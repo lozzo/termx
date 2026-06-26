@@ -21,11 +21,14 @@ func NewStreamLineReducer() StreamLineReducer {
 }
 
 type streamLineReducer struct {
-	ids       *historyIDAllocator
-	rowOwners map[int]LogicalLineID
-	lines     map[LogicalLineID]*streamLineDraft
-	cursorRow int
-	cursorCol int
+	ids                *historyIDAllocator
+	rowOwners          map[int]LogicalLineID
+	lines              map[LogicalLineID]*streamLineDraft
+	cursorRow          int
+	cursorCol          int
+	scrollTop          int
+	scrollBottom       int
+	skipNextScrollRect *pendingScrollRect
 }
 
 type streamLineDraft struct {
@@ -35,6 +38,12 @@ type streamLineDraft struct {
 	cursorRow int
 	cursorCol int
 	wrapped   bool
+	tailFill  *RowTailFill
+}
+
+type pendingScrollRect struct {
+	rect vterm.DamageRect
+	dy   int
 }
 
 func (reducer *streamLineReducer) ApplyOp(op TerminalSemanticOp) ([]HistoryMutation, error) {
@@ -52,6 +61,9 @@ func (reducer *streamLineReducer) ApplyOp(op TerminalSemanticOp) ([]HistoryMutat
 	case vterm.ScreenOpClearRect:
 		return reducer.applyClearRect(op), nil
 	case vterm.ScreenOpScrollRect:
+		if reducer.consumePendingScrollRect(op.Rect, op.Dy) {
+			return nil, nil
+		}
 		return reducer.applyScrollRect(op), nil
 	case vterm.ScreenOpCopyRect:
 		return reducer.applyCopyRect(op), nil
@@ -127,6 +139,9 @@ func (reducer *streamLineReducer) applyControl(op TerminalSemanticOp) []HistoryM
 			row = op.Row
 		}
 		id, ok := reducer.rowOwners[row]
+		if ok && op.TailFill != nil {
+			reducer.setDraftTailFill(id, op.TailFill)
+		}
 		reducer.cursorRow = row + 1
 		if op.Control == "nel" {
 			reducer.cursorCol = 0
@@ -158,6 +173,36 @@ func (reducer *streamLineReducer) applyControl(op TerminalSemanticOp) []HistoryM
 		return reducer.applyEraseLine(op.Row, op.Col, op.Mode)
 	case "ed":
 		return reducer.applyEraseDisplay(op)
+	case "il":
+		return reducer.applyLineInsertDelete(op.Row, op.Bottom, controlCount(op))
+	case "dl":
+		return reducer.applyLineInsertDelete(op.Row, op.Bottom, -controlCount(op))
+	case "su":
+		return reducer.applyLineInsertDelete(op.Row, op.Bottom, -controlCount(op))
+	case "sd":
+		return reducer.applyLineInsertDelete(op.Row, op.Bottom, controlCount(op))
+	case "ri":
+		return reducer.applyReverseIndex(op)
+	case "ht", "cbt":
+		reducer.cursorRow = maxInt(0, op.Row)
+		reducer.cursorCol = maxInt(0, op.Col)
+	case "ris":
+		sealed, _ := reducer.SealOpenLine(SealReasonFullReplace)
+		reducer.rowOwners = make(map[int]LogicalLineID)
+		reducer.lines = make(map[LogicalLineID]*streamLineDraft)
+		reducer.cursorRow = 0
+		reducer.cursorCol = 0
+		reducer.scrollTop = 0
+		reducer.scrollBottom = 0
+		reducer.skipNextScrollRect = nil
+		return sealed
+	case "decstbm":
+		reducer.scrollTop = maxInt(0, op.Mode-1)
+		reducer.scrollBottom = maxInt(reducer.scrollTop+1, op.Bottom)
+		reducer.cursorRow = reducer.scrollTop
+		reducer.cursorCol = 0
+	case "decslrm", "hts", "tbc", "decst8c", "scs", "da", "da2", "dsr", "decxcpr", "decrqm", "decscusr":
+		return nil
 	case "ech":
 		return reducer.applyEraseCharacters(op.Row, op.Col, controlCount(op))
 	case "dch":
@@ -171,6 +216,9 @@ func (reducer *streamLineReducer) applyControl(op TerminalSemanticOp) []HistoryM
 func (reducer *streamLineReducer) applySoftWrap(op TerminalSemanticOp) []HistoryMutation {
 	draft := reducer.ensureDraftForRow(op.Row)
 	draft.wrapped = true
+	if op.TailFill != nil {
+		draft.tailFill = rowTailFillFromTerminal(op.TailFill)
+	}
 	nextRow := op.Row + 1
 	reducer.rowOwners[nextRow] = draft.id
 	reducer.addDraftRow(draft, nextRow)
@@ -329,6 +377,54 @@ func (reducer *streamLineReducer) applyScrollRect(op TerminalSemanticOp) []Histo
 	return mutations
 }
 
+func (reducer *streamLineReducer) applyLineInsertDelete(row int, bottom int, dy int) []HistoryMutation {
+	if bottom <= row || dy == 0 {
+		return nil
+	}
+	rect := vterm.DamageRect{X: 0, Y: row, Width: maxInt(1, reducer.maxOwnedWidth()), Height: bottom - row}
+	op := TerminalSemanticOp{Code: vterm.ScreenOpScrollRect, Rect: rect, Dy: dy}
+	mutations := reducer.applyScrollRect(op)
+	reducer.skipNextScrollRect = &pendingScrollRect{rect: rect, dy: dy}
+	reducer.cursorRow = maxInt(0, row)
+	reducer.cursorCol = 0
+	return mutations
+}
+
+func (reducer *streamLineReducer) applyReverseIndex(op TerminalSemanticOp) []HistoryMutation {
+	row := maxInt(0, op.Row)
+	top, bottom := reducer.effectiveScrollRegionForRow(row)
+	if row == top {
+		return reducer.applyLineInsertDelete(top, bottom, 1)
+	}
+	reducer.cursorRow = maxInt(0, row-1)
+	reducer.cursorCol = maxInt(0, op.Col)
+	return nil
+}
+
+func (reducer *streamLineReducer) effectiveScrollRegionForRow(row int) (int, int) {
+	if reducer != nil && reducer.scrollBottom > reducer.scrollTop && row >= reducer.scrollTop && row < reducer.scrollBottom {
+		return reducer.scrollTop, reducer.scrollBottom
+	}
+	bottom := reducer.maxOwnedRow() + 1
+	if bottom <= row {
+		bottom = row + 1
+	}
+	return row, bottom
+}
+
+func (reducer *streamLineReducer) consumePendingScrollRect(rect vterm.DamageRect, dy int) bool {
+	if reducer == nil || reducer.skipNextScrollRect == nil {
+		return false
+	}
+	pending := reducer.skipNextScrollRect
+	if pending.dy == dy && scrollRectsEquivalent(pending.rect, rect) {
+		reducer.skipNextScrollRect = nil
+		return true
+	}
+	reducer.skipNextScrollRect = nil
+	return false
+}
+
 func (reducer *streamLineReducer) applyCopyRect(op TerminalSemanticOp) []HistoryMutation {
 	if op.Src.Width <= 0 || op.Src.Height <= 0 {
 		return nil
@@ -355,6 +451,44 @@ func (reducer *streamLineReducer) applyCopyRect(op TerminalSemanticOp) []History
 		mutations = append(mutations, reducer.openLineMutation(dstDraft, dstRow))
 	}
 	return mutations
+}
+
+func (reducer *streamLineReducer) maxOwnedWidth() int {
+	width := 0
+	for _, draft := range reducer.lines {
+		if draft == nil {
+			continue
+		}
+		for _, cells := range draft.rows {
+			if len(cells) > width {
+				width = len(cells)
+			}
+		}
+	}
+	return width
+}
+
+func (reducer *streamLineReducer) maxOwnedRow() int {
+	maxRow := -1
+	for row := range reducer.rowOwners {
+		if row > maxRow {
+			maxRow = row
+		}
+	}
+	return maxRow
+}
+
+func scrollRectsEquivalent(left vterm.DamageRect, right vterm.DamageRect) bool {
+	if left.Y != right.Y || left.Height != right.Height {
+		return false
+	}
+	if left.X != 0 || right.X != 0 {
+		return left == right
+	}
+	if left.Width <= 0 || right.Width <= 0 {
+		return left.Width == right.Width
+	}
+	return true
 }
 
 func (reducer *streamLineReducer) ensureState() {
@@ -468,6 +602,17 @@ func (reducer *streamLineReducer) removeRowFromDraft(id LogicalLineID, row int) 
 	}
 }
 
+func (reducer *streamLineReducer) setDraftTailFill(id LogicalLineID, style *TerminalSemanticStyle) {
+	if reducer == nil || style == nil {
+		return
+	}
+	draft := reducer.lines[id]
+	if draft == nil {
+		return
+	}
+	draft.tailFill = rowTailFillFromTerminal(style)
+}
+
 func (reducer *streamLineReducer) sealLine(id LogicalLineID, reason SealReason, kind HistoryRecordKind) []HistoryMutation {
 	draft := reducer.lines[id]
 	if draft == nil {
@@ -529,6 +674,7 @@ func (reducer *streamLineReducer) logicalLineForRow(draft *streamLineDraft, row 
 	line := logicalLineTemplate(HistoryRecordOrdinaryLine)
 	line.ID = draft.id
 	line.Cells = cloneHistoryCells(draft.rows[row])
+	line.TailFill = cloneRowTailFill(draft.tailFill)
 	line.Seal = SealStateOpen
 	return line
 }
@@ -540,6 +686,7 @@ func (reducer *streamLineReducer) logicalLineFromDraft(draft *streamLineDraft, k
 		line.Cells = append(line.Cells, cloneHistoryCells(draft.rows[row])...)
 	}
 	line.Cells = trimTrailingBlankCells(line.Cells)
+	line.TailFill = cloneRowTailFill(draft.tailFill)
 	line.Seal = SealStateOpen
 	return line
 }
@@ -556,6 +703,30 @@ func logicalLineTemplate(kind HistoryRecordKind) LogicalLine {
 		Kind:      string(kind),
 		Residency: ResidencyMemory,
 	}
+}
+
+func rowTailFillFromTerminal(style *TerminalSemanticStyle) *RowTailFill {
+	if style == nil {
+		return nil
+	}
+	return &RowTailFill{Style: CellStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
+	}}
+}
+
+func cloneRowTailFill(fill *RowTailFill) *RowTailFill {
+	if fill == nil {
+		return nil
+	}
+	out := *fill
+	return &out
 }
 
 func (reducer *streamLineReducer) sortedLineIDs() []LogicalLineID {

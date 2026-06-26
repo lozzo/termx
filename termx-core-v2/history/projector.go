@@ -35,6 +35,10 @@ type FrameReducer interface {
 	ReplacePrimaryCurrent(frame TerminalSemanticFrame, reason FrameReason) ([]HistoryMutation, error)
 	// ArchivePrimaryCurrent 把 current primary frame 按明确 boundary seal 到 frame journal。
 	ArchivePrimaryCurrent(reason SealReason) ([]HistoryMutation, error)
+	// ClearPrimaryCurrent 丢弃 current primary frame ownership。它只用于 vterm 已经
+	// 用 scroll-out proof 或 reset/clear boundary 表达内容去向时，避免把旧 frame
+	// 再作为 archived truth 重复写入 timeline。
+	ClearPrimaryCurrent(reason FrameReason) ([]HistoryMutation, error)
 	// ReplaceAltCurrent 用 alt semantic frame 全量替换 transient alt frame。
 	ReplaceAltCurrent(frame TerminalSemanticFrame) ([]HistoryMutation, error)
 	// ClearAltCurrent 在 alt exit 或 terminal close 时丢弃 transient frame。

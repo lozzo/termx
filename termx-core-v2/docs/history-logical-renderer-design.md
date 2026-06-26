@@ -321,14 +321,17 @@ type StreamLineReducer interface {
     ApplyOp(op TerminalSemanticOp) ([]HistoryMutation, error)
     SealOpenLine(reason SealReason) ([]HistoryMutation, error)
     SealScrollOut(proof TerminalSemanticScrollOut) ([]HistoryMutation, error)
+    ResetForClearScrollback()
 }
 
 type FrameReducer interface {
     ReplacePrimaryCurrent(frame TerminalSemanticFrame, reason FrameReason) ([]HistoryMutation, error)
     ArchivePrimaryCurrent(reason SealReason) ([]HistoryMutation, error)
+    ClearPrimaryCurrent(reason FrameReason) ([]HistoryMutation, error)
     ReplaceAltCurrent(frame TerminalSemanticFrame) ([]HistoryMutation, error)
     ClearAltCurrent(reason FrameReason) ([]HistoryMutation, error)
     ClosePrimaryCurrent(reason SealReason) ([]HistoryMutation, error)
+    ResetForClearScrollback()
 }
 ```
 
@@ -343,6 +346,7 @@ HistoryStore 应只接收 renderer mutation，不自己解释 terminal ops。
 ```go
 type HistoryStore interface {
     Apply(batch HistoryMutationBatch) error
+    ReadState() HistoryReadState
 
     LatestWindow(req HistoryWindowRequest) (HistoryWindow, error)
     OlderWindow(req HistoryWindowRequest) (HistoryWindow, error)
@@ -405,12 +409,15 @@ reducer 里处理，不能再靠“如果当前 case 是 Codex resume”这类�
 | `WriteSpan(row,col,cells,wrapped)` | `StreamLineReducer` 必须按 vterm 给出的 row/col 和当前 row ownership 写入对应 logical line draft；`FrameReducer` 在 primary/alt frame 模式下用 frame payload 全量替换 current frame | 不能只维护一个全局 open line 再按最后一次 col 覆盖；不能忽略 row |
 | `Control: cr` | 更新当前 semantic row 的 cursor col 为 0，后续 write 在同一 logical line 内覆盖 | 不能 seal line，也不能把 CR 前后的中间态都写进 timeline |
 | `Control: lf/ind/nel` | 按 terminal 行移动语义关闭或切换当前 physical row ownership；如果 scroll-out proof 同时出现，以 proof 为 seal 依据并保证 exactly-once | 不能把所有 LF 都当普通 append，也不能漏掉 scroll-out 中已离屏的行 |
+| `Control: il/dl/su/sd/ri` | 按 vterm 已解析的行插入、删除、滚动和反向索引移动 mutable row ownership；真正进入 scrollback 的内容仍只能由 vterm scroll-out proof seal | 不能静默忽略这些 control；不能从滚动后的最终 frame 反推被挤出的历史行；不能把同一 transaction 随后的 screen diff `ScrollRect` 再应用一遍 |
 | `Control: soft-wrap` | 标记当前 logical line 与下一 physical row 的 wrap 关系；查看时可以 reflow ordinary line | 不能把 soft-wrap 当显式换行，也不能把 wrapped physical row 当独立 logical line |
 | `Control: bs/cub/cuf/cha/hpa` | 只移动当前 row cursor；后续 write 按新 cursor 修改 draft cells | 不能追加空白历史，也不能在 cursor move 时创建 sealed record |
 | `Control: cup/vpa/cuu/cud` | 更新 semantic cursor 指向的 physical row ownership；如果跳到已有 mutable row，应修改该 row 对应 draft | 不能继续写入旧 open line；不能丢掉跳转后的 row 维度 |
+| `Control: ht/cbt/hts/tbc/decst8c/decstbm/decslrm` | `ht/cbt` 使用 vterm resolved row/col 更新 cursor；`decstbm` 保存滚动区供 `ri/su/sd/il/dl` 使用；tab stop 和水平 margin 状态由 vterm 持有，history 不另建第二份 tab truth | 不能按固定 8 列重放 tab；不能忽略 `decstbm` 后再把滚动区操作当全屏操作 |
 | `Control: el` / `ClearToEOL` | 按 mode 和 col 清除当前 row 的 cell 区间，更新 draft 或 current frame payload；mode 0/1/2 必须区分 | 不能只做 truncate-to-col；不能把清除动作当新文本行 |
 | `Control: ed` / `ClearRect` | 按 vterm 给出的矩形清除 row ownership 和 cells；screen app frame 模式由 frame payload 全量替换 | 不能从 clear screen 凭空创建 sealed history；不能把 cleared default blank rows作为内容历史 |
 | `Control: ech/dch/ich` | 在当前 row 内 erase/delete/insert 指定 cell count，保持 ordered op 顺序 | 不能只覆盖 write span；不能忽略这些控制导致文本重叠 |
+| `Control: ris` | reset boundary 会 seal ordinary open line，并清 primary current/alt transient ownership；后续 history 只能来自 reset 后新的 vterm 产出 | 不能让 reset 前 mutable frame 在下一次 repaint 后继续存在；不能把 reset 当普通无害 control |
 | `ScrollRect` | 按矩形滚动移动 row ownership；滚出 primary viewport 的内容只能通过同一 transaction 的 scroll-out proof seal | 不能从最终 snapshot 猜离屏行；不能把 scroll rect 本身当作完整历史 payload |
 | `CopyRect` | 在 mutable row/frame model 内复制 cell 区间和 row ownership；这是 repaint/区域复制语义 | 不能把 copy 目标追加成新 timeline record |
 | `Cursor` | 只更新 cursor projection/metadata；必要时影响后续 selection/frozen cursor | 不能作为 content 写入 history |
@@ -418,9 +425,10 @@ reducer 里处理，不能再靠“如果当前 case 是 Codex resume”这类�
 | `Modes` alt exit | 清 alt transient；后续 primary output 作为新的 primary current 或 ordinary stream | 不能复活 alt enter 前的 primary current；不能 seal alt screen 内容 |
 | `Modes` synchronized output 2026 begin/active/end | classifier 只用 vterm mode truth 判断 primary frame session；begin/payload/end 被拆 transaction 时也必须保持 session 语义 | 不能用 raw chunk、程序名或 “begin/end 是否同包” 推断 |
 | `Resize` / `RequiresFullReplace` | 作为 non-history boundary 推进 generation/cursor invalidation；sealed ordinary line 只在 window 投影时 reflow，sealed frame 固定 cols | 不能从 resized screen snapshot 生成 history；不能改写 sealed records |
-| `PrimaryScrollOut` | 作为 ordered scroll-out proof seal 离开 primary viewport 的 logical lines；必须有 seq/order 才能和 ops/frame 正确合并 | 不能把 proof 当最终屏幕快照；不能允许重复 seal |
+| `PrimaryScrollOut` | 作为 ordered scroll-out proof seal 离开 primary viewport 的 logical lines；classifier 必须结合 `ReadState` 区分 ordinary stream 已 seal 内容和 primary current frame 内容，避免重复或丢失 | 不能把 proof 当最终屏幕快照；不能在 primary current frame 清屏时丢 proof；不能在普通 ED2 已有 sealed rows 时重复 seal |
 | `PrimaryFrame` | `FrameReducer.ReplacePrimaryCurrent` 全量替换 current primary frame rows，保留 fixed-grid source cols | 不能从 write ops 重建 frame；不能把每次 repaint 追加进 timeline |
 | `AltFrame` | `FrameReducer.ReplaceAltCurrent` 全量替换 transient alt frame，可进入 latest/frozen projection | 不能进入 primary sealed timeline |
+| `TailFill` | `lf/ind/soft-wrap` 携带的 vterm tail background 应保存到 logical line `TailFill`，它不是文本内容也不增加 logical width | 不能投影成真实空格；不能丢掉明确背景导致历史行尾样式和 vterm 语义不一致 |
 | `Title` / OSC metadata | 可作为 terminal metadata 或非 history boundary；除 OSC8 hyperlink 这类 cell style 外不写 logical text | 不能把控制序列字节泄漏为历史文本 |
 
 当前 vterm transaction 仍把部分 side proof（例如 `PrimaryScrollOut`、`PrimaryFrame`）放在 ops 之外。

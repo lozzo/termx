@@ -21,6 +21,7 @@ const (
 	HistorySemanticEventResize           HistorySemanticEventKind = "resize"
 	HistorySemanticEventFullReplace      HistorySemanticEventKind = "full-replace"
 	HistorySemanticEventClearScrollback  HistorySemanticEventKind = "clear-scrollback"
+	HistorySemanticEventReset            HistorySemanticEventKind = "reset"
 	HistorySemanticEventClose            HistorySemanticEventKind = "close"
 )
 
@@ -111,6 +112,9 @@ func HistorySemanticEventsFromTransaction(tx TerminalSemanticTransaction) []Hist
 			kind = HistorySemanticEventClearScrollback
 			reason = "ed3"
 			hasClearScrollbackOp = true
+		case isResetOp(opCopy):
+			kind = HistorySemanticEventReset
+			reason = "ris"
 		}
 		appendEvent(HistorySemanticEvent{
 			OrderSource: HistorySemanticEventOrderFromOps,
@@ -194,6 +198,10 @@ func isClearScrollbackOp(op TerminalSemanticOp) bool {
 
 func isEraseDisplayAllOp(op TerminalSemanticOp) bool {
 	return op.Code == vterm.ScreenOpControl && op.Control == "ed" && op.Mode == 2
+}
+
+func isResetOp(op TerminalSemanticOp) bool {
+	return op.Code == vterm.ScreenOpControl && op.Control == "ris"
 }
 
 func terminalScrollOutProofsFromOp(op TerminalSemanticOp) []TerminalSemanticScrollOut {

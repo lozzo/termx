@@ -73,6 +73,19 @@ func (store *inMemoryHistoryStore) Apply(batch HistoryMutationBatch) error {
 	return nil
 }
 
+func (store *inMemoryHistoryStore) ReadState() HistoryReadState {
+	if store == nil {
+		return HistoryReadState{}
+	}
+	store.ensureState()
+	return HistoryReadState{
+		Generation:        store.generation,
+		HasOpenLine:       store.openLine != nil,
+		HasPrimaryCurrent: store.frameJournal.PrimaryCurrent != nil,
+		HasAltCurrent:     store.frameJournal.AltCurrent != nil,
+	}
+}
+
 func (store *inMemoryHistoryStore) LatestWindow(req HistoryWindowRequest) (HistoryWindow, error) {
 	if store == nil {
 		return HistoryWindow{}, nil
@@ -238,6 +251,8 @@ func (store *inMemoryHistoryStore) applyMutation(mutation HistoryMutation) error
 			store.frameJournal.PrimaryCurrent = nil
 		}
 		store.upsertFrameRecord(frame)
+	case HistoryMutationClearPrimaryFrame:
+		store.frameJournal.PrimaryCurrent = nil
 	case HistoryMutationReplaceAltFrame:
 		if mutation.Transient == nil {
 			return ErrHistoryInvalidMutation

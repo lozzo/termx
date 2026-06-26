@@ -497,7 +497,7 @@ func (terminal *Terminal) applyHistoryWriteResult(result live.SurfaceWriteResult
 	}
 	for _, segment := range result.Segments {
 		for _, tx := range segment.Transactions {
-			decision := terminal.historyDecisionForTransaction(tx)
+			decision := terminal.historyDecisionForTransaction(tx, terminal.historyStore.ReadState())
 			batch, err := terminal.historyRenderer.Apply(tx, decision)
 			if err != nil {
 				continue
@@ -540,7 +540,7 @@ func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {
 	_ = terminal.historyStore.Apply(batch)
 }
 
-func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSemanticTransaction) history.HistoryDecision {
+func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSemanticTransaction, state history.HistoryReadState) history.HistoryDecision {
 	decision := history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream}
 	hasEraseDisplay := historyTransactionHasEraseDisplay(tx)
 	if tx.RequiresFullReplace && tx.FullReplaceReason == "resize" {
@@ -560,7 +560,10 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 	if tx.PrimaryFrame != nil && (tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd || len(tx.PrimaryScrollOut) > 0 || tx.RequiresFullReplace || hasEraseDisplay) {
 		decision.Mode = history.HistoryOutputModePrimaryFrameSession
 		decision.PublishPrimaryFrame = true
-		decision.ConsumeScrollOutProof = !hasEraseDisplay
+		// 中文说明：vterm 已经证明进入 primary scrollback 的内容必须进入
+		// authoritative history。普通 stream 已经按 LF/open-line seal 记录过的
+		// 内容不能在 ED2 时重复消费；primary current frame 则必须消费 proof。
+		decision.ConsumeScrollOutProof = historyTransactionShouldConsumeScrollOut(tx, state)
 		decision.ConsumeClearBoundary = hasEraseDisplay
 	}
 	return decision
@@ -569,6 +572,25 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 func historyTransactionHasEraseDisplay(tx history.TerminalSemanticTransaction) bool {
 	for _, op := range tx.Ops {
 		if op.Code == vterm.ScreenOpControl && op.Control == "ed" {
+			return true
+		}
+	}
+	return false
+}
+
+func historyTransactionShouldConsumeScrollOut(tx history.TerminalSemanticTransaction, state history.HistoryReadState) bool {
+	if len(tx.PrimaryScrollOut) == 0 && !historyTransactionHasOpScrollOut(tx) {
+		return false
+	}
+	if state.HasPrimaryCurrent || tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd || tx.RequiresFullReplace {
+		return true
+	}
+	return !historyTransactionHasEraseDisplay(tx)
+}
+
+func historyTransactionHasOpScrollOut(tx history.TerminalSemanticTransaction) bool {
+	for _, op := range tx.Ops {
+		if len(op.ScrollOut) > 0 {
 			return true
 		}
 	}

@@ -11,6 +11,7 @@ const (
 	HistoryMutationAppendTimelineRecord HistoryMutationKind = "append-timeline-record"
 	HistoryMutationReplacePrimaryFrame  HistoryMutationKind = "replace-primary-frame"
 	HistoryMutationArchivePrimaryFrame  HistoryMutationKind = "archive-primary-frame"
+	HistoryMutationClearPrimaryFrame    HistoryMutationKind = "clear-primary-frame"
 	HistoryMutationReplaceAltFrame      HistoryMutationKind = "replace-alt-frame"
 	HistoryMutationClearAltFrame        HistoryMutationKind = "clear-alt-frame"
 	HistoryMutationClosePrimaryFrame    HistoryMutationKind = "close-primary-frame"

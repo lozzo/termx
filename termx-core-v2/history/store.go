@@ -102,6 +102,9 @@ type StorageCompactionPolicy struct {
 type HistoryStore interface {
 	// Apply 把 renderer batch 作为唯一写路径应用到 authoritative history truth。
 	Apply(batch HistoryMutationBatch) error
+	// ReadState 返回 classifier 所需的只读 history ownership 边界。调用方只能用它
+	// 判断 semantic transaction 的消费路径，不能从中派生 payload 或 UI rows。
+	ReadState() HistoryReadState
 	// LatestWindow 返回某个 terminal 的 authoritative latest projection。
 	LatestWindow(req HistoryWindowRequest) (HistoryWindow, error)
 	// OlderWindow 使用上一响应中的 cursor truth 跨 current/archive/sealed segments

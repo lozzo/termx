@@ -96,7 +96,9 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 				return nil, err
 			}
 			mutations = append(mutations, streamMutations...)
-			frameMutations, err := renderer.frames.ArchivePrimaryCurrent(SealReasonFullReplace)
+			// 中文说明：ED2 的旧屏内容由 vterm ordered scroll-out proof 表达；
+			// 这里只清 current frame ownership，不能再 archive 同一旧屏形成重复 truth。
+			frameMutations, err := renderer.frames.ClearPrimaryCurrent(FrameReasonPrimaryRepaint)
 			if err != nil {
 				return nil, err
 			}
@@ -141,6 +143,24 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 			renderer.frames.ResetForClearScrollback()
 		}
 		return []HistoryMutation{{Kind: HistoryMutationClearScrollback, Reason: SealReasonFullReplace}}, nil
+	case HistorySemanticEventReset:
+		var mutations []HistoryMutation
+		streamMutations, err := renderer.stream.SealOpenLine(SealReasonFullReplace)
+		if err != nil {
+			return nil, err
+		}
+		mutations = append(mutations, streamMutations...)
+		frameMutations, err := renderer.frames.ClearPrimaryCurrent(FrameReasonPrimaryRepaint)
+		if err != nil {
+			return nil, err
+		}
+		mutations = append(mutations, frameMutations...)
+		altMutations, err := renderer.frames.ClearAltCurrent(FrameReasonAltExit)
+		if err != nil {
+			return nil, err
+		}
+		mutations = append(mutations, altMutations...)
+		return mutations, nil
 	}
 	return nil, nil
 }

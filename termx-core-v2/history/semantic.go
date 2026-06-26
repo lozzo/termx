@@ -36,6 +36,10 @@ type TerminalSemanticStyle = vterm.TerminalSemanticStyle
 // 离开了可见区域。它是 proof，不是第二份 store。
 type TerminalSemanticScrollOut = vterm.TerminalSemanticScrollOut
 
+// TerminalSemanticScrollbackRowAppend 是 vterm 挂在 ordered op 上的 scrollback
+// row proof，例如 ED2 清屏时旧可见行离开 primary viewport。
+type TerminalSemanticScrollbackRowAppend = vterm.ScrollbackRowAppend
+
 // TerminalSemanticFrame 是 vterm 为一个 transaction 产出的 current primary 或 alt
 // fixed-grid frame。它可以 publish current frame，但不能独自创建 ordinary
 // sealed history。

@@ -56,6 +56,19 @@ func (reducer *frameReducer) ArchivePrimaryCurrent(reason SealReason) ([]History
 	return reducer.sealedFrameMutations(sealed, HistoryMutationArchivePrimaryFrame, HistoryRecordArchivedPrimaryFrame), nil
 }
 
+func (reducer *frameReducer) ClearPrimaryCurrent(reason FrameReason) ([]HistoryMutation, error) {
+	if reducer == nil || reducer.journal.PrimaryCurrent == nil {
+		return nil, nil
+	}
+	frameID := reducer.journal.PrimaryCurrent.ID
+	reducer.journal.PrimaryCurrent = nil
+	return []HistoryMutation{{
+		Kind:    HistoryMutationClearPrimaryFrame,
+		FrameID: frameID,
+		Reason:  sealReasonFromFrameReason(reason),
+	}}, nil
+}
+
 func (reducer *frameReducer) ReplaceAltCurrent(frame TerminalSemanticFrame) ([]HistoryMutation, error) {
 	if reducer == nil {
 		return nil, nil

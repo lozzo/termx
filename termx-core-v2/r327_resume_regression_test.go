@@ -101,7 +101,7 @@ func TestR327FullReplacePrimaryFrameIsConsumedAsScreenRedraw(t *testing.T) {
 			},
 		},
 	}
-	decision := terminal.historyDecisionForTransaction(tx)
+	decision := terminal.historyDecisionForTransaction(tx, terminal.historyStore.ReadState())
 	batch, err := terminal.historyRenderer.Apply(tx, decision)
 	if err != nil {
 		t.Fatalf("apply full replace redraw transaction: %v", err)

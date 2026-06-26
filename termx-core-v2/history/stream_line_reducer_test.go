@@ -205,6 +205,108 @@ func TestR321StreamReducerScrollAndCopyRectMoveRowOwnership(t *testing.T) {
 	}
 }
 
+func TestR329StreamReducerConsumesVTermLineControls(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		control TerminalSemanticOp
+		trailer *TerminalSemanticOp
+		want    map[int]string
+	}{
+		{
+			name:    "insert line moves owned rows down once",
+			control: controlOpWithBottom("il", 1, 0, 1, 3),
+			trailer: &TerminalSemanticOp{Code: vterm.ScreenOpScrollRect, Rect: vterm.DamageRect{X: 0, Y: 1, Width: 12, Height: 2}, Dy: 1},
+			want:    map[int]string{0: "top", 2: "mid"},
+		},
+		{
+			name:    "delete line moves owned rows up once",
+			control: controlOpWithBottom("dl", 1, 0, 1, 3),
+			trailer: &TerminalSemanticOp{Code: vterm.ScreenOpScrollRect, Rect: vterm.DamageRect{X: 0, Y: 1, Width: 12, Height: 2}, Dy: -1},
+			want:    map[int]string{0: "top", 1: "bot"},
+		},
+		{
+			name:    "scroll up uses scroll region bottom",
+			control: controlOpWithBottom("su", 0, 0, 1, 3),
+			trailer: &TerminalSemanticOp{Code: vterm.ScreenOpScrollRect, Rect: vterm.DamageRect{X: 0, Y: 0, Width: 12, Height: 3}, Dy: -1},
+			want:    map[int]string{0: "mid", 1: "bot"},
+		},
+		{
+			name:    "scroll down uses scroll region bottom",
+			control: controlOpWithBottom("sd", 0, 0, 1, 3),
+			trailer: &TerminalSemanticOp{Code: vterm.ScreenOpScrollRect, Rect: vterm.DamageRect{X: 0, Y: 0, Width: 12, Height: 3}, Dy: 1},
+			want:    map[int]string{1: "top", 2: "mid"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reducer := NewStreamLineReducer()
+			applyStreamOps(t, reducer,
+				writeOp(0, 0, "top"),
+				writeOp(1, 0, "mid"),
+				writeOp(2, 0, "bot"),
+				tc.control,
+			)
+			if tc.trailer != nil {
+				applyStreamOps(t, reducer, *tc.trailer)
+			}
+			lines := openLinesByRow(t, reducer)
+			assertOpenLineTexts(t, lines, tc.want)
+		})
+	}
+}
+
+func TestR329StreamReducerReverseIndexUsesScrollRegion(t *testing.T) {
+	reducer := NewStreamLineReducer()
+	applyStreamOps(t, reducer,
+		writeOp(0, 0, "top"),
+		writeOp(1, 0, "region-a"),
+		writeOp(2, 0, "region-b"),
+		writeOp(3, 0, "region-c"),
+		controlOpWithBottom("decstbm", 0, 0, 2, 4),
+		controlOp("cup", 1, 0, 0),
+		controlOp("ri", 1, 0, 0),
+		TerminalSemanticOp{Code: vterm.ScreenOpScrollRect, Rect: vterm.DamageRect{X: 0, Y: 1, Width: 12, Height: 3}, Dy: 1},
+	)
+
+	lines := openLinesByRow(t, reducer)
+	assertOpenLineTexts(t, lines, map[int]string{
+		0: "top",
+		2: "region-a",
+		3: "region-b",
+	})
+}
+
+func TestR329StreamReducerRISSealsAndClearsMutableRows(t *testing.T) {
+	reducer := NewStreamLineReducer()
+	applyStreamOps(t, reducer, writeOp(0, 0, "before"))
+
+	mutations, err := reducer.ApplyOp(controlOp("ris", 0, 6, 0))
+	if err != nil {
+		t.Fatalf("apply RIS: %v", err)
+	}
+	if got := joinedLineTexts(sealedMutationLines(mutations)); got != "before" {
+		t.Fatalf("RIS must seal current observable line before reset, got %q mutations=%#v", got, mutations)
+	}
+	if lines := openLinesByRow(t, reducer); len(lines) != 0 {
+		t.Fatalf("RIS must clear ordinary row ownership, got %#v", lines)
+	}
+}
+
+func TestR329StreamReducerCarriesVTermTailFill(t *testing.T) {
+	reducer := NewStreamLineReducer()
+	applyStreamOps(t, reducer, writeOp(0, 0, "styled"))
+
+	lf := controlOp("lf", 0, 6, 0)
+	lf.TailFill = &TerminalSemanticStyle{BG: "idx:24"}
+	mutations, err := reducer.ApplyOp(lf)
+	if err != nil {
+		t.Fatalf("apply LF with tail fill: %v", err)
+	}
+	sealed := sealedMutationLines(mutations)
+	if len(sealed) != 1 || sealed[0].TailFill == nil || sealed[0].TailFill.Style.BG != "idx:24" {
+		t.Fatalf("vterm TailFill must be copied into logical history line, got %#v mutations=%#v", sealed, mutations)
+	}
+}
+
 func TestR321StreamReducerSoftWrapAndLFBoundaries(t *testing.T) {
 	reducer := NewStreamLineReducer()
 	applyStreamOps(t, reducer,
@@ -289,4 +391,26 @@ func writeOp(row int, col int, text string) TerminalSemanticOp {
 
 func controlOp(kind string, row int, col int, mode int) TerminalSemanticOp {
 	return TerminalSemanticOp{Code: vterm.ScreenOpControl, Control: kind, Row: row, Col: col, Mode: mode}
+}
+
+func controlOpWithBottom(kind string, row int, col int, mode int, bottom int) TerminalSemanticOp {
+	op := controlOp(kind, row, col, mode)
+	op.Bottom = bottom
+	return op
+}
+
+func assertOpenLineTexts(t *testing.T, lines map[int]OpenLine, want map[int]string) {
+	t.Helper()
+	if len(lines) != len(want) {
+		t.Fatalf("unexpected row ownership count, got %#v want %#v", lines, want)
+	}
+	for row, text := range want {
+		line, ok := lines[row]
+		if !ok {
+			t.Fatalf("missing row %d in %#v", row, lines)
+		}
+		if got := lineText(line.Draft.Line); got != text {
+			t.Fatalf("row %d got %q want %q lines=%#v", row, got, text, lines)
+		}
+	}
 }
