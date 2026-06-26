@@ -630,6 +630,7 @@ func (reducer *streamLineReducer) sealLine(id LogicalLineID, reason SealReason, 
 func (reducer *streamLineReducer) sealStandaloneLine(line LogicalLine, reason SealReason, kind HistoryRecordKind) []HistoryMutation {
 	record := HistoryRecord{
 		ID:      reducer.ids.nextHistoryRecordID(),
+		Seq:     reducer.ids.nextTimelineSeq(),
 		Kind:    kind,
 		LineIDs: []LogicalLineID{line.ID},
 		Reason:  reason,

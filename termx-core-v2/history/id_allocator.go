@@ -6,6 +6,7 @@ package history
 type historyIDAllocator struct {
 	nextLineID   LogicalLineID
 	nextRecordID HistoryRecordID
+	nextSeq      uint64
 }
 
 // newHistoryIDAllocator 创建 terminal history renderer 的本地 allocator。它不是
@@ -37,6 +38,14 @@ func (allocator *historyIDAllocator) nextHistoryRecordID() HistoryRecordID {
 	id := allocator.nextRecordID
 	allocator.nextRecordID++
 	return id
+}
+
+// nextTimelineSeq 分配 sealed timeline 的全局顺序号。StreamLineReducer 与
+// FrameReducer 必须共享该计数，避免普通 prompt 被排到刚关闭的 screen-frame 前面。
+func (allocator *historyIDAllocator) nextTimelineSeq() uint64 {
+	allocator.ensure()
+	allocator.nextSeq++
+	return allocator.nextSeq
 }
 
 func (allocator *historyIDAllocator) ensure() {

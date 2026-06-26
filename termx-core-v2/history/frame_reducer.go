@@ -18,7 +18,6 @@ type frameReducer struct {
 	nextSessionID ScreenSessionID
 	nextFrameID   ScreenFrameID
 	ids           *historyIDAllocator
-	nextSeq       uint64
 }
 
 func (reducer *frameReducer) ReplacePrimaryCurrent(frame TerminalSemanticFrame, reason FrameReason) ([]HistoryMutation, error) {
@@ -132,7 +131,6 @@ func (reducer *frameReducer) ResetForClearScrollback() {
 	reducer.nextSessionID = 1
 	reducer.nextFrameID = 1
 	reducer.ids = newHistoryIDAllocator()
-	reducer.nextSeq = 0
 }
 
 func (reducer *frameReducer) ensureCounters() {
@@ -182,8 +180,8 @@ func (reducer *frameReducer) currentAltFrameID() ScreenFrameID {
 }
 
 func (reducer *frameReducer) nextSequence() uint64 {
-	reducer.nextSeq++
-	return reducer.nextSeq
+	reducer.ensureCounters()
+	return reducer.ids.nextTimelineSeq()
 }
 
 func (reducer *frameReducer) nextLogicalLineID() LogicalLineID {

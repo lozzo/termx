@@ -543,6 +543,7 @@ func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {
 func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSemanticTransaction, state history.HistoryReadState) history.HistoryDecision {
 	decision := history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream}
 	hasEraseDisplay := historyTransactionHasEraseDisplay(tx)
+	isPrimaryFrameSession := tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd || tx.RequiresFullReplace || hasEraseDisplay
 	if tx.RequiresFullReplace && tx.FullReplaceReason == "resize" {
 		return history.HistoryDecision{Mode: history.HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true}
 	}
@@ -557,7 +558,7 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 		decision.Mode = history.HistoryOutputModeAltTransient
 		decision.PublishAltFrame = true
 	}
-	if tx.PrimaryFrame != nil && (tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd || len(tx.PrimaryScrollOut) > 0 || tx.RequiresFullReplace || hasEraseDisplay) {
+	if tx.PrimaryFrame != nil && isPrimaryFrameSession {
 		decision.Mode = history.HistoryOutputModePrimaryFrameSession
 		decision.PublishPrimaryFrame = true
 		// 中文说明：vterm 已经证明进入 primary scrollback 的内容必须进入
@@ -565,6 +566,11 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 		// 内容不能在 ED2 时重复消费；primary current frame 则必须消费 proof。
 		decision.ConsumeScrollOutProof = historyTransactionShouldConsumeScrollOut(tx, state)
 		decision.ConsumeClearBoundary = hasEraseDisplay
+	}
+	if decision.Mode == history.HistoryOutputModeOrdinaryStream && state.HasPrimaryCurrent {
+		// 中文说明：screen app session 后恢复普通 shell 输出，是 terminal 语义上的
+		// session 边界；history 必须先收口 current frame，再写普通 open line。
+		decision.ClosePrimaryFrameBeforeStream = true
 	}
 	return decision
 }

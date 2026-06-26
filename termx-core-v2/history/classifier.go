@@ -25,11 +25,14 @@ type HistoryDecision struct {
 	PublishAltFrame         bool
 	ClearAltFrame           bool
 	ClosePrimaryFrame       bool
-	SealOpenLine            bool
-	ConsumeStreamOps        bool
-	ConsumeScrollOutProof   bool
-	ConsumeClearBoundary    bool
-	NonHistoryBoundary      bool
+	// ClosePrimaryFrameBeforeStream 表示普通输出恢复前必须先关闭 primary
+	// current frame，防止后续 prompt/open line 被投影到旧 screen-frame 前面。
+	ClosePrimaryFrameBeforeStream bool
+	SealOpenLine                  bool
+	ConsumeStreamOps              bool
+	ConsumeScrollOutProof         bool
+	ConsumeClearBoundary          bool
+	NonHistoryBoundary            bool
 }
 
 // HistorySemanticClassifier 只能根据 terminal semantic transaction 和

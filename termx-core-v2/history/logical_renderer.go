@@ -32,6 +32,16 @@ func (renderer *logicalRenderer) Apply(tx TerminalSemanticTransaction, decision 
 		return HistoryMutationBatch{}, nil
 	}
 	var mutations []HistoryMutation
+	if decision.ClosePrimaryFrameBeforeStream {
+		// 中文说明：primary screen app 结束后出现新的普通 PTY 输出时，旧 current
+		// frame 必须先离开 mutable ownership；否则 shell prompt 会在 projection 中
+		// 插到旧 current frame 前面，形成与真实 PTY 顺序相反的历史。
+		next, err := renderer.frames.ClosePrimaryCurrent(SealReasonSessionClose)
+		if err != nil {
+			return HistoryMutationBatch{}, err
+		}
+		mutations = append(mutations, next...)
+	}
 	for _, event := range HistorySemanticEventsFromTransaction(tx) {
 		next, err := renderer.applyEvent(event, decision)
 		if err != nil {
