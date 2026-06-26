@@ -36,6 +36,9 @@ type FrameReducer interface {
 	ReplaceAltCurrent(frame TerminalSemanticFrame) ([]HistoryMutation, error)
 	// ClearAltCurrent 在 alt exit 或 terminal close 时丢弃 transient frame。
 	ClearAltCurrent(reason FrameReason) ([]HistoryMutation, error)
+	// ApplyNonHistoryBoundary 处理 resize/full-replace 等不应 seal history 的
+	// terminal boundary；实现只能推进 frame generation/cursor invalidation mutation。
+	ApplyNonHistoryBoundary(reason FrameReason) ([]HistoryMutation, error)
 	// ClosePrimaryCurrent 在 terminal/session close 时按 policy seal 或丢弃 current primary。
 	ClosePrimaryCurrent(reason SealReason) ([]HistoryMutation, error)
 }
