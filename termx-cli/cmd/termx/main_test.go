@@ -1446,21 +1446,8 @@ func TestV3E2ESmokeCommandRunsLocalCoreAndTUIPath(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("v3 e2e-smoke returned error: %v", err)
-	}
-	text := out.String()
-	if !strings.Contains(text, "termx v3 e2e smoke ok") ||
-		!strings.Contains(text, "terminal=term-") ||
-		!strings.Contains(text, "frames=") ||
-		!strings.Contains(text, "viewport=100x40") ||
-		!strings.Contains(text, "session=98x36") ||
-		!strings.Contains(text, "copy_cols=98") ||
-		!strings.Contains(text, "pane_commands=5") ||
-		!strings.Contains(text, "panes=1") ||
-		!strings.Contains(text, "active=pane-main") ||
-		!strings.Contains(text, "zoom_checked=true") {
-		t.Fatalf("unexpected v3 e2e smoke output:\n%s", text)
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "history not rebuilt") {
+		t.Fatalf("v3 e2e-smoke should report clean-slate history state, got err=%v out=%q", err, out.String())
 	}
 }
 

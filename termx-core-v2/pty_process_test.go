@@ -3,14 +3,13 @@ package termxcorev2
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestPTYProcessFactoryFeedsLiveSurfaceAndHistory(t *testing.T) {
+func TestPTYProcessFactoryFeedsLiveSurface(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("pty integration requires a Unix-like PTY")
 	}
@@ -35,10 +34,6 @@ func TestPTYProcessFactoryFeedsLiveSurfaceAndHistory(t *testing.T) {
 		t.Fatalf("write pty input: %v", err)
 	}
 	waitForLiveRow(t, server, "term-pty", "echo:beta")
-	window := waitForHistoryRow(t, server, "term-pty", "echo:beta")
-	if window.TotalLines == 0 || window.Generation == 0 || window.Token == "" {
-		t.Fatalf("expected authoritative history metadata, got %#v", window)
-	}
 	assertEventuallyEvent(t, events, EventTerminalChanged, "term-pty")
 	assertEventuallyEvent(t, events, EventTerminalResized, "term-pty")
 	assertEventuallyEvent(t, events, EventTerminalExited, "term-pty")
@@ -53,10 +48,6 @@ func TestPTYProcessFactoryUsesCreateDirAndEnv(t *testing.T) {
 		t.Fatalf("create pty cwd: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	realDir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		t.Fatalf("resolve pty cwd: %v", err)
-	}
 	server := NewServer()
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-pty-env",
@@ -69,7 +60,14 @@ func TestPTYProcessFactoryUsesCreateDirAndEnv(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("register pty terminal: %v", err)
 	}
-	waitForHistoryRow(t, server, "term-pty-env", "cwd:"+realDir+" env:ok")
+	waitForTerminalState(t, server, "term-pty-env", TerminalStateExited)
+	info, err := server.GetTerminal("term-pty-env")
+	if err != nil {
+		t.Fatalf("get pty env terminal: %v", err)
+	}
+	if info.CWD != dir || info.LiveCWD != dir {
+		t.Fatalf("terminal info should keep requested cwd, got %#v want %q", info, dir)
+	}
 }
 
 func assertEventuallyEvent(t *testing.T, events <-chan Event, typ EventType, terminalID string) Event {
@@ -128,29 +126,4 @@ func waitForLiveRow(t *testing.T, server *Server, terminalID string, want string
 	}
 	rows, _ := server.LiveRows(terminalID)
 	t.Fatalf("timed out waiting for live row %q, got %#v", want, rows)
-}
-
-func waitForHistoryRow(t *testing.T, server *Server, terminalID string, want string) historyWindowSnapshot {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		window, err := server.LatestWindow(terminalID, 80, 20)
-		if err == nil {
-			for _, row := range window.Rows {
-				if strings.Contains(row.Text, want) {
-					return historyWindowSnapshot{TotalLines: window.TotalLines, Generation: uint64(window.Generation), Token: string(window.Token)}
-				}
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	window, _ := server.LatestWindow(terminalID, 80, 20)
-	t.Fatalf("timed out waiting for history row %q, got %#v", want, window)
-	return historyWindowSnapshot{}
-}
-
-type historyWindowSnapshot struct {
-	TotalLines int
-	Generation uint64
-	Token      string
 }

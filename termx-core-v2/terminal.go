@@ -8,42 +8,31 @@ import (
 	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 type Terminal struct {
-	mu           sync.Mutex
-	info         TerminalInfo
-	options      TerminalCreateOptions
-	process      TerminalProcess
-	liveMu       sync.Mutex
-	live         *live.SurfaceTrack
-	historyMu    sync.Mutex
-	history      *terminalHistoryPipeline
-	historyClose func() error
-	queueMu      sync.Mutex
-	liveQ        *terminalLiveIngestQueue
-	historyQ     *terminalHistoryIngestQueue
-	events       *eventBroker
-	update       func(TerminalInfo)
+	mu      sync.Mutex
+	info    TerminalInfo
+	options TerminalCreateOptions
+	process TerminalProcess
+	liveMu  sync.Mutex
+	live    *live.SurfaceTrack
+	queueMu sync.Mutex
+	liveQ   *terminalLiveIngestQueue
+	events  *eventBroker
+	update  func(TerminalInfo)
 }
 
-func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyBackend history.StorageBackend) *Terminal {
+func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo)) *Terminal {
 	size := live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)}
-	var historyClose func() error
-	if closer, ok := historyBackend.(interface{ Close() error }); ok {
-		historyClose = closer.Close
-	}
 	terminal := &Terminal{
-		info:         info.Clone(),
-		options:      cloneTerminalCreateOptions(options),
-		process:      process,
-		history:      newTerminalHistoryPipelineWithStorage(int(info.Size.Cols), int(info.Size.Rows), historyBackend),
-		historyClose: historyClose,
-		events:       events,
-		update:       update,
+		info:    info.Clone(),
+		options: cloneTerminalCreateOptions(options),
+		process: process,
+		events:  events,
+		update:  update,
 	}
 	liveOptions := live.DefaultSurfaceTrackOptions()
 	liveOptions.OnResponse = terminal.handleLiveSurfaceResponse
@@ -108,15 +97,9 @@ func (terminal *Terminal) IngestOutput(output string) error {
 	terminal.mu.Unlock()
 
 	terminal.liveMu.Lock()
-	result := surface.WriteWithResult(rawOutput)
-	size := surface.Size()
+	surface.Write(rawOutput)
 	terminal.liveMu.Unlock()
 
-	for _, batch := range terminalSemanticBatchesFromSurfaceResult(result, size) {
-		if err := terminal.historyPipeline().IngestSemanticBatch(batch); err != nil {
-			return err
-		}
-	}
 	terminal.publish(EventTerminalChanged, info)
 	return nil
 }
@@ -157,9 +140,6 @@ func (terminal *Terminal) Resize(size Size) error {
 	terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
 	terminal.liveMu.Unlock()
 
-	if err := terminal.historyPipeline().Resize(int(size.Cols), int(size.Rows), resizeHistoryEvent(oldSize, size)); err != nil {
-		return err
-	}
 	terminal.syncInfo(info)
 	terminal.publishResize(info, oldSize, size)
 	return nil
@@ -177,17 +157,9 @@ func (terminal *Terminal) Close() error {
 	process := terminal.process
 	terminal.info.State = TerminalStateRemoved
 	info := terminal.info.Clone()
-	closeHistory := terminal.historyClose
-	terminal.historyClose = nil
 	terminal.mu.Unlock()
 	terminal.syncInfo(info)
-	processErr := process.Close()
-	if closeHistory != nil {
-		if err := closeHistory(); err != nil && processErr == nil {
-			return err
-		}
-	}
-	return processErr
+	return process.Close()
 }
 
 func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) error {
@@ -213,18 +185,8 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.info.ExitedAt = time.Time{}
 	info = terminal.info.Clone()
 	terminal.mu.Unlock()
-	if err := terminal.historyPipeline().ResetForRestart(); err != nil {
-		_ = process.Close()
-		terminal.mu.Lock()
-		if terminal.process == process {
-			terminal.process = old
-			terminal.info = oldInfo
-		}
-		terminal.mu.Unlock()
-		return err
-	}
+	_ = oldInfo
 	terminal.queueMu.Lock()
-	terminal.historyQ = nil
 	terminal.queueMu.Unlock()
 	terminal.liveMu.Lock()
 	terminal.live.Resize(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)})
@@ -261,60 +223,16 @@ func (terminal *Terminal) VisitLiveTrimmedScreenRows(visit func(rowIndex int, ce
 	return terminal.live.VisitTrimmedScreenRows(visit)
 }
 
-func (terminal *Terminal) LatestWindow(cols, rows int) (history.HistoryWindow, error) {
-	return terminal.historyPipeline().LatestWindow(cols, rows)
-}
-
-func (terminal *Terminal) OlderWindow(cols, rows int, cursor history.HistoryCursor) (history.HistoryWindow, error) {
-	return terminal.historyPipeline().OlderWindow(cols, rows, cursor)
-}
-
-func (terminal *Terminal) CommittedCursorValid(cols int, cursor history.HistoryCursor) bool {
-	return terminal.historyPipeline().CommittedCursorValid(cols, cursor)
-}
-
-func (terminal *Terminal) FreezeSnapshot() history.FrozenSnapshot {
-	return terminal.historyPipeline().FreezeSnapshot()
-}
-
-func (terminal *Terminal) FreezePinnedSnapshot() history.FrozenSnapshot {
-	return terminal.historyPipeline().FreezePinnedSnapshot()
-}
-
-func (terminal *Terminal) FreezePinnedSnapshotAtGeneration(generation history.Generation) history.FrozenSnapshot {
-	return terminal.historyPipeline().FreezePinnedSnapshotAtGeneration(generation)
-}
-
-func (terminal *Terminal) HistoryGeneration() history.Generation {
-	return terminal.historyPipeline().Generation()
-}
-
-func (terminal *Terminal) RetainedHistoryLineCount() int {
-	return terminal.historyPipeline().RetainedHistoryLineCount()
-}
-
 func (terminal *Terminal) FlushHistory(ctx context.Context) error {
 	terminal.queueMu.Lock()
 	liveQueue := terminal.liveQ
-	historyQueue := terminal.historyQ
 	terminal.queueMu.Unlock()
 	if liveQueue != nil {
 		if err := liveQueue.Flush(ctx); err != nil {
 			return err
 		}
 	}
-	if historyQueue == nil {
-		return nil
-	}
-	// 中文说明：copy/history 冻结前只等待已经读入队列的历史输出追平；
-	// 不持 terminal 主锁，避免 history worker 处理同批输出时反向等待自己。
-	return historyQueue.Flush(ctx)
-}
-
-func (terminal *Terminal) historyPipeline() *terminalHistoryPipeline {
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
-	return terminal.history
+	return nil
 }
 
 func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {
@@ -365,22 +283,16 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 		return done
 	}
 	liveQueue := newTerminalLiveIngestQueue()
-	historyQueue := newTerminalHistoryIngestQueue()
-	terminal.setIngestQueues(process, liveQueue, historyQueue)
+	terminal.setIngestQueues(process, liveQueue)
 	go liveQueue.Run(func(output string) error {
-		return terminal.ingestProcessSemanticOutput(process, historyQueue, output)
-	})
-	go historyQueue.Run(nil, func(batches []terminalSemanticBatch) error {
-		return terminal.ingestProcessHistorySemanticBatches(process, batches)
+		return terminal.ingestProcessLiveOutput(process, output)
 	})
 	go func() {
 		defer close(done)
 		defer func() {
 			liveQueue.Close()
 			liveQueue.Wait()
-			historyQueue.Close()
-			historyQueue.Wait()
-			terminal.clearIngestQueues(process, liveQueue, historyQueue)
+			terminal.clearIngestQueues(process, liveQueue)
 		}()
 		for chunk := range output {
 			if len(chunk) == 0 {
@@ -393,7 +305,7 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 	return done
 }
 
-func (terminal *Terminal) setIngestQueues(process TerminalProcess, liveQueue *terminalLiveIngestQueue, historyQueue *terminalHistoryIngestQueue) {
+func (terminal *Terminal) setIngestQueues(process TerminalProcess, liveQueue *terminalLiveIngestQueue) {
 	terminal.mu.Lock()
 	current := terminal.process == process
 	terminal.mu.Unlock()
@@ -402,11 +314,10 @@ func (terminal *Terminal) setIngestQueues(process TerminalProcess, liveQueue *te
 	}
 	terminal.queueMu.Lock()
 	terminal.liveQ = liveQueue
-	terminal.historyQ = historyQueue
 	terminal.queueMu.Unlock()
 }
 
-func (terminal *Terminal) clearIngestQueues(process TerminalProcess, liveQueue *terminalLiveIngestQueue, historyQueue *terminalHistoryIngestQueue) {
+func (terminal *Terminal) clearIngestQueues(process TerminalProcess, liveQueue *terminalLiveIngestQueue) {
 	terminal.mu.Lock()
 	current := terminal.process == process
 	terminal.mu.Unlock()
@@ -416,9 +327,6 @@ func (terminal *Terminal) clearIngestQueues(process TerminalProcess, liveQueue *
 	terminal.queueMu.Lock()
 	if terminal.liveQ == liveQueue {
 		terminal.liveQ = nil
-	}
-	if terminal.historyQ == historyQueue {
-		terminal.historyQ = nil
 	}
 	terminal.queueMu.Unlock()
 }
@@ -436,7 +344,7 @@ func (terminal *Terminal) watchExit(process TerminalProcess, outputDone <-chan s
 	}()
 }
 
-func (terminal *Terminal) ingestProcessSemanticOutput(process TerminalProcess, historyQueue *terminalHistoryIngestQueue, output string) error {
+func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, output string) error {
 	terminal.mu.Lock()
 	if terminal.process != process {
 		terminal.mu.Unlock()
@@ -451,15 +359,8 @@ func (terminal *Terminal) ingestProcessSemanticOutput(process TerminalProcess, h
 	terminal.mu.Unlock()
 
 	terminal.liveMu.Lock()
-	result := surface.WriteWithResult(output)
-	size := surface.Size()
+	surface.Write(output)
 	terminal.liveMu.Unlock()
-
-	for _, batch := range terminalSemanticBatchesFromSurfaceResult(result, size) {
-		if !historyQueue.EnqueueBatch(batch) {
-			return nil
-		}
-	}
 
 	terminal.mu.Lock()
 	stillCurrent := terminal.process == process && terminal.info.State != TerminalStateExited && terminal.info.State != TerminalStateRemoved
@@ -468,49 +369,6 @@ func (terminal *Terminal) ingestProcessSemanticOutput(process TerminalProcess, h
 		return nil
 	}
 	terminal.publish(EventTerminalChanged, info)
-	return nil
-}
-
-func (terminal *Terminal) ingestProcessHistoryOutput(process TerminalProcess, output string) error {
-	return terminal.ingestProcessHistoryOutputBatch(process, []string{output})
-}
-
-func (terminal *Terminal) ingestProcessHistoryOutputBatch(process TerminalProcess, outputs []string) error {
-	terminal.mu.Lock()
-	if terminal.process != process {
-		terminal.mu.Unlock()
-		return nil
-	}
-	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
-		terminal.mu.Unlock()
-		return ErrTerminalExited
-	}
-	terminal.historyMu.Lock()
-	pipeline := terminal.history
-	terminal.historyMu.Unlock()
-	terminal.mu.Unlock()
-	return pipeline.IngestBatch(outputs)
-}
-
-func (terminal *Terminal) ingestProcessHistorySemanticBatches(process TerminalProcess, batches []terminalSemanticBatch) error {
-	terminal.mu.Lock()
-	if terminal.process != process {
-		terminal.mu.Unlock()
-		return nil
-	}
-	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
-		terminal.mu.Unlock()
-		return ErrTerminalExited
-	}
-	terminal.historyMu.Lock()
-	pipeline := terminal.history
-	terminal.historyMu.Unlock()
-	terminal.mu.Unlock()
-	for _, batch := range batches {
-		if err := pipeline.IngestSemanticBatch(batch); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -527,7 +385,6 @@ func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) 
 	terminal.info.ExitedAt = time.Now().UTC()
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
-	_ = terminal.historyPipeline().ForceCommitFrontier()
 	terminal.appendExitMarker(info)
 	terminal.syncInfo(info)
 	terminal.publish(EventTerminalExited, info)
@@ -542,7 +399,6 @@ func (terminal *Terminal) appendExitMarker(info TerminalInfo) {
 	terminal.liveMu.Lock()
 	terminal.live.Write(text)
 	terminal.liveMu.Unlock()
-	_ = terminal.historyPipeline().AppendSystemLines(lines)
 }
 
 func terminalExitMarkerLines(info TerminalInfo) []string {
@@ -576,17 +432,4 @@ func (terminal *Terminal) syncInfo(info TerminalInfo) {
 	if terminal.update != nil {
 		terminal.update(info)
 	}
-}
-
-func resizeHistoryEvent(oldSize Size, newSize Size) history.HistoryEvent {
-	event := history.HistoryEvent{Kind: history.EventResize, ResizeDirection: history.ResizeSame}
-	switch {
-	case newSize.Rows > oldSize.Rows:
-		event.ResizeDirection = history.ResizeGrow
-		event.Count = int(newSize.Rows - oldSize.Rows)
-	case newSize.Rows < oldSize.Rows:
-		event.ResizeDirection = history.ResizeShrink
-		event.Count = int(oldSize.Rows - newSize.Rows)
-	}
-	return event
 }

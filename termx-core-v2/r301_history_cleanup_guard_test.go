@@ -35,13 +35,17 @@ func TestR301HistoryCleanupGuard(t *testing.T) {
 		})
 	}
 
-	semanticIngest := r301ReadFile(t, "terminal_semantic_ingest.go")
-	for _, forbidden := range []string{
-		"ingestOutputLocked(batch.Raw)",
-		"stats.RawFallbacks++",
+	for _, removed := range []string{
+		"terminal_semantic_ingest.go",
+		"terminal_history_pipeline.go",
+		"terminal_history_queue.go",
+		"history_ingest.go",
+		"history_projector.go",
 	} {
-		if strings.Contains(semanticIngest, forbidden) {
-			t.Fatalf("semantic batch projector must not keep raw parser fallback %q", forbidden)
+		if _, err := os.Stat(removed); err == nil {
+			t.Fatalf("old history implementation file must stay deleted: %s", removed)
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("stat %s: %v", removed, err)
 		}
 	}
 

@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-shared/transport"
 )
 
@@ -32,43 +31,6 @@ func TestServerOptions(t *testing.T) {
 	}
 	if server.DefaultSize() != (Size{Cols: 100, Rows: 30}) {
 		t.Fatalf("unexpected default size %#v", server.DefaultSize())
-	}
-}
-
-func TestServerHistoryStorageFactoryFeedsTerminalHistory(t *testing.T) {
-	dir := t.TempDir()
-	var backend *history.MemoryStorageBackend
-	server := NewServer(
-		WithProcessFactory(newRecordingProcessFactory()),
-		WithHistoryStorageFactory(func(terminalID string) (history.StorageBackend, error) {
-			path := filepath.Join(dir, terminalID+".compact")
-			created, err := history.NewFileBackedMemoryStorageBackend(path)
-			if err != nil {
-				return nil, err
-			}
-			backend = created
-			return created, nil
-		}),
-	)
-	info, err := server.RegisterTerminal(TerminalRecord{ID: "term-file-history", Command: []string{"sh"}})
-	if err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), info.ID, "alpha\r\nbeta\r\n"); err != nil {
-		t.Fatalf("ingest output: %v", err)
-	}
-	window, err := server.LatestWindow(info.ID, 80, 10)
-	if err != nil {
-		t.Fatalf("latest window: %v", err)
-	}
-	if text := historyWindowText(window.Rows); !strings.Contains(text, "alpha") || !strings.Contains(text, "beta") {
-		t.Fatalf("history window did not read file-backed lines, text=%q window=%#v", text, window)
-	}
-	if backend == nil || backend.LineIDs() == nil {
-		t.Fatalf("history storage factory was not used")
-	}
-	if err := server.RemoveTerminal(info.ID); err != nil {
-		t.Fatalf("remove terminal: %v", err)
 	}
 }
 

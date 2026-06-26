@@ -174,6 +174,13 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if err := validateV3E2EStyledChrome(host.Frames()); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
+	if _, err := client.HistoryWindow(ctx, protocol.HistoryWindowParams{
+		TerminalID: created.TerminalID,
+		Cols:       runtime.State().Session.Cols,
+		Limit:      1,
+	}); err != nil && strings.Contains(err.Error(), corev2.ErrHistoryNotRebuilt.Error()) {
+		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: %w", err)
+	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		return v3E2ESmokeResult{}, err
 	}

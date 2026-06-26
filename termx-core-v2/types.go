@@ -76,7 +76,7 @@ var (
 	ErrDuplicateTerminal          = errors.New("duplicate terminal")
 	ErrTerminalNotFound           = errors.New("terminal not found")
 	ErrTerminalExited             = errors.New("terminal exited")
-	ErrStaleHistoryWindow         = errors.New("stale history window")
+	ErrHistoryNotRebuilt          = errors.New("history not rebuilt")
 	ErrInvalidServerSize          = errors.New("invalid server size")
 	ErrNilListenerFactory         = errors.New("nil listener factory")
 	ErrInvalidStorageKey          = errors.New("invalid storage key")

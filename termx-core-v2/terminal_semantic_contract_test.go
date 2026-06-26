@@ -3,20 +3,17 @@ package termxcorev2
 import (
 	"testing"
 
-	"github.com/lozzow/termx/termx-core-v2/live"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 func TestR302CoreConsumesVTermSemanticTransactionContract(t *testing.T) {
-	var _ TerminalSemanticSource = vterm.NewSemanticSource(12, 2, 100, nil)
+	source := vterm.NewSemanticSource(12, 2, 100, nil)
+	var _ TerminalSemanticSource = source
 
-	surface := live.NewSurfaceTrack(live.SurfaceSize{Cols: 12, Rows: 2})
-	result := surface.WriteWithResult("one\r\ntwo\r\nthree")
-	batches := terminalSemanticBatchesFromSurfaceResult(result, surface.Size())
-	if len(batches) == 0 {
-		t.Fatal("surface write must produce shared-vterm semantic batches")
+	tx, err := source.ApplyPTYWrite([]byte("one\r\ntwo\r\nthree"))
+	if err != nil {
+		t.Fatalf("apply PTY write: %v", err)
 	}
-	tx := terminalSemanticTransactionFromBatch(batches[0])
 	if tx.Size != (TerminalSemanticSize{Cols: 12, Rows: 2}) {
 		t.Fatalf("transaction should preserve PTY size, got %#v", tx.Size)
 	}
