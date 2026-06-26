@@ -789,6 +789,7 @@ func (store *memoryHistoryStore) commitFrame(frame *ScreenFrame) ([]LogicalLineI
 			Seal:              SealStateSealed,
 			Kind:              string(LineKindScreenFrame),
 			Cells:             cloneHistoryCells(row),
+			ScreenCols:        clonedFrame.ScreenCols,
 			Residency:         ResidencyMemory,
 		}
 		store.lines[id] = line
@@ -868,12 +869,13 @@ func historyRowFromLine(line LogicalLine, committed bool) HistoryRow {
 	}
 	fixedGrid := kind == LineKindScreenFrame || kind == LineKindArchivedScreenFrame || kind == LineKindAltScreenFrame
 	return HistoryRow{
-		Cells:     cloneHistoryCells(line.Cells),
-		Kind:      kind,
-		Segment:   HistorySegmentCommitted,
-		LineID:    line.ID,
-		Committed: committed,
-		FixedGrid: fixedGrid,
+		Cells:      cloneHistoryCells(line.Cells),
+		Kind:       kind,
+		Segment:    HistorySegmentCommitted,
+		LineID:     line.ID,
+		Committed:  committed,
+		FixedGrid:  fixedGrid,
+		ScreenCols: line.ScreenCols,
 	}
 }
 

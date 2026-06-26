@@ -300,6 +300,64 @@ func TestR306PrimaryCurrentArchivesBeforeAltAndPostAltPrimaryIsNewFrame(t *testi
 	}
 }
 
+func TestR307ResizeDoesNotRewriteCommittedHistory(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-resize-history",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 12, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-resize-history", "alpha\r\nbeta\r\ngamma\r\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	before := terminalHistoryCommittedRows(latestTerminalHistory(t, server, "term-resize-history"))
+	if len(before) == 0 {
+		t.Fatalf("expected committed ordinary rows before resize")
+	}
+	if err := server.ResizeTerminal(context.Background(), "term-resize-history", 40, 6); err != nil {
+		t.Fatalf("resize terminal: %v", err)
+	}
+	after := terminalHistoryCommittedRows(latestTerminalHistory(t, server, "term-resize-history"))
+	if strings.Join(before, "\n") != strings.Join(after, "\n") {
+		t.Fatalf("resize must not rewrite committed logical history, before=%#v after=%#v", before, after)
+	}
+}
+
+func TestR307ProcessExitCommitsFinalScreenFrameOnceAtOriginalWidth(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-final-frame",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 26, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	process := factory.process("term-final-frame")
+	process.emitOutput("\x1b[?2026hfinal frame\x1b[?2026l")
+	process.exit(0)
+	waitForTerminalState(t, server, "term-final-frame", TerminalStateExited)
+	process.exit(0)
+
+	window := latestTerminalHistory(t, server, "term-final-frame")
+	finalRows := terminalHistoryCommittedRowsByKind(window, history.LineKindScreenFrame)
+	if len(finalRows) == 0 {
+		t.Fatalf("process exit should commit final primary screen-frame, window=%#v", window)
+	}
+	if countRowsContaining(finalRows, "final frame") != 1 {
+		t.Fatalf("final frame should be committed once, rows=%#v", finalRows)
+	}
+	for _, row := range window.Rows {
+		if row.Kind == history.LineKindScreenFrame && row.Committed {
+			if !row.FixedGrid || row.ScreenCols != 26 {
+				t.Fatalf("final screen-frame must stay fixed-grid at original width: %#v", row)
+			}
+		}
+	}
+}
+
 func TestTerminalRestartReplacesProcessAndClearsExitMetadata(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -356,6 +414,16 @@ func terminalHistoryCommittedRows(window history.HistoryWindow) []string {
 	return rows
 }
 
+func terminalHistoryCommittedRowsByKind(window history.HistoryWindow, kind history.LineKind) []string {
+	var rows []string
+	for _, row := range window.Rows {
+		if row.Committed && row.Kind == kind {
+			rows = append(rows, terminalHistoryPlainText(row.Cells))
+		}
+	}
+	return rows
+}
+
 func terminalHistoryAllRows(window history.HistoryWindow) []string {
 	rows := make([]string, 0, len(window.Rows))
 	for _, row := range window.Rows {
@@ -394,6 +462,16 @@ func countStringForTerminalTest(values []string, want string) int {
 	count := 0
 	for _, value := range values {
 		if value == want {
+			count++
+		}
+	}
+	return count
+}
+
+func countRowsContaining(values []string, want string) int {
+	count := 0
+	for _, value := range values {
+		if strings.Contains(value, want) {
 			count++
 		}
 	}

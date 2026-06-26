@@ -144,8 +144,9 @@ func (terminal *Terminal) Resize(size Size) error {
 	terminal.mu.Unlock()
 
 	terminal.liveMu.Lock()
-	terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
+	tx := terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
 	terminal.liveMu.Unlock()
+	terminal.applyHistoryResizeTransaction(tx)
 
 	terminal.syncInfo(info)
 	terminal.publishResize(info, oldSize, size)
@@ -494,6 +495,27 @@ func (terminal *Terminal) applyHistoryWriteResult(result live.SurfaceWriteResult
 			_ = terminal.historyStore.ApplyMutation(mutation)
 		}
 	}
+}
+
+func (terminal *Terminal) applyHistoryResizeTransaction(tx history.TerminalSemanticTransaction) {
+	if tx.Seq == 0 && tx.Size == (history.TerminalSemanticSize{}) {
+		return
+	}
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyProjector == nil || terminal.historyStore == nil {
+		return
+	}
+	// 中文说明：resize 是 terminal semantic boundary，只能失效/推进 generation，
+	// 不得从 resized live snapshot 生成或重写 committed history。
+	mutation, err := terminal.historyProjector.Apply(tx, history.ScreenAppDecision{
+		Mode:               history.ScreenOutputModeNonHistoryBoundary,
+		NonHistoryBoundary: true,
+	})
+	if err != nil {
+		return
+	}
+	_ = terminal.historyStore.ApplyMutation(mutation)
 }
 
 func (terminal *Terminal) classifyOrdinaryHistoryTransaction(tx history.TerminalSemanticTransaction) history.ScreenAppDecision {

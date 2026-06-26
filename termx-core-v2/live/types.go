@@ -80,13 +80,14 @@ func (surface *SurfaceTrack) Size() SurfaceSize {
 	return surface.size
 }
 
-func (surface *SurfaceTrack) Resize(size SurfaceSize) {
+func (surface *SurfaceTrack) Resize(size SurfaceSize) vterm.TerminalSemanticTransaction {
 	if !size.Valid() {
-		return
+		return vterm.TerminalSemanticTransaction{}
 	}
 	surface.size = size
 	surface.ensureSemanticSource()
-	_, _ = surface.source.Resize(vterm.TerminalSemanticSize{Cols: size.Cols, Rows: size.Rows})
+	tx, _ := surface.source.Resize(vterm.TerminalSemanticSize{Cols: size.Cols, Rows: size.Rows})
+	return tx
 }
 
 func (surface *SurfaceTrack) ResetForRestartPreservingScreen() {

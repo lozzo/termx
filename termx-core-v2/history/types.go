@@ -67,6 +67,7 @@ type LogicalLine struct {
 	Kind              string
 	Cells             []Cell
 	TailFill          *RowTailFill
+	ScreenCols        int
 	Dirty             bool
 	Residency         Residency
 }
