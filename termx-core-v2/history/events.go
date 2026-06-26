@@ -2,9 +2,8 @@ package history
 
 import "time"
 
-// HistoryEventKind enumerates the low-level history semantic events accepted by
-// the clean R303 model. These names describe domain transitions, not renderer
-// rows, snapshots, or raw PTY fallback states.
+// HistoryEventKind 枚举 R303 干净模型接收的低层 history semantic event。这些
+// 名字描述 domain transition，不描述 renderer rows、snapshot 或 raw PTY fallback。
 type HistoryEventKind string
 
 const (
@@ -22,7 +21,7 @@ const (
 )
 
 // HistoryEvent 是进入 history projector/store 的唯一输入形状。
-// message chain：TerminalSemanticTransaction -> classifier/projector -> HistoryMutation。
+// 消息链路：TerminalSemanticTransaction -> classifier/projector -> HistoryMutation。
 type HistoryEvent struct {
 	Seq       uint64
 	Kind      HistoryEventKind

@@ -2,37 +2,37 @@ package history
 
 import vterm "github.com/lozzow/termx/termx-vterm/vterm"
 
-// TerminalSemanticSource is the only terminal semantics source history may
-// consume. The domain owner is vterm: it decodes PTY bytes and resize events,
-// while history receives already-ordered transactions and must not replay raw.
+// TerminalSemanticSource 是 history 唯一允许消费的 terminal semantics source。
+// domain owner 是 vterm：vterm 解码 PTY bytes 和 resize events，history 只接收
+// 已排序 transaction，不能 replay raw。
 type TerminalSemanticSource = vterm.TerminalSemanticSource
 
-// TerminalSemanticSize carries the PTY size attached to one semantic
-// transaction. History uses it for fixed-grid frame metadata and cursor
-// invalidation, not for rewriting committed logical lines.
+// TerminalSemanticSize 携带一个 semantic transaction 关联的 PTY size。history
+// 只把它用于 fixed-grid frame metadata 和 cursor invalidation，不能用它重写
+// committed logical lines。
 type TerminalSemanticSize = vterm.TerminalSemanticSize
 
-// TerminalSemanticTransaction is one ordered vterm write/resize boundary. It
-// is the truth-source message from parser to classifier/projector.
+// TerminalSemanticTransaction 是一个已排序的 vterm write/resize boundary；它是
+// parser 到 classifier/projector 的 truth-source message。
 type TerminalSemanticTransaction = vterm.TerminalSemanticTransaction
 
-// TerminalSemanticOp is an ordered terminal operation emitted by vterm. The
-// projector consumes these ops instead of comparing live snapshots.
+// TerminalSemanticOp 是 vterm 产出的已排序 terminal operation；projector 消费
+// 这些 ops，不能比较 live snapshot。
 type TerminalSemanticOp = vterm.TerminalSemanticOp
 
-// TerminalSemanticCell is the vterm cell payload used to build logical-line and
-// fixed-grid frame content. It is copied into history-owned payloads as needed.
+// TerminalSemanticCell 是 vterm cell payload，用来构建 logical-line 和 fixed-grid
+// frame content；需要进入 history 时必须复制成 history-owned payload。
 type TerminalSemanticCell = vterm.TerminalSemanticCell
 
-// TerminalSemanticStyle is the vterm style token shape. History preserves
-// terminal semantics and leaves theme default resolution to the viewer.
+// TerminalSemanticStyle 是 vterm style token 形状。history 保存 terminal
+// semantics，默认主题解析交给 viewer。
 type TerminalSemanticStyle = vterm.TerminalSemanticStyle
 
-// TerminalSemanticScrollOut proves primary screen ownership moved out of the
-// visible area during the same transaction. It is proof, not a second store.
+// TerminalSemanticScrollOut 证明同一个 transaction 内 primary screen ownership
+// 离开了可见区域。它是 proof，不是第二份 store。
 type TerminalSemanticScrollOut = vterm.TerminalSemanticScrollOut
 
-// TerminalSemanticFrame is the current primary or alt fixed-grid frame emitted
-// by vterm for a transaction. It can publish current frames but cannot by itself
-// create ordinary committed history.
+// TerminalSemanticFrame 是 vterm 为一个 transaction 产出的 current primary 或 alt
+// fixed-grid frame。它可以 publish current frame，但不能独自创建 ordinary
+// committed history。
 type TerminalSemanticFrame = vterm.TerminalSemanticFrame

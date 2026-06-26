@@ -1,4 +1,4 @@
-# History rebuild /goal prompt
+# 历史重建 /goal prompt
 
 把下面这段作为 `/goal` 的任务说明使用。它不是只做 R303，而是让 Agent 按
 `workflow.md` 从最早未完成切片开始，逐片推进 R303-R310。
@@ -19,7 +19,7 @@
 - 旧 history 实现已经清空，不能恢复旧 `HistoryTrack`、raw parser、snapshot/window 拼接、terminal history pipeline/queue 或 storage scrub 路径。
 - `termx-core-v2/history/` 只保留 logical-line payload 定义和 domain contract 文件。
 - `history.window` / `history.copy` 在真正完成 R310 接入前不能临时接 live surface、snapshot、TUI local rows 或旧 protocol fallback。
-- 所有新增或修改的导出 type/interface/struct/方法/函数必须写详细注释；关键代码路径也要写清 domain owner、truth source、消息链路、失败条件或调用边界。
+- 所有新增或修改的导出 type/interface/struct/方法/函数必须写详细中文注释；关键代码路径也要写清领域归属、真值来源、消息链路、失败条件或调用边界。
 
 必须按下面切片顺序推进，不允许为了看起来快而跨切片：
 

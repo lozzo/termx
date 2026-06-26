@@ -1,8 +1,7 @@
 package history
 
-// HistoryMutationKind enumerates the only domain changes a projector may send
-// to the authoritative store. Adding a kind requires a harness that proves the
-// truth source and cursor semantics.
+// HistoryMutationKind 枚举 projector 能发送给 authoritative store 的唯一 domain
+// change 集合。新增 kind 必须先补 harness 证明 truth source 和 cursor 语义。
 type HistoryMutationKind string
 
 const (
@@ -24,9 +23,8 @@ type HistoryMutation struct {
 	Events     []HistoryMutationEvent
 }
 
-// HistoryMutationEvent is one operation inside a projector transaction. It
-// carries ids and payload references owned by history, never TUI rows or live
-// surface snapshots.
+// HistoryMutationEvent 表示 projector transaction 内的一步操作。它只能携带
+// history 拥有的 id 和 payload 引用，不能携带 TUI rows 或 live surface snapshot。
 type HistoryMutationEvent struct {
 	Kind          HistoryMutationKind
 	LineIDs       []LogicalLineID

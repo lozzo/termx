@@ -2,9 +2,8 @@ package history
 
 import "testing"
 
-// TestHistorySegmentNamesMatchProtocolBoundary guards the segment vocabulary
-// required by history.window/copy so older pagination cannot collapse back into
-// plain before_line_id semantics.
+// TestHistorySegmentNamesMatchProtocolBoundary 守住 history.window/copy 需要的
+// segment 词表，避免 older 分页退化回普通 before_line_id 语义。
 func TestHistorySegmentNamesMatchProtocolBoundary(t *testing.T) {
 	want := []HistorySegment{
 		HistorySegmentCommitted,
@@ -19,8 +18,8 @@ func TestHistorySegmentNamesMatchProtocolBoundary(t *testing.T) {
 	}
 }
 
-// TestHistoryWindowRowsCarrySegmentAndLineIdentity verifies that a projected
-// row still carries the domain identifiers needed for selection and cursoring.
+// TestHistoryWindowRowsCarrySegmentAndLineIdentity 验证投影 row 仍携带选择和
+// cursor 所需的 domain 标识。
 func TestHistoryWindowRowsCarrySegmentAndLineIdentity(t *testing.T) {
 	window := HistoryWindow{
 		Token: "tok-1",
@@ -39,9 +38,9 @@ func TestHistoryWindowRowsCarrySegmentAndLineIdentity(t *testing.T) {
 	}
 }
 
-// TestHistoryProjectorContractConsumesSemanticTransactions locks the message
-// chain shape: projector input is a semantic transaction plus classifier
-// decision, not live rows or raw PTY fallback.
+// TestHistoryProjectorContractConsumesSemanticTransactions 锁住消息链路形状：
+// projector 输入只能是 semantic transaction 加 classifier decision，不能是 live
+// rows 或 raw PTY fallback。
 func TestHistoryProjectorContractConsumesSemanticTransactions(t *testing.T) {
 	var tx TerminalSemanticTransaction
 	decision := ScreenAppDecision{Mode: ScreenOutputModeOrdinary}
@@ -57,14 +56,13 @@ func TestHistoryProjectorContractConsumesSemanticTransactions(t *testing.T) {
 
 type noopProjector struct{}
 
-// Apply implements HistoryProjector for contract tests without synthesizing
-// domain mutations.
+// Apply 为 contract test 实现 HistoryProjector，不合成任何 domain mutation。
 func (noopProjector) Apply(TerminalSemanticTransaction, ScreenAppDecision) (HistoryMutation, error) {
 	return HistoryMutation{}, nil
 }
 
-// ForceClose implements the lifecycle side of HistoryProjector for contract
-// tests without producing close mutations.
+// ForceClose 为 contract test 实现 HistoryProjector 的 lifecycle 边界，不产生
+// close mutation。
 func (noopProjector) ForceClose(CloseReason) (HistoryMutation, error) {
 	return HistoryMutation{}, nil
 }

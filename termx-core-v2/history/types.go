@@ -1,14 +1,14 @@
-// Package history defines the logical-line payload model.
+// Package history 定义 logical-line payload model。
 package history
 
-// LogicalLineID identifies one logical line in the authoritative history model.
+// LogicalLineID 标识 authoritative history model 中的一条 logical line。
 type LogicalLineID uint64
 
-// Generation marks payload changes. The rebuilt history implementation will
-// decide how generations are assigned and exposed to consumers.
+// Generation 标记 payload 变化；重建后的 history 实现负责决定 generation 如何分配
+// 并暴露给 consumer。
 type Generation uint64
 
-// SealState describes whether a logical line may still receive semantic writes.
+// SealState 描述 logical line 是否仍可接收 semantic writes。
 type SealState string
 
 const (
@@ -16,8 +16,8 @@ const (
 	SealStateSealed SealState = "sealed"
 )
 
-// Residency describes where the logical line payload lives. It is not a
-// mutability flag; the rebuilt model owns mutability separately.
+// Residency 描述 logical line payload 的驻留位置。它不是 mutability flag；
+// mutability 由重建后的模型单独负责。
 type Residency string
 
 const (
@@ -37,8 +37,8 @@ type Cell struct {
 	LinkParams string
 }
 
-// CellStyle stores terminal style tokens for one cell. Empty FG/BG means
-// terminal default color; the viewer resolves defaults with its current theme.
+// CellStyle 保存单个 cell 的 terminal style token。空 FG/BG 表示 terminal default
+// color；viewer 按当前主题解析默认色。
 type CellStyle struct {
 	FG            string
 	BG            string

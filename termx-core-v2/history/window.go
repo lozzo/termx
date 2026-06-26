@@ -2,8 +2,8 @@ package history
 
 import "time"
 
-// HistorySegment names the segment currently addressed by a history cursor.
-// It prevents archived/current frames from being paged through ordinary line ids.
+// HistorySegment 命名 history cursor 当前指向的 segment，防止 archived/current
+// frames 被当作 ordinary line ids 分页。
 type HistorySegment string
 
 const (
@@ -13,8 +13,8 @@ const (
 	HistorySegmentCurrentAltFrame      HistorySegment = "current-alt-frame"
 )
 
-// HistoryWindowMode describes the pagination direction requested from core-v2.
-// The store decides replace/prepend/append; the client must not infer it.
+// HistoryWindowMode 描述向 core-v2 请求的分页方向。replace/prepend/append 由 store
+// 决定，client 不能自行推断。
 type HistoryWindowMode string
 
 const (
@@ -24,8 +24,8 @@ const (
 	HistoryWindowModeOldest HistoryWindowMode = "oldest"
 )
 
-// HistoryWindowOp tells consumers how to apply a returned authoritative window.
-// It is derived by core-v2 from token/cursor state, not by TUI local row counts.
+// HistoryWindowOp 告诉 consumer 如何应用返回的 authoritative window。它由 core-v2
+// 根据 token/cursor state 推导，不能由 TUI local row count 推导。
 type HistoryWindowOp string
 
 const (
@@ -46,16 +46,16 @@ type HistoryCursor struct {
 	Valid      bool
 }
 
-// HistoryBoundary records the visible logical boundary and next segment cursor
-// for a returned window or frozen snapshot.
+// HistoryBoundary 记录返回 window 或 frozen snapshot 的可见 logical boundary 和
+// next segment cursor。
 type HistoryBoundary struct {
 	FirstLineID LogicalLineID
 	LastLineID  LogicalLineID
 	Cursor      HistoryCursor
 }
 
-// HistoryWindowRequest is the domain request for latest/older/newer windows.
-// Cursor and boundary are segment-aware and must be echoed, not reconstructed.
+// HistoryWindowRequest 是 latest/older/newer window 的 domain request。Cursor 和
+// boundary 都是 segment-aware，只能原样传回，不能重建。
 type HistoryWindowRequest struct {
 	TerminalID string
 	Mode       HistoryWindowMode
@@ -66,16 +66,16 @@ type HistoryWindowRequest struct {
 	Boundary   HistoryBoundary
 }
 
-// FreezeHistoryRequest starts a copy/history snapshot. The returned token pins
-// the visible logical boundary so later repaint cannot change selected text.
+// FreezeHistoryRequest 启动 copy/history snapshot。返回的 token 固定可见 logical
+// boundary，使后续 repaint 不能改变已选择文本。
 type FreezeHistoryRequest struct {
 	TerminalID string
 	Cols       int
 	Limit      int
 }
 
-// HistoryCopyRequest asks core-v2 to copy text from an authoritative frozen
-// history token. It must not be satisfied from TUI rows or live surface cache.
+// HistoryCopyRequest 要求 core-v2 从 authoritative frozen history token 复制文本。
+// 它不能从 TUI rows 或 live surface cache 满足。
 type HistoryCopyRequest struct {
 	TerminalID string
 	Token      HistoryToken
@@ -84,8 +84,8 @@ type HistoryCopyRequest struct {
 	End        HistoryCursor
 }
 
-// HistoryLineSpan maps projected rows back to logical line and segment truth.
-// It is metadata for selection/copy, not an alternate history payload store.
+// HistoryLineSpan 把 projected rows 映射回 logical line 和 segment truth。它是
+// selection/copy metadata，不是另一份 history payload store。
 type HistoryLineSpan struct {
 	StartRow       int
 	EndRow         int
@@ -100,8 +100,8 @@ type HistoryLineSpan struct {
 	ClippedAfter   bool
 }
 
-// HistoryRow is one projected row returned by history.window. Its cells come
-// from logical-line/frame payload truth; renderer output must not write it back.
+// HistoryRow 是 history.window 返回的一行 projected row。它的 cells 来自
+// logical-line/frame payload truth，renderer output 不能写回它。
 type HistoryRow struct {
 	Cells      []Cell
 	Kind       LineKind
@@ -116,7 +116,7 @@ type HistoryRow struct {
 	Wrapped    bool
 }
 
-// HistoryWindow 是 core-v2 authoritative projection，不携带 TUI pane/workspace truth。
+// HistoryWindow 是 core-v2 权威 projection，不携带 TUI pane/workspace truth。
 type HistoryWindow struct {
 	TerminalID   string
 	Token        HistoryToken
@@ -131,8 +131,8 @@ type HistoryWindow struct {
 	Timestamp    time.Time
 }
 
-// FrozenHistorySnapshot records the logical boundaries visible when copy mode
-// starts. It is a tokenized boundary, not a full duplicate of all history.
+// FrozenHistorySnapshot 记录 copy mode 启动时可见的 logical boundaries。它是
+// tokenized boundary，不是整份历史的完整副本。
 type FrozenHistorySnapshot struct {
 	Token                 HistoryToken
 	TerminalID            string
