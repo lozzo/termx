@@ -9,8 +9,7 @@ func NewFrameReducer() FrameReducer {
 	return &frameReducer{
 		nextSessionID: 1,
 		nextFrameID:   1,
-		nextLineID:    1,
-		nextRecordID:  1,
+		ids:           newHistoryIDAllocator(),
 	}
 }
 
@@ -18,8 +17,7 @@ type frameReducer struct {
 	journal       FrameJournal
 	nextSessionID ScreenSessionID
 	nextFrameID   ScreenFrameID
-	nextLineID    LogicalLineID
-	nextRecordID  HistoryRecordID
+	ids           *historyIDAllocator
 	nextSeq       uint64
 }
 
@@ -120,12 +118,10 @@ func (reducer *frameReducer) ensureCounters() {
 	if reducer.nextFrameID == 0 {
 		reducer.nextFrameID = 1
 	}
-	if reducer.nextLineID == 0 {
-		reducer.nextLineID = 1
+	if reducer.ids == nil {
+		reducer.ids = newHistoryIDAllocator()
 	}
-	if reducer.nextRecordID == 0 {
-		reducer.nextRecordID = 1
-	}
+	reducer.ids.ensure()
 }
 
 func (reducer *frameReducer) currentSessionID() ScreenSessionID {
@@ -167,9 +163,7 @@ func (reducer *frameReducer) nextSequence() uint64 {
 }
 
 func (reducer *frameReducer) nextLogicalLineID() LogicalLineID {
-	id := reducer.nextLineID
-	reducer.nextLineID++
-	return id
+	return reducer.ids.nextLogicalLineID()
 }
 
 func (reducer *frameReducer) draftsFromSemanticFrame(frame TerminalSemanticFrame, kind string, seal SealState) []LogicalLineDraft {
@@ -241,14 +235,13 @@ func (reducer *frameReducer) sealMutableFrame(frame MutableFrame, reason SealRea
 
 func (reducer *frameReducer) sealedFrameMutations(frame SealedFrame, mutationKind HistoryMutationKind, recordKind HistoryRecordKind) []HistoryMutation {
 	record := HistoryRecord{
-		ID:      reducer.nextRecordID,
+		ID:      reducer.ids.nextHistoryRecordID(),
 		Seq:     frame.Seq,
 		Kind:    recordKind,
 		LineIDs: lineIDsFromLogicalLines(frame.Lines),
 		FrameID: frame.ID,
 		Reason:  frame.Reason,
 	}
-	reducer.nextRecordID++
 	sealedCopy := cloneSealedFrame(frame)
 	recordCopy := cloneHistoryRecord(record)
 	return []HistoryMutation{

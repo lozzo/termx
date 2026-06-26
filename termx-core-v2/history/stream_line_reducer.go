@@ -13,8 +13,7 @@ import (
 // HistoryMutation 交给后续 authoritative store 应用。
 func NewStreamLineReducer() StreamLineReducer {
 	return &streamLineReducer{
-		nextLineID:       1,
-		nextRecordID:     1,
+		ids:              newHistoryIDAllocator(),
 		rowOwners:        make(map[int]LogicalLineID),
 		lines:            make(map[LogicalLineID]*streamLineDraft),
 		sealedProofSigns: make(map[string]struct{}),
@@ -22,8 +21,7 @@ func NewStreamLineReducer() StreamLineReducer {
 }
 
 type streamLineReducer struct {
-	nextLineID       LogicalLineID
-	nextRecordID     HistoryRecordID
+	ids              *historyIDAllocator
 	rowOwners        map[int]LogicalLineID
 	lines            map[LogicalLineID]*streamLineDraft
 	cursorRow        int
@@ -359,12 +357,10 @@ func (reducer *streamLineReducer) ensureState() {
 	if reducer.sealedProofSigns == nil {
 		reducer.sealedProofSigns = make(map[string]struct{})
 	}
-	if reducer.nextLineID == 0 {
-		reducer.nextLineID = 1
+	if reducer.ids == nil {
+		reducer.ids = newHistoryIDAllocator()
 	}
-	if reducer.nextRecordID == 0 {
-		reducer.nextRecordID = 1
-	}
+	reducer.ids.ensure()
 }
 
 func (reducer *streamLineReducer) ensureDraftForRow(row int) *streamLineDraft {
@@ -374,8 +370,7 @@ func (reducer *streamLineReducer) ensureDraftForRow(row int) *streamLineDraft {
 			return draft
 		}
 	}
-	id := reducer.nextLineID
-	reducer.nextLineID++
+	id := reducer.ids.nextLogicalLineID()
 	draft := &streamLineDraft{
 		id:       id,
 		rows:     map[int][]Cell{row: nil},
@@ -396,9 +391,7 @@ func (reducer *streamLineReducer) ensureDraftWithID(id LogicalLineID) *streamLin
 		wrapped: false,
 	}
 	reducer.lines[id] = draft
-	if reducer.nextLineID <= id {
-		reducer.nextLineID = id + 1
-	}
+	reducer.ids.reserveLogicalLineID(id)
 	return draft
 }
 
@@ -484,12 +477,11 @@ func (reducer *streamLineReducer) sealLine(id LogicalLineID, reason SealReason, 
 
 func (reducer *streamLineReducer) sealStandaloneLine(line LogicalLine, reason SealReason, kind HistoryRecordKind) []HistoryMutation {
 	record := HistoryRecord{
-		ID:      reducer.nextRecordID,
+		ID:      reducer.ids.nextHistoryRecordID(),
 		Kind:    kind,
 		LineIDs: []LogicalLineID{line.ID},
 		Reason:  reason,
 	}
-	reducer.nextRecordID++
 	lineCopy := cloneLogicalLine(line)
 	recordCopy := cloneHistoryRecord(record)
 	return []HistoryMutation{
@@ -527,7 +519,7 @@ func (reducer *streamLineReducer) openLineMutation(draft *streamLineDraft, row i
 }
 
 func (reducer *streamLineReducer) logicalLineForRow(draft *streamLineDraft, row int) LogicalLine {
-	line := reducer.newLogicalLine(HistoryRecordOrdinaryLine)
+	line := logicalLineTemplate(HistoryRecordOrdinaryLine)
 	line.ID = draft.id
 	line.Cells = cloneHistoryCells(draft.rows[row])
 	line.Seal = SealStateOpen
@@ -535,7 +527,7 @@ func (reducer *streamLineReducer) logicalLineForRow(draft *streamLineDraft, row 
 }
 
 func (reducer *streamLineReducer) logicalLineFromDraft(draft *streamLineDraft, kind HistoryRecordKind) LogicalLine {
-	line := reducer.newLogicalLine(kind)
+	line := logicalLineTemplate(kind)
 	line.ID = draft.id
 	for _, row := range draft.rowOrder {
 		line.Cells = append(line.Cells, cloneHistoryCells(draft.rows[row])...)
@@ -546,13 +538,13 @@ func (reducer *streamLineReducer) logicalLineFromDraft(draft *streamLineDraft, k
 }
 
 func (reducer *streamLineReducer) newLogicalLine(kind HistoryRecordKind) LogicalLine {
-	id := reducer.nextLineID
-	if kind == HistoryRecordPrimaryScrollOutLine || id == 0 {
-		id = reducer.nextLineID
-		reducer.nextLineID++
-	}
+	line := logicalLineTemplate(kind)
+	line.ID = reducer.ids.nextLogicalLineID()
+	return line
+}
+
+func logicalLineTemplate(kind HistoryRecordKind) LogicalLine {
 	return LogicalLine{
-		ID:        id,
 		Seal:      SealStateOpen,
 		Kind:      string(kind),
 		Residency: ResidencyMemory,

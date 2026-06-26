@@ -4,11 +4,21 @@ package history
 // 到 mutation batch 的唯一转换层。domain owner：history；truth source 只允许是
 // vterm TerminalSemanticTransaction、HistoryDecision 和 lifecycle CloseReason。
 func NewHistoryLogicalRenderer(stream StreamLineReducer, frames FrameReducer) HistoryLogicalRenderer {
+	allocator := newHistoryIDAllocator()
 	if stream == nil {
-		stream = NewStreamLineReducer()
+		stream = &streamLineReducer{
+			ids:              allocator,
+			rowOwners:        make(map[int]LogicalLineID),
+			lines:            make(map[LogicalLineID]*streamLineDraft),
+			sealedProofSigns: make(map[string]struct{}),
+		}
 	}
 	if frames == nil {
-		frames = NewFrameReducer()
+		frames = &frameReducer{
+			nextSessionID: 1,
+			nextFrameID:   1,
+			ids:           allocator,
+		}
 	}
 	return &logicalRenderer{stream: stream, frames: frames}
 }
