@@ -245,6 +245,59 @@ func TestHistoryStorePrependsOlderAndRebasesExistingSpans(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreAcceptsOlderPrependFromCurrentFrameWhenTailBoundaryMatches(t *testing.T) {
+	store := HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       80,
+		SourceLines: []HistoryLogicalLine{
+			{Text: "visible tail", LineID: 20},
+			{Text: "codex current", LineID: 300001},
+		},
+		Rows: []HistoryRow{
+			{Text: "visible tail", LineID: 20, Segment: HistoryCursorSegmentCommitted},
+			{Text: "codex current", LineID: 300001, Kind: HistoryRowKindScreenFrame, Segment: HistoryCursorSegmentCurrentPrimaryFrame},
+		},
+		Lines:      []HistoryLineSpan{{LineID: 20, StartRow: 0, EndRow: 0}, {LineID: 300001, StartRow: 1, EndRow: 1}},
+		Cursor:     HistoryCursor{Valid: true, BeforeLineID: 300001, Segment: HistoryCursorSegmentCurrentPrimaryFrame},
+		Generation: 7,
+		Boundary:   HistoryBoundary{FirstLineID: 20, LastLineID: 20},
+	}
+	store, err := store.BeginOlder(HistoryPendingRequest{
+		ID:         2,
+		TerminalID: "term-1",
+		Cols:       80,
+		Token:      "tok-1",
+		Generation: 7,
+		Cursor:     store.Cursor,
+		Boundary:   store.Boundary,
+	})
+	if err != nil {
+		t.Fatalf("begin older: %v", err)
+	}
+
+	window := historyWindow(HistoryWindowPrepend, "term-1", "tok-1", 80, 7, []HistoryRow{
+		{Text: "older one", LineID: 10, Segment: HistoryCursorSegmentCommitted},
+	})
+	window.Cursor = HistoryCursor{Valid: true, BeforeLineID: 10, Segment: HistoryCursorSegmentCommitted}
+	window.Boundary = HistoryBoundary{FirstLineID: 10, LastLineID: 20}
+	window.Lines = []HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 0}}
+	store, inserted, err := store.ApplyWindow(2, window)
+	if err != nil {
+		t.Fatalf("apply older: %v", err)
+	}
+
+	if inserted != 1 {
+		t.Fatalf("expected one prepended row, got %d", inserted)
+	}
+	if got := rowTexts(store.Rows); !reflect.DeepEqual(got, []string{"older one", "visible tail", "codex current"}) {
+		t.Fatalf("current-frame older prepend should keep visible history and frame, got %v", got)
+	}
+	if store.Boundary.FirstLineID != 10 || store.Boundary.LastLineID != 20 {
+		t.Fatalf("older prepend should extend first boundary but keep frozen tail, got %#v", store.Boundary)
+	}
+}
+
 func TestHistoryStoreAppendsNewerAndKeepsFrozenBoundary(t *testing.T) {
 	store := HistoryStore{
 		TerminalID: "term-1",

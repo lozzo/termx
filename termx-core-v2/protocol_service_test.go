@@ -304,6 +304,9 @@ func TestProtocolServiceHistoryOlderFromCurrentFramePagesCommittedRows(t *testin
 	if got := protocolHistoryWindowTexts(older); len(got) != 1 || got[0] != "older one" {
 		t.Fatalf("older from current frame should return committed history, got %#v", got)
 	}
+	if older.LastLineID != latest.LastLineID {
+		t.Fatalf("older prepend must preserve frozen tail boundary for TUI stale checks, latest=%#v older=%#v", latest, older)
+	}
 }
 
 func TestProtocolServiceHistoryOlderUsesSegmentCursorToken(t *testing.T) {

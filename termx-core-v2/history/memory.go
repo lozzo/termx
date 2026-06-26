@@ -703,6 +703,12 @@ func (store *memoryHistoryStore) OlderWindow(req HistoryWindowRequest) (HistoryW
 		LogicalTotal: len(store.committed),
 		Timestamp:    time.Now(),
 	}
+	if req.Boundary.LastLineID != 0 {
+		// 中文说明：prepend response 的 LastLineID 表示当前 frozen window
+		// 已加载尾边界，不是本次 older page 的尾行；TUI 用它确认 older
+		// response 仍属于同一个 authoritative window。
+		window.Boundary.LastLineID = req.Boundary.LastLineID
+	}
 	for _, id := range page {
 		line, ok := store.lines[id]
 		if !ok {
@@ -710,7 +716,9 @@ func (store *memoryHistoryStore) OlderWindow(req HistoryWindowRequest) (HistoryW
 		}
 		window.Rows = append(window.Rows, historyRowFromLine(line, true))
 		window.Lines = append(window.Lines, historySpanFromLine(len(window.Rows)-1, line, true))
-		window.Boundary.LastLineID = id
+		if window.Boundary.LastLineID == 0 {
+			window.Boundary.LastLineID = id
+		}
 		if window.Boundary.FirstLineID == 0 {
 			window.Boundary.FirstLineID = id
 		}

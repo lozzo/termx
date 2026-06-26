@@ -143,6 +143,9 @@ func TestR312OlderFromCurrentPrimaryFrameReturnsCommittedHistoryBeforeLatestBoun
 	if got := committedPlainRows(older); len(got) != 1 || got[0] != "older one" {
 		t.Fatalf("older from current frame should return committed rows before frame, got %#v in %#v", got, older.Rows)
 	}
+	if older.Boundary.LastLineID != latest.Boundary.LastLineID {
+		t.Fatalf("older prepend must preserve frozen tail boundary for TUI stale checks, latest=%#v older=%#v", latest.Boundary, older.Boundary)
+	}
 }
 
 func TestR312LatestTokenFreezesCurrentPrimaryFramePayload(t *testing.T) {
