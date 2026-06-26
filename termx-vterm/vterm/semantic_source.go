@@ -16,8 +16,16 @@ type TerminalSemanticOp = DamageOp
 type TerminalSemanticCell = Cell
 type TerminalSemanticStyle = CellStyle
 
+// TerminalSemanticCellRun 是 vterm 在 scroll-out proof 中保留的 styled text run。
+// domain owner：vterm；core 只能消费它展开历史 payload，不能把 raw PTY 当 fallback。
+type TerminalSemanticCellRun = CellRun
+
+// TerminalSemanticScrollOut 是同一个 transaction 内 primary 内容离开可见区域的证明。
+// Cells 是 cell 级 payload；Runs 是 vterm 在 raw damage 中保留的 styled text payload。
+// core 只能把这些 payload 复制进 logical-line history，不能从 current frame 反推历史。
 type TerminalSemanticScrollOut struct {
 	Cells      []TerminalSemanticCell
+	Runs       []TerminalSemanticCellRun
 	Wrapped    bool
 	WrappedSet bool
 }
@@ -41,9 +49,12 @@ type TerminalSemanticTransaction struct {
 	AltFrame         *TerminalSemanticFrame
 	AltExitFrame     *TerminalSemanticFrame
 
-	AltEntered          bool
-	AltExited           bool
-	SynchronizedBegin   bool
+	AltEntered        bool
+	AltExited         bool
+	SynchronizedBegin bool
+	// SynchronizedActive 表示 transaction 结束后 mode 2026 仍处于开启状态。
+	// core classifier 用它识别 begin/end 分片之间的 payload，不回看 raw bytes。
+	SynchronizedActive  bool
 	SynchronizedEnd     bool
 	RequiresFullReplace bool
 	FullReplaceReason   string
@@ -119,6 +130,7 @@ func (source *SemanticSource) transactionFromDamage(seq uint64, raw string, dama
 	for _, scrollOut := range damage.ScrollbackAppend {
 		tx.PrimaryScrollOut = append(tx.PrimaryScrollOut, TerminalSemanticScrollOut{
 			Cells:      cloneCellSlice(scrollOut.Cells),
+			Runs:       cloneCellRuns(scrollOut.Runs),
 			Wrapped:    scrollOut.Wrapped,
 			WrappedSet: scrollOut.WrappedSet,
 		})
@@ -128,6 +140,7 @@ func (source *SemanticSource) transactionFromDamage(seq uint64, raw string, dama
 	tx.SynchronizedBegin = terminalSemanticDamageHasSyncMode(damage, true)
 	tx.SynchronizedEnd = terminalSemanticDamageHasSyncMode(damage, false)
 	if source.vt != nil {
+		tx.SynchronizedActive = source.vt.Modes().SynchronizedOutput
 		screen := source.vt.UsedScreenContent()
 		frame := &TerminalSemanticFrame{Rows: cloneCellRows(screen.Cells), Cols: size.Cols}
 		if screen.IsAlternateScreen {
@@ -193,5 +206,14 @@ func cloneCellRows(rows [][]Cell) [][]Cell {
 	for i, row := range rows {
 		out[i] = cloneCellSlice(row)
 	}
+	return out
+}
+
+func cloneCellRuns(runs []CellRun) []CellRun {
+	if len(runs) == 0 {
+		return nil
+	}
+	out := make([]CellRun, len(runs))
+	copy(out, runs)
 	return out
 }

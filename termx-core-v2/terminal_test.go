@@ -225,6 +225,35 @@ func TestR305FrozenSnapshotCapturesPrimaryCurrentFrameBoundary(t *testing.T) {
 	}
 }
 
+func TestR311SynchronizedOutputCommitsScrollOutBeforeCurrentFrame(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-sync-scroll",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 12, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	raw := "\x1b[?2026h"
+	for i := 1; i <= 8; i++ {
+		raw += "line0" + string(rune('0'+i)) + "\r\n"
+	}
+	raw += "\x1b[?2026l"
+	if err := server.IngestOutput(context.Background(), "term-sync-scroll", raw); err != nil {
+		t.Fatalf("ingest synchronized burst: %v", err)
+	}
+
+	window := latestTerminalHistory(t, server, "term-sync-scroll")
+	committed := terminalHistoryCommittedRows(window)
+	if got, want := strings.Join(committed, "\n"), "line01\nline02\nline03\nline04\nline05\nline06"; got != want {
+		t.Fatalf("synchronized scroll-out should become committed history, committed=%#v window=%#v", committed, window)
+	}
+	current := terminalHistoryRowsBySegment(window, history.HistorySegmentCurrentPrimaryFrame)
+	if countRowsContaining(terminalHistoryRowsText(current), "line07") != 1 || countRowsContaining(terminalHistoryRowsText(current), "line08") != 1 {
+		t.Fatalf("current primary frame should remain final visible screen, got %#v", terminalHistoryRowsText(current))
+	}
+}
+
 func TestR306PureAltTransientIsSelectableAndNeverOrdinaryCommitted(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

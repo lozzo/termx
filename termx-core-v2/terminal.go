@@ -556,7 +556,9 @@ func (terminal *Terminal) classifyOrdinaryHistoryTransaction(tx history.Terminal
 			EnterAltTransientFrame:    tx.AltEntered,
 		}
 	}
-	if tx.SynchronizedBegin || tx.SynchronizedEnd {
+	// 中文说明：mode 2026 的 begin/payload/end 可能被 live surface 分成多个
+	// transaction；Active 来自 vterm mode truth，不能用 raw 分段或程序名推断。
+	if tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd {
 		return history.ScreenAppDecision{
 			Mode:         history.ScreenOutputModePrimaryScreenSession,
 			PublishFrame: tx.PrimaryFrame != nil,

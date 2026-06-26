@@ -24,6 +24,10 @@ type TerminalSemanticOp = vterm.TerminalSemanticOp
 // frame content；需要进入 history 时必须复制成 history-owned payload。
 type TerminalSemanticCell = vterm.TerminalSemanticCell
 
+// TerminalSemanticCellRun 是 vterm 在 scroll-out proof 中保留的 styled text run。
+// history 只能把它展开成 history-owned cells，不能把 run slice 当成独立 truth。
+type TerminalSemanticCellRun = vterm.TerminalSemanticCellRun
+
 // TerminalSemanticStyle 是 vterm style token 形状。history 保存 terminal
 // semantics，默认主题解析交给 viewer。
 type TerminalSemanticStyle = vterm.TerminalSemanticStyle

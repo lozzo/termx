@@ -87,6 +87,9 @@ type CursorState struct {
 	Blink   bool
 }
 
+// TerminalModes 是 vterm 持有的终端模式状态。
+// domain owner：vterm 解码 PTY private/public mode；上层只能读取该状态做语义判定，
+// 不能用 raw bytes 或程序名重建 mode truth。
 type TerminalModes struct {
 	AlternateScreen   bool
 	AlternateScroll   bool
@@ -99,6 +102,9 @@ type TerminalModes struct {
 	BracketedPaste    bool
 	ApplicationCursor bool
 	AutoWrap          bool
+	// SynchronizedOutput 对应 DEC private mode 2026；它让 core 能识别
+	// begin/end 分片之间的 payload 仍属于同一个 primary screen session。
+	SynchronizedOutput bool
 }
 
 type ScreenData struct {
@@ -2068,6 +2074,8 @@ func (v *VTerm) setMode(mode ansi.Mode, enabled bool) {
 		v.modes.BracketedPaste = enabled
 	case ansi.ModeAutoWrap:
 		v.modes.AutoWrap = enabled
+	case ansi.ModeSynchronizedOutput:
+		v.modes.SynchronizedOutput = enabled
 	}
 }
 
@@ -2328,6 +2336,7 @@ func writeTerminalModesANSI(b *strings.Builder, modes TerminalModes) {
 	writePrivateModeANSI(b, 7, modes.AutoWrap)
 	writePrivateModeANSI(b, 1007, modes.AlternateScroll)
 	writePrivateModeANSI(b, 2004, modes.BracketedPaste)
+	writePrivateModeANSI(b, 2026, modes.SynchronizedOutput)
 
 	mouseX10 := modes.MouseX10
 	mouseNormal := modes.MouseNormal

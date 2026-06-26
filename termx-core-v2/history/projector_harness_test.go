@@ -74,6 +74,32 @@ func TestR303PrimarySynchronizedFrameIsCurrentOnly(t *testing.T) {
 	}
 }
 
+func TestR311PrimarySessionCommitsScrollOutProofBeforeCurrentFrame(t *testing.T) {
+	store, projector := newR303Harness()
+
+	tx := fakeTx(1, 12, 3)
+	tx.SynchronizedBegin = true
+	tx.SynchronizedEnd = true
+	tx.PrimaryScrollOut = []TerminalSemanticScrollOut{
+		{Runs: []TerminalSemanticCellRun{{Text: "line01"}}},
+		{Runs: []TerminalSemanticCellRun{{Text: "line02"}}},
+	}
+	tx.PrimaryFrame = fakeTerminalFrame(12, "line03", "line04")
+	applyR303(t, store, projector, tx, ScreenAppDecision{
+		Mode:         ScreenOutputModePrimaryScreenSession,
+		PublishFrame: true,
+	})
+
+	window := latestR303(t, store)
+	if got := committedPlainRows(window); len(got) != 2 || got[0] != "line01" || got[1] != "line02" {
+		t.Fatalf("primary session scroll-out proof should commit logical history, got %#v in %#v", got, window.Rows)
+	}
+	current := plainRowsBySegment(window, HistorySegmentCurrentPrimaryFrame)
+	if len(current) != 2 || current[0] != "line03" || current[1] != "line04" {
+		t.Fatalf("current primary frame should remain latest fixed-grid frame, got %#v", current)
+	}
+}
+
 func TestR303PrimaryFullscreenRepaintReplacesCurrentOnly(t *testing.T) {
 	store, projector := newR303Harness()
 	decision := ScreenAppDecision{Mode: ScreenOutputModePrimaryScreenSession, PublishFrame: true}

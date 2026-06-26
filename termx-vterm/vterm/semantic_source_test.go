@@ -44,6 +44,57 @@ func TestSemanticSourceApplyPTYWriteEmitsModeBoundaries(t *testing.T) {
 	}
 }
 
+func TestSemanticSourceSynchronizedActiveSpansSplitTransactions(t *testing.T) {
+	source := NewSemanticSource(12, 3, 100, nil)
+	begin, err := source.ApplyPTYWrite([]byte("\x1b[?2026h"))
+	if err != nil {
+		t.Fatalf("apply sync begin: %v", err)
+	}
+	payload, err := source.ApplyPTYWrite([]byte("payload"))
+	if err != nil {
+		t.Fatalf("apply sync payload: %v", err)
+	}
+	end, err := source.ApplyPTYWrite([]byte("\x1b[?2026l"))
+	if err != nil {
+		t.Fatalf("apply sync end: %v", err)
+	}
+	if !begin.SynchronizedBegin || !begin.SynchronizedActive {
+		t.Fatalf("begin transaction should expose active synchronized mode, got %#v", begin)
+	}
+	if payload.SynchronizedBegin || payload.SynchronizedEnd || !payload.SynchronizedActive {
+		t.Fatalf("payload transaction should remain inside synchronized mode, got %#v", payload)
+	}
+	if !end.SynchronizedEnd || end.SynchronizedActive {
+		t.Fatalf("end transaction should close synchronized mode, got %#v", end)
+	}
+}
+
+func TestSemanticSourceSynchronizedScrollOutKeepsPayloadRuns(t *testing.T) {
+	source := NewSemanticSource(12, 3, 100, nil)
+	raw := "\x1b[?2026h"
+	for i := 1; i <= 8; i++ {
+		raw += "line0" + string(rune('0'+i)) + "\r\n"
+	}
+	raw += "\x1b[?2026l"
+
+	tx, err := source.ApplyPTYWrite([]byte(raw))
+	if err != nil {
+		t.Fatalf("apply synchronized output: %v", err)
+	}
+	if !tx.SynchronizedBegin || !tx.SynchronizedEnd {
+		t.Fatalf("expected synchronized boundaries, got %#v", tx)
+	}
+	if len(tx.PrimaryScrollOut) < 6 {
+		t.Fatalf("expected scroll-out proof for lines beyond screen, got %#v", tx.PrimaryScrollOut)
+	}
+	if got := semanticScrollOutText(tx.PrimaryScrollOut[0]); got != "line01" {
+		t.Fatalf("scroll-out proof must preserve text payload, got %q in %#v", got, tx.PrimaryScrollOut[0])
+	}
+	if tx.PrimaryFrame == nil || len(tx.PrimaryFrame.Rows) < 2 || cellsTextForSemanticTest(tx.PrimaryFrame.Rows[0]) != "line07" || cellsTextForSemanticTest(tx.PrimaryFrame.Rows[1]) != "line08" {
+		t.Fatalf("expected latest frame to remain final screen, got %#v", tx.PrimaryFrame)
+	}
+}
+
 func TestSemanticSourceResizeEmitsTransaction(t *testing.T) {
 	source := NewSemanticSource(8, 2, 100, nil)
 	if _, err := source.ApplyPTYWrite([]byte("abcdef\n")); err != nil {
@@ -62,4 +113,23 @@ func TestSemanticSourceResizeEmitsTransaction(t *testing.T) {
 	if tx.PrimaryFrame == nil || tx.PrimaryFrame.Cols != 4 {
 		t.Fatalf("resize transaction should include current primary frame projection: %#v", tx)
 	}
+}
+
+func semanticScrollOutText(row TerminalSemanticScrollOut) string {
+	var out string
+	for _, cell := range row.Cells {
+		out += cell.Content
+	}
+	for _, run := range row.Runs {
+		out += run.Text
+	}
+	return out
+}
+
+func cellsTextForSemanticTest(cells []TerminalSemanticCell) string {
+	var out string
+	for _, cell := range cells {
+		out += cell.Content
+	}
+	return out
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
@@ -132,6 +133,7 @@ func (projector *memoryHistoryProjector) Apply(tx TerminalSemanticTransaction, d
 			})
 		}
 	case ScreenOutputModePrimaryScreenSession:
+		projector.commitPrimaryScrollOutProofs(&mutation, tx, decision)
 		if decision.PublishFrame || tx.PrimaryFrame != nil {
 			sessionID := projector.activeSessionID
 			opened := false
@@ -238,10 +240,30 @@ func (projector *memoryHistoryProjector) applyOrdinaryTransaction(mutation *Hist
 		}
 	}
 	for _, proof := range tx.PrimaryScrollOut {
-		if len(proof.Cells) == 0 {
+		cells := convertTerminalScrollOutCells(proof)
+		if len(cells) == 0 {
 			continue
 		}
-		line := projector.newLogicalLine(convertTerminalCells(proof.Cells), LineKindOrdinary, SealStateSealed)
+		line := projector.newLogicalLine(cells, LineKindOrdinary, SealStateSealed)
+		mutation.Events = append(mutation.Events, HistoryMutationEvent{
+			Kind:     HistoryMutationOrdinaryCommit,
+			Line:     &line,
+			LineIDs:  []LogicalLineID{line.ID},
+			Decision: decision,
+		})
+	}
+}
+
+func (projector *memoryHistoryProjector) commitPrimaryScrollOutProofs(mutation *HistoryMutation, tx TerminalSemanticTransaction, decision ScreenAppDecision) {
+	for _, proof := range tx.PrimaryScrollOut {
+		cells := convertTerminalScrollOutCells(proof)
+		if len(cells) == 0 {
+			continue
+		}
+		// 中文说明：primary screen session 同一 transaction 内的 scroll-out proof
+		// 来自 vterm semantic source，表示内容真实离开 primary screen；这里允许
+		// commit logical line，但仍不从 current frame 或 live snapshot 反推历史。
+		line := projector.newLogicalLine(cells, LineKindOrdinary, SealStateSealed)
 		mutation.Events = append(mutation.Events, HistoryMutationEvent{
 			Kind:     HistoryMutationOrdinaryCommit,
 			Line:     &line,
@@ -1029,6 +1051,41 @@ func convertTerminalCells(cells []TerminalSemanticCell) []Cell {
 		}
 		if out[i].Width == 0 && out[i].Text != "" {
 			out[i].Width = 1
+		}
+	}
+	return out
+}
+
+func convertTerminalScrollOutCells(row TerminalSemanticScrollOut) []Cell {
+	if len(row.Cells) > 0 {
+		return convertTerminalCells(row.Cells)
+	}
+	// 中文说明：vterm scroll-out proof 可能只携带 styled runs；这里把 runs
+	// 展开为 history-owned cells，避免 core 回退解析 raw PTY 或 current frame。
+	return convertTerminalRuns(row.Runs)
+}
+
+func convertTerminalRuns(runs []TerminalSemanticCellRun) []Cell {
+	if len(runs) == 0 {
+		return nil
+	}
+	var out []Cell
+	for _, run := range runs {
+		text := run.Text
+		if text == "" {
+			continue
+		}
+		style := convertTerminalStyle(run.Style)
+		for len(text) > 0 {
+			cluster, width := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
+			if cluster == "" {
+				break
+			}
+			if width < 0 {
+				width = 0
+			}
+			out = append(out, Cell{Text: cluster, Width: width, Style: style})
+			text = text[len(cluster):]
 		}
 	}
 	return out
