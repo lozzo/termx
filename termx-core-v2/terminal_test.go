@@ -358,6 +358,35 @@ func TestR307ProcessExitCommitsFinalScreenFrameOnceAtOriginalWidth(t *testing.T)
 	}
 }
 
+func TestR308HistoryPreservesTerminalColorTokens(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-style-history",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 80, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-style-history",
+		"default \x1b[31mred\x1b[0m \x1b[38;5;123midx\x1b[0m \x1b[38;2;1;2;3mtrue\x1b[0m\r\n",
+	); err != nil {
+		t.Fatalf("ingest styled output: %v", err)
+	}
+	window := latestTerminalHistory(t, server, "term-style-history")
+	if style, ok := terminalHistoryCellStyleForWord(window, "default"); !ok || style.FG != "" || style.BG != "" {
+		t.Fatalf("default style should stay semantic empty fg/bg, style=%#v ok=%v", style, ok)
+	}
+	if style, ok := terminalHistoryCellStyleForWord(window, "red"); !ok || style.FG != "ansi:1" {
+		t.Fatalf("16-color SGR should be stored as ansi token, style=%#v ok=%v", style, ok)
+	}
+	if style, ok := terminalHistoryCellStyleForWord(window, "idx"); !ok || style.FG != "idx:123" {
+		t.Fatalf("256-color SGR should be stored as idx token, style=%#v ok=%v", style, ok)
+	}
+	if style, ok := terminalHistoryCellStyleForWord(window, "true"); !ok || style.FG != "#010203" {
+		t.Fatalf("truecolor SGR should be stored as RGB content token, style=%#v ok=%v", style, ok)
+	}
+}
+
 func TestTerminalRestartReplacesProcessAndClearsExitMetadata(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -456,6 +485,21 @@ func terminalHistoryPlainText(cells []history.Cell) string {
 		builder.WriteString(cell.Text)
 	}
 	return builder.String()
+}
+
+func terminalHistoryCellStyleForWord(window history.HistoryWindow, word string) (history.CellStyle, bool) {
+	for _, row := range window.Rows {
+		for i := range row.Cells {
+			var got strings.Builder
+			for j := i; j < len(row.Cells) && j < i+len(word); j++ {
+				got.WriteString(row.Cells[j].Text)
+			}
+			if got.String() == word {
+				return row.Cells[i].Style, true
+			}
+		}
+	}
+	return history.CellStyle{}, false
 }
 
 func countStringForTerminalTest(values []string, want string) int {
