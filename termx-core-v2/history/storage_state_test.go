@@ -147,23 +147,12 @@ func TestHistoryStorageSnapshotRoundTripPreservesWindowBoundaries(t *testing.T) 
 		t.Fatalf("restored window generation mismatch got=%d want=%d", latest.Generation, track.Generation())
 	}
 
-	archived, err := recovered.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 1, Cursor: latest.Cursor})
-	if err != nil {
-		t.Fatalf("older archived after restore: %v", err)
-	}
-	if got := rowTexts(archived.Rows); !reflect.DeepEqual(got, []string{"codex frame one"}) {
-		t.Fatalf("older should preserve archived frame before shell, got %v rows=%#v", got, archived.Rows)
-	}
-	if archived.Rows[0].Committed || archived.Rows[0].Kind != RowKindArchivedScreenFrame {
-		t.Fatalf("archived row should remain non-committed frame, got %#v", archived.Rows[0])
-	}
-
-	shell, err := recovered.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 1, Cursor: archived.Cursor})
+	shell, err := recovered.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 10, Cursor: latest.Cursor})
 	if err != nil {
 		t.Fatalf("older shell after restore: %v", err)
 	}
 	if got := rowTexts(shell.Rows); !reflect.DeepEqual(got, []string{"shell before codex"}) {
-		t.Fatalf("older should reach committed shell history, got %v rows=%#v", got, shell.Rows)
+		t.Fatalf("older should skip replaced repaint frame and reach committed shell history, got %v rows=%#v", got, shell.Rows)
 	}
 	if shell.HasMore {
 		t.Fatalf("shell page should exhaust history, cursor=%#v rows=%#v", shell.Cursor, shell.Rows)

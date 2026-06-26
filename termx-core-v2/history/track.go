@@ -1126,9 +1126,8 @@ func (track *HistoryTrack) replacePrimaryFrame(rows [][]Cell) error {
 	if track.altScreen {
 		return nil
 	}
-	if err := track.archiveCurrentPrimaryFrame(); err != nil {
-		return err
-	}
+	// 中文说明：primary screen app 的普通 repaint 只替换 current frame；
+	// /re -> /res 这类输入补全过程不是有意义的历史边界，不能自动进入 archived journal。
 	if err := track.dropCurrentPrimaryFrame(); err != nil {
 		return err
 	}
@@ -1227,7 +1226,7 @@ func (track *HistoryTrack) replaceTransientFrame(rows [][]Cell) error {
 	return nil
 }
 
-// replacePrimaryFullscreenFrame 归档当前 fullscreen frame，再让下一帧在同一位置重建。
+// replacePrimaryFullscreenFrame 丢弃当前 fullscreen frame，再让下一帧在同一位置重建。
 // 它不能碰 committed history；进入 fullscreen 前的页面已经由第一次 page-break 保留。
 func (track *HistoryTrack) replacePrimaryFullscreenFrame() error {
 	modes := track.primaryFullscreenModes
@@ -1237,11 +1236,13 @@ func (track *HistoryTrack) replacePrimaryFullscreenFrame() error {
 			return err
 		}
 	} else {
-		archived, err := track.archivePublishedPrimaryFrameWithoutBump()
+		// 中文说明：普通 primary repaint 默认是 current-only replace；只有 alt
+		// enter 这类明确边界才 archive/hide pre-alt primary frame。
+		droppedFrame, err := track.dropPublishedPrimaryFrameWithoutBump()
 		if err != nil {
 			return err
 		}
-		changed = changed || archived
+		changed = changed || droppedFrame
 		dropped, err := track.dropNonCommittedFrontierWithoutBump()
 		if err != nil {
 			return err
@@ -1592,17 +1593,6 @@ func (track *HistoryTrack) dropCurrentPrimaryFrame() error {
 	return nil
 }
 
-func (track *HistoryTrack) archiveCurrentPrimaryFrame() error {
-	changed, err := track.archivePublishedPrimaryFrameWithoutBump()
-	if err != nil {
-		return err
-	}
-	if changed {
-		track.bumpGeneration()
-	}
-	return nil
-}
-
 func (track *HistoryTrack) archivePublishedPrimaryFrameWithoutBump() (bool, error) {
 	ids := cloneLineIDs(track.publishedFrameLineIDs)
 	if len(ids) == 0 {
@@ -1620,8 +1610,8 @@ func (track *HistoryTrack) archivePublishedPrimaryFrameWithoutBump() (bool, erro
 		if line.Kind != RowKindScreenFrame {
 			continue
 		}
-		// 中文说明：screen app 重绘替换 current frame 时，旧 frame 是本会话历史；
-		// 它不进 ordinary committed history，但必须继续由 core authoritative older 暴露。
+		// 中文说明：只有 alt enter 等明确边界才把 pre-alt primary frame 归档；
+		// 普通重绘替换 current frame 时必须走 drop，避免把输入补全过程写成历史。
 		line.Kind = RowKindArchivedScreenFrame
 		if _, err := track.replaceOwnedLine(line); err != nil {
 			return changed, err

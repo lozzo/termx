@@ -3,6 +3,7 @@ package history
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -468,7 +469,7 @@ func TestFreezeSnapshotPinsActivePrimaryFullscreenFrameAsMutableTail(t *testing.
 	}
 }
 
-func TestPrimaryScreenFrameJournalPagesArchivedFramesBeforeCommittedHistory(t *testing.T) {
+func TestPrimaryScreenFrameRepaintReplacesCurrentWithoutArchivedHistory(t *testing.T) {
 	track := NewHistoryTrack()
 	track.SetPrimaryScreenRows(4)
 	applyHistoryEvents(t, track,
@@ -493,41 +494,82 @@ func TestPrimaryScreenFrameJournalPagesArchivedFramesBeforeCommittedHistory(t *t
 		t.Fatalf("latest should show current frame, got %v rows=%#v", got, latest.Rows)
 	}
 	if !latest.HasMore || !latest.Cursor.Valid {
-		t.Fatalf("latest should expose older archived frames, hasMore=%v cursor=%#v", latest.HasMore, latest.Cursor)
+		t.Fatalf("latest should expose committed shell history, hasMore=%v cursor=%#v", latest.HasMore, latest.Cursor)
 	}
-	if latest.TotalLines != 1 {
-		t.Fatalf("archived frames must not increase ordinary committed depth, total=%d", latest.TotalLines)
-	}
-
-	older, err := track.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 2, Cursor: latest.Cursor})
-	if err != nil {
-		t.Fatalf("older archived: %v", err)
-	}
-	if got := rowTexts(older.Rows); !reflect.DeepEqual(got, []string{"codex frame one", "codex frame two"}) {
-		t.Fatalf("older should return archived frames before shell history, got %v rows=%#v", got, older.Rows)
-	}
-	for _, row := range older.Rows {
-		if row.Committed || row.Kind != RowKindArchivedScreenFrame {
-			t.Fatalf("archived frame rows must not be ordinary committed rows, rows=%#v", older.Rows)
-		}
-	}
-	if !older.HasMore || !older.Cursor.Valid {
-		t.Fatalf("older archived page should still point to shell history, hasMore=%v cursor=%#v", older.HasMore, older.Cursor)
+	if latest.TotalLines != 1 || len(track.archivedFrameLineIDs) != 0 {
+		t.Fatalf("primary repaint must not grow ordinary or archived history, total=%d archived=%v", latest.TotalLines, track.archivedFrameLineIDs)
 	}
 
-	shell, err := track.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 1, Cursor: older.Cursor})
+	older, err := track.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 10, Cursor: latest.Cursor})
 	if err != nil {
 		t.Fatalf("older shell: %v", err)
 	}
-	if got := rowTexts(shell.Rows); !reflect.DeepEqual(got, []string{"shell before codex"}) {
-		t.Fatalf("after archived frames older should return committed shell history, got %v rows=%#v", got, shell.Rows)
+	if got := rowTexts(older.Rows); !reflect.DeepEqual(got, []string{"shell before codex"}) {
+		t.Fatalf("older should skip replaced repaint frames and return committed shell history, got %v rows=%#v", got, older.Rows)
 	}
-	if shell.HasMore {
-		t.Fatalf("shell page should exhaust history, cursor=%#v rows=%#v", shell.Cursor, shell.Rows)
+	if older.HasMore {
+		t.Fatalf("shell page should exhaust history without replaced repaint frames, cursor=%#v rows=%#v", older.Cursor, older.Rows)
 	}
 }
 
-func TestPrimaryScreenFrameJournalSurvivesFinalCommit(t *testing.T) {
+func TestPrimaryScreenInputRepaintDoesNotRecordIntermediateSuggestions(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(8)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("shell before codex")},
+		HistoryEvent{Kind: EventForceCommitFrontier},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{
+			cells("OpenAI Codex"),
+			cells("> /re"),
+			cells("/review review my current changes"),
+			cells("/resume resume a saved chat"),
+		}},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{
+			cells("OpenAI Codex"),
+			cells("> /res"),
+			cells("/resume resume a saved chat"),
+		}},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{
+			cells("OpenAI Codex"),
+			cells("> /resume"),
+			cells("/resume resume a saved chat"),
+		}},
+	)
+
+	latest, err := track.LatestWindow(HistoryWindowRequest{Cols: 80, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	latestText := strings.Join(rowTexts(latest.Rows), "\n")
+	if !strings.Contains(latestText, "> /resume") {
+		t.Fatalf("latest should show final current frame, text=%q rows=%#v", latestText, latest.Rows)
+	}
+	tail, err := track.LatestWindow(HistoryWindowRequest{Cols: 80, Rows: 1})
+	if err != nil {
+		t.Fatalf("latest tail: %v", err)
+	}
+	if !tail.HasMore || !tail.Cursor.Valid {
+		t.Fatalf("latest tail should expose cursor into current frame or shell history, window=%#v", tail)
+	}
+	older, err := track.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 20, Cursor: tail.Cursor})
+	if err != nil {
+		t.Fatalf("older: %v", err)
+	}
+	olderRows := rowTexts(older.Rows)
+	olderText := strings.Join(olderRows, "\n")
+	for _, forbidden := range []string{"> /re", "> /res", "/review review my current changes"} {
+		for _, row := range olderRows {
+			if row == forbidden {
+				t.Fatalf("older must not expose intermediate input repaint %q, text=%q rows=%#v", forbidden, olderText, older.Rows)
+			}
+		}
+	}
+	if !strings.Contains(olderText, "shell before codex") {
+		t.Fatalf("older should still reach committed shell history, text=%q rows=%#v", olderText, older.Rows)
+	}
+}
+
+func TestPrimaryScreenFrameCurrentOnlyFinalCommit(t *testing.T) {
 	track := NewHistoryTrack()
 	track.SetPrimaryScreenRows(4)
 	applyHistoryEvents(t, track,
@@ -553,26 +595,18 @@ func TestPrimaryScreenFrameJournalSurvivesFinalCommit(t *testing.T) {
 		t.Fatalf("final frame should be ordinary committed screen-frame tail, got %#v", latest.Rows[0])
 	}
 	if !latest.HasMore || !latest.Cursor.Valid {
-		t.Fatalf("latest should expose archived session frames before shell, hasMore=%v cursor=%#v", latest.HasMore, latest.Cursor)
+		t.Fatalf("latest should expose shell before final frame, hasMore=%v cursor=%#v", latest.HasMore, latest.Cursor)
 	}
 
-	archived, err := track.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 1, Cursor: latest.Cursor})
-	if err != nil {
-		t.Fatalf("older archived: %v", err)
-	}
-	if got := rowTexts(archived.Rows); !reflect.DeepEqual(got, []string{"codex frame one"}) {
-		t.Fatalf("older should return archived frame after final commit, got %v rows=%#v", got, archived.Rows)
-	}
-	if archived.Rows[0].Committed || archived.Rows[0].Kind != RowKindArchivedScreenFrame {
-		t.Fatalf("archived row after final commit should remain non-committed archived frame, got %#v", archived.Rows[0])
-	}
-
-	shell, err := track.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 1, Cursor: archived.Cursor})
+	shell, err := track.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 10, Cursor: latest.Cursor})
 	if err != nil {
 		t.Fatalf("older shell: %v", err)
 	}
 	if got := rowTexts(shell.Rows); !reflect.DeepEqual(got, []string{"shell before codex"}) {
-		t.Fatalf("older after archived frame should reach shell history, got %v rows=%#v", got, shell.Rows)
+		t.Fatalf("older after final frame should reach shell history, got %v rows=%#v", got, shell.Rows)
+	}
+	if shell.HasMore {
+		t.Fatalf("shell page should exhaust history, cursor=%#v rows=%#v", shell.Cursor, shell.Rows)
 	}
 }
 

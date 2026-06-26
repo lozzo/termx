@@ -1818,7 +1818,7 @@ func TestTerminalSemanticProjectorKeepsPublishedFrameVisibleDuringNextBSU(t *tes
 	}
 }
 
-func TestTerminalSemanticProjectorPrimaryScreenSessionArchivesRepaintViaProjector(t *testing.T) {
+func TestTerminalSemanticProjectorPrimaryScreenSessionReplacesRepaintViaProjector(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
 	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
@@ -1861,21 +1861,21 @@ func TestTerminalSemanticProjectorPrimaryScreenSessionArchivesRepaintViaProjecto
 		t.Fatalf("latest tail: %v", err)
 	}
 	if !latestTail.HasMore || !latestTail.Cursor.Valid {
-		t.Fatalf("latest tail should expose cursor to archived session frames, window=%#v", latestTail)
+		t.Fatalf("latest tail should expose cursor to prior current rows or committed shell history, window=%#v", latestTail)
 	}
 	older, err := pipeline.OlderWindow(40, 20, latestTail.Cursor)
 	if err != nil {
 		t.Fatalf("older: %v", err)
 	}
 	olderText := historyWindowJoinedText(older)
-	for _, want := range []string{"frame-one", "prompt-one"} {
+	for _, want := range []string{"shell-one", "shell-two"} {
 		if !strings.Contains(olderText, want) {
-			t.Fatalf("older should expose archived primary frame %q, text=%q rows=%#v", want, olderText, older.Rows)
+			t.Fatalf("older should reach committed shell history %q, text=%q rows=%#v", want, olderText, older.Rows)
 		}
 	}
-	for _, row := range older.Rows {
-		if strings.Contains(row.Text, "frame-one") && (row.Committed || row.Kind != history.RowKindArchivedScreenFrame) {
-			t.Fatalf("archived primary repaint should remain non-committed archived frame, row=%#v", row)
+	for _, stale := range []string{"frame-one", "prompt-one"} {
+		if strings.Contains(olderText, stale) {
+			t.Fatalf("ordinary primary repaint must not expose replaced frame %q, text=%q rows=%#v", stale, olderText, older.Rows)
 		}
 	}
 }

@@ -44,7 +44,10 @@ home、clear、absolute cursor、scroll region、synchronized output 重绘。�
 
 - 进入 primary screen app session 后，运行中的 repaint 修改 session current frame。
 - current frame 能在 `history.window latest` 和 frozen copy 中看到，`Committed=false`。
-- 新 frame 发布时，旧 current frame 可以进入 bounded archived frame journal。
+- 普通 repaint 默认只替换 current frame，不把 `/re` -> `/res` 这类输入补全过程写入
+  archived journal。
+- 只有 alt enter、session boundary 或后续明确 retention policy 标记的有意义边界，才可以把旧
+  primary current frame 放入 bounded archived frame journal。
 - archived frames 不进入 `CommittedHistoryIndex`，不增加 ordinary history depth。
 - session 关闭时，最终 primary current frame ordinary commit 一次。
 - 中间 repaint 不 ordinary commit。
@@ -82,7 +85,7 @@ latest window
 older 顺序：
 
 1. active frame 当前可见内容。
-2. 同一 primary screen app session 的 archived frames，newest -> oldest。
+2. 同一 primary screen app session 在明确边界保留下来的 archived frames，newest -> oldest。
 3. ordinary committed history。
 
 alt-screen current frame 不自动用旧 shell history 填满首屏。用户 older 时才进入前面的
@@ -430,8 +433,9 @@ ScreenCols: original PTY cols
   frame 处理，不走普通 text reflow。
 - final committed frame 必须保留空物理行、styled blank、wide char、OSC8 link 和 tail
   footprint。
-- 从 final committed frame older 时，仍要能先进入同 session archived frames，再回到更早的
-  ordinary committed history；cursor/token 必须表达这个 segment 边界。
+- 从 final committed frame older 时，如果同 session 存在明确边界保留下来的 archived frames，
+  仍要能先进入这些 archived frames，再回到更早的 ordinary committed history；cursor/token
+  必须表达这个 segment 边界。
 - final committed frame 不会把 archived frames 改写成 ordinary history。
 
 ### 4.3 archived frame journal
@@ -452,9 +456,11 @@ FrameRecord
 
 约束：
 
-- replacing current primary frame 时，旧 current frame 转成 `archived-screen-frame`。
+- 普通 replacing current primary frame 是 current-only replace；旧 current frame 被丢弃。
+- alt enter、session boundary 或明确 retention policy 标记的 archive boundary 才能把旧
+  current frame 转成 `archived-screen-frame`。
 - archived frame 不进入 `CommittedHistoryIndex`。
-- older 先遍历 current session archived frames，再回 ordinary committed history。
+- older 先遍历 current session 已存在的 archived frames，再回 ordinary committed history。
 - 相同 frame hash 不重复归档。
 - retention 必须有最大帧数、最大字节数和 snapshot pin/stale 规则。
 
@@ -548,8 +554,11 @@ line 2
 - 如果程序通过真实 primary scroll-out 产生 transcript，这部分按 ordinary logical line 提交。
 - 如果程序只是重绘 current screen，没有产生 terminal scroll-out，那么历史不能凭空得到
   未在终端语义中出现过的隐藏内容。
-- 被后续 primary frame 替换下来的 published frames 进入 bounded archived frame journal。
-- older 先看 archived frames，再看 ordinary transcript。
+- 普通 primary repaint 只替换 current frame，不记录 `/re`、`/res` 这类中间输入态。
+- 如果程序通过 terminal 语义产生 scroll-out transcript，则 transcript 进入 ordinary history；
+  如果遇到 alt enter 等明确 archive boundary，pre-alt primary current 才进入 bounded
+  archived frame journal。
+- older 先看明确保留下来的 archived frames，再看 ordinary transcript。
 - 这不是 Codex 特判，是 primary screen app session 规则。
 
 ### 5.6 Codex `/resume` alt-screen picker
@@ -777,7 +786,8 @@ domain owner 重新建模。
 
 - history truth 基本单位仍是 logical line。
 - ordinary output 进入 ordinary committed history。
-- primary screen app 运行中使用 current frame + bounded archived frame journal。
+- primary screen app 运行中使用 current frame；只有明确 archive boundary 或已定 retention
+  policy 才使用 bounded archived frame journal。
 - primary session close 时 final primary frame ordinary commit once，且 committed row 仍保留
   fixed-grid `screen-frame` kind。
 - alt-screen 默认 current-only，不 ordinary commit，不进入 primary journal。
@@ -808,9 +818,10 @@ domain owner 重新建模。
 
 Codex / Claude Code 这种不一样。它看起来在输出很多东西，但它会反复回到屏幕前面改旧
 内容、清掉一块、重新画一块。所以它运行时不能把每次重画都当日志写进去。我们要给它
-一个“会话”：当前看到的是 current frame；旧的有意义画面可以归档成 archived frame；
-程序结束时只把最后一屏提交到普通历史一次。这个最后一屏即使进了普通历史，也还是
-按“屏幕形状”保存，不会被当成普通文本重新折行。
+一个“会话”：当前看到的是 current frame；普通重绘只替换这个 current frame；只有 alt
+enter 这类明确边界或后续定下的 retention 策略，才把旧的有意义画面归档成 archived
+frame。程序结束时只把最后一屏提交到普通历史一次。这个最后一屏即使进了普通历史，也
+还是按“屏幕形状”保存，不会被当成普通文本重新折行。
 
 vim / htop / Codex `/resume` picker 这种 alt-screen 更像“临时全屏界面”。你正在看的时候
 要能复制它，但退出后默认不应该把它塞进 shell 历史。Codex `/resume` picker 也不能和
