@@ -166,6 +166,65 @@ func TestR304ProcessExitForceCommitsPrimaryFrontier(t *testing.T) {
 	}
 }
 
+func TestR305PrimaryScreenRepaintPublishesCurrentOnly(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-primary-frame",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 24, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-primary-frame", "\x1b[?2026hfirst frame\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest first synchronized frame: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-primary-frame", "\x1b[?2026h\r\x1b[Ksecond frame\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest repaint synchronized frame: %v", err)
+	}
+
+	window := latestTerminalHistory(t, server, "term-primary-frame")
+	if window.LogicalTotal != 0 {
+		t.Fatalf("primary repaint current frame must not grow ordinary committed depth, total=%d rows=%#v", window.LogicalTotal, window.Rows)
+	}
+	current := terminalHistoryRowsBySegment(window, history.HistorySegmentCurrentPrimaryFrame)
+	if len(current) == 0 {
+		t.Fatalf("latest history should expose current primary frame, window=%#v", window)
+	}
+	if got := terminalHistoryPlainText(current[0].Cells); !strings.Contains(got, "second frame") {
+		t.Fatalf("repaint should replace current primary frame with latest content, got %q rows=%#v", got, current)
+	}
+	for _, row := range current {
+		if row.Committed || !row.FixedGrid || row.ScreenCols != 24 {
+			t.Fatalf("current primary frame should be uncommitted fixed-grid at source width: %#v", row)
+		}
+	}
+}
+
+func TestR305FrozenSnapshotCapturesPrimaryCurrentFrameBoundary(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-primary-freeze",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 30, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-primary-freeze", "\x1b[?2026hcurrent frame\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest synchronized frame: %v", err)
+	}
+	snapshot, err := server.TerminalHistoryFreeze(context.Background(), "term-primary-freeze", history.FreezeHistoryRequest{
+		TerminalID: "term-primary-freeze",
+		Cols:       30,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("freeze history: %v", err)
+	}
+	if snapshot.Boundary.Cursor.Segment != history.HistorySegmentCurrentPrimaryFrame || !snapshot.Boundary.Cursor.Valid {
+		t.Fatalf("freeze should capture current primary frame segment boundary, got %#v", snapshot)
+	}
+}
+
 func TestTerminalRestartReplacesProcessAndClearsExitMetadata(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -226,6 +285,16 @@ func terminalHistoryAllRows(window history.HistoryWindow) []string {
 	rows := make([]string, 0, len(window.Rows))
 	for _, row := range window.Rows {
 		rows = append(rows, terminalHistoryPlainText(row.Cells))
+	}
+	return rows
+}
+
+func terminalHistoryRowsBySegment(window history.HistoryWindow, segment history.HistorySegment) []history.HistoryRow {
+	var rows []history.HistoryRow
+	for _, row := range window.Rows {
+		if row.Segment == segment {
+			rows = append(rows, row)
+		}
 	}
 	return rows
 }

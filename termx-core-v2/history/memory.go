@@ -635,6 +635,29 @@ func (store *memoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHistory
 		Token:      token,
 		Valid:      snapshot.Boundary.FirstLineID != 0,
 	}
+	for _, session := range store.sessionsInOrder() {
+		if session.current == nil {
+			continue
+		}
+		snapshot.Boundary.Cursor = HistoryCursor{
+			Segment:    HistorySegmentCurrentPrimaryFrame,
+			SessionID:  session.current.SessionID,
+			FrameID:    session.current.ID,
+			Generation: store.generation,
+			Token:      token,
+			Valid:      true,
+		}
+		break
+	}
+	if store.currentAlt != nil {
+		snapshot.Boundary.Cursor = HistoryCursor{
+			Segment:    HistorySegmentCurrentAltFrame,
+			FrameID:    store.currentAlt.ID,
+			Generation: store.generation,
+			Token:      token,
+			Valid:      true,
+		}
+	}
 	store.frozen[token] = snapshot
 	return snapshot, nil
 }

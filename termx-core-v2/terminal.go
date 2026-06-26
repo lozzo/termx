@@ -461,6 +461,18 @@ func (terminal *Terminal) HistoryCopy(req history.HistoryCopyRequest) (string, e
 	return terminal.historyStore.Copy(req)
 }
 
+func (terminal *Terminal) HistoryFreeze(req history.FreezeHistoryRequest) (history.FrozenHistorySnapshot, error) {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyStore == nil {
+		return history.FrozenHistorySnapshot{}, ErrHistoryNotRebuilt
+	}
+	if req.TerminalID == "" {
+		req.TerminalID = terminal.info.ID
+	}
+	return terminal.historyStore.Freeze(req)
+}
+
 func (terminal *Terminal) applyHistoryWriteResult(result live.SurfaceWriteResult) {
 	if len(result.Segments) == 0 {
 		return
@@ -485,6 +497,12 @@ func (terminal *Terminal) applyHistoryWriteResult(result live.SurfaceWriteResult
 }
 
 func (terminal *Terminal) classifyOrdinaryHistoryTransaction(tx history.TerminalSemanticTransaction) history.ScreenAppDecision {
+	if tx.SynchronizedBegin || tx.SynchronizedEnd {
+		return history.ScreenAppDecision{
+			Mode:         history.ScreenOutputModePrimaryScreenSession,
+			PublishFrame: tx.PrimaryFrame != nil,
+		}
+	}
 	if tx.RequiresFullReplace {
 		return history.ScreenAppDecision{
 			Mode:               history.ScreenOutputModeNonHistoryBoundary,

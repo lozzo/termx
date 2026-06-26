@@ -418,6 +418,21 @@ func (server *Server) TerminalHistoryCopy(ctx context.Context, id string, req hi
 	return terminal.HistoryCopy(req)
 }
 
+// TerminalHistoryFreeze 创建 core-v2 terminal 内部 frozen history boundary。R305
+// 用它验证 primary current frame 能进入 frozen projection；protocol release/copy
+// token 生命周期仍留到 R310。
+func (server *Server) TerminalHistoryFreeze(ctx context.Context, id string, req history.FreezeHistoryRequest) (history.FrozenHistorySnapshot, error) {
+	_ = ctx
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return history.FrozenHistorySnapshot{}, err
+	}
+	if req.TerminalID == "" {
+		req.TerminalID = id
+	}
+	return terminal.HistoryFreeze(req)
+}
+
 func (server *Server) Events(ctx context.Context, filter EventFilter) <-chan Event {
 	if ctx == nil {
 		ctx = context.Background()
