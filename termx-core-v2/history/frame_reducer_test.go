@@ -157,6 +157,41 @@ func TestR322FrameReducerClosePrimaryKeepsFixedWidthFinalFrame(t *testing.T) {
 	}
 }
 
+func TestR325FrameReducerTrimsTrailingDefaultBlankFrameRows(t *testing.T) {
+	reducer := NewFrameReducer()
+	frame := semanticFrame(12,
+		"codex current",
+		"",
+		"",
+	)
+	if _, err := reducer.ReplacePrimaryCurrent(frame, FrameReasonPrimaryRepaint); err != nil {
+		t.Fatalf("replace primary current: %v", err)
+	}
+	current := currentPrimaryFrame(t, reducer)
+	if got := len(current.Rows); got != 1 {
+		t.Fatalf("trailing default blank frame rows must not enter history payload, got rows=%d frame=%#v", got, current)
+	}
+	if got := frameDraftText(current.Rows); got != "codex current" {
+		t.Fatalf("frame text mismatch after trimming default blank tail: %q", got)
+	}
+}
+
+func TestR325FrameReducerKeepsStyledBlankFrameRows(t *testing.T) {
+	reducer := NewFrameReducer()
+	frame := semanticFrame(8, "body")
+	frame.Rows = append(frame.Rows, []TerminalSemanticCell{{Content: " ", Width: 1, Style: TerminalSemanticStyle{BG: "idx:24"}}})
+	if _, err := reducer.ReplacePrimaryCurrent(frame, FrameReasonPrimaryRepaint); err != nil {
+		t.Fatalf("replace primary current: %v", err)
+	}
+	current := currentPrimaryFrame(t, reducer)
+	if got := len(current.Rows); got != 2 {
+		t.Fatalf("styled trailing blank row is terminal content and must survive, got rows=%d frame=%#v", got, current)
+	}
+	if current.Rows[1].Line.Cells[0].Style.BG != "idx:24" {
+		t.Fatalf("styled blank row lost style payload: %#v", current.Rows[1].Line.Cells)
+	}
+}
+
 func currentPrimaryFrame(t *testing.T, reducer FrameReducer) MutableFrame {
 	t.Helper()
 	state := frameDebugState(t, reducer)

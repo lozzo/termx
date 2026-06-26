@@ -173,13 +173,14 @@ func (reducer *frameReducer) nextLogicalLineID() LogicalLineID {
 }
 
 func (reducer *frameReducer) draftsFromSemanticFrame(frame TerminalSemanticFrame, kind string, seal SealState) []LogicalLineDraft {
-	rows := make([]LogicalLineDraft, 0, len(frame.Rows))
-	for row, cells := range frame.Rows {
+	frameRows := trimmedFrameRows(frame.Rows)
+	rows := make([]LogicalLineDraft, 0, len(frameRows))
+	for row, cells := range frameRows {
 		line := LogicalLine{
 			ID:         reducer.nextLogicalLineID(),
 			Seal:       seal,
 			Kind:       kind,
-			Cells:      historyCellsFromTerminal(cells),
+			Cells:      cells,
 			ScreenCols: frame.Cols,
 			Residency:  ResidencyMemory,
 		}
@@ -189,6 +190,33 @@ func (reducer *frameReducer) draftsFromSemanticFrame(frame TerminalSemanticFrame
 		})
 	}
 	return rows
+}
+
+func trimmedFrameRows(rows [][]TerminalSemanticCell) [][]Cell {
+	// 中文说明：vterm frame 为了保持屏幕索引会保留 used screen rows；history
+	// 投影只能裁掉尾部纯 default blank rows，不能在 protocol/CLI 层再做症状过滤。
+	converted := make([][]Cell, len(rows))
+	lastContentRow := -1
+	for row, cells := range rows {
+		trimmed := trimTrailingBlankCells(historyCellsFromTerminal(cells))
+		converted[row] = trimmed
+		if !historyFrameRowIsDefaultBlank(trimmed) {
+			lastContentRow = row
+		}
+	}
+	if lastContentRow < 0 {
+		return nil
+	}
+	return converted[:lastContentRow+1]
+}
+
+func historyFrameRowIsDefaultBlank(cells []Cell) bool {
+	for _, cell := range cells {
+		if !isDefaultBlankCell(cell) {
+			return false
+		}
+	}
+	return true
 }
 
 func (reducer *frameReducer) sealMutableFrame(frame MutableFrame, reason SealReason) SealedFrame {

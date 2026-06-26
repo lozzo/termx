@@ -168,8 +168,8 @@ func TestR324TerminalHistoryPrimaryRepaintScrollOutAltResizeAndExit(t *testing.T
 	if err != nil {
 		t.Fatalf("history.window after sync output: %v", err)
 	}
-	if !historyRowsContain(window.Rows, "line1") || !historyRowsContain(window.Rows, "line4") {
-		t.Fatalf("history should include scroll-out proof and current frame, rows=%v", historyRowTexts(window.Rows))
+	if !historyRowsContainSegment(window.Rows, history.HistorySegmentCommitted) || !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) || !historyRowsContain(window.Rows, "line4") {
+		t.Fatalf("history should include sealed scroll-out proof and current frame, rows=%v", historyRowTexts(window.Rows))
 	}
 
 	if err := server.IngestOutput(context.Background(), "term-history-screen", "\x1b[?1049hALT\x1b[?1049l"); err != nil {
@@ -245,6 +245,15 @@ func historyRowTexts(rows []history.HistoryRow) []string {
 func historyRowsContain(rows []history.HistoryRow, needle string) bool {
 	for _, row := range rows {
 		if strings.Contains(historyCellsText(row.Cells), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func historyRowsContainSegment(rows []history.HistoryRow, segment history.HistorySegment) bool {
+	for _, row := range rows {
+		if row.Segment == segment {
 			return true
 		}
 	}

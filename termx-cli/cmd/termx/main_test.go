@@ -815,7 +815,8 @@ func TestV3HistoryDumpWritesAuthoritativeWindows(t *testing.T) {
 	for _, want := range []string{
 		"termx core-v2 authoritative history dump",
 		"window 0 op=prepend",
-		"window 1 op=replace",
+		"window 1 op=prepend",
+		"window 2 op=replace",
 		"older one",
 		"visible tail",
 		"codex current",

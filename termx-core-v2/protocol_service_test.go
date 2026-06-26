@@ -214,6 +214,18 @@ func TestProtocolServiceHistoryWindowReturnsAuthoritativeRowsAfterR324(t *testin
 	if window.Token == "" || len(window.RowLineIDs) < 2 {
 		t.Fatalf("history.window should carry frozen token and row ids, got %#v", window)
 	}
+	if window.Generation == 0 || !window.CursorValid || window.CursorLineID == 0 {
+		t.Fatalf("history.window should carry generation and segment cursor, got %#v", window)
+	}
+	if got := strings.Join(window.RowSegments, "|"); got != "committed|committed" {
+		t.Fatalf("history.window should preserve row segments, got %q window=%#v", got, window)
+	}
+	if got := strings.Join(window.RowKinds, "|"); got != "ordinary|ordinary" {
+		t.Fatalf("history.window should preserve row kinds, got %q window=%#v", got, window)
+	}
+	if window.FirstLineID != window.RowLineIDs[0] || window.LastLineID != window.RowLineIDs[1] || len(window.RowInLine) < 2 {
+		t.Fatalf("history.window should preserve logical line boundary and row mapping, got %#v", window)
+	}
 	text, err := client.HistoryCopy(context.Background(), protocol.HistoryWindowParams{
 		TerminalID:       "term-history-r324",
 		Token:            window.Token,
