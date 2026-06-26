@@ -1,6 +1,7 @@
 package history
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -197,6 +198,56 @@ func TestR312LatestTokenFreezesCurrentPrimaryFramePayload(t *testing.T) {
 	}
 	if got := plainRowsBySegment(again, HistorySegmentCurrentPrimaryFrame); len(got) != 1 || got[0] != "frame one" {
 		t.Fatalf("frozen token must not read later current frame repaint, got %#v", got)
+	}
+}
+
+func TestR315ScreenFrameProjectionTrimsTrailingDefaultBlankRows(t *testing.T) {
+	store, projector := newR303Harness()
+
+	frameTx := fakeTx(1, 24, 8)
+	frameTx.PrimaryFrame = &TerminalSemanticFrame{
+		Cols: 24,
+		Rows: [][]TerminalSemanticCell{
+			fakeTerminalCells("first visible"),
+			nil,
+			fakeTerminalCells("last visible"),
+			fakeTerminalCells(""),
+			fakeTerminalCells("   "),
+		},
+	}
+	applyR303(t, store, projector, frameTx, ScreenAppDecision{
+		Mode:         ScreenOutputModePrimaryScreenSession,
+		PublishFrame: true,
+	})
+
+	window := latestR303(t, store)
+	got := plainRowsBySegment(window, HistorySegmentCurrentPrimaryFrame)
+	if !reflect.DeepEqual(got, []string{"first visible", "", "last visible"}) {
+		t.Fatalf("screen-frame projection should trim trailing default blank rows only, got %#v", got)
+	}
+}
+
+func TestR315ScreenFrameProjectionKeepsStyledTrailingBlankRows(t *testing.T) {
+	store, projector := newR303Harness()
+
+	frameTx := fakeTx(1, 24, 4)
+	frameTx.PrimaryFrame = &TerminalSemanticFrame{
+		Cols: 24,
+		Rows: [][]TerminalSemanticCell{
+			fakeTerminalCells("body"),
+			{{Content: " ", Width: 1, Style: TerminalSemanticStyle{BG: "#112233"}}},
+			fakeTerminalCells(""),
+		},
+	}
+	applyR303(t, store, projector, frameTx, ScreenAppDecision{
+		Mode:         ScreenOutputModePrimaryScreenSession,
+		PublishFrame: true,
+	})
+
+	window := latestR303(t, store)
+	got := plainRowsBySegment(window, HistorySegmentCurrentPrimaryFrame)
+	if !reflect.DeepEqual(got, []string{"body", " "}) {
+		t.Fatalf("screen-frame projection must keep styled trailing blank footprint, got %#v", got)
 	}
 }
 

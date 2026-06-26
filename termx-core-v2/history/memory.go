@@ -3,6 +3,7 @@ package history
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
@@ -1079,7 +1080,27 @@ func convertTerminalFrame(frame *TerminalSemanticFrame) ([][]Cell, int) {
 	for i, row := range frame.Rows {
 		rows[i] = convertTerminalCells(row)
 	}
-	return rows, frame.Cols
+	return trimTrailingDefaultBlankFrameRows(rows), frame.Cols
+}
+
+func trimTrailingDefaultBlankFrameRows(rows [][]Cell) [][]Cell {
+	end := len(rows)
+	for end > 0 && isDefaultBlankFrameRow(rows[end-1]) {
+		end--
+	}
+	return rows[:end]
+}
+
+func isDefaultBlankFrameRow(row []Cell) bool {
+	for _, cell := range row {
+		if cell.Text != "" && strings.TrimSpace(cell.Text) != "" {
+			return false
+		}
+		if cell.Style != (CellStyle{}) || cell.LinkURL != "" || cell.LinkParams != "" {
+			return false
+		}
+	}
+	return true
 }
 
 func frameRowsFromWriteOps(ops []TerminalSemanticOp, cols int) ([][]Cell, int) {
