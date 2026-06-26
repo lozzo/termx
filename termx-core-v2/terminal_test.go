@@ -225,6 +225,81 @@ func TestR305FrozenSnapshotCapturesPrimaryCurrentFrameBoundary(t *testing.T) {
 	}
 }
 
+func TestR306PureAltTransientIsSelectableAndNeverOrdinaryCommitted(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-alt-transient",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-alt-transient", "\x1b[?1049halt frame"); err != nil {
+		t.Fatalf("ingest alt enter: %v", err)
+	}
+	window := latestTerminalHistory(t, server, "term-alt-transient")
+	altRows := terminalHistoryRowsBySegment(window, history.HistorySegmentCurrentAltFrame)
+	if len(altRows) == 0 {
+		t.Fatalf("running alt frame should be visible for selection, window=%#v", window)
+	}
+	if window.LogicalTotal != 0 || altRows[0].Committed {
+		t.Fatalf("alt transient must not ordinary commit, total=%d rows=%#v", window.LogicalTotal, altRows)
+	}
+	if err := server.IngestOutput(context.Background(), "term-alt-transient", "\x1b[?1049l"); err != nil {
+		t.Fatalf("ingest alt exit: %v", err)
+	}
+	window = latestTerminalHistory(t, server, "term-alt-transient")
+	if rows := terminalHistoryRowsBySegment(window, history.HistorySegmentCurrentAltFrame); len(rows) != 0 {
+		t.Fatalf("alt exit should release transient current frame, got %#v", rows)
+	}
+	if window.LogicalTotal != 0 {
+		t.Fatalf("pure alt exit must not commit history, total=%d rows=%#v", window.LogicalTotal, window.Rows)
+	}
+}
+
+func TestR306PrimaryCurrentArchivesBeforeAltAndPostAltPrimaryIsNewFrame(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-primary-alt",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 28, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-primary-alt", "\x1b[?2026hpre alt primary\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest primary frame: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-primary-alt", "\x1b[?1049halt choice"); err != nil {
+		t.Fatalf("ingest alt enter: %v", err)
+	}
+	duringAlt := latestTerminalHistory(t, server, "term-primary-alt")
+	archived := terminalHistoryRowsBySegment(duringAlt, history.HistorySegmentArchivedPrimaryFrame)
+	if len(archived) == 0 || !strings.Contains(terminalHistoryPlainText(archived[0].Cells), "pre alt primary") {
+		t.Fatalf("alt enter should archive pre-alt primary frame, got %#v", archived)
+	}
+	if current := terminalHistoryRowsBySegment(duringAlt, history.HistorySegmentCurrentPrimaryFrame); len(current) != 0 {
+		t.Fatalf("alt enter should hide pre-alt current primary frame, got %#v", current)
+	}
+	if alt := terminalHistoryRowsBySegment(duringAlt, history.HistorySegmentCurrentAltFrame); len(alt) == 0 {
+		t.Fatalf("alt enter should publish transient alt frame, window=%#v", duringAlt)
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-primary-alt", "\x1b[?1049l"); err != nil {
+		t.Fatalf("ingest alt exit: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-primary-alt", "\x1b[?2026hpost alt primary\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest post alt primary: %v", err)
+	}
+	afterAlt := latestTerminalHistory(t, server, "term-primary-alt")
+	current := terminalHistoryRowsBySegment(afterAlt, history.HistorySegmentCurrentPrimaryFrame)
+	if len(current) == 0 || !strings.Contains(strings.Join(terminalHistoryRowsText(current), ""), "post alt primary") {
+		t.Fatalf("post-alt primary output should publish a new current frame, got %#v", current)
+	}
+	if current[0].FrameID == archived[0].FrameID {
+		t.Fatalf("post-alt current frame must be a new frame, archived=%#v current=%#v", archived[0], current[0])
+	}
+}
+
 func TestTerminalRestartReplacesProcessAndClearsExitMetadata(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -297,6 +372,14 @@ func terminalHistoryRowsBySegment(window history.HistoryWindow, segment history.
 		}
 	}
 	return rows
+}
+
+func terminalHistoryRowsText(rows []history.HistoryRow) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, terminalHistoryPlainText(row.Cells))
+	}
+	return out
 }
 
 func terminalHistoryPlainText(cells []history.Cell) string {

@@ -63,6 +63,7 @@ type memoryHistoryProjector struct {
 	activeAltFrameID     ScreenFrameID
 	primaryCurrent       *ScreenFrame
 	altCurrent           *ScreenFrame
+	primaryClearedForAlt bool
 	finalCommitted       bool
 }
 
@@ -98,6 +99,7 @@ func (projector *memoryHistoryProjector) Apply(tx TerminalSemanticTransaction, d
 		if decision.ClearPrimaryCurrentForAlt {
 			projector.primaryCurrent = nil
 			projector.activePrimaryFrameID = 0
+			projector.primaryClearedForAlt = true
 		}
 	}
 
@@ -112,6 +114,8 @@ func (projector *memoryHistoryProjector) Apply(tx TerminalSemanticTransaction, d
 		}
 		projector.altCurrent = nil
 		projector.activeAltFrameID = 0
+		projector.primaryCurrent = nil
+		projector.activePrimaryFrameID = 0
 	}
 
 	switch decision.Mode {
@@ -146,6 +150,7 @@ func (projector *memoryHistoryProjector) Apply(tx TerminalSemanticTransaction, d
 				})
 			}
 			frame := projector.nextFrame(tx.PrimaryFrame, LineKindScreenFrame, sessionID, tx)
+			projector.primaryClearedForAlt = false
 			projector.primaryCurrent = &frame
 			projector.activePrimaryFrameID = frame.ID
 			mutation.Events = append(mutation.Events, HistoryMutationEvent{
@@ -205,6 +210,7 @@ func (projector *memoryHistoryProjector) ForceClose(reason CloseReason) (History
 	projector.primaryCurrent = nil
 	projector.altCurrent = nil
 	projector.activeAltFrameID = 0
+	projector.primaryClearedForAlt = false
 	return mutation, nil
 }
 
@@ -363,12 +369,19 @@ func (projector *memoryHistoryProjector) closePrimarySession(mutation *HistoryMu
 	projector.activeSessionID = 0
 	projector.activePrimaryFrameID = 0
 	projector.primaryCurrent = nil
+	projector.primaryClearedForAlt = false
 }
 
 func (projector *memoryHistoryProjector) nextFrame(frame *TerminalSemanticFrame, kind LineKind, sessionID ScreenSessionID, tx TerminalSemanticTransaction) ScreenFrame {
 	id := projector.nextFrameID
 	projector.nextFrameID++
 	rows, cols := convertTerminalFrame(frame)
+	if kind == LineKindScreenFrame && projector.primaryClearedForAlt {
+		if opRows, opCols := frameRowsFromWriteOps(tx.Ops, tx.Size.Cols); len(opRows) > 0 {
+			rows = opRows
+			cols = opCols
+		}
+	}
 	if cols == 0 {
 		cols = tx.Size.Cols
 	}
@@ -887,6 +900,35 @@ func convertTerminalFrame(frame *TerminalSemanticFrame) ([][]Cell, int) {
 		rows[i] = convertTerminalCells(row)
 	}
 	return rows, frame.Cols
+}
+
+func frameRowsFromWriteOps(ops []TerminalSemanticOp, cols int) ([][]Cell, int) {
+	var rows [][]Cell
+	var current []Cell
+	for _, op := range ops {
+		switch op.Code {
+		case terminalOpWriteSpan:
+			current = append(current, convertTerminalCells(op.Cells)...)
+		case terminalOpControl:
+			if op.Control == "lf" || op.Control == "ind" || op.Control == "nel" {
+				if len(current) > 0 {
+					rows = append(rows, current)
+					current = nil
+				}
+			}
+		}
+	}
+	if len(current) > 0 {
+		rows = append(rows, current)
+	}
+	if cols <= 0 {
+		for _, row := range rows {
+			if len(row) > cols {
+				cols = len(row)
+			}
+		}
+	}
+	return rows, cols
 }
 
 func convertTerminalCells(cells []TerminalSemanticCell) []Cell {

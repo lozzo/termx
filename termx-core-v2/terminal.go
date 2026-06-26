@@ -497,6 +497,21 @@ func (terminal *Terminal) applyHistoryWriteResult(result live.SurfaceWriteResult
 }
 
 func (terminal *Terminal) classifyOrdinaryHistoryTransaction(tx history.TerminalSemanticTransaction) history.ScreenAppDecision {
+	if tx.AltExited {
+		return history.ScreenAppDecision{
+			Mode:                  history.ScreenOutputModeAltTransient,
+			ExitAltTransientFrame: true,
+		}
+	}
+	if tx.AltEntered || tx.AltFrame != nil {
+		return history.ScreenAppDecision{
+			Mode:                      history.ScreenOutputModeAltTransient,
+			PublishFrame:              tx.AltFrame != nil,
+			ArchivePrimaryBeforeAlt:   tx.AltEntered,
+			ClearPrimaryCurrentForAlt: tx.AltEntered,
+			EnterAltTransientFrame:    tx.AltEntered,
+		}
+	}
 	if tx.SynchronizedBegin || tx.SynchronizedEnd {
 		return history.ScreenAppDecision{
 			Mode:         history.ScreenOutputModePrimaryScreenSession,
