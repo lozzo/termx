@@ -556,7 +556,7 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 		decision.Mode = history.HistoryOutputModeAltTransient
 		decision.PublishAltFrame = true
 	}
-	if tx.PrimaryFrame != nil && (tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd || len(tx.PrimaryScrollOut) > 0) {
+	if tx.PrimaryFrame != nil && (tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd || len(tx.PrimaryScrollOut) > 0 || tx.RequiresFullReplace) {
 		decision.Mode = history.HistoryOutputModePrimaryFrameSession
 		decision.PublishPrimaryFrame = true
 	}

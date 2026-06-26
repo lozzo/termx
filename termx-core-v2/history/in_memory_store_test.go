@@ -130,6 +130,28 @@ func TestR323InMemoryStoreOlderDoesNotDuplicateFullyIncludedTimeline(t *testing.
 	}
 }
 
+func TestR327InMemoryStoreOlderPagesWithinCurrentFrameBeforeTimeline(t *testing.T) {
+	store := NewInMemoryHistoryStore("term-1")
+	applyStoreBatch(t, store,
+		sealedLineMutations(1, 1, "sealed"),
+		replacePrimaryRowsMutation(10, 2, 80, "frame-1", "frame-2", "frame-3"),
+	)
+	latest, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-1", Limit: 2, Cols: 80})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(latest.Rows); strings.Join(got, "|") != "frame-2|frame-3" {
+		t.Fatalf("latest should be current frame tail, got %v", got)
+	}
+	older, err := store.OlderWindow(HistoryWindowRequest{TerminalID: "term-1", Limit: 2, Cols: 80, Cursor: latest.Boundary.Cursor})
+	if err != nil {
+		t.Fatalf("older window: %v", err)
+	}
+	if got := rowTexts(older.Rows); strings.Join(got, "|") != "sealed|frame-1" {
+		t.Fatalf("older must include frame rows hidden above latest tail before falling back to timeline, got %v window=%#v", got, older)
+	}
+}
+
 func TestR323InMemoryStoreOpenLineIsMutableProjection(t *testing.T) {
 	store := NewInMemoryHistoryStore("term-1")
 	openLine := OpenLine{Active: true, Draft: LogicalLineDraft{Line: lineForStore(7, "draft", string(LineKindOrdinary), 0), Row: 0}}
@@ -220,13 +242,21 @@ func archivedFrameMutationsForStore(frameID ScreenFrameID, recordID HistoryRecor
 }
 
 func replacePrimaryMutation(frameID ScreenFrameID, firstLineID LogicalLineID, cols int, text string) []HistoryMutation {
-	line := lineForStore(firstLineID, text, string(LineKindScreenFrame), cols)
-	line.Seal = SealStateOpen
+	return replacePrimaryRowsMutation(frameID, firstLineID, cols, text)
+}
+
+func replacePrimaryRowsMutation(frameID ScreenFrameID, firstLineID LogicalLineID, cols int, texts ...string) []HistoryMutation {
+	rows := make([]LogicalLineDraft, 0, len(texts))
+	for index, text := range texts {
+		line := lineForStore(firstLineID+LogicalLineID(index), text, string(LineKindScreenFrame), cols)
+		line.Seal = SealStateOpen
+		rows = append(rows, LogicalLineDraft{Line: line, Row: index})
+	}
 	frame := MutableFrame{
 		ID:        frameID,
 		SessionID: 1,
 		Cols:      cols,
-		Rows:      []LogicalLineDraft{{Line: line, Row: 0}},
+		Rows:      rows,
 		Source:    FrameSourcePrimarySemantic,
 	}
 	return []HistoryMutation{{Kind: HistoryMutationReplacePrimaryFrame, Mutable: &frame, FrameID: frameID, SessionID: 1}}

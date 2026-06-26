@@ -140,7 +140,7 @@ func TestR321StreamReducerEraseDeleteInsertCharacter(t *testing.T) {
 	})
 }
 
-func TestR321StreamReducerScrollOutProofSealsExactlyOnce(t *testing.T) {
+func TestR321StreamReducerScrollOutProofSealsTerminalEvents(t *testing.T) {
 	reducer := NewStreamLineReducer()
 	applyStreamOps(t, reducer, writeOp(0, 0, "visible"))
 
@@ -155,8 +155,8 @@ func TestR321StreamReducerScrollOutProofSealsExactlyOnce(t *testing.T) {
 	if got := joinedLineTexts(sealedMutationLines(first)); got != "gone" {
 		t.Fatalf("first proof must seal proof payload, got %q mutations=%#v", got, first)
 	}
-	if got := len(sealedMutationLines(second)); got != 0 {
-		t.Fatalf("repeated identical proof must not seal twice, got %d mutations=%#v", got, second)
+	if got := joinedLineTexts(sealedMutationLines(second)); got != "gone" {
+		t.Fatalf("same text in a later terminal proof is still observable PTY history, got %q mutations=%#v", got, second)
 	}
 	if got := lineText(singleOpenLine(t, reducer).Draft.Line); got != "visible" {
 		t.Fatalf("scroll-out proof must not rewrite active open line, got %q", got)

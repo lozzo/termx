@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
@@ -13,20 +14,18 @@ import (
 // HistoryMutation 交给后续 authoritative store 应用。
 func NewStreamLineReducer() StreamLineReducer {
 	return &streamLineReducer{
-		ids:              newHistoryIDAllocator(),
-		rowOwners:        make(map[int]LogicalLineID),
-		lines:            make(map[LogicalLineID]*streamLineDraft),
-		sealedProofSigns: make(map[string]struct{}),
+		ids:       newHistoryIDAllocator(),
+		rowOwners: make(map[int]LogicalLineID),
+		lines:     make(map[LogicalLineID]*streamLineDraft),
 	}
 }
 
 type streamLineReducer struct {
-	ids              *historyIDAllocator
-	rowOwners        map[int]LogicalLineID
-	lines            map[LogicalLineID]*streamLineDraft
-	cursorRow        int
-	cursorCol        int
-	sealedProofSigns map[string]struct{}
+	ids       *historyIDAllocator
+	rowOwners map[int]LogicalLineID
+	lines     map[LogicalLineID]*streamLineDraft
+	cursorRow int
+	cursorCol int
 }
 
 type streamLineDraft struct {
@@ -79,18 +78,11 @@ func (reducer *streamLineReducer) SealScrollOut(proof TerminalSemanticScrollOut)
 		return nil, nil
 	}
 	reducer.ensureState()
-	sign := scrollOutProofSignature(proof)
-	if sign == "" {
-		return nil, nil
-	}
-	// vterm 当前 proof 没有独立 id；这里用 payload signature 防止同一 proof 被重复消费。
-	// 如果后续需要允许相同文本的不同 proof，必须先在 vterm contract 增补 ordered proof id。
-	if _, exists := reducer.sealedProofSigns[sign]; exists {
-		return nil, nil
-	}
-	reducer.sealedProofSigns[sign] = struct{}{}
 	line := reducer.newLogicalLine(HistoryRecordPrimaryScrollOutLine)
 	line.Cells = cellsFromScrollOutProof(proof)
+	if len(line.Cells) == 0 {
+		return nil, nil
+	}
 	line.Seal = SealStateSealed
 	return reducer.sealStandaloneLine(line, SealReasonScrollOut, HistoryRecordPrimaryScrollOutLine), nil
 }
@@ -353,9 +345,6 @@ func (reducer *streamLineReducer) ensureState() {
 	}
 	if reducer.lines == nil {
 		reducer.lines = make(map[LogicalLineID]*streamLineDraft)
-	}
-	if reducer.sealedProofSigns == nil {
-		reducer.sealedProofSigns = make(map[string]struct{})
 	}
 	if reducer.ids == nil {
 		reducer.ids = newHistoryIDAllocator()
@@ -630,12 +619,20 @@ func historyCellsFromTerminal(cells []TerminalSemanticCell) []Cell {
 	out := make([]Cell, 0, len(cells))
 	for _, cell := range cells {
 		text := cell.Content
-		if text == "" {
-			text = " "
-		}
 		width := cell.Width
 		if width <= 0 {
-			width = 1
+			if text == "" {
+				// 中文说明：width=0 且无文本是宽字符 continuation cell；
+				// 历史文本 truth 已在前一个 Width=2 cell 中，不能投影成真实空格。
+				continue
+			}
+			width = xansi.StringWidth(text)
+			if width <= 0 {
+				continue
+			}
+		}
+		if text == "" {
+			text = strings.Repeat(" ", width)
 		}
 		out = append(out, Cell{
 			Text:       text,
@@ -719,7 +716,9 @@ func terminalCellsDisplayWidth(cells []TerminalSemanticCell) int {
 			width += cell.Width
 			continue
 		}
-		width++
+		if cell.Content != "" {
+			width += maxInt(0, xansi.StringWidth(cell.Content))
+		}
 	}
 	return width
 }
@@ -728,10 +727,19 @@ func cellsFromScrollOutProof(proof TerminalSemanticScrollOut) []Cell {
 	if len(proof.Runs) > 0 {
 		var cells []Cell
 		for _, run := range proof.Runs {
-			for _, r := range run.Text {
+			text := run.Text
+			for text != "" {
+				cluster, width := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
+				if cluster == "" {
+					break
+				}
+				text = text[len(cluster):]
+				if width <= 0 {
+					continue
+				}
 				cells = append(cells, Cell{
-					Text:  string(r),
-					Width: 1,
+					Text:  cluster,
+					Width: width,
 					Style: historyStyleFromTerminal(run.Style),
 				})
 			}
@@ -739,35 +747,6 @@ func cellsFromScrollOutProof(proof TerminalSemanticScrollOut) []Cell {
 		return trimTrailingBlankCells(cells)
 	}
 	return trimTrailingBlankCells(historyCellsFromTerminal(proof.Cells))
-}
-
-func scrollOutProofSignature(proof TerminalSemanticScrollOut) string {
-	var builder strings.Builder
-	builder.WriteString("wrapped:")
-	if proof.WrappedSet && proof.Wrapped {
-		builder.WriteString("1")
-	} else {
-		builder.WriteString("0")
-	}
-	builder.WriteString("|runs:")
-	for _, run := range proof.Runs {
-		builder.WriteString(run.Style.FG)
-		builder.WriteString("/")
-		builder.WriteString(run.Style.BG)
-		builder.WriteString(":")
-		builder.WriteString(run.Text)
-		builder.WriteString(";")
-	}
-	builder.WriteString("|cells:")
-	for _, cell := range proof.Cells {
-		builder.WriteString(cell.Style.FG)
-		builder.WriteString("/")
-		builder.WriteString(cell.Style.BG)
-		builder.WriteString(":")
-		builder.WriteString(cell.Content)
-		builder.WriteString(";")
-	}
-	return builder.String()
 }
 
 func maxInt(a int, b int) int {

@@ -7,10 +7,9 @@ func NewHistoryLogicalRenderer(stream StreamLineReducer, frames FrameReducer) Hi
 	allocator := newHistoryIDAllocator()
 	if stream == nil {
 		stream = &streamLineReducer{
-			ids:              allocator,
-			rowOwners:        make(map[int]LogicalLineID),
-			lines:            make(map[LogicalLineID]*streamLineDraft),
-			sealedProofSigns: make(map[string]struct{}),
+			ids:       allocator,
+			rowOwners: make(map[int]LogicalLineID),
+			lines:     make(map[LogicalLineID]*streamLineDraft),
 		}
 	}
 	if frames == nil {

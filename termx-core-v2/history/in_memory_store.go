@@ -91,7 +91,7 @@ func (store *inMemoryHistoryStore) LatestWindow(req HistoryWindowRequest) (Histo
 	page := cloneHistoryRows(rows[start:])
 	boundary := boundaryForRows(page, store.generation, req.Token)
 	if len(page) > 0 {
-		olderStart := store.timelineRowsBeforeLiveStart(start)
+		olderStart := start
 		boundary.Cursor = HistoryCursor{
 			Generation: store.generation,
 			RowInLine:  olderStart,
@@ -112,7 +112,7 @@ func (store *inMemoryHistoryStore) OlderWindow(req HistoryWindowRequest) (Histor
 		return HistoryWindow{}, nil
 	}
 	store.ensureState()
-	rows := store.projectTimelineRows()
+	rows := store.projectRowsForOlder(req)
 	limit := normalizedLimit(req.Limit)
 	if !req.Cursor.Valid {
 		return store.windowFromProjectedRows(req, nil, HistoryWindowPrepend, HistoryBoundary{Cursor: HistoryCursor{Generation: store.generation}}, store.generation), nil
@@ -315,15 +315,16 @@ func (store *inMemoryHistoryStore) projectTimelineRows() []HistoryRow {
 	return rows
 }
 
-func (store *inMemoryHistoryStore) timelineRowsBeforeLiveStart(liveStart int) int {
-	timelineRows := len(store.projectTimelineRows())
-	if liveStart <= 0 {
-		return 0
+func (store *inMemoryHistoryStore) projectRowsForOlder(req HistoryWindowRequest) []HistoryRow {
+	if req.Token != "" {
+		if frozen, ok := store.frozen[req.Token]; ok {
+			return cloneHistoryRows(frozen.rows)
+		}
 	}
-	if liveStart > timelineRows {
-		return timelineRows
-	}
-	return liveStart
+	// 中文说明：older cursor 从 latest 的完整 live projection 向前翻页。
+	// 如果 latest limit 截在 current frame 中间，必须先返回 current frame 的更早行，
+	// 再接 sealed timeline；不能只看 timeline，否则 screen app 上滑会丢半个 current。
+	return store.projectLiveRows()
 }
 
 func (store *inMemoryHistoryStore) rowsFromTimelineFrame(record HistoryRecord, segment HistorySegment, kind LineKind) []HistoryRow {
