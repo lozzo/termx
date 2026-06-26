@@ -1006,16 +1006,6 @@ func protocolHistoryCols(cols int) uint16 {
 	return uint16(cols)
 }
 
-func (session *protocolSession) validateOlderWindowRequest(params protocol.HistoryWindowParams, cols int) error {
-	_, _ = params, cols
-	return ErrHistoryNotRebuilt
-}
-
-func (session *protocolSession) validateNewerWindowRequest(params protocol.HistoryWindowParams, cols int) error {
-	_, _ = params, cols
-	return ErrHistoryNotRebuilt
-}
-
 func (session *protocolSession) startEvents(ctx context.Context, params protocol.EventsParams) {
 	eventCtx, cancel := context.WithCancel(ctx)
 	session.mu.Lock()
