@@ -194,20 +194,142 @@ func TestProtocolServiceRestartedProcessSurvivesClientSessionClose(t *testing.T)
 	}
 }
 
-func TestProtocolServiceHistoryWindowReportsNotRebuilt(t *testing.T) {
-	_, client, closeClient := newProtocolClient(t)
+func TestProtocolServiceHistoryWindowCopyAndReleaseUseAuthoritativeHistory(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 3}}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	_, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-1", Cols: 10, Limit: 2})
-	if err == nil || !strings.Contains(err.Error(), ErrHistoryNotRebuilt.Error()) {
-		t.Fatalf("history.window should report clean-slate state, got %v", err)
+	if err := server.IngestOutput(context.Background(), "term-1", "alpha\nbeta"); err != nil {
+		t.Fatalf("ingest: %v", err)
 	}
-	_, err = client.HistoryCopy(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-1", Token: "missing"})
-	if err == nil || !strings.Contains(err.Error(), ErrHistoryNotRebuilt.Error()) {
-		t.Fatalf("history.copy should report clean-slate state, got %v", err)
+
+	window, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-1", Cols: 10, Limit: 10})
+	if err != nil {
+		t.Fatalf("history.window: %v", err)
 	}
+	if window.TerminalID != "term-1" || window.Op != protocol.HistoryWindowReplace || window.Size.Cols != 10 || window.Token == "" {
+		t.Fatalf("unexpected history window metadata %#v", window)
+	}
+	if got := protocolHistoryWindowTexts(window); len(got) != 2 || got[0] != "alpha" || got[1] != "beta" {
+		t.Fatalf("history.window must project core logical rows, got %#v", got)
+	}
+	if len(window.RowSegments) != len(window.Rows) || window.CursorSegment != protocol.HistoryCursorSegmentCommitted {
+		t.Fatalf("history.window must expose segment cursor, got cursor=%#v rowSegments=%#v", window.CursorSegment, window.RowSegments)
+	}
+	if len(window.RowLineIDs) != len(window.Rows) || window.FirstLineID == 0 || window.LastLineID == 0 {
+		t.Fatalf("history.window must expose logical ids, got %#v", window)
+	}
+
+	copied, err := client.HistoryCopy(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-1", Token: window.Token})
+	if err != nil {
+		t.Fatalf("history.copy: %v", err)
+	}
+	if copied != "alpha\nbeta" {
+		t.Fatalf("history.copy must use authoritative frozen token, got %q", copied)
+	}
+	if err := client.ReleaseHistory(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-1", Token: window.Token}); err != nil {
+		t.Fatalf("history.release: %v", err)
+	}
+	_, err = client.HistoryCopy(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-1", Token: window.Token})
+	if err == nil {
+		t.Fatal("history.copy after release should reject released token")
+	}
+}
+
+func TestProtocolServiceHistoryWindowCarriesScreenFrameSegments(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-frame", Command: []string{"shell"}, Size: protocol.Size{Cols: 24, Rows: 4}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-frame", "\x1b[?2026hmodel: active\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest primary frame: %v", err)
+	}
+
+	window, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-frame", Cols: 24, Limit: 10})
+	if err != nil {
+		t.Fatalf("history.window: %v", err)
+	}
+	if window.CursorSegment != protocol.HistoryCursorSegmentCurrentPrimaryFrame {
+		t.Fatalf("current frame cursor segment should stay authoritative, got %#v", window.CursorSegment)
+	}
+	if len(window.RowSegments) == 0 || window.RowSegments[len(window.RowSegments)-1] != protocol.HistoryCursorSegmentCurrentPrimaryFrame {
+		t.Fatalf("current frame row segment missing from protocol window %#v", window.RowSegments)
+	}
+	if len(window.RowKinds) == 0 || window.RowKinds[len(window.RowKinds)-1] != "screen-frame" {
+		t.Fatalf("current frame row kind missing from protocol window %#v", window.RowKinds)
+	}
+}
+
+func TestProtocolServiceHistoryOlderUsesSegmentCursorToken(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-page", Command: []string{"shell"}, Size: protocol.Size{Cols: 12, Rows: 4}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-page", "alpha\r\nbeta\r\ngamma\r\n"); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-page", Cols: 12, Limit: 2})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	if got := protocolHistoryWindowTexts(latest); len(got) != 2 || got[0] != "beta" || got[1] != "gamma" {
+		t.Fatalf("latest should return committed tail, got %#v", got)
+	}
+	if latest.Token == "" || !latest.CursorValid || latest.CursorSegment != protocol.HistoryCursorSegmentCommitted || latest.CursorLineID == 0 {
+		t.Fatalf("latest must return tokenized committed cursor, got %#v", latest)
+	}
+
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-page",
+		Cols:                12,
+		Limit:               1,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		CursorValid:         true,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+		CursorSegment:       latest.CursorSegment,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err != nil {
+		t.Fatalf("older history.window: %v", err)
+	}
+	if older.Op != protocol.HistoryWindowPrepend || older.CursorSegment != protocol.HistoryCursorSegmentCommitted {
+		t.Fatalf("older must be authoritative prepend with segment cursor, got %#v", older)
+	}
+	if got := protocolHistoryWindowTexts(older); len(got) != 1 || got[0] != "alpha" {
+		t.Fatalf("older must page by core logical cursor, got %#v", got)
+	}
+}
+
+func protocolHistoryWindowTexts(window *protocol.HistoryWindow) []string {
+	if window == nil {
+		return nil
+	}
+	out := make([]string, 0, len(window.Rows))
+	for _, row := range window.Rows {
+		out = append(out, protocolCompactRowText(row))
+	}
+	return out
+}
+
+func protocolCompactRowText(row protocol.CompactRow) string {
+	if row.Text != "" {
+		return row.Text
+	}
+	var builder strings.Builder
+	for _, run := range row.Runs {
+		builder.WriteString(run.Text)
+	}
+	for _, cell := range row.Cells {
+		builder.WriteString(cell.Content)
+	}
+	return builder.String()
 }
 
 func TestProtocolServiceAttachmentStreamsLiveScreenUpdates(t *testing.T) {

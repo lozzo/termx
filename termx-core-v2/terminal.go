@@ -447,7 +447,15 @@ func (terminal *Terminal) HistoryWindow(req history.HistoryWindowRequest) (histo
 	if req.TerminalID == "" {
 		req.TerminalID = terminal.info.ID
 	}
-	return terminal.historyStore.LatestWindow(req)
+	switch req.Mode {
+	case "", history.HistoryWindowModeLatest, history.HistoryWindowModeOldest:
+		req.Mode = history.HistoryWindowModeLatest
+		return terminal.historyStore.LatestWindow(req)
+	case history.HistoryWindowModeOlder, history.HistoryWindowModeNewer:
+		return terminal.historyStore.OlderWindow(req)
+	default:
+		return history.HistoryWindow{}, history.ErrHistoryUnsupportedWindowMode
+	}
 }
 
 func (terminal *Terminal) HistoryCopy(req history.HistoryCopyRequest) (string, error) {
@@ -472,6 +480,20 @@ func (terminal *Terminal) HistoryFreeze(req history.FreezeHistoryRequest) (histo
 		req.TerminalID = terminal.info.ID
 	}
 	return terminal.historyStore.Freeze(req)
+}
+
+// HistoryRelease 释放 terminal history store 中的 core-owned token。调用方通常是
+// protocol history.release；失败条件是 history store 尚未重建或 token 所属 terminal
+// 不存在，释放动作不得删除 logical-line committed truth。
+func (terminal *Terminal) HistoryRelease(token history.HistoryToken) error {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyStore == nil {
+		return ErrHistoryNotRebuilt
+	}
+	// 中文说明：release 只释放 core-owned frozen token，不删除 committed
+	// logical-line truth，也不允许 protocol/TUI 用本地缓存替代 token 生命周期。
+	return terminal.historyStore.Release(token)
 }
 
 func (terminal *Terminal) applyHistoryWriteResult(result live.SurfaceWriteResult) {

@@ -457,7 +457,7 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 		t.Fatalf("unexpected older result %#v", older)
 	}
 	params := client.requests[1]
-	if params.Token != "tok-1" || params.Generation != 7 || !params.CursorValid || params.BeforeLineID != 42 || params.BeforeRowInLine != 1 || params.CursorSegment != protocol.HistoryCursorSegmentArchivedPrimaryFrame || params.BoundaryLastLineID != 43 {
+	if params.Mode != "older" || params.Token != "tok-1" || params.Generation != 7 || !params.CursorValid || params.BeforeLineID != 42 || params.BeforeRowInLine != 1 || params.CursorSegment != protocol.HistoryCursorSegmentArchivedPrimaryFrame || params.BoundaryLastLineID != 43 {
 		t.Fatalf("unexpected older params %#v", params)
 	}
 
@@ -500,7 +500,7 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 		t.Fatalf("unexpected oldest result %#v", oldest)
 	}
 	params = client.requests[3]
-	if params.Token != "tok-1" || params.Generation != 7 || params.CursorValid || params.BeforeLineID != 0 || params.BoundaryLastLineID != 43 {
+	if params.Mode != "oldest" || params.Token != "tok-1" || params.Generation != 7 || params.CursorValid || params.BeforeLineID != 0 || params.BoundaryLastLineID != 43 {
 		t.Fatalf("unexpected oldest params %#v", params)
 	}
 

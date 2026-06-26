@@ -390,8 +390,8 @@ func (server *Server) LiveSnapshot(id string) (live.SurfaceSnapshot, error) {
 }
 
 // TerminalHistoryWindow 返回 core-v2 terminal 内部 authoritative history domain
-// projection。R304 只用于普通输出最小实现和 harness；protocol/TUI 的
-// history.window 仍必须等 R310 接入，不能在协议层临时 fallback 到 live rows。
+// projection。调用边界包括 protocol history.window 和 domain harness；实现只能读取
+// core history store，不能 fallback 到 live rows 或 snapshot。
 func (server *Server) TerminalHistoryWindow(ctx context.Context, id string, req history.HistoryWindowRequest) (history.HistoryWindow, error) {
 	_ = ctx
 	terminal, err := server.Terminal(id)
@@ -405,7 +405,8 @@ func (server *Server) TerminalHistoryWindow(ctx context.Context, id string, req 
 }
 
 // TerminalHistoryCopy 从 core-v2 terminal 内部 authoritative history domain 复制文本。
-// 它不服务协议层 history.copy；R310 前 protocol 仍返回 ErrHistoryNotRebuilt。
+// 调用边界包括 protocol history.copy；复制文本必须来自 tokenized history payload，
+// 不能由 TUI rows 或 live surface cache 组装。
 func (server *Server) TerminalHistoryCopy(ctx context.Context, id string, req history.HistoryCopyRequest) (string, error) {
 	_ = ctx
 	terminal, err := server.Terminal(id)
@@ -418,9 +419,8 @@ func (server *Server) TerminalHistoryCopy(ctx context.Context, id string, req hi
 	return terminal.HistoryCopy(req)
 }
 
-// TerminalHistoryFreeze 创建 core-v2 terminal 内部 frozen history boundary。R305
-// 用它验证 primary current frame 能进入 frozen projection；protocol release/copy
-// token 生命周期仍留到 R310。
+// TerminalHistoryFreeze 创建 core-v2 terminal 内部 frozen history boundary。它为
+// protocol latest/copy 建立 core-owned token，后续 repaint 不得改写该 token 的复制边界。
 func (server *Server) TerminalHistoryFreeze(ctx context.Context, id string, req history.FreezeHistoryRequest) (history.FrozenHistorySnapshot, error) {
 	_ = ctx
 	terminal, err := server.Terminal(id)
@@ -431,6 +431,17 @@ func (server *Server) TerminalHistoryFreeze(ctx context.Context, id string, req 
 		req.TerminalID = id
 	}
 	return terminal.HistoryFreeze(req)
+}
+
+// TerminalHistoryRelease 释放 core-v2 authoritative history token。调用边界是
+// protocol history.release；它只回收 frozen/window 资源，不删除 committed history truth。
+func (server *Server) TerminalHistoryRelease(ctx context.Context, id string, token history.HistoryToken) error {
+	_ = ctx
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return err
+	}
+	return terminal.HistoryRelease(token)
 }
 
 func (server *Server) Events(ctx context.Context, filter EventFilter) <-chan Event {

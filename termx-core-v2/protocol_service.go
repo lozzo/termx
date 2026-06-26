@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-proto/wire"
 	"github.com/lozzow/termx/termx-shared/transport"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
@@ -511,6 +512,9 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		if in.Token == "" {
 			return nil, false, protocolErrorBadRequest, fmt.Errorf("history release requires token")
 		}
+		if err := session.historyRelease(ctx, in); err != nil {
+			return nil, false, errorCode(err), err
+		}
 		return encodeMethodResult(req.Method, nil)
 	case "remote.status":
 		service, err := session.remoteService()
@@ -767,21 +771,239 @@ func (session *protocolSession) handleStreamFrame(ctx context.Context, channel u
 }
 
 func (session *protocolSession) historyWindow(ctx context.Context, params protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
-	_ = ctx
 	if _, err := session.server.GetTerminal(params.TerminalID); err != nil {
 		return nil, err
 	}
-	// 中文说明：旧 frozen snapshot/window 投影已被清空；history.window 必须等
-	// R303 重新定义 authoritative history owner 后再恢复，不能临时从 live 或旧 API 拼。
-	return nil, ErrHistoryNotRebuilt
+	req := historyWindowRequestFromProtocol(params)
+	if req.Mode == history.HistoryWindowModeLatest {
+		// 中文说明：protocol latest 为 copy/history 会话建立 core-owned frozen token；
+		// TUI 只能原样保存 token/cursor，不能用 live rows 或本地 row count 推断边界。
+		snapshot, err := session.server.TerminalHistoryFreeze(ctx, params.TerminalID, history.FreezeHistoryRequest{
+			TerminalID: params.TerminalID,
+			Cols:       req.Cols,
+			Limit:      req.Limit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		req.Token = snapshot.Token
+	}
+	window, err := session.server.TerminalHistoryWindow(ctx, params.TerminalID, req)
+	if err != nil {
+		return nil, err
+	}
+	return protocolHistoryWindowFromDomain(window), nil
 }
 
 func (session *protocolSession) historyCopy(ctx context.Context, params protocol.HistoryWindowParams) ([]byte, error) {
-	_ = ctx
 	if _, err := session.server.GetTerminal(params.TerminalID); err != nil {
 		return nil, err
 	}
-	return nil, ErrHistoryNotRebuilt
+	text, err := session.server.TerminalHistoryCopy(ctx, params.TerminalID, historyCopyRequestFromProtocol(params))
+	if err != nil {
+		return nil, err
+	}
+	return []byte(text), nil
+}
+
+func (session *protocolSession) historyRelease(ctx context.Context, params protocol.HistoryWindowParams) error {
+	if _, err := session.server.GetTerminal(params.TerminalID); err != nil {
+		return err
+	}
+	return session.server.TerminalHistoryRelease(ctx, params.TerminalID, history.HistoryToken(params.Token))
+}
+
+func historyWindowRequestFromProtocol(params protocol.HistoryWindowParams) history.HistoryWindowRequest {
+	mode := history.HistoryWindowMode(params.Mode)
+	if mode == "" {
+		if params.AfterCursorValid {
+			mode = history.HistoryWindowModeNewer
+		} else if params.CursorValid {
+			mode = history.HistoryWindowModeOlder
+		} else {
+			mode = history.HistoryWindowModeLatest
+		}
+	}
+	req := history.HistoryWindowRequest{
+		TerminalID: params.TerminalID,
+		Mode:       mode,
+		Cols:       params.Cols,
+		Limit:      params.Limit,
+		Token:      history.HistoryToken(params.Token),
+		Cursor: history.HistoryCursor{
+			Segment:    history.HistorySegment(params.CursorSegment),
+			LineID:     history.LogicalLineID(params.BeforeLineID),
+			RowInLine:  params.BeforeRowInLine,
+			Generation: history.Generation(params.Generation),
+			Token:      history.HistoryToken(params.Token),
+			Valid:      params.CursorValid,
+		},
+		Boundary: history.HistoryBoundary{
+			FirstLineID: history.LogicalLineID(params.BoundaryFirstLineID),
+			LastLineID:  history.LogicalLineID(params.BoundaryLastLineID),
+		},
+	}
+	if params.AfterCursorValid {
+		req.Cursor = history.HistoryCursor{
+			Segment:    history.HistorySegment(params.AfterCursorSegment),
+			LineID:     history.LogicalLineID(params.AfterLineID),
+			RowInLine:  params.AfterRowInLine,
+			Generation: history.Generation(params.Generation),
+			Token:      history.HistoryToken(params.Token),
+			Valid:      true,
+		}
+	}
+	req.Boundary.Cursor = req.Cursor
+	if req.Cols <= 0 {
+		req.Cols = 80
+	}
+	return req
+}
+
+func historyCopyRequestFromProtocol(params protocol.HistoryWindowParams) history.HistoryCopyRequest {
+	req := history.HistoryCopyRequest{
+		TerminalID: params.TerminalID,
+		Token:      history.HistoryToken(params.Token),
+		Cols:       params.Cols,
+	}
+	if params.RangeValid {
+		req.Start = history.HistoryCursor{
+			Segment:    history.HistorySegment(params.CursorSegment),
+			LineID:     history.LogicalLineID(params.RangeStartLineID),
+			RowInLine:  params.RangeStartCol,
+			Generation: history.Generation(params.Generation),
+			Token:      history.HistoryToken(params.Token),
+			Valid:      true,
+		}
+		req.End = history.HistoryCursor{
+			Segment:    history.HistorySegment(params.AfterCursorSegment),
+			LineID:     history.LogicalLineID(params.RangeEndLineID),
+			RowInLine:  params.RangeEndCol,
+			Generation: history.Generation(params.Generation),
+			Token:      history.HistoryToken(params.Token),
+			Valid:      true,
+		}
+	}
+	return req
+}
+
+func protocolHistoryWindowFromDomain(window history.HistoryWindow) *protocol.HistoryWindow {
+	rows := make([]protocol.CompactRow, 0, len(window.Rows))
+	rowKinds := make([]string, 0, len(window.Rows))
+	rowSegments := make([]string, 0, len(window.Rows))
+	rowWrapped := make([]bool, 0, len(window.Rows))
+	rowOwnership := make([]string, 0, len(window.Rows))
+	rowLineIDs := make([]uint64, 0, len(window.Rows))
+	rowInLine := make([]int, 0, len(window.Rows))
+	for _, row := range window.Rows {
+		rows = append(rows, protocolCompactRowFromHistoryCells(row.Cells))
+		rowKinds = append(rowKinds, string(row.Kind))
+		rowSegments = append(rowSegments, string(row.Segment))
+		rowWrapped = append(rowWrapped, row.Wrapped)
+		rowOwnership = append(rowOwnership, protocolHistoryRowOwnership(row))
+		rowLineIDs = append(rowLineIDs, uint64(row.LineID))
+		rowInLine = append(rowInLine, row.RowInLine)
+	}
+	lines := make([]protocol.HistoryLineSpan, 0, len(window.Lines))
+	for _, span := range window.Lines {
+		lines = append(lines, protocol.HistoryLineSpan{
+			StartRow:       span.StartRow,
+			EndRow:         protocolHistorySpanEndRow(span),
+			RowKind:        string(span.Kind),
+			LogicalLineID:  uint64(span.LogicalLineID),
+			TimestampStart: span.TimestampStart,
+			TimestampEnd:   span.TimestampEnd,
+			ClippedBefore:  span.ClippedBefore,
+			ClippedAfter:   span.ClippedAfter,
+		})
+	}
+	return &protocol.HistoryWindow{
+		TerminalID:    window.TerminalID,
+		Token:         string(window.Token),
+		Op:            protocol.HistoryWindowOp(window.Op),
+		Size:          protocol.Size{Cols: protocolHistoryCols(window.Cols)},
+		Rows:          rows,
+		RowKinds:      rowKinds,
+		RowWrapped:    rowWrapped,
+		RowOwnership:  rowOwnership,
+		RowSegments:   rowSegments,
+		Lines:         lines,
+		LoadedRows:    len(rows),
+		TotalRows:     window.LogicalTotal,
+		LoadedLines:   len(lines),
+		LogicalTotal:  window.LogicalTotal,
+		HasMore:       window.HasMore,
+		Generation:    uint64(window.Generation),
+		FirstLineID:   uint64(window.Boundary.FirstLineID),
+		LastLineID:    uint64(window.Boundary.LastLineID),
+		CursorValid:   window.Boundary.Cursor.Valid,
+		CursorLineID:  uint64(window.Boundary.Cursor.LineID),
+		CursorRow:     window.Boundary.Cursor.RowInLine,
+		CursorSegment: string(window.Boundary.Cursor.Segment),
+		RowLineIDs:    rowLineIDs,
+		RowInLine:     rowInLine,
+		Timestamp:     window.Timestamp,
+	}
+}
+
+func protocolCompactRowFromHistoryCells(cells []history.Cell) protocol.CompactRow {
+	if len(cells) == 0 {
+		return protocol.CompactRow{}
+	}
+	row := protocol.CompactRow{Cells: make([]protocol.CompactRowCell, 0, len(cells))}
+	for _, cell := range cells {
+		row.Cells = append(row.Cells, protocol.CompactRowCell{
+			Content:    cell.Text,
+			Width:      cell.Width,
+			Style:      protocolCompactRowStyleFromHistory(cell.Style),
+			LinkURL:    cell.LinkURL,
+			LinkParams: cell.LinkParams,
+		})
+	}
+	return row
+}
+
+func protocolCompactRowStyleFromHistory(style history.CellStyle) *protocol.CompactRowStyle {
+	if style == (history.CellStyle{}) {
+		return nil
+	}
+	return &protocol.CompactRowStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
+	}
+}
+
+func protocolHistoryRowOwnership(row history.HistoryRow) string {
+	if row.Segment == history.HistorySegmentCommitted && row.Committed {
+		return protocol.RowOwnershipPersisted
+	}
+	if row.Segment == history.HistorySegmentCommitted {
+		return protocol.RowOwnershipLiveTailLive
+	}
+	return protocol.RowOwnershipScreen
+}
+
+func protocolHistorySpanEndRow(span history.HistoryLineSpan) int {
+	if span.EndRow > span.StartRow {
+		return span.EndRow - 1
+	}
+	return span.EndRow
+}
+
+func protocolHistoryCols(cols int) uint16 {
+	if cols <= 0 {
+		return 0
+	}
+	if cols > int(^uint16(0)) {
+		return ^uint16(0)
+	}
+	return uint16(cols)
 }
 
 func (session *protocolSession) validateOlderWindowRequest(params protocol.HistoryWindowParams, cols int) error {

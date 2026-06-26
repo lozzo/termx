@@ -596,30 +596,99 @@ func (store *memoryHistoryStore) LatestWindow(req HistoryWindowRequest) (History
 			window.Boundary.FirstLineID = id
 		}
 	}
-	for _, session := range store.sessionsInOrder() {
-		for _, frame := range session.archives {
-			window.appendFrameRows(frame, HistorySegmentArchivedPrimaryFrame)
-		}
-		if session.current != nil {
-			window.appendFrameRows(*session.current, HistorySegmentCurrentPrimaryFrame)
-		}
-	}
-	if store.currentAlt != nil {
-		window.appendFrameRows(*store.currentAlt, HistorySegmentCurrentAltFrame)
-	}
-	window.LogicalTotal = len(store.committed)
-	window.Boundary.Cursor = HistoryCursor{
+	cursor := HistoryCursor{
 		Segment:    HistorySegmentCommitted,
 		LineID:     window.Boundary.FirstLineID,
 		Generation: store.generation,
 		Token:      window.Token,
 		Valid:      window.Boundary.FirstLineID != 0,
 	}
+	for _, session := range store.sessionsInOrder() {
+		for _, frame := range session.archives {
+			window.appendFrameRows(frame, HistorySegmentArchivedPrimaryFrame)
+			cursor = historyCursorForFrame(frame, HistorySegmentArchivedPrimaryFrame, store.generation, window.Token)
+		}
+		if session.current != nil {
+			window.appendFrameRows(*session.current, HistorySegmentCurrentPrimaryFrame)
+			cursor = historyCursorForFrame(*session.current, HistorySegmentCurrentPrimaryFrame, store.generation, window.Token)
+		}
+	}
+	if store.currentAlt != nil {
+		window.appendFrameRows(*store.currentAlt, HistorySegmentCurrentAltFrame)
+		cursor = historyCursorForFrame(*store.currentAlt, HistorySegmentCurrentAltFrame, store.generation, window.Token)
+	}
+	window.Boundary.Cursor = cursor
+	window.LogicalTotal = len(store.committed)
 	return window, nil
 }
 
 func (store *memoryHistoryStore) OlderWindow(req HistoryWindowRequest) (HistoryWindow, error) {
-	return HistoryWindow{}, ErrHistoryUnsupportedWindowMode
+	if store == nil {
+		return HistoryWindow{}, nil
+	}
+	if req.Cursor.Segment != "" && req.Cursor.Segment != HistorySegmentCommitted {
+		return HistoryWindow{}, ErrHistoryUnsupportedWindowMode
+	}
+	ids := append([]LogicalLineID(nil), store.committed...)
+	if req.Token != "" {
+		snapshot, ok := store.frozen[req.Token]
+		if !ok {
+			return HistoryWindow{}, fmt.Errorf("%w: unknown frozen token", ErrHistoryInvalidMutation)
+		}
+		ids = committedIDsThrough(ids, snapshot.CommittedUpperBound)
+	}
+	end := len(ids)
+	if req.Cursor.Valid && req.Cursor.LineID != 0 {
+		if index := lineIDIndex(ids, req.Cursor.LineID); index >= 0 {
+			end = index
+		}
+	} else if req.Boundary.FirstLineID != 0 {
+		if index := lineIDIndex(ids, req.Boundary.FirstLineID); index >= 0 {
+			end = index
+		}
+	}
+	if end < 0 {
+		end = 0
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = len(ids)
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+	page := ids[start:end]
+	window := HistoryWindow{
+		TerminalID:   store.windowTerminalID(req.TerminalID),
+		Token:        req.Token,
+		Op:           HistoryWindowPrepend,
+		Cols:         req.Cols,
+		Generation:   store.generation,
+		HasMore:      start > 0,
+		LogicalTotal: len(store.committed),
+		Timestamp:    time.Now(),
+	}
+	for _, id := range page {
+		line, ok := store.lines[id]
+		if !ok {
+			continue
+		}
+		window.Rows = append(window.Rows, historyRowFromLine(line, true))
+		window.Lines = append(window.Lines, historySpanFromLine(len(window.Rows)-1, line, true))
+		window.Boundary.LastLineID = id
+		if window.Boundary.FirstLineID == 0 {
+			window.Boundary.FirstLineID = id
+		}
+	}
+	window.Boundary.Cursor = HistoryCursor{
+		Segment:    HistorySegmentCommitted,
+		LineID:     window.Boundary.FirstLineID,
+		Generation: store.generation,
+		Token:      req.Token,
+		Valid:      window.Boundary.FirstLineID != 0,
+	}
+	return window, nil
 }
 
 func (store *memoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHistorySnapshot, error) {
@@ -862,6 +931,18 @@ func (window *HistoryWindow) appendFrameRows(frame ScreenFrame, segment HistoryS
 	}
 }
 
+func historyCursorForFrame(frame ScreenFrame, segment HistorySegment, generation Generation, token HistoryToken) HistoryCursor {
+	return HistoryCursor{
+		Segment:    segment,
+		SessionID:  frame.SessionID,
+		FrameID:    frame.ID,
+		LineID:     LogicalLineID(frame.ID)*100000 + 1,
+		Generation: generation,
+		Token:      token,
+		Valid:      true,
+	}
+}
+
 func historyRowFromLine(line LogicalLine, committed bool) HistoryRow {
 	kind := LineKind(line.Kind)
 	if kind == "" {
@@ -1053,6 +1134,15 @@ func committedIDsThrough(ids []LogicalLineID, upper LogicalLineID) []LogicalLine
 		}
 	}
 	return out
+}
+
+func lineIDIndex(ids []LogicalLineID, target LogicalLineID) int {
+	for index, id := range ids {
+		if id == target {
+			return index
+		}
+	}
+	return -1
 }
 
 func nextStoreLineID(lines map[LogicalLineID]LogicalLine) LogicalLineID {
