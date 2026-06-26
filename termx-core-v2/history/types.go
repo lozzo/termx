@@ -37,6 +37,8 @@ type Cell struct {
 	LinkParams string
 }
 
+// CellStyle stores terminal style tokens for one cell. Empty FG/BG means
+// terminal default color; the viewer resolves defaults with its current theme.
 type CellStyle struct {
 	FG            string
 	BG            string
