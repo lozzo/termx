@@ -1,39 +1,45 @@
 package history
 
-// HistoryMutationKind 枚举 projector 能发送给 authoritative store 的唯一 domain
-// change 集合。新增 kind 必须先补 harness 证明 truth source 和 cursor 语义。
+// HistoryMutationKind 枚举 HistoryLogicalRenderer 能发送给 authoritative store 的
+// 唯一 domain change 集合。新增 kind 必须先补 harness 证明 truth source、ordered
+// semantic 覆盖和 cursor 语义。
 type HistoryMutationKind string
 
 const (
-	HistoryMutationOrdinaryCommit      HistoryMutationKind = "ordinary-commit"
-	HistoryMutationFrontierMutate      HistoryMutationKind = "frontier-mutate"
-	HistoryMutationOpenScreenSession   HistoryMutationKind = "open-screen-session"
-	HistoryMutationPublishPrimaryFrame HistoryMutationKind = "publish-primary-frame"
-	HistoryMutationArchivePrimaryFrame HistoryMutationKind = "archive-primary-frame"
-	HistoryMutationPublishAltFrame     HistoryMutationKind = "publish-alt-frame"
-	HistoryMutationCloseScreenSession  HistoryMutationKind = "close-screen-session"
-	HistoryMutationCommitFinalFrame    HistoryMutationKind = "commit-final-frame"
-	HistoryMutationNonHistoryBoundary  HistoryMutationKind = "non-history-boundary"
+	HistoryMutationUpsertOpenLine       HistoryMutationKind = "upsert-open-line"
+	HistoryMutationSealLine             HistoryMutationKind = "seal-line"
+	HistoryMutationAppendTimelineRecord HistoryMutationKind = "append-timeline-record"
+	HistoryMutationReplacePrimaryFrame  HistoryMutationKind = "replace-primary-frame"
+	HistoryMutationArchivePrimaryFrame  HistoryMutationKind = "archive-primary-frame"
+	HistoryMutationReplaceAltFrame      HistoryMutationKind = "replace-alt-frame"
+	HistoryMutationClearAltFrame        HistoryMutationKind = "clear-alt-frame"
+	HistoryMutationClosePrimaryFrame    HistoryMutationKind = "close-primary-frame"
+	HistoryMutationNonHistoryBoundary   HistoryMutationKind = "non-history-boundary"
 )
 
-// HistoryMutation 是 projector 输出到 store 的事务；它只能表达 history domain 变化。
-type HistoryMutation struct {
+// HistoryMutationBatch 是 renderer 输出到 store 的事务边界。一个 batch 对应一个
+// terminal semantic transaction 或一个 lifecycle close，store 必须原子应用。
+type HistoryMutationBatch struct {
 	Seq        uint64
 	Generation Generation
-	Events     []HistoryMutationEvent
+	Mutations  []HistoryMutation
 }
 
-// HistoryMutationEvent 表示 projector transaction 内的一步操作。它只能携带
-// history 拥有的 id 和 payload 引用，不能携带 TUI rows 或 live surface snapshot。
-type HistoryMutationEvent struct {
-	Kind          HistoryMutationKind
-	LineIDs       []LogicalLineID
-	Line          *LogicalLine
-	Frame         *ScreenFrame
-	SessionID     ScreenSessionID
-	FrameID       ScreenFrameID
-	ArchiveReason ArchiveReason
-	ClosePolicy   ClosePolicy
-	CloseReason   CloseReason
-	Decision      ScreenAppDecision
+// HistoryMutation 是 renderer 输出到 store 的单步 domain change；它只能表达
+// history-owned logical line、timeline 和 frame journal 变化。
+type HistoryMutation struct {
+	Kind      HistoryMutationKind
+	LineIDs   []LogicalLineID
+	Line      *LogicalLine
+	OpenLine  *OpenLine
+	Record    *HistoryRecord
+	Frame     *ScreenFrame
+	Mutable   *MutableFrame
+	Sealed    *SealedFrame
+	Transient *TransientFrame
+	SessionID ScreenSessionID
+	FrameID   ScreenFrameID
+	Reason    SealReason
+	Close     CloseReason
+	Decision  HistoryDecision
 }

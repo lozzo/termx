@@ -9,7 +9,7 @@ type TerminalSemanticSource = vterm.TerminalSemanticSource
 
 // TerminalSemanticSize 携带一个 semantic transaction 关联的 PTY size。history
 // 只把它用于 fixed-grid frame metadata 和 cursor invalidation，不能用它重写
-// committed logical lines。
+// sealed logical lines。
 type TerminalSemanticSize = vterm.TerminalSemanticSize
 
 // TerminalSemanticTransaction 是一个已排序的 vterm write/resize boundary；它是
@@ -38,5 +38,5 @@ type TerminalSemanticScrollOut = vterm.TerminalSemanticScrollOut
 
 // TerminalSemanticFrame 是 vterm 为一个 transaction 产出的 current primary 或 alt
 // fixed-grid frame。它可以 publish current frame，但不能独自创建 ordinary
-// committed history。
+// sealed history。
 type TerminalSemanticFrame = vterm.TerminalSemanticFrame

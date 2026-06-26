@@ -38,31 +38,53 @@ func TestHistoryWindowRowsCarrySegmentAndLineIdentity(t *testing.T) {
 	}
 }
 
-// TestHistoryProjectorContractConsumesSemanticTransactions 锁住消息链路形状：
-// projector 输入只能是 semantic transaction 加 classifier decision，不能是 live
-// rows 或 raw PTY fallback。
-func TestHistoryProjectorContractConsumesSemanticTransactions(t *testing.T) {
+// TestHistoryLogicalRendererContractConsumesSemanticTransactions 锁住消息链路形状：
+// renderer 输入只能是 semantic transaction 加 classifier decision，不能是 live
+// rows、snapshot 或 raw PTY fallback。
+func TestHistoryLogicalRendererContractConsumesSemanticTransactions(t *testing.T) {
 	var tx TerminalSemanticTransaction
-	decision := ScreenAppDecision{Mode: ScreenOutputModeOrdinary}
-	projector := noopProjector{}
-	mutation, err := projector.Apply(tx, decision)
+	decision := HistoryDecision{Mode: HistoryOutputModeOrdinaryStream}
+	renderer := noopRenderer{}
+	batch, err := renderer.Apply(tx, decision)
 	if err != nil {
-		t.Fatalf("projector contract returned error: %v", err)
+		t.Fatalf("renderer contract returned error: %v", err)
 	}
-	if mutation.Events != nil {
-		t.Fatalf("noop projector should not synthesize history events: %#v", mutation)
+	if batch.Mutations != nil {
+		t.Fatalf("noop renderer should not synthesize history mutations: %#v", batch)
 	}
 }
 
-type noopProjector struct{}
-
-// Apply 为 contract test 实现 HistoryProjector，不合成任何 domain mutation。
-func (noopProjector) Apply(TerminalSemanticTransaction, ScreenAppDecision) (HistoryMutation, error) {
-	return HistoryMutation{}, nil
+// TestR319HistoryStateNamesNewTruthBoundaries 验证新模型的顶层对象不再把
+// commit/frontier 作为领域 truth，而是以 open line、sealed timeline 和 frame
+// journal 组合历史状态。
+func TestR319HistoryStateNamesNewTruthBoundaries(t *testing.T) {
+	state := HistoryState{
+		TerminalID: "term",
+		OpenLine: OpenLine{
+			Active: true,
+			Draft:  LogicalLineDraft{Line: LogicalLine{ID: 1, Seal: SealStateOpen}},
+		},
+		Timeline: SealedTimeline{Records: []HistoryRecord{{
+			ID:      1,
+			Kind:    HistoryRecordOrdinaryLine,
+			LineIDs: []LogicalLineID{2},
+		}}},
+		Frames: FrameJournal{PrimaryCurrent: &MutableFrame{ID: 3, Cols: 80}},
+	}
+	if !state.OpenLine.Active || len(state.Timeline.Records) != 1 || state.Frames.PrimaryCurrent == nil {
+		t.Fatalf("history state lost open/timeline/frame boundaries: %#v", state)
+	}
 }
 
-// ForceClose 为 contract test 实现 HistoryProjector 的 lifecycle 边界，不产生
+type noopRenderer struct{}
+
+// Apply 为 contract test 实现 HistoryLogicalRenderer，不合成任何 domain mutation。
+func (noopRenderer) Apply(TerminalSemanticTransaction, HistoryDecision) (HistoryMutationBatch, error) {
+	return HistoryMutationBatch{}, nil
+}
+
+// Close 为 contract test 实现 HistoryLogicalRenderer 的 lifecycle 边界，不产生
 // close mutation。
-func (noopProjector) ForceClose(CloseReason) (HistoryMutation, error) {
-	return HistoryMutation{}, nil
+func (noopRenderer) Close(CloseReason) (HistoryMutationBatch, error) {
+	return HistoryMutationBatch{}, nil
 }

@@ -7,6 +7,8 @@ import "time"
 type HistorySegment string
 
 const (
+	// HistorySegmentCommitted 是 protocol/TUI 兼容 segment 名。新 history 领域
+	// 语义应把它理解为 sealed timeline segment，而不是 commit 概念。
 	HistorySegmentCommitted            HistorySegment = "committed"
 	HistorySegmentCurrentPrimaryFrame  HistorySegment = "current-primary-frame"
 	HistorySegmentArchivedPrimaryFrame HistorySegment = "archived-primary-frame"
@@ -112,8 +114,10 @@ type HistoryRow struct {
 	RowInLine  int
 	FixedGrid  bool
 	ScreenCols int
-	Committed  bool
-	Wrapped    bool
+	// Committed 是旧 protocol/wire 兼容字段；新领域语义只应把它当作
+	// projected row 是否来自 sealed timeline 的标记，不能引入 commit owner。
+	Committed bool
+	Wrapped   bool
 }
 
 // HistoryWindow 是 core-v2 权威 projection，不携带 TUI pane/workspace truth。
@@ -134,10 +138,14 @@ type HistoryWindow struct {
 // FrozenHistorySnapshot 记录 copy mode 启动时可见的 logical boundaries。它是
 // tokenized boundary，不是整份历史的完整副本。
 type FrozenHistorySnapshot struct {
-	Token                 HistoryToken
-	TerminalID            string
-	Cols                  int
-	CommittedUpperBound   LogicalLineID
+	Token      HistoryToken
+	TerminalID string
+	Cols       int
+	// CommittedUpperBound 是旧 token schema 的兼容字段；新 store 实现应按
+	// sealed timeline boundary 填充，不应恢复 commit 领域概念。
+	CommittedUpperBound LogicalLineID
+	// FrozenFrontierLineIDs 是旧 token schema 的兼容字段；新 store 实现应按
+	// mutable open/current projection 填充，不应恢复 frontier owner。
 	FrozenFrontierLineIDs []LogicalLineID
 	FrozenPrimaryFrames   []ScreenFrame
 	FrozenAltFrame        *ScreenFrame

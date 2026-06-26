@@ -2,34 +2,34 @@ package history
 
 import "time"
 
-// HistoryEventKind 枚举 R303 干净模型接收的低层 history semantic event。这些
-// 名字描述 domain transition，不描述 renderer rows、snapshot 或 raw PTY fallback。
-type HistoryEventKind string
+// HistorySemanticEventKind 枚举 R319 后 history renderer 内部使用的有序语义事件。
+// 这些事件来自同一份 TerminalSemanticTransaction，不允许从 raw PTY 或 live
+// snapshot 重新合成。
+type HistorySemanticEventKind string
 
 const (
-	HistoryEventWritePrimaryCells        HistoryEventKind = "write-primary-cells"
-	HistoryEventSealLogicalLine          HistoryEventKind = "seal-logical-line"
-	HistoryEventMutateFrontier           HistoryEventKind = "mutate-frontier"
-	HistoryEventResetFrontier            HistoryEventKind = "reset-frontier"
-	HistoryEventCommitFrontier           HistoryEventKind = "commit-frontier"
-	HistoryEventForceCommitFrontier      HistoryEventKind = "force-commit-frontier"
-	HistoryEventReclaimCommittedSuffix   HistoryEventKind = "reclaim-committed-suffix"
-	HistoryEventHideFrontier             HistoryEventKind = "hide-frontier"
-	HistoryEventTruncateCommittedHistory HistoryEventKind = "truncate-committed-history"
-	HistoryEventSwitchAltScreen          HistoryEventKind = "switch-alt-screen"
-	HistoryEventNonHistoryBoundary       HistoryEventKind = "non-history-boundary"
+	HistorySemanticEventOp               HistorySemanticEventKind = "op"
+	HistorySemanticEventPrimaryScrollOut HistorySemanticEventKind = "primary-scroll-out"
+	HistorySemanticEventPrimaryFrame     HistorySemanticEventKind = "primary-frame"
+	HistorySemanticEventAltFrame         HistorySemanticEventKind = "alt-frame"
+	HistorySemanticEventAltEnter         HistorySemanticEventKind = "alt-enter"
+	HistorySemanticEventAltExit          HistorySemanticEventKind = "alt-exit"
+	HistorySemanticEventResize           HistorySemanticEventKind = "resize"
+	HistorySemanticEventFullReplace      HistorySemanticEventKind = "full-replace"
+	HistorySemanticEventClose            HistorySemanticEventKind = "close"
 )
 
-// HistoryEvent 是进入 history projector/store 的唯一输入形状。
-// 消息链路：TerminalSemanticTransaction -> classifier/projector -> HistoryMutation。
-type HistoryEvent struct {
+// HistorySemanticEvent 是 renderer 内部的 ordered event 形状。它把 ops、scroll-out
+// proof 和 frame payload 放到同一条顺序链上，便于 harness 检查是否漏处理某类
+// terminal semantic。
+type HistorySemanticEvent struct {
 	Seq       uint64
-	Kind      HistoryEventKind
+	Order     int
+	Kind      HistorySemanticEventKind
 	Time      time.Time
-	LineID    LogicalLineID
-	Cells     []Cell
-	Frame     *ScreenFrame
+	Op        *TerminalSemanticOp
+	ScrollOut *TerminalSemanticScrollOut
+	Frame     *TerminalSemanticFrame
 	Size      TerminalSemanticSize
 	Reason    string
-	Operation TerminalSemanticOp
 }

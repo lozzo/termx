@@ -1,6 +1,6 @@
 # history logical renderer 设计重写
 
-状态：R318 新设计基准。
+状态：R319 history logical renderer 设计与清场基准。
 
 本文替代旧 screen app 无限历史文档里的 `commit/committed` 语义。旧文档仍可作为 R300-R317
 问题背景，但只要本文与旧文档、旧代码类型名或旧测试描述冲突，以本文为准。
@@ -103,7 +103,7 @@ type HistoryState struct {
     OpenLine OpenLine
     Timeline SealedTimeline
     Frames FrameJournal
-    Frozen map[HistoryToken]FrozenProjection
+    Frozen map[HistoryToken]FrozenHistorySnapshot
 }
 ```
 
@@ -291,6 +291,7 @@ type HistoryDecision struct {
     PublishAltFrame bool
     ClearAltFrame bool
     ClosePrimaryFrame bool
+    SealOpenLine bool
     NonHistoryBoundary bool
 }
 ```
@@ -309,7 +310,7 @@ HistoryLogicalRenderer 是 “terminal semantic transaction -> history mutation�
 ```go
 type HistoryLogicalRenderer interface {
     Apply(tx TerminalSemanticTransaction, decision HistoryDecision) (HistoryMutationBatch, error)
-    Close(reason TerminalCloseReason) (HistoryMutationBatch, error)
+    Close(reason CloseReason) (HistoryMutationBatch, error)
 }
 ```
 
@@ -317,17 +318,17 @@ type HistoryLogicalRenderer interface {
 
 ```go
 type StreamLineReducer interface {
-    ApplyOp(op TerminalSemanticOp) []HistoryMutation
-    SealOpenLine(reason SealReason) []HistoryMutation
-    SealScrollOut(proof ScrollOutProof) []HistoryMutation
+    ApplyOp(op TerminalSemanticOp) ([]HistoryMutation, error)
+    SealOpenLine(reason SealReason) ([]HistoryMutation, error)
+    SealScrollOut(proof TerminalSemanticScrollOut) ([]HistoryMutation, error)
 }
 
 type FrameReducer interface {
-    ReplacePrimaryCurrent(frame TerminalSemanticFrame, reason FrameReason) []HistoryMutation
-    ArchivePrimaryCurrent(reason SealReason) []HistoryMutation
-    ReplaceAltCurrent(frame TerminalSemanticFrame) []HistoryMutation
-    ClearAltCurrent(reason FrameReason) []HistoryMutation
-    ClosePrimaryCurrent(reason SealReason) []HistoryMutation
+    ReplacePrimaryCurrent(frame TerminalSemanticFrame, reason FrameReason) ([]HistoryMutation, error)
+    ArchivePrimaryCurrent(reason SealReason) ([]HistoryMutation, error)
+    ReplaceAltCurrent(frame TerminalSemanticFrame) ([]HistoryMutation, error)
+    ClearAltCurrent(reason FrameReason) ([]HistoryMutation, error)
+    ClosePrimaryCurrent(reason SealReason) ([]HistoryMutation, error)
 }
 ```
 
@@ -346,7 +347,7 @@ type HistoryStore interface {
     LatestWindow(req HistoryWindowRequest) (HistoryWindow, error)
     OlderWindow(req HistoryWindowRequest) (HistoryWindow, error)
     NewerWindow(req HistoryWindowRequest) (HistoryWindow, error)
-    Freeze(req FreezeHistoryRequest) (FrozenProjection, error)
+    Freeze(req FreezeHistoryRequest) (FrozenHistorySnapshot, error)
     Copy(req HistoryCopyRequest) (string, error)
     Release(token HistoryToken) error
 }
@@ -373,9 +374,9 @@ StorageBackend 只负责 residency。
 
 ```go
 type StorageBackend interface {
-    ApplyStorageBatch(batch StorageBatch) error
-    Recover() (HistoryStateSnapshot, error)
-    Compact(policy CompactPolicy) error
+    Apply(tx StorageTransaction) error
+    Recover() (RecoveredHistoryState, error)
+    Compact(policy StorageCompactionPolicy) error
 }
 ```
 
@@ -392,6 +393,40 @@ storage operation 使用下面这些语义，不使用 commit 语义：
 写入文件不代表 sealed。sealed 也不代表文件不能 compact。domain mutability 由 HistoryState 决定。
 
 ## 6. 处理流程
+
+### 6.0 semantic 覆盖矩阵
+
+history renderer 必须像 live renderer 一样消费 vterm 的 semantic transaction，只是输出目标变成
+logical history model。下面这张表是 R319 之后的实现准入：新增 reducer 前必须先确认对应语义在哪个
+reducer 里处理，不能再靠“如果当前 case 是 Codex resume”这类局部分支补洞。
+
+| vterm semantic | history 处理要求 | 不能做的事 |
+| --- | --- | --- |
+| `WriteSpan(row,col,cells,wrapped)` | `StreamLineReducer` 必须按 vterm 给出的 row/col 和当前 row ownership 写入对应 logical line draft；`FrameReducer` 在 primary/alt frame 模式下用 frame payload 全量替换 current frame | 不能只维护一个全局 open line 再按最后一次 col 覆盖；不能忽略 row |
+| `Control: cr` | 更新当前 semantic row 的 cursor col 为 0，后续 write 在同一 logical line 内覆盖 | 不能 seal line，也不能把 CR 前后的中间态都写进 timeline |
+| `Control: lf/ind/nel` | 按 terminal 行移动语义关闭或切换当前 physical row ownership；如果 scroll-out proof 同时出现，以 proof 为 seal 依据并保证 exactly-once | 不能把所有 LF 都当普通 append，也不能漏掉 scroll-out 中已离屏的行 |
+| `Control: soft-wrap` | 标记当前 logical line 与下一 physical row 的 wrap 关系；查看时可以 reflow ordinary line | 不能把 soft-wrap 当显式换行，也不能把 wrapped physical row 当独立 logical line |
+| `Control: bs/cub/cuf/cha/hpa` | 只移动当前 row cursor；后续 write 按新 cursor 修改 draft cells | 不能追加空白历史，也不能在 cursor move 时创建 sealed record |
+| `Control: cup/vpa/cuu/cud` | 更新 semantic cursor 指向的 physical row ownership；如果跳到已有 mutable row，应修改该 row 对应 draft | 不能继续写入旧 open line；不能丢掉跳转后的 row 维度 |
+| `Control: el` / `ClearToEOL` | 按 mode 和 col 清除当前 row 的 cell 区间，更新 draft 或 current frame payload；mode 0/1/2 必须区分 | 不能只做 truncate-to-col；不能把清除动作当新文本行 |
+| `Control: ed` / `ClearRect` | 按 vterm 给出的矩形清除 row ownership 和 cells；screen app frame 模式由 frame payload 全量替换 | 不能从 clear screen 凭空创建 sealed history；不能把 cleared default blank rows作为内容历史 |
+| `Control: ech/dch/ich` | 在当前 row 内 erase/delete/insert 指定 cell count，保持 ordered op 顺序 | 不能只覆盖 write span；不能忽略这些控制导致文本重叠 |
+| `ScrollRect` | 按矩形滚动移动 row ownership；滚出 primary viewport 的内容只能通过同一 transaction 的 scroll-out proof seal | 不能从最终 snapshot 猜离屏行；不能把 scroll rect 本身当作完整历史 payload |
+| `CopyRect` | 在 mutable row/frame model 内复制 cell 区间和 row ownership；这是 repaint/区域复制语义 | 不能把 copy 目标追加成新 timeline record |
+| `Cursor` | 只更新 cursor projection/metadata；必要时影响后续 selection/frozen cursor | 不能作为 content 写入 history |
+| `Modes` alt enter | archive primary current，清 primary current，开始 alt transient；如果同一 transaction 有 alt frame，发布 transient frame | 不能把 alt frame 写入 primary timeline；不能保留 pre-alt current 等待退出后继续 final close |
+| `Modes` alt exit | 清 alt transient；后续 primary output 作为新的 primary current 或 ordinary stream | 不能复活 alt enter 前的 primary current；不能 seal alt screen 内容 |
+| `Modes` synchronized output 2026 begin/active/end | classifier 只用 vterm mode truth 判断 primary frame session；begin/payload/end 被拆 transaction 时也必须保持 session 语义 | 不能用 raw chunk、程序名或 “begin/end 是否同包” 推断 |
+| `Resize` / `RequiresFullReplace` | 作为 non-history boundary 推进 generation/cursor invalidation；sealed ordinary line 只在 window 投影时 reflow，sealed frame 固定 cols | 不能从 resized screen snapshot 生成 history；不能改写 sealed records |
+| `PrimaryScrollOut` | 作为 ordered scroll-out proof seal 离开 primary viewport 的 logical lines；必须有 seq/order 才能和 ops/frame 正确合并 | 不能把 proof 当最终屏幕快照；不能允许重复 seal |
+| `PrimaryFrame` | `FrameReducer.ReplacePrimaryCurrent` 全量替换 current primary frame rows，保留 fixed-grid source cols | 不能从 write ops 重建 frame；不能把每次 repaint 追加进 timeline |
+| `AltFrame` | `FrameReducer.ReplaceAltCurrent` 全量替换 transient alt frame，可进入 latest/frozen projection | 不能进入 primary sealed timeline |
+| `Title` / OSC metadata | 可作为 terminal metadata 或非 history boundary；除 OSC8 hyperlink 这类 cell style 外不写 logical text | 不能把控制序列字节泄漏为历史文本 |
+
+当前 vterm transaction 仍把部分 side proof（例如 `PrimaryScrollOut`、`PrimaryFrame`）放在 ops 之外。
+如果一次 raw write 同时包含 scroll、frame 和 mode boundary，history renderer 需要稳定的 `seq/order`
+来合并它们。缺少 ordered proof 时，正确行为是让 harness 暴露 contract 缺口，而不是用最终屏幕或 raw
+bytes fallback 猜历史。
 
 ### 6.1 普通输出
 
@@ -579,7 +614,8 @@ cursor 不能只看 visual row index。它至少要绑定：
 
 ## 8. Copy/Search
 
-copy/search 只消费 authoritative HistoryWindow 或 FrozenProjection。
+copy/search 只消费 authoritative HistoryWindow 或 FrozenHistorySnapshot。`FrozenProjection` 仍可作为
+设计概念理解，但代码边界使用 `FrozenHistorySnapshot`。
 
 规则：
 
@@ -619,7 +655,23 @@ copy/search 只消费 authoritative HistoryWindow 或 FrozenProjection。
 9. Pagination：latest/older 沿统一 timeline，不把 archive 临时挂在最新尾部。
 10. Storage recovery：recover 后 restored HistoryState 的 mutable/sealed/frame/timeline 边界一致。
 
-## 11. 实现迁移原则
+## 11. R319 清场决定
+
+R303-R317 的内存 projector/store 证明了问题，但它的实现方式已经偏离本文模型：它有单一 open line、
+局部 `commit`/`frontier` 语义、从 write ops 重建 frame 的 fallback、以及 latest/older 的局部拼接逻辑。
+这些代码继续存在会让后续切片沿着错误模型补分支。
+
+R319 之后：
+
+- 删除旧 `memoryHistoryProjector` / `memoryHistoryStore` 和对应旧 harness。
+- 删除 `frameRowsFromWriteOps` 这类从 write ops 猜 frame 的 fallback。
+- 新代码只保留 renderer/store/storage 的类型和接口边界。
+- terminal 仍保留 vterm semantic transaction，但在新 renderer 实现前不再写旧 history store。
+- `history.window` / `history.copy` / `history.release` 在 renderer 未重建时明确返回 `history not rebuilt`。
+- 后续实现必须先补 semantic coverage harness，再填 `StreamLineReducer`、`FrameReducer`、`HistoryStore`
+  的真实逻辑。
+
+## 12. 实现迁移原则
 
 - 先改文档和 harness，再改 projector/store。
 - 先引入 `HistoryLogicalRenderer`、`StreamLineReducer`、`FrameReducer` 的内部边界，再逐步重命名旧类型。

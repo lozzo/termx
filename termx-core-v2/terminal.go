@@ -7,26 +7,22 @@ import (
 	"sync"
 	"time"
 
-	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 type Terminal struct {
-	mu               sync.Mutex
-	info             TerminalInfo
-	options          TerminalCreateOptions
-	process          TerminalProcess
-	liveMu           sync.Mutex
-	live             *live.SurfaceTrack
-	historyMu        sync.Mutex
-	historyProjector history.HistoryProjector
-	historyStore     history.InfiniteHistoryStore
-	queueMu          sync.Mutex
-	liveQ            *terminalLiveIngestQueue
-	events           *eventBroker
-	update           func(TerminalInfo)
+	mu      sync.Mutex
+	info    TerminalInfo
+	options TerminalCreateOptions
+	process TerminalProcess
+	liveMu  sync.Mutex
+	live    *live.SurfaceTrack
+	queueMu sync.Mutex
+	liveQ   *terminalLiveIngestQueue
+	events  *eventBroker
+	update  func(TerminalInfo)
 }
 
 func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo)) *Terminal {
@@ -41,8 +37,6 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 	liveOptions := live.DefaultSurfaceTrackOptions()
 	liveOptions.OnResponse = terminal.handleLiveSurfaceResponse
 	terminal.live = live.NewSurfaceTrackWithOptions(size, liveOptions)
-	terminal.historyProjector = history.NewMemoryHistoryProjector()
-	terminal.historyStore = history.NewMemoryHistoryStore()
 	terminal.watchProcess(process)
 	return terminal
 }
@@ -430,162 +424,53 @@ func terminalExitMarkerLines(info TerminalInfo) []string {
 	return lines
 }
 
-func historyCellTextWidthForTerminal(text string) int {
-	width := xansi.StringWidth(text)
-	if width < 0 {
-		return 0
-	}
-	return width
-}
-
 func (terminal *Terminal) HistoryWindow(req history.HistoryWindowRequest) (history.HistoryWindow, error) {
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
-	if terminal.historyStore == nil {
-		return history.HistoryWindow{}, ErrHistoryNotRebuilt
-	}
-	if req.TerminalID == "" {
-		req.TerminalID = terminal.info.ID
-	}
-	switch req.Mode {
-	case "", history.HistoryWindowModeLatest, history.HistoryWindowModeOldest:
-		req.Mode = history.HistoryWindowModeLatest
-		return terminal.historyStore.LatestWindow(req)
-	case history.HistoryWindowModeOlder, history.HistoryWindowModeNewer:
-		return terminal.historyStore.OlderWindow(req)
-	default:
-		return history.HistoryWindow{}, history.ErrHistoryUnsupportedWindowMode
-	}
+	// 中文说明：R319 已删除旧补丁式 projector/store。新的 logical renderer
+	// 接入前，这里必须显式失败，不能返回旧错误模型拼出来的 history window。
+	_ = req
+	return history.HistoryWindow{}, ErrHistoryNotRebuilt
 }
 
 func (terminal *Terminal) HistoryCopy(req history.HistoryCopyRequest) (string, error) {
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
-	if terminal.historyStore == nil {
-		return "", ErrHistoryNotRebuilt
-	}
-	if req.TerminalID == "" {
-		req.TerminalID = terminal.info.ID
-	}
-	return terminal.historyStore.Copy(req)
+	// 中文说明：copy/search 只能从新 HistoryStore 的 authoritative frozen
+	// projection 读取；旧 store 清场后不允许 TUI 或 live surface fallback。
+	_ = req
+	return "", ErrHistoryNotRebuilt
 }
 
 func (terminal *Terminal) HistoryFreeze(req history.FreezeHistoryRequest) (history.FrozenHistorySnapshot, error) {
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
-	if terminal.historyStore == nil {
-		return history.FrozenHistorySnapshot{}, ErrHistoryNotRebuilt
-	}
-	if req.TerminalID == "" {
-		req.TerminalID = terminal.info.ID
-	}
-	return terminal.historyStore.Freeze(req)
+	// 中文说明：freeze 必须冻结新 renderer 的 mutable frame projection。旧
+	// current frame store 已删除，因此这里明确返回未重建。
+	_ = req
+	return history.FrozenHistorySnapshot{}, ErrHistoryNotRebuilt
 }
 
-// HistoryRelease 释放 terminal history store 中的 core-owned token。调用方通常是
-// protocol history.release；失败条件是 history store 尚未重建或 token 所属 terminal
-// 不存在，释放动作不得删除 logical-line committed truth。
+// HistoryRelease 释放 terminal history store 中的 core-owned token。R319 清场后
+// history store 尚未重建，因此该入口明确返回 ErrHistoryNotRebuilt，防止旧 token
+// 生命周期或 TUI 本地缓存被误当作 authoritative history。
 func (terminal *Terminal) HistoryRelease(token history.HistoryToken) error {
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
-	if terminal.historyStore == nil {
-		return ErrHistoryNotRebuilt
-	}
-	// 中文说明：release 只释放 core-owned frozen token，不删除 committed
-	// logical-line truth，也不允许 protocol/TUI 用本地缓存替代 token 生命周期。
-	return terminal.historyStore.Release(token)
+	_ = token
+	return ErrHistoryNotRebuilt
 }
 
 func (terminal *Terminal) applyHistoryWriteResult(result live.SurfaceWriteResult) {
-	if len(result.Segments) == 0 {
-		return
-	}
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
-	if terminal.historyProjector == nil || terminal.historyStore == nil {
-		return
-	}
-	// 中文说明：R304 只把同一 live vterm 产出的 semantic tx 交给 ordinary
-	// history projector；这里禁止从 raw segment 或 live rows 反推 history truth。
-	for _, segment := range result.Segments {
-		for _, tx := range segment.Transactions {
-			decision := terminal.classifyOrdinaryHistoryTransaction(tx)
-			mutation, err := terminal.historyProjector.Apply(tx, decision)
-			if err != nil {
-				continue
-			}
-			_ = terminal.historyStore.ApplyMutation(mutation)
-		}
-	}
+	// 中文说明：live surface 仍产出 vterm semantic transaction，但 R319 已清掉
+	// 旧 projector/store。后续切片必须把 result.Segments 接入新的
+	// HistoryLogicalRenderer，不能在这里恢复 raw parser 或旧内存 store。
+	_ = result
 }
 
 func (terminal *Terminal) applyHistoryResizeTransaction(tx history.TerminalSemanticTransaction) {
-	if tx.Seq == 0 && tx.Size == (history.TerminalSemanticSize{}) {
-		return
-	}
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
-	if terminal.historyProjector == nil || terminal.historyStore == nil {
-		return
-	}
-	// 中文说明：resize 是 terminal semantic boundary，只能失效/推进 generation，
-	// 不得从 resized live snapshot 生成或重写 committed history。
-	mutation, err := terminal.historyProjector.Apply(tx, history.ScreenAppDecision{
-		Mode:               history.ScreenOutputModeNonHistoryBoundary,
-		NonHistoryBoundary: true,
-	})
-	if err != nil {
-		return
-	}
-	_ = terminal.historyStore.ApplyMutation(mutation)
-}
-
-func (terminal *Terminal) classifyOrdinaryHistoryTransaction(tx history.TerminalSemanticTransaction) history.ScreenAppDecision {
-	if tx.AltExited {
-		return history.ScreenAppDecision{
-			Mode:                  history.ScreenOutputModeAltTransient,
-			ExitAltTransientFrame: true,
-		}
-	}
-	if tx.AltEntered || tx.AltFrame != nil {
-		return history.ScreenAppDecision{
-			Mode:                      history.ScreenOutputModeAltTransient,
-			PublishFrame:              tx.AltFrame != nil,
-			ArchivePrimaryBeforeAlt:   tx.AltEntered,
-			ClearPrimaryCurrentForAlt: tx.AltEntered,
-			EnterAltTransientFrame:    tx.AltEntered,
-		}
-	}
-	// 中文说明：mode 2026 的 begin/payload/end 可能被 live surface 分成多个
-	// transaction；Active 来自 vterm mode truth，不能用 raw 分段或程序名推断。
-	if tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd {
-		return history.ScreenAppDecision{
-			Mode:         history.ScreenOutputModePrimaryScreenSession,
-			PublishFrame: tx.PrimaryFrame != nil,
-		}
-	}
-	if tx.RequiresFullReplace {
-		return history.ScreenAppDecision{
-			Mode:               history.ScreenOutputModeNonHistoryBoundary,
-			NonHistoryBoundary: true,
-		}
-	}
-	return history.ScreenAppDecision{Mode: history.ScreenOutputModeOrdinary}
+	// 中文说明：resize 仍来自 vterm semantic transaction。新 renderer 接入前不
+	// 允许从 resized live snapshot 生成 history 或改写 sealed records。
+	_ = tx
 }
 
 func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
-	if terminal.historyProjector == nil || terminal.historyStore == nil {
-		return
-	}
-	// 中文说明：process exit 是 lifecycle boundary，不伪造成 PTY bytes；history
-	// projector 只能通过 ForceClose 收口 primary mutable frontier。
-	mutation, err := terminal.historyProjector.ForceClose(reason)
-	if err != nil {
-		return
-	}
-	_ = terminal.historyStore.ApplyMutation(mutation)
+	// 中文说明：process exit 是 lifecycle boundary，后续必须走
+	// HistoryLogicalRenderer.Close。旧 ForceClose/projector 已删除，不能伪造成
+	// PTY bytes 或 fallback 到旧 store。
+	_ = reason
 }
 
 func (terminal *Terminal) syncInfo(info TerminalInfo) {

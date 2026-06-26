@@ -10,8 +10,8 @@ func NewMemoryStorageBackend() StorageBackend {
 type memoryStorageBackend struct {
 	generation Generation
 	lines      map[LogicalLineID]LogicalLine
-	committed  []LogicalLineID
-	frontier   []LogicalLineID
+	timeline   []HistoryRecord
+	mutable    []LogicalLineID
 	frames     []FrameRecord
 }
 
@@ -30,17 +30,16 @@ func (backend *memoryStorageBackend) Apply(tx StorageTransaction) error {
 	}
 	for _, id := range tx.Tombstones {
 		delete(backend.lines, id)
-		backend.committed = removeLineID(backend.committed, id)
-		backend.frontier = removeLineID(backend.frontier, id)
+		backend.mutable = removeLineID(backend.mutable, id)
 	}
-	if tx.Committed != nil {
-		backend.committed = append([]LogicalLineID(nil), tx.Committed...)
+	if tx.Timeline != nil {
+		backend.timeline = cloneHistoryRecords(tx.Timeline)
 	}
-	if tx.Frontier != nil {
-		backend.frontier = append([]LogicalLineID(nil), tx.Frontier...)
+	if tx.Mutable != nil {
+		backend.mutable = append([]LogicalLineID(nil), tx.Mutable...)
 	}
 	if tx.Frames != nil {
-		backend.frames = append([]FrameRecord(nil), tx.Frames...)
+		backend.frames = cloneFrameRecords(tx.Frames)
 	}
 	return nil
 }
@@ -51,9 +50,9 @@ func (backend *memoryStorageBackend) Recover() (RecoveredHistoryState, error) {
 	}
 	state := RecoveredHistoryState{
 		Generation: backend.generation,
-		Committed:  append([]LogicalLineID(nil), backend.committed...),
-		Frontier:   append([]LogicalLineID(nil), backend.frontier...),
-		Frames:     append([]FrameRecord(nil), backend.frames...),
+		Timeline:   cloneHistoryRecords(backend.timeline),
+		Mutable:    append([]LogicalLineID(nil), backend.mutable...),
+		Frames:     cloneFrameRecords(backend.frames),
 	}
 	for _, id := range sortedLineIDs(backend.lines) {
 		state.Lines = append(state.Lines, cloneLogicalLine(backend.lines[id]))
@@ -66,13 +65,15 @@ func (backend *memoryStorageBackend) Compact(policy StorageCompactionPolicy) err
 		return nil
 	}
 	if policy.MaxFrames >= 0 && len(backend.frames) > policy.MaxFrames {
-		backend.frames = append([]FrameRecord(nil), backend.frames[len(backend.frames)-policy.MaxFrames:]...)
+		backend.frames = cloneFrameRecords(backend.frames[len(backend.frames)-policy.MaxFrames:])
 	}
 	referenced := make(map[LogicalLineID]struct{})
-	for _, id := range backend.committed {
-		referenced[id] = struct{}{}
+	for _, record := range backend.timeline {
+		for _, id := range record.LineIDs {
+			referenced[id] = struct{}{}
+		}
 	}
-	for _, id := range backend.frontier {
+	for _, id := range backend.mutable {
 		referenced[id] = struct{}{}
 	}
 	for _, frame := range backend.frames {
@@ -86,6 +87,28 @@ func (backend *memoryStorageBackend) Compact(policy StorageCompactionPolicy) err
 		}
 	}
 	return nil
+}
+
+func cloneHistoryRecords(records []HistoryRecord) []HistoryRecord {
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]HistoryRecord, len(records))
+	for i := range records {
+		out[i] = cloneHistoryRecord(records[i])
+	}
+	return out
+}
+
+func cloneFrameRecords(records []FrameRecord) []FrameRecord {
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]FrameRecord, len(records))
+	for i := range records {
+		out[i] = cloneFrameRecord(records[i])
+	}
+	return out
 }
 
 func sortedLineIDs(lines map[LogicalLineID]LogicalLine) []LogicalLineID {
