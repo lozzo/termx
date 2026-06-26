@@ -106,41 +106,157 @@ func TestTerminalIngestOutputPublishesLiveChangedEvent(t *testing.T) {
 	}
 }
 
-func TestR319TerminalHistoryReturnsNotRebuiltAfterOldProjectorCleanup(t *testing.T) {
+func TestR324TerminalHistoryReturnsAuthoritativeWindow(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-history-cleanup",
+		ID:      "term-history-r324",
 		Command: []string{"shell"},
 		Size:    Size{Cols: 30, Rows: 3},
 	}); err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}
-	if err := server.IngestOutput(context.Background(), "term-history-cleanup", "alpha\r\n\x1b[?2026hframe\x1b[?2026l"); err != nil {
+	if err := server.IngestOutput(context.Background(), "term-history-r324", "alpha\r\nbeta\r\n"); err != nil {
 		t.Fatalf("ingest output: %v", err)
 	}
-	if _, err := server.TerminalHistoryWindow(context.Background(), "term-history-cleanup", history.HistoryWindowRequest{
-		TerminalID: "term-history-cleanup",
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-history-r324", history.HistoryWindowRequest{
+		TerminalID: "term-history-r324",
 		Mode:       history.HistoryWindowModeLatest,
 		Cols:       30,
 		Limit:      10,
-	}); !errors.Is(err, ErrHistoryNotRebuilt) {
-		t.Fatalf("history.window should be disabled until logical renderer rebuild, got %v", err)
+	})
+	if err != nil {
+		t.Fatalf("history.window should return rebuilt authoritative history: %v", err)
 	}
-	if _, err := server.TerminalHistoryFreeze(context.Background(), "term-history-cleanup", history.FreezeHistoryRequest{
-		TerminalID: "term-history-cleanup",
+	if got := historyRowTexts(window.Rows); strings.Join(got, "|") != "alpha|beta" {
+		t.Fatalf("history.window rows mismatch: %v window=%#v", got, window)
+	}
+	snapshot, err := server.TerminalHistoryFreeze(context.Background(), "term-history-r324", history.FreezeHistoryRequest{
+		TerminalID: "term-history-r324",
 		Cols:       30,
 		Limit:      10,
-	}); !errors.Is(err, ErrHistoryNotRebuilt) {
-		t.Fatalf("history.freeze should be disabled until logical renderer rebuild, got %v", err)
+	})
+	if err != nil {
+		t.Fatalf("history.freeze should create token: %v", err)
 	}
-	if _, err := server.TerminalHistoryCopy(context.Background(), "term-history-cleanup", history.HistoryCopyRequest{
-		TerminalID: "term-history-cleanup",
-	}); !errors.Is(err, ErrHistoryNotRebuilt) {
-		t.Fatalf("history.copy should be disabled until logical renderer rebuild, got %v", err)
+	text, err := server.TerminalHistoryCopy(context.Background(), "term-history-r324", history.HistoryCopyRequest{
+		TerminalID: "term-history-r324",
+		Token:      snapshot.Token,
+		Start:      history.HistoryCursor{LineID: window.Rows[0].LineID, Valid: true},
+		End:        history.HistoryCursor{LineID: window.Rows[1].LineID, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("history.copy should use authoritative frozen token: %v", err)
 	}
-	if err := server.TerminalHistoryRelease(context.Background(), "term-history-cleanup", "tok"); !errors.Is(err, ErrHistoryNotRebuilt) {
-		t.Fatalf("history.release should be disabled until logical renderer rebuild, got %v", err)
+	if text != "alpha\nbeta" {
+		t.Fatalf("history.copy mismatch: %q", text)
 	}
+	if err := server.TerminalHistoryRelease(context.Background(), "term-history-r324", snapshot.Token); err != nil {
+		t.Fatalf("history.release should release token: %v", err)
+	}
+}
+
+func TestR324TerminalHistoryPrimaryRepaintScrollOutAltResizeAndExit(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-history-screen", Command: []string{"shell"}, Size: Size{Cols: 8, Rows: 3}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-history-screen", "\x1b[?2026hline1\r\nline2\r\nline3\r\nline4\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest synchronized output: %v", err)
+	}
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{TerminalID: "term-history-screen", Mode: history.HistoryWindowModeLatest, Cols: 8, Limit: 10})
+	if err != nil {
+		t.Fatalf("history.window after sync output: %v", err)
+	}
+	if !historyRowsContain(window.Rows, "line1") || !historyRowsContain(window.Rows, "line4") {
+		t.Fatalf("history should include scroll-out proof and current frame, rows=%v", historyRowTexts(window.Rows))
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-history-screen", "\x1b[?1049hALT\x1b[?1049l"); err != nil {
+		t.Fatalf("ingest alt transient: %v", err)
+	}
+	window, err = server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{TerminalID: "term-history-screen", Mode: history.HistoryWindowModeLatest, Cols: 8, Limit: 10})
+	if err != nil {
+		t.Fatalf("history.window after alt: %v", err)
+	}
+	for _, row := range window.Rows {
+		if strings.Contains(historyCellsText(row.Cells), "ALT") && row.Segment != history.HistorySegmentCurrentAltFrame {
+			t.Fatalf("alt content must not enter primary timeline, row=%#v rows=%v", row, historyRowTexts(window.Rows))
+		}
+	}
+	if err := server.ResizeTerminal(context.Background(), "term-history-screen", 12, 4); err != nil {
+		t.Fatalf("resize terminal: %v", err)
+	}
+	windowAfterResize, err := server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{TerminalID: "term-history-screen", Mode: history.HistoryWindowModeLatest, Cols: 12, Limit: 10})
+	if err != nil {
+		t.Fatalf("history.window after resize: %v", err)
+	}
+	if len(windowAfterResize.Rows) < len(window.Rows) {
+		t.Fatalf("resize boundary must not delete history rows: before=%v after=%v", historyRowTexts(window.Rows), historyRowTexts(windowAfterResize.Rows))
+	}
+
+	process := factory.process("term-history-screen")
+	if process == nil {
+		t.Fatal("expected recording process")
+	}
+	process.exit(0)
+	waitForTerminalState(t, server, "term-history-screen", TerminalStateExited)
+	windowAfterExit, err := server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{TerminalID: "term-history-screen", Mode: history.HistoryWindowModeLatest, Cols: 12, Limit: 20})
+	if err != nil {
+		t.Fatalf("history.window after exit: %v", err)
+	}
+	if len(windowAfterExit.Rows) == 0 {
+		t.Fatal("process exit should leave authoritative history rows")
+	}
+}
+
+func TestR324TerminalHistoryRemoveClosesOpenLine(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-history-remove", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 3}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-history-remove", "partial"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	terminal, err := server.Terminal("term-history-remove")
+	if err != nil {
+		t.Fatalf("terminal handle before remove: %v", err)
+	}
+	if err := server.RemoveTerminal("term-history-remove"); err != nil {
+		t.Fatalf("remove terminal: %v", err)
+	}
+	window, err := terminal.HistoryWindow(history.HistoryWindowRequest{TerminalID: "term-history-remove", Mode: history.HistoryWindowModeLatest, Cols: 20, Limit: 10})
+	if err != nil {
+		t.Fatalf("history.window after remove should read closed store: %v", err)
+	}
+	if got := historyRowTexts(window.Rows); strings.Join(got, "|") != "partial" {
+		t.Fatalf("remove close should seal open line before process close, got %v", got)
+	}
+}
+
+func historyRowTexts(rows []history.HistoryRow) []string {
+	texts := make([]string, 0, len(rows))
+	for _, row := range rows {
+		texts = append(texts, historyCellsText(row.Cells))
+	}
+	return texts
+}
+
+func historyRowsContain(rows []history.HistoryRow, needle string) bool {
+	for _, row := range rows {
+		if strings.Contains(historyCellsText(row.Cells), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func historyCellsText(cells []history.Cell) string {
+	var out string
+	for _, cell := range cells {
+		out += cell.Text
+	}
+	return out
 }
 
 func TestTerminalRestartReplacesProcessAndClearsExitMetadata(t *testing.T) {

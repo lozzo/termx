@@ -194,27 +194,41 @@ func TestProtocolServiceRestartedProcessSurvivesClientSessionClose(t *testing.T)
 	}
 }
 
-func TestProtocolServiceHistoryWindowReturnsNotRebuiltDuringR319Cleanup(t *testing.T) {
+func TestProtocolServiceHistoryWindowReturnsAuthoritativeRowsAfterR324(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-history-r319", Command: []string{"shell"}, Size: protocol.Size{Cols: 24, Rows: 4}}); err != nil {
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-history-r324", Command: []string{"shell"}, Size: protocol.Size{Cols: 24, Rows: 4}}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := server.IngestOutput(context.Background(), "term-history-r319", "alpha\n\x1b[?2026hframe\x1b[?2026l"); err != nil {
+	if err := server.IngestOutput(context.Background(), "term-history-r324", "alpha\r\nbeta\r\n"); err != nil {
 		t.Fatalf("ingest output: %v", err)
 	}
 
-	_, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-history-r319", Cols: 24, Limit: 10})
-	if err == nil || !strings.Contains(err.Error(), ErrHistoryNotRebuilt.Error()) {
-		t.Fatalf("history.window should surface not rebuilt while old projector is removed, got %v", err)
+	window, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-history-r324", Cols: 24, Limit: 10})
+	if err != nil {
+		t.Fatalf("history.window should return authoritative rows: %v", err)
 	}
-	_, err = client.HistoryCopy(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-history-r319", Token: "tok"})
-	if err == nil || !strings.Contains(err.Error(), ErrHistoryNotRebuilt.Error()) {
-		t.Fatalf("history.copy should surface not rebuilt while old projector is removed, got %v", err)
+	if got := protocolRowTexts(window.Rows); strings.Join(got, "|") != "alpha|beta" {
+		t.Fatalf("unexpected history.window rows %v window=%#v", got, window)
 	}
-	err = client.ReleaseHistory(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-history-r319", Token: "tok"})
-	if err == nil || !strings.Contains(err.Error(), ErrHistoryNotRebuilt.Error()) {
-		t.Fatalf("history.release should surface not rebuilt while old projector is removed, got %v", err)
+	if window.Token == "" || len(window.RowLineIDs) < 2 {
+		t.Fatalf("history.window should carry frozen token and row ids, got %#v", window)
+	}
+	text, err := client.HistoryCopy(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:       "term-history-r324",
+		Token:            window.Token,
+		RangeValid:       true,
+		RangeStartLineID: window.RowLineIDs[0],
+		RangeEndLineID:   window.RowLineIDs[1],
+	})
+	if err != nil {
+		t.Fatalf("history.copy should use authoritative token: %v", err)
+	}
+	if text != "alpha\nbeta" {
+		t.Fatalf("history.copy mismatch: %q", text)
+	}
+	if err := client.ReleaseHistory(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-history-r324", Token: window.Token}); err != nil {
+		t.Fatalf("history.release should succeed: %v", err)
 	}
 }
 
@@ -567,4 +581,12 @@ func cellsText(row []protocol.Cell) string {
 		builder.WriteString(cell.Content)
 	}
 	return builder.String()
+}
+
+func protocolRowTexts(rows []protocol.CompactRow) []string {
+	texts := make([]string, 0, len(rows))
+	for _, row := range rows {
+		texts = append(texts, cellsText(row.DecodeCells()))
+	}
+	return texts
 }

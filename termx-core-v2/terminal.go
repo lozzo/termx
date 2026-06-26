@@ -13,16 +13,19 @@ import (
 )
 
 type Terminal struct {
-	mu      sync.Mutex
-	info    TerminalInfo
-	options TerminalCreateOptions
-	process TerminalProcess
-	liveMu  sync.Mutex
-	live    *live.SurfaceTrack
-	queueMu sync.Mutex
-	liveQ   *terminalLiveIngestQueue
-	events  *eventBroker
-	update  func(TerminalInfo)
+	mu              sync.Mutex
+	info            TerminalInfo
+	options         TerminalCreateOptions
+	process         TerminalProcess
+	liveMu          sync.Mutex
+	live            *live.SurfaceTrack
+	historyMu       sync.Mutex
+	historyRenderer history.HistoryLogicalRenderer
+	historyStore    history.HistoryStore
+	queueMu         sync.Mutex
+	liveQ           *terminalLiveIngestQueue
+	events          *eventBroker
+	update          func(TerminalInfo)
 }
 
 func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo)) *Terminal {
@@ -34,6 +37,8 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 		events:  events,
 		update:  update,
 	}
+	terminal.historyRenderer = history.NewHistoryLogicalRenderer(nil, nil)
+	terminal.historyStore = history.NewInMemoryHistoryStore(info.ID)
 	liveOptions := live.DefaultSurfaceTrackOptions()
 	liveOptions.OnResponse = terminal.handleLiveSurfaceResponse
 	terminal.live = live.NewSurfaceTrackWithOptions(size, liveOptions)
@@ -155,12 +160,26 @@ func (terminal *Terminal) Kill() error {
 }
 
 func (terminal *Terminal) Close() error {
+	return terminal.closeWithReason(history.CloseReasonTerminalRemove)
+}
+
+func (terminal *Terminal) closeWithReason(reason history.CloseReason) error {
+	_ = terminal.FlushHistory(context.Background())
 	terminal.mu.Lock()
 	process := terminal.process
+	shouldCloseHistory := terminal.info.State == TerminalStateRunning
 	terminal.info.State = TerminalStateRemoved
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
+	if shouldCloseHistory {
+		// 中文说明：remove/shutdown 不一定会经过 process-exit watcher；running terminal
+		// 的最后 open line/current frame 必须用 lifecycle close reason 交给 history renderer。
+		terminal.forceCloseHistory(reason)
+	}
 	terminal.syncInfo(info)
+	if process == nil {
+		return nil
+	}
 	return process.Close()
 }
 
@@ -425,52 +444,123 @@ func terminalExitMarkerLines(info TerminalInfo) []string {
 }
 
 func (terminal *Terminal) HistoryWindow(req history.HistoryWindowRequest) (history.HistoryWindow, error) {
-	// 中文说明：R319 已删除旧补丁式 projector/store。新的 logical renderer
-	// 接入前，这里必须显式失败，不能返回旧错误模型拼出来的 history window。
-	_ = req
-	return history.HistoryWindow{}, ErrHistoryNotRebuilt
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyStore == nil {
+		return history.HistoryWindow{}, ErrHistoryNotRebuilt
+	}
+	switch req.Mode {
+	case "", history.HistoryWindowModeLatest:
+		return terminal.historyStore.LatestWindow(req)
+	case history.HistoryWindowModeOlder, history.HistoryWindowModeOldest:
+		return terminal.historyStore.OlderWindow(req)
+	case history.HistoryWindowModeNewer:
+		return terminal.historyStore.NewerWindow(req)
+	default:
+		return history.HistoryWindow{}, history.ErrHistoryUnsupportedWindowMode
+	}
 }
 
 func (terminal *Terminal) HistoryCopy(req history.HistoryCopyRequest) (string, error) {
-	// 中文说明：copy/search 只能从新 HistoryStore 的 authoritative frozen
-	// projection 读取；旧 store 清场后不允许 TUI 或 live surface fallback。
-	_ = req
-	return "", ErrHistoryNotRebuilt
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyStore == nil {
+		return "", ErrHistoryNotRebuilt
+	}
+	return terminal.historyStore.Copy(req)
 }
 
 func (terminal *Terminal) HistoryFreeze(req history.FreezeHistoryRequest) (history.FrozenHistorySnapshot, error) {
-	// 中文说明：freeze 必须冻结新 renderer 的 mutable frame projection。旧
-	// current frame store 已删除，因此这里明确返回未重建。
-	_ = req
-	return history.FrozenHistorySnapshot{}, ErrHistoryNotRebuilt
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyStore == nil {
+		return history.FrozenHistorySnapshot{}, ErrHistoryNotRebuilt
+	}
+	return terminal.historyStore.Freeze(req)
 }
 
-// HistoryRelease 释放 terminal history store 中的 core-owned token。R319 清场后
-// history store 尚未重建，因此该入口明确返回 ErrHistoryNotRebuilt，防止旧 token
-// 生命周期或 TUI 本地缓存被误当作 authoritative history。
+// HistoryRelease 释放 terminal history store 中的 core-owned token。
 func (terminal *Terminal) HistoryRelease(token history.HistoryToken) error {
-	_ = token
-	return ErrHistoryNotRebuilt
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyStore == nil {
+		return ErrHistoryNotRebuilt
+	}
+	return terminal.historyStore.Release(token)
 }
 
 func (terminal *Terminal) applyHistoryWriteResult(result live.SurfaceWriteResult) {
-	// 中文说明：live surface 仍产出 vterm semantic transaction，但 R319 已清掉
-	// 旧 projector/store。后续切片必须把 result.Segments 接入新的
-	// HistoryLogicalRenderer，不能在这里恢复 raw parser 或旧内存 store。
-	_ = result
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyRenderer == nil || terminal.historyStore == nil {
+		return
+	}
+	for _, segment := range result.Segments {
+		for _, tx := range segment.Transactions {
+			decision := terminal.historyDecisionForTransaction(tx)
+			batch, err := terminal.historyRenderer.Apply(tx, decision)
+			if err != nil {
+				continue
+			}
+			_ = terminal.historyStore.Apply(batch)
+		}
+	}
 }
 
 func (terminal *Terminal) applyHistoryResizeTransaction(tx history.TerminalSemanticTransaction) {
-	// 中文说明：resize 仍来自 vterm semantic transaction。新 renderer 接入前不
-	// 允许从 resized live snapshot 生成 history 或改写 sealed records。
-	_ = tx
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyRenderer == nil || terminal.historyStore == nil {
+		return
+	}
+	// 中文说明：resize 只作为 semantic non-history boundary 进入 renderer，不能从
+	// resized live snapshot 生成 sealed history，也不能重写 sealed records。
+	batch, err := terminal.historyRenderer.Apply(tx, history.HistoryDecision{
+		Mode:               history.HistoryOutputModeBoundaryOnly,
+		NonHistoryBoundary: true,
+	})
+	if err != nil {
+		return
+	}
+	_ = terminal.historyStore.Apply(batch)
 }
 
 func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {
-	// 中文说明：process exit 是 lifecycle boundary，后续必须走
-	// HistoryLogicalRenderer.Close。旧 ForceClose/projector 已删除，不能伪造成
-	// PTY bytes 或 fallback 到旧 store。
-	_ = reason
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyRenderer == nil || terminal.historyStore == nil {
+		return
+	}
+	// 中文说明：process exit 是 lifecycle boundary，只能走 renderer.Close；不能伪造成
+	// PTY bytes，也不能 fallback 到 live snapshot。
+	batch, err := terminal.historyRenderer.Close(reason)
+	if err != nil {
+		return
+	}
+	_ = terminal.historyStore.Apply(batch)
+}
+
+func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSemanticTransaction) history.HistoryDecision {
+	decision := history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream}
+	if tx.RequiresFullReplace && tx.FullReplaceReason == "resize" {
+		return history.HistoryDecision{Mode: history.HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true}
+	}
+	if tx.AltEntered {
+		decision.ArchivePrimaryBeforeAlt = true
+		decision.ClearPrimaryCurrent = true
+	}
+	if tx.AltExited {
+		decision.ClearAltFrame = true
+	}
+	if tx.AltFrame != nil {
+		decision.Mode = history.HistoryOutputModeAltTransient
+		decision.PublishAltFrame = true
+	}
+	if tx.PrimaryFrame != nil && (tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd || len(tx.PrimaryScrollOut) > 0) {
+		decision.Mode = history.HistoryOutputModePrimaryFrameSession
+		decision.PublishPrimaryFrame = true
+	}
+	return decision
 }
 
 func (terminal *Terminal) syncInfo(info TerminalInfo) {

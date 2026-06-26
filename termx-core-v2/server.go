@@ -541,7 +541,7 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	server.terminals = make(map[string]*Terminal)
 	server.mu.Unlock()
 	for _, terminal := range terminals {
-		_ = terminal.Close()
+		_ = terminal.closeWithReason(history.CloseReasonDaemonShutdown)
 	}
 	server.registry.clear()
 	server.events.publish(Event{Type: EventServerStopped, SocketPath: server.cfg.socketPath})
