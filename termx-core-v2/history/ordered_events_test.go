@@ -20,6 +20,7 @@ func TestR320OrderedSemanticEventsCoverMatrixInputs(t *testing.T) {
 			{Code: vterm.ScreenOpControl, Control: "ech", Row: 5, Col: 7, Mode: 2},
 			{Code: vterm.ScreenOpControl, Control: "dch", Row: 5, Col: 7, Mode: 2},
 			{Code: vterm.ScreenOpControl, Control: "ich", Row: 5, Col: 7, Mode: 2},
+			{Code: vterm.ScreenOpControl, Control: "ed", Row: 0, Col: 0, Mode: 2, ScrollOut: []vterm.ScrollbackRowAppend{{Runs: []vterm.CellRun{{Text: "clear-old"}}}}},
 			{Code: vterm.ScreenOpScrollRect, Rect: vterm.DamageRect{X: 0, Y: 1, Width: 80, Height: 10}, Dy: -1},
 			{Code: vterm.ScreenOpCopyRect, Src: vterm.DamageRect{X: 0, Y: 0, Width: 6, Height: 1}, DstX: 0, DstY: 2},
 			{Code: vterm.ScreenOpModes, Private: true, Mode: 1049, Enabled: true},
@@ -51,12 +52,13 @@ func TestR320OrderedSemanticEventsCoverMatrixInputs(t *testing.T) {
 		"control:ech:2",
 		"control:dch:2",
 		"control:ich:2",
+		"scroll-out:clear-old",
+		"control:ed:2",
 		"scroll-rect:0,1:80x10:-1",
 		"copy-rect:0,0:6x1->0,2",
 		"alt-enter:1049",
 		"alt-exit:1049",
 		"resize-op:100x30",
-		"scroll-out:gone",
 		"primary-frame:p",
 		"alt-frame:a",
 		"full-replace:resize",
@@ -65,12 +67,12 @@ func TestR320OrderedSemanticEventsCoverMatrixInputs(t *testing.T) {
 		t.Fatalf("ordered semantic event coverage mismatch\ngot  %v\nwant %v", got, want)
 	}
 
-	for _, event := range events[:12] {
+	for _, event := range events[:14] {
 		if event.OrderSource != HistorySemanticEventOrderFromOps {
 			t.Fatalf("op-derived event must keep vterm op order source, got %#v", event)
 		}
 	}
-	for _, event := range events[12:] {
+	for _, event := range events[14:] {
 		if event.OrderSource != HistorySemanticEventOrderFromTransactionSideProof {
 			t.Fatalf("side proof must be marked transaction scoped until vterm exposes exact proof order, got %#v", event)
 		}
@@ -171,6 +173,36 @@ func TestR320RealVTermTransactionFeedsOrderedEventContract(t *testing.T) {
 	}
 }
 
+func TestR328RealVTermED2ScrollOutIsOrderedBeforeRedraw(t *testing.T) {
+	source := vterm.NewSemanticSource(20, 4, 0, nil)
+	if _, err := source.ApplyPTYWrite([]byte("old-a\r\nold-b")); err != nil {
+		t.Fatalf("seed vterm: %v", err)
+	}
+	tx, err := source.ApplyPTYWrite([]byte("\x1b[H\x1b[2Jnew-a\r\nnew-b"))
+	if err != nil {
+		t.Fatalf("apply ED2 redraw: %v", err)
+	}
+	labels := eventLabels(HistorySemanticEventsFromTransaction(tx))
+	want := []string{
+		"control:cup",
+		"scroll-out:old-a",
+		"scroll-out:old-b",
+		"control:ed:2",
+		"write:0:0:new-a",
+		"control:cr",
+		"control:lf",
+		"write:1:0:new-b",
+	}
+	for _, label := range want {
+		if !containsLabel(labels, label) {
+			t.Fatalf("ED2 clear/redraw missing ordered label %q, got %v", label, labels)
+		}
+	}
+	if strings.Join(labels[:len(want)], "|") != strings.Join(want, "|") {
+		t.Fatalf("ED2 scroll-out proof must stay before redraw ops\ngot  %v\nwant prefix %v", labels, want)
+	}
+}
+
 func assertSequentialEventEnvelope(t *testing.T, events []HistorySemanticEvent, seq uint64, size TerminalSemanticSize) {
 	t.Helper()
 	for i, event := range events {
@@ -204,6 +236,8 @@ func eventLabels(events []HistorySemanticEvent) []string {
 			out = append(out, "alt-frame:"+semanticFrameText(event.Frame))
 		case HistorySemanticEventFullReplace:
 			out = append(out, "full-replace:"+event.Reason)
+		case HistorySemanticEventClearScrollback:
+			out = append(out, "clear-scrollback:"+event.Reason)
 		default:
 			out = append(out, string(event.Kind))
 		}
@@ -278,9 +312,9 @@ func semanticScrollOutText(proof *TerminalSemanticScrollOut) string {
 		for _, run := range proof.Runs {
 			out += run.Text
 		}
-		return out
+		return strings.TrimRight(out, " ")
 	}
-	return semanticCellsText(proof.Cells)
+	return strings.TrimRight(semanticCellsText(proof.Cells), " ")
 }
 
 func semanticCellsText(cells []TerminalSemanticCell) string {

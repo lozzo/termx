@@ -15,6 +15,7 @@ const (
 	HistoryMutationClearAltFrame        HistoryMutationKind = "clear-alt-frame"
 	HistoryMutationClosePrimaryFrame    HistoryMutationKind = "close-primary-frame"
 	HistoryMutationNonHistoryBoundary   HistoryMutationKind = "non-history-boundary"
+	HistoryMutationClearScrollback      HistoryMutationKind = "clear-scrollback"
 )
 
 // HistoryMutationBatch 是 renderer 输出到 store 的事务边界。一个 batch 对应一个

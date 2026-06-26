@@ -107,6 +107,27 @@ func TestR321StreamReducerEraseDisplayAndClearRect(t *testing.T) {
 	}
 }
 
+func TestR328StreamReducerED2SealsOpenLineBeforeClearingScreen(t *testing.T) {
+	reducer := NewStreamLineReducer()
+	applyStreamOps(t, reducer,
+		writeOp(0, 0, "old-a"),
+		controlOp("lf", 0, 5, 0),
+		writeOp(1, 0, "old-b"),
+	)
+
+	mutations, err := reducer.ApplyOp(controlOp("ed", 0, 0, 2))
+	if err != nil {
+		t.Fatalf("apply ED2: %v", err)
+	}
+	sealed := joinedLineTexts(sealedMutationLines(mutations))
+	if !strings.Contains(sealed, "old-b") {
+		t.Fatalf("ED2 must seal visible open line before clearing screen, sealed=%q mutations=%#v", sealed, mutations)
+	}
+	if lines := openLinesByRow(t, reducer); len(lines) != 0 {
+		t.Fatalf("ED2 should remove cleared rows from ordinary open ownership, got %#v", lines)
+	}
+}
+
 func TestR321StreamReducerEraseDeleteInsertCharacter(t *testing.T) {
 	t.Run("ech", func(t *testing.T) {
 		reducer := NewStreamLineReducer()

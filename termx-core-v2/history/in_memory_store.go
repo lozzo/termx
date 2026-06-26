@@ -259,6 +259,19 @@ func (store *inMemoryHistoryStore) applyMutation(mutation HistoryMutation) error
 		store.upsertFrameRecord(frame)
 	case HistoryMutationNonHistoryBoundary:
 		return nil
+	case HistoryMutationClearScrollback:
+		// 中文说明：只有 vterm 明确识别到 ED3/clear scrollback 这类 terminal 语义时
+		// 才清 authoritative history projection；普通 vterm scrollback 容量淘汰不能走这里。
+		store.lines = make(map[LogicalLineID]LogicalLine)
+		store.timeline = nil
+		store.openLine = nil
+		store.frameJournal = FrameJournal{}
+		store.frameRecords = nil
+		store.frozen = make(map[HistoryToken]frozenWindowProjection)
+		store.nextRecordID = 0
+		store.nextLineID = 0
+		store.nextFrameID = 0
+		store.nextSessionID = 0
 	default:
 		return ErrHistoryInvalidMutation
 	}

@@ -111,6 +111,17 @@ func (reducer *frameReducer) ClosePrimaryCurrent(reason SealReason) ([]HistoryMu
 	return reducer.sealedFrameMutations(sealed, HistoryMutationClosePrimaryFrame, HistoryRecordClosedPrimaryFrame), nil
 }
 
+func (reducer *frameReducer) ResetForClearScrollback() {
+	if reducer == nil {
+		return
+	}
+	reducer.journal = FrameJournal{}
+	reducer.nextSessionID = 1
+	reducer.nextFrameID = 1
+	reducer.ids = newHistoryIDAllocator()
+	reducer.nextSeq = 0
+}
+
 func (reducer *frameReducer) ensureCounters() {
 	if reducer.nextSessionID == 0 {
 		reducer.nextSessionID = 1

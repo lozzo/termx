@@ -58,6 +58,10 @@ type TerminalSemanticTransaction struct {
 	SynchronizedEnd     bool
 	RequiresFullReplace bool
 	FullReplaceReason   string
+	// ClearScrollback 表示 PTY 明确发出了清除 terminal scrollback/history 的语义
+	// 边界，例如 ED3。它不是 vterm 内部 scrollback 容量淘汰，core 只能在该字段为
+	// true 时清 authoritative scrollback/history projection。
+	ClearScrollback bool
 
 	SourceDamage WriteDamage
 }
@@ -125,6 +129,7 @@ func (source *SemanticSource) transactionFromDamage(seq uint64, raw string, dama
 		Ops:                 cloneSemanticOps(semanticOpsForTransactionDamage(damage)),
 		RequiresFullReplace: damage.RequiresFullReplace,
 		FullReplaceReason:   damage.FullReplaceReason,
+		ClearScrollback:     terminalSemanticDamageHasClearScrollback(damage),
 		SourceDamage:        damage,
 	}
 	for _, scrollOut := range damage.ScrollbackAppend {
@@ -195,7 +200,21 @@ func cloneSemanticOps(ops []DamageOp) []DamageOp {
 	}
 	out := make([]DamageOp, len(ops))
 	copy(out, ops)
+	for i := range out {
+		out[i].Cells = cloneCellSlice(out[i].Cells)
+		out[i].Runs = cloneCellRuns(out[i].Runs)
+		out[i].ScrollOut = cloneScrollbackRowAppends(out[i].ScrollOut)
+	}
 	return out
+}
+
+func terminalSemanticDamageHasClearScrollback(damage WriteDamage) bool {
+	for _, op := range semanticOpsForTransactionDamage(damage) {
+		if op.Code == ScreenOpControl && op.Control == "ed" && op.Mode == 3 {
+			return true
+		}
+	}
+	return false
 }
 
 func cloneCellRows(rows [][]Cell) [][]Cell {
@@ -215,5 +234,18 @@ func cloneCellRuns(runs []CellRun) []CellRun {
 	}
 	out := make([]CellRun, len(runs))
 	copy(out, runs)
+	return out
+}
+
+func cloneScrollbackRowAppends(rows []ScrollbackRowAppend) []ScrollbackRowAppend {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]ScrollbackRowAppend, len(rows))
+	for i, row := range rows {
+		out[i] = row
+		out[i].Cells = cloneCellSlice(row.Cells)
+		out[i].Runs = cloneCellRuns(row.Runs)
+	}
 	return out
 }

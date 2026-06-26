@@ -1,6 +1,9 @@
 package vterm
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestSemanticSourceApplyPTYWriteEmitsOrderedTransaction(t *testing.T) {
 	source := NewSemanticSource(12, 2, 100, nil)
@@ -95,6 +98,39 @@ func TestSemanticSourceSynchronizedScrollOutKeepsPayloadRuns(t *testing.T) {
 	}
 }
 
+func TestR328SemanticSourceDistinguishesEraseDisplayFromClearScrollback(t *testing.T) {
+	ed2 := NewSemanticSource(12, 3, 100, nil)
+	if _, err := ed2.ApplyPTYWrite([]byte("old1\r\nold2")); err != nil {
+		t.Fatalf("seed ED2 source: %v", err)
+	}
+	ed2Tx, err := ed2.ApplyPTYWrite([]byte("\x1b[2Jnew"))
+	if err != nil {
+		t.Fatalf("apply ED2: %v", err)
+	}
+	if ed2Tx.ClearScrollback {
+		t.Fatalf("ED2 saves visible screen to scrollback; it must not clear authoritative history: %#v", ed2Tx)
+	}
+	gotED2Proof := ""
+	for _, proof := range ed2Tx.PrimaryScrollOut {
+		gotED2Proof += semanticScrollOutText(proof)
+	}
+	if gotED2Proof != "old1old2" {
+		t.Fatalf("ED2 should expose clear-time scrollback proof for every visible row, got %q in %#v", gotED2Proof, ed2Tx.PrimaryScrollOut)
+	}
+
+	ed3 := NewSemanticSource(12, 3, 100, nil)
+	if _, err := ed3.ApplyPTYWrite([]byte("old1\r\nold2")); err != nil {
+		t.Fatalf("seed ED3 source: %v", err)
+	}
+	ed3Tx, err := ed3.ApplyPTYWrite([]byte("\x1b[3Jnew"))
+	if err != nil {
+		t.Fatalf("apply ED3: %v", err)
+	}
+	if !ed3Tx.ClearScrollback {
+		t.Fatalf("ED3 must expose explicit clear-scrollback boundary to core history: %#v", ed3Tx)
+	}
+}
+
 func TestSemanticSourceResizeEmitsTransaction(t *testing.T) {
 	source := NewSemanticSource(8, 2, 100, nil)
 	if _, err := source.ApplyPTYWrite([]byte("abcdef\n")); err != nil {
@@ -123,7 +159,7 @@ func semanticScrollOutText(row TerminalSemanticScrollOut) string {
 	for _, run := range row.Runs {
 		out += run.Text
 	}
-	return out
+	return strings.TrimRight(out, " ")
 }
 
 func cellsTextForSemanticTest(cells []TerminalSemanticCell) string {

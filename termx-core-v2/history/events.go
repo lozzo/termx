@@ -20,6 +20,7 @@ const (
 	HistorySemanticEventAltExit          HistorySemanticEventKind = "alt-exit"
 	HistorySemanticEventResize           HistorySemanticEventKind = "resize"
 	HistorySemanticEventFullReplace      HistorySemanticEventKind = "full-replace"
+	HistorySemanticEventClearScrollback  HistorySemanticEventKind = "clear-scrollback"
 	HistorySemanticEventClose            HistorySemanticEventKind = "close"
 )
 
@@ -60,15 +61,18 @@ type HistorySemanticEvent struct {
 
 // HistorySemanticEventsFromTransaction 把一个 vterm semantic transaction 归一化为
 // renderer 内部的 ordered event 链。truth source 仍是同一个 transaction：Ops 按
-// vterm 给出的顺序进入；PrimaryScrollOut、PrimaryFrame、AltFrame、Resize 和
-// RequiresFullReplace 作为 transaction side proof 进入，调用方不得把 side proof
-// 当作 raw stream 中的精确位置。
+// vterm 给出的顺序进入；op.ScrollOut 是 vterm 明确挂在该 op 上的 ordered proof。
+// 只有 transaction 级 PrimaryScrollOut、PrimaryFrame、AltFrame、Resize 和
+// RequiresFullReplace 仍作为 side proof 进入，调用方不得把这些 side proof 当作
+// raw stream 中的精确位置。
 func HistorySemanticEventsFromTransaction(tx TerminalSemanticTransaction) []HistorySemanticEvent {
 	events := make([]HistorySemanticEvent, 0, len(tx.Ops)+len(tx.PrimaryScrollOut)+6)
 	nextOrder := 0
 	hasAltEnterOp := false
 	hasAltExitOp := false
 	hasResizeOp := false
+	hasClearScrollbackOp := false
+	hasOrderedScrollOut := false
 
 	appendEvent := func(event HistorySemanticEvent) {
 		event.Seq = tx.Seq
@@ -80,7 +84,17 @@ func HistorySemanticEventsFromTransaction(tx TerminalSemanticTransaction) []Hist
 
 	for _, op := range tx.Ops {
 		opCopy := cloneTerminalSemanticOp(op)
+		for _, proof := range terminalScrollOutProofsFromOp(opCopy) {
+			proofCopy := cloneTerminalSemanticScrollOut(proof)
+			appendEvent(HistorySemanticEvent{
+				OrderSource: HistorySemanticEventOrderFromOps,
+				Kind:        HistorySemanticEventPrimaryScrollOut,
+				ScrollOut:   &proofCopy,
+			})
+			hasOrderedScrollOut = true
+		}
 		kind := HistorySemanticEventOp
+		reason := ""
 		switch {
 		case isAltModeOp(opCopy):
 			if opCopy.Enabled {
@@ -93,11 +107,16 @@ func HistorySemanticEventsFromTransaction(tx TerminalSemanticTransaction) []Hist
 		case opCopy.Code == vterm.ScreenOpResize:
 			kind = HistorySemanticEventResize
 			hasResizeOp = true
+		case isClearScrollbackOp(opCopy):
+			kind = HistorySemanticEventClearScrollback
+			reason = "ed3"
+			hasClearScrollbackOp = true
 		}
 		appendEvent(HistorySemanticEvent{
 			OrderSource: HistorySemanticEventOrderFromOps,
 			Kind:        kind,
 			Op:          &opCopy,
+			Reason:      reason,
 		})
 	}
 
@@ -113,13 +132,15 @@ func HistorySemanticEventsFromTransaction(tx TerminalSemanticTransaction) []Hist
 			Kind:        HistorySemanticEventAltExit,
 		})
 	}
-	for _, proof := range tx.PrimaryScrollOut {
-		proofCopy := cloneTerminalSemanticScrollOut(proof)
-		appendEvent(HistorySemanticEvent{
-			OrderSource: HistorySemanticEventOrderFromTransactionSideProof,
-			Kind:        HistorySemanticEventPrimaryScrollOut,
-			ScrollOut:   &proofCopy,
-		})
+	if !hasOrderedScrollOut {
+		for _, proof := range tx.PrimaryScrollOut {
+			proofCopy := cloneTerminalSemanticScrollOut(proof)
+			appendEvent(HistorySemanticEvent{
+				OrderSource: HistorySemanticEventOrderFromTransactionSideProof,
+				Kind:        HistorySemanticEventPrimaryScrollOut,
+				ScrollOut:   &proofCopy,
+			})
+		}
 	}
 	if tx.PrimaryFrame != nil {
 		appendEvent(HistorySemanticEvent{
@@ -149,6 +170,13 @@ func HistorySemanticEventsFromTransaction(tx TerminalSemanticTransaction) []Hist
 			Reason:      tx.FullReplaceReason,
 		})
 	}
+	if tx.ClearScrollback && !hasClearScrollbackOp {
+		appendEvent(HistorySemanticEvent{
+			OrderSource: HistorySemanticEventOrderFromTransactionSideProof,
+			Kind:        HistorySemanticEventClearScrollback,
+			Reason:      "ed3",
+		})
+	}
 	return events
 }
 
@@ -160,9 +188,34 @@ func isResizeFullReplace(tx TerminalSemanticTransaction) bool {
 	return tx.RequiresFullReplace && tx.FullReplaceReason == "resize"
 }
 
+func isClearScrollbackOp(op TerminalSemanticOp) bool {
+	return op.Code == vterm.ScreenOpControl && op.Control == "ed" && op.Mode == 3
+}
+
+func isEraseDisplayAllOp(op TerminalSemanticOp) bool {
+	return op.Code == vterm.ScreenOpControl && op.Control == "ed" && op.Mode == 2
+}
+
+func terminalScrollOutProofsFromOp(op TerminalSemanticOp) []TerminalSemanticScrollOut {
+	if len(op.ScrollOut) == 0 {
+		return nil
+	}
+	out := make([]TerminalSemanticScrollOut, 0, len(op.ScrollOut))
+	for _, row := range op.ScrollOut {
+		out = append(out, TerminalSemanticScrollOut{
+			Cells:      cloneTerminalSemanticCells(row.Cells),
+			Runs:       cloneTerminalSemanticRuns(row.Runs),
+			Wrapped:    row.Wrapped,
+			WrappedSet: row.WrappedSet,
+		})
+	}
+	return out
+}
+
 func cloneTerminalSemanticOp(op TerminalSemanticOp) TerminalSemanticOp {
 	op.Cells = cloneTerminalSemanticCells(op.Cells)
 	op.Runs = cloneTerminalSemanticRuns(op.Runs)
+	op.ScrollOut = cloneTerminalScrollbackRowAppends(op.ScrollOut)
 	if op.TailFill != nil {
 		fill := *op.TailFill
 		op.TailFill = &fill
@@ -211,5 +264,18 @@ func cloneTerminalSemanticRuns(runs []TerminalSemanticCellRun) []TerminalSemanti
 	}
 	out := make([]TerminalSemanticCellRun, len(runs))
 	copy(out, runs)
+	return out
+}
+
+func cloneTerminalScrollbackRowAppends(rows []vterm.ScrollbackRowAppend) []vterm.ScrollbackRowAppend {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]vterm.ScrollbackRowAppend, len(rows))
+	for i, row := range rows {
+		out[i] = row
+		out[i].Cells = cloneTerminalSemanticCells(row.Cells)
+		out[i].Runs = cloneTerminalSemanticRuns(row.Runs)
+	}
 	return out
 }

@@ -22,6 +22,9 @@ type StreamLineReducer interface {
 	SealOpenLine(reason SealReason) ([]HistoryMutation, error)
 	// SealScrollOut 把 vterm 提供的 primary scroll-out proof seal 成 logical lines。
 	SealScrollOut(proof TerminalSemanticScrollOut) ([]HistoryMutation, error)
+	// ResetForClearScrollback 在 ED3 等明确 clear-scrollback boundary 后丢弃
+	// renderer-owned ordinary mutable state。调用方仍需通过 mutation 清 store。
+	ResetForClearScrollback()
 }
 
 // FrameReducer 负责 primary current、archived primary 和 alt transient frame
@@ -41,4 +44,7 @@ type FrameReducer interface {
 	ApplyNonHistoryBoundary(reason FrameReason) ([]HistoryMutation, error)
 	// ClosePrimaryCurrent 在 terminal/session close 时按 policy seal 或丢弃 current primary。
 	ClosePrimaryCurrent(reason SealReason) ([]HistoryMutation, error)
+	// ResetForClearScrollback 在 ED3 等明确 clear-scrollback boundary 后丢弃
+	// renderer-owned frame journal 和 session state，避免下一次 redraw 沿用旧 session。
+	ResetForClearScrollback()
 }

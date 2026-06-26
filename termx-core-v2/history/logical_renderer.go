@@ -89,11 +89,25 @@ func (renderer *logicalRenderer) Close(reason CloseReason) (HistoryMutationBatch
 func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision HistoryDecision) ([]HistoryMutation, error) {
 	switch event.Kind {
 	case HistorySemanticEventOp:
-		if decision.Mode == HistoryOutputModeOrdinaryStream && event.Op != nil {
+		if decision.ConsumeClearBoundary && event.Op != nil && isEraseDisplayAllOp(*event.Op) {
+			var mutations []HistoryMutation
+			streamMutations, err := renderer.stream.ApplyOp(*event.Op)
+			if err != nil {
+				return nil, err
+			}
+			mutations = append(mutations, streamMutations...)
+			frameMutations, err := renderer.frames.ArchivePrimaryCurrent(SealReasonFullReplace)
+			if err != nil {
+				return nil, err
+			}
+			mutations = append(mutations, frameMutations...)
+			return mutations, nil
+		}
+		if (decision.Mode == HistoryOutputModeOrdinaryStream || decision.ConsumeStreamOps) && event.Op != nil {
 			return renderer.stream.ApplyOp(*event.Op)
 		}
 	case HistorySemanticEventPrimaryScrollOut:
-		if event.ScrollOut != nil {
+		if decision.ConsumeScrollOutProof && event.ScrollOut != nil {
 			return renderer.stream.SealScrollOut(*event.ScrollOut)
 		}
 	case HistorySemanticEventPrimaryFrame:
@@ -119,6 +133,14 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 		if decision.NonHistoryBoundary {
 			return renderer.frames.ApplyNonHistoryBoundary(FrameReasonResize)
 		}
+	case HistorySemanticEventClearScrollback:
+		if renderer.stream != nil {
+			renderer.stream.ResetForClearScrollback()
+		}
+		if renderer.frames != nil {
+			renderer.frames.ResetForClearScrollback()
+		}
+		return []HistoryMutation{{Kind: HistoryMutationClearScrollback, Reason: SealReasonFullReplace}}, nil
 	}
 	return nil, nil
 }

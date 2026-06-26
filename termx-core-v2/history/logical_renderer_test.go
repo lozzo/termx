@@ -13,7 +13,7 @@ func TestR326LogicalRendererSharesIDsAcrossStreamAndFrameReducers(t *testing.T) 
 			Cols: 12,
 			Rows: [][]TerminalSemanticCell{{{Content: "frame", Width: 1}}},
 		},
-	}, HistoryDecision{Mode: HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true})
+	}, HistoryDecision{Mode: HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true, ConsumeScrollOutProof: true})
 	if err != nil {
 		t.Fatalf("apply renderer transaction: %v", err)
 	}

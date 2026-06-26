@@ -87,6 +87,17 @@ func (reducer *streamLineReducer) SealScrollOut(proof TerminalSemanticScrollOut)
 	return reducer.sealStandaloneLine(line, SealReasonScrollOut, HistoryRecordPrimaryScrollOutLine), nil
 }
 
+func (reducer *streamLineReducer) ResetForClearScrollback() {
+	if reducer == nil {
+		return
+	}
+	reducer.ids = newHistoryIDAllocator()
+	reducer.rowOwners = make(map[int]LogicalLineID)
+	reducer.lines = make(map[LogicalLineID]*streamLineDraft)
+	reducer.cursorRow = 0
+	reducer.cursorCol = 0
+}
+
 func (reducer *streamLineReducer) applyWriteSpan(op TerminalSemanticOp) []HistoryMutation {
 	reducer.cursorRow = op.Row
 	reducer.cursorCol = op.Col
@@ -208,6 +219,13 @@ func (reducer *streamLineReducer) applyEraseDisplay(op TerminalSemanticOp) []His
 		}
 		mutations = append(mutations, reducer.applyEraseLine(op.Row, op.Col, 1)...)
 	case 2, 3:
+		// 中文说明：ED2/ED3 会把整屏从 current ownership 清掉。对普通流来说，
+		// 已经写到可见屏但尚未 LF 的 open line 也是真实 PTY 输出，不能直接丢弃。
+		sealed, _ := reducer.SealOpenLine(SealReasonFullReplace)
+		mutations = append(mutations, sealed...)
+		if op.Mode == 3 {
+			return mutations
+		}
 		for _, row := range reducer.sortedOwnedRows() {
 			mutations = append(mutations, reducer.clearRow(row)...)
 		}

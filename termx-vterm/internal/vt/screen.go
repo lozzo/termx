@@ -195,7 +195,24 @@ func (s *Screen) Clear() {
 // be preserved in history. The blank cell is used to fill the cleared area;
 // pass nil to clear to empty cells, or blankCell() to preserve the current
 // pen background color.
-func (s *Screen) ClearWithScrollback(blank *uv.Cell) {
+func (s *Screen) ClearWithScrollback(blank *uv.Cell) []ScrollbackDamage {
+	// 中文说明：damage 记录是 core-v2 history 的语义来源，不能因为本地
+	// emulator scrollback 被禁用而丢掉 ED2 清屏时离开可见区的行。
+	var capturedRows []ScrollbackDamage
+	for y := 0; y < s.buf.Height(); y++ {
+		line := s.buf.Line(y)
+		if line == nil {
+			continue
+		}
+		used := min(len(line), s.LineUsed(y))
+		if used <= 0 {
+			continue
+		}
+		captured := line[:used]
+		if !s.isLineEmpty(captured) {
+			capturedRows = append(capturedRows, s.scrollbackDamageForLine(y, captured, s.LineWrapped(y)))
+		}
+	}
 	if s.scrollback != nil {
 		// Save all lines that have content before clearing
 		for y := 0; y < s.buf.Height(); y++ {
@@ -209,7 +226,6 @@ func (s *Screen) ClearWithScrollback(blank *uv.Cell) {
 			}
 			captured := line[:used]
 			if !s.isLineEmpty(captured) {
-				s.recordScrollbackLine(y, captured, s.LineWrapped(y))
 				s.scrollback.PushWrapped(captured, s.LineWrapped(y))
 			}
 		}
@@ -217,6 +233,7 @@ func (s *Screen) ClearWithScrollback(blank *uv.Cell) {
 	s.FillArea(blank, s.Bounds())
 	clear(s.wrapped)
 	clear(s.used)
+	return capturedRows
 }
 
 // isLineEmpty returns true if the line contains only empty/space cells.
@@ -904,4 +921,11 @@ func (s *Screen) recordScrollbackLine(y int, line uv.Line, wrapped bool) {
 		return
 	}
 	s.damage.recordScrollbackLine(y, line, wrapped)
+}
+
+func (s *Screen) scrollbackDamageForLine(y int, line uv.Line, wrapped bool) ScrollbackDamage {
+	if line == nil {
+		return ScrollbackDamage{}
+	}
+	return compactScrollbackDamage(y, line, wrapped)
 }

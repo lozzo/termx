@@ -596,6 +596,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		n, _, _ := params.Param(0, 0)
 		width, height := e.Width(), e.Height()
 		x, y := e.scr.CursorPosition()
+		var scrollOut []ScrollbackDamage
 		switch n {
 		case 0: // Erase screen below (from after cursor position)
 			rect1 := uv.Rect(x, y, width, 1)            // cursor to end of line
@@ -609,7 +610,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			// Save screen content to scrollback before clearing.
 			// Use blankCell() to preserve the current pen BG color,
 			// matching case 0/1 behavior and real terminals (xterm, kitty).
-			e.scr.ClearWithScrollback(e.scr.blankCell())
+			scrollOut = e.scr.ClearWithScrollback(e.scr.blankCell())
 		case 3: // erase display (including scrollback in some terminals)
 			// For ED 3, we clear the screen but also clear scrollback
 			// This matches xterm behavior where ESC[3J clears scrollback.
@@ -621,7 +622,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		default:
 			return false
 		}
-		e.scr.damage.recordControl("ed", x, y, n)
+		e.scr.damage.recordControlWithScrollOut("ed", x, y, n, scrollOut)
 		return true
 	})
 

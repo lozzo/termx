@@ -26,6 +26,9 @@ type HistoryDecision struct {
 	ClearAltFrame           bool
 	ClosePrimaryFrame       bool
 	SealOpenLine            bool
+	ConsumeStreamOps        bool
+	ConsumeScrollOutProof   bool
+	ConsumeClearBoundary    bool
 	NonHistoryBoundary      bool
 }
 

@@ -542,6 +542,7 @@ func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {
 
 func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSemanticTransaction) history.HistoryDecision {
 	decision := history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream}
+	hasEraseDisplay := historyTransactionHasEraseDisplay(tx)
 	if tx.RequiresFullReplace && tx.FullReplaceReason == "resize" {
 		return history.HistoryDecision{Mode: history.HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true}
 	}
@@ -556,11 +557,22 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 		decision.Mode = history.HistoryOutputModeAltTransient
 		decision.PublishAltFrame = true
 	}
-	if tx.PrimaryFrame != nil && (tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd || len(tx.PrimaryScrollOut) > 0 || tx.RequiresFullReplace) {
+	if tx.PrimaryFrame != nil && (tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd || len(tx.PrimaryScrollOut) > 0 || tx.RequiresFullReplace || hasEraseDisplay) {
 		decision.Mode = history.HistoryOutputModePrimaryFrameSession
 		decision.PublishPrimaryFrame = true
+		decision.ConsumeScrollOutProof = !hasEraseDisplay
+		decision.ConsumeClearBoundary = hasEraseDisplay
 	}
 	return decision
+}
+
+func historyTransactionHasEraseDisplay(tx history.TerminalSemanticTransaction) bool {
+	for _, op := range tx.Ops {
+		if op.Code == vterm.ScreenOpControl && op.Control == "ed" {
+			return true
+		}
+	}
+	return false
 }
 
 func (terminal *Terminal) syncInfo(info TerminalInfo) {
