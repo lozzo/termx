@@ -85,6 +85,48 @@ func TestR323InMemoryStoreFreezeKeepsMutableFrameSnapshot(t *testing.T) {
 	}
 }
 
+func TestR332FrozenHistoryCanPageOlderThanLatestLimit(t *testing.T) {
+	store := NewInMemoryHistoryStore("term-1")
+	applyStoreBatch(t, store,
+		sealedLineMutations(1, 1, "line-1"),
+		sealedLineMutations(2, 2, "line-2"),
+		sealedLineMutations(3, 3, "line-3"),
+		sealedLineMutations(4, 4, "line-4"),
+		replacePrimaryRowsMutation(10, 5, 80, "frame-1", "frame-2"),
+	)
+
+	snapshot, err := store.Freeze(FreezeHistoryRequest{TerminalID: "term-1", Limit: 2, Cols: 80})
+	if err != nil {
+		t.Fatalf("freeze: %v", err)
+	}
+	applyStoreBatch(t, store, replacePrimaryRowsMutation(10, 5, 80, "changed-1", "changed-2"))
+
+	latest, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-1", Token: snapshot.Token, Limit: 2, Cols: 80})
+	if err != nil {
+		t.Fatalf("frozen latest: %v", err)
+	}
+	if got := rowTexts(latest.Rows); strings.Join(got, "|") != "frame-1|frame-2" {
+		t.Fatalf("frozen latest should return stable tail, got %v", got)
+	}
+	if !latest.Boundary.Cursor.Valid || latest.Boundary.Cursor.RowInLine != 4 {
+		t.Fatalf("frozen latest cursor must point before the latest page in full snapshot, got %#v", latest.Boundary.Cursor)
+	}
+
+	older, err := store.OlderWindow(HistoryWindowRequest{
+		TerminalID: "term-1",
+		Token:      snapshot.Token,
+		Limit:      2,
+		Cols:       80,
+		Cursor:     latest.Boundary.Cursor,
+	})
+	if err != nil {
+		t.Fatalf("frozen older: %v", err)
+	}
+	if got := rowTexts(older.Rows); strings.Join(got, "|") != "line-3|line-4" {
+		t.Fatalf("frozen older must page from full frozen projection, got %v window=%#v", got, older)
+	}
+}
+
 func TestR323InMemoryStoreCopyUsesFrozenAuthoritativeRows(t *testing.T) {
 	store := NewInMemoryHistoryStore("term-1")
 	applyStoreBatch(t, store, sealedLineMutations(1, 1, "alpha"), replacePrimaryMutation(10, 2, 80, "beta"))

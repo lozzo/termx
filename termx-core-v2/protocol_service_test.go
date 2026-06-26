@@ -214,8 +214,11 @@ func TestProtocolServiceHistoryWindowReturnsAuthoritativeRowsAfterR324(t *testin
 	if window.Token == "" || len(window.RowLineIDs) < 2 {
 		t.Fatalf("history.window should carry frozen token and row ids, got %#v", window)
 	}
-	if window.Generation == 0 || !window.CursorValid || window.CursorLineID == 0 {
-		t.Fatalf("history.window should carry generation and segment cursor, got %#v", window)
+	if window.Generation == 0 {
+		t.Fatalf("history.window should carry generation, got %#v", window)
+	}
+	if window.HasMore && (!window.CursorValid || window.CursorLineID == 0) {
+		t.Fatalf("history.window with older rows should carry segment cursor, got %#v", window)
 	}
 	if got := strings.Join(window.RowSegments, "|"); got != "committed|committed" {
 		t.Fatalf("history.window should preserve row segments, got %q window=%#v", got, window)

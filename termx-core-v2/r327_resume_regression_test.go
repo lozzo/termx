@@ -126,6 +126,32 @@ func TestR327FullReplacePrimaryFrameIsConsumedAsScreenRedraw(t *testing.T) {
 	}
 }
 
+func TestR332OrdinaryCJKOutputDoesNotInsertContinuationSpaces(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r332-cjk-ordinary",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 120, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r332-cjk-ordinary", "S01 010/100 | seq=010 | 中文编号010中文\r\n"); err != nil {
+		t.Fatalf("ingest ordinary cjk output: %v", err)
+	}
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r332-cjk-ordinary", history.HistoryWindowRequest{
+		TerminalID: "term-r332-cjk-ordinary",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       120,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if got := strings.Join(historyRowTexts(window.Rows), "\n"); !strings.Contains(got, "中文编号010中文") {
+		t.Fatalf("ordinary CJK output must not gain continuation spaces, got %q rows=%#v", got, window.Rows)
+	}
+}
+
 func historyTextCount(rows []history.HistoryRow, needle string) int {
 	count := 0
 	for _, row := range rows {

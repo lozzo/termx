@@ -76,6 +76,29 @@ func TestR321StreamReducerCursorAddressingWritesTargetRow(t *testing.T) {
 	}
 }
 
+func TestR332StreamReducerWideCellsDoNotLeaveContinuationSpaces(t *testing.T) {
+	reducer := NewStreamLineReducer()
+	applyStreamOps(t, reducer, TerminalSemanticOp{
+		Code: vterm.ScreenOpWriteSpan,
+		Row:  0,
+		Col:  0,
+		Cells: []TerminalSemanticCell{
+			{Content: "中", Width: 2},
+			{Content: "", Width: 0},
+			{Content: "文", Width: 2},
+			{Content: "", Width: 0},
+		},
+	})
+
+	line := singleOpenLine(t, reducer).Draft.Line
+	if got := lineText(line); got != "中文" {
+		t.Fatalf("wide-cell continuation placeholders must not become spaces, got %q line=%#v", got, line)
+	}
+	if len(line.Cells) != 2 || line.Cells[0].Width != 2 || line.Cells[1].Width != 2 {
+		t.Fatalf("wide cells should keep authoritative widths, got %#v", line.Cells)
+	}
+}
+
 func TestR321StreamReducerEraseDisplayAndClearRect(t *testing.T) {
 	reducer := NewStreamLineReducer()
 	applyStreamOps(t, reducer,

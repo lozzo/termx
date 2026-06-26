@@ -853,22 +853,67 @@ func writeCellsAt(cells []Cell, col int, incoming []Cell) []Cell {
 		col = 0
 	}
 	cells = ensureCellWidth(cells, col)
-	for offset, cell := range incoming {
-		target := col + offset
-		if target < len(cells) {
-			cells[target] = cell
-			continue
+	index := cellIndexForDisplayColumn(cells, col)
+	for _, cell := range incoming {
+		width := historyCellDisplayWidth(cell)
+		if index < len(cells) {
+			cells[index] = cell
+		} else {
+			cells = append(cells, cell)
 		}
-		cells = append(cells, cell)
+		index++
+		for width > 1 && index < len(cells) {
+			// 中文说明：普通流 rows 按 display column 定位；宽字符后续列不是文本。
+			// 覆盖旧内容时必须删掉被宽字符占用的旧 cell，不能留下真实空格。
+			cells = append(cells[:index], cells[index+1:]...)
+			width--
+		}
 	}
 	return cells
 }
 
 func ensureCellWidth(cells []Cell, width int) []Cell {
-	for len(cells) < width {
+	for historyCellsDisplayWidth(cells) < width {
 		cells = append(cells, blankHistoryCell())
 	}
 	return cells
+}
+
+func cellIndexForDisplayColumn(cells []Cell, col int) int {
+	if col <= 0 {
+		return 0
+	}
+	cursor := 0
+	for index, cell := range cells {
+		cellWidth := historyCellDisplayWidth(cell)
+		if col < cursor+cellWidth {
+			return index
+		}
+		cursor += cellWidth
+	}
+	return len(cells)
+}
+
+func historyCellsDisplayWidth(cells []Cell) int {
+	width := 0
+	for _, cell := range cells {
+		width += historyCellDisplayWidth(cell)
+	}
+	return width
+}
+
+func historyCellDisplayWidth(cell Cell) int {
+	if cell.Width > 0 {
+		return cell.Width
+	}
+	if cell.Text == "" {
+		return 0
+	}
+	width := xansi.StringWidth(cell.Text)
+	if width > 0 {
+		return width
+	}
+	return 0
 }
 
 func trimTrailingBlankCells(cells []Cell) []Cell {
