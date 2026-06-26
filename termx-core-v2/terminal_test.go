@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/lozzow/termx/termx-core-v2/history"
 )
 
 func TestTerminalLifecycleAndLiveSurface(t *testing.T) {
@@ -104,6 +106,66 @@ func TestTerminalIngestOutputPublishesLiveChangedEvent(t *testing.T) {
 	}
 }
 
+func TestR304OrdinaryOutputCommitsFromSemanticScrollOut(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-history",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 12, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-history", "one\r\ntwo\r\nthree\r\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	window := latestTerminalHistory(t, server, "term-history")
+	if got := terminalHistoryCommittedRows(window); len(got) == 0 || got[0] != "one" {
+		t.Fatalf("ordinary output should commit scrolled logical lines from semantic tx, got %#v window=%#v", got, window)
+	}
+}
+
+func TestR304ControlOverwriteMutatesFrontierWithoutCommit(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-progress",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 30, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-progress", "progress 10%\r\x1b[Kprogress 20%"); err != nil {
+		t.Fatalf("ingest progress: %v", err)
+	}
+	window := latestTerminalHistory(t, server, "term-progress")
+	if window.LogicalTotal != 0 {
+		t.Fatalf("CR/EL overwrite should not commit intermediate progress, total=%d rows=%#v", window.LogicalTotal, window.Rows)
+	}
+	if got := terminalHistoryAllRows(window); len(got) != 1 || !strings.Contains(got[0], "progress 20%") {
+		t.Fatalf("frontier should expose latest progress state only, got %#v", got)
+	}
+}
+
+func TestR304ProcessExitForceCommitsPrimaryFrontier(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-exit-history",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 40, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	process := factory.process("term-exit-history")
+	process.emitOutput("unterminated tail")
+	process.exit(0)
+	waitForTerminalState(t, server, "term-exit-history", TerminalStateExited)
+
+	window := latestTerminalHistory(t, server, "term-exit-history")
+	if got := terminalHistoryCommittedRows(window); countStringForTerminalTest(got, "unterminated tail") != 1 {
+		t.Fatalf("process exit should force commit primary mutable frontier once, got %#v", got)
+	}
+}
+
 func TestTerminalRestartReplacesProcessAndClearsExitMetadata(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -134,6 +196,56 @@ func TestTerminalRestartReplacesProcessAndClearsExitMetadata(t *testing.T) {
 	if info.State != TerminalStateRunning || info.ExitCode != nil || !info.ExitedAt.IsZero() {
 		t.Fatalf("restart should clear exit metadata, got %#v", info)
 	}
+}
+
+func latestTerminalHistory(t *testing.T, server *Server, terminalID string) history.HistoryWindow {
+	t.Helper()
+	window, err := server.TerminalHistoryWindow(context.Background(), terminalID, history.HistoryWindowRequest{
+		TerminalID: terminalID,
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       80,
+		Limit:      100,
+	})
+	if err != nil {
+		t.Fatalf("terminal history window: %v", err)
+	}
+	return window
+}
+
+func terminalHistoryCommittedRows(window history.HistoryWindow) []string {
+	var rows []string
+	for _, row := range window.Rows {
+		if row.Committed {
+			rows = append(rows, terminalHistoryPlainText(row.Cells))
+		}
+	}
+	return rows
+}
+
+func terminalHistoryAllRows(window history.HistoryWindow) []string {
+	rows := make([]string, 0, len(window.Rows))
+	for _, row := range window.Rows {
+		rows = append(rows, terminalHistoryPlainText(row.Cells))
+	}
+	return rows
+}
+
+func terminalHistoryPlainText(cells []history.Cell) string {
+	var builder strings.Builder
+	for _, cell := range cells {
+		builder.WriteString(cell.Text)
+	}
+	return builder.String()
+}
+
+func countStringForTerminalTest(values []string, want string) int {
+	count := 0
+	for _, value := range values {
+		if value == want {
+			count++
+		}
+	}
+	return count
 }
 
 func TestTerminalKillAndRemoveCloseProcess(t *testing.T) {

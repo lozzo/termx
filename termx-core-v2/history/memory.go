@@ -26,6 +26,7 @@ const (
 	terminalOpClearRect  = vterm.ScreenOpClearRect
 	terminalOpClearToEOL = vterm.ScreenOpClearToEOL
 	terminalOpCursor     = vterm.ScreenOpCursor
+	terminalOpControl    = vterm.ScreenOpControl
 	terminalOpResize     = vterm.ScreenOpResize
 )
 
@@ -212,8 +213,10 @@ func (projector *memoryHistoryProjector) applyOrdinaryTransaction(mutation *Hist
 		for _, op := range tx.Ops {
 			switch op.Code {
 			case terminalOpWriteSpan:
-				projector.writeCellsToFrontier(mutation, convertTerminalCells(op.Cells), decision)
-			case terminalOpClearToEOL, terminalOpClearRect, terminalOpCursor, terminalOpScrollRect, terminalOpCopyRect:
+				projector.writeCellsToFrontier(mutation, convertTerminalCells(op.Cells), op.Col, decision)
+			case terminalOpClearToEOL:
+				projector.truncateFrontierAt(mutation, op.Col, decision)
+			case terminalOpClearRect, terminalOpCursor, terminalOpScrollRect, terminalOpCopyRect:
 				mutation.Events = append(mutation.Events, HistoryMutationEvent{
 					Kind:     HistoryMutationFrontierMutate,
 					Decision: decision,
@@ -223,10 +226,15 @@ func (projector *memoryHistoryProjector) applyOrdinaryTransaction(mutation *Hist
 					Kind:     HistoryMutationNonHistoryBoundary,
 					Decision: decision,
 				})
+			case terminalOpControl:
+				projector.applyOrdinaryControl(mutation, op, decision)
 			}
 		}
 	}
 	for _, proof := range tx.PrimaryScrollOut {
+		if len(proof.Cells) == 0 {
+			continue
+		}
 		line := projector.newLogicalLine(convertTerminalCells(proof.Cells), LineKindOrdinary, SealStateSealed)
 		mutation.Events = append(mutation.Events, HistoryMutationEvent{
 			Kind:     HistoryMutationOrdinaryCommit,
@@ -237,7 +245,26 @@ func (projector *memoryHistoryProjector) applyOrdinaryTransaction(mutation *Hist
 	}
 }
 
-func (projector *memoryHistoryProjector) writeCellsToFrontier(mutation *HistoryMutation, cells []Cell, decision ScreenAppDecision) {
+func (projector *memoryHistoryProjector) applyOrdinaryControl(mutation *HistoryMutation, op TerminalSemanticOp, decision ScreenAppDecision) {
+	switch op.Control {
+	case "lf", "ind", "nel":
+		projector.forceCommitOpenLine(mutation)
+	case "el":
+		projector.truncateFrontierAt(mutation, op.Col, decision)
+	case "cr", "bs", "cub", "cuu", "cud", "cuf", "cup", "cha", "hpa", "vpa":
+		mutation.Events = append(mutation.Events, HistoryMutationEvent{
+			Kind:     HistoryMutationFrontierMutate,
+			Decision: decision,
+		})
+	default:
+		mutation.Events = append(mutation.Events, HistoryMutationEvent{
+			Kind:     HistoryMutationFrontierMutate,
+			Decision: decision,
+		})
+	}
+}
+
+func (projector *memoryHistoryProjector) writeCellsToFrontier(mutation *HistoryMutation, cells []Cell, col int, decision ScreenAppDecision) {
 	if len(cells) == 0 {
 		return
 	}
@@ -245,9 +272,47 @@ func (projector *memoryHistoryProjector) writeCellsToFrontier(mutation *HistoryM
 		line := projector.newLogicalLine(nil, LineKindOrdinary, SealStateOpen)
 		projector.openLine = &line
 	}
-	projector.openLine.Cells = append(projector.openLine.Cells, cloneHistoryCells(cells)...)
+	// 中文说明：R304 普通输出只允许 terminal semantic op 修改 frontier。
+	// CR/CUP/EL 后的 write-span 通过列位置覆盖当前 open line，不追加中间态。
+	if col < 0 {
+		col = len(projector.openLine.Cells)
+	}
+	replacement := cloneHistoryCells(cells)
+	if col >= len(projector.openLine.Cells) {
+		projector.openLine.Cells = append(projector.openLine.Cells, replacement...)
+	} else {
+		updated := cloneHistoryCells(projector.openLine.Cells[:col])
+		updated = append(updated, replacement...)
+		if tailStart := col + len(replacement); tailStart < len(projector.openLine.Cells) {
+			updated = append(updated, projector.openLine.Cells[tailStart:]...)
+		}
+		projector.openLine.Cells = updated
+	}
 	projector.openLine.ContentGeneration = projector.generation
 	projector.openLine.Generation = projector.generation
+	line := cloneLogicalLine(*projector.openLine)
+	mutation.Events = append(mutation.Events, HistoryMutationEvent{
+		Kind:     HistoryMutationFrontierMutate,
+		Line:     &line,
+		LineIDs:  []LogicalLineID{line.ID},
+		Decision: decision,
+	})
+}
+
+func (projector *memoryHistoryProjector) truncateFrontierAt(mutation *HistoryMutation, col int, decision ScreenAppDecision) {
+	if projector.openLine == nil {
+		mutation.Events = append(mutation.Events, HistoryMutationEvent{
+			Kind:     HistoryMutationFrontierMutate,
+			Decision: decision,
+		})
+		return
+	}
+	if col < 0 {
+		col = 0
+	}
+	if col < len(projector.openLine.Cells) {
+		projector.openLine.Cells = cloneHistoryCells(projector.openLine.Cells[:col])
+	}
 	line := cloneLogicalLine(*projector.openLine)
 	mutation.Events = append(mutation.Events, HistoryMutationEvent{
 		Kind:     HistoryMutationFrontierMutate,

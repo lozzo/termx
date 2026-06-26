@@ -8,21 +8,25 @@ import (
 	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 type Terminal struct {
-	mu      sync.Mutex
-	info    TerminalInfo
-	options TerminalCreateOptions
-	process TerminalProcess
-	liveMu  sync.Mutex
-	live    *live.SurfaceTrack
-	queueMu sync.Mutex
-	liveQ   *terminalLiveIngestQueue
-	events  *eventBroker
-	update  func(TerminalInfo)
+	mu               sync.Mutex
+	info             TerminalInfo
+	options          TerminalCreateOptions
+	process          TerminalProcess
+	liveMu           sync.Mutex
+	live             *live.SurfaceTrack
+	historyMu        sync.Mutex
+	historyProjector history.HistoryProjector
+	historyStore     history.InfiniteHistoryStore
+	queueMu          sync.Mutex
+	liveQ            *terminalLiveIngestQueue
+	events           *eventBroker
+	update           func(TerminalInfo)
 }
 
 func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo)) *Terminal {
@@ -37,6 +41,8 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 	liveOptions := live.DefaultSurfaceTrackOptions()
 	liveOptions.OnResponse = terminal.handleLiveSurfaceResponse
 	terminal.live = live.NewSurfaceTrackWithOptions(size, liveOptions)
+	terminal.historyProjector = history.NewMemoryHistoryProjector()
+	terminal.historyStore = history.NewMemoryHistoryStore()
 	terminal.watchProcess(process)
 	return terminal
 }
@@ -97,8 +103,9 @@ func (terminal *Terminal) IngestOutput(output string) error {
 	terminal.mu.Unlock()
 
 	terminal.liveMu.Lock()
-	surface.Write(rawOutput)
+	result := surface.WriteWithResult(rawOutput)
 	terminal.liveMu.Unlock()
+	terminal.applyHistoryWriteResult(result)
 
 	terminal.publish(EventTerminalChanged, info)
 	return nil
@@ -359,8 +366,9 @@ func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, outpu
 	terminal.mu.Unlock()
 
 	terminal.liveMu.Lock()
-	surface.Write(output)
+	result := surface.WriteWithResult(output)
 	terminal.liveMu.Unlock()
+	terminal.applyHistoryWriteResult(result)
 
 	terminal.mu.Lock()
 	stillCurrent := terminal.process == process && terminal.info.State != TerminalStateExited && terminal.info.State != TerminalStateRemoved
@@ -385,6 +393,7 @@ func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) 
 	terminal.info.ExitedAt = time.Now().UTC()
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
+	terminal.forceCloseHistory(history.CloseReasonProcessExit)
 	terminal.appendExitMarker(info)
 	terminal.syncInfo(info)
 	terminal.publish(EventTerminalExited, info)
@@ -426,6 +435,78 @@ func historyCellTextWidthForTerminal(text string) int {
 		return 0
 	}
 	return width
+}
+
+func (terminal *Terminal) HistoryWindow(req history.HistoryWindowRequest) (history.HistoryWindow, error) {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyStore == nil {
+		return history.HistoryWindow{}, ErrHistoryNotRebuilt
+	}
+	if req.TerminalID == "" {
+		req.TerminalID = terminal.info.ID
+	}
+	return terminal.historyStore.LatestWindow(req)
+}
+
+func (terminal *Terminal) HistoryCopy(req history.HistoryCopyRequest) (string, error) {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyStore == nil {
+		return "", ErrHistoryNotRebuilt
+	}
+	if req.TerminalID == "" {
+		req.TerminalID = terminal.info.ID
+	}
+	return terminal.historyStore.Copy(req)
+}
+
+func (terminal *Terminal) applyHistoryWriteResult(result live.SurfaceWriteResult) {
+	if len(result.Segments) == 0 {
+		return
+	}
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyProjector == nil || terminal.historyStore == nil {
+		return
+	}
+	// 中文说明：R304 只把同一 live vterm 产出的 semantic tx 交给 ordinary
+	// history projector；这里禁止从 raw segment 或 live rows 反推 history truth。
+	for _, segment := range result.Segments {
+		for _, tx := range segment.Transactions {
+			decision := terminal.classifyOrdinaryHistoryTransaction(tx)
+			mutation, err := terminal.historyProjector.Apply(tx, decision)
+			if err != nil {
+				continue
+			}
+			_ = terminal.historyStore.ApplyMutation(mutation)
+		}
+	}
+}
+
+func (terminal *Terminal) classifyOrdinaryHistoryTransaction(tx history.TerminalSemanticTransaction) history.ScreenAppDecision {
+	if tx.RequiresFullReplace {
+		return history.ScreenAppDecision{
+			Mode:               history.ScreenOutputModeNonHistoryBoundary,
+			NonHistoryBoundary: true,
+		}
+	}
+	return history.ScreenAppDecision{Mode: history.ScreenOutputModeOrdinary}
+}
+
+func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if terminal.historyProjector == nil || terminal.historyStore == nil {
+		return
+	}
+	// 中文说明：process exit 是 lifecycle boundary，不伪造成 PTY bytes；history
+	// projector 只能通过 ForceClose 收口 primary mutable frontier。
+	mutation, err := terminal.historyProjector.ForceClose(reason)
+	if err != nil {
+		return
+	}
+	_ = terminal.historyStore.ApplyMutation(mutation)
 }
 
 func (terminal *Terminal) syncInfo(info TerminalInfo) {

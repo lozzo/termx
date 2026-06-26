@@ -39,6 +39,7 @@ type SurfaceWriteResult struct {
 
 type SurfaceWriteSegment struct {
 	Raw                string
+	Transactions       []vterm.TerminalSemanticTransaction
 	Damages            []vterm.WriteDamage
 	PrimaryScreenRows  [][]vterm.Cell
 	AltScreenRows      [][]vterm.Cell
@@ -128,6 +129,7 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 	var result SurfaceWriteResult
 	var raw strings.Builder
 	var damages []vterm.WriteDamage
+	var transactions []vterm.TerminalSemanticTransaction
 	if text == "" && surface.pending == "" {
 		return result
 	}
@@ -137,13 +139,17 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 	for text != "" {
 		idx := strings.Index(text, "\x1b[?")
 		if idx < 0 {
-			damages = appendSurfaceWriteDamage(damages, surface.writeRaw(text))
+			tx := surface.writeRaw(text)
+			damages = appendSurfaceWriteDamage(damages, tx.SourceDamage)
+			transactions = appendSurfaceWriteTransaction(transactions, tx)
 			raw.WriteString(text)
-			surface.appendSurfaceWriteRawSegment(&result, &raw, &damages)
+			surface.appendSurfaceWriteRawSegment(&result, &raw, &damages, &transactions)
 			return result
 		}
 		if idx > 0 {
-			damages = appendSurfaceWriteDamage(damages, surface.writeRaw(text[:idx]))
+			tx := surface.writeRaw(text[:idx])
+			damages = appendSurfaceWriteDamage(damages, tx.SourceDamage)
+			transactions = appendSurfaceWriteTransaction(transactions, tx)
 			raw.WriteString(text[:idx])
 			text = text[idx:]
 			continue
@@ -151,18 +157,22 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 		consumed, action, _, complete := consumePrivateModeCSI(text)
 		if !complete {
 			surface.pending = text
-			surface.appendSurfaceWriteRawSegment(&result, &raw, &damages)
+			surface.appendSurfaceWriteRawSegment(&result, &raw, &damages, &transactions)
 			return result
 		}
 		if consumed <= 0 {
-			damages = appendSurfaceWriteDamage(damages, surface.writeRaw(text[:1]))
+			tx := surface.writeRaw(text[:1])
+			damages = appendSurfaceWriteDamage(damages, tx.SourceDamage)
+			transactions = appendSurfaceWriteTransaction(transactions, tx)
 			raw.WriteString(text[:1])
 			text = text[1:]
 			continue
 		}
 		if action == privateModeAltExit && surface.vterm().IsAltScreen() {
 			altFrame := surface.altScreenFrameCells()
-			damages = appendSurfaceWriteDamage(damages, surface.writeRaw(text[:consumed]))
+			tx := surface.writeRaw(text[:consumed])
+			damages = appendSurfaceWriteDamage(damages, tx.SourceDamage)
+			transactions = appendSurfaceWriteTransaction(transactions, tx)
 			raw.WriteString(text[:consumed])
 			if surface.preserveAltScreenFrameOnExit {
 				surface.appendAltScreenFrameCells(altFrame)
@@ -170,38 +180,44 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 			if len(altFrame) > 0 {
 				result.Segments = append(result.Segments, SurfaceWriteSegment{
 					Raw:                raw.String(),
+					Transactions:       cloneSurfaceWriteTransactions(transactions),
 					Damages:            cloneSurfaceWriteDamages(damages),
 					PrimaryScreenRows:  surface.primaryScreenFrameRows(),
 					AltScreenExitFrame: cloneVTermCellRows(altFrame),
 				})
 				raw.Reset()
 				damages = nil
+				transactions = nil
 			}
 			text = text[consumed:]
 			continue
 		}
-		damages = appendSurfaceWriteDamage(damages, surface.writeRaw(text[:consumed]))
+		tx := surface.writeRaw(text[:consumed])
+		damages = appendSurfaceWriteDamage(damages, tx.SourceDamage)
+		transactions = appendSurfaceWriteTransaction(transactions, tx)
 		raw.WriteString(text[:consumed])
 		text = text[consumed:]
 	}
 	if raw.Len() > 0 {
-		surface.appendSurfaceWriteRawSegment(&result, &raw, &damages)
+		surface.appendSurfaceWriteRawSegment(&result, &raw, &damages, &transactions)
 	}
 	return result
 }
 
-func (surface *SurfaceTrack) appendSurfaceWriteRawSegment(result *SurfaceWriteResult, raw *strings.Builder, damages *[]vterm.WriteDamage) {
+func (surface *SurfaceTrack) appendSurfaceWriteRawSegment(result *SurfaceWriteResult, raw *strings.Builder, damages *[]vterm.WriteDamage, transactions *[]vterm.TerminalSemanticTransaction) {
 	if result == nil || raw == nil || raw.Len() == 0 {
 		return
 	}
 	result.Segments = append(result.Segments, SurfaceWriteSegment{
 		Raw:               raw.String(),
+		Transactions:      cloneSurfaceWriteTransactions(*transactions),
 		Damages:           cloneSurfaceWriteDamages(*damages),
 		PrimaryScreenRows: surface.primaryScreenFrameRows(),
 		AltScreenRows:     surface.altScreenFrameRows(),
 	})
 	raw.Reset()
 	*damages = nil
+	*transactions = nil
 }
 
 func (surface *SurfaceTrack) primaryScreenFrameRows() [][]vterm.Cell {
@@ -236,17 +252,33 @@ func cloneSurfaceWriteDamages(in []vterm.WriteDamage) []vterm.WriteDamage {
 	return out
 }
 
-func (surface *SurfaceTrack) writeRaw(text string) vterm.WriteDamage {
+func appendSurfaceWriteTransaction(transactions []vterm.TerminalSemanticTransaction, tx vterm.TerminalSemanticTransaction) []vterm.TerminalSemanticTransaction {
+	if tx.Seq == 0 && tx.Size == (vterm.TerminalSemanticSize{}) && len(tx.Ops) == 0 && len(tx.PrimaryScrollOut) == 0 && tx.PrimaryFrame == nil && tx.AltFrame == nil && !tx.AltEntered && !tx.AltExited && !tx.RequiresFullReplace {
+		return transactions
+	}
+	return append(transactions, tx)
+}
+
+func cloneSurfaceWriteTransactions(in []vterm.TerminalSemanticTransaction) []vterm.TerminalSemanticTransaction {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]vterm.TerminalSemanticTransaction, len(in))
+	copy(out, in)
+	return out
+}
+
+func (surface *SurfaceTrack) writeRaw(text string) vterm.TerminalSemanticTransaction {
 	if text == "" {
-		return vterm.WriteDamage{}
+		return vterm.TerminalSemanticTransaction{}
 	}
 	// 中文说明：同一批 PTY bytes 只在 core 持有的 vterm 中解码一次；返回的
 	// damage 是 EventRouter 的语义输入，不是 history truth 或 live snapshot。
 	tx, err := surface.source.ApplyPTYWrite([]byte(text))
 	if err != nil {
-		return vterm.WriteDamage{}
+		return vterm.TerminalSemanticTransaction{}
 	}
-	return tx.SourceDamage
+	return tx
 }
 
 func (surface *SurfaceTrack) altScreenFrameCells() [][]vterm.Cell {

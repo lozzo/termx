@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
 	"github.com/lozzow/termx/termx-shared/transport"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
@@ -386,6 +387,35 @@ func (server *Server) LiveSnapshot(id string) (live.SurfaceSnapshot, error) {
 		return live.SurfaceSnapshot{}, err
 	}
 	return terminal.LiveSnapshot(), nil
+}
+
+// TerminalHistoryWindow 返回 core-v2 terminal 内部 authoritative history domain
+// projection。R304 只用于普通输出最小实现和 harness；protocol/TUI 的
+// history.window 仍必须等 R310 接入，不能在协议层临时 fallback 到 live rows。
+func (server *Server) TerminalHistoryWindow(ctx context.Context, id string, req history.HistoryWindowRequest) (history.HistoryWindow, error) {
+	_ = ctx
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return history.HistoryWindow{}, err
+	}
+	if req.TerminalID == "" {
+		req.TerminalID = id
+	}
+	return terminal.HistoryWindow(req)
+}
+
+// TerminalHistoryCopy 从 core-v2 terminal 内部 authoritative history domain 复制文本。
+// 它不服务协议层 history.copy；R310 前 protocol 仍返回 ErrHistoryNotRebuilt。
+func (server *Server) TerminalHistoryCopy(ctx context.Context, id string, req history.HistoryCopyRequest) (string, error) {
+	_ = ctx
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return "", err
+	}
+	if req.TerminalID == "" {
+		req.TerminalID = id
+	}
+	return terminal.HistoryCopy(req)
 }
 
 func (server *Server) Events(ctx context.Context, filter EventFilter) <-chan Event {
