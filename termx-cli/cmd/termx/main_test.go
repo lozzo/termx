@@ -753,6 +753,83 @@ func TestV3LocalControlCommandsRemainAvailable(t *testing.T) {
 	}
 }
 
+func TestV3HistoryDumpWritesAuthoritativeWindows(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	server := corev2.NewServer(corev2.WithSocketPath(socketPath), corev2.WithProcessFactory(newCoreV2ResizeRecordingProcessFactory()))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- server.ListenAndServe(ctx)
+	}()
+	defer func() {
+		cancel()
+		_ = server.Shutdown(context.Background())
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("core-v2 server did not stop in time")
+		}
+	}()
+	if err := waitForSocket(socketPath, 2*time.Second, func() error {
+		client, err := dialV3Client(socketPath)
+		if err != nil {
+			return err
+		}
+		return client.Close()
+	}); err != nil {
+		t.Fatalf("core-v2 daemon did not become ready: %v", err)
+	}
+	client, err := dialV3Client(socketPath)
+	if err != nil {
+		t.Fatalf("dial core-v2 daemon: %v", err)
+	}
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-dump", Command: []string{"shell"}, Size: protocol.Size{Cols: 24, Rows: 4}}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-dump", "older one\r\nvisible tail\r\n"); err != nil {
+		t.Fatalf("ingest committed history: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-dump", "\x1b[?2026h\x1b[2J\x1b[Hcodex current\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest current frame: %v", err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("close setup client: %v", err)
+	}
+
+	outPath := filepath.Join(t.TempDir(), "history.dump")
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "history-dump", "term-dump", "--out", outPath, "--cols", "24", "--limit", "1"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("history-dump returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read dump: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		"termx core-v2 authoritative history dump",
+		"window 0 op=prepend",
+		"window 1 op=replace",
+		"older one",
+		"visible tail",
+		"codex current",
+		"segment=current-primary-frame",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("history dump missing %q:\n%s", want, text)
+		}
+	}
+	if !strings.Contains(out.String(), "termx v3 history dump ok") || !strings.Contains(out.String(), outPath) {
+		t.Fatalf("unexpected command output:\n%s", out.String())
+	}
+}
+
 func TestV3AttachRejectsNonInteractiveTerminal(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
 	oldRunAttach := runV3Attach
@@ -1446,8 +1523,14 @@ func TestV3E2ESmokeCommandRunsLocalCoreAndTUIPath(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 
-	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "history not rebuilt") {
-		t.Fatalf("v3 e2e-smoke should report clean-slate history state, got err=%v out=%q", err, out.String())
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("v3 e2e-smoke returned error: %v", err)
+	}
+	text := out.String()
+	for _, want := range []string{"termx v3 e2e smoke ok", "copy_cols=98", "zoom_checked=true"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("v3 e2e-smoke output missing %q:\n%s", want, text)
+		}
 	}
 }
 
