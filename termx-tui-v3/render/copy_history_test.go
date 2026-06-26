@@ -1,11 +1,14 @@
 package render
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
+
+var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
 
 func TestCopyHistoryContentANSILineAtOffsetsInternalColumnAnchors(t *testing.T) {
 	history := state.HistoryStore{
@@ -42,6 +45,29 @@ func TestCopyHistoryContentANSILineUsesTailFillDisplayOnly(t *testing.T) {
 	ansi := CopyHistoryContentANSILineAt(state.HistoryStore{Cols: 8, Rows: []state.HistoryRow{row}}, state.CopyModeStore{BoundCols: 8}, 0, 8, 0, DefaultTheme())
 	if !strings.Contains(ansi, "\x1b[48;5;24m      ") {
 		t.Fatalf("tail fill should render display-only background to EOL, got %q", ansi)
+	}
+}
+
+func TestCopyHistoryDefaultBlankCellsRenderAsViewportBackground(t *testing.T) {
+	row := state.HistoryRow{
+		Text:   "    ",
+		LineID: 99,
+		Kind:   state.HistoryRowKindArchivedScreenFrame,
+		Cells: []state.HistoryCell{
+			{Text: " ", Width: 1},
+			{Text: " ", Width: 1},
+			{Text: " ", Width: 1},
+			{Text: " ", Width: 1},
+		},
+	}
+
+	ansi := CopyHistoryContentANSILineAt(state.HistoryStore{Cols: 8, Rows: []state.HistoryRow{row}}, state.CopyModeStore{BoundCols: 8}, 0, 8, 0, DefaultTheme())
+	if strings.Contains(ansi, "\x1b[49m") || strings.Contains(ansi, "\x1b[39m") || strings.Contains(ansi, "\x1b[48;") {
+		t.Fatalf("default blank frame cells should not force terminal ANSI background, got %q", ansi)
+	}
+	plain := ansiEscapePattern.ReplaceAllString(ansi, "")
+	if got := DisplayWidth(plain); got != 8 {
+		t.Fatalf("default blank frame row should still occupy viewport columns, got width=%d ansi=%q plain=%q", got, ansi, plain)
 	}
 }
 

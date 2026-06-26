@@ -902,7 +902,7 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRow
 		store.Cursor = CopyPosition{Row: cursorRow}
 		store.ViewportTop = viewportTop
 		if pendingScroll != 0 {
-			store = store.ScrollCursor(pendingScroll, totalRows)
+			store = store.ScrollViewport(pendingScroll, totalRows)
 		}
 	} else {
 		store.ViewportTop = 0
@@ -1022,7 +1022,7 @@ func (store CopyModeStore) ApplyDeferredOlderScroll(rows int, totalRows int) Cop
 	}
 	// older prepend 已经把原 visible top 重新锚到同一条 logical line；
 	// 这里仅消费用户在等待分页时还想继续向上的行数，保持“请求按页、浏览按行”。
-	return store.ScrollCursor(-rows, totalRows)
+	return store.ScrollViewport(-rows, totalRows)
 }
 
 func (store CopyModeStore) ApplyHistoryTrim(trim HistoryTrimResult, totalRows int) CopyModeStore {
@@ -1151,6 +1151,33 @@ func (store CopyModeStore) ScrollCursor(delta int, totalRows int) CopyModeStore 
 	nextRow := clampCopyInt(store.Cursor.Row+delta, 0, totalRows-1)
 	store = store.MoveCursor(CopyPosition{Row: nextRow, Col: store.Cursor.Col})
 	return store.FollowCursor(totalRows)
+}
+
+// ScrollViewport 表达 PageUp/PageDown/鼠标滚轮这类“移动可见窗口”的浏览语义。
+// CopyModeStore 仍只保存交互态；history truth 继续来自 HistoryStore/core-v2，
+// cursor 只是跟随新 viewport clamp 到可见范围，不能反过来让翻页停在最新 frame 内部。
+func (store CopyModeStore) ScrollViewport(delta int, totalRows int) CopyModeStore {
+	if totalRows <= 0 {
+		store.ViewportTop = 0
+		store.Cursor = CopyPosition{}
+		return store
+	}
+	height := copyVisibleRowsForStore(store)
+	if height <= 0 {
+		height = 1
+	}
+	maxTop := maxCopyInt(0, totalRows-height)
+	offset := store.Cursor.Row - store.ViewportTop
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= height {
+		offset = height - 1
+	}
+	nextTop := clampCopyInt(store.ViewportTop+delta, 0, maxTop)
+	store.ViewportTop = nextTop
+	store.Cursor = CopyPosition{Row: clampCopyInt(nextTop+offset, 0, totalRows-1), Col: store.Cursor.Col}
+	return store.Scroll(0, totalRows)
 }
 
 func (store CopyModeStore) FollowCursor(totalRows int) CopyModeStore {

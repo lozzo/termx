@@ -365,6 +365,11 @@ func renderCellsFromHistory(cell state.HistoryCell, row int, from int, selection
 	if selection.active || search.active {
 		return copyHistoryStyledTextCells(text, width, ansiStyleFromHistory(cell.Style), cell.LinkURL, cell.LinkParams, row, from, selection, search)
 	}
+	if copyHistoryDefaultBlankCell(cell) {
+		// 中文说明：default blank 是 terminal 的无内容背景，不是历史内容自身的显式样式；
+		// copy/history 展示时交给 viewport 背景承载，避免整行空白被画成黑块。
+		return []Cell{NewCell(strings.Repeat(" ", width))}
+	}
 	return []Cell{{
 		Text:            text,
 		Width:           width,
@@ -374,6 +379,13 @@ func renderCellsFromHistory(cell state.HistoryCell, row int, from int, selection
 		TerminalContent: true,
 		Safe:            true,
 	}}
+}
+
+func copyHistoryDefaultBlankCell(cell state.HistoryCell) bool {
+	return cell.LinkURL == "" &&
+		cell.LinkParams == "" &&
+		cell.Style == (state.HistoryCellStyle{}) &&
+		strings.TrimSpace(cell.Text) == ""
 }
 
 func ansiStyleFromHistory(style state.HistoryCellStyle) ANSICellStyle {

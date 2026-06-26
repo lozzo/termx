@@ -676,6 +676,23 @@ func TestCopyModeAcceptLatestStartsAtNewestTail(t *testing.T) {
 	}
 }
 
+func TestCopyModeAcceptLatestAppliesPendingScrollAsViewportMove(t *testing.T) {
+	rows := make([]HistoryRow, 0, 30)
+	for i := 0; i < 30; i++ {
+		rows = append(rows, HistoryRow{Text: "row", LineID: uint64(i + 1)})
+	}
+	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
+	copyMode := CopyModeStore{
+		ViewRows:            5,
+		EnteringLive:        &LiveSurfaceSnapshot{},
+		EnteringScrollDelta: -3,
+	}.AcceptLatest(latest, latest.Cols, len(rows))
+
+	if copyMode.ViewportTop != 22 || copyMode.Cursor.Row != 26 {
+		t.Fatalf("pending PageUp while latest is flying should move viewport, got %#v", copyMode)
+	}
+}
+
 func TestCopyModeAcceptLatestKeepsCursorAtNewestLiveTail(t *testing.T) {
 	rows := []HistoryRow{
 		{Text: "shell prompt 1", LineID: 1},
@@ -1158,6 +1175,41 @@ func TestCopyModeScrollCursorMovesCursorBeforeViewport(t *testing.T) {
 	}.ScrollCursor(1, 30)
 	if copyMode.Cursor != (CopyPosition{Row: 15, Col: 3}) || copyMode.ViewportTop != 11 {
 		t.Fatalf("down scroll should move viewport only after cursor crosses bottom edge, got %#v", copyMode)
+	}
+}
+
+func TestCopyModeScrollViewportPagesWithoutStallingOnCursor(t *testing.T) {
+	copyMode := CopyModeStore{
+		Active:      true,
+		ViewRows:    5,
+		ViewportTop: 25,
+		Cursor:      CopyPosition{Row: 29, Col: 3},
+	}
+
+	copyMode = copyMode.ScrollViewport(-3, 40)
+
+	if copyMode.ViewportTop != 22 || copyMode.Cursor.Row != 26 {
+		t.Fatalf("page-style scroll should move viewport first and keep cursor visible, got %#v", copyMode)
+	}
+
+	copyMode = CopyModeStore{
+		Active:      true,
+		ViewRows:    5,
+		ViewportTop: 1,
+		Cursor:      CopyPosition{Row: 1, Col: 3},
+	}.ScrollViewport(-3, 40)
+	if copyMode.ViewportTop != 0 || copyMode.Cursor.Row != 0 {
+		t.Fatalf("viewport scroll should clamp at history top without losing visible cursor, got %#v", copyMode)
+	}
+
+	copyMode = CopyModeStore{
+		Active:      true,
+		ViewRows:    5,
+		ViewportTop: 25,
+		Cursor:      CopyPosition{Row: 25, Col: 3},
+	}.ScrollViewport(3, 40)
+	if copyMode.ViewportTop != 28 || copyMode.Cursor.Row != 28 {
+		t.Fatalf("down page-style scroll should move viewport and keep cursor visible, got %#v", copyMode)
 	}
 }
 
