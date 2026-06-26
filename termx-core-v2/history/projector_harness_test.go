@@ -100,6 +100,103 @@ func TestR311PrimarySessionCommitsScrollOutProofBeforeCurrentFrame(t *testing.T)
 	}
 }
 
+func TestR312OlderFromCurrentPrimaryFrameReturnsCommittedHistoryBeforeLatestBoundary(t *testing.T) {
+	store, projector := newR303Harness()
+
+	for i, text := range []string{"older one", "visible tail"} {
+		ordinary := fakeTx(uint64(i+1), 20, 4)
+		ordinary.PrimaryScrollOut = []TerminalSemanticScrollOut{{Cells: fakeTerminalCells(text)}}
+		applyR303(t, store, projector, ordinary, ScreenAppDecision{Mode: ScreenOutputModeOrdinary})
+	}
+
+	frameTx := fakeTx(3, 20, 4)
+	frameTx.SynchronizedBegin = true
+	frameTx.SynchronizedEnd = true
+	frameTx.PrimaryFrame = fakeTerminalFrame(20, "codex current")
+	applyR303(t, store, projector, frameTx, ScreenAppDecision{
+		Mode:         ScreenOutputModePrimaryScreenSession,
+		PublishFrame: true,
+	})
+
+	latest, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term", Mode: HistoryWindowModeLatest, Cols: 20, Limit: 1})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if latest.Boundary.Cursor.Segment != HistorySegmentCurrentPrimaryFrame {
+		t.Fatalf("latest should anchor at current primary frame, got %#v", latest.Boundary.Cursor)
+	}
+	if got := committedPlainRows(latest); len(got) != 1 || got[0] != "visible tail" {
+		t.Fatalf("latest should keep only committed visible tail before frame, got %#v", got)
+	}
+	older, err := store.OlderWindow(HistoryWindowRequest{
+		TerminalID: "term",
+		Mode:       HistoryWindowModeOlder,
+		Cols:       20,
+		Limit:      10,
+		Cursor:     latest.Boundary.Cursor,
+		Boundary:   latest.Boundary,
+		Token:      latest.Token,
+	})
+	if err != nil {
+		t.Fatalf("older from current primary frame should page into committed history: %v", err)
+	}
+	if got := committedPlainRows(older); len(got) != 1 || got[0] != "older one" {
+		t.Fatalf("older from current frame should return committed rows before frame, got %#v in %#v", got, older.Rows)
+	}
+}
+
+func TestR312LatestTokenFreezesCurrentPrimaryFramePayload(t *testing.T) {
+	store, projector := newR303Harness()
+
+	frameTx := fakeTx(1, 20, 4)
+	frameTx.SynchronizedBegin = true
+	frameTx.SynchronizedEnd = true
+	frameTx.PrimaryFrame = fakeTerminalFrame(20, "frame one")
+	applyR303(t, store, projector, frameTx, ScreenAppDecision{
+		Mode:         ScreenOutputModePrimaryScreenSession,
+		PublishFrame: true,
+	})
+	snapshot, err := store.Freeze(FreezeHistoryRequest{TerminalID: "term", Cols: 20, Limit: 10})
+	if err != nil {
+		t.Fatalf("freeze latest frame: %v", err)
+	}
+	latest, err := store.LatestWindow(HistoryWindowRequest{
+		TerminalID: "term",
+		Mode:       HistoryWindowModeLatest,
+		Cols:       20,
+		Limit:      10,
+		Token:      snapshot.Token,
+	})
+	if err != nil {
+		t.Fatalf("latest frozen frame: %v", err)
+	}
+	if got := plainRowsBySegment(latest, HistorySegmentCurrentPrimaryFrame); len(got) != 1 || got[0] != "frame one" {
+		t.Fatalf("frozen latest should expose original current frame, got %#v", got)
+	}
+
+	repaint := fakeTx(2, 20, 4)
+	repaint.SynchronizedBegin = true
+	repaint.SynchronizedEnd = true
+	repaint.PrimaryFrame = fakeTerminalFrame(20, "frame two")
+	applyR303(t, store, projector, repaint, ScreenAppDecision{
+		Mode:         ScreenOutputModePrimaryScreenSession,
+		PublishFrame: true,
+	})
+	again, err := store.LatestWindow(HistoryWindowRequest{
+		TerminalID: "term",
+		Mode:       HistoryWindowModeLatest,
+		Cols:       20,
+		Limit:      10,
+		Token:      snapshot.Token,
+	})
+	if err != nil {
+		t.Fatalf("latest frozen frame after repaint: %v", err)
+	}
+	if got := plainRowsBySegment(again, HistorySegmentCurrentPrimaryFrame); len(got) != 1 || got[0] != "frame one" {
+		t.Fatalf("frozen token must not read later current frame repaint, got %#v", got)
+	}
+}
+
 func TestR303PrimaryFullscreenRepaintReplacesCurrentOnly(t *testing.T) {
 	store, projector := newR303Harness()
 	decision := ScreenAppDecision{Mode: ScreenOutputModePrimaryScreenSession, PublishFrame: true}

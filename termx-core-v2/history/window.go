@@ -139,6 +139,8 @@ type FrozenHistorySnapshot struct {
 	Cols                  int
 	CommittedUpperBound   LogicalLineID
 	FrozenFrontierLineIDs []LogicalLineID
+	FrozenPrimaryFrames   []ScreenFrame
+	FrozenAltFrame        *ScreenFrame
 	Boundary              HistoryBoundary
 	Generation            Generation
 	CreatedAt             time.Time

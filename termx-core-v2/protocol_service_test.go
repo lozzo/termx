@@ -262,6 +262,50 @@ func TestProtocolServiceHistoryWindowCarriesScreenFrameSegments(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceHistoryOlderFromCurrentFramePagesCommittedRows(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-frame-older", Command: []string{"shell"}, Size: protocol.Size{Cols: 24, Rows: 4}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-frame-older", "older one\r\nvisible tail\r\n"); err != nil {
+		t.Fatalf("ingest committed: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-frame-older", "\x1b[?2026h\x1b[2J\x1b[Hcodex current\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest primary frame: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-frame-older", Cols: 24, Limit: 1})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	if latest.Token == "" || latest.CursorSegment != protocol.HistoryCursorSegmentCurrentPrimaryFrame {
+		t.Fatalf("latest should be anchored at current frame, got %#v", latest)
+	}
+	if got := protocolHistoryWindowTexts(latest); countStringForProtocolTest(got, "visible tail") != 1 || countStringForProtocolTest(got, "codex current") != 1 {
+		t.Fatalf("latest should include committed tail plus current frame, got %#v", got)
+	}
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-frame-older",
+		Cols:                24,
+		Limit:               10,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		CursorValid:         true,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+		CursorSegment:       latest.CursorSegment,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err != nil {
+		t.Fatalf("older from current frame cursor: %v", err)
+	}
+	if got := protocolHistoryWindowTexts(older); len(got) != 1 || got[0] != "older one" {
+		t.Fatalf("older from current frame should return committed history, got %#v", got)
+	}
+}
+
 func TestProtocolServiceHistoryOlderUsesSegmentCursorToken(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
@@ -330,6 +374,16 @@ func protocolCompactRowText(row protocol.CompactRow) string {
 		builder.WriteString(cell.Content)
 	}
 	return builder.String()
+}
+
+func countStringForProtocolTest(values []string, want string) int {
+	count := 0
+	for _, value := range values {
+		if value == want {
+			count++
+		}
+	}
+	return count
 }
 
 func TestProtocolServiceAttachmentStreamsLiveScreenUpdates(t *testing.T) {

@@ -587,6 +587,16 @@ func (store *memoryHistoryStore) LatestWindow(req HistoryWindowRequest) (History
 	if store == nil {
 		return HistoryWindow{}, nil
 	}
+	var snapshot FrozenHistorySnapshot
+	frozen := false
+	if req.Token != "" {
+		var ok bool
+		snapshot, ok = store.frozen[req.Token]
+		if !ok {
+			return HistoryWindow{}, fmt.Errorf("%w: unknown frozen token", ErrHistoryInvalidMutation)
+		}
+		frozen = true
+	}
 	window := HistoryWindow{
 		TerminalID: store.windowTerminalID(req.TerminalID),
 		Token:      req.Token,
@@ -600,7 +610,12 @@ func (store *memoryHistoryStore) LatestWindow(req HistoryWindowRequest) (History
 		limit = len(store.committed) + len(store.frontier) + 32
 	}
 	ids := append([]LogicalLineID(nil), store.committed...)
-	ids = append(ids, store.frontier...)
+	if frozen {
+		ids = committedIDsThrough(ids, snapshot.CommittedUpperBound)
+		ids = append(ids, snapshot.FrozenFrontierLineIDs...)
+	} else {
+		ids = append(ids, store.frontier...)
+	}
 	if len(ids) > limit {
 		window.HasMore = true
 		ids = ids[len(ids)-limit:]
@@ -625,19 +640,10 @@ func (store *memoryHistoryStore) LatestWindow(req HistoryWindowRequest) (History
 		Token:      window.Token,
 		Valid:      window.Boundary.FirstLineID != 0,
 	}
-	for _, session := range store.sessionsInOrder() {
-		for _, frame := range session.archives {
-			window.appendFrameRows(frame, HistorySegmentArchivedPrimaryFrame)
-			cursor = historyCursorForFrame(frame, HistorySegmentArchivedPrimaryFrame, store.generation, window.Token)
-		}
-		if session.current != nil {
-			window.appendFrameRows(*session.current, HistorySegmentCurrentPrimaryFrame)
-			cursor = historyCursorForFrame(*session.current, HistorySegmentCurrentPrimaryFrame, store.generation, window.Token)
-		}
-	}
-	if store.currentAlt != nil {
-		window.appendFrameRows(*store.currentAlt, HistorySegmentCurrentAltFrame)
-		cursor = historyCursorForFrame(*store.currentAlt, HistorySegmentCurrentAltFrame, store.generation, window.Token)
+	if frozen {
+		cursor = store.appendFrozenFrameRows(&window, snapshot, cursor)
+	} else {
+		cursor = store.appendLiveFrameRows(&window, cursor)
 	}
 	window.Boundary.Cursor = cursor
 	window.LogicalTotal = len(store.committed)
@@ -648,9 +654,6 @@ func (store *memoryHistoryStore) OlderWindow(req HistoryWindowRequest) (HistoryW
 	if store == nil {
 		return HistoryWindow{}, nil
 	}
-	if req.Cursor.Segment != "" && req.Cursor.Segment != HistorySegmentCommitted {
-		return HistoryWindow{}, ErrHistoryUnsupportedWindowMode
-	}
 	ids := append([]LogicalLineID(nil), store.committed...)
 	if req.Token != "" {
 		snapshot, ok := store.frozen[req.Token]
@@ -660,7 +663,16 @@ func (store *memoryHistoryStore) OlderWindow(req HistoryWindowRequest) (HistoryW
 		ids = committedIDsThrough(ids, snapshot.CommittedUpperBound)
 	}
 	end := len(ids)
-	if req.Cursor.Valid && req.Cursor.LineID != 0 {
+	if req.Cursor.Valid && req.Cursor.Segment != "" && req.Cursor.Segment != HistorySegmentCommitted {
+		// 中文说明：current/archive frame 是 latest window 尾部的可选片段；
+		// older 从这些 segment 往前翻时必须接回 latest 已加载 committed
+		// 边界之前的历史，不能重复返回 latest 中已经带下来的 tail。
+		if req.Boundary.FirstLineID != 0 {
+			if index := lineIDIndex(ids, req.Boundary.FirstLineID); index >= 0 {
+				end = index
+			}
+		}
+	} else if req.Cursor.Valid && req.Cursor.LineID != 0 {
 		if index := lineIDIndex(ids, req.Cursor.LineID); index >= 0 {
 			end = index
 		}
@@ -728,6 +740,11 @@ func (store *memoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHistory
 		Generation:            store.generation,
 		CreatedAt:             time.Now(),
 	}
+	snapshot.FrozenPrimaryFrames = store.cloneVisiblePrimaryFrames()
+	if store.currentAlt != nil {
+		alt := cloneHistoryFrame(*store.currentAlt)
+		snapshot.FrozenAltFrame = &alt
+	}
 	if len(store.committed) > 0 {
 		snapshot.Boundary.FirstLineID = store.committed[0]
 		snapshot.Boundary.LastLineID = lastLineID(store.committed)
@@ -764,6 +781,56 @@ func (store *memoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHistory
 	}
 	store.frozen[token] = snapshot
 	return snapshot, nil
+}
+
+func (store *memoryHistoryStore) appendLiveFrameRows(window *HistoryWindow, cursor HistoryCursor) HistoryCursor {
+	for _, session := range store.sessionsInOrder() {
+		for _, frame := range session.archives {
+			window.appendFrameRows(frame, HistorySegmentArchivedPrimaryFrame)
+			cursor = historyCursorForFrame(frame, HistorySegmentArchivedPrimaryFrame, store.generation, window.Token)
+		}
+		if session.current != nil {
+			window.appendFrameRows(*session.current, HistorySegmentCurrentPrimaryFrame)
+			cursor = historyCursorForFrame(*session.current, HistorySegmentCurrentPrimaryFrame, store.generation, window.Token)
+		}
+	}
+	if store.currentAlt != nil {
+		window.appendFrameRows(*store.currentAlt, HistorySegmentCurrentAltFrame)
+		cursor = historyCursorForFrame(*store.currentAlt, HistorySegmentCurrentAltFrame, store.generation, window.Token)
+	}
+	return cursor
+}
+
+func (store *memoryHistoryStore) appendFrozenFrameRows(window *HistoryWindow, snapshot FrozenHistorySnapshot, cursor HistoryCursor) HistoryCursor {
+	for _, frame := range snapshot.FrozenPrimaryFrames {
+		segment := HistorySegmentArchivedPrimaryFrame
+		if frame.Kind == LineKindScreenFrame {
+			segment = HistorySegmentCurrentPrimaryFrame
+		}
+		window.appendFrameRows(frame, segment)
+		cursor = historyCursorForFrame(frame, segment, snapshot.Generation, window.Token)
+	}
+	if snapshot.FrozenAltFrame != nil {
+		window.appendFrameRows(*snapshot.FrozenAltFrame, HistorySegmentCurrentAltFrame)
+		cursor = historyCursorForFrame(*snapshot.FrozenAltFrame, HistorySegmentCurrentAltFrame, snapshot.Generation, window.Token)
+	}
+	return cursor
+}
+
+func (store *memoryHistoryStore) cloneVisiblePrimaryFrames() []ScreenFrame {
+	if store == nil {
+		return nil
+	}
+	var frames []ScreenFrame
+	for _, session := range store.sessionsInOrder() {
+		for _, frame := range session.archives {
+			frames = append(frames, cloneHistoryFrame(frame))
+		}
+		if session.current != nil {
+			frames = append(frames, cloneHistoryFrame(*session.current))
+		}
+	}
+	return frames
 }
 
 func (store *memoryHistoryStore) Copy(req HistoryCopyRequest) (string, error) {
