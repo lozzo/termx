@@ -75,6 +75,7 @@ type StorageTransaction struct {
 	Lines      []LogicalLine
 	Tombstones []LogicalLineID
 	Committed  []LogicalLineID
+	Frontier   []LogicalLineID
 	Frames     []FrameRecord
 }
 
