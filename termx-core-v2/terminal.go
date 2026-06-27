@@ -544,7 +544,14 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 	decision := history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream}
 	hasEraseDisplay := historyTransactionHasEraseDisplay(tx)
 	hasContentMutation := historyTransactionHasContentMutation(tx)
-	isPrimaryFrameSession := ((tx.SynchronizedActive || tx.SynchronizedEnd) && hasContentMutation) || tx.RequiresFullReplace || hasEraseDisplay
+	hasContentAfterSyncEnd := historyTransactionHasContentAfterSyncEnd(tx)
+	syncFrameSession := ((tx.SynchronizedActive || tx.SynchronizedEnd) && hasContentMutation && !hasContentAfterSyncEnd)
+	// 中文说明：RequiresFullReplace 只是 vterm/live stale 边界；只有没有 current
+	// primary owner 且缺少 ordered content ops 时，PrimaryFrame side proof 才能作为
+	// 初始 screen redraw 进入 frame reducer。否则 shell prompt 这类普通输出会被
+	// 最终整屏 frame 又发布一次，和已 sealed 的尾屏形成重复历史。
+	fullReplaceFrameOnly := tx.RequiresFullReplace && !state.HasPrimaryCurrent && !historyTransactionHasOrderedContentOps(tx)
+	isPrimaryFrameSession := syncFrameSession || fullReplaceFrameOnly || hasEraseDisplay
 	if tx.RequiresFullReplace && tx.FullReplaceReason == "resize" {
 		return history.HistoryDecision{Mode: history.HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true}
 	}
@@ -568,10 +575,12 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 		decision.ConsumeScrollOutProof = historyTransactionShouldConsumeScrollOut(tx, state)
 		decision.ConsumeClearBoundary = hasEraseDisplay
 	}
-	if decision.Mode == history.HistoryOutputModeOrdinaryStream && state.HasPrimaryCurrent && historyTransactionHasContentMutation(tx) {
+	if decision.Mode == history.HistoryOutputModeOrdinaryStream && state.HasPrimaryCurrent && (historyTransactionHasContentMutation(tx) || tx.RequiresFullReplace) {
 		// 中文说明：screen app session 后恢复真正的普通输出，才是 terminal
 		// 语义上的 session 边界；纯 synchronized begin/end 这类 mode 边界没有
-		// payload，不能把 current frame close 进 committed history。
+		// payload，不能把 current frame close 进 committed history。full replace
+		// stale 边界不能发布最终整屏，但必须关闭旧 current ownership，避免旧尾屏
+		// 在 latest window 中继续作为 mutable frame 重复出现。
 		decision.ClosePrimaryFrameBeforeStream = true
 	}
 	return decision
@@ -579,7 +588,7 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 
 func historyTransactionHasEraseDisplay(tx history.TerminalSemanticTransaction) bool {
 	for _, op := range tx.Ops {
-		if op.Code == vterm.ScreenOpControl && op.Control == "ed" {
+		if op.Code == vterm.ScreenOpControl && op.Control == "ed" && op.Mode == 2 {
 			return true
 		}
 	}
@@ -588,17 +597,47 @@ func historyTransactionHasEraseDisplay(tx history.TerminalSemanticTransaction) b
 
 func historyTransactionHasContentMutation(tx history.TerminalSemanticTransaction) bool {
 	for _, op := range tx.Ops {
-		switch op.Code {
-		case vterm.ScreenOpWriteSpan, vterm.ScreenOpScrollRect, vterm.ScreenOpCopyRect, vterm.ScreenOpClearRect, vterm.ScreenOpClearToEOL, vterm.ScreenOpResize:
+		if historyOpMutatesContent(op) {
 			return true
-		case vterm.ScreenOpControl:
-			switch op.Control {
-			case "ed", "el", "ech", "dch", "ich", "il", "dl", "su", "sd", "ri", "ris":
-				return true
-			}
 		}
 	}
 	return len(tx.PrimaryScrollOut) > 0 || historyTransactionHasOpScrollOut(tx)
+}
+
+func historyTransactionHasOrderedContentOps(tx history.TerminalSemanticTransaction) bool {
+	for _, op := range tx.Ops {
+		if historyOpMutatesContent(op) {
+			return true
+		}
+	}
+	return false
+}
+
+func historyTransactionHasContentAfterSyncEnd(tx history.TerminalSemanticTransaction) bool {
+	afterSyncEnd := false
+	for _, op := range tx.Ops {
+		if op.Code == vterm.ScreenOpModes && op.Private && op.Mode == 2026 && !op.Enabled {
+			afterSyncEnd = true
+			continue
+		}
+		if afterSyncEnd && historyOpMutatesContent(op) {
+			return true
+		}
+	}
+	return false
+}
+
+func historyOpMutatesContent(op history.TerminalSemanticOp) bool {
+	switch op.Code {
+	case vterm.ScreenOpWriteSpan, vterm.ScreenOpScrollRect, vterm.ScreenOpCopyRect, vterm.ScreenOpClearRect, vterm.ScreenOpClearToEOL, vterm.ScreenOpResize:
+		return true
+	case vterm.ScreenOpControl:
+		switch op.Control {
+		case "ed", "el", "ech", "dch", "ich", "il", "dl", "su", "sd", "ri", "ris":
+			return true
+		}
+	}
+	return len(op.ScrollOut) > 0
 }
 
 func historyTransactionShouldConsumeScrollOut(tx history.TerminalSemanticTransaction, state history.HistoryReadState) bool {
