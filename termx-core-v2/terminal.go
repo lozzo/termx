@@ -548,10 +548,13 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 	syncFrameSession := ((tx.SynchronizedActive || tx.SynchronizedEnd) && hasContentMutation && !hasContentAfterSyncEnd)
 	// 中文说明：RequiresFullReplace 只是 vterm/live stale 边界；只有没有 current
 	// primary owner 且缺少 ordered content ops 时，PrimaryFrame side proof 才能作为
-	// 初始 screen redraw 进入 frame reducer。否则 shell prompt 这类普通输出会被
-	// 最终整屏 frame 又发布一次，和已 sealed 的尾屏形成重复历史。
+	// 初始 screen redraw 进入 frame reducer。若已有 sealed timeline，full-replace
+	// snapshot 必须带本 transaction 的 touch proof，否则 shell prompt 这类普通输出
+	// 会被最终整屏 frame 又发布一次，和已 sealed 的尾屏形成重复历史。
 	fullReplaceFrameOnly := tx.RequiresFullReplace && !state.HasPrimaryCurrent && !historyTransactionHasOrderedContentOps(tx)
-	isPrimaryFrameSession := syncFrameSession || fullReplaceFrameOnly || hasEraseDisplay
+	fullReplaceTouchedRowsOnly := fullReplaceFrameOnly && state.HasTimeline && len(tx.PrimaryFrameTouchedRows) > 0
+	fullReplaceCanPublish := fullReplaceFrameOnly && (!state.HasTimeline || fullReplaceTouchedRowsOnly)
+	isPrimaryFrameSession := syncFrameSession || fullReplaceCanPublish || hasEraseDisplay
 	if tx.RequiresFullReplace && tx.FullReplaceReason == "resize" {
 		return history.HistoryDecision{Mode: history.HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true}
 	}
@@ -569,11 +572,11 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 	if tx.PrimaryFrame != nil && isPrimaryFrameSession {
 		decision.Mode = history.HistoryOutputModePrimaryFrameSession
 		decision.PublishPrimaryFrame = true
-		// 中文说明：同步输出刚启动时，vterm PrimaryFrame side proof 会包含屏幕上
-		// 已经 sealed 的普通 shell tail。没有 clear/full-replace 边界时，只允许
-		// 本 transaction 触达的 rows 进入 current frame，不能把旧 shell 屏幕复刻成
-		// 第二份 screen app history truth。
-		decision.PublishPrimaryFrameTouchedRowsOnly = syncFrameSession && !hasEraseDisplay && !tx.RequiresFullReplace
+		// 中文说明：同步输出或 full-replace direct damage 刚启动时，vterm
+		// PrimaryFrame side proof 会包含屏幕上已经 sealed 的普通 shell tail。
+		// 没有 clear 边界时，只允许本 transaction 触达的 rows 进入 current
+		// frame，不能把旧 shell 屏幕复刻成第二份 screen app history truth。
+		decision.PublishPrimaryFrameTouchedRowsOnly = !hasEraseDisplay && (syncFrameSession || fullReplaceTouchedRowsOnly)
 		// 中文说明：vterm 已经证明真正滚出 primary viewport 的 payload 必须进入
 		// authoritative history；ED2 清屏时捕获的旧可见屏只是 repaint boundary，
 		// renderer 会跳过，避免 copy/history 里出现多倍临时 UI。

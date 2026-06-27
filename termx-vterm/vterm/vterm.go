@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image/color"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -480,11 +481,15 @@ type WriteDamage struct {
 	DirectDamageItems   int
 	DirectDamageRows    int
 	DirectDamageCells   int
-	Cursor              CursorState
-	Modes               TerminalModes
-	SizeCols            int
-	SizeRows            int
-	DiffCPUNanos        int64
+	// DirectDamageTouchedRows 是本次 direct damage 在 primary/alt screen 上触达的
+	// row index。domain owner 是 vterm damage 解码；core 只能把它当作
+	// current-frame ownership proof，不能用 final screen snapshot 反推历史。
+	DirectDamageTouchedRows []int
+	Cursor                  CursorState
+	Modes                   TerminalModes
+	SizeCols                int
+	SizeRows                int
+	DiffCPUNanos            int64
 }
 
 type TraceHooks struct {
@@ -865,6 +870,7 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 			damage.DirectDamageItems = directStats.Items
 			damage.DirectDamageRows = directStats.Rows
 			damage.DirectDamageCells = directStats.Cells
+			damage.DirectDamageTouchedRows = cloneIntSlice(directStats.TouchedRows)
 		} else {
 			damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, "screen_shape_changed")
 			if hasDirectDamage {
@@ -4149,6 +4155,7 @@ type directDamageSummary struct {
 	MaxItemsPerRow         int
 	ScreenWidth            int
 	ScreenHeight           int
+	TouchedRows            []int
 	HasScrollOrMove        bool
 	HasUnsupported         bool
 	HasFullScreenDamage    bool
@@ -4263,6 +4270,13 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 		}
 	}
 	stats.Rows = len(changedRows)
+	if len(changedRows) > 0 {
+		stats.TouchedRows = make([]int, 0, len(changedRows))
+		for row := range changedRows {
+			stats.TouchedRows = append(stats.TouchedRows, row)
+		}
+		sort.Ints(stats.TouchedRows)
+	}
 	return stats
 }
 
@@ -4289,6 +4303,15 @@ func markClampedRows(rows map[int]struct{}, y, height, maxHeight int) {
 	for row := start; row < end; row++ {
 		rows[row] = struct{}{}
 	}
+}
+
+func cloneIntSlice(in []int) []int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]int, len(in))
+	copy(out, in)
+	return out
 }
 
 func (v *VTerm) damageOpsFromCharmVTDamages(damages []charmvt.Damage, screenWidth, screenHeight int, timestamps []time.Time, rowKinds []string) ([]DamageOp, bool) {

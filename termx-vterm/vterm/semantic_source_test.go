@@ -3,6 +3,9 @@ package vterm
 import (
 	"strings"
 	"testing"
+
+	uv "github.com/charmbracelet/ultraviolet"
+	charmvt "github.com/lozzow/termx/termx-vterm/internal/vt"
 )
 
 func TestSemanticSourceApplyPTYWriteEmitsOrderedTransaction(t *testing.T) {
@@ -95,6 +98,37 @@ func TestSemanticSourceSynchronizedScrollOutKeepsPayloadRuns(t *testing.T) {
 	}
 	if tx.PrimaryFrame == nil || len(tx.PrimaryFrame.Rows) < 2 || cellsTextForSemanticTest(tx.PrimaryFrame.Rows[0]) != "line07" || cellsTextForSemanticTest(tx.PrimaryFrame.Rows[1]) != "line08" {
 		t.Fatalf("expected latest frame to remain final screen, got %#v", tx.PrimaryFrame)
+	}
+}
+
+func TestR335SemanticSourceExposesFullReplaceTouchedRows(t *testing.T) {
+	source := NewSemanticSource(80, 24, 100, nil)
+	prevWithDamage := safeEmulatorWriteWithDamage
+	safeEmulatorWriteWithDamage = func(emu *charmvt.SafeEmulator, data []byte) (int, error, []charmvt.Damage, bool) {
+		n, err := emu.Write(data)
+		cells := make([]uv.Cell, emu.Width())
+		for col := range cells {
+			cells[col] = uv.Cell{Content: "x", Width: 1}
+		}
+		damages := make([]charmvt.Damage, emu.Height())
+		for row := 0; row < emu.Height(); row++ {
+			damages[row] = charmvt.SpanDamage{X: 0, Y: row, Cells: cells}
+		}
+		return n, err, damages, true
+	}
+	t.Cleanup(func() {
+		safeEmulatorWriteWithDamage = prevWithDamage
+	})
+
+	tx, err := source.ApplyPTYWrite([]byte("x"))
+	if err != nil {
+		t.Fatalf("apply broad direct damage: %v", err)
+	}
+	if !tx.RequiresFullReplace || tx.FullReplaceReason != "broad_direct_cell_damage" {
+		t.Fatalf("expected broad full replace transaction, got %#v", tx)
+	}
+	if len(tx.PrimaryFrameTouchedRows) != 24 || tx.PrimaryFrameTouchedRows[0] != 0 || tx.PrimaryFrameTouchedRows[23] != 23 {
+		t.Fatalf("semantic transaction must carry primary frame touched rows, got %#v", tx.PrimaryFrameTouchedRows)
 	}
 }
 

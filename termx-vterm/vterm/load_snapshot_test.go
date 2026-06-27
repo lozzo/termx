@@ -3440,6 +3440,9 @@ func TestVTermWriteWithDamageBroadDirectSpanUsesFullReplace(t *testing.T) {
 	if damage.DirectDamageItems != 24 || damage.DirectDamageRows != 24 || damage.DirectDamageCells != 1920 {
 		t.Fatalf("unexpected direct damage stats: items=%d rows=%d cells=%d", damage.DirectDamageItems, damage.DirectDamageRows, damage.DirectDamageCells)
 	}
+	if len(damage.DirectDamageTouchedRows) != 24 || damage.DirectDamageTouchedRows[0] != 0 || damage.DirectDamageTouchedRows[23] != 23 {
+		t.Fatalf("direct damage must expose sorted touched row proof, got %#v", damage.DirectDamageTouchedRows)
+	}
 }
 
 func TestVTermWriteWithDamageRepeatedDirectSpanUsesFullReplace(t *testing.T) {
@@ -3476,6 +3479,9 @@ func TestVTermWriteWithDamageRepeatedDirectSpanUsesFullReplace(t *testing.T) {
 	}
 	if damage.DirectDamageItems != 6000 || damage.DirectDamageRows != 1 || damage.DirectDamageCells != 6000 {
 		t.Fatalf("unexpected direct damage stats: items=%d rows=%d cells=%d", damage.DirectDamageItems, damage.DirectDamageRows, damage.DirectDamageCells)
+	}
+	if len(damage.DirectDamageTouchedRows) != 1 || damage.DirectDamageTouchedRows[0] != 2 {
+		t.Fatalf("repeated direct damage must expose touched row proof, got %#v", damage.DirectDamageTouchedRows)
 	}
 }
 

@@ -40,6 +40,9 @@ func (renderer *logicalRenderer) Apply(tx TerminalSemanticTransaction, decision 
 		return HistoryMutationBatch{}, nil
 	}
 	renderer.primaryFrameTouchedRows = nil
+	if decision.PublishPrimaryFrame && decision.PublishPrimaryFrameTouchedRowsOnly {
+		renderer.recordPrimaryFrameTouchedRowIndexes(tx.PrimaryFrameTouchedRows, tx.Size)
+	}
 	var mutations []HistoryMutation
 	if decision.ClosePrimaryFrameBeforeStream {
 		// 中文说明：primary screen app 结束后出现新的普通 PTY 输出时，旧 current
@@ -276,6 +279,24 @@ func (renderer *logicalRenderer) recordPrimaryFrameTouchedRows(op TerminalSemant
 		case "ri":
 			markRow(op.Row)
 		}
+	}
+}
+
+func (renderer *logicalRenderer) recordPrimaryFrameTouchedRowIndexes(rows []int, size TerminalSemanticSize) {
+	if renderer == nil {
+		return
+	}
+	for _, row := range rows {
+		if row < 0 {
+			continue
+		}
+		if size.Rows > 0 && row >= size.Rows {
+			continue
+		}
+		if renderer.primaryFrameTouchedRows == nil {
+			renderer.primaryFrameTouchedRows = make(map[int]struct{})
+		}
+		renderer.primaryFrameTouchedRows[row] = struct{}{}
 	}
 }
 

@@ -81,6 +81,7 @@ func (store *inMemoryHistoryStore) ReadState() HistoryReadState {
 	return HistoryReadState{
 		Generation:        store.generation,
 		HasOpenLine:       store.openLine != nil,
+		HasTimeline:       len(store.timeline) > 0,
 		HasPrimaryCurrent: store.frameJournal.PrimaryCurrent != nil,
 		HasAltCurrent:     store.frameJournal.AltCurrent != nil,
 	}

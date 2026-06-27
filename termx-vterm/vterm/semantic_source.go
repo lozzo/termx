@@ -46,8 +46,12 @@ type TerminalSemanticTransaction struct {
 
 	PrimaryScrollOut []TerminalSemanticScrollOut
 	PrimaryFrame     *TerminalSemanticFrame
-	AltFrame         *TerminalSemanticFrame
-	AltExitFrame     *TerminalSemanticFrame
+	// PrimaryFrameTouchedRows 表示本次 transaction 确认触达的 primary frame 行。
+	// truth source 是 vterm direct damage/ordered ops；core 只能按这些行接管
+	// current frame ownership，不能把整张 PrimaryFrame 快照当作新历史。
+	PrimaryFrameTouchedRows []int
+	AltFrame                *TerminalSemanticFrame
+	AltExitFrame            *TerminalSemanticFrame
 
 	AltEntered        bool
 	AltExited         bool
@@ -123,14 +127,15 @@ func (source *SemanticSource) transactionFromDamage(seq uint64, raw string, dama
 		size = source.currentSize()
 	}
 	tx := TerminalSemanticTransaction{
-		Seq:                 seq,
-		Raw:                 raw,
-		Size:                size,
-		Ops:                 cloneSemanticOps(semanticOpsForTransactionDamage(damage)),
-		RequiresFullReplace: damage.RequiresFullReplace,
-		FullReplaceReason:   damage.FullReplaceReason,
-		ClearScrollback:     terminalSemanticDamageHasClearScrollback(damage),
-		SourceDamage:        damage,
+		Seq:                     seq,
+		Raw:                     raw,
+		Size:                    size,
+		Ops:                     cloneSemanticOps(semanticOpsForTransactionDamage(damage)),
+		PrimaryFrameTouchedRows: cloneIntSlice(damage.DirectDamageTouchedRows),
+		RequiresFullReplace:     damage.RequiresFullReplace,
+		FullReplaceReason:       damage.FullReplaceReason,
+		ClearScrollback:         terminalSemanticDamageHasClearScrollback(damage),
+		SourceDamage:            damage,
 	}
 	for _, scrollOut := range damage.ScrollbackAppend {
 		tx.PrimaryScrollOut = append(tx.PrimaryScrollOut, TerminalSemanticScrollOut{
