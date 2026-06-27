@@ -24,6 +24,25 @@ func TestR322FrameReducerPrimaryRepaintIsCurrentOnly(t *testing.T) {
 	}
 }
 
+func TestR334FrameReducerTouchedRowsDoNotAdoptUntouchedShellTail(t *testing.T) {
+	reducer := NewFrameReducer()
+	mutations, err := reducer.ReplacePrimaryTouchedRows(semanticFrame(20,
+		"sealed shell 1",
+		"sealed shell 2",
+		"",
+		"codex ui",
+	), []int{3}, FrameReasonPrimaryRepaint)
+	if err != nil {
+		t.Fatalf("replace touched primary rows: %v", err)
+	}
+	if len(mutations) != 1 || mutations[0].Mutable == nil {
+		t.Fatalf("expected mutable frame mutation, got %#v", mutations)
+	}
+	if got := frameDraftText(mutations[0].Mutable.Rows); got != "codex ui" {
+		t.Fatalf("touched-row frame must not copy untouched shell rows, got %q mutations=%#v", got, mutations)
+	}
+}
+
 func TestR322FrameReducerAltTransientDoesNotEnterPrimaryTimeline(t *testing.T) {
 	reducer := NewFrameReducer()
 	if _, err := reducer.ReplaceAltCurrent(semanticFrame(20, "alt")); err != nil {

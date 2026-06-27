@@ -1,5 +1,11 @@
 package history
 
+import (
+	"sort"
+
+	vterm "github.com/lozzow/termx/termx-vterm/vterm"
+)
+
 // NewHistoryLogicalRenderer 组合 stream/frame reducers，创建 semantic transaction
 // 到 mutation batch 的唯一转换层。domain owner：history；truth source 只允许是
 // vterm TerminalSemanticTransaction、HistoryDecision 和 lifecycle CloseReason。
@@ -26,12 +32,14 @@ type logicalRenderer struct {
 	stream                   StreamLineReducer
 	frames                   FrameReducer
 	primaryFrameHasScrollOut bool
+	primaryFrameTouchedRows  map[int]struct{}
 }
 
 func (renderer *logicalRenderer) Apply(tx TerminalSemanticTransaction, decision HistoryDecision) (HistoryMutationBatch, error) {
 	if renderer == nil {
 		return HistoryMutationBatch{}, nil
 	}
+	renderer.primaryFrameTouchedRows = nil
 	var mutations []HistoryMutation
 	if decision.ClosePrimaryFrameBeforeStream {
 		// 中文说明：primary screen app 结束后出现新的普通 PTY 输出时，旧 current
@@ -103,6 +111,9 @@ func (renderer *logicalRenderer) Close(reason CloseReason) (HistoryMutationBatch
 func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision HistoryDecision) ([]HistoryMutation, error) {
 	switch event.Kind {
 	case HistorySemanticEventOp:
+		if decision.PublishPrimaryFrame && decision.PublishPrimaryFrameTouchedRowsOnly && event.Op != nil {
+			renderer.recordPrimaryFrameTouchedRows(*event.Op, event.Size)
+		}
 		if decision.ConsumeClearBoundary && event.Op != nil && isEraseDisplayAllOp(*event.Op) {
 			var mutations []HistoryMutation
 			streamMutations, err := renderer.stream.ClearScreenOwnership()
@@ -146,6 +157,9 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 		}
 	case HistorySemanticEventPrimaryFrame:
 		if decision.PublishPrimaryFrame && event.Frame != nil {
+			if decision.PublishPrimaryFrameTouchedRowsOnly {
+				return renderer.frames.ReplacePrimaryTouchedRows(*event.Frame, renderer.sortedPrimaryFrameTouchedRows(), FrameReasonPrimaryRepaint)
+			}
 			return renderer.frames.ReplacePrimaryCurrent(*event.Frame, FrameReasonPrimaryRepaint)
 		}
 	case HistorySemanticEventAltEnter:
@@ -202,6 +216,79 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 		return mutations, nil
 	}
 	return nil, nil
+}
+
+func (renderer *logicalRenderer) recordPrimaryFrameTouchedRows(op TerminalSemanticOp, size TerminalSemanticSize) {
+	if renderer == nil {
+		return
+	}
+	markRow := func(row int) {
+		if row < 0 {
+			return
+		}
+		if size.Rows > 0 && row >= size.Rows {
+			return
+		}
+		if renderer.primaryFrameTouchedRows == nil {
+			renderer.primaryFrameTouchedRows = make(map[int]struct{})
+		}
+		renderer.primaryFrameTouchedRows[row] = struct{}{}
+	}
+	markRange := func(start int, end int) {
+		if end < start {
+			start, end = end, start
+		}
+		if size.Rows > 0 && end > size.Rows {
+			end = size.Rows
+		}
+		for row := start; row < end; row++ {
+			markRow(row)
+		}
+	}
+	switch op.Code {
+	case vterm.ScreenOpWriteSpan, vterm.ScreenOpClearToEOL:
+		markRow(op.Row)
+	case vterm.ScreenOpClearRect:
+		markRange(op.Rect.Y, op.Rect.Y+op.Rect.Height)
+	case vterm.ScreenOpScrollRect:
+		markRange(op.Rect.Y, op.Rect.Y+op.Rect.Height)
+	case vterm.ScreenOpCopyRect:
+		markRange(op.DstY, op.DstY+op.Src.Height)
+	case vterm.ScreenOpControl:
+		switch op.Control {
+		case "el", "ech", "dch", "ich":
+			markRow(op.Row)
+		case "ed":
+			switch op.Mode {
+			case 1:
+				markRange(0, op.Row+1)
+			case 2, 3:
+				markRange(0, size.Rows)
+			default:
+				markRange(op.Row, size.Rows)
+			}
+		case "il", "dl", "su", "sd":
+			if op.Bottom > op.Row {
+				markRange(op.Row, op.Bottom)
+			} else {
+				markRow(op.Row)
+			}
+		case "ri":
+			markRow(op.Row)
+		}
+	}
+}
+
+func (renderer *logicalRenderer) sortedPrimaryFrameTouchedRows() []int {
+	if renderer == nil || len(renderer.primaryFrameTouchedRows) == 0 {
+		return nil
+	}
+	rows := make([]int, 0, len(renderer.primaryFrameTouchedRows))
+	for row := range renderer.primaryFrameTouchedRows {
+		rows = append(rows, row)
+	}
+	sort.Ints(rows)
+	return rows
 }
 
 func sealReasonFromCloseReason(reason CloseReason) SealReason {

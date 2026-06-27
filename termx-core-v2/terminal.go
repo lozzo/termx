@@ -569,6 +569,11 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 	if tx.PrimaryFrame != nil && isPrimaryFrameSession {
 		decision.Mode = history.HistoryOutputModePrimaryFrameSession
 		decision.PublishPrimaryFrame = true
+		// 中文说明：同步输出刚启动时，vterm PrimaryFrame side proof 会包含屏幕上
+		// 已经 sealed 的普通 shell tail。没有 clear/full-replace 边界时，只允许
+		// 本 transaction 触达的 rows 进入 current frame，不能把旧 shell 屏幕复刻成
+		// 第二份 screen app history truth。
+		decision.PublishPrimaryFrameTouchedRowsOnly = syncFrameSession && !hasEraseDisplay && !tx.RequiresFullReplace
 		// 中文说明：vterm 已经证明真正滚出 primary viewport 的 payload 必须进入
 		// authoritative history；ED2 清屏时捕获的旧可见屏只是 repaint boundary，
 		// renderer 会跳过，避免 copy/history 里出现多倍临时 UI。

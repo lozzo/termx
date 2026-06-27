@@ -18,13 +18,18 @@ type HistoryReadState struct {
 // HistoryDecision 只表达 semantic transaction 该走哪条 history renderer 路径。
 // 它不能携带 renderer rows、live snapshot、进程名或协议/TUI 状态。
 type HistoryDecision struct {
-	Mode                    HistoryOutputMode
-	PublishPrimaryFrame     bool
-	ArchivePrimaryBeforeAlt bool
-	ClearPrimaryCurrent     bool
-	PublishAltFrame         bool
-	ClearAltFrame           bool
-	ClosePrimaryFrame       bool
+	Mode                HistoryOutputMode
+	PublishPrimaryFrame bool
+	// PublishPrimaryFrameTouchedRowsOnly 表示本次 primary frame 只能接管当前
+	// transaction 明确触达的 rows。它用于 synchronized 输出刚启动但尚未 clear
+	// 全屏的场景，防止已 sealed 的普通 shell tail 被整屏 side proof 再发布为
+	// current frame；真值来源只能是 ordered semantic ops 的 row/rect 信息。
+	PublishPrimaryFrameTouchedRowsOnly bool
+	ArchivePrimaryBeforeAlt            bool
+	ClearPrimaryCurrent                bool
+	PublishAltFrame                    bool
+	ClearAltFrame                      bool
+	ClosePrimaryFrame                  bool
 	// ClosePrimaryFrameBeforeStream 表示普通输出恢复前必须先关闭 primary
 	// current frame，防止后续 prompt/open line 被投影到旧 screen-frame 前面。
 	ClosePrimaryFrameBeforeStream bool

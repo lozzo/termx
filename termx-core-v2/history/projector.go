@@ -36,6 +36,10 @@ type FrameReducer interface {
 	// ReplacePrimaryCurrent 用同一 transaction 的 primary semantic frame 全量替换
 	// current primary frame。
 	ReplacePrimaryCurrent(frame TerminalSemanticFrame, reason FrameReason) ([]HistoryMutation, error)
+	// ReplacePrimaryTouchedRows 只用本 transaction 明确触达的 rows 更新 current
+	// primary frame。调用方必须从 ordered semantic ops 派生 touched rows；不能用
+	// live snapshot 文本或程序名过滤，否则会把 shell tail 误当成 screen app truth。
+	ReplacePrimaryTouchedRows(frame TerminalSemanticFrame, rows []int, reason FrameReason) ([]HistoryMutation, error)
 	// ArchivePrimaryCurrent 把 current primary frame 按明确 boundary seal 到 frame journal。
 	ArchivePrimaryCurrent(reason SealReason) ([]HistoryMutation, error)
 	// ClearPrimaryCurrent 丢弃 current primary frame ownership。它只用于 vterm 已经

@@ -1,6 +1,9 @@
 package history
 
-import "time"
+import (
+	"sort"
+	"time"
+)
 
 // NewFrameReducer 创建 primary/alt fixed-grid frame journal reducer。
 // domain owner：history；truth source 只能是 vterm semantic frame payload 和明确
@@ -33,6 +36,66 @@ func (reducer *frameReducer) ReplacePrimaryCurrent(frame TerminalSemanticFrame, 
 		Seq:       reducer.nextSequence(),
 		Cols:      frame.Cols,
 		Rows:      reducer.draftsFromSemanticFrame(frame, string(LineKindScreenFrame), SealStateOpen),
+		Source:    FrameSourcePrimarySemantic,
+		CreatedAt: time.Now().UTC(),
+	}
+	reducer.journal.PrimaryCurrent = cloneMutableFramePointer(&mutable)
+	mutationFrame := cloneMutableFrame(mutable)
+	return []HistoryMutation{{
+		Kind:      HistoryMutationReplacePrimaryFrame,
+		Mutable:   &mutationFrame,
+		SessionID: mutable.SessionID,
+		FrameID:   mutable.ID,
+	}}, nil
+}
+
+func (reducer *frameReducer) ReplacePrimaryTouchedRows(frame TerminalSemanticFrame, rows []int, reason FrameReason) ([]HistoryMutation, error) {
+	if reducer == nil {
+		return nil, nil
+	}
+	reducer.ensureCounters()
+	rowSet := normalizedFrameTouchedRows(rows, len(frame.Rows))
+	if len(rowSet) == 0 {
+		return nil, nil
+	}
+	frameRows := trimmedFrameRows(frame.Rows)
+	id := reducer.currentPrimaryFrameID()
+	sessionID := reducer.currentSessionID()
+	draftByRow := make(map[int]LogicalLineDraft)
+	if current := reducer.journal.PrimaryCurrent; current != nil {
+		sessionID = current.SessionID
+		for _, draft := range current.Rows {
+			draftByRow[draft.Row] = cloneLogicalLineDraft(draft)
+		}
+	}
+	for row := range rowSet {
+		if row >= len(frameRows) {
+			delete(draftByRow, row)
+			continue
+		}
+		line := LogicalLine{
+			ID:         reducer.nextLogicalLineID(),
+			Seal:       SealStateOpen,
+			Kind:       string(LineKindScreenFrame),
+			Cells:      cloneHistoryCells(frameRows[row]),
+			ScreenCols: frame.Cols,
+			Residency:  ResidencyMemory,
+		}
+		draftByRow[row] = LogicalLineDraft{
+			Line: cloneLogicalLine(line),
+			Row:  row,
+		}
+	}
+	mergedRows := logicalLineDraftsFromRowMap(draftByRow)
+	if len(mergedRows) == 0 {
+		return reducer.ClearPrimaryCurrent(reason)
+	}
+	mutable := MutableFrame{
+		ID:        id,
+		SessionID: sessionID,
+		Seq:       reducer.nextSequence(),
+		Cols:      frame.Cols,
+		Rows:      mergedRows,
 		Source:    FrameSourcePrimarySemantic,
 		CreatedAt: time.Now().UTC(),
 	}
@@ -238,6 +301,36 @@ func trimmedFrameRows(rows [][]TerminalSemanticCell) [][]Cell {
 	return converted[:lastContentRow+1]
 }
 
+func normalizedFrameTouchedRows(rows []int, frameRowCount int) map[int]struct{} {
+	if len(rows) == 0 || frameRowCount <= 0 {
+		return nil
+	}
+	out := make(map[int]struct{}, len(rows))
+	for _, row := range rows {
+		if row < 0 || row >= frameRowCount {
+			continue
+		}
+		out[row] = struct{}{}
+	}
+	return out
+}
+
+func logicalLineDraftsFromRowMap(rows map[int]LogicalLineDraft) []LogicalLineDraft {
+	if len(rows) == 0 {
+		return nil
+	}
+	indexes := make([]int, 0, len(rows))
+	for row := range rows {
+		indexes = append(indexes, row)
+	}
+	sort.Ints(indexes)
+	out := make([]LogicalLineDraft, 0, len(indexes))
+	for _, row := range indexes {
+		out = append(out, cloneLogicalLineDraft(rows[row]))
+	}
+	return out
+}
+
 func historyFrameRowIsDefaultBlank(cells []Cell) bool {
 	for _, cell := range cells {
 		if !isDefaultBlankCell(cell) {
@@ -371,6 +464,11 @@ func cloneLogicalLineDrafts(drafts []LogicalLineDraft) []LogicalLineDraft {
 		out[i].Line = cloneLogicalLine(draft.Line)
 	}
 	return out
+}
+
+func cloneLogicalLineDraft(draft LogicalLineDraft) LogicalLineDraft {
+	draft.Line = cloneLogicalLine(draft.Line)
+	return draft
 }
 
 func cloneLogicalLines(lines []LogicalLine) []LogicalLine {
