@@ -44,7 +44,7 @@ func TestR326LogicalRendererSharesIDsAcrossStreamAndFrameReducers(t *testing.T) 
 	}
 }
 
-func TestR329LogicalRendererConsumesED2OrderedScrollOutAndClearsCurrentFrame(t *testing.T) {
+func TestR329LogicalRendererSkipsED2ClearTimeScrollOutAndClearsCurrentFrame(t *testing.T) {
 	renderer := NewHistoryLogicalRenderer(nil, nil)
 	if _, err := renderer.Apply(TerminalSemanticTransaction{
 		Seq: 1,
@@ -70,7 +70,7 @@ func TestR329LogicalRendererConsumesED2OrderedScrollOutAndClearsCurrentFrame(t *
 			Cols: 12,
 			Rows: [][]TerminalSemanticCell{{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}},
 		},
-	}, HistoryDecision{Mode: HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true, ConsumeScrollOutProof: true, ConsumeClearScrollOutProof: true, ConsumeClearBoundary: true})
+	}, HistoryDecision{Mode: HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true, ConsumeScrollOutProof: true, ConsumeClearBoundary: true})
 	if err != nil {
 		t.Fatalf("apply ED2 redraw: %v", err)
 	}
@@ -92,11 +92,61 @@ func TestR329LogicalRendererConsumesED2OrderedScrollOutAndClearsCurrentFrame(t *
 			t.Fatalf("ED2 scroll-out proof owns old screen history; renderer must not also archive old frame: %#v", batch)
 		}
 	}
-	if len(sealed) != 1 || sealed[0] != "old" {
-		t.Fatalf("ED2 ordered scroll-out must be sealed into history, got %v batch=%#v", sealed, batch)
+	if len(sealed) != 0 {
+		t.Fatalf("ED2 clear-time old screen proof must not become committed history, got %v batch=%#v", sealed, batch)
 	}
 	if clearPrimary != 1 || replacePrimary != 1 {
 		t.Fatalf("ED2 redraw should clear old current then publish new frame, clear=%d replace=%d batch=%#v", clearPrimary, replacePrimary, batch)
+	}
+}
+
+func TestR333LogicalRendererClosesScrolledPrimaryFrameBeforeED2Repaint(t *testing.T) {
+	renderer := NewHistoryLogicalRenderer(nil, nil)
+	if _, err := renderer.Apply(TerminalSemanticTransaction{
+		Seq: 1,
+		PrimaryScrollOut: []TerminalSemanticScrollOut{{
+			Runs: []TerminalSemanticCellRun{{Text: "body-01"}},
+		}},
+		PrimaryFrame: &TerminalSemanticFrame{
+			Cols: 12,
+			Rows: [][]TerminalSemanticCell{
+				{{Content: "t", Width: 1}, {Content: "a", Width: 1}, {Content: "i", Width: 1}, {Content: "l", Width: 1}},
+			},
+		},
+	}, HistoryDecision{Mode: HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true, ConsumeScrollOutProof: true}); err != nil {
+		t.Fatalf("seed scrolled primary frame: %v", err)
+	}
+
+	batch, err := renderer.Apply(TerminalSemanticTransaction{
+		Seq: 2,
+		Ops: []TerminalSemanticOp{{
+			Code:    vterm.ScreenOpControl,
+			Control: "ed",
+			Mode:    2,
+		}},
+		PrimaryFrame: &TerminalSemanticFrame{
+			Cols: 12,
+			Rows: [][]TerminalSemanticCell{{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}},
+		},
+	}, HistoryDecision{Mode: HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true, ConsumeScrollOutProof: true, ConsumeClearBoundary: true})
+	if err != nil {
+		t.Fatalf("apply ED2 repaint: %v", err)
+	}
+	var closed []string
+	var clearPrimary int
+	for _, mutation := range batch.Mutations {
+		if mutation.Kind == HistoryMutationClosePrimaryFrame && mutation.Sealed != nil {
+			closed = append(closed, logicalLinesText(mutation.Sealed.Lines))
+		}
+		if mutation.Kind == HistoryMutationClearPrimaryFrame {
+			clearPrimary++
+		}
+	}
+	if len(closed) != 1 || closed[0] != "tail" {
+		t.Fatalf("ED2 after payload scroll-out must close current tail before repaint, closed=%v batch=%#v", closed, batch)
+	}
+	if clearPrimary != 0 {
+		t.Fatalf("scrolled frame should be closed, not just cleared, batch=%#v", batch)
 	}
 }
 

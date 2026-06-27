@@ -3,6 +3,7 @@ package history
 import (
 	"time"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
@@ -260,23 +261,38 @@ func transactionSideScrollOutProofs(primary []TerminalSemanticScrollOut, ordered
 }
 
 func terminalScrollOutEqual(left TerminalSemanticScrollOut, right TerminalSemanticScrollOut) bool {
-	if left.Wrapped != right.Wrapped || left.WrappedSet != right.WrappedSet {
+	leftCells := normalizedTerminalScrollOutProofCells(left)
+	rightCells := normalizedTerminalScrollOutProofCells(right)
+	if len(leftCells) != len(rightCells) {
 		return false
 	}
-	if len(left.Cells) != len(right.Cells) || len(left.Runs) != len(right.Runs) {
-		return false
-	}
-	for i := range left.Cells {
-		if left.Cells[i] != right.Cells[i] {
-			return false
-		}
-	}
-	for i := range left.Runs {
-		if left.Runs[i] != right.Runs[i] {
+	for index := range leftCells {
+		if leftCells[index] != rightCells[index] {
 			return false
 		}
 	}
 	return true
+}
+
+func normalizedTerminalScrollOutProofCells(proof TerminalSemanticScrollOut) []Cell {
+	if len(proof.Runs) > 0 {
+		var cells []Cell
+		for _, run := range proof.Runs {
+			width := xansi.StringWidth(run.Text)
+			if width <= 0 && run.Text == "" {
+				continue
+			}
+			cells = append(cells, Cell{
+				Text:       run.Text,
+				Width:      width,
+				Style:      historyStyleFromTerminal(run.Style),
+				LinkURL:    run.Style.LinkURL,
+				LinkParams: run.Style.LinkParams,
+			})
+		}
+		return trimTrailingBlankCells(cells)
+	}
+	return trimTrailingBlankCells(historyCellsFromTerminal(proof.Cells))
 }
 
 func cloneTerminalSemanticOp(op TerminalSemanticOp) TerminalSemanticOp {

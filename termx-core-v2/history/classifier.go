@@ -31,11 +31,8 @@ type HistoryDecision struct {
 	SealOpenLine                  bool
 	ConsumeStreamOps              bool
 	ConsumeScrollOutProof         bool
-	// ConsumeClearScrollOutProof 只允许 ED2 clear-time proof 从 primary current
-	// frame 进入 history；普通 stream 已经 seal 过的可见尾部不能被 ED2 proof 重复写入。
-	ConsumeClearScrollOutProof bool
-	ConsumeClearBoundary       bool
-	NonHistoryBoundary         bool
+	ConsumeClearBoundary          bool
+	NonHistoryBoundary            bool
 }
 
 // HistorySemanticClassifier 只能根据 terminal semantic transaction 和

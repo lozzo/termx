@@ -92,6 +92,39 @@ func TestR333ED2ClearScreenDoesNotDuplicateAlreadySealedOrdinaryLines(t *testing
 	}
 }
 
+func TestR333RepeatedED2SmallUIPaintsDoNotMultiplyHistory(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r333-ed2-small-ui",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 64, Rows: 12},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	for i := 0; i < 4; i++ {
+		payload := "\x1b[?2026h\x1b[2J\x1b[H" +
+			"Update available! 0.142.2 -> 0.142.3\r\n\r\n" +
+			"Release notes: https://github.com/openai/codex/releases/latest\r\n\r\n" +
+			"1. Update now\r\n" +
+			"2. Skip\r\n" +
+			"3. Skip until next version\r\n\r\n" +
+			"Press enter to continue" +
+			"\x1b[?2026l"
+		if err := server.IngestOutput(context.Background(), "term-r333-ed2-small-ui", payload); err != nil {
+			t.Fatalf("ingest repaint %d: %v", i, err)
+		}
+	}
+
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r333-ed2-small-ui", 64, 4)
+	joined := strings.Join(historyRowTexts(rows), "\n")
+	if got := strings.Count(joined, "Update available!"); got != 1 {
+		t.Fatalf("repeated small ED2 UI repaint should leave one current frame copy, count=%d:\n%s\nrows=%#v", got, joined, rows)
+	}
+	if committed := strings.Join(committedHistoryRowTexts(rows), "|"); strings.Contains(committed, "Update available!") {
+		t.Fatalf("small repaint old frames must not enter committed history, committed=%q rows=%#v", committed, rows)
+	}
+}
+
 func TestR333SynchronizedBeginAloneDoesNotPublishExistingShellScreenAsFrame(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
@@ -119,6 +152,28 @@ func TestR333SynchronizedBeginAloneDoesNotPublishExistingShellScreenAsFrame(t *t
 	}
 	if historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
 		t.Fatalf("synchronized begin without repaint payload must not publish existing shell screen as current frame, rows=%#v", window.Rows)
+	}
+}
+
+func TestR333SynchronizedEndAloneDoesNotRepublishCurrentFrame(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r333-sync-end",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 24, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r333-sync-end", "\x1b[?2026hcurrent\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest synchronized payload: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r333-sync-end", "\x1b[?2026h\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest synchronized end-only boundary: %v", err)
+	}
+
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r333-sync-end", 24, 2)
+	if got := historyTextCount(rows, "current"); got != 1 {
+		t.Fatalf("sync end-only boundary must not republish current frame, count=%d rows=%#v", got, rows)
 	}
 }
 

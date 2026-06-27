@@ -23,8 +23,9 @@ func NewHistoryLogicalRenderer(stream StreamLineReducer, frames FrameReducer) Hi
 }
 
 type logicalRenderer struct {
-	stream StreamLineReducer
-	frames FrameReducer
+	stream                   StreamLineReducer
+	frames                   FrameReducer
+	primaryFrameHasScrollOut bool
 }
 
 func (renderer *logicalRenderer) Apply(tx TerminalSemanticTransaction, decision HistoryDecision) (HistoryMutationBatch, error) {
@@ -41,6 +42,7 @@ func (renderer *logicalRenderer) Apply(tx TerminalSemanticTransaction, decision 
 			return HistoryMutationBatch{}, err
 		}
 		mutations = append(mutations, next...)
+		renderer.primaryFrameHasScrollOut = false
 	}
 	for _, event := range HistorySemanticEventsFromTransaction(tx) {
 		next, err := renderer.applyEvent(event, decision)
@@ -62,6 +64,7 @@ func (renderer *logicalRenderer) Apply(tx TerminalSemanticTransaction, decision 
 			return HistoryMutationBatch{}, err
 		}
 		mutations = append(mutations, next...)
+		renderer.primaryFrameHasScrollOut = false
 	}
 	if decision.NonHistoryBoundary && len(mutations) == 0 {
 		next, err := renderer.frames.ApplyNonHistoryBoundary(FrameReasonResize)
@@ -88,6 +91,7 @@ func (renderer *logicalRenderer) Close(reason CloseReason) (HistoryMutationBatch
 		return HistoryMutationBatch{}, err
 	}
 	mutations = append(mutations, frameMutations...)
+	renderer.primaryFrameHasScrollOut = false
 	altMutations, err := renderer.frames.ClearAltCurrent(FrameReasonTerminalClose)
 	if err != nil {
 		return HistoryMutationBatch{}, err
@@ -106,24 +110,39 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 				return nil, err
 			}
 			mutations = append(mutations, streamMutations...)
-			// 中文说明：ED2 的旧屏内容由 vterm ordered scroll-out proof 表达；
-			// 这里只清 current frame ownership，不能再 archive 同一旧屏形成重复 truth。
-			frameMutations, err := renderer.frames.ClearPrimaryCurrent(FrameReasonPrimaryRepaint)
+			// 中文说明：ED2 是 repaint boundary，不是“每一帧都进入历史”的信号。
+			// 只有当前 primary session 已经有真实 payload scroll-out 时，才在
+			// repaint 前补齐尾屏；纯小屏 repaint 只替换 current frame，避免 copy/history
+			// 中出现多倍临时 UI。
+			var frameMutations []HistoryMutation
+			if renderer.primaryFrameHasScrollOut {
+				frameMutations, err = renderer.frames.ClosePrimaryCurrent(SealReasonSessionClose)
+			} else {
+				frameMutations, err = renderer.frames.ClearPrimaryCurrent(FrameReasonPrimaryRepaint)
+			}
 			if err != nil {
 				return nil, err
 			}
 			mutations = append(mutations, frameMutations...)
+			renderer.primaryFrameHasScrollOut = false
 			return mutations, nil
 		}
 		if (decision.Mode == HistoryOutputModeOrdinaryStream || decision.ConsumeStreamOps) && event.Op != nil {
 			return renderer.stream.ApplyOp(*event.Op)
 		}
 	case HistorySemanticEventPrimaryScrollOut:
-		if event.ClearScrollOut && !decision.ConsumeClearScrollOutProof {
+		if event.ClearScrollOut {
 			return nil, nil
 		}
 		if decision.ConsumeScrollOutProof && event.ScrollOut != nil {
-			return renderer.stream.SealScrollOut(*event.ScrollOut)
+			mutations, err := renderer.stream.SealScrollOut(*event.ScrollOut)
+			if err != nil {
+				return nil, err
+			}
+			if len(mutations) > 0 {
+				renderer.primaryFrameHasScrollOut = true
+			}
+			return mutations, nil
 		}
 	case HistorySemanticEventPrimaryFrame:
 		if decision.PublishPrimaryFrame && event.Frame != nil {
@@ -133,7 +152,12 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 		if decision.ArchivePrimaryBeforeAlt {
 			// 中文说明：alt enter 的 primary 清理必须由 archive boundary 完成；
 			// 不能重复提交 clear/fallback mutation，否则 frame journal 会变成第二份 truth。
-			return renderer.frames.ArchivePrimaryCurrent(SealReasonAltEnter)
+			mutations, err := renderer.frames.ArchivePrimaryCurrent(SealReasonAltEnter)
+			if err != nil {
+				return nil, err
+			}
+			renderer.primaryFrameHasScrollOut = false
+			return mutations, nil
 		}
 		return nil, nil
 	case HistorySemanticEventAltExit:
@@ -155,6 +179,7 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 		if renderer.frames != nil {
 			renderer.frames.ResetForClearScrollback()
 		}
+		renderer.primaryFrameHasScrollOut = false
 		return []HistoryMutation{{Kind: HistoryMutationClearScrollback, Reason: SealReasonFullReplace}}, nil
 	case HistorySemanticEventReset:
 		var mutations []HistoryMutation
@@ -168,6 +193,7 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 			return nil, err
 		}
 		mutations = append(mutations, frameMutations...)
+		renderer.primaryFrameHasScrollOut = false
 		altMutations, err := renderer.frames.ClearAltCurrent(FrameReasonAltExit)
 		if err != nil {
 			return nil, err

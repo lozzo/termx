@@ -544,7 +544,7 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 	decision := history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream}
 	hasEraseDisplay := historyTransactionHasEraseDisplay(tx)
 	hasContentMutation := historyTransactionHasContentMutation(tx)
-	isPrimaryFrameSession := (tx.SynchronizedActive && hasContentMutation) || tx.SynchronizedEnd || tx.RequiresFullReplace || hasEraseDisplay
+	isPrimaryFrameSession := ((tx.SynchronizedActive || tx.SynchronizedEnd) && hasContentMutation) || tx.RequiresFullReplace || hasEraseDisplay
 	if tx.RequiresFullReplace && tx.FullReplaceReason == "resize" {
 		return history.HistoryDecision{Mode: history.HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true}
 	}
@@ -562,16 +562,16 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 	if tx.PrimaryFrame != nil && isPrimaryFrameSession {
 		decision.Mode = history.HistoryOutputModePrimaryFrameSession
 		decision.PublishPrimaryFrame = true
-		// 中文说明：vterm 已经证明进入 primary scrollback 的内容必须进入
-		// authoritative history。普通 stream 已经按 LF/open-line seal 记录过的
-		// 内容不能在 ED2 时重复消费；primary current frame 则必须消费 proof。
+		// 中文说明：vterm 已经证明真正滚出 primary viewport 的 payload 必须进入
+		// authoritative history；ED2 清屏时捕获的旧可见屏只是 repaint boundary，
+		// renderer 会跳过，避免 copy/history 里出现多倍临时 UI。
 		decision.ConsumeScrollOutProof = historyTransactionShouldConsumeScrollOut(tx, state)
-		decision.ConsumeClearScrollOutProof = state.HasPrimaryCurrent
 		decision.ConsumeClearBoundary = hasEraseDisplay
 	}
-	if decision.Mode == history.HistoryOutputModeOrdinaryStream && state.HasPrimaryCurrent {
-		// 中文说明：screen app session 后恢复普通 shell 输出，是 terminal 语义上的
-		// session 边界；history 必须先收口 current frame，再写普通 open line。
+	if decision.Mode == history.HistoryOutputModeOrdinaryStream && state.HasPrimaryCurrent && historyTransactionHasContentMutation(tx) {
+		// 中文说明：screen app session 后恢复真正的普通输出，才是 terminal
+		// 语义上的 session 边界；纯 synchronized begin/end 这类 mode 边界没有
+		// payload，不能把 current frame close 进 committed history。
 		decision.ClosePrimaryFrameBeforeStream = true
 	}
 	return decision
