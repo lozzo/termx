@@ -48,9 +48,17 @@ func (renderer *logicalRenderer) Apply(tx TerminalSemanticTransaction, decision 
 	var mutations []HistoryMutation
 	if decision.ClosePrimaryFrameBeforeStream {
 		// 中文说明：primary screen app 结束后出现新的普通 PTY 输出时，旧 current
-		// frame 必须先离开 mutable ownership；否则 shell prompt 会在 projection 中
-		// 插到旧 current frame 前面，形成与真实 PTY 顺序相反的历史。
-		next, err := renderer.frames.ClosePrimaryCurrent(SealReasonSessionClose)
+		// frame 必须先离开 mutable ownership；若本 transaction 带有 vterm 当前屏幕
+		// proof，必须用该 proof 收束 final frame，并排除本次 ordinary stream 触达的
+		// rows，否则一闪而过的旧 current 行会被错误 seal，prompt 行也会重复进入 frame。
+		excludedRows := renderer.touchedRowsForTransaction(tx)
+		var next []HistoryMutation
+		var err error
+		if tx.PrimaryFrame != nil {
+			next, err = renderer.frames.ClosePrimaryCurrentFromFrameExcludingRows(*tx.PrimaryFrame, excludedRows, SealReasonSessionClose)
+		} else {
+			next, err = renderer.frames.ClosePrimaryCurrent(SealReasonSessionClose)
+		}
 		if err != nil {
 			return HistoryMutationBatch{}, err
 		}
@@ -306,6 +314,20 @@ func (renderer *logicalRenderer) recordPrimaryFrameTouchedRowIndexes(rows []int,
 		}
 		renderer.primaryFrameTouchedRows[row] = struct{}{}
 	}
+}
+
+func (renderer *logicalRenderer) touchedRowsForTransaction(tx TerminalSemanticTransaction) []int {
+	if renderer == nil {
+		return nil
+	}
+	saved := renderer.primaryFrameTouchedRows
+	renderer.primaryFrameTouchedRows = nil
+	for _, op := range tx.Ops {
+		renderer.recordPrimaryFrameTouchedRows(op, tx.Size)
+	}
+	rows := renderer.sortedPrimaryFrameTouchedRows()
+	renderer.primaryFrameTouchedRows = saved
+	return rows
 }
 
 func (renderer *logicalRenderer) sortedPrimaryFrameTouchedRows() []int {

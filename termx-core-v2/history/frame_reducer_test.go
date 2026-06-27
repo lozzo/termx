@@ -43,6 +43,38 @@ func TestR334FrameReducerTouchedRowsDoNotAdoptUntouchedShellTail(t *testing.T) {
 	}
 }
 
+func TestR337FrameReducerCloseFromFrameExcludesOrdinaryTouchedRows(t *testing.T) {
+	reducer := NewFrameReducer()
+	if _, err := reducer.ReplacePrimaryTouchedRows(semanticFrame(20,
+		"sealed shell 1",
+		"sealed shell 2",
+		"codex header",
+		"Shutting down...",
+	), []int{2, 3}, FrameReasonPrimaryRepaint); err != nil {
+		t.Fatalf("seed current primary rows: %v", err)
+	}
+
+	mutations, err := reducer.ClosePrimaryCurrentFromFrameExcludingRows(semanticFrame(20,
+		"sealed shell 1",
+		"sealed shell 2",
+		"codex header final",
+		"shell prompt",
+	), []int{3}, SealReasonSessionClose)
+	if err != nil {
+		t.Fatalf("close current from transaction frame: %v", err)
+	}
+	closed := closedFrameMutations(mutations)
+	if len(closed) != 1 {
+		t.Fatalf("expected one closed frame, got %#v", mutations)
+	}
+	if got := logicalLinesText(closed[0].Lines); got != "codex header final" {
+		t.Fatalf("close-from-frame must keep only owned non-prompt rows, got %q frame=%#v", got, closed[0])
+	}
+	if frameDebugState(t, reducer).PrimaryCurrent != nil {
+		t.Fatalf("close-from-frame must clear mutable current")
+	}
+}
+
 func TestR322FrameReducerAltTransientDoesNotEnterPrimaryTimeline(t *testing.T) {
 	reducer := NewFrameReducer()
 	if _, err := reducer.ReplaceAltCurrent(semanticFrame(20, "alt")); err != nil {

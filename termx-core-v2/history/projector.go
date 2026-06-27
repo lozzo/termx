@@ -40,6 +40,12 @@ type FrameReducer interface {
 	// primary frame。调用方必须从 ordered semantic ops 派生 touched rows；不能用
 	// live snapshot 文本或程序名过滤，否则会把 shell tail 误当成 screen app truth。
 	ReplacePrimaryTouchedRows(frame TerminalSemanticFrame, rows []int, reason FrameReason) ([]HistoryMutation, error)
+	// ClosePrimaryCurrentFromFrameExcludingRows 使用普通输出 transaction 结束后的
+	// vterm 当前屏幕 proof 收束 primary current frame，但只更新 current frame 已拥有的
+	// rows，并排除本次普通 stream 触达的 rows。domain owner：history frame reducer；
+	// truth source 是同一 terminal semantic transaction，失败条件是不能把 prompt 行或
+	// 已 sealed shell tail 复制进 final screen-frame。
+	ClosePrimaryCurrentFromFrameExcludingRows(frame TerminalSemanticFrame, excludedRows []int, reason SealReason) ([]HistoryMutation, error)
 	// ArchivePrimaryCurrent 把 current primary frame 按明确 boundary seal 到 frame journal。
 	ArchivePrimaryCurrent(reason SealReason) ([]HistoryMutation, error)
 	// ClearPrimaryCurrent 丢弃 current primary frame ownership。它只用于 vterm 已经

@@ -109,6 +109,62 @@ func (reducer *frameReducer) ReplacePrimaryTouchedRows(frame TerminalSemanticFra
 	}}, nil
 }
 
+// ClosePrimaryCurrentFromFrameExcludingRows 用普通 stream 恢复 transaction 的当前
+// 屏幕 proof 收束 primary frame。它只更新 current frame 既有 ownership rows，避免把
+// 已 sealed shell tail 接管进 screen-frame；excludedRows 表示 prompt 等本次普通输出
+// 触达的 rows，必须由 stream reducer 单独消费。
+func (reducer *frameReducer) ClosePrimaryCurrentFromFrameExcludingRows(frame TerminalSemanticFrame, excludedRows []int, reason SealReason) ([]HistoryMutation, error) {
+	if reducer == nil || reducer.journal.PrimaryCurrent == nil {
+		return nil, nil
+	}
+	reducer.ensureCounters()
+	current := reducer.journal.PrimaryCurrent
+	excludeSet := normalizedFrameTouchedRows(excludedRows, frameRowCountForExclusion(frame.Rows, current.Rows))
+	frameRows := trimmedFrameRows(frame.Rows)
+	draftByRow := make(map[int]LogicalLineDraft, len(current.Rows))
+	for _, draft := range current.Rows {
+		row := draft.Row
+		if _, excluded := excludeSet[row]; excluded {
+			continue
+		}
+		if row >= len(frameRows) {
+			continue
+		}
+		cells := frameRows[row]
+		if historyFrameRowIsDefaultBlank(cells) {
+			continue
+		}
+		line := LogicalLine{
+			ID:         reducer.nextLogicalLineID(),
+			Seal:       SealStateOpen,
+			Kind:       string(LineKindScreenFrame),
+			Cells:      cloneHistoryCells(cells),
+			ScreenCols: frame.Cols,
+			Residency:  ResidencyMemory,
+		}
+		draftByRow[row] = LogicalLineDraft{
+			Line: cloneLogicalLine(line),
+			Row:  row,
+		}
+	}
+	rows := logicalLineDraftsFromRowMap(draftByRow)
+	if len(rows) == 0 {
+		return reducer.ClearPrimaryCurrent(FrameReasonSessionClose)
+	}
+	mutable := MutableFrame{
+		ID:        current.ID,
+		SessionID: current.SessionID,
+		Seq:       reducer.nextSequence(),
+		Cols:      frame.Cols,
+		Rows:      rows,
+		Source:    FrameSourcePrimarySemantic,
+		CreatedAt: time.Now().UTC(),
+	}
+	sealed := reducer.sealMutableFrame(mutable, reason)
+	reducer.journal.PrimaryCurrent = nil
+	return reducer.sealedFrameMutations(sealed, HistoryMutationClosePrimaryFrame, HistoryRecordClosedPrimaryFrame), nil
+}
+
 func (reducer *frameReducer) ArchivePrimaryCurrent(reason SealReason) ([]HistoryMutation, error) {
 	if reducer == nil || reducer.journal.PrimaryCurrent == nil {
 		return nil, nil
@@ -315,6 +371,16 @@ func normalizedFrameTouchedRows(rows []int, frameRowCount int) map[int]struct{} 
 	return out
 }
 
+func frameRowCountForExclusion(frameRows [][]TerminalSemanticCell, currentRows []LogicalLineDraft) int {
+	maxRows := len(frameRows)
+	for _, draft := range currentRows {
+		if draft.Row >= maxRows {
+			maxRows = draft.Row + 1
+		}
+	}
+	return maxRows
+}
+
 func logicalLineDraftsFromRowMap(rows map[int]LogicalLineDraft) []LogicalLineDraft {
 	if len(rows) == 0 {
 		return nil
@@ -488,6 +554,8 @@ func sealReasonFromFrameReason(reason FrameReason) SealReason {
 		return SealReasonAltEnter
 	case FrameReasonResize:
 		return SealReasonUnknown
+	case FrameReasonSessionClose:
+		return SealReasonSessionClose
 	case FrameReasonTerminalClose:
 		return SealReasonTerminalClose
 	default:

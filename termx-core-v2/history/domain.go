@@ -91,6 +91,7 @@ const (
 	FrameReasonAltEnter       FrameReason = "alt-enter"
 	FrameReasonAltExit        FrameReason = "alt-exit"
 	FrameReasonResize         FrameReason = "resize"
+	FrameReasonSessionClose   FrameReason = "session-close"
 	FrameReasonTerminalClose  FrameReason = "terminal-close"
 )
 

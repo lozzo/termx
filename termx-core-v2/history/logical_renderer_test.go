@@ -1,6 +1,7 @@
 package history
 
 import (
+	"strings"
 	"testing"
 
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
@@ -103,6 +104,62 @@ func TestR336LogicalRendererKeepsED2ClearTimeScrollOutForPrimaryFrame(t *testing
 	}
 	if clearPrimary != 1 || replacePrimary != 1 {
 		t.Fatalf("ED2 redraw should clear old current then publish new frame, clear=%d replace=%d batch=%#v", clearPrimary, replacePrimary, batch)
+	}
+}
+
+func TestR337LogicalRendererClosesPrimaryFromCurrentScreenProofBeforePrompt(t *testing.T) {
+	renderer := NewHistoryLogicalRenderer(nil, nil)
+	shutdownFrame := semanticFrame(20, "codex header", "Shutting down...")
+	if _, err := renderer.Apply(TerminalSemanticTransaction{
+		Seq:                     1,
+		PrimaryFrame:            &shutdownFrame,
+		PrimaryFrameTouchedRows: []int{0, 1},
+		Size:                    TerminalSemanticSize{Cols: 20, Rows: 4},
+	}, HistoryDecision{
+		Mode:                               HistoryOutputModePrimaryFrameSession,
+		PublishPrimaryFrame:                true,
+		PublishPrimaryFrameTouchedRowsOnly: true,
+	}); err != nil {
+		t.Fatalf("seed primary frame: %v", err)
+	}
+
+	promptFrame := semanticFrame(20, "codex header", "shell prompt")
+	batch, err := renderer.Apply(TerminalSemanticTransaction{
+		Seq: 2,
+		Ops: []TerminalSemanticOp{{
+			Code: vterm.ScreenOpWriteSpan,
+			Row:  1,
+			Col:  0,
+			Runs: []TerminalSemanticCellRun{{Text: "shell prompt"}},
+		}},
+		PrimaryFrame: &promptFrame,
+		Size:         TerminalSemanticSize{Cols: 20, Rows: 4},
+	}, HistoryDecision{
+		Mode:                          HistoryOutputModeOrdinaryStream,
+		ClosePrimaryFrameBeforeStream: true,
+	})
+	if err != nil {
+		t.Fatalf("apply prompt transaction: %v", err)
+	}
+
+	var closed []string
+	var stream []string
+	for _, mutation := range batch.Mutations {
+		if mutation.Kind == HistoryMutationClosePrimaryFrame && mutation.Sealed != nil {
+			closed = append(closed, logicalLinesText(mutation.Sealed.Lines))
+		}
+		if mutation.Line != nil {
+			stream = append(stream, lineText(*mutation.Line))
+		}
+		if mutation.Mutable != nil && frameDraftText(mutation.Mutable.Rows) == "Shutting down..." {
+			t.Fatalf("ordinary prompt boundary must not republish transient current frame: %#v", batch)
+		}
+	}
+	if len(closed) != 1 || closed[0] != "codex header" {
+		t.Fatalf("prompt boundary must close visible non-prompt frame rows from transaction proof, closed=%v batch=%#v", closed, batch)
+	}
+	if got := strings.Join(stream, "\n"); got != "" {
+		t.Fatalf("prompt without LF should stay as ordinary open line mutation, got sealed=%q batch=%#v", got, batch)
 	}
 }
 
