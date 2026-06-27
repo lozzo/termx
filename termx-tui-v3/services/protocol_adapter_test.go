@@ -407,6 +407,7 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 			Lines:          []protocol.HistoryLineSpan{{LogicalLineID: 42, StartRow: 0, EndRow: 0}},
 			RowLineIDs:     []uint64{42},
 			RowInLine:      []int{0},
+			RowIndexes:     []int{200},
 			RowSegments:    []string{protocol.HistoryCursorSegmentArchivedPrimaryFrame},
 			CursorValid:    true,
 			CursorLineID:   42,
@@ -438,6 +439,9 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	}
 	if latest.Window.Rows[0].Segment != state.HistoryCursorSegmentArchivedPrimaryFrame || latest.Window.SourceLines[0].Segment != state.HistoryCursorSegmentArchivedPrimaryFrame {
 		t.Fatalf("latest must preserve authoritative row segment, rows=%#v source=%#v", latest.Window.Rows, latest.Window.SourceLines)
+	}
+	if latest.Window.Rows[0].ProjectionRowIndex != 200 || latest.Window.SourceLines[0].ProjectionRowIndex != 200 {
+		t.Fatalf("latest must preserve row projection index, rows=%#v source=%#v", latest.Window.Rows, latest.Window.SourceLines)
 	}
 	if len(client.requests) != 1 || client.requests[0].Token != "" || client.requests[0].Cols != 80 {
 		t.Fatalf("unexpected latest params %#v", client.requests)

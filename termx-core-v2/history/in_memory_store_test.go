@@ -125,6 +125,58 @@ func TestR332FrozenHistoryCanPageOlderThanLatestLimit(t *testing.T) {
 	if got := rowTexts(older.Rows); strings.Join(got, "|") != "line-3|line-4" {
 		t.Fatalf("frozen older must page from full frozen projection, got %v window=%#v", got, older)
 	}
+	if latest.Rows[0].ProjectionRowIndex != 4 || older.Rows[0].ProjectionRowIndex != 2 {
+		t.Fatalf("windows must carry projection row indexes, latest=%#v older=%#v", latest.Rows, older.Rows)
+	}
+}
+
+func TestR333InMemoryStoreOlderPagesFrozenProjectionWithoutDuplicates(t *testing.T) {
+	store := NewInMemoryHistoryStore("term-1")
+	var batches [][]HistoryMutation
+	for i := 1; i <= 300; i++ {
+		batches = append(batches, sealedLineMutations(LogicalLineID(i), HistoryRecordID(i), "line"))
+	}
+	applyStoreBatch(t, store, batches...)
+
+	snapshot, err := store.Freeze(FreezeHistoryRequest{TerminalID: "term-1", Limit: 40, Cols: 80})
+	if err != nil {
+		t.Fatalf("freeze: %v", err)
+	}
+	window, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-1", Token: snapshot.Token, Limit: 40, Cols: 80})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	var indexes []int
+	for {
+		for _, row := range window.Rows {
+			indexes = append(indexes, row.ProjectionRowIndex)
+		}
+		if !window.Boundary.Cursor.Valid {
+			break
+		}
+		window, err = store.OlderWindow(HistoryWindowRequest{TerminalID: "term-1", Token: snapshot.Token, Limit: 40, Cols: 80, Cursor: window.Boundary.Cursor})
+		if err != nil {
+			t.Fatalf("older: %v", err)
+		}
+		if len(window.Rows) == 0 {
+			break
+		}
+	}
+	if len(indexes) != 300 {
+		t.Fatalf("expected all projection rows exactly once, got %d", len(indexes))
+	}
+	seen := make(map[int]bool, len(indexes))
+	for _, index := range indexes {
+		if seen[index] {
+			t.Fatalf("projection row %d repeated in older paging: %v", index, indexes)
+		}
+		seen[index] = true
+	}
+	for index := 0; index < 300; index++ {
+		if !seen[index] {
+			t.Fatalf("projection row %d missing from older paging", index)
+		}
+	}
 }
 
 func TestR323InMemoryStoreCopyUsesFrozenAuthoritativeRows(t *testing.T) {

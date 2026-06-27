@@ -1815,6 +1815,7 @@ const (
 	historyWindowLineFrameIDsFieldNumber           protowire.Number = 39
 	historyWindowLineFixedGridFieldNumber          protowire.Number = 40
 	historyWindowLineScreenColsFieldNumber         protowire.Number = 41
+	historyWindowResponseRowIndexesFieldNumber     protowire.Number = 42
 )
 
 func encodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, params HistoryWindowParams) {

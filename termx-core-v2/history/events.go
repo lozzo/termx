@@ -74,8 +74,8 @@ func HistorySemanticEventsFromTransaction(tx TerminalSemanticTransaction) []Hist
 	hasAltExitOp := false
 	hasResizeOp := false
 	hasClearScrollbackOp := false
-	hasOrderedScrollOut := false
 	firstEraseDisplayAllOp := firstEraseDisplayAllOpIndex(tx.Ops)
+	var orderedScrollOut []TerminalSemanticScrollOut
 
 	appendEvent := func(event HistorySemanticEvent) {
 		event.Seq = tx.Seq
@@ -89,13 +89,13 @@ func HistorySemanticEventsFromTransaction(tx TerminalSemanticTransaction) []Hist
 		opCopy := cloneTerminalSemanticOp(op)
 		for _, proof := range terminalScrollOutProofsFromOp(opCopy) {
 			proofCopy := cloneTerminalSemanticScrollOut(proof)
+			orderedScrollOut = append(orderedScrollOut, cloneTerminalSemanticScrollOut(proofCopy))
 			appendEvent(HistorySemanticEvent{
 				OrderSource:    HistorySemanticEventOrderFromOps,
 				Kind:           HistorySemanticEventPrimaryScrollOut,
 				ScrollOut:      &proofCopy,
 				ClearScrollOut: isEraseDisplayAllOp(opCopy) || (firstEraseDisplayAllOp >= 0 && opIndex < firstEraseDisplayAllOp),
 			})
-			hasOrderedScrollOut = true
 		}
 		kind := HistorySemanticEventOp
 		reason := ""
@@ -139,17 +139,15 @@ func HistorySemanticEventsFromTransaction(tx TerminalSemanticTransaction) []Hist
 			Kind:        HistorySemanticEventAltExit,
 		})
 	}
-	if !hasOrderedScrollOut {
-		clearScrollOut := transactionHasEraseDisplayAll(tx)
-		for _, proof := range tx.PrimaryScrollOut {
-			proofCopy := cloneTerminalSemanticScrollOut(proof)
-			appendEvent(HistorySemanticEvent{
-				OrderSource:    HistorySemanticEventOrderFromTransactionSideProof,
-				Kind:           HistorySemanticEventPrimaryScrollOut,
-				ScrollOut:      &proofCopy,
-				ClearScrollOut: clearScrollOut,
-			})
-		}
+	clearTransactionSideScrollOut := transactionHasEraseDisplayAll(tx) && len(orderedScrollOut) == 0
+	for _, proof := range transactionSideScrollOutProofs(tx.PrimaryScrollOut, orderedScrollOut) {
+		proofCopy := cloneTerminalSemanticScrollOut(proof)
+		appendEvent(HistorySemanticEvent{
+			OrderSource:    HistorySemanticEventOrderFromTransactionSideProof,
+			Kind:           HistorySemanticEventPrimaryScrollOut,
+			ScrollOut:      &proofCopy,
+			ClearScrollOut: clearTransactionSideScrollOut,
+		})
 	}
 	if tx.PrimaryFrame != nil {
 		appendEvent(HistorySemanticEvent{
@@ -241,6 +239,44 @@ func terminalScrollOutProofsFromOp(op TerminalSemanticOp) []TerminalSemanticScro
 		})
 	}
 	return out
+}
+
+func transactionSideScrollOutProofs(primary []TerminalSemanticScrollOut, ordered []TerminalSemanticScrollOut) []TerminalSemanticScrollOut {
+	if len(primary) == 0 {
+		return nil
+	}
+	// 中文说明：vterm 会同时给出 op 级 ED2 清屏 proof 和 transaction 级
+	// scrollback append proof。前者有精确 op 顺序，后者覆盖同一 write 中后续
+	// payload 滚出的行；这里只按前缀去重，不能因为存在 ED2 就丢掉后续 payload。
+	start := 0
+	for start < len(primary) && start < len(ordered) && terminalScrollOutEqual(primary[start], ordered[start]) {
+		start++
+	}
+	out := make([]TerminalSemanticScrollOut, 0, len(primary)-start)
+	for _, proof := range primary[start:] {
+		out = append(out, cloneTerminalSemanticScrollOut(proof))
+	}
+	return out
+}
+
+func terminalScrollOutEqual(left TerminalSemanticScrollOut, right TerminalSemanticScrollOut) bool {
+	if left.Wrapped != right.Wrapped || left.WrappedSet != right.WrappedSet {
+		return false
+	}
+	if len(left.Cells) != len(right.Cells) || len(left.Runs) != len(right.Runs) {
+		return false
+	}
+	for i := range left.Cells {
+		if left.Cells[i] != right.Cells[i] {
+			return false
+		}
+	}
+	for i := range left.Runs {
+		if left.Runs[i] != right.Runs[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func cloneTerminalSemanticOp(op TerminalSemanticOp) TerminalSemanticOp {

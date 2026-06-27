@@ -2163,6 +2163,7 @@ type HistoryWindow struct {
 	RowFrameIDs    []uint64
 	RowFixedGrid   []bool
 	RowScreenCols  []int
+	RowIndexes     []int
 	Lines          []HistoryLineSpan
 	BeforeOffset   int
 	LoadedRows     int

@@ -202,19 +202,20 @@ func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.Hist
 		text, cells := historyTextAndCellsFromCompactRow(row)
 		span, hasSpan := historyProtocolSpanForRow(window.Lines, i, lineID)
 		nextLine := state.HistoryLogicalLine{
-			Text:          text,
-			Cells:         cells,
-			LineID:        lineID,
-			Kind:          historyProtocolRowKind(window, i, span, hasSpan),
-			Segment:       stringAt(window.RowSegments, i),
-			SessionID:     uint64At(window.RowSessionIDs, i),
-			FrameID:       uint64At(window.RowFrameIDs, i),
-			FixedGrid:     boolAt(window.RowFixedGrid, i) || (hasSpan && span.FixedGrid),
-			ScreenCols:    intAt(window.RowScreenCols, i),
-			TailFill:      historyTailFillFromProtocol(row.TailFill),
-			LiveTail:      historyProtocolRowIsLiveTail(window, i),
-			ClippedBefore: hasSpan && span.ClippedBefore,
-			ClippedAfter:  hasSpan && span.ClippedAfter,
+			Text:               text,
+			Cells:              cells,
+			LineID:             lineID,
+			Kind:               historyProtocolRowKind(window, i, span, hasSpan),
+			Segment:            stringAt(window.RowSegments, i),
+			SessionID:          uint64At(window.RowSessionIDs, i),
+			FrameID:            uint64At(window.RowFrameIDs, i),
+			FixedGrid:          boolAt(window.RowFixedGrid, i) || (hasSpan && span.FixedGrid),
+			ScreenCols:         intAt(window.RowScreenCols, i),
+			ProjectionRowIndex: intAt(window.RowIndexes, i),
+			TailFill:           historyTailFillFromProtocol(row.TailFill),
+			LiveTail:           historyProtocolRowIsLiveTail(window, i),
+			ClippedBefore:      hasSpan && span.ClippedBefore,
+			ClippedAfter:       hasSpan && span.ClippedAfter,
 		}
 		if nextLine.ScreenCols == 0 && hasSpan {
 			nextLine.ScreenCols = span.ScreenCols
@@ -284,34 +285,36 @@ func historyRowsFromProtocol(window *protocol.HistoryWindow, sourceLines []state
 	for i, row := range window.Rows {
 		text, cells := historyTextAndCellsFromCompactRow(row)
 		rows = append(rows, state.HistoryRow{
-			Text:       text,
-			Cells:      cells,
-			TailFill:   historyTailFillFromProtocol(row.TailFill),
-			LineID:     uint64At(window.RowLineIDs, i),
-			RowInLine:  intAt(window.RowInLine, i),
-			Kind:       stringAt(window.RowKinds, i),
-			Segment:    stringAt(window.RowSegments, i),
-			SessionID:  uint64At(window.RowSessionIDs, i),
-			FrameID:    uint64At(window.RowFrameIDs, i),
-			FixedGrid:  boolAt(window.RowFixedGrid, i),
-			ScreenCols: intAt(window.RowScreenCols, i),
-			LiveTail:   historyProtocolRowIsLiveTail(window, i),
+			Text:               text,
+			Cells:              cells,
+			TailFill:           historyTailFillFromProtocol(row.TailFill),
+			LineID:             uint64At(window.RowLineIDs, i),
+			RowInLine:          intAt(window.RowInLine, i),
+			Kind:               stringAt(window.RowKinds, i),
+			Segment:            stringAt(window.RowSegments, i),
+			SessionID:          uint64At(window.RowSessionIDs, i),
+			FrameID:            uint64At(window.RowFrameIDs, i),
+			FixedGrid:          boolAt(window.RowFixedGrid, i),
+			ScreenCols:         intAt(window.RowScreenCols, i),
+			ProjectionRowIndex: intAt(window.RowIndexes, i),
+			LiveTail:           historyProtocolRowIsLiveTail(window, i),
 		})
 	}
 	lines := make([]state.HistoryLineSpan, 0, len(window.Lines))
 	for _, span := range window.Lines {
 		lines = append(lines, state.HistoryLineSpan{
-			LineID:        span.LogicalLineID,
-			StartRow:      span.StartRow,
-			EndRow:        span.EndRow,
-			Kind:          span.RowKind,
-			Segment:       stringAt(window.RowSegments, span.StartRow),
-			SessionID:     firstNonZeroUint64(span.SessionID, uint64At(window.RowSessionIDs, span.StartRow)),
-			FrameID:       firstNonZeroUint64(span.FrameID, uint64At(window.RowFrameIDs, span.StartRow)),
-			FixedGrid:     span.FixedGrid || boolAt(window.RowFixedGrid, span.StartRow),
-			ScreenCols:    firstNonZeroInt(span.ScreenCols, intAt(window.RowScreenCols, span.StartRow)),
-			ClippedBefore: span.ClippedBefore,
-			ClippedAfter:  span.ClippedAfter,
+			LineID:             span.LogicalLineID,
+			StartRow:           span.StartRow,
+			EndRow:             span.EndRow,
+			Kind:               span.RowKind,
+			Segment:            stringAt(window.RowSegments, span.StartRow),
+			SessionID:          firstNonZeroUint64(span.SessionID, uint64At(window.RowSessionIDs, span.StartRow)),
+			FrameID:            firstNonZeroUint64(span.FrameID, uint64At(window.RowFrameIDs, span.StartRow)),
+			FixedGrid:          span.FixedGrid || boolAt(window.RowFixedGrid, span.StartRow),
+			ScreenCols:         firstNonZeroInt(span.ScreenCols, intAt(window.RowScreenCols, span.StartRow)),
+			ProjectionRowIndex: intAt(window.RowIndexes, span.StartRow),
+			ClippedBefore:      span.ClippedBefore,
+			ClippedAfter:       span.ClippedAfter,
 		})
 	}
 	if len(lines) == 0 {
@@ -341,15 +344,6 @@ func historyLineSpansFromRows(rows []state.HistoryRow, sourceLines []state.Histo
 	if len(rows) == 0 {
 		return nil
 	}
-	clipped := make(map[uint64]state.HistoryLogicalLine, len(sourceLines))
-	for _, line := range sourceLines {
-		if line.LineID == 0 {
-			continue
-		}
-		if line.ClippedBefore || line.ClippedAfter {
-			clipped[line.LineID] = line
-		}
-	}
 	spans := make([]state.HistoryLineSpan, 0, len(rows))
 	start := 0
 	current := rows[0].LineID
@@ -363,15 +357,15 @@ func historyLineSpansFromRows(rows []state.HistoryRow, sourceLines []state.Histo
 			(!rows[row].FixedGrid || rows[row].ScreenCols == rows[start].ScreenCols) {
 			continue
 		}
-		spans = append(spans, historyLineSpanFromRowGroup(rows, current, start, row-1, clipped))
+		spans = append(spans, historyLineSpanFromRowGroup(rows, current, start, row-1, sourceLines))
 		start = row
 		current = rows[row].LineID
 	}
-	spans = append(spans, historyLineSpanFromRowGroup(rows, current, start, len(rows)-1, clipped))
+	spans = append(spans, historyLineSpanFromRowGroup(rows, current, start, len(rows)-1, sourceLines))
 	return spans
 }
 
-func historyLineSpanFromRowGroup(rows []state.HistoryRow, lineID uint64, start int, end int, clipped map[uint64]state.HistoryLogicalLine) state.HistoryLineSpan {
+func historyLineSpanFromRowGroup(rows []state.HistoryRow, lineID uint64, start int, end int, sourceLines []state.HistoryLogicalLine) state.HistoryLineSpan {
 	span := state.HistoryLineSpan{LineID: lineID, StartRow: start, EndRow: end}
 	if start >= 0 && start < len(rows) {
 		span.Kind = rows[start].Kind
@@ -380,21 +374,39 @@ func historyLineSpanFromRowGroup(rows []state.HistoryRow, lineID uint64, start i
 		span.FrameID = rows[start].FrameID
 		span.FixedGrid = rows[start].FixedGrid
 		span.ScreenCols = rows[start].ScreenCols
+		span.ProjectionRowIndex = rows[start].ProjectionRowIndex
 	}
 	if lineID == 0 {
 		return span
 	}
-	if line, ok := clipped[lineID]; ok {
+	if line, ok := historySourceLineForRow(sourceLines, rows[start]); ok && (line.ClippedBefore || line.ClippedAfter) {
 		span.Kind = line.Kind
 		span.Segment = line.Segment
 		span.SessionID = line.SessionID
 		span.FrameID = line.FrameID
 		span.FixedGrid = line.FixedGrid
 		span.ScreenCols = line.ScreenCols
+		span.ProjectionRowIndex = line.ProjectionRowIndex
 		span.ClippedBefore = line.ClippedBefore
 		span.ClippedAfter = line.ClippedAfter
 	}
 	return span
+}
+
+func historySourceLineForRow(lines []state.HistoryLogicalLine, row state.HistoryRow) (state.HistoryLogicalLine, bool) {
+	for _, line := range lines {
+		if line.LineID != 0 &&
+			line.LineID == row.LineID &&
+			line.Kind == row.Kind &&
+			line.Segment == row.Segment &&
+			line.SessionID == row.SessionID &&
+			line.FrameID == row.FrameID &&
+			line.FixedGrid == row.FixedGrid &&
+			(!line.FixedGrid || line.ScreenCols == row.ScreenCols) {
+			return line, true
+		}
+	}
+	return state.HistoryLogicalLine{}, false
 }
 
 func historyTailFillFromProtocol(style *protocol.CompactRowStyle) *state.HistoryCellStyle {

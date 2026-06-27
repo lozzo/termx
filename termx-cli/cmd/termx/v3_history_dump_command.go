@@ -197,10 +197,11 @@ func writeV3HistoryDumpWindow(writer *bufio.Writer, index int, window *protocol.
 	for rowIndex, row := range window.Rows {
 		lineID := rowMetaUint64(window.RowLineIDs, rowIndex)
 		rowInLine := rowMetaInt(window.RowInLine, rowIndex)
+		projectionIndex := rowMetaInt(window.RowIndexes, rowIndex)
 		segment := rowMetaString(window.RowSegments, rowIndex)
 		kind := rowMetaString(window.RowKinds, rowIndex)
 		text := compactProtocolRowText(row)
-		fmt.Fprintf(writer, "%06d page_row=%d line=%d row=%d segment=%s kind=%s text=%q\n", globalRow, rowIndex, lineID, rowInLine, segment, kind, text)
+		fmt.Fprintf(writer, "%06d page_row=%d projection=%d line=%d row=%d segment=%s kind=%s text=%q\n", globalRow, rowIndex, projectionIndex, lineID, rowInLine, segment, kind, text)
 		globalRow++
 	}
 	fmt.Fprintln(writer)

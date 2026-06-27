@@ -79,20 +79,23 @@ type HistoryPendingRequest struct {
 
 // HistoryRow 是 authoritative HistoryWindow 的 visual row 投影。
 type HistoryRow struct {
-	Text         string
-	Cells        []HistoryCell
-	TailFill     *HistoryCellStyle
-	LineID       uint64
-	RowInLine    int
-	Kind         string
-	Segment      string
-	SessionID    uint64
-	FrameID      uint64
-	FixedGrid    bool
-	ScreenCols   int
-	ClippedStart bool
-	ClippedEnd   bool
-	LiveTail     bool
+	Text       string
+	Cells      []HistoryCell
+	TailFill   *HistoryCellStyle
+	LineID     uint64
+	RowInLine  int
+	Kind       string
+	Segment    string
+	SessionID  uint64
+	FrameID    uint64
+	FixedGrid  bool
+	ScreenCols int
+	// ProjectionRowIndex 来自 core authoritative projection；copy/history 本地
+	// trim 后用它恢复 older cursor，不能从 RowInLine 或本地 visual row 推断。
+	ProjectionRowIndex int
+	ClippedStart       bool
+	ClippedEnd         bool
+	LiveTail           bool
 }
 
 // HistoryCell 是 core-v2 authoritative HistoryWindow 的 styled cell 投影。
@@ -119,17 +122,18 @@ type HistoryCellStyle struct {
 // HistoryLogicalLine 是 copy/history 冻结快照里的单条 logical line payload。
 // TUI 只把它当作 authoritative source，再按当前 pane 宽度本地重排成 Rows。
 type HistoryLogicalLine struct {
-	Text       string
-	Cells      []HistoryCell
-	LineID     uint64
-	Kind       string
-	Segment    string
-	SessionID  uint64
-	FrameID    uint64
-	FixedGrid  bool
-	ScreenCols int
-	TailFill   *HistoryCellStyle
-	LiveTail   bool
+	Text               string
+	Cells              []HistoryCell
+	LineID             uint64
+	Kind               string
+	Segment            string
+	SessionID          uint64
+	FrameID            uint64
+	FixedGrid          bool
+	ScreenCols         int
+	ProjectionRowIndex int
+	TailFill           *HistoryCellStyle
+	LiveTail           bool
 	// clipped 标记表达这条 frozen source 是否只是 authoritative logical line
 	// 的局部片段；本地 reflow 时必须继续保留，不能把 partial 片段误当成完整行。
 	ClippedBefore bool
@@ -149,17 +153,18 @@ func sameHistoryLogicalLineSource(left HistoryLogicalLine, right HistoryLogicalL
 
 // HistoryLineSpan 是 authoritative window 中 logical line 到 visual rows 的映射。
 type HistoryLineSpan struct {
-	LineID        uint64
-	StartRow      int
-	EndRow        int
-	Kind          string
-	Segment       string
-	SessionID     uint64
-	FrameID       uint64
-	FixedGrid     bool
-	ScreenCols    int
-	ClippedBefore bool
-	ClippedAfter  bool
+	LineID             uint64
+	StartRow           int
+	EndRow             int
+	Kind               string
+	Segment            string
+	SessionID          uint64
+	FrameID            uint64
+	FixedGrid          bool
+	ScreenCols         int
+	ProjectionRowIndex int
+	ClippedBefore      bool
+	ClippedAfter       bool
 }
 
 // HistoryWindow 是 state 层使用的 core-v2 authoritative window DTO。
@@ -746,19 +751,20 @@ func historyRowsToLogicalLines(rows []HistoryRow, spans []HistoryLineSpan) []His
 		}
 		span, hasSpan := historySpanForRow(spans, index, row)
 		lines = append(lines, HistoryLogicalLine{
-			Text:          row.Text,
-			Cells:         cloneHistoryCells(row.Cells),
-			LineID:        row.LineID,
-			Kind:          row.Kind,
-			Segment:       row.Segment,
-			SessionID:     row.SessionID,
-			FrameID:       row.FrameID,
-			FixedGrid:     row.FixedGrid,
-			ScreenCols:    row.ScreenCols,
-			TailFill:      cloneHistoryCellStyle(row.TailFill),
-			LiveTail:      row.LiveTail,
-			ClippedBefore: hasSpan && span.ClippedBefore,
-			ClippedAfter:  hasSpan && span.ClippedAfter,
+			Text:               row.Text,
+			Cells:              cloneHistoryCells(row.Cells),
+			LineID:             row.LineID,
+			Kind:               row.Kind,
+			Segment:            row.Segment,
+			SessionID:          row.SessionID,
+			FrameID:            row.FrameID,
+			FixedGrid:          row.FixedGrid,
+			ScreenCols:         row.ScreenCols,
+			ProjectionRowIndex: row.ProjectionRowIndex,
+			TailFill:           cloneHistoryCellStyle(row.TailFill),
+			LiveTail:           row.LiveTail,
+			ClippedBefore:      hasSpan && span.ClippedBefore,
+			ClippedAfter:       hasSpan && span.ClippedAfter,
 		})
 	}
 	return lines
@@ -835,15 +841,13 @@ func (store HistoryStore) TrimRows(startRow int, endRow int) (HistoryStore, Hist
 	if len(store.SourceLines) == 0 {
 		return store, HistoryTrimResult{}
 	}
-	firstLineID := store.Rows[startRow].LineID
-	lastLineID := store.Rows[endRow].LineID
-	startLine := historySourceLineIndexByID(store.SourceLines, firstLineID)
-	endLine := historySourceLineIndexByID(store.SourceLines, lastLineID)
+	startLine := historySourceLineIndexForRow(store.SourceLines, store.Rows[startRow])
+	endLine := historySourceLineIndexForRow(store.SourceLines, store.Rows[endRow])
 	if startLine < 0 || endLine < startLine {
 		return store, HistoryTrimResult{}
 	}
-	firstKeptRow := historyFirstRowIndexByLineID(store.Rows, store.SourceLines[startLine].LineID)
-	lastKeptRow := historyLastRowIndexByLineID(store.Rows, store.SourceLines[endLine].LineID)
+	firstKeptRow := historyFirstRowIndexForSource(store.Rows, store.SourceLines[startLine])
+	lastKeptRow := historyLastRowIndexForSource(store.Rows, store.SourceLines[endLine])
 	if firstKeptRow < 0 || lastKeptRow < firstKeptRow {
 		return store, HistoryTrimResult{}
 	}
@@ -866,7 +870,8 @@ func (store HistoryStore) TrimRows(startRow int, endRow int) (HistoryStore, Hist
 		}
 		store.Boundary.LastLineID = boundaryLast
 		// 中文说明：本地裁剪不能把 core projection cursor 重建成 row-in-line。
-		// 如果丢掉顶部窗口，下一次 older 应指向保留首行所在的 projection index。
+		// ProjectionRowIndex 是 core 发来的 authoritative row index；旧协议缺字段时
+		// 才退回按 source/core row count 平移。
 		store.Cursor = cursorBeforeFirstLocalRow(store.Rows, store.Cursor, result.DroppedLinesBefore)
 	}
 	return store, result
@@ -883,7 +888,11 @@ func cursorBeforeFirstLocalRow(rows []HistoryRow, previous HistoryCursor, droppe
 	cursor := previous
 	cursor.BeforeLineID = first.LineID
 	cursor.BeforeRowInLine = first.RowInLine
-	cursor.BeforeRowIndex = previous.BeforeRowIndex + droppedRowsBefore
+	if first.ProjectionRowIndex > 0 || previous.BeforeRowIndex == 0 && droppedRowsBefore == 0 {
+		cursor.BeforeRowIndex = first.ProjectionRowIndex
+	} else {
+		cursor.BeforeRowIndex = previous.BeforeRowIndex + droppedRowsBefore
+	}
 	cursor.Valid = previous.Valid || cursor.BeforeRowIndex > 0
 	if first.Segment != "" {
 		cursor.Segment = first.Segment
@@ -891,30 +900,27 @@ func cursorBeforeFirstLocalRow(rows []HistoryRow, previous HistoryCursor, droppe
 	return cursor
 }
 
-func historyFirstRowIndexByLineID(rows []HistoryRow, lineID uint64) int {
+func historyFirstRowIndexForSource(rows []HistoryRow, source HistoryLogicalLine) int {
 	for index, row := range rows {
-		if row.LineID == lineID {
+		if sameHistoryRowLogicalLineSource(source, row) {
 			return index
 		}
 	}
 	return -1
 }
 
-func historyLastRowIndexByLineID(rows []HistoryRow, lineID uint64) int {
+func historyLastRowIndexForSource(rows []HistoryRow, source HistoryLogicalLine) int {
 	for index := len(rows) - 1; index >= 0; index-- {
-		if rows[index].LineID == lineID {
+		if sameHistoryRowLogicalLineSource(source, rows[index]) {
 			return index
 		}
 	}
 	return -1
 }
 
-func historySourceLineIndexByID(lines []HistoryLogicalLine, lineID uint64) int {
-	if lineID == 0 {
-		return -1
-	}
+func historySourceLineIndexForRow(lines []HistoryLogicalLine, row HistoryRow) int {
 	for index, line := range lines {
-		if line.LineID == lineID {
+		if sameHistoryRowLogicalLineSource(line, row) {
 			return index
 		}
 	}
@@ -1040,6 +1046,13 @@ func copyModeCanShiftSimpleOlderPrepend(insertedRows int, before HistoryStore, a
 func historyRowsSameAnchor(left HistoryRow, right HistoryRow) bool {
 	return left.LineID == right.LineID &&
 		left.RowInLine == right.RowInLine &&
+		left.Kind == right.Kind &&
+		left.Segment == right.Segment &&
+		left.SessionID == right.SessionID &&
+		left.FrameID == right.FrameID &&
+		left.FixedGrid == right.FixedGrid &&
+		(!left.FixedGrid || left.ScreenCols == right.ScreenCols) &&
+		left.ProjectionRowIndex == right.ProjectionRowIndex &&
 		left.Text == right.Text &&
 		left.ClippedStart == right.ClippedStart &&
 		left.ClippedEnd == right.ClippedEnd &&
@@ -1423,15 +1436,16 @@ func historyLineSpanForLocalRows(rows []HistoryRow, start int, end int) HistoryL
 	}
 	row := rows[start]
 	return HistoryLineSpan{
-		LineID:     row.LineID,
-		StartRow:   start,
-		EndRow:     end,
-		Kind:       row.Kind,
-		Segment:    row.Segment,
-		SessionID:  row.SessionID,
-		FrameID:    row.FrameID,
-		FixedGrid:  row.FixedGrid,
-		ScreenCols: row.ScreenCols,
+		LineID:             row.LineID,
+		StartRow:           start,
+		EndRow:             end,
+		Kind:               row.Kind,
+		Segment:            row.Segment,
+		SessionID:          row.SessionID,
+		FrameID:            row.FrameID,
+		FixedGrid:          row.FixedGrid,
+		ScreenCols:         row.ScreenCols,
+		ProjectionRowIndex: row.ProjectionRowIndex,
 	}
 }
 
@@ -1785,17 +1799,18 @@ func ReflowHistoryLogicalLines(lines []HistoryLogicalLine, cols int) ([]HistoryR
 			end = start
 		}
 		spans = append(spans, HistoryLineSpan{
-			LineID:        line.LineID,
-			StartRow:      start,
-			EndRow:        end,
-			Kind:          line.Kind,
-			Segment:       line.Segment,
-			SessionID:     line.SessionID,
-			FrameID:       line.FrameID,
-			FixedGrid:     line.FixedGrid,
-			ScreenCols:    line.ScreenCols,
-			ClippedBefore: line.ClippedBefore,
-			ClippedAfter:  line.ClippedAfter,
+			LineID:             line.LineID,
+			StartRow:           start,
+			EndRow:             end,
+			Kind:               line.Kind,
+			Segment:            line.Segment,
+			SessionID:          line.SessionID,
+			FrameID:            line.FrameID,
+			FixedGrid:          line.FixedGrid,
+			ScreenCols:         line.ScreenCols,
+			ProjectionRowIndex: line.ProjectionRowIndex,
+			ClippedBefore:      line.ClippedBefore,
+			ClippedAfter:       line.ClippedAfter,
 		})
 	}
 	return rows, spans
@@ -1812,24 +1827,25 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 		cells = normalizeHistoryLogicalLineCells(cells, cols)
 	}
 	if len(cells) == 0 {
-		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, LiveTail: line.LiveTail}}
+		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, ProjectionRowIndex: line.ProjectionRowIndex, LiveTail: line.LiveTail}}
 	}
 	rows := make([]HistoryRow, 0, 1)
 	current := make([]HistoryCell, 0, len(cells))
 	width := 0
 	flush := func() {
 		row := HistoryRow{
-			Text:       historyCellsPlainTextForState(current),
-			Cells:      cloneHistoryCells(current),
-			LineID:     line.LineID,
-			RowInLine:  len(rows),
-			Kind:       line.Kind,
-			Segment:    line.Segment,
-			SessionID:  line.SessionID,
-			FrameID:    line.FrameID,
-			FixedGrid:  line.FixedGrid,
-			ScreenCols: line.ScreenCols,
-			LiveTail:   line.LiveTail,
+			Text:               historyCellsPlainTextForState(current),
+			Cells:              cloneHistoryCells(current),
+			LineID:             line.LineID,
+			RowInLine:          len(rows),
+			Kind:               line.Kind,
+			Segment:            line.Segment,
+			SessionID:          line.SessionID,
+			FrameID:            line.FrameID,
+			FixedGrid:          line.FixedGrid,
+			ScreenCols:         line.ScreenCols,
+			ProjectionRowIndex: line.ProjectionRowIndex,
+			LiveTail:           line.LiveTail,
 		}
 		rows = append(rows, row)
 		current = current[:0]
@@ -1880,17 +1896,18 @@ func fixedGridHistoryRows(line HistoryLogicalLine, cells []HistoryCell) []Histor
 		cells = normalizeHistoryLogicalLineCells(cells, HistoryCellDisplayWidthSum(cells))
 	}
 	row := HistoryRow{
-		Text:       historyCellsPlainTextForState(cells),
-		Cells:      cloneHistoryCells(cells),
-		LineID:     line.LineID,
-		Kind:       line.Kind,
-		Segment:    line.Segment,
-		SessionID:  line.SessionID,
-		FrameID:    line.FrameID,
-		FixedGrid:  line.FixedGrid,
-		ScreenCols: line.ScreenCols,
-		LiveTail:   line.LiveTail,
-		TailFill:   cloneHistoryCellStyle(line.TailFill),
+		Text:               historyCellsPlainTextForState(cells),
+		Cells:              cloneHistoryCells(cells),
+		LineID:             line.LineID,
+		Kind:               line.Kind,
+		Segment:            line.Segment,
+		SessionID:          line.SessionID,
+		FrameID:            line.FrameID,
+		FixedGrid:          line.FixedGrid,
+		ScreenCols:         line.ScreenCols,
+		ProjectionRowIndex: line.ProjectionRowIndex,
+		LiveTail:           line.LiveTail,
+		TailFill:           cloneHistoryCellStyle(line.TailFill),
 	}
 	if row.Text == "" && line.Text != "" {
 		row.Text = line.Text
@@ -1904,23 +1921,24 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 	}
 	clusters := textGraphemeClusters(line.Text)
 	if len(clusters) == 0 {
-		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, LiveTail: line.LiveTail}}
+		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, ProjectionRowIndex: line.ProjectionRowIndex, LiveTail: line.LiveTail}}
 	}
 	rows := make([]HistoryRow, 0, 1)
 	var builder strings.Builder
 	width := 0
 	flush := func() {
 		row := HistoryRow{
-			Text:       builder.String(),
-			LineID:     line.LineID,
-			RowInLine:  len(rows),
-			Kind:       line.Kind,
-			Segment:    line.Segment,
-			SessionID:  line.SessionID,
-			FrameID:    line.FrameID,
-			FixedGrid:  line.FixedGrid,
-			ScreenCols: line.ScreenCols,
-			LiveTail:   line.LiveTail,
+			Text:               builder.String(),
+			LineID:             line.LineID,
+			RowInLine:          len(rows),
+			Kind:               line.Kind,
+			Segment:            line.Segment,
+			SessionID:          line.SessionID,
+			FrameID:            line.FrameID,
+			FixedGrid:          line.FixedGrid,
+			ScreenCols:         line.ScreenCols,
+			ProjectionRowIndex: line.ProjectionRowIndex,
+			LiveTail:           line.LiveTail,
 		}
 		rows = append(rows, row)
 		builder.Reset()
@@ -1949,7 +1967,7 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 
 func reflowPlainASCIIHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	if line.Text == "" {
-		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, LiveTail: line.LiveTail}}
+		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, ProjectionRowIndex: line.ProjectionRowIndex, LiveTail: line.LiveTail}}
 	}
 	if cols <= 0 {
 		cols = 80
@@ -1961,16 +1979,17 @@ func reflowPlainASCIIHistoryLogicalLine(line HistoryLogicalLine, cols int) []His
 			end = len(line.Text)
 		}
 		rows = append(rows, HistoryRow{
-			Text:       line.Text[start:end],
-			LineID:     line.LineID,
-			RowInLine:  len(rows),
-			Kind:       line.Kind,
-			Segment:    line.Segment,
-			SessionID:  line.SessionID,
-			FrameID:    line.FrameID,
-			FixedGrid:  line.FixedGrid,
-			ScreenCols: line.ScreenCols,
-			LiveTail:   line.LiveTail,
+			Text:               line.Text[start:end],
+			LineID:             line.LineID,
+			RowInLine:          len(rows),
+			Kind:               line.Kind,
+			Segment:            line.Segment,
+			SessionID:          line.SessionID,
+			FrameID:            line.FrameID,
+			FixedGrid:          line.FixedGrid,
+			ScreenCols:         line.ScreenCols,
+			ProjectionRowIndex: line.ProjectionRowIndex,
+			LiveTail:           line.LiveTail,
 		})
 	}
 	applyTailFillToLastHistoryRow(rows, line.TailFill)

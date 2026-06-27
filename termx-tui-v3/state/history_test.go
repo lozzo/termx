@@ -1072,6 +1072,51 @@ func TestR333HistoryStoreTrimRowsAdvancesCursorBySourceLinesNotVisualRows(t *tes
 	}
 }
 
+func TestR333HistoryStoreTrimRowsUsesProjectionRowIndex(t *testing.T) {
+	store := HistoryStore{
+		Cols: 80,
+		SourceLines: []HistoryLogicalLine{
+			{Text: "a", LineID: 20, Segment: HistoryCursorSegmentCommitted, ProjectionRowIndex: 240},
+			{Text: "b", LineID: 21, Segment: HistoryCursorSegmentCommitted, ProjectionRowIndex: 244},
+			{Text: "c", LineID: 22, Segment: HistoryCursorSegmentCommitted, ProjectionRowIndex: 248},
+		},
+		Cursor:   HistoryCursor{Valid: true, BeforeLineID: 20, BeforeRowIndex: 240, Segment: HistoryCursorSegmentCommitted},
+		Boundary: HistoryBoundary{FirstLineID: 20, LastLineID: 22},
+	}
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+
+	trimmed, result := store.TrimRows(1, 2)
+
+	if result.DroppedLinesBefore != 1 {
+		t.Fatalf("test setup should drop one source row, got %#v", result)
+	}
+	if trimmed.Cursor.BeforeRowIndex != 244 || trimmed.Cursor.BeforeLineID != 21 {
+		t.Fatalf("trim must use first retained core ProjectionRowIndex, got %#v", trimmed.Cursor)
+	}
+}
+
+func TestR333HistoryStoreTrimRowsUsesSourceIdentityNotLineID(t *testing.T) {
+	store := HistoryStore{
+		Cols: 80,
+		SourceLines: []HistoryLogicalLine{
+			{Text: "old", LineID: 42, Kind: HistoryRowKindScreenFrame, Segment: HistoryCursorSegmentCurrentPrimaryFrame, SessionID: 3, FrameID: 10, FixedGrid: true, ScreenCols: 80, ProjectionRowIndex: 240},
+			{Text: "new", LineID: 42, Kind: HistoryRowKindScreenFrame, Segment: HistoryCursorSegmentCurrentPrimaryFrame, SessionID: 3, FrameID: 11, FixedGrid: true, ScreenCols: 80, ProjectionRowIndex: 241},
+		},
+		Cursor:   HistoryCursor{Valid: true, BeforeLineID: 42, BeforeRowIndex: 240, Segment: HistoryCursorSegmentCurrentPrimaryFrame},
+		Boundary: HistoryBoundary{FirstLineID: 42, LastLineID: 42},
+	}
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+
+	trimmed, result := store.TrimRows(1, 1)
+
+	if result.DroppedLinesBefore != 1 || len(trimmed.SourceLines) != 1 {
+		t.Fatalf("trim should keep only the second source identity, result=%#v store=%#v", result, trimmed)
+	}
+	if trimmed.SourceLines[0].FrameID != 11 || trimmed.Cursor.BeforeRowIndex != 241 {
+		t.Fatalf("trim must key by frame identity and projection row, got cursor=%#v source=%#v", trimmed.Cursor, trimmed.SourceLines)
+	}
+}
+
 func TestHistoryStoreTrimRowsDetachesDroppedBackingArrays(t *testing.T) {
 	source := make([]HistoryLogicalLine, 0, 64)
 	for i := 0; i < 64; i++ {

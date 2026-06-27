@@ -108,15 +108,18 @@ type HistoryLineSpan struct {
 // HistoryRow 是 history.window 返回的一行 projected row。它的 cells 来自
 // logical-line/frame payload truth，renderer output 不能写回它。
 type HistoryRow struct {
-	Cells      []Cell
-	Kind       LineKind
-	Segment    HistorySegment
-	LineID     LogicalLineID
-	SessionID  ScreenSessionID
-	FrameID    ScreenFrameID
-	RowInLine  int
-	FixedGrid  bool
-	ScreenCols int
+	Cells     []Cell
+	Kind      LineKind
+	Segment   HistorySegment
+	LineID    LogicalLineID
+	SessionID ScreenSessionID
+	FrameID   ScreenFrameID
+	RowInLine int
+	// ProjectionRowIndex 是该 row 在 core authoritative projection 中的绝对
+	// row index；TUI 裁剪本地窗口后必须用它恢复 older cursor，不能用 RowInLine。
+	ProjectionRowIndex int
+	FixedGrid          bool
+	ScreenCols         int
 	// Committed 是旧 protocol/wire 兼容字段；新领域语义只应把它当作
 	// projected row 是否来自 sealed timeline 的标记，不能引入 commit owner。
 	Committed bool

@@ -287,6 +287,7 @@ func historyWindowToWirePB(window *HistoryWindow) *wirepb.HistoryWindow {
 	setUint64SliceUnknownField(msg, historyWindowResponseRowFrameIDsFieldNumber, window.RowFrameIDs)
 	setBoolSliceUnknownField(msg, historyWindowResponseRowFixedGridFieldNumber, window.RowFixedGrid)
 	setIntSliceUnknownField(msg, historyWindowResponseRowScreenColsFieldNumber, window.RowScreenCols)
+	setIntSliceUnknownField(msg, historyWindowResponseRowIndexesFieldNumber, window.RowIndexes)
 	setUint64SliceUnknownField(msg, historyWindowLineSessionIDsFieldNumber, lineSessionIDs)
 	setUint64SliceUnknownField(msg, historyWindowLineFrameIDsFieldNumber, lineFrameIDs)
 	setBoolSliceUnknownField(msg, historyWindowLineFixedGridFieldNumber, lineFixedGrid)
@@ -373,6 +374,7 @@ func historyWindowFromWirePB(msg *wirepb.HistoryWindow) (*HistoryWindow, error) 
 		RowFrameIDs:    uint64SliceUnknownField(msg, historyWindowResponseRowFrameIDsFieldNumber),
 		RowFixedGrid:   boolSliceUnknownField(msg, historyWindowResponseRowFixedGridFieldNumber),
 		RowScreenCols:  intSliceUnknownField(msg, historyWindowResponseRowScreenColsFieldNumber),
+		RowIndexes:     intSliceUnknownField(msg, historyWindowResponseRowIndexesFieldNumber),
 		Lines:          lines,
 		BeforeOffset:   int(msg.GetBeforeOffset()),
 		LoadedRows:     int(msg.GetLoadedRows()),

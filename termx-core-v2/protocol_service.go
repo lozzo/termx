@@ -911,6 +911,7 @@ func protocolHistoryWindowFromDomain(window history.HistoryWindow) *protocol.His
 	rowFrameIDs := make([]uint64, 0, len(window.Rows))
 	rowFixedGrid := make([]bool, 0, len(window.Rows))
 	rowScreenCols := make([]int, 0, len(window.Rows))
+	rowIndexes := make([]int, 0, len(window.Rows))
 	for _, row := range window.Rows {
 		rows = append(rows, protocolCompactRowFromHistoryCells(row.Cells))
 		rowKinds = append(rowKinds, string(row.Kind))
@@ -923,6 +924,7 @@ func protocolHistoryWindowFromDomain(window history.HistoryWindow) *protocol.His
 		rowFrameIDs = append(rowFrameIDs, uint64(row.FrameID))
 		rowFixedGrid = append(rowFixedGrid, row.FixedGrid)
 		rowScreenCols = append(rowScreenCols, row.ScreenCols)
+		rowIndexes = append(rowIndexes, row.ProjectionRowIndex)
 	}
 	lines := make([]protocol.HistoryLineSpan, 0, len(window.Lines))
 	for _, span := range window.Lines {
@@ -955,6 +957,7 @@ func protocolHistoryWindowFromDomain(window history.HistoryWindow) *protocol.His
 		RowFrameIDs:    rowFrameIDs,
 		RowFixedGrid:   rowFixedGrid,
 		RowScreenCols:  rowScreenCols,
+		RowIndexes:     rowIndexes,
 		Lines:          lines,
 		LoadedRows:     len(rows),
 		TotalRows:      window.LogicalTotal,

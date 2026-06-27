@@ -59,6 +59,7 @@ func TestR320OrderedSemanticEventsCoverMatrixInputs(t *testing.T) {
 		"alt-enter:1049",
 		"alt-exit:1049",
 		"resize-op:100x30",
+		"scroll-out:gone",
 		"primary-frame:p",
 		"alt-frame:a",
 		"full-replace:resize",
@@ -239,6 +240,55 @@ func TestR333RealVTermSynchronizedED2ScrollOutIsClearTimeProof(t *testing.T) {
 	}
 	if scrollOut == 0 {
 		t.Fatalf("expected synchronized ED2 old-screen scroll-out proof, labels=%v tx=%#v", labels, tx)
+	}
+}
+
+func TestR333RealVTermSynchronizedED2KeepsPostClearPayloadScrollOut(t *testing.T) {
+	source := vterm.NewSemanticSource(12, 3, 0, nil)
+	if _, err := source.ApplyPTYWrite([]byte("old-a\r\nold-b")); err != nil {
+		t.Fatalf("seed vterm: %v", err)
+	}
+	var raw strings.Builder
+	raw.WriteString("\x1b[?2026h\x1b[2J\x1b[H")
+	for i := 1; i <= 8; i++ {
+		raw.WriteString("line0")
+		raw.WriteString(strconv.Itoa(i))
+		raw.WriteString("\r\n")
+	}
+	raw.WriteString("\x1b[?2026l")
+	tx, err := source.ApplyPTYWrite([]byte(raw.String()))
+	if err != nil {
+		t.Fatalf("apply synchronized ED2 redraw: %v", err)
+	}
+
+	events := HistorySemanticEventsFromTransaction(tx)
+	labels := eventLabels(events)
+	var clearRows []string
+	var payloadRows []string
+	for _, event := range events {
+		if event.Kind != HistorySemanticEventPrimaryScrollOut {
+			continue
+		}
+		text := semanticScrollOutText(event.ScrollOut)
+		if event.ClearScrollOut {
+			clearRows = append(clearRows, text)
+		} else {
+			payloadRows = append(payloadRows, text)
+		}
+	}
+	if len(clearRows) == 0 {
+		t.Fatalf("ED2 old visible screen must remain clear-time proof, labels=%v tx=%#v", labels, tx)
+	}
+	if len(payloadRows) == 0 {
+		t.Fatalf("post-ED2 synchronized payload scroll-out must remain history payload, labels=%v tx=%#v", labels, tx)
+	}
+	if !containsLabel(labels, "scroll-out:line01") {
+		t.Fatalf("post-clear payload line01 should enter event chain, labels=%v clear=%v payload=%v", labels, clearRows, payloadRows)
+	}
+	for _, row := range payloadRows {
+		if strings.HasPrefix(row, "old-") {
+			t.Fatalf("old screen clear proof must not be reclassified as payload, clear=%v payload=%v labels=%v", clearRows, payloadRows, labels)
+		}
 	}
 }
 

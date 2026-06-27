@@ -105,6 +105,7 @@ func (store *inMemoryHistoryStore) latestWindowFromRows(req HistoryWindowRequest
 	limit := normalizedLimit(req.Limit)
 	start := maxInt(0, len(rows)-limit)
 	page := cloneHistoryRows(rows[start:])
+	annotateProjectionRowIndexes(page, start)
 	boundary := boundaryForRows(page, generation, req.Token)
 	if len(page) > 0 {
 		boundary.Cursor = HistoryCursor{
@@ -140,6 +141,7 @@ func (store *inMemoryHistoryStore) OlderWindow(req HistoryWindowRequest) (Histor
 	}
 	start := maxInt(0, end-limit)
 	page := cloneHistoryRows(rows[start:end])
+	annotateProjectionRowIndexes(page, start)
 	boundary := boundaryForRows(page, store.generation, req.Token)
 	boundary.Cursor = HistoryCursor{Generation: store.generation, BeforeRowIndex: start, Token: req.Token, Valid: start > 0}
 	if len(page) > 0 && boundary.Cursor.Valid {
@@ -167,6 +169,7 @@ func (store *inMemoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHisto
 	limit := normalizedLimit(req.Limit)
 	start := maxInt(0, len(rows)-limit)
 	latestRows := cloneHistoryRows(rows[start:])
+	annotateProjectionRowIndexes(latestRows, start)
 	boundary := boundaryForRows(latestRows, store.generation, token)
 	if len(latestRows) > 0 {
 		boundary.Cursor = HistoryCursor{
@@ -502,6 +505,12 @@ func (store *inMemoryHistoryStore) windowFromProjectedRows(req HistoryWindowRequ
 		HasMore:      boundary.Cursor.Valid,
 		LogicalTotal: len(rows),
 		Timestamp:    time.Now().UTC(),
+	}
+}
+
+func annotateProjectionRowIndexes(rows []HistoryRow, start int) {
+	for index := range rows {
+		rows[index].ProjectionRowIndex = start + index
 	}
 }
 
