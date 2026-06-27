@@ -101,7 +101,7 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 	case HistorySemanticEventOp:
 		if decision.ConsumeClearBoundary && event.Op != nil && isEraseDisplayAllOp(*event.Op) {
 			var mutations []HistoryMutation
-			streamMutations, err := renderer.stream.ApplyOp(*event.Op)
+			streamMutations, err := renderer.stream.ClearScreenOwnership()
 			if err != nil {
 				return nil, err
 			}
@@ -119,6 +119,9 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 			return renderer.stream.ApplyOp(*event.Op)
 		}
 	case HistorySemanticEventPrimaryScrollOut:
+		if event.ClearScrollOut && !decision.ConsumeClearScrollOutProof {
+			return nil, nil
+		}
 		if decision.ConsumeScrollOutProof && event.ScrollOut != nil {
 			return renderer.stream.SealScrollOut(*event.ScrollOut)
 		}

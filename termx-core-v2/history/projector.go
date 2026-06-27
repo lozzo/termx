@@ -22,6 +22,9 @@ type StreamLineReducer interface {
 	SealOpenLine(reason SealReason) ([]HistoryMutation, error)
 	// SealScrollOut 把 vterm 提供的 primary scroll-out proof seal 成 logical lines。
 	SealScrollOut(proof TerminalSemanticScrollOut) ([]HistoryMutation, error)
+	// ClearScreenOwnership 只清理 stream reducer 当前屏幕 ownership，不把已按 LF
+	// seal 的普通行再次写入 history；ED2 clear-time proof 负责表达真正未封存内容。
+	ClearScreenOwnership() ([]HistoryMutation, error)
 	// ResetForClearScrollback 在 ED3 等明确 clear-scrollback boundary 后丢弃
 	// renderer-owned ordinary mutable state。调用方仍需通过 mutation 清 store。
 	ResetForClearScrollback()

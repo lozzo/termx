@@ -1002,15 +1002,73 @@ func TestHistoryStoreTrimRowsKeepsAuthoritativeCursorSegment(t *testing.T) {
 	store := HistoryStore{
 		Cols:        80,
 		SourceLines: source,
-		Cursor:      HistoryCursor{Valid: true, BeforeLineID: 1, Segment: HistoryCursorSegmentArchivedPrimaryFrame},
+		Cursor:      HistoryCursor{Valid: true, BeforeLineID: 1, BeforeRowIndex: 0, Segment: HistoryCursorSegmentArchivedPrimaryFrame},
 		Boundary:    HistoryBoundary{FirstLineID: 1, LastLineID: 3},
 	}
 	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
 
 	trimmed, _ := store.TrimRows(1, 2)
 
-	if trimmed.Cursor != (HistoryCursor{Valid: true, BeforeLineID: 2, Segment: HistoryCursorSegmentArchivedPrimaryFrame}) {
+	if trimmed.Cursor != (HistoryCursor{Valid: true, BeforeLineID: 2, BeforeRowIndex: 1, Segment: HistoryCursorSegmentArchivedPrimaryFrame}) {
 		t.Fatalf("trim must keep core cursor segment while moving local boundary, got %#v", trimmed.Cursor)
+	}
+}
+
+func TestR333HistoryStoreTrimRowsPreservesProjectionCursorIndex(t *testing.T) {
+	source := make([]HistoryLogicalLine, 0, 8)
+	for i := 0; i < 8; i++ {
+		source = append(source, HistoryLogicalLine{
+			Text:    "line",
+			LineID:  uint64(240 + i),
+			Segment: HistoryCursorSegmentCommitted,
+		})
+	}
+	store := HistoryStore{
+		Cols:        80,
+		SourceLines: source,
+		Cursor:      HistoryCursor{Valid: true, BeforeLineID: 240, BeforeRowInLine: 0, BeforeRowIndex: 240, Segment: HistoryCursorSegmentCommitted},
+		Boundary:    HistoryBoundary{FirstLineID: 240, LastLineID: 247},
+	}
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+
+	trimmed, result := store.TrimRows(2, 7)
+
+	if result.DroppedRowsBefore != 2 {
+		t.Fatalf("unexpected trim result %#v", result)
+	}
+	if trimmed.Cursor.BeforeRowIndex != 242 || trimmed.Cursor.BeforeRowInLine != 0 || trimmed.Cursor.BeforeLineID != 242 {
+		t.Fatalf("trim must advance projection cursor without using row-in-line as offset, got %#v", trimmed.Cursor)
+	}
+}
+
+func TestR333HistoryStoreTrimRowsAdvancesCursorBySourceLinesNotVisualRows(t *testing.T) {
+	store := HistoryStore{
+		Cols: 4,
+		SourceLines: []HistoryLogicalLine{
+			{Text: "aaaa", LineID: 10, Segment: HistoryCursorSegmentCommitted},
+			{Text: "bbbbbbbb", LineID: 11, Segment: HistoryCursorSegmentCommitted},
+			{Text: "cccc", LineID: 12, Segment: HistoryCursorSegmentCommitted},
+		},
+		Cursor:   HistoryCursor{Valid: true, BeforeLineID: 10, BeforeRowIndex: 10, Segment: HistoryCursorSegmentCommitted},
+		Boundary: HistoryBoundary{FirstLineID: 10, LastLineID: 12},
+	}
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+
+	trimmed, result := store.TrimRows(2, len(store.Rows)-1)
+
+	if result.DroppedRowsBefore != 1 || result.DroppedLinesBefore != 1 {
+		t.Fatalf("test setup should drop one source line with one visual row, got %#v", result)
+	}
+	if trimmed.Cursor.BeforeRowIndex != 11 {
+		t.Fatalf("cursor should advance by dropped source rows, got %#v", trimmed.Cursor)
+	}
+
+	trimmed, result = trimmed.TrimRows(2, len(trimmed.Rows)-1)
+	if result.DroppedRowsBefore != 2 || result.DroppedLinesBefore != 1 {
+		t.Fatalf("test setup should drop two visual rows from one source line, got %#v", result)
+	}
+	if trimmed.Cursor.BeforeRowIndex != 12 {
+		t.Fatalf("cursor must advance by one source line, not two visual rows, got %#v", trimmed.Cursor)
 	}
 }
 
@@ -1047,6 +1105,113 @@ func TestHistoryStoreTrimRowsDetachesDroppedBackingArrays(t *testing.T) {
 	store.SourceLines[24].Cells[0].Text = "mutated-old"
 	if trimmed.SourceLines[0].Cells[0].Text != "payload" {
 		t.Fatalf("trimmed source cells must be detached from dropped window, got %#v", trimmed.SourceLines[0].Cells)
+	}
+}
+
+func TestR333HistoryStoreAcceptsOlderPageWithOwnTailBoundary(t *testing.T) {
+	store := HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       80,
+		SourceLines: []HistoryLogicalLine{
+			{Text: "new-1", LineID: 20, Segment: HistoryCursorSegmentCommitted},
+			{Text: "new-2", LineID: 21, Segment: HistoryCursorSegmentCommitted},
+		},
+		Cursor:     HistoryCursor{Valid: true, BeforeLineID: 20, BeforeRowIndex: 20, Segment: HistoryCursorSegmentCommitted},
+		Generation: 7,
+		Boundary:   HistoryBoundary{FirstLineID: 20, LastLineID: 21},
+		HasMore:    true,
+	}
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+	pending := HistoryPendingRequest{
+		ID:         1,
+		Kind:       HistoryRequestOlder,
+		TerminalID: "term-1",
+		Cols:       80,
+		Token:      "tok-1",
+		Generation: 7,
+		Cursor:     store.Cursor,
+		Boundary:   store.Boundary,
+	}
+	var err error
+	store, err = store.BeginOlder(pending)
+	if err != nil {
+		t.Fatalf("begin older: %v", err)
+	}
+
+	window := HistoryWindow{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Op:         HistoryWindowPrepend,
+		Cols:       80,
+		SourceLines: []HistoryLogicalLine{
+			{Text: "old-1", LineID: 18, Segment: HistoryCursorSegmentCommitted},
+			{Text: "old-2", LineID: 19, Segment: HistoryCursorSegmentCommitted},
+		},
+		Cursor:     HistoryCursor{Valid: true, BeforeLineID: 18, BeforeRowIndex: 18, Segment: HistoryCursorSegmentCommitted},
+		HasMore:    true,
+		Generation: 7,
+		Boundary:   HistoryBoundary{FirstLineID: 18, LastLineID: 19},
+	}
+	window.Rows, window.Lines = ReflowHistoryLogicalLines(window.SourceLines, window.Cols)
+
+	next, inserted, err := store.ApplyWindow(1, window)
+	if err != nil {
+		t.Fatalf("older prepend with older tail boundary should be accepted: %v", err)
+	}
+	if inserted != 2 || len(next.SourceLines) != 4 || next.SourceLines[0].LineID != 18 || next.Boundary.LastLineID != 21 {
+		t.Fatalf("unexpected prepended state inserted=%d store=%#v", inserted, next)
+	}
+}
+
+func TestR333HistorySourceLinesDoNotMergeAcrossSegmentIdentity(t *testing.T) {
+	older := []HistoryLogicalLine{{
+		Text:         "frame",
+		LineID:       42,
+		Kind:         HistoryRowKindScreenFrame,
+		Segment:      HistoryCursorSegmentCurrentPrimaryFrame,
+		ClippedAfter: true,
+	}}
+	existing := []HistoryLogicalLine{{
+		Text:          "prompt",
+		LineID:        42,
+		Segment:       HistoryCursorSegmentCommitted,
+		ClippedBefore: true,
+	}}
+
+	merged := mergePrependedHistoryLogicalLines(older, existing)
+	if len(merged) != 2 || merged[0].Text != "frame" || merged[1].Text != "prompt" {
+		t.Fatalf("same line id from different segment/kind must not merge, got %#v", merged)
+	}
+}
+
+func TestR333HistorySourceLinesDoNotMergeAcrossFrameIdentity(t *testing.T) {
+	older := []HistoryLogicalLine{{
+		Text:         "old-frame",
+		LineID:       42,
+		Kind:         HistoryRowKindScreenFrame,
+		Segment:      HistoryCursorSegmentCurrentPrimaryFrame,
+		SessionID:    3,
+		FrameID:      10,
+		FixedGrid:    true,
+		ScreenCols:   80,
+		ClippedAfter: true,
+	}}
+	existing := []HistoryLogicalLine{{
+		Text:          "new-frame",
+		LineID:        42,
+		Kind:          HistoryRowKindScreenFrame,
+		Segment:       HistoryCursorSegmentCurrentPrimaryFrame,
+		SessionID:     3,
+		FrameID:       11,
+		FixedGrid:     true,
+		ScreenCols:    80,
+		ClippedBefore: true,
+	}}
+
+	merged := mergePrependedHistoryLogicalLines(older, existing)
+	if len(merged) != 2 || merged[0].FrameID != 10 || merged[1].FrameID != 11 {
+		t.Fatalf("same line id from different frame ids must not merge, got %#v", merged)
 	}
 }
 

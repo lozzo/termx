@@ -183,6 +183,11 @@ func TestR328RealVTermED2ScrollOutIsOrderedBeforeRedraw(t *testing.T) {
 		t.Fatalf("apply ED2 redraw: %v", err)
 	}
 	labels := eventLabels(HistorySemanticEventsFromTransaction(tx))
+	for _, event := range HistorySemanticEventsFromTransaction(tx) {
+		if event.Kind == HistorySemanticEventPrimaryScrollOut && !event.ClearScrollOut {
+			t.Fatalf("ED2 old-screen scroll-out proof must be marked clear-time proof, event=%#v labels=%v", event, labels)
+		}
+	}
 	want := []string{
 		"control:cup",
 		"scroll-out:old-a",
@@ -209,6 +214,31 @@ func assertSequentialEventEnvelope(t *testing.T, events []HistorySemanticEvent, 
 		if event.Seq != seq || event.Order != i || event.Size != size {
 			t.Fatalf("event %d lost transaction envelope: %#v", i, event)
 		}
+	}
+}
+
+func TestR333RealVTermSynchronizedED2ScrollOutIsClearTimeProof(t *testing.T) {
+	source := vterm.NewSemanticSource(24, 4, 0, nil)
+	if _, err := source.ApplyPTYWrite([]byte("older one\r\nvisible tail\r\n")); err != nil {
+		t.Fatalf("seed vterm: %v", err)
+	}
+	tx, err := source.ApplyPTYWrite([]byte("\x1b[?2026h\x1b[2J\x1b[Hcodex current\x1b[?2026l"))
+	if err != nil {
+		t.Fatalf("apply synchronized ED2 redraw: %v", err)
+	}
+	events := HistorySemanticEventsFromTransaction(tx)
+	labels := eventLabels(events)
+	var scrollOut int
+	for _, event := range events {
+		if event.Kind == HistorySemanticEventPrimaryScrollOut {
+			scrollOut++
+			if !event.ClearScrollOut {
+				t.Fatalf("synchronized ED2 old-screen scroll-out must be marked clear-time proof, event=%#v labels=%v", event, labels)
+			}
+		}
+	}
+	if scrollOut == 0 {
+		t.Fatalf("expected synchronized ED2 old-screen scroll-out proof, labels=%v tx=%#v", labels, tx)
 	}
 }
 

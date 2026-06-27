@@ -125,6 +125,7 @@ func runV3HistoryDump(ctx context.Context, client *protocol.Client, cfg v3Histor
 				CursorValid:         olderCursor.CursorValid,
 				BeforeLineID:        olderCursor.CursorLineID,
 				BeforeRowInLine:     olderCursor.CursorRow,
+				BeforeRowIndex:      olderCursor.CursorRowIndex,
 				CursorSegment:       olderCursor.CursorSegment,
 				BoundaryFirstLineID: olderCursor.FirstLineID,
 				BoundaryLastLineID:  latest.LastLineID,
@@ -156,7 +157,7 @@ func writeV3HistoryDumpHeader(writer *bufio.Writer, cfg v3HistoryDumpConfig, lat
 	fmt.Fprintf(writer, "# terminal_id=%s cols=%d limit=%d all=%v\n", cfg.TerminalID, cfg.Cols, cfg.Limit, cfg.All)
 	fmt.Fprintf(writer, "# output_order=oldest-to-newest\n")
 	if latest != nil {
-		fmt.Fprintf(writer, "# latest_token=%s latest_generation=%d latest_boundary=%d..%d latest_cursor_valid=%v latest_cursor=%s/%d:%d logical_total=%d\n",
+		fmt.Fprintf(writer, "# latest_token=%s latest_generation=%d latest_boundary=%d..%d latest_cursor_valid=%v latest_cursor=%s/%d:%d index=%d logical_total=%d\n",
 			latest.Token,
 			latest.Generation,
 			latest.FirstLineID,
@@ -165,6 +166,7 @@ func writeV3HistoryDumpHeader(writer *bufio.Writer, cfg v3HistoryDumpConfig, lat
 			latest.CursorSegment,
 			latest.CursorLineID,
 			latest.CursorRow,
+			latest.CursorRowIndex,
 			latest.LogicalTotal,
 		)
 	}
@@ -176,7 +178,7 @@ func writeV3HistoryDumpWindow(writer *bufio.Writer, index int, window *protocol.
 	if window == nil {
 		return globalRow, nil
 	}
-	fmt.Fprintf(writer, "## window %d op=%s rows=%d token=%s generation=%d boundary=%d..%d cursor_valid=%v cursor=%s/%d:%d has_more=%v logical_total=%d\n",
+	fmt.Fprintf(writer, "## window %d op=%s rows=%d token=%s generation=%d boundary=%d..%d cursor_valid=%v cursor=%s/%d:%d index=%d has_more=%v logical_total=%d\n",
 		index,
 		window.Op,
 		len(window.Rows),
@@ -188,6 +190,7 @@ func writeV3HistoryDumpWindow(writer *bufio.Writer, index int, window *protocol.
 		window.CursorSegment,
 		window.CursorLineID,
 		window.CursorRow,
+		window.CursorRowIndex,
 		window.HasMore,
 		window.LogicalTotal,
 	)

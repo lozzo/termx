@@ -99,6 +99,18 @@ func (reducer *streamLineReducer) SealScrollOut(proof TerminalSemanticScrollOut)
 	return reducer.sealStandaloneLine(line, SealReasonScrollOut, HistoryRecordPrimaryScrollOutLine), nil
 }
 
+func (reducer *streamLineReducer) ClearScreenOwnership() ([]HistoryMutation, error) {
+	if reducer == nil {
+		return nil, nil
+	}
+	reducer.ensureState()
+	var mutations []HistoryMutation
+	for _, row := range reducer.sortedOwnedRows() {
+		mutations = append(mutations, reducer.clearRow(row)...)
+	}
+	return mutations, nil
+}
+
 func (reducer *streamLineReducer) ResetForClearScrollback() {
 	if reducer == nil {
 		return

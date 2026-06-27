@@ -44,10 +44,13 @@ const (
 )
 
 // HistoryCursor 是 older pagination 的 logical boundary。
+// BeforeRowIndex 来自 core authoritative projection，是下一次 older 请求的
+// 绝对行号；BeforeRowInLine 只描述 logical line 内部位置，不能参与分页。
 type HistoryCursor struct {
 	Valid           bool
 	BeforeLineID    uint64
 	BeforeRowInLine int
+	BeforeRowIndex  int
 	Segment         string
 }
 
@@ -83,6 +86,10 @@ type HistoryRow struct {
 	RowInLine    int
 	Kind         string
 	Segment      string
+	SessionID    uint64
+	FrameID      uint64
+	FixedGrid    bool
+	ScreenCols   int
 	ClippedStart bool
 	ClippedEnd   bool
 	LiveTail     bool
@@ -112,17 +119,32 @@ type HistoryCellStyle struct {
 // HistoryLogicalLine 是 copy/history 冻结快照里的单条 logical line payload。
 // TUI 只把它当作 authoritative source，再按当前 pane 宽度本地重排成 Rows。
 type HistoryLogicalLine struct {
-	Text     string
-	Cells    []HistoryCell
-	LineID   uint64
-	Kind     string
-	Segment  string
-	TailFill *HistoryCellStyle
-	LiveTail bool
+	Text       string
+	Cells      []HistoryCell
+	LineID     uint64
+	Kind       string
+	Segment    string
+	SessionID  uint64
+	FrameID    uint64
+	FixedGrid  bool
+	ScreenCols int
+	TailFill   *HistoryCellStyle
+	LiveTail   bool
 	// clipped 标记表达这条 frozen source 是否只是 authoritative logical line
 	// 的局部片段；本地 reflow 时必须继续保留，不能把 partial 片段误当成完整行。
 	ClippedBefore bool
 	ClippedAfter  bool
+}
+
+func sameHistoryLogicalLineSource(left HistoryLogicalLine, right HistoryLogicalLine) bool {
+	return left.LineID != 0 &&
+		left.LineID == right.LineID &&
+		left.Kind == right.Kind &&
+		left.Segment == right.Segment &&
+		left.SessionID == right.SessionID &&
+		left.FrameID == right.FrameID &&
+		left.FixedGrid == right.FixedGrid &&
+		(!left.FixedGrid || left.ScreenCols == right.ScreenCols)
 }
 
 // HistoryLineSpan 是 authoritative window 中 logical line 到 visual rows 的映射。
@@ -131,6 +153,11 @@ type HistoryLineSpan struct {
 	StartRow      int
 	EndRow        int
 	Kind          string
+	Segment       string
+	SessionID     uint64
+	FrameID       uint64
+	FixedGrid     bool
+	ScreenCols    int
 	ClippedBefore bool
 	ClippedAfter  bool
 }
@@ -440,9 +467,9 @@ func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryW
 		if pending.Generation != 0 && pending.Generation != window.Generation {
 			return ErrStaleHistoryResponse
 		}
-		if len(window.SourceLines) != 0 && pending.Boundary.LastLineID != 0 && pending.Boundary.LastLineID != window.Boundary.LastLineID {
-			return ErrStaleHistoryResponse
-		}
+		// 中文说明：older prepend 返回的是 existing head 之前的页面，
+		// 它的 LastLineID 应该是 older page 自己的尾部，不应等于当前窗口尾部。
+		// stale guard 只依赖 token/generation/request id 和 core cursor。
 	case HistoryRequestNewer:
 		if window.Op != HistoryWindowAppend {
 			return ErrHistoryWindowMismatch
@@ -587,8 +614,7 @@ func historyPrependNeedsBoundaryMerge(older []HistoryLogicalLine, existing []His
 	}
 	lastOlder := older[len(older)-1]
 	firstExisting := existing[0]
-	return lastOlder.LineID != 0 &&
-		lastOlder.LineID == firstExisting.LineID &&
+	return sameHistoryLogicalLineSource(lastOlder, firstExisting) &&
 		lastOlder.ClippedAfter &&
 		firstExisting.ClippedBefore
 }
@@ -599,8 +625,7 @@ func historyAppendNeedsBoundaryMerge(existing []HistoryLogicalLine, newer []Hist
 	}
 	lastExisting := existing[len(existing)-1]
 	firstNewer := newer[0]
-	return lastExisting.LineID != 0 &&
-		lastExisting.LineID == firstNewer.LineID &&
+	return sameHistoryLogicalLineSource(lastExisting, firstNewer) &&
 		lastExisting.ClippedAfter &&
 		firstNewer.ClippedBefore
 }
@@ -640,8 +665,7 @@ func mergePrependedHistoryLogicalLines(older []HistoryLogicalLine, existing []Hi
 	rest := cloneHistoryLogicalLines(existing)
 	lastOlder := &merged[len(merged)-1]
 	firstExisting := rest[0]
-	if lastOlder.LineID != 0 &&
-		lastOlder.LineID == firstExisting.LineID &&
+	if sameHistoryLogicalLineSource(*lastOlder, firstExisting) &&
 		lastOlder.ClippedAfter &&
 		firstExisting.ClippedBefore {
 		lastOlder.Text += firstExisting.Text
@@ -670,8 +694,7 @@ func mergeAppendedHistoryLogicalLines(existing []HistoryLogicalLine, newer []His
 	rest := cloneHistoryLogicalLines(newer)
 	lastExisting := &merged[len(merged)-1]
 	firstNewer := rest[0]
-	if lastExisting.LineID != 0 &&
-		lastExisting.LineID == firstNewer.LineID &&
+	if sameHistoryLogicalLineSource(*lastExisting, firstNewer) &&
 		lastExisting.ClippedAfter &&
 		firstNewer.ClippedBefore {
 		lastExisting.Text += firstNewer.Text
@@ -707,16 +730,9 @@ func historyRowsToLogicalLines(rows []HistoryRow, spans []HistoryLineSpan) []His
 	if len(rows) == 0 {
 		return nil
 	}
-	spansByLineID := make(map[uint64]HistoryLineSpan, len(spans))
-	for _, span := range spans {
-		if span.LineID == 0 {
-			continue
-		}
-		spansByLineID[span.LineID] = span
-	}
 	lines := make([]HistoryLogicalLine, 0, len(rows))
-	for _, row := range rows {
-		if len(lines) > 0 && lines[len(lines)-1].LineID == row.LineID {
+	for index, row := range rows {
+		if len(lines) > 0 && sameHistoryRowLogicalLineSource(lines[len(lines)-1], row) {
 			lines[len(lines)-1].Text += row.Text
 			lines[len(lines)-1].Cells = append(lines[len(lines)-1].Cells, cloneHistoryCells(row.Cells)...)
 			if row.TailFill != nil {
@@ -728,13 +744,17 @@ func historyRowsToLogicalLines(rows []HistoryRow, spans []HistoryLineSpan) []His
 			lines[len(lines)-1].LiveTail = lines[len(lines)-1].LiveTail || row.LiveTail
 			continue
 		}
-		span, hasSpan := spansByLineID[row.LineID]
+		span, hasSpan := historySpanForRow(spans, index, row)
 		lines = append(lines, HistoryLogicalLine{
 			Text:          row.Text,
 			Cells:         cloneHistoryCells(row.Cells),
 			LineID:        row.LineID,
 			Kind:          row.Kind,
 			Segment:       row.Segment,
+			SessionID:     row.SessionID,
+			FrameID:       row.FrameID,
+			FixedGrid:     row.FixedGrid,
+			ScreenCols:    row.ScreenCols,
 			TailFill:      cloneHistoryCellStyle(row.TailFill),
 			LiveTail:      row.LiveTail,
 			ClippedBefore: hasSpan && span.ClippedBefore,
@@ -742,6 +762,48 @@ func historyRowsToLogicalLines(rows []HistoryRow, spans []HistoryLineSpan) []His
 		})
 	}
 	return lines
+}
+
+func historySpanForRow(spans []HistoryLineSpan, rowIndex int, row HistoryRow) (HistoryLineSpan, bool) {
+	for _, span := range spans {
+		if span.LineID != 0 && row.LineID != 0 && span.LineID != row.LineID {
+			continue
+		}
+		if rowIndex < span.StartRow || rowIndex > span.EndRow {
+			continue
+		}
+		if span.Kind != "" && span.Kind != row.Kind {
+			continue
+		}
+		if span.Segment != "" && span.Segment != row.Segment {
+			continue
+		}
+		if span.SessionID != 0 && span.SessionID != row.SessionID {
+			continue
+		}
+		if span.FrameID != 0 && span.FrameID != row.FrameID {
+			continue
+		}
+		if span.FixedGrid != row.FixedGrid {
+			continue
+		}
+		if span.FixedGrid && span.ScreenCols != 0 && span.ScreenCols != row.ScreenCols {
+			continue
+		}
+		return span, true
+	}
+	return HistoryLineSpan{}, false
+}
+
+func sameHistoryRowLogicalLineSource(line HistoryLogicalLine, row HistoryRow) bool {
+	return line.LineID != 0 &&
+		line.LineID == row.LineID &&
+		line.Kind == row.Kind &&
+		line.Segment == row.Segment &&
+		line.SessionID == row.SessionID &&
+		line.FrameID == row.FrameID &&
+		line.FixedGrid == row.FixedGrid &&
+		(!line.FixedGrid || line.ScreenCols == row.ScreenCols)
 }
 
 func (store HistoryStore) EnsureSourceLines() HistoryStore {
@@ -803,14 +865,14 @@ func (store HistoryStore) TrimRows(startRow int, endRow int) (HistoryStore, Hist
 			boundaryLast = store.Rows[len(store.Rows)-1].LineID
 		}
 		store.Boundary.LastLineID = boundaryLast
-		// 中文说明：cursor segment 来自 core authoritative row metadata；本地裁剪
-		// 只能把保留下来的首行 segment 带回 cursor，不能按 row kind 重新推导 truth。
-		store.Cursor = cursorBeforeFirstLocalRow(store.Rows)
+		// 中文说明：本地裁剪不能把 core projection cursor 重建成 row-in-line。
+		// 如果丢掉顶部窗口，下一次 older 应指向保留首行所在的 projection index。
+		store.Cursor = cursorBeforeFirstLocalRow(store.Rows, store.Cursor, result.DroppedLinesBefore)
 	}
 	return store, result
 }
 
-func cursorBeforeFirstLocalRow(rows []HistoryRow) HistoryCursor {
+func cursorBeforeFirstLocalRow(rows []HistoryRow, previous HistoryCursor, droppedRowsBefore int) HistoryCursor {
 	if len(rows) == 0 {
 		return HistoryCursor{}
 	}
@@ -818,7 +880,15 @@ func cursorBeforeFirstLocalRow(rows []HistoryRow) HistoryCursor {
 	if first.LineID == 0 {
 		return HistoryCursor{}
 	}
-	return HistoryCursor{Valid: true, BeforeLineID: first.LineID, BeforeRowInLine: first.RowInLine, Segment: first.Segment}
+	cursor := previous
+	cursor.BeforeLineID = first.LineID
+	cursor.BeforeRowInLine = first.RowInLine
+	cursor.BeforeRowIndex = previous.BeforeRowIndex + droppedRowsBefore
+	cursor.Valid = previous.Valid || cursor.BeforeRowIndex > 0
+	if first.Segment != "" {
+		cursor.Segment = first.Segment
+	}
+	return cursor
 }
 
 func historyFirstRowIndexByLineID(rows []HistoryRow, lineID uint64) int {
@@ -1325,17 +1395,44 @@ func historyLineSpansForSearch(history HistoryStore) []HistoryLineSpan {
 	}
 	spans := make([]HistoryLineSpan, 0, len(history.Rows))
 	start := 0
-	current := history.Rows[0].LineID
 	for row := 1; row < len(history.Rows); row++ {
-		if history.Rows[row].LineID == current {
+		if sameHistoryRowsSource(history.Rows[start], history.Rows[row]) {
 			continue
 		}
-		spans = append(spans, HistoryLineSpan{LineID: current, StartRow: start, EndRow: row - 1})
+		spans = append(spans, historyLineSpanForLocalRows(history.Rows, start, row-1))
 		start = row
-		current = history.Rows[row].LineID
 	}
-	spans = append(spans, HistoryLineSpan{LineID: current, StartRow: start, EndRow: len(history.Rows) - 1})
+	spans = append(spans, historyLineSpanForLocalRows(history.Rows, start, len(history.Rows)-1))
 	return spans
+}
+
+func sameHistoryRowsSource(left HistoryRow, right HistoryRow) bool {
+	return left.LineID != 0 &&
+		left.LineID == right.LineID &&
+		left.Kind == right.Kind &&
+		left.Segment == right.Segment &&
+		left.SessionID == right.SessionID &&
+		left.FrameID == right.FrameID &&
+		left.FixedGrid == right.FixedGrid &&
+		(!left.FixedGrid || left.ScreenCols == right.ScreenCols)
+}
+
+func historyLineSpanForLocalRows(rows []HistoryRow, start int, end int) HistoryLineSpan {
+	if start < 0 || start >= len(rows) {
+		return HistoryLineSpan{}
+	}
+	row := rows[start]
+	return HistoryLineSpan{
+		LineID:     row.LineID,
+		StartRow:   start,
+		EndRow:     end,
+		Kind:       row.Kind,
+		Segment:    row.Segment,
+		SessionID:  row.SessionID,
+		FrameID:    row.FrameID,
+		FixedGrid:  row.FixedGrid,
+		ScreenCols: row.ScreenCols,
+	}
 }
 
 func historySpanGraphemeBoundaries(history HistoryStore, span HistoryLineSpan) ([]string, []CopyPosition) {
@@ -1692,6 +1789,11 @@ func ReflowHistoryLogicalLines(lines []HistoryLogicalLine, cols int) ([]HistoryR
 			StartRow:      start,
 			EndRow:        end,
 			Kind:          line.Kind,
+			Segment:       line.Segment,
+			SessionID:     line.SessionID,
+			FrameID:       line.FrameID,
+			FixedGrid:     line.FixedGrid,
+			ScreenCols:    line.ScreenCols,
 			ClippedBefore: line.ClippedBefore,
 			ClippedAfter:  line.ClippedAfter,
 		})
@@ -1710,19 +1812,24 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 		cells = normalizeHistoryLogicalLineCells(cells, cols)
 	}
 	if len(cells) == 0 {
-		return []HistoryRow{{LineID: line.LineID, Segment: line.Segment, LiveTail: line.LiveTail}}
+		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, LiveTail: line.LiveTail}}
 	}
 	rows := make([]HistoryRow, 0, 1)
 	current := make([]HistoryCell, 0, len(cells))
 	width := 0
 	flush := func() {
 		row := HistoryRow{
-			Text:      historyCellsPlainTextForState(current),
-			Cells:     cloneHistoryCells(current),
-			LineID:    line.LineID,
-			RowInLine: len(rows),
-			Segment:   line.Segment,
-			LiveTail:  line.LiveTail,
+			Text:       historyCellsPlainTextForState(current),
+			Cells:      cloneHistoryCells(current),
+			LineID:     line.LineID,
+			RowInLine:  len(rows),
+			Kind:       line.Kind,
+			Segment:    line.Segment,
+			SessionID:  line.SessionID,
+			FrameID:    line.FrameID,
+			FixedGrid:  line.FixedGrid,
+			ScreenCols: line.ScreenCols,
+			LiveTail:   line.LiveTail,
 		}
 		rows = append(rows, row)
 		current = current[:0]
@@ -1773,13 +1880,17 @@ func fixedGridHistoryRows(line HistoryLogicalLine, cells []HistoryCell) []Histor
 		cells = normalizeHistoryLogicalLineCells(cells, HistoryCellDisplayWidthSum(cells))
 	}
 	row := HistoryRow{
-		Text:     historyCellsPlainTextForState(cells),
-		Cells:    cloneHistoryCells(cells),
-		LineID:   line.LineID,
-		Kind:     line.Kind,
-		Segment:  line.Segment,
-		LiveTail: line.LiveTail,
-		TailFill: cloneHistoryCellStyle(line.TailFill),
+		Text:       historyCellsPlainTextForState(cells),
+		Cells:      cloneHistoryCells(cells),
+		LineID:     line.LineID,
+		Kind:       line.Kind,
+		Segment:    line.Segment,
+		SessionID:  line.SessionID,
+		FrameID:    line.FrameID,
+		FixedGrid:  line.FixedGrid,
+		ScreenCols: line.ScreenCols,
+		LiveTail:   line.LiveTail,
+		TailFill:   cloneHistoryCellStyle(line.TailFill),
 	}
 	if row.Text == "" && line.Text != "" {
 		row.Text = line.Text
@@ -1793,18 +1904,23 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 	}
 	clusters := textGraphemeClusters(line.Text)
 	if len(clusters) == 0 {
-		return []HistoryRow{{LineID: line.LineID, Segment: line.Segment, LiveTail: line.LiveTail}}
+		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, LiveTail: line.LiveTail}}
 	}
 	rows := make([]HistoryRow, 0, 1)
 	var builder strings.Builder
 	width := 0
 	flush := func() {
 		row := HistoryRow{
-			Text:      builder.String(),
-			LineID:    line.LineID,
-			RowInLine: len(rows),
-			Segment:   line.Segment,
-			LiveTail:  line.LiveTail,
+			Text:       builder.String(),
+			LineID:     line.LineID,
+			RowInLine:  len(rows),
+			Kind:       line.Kind,
+			Segment:    line.Segment,
+			SessionID:  line.SessionID,
+			FrameID:    line.FrameID,
+			FixedGrid:  line.FixedGrid,
+			ScreenCols: line.ScreenCols,
+			LiveTail:   line.LiveTail,
 		}
 		rows = append(rows, row)
 		builder.Reset()
@@ -1833,7 +1949,7 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 
 func reflowPlainASCIIHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	if line.Text == "" {
-		return []HistoryRow{{LineID: line.LineID, Segment: line.Segment, LiveTail: line.LiveTail}}
+		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, LiveTail: line.LiveTail}}
 	}
 	if cols <= 0 {
 		cols = 80
@@ -1845,11 +1961,16 @@ func reflowPlainASCIIHistoryLogicalLine(line HistoryLogicalLine, cols int) []His
 			end = len(line.Text)
 		}
 		rows = append(rows, HistoryRow{
-			Text:      line.Text[start:end],
-			LineID:    line.LineID,
-			RowInLine: len(rows),
-			Segment:   line.Segment,
-			LiveTail:  line.LiveTail,
+			Text:       line.Text[start:end],
+			LineID:     line.LineID,
+			RowInLine:  len(rows),
+			Kind:       line.Kind,
+			Segment:    line.Segment,
+			SessionID:  line.SessionID,
+			FrameID:    line.FrameID,
+			FixedGrid:  line.FixedGrid,
+			ScreenCols: line.ScreenCols,
+			LiveTail:   line.LiveTail,
 		})
 	}
 	applyTailFillToLastHistoryRow(rows, line.TailFill)
@@ -2003,6 +2124,9 @@ func splitEmptyHistoryCellFootprint(cell HistoryCell, cols int) []HistoryCell {
 func historyCellsPlainTextForState(cells []HistoryCell) string {
 	var builder strings.Builder
 	for _, cell := range cells {
+		if cell.Text == "" {
+			continue
+		}
 		builder.WriteString(cell.Text)
 		if pad := HistoryCellDisplayWidth(cell) - textDisplayWidth(cell.Text); pad > 0 {
 			builder.WriteString(strings.Repeat(" ", pad))

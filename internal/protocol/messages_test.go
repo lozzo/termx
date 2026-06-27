@@ -615,35 +615,44 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 		RowWrapped:    []bool{false},
 		RowOwnership:  []string{RowOwnershipPersisted},
 		RowSegments:   []string{HistoryCursorSegmentArchivedPrimaryFrame},
+		RowSessionIDs: []uint64{9},
+		RowFrameIDs:   []uint64{11},
+		RowFixedGrid:  []bool{true},
+		RowScreenCols: []int{120},
 		RowTimestamps: []time.Time{time.Date(2026, 6, 2, 1, 0, 0, 0, time.UTC)},
 		Lines: []HistoryLineSpan{{
 			StartRow:       0,
 			EndRow:         0,
 			RowKind:        "output",
 			LogicalLineID:  42,
+			SessionID:      9,
+			FrameID:        11,
+			FixedGrid:      true,
+			ScreenCols:     120,
 			TimestampStart: time.Date(2026, 6, 2, 0, 59, 0, 0, time.UTC),
 			TimestampEnd:   time.Date(2026, 6, 2, 1, 1, 0, 0, time.UTC),
 			ClippedBefore:  true,
 			ClippedAfter:   true,
 		}},
-		BeforeOffset:  3,
-		LoadedRows:    9,
-		TotalRows:     12,
-		LoadedLines:   2,
-		LogicalTotal:  4,
-		HasMore:       true,
-		Generation:    7,
-		FirstRowID:    0,
-		LastRowID:     2,
-		FirstLineID:   42,
-		LastLineID:    43,
-		CursorValid:   true,
-		CursorLineID:  42,
-		CursorRow:     1,
-		CursorSegment: HistoryCursorSegmentArchivedPrimaryFrame,
-		RowLineIDs:    []uint64{42},
-		RowInLine:     []int{1},
-		Timestamp:     time.Date(2026, 6, 2, 2, 0, 0, 0, time.UTC),
+		BeforeOffset:   3,
+		LoadedRows:     9,
+		TotalRows:      12,
+		LoadedLines:    2,
+		LogicalTotal:   4,
+		HasMore:        true,
+		Generation:     7,
+		FirstRowID:     0,
+		LastRowID:      2,
+		FirstLineID:    42,
+		LastLineID:     43,
+		CursorValid:    true,
+		CursorLineID:   42,
+		CursorRow:      1,
+		CursorRowIndex: 200,
+		CursorSegment:  HistoryCursorSegmentArchivedPrimaryFrame,
+		RowLineIDs:     []uint64{42},
+		RowInLine:      []int{1},
+		Timestamp:      time.Date(2026, 6, 2, 2, 0, 0, 0, time.UTC),
 	}
 	window.Rows[0].TailFill = &CompactRowStyle{BG: "idx:24"}
 	payload, err := EncodeHistoryWindowPayload(window)
@@ -663,7 +672,7 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 	if decoded.Generation != 7 || decoded.FirstRowID != 0 || decoded.LastRowID != 2 || decoded.FirstLineID != 42 || decoded.LastLineID != 43 {
 		t.Fatalf("unexpected decoded history window boundary: %#v", decoded)
 	}
-	if !decoded.CursorValid || decoded.CursorLineID != 42 || decoded.CursorRow != 1 || decoded.CursorSegment != HistoryCursorSegmentArchivedPrimaryFrame {
+	if !decoded.CursorValid || decoded.CursorLineID != 42 || decoded.CursorRow != 1 || decoded.CursorRowIndex != 200 || decoded.CursorSegment != HistoryCursorSegmentArchivedPrimaryFrame {
 		t.Fatalf("unexpected decoded history cursor: %#v", decoded)
 	}
 	if !reflect.DeepEqual(decoded.RowLineIDs, []uint64{42}) || !reflect.DeepEqual(decoded.RowInLine, []int{1}) {
@@ -677,6 +686,9 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(decoded.RowSegments, []string{HistoryCursorSegmentArchivedPrimaryFrame}) {
 		t.Fatalf("unexpected decoded row segments: %#v", decoded.RowSegments)
+	}
+	if !reflect.DeepEqual(decoded.RowSessionIDs, []uint64{9}) || !reflect.DeepEqual(decoded.RowFrameIDs, []uint64{11}) || !reflect.DeepEqual(decoded.RowFixedGrid, []bool{true}) || !reflect.DeepEqual(decoded.RowScreenCols, []int{120}) {
+		t.Fatalf("unexpected decoded row source identity: sessions=%v frames=%v fixed=%v cols=%v", decoded.RowSessionIDs, decoded.RowFrameIDs, decoded.RowFixedGrid, decoded.RowScreenCols)
 	}
 	if got := compactRowToStringForTest(decoded.Rows[0]); got != "ERR 好 " {
 		t.Fatalf("unexpected decoded history row: %q", got)
@@ -711,10 +723,12 @@ func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
 		CursorValid:         true,
 		BeforeLineID:        42,
 		BeforeRowInLine:     1,
+		BeforeRowIndex:      200,
 		CursorSegment:       HistoryCursorSegmentArchivedPrimaryFrame,
 		AfterCursorValid:    true,
 		AfterLineID:         43,
 		AfterRowInLine:      2,
+		AfterRowIndex:       240,
 		AfterCursorSegment:  HistoryCursorSegmentCurrentAltFrame,
 		BoundaryFirstLineID: 42,
 		BoundaryLastLineID:  43,
@@ -746,10 +760,12 @@ func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
 		CursorValid:         true,
 		BeforeLineID:        42,
 		BeforeRowInLine:     1,
+		BeforeRowIndex:      200,
 		CursorSegment:       HistoryCursorSegmentArchivedPrimaryFrame,
 		AfterCursorValid:    true,
 		AfterLineID:         43,
 		AfterRowInLine:      2,
+		AfterRowIndex:       240,
 		AfterCursorSegment:  HistoryCursorSegmentCurrentAltFrame,
 		BoundaryFirstLineID: 42,
 		BoundaryLastLineID:  43,

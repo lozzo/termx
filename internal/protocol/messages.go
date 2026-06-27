@@ -528,10 +528,12 @@ type HistoryWindowParams struct {
 	CursorValid         bool
 	BeforeLineID        uint64
 	BeforeRowInLine     int
+	BeforeRowIndex      int
 	CursorSegment       string
 	AfterCursorValid    bool
 	AfterLineID         uint64
 	AfterRowInLine      int
+	AfterRowIndex       int
 	AfterCursorSegment  string
 	BoundaryFirstLineID uint64
 	BoundaryLastLineID  uint64
@@ -2131,6 +2133,10 @@ type HistoryLineSpan struct {
 	EndRow         int
 	RowKind        string
 	LogicalLineID  uint64
+	SessionID      uint64
+	FrameID        uint64
+	FixedGrid      bool
+	ScreenCols     int
 	TimestampStart time.Time
 	TimestampEnd   time.Time
 	ClippedBefore  bool
@@ -2143,35 +2149,40 @@ type HistoryLineSpan struct {
 // stale guard 只能依赖 token/generation/cursor/logical boundary；LoadedRows、
 // TotalRows、BeforeOffset 等字段只能作为展示或兼容信息，不能替代这些 guard。
 type HistoryWindow struct {
-	TerminalID    string
-	Token         string
-	Op            HistoryWindowOp
-	Size          Size
-	Rows          []CompactRow
-	RowTimestamps []time.Time
-	RowKinds      []string
-	RowWrapped    []bool
-	RowOwnership  []string
-	RowSegments   []string
-	Lines         []HistoryLineSpan
-	BeforeOffset  int
-	LoadedRows    int
-	TotalRows     int
-	LoadedLines   int
-	LogicalTotal  int
-	HasMore       bool
-	Generation    uint64
-	FirstRowID    uint64
-	LastRowID     uint64
-	FirstLineID   uint64
-	LastLineID    uint64
-	CursorValid   bool
-	CursorLineID  uint64
-	CursorRow     int
-	CursorSegment string
-	RowLineIDs    []uint64
-	RowInLine     []int
-	Timestamp     time.Time
+	TerminalID     string
+	Token          string
+	Op             HistoryWindowOp
+	Size           Size
+	Rows           []CompactRow
+	RowTimestamps  []time.Time
+	RowKinds       []string
+	RowWrapped     []bool
+	RowOwnership   []string
+	RowSegments    []string
+	RowSessionIDs  []uint64
+	RowFrameIDs    []uint64
+	RowFixedGrid   []bool
+	RowScreenCols  []int
+	Lines          []HistoryLineSpan
+	BeforeOffset   int
+	LoadedRows     int
+	TotalRows      int
+	LoadedLines    int
+	LogicalTotal   int
+	HasMore        bool
+	Generation     uint64
+	FirstRowID     uint64
+	LastRowID      uint64
+	FirstLineID    uint64
+	LastLineID     uint64
+	CursorValid    bool
+	CursorLineID   uint64
+	CursorRow      int
+	CursorRowIndex int
+	CursorSegment  string
+	RowLineIDs     []uint64
+	RowInLine      []int
+	Timestamp      time.Time
 }
 
 func (s CellStyle) isZero() bool {

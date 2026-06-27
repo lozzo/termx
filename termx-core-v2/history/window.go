@@ -37,15 +37,18 @@ const (
 )
 
 // HistoryCursor 是 segment-aware cursor；client 只能原样传回，不能猜 older 边界。
+// BeforeRowIndex 是 older 请求使用的 projection 绝对行号；RowInLine 只描述
+// cursor 所在 logical line 内部的局部 row，二者不能复用。
 type HistoryCursor struct {
-	Segment    HistorySegment
-	SessionID  ScreenSessionID
-	FrameID    ScreenFrameID
-	LineID     LogicalLineID
-	RowInLine  int
-	Generation Generation
-	Token      HistoryToken
-	Valid      bool
+	Segment        HistorySegment
+	SessionID      ScreenSessionID
+	FrameID        ScreenFrameID
+	LineID         LogicalLineID
+	RowInLine      int
+	BeforeRowIndex int
+	Generation     Generation
+	Token          HistoryToken
+	Valid          bool
 }
 
 // HistoryBoundary 记录返回 window 或 frozen snapshot 的可见 logical boundary 和

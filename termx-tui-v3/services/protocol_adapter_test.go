@@ -399,25 +399,26 @@ func TestProtocolClipboardStorageAdapterWatchesClipboardKeyPrefix(t *testing.T) 
 func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	client := &fakeProtocolHistoryClient{
 		window: &protocol.HistoryWindow{
-			TerminalID:    "term-1",
-			Token:         "tok-1",
-			Op:            protocol.HistoryWindowReplace,
-			Size:          protocol.Size{Cols: 80, Rows: 24},
-			Rows:          []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "h"}, {Content: "i"}})},
-			Lines:         []protocol.HistoryLineSpan{{LogicalLineID: 42, StartRow: 0, EndRow: 0}},
-			RowLineIDs:    []uint64{42},
-			RowInLine:     []int{0},
-			RowSegments:   []string{protocol.HistoryCursorSegmentArchivedPrimaryFrame},
-			CursorValid:   true,
-			CursorLineID:  42,
-			CursorRow:     1,
-			CursorSegment: protocol.HistoryCursorSegmentArchivedPrimaryFrame,
-			HasMore:       true,
-			Generation:    7,
-			FirstLineID:   42,
-			LastLineID:    43,
-			LoadedLines:   1,
-			LogicalTotal:  2,
+			TerminalID:     "term-1",
+			Token:          "tok-1",
+			Op:             protocol.HistoryWindowReplace,
+			Size:           protocol.Size{Cols: 80, Rows: 24},
+			Rows:           []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "h"}, {Content: "i"}})},
+			Lines:          []protocol.HistoryLineSpan{{LogicalLineID: 42, StartRow: 0, EndRow: 0}},
+			RowLineIDs:     []uint64{42},
+			RowInLine:      []int{0},
+			RowSegments:    []string{protocol.HistoryCursorSegmentArchivedPrimaryFrame},
+			CursorValid:    true,
+			CursorLineID:   42,
+			CursorRow:      1,
+			CursorRowIndex: 200,
+			CursorSegment:  protocol.HistoryCursorSegmentArchivedPrimaryFrame,
+			HasMore:        true,
+			Generation:     7,
+			FirstLineID:    42,
+			LastLineID:     43,
+			LoadedLines:    1,
+			LogicalTotal:   2,
 		},
 	}
 	adapter := ProtocolCoreClientAdapter{Client: client}
@@ -431,6 +432,9 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	}
 	if latest.Window.Cursor.Segment != state.HistoryCursorSegmentArchivedPrimaryFrame {
 		t.Fatalf("latest must preserve authoritative cursor segment, got %#v", latest.Window.Cursor)
+	}
+	if latest.Window.Cursor.BeforeRowIndex != 200 || latest.Window.Cursor.BeforeRowInLine != 1 {
+		t.Fatalf("latest must split cursor row-index and row-in-line, got %#v", latest.Window.Cursor)
 	}
 	if latest.Window.Rows[0].Segment != state.HistoryCursorSegmentArchivedPrimaryFrame || latest.Window.SourceLines[0].Segment != state.HistoryCursorSegmentArchivedPrimaryFrame {
 		t.Fatalf("latest must preserve authoritative row segment, rows=%#v source=%#v", latest.Window.Rows, latest.Window.SourceLines)
@@ -447,7 +451,7 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 		Rows:       10,
 		Token:      "tok-1",
 		Generation: 7,
-		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 42, BeforeRowInLine: 1, Segment: state.HistoryCursorSegmentArchivedPrimaryFrame},
+		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 42, BeforeRowInLine: 1, BeforeRowIndex: 200, Segment: state.HistoryCursorSegmentArchivedPrimaryFrame},
 		Boundary:   state.HistoryBoundary{FirstLineID: 42, LastLineID: 43},
 	})
 	if err != nil {
@@ -457,7 +461,7 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 		t.Fatalf("unexpected older result %#v", older)
 	}
 	params := client.requests[1]
-	if params.Mode != "older" || params.Token != "tok-1" || params.Generation != 7 || !params.CursorValid || params.BeforeLineID != 42 || params.BeforeRowInLine != 1 || params.CursorSegment != protocol.HistoryCursorSegmentArchivedPrimaryFrame || params.BoundaryLastLineID != 43 {
+	if params.Mode != "older" || params.Token != "tok-1" || params.Generation != 7 || !params.CursorValid || params.BeforeLineID != 42 || params.BeforeRowInLine != 1 || params.BeforeRowIndex != 200 || params.CursorSegment != protocol.HistoryCursorSegmentArchivedPrimaryFrame || params.BoundaryLastLineID != 43 {
 		t.Fatalf("unexpected older params %#v", params)
 	}
 
@@ -469,7 +473,7 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 		Rows:       10,
 		Token:      "tok-1",
 		Generation: 7,
-		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 43, BeforeRowInLine: 2, Segment: state.HistoryCursorSegmentCurrentAltFrame},
+		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 43, BeforeRowInLine: 2, BeforeRowIndex: 240, Segment: state.HistoryCursorSegmentCurrentAltFrame},
 		Boundary:   state.HistoryBoundary{FirstLineID: 40, LastLineID: 50},
 	})
 	if err != nil {
@@ -479,7 +483,7 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 		t.Fatalf("unexpected newer result %#v", newer)
 	}
 	params = client.requests[2]
-	if params.Mode != "newer" || params.Token != "tok-1" || params.Generation != 7 || !params.AfterCursorValid || params.AfterLineID != 43 || params.AfterRowInLine != 2 || params.AfterCursorSegment != protocol.HistoryCursorSegmentCurrentAltFrame || params.BoundaryFirstLineID != 40 || params.BoundaryLastLineID != 50 {
+	if params.Mode != "newer" || params.Token != "tok-1" || params.Generation != 7 || !params.AfterCursorValid || params.AfterLineID != 43 || params.AfterRowInLine != 2 || params.AfterRowIndex != 240 || params.AfterCursorSegment != protocol.HistoryCursorSegmentCurrentAltFrame || params.BoundaryFirstLineID != 40 || params.BoundaryLastLineID != 50 {
 		t.Fatalf("unexpected newer params %#v", params)
 	}
 
@@ -898,6 +902,135 @@ func TestProtocolCoreClientAdapterMergesSameLogicalLineRowsIntoFrozenSource(t *t
 	reflowedRows, _ := state.ReflowHistoryLogicalLines(result.Window.SourceLines, 6)
 	if got := rowTextsForProtocolAdapter(reflowedRows); len(got) != 1 || got[0] != "abcdef" {
 		t.Fatalf("merged frozen source should support wider local reflow, got %#v", reflowedRows)
+	}
+}
+
+func TestR333ProtocolCoreClientAdapterDoesNotPadWideCellsIntoSourceText(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 20, Rows: 24},
+			Rows: []protocol.CompactRow{
+				{Cells: []protocol.CompactRowCell{
+					{Content: "中", Width: 2},
+					{Content: "", Width: 1},
+					{Content: "文", Width: 2},
+					{Content: "", Width: 1},
+					{Content: "编号010", Width: 7},
+					{Content: "中", Width: 2},
+					{Content: "", Width: 1},
+					{Content: "文", Width: 2},
+					{Content: "", Width: 1},
+				}},
+			},
+			Lines:       []protocol.HistoryLineSpan{{LogicalLineID: 42, StartRow: 0, EndRow: 0}},
+			RowLineIDs:  []uint64{42},
+			RowInLine:   []int{0},
+			LoadedLines: 1,
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 20, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(result.Window.SourceLines) != 1 || result.Window.SourceLines[0].Text != "中文编号010中文" {
+		t.Fatalf("wide cells must not materialize display padding into text, got %#v", result.Window.SourceLines)
+	}
+	if got := rowTextsForProtocolAdapter(result.Window.Rows); len(got) != 1 || got[0] != "中文编号010中文" {
+		t.Fatalf("wide cells must not materialize display padding into row text, got %#v", result.Window.Rows)
+	}
+}
+
+func TestR333ProtocolCoreClientAdapterDoesNotMergeSameLineIDAcrossSegments(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 10, Rows: 24},
+			Rows: []protocol.CompactRow{
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "frame"}}),
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "prompt"}}),
+			},
+			Lines: []protocol.HistoryLineSpan{
+				{LogicalLineID: 42, StartRow: 0, EndRow: 0, RowKind: state.HistoryRowKindScreenFrame},
+				{LogicalLineID: 42, StartRow: 1, EndRow: 1},
+			},
+			RowLineIDs:  []uint64{42, 42},
+			RowInLine:   []int{0, 0},
+			RowKinds:    []string{state.HistoryRowKindScreenFrame, ""},
+			RowSegments: []string{state.HistoryCursorSegmentCurrentPrimaryFrame, state.HistoryCursorSegmentCommitted},
+			RowSessionIDs: []uint64{
+				7,
+				0,
+			},
+			RowFrameIDs: []uint64{
+				11,
+				0,
+			},
+			RowFixedGrid: []bool{true, false},
+			RowScreenCols: []int{
+				10,
+				0,
+			},
+			LoadedLines: 2,
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 10, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(result.Window.SourceLines) != 2 {
+		t.Fatalf("same line id across frame/stream identity must stay split, got %#v", result.Window.SourceLines)
+	}
+	if result.Window.SourceLines[0].Text != "frame" || result.Window.SourceLines[1].Text != "prompt" {
+		t.Fatalf("unexpected source text after split, got %#v", result.Window.SourceLines)
+	}
+	if !result.Window.SourceLines[0].FixedGrid || result.Window.SourceLines[0].SessionID != 7 || result.Window.SourceLines[0].FrameID != 11 || result.Window.SourceLines[0].ScreenCols != 10 {
+		t.Fatalf("source identity must preserve frame metadata, got %#v", result.Window.SourceLines[0])
+	}
+}
+
+func TestR333ProtocolCoreClientAdapterDoesNotMergeSameLineIDAcrossFrameIdentity(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 10, Rows: 24},
+			Rows: []protocol.CompactRow{
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "old"}}),
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "new"}}),
+			},
+			Lines: []protocol.HistoryLineSpan{
+				{LogicalLineID: 42, StartRow: 0, EndRow: 0, RowKind: state.HistoryRowKindScreenFrame, SessionID: 3, FrameID: 10, FixedGrid: true, ScreenCols: 10},
+				{LogicalLineID: 42, StartRow: 1, EndRow: 1, RowKind: state.HistoryRowKindScreenFrame, SessionID: 3, FrameID: 11, FixedGrid: true, ScreenCols: 10},
+			},
+			RowLineIDs:    []uint64{42, 42},
+			RowInLine:     []int{0, 0},
+			RowKinds:      []string{state.HistoryRowKindScreenFrame, state.HistoryRowKindScreenFrame},
+			RowSegments:   []string{state.HistoryCursorSegmentCurrentPrimaryFrame, state.HistoryCursorSegmentCurrentPrimaryFrame},
+			RowSessionIDs: []uint64{3, 3},
+			RowFrameIDs:   []uint64{10, 11},
+			RowFixedGrid:  []bool{true, true},
+			RowScreenCols: []int{10, 10},
+			LoadedLines:   2,
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 10, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(result.Window.SourceLines) != 2 || result.Window.SourceLines[0].FrameID != 10 || result.Window.SourceLines[1].FrameID != 11 {
+		t.Fatalf("same line id across frame ids must stay split, got %#v", result.Window.SourceLines)
 	}
 }
 

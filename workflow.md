@@ -227,6 +227,7 @@
 | R330. SK Codex resume 编号输出诊断脚本 | 完成 | `workflow.md`、`scripts/` | 新增受控 Python 输出脚本，用 `Sxx 001..100` 这种编号行模拟 Codex `/resume` clear+redraw、多次切换和 CJK 文本，方便人工或 tmux/TermX history dump 对照缺行、混行和中文空格问题 |
 | R331. SK screen frame 后普通 prompt 顺序修复 | 完成 | `workflow.md`、`termx-core-v2/` | 复现编号脚本结束后 shell prompt 被插入 `S03` current frame 中间的问题；修复 primary screen app current frame 到普通 stream 的 session 边界和 sealed timeline sequence，使 prompt 排在已关闭 frame 之后 |
 | R332. SK frozen history 全量分页与普通 CJK 列坐标修复 | 完成 | `workflow.md`、`termx-core-v2/` | 用编号脚本和 authoritative history dump 复验 Ghostty/tmux 观察；修复 frozen token 只保存 latest 页导致 older 重复最新页的问题，并修复 ordinary stream 按 slice index 写入宽字符导致中文之间出现真实空格的问题 |
+| R333. SK Codex 类历史分页 cursor 契约修复 | 完成 | `workflow.md`、`termx-core-v2/`、`internal/protocol/`、`termx-tui-v3/`、按需 `termx-cli/` | 修复 Codex 类 primary screen app clear+redraw 后 copy/history 上滑仍截断或混排的问题；把 older 分页 cursor 的 projection absolute row index 与 logical line 内 row 区分开，TUI 不再用本地 row-in-line 重建 core cursor，并放宽 older prepend boundary 校验与 SourceLines identity |
 
 ## 7. 测试准入
 

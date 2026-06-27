@@ -107,18 +107,18 @@ func (store *inMemoryHistoryStore) latestWindowFromRows(req HistoryWindowRequest
 	page := cloneHistoryRows(rows[start:])
 	boundary := boundaryForRows(page, generation, req.Token)
 	if len(page) > 0 {
-		olderStart := start
 		boundary.Cursor = HistoryCursor{
-			Generation: generation,
-			RowInLine:  olderStart,
-			Valid:      olderStart > 0,
-			Token:      req.Token,
+			Generation:     generation,
+			BeforeRowIndex: start,
+			Valid:          start > 0,
+			Token:          req.Token,
 		}
 		if boundary.Cursor.Valid {
 			boundary.Cursor.Segment = page[0].Segment
 			boundary.Cursor.SessionID = page[0].SessionID
 			boundary.Cursor.FrameID = page[0].FrameID
 			boundary.Cursor.LineID = page[0].LineID
+			boundary.Cursor.RowInLine = page[0].RowInLine
 		}
 	}
 	return store.windowFromProjectedRows(req, page, HistoryWindowReplace, boundary, generation), nil
@@ -134,14 +134,21 @@ func (store *inMemoryHistoryStore) OlderWindow(req HistoryWindowRequest) (Histor
 	if !req.Cursor.Valid {
 		return store.windowFromProjectedRows(req, nil, HistoryWindowPrepend, HistoryBoundary{Cursor: HistoryCursor{Generation: store.generation}}, store.generation), nil
 	}
-	end := req.Cursor.RowInLine
+	end := req.Cursor.BeforeRowIndex
 	if end <= 0 || end > len(rows) {
 		end = len(rows)
 	}
 	start := maxInt(0, end-limit)
 	page := cloneHistoryRows(rows[start:end])
 	boundary := boundaryForRows(page, store.generation, req.Token)
-	boundary.Cursor = HistoryCursor{Generation: store.generation, RowInLine: start, Valid: start > 0}
+	boundary.Cursor = HistoryCursor{Generation: store.generation, BeforeRowIndex: start, Token: req.Token, Valid: start > 0}
+	if len(page) > 0 && boundary.Cursor.Valid {
+		boundary.Cursor.Segment = page[0].Segment
+		boundary.Cursor.SessionID = page[0].SessionID
+		boundary.Cursor.FrameID = page[0].FrameID
+		boundary.Cursor.LineID = page[0].LineID
+		boundary.Cursor.RowInLine = page[0].RowInLine
+	}
 	return store.windowFromProjectedRows(req, page, HistoryWindowPrepend, boundary, store.generation), nil
 }
 
@@ -163,14 +170,15 @@ func (store *inMemoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHisto
 	boundary := boundaryForRows(latestRows, store.generation, token)
 	if len(latestRows) > 0 {
 		boundary.Cursor = HistoryCursor{
-			Segment:    latestRows[0].Segment,
-			SessionID:  latestRows[0].SessionID,
-			FrameID:    latestRows[0].FrameID,
-			LineID:     latestRows[0].LineID,
-			RowInLine:  start,
-			Generation: store.generation,
-			Token:      token,
-			Valid:      start > 0,
+			Segment:        latestRows[0].Segment,
+			SessionID:      latestRows[0].SessionID,
+			FrameID:        latestRows[0].FrameID,
+			LineID:         latestRows[0].LineID,
+			RowInLine:      latestRows[0].RowInLine,
+			BeforeRowIndex: start,
+			Generation:     store.generation,
+			Token:          token,
+			Valid:          start > 0,
 		}
 	}
 	snapshot := FrozenHistorySnapshot{

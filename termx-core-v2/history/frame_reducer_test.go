@@ -113,6 +113,24 @@ func TestR322FrameReducerPostAltPrimaryIsNewFrame(t *testing.T) {
 	}
 }
 
+func TestR333FrameReducerClearPrimaryForcesNewSessionEpoch(t *testing.T) {
+	reducer := NewFrameReducer()
+	if _, err := reducer.ReplacePrimaryCurrent(semanticFrame(10, "old"), FrameReasonPrimaryRepaint); err != nil {
+		t.Fatalf("replace primary current: %v", err)
+	}
+	before := currentPrimaryFrame(t, reducer)
+	if _, err := reducer.ClearPrimaryCurrent(FrameReasonPrimaryRepaint); err != nil {
+		t.Fatalf("clear primary current: %v", err)
+	}
+	if _, err := reducer.ReplacePrimaryCurrent(semanticFrame(10, "new"), FrameReasonPrimaryRepaint); err != nil {
+		t.Fatalf("replace primary current after clear: %v", err)
+	}
+	after := currentPrimaryFrame(t, reducer)
+	if after.SessionID == before.SessionID || after.ID == before.ID {
+		t.Fatalf("repaint clear must start a new frame/session epoch, before=%#v after=%#v", before, after)
+	}
+}
+
 func TestR322FrameReducerResizeBoundaryDoesNotSealHistory(t *testing.T) {
 	reducer := NewFrameReducer()
 	if _, err := reducer.ReplacePrimaryCurrent(semanticFrame(80, "wide"), FrameReasonPrimaryRepaint); err != nil {

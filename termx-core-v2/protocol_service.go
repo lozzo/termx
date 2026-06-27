@@ -824,6 +824,16 @@ func historyWindowRequestFromProtocol(params protocol.HistoryWindowParams) histo
 			mode = history.HistoryWindowModeLatest
 		}
 	}
+	beforeRowIndex := params.BeforeRowIndex
+	if beforeRowIndex == 0 && params.BeforeRowInLine > 0 {
+		// 中文说明：旧 protocol 调用曾把 projection absolute row cursor
+		// 放入 BeforeRowInLine；新调用必须使用 BeforeRowIndex。
+		beforeRowIndex = params.BeforeRowInLine
+	}
+	afterRowIndex := params.AfterRowIndex
+	if afterRowIndex == 0 && params.AfterRowInLine > 0 {
+		afterRowIndex = params.AfterRowInLine
+	}
 	req := history.HistoryWindowRequest{
 		TerminalID: params.TerminalID,
 		Mode:       mode,
@@ -831,12 +841,13 @@ func historyWindowRequestFromProtocol(params protocol.HistoryWindowParams) histo
 		Limit:      params.Limit,
 		Token:      history.HistoryToken(params.Token),
 		Cursor: history.HistoryCursor{
-			Segment:    history.HistorySegment(params.CursorSegment),
-			LineID:     history.LogicalLineID(params.BeforeLineID),
-			RowInLine:  params.BeforeRowInLine,
-			Generation: history.Generation(params.Generation),
-			Token:      history.HistoryToken(params.Token),
-			Valid:      params.CursorValid,
+			Segment:        history.HistorySegment(params.CursorSegment),
+			LineID:         history.LogicalLineID(params.BeforeLineID),
+			RowInLine:      params.BeforeRowInLine,
+			BeforeRowIndex: beforeRowIndex,
+			Generation:     history.Generation(params.Generation),
+			Token:          history.HistoryToken(params.Token),
+			Valid:          params.CursorValid,
 		},
 		Boundary: history.HistoryBoundary{
 			FirstLineID: history.LogicalLineID(params.BoundaryFirstLineID),
@@ -845,12 +856,13 @@ func historyWindowRequestFromProtocol(params protocol.HistoryWindowParams) histo
 	}
 	if params.AfterCursorValid {
 		req.Cursor = history.HistoryCursor{
-			Segment:    history.HistorySegment(params.AfterCursorSegment),
-			LineID:     history.LogicalLineID(params.AfterLineID),
-			RowInLine:  params.AfterRowInLine,
-			Generation: history.Generation(params.Generation),
-			Token:      history.HistoryToken(params.Token),
-			Valid:      true,
+			Segment:        history.HistorySegment(params.AfterCursorSegment),
+			LineID:         history.LogicalLineID(params.AfterLineID),
+			RowInLine:      params.AfterRowInLine,
+			BeforeRowIndex: afterRowIndex,
+			Generation:     history.Generation(params.Generation),
+			Token:          history.HistoryToken(params.Token),
+			Valid:          true,
 		}
 	}
 	req.Boundary.Cursor = req.Cursor
@@ -895,6 +907,10 @@ func protocolHistoryWindowFromDomain(window history.HistoryWindow) *protocol.His
 	rowOwnership := make([]string, 0, len(window.Rows))
 	rowLineIDs := make([]uint64, 0, len(window.Rows))
 	rowInLine := make([]int, 0, len(window.Rows))
+	rowSessionIDs := make([]uint64, 0, len(window.Rows))
+	rowFrameIDs := make([]uint64, 0, len(window.Rows))
+	rowFixedGrid := make([]bool, 0, len(window.Rows))
+	rowScreenCols := make([]int, 0, len(window.Rows))
 	for _, row := range window.Rows {
 		rows = append(rows, protocolCompactRowFromHistoryCells(row.Cells))
 		rowKinds = append(rowKinds, string(row.Kind))
@@ -903,6 +919,10 @@ func protocolHistoryWindowFromDomain(window history.HistoryWindow) *protocol.His
 		rowOwnership = append(rowOwnership, protocolHistoryRowOwnership(row))
 		rowLineIDs = append(rowLineIDs, uint64(row.LineID))
 		rowInLine = append(rowInLine, row.RowInLine)
+		rowSessionIDs = append(rowSessionIDs, uint64(row.SessionID))
+		rowFrameIDs = append(rowFrameIDs, uint64(row.FrameID))
+		rowFixedGrid = append(rowFixedGrid, row.FixedGrid)
+		rowScreenCols = append(rowScreenCols, row.ScreenCols)
 	}
 	lines := make([]protocol.HistoryLineSpan, 0, len(window.Lines))
 	for _, span := range window.Lines {
@@ -911,6 +931,10 @@ func protocolHistoryWindowFromDomain(window history.HistoryWindow) *protocol.His
 			EndRow:         protocolHistorySpanEndRow(span),
 			RowKind:        string(span.Kind),
 			LogicalLineID:  uint64(span.LogicalLineID),
+			SessionID:      uint64(span.SessionID),
+			FrameID:        uint64(span.FrameID),
+			FixedGrid:      protocolHistorySpanFixedGrid(window.Rows, span),
+			ScreenCols:     protocolHistorySpanScreenCols(window.Rows, span),
 			TimestampStart: span.TimestampStart,
 			TimestampEnd:   span.TimestampEnd,
 			ClippedBefore:  span.ClippedBefore,
@@ -918,31 +942,36 @@ func protocolHistoryWindowFromDomain(window history.HistoryWindow) *protocol.His
 		})
 	}
 	return &protocol.HistoryWindow{
-		TerminalID:    window.TerminalID,
-		Token:         string(window.Token),
-		Op:            protocol.HistoryWindowOp(window.Op),
-		Size:          protocol.Size{Cols: protocolHistoryCols(window.Cols)},
-		Rows:          rows,
-		RowKinds:      rowKinds,
-		RowWrapped:    rowWrapped,
-		RowOwnership:  rowOwnership,
-		RowSegments:   rowSegments,
-		Lines:         lines,
-		LoadedRows:    len(rows),
-		TotalRows:     window.LogicalTotal,
-		LoadedLines:   len(lines),
-		LogicalTotal:  window.LogicalTotal,
-		HasMore:       window.HasMore,
-		Generation:    uint64(window.Generation),
-		FirstLineID:   uint64(window.Boundary.FirstLineID),
-		LastLineID:    uint64(window.Boundary.LastLineID),
-		CursorValid:   window.Boundary.Cursor.Valid,
-		CursorLineID:  uint64(window.Boundary.Cursor.LineID),
-		CursorRow:     window.Boundary.Cursor.RowInLine,
-		CursorSegment: string(window.Boundary.Cursor.Segment),
-		RowLineIDs:    rowLineIDs,
-		RowInLine:     rowInLine,
-		Timestamp:     window.Timestamp,
+		TerminalID:     window.TerminalID,
+		Token:          string(window.Token),
+		Op:             protocol.HistoryWindowOp(window.Op),
+		Size:           protocol.Size{Cols: protocolHistoryCols(window.Cols)},
+		Rows:           rows,
+		RowKinds:       rowKinds,
+		RowWrapped:     rowWrapped,
+		RowOwnership:   rowOwnership,
+		RowSegments:    rowSegments,
+		RowSessionIDs:  rowSessionIDs,
+		RowFrameIDs:    rowFrameIDs,
+		RowFixedGrid:   rowFixedGrid,
+		RowScreenCols:  rowScreenCols,
+		Lines:          lines,
+		LoadedRows:     len(rows),
+		TotalRows:      window.LogicalTotal,
+		LoadedLines:    len(lines),
+		LogicalTotal:   window.LogicalTotal,
+		HasMore:        window.HasMore,
+		Generation:     uint64(window.Generation),
+		FirstLineID:    uint64(window.Boundary.FirstLineID),
+		LastLineID:     uint64(window.Boundary.LastLineID),
+		CursorValid:    window.Boundary.Cursor.Valid,
+		CursorLineID:   uint64(window.Boundary.Cursor.LineID),
+		CursorRow:      window.Boundary.Cursor.RowInLine,
+		CursorRowIndex: window.Boundary.Cursor.BeforeRowIndex,
+		CursorSegment:  string(window.Boundary.Cursor.Segment),
+		RowLineIDs:     rowLineIDs,
+		RowInLine:      rowInLine,
+		Timestamp:      window.Timestamp,
 	}
 }
 
@@ -994,6 +1023,20 @@ func protocolHistorySpanEndRow(span history.HistoryLineSpan) int {
 		return span.EndRow - 1
 	}
 	return span.EndRow
+}
+
+func protocolHistorySpanFixedGrid(rows []history.HistoryRow, span history.HistoryLineSpan) bool {
+	if span.StartRow < 0 || span.StartRow >= len(rows) {
+		return false
+	}
+	return rows[span.StartRow].FixedGrid
+}
+
+func protocolHistorySpanScreenCols(rows []history.HistoryRow, span history.HistoryLineSpan) int {
+	if span.StartRow < 0 || span.StartRow >= len(rows) {
+		return 0
+	}
+	return rows[span.StartRow].ScreenCols
 }
 
 func protocolHistoryCols(cols int) uint16 {

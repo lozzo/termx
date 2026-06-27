@@ -543,7 +543,8 @@ func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {
 func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSemanticTransaction, state history.HistoryReadState) history.HistoryDecision {
 	decision := history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream}
 	hasEraseDisplay := historyTransactionHasEraseDisplay(tx)
-	isPrimaryFrameSession := tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd || tx.RequiresFullReplace || hasEraseDisplay
+	hasContentMutation := historyTransactionHasContentMutation(tx)
+	isPrimaryFrameSession := (tx.SynchronizedActive && hasContentMutation) || tx.SynchronizedEnd || tx.RequiresFullReplace || hasEraseDisplay
 	if tx.RequiresFullReplace && tx.FullReplaceReason == "resize" {
 		return history.HistoryDecision{Mode: history.HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true}
 	}
@@ -565,6 +566,7 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 		// authoritative history。普通 stream 已经按 LF/open-line seal 记录过的
 		// 内容不能在 ED2 时重复消费；primary current frame 则必须消费 proof。
 		decision.ConsumeScrollOutProof = historyTransactionShouldConsumeScrollOut(tx, state)
+		decision.ConsumeClearScrollOutProof = state.HasPrimaryCurrent
 		decision.ConsumeClearBoundary = hasEraseDisplay
 	}
 	if decision.Mode == history.HistoryOutputModeOrdinaryStream && state.HasPrimaryCurrent {
@@ -582,6 +584,21 @@ func historyTransactionHasEraseDisplay(tx history.TerminalSemanticTransaction) b
 		}
 	}
 	return false
+}
+
+func historyTransactionHasContentMutation(tx history.TerminalSemanticTransaction) bool {
+	for _, op := range tx.Ops {
+		switch op.Code {
+		case vterm.ScreenOpWriteSpan, vterm.ScreenOpScrollRect, vterm.ScreenOpCopyRect, vterm.ScreenOpClearRect, vterm.ScreenOpClearToEOL, vterm.ScreenOpResize:
+			return true
+		case vterm.ScreenOpControl:
+			switch op.Control {
+			case "ed", "el", "ech", "dch", "ich", "il", "dl", "su", "sd", "ri", "ris":
+				return true
+			}
+		}
+	}
+	return len(tx.PrimaryScrollOut) > 0 || historyTransactionHasOpScrollOut(tx)
 }
 
 func historyTransactionShouldConsumeScrollOut(tx history.TerminalSemanticTransaction, state history.HistoryReadState) bool {

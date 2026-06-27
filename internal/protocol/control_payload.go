@@ -1789,21 +1789,32 @@ func timePtrToUnixNano(value *time.Time) int64 {
 }
 
 const (
-	terminalInfoExitedAtFieldNumber               protowire.Number = 13
-	terminalStateChangedExitedAtFieldNumber       protowire.Number = 4
-	historyWindowModeFieldNumber                  protowire.Number = 12
-	historyWindowAfterCursorValidFieldNumber      protowire.Number = 13
-	historyWindowAfterLineIDFieldNumber           protowire.Number = 14
-	historyWindowAfterRowInLineFieldNumber        protowire.Number = 15
-	historyWindowRangeValidFieldNumber            protowire.Number = 16
-	historyWindowRangeStartLineIDFieldNumber      protowire.Number = 17
-	historyWindowRangeStartColFieldNumber         protowire.Number = 18
-	historyWindowRangeEndLineIDFieldNumber        protowire.Number = 19
-	historyWindowRangeEndColFieldNumber           protowire.Number = 20
-	historyWindowCursorSegmentFieldNumber         protowire.Number = 21
-	historyWindowAfterCursorSegmentFieldNumber    protowire.Number = 22
-	historyWindowResponseCursorSegmentFieldNumber protowire.Number = 31
-	historyWindowResponseRowSegmentsFieldNumber   protowire.Number = 32
+	terminalInfoExitedAtFieldNumber                protowire.Number = 13
+	terminalStateChangedExitedAtFieldNumber        protowire.Number = 4
+	historyWindowModeFieldNumber                   protowire.Number = 12
+	historyWindowAfterCursorValidFieldNumber       protowire.Number = 13
+	historyWindowAfterLineIDFieldNumber            protowire.Number = 14
+	historyWindowAfterRowInLineFieldNumber         protowire.Number = 15
+	historyWindowRangeValidFieldNumber             protowire.Number = 16
+	historyWindowRangeStartLineIDFieldNumber       protowire.Number = 17
+	historyWindowRangeStartColFieldNumber          protowire.Number = 18
+	historyWindowRangeEndLineIDFieldNumber         protowire.Number = 19
+	historyWindowRangeEndColFieldNumber            protowire.Number = 20
+	historyWindowCursorSegmentFieldNumber          protowire.Number = 21
+	historyWindowAfterCursorSegmentFieldNumber     protowire.Number = 22
+	historyWindowBeforeRowIndexFieldNumber         protowire.Number = 23
+	historyWindowAfterRowIndexFieldNumber          protowire.Number = 24
+	historyWindowResponseCursorSegmentFieldNumber  protowire.Number = 31
+	historyWindowResponseRowSegmentsFieldNumber    protowire.Number = 32
+	historyWindowResponseCursorRowIndexFieldNumber protowire.Number = 33
+	historyWindowResponseRowSessionIDsFieldNumber  protowire.Number = 34
+	historyWindowResponseRowFrameIDsFieldNumber    protowire.Number = 35
+	historyWindowResponseRowFixedGridFieldNumber   protowire.Number = 36
+	historyWindowResponseRowScreenColsFieldNumber  protowire.Number = 37
+	historyWindowLineSessionIDsFieldNumber         protowire.Number = 38
+	historyWindowLineFrameIDsFieldNumber           protowire.Number = 39
+	historyWindowLineFixedGridFieldNumber          protowire.Number = 40
+	historyWindowLineScreenColsFieldNumber         protowire.Number = 41
 )
 
 func encodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, params HistoryWindowParams) {
@@ -1813,6 +1824,8 @@ func encodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, par
 	setBoolProtoFieldOrUnknown(msg, historyWindowAfterCursorValidFieldNumber, params.AfterCursorValid)
 	setUint64ProtoFieldOrUnknown(msg, historyWindowAfterLineIDFieldNumber, params.AfterLineID)
 	setInt32ProtoFieldOrUnknown(msg, historyWindowAfterRowInLineFieldNumber, int32(params.AfterRowInLine))
+	setInt32ProtoFieldOrUnknown(msg, historyWindowBeforeRowIndexFieldNumber, int32(params.BeforeRowIndex))
+	setInt32ProtoFieldOrUnknown(msg, historyWindowAfterRowIndexFieldNumber, int32(params.AfterRowIndex))
 	setBoolProtoFieldOrUnknown(msg, historyWindowRangeValidFieldNumber, params.RangeValid)
 	setUint64ProtoFieldOrUnknown(msg, historyWindowRangeStartLineIDFieldNumber, params.RangeStartLineID)
 	setInt32ProtoFieldOrUnknown(msg, historyWindowRangeStartColFieldNumber, int32(params.RangeStartCol))
@@ -1830,6 +1843,16 @@ func decodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, par
 	params.AfterCursorValid = boolProtoFieldOrUnknown(msg, historyWindowAfterCursorValidFieldNumber)
 	params.AfterLineID = uint64ProtoFieldOrUnknown(msg, historyWindowAfterLineIDFieldNumber)
 	params.AfterRowInLine = int(int32ProtoFieldOrUnknown(msg, historyWindowAfterRowInLineFieldNumber))
+	params.BeforeRowIndex = int(int32ProtoFieldOrUnknown(msg, historyWindowBeforeRowIndexFieldNumber))
+	params.AfterRowIndex = int(int32ProtoFieldOrUnknown(msg, historyWindowAfterRowIndexFieldNumber))
+	if params.BeforeRowIndex == 0 && params.BeforeRowInLine > 0 {
+		// 中文说明：旧客户端曾把 projection absolute offset 放进
+		// before_row_in_line；新路径只写 before_row_index。
+		params.BeforeRowIndex = params.BeforeRowInLine
+	}
+	if params.AfterRowIndex == 0 && params.AfterRowInLine > 0 {
+		params.AfterRowIndex = params.AfterRowInLine
+	}
 	params.RangeValid = boolProtoFieldOrUnknown(msg, historyWindowRangeValidFieldNumber)
 	params.RangeStartLineID = uint64ProtoFieldOrUnknown(msg, historyWindowRangeStartLineIDFieldNumber)
 	params.RangeStartCol = int(int32ProtoFieldOrUnknown(msg, historyWindowRangeStartColFieldNumber))

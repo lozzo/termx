@@ -108,7 +108,7 @@ func TestR332FrozenHistoryCanPageOlderThanLatestLimit(t *testing.T) {
 	if got := rowTexts(latest.Rows); strings.Join(got, "|") != "frame-1|frame-2" {
 		t.Fatalf("frozen latest should return stable tail, got %v", got)
 	}
-	if !latest.Boundary.Cursor.Valid || latest.Boundary.Cursor.RowInLine != 4 {
+	if !latest.Boundary.Cursor.Valid || latest.Boundary.Cursor.BeforeRowIndex != 4 || latest.Boundary.Cursor.RowInLine != 0 {
 		t.Fatalf("frozen latest cursor must point before the latest page in full snapshot, got %#v", latest.Boundary.Cursor)
 	}
 

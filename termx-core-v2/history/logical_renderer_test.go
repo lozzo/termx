@@ -70,7 +70,7 @@ func TestR329LogicalRendererConsumesED2OrderedScrollOutAndClearsCurrentFrame(t *
 			Cols: 12,
 			Rows: [][]TerminalSemanticCell{{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}},
 		},
-	}, HistoryDecision{Mode: HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true, ConsumeScrollOutProof: true, ConsumeClearBoundary: true})
+	}, HistoryDecision{Mode: HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true, ConsumeScrollOutProof: true, ConsumeClearScrollOutProof: true, ConsumeClearBoundary: true})
 	if err != nil {
 		t.Fatalf("apply ED2 redraw: %v", err)
 	}
@@ -97,6 +97,30 @@ func TestR329LogicalRendererConsumesED2OrderedScrollOutAndClearsCurrentFrame(t *
 	}
 	if clearPrimary != 1 || replacePrimary != 1 {
 		t.Fatalf("ED2 redraw should clear old current then publish new frame, clear=%d replace=%d batch=%#v", clearPrimary, replacePrimary, batch)
+	}
+}
+
+func TestR333LogicalRendererSkipsClearTimeScrollOutWithoutPrimaryFrame(t *testing.T) {
+	renderer := NewHistoryLogicalRenderer(nil, nil)
+	batch, err := renderer.Apply(TerminalSemanticTransaction{
+		Seq: 1,
+		Ops: []TerminalSemanticOp{
+			{Code: vterm.ScreenOpControl, Control: "sm", Private: true, Mode: 2026},
+			{Code: vterm.ScreenOpControl, Control: "ed", Mode: 2},
+		},
+		PrimaryScrollOut: []TerminalSemanticScrollOut{{Runs: []TerminalSemanticCellRun{{Text: "already-sealed"}}}},
+		PrimaryFrame: &TerminalSemanticFrame{
+			Cols: 12,
+			Rows: [][]TerminalSemanticCell{{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}},
+		},
+	}, HistoryDecision{Mode: HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true, ConsumeScrollOutProof: true, ConsumeClearBoundary: true})
+	if err != nil {
+		t.Fatalf("apply synchronized ED2: %v", err)
+	}
+	for _, mutation := range batch.Mutations {
+		if mutation.Kind == HistoryMutationSealLine && mutation.Line != nil && lineText(*mutation.Line) == "already-sealed" {
+			t.Fatalf("clear-time scroll-out without primary frame ownership must not be sealed again: %#v", batch)
+		}
 	}
 }
 

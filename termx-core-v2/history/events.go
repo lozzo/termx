@@ -48,16 +48,17 @@ const (
 // terminal semantic。Order 是 renderer 消费顺序；只有 OrderSource 为
 // HistorySemanticEventOrderFromOps 时才表示 vterm op 级精确顺序。
 type HistorySemanticEvent struct {
-	Seq         uint64
-	Order       int
-	OrderSource HistorySemanticEventOrderSource
-	Kind        HistorySemanticEventKind
-	Time        time.Time
-	Op          *TerminalSemanticOp
-	ScrollOut   *TerminalSemanticScrollOut
-	Frame       *TerminalSemanticFrame
-	Size        TerminalSemanticSize
-	Reason      string
+	Seq            uint64
+	Order          int
+	OrderSource    HistorySemanticEventOrderSource
+	Kind           HistorySemanticEventKind
+	Time           time.Time
+	Op             *TerminalSemanticOp
+	ScrollOut      *TerminalSemanticScrollOut
+	ClearScrollOut bool
+	Frame          *TerminalSemanticFrame
+	Size           TerminalSemanticSize
+	Reason         string
 }
 
 // HistorySemanticEventsFromTransaction 把一个 vterm semantic transaction 归一化为
@@ -74,6 +75,7 @@ func HistorySemanticEventsFromTransaction(tx TerminalSemanticTransaction) []Hist
 	hasResizeOp := false
 	hasClearScrollbackOp := false
 	hasOrderedScrollOut := false
+	firstEraseDisplayAllOp := firstEraseDisplayAllOpIndex(tx.Ops)
 
 	appendEvent := func(event HistorySemanticEvent) {
 		event.Seq = tx.Seq
@@ -83,14 +85,15 @@ func HistorySemanticEventsFromTransaction(tx TerminalSemanticTransaction) []Hist
 		nextOrder++
 	}
 
-	for _, op := range tx.Ops {
+	for opIndex, op := range tx.Ops {
 		opCopy := cloneTerminalSemanticOp(op)
 		for _, proof := range terminalScrollOutProofsFromOp(opCopy) {
 			proofCopy := cloneTerminalSemanticScrollOut(proof)
 			appendEvent(HistorySemanticEvent{
-				OrderSource: HistorySemanticEventOrderFromOps,
-				Kind:        HistorySemanticEventPrimaryScrollOut,
-				ScrollOut:   &proofCopy,
+				OrderSource:    HistorySemanticEventOrderFromOps,
+				Kind:           HistorySemanticEventPrimaryScrollOut,
+				ScrollOut:      &proofCopy,
+				ClearScrollOut: isEraseDisplayAllOp(opCopy) || (firstEraseDisplayAllOp >= 0 && opIndex < firstEraseDisplayAllOp),
 			})
 			hasOrderedScrollOut = true
 		}
@@ -137,12 +140,14 @@ func HistorySemanticEventsFromTransaction(tx TerminalSemanticTransaction) []Hist
 		})
 	}
 	if !hasOrderedScrollOut {
+		clearScrollOut := transactionHasEraseDisplayAll(tx)
 		for _, proof := range tx.PrimaryScrollOut {
 			proofCopy := cloneTerminalSemanticScrollOut(proof)
 			appendEvent(HistorySemanticEvent{
-				OrderSource: HistorySemanticEventOrderFromTransactionSideProof,
-				Kind:        HistorySemanticEventPrimaryScrollOut,
-				ScrollOut:   &proofCopy,
+				OrderSource:    HistorySemanticEventOrderFromTransactionSideProof,
+				Kind:           HistorySemanticEventPrimaryScrollOut,
+				ScrollOut:      &proofCopy,
+				ClearScrollOut: clearScrollOut,
 			})
 		}
 	}
@@ -198,6 +203,24 @@ func isClearScrollbackOp(op TerminalSemanticOp) bool {
 
 func isEraseDisplayAllOp(op TerminalSemanticOp) bool {
 	return op.Code == vterm.ScreenOpControl && op.Control == "ed" && op.Mode == 2
+}
+
+func transactionHasEraseDisplayAll(tx TerminalSemanticTransaction) bool {
+	for _, op := range tx.Ops {
+		if isEraseDisplayAllOp(op) {
+			return true
+		}
+	}
+	return false
+}
+
+func firstEraseDisplayAllOpIndex(ops []TerminalSemanticOp) int {
+	for index, op := range ops {
+		if isEraseDisplayAllOp(op) {
+			return index
+		}
+	}
+	return -1
 }
 
 func isResetOp(op TerminalSemanticOp) bool {

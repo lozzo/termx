@@ -14,10 +14,11 @@ func NewFrameReducer() FrameReducer {
 }
 
 type frameReducer struct {
-	journal       FrameJournal
-	nextSessionID ScreenSessionID
-	nextFrameID   ScreenFrameID
-	ids           *historyIDAllocator
+	journal                FrameJournal
+	nextSessionID          ScreenSessionID
+	nextFrameID            ScreenFrameID
+	forceNewPrimarySession bool
+	ids                    *historyIDAllocator
 }
 
 func (reducer *frameReducer) ReplacePrimaryCurrent(frame TerminalSemanticFrame, reason FrameReason) ([]HistoryMutation, error) {
@@ -61,6 +62,10 @@ func (reducer *frameReducer) ClearPrimaryCurrent(reason FrameReason) ([]HistoryM
 	}
 	frameID := reducer.journal.PrimaryCurrent.ID
 	reducer.journal.PrimaryCurrent = nil
+	// 中文说明：ED2/full repaint 是 primary frame ownership 边界；下一次
+	// primary frame 不能复用被清掉的 session epoch，否则 TUI 会把旧新 frame
+	// 当同一 source identity 拼接。
+	reducer.forceNewPrimarySession = true
 	return []HistoryMutation{{
 		Kind:    HistoryMutationClearPrimaryFrame,
 		FrameID: frameID,
@@ -130,6 +135,7 @@ func (reducer *frameReducer) ResetForClearScrollback() {
 	reducer.journal = FrameJournal{}
 	reducer.nextSessionID = 1
 	reducer.nextFrameID = 1
+	reducer.forceNewPrimarySession = false
 	reducer.ids = newHistoryIDAllocator()
 }
 
@@ -150,6 +156,12 @@ func (reducer *frameReducer) currentSessionID() ScreenSessionID {
 	reducer.ensureCounters()
 	if reducer.journal.PrimaryCurrent != nil {
 		return reducer.journal.PrimaryCurrent.SessionID
+	}
+	if reducer.forceNewPrimarySession {
+		reducer.forceNewPrimarySession = false
+		id := reducer.nextSessionID
+		reducer.nextSessionID++
+		return id
 	}
 	if len(reducer.journal.PrimaryArchived) > 0 {
 		return reducer.journal.PrimaryArchived[len(reducer.journal.PrimaryArchived)-1].SessionID
