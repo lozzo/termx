@@ -181,7 +181,7 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 		host,
 		app.NewAsyncEffectRunner(),
 		app.LiveDeps{Terminal: terminal, Logger: logger},
-		app.CopyModeDeps{Core: core, Clipboard: &services.SystemClipboardService{}, Terminal: terminal, Rows: rows},
+		app.CopyModeDeps{Core: core, Clipboard: &services.SystemClipboardService{}, Terminal: terminal, Logger: logger, Rows: rows},
 		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID), Logger: logger, SkipInitialLoad: opts.SkipWorkbenchInitialLoad},
 		app.ClipboardDeps{Storage: clipboardStorage, Ref: state.DefaultClipboardStorageRef(state.DefaultWorkspaceID), Logger: logger},
 	)

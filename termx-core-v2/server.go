@@ -401,7 +401,37 @@ func (server *Server) TerminalHistoryWindow(ctx context.Context, id string, req 
 	if req.TerminalID == "" {
 		req.TerminalID = id
 	}
-	return terminal.HistoryWindow(req)
+	requestAttrs := []any{
+		"terminal_id", req.TerminalID,
+		"mode", string(req.Mode),
+		"cols", req.Cols,
+		"limit", req.Limit,
+		"token", string(req.Token),
+	}
+	requestAttrs = append(requestAttrs, coreHistoryCursorAttrs("request", req.Cursor)...)
+	requestAttrs = append(requestAttrs, coreHistoryBoundaryAttrs("request", req.Boundary)...)
+	coreHistoryTrace(server.cfg.logger, "core.store.request_window", requestAttrs...)
+	window, err := terminal.HistoryWindow(req)
+	if err != nil {
+		return history.HistoryWindow{}, err
+	}
+	responseAttrs := []any{
+		"terminal_id", window.TerminalID,
+		"mode", string(req.Mode),
+		"op", string(window.Op),
+		"cols", window.Cols,
+		"rows", len(window.Rows),
+		"lines", len(window.Lines),
+		"token", string(window.Token),
+		"generation", uint64(window.Generation),
+		"has_more", window.HasMore,
+		"logical_total", window.LogicalTotal,
+		"summary", coreHistoryWindowSummary(window.Rows),
+	}
+	responseAttrs = append(responseAttrs, coreHistoryCursorAttrs("response", window.Boundary.Cursor)...)
+	responseAttrs = append(responseAttrs, coreHistoryBoundaryAttrs("response", window.Boundary)...)
+	coreHistoryTrace(server.cfg.logger, "core.store.response_window", responseAttrs...)
+	return window, nil
 }
 
 // TerminalHistoryCopy 从 core-v2 terminal 内部 authoritative history domain 复制文本。

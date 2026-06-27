@@ -19,6 +19,7 @@ import (
 const (
 	tuiDiagnosticsEnv        = "TERMX_TUI_DIAG"
 	tuiInputTraceEnv         = "TERMX_TUI_INPUT_TRACE"
+	tuiHistoryTraceEnv       = "TERMX_HISTORY_TRACE"
 	tuiDiagnosticsInterval   = "TERMX_TUI_DIAG_INTERVAL_MS"
 	tuiHeapProfileDirEnv     = "TERMX_TUI_HEAP_PROFILE_DIR"
 	tuiHeapProfileEveryEnv   = "TERMX_TUI_HEAP_PROFILE_EVERY_MB"
@@ -30,31 +31,34 @@ const (
 )
 
 type runtimeDiagnostics struct {
-	mu                sync.Mutex
-	logger            *slog.Logger
-	enabled           bool
-	inputTraceEnabled bool
-	interval          time.Duration
-	lastLog           time.Time
-	frameSeq          uint64
-	patchSeq          uint64
-	lastFloatingKey   string
-	heapProfileDir    string
-	memstatsDir       string
-	heapProfileEvery  uint64
-	lastHeapProfileAt uint64
+	mu                  sync.Mutex
+	logger              *slog.Logger
+	enabled             bool
+	inputTraceEnabled   bool
+	historyTraceEnabled bool
+	interval            time.Duration
+	lastLog             time.Time
+	frameSeq            uint64
+	patchSeq            uint64
+	lastFloatingKey     string
+	heapProfileDir      string
+	memstatsDir         string
+	heapProfileEvery    uint64
+	lastHeapProfileAt   uint64
 }
 
 func newRuntimeDiagnostics(logger *slog.Logger) *runtimeDiagnostics {
 	if logger == nil {
 		return nil
 	}
+	tuiDiagnosticsEnabled := diagnosticsEnabledFromEnv(tuiDiagnosticsEnv)
 	diag := &runtimeDiagnostics{
-		logger:   logger,
-		enabled:  diagnosticsEnabledFromEnv(tuiDiagnosticsEnv),
-		interval: diagnosticsIntervalFromEnv(tuiDiagnosticsInterval, time.Second),
+		logger:              logger,
+		enabled:             tuiDiagnosticsEnabled,
+		inputTraceEnabled:   tuiDiagnosticsEnabled || diagnosticsEnabledFromEnv(tuiInputTraceEnv),
+		historyTraceEnabled: diagnosticsEnabledFromEnv(tuiHistoryTraceEnv),
+		interval:            diagnosticsIntervalFromEnv(tuiDiagnosticsInterval, time.Second),
 	}
-	diag.inputTraceEnabled = diag.enabled || diagnosticsEnabledFromEnv(tuiInputTraceEnv)
 	if dir := strings.TrimSpace(os.Getenv(tuiHeapProfileDirEnv)); dir != "" {
 		diag.heapProfileDir = dir
 		if strings.TrimSpace(os.Getenv(tuiHeapProfileEveryEnv)) != "" {
@@ -78,7 +82,7 @@ func (runtime *AppRuntime) observeRuntimeMessage(msg Msg, effects []Effect) {
 }
 
 func (runtime *AppRuntime) observeRuntimeFrame(frame render.Frame) {
-	if runtime.diagnostics == nil || !runtime.diagnostics.enabled {
+	if runtime.diagnostics == nil || (!runtime.diagnostics.enabled && !runtime.diagnostics.historyTraceEnabled) {
 		return
 	}
 	runtime.diagnostics.observeFrame(runtime, frame)
@@ -128,6 +132,10 @@ func (diag *runtimeDiagnostics) observeMessage(runtime *AppRuntime, msg Msg, eff
 
 func (diag *runtimeDiagnostics) observeFrame(runtime *AppRuntime, frame render.Frame) {
 	diag.frameSeq++
+	diag.observeHistoryFrame(runtime, frame)
+	if !diag.enabled {
+		return
+	}
 	if time.Since(diag.lastLog) < diag.interval {
 		diag.maybeWriteHeapProfile(runtime.state, "frame")
 		return
@@ -150,6 +158,53 @@ func (diag *runtimeDiagnostics) observeFrame(runtime *AppRuntime, frame render.F
 		"heap_objects", mem.HeapObjects,
 	)
 	diag.maybeWriteHeapProfile(runtime.state, "frame")
+}
+
+func (diag *runtimeDiagnostics) observeHistoryFrame(runtime *AppRuntime, frame render.Frame) {
+	if diag.logger == nil || !diag.historyTraceEnabled || runtime == nil {
+		return
+	}
+	history := runtime.state.History
+	copyMode := runtime.state.CopyMode
+	if !copyMode.Active && !copyMode.Entering {
+		return
+	}
+	start := copyMode.ViewportTop
+	if start < 0 {
+		start = 0
+	}
+	end := start + copyMode.ViewRows
+	if copyMode.ViewRows <= 0 {
+		end = start + 8
+	}
+	if end > len(history.Rows) {
+		end = len(history.Rows)
+	}
+	var visible []state.HistoryRow
+	if start < end && start < len(history.Rows) {
+		visible = history.Rows[start:end]
+	}
+	attrs := []any{
+		"frame_seq", diag.frameSeq,
+		"root_generation", runtime.state.Generation,
+		"active", copyMode.Active,
+		"entering", copyMode.Entering,
+		"view_id", copyMode.ViewID,
+		"terminal_id", copyMode.TerminalID,
+		"viewport_top", copyMode.ViewportTop,
+		"view_rows", copyMode.ViewRows,
+		"cursor_row", copyMode.Cursor.Row,
+		"cursor_col", copyMode.Cursor.Col,
+		"history_rows", len(history.Rows),
+		"visible_start", start,
+		"visible_end", end,
+		"visible_summary", state.HistoryTraceWindowSummary(visible),
+		"frame_lines", len(frame.Lines),
+		"frame_ansi_lines", len(frame.ANSILines),
+	}
+	attrs = append(attrs, historyTraceCursorAttrs("store", history.Cursor)...)
+	attrs = append(attrs, historyTraceBoundaryAttrs("store", history.Boundary)...)
+	logHistoryTrace(diag.logger, "tui.render.visible", attrs...)
 }
 
 func (diag *runtimeDiagnostics) observePatchFrame(runtime *AppRuntime, frame render.Frame) {

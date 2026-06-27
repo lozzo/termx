@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+
+	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
 func isContextLifecycleError(err error) bool {
@@ -32,4 +34,33 @@ func logLifecycleTrace(logger *slog.Logger, event string, attrs ...any) {
 	}
 	values := append([]any{"event", event}, attrs...)
 	logger.Info("tui-v3 lifecycle trace", values...)
+}
+
+func historyTraceEnabled() bool {
+	return diagnosticsEnabledFromEnv(tuiHistoryTraceEnv)
+}
+
+func logHistoryTrace(logger *slog.Logger, stage string, attrs ...any) {
+	if logger == nil || !historyTraceEnabled() {
+		return
+	}
+	values := append([]any{"stage", stage}, attrs...)
+	logger.Info("tui-v3 history trace", values...)
+}
+
+func historyTraceCursorAttrs(prefix string, cursor state.HistoryCursor) []any {
+	return []any{
+		prefix + "_cursor_valid", cursor.Valid,
+		prefix + "_cursor_line", cursor.BeforeLineID,
+		prefix + "_cursor_row", cursor.BeforeRowInLine,
+		prefix + "_cursor_index", cursor.BeforeRowIndex,
+		prefix + "_cursor_segment", cursor.Segment,
+	}
+}
+
+func historyTraceBoundaryAttrs(prefix string, boundary state.HistoryBoundary) []any {
+	return []any{
+		prefix + "_boundary_first", boundary.FirstLineID,
+		prefix + "_boundary_last", boundary.LastLineID,
+	}
 }
