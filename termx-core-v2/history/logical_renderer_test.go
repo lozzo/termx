@@ -44,7 +44,7 @@ func TestR326LogicalRendererSharesIDsAcrossStreamAndFrameReducers(t *testing.T) 
 	}
 }
 
-func TestR329LogicalRendererSkipsED2ClearTimeScrollOutAndClearsCurrentFrame(t *testing.T) {
+func TestR336LogicalRendererKeepsED2ClearTimeScrollOutForPrimaryFrame(t *testing.T) {
 	renderer := NewHistoryLogicalRenderer(nil, nil)
 	if _, err := renderer.Apply(TerminalSemanticTransaction{
 		Seq: 1,
@@ -70,7 +70,13 @@ func TestR329LogicalRendererSkipsED2ClearTimeScrollOutAndClearsCurrentFrame(t *t
 			Cols: 12,
 			Rows: [][]TerminalSemanticCell{{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}},
 		},
-	}, HistoryDecision{Mode: HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true, ConsumeScrollOutProof: true, ConsumeClearBoundary: true})
+	}, HistoryDecision{
+		Mode:                           HistoryOutputModePrimaryFrameSession,
+		PublishPrimaryFrame:            true,
+		ConsumeScrollOutProof:          true,
+		ConsumeClearTimeScrollOutProof: true,
+		ConsumeClearBoundary:           true,
+	})
 	if err != nil {
 		t.Fatalf("apply ED2 redraw: %v", err)
 	}
@@ -92,8 +98,8 @@ func TestR329LogicalRendererSkipsED2ClearTimeScrollOutAndClearsCurrentFrame(t *t
 			t.Fatalf("ED2 scroll-out proof owns old screen history; renderer must not also archive old frame: %#v", batch)
 		}
 	}
-	if len(sealed) != 0 {
-		t.Fatalf("ED2 clear-time old screen proof must not become committed history, got %v batch=%#v", sealed, batch)
+	if len(sealed) != 1 || sealed[0] != "old" {
+		t.Fatalf("ED2 clear-time primary frame proof must enter scrollable history once, got %v batch=%#v", sealed, batch)
 	}
 	if clearPrimary != 1 || replacePrimary != 1 {
 		t.Fatalf("ED2 redraw should clear old current then publish new frame, clear=%d replace=%d batch=%#v", clearPrimary, replacePrimary, batch)

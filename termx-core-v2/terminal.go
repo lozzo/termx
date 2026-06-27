@@ -581,6 +581,11 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 		// authoritative history；ED2 清屏时捕获的旧可见屏只是 repaint boundary，
 		// renderer 会跳过，避免 copy/history 里出现多倍临时 UI。
 		decision.ConsumeScrollOutProof = historyTransactionShouldConsumeScrollOut(tx, state)
+		// 中文说明：ED2 不等于 ED3。若清屏前有 primary current frame，
+		// vterm 的 clear-time scroll-out proof 表示该 frame 真实离开 viewport，
+		// 应进入 scrollable history；普通 shell 已 sealed 可见行仍不能消费该
+		// proof，否则会复制已经在 timeline 中的 shell tail。
+		decision.ConsumeClearTimeScrollOutProof = hasEraseDisplay && state.HasPrimaryCurrent
 		decision.ConsumeClearBoundary = hasEraseDisplay
 	}
 	if decision.Mode == history.HistoryOutputModeOrdinaryStream && state.HasPrimaryCurrent && (historyTransactionHasContentMutation(tx) || tx.RequiresFullReplace) {

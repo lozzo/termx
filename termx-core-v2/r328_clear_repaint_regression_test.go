@@ -118,11 +118,54 @@ func TestR333RepeatedED2SmallUIPaintsDoNotMultiplyHistory(t *testing.T) {
 
 	rows, _ := r326CollectAllHistoryRows(t, server, "term-r333-ed2-small-ui", 64, 4)
 	joined := strings.Join(historyRowTexts(rows), "\n")
-	if got := strings.Count(joined, "Update available!"); got != 1 {
-		t.Fatalf("repeated small ED2 UI repaint should leave one current frame copy, count=%d:\n%s\nrows=%#v", got, joined, rows)
+	if got := strings.Count(joined, "Update available!"); got != 4 {
+		t.Fatalf("ED2 is scrollback-preserving; each cleared primary frame plus latest frame should appear once, count=%d:\n%s\nrows=%#v", got, joined, rows)
 	}
-	if committed := strings.Join(committedHistoryRowTexts(rows), "|"); strings.Contains(committed, "Update available!") {
-		t.Fatalf("small repaint old frames must not enter committed history, committed=%q rows=%#v", committed, rows)
+	if got := len(currentPrimaryFrameRowTexts(rows)); got == 0 {
+		t.Fatalf("latest repaint should still leave a current primary frame, rows=%#v", rows)
+	}
+}
+
+func TestR336ED2ClearPreservesPreviousPrimaryFrameInScrollableHistory(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r336-ed2-primary-scrollback",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 40, Rows: 6},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r336-ed2-primary-scrollback",
+		"\x1b[?2026h"+
+			"before clear 1\r\n"+
+			"before clear 2"+
+			"\x1b[?2026l",
+	); err != nil {
+		t.Fatalf("seed primary frame: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r336-ed2-primary-scrollback",
+		"\x1b[?2026h\x1b[H\x1b[2J"+
+			"after clear only"+
+			"\x1b[?2026l",
+	); err != nil {
+		t.Fatalf("ingest ED2 clear redraw: %v", err)
+	}
+
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r336-ed2-primary-scrollback", 40, 2)
+	text := strings.Join(historyRowTexts(rows), "\n")
+	for _, want := range []string{"before clear 1", "before clear 2", "after clear only"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("ED2 clear must keep %q in authoritative history/curr frame:\n%s\nrows=%#v", want, text, rows)
+		}
+	}
+	committed := strings.Join(committedHistoryRowTexts(rows), "\n")
+	for _, want := range []string{"before clear 1", "before clear 2"} {
+		if got := strings.Count(committed, want); got != 1 {
+			t.Fatalf("clear-time primary frame history must appear once in sealed timeline, %q count=%d:\n%s\nrows=%#v", want, got, committed, rows)
+		}
+	}
+	if got := historyTextCount(rows, "after clear only"); got != 1 {
+		t.Fatalf("post-clear primary frame should appear once, count=%d:\n%s\nrows=%#v", got, text, rows)
 	}
 }
 

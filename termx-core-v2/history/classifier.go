@@ -41,8 +41,12 @@ type HistoryDecision struct {
 	SealOpenLine                  bool
 	ConsumeStreamOps              bool
 	ConsumeScrollOutProof         bool
-	ConsumeClearBoundary          bool
-	NonHistoryBoundary            bool
+	// ConsumeClearTimeScrollOutProof 表示 ED2 clear-time scroll-out proof 来自
+	// 当前 primary frame ownership 离开 viewport，必须进入 sealed timeline；
+	// 普通 shell 已 sealed 的可见行不能打开这个开关，否则会重复历史。
+	ConsumeClearTimeScrollOutProof bool
+	ConsumeClearBoundary           bool
+	NonHistoryBoundary             bool
 }
 
 // HistorySemanticClassifier 只能根据 terminal semantic transaction 和

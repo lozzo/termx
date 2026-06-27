@@ -8,7 +8,7 @@ import (
 	"github.com/lozzow/termx/termx-core-v2/history"
 )
 
-func TestR329ED2SmallPrimaryFrameRepaintDoesNotDuplicateHistory(t *testing.T) {
+func TestR336ED2SmallPrimaryFrameRepaintKeepsScrollableHistory(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-r329-ed2-primary",
@@ -27,8 +27,8 @@ func TestR329ED2SmallPrimaryFrameRepaintDoesNotDuplicateHistory(t *testing.T) {
 
 	rows, _ := r326CollectAllHistoryRows(t, server, "term-r329-ed2-primary", 18, 2)
 	committed := strings.Join(committedHistoryRowTexts(rows), "|")
-	if committed != "" {
-		t.Fatalf("ED2 clear-time old primary frame must not duplicate transient UI history, committed=%q rows=%#v", committed, rows)
+	if committed != "frame-a|frame-b" {
+		t.Fatalf("ED2 clear-time primary frame must be preserved once in scrollable history, committed=%q rows=%#v", committed, rows)
 	}
 	current := strings.Join(currentPrimaryFrameRowTexts(rows), "|")
 	if current != "next-a|next-b" {
