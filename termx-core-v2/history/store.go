@@ -122,6 +122,10 @@ type HistoryStore interface {
 	// OlderWindow 使用上一响应中的 cursor truth 跨 current/archive/sealed segments
 	// 分页。
 	OlderWindow(req HistoryWindowRequest) (HistoryWindow, error)
+	// OldestWindow 从 authoritative projection 的最老 head 直接返回 replace window。
+	// 它服务 TUI copy mode `g` 跳转，不能复用 older/prepend 合同，否则 consumer 会把
+	// response 当成增量页而不是新的可见窗口 truth。
+	OldestWindow(req HistoryWindowRequest) (HistoryWindow, error)
 	// NewerWindow 使用 cursor truth 向最新方向分页。
 	NewerWindow(req HistoryWindowRequest) (HistoryWindow, error)
 	// Freeze 创建 tokenized copy/history boundary，后续 repaint 不能改写它。

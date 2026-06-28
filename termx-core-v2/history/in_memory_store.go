@@ -165,6 +165,18 @@ func (store *inMemoryHistoryStore) latestWindowFromRows(req HistoryWindowRequest
 	return store.windowFromProjectedRows(req, page, HistoryWindowReplace, boundary, generation), nil
 }
 
+func (store *inMemoryHistoryStore) oldestWindowFromRows(req HistoryWindowRequest, rows []HistoryRow, generation Generation) HistoryWindow {
+	limit := normalizedLimit(req.Limit)
+	end := minInt(len(rows), limit)
+	page := cloneHistoryRows(rows[:end])
+	annotateProjectionRowIndexes(page, 0)
+	boundary := boundaryForRows(page, generation, req.Token)
+	if len(page) > 0 {
+		boundary.Cursor = HistoryCursor{Generation: generation, Token: req.Token}
+	}
+	return store.windowFromProjectedRows(req, page, HistoryWindowReplace, boundary, generation)
+}
+
 func (store *inMemoryHistoryStore) OlderWindow(req HistoryWindowRequest) (HistoryWindow, error) {
 	if store == nil {
 		return HistoryWindow{}, nil
@@ -200,6 +212,27 @@ func (store *inMemoryHistoryStore) OlderWindow(req HistoryWindowRequest) (Histor
 		boundary.Cursor.RowInLine = page[0].RowInLine
 	}
 	return store.windowFromProjectedRows(req, page, HistoryWindowPrepend, boundary, store.generation), nil
+}
+
+func (store *inMemoryHistoryStore) OldestWindow(req HistoryWindowRequest) (HistoryWindow, error) {
+	if store == nil {
+		return HistoryWindow{}, nil
+	}
+	store.ensureState()
+	if req.Token != "" {
+		frozen, ok := store.frozen[req.Token]
+		if !ok {
+			return HistoryWindow{}, ErrHistoryInvalidMutation
+		}
+		if len(frozen.index) > 0 {
+			return store.oldestWindowFromIndex(req, frozen.index, frozen.snapshot.Generation)
+		}
+		return store.oldestWindowFromRows(req, frozen.rows, frozen.snapshot.Generation), nil
+	}
+	if store.canUseIndexedProjection() {
+		return store.oldestWindowFromIndex(req, store.liveProjectionIndex(), store.generation)
+	}
+	return store.oldestWindowFromRows(req, store.projectLiveRows(), store.generation), nil
 }
 
 func (store *inMemoryHistoryStore) NewerWindow(req HistoryWindowRequest) (HistoryWindow, error) {
@@ -674,6 +707,20 @@ func (store *inMemoryHistoryStore) olderWindowFromIndex(req HistoryWindowRequest
 		boundary.Cursor = HistoryCursor{Generation: generation, Token: req.Token}
 	}
 	return store.windowFromProjectedRows(req, page, HistoryWindowPrepend, boundary, generation), nil
+}
+
+func (store *inMemoryHistoryStore) oldestWindowFromIndex(req HistoryWindowRequest, index []projectedRowRef, generation Generation) (HistoryWindow, error) {
+	limit := normalizedLimit(req.Limit)
+	end := minInt(len(index), limit)
+	page, _, err := store.rowsFromIndexWindow(index, 0, end)
+	if err != nil {
+		return HistoryWindow{}, err
+	}
+	boundary := boundaryForRows(page, generation, req.Token)
+	if len(page) > 0 {
+		boundary.Cursor = HistoryCursor{Generation: generation, Token: req.Token}
+	}
+	return store.windowFromProjectedRows(req, page, HistoryWindowReplace, boundary, generation), nil
 }
 
 func cursorBeforeIndex(row HistoryRow, beforeIndex int, generation Generation, token HistoryToken, valid bool) HistoryCursor {

@@ -27,8 +27,6 @@ Options:
                         set TERMX_DAEMON_MEMORY_LIMIT_MB for daemon runtime GC pacing
   --daemon-request-reclaim-min-heap-mb N
                         set TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB for request-boundary page reclaim
-  --daemon-history-file-backend
-                        force daemon compact history payloads into artifact file backend dir
   --use-real-state      do not isolate XDG_STATE_HOME; useful for reproducing user default-state RSS
   --tui-memory-limit-mb N
                         set TERMX_TUI_MEMORY_LIMIT_MB for TUI runtime GC pacing
@@ -46,13 +44,12 @@ Artifacts:
   stress-times.tsv      parsed per-run time(1) output captured from the TUI pane
   stress-commands.tsv   exact stress command typed into the TUI pane
   history-trace.tsv     live/copy captures checked for oldest/newest stress markers
-  history-files.tsv     compact history file count/bytes after each stress run
+  history-files.tsv     file-backed history payload count/bytes after each stress run
   profile-summary.txt   daemon/TUI pprof top summaries
   profile-graphs/       daemon/TUI pprof DOT graphs and SVG graphs when Graphviz exists
   daemon-memstats/       daemon runtime MemStats samples collected at RSS stages
   tui-memstats/          TUI runtime MemStats samples collected at RSS stages
-  state/termx/core-v2-history/ default daemon file-backed compact history payloads
-  daemon-history-backend/ forced compact history payload dir when --daemon-history-file-backend is set
+  state/termx/history-v2/ default daemon file-backed history payloads
   live.txt              tmux capture after stress completes
   copy-oldest.txt       capture after copy/history oldest jump
   daemon-heap/          daemon heap profiles captured by --profile-mode
@@ -133,6 +130,23 @@ wait_for_capture() {
       return 0
     fi
     sleep 1
+  done
+  return 1
+}
+
+wait_for_copy_oldest() {
+  local target="$1"
+  local deadline="$2"
+  local attempt
+  # 中文说明：真实 tmux harness 下，进入 copy mode 后第一次普通按键可能和
+  # 重绘/输入读取边界竞争；这里循环发送 oldest intent，避免把 harness 时序误判为历史失败。
+  for attempt in $(seq 1 "$deadline"); do
+    tmux send-keys -t "$target" g
+    sleep 1
+    capture_pane "$target" "copy-oldest"
+    if LC_ALL=C grep -Fq "000000" "$ROOT/copy-oldest.txt"; then
+      return 0
+    fi
   done
   return 1
 }
@@ -222,10 +236,8 @@ write_memory_peaks() {
 }
 
 history_backend_dir() {
-  if [[ "$DAEMON_HISTORY_FILE_BACKEND" == "1" ]]; then
-    printf '%s\n' "$DAEMON_HISTORY_BACKEND_DIR"
-  elif [[ "$USE_REAL_STATE" == "1" ]]; then
-    printf '%s/termx/core-v2-history\n' "$(real_state_home)"
+  if [[ "$USE_REAL_STATE" == "1" ]]; then
+    printf '%s/termx/history-v2\n' "$(real_state_home)"
   else
     printf '%s\n' "$DAEMON_DEFAULT_HISTORY_BACKEND_DIR"
   fi
@@ -245,7 +257,7 @@ history_backend_stats() {
     printf '0\t0\t0.0\n'
     return 0
   fi
-  find "$dir" -type f -name '*.compact' -print0 2>/dev/null | python3 -c '
+  find "$dir" -type f -name '*.history-lines.bin' -print0 2>/dev/null | python3 -c '
 import os
 import sys
 
@@ -482,12 +494,7 @@ write_profile_summary() {
     if [[ -d "$DAEMON_DEFAULT_HISTORY_BACKEND_DIR" ]]; then
       echo
       echo "## daemon default history file backend"
-      find "$DAEMON_DEFAULT_HISTORY_BACKEND_DIR" -type f -name '*.compact' -print0 2>/dev/null | xargs -0 ls -lh 2>/dev/null || true
-    fi
-    if [[ "$DAEMON_HISTORY_FILE_BACKEND" == "1" ]]; then
-      echo
-      echo "## daemon forced history file backend"
-      find "$DAEMON_HISTORY_BACKEND_DIR" -type f -name '*.compact' -print0 2>/dev/null | xargs -0 ls -lh 2>/dev/null || true
+      find "$DAEMON_DEFAULT_HISTORY_BACKEND_DIR" -type f -name '*.history-lines.bin' -print0 2>/dev/null | xargs -0 ls -lh 2>/dev/null || true
     fi
     echo
     if [[ -n "$daemon_profile" ]]; then
@@ -543,7 +550,6 @@ WAIT_SECONDS=90
 CLEANUP_ROOT=0
 DAEMON_MEMORY_LIMIT_MB=""
 DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB=""
-DAEMON_HISTORY_FILE_BACKEND=0
 USE_REAL_STATE=0
 TUI_MEMORY_LIMIT_MB=""
 BASELINE_TIME=1
@@ -598,10 +604,6 @@ while [[ $# -gt 0 ]]; do
     --daemon-request-reclaim-min-heap-mb)
       DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB="$2"
       shift 2
-      ;;
-    --daemon-history-file-backend)
-      DAEMON_HISTORY_FILE_BACKEND=1
-      shift
       ;;
     --use-real-state)
       USE_REAL_STATE=1
@@ -691,9 +693,8 @@ DAEMON_HEAP_DIR="$ROOT/daemon-heap"
 TUI_HEAP_DIR="$ROOT/tui-heap"
 DAEMON_MEMSTATS_DIR="$ROOT/daemon-memstats"
 TUI_MEMSTATS_DIR="$ROOT/tui-memstats"
-DAEMON_HISTORY_BACKEND_DIR="$ROOT/daemon-history-backend"
 DAEMON_DEFAULT_STATE_DIR="$ROOT/state"
-DAEMON_DEFAULT_HISTORY_BACKEND_DIR="$DAEMON_DEFAULT_STATE_DIR/termx/core-v2-history"
+DAEMON_DEFAULT_HISTORY_BACKEND_DIR="$DAEMON_DEFAULT_STATE_DIR/termx/history-v2"
 DIAG_STAGE_FILE="$ROOT/diag-stage.txt"
 SESSION="termx-tui-stress-$$"
 TARGET="$SESSION:0.0"
@@ -702,14 +703,34 @@ TERMINAL_ID_FILE="$ROOT/terminal.id"
 DAEMON_PID=""
 TERMINAL_ID=""
 
+run_cleanup_command() {
+  local timeout="$1"
+  shift
+  "$@" >/dev/null 2>&1 &
+  local pid=$!
+  (
+    sleep "$timeout"
+    kill "$pid" 2>/dev/null || true
+    sleep 1
+    kill -KILL "$pid" 2>/dev/null || true
+  ) &
+  local timer_pid=$!
+  wait "$pid" 2>/dev/null
+  local status=$?
+  kill "$timer_pid" 2>/dev/null || true
+  wait "$timer_pid" 2>/dev/null || true
+  return "$status"
+}
+
 cleanup() {
   set +e
   if tmux has-session -t "$SESSION" 2>/dev/null; then
     tmux kill-session -t "$SESSION" 2>/dev/null
   fi
   if [[ -n "$TERMINAL_ID" && -x "$BIN" ]]; then
-    "$BIN" --socket "$SOCK" --log-file "$LOG" v3 kill "$TERMINAL_ID" >/dev/null 2>&1
-    "$BIN" --socket "$SOCK" --log-file "$LOG" v3 rm "$TERMINAL_ID" >/dev/null 2>&1
+    # 中文说明：压力报告已经完成后，诊断清理不得因 daemon 忙于历史回收而无限阻塞。
+    run_cleanup_command 10 "$BIN" --socket "$SOCK" --log-file "$LOG" v3 kill "$TERMINAL_ID"
+    run_cleanup_command 10 "$BIN" --socket "$SOCK" --log-file "$LOG" v3 rm "$TERMINAL_ID"
   fi
   if [[ -n "$DAEMON_PID" ]] && kill -0 "$DAEMON_PID" 2>/dev/null; then
     kill "$DAEMON_PID" 2>/dev/null
@@ -745,10 +766,6 @@ mkdir -p "$TUI_HEAP_DIR"
 mkdir -p "$DAEMON_HEAP_DIR"
 mkdir -p "$TUI_MEMSTATS_DIR"
 mkdir -p "$DAEMON_MEMSTATS_DIR"
-if [[ "$DAEMON_HISTORY_FILE_BACKEND" == "1" ]]; then
-  mkdir -p "$DAEMON_HISTORY_BACKEND_DIR"
-fi
-
 if [[ "$BASELINE_TIME" == "1" ]]; then
   log "running outside-termx stress baseline: $(stress_command_display "$SEED")"
   /usr/bin/time -p "$(command -v python3)" "$STRESS_SCRIPT" $(stress_script_args "$SEED") >"$ROOT/baseline-output.txt" 2>"$ROOT/baseline-time.txt"
@@ -760,12 +777,7 @@ DAEMON_ENV_PREFIX=(TERMX_STRESS_HARNESS=1)
 if [[ "$USE_REAL_STATE" == "0" ]]; then
   DAEMON_ENV_PREFIX+=(XDG_STATE_HOME="$DAEMON_DEFAULT_STATE_DIR")
 fi
-DAEMON_HISTORY_FILE_BACKEND_ENV=""
-if [[ "$DAEMON_HISTORY_FILE_BACKEND" == "1" ]]; then
-  log "daemon history file backend: $DAEMON_HISTORY_BACKEND_DIR"
-  DAEMON_HISTORY_FILE_BACKEND_ENV="$DAEMON_HISTORY_BACKEND_DIR"
-  DAEMON_ENV_PREFIX+=(TERMX_DAEMON_HISTORY_FILE_BACKEND_DIR="$DAEMON_HISTORY_FILE_BACKEND_ENV")
-elif [[ "$USE_REAL_STATE" == "1" ]]; then
+if [[ "$USE_REAL_STATE" == "1" ]]; then
   log "daemon default history file backend: real user state"
 else
   log "daemon default history file backend: $DAEMON_DEFAULT_HISTORY_BACKEND_DIR"
@@ -892,9 +904,10 @@ record_stage "tui_copy_latest" "tui" "$TUI_PID"
 maybe_capture_stage_profile "tui_copy_latest" "tui" "$TUI_PID"
 
 log "jumping to oldest history page"
-tmux send-keys -t "$TARGET" g
-sleep 4
-capture_pane "$TARGET" "copy-oldest"
+if ! wait_for_copy_oldest "$TARGET" "$WAIT_SECONDS"; then
+  echo "copy-oldest did not show oldest stress line 000000" >&2
+  exit 1
+fi
 append_history_trace "copy_oldest" "$ROOT/copy-oldest.txt"
 record_stage "daemon_copy_oldest" "daemon" "$DAEMON_PID"
 record_stage "tui_copy_oldest" "tui" "$TUI_PID"
@@ -907,11 +920,6 @@ if [[ "$PROFILE_MODE" == "final" ]]; then
   sleep 1
   record_stage "daemon_after_profile_gc" "daemon" "$DAEMON_PID"
   record_stage "tui_after_profile_gc" "tui" "$TUI_PID"
-fi
-
-if ! LC_ALL=C grep -Fq "000000" "$ROOT/copy-oldest.txt"; then
-  echo "copy-oldest did not show oldest stress line 000000" >&2
-  exit 1
 fi
 
 if [[ -s "$TIME_FILE" ]]; then

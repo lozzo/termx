@@ -251,6 +251,44 @@ func TestR324TerminalHistoryReturnsAuthoritativeWindow(t *testing.T) {
 	}
 }
 
+func TestR360TerminalHistoryOldestReturnsReplaceWindow(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-history-r360-oldest",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 30, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-history-r360-oldest", "line-1\r\nline-2\r\nline-3\r\nline-4\r\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	snapshot, err := server.TerminalHistoryFreeze(context.Background(), "term-history-r360-oldest", history.FreezeHistoryRequest{
+		TerminalID: "term-history-r360-oldest",
+		Cols:       30,
+		Limit:      2,
+	})
+	if err != nil {
+		t.Fatalf("history.freeze should create token: %v", err)
+	}
+	oldest, err := server.TerminalHistoryWindow(context.Background(), "term-history-r360-oldest", history.HistoryWindowRequest{
+		TerminalID: "term-history-r360-oldest",
+		Mode:       history.HistoryWindowModeOldest,
+		Token:      snapshot.Token,
+		Cols:       30,
+		Limit:      2,
+	})
+	if err != nil {
+		t.Fatalf("oldest window: %v", err)
+	}
+	if oldest.Op != history.HistoryWindowReplace {
+		t.Fatalf("oldest must be a replace window, got %s", oldest.Op)
+	}
+	if got := strings.Join(historyRowTexts(oldest.Rows), "|"); got != "line-1|line-2" {
+		t.Fatalf("oldest should return frozen head rows, got %q window=%#v", got, oldest)
+	}
+}
+
 func TestR346TerminalUsesFileBackedHistoryStoreWhenConfigured(t *testing.T) {
 	historyDir := t.TempDir()
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()), WithHistoryStorageDir(historyDir))

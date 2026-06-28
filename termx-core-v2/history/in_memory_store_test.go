@@ -131,6 +131,70 @@ func TestR332FrozenHistoryCanPageOlderThanLatestLimit(t *testing.T) {
 	}
 }
 
+func TestR360FrozenHistoryOldestWindowReplacesWithProjectionHead(t *testing.T) {
+	store := NewInMemoryHistoryStore("term-1")
+	applyStoreBatch(t, store,
+		sealedLineMutations(1, 1, "line-1"),
+		sealedLineMutations(2, 2, "line-2"),
+		sealedLineMutations(3, 3, "line-3"),
+		sealedLineMutations(4, 4, "line-4"),
+		replacePrimaryRowsMutation(10, 5, 80, "frame-1", "frame-2"),
+	)
+
+	snapshot, err := store.Freeze(FreezeHistoryRequest{TerminalID: "term-1", Limit: 2, Cols: 80})
+	if err != nil {
+		t.Fatalf("freeze: %v", err)
+	}
+	oldest, err := store.OldestWindow(HistoryWindowRequest{TerminalID: "term-1", Token: snapshot.Token, Limit: 2, Cols: 80})
+	if err != nil {
+		t.Fatalf("oldest: %v", err)
+	}
+	if oldest.Op != HistoryWindowReplace {
+		t.Fatalf("oldest must replace local visible window, got %s", oldest.Op)
+	}
+	if got := rowTexts(oldest.Rows); strings.Join(got, "|") != "line-1|line-2" {
+		t.Fatalf("oldest must return frozen projection head, got %v window=%#v", got, oldest)
+	}
+	if oldest.Rows[0].ProjectionRowIndex != 0 || oldest.Rows[1].ProjectionRowIndex != 1 {
+		t.Fatalf("oldest rows must keep absolute projection indexes from head, got %#v", oldest.Rows)
+	}
+	if oldest.Boundary.FirstLineID != 1 || oldest.Boundary.LastLineID != 2 {
+		t.Fatalf("oldest replace boundary must describe visible head page, got %#v", oldest.Boundary)
+	}
+	if oldest.HasMore {
+		t.Fatalf("oldest replace is already at projection head and must not advertise older pages: %#v", oldest.Boundary.Cursor)
+	}
+}
+
+func TestR360BackendHistoryOldestWindowReadsProjectionHead(t *testing.T) {
+	store := NewBackendHistoryStore("term-1", NewMemoryStorageBackend())
+	applyStoreBatch(t, store,
+		sealedLineMutations(1, 1, "line-1"),
+		sealedLineMutations(2, 2, "line-2"),
+		sealedLineMutations(3, 3, "line-3"),
+		sealedLineMutations(4, 4, "line-4"),
+		replacePrimaryRowsMutation(10, 5, 80, "frame-1", "frame-2"),
+	)
+
+	snapshot, err := store.Freeze(FreezeHistoryRequest{TerminalID: "term-1", Limit: 2, Cols: 80})
+	if err != nil {
+		t.Fatalf("freeze: %v", err)
+	}
+	oldest, err := store.OldestWindow(HistoryWindowRequest{TerminalID: "term-1", Token: snapshot.Token, Limit: 2, Cols: 80})
+	if err != nil {
+		t.Fatalf("oldest: %v", err)
+	}
+	if got := rowTexts(oldest.Rows); strings.Join(got, "|") != "line-1|line-2" {
+		t.Fatalf("backend oldest must read projection head from payload backend, got %v window=%#v", got, oldest)
+	}
+	if oldest.Op != HistoryWindowReplace || oldest.HasMore {
+		t.Fatalf("backend oldest must be a head replace without older pages, got op=%s hasMore=%v cursor=%#v", oldest.Op, oldest.HasMore, oldest.Boundary.Cursor)
+	}
+	if oldest.Boundary.FirstLineID != 1 || oldest.Boundary.LastLineID != 2 {
+		t.Fatalf("backend oldest boundary must describe visible head page, got %#v", oldest.Boundary)
+	}
+}
+
 func TestR333InMemoryStoreOlderPagesFrozenProjectionWithoutDuplicates(t *testing.T) {
 	store := NewInMemoryHistoryStore("term-1")
 	var batches [][]HistoryMutation

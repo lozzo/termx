@@ -651,8 +651,10 @@ func (terminal *Terminal) HistoryWindow(req history.HistoryWindowRequest) (histo
 	switch req.Mode {
 	case "", history.HistoryWindowModeLatest:
 		return terminal.historyStore.LatestWindow(req)
-	case history.HistoryWindowModeOlder, history.HistoryWindowModeOldest:
+	case history.HistoryWindowModeOlder:
 		return terminal.historyStore.OlderWindow(req)
+	case history.HistoryWindowModeOldest:
+		return terminal.historyStore.OldestWindow(req)
 	case history.HistoryWindowModeNewer:
 		return terminal.historyStore.NewerWindow(req)
 	default:
