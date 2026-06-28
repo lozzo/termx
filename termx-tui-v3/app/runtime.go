@@ -400,7 +400,6 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 			}
 			continue
 		}
-		msg = runtime.prepareRenderPressureMessage(msg)
 		next, effects := runtime.reduce(runtime.state, msg)
 		runtime.state = next
 		runtime.observeRuntimeMessage(msg, effects)
@@ -478,41 +477,6 @@ func (runtime *AppRuntime) prepareRuntimeMessage(msg Msg) bool {
 	default:
 		return true
 	}
-}
-
-func (runtime *AppRuntime) prepareRenderPressureMessage(msg Msg) Msg {
-	surface, ok := msg.(LiveSurfaceMsg)
-	if !ok || surface.Superseded || surface.Err != nil || surface.LifecycleKnown || !ordinaryLiveSnapshot(surface.Snapshot) {
-		return msg
-	}
-	if !runtime.liveSurfaceHasQueuedOrDirtySuccessor(surface.Snapshot.TerminalID) {
-		return msg
-	}
-	// 中文说明：压力输出时由事件积压和 refresh 背压决定是否丢中间帧；
-	// 这里只跳过已被后续 ordinary surface 取代的渲染，不按固定帧率限速。
-	surface.Superseded = true
-	return surface
-}
-
-func (runtime *AppRuntime) liveSurfaceHasQueuedOrDirtySuccessor(terminalID string) bool {
-	if terminalID == "" {
-		return false
-	}
-	if refresh, ok := runtime.state.Surface.Refreshes[terminalID]; ok && refresh.Dirty {
-		return true
-	}
-	runtime.mu.Lock()
-	defer runtime.mu.Unlock()
-	for _, queued := range runtime.queue {
-		if liveQueueBoundary(queued) {
-			return false
-		}
-		update, ok := queuedOrdinaryLiveUpdate(queued)
-		if ok && update.terminalID == terminalID {
-			return true
-		}
-	}
-	return false
 }
 
 func (runtime *AppRuntime) ingestHostInitialSize() {
@@ -699,9 +663,6 @@ func (runtime *AppRuntime) coalesceQueuedLiveUpdate(msg Msg) bool {
 		if !ok || existing.terminalID != incoming.terminalID {
 			continue
 		}
-		if liveRevisionNewer(existing.revision, incoming.revision) {
-			return true
-		}
 		runtime.removeAtLocked(i)
 		runtime.queue = append(runtime.queue, msg)
 		return true
@@ -769,42 +730,23 @@ func (runtime *AppRuntime) replaceQueuedWorkbenchStoragePersistLocked(msg Workbe
 
 type queuedLiveUpdate struct {
 	terminalID string
-	revision   uint64
 }
 
 func queuedOrdinaryLiveUpdate(msg Msg) (queuedLiveUpdate, bool) {
 	switch msg := msg.(type) {
-	case LiveSurfaceMsg:
-		// 中文说明：core lifecycle 查询结果必须按边界消息处理，不能被普通 live 帧合并丢掉。
-		if msg.Err != nil || msg.LifecycleKnown || !ordinaryLiveSnapshot(msg.Snapshot) {
-			return queuedLiveUpdate{}, false
-		}
-		if msg.Snapshot.TerminalID == "" {
-			return queuedLiveUpdate{}, false
-		}
-		return queuedLiveUpdate{terminalID: msg.Snapshot.TerminalID, revision: msg.Snapshot.Revision}, true
 	case LiveEventMsg:
-		// 中文说明：event stream 里的 lifecycle 变化同样是边界，不进入 latest-only 合并。
+		// 中文说明：runtime 队列只合并 live invalidation wake-up；
+		// native screen fetch result 已经由 reducer-owned LiveRenderRequestState 背压。
 		if ordinaryLiveRefreshEvent(msg.Event) {
 			if msg.Event.TerminalID == "" {
 				return queuedLiveUpdate{}, false
 			}
 			return queuedLiveUpdate{terminalID: msg.Event.TerminalID}, true
 		}
-		if msg.Event.Err != nil || msg.Event.Exited || msg.Event.LifecycleKnown || !msg.Event.Ready || !ordinaryLiveSnapshot(msg.Event.Snapshot) {
-			return queuedLiveUpdate{}, false
-		}
-		terminalID := msg.Event.Snapshot.TerminalID
-		if terminalID == "" {
-			terminalID = msg.Event.TerminalID
-		}
-		if terminalID == "" {
-			return queuedLiveUpdate{}, false
-		}
-		return queuedLiveUpdate{terminalID: terminalID, revision: msg.Event.Snapshot.Revision}, true
 	default:
 		return queuedLiveUpdate{}, false
 	}
+	return queuedLiveUpdate{}, false
 }
 
 func liveQueueBoundary(msg Msg) bool {
@@ -812,25 +754,13 @@ func liveQueueBoundary(msg Msg) bool {
 	case LiveAttachMsg, LiveAttachResultMsg, LiveInputAttachResultMsg, TerminalPoolAttachResultMsg, LiveExitMsg, LiveResizeMsg, LiveResizeResultMsg, HostResizeMsg, QuitMsg:
 		return true
 	case LiveSurfaceMsg:
-		_, ok := queuedOrdinaryLiveUpdate(msg)
-		return !ok
+		return true
 	case LiveEventMsg:
 		_, ok := queuedOrdinaryLiveUpdate(msg)
 		return !ok
 	default:
 		return false
 	}
-}
-
-func ordinaryLiveSnapshot(snapshot state.LiveSurfaceSnapshot) bool {
-	if snapshot.Err != "" || snapshot.ExitCode != 0 || snapshot.ExitReason != "" {
-		return false
-	}
-	return snapshot.State == "" || snapshot.State == state.TerminalLiveAttached
-}
-
-func liveRevisionNewer(existing uint64, incoming uint64) bool {
-	return existing != 0 && incoming != 0 && existing > incoming
 }
 
 func firstOrdinaryLiveUpdateIndex(queue []Msg) int {
@@ -990,6 +920,18 @@ func (runtime *AppRuntime) renderFrame() {
 	runtime.firstFrameWritten = true
 	runtime.rememberCopyHistoryPatchFrame(frame)
 	runtime.observeRuntimeFrame(frame)
+	if runtime.liveRenderHasPendingDirtyRequest() {
+		runtime.enqueue(LiveFrameRenderedMsg{})
+	}
+}
+
+func (runtime *AppRuntime) liveRenderHasPendingDirtyRequest() bool {
+	for _, request := range runtime.state.Surface.RenderRequests {
+		if !request.InFlight && (request.Dirty || request.WantedRevision > request.CurrentRevision) {
+			return true
+		}
+	}
+	return false
 }
 
 func frameApproxBytes(frame render.Frame) int {

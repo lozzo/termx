@@ -119,12 +119,24 @@ type TerminalService interface {
 	Resize(context.Context, TerminalResizeRequest) (TerminalResizeResult, error)
 }
 
-type TerminalSurfaceService interface {
+// NativeScreenSource 是 TUI live render loop 拉取 core latest native screen 的唯一接口。
+// 它不返回 history token、scrollback 或 lifecycle truth；调用方只能把结果用于当前实时显示。
+type NativeScreenSource interface {
 	LiveSurface(context.Context, TerminalSurfaceRequest) (TerminalSurfaceResult, error)
 }
 
-type TerminalLiveEventService interface {
+// LiveInvalidationSource 只提供 live screen 失效唤醒事件。
+// 事件可以合并；它不是 frame delivery，也不保证中间 revision 可补取。
+type LiveInvalidationSource interface {
 	LiveEvents(context.Context, TerminalLiveEventRequest) (<-chan TerminalLiveEvent, error)
+}
+
+type TerminalSurfaceService interface {
+	NativeScreenSource
+}
+
+type TerminalLiveEventService interface {
+	LiveInvalidationSource
 }
 
 type TerminalPoolItem struct {

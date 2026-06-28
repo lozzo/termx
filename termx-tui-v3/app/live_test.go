@@ -1092,7 +1092,7 @@ func TestLiveEventRefreshRequestsLatestSurfaceAfterEventLoopCoalescing(t *testin
 	}
 }
 
-func TestLiveEventRefreshBackpressureSchedulesOneFetchUntilSurfaceReturns(t *testing.T) {
+func TestLiveEventRefreshBackpressureWaitsForRenderedFrameBeforeFollowUpFetch(t *testing.T) {
 	terminal := &services.FakeTerminalService{SurfaceResult: services.TerminalSurfaceResult{
 		Ready:    true,
 		Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Lines: []string{"latest"}},
@@ -1108,16 +1108,24 @@ func TestLiveEventRefreshBackpressureSchedulesOneFetchUntilSurfaceReturns(t *tes
 	if len(effects) != 0 {
 		t.Fatalf("second refresh while in-flight should only mark dirty, got %#v", effects)
 	}
-	if refresh := root.Surface.Refreshes["term-1"]; !refresh.InFlight || !refresh.Dirty {
-		t.Fatalf("expected in-flight dirty refresh state, got %#v", refresh)
+	if request := root.Surface.RenderRequests["term-1"]; !request.InFlight || !request.Dirty {
+		t.Fatalf("expected in-flight dirty render request state, got %#v", request)
 	}
 
 	root, effects = reducer(root, LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Lines: []string{"first"}}, RequestedCols: 80, RequestedRows: 24})
-	if len(effects) != 1 {
-		t.Fatalf("dirty refresh should schedule one follow-up fetch after surface returns, got %#v", effects)
+	if len(effects) != 0 {
+		t.Fatalf("surface return must not schedule follow-up until a frame is rendered, got %#v", effects)
 	}
-	if refresh := root.Surface.Refreshes["term-1"]; !refresh.InFlight || refresh.Dirty {
-		t.Fatalf("follow-up fetch should be in-flight and clean, got %#v", refresh)
+	if request := root.Surface.RenderRequests["term-1"]; request.InFlight || !request.Dirty {
+		t.Fatalf("dirty request should wait for render completion, got %#v", request)
+	}
+
+	root, effects = reducer(root, LiveFrameRenderedMsg{})
+	if len(effects) != 1 {
+		t.Fatalf("frame render should schedule one follow-up fetch, got %#v", effects)
+	}
+	if request := root.Surface.RenderRequests["term-1"]; !request.InFlight || request.Dirty {
+		t.Fatalf("follow-up fetch should be in-flight and clean, got %#v", request)
 	}
 	msg := effects[0].(FuncEffect).Run(context.Background())
 	surface, ok := msg.(LiveSurfaceMsg)

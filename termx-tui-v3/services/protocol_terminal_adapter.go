@@ -441,22 +441,8 @@ func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.
 		}
 		out.Command = append([]string(nil), info.Command...)
 		out.Reason = "exited"
-	}
-	surface, err := adapter.LiveSurface(ctx, TerminalSurfaceRequest{TerminalID: out.TerminalID, Cols: req.Cols, Rows: req.Rows})
-	if err != nil {
-		out.Err = err
 		return out
 	}
-	out.Snapshot = surface.Snapshot
-	out.LifecycleKnown = surface.LifecycleKnown
-	if out.Exited {
-		out.Snapshot.State = state.TerminalLiveExited
-		out.Snapshot.ExitCode = out.ExitCode
-		out.Snapshot.ExitReason = out.Reason
-		out.Snapshot.ExitedAt = out.ExitedAt
-		out.Snapshot.Command = append([]string(nil), out.Command...)
-	}
-	out.Ready = surface.Ready
 	return out
 }
 

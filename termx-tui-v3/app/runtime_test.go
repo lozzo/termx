@@ -76,40 +76,26 @@ func TestAppRuntimeDequeClearsProcessedMessageReferences(t *testing.T) {
 	}
 }
 
-func TestAppRuntimeCoalescedLiveUpdateClearsStalePayloadReference(t *testing.T) {
+func TestAppRuntimeCoalescedLiveInvalidationClearsStalePayloadReference(t *testing.T) {
 	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
-	largeLine := strings.Repeat("x", 1024)
-	runtime.enqueue(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
-		TerminalID: "term-1",
-		Revision:   1,
-		Lines:      []string{largeLine},
-		State:      state.TerminalLiveAttached,
-	}})
-	runtime.enqueue(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
-		TerminalID: "term-1",
-		Revision:   2,
-		Lines:      []string{"latest"},
-		State:      state.TerminalLiveAttached,
-	}})
+	runtime.queue = make([]Msg, 0, 2)
+	runtime.enqueue(LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
+	runtime.enqueue(LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
 
 	if len(runtime.queue) != 1 {
-		t.Fatalf("live updates should coalesce to one message, queue=%#v", runtime.queue)
+		t.Fatalf("live invalidations should coalesce to one message, queue=%#v", runtime.queue)
 	}
 	retained := runtime.queue[:cap(runtime.queue)]
 	for i := len(runtime.queue); i < len(retained); i++ {
 		if retained[i] != nil {
-			t.Fatalf("coalesced live update kept stale queue slot %d: %#v", i, retained[i])
+			t.Fatalf("coalesced live invalidation kept stale queue slot %d: %#v", i, retained[i])
 		}
 	}
 }
 
 func TestAppRuntimePrioritizesInputBeforeQueuedOrdinaryLiveUpdate(t *testing.T) {
 	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
-	runtime.enqueue(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
-		TerminalID: "term-1",
-		Revision:   1,
-		State:      state.TerminalLiveAttached,
-	}})
+	runtime.enqueue(LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
 	runtime.enqueue(InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}})
 
 	msg, ok := runtime.dequeue()
@@ -473,7 +459,7 @@ func TestAppRuntimeRendersBoundedBatchBeforeQueueBecomesEmpty(t *testing.T) {
 	}
 }
 
-func TestAppRuntimeCoalescesQueuedLiveSurfaceUpdatesByTerminalID(t *testing.T) {
+func TestAppRuntimeDoesNotCoalesceNativeScreenFetchResults(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	var revisions []uint64
 	var lines []string
@@ -510,18 +496,18 @@ func TestAppRuntimeCoalescesQueuedLiveSurfaceUpdatesByTerminalID(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 
-	if !reflect.DeepEqual(revisions, []uint64{3}) {
-		t.Fatalf("expected only latest queued revision, got %v", revisions)
+	if !reflect.DeepEqual(revisions, []uint64{1, 2, 3}) {
+		t.Fatalf("native screen fetch results must stay ordered, got %v", revisions)
 	}
-	if !reflect.DeepEqual(lines, []string{"three"}) {
-		t.Fatalf("expected latest queued surface payload, got %v", lines)
+	if !reflect.DeepEqual(lines, []string{"one", "two", "three"}) {
+		t.Fatalf("native screen fetch payloads must stay ordered, got %v", lines)
 	}
-	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"frame-1"}) {
-		t.Fatalf("coalesced live updates should render once, got %v", got)
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"frame-3"}) {
+		t.Fatalf("message burst should still render once after ordered fetch results, got %v", got)
 	}
 }
 
-func TestAppRuntimeCoalescedLiveSurfaceKeepsLatestQueuePosition(t *testing.T) {
+func TestAppRuntimeKeepsNativeScreenFetchResultQueuePosition(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	var seen []string
 	runtime := NewAppRuntime(
@@ -555,12 +541,12 @@ func TestAppRuntimeCoalescedLiveSurfaceKeepsLatestQueuePosition(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 
-	if want := []string{"ordinary", "surface:2"}; !reflect.DeepEqual(seen, want) {
-		t.Fatalf("coalesced latest live frame must keep its latest queue position, got %v want %v", seen, want)
+	if want := []string{"surface:1", "ordinary", "surface:2"}; !reflect.DeepEqual(seen, want) {
+		t.Fatalf("native screen fetch result order changed, got %v want %v", seen, want)
 	}
 }
 
-func TestAppRuntimeDropsOlderQueuedLiveSurfaceRevision(t *testing.T) {
+func TestAppRuntimeDoesNotDropOlderNativeScreenFetchResult(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	var revisions []uint64
 	runtime := NewAppRuntime(
@@ -588,12 +574,12 @@ func TestAppRuntimeDropsOlderQueuedLiveSurfaceRevision(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 
-	if !reflect.DeepEqual(revisions, []uint64{3}) {
-		t.Fatalf("older revision must not replace queued latest revision, got %v", revisions)
+	if !reflect.DeepEqual(revisions, []uint64{3, 2}) {
+		t.Fatalf("runtime queue must not decide native screen staleness, got %v", revisions)
 	}
 }
 
-func TestAppRuntimeCoalescesQueuedLiveEventsByTerminalID(t *testing.T) {
+func TestAppRuntimeDoesNotCoalesceReadyLiveEventsByTerminalID(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	var revisions []uint64
 	runtime := NewAppRuntime(
@@ -624,8 +610,8 @@ func TestAppRuntimeCoalescesQueuedLiveEventsByTerminalID(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 
-	if !reflect.DeepEqual(revisions, []uint64{3}) {
-		t.Fatalf("expected only latest queued live event revision, got %v", revisions)
+	if !reflect.DeepEqual(revisions, []uint64{1, 2, 3}) {
+		t.Fatalf("ready live events are semantic boundaries and must stay ordered, got %v", revisions)
 	}
 }
 
@@ -666,7 +652,7 @@ func TestAppRuntimeCoalescesQueuedLiveRefreshEventsByTerminalID(t *testing.T) {
 	}
 }
 
-func TestAppRuntimeSkipsSupersededLiveSurfaceWhileDirtyRefreshIsPending(t *testing.T) {
+func TestAppRuntimeSchedulesDirtyLiveFetchAfterFrameIsWritten(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	reducer := NewLiveReducer(LiveDeps{Terminal: &services.FakeTerminalService{
 		SurfaceResult: services.TerminalSurfaceResult{
@@ -681,8 +667,8 @@ func TestAppRuntimeSkipsSupersededLiveSurfaceWhileDirtyRefreshIsPending(t *testi
 	runtime := NewAppRuntime(
 		state.Root{Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-1",
-			Refreshes: map[string]state.LiveSurfaceRefreshState{
-				"term-1": {InFlight: true, Dirty: true, Cols: 80, Rows: 24},
+			RenderRequests: map[string]state.LiveRenderRequestState{
+				"term-1": {InFlight: true, Dirty: true, WantedRevision: 3, Cols: 80, Rows: 24},
 			},
 		}},
 		reducer,
@@ -704,15 +690,15 @@ func TestAppRuntimeSkipsSupersededLiveSurfaceWhileDirtyRefreshIsPending(t *testi
 		t.Fatalf("drain: %v", err)
 	}
 
-	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"latest"}) {
-		t.Fatalf("dirty successor should suppress middle live frame and render latest only, got %v", got)
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"middle", "latest"}) {
+		t.Fatalf("render loop should draw accepted frame then pull latest after frame completion, got %v", got)
 	}
 	if runtime.State().Surface.Revision != 3 {
 		t.Fatalf("latest surface should win, got %#v", runtime.State().Surface)
 	}
 }
 
-func TestAppRuntimeOrdinaryRefreshSurfaceDoesNotBlockLatestOnlySkipping(t *testing.T) {
+func TestAppRuntimeDirtyLiveFetchIgnoresServiceLifecycleFlagFromOrdinaryRefresh(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	reducer := NewLiveReducer(LiveDeps{Terminal: &services.FakeTerminalService{
 		SurfaceResult: services.TerminalSurfaceResult{
@@ -728,8 +714,8 @@ func TestAppRuntimeOrdinaryRefreshSurfaceDoesNotBlockLatestOnlySkipping(t *testi
 	runtime := NewAppRuntime(
 		state.Root{Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-1",
-			Refreshes: map[string]state.LiveSurfaceRefreshState{
-				"term-1": {InFlight: true, Dirty: true, Cols: 80, Rows: 24},
+			RenderRequests: map[string]state.LiveRenderRequestState{
+				"term-1": {InFlight: true, Dirty: true, WantedRevision: 3, Cols: 80, Rows: 24},
 			},
 		}},
 		reducer,
@@ -751,8 +737,11 @@ func TestAppRuntimeOrdinaryRefreshSurfaceDoesNotBlockLatestOnlySkipping(t *testi
 		t.Fatalf("drain: %v", err)
 	}
 
-	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"latest"}) {
-		t.Fatalf("ordinary refresh surface must stay latest-only under dirty successor, got %v", got)
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"middle", "latest"}) {
+		t.Fatalf("ordinary refresh surface should render, then frame completion should pull latest, got %v", got)
+	}
+	if runtime.State().Surface.State == state.TerminalLiveExited {
+		t.Fatalf("ordinary refresh fetch must not become lifecycle boundary, got %#v", runtime.State().Surface)
 	}
 }
 
@@ -761,13 +750,16 @@ func TestAppRuntimeDoesNotSkipLifecycleLiveSurfaceUnderPressure(t *testing.T) {
 	runtime := NewAppRuntime(
 		state.Root{Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-1",
-			Refreshes: map[string]state.LiveSurfaceRefreshState{
-				"term-1": {InFlight: true, Dirty: true, Cols: 80, Rows: 24},
+			RenderRequests: map[string]state.LiveRenderRequestState{
+				"term-1": {InFlight: true, Dirty: true, WantedRevision: 3, Cols: 80, Rows: 24},
 			},
 		}},
 		func(root state.Root, msg Msg) (state.Root, []Effect) {
 			surface, ok := msg.(LiveSurfaceMsg)
 			if !ok {
+				if _, ok := msg.(LiveFrameRenderedMsg); ok {
+					return root, nil
+				}
 				t.Fatalf("expected LiveSurfaceMsg, got %T", msg)
 			}
 			root.Surface = root.Surface.ApplySnapshotWithLifecycle(surface.Snapshot, surface.LifecycleKnown)

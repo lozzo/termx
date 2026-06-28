@@ -1739,10 +1739,6 @@ func TestProtocolTerminalServiceAdapterMapsExitedEventMetadata(t *testing.T) {
 			ExitCode: &exitCode,
 			ExitedAt: exitedAt,
 		}}},
-		liveScreenResult: &protocol.NativeScreenSnapshot{
-			TerminalID: "term-1",
-			Size:       protocol.Size{Cols: 80, Rows: 24},
-		},
 	}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
 	events, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
@@ -1756,8 +1752,11 @@ func TestProtocolTerminalServiceAdapterMapsExitedEventMetadata(t *testing.T) {
 	}}
 
 	got := <-events
-	if !got.Exited || got.ExitCode != 23 || !got.ExitedAt.Equal(exitedAt) || strings.Join(got.Command, " ") != "bash -lc make test" || got.Snapshot.State != state.TerminalLiveExited {
+	if !got.Exited || got.ExitCode != 23 || !got.ExitedAt.Equal(exitedAt) || strings.Join(got.Command, " ") != "bash -lc make test" || got.Ready || got.Snapshot.State != "" {
 		t.Fatalf("expected exited metadata event, got %#v", got)
+	}
+	if client.listCalls != 1 || len(client.liveScreenIDs) != 0 {
+		t.Fatalf("exited lifecycle event must not fetch live screen, lists=%d live_screens=%#v", client.listCalls, client.liveScreenIDs)
 	}
 }
 

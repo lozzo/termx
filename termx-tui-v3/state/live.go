@@ -31,7 +31,7 @@ type TerminalSurfaceStore struct {
 	Err            string
 	ResizeBoundary LiveResizeBoundary
 	Surfaces       map[string]LiveSurfaceSnapshot
-	Refreshes      map[string]LiveSurfaceRefreshState
+	RenderRequests map[string]LiveRenderRequestState
 }
 
 // LiveResizeBoundary 是一次 content rect resize 后等待匹配 surface 的基线。
@@ -43,12 +43,24 @@ type LiveResizeBoundary struct {
 	Rows         int
 }
 
-// LiveSurfaceRefreshState 是 TUI 对 live snapshot 拉取的背压状态，不是 core truth。
-type LiveSurfaceRefreshState struct {
-	InFlight bool
-	Dirty    bool
-	Cols     int
-	Rows     int
+// LiveRenderRequestState 是 TUI render loop 对某个 terminal 的 latest native screen 请求状态。
+// 它只归当前 TUI 客户端所有：core 不知道该状态，history/copy 也不能读取它作为 truth。
+type LiveRenderRequestState struct {
+	WantedRevision   uint64
+	CurrentRevision  uint64
+	InFlight         bool
+	InFlightRevision uint64
+	Dirty            bool
+	Cols             int
+	Rows             int
+}
+
+// LiveRenderFetchRequest 是 reducer 决定要异步拉取 core latest native screen 的请求。
+// 它只携带 terminal identity 和当前 view size，不携带历史 token 或 frame payload。
+type LiveRenderFetchRequest struct {
+	TerminalID string
+	Cols       int
+	Rows       int
 }
 
 // LiveCursor 是 live surface 的 content-local 光标状态。
@@ -146,15 +158,16 @@ func (store TerminalSurfaceStore) ApplySnapshotWithLifecycle(snapshot LiveSurfac
 	if snapshot.TerminalID == "" {
 		return store
 	}
-	store = store.FinishRefresh(snapshot.TerminalID)
 	if snapshot.State == "" {
 		snapshot.State = TerminalLiveAttached
 	}
 	if store.resizeBoundaryRejects(snapshot) {
+		store = store.finishLiveRenderFetch(snapshot.TerminalID, snapshot.Revision, false)
 		return store
 	}
 	if current, ok := store.snapshotForTerminal(snapshot.TerminalID); ok {
 		if shouldRejectLiveSnapshotWithLifecycle(current, snapshot, lifecycleKnown) {
+			store = store.finishLiveRenderFetch(snapshot.TerminalID, snapshot.Revision, false)
 			return store
 		}
 		if snapshot.Revision == 0 {
@@ -165,6 +178,7 @@ func (store TerminalSurfaceStore) ApplySnapshotWithLifecycle(snapshot LiveSurfac
 	snapshot.Screen = cloneLiveCellRows(snapshot.Screen)
 	store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
 	store.Surfaces[snapshot.TerminalID] = snapshot
+	store = store.finishLiveRenderFetch(snapshot.TerminalID, snapshot.Revision, true)
 	if store.TerminalID == "" || store.TerminalID == snapshot.TerminalID {
 		store = store.projectSnapshot(snapshot, true)
 		if store.ResizeBoundary.Active && snapshot.Cols == store.ResizeBoundary.Cols && snapshot.Rows == store.ResizeBoundary.Rows {
@@ -415,9 +429,9 @@ func (store TerminalSurfaceStore) RemoveTerminal(terminalID string) TerminalSurf
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
 		delete(store.Surfaces, terminalID)
 	}
-	if len(store.Refreshes) > 0 {
-		store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
-		delete(store.Refreshes, terminalID)
+	if len(store.RenderRequests) > 0 {
+		store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
+		delete(store.RenderRequests, terminalID)
 	}
 	if store.TerminalID != terminalID {
 		return store
@@ -442,7 +456,7 @@ func (store TerminalSurfaceStore) RemoveTerminal(terminalID string) TerminalSurf
 	return store
 }
 
-func (store TerminalSurfaceStore) RequestRefresh(terminalID string, cols int, rows int) (TerminalSurfaceStore, bool) {
+func (store TerminalSurfaceStore) RequestLiveRender(terminalID string, revision uint64, cols int, rows int) (TerminalSurfaceStore, bool) {
 	if terminalID == "" {
 		return store, false
 	}
@@ -452,53 +466,98 @@ func (store TerminalSurfaceStore) RequestRefresh(terminalID string, cols int, ro
 	if rows <= 0 {
 		rows = 24
 	}
-	refresh := store.Refreshes[terminalID]
-	refresh.Cols = cols
-	refresh.Rows = rows
-	if refresh.InFlight {
-		refresh.Dirty = true
-		store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
-		store.Refreshes[terminalID] = refresh
+	request := store.RenderRequests[terminalID]
+	if revision > request.WantedRevision {
+		request.WantedRevision = revision
+	}
+	if request.CurrentRevision == 0 {
+		if snapshot, ok := store.snapshotForTerminal(terminalID); ok {
+			request.CurrentRevision = snapshot.Revision
+		}
+	}
+	request.Cols = cols
+	request.Rows = rows
+	if request.InFlight {
+		request.Dirty = true
+		store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
+		store.RenderRequests[terminalID] = request
 		return store, false
 	}
-	refresh.InFlight = true
-	refresh.Dirty = false
-	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
-	store.Refreshes[terminalID] = refresh
+	request.InFlight = true
+	request.InFlightRevision = request.WantedRevision
+	request.Dirty = false
+	store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
+	store.RenderRequests[terminalID] = request
 	return store, true
 }
 
-func (store TerminalSurfaceStore) FinishRefresh(terminalID string) TerminalSurfaceStore {
+func (store TerminalSurfaceStore) FailLiveRenderFetch(terminalID string) TerminalSurfaceStore {
 	if terminalID == "" {
 		return store
 	}
-	refresh, ok := store.Refreshes[terminalID]
+	request, ok := store.RenderRequests[terminalID]
 	if !ok {
 		return store
 	}
-	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
-	if refresh.Dirty {
-		refresh.InFlight = false
-		refresh.Dirty = false
-		store.Refreshes[terminalID] = refresh
+	request.InFlight = false
+	request.InFlightRevision = 0
+	store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
+	if request.Dirty || request.WantedRevision > request.CurrentRevision {
+		request.Dirty = true
+		store.RenderRequests[terminalID] = request
 		return store
 	}
-	delete(store.Refreshes, terminalID)
+	delete(store.RenderRequests, terminalID)
 	return store
 }
 
-func (store TerminalSurfaceStore) ConsumeDirtyRefresh(terminalID string) (TerminalSurfaceStore, int, int, bool) {
+func (store TerminalSurfaceStore) LiveFrameRendered() (TerminalSurfaceStore, []LiveRenderFetchRequest) {
+	if len(store.RenderRequests) == 0 {
+		return store, nil
+	}
+	store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
+	requests := make([]LiveRenderFetchRequest, 0, len(store.RenderRequests))
+	for terminalID, request := range store.RenderRequests {
+		if terminalID == "" || request.InFlight || (!request.Dirty && request.WantedRevision <= request.CurrentRevision) {
+			continue
+		}
+		request.InFlight = true
+		request.InFlightRevision = request.WantedRevision
+		request.Dirty = false
+		if request.Cols <= 0 {
+			request.Cols = 80
+		}
+		if request.Rows <= 0 {
+			request.Rows = 24
+		}
+		store.RenderRequests[terminalID] = request
+		requests = append(requests, LiveRenderFetchRequest{TerminalID: terminalID, Cols: request.Cols, Rows: request.Rows})
+	}
+	return store, requests
+}
+
+func (store TerminalSurfaceStore) finishLiveRenderFetch(terminalID string, revision uint64, accepted bool) TerminalSurfaceStore {
 	if terminalID == "" {
-		return store, 0, 0, false
+		return store
 	}
-	refresh, ok := store.Refreshes[terminalID]
-	if !ok || refresh.InFlight || refresh.Dirty {
-		return store, 0, 0, false
+	request, ok := store.RenderRequests[terminalID]
+	if !ok {
+		return store
 	}
-	refresh.InFlight = true
-	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
-	store.Refreshes[terminalID] = refresh
-	return store, refresh.Cols, refresh.Rows, true
+	request.InFlight = false
+	request.InFlightRevision = 0
+	if accepted && revision > request.CurrentRevision {
+		request.CurrentRevision = revision
+	}
+	if !accepted || request.Dirty || request.WantedRevision > request.CurrentRevision {
+		request.Dirty = true
+		store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
+		store.RenderRequests[terminalID] = request
+		return store
+	}
+	store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
+	delete(store.RenderRequests, terminalID)
+	return store
 }
 
 func (store TerminalSessionStore) RemoveTerminal(terminalID string) TerminalSessionStore {
@@ -819,8 +878,8 @@ func cloneLiveSurfaceSnapshots(values map[string]LiveSurfaceSnapshot) map[string
 	return cloned
 }
 
-func cloneLiveSurfaceRefreshStates(values map[string]LiveSurfaceRefreshState) map[string]LiveSurfaceRefreshState {
-	cloned := make(map[string]LiveSurfaceRefreshState, len(values)+1)
+func cloneLiveRenderRequestStates(values map[string]LiveRenderRequestState) map[string]LiveRenderRequestState {
+	cloned := make(map[string]LiveRenderRequestState, len(values)+1)
 	for key, value := range values {
 		cloned[key] = value
 	}
