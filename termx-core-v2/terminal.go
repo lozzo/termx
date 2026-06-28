@@ -24,11 +24,15 @@ type Terminal struct {
 	historyMu       sync.Mutex
 	historyRenderer history.HistoryLogicalRenderer
 	historyStore    history.HistoryStore
-	historyEnabled  bool
-	queueMu         sync.Mutex
-	liveQ           *terminalLiveIngestQueue
-	events          *eventBroker
-	update          func(TerminalInfo)
+	historySemantic *vterm.SemanticSource
+	// 中文说明：history semantic worker 只在 vterm parser transaction 边界上保留
+	// 未完成的 private CSI；它不是 raw history parser，也不生成 history truth。
+	historySemanticPending string
+	historyEnabled         bool
+	queueMu                sync.Mutex
+	historyQ               *terminalHistoryIngestQueue
+	events                 *eventBroker
+	update                 func(TerminalInfo)
 }
 
 func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyStore history.HistoryStore, historyEnabled bool) *Terminal {
@@ -43,6 +47,7 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 	}
 	if historyEnabled {
 		terminal.historyRenderer = history.NewHistoryLogicalRenderer(nil, nil)
+		terminal.historySemantic = vterm.NewSemanticSource(size.Cols, size.Rows, 0, nil)
 		if historyStore == nil {
 			historyStore = history.NewInMemoryHistoryStore(info.ID)
 		}
@@ -99,6 +104,10 @@ func (terminal *Terminal) handleLiveSurfaceResponse(data []byte) {
 	_ = process.Input(data)
 }
 
+// IngestOutput 是测试和诊断入口，用一段 PTY 输出同步推进 terminal。
+// 它会立即更新 native live screen，并在 history enabled 时同步喂给 history semantic
+// source；真实 PTY 热路径使用 watchOutput 中的 live/history worker 分离，不能用本方法
+// 的同步行为推断生产背压模型。
 func (terminal *Terminal) IngestOutput(output string) error {
 	rawOutput := output
 	terminal.mu.Lock()
@@ -111,19 +120,12 @@ func (terminal *Terminal) IngestOutput(output string) error {
 	terminal.mu.Unlock()
 
 	terminal.liveMu.Lock()
-	var result live.SurfaceWriteResult
-	if terminal.historyEnabled {
-		result = surface.WriteWithResult(rawOutput)
-	} else {
-		// 中文说明：history disabled 是明确的 live-only 模式；这里不生成
-		// semantic evidence 或 frame clone，避免无限历史拖慢 native screen。
-		surface.WriteNativeScreen(rawOutput)
-	}
+	surface.Write(rawOutput)
 	terminal.bumpLiveRevisionLocked()
 	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
 	if terminal.historyEnabled {
-		terminal.applyHistoryWriteResult(result)
+		terminal.ingestHistoryOutputBatch([]string{output})
 	}
 
 	terminal.publishLiveInvalidated(info.ID, liveRevision)
@@ -138,6 +140,75 @@ func normalizeTerminalOutput(output string) string {
 	return output
 }
 
+// splitTerminalHistorySemanticWrites 把 PTY text 按 private CSI mode 边界拆成
+// vterm semantic transaction 输入片段。它只恢复 begin/payload/end 这类 parser
+// transaction 边界，不解释 history，不识别程序名，也不从 raw bytes 直接生成 logical line。
+func splitTerminalHistorySemanticWrites(pending *string, text string) []string {
+	if text == "" && (pending == nil || *pending == "") {
+		return nil
+	}
+	if pending != nil && *pending != "" {
+		text = *pending + text
+		*pending = ""
+	}
+	var writes []string
+	var raw strings.Builder
+	for text != "" {
+		idx := strings.Index(text, "\x1b[?")
+		if idx < 0 {
+			raw.WriteString(text)
+			break
+		}
+		if idx > 0 {
+			raw.WriteString(text[:idx])
+			text = text[idx:]
+			continue
+		}
+		consumed, complete := consumeTerminalHistoryPrivateCSI(text)
+		if !complete {
+			if raw.Len() > 0 {
+				writes = append(writes, raw.String())
+				raw.Reset()
+			}
+			if pending != nil {
+				*pending = text
+			}
+			return writes
+		}
+		if consumed <= 0 {
+			raw.WriteString(text[:1])
+			text = text[1:]
+			continue
+		}
+		if raw.Len() > 0 {
+			writes = append(writes, raw.String())
+			raw.Reset()
+		}
+		writes = append(writes, text[:consumed])
+		text = text[consumed:]
+	}
+	if raw.Len() > 0 {
+		writes = append(writes, raw.String())
+	}
+	return writes
+}
+
+func consumeTerminalHistoryPrivateCSI(input string) (int, bool) {
+	if !strings.HasPrefix(input, "\x1b[?") {
+		return 0, true
+	}
+	for i := 3; i < len(input); i++ {
+		b := input[i]
+		if b >= 0x40 && b <= 0x7e {
+			return i + 1, true
+		}
+	}
+	return 0, false
+}
+
+// Resize 调整 terminal PTY 和 core native live screen 的尺寸。
+// live resize 只更新当前屏；history resize 通过独立 semantic source 发送 non-history
+// boundary，不能由 resized snapshot 生成或重写 authoritative history。
 func (terminal *Terminal) Resize(size Size) error {
 	if !size.Valid() {
 		return ErrInvalidServerSize
@@ -163,12 +234,12 @@ func (terminal *Terminal) Resize(size Size) error {
 	terminal.mu.Unlock()
 
 	terminal.liveMu.Lock()
-	tx := terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
+	terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
 	terminal.bumpLiveRevisionLocked()
 	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
 	if terminal.historyEnabled {
-		terminal.applyHistoryResizeTransaction(tx)
+		terminal.applyHistoryResize(size)
 	}
 
 	terminal.syncInfo(info)
@@ -233,6 +304,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.mu.Unlock()
 	_ = oldInfo
 	terminal.queueMu.Lock()
+	terminal.historyQ = nil
 	terminal.queueMu.Unlock()
 	terminal.liveMu.Lock()
 	terminal.live.Resize(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)})
@@ -240,6 +312,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.bumpLiveRevisionLocked()
 	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
+	terminal.resetHistorySemantic(info.Size)
 	terminal.syncInfo(info)
 	terminal.watchProcess(process)
 	_ = old.Close()
@@ -325,16 +398,19 @@ func (terminal *Terminal) LiveRevision() LiveRevision {
 	return LiveRevision(terminal.liveRevision)
 }
 
+// FlushHistory 等待当前 terminal 的 history semantic worker 追平已入队输出。
+// 它不等待 live queue，也不关心客户端渲染进度；调用边界是 history.window/freeze/copy
+// 和 lifecycle close，避免读取到尚未应用到 authoritative store 的历史。
 func (terminal *Terminal) FlushHistory(ctx context.Context) error {
 	terminal.queueMu.Lock()
-	liveQueue := terminal.liveQ
+	queue := terminal.historyQ
 	terminal.queueMu.Unlock()
-	if liveQueue != nil {
-		if err := liveQueue.Flush(ctx); err != nil {
-			return err
-		}
+	if queue == nil {
+		return nil
 	}
-	return nil
+	// 中文说明：history/copy/freeze 只等待 authoritative history worker 追平；
+	// live native screen 没有 flush fence，不能因客户端查询反压最新屏链路。
+	return queue.Flush(ctx)
 }
 
 func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {
@@ -399,7 +475,14 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 		return done
 	}
 	liveQueue := newTerminalLiveIngestQueue()
-	terminal.setIngestQueues(process, liveQueue)
+	var historyWorker *terminalHistoryIngestQueue
+	if terminal.historyEnabled {
+		historyWorker = newTerminalHistoryIngestQueue()
+		terminal.setHistoryQueue(process, historyWorker)
+		go historyWorker.Run(func(outputs []string) error {
+			return terminal.ingestProcessHistoryOutputBatch(process, outputs)
+		})
+	}
 	go liveQueue.Run(func(output string) error {
 		return terminal.ingestProcessLiveOutput(process, output)
 	})
@@ -408,7 +491,11 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 		defer func() {
 			liveQueue.Close()
 			liveQueue.Wait()
-			terminal.clearIngestQueues(process, liveQueue)
+			if historyWorker != nil {
+				historyWorker.Close()
+				historyWorker.Wait()
+				terminal.clearHistoryQueue(process, historyWorker)
+			}
 		}()
 		for chunk := range output {
 			if len(chunk) == 0 {
@@ -416,12 +503,15 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 			}
 			text := string(chunk)
 			liveQueue.Enqueue(text)
+			if historyWorker != nil {
+				historyWorker.Enqueue(text)
+			}
 		}
 	}()
 	return done
 }
 
-func (terminal *Terminal) setIngestQueues(process TerminalProcess, liveQueue *terminalLiveIngestQueue) {
+func (terminal *Terminal) setHistoryQueue(process TerminalProcess, queue *terminalHistoryIngestQueue) {
 	terminal.mu.Lock()
 	current := terminal.process == process
 	terminal.mu.Unlock()
@@ -429,11 +519,11 @@ func (terminal *Terminal) setIngestQueues(process TerminalProcess, liveQueue *te
 		return
 	}
 	terminal.queueMu.Lock()
-	terminal.liveQ = liveQueue
+	terminal.historyQ = queue
 	terminal.queueMu.Unlock()
 }
 
-func (terminal *Terminal) clearIngestQueues(process TerminalProcess, liveQueue *terminalLiveIngestQueue) {
+func (terminal *Terminal) clearHistoryQueue(process TerminalProcess, queue *terminalHistoryIngestQueue) {
 	terminal.mu.Lock()
 	current := terminal.process == process
 	terminal.mu.Unlock()
@@ -441,8 +531,8 @@ func (terminal *Terminal) clearIngestQueues(process TerminalProcess, liveQueue *
 		return
 	}
 	terminal.queueMu.Lock()
-	if terminal.liveQ == liveQueue {
-		terminal.liveQ = nil
+	if terminal.historyQ == queue {
+		terminal.historyQ = nil
 	}
 	terminal.queueMu.Unlock()
 }
@@ -475,20 +565,10 @@ func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, outpu
 	terminal.mu.Unlock()
 
 	terminal.liveMu.Lock()
-	var result live.SurfaceWriteResult
-	if terminal.historyEnabled {
-		result = surface.WriteWithResult(output)
-	} else {
-		// 中文说明：live-only 压力路径只更新 core 最新屏幕；history owner
-		// 被显式关闭时，不允许在热路径构造无限历史证据。
-		surface.WriteNativeScreen(output)
-	}
+	surface.Write(output)
 	terminal.bumpLiveRevisionLocked()
 	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
-	if terminal.historyEnabled {
-		terminal.applyHistoryWriteResult(result)
-	}
 
 	terminal.mu.Lock()
 	stillCurrent := terminal.process == process && terminal.info.State != TerminalStateExited && terminal.info.State != TerminalStateRemoved
@@ -529,11 +609,7 @@ func (terminal *Terminal) appendExitMarker(info TerminalInfo) {
 	}
 	text := "\r\n" + strings.Join(lines, "\r\n") + "\r\n"
 	terminal.liveMu.Lock()
-	if terminal.historyEnabled {
-		terminal.live.Write(text)
-	} else {
-		terminal.live.WriteNativeScreen(text)
-	}
+	terminal.live.Write(text)
 	terminal.bumpLiveRevisionLocked()
 	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
@@ -621,28 +697,46 @@ func (terminal *Terminal) HistoryRelease(token history.HistoryToken) error {
 	return terminal.historyStore.Release(token)
 }
 
-func (terminal *Terminal) applyHistoryWriteResult(result live.SurfaceWriteResult) {
+func (terminal *Terminal) ingestProcessHistoryOutputBatch(process TerminalProcess, outputs []string) error {
+	terminal.mu.Lock()
+	if terminal.process != process {
+		terminal.mu.Unlock()
+		return nil
+	}
+	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return ErrTerminalExited
+	}
+	terminal.mu.Unlock()
+	terminal.ingestHistoryOutputBatch(outputs)
+	return nil
+}
+
+func (terminal *Terminal) ingestHistoryOutputBatch(outputs []string) {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
-	if !terminal.historyEnabled || terminal.historyRenderer == nil || terminal.historyStore == nil {
+	if !terminal.historyEnabled || terminal.historyRenderer == nil || terminal.historyStore == nil || terminal.historySemantic == nil {
 		return
 	}
-	for _, segment := range result.Segments {
-		for _, tx := range segment.Transactions {
-			decision := terminal.historyDecisionForTransaction(tx, terminal.historyStore.ReadState())
-			batch, err := terminal.historyRenderer.Apply(tx, decision)
+	for _, output := range outputs {
+		for _, semanticWrite := range splitTerminalHistorySemanticWrites(&terminal.historySemanticPending, output) {
+			tx, err := terminal.historySemantic.ApplyPTYWrite([]byte(semanticWrite))
 			if err != nil {
 				continue
 			}
-			_ = terminal.historyStore.Apply(batch)
+			terminal.applyHistoryTransactionLocked(tx)
 		}
 	}
 }
 
-func (terminal *Terminal) applyHistoryResizeTransaction(tx history.TerminalSemanticTransaction) {
+func (terminal *Terminal) applyHistoryResize(size Size) {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
-	if !terminal.historyEnabled || terminal.historyRenderer == nil || terminal.historyStore == nil {
+	if !terminal.historyEnabled || terminal.historyRenderer == nil || terminal.historyStore == nil || terminal.historySemantic == nil {
+		return
+	}
+	tx, err := terminal.historySemantic.Resize(vterm.TerminalSemanticSize{Cols: int(size.Cols), Rows: int(size.Rows)})
+	if err != nil {
 		return
 	}
 	// 中文说明：resize 只作为 semantic non-history boundary 进入 renderer，不能从
@@ -655,6 +749,28 @@ func (terminal *Terminal) applyHistoryResizeTransaction(tx history.TerminalSeman
 		return
 	}
 	_ = terminal.historyStore.Apply(batch)
+}
+
+func (terminal *Terminal) applyHistoryTransactionLocked(tx history.TerminalSemanticTransaction) {
+	decision := terminal.historyDecisionForTransaction(tx, terminal.historyStore.ReadState())
+	batch, err := terminal.historyRenderer.Apply(tx, decision)
+	if err != nil {
+		return
+	}
+	_ = terminal.historyStore.Apply(batch)
+}
+
+func (terminal *Terminal) resetHistorySemantic(size Size) {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled {
+		return
+	}
+	// 中文说明：restart 是新 PTY process，但不是新 terminal identity。history store
+	// 保留旧逻辑行；terminal semantic decoder 必须重建，避免旧程序 mode/pending CSI
+	// 污染新进程后续输出。
+	terminal.historySemantic = vterm.NewSemanticSource(int(size.Cols), int(size.Rows), 0, nil)
+	terminal.historySemanticPending = ""
 }
 
 func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {

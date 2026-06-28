@@ -81,7 +81,7 @@ func TestTerminalLiveIngestQueueDropsConsumedPayloadReferences(t *testing.T) {
 		t.Fatalf("expected first capped batch, got batch=%d ok=%v", len(first), ok)
 	}
 	retained := queue.pending[:cap(queue.pending)]
-	if len(queue.pending) != 1 || retained[1].text != "" {
+	if len(queue.pending) != 1 || retained[1] != "" {
 		t.Fatalf("consumed live payload should not remain in backing array, len=%d retained=%#v", len(queue.pending), retained)
 	}
 

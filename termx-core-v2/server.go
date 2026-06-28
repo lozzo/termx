@@ -518,9 +518,14 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, rende
 // projection。调用边界包括 protocol history.window 和 domain harness；实现只能读取
 // core history store，不能 fallback 到 live rows 或 snapshot。
 func (server *Server) TerminalHistoryWindow(ctx context.Context, id string, req history.HistoryWindowRequest) (history.HistoryWindow, error) {
-	_ = ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	terminal, err := server.Terminal(id)
 	if err != nil {
+		return history.HistoryWindow{}, err
+	}
+	if err := terminal.FlushHistory(ctx); err != nil {
 		return history.HistoryWindow{}, err
 	}
 	if req.TerminalID == "" {
@@ -563,9 +568,14 @@ func (server *Server) TerminalHistoryWindow(ctx context.Context, id string, req 
 // 调用边界包括 protocol history.copy；复制文本必须来自 tokenized history payload，
 // 不能由 TUI rows 或 live surface cache 组装。
 func (server *Server) TerminalHistoryCopy(ctx context.Context, id string, req history.HistoryCopyRequest) (string, error) {
-	_ = ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	terminal, err := server.Terminal(id)
 	if err != nil {
+		return "", err
+	}
+	if err := terminal.FlushHistory(ctx); err != nil {
 		return "", err
 	}
 	if req.TerminalID == "" {
@@ -577,9 +587,14 @@ func (server *Server) TerminalHistoryCopy(ctx context.Context, id string, req hi
 // TerminalHistoryFreeze 创建 core-v2 terminal 内部 frozen history boundary。它为
 // protocol latest/copy 建立 core-owned token，后续 repaint 不得改写该 token 的复制边界。
 func (server *Server) TerminalHistoryFreeze(ctx context.Context, id string, req history.FreezeHistoryRequest) (history.FrozenHistorySnapshot, error) {
-	_ = ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	terminal, err := server.Terminal(id)
 	if err != nil {
+		return history.FrozenHistorySnapshot{}, err
+	}
+	if err := terminal.FlushHistory(ctx); err != nil {
 		return history.FrozenHistorySnapshot{}, err
 	}
 	if req.TerminalID == "" {

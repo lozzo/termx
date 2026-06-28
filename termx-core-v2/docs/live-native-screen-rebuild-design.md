@@ -1,6 +1,6 @@
 # live native screen 重构设计
 
-状态：R348 live native screen 重构与清场基准。
+状态：R358 后 live native screen 重构基准。
 
 本文只定义普通实时终端显示链路，不定义 authoritative history truth。history 仍以
 `termx-core-v2/docs/history-logical-renderer-design.md` 为准。live screen 可以被 copy mode
@@ -28,6 +28,18 @@ PTY bytes
 live 数据，因为 live screen 的目标是尽快靠近最新状态，不是补放中间帧。中间输出是否进入可回看历史，
 由 history logical renderer 和 history store 决定。
 
+R358 后，live native screen 和 authoritative history 的接口边界重新切开：
+
+- live hot path 只维护 `live.SurfaceTrack` 中的当前 `vterm.VTerm`，写入走 latest-frame 路径。
+- `SurfaceTrack` 不再把 semantic transaction、damage、primary/alt frame clone 放进 live write result。
+- 真实 PTY 输出同时进入独立 history semantic worker；worker 再喂给 `vterm.SemanticSource` 和 history renderer。
+- history worker 可以 flush，live ingest queue 不能有 flush fence；history/copy/freeze 等读取入口只等待 history worker 追平，不等待 live queue。
+
+这个边界是为了验证并恢复 `c4ee7923` 的实时体验：core 当前屏必须是轻量 latest native screen，
+不能因为 history store、semantic evidence 或客户端查询反压真实程序输出。后续如果要重新回到
+“同一批 PTY bytes 只解码一次”，必须先设计一个不会让 live hot path 重新依赖 history transaction
+结果的 semantic tap；不能把 history transaction 再塞回 `SurfaceTrack.WriteWithResult`。
+
 ## 2. 设计边界
 
 ### 2.1 core owner
@@ -38,7 +50,7 @@ core 负责：
 
 - 持有 terminal process、PTY size、lifecycle、attachment registry、resize ownership。
 - 持有唯一 `live.SurfaceTrack` / vterm 当前 screen state。
-- 在同一批 PTY bytes 解码后，更新 native screen 并产出同源 semantic transaction 给 history renderer。
+- 更新 native screen，并通过独立 history semantic worker 让 history renderer 追平同一 PTY 输出。
 - 为每个 terminal 维护单调 `LiveRevision`。
 - 在 native screen 变化后发布 `terminal.live.invalidated { terminal_id, revision }`。
 - 在客户端请求时返回当前最新 `NativeScreenSnapshot`。
@@ -50,6 +62,7 @@ core 不负责：
 - 不为每个客户端维护待渲染 frame 队列。
 - 不把每次 changed 都转换成需要发送给客户端的完整 screen frame。
 - 不用 snapshot、grid viewport、renderer rows 或 TUI 状态反推 history。
+- 不在 live surface write result 中承载 history transaction 或 frame evidence。
 
 ### 2.2 TUI owner
 
@@ -230,9 +243,10 @@ on live.screen.snapshot(snapshot):
 这些代码或设计不能因为清场 live 链路而删除，只能重命名、收口或搬到新 contract 下。
 
 - `termx-core-v2/live.SurfaceTrack`：core 当前 native screen 的 owner，仍是 vterm screen state 的承载点。
-- `SurfaceTrack.WriteWithResult`：同一批 PTY bytes 更新 live screen，同时把 semantic transaction 交给 history。
+- `SurfaceTrack.WriteWithResult`：只返回 live/raw 分段和 alt-exit frame capture；不能重新承载 history semantic transaction。
+- `terminalHistoryIngestQueue`：history semantic worker 的 backpressure 边界；它只能把 PTY text 交给 `vterm.SemanticSource` 产生 transaction，不能变成 raw parser 或第二套 history truth。
 - `Terminal.handleLiveSurfaceResponse`：OSC/DA/DSR 等 terminal response 必须回写 PTY。
-- `terminalLiveIngestQueue`：PTY output goroutine 和 terminal write/history apply 之间仍需要 bounded ingest 边界；可以重写，但不能让 PTY 热路径被 TUI render 或 protocol backlog 阻塞。
+- `terminalLiveIngestQueue`：PTY output goroutine 和 native screen write 之间的 latest ingest 边界；不能有 history/copy/freeze flush fence，不能让 PTY 热路径被 TUI render、history store 或 protocol backlog 阻塞。
 - terminal lifecycle、restart、remove、process exit marker：这是 core terminal truth，不能塞进 TUI pane state。
 - attachment registry、input channel、resize ownership、size lock：这是 terminal/view 协作边界，不是 live display patch。
 - live modes/cursor/cell style conversion：mouse passthrough、bracketed paste、cursor、宽字符、emoji、zero-width placeholder 都依赖这些字段。

@@ -274,6 +274,14 @@ transaction 必须包含：
 如果一次 raw write 同时包含多个 mode boundary，adapter 应拆分 transaction，或者 transaction 必须能表达
 边界的有序位置。history renderer 不能靠 bool flag 猜 raw order。
 
+R358 后，当前实现为了恢复 `c4ee7923` 的 live native screen 快路径，把 `live.SurfaceTrack`
+和 history semantic source 切开：live surface 不再返回 transaction，真实 PTY 输出通过
+history semantic worker 喂给 `TerminalSemanticSource`。这不改变 history truth 模型：
+renderer 仍只消费 `TerminalSemanticTransaction`，不能读取 live snapshot 或 raw parser fallback。
+但它意味着当前实现暂时不是“live 与 history 共用同一个 VTerm 实例”；后续若要恢复单实例
+semantic tap，必须保证 live hot path 不再被 history transaction 结果、store apply 或 flush fence
+反压。
+
 ### 5.2 HistorySemanticClassifier
 
 classifier 只根据 terminal 语义和当前 history state 决策，不看程序名。

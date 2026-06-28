@@ -50,8 +50,12 @@ func TestR301HistoryCleanupGuard(t *testing.T) {
 	}
 
 	terminalSource := r301ReadFile(t, "terminal.go")
-	if strings.Contains(terminalSource, "historyQueue.Enqueue(text)") {
-		t.Fatal("real PTY output must enter history as shared-vterm semantic batches, not raw text queue items")
+	if strings.Contains(terminalSource, "historyQueue.Enqueue(text)") || strings.Contains(terminalSource, "historyANSIParser") || strings.Contains(terminalSource, "terminalHistoryPipeline") {
+		t.Fatal("real PTY output must not re-enter old raw parser history queue/pipeline")
+	}
+	workerSource := r301ReadFile(t, "terminal_history_ingest_worker.go")
+	if !strings.Contains(workerSource, "terminalHistoryIngestQueue") {
+		t.Fatal("R358 history semantic worker guard must cover the ingest worker")
 	}
 }
 

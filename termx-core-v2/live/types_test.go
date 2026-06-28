@@ -81,25 +81,14 @@ func TestSurfaceTrackLargeWriteKeepsLatestScreen(t *testing.T) {
 	}
 }
 
-func TestSurfaceTrackWriteNativeScreenDoesNotBuildHistorySegments(t *testing.T) {
+func TestSurfaceTrackWriteResultOnlyCarriesLiveRawSegments(t *testing.T) {
 	surface := NewSurfaceTrack(SurfaceSize{Cols: 20, Rows: 3})
-	surface.WriteNativeScreen("one\r\ntwo\r\nlatest")
+	result := surface.WriteWithResult("one\r\ntwo\r\nlatest")
 	if got := strings.Join(surface.Rows(), "\n"); !strings.Contains(got, "latest") {
-		t.Fatalf("native screen write should update latest screen, got %q", got)
+		t.Fatalf("live screen write should update latest screen, got %q", got)
 	}
-
-	result := surface.WriteWithResult("history\r\n")
-	if len(result.Segments) == 0 || len(result.Segments[0].Transactions) == 0 {
-		t.Fatalf("history-enabled write should still expose semantic evidence, got %#v", result)
-	}
-}
-
-func TestAppendSurfaceWriteDamageKeepsSemanticOnlyOps(t *testing.T) {
-	damages := appendSurfaceWriteDamage(nil, vterm.WriteDamage{
-		SemanticOps: []vterm.DamageOp{{Code: vterm.ScreenOpControl, Control: "cup", Row: 1, Col: 2}},
-	})
-	if len(damages) != 1 || len(damages[0].SemanticOps) != 1 {
-		t.Fatalf("expected semantic-only damage to be retained, got %#v", damages)
+	if len(result.Segments) != 1 || result.Segments[0].Raw == "" || len(result.Segments[0].AltScreenExitFrame) != 0 {
+		t.Fatalf("live write result should carry only raw live segment data, got %#v", result)
 	}
 }
 
