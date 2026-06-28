@@ -2,6 +2,7 @@ package termxcorev2
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -94,6 +95,49 @@ func TestTerminalHistoryIngestQueueDropsConsumedPayloadReferences(t *testing.T) 
 		t.Fatalf("empty history buffer should release backing array, got len=%d cap=%d", len(queue.pending), cap(queue.pending))
 	}
 	close(queue.done)
+}
+
+func TestR362TerminalHistoryIngestQueueSpoolsPendingPayloadsOffHeap(t *testing.T) {
+	queue := newTerminalHistoryIngestQueue()
+	spoolPath := queue.spool.file.Name()
+	large := strings.Repeat("history-payload-", 4096)
+	for i := 0; i < 8; i++ {
+		if !queue.Enqueue(large) {
+			t.Fatal("expected enqueue before close")
+		}
+	}
+	total := 0
+	for index, item := range queue.pending {
+		if item.text != "" {
+			t.Fatalf("pending item %d retained raw text in heap", index)
+		}
+		total += item.length
+	}
+	if total != len(large)*8 {
+		t.Fatalf("pending spool metadata lost payload length, got %d", total)
+	}
+
+	batch, ok := queue.nextBatch()
+	if !ok || len(batch) == 0 {
+		t.Fatalf("expected spooled batch, got len=%d ok=%v", len(batch), ok)
+	}
+	if len(batch) != 8 {
+		t.Fatalf("large payloads should stay as separate semantic chunks inside capped batch, got %d", len(batch))
+	}
+	for index, item := range batch {
+		if item.text != large {
+			t.Fatalf("spooled batch item %d did not restore payload, got len=%d", index, len(item.text))
+		}
+	}
+	if len(queue.pending) != 0 {
+		t.Fatalf("all capped batch payloads should be consumed, got %d remaining items", len(queue.pending))
+	}
+	queue.Close()
+	close(queue.done)
+	queue.spool.close()
+	if _, err := os.Stat(spoolPath); !os.IsNotExist(err) {
+		t.Fatalf("spool file should be removed after close, err=%v", err)
+	}
 }
 
 func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {

@@ -2,6 +2,8 @@ package termxcorev2
 
 import (
 	"context"
+	"io"
+	"os"
 	"sync"
 )
 
@@ -12,23 +14,31 @@ const terminalHistoryIngestBatchMaxBytes = 1024 * 1024
 // screen；worker 再把批次交给 HistoryLogicalRenderer，避免 history store 反压
 // native live screen 最新屏链路。
 type terminalHistoryIngestQueue struct {
-	mu       sync.Mutex
-	cond     *sync.Cond
-	pending  []terminalHistoryIngestItem
-	flushSeq uint64
-	doneSeq  uint64
-	inFlight bool
-	closed   bool
-	done     chan struct{}
+	mu        sync.Mutex
+	cond      *sync.Cond
+	pending   []terminalHistoryIngestItem
+	spool     *terminalHistoryIngestSpool
+	flushSeq  uint64
+	doneSeq   uint64
+	inFlight  bool
+	closed    bool
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 type terminalHistoryIngestItem struct {
+	offset   int64
+	length   int
 	text     string
 	flushSeq uint64
+	err      error
 }
 
 func newTerminalHistoryIngestQueue() *terminalHistoryIngestQueue {
-	queue := &terminalHistoryIngestQueue{done: make(chan struct{})}
+	queue := &terminalHistoryIngestQueue{
+		spool: newTerminalHistoryIngestSpool(),
+		done:  make(chan struct{}),
+	}
 	queue.cond = sync.NewCond(&queue.mu)
 	return queue
 }
@@ -42,7 +52,8 @@ func (queue *terminalHistoryIngestQueue) Enqueue(text string) bool {
 	if queue.closed {
 		return false
 	}
-	queue.pending = append(queue.pending, terminalHistoryIngestItem{text: text})
+	item := queue.spool.append(text)
+	queue.pending = append(queue.pending, item)
 	queue.cond.Signal()
 	return true
 }
@@ -112,7 +123,14 @@ func (queue *terminalHistoryIngestQueue) Wait() {
 }
 
 func (queue *terminalHistoryIngestQueue) Run(ingest func([]string) error) {
-	defer close(queue.done)
+	defer func() {
+		queue.closeOnce.Do(func() {
+			if queue.spool != nil {
+				queue.spool.close()
+			}
+		})
+		close(queue.done)
+	}()
 	for {
 		batch, ok := queue.nextBatch()
 		if !ok {
@@ -140,6 +158,9 @@ func terminalHistoryIngestBatchTexts(batch []terminalHistoryIngestItem) []string
 	}
 	texts := make([]string, 0, len(batch))
 	for _, item := range batch {
+		if item.err != nil {
+			continue
+		}
 		if item.text != "" {
 			texts = append(texts, item.text)
 		}
@@ -163,20 +184,41 @@ func (queue *terminalHistoryIngestQueue) nextBatch() ([]terminalHistoryIngestIte
 			count++
 			break
 		}
-		nextBytes := len(queue.pending[count].text)
+		nextBytes := queue.pending[count].length
 		if count > 0 && bytes+nextBytes > terminalHistoryIngestBatchMaxBytes {
 			break
 		}
 		bytes += nextBytes
 		count++
 	}
-	batch := append([]terminalHistoryIngestItem(nil), queue.pending[:count]...)
+	batch := queue.cloneBatchLocked(queue.pending[:count])
 	queue.dropPendingPrefixLocked(count)
 	if len(queue.pending) > 0 {
 		queue.cond.Signal()
 	}
 	queue.inFlight = true
 	return batch, true
+}
+
+func (queue *terminalHistoryIngestQueue) cloneBatchLocked(items []terminalHistoryIngestItem) []terminalHistoryIngestItem {
+	if len(items) == 0 {
+		return nil
+	}
+	batch := make([]terminalHistoryIngestItem, len(items))
+	copy(batch, items)
+	for i := range batch {
+		if batch[i].length > 0 {
+			text, err := queue.spool.read(batch[i])
+			if err != nil {
+				batch[i].err = err
+				continue
+			}
+			// 中文说明：spool 只在 batch 出队时短暂还原字符串；pending 队列本身只持有
+			// offset/length，避免 history worker 落后时把 PTY payload 常驻 Go heap。
+			batch[i].text = text
+		}
+	}
+	return batch
 }
 
 func (queue *terminalHistoryIngestQueue) markFlushed(target uint64) {
@@ -218,4 +260,74 @@ func (queue *terminalHistoryIngestQueue) dropPendingPrefixLocked(count int) {
 		return
 	}
 	queue.pending = queue.pending[:remaining]
+}
+
+// terminalHistoryIngestSpool 是 history worker 的 raw PTY backlog 驻留边界。
+// domain owner 是 history ingest queue：spool 只暂存尚未被 semantic source 消费的
+// 原始 PTY bytes，不解释内容、不生成 history truth，也不参与 live latest path。
+type terminalHistoryIngestSpool struct {
+	file   *os.File
+	offset int64
+	err    error
+}
+
+func newTerminalHistoryIngestSpool() *terminalHistoryIngestSpool {
+	file, err := os.CreateTemp("", "termx-history-ingest-*.spool")
+	return &terminalHistoryIngestSpool{file: file, err: err}
+}
+
+func (spool *terminalHistoryIngestSpool) append(text string) terminalHistoryIngestItem {
+	item := terminalHistoryIngestItem{length: len(text)}
+	if spool == nil || spool.err != nil || spool.file == nil {
+		item.err = spoolError(spool)
+		return item
+	}
+	offset := spool.offset
+	n, err := io.WriteString(spool.file, text)
+	if err != nil {
+		spool.err = err
+		item.err = err
+		return item
+	}
+	spool.offset += int64(n)
+	item.offset = offset
+	item.length = n
+	return item
+}
+
+func (spool *terminalHistoryIngestSpool) read(item terminalHistoryIngestItem) (string, error) {
+	if item.length == 0 {
+		return "", item.err
+	}
+	if item.err != nil {
+		return "", item.err
+	}
+	if spool == nil || spool.file == nil {
+		return "", spoolError(spool)
+	}
+	buf := make([]byte, item.length)
+	if _, err := spool.file.ReadAt(buf, item.offset); err != nil {
+		return "", err
+	}
+	return string(buf), nil
+}
+
+func (spool *terminalHistoryIngestSpool) close() {
+	if spool == nil || spool.file == nil {
+		return
+	}
+	name := spool.file.Name()
+	_ = spool.file.Close()
+	_ = os.Remove(name)
+	spool.file = nil
+}
+
+func spoolError(spool *terminalHistoryIngestSpool) error {
+	if spool == nil {
+		return os.ErrInvalid
+	}
+	if spool.err != nil {
+		return spool.err
+	}
+	return os.ErrInvalid
 }

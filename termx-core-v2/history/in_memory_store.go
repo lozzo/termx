@@ -67,9 +67,11 @@ type inMemoryHistoryStore struct {
 type frozenWindowProjection struct {
 	snapshot FrozenHistorySnapshot
 	rows     []HistoryRow
-	index    []projectedRowRef
-	lines    []HistoryLineSpan
-	boundary HistoryBoundary
+	// 中文说明：copy/history token 在 file-backed 模式只冻结 compact projection
+	// metadata；payload truth 仍按窗口从 backend 读取，不能展开成全量 HistoryRow。
+	projection projectionSnapshot
+	lines      []HistoryLineSpan
+	boundary   HistoryBoundary
 }
 
 type projectedRowRef struct {
@@ -80,6 +82,24 @@ type projectedRowRef struct {
 	FrameID    ScreenFrameID
 	RowInLine  int
 	Index      int
+	FixedGrid  bool
+	ScreenCols int
+	Committed  bool
+}
+
+type projectionSnapshot struct {
+	records []projectedRecordRef
+	total   int
+}
+
+// 中文说明：projectedRecordRef 是 history store 的窗口索引元数据，保存 line id
+// 与 segment 边界；它不复制 logical line payload，也不成为第二份 history truth。
+type projectedRecordRef struct {
+	LineIDs    []LogicalLineID
+	Kind       LineKind
+	Segment    HistorySegment
+	SessionID  ScreenSessionID
+	FrameID    ScreenFrameID
 	FixedGrid  bool
 	ScreenCols int
 	Committed  bool
@@ -129,14 +149,13 @@ func (store *inMemoryHistoryStore) LatestWindow(req HistoryWindowRequest) (Histo
 		if !ok {
 			return HistoryWindow{}, ErrHistoryInvalidMutation
 		}
-		if len(frozen.index) > 0 {
-			return store.latestWindowFromIndex(req, frozen.index, frozen.snapshot.Generation)
+		if frozen.projection.total > 0 {
+			return store.latestWindowFromProjection(req, frozen.projection, frozen.snapshot.Generation)
 		}
 		return store.latestWindowFromRows(req, frozen.rows, frozen.snapshot.Generation)
 	}
 	if store.canUseIndexedProjection() {
-		index := store.liveProjectionIndex()
-		return store.latestWindowFromIndex(req, index, store.generation)
+		return store.latestWindowFromProjection(req, store.liveProjectionSnapshot(), store.generation)
 	}
 	return store.latestWindowFromRows(req, store.projectLiveRows(), store.generation)
 }
@@ -183,12 +202,12 @@ func (store *inMemoryHistoryStore) OlderWindow(req HistoryWindowRequest) (Histor
 	}
 	store.ensureState()
 	if req.Token != "" {
-		if frozen, ok := store.frozen[req.Token]; ok && len(frozen.index) > 0 {
-			return store.olderWindowFromIndex(req, frozen.index, frozen.snapshot.Generation)
+		if frozen, ok := store.frozen[req.Token]; ok && frozen.projection.total > 0 {
+			return store.olderWindowFromProjection(req, frozen.projection, frozen.snapshot.Generation)
 		}
 	}
 	if req.Token == "" && store.canUseIndexedProjection() {
-		return store.olderWindowFromIndex(req, store.liveProjectionIndex(), store.generation)
+		return store.olderWindowFromProjection(req, store.liveProjectionSnapshot(), store.generation)
 	}
 	rows := store.projectRowsForOlder(req)
 	limit := normalizedLimit(req.Limit)
@@ -224,13 +243,13 @@ func (store *inMemoryHistoryStore) OldestWindow(req HistoryWindowRequest) (Histo
 		if !ok {
 			return HistoryWindow{}, ErrHistoryInvalidMutation
 		}
-		if len(frozen.index) > 0 {
-			return store.oldestWindowFromIndex(req, frozen.index, frozen.snapshot.Generation)
+		if frozen.projection.total > 0 {
+			return store.oldestWindowFromProjection(req, frozen.projection, frozen.snapshot.Generation)
 		}
 		return store.oldestWindowFromRows(req, frozen.rows, frozen.snapshot.Generation), nil
 	}
 	if store.canUseIndexedProjection() {
-		return store.oldestWindowFromIndex(req, store.liveProjectionIndex(), store.generation)
+		return store.oldestWindowFromProjection(req, store.liveProjectionSnapshot(), store.generation)
 	}
 	return store.oldestWindowFromRows(req, store.projectLiveRows(), store.generation), nil
 }
@@ -247,12 +266,12 @@ func (store *inMemoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHisto
 	store.nextToken++
 	token := HistoryToken(fmt.Sprintf("hist-%d", store.nextToken))
 	var rows []HistoryRow
-	var index []projectedRowRef
+	var projection projectionSnapshot
 	var latestRows []HistoryRow
 	var boundary HistoryBoundary
 	if store.canUseIndexedProjection() {
-		index = store.liveProjectionIndex()
-		page, start, err := store.rowsFromIndexWindow(index, maxInt(0, len(index)-normalizedLimit(req.Limit)), len(index))
+		projection = store.liveProjectionSnapshot()
+		page, start, err := store.rowsFromProjectionWindow(projection, maxInt(0, projection.total-normalizedLimit(req.Limit)), projection.total)
 		if err != nil {
 			return FrozenHistorySnapshot{}, err
 		}
@@ -294,15 +313,15 @@ func (store *inMemoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHisto
 		Generation:            store.generation,
 		CreatedAt:             time.Now().UTC(),
 	}
-	if len(rows) == 0 && len(index) > 0 {
+	if len(rows) == 0 && projection.total > 0 {
 		rows = latestRows
 	}
 	store.frozen[token] = frozenWindowProjection{
-		snapshot: snapshot,
-		rows:     cloneHistoryRows(rows),
-		index:    cloneProjectedRowRefs(index),
-		lines:    spansForRows(rows),
-		boundary: boundary,
+		snapshot:   snapshot,
+		rows:       cloneHistoryRows(rows),
+		projection: cloneProjectionSnapshot(projection),
+		lines:      spansForRows(rows),
+		boundary:   boundary,
 	}
 	return snapshot, nil
 }
@@ -318,13 +337,13 @@ func (store *inMemoryHistoryStore) Copy(req HistoryCopyRequest) (string, error) 
 		if !ok {
 			return "", ErrHistoryInvalidMutation
 		}
-		if len(frozen.index) > 0 {
-			return store.copyFromIndex(frozen.index, req)
+		if frozen.projection.total > 0 {
+			return store.copyFromProjection(frozen.projection, req)
 		}
 		rows = frozen.rows
 	} else {
 		if store.canUseIndexedProjection() {
-			return store.copyFromIndex(store.liveProjectionIndex(), req)
+			return store.copyFromProjection(store.liveProjectionSnapshot(), req)
 		}
 		rows = store.projectLiveRows()
 	}
@@ -372,8 +391,7 @@ func (store *inMemoryHistoryStore) applyMutation(mutation HistoryMutation) error
 			return ErrHistoryInvalidMutation
 		}
 		record := cloneHistoryRecord(*mutation.Record)
-		store.timeline = append(store.timeline, record)
-		store.observeHistoryRecord(record)
+		store.appendTimelineRecord(record)
 	case HistoryMutationReplacePrimaryFrame:
 		if mutation.Mutable == nil {
 			return ErrHistoryInvalidMutation
@@ -431,6 +449,40 @@ func (store *inMemoryHistoryStore) applyMutation(mutation HistoryMutation) error
 		return ErrHistoryInvalidMutation
 	}
 	return nil
+}
+
+func (store *inMemoryHistoryStore) appendTimelineRecord(record HistoryRecord) {
+	store.observeHistoryRecord(record)
+	if store.tryAppendOrdinaryTimelineRecord(record) {
+		return
+	}
+	store.timeline = append(store.timeline, record)
+}
+
+func (store *inMemoryHistoryStore) tryAppendOrdinaryTimelineRecord(record HistoryRecord) bool {
+	if !compactableLineTimelineRecord(record) || len(store.timeline) == 0 {
+		return false
+	}
+	last := &store.timeline[len(store.timeline)-1]
+	if !compactableLineTimelineRecord(*last) {
+		return false
+	}
+	if last.Kind != record.Kind || last.Reason != record.Reason {
+		return false
+	}
+	if record.Seq != 0 && last.Seq != 0 && record.Seq < last.Seq {
+		return false
+	}
+	// 中文说明：file-backed 模式的 sealed payload truth 已由 logical line id 指向
+	// backend；这里仅压缩 timeline 元数据，避免 ordinary 输出一行一个 record 驻留。
+	last.LineIDs = append(last.LineIDs, record.LineIDs...)
+	return true
+}
+
+func compactableLineTimelineRecord(record HistoryRecord) bool {
+	return (record.Kind == HistoryRecordOrdinaryLine || record.Kind == HistoryRecordPrimaryScrollOutLine) &&
+		record.FrameID == 0 &&
+		len(record.LineIDs) > 0
 }
 
 func (store *inMemoryHistoryStore) ensureState() {
@@ -592,10 +644,12 @@ func (store *inMemoryHistoryStore) canUseIndexedProjection() bool {
 	return store != nil && store.payload != nil
 }
 
-func (store *inMemoryHistoryStore) liveProjectionIndex() []projectedRowRef {
+func (store *inMemoryHistoryStore) liveProjectionSnapshot() projectionSnapshot {
 	if store == nil {
-		return nil
+		return projectionSnapshot{}
 	}
+	// 中文说明：payload backend 热路径只能构建 compact projection。真实 window 行
+	// 在 rowsFromProjectionWindow 中按请求切片读取，避免 1M 行压力下全量 materialize。
 	records := cloneHistoryRecords(store.timeline)
 	sort.SliceStable(records, func(i, j int) bool {
 		if records[i].Seq == records[j].Seq {
@@ -603,20 +657,20 @@ func (store *inMemoryHistoryStore) liveProjectionIndex() []projectedRowRef {
 		}
 		return records[i].Seq < records[j].Seq
 	})
-	index := make([]projectedRowRef, 0, len(records))
+	projection := projectionSnapshot{}
 	for _, record := range records {
 		switch record.Kind {
 		case HistoryRecordArchivedPrimaryFrame:
-			index = append(index, projectedRefsForRecord(record, HistorySegmentArchivedPrimaryFrame, LineKindArchivedScreenFrame)...)
+			projection.appendRecord(projectedRecordForTimeline(record, HistorySegmentArchivedPrimaryFrame, LineKindArchivedScreenFrame))
 		case HistoryRecordClosedPrimaryFrame:
-			index = append(index, projectedRefsForRecord(record, HistorySegmentCommitted, LineKindScreenFrame)...)
+			projection.appendRecord(projectedRecordForTimeline(record, HistorySegmentCommitted, LineKindScreenFrame))
 		default:
-			index = append(index, projectedRefsForRecord(record, HistorySegmentCommitted, lineKindFromRecord(record.Kind))...)
+			projection.appendRecord(projectedRecordForTimeline(record, HistorySegmentCommitted, lineKindFromRecord(record.Kind)))
 		}
 	}
 	if store.openLine != nil {
-		index = append(index, projectedRowRef{
-			LineID:    store.openLine.Draft.Line.ID,
+		projection.appendRecord(projectedRecordRef{
+			LineIDs:   []LogicalLineID{store.openLine.Draft.Line.ID},
 			Kind:      LineKindOrdinary,
 			Segment:   HistorySegmentCommitted,
 			Committed: false,
@@ -624,58 +678,66 @@ func (store *inMemoryHistoryStore) liveProjectionIndex() []projectedRowRef {
 	}
 	if store.frameJournal.PrimaryCurrent != nil {
 		frame := store.frameJournal.PrimaryCurrent
-		for _, draft := range frame.Rows {
-			index = append(index, projectedRowRef{
-				LineID:     draft.Line.ID,
-				Kind:       LineKindScreenFrame,
-				Segment:    HistorySegmentCurrentPrimaryFrame,
-				SessionID:  frame.SessionID,
-				FrameID:    frame.ID,
-				FixedGrid:  true,
-				ScreenCols: frame.Cols,
-				Committed:  false,
-			})
-		}
+		projection.appendRecord(projectedRecordRef{
+			LineIDs:    lineIDsFromDrafts(frame.Rows),
+			Kind:       LineKindScreenFrame,
+			Segment:    HistorySegmentCurrentPrimaryFrame,
+			SessionID:  frame.SessionID,
+			FrameID:    frame.ID,
+			FixedGrid:  true,
+			ScreenCols: frame.Cols,
+			Committed:  false,
+		})
 	}
 	if store.frameJournal.AltCurrent != nil {
 		frame := store.frameJournal.AltCurrent
-		for _, draft := range frame.Rows {
-			index = append(index, projectedRowRef{
-				LineID:     draft.Line.ID,
-				Kind:       LineKindAltScreenFrame,
-				Segment:    HistorySegmentCurrentAltFrame,
-				FrameID:    frame.ID,
-				FixedGrid:  true,
-				ScreenCols: frame.Cols,
-				Committed:  false,
-			})
-		}
-	}
-	for i := range index {
-		index[i].Index = i
-	}
-	return index
-}
-
-func projectedRefsForRecord(record HistoryRecord, segment HistorySegment, kind LineKind) []projectedRowRef {
-	refs := make([]projectedRowRef, 0, len(record.LineIDs))
-	for _, id := range record.LineIDs {
-		refs = append(refs, projectedRowRef{
-			LineID:    id,
-			Kind:      kind,
-			Segment:   segment,
-			FrameID:   record.FrameID,
-			FixedGrid: record.FrameID != 0,
-			Committed: true,
+		projection.appendRecord(projectedRecordRef{
+			LineIDs:    lineIDsFromDrafts(frame.Rows),
+			Kind:       LineKindAltScreenFrame,
+			Segment:    HistorySegmentCurrentAltFrame,
+			FrameID:    frame.ID,
+			FixedGrid:  true,
+			ScreenCols: frame.Cols,
+			Committed:  false,
 		})
 	}
-	return refs
+	return projection
 }
 
-func (store *inMemoryHistoryStore) latestWindowFromIndex(req HistoryWindowRequest, index []projectedRowRef, generation Generation) (HistoryWindow, error) {
+func (projection *projectionSnapshot) appendRecord(record projectedRecordRef) {
+	if projection == nil || len(record.LineIDs) == 0 {
+		return
+	}
+	projection.records = append(projection.records, record)
+	projection.total += len(record.LineIDs)
+}
+
+func projectedRecordForTimeline(record HistoryRecord, segment HistorySegment, kind LineKind) projectedRecordRef {
+	return projectedRecordRef{
+		LineIDs:   append([]LogicalLineID(nil), record.LineIDs...),
+		Kind:      kind,
+		Segment:   segment,
+		FrameID:   record.FrameID,
+		FixedGrid: record.FrameID != 0,
+		Committed: true,
+	}
+}
+
+func lineIDsFromDrafts(drafts []LogicalLineDraft) []LogicalLineID {
+	if len(drafts) == 0 {
+		return nil
+	}
+	ids := make([]LogicalLineID, 0, len(drafts))
+	for _, draft := range drafts {
+		ids = append(ids, draft.Line.ID)
+	}
+	return ids
+}
+
+func (store *inMemoryHistoryStore) latestWindowFromProjection(req HistoryWindowRequest, projection projectionSnapshot, generation Generation) (HistoryWindow, error) {
 	limit := normalizedLimit(req.Limit)
-	start := maxInt(0, len(index)-limit)
-	page, _, err := store.rowsFromIndexWindow(index, start, len(index))
+	start := maxInt(0, projection.total-limit)
+	page, _, err := store.rowsFromProjectionWindow(projection, start, projection.total)
 	if err != nil {
 		return HistoryWindow{}, err
 	}
@@ -686,17 +748,17 @@ func (store *inMemoryHistoryStore) latestWindowFromIndex(req HistoryWindowReques
 	return store.windowFromProjectedRows(req, page, HistoryWindowReplace, boundary, generation), nil
 }
 
-func (store *inMemoryHistoryStore) olderWindowFromIndex(req HistoryWindowRequest, index []projectedRowRef, generation Generation) (HistoryWindow, error) {
+func (store *inMemoryHistoryStore) olderWindowFromProjection(req HistoryWindowRequest, projection projectionSnapshot, generation Generation) (HistoryWindow, error) {
 	limit := normalizedLimit(req.Limit)
 	if !req.Cursor.Valid {
 		return store.windowFromProjectedRows(req, nil, HistoryWindowPrepend, HistoryBoundary{Cursor: HistoryCursor{Generation: generation, Token: req.Token}}, generation), nil
 	}
 	end := req.Cursor.BeforeRowIndex
-	if end <= 0 || end > len(index) {
-		end = len(index)
+	if end <= 0 || end > projection.total {
+		end = projection.total
 	}
 	start := maxInt(0, end-limit)
-	page, _, err := store.rowsFromIndexWindow(index, start, end)
+	page, _, err := store.rowsFromProjectionWindow(projection, start, end)
 	if err != nil {
 		return HistoryWindow{}, err
 	}
@@ -709,10 +771,10 @@ func (store *inMemoryHistoryStore) olderWindowFromIndex(req HistoryWindowRequest
 	return store.windowFromProjectedRows(req, page, HistoryWindowPrepend, boundary, generation), nil
 }
 
-func (store *inMemoryHistoryStore) oldestWindowFromIndex(req HistoryWindowRequest, index []projectedRowRef, generation Generation) (HistoryWindow, error) {
+func (store *inMemoryHistoryStore) oldestWindowFromProjection(req HistoryWindowRequest, projection projectionSnapshot, generation Generation) (HistoryWindow, error) {
 	limit := normalizedLimit(req.Limit)
-	end := minInt(len(index), limit)
-	page, _, err := store.rowsFromIndexWindow(index, 0, end)
+	end := minInt(projection.total, limit)
+	page, _, err := store.rowsFromProjectionWindow(projection, 0, end)
 	if err != nil {
 		return HistoryWindow{}, err
 	}
@@ -735,6 +797,68 @@ func cursorBeforeIndex(row HistoryRow, beforeIndex int, generation Generation, t
 		Token:          token,
 		Valid:          valid,
 	}
+}
+
+func (store *inMemoryHistoryStore) rowsFromProjectionWindow(projection projectionSnapshot, start int, end int) ([]HistoryRow, int, error) {
+	if start < 0 {
+		start = 0
+	}
+	if end > projection.total {
+		end = projection.total
+	}
+	if end < start {
+		end = start
+	}
+	// 中文说明：这里最多展开当前窗口范围内的 row refs；full projection 只能保持
+	// compact record 形态，避免 copy/history 冻结后再次线性驻留。
+	refs := refsFromProjectionWindow(projection, start, end)
+	rows, _, err := store.rowsFromIndexWindow(refs, 0, len(refs))
+	if err != nil {
+		return nil, start, err
+	}
+	return rows, start, nil
+}
+
+func refsFromProjectionWindow(projection projectionSnapshot, start int, end int) []projectedRowRef {
+	if start < 0 {
+		start = 0
+	}
+	if end > projection.total {
+		end = projection.total
+	}
+	if end <= start {
+		return nil
+	}
+	refs := make([]projectedRowRef, 0, end-start)
+	recordStart := 0
+	for _, record := range projection.records {
+		recordEnd := recordStart + len(record.LineIDs)
+		if recordEnd <= start {
+			recordStart = recordEnd
+			continue
+		}
+		if recordStart >= end {
+			break
+		}
+		from := maxInt(start, recordStart)
+		to := minInt(end, recordEnd)
+		for absolute := from; absolute < to; absolute++ {
+			lineIndex := absolute - recordStart
+			refs = append(refs, projectedRowRef{
+				LineID:     record.LineIDs[lineIndex],
+				Kind:       record.Kind,
+				Segment:    record.Segment,
+				SessionID:  record.SessionID,
+				FrameID:    record.FrameID,
+				Index:      absolute,
+				FixedGrid:  record.FixedGrid,
+				ScreenCols: record.ScreenCols,
+				Committed:  record.Committed,
+			})
+		}
+		recordStart = recordEnd
+	}
+	return refs
 }
 
 func (store *inMemoryHistoryStore) rowsFromIndexWindow(index []projectedRowRef, start int, end int) ([]HistoryRow, int, error) {
@@ -790,22 +914,22 @@ func (store *inMemoryHistoryStore) loadLines(ids []LogicalLineID) ([]LogicalLine
 	return lines, nil
 }
 
-func (store *inMemoryHistoryStore) copyFromIndex(index []projectedRowRef, req HistoryCopyRequest) (string, error) {
-	if len(index) == 0 {
+func (store *inMemoryHistoryStore) copyFromProjection(projection projectionSnapshot, req HistoryCopyRequest) (string, error) {
+	if projection.total == 0 {
 		return "", nil
 	}
-	start := indexByLineID(index, req.Start.LineID)
-	end := indexByLineID(index, req.End.LineID)
+	start := projectionIndexByLineID(projection, req.Start.LineID)
+	end := projectionIndexByLineID(projection, req.End.LineID)
 	if start < 0 {
 		start = 0
 	}
 	if end < 0 {
-		end = len(index) - 1
+		end = projection.total - 1
 	}
 	if start > end {
 		start, end = end, start
 	}
-	rows, _, err := store.rowsFromIndexWindow(index, start, end+1)
+	rows, _, err := store.rowsFromProjectionWindow(projection, start, end+1)
 	if err != nil {
 		return "", err
 	}
@@ -816,24 +940,34 @@ func (store *inMemoryHistoryStore) copyFromIndex(index []projectedRowRef, req Hi
 	return strings.Join(texts, "\n"), nil
 }
 
-func indexByLineID(index []projectedRowRef, id LogicalLineID) int {
+func projectionIndexByLineID(projection projectionSnapshot, id LogicalLineID) int {
 	if id == 0 {
 		return -1
 	}
-	for i, ref := range index {
-		if ref.LineID == id {
-			return i
+	index := 0
+	for _, record := range projection.records {
+		for _, lineID := range record.LineIDs {
+			if lineID == id {
+				return index
+			}
+			index++
 		}
 	}
 	return -1
 }
 
-func cloneProjectedRowRefs(refs []projectedRowRef) []projectedRowRef {
-	if len(refs) == 0 {
-		return nil
+func cloneProjectionSnapshot(projection projectionSnapshot) projectionSnapshot {
+	if len(projection.records) == 0 {
+		return projectionSnapshot{total: projection.total}
 	}
-	out := make([]projectedRowRef, len(refs))
-	copy(out, refs)
+	out := projectionSnapshot{
+		records: make([]projectedRecordRef, len(projection.records)),
+		total:   projection.total,
+	}
+	for i := range projection.records {
+		out.records[i] = projection.records[i]
+		out.records[i].LineIDs = append([]LogicalLineID(nil), projection.records[i].LineIDs...)
+	}
 	return out
 }
 

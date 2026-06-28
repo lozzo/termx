@@ -431,10 +431,10 @@ func applyStoreBatch(t *testing.T, store HistoryStore, mutationGroups ...[]Histo
 func sealedLineMutations(lineID LogicalLineID, recordID HistoryRecordID, text string) []HistoryMutation {
 	line := lineForStore(lineID, text, string(LineKindOrdinary), 0)
 	line.Seal = SealStateSealed
-	record := HistoryRecord{ID: recordID, Seq: uint64(recordID), Kind: HistoryRecordOrdinaryLine, LineIDs: []LogicalLineID{lineID}}
+	record := HistoryRecord{ID: recordID, Seq: uint64(recordID), Kind: HistoryRecordOrdinaryLine, LineIDs: []LogicalLineID{lineID}, Reason: SealReasonLineFeed}
 	return []HistoryMutation{
-		{Kind: HistoryMutationSealLine, Line: &line, LineIDs: []LogicalLineID{lineID}},
-		{Kind: HistoryMutationAppendTimelineRecord, Record: &record, LineIDs: []LogicalLineID{lineID}},
+		{Kind: HistoryMutationSealLine, Line: &line, LineIDs: []LogicalLineID{lineID}, Reason: SealReasonLineFeed},
+		{Kind: HistoryMutationAppendTimelineRecord, Record: &record, LineIDs: []LogicalLineID{lineID}, Reason: SealReasonLineFeed},
 	}
 }
 
