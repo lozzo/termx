@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -985,9 +986,21 @@ func (runtime *AppRuntime) renderFrame() {
 	runtime.markFloatingRepaintFrame(&frame)
 	runtime.lastHitRegions = cloneRenderHitRegions(frame.HitRegions)
 	_ = runtime.host.FrameSink().WriteFrame(frame)
+	perftrace.Count("tui.frame", frameApproxBytes(frame))
 	runtime.firstFrameWritten = true
 	runtime.rememberCopyHistoryPatchFrame(frame)
 	runtime.observeRuntimeFrame(frame)
+}
+
+func frameApproxBytes(frame render.Frame) int {
+	total := 0
+	for _, line := range frame.Lines {
+		total += len(line)
+	}
+	for _, line := range frame.ANSILines {
+		total += len(line)
+	}
+	return total
 }
 
 func (runtime *AppRuntime) shouldWriteFirstFrame() bool {

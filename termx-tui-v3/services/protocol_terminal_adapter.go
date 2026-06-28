@@ -8,6 +8,7 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -40,6 +41,8 @@ type ProtocolInputRequestClient interface {
 type ProtocolTerminalServiceAdapter struct {
 	Client ProtocolTerminalClient
 }
+
+const maxProtocolLiveRefreshDrainBeforeYield = 4096
 
 func (adapter ProtocolTerminalServiceAdapter) Attach(ctx context.Context, req TerminalAttachRequest) (TerminalAttachResult, error) {
 	if adapter.Client == nil {
@@ -399,6 +402,7 @@ func (adapter ProtocolTerminalServiceAdapter) LiveEvents(ctx context.Context, re
 				event, pending, drainedClosed = drainProtocolLiveRefreshEvents(events, event)
 			}
 			liveEvent := adapter.liveEventFromProtocol(ctx, req, event)
+			perftrace.Count("tui.protocol.live_event", protocolLiveEventApproxBytes(liveEvent))
 			select {
 			case out <- liveEvent:
 			case <-ctx.Done():
@@ -411,7 +415,11 @@ func (adapter ProtocolTerminalServiceAdapter) LiveEvents(ctx context.Context, re
 
 func drainProtocolLiveRefreshEvents(events <-chan protocol.Event, current protocol.Event) (protocol.Event, *protocol.Event, bool) {
 	latest := current
+	drained := 1
 	for {
+		if drained >= maxProtocolLiveRefreshDrainBeforeYield {
+			return latest, nil, false
+		}
 		select {
 		case event, ok := <-events:
 			if !ok {
@@ -419,8 +427,10 @@ func drainProtocolLiveRefreshEvents(events <-chan protocol.Event, current protoc
 			}
 			if ordinaryProtocolLiveRefreshEvent(event) && sameProtocolLiveRefreshTarget(latest, event) {
 				// 中文说明：普通 terminal.changed 只是“latest screen 已失效”的信号，
-				// 不是必须逐帧播放的内容事件；队列里已有的同类 backlog 必须全部吞并。
+				// 不是必须逐帧播放的内容事件；队列里已有的同类 backlog 尽量吞并。
+				// 但持续输出时不能无限等待 channel 变空，否则 live screen 会长期不刷新。
 				latest = event
+				drained++
 				continue
 			}
 			return latest, &event, false
@@ -437,6 +447,22 @@ func ordinaryProtocolLiveRefreshEvent(event protocol.Event) bool {
 
 func sameProtocolLiveRefreshTarget(left protocol.Event, right protocol.Event) bool {
 	return left.TerminalID == "" || right.TerminalID == "" || left.TerminalID == right.TerminalID
+}
+
+func protocolLiveEventApproxBytes(event TerminalLiveEvent) int {
+	if !event.Ready {
+		return 0
+	}
+	total := 0
+	for _, line := range event.Snapshot.Lines {
+		total += len(line)
+	}
+	for _, row := range event.Snapshot.Screen {
+		for _, cell := range row {
+			total += len(cell.Text)
+		}
+	}
+	return total
 }
 
 func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.Context, req TerminalLiveEventRequest, event protocol.Event) TerminalLiveEvent {

@@ -16,6 +16,7 @@ import (
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-proto/wire"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/transport"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
@@ -30,6 +31,7 @@ const (
 
 const daemonBoundaryReclaimMinHeapMBEnv = "TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
 const daemonBoundaryReclaimDefaultMinHeapBytes = 8 << 20
+const maxProtocolLiveInvalidationDrainBeforeYield = 4096
 
 var errProtocolAttachmentMismatch = errors.New("protocol attachment mismatch")
 var daemonBoundaryReclaimMinHeapBytes = parseDaemonBoundaryReclaimMinHeapBytes()
@@ -1103,22 +1105,77 @@ func (session *protocolSession) startEvents(ctx context.Context, params protocol
 	events := session.server.Events(eventCtx, eventFilterFromProtocol(params))
 	go func() {
 		defer session.clearEventSubscription(subID)
+		var pending *Event
+		var drainedClosed bool
 		for {
-			select {
-			case <-eventCtx.Done():
+			var event Event
+			if pending != nil {
+				event = *pending
+				pending = nil
+			} else if drainedClosed {
 				return
-			case event, ok := <-events:
-				if !ok {
+			} else {
+				var ok bool
+				select {
+				case <-eventCtx.Done():
 					return
+				case event, ok = <-events:
+					if !ok {
+						return
+					}
 				}
-				payload, err := protocol.EncodeEventPayload(protocolEventFromCoreV2(event))
-				if err != nil {
-					continue
-				}
-				_ = session.sendFrame(0, wire.TypeEvent, payload)
 			}
+			if ordinaryCoreLiveInvalidationEvent(event) {
+				// 中文说明：普通 terminal.changed 只是 live screen 失效信号，
+				// protocol event stream 不能逐个排队挤占 snapshot response。
+				event, pending, drainedClosed = drainCoreLiveInvalidationEvents(events, event)
+			}
+			payload, err := protocol.EncodeEventPayload(protocolEventFromCoreV2(event))
+			if err != nil {
+				continue
+			}
+			perftrace.Count("core.protocol.event", len(payload))
+			_ = session.sendFrame(0, wire.TypeEvent, payload)
 		}
 	}()
+}
+
+func drainCoreLiveInvalidationEvents(events <-chan Event, current Event) (Event, *Event, bool) {
+	latest := current
+	drained := 1
+	for {
+		if drained >= maxProtocolLiveInvalidationDrainBeforeYield {
+			return latest, nil, false
+		}
+		select {
+		case event, ok := <-events:
+			if !ok {
+				return latest, nil, true
+			}
+			if ordinaryCoreLiveInvalidationEvent(event) && sameCoreLiveInvalidationTarget(latest, event) {
+				latest = event
+				drained++
+				continue
+			}
+			return latest, &event, false
+		default:
+			return latest, nil, false
+		}
+	}
+}
+
+func ordinaryCoreLiveInvalidationEvent(event Event) bool {
+	if event.Type != EventTerminalChanged || event.LifecycleKnown || event.Storage != nil || event.Workbench != nil {
+		return false
+	}
+	if event.Terminal != nil && (event.Terminal.State == TerminalStateExited || event.Terminal.State == TerminalStateRemoved) {
+		return false
+	}
+	return true
+}
+
+func sameCoreLiveInvalidationTarget(left Event, right Event) bool {
+	return left.TerminalID == right.TerminalID
 }
 
 func (session *protocolSession) stopEvents() {
@@ -1223,17 +1280,33 @@ func (session *protocolSession) startAttachmentStream(ctx context.Context, attac
 }
 
 func (session *protocolSession) forwardAttachmentStream(ctx context.Context, attachment protocolAttachment, events <-chan Event) {
+	var pending *Event
+	var drainedClosed bool
 	for {
-		select {
-		case <-ctx.Done():
+		var event Event
+		if pending != nil {
+			event = *pending
+			pending = nil
+		} else if drainedClosed {
 			return
-		case _, ok := <-events:
-			if !ok {
+		} else {
+			var ok bool
+			select {
+			case <-ctx.Done():
 				return
+			case event, ok = <-events:
+				if !ok {
+					return
+				}
 			}
-			if err := session.sendLiveScreenUpdate(attachment); err != nil {
-				return
-			}
+		}
+		if ordinaryCoreLiveInvalidationEvent(event) {
+			// 中文说明：attachment screen stream 是 live 投影，不是历史 truth；
+			// 高频输出时只需要按 bounded latest 刷新，避免整屏 full-replace 阻塞协议通道。
+			event, pending, drainedClosed = drainCoreLiveInvalidationEvents(events, event)
+		}
+		if err := session.sendLiveScreenUpdate(attachment); err != nil {
+			return
 		}
 	}
 }
@@ -1248,6 +1321,7 @@ func (session *protocolSession) sendLiveScreenUpdate(attachment protocolAttachme
 	}
 	// 中文说明：stream frame 属于 attachment channel 的 live 投影；它只读 core-v2
 	// live surface，不创建 history truth，也不把 App 本地缓存写回 core。
+	perftrace.Count("core.protocol.attach_screen_update", len(payload))
 	return session.sendFrame(attachment.Channel, wire.TypeScreenUpdate, payload)
 }
 

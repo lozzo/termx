@@ -9,6 +9,7 @@ import (
 
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
@@ -390,6 +391,7 @@ func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, outpu
 	if !stillCurrent {
 		return nil
 	}
+	perftrace.Count("core.terminal.changed", len(output))
 	terminal.publish(EventTerminalChanged, info)
 	return nil
 }

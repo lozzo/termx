@@ -278,6 +278,84 @@ func TestProtocolServiceAttachmentStreamsLiveScreenUpdates(t *testing.T) {
 	}
 }
 
+func TestProtocolLiveInvalidationDrainYieldsDuringSustainedBacklog(t *testing.T) {
+	events := make(chan Event, maxProtocolLiveInvalidationDrainBeforeYield+32)
+	for i := 0; i < cap(events); i++ {
+		events <- Event{Type: EventTerminalChanged, TerminalID: "term-1", Timestamp: time.Unix(int64(i), 0)}
+	}
+	close(events)
+
+	first, pending, closed := drainCoreLiveInvalidationEvents(events, Event{Type: EventTerminalChanged, TerminalID: "term-1"})
+	if pending != nil || closed {
+		t.Fatalf("first bounded drain should yield without consuming closed backlog pending=%#v closed=%v", pending, closed)
+	}
+	second, pending, closed := drainCoreLiveInvalidationEvents(events, first)
+	if pending != nil || !closed {
+		t.Fatalf("second drain should consume remaining closed backlog pending=%#v closed=%v", pending, closed)
+	}
+	if !second.Timestamp.Equal(time.Unix(int64(maxProtocolLiveInvalidationDrainBeforeYield+31), 0)) {
+		t.Fatalf("drain should preserve latest ordinary event, got %#v", second.Timestamp)
+	}
+}
+
+func TestProtocolLiveInvalidationDrainStopsAtSemanticBoundary(t *testing.T) {
+	events := make(chan Event, 3)
+	events <- Event{Type: EventTerminalChanged, TerminalID: "term-1", Timestamp: time.Unix(2, 0)}
+	events <- Event{Type: EventTerminalResized, TerminalID: "term-1", NewSize: Size{Cols: 100, Rows: 40}}
+	events <- Event{Type: EventTerminalChanged, TerminalID: "term-1", Timestamp: time.Unix(3, 0)}
+
+	got, pending, closed := drainCoreLiveInvalidationEvents(events, Event{Type: EventTerminalChanged, TerminalID: "term-1", Timestamp: time.Unix(1, 0)})
+	if closed || pending == nil {
+		t.Fatalf("expected semantic boundary pending event, pending=%#v closed=%v", pending, closed)
+	}
+	if got.Timestamp != time.Unix(2, 0) {
+		t.Fatalf("expected latest ordinary event before boundary, got %#v", got)
+	}
+	if pending.Type != EventTerminalResized {
+		t.Fatalf("resize boundary must not be swallowed, got %#v", pending)
+	}
+}
+
+func TestProtocolLiveInvalidationDrainStopsAtOtherTerminal(t *testing.T) {
+	events := make(chan Event, 2)
+	events <- Event{Type: EventTerminalChanged, TerminalID: "term-2", Timestamp: time.Unix(2, 0)}
+	events <- Event{Type: EventTerminalChanged, TerminalID: "term-1", Timestamp: time.Unix(3, 0)}
+
+	got, pending, closed := drainCoreLiveInvalidationEvents(events, Event{Type: EventTerminalChanged, TerminalID: "term-1", Timestamp: time.Unix(1, 0)})
+	if closed || pending == nil {
+		t.Fatalf("expected other-terminal boundary pending event, pending=%#v closed=%v", pending, closed)
+	}
+	if got.TerminalID != "term-1" || !got.Timestamp.Equal(time.Unix(1, 0)) {
+		t.Fatalf("current terminal event should stay unchanged before other-terminal boundary, got %#v", got)
+	}
+	if pending.TerminalID != "term-2" {
+		t.Fatalf("other terminal live invalidation must not be swallowed, got %#v", pending)
+	}
+}
+
+func BenchmarkProtocolLiveInvalidationDrain100k(b *testing.B) {
+	const eventsPerRun = 100000
+	for i := 0; i < b.N; i++ {
+		events := make(chan Event, eventsPerRun)
+		for n := 0; n < eventsPerRun; n++ {
+			events <- Event{Type: EventTerminalChanged, TerminalID: "term-1"}
+		}
+		close(events)
+
+		count := 0
+		event := Event{Type: EventTerminalChanged, TerminalID: "term-1"}
+		for {
+			var closed bool
+			event, _, closed = drainCoreLiveInvalidationEvents(events, event)
+			count++
+			if closed {
+				break
+			}
+		}
+		b.ReportMetric(float64(count), "live-invalidations/op")
+	}
+}
+
 func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

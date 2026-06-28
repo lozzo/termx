@@ -1932,39 +1932,67 @@ func TestProtocolTerminalServiceAdapterLiveEventDrainUsesQueuedBacklogOnly(t *te
 }
 
 func TestProtocolTerminalServiceAdapterLiveEventDrainCoalescesLargeBacklogToLatestRefresh(t *testing.T) {
-	eventCh := make(chan protocol.Event, 512)
-	client := &fakeProtocolTerminalClient{
-		eventCh: eventCh,
+	events := make(chan protocol.Event, 512)
+	for i := 0; i < cap(events); i++ {
+		events <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(int64(i), 0)}
 	}
-	for i := 0; i < cap(eventCh); i++ {
-		eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(int64(i), 0)}
-	}
-	close(eventCh)
+	close(events)
 
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
-	events, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
-	if err != nil {
-		t.Fatalf("live events: %v", err)
+	got, pending, closed := drainProtocolLiveRefreshEvents(events, protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(-1, 0)})
+	if pending != nil || !closed {
+		t.Fatalf("closed ordinary backlog should coalesce into one drain pending=%#v closed=%v", pending, closed)
+	}
+	if !got.Timestamp.Equal(time.Unix(511, 0)) {
+		t.Fatalf("closed ordinary backlog should preserve latest event, got %#v", got.Timestamp)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterLiveEventDrainYieldsDuringSustainedBacklog(t *testing.T) {
+	events := make(chan protocol.Event, maxProtocolLiveRefreshDrainBeforeYield+32)
+	for i := 0; i < cap(events); i++ {
+		events <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(int64(i), 0)}
 	}
 
-	select {
-	case got := <-events:
-		if !got.Refresh || got.Ready || got.TerminalID != "term-1" {
-			t.Fatalf("unexpected live event %#v", got)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("ordinary live coalescing did not emit latest refresh invalidation")
+	got, pending, closed := drainProtocolLiveRefreshEvents(events, protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(-1, 0)})
+	if pending != nil || closed {
+		t.Fatalf("bounded drain should yield without consuming closed backlog pending=%#v closed=%v", pending, closed)
 	}
-	select {
-	case got, ok := <-events:
-		if ok {
-			t.Fatalf("large ordinary backlog must not be split into replay frames, got %#v", got)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for coalesced backlog stream close")
+	if !got.Timestamp.Equal(time.Unix(int64(maxProtocolLiveRefreshDrainBeforeYield-2), 0)) {
+		t.Fatalf("bounded drain should return latest event in this batch, got %#v", got.Timestamp)
 	}
-	if len(client.snapshotIDs) != 0 {
-		t.Fatalf("refresh invalidation must not fetch snapshot in service layer, got %#v", client.snapshotIDs)
+	if len(events) != 33 {
+		t.Fatalf("bounded drain should leave sustained backlog for next refresh, got %d", len(events))
+	}
+
+	got, pending, closed = drainProtocolLiveRefreshEvents(events, got)
+	if pending != nil || closed {
+		t.Fatalf("remaining open backlog should drain without closed signal pending=%#v closed=%v", pending, closed)
+	}
+	if !got.Timestamp.Equal(time.Unix(int64(maxProtocolLiveRefreshDrainBeforeYield+31), 0)) {
+		t.Fatalf("second drain should return latest queued event, got %#v", got.Timestamp)
+	}
+}
+
+func BenchmarkProtocolTerminalServiceAdapterLiveEventDrain100k(b *testing.B) {
+	const eventCount = 100000
+	for i := 0; i < b.N; i++ {
+		events := make(chan protocol.Event, eventCount)
+		for n := 0; n < eventCount; n++ {
+			events <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
+		}
+		close(events)
+
+		count := 0
+		event := protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
+		for {
+			var closed bool
+			event, _, closed = drainProtocolLiveRefreshEvents(events, event)
+			count++
+			if closed {
+				break
+			}
+		}
+		b.ReportMetric(float64(count), "refreshes/op")
 	}
 }
 

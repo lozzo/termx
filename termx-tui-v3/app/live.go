@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
@@ -837,11 +838,13 @@ func liveSurfaceEffect(terminalID string, cols int, rows int, deps LiveDeps) []E
 		Async:            true,
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
+			finish := perftrace.Measure("tui.live_surface")
 			result, err := source.LiveSurface(ctx, services.TerminalSurfaceRequest{
 				TerminalID: terminalID,
 				Cols:       cols,
 				Rows:       rows,
 			})
+			finish(liveSurfaceResultApproxBytes(result))
 			if err != nil {
 				logEffectError(deps.Logger, "live.surface", err, "terminal_id", terminalID)
 				if isContextLifecycleError(err) {
@@ -898,6 +901,7 @@ func liveStreamEffect(terminalID string, cols int, rows int, deps LiveDeps) []Ef
 						if event.TerminalID == "" {
 							event.TerminalID = terminalID
 						}
+						perftrace.Count("tui.live_event", liveEventApproxBytes(event))
 						post(LiveEventMsg{Event: event})
 					}
 				}
@@ -908,6 +912,30 @@ func liveStreamEffect(terminalID string, cols int, rows int, deps LiveDeps) []Ef
 
 func liveStreamTokenForTerminal(terminalID string) CancelToken {
 	return CancelToken(liveStreamTokenPrefix + terminalID)
+}
+
+func liveSurfaceResultApproxBytes(result services.TerminalSurfaceResult) int {
+	return liveSnapshotApproxBytes(result.Snapshot)
+}
+
+func liveEventApproxBytes(event services.TerminalLiveEvent) int {
+	if event.Ready {
+		return liveSnapshotApproxBytes(event.Snapshot)
+	}
+	return 0
+}
+
+func liveSnapshotApproxBytes(snapshot state.LiveSurfaceSnapshot) int {
+	total := 0
+	for _, line := range snapshot.Lines {
+		total += len(line)
+	}
+	for _, row := range snapshot.Screen {
+		for _, cell := range row {
+			total += len(cell.Text)
+		}
+	}
+	return total
 }
 
 func maybeRefreshFloatingAutoFit(root state.Root, terminalID string) (state.Root, []Effect) {
