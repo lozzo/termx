@@ -660,7 +660,10 @@ func (runtime *AppRuntime) coalesceQueuedLiveUpdate(msg Msg) bool {
 			return false
 		}
 		existing, ok := queuedOrdinaryLiveUpdate(queued)
-		if !ok || existing.terminalID != incoming.terminalID {
+		if !ok {
+			return false
+		}
+		if existing.terminalID != incoming.terminalID {
 			continue
 		}
 		runtime.removeAtLocked(i)
@@ -736,12 +739,18 @@ func queuedOrdinaryLiveUpdate(msg Msg) (queuedLiveUpdate, bool) {
 	switch msg := msg.(type) {
 	case LiveEventMsg:
 		// 中文说明：runtime 队列只合并 live invalidation wake-up；
-		// native screen fetch result 已经由 reducer-owned LiveRenderRequestState 背压。
 		if ordinaryLiveRefreshEvent(msg.Event) {
 			if msg.Event.TerminalID == "" {
 				return queuedLiveUpdate{}, false
 			}
 			return queuedLiveUpdate{terminalID: msg.Event.TerminalID}, true
+		}
+	case LiveSurfaceMsg:
+		// 中文说明：普通 native screen result 是 live projection，不是语义帧；
+		// 压力输出下同 terminal 已返回的旧 projection 必须 latest-only 合并，
+		// 生命周期/错误 surface 仍是不可丢的语义边界。
+		if ordinaryLiveSurfaceResult(msg) {
+			return queuedLiveUpdate{terminalID: msg.Snapshot.TerminalID}, true
 		}
 	default:
 		return queuedLiveUpdate{}, false
@@ -754,7 +763,8 @@ func liveQueueBoundary(msg Msg) bool {
 	case LiveAttachMsg, LiveAttachResultMsg, LiveInputAttachResultMsg, TerminalPoolAttachResultMsg, LiveExitMsg, LiveResizeMsg, LiveResizeResultMsg, HostResizeMsg, QuitMsg:
 		return true
 	case LiveSurfaceMsg:
-		return true
+		_, ok := queuedOrdinaryLiveUpdate(msg)
+		return !ok
 	case LiveEventMsg:
 		_, ok := queuedOrdinaryLiveUpdate(msg)
 		return !ok
@@ -773,6 +783,10 @@ func firstOrdinaryLiveUpdateIndex(queue []Msg) int {
 		}
 	}
 	return -1
+}
+
+func ordinaryLiveSurfaceResult(msg LiveSurfaceMsg) bool {
+	return msg.Err == nil && !msg.LifecycleKnown && msg.Snapshot.TerminalID != ""
 }
 
 func (runtime *AppRuntime) removeAtLocked(index int) {

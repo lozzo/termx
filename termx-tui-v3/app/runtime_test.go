@@ -93,6 +93,23 @@ func TestAppRuntimeCoalescedLiveInvalidationClearsStalePayloadReference(t *testi
 	}
 }
 
+func TestAppRuntimeCoalescedLiveSurfaceClearsStalePayloadReference(t *testing.T) {
+	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
+	runtime.queue = make([]Msg, 0, 2)
+	runtime.enqueue(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 1, Lines: []string{strings.Repeat("old", 1024)}}})
+	runtime.enqueue(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 2, Lines: []string{"latest"}}})
+
+	if len(runtime.queue) != 1 {
+		t.Fatalf("live surfaces should coalesce to one message, queue=%#v", runtime.queue)
+	}
+	retained := runtime.queue[:cap(runtime.queue)]
+	for i := len(runtime.queue); i < len(retained); i++ {
+		if retained[i] != nil {
+			t.Fatalf("coalesced live surface kept stale queue slot %d: %#v", i, retained[i])
+		}
+	}
+}
+
 func TestAppRuntimePrioritizesInputBeforeQueuedOrdinaryLiveUpdate(t *testing.T) {
 	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
 	runtime.enqueue(LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
@@ -459,7 +476,7 @@ func TestAppRuntimeRendersBoundedBatchBeforeQueueBecomesEmpty(t *testing.T) {
 	}
 }
 
-func TestAppRuntimeDoesNotCoalesceNativeScreenFetchResults(t *testing.T) {
+func TestAppRuntimeCoalescesOrdinaryNativeScreenFetchResultsByTerminal(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	var revisions []uint64
 	var lines []string
@@ -496,18 +513,18 @@ func TestAppRuntimeDoesNotCoalesceNativeScreenFetchResults(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 
-	if !reflect.DeepEqual(revisions, []uint64{1, 2, 3}) {
-		t.Fatalf("native screen fetch results must stay ordered, got %v", revisions)
+	if !reflect.DeepEqual(revisions, []uint64{3}) {
+		t.Fatalf("ordinary native screen fetch results should be latest-only, got %v", revisions)
 	}
-	if !reflect.DeepEqual(lines, []string{"one", "two", "three"}) {
-		t.Fatalf("native screen fetch payloads must stay ordered, got %v", lines)
+	if !reflect.DeepEqual(lines, []string{"three"}) {
+		t.Fatalf("ordinary native screen fetch payload should keep only latest, got %v", lines)
 	}
-	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"frame-3"}) {
-		t.Fatalf("message burst should still render once after ordered fetch results, got %v", got)
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"frame-1"}) {
+		t.Fatalf("coalesced native screen result should render once, got %v", got)
 	}
 }
 
-func TestAppRuntimeKeepsNativeScreenFetchResultQueuePosition(t *testing.T) {
+func TestAppRuntimeDoesNotCoalesceNativeScreenFetchResultsAcrossOrdinaryBoundary(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	var seen []string
 	runtime := NewAppRuntime(
@@ -546,7 +563,7 @@ func TestAppRuntimeKeepsNativeScreenFetchResultQueuePosition(t *testing.T) {
 	}
 }
 
-func TestAppRuntimeDoesNotDropOlderNativeScreenFetchResult(t *testing.T) {
+func TestAppRuntimeDoesNotCoalesceLifecycleNativeScreenFetchResult(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	var revisions []uint64
 	runtime := NewAppRuntime(
@@ -567,7 +584,7 @@ func TestAppRuntimeDoesNotDropOlderNativeScreenFetchResult(t *testing.T) {
 	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 3, Lines: []string{"new"}}}); err != nil {
 		t.Fatalf("post revision 3: %v", err)
 	}
-	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 2, Lines: []string{"old"}}}); err != nil {
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 2, Lines: []string{"old"}}, LifecycleKnown: true}); err != nil {
 		t.Fatalf("post revision 2: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -575,7 +592,7 @@ func TestAppRuntimeDoesNotDropOlderNativeScreenFetchResult(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(revisions, []uint64{3, 2}) {
-		t.Fatalf("runtime queue must not decide native screen staleness, got %v", revisions)
+		t.Fatalf("lifecycle native screen result must stay as semantic boundary, got %v", revisions)
 	}
 }
 
