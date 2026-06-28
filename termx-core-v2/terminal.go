@@ -578,8 +578,8 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 		// frame，不能把旧 shell 屏幕复刻成第二份 screen app history truth。
 		decision.PublishPrimaryFrameTouchedRowsOnly = !hasEraseDisplay && (syncFrameSession || fullReplaceTouchedRowsOnly)
 		// 中文说明：vterm 已经证明真正滚出 primary viewport 的 payload 必须进入
-		// authoritative history；ED2 清屏时捕获的旧可见屏只是 repaint boundary，
-		// renderer 会跳过，避免 copy/history 里出现多倍临时 UI。
+		// authoritative history；ED2 clear-time proof 只有在已有 primary current
+		// ownership 时才消费，renderer 不能靠更早的 scroll-out 状态补 seal。
 		decision.ConsumeScrollOutProof = historyTransactionShouldConsumeScrollOut(tx, state)
 		// 中文说明：ED2 不等于 ED3。若清屏前有 primary current frame，
 		// vterm 的 clear-time scroll-out proof 表示该 frame 真实离开 viewport，

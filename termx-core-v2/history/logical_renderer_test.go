@@ -163,7 +163,7 @@ func TestR337LogicalRendererClosesPrimaryFromCurrentScreenProofBeforePrompt(t *t
 	}
 }
 
-func TestR333LogicalRendererClosesScrolledPrimaryFrameBeforeED2Repaint(t *testing.T) {
+func TestR338LogicalRendererED2DoesNotCloseFrameFromStaleScrollOutState(t *testing.T) {
 	renderer := NewHistoryLogicalRenderer(nil, nil)
 	if _, err := renderer.Apply(TerminalSemanticTransaction{
 		Seq: 1,
@@ -196,7 +196,8 @@ func TestR333LogicalRendererClosesScrolledPrimaryFrameBeforeED2Repaint(t *testin
 		t.Fatalf("apply ED2 repaint: %v", err)
 	}
 	var closed []string
-	var clearPrimary int
+	clearPrimary := 0
+	replacePrimary := 0
 	for _, mutation := range batch.Mutations {
 		if mutation.Kind == HistoryMutationClosePrimaryFrame && mutation.Sealed != nil {
 			closed = append(closed, logicalLinesText(mutation.Sealed.Lines))
@@ -204,12 +205,15 @@ func TestR333LogicalRendererClosesScrolledPrimaryFrameBeforeED2Repaint(t *testin
 		if mutation.Kind == HistoryMutationClearPrimaryFrame {
 			clearPrimary++
 		}
+		if mutation.Kind == HistoryMutationReplacePrimaryFrame {
+			replacePrimary++
+		}
 	}
-	if len(closed) != 1 || closed[0] != "tail" {
-		t.Fatalf("ED2 after payload scroll-out must close current tail before repaint, closed=%v batch=%#v", closed, batch)
+	if len(closed) != 0 {
+		t.Fatalf("ED2 without same-transaction clear-time proof must not close stale tail, closed=%v batch=%#v", closed, batch)
 	}
-	if clearPrimary != 0 {
-		t.Fatalf("scrolled frame should be closed, not just cleared, batch=%#v", batch)
+	if clearPrimary != 1 || replacePrimary != 1 {
+		t.Fatalf("ED2 repaint should clear old ownership and publish latest frame, clear=%d replace=%d batch=%#v", clearPrimary, replacePrimary, batch)
 	}
 }
 
