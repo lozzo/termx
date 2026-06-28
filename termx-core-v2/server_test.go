@@ -21,6 +21,7 @@ func TestServerOptions(t *testing.T) {
 	server := NewServer(
 		WithSocketPath("/tmp/termx-core-v2-test.sock"),
 		WithDefaultSize(100, 30),
+		WithHistoryStorageDir("/tmp/termx-core-v2-history"),
 		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 		WithListenerFactory(func(string) (transport.Listener, error) {
 			return newFakeListener("unused"), nil
@@ -31,6 +32,9 @@ func TestServerOptions(t *testing.T) {
 	}
 	if server.DefaultSize() != (Size{Cols: 100, Rows: 30}) {
 		t.Fatalf("unexpected default size %#v", server.DefaultSize())
+	}
+	if server.HistoryStorageDir() != "/tmp/termx-core-v2-history" {
+		t.Fatalf("unexpected history storage dir %q", server.HistoryStorageDir())
 	}
 }
 

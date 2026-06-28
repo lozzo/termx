@@ -6,7 +6,10 @@ import (
 	"sync"
 )
 
-const terminalLiveIngestBatchMaxBytes = 1024 * 1024
+// terminalLiveIngestBatchMaxBytes 是 live latest 更新的交互批次上限。
+// domain owner：core live ingest queue；truth source 仍是 PTY bytes。这里按
+// PTY read 粒度切批，避免压力输出被 1MB 合并成很粗的 live screen 跳变。
+const terminalLiveIngestBatchMaxBytes = ptyReadBufferBytes
 
 // terminalLiveIngestQueue 把 PTY 高频输出压成 live latest 批次。
 // enqueue 不写 vterm，不持 terminal live 锁；worker 只取当前积压批次写一次 screen。

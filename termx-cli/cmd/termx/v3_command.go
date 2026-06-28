@@ -73,7 +73,8 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 
 			socketPath := resolveV3Socket(*socket)
 			applyDaemonRuntimeTuning(logger)
-			opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath)}
+			historyDir := resolveV3HistoryStorageDir()
+			opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryStorageDir(historyDir)}
 			srv := newCoreV2Server(opts...)
 			remoteCfg, err := remoteConfigFromFileAndEnv(remoteConfigPathValue(configPath))
 			if err != nil {
@@ -98,7 +99,7 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 				_ = srv.Shutdown(context.Background())
 			}()
 
-			logger.Info("starting core-v2 daemon", "socket", socketPath, "log_file", logPath)
+			logger.Info("starting core-v2 daemon", "socket", socketPath, "log_file", logPath, "history_dir", historyDir)
 			err = srv.ListenAndServe(ctx)
 			writeHeapProfile("exit")
 			if err != nil {

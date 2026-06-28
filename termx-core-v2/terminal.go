@@ -29,7 +29,7 @@ type Terminal struct {
 	update          func(TerminalInfo)
 }
 
-func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo)) *Terminal {
+func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyStore history.HistoryStore) *Terminal {
 	size := live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)}
 	terminal := &Terminal{
 		info:    info.Clone(),
@@ -39,7 +39,10 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 		update:  update,
 	}
 	terminal.historyRenderer = history.NewHistoryLogicalRenderer(nil, nil)
-	terminal.historyStore = history.NewInMemoryHistoryStore(info.ID)
+	if historyStore == nil {
+		historyStore = history.NewInMemoryHistoryStore(info.ID)
+	}
+	terminal.historyStore = historyStore
 	liveOptions := live.DefaultSurfaceTrackOptions()
 	liveOptions.OnResponse = terminal.handleLiveSurfaceResponse
 	terminal.live = live.NewSurfaceTrackWithOptions(size, liveOptions)

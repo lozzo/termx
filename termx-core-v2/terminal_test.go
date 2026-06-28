@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -152,6 +154,49 @@ func TestR324TerminalHistoryReturnsAuthoritativeWindow(t *testing.T) {
 	}
 	if err := server.TerminalHistoryRelease(context.Background(), "term-history-r324", snapshot.Token); err != nil {
 		t.Fatalf("history.release should release token: %v", err)
+	}
+}
+
+func TestR346TerminalUsesFileBackedHistoryStoreWhenConfigured(t *testing.T) {
+	historyDir := t.TempDir()
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()), WithHistoryStorageDir(historyDir))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r346-file-backed",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 30, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r346-file-backed", "alpha\r\nbeta\r\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	payloadPath := filepath.Join(historyDir, "term-r346-file-backed.history-lines.bin")
+	if info, err := os.Stat(payloadPath); err != nil || info.Size() == 0 {
+		t.Fatalf("expected file-backed history payload at %s, info=%#v err=%v", payloadPath, info, err)
+	}
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r346-file-backed", history.HistoryWindowRequest{
+		TerminalID: "term-r346-file-backed",
+		Mode:       history.HistoryWindowModeLatest,
+		Limit:      2,
+		Cols:       30,
+	})
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "alpha|beta" {
+		t.Fatalf("file-backed terminal history window mismatch: %q", got)
+	}
+}
+
+func TestR346TerminalDoesNotSilentlyFallbackWhenHistoryBackendCannotOpen(t *testing.T) {
+	blockingFile := filepath.Join(t.TempDir(), "blocking-file")
+	badDir := filepath.Join(blockingFile, "child")
+	if err := os.WriteFile(blockingFile, []byte("not-a-directory"), 0o600); err != nil {
+		t.Fatalf("seed blocking file: %v", err)
+	}
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()), WithHistoryStorageDir(badDir))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r346-bad-backend", Command: []string{"shell"}}); err == nil {
+		t.Fatal("register terminal should fail when configured file-backed history cannot be created")
 	}
 }
 

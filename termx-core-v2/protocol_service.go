@@ -31,7 +31,11 @@ const (
 
 const daemonBoundaryReclaimMinHeapMBEnv = "TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
 const daemonBoundaryReclaimDefaultMinHeapBytes = 8 << 20
-const maxProtocolLiveInvalidationDrainBeforeYield = 4096
+
+// maxProtocolLiveInvalidationDrainBeforeYield 限制普通 live invalidation 的
+// latest-only 合并窗口。它要足够小，避免压力输出期间 protocol 把许多 core
+// live 批次继续吞成少数几帧；语义边界仍由 drain 逻辑单独保留。
+const maxProtocolLiveInvalidationDrainBeforeYield = 64
 
 var errProtocolAttachmentMismatch = errors.New("protocol attachment mismatch")
 var daemonBoundaryReclaimMinHeapBytes = parseDaemonBoundaryReclaimMinHeapBytes()

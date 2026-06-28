@@ -28,3 +28,7 @@ func v3ConfigPathPolicy() string {
 func v3StatePathPolicy() string {
 	return "unused"
 }
+
+func resolveV3HistoryStorageDir() string {
+	return resolveStateFilePath("history-v2")
+}

@@ -42,7 +42,10 @@ type ProtocolTerminalServiceAdapter struct {
 	Client ProtocolTerminalClient
 }
 
-const maxProtocolLiveRefreshDrainBeforeYield = 4096
+// maxProtocolLiveRefreshDrainBeforeYield 限制 TUI service 边界的 latest-only
+// 合并窗口。普通 changed 可以合并，但压力输出时必须定期让出 live refresh，
+// 否则用户只能看到几次大跳帧。
+const maxProtocolLiveRefreshDrainBeforeYield = 64
 
 func (adapter ProtocolTerminalServiceAdapter) Attach(ctx context.Context, req TerminalAttachRequest) (TerminalAttachResult, error) {
 	if adapter.Client == nil {

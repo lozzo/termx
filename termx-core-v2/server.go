@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -20,14 +21,21 @@ type ListenerFactory func(socketPath string) (transport.Listener, error)
 type ServerOption func(*serverConfig)
 
 type serverConfig struct {
-	socketPath      string
-	defaultSize     Size
-	logger          *slog.Logger
-	listenerFactory ListenerFactory
-	processFactory  ProcessFactory
-	remoteService   RemoteService
-	eventBuffer     int
+	socketPath          string
+	defaultSize         Size
+	logger              *slog.Logger
+	listenerFactory     ListenerFactory
+	processFactory      ProcessFactory
+	remoteService       RemoteService
+	eventBuffer         int
+	historyStoreFactory HistoryStoreFactory
+	historyStorageDir   string
 }
+
+// HistoryStoreFactory 为每个 terminal 创建 core-v2 authoritative history store。
+// domain owner 是 Server/Terminal lifecycle：工厂只决定 payload residency backend，
+// 不能解释 terminal semantic transaction，也不能替代 HistoryStore 的 cursor truth。
+type HistoryStoreFactory func(terminalID string) (history.HistoryStore, error)
 
 type Server struct {
 	cfg                   serverConfig
@@ -137,6 +145,25 @@ func WithEventBuffer(size int) ServerOption {
 	}
 }
 
+// WithHistoryStoreFactory 注入 terminal history store 工厂。调用边界是
+// RegisterTerminal；工厂返回错误时 terminal 创建必须失败，不能静默回退到内存
+// store 后继续占用大量 RSS。
+func WithHistoryStoreFactory(factory HistoryStoreFactory) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.historyStoreFactory = factory
+	}
+}
+
+// WithHistoryStorageDir 为生产 daemon 配置文件-backed sealed payload store。
+// 文件 backend 只承载 logical-line payload 驻留；timeline/window/cursor truth 仍由
+// core-v2 HistoryStore 持有。
+func WithHistoryStorageDir(dir string) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.historyStorageDir = dir
+		cfg.historyStoreFactory = fileBackedHistoryStoreFactory(dir)
+	}
+}
+
 // SetRemoteService 允许 daemon 完成 core-v2 server 构造后再注入 remote runtime hook。
 func (server *Server) SetRemoteService(service RemoteService) {
 	server.remoteServiceMu.Lock()
@@ -158,6 +185,13 @@ func (server *Server) DefaultSize() Size {
 	return server.cfg.defaultSize
 }
 
+// HistoryStorageDir 返回 daemon 配置的 file-backed history payload 目录。
+// 它只用于诊断和测试确认 residency 配置；history truth 仍由 Terminal 的
+// HistoryStore/window/cursor contract 决定。
+func (server *Server) HistoryStorageDir() string {
+	return server.cfg.historyStorageDir
+}
+
 func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, error) {
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
@@ -168,17 +202,42 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 	if err != nil {
 		return TerminalInfo{}, err
 	}
+	historyStore, err := server.newHistoryStore(info.ID)
+	if err != nil {
+		_, _ = server.registry.remove(info.ID)
+		return TerminalInfo{}, err
+	}
 	process, err := server.cfg.processFactory.Spawn(context.Background(), processSpecFromTerminal(info, record.Options))
 	if err != nil {
 		_, _ = server.registry.remove(info.ID)
 		return TerminalInfo{}, err
 	}
-	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo)
+	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore)
 	server.mu.Lock()
 	server.terminals[info.ID] = terminal
 	server.mu.Unlock()
 	server.publishTerminalEvent(EventTerminalCreated, info)
 	return info, nil
+}
+
+func (server *Server) newHistoryStore(terminalID string) (history.HistoryStore, error) {
+	if server.cfg.historyStoreFactory == nil {
+		return history.NewInMemoryHistoryStore(terminalID), nil
+	}
+	return server.cfg.historyStoreFactory(terminalID)
+}
+
+func fileBackedHistoryStoreFactory(dir string) HistoryStoreFactory {
+	return func(terminalID string) (history.HistoryStore, error) {
+		if strings.TrimSpace(dir) == "" {
+			return history.NewInMemoryHistoryStore(terminalID), nil
+		}
+		backend, err := history.NewFileStorageBackend(dir, terminalID)
+		if err != nil {
+			return nil, err
+		}
+		return history.NewBackendHistoryStore(terminalID, backend), nil
+	}
 }
 
 func processSpecFromTerminal(info TerminalInfo, options TerminalCreateOptions) ProcessSpec {

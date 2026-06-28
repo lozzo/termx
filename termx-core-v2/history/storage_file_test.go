@@ -48,3 +48,17 @@ func TestR342FileStorageBackendDoesNotUseJSON(t *testing.T) {
 		t.Fatalf("history file backend must not use JSONL path: %s", fileBackend.path)
 	}
 }
+
+func TestR346FileStorageBackendEscapesTerminalIDForPath(t *testing.T) {
+	backend, err := NewFileStorageBackend(t.TempDir(), "term/with/slash")
+	if err != nil {
+		t.Fatalf("create file backend: %v", err)
+	}
+	fileBackend := backend.(*fileStorageBackend)
+	if strings.Contains(fileBackend.path, "term/with/slash.history-lines.bin") {
+		t.Fatalf("terminal id must not create nested history payload path: %s", fileBackend.path)
+	}
+	if !strings.Contains(fileBackend.path, "term%2Fwith%2Fslash.history-lines.bin") {
+		t.Fatalf("history payload file should use escaped terminal id, got %s", fileBackend.path)
+	}
+}

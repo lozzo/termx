@@ -1938,12 +1938,24 @@ func TestProtocolTerminalServiceAdapterLiveEventDrainCoalescesLargeBacklogToLate
 	}
 	close(events)
 
-	got, pending, closed := drainProtocolLiveRefreshEvents(events, protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(-1, 0)})
-	if pending != nil || !closed {
-		t.Fatalf("closed ordinary backlog should coalesce into one drain pending=%#v closed=%v", pending, closed)
+	event := protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(-1, 0)}
+	refreshes := 0
+	for {
+		got, pending, closed := drainProtocolLiveRefreshEvents(events, event)
+		refreshes++
+		if pending != nil {
+			t.Fatalf("ordinary backlog should not create pending semantic boundary: %#v", pending)
+		}
+		event = got
+		if closed {
+			break
+		}
 	}
-	if !got.Timestamp.Equal(time.Unix(511, 0)) {
-		t.Fatalf("closed ordinary backlog should preserve latest event, got %#v", got.Timestamp)
+	if refreshes <= 1 || refreshes > 16 {
+		t.Fatalf("large ordinary backlog should yield several latest refreshes, got %d", refreshes)
+	}
+	if !event.Timestamp.Equal(time.Unix(511, 0)) {
+		t.Fatalf("closed ordinary backlog should preserve final latest event, got %#v", event.Timestamp)
 	}
 }
 

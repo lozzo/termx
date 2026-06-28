@@ -329,6 +329,10 @@ func TestDefaultDaemonUsesCoreV2Server(t *testing.T) {
 	fakeV3 := &fakeCoreV2Server{}
 	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
 		fakeV3.newServerCalls++
+		server := corev2.NewServer(opts...)
+		if server.HistoryStorageDir() == "" {
+			t.Fatal("default daemon must configure file-backed core-v2 history storage dir")
+		}
 		return fakeV3
 	}
 

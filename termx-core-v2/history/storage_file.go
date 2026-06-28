@@ -5,8 +5,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -24,7 +26,11 @@ func NewFileStorageBackend(dir string, terminalID string) (StorageBackend, error
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	path := filepath.Join(dir, terminalID+".history-lines.bin")
+	fileName, err := historyLinePayloadFileName(terminalID)
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(dir, fileName)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, err
@@ -34,6 +40,14 @@ func NewFileStorageBackend(dir string, terminalID string) (StorageBackend, error
 		file:    file,
 		offsets: make(map[LogicalLineID]int64),
 	}, nil
+}
+
+func historyLinePayloadFileName(terminalID string) (string, error) {
+	terminalID = strings.TrimSpace(terminalID)
+	if terminalID == "" {
+		return "", os.ErrInvalid
+	}
+	return url.PathEscape(terminalID) + ".history-lines.bin", nil
 }
 
 type fileStorageBackend struct {
