@@ -126,6 +126,23 @@ func (surface *SurfaceTrack) Write(text string) {
 	_ = surface.WriteWithResult(text)
 }
 
+// WriteNativeScreen 只推进 core 持有的 native live screen，不构造 history
+// semantic transaction、damage 列表或 primary/alt frame clone。调用边界是
+// history-disabled / live-only 热路径；需要 authoritative history proof 的路径
+// 必须继续使用 WriteWithResult。
+func (surface *SurfaceTrack) WriteNativeScreen(text string) {
+	if text == "" && surface.pending == "" {
+		return
+	}
+	surface.ensureSemanticSource()
+	text = surface.pending + text
+	surface.pending = ""
+	if text == "" {
+		return
+	}
+	_, _, _ = surface.vterm().WriteForLatestFrame([]byte(text))
+}
+
 func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 	var result SurfaceWriteResult
 	var raw strings.Builder

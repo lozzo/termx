@@ -1826,7 +1826,7 @@ func errorCode(err error) int {
 		return protocolErrorBadRequest
 	case errors.Is(err, ErrStorageEntryNotFound), errors.Is(err, ErrWorkbenchNotFound):
 		return protocolErrorNotFound
-	case errors.Is(err, ErrRemoteServiceUnavailable), errors.Is(err, ErrHistoryNotRebuilt):
+	case errors.Is(err, ErrRemoteServiceUnavailable), errors.Is(err, ErrHistoryNotRebuilt), errors.Is(err, ErrHistoryDisabled):
 		return protocolErrorUnavailable
 	default:
 		return protocolErrorInternal

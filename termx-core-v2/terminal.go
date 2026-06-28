@@ -24,26 +24,30 @@ type Terminal struct {
 	historyMu       sync.Mutex
 	historyRenderer history.HistoryLogicalRenderer
 	historyStore    history.HistoryStore
+	historyEnabled  bool
 	queueMu         sync.Mutex
 	liveQ           *terminalLiveIngestQueue
 	events          *eventBroker
 	update          func(TerminalInfo)
 }
 
-func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyStore history.HistoryStore) *Terminal {
+func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyStore history.HistoryStore, historyEnabled bool) *Terminal {
 	size := live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)}
 	terminal := &Terminal{
-		info:    info.Clone(),
-		options: cloneTerminalCreateOptions(options),
-		process: process,
-		events:  events,
-		update:  update,
+		info:           info.Clone(),
+		options:        cloneTerminalCreateOptions(options),
+		process:        process,
+		events:         events,
+		update:         update,
+		historyEnabled: historyEnabled,
 	}
-	terminal.historyRenderer = history.NewHistoryLogicalRenderer(nil, nil)
-	if historyStore == nil {
-		historyStore = history.NewInMemoryHistoryStore(info.ID)
+	if historyEnabled {
+		terminal.historyRenderer = history.NewHistoryLogicalRenderer(nil, nil)
+		if historyStore == nil {
+			historyStore = history.NewInMemoryHistoryStore(info.ID)
+		}
+		terminal.historyStore = historyStore
 	}
-	terminal.historyStore = historyStore
 	liveOptions := live.DefaultSurfaceTrackOptions()
 	liveOptions.OnResponse = terminal.handleLiveSurfaceResponse
 	terminal.live = live.NewSurfaceTrackWithOptions(size, liveOptions)
@@ -107,11 +111,20 @@ func (terminal *Terminal) IngestOutput(output string) error {
 	terminal.mu.Unlock()
 
 	terminal.liveMu.Lock()
-	result := surface.WriteWithResult(rawOutput)
+	var result live.SurfaceWriteResult
+	if terminal.historyEnabled {
+		result = surface.WriteWithResult(rawOutput)
+	} else {
+		// 中文说明：history disabled 是明确的 live-only 模式；这里不生成
+		// semantic evidence 或 frame clone，避免无限历史拖慢 native screen。
+		surface.WriteNativeScreen(rawOutput)
+	}
 	terminal.bumpLiveRevisionLocked()
 	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
-	terminal.applyHistoryWriteResult(result)
+	if terminal.historyEnabled {
+		terminal.applyHistoryWriteResult(result)
+	}
 
 	terminal.publishLiveInvalidated(info.ID, liveRevision)
 	return nil
@@ -154,7 +167,9 @@ func (terminal *Terminal) Resize(size Size) error {
 	terminal.bumpLiveRevisionLocked()
 	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
-	terminal.applyHistoryResizeTransaction(tx)
+	if terminal.historyEnabled {
+		terminal.applyHistoryResizeTransaction(tx)
+	}
 
 	terminal.syncInfo(info)
 	terminal.publishResize(info, oldSize, size)
@@ -181,7 +196,7 @@ func (terminal *Terminal) closeWithReason(reason history.CloseReason) error {
 	terminal.info.State = TerminalStateRemoved
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
-	if shouldCloseHistory {
+	if shouldCloseHistory && terminal.historyEnabled {
 		// 中文说明：remove/shutdown 不一定会经过 process-exit watcher；running terminal
 		// 的最后 open line/current frame 必须用 lifecycle close reason 交给 history renderer。
 		terminal.forceCloseHistory(reason)
@@ -460,11 +475,20 @@ func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, outpu
 	terminal.mu.Unlock()
 
 	terminal.liveMu.Lock()
-	result := surface.WriteWithResult(output)
+	var result live.SurfaceWriteResult
+	if terminal.historyEnabled {
+		result = surface.WriteWithResult(output)
+	} else {
+		// 中文说明：live-only 压力路径只更新 core 最新屏幕；history owner
+		// 被显式关闭时，不允许在热路径构造无限历史证据。
+		surface.WriteNativeScreen(output)
+	}
 	terminal.bumpLiveRevisionLocked()
 	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
-	terminal.applyHistoryWriteResult(result)
+	if terminal.historyEnabled {
+		terminal.applyHistoryWriteResult(result)
+	}
 
 	terminal.mu.Lock()
 	stillCurrent := terminal.process == process && terminal.info.State != TerminalStateExited && terminal.info.State != TerminalStateRemoved
@@ -490,7 +514,9 @@ func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) 
 	terminal.info.ExitedAt = time.Now().UTC()
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
-	terminal.forceCloseHistory(history.CloseReasonProcessExit)
+	if terminal.historyEnabled {
+		terminal.forceCloseHistory(history.CloseReasonProcessExit)
+	}
 	terminal.appendExitMarker(info)
 	terminal.syncInfo(info)
 	terminal.publish(EventTerminalExited, info)
@@ -503,7 +529,11 @@ func (terminal *Terminal) appendExitMarker(info TerminalInfo) {
 	}
 	text := "\r\n" + strings.Join(lines, "\r\n") + "\r\n"
 	terminal.liveMu.Lock()
-	terminal.live.Write(text)
+	if terminal.historyEnabled {
+		terminal.live.Write(text)
+	} else {
+		terminal.live.WriteNativeScreen(text)
+	}
 	terminal.bumpLiveRevisionLocked()
 	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
@@ -536,6 +566,9 @@ func terminalExitMarkerLines(info TerminalInfo) []string {
 func (terminal *Terminal) HistoryWindow(req history.HistoryWindowRequest) (history.HistoryWindow, error) {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled {
+		return history.HistoryWindow{}, ErrHistoryDisabled
+	}
 	if terminal.historyStore == nil {
 		return history.HistoryWindow{}, ErrHistoryNotRebuilt
 	}
@@ -554,6 +587,9 @@ func (terminal *Terminal) HistoryWindow(req history.HistoryWindowRequest) (histo
 func (terminal *Terminal) HistoryCopy(req history.HistoryCopyRequest) (string, error) {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled {
+		return "", ErrHistoryDisabled
+	}
 	if terminal.historyStore == nil {
 		return "", ErrHistoryNotRebuilt
 	}
@@ -563,6 +599,9 @@ func (terminal *Terminal) HistoryCopy(req history.HistoryCopyRequest) (string, e
 func (terminal *Terminal) HistoryFreeze(req history.FreezeHistoryRequest) (history.FrozenHistorySnapshot, error) {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled {
+		return history.FrozenHistorySnapshot{}, ErrHistoryDisabled
+	}
 	if terminal.historyStore == nil {
 		return history.FrozenHistorySnapshot{}, ErrHistoryNotRebuilt
 	}
@@ -573,6 +612,9 @@ func (terminal *Terminal) HistoryFreeze(req history.FreezeHistoryRequest) (histo
 func (terminal *Terminal) HistoryRelease(token history.HistoryToken) error {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled {
+		return ErrHistoryDisabled
+	}
 	if terminal.historyStore == nil {
 		return ErrHistoryNotRebuilt
 	}
@@ -582,7 +624,7 @@ func (terminal *Terminal) HistoryRelease(token history.HistoryToken) error {
 func (terminal *Terminal) applyHistoryWriteResult(result live.SurfaceWriteResult) {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
-	if terminal.historyRenderer == nil || terminal.historyStore == nil {
+	if !terminal.historyEnabled || terminal.historyRenderer == nil || terminal.historyStore == nil {
 		return
 	}
 	for _, segment := range result.Segments {
@@ -600,7 +642,7 @@ func (terminal *Terminal) applyHistoryWriteResult(result live.SurfaceWriteResult
 func (terminal *Terminal) applyHistoryResizeTransaction(tx history.TerminalSemanticTransaction) {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
-	if terminal.historyRenderer == nil || terminal.historyStore == nil {
+	if !terminal.historyEnabled || terminal.historyRenderer == nil || terminal.historyStore == nil {
 		return
 	}
 	// 中文说明：resize 只作为 semantic non-history boundary 进入 renderer，不能从
@@ -618,7 +660,7 @@ func (terminal *Terminal) applyHistoryResizeTransaction(tx history.TerminalSeman
 func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
-	if terminal.historyRenderer == nil || terminal.historyStore == nil {
+	if !terminal.historyEnabled || terminal.historyRenderer == nil || terminal.historyStore == nil {
 		return
 	}
 	// 中文说明：process exit 是 lifecycle boundary，只能走 renderer.Close；不能伪造成

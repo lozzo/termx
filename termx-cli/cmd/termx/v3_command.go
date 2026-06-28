@@ -75,6 +75,11 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 			applyDaemonRuntimeTuning(logger)
 			historyDir := resolveV3HistoryStorageDir()
 			opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryStorageDir(historyDir)}
+			historyEnabled := !envBool("TERMX_HISTORY_DISABLE")
+			if !historyEnabled {
+				historyDir = ""
+				opts = []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryDisabled()}
+			}
 			srv := newCoreV2Server(opts...)
 			remoteCfg, err := remoteConfigFromFileAndEnv(remoteConfigPathValue(configPath))
 			if err != nil {
@@ -99,7 +104,7 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 				_ = srv.Shutdown(context.Background())
 			}()
 
-			logger.Info("starting core-v2 daemon", "socket", socketPath, "log_file", logPath, "history_dir", historyDir)
+			logger.Info("starting core-v2 daemon", "socket", socketPath, "log_file", logPath, "history_dir", historyDir, "history_enabled", historyEnabled)
 			err = srv.ListenAndServe(ctx)
 			writeHeapProfile("exit")
 			if err != nil {

@@ -30,6 +30,7 @@ type serverConfig struct {
 	eventBuffer         int
 	historyStoreFactory HistoryStoreFactory
 	historyStorageDir   string
+	historyDisabled     bool
 }
 
 // HistoryStoreFactory 为每个 terminal 创建 core-v2 authoritative history store。
@@ -161,6 +162,19 @@ func WithHistoryStorageDir(dir string) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.historyStorageDir = dir
 		cfg.historyStoreFactory = fileBackedHistoryStoreFactory(dir)
+		cfg.historyDisabled = false
+	}
+}
+
+// WithHistoryDisabled 关闭 core-v2 authoritative history owner。
+// domain owner 是 Server/Terminal lifecycle：关闭后 terminal 只维护 native live
+// screen 与 live revision，PTY 写入热路径不会创建 renderer/store mutation，
+// history.window/copy/freeze/release 必须返回 ErrHistoryDisabled。
+func WithHistoryDisabled() ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.historyDisabled = true
+		cfg.historyStoreFactory = nil
+		cfg.historyStorageDir = ""
 	}
 }
 
@@ -202,17 +216,22 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 	if err != nil {
 		return TerminalInfo{}, err
 	}
-	historyStore, err := server.newHistoryStore(info.ID)
-	if err != nil {
-		_, _ = server.registry.remove(info.ID)
-		return TerminalInfo{}, err
+	var historyStore history.HistoryStore
+	historyEnabled := !server.cfg.historyDisabled
+	if historyEnabled {
+		var err error
+		historyStore, err = server.newHistoryStore(info.ID)
+		if err != nil {
+			_, _ = server.registry.remove(info.ID)
+			return TerminalInfo{}, err
+		}
 	}
 	process, err := server.cfg.processFactory.Spawn(context.Background(), processSpecFromTerminal(info, record.Options))
 	if err != nil {
 		_, _ = server.registry.remove(info.ID)
 		return TerminalInfo{}, err
 	}
-	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore)
+	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore, historyEnabled)
 	server.mu.Lock()
 	server.terminals[info.ID] = terminal
 	server.mu.Unlock()

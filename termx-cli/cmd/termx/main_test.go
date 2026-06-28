@@ -17,6 +17,7 @@ import (
 
 	"github.com/lozzow/termx/internal/protocol"
 	corev2 "github.com/lozzow/termx/termx-core-v2"
+	"github.com/lozzow/termx/termx-core-v2/history"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	tuiv3 "github.com/lozzow/termx/termx-tui-v3"
 	"github.com/lozzow/termx/termx-tui-v3/app"
@@ -349,6 +350,48 @@ func TestDefaultDaemonUsesCoreV2Server(t *testing.T) {
 	}
 }
 
+func TestDaemonCanDisableHistoryFromEnv(t *testing.T) {
+	oldNewCoreV2Server := newCoreV2Server
+	t.Cleanup(func() {
+		newCoreV2Server = oldNewCoreV2Server
+	})
+	t.Setenv("TERMX_HISTORY_DISABLE", "1")
+
+	fakeV3 := &fakeCoreV2Server{}
+	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
+		fakeV3.newServerCalls++
+		opts = append(opts, corev2.WithProcessFactory(newCoreV2ResizeRecordingProcessFactory()))
+		server := corev2.NewServer(opts...)
+		if server.HistoryStorageDir() != "" {
+			t.Fatalf("history disabled daemon must not configure history storage dir, got %q", server.HistoryStorageDir())
+		}
+		if _, err := server.RegisterTerminal(corev2.TerminalRecord{ID: "term-disabled", Command: []string{"shell"}}); err != nil {
+			t.Fatalf("register disabled-history terminal: %v", err)
+		}
+		if _, err := server.TerminalHistoryWindow(context.Background(), "term-disabled", history.HistoryWindowRequest{
+			TerminalID: "term-disabled",
+			Mode:       history.HistoryWindowModeLatest,
+			Limit:      1,
+			Cols:       20,
+		}); !errors.Is(err, corev2.ErrHistoryDisabled) {
+			t.Fatalf("expected disabled history window, got %v", err)
+		}
+		return fakeV3
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", filepath.Join(t.TempDir(), "termx-v2.sock"), "--log-file", filepath.Join(t.TempDir(), "termx.log"), "daemon"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if fakeV3.newServerCalls != 1 {
+		t.Fatalf("expected one core-v2 server construction, got %d", fakeV3.newServerCalls)
+	}
+}
+
 func TestV3PingConnectsExistingCoreV2Daemon(t *testing.T) {
 	oldDial := v3DialClient
 	oldStart := startV3Daemon
@@ -528,6 +571,38 @@ func TestStartCoreV2DaemonCommandUsesV3Daemon(t *testing.T) {
 	if !reflect.DeepEqual(got.Args, wantArgs) {
 		t.Fatalf("unexpected v3 daemon args: %#v", got.Args)
 	}
+}
+
+func TestStartCoreV2DaemonCommandCarriesHistoryDisableEnv(t *testing.T) {
+	oldExecutable := osExecutable
+	t.Cleanup(func() {
+		osExecutable = oldExecutable
+	})
+	t.Setenv("TERMX_HISTORY_DISABLE", "1")
+
+	exe := filepath.Join(t.TempDir(), "termx")
+	osExecutable = func() (string, error) {
+		return exe, nil
+	}
+	got, err := buildStartCoreV2DaemonCommand("/tmp/termx-v2.sock", "/tmp/termx.log")
+	if err != nil {
+		t.Fatalf("buildStartCoreV2DaemonCommand returned error: %v", err)
+	}
+	if got.Path != exe {
+		t.Fatalf("expected executable %q, got %q", exe, got.Path)
+	}
+	if !containsEnv(got.Env, "TERMX_HISTORY_DISABLE=1") {
+		t.Fatalf("auto-start daemon command must carry history disabled env, env=%#v", got.Env)
+	}
+}
+
+func containsEnv(env []string, want string) bool {
+	for _, item := range env {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestStartCoreV2DaemonCommandCanCarryRemoteConfigPath(t *testing.T) {

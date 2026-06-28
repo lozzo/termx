@@ -77,6 +77,7 @@ var (
 	ErrTerminalNotFound           = errors.New("terminal not found")
 	ErrTerminalExited             = errors.New("terminal exited")
 	ErrHistoryNotRebuilt          = errors.New("history not rebuilt")
+	ErrHistoryDisabled            = errors.New("history disabled")
 	ErrInvalidServerSize          = errors.New("invalid server size")
 	ErrNilListenerFactory         = errors.New("nil listener factory")
 	ErrInvalidStorageKey          = errors.New("invalid storage key")

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
+	"github.com/lozzow/termx/termx-core-v2/live"
 )
 
 func TestTerminalLifecycleAndLiveSurface(t *testing.T) {
@@ -105,6 +106,35 @@ func TestTerminalIngestOutputPublishesLiveInvalidatedEvent(t *testing.T) {
 	event := assertEventValue(t, events, EventTerminalLiveInvalidated, "term-1")
 	if event.Live == nil || event.Live.Revision == 0 {
 		t.Fatalf("expected live invalidation revision, got %#v", event)
+	}
+}
+
+func TestTerminalHistoryDisabledUsesNativeScreenOnlyWritePath(t *testing.T) {
+	historyDir := t.TempDir()
+	server := NewServer(
+		WithProcessFactory(newRecordingProcessFactory()),
+		WithHistoryStorageDir(historyDir),
+		WithHistoryDisabled(),
+	)
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-live-only",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 24, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-live-only", "alpha\r\nbeta\r\nlatest"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(historyDir, "term-live-only.history-lines.bin")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("history disabled must not write payload file, err=%v", err)
+	}
+	snapshot, err := server.LiveSnapshot("term-live-only")
+	if err != nil {
+		t.Fatalf("live snapshot: %v", err)
+	}
+	if got := strings.Join(liveSnapshotRows(snapshot), "\n"); !strings.Contains(got, "latest") {
+		t.Fatalf("native screen must still update in history disabled mode, got %q", got)
 	}
 }
 
@@ -375,6 +405,18 @@ func historyCellsText(cells []history.Cell) string {
 		out += cell.Text
 	}
 	return out
+}
+
+func liveSnapshotRows(snapshot live.SurfaceSnapshot) []string {
+	rows := make([]string, 0, len(snapshot.Screen.Cells))
+	for _, row := range snapshot.Screen.Cells {
+		var text string
+		for _, cell := range row {
+			text += cell.Content
+		}
+		rows = append(rows, strings.TrimRight(text, " "))
+	}
+	return rows
 }
 
 func TestTerminalRestartReplacesProcessAndClearsExitMetadata(t *testing.T) {

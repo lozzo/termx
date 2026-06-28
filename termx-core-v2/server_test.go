@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-shared/transport"
 )
 
@@ -35,6 +36,46 @@ func TestServerOptions(t *testing.T) {
 	}
 	if server.HistoryStorageDir() != "/tmp/termx-core-v2-history" {
 		t.Fatalf("unexpected history storage dir %q", server.HistoryStorageDir())
+	}
+}
+
+func TestServerHistoryDisabledSkipsStoreCreationAndReturnsDisabled(t *testing.T) {
+	called := false
+	server := NewServer(
+		WithProcessFactory(newRecordingProcessFactory()),
+		WithHistoryStoreFactory(func(string) (history.HistoryStore, error) {
+			called = true
+			return history.NewInMemoryHistoryStore("unexpected"), nil
+		}),
+		WithHistoryDisabled(),
+	)
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-history-disabled",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if called {
+		t.Fatal("history disabled must not create a history store")
+	}
+	if err := server.IngestOutput(context.Background(), "term-history-disabled", "old\r\nlatest-tail"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	rows, err := server.LiveRows("term-history-disabled")
+	if err != nil {
+		t.Fatalf("live rows: %v", err)
+	}
+	if got := strings.Join(rows, "\n"); !strings.Contains(got, "latest-tail") {
+		t.Fatalf("history disabled must still update native live screen, got %q", got)
+	}
+	if _, err := server.TerminalHistoryWindow(context.Background(), "term-history-disabled", history.HistoryWindowRequest{
+		TerminalID: "term-history-disabled",
+		Mode:       history.HistoryWindowModeLatest,
+		Limit:      5,
+		Cols:       20,
+	}); !errors.Is(err, ErrHistoryDisabled) {
+		t.Fatalf("expected ErrHistoryDisabled, got %v", err)
 	}
 }
 
