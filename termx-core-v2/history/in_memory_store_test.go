@@ -1,6 +1,7 @@
 package history
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -176,6 +177,56 @@ func TestR333InMemoryStoreOlderPagesFrozenProjectionWithoutDuplicates(t *testing
 		if !seen[index] {
 			t.Fatalf("projection row %d missing from older paging", index)
 		}
+	}
+}
+
+func TestR343InMemoryStoreApplyHotPathDoesNotReindexWholeStore(t *testing.T) {
+	source, err := os.ReadFile("in_memory_store.go")
+	if err != nil {
+		t.Fatalf("read store source: %v", err)
+	}
+	// 中文说明：Apply 是 PTY 输出链路上的同步热路径，不能为了维护辅助计数器
+	// 每次扫描已存在的 lines/timeline/frame records；恢复路径才允许全量 reindex。
+	hotFunctions := []string{
+		"func (store *inMemoryHistoryStore) Apply",
+		"func (store *inMemoryHistoryStore) applyMutation",
+		"func (store *inMemoryHistoryStore) upsertLogicalLines",
+		"func (store *inMemoryHistoryStore) upsertDraftLines",
+		"func (store *inMemoryHistoryStore) upsertFrameRecord",
+		"func (store *inMemoryHistoryStore) flushStorage",
+	}
+	for _, signature := range hotFunctions {
+		body := sourceFunctionBody(t, string(source), signature)
+		if strings.Contains(body, "reindexCounters(") {
+			t.Fatalf("%s must not call reindexCounters on the history write hot path", signature)
+		}
+	}
+}
+
+func TestR343InMemoryStoreIncrementalCountersSurviveSequentialApplies(t *testing.T) {
+	store := NewInMemoryHistoryStore("term-r343").(*inMemoryHistoryStore)
+	for i := 1; i <= 1024; i++ {
+		id := LogicalLineID(i)
+		applyStoreBatch(t, store, sealedLineMutations(id, HistoryRecordID(i), "line"))
+	}
+	if store.nextLineID != 1025 {
+		t.Fatalf("line counter should advance incrementally without full reindex, got %d", store.nextLineID)
+	}
+	if store.nextRecordID != 1025 {
+		t.Fatalf("record counter should advance incrementally without full reindex, got %d", store.nextRecordID)
+	}
+
+	applyStoreBatch(t, store, replacePrimaryRowsMutation(55, 2000, 80, "frame"))
+	if store.nextFrameID != 56 || store.nextSessionID != 2 {
+		t.Fatalf("primary frame counters should observe mutable frame ids, frame=%d session=%d", store.nextFrameID, store.nextSessionID)
+	}
+
+	window, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-r343", Limit: 2, Cols: 80})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(window.Rows); strings.Join(got, "|") != "line|frame" {
+		t.Fatalf("sequential hot-path applies lost authoritative projection, got %v", got)
 	}
 }
 
@@ -374,4 +425,18 @@ func rowTexts(rows []HistoryRow) []string {
 		out = append(out, text)
 	}
 	return out
+}
+
+func sourceFunctionBody(t *testing.T, source string, signature string) string {
+	t.Helper()
+	start := strings.Index(source, signature)
+	if start < 0 {
+		t.Fatalf("source missing function %q", signature)
+	}
+	rest := source[start+len(signature):]
+	next := strings.Index(rest, "\nfunc ")
+	if next < 0 {
+		return rest
+	}
+	return rest[:next]
 }

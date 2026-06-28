@@ -319,6 +319,7 @@ func (store *inMemoryHistoryStore) applyMutation(mutation HistoryMutation) error
 			open.Draft.Line = cloneLogicalLine(open.Draft.Line)
 			store.openLine = &open
 			store.lines[open.Draft.Line.ID] = cloneLogicalLine(open.Draft.Line)
+			store.observeLineID(open.Draft.Line.ID)
 			store.markLineDirty(open.Draft.Line.ID)
 		}
 	case HistoryMutationSealLine:
@@ -328,6 +329,7 @@ func (store *inMemoryHistoryStore) applyMutation(mutation HistoryMutation) error
 		line := cloneLogicalLine(*mutation.Line)
 		line.Seal = SealStateSealed
 		store.lines[line.ID] = line
+		store.observeLineID(line.ID)
 		store.markLineDirty(line.ID)
 		if store.openLine != nil && store.openLine.Draft.Line.ID == line.ID {
 			store.openLine = nil
@@ -336,13 +338,17 @@ func (store *inMemoryHistoryStore) applyMutation(mutation HistoryMutation) error
 		if mutation.Record == nil {
 			return ErrHistoryInvalidMutation
 		}
-		store.timeline = append(store.timeline, cloneHistoryRecord(*mutation.Record))
+		record := cloneHistoryRecord(*mutation.Record)
+		store.timeline = append(store.timeline, record)
+		store.observeHistoryRecord(record)
 	case HistoryMutationReplacePrimaryFrame:
 		if mutation.Mutable == nil {
 			return ErrHistoryInvalidMutation
 		}
 		frame := cloneMutableFrame(*mutation.Mutable)
 		store.frameJournal.PrimaryCurrent = &frame
+		store.observeFrameID(frame.ID)
+		store.observeSessionID(frame.SessionID)
 		store.upsertDraftLines(frame.Rows)
 	case HistoryMutationArchivePrimaryFrame:
 		if mutation.Sealed == nil {
@@ -350,6 +356,8 @@ func (store *inMemoryHistoryStore) applyMutation(mutation HistoryMutation) error
 		}
 		frame := cloneSealedFrame(*mutation.Sealed)
 		store.frameJournal.PrimaryArchived = append(store.frameJournal.PrimaryArchived, frame)
+		store.observeFrameID(frame.ID)
+		store.observeSessionID(frame.SessionID)
 		store.upsertLogicalLines(frame.Lines)
 		if store.frameJournal.PrimaryCurrent != nil && store.frameJournal.PrimaryCurrent.ID == frame.ID {
 			store.frameJournal.PrimaryCurrent = nil
@@ -363,6 +371,7 @@ func (store *inMemoryHistoryStore) applyMutation(mutation HistoryMutation) error
 		}
 		frame := cloneTransientFrame(*mutation.Transient)
 		store.frameJournal.AltCurrent = &frame
+		store.observeFrameID(frame.ID)
 		store.upsertDraftLines(frame.Rows)
 	case HistoryMutationClearAltFrame:
 		store.frameJournal.AltCurrent = nil
@@ -371,6 +380,8 @@ func (store *inMemoryHistoryStore) applyMutation(mutation HistoryMutation) error
 			return ErrHistoryInvalidMutation
 		}
 		frame := cloneSealedFrame(*mutation.Sealed)
+		store.observeFrameID(frame.ID)
+		store.observeSessionID(frame.SessionID)
 		store.upsertLogicalLines(frame.Lines)
 		if store.frameJournal.PrimaryCurrent != nil && store.frameJournal.PrimaryCurrent.ID == frame.ID {
 			store.frameJournal.PrimaryCurrent = nil
@@ -386,7 +397,6 @@ func (store *inMemoryHistoryStore) applyMutation(mutation HistoryMutation) error
 	default:
 		return ErrHistoryInvalidMutation
 	}
-	store.reindexCounters()
 	return nil
 }
 
@@ -410,6 +420,60 @@ func (store *inMemoryHistoryStore) markLineDirty(id LogicalLineID) {
 		store.dirtyLines = make(map[LogicalLineID]struct{})
 	}
 	store.dirtyLines[id] = struct{}{}
+}
+
+// 中文说明：next* 计数器只是后续分配 ID 的辅助状态，不是 history truth。
+// PTY 输出热路径只能观察本批 mutation 携带的 id；全量扫描仅允许在恢复路径执行。
+func (store *inMemoryHistoryStore) observeLineID(id LogicalLineID) {
+	if store == nil || id == 0 {
+		return
+	}
+	if store.nextLineID <= id {
+		store.nextLineID = id + 1
+	}
+}
+
+func (store *inMemoryHistoryStore) observeRecordID(id HistoryRecordID) {
+	if store == nil || id == 0 {
+		return
+	}
+	if store.nextRecordID <= id {
+		store.nextRecordID = id + 1
+	}
+}
+
+func (store *inMemoryHistoryStore) observeFrameID(id ScreenFrameID) {
+	if store == nil || id == 0 {
+		return
+	}
+	if store.nextFrameID <= id {
+		store.nextFrameID = id + 1
+	}
+}
+
+func (store *inMemoryHistoryStore) observeSessionID(id ScreenSessionID) {
+	if store == nil || id == 0 {
+		return
+	}
+	if store.nextSessionID <= id {
+		store.nextSessionID = id + 1
+	}
+}
+
+func (store *inMemoryHistoryStore) observeHistoryRecord(record HistoryRecord) {
+	store.observeRecordID(record.ID)
+	store.observeFrameID(record.FrameID)
+	for _, id := range record.LineIDs {
+		store.observeLineID(id)
+	}
+}
+
+func (store *inMemoryHistoryStore) observeFrameRecord(record FrameRecord) {
+	store.observeFrameID(record.FrameID)
+	store.observeSessionID(record.SessionID)
+	for _, id := range record.LineIDs {
+		store.observeLineID(id)
+	}
 }
 
 func (store *inMemoryHistoryStore) flushStorage() error {
@@ -828,6 +892,7 @@ func (store *inMemoryHistoryStore) sealedFrameByID(id ScreenFrameID) *SealedFram
 func (store *inMemoryHistoryStore) upsertLogicalLines(lines []LogicalLine) {
 	for _, line := range lines {
 		store.lines[line.ID] = cloneLogicalLine(line)
+		store.observeLineID(line.ID)
 		store.markLineDirty(line.ID)
 	}
 }
@@ -835,6 +900,7 @@ func (store *inMemoryHistoryStore) upsertLogicalLines(lines []LogicalLine) {
 func (store *inMemoryHistoryStore) upsertDraftLines(drafts []LogicalLineDraft) {
 	for _, draft := range drafts {
 		store.lines[draft.Line.ID] = cloneLogicalLine(draft.Line)
+		store.observeLineID(draft.Line.ID)
 		store.markLineDirty(draft.Line.ID)
 	}
 }
@@ -848,6 +914,7 @@ func (store *inMemoryHistoryStore) upsertFrameRecord(frame SealedFrame) {
 		ScreenSize: TerminalSemanticSize{Cols: frame.Cols, Rows: len(frame.Lines)},
 		SealReason: frame.Reason,
 	}
+	store.observeFrameRecord(record)
 	for i, current := range store.frameRecords {
 		if current.FrameID == frame.ID {
 			store.frameRecords[i] = cloneFrameRecord(record)
