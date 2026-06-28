@@ -238,6 +238,7 @@
 | R341. SK cursor-backed sealed timeline store | 完成 | `workflow.md`、`termx-core-v2/history/`、按需 `termx-core-v2/terminal.go` | 为 10 万行普通输出先落地 cursor-backed store：sealed logical-line payload 可驻留 backend，latest/older/copy 按 cursor/window 读取，不为窗口分页先 materialize 全量 rows；current frame spill 留后续切片 |
 | R342. SK 二进制历史 payload 后端 | 完成 | `workflow.md`、`termx-core-v2/history/` | 删除 R341 临时 JSONL 文件后端，改成长度前缀二进制 append-only payload 文件；文件后端不得依赖 `encoding/json`，为后续 mmap/zero-copy/index 文件预留稳定 record layout |
 | R343. SK history store Apply 热路径去全量扫描 | 完成 | `workflow.md`、`termx-core-v2/history/` | 修复 10 万行普通输出被 authoritative history store 拖慢的问题；HistoryStore Apply 不得在每个 mutation 后全量 reindex 已有 lines/timeline/frame records，计数器只能随当前 mutation 增量维护，恢复路径才允许全量扫描 |
+| R344. SK TUI live refresh latest-only backlog 合并 | 完成 | `workflow.md`、`termx-tui-v3/services/`、按需 `termx-tui-v3/app/` | 修复压力输出期间 TUI 按积压 changed 事件逐帧追屏的问题；普通 `terminal.changed` 只表示 live surface 失效，必须在 service/app 边界合并为 latest-only refresh，不能按固定事件数量分批拉 snapshot 和渲染中间屏 |
 
 ## 7. 测试准入
 
@@ -261,6 +262,7 @@
 
 ## 9. 当前状态
 
+- `R344` 已完成：定位压力输出期间 TUI “一帧一帧追屏”的直接原因是 protocol terminal adapter 在普通 `terminal.changed` backlog 中按固定 `maxProtocolLiveRefreshDrain=64` 分批吐出 refresh invalidation；这会让 app 层反复拉 latest snapshot 并写出中间屏，视觉上从 100 跳到 300/500/1000 逐段追，而不是把 changed 当成 latest-only invalidation。现在 service 层会吞并当前已经排队的同 terminal 普通 refresh backlog，直到 backlog 为空或遇到 resize/exit/read-error/metadata 等语义边界才吐一次 refresh；新增测试覆盖 512 个 changed 只产生一个 refresh，并验证 semantic boundary 不被吞掉。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 - `R343` 已完成：定位 `time python scripts/generate_terminal_stress.py --lines 100000` 卡顿的直接 core-v2 根因之一是 `inMemoryHistoryStore.applyMutation` 每处理一个 mutation 后调用 `reindexCounters()`，全量扫描已有 logical lines、timeline records 和 frame records；10 万行普通输出会把 authoritative history 写入拖成近似 O(n²)，同步压住真实 PTY 输出链路。现在 `Apply` 热路径只观察当前 mutation 携带的 line/record/frame/session id 增量推进辅助计数器，`reindexCounters()` 仅保留给 recovery 构造路径；新增 guard 测试禁止 `Apply`/`applyMutation`/store upsert/flushStorage 热 helper 重新调用全量 reindex，并用连续单行 Apply 验证增量计数器和 latest projection。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
 - `R342` 已完成：删除 R341 临时 JSONL payload store，改为二进制 append-only record。文件 record 使用固定 magic/version/header、line id 与长度前缀；payload 自身用小端整数和字符串长度编码 logical line、cells、style，并把连续相同 width/style/link 的 cells 合并成 run，避免 JSON 反射解析和文本膨胀。新增 guard 测试禁止 file backend import `encoding/json` 或回到 `.jsonl` 路径。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
 - `R338` 已完成：继续沿 `335af9ac4b7e9e44703540c93e9655a224d3f73d` 方向推进，保留当前 copy/history 交互基础，只收敛 core-v2 pseudo-TUI 历史边界。renderer 已删除跨 transaction 的 stale scroll-out 记忆：ED2 repaint 不再因为更早发生过 payload scroll-out 就把当前尾屏 seal 进 authoritative history；旧屏内容进入历史只能来自同一 transaction 的 clear-time scroll-out proof。新增 R338 renderer harness 覆盖“先 payload scroll-out、后无 clear-time proof ED2 repaint”场景，验证只 clear current ownership 并 publish 最新 frame，不 close stale tail。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。

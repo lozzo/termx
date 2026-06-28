@@ -1931,34 +1931,58 @@ func TestProtocolTerminalServiceAdapterLiveEventDrainUsesQueuedBacklogOnly(t *te
 	}
 }
 
-func TestProtocolTerminalServiceAdapterLiveEventDrainDoesNotStarveRefresh(t *testing.T) {
-	eventCh := make(chan protocol.Event, maxProtocolLiveRefreshDrain+16)
+func TestProtocolTerminalServiceAdapterLiveEventDrainCoalescesLargeBacklogToLatestRefresh(t *testing.T) {
+	eventCh := make(chan protocol.Event, 512)
 	client := &fakeProtocolTerminalClient{
 		eventCh: eventCh,
 	}
 	for i := 0; i < cap(eventCh); i++ {
-		eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
+		eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(int64(i), 0)}
 	}
+	close(eventCh)
 
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	events, err := adapter.LiveEvents(ctx, TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
+	events, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("live events: %v", err)
 	}
 
 	select {
 	case got := <-events:
-		cancel()
 		if !got.Refresh || got.Ready || got.TerminalID != "term-1" {
 			t.Fatalf("unexpected live event %#v", got)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("ordinary live coalescing starved refresh invalidation")
+		t.Fatal("ordinary live coalescing did not emit latest refresh invalidation")
+	}
+	select {
+	case got, ok := <-events:
+		if ok {
+			t.Fatalf("large ordinary backlog must not be split into replay frames, got %#v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for coalesced backlog stream close")
 	}
 	if len(client.snapshotIDs) != 0 {
 		t.Fatalf("refresh invalidation must not fetch snapshot in service layer, got %#v", client.snapshotIDs)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterLiveEventDrainStopsAtSemanticBoundary(t *testing.T) {
+	events := make(chan protocol.Event, 4)
+	events <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(2, 0)}
+	boundary := protocol.Event{Type: protocol.EventTerminalResized, TerminalID: "term-1", Timestamp: time.Unix(3, 0)}
+	events <- boundary
+
+	got, pending, closed := drainProtocolLiveRefreshEvents(events, protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(1, 0)})
+	if closed || pending == nil {
+		t.Fatalf("expected boundary event to remain pending, got=%#v pending=%#v closed=%v", got, pending, closed)
+	}
+	if !got.Timestamp.Equal(time.Unix(2, 0)) {
+		t.Fatalf("latest ordinary refresh before boundary should win, got %#v", got)
+	}
+	if pending.Type != boundary.Type || pending.TerminalID != boundary.TerminalID || !pending.Timestamp.Equal(boundary.Timestamp) {
+		t.Fatalf("semantic boundary must not be swallowed, got %#v want %#v", pending, boundary)
 	}
 }
 

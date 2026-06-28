@@ -41,8 +41,6 @@ type ProtocolTerminalServiceAdapter struct {
 	Client ProtocolTerminalClient
 }
 
-const maxProtocolLiveRefreshDrain = 64
-
 func (adapter ProtocolTerminalServiceAdapter) Attach(ctx context.Context, req TerminalAttachRequest) (TerminalAttachResult, error) {
 	if adapter.Client == nil {
 		return TerminalAttachResult{}, ErrMissingTerminalClient
@@ -413,13 +411,15 @@ func (adapter ProtocolTerminalServiceAdapter) LiveEvents(ctx context.Context, re
 
 func drainProtocolLiveRefreshEvents(events <-chan protocol.Event, current protocol.Event) (protocol.Event, *protocol.Event, bool) {
 	latest := current
-	for drained := 0; drained < maxProtocolLiveRefreshDrain; drained++ {
+	for {
 		select {
 		case event, ok := <-events:
 			if !ok {
 				return latest, nil, true
 			}
 			if ordinaryProtocolLiveRefreshEvent(event) && sameProtocolLiveRefreshTarget(latest, event) {
+				// 中文说明：普通 terminal.changed 只是“latest screen 已失效”的信号，
+				// 不是必须逐帧播放的内容事件；队列里已有的同类 backlog 必须全部吞并。
 				latest = event
 				continue
 			}
