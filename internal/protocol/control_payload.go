@@ -348,6 +348,18 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			ScrollbackOffset: int32(value.ScrollbackOffset),
 			ScrollbackLimit:  int32(value.ScrollbackLimit),
 		})
+	case "live.screen.get":
+		value, ok := params.(LiveScreenParams)
+		if !ok {
+			if ptr, ptrOK := params.(*LiveScreenParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.LiveScreenParams", params)
+		}
+		return proto.Marshal(&wirepb.GetParams{TerminalId: value.TerminalID})
 	case "grid.viewport":
 		value, ok := params.(GridViewportParams)
 		if !ok {
@@ -545,6 +557,12 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return SnapshotParams{TerminalID: msg.GetTerminalId(), ScrollbackOffset: int(msg.GetScrollbackOffset()), ScrollbackLimit: int(msg.GetScrollbackLimit())}, nil
+	case "live.screen.get":
+		var msg wirepb.GetParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, err
+		}
+		return LiveScreenParams{TerminalID: msg.GetTerminalId()}, nil
 	case "grid.viewport":
 		var msg wirepb.GridViewportParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
@@ -1704,6 +1722,9 @@ func eventToWirePB(event Event) *wirepb.Event {
 	if event.ReadError != nil {
 		out.ReadError = &wirepb.TerminalReadErrorData{Error: event.ReadError.Error}
 	}
+	if event.LiveInvalidated != nil {
+		setUint64UnknownField(out, eventLiveRevisionFieldNumber, event.LiveInvalidated.Revision)
+	}
 	if event.Storage != nil {
 		out.Storage = &wirepb.StorageChangedData{
 			AppId:   event.Storage.AppID,
@@ -1760,6 +1781,9 @@ func eventFromWirePB(msg *wirepb.Event) Event {
 	if msg.ReadError != nil {
 		out.ReadError = &TerminalReadErrorData{Error: msg.ReadError.GetError()}
 	}
+	if out.Type == EventTerminalLiveInvalidated {
+		out.LiveInvalidated = &LiveScreenInvalidatedData{Revision: uint64UnknownField(msg, eventLiveRevisionFieldNumber)}
+	}
 	if msg.Storage != nil {
 		out.Storage = &StorageChangedData{
 			AppID:   msg.Storage.GetAppId(),
@@ -1791,6 +1815,8 @@ func timePtrToUnixNano(value *time.Time) int64 {
 const (
 	terminalInfoExitedAtFieldNumber                protowire.Number = 13
 	terminalStateChangedExitedAtFieldNumber        protowire.Number = 4
+	eventLiveRevisionFieldNumber                   protowire.Number = 14
+	nativeScreenLiveRevisionFieldNumber            protowire.Number = 17
 	historyWindowModeFieldNumber                   protowire.Number = 12
 	historyWindowAfterCursorValidFieldNumber       protowire.Number = 13
 	historyWindowAfterLineIDFieldNumber            protowire.Number = 14

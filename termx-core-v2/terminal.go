@@ -109,10 +109,11 @@ func (terminal *Terminal) IngestOutput(output string) error {
 	terminal.liveMu.Lock()
 	result := surface.WriteWithResult(rawOutput)
 	terminal.bumpLiveRevisionLocked()
+	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
 	terminal.applyHistoryWriteResult(result)
 
-	terminal.publish(EventTerminalChanged, info)
+	terminal.publishLiveInvalidated(info.ID, liveRevision)
 	return nil
 }
 
@@ -151,11 +152,13 @@ func (terminal *Terminal) Resize(size Size) error {
 	terminal.liveMu.Lock()
 	tx := terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
 	terminal.bumpLiveRevisionLocked()
+	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
 	terminal.applyHistoryResizeTransaction(tx)
 
 	terminal.syncInfo(info)
 	terminal.publishResize(info, oldSize, size)
+	terminal.publishLiveInvalidated(info.ID, liveRevision)
 	return nil
 }
 
@@ -220,11 +223,13 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.live.Resize(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)})
 	terminal.live.ResetForRestartPreservingScreen()
 	terminal.bumpLiveRevisionLocked()
+	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
 	terminal.syncInfo(info)
 	terminal.watchProcess(process)
 	_ = old.Close()
 	terminal.publishLifecycle(EventTerminalChanged, info)
+	terminal.publishLiveInvalidated(info.ID, liveRevision)
 	return nil
 }
 
@@ -262,6 +267,40 @@ func (terminal *Terminal) VisitLiveTrimmedScreenRowsWithRevision(visit func(rowI
 	return info, terminal.liveRevision
 }
 
+// NativeScreenSnapshot 返回 core 当前 latest native screen。
+// 调用方只能把它用于实时显示 projection；history/window/copy truth 必须继续走 HistoryWindow/Copy。
+func (terminal *Terminal) NativeScreenSnapshot(terminalID string) NativeScreenSnapshot {
+	terminal.liveMu.Lock()
+	defer terminal.liveMu.Unlock()
+	var rows []NativeScreenRow
+	screenInfo := terminal.live.VisitTrimmedScreenRows(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
+		for len(rows) < rowIndex {
+			rows = append(rows, NativeScreenRow{Index: len(rows)})
+		}
+		row := NativeScreenRow{Index: rowIndex}
+		if cellCount > 0 {
+			row.Cells = make([]vterm.Cell, cellCount)
+			for i := 0; i < cellCount; i++ {
+				row.Cells[i] = cellAt(i)
+			}
+		}
+		rows = append(rows, row)
+	})
+	for len(rows) < screenInfo.Rows {
+		rows = append(rows, NativeScreenRow{Index: len(rows)})
+	}
+	return NativeScreenSnapshot{
+		TerminalID: terminalID,
+		Revision:   LiveRevision(terminal.liveRevision),
+		Size:       NativeScreenSize{Cols: screenInfo.Cols, Rows: screenInfo.Rows},
+		Rows:       rows,
+		Cursor:     screenInfo.Cursor,
+		Modes:      screenInfo.Modes,
+		AltScreen:  screenInfo.IsAlternateScreen,
+		Timestamp:  time.Now().UTC(),
+	}
+}
+
 func (terminal *Terminal) FlushHistory(ctx context.Context) error {
 	terminal.queueMu.Lock()
 	liveQueue := terminal.liveQ
@@ -292,6 +331,20 @@ func (terminal *Terminal) publishEvent(typ EventType, info TerminalInfo, lifecyc
 		TerminalID:     info.ID,
 		Terminal:       &terminalCopy,
 		LifecycleKnown: lifecycleKnown,
+	})
+}
+
+func (terminal *Terminal) publishLiveInvalidated(terminalID string, revision uint64) {
+	if terminal.events == nil {
+		return
+	}
+	terminal.events.publish(Event{
+		Type:       EventTerminalLiveInvalidated,
+		TerminalID: terminalID,
+		Live: &LiveScreenInvalidated{
+			TerminalID: terminalID,
+			Revision:   LiveRevision(revision),
+		},
 	})
 }
 
@@ -400,6 +453,7 @@ func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, outpu
 	terminal.liveMu.Lock()
 	result := surface.WriteWithResult(output)
 	terminal.bumpLiveRevisionLocked()
+	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
 	terminal.applyHistoryWriteResult(result)
 
@@ -410,7 +464,7 @@ func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, outpu
 		return nil
 	}
 	perftrace.Count("core.terminal.changed", len(output))
-	terminal.publish(EventTerminalChanged, info)
+	terminal.publishLiveInvalidated(info.ID, liveRevision)
 	return nil
 }
 
@@ -442,7 +496,9 @@ func (terminal *Terminal) appendExitMarker(info TerminalInfo) {
 	terminal.liveMu.Lock()
 	terminal.live.Write(text)
 	terminal.bumpLiveRevisionLocked()
+	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
+	terminal.publishLiveInvalidated(info.ID, liveRevision)
 }
 
 func (terminal *Terminal) bumpLiveRevisionLocked() {

@@ -404,6 +404,16 @@ func (c *Client) SnapshotCompact(ctx context.Context, terminalID string, offset,
 	return DecodeCompactSnapshotPayload(payload)
 }
 
+// LiveScreen 返回 core 当前 latest native screen。
+// 它是 v3 live display 的专用路径，不读取 scrollback，也不使用 HistoryGeneration 承载 revision。
+func (c *Client) LiveScreen(ctx context.Context, terminalID string) (*NativeScreenSnapshot, error) {
+	payload, err := c.doRequestPayload(ctx, "live.screen.get", LiveScreenParams{TerminalID: terminalID})
+	if err != nil {
+		return nil, err
+	}
+	return DecodeNativeScreenSnapshotPayload(payload)
+}
+
 func (c *Client) GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*GridViewport, error) {
 	payload, err := c.doRequestPayload(ctx, "grid.viewport", GridViewportParams{
 		TerminalID:       terminalID,

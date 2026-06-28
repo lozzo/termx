@@ -426,6 +426,17 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 			return nil, true, protocolErrorInternal, err
 		}
 		return payload, true, 0, nil
+	case "live.screen.get":
+		in := params.(protocol.LiveScreenParams)
+		snapshot, err := session.liveNativeScreenSnapshot(in)
+		if err != nil {
+			return nil, true, errorCode(err), err
+		}
+		payload, err := protocol.EncodeNativeScreenSnapshotPayload(snapshot)
+		if err != nil {
+			return nil, true, protocolErrorInternal, err
+		}
+		return payload, true, 0, nil
 	case "events":
 		in := params.(protocol.EventsParams)
 		session.startEvents(ctx, in)
@@ -597,7 +608,7 @@ func (session *protocolSession) liveCompactSnapshot(params protocol.SnapshotPara
 		return nil, err
 	}
 	var rows []protocol.CompactRow
-	screenInfo, liveRevision := terminal.VisitLiveTrimmedScreenRowsWithRevision(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
+	screenInfo, _ := terminal.VisitLiveTrimmedScreenRowsWithRevision(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
 		if rows == nil {
 			rows = make([]protocol.CompactRow, 0, rowIndex+1)
 		}
@@ -628,12 +639,41 @@ func (session *protocolSession) liveCompactSnapshot(params protocol.SnapshotPara
 		ScreenIsAlternate: screenInfo.IsAlternateScreen,
 		Cursor:            vtermCursorToProtocol(screenInfo.Cursor),
 		Modes:             vtermModesToProtocol(screenInfo.Modes),
-		// 中文说明：live compact snapshot 仍只读 native screen；这里复用
-		// HistoryGeneration wire 字段承载 live projection revision，供 TUI 拒绝
-		// stale snapshot，不能解释成 logical-line history generation。
-		HistoryGeneration: liveRevision,
+		HistoryGeneration: 0,
 		ScreenOwnership:   repeatString(protocol.RowOwnershipScreen, len(rows)),
 		Timestamp:         time.Now().UTC(),
+	}, nil
+}
+
+func (session *protocolSession) liveNativeScreenSnapshot(params protocol.LiveScreenParams) (*protocol.NativeScreenSnapshot, error) {
+	info, err := session.server.GetTerminal(params.TerminalID)
+	if err != nil {
+		return nil, err
+	}
+	terminal, err := session.server.Terminal(params.TerminalID)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := terminal.NativeScreenSnapshot(params.TerminalID)
+	rows := make([]protocol.CompactRow, 0, len(snapshot.Rows))
+	for _, row := range snapshot.Rows {
+		cells := make([]protocol.Cell, len(row.Cells))
+		for i, cell := range row.Cells {
+			cells[i] = vtermCellToProtocol(cell)
+		}
+		rows = append(rows, protocol.BuildCompactRowPreserveTrailingBlankCells(len(cells), func(index int) protocol.Cell {
+			return cells[index]
+		}))
+	}
+	return &protocol.NativeScreenSnapshot{
+		TerminalID: snapshot.TerminalID,
+		Revision:   uint64(snapshot.Revision),
+		Size:       protocolSizeFromCore(info.Size),
+		Rows:       rows,
+		AltScreen:  snapshot.AltScreen,
+		Cursor:     vtermCursorToProtocol(snapshot.Cursor),
+		Modes:      vtermModesToProtocol(snapshot.Modes),
+		Timestamp:  snapshot.Timestamp,
 	}, nil
 }
 
@@ -1172,7 +1212,7 @@ func drainCoreLiveInvalidationEvents(events <-chan Event, current Event) (Event,
 }
 
 func ordinaryCoreLiveInvalidationEvent(event Event) bool {
-	if event.Type != EventTerminalChanged || event.LifecycleKnown || event.Storage != nil || event.Workbench != nil {
+	if event.Type != EventTerminalLiveInvalidated || event.LifecycleKnown || event.Storage != nil || event.Workbench != nil {
 		return false
 	}
 	if event.Terminal != nil && (event.Terminal.State == TerminalStateExited || event.Terminal.State == TerminalStateRemoved) {
@@ -1273,7 +1313,7 @@ func (session *protocolSession) startAttachmentStream(ctx context.Context, attac
 	events := session.server.Events(streamCtx, EventFilter{
 		TerminalID: attachment.TerminalID,
 		Types: []EventType{
-			EventTerminalChanged,
+			EventTerminalLiveInvalidated,
 			EventTerminalResized,
 			EventTerminalExited,
 		},
@@ -1888,6 +1928,13 @@ func protocolEventFromCoreV2(event Event) protocol.Event {
 				ExitedAt: event.Terminal.ExitedAt,
 			}
 		}
+	case EventTerminalLiveInvalidated:
+		out.Type = protocol.EventTerminalLiveInvalidated
+		revision := uint64(0)
+		if event.Live != nil {
+			revision = uint64(event.Live.Revision)
+		}
+		out.LiveInvalidated = &protocol.LiveScreenInvalidatedData{Revision: revision}
 	case EventTerminalRemoved:
 		out.Type = protocol.EventTerminalRemoved
 		out.Removed = &protocol.TerminalRemovedData{Reason: "removed"}
@@ -1929,6 +1976,8 @@ func eventFilterFromProtocol(params protocol.EventsParams) EventFilter {
 			out.Types = append(out.Types, EventTerminalRemoved)
 		case protocol.EventTerminalStateChanged:
 			out.Types = append(out.Types, EventTerminalChanged, EventTerminalExited)
+		case protocol.EventTerminalLiveInvalidated:
+			out.Types = append(out.Types, EventTerminalLiveInvalidated)
 		case protocol.EventTerminalMetadataChanged, protocol.EventTerminalResized:
 			if typ == protocol.EventTerminalMetadataChanged {
 				out.Types = append(out.Types, EventTerminalMetadataChanged)

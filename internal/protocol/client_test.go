@@ -48,6 +48,7 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"InputWithOptions",
 		"Kill",
 		"List",
+		"LiveScreen",
 		"LockResize",
 		"ReleaseHistory",
 		"Remove",
@@ -311,6 +312,14 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 	}
 	if compactSnap.TerminalID != "term-1" || len(compactSnap.ScreenRows) != 1 || compactSnap.ScreenRows[0].Text != "hi" {
 		t.Fatalf("unexpected compact snapshot result: %#v", compactSnap)
+	}
+
+	liveScreen, err := client.LiveScreen(ctx, "term-1")
+	if err != nil {
+		t.Fatalf("live screen failed: %v", err)
+	}
+	if liveScreen.TerminalID != "term-1" || liveScreen.Revision != 9 || len(liveScreen.Rows) != 1 || liveScreen.Rows[0].Text != "ns" {
+		t.Fatalf("unexpected live screen result: %#v", liveScreen)
 	}
 
 	viewport, err := client.GridViewport(ctx, "term-1", 1, 2, 80)
@@ -1230,6 +1239,25 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 		return err
 	}
 	if err := sendBinaryResponse(tr, req.ID, snapshotResult); err != nil {
+		return err
+	}
+
+	req, err = expectRequest(tr, "live.screen.get")
+	if err != nil {
+		return err
+	}
+	liveResult, err := EncodeNativeScreenSnapshotPayload(&NativeScreenSnapshot{
+		TerminalID: "term-1",
+		Revision:   9,
+		Size:       Size{Cols: 80, Rows: 24},
+		Rows:       []CompactRow{CompactRowFromCells([]Cell{{Content: "n", Width: 1}, {Content: "s", Width: 1}})},
+		Cursor:     CursorState{Row: 0, Col: 2, Visible: true},
+		Modes:      TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		return err
+	}
+	if err := sendBinaryResponse(tr, req.ID, liveResult); err != nil {
 		return err
 	}
 

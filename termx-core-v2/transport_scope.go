@@ -116,6 +116,12 @@ func (scope TransportScope) constrainTerminalMethod(method string, params any) (
 			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
 		}
 		return params, scope.requireTerminal(method, in.TerminalID)
+	case "live.screen.get":
+		in, ok := params.(protocol.LiveScreenParams)
+		if !ok {
+			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
+		}
+		return params, scope.requireTerminal(method, in.TerminalID)
 	case "history.window", "history.copy", "history.release":
 		in, ok := params.(protocol.HistoryWindowParams)
 		if !ok {
@@ -212,6 +218,7 @@ func allTerminalEventTypes() []protocol.EventType {
 		protocol.EventTerminalRemoved,
 		protocol.EventCollaboratorsRevoked,
 		protocol.EventTerminalReadError,
+		protocol.EventTerminalLiveInvalidated,
 		protocol.EventTerminalMetadataChanged,
 	}
 }
@@ -224,6 +231,7 @@ func isTerminalEventType(typ protocol.EventType) bool {
 		protocol.EventTerminalRemoved,
 		protocol.EventCollaboratorsRevoked,
 		protocol.EventTerminalReadError,
+		protocol.EventTerminalLiveInvalidated,
 		protocol.EventTerminalMetadataChanged:
 		return true
 	default:

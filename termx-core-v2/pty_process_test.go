@@ -14,7 +14,7 @@ func TestPTYProcessFactoryFeedsLiveSurface(t *testing.T) {
 		t.Skip("pty integration requires a Unix-like PTY")
 	}
 	server := NewServer()
-	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalChanged, EventTerminalResized, EventTerminalExited}})
+	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalLiveInvalidated, EventTerminalResized, EventTerminalExited}})
 	info, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-pty",
 		Command: []string{"/bin/sh", "-c", "printf 'alpha\\n'; read line; printf \"echo:%s\\n\" \"$line\""},
@@ -34,7 +34,7 @@ func TestPTYProcessFactoryFeedsLiveSurface(t *testing.T) {
 		t.Fatalf("write pty input: %v", err)
 	}
 	waitForLiveRow(t, server, "term-pty", "echo:beta")
-	assertEventuallyEvent(t, events, EventTerminalChanged, "term-pty")
+	assertEventuallyEvent(t, events, EventTerminalLiveInvalidated, "term-pty")
 	assertEventuallyEvent(t, events, EventTerminalResized, "term-pty")
 	assertEventuallyEvent(t, events, EventTerminalExited, "term-pty")
 }

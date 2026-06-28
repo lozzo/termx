@@ -67,6 +67,49 @@ func DecodeCompactSnapshotPayload(payload []byte) (*CompactSnapshot, error) {
 	return compactSnapshotFromWirePB(&msg)
 }
 
+// EncodeNativeScreenSnapshotPayload 编码 realtime native screen 专用 payload。
+// wire 暂时复用 Snapshot 的 screen RowSet/cursor/modes 字段，但 live revision 写入独立 unknown field，
+// 不借用 history_generation，避免 live display contract 污染 authoritative history 语义。
+func EncodeNativeScreenSnapshotPayload(snapshot *NativeScreenSnapshot) ([]byte, error) {
+	if snapshot == nil {
+		return nil, fmt.Errorf("nil native screen snapshot")
+	}
+	msg := &wirepb.Snapshot{
+		TerminalId:        snapshot.TerminalID,
+		Size:              sizeToWirePB(snapshot.Size),
+		ScreenIsAlternate: snapshot.AltScreen,
+		Screen:            rowSetToWirePB(snapshot.Rows, nil, nil, nil, nil),
+		Cursor:            cursorToWirePB(snapshot.Cursor),
+		Modes:             modesToWirePB(snapshot.Modes),
+		TimestampUnixNano: timeToUnixNano(snapshot.Timestamp),
+	}
+	setUint64UnknownField(msg, nativeScreenLiveRevisionFieldNumber, snapshot.Revision)
+	return proto.Marshal(msg)
+}
+
+// DecodeNativeScreenSnapshotPayload 解码 live.screen.get 的专用 payload。
+// 旧 Snapshot scrollback/history 字段会被忽略，调用方只能把结果当 realtime native screen。
+func DecodeNativeScreenSnapshotPayload(payload []byte) (*NativeScreenSnapshot, error) {
+	var msg wirepb.Snapshot
+	if err := proto.Unmarshal(payload, &msg); err != nil {
+		return nil, err
+	}
+	screenRows, _, _, _, _, err := rowSetFromWirePB(msg.GetScreen())
+	if err != nil {
+		return nil, err
+	}
+	return &NativeScreenSnapshot{
+		TerminalID: msg.GetTerminalId(),
+		Revision:   uint64UnknownField(&msg, nativeScreenLiveRevisionFieldNumber),
+		Size:       sizeFromWirePB(msg.GetSize()),
+		Rows:       screenRows,
+		AltScreen:  msg.GetScreenIsAlternate(),
+		Cursor:     cursorFromWirePB(msg.GetCursor()),
+		Modes:      modesFromWirePB(msg.GetModes()),
+		Timestamp:  unixNanoToTime(msg.GetTimestampUnixNano()),
+	}, nil
+}
+
 func EncodeGridViewportPayload(viewport *GridViewport) ([]byte, error) {
 	if viewport == nil {
 		return nil, fmt.Errorf("nil grid viewport")

@@ -281,11 +281,11 @@ func TestProtocolServiceAttachmentStreamsLiveScreenUpdates(t *testing.T) {
 func TestProtocolLiveInvalidationDrainYieldsDuringSustainedBacklog(t *testing.T) {
 	events := make(chan Event, maxProtocolLiveInvalidationDrainBeforeYield+32)
 	for i := 0; i < cap(events); i++ {
-		events <- Event{Type: EventTerminalChanged, TerminalID: "term-1", Timestamp: time.Unix(int64(i), 0)}
+		events <- Event{Type: EventTerminalLiveInvalidated, TerminalID: "term-1", Timestamp: time.Unix(int64(i), 0)}
 	}
 	close(events)
 
-	first, pending, closed := drainCoreLiveInvalidationEvents(events, Event{Type: EventTerminalChanged, TerminalID: "term-1"})
+	first, pending, closed := drainCoreLiveInvalidationEvents(events, Event{Type: EventTerminalLiveInvalidated, TerminalID: "term-1"})
 	if pending != nil || closed {
 		t.Fatalf("first bounded drain should yield without consuming closed backlog pending=%#v closed=%v", pending, closed)
 	}
@@ -300,11 +300,11 @@ func TestProtocolLiveInvalidationDrainYieldsDuringSustainedBacklog(t *testing.T)
 
 func TestProtocolLiveInvalidationDrainStopsAtSemanticBoundary(t *testing.T) {
 	events := make(chan Event, 3)
-	events <- Event{Type: EventTerminalChanged, TerminalID: "term-1", Timestamp: time.Unix(2, 0)}
+	events <- Event{Type: EventTerminalLiveInvalidated, TerminalID: "term-1", Timestamp: time.Unix(2, 0)}
 	events <- Event{Type: EventTerminalResized, TerminalID: "term-1", NewSize: Size{Cols: 100, Rows: 40}}
-	events <- Event{Type: EventTerminalChanged, TerminalID: "term-1", Timestamp: time.Unix(3, 0)}
+	events <- Event{Type: EventTerminalLiveInvalidated, TerminalID: "term-1", Timestamp: time.Unix(3, 0)}
 
-	got, pending, closed := drainCoreLiveInvalidationEvents(events, Event{Type: EventTerminalChanged, TerminalID: "term-1", Timestamp: time.Unix(1, 0)})
+	got, pending, closed := drainCoreLiveInvalidationEvents(events, Event{Type: EventTerminalLiveInvalidated, TerminalID: "term-1", Timestamp: time.Unix(1, 0)})
 	if closed || pending == nil {
 		t.Fatalf("expected semantic boundary pending event, pending=%#v closed=%v", pending, closed)
 	}
@@ -318,10 +318,10 @@ func TestProtocolLiveInvalidationDrainStopsAtSemanticBoundary(t *testing.T) {
 
 func TestProtocolLiveInvalidationDrainStopsAtOtherTerminal(t *testing.T) {
 	events := make(chan Event, 2)
-	events <- Event{Type: EventTerminalChanged, TerminalID: "term-2", Timestamp: time.Unix(2, 0)}
-	events <- Event{Type: EventTerminalChanged, TerminalID: "term-1", Timestamp: time.Unix(3, 0)}
+	events <- Event{Type: EventTerminalLiveInvalidated, TerminalID: "term-2", Timestamp: time.Unix(2, 0)}
+	events <- Event{Type: EventTerminalLiveInvalidated, TerminalID: "term-1", Timestamp: time.Unix(3, 0)}
 
-	got, pending, closed := drainCoreLiveInvalidationEvents(events, Event{Type: EventTerminalChanged, TerminalID: "term-1", Timestamp: time.Unix(1, 0)})
+	got, pending, closed := drainCoreLiveInvalidationEvents(events, Event{Type: EventTerminalLiveInvalidated, TerminalID: "term-1", Timestamp: time.Unix(1, 0)})
 	if closed || pending == nil {
 		t.Fatalf("expected other-terminal boundary pending event, pending=%#v closed=%v", pending, closed)
 	}
@@ -338,12 +338,12 @@ func BenchmarkProtocolLiveInvalidationDrain100k(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		events := make(chan Event, eventsPerRun)
 		for n := 0; n < eventsPerRun; n++ {
-			events <- Event{Type: EventTerminalChanged, TerminalID: "term-1"}
+			events <- Event{Type: EventTerminalLiveInvalidated, TerminalID: "term-1"}
 		}
 		close(events)
 
 		count := 0
-		event := Event{Type: EventTerminalChanged, TerminalID: "term-1"}
+		event := Event{Type: EventTerminalLiveInvalidated, TerminalID: "term-1"}
 		for {
 			var closed bool
 			event, _, closed = drainCoreLiveInvalidationEvents(events, event)
@@ -530,41 +530,52 @@ func TestProtocolServiceSnapshotReturnsLiveSurfaceRows(t *testing.T) {
 	if compact.TerminalID != "term-1" || compact.Size != (protocol.Size{Cols: 12, Rows: 4}) {
 		t.Fatalf("unexpected compact snapshot metadata %#v", compact)
 	}
-	if compact.HistoryGeneration == 0 {
-		t.Fatalf("compact live snapshot must carry live projection revision, got %#v", compact)
+	if compact.HistoryGeneration != 0 {
+		t.Fatalf("compact live snapshot must not carry live projection revision in history generation, got %#v", compact)
 	}
 	if got := compact.ScreenRows[0].Text; got != "alpha" {
 		t.Fatalf("compact snapshot should keep row compact text, got %#v", compact.ScreenRows[0])
 	}
+
+	liveScreen, err := client.LiveScreen(context.Background(), "term-1")
+	if err != nil {
+		t.Fatalf("live screen: %v", err)
+	}
+	if liveScreen.TerminalID != "term-1" || liveScreen.Size != (protocol.Size{Cols: 12, Rows: 4}) || liveScreen.Revision == 0 {
+		t.Fatalf("unexpected live screen metadata %#v", liveScreen)
+	}
+	if got := liveScreen.Rows[0].Text; got != "alpha" {
+		t.Fatalf("live screen should expose native row text, got %#v", liveScreen.Rows[0])
+	}
 }
 
-func TestProtocolServiceCompactSnapshotLiveRevisionAdvancesWithOutput(t *testing.T) {
+func TestProtocolServiceLiveScreenRevisionAdvancesWithOutput(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 
 	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-r347-live-revision", Command: []string{"shell"}, Size: protocol.Size{Cols: 12, Rows: 4}}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	first, err := client.SnapshotCompact(context.Background(), "term-r347-live-revision", 0, 4)
+	first, err := client.LiveScreen(context.Background(), "term-r347-live-revision")
 	if err != nil {
-		t.Fatalf("initial compact snapshot: %v", err)
+		t.Fatalf("initial live screen: %v", err)
 	}
 	if err := server.IngestOutput(context.Background(), "term-r347-live-revision", "alpha\r\n"); err != nil {
 		t.Fatalf("first ingest: %v", err)
 	}
-	second, err := client.SnapshotCompact(context.Background(), "term-r347-live-revision", 0, 4)
+	second, err := client.LiveScreen(context.Background(), "term-r347-live-revision")
 	if err != nil {
-		t.Fatalf("second compact snapshot: %v", err)
+		t.Fatalf("second live screen: %v", err)
 	}
 	if err := server.IngestOutput(context.Background(), "term-r347-live-revision", "beta\r\n"); err != nil {
 		t.Fatalf("second ingest: %v", err)
 	}
-	third, err := client.SnapshotCompact(context.Background(), "term-r347-live-revision", 0, 4)
+	third, err := client.LiveScreen(context.Background(), "term-r347-live-revision")
 	if err != nil {
-		t.Fatalf("third compact snapshot: %v", err)
+		t.Fatalf("third live screen: %v", err)
 	}
-	if !(first.HistoryGeneration < second.HistoryGeneration && second.HistoryGeneration < third.HistoryGeneration) {
-		t.Fatalf("live projection revision must advance monotonically, got %d -> %d -> %d", first.HistoryGeneration, second.HistoryGeneration, third.HistoryGeneration)
+	if !(first.Revision < second.Revision && second.Revision < third.Revision) {
+		t.Fatalf("live projection revision must advance monotonically, got %d -> %d -> %d", first.Revision, second.Revision, third.Revision)
 	}
 }
 

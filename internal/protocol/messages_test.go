@@ -124,6 +124,59 @@ func TestCompactSnapshotPayloadRoundTripKeepsSnapshotCompatibility(t *testing.T)
 	}
 }
 
+func TestNativeScreenSnapshotPayloadRoundTripUsesLiveRevision(t *testing.T) {
+	snap := &NativeScreenSnapshot{
+		TerminalID: "term-live",
+		Revision:   42,
+		Size:       Size{Cols: 20, Rows: 3},
+		Rows:       []CompactRow{CompactRowFromCells([]Cell{{Content: "l", Width: 1}, {Content: "v", Width: 1}})},
+		AltScreen:  true,
+		Cursor:     CursorState{Row: 0, Col: 2, Visible: true},
+		Modes:      TerminalModes{AlternateScreen: true, BracketedPaste: true, AutoWrap: true},
+		Timestamp:  time.Date(2026, 6, 28, 1, 2, 3, 0, time.UTC),
+	}
+	payload, err := EncodeNativeScreenSnapshotPayload(snap)
+	if err != nil {
+		t.Fatalf("encode native screen: %v", err)
+	}
+	asSnapshot, err := DecodeCompactSnapshotPayload(payload)
+	if err != nil {
+		t.Fatalf("decode as compact snapshot: %v", err)
+	}
+	if asSnapshot.HistoryGeneration != 0 {
+		t.Fatalf("native live revision must not be encoded as history generation, got %#v", asSnapshot)
+	}
+	decoded, err := DecodeNativeScreenSnapshotPayload(payload)
+	if err != nil {
+		t.Fatalf("decode native screen: %v", err)
+	}
+	if decoded.TerminalID != snap.TerminalID || decoded.Revision != 42 || decoded.Size != snap.Size || !decoded.AltScreen {
+		t.Fatalf("unexpected native screen metadata %#v", decoded)
+	}
+	if decoded.Rows[0].Text != "lv" || !decoded.Modes.BracketedPaste || decoded.Cursor.Col != 2 {
+		t.Fatalf("native screen lost rows/modes/cursor: %#v", decoded)
+	}
+}
+
+func TestLiveInvalidatedEventRoundTripCarriesRevision(t *testing.T) {
+	payload, err := EncodeEventPayload(Event{
+		Type:            EventTerminalLiveInvalidated,
+		TerminalID:      "term-live",
+		LiveInvalidated: &LiveScreenInvalidatedData{Revision: 99},
+		Timestamp:       time.Date(2026, 6, 28, 1, 2, 3, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("encode event: %v", err)
+	}
+	event, err := DecodeEventPayload(payload)
+	if err != nil {
+		t.Fatalf("decode event: %v", err)
+	}
+	if event.Type != EventTerminalLiveInvalidated || event.TerminalID != "term-live" || event.LiveInvalidated == nil || event.LiveInvalidated.Revision != 99 {
+		t.Fatalf("live invalidation event did not round trip: %#v", event)
+	}
+}
+
 func TestGridViewportPayloadRoundTripUsesBinaryRows(t *testing.T) {
 	viewport := &GridViewport{
 		TerminalID:             "term-grid",

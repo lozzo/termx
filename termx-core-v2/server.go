@@ -333,7 +333,7 @@ func (server *Server) SetMetadata(ctx context.Context, id string, name string, t
 	if err != nil {
 		return TerminalInfo{}, err
 	}
-	server.publishTerminalEvent(EventTerminalChanged, info)
+	server.publishTerminalEvent(EventTerminalMetadataChanged, info)
 	return info, nil
 }
 

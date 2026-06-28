@@ -18,6 +18,7 @@ const (
 	EventTerminalMetadataChanged EventType = "terminal.metadata_changed"
 	EventTerminalRemoved         EventType = "terminal.removed"
 	EventTerminalChanged         EventType = "terminal.changed"
+	EventTerminalLiveInvalidated EventType = "terminal.live.invalidated"
 	EventStorageChanged          EventType = "storage.changed"
 	EventWorkbenchChanged        EventType = "workbench.changed"
 )
@@ -28,6 +29,7 @@ type Event struct {
 	Terminal   *TerminalInfo
 	Storage    *StorageChanged
 	Workbench  *WorkbenchChanged
+	Live       *LiveScreenInvalidated
 	// 中文说明：true 表示该事件承载 terminal lifecycle 变化，而不是普通 live 输出刷新。
 	LifecycleKnown bool
 	SocketPath     string
@@ -191,6 +193,10 @@ func cloneEvent(event Event) Event {
 	if event.Workbench != nil {
 		workbench := *event.Workbench
 		event.Workbench = &workbench
+	}
+	if event.Live != nil {
+		live := *event.Live
+		event.Live = &live
 	}
 	return event
 }

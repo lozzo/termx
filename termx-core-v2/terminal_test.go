@@ -93,18 +93,18 @@ func TestTerminalLiveSurfaceRepliesToOSCBackgroundQuery(t *testing.T) {
 	}, "expected live terminal query response to be written back to process input")
 }
 
-func TestTerminalIngestOutputPublishesLiveChangedEvent(t *testing.T) {
+func TestTerminalIngestOutputPublishesLiveInvalidatedEvent(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
-	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalChanged}})
+	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalLiveInvalidated}})
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}}); err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}
 	if err := server.IngestOutput(context.Background(), "term-1", "live update\n"); err != nil {
 		t.Fatalf("ingest output: %v", err)
 	}
-	event := assertEventValue(t, events, EventTerminalChanged, "term-1")
-	if event.Terminal == nil || event.Terminal.State != TerminalStateRunning {
-		t.Fatalf("expected running terminal info on live changed event, got %#v", event)
+	event := assertEventValue(t, events, EventTerminalLiveInvalidated, "term-1")
+	if event.Live == nil || event.Live.Revision == 0 {
+		t.Fatalf("expected live invalidation revision, got %#v", event)
 	}
 }
 

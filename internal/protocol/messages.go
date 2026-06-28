@@ -255,6 +255,7 @@ const (
 	EventTerminalRemoved         EventType = 4
 	EventCollaboratorsRevoked    EventType = 5
 	EventTerminalReadError       EventType = 6
+	EventTerminalLiveInvalidated EventType = 7
 	EventTerminalMetadataChanged EventType = 10
 	EventStorageChanged          EventType = 11
 	EventWorkbenchChanged        EventType = 12
@@ -286,6 +287,12 @@ type CollaboratorsRevokedData struct{}
 
 type TerminalReadErrorData struct {
 	Error string
+}
+
+// LiveScreenInvalidatedData 是 core native screen 的 latest-only 唤醒事件。
+// 它不携带 screen rows；客户端收到后应按需调用 live.screen.get 拉取当前最新 NativeScreenSnapshot。
+type LiveScreenInvalidatedData struct {
+	Revision uint64
 }
 
 type StorageScope string
@@ -377,6 +384,7 @@ type Event struct {
 	Removed              *TerminalRemovedData
 	CollaboratorsRevoked *CollaboratorsRevokedData
 	ReadError            *TerminalReadErrorData
+	LiveInvalidated      *LiveScreenInvalidatedData
 	Storage              *StorageChangedData
 	Workbench            *WorkbenchChangedData
 }
@@ -500,6 +508,12 @@ type SnapshotParams struct {
 	TerminalID       string
 	ScrollbackOffset int
 	ScrollbackLimit  int
+}
+
+// LiveScreenParams 是 realtime native screen 的请求参数。
+// 它不包含 scrollback/page/window 字段；live.screen.get 总是返回 core 当前 latest screen。
+type LiveScreenParams struct {
+	TerminalID string
 }
 
 // GridViewportParams 只服务 legacy realtime projection 兼容路径，不能作为
@@ -2091,6 +2105,19 @@ type CompactSnapshot struct {
 	Cursor                 CursorState
 	Modes                  TerminalModes
 	Timestamp              time.Time
+}
+
+// NativeScreenSnapshot 是 v3 live display 的专用协议投影。
+// 它只表达 core 当前 native screen，不包含 scrollback、history generation、older cursor 或 copy/history token。
+type NativeScreenSnapshot struct {
+	TerminalID string
+	Revision   uint64
+	Size       Size
+	Rows       []CompactRow
+	AltScreen  bool
+	Cursor     CursorState
+	Modes      TerminalModes
+	Timestamp  time.Time
 }
 
 type GridViewport struct {
