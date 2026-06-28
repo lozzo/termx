@@ -32,6 +32,7 @@ type TerminalSurfaceStore struct {
 	ResizeBoundary LiveResizeBoundary
 	Surfaces       map[string]LiveSurfaceSnapshot
 	RenderRequests map[string]LiveRenderRequestState
+	Invalidations  map[string]LiveInvalidationArmState
 }
 
 // LiveResizeBoundary 是一次 content rect resize 后等待匹配 surface 的基线。
@@ -61,6 +62,23 @@ type LiveRenderFetchRequest struct {
 	TerminalID string
 	Cols       int
 	Rows       int
+}
+
+// LiveInvalidationArmState 是当前 TUI 客户端对一个 terminal 的 one-shot wake
+// 状态。它只记录“已经渲染到哪个 native screen revision 后重新 arm”，不保存
+// screen payload，也不是 core/history truth。
+type LiveInvalidationArmState struct {
+	Armed            bool
+	RenderedRevision uint64
+}
+
+// LiveInvalidationArmRequest 是 reducer 要发起的一次 one-shot invalidation arm。
+// core 收到后只需要在 native screen revision 超过 RenderedRevision 时叫醒 TUI 一次。
+type LiveInvalidationArmRequest struct {
+	TerminalID       string
+	Cols             int
+	Rows             int
+	RenderedRevision uint64
 }
 
 // LiveCursor 是 live surface 的 content-local 光标状态。
@@ -433,6 +451,10 @@ func (store TerminalSurfaceStore) RemoveTerminal(terminalID string) TerminalSurf
 		store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
 		delete(store.RenderRequests, terminalID)
 	}
+	if len(store.Invalidations) > 0 {
+		store.Invalidations = cloneLiveInvalidationArmStates(store.Invalidations)
+		delete(store.Invalidations, terminalID)
+	}
 	if store.TerminalID != terminalID {
 		return store
 	}
@@ -516,29 +538,85 @@ func (store TerminalSurfaceStore) FailLiveRenderFetch(terminalID string) Termina
 	return store
 }
 
+// LiveFrameRendered 收束一次完整 FrameSink 写入后的 live render loop 状态。
+// 它只在 TUI 已经真正写完一帧后调用：dirty fetch 会在这里被合并成 latest
+// screen 请求；如果当前 terminal 没有 pending fetch，则重新 arm 一次 one-shot
+// invalidation。
 func (store TerminalSurfaceStore) LiveFrameRendered() (TerminalSurfaceStore, []LiveRenderFetchRequest) {
-	if len(store.RenderRequests) == 0 {
-		return store, nil
-	}
-	store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
 	requests := make([]LiveRenderFetchRequest, 0, len(store.RenderRequests))
-	for terminalID, request := range store.RenderRequests {
-		if terminalID == "" || request.InFlight || (!request.Dirty && request.WantedRevision <= request.CurrentRevision) {
-			continue
+	if len(store.RenderRequests) > 0 {
+		store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
+		for terminalID, request := range store.RenderRequests {
+			if terminalID == "" || request.InFlight || (!request.Dirty && request.WantedRevision <= request.CurrentRevision) {
+				continue
+			}
+			request.InFlight = true
+			request.InFlightRevision = request.WantedRevision
+			request.Dirty = false
+			if request.Cols <= 0 {
+				request.Cols = 80
+			}
+			if request.Rows <= 0 {
+				request.Rows = 24
+			}
+			store.RenderRequests[terminalID] = request
+			requests = append(requests, LiveRenderFetchRequest{TerminalID: terminalID, Cols: request.Cols, Rows: request.Rows})
 		}
-		request.InFlight = true
-		request.InFlightRevision = request.WantedRevision
-		request.Dirty = false
-		if request.Cols <= 0 {
-			request.Cols = 80
-		}
-		if request.Rows <= 0 {
-			request.Rows = 24
-		}
-		store.RenderRequests[terminalID] = request
-		requests = append(requests, LiveRenderFetchRequest{TerminalID: terminalID, Cols: request.Cols, Rows: request.Rows})
 	}
 	return store, requests
+}
+
+// RequestLiveInvalidationArm 在当前 terminal 没有 pending fetch 时生成 one-shot
+// invalidation arm 请求。RenderedRevision 来自当前已经投影到 TUI 的 latest screen；
+// core 只会在 native screen revision 超过它时叫醒一次。
+func (store TerminalSurfaceStore) RequestLiveInvalidationArm(terminalID string, cols int, rows int) (TerminalSurfaceStore, LiveInvalidationArmRequest, bool) {
+	if terminalID == "" {
+		return store, LiveInvalidationArmRequest{}, false
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
+	snapshot, ok := store.snapshotForTerminal(terminalID)
+	if !ok && store.TerminalID != terminalID {
+		return store, LiveInvalidationArmRequest{}, false
+	}
+	renderedRevision := snapshot.Revision
+	if !ok {
+		renderedRevision = store.Revision
+	}
+	if request, ok := store.RenderRequests[terminalID]; ok && (request.InFlight || request.Dirty || request.WantedRevision > request.CurrentRevision) {
+		return store, LiveInvalidationArmRequest{}, false
+	}
+	arm := store.Invalidations[terminalID]
+	if arm.Armed && arm.RenderedRevision == renderedRevision {
+		return store, LiveInvalidationArmRequest{}, false
+	}
+	store.Invalidations = cloneLiveInvalidationArmStates(store.Invalidations)
+	store.Invalidations[terminalID] = LiveInvalidationArmState{Armed: true, RenderedRevision: renderedRevision}
+	return store, LiveInvalidationArmRequest{
+		TerminalID:       terminalID,
+		Cols:             cols,
+		Rows:             rows,
+		RenderedRevision: renderedRevision,
+	}, true
+}
+
+// FinishLiveInvalidationArm 表示一次 one-shot invalidation waiter 已返回或失败。
+// 只有匹配同一个 RenderedRevision 的 arm 才会解除，避免迟到的旧 waiter 清掉新 arm。
+func (store TerminalSurfaceStore) FinishLiveInvalidationArm(terminalID string, renderedRevision uint64) TerminalSurfaceStore {
+	if terminalID == "" || len(store.Invalidations) == 0 {
+		return store
+	}
+	arm, ok := store.Invalidations[terminalID]
+	if !ok || arm.RenderedRevision != renderedRevision {
+		return store
+	}
+	store.Invalidations = cloneLiveInvalidationArmStates(store.Invalidations)
+	delete(store.Invalidations, terminalID)
+	return store
 }
 
 func (store TerminalSurfaceStore) finishLiveRenderFetch(terminalID string, revision uint64, accepted bool) TerminalSurfaceStore {
@@ -888,6 +966,14 @@ func cloneLiveSurfaceSnapshots(values map[string]LiveSurfaceSnapshot) map[string
 
 func cloneLiveRenderRequestStates(values map[string]LiveRenderRequestState) map[string]LiveRenderRequestState {
 	cloned := make(map[string]LiveRenderRequestState, len(values)+1)
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneLiveInvalidationArmStates(values map[string]LiveInvalidationArmState) map[string]LiveInvalidationArmState {
+	cloned := make(map[string]LiveInvalidationArmState, len(values)+1)
 	for key, value := range values {
 		cloned[key] = value
 	}

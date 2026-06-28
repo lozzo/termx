@@ -414,6 +414,17 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 			return nil, true, protocolErrorInternal, err
 		}
 		return payload, true, 0, nil
+	case "live.invalidation.next":
+		in := params.(protocol.LiveInvalidationNextParams)
+		event, err := session.nextLiveInvalidation(ctx, in)
+		if err != nil {
+			return nil, true, errorCode(err), err
+		}
+		payload, err := protocol.EncodeEventPayload(protocolEventFromCoreV2(event))
+		if err != nil {
+			return nil, true, protocolErrorInternal, err
+		}
+		return payload, true, 0, nil
 	case "events":
 		in := params.(protocol.EventsParams)
 		session.startEvents(ctx, in)
@@ -1061,6 +1072,15 @@ func (session *protocolSession) startEvents(ctx context.Context, params protocol
 			_ = session.sendFrame(0, wire.TypeEvent, payload)
 		}
 	}()
+}
+
+func (session *protocolSession) nextLiveInvalidation(ctx context.Context, params protocol.LiveInvalidationNextParams) (Event, error) {
+	if params.TerminalID == "" {
+		return Event{}, ErrTerminalNotFound
+	}
+	// 中文说明：protocol 只转发 one-shot arm 参数；是否立即返回、是否等待
+	// 下一次 revision，统一由 core server 的 live invalidation owner 决定。
+	return session.server.NextLiveInvalidation(ctx, params.TerminalID, LiveRevision(params.RenderedRevision))
 }
 
 func (session *protocolSession) stopEvents() {

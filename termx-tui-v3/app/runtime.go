@@ -111,6 +111,12 @@ type Reducer func(state.Root, Msg) (state.Root, []Effect)
 // RenderFunc 把 reducer-owned state 投影成 frame。
 type RenderFunc func(state.Root) render.Frame
 
+// AfterRenderFunc 是 runtime 写完一帧后的领域回调。
+// runtime 只负责声明“FrameSink 已写入一张完整 frame”；具体是否重新 arm
+// live invalidation、是否发起 latest screen fetch，由注册方按自己的 domain state
+// 决定，避免通用消息循环硬编码 live 领域类型。
+type AfterRenderFunc func(state.Root) (state.Root, []Effect)
+
 type handledEffect struct{}
 
 func (handledEffect) isEffect() {}
@@ -174,6 +180,7 @@ type AppRuntime struct {
 	state               state.Root
 	reduce              Reducer
 	render              RenderFunc
+	afterRender         AfterRenderFunc
 	host                TerminalHost
 	runner              EffectRunner
 	queue               []Msg
@@ -295,6 +302,10 @@ func (runtime *AppRuntime) SetLogger(logger *slog.Logger) {
 	runtime.stopDiagnostics = startRuntimeHeapSignalProfiler(runtime, logger)
 }
 
+func (runtime *AppRuntime) SetAfterRender(afterRender AfterRenderFunc) {
+	runtime.afterRender = afterRender
+}
+
 func (runtime *AppRuntime) State() state.Root {
 	return runtime.state
 }
@@ -377,7 +388,7 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 			msg, ok = runtime.dequeue()
 			if !ok {
 				if needsRender {
-					runtime.renderFrame()
+					runtime.renderFrame(ctx)
 					needsRender = false
 					runtime.ingestHostInput()
 					runtime.enqueueDueToastTick()
@@ -408,11 +419,11 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 			needsRender = true
 		}
 		if _, ok := msg.(HostResizeMsg); ok {
-			runtime.renderFrame()
+			runtime.renderFrame(ctx)
 			needsRender = false
 		}
 		if runtime.shouldWriteFirstFrame() {
-			runtime.renderFrame()
+			runtime.renderFrame(ctx)
 			needsRender = false
 		}
 		for _, effect := range effects {
@@ -424,7 +435,7 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 			return nil
 		}
 		if needsRender && processed >= runtime.messageBatchLimit() {
-			runtime.renderFrame()
+			runtime.renderFrame(ctx)
 			return nil
 		}
 	}
@@ -919,12 +930,12 @@ func (runtime *AppRuntime) nextToastWakeDelay() time.Duration {
 	return interval - elapsed
 }
 
-func (runtime *AppRuntime) renderFrame() {
+func (runtime *AppRuntime) renderFrame(ctx context.Context) bool {
 	if runtime.host == nil {
-		return
+		return false
 	}
 	if runtime.tryRenderCopyHistoryPatch() {
-		return
+		return false
 	}
 	frame := runtime.render(runtime.state)
 	runtime.markFloatingRepaintFrame(&frame)
@@ -934,18 +945,14 @@ func (runtime *AppRuntime) renderFrame() {
 	runtime.firstFrameWritten = true
 	runtime.rememberCopyHistoryPatchFrame(frame)
 	runtime.observeRuntimeFrame(frame)
-	if runtime.liveRenderHasPendingDirtyRequest() {
-		runtime.enqueue(LiveFrameRenderedMsg{})
-	}
-}
-
-func (runtime *AppRuntime) liveRenderHasPendingDirtyRequest() bool {
-	for _, request := range runtime.state.Surface.RenderRequests {
-		if !request.InFlight && (request.Dirty || request.WantedRevision > request.CurrentRevision) {
-			return true
+	if runtime.afterRender != nil {
+		next, effects := runtime.afterRender(runtime.state)
+		runtime.state = next
+		for _, effect := range effects {
+			runtime.scheduleEffect(ctx, effect)
 		}
 	}
-	return false
+	return true
 }
 
 func frameApproxBytes(frame render.Frame) int {

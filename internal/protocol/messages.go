@@ -508,6 +508,15 @@ type LiveScreenParams struct {
 	TerminalID string
 }
 
+// LiveInvalidationNextParams 是 live display one-shot invalidation 的请求参数。
+// 调用方只在已经渲染完当前 latest screen 后发起；RenderedRevision 是客户端已
+// 完整写入 FrameSink 的 native screen revision。服务端只在 core 当前 revision
+// 大于该值时返回一次唤醒，或者阻塞等待下一次超过该值的 invalidation。
+type LiveInvalidationNextParams struct {
+	TerminalID       string
+	RenderedRevision uint64
+}
+
 // HistoryWindowParams 是 authoritative history path 的请求参数。
 // 它只表达 terminal-scoped history projection，不携带 pane/view/attachment
 // identity；客户端若要把 response 重新绑定回本地 pane/view，只能依赖本地

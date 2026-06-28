@@ -301,6 +301,15 @@ func (terminal *Terminal) NativeScreenSnapshot(terminalID string) NativeScreenSn
 	}
 }
 
+// LiveRevision 返回当前 terminal native screen 的 latest-only revision。
+// 它只服务 live invalidation one-shot arm 的“是否已经有新屏幕”判断；
+// history/window/copy 不能把它当成 logical history generation。
+func (terminal *Terminal) LiveRevision() LiveRevision {
+	terminal.liveMu.Lock()
+	defer terminal.liveMu.Unlock()
+	return LiveRevision(terminal.liveRevision)
+}
+
 func (terminal *Terminal) FlushHistory(ctx context.Context) error {
 	terminal.queueMu.Lock()
 	liveQueue := terminal.liveQ

@@ -54,6 +54,27 @@ func TestLiveInvalidatedEventRoundTripCarriesRevision(t *testing.T) {
 	}
 }
 
+func TestLiveInvalidationNextParamsRoundTripCarriesRenderedRevision(t *testing.T) {
+	payload, err := EncodeMethodParams("live.invalidation.next", LiveInvalidationNextParams{
+		TerminalID:       "term-live",
+		RenderedRevision: 123,
+	})
+	if err != nil {
+		t.Fatalf("encode live invalidation params: %v", err)
+	}
+	decoded, err := DecodeMethodParams("live.invalidation.next", payload)
+	if err != nil {
+		t.Fatalf("decode live invalidation params: %v", err)
+	}
+	params, ok := decoded.(LiveInvalidationNextParams)
+	if !ok {
+		t.Fatalf("decoded params type %T", decoded)
+	}
+	if params.TerminalID != "term-live" || params.RenderedRevision != 123 {
+		t.Fatalf("unexpected params %#v", params)
+	}
+}
+
 func TestCompactRowsReuseASCIIStrings(t *testing.T) {
 	rows := CompactRowsFromCells([][]Cell{
 		{{Content: "a", Width: 1}, {Content: "a", Width: 1}, {Content: "a", Width: 1}, {Content: "a", Width: 1}},

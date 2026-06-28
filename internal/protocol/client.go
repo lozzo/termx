@@ -322,6 +322,24 @@ func (c *Client) LiveScreen(ctx context.Context, terminalID string) (*NativeScre
 	return DecodeNativeScreenSnapshotPayload(payload)
 }
 
+// NextLiveInvalidation 阻塞等待指定 terminal 超过 renderedRevision 的下一次 live
+// screen 失效通知。这是 TUI latest-screen render loop 的 one-shot arm 接口；
+// 返回后本次 arm 自动结束，且不会携带 screen payload。
+func (c *Client) NextLiveInvalidation(ctx context.Context, terminalID string, renderedRevision uint64) (*Event, error) {
+	payload, err := c.doRequestPayload(ctx, "live.invalidation.next", LiveInvalidationNextParams{
+		TerminalID:       terminalID,
+		RenderedRevision: renderedRevision,
+	})
+	if err != nil {
+		return nil, err
+	}
+	event, err := DecodeEventPayload(payload)
+	if err != nil {
+		return nil, err
+	}
+	return &event, nil
+}
+
 func (c *Client) HistoryWindow(ctx context.Context, params HistoryWindowParams) (*HistoryWindow, error) {
 	payload, err := c.doRequestPayload(ctx, "history.window", params)
 	if err != nil {

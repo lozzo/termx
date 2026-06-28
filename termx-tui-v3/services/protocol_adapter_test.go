@@ -70,6 +70,10 @@ type fakeProtocolTerminalClient struct {
 	eventCh            chan protocol.Event
 	eventSubscribers   []fakeProtocolEventSubscriber
 	eventFanoutStarted bool
+	nextLiveIDs        []string
+	nextLiveRevisions  []uint64
+	nextLiveEvent      *protocol.Event
+	nextLiveErr        error
 	liveScreenIDs      []string
 	liveScreenResult   *protocol.NativeScreenSnapshot
 	liveScreenResults  map[string]*protocol.NativeScreenSnapshot
@@ -120,6 +124,19 @@ func (client *fakeProtocolTerminalClient) Events(_ context.Context, params proto
 		}()
 	}
 	return ch, nil
+}
+
+func (client *fakeProtocolTerminalClient) NextLiveInvalidation(_ context.Context, terminalID string, renderedRevision uint64) (*protocol.Event, error) {
+	client.nextLiveIDs = append(client.nextLiveIDs, terminalID)
+	client.nextLiveRevisions = append(client.nextLiveRevisions, renderedRevision)
+	if client.nextLiveErr != nil {
+		return nil, client.nextLiveErr
+	}
+	if client.nextLiveEvent != nil {
+		event := *client.nextLiveEvent
+		return &event, nil
+	}
+	return &protocol.Event{Type: protocol.EventTerminalLiveInvalidated, TerminalID: terminalID}, nil
 }
 
 func (client *fakeProtocolTerminalClient) publishEvent(event protocol.Event) {
@@ -1607,75 +1624,62 @@ func TestProtocolTerminalServiceAdapterSkipsZeroWidthContinuationPlaceholders(t 
 }
 
 func TestProtocolTerminalServiceAdapterMapsOrdinaryLiveEventsToRefreshInvalidation(t *testing.T) {
-	eventCh := make(chan protocol.Event, 1)
 	client := &fakeProtocolTerminalClient{
-		eventCh: eventCh,
+		nextLiveEvent: &protocol.Event{Type: protocol.EventTerminalLiveInvalidated, TerminalID: "term-1", LiveInvalidated: &protocol.LiveScreenInvalidatedData{Revision: 9}},
 	}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
-	events, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
+	got, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24, RenderedRevision: 7})
 	if err != nil {
-		t.Fatalf("live events: %v", err)
+		t.Fatalf("arm live invalidation: %v", err)
 	}
-	eventCh <- protocol.Event{Type: protocol.EventTerminalLiveInvalidated, TerminalID: "term-1", LiveInvalidated: &protocol.LiveScreenInvalidatedData{Revision: 9}}
-
-	got := <-events
-	if !got.Refresh || got.Ready || got.TerminalID != "term-1" || got.Snapshot.Revision != 9 || got.Snapshot.TerminalID != "" || len(got.Snapshot.Screen) != 0 {
+	if !got.Refresh || got.Ready || got.TerminalID != "term-1" || got.RenderedRevision != 7 || got.Snapshot.Revision != 9 || got.Snapshot.TerminalID != "" || len(got.Snapshot.Screen) != 0 {
 		t.Fatalf("unexpected live event %#v", got)
 	}
-	if len(client.eventParams) != 1 || client.eventParams[0].TerminalID != "term-1" {
-		t.Fatalf("expected protocol events subscription, got %#v", client.eventParams)
+	if len(client.nextLiveIDs) != 1 || client.nextLiveIDs[0] != "term-1" || len(client.eventParams) != 0 {
+		t.Fatalf("expected one-shot live invalidation RPC, next=%#v events=%#v", client.nextLiveIDs, client.eventParams)
+	}
+	if !reflect.DeepEqual(client.nextLiveRevisions, []uint64{7}) {
+		t.Fatalf("expected rendered revision in one-shot RPC, got %#v", client.nextLiveRevisions)
 	}
 	if len(client.liveScreenIDs) != 0 {
 		t.Fatalf("live invalidation should not fetch native screen in service layer, got %#v", client.liveScreenIDs)
 	}
 }
 
-func TestProtocolTerminalServiceAdapterLiveEventsKeepIndependentTerminalStreams(t *testing.T) {
-	eventCh := make(chan protocol.Event, 4)
-	client := &fakeProtocolTerminalClient{
-		eventCh: eventCh,
-	}
+func TestProtocolTerminalServiceAdapterLiveInvalidationArmIsTerminalScoped(t *testing.T) {
+	client := &fakeProtocolTerminalClient{}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
-	termOneEvents, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
+	termOne, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24, RenderedRevision: 1})
 	if err != nil {
-		t.Fatalf("term-1 live events: %v", err)
+		t.Fatalf("term-1 live invalidation: %v", err)
 	}
-	termTwoEvents, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-2", Cols: 80, Rows: 24})
+	termTwo, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-2", Cols: 80, Rows: 24, RenderedRevision: 2})
 	if err != nil {
-		t.Fatalf("term-2 live events: %v", err)
+		t.Fatalf("term-2 live invalidation: %v", err)
 	}
-
-	eventCh <- protocol.Event{Type: protocol.EventTerminalLiveInvalidated, TerminalID: "term-1"}
-	if got := readTerminalLiveEvent(t, termOneEvents); got.TerminalID != "term-1" || !got.Refresh || got.Ready {
-		t.Fatalf("term-1 stream must receive its own event without blocking behind term-2 subscription, got %#v", got)
+	if termOne.TerminalID != "term-1" || !termOne.Refresh || termTwo.TerminalID != "term-2" || !termTwo.Refresh {
+		t.Fatalf("one-shot invalidations must stay terminal scoped, term1=%#v term2=%#v", termOne, termTwo)
 	}
-	assertNoTerminalLiveEvent(t, termTwoEvents)
-
-	eventCh <- protocol.Event{Type: protocol.EventTerminalLiveInvalidated, TerminalID: "term-2"}
-	if got := readTerminalLiveEvent(t, termTwoEvents); got.TerminalID != "term-2" || !got.Refresh || got.Ready {
-		t.Fatalf("term-2 stream must receive its own event, got %#v", got)
+	if want := []string{"term-1", "term-2"}; !reflect.DeepEqual(client.nextLiveIDs, want) {
+		t.Fatalf("expected terminal-scoped one-shot calls, got %#v", client.nextLiveIDs)
 	}
-	assertNoTerminalLiveEvent(t, termOneEvents)
-	if len(client.eventParams) != 2 || client.eventParams[0].TerminalID != "term-1" || client.eventParams[1].TerminalID != "term-2" {
-		t.Fatalf("expected independent protocol event subscriptions, got %#v", client.eventParams)
-	}
-	if len(client.liveScreenIDs) != 0 {
-		t.Fatalf("independent invalidation streams should not fetch native screens in service layer, got %#v", client.liveScreenIDs)
+	if want := []uint64{1, 2}; !reflect.DeepEqual(client.nextLiveRevisions, want) {
+		t.Fatalf("expected terminal-scoped rendered revisions, got %#v", client.nextLiveRevisions)
 	}
 }
 
-func readTerminalLiveEvent(t *testing.T, events <-chan TerminalLiveEvent) TerminalLiveEvent {
-	t.Helper()
-	select {
-	case event, ok := <-events:
-		if !ok {
-			t.Fatal("terminal live event channel closed")
-		}
-		return event
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for terminal live event")
+func TestProtocolTerminalServiceAdapterRejectsNonInvalidationOnLiveArm(t *testing.T) {
+	client := &fakeProtocolTerminalClient{
+		nextLiveEvent: &protocol.Event{Type: protocol.EventTerminalMetadataChanged, TerminalID: "term-1"},
 	}
-	return TerminalLiveEvent{}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	got, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", RenderedRevision: 4})
+	if err != nil {
+		t.Fatalf("arm live invalidation: %v", err)
+	}
+	if got.Err == nil || got.Refresh || got.Metadata || got.Exited {
+		t.Fatalf("non-invalidation event must not re-enter live union path, got %#v", got)
+	}
 }
 
 func liveScreenRowText(snapshot state.LiveSurfaceSnapshot, rowIndex int) string {
@@ -1687,77 +1691,6 @@ func liveScreenRowText(snapshot state.LiveSurfaceSnapshot, rowIndex int) string 
 		builder.WriteString(cell.Text)
 	}
 	return strings.TrimRight(builder.String(), " ")
-}
-
-func assertNoTerminalLiveEvent(t *testing.T, events <-chan TerminalLiveEvent) {
-	t.Helper()
-	select {
-	case event, ok := <-events:
-		if ok {
-			t.Fatalf("unexpected terminal live event %#v", event)
-		}
-		t.Fatal("terminal live event channel closed")
-	case <-time.After(50 * time.Millisecond):
-	}
-}
-
-func TestProtocolTerminalServiceAdapterMapsMetadataEventsToTags(t *testing.T) {
-	eventCh := make(chan protocol.Event, 1)
-	client := &fakeProtocolTerminalClient{
-		eventCh: eventCh,
-		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
-			ID:   "term-1",
-			Tags: map[string]string{"termx.size_lock": "lock", "role": "shell"},
-		}}},
-	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
-	events, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
-	if err != nil {
-		t.Fatalf("live events: %v", err)
-	}
-	eventCh <- protocol.Event{Type: protocol.EventTerminalMetadataChanged, TerminalID: "term-1"}
-
-	got := <-events
-	if !got.Metadata || got.TerminalID != "term-1" || got.Tags["termx.size_lock"] != "lock" || got.Ready {
-		t.Fatalf("metadata event should return terminal tags without surface refresh, got %#v", got)
-	}
-	if client.listCalls != 1 || len(client.liveScreenIDs) != 0 {
-		t.Fatalf("metadata event should list terminal metadata without live screen refresh, lists=%d live_screens=%#v", client.listCalls, client.liveScreenIDs)
-	}
-}
-
-func TestProtocolTerminalServiceAdapterMapsExitedEventMetadata(t *testing.T) {
-	exitedAt := time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC)
-	exitCode := 23
-	eventCh := make(chan protocol.Event, 1)
-	client := &fakeProtocolTerminalClient{
-		eventCh: eventCh,
-		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
-			ID:       "term-1",
-			Command:  []string{"bash", "-lc", "make test"},
-			State:    "exited",
-			ExitCode: &exitCode,
-			ExitedAt: exitedAt,
-		}}},
-	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
-	events, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
-	if err != nil {
-		t.Fatalf("live events: %v", err)
-	}
-	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", StateChanged: &protocol.TerminalStateChangedData{
-		NewState: "exited",
-		ExitCode: &exitCode,
-		ExitedAt: exitedAt,
-	}}
-
-	got := <-events
-	if !got.Exited || got.ExitCode != 23 || !got.ExitedAt.Equal(exitedAt) || strings.Join(got.Command, " ") != "bash -lc make test" || got.Ready || got.Snapshot.State != "" {
-		t.Fatalf("expected exited metadata event, got %#v", got)
-	}
-	if client.listCalls != 1 || len(client.liveScreenIDs) != 0 {
-		t.Fatalf("exited lifecycle event must not fetch live screen, lists=%d live_screens=%#v", client.listCalls, client.liveScreenIDs)
-	}
 }
 
 func TestProtocolTerminalAdapterDoesNotUseFixedLiveFrameInterval(t *testing.T) {

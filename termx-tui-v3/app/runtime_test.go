@@ -671,7 +671,7 @@ func TestAppRuntimeCoalescesQueuedLiveRefreshEventsByTerminalID(t *testing.T) {
 
 func TestAppRuntimeSchedulesDirtyLiveFetchAfterFrameIsWritten(t *testing.T) {
 	host := NewFakeTerminalHost(8)
-	reducer := NewLiveReducer(LiveDeps{Terminal: &services.FakeTerminalService{
+	liveDeps := LiveDeps{Terminal: &services.FakeTerminalService{
 		SurfaceResult: services.TerminalSurfaceResult{
 			Ready: true,
 			Snapshot: state.LiveSurfaceSnapshot{
@@ -680,7 +680,8 @@ func TestAppRuntimeSchedulesDirtyLiveFetchAfterFrameIsWritten(t *testing.T) {
 				Lines:      []string{"latest"},
 			},
 		},
-	}})
+	}}
+	reducer := NewLiveReducer(liveDeps)
 	runtime := NewAppRuntime(
 		state.Root{Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-1",
@@ -695,6 +696,7 @@ func TestAppRuntimeSchedulesDirtyLiveFetchAfterFrameIsWritten(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 	)
+	runtime.SetAfterRender(liveAfterRenderFunc(liveDeps))
 
 	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",
@@ -717,7 +719,7 @@ func TestAppRuntimeSchedulesDirtyLiveFetchAfterFrameIsWritten(t *testing.T) {
 
 func TestAppRuntimeDirtyLiveFetchIgnoresServiceLifecycleFlagFromOrdinaryRefresh(t *testing.T) {
 	host := NewFakeTerminalHost(8)
-	reducer := NewLiveReducer(LiveDeps{Terminal: &services.FakeTerminalService{
+	liveDeps := LiveDeps{Terminal: &services.FakeTerminalService{
 		SurfaceResult: services.TerminalSurfaceResult{
 			Ready: true,
 			Snapshot: state.LiveSurfaceSnapshot{
@@ -727,7 +729,8 @@ func TestAppRuntimeDirtyLiveFetchIgnoresServiceLifecycleFlagFromOrdinaryRefresh(
 			},
 			LifecycleKnown: true,
 		},
-	}})
+	}}
+	reducer := NewLiveReducer(liveDeps)
 	runtime := NewAppRuntime(
 		state.Root{Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-1",
@@ -742,6 +745,7 @@ func TestAppRuntimeDirtyLiveFetchIgnoresServiceLifecycleFlagFromOrdinaryRefresh(
 		host,
 		NewSyncEffectRunner(),
 	)
+	runtime.SetAfterRender(liveAfterRenderFunc(liveDeps))
 
 	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",
@@ -774,9 +778,6 @@ func TestAppRuntimeDoesNotSkipLifecycleLiveSurfaceUnderPressure(t *testing.T) {
 		func(root state.Root, msg Msg) (state.Root, []Effect) {
 			surface, ok := msg.(LiveSurfaceMsg)
 			if !ok {
-				if _, ok := msg.(LiveFrameRenderedMsg); ok {
-					return root, nil
-				}
 				t.Fatalf("expected LiveSurfaceMsg, got %T", msg)
 			}
 			root.Surface = root.Surface.ApplySnapshotWithLifecycle(surface.Snapshot, surface.LifecycleKnown)

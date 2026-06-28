@@ -448,6 +448,53 @@ func (server *Server) LiveSnapshot(id string) (live.SurfaceSnapshot, error) {
 	return terminal.LiveSnapshot(), nil
 }
 
+// NextLiveInvalidation 等待指定 terminal 的 native screen revision 超过
+// renderedRevision，并返回一次 live invalidation。它是 core-v2 对 TUI latest
+// screen render loop 暴露的 one-shot wake contract：core 只维护最新屏幕和 revision，
+// 不知道客户端渲染进度，也不推送中间帧 payload。
+func (server *Server) NextLiveInvalidation(ctx context.Context, id string, renderedRevision LiveRevision) (Event, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return Event{}, err
+	}
+	// 中文说明：先注册 waiter 再读取 current revision，避免读取之后、订阅之前
+	// 发生的 invalidation 丢失导致 TUI one-shot arm 睡死。
+	waitCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events := server.Events(waitCtx, EventFilter{
+		TerminalID: id,
+		Types:      []EventType{EventTerminalLiveInvalidated},
+	})
+	current := terminal.LiveRevision()
+	if current > renderedRevision {
+		return Event{
+			Type:       EventTerminalLiveInvalidated,
+			TerminalID: id,
+			Live: &LiveScreenInvalidated{
+				TerminalID: id,
+				Revision:   current,
+			},
+		}, nil
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return Event{}, ctx.Err()
+		case event, ok := <-events:
+			if !ok {
+				return Event{}, context.Canceled
+			}
+			if event.Live == nil || event.Live.Revision <= renderedRevision {
+				continue
+			}
+			return event, nil
+		}
+	}
+}
+
 // TerminalHistoryWindow 返回 core-v2 terminal 内部 authoritative history domain
 // projection。调用边界包括 protocol history.window 和 domain harness；实现只能读取
 // core history store，不能 fallback 到 live rows 或 snapshot。

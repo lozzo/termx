@@ -17,6 +17,7 @@ type ProtocolTerminalClient interface {
 	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
 	List(context.Context) (*protocol.ListResult, error)
 	LiveScreen(context.Context, string) (*protocol.NativeScreenSnapshot, error)
+	NextLiveInvalidation(context.Context, string, uint64) (*protocol.Event, error)
 	Create(context.Context, protocol.CreateParams) (*protocol.CreateResult, error)
 	Restart(context.Context, string) error
 	Kill(context.Context, string) error
@@ -331,47 +332,20 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 	}, nil
 }
 
-func (adapter ProtocolTerminalServiceAdapter) LiveEvents(ctx context.Context, req TerminalLiveEventRequest) (<-chan TerminalLiveEvent, error) {
+func (adapter ProtocolTerminalServiceAdapter) ArmLiveInvalidation(ctx context.Context, req TerminalLiveEventRequest) (TerminalLiveEvent, error) {
 	if adapter.Client == nil {
-		return nil, ErrMissingTerminalClient
+		return TerminalLiveEvent{}, ErrMissingTerminalClient
 	}
-	events, err := adapter.Client.Events(ctx, protocol.EventsParams{
-		TerminalID: req.TerminalID,
-		Types: []protocol.EventType{
-			protocol.EventTerminalLiveInvalidated,
-			protocol.EventTerminalStateChanged,
-			protocol.EventTerminalResized,
-			protocol.EventTerminalMetadataChanged,
-			protocol.EventTerminalReadError,
-		},
-	})
+	event, err := adapter.Client.NextLiveInvalidation(ctx, req.TerminalID, req.RenderedRevision)
 	if err != nil {
-		return nil, err
+		return TerminalLiveEvent{}, err
 	}
-	out := make(chan TerminalLiveEvent, 16)
-	go func() {
-		defer close(out)
-		for {
-			var event protocol.Event
-			var ok bool
-			select {
-			case <-ctx.Done():
-				return
-			case event, ok = <-events:
-				if !ok {
-					return
-				}
-			}
-			liveEvent := adapter.liveEventFromProtocol(ctx, req, event)
-			perftrace.Count("tui.protocol.live_event", protocolLiveEventApproxBytes(liveEvent))
-			select {
-			case out <- liveEvent:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-	return out, nil
+	if event == nil {
+		return TerminalLiveEvent{}, context.Canceled
+	}
+	liveEvent := liveInvalidationFromProtocol(req, *event)
+	perftrace.Count("tui.protocol.live_event", protocolLiveEventApproxBytes(liveEvent))
+	return liveEvent, nil
 }
 
 func protocolLiveEventApproxBytes(event TerminalLiveEvent) int {
@@ -390,58 +364,19 @@ func protocolLiveEventApproxBytes(event TerminalLiveEvent) int {
 	return total
 }
 
-func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.Context, req TerminalLiveEventRequest, event protocol.Event) TerminalLiveEvent {
-	out := TerminalLiveEvent{TerminalID: req.TerminalID}
+func liveInvalidationFromProtocol(req TerminalLiveEventRequest, event protocol.Event) TerminalLiveEvent {
+	out := TerminalLiveEvent{TerminalID: req.TerminalID, RenderedRevision: req.RenderedRevision}
 	if event.TerminalID != "" {
 		out.TerminalID = event.TerminalID
 	}
-	if event.ReadError != nil {
-		out.Err = fmt.Errorf("%s", event.ReadError.Error)
+	if event.Type != protocol.EventTerminalLiveInvalidated {
+		out.Err = fmt.Errorf("unexpected live invalidation event type: %v", event.Type)
 		return out
 	}
-	if event.Type == protocol.EventTerminalLiveInvalidated {
-		// 中文说明：live invalidation 只是唤醒信号；TUI app 自己决定何时拉取 latest screen。
-		out.Refresh = true
-		if event.LiveInvalidated != nil {
-			out.Snapshot.Revision = event.LiveInvalidated.Revision
-		}
-		return out
-	}
-	if event.Type == protocol.EventTerminalMetadataChanged {
-		out.Metadata = true
-		info, err := adapter.terminalInfo(ctx, out.TerminalID)
-		if err != nil {
-			out.Err = err
-			return out
-		}
-		out.Tags = cloneStringMap(info.Tags)
-		out.AttachmentProjection = true
-		out.AttachmentCount = info.ResizeOwnerAttachmentCount
-		if info.ResizeOwnership != nil {
-			out.OwnerSurfaceID = info.ResizeOwnership.OwnerSurfaceID
-			out.OwnerViewID = info.ResizeOwnership.OwnerViewID
-			out.ResizeEpoch = info.ResizeOwnership.Epoch
-			out.SizeLocked = info.ResizeOwnership.SizeLocked
-		}
-		return out
-	}
-	if event.StateChanged != nil && event.StateChanged.NewState == "exited" {
-		out.Exited = true
-		if event.StateChanged.ExitCode != nil {
-			out.ExitCode = *event.StateChanged.ExitCode
-		}
-		out.ExitedAt = event.StateChanged.ExitedAt
-		if out.ExitedAt.IsZero() {
-			out.ExitedAt = event.Timestamp
-		}
-		info, err := adapter.terminalInfo(ctx, out.TerminalID)
-		if err != nil {
-			out.Err = err
-			return out
-		}
-		out.Command = append([]string(nil), info.Command...)
-		out.Reason = "exited"
-		return out
+	// 中文说明：live invalidation 只是唤醒信号；TUI app 自己决定何时拉取 latest screen。
+	out.Refresh = true
+	if event.LiveInvalidated != nil {
+		out.Snapshot.Revision = event.LiveInvalidated.Revision
 	}
 	return out
 }

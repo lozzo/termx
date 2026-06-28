@@ -271,7 +271,7 @@ func benchmarkCopyHistoryWheelRuntimeWithSender(b *testing.B, runtime *AppRuntim
 
 func benchmarkCopyHistoryAlternatingWheelRuntime(b *testing.B, runtime *AppRuntime, send func(input.InputEvent) error, patchCount func() int) {
 	b.Helper()
-	runtime.renderFrame()
+	runtime.renderFrame(context.Background())
 	beforePatches := 0
 	if patchCount != nil {
 		beforePatches = patchCount()

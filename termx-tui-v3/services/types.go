@@ -125,10 +125,10 @@ type NativeScreenSource interface {
 	LiveSurface(context.Context, TerminalSurfaceRequest) (TerminalSurfaceResult, error)
 }
 
-// LiveInvalidationSource 只提供 live screen 失效唤醒事件。
-// 事件可以合并；它不是 frame delivery，也不保证中间 revision 可补取。
+// LiveInvalidationSource 只提供 one-shot live screen 失效唤醒。
+// 调用方每次 arm 最多得到一次通知；通知不是 frame delivery，也不保证中间 revision 可补取。
 type LiveInvalidationSource interface {
-	LiveEvents(context.Context, TerminalLiveEventRequest) (<-chan TerminalLiveEvent, error)
+	ArmLiveInvalidation(context.Context, TerminalLiveEventRequest) (TerminalLiveEvent, error)
 }
 
 type TerminalSurfaceService interface {
@@ -300,15 +300,19 @@ type TerminalSurfaceRequest struct {
 }
 
 type TerminalLiveEventRequest struct {
-	TerminalID string
-	Cols       int
-	Rows       int
+	TerminalID       string
+	Cols             int
+	Rows             int
+	RenderedRevision uint64
 }
 
 type TerminalLiveEvent struct {
 	TerminalID string
 	Snapshot   state.LiveSurfaceSnapshot
 	Refresh    bool
+	// 中文说明：这是 TUI one-shot arm 请求的关联值，表示本次 waiter 是在
+	// 哪个已渲染 native screen revision 后发出的；它不是 core history truth。
+	RenderedRevision uint64
 	// 中文说明：只标记这一次 event 承载 core lifecycle 变化；reducer 用完即丢。
 	LifecycleKnown       bool
 	Exited               bool
@@ -558,39 +562,39 @@ func (client *FakeCoreClient) ReleaseHistory(_ context.Context, req HistoryRelea
 }
 
 type FakeTerminalService struct {
-	AttachResult      TerminalAttachResult
-	ListResult        TerminalListResult
-	CreateResult      TerminalCreateResult
-	SurfaceResult     TerminalSurfaceResult
-	AttachErr         error
-	ListErr           error
-	CreateErr         error
-	RestartErr        error
-	ReconnectErr      error
-	KillErr           error
-	RemoveErr         error
-	EditErr           error
-	EditTagsErr       error
-	InputErr          error
-	ResizeErr         error
-	ResizeResult      TerminalResizeResult
-	SurfaceErr        error
-	LiveEventsCh      chan TerminalLiveEvent
-	LiveEventsErr     error
-	Attaches          []TerminalAttachRequest
-	Detaches          []TerminalDetachRequest
-	Lists             []TerminalListRequest
-	Creates           []TerminalCreateRequest
-	Restarts          []TerminalRestartRequest
-	Reconnects        []TerminalReconnectRequest
-	Kills             []TerminalKillRequest
-	Removes           []TerminalRemoveRequest
-	Edits             []TerminalEditMetadataRequest
-	TagEdits          []TerminalEditTagsRequest
-	Inputs            []TerminalInputRequest
-	Resizes           []TerminalResizeRequest
-	Surfaces          []TerminalSurfaceRequest
-	LiveEventRequests []TerminalLiveEventRequest
+	AttachResult             TerminalAttachResult
+	ListResult               TerminalListResult
+	CreateResult             TerminalCreateResult
+	SurfaceResult            TerminalSurfaceResult
+	AttachErr                error
+	ListErr                  error
+	CreateErr                error
+	RestartErr               error
+	ReconnectErr             error
+	KillErr                  error
+	RemoveErr                error
+	EditErr                  error
+	EditTagsErr              error
+	InputErr                 error
+	ResizeErr                error
+	ResizeResult             TerminalResizeResult
+	SurfaceErr               error
+	LiveInvalidationsCh      chan TerminalLiveEvent
+	LiveInvalidationsErr     error
+	Attaches                 []TerminalAttachRequest
+	Detaches                 []TerminalDetachRequest
+	Lists                    []TerminalListRequest
+	Creates                  []TerminalCreateRequest
+	Restarts                 []TerminalRestartRequest
+	Reconnects               []TerminalReconnectRequest
+	Kills                    []TerminalKillRequest
+	Removes                  []TerminalRemoveRequest
+	Edits                    []TerminalEditMetadataRequest
+	TagEdits                 []TerminalEditTagsRequest
+	Inputs                   []TerminalInputRequest
+	Resizes                  []TerminalResizeRequest
+	Surfaces                 []TerminalSurfaceRequest
+	LiveInvalidationRequests []TerminalLiveEventRequest
 }
 
 type FakeWorkbenchStorageService struct {
@@ -876,20 +880,24 @@ func (service *FakeTerminalService) LiveSurface(_ context.Context, req TerminalS
 	return result, nil
 }
 
-func (service *FakeTerminalService) LiveEvents(ctx context.Context, req TerminalLiveEventRequest) (<-chan TerminalLiveEvent, error) {
-	service.LiveEventRequests = append(service.LiveEventRequests, req)
-	if service.LiveEventsErr != nil {
-		return nil, service.LiveEventsErr
+func (service *FakeTerminalService) ArmLiveInvalidation(ctx context.Context, req TerminalLiveEventRequest) (TerminalLiveEvent, error) {
+	service.LiveInvalidationRequests = append(service.LiveInvalidationRequests, req)
+	if service.LiveInvalidationsErr != nil {
+		return TerminalLiveEvent{}, service.LiveInvalidationsErr
 	}
-	if service.LiveEventsCh != nil {
-		return service.LiveEventsCh, nil
+	if service.LiveInvalidationsCh != nil {
+		select {
+		case event, ok := <-service.LiveInvalidationsCh:
+			if !ok {
+				return TerminalLiveEvent{}, context.Canceled
+			}
+			return event, nil
+		case <-ctx.Done():
+			return TerminalLiveEvent{}, ctx.Err()
+		}
 	}
-	ch := make(chan TerminalLiveEvent)
-	go func() {
-		<-ctx.Done()
-		close(ch)
-	}()
-	return ch, nil
+	<-ctx.Done()
+	return TerminalLiveEvent{}, ctx.Err()
 }
 
 func cloneTerminalPoolItems(items []TerminalPoolItem) []TerminalPoolItem {

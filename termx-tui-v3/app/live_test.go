@@ -996,35 +996,36 @@ func TestTerminalPoolRemoveDeletesInventoryAndBindings(t *testing.T) {
 	}
 }
 
-func TestLiveStreamTokenIsTerminalScoped(t *testing.T) {
-	terminal := &services.FakeTerminalService{LiveEventsCh: make(chan services.TerminalLiveEvent)}
-	first := liveStreamEffect("term-1", 80, 24, LiveDeps{Terminal: terminal})
-	second := liveStreamEffect("term-2", 80, 24, LiveDeps{Terminal: terminal})
-	if len(first) != 2 || len(second) != 2 {
-		t.Fatalf("expected cancel+stream effects, first=%#v second=%#v", first, second)
+func TestLiveInvalidationArmEffectIsOneShot(t *testing.T) {
+	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 2)}
+	effects := liveInvalidationArmEffect(state.LiveInvalidationArmRequest{TerminalID: "term-1", Cols: 80, Rows: 24, RenderedRevision: 6}, LiveDeps{Terminal: terminal})
+	if len(effects) != 1 {
+		t.Fatalf("expected one-shot arm effect, got %#v", effects)
 	}
-	firstCancel := first[0].(CancelEffect)
-	firstStream := first[1].(StreamEffect)
-	secondCancel := second[0].(CancelEffect)
-	secondStream := second[1].(StreamEffect)
-	if firstCancel.Token != firstStream.Token || secondCancel.Token != secondStream.Token || firstStream.Token == secondStream.Token {
-		t.Fatalf("live stream tokens must be scoped per terminal, first=%q/%q second=%q/%q", firstCancel.Token, firstStream.Token, secondCancel.Token, secondStream.Token)
+	if effect := effects[0].(FuncEffect); effect.Token != liveInvalidationArmToken("term-1") {
+		t.Fatalf("expected terminal-scoped arm token, got %q", effect.Token)
+	}
+	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 7}}
+	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	event, ok := msg.(LiveEventMsg)
+	if !ok || !event.Event.Refresh || event.Event.RenderedRevision != 6 || event.Event.Snapshot.Revision != 7 {
+		t.Fatalf("arm effect should return exactly first invalidation, got %#v ok=%v", msg, ok)
+	}
+	if len(terminal.LiveInvalidationRequests) != 1 || terminal.LiveInvalidationRequests[0].TerminalID != "term-1" || terminal.LiveInvalidationRequests[0].RenderedRevision != 6 {
+		t.Fatalf("expected one arm request, got %#v", terminal.LiveInvalidationRequests)
 	}
 }
 
-func TestLiveStreamContextCanceledDoesNotPostPanelError(t *testing.T) {
-	terminal := &services.FakeTerminalService{LiveEventsErr: context.Canceled}
-	effects := liveStreamEffect("term-1", 80, 24, LiveDeps{Terminal: terminal})
-	if len(effects) != 2 {
-		t.Fatalf("expected cancel+stream effects, got %#v", effects)
+func TestLiveInvalidationArmContextCanceledDoesNotPostPanelError(t *testing.T) {
+	terminal := &services.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
+	effects := liveInvalidationArmEffect(state.LiveInvalidationArmRequest{TerminalID: "term-1", Cols: 80, Rows: 24, RenderedRevision: 6}, LiveDeps{Terminal: terminal})
+	if len(effects) != 1 {
+		t.Fatalf("expected one-shot arm effect, got %#v", effects)
 	}
-	stream := effects[1].(StreamEffect)
-	var posted []Msg
-	stream.Run(context.Background(), func(msg Msg) {
-		posted = append(posted, msg)
-	})
-	if len(posted) != 0 {
-		t.Fatalf("context canceled live stream should not post UI error, got %#v", posted)
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	if msg != nil {
+		t.Fatalf("context canceled live invalidation arm should stay silent, got %#v", msg)
 	}
 
 	root := state.Root{Shell: state.DefaultShell()}
@@ -1120,9 +1121,9 @@ func TestLiveEventRefreshBackpressureWaitsForRenderedFrameBeforeFollowUpFetch(t 
 		t.Fatalf("dirty request should wait for render completion, got %#v", request)
 	}
 
-	root, effects = reducer(root, LiveFrameRenderedMsg{})
+	root, effects = reduceLiveFrameRendered(root, LiveDeps{Terminal: terminal})
 	if len(effects) != 1 {
-		t.Fatalf("frame render should schedule one follow-up fetch, got %#v", effects)
+		t.Fatalf("frame render should schedule only follow-up fetch while dirty, got %#v", effects)
 	}
 	if request := root.Surface.RenderRequests["term-1"]; !request.InFlight || request.Dirty {
 		t.Fatalf("follow-up fetch should be in-flight and clean, got %#v", request)
@@ -2429,8 +2430,17 @@ func TestLiveAppAttachClearsPendingForEmptySurfaceSnapshot(t *testing.T) {
 func TestLiveRuntimeConsumesBackendLiveEventsAndRedraws(t *testing.T) {
 	liveEvents := make(chan services.TerminalLiveEvent, 2)
 	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 78, Rows: 20},
-		LiveEventsCh: liveEvents,
+		AttachResult:        services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 78, Rows: 20},
+		LiveInvalidationsCh: liveEvents,
+		SurfaceResult: services.TerminalSurfaceResult{
+			Ready: true,
+			Snapshot: state.LiveSurfaceSnapshot{
+				TerminalID: "term-1",
+				Cols:       78,
+				Rows:       20,
+				Lines:      []string{"backend live update"},
+			},
+		},
 	}
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
@@ -2449,19 +2459,14 @@ func TestLiveRuntimeConsumesBackendLiveEventsAndRedraws(t *testing.T) {
 	}
 	liveEvents <- services.TerminalLiveEvent{
 		TerminalID: "term-1",
-		Ready:      true,
-		Snapshot: state.LiveSurfaceSnapshot{
-			TerminalID: "term-1",
-			Cols:       78,
-			Rows:       20,
-			Lines:      []string{"backend live update"},
-		},
+		Refresh:    true,
+		Snapshot:   state.LiveSurfaceSnapshot{Revision: 7},
 	}
 	if err := drainUntilFrameContains(context.Background(), runtime, host, "backend live update"); err != nil {
 		t.Fatal(err)
 	}
-	if len(terminal.LiveEventRequests) != 1 || terminal.LiveEventRequests[0].TerminalID != "term-1" {
-		t.Fatalf("expected live event subscription after attach, got %#v", terminal.LiveEventRequests)
+	if len(terminal.LiveInvalidationRequests) == 0 || terminal.LiveInvalidationRequests[0].TerminalID != "term-1" {
+		t.Fatalf("expected live invalidation arm after attach, got %#v", terminal.LiveInvalidationRequests)
 	}
 }
 
