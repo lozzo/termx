@@ -72,6 +72,10 @@ func (NoopEffect) isEffect() {}
 type FuncEffect struct {
 	Token CancelToken
 	Async bool
+	// SerialKey 让真实异步 runner 对同一个 domain owner 串行执行 effect。
+	// 它用于 terminal input 这类 byte stream：主循环不能同步等待 ack，但同一
+	// terminal/view/channel 的输入顺序是 PTY 消息链路 truth，不能被 goroutine 调度打乱。
+	SerialKey string
 	// ForceSyncInTests 只给 deterministic harness 使用：真实 runtime 仍按 Async 异步执行，
 	// 但 SyncEffectRunner 需要同步跑完该 effect，避免测试必须引入额外 goroutine 等待。
 	ForceSyncInTests bool
@@ -1901,6 +1905,7 @@ type AsyncEffectRunner struct {
 	mu      sync.Mutex
 	nextID  uint64
 	cancels map[CancelToken]asyncEffectHandle
+	serials map[string]*asyncSerialQueue
 }
 
 type asyncEffectHandle struct {
@@ -1908,8 +1913,23 @@ type asyncEffectHandle struct {
 	Cancel context.CancelFunc
 }
 
+type asyncSerialQueue struct {
+	items   []asyncSerialItem
+	running bool
+}
+
+type asyncSerialItem struct {
+	ctx    context.Context
+	effect FuncEffect
+	post   func(Msg)
+	done   func()
+}
+
 func NewAsyncEffectRunner() *AsyncEffectRunner {
-	return &AsyncEffectRunner{cancels: make(map[CancelToken]asyncEffectHandle)}
+	return &AsyncEffectRunner{
+		cancels: make(map[CancelToken]asyncEffectHandle),
+		serials: make(map[string]*asyncSerialQueue),
+	}
 }
 
 func (runner *AsyncEffectRunner) Run(ctx context.Context, effect Effect, post func(Msg)) {
@@ -1936,6 +1956,10 @@ func (runner *AsyncEffectRunner) Run(ctx context.Context, effect Effect, post fu
 
 func (runner *AsyncEffectRunner) runAsyncFunc(ctx context.Context, effect FuncEffect, post func(Msg)) {
 	effectCtx, done := runner.start(effect.Token, ctx)
+	if effect.SerialKey != "" {
+		runner.enqueueSerialFunc(effectCtx, effect, post, done)
+		return
+	}
 	go func() {
 		defer done()
 		msg := effect.Run(effectCtx)
@@ -1943,6 +1967,55 @@ func (runner *AsyncEffectRunner) runAsyncFunc(ctx context.Context, effect FuncEf
 			post(msg)
 		}
 	}()
+}
+
+func (runner *AsyncEffectRunner) enqueueSerialFunc(ctx context.Context, effect FuncEffect, post func(Msg), done func()) {
+	key := effect.SerialKey
+	item := asyncSerialItem{ctx: ctx, effect: effect, post: post, done: done}
+	runner.mu.Lock()
+	queue := runner.serials[key]
+	if queue == nil {
+		queue = &asyncSerialQueue{}
+		runner.serials[key] = queue
+	}
+	queue.items = append(queue.items, item)
+	shouldStart := !queue.running
+	if shouldStart {
+		queue.running = true
+	}
+	runner.mu.Unlock()
+	if shouldStart {
+		go runner.runSerialFuncQueue(key)
+	}
+}
+
+func (runner *AsyncEffectRunner) runSerialFuncQueue(key string) {
+	for {
+		runner.mu.Lock()
+		queue := runner.serials[key]
+		if queue == nil || len(queue.items) == 0 {
+			if queue != nil {
+				queue.running = false
+				delete(runner.serials, key)
+			}
+			runner.mu.Unlock()
+			return
+		}
+		item := queue.items[0]
+		copy(queue.items, queue.items[1:])
+		last := len(queue.items) - 1
+		queue.items[last] = asyncSerialItem{}
+		queue.items = queue.items[:last]
+		runner.mu.Unlock()
+
+		func() {
+			defer item.done()
+			msg := item.effect.Run(item.ctx)
+			if msg != nil {
+				item.post(msg)
+			}
+		}()
+	}
 }
 
 func (runner *AsyncEffectRunner) runStream(ctx context.Context, effect StreamEffect, post func(Msg)) {

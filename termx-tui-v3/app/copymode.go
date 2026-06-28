@@ -1386,6 +1386,9 @@ func reduceCopyModePaste(root state.Root, deps CopyModeDeps, readSystemClipboard
 	root = root.Advance()
 	effects := append([]Effect{}, releaseEffects...)
 	effects = append(effects, FuncEffect{
+		Async:            true,
+		SerialKey:        terminalInputSerialKey(target),
+		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			text := deps.Clipboard.LastCopy()
 			if readSystemClipboard {
@@ -1452,6 +1455,9 @@ func reduceCopyModePasteText(root state.Root, deps CopyModeDeps, text string) (s
 	root = root.Advance()
 	effects := append([]Effect{}, releaseEffects...)
 	effects = append(effects, FuncEffect{
+		Async:            true,
+		SerialKey:        terminalInputSerialKey(target),
+		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
 				TerminalID: target.TerminalID,

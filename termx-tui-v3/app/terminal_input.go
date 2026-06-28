@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/services"
@@ -101,6 +102,7 @@ func terminalSendInputEffect(target liveInputTargetInfo, event input.InputEvent,
 	payload := append([]byte(nil), bytes...)
 	return FuncEffect{
 		Async:            true,
+		SerialKey:        terminalInputSerialKey(target),
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
@@ -127,6 +129,12 @@ func terminalSendInputEffect(target liveInputTargetInfo, event input.InputEvent,
 			}
 		},
 	}
+}
+
+func terminalInputSerialKey(target liveInputTargetInfo) string {
+	// 中文说明：PTY input 是有序 byte stream；真实 runtime 可以异步发送，
+	// 但同一 terminal/view/channel 不能并发乱序，尤其是 tmux paste/长命令输入。
+	return "terminal.input:" + target.TerminalID + ":" + target.ViewID + ":" + strconv.FormatUint(uint64(target.Channel), 10)
 }
 
 type terminalInputRouteLog struct {

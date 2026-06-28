@@ -52,6 +52,68 @@ func TestRuntimeContractsDoNotUseBubbleTea(t *testing.T) {
 	}
 }
 
+func TestAsyncEffectRunnerSerialKeyPreservesEffectOrder(t *testing.T) {
+	runner := NewAsyncEffectRunner()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	startedFirst := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	startedSecond := make(chan struct{})
+	posted := make(chan string, 2)
+	post := func(msg Msg) {
+		if test, ok := msg.(testMsg); ok {
+			posted <- test.Name
+		}
+	}
+
+	runner.Run(ctx, FuncEffect{
+		Async:     true,
+		SerialKey: "terminal.input:term-1:view-1:7",
+		Run: func(context.Context) Msg {
+			close(startedFirst)
+			<-releaseFirst
+			return testMsg{Name: "first"}
+		},
+	}, post)
+	select {
+	case <-startedFirst:
+	case <-time.After(time.Second):
+		t.Fatal("first serial effect did not start")
+	}
+
+	runner.Run(ctx, FuncEffect{
+		Async:     true,
+		SerialKey: "terminal.input:term-1:view-1:7",
+		Run: func(context.Context) Msg {
+			close(startedSecond)
+			return testMsg{Name: "second"}
+		},
+	}, post)
+	select {
+	case <-startedSecond:
+		t.Fatal("second serial effect started before first completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	close(releaseFirst)
+	for _, want := range []string{"first", "second"} {
+		select {
+		case got := <-posted:
+			if got != want {
+				t.Fatalf("serial effect order changed, got %q want %q", got, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for %s serial effect", want)
+		}
+	}
+	select {
+	case <-startedSecond:
+	case <-time.After(time.Second):
+		t.Fatal("second serial effect did not start after first completed")
+	}
+}
+
 func TestAppRuntimeDequeClearsProcessedMessageReferences(t *testing.T) {
 	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
 	runtime.enqueue(retainingMsg{Payload: make([]byte, 1024)})

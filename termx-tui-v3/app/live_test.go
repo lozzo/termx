@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -81,6 +82,55 @@ func (service *refreshingInputTerminalService) SendInput(_ context.Context, req 
 		return fmt.Errorf("stale channel %d", req.Channel)
 	}
 	return nil
+}
+
+type blockingOrderedInputTerminalService struct {
+	services.FakeTerminalService
+	firstStarted chan struct{}
+	releaseFirst chan struct{}
+	done         chan struct{}
+	mu           sync.Mutex
+	inputs       []services.TerminalInputRequest
+}
+
+func newBlockingOrderedInputTerminalService() *blockingOrderedInputTerminalService {
+	return &blockingOrderedInputTerminalService{
+		firstStarted: make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+		done:         make(chan struct{}),
+	}
+}
+
+func (service *blockingOrderedInputTerminalService) SendInput(_ context.Context, req services.TerminalInputRequest) error {
+	service.mu.Lock()
+	isFirst := len(service.inputs) == 0
+	service.inputs = append(service.inputs, req)
+	service.mu.Unlock()
+	if isFirst {
+		close(service.firstStarted)
+		<-service.releaseFirst
+	}
+	service.mu.Lock()
+	count := len(service.inputs)
+	service.mu.Unlock()
+	if count >= 2 {
+		select {
+		case <-service.done:
+		default:
+			close(service.done)
+		}
+	}
+	return nil
+}
+
+func (service *blockingOrderedInputTerminalService) inputText() string {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	var builder strings.Builder
+	for _, req := range service.inputs {
+		builder.Write(req.Bytes)
+	}
+	return builder.String()
 }
 
 func ownerLiveAttachConfig(terminalID string, cols int, rows int) LiveConfig {
@@ -220,6 +270,74 @@ func TestTerminalInputRouterLogsActiveViewRoute(t *testing.T) {
 	for _, want := range []string{"tui-v3 input route", "tui-v3 terminal input sent", "result=terminal", "target_view=" + state.TerminalPaneViewID(state.DefaultPaneID), "terminal_id=term-1", "channel=7"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("input route log missing %q in:\n%s", want, text)
+		}
+	}
+}
+
+func TestInteractiveRuntimeSerializesAsyncTerminalInputBytes(t *testing.T) {
+	terminal := newBlockingOrderedInputTerminalService()
+	root := state.Root{
+		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(
+		state.DefaultPaneID,
+		"term-1",
+		7,
+		80,
+		24,
+		state.TerminalResizeRoleOwner,
+		"surface-1",
+		state.TerminalPaneViewID(state.DefaultPaneID),
+		true,
+	))
+	host := NewFakeTerminalHost(64)
+	host.SetSize(100, 30)
+	runtime := NewInteractiveRuntime(
+		root,
+		host,
+		NewAsyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain setup: %v", err)
+	}
+
+	command := "printf abc"
+	for _, ch := range command {
+		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: string(ch)}); err != nil {
+			t.Fatalf("send input %q: %v", ch, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain input: %v", err)
+	}
+	select {
+	case <-terminal.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first terminal input did not start")
+	}
+	// 中文说明：第一字节未 ack 前，后续同 terminal/view/channel input
+	// 不能越过它进入 service；否则 tmux send-keys 长命令会被打乱。
+	if got := terminal.inputText(); got != "p" {
+		t.Fatalf("input stream must wait behind first byte while async send is in-flight, got %q", got)
+	}
+	close(terminal.releaseFirst)
+	select {
+	case <-terminal.done:
+	case <-time.After(time.Second):
+		t.Fatal("terminal input queue did not continue after first byte released")
+	}
+	deadline := time.After(time.Second)
+	for {
+		if got := terminal.inputText(); got == command {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("terminal input order changed, got %q want %q", terminal.inputText(), command)
+		default:
+			time.Sleep(time.Millisecond)
 		}
 	}
 }
