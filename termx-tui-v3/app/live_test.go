@@ -1000,36 +1000,55 @@ func TestTerminalPoolRemoveDeletesInventoryAndBindings(t *testing.T) {
 	}
 }
 
-func TestLiveInvalidationArmEffectIsOneShot(t *testing.T) {
+func TestLiveStreamEffectCoalescesThroughRuntimeQueue(t *testing.T) {
 	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 2)}
-	effects := liveInvalidationArmEffect(state.LiveInvalidationArmRequest{TerminalID: "term-1", Cols: 80, Rows: 24, RenderedRevision: 6}, LiveDeps{Terminal: terminal})
-	if len(effects) != 1 {
-		t.Fatalf("expected one-shot arm effect, got %#v", effects)
+	effects := liveStreamEffect("term-1", 80, 24, LiveDeps{Terminal: terminal})
+	if len(effects) != 2 {
+		t.Fatalf("expected cancel plus stream effect, got %#v", effects)
 	}
-	if effect := effects[0].(FuncEffect); effect.Token != liveInvalidationArmToken("term-1") {
-		t.Fatalf("expected terminal-scoped arm token, got %q", effect.Token)
+	if cancel := effects[0].(CancelEffect); cancel.Token != liveStreamTokenForTerminal("term-1") {
+		t.Fatalf("expected terminal-scoped stream cancel, got %q", cancel.Token)
+	}
+	stream := effects[1].(StreamEffect)
+	if stream.Token != liveStreamTokenForTerminal("term-1") {
+		t.Fatalf("expected terminal-scoped stream token, got %q", stream.Token)
 	}
 	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 7}}
 	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
-	msg := effects[0].(FuncEffect).Run(context.Background())
-	event, ok := msg.(LiveEventMsg)
-	if !ok || !event.Event.Refresh || event.Event.RenderedRevision != 6 || event.Event.Snapshot.Revision != 7 {
-		t.Fatalf("arm effect should return exactly first invalidation, got %#v ok=%v", msg, ok)
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+	var posted []Msg
+	stream.Run(ctx, func(msg Msg) {
+		posted = append(posted, msg)
+		if len(posted) == 2 {
+			cancelCtx()
+		}
+	})
+	if len(posted) != 2 {
+		t.Fatalf("expected stream to post two invalidations before cancel, got %#v", posted)
 	}
-	if len(terminal.LiveInvalidationRequests) != 1 || terminal.LiveInvalidationRequests[0].TerminalID != "term-1" || terminal.LiveInvalidationRequests[0].RenderedRevision != 6 {
-		t.Fatalf("expected one arm request, got %#v", terminal.LiveInvalidationRequests)
+	first := posted[0].(LiveEventMsg)
+	second := posted[1].(LiveEventMsg)
+	if first.Event.Snapshot.Revision != 7 || second.Event.Snapshot.Revision != 8 {
+		t.Fatalf("expected posted invalidations in order, got %#v", posted)
+	}
+	if len(terminal.LiveInvalidationRequests) != 2 ||
+		terminal.LiveInvalidationRequests[0].RenderedRevision != 0 ||
+		terminal.LiveInvalidationRequests[1].RenderedRevision != 7 {
+		t.Fatalf("expected stream to re-arm from observed revision, got %#v", terminal.LiveInvalidationRequests)
 	}
 }
 
-func TestLiveInvalidationArmContextCanceledDoesNotPostPanelError(t *testing.T) {
+func TestLiveStreamContextCanceledDoesNotPostPanelError(t *testing.T) {
 	terminal := &services.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
-	effects := liveInvalidationArmEffect(state.LiveInvalidationArmRequest{TerminalID: "term-1", Cols: 80, Rows: 24, RenderedRevision: 6}, LiveDeps{Terminal: terminal})
-	if len(effects) != 1 {
-		t.Fatalf("expected one-shot arm effect, got %#v", effects)
-	}
-	msg := effects[0].(FuncEffect).Run(context.Background())
-	if msg != nil {
-		t.Fatalf("context canceled live invalidation arm should stay silent, got %#v", msg)
+	effects := liveStreamEffect("term-1", 80, 24, LiveDeps{Terminal: terminal})
+	stream := effects[1].(StreamEffect)
+	var posted []Msg
+	stream.Run(context.Background(), func(msg Msg) {
+		posted = append(posted, msg)
+	})
+	if len(posted) != 0 {
+		t.Fatalf("context canceled live invalidation stream should stay silent, got %#v", posted)
 	}
 
 	root := state.Root{Shell: state.DefaultShell()}
@@ -1097,7 +1116,7 @@ func TestLiveEventRefreshRequestsLatestSurfaceAfterEventLoopCoalescing(t *testin
 	}
 }
 
-func TestLiveEventRefreshBackpressureWaitsForRenderedFrameBeforeFollowUpFetch(t *testing.T) {
+func TestLiveEventRefreshBackpressureSchedulesDirtyLatestFetchAfterSurfaceReturn(t *testing.T) {
 	terminal := &services.FakeTerminalService{SurfaceResult: services.TerminalSurfaceResult{
 		Ready:    true,
 		Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Lines: []string{"latest"}},
@@ -1113,23 +1132,15 @@ func TestLiveEventRefreshBackpressureWaitsForRenderedFrameBeforeFollowUpFetch(t 
 	if len(effects) != 0 {
 		t.Fatalf("second refresh while in-flight should only mark dirty, got %#v", effects)
 	}
-	if request := root.Surface.RenderRequests["term-1"]; !request.InFlight || !request.Dirty {
-		t.Fatalf("expected in-flight dirty render request state, got %#v", request)
+	if request := root.Surface.Refreshes["term-1"]; !request.InFlight || !request.Dirty {
+		t.Fatalf("expected in-flight dirty refresh state, got %#v", request)
 	}
 
 	root, effects = reducer(root, LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Lines: []string{"first"}}, RequestedCols: 80, RequestedRows: 24})
-	if len(effects) != 0 {
-		t.Fatalf("surface return must not schedule follow-up until a frame is rendered, got %#v", effects)
-	}
-	if request := root.Surface.RenderRequests["term-1"]; request.InFlight || !request.Dirty {
-		t.Fatalf("dirty request should wait for render completion, got %#v", request)
-	}
-
-	root, effects = reduceLiveFrameRendered(root, FrameWrittenMsg{TerminalID: "term-1", Revision: 2}, LiveDeps{Terminal: terminal})
 	if len(effects) != 1 {
-		t.Fatalf("frame render should schedule only follow-up fetch while dirty, got %#v", effects)
+		t.Fatalf("surface return should schedule one follow-up latest fetch while dirty, got %#v", effects)
 	}
-	if request := root.Surface.RenderRequests["term-1"]; !request.InFlight || request.Dirty {
+	if request := root.Surface.Refreshes["term-1"]; !request.InFlight || request.Dirty {
 		t.Fatalf("follow-up fetch should be in-flight and clean, got %#v", request)
 	}
 	msg := effects[0].(FuncEffect).Run(context.Background())
@@ -1139,7 +1150,7 @@ func TestLiveEventRefreshBackpressureWaitsForRenderedFrameBeforeFollowUpFetch(t 
 	}
 }
 
-func TestLiveEventRefreshIgnoresStaleInvalidationRevision(t *testing.T) {
+func TestLiveEventRefreshUsesCoreLatestScreenInsteadOfEventPayload(t *testing.T) {
 	terminal := &services.FakeTerminalService{SurfaceResult: services.TerminalSurfaceResult{
 		Ready:    true,
 		Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 11, Lines: []string{"latest"}},
@@ -1156,14 +1167,16 @@ func TestLiveEventRefreshIgnoresStaleInvalidationRevision(t *testing.T) {
 		Refresh:    true,
 		Snapshot:   state.LiveSurfaceSnapshot{Revision: 5},
 	}})
-	if len(effects) != 0 {
-		t.Fatalf("stale invalidation must not start live.screen.get, got %#v", effects)
+	if len(effects) != 1 {
+		t.Fatalf("ordinary refresh should start one latest screen fetch, got %#v", effects)
 	}
-	if got := len(terminal.Surfaces); got != 0 {
-		t.Fatalf("stale invalidation should not call native screen source, got %d calls", got)
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	surface, ok := msg.(LiveSurfaceMsg)
+	if !ok || surface.Snapshot.Revision != 11 || surface.Snapshot.Lines[0] != "latest" {
+		t.Fatalf("refresh must use core latest screen, got %#v ok=%v", msg, ok)
 	}
 	if root.Surface.SurfaceForTerminal("term-1").Revision != 10 {
-		t.Fatalf("stale invalidation must keep current surface, got %#v", root.Surface.SurfaceForTerminal("term-1"))
+		t.Fatalf("refresh event alone must not mutate current surface, got %#v", root.Surface.SurfaceForTerminal("term-1"))
 	}
 }
 

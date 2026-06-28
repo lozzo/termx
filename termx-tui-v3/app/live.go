@@ -30,6 +30,8 @@ type LiveDeps struct {
 	Logger   *slog.Logger
 }
 
+const liveStreamTokenPrefix = "terminal.live.stream:"
+
 func runtimeSurfaceID(root state.Root) string {
 	if root.RuntimeSurfaceID != "" {
 		return root.RuntimeSurfaceID
@@ -44,7 +46,6 @@ func NewLiveRuntime(initial state.Root, host TerminalHost, runner EffectRunner, 
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
 	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(deps), NewTerminalInputRouterReducer(deps), NewLiveReducer(deps), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
-	runtime.SetAfterRender(liveAfterRenderFunc(deps))
 	runtime.SetLogger(deps.Logger)
 	return runtime
 }
@@ -85,7 +86,6 @@ func NewInteractiveRuntimeWithStorage(
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
 	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewTerminalInputRouterReducer(live), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
-	runtime.SetAfterRender(liveAfterRenderFunc(live))
 	runtime.SetLogger(live.Logger)
 	if workbench.Storage != nil {
 		// 启动时先恢复 core-v2 opaque storage 中的 workbench truth，再订阅后续变化。
@@ -156,9 +156,18 @@ type LiveSurfaceMsg struct {
 	LifecycleKnown bool
 	RequestedCols  int
 	RequestedRows  int
+	Superseded     bool
 }
 
 func (LiveSurfaceMsg) isMsg() {}
+
+func (msg LiveSurfaceMsg) SkipRender() bool {
+	return msg.isSupersededOrdinarySurface()
+}
+
+func (msg LiveSurfaceMsg) isSupersededOrdinarySurface() bool {
+	return msg.Superseded && ordinaryLiveSurfaceResult(msg)
+}
 
 type LiveLifecycleQueryTarget struct {
 	TerminalID string
@@ -257,7 +266,7 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			return reduceLiveLifecycleQuery(root, msg, deps)
 		case LiveSurfaceMsg:
 			if msg.Err != nil {
-				root.Surface = root.Surface.FailLiveRenderFetch(msg.Snapshot.TerminalID)
+				root.Surface = root.Surface.FinishRefresh(msg.Snapshot.TerminalID)
 				if next, ok := markTerminalExitedFromError(root, msg.Snapshot.TerminalID, msg.Err); ok {
 					logLifecycleTrace(deps.Logger, "live.surface.error.exited",
 						"terminal_id", msg.Snapshot.TerminalID,
@@ -268,7 +277,8 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 					return next.Advance(), nil
 				}
 				root.Surface = root.Surface.SetError(msg.Err.Error())
-				return root.Advance(), nil
+				root, effects := maybeScheduleDirtyLiveSurfaceRefresh(root, msg.Snapshot.TerminalID, msg.RequestedCols, msg.RequestedRows, deps)
+				return root.Advance(), effects
 			}
 			root.Surface = root.Surface.ApplySnapshotWithLifecycle(msg.Snapshot, msg.LifecycleKnown)
 			if msg.LifecycleKnown && msg.Snapshot.State == state.TerminalLiveAttached && msg.Snapshot.TerminalID == root.Session.TerminalID {
@@ -288,7 +298,8 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.Snapshot.TerminalID)),
 			)
 			next, effects := maybeRefreshFloatingAutoFit(root, msg.Snapshot.TerminalID)
-			return next, effects
+			next, dirtyEffects := maybeScheduleDirtyLiveSurfaceRefresh(next, msg.Snapshot.TerminalID, msg.RequestedCols, msg.RequestedRows, deps)
+			return next, append(effects, dirtyEffects...)
 		case LiveEventMsg:
 			return reduceLiveEvent(root, msg, deps)
 		case LiveExitMsg:
@@ -778,7 +789,9 @@ func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID 
 }
 
 func liveEffects(terminalID string, cols int, rows int, deps LiveDeps) []Effect {
-	return liveSurfaceEffect(terminalID, cols, rows, true, deps)
+	effects := liveSurfaceEffect(terminalID, cols, rows, true, deps)
+	effects = append(effects, liveStreamEffect(terminalID, cols, rows, deps)...)
+	return effects
 }
 
 func reduceLiveLifecycleQuery(root state.Root, msg LiveLifecycleQueryMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -858,47 +871,58 @@ func liveSurfaceEffect(terminalID string, cols int, rows int, knownLifecycle boo
 	}}
 }
 
-func liveInvalidationArmEffect(request state.LiveInvalidationArmRequest, deps LiveDeps) []Effect {
+func liveStreamEffect(terminalID string, cols int, rows int, deps LiveDeps) []Effect {
 	source, ok := deps.Terminal.(services.LiveInvalidationSource)
-	if !ok || request.TerminalID == "" {
+	if !ok || terminalID == "" {
 		return nil
 	}
-	return []Effect{FuncEffect{
-		Token: liveInvalidationArmToken(request.TerminalID),
-		Async: true,
-		Run: func(ctx context.Context) Msg {
-			event, err := source.ArmLiveInvalidation(ctx, services.TerminalLiveEventRequest{
-				TerminalID:       request.TerminalID,
-				Cols:             request.Cols,
-				Rows:             request.Rows,
-				RenderedRevision: request.RenderedRevision,
-			})
-			if err != nil {
-				logEffectError(deps.Logger, "live.invalidation", err,
-					"terminal_id", request.TerminalID,
-					"rendered_revision", request.RenderedRevision,
-				)
-				if isContextLifecycleError(err) {
-					return nil
+	token := liveStreamTokenForTerminal(terminalID)
+	return []Effect{
+		CancelEffect{Token: token},
+		StreamEffect{
+			Token: token,
+			Run: func(ctx context.Context, post func(Msg)) {
+				var renderedRevision uint64
+				for {
+					if err := ctx.Err(); err != nil {
+						return
+					}
+					event, err := source.ArmLiveInvalidation(ctx, services.TerminalLiveEventRequest{
+						TerminalID:       terminalID,
+						Cols:             cols,
+						Rows:             rows,
+						RenderedRevision: renderedRevision,
+					})
+					if err != nil {
+						logEffectError(deps.Logger, "live.invalidation", err,
+							"terminal_id", terminalID,
+							"rendered_revision", renderedRevision,
+						)
+						if isContextLifecycleError(err) {
+							return
+						}
+						post(LiveEventMsg{Event: services.TerminalLiveEvent{
+							TerminalID: terminalID,
+							Err:        err,
+						}})
+						return
+					}
+					if event.TerminalID == "" {
+						event.TerminalID = terminalID
+					}
+					if event.Snapshot.Revision > renderedRevision {
+						renderedRevision = event.Snapshot.Revision
+					}
+					perftrace.Count("tui.live_event", liveEventApproxBytes(event))
+					post(LiveEventMsg{Event: event})
 				}
-				return LiveEventMsg{Event: services.TerminalLiveEvent{
-					TerminalID:       request.TerminalID,
-					RenderedRevision: request.RenderedRevision,
-					Err:              err,
-				}}
-			}
-			if event.TerminalID == "" {
-				event.TerminalID = request.TerminalID
-			}
-			event.RenderedRevision = request.RenderedRevision
-			perftrace.Count("tui.live_event", liveEventApproxBytes(event))
-			return LiveEventMsg{Event: event}
+			},
 		},
-	}}
+	}
 }
 
-func liveInvalidationArmToken(terminalID string) CancelToken {
-	return CancelToken("live.invalidation:" + terminalID)
+func liveStreamTokenForTerminal(terminalID string) CancelToken {
+	return CancelToken(liveStreamTokenPrefix + terminalID)
 }
 
 func liveSurfaceResultApproxBytes(result services.TerminalSurfaceResult) int {
@@ -908,6 +932,9 @@ func liveSurfaceResultApproxBytes(result services.TerminalSurfaceResult) int {
 func liveEventApproxBytes(event services.TerminalLiveEvent) int {
 	if event.Ready {
 		return liveSnapshotApproxBytes(event.Snapshot)
+	}
+	if event.Refresh {
+		return 1
 	}
 	return 0
 }
@@ -961,16 +988,13 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Ro
 	if event.TerminalID == "" {
 		event.TerminalID = root.Surface.TerminalID
 	}
-	if event.TerminalID != "" {
-		root.Surface = root.Surface.FinishLiveInvalidationArm(event.TerminalID, event.RenderedRevision)
-	}
 	if ordinaryLiveRefreshEvent(event) {
 		if event.TerminalID == "" {
 			return root, nil
 		}
 		cols, rows := liveSurfaceRefreshSize(root, event.TerminalID)
 		var shouldFetch bool
-		root.Surface, shouldFetch = root.Surface.RequestLiveRender(event.TerminalID, event.Snapshot.Revision, cols, rows)
+		root.Surface, shouldFetch = root.Surface.RequestRefresh(event.TerminalID, cols, rows)
 		if !shouldFetch {
 			return root, nil
 		}
@@ -1066,40 +1090,20 @@ func applyTerminalAttachmentProjectionFromResize(root state.Root, result service
 	return root
 }
 
-func liveAfterRenderFunc(deps LiveDeps) AfterRenderFunc {
-	return func(root state.Root, msg FrameWrittenMsg) (state.Root, []Effect) {
-		return reduceLiveFrameRendered(root, msg, deps)
+func maybeScheduleDirtyLiveSurfaceRefresh(root state.Root, terminalID string, fallbackCols int, fallbackRows int, deps LiveDeps) (state.Root, []Effect) {
+	var cols, rows int
+	var shouldFetch bool
+	root.Surface, cols, rows, shouldFetch = root.Surface.ConsumeDirtyRefresh(terminalID)
+	if !shouldFetch {
+		return root, nil
 	}
-}
-
-func reduceLiveFrameRendered(root state.Root, msg FrameWrittenMsg, deps LiveDeps) (state.Root, []Effect) {
-	var requests []state.LiveRenderFetchRequest
-	root.Surface, requests = root.Surface.LiveFrameRendered(msg.TerminalID, msg.Revision)
-	effects := make([]Effect, 0, len(requests)+1)
-	for _, request := range requests {
-		cols, rows := request.Cols, request.Rows
-		if cols <= 0 || rows <= 0 {
-			cols, rows = liveSurfaceRefreshSize(root, request.TerminalID)
-		}
-		effects = append(effects, liveSurfaceEffect(request.TerminalID, cols, rows, false, deps)...)
+	if cols <= 0 || rows <= 0 {
+		cols, rows = fallbackCols, fallbackRows
 	}
-	if len(requests) > 0 {
-		return root, effects
+	if cols <= 0 || rows <= 0 {
+		cols, rows = liveSurfaceRefreshSize(root, terminalID)
 	}
-	terminalID := msg.TerminalID
-	if terminalID == "" {
-		terminalID = root.Surface.TerminalID
-	}
-	if terminalID != "" {
-		cols, rows := liveSurfaceRefreshSize(root, terminalID)
-		var request state.LiveInvalidationArmRequest
-		var ok bool
-		root.Surface, request, ok = root.Surface.RequestLiveInvalidationArmAt(terminalID, cols, rows, msg.Revision)
-		if ok {
-			effects = append(effects, liveInvalidationArmEffect(request, deps)...)
-		}
-	}
-	return root, effects
+	return root, liveSurfaceEffect(terminalID, cols, rows, false, deps)
 }
 
 func liveSurfaceRefreshSize(root state.Root, terminalID string) (int, int) {

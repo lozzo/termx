@@ -58,11 +58,11 @@ TUI 是渲染循环 owner。
 TUI 负责：
 
 - 订阅 `terminal.live.invalidated`。
-- 把 invalidation 合并成本地 `dirty + wanted_revision`。
+- 把 invalidation 合并成本地 `dirty`，不能把每个 revision 变成待追任务。
 - 如果当前没有正在拉取的 live screen，则异步请求 core 当前最新 `NativeScreenSnapshot`。
-- 收到 snapshot 后按 revision、terminal id、view binding、resize epoch 做 stale guard。
+- 收到 snapshot 后按 terminal id、view binding、resize epoch 做 stale guard；revision 只用于观察和诊断，不能驱动逐 revision 追帧。
 - 接受 snapshot 后更新本地 `LatestScreenByTerminal`，再由 renderer 画当前 view-model。
-- 一帧渲染完成后，如果期间又有 dirty 或 wanted revision 大于当前 revision，再拉一次最新 screen。
+- snapshot 返回期间如果又有 dirty，就再拉一次 core 当前最新 screen；不等待 FrameSink 完成，也不补渲染中间 snapshot。
 
 TUI 不负责：
 
@@ -177,44 +177,43 @@ TUI 可以在 render view-model 中把 lifecycle overlay 和 latest screen 合�
 TUI 侧的 reducer 需要维护 per-terminal request state。
 
 ```go
-type LiveRenderRequestState struct {
-    WantedRevision uint64
-    CurrentRevision uint64
+type LiveSurfaceRefreshState struct {
     InFlight bool
-    InFlightRequestID string
-    InFlightRevision uint64
     Dirty bool
-    RequestedSize NativeScreenSize
-    ResizeEpoch uint64
+    Cols int
+    Rows int
 }
 ```
 
 推荐循环：
 
 ```text
-on terminal.live.invalidated(term, rev):
-  wanted_revision = max(wanted_revision, rev)
-  dirty = true
-  if !in_flight:
-    start live.screen.get(term)
+on terminal.live.invalidated(term):
+  if in_flight:
+    dirty = true
+    remember latest cols/rows
+    return
+
+  in_flight = true
+  dirty = false
+  start live.screen.get(term)
 
 on live.screen.snapshot(snapshot):
-  in_flight = false
   if snapshot.term != bound term:
-    discard
-  else if snapshot.revision < current_revision:
+    in_flight = false
     discard
   else if snapshot size/resize epoch stale:
+    in_flight = false
     discard and request latest for current size
   else:
     current_screen = snapshot
-    current_revision = snapshot.revision
-    dirty = false
     request render
-
-after render frame written:
-  if dirty || wanted_revision > current_revision:
-    start live.screen.get(term)
+    if dirty:
+      in_flight = true
+      dirty = false
+      start live.screen.get(term)
+    else:
+      clear refresh state
 ```
 
 关键点：
@@ -222,8 +221,9 @@ after render frame written:
 - `live.screen.get` 总是取 core 当前最新 screen，不取某个历史 revision。
 - snapshot response 可以比触发它的 invalidation 更新。
 - response 只要不是 stale，就直接替换 TUI 本地 latest screen。
-- render 期间出现的新 invalidation 只设置 dirty，不打断当前 render。
-- render 完再拉最新，不补放中间帧。
+- revision 不作为 TUI 必须补完的队列；同一 terminal 的中间 revision 必须允许被跳过。
+- render 期间出现的新 invalidation 只设置 dirty，不打断当前 render，也不要求 FrameSink 写完后才能再取 latest。
+- 已有 dirty 或已排队后继 surface 时，中间普通 surface 可以只推进 reducer 状态并跳过渲染。
 
 ## 5. 当前代码里必须保留的东西
 
@@ -309,14 +309,14 @@ after render frame written:
 - `ApplySnapshotWithLifecycle`：screen snapshot 不应携带 lifecycle boundary。
 - `LiveLifecycleQueryMsg` 作为 live surface path 的补丁。workbench restore 可保留 lifecycle query，但应走独立 lifecycle service。
 - `LiveSurfaceMsg.LifecycleKnown` / `LiveEventMsg.LifecycleKnown` 这类把生命周期混进 screen apply 的字段。
-- `maybeScheduleDirtyLiveSurfaceRefresh` 的当前形态。应替换为明确 per-terminal render request controller。
-- runtime 队列里的 `coalesceQueuedLiveUpdate` / `queuedOrdinaryLiveUpdate` / `liveQueueBoundary`。live coalesce 应在 `LiveScreenInvalidated` 语义上按 terminal + revision 合并，不应识别旧 union msg。
+- `maybeScheduleDirtyLiveSurfaceRefresh` 必须只表达 `InFlight/Dirty` latest-screen 背压，不能扩展成 revision 追赶器。
+- runtime 队列里的 `coalesceQueuedLiveUpdate` / `queuedOrdinaryLiveUpdate` / `liveQueueBoundary` 只能合并普通 live wake/surface projection，不能跨 lifecycle、resize、attach、exit 边界。
 - `TerminalSurfaceStore` 中把 refresh、lifecycle、snapshot fallback 混在一起的状态字段。
 
 保留但重写：
 
 - `TerminalSurfaceStore` 作为 per-terminal latest screen cache。
-- `LiveSurfaceRefreshState` 的思想，即 in-flight + dirty + requested size，但字段和消息语义要改成 `LiveRenderRequestState`。
+- `LiveSurfaceRefreshState` 的 `in-flight + dirty + requested size` 背压模型。
 - `ResizeBoundary` / requested cols rows stale guard。
 - `CopyModeStore.BindLatest(... enteringLive ...)` 的进入时 live snapshot 参数，但类型要换成新的 native screen snapshot。
 - floating auto-fit 对 surface size 变化的响应。
@@ -351,10 +351,10 @@ after render frame written:
 任务：
 
 - service 改为订阅 `LiveScreenInvalidated` 并拉取 `NativeScreenSnapshot`。
-- reducer 实现 `wanted_revision + in_flight + dirty` render request controller。
+- reducer 实现 `in_flight + dirty + requested size` latest-screen refresh controller；禁止把 revision 作为待追队列。
 - renderer 只消费 `LatestScreenByTerminal`。
 - lifecycle/metadata/resize-control 走独立消息。
-- 补 TUI harness：持续 invalidation 期间不追帧，render 后继续拉最新；resize stale snapshot 被拒绝；exit lifecycle 不被普通 screen refresh 覆盖。
+- 补 TUI harness：持续 invalidation 期间不追帧，surface 返回期间 dirty 时只拉一次 latest；已有 dirty/后继 surface 时中间 projection 不触发渲染；resize stale snapshot 被拒绝；exit lifecycle 不被普通 screen refresh 覆盖。
 
 ### 7.3 删除旧链路
 

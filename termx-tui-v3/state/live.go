@@ -31,8 +31,7 @@ type TerminalSurfaceStore struct {
 	Err            string
 	ResizeBoundary LiveResizeBoundary
 	Surfaces       map[string]LiveSurfaceSnapshot
-	RenderRequests map[string]LiveRenderRequestState
-	Invalidations  map[string]LiveInvalidationArmState
+	Refreshes      map[string]LiveSurfaceRefreshState
 }
 
 // LiveResizeBoundary 是一次 content rect resize 后等待匹配 surface 的基线。
@@ -44,42 +43,12 @@ type LiveResizeBoundary struct {
 	Rows         int
 }
 
-// LiveRenderRequestState 是 TUI render loop 对某个 terminal 的 latest native screen 请求状态。
-// 它只归当前 TUI 客户端所有：core 不知道该状态，history/copy 也不能读取它作为 truth。
-type LiveRenderRequestState struct {
-	WantedRevision   uint64
-	CurrentRevision  uint64
-	WrittenRevision  uint64
-	InFlight         bool
-	InFlightRevision uint64
-	Dirty            bool
-	Cols             int
-	Rows             int
-}
-
-// LiveRenderFetchRequest 是 reducer 决定要异步拉取 core latest native screen 的请求。
-// 它只携带 terminal identity 和当前 view size，不携带历史 token 或 frame payload。
-type LiveRenderFetchRequest struct {
-	TerminalID string
-	Cols       int
-	Rows       int
-}
-
-// LiveInvalidationArmState 是当前 TUI 客户端对一个 terminal 的 one-shot wake
-// 状态。它只记录“已经渲染到哪个 native screen revision 后重新 arm”，不保存
-// screen payload，也不是 core/history truth。
-type LiveInvalidationArmState struct {
-	Armed            bool
-	RenderedRevision uint64
-}
-
-// LiveInvalidationArmRequest 是 reducer 要发起的一次 one-shot invalidation arm。
-// core 收到后只需要在 native screen revision 超过 RenderedRevision 时叫醒 TUI 一次。
-type LiveInvalidationArmRequest struct {
-	TerminalID       string
-	Cols             int
-	Rows             int
-	RenderedRevision uint64
+// LiveSurfaceRefreshState 是 TUI 对 live snapshot 拉取的背压状态，不是 core truth。
+type LiveSurfaceRefreshState struct {
+	InFlight bool
+	Dirty    bool
+	Cols     int
+	Rows     int
 }
 
 // LiveCursor 是 live surface 的 content-local 光标状态。
@@ -181,12 +150,10 @@ func (store TerminalSurfaceStore) ApplySnapshotWithLifecycle(snapshot LiveSurfac
 		snapshot.State = TerminalLiveAttached
 	}
 	if store.resizeBoundaryRejects(snapshot) {
-		store = store.finishLiveRenderFetch(snapshot.TerminalID, snapshot.Revision, false)
 		return store
 	}
 	if current, ok := store.snapshotForTerminal(snapshot.TerminalID); ok {
 		if shouldRejectLiveSnapshotWithLifecycle(current, snapshot, lifecycleKnown) {
-			store = store.finishLiveRenderFetch(snapshot.TerminalID, snapshot.Revision, false)
 			return store
 		}
 		if snapshot.Revision == 0 {
@@ -197,7 +164,7 @@ func (store TerminalSurfaceStore) ApplySnapshotWithLifecycle(snapshot LiveSurfac
 	snapshot.Screen = cloneLiveCellRows(snapshot.Screen)
 	store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
 	store.Surfaces[snapshot.TerminalID] = snapshot
-	store = store.finishLiveRenderFetch(snapshot.TerminalID, snapshot.Revision, true)
+	store = store.FinishRefresh(snapshot.TerminalID)
 	if store.TerminalID == "" || store.TerminalID == snapshot.TerminalID {
 		store = store.projectSnapshot(snapshot, true)
 		if store.ResizeBoundary.Active && snapshot.Cols == store.ResizeBoundary.Cols && snapshot.Rows == store.ResizeBoundary.Rows {
@@ -448,13 +415,9 @@ func (store TerminalSurfaceStore) RemoveTerminal(terminalID string) TerminalSurf
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
 		delete(store.Surfaces, terminalID)
 	}
-	if len(store.RenderRequests) > 0 {
-		store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
-		delete(store.RenderRequests, terminalID)
-	}
-	if len(store.Invalidations) > 0 {
-		store.Invalidations = cloneLiveInvalidationArmStates(store.Invalidations)
-		delete(store.Invalidations, terminalID)
+	if len(store.Refreshes) > 0 {
+		store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
+		delete(store.Refreshes, terminalID)
 	}
 	if store.TerminalID != terminalID {
 		return store
@@ -479,7 +442,7 @@ func (store TerminalSurfaceStore) RemoveTerminal(terminalID string) TerminalSurf
 	return store
 }
 
-func (store TerminalSurfaceStore) RequestLiveRender(terminalID string, revision uint64, cols int, rows int) (TerminalSurfaceStore, bool) {
+func (store TerminalSurfaceStore) RequestRefresh(terminalID string, cols int, rows int) (TerminalSurfaceStore, bool) {
 	if terminalID == "" {
 		return store, false
 	}
@@ -489,181 +452,57 @@ func (store TerminalSurfaceStore) RequestLiveRender(terminalID string, revision 
 	if rows <= 0 {
 		rows = 24
 	}
-	request := store.RenderRequests[terminalID]
-	if revision > request.WantedRevision {
-		request.WantedRevision = revision
-	}
-	if request.CurrentRevision == 0 {
-		if snapshot, ok := store.snapshotForTerminal(terminalID); ok {
-			request.CurrentRevision = snapshot.Revision
-		}
-	}
-	if request.WrittenRevision == 0 {
-		request.WrittenRevision = request.CurrentRevision
-	}
-	if revision != 0 && revision <= request.CurrentRevision {
-		if !request.InFlight && !request.Dirty && request.WantedRevision <= request.CurrentRevision {
-			return store, false
-		}
-	}
-	request.Cols = cols
-	request.Rows = rows
-	if request.InFlight {
-		request.Dirty = true
-		store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
-		store.RenderRequests[terminalID] = request
+	refresh := store.Refreshes[terminalID]
+	refresh.Cols = cols
+	refresh.Rows = rows
+	if refresh.InFlight {
+		// 中文说明：普通 live invalidation 只是“当前屏已失效”的合并信号。
+		// fetch 飞行期间不能排 N 个 revision，只记录 dirty，下一次仍取 core latest screen。
+		refresh.Dirty = true
+		store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
+		store.Refreshes[terminalID] = refresh
 		return store, false
 	}
-	request.InFlight = true
-	request.InFlightRevision = request.WantedRevision
-	request.Dirty = false
-	store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
-	store.RenderRequests[terminalID] = request
+	refresh.InFlight = true
+	refresh.Dirty = false
+	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
+	store.Refreshes[terminalID] = refresh
 	return store, true
 }
 
-func (store TerminalSurfaceStore) FailLiveRenderFetch(terminalID string) TerminalSurfaceStore {
+func (store TerminalSurfaceStore) FinishRefresh(terminalID string) TerminalSurfaceStore {
 	if terminalID == "" {
 		return store
 	}
-	request, ok := store.RenderRequests[terminalID]
+	refresh, ok := store.Refreshes[terminalID]
 	if !ok {
 		return store
 	}
-	request.InFlight = false
-	request.InFlightRevision = 0
-	store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
-	if request.Dirty || request.WantedRevision > request.CurrentRevision {
-		request.Dirty = true
-		store.RenderRequests[terminalID] = request
+	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
+	if refresh.Dirty {
+		// 中文说明：fetch 返回期间又有 invalidation，先让当前 latest screen
+		// 进入 runtime 队列；后续由 maybeScheduleDirtyLiveSurfaceRefresh 再拉一次当前最新屏。
+		refresh.InFlight = false
+		refresh.Dirty = false
+		store.Refreshes[terminalID] = refresh
 		return store
 	}
-	delete(store.RenderRequests, terminalID)
+	delete(store.Refreshes, terminalID)
 	return store
 }
 
-// LiveFrameRendered 收束一次完整 FrameSink 写入后的 live render loop 状态。
-// 它只在 TUI 已经真正写完一帧后调用：dirty fetch 会在这里被合并成 latest
-// screen 请求；如果当前 terminal 没有 pending fetch，则重新 arm 一次 one-shot
-// invalidation。
-func (store TerminalSurfaceStore) LiveFrameRendered(terminalID string, revision uint64) (TerminalSurfaceStore, []LiveRenderFetchRequest) {
-	if terminalID != "" && revision != 0 {
-		if request, ok := store.RenderRequests[terminalID]; ok && revision > request.WrittenRevision {
-			request.WrittenRevision = revision
-			store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
-			store.RenderRequests[terminalID] = request
-		}
-	}
-	requests := make([]LiveRenderFetchRequest, 0, len(store.RenderRequests))
-	if len(store.RenderRequests) > 0 {
-		store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
-		for terminalID, request := range store.RenderRequests {
-			if terminalID == "" || request.InFlight || (!request.Dirty && request.WantedRevision <= request.CurrentRevision) {
-				continue
-			}
-			request.InFlight = true
-			request.InFlightRevision = request.WantedRevision
-			request.Dirty = false
-			if request.Cols <= 0 {
-				request.Cols = 80
-			}
-			if request.Rows <= 0 {
-				request.Rows = 24
-			}
-			store.RenderRequests[terminalID] = request
-			requests = append(requests, LiveRenderFetchRequest{TerminalID: terminalID, Cols: request.Cols, Rows: request.Rows})
-		}
-	}
-	return store, requests
-}
-
-// RequestLiveInvalidationArm 在当前 terminal 没有 pending fetch 时生成 one-shot
-// invalidation arm 请求。RenderedRevision 来自当前 store 投影，只适合同步
-// FrameSink 或 deterministic harness；真实 TTY 应使用 RequestLiveInvalidationArmAt。
-func (store TerminalSurfaceStore) RequestLiveInvalidationArm(terminalID string, cols int, rows int) (TerminalSurfaceStore, LiveInvalidationArmRequest, bool) {
-	renderedRevision := store.Revision
-	if snapshot, ok := store.snapshotForTerminal(terminalID); ok {
-		renderedRevision = snapshot.Revision
-	}
-	if request, ok := store.RenderRequests[terminalID]; ok && request.WrittenRevision != 0 {
-		renderedRevision = request.WrittenRevision
-	}
-	return store.RequestLiveInvalidationArmAt(terminalID, cols, rows, renderedRevision)
-}
-
-// RequestLiveInvalidationArmAt 用真实 FrameSink 写出完成的 revision 生成 one-shot
-// invalidation arm。这个 revision 是 TUI 客户端“已经显示给用户”的边界；core
-// 只在 native screen 超过该 revision 时再叫醒一次。
-func (store TerminalSurfaceStore) RequestLiveInvalidationArmAt(terminalID string, cols int, rows int, renderedRevision uint64) (TerminalSurfaceStore, LiveInvalidationArmRequest, bool) {
+func (store TerminalSurfaceStore) ConsumeDirtyRefresh(terminalID string) (TerminalSurfaceStore, int, int, bool) {
 	if terminalID == "" {
-		return store, LiveInvalidationArmRequest{}, false
+		return store, 0, 0, false
 	}
-	if cols <= 0 {
-		cols = 80
+	refresh, ok := store.Refreshes[terminalID]
+	if !ok || refresh.InFlight || refresh.Dirty {
+		return store, 0, 0, false
 	}
-	if rows <= 0 {
-		rows = 24
-	}
-	if _, ok := store.snapshotForTerminal(terminalID); !ok && store.TerminalID != terminalID {
-		return store, LiveInvalidationArmRequest{}, false
-	}
-	if request, ok := store.RenderRequests[terminalID]; ok && (request.InFlight || request.Dirty || request.WantedRevision > request.CurrentRevision) {
-		return store, LiveInvalidationArmRequest{}, false
-	}
-	arm := store.Invalidations[terminalID]
-	if arm.Armed && arm.RenderedRevision == renderedRevision {
-		return store, LiveInvalidationArmRequest{}, false
-	}
-	store.Invalidations = cloneLiveInvalidationArmStates(store.Invalidations)
-	store.Invalidations[terminalID] = LiveInvalidationArmState{Armed: true, RenderedRevision: renderedRevision}
-	return store, LiveInvalidationArmRequest{
-		TerminalID:       terminalID,
-		Cols:             cols,
-		Rows:             rows,
-		RenderedRevision: renderedRevision,
-	}, true
-}
-
-// FinishLiveInvalidationArm 表示一次 one-shot invalidation waiter 已返回或失败。
-// 只有匹配同一个 RenderedRevision 的 arm 才会解除，避免迟到的旧 waiter 清掉新 arm。
-func (store TerminalSurfaceStore) FinishLiveInvalidationArm(terminalID string, renderedRevision uint64) TerminalSurfaceStore {
-	if terminalID == "" || len(store.Invalidations) == 0 {
-		return store
-	}
-	arm, ok := store.Invalidations[terminalID]
-	if !ok || arm.RenderedRevision != renderedRevision {
-		return store
-	}
-	store.Invalidations = cloneLiveInvalidationArmStates(store.Invalidations)
-	delete(store.Invalidations, terminalID)
-	return store
-}
-
-func (store TerminalSurfaceStore) finishLiveRenderFetch(terminalID string, revision uint64, accepted bool) TerminalSurfaceStore {
-	if terminalID == "" {
-		return store
-	}
-	request, ok := store.RenderRequests[terminalID]
-	if !ok {
-		return store
-	}
-	request.InFlight = false
-	request.InFlightRevision = 0
-	if accepted && revision > request.CurrentRevision {
-		request.CurrentRevision = revision
-	}
-	if accepted && revision != 0 && request.WantedRevision <= request.CurrentRevision {
-		request.Dirty = false
-	}
-	if !accepted || request.Dirty || request.WantedRevision > request.CurrentRevision {
-		request.Dirty = true
-		store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
-		store.RenderRequests[terminalID] = request
-		return store
-	}
-	store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
-	delete(store.RenderRequests, terminalID)
-	return store
+	refresh.InFlight = true
+	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
+	store.Refreshes[terminalID] = refresh
+	return store, refresh.Cols, refresh.Rows, true
 }
 
 func (store TerminalSessionStore) RemoveTerminal(terminalID string) TerminalSessionStore {
@@ -984,16 +823,8 @@ func cloneLiveSurfaceSnapshots(values map[string]LiveSurfaceSnapshot) map[string
 	return cloned
 }
 
-func cloneLiveRenderRequestStates(values map[string]LiveRenderRequestState) map[string]LiveRenderRequestState {
-	cloned := make(map[string]LiveRenderRequestState, len(values)+1)
-	for key, value := range values {
-		cloned[key] = value
-	}
-	return cloned
-}
-
-func cloneLiveInvalidationArmStates(values map[string]LiveInvalidationArmState) map[string]LiveInvalidationArmState {
-	cloned := make(map[string]LiveInvalidationArmState, len(values)+1)
+func cloneLiveSurfaceRefreshStates(values map[string]LiveSurfaceRefreshState) map[string]LiveSurfaceRefreshState {
+	cloned := make(map[string]LiveSurfaceRefreshState, len(values)+1)
 	for key, value := range values {
 		cloned[key] = value
 	}

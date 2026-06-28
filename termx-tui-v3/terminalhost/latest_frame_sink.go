@@ -55,12 +55,6 @@ func (sink *LatestFrameSink) NeedsCompleteFrame() bool {
 	return preference.NeedsCompleteFrame()
 }
 
-// SupportsFrameWriteCompletion 声明 LatestFrameSink 会在后台 writer 写完完整帧后
-// 调用 Frame.OnWritten；runtime 依赖它把 live invalidation arm 绑定到真实输出完成。
-func (sink *LatestFrameSink) SupportsFrameWriteCompletion() bool {
-	return true
-}
-
 func (sink *LatestFrameSink) WriteFrame(frame render.Frame) error {
 	cloned := frame.Clone()
 	sink.mu.Lock()
@@ -103,9 +97,6 @@ func (sink *LatestFrameSink) loop() {
 			_ = sink.sink.WriteFrame(frame)
 		}
 		perftrace.Count("tui.frame_sink_written", latestFrameApproxBytes(frame))
-		if frame.Patch == nil && frame.OnWritten != nil {
-			frame.OnWritten()
-		}
 	}
 }
 
