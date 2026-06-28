@@ -1134,6 +1134,34 @@ func TestLiveEventRefreshBackpressureWaitsForRenderedFrameBeforeFollowUpFetch(t 
 	}
 }
 
+func TestLiveEventRefreshIgnoresStaleInvalidationRevision(t *testing.T) {
+	terminal := &services.FakeTerminalService{SurfaceResult: services.TerminalSurfaceResult{
+		Ready:    true,
+		Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 11, Lines: []string{"latest"}},
+	}}
+	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{Surface: (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   10,
+		Lines:      []string{"rev10"},
+	})}
+
+	root, effects := reducer(root, LiveEventMsg{Event: services.TerminalLiveEvent{
+		TerminalID: "term-1",
+		Refresh:    true,
+		Snapshot:   state.LiveSurfaceSnapshot{Revision: 5},
+	}})
+	if len(effects) != 0 {
+		t.Fatalf("stale invalidation must not start live.screen.get, got %#v", effects)
+	}
+	if got := len(terminal.Surfaces); got != 0 {
+		t.Fatalf("stale invalidation should not call native screen source, got %d calls", got)
+	}
+	if root.Surface.SurfaceForTerminal("term-1").Revision != 10 {
+		t.Fatalf("stale invalidation must keep current surface, got %#v", root.Surface.SurfaceForTerminal("term-1"))
+	}
+}
+
 func TestLiveEventRefreshDoesNotTriggerLayoutResizeMeasurement(t *testing.T) {
 	root := state.Root{Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 80, DesiredRows: 24}}
 	refresh := LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}}

@@ -498,3 +498,35 @@ func TestTerminalSurfaceLiveRenderRequestWaitsForFrameBeforeFollowUpFetch(t *tes
 		t.Fatalf("fresh snapshot should clear render request state, store=%#v", store.RenderRequests)
 	}
 }
+
+func TestTerminalSurfaceLiveRenderRequestClearsDirtyCoveredByLatestSnapshot(t *testing.T) {
+	var store TerminalSurfaceStore
+	var fetch bool
+	store, fetch = store.RequestLiveRender("term-1", 7, 80, 24)
+	if !fetch {
+		t.Fatalf("first invalidation should start fetch, store=%#v", store.RenderRequests)
+	}
+	store, fetch = store.RequestLiveRender("term-1", 9, 80, 24)
+	if fetch {
+		t.Fatalf("in-flight invalidation should only mark dirty, store=%#v", store.RenderRequests)
+	}
+
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 10, Cols: 80, Rows: 24, Lines: []string{"rev10"}})
+	if _, ok := store.RenderRequests["term-1"]; ok {
+		t.Fatalf("snapshot revision covering dirty wanted revision must clear request, store=%#v", store.RenderRequests)
+	}
+}
+
+func TestTerminalSurfaceLiveRenderRequestIgnoresStaleInvalidationRevision(t *testing.T) {
+	store := TerminalSurfaceStore{Surfaces: map[string]LiveSurfaceSnapshot{
+		"term-1": {TerminalID: "term-1", Revision: 10, Cols: 80, Rows: 24, Lines: []string{"rev10"}},
+	}}
+	var fetch bool
+	store, fetch = store.RequestLiveRender("term-1", 5, 80, 24)
+	if fetch {
+		t.Fatalf("stale invalidation must not start fetch, store=%#v", store.RenderRequests)
+	}
+	if _, ok := store.RenderRequests["term-1"]; ok {
+		t.Fatalf("stale invalidation must not leave dirty request state, store=%#v", store.RenderRequests)
+	}
+}

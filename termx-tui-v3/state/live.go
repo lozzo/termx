@@ -475,6 +475,11 @@ func (store TerminalSurfaceStore) RequestLiveRender(terminalID string, revision 
 			request.CurrentRevision = snapshot.Revision
 		}
 	}
+	if revision != 0 && revision <= request.CurrentRevision {
+		if !request.InFlight && !request.Dirty && request.WantedRevision <= request.CurrentRevision {
+			return store, false
+		}
+	}
 	request.Cols = cols
 	request.Rows = rows
 	if request.InFlight {
@@ -548,6 +553,9 @@ func (store TerminalSurfaceStore) finishLiveRenderFetch(terminalID string, revis
 	request.InFlightRevision = 0
 	if accepted && revision > request.CurrentRevision {
 		request.CurrentRevision = revision
+	}
+	if accepted && revision != 0 && request.WantedRevision <= request.CurrentRevision {
+		request.Dirty = false
 	}
 	if !accepted || request.Dirty || request.WantedRevision > request.CurrentRevision {
 		request.Dirty = true
