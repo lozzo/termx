@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -714,6 +715,51 @@ func TestAppRuntimeSchedulesDirtyLiveFetchAfterFrameIsWritten(t *testing.T) {
 	}
 	if runtime.State().Surface.Revision != 3 {
 		t.Fatalf("latest surface should win, got %#v", runtime.State().Surface)
+	}
+}
+
+func TestAppRuntimeWaitsForAsyncFrameSinkCompletionBeforeLiveFollowUp(t *testing.T) {
+	completionSink := &deferredCompletionFrameSink{}
+	host := newCompletionTestHost(completionSink)
+	liveDeps := LiveDeps{Terminal: &services.FakeTerminalService{
+		SurfaceResult: services.TerminalSurfaceResult{
+			Ready:    true,
+			Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 3, Lines: []string{"latest"}},
+		},
+	}}
+	runtime := NewAppRuntime(
+		state.Root{Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			RenderRequests: map[string]state.LiveRenderRequestState{
+				"term-1": {InFlight: true, Dirty: true, WantedRevision: 3, Cols: 80, Rows: 24},
+			},
+		}},
+		NewLiveReducer(liveDeps),
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: append([]string(nil), root.Surface.Lines...)}
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	runtime.SetAfterRender(liveAfterRenderFunc(liveDeps))
+
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 2, Lines: []string{"middle"}}, RequestedCols: 80, RequestedRows: 24}); err != nil {
+		t.Fatalf("post middle surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain before completion: %v", err)
+	}
+	if len(liveDeps.Terminal.(*services.FakeTerminalService).Surfaces) != 0 {
+		t.Fatalf("async sink must not schedule follow-up latest fetch before frame completion, got %#v", liveDeps.Terminal.(*services.FakeTerminalService).Surfaces)
+	}
+
+	completionSink.completeLatest()
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain after completion: %v", err)
+	}
+	got := frameLines(completionSink.framesSnapshot())
+	if len(got) < 2 || !reflect.DeepEqual(got[len(got)-2:], []string{"middle", "latest"}) {
+		t.Fatalf("frame completion should drive exactly one follow-up latest render, got %v", got)
 	}
 }
 
@@ -4211,6 +4257,84 @@ func TestFakeFrameSinkReturnsDetachedFrames(t *testing.T) {
 	if got[0].Lines[0] != "one" {
 		t.Fatalf("expected detached frames, got %v", got)
 	}
+}
+
+type deferredCompletionFrameSink struct {
+	mu      sync.Mutex
+	frames  []render.Frame
+	pending []func()
+}
+
+type completionTestHost struct {
+	events chan input.InputEvent
+	ready  chan struct{}
+	sink   render.FrameSink
+}
+
+func newCompletionTestHost(sink render.FrameSink) *completionTestHost {
+	return &completionTestHost{
+		events: make(chan input.InputEvent, 1),
+		ready:  make(chan struct{}, 1),
+		sink:   sink,
+	}
+}
+
+func (host *completionTestHost) Size() (int, int, error) {
+	return 80, 24, nil
+}
+
+func (host *completionTestHost) InputEvents() <-chan input.InputEvent {
+	return host.events
+}
+
+func (host *completionTestHost) EventsReady() <-chan struct{} {
+	return host.ready
+}
+
+func (host *completionTestHost) FrameSink() render.FrameSink {
+	return host.sink
+}
+
+func (sink *deferredCompletionFrameSink) WriteFrame(frame render.Frame) error {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	cloned := frame.Clone()
+	cloned.OnWritten = nil
+	sink.frames = append(sink.frames, cloned)
+	if frame.OnWritten != nil {
+		sink.pending = append(sink.pending, frame.OnWritten)
+	}
+	return nil
+}
+
+func (sink *deferredCompletionFrameSink) SupportsFrameWriteCompletion() bool {
+	return true
+}
+
+func (sink *deferredCompletionFrameSink) NeedsCompleteFrame() bool {
+	return true
+}
+
+func (sink *deferredCompletionFrameSink) completeLatest() {
+	sink.mu.Lock()
+	if len(sink.pending) == 0 {
+		sink.mu.Unlock()
+		return
+	}
+	callback := sink.pending[len(sink.pending)-1]
+	sink.pending = nil
+	sink.mu.Unlock()
+	callback()
+}
+
+func (sink *deferredCompletionFrameSink) framesSnapshot() []render.Frame {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	frames := make([]render.Frame, len(sink.frames))
+	for i, frame := range sink.frames {
+		frames[i] = frame.Clone()
+	}
+	return frames
 }
 
 func frameLines(frames []render.Frame) []string {

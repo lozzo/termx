@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 )
 
@@ -54,6 +55,12 @@ func (sink *LatestFrameSink) NeedsCompleteFrame() bool {
 	return preference.NeedsCompleteFrame()
 }
 
+// SupportsFrameWriteCompletion 声明 LatestFrameSink 会在后台 writer 写完完整帧后
+// 调用 Frame.OnWritten；runtime 依赖它把 live invalidation arm 绑定到真实输出完成。
+func (sink *LatestFrameSink) SupportsFrameWriteCompletion() bool {
+	return true
+}
+
 func (sink *LatestFrameSink) WriteFrame(frame render.Frame) error {
 	cloned := frame.Clone()
 	sink.mu.Lock()
@@ -94,6 +101,10 @@ func (sink *LatestFrameSink) loop() {
 		}
 		if sink.sink != nil {
 			_ = sink.sink.WriteFrame(frame)
+		}
+		perftrace.Count("tui.frame_sink_written", latestFrameApproxBytes(frame))
+		if frame.Patch == nil && frame.OnWritten != nil {
+			frame.OnWritten()
 		}
 	}
 }
@@ -184,6 +195,20 @@ func latestFrameSinkPatchBytes(frames []render.Frame) int {
 		for _, line := range frame.Patch.LinesANSI {
 			total += len(line)
 		}
+	}
+	return total
+}
+
+func latestFrameApproxBytes(frame render.Frame) int {
+	if frame.Patch != nil {
+		return latestFrameSinkPatchBytes([]render.Frame{frame})
+	}
+	total := 0
+	for _, line := range frame.Lines {
+		total += len(line)
+	}
+	for _, line := range frame.ANSILines {
+		total += len(line)
 	}
 	return total
 }

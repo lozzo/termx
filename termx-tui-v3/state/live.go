@@ -49,6 +49,7 @@ type LiveResizeBoundary struct {
 type LiveRenderRequestState struct {
 	WantedRevision   uint64
 	CurrentRevision  uint64
+	WrittenRevision  uint64
 	InFlight         bool
 	InFlightRevision uint64
 	Dirty            bool
@@ -497,6 +498,9 @@ func (store TerminalSurfaceStore) RequestLiveRender(terminalID string, revision 
 			request.CurrentRevision = snapshot.Revision
 		}
 	}
+	if request.WrittenRevision == 0 {
+		request.WrittenRevision = request.CurrentRevision
+	}
 	if revision != 0 && revision <= request.CurrentRevision {
 		if !request.InFlight && !request.Dirty && request.WantedRevision <= request.CurrentRevision {
 			return store, false
@@ -542,7 +546,14 @@ func (store TerminalSurfaceStore) FailLiveRenderFetch(terminalID string) Termina
 // 它只在 TUI 已经真正写完一帧后调用：dirty fetch 会在这里被合并成 latest
 // screen 请求；如果当前 terminal 没有 pending fetch，则重新 arm 一次 one-shot
 // invalidation。
-func (store TerminalSurfaceStore) LiveFrameRendered() (TerminalSurfaceStore, []LiveRenderFetchRequest) {
+func (store TerminalSurfaceStore) LiveFrameRendered(terminalID string, revision uint64) (TerminalSurfaceStore, []LiveRenderFetchRequest) {
+	if terminalID != "" && revision != 0 {
+		if request, ok := store.RenderRequests[terminalID]; ok && revision > request.WrittenRevision {
+			request.WrittenRevision = revision
+			store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
+			store.RenderRequests[terminalID] = request
+		}
+	}
 	requests := make([]LiveRenderFetchRequest, 0, len(store.RenderRequests))
 	if len(store.RenderRequests) > 0 {
 		store.RenderRequests = cloneLiveRenderRequestStates(store.RenderRequests)
@@ -567,9 +578,23 @@ func (store TerminalSurfaceStore) LiveFrameRendered() (TerminalSurfaceStore, []L
 }
 
 // RequestLiveInvalidationArm 在当前 terminal 没有 pending fetch 时生成 one-shot
-// invalidation arm 请求。RenderedRevision 来自当前已经投影到 TUI 的 latest screen；
-// core 只会在 native screen revision 超过它时叫醒一次。
+// invalidation arm 请求。RenderedRevision 来自当前 store 投影，只适合同步
+// FrameSink 或 deterministic harness；真实 TTY 应使用 RequestLiveInvalidationArmAt。
 func (store TerminalSurfaceStore) RequestLiveInvalidationArm(terminalID string, cols int, rows int) (TerminalSurfaceStore, LiveInvalidationArmRequest, bool) {
+	renderedRevision := store.Revision
+	if snapshot, ok := store.snapshotForTerminal(terminalID); ok {
+		renderedRevision = snapshot.Revision
+	}
+	if request, ok := store.RenderRequests[terminalID]; ok && request.WrittenRevision != 0 {
+		renderedRevision = request.WrittenRevision
+	}
+	return store.RequestLiveInvalidationArmAt(terminalID, cols, rows, renderedRevision)
+}
+
+// RequestLiveInvalidationArmAt 用真实 FrameSink 写出完成的 revision 生成 one-shot
+// invalidation arm。这个 revision 是 TUI 客户端“已经显示给用户”的边界；core
+// 只在 native screen 超过该 revision 时再叫醒一次。
+func (store TerminalSurfaceStore) RequestLiveInvalidationArmAt(terminalID string, cols int, rows int, renderedRevision uint64) (TerminalSurfaceStore, LiveInvalidationArmRequest, bool) {
 	if terminalID == "" {
 		return store, LiveInvalidationArmRequest{}, false
 	}
@@ -579,13 +604,8 @@ func (store TerminalSurfaceStore) RequestLiveInvalidationArm(terminalID string, 
 	if rows <= 0 {
 		rows = 24
 	}
-	snapshot, ok := store.snapshotForTerminal(terminalID)
-	if !ok && store.TerminalID != terminalID {
+	if _, ok := store.snapshotForTerminal(terminalID); !ok && store.TerminalID != terminalID {
 		return store, LiveInvalidationArmRequest{}, false
-	}
-	renderedRevision := snapshot.Revision
-	if !ok {
-		renderedRevision = store.Revision
 	}
 	if request, ok := store.RenderRequests[terminalID]; ok && (request.InFlight || request.Dirty || request.WantedRevision > request.CurrentRevision) {
 		return store, LiveInvalidationArmRequest{}, false

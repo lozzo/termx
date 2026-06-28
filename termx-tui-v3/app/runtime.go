@@ -63,6 +63,20 @@ type TickMsg struct {
 
 func (TickMsg) isMsg() {}
 
+// FrameWrittenMsg 表示 runtime 最近提交的一张完整 frame 已写到输出边界。
+// Seq 用来丢弃 LatestFrameSink 写完旧帧后的迟到回调；TerminalID/Revision 是
+// 该 frame 渲染时的 live projection 边界，只用于重新 arm latest-screen wake。
+type FrameWrittenMsg struct {
+	Seq        uint64
+	TerminalID string
+	Revision   uint64
+}
+
+func (FrameWrittenMsg) isMsg() {}
+
+// SkipRender 表示写帧完成只是 runtime 内部时钟边界，本身不能再次触发绘制。
+func (FrameWrittenMsg) SkipRender() bool { return true }
+
 // NoopEffect 是无需执行的副作用。
 type NoopEffect struct{}
 
@@ -111,11 +125,10 @@ type Reducer func(state.Root, Msg) (state.Root, []Effect)
 // RenderFunc 把 reducer-owned state 投影成 frame。
 type RenderFunc func(state.Root) render.Frame
 
-// AfterRenderFunc 是 runtime 写完一帧后的领域回调。
-// runtime 只负责声明“FrameSink 已写入一张完整 frame”；具体是否重新 arm
-// live invalidation、是否发起 latest screen fetch，由注册方按自己的 domain state
-// 决定，避免通用消息循环硬编码 live 领域类型。
-type AfterRenderFunc func(state.Root) (state.Root, []Effect)
+// AfterRenderFunc 是 runtime 确认完整帧已经写出后的领域回调。
+// 真实 TTY 会先把 frame 交给 LatestFrameSink，再由后台 writer 写出；live loop
+// 只能在写出完成消息回到 reducer 后重新 arm core invalidation，避免继续拉取中间帧。
+type AfterRenderFunc func(state.Root, FrameWrittenMsg) (state.Root, []Effect)
 
 type handledEffect struct{}
 
@@ -197,6 +210,8 @@ type AppRuntime struct {
 	startupFrameReady   bool
 	maxMessagesPerBatch int
 	copyHistoryPatch    copyHistoryPatchCache
+	frameSeq            uint64
+	latestFrameSeq      uint64
 	lastFloatingRepaint floatingRepaintSignature
 	diagnostics         *runtimeDiagnostics
 	stopDiagnostics     func()
@@ -404,6 +419,19 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 			runtime.quit = true
 			return nil
 		}
+		if frameWritten, ok := msg.(FrameWrittenMsg); ok {
+			effects := runtime.handleFrameWritten(frameWritten)
+			runtime.observeRuntimeMessage(msg, effects)
+			for _, effect := range effects {
+				runtime.scheduleEffect(ctx, effect)
+			}
+			runtime.ingestHostInput()
+			runtime.enqueueDueToastTick()
+			if runtime.quit {
+				return nil
+			}
+			continue
+		}
 		if !runtime.prepareRuntimeMessage(msg) {
 			runtime.ingestHostInput()
 			if runtime.quit {
@@ -440,6 +468,19 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (runtime *AppRuntime) handleFrameWritten(msg FrameWrittenMsg) []Effect {
+	if runtime.afterRender == nil {
+		return nil
+	}
+	if msg.Seq != 0 && msg.Seq != runtime.latestFrameSeq {
+		return nil
+	}
+	perftrace.Count("tui.frame_written", 0)
+	next, effects := runtime.afterRender(runtime.state, msg)
+	runtime.state = next
+	return effects
 }
 
 func (runtime *AppRuntime) messageBatchLimit() int {
@@ -937,22 +978,41 @@ func (runtime *AppRuntime) renderFrame(ctx context.Context) bool {
 	if runtime.tryRenderCopyHistoryPatch() {
 		return false
 	}
-	frame := runtime.render(runtime.state)
+	frameRoot := runtime.state
+	frame := runtime.render(frameRoot)
 	runtime.markFloatingRepaintFrame(&frame)
 	runtime.lastHitRegions = cloneRenderHitRegions(frame.HitRegions)
-	_ = runtime.host.FrameSink().WriteFrame(frame)
+	runtime.frameSeq++
+	frameSeq := runtime.frameSeq
+	runtime.latestFrameSeq = frameSeq
+	frameWritten := runtime.frameWrittenMsg(frameRoot, frameSeq)
+	sink := runtime.host.FrameSink()
+	supportsCompletion := false
+	if completionSink, ok := sink.(render.FrameWriteCompletionSink); ok {
+		supportsCompletion = completionSink.SupportsFrameWriteCompletion()
+	}
+	if supportsCompletion {
+		frame.OnWritten = func() {
+			runtime.enqueue(frameWritten)
+		}
+	}
+	_ = sink.WriteFrame(frame)
+	if !supportsCompletion {
+		runtime.enqueue(frameWritten)
+	}
 	perftrace.Count("tui.frame", frameApproxBytes(frame))
 	runtime.firstFrameWritten = true
 	runtime.rememberCopyHistoryPatchFrame(frame)
 	runtime.observeRuntimeFrame(frame)
-	if runtime.afterRender != nil {
-		next, effects := runtime.afterRender(runtime.state)
-		runtime.state = next
-		for _, effect := range effects {
-			runtime.scheduleEffect(ctx, effect)
-		}
-	}
 	return true
+}
+
+func (runtime *AppRuntime) frameWrittenMsg(root state.Root, seq uint64) FrameWrittenMsg {
+	return FrameWrittenMsg{
+		Seq:        seq,
+		TerminalID: root.Surface.TerminalID,
+		Revision:   root.Surface.Revision,
+	}
 }
 
 func frameApproxBytes(frame render.Frame) int {
@@ -2055,7 +2115,9 @@ func (sink *FakeFrameSink) WriteFrame(frame render.Frame) error {
 	if sink.onWrite != nil {
 		sink.onWrite()
 	}
-	sink.frames = append(sink.frames, frame.Clone())
+	cloned := frame.Clone()
+	cloned.OnWritten = nil
+	sink.frames = append(sink.frames, cloned)
 	return nil
 }
 

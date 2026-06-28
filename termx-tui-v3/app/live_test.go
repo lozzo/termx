@@ -205,7 +205,11 @@ func TestTerminalInputRouterLogsActiveViewRoute(t *testing.T) {
 	if len(effects) != 1 {
 		t.Fatalf("ordinary key should produce terminal input effect, got %#v", effects)
 	}
-	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveInputResultMsg)
+	effect, ok := effects[0].(FuncEffect)
+	if !ok || !effect.Async || !effect.ForceSyncInTests {
+		t.Fatalf("terminal input send must be async in real runtime and sync-capable in tests, got %#v", effects[0])
+	}
+	msg, ok := effect.Run(context.Background()).(LiveInputResultMsg)
 	if !ok || msg.Err != nil {
 		t.Fatalf("expected terminal input result, got %#v ok=%v", msg, ok)
 	}
@@ -1121,7 +1125,7 @@ func TestLiveEventRefreshBackpressureWaitsForRenderedFrameBeforeFollowUpFetch(t 
 		t.Fatalf("dirty request should wait for render completion, got %#v", request)
 	}
 
-	root, effects = reduceLiveFrameRendered(root, LiveDeps{Terminal: terminal})
+	root, effects = reduceLiveFrameRendered(root, FrameWrittenMsg{TerminalID: "term-1", Revision: 2}, LiveDeps{Terminal: terminal})
 	if len(effects) != 1 {
 		t.Fatalf("frame render should schedule only follow-up fetch while dirty, got %#v", effects)
 	}

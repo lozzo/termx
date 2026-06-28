@@ -15,6 +15,9 @@ type Frame struct {
 	HitRegions  []HitRegion
 	Metadata    RenderMetadata
 	Theme       Theme
+	// OnWritten 是真实输出边界回调。LatestFrameSink 可以先接收完整帧再异步写 TTY；
+	// live render loop 只有在完整帧实际写完后才能重新 arm core invalidation。
+	OnWritten func()
 }
 
 // Clone 返回 detached frame，防止测试或 host 共享修改 frame lines。
@@ -25,6 +28,7 @@ func (frame Frame) Clone() Frame {
 		Blink:      frame.Blink,
 		Metadata:   frame.Metadata,
 		Theme:      frame.Theme,
+		OnWritten:  frame.OnWritten,
 	}
 	if len(frame.Lines) > 0 {
 		cloned.Lines = cloneStrings(frame.Lines)
@@ -89,6 +93,14 @@ func cloneStrings(values []string) []string {
 // FrameSink 把渲染帧写入 host、recorder 或 test sink。
 type FrameSink interface {
 	WriteFrame(Frame) error
+}
+
+// FrameWriteCompletionSink 表示 sink 会在 Frame.OnWritten 中报告真实写帧完成。
+// Latest live loop 依赖这个边界决定何时重新 arm core invalidation；不实现该
+// 接口的 legacy/test sink 会被 runtime 当作同步写入处理。
+type FrameWriteCompletionSink interface {
+	// SupportsFrameWriteCompletion 返回 true 表示 sink 会在完整帧真实写出后调用 Frame.OnWritten。
+	SupportsFrameWriteCompletion() bool
 }
 
 // FrameSinkPreference 允许真实 host 声明自己只需要 ANSI 输出。

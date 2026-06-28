@@ -100,6 +100,8 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 func terminalSendInputEffect(target liveInputTargetInfo, event input.InputEvent, bytes []byte, retryOnError bool, deps LiveDeps) Effect {
 	payload := append([]byte(nil), bytes...)
 	return FuncEffect{
+		Async:            true,
+		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
 				TerminalID: target.TerminalID,

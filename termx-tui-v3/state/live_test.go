@@ -485,7 +485,7 @@ func TestTerminalSurfaceLiveRenderRequestWaitsForFrameBeforeFollowUpFetch(t *tes
 	}
 
 	var requests []LiveRenderFetchRequest
-	store, requests = store.LiveFrameRendered()
+	store, requests = store.LiveFrameRendered("term-1", 8)
 	if len(requests) != 1 || requests[0].TerminalID != "term-1" || requests[0].Cols != 96 || requests[0].Rows != 30 {
 		t.Fatalf("frame completion should schedule one latest fetch, got %#v store=%#v", requests, store.RenderRequests)
 	}

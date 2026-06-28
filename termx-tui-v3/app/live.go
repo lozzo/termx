@@ -1067,14 +1067,14 @@ func applyTerminalAttachmentProjectionFromResize(root state.Root, result service
 }
 
 func liveAfterRenderFunc(deps LiveDeps) AfterRenderFunc {
-	return func(root state.Root) (state.Root, []Effect) {
-		return reduceLiveFrameRendered(root, deps)
+	return func(root state.Root, msg FrameWrittenMsg) (state.Root, []Effect) {
+		return reduceLiveFrameRendered(root, msg, deps)
 	}
 }
 
-func reduceLiveFrameRendered(root state.Root, deps LiveDeps) (state.Root, []Effect) {
+func reduceLiveFrameRendered(root state.Root, msg FrameWrittenMsg, deps LiveDeps) (state.Root, []Effect) {
 	var requests []state.LiveRenderFetchRequest
-	root.Surface, requests = root.Surface.LiveFrameRendered()
+	root.Surface, requests = root.Surface.LiveFrameRendered(msg.TerminalID, msg.Revision)
 	effects := make([]Effect, 0, len(requests)+1)
 	for _, request := range requests {
 		cols, rows := request.Cols, request.Rows
@@ -1086,12 +1086,15 @@ func reduceLiveFrameRendered(root state.Root, deps LiveDeps) (state.Root, []Effe
 	if len(requests) > 0 {
 		return root, effects
 	}
-	terminalID := root.Surface.TerminalID
+	terminalID := msg.TerminalID
+	if terminalID == "" {
+		terminalID = root.Surface.TerminalID
+	}
 	if terminalID != "" {
 		cols, rows := liveSurfaceRefreshSize(root, terminalID)
 		var request state.LiveInvalidationArmRequest
 		var ok bool
-		root.Surface, request, ok = root.Surface.RequestLiveInvalidationArm(terminalID, cols, rows)
+		root.Surface, request, ok = root.Surface.RequestLiveInvalidationArmAt(terminalID, cols, rows, msg.Revision)
 		if ok {
 			effects = append(effects, liveInvalidationArmEffect(request, deps)...)
 		}
