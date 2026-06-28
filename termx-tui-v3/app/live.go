@@ -789,7 +789,7 @@ func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID 
 }
 
 func liveEffects(terminalID string, cols int, rows int, deps LiveDeps) []Effect {
-	effects := liveSurfaceEffect(terminalID, cols, rows, deps)
+	effects := liveSurfaceEffect(terminalID, cols, rows, true, deps)
 	effects = append(effects, liveStreamEffect(terminalID, cols, rows, deps)...)
 	return effects
 }
@@ -824,12 +824,12 @@ func reduceLiveLifecycleQuery(root state.Root, msg LiveLifecycleQueryMsg, deps L
 			"rows", rows,
 			"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(terminalID)),
 		)
-		effects = append(effects, liveSurfaceEffect(terminalID, cols, rows, deps)...)
+		effects = append(effects, liveSurfaceEffect(terminalID, cols, rows, true, deps)...)
 	}
 	return root, effects
 }
 
-func liveSurfaceEffect(terminalID string, cols int, rows int, deps LiveDeps) []Effect {
+func liveSurfaceEffect(terminalID string, cols int, rows int, knownLifecycle bool, deps LiveDeps) []Effect {
 	source, ok := deps.Terminal.(services.TerminalSurfaceService)
 	if !ok || terminalID == "" {
 		return nil
@@ -861,7 +861,12 @@ func liveSurfaceEffect(terminalID string, cols int, rows int, deps LiveDeps) []E
 			if result.Snapshot.Rows == 0 {
 				result.Snapshot.Rows = rows
 			}
-			return LiveSurfaceMsg{Snapshot: result.Snapshot, LifecycleKnown: result.LifecycleKnown, RequestedCols: cols, RequestedRows: rows}
+			// 中文说明：普通 terminal.changed refresh 只表示 live projection 失效，
+			// 不能因为 service 顺手查了 core lifecycle 就伪装成 lifecycle boundary；
+			// 否则 app 队列会禁止 latest-only 丢弃旧帧。attach/显式 lifecycle query
+			// 仍通过 knownLifecycle 保留权威边界。
+			lifecycleKnown := knownLifecycle && result.LifecycleKnown
+			return LiveSurfaceMsg{Snapshot: result.Snapshot, LifecycleKnown: lifecycleKnown, RequestedCols: cols, RequestedRows: rows}
 		},
 	}}
 }
@@ -984,7 +989,7 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Ro
 		if !shouldFetch {
 			return root, nil
 		}
-		return root, liveSurfaceEffect(event.TerminalID, cols, rows, deps)
+		return root, liveSurfaceEffect(event.TerminalID, cols, rows, false, deps)
 	}
 	if event.Err != nil {
 		if isContextLifecycleError(event.Err) {
@@ -1089,7 +1094,7 @@ func maybeScheduleDirtyLiveSurfaceRefresh(root state.Root, terminalID string, fa
 	if cols <= 0 || rows <= 0 {
 		cols, rows = liveSurfaceRefreshSize(root, terminalID)
 	}
-	return root, liveSurfaceEffect(terminalID, cols, rows, deps)
+	return root, liveSurfaceEffect(terminalID, cols, rows, false, deps)
 }
 
 func liveSurfaceRefreshSize(root state.Root, terminalID string) (int, int) {

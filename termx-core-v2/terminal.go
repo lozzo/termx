@@ -20,6 +20,7 @@ type Terminal struct {
 	process         TerminalProcess
 	liveMu          sync.Mutex
 	live            *live.SurfaceTrack
+	liveRevision    uint64
 	historyMu       sync.Mutex
 	historyRenderer history.HistoryLogicalRenderer
 	historyStore    history.HistoryStore
@@ -107,6 +108,7 @@ func (terminal *Terminal) IngestOutput(output string) error {
 
 	terminal.liveMu.Lock()
 	result := surface.WriteWithResult(rawOutput)
+	terminal.bumpLiveRevisionLocked()
 	terminal.liveMu.Unlock()
 	terminal.applyHistoryWriteResult(result)
 
@@ -148,6 +150,7 @@ func (terminal *Terminal) Resize(size Size) error {
 
 	terminal.liveMu.Lock()
 	tx := terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
+	terminal.bumpLiveRevisionLocked()
 	terminal.liveMu.Unlock()
 	terminal.applyHistoryResizeTransaction(tx)
 
@@ -216,6 +219,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.liveMu.Lock()
 	terminal.live.Resize(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)})
 	terminal.live.ResetForRestartPreservingScreen()
+	terminal.bumpLiveRevisionLocked()
 	terminal.liveMu.Unlock()
 	terminal.syncInfo(info)
 	terminal.watchProcess(process)
@@ -246,6 +250,16 @@ func (terminal *Terminal) VisitLiveTrimmedScreenRows(visit func(rowIndex int, ce
 	terminal.liveMu.Lock()
 	defer terminal.liveMu.Unlock()
 	return terminal.live.VisitTrimmedScreenRows(visit)
+}
+
+// VisitLiveTrimmedScreenRowsWithRevision 在同一 live 锁内读取当前 native screen
+// 与 live projection revision。revision 只表示当前屏投影版本，不是 history truth
+// generation；protocol/TUI 用它拒绝旧 snapshot，不能把它解释成 logical history 版本。
+func (terminal *Terminal) VisitLiveTrimmedScreenRowsWithRevision(visit func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell)) (vterm.TrimmedScreenRowsInfo, uint64) {
+	terminal.liveMu.Lock()
+	defer terminal.liveMu.Unlock()
+	info := terminal.live.VisitTrimmedScreenRows(visit)
+	return info, terminal.liveRevision
 }
 
 func (terminal *Terminal) FlushHistory(ctx context.Context) error {
@@ -385,6 +399,7 @@ func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, outpu
 
 	terminal.liveMu.Lock()
 	result := surface.WriteWithResult(output)
+	terminal.bumpLiveRevisionLocked()
 	terminal.liveMu.Unlock()
 	terminal.applyHistoryWriteResult(result)
 
@@ -426,7 +441,12 @@ func (terminal *Terminal) appendExitMarker(info TerminalInfo) {
 	text := "\r\n" + strings.Join(lines, "\r\n") + "\r\n"
 	terminal.liveMu.Lock()
 	terminal.live.Write(text)
+	terminal.bumpLiveRevisionLocked()
 	terminal.liveMu.Unlock()
+}
+
+func (terminal *Terminal) bumpLiveRevisionLocked() {
+	terminal.liveRevision++
 }
 
 func terminalExitMarkerLines(info TerminalInfo) []string {

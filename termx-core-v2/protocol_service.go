@@ -597,7 +597,7 @@ func (session *protocolSession) liveCompactSnapshot(params protocol.SnapshotPara
 		return nil, err
 	}
 	var rows []protocol.CompactRow
-	screenInfo := terminal.VisitLiveTrimmedScreenRows(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
+	screenInfo, liveRevision := terminal.VisitLiveTrimmedScreenRowsWithRevision(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
 		if rows == nil {
 			rows = make([]protocol.CompactRow, 0, rowIndex+1)
 		}
@@ -628,7 +628,10 @@ func (session *protocolSession) liveCompactSnapshot(params protocol.SnapshotPara
 		ScreenIsAlternate: screenInfo.IsAlternateScreen,
 		Cursor:            vtermCursorToProtocol(screenInfo.Cursor),
 		Modes:             vtermModesToProtocol(screenInfo.Modes),
-		HistoryGeneration: 0,
+		// 中文说明：live compact snapshot 仍只读 native screen；这里复用
+		// HistoryGeneration wire 字段承载 live projection revision，供 TUI 拒绝
+		// stale snapshot，不能解释成 logical-line history generation。
+		HistoryGeneration: liveRevision,
 		ScreenOwnership:   repeatString(protocol.RowOwnershipScreen, len(rows)),
 		Timestamp:         time.Now().UTC(),
 	}, nil
@@ -644,7 +647,7 @@ func (session *protocolSession) liveScreenUpdatePayload(terminalID string) ([]by
 		return nil, err
 	}
 	var rows [][]protocol.Cell
-	screenInfo := terminal.VisitLiveTrimmedScreenRows(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
+	screenInfo, _ := terminal.VisitLiveTrimmedScreenRowsWithRevision(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
 		for len(rows) <= rowIndex {
 			rows = append(rows, nil)
 		}

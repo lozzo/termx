@@ -712,6 +712,50 @@ func TestAppRuntimeSkipsSupersededLiveSurfaceWhileDirtyRefreshIsPending(t *testi
 	}
 }
 
+func TestAppRuntimeOrdinaryRefreshSurfaceDoesNotBlockLatestOnlySkipping(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	reducer := NewLiveReducer(LiveDeps{Terminal: &services.FakeTerminalService{
+		SurfaceResult: services.TerminalSurfaceResult{
+			Ready: true,
+			Snapshot: state.LiveSurfaceSnapshot{
+				TerminalID: "term-1",
+				Revision:   3,
+				Lines:      []string{"latest"},
+			},
+			LifecycleKnown: true,
+		},
+	}})
+	runtime := NewAppRuntime(
+		state.Root{Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Refreshes: map[string]state.LiveSurfaceRefreshState{
+				"term-1": {InFlight: true, Dirty: true, Cols: 80, Rows: 24},
+			},
+		}},
+		reducer,
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: append([]string(nil), root.Surface.Lines...)}
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Lines:      []string{"middle"},
+	}, RequestedCols: 80, RequestedRows: 24}); err != nil {
+		t.Fatalf("post ordinary surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"latest"}) {
+		t.Fatalf("ordinary refresh surface must stay latest-only under dirty successor, got %v", got)
+	}
+}
+
 func TestAppRuntimeDoesNotSkipLifecycleLiveSurfaceUnderPressure(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runtime := NewAppRuntime(

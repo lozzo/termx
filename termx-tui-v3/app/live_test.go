@@ -952,7 +952,7 @@ func TestLiveAttachAndInitialSurfaceEffectsAreAsync(t *testing.T) {
 		t.Fatalf("attach must be async in real runtime and sync-capable in harness, got %#v", effects[0])
 	}
 
-	effects = liveSurfaceEffect("term-1", 80, 24, LiveDeps{Terminal: terminal})
+	effects = liveSurfaceEffect("term-1", 80, 24, true, LiveDeps{Terminal: terminal})
 	if len(effects) != 1 {
 		t.Fatalf("expected one live surface effect, got %#v", effects)
 	}
@@ -1044,6 +1044,7 @@ func TestLiveEventRefreshRequestsLatestSurfaceAfterEventLoopCoalescing(t *testin
 				TerminalID: "term-1",
 				Lines:      []string{"latest"},
 			},
+			LifecycleKnown: true,
 		},
 	}
 	shell := state.DefaultShell().
@@ -1078,6 +1079,9 @@ func TestLiveEventRefreshRequestsLatestSurfaceAfterEventLoopCoalescing(t *testin
 	msg, ok := effect.Run(context.Background()).(LiveSurfaceMsg)
 	if !ok || msg.Snapshot.TerminalID != "term-1" || msg.Snapshot.Lines[0] != "latest" {
 		t.Fatalf("expected latest live surface message, got %#v ok=%v", msg, ok)
+	}
+	if msg.LifecycleKnown {
+		t.Fatalf("ordinary refresh surface must not become lifecycle boundary, got %#v", msg)
 	}
 	if len(terminal.Surfaces) != 1 || terminal.Surfaces[0].Cols != 96 || terminal.Surfaces[0].Rows != 30 {
 		t.Fatalf("refresh should use resize owner surface size, got %#v", terminal.Surfaces)

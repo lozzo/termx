@@ -530,8 +530,41 @@ func TestProtocolServiceSnapshotReturnsLiveSurfaceRows(t *testing.T) {
 	if compact.TerminalID != "term-1" || compact.Size != (protocol.Size{Cols: 12, Rows: 4}) {
 		t.Fatalf("unexpected compact snapshot metadata %#v", compact)
 	}
+	if compact.HistoryGeneration == 0 {
+		t.Fatalf("compact live snapshot must carry live projection revision, got %#v", compact)
+	}
 	if got := compact.ScreenRows[0].Text; got != "alpha" {
 		t.Fatalf("compact snapshot should keep row compact text, got %#v", compact.ScreenRows[0])
+	}
+}
+
+func TestProtocolServiceCompactSnapshotLiveRevisionAdvancesWithOutput(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-r347-live-revision", Command: []string{"shell"}, Size: protocol.Size{Cols: 12, Rows: 4}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	first, err := client.SnapshotCompact(context.Background(), "term-r347-live-revision", 0, 4)
+	if err != nil {
+		t.Fatalf("initial compact snapshot: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r347-live-revision", "alpha\r\n"); err != nil {
+		t.Fatalf("first ingest: %v", err)
+	}
+	second, err := client.SnapshotCompact(context.Background(), "term-r347-live-revision", 0, 4)
+	if err != nil {
+		t.Fatalf("second compact snapshot: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r347-live-revision", "beta\r\n"); err != nil {
+		t.Fatalf("second ingest: %v", err)
+	}
+	third, err := client.SnapshotCompact(context.Background(), "term-r347-live-revision", 0, 4)
+	if err != nil {
+		t.Fatalf("third compact snapshot: %v", err)
+	}
+	if !(first.HistoryGeneration < second.HistoryGeneration && second.HistoryGeneration < third.HistoryGeneration) {
+		t.Fatalf("live projection revision must advance monotonically, got %d -> %d -> %d", first.HistoryGeneration, second.HistoryGeneration, third.HistoryGeneration)
 	}
 }
 
