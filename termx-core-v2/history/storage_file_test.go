@@ -1,6 +1,8 @@
 package history
 
 import (
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
 )
@@ -24,5 +26,25 @@ func TestR341FileStorageBackendServesWindowPayloads(t *testing.T) {
 	}
 	if got := strings.Join(rowTexts(window.Rows), "|"); got != "file-line|file-line|file-line" {
 		t.Fatalf("file backend should load payloads for window, got %q", got)
+	}
+}
+
+func TestR342FileStorageBackendDoesNotUseJSON(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "storage_file.go", nil, parser.ImportsOnly)
+	if err != nil {
+		t.Fatalf("parse storage file: %v", err)
+	}
+	for _, spec := range file.Imports {
+		if spec.Path.Value == `"encoding/json"` {
+			t.Fatalf("history file backend must stay binary; encoding/json import is not allowed")
+		}
+	}
+	backend, err := NewFileStorageBackend(t.TempDir(), "term-r342-binary")
+	if err != nil {
+		t.Fatalf("create file backend: %v", err)
+	}
+	fileBackend := backend.(*fileStorageBackend)
+	if strings.HasSuffix(fileBackend.path, ".jsonl") {
+		t.Fatalf("history file backend must not use JSONL path: %s", fileBackend.path)
 	}
 }
