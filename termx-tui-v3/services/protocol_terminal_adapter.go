@@ -17,7 +17,7 @@ type ProtocolTerminalClient interface {
 	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
 	List(context.Context) (*protocol.ListResult, error)
 	LiveScreen(context.Context, string) (*protocol.NativeScreenSnapshot, error)
-	NextLiveInvalidation(context.Context, string, uint64) (*protocol.Event, error)
+	NextLiveInvalidation(context.Context, string) (*protocol.Event, error)
 	Create(context.Context, protocol.CreateParams) (*protocol.CreateResult, error)
 	Restart(context.Context, string) error
 	Kill(context.Context, string) error
@@ -336,7 +336,7 @@ func (adapter ProtocolTerminalServiceAdapter) ArmLiveInvalidation(ctx context.Co
 	if adapter.Client == nil {
 		return TerminalLiveEvent{}, ErrMissingTerminalClient
 	}
-	event, err := adapter.Client.NextLiveInvalidation(ctx, req.TerminalID, req.RenderedRevision)
+	event, err := adapter.Client.NextLiveInvalidation(ctx, req.TerminalID)
 	if err != nil {
 		return TerminalLiveEvent{}, err
 	}
@@ -365,7 +365,7 @@ func protocolLiveEventApproxBytes(event TerminalLiveEvent) int {
 }
 
 func liveInvalidationFromProtocol(req TerminalLiveEventRequest, event protocol.Event) TerminalLiveEvent {
-	out := TerminalLiveEvent{TerminalID: req.TerminalID, RenderedRevision: req.RenderedRevision}
+	out := TerminalLiveEvent{TerminalID: req.TerminalID}
 	if event.TerminalID != "" {
 		out.TerminalID = event.TerminalID
 	}

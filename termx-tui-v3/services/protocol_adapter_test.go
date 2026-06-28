@@ -71,7 +71,6 @@ type fakeProtocolTerminalClient struct {
 	eventSubscribers   []fakeProtocolEventSubscriber
 	eventFanoutStarted bool
 	nextLiveIDs        []string
-	nextLiveRevisions  []uint64
 	nextLiveEvent      *protocol.Event
 	nextLiveErr        error
 	liveScreenIDs      []string
@@ -126,9 +125,8 @@ func (client *fakeProtocolTerminalClient) Events(_ context.Context, params proto
 	return ch, nil
 }
 
-func (client *fakeProtocolTerminalClient) NextLiveInvalidation(_ context.Context, terminalID string, renderedRevision uint64) (*protocol.Event, error) {
+func (client *fakeProtocolTerminalClient) NextLiveInvalidation(_ context.Context, terminalID string) (*protocol.Event, error) {
 	client.nextLiveIDs = append(client.nextLiveIDs, terminalID)
-	client.nextLiveRevisions = append(client.nextLiveRevisions, renderedRevision)
 	if client.nextLiveErr != nil {
 		return nil, client.nextLiveErr
 	}
@@ -1628,18 +1626,15 @@ func TestProtocolTerminalServiceAdapterMapsOrdinaryLiveEventsToRefreshInvalidati
 		nextLiveEvent: &protocol.Event{Type: protocol.EventTerminalLiveInvalidated, TerminalID: "term-1", LiveInvalidated: &protocol.LiveScreenInvalidatedData{Revision: 9}},
 	}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
-	got, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24, RenderedRevision: 7})
+	got, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("arm live invalidation: %v", err)
 	}
-	if !got.Refresh || got.Ready || got.TerminalID != "term-1" || got.RenderedRevision != 7 || got.Snapshot.Revision != 9 || got.Snapshot.TerminalID != "" || len(got.Snapshot.Screen) != 0 {
+	if !got.Refresh || got.Ready || got.TerminalID != "term-1" || got.Snapshot.Revision != 9 || got.Snapshot.TerminalID != "" || len(got.Snapshot.Screen) != 0 {
 		t.Fatalf("unexpected live event %#v", got)
 	}
 	if len(client.nextLiveIDs) != 1 || client.nextLiveIDs[0] != "term-1" || len(client.eventParams) != 0 {
 		t.Fatalf("expected one-shot live invalidation RPC, next=%#v events=%#v", client.nextLiveIDs, client.eventParams)
-	}
-	if !reflect.DeepEqual(client.nextLiveRevisions, []uint64{7}) {
-		t.Fatalf("expected rendered revision in one-shot RPC, got %#v", client.nextLiveRevisions)
 	}
 	if len(client.liveScreenIDs) != 0 {
 		t.Fatalf("live invalidation should not fetch native screen in service layer, got %#v", client.liveScreenIDs)
@@ -1649,11 +1644,11 @@ func TestProtocolTerminalServiceAdapterMapsOrdinaryLiveEventsToRefreshInvalidati
 func TestProtocolTerminalServiceAdapterLiveInvalidationArmIsTerminalScoped(t *testing.T) {
 	client := &fakeProtocolTerminalClient{}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
-	termOne, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24, RenderedRevision: 1})
+	termOne, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("term-1 live invalidation: %v", err)
 	}
-	termTwo, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-2", Cols: 80, Rows: 24, RenderedRevision: 2})
+	termTwo, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-2", Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("term-2 live invalidation: %v", err)
 	}
@@ -1663,9 +1658,6 @@ func TestProtocolTerminalServiceAdapterLiveInvalidationArmIsTerminalScoped(t *te
 	if want := []string{"term-1", "term-2"}; !reflect.DeepEqual(client.nextLiveIDs, want) {
 		t.Fatalf("expected terminal-scoped one-shot calls, got %#v", client.nextLiveIDs)
 	}
-	if want := []uint64{1, 2}; !reflect.DeepEqual(client.nextLiveRevisions, want) {
-		t.Fatalf("expected terminal-scoped rendered revisions, got %#v", client.nextLiveRevisions)
-	}
 }
 
 func TestProtocolTerminalServiceAdapterRejectsNonInvalidationOnLiveArm(t *testing.T) {
@@ -1673,7 +1665,7 @@ func TestProtocolTerminalServiceAdapterRejectsNonInvalidationOnLiveArm(t *testin
 		nextLiveEvent: &protocol.Event{Type: protocol.EventTerminalMetadataChanged, TerminalID: "term-1"},
 	}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
-	got, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", RenderedRevision: 4})
+	got, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1"})
 	if err != nil {
 		t.Fatalf("arm live invalidation: %v", err)
 	}

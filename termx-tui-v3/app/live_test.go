@@ -1151,9 +1151,9 @@ func TestLiveStreamEffectCoalescesThroughRuntimeQueue(t *testing.T) {
 		t.Fatalf("expected posted invalidations in order, got %#v", posted)
 	}
 	if len(terminal.LiveInvalidationRequests) != 2 ||
-		terminal.LiveInvalidationRequests[0].RenderedRevision != 0 ||
-		terminal.LiveInvalidationRequests[1].RenderedRevision != 7 {
-		t.Fatalf("expected stream to re-arm from observed revision, got %#v", terminal.LiveInvalidationRequests)
+		terminal.LiveInvalidationRequests[0].TerminalID != "term-1" ||
+		terminal.LiveInvalidationRequests[1].TerminalID != "term-1" {
+		t.Fatalf("expected stream to re-arm terminal-scoped wake without rendered revision, got %#v", terminal.LiveInvalidationRequests)
 	}
 }
 

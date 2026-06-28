@@ -467,37 +467,24 @@ func (server *Server) LiveSnapshot(id string) (live.SurfaceSnapshot, error) {
 	return terminal.LiveSnapshot(), nil
 }
 
-// NextLiveInvalidation 等待指定 terminal 的 native screen revision 超过
-// renderedRevision，并返回一次 live invalidation。它是 core-v2 对 TUI latest
-// screen render loop 暴露的 one-shot wake contract：core 只维护最新屏幕和 revision，
-// 不知道客户端渲染进度，也不推送中间帧 payload。
-func (server *Server) NextLiveInvalidation(ctx context.Context, id string, renderedRevision LiveRevision) (Event, error) {
+// NextLiveInvalidation 等待指定 terminal 的下一次 live invalidation。
+// core-v2 只维护 latest native screen 和 wake signal；该接口不能接收 TUI 已渲染
+// revision，也不能把客户端渲染进度变成服务端过滤条件。
+func (server *Server) NextLiveInvalidation(ctx context.Context, id string) (Event, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	terminal, err := server.Terminal(id)
-	if err != nil {
+	if _, err := server.Terminal(id); err != nil {
 		return Event{}, err
 	}
-	// 中文说明：先注册 waiter 再读取 current revision，避免读取之后、订阅之前
-	// 发生的 invalidation 丢失导致 TUI one-shot arm 睡死。
+	// 中文说明：这里故意不读取或比较客户端 rendered revision。live owner
+	// 只提供下一次 terminal wake，TUI 收到 wake 后自行拉 core 当前 latest screen。
 	waitCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	events := server.Events(waitCtx, EventFilter{
 		TerminalID: id,
 		Types:      []EventType{EventTerminalLiveInvalidated},
 	})
-	current := terminal.LiveRevision()
-	if current > renderedRevision {
-		return Event{
-			Type:       EventTerminalLiveInvalidated,
-			TerminalID: id,
-			Live: &LiveScreenInvalidated{
-				TerminalID: id,
-				Revision:   current,
-			},
-		}, nil
-	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -506,7 +493,7 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, rende
 			if !ok {
 				return Event{}, context.Canceled
 			}
-			if event.Live == nil || event.Live.Revision <= renderedRevision {
+			if event.Live == nil {
 				continue
 			}
 			return event, nil

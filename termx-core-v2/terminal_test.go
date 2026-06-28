@@ -138,7 +138,7 @@ func TestTerminalHistoryDisabledUsesNativeScreenOnlyWritePath(t *testing.T) {
 	}
 }
 
-func TestServerNextLiveInvalidationReturnsImmediatelyWhenRevisionAlreadyAdvanced(t *testing.T) {
+func TestServerNextLiveInvalidationDoesNotUseRenderedRevisionState(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-live-next", Command: []string{"shell"}}); err != nil {
 		t.Fatalf("register terminal: %v", err)
@@ -146,34 +146,26 @@ func TestServerNextLiveInvalidationReturnsImmediatelyWhenRevisionAlreadyAdvanced
 	if err := server.IngestOutput(context.Background(), "term-live-next", "live update\n"); err != nil {
 		t.Fatalf("ingest output: %v", err)
 	}
-	event, err := server.NextLiveInvalidation(context.Background(), "term-live-next", 0)
-	if err != nil {
-		t.Fatalf("next live invalidation: %v", err)
-	}
-	if event.Type != EventTerminalLiveInvalidated || event.TerminalID != "term-live-next" || event.Live == nil || event.Live.Revision == 0 {
-		t.Fatalf("expected immediate live invalidation, got %#v", event)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if event, err := server.NextLiveInvalidation(ctx, "term-live-next"); err == nil {
+		t.Fatalf("one-shot arm must wait for a future wake instead of replaying current revision: %#v", event)
+	} else if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected wait timeout without future invalidation, got %v", err)
 	}
 }
 
-func TestServerNextLiveInvalidationWaitsForRevisionBeyondRendered(t *testing.T) {
+func TestServerNextLiveInvalidationWaitsForNextWake(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-live-wait", Command: []string{"shell"}}); err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}
-	if err := server.IngestOutput(context.Background(), "term-live-wait", "first\n"); err != nil {
-		t.Fatalf("ingest first output: %v", err)
-	}
-	terminal, err := server.Terminal("term-live-wait")
-	if err != nil {
-		t.Fatalf("terminal: %v", err)
-	}
-	rendered := terminal.LiveRevision()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	done := make(chan Event, 1)
 	errs := make(chan error, 1)
 	go func() {
-		event, err := server.NextLiveInvalidation(ctx, "term-live-wait", rendered)
+		event, err := server.NextLiveInvalidation(ctx, "term-live-wait")
 		if err != nil {
 			errs <- err
 			return
@@ -182,20 +174,20 @@ func TestServerNextLiveInvalidationWaitsForRevisionBeyondRendered(t *testing.T) 
 	}()
 	select {
 	case event := <-done:
-		t.Fatalf("one-shot arm returned before revision advanced: %#v", event)
+		t.Fatalf("one-shot arm returned before next wake: %#v", event)
 	case err := <-errs:
-		t.Fatalf("one-shot arm failed before revision advanced: %v", err)
+		t.Fatalf("one-shot arm failed before next wake: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
-	if err := server.IngestOutput(context.Background(), "term-live-wait", "second\n"); err != nil {
-		t.Fatalf("ingest second output: %v", err)
+	if err := server.IngestOutput(context.Background(), "term-live-wait", "live update\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
 	}
 	select {
 	case err := <-errs:
 		t.Fatalf("one-shot arm failed: %v", err)
 	case event := <-done:
-		if event.Live == nil || event.Live.Revision <= rendered {
-			t.Fatalf("expected revision beyond rendered=%d, got %#v", rendered, event)
+		if event.Type != EventTerminalLiveInvalidated || event.TerminalID != "term-live-wait" || event.Live == nil || event.Live.Revision == 0 {
+			t.Fatalf("expected next live invalidation, got %#v", event)
 		}
 	case <-ctx.Done():
 		t.Fatalf("timed out waiting for live invalidation: %v", ctx.Err())

@@ -882,21 +882,18 @@ func liveStreamEffect(terminalID string, cols int, rows int, deps LiveDeps) []Ef
 		StreamEffect{
 			Token: token,
 			Run: func(ctx context.Context, post func(Msg)) {
-				var renderedRevision uint64
 				for {
 					if err := ctx.Err(); err != nil {
 						return
 					}
 					event, err := source.ArmLiveInvalidation(ctx, services.TerminalLiveEventRequest{
-						TerminalID:       terminalID,
-						Cols:             cols,
-						Rows:             rows,
-						RenderedRevision: renderedRevision,
+						TerminalID: terminalID,
+						Cols:       cols,
+						Rows:       rows,
 					})
 					if err != nil {
 						logEffectError(deps.Logger, "live.invalidation", err,
 							"terminal_id", terminalID,
-							"rendered_revision", renderedRevision,
 						)
 						if isContextLifecycleError(err) {
 							return
@@ -909,9 +906,6 @@ func liveStreamEffect(terminalID string, cols int, rows int, deps LiveDeps) []Ef
 					}
 					if event.TerminalID == "" {
 						event.TerminalID = terminalID
-					}
-					if event.Snapshot.Revision > renderedRevision {
-						renderedRevision = event.Snapshot.Revision
 					}
 					perftrace.Count("tui.live_event", liveEventApproxBytes(event))
 					post(LiveEventMsg{Event: event})

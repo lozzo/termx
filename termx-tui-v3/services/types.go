@@ -300,19 +300,15 @@ type TerminalSurfaceRequest struct {
 }
 
 type TerminalLiveEventRequest struct {
-	TerminalID       string
-	Cols             int
-	Rows             int
-	RenderedRevision uint64
+	TerminalID string
+	Cols       int
+	Rows       int
 }
 
 type TerminalLiveEvent struct {
 	TerminalID string
 	Snapshot   state.LiveSurfaceSnapshot
 	Refresh    bool
-	// 中文说明：这是 TUI one-shot arm 请求的关联值，表示本次 waiter 是在
-	// 哪个已渲染 native screen revision 后发出的；它不是 core history truth。
-	RenderedRevision uint64
 	// 中文说明：只标记这一次 event 承载 core lifecycle 变化；reducer 用完即丢。
 	LifecycleKnown       bool
 	Exited               bool
