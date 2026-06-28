@@ -303,18 +303,10 @@ func (store *inMemoryHistoryStore) applyMutation(mutation HistoryMutation) error
 	case HistoryMutationNonHistoryBoundary:
 		return nil
 	case HistoryMutationClearScrollback:
-		// 中文说明：只有 vterm 明确识别到 ED3/clear scrollback 这类 terminal 语义时
-		// 才清 authoritative history projection；普通 vterm scrollback 容量淘汰不能走这里。
-		store.lines = make(map[LogicalLineID]LogicalLine)
-		store.timeline = nil
-		store.openLine = nil
-		store.frameJournal = FrameJournal{}
-		store.frameRecords = nil
+		// 中文说明：ED3/clear-scrollback 在 TermX 无限历史里只是“新建一页”的
+		// 软边界。它可以 bump generation 让旧窗口重取，但不能删除 core-v2
+		// logical-line truth；真正删除历史必须是后续显式 truncate/retention 语义。
 		store.frozen = make(map[HistoryToken]frozenWindowProjection)
-		store.nextRecordID = 0
-		store.nextLineID = 0
-		store.nextFrameID = 0
-		store.nextSessionID = 0
 	default:
 		return ErrHistoryInvalidMutation
 	}

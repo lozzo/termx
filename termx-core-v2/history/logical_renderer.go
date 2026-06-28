@@ -193,12 +193,9 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 			return renderer.frames.ApplyNonHistoryBoundary(FrameReasonResize)
 		}
 	case HistorySemanticEventClearScrollback:
-		if renderer.stream != nil {
-			renderer.stream.ResetForClearScrollback()
-		}
-		if renderer.frames != nil {
-			renderer.frames.ResetForClearScrollback()
-		}
+		// 中文说明：clear-scrollback 是 scrollback 页边界，不是 authoritative
+		// history truncate。renderer 不能重置 stream/frame ownership，否则同一
+		// terminal identity 下的旧页会被当成从未存在。
 		return []HistoryMutation{{Kind: HistoryMutationClearScrollback, Reason: SealReasonFullReplace}}, nil
 	case HistorySemanticEventReset:
 		var mutations []HistoryMutation

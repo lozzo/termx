@@ -10,7 +10,7 @@ import (
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
-func TestR328ED3ClearScrollbackDropsOldAuthoritativeHistoryBeforeRedraw(t *testing.T) {
+func TestR328ED3ClearScrollbackCreatesNewPageWithoutDroppingAuthoritativeHistory(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-r328-ed3",
@@ -28,11 +28,16 @@ func TestR328ED3ClearScrollbackDropsOldAuthoritativeHistoryBeforeRedraw(t *testi
 
 	rows, _ := r326CollectAllHistoryRows(t, server, "term-r328-ed3", 20, 2)
 	text := strings.Join(historyRowTexts(rows), "\n")
-	if strings.Contains(text, "old-a") || strings.Contains(text, "old-b") {
-		t.Fatalf("ED3 clear-scrollback boundary must drop old authoritative history, got:\n%s\nrows=%#v", text, rows)
+	for _, want := range []string{"old-a", "old-b", "new-a", "new-b"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("ED3 clear-scrollback must create a new page without tearing old authoritative history, missing %q:\n%s\nrows=%#v", want, text, rows)
+		}
 	}
-	if !strings.Contains(text, "new-a") || !strings.Contains(text, "new-b") {
-		t.Fatalf("redraw after ED3 must remain visible after clear boundary, got:\n%s\nrows=%#v", text, rows)
+	committed := strings.Join(committedHistoryRowTexts(rows), "\n")
+	for _, want := range []string{"old-a", "old-b"} {
+		if got := strings.Count(committed, want); got != 1 {
+			t.Fatalf("ED3 must keep old page exactly once in authoritative history, %q count=%d:\n%s\nrows=%#v", want, got, committed, rows)
+		}
 	}
 }
 
@@ -222,6 +227,59 @@ func TestR339CodexClearKeepsShellAndPreviousPrimaryHistory(t *testing.T) {
 	current := strings.Join(currentPrimaryFrameRowTexts(rows), "\n")
 	if current != "codex after clear only" {
 		t.Fatalf("live/current primary frame after /clear should only contain post-clear Codex screen, got %q rows=%#v", current, rows)
+	}
+}
+
+func TestR340CodexClearWithED2AndED3CreatesNewPageWithoutDroppingHistory(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r340-codex-ed2-ed3-clear",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 44, Rows: 6},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r340-codex-ed2-ed3-clear",
+		"shell page before codex\r\n",
+	); err != nil {
+		t.Fatalf("seed shell history: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r340-codex-ed2-ed3-clear",
+		"\x1b[?2026h"+
+			"codex page before clear 1\r\n"+
+			"codex page before clear 2"+
+			"\x1b[?2026l",
+	); err != nil {
+		t.Fatalf("seed codex primary frame: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r340-codex-ed2-ed3-clear",
+		"\x1b[?2026h\x1b[H\x1b[2J\x1b[3J"+
+			"codex page after clear"+
+			"\x1b[?2026l",
+	); err != nil {
+		t.Fatalf("ingest codex ED2+ED3 clear repaint: %v", err)
+	}
+
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r340-codex-ed2-ed3-clear", 44, 2)
+	text := strings.Join(historyRowTexts(rows), "\n")
+	for _, want := range []string{
+		"shell page before codex",
+		"codex page before clear 1",
+		"codex page before clear 2",
+		"codex page after clear",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("ED2+ED3 clear must create a new page without dropping %q:\n%s\nrows=%#v", want, text, rows)
+		}
+	}
+	committed := strings.Join(committedHistoryRowTexts(rows), "\n")
+	for _, want := range []string{"shell page before codex", "codex page before clear 1", "codex page before clear 2"} {
+		if got := strings.Count(committed, want); got != 1 {
+			t.Fatalf("clear-scrollback soft boundary must keep prior page exactly once, %q count=%d:\n%s\nrows=%#v", want, got, committed, rows)
+		}
+	}
+	if current := strings.Join(currentPrimaryFrameRowTexts(rows), "\n"); current != "codex page after clear" {
+		t.Fatalf("post-clear page should remain current primary frame, got %q rows=%#v", current, rows)
 	}
 }
 
