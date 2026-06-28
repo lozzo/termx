@@ -69,6 +69,18 @@ type StorageBackend interface {
 	Compact(policy StorageCompactionPolicy) error
 }
 
+// LinePayloadBackend 是 R341 后 sealed timeline 分页使用的按 id 读取接口。
+// domain owner 仍是 HistoryStore：backend 只按 id 返回 payload，不能判断某条
+// line 是否 sealed、mutable、可见或属于哪个 window。
+type LinePayloadBackend interface {
+	// GetLine 返回指定 logical line payload。缺失返回 false，调用方必须按
+	// authoritative index 决定是否跳过或报错。
+	GetLine(id LogicalLineID) (LogicalLine, bool)
+	// GetLines 按输入 id 顺序返回 payload。它服务 cursor window/copy，不得把
+	// 整个 backend materialize 成 rows。
+	GetLines(ids []LogicalLineID) ([]LogicalLine, error)
+}
+
 // StorageTransaction 是 history generation update 的 storage-layer 视图；它不能
 // 决定 persisted line 是否 mutable。
 type StorageTransaction struct {

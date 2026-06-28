@@ -60,6 +60,32 @@ func (backend *memoryStorageBackend) Recover() (RecoveredHistoryState, error) {
 	return state, nil
 }
 
+func (backend *memoryStorageBackend) GetLine(id LogicalLineID) (LogicalLine, bool) {
+	if backend == nil || backend.lines == nil {
+		return LogicalLine{}, false
+	}
+	line, ok := backend.lines[id]
+	if !ok {
+		return LogicalLine{}, false
+	}
+	return cloneLogicalLine(line), true
+}
+
+func (backend *memoryStorageBackend) GetLines(ids []LogicalLineID) ([]LogicalLine, error) {
+	if backend == nil || len(ids) == 0 {
+		return nil, nil
+	}
+	lines := make([]LogicalLine, 0, len(ids))
+	for _, id := range ids {
+		line, ok := backend.GetLine(id)
+		if !ok {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return lines, nil
+}
+
 func (backend *memoryStorageBackend) Compact(policy StorageCompactionPolicy) error {
 	if backend == nil {
 		return nil
