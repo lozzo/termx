@@ -41,9 +41,8 @@ type result struct {
 }
 
 type StreamFrame struct {
-	Type           uint8
-	Payload        []byte
-	ScreenSequence uint64
+	Type    uint8
+	Payload []byte
 }
 
 type HistoryReplayPage struct {
@@ -60,16 +59,13 @@ type eventSubscription struct {
 }
 
 type clientStream struct {
-	mu                            sync.Mutex
-	cond                          *sync.Cond
-	ch                            chan StreamFrame
-	done                          chan struct{}
-	queue                         []StreamFrame
-	queueLimit                    int
-	screenSequence                uint64
-	pendingDroppedBytes           uint64
-	pendingSyncLostScreenSequence uint64
-	closed                        bool
+	mu         sync.Mutex
+	cond       *sync.Cond
+	ch         chan StreamFrame
+	done       chan struct{}
+	queue      []StreamFrame
+	queueLimit int
+	closed     bool
 }
 
 func newClientStream() *clientStream {
@@ -104,21 +100,6 @@ func (s *clientStream) send(frame StreamFrame) {
 	if s.closed {
 		return
 	}
-	if frame.Type == wire.TypeSyncLost {
-		dropped, err := wire.DecodeSyncLostPayload(frame.Payload)
-		if err != nil {
-			return
-		}
-		s.noteDroppedOutputLocked(dropped, frame.ScreenSequence)
-		s.flushPendingSyncLostLocked()
-		s.cond.Signal()
-		return
-	}
-	if frame.Type == wire.TypeScreenUpdate {
-		s.screenSequence++
-		frame.ScreenSequence = s.screenSequence
-	}
-	s.flushPendingSyncLostLocked()
 	s.enqueueFrameLocked(frame)
 	s.cond.Signal()
 }
@@ -132,8 +113,6 @@ func (s *clientStream) close() {
 	s.closed = true
 	close(s.done)
 	s.queue = nil
-	s.pendingDroppedBytes = 0
-	s.pendingSyncLostScreenSequence = 0
 	s.cond.Broadcast()
 }
 
@@ -157,7 +136,6 @@ func (s *clientStream) nextFrame() (StreamFrame, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for {
-		s.flushPendingSyncLostLocked()
 		if len(s.queue) > 0 {
 			frame := s.queue[0]
 			copy(s.queue, s.queue[1:])
@@ -175,13 +153,6 @@ func (s *clientStream) nextFrame() (StreamFrame, bool) {
 
 func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
 	if len(s.queue) >= s.queueLimit {
-		if frame.Type == wire.TypeScreenUpdate {
-			s.noteDroppedOutputLocked(uint64(len(frame.Payload)), frame.ScreenSequence)
-			// A dropped screen frame invalidates all later deltas. Queue the
-			// recovery marker immediately; otherwise a ready-gated producer can
-			// stall before another frame arrives to flush the pending loss.
-			s.flushPendingSyncLostLocked()
-		}
 		return
 	}
 	payload := frame.Payload
@@ -189,48 +160,9 @@ func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
 		payload = append([]byte(nil), payload...)
 	}
 	s.queue = append(s.queue, StreamFrame{
-		Type:           frame.Type,
-		Payload:        payload,
-		ScreenSequence: frame.ScreenSequence,
+		Type:    frame.Type,
+		Payload: payload,
 	})
-}
-
-func (s *clientStream) noteDroppedOutputLocked(dropped uint64, screenSequence uint64) {
-	if dropped == 0 {
-		return
-	}
-	s.pendingDroppedBytes += dropped
-	if screenSequence > 0 && screenSequence > s.pendingSyncLostScreenSequence {
-		s.pendingSyncLostScreenSequence = screenSequence
-	}
-}
-
-func (s *clientStream) flushPendingSyncLostLocked() {
-	if s.pendingDroppedBytes == 0 {
-		return
-	}
-	if len(s.queue) > 0 {
-		last := &s.queue[len(s.queue)-1]
-		if last.Type == wire.TypeSyncLost {
-			current, err := wire.DecodeSyncLostPayload(last.Payload)
-			if err == nil {
-				last.Payload = wire.EncodeSyncLostPayload(current + s.pendingDroppedBytes)
-				if s.pendingSyncLostScreenSequence > last.ScreenSequence {
-					last.ScreenSequence = s.pendingSyncLostScreenSequence
-				}
-				s.pendingSyncLostScreenSequence = 0
-				s.pendingDroppedBytes = 0
-				return
-			}
-		}
-	}
-	s.queue = append(s.queue, StreamFrame{
-		Type:           wire.TypeSyncLost,
-		Payload:        wire.EncodeSyncLostPayload(s.pendingDroppedBytes),
-		ScreenSequence: s.pendingSyncLostScreenSequence,
-	})
-	s.pendingSyncLostScreenSequence = 0
-	s.pendingDroppedBytes = 0
 }
 
 func NewClient(t transport.Transport) *Client {
@@ -380,30 +312,6 @@ func (c *Client) UnlockResize(ctx context.Context, params ResizeControlParams) (
 	return &out, nil
 }
 
-func (c *Client) Snapshot(ctx context.Context, terminalID string, offset, limit int) (*Snapshot, error) {
-	payload, err := c.doRequestPayload(ctx, "snapshot", SnapshotParams{
-		TerminalID:       terminalID,
-		ScrollbackOffset: offset,
-		ScrollbackLimit:  limit,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return DecodeSnapshotPayload(payload)
-}
-
-func (c *Client) SnapshotCompact(ctx context.Context, terminalID string, offset, limit int) (*CompactSnapshot, error) {
-	payload, err := c.doRequestPayload(ctx, "snapshot", SnapshotParams{
-		TerminalID:       terminalID,
-		ScrollbackOffset: offset,
-		ScrollbackLimit:  limit,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return DecodeCompactSnapshotPayload(payload)
-}
-
 // LiveScreen 返回 core 当前 latest native screen。
 // 它是 v3 live display 的专用路径，不读取 scrollback，也不使用 HistoryGeneration 承载 revision。
 func (c *Client) LiveScreen(ctx context.Context, terminalID string) (*NativeScreenSnapshot, error) {
@@ -412,19 +320,6 @@ func (c *Client) LiveScreen(ctx context.Context, terminalID string) (*NativeScre
 		return nil, err
 	}
 	return DecodeNativeScreenSnapshotPayload(payload)
-}
-
-func (c *Client) GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*GridViewport, error) {
-	payload, err := c.doRequestPayload(ctx, "grid.viewport", GridViewportParams{
-		TerminalID:       terminalID,
-		ScrollbackOffset: offset,
-		ScrollbackLimit:  limit,
-		Cols:             cols,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return DecodeGridViewportPayload(payload)
 }
 
 func (c *Client) HistoryWindow(ctx context.Context, params HistoryWindowParams) (*HistoryWindow, error) {
@@ -587,19 +482,6 @@ func (c *Client) InputWithOptions(ctx context.Context, params InputParams) error
 
 func (c *Client) Resize(ctx context.Context, channel uint16, cols, rows uint16) error {
 	frame, err := wire.EncodeFrame(channel, wire.TypeResize, wire.EncodeResizePayload(cols, rows))
-	if err != nil {
-		return err
-	}
-	return c.send(frame)
-}
-
-func (c *Client) StreamReady(ctx context.Context, channel uint16, screenSequence uint64) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-	frame, err := wire.EncodeFrame(channel, wire.TypeStreamReady, wire.EncodeStreamReadyPayload(screenSequence))
 	if err != nil {
 		return err
 	}

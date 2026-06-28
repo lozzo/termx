@@ -11,12 +11,10 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-proto/wire"
-	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/transport"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
@@ -31,11 +29,6 @@ const (
 
 const daemonBoundaryReclaimMinHeapMBEnv = "TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
 const daemonBoundaryReclaimDefaultMinHeapBytes = 8 << 20
-
-// maxProtocolLiveInvalidationDrainBeforeYield 限制普通 live invalidation 的
-// latest-only 合并窗口。它要足够小，避免压力输出期间 protocol 把许多 core
-// live 批次继续吞成少数几帧；语义边界仍由 drain 逻辑单独保留。
-const maxProtocolLiveInvalidationDrainBeforeYield = 64
 
 var errProtocolAttachmentMismatch = errors.New("protocol attachment mismatch")
 var daemonBoundaryReclaimMinHeapBytes = parseDaemonBoundaryReclaimMinHeapBytes()
@@ -88,19 +81,18 @@ func claimDaemonBoundaryReclaimHeapSys(heapSys uint64) bool {
 }
 
 type protocolSession struct {
-	server        *Server
-	conn          transport.Transport
-	scope         TransportScope
-	sessionID     uint64
-	sendMu        sync.Mutex
-	nextCh        atomic.Uint32
-	nextSnapshot  atomic.Uint64
-	mu            sync.RWMutex
-	attachments   map[uint16]protocolAttachment
-	streamCancels map[uint16]context.CancelFunc
-	eventCancels  map[uint64]context.CancelFunc
-	nextEventSub  uint64
-	requests      sync.WaitGroup
+	server       *Server
+	conn         transport.Transport
+	scope        TransportScope
+	sessionID    uint64
+	sendMu       sync.Mutex
+	nextCh       atomic.Uint32
+	nextSnapshot atomic.Uint64
+	mu           sync.RWMutex
+	attachments  map[uint16]protocolAttachment
+	eventCancels map[uint64]context.CancelFunc
+	nextEventSub uint64
+	requests     sync.WaitGroup
 }
 
 // protocolAttachment 是 daemon-side channel/view registry；它不保存 TUI workspace/pane truth。
@@ -122,13 +114,12 @@ type protocolAttachmentKey struct {
 
 func newProtocolSession(server *Server, conn transport.Transport, scope TransportScope) *protocolSession {
 	session := &protocolSession{
-		server:        server,
-		conn:          conn,
-		scope:         scope.normalized(),
-		sessionID:     server.nextProtocolSessionID.Add(1),
-		attachments:   make(map[uint16]protocolAttachment),
-		streamCancels: make(map[uint16]context.CancelFunc),
-		eventCancels:  make(map[uint64]context.CancelFunc),
+		server:       server,
+		conn:         conn,
+		scope:        scope.normalized(),
+		sessionID:    server.nextProtocolSessionID.Add(1),
+		attachments:  make(map[uint16]protocolAttachment),
+		eventCancels: make(map[uint64]context.CancelFunc),
 	}
 	session.nextCh.Store(6)
 	return session
@@ -140,7 +131,6 @@ func (session *protocolSession) run(ctx context.Context) error {
 	defer func() {
 		cancel()
 		session.requests.Wait()
-		session.stopAllAttachmentStreams()
 		session.stopEvents()
 		session.releaseProtocolAttachments()
 	}()
@@ -344,10 +334,8 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		if err != nil {
 			return nil, false, errorCode(err), err
 		}
-		if err := session.startAttachmentStream(ctx, attachment); err != nil {
-			session.detach(protocol.DetachParams{Channel: attachment.Channel})
-			return nil, false, errorCode(err), err
-		}
+		// 中文说明：attach 只注册 input/resize/lifecycle owner；live 画面不再走
+		// attachment channel 的 screen.update stream，客户端必须按 invalidation 拉 latest screen。
 		return encodeMethodResult(req.Method, protocol.AttachResult{
 			Mode:          attachment.Mode,
 			Channel:       attachment.Channel,
@@ -415,17 +403,6 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 			return nil, false, errorCode(err), err
 		}
 		return encodeMethodResult(req.Method, protocol.ResizeControlResult{Size: control.ResizeOwnership.Size, ResizeControl: control})
-	case "snapshot":
-		in := params.(protocol.SnapshotParams)
-		snapshot, err := session.liveCompactSnapshot(in)
-		if err != nil {
-			return nil, true, errorCode(err), err
-		}
-		payload, err := protocol.EncodeCompactSnapshotPayload(snapshot)
-		if err != nil {
-			return nil, true, protocolErrorInternal, err
-		}
-		return payload, true, 0, nil
 	case "live.screen.get":
 		in := params.(protocol.LiveScreenParams)
 		snapshot, err := session.liveNativeScreenSnapshot(in)
@@ -598,53 +575,6 @@ func (session *protocolSession) remoteService() (RemoteService, error) {
 	return service, nil
 }
 
-func (session *protocolSession) liveCompactSnapshot(params protocol.SnapshotParams) (*protocol.CompactSnapshot, error) {
-	info, err := session.server.GetTerminal(params.TerminalID)
-	if err != nil {
-		return nil, err
-	}
-	terminal, err := session.server.Terminal(params.TerminalID)
-	if err != nil {
-		return nil, err
-	}
-	var rows []protocol.CompactRow
-	screenInfo, _ := terminal.VisitLiveTrimmedScreenRowsWithRevision(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
-		if rows == nil {
-			rows = make([]protocol.CompactRow, 0, rowIndex+1)
-		}
-		for len(rows) < rowIndex {
-			rows = append(rows, protocol.CompactRow{})
-		}
-		// 中文说明：snapshot 协议已经是 compact rows，不能再先构造
-		// [][]protocol.Cell；这里按需读取 vterm cell 并直接压成 wire row。
-		rows = append(rows, protocol.BuildCompactRowPreserveTrailingBlankCells(cellCount, func(index int) protocol.Cell {
-			return vtermCellToProtocol(cellAt(index))
-		}))
-	})
-	for len(rows) < screenInfo.Rows {
-		rows = append(rows, protocol.CompactRow{})
-	}
-	attrs := coreTerminalInfoAttrs(info)
-	attrs = append(attrs,
-		"screen_rows", len(rows),
-		"cursor_row", screenInfo.Cursor.Row,
-		"cursor_col", screenInfo.Cursor.Col,
-		"cursor_visible", screenInfo.Cursor.Visible,
-	)
-	coreLifecycleTrace(session.server.cfg.logger, "protocol.snapshot", attrs...)
-	return &protocol.CompactSnapshot{
-		TerminalID:        params.TerminalID,
-		Size:              protocolSizeFromCore(info.Size),
-		ScreenRows:        rows,
-		ScreenIsAlternate: screenInfo.IsAlternateScreen,
-		Cursor:            vtermCursorToProtocol(screenInfo.Cursor),
-		Modes:             vtermModesToProtocol(screenInfo.Modes),
-		HistoryGeneration: 0,
-		ScreenOwnership:   repeatString(protocol.RowOwnershipScreen, len(rows)),
-		Timestamp:         time.Now().UTC(),
-	}, nil
-}
-
 func (session *protocolSession) liveNativeScreenSnapshot(params protocol.LiveScreenParams) (*protocol.NativeScreenSnapshot, error) {
 	info, err := session.server.GetTerminal(params.TerminalID)
 	if err != nil {
@@ -675,45 +605,6 @@ func (session *protocolSession) liveNativeScreenSnapshot(params protocol.LiveScr
 		Modes:      vtermModesToProtocol(snapshot.Modes),
 		Timestamp:  snapshot.Timestamp,
 	}, nil
-}
-
-func (session *protocolSession) liveScreenUpdatePayload(terminalID string) ([]byte, error) {
-	info, err := session.server.GetTerminal(terminalID)
-	if err != nil {
-		return nil, err
-	}
-	terminal, err := session.server.Terminal(terminalID)
-	if err != nil {
-		return nil, err
-	}
-	var rows [][]protocol.Cell
-	screenInfo, _ := terminal.VisitLiveTrimmedScreenRowsWithRevision(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
-		for len(rows) <= rowIndex {
-			rows = append(rows, nil)
-		}
-		if cellCount <= 0 {
-			rows[rowIndex] = nil
-			return
-		}
-		row := make([]protocol.Cell, cellCount)
-		for i := 0; i < cellCount; i++ {
-			row[i] = vtermCellToProtocol(cellAt(i))
-		}
-		rows[rowIndex] = row
-	})
-	for len(rows) < screenInfo.Rows {
-		rows = append(rows, nil)
-	}
-	return protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
-		FullReplace: true,
-		Size:        protocolSizeFromCore(info.Size),
-		Screen: protocol.ScreenData{
-			Cells:             rows,
-			IsAlternateScreen: screenInfo.IsAlternateScreen,
-		},
-		Cursor: vtermCursorToProtocol(screenInfo.Cursor),
-		Modes:  vtermModesToProtocol(screenInfo.Modes),
-	})
 }
 
 func vtermCellToProtocol(cell vterm.Cell) protocol.Cell {
@@ -812,7 +703,7 @@ func (session *protocolSession) handleStreamFrame(ctx context.Context, channel u
 		}
 		session.resizeControlForOwner(attachment, protocol.Size{Cols: cols, Rows: rows})
 		return nil
-	case wire.TypeStreamReady, wire.TypeBootstrapDone:
+	case wire.TypeBootstrapDone:
 		return nil
 	default:
 		return fmt.Errorf("unsupported stream frame type %d", typ)
@@ -1152,77 +1043,24 @@ func (session *protocolSession) startEvents(ctx context.Context, params protocol
 	events := session.server.Events(eventCtx, eventFilterFromProtocol(params))
 	go func() {
 		defer session.clearEventSubscription(subID)
-		var pending *Event
-		var drainedClosed bool
 		for {
 			var event Event
-			if pending != nil {
-				event = *pending
-				pending = nil
-			} else if drainedClosed {
+			var ok bool
+			select {
+			case <-eventCtx.Done():
 				return
-			} else {
-				var ok bool
-				select {
-				case <-eventCtx.Done():
+			case event, ok = <-events:
+				if !ok {
 					return
-				case event, ok = <-events:
-					if !ok {
-						return
-					}
 				}
-			}
-			if ordinaryCoreLiveInvalidationEvent(event) {
-				// 中文说明：普通 terminal.changed 只是 live screen 失效信号，
-				// protocol event stream 不能逐个排队挤占 snapshot response。
-				event, pending, drainedClosed = drainCoreLiveInvalidationEvents(events, event)
 			}
 			payload, err := protocol.EncodeEventPayload(protocolEventFromCoreV2(event))
 			if err != nil {
 				continue
 			}
-			perftrace.Count("core.protocol.event", len(payload))
 			_ = session.sendFrame(0, wire.TypeEvent, payload)
 		}
 	}()
-}
-
-func drainCoreLiveInvalidationEvents(events <-chan Event, current Event) (Event, *Event, bool) {
-	latest := current
-	drained := 1
-	for {
-		if drained >= maxProtocolLiveInvalidationDrainBeforeYield {
-			return latest, nil, false
-		}
-		select {
-		case event, ok := <-events:
-			if !ok {
-				return latest, nil, true
-			}
-			if ordinaryCoreLiveInvalidationEvent(event) && sameCoreLiveInvalidationTarget(latest, event) {
-				latest = event
-				drained++
-				continue
-			}
-			return latest, &event, false
-		default:
-			return latest, nil, false
-		}
-	}
-}
-
-func ordinaryCoreLiveInvalidationEvent(event Event) bool {
-	if event.Type != EventTerminalLiveInvalidated || event.LifecycleKnown || event.Storage != nil || event.Workbench != nil {
-		return false
-	}
-	if event.Terminal != nil && (event.Terminal.State == TerminalStateExited || event.Terminal.State == TerminalStateRemoved) {
-		return false
-	}
-	return true
-}
-
-func sameCoreLiveInvalidationTarget(left Event, right Event) bool {
-	return left.TerminalID == right.TerminalID
 }
 
 func (session *protocolSession) stopEvents() {
@@ -1302,107 +1140,6 @@ func (session *protocolSession) attach(params protocol.AttachParams) (protocolAt
 	return attachment, control, nil
 }
 
-func (session *protocolSession) startAttachmentStream(ctx context.Context, attachment protocolAttachment) error {
-	streamCtx, cancel := context.WithCancel(ctx)
-	session.mu.Lock()
-	if previous := session.streamCancels[attachment.Channel]; previous != nil {
-		previous()
-	}
-	session.streamCancels[attachment.Channel] = cancel
-	session.mu.Unlock()
-	events := session.server.Events(streamCtx, EventFilter{
-		TerminalID: attachment.TerminalID,
-		Types: []EventType{
-			EventTerminalLiveInvalidated,
-			EventTerminalResized,
-			EventTerminalExited,
-		},
-	})
-	go session.forwardAttachmentStream(streamCtx, attachment, events)
-	if err := session.sendLiveScreenUpdate(attachment); err != nil {
-		session.stopAttachmentStreams([]uint16{attachment.Channel})
-		return err
-	}
-	return nil
-}
-
-func (session *protocolSession) forwardAttachmentStream(ctx context.Context, attachment protocolAttachment, events <-chan Event) {
-	var pending *Event
-	var drainedClosed bool
-	for {
-		var event Event
-		if pending != nil {
-			event = *pending
-			pending = nil
-		} else if drainedClosed {
-			return
-		} else {
-			var ok bool
-			select {
-			case <-ctx.Done():
-				return
-			case event, ok = <-events:
-				if !ok {
-					return
-				}
-			}
-		}
-		if ordinaryCoreLiveInvalidationEvent(event) {
-			// 中文说明：attachment screen stream 是 live 投影，不是历史 truth；
-			// 高频输出时只需要按 bounded latest 刷新，避免整屏 full-replace 阻塞协议通道。
-			event, pending, drainedClosed = drainCoreLiveInvalidationEvents(events, event)
-		}
-		if err := session.sendLiveScreenUpdate(attachment); err != nil {
-			return
-		}
-	}
-}
-
-func (session *protocolSession) sendLiveScreenUpdate(attachment protocolAttachment) error {
-	if _, err := session.attachmentForChannel(attachment.Channel); err != nil {
-		return err
-	}
-	payload, err := session.liveScreenUpdatePayload(attachment.TerminalID)
-	if err != nil {
-		return err
-	}
-	// 中文说明：stream frame 属于 attachment channel 的 live 投影；它只读 core-v2
-	// live surface，不创建 history truth，也不把 App 本地缓存写回 core。
-	perftrace.Count("core.protocol.attach_screen_update", len(payload))
-	return session.sendFrame(attachment.Channel, wire.TypeScreenUpdate, payload)
-}
-
-func (session *protocolSession) stopAttachmentStreams(channels []uint16) {
-	if len(channels) == 0 {
-		return
-	}
-	session.mu.Lock()
-	cancels := make([]context.CancelFunc, 0, len(channels))
-	for _, channel := range channels {
-		if cancel := session.streamCancels[channel]; cancel != nil {
-			cancels = append(cancels, cancel)
-			delete(session.streamCancels, channel)
-		}
-	}
-	session.mu.Unlock()
-	for _, cancel := range cancels {
-		cancel()
-	}
-}
-
-func (session *protocolSession) stopAllAttachmentStreams() {
-	session.mu.Lock()
-	cancels := make([]context.CancelFunc, 0, len(session.streamCancels))
-	for channel, cancel := range session.streamCancels {
-		cancels = append(cancels, cancel)
-		delete(session.streamCancels, channel)
-	}
-	session.mu.Unlock()
-	for _, cancel := range cancels {
-		cancel()
-	}
-}
-
 func (session *protocolSession) detach(params protocol.DetachParams) {
 	session.mu.Lock()
 	var detached []protocolAttachment
@@ -1414,11 +1151,6 @@ func (session *protocolSession) detach(params protocol.DetachParams) {
 		detached = append(detached, attachment)
 	}
 	session.mu.Unlock()
-	channels := make([]uint16, 0, len(detached))
-	for _, attachment := range detached {
-		channels = append(channels, attachment.Channel)
-	}
-	session.stopAttachmentStreams(channels)
 	session.unregisterProtocolAttachments(detached)
 }
 
@@ -1686,11 +1418,6 @@ func (session *protocolSession) releaseProtocolAttachments() {
 		detached = append(detached, attachment)
 	}
 	session.mu.Unlock()
-	channels := make([]uint16, 0, len(detached))
-	for _, attachment := range detached {
-		channels = append(channels, attachment.Channel)
-	}
-	session.stopAttachmentStreams(channels)
 	session.unregisterProtocolAttachments(detached)
 }
 

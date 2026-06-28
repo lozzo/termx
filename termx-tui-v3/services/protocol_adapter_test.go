@@ -70,9 +70,9 @@ type fakeProtocolTerminalClient struct {
 	eventCh            chan protocol.Event
 	eventSubscribers   []fakeProtocolEventSubscriber
 	eventFanoutStarted bool
-	snapshotIDs        []string
-	snapshotResult     *protocol.Snapshot
-	snapshotResults    map[string]*protocol.Snapshot
+	liveScreenIDs      []string
+	liveScreenResult   *protocol.NativeScreenSnapshot
+	liveScreenResults  map[string]*protocol.NativeScreenSnapshot
 	attachResult       *protocol.AttachResult
 	listResult         *protocol.ListResult
 	createResult       *protocol.CreateResult
@@ -268,17 +268,17 @@ func (client *fakeProtocolTerminalClient) EnsureResize(_ context.Context, params
 	}, nil
 }
 
-func (client *fakeProtocolTerminalClient) Snapshot(_ context.Context, terminalID string, _ int, _ int) (*protocol.Snapshot, error) {
-	client.snapshotIDs = append(client.snapshotIDs, terminalID)
-	if client.snapshotResults != nil {
-		if snapshot := client.snapshotResults[terminalID]; snapshot != nil {
+func (client *fakeProtocolTerminalClient) LiveScreen(_ context.Context, terminalID string) (*protocol.NativeScreenSnapshot, error) {
+	client.liveScreenIDs = append(client.liveScreenIDs, terminalID)
+	if client.liveScreenResults != nil {
+		if snapshot := client.liveScreenResults[terminalID]; snapshot != nil {
 			return snapshot, nil
 		}
 	}
-	if client.snapshotResult != nil {
-		return client.snapshotResult, nil
+	if client.liveScreenResult != nil {
+		return client.liveScreenResult, nil
 	}
-	return &protocol.Snapshot{TerminalID: terminalID}, nil
+	return &protocol.NativeScreenSnapshot{TerminalID: terminalID}, nil
 }
 
 func (client *fakeProtocolTerminalClient) StorageGet(_ context.Context, params protocol.StorageGetParams) (*protocol.StorageEntry, error) {
@@ -290,19 +290,6 @@ func (client *fakeProtocolTerminalClient) StorageGet(_ context.Context, params p
 		return client.storageEntry, nil
 	}
 	return &protocol.StorageEntry{}, nil
-}
-
-type fakeCompactProtocolTerminalClient struct {
-	*fakeProtocolTerminalClient
-	compactSnapshot *protocol.CompactSnapshot
-}
-
-func (client *fakeCompactProtocolTerminalClient) SnapshotCompact(_ context.Context, terminalID string, _ int, _ int) (*protocol.CompactSnapshot, error) {
-	client.snapshotIDs = append(client.snapshotIDs, terminalID)
-	if client.compactSnapshot != nil {
-		return client.compactSnapshot, nil
-	}
-	return &protocol.CompactSnapshot{TerminalID: terminalID}, nil
 }
 
 func (client *fakeProtocolTerminalClient) StoragePut(_ context.Context, params protocol.StoragePutParams) (*protocol.StorageEntry, error) {
@@ -1449,19 +1436,14 @@ func TestProtocolTerminalServiceAdapterUsesResizeControlRole(t *testing.T) {
 
 func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 	client := &fakeProtocolTerminalClient{
-		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
-			ID:      "term-1",
-			State:   "running",
-			Command: []string{"/bin/zsh"},
-		}}},
-		snapshotResult: &protocol.Snapshot{
-			TerminalID:        "term-1",
-			Size:              protocol.Size{Cols: 12, Rows: 2},
-			HistoryGeneration: 42,
-			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
-				{{Content: "$ "}, {Content: "你好", Width: 2, Style: protocol.CellStyle{FG: "ansi:2"}}, {Content: "🚀", Width: 2}},
-				{{Content: "done"}},
-			}},
+		liveScreenResult: &protocol.NativeScreenSnapshot{
+			TerminalID: "term-1",
+			Revision:   42,
+			Size:       protocol.Size{Cols: 12, Rows: 2},
+			Rows: []protocol.CompactRow{
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "$ "}, {Content: "你好", Width: 2, Style: protocol.CellStyle{FG: "ansi:2"}}, {Content: "🚀", Width: 2}}),
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "done"}}),
+			},
 			Cursor: protocol.CursorState{Visible: true, Row: 1, Col: 4, Shape: "bar"},
 			Modes:  protocol.TerminalModes{MouseTracking: true, MouseButtonEvent: true, MouseSGR: true},
 		},
@@ -1477,14 +1459,14 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 		t.Fatalf("live surface: %v", err)
 	}
 
-	if len(client.snapshotIDs) != 1 || client.snapshotIDs[0] != "term-1" {
-		t.Fatalf("expected snapshot request, got %#v", client.snapshotIDs)
+	if len(client.liveScreenIDs) != 1 || client.liveScreenIDs[0] != "term-1" {
+		t.Fatalf("expected live screen request, got %#v", client.liveScreenIDs)
 	}
 	if !result.Ready || result.Snapshot.Cols != 12 || result.Snapshot.Rows != 2 || len(result.Snapshot.Screen) != 2 {
 		t.Fatalf("unexpected live surface result %#v", result)
 	}
 	if result.Snapshot.Revision != 42 {
-		t.Fatalf("expected history generation to become live revision boundary, got %d", result.Snapshot.Revision)
+		t.Fatalf("expected native screen revision boundary, got %d", result.Snapshot.Revision)
 	}
 	if len(result.Snapshot.Lines) != 0 {
 		t.Fatalf("live surface with screen cells should not keep duplicate text lines %#v", result.Snapshot.Lines)
@@ -1501,28 +1483,25 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 	if !result.Snapshot.Modes.MousePassthroughEnabled() || !result.Snapshot.Modes.MouseButton || !result.Snapshot.Modes.MouseSGR {
 		t.Fatalf("expected protocol terminal mouse modes to be preserved, got %#v", result.Snapshot.Modes)
 	}
-	if !result.LifecycleKnown || result.Snapshot.State != state.TerminalLiveAttached || result.Snapshot.ExitReason != "" || len(result.Snapshot.Command) != 0 {
-		t.Fatalf("expected running core lifecycle on live surface, result=%#v snapshot=%#v", result, result.Snapshot)
+	if result.LifecycleKnown || result.Snapshot.State != "" || result.Snapshot.ExitReason != "" || len(result.Snapshot.Command) != 0 {
+		t.Fatalf("live screen RPC must not carry lifecycle metadata, result=%#v snapshot=%#v", result, result.Snapshot)
 	}
 }
 
 func TestProtocolTerminalServiceAdapterMergesPlainASCIILiveCellRuns(t *testing.T) {
 	client := &fakeProtocolTerminalClient{
-		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
-			ID:    "term-1",
-			State: "running",
-		}}},
-		snapshotResult: &protocol.Snapshot{
+		liveScreenResult: &protocol.NativeScreenSnapshot{
 			TerminalID: "term-1",
+			Revision:   12,
 			Size:       protocol.Size{Cols: 8, Rows: 1},
-			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{
+			Rows: []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{
 				{Content: "a", Width: 1},
 				{Content: "b", Width: 1},
 				{Content: "c", Width: 1},
 				{Content: "d", Width: 1, Style: protocol.CellStyle{FG: "ansi:2"}},
 				{Content: "e", Width: 1, Style: protocol.CellStyle{FG: "ansi:2"}},
 				{Content: "f", Width: 1},
-			}}},
+			})},
 		},
 	}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
@@ -1535,57 +1514,6 @@ func TestProtocolTerminalServiceAdapterMergesPlainASCIILiveCellRuns(t *testing.T
 	row := result.Snapshot.Screen[0]
 	if len(row) != 3 || row[0].Text != "abc" || row[0].Width != 3 || row[1].Text != "de" || row[1].Width != 2 || row[1].FG != "ansi:2" || row[2].Text != "f" {
 		t.Fatalf("plain ASCII live cells should merge by style run, got %#v", row)
-	}
-}
-
-func TestProtocolTerminalServiceAdapterMapsCompactLiveSurfaceSnapshot(t *testing.T) {
-	base := &fakeProtocolTerminalClient{
-		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
-			ID:    "term-1",
-			State: "running",
-		}}},
-	}
-	client := &fakeCompactProtocolTerminalClient{
-		fakeProtocolTerminalClient: base,
-		compactSnapshot: &protocol.CompactSnapshot{
-			TerminalID:        "term-1",
-			Size:              protocol.Size{Cols: 12, Rows: 2},
-			HistoryGeneration: 77,
-			ScreenRows: []protocol.CompactRow{
-				protocol.CompactRowFromCells([]protocol.Cell{
-					{Content: "$", Width: 1},
-					{Content: " ", Width: 1},
-					{Content: "o", Width: 1, Style: protocol.CellStyle{FG: "ansi:2"}},
-					{Content: "k", Width: 1, Style: protocol.CellStyle{FG: "ansi:2"}},
-				}),
-				protocol.CompactRowFromCells([]protocol.Cell{{Content: "done", Width: 4}}),
-			},
-			Cursor: protocol.CursorState{Visible: true, Row: 1, Col: 4, Shape: "block"},
-			Modes:  protocol.TerminalModes{MouseTracking: true, MouseButtonEvent: true, MouseSGR: true},
-		},
-	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
-
-	result, err := adapter.LiveSurface(context.Background(), TerminalSurfaceRequest{TerminalID: "term-1", Cols: 12, Rows: 2})
-	if err != nil {
-		t.Fatalf("compact live surface: %v", err)
-	}
-
-	if len(client.snapshotIDs) != 1 || client.snapshotIDs[0] != "term-1" {
-		t.Fatalf("expected compact snapshot request only, got %#v", client.snapshotIDs)
-	}
-	if result.Snapshot.Revision != 77 || result.Snapshot.Cols != 12 || result.Snapshot.Rows != 2 {
-		t.Fatalf("compact snapshot metadata not preserved: %#v", result.Snapshot)
-	}
-	if len(result.Snapshot.Lines) != 0 {
-		t.Fatalf("compact screen rows should not keep duplicate lines, got %#v", result.Snapshot.Lines)
-	}
-	row := result.Snapshot.Screen[0]
-	if len(row) != 2 || row[0].Text != "$ " || row[0].Width != 2 || row[1].Text != "ok" || row[1].FG != "ansi:2" {
-		t.Fatalf("compact rows should map directly to merged live cells, got %#v", row)
-	}
-	if !result.Snapshot.Cursor.Visible || result.Snapshot.Cursor.Shape != "block" || !result.Snapshot.Modes.MousePassthroughEnabled() {
-		t.Fatalf("compact cursor/modes not preserved: %#v %#v", result.Snapshot.Cursor, result.Snapshot.Modes)
 	}
 }
 
@@ -1606,52 +1534,16 @@ func BenchmarkLiveSurfaceCellsFromProtocolASCIIStyledRuns(b *testing.B) {
 	}
 }
 
-func TestProtocolTerminalServiceAdapterMapsExitedLiveSurfaceLifecycle(t *testing.T) {
-	exitedAt := time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC)
-	exitCode := 23
+func TestProtocolTerminalServiceAdapterLiveScreenIgnoresExitMarkerText(t *testing.T) {
 	client := &fakeProtocolTerminalClient{
-		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
-			ID:       "term-1",
-			State:    "exited",
-			Command:  []string{"bash", "-lc", "exit 23"},
-			ExitCode: &exitCode,
-			ExitedAt: exitedAt,
-		}}},
-		snapshotResult: &protocol.Snapshot{
-			TerminalID: "term-1",
-			Size:       protocol.Size{Cols: 80, Rows: 24},
-			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
-				{{Content: "terminal exited: term-1 code:23 exited"}},
-			}},
-		},
-	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
-
-	result, err := adapter.LiveSurface(context.Background(), TerminalSurfaceRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
-	if err != nil {
-		t.Fatalf("live surface: %v", err)
-	}
-
-	if !result.LifecycleKnown || result.Snapshot.State != state.TerminalLiveExited || result.Snapshot.ExitCode != 23 || !result.Snapshot.ExitedAt.Equal(exitedAt) || strings.Join(result.Snapshot.Command, " ") != "bash -lc exit 23" {
-		t.Fatalf("expected exited core lifecycle on live surface, result=%#v snapshot=%#v", result, result.Snapshot)
-	}
-}
-
-func TestProtocolTerminalServiceAdapterRunningLifecycleIgnoresExitMarkerText(t *testing.T) {
-	client := &fakeProtocolTerminalClient{
-		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
-			ID:      "term-1",
-			State:   "running",
-			Command: []string{"/bin/zsh"},
-		}}},
-		snapshotResult: &protocol.Snapshot{
+		liveScreenResult: &protocol.NativeScreenSnapshot{
 			TerminalID: "term-1",
 			Size:       protocol.Size{Cols: 80, Rows: 3},
-			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
-				{{Content: "terminal exited: term-1 code:0 exited"}},
-				{{Content: "command: /bin/zsh"}},
-				{{Content: "% "}},
-			}},
+			Rows: []protocol.CompactRow{
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "terminal exited: term-1 code:0 exited"}}),
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "command: /bin/zsh"}}),
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "% "}}),
+			},
 			Cursor: protocol.CursorState{Visible: true, Row: 2, Col: 2, Shape: "bar"},
 		},
 	}
@@ -1662,8 +1554,8 @@ func TestProtocolTerminalServiceAdapterRunningLifecycleIgnoresExitMarkerText(t *
 		t.Fatalf("live surface: %v", err)
 	}
 
-	if result.Snapshot.State != state.TerminalLiveAttached || result.Snapshot.ExitReason != "" || result.Snapshot.ExitCode != 0 || !result.Snapshot.ExitedAt.IsZero() {
-		t.Fatalf("running core lifecycle must win over marker text, got %#v", result.Snapshot)
+	if result.LifecycleKnown || result.Snapshot.State != "" || result.Snapshot.ExitReason != "" || result.Snapshot.ExitCode != 0 || !result.Snapshot.ExitedAt.IsZero() {
+		t.Fatalf("live screen text must not infer lifecycle, got %#v", result.Snapshot)
 	}
 	if len(result.Snapshot.Lines) != 0 || len(result.Snapshot.Screen) != 3 || result.Snapshot.Screen[2][0].Text != "% " || !result.Snapshot.Cursor.Visible {
 		t.Fatalf("live surface should still keep marker screen and cursor, got %#v", result.Snapshot)
@@ -1672,15 +1564,11 @@ func TestProtocolTerminalServiceAdapterRunningLifecycleIgnoresExitMarkerText(t *
 
 func TestProtocolTerminalServiceAdapterSkipsZeroWidthContinuationPlaceholders(t *testing.T) {
 	client := &fakeProtocolTerminalClient{
-		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
-			ID:    "term-1",
-			State: "running",
-		}}},
-		snapshotResult: &protocol.Snapshot{
+		liveScreenResult: &protocol.NativeScreenSnapshot{
 			TerminalID: "term-1",
 			Size:       protocol.Size{Cols: 8, Rows: 1},
-			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
-				{
+			Rows: []protocol.CompactRow{
+				protocol.CompactRowFromCells([]protocol.Cell{
 					{Content: "♻️", Width: 2},
 					{Content: "", Width: 0},
 					{Content: "♻️", Width: 2},
@@ -1689,8 +1577,8 @@ func TestProtocolTerminalServiceAdapterSkipsZeroWidthContinuationPlaceholders(t 
 					{Content: "", Width: 0},
 					{Content: "·", Width: 1},
 					{Content: "·", Width: 1},
-				},
-			}},
+				}),
+			},
 		},
 	}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
@@ -1728,17 +1616,17 @@ func TestProtocolTerminalServiceAdapterMapsOrdinaryLiveEventsToRefreshInvalidati
 	if err != nil {
 		t.Fatalf("live events: %v", err)
 	}
-	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
+	eventCh <- protocol.Event{Type: protocol.EventTerminalLiveInvalidated, TerminalID: "term-1", LiveInvalidated: &protocol.LiveScreenInvalidatedData{Revision: 9}}
 
 	got := <-events
-	if !got.Refresh || got.Ready || got.TerminalID != "term-1" || got.Snapshot.TerminalID != "" || len(got.Snapshot.Screen) != 0 {
+	if !got.Refresh || got.Ready || got.TerminalID != "term-1" || got.Snapshot.Revision != 9 || got.Snapshot.TerminalID != "" || len(got.Snapshot.Screen) != 0 {
 		t.Fatalf("unexpected live event %#v", got)
 	}
 	if len(client.eventParams) != 1 || client.eventParams[0].TerminalID != "term-1" {
 		t.Fatalf("expected protocol events subscription, got %#v", client.eventParams)
 	}
-	if len(client.snapshotIDs) != 0 {
-		t.Fatalf("ordinary live event should not decode snapshot before app coalescing, got %#v", client.snapshotIDs)
+	if len(client.liveScreenIDs) != 0 {
+		t.Fatalf("live invalidation should not fetch native screen in service layer, got %#v", client.liveScreenIDs)
 	}
 }
 
@@ -1757,13 +1645,13 @@ func TestProtocolTerminalServiceAdapterLiveEventsKeepIndependentTerminalStreams(
 		t.Fatalf("term-2 live events: %v", err)
 	}
 
-	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
+	eventCh <- protocol.Event{Type: protocol.EventTerminalLiveInvalidated, TerminalID: "term-1"}
 	if got := readTerminalLiveEvent(t, termOneEvents); got.TerminalID != "term-1" || !got.Refresh || got.Ready {
 		t.Fatalf("term-1 stream must receive its own event without blocking behind term-2 subscription, got %#v", got)
 	}
 	assertNoTerminalLiveEvent(t, termTwoEvents)
 
-	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-2"}
+	eventCh <- protocol.Event{Type: protocol.EventTerminalLiveInvalidated, TerminalID: "term-2"}
 	if got := readTerminalLiveEvent(t, termTwoEvents); got.TerminalID != "term-2" || !got.Refresh || got.Ready {
 		t.Fatalf("term-2 stream must receive its own event, got %#v", got)
 	}
@@ -1771,8 +1659,8 @@ func TestProtocolTerminalServiceAdapterLiveEventsKeepIndependentTerminalStreams(
 	if len(client.eventParams) != 2 || client.eventParams[0].TerminalID != "term-1" || client.eventParams[1].TerminalID != "term-2" {
 		t.Fatalf("expected independent protocol event subscriptions, got %#v", client.eventParams)
 	}
-	if len(client.snapshotIDs) != 0 {
-		t.Fatalf("independent ordinary streams should not fetch snapshots in service layer, got %#v", client.snapshotIDs)
+	if len(client.liveScreenIDs) != 0 {
+		t.Fatalf("independent invalidation streams should not fetch native screens in service layer, got %#v", client.liveScreenIDs)
 	}
 }
 
@@ -1833,8 +1721,8 @@ func TestProtocolTerminalServiceAdapterMapsMetadataEventsToTags(t *testing.T) {
 	if !got.Metadata || got.TerminalID != "term-1" || got.Tags["termx.size_lock"] != "lock" || got.Ready {
 		t.Fatalf("metadata event should return terminal tags without surface refresh, got %#v", got)
 	}
-	if client.listCalls != 1 || len(client.snapshotIDs) != 0 {
-		t.Fatalf("metadata event should list terminal metadata without snapshot refresh, lists=%d snapshots=%#v", client.listCalls, client.snapshotIDs)
+	if client.listCalls != 1 || len(client.liveScreenIDs) != 0 {
+		t.Fatalf("metadata event should list terminal metadata without live screen refresh, lists=%d live_screens=%#v", client.listCalls, client.liveScreenIDs)
 	}
 }
 
@@ -1851,7 +1739,7 @@ func TestProtocolTerminalServiceAdapterMapsExitedEventMetadata(t *testing.T) {
 			ExitCode: &exitCode,
 			ExitedAt: exitedAt,
 		}}},
-		snapshotResult: &protocol.Snapshot{
+		liveScreenResult: &protocol.NativeScreenSnapshot{
 			TerminalID: "term-1",
 			Size:       protocol.Size{Cols: 80, Rows: 24},
 		},
@@ -1870,159 +1758,6 @@ func TestProtocolTerminalServiceAdapterMapsExitedEventMetadata(t *testing.T) {
 	got := <-events
 	if !got.Exited || got.ExitCode != 23 || !got.ExitedAt.Equal(exitedAt) || strings.Join(got.Command, " ") != "bash -lc make test" || got.Snapshot.State != state.TerminalLiveExited {
 		t.Fatalf("expected exited metadata event, got %#v", got)
-	}
-}
-
-func TestProtocolTerminalServiceAdapterCoalescesQueuedOrdinaryLiveRefreshEvents(t *testing.T) {
-	eventCh := make(chan protocol.Event, 8)
-	client := &fakeProtocolTerminalClient{
-		eventCh: eventCh,
-	}
-	for i := 0; i < 5; i++ {
-		eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
-	}
-	close(eventCh)
-
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
-	events, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
-	if err != nil {
-		t.Fatalf("live events: %v", err)
-	}
-
-	select {
-	case got, ok := <-events:
-		if !ok {
-			t.Fatal("expected coalesced live event")
-		}
-		if !got.Refresh || got.Ready || got.TerminalID != "term-1" {
-			t.Fatalf("unexpected coalesced live event %#v", got)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for coalesced live event")
-	}
-	select {
-	case got, ok := <-events:
-		if ok {
-			t.Fatalf("expected ordinary live burst to produce one event, got %#v", got)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for coalesced stream close")
-	}
-	if len(client.snapshotIDs) != 0 {
-		t.Fatalf("ordinary live burst should coalesce before any snapshot request, got %#v", client.snapshotIDs)
-	}
-}
-
-func TestProtocolTerminalServiceAdapterLiveEventDrainUsesQueuedBacklogOnly(t *testing.T) {
-	events := make(chan protocol.Event, 1)
-	events <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(2, 0)}
-
-	got, pending, closed := drainProtocolLiveRefreshEvents(events, protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(1, 0)})
-	if closed || pending != nil {
-		t.Fatalf("unexpected drain state: pending=%#v closed=%v", pending, closed)
-	}
-	if !got.Timestamp.Equal(time.Unix(2, 0)) {
-		t.Fatalf("expected queued latest event to win, got %#v", got)
-	}
-
-	got, pending, closed = drainProtocolLiveRefreshEvents(events, got)
-	if closed || pending != nil || !got.Timestamp.Equal(time.Unix(2, 0)) {
-		t.Fatalf("empty backlog should return current event immediately, got=%#v pending=%#v closed=%v", got, pending, closed)
-	}
-}
-
-func TestProtocolTerminalServiceAdapterLiveEventDrainCoalescesLargeBacklogToLatestRefresh(t *testing.T) {
-	events := make(chan protocol.Event, 512)
-	for i := 0; i < cap(events); i++ {
-		events <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(int64(i), 0)}
-	}
-	close(events)
-
-	event := protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(-1, 0)}
-	refreshes := 0
-	for {
-		got, pending, closed := drainProtocolLiveRefreshEvents(events, event)
-		refreshes++
-		if pending != nil {
-			t.Fatalf("ordinary backlog should not create pending semantic boundary: %#v", pending)
-		}
-		event = got
-		if closed {
-			break
-		}
-	}
-	if refreshes <= 1 || refreshes > 16 {
-		t.Fatalf("large ordinary backlog should yield several latest refreshes, got %d", refreshes)
-	}
-	if !event.Timestamp.Equal(time.Unix(511, 0)) {
-		t.Fatalf("closed ordinary backlog should preserve final latest event, got %#v", event.Timestamp)
-	}
-}
-
-func TestProtocolTerminalServiceAdapterLiveEventDrainYieldsDuringSustainedBacklog(t *testing.T) {
-	events := make(chan protocol.Event, maxProtocolLiveRefreshDrainBeforeYield+32)
-	for i := 0; i < cap(events); i++ {
-		events <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(int64(i), 0)}
-	}
-
-	got, pending, closed := drainProtocolLiveRefreshEvents(events, protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(-1, 0)})
-	if pending != nil || closed {
-		t.Fatalf("bounded drain should yield without consuming closed backlog pending=%#v closed=%v", pending, closed)
-	}
-	if !got.Timestamp.Equal(time.Unix(int64(maxProtocolLiveRefreshDrainBeforeYield-2), 0)) {
-		t.Fatalf("bounded drain should return latest event in this batch, got %#v", got.Timestamp)
-	}
-	if len(events) != 33 {
-		t.Fatalf("bounded drain should leave sustained backlog for next refresh, got %d", len(events))
-	}
-
-	got, pending, closed = drainProtocolLiveRefreshEvents(events, got)
-	if pending != nil || closed {
-		t.Fatalf("remaining open backlog should drain without closed signal pending=%#v closed=%v", pending, closed)
-	}
-	if !got.Timestamp.Equal(time.Unix(int64(maxProtocolLiveRefreshDrainBeforeYield+31), 0)) {
-		t.Fatalf("second drain should return latest queued event, got %#v", got.Timestamp)
-	}
-}
-
-func BenchmarkProtocolTerminalServiceAdapterLiveEventDrain100k(b *testing.B) {
-	const eventCount = 100000
-	for i := 0; i < b.N; i++ {
-		events := make(chan protocol.Event, eventCount)
-		for n := 0; n < eventCount; n++ {
-			events <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
-		}
-		close(events)
-
-		count := 0
-		event := protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
-		for {
-			var closed bool
-			event, _, closed = drainProtocolLiveRefreshEvents(events, event)
-			count++
-			if closed {
-				break
-			}
-		}
-		b.ReportMetric(float64(count), "refreshes/op")
-	}
-}
-
-func TestProtocolTerminalServiceAdapterLiveEventDrainStopsAtSemanticBoundary(t *testing.T) {
-	events := make(chan protocol.Event, 4)
-	events <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(2, 0)}
-	boundary := protocol.Event{Type: protocol.EventTerminalResized, TerminalID: "term-1", Timestamp: time.Unix(3, 0)}
-	events <- boundary
-
-	got, pending, closed := drainProtocolLiveRefreshEvents(events, protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(1, 0)})
-	if closed || pending == nil {
-		t.Fatalf("expected boundary event to remain pending, got=%#v pending=%#v closed=%v", got, pending, closed)
-	}
-	if !got.Timestamp.Equal(time.Unix(2, 0)) {
-		t.Fatalf("latest ordinary refresh before boundary should win, got %#v", got)
-	}
-	if pending.Type != boundary.Type || pending.TerminalID != boundary.TerminalID || !pending.Timestamp.Equal(boundary.Timestamp) {
-		t.Fatalf("semantic boundary must not be swallowed, got %#v want %#v", pending, boundary)
 	}
 }
 

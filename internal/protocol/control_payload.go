@@ -332,22 +332,6 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			return nil, methodParamsTypeError(method, "protocol.WorkbenchMutateParams", params)
 		}
 		return proto.Marshal(workbenchMutateParamsToWirePB(value))
-	case "snapshot":
-		value, ok := params.(SnapshotParams)
-		if !ok {
-			if ptr, ptrOK := params.(*SnapshotParams); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodParamsTypeError(method, "protocol.SnapshotParams", params)
-		}
-		return proto.Marshal(&wirepb.SnapshotParams{
-			TerminalId:       value.TerminalID,
-			ScrollbackOffset: int32(value.ScrollbackOffset),
-			ScrollbackLimit:  int32(value.ScrollbackLimit),
-		})
 	case "live.screen.get":
 		value, ok := params.(LiveScreenParams)
 		if !ok {
@@ -360,23 +344,6 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			return nil, methodParamsTypeError(method, "protocol.LiveScreenParams", params)
 		}
 		return proto.Marshal(&wirepb.GetParams{TerminalId: value.TerminalID})
-	case "grid.viewport":
-		value, ok := params.(GridViewportParams)
-		if !ok {
-			if ptr, ptrOK := params.(*GridViewportParams); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodParamsTypeError(method, "protocol.GridViewportParams", params)
-		}
-		return proto.Marshal(&wirepb.GridViewportParams{
-			TerminalId:       value.TerminalID,
-			ScrollbackOffset: int32(value.ScrollbackOffset),
-			ScrollbackLimit:  int32(value.ScrollbackLimit),
-			Cols:             int32(value.Cols),
-		})
 	case "history.window", "history.release", "history.copy":
 		value, ok := params.(HistoryWindowParams)
 		if !ok {
@@ -551,24 +518,12 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return workbenchMutateParamsFromWirePB(&msg), nil
-	case "snapshot":
-		var msg wirepb.SnapshotParams
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return nil, err
-		}
-		return SnapshotParams{TerminalID: msg.GetTerminalId(), ScrollbackOffset: int(msg.GetScrollbackOffset()), ScrollbackLimit: int(msg.GetScrollbackLimit())}, nil
 	case "live.screen.get":
 		var msg wirepb.GetParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return nil, err
 		}
 		return LiveScreenParams{TerminalID: msg.GetTerminalId()}, nil
-	case "grid.viewport":
-		var msg wirepb.GridViewportParams
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return nil, err
-		}
-		return GridViewportParams{TerminalID: msg.GetTerminalId(), ScrollbackOffset: int(msg.GetScrollbackOffset()), ScrollbackLimit: int(msg.GetScrollbackLimit()), Cols: int(msg.GetCols())}, nil
 	case "history.window", "history.release", "history.copy":
 		var msg wirepb.HistoryWindowParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {

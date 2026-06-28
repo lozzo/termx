@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -39,7 +38,6 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"Detach",
 		"EnsureResize",
 		"Events",
-		"GridViewport",
 		"Hello",
 		"HistoryCopy",
 		"HistoryReplay",
@@ -57,14 +55,11 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"Restart",
 		"SetMetadata",
 		"SetTags",
-		"Snapshot",
-		"SnapshotCompact",
 		"StorageDelete",
 		"StorageGet",
 		"StorageList",
 		"StoragePut",
 		"Stream",
-		"StreamReady",
 		"UnlockResize",
 		"WorkbenchApply",
 		"WorkbenchGet",
@@ -278,40 +273,12 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 		t.Fatalf("unexpected channel: %#v", attach)
 	}
 
-	stream, stop := client.Stream(attach.Channel)
-	defer stop()
-
 	if err := client.Input(ctx, attach.Channel, []byte("echo hi\n")); err != nil {
 		t.Fatalf("input failed: %v", err)
 	}
 
-	select {
-	case msg := <-stream:
-		if msg.Type != wire.TypeScreenUpdate || string(msg.Payload) != "stream-data" {
-			t.Fatalf("unexpected stream frame: %#v", msg)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for stream output")
-	}
-
 	if err := client.Resize(ctx, attach.Channel, 100, 40); err != nil {
 		t.Fatalf("resize failed: %v", err)
-	}
-
-	snap, err := client.Snapshot(ctx, "term-1", 0, 50)
-	if err != nil {
-		t.Fatalf("snapshot failed: %v", err)
-	}
-	if snap.TerminalID != "term-1" || len(snap.Scrollback) != 1 {
-		t.Fatalf("unexpected snapshot result: %#v", snap)
-	}
-
-	compactSnap, err := client.SnapshotCompact(ctx, "term-1", 0, 50)
-	if err != nil {
-		t.Fatalf("compact snapshot failed: %v", err)
-	}
-	if compactSnap.TerminalID != "term-1" || len(compactSnap.ScreenRows) != 1 || compactSnap.ScreenRows[0].Text != "hi" {
-		t.Fatalf("unexpected compact snapshot result: %#v", compactSnap)
 	}
 
 	liveScreen, err := client.LiveScreen(ctx, "term-1")
@@ -320,14 +287,6 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 	}
 	if liveScreen.TerminalID != "term-1" || liveScreen.Revision != 9 || len(liveScreen.Rows) != 1 || liveScreen.Rows[0].Text != "ns" {
 		t.Fatalf("unexpected live screen result: %#v", liveScreen)
-	}
-
-	viewport, err := client.GridViewport(ctx, "term-1", 1, 2, 80)
-	if err != nil {
-		t.Fatalf("grid viewport failed: %v", err)
-	}
-	if viewport.TerminalID != "term-1" || len(viewport.Rows) != 1 || viewport.ScrollbackOffset != 1 || viewport.ScrollbackLimit != 2 {
-		t.Fatalf("unexpected grid viewport result: %#v", viewport)
 	}
 
 	history, err := client.HistoryReplay(ctx, attach.Channel, 0, 50)
@@ -661,64 +620,6 @@ func assertNoProtocolEvent(t *testing.T, events <-chan Event) {
 	}
 }
 
-func TestClientAttachBuffersFramesThatArriveBeforeStreamRegistration(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	clientTransport, serverTransport := memory.NewPair()
-	defer clientTransport.Close()
-	defer serverTransport.Close()
-
-	serverDone := make(chan error, 1)
-	go func() {
-		serverDone <- runBufferedAttachServer(serverTransport)
-	}()
-
-	client := NewClient(clientTransport)
-	defer client.Close()
-
-	if err := client.Hello(ctx, Hello{Version: wire.Version, Client: "test"}); err != nil {
-		t.Fatalf("hello failed: %v", err)
-	}
-
-	attach, err := client.Attach(ctx, "term-1", "collaborator")
-	if err != nil {
-		t.Fatalf("attach failed: %v", err)
-	}
-
-	stream, stop := client.Stream(attach.Channel)
-	defer stop()
-
-	select {
-	case msg := <-stream:
-		if msg.Type != wire.TypeScreenUpdate || string(msg.Payload) != "early-output" {
-			t.Fatalf("unexpected buffered stream frame: %#v", msg)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for buffered screen update")
-	}
-
-	select {
-	case msg := <-stream:
-		if msg.Type != wire.TypeClosed {
-			t.Fatalf("expected closed frame, got %#v", msg)
-		}
-		code, err := wire.DecodeClosedPayload(msg.Payload)
-		if err != nil {
-			t.Fatalf("decode closed payload failed: %v", err)
-		}
-		if code != 0 {
-			t.Fatalf("expected exit code 0, got %d", code)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for buffered closed frame")
-	}
-
-	if err := <-serverDone; err != nil {
-		t.Fatalf("fake server failed: %v", err)
-	}
-}
-
 func TestClientStreamCancelDropsLateFramesAndKeepsReadLoopAlive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -757,54 +658,6 @@ func TestClientStreamCancelDropsLateFramesAndKeepsReadLoopAlive(t *testing.T) {
 
 	if _, err := client.List(ctx); err != nil {
 		t.Fatalf("expected client to stay usable after late frame, got %v", err)
-	}
-
-	if err := <-serverDone; err != nil {
-		t.Fatalf("fake server failed: %v", err)
-	}
-}
-
-func TestClientStreamCancelKeepsEarlyFramesWhenSameChannelIsReattached(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	clientTransport, serverTransport := memory.NewPair()
-	defer clientTransport.Close()
-	defer serverTransport.Close()
-
-	serverDone := make(chan error, 1)
-	go func() {
-		serverDone <- runReusedChannelAttachServer(serverTransport)
-	}()
-
-	client := NewClient(clientTransport)
-	defer client.Close()
-
-	if err := client.Hello(ctx, Hello{Version: wire.Version, Client: "test"}); err != nil {
-		t.Fatalf("hello failed: %v", err)
-	}
-
-	first, err := client.Attach(ctx, "term-1", "observer")
-	if err != nil {
-		t.Fatalf("first attach failed: %v", err)
-	}
-	_, stop := client.Stream(first.Channel)
-	stop()
-
-	second, err := client.Attach(ctx, "term-1", "observer")
-	if err != nil {
-		t.Fatalf("second attach failed: %v", err)
-	}
-	stream, stop2 := client.Stream(second.Channel)
-	defer stop2()
-
-	select {
-	case frame := <-stream:
-		if frame.Type != wire.TypeScreenUpdate || string(frame.Payload) != "replayed-after-reattach" {
-			t.Fatalf("unexpected replayed frame: %#v", frame)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for replayed early frame on reused channel")
 	}
 
 	if err := <-serverDone; err != nil {
@@ -894,58 +747,14 @@ func TestClientSerializesConcurrentSends(t *testing.T) {
 	}
 }
 
-func TestClientStreamPreservesQueuedFullReplaceScreenUpdates(t *testing.T) {
+func TestClientStreamKeepsOrderedFrames(t *testing.T) {
 	stream := newClientStreamWithConfig(4, 0)
 	defer stream.close()
 
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "a")})
-	waitForClientStreamState(t, stream, func() bool {
-		return len(stream.queue) == 0
-	})
-
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "b")})
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "c")})
-
-	stream.mu.Lock()
-	defer stream.mu.Unlock()
-	if len(stream.queue) != 2 {
-		t.Fatalf("expected full-replace screen updates to remain sequence-addressable, got %d", len(stream.queue))
-	}
-	if !testScreenUpdatePayloadContainsText(t, stream.queue[0].Payload, "b") || !testScreenUpdatePayloadContainsText(t, stream.queue[1].Payload, "c") {
-		t.Fatalf("unexpected queued frames: %#v", stream.queue)
-	}
-}
-
-func TestClientStreamDoesNotCoalesceQueuedDeltaScreenUpdates(t *testing.T) {
-	stream := newClientStreamWithConfig(4, 0)
-	defer stream.close()
-
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testDeltaScreenUpdatePayload(t, "a")})
-	waitForClientStreamState(t, stream, func() bool {
-		return len(stream.queue) == 0
-	})
-
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testDeltaScreenUpdatePayload(t, "b")})
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testDeltaScreenUpdatePayload(t, "c")})
-
-	stream.mu.Lock()
-	defer stream.mu.Unlock()
-	if len(stream.queue) != 2 {
-		t.Fatalf("expected queued delta screen updates to be preserved, got %d", len(stream.queue))
-	}
-	if !testScreenUpdatePayloadContainsText(t, stream.queue[0].Payload, "b") || !testScreenUpdatePayloadContainsText(t, stream.queue[1].Payload, "c") {
-		t.Fatalf("unexpected queued delta frames: %#v", stream.queue)
-	}
-}
-
-func TestClientStreamKeepsControlFrameBetweenScreenUpdates(t *testing.T) {
-	stream := newClientStreamWithConfig(4, 0)
-	defer stream.close()
-
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "a")})
+	stream.send(StreamFrame{Type: wire.TypeHistoryReplay, Payload: []byte("a")})
 	stream.send(StreamFrame{Type: wire.TypeResize, Payload: []byte("resize")})
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "b")})
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "c")})
+	stream.send(StreamFrame{Type: wire.TypeHistoryReplay, Payload: []byte("b")})
+	stream.send(StreamFrame{Type: wire.TypeClosed, Payload: []byte("c")})
 
 	frames := []StreamFrame{
 		waitClientStreamFrame(t, stream),
@@ -953,162 +762,18 @@ func TestClientStreamKeepsControlFrameBetweenScreenUpdates(t *testing.T) {
 		waitClientStreamFrame(t, stream),
 		waitClientStreamFrame(t, stream),
 	}
-	if frames[0].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, frames[0].Payload, "a") {
+	if frames[0].Type != wire.TypeHistoryReplay || string(frames[0].Payload) != "a" {
 		t.Fatalf("unexpected first queued frame: %#v", frames[0])
 	}
 	if frames[1].Type != wire.TypeResize {
 		t.Fatalf("unexpected control frame: %#v", frames[1])
 	}
-	if frames[2].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, frames[2].Payload, "b") {
-		t.Fatalf("unexpected second screen frame: %#v", frames[2])
+	if frames[2].Type != wire.TypeHistoryReplay || string(frames[2].Payload) != "b" {
+		t.Fatalf("unexpected second queued frame: %#v", frames[2])
 	}
-	if frames[3].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, frames[3].Payload, "c") {
-		t.Fatalf("unexpected final screen frame: %#v", frames[3])
+	if frames[3].Type != wire.TypeClosed || string(frames[3].Payload) != "c" {
+		t.Fatalf("unexpected final queued frame: %#v", frames[3])
 	}
-}
-
-func TestClientStreamOverflowQueuesSyncLostInsteadOfSilentDrop(t *testing.T) {
-	stream := newClientStreamWithConfig(2, 0)
-	defer stream.close()
-
-	payload := bytes.Repeat([]byte("x"), wire.MaxFrameSize/2+1)
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload})
-	waitForClientStreamState(t, stream, func() bool {
-		return len(stream.queue) == 0
-	})
-
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload})
-	stream.send(StreamFrame{Type: wire.TypeResize, Payload: wire.EncodeResizePayload(80, 24)})
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload})
-	stream.send(StreamFrame{Type: wire.TypeResize, Payload: wire.EncodeResizePayload(80, 25)})
-
-	waitForClientStreamState(t, stream, func() bool {
-		return len(stream.queue) == 3 && stream.pendingDroppedBytes == 0
-	})
-
-	stream.mu.Lock()
-	if len(stream.queue) != 3 {
-		t.Fatalf("expected sync-lost frame after overflow flush, got %d frames", len(stream.queue))
-	}
-	frame := stream.queue[2]
-	if frame.Type != wire.TypeSyncLost {
-		t.Fatalf("expected sync-lost frame after overflow, got %#v", frame)
-	}
-	dropped, err := wire.DecodeSyncLostPayload(frame.Payload)
-	if err != nil {
-		t.Fatalf("decode sync-lost payload: %v", err)
-	}
-	if dropped == 0 {
-		t.Fatalf("expected non-zero dropped byte count, got %d", dropped)
-	}
-	stream.mu.Unlock()
-}
-
-func TestClientStreamOverflowFlushesSyncLostWithoutWaitingForNextFrame(t *testing.T) {
-	stream := newClientStreamWithConfig(1, 0)
-	defer stream.close()
-
-	payload := bytes.Repeat([]byte("x"), 128)
-	stream.send(StreamFrame{Type: wire.TypeResize, Payload: wire.EncodeResizePayload(80, 24)})
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload})
-
-	waitForClientStreamState(t, stream, func() bool {
-		return len(stream.queue) >= 1 && stream.queue[len(stream.queue)-1].Type == wire.TypeSyncLost && stream.pendingDroppedBytes == 0
-	})
-
-	stream.mu.Lock()
-	defer stream.mu.Unlock()
-	frame := stream.queue[len(stream.queue)-1]
-	if frame.Type != wire.TypeSyncLost {
-		t.Fatalf("expected dropped screen frame to queue sync-lost immediately, got %#v", frame)
-	}
-	dropped, err := wire.DecodeSyncLostPayload(frame.Payload)
-	if err != nil {
-		t.Fatalf("decode sync-lost payload: %v", err)
-	}
-	if dropped != uint64(len(payload)) {
-		t.Fatalf("expected dropped byte count %d, got %d", len(payload), dropped)
-	}
-}
-
-func TestClientStreamOverflowSyncLostAcksDroppedScreenSequence(t *testing.T) {
-	stream := newClientStreamWithConfig(1, 1)
-	defer stream.close()
-
-	payload := bytes.Repeat([]byte("x"), 128)
-	stream.send(StreamFrame{Type: wire.TypeResize, Payload: wire.EncodeResizePayload(80, 24)})
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload})
-
-	frame := waitClientStreamFrame(t, stream)
-	if frame.Type != wire.TypeResize {
-		t.Fatalf("expected first delivered frame to remain resize, got %#v", frame)
-	}
-	frame = waitClientStreamFrame(t, stream)
-	if frame.Type != wire.TypeSyncLost {
-		t.Fatalf("expected sync-lost after dropped screen frame, got %#v", frame)
-	}
-	if frame.ScreenSequence != 1 {
-		t.Fatalf("expected sync-lost to carry dropped screen sequence 1, got %d", frame.ScreenSequence)
-	}
-}
-
-func testFullReplaceScreenUpdatePayload(t *testing.T, text string) []byte {
-	t.Helper()
-	payload, err := EncodeScreenUpdatePayload(ScreenUpdate{
-		FullReplace: true,
-		Size:        Size{Cols: 8, Rows: 1},
-		Screen: ScreenData{
-			Cells: [][]Cell{{{Content: text, Width: 1}}},
-		},
-		Cursor: CursorState{Visible: true},
-		Modes:  TerminalModes{AutoWrap: true},
-	})
-	if err != nil {
-		t.Fatalf("encode full screen update: %v", err)
-	}
-	return payload
-}
-
-func testDeltaScreenUpdatePayload(t *testing.T, text string) []byte {
-	t.Helper()
-	payload, err := EncodeScreenUpdatePayload(ScreenUpdate{
-		Size: Size{Cols: 8, Rows: 1},
-		Ops: []ScreenOp{{
-			Code:  ScreenOpWriteSpan,
-			Row:   0,
-			Col:   0,
-			Cells: []Cell{{Content: text, Width: 1}},
-		}},
-		Cursor: CursorState{Visible: true},
-		Modes:  TerminalModes{AutoWrap: true},
-	})
-	if err != nil {
-		t.Fatalf("encode delta screen update: %v", err)
-	}
-	return payload
-}
-
-func testScreenUpdatePayloadContainsText(t *testing.T, payload []byte, text string) bool {
-	t.Helper()
-	update, err := DecodeScreenUpdatePayload(payload)
-	if err != nil {
-		t.Fatalf("decode screen update: %v", err)
-	}
-	for _, row := range update.Screen.Cells {
-		for _, cell := range row {
-			if cell.Content == text {
-				return true
-			}
-		}
-	}
-	for _, op := range update.Ops {
-		for _, cell := range op.Cells {
-			if cell.Content == text {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func runFakeProtocolServer(tr *memory.Transport) error {
@@ -1193,10 +858,6 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	if channel != 7 || typ != wire.TypeInput || string(payload) != "echo hi\n" {
 		return fmt.Errorf("unexpected input frame: channel=%d type=%d payload=%q", channel, typ, string(payload))
 	}
-	if err := sendFrame(tr, 7, wire.TypeScreenUpdate, []byte("stream-data")); err != nil {
-		return err
-	}
-
 	channel, typ, payload, err = recvFrame(tr)
 	if err != nil {
 		return err
@@ -1210,36 +871,6 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	}
 	if cols != 100 || rows != 40 {
 		return fmt.Errorf("unexpected resize payload: %dx%d", cols, rows)
-	}
-
-	req, err = expectRequest(tr, "snapshot")
-	if err != nil {
-		return err
-	}
-	snapshotResult, err := EncodeSnapshotPayload(&Snapshot{
-		TerminalID: "term-1",
-		Size:       Size{Cols: 80, Rows: 24},
-		Screen: ScreenData{Cells: [][]Cell{
-			{{Content: "h", Width: 1}, {Content: "i", Width: 1}},
-		}},
-		Scrollback: []CompactRow{CompactRowFromCells([]Cell{{Content: "o", Width: 1}, {Content: "k", Width: 1}})},
-		Cursor:     CursorState{Row: 0, Col: 2, Visible: true, Shape: "block"},
-		Modes:      TerminalModes{AutoWrap: true},
-		Timestamp:  time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC),
-	})
-	if err != nil {
-		return err
-	}
-	if err := sendBinaryResponse(tr, req.ID, snapshotResult); err != nil {
-		return err
-	}
-
-	req, err = expectRequest(tr, "snapshot")
-	if err != nil {
-		return err
-	}
-	if err := sendBinaryResponse(tr, req.ID, snapshotResult); err != nil {
-		return err
 	}
 
 	req, err = expectRequest(tr, "live.screen.get")
@@ -1258,34 +889,6 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 		return err
 	}
 	if err := sendBinaryResponse(tr, req.ID, liveResult); err != nil {
-		return err
-	}
-
-	req, err = expectRequest(tr, "grid.viewport")
-	if err != nil {
-		return err
-	}
-	viewportParams, err := requestParams[GridViewportParams](req)
-	if err != nil {
-		return err
-	}
-	if viewportParams.TerminalID != "term-1" || viewportParams.ScrollbackOffset != 1 || viewportParams.ScrollbackLimit != 2 || viewportParams.Cols != 80 {
-		return fmt.Errorf("unexpected grid viewport params: %#v", viewportParams)
-	}
-	viewportResult, err := EncodeGridViewportPayload(&GridViewport{
-		TerminalID:        "term-1",
-		Size:              Size{Cols: 80, Rows: 24},
-		Rows:              []CompactRow{CompactRowFromCells([]Cell{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}})},
-		ScrollbackOffset:  1,
-		ScrollbackLimit:   2,
-		ScrollbackTotal:   3,
-		ScrollbackHasMore: true,
-		Timestamp:         time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC),
-	})
-	if err != nil {
-		return err
-	}
-	if err := sendBinaryResponse(tr, req.ID, viewportResult); err != nil {
 		return err
 	}
 
@@ -1320,23 +923,6 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	}
 
 	return tr.Close()
-}
-
-func waitForClientStreamState(t *testing.T, stream *clientStream, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		stream.mu.Lock()
-		ok := cond()
-		stream.mu.Unlock()
-		if ok {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	stream.mu.Lock()
-	defer stream.mu.Unlock()
-	t.Fatalf("timed out waiting for client stream state: queued=%d dropped=%d", len(stream.queue), stream.pendingDroppedBytes)
 }
 
 func waitClientStreamFrame(t *testing.T, stream *clientStream) StreamFrame {
@@ -1490,27 +1076,6 @@ func runFakeEventServer(tr *memory.Transport) error {
 	return tr.Close()
 }
 
-func runBufferedAttachServer(tr *memory.Transport) error {
-	if err := expectHello(tr); err != nil {
-		return err
-	}
-	if err := respondHello(tr); err != nil {
-		return err
-	}
-
-	req, err := expectRequest(tr, "attach")
-	if err != nil {
-		return err
-	}
-	if err := sendFrame(tr, 7, wire.TypeScreenUpdate, []byte("early-output")); err != nil {
-		return err
-	}
-	if err := sendFrame(tr, 7, wire.TypeClosed, wire.EncodeClosedPayload(0)); err != nil {
-		return err
-	}
-	return sendMethodResponse(tr, req, AttachResult{Mode: "collaborator", Channel: 7})
-}
-
 func runLateFrameAfterCancelServer(tr *memory.Transport) error {
 	if err := expectHello(tr); err != nil {
 		return err
@@ -1527,7 +1092,11 @@ func runLateFrameAfterCancelServer(tr *memory.Transport) error {
 		return err
 	}
 	time.Sleep(50 * time.Millisecond)
-	if err := sendFrame(tr, 7, wire.TypeScreenUpdate, []byte("late-output")); err != nil {
+	historyPayload, err := wire.EncodeHistoryReplayPayload(1, false, []byte("late-output"))
+	if err != nil {
+		return err
+	}
+	if err := sendFrame(tr, 7, wire.TypeHistoryReplay, historyPayload); err != nil {
 		return err
 	}
 
@@ -1541,32 +1110,6 @@ func runLateFrameAfterCancelServer(tr *memory.Transport) error {
 		return err
 	}
 	return nil
-}
-
-func runReusedChannelAttachServer(tr *memory.Transport) error {
-	if err := expectHello(tr); err != nil {
-		return err
-	}
-	if err := respondHello(tr); err != nil {
-		return err
-	}
-
-	req, err := expectRequest(tr, "attach")
-	if err != nil {
-		return err
-	}
-	if err := sendMethodResponse(tr, req, AttachResult{Mode: "observer", Channel: 7}); err != nil {
-		return err
-	}
-
-	req, err = expectRequest(tr, "attach")
-	if err != nil {
-		return err
-	}
-	if err := sendFrame(tr, 7, wire.TypeScreenUpdate, []byte("replayed-after-reattach")); err != nil {
-		return err
-	}
-	return sendMethodResponse(tr, req, AttachResult{Mode: "observer", Channel: 7})
 }
 
 func expectHello(tr *memory.Transport) error {

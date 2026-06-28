@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/internal/protocol"
@@ -17,6 +16,7 @@ type ProtocolTerminalClient interface {
 	Detach(context.Context, protocol.DetachParams) error
 	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
 	List(context.Context) (*protocol.ListResult, error)
+	LiveScreen(context.Context, string) (*protocol.NativeScreenSnapshot, error)
 	Create(context.Context, protocol.CreateParams) (*protocol.CreateResult, error)
 	Restart(context.Context, string) error
 	Kill(context.Context, string) error
@@ -26,11 +26,6 @@ type ProtocolTerminalClient interface {
 	Input(context.Context, uint16, []byte) error
 	Resize(context.Context, uint16, uint16, uint16) error
 	EnsureResize(context.Context, protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error)
-	Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error)
-}
-
-type ProtocolCompactSnapshotClient interface {
-	SnapshotCompact(context.Context, string, int, int) (*protocol.CompactSnapshot, error)
 }
 
 type ProtocolInputRequestClient interface {
@@ -41,11 +36,6 @@ type ProtocolInputRequestClient interface {
 type ProtocolTerminalServiceAdapter struct {
 	Client ProtocolTerminalClient
 }
-
-// maxProtocolLiveRefreshDrainBeforeYield 限制 TUI service 边界的 latest-only
-// 合并窗口。普通 changed 可以合并，但压力输出时必须定期让出 live refresh，
-// 否则用户只能看到几次大跳帧。
-const maxProtocolLiveRefreshDrainBeforeYield = 64
 
 func (adapter ProtocolTerminalServiceAdapter) Attach(ctx context.Context, req TerminalAttachRequest) (TerminalAttachResult, error) {
 	if adapter.Client == nil {
@@ -314,49 +304,30 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 	if adapter.Client == nil {
 		return TerminalSurfaceResult{}, ErrMissingTerminalClient
 	}
-	limit := req.Rows
-	if limit <= 0 {
-		limit = 24
-	}
-	snapshot, compactSnapshot, err := adapter.liveSnapshot(ctx, req.TerminalID, limit)
+	snapshot, err := adapter.Client.LiveScreen(ctx, req.TerminalID)
 	if err != nil {
 		return TerminalSurfaceResult{}, err
 	}
-	screen := liveSurfaceScreenFromSnapshots(snapshot, compactSnapshot)
-	var lines []string
-	if len(screen) == 0 {
-		// 中文说明：Screen 是 live render 主路径；只有没有 styled cells 时才保留旧 Lines fallback，
-		// 避免压力输出时为同一帧同时维护 cell screen 和纯文本行副本。
-		lines = liveSurfaceLinesFromSnapshots(snapshot, compactSnapshot)
-	}
-	info, err := adapter.terminalInfo(ctx, req.TerminalID)
-	if err != nil {
-		return TerminalSurfaceResult{}, err
-	}
-	size := liveSnapshotSize(snapshot, compactSnapshot)
-	cursor := liveSnapshotCursor(snapshot, compactSnapshot)
-	modes := liveSnapshotModes(snapshot, compactSnapshot)
-	revision := liveSnapshotRevision(snapshot, compactSnapshot)
+	// 中文说明：v3 live display 的 screen truth 只能来自 core latest native screen；
+	// lifecycle 由 list/state event 单独承载，不能再混入 snapshot RPC。
 	liveSnapshot := state.LiveSurfaceSnapshot{
 		TerminalID: req.TerminalID,
-		Revision:   revision,
-		Cols:       int(size.Cols),
-		Rows:       int(size.Rows),
-		Lines:      lines,
-		Screen:     screen,
+		Revision:   snapshot.Revision,
+		Cols:       int(snapshot.Size.Cols),
+		Rows:       int(snapshot.Size.Rows),
+		Screen:     liveSurfaceScreenFromCompactRows(snapshot.Rows),
 		Cursor: state.LiveCursor{
-			Visible: cursor.Visible,
-			Row:     cursor.Row,
-			Col:     cursor.Col,
-			Shape:   cursor.Shape,
+			Visible: snapshot.Cursor.Visible,
+			Row:     snapshot.Cursor.Row,
+			Col:     snapshot.Cursor.Col,
+			Shape:   snapshot.Cursor.Shape,
 		},
-		Modes: liveSurfaceModesFromProtocol(modes),
+		Modes: liveSurfaceModesFromProtocol(snapshot.Modes),
 	}
-	liveSnapshot = applyProtocolTerminalLifecycle(liveSnapshot, info)
 	return TerminalSurfaceResult{
 		Ready:          true,
 		Snapshot:       liveSnapshot,
-		LifecycleKnown: true,
+		LifecycleKnown: false,
 	}, nil
 }
 
@@ -367,6 +338,7 @@ func (adapter ProtocolTerminalServiceAdapter) LiveEvents(ctx context.Context, re
 	events, err := adapter.Client.Events(ctx, protocol.EventsParams{
 		TerminalID: req.TerminalID,
 		Types: []protocol.EventType{
+			protocol.EventTerminalLiveInvalidated,
 			protocol.EventTerminalStateChanged,
 			protocol.EventTerminalResized,
 			protocol.EventTerminalMetadataChanged,
@@ -379,30 +351,16 @@ func (adapter ProtocolTerminalServiceAdapter) LiveEvents(ctx context.Context, re
 	out := make(chan TerminalLiveEvent, 16)
 	go func() {
 		defer close(out)
-		var pending *protocol.Event
-		var drainedClosed bool
 		for {
 			var event protocol.Event
-			if pending != nil {
-				event = *pending
-				pending = nil
-			} else if drainedClosed {
+			var ok bool
+			select {
+			case <-ctx.Done():
 				return
-			} else {
-				var ok bool
-				select {
-				case <-ctx.Done():
+			case event, ok = <-events:
+				if !ok {
 					return
-				case event, ok = <-events:
-					if !ok {
-						return
-					}
 				}
-			}
-			if ordinaryProtocolLiveRefreshEvent(event) {
-				// 中文说明：普通 changed 只是“live surface 已变”的通知，压力输出时可合并；
-				// resize、exit、read error 这类边界事件必须保留原顺序。
-				event, pending, drainedClosed = drainProtocolLiveRefreshEvents(events, event)
 			}
 			liveEvent := adapter.liveEventFromProtocol(ctx, req, event)
 			perftrace.Count("tui.protocol.live_event", protocolLiveEventApproxBytes(liveEvent))
@@ -414,42 +372,6 @@ func (adapter ProtocolTerminalServiceAdapter) LiveEvents(ctx context.Context, re
 		}
 	}()
 	return out, nil
-}
-
-func drainProtocolLiveRefreshEvents(events <-chan protocol.Event, current protocol.Event) (protocol.Event, *protocol.Event, bool) {
-	latest := current
-	drained := 1
-	for {
-		if drained >= maxProtocolLiveRefreshDrainBeforeYield {
-			return latest, nil, false
-		}
-		select {
-		case event, ok := <-events:
-			if !ok {
-				return latest, nil, true
-			}
-			if ordinaryProtocolLiveRefreshEvent(event) && sameProtocolLiveRefreshTarget(latest, event) {
-				// 中文说明：普通 terminal.changed 只是“latest screen 已失效”的信号，
-				// 不是必须逐帧播放的内容事件；队列里已有的同类 backlog 尽量吞并。
-				// 但持续输出时不能无限等待 channel 变空，否则 live screen 会长期不刷新。
-				latest = event
-				drained++
-				continue
-			}
-			return latest, &event, false
-		default:
-			return latest, nil, false
-		}
-	}
-	return latest, nil, false
-}
-
-func ordinaryProtocolLiveRefreshEvent(event protocol.Event) bool {
-	return event.Type == protocol.EventTerminalStateChanged && event.StateChanged == nil && event.ReadError == nil
-}
-
-func sameProtocolLiveRefreshTarget(left protocol.Event, right protocol.Event) bool {
-	return left.TerminalID == "" || right.TerminalID == "" || left.TerminalID == right.TerminalID
 }
 
 func protocolLiveEventApproxBytes(event TerminalLiveEvent) int {
@@ -477,6 +399,14 @@ func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.
 		out.Err = fmt.Errorf("%s", event.ReadError.Error)
 		return out
 	}
+	if event.Type == protocol.EventTerminalLiveInvalidated {
+		// 中文说明：live invalidation 只是唤醒信号；TUI app 自己决定何时拉取 latest screen。
+		out.Refresh = true
+		if event.LiveInvalidated != nil {
+			out.Snapshot.Revision = event.LiveInvalidated.Revision
+		}
+		return out
+	}
 	if event.Type == protocol.EventTerminalMetadataChanged {
 		out.Metadata = true
 		info, err := adapter.terminalInfo(ctx, out.TerminalID)
@@ -493,12 +423,6 @@ func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.
 			out.ResizeEpoch = info.ResizeOwnership.Epoch
 			out.SizeLocked = info.ResizeOwnership.SizeLocked
 		}
-		return out
-	}
-	if ordinaryProtocolLiveRefreshEvent(event) {
-		// 中文说明：普通 changed 事件只表达 live surface 已失效；真正 snapshot 拉取
-		// 交给 app 事件循环合并后执行，避免 service 层提前 decode 被丢弃的帧。
-		out.Refresh = true
 		return out
 	}
 	if event.StateChanged != nil && event.StateChanged.NewState == "exited" {
@@ -549,139 +473,6 @@ func (adapter ProtocolTerminalServiceAdapter) terminalInfo(ctx context.Context, 
 	return protocol.TerminalInfo{}, fmt.Errorf("terminal metadata unavailable: %s", terminalID)
 }
 
-func applyProtocolTerminalLifecycle(snapshot state.LiveSurfaceSnapshot, info protocol.TerminalInfo) state.LiveSurfaceSnapshot {
-	// 中文说明：terminal lifecycle 的权威来源是 core terminal list，不是 live 画面里的文本。
-	snapshot.ExitCode = 0
-	snapshot.ExitReason = ""
-	snapshot.ExitedAt = time.Time{}
-	snapshot.Command = nil
-	snapshot.Err = ""
-	if info.State == string(state.TerminalLiveExited) || info.State == "exited" {
-		snapshot.State = state.TerminalLiveExited
-		if info.ExitCode != nil {
-			snapshot.ExitCode = *info.ExitCode
-		}
-		snapshot.ExitReason = "exited"
-		snapshot.ExitedAt = info.ExitedAt
-		snapshot.Command = append([]string(nil), info.Command...)
-		return snapshot
-	}
-	snapshot.State = state.TerminalLiveAttached
-	return snapshot
-}
-
-func (adapter ProtocolTerminalServiceAdapter) liveSnapshot(ctx context.Context, terminalID string, limit int) (*protocol.Snapshot, *protocol.CompactSnapshot, error) {
-	if compactClient, ok := adapter.Client.(ProtocolCompactSnapshotClient); ok {
-		compactSnapshot, err := compactClient.SnapshotCompact(ctx, terminalID, 0, limit)
-		return nil, compactSnapshot, err
-	}
-	snapshot, err := adapter.Client.Snapshot(ctx, terminalID, 0, limit)
-	return snapshot, nil, err
-}
-
-func liveSnapshotSize(snapshot *protocol.Snapshot, compactSnapshot *protocol.CompactSnapshot) protocol.Size {
-	if compactSnapshot != nil {
-		return compactSnapshot.Size
-	}
-	if snapshot != nil {
-		return snapshot.Size
-	}
-	return protocol.Size{}
-}
-
-func liveSnapshotRevision(snapshot *protocol.Snapshot, compactSnapshot *protocol.CompactSnapshot) uint64 {
-	if compactSnapshot != nil {
-		return compactSnapshot.HistoryGeneration
-	}
-	if snapshot != nil {
-		return snapshot.HistoryGeneration
-	}
-	return 0
-}
-
-func liveSnapshotCursor(snapshot *protocol.Snapshot, compactSnapshot *protocol.CompactSnapshot) protocol.CursorState {
-	if compactSnapshot != nil {
-		return compactSnapshot.Cursor
-	}
-	if snapshot != nil {
-		return snapshot.Cursor
-	}
-	return protocol.CursorState{}
-}
-
-func liveSnapshotModes(snapshot *protocol.Snapshot, compactSnapshot *protocol.CompactSnapshot) protocol.TerminalModes {
-	if compactSnapshot != nil {
-		return compactSnapshot.Modes
-	}
-	if snapshot != nil {
-		return snapshot.Modes
-	}
-	return protocol.TerminalModes{}
-}
-
-func liveSurfaceLinesFromSnapshots(snapshot *protocol.Snapshot, compactSnapshot *protocol.CompactSnapshot) []string {
-	if compactSnapshot != nil {
-		return liveSurfaceLinesFromCompactRows(compactSnapshot.ScreenRows)
-	}
-	return liveSurfaceLinesFromSnapshot(snapshot)
-}
-
-func liveSurfaceLinesFromSnapshot(snapshot *protocol.Snapshot) []string {
-	if snapshot == nil || len(snapshot.Screen.Cells) == 0 {
-		return nil
-	}
-	lines := make([]string, len(snapshot.Screen.Cells))
-	for rowIndex, row := range snapshot.Screen.Cells {
-		for _, cell := range row {
-			lines[rowIndex] += cell.Content
-		}
-		lines[rowIndex] = strings.TrimRight(lines[rowIndex], " ")
-	}
-	return trimTrailingEmptySurfaceLines(lines)
-}
-
-func liveSurfaceLinesFromCompactRows(rows []protocol.CompactRow) []string {
-	if len(rows) == 0 {
-		return nil
-	}
-	lines := make([]string, len(rows))
-	for rowIndex, row := range rows {
-		lines[rowIndex] = strings.TrimRight(liveSurfaceCompactRowText(row), " ")
-	}
-	return trimTrailingEmptySurfaceLines(lines)
-}
-
-func trimTrailingEmptySurfaceLines(lines []string) []string {
-	last := len(lines) - 1
-	for last >= 0 && lines[last] == "" {
-		last--
-	}
-	if last < 0 {
-		return nil
-	}
-	out := make([]string, last+1)
-	copy(out, lines[:last+1])
-	return out
-}
-
-func liveSurfaceScreenFromSnapshots(snapshot *protocol.Snapshot, compactSnapshot *protocol.CompactSnapshot) [][]state.LiveCell {
-	if compactSnapshot != nil {
-		return liveSurfaceScreenFromCompactRows(compactSnapshot.ScreenRows)
-	}
-	return liveSurfaceScreenFromSnapshot(snapshot)
-}
-
-func liveSurfaceScreenFromSnapshot(snapshot *protocol.Snapshot) [][]state.LiveCell {
-	if snapshot == nil || len(snapshot.Screen.Cells) == 0 {
-		return nil
-	}
-	screen := make([][]state.LiveCell, len(snapshot.Screen.Cells))
-	for rowIndex, row := range snapshot.Screen.Cells {
-		screen[rowIndex] = liveSurfaceCellsFromProtocol(row)
-	}
-	return screen
-}
-
 func liveSurfaceScreenFromCompactRows(rows []protocol.CompactRow) [][]state.LiveCell {
 	if len(rows) == 0 {
 		return nil
@@ -723,27 +514,6 @@ func liveSurfaceCellsFromCompactRow(row protocol.CompactRow) []state.LiveCell {
 		return nil
 	}
 	return liveSurfaceCellsFromCompactCells(row.Cells)
-}
-
-func liveSurfaceCompactRowText(row protocol.CompactRow) string {
-	if row.Text != "" {
-		return row.Text
-	}
-	if len(row.Runs) > 0 {
-		var builder strings.Builder
-		for _, run := range row.Runs {
-			builder.WriteString(run.Text)
-		}
-		return builder.String()
-	}
-	if len(row.Cells) == 0 {
-		return ""
-	}
-	var builder strings.Builder
-	for _, cell := range row.Cells {
-		builder.WriteString(cell.Content)
-	}
-	return builder.String()
 }
 
 func liveSurfaceCellFromCompactRun(run protocol.CompactRowRun) (state.LiveCell, bool) {

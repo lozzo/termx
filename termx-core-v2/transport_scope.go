@@ -110,12 +110,6 @@ func (scope TransportScope) constrainTerminalMethod(method string, params any) (
 			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
 		}
 		return params, scope.requireTerminal(method, in.TerminalID)
-	case "snapshot":
-		in, ok := params.(protocol.SnapshotParams)
-		if !ok {
-			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
-		}
-		return params, scope.requireTerminal(method, in.TerminalID)
 	case "live.screen.get":
 		in, ok := params.(protocol.LiveScreenParams)
 		if !ok {
