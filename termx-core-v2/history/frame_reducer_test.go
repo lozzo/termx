@@ -1,6 +1,9 @@
 package history
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestR322FrameReducerPrimaryRepaintIsCurrentOnly(t *testing.T) {
 	reducer := NewFrameReducer()
@@ -72,6 +75,28 @@ func TestR337FrameReducerCloseFromFrameExcludesOrdinaryTouchedRows(t *testing.T)
 	}
 	if frameDebugState(t, reducer).PrimaryCurrent != nil {
 		t.Fatalf("close-from-frame must clear mutable current")
+	}
+}
+
+func TestR339FrameReducerFiltersClearTimeProofToCurrentRows(t *testing.T) {
+	reducer := NewFrameReducer()
+	if _, err := reducer.ReplacePrimaryTouchedRows(semanticFrame(20,
+		"sealed shell 1",
+		"sealed shell 2",
+		"codex before clear 1",
+		"codex before clear 2",
+	), []int{2, 3}, FrameReasonPrimaryRepaint); err != nil {
+		t.Fatalf("seed current primary rows: %v", err)
+	}
+
+	filtered := reducer.FilterPrimaryScrollOutRows([]TerminalSemanticScrollOut{
+		{Runs: []TerminalSemanticCellRun{{Text: "sealed shell 1"}}, Row: 0, RowSet: true},
+		{Runs: []TerminalSemanticCellRun{{Text: "sealed shell 2"}}, Row: 1, RowSet: true},
+		{Runs: []TerminalSemanticCellRun{{Text: "codex before clear 1"}}, Row: 2, RowSet: true},
+		{Runs: []TerminalSemanticCellRun{{Text: "codex before clear 2"}}, Row: 3, RowSet: true},
+	})
+	if got := scrollOutProofTexts(filtered); got != "codex before clear 1|codex before clear 2" {
+		t.Fatalf("clear-time proof must keep only current frame rows, got %q proofs=%#v", got, filtered)
 	}
 }
 
@@ -279,6 +304,22 @@ func frameDebugState(t *testing.T, reducer FrameReducer) FrameJournal {
 		t.Fatalf("frame reducer does not expose test debug journal")
 	}
 	return debug.debugFrameJournal()
+}
+
+func scrollOutProofTexts(proofs []TerminalSemanticScrollOut) string {
+	var texts []string
+	for _, proof := range proofs {
+		texts = append(texts, historyTestCellsText(cellsFromScrollOutProof(proof)))
+	}
+	return strings.Join(texts, "|")
+}
+
+func historyTestCellsText(cells []Cell) string {
+	var out string
+	for _, cell := range cells {
+		out += cell.Text
+	}
+	return out
 }
 
 func archivedFrameMutations(mutations []HistoryMutation) []SealedFrame {

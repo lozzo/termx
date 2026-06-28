@@ -235,6 +235,8 @@ func terminalScrollOutProofsFromOp(op TerminalSemanticOp) []TerminalSemanticScro
 		out = append(out, TerminalSemanticScrollOut{
 			Cells:      cloneTerminalSemanticCells(row.Cells),
 			Runs:       cloneTerminalSemanticRuns(row.Runs),
+			Row:        row.Row,
+			RowSet:     row.RowSet,
 			Wrapped:    row.Wrapped,
 			WrappedSet: row.WrappedSet,
 		})
@@ -310,6 +312,17 @@ func cloneTerminalSemanticScrollOut(proof TerminalSemanticScrollOut) TerminalSem
 	proof.Cells = cloneTerminalSemanticCells(proof.Cells)
 	proof.Runs = cloneTerminalSemanticRuns(proof.Runs)
 	return proof
+}
+
+func cloneTerminalSemanticScrollOuts(proofs []TerminalSemanticScrollOut) []TerminalSemanticScrollOut {
+	if len(proofs) == 0 {
+		return nil
+	}
+	out := make([]TerminalSemanticScrollOut, len(proofs))
+	for i, proof := range proofs {
+		out[i] = cloneTerminalSemanticScrollOut(proof)
+	}
+	return out
 }
 
 func cloneTerminalSemanticFrame(frame *TerminalSemanticFrame) *TerminalSemanticFrame {

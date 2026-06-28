@@ -148,7 +148,15 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 			return nil, nil
 		}
 		if decision.ConsumeScrollOutProof && event.ScrollOut != nil {
-			mutations, err := renderer.stream.SealScrollOut(*event.ScrollOut)
+			proof := *event.ScrollOut
+			if event.ClearScrollOut {
+				proofs := renderer.frames.FilterPrimaryScrollOutRows([]TerminalSemanticScrollOut{proof})
+				if len(proofs) == 0 {
+					return nil, nil
+				}
+				proof = proofs[0]
+			}
+			mutations, err := renderer.stream.SealScrollOut(proof)
 			if err != nil {
 				return nil, err
 			}

@@ -192,6 +192,28 @@ func (reducer *frameReducer) ClearPrimaryCurrent(reason FrameReason) ([]HistoryM
 	}}, nil
 }
 
+func (reducer *frameReducer) FilterPrimaryScrollOutRows(proofs []TerminalSemanticScrollOut) []TerminalSemanticScrollOut {
+	if reducer == nil || reducer.journal.PrimaryCurrent == nil || len(proofs) == 0 {
+		return cloneTerminalSemanticScrollOuts(proofs)
+	}
+	ownedRows := make(map[int]struct{}, len(reducer.journal.PrimaryCurrent.Rows))
+	for _, draft := range reducer.journal.PrimaryCurrent.Rows {
+		ownedRows[draft.Row] = struct{}{}
+	}
+	out := make([]TerminalSemanticScrollOut, 0, len(proofs))
+	for _, proof := range proofs {
+		if !proof.RowSet {
+			out = append(out, cloneTerminalSemanticScrollOut(proof))
+			continue
+		}
+		if _, owned := ownedRows[proof.Row]; !owned {
+			continue
+		}
+		out = append(out, cloneTerminalSemanticScrollOut(proof))
+	}
+	return out
+}
+
 func (reducer *frameReducer) ReplaceAltCurrent(frame TerminalSemanticFrame) ([]HistoryMutation, error) {
 	if reducer == nil {
 		return nil, nil

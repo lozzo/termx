@@ -218,6 +218,7 @@ type rowCacheReconcilePlan struct {
 	requiredScrollbackAppends int
 	beforeScrollbackLen       int
 	screenScrollShift         int
+	scrollbackSourceRows      []int
 }
 
 type DamageRect struct {
@@ -258,6 +259,7 @@ type DamageOp struct {
 	Dy      int
 	Row     int
 	Col     int
+	RowSet  bool
 	Mode    int
 	Bottom  int
 	Private bool
@@ -276,10 +278,15 @@ type DamageOp struct {
 }
 
 type ScrollbackRowAppend struct {
-	Cells      []Cell
-	Runs       []CellRun
-	Timestamp  time.Time
-	RowKind    string
+	Cells     []Cell
+	Runs      []CellRun
+	Timestamp time.Time
+	RowKind   string
+	// Row/RowSet 表示该 proof 来源于清屏或滚动前的 primary viewport 行。
+	// core-v2 history 用它按 current frame ownership 过滤 ED2 clear-time proof，
+	// 避免把已经 sealed 的 shell 行重复写入 authoritative history。
+	Row        int
+	RowSet     bool
 	Wrapped    bool
 	WrappedSet bool
 	Ownership  string
@@ -413,7 +420,7 @@ func normalizeScreenOp(op DamageOp) DamageOp {
 	case ScreenOpModes:
 		return DamageOp{Code: op.Code, Mode: op.Mode, Private: op.Private, Enabled: op.Enabled}
 	case ScreenOpControl:
-		return DamageOp{Code: op.Code, Control: op.Control, Row: op.Row, Col: op.Col, Mode: op.Mode, Bottom: op.Bottom, Cells: op.Cells, ScrollOut: cloneScrollbackRowAppends(op.ScrollOut), TailFill: cloneCellStylePointer(op.TailFill)}
+		return DamageOp{Code: op.Code, Control: op.Control, Row: op.Row, Col: op.Col, RowSet: op.RowSet, Mode: op.Mode, Bottom: op.Bottom, Cells: op.Cells, ScrollOut: cloneScrollbackRowAppends(op.ScrollOut), TailFill: cloneCellStylePointer(op.TailFill)}
 	}
 	return op
 }
@@ -3104,12 +3111,20 @@ func (v *VTerm) reconcileRowMetadataLocked(beforeScreen []rowFingerprint, before
 	} else {
 		v.screenRowKindsScratch = oldScreenRowKinds[:0]
 	}
+	sourceRows := make([]int, requiredAppends)
+	for i := range sourceRows {
+		sourceRows[i] = -1
+	}
+	for i := 0; i < preservedFromBefore && i < len(sourceRows); i++ {
+		sourceRows[i] = i
+	}
 	return rowCacheReconcilePlan{
 		afterScreen:               afterScreen,
 		preservedFromBefore:       preservedFromBefore,
 		requiredScrollbackAppends: requiredAppends,
 		beforeScrollbackLen:       beforeScrollbackLen,
 		screenScrollShift:         screenScrollShift,
+		scrollbackSourceRows:      sourceRows,
 	}
 }
 
@@ -3356,6 +3371,11 @@ func (v *VTerm) appendScrollbackDamageLocked(damage *WriteDamage, plan rowCacheR
 		retainedFromOldScrollback = afterScrollbackLen
 	}
 	for row := retainedFromOldScrollback; row < afterScrollbackLen; row++ {
+		sourceIndex := row - retainedFromOldScrollback
+		sourceRow := -1
+		if sourceIndex >= 0 && sourceIndex < len(plan.scrollbackSourceRows) {
+			sourceRow = plan.scrollbackSourceRows[sourceIndex]
+		}
 		op := DamageOp{
 			Row:        row,
 			Cells:      cloneCellSlice(v.scrollbackRowViewLocked(row)),
@@ -3363,6 +3383,10 @@ func (v *VTerm) appendScrollbackDamageLocked(damage *WriteDamage, plan rowCacheR
 			RowKind:    stringAt(v.scrollbackRowKinds, row),
 			Wrapped:    v.scrollbackRowWrappedAtLocked(row),
 			WrappedSet: true,
+		}
+		if sourceRow >= 0 {
+			op.Row = sourceRow
+			op.RowSet = true
 		}
 		damage.ScrollbackAppend = append(damage.ScrollbackAppend, op)
 	}
@@ -4007,6 +4031,8 @@ func (v *VTerm) scrollbackRowAppendFromCharmVTDamage(row charmvt.ScrollbackDamag
 		Runs:       runs,
 		Timestamp:  timeAt(timestamps, row.Y),
 		RowKind:    stringAt(rowKinds, row.Y),
+		Row:        row.Y,
+		RowSet:     row.Y >= 0,
 		Wrapped:    row.Wrapped,
 		WrappedSet: true,
 	}
@@ -4018,6 +4044,8 @@ func damageOpFromScrollbackRowAppend(row ScrollbackRowAppend) DamageOp {
 		Runs:       cloneCellRuns(row.Runs),
 		Timestamp:  row.Timestamp,
 		RowKind:    row.RowKind,
+		Row:        row.Row,
+		RowSet:     row.RowSet,
 		Wrapped:    row.Wrapped,
 		WrappedSet: row.WrappedSet,
 	}

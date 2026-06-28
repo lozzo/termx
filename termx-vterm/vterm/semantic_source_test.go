@@ -151,6 +151,9 @@ func TestR328SemanticSourceDistinguishesEraseDisplayFromClearScrollback(t *testi
 	if gotED2Proof != "old1old2" {
 		t.Fatalf("ED2 should expose clear-time scrollback proof for every visible row, got %q in %#v", gotED2Proof, ed2Tx.PrimaryScrollOut)
 	}
+	if len(ed2Tx.PrimaryScrollOut) != 2 || !ed2Tx.PrimaryScrollOut[0].RowSet || ed2Tx.PrimaryScrollOut[0].Row != 0 || !ed2Tx.PrimaryScrollOut[1].RowSet || ed2Tx.PrimaryScrollOut[1].Row != 1 {
+		t.Fatalf("ED2 clear-time proof must preserve original viewport rows, got %#v", ed2Tx.PrimaryScrollOut)
+	}
 
 	ed3 := NewSemanticSource(12, 3, 100, nil)
 	if _, err := ed3.ApplyPTYWrite([]byte("old1\r\nold2")); err != nil {

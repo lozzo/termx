@@ -169,6 +169,62 @@ func TestR336ED2ClearPreservesPreviousPrimaryFrameInScrollableHistory(t *testing
 	}
 }
 
+func TestR339CodexClearKeepsShellAndPreviousPrimaryHistory(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r339-codex-clear-iterm2",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 44, Rows: 6},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r339-codex-clear-iterm2",
+		"shell history 1\r\n"+
+			"shell history 2\r\n",
+	); err != nil {
+		t.Fatalf("seed shell history: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r339-codex-clear-iterm2",
+		"\x1b[?2026h"+
+			"codex before clear 1\r\n"+
+			"codex before clear 2"+
+			"\x1b[?2026l",
+	); err != nil {
+		t.Fatalf("seed codex primary frame: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r339-codex-clear-iterm2",
+		"\x1b[?2026h\x1b[H\x1b[2J"+
+			"codex after clear only"+
+			"\x1b[?2026l",
+	); err != nil {
+		t.Fatalf("ingest codex /clear repaint: %v", err)
+	}
+
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r339-codex-clear-iterm2", 44, 2)
+	text := strings.Join(historyRowTexts(rows), "\n")
+	for _, want := range []string{
+		"shell history 1",
+		"shell history 2",
+		"codex before clear 1",
+		"codex before clear 2",
+		"codex after clear only",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("iTerm2-style /clear history missing %q:\n%s\nrows=%#v", want, text, rows)
+		}
+	}
+	committed := strings.Join(committedHistoryRowTexts(rows), "\n")
+	for _, want := range []string{"shell history 1", "shell history 2", "codex before clear 1", "codex before clear 2"} {
+		if got := strings.Count(committed, want); got != 1 {
+			t.Fatalf("/clear must keep %q exactly once in scrollable history, count=%d:\n%s\nrows=%#v", want, got, committed, rows)
+		}
+	}
+	current := strings.Join(currentPrimaryFrameRowTexts(rows), "\n")
+	if current != "codex after clear only" {
+		t.Fatalf("live/current primary frame after /clear should only contain post-clear Codex screen, got %q rows=%#v", current, rows)
+	}
+}
+
 func TestR333SynchronizedBeginAloneDoesNotPublishExistingShellScreenAsFrame(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

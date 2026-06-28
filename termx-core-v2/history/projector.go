@@ -52,6 +52,11 @@ type FrameReducer interface {
 	// 用 scroll-out proof 或 reset/clear boundary 表达内容去向时，避免把旧 frame
 	// 再作为 archived truth 重复写入 timeline。
 	ClearPrimaryCurrent(reason FrameReason) ([]HistoryMutation, error)
+	// FilterPrimaryScrollOutRows 只保留属于当前 primary frame ownership 的 scroll-out
+	// proof。它用于 ED2 clear-time proof：vterm 会给出整屏离开 viewport 的行，
+	// 但其中可能混有已 sealed 的普通 shell 行，history 只能把 current frame
+	// 拥有的 rows 写入 timeline。
+	FilterPrimaryScrollOutRows(proofs []TerminalSemanticScrollOut) []TerminalSemanticScrollOut
 	// ReplaceAltCurrent 用 alt semantic frame 全量替换 transient alt frame。
 	ReplaceAltCurrent(frame TerminalSemanticFrame) ([]HistoryMutation, error)
 	// ClearAltCurrent 在 alt exit 或 terminal close 时丢弃 transient frame。

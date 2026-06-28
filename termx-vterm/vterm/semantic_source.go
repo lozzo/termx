@@ -24,8 +24,12 @@ type TerminalSemanticCellRun = CellRun
 // Cells 是 cell 级 payload；Runs 是 vterm 在 raw damage 中保留的 styled text payload。
 // core 只能把这些 payload 复制进 logical-line history，不能从 current frame 反推历史。
 type TerminalSemanticScrollOut struct {
-	Cells      []TerminalSemanticCell
-	Runs       []TerminalSemanticCellRun
+	Cells []TerminalSemanticCell
+	Runs  []TerminalSemanticCellRun
+	// Row/RowSet 表示该 proof 来源于清屏/滚动前的 primary viewport row。
+	// core-v2 只能用它过滤 current primary frame ownership，不能据此反推新内容。
+	Row        int
+	RowSet     bool
 	Wrapped    bool
 	WrappedSet bool
 }
@@ -141,6 +145,8 @@ func (source *SemanticSource) transactionFromDamage(seq uint64, raw string, dama
 		tx.PrimaryScrollOut = append(tx.PrimaryScrollOut, TerminalSemanticScrollOut{
 			Cells:      cloneCellSlice(scrollOut.Cells),
 			Runs:       cloneCellRuns(scrollOut.Runs),
+			Row:        scrollOut.Row,
+			RowSet:     scrollOut.RowSet,
 			Wrapped:    scrollOut.Wrapped,
 			WrappedSet: scrollOut.WrappedSet,
 		})
