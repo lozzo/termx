@@ -17,6 +17,7 @@ import (
 
 	"github.com/lozzow/termx/internal/protocol"
 	corev2 "github.com/lozzow/termx/termx-core-v2"
+	"github.com/lozzow/termx/termx-core-v2/history"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	tuiv3 "github.com/lozzow/termx/termx-tui-v3"
 	"github.com/lozzow/termx/termx-tui-v3/app"
@@ -327,6 +328,10 @@ func TestDefaultDaemonUsesCoreV2Server(t *testing.T) {
 	fakeV3 := &fakeCoreV2Server{}
 	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
 		fakeV3.newServerCalls++
+		server := corev2.NewServer(opts...)
+		if server.HistoryStorageDir() == "" {
+			t.Fatal("default daemon must configure file-backed core-v2 history storage dir")
+		}
 		return fakeV3
 	}
 
@@ -340,6 +345,48 @@ func TestDefaultDaemonUsesCoreV2Server(t *testing.T) {
 	}
 	if fakeV3.newServerCalls != 1 || fakeV3.listenCalls != 1 || fakeV3.shutdownCalls != 1 {
 		t.Fatalf("unexpected core-v2 fake server calls: new=%d listen=%d shutdown=%d", fakeV3.newServerCalls, fakeV3.listenCalls, fakeV3.shutdownCalls)
+	}
+}
+
+func TestDaemonCanDisableHistoryFromEnv(t *testing.T) {
+	oldNewCoreV2Server := newCoreV2Server
+	t.Cleanup(func() {
+		newCoreV2Server = oldNewCoreV2Server
+	})
+	t.Setenv("TERMX_HISTORY_DISABLE", "1")
+
+	fakeV3 := &fakeCoreV2Server{}
+	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
+		fakeV3.newServerCalls++
+		opts = append(opts, corev2.WithProcessFactory(newCoreV2ResizeRecordingProcessFactory()))
+		server := corev2.NewServer(opts...)
+		if server.HistoryStorageDir() != "" {
+			t.Fatalf("history disabled daemon must not configure history storage dir, got %q", server.HistoryStorageDir())
+		}
+		if _, err := server.RegisterTerminal(corev2.TerminalRecord{ID: "term-disabled", Command: []string{"shell"}}); err != nil {
+			t.Fatalf("register disabled-history terminal: %v", err)
+		}
+		if _, err := server.TerminalHistoryWindow(context.Background(), "term-disabled", history.HistoryWindowRequest{
+			TerminalID: "term-disabled",
+			Mode:       history.HistoryWindowModeLatest,
+			Limit:      1,
+			Cols:       20,
+		}); !errors.Is(err, corev2.ErrHistoryDisabled) {
+			t.Fatalf("expected disabled history window, got %v", err)
+		}
+		return fakeV3
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", filepath.Join(t.TempDir(), "termx-v2.sock"), "--log-file", filepath.Join(t.TempDir(), "termx.log"), "daemon"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if fakeV3.newServerCalls != 1 {
+		t.Fatalf("expected one core-v2 server construction, got %d", fakeV3.newServerCalls)
 	}
 }
 
@@ -748,6 +795,84 @@ func TestV3LocalControlCommandsRemainAvailable(t *testing.T) {
 	}
 	if strings.TrimSpace(out.String()) == "" {
 		t.Fatalf("expected v3 new to print terminal id, got %q", out.String())
+	}
+}
+
+func TestV3HistoryDumpWritesAuthoritativeWindows(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	server := corev2.NewServer(corev2.WithSocketPath(socketPath), corev2.WithProcessFactory(newCoreV2ResizeRecordingProcessFactory()))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- server.ListenAndServe(ctx)
+	}()
+	defer func() {
+		cancel()
+		_ = server.Shutdown(context.Background())
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("core-v2 server did not stop in time")
+		}
+	}()
+	if err := waitForSocket(socketPath, 2*time.Second, func() error {
+		client, err := dialV3Client(socketPath)
+		if err != nil {
+			return err
+		}
+		return client.Close()
+	}); err != nil {
+		t.Fatalf("core-v2 daemon did not become ready: %v", err)
+	}
+	client, err := dialV3Client(socketPath)
+	if err != nil {
+		t.Fatalf("dial core-v2 daemon: %v", err)
+	}
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-dump", Command: []string{"shell"}, Size: protocol.Size{Cols: 24, Rows: 4}}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-dump", "older one\r\nvisible tail\r\n"); err != nil {
+		t.Fatalf("ingest committed history: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-dump", "\x1b[?2026h\x1b[2J\x1b[Hcodex current\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest current frame: %v", err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("close setup client: %v", err)
+	}
+
+	outPath := filepath.Join(t.TempDir(), "history.dump")
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "history-dump", "term-dump", "--out", outPath, "--cols", "24", "--limit", "1"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("history-dump returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read dump: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		"termx core-v2 authoritative history dump",
+		"window 0 op=prepend",
+		"window 1 op=prepend",
+		"window 2 op=replace",
+		"older one",
+		"visible tail",
+		"codex current",
+		"segment=current-primary-frame",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("history dump missing %q:\n%s", want, text)
+		}
+	}
+	if !strings.Contains(out.String(), "termx v3 history dump ok") || !strings.Contains(out.String(), outPath) {
+		t.Fatalf("unexpected command output:\n%s", out.String())
 	}
 }
 
