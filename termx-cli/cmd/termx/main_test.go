@@ -571,6 +571,38 @@ func TestStartCoreV2DaemonCommandUsesV3Daemon(t *testing.T) {
 	}
 }
 
+func TestStartCoreV2DaemonCommandCarriesHistoryDisableEnv(t *testing.T) {
+	oldExecutable := osExecutable
+	t.Cleanup(func() {
+		osExecutable = oldExecutable
+	})
+	t.Setenv("TERMX_HISTORY_DISABLE", "1")
+
+	exe := filepath.Join(t.TempDir(), "termx")
+	osExecutable = func() (string, error) {
+		return exe, nil
+	}
+	got, err := buildStartCoreV2DaemonCommand("/tmp/termx-v2.sock", "/tmp/termx.log")
+	if err != nil {
+		t.Fatalf("buildStartCoreV2DaemonCommand returned error: %v", err)
+	}
+	if got.Path != exe {
+		t.Fatalf("expected executable %q, got %q", exe, got.Path)
+	}
+	if !containsEnv(got.Env, "TERMX_HISTORY_DISABLE=1") {
+		t.Fatalf("auto-start daemon command must carry history disabled env, env=%#v", got.Env)
+	}
+}
+
+func containsEnv(env []string, want string) bool {
+	for _, item := range env {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestStartCoreV2DaemonCommandCanCarryRemoteConfigPath(t *testing.T) {
 	oldExecutable := osExecutable
 	t.Cleanup(func() {

@@ -126,6 +126,12 @@ func buildStartCoreV2DaemonCommandWithConfig(path string, logFile string, config
 	if configPath = strings.TrimSpace(configPath); configPath != "" {
 		args = append(args, "--config", configPath)
 	}
+	if envBool("TERMX_HISTORY_DISABLE") {
+		cmd := exec.Command(exe, append(args, "daemon")...)
+		cmd.Env = os.Environ()
+		cmd.Env = append(cmd.Env, "TERMX_HISTORY_DISABLE=1")
+		return cmd, nil
+	}
 	// 默认 daemon 已切换为 core-v2；自动启动不得落回 legacy daemon。
 	args = append(args, "daemon")
 	return exec.Command(exe, args...), nil
