@@ -13,12 +13,61 @@ import (
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
-// RequestID 标识一个异步 service 请求。
-type RequestID uint64
+// RequestID 标识一个异步 service 请求，类型归属 state，避免 reducer 回投时二次转换。
+type RequestID = state.RequestID
 
-// Valid 表示 request id 能否对应一个 in-flight 请求。
-func (id RequestID) Valid() bool {
-	return id != 0
+type HistoryLatestRequest struct {
+	RequestID          RequestID
+	PaneID             string
+	ViewID             string
+	TerminalID         string
+	Cols               int
+	Rows               int
+	GenerationBoundary uint64
+}
+
+type HistoryOlderRequest struct {
+	RequestID  RequestID
+	PaneID     string
+	ViewID     string
+	TerminalID string
+	Cols       int
+	Rows       int
+	Token      string
+	Generation uint64
+	Cursor     state.HistoryCursor
+	Boundary   state.HistoryBoundary
+}
+
+type HistoryReleaseRequest struct {
+	TerminalID string
+	Token      string
+}
+
+type HistoryCopyRangeRequest struct {
+	TerminalID string
+	Cols       int
+	Token      string
+	Generation uint64
+	Boundary   state.HistoryBoundary
+	Start      state.CopyLogicalPosition
+	End        state.CopyLogicalPosition
+}
+
+type HistoryResult struct {
+	RequestID RequestID
+	Window    state.HistoryWindow
+}
+
+type HistoryCopyRangeResult struct {
+	Text string
+}
+
+type CoreClient interface {
+	HistoryLatest(context.Context, HistoryLatestRequest) (HistoryResult, error)
+	HistoryOlder(context.Context, HistoryOlderRequest) (HistoryResult, error)
+	HistoryCopyRange(context.Context, HistoryCopyRangeRequest) (HistoryCopyRangeResult, error)
+	ReleaseHistory(context.Context, HistoryReleaseRequest) error
 }
 
 type TerminalService interface {

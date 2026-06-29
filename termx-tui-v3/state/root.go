@@ -4,6 +4,10 @@ package state
 type Root struct {
 	Generation       uint64
 	RuntimeSurfaceID string
+	History          HistoryStore
+	CopyMode         CopyModeStore
+	HistoryByView    map[string]HistoryStore
+	CopyModeByView   map[string]CopyModeStore
 	Clipboard        ClipboardStore
 	Surface          TerminalSurfaceStore
 	Session          TerminalSessionStore
@@ -20,6 +24,189 @@ type Root struct {
 func (r Root) Advance() Root {
 	r.Generation++
 	return r
+}
+
+func (r Root) CopyHistorySessionForView(viewID string) (HistoryStore, CopyModeStore) {
+	if viewID == "" {
+		return r.History, r.CopyMode
+	}
+	if historyStoreMatchesView(r.History, viewID) || copyModeStoreMatchesView(r.CopyMode, viewID) {
+		return r.History, r.CopyMode
+	}
+	history, hasHistory := r.HistoryByView[viewID]
+	copyMode, hasCopyMode := r.CopyModeByView[viewID]
+	if hasHistory || hasCopyMode {
+		return history, copyMode
+	}
+	return HistoryStore{}, CopyModeStore{}
+}
+
+func (r Root) WithCopyHistorySession(viewID string, history HistoryStore, copyMode CopyModeStore) Root {
+	if viewID == "" {
+		viewID = copyHistorySessionViewID(history, copyMode)
+	}
+	if viewID == "" {
+		r.History = history
+		r.CopyMode = copyMode
+		return r
+	}
+	if history.ViewID == "" && historyStoreHasState(history) {
+		history.ViewID = viewID
+	}
+	if copyMode.ViewID == "" && copyModeStoreHasState(copyMode) {
+		copyMode.ViewID = viewID
+	}
+	r.History = history
+	r.CopyMode = copyMode
+	if !copyHistorySessionHasState(history, copyMode) {
+		return r.WithoutCopyHistorySession(viewID)
+	}
+	r.HistoryByView = cloneHistoryStoreMap(r.HistoryByView)
+	r.CopyModeByView = cloneCopyModeStoreMap(r.CopyModeByView)
+	r.HistoryByView[viewID] = history
+	r.CopyModeByView[viewID] = copyMode
+	return r
+}
+
+func (r Root) WithoutCopyHistorySession(viewID string) Root {
+	if viewID == "" {
+		return r
+	}
+	if historyStoreMatchesView(r.History, viewID) || copyModeStoreMatchesView(r.CopyMode, viewID) {
+		// 中文说明：copy/history 是 view-local 交互态；释放 view 时不能留下空壳
+		// terminal id，否则后续渲染或输入路由会误认为仍处于 copy history。
+		r.History = HistoryStore{}
+		r.CopyMode = CopyModeStore{}
+	}
+	if _, ok := r.HistoryByView[viewID]; ok {
+		r.HistoryByView = cloneHistoryStoreMap(r.HistoryByView)
+		delete(r.HistoryByView, viewID)
+	}
+	if _, ok := r.CopyModeByView[viewID]; ok {
+		r.CopyModeByView = cloneCopyModeStoreMap(r.CopyModeByView)
+		delete(r.CopyModeByView, viewID)
+	}
+	return r
+}
+
+func (r Root) WithoutCopyHistorySessionsForTerminal(terminalID string) Root {
+	if terminalID == "" {
+		return r
+	}
+	if r.History.TerminalID == terminalID || r.CopyMode.TerminalID == terminalID {
+		r.History = HistoryStore{}
+		r.CopyMode = CopyModeStore{}
+	}
+	for viewID, history := range r.HistoryByView {
+		copyMode := r.CopyModeByView[viewID]
+		if history.TerminalID == terminalID || copyMode.TerminalID == terminalID {
+			r = r.WithoutCopyHistorySession(viewID)
+		}
+	}
+	for viewID, copyMode := range r.CopyModeByView {
+		history := r.HistoryByView[viewID]
+		if history.TerminalID == terminalID || copyMode.TerminalID == terminalID {
+			r = r.WithoutCopyHistorySession(viewID)
+		}
+	}
+	return r
+}
+
+func (r Root) CopyHistoryTerminalIDs() []string {
+	ids := make(map[string]struct{})
+	if r.History.TerminalID != "" {
+		ids[r.History.TerminalID] = struct{}{}
+	}
+	if r.CopyMode.TerminalID != "" {
+		ids[r.CopyMode.TerminalID] = struct{}{}
+	}
+	for _, history := range r.HistoryByView {
+		if history.TerminalID != "" {
+			ids[history.TerminalID] = struct{}{}
+		}
+	}
+	for _, copyMode := range r.CopyModeByView {
+		if copyMode.TerminalID != "" {
+			ids[copyMode.TerminalID] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(ids))
+	for id := range ids {
+		out = append(out, id)
+	}
+	return out
+}
+
+func copyHistorySessionViewID(history HistoryStore, copyMode CopyModeStore) string {
+	if copyMode.ViewID != "" {
+		return copyMode.ViewID
+	}
+	if history.ViewID != "" {
+		return history.ViewID
+	}
+	if copyMode.PaneID != "" {
+		return TerminalPaneViewID(copyMode.PaneID)
+	}
+	if history.PaneID != "" {
+		return TerminalPaneViewID(history.PaneID)
+	}
+	return ""
+}
+
+func copyHistorySessionHasState(history HistoryStore, copyMode CopyModeStore) bool {
+	return historyStoreHasState(history) || copyModeStoreHasState(copyMode)
+}
+
+func historyStoreHasState(history HistoryStore) bool {
+	return history.TerminalID != "" ||
+		history.Token != "" ||
+		len(history.Rows) > 0 ||
+		len(history.SourceLines) > 0 ||
+		history.Pending != nil
+}
+
+func copyModeStoreHasState(copyMode CopyModeStore) bool {
+	return copyMode.Active ||
+		copyMode.Entering ||
+		copyMode.TerminalID != "" ||
+		copyMode.BoundToken != "" ||
+		copyMode.EnteringLive != nil
+}
+
+func historyStoreMatchesView(history HistoryStore, viewID string) bool {
+	if viewID == "" {
+		return false
+	}
+	if history.ViewID == viewID {
+		return true
+	}
+	return history.ViewID == "" && history.PaneID != "" && TerminalPaneViewID(history.PaneID) == viewID
+}
+
+func copyModeStoreMatchesView(copyMode CopyModeStore, viewID string) bool {
+	if viewID == "" {
+		return false
+	}
+	if copyMode.ViewID == viewID {
+		return true
+	}
+	return copyMode.ViewID == "" && copyMode.PaneID != "" && TerminalPaneViewID(copyMode.PaneID) == viewID
+}
+
+func cloneHistoryStoreMap(in map[string]HistoryStore) map[string]HistoryStore {
+	out := make(map[string]HistoryStore, len(in)+1)
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneCopyModeStoreMap(in map[string]CopyModeStore) map[string]CopyModeStore {
+	out := make(map[string]CopyModeStore, len(in)+1)
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 type WorkbenchSyncStore struct {
