@@ -177,6 +177,89 @@ func TestServerHistoryRemoveSealsOpenLineBeforeClosingTerminal(t *testing.T) {
 	}
 }
 
+func TestServerHistoryPrimaryFrameAltResizeAndExitStayAuthoritative(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-history-screen",
+		Command: []string{"sh"},
+		Size:    Size{Cols: 8, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-history-screen", "\x1b[?2026hline1\r\nline2\r\nline3\r\nline4\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest synchronized output: %v", err)
+	}
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{
+		TerminalID: "term-history-screen",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       8,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("history.window after sync output: %v", err)
+	}
+	if !historyRowsContainSegment(window.Rows, history.HistorySegmentCommitted) ||
+		!historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) ||
+		!historyRowsContainText(window.Rows, "line4") {
+		t.Fatalf("history should include sealed scroll-out proof and current frame, rows=%v", historyRowTextList(window.Rows))
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-history-screen", "\x1b[?1049hALT\x1b[?1049l"); err != nil {
+		t.Fatalf("ingest alt transient: %v", err)
+	}
+	window, err = server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{
+		TerminalID: "term-history-screen",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       8,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("history.window after alt: %v", err)
+	}
+	for _, row := range window.Rows {
+		if strings.Contains(historyCellsText(row.Cells), "ALT") && row.Segment != history.HistorySegmentCurrentAltFrame {
+			t.Fatalf("alt content must not enter primary timeline, row=%#v rows=%v", row, historyRowTextList(window.Rows))
+		}
+	}
+	if err := server.ResizeTerminal(context.Background(), "term-history-screen", 12, 4); err != nil {
+		t.Fatalf("resize terminal: %v", err)
+	}
+	windowAfterResize, err := server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{
+		TerminalID: "term-history-screen",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       12,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("history.window after resize: %v", err)
+	}
+	if len(windowAfterResize.Rows) < len(window.Rows) {
+		t.Fatalf("resize boundary must not delete history rows: before=%v after=%v", historyRowTextList(window.Rows), historyRowTextList(windowAfterResize.Rows))
+	}
+
+	if len(factory.processes) != 1 {
+		t.Fatal("expected recording process")
+	}
+	if err := factory.processes[0].Close(); err != nil {
+		t.Fatalf("close recording process output: %v", err)
+	}
+	factory.processes[0].wait <- ProcessExit{Code: 0}
+	waitForTerminalState(t, server, "term-history-screen", TerminalStateExited)
+	windowAfterExit, err := server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{
+		TerminalID: "term-history-screen",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       12,
+		Limit:      20,
+	})
+	if err != nil {
+		t.Fatalf("history.window after exit: %v", err)
+	}
+	if len(windowAfterExit.Rows) == 0 {
+		t.Fatal("process exit should leave authoritative history rows")
+	}
+}
+
 func historyRowsText(rows []history.HistoryRow) string {
 	var builder strings.Builder
 	for _, row := range rows {
@@ -198,4 +281,13 @@ func historyRowTextList(rows []history.HistoryRow) []string {
 		texts = append(texts, builder.String())
 	}
 	return texts
+}
+
+func historyRowsContainText(rows []history.HistoryRow, needle string) bool {
+	for _, row := range rows {
+		if strings.Contains(historyCellsText(row.Cells), needle) {
+			return true
+		}
+	}
+	return false
 }
