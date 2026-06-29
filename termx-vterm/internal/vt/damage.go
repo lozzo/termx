@@ -41,6 +41,19 @@ func (d SpanDamage) Bounds() uv.Rectangle {
 	return uv.Rect(d.X, d.Y, width, 1)
 }
 
+// TextDamage 表示真实 print path 写入的文本语义。它和 SpanDamage 分开：
+// SpanDamage 是 screen diff，可能来自填充、clear 或重排；TextDamage 才能给
+// history projector 当成 PTY 文本写入语义。
+type TextDamage struct {
+	X, Y  int
+	Cells []uv.Cell
+}
+
+// Bounds returns the bounds of the text semantic area.
+func (d TextDamage) Bounds() uv.Rectangle {
+	return SpanDamage{X: d.X, Y: d.Y, Cells: d.Cells}.Bounds()
+}
+
 // RectDamage represents a damaged rectangle.
 type RectDamage uv.Rectangle
 
@@ -128,6 +141,35 @@ type ScrollDamage struct {
 // Bounds returns the damaged rectangle.
 func (d ScrollDamage) Bounds() uv.Rectangle {
 	return d.Rectangle
+}
+
+// ControlDamage 记录同一 parser transaction 内的控制语义；这些控制不一定
+// 产生 cell damage，但 history projector 需要按顺序消费。
+type ControlDamage struct {
+	Kind      string
+	X, Y      int
+	Mode      int
+	Bottom    int
+	Cell      uv.Cell
+	HasCell   bool
+	ScrollOut []ScrollbackDamage
+}
+
+// Bounds 返回控制语义发生时的 cursor 位置。
+func (d ControlDamage) Bounds() uv.Rectangle {
+	return uv.Rect(d.X, d.Y, 1, 1)
+}
+
+// ModeDamage 记录同一 parser transaction 内的 mode 变化。
+type ModeDamage struct {
+	Mode    int
+	Private bool
+	Enabled bool
+}
+
+// Bounds 返回 origin 占位；mode 变化是语义控制，不是 cell mutation。
+func (d ModeDamage) Bounds() uv.Rectangle {
+	return uv.Rect(0, 0, 1, 1)
 }
 
 // ScrollbackDamage represents a row captured before it leaves the visible

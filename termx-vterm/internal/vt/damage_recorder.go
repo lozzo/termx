@@ -12,6 +12,7 @@ type screenDamageRecorder struct {
 	scrollbackOnly bool
 	damages        []Damage
 	spanCells      []uv.Cell
+	textCells      []uv.Cell
 	tailSpan       *SpanDamage
 	tailSpanStart  int
 	tailSpanEnd    int
@@ -26,12 +27,82 @@ func (r *screenDamageRecorder) record(d Damage) {
 			return
 		}
 	}
+	if text, ok := d.(TextDamage); ok {
+		r.recordText(text)
+		return
+	}
 	if span, ok := d.(SpanDamage); ok {
 		r.recordSpan(span)
 		return
 	}
 	r.tailSpan = nil
 	r.damages = append(r.damages, d)
+}
+
+func (r *screenDamageRecorder) recordControl(kind string, x int, y int, mode int) {
+	if r == nil || r.scrollbackOnly || kind == "" {
+		return
+	}
+	r.record(ControlDamage{Kind: kind, X: x, Y: y, Mode: mode})
+}
+
+func (r *screenDamageRecorder) recordControlWithScrollOut(kind string, x int, y int, mode int, scrollOut []ScrollbackDamage) {
+	if r == nil || r.scrollbackOnly || kind == "" {
+		return
+	}
+	r.record(ControlDamage{Kind: kind, X: x, Y: y, Mode: mode, ScrollOut: cloneScrollbackDamages(scrollOut)})
+}
+
+func (r *screenDamageRecorder) recordScrollRegion(top int, bottom int) {
+	if r == nil || r.scrollbackOnly {
+		return
+	}
+	r.record(ControlDamage{Kind: "decstbm", Mode: top, Bottom: bottom})
+}
+
+func (r *screenDamageRecorder) recordHorizontalScrollRegion(left int, right int) {
+	if r == nil || r.scrollbackOnly {
+		return
+	}
+	r.record(ControlDamage{Kind: "decslrm", Mode: left, Bottom: right})
+}
+
+func (r *screenDamageRecorder) recordControlWithCell(kind string, x int, y int, mode int, cell *uv.Cell) {
+	if r == nil || r.scrollbackOnly || kind == "" {
+		return
+	}
+	damage := ControlDamage{Kind: kind, X: x, Y: y, Mode: mode}
+	if cell != nil {
+		damage.Cell = *cell
+		damage.HasCell = true
+	}
+	r.record(damage)
+}
+
+func (r *screenDamageRecorder) recordControlWithCellAndBottom(kind string, x int, y int, mode int, bottom int, cell *uv.Cell) {
+	if r == nil || r.scrollbackOnly || kind == "" {
+		return
+	}
+	damage := ControlDamage{Kind: kind, X: x, Y: y, Mode: mode, Bottom: bottom}
+	if cell != nil {
+		damage.Cell = *cell
+		damage.HasCell = true
+	}
+	r.record(damage)
+}
+
+func (r *screenDamageRecorder) recordMode(mode int, private bool, enabled bool) {
+	if r == nil || r.scrollbackOnly || mode == 0 {
+		return
+	}
+	r.record(ModeDamage{Mode: mode, Private: private, Enabled: enabled})
+}
+
+func (r *screenDamageRecorder) recordTextSpan(x, y int, cells []uv.Cell) {
+	if r == nil || r.scrollbackOnly || len(cells) == 0 {
+		return
+	}
+	r.record(TextDamage{X: x, Y: y, Cells: cells})
 }
 
 func (r *screenDamageRecorder) recordSpanCell(x, y int, cell uv.Cell) {
@@ -73,17 +144,43 @@ func (r *screenDamageRecorder) recordScrollbackLine(y int, line uv.Line, wrapped
 		return
 	}
 	r.tailSpan = nil
+	r.damages = append(r.damages, compactScrollbackDamage(y, line, wrapped))
+}
+
+func compactScrollbackDamage(y int, line uv.Line, wrapped bool) ScrollbackDamage {
 	if text, ok := compactASCIIPlainLine(line); ok {
-		r.damages = append(r.damages, ScrollbackDamage{Y: y, ASCII: true, Text: text, Wrapped: wrapped})
-		return
+		return ScrollbackDamage{Y: y, ASCII: true, Text: text, Wrapped: wrapped}
 	}
 	if runs, ok := compactASCIIStyleRuns(line); ok {
-		r.damages = append(r.damages, ScrollbackDamage{Y: y, Runs: runs, Wrapped: wrapped})
-		return
+		return ScrollbackDamage{Y: y, Runs: runs, Wrapped: wrapped}
 	}
 	cells := make([]uv.Cell, len(line))
 	copy(cells, line)
-	r.damages = append(r.damages, ScrollbackDamage{Y: y, Cells: cells, Wrapped: wrapped})
+	return ScrollbackDamage{Y: y, Cells: cells, Wrapped: wrapped}
+}
+
+func cloneScrollbackDamages(in []ScrollbackDamage) []ScrollbackDamage {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ScrollbackDamage, len(in))
+	for i, row := range in {
+		out[i] = cloneScrollbackDamage(row)
+	}
+	return out
+}
+
+func cloneScrollbackDamage(row ScrollbackDamage) ScrollbackDamage {
+	out := row
+	if len(row.Cells) > 0 {
+		out.Cells = make([]uv.Cell, len(row.Cells))
+		copy(out.Cells, row.Cells)
+	}
+	if len(row.Runs) > 0 {
+		out.Runs = make([]ScrollbackRun, len(row.Runs))
+		copy(out.Runs, row.Runs)
+	}
+	return out
 }
 
 func (r *screenDamageRecorder) recordSpan(span SpanDamage) {
@@ -104,6 +201,19 @@ func (r *screenDamageRecorder) recordSpan(span SpanDamage) {
 	r.tailSpan = next
 	r.tailSpanStart = start
 	r.tailSpanEnd = span.X + spanDamageWidth(span)
+}
+
+func (r *screenDamageRecorder) recordText(text TextDamage) {
+	if r == nil || r.scrollbackOnly || len(text.Cells) == 0 {
+		return
+	}
+	start := len(r.textCells)
+	r.textCells = append(r.textCells, text.Cells...)
+	r.damages = append(r.damages, TextDamage{
+		X:     text.X,
+		Y:     text.Y,
+		Cells: r.textCells[start:len(r.textCells)],
+	})
 }
 
 func (r *screenDamageRecorder) mergeTrailingSpan(next SpanDamage) bool {
@@ -131,6 +241,13 @@ func (r *screenDamageRecorder) snapshot() []Damage {
 	for i, damage := range r.damages {
 		if span, ok := damage.(*SpanDamage); ok {
 			out[i] = *span
+			continue
+		}
+		if text, ok := damage.(TextDamage); ok {
+			cells := make([]uv.Cell, len(text.Cells))
+			copy(cells, text.Cells)
+			text.Cells = cells
+			out[i] = text
 			continue
 		}
 		out[i] = damage

@@ -77,6 +77,37 @@ func TestVTermLongTitleWithinParserBuffer(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageOSCTitleAndWorkingDirectoryKeepSemanticText(t *testing.T) {
+	var capturedTitle string
+	var capturedCWD string
+	vt := New(80, 24, 1000, nil)
+	vt.SetTitleHandler(func(title string) {
+		capturedTitle = title
+	})
+	vt.SetWorkingDirectoryHandler(func(path string) {
+		capturedCWD = path
+	})
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b]2;termx-title\x07\x1b]7;file://host/srv/app\x1b\\prompt$ "))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if capturedTitle != "termx-title" {
+		t.Fatalf("expected title callback, got %q", capturedTitle)
+	}
+	if capturedCWD != "file://host/srv/app" {
+		t.Fatalf("expected working directory callback, got %q", capturedCWD)
+	}
+	if !semanticOpsContainText(damage.SemanticOps, "prompt$ ") {
+		t.Fatalf("OSC title/cwd batch should keep following prompt as semantic text, ops=%#v damage=%#v", damage.SemanticOps, damage)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpTitle {
+			t.Fatalf("OSC title is vterm-owned state, not a history semantic op, got %#v in %#v", op, damage.SemanticOps)
+		}
+	}
+}
+
 func TestVTermWorkingDirectoryCallback(t *testing.T) {
 	var captured string
 	vt := New(80, 24, 1000, nil)
@@ -111,6 +142,40 @@ func TestVTermOSC8HyperlinkDoesNotLeakControlBytes(t *testing.T) {
 	}
 	if row[len("linked")+1].LinkURL != "" || row[len("linked")+1].LinkParams != "" {
 		t.Fatalf("expected trailing text to reset hyperlink, got %#v", row[len("linked")+1])
+	}
+}
+
+func TestVTermC1OSC8HyperlinkKeepsSemanticLinkText(t *testing.T) {
+	vt := New(80, 24, 1000, nil)
+
+	raw := string([]byte{0x9d}) + "8;id=c1;https://example.test/c1" + string([]byte{0x9c}) +
+		"linked" +
+		string([]byte{0x9d}) + "8;;" + string([]byte{0x9c}) +
+		" tail"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("WriteWithDamage failed: %v", err)
+	}
+	if !semanticOpsContainText(damage.SemanticOps, "linked") || !semanticOpsContainText(damage.SemanticOps, " tail") {
+		t.Fatalf("expected C1 OSC8 text to remain in semantic ops, ops=%#v damage=%#v", damage.SemanticOps, damage)
+	}
+
+	row := vt.ScreenRowView(0)
+	if got := rowToString(row); !strings.Contains(got, "linked tail") {
+		t.Fatalf("expected C1 OSC8 hyperlink text to remain visible, got %q damage=%#v", got, damage)
+	}
+	for i := 0; i < len("linked"); i++ {
+		if row[i].LinkURL != "https://example.test/c1" || row[i].LinkParams != "id=c1" {
+			t.Fatalf("expected C1 OSC8 linked cell %d to keep hyperlink, got %#v", i, row[i])
+		}
+	}
+	if row[len("linked")+1].LinkURL != "" || row[len("linked")+1].LinkParams != "" {
+		t.Fatalf("expected trailing text to reset C1 OSC8 hyperlink, got %#v", row[len("linked")+1])
+	}
+	for _, forbidden := range []string{"8;id=c1", "https://example.test/c1", "8;;"} {
+		if strings.Contains(rowToString(row), forbidden) {
+			t.Fatalf("C1 OSC8 control payload must not render as text %q, got %q", forbidden, rowToString(row))
+		}
 	}
 }
 

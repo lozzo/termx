@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image/color"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -87,6 +88,9 @@ type CursorState struct {
 	Blink   bool
 }
 
+// TerminalModes 是 vterm 持有的终端模式状态。
+// domain owner：vterm 解码 PTY private/public mode；上层只能读取该状态做语义判定，
+// 不能用 raw bytes 或程序名重建 mode truth。
 type TerminalModes struct {
 	AlternateScreen   bool
 	AlternateScroll   bool
@@ -99,6 +103,9 @@ type TerminalModes struct {
 	BracketedPaste    bool
 	ApplicationCursor bool
 	AutoWrap          bool
+	// SynchronizedOutput 对应 DEC private mode 2026；它让 core 能识别
+	// begin/end 分片之间的 payload 仍属于同一个 primary screen session。
+	SynchronizedOutput bool
 }
 
 type ScreenData struct {
@@ -211,6 +218,7 @@ type rowCacheReconcilePlan struct {
 	requiredScrollbackAppends int
 	beforeScrollbackLen       int
 	screenScrollShift         int
+	scrollbackSourceRows      []int
 }
 
 type DamageRect struct {
@@ -232,6 +240,7 @@ const (
 	ScreenOpModes
 	ScreenOpResize
 	ScreenOpTitle
+	ScreenOpControl
 )
 
 type Size struct {
@@ -240,18 +249,28 @@ type Size struct {
 }
 
 type DamageOp struct {
-	Code       ScreenOpCode
-	Rect       DamageRect
-	Src        DamageRect
-	DstX       int
-	DstY       int
-	Dx         int
-	Dy         int
-	Row        int
-	Col        int
-	Cells      []Cell
-	Runs       []CellRun
+	Code    ScreenOpCode
+	Control string
+	Rect    DamageRect
+	Src     DamageRect
+	DstX    int
+	DstY    int
+	Dx      int
+	Dy      int
+	Row     int
+	Col     int
+	RowSet  bool
+	Mode    int
+	Bottom  int
+	Private bool
+	Enabled bool
+	Cells   []Cell
+	Runs    []CellRun
+	// ScrollOut 携带该 op 语义位置上离开 primary 可见区的行，例如 ED2 清屏。
+	// 它属于 vterm ordered semantic proof，core 不能从最终 frame 反推这些行。
+	ScrollOut  []ScrollbackRowAppend
 	Size       Size
+	TailFill   *CellStyle
 	Timestamp  time.Time
 	RowKind    string
 	Wrapped    bool
@@ -259,9 +278,15 @@ type DamageOp struct {
 }
 
 type ScrollbackRowAppend struct {
-	Cells      []Cell
-	Timestamp  time.Time
-	RowKind    string
+	Cells     []Cell
+	Runs      []CellRun
+	Timestamp time.Time
+	RowKind   string
+	// Row/RowSet 表示该 proof 来源于清屏或滚动前的 primary viewport 行。
+	// core-v2 history 用它按 current frame ownership 过滤 ED2 clear-time proof，
+	// 避免把已经 sealed 的 shell 行重复写入 authoritative history。
+	Row        int
+	RowSet     bool
 	Wrapped    bool
 	WrappedSet bool
 	Ownership  string
@@ -333,6 +358,7 @@ func normalizeScreenOp(op DamageOp) DamageOp {
 		op.Col = 0
 		op.Cells = nil
 		op.Runs = nil
+		op.ScrollOut = nil
 		op.Wrapped = false
 		op.WrappedSet = false
 		op.Size = Size{}
@@ -345,6 +371,7 @@ func normalizeScreenOp(op DamageOp) DamageOp {
 		op.Col = 0
 		op.Cells = nil
 		op.Runs = nil
+		op.ScrollOut = nil
 		op.Wrapped = false
 		op.WrappedSet = false
 		op.Size = Size{}
@@ -356,6 +383,7 @@ func normalizeScreenOp(op DamageOp) DamageOp {
 		op.Col = 0
 		op.Cells = nil
 		op.Runs = nil
+		op.ScrollOut = nil
 		op.Size = Size{}
 		op.Src = DamageRect{}
 		op.DstX = 0
@@ -372,6 +400,7 @@ func normalizeScreenOp(op DamageOp) DamageOp {
 		op.Dy = 0
 		op.Cells = nil
 		op.Runs = nil
+		op.ScrollOut = nil
 	case ScreenOpResize:
 		op.Rect = DamageRect{}
 		op.Src = DamageRect{}
@@ -383,10 +412,15 @@ func normalizeScreenOp(op DamageOp) DamageOp {
 		op.Col = 0
 		op.Cells = nil
 		op.Runs = nil
+		op.ScrollOut = nil
 		op.Wrapped = false
 		op.WrappedSet = false
-	case ScreenOpCursor, ScreenOpModes, ScreenOpTitle:
+	case ScreenOpCursor, ScreenOpTitle:
 		return DamageOp{Code: op.Code}
+	case ScreenOpModes:
+		return DamageOp{Code: op.Code, Mode: op.Mode, Private: op.Private, Enabled: op.Enabled}
+	case ScreenOpControl:
+		return DamageOp{Code: op.Code, Control: op.Control, Row: op.Row, Col: op.Col, RowSet: op.RowSet, Mode: op.Mode, Bottom: op.Bottom, Cells: op.Cells, ScrollOut: cloneScrollbackRowAppends(op.ScrollOut), TailFill: cloneCellStylePointer(op.TailFill)}
 	}
 	return op
 }
@@ -427,7 +461,8 @@ func isValidScreenOpCode(code ScreenOpCode) bool {
 		ScreenOpCursor,
 		ScreenOpModes,
 		ScreenOpResize,
-		ScreenOpTitle:
+		ScreenOpTitle,
+		ScreenOpControl:
 		return true
 	default:
 		return false
@@ -441,6 +476,7 @@ type CellRun struct {
 
 type WriteDamage struct {
 	Ops                 []DamageOp
+	SemanticOps         []DamageOp
 	ScrollbackAppend    []DamageOp
 	LiveTailAppendRows  int
 	ResizeLiveTailRows  int
@@ -452,11 +488,15 @@ type WriteDamage struct {
 	DirectDamageItems   int
 	DirectDamageRows    int
 	DirectDamageCells   int
-	Cursor              CursorState
-	Modes               TerminalModes
-	SizeCols            int
-	SizeRows            int
-	DiffCPUNanos        int64
+	// DirectDamageTouchedRows 是本次 direct damage 在 primary/alt screen 上触达的
+	// row index。domain owner 是 vterm damage 解码；core 只能把它当作
+	// current-frame ownership proof，不能用 final screen snapshot 反推历史。
+	DirectDamageTouchedRows []int
+	Cursor                  CursorState
+	Modes                   TerminalModes
+	SizeCols                int
+	SizeRows                int
+	DiffCPUNanos            int64
 }
 
 type TraceHooks struct {
@@ -811,19 +851,21 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 			directStats := directDamageStats(directDamages, afterWidth, afterHeight)
 			if reason, broad := directStats.fullReplaceReason(); broad {
 				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, reason)
+				damage.SemanticOps = v.semanticControlOpsFromCharmVTDamagesLocked(directDamages, beforeScreenTimestamps, beforeScreenRowKinds)
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
 				}
 				traceCount("vterm.write.direct_damage_full_replace", 1)
 			} else if directOps, ok := v.damageOpsFromCharmVTDamages(directDamages, afterWidth, afterHeight, v.screenTimestamps, v.screenRowKinds); ok {
-				damage = v.writeDamageFromDirectOpsLocked(directOps, cachePlan)
+				damage = v.writeDamageFromDirectOpsLocked(directOps, v.semanticControlOpsFromCharmVTDamagesLocked(directDamages, beforeScreenTimestamps, beforeScreenRowKinds), cachePlan)
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
 				}
 			} else {
 				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, "direct_damage_unsupported")
+				damage.SemanticOps = v.semanticControlOpsFromCharmVTDamagesLocked(directDamages, beforeScreenTimestamps, beforeScreenRowKinds)
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
@@ -835,8 +877,12 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 			damage.DirectDamageItems = directStats.Items
 			damage.DirectDamageRows = directStats.Rows
 			damage.DirectDamageCells = directStats.Cells
+			damage.DirectDamageTouchedRows = cloneIntSlice(directStats.TouchedRows)
 		} else {
 			damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, "screen_shape_changed")
+			if hasDirectDamage {
+				damage.SemanticOps = v.semanticControlOpsFromCharmVTDamagesLocked(directDamages, beforeScreenTimestamps, beforeScreenRowKinds)
+			}
 		}
 		damage.DiffCPUNanos = time.Since(diffStart).Nanoseconds()
 		traceCount("vterm.write.changed_rows", damageChangedRowCount(damage))
@@ -2050,6 +2096,8 @@ func (v *VTerm) setMode(mode ansi.Mode, enabled bool) {
 		v.modes.BracketedPaste = enabled
 	case ansi.ModeAutoWrap:
 		v.modes.AutoWrap = enabled
+	case ansi.ModeSynchronizedOutput:
+		v.modes.SynchronizedOutput = enabled
 	}
 }
 
@@ -2310,6 +2358,7 @@ func writeTerminalModesANSI(b *strings.Builder, modes TerminalModes) {
 	writePrivateModeANSI(b, 7, modes.AutoWrap)
 	writePrivateModeANSI(b, 1007, modes.AlternateScroll)
 	writePrivateModeANSI(b, 2004, modes.BracketedPaste)
+	writePrivateModeANSI(b, 2026, modes.SynchronizedOutput)
 
 	mouseX10 := modes.MouseX10
 	mouseNormal := modes.MouseNormal
@@ -3062,12 +3111,20 @@ func (v *VTerm) reconcileRowMetadataLocked(beforeScreen []rowFingerprint, before
 	} else {
 		v.screenRowKindsScratch = oldScreenRowKinds[:0]
 	}
+	sourceRows := make([]int, requiredAppends)
+	for i := range sourceRows {
+		sourceRows[i] = -1
+	}
+	for i := 0; i < preservedFromBefore && i < len(sourceRows); i++ {
+		sourceRows[i] = i
+	}
 	return rowCacheReconcilePlan{
 		afterScreen:               afterScreen,
 		preservedFromBefore:       preservedFromBefore,
 		requiredScrollbackAppends: requiredAppends,
 		beforeScrollbackLen:       beforeScrollbackLen,
 		screenScrollShift:         screenScrollShift,
+		scrollbackSourceRows:      sourceRows,
 	}
 }
 
@@ -3137,9 +3194,123 @@ func (v *VTerm) reconcileRowCachesLocked(beforeScreen []rowFingerprint, plan row
 	v.scrollbackRowCache = nextScrollbackCache
 }
 
-func (v *VTerm) writeDamageFromDirectOpsLocked(ops []DamageOp, plan rowCacheReconcilePlan) WriteDamage {
+func (v *VTerm) semanticControlOpsFromCharmVTDamagesLocked(damages []charmvt.Damage, timestamps []time.Time, rowKinds []string) []DamageOp {
+	if len(damages) == 0 {
+		return nil
+	}
+	ops := make([]DamageOp, 0, len(damages))
+	tailRows := make(map[int]*CellStyle)
+	for _, raw := range damages {
+		switch d := raw.(type) {
+		case charmvt.TextDamage:
+			if len(d.Cells) == 0 {
+				continue
+			}
+			cells := uvCellsToVTermDamageCells(v, d.Cells)
+			if len(cells) == 0 {
+				continue
+			}
+			ops = append(ops, DamageOp{
+				Code:  ScreenOpWriteSpan,
+				Row:   d.Y,
+				Col:   maxInt(0, d.X),
+				Cells: cells,
+			})
+			recordSemanticTailFill(tailRows, d.X, d.Y, cells)
+		case charmvt.ControlDamage:
+			if d.Kind == "" {
+				continue
+			}
+			op := DamageOp{
+				Code:      ScreenOpControl,
+				Control:   d.Kind,
+				Row:       d.Y,
+				Col:       d.X,
+				Mode:      d.Mode,
+				Bottom:    d.Bottom,
+				ScrollOut: v.scrollbackRowAppendsFromCharmVTDamages(d.ScrollOut, timestamps, rowKinds),
+			}
+			if d.HasCell {
+				op.Cells = uvCellsToVTermDamageCells(v, []uv.Cell{d.Cell})
+			}
+			if semanticControlMayCarryTailFill(d.Kind) {
+				op.TailFill = cloneCellStylePointer(tailRows[d.Y])
+			}
+			ops = append(ops, op)
+			if semanticControlEndsPhysicalRow(d.Kind) {
+				delete(tailRows, d.Y)
+			}
+		case charmvt.ModeDamage:
+			ops = append(ops, DamageOp{
+				Code:    ScreenOpModes,
+				Mode:    d.Mode,
+				Private: d.Private,
+				Enabled: d.Enabled,
+			})
+		}
+	}
+	return ops
+}
+
+func recordSemanticTailFill(rows map[int]*CellStyle, x int, y int, cells []Cell) {
+	if rows == nil || len(cells) == 0 {
+		return
+	}
+	width := 0
+	var lastStyled *CellStyle
+	for _, cell := range cells {
+		if cell.Width == 0 {
+			continue
+		}
+		if style, ok := semanticTailFillStyle(cell); ok {
+			cloned := style
+			lastStyled = &cloned
+		} else if cell.Content != "" {
+			lastStyled = nil
+		}
+		width += maxInt(1, cell.Width)
+	}
+	if width <= 0 {
+		return
+	}
+	// 中文说明：TextDamage 记录的是同一 parser transaction 的真实写入；
+	// 尾部背景延伸作为行语义 metadata 传给下游，不能当作文本空格 payload。
+	if lastStyled != nil {
+		rows[y] = lastStyled
+		return
+	}
+	delete(rows, y)
+}
+
+func semanticTailFillStyle(cell Cell) (CellStyle, bool) {
+	if cell.Style.BG == "" || cell.LinkURL != "" || cell.LinkParams != "" {
+		return CellStyle{}, false
+	}
+	return CellStyle{BG: cell.Style.BG}, true
+}
+
+func semanticControlMayCarryTailFill(kind string) bool {
+	switch kind {
+	case "lf", "ind", "soft-wrap":
+		return true
+	default:
+		return false
+	}
+}
+
+func semanticControlEndsPhysicalRow(kind string) bool {
+	switch kind {
+	case "lf", "ind", "soft-wrap":
+		return true
+	default:
+		return false
+	}
+}
+
+func (v *VTerm) writeDamageFromDirectOpsLocked(ops []DamageOp, semanticOps []DamageOp, plan rowCacheReconcilePlan) WriteDamage {
 	damage := v.writeDamageHeaderLocked(plan)
 	damage.Ops = ops
+	damage.SemanticOps = appendSemanticScreenOps(semanticOps, ops)
 	v.appendScrollbackDamageLocked(&damage, plan)
 	damage.LiveTailAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
 	return damage
@@ -3152,6 +3323,23 @@ func (v *VTerm) writeDamageRequiresFullReplaceLocked(plan rowCacheReconcilePlan,
 	v.appendScrollbackDamageLocked(&damage, plan)
 	damage.LiveTailAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
 	return damage
+}
+
+func appendSemanticScreenOps(base []DamageOp, ops []DamageOp) []DamageOp {
+	if len(ops) == 0 {
+		return base
+	}
+	out := base
+	for _, op := range ops {
+		switch op.Code {
+		case ScreenOpScrollRect:
+			out = append(out, op)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (v *VTerm) writeDamageHeaderLocked(plan rowCacheReconcilePlan) WriteDamage {
@@ -3183,6 +3371,11 @@ func (v *VTerm) appendScrollbackDamageLocked(damage *WriteDamage, plan rowCacheR
 		retainedFromOldScrollback = afterScrollbackLen
 	}
 	for row := retainedFromOldScrollback; row < afterScrollbackLen; row++ {
+		sourceIndex := row - retainedFromOldScrollback
+		sourceRow := -1
+		if sourceIndex >= 0 && sourceIndex < len(plan.scrollbackSourceRows) {
+			sourceRow = plan.scrollbackSourceRows[sourceIndex]
+		}
 		op := DamageOp{
 			Row:        row,
 			Cells:      cloneCellSlice(v.scrollbackRowViewLocked(row)),
@@ -3190,6 +3383,10 @@ func (v *VTerm) appendScrollbackDamageLocked(damage *WriteDamage, plan rowCacheR
 			RowKind:    stringAt(v.scrollbackRowKinds, row),
 			Wrapped:    v.scrollbackRowWrappedAtLocked(row),
 			WrappedSet: true,
+		}
+		if sourceRow >= 0 {
+			op.Row = sourceRow
+			op.RowSet = true
 		}
 		damage.ScrollbackAppend = append(damage.ScrollbackAppend, op)
 	}
@@ -3799,28 +3996,59 @@ func (v *VTerm) scrollbackAppendOpsFromCharmVTDamages(damages []charmvt.Damage, 
 		if !ok || (row.Text == "" && len(row.Runs) == 0 && len(row.Cells) == 0) {
 			continue
 		}
-		cells := uvCellsToVTermDamageCells(v, row.Cells)
-		runs := []CellRun(nil)
-		switch {
-		case len(row.Runs) > 0:
-			cells = nil
-			runs = scrollbackRunsToVTermRuns(v, row.Runs)
-		case row.Text != "":
-			cells = nil
-			runs = asciiTextToVTermRuns(row.Text)
-		}
-		op := DamageOp{
-			Row:        row.Y,
-			Cells:      cells,
-			Runs:       runs,
-			Timestamp:  timeAt(timestamps, row.Y),
-			RowKind:    stringAt(rowKinds, row.Y),
-			Wrapped:    row.Wrapped,
-			WrappedSet: true,
-		}
-		out = append(out, op)
+		out = append(out, damageOpFromScrollbackRowAppend(v.scrollbackRowAppendFromCharmVTDamage(row, timestamps, rowKinds)))
 	}
 	return out
+}
+
+func (v *VTerm) scrollbackRowAppendsFromCharmVTDamages(rows []charmvt.ScrollbackDamage, timestamps []time.Time, rowKinds []string) []ScrollbackRowAppend {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]ScrollbackRowAppend, 0, len(rows))
+	for _, row := range rows {
+		if row.Text == "" && len(row.Runs) == 0 && len(row.Cells) == 0 {
+			continue
+		}
+		out = append(out, v.scrollbackRowAppendFromCharmVTDamage(row, timestamps, rowKinds))
+	}
+	return out
+}
+
+func (v *VTerm) scrollbackRowAppendFromCharmVTDamage(row charmvt.ScrollbackDamage, timestamps []time.Time, rowKinds []string) ScrollbackRowAppend {
+	cells := uvCellsToVTermDamageCells(v, row.Cells)
+	runs := []CellRun(nil)
+	switch {
+	case len(row.Runs) > 0:
+		cells = nil
+		runs = scrollbackRunsToVTermRuns(v, row.Runs)
+	case row.Text != "":
+		cells = nil
+		runs = asciiTextToVTermRuns(row.Text)
+	}
+	return ScrollbackRowAppend{
+		Cells:      cells,
+		Runs:       runs,
+		Timestamp:  timeAt(timestamps, row.Y),
+		RowKind:    stringAt(rowKinds, row.Y),
+		Row:        row.Y,
+		RowSet:     row.Y >= 0,
+		Wrapped:    row.Wrapped,
+		WrappedSet: true,
+	}
+}
+
+func damageOpFromScrollbackRowAppend(row ScrollbackRowAppend) DamageOp {
+	return DamageOp{
+		Cells:      cloneCellSlice(row.Cells),
+		Runs:       cloneCellRuns(row.Runs),
+		Timestamp:  row.Timestamp,
+		RowKind:    row.RowKind,
+		Row:        row.Row,
+		RowSet:     row.RowSet,
+		Wrapped:    row.Wrapped,
+		WrappedSet: row.WrappedSet,
+	}
 }
 
 func asciiTextToVTermRuns(text string) []CellRun {
@@ -3913,6 +4141,8 @@ func damageChangedRowCount(damage WriteDamage) int {
 			for row := op.DstY; row < op.DstY+op.Src.Height; row++ {
 				seen[row] = struct{}{}
 			}
+		case ScreenOpControl:
+			seen[op.Row] = struct{}{}
 		}
 	}
 	return len(seen) + len(damage.ScrollbackAppend)
@@ -3930,6 +4160,8 @@ func damageChangedCellCount(damage WriteDamage) int {
 			count++
 		case ScreenOpScrollRect, ScreenOpCopyRect:
 			count += maxInt(0, op.Rect.Width*op.Rect.Height)
+		case ScreenOpControl:
+			count++
 		}
 	}
 	for _, row := range damage.ScrollbackAppend {
@@ -3951,6 +4183,7 @@ type directDamageSummary struct {
 	MaxItemsPerRow         int
 	ScreenWidth            int
 	ScreenHeight           int
+	TouchedRows            []int
 	HasScrollOrMove        bool
 	HasUnsupported         bool
 	HasFullScreenDamage    bool
@@ -4010,6 +4243,8 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 	}
 	for _, raw := range damages {
 		switch d := raw.(type) {
+		case charmvt.TextDamage:
+			continue
 		case charmvt.SpanDamage:
 			width := spanDamageCellWidth(d.Cells)
 			if width <= 0 {
@@ -4042,6 +4277,10 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 			}
 		case charmvt.ScrollbackDamage:
 			continue
+		case charmvt.ControlDamage:
+			continue
+		case charmvt.ModeDamage:
+			continue
 		case charmvt.ScrollDamage, charmvt.MoveDamage:
 			stats.HasScrollOrMove = true
 		case charmvt.ScreenDamage:
@@ -4059,6 +4298,13 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 		}
 	}
 	stats.Rows = len(changedRows)
+	if len(changedRows) > 0 {
+		stats.TouchedRows = make([]int, 0, len(changedRows))
+		for row := range changedRows {
+			stats.TouchedRows = append(stats.TouchedRows, row)
+		}
+		sort.Ints(stats.TouchedRows)
+	}
 	return stats
 }
 
@@ -4087,6 +4333,15 @@ func markClampedRows(rows map[int]struct{}, y, height, maxHeight int) {
 	}
 }
 
+func cloneIntSlice(in []int) []int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]int, len(in))
+	copy(out, in)
+	return out
+}
+
 func (v *VTerm) damageOpsFromCharmVTDamages(damages []charmvt.Damage, screenWidth, screenHeight int, timestamps []time.Time, rowKinds []string) ([]DamageOp, bool) {
 	if v == nil {
 		return nil, false
@@ -4094,6 +4349,8 @@ func (v *VTerm) damageOpsFromCharmVTDamages(damages []charmvt.Damage, screenWidt
 	ops := make([]DamageOp, 0, len(damages))
 	for _, raw := range damages {
 		switch d := raw.(type) {
+		case charmvt.TextDamage:
+			continue
 		case charmvt.SpanDamage:
 			if len(d.Cells) == 0 {
 				continue
@@ -4171,6 +4428,30 @@ func (v *VTerm) damageOpsFromCharmVTDamages(damages []charmvt.Damage, screenWidt
 				Rect: DamageRect{X: rect.Min.X, Y: rect.Min.Y, Width: rect.Dx(), Height: rect.Dy()},
 				Dx:   d.Dx,
 				Dy:   d.Dy,
+			})
+		case charmvt.ControlDamage:
+			if d.Kind == "" {
+				continue
+			}
+			op := DamageOp{
+				Code:      ScreenOpControl,
+				Control:   d.Kind,
+				Row:       d.Y,
+				Col:       d.X,
+				Mode:      d.Mode,
+				Bottom:    d.Bottom,
+				ScrollOut: v.scrollbackRowAppendsFromCharmVTDamages(d.ScrollOut, timestamps, rowKinds),
+			}
+			if d.HasCell {
+				op.Cells = uvCellsToVTermDamageCells(v, []uv.Cell{d.Cell})
+			}
+			ops = append(ops, op)
+		case charmvt.ModeDamage:
+			ops = append(ops, DamageOp{
+				Code:    ScreenOpModes,
+				Mode:    d.Mode,
+				Private: d.Private,
+				Enabled: d.Enabled,
 			})
 		case charmvt.ScrollbackDamage:
 			continue

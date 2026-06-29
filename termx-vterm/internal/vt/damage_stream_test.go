@@ -9,18 +9,22 @@ func TestEmulatorWriteWithDamageCoalescesPrintableRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write with damage: %v", err)
 	}
-	if len(damages) != 1 {
-		t.Fatalf("expected one span damage, got %#v", damages)
-	}
-	span, ok := damages[0].(SpanDamage)
+	span, ok := firstDamageOfType[SpanDamage](damages)
 	if !ok {
-		t.Fatalf("expected span damage, got %#v", damages[0])
+		t.Fatalf("expected span damage, got %#v", damages)
 	}
 	if span.X != 0 || span.Y != 0 || len(span.Cells) != 3 {
 		t.Fatalf("unexpected span damage: %#v", span)
 	}
 	if span.Cells[0].Content != "a" || span.Cells[1].Content != "b" || span.Cells[2].Content != "c" {
 		t.Fatalf("unexpected span cells: %#v", span.Cells)
+	}
+	text, ok := firstDamageOfType[TextDamage](damages)
+	if !ok {
+		t.Fatalf("expected text semantic damage, got %#v", damages)
+	}
+	if text.X != 0 || text.Y != 0 || len(text.Cells) != 3 {
+		t.Fatalf("unexpected text semantic damage: %#v", text)
 	}
 }
 
@@ -83,11 +87,35 @@ func TestEmulatorWriteWithDamageUsesSpanForStyledErase(t *testing.T) {
 	if len(damages) == 0 {
 		t.Fatal("expected erase damage")
 	}
-	span, ok := damages[len(damages)-1].(SpanDamage)
+	control, ok := firstControlDamageKind(damages, "ech")
+	if !ok || control.Mode != 1 {
+		t.Fatalf("expected styled erase to record ECH control damage, got %#v", damages)
+	}
+	span, ok := firstDamageOfType[SpanDamage](damages)
 	if !ok {
-		t.Fatalf("expected styled erase to produce span damage, got %#v", damages[len(damages)-1])
+		t.Fatalf("expected styled erase to produce span damage, got %#v", damages)
 	}
 	if len(span.Cells) != 1 || span.Cells[0].Content != " " || span.Cells[0].Style.Bg == nil {
 		t.Fatalf("unexpected styled erase span: %#v", span)
 	}
+}
+
+func firstDamageOfType[T Damage](damages []Damage) (T, bool) {
+	var zero T
+	for _, damage := range damages {
+		if typed, ok := damage.(T); ok {
+			return typed, true
+		}
+	}
+	return zero, false
+}
+
+func firstControlDamageKind(damages []Damage, kind string) (ControlDamage, bool) {
+	for _, damage := range damages {
+		control, ok := damage.(ControlDamage)
+		if ok && control.Kind == kind {
+			return control, true
+		}
+	}
+	return ControlDamage{}, false
 }

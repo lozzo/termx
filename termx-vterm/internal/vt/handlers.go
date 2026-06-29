@@ -257,6 +257,16 @@ func (e *Emulator) registerDefaultCcHandlers() {
 				e.carriageReturn()
 				return true
 			})
+		case ansi.SO: // Shift Out [ansi.SO]
+			e.registerCcHandler(i, func() bool {
+				e.gl = 1
+				return true
+			})
+		case ansi.SI: // Shift In [ansi.SI]
+			e.registerCcHandler(i, func() bool {
+				e.gl = 0
+				return true
+			})
 		}
 	}
 
@@ -272,19 +282,14 @@ func (e *Emulator) registerDefaultCcHandlers() {
 				e.reverseIndex()
 				return true
 			})
-		case ansi.SO: // Shift Out [ansi.SO]
-			e.registerCcHandler(i, func() bool {
-				e.gl = 1
-				return true
-			})
-		case ansi.SI: // Shift In [ansi.SI]
-			e.registerCcHandler(i, func() bool {
-				e.gl = 0
-				return true
-			})
 		case ansi.IND: // Index [ansi.IND]
 			e.registerCcHandler(i, func() bool {
 				e.index()
+				return true
+			})
+		case ansi.NEL: // Next Line [ansi.NEL]
+			e.registerCcHandler(i, func() bool {
+				e.nextLine()
 				return true
 			})
 		case ansi.SS2: // Single Shift 2 [ansi.SS2]
@@ -347,12 +352,16 @@ func (e *Emulator) registerDefaultEscHandlers() {
 	e.RegisterEscHandler('=', func() bool {
 		// Keypad Application Mode [ansi.DECKPAM]
 		e.setMode(ansi.ModeNumericKeypad, ansi.ModeSet)
+		// 中文说明：DECKPAM 等价于 DEC private keypad mode ?66，语义流需要保留顺序。
+		e.scr.damage.recordMode(66, true, true)
 		return true
 	})
 
 	e.RegisterEscHandler('>', func() bool {
 		// Keypad Numeric Mode [ansi.DECKPNM]
 		e.setMode(ansi.ModeNumericKeypad, ansi.ModeReset)
+		// 中文说明：DECKPNM 关闭同一个 ?66 keypad mode，history 侧只消费语义不保存状态。
+		e.scr.damage.recordMode(66, true, false)
 		return true
 	})
 
@@ -396,6 +405,10 @@ func (e *Emulator) registerDefaultEscHandlers() {
 			default:
 				return false
 			}
+			x, y := e.scr.CursorPosition()
+			// 中文说明：SCS 只改变 shared vterm 的 charset 状态；history
+			// 后续只消费 print path 已映射的 text cells，不保存第二份 charset truth。
+			e.scr.damage.recordControl("scs", x, y, int(set))
 			return true
 		})
 	}
@@ -403,6 +416,12 @@ func (e *Emulator) registerDefaultEscHandlers() {
 	e.RegisterEscHandler('D', func() bool {
 		// Index [ansi.IND]
 		e.index()
+		return true
+	})
+
+	e.RegisterEscHandler('E', func() bool {
+		// 中文说明：7-bit ESC E 与 C1 NEL 等价，统一暴露为 CR+LF 语义。
+		e.nextLine()
 		return true
 	})
 
@@ -415,6 +434,18 @@ func (e *Emulator) registerDefaultEscHandlers() {
 	e.RegisterEscHandler('M', func() bool {
 		// Reverse Index [ansi.RI]
 		e.reverseIndex()
+		return true
+	})
+
+	e.RegisterEscHandler('N', func() bool {
+		// Single Shift 2 [ansi.SS2].
+		e.gsingle = 2
+		return true
+	})
+
+	e.RegisterEscHandler('O', func() bool {
+		// Single Shift 3 [ansi.SS3].
+		e.gsingle = 3
 		return true
 	})
 
@@ -460,7 +491,10 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 	e.RegisterCsiHandler('@', func(params ansi.Params) bool {
 		// Insert Character [ansi.ICH]
 		n, _, _ := params.Param(0, 1)
+		x, y := e.scr.CursorPosition()
+		blank := e.scr.blankCell()
 		e.scr.InsertCell(n)
+		e.scr.damage.recordControlWithCell("ich", x, y, n, blank)
 		return true
 	})
 
@@ -468,6 +502,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Cursor Up [ansi.CUU]
 		n, _, _ := params.Param(0, 1)
 		e.moveCursor(0, -n)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cuu", x, y, n)
 		return true
 	})
 
@@ -475,6 +511,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Cursor Down [ansi.CUD]
 		n, _, _ := params.Param(0, 1)
 		e.moveCursor(0, n)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cud", x, y, n)
 		return true
 	})
 
@@ -482,6 +520,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Cursor Forward [ansi.CUF]
 		n, _, _ := params.Param(0, 1)
 		e.moveCursor(n, 0)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cuf", x, y, n)
 		return true
 	})
 
@@ -489,6 +529,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Cursor Backward [ansi.CUB]
 		n, _, _ := params.Param(0, 1)
 		e.moveCursor(-n, 0)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cub", x, y, n)
 		return true
 	})
 
@@ -496,6 +538,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Cursor Next Line [ansi.CNL]
 		n, _, _ := params.Param(0, 1)
 		e.moveCursor(0, n)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cud", x, y, n)
 		e.carriageReturn()
 		return true
 	})
@@ -504,6 +548,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Cursor Previous Line [ansi.CPL]
 		n, _, _ := params.Param(0, 1)
 		e.moveCursor(0, -n)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cuu", x, y, n)
 		e.carriageReturn()
 		return true
 	})
@@ -513,6 +559,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		n, _, _ := params.Param(0, 1)
 		_, y := e.scr.CursorPosition()
 		e.setCursor(n-1, y)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cha", x, y, n)
 		return true
 	})
 
@@ -530,6 +578,9 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		y := min(height-1, row-1)
 		x := min(width-1, col-1)
 		e.setCursorPosition(x, y)
+		// 语义 damage 只记录 DECOM/滚动区域归一后的最终坐标，不能把原始 CSI 参数当 history truth。
+		x, y = e.scr.CursorPosition()
+		e.scr.damage.recordControl("cup", x, y, 0)
 		return true
 	})
 
@@ -545,6 +596,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		n, _, _ := params.Param(0, 0)
 		width, height := e.Width(), e.Height()
 		x, y := e.scr.CursorPosition()
+		var scrollOut []ScrollbackDamage
 		switch n {
 		case 0: // Erase screen below (from after cursor position)
 			rect1 := uv.Rect(x, y, width, 1)            // cursor to end of line
@@ -558,7 +610,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			// Save screen content to scrollback before clearing.
 			// Use blankCell() to preserve the current pen BG color,
 			// matching case 0/1 behavior and real terminals (xterm, kitty).
-			e.scr.ClearWithScrollback(e.scr.blankCell())
+			scrollOut = e.scr.ClearWithScrollback(e.scr.blankCell())
 		case 3: // erase display (including scrollback in some terminals)
 			// For ED 3, we clear the screen but also clear scrollback
 			// This matches xterm behavior where ESC[3J clears scrollback.
@@ -570,6 +622,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		default:
 			return false
 		}
+		e.scr.damage.recordControlWithScrollOut("ed", x, y, n, scrollOut)
 		return true
 	})
 
@@ -580,28 +633,34 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// bg color.
 		x, y := e.scr.CursorPosition()
 		w := e.scr.Width()
+		blank := e.scr.blankCell()
 
 		switch n {
 		case 0: // Erase from cursor to end of line
-			e.eraseCharacter(w - x)
+			e.eraseCharacterWithBlank(w-x, blank)
 		case 1: // Erase from start of line to cursor
 			rect := uv.Rect(0, y, x+1, 1)
-			e.scr.FillArea(e.scr.blankCell(), rect)
+			e.scr.FillArea(blank, rect)
 		case 2: // Erase entire line
 			rect := uv.Rect(0, y, w, 1)
-			e.scr.FillArea(e.scr.blankCell(), rect)
+			e.scr.FillArea(blank, rect)
 		default:
 			return false
 		}
+		e.scr.damage.recordControlWithCell("el", x, y, n, blank)
 		return true
 	})
 
 	e.RegisterCsiHandler('L', func(params ansi.Params) bool {
 		// Insert Line [ansi.IL]
 		n, _, _ := params.Param(0, 1)
+		x, y := e.scr.CursorPosition()
+		blank := e.scr.blankCell()
+		scroll := e.scr.ScrollRegion()
 		if e.scr.InsertLine(n) {
 			// Move the cursor to the left margin.
 			e.scr.setCursorX(0, true)
+			e.scr.damage.recordControlWithCellAndBottom("il", x, y, n, scroll.Max.Y, blank)
 		}
 		return true
 	})
@@ -609,11 +668,15 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 	e.RegisterCsiHandler('M', func(params ansi.Params) bool {
 		// Delete Line [ansi.DL]
 		n, _, _ := params.Param(0, 1)
+		x, y := e.scr.CursorPosition()
+		blank := e.scr.blankCell()
+		scroll := e.scr.ScrollRegion()
 		if e.scr.DeleteLine(n) {
 			// If the line was deleted successfully, move the cursor to the
 			// left.
 			// Move the cursor to the left margin.
 			e.scr.setCursorX(0, true)
+			e.scr.damage.recordControlWithCellAndBottom("dl", x, y, n, scroll.Max.Y, blank)
 		}
 		return true
 	})
@@ -621,28 +684,43 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 	e.RegisterCsiHandler('P', func(params ansi.Params) bool {
 		// Delete Character [ansi.DCH]
 		n, _, _ := params.Param(0, 1)
+		x, y := e.scr.CursorPosition()
+		blank := e.scr.blankCell()
 		e.scr.DeleteCell(n)
+		e.scr.damage.recordControlWithCell("dch", x, y, n, blank)
 		return true
 	})
 
 	e.RegisterCsiHandler('S', func(params ansi.Params) bool {
 		// Scroll Up [ansi.SU]
 		n, _, _ := params.Param(0, 1)
+		x, _ := e.scr.CursorPosition()
+		blank := e.scr.blankCell()
+		scroll := e.scr.ScrollRegion()
 		e.scr.ScrollUp(n)
+		e.scr.damage.recordControlWithCellAndBottom("su", x, scroll.Min.Y, n, scroll.Max.Y, blank)
 		return true
 	})
 
 	e.RegisterCsiHandler('T', func(params ansi.Params) bool {
 		// Scroll Down [ansi.SD]
 		n, _, _ := params.Param(0, 1)
+		x, _ := e.scr.CursorPosition()
+		blank := e.scr.blankCell()
+		scroll := e.scr.ScrollRegion()
 		e.scr.ScrollDown(n)
+		e.scr.damage.recordControlWithCellAndBottom("sd", x, scroll.Min.Y, n, scroll.Max.Y, blank)
 		return true
 	})
 
 	e.RegisterCsiHandler(ansi.Command('?', 0, 'W'), func(params ansi.Params) bool {
 		// Set Tab at Every 8 Columns [ansi.DECST8C]
 		if len(params) == 1 && params[0] == 5 {
+			x, y := e.scr.CursorPosition()
 			e.resetTabStops()
+			// 中文说明：DECST8C 重置的是 vterm tab stop 状态；history
+			// 只消费后续 HT 的 resolved column，不保存第二份 tab truth。
+			e.scr.damage.recordControl("decst8c", x, y, 5)
 			return true
 		}
 		return false
@@ -668,6 +746,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		width := e.Width()
 		_, y := e.scr.CursorPosition()
 		e.setCursorPosition(min(width-1, n-1), y)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cha", x, y, n)
 		return true
 	})
 
@@ -677,6 +757,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		width := e.Width()
 		x, y := e.scr.CursorPosition()
 		e.setCursorPosition(min(width-1, x+n), y)
+		x, y = e.scr.CursorPosition()
+		e.scr.damage.recordControl("cuf", x, y, n)
 		return true
 	})
 
@@ -701,6 +783,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			6,  // Selective Erase
 			22, // ANSI color
 		))
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("da", x, y, 0)
 		return true
 	})
 
@@ -717,6 +801,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			10, // Version 1.0
 			0,  // ROM Cartridge is always zero
 		))
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("da2", x, y, 0)
 		return true
 	})
 
@@ -726,6 +812,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		height := e.Height()
 		x, _ := e.scr.CursorPosition()
 		e.setCursorPosition(x, min(height-1, n-1))
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("vpa", x, y, n)
 		return true
 	})
 
@@ -735,6 +823,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		height := e.Height()
 		x, y := e.scr.CursorPosition()
 		e.setCursorPosition(x, min(height-1, y+n))
+		x, y = e.scr.CursorPosition()
+		e.scr.damage.recordControl("cud", x, y, n)
 		return true
 	})
 
@@ -745,22 +835,28 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		col, _, _ := params.Param(1, 1)
 		y := min(height-1, row-1)
 		x := min(width-1, col-1)
-		e.setCursor(x, y)
+		e.setCursorPosition(x, y)
+		// HVP 与 CUP 同义，也必须输出 origin mode 归一后的最终坐标。
+		x, y = e.scr.CursorPosition()
+		e.scr.damage.recordControl("cup", x, y, 0)
 		return true
 	})
 
 	e.RegisterCsiHandler('g', func(params ansi.Params) bool {
 		// Tab Clear [ansi.TBC]
 		value, _, _ := params.Param(0, 0)
+		x, y := e.scr.CursorPosition()
 		switch value {
 		case 0:
-			x, _ := e.scr.CursorPosition()
 			e.tabstops.Reset(x)
 		case 3:
 			e.tabstops.Clear()
 		default:
 			return false
 		}
+		// 中文说明：TBC 修改的是 vterm 内部 tab stop 状态；history 只需要
+		// 按同批后续 HT 的 resolved column 投影，不能由 parser 固定 8 列重放。
+		e.scr.damage.recordControl("tbc", x, y, value)
 
 		return true
 	})
@@ -814,6 +910,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			return false
 		}
 
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("dsr", x, y, n)
 		return true
 	})
 
@@ -831,18 +929,24 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			return false
 		}
 
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("decxcpr", x, y, n)
 		return true
 	})
 
 	e.RegisterCsiHandler(ansi.Command(0, '$', 'p'), func(params ansi.Params) bool {
 		// Request Mode [ansi.DECRQM] - ANSI
 		e.handleRequestMode(params, true)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("decrqm", x, y, 0)
 		return true
 	})
 
 	e.RegisterCsiHandler(ansi.Command('?', '$', 'p'), func(params ansi.Params) bool {
 		// Request Mode [ansi.DECRQM] - DEC
 		e.handleRequestMode(params, false)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("decrqm", x, y, 0)
 		return true
 	})
 
@@ -858,6 +962,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			style--
 		}
 		e.scr.setCursorStyle(CursorStyle(style), blink)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("decscusr", x, y, n)
 		return true
 	})
 
@@ -881,6 +987,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Rect is [x, y) which means y is exclusive. So the top margin
 		// is the top of the screen minus one.
 		e.scr.setVerticalMargins(top-1, bottom)
+		e.scr.damage.recordScrollRegion(top, bottom)
 
 		// Move the cursor to the top-left of the screen or scroll region
 		// depending on [ansi.DECOM].
@@ -912,6 +1019,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			}
 
 			e.scr.setHorizontalMargins(left-1, right)
+			e.scr.damage.recordHorizontalScrollRegion(left, right)
 
 			// Move the cursor to the top-left of the screen or scroll region
 			// depending on [ansi.DECOM].
