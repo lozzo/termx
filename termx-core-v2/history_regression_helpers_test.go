@@ -124,3 +124,11 @@ func r326CollectAllHistoryRows(t *testing.T, server *Server, terminalID string, 
 	}
 	return rows, pageCount
 }
+
+func historyCellsForRegression(text string) []history.TerminalSemanticCell {
+	cells := make([]history.TerminalSemanticCell, 0, len([]rune(text)))
+	for _, r := range text {
+		cells = append(cells, history.TerminalSemanticCell{Content: string(r), Width: 1})
+	}
+	return cells
+}
