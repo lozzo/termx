@@ -1,12 +1,17 @@
 # termx-core-v2 历史模型架构设计
 
+R318 说明：本文早于 `termx-core-v2/docs/history-logical-renderer-design.md`。
+历史语义、对象命名和接口边界以 R318 新文档为准；本文中 `commit/committed`、
+`CommittedHistoryIndex`、`MutableFrontier` 等旧词只作为历史背景或待迁移类型名，
+不得继续解释为新的领域概念。
+
 ## 1. 背景
 
 当前终端历史相关问题的核心不在实时当前屏幕如何显示，而在历史记录的真相单位不稳定：旧实现长期混用 visual row、wrapped row、snapshot scrollback、grid viewport 与局部 metadata 来表达历史边界。这样会导致滚动、copy mode、older prepend、latest replace、resize、reclaim、process exit、clear scrollback 等路径在不同层各自推断历史真相。
 
 本次重构不要求同步重写所有实时 screen、snapshot、grid viewport 数据结构。实时当前屏幕可以继续沿用现有方式。重构的核心准则是：历史记录必须按照 logical line 记录，并且只有 core-v2 的历史侧拥有 committed history truth。
 
-本设计不再把“已持久化”和“仍可变尾部”建成两套数据模型。`persisted` 只表示某一时刻的存储落点或提交状态，不表示不可修改。程序发出的 clear scrollback、truncate、resize reclaim、retention、process exit replacement 等语义都可以删除、撤回、替换或重新提交已经进入 committed history 的 logical line。
+本设计不再把“已持久化”和“仍可变尾部”建成两套数据模型。`persisted` 只表示某一时刻的存储落点或提交状态，不表示不可修改。程序发出的 truncate、resize reclaim、retention、process exit replacement 等语义都可以删除、撤回、替换或重新提交已经进入 committed history 的 logical line；终端 `ED3` / clear scrollback 只表达显示 scrollback 边界，不物理删除 authoritative history。
 
 ### 1.1 为什么必须是 logical line
 
@@ -103,7 +108,7 @@ Terminal size lock 是 terminal 级协作控制状态，不是 TUI 的 pane layo
 `HistoryTrack` 是 authoritative history truth，内部由四类对象组成：
 
 - `LogicalLineStore`：唯一 logical line truth，保存 line id、cells/runs、封口状态、版本、投影缓存和 payload metadata。
-- `CommittedHistoryIndex`：当前计入 committed history 的 ordered line index，负责 older cursor、retention、clear scrollback、truncate、generation 与 logical boundary。
+- `CommittedHistoryIndex`：当前计入 committed history 的 ordered line index，负责 older cursor、retention、truncate、generation 与 logical boundary。
 - `MutableFrontier`：当前仍可能被终端语义修改的 line 范围，包含 open line、sealed but still mutable line、reclaimed committed suffix、shrink resize 隐藏尾部。
 - `StorageBackend`：内存、文件、mmap 或其他持久化实现，只负责保存和恢复 `LogicalLineStore` 与索引状态，不定义 mutability。
 
@@ -199,7 +204,7 @@ LogicalLine 的 truth 是 logical boundary 与 cells/runs。projection segments 
 - 它只保存 line id、边界、cursor、generation、retention metadata 等索引信息。
 - 它不是单独的 payload store。
 - append commit 是把 line id 加入 committed index，不是复制成另一套 line。
-- clear scrollback / truncate committed history 可以删除 index 覆盖的 line，并通知 StorageBackend 删除、标记 tombstone 或等待 compaction。
+- 显式 truncate committed history 可以删除 index 覆盖的 line，并通知 StorageBackend 删除、标记 tombstone 或等待 compaction；`ED3` / clear scrollback 只记录 soft boundary，不删除 index。
 - retention 必须以完整 logical line 为单位。
 - older cursor 只能基于 committed index 和 logical boundary 生成。
 
@@ -288,7 +293,7 @@ copy mode frozen snapshot 要落地，不能只停在 `MutableFrontier` 这个�
 - `force-commit-frontier`：process exit 时强制封口 primary frontier 并提交。
 - `reclaim-committed-suffix`：grow resize 或其他可变性恢复场景按完整 logical line 把 committed suffix 撤回到 frontier。
 - `hide-frontier`：shrink resize 把当前 screen 中不可见但仍可变的 logical lines 转入 hidden frontier。
-- `truncate-committed-history`：clear scrollback、retention 或显式删除历史时，从 `CommittedHistoryIndex` 删除完整 logical line 范围，并同步删除或标记 store 中相关 line。
+- `truncate-committed-history`：retention 或显式删除历史时，从 `CommittedHistoryIndex` 删除完整 logical line 范围，并同步删除或标记 store 中相关 line。
 - `switch-alt-screen`：进入/退出 alt-screen 时冻结/恢复 primary history，不把 alt 内容写入 primary history。
 - `non-history-boundary`：attach、reattach、bootstrap、recovery、full replace、resize 等非历史创建事件只影响事务边界、token 或 generation，不凭空创建 committed history。
 
@@ -360,8 +365,8 @@ copy mode frozen snapshot 要落地，不能只停在 `MutableFrontier` 这个�
 - 真实终端 `CSI 2J` 对 `HistoryTrack` 是 page-break：先把 core 已持有的 primary frontier 封口提交，再清空 primary screen ownership，让清屏后的 UI 从新 logical page 开始。
 - 这个 page-break 只能提交 `LogicalLineStore` / `MutableFrontier` 里已经存在的 line；不能读取 `LiveSurfaceTrack`、snapshot、grid viewport 或 visual rows 来补造历史。
 - 如果业务明确要丢弃 mutable frontier，必须使用 `reset-frontier`，不能把它和默认 `CSI 2J` 混成一类。
-- clear scrollback 或程序明确删除历史时，必须使用 `truncate-committed-history`，并 bump generation、失效旧 token/cursor。
-- clear scrollback 可以删除已经写入 StorageBackend 的 line；StorageBackend 必须执行 delete、truncate、tombstone 或后续 compaction。
+- `ED3` / clear scrollback 是 soft boundary：必须 bump generation、失效当前 latest projection，但不得物理删除 authoritative committed history。
+- 程序明确删除历史时，必须使用 `truncate-committed-history`，并 bump generation、失效旧 token/cursor。
 - `truncate-committed-history` 只删除 committed index 覆盖的历史。它不得从当前 screen 或 `MutableFrontier` 反推删除内容。
 - 如果被 truncate 的 logical line 当前也在 `MutableFrontier` 中，truncate 必须切断其旧 committed source/boundary；除非同一事务还包含 `reset-frontier` 或 `mutate-frontier`，否则该 line 仍作为当前 frontier 内容保留。
 - 对仍保留在 frontier 的 line，StorageBackend 删除的是旧 committed reference 或旧 committed backing，不得丢失 frontier payload；必要时先把 payload 保留在 `LogicalLineStore` 或转移到新的 storage reference。
@@ -373,8 +378,8 @@ copy mode frozen snapshot 要落地，不能只停在 `MutableFrontier` 这个�
 ### 6.5 alt-screen 与 process exit 组合语义
 
 - 进入 alt-screen 前，primary `HistoryTrack` 必须先执行 page-break：把 core 已持有的 primary frontier 封口提交，再清空 primary screen ownership。
-- 进入 alt-screen 后，primary `HistoryTrack` 冻结；alt-screen 内部的清屏、光标移动和绘制不会持续进入 primary history。
-- 退出 alt-screen 时，live surface 可以保留 alt-screen 的最后一帧作为实时显示，history 也可以把同一最后一帧追加成新的 authoritative history page，避免全屏程序退出后 copy/history 里看不到这次 UI。当前默认开启，可用 `TERMX_PRESERVE_ALT_SCREEN_ON_EXIT=0` 临时关闭，后续迁到配置系统时仍只控制“退出时保留最后一帧”这一策略。
+- 进入 alt-screen 后，primary committed history 冻结；alt-screen 内部的清屏、光标移动和绘制不会进入 committed primary history。
+- running/exit alt-screen 的当前可见 frame 可以作为 transient latest/frozen frame 暴露给 history/copy，`Committed=false`，不增加 `CommittedHistoryIndex` depth，后续 primary 输出会替换它。live surface 是否把退出最后一帧 replay 到 primary 实时显示仍由 `TERMX_PRESERVE_ALT_SCREEN_ON_EXIT` 控制；默认只恢复 primary live screen，但 history/copy 仍能看到 transient 当前帧。
 
 ### 6.6 frozen snapshot / pagination contract
 
@@ -450,7 +455,7 @@ TUI-v3 stale guard 只能使用 core-v2 返回的 token、generation、cursor �
 - 两轨不能通过 snapshot、wrapped rows、visual rows 传递历史 truth。
 - resize 不能创造 history，grow resize 必须按完整 logical line reclaim committed suffix。
 - clear screen、full replace、attach、reattach、bootstrap、recovery 不能凭空创建 committed history；`CSI 2J` 只允许提交 core 已持有的 primary frontier，不能从 live snapshot 反推历史。
-- clear scrollback、truncate、retention 可以删除已提交和已持久化的 logical line，但必须按完整 logical line 更新 index、store、generation 与 cursor。
+- 显式 truncate、retention 可以删除已提交和已持久化的 logical line，但必须按完整 logical line 更新 index、store、generation 与 cursor；`ED3` / clear scrollback 不删除 authoritative history。
 - alt-screen 不写 primary history。
 - process exit 必须 force commit primary mutable frontier。
 - TUI 不得用本地深度计数、snapshot totals、LoadedRows、row count 推断 older/latest 接纳规则。
@@ -488,7 +493,7 @@ TUI-v3 stale guard 只能使用 core-v2 返回的 token、generation、cursor �
 
 ### 10.2 StorageBackend 被误当作历史真相
 
-风险：实现为了方便把“已经写到文件”解释成“不可修改”，导致 clear scrollback、truncate、reclaim、replacement 无法正确表达。
+风险：实现为了方便把“已经写到文件”解释成“不可修改”，导致 truncate、reclaim、replacement 无法正确表达，或把终端 `ED3` 误当成 authoritative history 删除。
 
 应对：domain model 只认 `LogicalLineStore`、`CommittedHistoryIndex` 与 `MutableFrontier`；StorageBackend 只是读写实现。测试必须覆盖删除已提交历史、reclaim 后修改再提交、retention 后 cursor 失效。
 
