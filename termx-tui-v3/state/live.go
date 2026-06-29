@@ -43,12 +43,21 @@ type LiveResizeBoundary struct {
 	Rows         int
 }
 
-// LiveSurfaceRefreshState 是 TUI 对 live snapshot 拉取的背压状态，不是 core truth。
+// LiveSurfaceRefreshState 是 TUI 对单个 terminal live 刷新链路的背压状态。
+// 领域归属在 TUI reducer：core 只提供 latest native screen 和 one-shot wake，
+// 这里记录本 TUI 是否已经 enable callback、是否正在拉 snapshot，以及是否需要
+// 在当前拉取完成后再补一次 latest fetch。它不是历史 truth，也不是 rendered ack。
 type LiveSurfaceRefreshState struct {
+	// Armed 表示本 TUI 已为该 terminal enable 了一次 core one-shot callback，
+	// callback 返回前不能因重复 frame-ready 再挂第二个同 terminal callback。
+	Armed bool
+	// InFlight 表示 live.screen.get 已发出但还未回到 reducer。
 	InFlight bool
-	Dirty    bool
-	Cols     int
-	Rows     int
+	// Dirty 表示 InFlight 期间又收到 invalidation，当前 fetch 完成后还要再取一次 latest。
+	Dirty bool
+	// Cols/Rows 保存下一次 live.screen.get 应使用的 owner view 尺寸。
+	Cols int
+	Rows int
 }
 
 // LiveCursor 是 live surface 的 content-local 光标状态。
@@ -453,6 +462,7 @@ func (store TerminalSurfaceStore) RequestRefresh(terminalID string, cols int, ro
 		rows = 24
 	}
 	refresh := store.Refreshes[terminalID]
+	refresh.Armed = false
 	refresh.Cols = cols
 	refresh.Rows = rows
 	if refresh.InFlight {
@@ -470,6 +480,51 @@ func (store TerminalSurfaceStore) RequestRefresh(terminalID string, cols int, ro
 	return store, true
 }
 
+// ArmLiveInvalidation 记录本 TUI 已经为 terminalID enable 了一次 core one-shot wake。
+// 同一个 TUI+terminalID 在 Armed/InFlight/Dirty 任一状态存在时都不能重复挂 callback；
+// wake 返回后必须通过 RequestRefresh 或 FinishLiveInvalidationArm 释放 Armed。
+func (store TerminalSurfaceStore) ArmLiveInvalidation(terminalID string, cols int, rows int) (TerminalSurfaceStore, bool) {
+	if terminalID == "" {
+		return store, false
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
+	refresh := store.Refreshes[terminalID]
+	if refresh.Armed || refresh.InFlight || refresh.Dirty {
+		return store, false
+	}
+	refresh.Armed = true
+	refresh.Cols = cols
+	refresh.Rows = rows
+	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
+	store.Refreshes[terminalID] = refresh
+	return store, true
+}
+
+// FinishLiveInvalidationArm 释放一个已经返回或失败的 one-shot callback pending 状态。
+// 如果该 terminal 同时存在 fetch/dirty 状态，只清掉 Armed；否则移除 refresh 记录。
+func (store TerminalSurfaceStore) FinishLiveInvalidationArm(terminalID string) TerminalSurfaceStore {
+	if terminalID == "" {
+		return store
+	}
+	refresh, ok := store.Refreshes[terminalID]
+	if !ok || !refresh.Armed {
+		return store
+	}
+	refresh.Armed = false
+	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
+	if refresh.InFlight || refresh.Dirty {
+		store.Refreshes[terminalID] = refresh
+		return store
+	}
+	delete(store.Refreshes, terminalID)
+	return store
+}
+
 func (store TerminalSurfaceStore) FinishRefresh(terminalID string) TerminalSurfaceStore {
 	if terminalID == "" {
 		return store
@@ -482,8 +537,13 @@ func (store TerminalSurfaceStore) FinishRefresh(terminalID string) TerminalSurfa
 	if refresh.Dirty {
 		// 中文说明：fetch 返回期间又有 invalidation，先让当前 latest screen
 		// 进入 runtime 队列；后续由 maybeScheduleDirtyLiveSurfaceRefresh 再拉一次当前最新屏。
+		refresh.Armed = false
 		refresh.InFlight = false
 		refresh.Dirty = false
+		store.Refreshes[terminalID] = refresh
+		return store
+	}
+	if refresh.Armed && !refresh.InFlight {
 		store.Refreshes[terminalID] = refresh
 		return store
 	}
@@ -496,9 +556,10 @@ func (store TerminalSurfaceStore) ConsumeDirtyRefresh(terminalID string) (Termin
 		return store, 0, 0, false
 	}
 	refresh, ok := store.Refreshes[terminalID]
-	if !ok || refresh.InFlight || refresh.Dirty {
+	if !ok || refresh.Armed || refresh.InFlight || refresh.Dirty {
 		return store, 0, 0, false
 	}
+	refresh.Armed = false
 	refresh.InFlight = true
 	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
 	store.Refreshes[terminalID] = refresh

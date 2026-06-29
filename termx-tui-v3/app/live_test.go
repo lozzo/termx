@@ -1173,6 +1173,58 @@ func TestLiveFrameReadyArmsNextInvalidation(t *testing.T) {
 	}
 }
 
+func TestLiveFrameReadyDedupesPendingCallbackForSharedTerminalViews(t *testing.T) {
+	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 1)}
+	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	shell := state.DefaultShell().
+		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-shared").
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-shared"}, state.SplitDirectionVertical)
+	root := state.Root{Shell: shell}
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
+		TerminalID: "term-shared",
+		Revision:   8,
+		Cols:       96,
+		Rows:       30,
+		Lines:      []string{"shared"},
+	})
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-shared", 7, 96, 30, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindPane(state.NewPaneTerminalView("pane-2", "term-shared", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false))
+
+	root, effects := reducer(root, LiveFrameReadyMsg{TerminalID: "term-shared", ObservedRevision: 8})
+	if len(effects) != 1 {
+		t.Fatalf("first ready should arm exactly one callback, got %#v", effects)
+	}
+	firstArm, ok := effects[0].(FuncEffect)
+	if !ok || firstArm.Token != liveInvalidationTokenForTerminal("term-shared") {
+		t.Fatalf("first ready should use terminal-scoped arm effect, got %#v", effects[0])
+	}
+	if request := root.Surface.Refreshes["term-shared"]; !request.Armed || request.InFlight || request.Dirty || request.Cols != 96 || request.Rows != 30 {
+		t.Fatalf("shared terminal should keep one pending callback at owner size, got %#v", request)
+	}
+
+	root, effects = reducer(root, LiveFrameReadyMsg{TerminalID: "term-shared", ObservedRevision: 8})
+	if len(effects) != 0 {
+		t.Fatalf("duplicate ready while callback is pending must not re-arm, got %#v", effects)
+	}
+	if request := root.Surface.Refreshes["term-shared"]; !request.Armed || request.InFlight || request.Dirty {
+		t.Fatalf("duplicate ready should leave pending callback unchanged, got %#v", request)
+	}
+
+	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-shared", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
+	wake, ok := firstArm.Run(context.Background()).(LiveEventMsg)
+	if !ok {
+		t.Fatalf("pending arm should return live wake msg")
+	}
+	root, effects = reducer(root, wake)
+	if len(effects) != 1 {
+		t.Fatalf("callback wake should start exactly one latest fetch, got %#v", effects)
+	}
+	if request := root.Surface.Refreshes["term-shared"]; request.Armed || !request.InFlight || request.Dirty {
+		t.Fatalf("callback wake should clear armed and start fetch, got %#v", request)
+	}
+}
+
 func TestLiveInvalidationArmContextCanceledDoesNotPostPanelError(t *testing.T) {
 	terminal := &services.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
 	effects := liveInvalidationArmEffect("term-1", 80, 24, 7, LiveDeps{Terminal: terminal})

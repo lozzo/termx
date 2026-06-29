@@ -991,6 +991,7 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Ro
 	if event.TerminalID == "" {
 		event.TerminalID = root.Surface.TerminalID
 	}
+	root.Surface = root.Surface.FinishLiveInvalidationArm(event.TerminalID)
 	if ordinaryLiveRefreshEvent(event) {
 		if event.TerminalID == "" {
 			return root, nil
@@ -1117,11 +1118,6 @@ func reduceLiveFrameReady(root state.Root, msg LiveFrameReadyMsg, deps LiveDeps)
 	if terminalID == "" {
 		return root, nil
 	}
-	if refresh, ok := root.Surface.Refreshes[terminalID]; ok && (refresh.InFlight || refresh.Dirty) {
-		// 中文说明：写帧完成时若 reducer 已经知道还有 dirty latest fetch，
-		// 下一次 enable 必须等 follow-up surface 写出后再发生，不能重开并行 wake。
-		return root, nil
-	}
 	surface := root.Surface.SurfaceForTerminal(terminalID)
 	if surface.State == state.TerminalLiveExited || surface.State == state.TerminalLiveError {
 		return root, nil
@@ -1130,7 +1126,17 @@ func reduceLiveFrameReady(root state.Root, msg LiveFrameReadyMsg, deps LiveDeps)
 		// 这次 ready 属于已被更新覆盖的本地帧，下一次 enable 由最新帧完成时触发。
 		return root, nil
 	}
+	if _, ok := deps.Terminal.(services.LiveInvalidationSource); !ok {
+		return root, nil
+	}
 	cols, rows := liveSurfaceRefreshSize(root, terminalID)
+	var shouldArm bool
+	root.Surface, shouldArm = root.Surface.ArmLiveInvalidation(terminalID, cols, rows)
+	if !shouldArm {
+		// 中文说明：同一个 TUI+terminalID 只能有一个 pending one-shot callback。
+		// 重复 ready、正在拉取或 dirty follow-up 都在 reducer 状态里合并。
+		return root, nil
+	}
 	return root, liveInvalidationArmEffect(terminalID, cols, rows, surface.Revision, deps)
 }
 

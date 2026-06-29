@@ -498,3 +498,34 @@ func TestTerminalSurfaceRefreshBackpressureConsumesDirtyAfterFetch(t *testing.T)
 		t.Fatalf("fresh snapshot should clear refresh state, store=%#v", store.Refreshes)
 	}
 }
+
+func TestTerminalSurfaceRefreshArmsOneCallbackPerTerminal(t *testing.T) {
+	var store TerminalSurfaceStore
+	var arm bool
+	store, arm = store.ArmLiveInvalidation("term-1", 80, 24)
+	if !arm || !store.Refreshes["term-1"].Armed {
+		t.Fatalf("first ready should arm one callback, store=%#v arm=%v", store.Refreshes, arm)
+	}
+
+	store, arm = store.ArmLiveInvalidation("term-1", 96, 30)
+	if arm {
+		t.Fatalf("duplicate ready must not re-arm the same terminal, store=%#v", store.Refreshes)
+	}
+	if request := store.Refreshes["term-1"]; !request.Armed || request.InFlight || request.Dirty || request.Cols != 80 || request.Rows != 24 {
+		t.Fatalf("duplicate ready should keep original pending callback, got %#v", request)
+	}
+
+	var fetch bool
+	store, fetch = store.RequestRefresh("term-1", 96, 30)
+	if !fetch {
+		t.Fatalf("callback wake should clear armed and start latest fetch, store=%#v", store.Refreshes)
+	}
+	if request := store.Refreshes["term-1"]; request.Armed || !request.InFlight || request.Dirty || request.Cols != 96 || request.Rows != 30 {
+		t.Fatalf("wake should become a single in-flight fetch, got %#v", request)
+	}
+
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 8, Cols: 96, Rows: 30, Lines: []string{"rev8"}})
+	if _, ok := store.Refreshes["term-1"]; ok {
+		t.Fatalf("fresh snapshot should clear callback/fetch state, store=%#v", store.Refreshes)
+	}
+}
