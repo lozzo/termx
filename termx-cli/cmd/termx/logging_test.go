@@ -73,7 +73,7 @@ func TestV3PathPolicy(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 
-	if got := resolveV3Socket(""); got != filepath.Join(runtimeDir, "termx-v2.sock") {
+	if got := resolveV3Socket(""); got != filepath.Join(runtimeDir, "termx-v2-wire2.sock") {
 		t.Fatalf("expected v3 socket in runtime dir, got %q", got)
 	}
 	explicitSocket := filepath.Join(t.TempDir(), "explicit.sock")

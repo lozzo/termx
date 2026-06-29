@@ -464,6 +464,48 @@ func TestProtocolServiceLiveScreenRevisionAdvancesWithOutput(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceNextLiveInvalidationDecodesOneShotParams(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-live-next", Command: []string{"shell"}, Size: protocol.Size{Cols: 12, Rows: 4}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	events := make(chan *protocol.Event, 1)
+	errs := make(chan error, 1)
+	go func() {
+		event, err := client.NextLiveInvalidation(ctx, "term-live-next")
+		if err != nil {
+			errs <- err
+			return
+		}
+		events <- event
+	}()
+
+	select {
+	case err := <-errs:
+		t.Fatalf("live invalidation request should decode terminal-scoped params, got %v", err)
+	case event := <-events:
+		t.Fatalf("live invalidation arm returned before next wake: %#v", event)
+	case <-time.After(20 * time.Millisecond):
+	}
+	if err := server.IngestOutput(context.Background(), "term-live-next", "wake\r\n"); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	select {
+	case err := <-errs:
+		t.Fatalf("live invalidation request failed after wake: %v", err)
+	case event := <-events:
+		if event == nil || event.Type != protocol.EventTerminalLiveInvalidated || event.TerminalID != "term-live-next" {
+			t.Fatalf("unexpected live invalidation event %#v", event)
+		}
+	case <-ctx.Done():
+		t.Fatalf("timed out waiting for live invalidation event: %v", ctx.Err())
+	}
+}
+
 func newProtocolClient(t *testing.T) (*Server, *protocol.Client, func()) {
 	return newProtocolClientWithProcessFactory(t, newRecordingProcessFactory())
 }

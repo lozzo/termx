@@ -12,6 +12,7 @@ import (
 
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
+	"github.com/lozzow/termx/termx-proto/wire"
 	"github.com/lozzow/termx/termx-shared/transport"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 )
@@ -786,8 +787,9 @@ func unixListenerFactory(socketPath string) (transport.Listener, error) {
 }
 
 func defaultSocketPath() string {
+	name := fmt.Sprintf("termx-v2-wire%d.sock", wire.Version)
 	if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
-		return runtimeDir + "/termx-v2.sock"
+		return runtimeDir + "/" + name
 	}
-	return fmt.Sprintf("%s/termx-v2-%d.sock", os.TempDir(), os.Getuid())
+	return fmt.Sprintf("%s/termx-v2-wire%d-%d.sock", os.TempDir(), wire.Version, os.Getuid())
 }
