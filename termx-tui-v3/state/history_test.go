@@ -2,6 +2,7 @@ package state
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -286,6 +287,165 @@ func TestHistoryStoreAppliesOldestReplaceAndNewerAppend(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreReflowsFrozenLogicalLinesAtLocalCols(t *testing.T) {
+	lines := []HistoryLogicalLine{{
+		Text:   "abcdef",
+		LineID: 10,
+		Cells: []HistoryCell{
+			{Text: "abc", Width: 3},
+			{Text: "def", Width: 3},
+		},
+	}}
+	rows, spans := ReflowHistoryLogicalLines(lines, 3)
+	if got := historyTestRowTexts(rows); !reflect.DeepEqual(got, []string{"abc", "def"}) {
+		t.Fatalf("expected local reflow rows, got %v", got)
+	}
+	if len(spans) != 1 || spans[0].StartRow != 0 || spans[0].EndRow != 1 || rows[1].RowInLine != 1 {
+		t.Fatalf("reflow span/row metadata wrong: rows=%#v spans=%#v", rows, spans)
+	}
+}
+
+func TestHistoryStoreReflowPreservesAuthoritativeCellPadding(t *testing.T) {
+	lines := []HistoryLogicalLine{{
+		LineID: 10,
+		Cells: []HistoryCell{
+			{Text: "AGENTS.md", Width: 9},
+			{Text: "go.work", Width: 9},
+			{Text: "README.md", Width: 9},
+		},
+	}}
+	rows, _ := ReflowHistoryLogicalLines(lines, 40)
+	if got := rows[0].Text; got != "AGENTS.mdgo.work  README.md" {
+		t.Fatalf("reflow text should materialize authoritative cell padding, got %q", got)
+	}
+}
+
+func TestHistoryStoreDoesNotReflowFixedGridRows(t *testing.T) {
+	lines := []HistoryLogicalLine{{
+		LineID:     10,
+		Kind:       "screen-frame",
+		FixedGrid:  true,
+		ScreenCols: 80,
+		Cells: []HistoryCell{
+			{Text: "model:", Width: 19},
+			{Text: "gpt-5.5 xhigh", Width: 13},
+		},
+	}}
+	rows, spans := ReflowHistoryLogicalLines(lines, 12)
+	if len(rows) != 1 || rows[0].Kind != "screen-frame" || rows[0].Text != "model:             gpt-5.5 xhigh" {
+		t.Fatalf("screen frame row must remain one fixed-grid row with padding, rows=%#v", rows)
+	}
+	if spans[0].StartRow != 0 || spans[0].EndRow != 0 {
+		t.Fatalf("fixed-grid span should stay one row, got %#v", spans)
+	}
+}
+
+func TestHistoryStoreTrimRowsPreservesProjectionCursorAndFrozenTail(t *testing.T) {
+	source := make([]HistoryLogicalLine, 0, 8)
+	for i := 0; i < 8; i++ {
+		source = append(source, HistoryLogicalLine{
+			Text:               "line",
+			LineID:             uint64(240 + i),
+			Segment:            HistoryCursorSegmentCommitted,
+			ProjectionRowIndex: 240 + i,
+		})
+	}
+	store := HistoryStore{
+		Cols:        80,
+		SourceLines: source,
+		Cursor:      HistoryCursor{Valid: true, BeforeLineID: 240, BeforeRowIndex: 240, Segment: HistoryCursorSegmentCommitted},
+		Boundary:    HistoryBoundary{FirstLineID: 240, LastLineID: 247},
+	}
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+
+	trimmed, result := store.TrimRows(2, 6)
+
+	if result.DroppedRowsBefore != 2 || result.DroppedRowsAfter != 1 || result.DroppedLinesBefore != 2 || result.DroppedLinesAfter != 1 {
+		t.Fatalf("unexpected trim accounting: %#v", result)
+	}
+	if len(trimmed.Rows) != 5 || len(trimmed.SourceLines) != 5 {
+		t.Fatalf("trim should keep only local source window, rows=%d sources=%d", len(trimmed.Rows), len(trimmed.SourceLines))
+	}
+	if trimmed.Boundary.FirstLineID != 242 || trimmed.Boundary.LastLineID != 247 {
+		t.Fatalf("trim must update local first boundary but keep frozen tail guard, got %#v", trimmed.Boundary)
+	}
+	if trimmed.Cursor.BeforeLineID != 242 || trimmed.Cursor.BeforeRowIndex != 242 || trimmed.Cursor.Segment != HistoryCursorSegmentCommitted {
+		t.Fatalf("trim must preserve authoritative projection cursor, got %#v", trimmed.Cursor)
+	}
+}
+
+func TestHistoryStoreTrimRowsUsesSourceIdentityNotLineID(t *testing.T) {
+	store := HistoryStore{
+		Cols: 80,
+		SourceLines: []HistoryLogicalLine{
+			{Text: "old", LineID: 42, Kind: "screen-frame", Segment: HistoryCursorSegmentCurrentPrimaryFrame, SessionID: 3, FrameID: 10, FixedGrid: true, ScreenCols: 80, ProjectionRowIndex: 240},
+			{Text: "new", LineID: 42, Kind: "screen-frame", Segment: HistoryCursorSegmentCurrentPrimaryFrame, SessionID: 3, FrameID: 11, FixedGrid: true, ScreenCols: 80, ProjectionRowIndex: 241},
+		},
+		Cursor:   HistoryCursor{Valid: true, BeforeLineID: 42, BeforeRowIndex: 240, Segment: HistoryCursorSegmentCurrentPrimaryFrame},
+		Boundary: HistoryBoundary{FirstLineID: 42, LastLineID: 42},
+	}
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+
+	trimmed, result := store.TrimRows(1, 1)
+
+	if result.DroppedLinesBefore != 1 || len(trimmed.SourceLines) != 1 {
+		t.Fatalf("trim should keep only second source identity, result=%#v store=%#v", result, trimmed)
+	}
+	if trimmed.SourceLines[0].FrameID != 11 || trimmed.Cursor.BeforeRowIndex != 241 {
+		t.Fatalf("trim must key by frame identity and projection row, got cursor=%#v source=%#v", trimmed.Cursor, trimmed.SourceLines)
+	}
+}
+
+func TestHistoryStoreMergesBoundaryOverlapWhenPrependingOlderWindow(t *testing.T) {
+	store := HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       4,
+		SourceLines: []HistoryLogicalLine{{
+			Text:          "cdef",
+			LineID:        10,
+			Segment:       HistoryCursorSegmentCommitted,
+			ClippedBefore: true,
+			ClippedAfter:  false,
+		}},
+		Cursor:     HistoryCursor{Valid: true, BeforeLineID: 10, Segment: HistoryCursorSegmentCommitted},
+		Generation: 7,
+		Boundary:   HistoryBoundary{FirstLineID: 10, LastLineID: 10},
+	}
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+	store, err := store.BeginOlder(HistoryPendingRequest{ID: 31, TerminalID: "term-1", Cols: 4, Token: "tok-1", Generation: 7, Cursor: store.Cursor, Boundary: store.Boundary})
+	if err != nil {
+		t.Fatalf("begin older: %v", err)
+	}
+	window := HistoryWindow{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Op:         HistoryWindowPrepend,
+		Cols:       4,
+		SourceLines: []HistoryLogicalLine{{
+			Text:         "ab",
+			LineID:       10,
+			Segment:      HistoryCursorSegmentCommitted,
+			ClippedAfter: true,
+		}},
+		Cursor:     HistoryCursor{Valid: false},
+		Generation: 7,
+		Boundary:   HistoryBoundary{FirstLineID: 10, LastLineID: 10},
+	}
+	window.Rows, window.Lines = ReflowHistoryLogicalLines(window.SourceLines, window.Cols)
+
+	got, _, err := store.ApplyWindow(31, window)
+	if err != nil {
+		t.Fatalf("apply older overlap: %v", err)
+	}
+	if len(got.SourceLines) != 1 || got.SourceLines[0].Text != "abcdef" || got.SourceLines[0].ClippedBefore || got.SourceLines[0].ClippedAfter {
+		t.Fatalf("overlap partials must merge into one logical source, got %#v", got.SourceLines)
+	}
+	if gotText := strings.Join(historyTestRowTexts(got.Rows), "|"); gotText != "abcd|ef" {
+		t.Fatalf("merged source should reflow at local cols, got %q rows=%#v", gotText, got.Rows)
+	}
+}
+
 func TestHistoryTraceWindowSummarySamplesIdentityAndEscapesText(t *testing.T) {
 	rows := make([]HistoryRow, 10)
 	for i := range rows {
@@ -320,4 +480,12 @@ func TestHistoryTraceWindowSummarySamplesIdentityAndEscapesText(t *testing.T) {
 			t.Fatalf("summary missing %q in %q", want, summary)
 		}
 	}
+}
+
+func historyTestRowTexts(rows []HistoryRow) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.Text)
+	}
+	return out
 }
