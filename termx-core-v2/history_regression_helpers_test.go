@@ -81,6 +81,15 @@ func historyTextCount(rows []history.HistoryRow, needle string) int {
 	return count
 }
 
+func historyTextIndex(rows []string, needle string) int {
+	for index, row := range rows {
+		if strings.Contains(row, needle) {
+			return index
+		}
+	}
+	return -1
+}
+
 func r326CollectAllHistoryRows(t *testing.T, server *Server, terminalID string, cols int, limit int) ([]history.HistoryRow, int) {
 	t.Helper()
 	latest, err := server.TerminalHistoryWindow(context.Background(), terminalID, history.HistoryWindowRequest{
