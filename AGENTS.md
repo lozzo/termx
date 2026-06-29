@@ -2,35 +2,33 @@
 
 ## 最高工作基准
 
-- 仓库根目录 `workflow.md` 是当前分支唯一有效的活动驱动文件。
-- 本仓库内所有工作必须先读取 `workflow.md`，并以它作为范围、任务顺序、测试准入和提交规则的唯一基准。
+- `AGENTS.md` 是本仓库代理执行方式、范围判断、测试和提交纪律的默认基准。
+- 后续工作不再由 `workflow.md` 驱动；除非用户明确要求，不必读取、更新或按它的任务队列执行。
+- 用户当前请求是活动驱动来源；范围必须结合本文件的目录职责、冻结规则和仓库实际状态判断。
 - `termx-core-v2/docs/architecture.md` 是 core-v2 技术设计基准。
 - `termx-tui-v3/docs/architecture.md` 是 tui-v3 技术设计基准。
-- `AGENTS.md` 只规定代理执行方式和目录职责，不替代 `workflow.md` 的范围判断。
-- 若 `workflow.md` 与旧说明、聊天记录、旧代码行为或局部假设冲突，默认以 `workflow.md` 为准。
+- 若 `workflow.md`、旧说明、聊天记录、旧代码行为或局部假设与本文件或用户当前请求冲突，默认以后者为准。
 
 ## 自动执行模式
 
 当用户启动 `/goal` 或要求自动推进时，按下面循环执行：
 
-1. 读取 `workflow.md`。
+1. 读取 `AGENTS.md`，需要技术细节时读取对应 architecture 文档。
 2. 检查 `git status --short --branch`，确认是否存在未提交改动。
-3. 按 `workflow.md` 任务队列表格顺序选择最早未完成切片。
-4. 如果最早未完成切片是 `阻塞`，停止并向用户说明阻塞，不得跳到后续 `待开始` 切片。
-5. 如果最早未完成切片是 `待开始`，先把它改为 `进行中`，并提交或与本切片首个实现提交同切片提交。
-6. 只执行该切片，不跨切片扩展范围。
-7. 需要技术细节时读取对应 architecture 文档。
-8. 实现最小可验证改动，补齐该切片要求的 harness。
-9. 运行该切片的测试准入命令。
-10. 更新 `workflow.md` 中该切片状态和必要的当前状态说明。
-11. 使用中文提交信息提交本切片。
-12. 若 `/goal` 仍在继续，再进入下一切片。
+3. 根据用户当前目标、仓库状态和本文件约束拆出最早且最小可验证任务；如果用户给了明确清单，按清单顺序推进。
+4. 如果当前任务阻塞，停止并向用户说明阻塞原因，不得自行跳到无关任务。
+5. 只执行当前任务，不跨任务扩展范围。
+6. 实现最小可验证改动，补齐必要 harness。
+7. 运行与改动范围匹配的测试准入命令；文档-only 改动至少运行 `git diff --check`。
+8. 只更新当前任务必要的文档和状态说明，不维护 `workflow.md` 状态。
+9. 使用中文提交信息提交当前任务。
+10. 若 `/goal` 仍在继续且存在明确下一任务，再进入下一轮。
 
-如果没有明确阻塞，不要停下来要求用户确认普通实现细节。若范围、语义或目录权限不清，必须先更新 `workflow.md` 或向用户说明阻塞。
+如果没有明确阻塞，不要停下来要求用户确认普通实现细节。若范围、语义或目录权限不清，必须先向用户说明阻塞。
 
 ## 范围规则
 
-- 允许主动工作目录只能来自 `workflow.md` 的“当前主线范围”和“受限联动范围”。
+- 允许主动工作目录由用户当前请求、本文件目录职责和必要联动决定，默认只触碰最小相关目录。
 - 不允许因为“看起来有关”自行扩散到其他目录。
 - 旧 `termx-core/` 与 `tuiv2/` 已退出本分支，不再作为只读参考、legacy fallback 或默认依赖存在。
 - 当前默认本地 CLI 入口必须走 `termx-core-v2/` 与 `termx-tui-v3/`；不得重新引入 `termx legacy ...`、旧 daemon、旧 TUI 或 remote legacy/fallback。
@@ -38,11 +36,11 @@
 - `termx-cli/cmd/termx/remote_*.go` 只能通过 core-v2 daemon/protocol/service extension 接入，不得 import 旧 `termx-core` 或 `tuiv2`。
 - `termx-cli/cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
 - 当前进入 remote 迁移阶段时，仍必须保持默认本地入口走 `termx-core-v2/` 与 `termx-tui-v3/`；remote 迁移只能通过 core-v2 protocol/service extension、`termx-remote` public package 和 CLI glue 接入，不能把默认路径退回旧 daemon 或旧 TUI。
-- `termx remote ...` 从 legacy/fallback 迁出必须按 `workflow.md` 切片逐步完成：先审计和契约，再 core-v2 extension hook，再 CLI 装配，再启用 local/pair flow。不得一次性大搬旧实现。
+- `termx remote ...` 从 legacy/fallback 迁出必须按用户给定计划或明确任务逐步完成：先审计和契约，再 core-v2 extension hook，再 CLI 装配，再启用 local/pair flow。不得一次性大搬旧实现。
 - 协议迁移必须以 core-v2 domain contract 为唯一目标；不为旧 `termx-core/` 保留 wire format、storage format、method adapter、双 handler、fallback 读写或兼容 shim。
-- remote 迁移期间允许触碰 `termx-remote/` 和必要的 `termx-cli/cmd/termx/remote_*.go`，但只能在 `workflow.md` 当前切片列明时修改；`remote-ui/`、`web-control/`、`termx-hub/` 仍冻结。
-- 如果确实必须恢复旧目录，先修改 `workflow.md` 的范围表并说明原因；默认不允许恢复。
-- 冻结目录不得触碰，除非 `workflow.md` 先明确解冻。
+- remote 迁移期间允许触碰 `termx-remote/` 和必要的 `termx-cli/cmd/termx/remote_*.go`，但只能在当前任务直接需要时修改；`remote-ui/`、`web-control/`、`termx-hub/` 仍默认冻结。
+- 如果确实必须恢复旧目录，先向用户说明原因并获得明确同意；默认不允许恢复。
+- 冻结目录不得触碰，除非用户明确解冻或当前任务直接要求。
 - 关键代码需要写上注释,使用中文
 ## 目录职责
 
@@ -53,10 +51,10 @@
 - `termx-core/`：已删除旧 core 目录；不得作为 fallback 恢复。
 - `tuiv2/`：已删除旧 TUI 目录；不得作为 fallback 恢复。
 - `termx-vterm/`：受限联动目录，只在新 core-v2/tui-v3 的 terminal 或 protocol 契约确实需要时最小化触及。
-- `internal/protocol/` 与 `termx-proto/`：受限联动目录，只在 `history.window` contract 或 protocol adapter 切片需要时最小化触及。
-- `termx-remote/`：remote runtime/service 主线目录，只在 remote 迁移切片中修改；它不能直接拥有 core-v2 terminal/history truth，只能通过 core-v2 daemon/protocol adapter 访问。
-- `termx-remote-v2/`：remote v2 设计/实验目录；默认不触碰，除非 `workflow.md` 明确把它纳入当前切片。
-- `termx-cli/`、`termx-shared/`、`termx-testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前切片需要时最小化触及。
+- `internal/protocol/` 与 `termx-proto/`：受限联动目录，只在相关 contract 或 protocol adapter 任务需要时最小化触及。
+- `termx-remote/`：remote runtime/service 主线目录，只在 remote 迁移任务中修改；它不能直接拥有 core-v2 terminal/history truth，只能通过 core-v2 daemon/protocol adapter 访问。
+- `termx-remote-v2/`：remote v2 设计/实验目录；默认不触碰，除非用户明确把它纳入当前任务。
+- `termx-cli/`、`termx-shared/`、`termx-testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前任务需要时最小化触及。
 
 ## 硬语义规则
 
@@ -87,7 +85,7 @@
 - 先写 domain model 和小 harness，再接真实 protocol、terminal 或 CLI 入口。
 - 代码必须按正确模型写完整：如果只能靠“再补一个判断”“再刷一次状态”“失败就 fallback”“先 scrub storage”才能成立，默认方案不合格，需要回到状态归属和契约设计重新做。
 - 当前处于开发周期，不做旧内部实现、旧 storage/协议格式、旧 snapshot/workbench schema 或旧运行时行为的兼容；需要破坏性调整时直接按新模型改，删除旧路径。
-- 不为兼容旧内部实现保留双路径、适配层、桥接代码、旧格式读取分支或迁移兜底，除非 `workflow.md` 明确要求。
+- 不为兼容旧内部实现保留双路径、适配层、桥接代码、旧格式读取分支或迁移兜底，除非用户当前请求或新设计文档明确要求。
 - remote/protocol 迁移时发现旧 core contract 与 core-v2 contract 冲突，必须改向 core-v2；不得为了旧客户端或旧 daemon 继续工作而保留兼容代码。
 - 从旧实现迁移代码时，迁入新目录后必须按新边界重命名、裁剪依赖并补 v2/v3 harness。
 - service 不得直接修改 reducer-owned state；必须通过 message/effect 回到主循环。
@@ -98,15 +96,15 @@
 
 ## 测试和提交
 
-- 每个有效切片提交前必须运行 `workflow.md` 规定的测试准入命令。
+- 每个有效变动提交前必须运行与改动范围匹配的测试准入命令。
 - 文档-only 改动至少运行 `git diff --check`。
 - 如果测试无法运行，最终说明必须写清原因。
 - 每个有效变动必须提交，提交信息必须使用中文。
-- 一次切片尚未达到可提交状态时，先收敛切片，不要继续扩大改动面。
+- 一次任务尚未达到可提交状态时，先收敛任务，不要继续扩大改动面。
 - 不得 amend commit，除非用户明确要求。
 
 ## 子代理使用
 
 - 只有当用户明确要求子 Agent、审核或并行代理工作时才使用子代理。
-- 子代理适合做只读审核、独立探索或互不重叠的实现切片。
+- 子代理适合做只读审核、独立探索或互不重叠的实现任务。
 - 子代理审核后的 findings 必须先本地判断并处理，再提交最终结果。
