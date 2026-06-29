@@ -112,12 +112,20 @@ func hostRenderFunc(host TerminalHost, builder render.RenderVMBuilder, renderer 
 		}
 	}
 	return func(root state.Root) render.Frame {
+		finishVM := perftrace.Measure("tui.render_vm_build")
 		vm := builder.Build(root)
+		finishVM(0)
 		if ansiOnly {
 			// 中文说明：真实 TTY 只消费 ANSI 行；测试 sink 默认保留 plain/styled frame 方便断言。
-			return renderer.RenderANSI(vm)
+			finishANSI := perftrace.Measure("tui.render_ansi")
+			frame := renderer.RenderANSI(vm)
+			finishANSI(frameApproxBytes(frame))
+			return frame
 		}
-		return renderer.Render(vm)
+		finishStyled := perftrace.Measure("tui.render_styled")
+		frame := renderer.Render(vm)
+		finishStyled(frameApproxBytes(frame))
+		return frame
 	}
 }
 
@@ -265,6 +273,8 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 		case LiveLifecycleQueryMsg:
 			return reduceLiveLifecycleQuery(root, msg, deps)
 		case LiveSurfaceMsg:
+			finishReduce := perftrace.Measure("tui.reducer.live_surface")
+			defer finishReduce(liveSnapshotApproxBytes(msg.Snapshot))
 			if msg.Err != nil {
 				root.Surface = root.Surface.FinishRefresh(msg.Snapshot.TerminalID)
 				if next, ok := markTerminalExitedFromError(root, msg.Snapshot.TerminalID, msg.Err); ok {
@@ -301,6 +311,8 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			next, dirtyEffects := maybeScheduleDirtyLiveSurfaceRefresh(next, msg.Snapshot.TerminalID, msg.RequestedCols, msg.RequestedRows, deps)
 			return next, append(effects, dirtyEffects...)
 		case LiveEventMsg:
+			finishReduce := perftrace.Measure("tui.reducer.live_event")
+			defer finishReduce(liveEventApproxBytes(msg.Event))
 			return reduceLiveEvent(root, msg, deps)
 		case LiveExitMsg:
 			root.Session = root.Session.MarkExited(msg.TerminalID, msg.ExitCode, msg.Reason)
@@ -997,8 +1009,10 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Ro
 		var shouldFetch bool
 		root.Surface, shouldFetch = root.Surface.RequestRefresh(event.TerminalID, cols, rows)
 		if !shouldFetch {
+			perftrace.Count("tui.live_refresh_dirty", 0)
 			return root, nil
 		}
+		perftrace.Count("tui.live_refresh_start", 0)
 		return root, liveSurfaceEffect(event.TerminalID, cols, rows, false, deps)
 	}
 	if event.Err != nil {
@@ -1094,10 +1108,15 @@ func applyTerminalAttachmentProjectionFromResize(root state.Root, result service
 func maybeScheduleDirtyLiveSurfaceRefresh(root state.Root, terminalID string, fallbackCols int, fallbackRows int, deps LiveDeps) (state.Root, []Effect) {
 	var cols, rows int
 	var shouldFetch bool
+	dirtyCount := 0
+	if refresh, ok := root.Surface.Refreshes[terminalID]; ok {
+		dirtyCount = int(refresh.DirtyCount)
+	}
 	root.Surface, cols, rows, shouldFetch = root.Surface.ConsumeDirtyRefresh(terminalID)
 	if !shouldFetch {
 		return root, nil
 	}
+	perftrace.Count("tui.live_refresh_followup", dirtyCount)
 	if cols <= 0 || rows <= 0 {
 		cols, rows = fallbackCols, fallbackRows
 	}

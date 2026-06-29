@@ -312,6 +312,7 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 	if err != nil {
 		return TerminalSurfaceResult{}, err
 	}
+	finishConvert := perftrace.Measure("tui.protocol.live_surface_convert")
 	// 中文说明：v3 live display 的 screen truth 只能来自 core latest native screen；
 	// lifecycle 由 list/state event 单独承载，不能再混入 snapshot RPC。
 	liveSnapshot := state.LiveSurfaceSnapshot{
@@ -328,6 +329,7 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 		},
 		Modes: liveSurfaceModesFromProtocol(snapshot.Modes),
 	}
+	finishConvert(liveSnapshotApproxBytes(liveSnapshot))
 	return TerminalSurfaceResult{
 		Ready:          true,
 		Snapshot:       liveSnapshot,
@@ -360,6 +362,19 @@ func protocolLiveEventApproxBytes(event TerminalLiveEvent) int {
 		total += len(line)
 	}
 	for _, row := range event.Snapshot.Screen {
+		for _, cell := range row {
+			total += len(cell.Text)
+		}
+	}
+	return total
+}
+
+func liveSnapshotApproxBytes(snapshot state.LiveSurfaceSnapshot) int {
+	total := 0
+	for _, line := range snapshot.Lines {
+		total += len(line)
+	}
+	for _, row := range snapshot.Screen {
 		for _, cell := range row {
 			total += len(cell.Text)
 		}

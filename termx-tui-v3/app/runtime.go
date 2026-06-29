@@ -120,9 +120,10 @@ type handledEffect struct{}
 func (handledEffect) isEffect() {}
 
 const (
-	defaultToastTickInterval   = time.Second
-	toastTickToken             = CancelToken("toast.tick")
-	defaultMaxMessagesPerBatch = 128
+	defaultToastTickInterval         = time.Second
+	toastTickToken                   = CancelToken("toast.tick")
+	defaultMaxMessagesPerBatch       = 128
+	liveSurfacePressureFrameInterval = 16 * time.Millisecond
 )
 
 // ComposeReducers 按顺序执行多个 reducer，并合并它们产生的 effects。
@@ -193,6 +194,7 @@ type AppRuntime struct {
 	firstFrameWritten   bool
 	startupFrameReady   bool
 	maxMessagesPerBatch int
+	livePressureFrames  map[string]time.Time
 	copyHistoryPatch    copyHistoryPatchCache
 	lastFloatingRepaint floatingRepaintSignature
 	diagnostics         *runtimeDiagnostics
@@ -411,8 +413,14 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 		processed++
 		if !messageSkipsRender(msg) {
 			needsRender = true
+		} else {
+			perftrace.Count("tui.message_skip_render", messageApproxBytes(msg))
 		}
 		if _, ok := msg.(HostResizeMsg); ok {
+			runtime.renderFrame(ctx)
+			needsRender = false
+		}
+		if needsRender && runtime.shouldRenderImmediatelyAfterMessage(msg) {
 			runtime.renderFrame(ctx)
 			needsRender = false
 		}
@@ -492,10 +500,38 @@ func (runtime *AppRuntime) prepareRenderPressureMessage(msg Msg) Msg {
 	if !runtime.liveSurfaceHasQueuedOrDirtySuccessor(surface.Snapshot.TerminalID) {
 		return msg
 	}
+	if runtime.shouldRenderLiveSurfaceUnderPressure(surface.Snapshot.TerminalID) {
+		// 中文说明：latest-only 可以丢中间 projection，但不能在高压输出下
+		// 因 dirty successor 永远跳过渲染；这里按帧预算放行当前最新屏。
+		perftrace.Count("tui.live_surface_pressure_render", liveSnapshotApproxBytes(surface.Snapshot))
+		return surface
+	}
 	// 中文说明：pressure 下如果当前 surface 已经有后继或 dirty refresh，
 	// 它仍会被 reducer 用来推进 fetch 状态，但这条中间 projection 不触发一帧渲染。
 	surface.Superseded = true
+	perftrace.Count("tui.live_surface_superseded", liveSnapshotApproxBytes(surface.Snapshot))
 	return surface
+}
+
+func (runtime *AppRuntime) shouldRenderLiveSurfaceUnderPressure(terminalID string) bool {
+	if terminalID == "" {
+		return false
+	}
+	now := runtime.currentTime()
+	if runtime.livePressureFrames == nil {
+		runtime.livePressureFrames = make(map[string]time.Time)
+	}
+	last := runtime.livePressureFrames[terminalID]
+	if !last.IsZero() && now.Sub(last) < liveSurfacePressureFrameInterval {
+		return false
+	}
+	runtime.livePressureFrames[terminalID] = now
+	return true
+}
+
+func (runtime *AppRuntime) shouldRenderImmediatelyAfterMessage(msg Msg) bool {
+	surface, ok := msg.(LiveSurfaceMsg)
+	return ok && ordinaryLiveSurfaceResult(surface) && !surface.Superseded
 }
 
 func (runtime *AppRuntime) liveSurfaceHasQueuedOrDirtySuccessor(terminalID string) bool {
@@ -706,6 +742,7 @@ func (runtime *AppRuntime) coalesceQueuedLiveUpdate(msg Msg) bool {
 		if existing.terminalID != incoming.terminalID {
 			continue
 		}
+		perftrace.Count("tui.queue_live_coalesce", messageApproxBytes(queued))
 		runtime.removeAtLocked(i)
 		runtime.queue = append(runtime.queue, msg)
 		return true
@@ -827,6 +864,17 @@ func firstOrdinaryLiveUpdateIndex(queue []Msg) int {
 
 func ordinaryLiveSurfaceResult(msg LiveSurfaceMsg) bool {
 	return msg.Err == nil && !msg.LifecycleKnown && msg.Snapshot.TerminalID != ""
+}
+
+func messageApproxBytes(msg Msg) int {
+	switch msg := msg.(type) {
+	case LiveSurfaceMsg:
+		return liveSnapshotApproxBytes(msg.Snapshot)
+	case LiveEventMsg:
+		return liveEventApproxBytes(msg.Event)
+	default:
+		return 0
+	}
 }
 
 func (runtime *AppRuntime) removeAtLocked(index int) {
@@ -963,17 +1011,25 @@ func (runtime *AppRuntime) renderFrame(ctx context.Context) bool {
 	if runtime.host == nil {
 		return false
 	}
+	finishTotal := perftrace.Measure("tui.render_frame_total")
 	if runtime.tryRenderCopyHistoryPatch() {
+		finishTotal(0)
 		return false
 	}
+	finishRender := perftrace.Measure("tui.render_build_frame")
 	frame := runtime.render(runtime.state)
+	frameBytes := frameApproxBytes(frame)
+	finishRender(frameBytes)
 	runtime.markFloatingRepaintFrame(&frame)
 	runtime.lastHitRegions = cloneRenderHitRegions(frame.HitRegions)
+	finishSinkEnqueue := perftrace.Measure("tui.frame_sink_enqueue")
 	_ = runtime.host.FrameSink().WriteFrame(frame)
-	perftrace.Count("tui.frame", frameApproxBytes(frame))
+	finishSinkEnqueue(frameBytes)
+	perftrace.Count("tui.frame", frameBytes)
 	runtime.firstFrameWritten = true
 	runtime.rememberCopyHistoryPatchFrame(frame)
 	runtime.observeRuntimeFrame(frame)
+	finishTotal(frameBytes)
 	return true
 }
 

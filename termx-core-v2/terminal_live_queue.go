@@ -4,6 +4,8 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/lozzow/termx/termx-shared/perftrace"
 )
 
 // terminalLiveIngestBatchMaxBytes 是 live native screen 的交互批次上限。
@@ -59,6 +61,7 @@ func (queue *terminalLiveIngestQueue) Run(ingest func(string) error) {
 		if !ok {
 			return
 		}
+		perftrace.Count("core.live.queue_batch", liveIngestBatchBytes(batch))
 		if ingest != nil {
 			_ = ingest(strings.Join(batch, ""))
 		}
@@ -103,6 +106,14 @@ func splitLiveIngestPayload(text string, limit int) (string, string) {
 	}
 	split := liveIngestSplitOffset(text, limit)
 	return text[:split], text[split:]
+}
+
+func liveIngestBatchBytes(batch []string) int {
+	total := 0
+	for _, text := range batch {
+		total += len(text)
+	}
+	return total
 }
 
 func liveIngestSplitOffset(text string, limit int) int {

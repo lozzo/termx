@@ -15,6 +15,7 @@ import (
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-proto/wire"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/transport"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
@@ -405,11 +406,15 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		return encodeMethodResult(req.Method, protocol.ResizeControlResult{Size: control.ResizeOwnership.Size, ResizeControl: control})
 	case "live.screen.get":
 		in := params.(protocol.LiveScreenParams)
+		finishSnapshot := perftrace.Measure("core.protocol.live_screen_snapshot")
 		snapshot, err := session.liveNativeScreenSnapshot(in)
+		finishSnapshot(nativeScreenSnapshotApproxBytes(snapshot))
 		if err != nil {
 			return nil, true, errorCode(err), err
 		}
+		finishEncode := perftrace.Measure("core.protocol.live_screen_encode")
 		payload, err := protocol.EncodeNativeScreenSnapshotPayload(snapshot)
+		finishEncode(len(payload))
 		if err != nil {
 			return nil, true, protocolErrorInternal, err
 		}
@@ -616,6 +621,23 @@ func (session *protocolSession) liveNativeScreenSnapshot(params protocol.LiveScr
 		Modes:      vtermModesToProtocol(snapshot.Modes),
 		Timestamp:  snapshot.Timestamp,
 	}, nil
+}
+
+func nativeScreenSnapshotApproxBytes(snapshot *protocol.NativeScreenSnapshot) int {
+	if snapshot == nil {
+		return 0
+	}
+	total := 0
+	for _, row := range snapshot.Rows {
+		total += len(row.Text)
+		for _, run := range row.Runs {
+			total += len(run.Text) + len(run.LinkURL) + len(run.LinkParams)
+		}
+		for _, cell := range row.Cells {
+			total += len(cell.Content) + len(cell.LinkURL) + len(cell.LinkParams)
+		}
+	}
+	return total
 }
 
 func vtermCellToProtocol(cell vterm.Cell) protocol.Cell {

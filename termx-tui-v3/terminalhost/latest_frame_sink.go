@@ -67,6 +67,9 @@ func (sink *LatestFrameSink) WriteFrame(frame render.Frame) error {
 		sink.patches = append(sink.patches, cloned)
 	} else {
 		// 中文说明：完整帧是绝对状态；它会覆盖之前还没写出的增量 patch。
+		if sink.pending != nil {
+			perftrace.Count("tui.frame_sink_overwrite", latestFrameApproxBytes(*sink.pending))
+		}
 		sink.pending = &cloned
 		sink.patches = nil
 	}
@@ -94,7 +97,9 @@ func (sink *LatestFrameSink) loop() {
 			return
 		}
 		if sink.sink != nil {
+			finishWrite := perftrace.Measure("tui.frame_sink_write")
 			_ = sink.sink.WriteFrame(frame)
+			finishWrite(latestFrameApproxBytes(frame))
 		}
 		perftrace.Count("tui.frame_sink_written", latestFrameApproxBytes(frame))
 	}

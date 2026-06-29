@@ -770,11 +770,56 @@ func TestAppRuntimeSchedulesDirtyLiveFetchAfterSurfaceReturn(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 
-	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"latest"}) {
-		t.Fatalf("runtime should render only the latest coalesced surface frame, got %v", got)
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"middle", "latest"}) {
+		t.Fatalf("runtime should render pressure-budget surface and follow-up latest frame, got %v", got)
 	}
 	if runtime.State().Surface.Revision != 3 {
 		t.Fatalf("latest surface should win, got %#v", runtime.State().Surface)
+	}
+}
+
+func TestAppRuntimeLiveSurfacePressureBudgetStillSkipsImmediateSuccessor(t *testing.T) {
+	runtime := NewAppRuntime(
+		state.Root{Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Refreshes: map[string]state.LiveSurfaceRefreshState{
+				"term-1": {Dirty: true},
+			},
+		}},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	now := time.Unix(10, 0)
+	runtime.now = func() time.Time { return now }
+
+	first := runtime.prepareRenderPressureMessage(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   1,
+		Lines:      []string{"first"},
+	}})
+	if surface, ok := first.(LiveSurfaceMsg); !ok || surface.Superseded {
+		t.Fatalf("first pressure surface within frame budget should render, got %#v", first)
+	}
+
+	second := runtime.prepareRenderPressureMessage(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Lines:      []string{"second"},
+	}})
+	if surface, ok := second.(LiveSurfaceMsg); !ok || !surface.Superseded {
+		t.Fatalf("immediate successor should still be latest-only skipped, got %#v", second)
+	}
+
+	now = now.Add(liveSurfacePressureFrameInterval)
+	third := runtime.prepareRenderPressureMessage(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   3,
+		Lines:      []string{"third"},
+	}})
+	if surface, ok := third.(LiveSurfaceMsg); !ok || surface.Superseded {
+		t.Fatalf("next budget window should render again, got %#v", third)
 	}
 }
 
@@ -818,8 +863,8 @@ func TestAppRuntimeDirtyLiveFetchIgnoresServiceLifecycleFlagFromOrdinaryRefresh(
 		t.Fatalf("drain: %v", err)
 	}
 
-	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"latest"}) {
-		t.Fatalf("ordinary refresh surface should coalesce to latest frame, got %v", got)
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"middle", "latest"}) {
+		t.Fatalf("ordinary refresh surface should render pressure-budget frame and latest follow-up, got %v", got)
 	}
 	if runtime.State().Surface.State == state.TerminalLiveExited {
 		t.Fatalf("ordinary refresh fetch must not become lifecycle boundary, got %#v", runtime.State().Surface)

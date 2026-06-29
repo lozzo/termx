@@ -47,8 +47,11 @@ type LiveResizeBoundary struct {
 type LiveSurfaceRefreshState struct {
 	InFlight bool
 	Dirty    bool
-	Cols     int
-	Rows     int
+	// DirtyCount 只统计一次 in-flight latest snapshot 期间合并的 wake 数；
+	// 它服务 TUI 刷新背压诊断，不是 core revision 或历史 truth。
+	DirtyCount uint64
+	Cols       int
+	Rows       int
 }
 
 // LiveCursor 是 live surface 的 content-local 光标状态。
@@ -459,6 +462,7 @@ func (store TerminalSurfaceStore) RequestRefresh(terminalID string, cols int, ro
 		// 中文说明：普通 live invalidation 只是“当前屏已失效”的合并信号。
 		// fetch 飞行期间不能排 N 个 revision，只记录 dirty，下一次仍取 core latest screen。
 		refresh.Dirty = true
+		refresh.DirtyCount++
 		store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
 		store.Refreshes[terminalID] = refresh
 		return store, false
@@ -500,6 +504,7 @@ func (store TerminalSurfaceStore) ConsumeDirtyRefresh(terminalID string) (Termin
 		return store, 0, 0, false
 	}
 	refresh.InFlight = true
+	refresh.DirtyCount = 0
 	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
 	store.Refreshes[terminalID] = refresh
 	return store, refresh.Cols, refresh.Rows, true

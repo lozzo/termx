@@ -565,7 +565,9 @@ func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, outpu
 	terminal.mu.Unlock()
 
 	terminal.liveMu.Lock()
+	finishLiveWrite := perftrace.Measure("core.live.write_screen")
 	surface.Write(output)
+	finishLiveWrite(len(output))
 	terminal.bumpLiveRevisionLocked()
 	liveRevision := terminal.liveRevision
 	terminal.liveMu.Unlock()
@@ -577,6 +579,7 @@ func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, outpu
 		return nil
 	}
 	perftrace.Count("core.terminal.changed", len(output))
+	perftrace.Count("core.live.invalidation_publish", len(output))
 	terminal.publishLiveInvalidated(info.ID, liveRevision)
 	return nil
 }

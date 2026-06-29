@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	corev2 "github.com/lozzow/termx/termx-core-v2"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	tuiv3 "github.com/lozzow/termx/termx-tui-v3"
 	tuiapp "github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/render"
@@ -87,6 +88,11 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
+			stopPerfTrace, perfTracePath, perfTraceEnabled := perftrace.EnableFromEnv(ctx)
+			defer stopPerfTrace()
+			if perfTraceEnabled {
+				logger.Info("core-v2 daemon perftrace enabled", "path", perfTracePath)
+			}
 			writeHeapProfile := startDaemonHeapProfiler(ctx, logger)
 			var remoteRuntime *coreV2DaemonRemoteRuntime
 			if coreServer, ok := srv.(*corev2.Server); ok {
