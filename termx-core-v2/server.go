@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 
+	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
 	"github.com/lozzow/termx/termx-shared/transport"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
@@ -19,14 +21,22 @@ type ListenerFactory func(socketPath string) (transport.Listener, error)
 type ServerOption func(*serverConfig)
 
 type serverConfig struct {
-	socketPath            string
-	defaultSize           Size
-	logger                *slog.Logger
-	listenerFactory       ListenerFactory
-	processFactory        ProcessFactory
-	remoteService         RemoteService
-	eventBuffer           int
+	socketPath          string
+	defaultSize         Size
+	logger              *slog.Logger
+	listenerFactory     ListenerFactory
+	processFactory      ProcessFactory
+	remoteService       RemoteService
+	eventBuffer         int
+	historyStoreFactory HistoryStoreFactory
+	historyStorageDir   string
+	historyDisabled     bool
 }
+
+// HistoryStoreFactory 为每个 terminal 创建 core-v2 authoritative history store。
+// 工厂只决定 payload residency backend，不能解释 terminal semantic transaction，
+// 也不能替代 HistoryStore 的 cursor/window truth。
+type HistoryStoreFactory func(terminalID string) (history.HistoryStore, error)
 
 type Server struct {
 	cfg                   serverConfig
@@ -136,6 +146,33 @@ func WithEventBuffer(size int) ServerOption {
 	}
 }
 
+// WithHistoryStoreFactory 注入 terminal history store 工厂。RegisterTerminal 创建
+// store 失败时必须失败，不能静默 fallback 后把 history truth 放到另一处。
+func WithHistoryStoreFactory(factory HistoryStoreFactory) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.historyStoreFactory = factory
+	}
+}
+
+// WithHistoryStorageDir 为生产 daemon 配置 file-backed logical-line payload 落点。
+// 文件 backend 只是 storage residency；window/cursor truth 仍由 HistoryStore 持有。
+func WithHistoryStorageDir(dir string) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.historyStorageDir = dir
+		cfg.historyStoreFactory = fileBackedHistoryStoreFactory(dir)
+		cfg.historyDisabled = false
+	}
+}
+
+// WithHistoryDisabled 关闭 core-v2 authoritative history owner。
+func WithHistoryDisabled() ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.historyDisabled = true
+		cfg.historyStoreFactory = nil
+		cfg.historyStorageDir = ""
+	}
+}
+
 // SetRemoteService 允许 daemon 完成 core-v2 server 构造后再注入 remote runtime hook。
 func (server *Server) SetRemoteService(service RemoteService) {
 	server.remoteServiceMu.Lock()
@@ -157,6 +194,11 @@ func (server *Server) DefaultSize() Size {
 	return server.cfg.defaultSize
 }
 
+// HistoryStorageDir 返回 daemon 配置的 file-backed history payload 目录。
+func (server *Server) HistoryStorageDir() string {
+	return server.cfg.historyStorageDir
+}
+
 func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, error) {
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
@@ -167,12 +209,22 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 	if err != nil {
 		return TerminalInfo{}, err
 	}
+	var historyStore history.HistoryStore
+	historyEnabled := !server.cfg.historyDisabled
+	if historyEnabled {
+		var err error
+		historyStore, err = server.newHistoryStore(info.ID)
+		if err != nil {
+			_, _ = server.registry.remove(info.ID)
+			return TerminalInfo{}, err
+		}
+	}
 	process, err := server.cfg.processFactory.Spawn(context.Background(), processSpecFromTerminal(info, record.Options))
 	if err != nil {
 		_, _ = server.registry.remove(info.ID)
 		return TerminalInfo{}, err
 	}
-	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo)
+	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore, historyEnabled)
 	server.mu.Lock()
 	server.terminals[info.ID] = terminal
 	server.mu.Unlock()
@@ -180,13 +232,33 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 	return info, nil
 }
 
+func (server *Server) newHistoryStore(terminalID string) (history.HistoryStore, error) {
+	if server.cfg.historyStoreFactory == nil {
+		return history.NewInMemoryHistoryStore(terminalID), nil
+	}
+	return server.cfg.historyStoreFactory(terminalID)
+}
+
+func fileBackedHistoryStoreFactory(dir string) HistoryStoreFactory {
+	return func(terminalID string) (history.HistoryStore, error) {
+		if strings.TrimSpace(dir) == "" {
+			return history.NewInMemoryHistoryStore(terminalID), nil
+		}
+		backend, err := history.NewFileStorageBackend(dir, terminalID)
+		if err != nil {
+			return nil, err
+		}
+		return history.NewBackendHistoryStore(terminalID, backend), nil
+	}
+}
+
 func processSpecFromTerminal(info TerminalInfo, options TerminalCreateOptions) ProcessSpec {
 	return ProcessSpec{
-		TerminalID:         info.ID,
-		Command:            append([]string(nil), info.Command...),
-		Size:               info.Size,
-		Dir:                options.Dir,
-		Env:                append([]string(nil), options.Env...),
+		TerminalID: info.ID,
+		Command:    append([]string(nil), info.Command...),
+		Size:       info.Size,
+		Dir:        options.Dir,
+		Env:        append([]string(nil), options.Env...),
 	}
 }
 
@@ -383,6 +455,86 @@ func (server *Server) LiveSnapshot(id string) (live.SurfaceSnapshot, error) {
 		return live.SurfaceSnapshot{}, err
 	}
 	return terminal.LiveSnapshot(), nil
+}
+
+// TerminalHistoryWindow 返回 core-v2 terminal 内部 authoritative history domain
+// projection。实现只能读取 core history store，不能 fallback 到 live rows 或 snapshot。
+func (server *Server) TerminalHistoryWindow(ctx context.Context, id string, req history.HistoryWindowRequest) (history.HistoryWindow, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return history.HistoryWindow{}, err
+	}
+	if err := terminal.FlushHistory(ctx); err != nil {
+		return history.HistoryWindow{}, err
+	}
+	if req.TerminalID == "" {
+		req.TerminalID = id
+	}
+	window, err := terminal.HistoryWindow(req)
+	if err != nil {
+		return history.HistoryWindow{}, err
+	}
+	coreLifecycleTrace(server.cfg.logger, "server.history.window",
+		"terminal_id", window.TerminalID,
+		"mode", string(req.Mode),
+		"op", string(window.Op),
+		"rows", len(window.Rows),
+		"lines", len(window.Lines),
+		"generation", uint64(window.Generation),
+		"has_more", window.HasMore,
+		"summary", coreHistoryWindowSummary(window.Rows),
+	)
+	return window, nil
+}
+
+// TerminalHistoryCopy 从 core-v2 authoritative history payload 复制文本。
+func (server *Server) TerminalHistoryCopy(ctx context.Context, id string, req history.HistoryCopyRequest) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return "", err
+	}
+	if err := terminal.FlushHistory(ctx); err != nil {
+		return "", err
+	}
+	if req.TerminalID == "" {
+		req.TerminalID = id
+	}
+	return terminal.HistoryCopy(req)
+}
+
+// TerminalHistoryFreeze 创建 core-owned frozen history boundary。
+func (server *Server) TerminalHistoryFreeze(ctx context.Context, id string, req history.FreezeHistoryRequest) (history.FrozenHistorySnapshot, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return history.FrozenHistorySnapshot{}, err
+	}
+	if err := terminal.FlushHistory(ctx); err != nil {
+		return history.FrozenHistorySnapshot{}, err
+	}
+	if req.TerminalID == "" {
+		req.TerminalID = id
+	}
+	return terminal.HistoryFreeze(req)
+}
+
+// TerminalHistoryRelease 释放 core-v2 authoritative history token；它只回收
+// frozen/window 资源，不删除 history truth。
+func (server *Server) TerminalHistoryRelease(ctx context.Context, id string, token history.HistoryToken) error {
+	_ = ctx
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return err
+	}
+	return terminal.HistoryRelease(token)
 }
 
 func (server *Server) Events(ctx context.Context, filter EventFilter) <-chan Event {
