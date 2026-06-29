@@ -2,6 +2,7 @@ package state
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -176,5 +177,41 @@ func TestHistoryStorePrependsOlderWindowAndMarksExhausted(t *testing.T) {
 	}
 	if inserted != 0 || got.OlderRequestState() != OlderRequestExhausted {
 		t.Fatalf("empty final page must mark exhausted, inserted=%d state=%s store=%#v", inserted, got.OlderRequestState(), got)
+	}
+}
+
+func TestHistoryTraceWindowSummarySamplesIdentityAndEscapesText(t *testing.T) {
+	rows := make([]HistoryRow, 10)
+	for i := range rows {
+		rows[i] = HistoryRow{
+			Text:               "row\ntext",
+			LineID:             uint64(100 + i),
+			RowInLine:          i % 2,
+			Segment:            HistoryCursorSegmentCommitted,
+			Kind:               "logical",
+			SessionID:          3,
+			FrameID:            4,
+			FixedGrid:          true,
+			ScreenCols:         80,
+			ProjectionRowIndex: i,
+			ClippedStart:       i == 0,
+			ClippedEnd:         i == len(rows)-1,
+		}
+	}
+
+	summary := HistoryTraceWindowSummary(rows)
+	if strings.Count(summary, " || ") != 7 {
+		t.Fatalf("summary should sample first and last rows, got %q", summary)
+	}
+	for _, want := range []string{
+		`i=0 projection=0 line=100 row=0`,
+		`i=9 projection=9 line=109 row=1`,
+		`segment=committed`,
+		`fixed=true cols=80`,
+		`text="row\\ntext"`,
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("summary missing %q in %q", want, summary)
+		}
 	}
 }
