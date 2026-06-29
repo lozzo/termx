@@ -5,7 +5,10 @@ import (
 	"sync"
 )
 
-const terminalLiveIngestBatchMaxBytes = 1024 * 1024
+// terminalLiveIngestBatchMaxBytes 是 live native screen 的交互批次上限。
+// core 仍只维护 latest screen，不承诺补放中间 frame；这个上限只防止 PTY
+// 高频输出被攒成超大块后才推进 vterm 和 live invalidation。
+const terminalLiveIngestBatchMaxBytes = 64 * 1024
 
 // terminalLiveIngestQueue 把 PTY 高频输出压成 live latest 批次。
 // enqueue 不写 vterm，不持 terminal live 锁；worker 只取当前积压批次写一次 screen。

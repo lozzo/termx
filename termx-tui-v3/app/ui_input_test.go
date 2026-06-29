@@ -1904,6 +1904,80 @@ func TestInteractiveRuntimeCtrlVEntersCopyWithoutTerminalInput(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeCtrlVPreemptsQueuedLiveRefresh(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+		SurfaceResult: services.TerminalSurfaceResult{
+			Ready: true,
+			Snapshot: state.LiveSurfaceSnapshot{
+				TerminalID: "term-1",
+				Revision:   2,
+				Cols:       80,
+				Rows:       24,
+				Lines:      []string{"stress output still moving"},
+			},
+		},
+	}
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			1,
+			[]state.HistoryRow{{Text: "latest before live backlog", LineID: 1}},
+		)}},
+	}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: core, Rows: 20},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+
+	surfacesBeforePressure := len(terminal.Surfaces)
+	runtime.maxMessagesPerBatch = 1
+	if err := runtime.Post(LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}}); err != nil {
+		t.Fatalf("post live refresh: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
+		t.Fatalf("send ctrl-v: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain first pressure batch: %v", err)
+	}
+
+	if !runtime.State().CopyMode.Entering || runtime.State().CopyMode.Active {
+		t.Fatalf("ctrl-v should enter copy before queued live refresh is processed, got %#v", runtime.State().CopyMode)
+	}
+	if len(core.LatestRequests) != 1 {
+		t.Fatalf("ctrl-v should start authoritative latest request immediately, got %#v", core.LatestRequests)
+	}
+	if len(terminal.Surfaces) != surfacesBeforePressure {
+		t.Fatalf("queued live refresh should not run before ctrl-v in first pressure batch, got before=%d after=%#v", surfacesBeforePressure, terminal.Surfaces)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("ctrl-v must not leak to terminal while live refresh is queued, got %#v", terminal.Inputs)
+	}
+
+	runtime.maxMessagesPerBatch = 0
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain remaining pressure queue: %v", err)
+	}
+	if !runtime.State().CopyMode.Active {
+		t.Fatalf("expected copy mode active after latest result, got %#v", runtime.State().CopyMode)
+	}
+}
+
 func TestInteractiveRuntimeCtrlVRendersLatestStressTail(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 120, Rows: 30},

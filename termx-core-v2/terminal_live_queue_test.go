@@ -69,6 +69,44 @@ func TestTerminalLiveIngestQueueSplitsLargePendingBatch(t *testing.T) {
 	close(queue.done)
 }
 
+func TestTerminalLiveIngestQueueUsesInteractiveBatchLimit(t *testing.T) {
+	if terminalLiveIngestBatchMaxBytes > ptyReadBufferBytes {
+		t.Fatalf("live batch limit must not exceed PTY read chunk, got batch=%d pty=%d", terminalLiveIngestBatchMaxBytes, ptyReadBufferBytes)
+	}
+	queue := newTerminalLiveIngestQueue()
+	chunk := strings.Repeat("x", terminalLiveIngestBatchMaxBytes)
+	for i := 0; i < 3; i++ {
+		if !queue.Enqueue(chunk) {
+			t.Fatal("expected enqueue before close")
+		}
+	}
+
+	batches := 0
+	totalBytes := 0
+	for {
+		batch, ok := queue.nextBatch()
+		if !ok {
+			t.Fatal("queue closed before pending chunks drained")
+		}
+		batches++
+		batchBytes := 0
+		for _, item := range batch {
+			batchBytes += len(item)
+		}
+		if batchBytes > terminalLiveIngestBatchMaxBytes {
+			t.Fatalf("live batch exceeded interactive limit: got %d limit %d", batchBytes, terminalLiveIngestBatchMaxBytes)
+		}
+		totalBytes += batchBytes
+		if totalBytes == len(chunk)*3 {
+			break
+		}
+	}
+	if batches != 3 {
+		t.Fatalf("PTY-sized stress chunks must not be merged into larger live batches, got %d", batches)
+	}
+	close(queue.done)
+}
+
 func TestTerminalLiveIngestQueueDropsConsumedPayloadReferences(t *testing.T) {
 	queue := newTerminalLiveIngestQueue()
 	chunk := strings.Repeat("x", terminalLiveIngestBatchMaxBytes)
