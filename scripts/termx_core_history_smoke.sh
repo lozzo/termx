@@ -283,6 +283,54 @@ if ! grep -Fq 'output_order=oldest-to-newest' "$DUMP"; then
   exit 1
 fi
 
+# 中文说明：这里校验完整分页结果，而不是只看首尾 marker，避免无限历史分页
+# 只返回最新窗口却仍然通过 smoke。
+python3 - "$DUMP" "$LINES" "$SEED" "$LIMIT" <<'PY'
+import re
+import sys
+
+dump_path = sys.argv[1]
+line_count = int(sys.argv[2])
+seed = sys.argv[3]
+limit = int(sys.argv[4])
+
+with open(dump_path, encoding="utf-8") as handle:
+    text = handle.read()
+
+marker_pattern = re.compile(
+    r'text="TERM_X_HISTORY ([0-9]{6}) seed=' + re.escape(seed) + r'"'
+)
+markers = [int(match.group(1)) for match in marker_pattern.finditer(text)]
+expected = list(range(line_count + 1))
+if markers != expected:
+    missing = sorted(set(expected) - set(markers))[:10]
+    extra = sorted(set(markers) - set(expected))[:10]
+    raise SystemExit(
+        "history dump marker order/count mismatch: "
+        f"got={len(markers)} want={len(expected)} "
+        f"missing={missing} extra={extra} "
+        f"head={markers[:5]} tail={markers[-5:]}"
+    )
+
+windows = re.findall(r"^## window \d+ op=([a-z]+) ", text, flags=re.MULTILINE)
+if not windows:
+    raise SystemExit("history dump did not contain window headers")
+if line_count + 1 > limit and len(windows) < 2:
+    raise SystemExit(
+        f"expected multiple history windows when markers exceed limit, got {len(windows)}"
+    )
+if windows[-1] != "replace":
+    raise SystemExit(
+        "newest history page should be written last as replace op, "
+        f"got windows={windows}"
+    )
+if len(windows) > 1 and "prepend" not in windows[:-1]:
+    raise SystemExit(
+        "older history pages should be written before latest page as prepend ops, "
+        f"got windows={windows}"
+    )
+PY
+
 FILE_COUNT="$(history_file_count "$HISTORY_DIR")"
 if [[ "$FILE_COUNT" -le 0 ]]; then
   echo "file-backed history payloads were not created under $HISTORY_DIR" >&2
