@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
 )
@@ -37,6 +38,101 @@ func TestServerHistoryWindowReadsAuthoritativeStore(t *testing.T) {
 	}
 	if got := historyRowsText(window.Rows); !strings.Contains(got, "hello history") {
 		t.Fatalf("history window should read authoritative payload, got %q rows=%#v", got, window.Rows)
+	}
+}
+
+func TestServerHistoryWindowDoesNotWaitForPendingIngestQueue(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	info, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-history-nonblocking",
+		Command: []string{"sh"},
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	terminal, err := server.Terminal(info.ID)
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), info.ID, "visible-before\n"); err != nil {
+		t.Fatalf("seed history: %v", err)
+	}
+
+	queue := newTerminalHistoryIngestQueue()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	go queue.Run(func([]string) error {
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+		<-release
+		return nil
+	})
+	terminal.queueMu.Lock()
+	terminal.historyQ = queue
+	terminal.queueMu.Unlock()
+	defer func() {
+		close(release)
+		queue.Close()
+		queue.Wait()
+		terminal.queueMu.Lock()
+		if terminal.historyQ == queue {
+			terminal.historyQ = nil
+		}
+		terminal.queueMu.Unlock()
+	}()
+	if !queue.Enqueue("pending-after\n") {
+		t.Fatal("expected pending history enqueue")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for blocked history worker")
+	}
+
+	freezeDone := make(chan error, 1)
+	go func() {
+		snapshot, err := server.TerminalHistoryFreeze(context.Background(), info.ID, history.FreezeHistoryRequest{
+			TerminalID: info.ID,
+			Cols:       80,
+			Limit:      1,
+		})
+		if err == nil && snapshot.Token == "" {
+			err = errors.New("history freeze did not return a token")
+		}
+		freezeDone <- err
+	}()
+	select {
+	case err := <-freezeDone:
+		if err != nil {
+			t.Fatalf("history.freeze: %v", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("history.freeze must not wait for pending history ingest flush")
+	}
+
+	windowDone := make(chan error, 1)
+	go func() {
+		window, err := server.TerminalHistoryWindow(context.Background(), info.ID, history.HistoryWindowRequest{
+			TerminalID: info.ID,
+			Cols:       80,
+			Limit:      1,
+		})
+		if err == nil && !historyRowsContainText(window.Rows, "visible-before") {
+			err = errors.New("history window lost already committed store rows")
+		}
+		windowDone <- err
+	}()
+	select {
+	case err := <-windowDone:
+		if err != nil {
+			t.Fatalf("history.window: %v", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("history.window must not wait for pending history ingest flush")
 	}
 }
 

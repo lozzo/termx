@@ -52,6 +52,9 @@ func TestCopyModeCtrlVRequestsLatestHistoryAndConsumesTerminalInput(t *testing.T
 	if len(core.LatestRequests) != 1 || core.LatestRequests[0].TerminalID != "term-1" {
 		t.Fatalf("expected latest request for active terminal, got %#v", core.LatestRequests)
 	}
+	if core.LatestRequests[0].Rows != next.CopyMode.ViewRows {
+		t.Fatalf("copy mode latest should request visible rows only, request=%d view=%d", core.LatestRequests[0].Rows, next.CopyMode.ViewRows)
+	}
 	next, effects = reducer(next, result)
 	if len(effects) != 0 {
 		t.Fatalf("history result should not emit effects, got %#v", effects)

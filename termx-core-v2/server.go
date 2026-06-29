@@ -467,9 +467,6 @@ func (server *Server) TerminalHistoryWindow(ctx context.Context, id string, req 
 	if err != nil {
 		return history.HistoryWindow{}, err
 	}
-	if err := terminal.FlushHistory(ctx); err != nil {
-		return history.HistoryWindow{}, err
-	}
 	if req.TerminalID == "" {
 		req.TerminalID = id
 	}
@@ -499,9 +496,6 @@ func (server *Server) TerminalHistoryCopy(ctx context.Context, id string, req hi
 	if err != nil {
 		return "", err
 	}
-	if err := terminal.FlushHistory(ctx); err != nil {
-		return "", err
-	}
 	if req.TerminalID == "" {
 		req.TerminalID = id
 	}
@@ -515,9 +509,6 @@ func (server *Server) TerminalHistoryFreeze(ctx context.Context, id string, req 
 	}
 	terminal, err := server.Terminal(id)
 	if err != nil {
-		return history.FrozenHistorySnapshot{}, err
-	}
-	if err := terminal.FlushHistory(ctx); err != nil {
 		return history.FrozenHistorySnapshot{}, err
 	}
 	if req.TerminalID == "" {

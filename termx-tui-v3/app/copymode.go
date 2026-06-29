@@ -437,10 +437,7 @@ func copyModeWindowRows(viewRows int) int {
 	if viewRows <= 0 {
 		viewRows = 24
 	}
-	if viewRows < 64 {
-		return 64
-	}
-	return viewRows * 2
+	return viewRows
 }
 
 func ensureCopyCursorVisible(copyMode state.CopyModeStore, totalRows int) state.CopyModeStore {
