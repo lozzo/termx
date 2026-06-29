@@ -106,6 +106,151 @@ func TestCompactSnapshotPayloadRoundTripKeepsSnapshotCompatibility(t *testing.T)
 	}
 }
 
+func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
+	window := &HistoryWindow{
+		TerminalID: "term-hist",
+		Token:      "g7:0-2:c80",
+		Op:         HistoryWindowReplace,
+		Size:       Size{Cols: 80, Rows: 5},
+		Rows: []CompactRow{CompactRowFromCellsPreserveTrailingBlankCells([]Cell{
+			{Content: "ERR", Width: 3, Style: CellStyle{FG: "ansi:1", Bold: true}},
+			{Content: " ", Width: 1},
+			{Content: "好", Width: 2, Style: CellStyle{FG: "#ffcc00", Underline: true}, LinkURL: "file://build.log", LinkParams: "line=7"},
+			{Content: " ", Width: 1},
+		}, true)},
+		RowKinds:      []string{"output"},
+		RowWrapped:    []bool{false},
+		RowOwnership:  []string{RowOwnershipPersisted},
+		RowSegments:   []string{HistoryCursorSegmentArchivedPrimaryFrame},
+		RowSessionIDs: []uint64{9},
+		RowFrameIDs:   []uint64{11},
+		RowFixedGrid:  []bool{true},
+		RowScreenCols: []int{120},
+		RowIndexes:    []int{200},
+		RowTimestamps: []time.Time{time.Date(2026, 6, 2, 1, 0, 0, 0, time.UTC)},
+		Lines: []HistoryLineSpan{{
+			StartRow:       0,
+			EndRow:         0,
+			RowKind:        "output",
+			LogicalLineID:  42,
+			SessionID:      9,
+			FrameID:        11,
+			FixedGrid:      true,
+			ScreenCols:     120,
+			TimestampStart: time.Date(2026, 6, 2, 0, 59, 0, 0, time.UTC),
+			TimestampEnd:   time.Date(2026, 6, 2, 1, 1, 0, 0, time.UTC),
+			ClippedBefore:  true,
+			ClippedAfter:   true,
+		}},
+		BeforeOffset:   3,
+		LoadedRows:     9,
+		TotalRows:      12,
+		LoadedLines:    2,
+		LogicalTotal:   4,
+		HasMore:        true,
+		Generation:     7,
+		FirstRowID:     0,
+		LastRowID:      2,
+		FirstLineID:    42,
+		LastLineID:     43,
+		CursorValid:    true,
+		CursorLineID:   42,
+		CursorRow:      1,
+		CursorRowIndex: 200,
+		CursorSegment:  HistoryCursorSegmentArchivedPrimaryFrame,
+		RowLineIDs:     []uint64{42},
+		RowInLine:      []int{1},
+		Timestamp:      time.Date(2026, 6, 2, 2, 0, 0, 0, time.UTC),
+	}
+	window.Rows[0].TailFill = &CompactRowStyle{BG: "idx:24"}
+
+	payload, err := EncodeHistoryWindowPayload(window)
+	if err != nil {
+		t.Fatalf("encode history window payload failed: %v", err)
+	}
+	decoded, err := DecodeHistoryWindowPayload(payload)
+	if err != nil {
+		t.Fatalf("decode history window payload failed: %v", err)
+	}
+	if decoded.TerminalID != "term-hist" || decoded.Token != "g7:0-2:c80" || decoded.Op != HistoryWindowReplace || decoded.Size != window.Size {
+		t.Fatalf("unexpected decoded history window header: %#v", decoded)
+	}
+	if decoded.BeforeOffset != 3 || decoded.LoadedRows != 9 || decoded.TotalRows != 12 || decoded.LoadedLines != 2 || decoded.LogicalTotal != 4 || !decoded.HasMore {
+		t.Fatalf("unexpected decoded history window metadata: %#v", decoded)
+	}
+	if decoded.Generation != 7 || decoded.FirstRowID != 0 || decoded.LastRowID != 2 || decoded.FirstLineID != 42 || decoded.LastLineID != 43 {
+		t.Fatalf("unexpected decoded history window boundary: %#v", decoded)
+	}
+	if !decoded.CursorValid || decoded.CursorLineID != 42 || decoded.CursorRow != 1 || decoded.CursorRowIndex != 200 || decoded.CursorSegment != HistoryCursorSegmentArchivedPrimaryFrame {
+		t.Fatalf("unexpected decoded history cursor: %#v", decoded)
+	}
+	if !reflect.DeepEqual(decoded.RowLineIDs, []uint64{42}) || !reflect.DeepEqual(decoded.RowInLine, []int{1}) {
+		t.Fatalf("unexpected decoded row logical mapping: line_ids=%v row_in_line=%v", decoded.RowLineIDs, decoded.RowInLine)
+	}
+	if len(decoded.Lines) != 1 || decoded.Lines[0] != window.Lines[0] {
+		t.Fatalf("unexpected decoded history line spans: %#v", decoded.Lines)
+	}
+	if !reflect.DeepEqual(decoded.RowOwnership, []string{RowOwnershipPersisted}) {
+		t.Fatalf("unexpected decoded history ownership: %#v", decoded.RowOwnership)
+	}
+	if !reflect.DeepEqual(decoded.RowSegments, []string{HistoryCursorSegmentArchivedPrimaryFrame}) {
+		t.Fatalf("unexpected decoded row segments: %#v", decoded.RowSegments)
+	}
+	if !reflect.DeepEqual(decoded.RowSessionIDs, []uint64{9}) || !reflect.DeepEqual(decoded.RowFrameIDs, []uint64{11}) || !reflect.DeepEqual(decoded.RowFixedGrid, []bool{true}) || !reflect.DeepEqual(decoded.RowScreenCols, []int{120}) || !reflect.DeepEqual(decoded.RowIndexes, []int{200}) {
+		t.Fatalf("unexpected decoded row source identity: sessions=%v frames=%v fixed=%v cols=%v indexes=%v", decoded.RowSessionIDs, decoded.RowFrameIDs, decoded.RowFixedGrid, decoded.RowScreenCols, decoded.RowIndexes)
+	}
+	if got := compactRowToStringForTest(decoded.Rows[0]); got != "ERR 好 " {
+		t.Fatalf("unexpected decoded history row: %q", got)
+	}
+	if decoded.Rows[0].TailFill == nil || decoded.Rows[0].TailFill.BG != "idx:24" {
+		t.Fatalf("lost tail fill after payload round trip: %#v", decoded.Rows[0])
+	}
+}
+
+func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
+	params := HistoryWindowParams{
+		TerminalID:          "term-hist",
+		BeforeOffset:        20,
+		Limit:               40,
+		Cols:                120,
+		Mode:                "older",
+		Token:               "g3:42",
+		Generation:          3,
+		CursorValid:         true,
+		BeforeLineID:        42,
+		BeforeRowInLine:     1,
+		BeforeRowIndex:      12,
+		CursorSegment:       HistoryCursorSegmentCommitted,
+		AfterCursorValid:    true,
+		AfterLineID:         43,
+		AfterRowInLine:      2,
+		AfterRowIndex:       13,
+		AfterCursorSegment:  HistoryCursorSegmentCurrentPrimaryFrame,
+		BoundaryFirstLineID: 10,
+		BoundaryLastLineID:  50,
+		RangeValid:          true,
+		RangeStartLineID:    42,
+		RangeStartCol:       3,
+		RangeEndLineID:      43,
+		RangeEndCol:         7,
+	}
+	payload, err := EncodeMethodParams("history.window", params)
+	if err != nil {
+		t.Fatalf("encode history params failed: %v", err)
+	}
+	decoded, err := DecodeMethodParams("history.window", payload)
+	if err != nil {
+		t.Fatalf("decode history params failed: %v", err)
+	}
+	got, ok := decoded.(HistoryWindowParams)
+	if !ok {
+		t.Fatalf("unexpected decoded params type %T", decoded)
+	}
+	if !reflect.DeepEqual(got, params) {
+		t.Fatalf("history params round trip mismatch\nwant %#v\ngot  %#v", params, got)
+	}
+}
+
 func TestCompactRowsReuseASCIIStrings(t *testing.T) {
 	rows := CompactRowsFromCells([][]Cell{
 		{{Content: "a", Width: 1}, {Content: "a", Width: 1}, {Content: "a", Width: 1}, {Content: "a", Width: 1}},

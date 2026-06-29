@@ -218,6 +218,29 @@ message SnapshotParams {
   string terminal_id = 1;
 }
 
+message HistoryWindowParams {
+  string terminal_id = 1;
+  int32 before_offset = 2;
+  int32 limit = 3;
+  int32 cols = 4;
+  string token = 5;
+  uint64 history_generation = 6;
+  bool cursor_valid = 7;
+  uint64 before_line_id = 8;
+  int32 before_row_in_line = 9;
+  uint64 boundary_first_line_id = 10;
+  uint64 boundary_last_line_id = 11;
+  string mode = 12;
+  bool after_cursor_valid = 13;
+  uint64 after_line_id = 14;
+  int32 after_row_in_line = 15;
+  bool range_valid = 16;
+  uint64 range_start_line_id = 17;
+  int32 range_start_col = 18;
+  uint64 range_end_line_id = 19;
+  int32 range_end_col = 20;
+}
+
 message ListResult {
   repeated TerminalInfo terminals = 1;
 }
@@ -239,6 +262,7 @@ message RowSet {
   repeated int64 timestamps_unix_nano = 2;
   repeated string row_kinds = 3;
   repeated bool wrapped = 4;
+  repeated string ownership = 5;
 }
 
 message Snapshot {
@@ -249,6 +273,39 @@ message Snapshot {
   CursorState cursor = 9;
   TerminalModes modes = 10;
   int64 timestamp_unix_nano = 11;
+}
+
+message HistoryWindow {
+  string terminal_id = 1;
+  string token = 2;
+  string op = 3;
+  Size size = 4;
+  RowSet rows = 5;
+  repeated int32 line_start_rows = 6;
+  repeated int32 line_end_rows = 7;
+  repeated string line_row_kinds = 8;
+  int64 before_offset = 9;
+  int64 loaded_rows = 10;
+  int64 total_rows = 11;
+  int64 logical_total = 12;
+  bool has_more = 13;
+  uint64 history_generation = 14;
+  uint64 first_row_id = 15;
+  uint64 last_row_id = 16;
+  int64 timestamp_unix_nano = 17;
+  repeated bool line_clipped_before = 18;
+  repeated bool line_clipped_after = 19;
+  repeated uint64 line_logical_line_ids = 20;
+  int64 loaded_lines = 21;
+  uint64 first_line_id = 22;
+  uint64 last_line_id = 23;
+  repeated int64 line_timestamp_start_unix_nano = 24;
+  repeated int64 line_timestamp_end_unix_nano = 25;
+  bool cursor_valid = 26;
+  uint64 cursor_before_line_id = 27;
+  int32 cursor_before_row_in_line = 28;
+  repeated uint64 row_logical_line_ids = 29;
+  repeated int32 row_in_line = 30;
 }
 
 message StorageEntry {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-proto/wirepb"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -66,13 +67,28 @@ func DecodeCompactSnapshotPayload(payload []byte) (*CompactSnapshot, error) {
 	return compactSnapshotFromWirePB(&msg)
 }
 
+func EncodeHistoryWindowPayload(window *HistoryWindow) ([]byte, error) {
+	if window == nil {
+		return nil, fmt.Errorf("nil history window")
+	}
+	return proto.Marshal(historyWindowToWirePB(window))
+}
+
+func DecodeHistoryWindowPayload(payload []byte) (*HistoryWindow, error) {
+	var msg wirepb.HistoryWindow
+	if err := proto.Unmarshal(payload, &msg); err != nil {
+		return nil, err
+	}
+	return historyWindowFromWirePB(&msg)
+}
+
 func snapshotToWirePB(snapshot *Snapshot) *wirepb.Snapshot {
 	return &wirepb.Snapshot{
 		TerminalId:        snapshot.TerminalID,
 		Size:              sizeToWirePB(snapshot.Size),
 		ScreenIsAlternate: snapshot.Screen.IsAlternateScreen,
 		// 中文说明：live snapshot 的几何由 Size/Extent 表达；无样式行尾空白不需要进 wire payload。
-		Screen:            rowSetToWirePB(CompactRowsFromCells(snapshot.Screen.Cells), snapshot.ScreenTimestamps, snapshot.ScreenRowKinds, snapshot.ScreenWrapped),
+		Screen:            rowSetToWirePB(CompactRowsFromCells(snapshot.Screen.Cells), snapshot.ScreenTimestamps, snapshot.ScreenRowKinds, snapshot.ScreenWrapped, nil),
 		Cursor:            cursorToWirePB(snapshot.Cursor),
 		Modes:             modesToWirePB(snapshot.Modes),
 		TimestampUnixNano: timeToUnixNano(snapshot.Timestamp),
@@ -84,7 +100,7 @@ func compactSnapshotToWirePB(snapshot *CompactSnapshot) *wirepb.Snapshot {
 		TerminalId:        snapshot.TerminalID,
 		Size:              sizeToWirePB(snapshot.Size),
 		ScreenIsAlternate: snapshot.ScreenIsAlternate,
-		Screen:            rowSetToWirePB(snapshot.ScreenRows, snapshot.ScreenTimestamps, snapshot.ScreenRowKinds, snapshot.ScreenWrapped),
+		Screen:            rowSetToWirePB(snapshot.ScreenRows, snapshot.ScreenTimestamps, snapshot.ScreenRowKinds, snapshot.ScreenWrapped, nil),
 		Cursor:            cursorToWirePB(snapshot.Cursor),
 		Modes:             modesToWirePB(snapshot.Modes),
 		TimestampUnixNano: timeToUnixNano(snapshot.Timestamp),
@@ -95,7 +111,7 @@ func snapshotFromWirePB(msg *wirepb.Snapshot) (*Snapshot, error) {
 	if msg == nil {
 		return nil, fmt.Errorf("nil snapshot payload")
 	}
-	screenRows, screenTimes, screenKinds, screenWrapped, err := rowSetFromWirePB(msg.GetScreen())
+	screenRows, screenTimes, screenKinds, screenWrapped, _, err := rowSetFromWirePB(msg.GetScreen())
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +132,7 @@ func compactSnapshotFromWirePB(msg *wirepb.Snapshot) (*CompactSnapshot, error) {
 	if msg == nil {
 		return nil, fmt.Errorf("nil snapshot payload")
 	}
-	screenRows, screenTimes, screenKinds, screenWrapped, err := rowSetFromWirePB(msg.GetScreen())
+	screenRows, screenTimes, screenKinds, screenWrapped, _, err := rowSetFromWirePB(msg.GetScreen())
 	if err != nil {
 		return nil, err
 	}
@@ -134,27 +150,206 @@ func compactSnapshotFromWirePB(msg *wirepb.Snapshot) (*CompactSnapshot, error) {
 	}, nil
 }
 
-func rowSetToWirePB(rows []CompactRow, timestamps []time.Time, rowKinds []string, wrapped []bool) *wirepb.RowSet {
+func historyWindowToWirePB(window *HistoryWindow) *wirepb.HistoryWindow {
+	lineStart := make([]int32, len(window.Lines))
+	lineEnd := make([]int32, len(window.Lines))
+	lineKinds := make([]string, len(window.Lines))
+	lineClippedBefore := make([]bool, len(window.Lines))
+	lineClippedAfter := make([]bool, len(window.Lines))
+	lineLogicalLineIDs := make([]uint64, len(window.Lines))
+	lineSessionIDs := make([]uint64, len(window.Lines))
+	lineFrameIDs := make([]uint64, len(window.Lines))
+	lineFixedGrid := make([]bool, len(window.Lines))
+	lineScreenCols := make([]int, len(window.Lines))
+	lineTimestampStart := make([]int64, len(window.Lines))
+	lineTimestampEnd := make([]int64, len(window.Lines))
+	for i, span := range window.Lines {
+		lineStart[i] = int32(span.StartRow)
+		lineEnd[i] = int32(span.EndRow)
+		lineKinds[i] = span.RowKind
+		lineClippedBefore[i] = span.ClippedBefore
+		lineClippedAfter[i] = span.ClippedAfter
+		lineLogicalLineIDs[i] = span.LogicalLineID
+		lineSessionIDs[i] = span.SessionID
+		lineFrameIDs[i] = span.FrameID
+		lineFixedGrid[i] = span.FixedGrid
+		lineScreenCols[i] = span.ScreenCols
+		lineTimestampStart[i] = timeToUnixNano(span.TimestampStart)
+		lineTimestampEnd[i] = timeToUnixNano(span.TimestampEnd)
+	}
+	msg := &wirepb.HistoryWindow{
+		TerminalId:                 window.TerminalID,
+		Token:                      window.Token,
+		Op:                         string(window.Op),
+		Size:                       sizeToWirePB(window.Size),
+		Rows:                       rowSetToWirePB(window.Rows, window.RowTimestamps, window.RowKinds, window.RowWrapped, window.RowOwnership),
+		LineStartRows:              lineStart,
+		LineEndRows:                lineEnd,
+		LineRowKinds:               lineKinds,
+		LineClippedBefore:          lineClippedBefore,
+		LineClippedAfter:           lineClippedAfter,
+		LineLogicalLineIds:         lineLogicalLineIDs,
+		LineTimestampStartUnixNano: lineTimestampStart,
+		LineTimestampEndUnixNano:   lineTimestampEnd,
+		BeforeOffset:               int64(window.BeforeOffset),
+		LoadedRows:                 int64(window.LoadedRows),
+		TotalRows:                  int64(window.TotalRows),
+		LoadedLines:                int64(window.LoadedLines),
+		LogicalTotal:               int64(window.LogicalTotal),
+		HasMore:                    window.HasMore,
+		HistoryGeneration:          window.Generation,
+		FirstRowId:                 window.FirstRowID,
+		LastRowId:                  window.LastRowID,
+		FirstLineId:                window.FirstLineID,
+		LastLineId:                 window.LastLineID,
+		CursorValid:                window.CursorValid,
+		CursorBeforeLineId:         window.CursorLineID,
+		CursorBeforeRowInLine:      int32(window.CursorRow),
+		RowLogicalLineIds:          append([]uint64(nil), window.RowLineIDs...),
+		RowInLine:                  encodeWireInt32Slice(window.RowInLine),
+		TimestampUnixNano:          timeToUnixNano(window.Timestamp),
+	}
+	// 中文说明：这些 source-identity 字段属于 history projection 边界；
+	// 如果 pb 生成物暂未声明字段，仍按正式 field number 写入 unknown。
+	setStringProtoFieldOrUnknown(msg, historyWindowResponseCursorSegmentFieldNumber, window.CursorSegment)
+	setStringSliceUnknownField(msg, historyWindowResponseRowSegmentsFieldNumber, window.RowSegments)
+	setInt32UnknownField(msg, historyWindowResponseCursorRowIndexFieldNumber, int32(window.CursorRowIndex))
+	setUint64SliceUnknownField(msg, historyWindowResponseRowSessionIDsFieldNumber, window.RowSessionIDs)
+	setUint64SliceUnknownField(msg, historyWindowResponseRowFrameIDsFieldNumber, window.RowFrameIDs)
+	setBoolSliceUnknownField(msg, historyWindowResponseRowFixedGridFieldNumber, window.RowFixedGrid)
+	setIntSliceUnknownField(msg, historyWindowResponseRowScreenColsFieldNumber, window.RowScreenCols)
+	setIntSliceUnknownField(msg, historyWindowResponseRowIndexesFieldNumber, window.RowIndexes)
+	setUint64SliceUnknownField(msg, historyWindowLineSessionIDsFieldNumber, lineSessionIDs)
+	setUint64SliceUnknownField(msg, historyWindowLineFrameIDsFieldNumber, lineFrameIDs)
+	setBoolSliceUnknownField(msg, historyWindowLineFixedGridFieldNumber, lineFixedGrid)
+	setIntSliceUnknownField(msg, historyWindowLineScreenColsFieldNumber, lineScreenCols)
+	return msg
+}
+
+func historyWindowFromWirePB(msg *wirepb.HistoryWindow) (*HistoryWindow, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("nil history window payload")
+	}
+	rows, timestamps, rowKinds, wrapped, ownership, err := rowSetFromWirePB(msg.GetRows())
+	if err != nil {
+		return nil, err
+	}
+	starts := msg.GetLineStartRows()
+	ends := msg.GetLineEndRows()
+	kinds := msg.GetLineRowKinds()
+	clippedBefore := msg.GetLineClippedBefore()
+	clippedAfter := msg.GetLineClippedAfter()
+	logicalLineIDs := msg.GetLineLogicalLineIds()
+	lineSessionIDs := uint64SliceUnknownField(msg, historyWindowLineSessionIDsFieldNumber)
+	lineFrameIDs := uint64SliceUnknownField(msg, historyWindowLineFrameIDsFieldNumber)
+	lineFixedGrid := boolSliceUnknownField(msg, historyWindowLineFixedGridFieldNumber)
+	lineScreenCols := intSliceUnknownField(msg, historyWindowLineScreenColsFieldNumber)
+	timestampStart := msg.GetLineTimestampStartUnixNano()
+	timestampEnd := msg.GetLineTimestampEndUnixNano()
+	lines := make([]HistoryLineSpan, 0, len(starts))
+	for i := range starts {
+		span := HistoryLineSpan{StartRow: int(starts[i])}
+		if i < len(ends) {
+			span.EndRow = int(ends[i])
+		}
+		if i < len(kinds) {
+			span.RowKind = kinds[i]
+		}
+		if i < len(clippedBefore) {
+			span.ClippedBefore = clippedBefore[i]
+		}
+		if i < len(clippedAfter) {
+			span.ClippedAfter = clippedAfter[i]
+		}
+		if i < len(logicalLineIDs) {
+			span.LogicalLineID = logicalLineIDs[i]
+		}
+		if i < len(lineSessionIDs) {
+			span.SessionID = lineSessionIDs[i]
+		}
+		if i < len(lineFrameIDs) {
+			span.FrameID = lineFrameIDs[i]
+		}
+		if i < len(lineFixedGrid) {
+			span.FixedGrid = lineFixedGrid[i]
+		}
+		if i < len(lineScreenCols) {
+			span.ScreenCols = lineScreenCols[i]
+		}
+		if i < len(timestampStart) {
+			span.TimestampStart = unixNanoToTime(timestampStart[i])
+		}
+		if i < len(timestampEnd) {
+			span.TimestampEnd = unixNanoToTime(timestampEnd[i])
+		}
+		lines = append(lines, span)
+	}
+	cursorRowIndex := int(int32ProtoFieldOrUnknown(msg, historyWindowResponseCursorRowIndexFieldNumber))
+	if cursorRowIndex == 0 && msg.GetCursorBeforeRowInLine() > 0 {
+		cursorRowIndex = int(msg.GetCursorBeforeRowInLine())
+	}
+	return &HistoryWindow{
+		TerminalID:     msg.GetTerminalId(),
+		Token:          msg.GetToken(),
+		Op:             HistoryWindowOp(msg.GetOp()),
+		Size:           sizeFromWirePB(msg.GetSize()),
+		Rows:           rows,
+		RowTimestamps:  timestamps,
+		RowKinds:       rowKinds,
+		RowWrapped:     wrapped,
+		RowOwnership:   ownership,
+		RowSegments:    stringSliceUnknownField(msg, historyWindowResponseRowSegmentsFieldNumber),
+		RowSessionIDs:  uint64SliceUnknownField(msg, historyWindowResponseRowSessionIDsFieldNumber),
+		RowFrameIDs:    uint64SliceUnknownField(msg, historyWindowResponseRowFrameIDsFieldNumber),
+		RowFixedGrid:   boolSliceUnknownField(msg, historyWindowResponseRowFixedGridFieldNumber),
+		RowScreenCols:  intSliceUnknownField(msg, historyWindowResponseRowScreenColsFieldNumber),
+		RowIndexes:     intSliceUnknownField(msg, historyWindowResponseRowIndexesFieldNumber),
+		Lines:          lines,
+		BeforeOffset:   int(msg.GetBeforeOffset()),
+		LoadedRows:     int(msg.GetLoadedRows()),
+		TotalRows:      int(msg.GetTotalRows()),
+		LoadedLines:    int(msg.GetLoadedLines()),
+		LogicalTotal:   int(msg.GetLogicalTotal()),
+		HasMore:        msg.GetHasMore(),
+		Generation:     msg.GetHistoryGeneration(),
+		FirstRowID:     msg.GetFirstRowId(),
+		LastRowID:      msg.GetLastRowId(),
+		FirstLineID:    msg.GetFirstLineId(),
+		LastLineID:     msg.GetLastLineId(),
+		CursorValid:    msg.GetCursorValid(),
+		CursorLineID:   msg.GetCursorBeforeLineId(),
+		CursorRow:      int(msg.GetCursorBeforeRowInLine()),
+		CursorRowIndex: cursorRowIndex,
+		CursorSegment:  stringProtoFieldOrUnknown(msg, historyWindowResponseCursorSegmentFieldNumber),
+		RowLineIDs:     append([]uint64(nil), msg.GetRowLogicalLineIds()...),
+		RowInLine:      decodeWireInt32Slice(msg.GetRowInLine()),
+		Timestamp:      unixNanoToTime(msg.GetTimestampUnixNano()),
+	}, nil
+}
+
+func rowSetToWirePB(rows []CompactRow, timestamps []time.Time, rowKinds []string, wrapped []bool, ownership []string) *wirepb.RowSet {
 	return &wirepb.RowSet{
 		RowsBlob:           encodeCompactRowsBlob(rows),
 		TimestampsUnixNano: encodeTimeSliceUnixNano(timestamps),
 		RowKinds:           encodeWireStringSlice(rowKinds),
 		Wrapped:            encodeWireBoolSlice(wrapped),
+		Ownership:          encodeWireStringSlice(ownership),
 	}
 }
 
-func rowSetFromWirePB(msg *wirepb.RowSet) ([]CompactRow, []time.Time, []string, []bool, error) {
+func rowSetFromWirePB(msg *wirepb.RowSet) ([]CompactRow, []time.Time, []string, []bool, []string, error) {
 	if msg == nil {
-		return nil, nil, nil, nil, nil
+		return nil, nil, nil, nil, nil, nil
 	}
 	rows, err := decodeCompactRowsBlob(msg.GetRowsBlob())
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	return rows,
 		decodeTimeSliceUnixNano(msg.GetTimestampsUnixNano()),
 		append([]string(nil), msg.GetRowKinds()...),
 		append([]bool(nil), msg.GetWrapped()...),
+		append([]string(nil), msg.GetOwnership()...),
 		nil
 }
 
@@ -436,6 +631,175 @@ func encodeWireStringSlice(values []string) []string {
 		return nil
 	}
 	return out
+}
+
+func setStringSliceUnknownField(msg proto.Message, field protowire.Number, values []string) {
+	if msg == nil || len(values) == 0 {
+		return
+	}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		setStringUnknownField(msg, field, value)
+	}
+}
+
+func stringSliceUnknownField(msg proto.Message, field protowire.Number) []string {
+	if msg == nil {
+		return nil
+	}
+	unknown := msg.ProtoReflect().GetUnknown()
+	var values []string
+	for len(unknown) > 0 {
+		num, typ, n := protowire.ConsumeTag(unknown)
+		if n < 0 {
+			return nil
+		}
+		unknown = unknown[n:]
+		valueStart := unknown
+		n = protowire.ConsumeFieldValue(num, typ, unknown)
+		if n < 0 {
+			return nil
+		}
+		if num == field && typ == protowire.BytesType {
+			value, consumed := protowire.ConsumeBytes(valueStart)
+			if consumed >= 0 {
+				values = append(values, string(value))
+			}
+		}
+		unknown = unknown[n:]
+	}
+	return values
+}
+
+func setUint64SliceUnknownField(msg proto.Message, field protowire.Number, values []uint64) {
+	if msg == nil || len(values) == 0 {
+		return
+	}
+	nonZero := false
+	for _, value := range values {
+		if value != 0 {
+			nonZero = true
+			break
+		}
+	}
+	if !nonZero {
+		return
+	}
+	appendUnknownField(msg, field, protowire.BytesType, func(out []byte) []byte {
+		var packed []byte
+		for _, value := range values {
+			packed = protowire.AppendVarint(packed, value)
+		}
+		out = protowire.AppendVarint(out, uint64(len(packed)))
+		return append(out, packed...)
+	})
+}
+
+func uint64SliceUnknownField(msg proto.Message, field protowire.Number) []uint64 {
+	if msg == nil {
+		return nil
+	}
+	unknown := msg.ProtoReflect().GetUnknown()
+	var values []uint64
+	for len(unknown) > 0 {
+		num, typ, n := protowire.ConsumeTag(unknown)
+		if n < 0 {
+			return nil
+		}
+		unknown = unknown[n:]
+		valueStart := unknown
+		n = protowire.ConsumeFieldValue(num, typ, unknown)
+		if n < 0 {
+			return nil
+		}
+		if num == field {
+			switch typ {
+			case protowire.VarintType:
+				value, consumed := protowire.ConsumeVarint(valueStart)
+				if consumed >= 0 {
+					values = append(values, value)
+				}
+			case protowire.BytesType:
+				payload, consumed := protowire.ConsumeBytes(valueStart)
+				if consumed >= 0 {
+					values = append(values, consumePackedUint64(payload)...)
+				}
+			}
+		}
+		unknown = unknown[n:]
+	}
+	return values
+}
+
+func setIntSliceUnknownField(msg proto.Message, field protowire.Number, values []int) {
+	if len(values) == 0 {
+		return
+	}
+	out := make([]uint64, len(values))
+	for i, value := range values {
+		if value > 0 {
+			out[i] = uint64(value)
+		}
+	}
+	setUint64SliceUnknownField(msg, field, out)
+}
+
+func intSliceUnknownField(msg proto.Message, field protowire.Number) []int {
+	values := uint64SliceUnknownField(msg, field)
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]int, len(values))
+	for i, value := range values {
+		out[i] = int(value)
+	}
+	return out
+}
+
+func setBoolSliceUnknownField(msg proto.Message, field protowire.Number, values []bool) {
+	if msg == nil || len(values) == 0 {
+		return
+	}
+	nonZero := false
+	out := make([]uint64, len(values))
+	for i, value := range values {
+		if value {
+			out[i] = 1
+			nonZero = true
+		}
+	}
+	if !nonZero {
+		return
+	}
+	setUint64SliceUnknownField(msg, field, out)
+}
+
+func boolSliceUnknownField(msg proto.Message, field protowire.Number) []bool {
+	values := uint64SliceUnknownField(msg, field)
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]bool, len(values))
+	for i, value := range values {
+		out[i] = value != 0
+	}
+	return out
+}
+
+func consumePackedUint64(payload []byte) []uint64 {
+	var values []uint64
+	for len(payload) > 0 {
+		value, consumed := protowire.ConsumeVarint(payload)
+		if consumed < 0 {
+			return nil
+		}
+		values = append(values, value)
+		payload = payload[consumed:]
+	}
+	return values
 }
 
 func encodeWireBoolSlice(values []bool) []bool {

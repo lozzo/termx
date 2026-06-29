@@ -496,6 +496,36 @@ type SnapshotParams struct {
 	TerminalID string
 }
 
+// HistoryWindowParams 是 authoritative history path 的请求参数。
+// 它只表达 terminal-scoped history projection，不携带 pane/view/attachment identity。
+// stale guard 只能依赖 token/generation/logical cursor/logical boundary。
+type HistoryWindowParams struct {
+	TerminalID          string
+	BeforeOffset        int
+	Limit               int
+	Cols                int
+	Mode                string
+	Token               string
+	Generation          uint64
+	CursorValid         bool
+	BeforeLineID        uint64
+	BeforeRowInLine     int
+	BeforeRowIndex      int
+	CursorSegment       string
+	AfterCursorValid    bool
+	AfterLineID         uint64
+	AfterRowInLine      int
+	AfterRowIndex       int
+	AfterCursorSegment  string
+	BoundaryFirstLineID uint64
+	BoundaryLastLineID  uint64
+	RangeValid          bool
+	RangeStartLineID    uint64
+	RangeStartCol       int
+	RangeEndLineID      uint64
+	RangeEndCol         int
+}
+
 type ScreenRect struct {
 	X      int
 	Y      int
@@ -1903,6 +1933,28 @@ type ScreenData struct {
 
 const SnapshotRowKindRestart = "restart"
 
+const (
+	RowOwnershipPersisted         = "persisted"
+	RowOwnershipLiveTailReclaimed = "live-tail-reclaimed"
+	RowOwnershipLiveTailLive      = "live-tail-live"
+	RowOwnershipScreen            = "screen"
+)
+
+type HistoryWindowOp string
+
+const (
+	HistoryWindowReplace HistoryWindowOp = "replace"
+	HistoryWindowPrepend HistoryWindowOp = "prepend"
+	HistoryWindowAppend  HistoryWindowOp = "append"
+)
+
+const (
+	HistoryCursorSegmentCommitted            = "committed"
+	HistoryCursorSegmentCurrentPrimaryFrame  = "current-primary-frame"
+	HistoryCursorSegmentArchivedPrimaryFrame = "archived-primary-frame"
+	HistoryCursorSegmentCurrentAltFrame      = "current-alt-frame"
+)
+
 type Snapshot struct {
 	TerminalID       string
 	Size             Size
@@ -1913,6 +1965,61 @@ type Snapshot struct {
 	Cursor           CursorState
 	Modes            TerminalModes
 	Timestamp        time.Time
+}
+
+type HistoryLineSpan struct {
+	StartRow       int
+	EndRow         int
+	RowKind        string
+	LogicalLineID  uint64
+	SessionID      uint64
+	FrameID        uint64
+	FixedGrid      bool
+	ScreenCols     int
+	TimestampStart time.Time
+	TimestampEnd   time.Time
+	ClippedBefore  bool
+	ClippedAfter   bool
+}
+
+// HistoryWindow 是 terminal-scoped authoritative history payload。
+// 它表达 logical line 在当前 cols 下的 projection truth，不回显 pane/view/workspace truth。
+type HistoryWindow struct {
+	TerminalID     string
+	Token          string
+	Op             HistoryWindowOp
+	Size           Size
+	Rows           []CompactRow
+	RowTimestamps  []time.Time
+	RowKinds       []string
+	RowWrapped     []bool
+	RowOwnership   []string
+	RowSegments    []string
+	RowSessionIDs  []uint64
+	RowFrameIDs    []uint64
+	RowFixedGrid   []bool
+	RowScreenCols  []int
+	RowIndexes     []int
+	Lines          []HistoryLineSpan
+	BeforeOffset   int
+	LoadedRows     int
+	TotalRows      int
+	LoadedLines    int
+	LogicalTotal   int
+	HasMore        bool
+	Generation     uint64
+	FirstRowID     uint64
+	LastRowID      uint64
+	FirstLineID    uint64
+	LastLineID     uint64
+	CursorValid    bool
+	CursorLineID   uint64
+	CursorRow      int
+	CursorRowIndex int
+	CursorSegment  string
+	RowLineIDs     []uint64
+	RowInLine      []int
+	Timestamp      time.Time
 }
 
 type CompactSnapshot struct {

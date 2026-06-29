@@ -392,6 +392,26 @@ func (c *Client) SnapshotCompact(ctx context.Context, terminalID string, _ int, 
 	return DecodeCompactSnapshotPayload(payload)
 }
 
+func (c *Client) HistoryWindow(ctx context.Context, params HistoryWindowParams) (*HistoryWindow, error) {
+	payload, err := c.doRequestPayload(ctx, "history.window", params)
+	if err != nil {
+		return nil, err
+	}
+	return DecodeHistoryWindowPayload(payload)
+}
+
+func (c *Client) HistoryCopy(ctx context.Context, params HistoryWindowParams) (string, error) {
+	payload, err := c.doRequestPayload(ctx, "history.copy", params)
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
+}
+
+func (c *Client) ReleaseHistory(ctx context.Context, params HistoryWindowParams) error {
+	return c.doRequest(ctx, "history.release", params, nil)
+}
+
 func (c *Client) StorageGet(ctx context.Context, params StorageGetParams) (*StorageEntry, error) {
 	var out StorageEntry
 	if err := c.doRequest(ctx, "storage.get", params, &out); err != nil {
