@@ -27,6 +27,24 @@ func waitForTerminalState(t *testing.T, server *Server, terminalID string, want 
 	t.Fatalf("timed out waiting for terminal %q state %q, got %#v", terminalID, want, last)
 }
 
+func waitForLiveRow(t *testing.T, server *Server, terminalID string, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		rows, err := server.LiveRows(terminalID)
+		if err == nil {
+			for _, row := range rows {
+				if strings.Contains(row, want) {
+					return
+				}
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	rows, _ := server.LiveRows(terminalID)
+	t.Fatalf("timed out waiting for live row %q, got %#v", want, rows)
+}
+
 func historyRowTexts(rows []history.HistoryRow) []string {
 	texts := make([]string, 0, len(rows))
 	for _, row := range rows {
@@ -124,6 +142,24 @@ func r326CollectAllHistoryRows(t *testing.T, server *Server, terminalID string, 
 		cursor = older.Boundary.Cursor
 	}
 	return rows, pageCount
+}
+
+func r326RowsContainKind(rows []history.HistoryRow, kind history.LineKind) bool {
+	for _, row := range rows {
+		if row.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func r326RowsContainSegmentWithCols(rows []history.HistoryRow, segment history.HistorySegment, cols int) bool {
+	for _, row := range rows {
+		if row.Segment == segment && row.ScreenCols == cols {
+			return true
+		}
+	}
+	return false
 }
 
 func historyCellsForRegression(text string) []history.TerminalSemanticCell {
