@@ -1,6 +1,7 @@
 package history
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -192,6 +193,123 @@ func TestR360BackendHistoryOldestWindowReadsProjectionHead(t *testing.T) {
 	}
 	if oldest.Boundary.FirstLineID != 1 || oldest.Boundary.LastLineID != 2 {
 		t.Fatalf("backend oldest boundary must describe visible head page, got %#v", oldest.Boundary)
+	}
+}
+
+func TestR363FrozenHistoryNewerWindowAppendsTowardProjectionTail(t *testing.T) {
+	store := NewInMemoryHistoryStore("term-1")
+	applyStoreBatch(t, store,
+		sealedLineMutations(1, 1, "line-1"),
+		sealedLineMutations(2, 2, "line-2"),
+		sealedLineMutations(3, 3, "line-3"),
+		sealedLineMutations(4, 4, "line-4"),
+		sealedLineMutations(5, 5, "line-5"),
+	)
+
+	snapshot, err := store.Freeze(FreezeHistoryRequest{TerminalID: "term-1", Limit: 2, Cols: 80})
+	if err != nil {
+		t.Fatalf("freeze: %v", err)
+	}
+	oldest, err := store.OldestWindow(HistoryWindowRequest{TerminalID: "term-1", Token: snapshot.Token, Limit: 2, Cols: 80})
+	if err != nil {
+		t.Fatalf("oldest: %v", err)
+	}
+	if got := strings.Join(rowTexts(oldest.Rows), "|"); got != "line-1|line-2" {
+		t.Fatalf("oldest setup should return projection head, got %q", got)
+	}
+	tail := oldest.Rows[len(oldest.Rows)-1]
+
+	newer, err := store.NewerWindow(HistoryWindowRequest{
+		TerminalID: "term-1",
+		Token:      snapshot.Token,
+		Limit:      2,
+		Cols:       80,
+		Cursor: HistoryCursor{
+			Valid:          true,
+			Segment:        tail.Segment,
+			LineID:         tail.LineID,
+			RowInLine:      tail.RowInLine,
+			BeforeRowIndex: tail.ProjectionRowIndex,
+		},
+	})
+	if err != nil {
+		t.Fatalf("newer: %v", err)
+	}
+	if newer.Op != HistoryWindowAppend {
+		t.Fatalf("newer must be append op, got %s", newer.Op)
+	}
+	if got := strings.Join(rowTexts(newer.Rows), "|"); got != "line-3|line-4" {
+		t.Fatalf("newer must return rows after local tail, got %q window=%#v", got, newer)
+	}
+	if newer.Rows[0].ProjectionRowIndex != 2 || newer.Rows[1].ProjectionRowIndex != 3 {
+		t.Fatalf("newer rows must keep absolute projection indexes, got %#v", newer.Rows)
+	}
+	if !newer.HasMore || !newer.Boundary.Cursor.Valid || newer.Boundary.Cursor.BeforeRowIndex != 3 {
+		t.Fatalf("newer cursor must point after appended tail while more rows remain, got window=%#v", newer)
+	}
+
+	finalTail := newer.Rows[len(newer.Rows)-1]
+	finalPage, err := store.NewerWindow(HistoryWindowRequest{
+		TerminalID: "term-1",
+		Token:      snapshot.Token,
+		Limit:      2,
+		Cols:       80,
+		Cursor: HistoryCursor{
+			Valid:          true,
+			Segment:        finalTail.Segment,
+			LineID:         finalTail.LineID,
+			RowInLine:      finalTail.RowInLine,
+			BeforeRowIndex: finalTail.ProjectionRowIndex,
+		},
+	})
+	if err != nil {
+		t.Fatalf("final newer: %v", err)
+	}
+	if got := strings.Join(rowTexts(finalPage.Rows), "|"); got != "line-5" {
+		t.Fatalf("final newer must return remaining tail row, got %q", got)
+	}
+	if finalPage.HasMore || finalPage.Boundary.Cursor.Valid {
+		t.Fatalf("final newer page must not advertise more tail rows, got %#v", finalPage.Boundary.Cursor)
+	}
+}
+
+func TestR363BackendHistoryNewerWindowReadsOnlyRequestedTailPage(t *testing.T) {
+	backend := newCountingLineBackend()
+	store := NewBackendHistoryStore("term-r363", backend)
+	for i := 1; i <= 20; i++ {
+		applyStoreBatch(t, store, sealedLineMutations(LogicalLineID(i), HistoryRecordID(i), fmt.Sprintf("line-%04d", i)))
+	}
+	snapshot, err := store.Freeze(FreezeHistoryRequest{TerminalID: "term-r363", Limit: 4, Cols: 80})
+	if err != nil {
+		t.Fatalf("freeze: %v", err)
+	}
+	oldest, err := store.OldestWindow(HistoryWindowRequest{TerminalID: "term-r363", Token: snapshot.Token, Limit: 4, Cols: 80})
+	if err != nil {
+		t.Fatalf("oldest: %v", err)
+	}
+	tail := oldest.Rows[len(oldest.Rows)-1]
+	backend.resetCounts()
+
+	newer, err := store.NewerWindow(HistoryWindowRequest{
+		TerminalID: "term-r363",
+		Token:      snapshot.Token,
+		Limit:      4,
+		Cols:       80,
+		Cursor: HistoryCursor{
+			Valid:          true,
+			Segment:        tail.Segment,
+			LineID:         tail.LineID,
+			BeforeRowIndex: tail.ProjectionRowIndex,
+		},
+	})
+	if err != nil {
+		t.Fatalf("backend newer: %v", err)
+	}
+	if got := strings.Join(rowTexts(newer.Rows), "|"); got != "line-0005|line-0006|line-0007|line-0008" {
+		t.Fatalf("backend newer must read page after local tail, got %q", got)
+	}
+	if backend.getLineCount != 4 || backend.recoverCount != 0 {
+		t.Fatalf("backend newer must read only requested payloads, get=%d recover=%d", backend.getLineCount, backend.recoverCount)
 	}
 }
 

@@ -255,7 +255,24 @@ func (store *inMemoryHistoryStore) OldestWindow(req HistoryWindowRequest) (Histo
 }
 
 func (store *inMemoryHistoryStore) NewerWindow(req HistoryWindowRequest) (HistoryWindow, error) {
-	return HistoryWindow{}, ErrHistoryUnsupportedWindowMode
+	if store == nil {
+		return HistoryWindow{}, nil
+	}
+	store.ensureState()
+	if req.Token != "" {
+		frozen, ok := store.frozen[req.Token]
+		if !ok {
+			return HistoryWindow{}, ErrHistoryInvalidMutation
+		}
+		if frozen.projection.total > 0 {
+			return store.newerWindowFromProjection(req, frozen.projection, frozen.snapshot.Generation)
+		}
+		return store.newerWindowFromRows(req, frozen.rows, frozen.snapshot.Generation)
+	}
+	if store.canUseIndexedProjection() {
+		return store.newerWindowFromProjection(req, store.liveProjectionSnapshot(), store.generation)
+	}
+	return store.newerWindowFromRows(req, store.projectLiveRows(), store.generation)
 }
 
 func (store *inMemoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHistorySnapshot, error) {
@@ -783,6 +800,80 @@ func (store *inMemoryHistoryStore) oldestWindowFromProjection(req HistoryWindowR
 		boundary.Cursor = HistoryCursor{Generation: generation, Token: req.Token}
 	}
 	return store.windowFromProjectedRows(req, page, HistoryWindowReplace, boundary, generation), nil
+}
+
+func (store *inMemoryHistoryStore) newerWindowFromRows(req HistoryWindowRequest, rows []HistoryRow, generation Generation) (HistoryWindow, error) {
+	limit := normalizedLimit(req.Limit)
+	if !req.Cursor.Valid {
+		return store.windowFromProjectedRows(req, nil, HistoryWindowAppend, HistoryBoundary{Cursor: HistoryCursor{Generation: generation, Token: req.Token}}, generation), nil
+	}
+	start := req.Cursor.BeforeRowIndex + 1
+	if start <= 0 {
+		index := rowIndexByLineID(rows, req.Cursor.LineID)
+		if index >= 0 {
+			start = index + 1
+		}
+	}
+	if start < 0 {
+		start = 0
+	}
+	if start > len(rows) {
+		start = len(rows)
+	}
+	end := minInt(len(rows), start+limit)
+	page := cloneHistoryRows(rows[start:end])
+	annotateProjectionRowIndexes(page, start)
+	boundary := boundaryForRows(page, generation, req.Token)
+	// 中文说明：newer 返回的是本地尾部之后的 authoritative 后续页。
+	// cursor 指向本次 append 后的尾行，TUI 后续只能原样传回，不能从本地行号重建。
+	boundary.Cursor = cursorAfterWindow(page, end, len(rows), generation, req.Token)
+	return store.windowFromProjectedRows(req, page, HistoryWindowAppend, boundary, generation), nil
+}
+
+func (store *inMemoryHistoryStore) newerWindowFromProjection(req HistoryWindowRequest, projection projectionSnapshot, generation Generation) (HistoryWindow, error) {
+	limit := normalizedLimit(req.Limit)
+	if !req.Cursor.Valid {
+		return store.windowFromProjectedRows(req, nil, HistoryWindowAppend, HistoryBoundary{Cursor: HistoryCursor{Generation: generation, Token: req.Token}}, generation), nil
+	}
+	start := req.Cursor.BeforeRowIndex + 1
+	if start <= 0 {
+		index := projectionIndexByLineID(projection, req.Cursor.LineID)
+		if index >= 0 {
+			start = index + 1
+		}
+	}
+	if start < 0 {
+		start = 0
+	}
+	if start > projection.total {
+		start = projection.total
+	}
+	end := minInt(projection.total, start+limit)
+	page, _, err := store.rowsFromProjectionWindow(projection, start, end)
+	if err != nil {
+		return HistoryWindow{}, err
+	}
+	boundary := boundaryForRows(page, generation, req.Token)
+	boundary.Cursor = cursorAfterWindow(page, end, projection.total, generation, req.Token)
+	return store.windowFromProjectedRows(req, page, HistoryWindowAppend, boundary, generation), nil
+}
+
+func cursorAfterWindow(rows []HistoryRow, end int, total int, generation Generation, token HistoryToken) HistoryCursor {
+	if len(rows) == 0 {
+		return HistoryCursor{Generation: generation, Token: token}
+	}
+	tail := rows[len(rows)-1]
+	return HistoryCursor{
+		Segment:        tail.Segment,
+		SessionID:      tail.SessionID,
+		FrameID:        tail.FrameID,
+		LineID:         tail.LineID,
+		RowInLine:      tail.RowInLine,
+		BeforeRowIndex: tail.ProjectionRowIndex,
+		Generation:     generation,
+		Token:          token,
+		Valid:          end < total,
+	}
 }
 
 func cursorBeforeIndex(row HistoryRow, beforeIndex int, generation Generation, token HistoryToken, valid bool) HistoryCursor {

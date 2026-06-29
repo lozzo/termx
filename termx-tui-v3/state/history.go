@@ -192,6 +192,14 @@ const (
 	OlderRequestMissing   OlderRequestState = "missing"
 )
 
+type NewerRequestState string
+
+const (
+	NewerRequestReady   NewerRequestState = "ready"
+	NewerRequestPending NewerRequestState = "pending"
+	NewerRequestMissing NewerRequestState = "missing"
+)
+
 type CopyPosition struct {
 	Row int
 	Col int
@@ -254,6 +262,25 @@ func (store HistoryStore) BeginOlder(req HistoryPendingRequest) (HistoryStore, e
 	return store, nil
 }
 
+func (store HistoryStore) BeginNewer(req HistoryPendingRequest) (HistoryStore, error) {
+	if store.Pending != nil {
+		return store, ErrHistoryRequestPending
+	}
+	req.Kind = HistoryRequestNewer
+	store.Pending = &req
+	return store, nil
+}
+
+func (store HistoryStore) BeginOldest(req HistoryPendingRequest) (HistoryStore, error) {
+	if store.Pending != nil {
+		return store, ErrHistoryRequestPending
+	}
+	req.Kind = HistoryRequestOldest
+	store.Pending = &req
+	store.Exhausted = ExhaustedMarker{}
+	return store, nil
+}
+
 func (store HistoryStore) ApplyWindow(requestID RequestID, window HistoryWindow) (HistoryStore, int, error) {
 	if store.Pending == nil || store.Pending.ID != requestID {
 		return store, 0, ErrStaleHistoryResponse
@@ -274,6 +301,14 @@ func (store HistoryStore) ApplyWindow(requestID RequestID, window HistoryWindow)
 			return store, 0, nil
 		}
 		store = store.prepend(window)
+		inserted := len(store.Rows) - beforeRows
+		if inserted < 0 {
+			inserted = 0
+		}
+		return store, inserted, nil
+	case HistoryWindowAppend:
+		beforeRows := len(store.Rows)
+		store = store.append(window)
 		inserted := len(store.Rows) - beforeRows
 		if inserted < 0 {
 			inserted = 0
@@ -318,6 +353,20 @@ func (store HistoryStore) OlderRequestState() OlderRequestState {
 	return OlderRequestReady
 }
 
+func (store HistoryStore) NewerRequestState() NewerRequestState {
+	if store.Pending != nil {
+		return NewerRequestPending
+	}
+	if store.Token == "" || len(store.Rows) == 0 || store.Boundary.LastLineID == 0 {
+		return NewerRequestMissing
+	}
+	tail := store.Rows[len(store.Rows)-1]
+	if tail.LineID == 0 || tail.LineID == store.Boundary.LastLineID {
+		return NewerRequestMissing
+	}
+	return NewerRequestReady
+}
+
 func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryWindow) error {
 	if pending.TerminalID != "" && pending.TerminalID != window.TerminalID {
 		return ErrHistoryWindowMismatch
@@ -333,6 +382,16 @@ func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryW
 		if window.Op != HistoryWindowReplace {
 			return ErrHistoryWindowMismatch
 		}
+	case HistoryRequestOldest:
+		if window.Op != HistoryWindowReplace {
+			return ErrHistoryWindowMismatch
+		}
+		if pending.Token != "" && pending.Token != window.Token {
+			return ErrStaleHistoryResponse
+		}
+		if pending.Generation != 0 && pending.Generation != window.Generation {
+			return ErrStaleHistoryResponse
+		}
 	case HistoryRequestOlder:
 		if window.Op != HistoryWindowPrepend {
 			return ErrHistoryWindowMismatch
@@ -341,6 +400,22 @@ func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryW
 			return ErrStaleHistoryResponse
 		}
 		if pending.Generation != 0 && pending.Generation != window.Generation {
+			return ErrStaleHistoryResponse
+		}
+	case HistoryRequestNewer:
+		if window.Op != HistoryWindowAppend {
+			return ErrHistoryWindowMismatch
+		}
+		if pending.Cols != 0 && pending.Cols != window.Cols {
+			return ErrHistoryWindowMismatch
+		}
+		if pending.Token != "" && pending.Token != window.Token {
+			return ErrStaleHistoryResponse
+		}
+		if pending.Generation != 0 && pending.Generation != window.Generation {
+			return ErrStaleHistoryResponse
+		}
+		if len(window.Rows) != 0 && pending.Boundary.FirstLineID != 0 && pending.Boundary.FirstLineID != window.Boundary.FirstLineID {
 			return ErrStaleHistoryResponse
 		}
 	default:
@@ -381,6 +456,25 @@ func (store HistoryStore) prepend(window HistoryWindow) HistoryStore {
 		store.Boundary.FirstLineID = window.Boundary.FirstLineID
 	}
 	if store.Boundary.LastLineID == 0 {
+		store.Boundary.LastLineID = window.Boundary.LastLineID
+	}
+	store.HasMore = window.HasMore
+	store.Exhausted = ExhaustedMarker{}
+	return store
+}
+
+func (store HistoryStore) append(window HistoryWindow) HistoryStore {
+	store.SourceLines = append(cloneHistoryLogicalLines(store.SourceLines), cloneHistoryLogicalLines(window.SourceLines)...)
+	rowsBefore := len(store.Rows)
+	store.Rows = append(cloneHistoryRows(store.Rows), cloneHistoryRows(window.Rows)...)
+	store.Lines = append(cloneHistoryLineSpans(store.Lines), rebaseHistoryLineSpans(window.Lines, rowsBefore)...)
+	store.Token = window.Token
+	store.Cursor = window.Cursor
+	store.Generation = window.Generation
+	if store.Boundary.FirstLineID == 0 {
+		store.Boundary.FirstLineID = window.Boundary.FirstLineID
+	}
+	if window.Boundary.LastLineID != 0 {
 		store.Boundary.LastLineID = window.Boundary.LastLineID
 	}
 	store.HasMore = window.HasMore

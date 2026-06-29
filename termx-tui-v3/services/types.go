@@ -39,6 +39,31 @@ type HistoryOlderRequest struct {
 	Boundary   state.HistoryBoundary
 }
 
+type HistoryNewerRequest struct {
+	RequestID  RequestID
+	PaneID     string
+	ViewID     string
+	TerminalID string
+	Cols       int
+	Rows       int
+	Token      string
+	Generation uint64
+	Cursor     state.HistoryCursor
+	Boundary   state.HistoryBoundary
+}
+
+type HistoryOldestRequest struct {
+	RequestID  RequestID
+	PaneID     string
+	ViewID     string
+	TerminalID string
+	Cols       int
+	Rows       int
+	Token      string
+	Generation uint64
+	Boundary   state.HistoryBoundary
+}
+
 type HistoryReleaseRequest struct {
 	TerminalID string
 	Token      string
@@ -66,6 +91,8 @@ type HistoryCopyRangeResult struct {
 type CoreClient interface {
 	HistoryLatest(context.Context, HistoryLatestRequest) (HistoryResult, error)
 	HistoryOlder(context.Context, HistoryOlderRequest) (HistoryResult, error)
+	HistoryNewer(context.Context, HistoryNewerRequest) (HistoryResult, error)
+	HistoryOldest(context.Context, HistoryOldestRequest) (HistoryResult, error)
 	HistoryCopyRange(context.Context, HistoryCopyRangeRequest) (HistoryCopyRangeResult, error)
 	ReleaseHistory(context.Context, HistoryReleaseRequest) error
 }

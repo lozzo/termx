@@ -205,6 +205,103 @@ func TestProtocolCoreClientAdapterMapsHistoryOlderCopyAndRelease(t *testing.T) {
 	}
 }
 
+func TestProtocolCoreClientAdapterMapsHistoryNewerAndOldest(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID:   "term-1",
+			Token:        "tok-1",
+			Op:           protocol.HistoryWindowAppend,
+			Size:         protocol.Size{Cols: 80},
+			Generation:   7,
+			FirstLineID:  40,
+			LastLineID:   50,
+			CursorValid:  true,
+			CursorLineID: 44,
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	newer, err := adapter.HistoryNewer(context.Background(), HistoryNewerRequest{
+		RequestID:  23,
+		PaneID:     "pane-main",
+		ViewID:     "pane:pane-main",
+		TerminalID: "term-1",
+		Cols:       80,
+		Rows:       12,
+		Token:      "tok-1",
+		Generation: 7,
+		Cursor: state.HistoryCursor{
+			Valid:           true,
+			BeforeLineID:    43,
+			BeforeRowInLine: 2,
+			BeforeRowIndex:  240,
+			Segment:         protocol.HistoryCursorSegmentCurrentAltFrame,
+		},
+		Boundary: state.HistoryBoundary{FirstLineID: 40, LastLineID: 50},
+	})
+	if err != nil {
+		t.Fatalf("history newer: %v", err)
+	}
+	if newer.RequestID != 23 || newer.Window.PaneID != "pane-main" || newer.Window.ViewID != "pane:pane-main" || newer.Window.Op != state.HistoryWindowAppend {
+		t.Fatalf("newer result identity not mapped: %#v", newer)
+	}
+	if len(client.requests) != 1 {
+		t.Fatalf("expected one newer request, got %#v", client.requests)
+	}
+	params := client.requests[0]
+	if params.Mode != string(state.HistoryRequestNewer) ||
+		params.Token != "tok-1" ||
+		params.Generation != 7 ||
+		!params.AfterCursorValid ||
+		params.AfterLineID != 43 ||
+		params.AfterRowInLine != 2 ||
+		params.AfterRowIndex != 240 ||
+		params.AfterCursorSegment != protocol.HistoryCursorSegmentCurrentAltFrame ||
+		params.BoundaryFirstLineID != 40 ||
+		params.BoundaryLastLineID != 50 {
+		t.Fatalf("newer request not mapped with after cursor: %#v", params)
+	}
+
+	client.window = &protocol.HistoryWindow{
+		TerminalID:  "term-1",
+		Token:       "tok-1",
+		Op:          protocol.HistoryWindowReplace,
+		Size:        protocol.Size{Cols: 80},
+		Generation:  7,
+		FirstLineID: 1,
+		LastLineID:  12,
+	}
+	oldest, err := adapter.HistoryOldest(context.Background(), HistoryOldestRequest{
+		RequestID:  24,
+		PaneID:     "pane-main",
+		ViewID:     "pane:pane-main",
+		TerminalID: "term-1",
+		Cols:       80,
+		Rows:       12,
+		Token:      "tok-1",
+		Generation: 7,
+		Boundary:   state.HistoryBoundary{FirstLineID: 1, LastLineID: 50},
+	})
+	if err != nil {
+		t.Fatalf("history oldest: %v", err)
+	}
+	if oldest.RequestID != 24 || oldest.Window.Op != state.HistoryWindowReplace || oldest.Window.Boundary.FirstLineID != 1 {
+		t.Fatalf("oldest result not mapped: %#v", oldest)
+	}
+	if len(client.requests) != 2 {
+		t.Fatalf("expected newer and oldest requests, got %#v", client.requests)
+	}
+	params = client.requests[1]
+	if params.Mode != string(state.HistoryRequestOldest) ||
+		params.Token != "tok-1" ||
+		params.Generation != 7 ||
+		params.AfterCursorValid ||
+		params.BoundaryFirstLineID != 1 ||
+		params.BoundaryLastLineID != 50 {
+		t.Fatalf("oldest request not mapped: %#v", params)
+	}
+}
+
 func TestProtocolCoreClientAdapterNormalizesStaleHistoryError(t *testing.T) {
 	client := &fakeProtocolHistoryClient{windowErr: errors.New("protocol error: stale history window")}
 	adapter := ProtocolCoreClientAdapter{Client: client}
