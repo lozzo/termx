@@ -446,6 +446,63 @@ func TestHistoryStoreMergesBoundaryOverlapWhenPrependingOlderWindow(t *testing.T
 	}
 }
 
+func TestCopyModeLogicalSelectionUsesLogicalLineDisplayColumns(t *testing.T) {
+	history := HistoryStore{
+		Cols: 4,
+		SourceLines: []HistoryLogicalLine{
+			{Text: "abcdefgh", LineID: 10, Segment: HistoryCursorSegmentCommitted},
+		},
+	}
+	history.Rows, history.Lines = ReflowHistoryLogicalLines(history.SourceLines, history.Cols)
+
+	copyMode := CopyModeStore{}.SetMark(CopyPosition{Row: 0, Col: 2})
+	copyMode = copyMode.MoveCursor(CopyPosition{Row: 1, Col: 3})
+	copyMode = copyMode.RefreshLogicalSelection(history)
+
+	if copyMode.Selection == nil {
+		t.Fatal("expected selection")
+	}
+	if copyMode.Selection.LogicalAnchor != (CopyLogicalPosition{Valid: true, LineID: 10, Col: 2}) {
+		t.Fatalf("anchor should map to logical col in first row, got %#v", copyMode.Selection.LogicalAnchor)
+	}
+	if copyMode.Selection.LogicalFocus != (CopyLogicalPosition{Valid: true, LineID: 10, Col: 7}) {
+		t.Fatalf("focus should include previous reflow row width, got %#v rows=%#v", copyMode.Selection.LogicalFocus, history.Rows)
+	}
+	start, end, ok := copyMode.SelectionLogicalRange(history)
+	if !ok || start.LineID != 10 || start.Col != 2 || end.LineID != 10 || end.Col != 7 {
+		t.Fatalf("logical range not returned from selection, start=%#v end=%#v ok=%v", start, end, ok)
+	}
+}
+
+func TestCopyModeSelectionNeedsBackendAfterTrimmedAnchor(t *testing.T) {
+	original := HistoryStore{
+		Rows: []HistoryRow{
+			{Text: "old", LineID: 10},
+			{Text: "current", LineID: 30},
+		},
+	}
+	copyMode := CopyModeStore{}.SetMark(CopyPosition{Row: 0, Col: 0})
+	copyMode = copyMode.MoveCursor(CopyPosition{Row: 1, Col: 3})
+	copyMode = copyMode.RefreshLogicalSelection(original)
+
+	trimmed := HistoryStore{
+		Rows: []HistoryRow{
+			{Text: "current", LineID: 30},
+		},
+	}
+	if !copyMode.SelectionNeedsBackend(trimmed) {
+		t.Fatalf("trimmed-away logical anchor should require backend copy, selection=%#v", copyMode.Selection)
+	}
+	start, end, ok := copyMode.SelectionLogicalRange(trimmed)
+	if !ok || start.LineID != 10 || end.LineID != 30 || end.Col != 3 {
+		t.Fatalf("logical range should preserve trimmed anchor and current focus, start=%#v end=%#v ok=%v", start, end, ok)
+	}
+	copyMode = copyMode.RefreshLogicalSelectionFocus(trimmed)
+	if copyMode.Selection == nil || copyMode.Selection.LogicalAnchor.LineID != 10 || copyMode.Selection.LogicalFocus.LineID != 30 {
+		t.Fatalf("focus refresh must not clobber trimmed anchor, got %#v", copyMode.Selection)
+	}
+}
+
 func TestHistoryTraceWindowSummarySamplesIdentityAndEscapesText(t *testing.T) {
 	rows := make([]HistoryRow, 10)
 	for i := range rows {

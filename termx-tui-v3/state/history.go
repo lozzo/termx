@@ -939,6 +939,89 @@ func (store CopyModeStore) Scroll(delta int, totalRows int) CopyModeStore {
 	return store
 }
 
+func (store CopyModeStore) MoveCursor(pos CopyPosition) CopyModeStore {
+	store.Cursor = pos
+	if store.Mark != nil {
+		selection := CopySelection{Anchor: *store.Mark, Focus: pos}
+		if store.Selection != nil && store.Selection.Anchor == *store.Mark {
+			selection.LogicalAnchor = store.Selection.LogicalAnchor
+		}
+		store.Selection = &selection
+	}
+	return store
+}
+
+func (store CopyModeStore) SetMark(pos CopyPosition) CopyModeStore {
+	store.Mark = &pos
+	store.Selection = &CopySelection{Anchor: pos, Focus: pos}
+	return store
+}
+
+// 复制选择必须保留 core 侧 logical 坐标，避免本地窗口裁剪后丢失真实选择范围。
+func (store CopyModeStore) RefreshLogicalSelection(history HistoryStore) CopyModeStore {
+	if store.Selection == nil {
+		return store
+	}
+	selection := *store.Selection
+	selection.LogicalAnchor = CopyLogicalPositionForPosition(history, selection.Anchor)
+	selection.LogicalFocus = CopyLogicalPositionForPosition(history, selection.Focus)
+	store.Selection = &selection
+	return store
+}
+
+func (store CopyModeStore) EnsureLogicalSelection(history HistoryStore) CopyModeStore {
+	if store.Selection == nil {
+		return store
+	}
+	selection := *store.Selection
+	if !selection.LogicalAnchor.Valid {
+		selection.LogicalAnchor = CopyLogicalPositionForPosition(history, selection.Anchor)
+	}
+	if !selection.LogicalFocus.Valid {
+		selection.LogicalFocus = CopyLogicalPositionForPosition(history, selection.Focus)
+	}
+	store.Selection = &selection
+	return store
+}
+
+func (store CopyModeStore) RefreshLogicalSelectionFocus(history HistoryStore) CopyModeStore {
+	if store.Selection == nil {
+		return store
+	}
+	selection := *store.Selection
+	selection.LogicalFocus = CopyLogicalPositionForPosition(history, selection.Focus)
+	store.Selection = &selection
+	return store
+}
+
+func (store CopyModeStore) SelectionLogicalRange(history HistoryStore) (CopyLogicalPosition, CopyLogicalPosition, bool) {
+	if store.Selection == nil {
+		return CopyLogicalPosition{}, CopyLogicalPosition{}, false
+	}
+	start := store.Selection.LogicalAnchor
+	if !start.Valid {
+		start = CopyLogicalPositionForPosition(history, store.Selection.Anchor)
+	}
+	end := store.Selection.LogicalFocus
+	if !end.Valid {
+		end = CopyLogicalPositionForPosition(history, store.Selection.Focus)
+	}
+	if !start.Valid || !end.Valid {
+		return CopyLogicalPosition{}, CopyLogicalPosition{}, false
+	}
+	return start, end, true
+}
+
+func (store CopyModeStore) SelectionNeedsBackend(history HistoryStore) bool {
+	if store.Selection == nil || !store.Selection.LogicalAnchor.Valid || !store.Selection.LogicalFocus.Valid {
+		return false
+	}
+	currentAnchor := CopyLogicalPositionForPosition(history, store.Selection.Anchor)
+	currentFocus := CopyLogicalPositionForPosition(history, store.Selection.Focus)
+	return !copyLogicalPositionSame(currentAnchor, store.Selection.LogicalAnchor) ||
+		!copyLogicalPositionSame(currentFocus, store.Selection.LogicalFocus)
+}
+
 func HistoryRowDisplayWidth(row HistoryRow) int {
 	if len(row.Cells) == 0 {
 		return xansi.StringWidth(strings.ReplaceAll(row.Text, "\n", " "))
@@ -1315,6 +1398,48 @@ func textClusterDisplayColumns(clusters []string) []int {
 		columns[index+1] = columns[index] + textDisplayWidth(cluster)
 	}
 	return columns
+}
+
+type historyLogicalOffset struct {
+	lineID uint64
+	col    int
+}
+
+func CopyLogicalPositionForPosition(history HistoryStore, pos CopyPosition) CopyLogicalPosition {
+	offset := historyLogicalOffsetForPosition(history, pos)
+	if offset.lineID == 0 {
+		return CopyLogicalPosition{}
+	}
+	return CopyLogicalPosition{Valid: true, LineID: offset.lineID, Col: offset.col}
+}
+
+func copyLogicalPositionSame(left CopyLogicalPosition, right CopyLogicalPosition) bool {
+	return left.Valid == right.Valid && left.LineID == right.LineID && left.Col == right.Col
+}
+
+// 同一 logical line 可能被本地列宽重排成多行，需要累加同源 row 的显示宽度。
+func historyLogicalOffsetForPosition(history HistoryStore, pos CopyPosition) historyLogicalOffset {
+	if len(history.Rows) == 0 {
+		return historyLogicalOffset{}
+	}
+	rowIndex := clampHistoryInt(pos.Row, 0, len(history.Rows)-1)
+	current := history.Rows[rowIndex]
+	if current.LineID == 0 {
+		return historyLogicalOffset{}
+	}
+	col := clampHistoryInt(pos.Col, 0, HistoryRowDisplayWidth(current))
+	offset := col
+	for cursor := rowIndex - 1; cursor >= 0; cursor-- {
+		previous := history.Rows[cursor]
+		if !sameHistoryRowsSource(previous, current) {
+			break
+		}
+		offset += HistoryRowDisplayWidth(previous)
+	}
+	return historyLogicalOffset{
+		lineID: current.LineID,
+		col:    offset,
+	}
 }
 
 func cloneHistoryLogicalLines(values []HistoryLogicalLine) []HistoryLogicalLine {
