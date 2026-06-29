@@ -69,16 +69,13 @@ type TerminalInfo struct {
 }
 
 type CreateParams struct {
-	Command            []string
-	ID                 string
-	Name               string
-	Tags               map[string]string
-	Size               Size
-	Dir                string
-	Env                []string
-	ScrollbackSize     int
-	ScrollbackMaxBytes int64
-	ScrollbackMaxAge   time.Duration
+	Command []string
+	ID      string
+	Name    string
+	Tags    map[string]string
+	Size    Size
+	Dir     string
+	Env     []string
 }
 
 type CreateResult struct {
@@ -403,7 +400,6 @@ type WorkbenchPaneKind string
 const (
 	WorkbenchPaneEmpty        WorkbenchPaneKind = "empty"
 	WorkbenchPaneTerminalLive WorkbenchPaneKind = "terminal-live"
-	WorkbenchPaneCopyHistory  WorkbenchPaneKind = "copy-history"
 	WorkbenchPaneExited       WorkbenchPaneKind = "exited"
 )
 
@@ -497,47 +493,7 @@ type WorkbenchMutateResult struct {
 }
 
 type SnapshotParams struct {
-	TerminalID       string
-	ScrollbackOffset int
-	ScrollbackLimit  int
-}
-
-// GridViewportParams 只服务 legacy realtime projection 兼容路径，不能作为
-// committed history truth 或 copy mode history source。
-type GridViewportParams struct {
-	TerminalID       string
-	ScrollbackOffset int
-	ScrollbackLimit  int
-	Cols             int
-}
-
-// HistoryWindowParams 是 authoritative history path 的请求参数。
-// 它只表达 terminal-scoped history projection，不携带 pane/view/attachment
-// identity；客户端若要把 response 重新绑定回本地 pane/view，只能依赖本地
-// pending request 和 token/generation/logical cursor/logical boundary 命中后回填。
-// 旧 BeforeOffset 保留为兼容字段；v3 应优先使用 token/generation/logical cursor
-// 与 logical line boundary 做 stale guard。
-type HistoryWindowParams struct {
-	TerminalID          string
-	BeforeOffset        int
-	Limit               int
-	Cols                int
-	Mode                string
-	Token               string
-	Generation          uint64
-	CursorValid         bool
-	BeforeLineID        uint64
-	BeforeRowInLine     int
-	AfterCursorValid    bool
-	AfterLineID         uint64
-	AfterRowInLine      int
-	BoundaryFirstLineID uint64
-	BoundaryLastLineID  uint64
-	RangeValid          bool
-	RangeStartLineID    uint64
-	RangeStartCol       int
-	RangeEndLineID      uint64
-	RangeEndCol         int
+	TerminalID string
 }
 
 type ScreenRect struct {
@@ -582,17 +538,8 @@ type ScreenOp struct {
 	WrappedSet bool
 }
 
-type ScrollbackRowAppend struct {
-	Cells      []Cell
-	Timestamp  time.Time
-	RowKind    string
-	Wrapped    bool
-	WrappedSet bool
-}
-
 type ScreenUpdate struct {
 	FullReplace      bool
-	ResetScrollback  bool
 	Size             Size
 	ScreenScroll     int
 	Title            string
@@ -601,27 +548,21 @@ type ScreenUpdate struct {
 	ScreenRowKinds   []string
 	ScreenWrapped    []bool
 	Ops              []ScreenOp
-	ScrollbackTrim   int
-	ScrollbackAppend []ScrollbackRowAppend
 	Cursor           CursorState
 	Modes            TerminalModes
 }
 
 type ScreenUpdateClassification struct {
-	FullReplace         bool
-	BlankFullReplace    bool
-	HasContentChange    bool
-	HasChangedRows      bool
-	HasScreenScroll     bool
-	HasScrollbackChange bool
-	HasTitle            bool
+	FullReplace      bool
+	BlankFullReplace bool
+	HasContentChange bool
+	HasChangedRows   bool
+	HasScreenScroll  bool
+	HasTitle         bool
 }
 
 func NormalizeScreenUpdate(update ScreenUpdate) ScreenUpdate {
 	normalized := update
-	if normalized.ScrollbackTrim < 0 {
-		normalized.ScrollbackTrim = 0
-	}
 	if normalized.FullReplace {
 		normalized.ScreenTimestamps = normalizeScreenUpdateTimeSlice(normalized.ScreenTimestamps, len(normalized.Screen.Cells))
 		normalized.ScreenRowKinds = normalizeScreenUpdateStringSlice(normalized.ScreenRowKinds, len(normalized.Screen.Cells))
@@ -630,20 +571,18 @@ func NormalizeScreenUpdate(update ScreenUpdate) ScreenUpdate {
 		normalized.Screen.IsAlternateScreen = normalized.Modes.AlternateScreen
 	}
 	normalized.Ops = normalizeScreenOps(normalized.Ops)
-	normalized.ScrollbackAppend = normalizeScrollbackAppendWrapped(normalized.ScrollbackAppend)
 	return normalized
 }
 
 func ClassifyScreenUpdate(update ScreenUpdate) ScreenUpdateClassification {
 	changedRows := len(screenUpdateChangedRowsFromOps(update.Ops)) > 0
 	return ScreenUpdateClassification{
-		FullReplace:         update.FullReplace,
-		BlankFullReplace:    isBlankFullReplaceScreenUpdate(update),
-		HasContentChange:    screenUpdateHasContentChange(update),
-		HasChangedRows:      changedRows,
-		HasScreenScroll:     screenUpdateHasScroll(update),
-		HasScrollbackChange: update.ResetScrollback || update.ScrollbackTrim > 0 || len(update.ScrollbackAppend) > 0,
-		HasTitle:            update.Title != "",
+		FullReplace:      update.FullReplace,
+		BlankFullReplace: isBlankFullReplaceScreenUpdate(update),
+		HasContentChange: screenUpdateHasContentChange(update),
+		HasChangedRows:   changedRows,
+		HasScreenScroll:  screenUpdateHasScroll(update),
+		HasTitle:         update.Title != "",
 	}
 }
 
@@ -860,7 +799,7 @@ func normalizeScreenUpdateBoolSlice(values []bool, size int) []bool {
 }
 
 func isBlankFullReplaceScreenUpdate(update ScreenUpdate) bool {
-	if !update.FullReplace || len(update.Ops) > 0 || len(update.ScrollbackAppend) > 0 {
+	if !update.FullReplace || len(update.Ops) > 0 {
 		return false
 	}
 	for _, row := range update.Screen.Cells {
@@ -876,10 +815,7 @@ func isBlankFullReplaceScreenUpdate(update ScreenUpdate) bool {
 func screenUpdateHasContentChange(update ScreenUpdate) bool {
 	return update.FullReplace ||
 		update.ScreenScroll != 0 ||
-		screenUpdateHasContentOps(update.Ops) ||
-		update.ResetScrollback ||
-		update.ScrollbackTrim > 0 ||
-		len(update.ScrollbackAppend) > 0
+		screenUpdateHasContentOps(update.Ops)
 }
 
 func screenUpdateHasContentOps(ops []ScreenOp) bool {
@@ -946,13 +882,6 @@ type ListResult struct {
 
 func EncodeScreenUpdatePayload(update ScreenUpdate) ([]byte, error) {
 	return encodeScreenUpdatePayloadBinary(NormalizeScreenUpdate(update))
-}
-
-func normalizeScrollbackAppendWrapped(rows []ScrollbackRowAppend) []ScrollbackRowAppend {
-	for i := range rows {
-		rows[i].Wrapped = wrappedSet(rows[i].WrappedSet, rows[i].Wrapped)
-	}
-	return rows
 }
 
 func trimCellsForScreenUpdateWire(row []Cell) []Cell {
@@ -1027,7 +956,6 @@ const (
 
 const (
 	screenUpdateFlagFullReplace uint8 = 1 << iota
-	screenUpdateFlagResetScrollback
 	screenUpdateFlagHasTitle
 	screenUpdateFlagHasScreenScroll
 )
@@ -1047,9 +975,6 @@ func encodeScreenUpdatePayloadBinaryCurrent(update ScreenUpdate) ([]byte, error)
 	flags := uint8(0)
 	if update.FullReplace {
 		flags |= screenUpdateFlagFullReplace
-	}
-	if update.ResetScrollback {
-		flags |= screenUpdateFlagResetScrollback
 	}
 	if update.Title != "" {
 		flags |= screenUpdateFlagHasTitle
@@ -1141,18 +1066,6 @@ func encodeScreenUpdatePayloadBinaryCurrent(update ScreenUpdate) ([]byte, error)
 			enc.appendString(op.Title)
 		}
 	}
-	enc.appendUvarint(uint64(maxInt(0, update.ScrollbackTrim)))
-	enc.appendUvarint(uint64(len(update.ScrollbackAppend)))
-	for _, row := range update.ScrollbackAppend {
-		row.Wrapped = wrappedSet(row.WrappedSet, row.Wrapped)
-		enc.appendTime(row.Timestamp)
-		enc.appendString(row.RowKind)
-		enc.appendByte(boolByte(row.WrappedSet))
-		if row.WrappedSet {
-			enc.appendByte(boolByte(row.Wrapped))
-		}
-		enc.appendCells(row.Cells, styleIndex)
-	}
 	return enc.buf, nil
 }
 
@@ -1177,9 +1090,6 @@ func collectScreenUpdateStyles(update ScreenUpdate) ([]CellStyle, map[CellStyle]
 		}
 		addCells(op.Cells)
 	}
-	for _, row := range update.ScrollbackAppend {
-		addCells(row.Cells)
-	}
 	return styles, index
 }
 
@@ -1201,9 +1111,8 @@ func decodeScreenUpdatePayloadBinary(payload []byte) (ScreenUpdate, error) {
 		return ScreenUpdate{}, err
 	}
 	update := ScreenUpdate{
-		FullReplace:     flags&screenUpdateFlagFullReplace != 0,
-		ResetScrollback: flags&screenUpdateFlagResetScrollback != 0,
-		Size:            Size{Cols: cols, Rows: rows},
+		FullReplace: flags&screenUpdateFlagFullReplace != 0,
+		Size:        Size{Cols: cols, Rows: rows},
 	}
 	if flags&screenUpdateFlagHasScreenScroll != 0 {
 		scroll, err := dec.readInt32()
@@ -1450,41 +1359,6 @@ func decodeScreenUpdatePayloadBinary(payload []byte) (ScreenUpdate, error) {
 			}
 		}
 		update.Ops = append(update.Ops, op)
-	}
-	scrollbackTrim, err := dec.readUvarint()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	update.ScrollbackTrim = int(scrollbackTrim)
-	appendCount, err := dec.readUvarint()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	update.ScrollbackAppend = make([]ScrollbackRowAppend, 0, int(appendCount))
-	for i := uint64(0); i < appendCount; i++ {
-		ts, err := dec.readTime()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		kind, err := dec.readString()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		wrappedSet, wrapped, err := dec.readWrapped()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		cells, err := dec.readRow(styles)
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		update.ScrollbackAppend = append(update.ScrollbackAppend, ScrollbackRowAppend{
-			Cells:      cells,
-			Timestamp:  ts,
-			RowKind:    kind,
-			Wrapped:    wrapped,
-			WrappedSet: wrappedSet,
-		})
 	}
 	if dec.off != len(dec.data) {
 		return ScreenUpdate{}, fmt.Errorf("trailing bytes in screen update payload")
@@ -2029,138 +1903,29 @@ type ScreenData struct {
 
 const SnapshotRowKindRestart = "restart"
 
-const (
-	RowOwnershipPersisted         = "persisted"
-	RowOwnershipLiveTailReclaimed = "live-tail-reclaimed"
-	RowOwnershipLiveTailLive      = "live-tail-live"
-	RowOwnershipScreen            = "screen"
-)
-
 type Snapshot struct {
-	TerminalID             string
-	Size                   Size
-	Screen                 ScreenData
-	Scrollback             []CompactRow
-	ScrollbackOffset       int
-	ScrollbackTotal        int
-	ScrollbackLogicalTotal int
-	ScrollbackHasMore      bool
-	ScrollbackLoadedRows   int
-	HistoryGeneration      uint64
-	ScrollbackFirstRowID   uint64
-	ScrollbackLastRowID    uint64
-	ScreenTimestamps       []time.Time
-	ScrollbackTimestamps   []time.Time
-	ScreenRowKinds         []string
-	ScrollbackRowKinds     []string
-	ScreenWrapped          []bool
-	ScrollbackWrapped      []bool
-	ScreenOwnership        []string
-	ScrollbackOwnership    []string
-	Cursor                 CursorState
-	Modes                  TerminalModes
-	Timestamp              time.Time
+	TerminalID       string
+	Size             Size
+	Screen           ScreenData
+	ScreenTimestamps []time.Time
+	ScreenRowKinds   []string
+	ScreenWrapped    []bool
+	Cursor           CursorState
+	Modes            TerminalModes
+	Timestamp        time.Time
 }
 
 type CompactSnapshot struct {
-	TerminalID             string
-	Size                   Size
-	ScreenRows             []CompactRow
-	ScreenIsAlternate      bool
-	Scrollback             []CompactRow
-	ScrollbackOffset       int
-	ScrollbackTotal        int
-	ScrollbackLogicalTotal int
-	ScrollbackHasMore      bool
-	ScrollbackLoadedRows   int
-	HistoryGeneration      uint64
-	ScrollbackFirstRowID   uint64
-	ScrollbackLastRowID    uint64
-	ScreenTimestamps       []time.Time
-	ScrollbackTimestamps   []time.Time
-	ScreenRowKinds         []string
-	ScrollbackRowKinds     []string
-	ScreenWrapped          []bool
-	ScrollbackWrapped      []bool
-	ScreenOwnership        []string
-	ScrollbackOwnership    []string
-	Cursor                 CursorState
-	Modes                  TerminalModes
-	Timestamp              time.Time
-}
-
-type GridViewport struct {
-	TerminalID             string
-	Size                   Size
-	Rows                   []CompactRow
-	ScrollbackOffset       int
-	ScrollbackLimit        int
-	ScrollbackTotal        int
-	ScrollbackLogicalTotal int
-	ScrollbackHasMore      bool
-	LoadedRows             int
-	HistoryGeneration      uint64
-	FirstRowID             uint64
-	LastRowID              uint64
-	ScrollbackTimestamps   []time.Time
-	ScrollbackRowKinds     []string
-	ScrollbackWrapped      []bool
-	RowOwnership           []string
-	Timestamp              time.Time
-}
-
-type HistoryWindowOp string
-
-const (
-	HistoryWindowReplace HistoryWindowOp = "replace"
-	HistoryWindowPrepend HistoryWindowOp = "prepend"
-	HistoryWindowAppend  HistoryWindowOp = "append"
-)
-
-type HistoryLineSpan struct {
-	StartRow       int
-	EndRow         int
-	RowKind        string
-	LogicalLineID  uint64
-	TimestampStart time.Time
-	TimestampEnd   time.Time
-	ClippedBefore  bool
-	ClippedAfter   bool
-}
-
-// HistoryWindow 是 terminal-scoped authoritative history payload。
-// 它只表达 logical line 在当前 cols 下的 history projection truth，不回显
-// pane/view/workspace truth，也不携带 resize ownership 或 live attachment control。
-// stale guard 只能依赖 token/generation/cursor/logical boundary；LoadedRows、
-// TotalRows、BeforeOffset 等字段只能作为展示或兼容信息，不能替代这些 guard。
-type HistoryWindow struct {
-	TerminalID    string
-	Token         string
-	Op            HistoryWindowOp
-	Size          Size
-	Rows          []CompactRow
-	RowTimestamps []time.Time
-	RowKinds      []string
-	RowWrapped    []bool
-	RowOwnership  []string
-	Lines         []HistoryLineSpan
-	BeforeOffset  int
-	LoadedRows    int
-	TotalRows     int
-	LoadedLines   int
-	LogicalTotal  int
-	HasMore       bool
-	Generation    uint64
-	FirstRowID    uint64
-	LastRowID     uint64
-	FirstLineID   uint64
-	LastLineID    uint64
-	CursorValid   bool
-	CursorLineID  uint64
-	CursorRow     int
-	RowLineIDs    []uint64
-	RowInLine     []int
-	Timestamp     time.Time
+	TerminalID        string
+	Size              Size
+	ScreenRows        []CompactRow
+	ScreenIsAlternate bool
+	ScreenTimestamps  []time.Time
+	ScreenRowKinds    []string
+	ScreenWrapped     []bool
+	Cursor            CursorState
+	Modes             TerminalModes
+	Timestamp         time.Time
 }
 
 func (s CellStyle) isZero() bool {

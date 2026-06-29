@@ -1,7 +1,6 @@
 import type {
   TerminalResizeControl,
   TerminalResizePolicy,
-  TerminalScrollbackPage,
   TerminalSnapshotPayload,
   TerminalProtocolEvent,
   TerminalProtocolChannel,
@@ -11,16 +10,12 @@ import {
   TERMX_FRAME_TYPES,
   TERMX_PROTOCOL_VERSION,
   decodeTermxFrame,
-  decodeHistoryReplayPayload,
-  encodeHistoryRequestPayload,
   encodeResizePayload,
   encodeTermxFrame,
-  rowsToReplay,
   rowsToText,
   screenRowsToPlainText,
   screenRowsToReplay,
   screenUpdatePayloadToReplay,
-  snapshotScrollbackRows,
   snapshotUsesAlternateScreen,
   snapshotToReplay,
   type TermxFrame,
@@ -31,7 +26,6 @@ import {
   decodeTerminalHelloPayload,
   decodeTerminalMethodResult,
   decodeTerminalResponsePayload,
-  decodeGridViewportPayload,
   encodeTerminalHelloPayload,
   encodeTerminalRequestPayload,
 } from './terminalWireProtocol'
@@ -54,17 +48,8 @@ interface PendingRequest {
   reject: (err: Error) => void
 }
 
-interface PendingHistoryReplay {
-  beforeOffset: number
-  limit: number
-  alternate: boolean
-  resolve: (page: TerminalScrollbackPage) => void
-  reject: (err: Error) => void
-}
-
 const defaultResizePolicy: TerminalResizePolicy = 'follower'
 const inputEnsureResizeFallbackMs = 100
-const initialSnapshotScrollbackLimit = 1
 const streamSnapshotRefreshDelayMs = 100
 const streamSnapshotRefreshMinIntervalMs = 500
 const streamSnapshotRefreshMaxIntervalMs = 4000
@@ -91,7 +76,6 @@ class TerminalProtocolClient implements TerminalProtocolSession {
   private helloDone: Promise<void> | null = null
   private attachDone: Promise<void> | null = null
   private readonly pending = new Map<number, PendingRequest>()
-  private pendingHistoryReplay: PendingHistoryReplay | null = null
   private readonly earlyStreamFrames: TermxFrame[] = []
   private readonly subscribers = new Map<string, Set<(event: TerminalProtocolEvent) => void>>()
   private readonly messageSubscription: { close(): void }
@@ -188,43 +172,6 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     return () => {
       handlers?.delete(handler)
     }
-  }
-
-  async loadScrollback(terminalId: string, offset: number, limit: number, alternate = false): Promise<TerminalScrollbackPage> {
-    this.assertTerminal(terminalId)
-    await this.withHandshakeTimeout(this.hello(), 'hello')
-    await this.withHandshakeTimeout(this.attach(), 'attach')
-    const normalizedOffset = Math.max(0, Math.floor(offset))
-    const normalizedLimit = Math.max(1, Math.floor(limit))
-    if (this.pendingHistoryReplay) {
-      throw new Error(`terminal history replay already in flight for ${this.options.terminalId}`)
-    }
-    return await new Promise<TerminalScrollbackPage>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        if (this.pendingHistoryReplay?.resolve !== resolve) return
-        this.pendingHistoryReplay = null
-        reject(new Error(`terminal history replay timed out for ${this.options.terminalId}`))
-      }, 8000)
-      this.pendingHistoryReplay = {
-        beforeOffset: normalizedOffset,
-        limit: normalizedLimit,
-        alternate,
-        resolve: (page) => {
-          clearTimeout(timer)
-          resolve(page)
-        },
-        reject: (err) => {
-          clearTimeout(timer)
-          reject(err)
-        },
-      }
-      const payload = encodeHistoryRequestPayload(normalizedOffset, normalizedLimit, alternate)
-      this.sendFrame(this.streamChannel, TERMX_FRAME_TYPES.historyRequest, payload).catch((err: unknown) => {
-        if (this.pendingHistoryReplay?.resolve !== resolve) return
-        this.pendingHistoryReplay = null
-        reject(err instanceof Error ? err : new Error(String(err)))
-      })
-    })
   }
 
   closeTerminalChannel(terminalId: string): void {
@@ -496,29 +443,6 @@ class TerminalProtocolClient implements TerminalProtocolSession {
         })
         this.emitClosed(closedReason(frame.payload))
         return
-      case TERMX_FRAME_TYPES.historyReplay: {
-        const pending = this.pendingHistoryReplay
-        if (!pending) return
-        this.pendingHistoryReplay = null
-        try {
-          const { rows, hasMore, replay } = decodeHistoryReplayPayload(frame.payload)
-          const viewport = decodeGridViewportPayload(replay)
-          const viewportRows = historyViewportRows(viewport)
-          const loadedRows = historyViewportLoadedRows(viewport, rows)
-          pending.resolve({
-            beforeOffset: pending.beforeOffset,
-            limit: pending.limit,
-            rows: loadedRows,
-            hasMore,
-            ...historyViewportMetadata(viewport),
-            alternate: pending.alternate,
-            replay: rowsToReplay(viewportRows),
-          })
-        } catch (error) {
-          pending.reject(error instanceof Error ? error : new Error(String(error)))
-        }
-        return
-      }
     }
   }
 
@@ -692,8 +616,6 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     try {
       const snapshot = await this.request('snapshot', {
         terminal_id: this.options.terminalId,
-        scrollback_offset: 0,
-        scrollback_limit: initialSnapshotScrollbackLimit,
       }, snapshotRefreshTimeoutMs)
       this.lastSnapshotRefreshAt = Date.now()
       if (recovery) this.recoveryRevision += 1
@@ -899,9 +821,6 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       this.pending.delete(id)
       pending.reject(err)
     }
-    const pendingHistoryReplay = this.pendingHistoryReplay
-    this.pendingHistoryReplay = null
-    pendingHistoryReplay?.reject(err)
   }
 
   private assertTerminal(terminalId: string): void {
@@ -1042,89 +961,11 @@ function normalizeSnapshot(value: unknown): TerminalSnapshotPayload {
     cols: typeof size?.cols === 'number' ? size.cols : 0,
     rows: typeof size?.rows === 'number' ? size.rows : 0,
     raw: record,
-    scrollbackRows: snapshotScrollbackRows(record),
     screenText: screenRowsToPlainText(record),
     screenReplay: screenRowsToReplay(record),
     alternateScreen: snapshotUsesAlternateScreen(record),
     ...(replay ? { replay } : {}),
   }
-}
-
-function historyViewportRows(value: unknown): unknown[] {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return []
-  }
-  const rows = (value as Record<string, unknown>).rows
-  return Array.isArray(rows) ? rows : []
-}
-
-function historyViewportLoadedRows(value: unknown, fallback: number): number {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return fallback
-  }
-  const loadedRows = (value as Record<string, unknown>).loaded_rows
-  if (typeof loadedRows === 'number' && Number.isFinite(loadedRows) && loadedRows > 0) {
-    return Math.floor(loadedRows)
-  }
-  return fallback
-}
-
-function historyViewportCommittedTotalRows(value: unknown): number | undefined {
-  return historyViewportPositiveIntField(value, 'scrollback_total')
-}
-
-function historyViewportLogicalTotalRows(value: unknown): number | undefined {
-  return historyViewportPositiveIntField(value, 'scrollback_logical_total')
-}
-
-function historyViewportGeneration(value: unknown): number | undefined {
-  return historyViewportPositiveIntField(value, 'history_generation')
-}
-
-function historyViewportFirstRowID(value: unknown): number | undefined {
-  return historyViewportNonNegativeIntField(value, 'first_row_id')
-}
-
-function historyViewportLastRowID(value: unknown): number | undefined {
-  return historyViewportNonNegativeIntField(value, 'last_row_id')
-}
-
-function historyViewportMetadata(value: unknown): Partial<TerminalScrollbackPage> {
-  const committedTotalRows = historyViewportCommittedTotalRows(value)
-  const logicalTotalRows = historyViewportLogicalTotalRows(value)
-  const historyGeneration = historyViewportGeneration(value)
-  const firstRowId = historyViewportFirstRowID(value)
-  const lastRowId = historyViewportLastRowID(value)
-  return {
-    ...(committedTotalRows !== undefined ? { committedTotalRows } : {}),
-    ...(logicalTotalRows !== undefined ? { logicalTotalRows } : {}),
-    ...(historyGeneration !== undefined ? { historyGeneration } : {}),
-    ...(firstRowId !== undefined ? { firstRowId } : {}),
-    ...(lastRowId !== undefined ? { lastRowId } : {}),
-  }
-}
-
-function historyViewportPositiveIntField(value: unknown, key: string): number | undefined {
-  const number = historyViewportNumberField(value, key)
-  if (number === undefined || number <= 0) return undefined
-  return number
-}
-
-function historyViewportNonNegativeIntField(value: unknown, key: string): number | undefined {
-  const number = historyViewportNumberField(value, key)
-  if (number === undefined || number < 0) return undefined
-  return number
-}
-
-function historyViewportNumberField(value: unknown, key: string): number | undefined {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return undefined
-  }
-  const number = (value as Record<string, unknown>)[key]
-  if (typeof number !== 'number' || !Number.isFinite(number)) {
-    return undefined
-  }
-  return Math.floor(number)
 }
 
 function closedReason(payload: Uint8Array): string | undefined {

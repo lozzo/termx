@@ -83,10 +83,7 @@ func NewUIInputReducer() Reducer {
 		if handled, next, effects := reduceExitedPaneCTAInput(root, inputMsg.Event); handled {
 			return next, effects
 		}
-		if root.CopyMode.Entering && copyModeOwnsActiveInput(root) {
-			return root, nil
-		}
-		intent := input.RouteWithMode(inputMsg.Event, copyModeOwnsActiveInput(root), inputMode(root.Shell.ReadonlyDefaults().InteractionMode))
+		intent := input.RouteWithMode(inputMsg.Event, inputMode(root.Shell.ReadonlyDefaults().InteractionMode))
 		switch intent.Kind {
 		case input.IntentOpenTerminalPicker:
 			root.Shell = root.Shell.OpenTerminalPicker()
@@ -206,7 +203,7 @@ func interactionModeTimeoutEffect(mode state.InteractionMode, seq uint64) Effect
 		Token: stickyInteractionModeTimeoutToken,
 		Async: true,
 		Run: func(ctx context.Context) Msg {
-			// sticky mode 是前缀键提示态；超时只退出 mode，不关闭 overlay/copy 页面。
+			// sticky mode 是前缀键提示态；超时只退出 mode，不关闭 overlay 页面。
 			timer := time.NewTimer(stickyInteractionModeTimeout)
 			defer timer.Stop()
 			select {

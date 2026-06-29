@@ -157,58 +157,6 @@ export type {
   TerminalSnapshotPayload,
 } from './terminal/terminalClient'
 export {
-  copyHistorySelection,
-  rangeFromHistorySelection,
-  searchHistorySurface,
-  selectionFromSurfaceRows,
-} from './terminal/coreV2HistoryInteraction'
-export {
-  CoreV2HistorySurfaceStaleError,
-  createCoreV2HistorySurface,
-} from './terminal/coreV2HistorySurface'
-export {
-  CORE_V2_HISTORY_WINDOW_MODES,
-  CORE_V2_HISTORY_WINDOW_OPS,
-  CORE_V2_TERMINAL_METHODS,
-  assertLiveCacheOnlyAPIName,
-  coreV2EventFromRuntimeEvent,
-  coreV2HistoryCopyRequestToProtocolRequest,
-  coreV2HistoryReleaseRequestToProtocolRequest,
-  coreV2HistoryWindowFromAPI,
-  coreV2HistoryWindowRequestToParams,
-} from './terminal/coreV2TerminalProtocol'
-export { createCoreV2HistorySource } from './terminal/coreV2HistorySource'
-export type {
-  CoreV2HistoryCellPoint,
-  CoreV2HistorySearchMatch,
-  CoreV2HistorySelection,
-} from './terminal/coreV2HistoryInteraction'
-export type {
-  CoreV2HistoryRenderWindow,
-  CoreV2HistorySurface,
-  CoreV2HistorySurfaceLoadOptions,
-  CoreV2HistorySurfaceOptions,
-  CoreV2HistorySurfaceSnapshot,
-} from './terminal/coreV2HistorySurface'
-export type {
-  CoreV2HistoryCell,
-  CoreV2HistoryCellStyle,
-  CoreV2HistoryCopyRequest,
-  CoreV2HistoryCursor,
-  CoreV2HistoryLineSpan,
-  CoreV2HistoryRange,
-  CoreV2HistoryReleaseRequest,
-  CoreV2HistoryRow,
-  CoreV2HistoryWindow,
-  CoreV2HistoryWindowMode,
-  CoreV2HistoryWindowOp,
-  CoreV2HistoryWindowParams,
-  CoreV2HistoryWindowRequest,
-  CoreV2TerminalProtocolEvent,
-  CoreV2TerminalProtocolRequest,
-} from './terminal/coreV2TerminalProtocol'
-export type { CoreV2HistorySource } from './terminal/coreV2HistorySource'
-export {
   DEFAULT_TERMINAL_SETTINGS,
   TERMINAL_FONT_OPTIONS,
   TERMINAL_SETTINGS_STORAGE_KEY,

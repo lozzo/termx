@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   TERMX_FRAME_TYPES,
   decodeTermxFrame,
-  encodeHistoryRequestPayload,
   encodeResizePayload,
   encodeTermxFrame,
-  rowsToReplay,
   rowsToText,
   screenUpdatePayloadToReplay,
   snapshotUsesAlternateScreen,
@@ -32,16 +30,7 @@ describe('termxProtocol', () => {
     expect(Array.from(encodeResizePayload(100, 40))).toEqual([0x00, 0x64, 0x00, 0x28])
   })
 
-  it('encodes alternate history requests with a trailing mode byte', () => {
-    const payload = new DataView(encodeHistoryRequestPayload(100, 50, true).buffer)
-
-    expect(payload.byteLength).toBe(9)
-    expect(payload.getUint32(0)).toBe(100)
-    expect(payload.getUint32(4)).toBe(50)
-    expect(payload.getUint8(8)).toBe(1)
-  })
-
-  it('flattens snapshot screen and scrollback rows into terminal text without pane/session concepts', () => {
+  it('flattens snapshot screen rows into terminal text without pane/session concepts', () => {
     const text = rowsToText({
       screen: {
         rows: [
@@ -49,12 +38,9 @@ describe('termxProtocol', () => {
           { cells: [{ r: '!' }] },
         ],
       },
-      scrollback: [
-        { cells: [{ r: 'o' }, { r: 'k' }] },
-      ],
     })
 
-    expect(text).toBe('ok\nhi\n!')
+    expect(text).toBe('hi\n!')
     expect(JSON.stringify({ text })).not.toMatch(/workspace|tab|window|pane|session/i)
   })
 
@@ -70,21 +56,12 @@ describe('termxProtocol', () => {
           },
         ],
       },
-      scrollback: [
-        {
-          cells: [
-            { r: 'o', s: { fg: 'idx:208' } },
-            { r: 'k' },
-          ],
-        },
-      ],
       cursor: { row: 0, col: 1, visible: true, shape: 'bar', blink: true },
       modes: { auto_wrap: true, bracketed_paste: true },
     })
 
     expect(replay).toContain('\x1b[H\x1b[2J\x1b[H')
     expect(replay).toContain('\x1b[?1049l')
-    expect(replay).toContain('\x1b[0;38;5;208mo')
     expect(replay).toContain('\x1b[1;1H\x1b]8;;\x07\x1b[0;1;31mh')
     expect(replay).toContain('\x1b[1;2H\x1b]8;;\x07\x1b[0;38;2;0;255;0mi')
     expect(replay).toContain('\x1b[5 q')
@@ -110,62 +87,20 @@ describe('termxProtocol', () => {
     expect(replay).toContain('i')
   })
 
-  it('preserves trailing styled and linked blanks in sequential replay text', () => {
+  it('preserves trailing styled and linked blanks in screen replay text', () => {
     const replay = snapshotToReplay({
-      screen: { rows: [] },
-      scrollback: [{
-        cells: [
-          { r: ' ', s: { bg: '#222222' } },
-          { r: ' ', link_url: 'https://example.test/tail' },
-        ],
-      }],
+      screen: {
+        rows: [{
+          cells: [
+            { r: ' ', s: { bg: '#222222' } },
+            { r: ' ', link_url: 'https://example.test/tail' },
+          ],
+        }],
+      },
     })
 
     expect(replay).toContain('\x1b[0;48;2;34;34;34m ')
     expect(replay).toContain('\x1b]8;;https://example.test/tail\x07 ')
-  })
-
-  it('preserves trailing plain blanks in sequential replay text for QR rows', () => {
-    const replay = rowsToReplay([
-      {
-        cells: [
-          { r: '█' },
-          { r: ' ' },
-          { r: ' ' },
-        ],
-      },
-      {
-        cells: [
-          { r: '▄' },
-          { r: ' ' },
-          { r: ' ' },
-        ],
-      },
-    ])
-
-    expect(replay).toBe('█  \r\n▄  ')
-  })
-
-  it('preserves soft-wrapped snapshot rows when generating replay text', () => {
-    const replay = snapshotToReplay({
-      screen: { rows: [] },
-      scrollback: [
-        { wrapped: true, cells: Array.from('abcde').map((char) => ({ r: char })) },
-        { cells: Array.from('fgh').map((char) => ({ r: char })) },
-        { cells: Array.from('hard').map((char) => ({ r: char })) },
-      ],
-    })
-
-    const plainReplay = replay.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
-    expect(plainReplay).toContain('abcdefgh')
-    expect(plainReplay).not.toContain('abcde\r\nfgh')
-    expect(plainReplay).toContain('fgh\r\nhard')
-    expect(rowsToText({
-      scrollback: [
-        { wrapped: true, cells: Array.from('abcde').map((char) => ({ r: char })) },
-        { cells: Array.from('fgh').map((char) => ({ r: char })) },
-      ],
-    })).toBe('abcdefgh')
   })
 
   it('emits alternate screen enter and exit sequences from snapshot modes', () => {
@@ -178,9 +113,6 @@ describe('termxProtocol', () => {
     const snapshot = {
       screen_is_alternate: true,
       modes: { alternate_screen: false },
-      scrollback: [
-        { cells: [{ r: 'o' }, { r: 'l' }, { r: 'd' }] },
-      ],
       screen: {
         rows: [
           { cells: [{ r: 't' }, { r: 'u' }, { r: 'i' }] },

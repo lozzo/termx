@@ -7,7 +7,6 @@ import {
 import {
   decodeTerminalMethodParams,
   decodeTerminalRequestPayload,
-  encodeGridViewportPayload,
   encodeTerminalErrorPayload,
   encodeTerminalHelloPayload,
   encodeTerminalResponsePayload,
@@ -98,7 +97,6 @@ export class MockRtcTerminalSession implements RtcSession {
   private readonly resizeControls = new Map<string, TerminalResizeControl>()
   private readonly ensureResizeControls = new Map<string, TerminalResizeControl>()
   private readonly snapshots = new Map<string, TerminalSnapshotPayload>()
-  private readonly snapshotPages = new Map<string, MockSnapshotPage[]>()
   private readonly failingSends = new Set<string>()
   private readonly failingEnsureResizes = new Map<string, string>()
 
@@ -190,9 +188,8 @@ export class MockRtcTerminalSession implements RtcSession {
     this.channels.get(terminalId)?.respondToNextSnapshot(snapshot)
   }
 
-  setTerminalSnapshot(terminalId: string, snapshot: TerminalSnapshotPayload & { pages?: MockSnapshotPage[] }): void {
+  setTerminalSnapshot(terminalId: string, snapshot: TerminalSnapshotPayload): void {
     this.snapshots.set(terminalId, snapshot)
-    this.snapshotPages.set(terminalId, snapshot.pages ?? [])
   }
 
   emitTerminalInfo(terminalId: string, info: TerminalInfoPayload): void {
@@ -243,22 +240,9 @@ export class MockRtcTerminalSession implements RtcSession {
     return this.snapshots.get(terminalId)
   }
 
-  snapshotPageFor(terminalId: string, offset: number): MockSnapshotPage | undefined {
-    return this.snapshotPages.get(terminalId)?.find((page) => page.offset === offset)
-  }
-
   snapshotRequests(terminalId: string): Array<{ offset: number; limit: number }> {
     return this.channels.get(terminalId)?.snapshotRequests ?? []
   }
-
-  historyReplayRequests(terminalId: string): Array<{ beforeOffset: number; limit: number; alternate?: boolean }> {
-    return this.channels.get(terminalId)?.historyReplayRequests ?? []
-  }
-}
-
-export interface MockSnapshotPage {
-  offset: number
-  rows: Array<string | { text?: string; cells?: Array<Record<string, unknown>>; wrapped?: boolean }>
 }
 
 class MockBinaryChannel implements RtcBinaryChannel {
@@ -266,7 +250,6 @@ class MockBinaryChannel implements RtcBinaryChannel {
   sentText = ''
   lastResize: { cols: number; rows: number } | undefined
   readonly snapshotRequests: Array<{ offset: number; limit: number }> = []
-  readonly historyReplayRequests: Array<{ beforeOffset: number; limit: number; alternate?: boolean }> = []
   private messageHandler: ((data: Uint8Array) => void) | undefined
   private closeHandler: (() => void) | undefined
   private streamChannel = 7
@@ -278,7 +261,7 @@ class MockBinaryChannel implements RtcBinaryChannel {
   constructor(
     readonly label: string,
     private readonly terminalId: string,
-    private readonly owner: Pick<MockRtcTerminalSession, 'snapshotFor' | 'snapshotPageFor'>,
+    private readonly owner: Pick<MockRtcTerminalSession, 'snapshotFor'>,
   ) {}
 
   send(data: Uint8Array): void {
@@ -296,10 +279,6 @@ class MockBinaryChannel implements RtcBinaryChannel {
       return
     }
     if (frame.channel !== this.streamChannel) return
-    if (frame.type === TERMX_FRAME_TYPES.historyRequest) {
-      this.handleHistoryRequest(frame)
-      return
-    }
     if (frame.type === TERMX_FRAME_TYPES.input) {
       this.sentText += new TextDecoder().decode(frame.payload)
       return
@@ -379,7 +358,7 @@ class MockBinaryChannel implements RtcBinaryChannel {
     const request = {
       id: requestEnvelope.id,
       method: requestEnvelope.method,
-      params: decodeTerminalMethodParams(requestEnvelope.method, requestEnvelope.params) as { scrollback_offset?: number; scrollback_limit?: number },
+      params: decodeTerminalMethodParams(requestEnvelope.method, requestEnvelope.params),
     }
     if (request.method === 'attach') {
       this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(request.id, request.method, {
@@ -394,23 +373,7 @@ class MockBinaryChannel implements RtcBinaryChannel {
       return
     }
     if (request.method === 'snapshot') {
-      const offset = request.params?.scrollback_offset ?? 0
-      const limit = request.params?.scrollback_limit ?? 0
-      this.snapshotRequests.push({ offset, limit })
-      const page = limit > 1 ? this.owner.snapshotPageFor(this.terminalId, offset) : undefined
-      if (page) {
-        this.respondToNextSnapshot({
-          text: '',
-          cols: 80,
-          rows: 24,
-          raw: {
-            size: { cols: 80, rows: 24 },
-            screen: { rows: [] },
-            scrollback: page.rows.map(mockHistoryRowToProtocolRow),
-          },
-        }, request.id)
-        return
-      }
+      this.snapshotRequests.push({ offset: 0, limit: 0 })
       this.respondToNextSnapshot(
         this.terminalSnapshot() ?? { text: '', cols: 80, rows: 24 },
         request.id,
@@ -438,48 +401,5 @@ class MockBinaryChannel implements RtcBinaryChannel {
 
   private terminalSnapshot(): TerminalSnapshotPayload | undefined {
     return this.owner?.snapshotFor(this.terminalId)
-  }
-
-  private handleHistoryRequest(frame: ReturnType<typeof decodeTermxFrame>): void {
-    const view = new DataView(frame.payload.buffer, frame.payload.byteOffset, frame.payload.byteLength)
-    const beforeOffset = view.getUint32(0)
-    const limit = view.getUint32(4)
-    const alternate = frame.payload.byteLength >= 9 && view.getUint8(8) === 1
-    this.historyReplayRequests.push({ beforeOffset, limit, ...(alternate ? { alternate } : {}) })
-    const page = this.owner.snapshotPageFor(this.terminalId, beforeOffset)
-    const rows = page?.rows ?? []
-    const nextOffset = beforeOffset + rows.length
-    const hasMore = rows.length > 0 && this.owner.snapshotPageFor(this.terminalId, nextOffset) !== undefined
-    const viewport = encodeGridViewportPayload({
-      terminal_id: this.terminalId,
-      size: { cols: 80, rows: 24 },
-      rows: rows.map(mockHistoryRowToProtocolRow),
-      scrollback_offset: beforeOffset,
-      scrollback_limit: limit,
-      scrollback_total: nextOffset + (hasMore ? 1 : 0),
-      scrollback_logical_total: nextOffset + (hasMore ? 1 : 0),
-      scrollback_has_more: hasMore,
-    })
-    const payload = new Uint8Array(5 + viewport.length)
-    const payloadView = new DataView(payload.buffer)
-    payloadView.setUint32(0, rows.length)
-    payloadView.setUint8(4, hasMore ? 1 : 0)
-    payload.set(viewport, 5)
-    this.emitFrame(TERMX_FRAME_TYPES.historyReplay, payload)
-  }
-}
-
-function mockHistoryRowToProtocolRow(row: MockSnapshotPage['rows'][number]): Record<string, unknown> {
-  if (typeof row === 'string') {
-    return {
-      cells: Array.from(row).map((char) => ({ r: char })),
-    }
-  }
-  const cells = Array.isArray(row.cells)
-    ? row.cells
-    : Array.from(row.text ?? '').map((char) => ({ r: char }))
-  return {
-    cells,
-    ...(row.wrapped ? { wrapped: true } : {}),
   }
 }

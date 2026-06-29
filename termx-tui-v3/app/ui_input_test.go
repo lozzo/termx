@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -108,13 +107,10 @@ func TestUIInputReducerPrefixModeCommandExitPolicy(t *testing.T) {
 	}
 }
 
-func TestUIInputReducerStickyTimeoutDoesNotCloseOverlayOrCopyMode(t *testing.T) {
+func TestUIInputReducerStickyTimeoutDoesNotCloseOverlay(t *testing.T) {
 	reducer := NewUIInputReducer()
 	shell := state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal).OpenTerminalPicker()
-	root := state.Root{
-		Shell:    shell,
-		CopyMode: state.CopyModeStore{Active: true, TerminalID: "term-1"},
-	}
+	root := state.Root{Shell: shell}
 	seq := root.Shell.InteractionModeSeq
 
 	root, _ = reducer(root, ShellInteractionModeTimeoutMsg{Mode: state.InteractionModeGlobal, Seq: seq})
@@ -123,9 +119,6 @@ func TestUIInputReducerStickyTimeoutDoesNotCloseOverlayOrCopyMode(t *testing.T) 
 	}
 	if !root.Shell.Overlay.Open || root.Shell.Overlay.Kind != state.OverlayTerminalPicker {
 		t.Fatalf("timeout must not close overlay, overlay=%#v", root.Shell.Overlay)
-	}
-	if !root.CopyMode.Active || root.CopyMode.TerminalID != "term-1" {
-		t.Fatalf("timeout must not mutate copy mode, copy=%#v", root.CopyMode)
 	}
 }
 
@@ -406,43 +399,6 @@ func TestUIInputReducerWorkbenchTreeDeleteKeysTrimQuery(t *testing.T) {
 	}
 }
 
-func TestUIInputReducerOpensClipboardHistoryFromCopyModeH(t *testing.T) {
-	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Clipboard: &services.FakeClipboardService{}, Terminal: &services.FakeTerminalService{}, Rows: 20})
-	root := state.Root{
-		CopyMode: state.CopyModeStore{Active: true},
-		Clipboard: state.ClipboardStore{
-			Entries: []state.ClipboardEntry{{ID: "clip:1", Title: "alpha", Text: "alpha", Preview: "alpha"}},
-		},
-	}
-
-	next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "H"}})
-	if !next.Shell.Overlay.Open || next.Shell.Overlay.Kind != state.OverlayClipboardHistory {
-		t.Fatalf("expected clipboard history overlay, got %#v", next.Shell.Overlay)
-	}
-	if len(effects) != 2 {
-		t.Fatalf("expected handled and storage load effects, got %#v", effects)
-	}
-	if _, ok := effects[1].(FuncEffect); !ok {
-		t.Fatalf("expected storage load effect, got %#v", effects)
-	}
-}
-
-func TestUIInputReducerOpensClipboardHistoryWhileCopyModeEntering(t *testing.T) {
-	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Clipboard: &services.FakeClipboardService{}, Terminal: &services.FakeTerminalService{}, Rows: 20})
-	root := state.Root{CopyMode: state.CopyModeStore{Entering: true, RequestID: 1}}
-
-	next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "H"}})
-	if !next.Shell.Overlay.Open || next.Shell.Overlay.Kind != state.OverlayClipboardHistory || !next.CopyMode.Entering {
-		t.Fatalf("expected clipboard history overlay without canceling entering copy mode, got %#v", next)
-	}
-	if len(effects) != 2 {
-		t.Fatalf("expected handled and storage load effects, got %#v", effects)
-	}
-	if _, ok := effects[1].(FuncEffect); !ok {
-		t.Fatalf("expected storage load effect, got %#v", effects)
-	}
-}
-
 func TestOverlayKeyboardCommandsRouteClipboardHistoryContentActions(t *testing.T) {
 	inputReducer := NewUIInputReducer()
 	root := state.Root{
@@ -552,7 +508,6 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -605,7 +560,6 @@ func TestInteractiveRuntimeOverlayMouseWheelMovesSelectionWithoutTerminalLeak(t 
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -649,7 +603,6 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -739,7 +692,6 @@ func TestInteractiveRuntimeTerminalPickerShowsExitedTerminalImmediatelyAfterAtta
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -822,7 +774,6 @@ func TestInteractiveRuntimeTerminalPickerEnterDefaultsToCreateTerminal(t *testin
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -861,7 +812,6 @@ func TestInteractiveRuntimeCreateTerminalFormSubmitsTerminalCreate(t *testing.T)
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	sendChars := func(value string) {
 		t.Helper()
@@ -915,7 +865,6 @@ func TestInteractiveRuntimeCreateTerminalFormRequiresName(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
 		t.Fatalf("send enter: %v", err)
@@ -1139,7 +1088,6 @@ func TestInteractiveRuntimeTerminalPickerUsesTerminalPoolService(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x06", Ctrl: true}); err != nil {
 		t.Fatalf("send ctrl-f: %v", err)
@@ -1388,7 +1336,7 @@ func TestTerminalPoolRestartResultPreventsStaleExitedPoolFromPoisoningReattach(t
 		ListResult:   services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-1", State: "running", Command: []string{"/bin/zsh"}, Cols: 80, Rows: 24}}},
 	}
 	host := NewFakeTerminalHost(16)
-	runtime := NewInteractiveRuntime(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{})
+	runtime := NewInteractiveRuntime(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal})
 	root := runtime.State()
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")
 	root.Session = root.Session.AttachWithResizeOwner("term-1", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID))
@@ -1473,7 +1421,7 @@ func TestRestartIfExitedSkipsRunningCoreTerminal(t *testing.T) {
 
 func TestTerminalPoolRunningListDoesNotCacheLifecycleBeforeSurface(t *testing.T) {
 	host := NewFakeTerminalHost(16)
-	runtime := NewInteractiveRuntime(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: &services.FakeTerminalService{}}, CopyModeDeps{})
+	runtime := NewInteractiveRuntime(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: &services.FakeTerminalService{}})
 	root := runtime.State()
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")
 	root.Session = root.Session.AttachWithResizeOwner("term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID))
@@ -1590,7 +1538,6 @@ func TestInteractiveRuntimeTerminalPoolPageFlow(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	for _, event := range []input.InputEvent{
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
@@ -1682,7 +1629,6 @@ func TestInteractiveRuntimeWorkbenchTreeOverlayFlow(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -1774,7 +1720,6 @@ func TestInteractiveRuntimePromptAndHelpOverlayFlow(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -1853,115 +1798,6 @@ func TestInteractiveRuntimePromptAndHelpOverlayFlow(t *testing.T) {
 	}
 }
 
-func TestInteractiveRuntimeCtrlVEntersCopyWithoutTerminalInput(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
-	}
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
-			state.HistoryWindowReplace,
-			"term-1",
-			"tok-1",
-			78,
-			1,
-			nil,
-		)}},
-	}
-	host := NewFakeTerminalHost(8)
-	host.SetSize(80, 24)
-	runtime := NewInteractiveRuntime(
-		state.Root{},
-		host,
-		NewSyncEffectRunner(),
-		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: core, Rows: 20},
-	)
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
-		t.Fatalf("post attach: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain attach: %v", err)
-	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
-		t.Fatalf("send ctrl-v: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain ctrl-v: %v", err)
-	}
-
-	if !runtime.State().CopyMode.Active {
-		t.Fatalf("expected copy mode active, got %#v", runtime.State().CopyMode)
-	}
-	if len(core.LatestRequests) != 1 {
-		t.Fatalf("expected authoritative latest request, got %#v", core.LatestRequests)
-	}
-	if len(terminal.Inputs) != 0 {
-		t.Fatalf("ctrl-v must not be sent to terminal, got %#v", terminal.Inputs)
-	}
-	last := lastFrame(t, host.Frames())
-	if !frameContains(last, "copy history empty") {
-		t.Fatalf("expected copy empty content in frame, got %#v", last.Lines)
-	}
-}
-
-func TestInteractiveRuntimeCtrlVRendersLatestStressTail(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 120, Rows: 30},
-	}
-	rows := make([]state.HistoryRow, 0, 100)
-	for i := 1; i <= 100; i++ {
-		text := stressHistoryLineForTUI(i)
-		rows = append(rows, state.HistoryRow{
-			Text:   text,
-			LineID: uint64(i),
-			Cells:  []state.HistoryCell{{Text: text, Width: len(text)}},
-		})
-	}
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
-			state.HistoryWindowReplace,
-			"term-1",
-			"tok-stress",
-			118,
-			1,
-			rows,
-		)}},
-	}
-	host := NewFakeTerminalHost(64)
-	host.SetSize(120, 30)
-	runtime := NewInteractiveRuntime(
-		state.Root{},
-		host,
-		NewSyncEffectRunner(),
-		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: core, Rows: 20},
-	)
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 120, Rows: 30}}); err != nil {
-		t.Fatalf("post attach: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain attach: %v", err)
-	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
-		t.Fatalf("send ctrl-v: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain ctrl-v: %v", err)
-	}
-
-	if !runtime.State().CopyMode.Active {
-		t.Fatalf("expected copy mode active, got %#v", runtime.State().CopyMode)
-	}
-	last := lastFrame(t, host.Frames())
-	if !frameContains(last, "000100") || frameContains(last, "ALT_SCREEN_MARK") {
-		t.Fatalf("copy latest should render newest primary stress tail only, got %#v", last.Lines)
-	}
-}
-
-func stressHistoryLineForTUI(n int) string {
-	return fmt.Sprintf("%06d [DEBUG ] stream pending path=/var/tmp/alpha/beta/gamma wrap======================== tail-marker", n)
-}
-
 func TestInteractiveRuntimeShellSemanticActionsReachRenderPath(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runtime := NewInteractiveRuntime(
@@ -1969,7 +1805,6 @@ func TestInteractiveRuntimeShellSemanticActionsReachRenderPath(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: &services.FakeTerminalService{}},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 
 	for _, msg := range []Msg{
@@ -2015,7 +1850,6 @@ func TestInteractiveRuntimePaneAndResizeModeKeymapUsesPaneCommandPath(t *testing
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -2079,7 +1913,6 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -2223,12 +2056,6 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 68, Rows: 18},
 	}
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{
-			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 33, 7, []state.HistoryRow{{Text: "copy-old", LineID: 20}})},
-			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 32, 8, []state.HistoryRow{{Text: "copy-sized", LineID: 30}})},
-		},
-	}
 	host := NewFakeTerminalHost(64)
 	host.SetSize(70, 22)
 	runtime := NewInteractiveRuntime(
@@ -2236,7 +2063,6 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: core, Rows: 20},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 70, Rows: 22, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "test-surface", ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -2352,34 +2178,9 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "q" {
 		t.Fatalf("missed mouse must not steal following terminal input, got %#v", terminal.Inputs)
 	}
-	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
-		Action: state.PaneCommandFocus,
-		Target: state.PaneCommandTarget{PaneID: "pane-2"},
-		Source: state.PaneCommandSourceTest,
-	}}); err != nil {
-		t.Fatalf("restore split pane focus before copy entry: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain split pane focus: %v", err)
-	}
-	runtime.state.CopyMode = state.CopyModeStore{}
-	runtime.state.History = state.HistoryStore{}
 	runtime.state.Shell.InteractionMode = state.InteractionModeNormal
 	runtime.state.Shell = runtime.state.Shell.CloseOverlay()
 	runtime.state.Shell, _ = runtime.state.Shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandDeactivate, Source: state.PaneCommandSourceTest})
-
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
-		t.Fatalf("send copy entry: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain copy entry: %v", err)
-	}
-	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols <= 0 || core.LatestRequests[0].PaneID != "pane-2" {
-		t.Fatalf("copy mode should bind to hidden split content cols, got %#v", core.LatestRequests)
-	}
-	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().CopyMode.BoundCols != core.LatestRequests[0].Cols {
-		t.Fatalf("copy mode should accept first authoritative window, got %#v", runtime.State().CopyMode)
-	}
 
 	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
 		Action:   state.PaneCommandSetSize,
@@ -2392,24 +2193,11 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain pane size rebind: %v", err)
 	}
-	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 33 {
-		t.Fatalf("pane size local reflow must not request a second latest window, got %#v", core.LatestRequests)
-	}
-	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().History.Token != "tok-1" {
-		t.Fatalf("pane size local reflow should keep current frozen token, got copy=%#v history=%#v", runtime.State().CopyMode, runtime.State().History)
-	}
-	if runtime.State().CopyMode.BoundCols != 32 || runtime.State().History.Cols != 32 {
-		t.Fatalf("pane size local reflow should update local history cols binding, got copy=%#v history=%#v", runtime.State().CopyMode, runtime.State().History)
-	}
 	if err := runtime.Post(ShellClearToastsMsg{}); err != nil {
-		t.Fatalf("post clear toasts after copy rebind: %v", err)
+		t.Fatalf("post clear toasts after pane size: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain clear toasts after copy rebind: %v", err)
-	}
-	copyFrame := lastFrame(t, host.Frames())
-	if !frameContains(copyFrame, "copy-old") || frameContains(copyFrame, "copy-sized") {
-		t.Fatalf("pane size local reflow should keep rendering current frozen history, got %#v", copyFrame.Lines)
+		t.Fatalf("drain clear toasts after pane size: %v", err)
 	}
 }
 
@@ -2440,7 +2228,6 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 100, Rows: 30, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "test-surface", ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -2701,7 +2488,6 @@ func TestInteractiveRuntimeGlobalModeTogglesChromeAndEscExitsMode(t *testing.T) 
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -2745,7 +2531,6 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -2894,7 +2679,6 @@ func TestInteractiveRuntimeTabAndWorkspaceProductFlow(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -3293,7 +3077,6 @@ func TestInteractiveRuntimeTabJumpUsesWorkbenchCommand(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)

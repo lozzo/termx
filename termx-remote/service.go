@@ -574,9 +574,6 @@ func (r terminalManagementRouter) RouteTerminalManagementRequest(ctx context.Con
 			body.GetDir(),
 			body.GetEnv(),
 			body.GetTags()[terminalmeta.SizeLockTag],
-			int(body.GetScrollbackSize()),
-			body.GetScrollbackMaxBytes(),
-			time.Duration(body.GetScrollbackMaxAgeSeconds())*time.Second,
 		)
 		if err != nil {
 			return http.StatusBadRequest, nil, err.Error()
@@ -642,7 +639,7 @@ func (r terminalManagementRouter) listTerminals(ctx context.Context) ([]runtime.
 	return out, nil
 }
 
-func (r terminalManagementRouter) createTerminal(ctx context.Context, name string, command []string, dir string, env []string, sizeLockMode string, scrollbackSize int, scrollbackMaxBytes int64, scrollbackMaxAge time.Duration) (runtime.TerminalInventoryItem, error) {
+func (r terminalManagementRouter) createTerminal(ctx context.Context, name string, command []string, dir string, env []string, sizeLockMode string) (runtime.TerminalInventoryItem, error) {
 	if r.daemon == nil {
 		return runtime.TerminalInventoryItem{}, nil
 	}
@@ -651,14 +648,11 @@ func (r terminalManagementRouter) createTerminal(ctx context.Context, name strin
 	resolvedEnv := terminalEnvironmentFromRemote(env)
 	environmentTag := strings.Join(resolvedEnv, "\n")
 	created, err := r.daemon.Create(ctx, protocol.CreateParams{
-		Command:            append([]string(nil), resolvedCommand...),
-		Name:               strings.TrimSpace(name),
-		Tags:               localTerminalTags(resolvedDir, environmentTag, sizeLockMode),
-		Dir:                resolvedDir,
-		Env:                resolvedEnv,
-		ScrollbackSize:     scrollbackSize,
-		ScrollbackMaxBytes: scrollbackMaxBytes,
-		ScrollbackMaxAge:   scrollbackMaxAge,
+		Command: append([]string(nil), resolvedCommand...),
+		Name:    strings.TrimSpace(name),
+		Tags:    localTerminalTags(resolvedDir, environmentTag, sizeLockMode),
+		Dir:     resolvedDir,
+		Env:     resolvedEnv,
 	})
 	if err != nil {
 		return runtime.TerminalInventoryItem{}, err

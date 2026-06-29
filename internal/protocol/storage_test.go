@@ -35,7 +35,7 @@ func TestStorageMethodCodecRoundTrip(t *testing.T) {
 	entry := StorageEntry{
 		AppID:     "tui",
 		Scope:     StorageScopePublic,
-		Key:       "locks/copy-mode-owner",
+		Key:       "locks/resize-owner",
 		Value:     []byte("view-a"),
 		Version:   3,
 		UpdatedAt: time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC),
@@ -60,7 +60,7 @@ func TestStorageEventCodecRoundTrip(t *testing.T) {
 		Storage: &StorageChangedData{
 			AppID:   "tui",
 			Scope:   StorageScopePublic,
-			Key:     "locks/copy-mode-owner",
+			Key:     "locks/resize-owner",
 			Version: 4,
 			Op:      "put",
 		},
@@ -76,7 +76,7 @@ func TestStorageEventCodecRoundTrip(t *testing.T) {
 	if got.Type != EventStorageChanged || got.Storage == nil {
 		t.Fatalf("unexpected decoded event: %#v", got)
 	}
-	if got.Storage.AppID != "tui" || got.Storage.Scope != StorageScopePublic || got.Storage.Key != "locks/copy-mode-owner" || got.Storage.Version != 4 || got.Storage.Op != "put" {
+	if got.Storage.AppID != "tui" || got.Storage.Scope != StorageScopePublic || got.Storage.Key != "locks/resize-owner" || got.Storage.Version != 4 || got.Storage.Op != "put" {
 		t.Fatalf("unexpected storage event: %#v", got.Storage)
 	}
 }

@@ -1030,7 +1030,7 @@ function SettingsView({
   onTerminalSettingsChange: (patch: Partial<TerminalSettings>) => void
   onExportDebugLogs?: (() => Promise<void>) | undefined
 }) {
-  const handleNumberSetting = (key: 'fontSize' | 'scrollback' | 'scrollbackPrefetchThresholdRows', min: number, max: number) =>
+  const handleNumberSetting = (key: 'fontSize' | 'scrollback', min: number, max: number) =>
     (event: ChangeEvent<HTMLInputElement>) => {
       const value = Number(event.currentTarget.value)
       if (!Number.isFinite(value)) return
@@ -1167,19 +1167,6 @@ function SettingsView({
                 type="number"
                 value={terminalSettings.scrollback}
                 onChange={handleNumberSetting('scrollback', 500, 50000)}
-              />
-            </SettingsRow>
-            <SettingsRow label="Prefetch threshold">
-              <input
-                aria-label="Terminal scrollback prefetch threshold"
-                className="h-9 w-28 rounded-lg border border-zinc-200 bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25"
-                inputMode="numeric"
-                max={1000}
-                min={0}
-                step={10}
-                type="number"
-                value={terminalSettings.scrollbackPrefetchThresholdRows}
-                onChange={handleNumberSetting('scrollbackPrefetchThresholdRows', 0, 1000)}
               />
             </SettingsRow>
             <SettingsRow label="Cursor blink">

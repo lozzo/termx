@@ -132,9 +132,6 @@ func pickerTerminalID(root Root, pane PaneState) string {
 	if pane.Active && root.Surface.TerminalID != "" {
 		return root.Surface.TerminalID
 	}
-	if pane.Active && root.History.TerminalID != "" {
-		return root.History.TerminalID
-	}
 	return ""
 }
 

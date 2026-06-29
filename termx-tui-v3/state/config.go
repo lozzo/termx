@@ -74,7 +74,6 @@ type TUIKeymapConfig struct {
 
 type TUIRootKeymapConfig struct {
 	TerminalPicker string
-	CopyMode       string
 	TabMode        string
 	WorkspaceMode  string
 	FloatingMode   string

@@ -13,14 +13,12 @@ import {
   EnsureResizeParamsSchema,
   EnsureResizeResultSchema,
   ErrorEnvelopeSchema,
-  GridViewportSchema,
   HelloSchema,
   RequestEnvelopeSchema,
   ResponseEnvelopeSchema,
   SnapshotParamsSchema,
   SnapshotSchema,
   type CursorState,
-  type GridViewport,
   type ResizeControl,
   type ResizeOwnership,
   type RowSet,
@@ -178,8 +176,6 @@ export function encodeTerminalMethodParams(method: string, params: unknown): Uin
     case 'snapshot':
       return encodeMessage(SnapshotParamsSchema, {
         terminalId: stringField(record, 'terminal_id', 'terminalId'),
-        scrollbackOffset: int32Value(field(record, 'scrollback_offset', 'scrollbackOffset')),
-        scrollbackLimit: int32Value(field(record, 'scrollback_limit', 'scrollbackLimit')),
       })
     default:
       return encodeMessage(EmptySchema, {})
@@ -214,8 +210,6 @@ export function decodeTerminalMethodParams(method: string, payload: Uint8Array):
       const params = decodeMessage(SnapshotParamsSchema, payload)
       return cleanRecord({
         terminal_id: params.terminalId,
-        scrollback_offset: params.scrollbackOffset,
-        scrollback_limit: params.scrollbackLimit,
       })
     }
     default:
@@ -260,14 +254,6 @@ export function decodeTerminalMethodResult(method: string, payload: Uint8Array):
   }
 }
 
-export function encodeGridViewportPayload(viewport: unknown): Uint8Array {
-  return encodeMessage(GridViewportSchema, gridViewportInit(asRecord(viewport)))
-}
-
-export function decodeGridViewportPayload(payload: Uint8Array): unknown {
-  return gridViewportToAPI(decodeMessage(GridViewportSchema, payload))
-}
-
 function attachResultToAPI(result: MessageShape<typeof AttachResultSchema>): unknown {
   return cleanRecord({
     mode: result.mode,
@@ -286,7 +272,6 @@ function ensureResizeResultToAPI(result: MessageShape<typeof EnsureResizeResultS
 
 function snapshotToAPI(snapshot: Snapshot): unknown {
   const screenRows = rowSetToRows(snapshot.screen)
-  const scrollbackRows = rowSetToRows(snapshot.scrollback)
   return cleanRecord({
     terminal_id: snapshot.terminalId,
     size: sizeToAPI(snapshot.size),
@@ -295,32 +280,9 @@ function snapshotToAPI(snapshot: Snapshot): unknown {
       rows: screenRows,
       alternateScreen: snapshot.screenIsAlternate,
     },
-    scrollback: scrollbackRows,
-    scrollback_offset: Number(snapshot.scrollbackOffset),
-    scrollback_total: Number(snapshot.scrollbackTotal),
-    scrollback_logical_total: Number(snapshot.scrollbackLogicalTotal),
-    scrollback_has_more: snapshot.scrollbackHasMore,
     cursor: cursorToAPI(snapshot.cursor),
     modes: modesToAPI(snapshot.modes, snapshot.screenIsAlternate),
     timestamp_unix_nano: Number(snapshot.timestampUnixNano),
-  })
-}
-
-function gridViewportToAPI(viewport: GridViewport): unknown {
-  return cleanRecord({
-    terminal_id: viewport.terminalId,
-    size: sizeToAPI(viewport.size),
-    rows: rowSetToRows(viewport.rows),
-    scrollback_offset: Number(viewport.scrollbackOffset),
-    scrollback_limit: Number(viewport.scrollbackLimit),
-    scrollback_total: Number(viewport.scrollbackTotal),
-    scrollback_logical_total: Number(viewport.scrollbackLogicalTotal),
-    scrollback_has_more: viewport.scrollbackHasMore,
-    loaded_rows: Number(viewport.loadedRows),
-    history_generation: Number(viewport.historyGeneration),
-    first_row_id: Number(viewport.firstRowId),
-    last_row_id: Number(viewport.lastRowId),
-    timestamp_unix_nano: Number(viewport.timestampUnixNano),
   })
 }
 
@@ -481,30 +443,7 @@ function snapshotInit(record: Record<string, unknown>): MessageInitShape<typeof 
     size: sizeInit(field(record, 'size')),
     screenIsAlternate,
     screen: rowSetInit(field(screen, 'rows')),
-    scrollback: rowSetInit(field(record, 'scrollback')),
-    scrollbackOffset: BigInt(int32Value(field(record, 'scrollback_offset', 'scrollbackOffset'))),
-    scrollbackTotal: BigInt(int32Value(field(record, 'scrollback_total', 'scrollbackTotal'))),
-    scrollbackLogicalTotal: BigInt(int32Value(field(record, 'scrollback_logical_total', 'scrollbackLogicalTotal'))),
-    scrollbackHasMore: booleanValue(field(record, 'scrollback_has_more', 'scrollbackHasMore')),
     modes: { mask: modesMask(modes, screenIsAlternate) },
-    timestampUnixNano: BigInt(0),
-  }
-}
-
-function gridViewportInit(record: Record<string, unknown>): MessageInitShape<typeof GridViewportSchema> {
-  return {
-    terminalId: stringField(record, 'terminal_id', 'terminalId'),
-    size: sizeInit(field(record, 'size')),
-    rows: rowSetInit(field(record, 'rows')),
-    scrollbackOffset: BigInt(int32Value(field(record, 'scrollback_offset', 'scrollbackOffset'))),
-    scrollbackLimit: BigInt(int32Value(field(record, 'scrollback_limit', 'scrollbackLimit'))),
-    scrollbackTotal: BigInt(int32Value(field(record, 'scrollback_total', 'scrollbackTotal'))),
-    scrollbackLogicalTotal: BigInt(int32Value(field(record, 'scrollback_logical_total', 'scrollbackLogicalTotal'))),
-    scrollbackHasMore: booleanValue(field(record, 'scrollback_has_more', 'scrollbackHasMore')),
-    loadedRows: BigInt(int32Value(field(record, 'loaded_rows', 'loadedRows'))),
-    historyGeneration: BigInt(int32Value(field(record, 'history_generation', 'historyGeneration'))),
-    firstRowId: BigInt(int32Value(field(record, 'first_row_id', 'firstRowId'))),
-    lastRowId: BigInt(int32Value(field(record, 'last_row_id', 'lastRowId'))),
     timestampUnixNano: BigInt(0),
   }
 }

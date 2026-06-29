@@ -143,38 +143,6 @@ func TestTerminalManagementCreateMarshalsProtocolTerminalID(t *testing.T) {
 	}
 }
 
-func TestTerminalManagementCreatePassesRetentionBudgets(t *testing.T) {
-	daemon := &terminalManagementDaemonStub{}
-	router := terminalManagementRouter{daemon: daemon}
-
-	status, _, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
-		Method: "create",
-		Path:   "create",
-		Body: mustMarshalRuntimeProto(t, &runtimepb.TerminalCreateRequest{
-			Name:                    "ops shell",
-			Command:                 []string{"/bin/zsh", "-l"},
-			ScrollbackSize:          234,
-			ScrollbackMaxBytes:      56789,
-			ScrollbackMaxAgeSeconds: int64((2 * time.Hour) / time.Second),
-		}),
-	})
-	if errMsg != "" {
-		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
-	}
-	if status != http.StatusOK {
-		t.Fatalf("RouteTerminalManagementRequest status = %d", status)
-	}
-	if daemon.createScrollbackSize != 234 {
-		t.Fatalf("expected scrollback size 234, got %d", daemon.createScrollbackSize)
-	}
-	if daemon.createScrollbackMaxBytes != 56789 {
-		t.Fatalf("expected scrollback max bytes 56789, got %d", daemon.createScrollbackMaxBytes)
-	}
-	if daemon.createScrollbackMaxAge != 2*time.Hour {
-		t.Fatalf("expected scrollback max age 2h, got %s", daemon.createScrollbackMaxAge)
-	}
-}
-
 func TestTerminalManagementCreatePassesEnvironmentToCoreCreateParams(t *testing.T) {
 	daemon := &terminalManagementDaemonStub{}
 	router := terminalManagementRouter{daemon: daemon}
@@ -486,16 +454,13 @@ func pairClaimRequestForTest(session remoteprotocol.PairStartResult) pairing.Cla
 }
 
 type terminalManagementDaemonStub struct {
-	createName               string
-	createCommand            []string
-	createDir                string
-	createEnv                []string
-	createScrollbackSize     int
-	createScrollbackMaxBytes int64
-	createScrollbackMaxAge   time.Duration
-	restartID                string
-	list                     []protocol.TerminalInfo
-	get                      *protocol.TerminalInfo
+	createName    string
+	createCommand []string
+	createDir     string
+	createEnv     []string
+	restartID     string
+	list          []protocol.TerminalInfo
+	get           *protocol.TerminalInfo
 }
 
 func (d *terminalManagementDaemonStub) Create(_ context.Context, params protocol.CreateParams) (*protocol.CreateResult, error) {
@@ -503,9 +468,6 @@ func (d *terminalManagementDaemonStub) Create(_ context.Context, params protocol
 	d.createCommand = append([]string(nil), params.Command...)
 	d.createDir = params.Dir
 	d.createEnv = append([]string(nil), params.Env...)
-	d.createScrollbackSize = params.ScrollbackSize
-	d.createScrollbackMaxBytes = params.ScrollbackMaxBytes
-	d.createScrollbackMaxAge = params.ScrollbackMaxAge
 	return &protocol.CreateResult{TerminalID: "terminal-created", State: "running"}, nil
 }
 

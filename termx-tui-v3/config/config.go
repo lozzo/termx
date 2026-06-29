@@ -53,7 +53,6 @@ func Default() state.TUIConfigStore {
 		Keymap: state.TUIKeymapConfig{
 			Root: state.TUIRootKeymapConfig{
 				TerminalPicker: "ctrl-f",
-				CopyMode:       "ctrl-v",
 				TabMode:        "ctrl-t",
 				WorkspaceMode:  "ctrl-w",
 				FloatingMode:   "ctrl-o",
@@ -298,7 +297,6 @@ var scalarSetters = map[string]scalarSetter{
 	"tui.interaction.picker.fuzzy_match":       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Interaction.Picker.FuzzyMatch = value }),
 	"tui.interaction.picker.highlight_matches": setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Interaction.Picker.HighlightMatches = value }),
 	"tui.keymap.root.terminal_picker":          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.TerminalPicker = value }),
-	"tui.keymap.root.copy_mode":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.CopyMode = value }),
 	"tui.keymap.root.tab_mode":                 setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.TabMode = value }),
 	"tui.keymap.root.workspace_mode":           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.WorkspaceMode = value }),
 	"tui.keymap.root.floating_mode":            setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.FloatingMode = value }),
@@ -498,7 +496,6 @@ func validateKeymap(keymap state.TUIKeymapConfig) error {
 	modes := map[string]map[string]string{
 		"root": {
 			"terminal_picker": keymap.Root.TerminalPicker,
-			"copy_mode":       keymap.Root.CopyMode,
 			"tab_mode":        keymap.Root.TabMode,
 			"workspace_mode":  keymap.Root.WorkspaceMode,
 			"floating_mode":   keymap.Root.FloatingMode,

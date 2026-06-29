@@ -423,10 +423,6 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionFooterFloatingMode:
 		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeFloating)
 		return root.Advance(), nil
-	case render.ActionFooterCopyMode:
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "v", Ctrl: true}}
-		}}}
 	case render.ActionFooterGlobalMode:
 		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeGlobal)
 		return root.Advance(), nil
@@ -521,11 +517,6 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "center"})
 	case render.ActionResizeLayoutReset:
 		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "reset"})
-	case render.ActionCopyOlder:
-		// copy footer 只生成等价 PageUp 输入，authoritative history 请求仍由 copy reducer 统一处理。
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}}
-		}}}
 	case render.ActionTerminalTakeResizeOwner:
 		root.Shell = root.Shell.ClearOwnerConfirm(0)
 		if msg.Floating {
@@ -952,8 +943,12 @@ func reduceClipboardHistoryPaste(root state.Root) (state.Root, []Effect) {
 	}
 	root.Shell = root.Shell.CloseOverlay()
 	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
-		return CopyModePasteTextMsg{Text: selected.Text}
+		return InputMsg{Event: inputEventFromPasteText(selected.Text)}
 	}}}
+}
+
+func inputEventFromPasteText(text string) input.InputEvent {
+	return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: text, RawSeq: text}
 }
 
 func reduceClipboardHistoryEdit(root state.Root) (state.Root, []Effect) {
@@ -1517,12 +1512,8 @@ func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (stat
 	root.Shell = addFloatingCommandToast(nextShell, command, result)
 	effects := []Effect{}
 	if result.Status == state.FloatingCommandOK && command.Action == state.FloatingCommandClose {
-		root = invalidateCopyModeForClosedFloating(root, result.ID)
 		root.TerminalViews = root.TerminalViews.DetachFloating(result.ID)
 		effects = append(effects, detachEffects...)
-	}
-	if result.Status == state.FloatingCommandOK && command.Action == state.FloatingCommandDeactivate {
-		root = invalidateCopyModeForInactiveView(root)
 	}
 	if result.Status == state.FloatingCommandOK && shouldPersistFloatingCommand(command) {
 		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
@@ -1549,9 +1540,6 @@ func reduceWorkbenchCommandWithOptions(root state.Root, command state.WorkbenchC
 	}
 	detachEffects := terminalDetachEffectsForWorkbenchCommand(root, previousShell, command, result)
 	root = updateTerminalViewsAfterWorkbenchCommand(root, previousShell, command, result)
-	if workbenchCommandChangesActiveView(command.Action) {
-		root = invalidateCopyModeForInactiveView(root)
-	}
 	effects := []Effect{FuncEffect{Run: func(context.Context) Msg {
 		return WorkbenchStoragePersistRequestMsg{Reason: string(result.Action)}
 	}}}
@@ -1603,10 +1591,8 @@ func updateTerminalViewsAfterPaneCommand(root state.Root, command state.PaneComm
 		}
 		root.TerminalViews = root.TerminalViews.BindPane(binding)
 	case state.PaneCommandClose:
-		root = invalidateCopyModeForClosedPane(root, command.Target.PaneID)
 		root.TerminalViews = root.TerminalViews.DetachPane(command.Target.PaneID)
 	case state.PaneCommandCloseAndKill:
-		root = invalidateCopyModeForClosedPane(root, command.Target.PaneID)
 		if hasTargetPane && targetPane.TerminalID != "" {
 			root.TerminalViews = root.TerminalViews.RemoveTerminal(targetPane.TerminalID)
 		} else {
@@ -1621,10 +1607,8 @@ func updateTerminalViewsAfterWorkbenchCommand(root state.Root, previousShell sta
 	case state.WorkbenchCommandPaneSplit:
 		root = bindWorkbenchSplitTerminalView(root, previousShell, command, result)
 	case state.WorkbenchCommandPaneDetach:
-		root = invalidateCopyModeForClosedPane(root, result.ID)
 		root.TerminalViews = root.TerminalViews.DetachPane(result.ID)
 	case state.WorkbenchCommandPaneClose:
-		root = invalidateCopyModeForClosedPane(root, result.ID)
 		root.TerminalViews = root.TerminalViews.DetachPane(result.ID)
 	case state.WorkbenchCommandPaneKill, state.WorkbenchCommandTabKill:
 		for _, terminalID := range result.Killed {
@@ -1632,30 +1616,9 @@ func updateTerminalViewsAfterWorkbenchCommand(root state.Root, previousShell sta
 		}
 	case state.WorkbenchCommandTabClose:
 		for _, pane := range panesForWorkbenchTarget(previousShell, command.TargetID) {
-			root = invalidateCopyModeForClosedPane(root, pane.ID)
 			root.TerminalViews = root.TerminalViews.DetachPane(pane.ID)
 		}
 	}
-	return root
-}
-
-func invalidateCopyModeForClosedPane(root state.Root, paneID string) state.Root {
-	if paneID == "" {
-		return root
-	}
-	return root.WithoutCopyHistorySession(root.TerminalViews.PaneViewID(paneID))
-}
-
-func invalidateCopyModeForClosedFloating(root state.Root, floatingID string) state.Root {
-	if floatingID == "" {
-		return root
-	}
-	return root.WithoutCopyHistorySession(root.TerminalViews.FloatingViewID(floatingID))
-}
-
-func invalidateCopyModeForInactiveView(root state.Root) state.Root {
-	// 中文说明：history/copy 是每个 TerminalView 的主动交互态；
-	// 切换 active pane/floating 不能替其它 view 自动退出。
 	return root
 }
 

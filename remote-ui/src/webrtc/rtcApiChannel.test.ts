@@ -90,16 +90,13 @@ describe('LocalApiChannel', () => {
     await pending
   })
 
-  it('encodes terminal create retention budgets over the runtime api channel', async () => {
+  it('encodes terminal create requests over the runtime api channel', async () => {
     const channel = new MockRTCDataChannel('api')
     const api = new LocalApiChannel(channel)
 
     const pending = api.request('create', {
       name: 'ops shell',
       command: ['/bin/zsh', '-l'],
-      scrollback_size: 234,
-      scrollback_max_bytes: 56789,
-      scrollback_max_age_seconds: 7200,
     }).catch(() => undefined)
 
     const request = decodeRuntimeAPIRequest(channel.sentBytes[0] ?? new Uint8Array())
@@ -110,9 +107,6 @@ describe('LocalApiChannel', () => {
     expect(decodeRuntimeRequestBody(request.path, request.method, request.body)).toEqual({
       name: 'ops shell',
       command: ['/bin/zsh', '-l'],
-      scrollback_size: 234,
-      scrollback_max_bytes: 56789,
-      scrollback_max_age_seconds: 7200,
     })
     api.close()
     await pending

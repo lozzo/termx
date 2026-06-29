@@ -780,10 +780,10 @@ func TestFrameworkFloatingClearsBackgroundWithoutOverlayFill(t *testing.T) {
 			Viewport: Rect{W: 64, H: 18},
 			Panels: []PanelVM{{
 				ID:           "pane-1",
-				Title:        "history",
+				Title:        "live",
 				Presentation: PanelPresentationCard,
 				Active:       true,
-				Content:      ContentVM{Kind: ContentCopyHistory, Lines: yellowRows},
+				Content:      ContentVM{Kind: ContentTerminalLive, Lines: yellowRows},
 			}},
 			Floating: []FloatingVM{{
 				ID:      "float-1",
@@ -859,7 +859,6 @@ func TestFrameworkRendersModeSpecificFooterHints(t *testing.T) {
 		{name: "global", mode: "global", want: "[h] HEADER"},
 		{name: "tab", mode: "tab", want: "[c] NEW"},
 		{name: "workspace", mode: "workspace", want: "[x] DELETE"},
-		{name: "copy", mode: "copy", want: "[PgUp] SCROLL"},
 		{name: "overlay", mode: "terminal-picker", want: "[enter] SELECT"},
 	}
 	for _, tc := range cases {
@@ -1253,9 +1252,9 @@ func TestFrameworkTranslatesContentHitRegionsAndCursor(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Cursor: Cursor{Visible: true, Row: 1, Col: 2, Shape: CursorShapeBlock},
 		Layout: LayoutVM{Viewport: Rect{W: 30, H: 10}, Panels: []PanelVM{{ID: "pane-1", Title: "pane", Presentation: PanelPresentationCard, Active: true, Content: ContentVM{
-			Kind:       ContentCopyHistory,
+			Kind:       ContentTerminalLive,
 			Lines:      []Line{NewLine("row")},
-			HitRegions: []HitRegion{{Kind: HitRegionHistoryRow, Rect: Rect{Y: 0, W: 10, H: 1}, LineID: 42}},
+			HitRegions: []HitRegion{{Kind: HitRegionPaneContent, Rect: Rect{Y: 0, W: 10, H: 1}, PaneID: "pane-1"}},
 		}}}},
 	}})
 
@@ -1264,12 +1263,12 @@ func TestFrameworkTranslatesContentHitRegionsAndCursor(t *testing.T) {
 	}
 	var contentRegion HitRegion
 	for _, region := range result.HitRegions {
-		if region.Kind == HitRegionHistoryRow && region.LineID == 42 {
+		if region.Kind == HitRegionPaneContent && region.PaneID == "pane-1" {
 			contentRegion = region
 			break
 		}
 	}
-	if contentRegion.Kind != HitRegionHistoryRow || contentRegion.Rect.Y == 0 {
+	if contentRegion.Kind != HitRegionPaneContent || contentRegion.Rect.Y == 0 {
 		t.Fatalf("expected translated content hit region, got %#v", result.HitRegions)
 	}
 }

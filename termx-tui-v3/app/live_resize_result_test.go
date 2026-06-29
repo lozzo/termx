@@ -119,6 +119,69 @@ func TestDetachedViewResizeRequestDoesNotReuseCurrentSessionChannel(t *testing.T
 	}
 }
 
+func TestViewScopedResizeResultAdoptsBindingSessionIdentity(t *testing.T) {
+	reducer := NewLiveReducer(LiveDeps{})
+	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
+	root := state.Root{
+		Session: state.TerminalSessionStore{
+			TerminalID:   "term-1",
+			Channel:      8,
+			Attached:     true,
+			Cols:         64,
+			Rows:         38,
+			DesiredCols:  118,
+			DesiredRows:  38,
+			ResizePolicy: state.TerminalResizeRoleOwner,
+			SurfaceID:    "surface-pane-2",
+			ViewID:       state.TerminalPaneViewID("pane-2"),
+		},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Cols:       64,
+			Rows:       38,
+		}.Resize(64, 38),
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID,
+			"term-1",
+			7,
+			118,
+			38,
+			state.TerminalResizeRoleOwner,
+			"surface-main",
+			viewID,
+			true,
+		)),
+	}
+
+	next, effects := reducer(root, LiveResizeResultMsg{
+		ViewID: viewID,
+		Seq:    1,
+		Cols:   118,
+		Rows:   38,
+		Result: services.TerminalResizeResult{
+			TerminalID:     "term-1",
+			Cols:           118,
+			Rows:           38,
+			Resized:        true,
+			CanResize:      true,
+			ResizePolicy:   state.TerminalResizeRoleOwner,
+			SurfaceID:      "surface-main",
+			ViewID:         viewID,
+			OwnerSurfaceID: "surface-main",
+			OwnerViewID:    viewID,
+		},
+	})
+	if len(effects) != 0 {
+		t.Fatalf("resize result should not emit effects, got %#v", effects)
+	}
+	if next.Session.Channel != 7 || next.Session.SurfaceID != "surface-main" || next.Session.ViewID != viewID {
+		t.Fatalf("view-scoped result must adopt binding identity, session=%#v", next.Session)
+	}
+	if next.Session.Cols != 118 || next.Session.Rows != 38 || next.Surface.Cols != 118 || next.Surface.Rows != 38 {
+		t.Fatalf("view-scoped result must project live size, session=%#v surface=%#v", next.Session, next.Surface)
+	}
+}
+
 func TestViewScopedResizeErrorSurfacesInSessionAndBinding(t *testing.T) {
 	reducer := NewLiveReducer(LiveDeps{})
 	root := state.Root{

@@ -163,8 +163,7 @@ func TestWorkbenchStorageSnapshotScrubsRuntimeAttachmentIdentity(t *testing.T) {
 }
 
 func TestWorkbenchStorageSnapshotScrubsTransientPaneKinds(t *testing.T) {
-	shell := DefaultShell().
-		SplitActivePane(PaneState{ID: "pane-history", Title: "history", Kind: PaneKind("copy-history"), TerminalID: "term-history"}, SplitDirectionVertical)
+	shell := DefaultShell()
 	shell.Workspace.Tabs[0].Panes[0] = PaneState{ID: DefaultPaneID, Title: "old shell", Kind: PaneKind("exited"), TerminalID: "term-main", Active: true}
 	shell, floatingResult := shell.ApplyFloatingCommand(FloatingCommand{
 		Action:   FloatingCommandCreate,
@@ -185,9 +184,6 @@ func TestWorkbenchStorageSnapshotScrubsTransientPaneKinds(t *testing.T) {
 
 	if got := snapshot.Workspace.Tabs[0].Panes[0]; got.Kind != PaneTerminalLive || got.TerminalID != "term-main" {
 		t.Fatalf("storage should keep terminal intent but not legacy exited pane kind, got %#v", got)
-	}
-	if got := snapshot.Workspace.Tabs[0].Panes[1]; got.Kind != PaneTerminalLive || got.TerminalID != "term-history" {
-		t.Fatalf("storage should keep terminal intent but not legacy copy-history pane kind, got %#v", got)
 	}
 	if len(snapshot.Workspace.Tabs[0].Floatings) != 1 || snapshot.Workspace.Tabs[0].Floatings[0].Pane.Kind != PaneTerminalLive || snapshot.Workspace.Tabs[0].Floatings[0].Pane.TerminalID != "term-float" {
 		t.Fatalf("storage should scrub tab floating transient pane kind, got %#v", snapshot.Workspace.Tabs[0].Floatings)
@@ -218,12 +214,6 @@ func TestWorkbenchStorageRestoreScrubsLegacyTransientPaneKinds(t *testing.T) {
 					TerminalID: "term-main",
 					Active:     true,
 				}},
-				Floatings: []FloatingPaneState{{
-					ID:    "floating-1",
-					Title: "float",
-					Pane:  PaneState{ID: "floating-1-pane", Title: "float", Kind: PaneKind("copy-history"), TerminalID: "term-float"},
-					Rect:  FloatingRect{X: 1, Y: 1, W: 40, H: 10},
-				}},
 			}},
 		},
 		Workspaces: []WorkspaceState{{
@@ -239,12 +229,6 @@ func TestWorkbenchStorageRestoreScrubsLegacyTransientPaneKinds(t *testing.T) {
 					Kind:       PaneKind("exited"),
 					TerminalID: "term-main",
 					Active:     true,
-				}},
-				Floatings: []FloatingPaneState{{
-					ID:    "floating-1",
-					Title: "float",
-					Pane:  PaneState{ID: "floating-1-pane", Title: "float", Kind: PaneKind("copy-history"), TerminalID: "term-float"},
-					Rect:  FloatingRect{X: 1, Y: 1, W: 40, H: 10},
 				}},
 			}},
 		}, {
@@ -276,9 +260,6 @@ func TestWorkbenchStorageRestoreScrubsLegacyTransientPaneKinds(t *testing.T) {
 	if pane, ok := restored.Pane(PaneCommandTarget{PaneID: DefaultPaneID}); !ok || pane.Kind != PaneTerminalLive || pane.TerminalID != "term-main" {
 		t.Fatalf("legacy exited pane kind must restore as terminal-live intent, pane=%#v ok=%v", pane, ok)
 	}
-	if floating, ok := restored.FloatingByPaneID("floating-1-pane"); !ok || floating.Pane.Kind != PaneTerminalLive || floating.Pane.TerminalID != "term-float" {
-		t.Fatalf("legacy floating transient kind must restore as terminal-live intent, floating=%#v ok=%v", floating, ok)
-	}
 	views, err := snapshot.ToTerminalViewStore()
 	if err != nil {
 		t.Fatalf("restore terminal views: %v", err)
@@ -288,9 +269,6 @@ func TestWorkbenchStorageRestoreScrubsLegacyTransientPaneKinds(t *testing.T) {
 	}
 	if binding, ok := views.PaneBinding("pane-secondary"); !ok || binding.TerminalID != "term-secondary" || binding.Channel != 0 || binding.Attached {
 		t.Fatalf("legacy inactive workspace pane terminal intent must migrate to detached view binding, binding=%#v ok=%v", binding, ok)
-	}
-	if binding, ok := views.FloatingBinding("floating-1"); !ok || binding.TerminalID != "term-float" || binding.Channel != 0 || binding.Attached {
-		t.Fatalf("legacy floating terminal intent must migrate to detached view binding, binding=%#v ok=%v", binding, ok)
 	}
 }
 

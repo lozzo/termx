@@ -48,7 +48,6 @@ func TestActionSpecCatalogIsSingleSourceForRenderedActions(t *testing.T) {
 		ActionResizeLayoutAlign,
 		ActionResizeLayoutCenter,
 		ActionResizeLayoutReset,
-		ActionCopyOlder,
 		ActionTabCreate,
 		ActionTabSwitch,
 		ActionTabClose,
@@ -60,7 +59,6 @@ func TestActionSpecCatalogIsSingleSourceForRenderedActions(t *testing.T) {
 		ActionFooterTabMode,
 		ActionFooterWorkspaceMode,
 		ActionFooterFloatingMode,
-		ActionFooterCopyMode,
 		ActionFooterGlobalMode,
 		ActionFooterPicker,
 		ActionFooterToggleHeader,
@@ -150,11 +148,6 @@ func TestActionSpecCatalogClassifiesVisibleClickableAndDispatchActions(t *testin
 	floating := assertSpec(ActionFloatingClose, ActionSurfaceFloatingChrome, ActionDispatchApp)
 	if floating.ChromeGlyph == "" || !floating.Danger {
 		t.Fatalf("floating close action should carry chrome glyph and danger metadata, got %#v", floating)
-	}
-
-	copyOlder := assertSpec(ActionCopyOlder, ActionSurfaceFooter, ActionDispatchApp)
-	if copyOlder.FooterKey != "PgUp" || copyOlder.HelpLabel == "" {
-		t.Fatalf("copy older action should carry footer and help metadata, got %#v", copyOlder)
 	}
 
 	helpOpen := assertSpec(ActionHelpOpen, ActionSurfaceFooter, ActionDispatchApp)

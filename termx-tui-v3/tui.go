@@ -30,11 +30,6 @@ func SmokeRun(ctx context.Context) (render.Frame, error) {
 	if len(result.Cases) == 0 {
 		return render.Frame{}, nil
 	}
-	for _, item := range result.Cases {
-		if item.Name == "copy-history" {
-			return item.Frame, nil
-		}
-	}
 	return result.Cases[len(result.Cases)-1].Frame, nil
 }
 
@@ -50,8 +45,6 @@ func SmokeRunDetailed(ctx context.Context) (SmokeResult, error) {
 		{name: "terminal-picker", root: smokeTerminalPickerRoot()},
 		{name: "terminal-pool-page", root: smokeTerminalPoolRoot()},
 		{name: "workbench-tree-page", root: smokeWorkbenchTreeRoot()},
-		{name: "copy-empty", root: smokeCopyEmptyRoot()},
-		{name: "copy-history", root: smokeCopyHistoryRoot()},
 		{name: "prompt-overlay", root: smokePromptRoot()},
 		{name: "help-overlay", root: smokeHelpRoot()},
 		{name: "tab-workspace", root: smokeTabWorkspaceRoot()},
@@ -204,39 +197,6 @@ func smokeWorkbenchTreeRoot() state.Root {
 	}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-logs", "term-logs", 1, 160, 40, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID("pane-logs"), true))
 	return root
-}
-
-func smokeCopyEmptyRoot() state.Root {
-	return state.Root{
-		History: state.HistoryStore{
-			TerminalID: "termx-copy-empty",
-			Token:      "empty-token",
-			Cols:       80,
-		},
-		CopyMode: state.CopyModeStore{
-			Active:     true,
-			TerminalID: "termx-copy-empty",
-			BoundToken: "empty-token",
-			BoundCols:  80,
-		},
-	}
-}
-
-func smokeCopyHistoryRoot() state.Root {
-	return state.Root{
-		History: state.HistoryStore{
-			TerminalID: "termx-smoke",
-			Token:      "smoke-token",
-			Cols:       80,
-			Rows:       []state.HistoryRow{{Text: "termx-tui-v3", LineID: 1}},
-		},
-		CopyMode: state.CopyModeStore{
-			Active:     true,
-			TerminalID: "termx-smoke",
-			BoundToken: "smoke-token",
-			BoundCols:  80,
-		},
-	}
 }
 
 func smokePromptRoot() state.Root {

@@ -25,7 +25,6 @@ type v3E2ESmokeResult struct {
 	ViewportRows int
 	SessionCols  int
 	SessionRows  int
-	CopyCols     int
 	PaneCommands int
 	PaneCount    int
 	ActivePaneID string
@@ -174,23 +173,6 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if err := validateV3E2EStyledChrome(host.Frames()); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
-		return v3E2ESmokeResult{}, err
-	}
-	if err := drainV3RuntimeUntil(ctx, runtime, func(root state.Root) bool {
-		return root.CopyMode.Active && len(root.History.Rows) > 0
-	}); err != nil {
-		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: copy mode did not load authoritative history: %w", err)
-	}
-	if err := drainV3RuntimeUntil(ctx, runtime, func(root state.Root) bool {
-		return root.CopyMode.BoundCols == 98 && root.History.Cols == 98 && root.CopyMode.Active && len(root.History.Rows) > 0
-	}); err != nil {
-		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: timed out waiting for copy mode resized bind: %w", err)
-	}
-	if runtime.State().CopyMode.BoundCols != 98 || runtime.State().History.Cols != 98 {
-		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: copy mode did not bind resized content cols, state=%#v", runtime.State())
-	}
-	copyCols := runtime.State().CopyMode.BoundCols
 	if err := validateV3E2EFrameSize(host.Frames(), 100, 40); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
@@ -214,7 +196,6 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 		ViewportRows: runtime.State().Viewport.Rows,
 		SessionCols:  runtime.State().Session.Cols,
 		SessionRows:  runtime.State().Session.Rows,
-		CopyCols:     copyCols,
 		PaneCommands: paneCommands,
 		PaneCount:    len(runtime.State().Shell.EnsureDefaults().Workspace.Tabs[0].Panes),
 		ActivePaneID: runtime.State().Shell.EnsureDefaults().ActivePaneID,

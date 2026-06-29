@@ -86,7 +86,7 @@ func footerLeftSegments(footer FooterVM, width int) []barSegment {
 }
 
 func footerActionTokensVisibleForWidth(actions []FooterActionVM, mode string, width int) []FooterActionVM {
-	if width >= 100 || (mode != "live" && mode != "normal") || !footerActionsMatchKeys(actions, []string{"^P", "^R", "^T", "^W", "^O", "^V", "^F", "^G"}) {
+	if width >= 100 || (mode != "live" && mode != "normal") || !footerActionsMatchKeys(actions, []string{"^P", "^R", "^T", "^W", "^O", "^F", "^G"}) {
 		return actions
 	}
 	keys := []string{"^P", "^R", "^T", "^G"}
@@ -741,8 +741,6 @@ func compactFooterActions(actions []string) []string {
 			action = "^T tab"
 		case "^O":
 			action = "^O float"
-		case "^V":
-			action = "^V copy"
 		case "^G":
 			action = "^G global"
 		}
@@ -774,8 +772,6 @@ func footerActionKeyStyle(key string, label string) StyleToken {
 		return StyleFooterKeyPicker
 	case strings.Contains(upper, "O") || strings.Contains(upper, "FLOAT"):
 		return StyleFooterKeyFloat
-	case strings.Contains(upper, "V") || strings.Contains(upper, "COPY"):
-		return StyleFooterKeyCopy
 	case strings.Contains(upper, "G") || strings.Contains(upper, "GLOBAL"):
 		return StyleFooterKeyGlobal
 	case strings.Contains(upper, "R") || strings.Contains(upper, "RESIZE") || strings.Contains(upper, "SIZE"):

@@ -279,7 +279,7 @@ func TestV3SmokeCommandIncludesVisualReviewCases(t *testing.T) {
 	}
 	text := out.String()
 	for _, want := range []string{
-		"termx v3 smoke ok: tui=termx-tui-v3 cases=12",
+		"termx v3 smoke ok: tui=termx-tui-v3 cases=10",
 		"case: terminal-pool-page",
 		"Terminal Pool",
 		"⌕ search 日志",
@@ -291,8 +291,6 @@ func TestV3SmokeCommandIncludesVisualReviewCases(t *testing.T) {
 		"case: visual-audit-current",
 		"visual review",
 		"[]─[]",
-		"case: copy-history",
-		"copy row",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("v3 smoke output missing visual review marker %q:\n%s", want, text)
@@ -1455,7 +1453,6 @@ func TestV3E2ESmokeCommandRunsLocalCoreAndTUIPath(t *testing.T) {
 		!strings.Contains(text, "frames=") ||
 		!strings.Contains(text, "viewport=100x40") ||
 		!strings.Contains(text, "session=98x36") ||
-		!strings.Contains(text, "copy_cols=98") ||
 		!strings.Contains(text, "pane_commands=5") ||
 		!strings.Contains(text, "panes=1") ||
 		!strings.Contains(text, "active=pane-main") ||
@@ -1863,7 +1860,7 @@ func TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts(t *testing.T) {
 		t.Fatalf("read style map diff: %v", err)
 	}
 	if !strings.Contains(string(current), "[]─[]") ||
-		!strings.Contains(string(target), "[V] COPY • [F] PICKER • [G] GLOBAL") ||
+		!strings.Contains(string(target), "[F] PICKER • [G] GLOBAL") ||
 		!strings.Contains(string(target), "float:1") ||
 		!strings.Contains(string(diff), "tmux visual diff") {
 		t.Fatalf("visual compare artifacts missing expected markers current=%q target=%q diff=%q", current, target, diff)

@@ -23,7 +23,7 @@ func startRuntimeHeapSignalProfiler(runtime *AppRuntime, logger *slog.Logger) fu
 			case <-done:
 				return
 			case sig := <-signals:
-				// 中文说明：真实 RSS harness 用 SIGUSR1 在 live/copy 关键点抓 TUI heap；
+				// 中文说明：真实 RSS harness 用 SIGUSR1 在运行时关键点抓 TUI heap；
 				// 只有显式设置 profile dir 时启用，不改变普通运行路径。
 				switch sig {
 				case syscall.SIGUSR1:

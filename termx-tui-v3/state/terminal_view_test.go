@@ -232,6 +232,26 @@ func TestTerminalViewStoreIgnoresStaleTerminalResizeControlDuringPendingOwner(t 
 	}
 }
 
+func TestTerminalViewStoreDetachOwnerPromotesFollowerWithStaleProjectedOwner(t *testing.T) {
+	store := TerminalViewStore{}
+	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface-a", "view-owner", true))
+	store = store.BindPane(NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, TerminalResizeRoleFollower, "surface-a", "view-next", false))
+	store = store.ApplyTerminalResizeControl("term-1", TerminalResizeControlProjection{
+		OwnerSurfaceID: "surface-a",
+		OwnerViewID:    "view-owner",
+		ResizeEpoch:    1,
+	})
+
+	store = store.DetachPane("pane-1")
+	next, ok := store.PaneBinding("pane-2")
+	if !ok {
+		t.Fatal("remaining pane should keep terminal binding")
+	}
+	if next.ResizeRole != TerminalResizeRoleOwner || !next.CanResize || next.OwnerViewID != "" || next.OwnerSurfaceID != "" || !next.ResizePending {
+		t.Fatalf("remaining pane should become local pending owner after stale projected owner is removed, got %#v", next)
+	}
+}
+
 func TestTerminalViewStoreIgnoresLocalOldOwnerProjectionAfterTransfer(t *testing.T) {
 	store := TerminalViewStore{}
 	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface-a", "view-owner", true))

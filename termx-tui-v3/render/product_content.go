@@ -807,13 +807,12 @@ func helpActionGroups() []helpActionGroup {
 			{Action: ActionPromptCancel},
 			{Action: ActionHelpOpen},
 		}, Details: []string{"confirm"}},
-		{Label: "Display / Copy", Items: []helpActionItem{
-			{Action: ActionCopyOlder},
+		{Label: "Clipboard History", Items: []helpActionItem{
 			{Action: ActionClipboardHistoryPaste},
 			{Action: ActionClipboardHistoryNew},
 			{Action: ActionClipboardHistoryEdit},
 			{Action: ActionClipboardHistoryDelete},
-		}, Details: []string{"authoritative HistoryWindow"}},
+		}},
 	}
 }
 

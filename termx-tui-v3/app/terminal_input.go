@@ -10,7 +10,7 @@ import (
 )
 
 // NewTerminalInputRouterReducer 是普通 terminal 输入的唯一入口。
-// UI、overlay、copy mode 已消费的输入不会到这里；未消费的 key/mouse passthrough
+// UI 和 overlay 已消费的输入不会到这里；未消费的 key/mouse passthrough
 // 必须在这里统一解析 active TerminalView binding，避免 key 和 mouse 走两套目标选择逻辑。
 func NewTerminalInputRouterReducer(deps LiveDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
@@ -30,14 +30,6 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 			Reason: "terminal service missing",
 		})
 		return setLiveError(root, "terminal service missing"), nil
-	}
-	if copyModeOwnsActiveInput(root) {
-		logTerminalInputRoute(deps, root, terminalInputRouteLog{
-			Event:  msg.Event,
-			Result: "consumed",
-			Reason: "copy mode active",
-		})
-		return root, []Effect{handledEffect{}}
 	}
 	shell := root.Shell.ReadonlyDefaults()
 	if shell.Overlay.Open {
@@ -67,7 +59,6 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		return root.Advance(), []Effect{handledEffect{}}
 	}
 	intent := input.RouteWithOptions(msg.Event, input.RouteOptions{
-		CopyModeActive:           false,
 		TerminalMousePassthrough: msg.TerminalMousePassthrough || liveMousePassthroughEnabled(root, msg.Event, target),
 	})
 	if intent.Kind != input.IntentTerminalInput || len(intent.Bytes) == 0 {
@@ -154,8 +145,6 @@ func logTerminalInputRoute(deps LiveDeps, root state.Root, entry terminalInputRo
 		"interaction_mode", string(shell.InteractionMode),
 		"overlay_open", shell.Overlay.Open,
 		"overlay_kind", string(shell.Overlay.Kind),
-		"copy_active", root.CopyMode.Active,
-		"copy_entering", root.CopyMode.Entering,
 		"target_view", entry.Target.ViewID,
 		"target_pane", entry.Target.PaneID,
 		"target_floating", entry.Target.FloatingID,

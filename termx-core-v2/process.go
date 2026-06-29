@@ -9,7 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"time"
 
 	creackpty "github.com/creack/pty"
 )
@@ -25,14 +24,11 @@ func (fn ProcessFactoryFunc) Spawn(ctx context.Context, spec ProcessSpec) (Termi
 }
 
 type ProcessSpec struct {
-	TerminalID         string
-	Command            []string
-	Size               Size
-	Dir                string
-	Env                []string
-	ScrollbackSize     int
-	ScrollbackMaxBytes int64
-	ScrollbackMaxAge   time.Duration
+	TerminalID string
+	Command    []string
+	Size       Size
+	Dir        string
+	Env        []string
 }
 
 func cloneProcessSpec(spec ProcessSpec) ProcessSpec {

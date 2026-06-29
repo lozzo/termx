@@ -15,8 +15,6 @@ export const TERMX_FRAME_TYPES = {
   streamReady: 0x15,
   syncLost: 0x16,
   closed: 0x17,
-  historyRequest: 0x18,
-  historyReplay: 0x19,
 } as const
 
 export type TermxFrameType = typeof TERMX_FRAME_TYPES[keyof typeof TERMX_FRAME_TYPES]
@@ -67,27 +65,6 @@ export function encodeResizePayload(cols: number, rows: number): Uint8Array {
   view.setUint16(0, cols)
   view.setUint16(2, rows)
   return payload
-}
-
-export function encodeHistoryRequestPayload(beforeOffset: number, limit: number, alternate = false): Uint8Array {
-  const payload = new Uint8Array(9)
-  const view = new DataView(payload.buffer)
-  view.setUint32(0, Math.max(0, beforeOffset))
-  view.setUint32(4, Math.max(0, limit))
-  view.setUint8(8, alternate ? 1 : 0)
-  return payload
-}
-
-export function decodeHistoryReplayPayload(payload: Uint8Array): { rows: number; hasMore: boolean; replay: Uint8Array } {
-  if (payload.byteLength < 5) {
-    throw new Error('termx history replay payload too short')
-  }
-  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
-  return {
-    rows: view.getUint32(0),
-    hasMore: view.getUint8(4) === 1,
-    replay: payload.slice(5),
-  }
 }
 
 interface CellStyleLike {
@@ -159,27 +136,18 @@ interface DecodedScreenOp {
 
 interface DecodedScreenUpdate {
   fullReplace: boolean
-  resetScrollback: boolean
   size: { cols: number; rows: number }
   screenScroll: number
   title: string
   screen: { rows: DecodedCell[][]; alternateScreen: boolean }
   ops: DecodedScreenOp[]
-  scrollbackTrim: number
-  scrollbackAppend: DecodedScrollbackRow[]
   cursor: DecodedCursor
   modes: DecodedModes
-}
-
-interface DecodedScrollbackRow {
-  cells: DecodedCell[]
-  wrapped: boolean
 }
 
 const screenUpdatePayloadMagic = 'TSU7'
 
 const screenUpdateFlagFullReplace = 1 << 0
-const screenUpdateFlagResetScrollback = 1 << 1
 const screenUpdateFlagHasTitle = 1 << 2
 const screenUpdateFlagHasScreenScroll = 1 << 3
 
@@ -257,13 +225,13 @@ function decodeScreenUpdatePayloadCurrent(payload: Uint8Array): DecodedScreenUpd
   for (let index = 0; index < opCount; index += 1) {
     update.ops.push(dec.readScreenOp(styles))
   }
-  update.scrollbackTrim = dec.readUvarint()
+  dec.readUvarint()
   const appendCount = dec.readUvarint()
   for (let index = 0; index < appendCount; index += 1) {
     dec.skipTime()
     dec.skipString()
-    const wrapped = dec.readWrapped()
-    update.scrollbackAppend.push({ cells: dec.readCells(styles), wrapped })
+    dec.skipWrapped()
+    dec.readCells(styles)
   }
   dec.assertEOF()
   return update
@@ -288,14 +256,11 @@ class ScreenUpdateDecoder {
     const rows = this.readUint16()
     const update: DecodedScreenUpdate = {
       fullReplace: (flags & screenUpdateFlagFullReplace) !== 0,
-      resetScrollback: (flags & screenUpdateFlagResetScrollback) !== 0,
       size: { cols, rows },
       screenScroll: 0,
       title: '',
       screen: { rows: [], alternateScreen: false },
       ops: [],
-      scrollbackTrim: 0,
-      scrollbackAppend: [],
       cursor: { ...emptyCursor },
       modes: { ...emptyModes },
     }
@@ -570,15 +535,6 @@ function screenUpdateToReplay(update: DecodedScreenUpdate): string | null {
 
   if (update.fullReplace) {
     parts.push(writePrivateModeANSI(1049, modes.alternateScreen))
-    if (!modes.alternateScreen && update.resetScrollback && update.scrollbackAppend.length > 0) {
-      parts.push(writeSequentialDecodedRows(update.scrollbackAppend))
-      parts.push('\r\n')
-      const visibleRows = Math.max(1, update.screen.rows.length)
-      for (let index = 0; index < visibleRows - 1; index += 1) {
-        parts.push('\n')
-      }
-      parts.push('\x1b[0m')
-    }
     parts.push('\x1b[H\x1b[2J\x1b[H')
     parts.push(writeDecodedRowsAbsolute(update.screen.rows))
   } else {
@@ -689,31 +645,6 @@ function writeDecodedCells(cells: DecodedCell[]): string {
   return parts.join('')
 }
 
-function writeSequentialDecodedRows(rows: DecodedScrollbackRow[]): string {
-  const parts: string[] = []
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index]
-    parts.push(writeSequentialDecodedRow(row?.cells ?? []))
-    if (index < rows.length - 1 && !row?.wrapped) {
-      parts.push('\r\n')
-    }
-  }
-  return parts.join('')
-}
-
-function writeSequentialDecodedRow(row: DecodedCell[]): string {
-  const parts: string[] = []
-  for (let index = 0; index < row.length; index += 1) {
-    const cell = row[index]
-    if (!cell) continue
-    if (cell.width === 0) continue
-    parts.push(cellStyleANSI(cellStyleWithCellLink(cell)))
-    parts.push(cell.content || ' ')
-  }
-  parts.push(resetCellStyleANSI())
-  return parts.join('')
-}
-
 function writeScrollRectANSI(rect: DecodedScreenRect, dx: number, dy: number, cols: number, rows: number): string | null {
   if (dy === 0 && dx === 0) return ''
   if (dx !== 0 || rect.width <= 0 || rect.height <= 0 || rect.y < 0) return null
@@ -763,18 +694,7 @@ export function rowsToText(snapshot: unknown): string {
     return ''
   }
   const record = snapshot
-  const chunks = [
-    ...rowsFrom(record.scrollback),
-    ...rowsFrom(record.screen && isRecord(record.screen) ? record.screen.rows : undefined),
-  ]
-  return rowsText(chunks)
-}
-
-export function snapshotScrollbackRows(snapshot: unknown): unknown[] {
-  if (!isRecord(snapshot)) {
-    return []
-  }
-  return rowsFrom(snapshot.scrollback)
+  return rowsText(rowsFrom(record.screen && isRecord(record.screen) ? record.screen.rows : undefined))
 }
 
 export function snapshotUsesAlternateScreen(snapshot: unknown): boolean {
@@ -783,10 +703,6 @@ export function snapshotUsesAlternateScreen(snapshot: unknown): boolean {
 
 export function rowsToPlainText(rows: unknown[]): string {
   return rowsText(rows)
-}
-
-export function rowsToReplay(rows: unknown[]): string {
-  return writeSequentialRows(rows)
 }
 
 export function screenRowsToPlainText(snapshot: unknown): string {
@@ -847,7 +763,6 @@ export function snapshotToReplay(snapshot: unknown): string {
 
   const screenRecord = snapshot.screen && isRecord(snapshot.screen) ? snapshot.screen : null
   const screenRows = rowsFrom(screenRecord?.rows)
-  const scrollbackRows = rowsFrom(snapshot.scrollback)
   const cursor = cursorFrom(snapshot.cursor)
   const modes = {
     ...modesFrom(snapshot.modes),
@@ -856,16 +771,6 @@ export function snapshotToReplay(snapshot: unknown): string {
   const parts: string[] = []
 
   parts.push(writePrivateModeANSI(1049, modes.alternateScreen))
-  if (!modes.alternateScreen && scrollbackRows.length > 0) {
-    parts.push(writeSequentialRows(scrollbackRows))
-    parts.push('\r\n')
-    const visibleRows = Math.max(1, screenRows.length)
-    for (let index = 0; index < visibleRows - 1; index += 1) {
-      parts.push('\n')
-    }
-    parts.push('\x1b[0m')
-  }
-
   parts.push('\x1b[H\x1b[2J\x1b[H')
   parts.push(encodeScreenSnapshot(screenRows))
   parts.push(writeTerminalModesANSI(modes))
@@ -898,40 +803,6 @@ function encodeScreenSnapshot(rows: unknown[]): string {
     return ''
   }
   parts.push(resetCellStyleANSI())
-  return parts.join('')
-}
-
-function writeSequentialRows(rows: unknown[]): string {
-  const parts: string[] = []
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index]
-    parts.push(writeSequentialRow(row))
-    if (index < rows.length - 1 && !rowWrapped(row)) {
-      parts.push('\r\n')
-    }
-  }
-  return parts.join('')
-}
-
-function writeSequentialRow(row: unknown): string {
-  const cells = rowCells(row)
-  const parts: string[] = []
-  let currentStyle = emptyStyle
-  for (let index = 0; index < cells.length; index += 1) {
-    const cell = cellFrom(cells[index])
-    if (cell.content === '' && cell.width === 0) {
-      continue
-    }
-    const style = cellStyleWithCellLink(cell)
-    if (!stylesEqual(style, currentStyle)) {
-      parts.push(cellStyleANSI(style))
-      currentStyle = style
-    }
-    parts.push(cell.content || ' ')
-  }
-  if (!stylesEqual(currentStyle, emptyStyle)) {
-    parts.push(resetCellStyleANSI())
-  }
   return parts.join('')
 }
 

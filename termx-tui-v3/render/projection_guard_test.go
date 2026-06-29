@@ -29,7 +29,6 @@ func TestProjectionFilesDoNotDependOnRendererRuntime(t *testing.T) {
 		"vm.go",
 		"content_projector_registry.go",
 		"product_content.go",
-		"copy_history.go",
 		"style.go",
 	}
 	for _, file := range projectionFiles {

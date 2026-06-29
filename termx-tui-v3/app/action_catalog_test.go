@@ -103,7 +103,7 @@ func TestTabWorkspaceFooterHintsMatchInputBindings(t *testing.T) {
 			if !ok {
 				continue
 			}
-			intent := input.RouteWithMode(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: token.Key}, false, tc.input)
+			intent := input.RouteWithMode(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: token.Key}, tc.input)
 			if intent.Kind != input.IntentWorkbenchCommand || intent.Command != command {
 				t.Fatalf("%s footer key %q action %q should route to %q, got %#v", tc.name, token.Key, token.ActionID, command, intent)
 			}
@@ -138,20 +138,6 @@ func hasUnknownActionToast(root state.Root, actionID string) bool {
 		}
 	}
 	return false
-}
-
-func TestActionCatalogCopyAndModeAdapterEffectsRemainMessages(t *testing.T) {
-	reducer := NewShellReducer()
-	root := actionCatalogDispatchRoot()
-	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionFooterCopyMode.String()})
-	if next.Generation != root.Generation || len(effects) != 1 {
-		t.Fatalf("copy footer action should remain a message adapter effect, root=%#v effects=%#v", next, effects)
-	}
-	msg := effects[0].(FuncEffect).Run(context.Background())
-	inputMsg, ok := msg.(InputMsg)
-	if !ok || inputMsg.Event.Kind != input.EventKindKey || inputMsg.Event.Char != "v" || !inputMsg.Event.Ctrl {
-		t.Fatalf("copy footer action should emit ctrl-v input msg, got %#v", msg)
-	}
 }
 
 func TestActionCatalogPaneDetachAndQuitAdapterEffectsRemainMessages(t *testing.T) {

@@ -96,7 +96,6 @@ const (
 	StyleFooterKeyTab        StyleToken = "footer-key-tab"
 	StyleFooterKeyWorkspace  StyleToken = "footer-key-workspace"
 	StyleFooterKeyFloat      StyleToken = "footer-key-float"
-	StyleFooterKeyCopy       StyleToken = "footer-key-copy"
 	StyleFooterKeyPicker     StyleToken = "footer-key-picker"
 	StyleFooterKeyGlobal     StyleToken = "footer-key-global"
 	StyleInfo                StyleToken = "info"
@@ -132,6 +131,12 @@ func NewCell(text string) Cell {
 		Width: DisplayWidth(text),
 		Safe:  true,
 	}
+}
+
+func styledCell(text string, style StyleToken) Cell {
+	cell := NewCell(text)
+	cell.Style = style
+	return cell
 }
 
 func (line Line) String() string {
@@ -472,8 +477,6 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 		return sgrForeground(theme.Success, true)
 	case StyleFooterKeyFloat:
 		return sgrForeground(mixHostColor(theme.Accent, theme.Info, 0.45), true)
-	case StyleFooterKeyCopy:
-		return sgrForeground(mixHostColor(theme.Success, theme.Info, 0.35), true)
 	case StyleFooterKeyPicker:
 		return sgrForeground(mixHostColor(theme.Danger, theme.Warning, 0.35), true)
 	case StyleFooterKeyGlobal:
@@ -763,7 +766,6 @@ type ContentKind string
 
 const (
 	ContentTerminalLive     ContentKind = "terminal-live"
-	ContentCopyHistory      ContentKind = "copy-history"
 	ContentEmptyPane        ContentKind = "empty-pane"
 	ContentExitedPane       ContentKind = "exited-pane"
 	ContentTerminalPicker   ContentKind = "terminal-picker"

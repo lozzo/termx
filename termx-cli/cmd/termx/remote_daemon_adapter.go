@@ -42,11 +42,8 @@ func (adapter *coreV2RemoteDaemonAdapter) Create(_ context.Context, params corep
 		Tags:    cloneRemoteAdapterStringMap(params.Tags),
 		Size:    corev2.SizeFromProtocol(params.Size),
 		Options: corev2.TerminalCreateOptions{
-			Dir:                params.Dir,
-			Env:                append([]string(nil), params.Env...),
-			ScrollbackSize:     params.ScrollbackSize,
-			ScrollbackMaxBytes: params.ScrollbackMaxBytes,
-			ScrollbackMaxAge:   params.ScrollbackMaxAge,
+			Dir: params.Dir,
+			Env: append([]string(nil), params.Env...),
 		},
 	})
 	if err != nil {

@@ -14,8 +14,7 @@ const (
 	WorkbenchStorageSchemaV1    = 1
 	WorkbenchStorageSchemaV2    = 2
 
-	legacyPaneCopyHistory PaneKind = "copy-history"
-	legacyPaneExited      PaneKind = "exited"
+	legacyPaneExited PaneKind = "exited"
 )
 
 var ErrInvalidWorkbenchSnapshot = errors.New("invalid workbench snapshot")
@@ -119,7 +118,7 @@ func workbenchStorageWorkspace(workspace WorkspaceState) WorkspaceState {
 
 func workbenchStoragePane(pane PaneState) PaneState {
 	switch pane.Kind {
-	case legacyPaneExited, legacyPaneCopyHistory:
+	case legacyPaneExited:
 		// 中文说明：旧 storage 可能保存过展示态；当前契约只保存连接槽位。
 		if pane.TerminalID != "" {
 			pane.Kind = PaneTerminalLive

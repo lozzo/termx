@@ -48,7 +48,6 @@ describe('RemoteControlApp', () => {
     expect((screen.getByLabelText(/terminal renderer/i) as HTMLSelectElement).value).toBe('auto')
     expect((screen.getByLabelText(/terminal keyboard mode/i) as HTMLSelectElement).value).toBe('auto')
     expect((screen.getByLabelText(/^terminal scrollback$/i) as HTMLInputElement).value).toBe('10000')
-    expect((screen.getByLabelText(/terminal scrollback prefetch threshold/i) as HTMLInputElement).value).toBe('30')
     expect(screen.getByLabelText(/terminal cursor blink/i).getAttribute('aria-pressed')).toBe('true')
   })
 
@@ -71,7 +70,6 @@ describe('RemoteControlApp', () => {
     fireEvent.change(screen.getByLabelText(/terminal renderer/i), { target: { value: 'canvas' } })
     fireEvent.change(screen.getByLabelText(/terminal keyboard mode/i), { target: { value: 'shift' } })
     fireEvent.change(screen.getByLabelText(/^terminal scrollback$/i), { target: { value: '15000' } })
-    fireEvent.change(screen.getByLabelText(/terminal scrollback prefetch threshold/i), { target: { value: '120' } })
     fireEvent.click(screen.getByLabelText(/terminal cursor blink/i))
 
     expect(JSON.parse(storage.getItem('termx.terminal.settings.v1') ?? '{}')).toMatchObject({
@@ -81,7 +79,6 @@ describe('RemoteControlApp', () => {
       renderer: 'canvas',
       keyboardMode: 'shift',
       scrollback: 15000,
-      scrollbackPrefetchThresholdRows: 120,
       cursorBlink: false,
     })
   })

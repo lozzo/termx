@@ -21,20 +21,12 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 			},
 			IsAlternateScreen: true,
 		},
-		Scrollback: []CompactRow{
-			CompactRowFromCells([]Cell{{Content: "h", Width: 1, Style: CellStyle{FG: "#ff0000"}}, {Content: "i", Width: 1, Style: CellStyle{FG: "#ff0000"}}}),
-		},
-		ScreenTimestamps:     []time.Time{time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)},
-		ScrollbackTimestamps: []time.Time{time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC)},
-		ScreenRowKinds:       []string{SnapshotRowKindRestart},
-		ScrollbackRowKinds:   []string{"log"},
-		ScreenWrapped:        []bool{false, true, false, false},
-		ScrollbackWrapped:    []bool{true},
-		ScreenOwnership:      []string{RowOwnershipScreen, RowOwnershipScreen, RowOwnershipScreen, RowOwnershipScreen},
-		ScrollbackOwnership:  []string{RowOwnershipPersisted},
-		Cursor:               CursorState{Row: 1, Col: 2, Visible: true, Shape: "bar", Blink: true},
-		Modes:                TerminalModes{AlternateScreen: true, AlternateScroll: true, BracketedPaste: true, ApplicationCursor: true, AutoWrap: true},
-		Timestamp:            time.Date(2026, 3, 18, 2, 0, 0, 0, time.UTC),
+		ScreenTimestamps: []time.Time{time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)},
+		ScreenRowKinds:   []string{SnapshotRowKindRestart},
+		ScreenWrapped:    []bool{false, true, false, false},
+		Cursor:           CursorState{Row: 1, Col: 2, Visible: true, Shape: "bar", Blink: true},
+		Modes:            TerminalModes{AlternateScreen: true, AlternateScroll: true, BracketedPaste: true, ApplicationCursor: true, AutoWrap: true},
+		Timestamp:        time.Date(2026, 3, 18, 2, 0, 0, 0, time.UTC),
 	}
 	payload, err := EncodeSnapshotPayload(snap)
 	if err != nil {
@@ -62,14 +54,8 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 	if got := rowToStringForTest(decoded.Screen.Cells[3]); got != "B " || decoded.Screen.Cells[3][1].Style.BG != "#112233" {
 		t.Fatalf("expected decoded live screen row to preserve styled trailing spaces, got %q %#v", got, decoded.Screen.Cells[3])
 	}
-	if row := decoded.Scrollback[0].DecodeCells(); rowToStringForTest(row) != "hi" || row[0].Style.FG != "#ff0000" {
-		t.Fatalf("unexpected decoded scrollback: %#v", row)
-	}
-	if len(decoded.ScreenWrapped) != 4 || !decoded.ScreenWrapped[1] || len(decoded.ScrollbackWrapped) != 1 || !decoded.ScrollbackWrapped[0] {
-		t.Fatalf("unexpected decoded wrapped metadata: %#v %#v", decoded.ScreenWrapped, decoded.ScrollbackWrapped)
-	}
-	if len(decoded.ScreenOwnership) != 4 || decoded.ScreenOwnership[0] != RowOwnershipScreen || len(decoded.ScrollbackOwnership) != 1 || decoded.ScrollbackOwnership[0] != RowOwnershipPersisted {
-		t.Fatalf("unexpected decoded ownership metadata: %#v %#v", decoded.ScreenOwnership, decoded.ScrollbackOwnership)
+	if len(decoded.ScreenWrapped) != 4 || !decoded.ScreenWrapped[1] {
+		t.Fatalf("unexpected decoded wrapped metadata: %#v", decoded.ScreenWrapped)
 	}
 	if decoded.Cursor.Shape != "bar" || !decoded.Modes.BracketedPaste || !decoded.Modes.AutoWrap {
 		t.Fatalf("unexpected decoded cursor/modes: %#v %#v", decoded.Cursor, decoded.Modes)
@@ -88,9 +74,6 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 	if got := compact.ScreenRows[1].DecodeCells(); rowToStringForTest(got) != "重" {
 		t.Fatalf("compact screen row should still be decodable on demand, got %#v", got)
 	}
-	if len(compact.Scrollback) != 1 || compact.Scrollback[0].DecodeCells()[0].Style.FG != "#ff0000" {
-		t.Fatalf("compact decode should preserve scrollback rows, got %#v", compact.Scrollback)
-	}
 }
 
 func TestCompactSnapshotPayloadRoundTripKeepsSnapshotCompatibility(t *testing.T) {
@@ -99,7 +82,6 @@ func TestCompactSnapshotPayloadRoundTripKeepsSnapshotCompatibility(t *testing.T)
 		Size:              Size{Cols: 20, Rows: 3},
 		ScreenRows:        []CompactRow{CompactRowFromCells([]Cell{{Content: "c", Width: 1}, {Content: "1", Width: 1}})},
 		ScreenIsAlternate: true,
-		ScreenOwnership:   []string{RowOwnershipScreen},
 		Cursor:            CursorState{Row: 0, Col: 2, Visible: true},
 		Modes:             TerminalModes{AlternateScreen: true, AutoWrap: true},
 		Timestamp:         time.Date(2026, 6, 20, 1, 0, 0, 0, time.UTC),
@@ -121,45 +103,6 @@ func TestCompactSnapshotPayloadRoundTripKeepsSnapshotCompatibility(t *testing.T)
 	}
 	if decoded.TerminalID != snap.TerminalID || !decoded.Screen.IsAlternateScreen || rowToStringForTest(decoded.Screen.Cells[0]) != "c1" {
 		t.Fatalf("compact payload must remain old snapshot compatible, got %#v", decoded)
-	}
-}
-
-func TestGridViewportPayloadRoundTripUsesBinaryRows(t *testing.T) {
-	viewport := &GridViewport{
-		TerminalID:             "term-grid",
-		Size:                   Size{Cols: 120, Rows: 40},
-		Rows:                   []CompactRow{CompactRowFromCells([]Cell{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}})},
-		ScrollbackOffset:       10,
-		ScrollbackLimit:        20,
-		ScrollbackTotal:        100,
-		ScrollbackLogicalTotal: 42,
-		ScrollbackHasMore:      true,
-		LoadedRows:             7,
-		HistoryGeneration:      42,
-		FirstRowID:             1000,
-		LastRowID:              1006,
-		RowOwnership:           []string{RowOwnershipLiveTailReclaimed},
-		Timestamp:              time.Date(2026, 3, 18, 3, 0, 0, 0, time.UTC),
-	}
-	payload, err := EncodeGridViewportPayload(viewport)
-	if err != nil {
-		t.Fatalf("encode viewport payload failed: %v", err)
-	}
-	decoded, err := DecodeGridViewportPayload(payload)
-	if err != nil {
-		t.Fatalf("decode viewport payload failed: %v", err)
-	}
-	if decoded.TerminalID != viewport.TerminalID || decoded.Size != viewport.Size || decoded.ScrollbackTotal != 100 || decoded.ScrollbackLogicalTotal != 42 || !decoded.ScrollbackHasMore {
-		t.Fatalf("unexpected decoded viewport header: %#v", decoded)
-	}
-	if decoded.LoadedRows != 7 || decoded.HistoryGeneration != 42 || decoded.FirstRowID != 1000 || decoded.LastRowID != 1006 {
-		t.Fatalf("unexpected decoded viewport coordinates: %#v", decoded)
-	}
-	if len(decoded.RowOwnership) != 1 || decoded.RowOwnership[0] != RowOwnershipLiveTailReclaimed {
-		t.Fatalf("unexpected decoded viewport ownership: %#v", decoded.RowOwnership)
-	}
-	if got := compactRowToStringForTest(decoded.Rows[0]); got != "row" {
-		t.Fatalf("unexpected decoded viewport row: %q", got)
 	}
 }
 
@@ -342,14 +285,10 @@ func TestScreenUpdatePayloadCurrentRoundTrip(t *testing.T) {
 	screenRows[0][1].LinkURL = "https://example.test/screen"
 	screenRows[0][1].LinkParams = "id=screen"
 	writeCells := []Cell{{Content: "n", Width: 1}, {Content: "e", Width: 1, LinkURL: "https://example.test/op", LinkParams: "id=op"}, {Content: "w", Width: 1}}
-	scrollbackRow := rowWithTextAt(10, 0, "old")
-	scrollbackRow[0].LinkURL = "https://example.test/scrollback"
-	scrollbackRow[0].LinkParams = "id=scrollback"
 	update := ScreenUpdate{
-		FullReplace:     true,
-		ResetScrollback: true,
-		Size:            protocolSize(10, 4),
-		Title:           "ops-demo",
+		FullReplace: true,
+		Size:        protocolSize(10, 4),
+		Title:       "ops-demo",
 		Screen: ScreenData{
 			Cells:             screenRows,
 			IsAlternateScreen: true,
@@ -369,14 +308,6 @@ func TestScreenUpdatePayloadCurrentRoundTrip(t *testing.T) {
 			{Code: ScreenOpResize, Size: Size{Cols: 10, Rows: 4}},
 			{Code: ScreenOpTitle, Title: "ops-demo"},
 		},
-		ScrollbackTrim: 2,
-		ScrollbackAppend: []ScrollbackRowAppend{{
-			Cells:      scrollbackRow,
-			Timestamp:  now.Add(5 * time.Second),
-			RowKind:    "old",
-			Wrapped:    true,
-			WrappedSet: true,
-		}},
 		Cursor: CursorState{Row: 3, Col: 3, Visible: true, Shape: "bar"},
 		Modes:  TerminalModes{AlternateScreen: true, AutoWrap: true, MouseTracking: true},
 	}
@@ -392,7 +323,7 @@ func TestScreenUpdatePayloadCurrentRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if !decoded.FullReplace || !decoded.ResetScrollback || decoded.Title != update.Title || decoded.ScreenScroll != update.ScreenScroll {
+	if !decoded.FullReplace || decoded.Title != update.Title || decoded.ScreenScroll != update.ScreenScroll {
 		t.Fatalf("unexpected header round-trip: %#v", decoded)
 	}
 	if len(decoded.ScreenWrapped) != 2 || !decoded.ScreenWrapped[0] || decoded.ScreenWrapped[1] {
@@ -415,12 +346,6 @@ func TestScreenUpdatePayloadCurrentRoundTrip(t *testing.T) {
 	}
 	if decoded.Ops[5].Cursor.Shape != "bar" || !decoded.Ops[6].Modes.MouseTracking {
 		t.Fatalf("unexpected control op round-trip: %#v %#v", decoded.Ops[5], decoded.Ops[6])
-	}
-	if len(decoded.ScrollbackAppend) != 1 || !decoded.ScrollbackAppend[0].WrappedSet || !decoded.ScrollbackAppend[0].Wrapped {
-		t.Fatalf("unexpected scrollback wrapped metadata: %#v", decoded.ScrollbackAppend)
-	}
-	if got := decoded.ScrollbackAppend[0].Cells[0]; got.LinkURL != "https://example.test/scrollback" || got.LinkParams != "id=scrollback" {
-		t.Fatalf("expected scrollback hyperlink round-trip, got %#v", got)
 	}
 }
 
@@ -528,7 +453,7 @@ func TestClassifyScreenUpdateDetectsBlankFullReplace(t *testing.T) {
 	if !classification.HasContentChange {
 		t.Fatalf("expected blank full replace to still count as content change, got %#v", classification)
 	}
-	if classification.HasChangedRows || classification.HasScrollbackChange {
+	if classification.HasChangedRows {
 		t.Fatalf("expected blank full replace to stay delta-free, got %#v", classification)
 	}
 }
@@ -546,7 +471,7 @@ func TestClassifyScreenUpdateTreatsTitleOnlyUpdateAsNonContentChange(t *testing.
 	if !classification.HasTitle {
 		t.Fatalf("expected title-only update to keep title bit, got %#v", classification)
 	}
-	if classification.FullReplace || classification.HasChangedRows || classification.HasScreenScroll || classification.HasScrollbackChange {
+	if classification.FullReplace || classification.HasChangedRows || classification.HasScreenScroll {
 		t.Fatalf("expected title-only update to stay non-buffer-mutating, got %#v", classification)
 	}
 }
@@ -566,7 +491,7 @@ func TestClassifyScreenUpdateTreatsOpcodeControlOnlyUpdateAsNonContentChange(t *
 	if classification.HasContentChange {
 		t.Fatalf("expected control-only opcode update to avoid content-change boundary, got %#v", classification)
 	}
-	if classification.HasChangedRows || classification.HasScreenScroll || classification.HasScrollbackChange || !classification.HasTitle {
+	if classification.HasChangedRows || classification.HasScreenScroll || !classification.HasTitle {
 		t.Fatalf("unexpected opcode classification bits: %#v", classification)
 	}
 }
@@ -596,182 +521,6 @@ func writeText(row []Cell, col int, text string) {
 		}
 		row[col] = Cell{Content: string(r), Width: 1}
 		col++
-	}
-}
-
-func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
-	window := &HistoryWindow{
-		TerminalID: "term-hist",
-		Token:      "g7:0-2:c80",
-		Op:         HistoryWindowReplace,
-		Size:       Size{Cols: 80, Rows: 24},
-		Rows: []CompactRow{CompactRowFromCellsPreserveTrailingBlankCells([]Cell{
-			{Content: "ERR", Width: 3, Style: CellStyle{FG: "ansi:1", Bold: true}},
-			{Content: " ", Width: 1},
-			{Content: "好", Width: 2, Style: CellStyle{FG: "#ffcc00", Underline: true}, LinkURL: "file://build.log", LinkParams: "line=7"},
-			{Content: " ", Width: 1},
-		}, true)},
-		RowKinds:      []string{"output"},
-		RowWrapped:    []bool{false},
-		RowOwnership:  []string{RowOwnershipPersisted},
-		RowTimestamps: []time.Time{time.Date(2026, 6, 2, 1, 0, 0, 0, time.UTC)},
-		Lines: []HistoryLineSpan{{
-			StartRow:       0,
-			EndRow:         0,
-			RowKind:        "output",
-			LogicalLineID:  42,
-			TimestampStart: time.Date(2026, 6, 2, 0, 59, 0, 0, time.UTC),
-			TimestampEnd:   time.Date(2026, 6, 2, 1, 1, 0, 0, time.UTC),
-			ClippedBefore:  true,
-			ClippedAfter:   true,
-		}},
-		BeforeOffset: 3,
-		LoadedRows:   9,
-		TotalRows:    12,
-		LoadedLines:  2,
-		LogicalTotal: 4,
-		HasMore:      true,
-		Generation:   7,
-		FirstRowID:   0,
-		LastRowID:    2,
-		FirstLineID:  42,
-		LastLineID:   43,
-		CursorValid:  true,
-		CursorLineID: 42,
-		CursorRow:    1,
-		RowLineIDs:   []uint64{42},
-		RowInLine:    []int{1},
-		Timestamp:    time.Date(2026, 6, 2, 2, 0, 0, 0, time.UTC),
-	}
-	window.Rows[0].TailFill = &CompactRowStyle{BG: "idx:24"}
-	payload, err := EncodeHistoryWindowPayload(window)
-	if err != nil {
-		t.Fatalf("encode history window payload failed: %v", err)
-	}
-	decoded, err := DecodeHistoryWindowPayload(payload)
-	if err != nil {
-		t.Fatalf("decode history window payload failed: %v", err)
-	}
-	if decoded.TerminalID != "term-hist" || decoded.Token != "g7:0-2:c80" || decoded.Op != HistoryWindowReplace || decoded.Size != window.Size {
-		t.Fatalf("unexpected decoded history window header: %#v", decoded)
-	}
-	if decoded.BeforeOffset != 3 || decoded.LoadedRows != 9 || decoded.TotalRows != 12 || decoded.LoadedLines != 2 || decoded.LogicalTotal != 4 || !decoded.HasMore {
-		t.Fatalf("unexpected decoded history window metadata: %#v", decoded)
-	}
-	if decoded.Generation != 7 || decoded.FirstRowID != 0 || decoded.LastRowID != 2 || decoded.FirstLineID != 42 || decoded.LastLineID != 43 {
-		t.Fatalf("unexpected decoded history window boundary: %#v", decoded)
-	}
-	if !decoded.CursorValid || decoded.CursorLineID != 42 || decoded.CursorRow != 1 {
-		t.Fatalf("unexpected decoded history cursor: %#v", decoded)
-	}
-	if !reflect.DeepEqual(decoded.RowLineIDs, []uint64{42}) || !reflect.DeepEqual(decoded.RowInLine, []int{1}) {
-		t.Fatalf("unexpected decoded row logical mapping: line_ids=%v row_in_line=%v", decoded.RowLineIDs, decoded.RowInLine)
-	}
-	if len(decoded.Lines) != 1 || decoded.Lines[0] != window.Lines[0] {
-		t.Fatalf("unexpected decoded history line spans: %#v", decoded.Lines)
-	}
-	if len(decoded.RowOwnership) != 1 || decoded.RowOwnership[0] != RowOwnershipPersisted {
-		t.Fatalf("unexpected decoded history ownership: %#v", decoded.RowOwnership)
-	}
-	if got := compactRowToStringForTest(decoded.Rows[0]); got != "ERR 好 " {
-		t.Fatalf("unexpected decoded history row: %q", got)
-	}
-	if decoded.Rows[0].TailFill == nil || decoded.Rows[0].TailFill.BG != "idx:24" {
-		t.Fatalf("lost tail fill after payload round trip: %#v", decoded.Rows[0])
-	}
-	cells := decoded.Rows[0].DecodeCells()
-	if len(cells) != 4 {
-		t.Fatalf("expected styled history cells after payload round trip, got %#v", cells)
-	}
-	if cells[0].Content != "ERR" || cells[0].Width != 3 || cells[0].Style.FG != "ansi:1" || !cells[0].Style.Bold {
-		t.Fatalf("lost first styled cell after payload round trip %#v", cells[0])
-	}
-	if cells[2].Content != "好" || cells[2].Width != 2 || cells[2].Style.FG != "#ffcc00" || !cells[2].Style.Underline || cells[2].LinkURL == "" || cells[2].LinkParams == "" {
-		t.Fatalf("lost wide linked cell after payload round trip %#v", cells[2])
-	}
-	if cells[3].Content != " " {
-		t.Fatalf("lost trailing blank cell after payload round trip %#v", cells[3])
-	}
-}
-
-func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
-	encoded, err := EncodeMethodParams("history.window", HistoryWindowParams{
-		TerminalID:          "term-hist",
-		BeforeOffset:        5,
-		Limit:               50,
-		Cols:                100,
-		Mode:                "newer",
-		Token:               "g7:c100:f42:l43",
-		Generation:          7,
-		CursorValid:         true,
-		BeforeLineID:        42,
-		BeforeRowInLine:     1,
-		AfterCursorValid:    true,
-		AfterLineID:         43,
-		AfterRowInLine:      2,
-		BoundaryFirstLineID: 42,
-		BoundaryLastLineID:  43,
-		RangeValid:          true,
-		RangeStartLineID:    40,
-		RangeStartCol:       3,
-		RangeEndLineID:      44,
-		RangeEndCol:         9,
-	})
-	if err != nil {
-		t.Fatalf("encode control params failed: %v", err)
-	}
-	decoded, err := DecodeMethodParams("history.window", encoded)
-	if err != nil {
-		t.Fatalf("decode control params failed: %v", err)
-	}
-	params, ok := decoded.(HistoryWindowParams)
-	if !ok {
-		t.Fatalf("expected HistoryWindowParams, got %T", decoded)
-	}
-	if params != (HistoryWindowParams{
-		TerminalID:          "term-hist",
-		BeforeOffset:        5,
-		Limit:               50,
-		Cols:                100,
-		Mode:                "newer",
-		Token:               "g7:c100:f42:l43",
-		Generation:          7,
-		CursorValid:         true,
-		BeforeLineID:        42,
-		BeforeRowInLine:     1,
-		AfterCursorValid:    true,
-		AfterLineID:         43,
-		AfterRowInLine:      2,
-		BoundaryFirstLineID: 42,
-		BoundaryLastLineID:  43,
-		RangeValid:          true,
-		RangeStartLineID:    40,
-		RangeStartCol:       3,
-		RangeEndLineID:      44,
-		RangeEndCol:         9,
-	}) {
-		t.Fatalf("unexpected decoded history window params: %#v", params)
-	}
-}
-
-func TestHistoryReleaseParamsControlPayloadRoundTrip(t *testing.T) {
-	encoded, err := EncodeMethodParams("history.release", HistoryWindowParams{
-		TerminalID: "term-hist",
-		Token:      "snap-token",
-	})
-	if err != nil {
-		t.Fatalf("encode history release params failed: %v", err)
-	}
-	decoded, err := DecodeMethodParams("history.release", encoded)
-	if err != nil {
-		t.Fatalf("decode history release params failed: %v", err)
-	}
-	params, ok := decoded.(HistoryWindowParams)
-	if !ok {
-		t.Fatalf("expected HistoryWindowParams, got %T", decoded)
-	}
-	if params.TerminalID != "term-hist" || params.Token != "snap-token" {
-		t.Fatalf("unexpected history release params: %#v", params)
 	}
 }
 

@@ -8,16 +8,13 @@ import (
 
 func TestCoreV2RemoteWireContractFields(t *testing.T) {
 	assertFields(t, (&CreateParams{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"command":                    1,
-		"id":                         2,
-		"name":                       3,
-		"tags":                       4,
-		"size":                       5,
-		"dir":                        6,
-		"env":                        7,
-		"scrollback_size":            8,
-		"scrollback_max_bytes":       9,
-		"scrollback_max_age_seconds": 10,
+		"command": 1,
+		"id":      2,
+		"name":    3,
+		"tags":    4,
+		"size":    5,
+		"dir":     6,
+		"env":     7,
 	})
 
 	assertFields(t, (&TerminalInfo{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
@@ -34,62 +31,6 @@ func TestCoreV2RemoteWireContractFields(t *testing.T) {
 		"resize_ownership":              11,
 		"resize_owner_attachment_count": 12,
 		"exited_at_unix_nano":           13,
-	})
-
-	assertFields(t, (&HistoryWindowParams{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"terminal_id":            1,
-		"before_offset":          2,
-		"limit":                  3,
-		"cols":                   4,
-		"token":                  5,
-		"history_generation":     6,
-		"cursor_valid":           7,
-		"before_line_id":         8,
-		"before_row_in_line":     9,
-		"boundary_first_line_id": 10,
-		"boundary_last_line_id":  11,
-		"mode":                   12,
-		"after_cursor_valid":     13,
-		"after_line_id":          14,
-		"after_row_in_line":      15,
-		"range_valid":            16,
-		"range_start_line_id":    17,
-		"range_start_col":        18,
-		"range_end_line_id":      19,
-		"range_end_col":          20,
-	})
-
-	assertFields(t, (&HistoryWindow{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
-		"terminal_id":                    1,
-		"token":                          2,
-		"op":                             3,
-		"size":                           4,
-		"rows":                           5,
-		"line_start_rows":                6,
-		"line_end_rows":                  7,
-		"line_row_kinds":                 8,
-		"before_offset":                  9,
-		"loaded_rows":                    10,
-		"total_rows":                     11,
-		"logical_total":                  12,
-		"has_more":                       13,
-		"history_generation":             14,
-		"first_row_id":                   15,
-		"last_row_id":                    16,
-		"timestamp_unix_nano":            17,
-		"line_clipped_before":            18,
-		"line_clipped_after":             19,
-		"line_logical_line_ids":          20,
-		"loaded_lines":                   21,
-		"first_line_id":                  22,
-		"last_line_id":                   23,
-		"line_timestamp_start_unix_nano": 24,
-		"line_timestamp_end_unix_nano":   25,
-		"cursor_valid":                   26,
-		"cursor_before_line_id":          27,
-		"cursor_before_row_in_line":      28,
-		"row_logical_line_ids":           29,
-		"row_in_line":                    30,
 	})
 
 	assertFields(t, (&RemoteStatus{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{

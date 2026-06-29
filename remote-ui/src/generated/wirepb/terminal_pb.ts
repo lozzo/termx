@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file terminal.proto.
  */
 export const file_terminal: GenFile = /*@__PURE__*/
-  fileDesc("Cg50ZXJtaW5hbC5wcm90bxIVdGVybXgucHJvdG9jb2wud2lyZXBiIgcKBUVtcHR5IjgKBUhlbGxvEg8KB3ZlcnNpb24YASABKA0SDgoGY2xpZW50GAIgASgJEg4KBnNlcnZlchgDIAEoCSI9Cg9SZXF1ZXN0RW52ZWxvcGUSCgoCaWQYASABKAQSDgoGbWV0aG9kGAIgASgJEg4KBnBhcmFtcxgDIAEoDCIuChBSZXNwb25zZUVudmVsb3BlEgoKAmlkGAEgASgEEg4KBnJlc3VsdBgCIAEoDCIuCg1Qcm90b2NvbEVycm9yEgwKBGNvZGUYASABKAUSDwoHbWVzc2FnZRgCIAEoCSJQCg1FcnJvckVudmVsb3BlEgoKAmlkGAEgASgEEjMKBWVycm9yGAIgASgLMiQudGVybXgucHJvdG9jb2wud2lyZXBiLlByb3RvY29sRXJyb3IiIgoEU2l6ZRIMCgRjb2xzGAEgASgNEgwKBHJvd3MYAiABKA0iqQMKDFRlcm1pbmFsSW5mbxIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEg8KB2NvbW1hbmQYAyADKAkSOwoEdGFncxgEIAMoCzItLnRlcm14LnByb3RvY29sLndpcmVwYi5UZXJtaW5hbEluZm8uVGFnc0VudHJ5EikKBHNpemUYBSABKAsyGy50ZXJteC5wcm90b2NvbC53aXJlcGIuU2l6ZRINCgVzdGF0ZRgGIAEoCRILCgNjd2QYByABKAkSEAoIbGl2ZV9jd2QYCCABKAkSHAoUY3JlYXRlZF9hdF91bml4X25hbm8YCSABKAMSFgoJZXhpdF9jb2RlGAogASgFSACIAQESQAoQcmVzaXplX293bmVyc2hpcBgLIAEoCzImLnRlcm14LnByb3RvY29sLndpcmVwYi5SZXNpemVPd25lcnNoaXASJQodcmVzaXplX293bmVyX2F0dGFjaG1lbnRfY291bnQYDCABKAUaKwoJVGFnc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAFCDAoKX2V4aXRfY29kZSLDAgoMQ3JlYXRlUGFyYW1zEg8KB2NvbW1hbmQYASADKAkSCgoCaWQYAiABKAkSDAoEbmFtZRgDIAEoCRI7CgR0YWdzGAQgAygLMi0udGVybXgucHJvdG9jb2wud2lyZXBiLkNyZWF0ZVBhcmFtcy5UYWdzRW50cnkSKQoEc2l6ZRgFIAEoCzIbLnRlcm14LnByb3RvY29sLndpcmVwYi5TaXplEgsKA2RpchgGIAEoCRILCgNlbnYYByADKAkSFwoPc2Nyb2xsYmFja19zaXplGAggASgFEhwKFHNjcm9sbGJhY2tfbWF4X2J5dGVzGAkgASgDEiIKGnNjcm9sbGJhY2tfbWF4X2FnZV9zZWNvbmRzGAogASgDGisKCVRhZ3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIjIKDENyZWF0ZVJlc3VsdBITCgt0ZXJtaW5hbF9pZBgBIAEoCRINCgVzdGF0ZRgCIAEoCSIgCglHZXRQYXJhbXMSEwoLdGVybWluYWxfaWQYASABKAkiPwoMUmVzaXplUGFyYW1zEhMKC3Rlcm1pbmFsX2lkGAEgASgJEgwKBGNvbHMYAiABKA0SDAoEcm93cxgDIAEoDSKSAQoSRW5zdXJlUmVzaXplUGFyYW1zEhMKC3Rlcm1pbmFsX2lkGAEgASgJEg8KB2NoYW5uZWwYAiABKA0SDAoEY29scxgDIAEoDRIMCgRyb3dzGAQgASgNEhUKDXJlc2l6ZV9wb2xpY3kYBSABKAkSEgoKc3VyZmFjZV9pZBgGIAEoCRIPCgd2aWV3X2lkGAcgASgJIo4BChJFbnN1cmVSZXNpemVSZXN1bHQSPAoOcmVzaXplX2NvbnRyb2wYASABKAsyJC50ZXJteC5wcm90b2NvbC53aXJlcGIuUmVzaXplQ29udHJvbBIpCgRzaXplGAIgASgLMhsudGVybXgucHJvdG9jb2wud2lyZXBiLlNpemUSDwoHcmVzaXplZBgDIAEoCCKPAQoNU2V0VGFnc1BhcmFtcxITCgt0ZXJtaW5hbF9pZBgBIAEoCRI8CgR0YWdzGAIgAygLMi4udGVybXgucHJvdG9jb2wud2lyZXBiLlNldFRhZ3NQYXJhbXMuVGFnc0VudHJ5GisKCVRhZ3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIqUBChFTZXRNZXRhZGF0YVBhcmFtcxITCgt0ZXJtaW5hbF9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEkAKBHRhZ3MYAyADKAsyMi50ZXJteC5wcm90b2NvbC53aXJlcGIuU2V0TWV0YWRhdGFQYXJhbXMuVGFnc0VudHJ5GisKCVRhZ3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIm0KDEF0dGFjaFBhcmFtcxITCgt0ZXJtaW5hbF9pZBgBIAEoCRIMCgRtb2RlGAIgASgJEhUKDXJlc2l6ZV9wb2xpY3kYAyABKAkSEgoKc3VyZmFjZV9pZBgEIAEoCRIPCgd2aWV3X2lkGAUgASgJImsKDEF0dGFjaFJlc3VsdBIMCgRtb2RlGAEgASgJEg8KB2NoYW5uZWwYAiABKA0SPAoOcmVzaXplX2NvbnRyb2wYAyABKAsyJC50ZXJteC5wcm90b2NvbC53aXJlcGIuUmVzaXplQ29udHJvbCLJAQoPUmVzaXplT3duZXJzaGlwEhsKE293bmVyX2F0dGFjaG1lbnRfaWQYASABKAkSGAoQb3duZXJfc3VyZmFjZV9pZBgCIAEoCRIVCg1vd25lcl92aWV3X2lkGAMgASgJEhkKEW93bmVyX3JlbW90ZV9hZGRyGAQgASgJEikKBHNpemUYBSABKAsyGy50ZXJteC5wcm90b2NvbC53aXJlcGIuU2l6ZRITCgtzaXplX2xvY2tlZBgGIAEoCBINCgVlcG9jaBgHIAEoBCLPAQoNUmVzaXplQ29udHJvbBISCgpjYW5fcmVzaXplGAEgASgIEg4KBnJlYXNvbhgCIAEoCRITCgtzaXplX2xvY2tlZBgDIAEoCBISCgpzdXJmYWNlX2lkGAQgASgJEhgKEG93bmVyX3N1cmZhY2VfaWQYBSABKAkSFQoNb3duZXJfdmlld19pZBgGIAEoCRJAChByZXNpemVfb3duZXJzaGlwGAcgASgLMiYudGVybXgucHJvdG9jb2wud2lyZXBiLlJlc2l6ZU93bmVyc2hpcCJfChNUZXJtaW5hbENyZWF0ZWREYXRhEgwKBG5hbWUYASABKAkSDwoHY29tbWFuZBgCIAMoCRIpCgRzaXplGAMgASgLMhsudGVybXgucHJvdG9jb2wud2lyZXBiLlNpemUiZgoYVGVybWluYWxTdGF0ZUNoYW5nZWREYXRhEhEKCW9sZF9zdGF0ZRgBIAEoCRIRCgluZXdfc3RhdGUYAiABKAkSFgoJZXhpdF9jb2RlGAMgASgFSACIAQFCDAoKX2V4aXRfY29kZSJzChNUZXJtaW5hbFJlc2l6ZWREYXRhEi0KCG9sZF9zaXplGAEgASgLMhsudGVybXgucHJvdG9jb2wud2lyZXBiLlNpemUSLQoIbmV3X3NpemUYAiABKAsyGy50ZXJteC5wcm90b2NvbC53aXJlcGIuU2l6ZSIlChNUZXJtaW5hbFJlbW92ZWREYXRhEg4KBnJlYXNvbhgBIAEoCSIaChhDb2xsYWJvcmF0b3JzUmV2b2tlZERhdGEiJgoVVGVybWluYWxSZWFkRXJyb3JEYXRhEg0KBWVycm9yGAEgASgJIpQBChJTdG9yYWdlQ2hhbmdlZERhdGESDgoGYXBwX2lkGAEgASgJEjIKBXNjb3BlGAIgASgOMiMudGVybXgucHJvdG9jb2wud2lyZXBiLlN0b3JhZ2VTY29wZRIQCghvd25lcl9pZBgDIAEoCRILCgNrZXkYBCABKAkSDwoHdmVyc2lvbhgFIAEoBBIKCgJvcBgGIAEoCSKUBAoFRXZlbnQSDAoEdHlwZRgBIAEoDRITCgt0ZXJtaW5hbF9pZBgCIAEoCRIbChN0aW1lc3RhbXBfdW5peF9uYW5vGAQgASgDEjsKB2NyZWF0ZWQYBSABKAsyKi50ZXJteC5wcm90b2NvbC53aXJlcGIuVGVybWluYWxDcmVhdGVkRGF0YRJGCg1zdGF0ZV9jaGFuZ2VkGAYgASgLMi8udGVybXgucHJvdG9jb2wud2lyZXBiLlRlcm1pbmFsU3RhdGVDaGFuZ2VkRGF0YRI7CgdyZXNpemVkGAcgASgLMioudGVybXgucHJvdG9jb2wud2lyZXBiLlRlcm1pbmFsUmVzaXplZERhdGESOwoHcmVtb3ZlZBgIIAEoCzIqLnRlcm14LnByb3RvY29sLndpcmVwYi5UZXJtaW5hbFJlbW92ZWREYXRhEk4KFWNvbGxhYm9yYXRvcnNfcmV2b2tlZBgJIAEoCzIvLnRlcm14LnByb3RvY29sLndpcmVwYi5Db2xsYWJvcmF0b3JzUmV2b2tlZERhdGESQAoKcmVhZF9lcnJvchgKIAEoCzIsLnRlcm14LnByb3RvY29sLndpcmVwYi5UZXJtaW5hbFJlYWRFcnJvckRhdGESOgoHc3RvcmFnZRgMIAEoCzIpLnRlcm14LnByb3RvY29sLndpcmVwYi5TdG9yYWdlQ2hhbmdlZERhdGEivAEKDEV2ZW50c1BhcmFtcxITCgt0ZXJtaW5hbF9pZBgBIAEoCRINCgV0eXBlcxgDIAMoDRIWCg5zdG9yYWdlX2FwcF9pZBgEIAEoCRI6Cg1zdG9yYWdlX3Njb3BlGAUgASgOMiMudGVybXgucHJvdG9jb2wud2lyZXBiLlN0b3JhZ2VTY29wZRIYChBzdG9yYWdlX293bmVyX2lkGAYgASgJEhoKEnN0b3JhZ2Vfa2V5X3ByZWZpeBgHIAEoCSJaCg5TbmFwc2hvdFBhcmFtcxITCgt0ZXJtaW5hbF9pZBgBIAEoCRIZChFzY3JvbGxiYWNrX29mZnNldBgCIAEoBRIYChBzY3JvbGxiYWNrX2xpbWl0GAMgASgFImwKEkdyaWRWaWV3cG9ydFBhcmFtcxITCgt0ZXJtaW5hbF9pZBgBIAEoCRIZChFzY3JvbGxiYWNrX29mZnNldBgCIAEoBRIYChBzY3JvbGxiYWNrX2xpbWl0GAMgASgFEgwKBGNvbHMYBCABKAUiRAoKTGlzdFJlc3VsdBI2Cgl0ZXJtaW5hbHMYASADKAsyIy50ZXJteC5wcm90b2NvbC53aXJlcGIuVGVybWluYWxJbmZvIlYKC0N1cnNvclN0YXRlEgsKA3JvdxgBIAEoBRILCgNjb2wYAiABKAUSDwoHdmlzaWJsZRgDIAEoCBINCgVzaGFwZRgEIAEoDRINCgVibGluaxgFIAEoCCIdCg1UZXJtaW5hbE1vZGVzEgwKBG1hc2sYASABKA0iXQoGUm93U2V0EhEKCXJvd3NfYmxvYhgBIAEoDBIcChR0aW1lc3RhbXBzX3VuaXhfbmFubxgCIAMoAxIRCglyb3dfa2luZHMYAyADKAkSDwoHd3JhcHBlZBgEIAMoCCLABAoIU25hcHNob3QSEwoLdGVybWluYWxfaWQYASABKAkSKQoEc2l6ZRgCIAEoCzIbLnRlcm14LnByb3RvY29sLndpcmVwYi5TaXplEhsKE3NjcmVlbl9pc19hbHRlcm5hdGUYAyABKAgSLQoGc2NyZWVuGAQgASgLMh0udGVybXgucHJvdG9jb2wud2lyZXBiLlJvd1NldBIxCgpzY3JvbGxiYWNrGAUgASgLMh0udGVybXgucHJvdG9jb2wud2lyZXBiLlJvd1NldBIZChFzY3JvbGxiYWNrX29mZnNldBgGIAEoAxIYChBzY3JvbGxiYWNrX3RvdGFsGAcgASgDEhsKE3Njcm9sbGJhY2tfaGFzX21vcmUYCCABKAgSMgoGY3Vyc29yGAkgASgLMiIudGVybXgucHJvdG9jb2wud2lyZXBiLkN1cnNvclN0YXRlEjMKBW1vZGVzGAogASgLMiQudGVybXgucHJvdG9jb2wud2lyZXBiLlRlcm1pbmFsTW9kZXMSGwoTdGltZXN0YW1wX3VuaXhfbmFubxgLIAEoAxIaChJoaXN0b3J5X2dlbmVyYXRpb24YDCABKAQSHgoWc2Nyb2xsYmFja19sb2FkZWRfcm93cxgNIAEoAxIfChdzY3JvbGxiYWNrX2ZpcnN0X3Jvd19pZBgOIAEoBBIeChZzY3JvbGxiYWNrX2xhc3Rfcm93X2lkGA8gASgEEiAKGHNjcm9sbGJhY2tfbG9naWNhbF90b3RhbBgQIAEoAyKCAwoMR3JpZFZpZXdwb3J0EhMKC3Rlcm1pbmFsX2lkGAEgASgJEikKBHNpemUYAiABKAsyGy50ZXJteC5wcm90b2NvbC53aXJlcGIuU2l6ZRIrCgRyb3dzGAMgASgLMh0udGVybXgucHJvdG9jb2wud2lyZXBiLlJvd1NldBIZChFzY3JvbGxiYWNrX29mZnNldBgEIAEoAxIYChBzY3JvbGxiYWNrX2xpbWl0GAUgASgDEhgKEHNjcm9sbGJhY2tfdG90YWwYBiABKAMSGwoTc2Nyb2xsYmFja19oYXNfbW9yZRgHIAEoCBIbChN0aW1lc3RhbXBfdW5peF9uYW5vGAggASgDEhMKC2xvYWRlZF9yb3dzGAkgASgDEhoKEmhpc3RvcnlfZ2VuZXJhdGlvbhgKIAEoBBIUCgxmaXJzdF9yb3dfaWQYCyABKAQSEwoLbGFzdF9yb3dfaWQYDCABKAQSIAoYc2Nyb2xsYmFja19sb2dpY2FsX3RvdGFsGA0gASgDIq8BCgxTdG9yYWdlRW50cnkSDgoGYXBwX2lkGAEgASgJEjIKBXNjb3BlGAIgASgOMiMudGVybXgucHJvdG9jb2wud2lyZXBiLlN0b3JhZ2VTY29wZRIQCghvd25lcl9pZBgDIAEoCRILCgNrZXkYBCABKAkSDQoFdmFsdWUYBSABKAwSDwoHdmVyc2lvbhgGIAEoBBIcChR1cGRhdGVkX2F0X3VuaXhfbmFubxgHIAEoAyJ1ChBTdG9yYWdlR2V0UGFyYW1zEg4KBmFwcF9pZBgBIAEoCRIyCgVzY29wZRgCIAEoDjIjLnRlcm14LnByb3RvY29sLndpcmVwYi5TdG9yYWdlU2NvcGUSEAoIb3duZXJfaWQYAyABKAkSCwoDa2V5GAQgASgJIrUBChBTdG9yYWdlUHV0UGFyYW1zEg4KBmFwcF9pZBgBIAEoCRIyCgVzY29wZRgCIAEoDjIjLnRlcm14LnByb3RvY29sLndpcmVwYi5TdG9yYWdlU2NvcGUSEAoIb3duZXJfaWQYAyABKAkSCwoDa2V5GAQgASgJEg0KBXZhbHVlGAUgASgMEhUKDWNoZWNrX3ZlcnNpb24YBiABKAgSGAoQZXhwZWN0ZWRfdmVyc2lvbhgHIAEoBCKpAQoTU3RvcmFnZURlbGV0ZVBhcmFtcxIOCgZhcHBfaWQYASABKAkSMgoFc2NvcGUYAiABKA4yIy50ZXJteC5wcm90b2NvbC53aXJlcGIuU3RvcmFnZVNjb3BlEhAKCG93bmVyX2lkGAMgASgJEgsKA2tleRgEIAEoCRIVCg1jaGVja192ZXJzaW9uGAUgASgIEhgKEGV4cGVjdGVkX3ZlcnNpb24YBiABKAQimgEKE1N0b3JhZ2VEZWxldGVSZXN1bHQSDgoGYXBwX2lkGAEgASgJEjIKBXNjb3BlGAIgASgOMiMudGVybXgucHJvdG9jb2wud2lyZXBiLlN0b3JhZ2VTY29wZRIQCghvd25lcl9pZBgDIAEoCRILCgNrZXkYBCABKAkSDwoHZGVsZXRlZBgFIAEoCBIPCgd2ZXJzaW9uGAYgASgEInkKEVN0b3JhZ2VMaXN0UGFyYW1zEg4KBmFwcF9pZBgBIAEoCRIyCgVzY29wZRgCIAEoDjIjLnRlcm14LnByb3RvY29sLndpcmVwYi5TdG9yYWdlU2NvcGUSEAoIb3duZXJfaWQYAyABKAkSDgoGcHJlZml4GAQgASgJIkkKEVN0b3JhZ2VMaXN0UmVzdWx0EjQKB2VudHJpZXMYASADKAsyIy50ZXJteC5wcm90b2NvbC53aXJlcGIuU3RvcmFnZUVudHJ5IvYBCgxSZW1vdGVTdGF0dXMSDQoFc3RhdGUYASABKAkSDgoGZGV0YWlsGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRITCgtkZXZpY2VfbmFtZRgEIAEoCRITCgtjb250cm9sX3VybBgFIAEoCRIPCgdodWJfdXJsGAYgASgJEhAKCGh1Yl91cmxzGAcgAygJEhAKCGRhdGFfZGlyGAggASgJEgwKBG1vZGUYCSABKAkSEQoJYWxsb3dfbGFuGAogASgIEhYKDnRlcm1pbmFsX2NvdW50GAsgASgFEhwKFHVwZGF0ZWRfYXRfdW5peF9uYW5vGAwgASgDIl4KFVJlbW90ZVBhaXJTdGFydFBhcmFtcxIWCg5sb2NhbF9wYWlyX3VybBgBIAEoCRITCgt0dGxfc2Vjb25kcxgCIAEoBRIYChBhdXRoX3R0bF9zZWNvbmRzGAMgASgFItABChVSZW1vdGVQYWlyU3RhcnRSZXN1bHQSDAoEdHlwZRgBIAEoCRISCgptYWNoaW5lX2lkGAIgASgJEhQKDG1hY2hpbmVfbmFtZRgDIAEoCRIWCg5sb2NhbF9wYWlyX3VybBgEIAEoCRIXCg9wYWlyX3Nlc3Npb25faWQYBSABKAkSEwoLcGFpcl9zZWNyZXQYBiABKAkSGwoTYW5zd2VyX3Byb29mX3NlY3JldBgHIAEoCRIcChRleHBpcmVzX2F0X3VuaXhfbmFubxgIIAEoAyKUAQoXUmVtb3RlTG9jYWxFbmFibGVQYXJhbXMSFgoObG9jYWxfd2ViX2FkZHIYASABKAkSFAoMaWNlX3RjcF9hZGRyGAIgASgJEhAKCGh1Yl91cmxzGAMgAygJEhMKC2NvbnRyb2xfdXJsGAQgASgJEhQKDGFjY2Vzc190b2tlbhgFIAEoCRIOCgZyZWdpb24YBiABKAkiyQEKEVJlbW90ZUxvY2FsU3RhdHVzEg8KB2VuYWJsZWQYASABKAgSEAoIaHR0cF91cmwYAiABKAkSFgoObG9jYWxfd2ViX2FkZHIYAyABKAkSFgoObG9jYWxfcGFpcl91cmwYBCABKAkSFwoPaWNlX3RjcF9lbmFibGVkGAUgASgIEhQKDGljZV90Y3BfYWRkchgGIAEoCRIUCgxpY2VfdGNwX3BvcnQYByABKAUSHAoUdXBkYXRlZF9hdF91bml4X25hbm8YCCABKAMijAIKFFRlcm1pbmFsR3JpZE1ldGFkYXRhEhUKDXN0b3JlX3ZlcnNpb24YASABKAUSEwoLdGVybWluYWxfaWQYAiABKAkSEQoJcm93X2NvZGVjGAMgASgJEhMKC2luZGV4X2NvZGVjGAQgASgJEhYKDnBhZ2VfbWF4X2J5dGVzGAUgASgDEhEKCXJvd19jb3VudBgGIAEoAxISCgpwYWdlX2NvdW50GAcgASgDEhcKD2NyZWF0ZWRfYXRfdW5peBgIIAEoAxIXCg91cGRhdGVkX2F0X3VuaXgYCSABKAMSEwoLYmFzZV9yb3dfaWQYCiABKAQSGgoSaGlzdG9yeV9nZW5lcmF0aW9uGAsgASgEKmIKDFN0b3JhZ2VTY29wZRIdChlTVE9SQUdFX1NDT1BFX1VOU1BFQ0lGSUVEEAASGAoUU1RPUkFHRV9TQ09QRV9QVUJMSUMQARIZChVTVE9SQUdFX1NDT1BFX1BSSVZBVEUQAkIsWipnaXRodWIuY29tL2xvenpvdy90ZXJteC90ZXJteC1wcm90by93aXJlcGJiBnByb3RvMw");
+  fileDesc("Cg50ZXJtaW5hbC5wcm90bxIVdGVybXgucHJvdG9jb2wud2lyZXBiIgcKBUVtcHR5IjgKBUhlbGxvEg8KB3ZlcnNpb24YASABKA0SDgoGY2xpZW50GAIgASgJEg4KBnNlcnZlchgDIAEoCSI9Cg9SZXF1ZXN0RW52ZWxvcGUSCgoCaWQYASABKAQSDgoGbWV0aG9kGAIgASgJEg4KBnBhcmFtcxgDIAEoDCIuChBSZXNwb25zZUVudmVsb3BlEgoKAmlkGAEgASgEEg4KBnJlc3VsdBgCIAEoDCIuCg1Qcm90b2NvbEVycm9yEgwKBGNvZGUYASABKAUSDwoHbWVzc2FnZRgCIAEoCSJQCg1FcnJvckVudmVsb3BlEgoKAmlkGAEgASgEEjMKBWVycm9yGAIgASgLMiQudGVybXgucHJvdG9jb2wud2lyZXBiLlByb3RvY29sRXJyb3IiIgoEU2l6ZRIMCgRjb2xzGAEgASgNEgwKBHJvd3MYAiABKA0ixgMKDFRlcm1pbmFsSW5mbxIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEg8KB2NvbW1hbmQYAyADKAkSOwoEdGFncxgEIAMoCzItLnRlcm14LnByb3RvY29sLndpcmVwYi5UZXJtaW5hbEluZm8uVGFnc0VudHJ5EikKBHNpemUYBSABKAsyGy50ZXJteC5wcm90b2NvbC53aXJlcGIuU2l6ZRINCgVzdGF0ZRgGIAEoCRILCgNjd2QYByABKAkSEAoIbGl2ZV9jd2QYCCABKAkSHAoUY3JlYXRlZF9hdF91bml4X25hbm8YCSABKAMSFgoJZXhpdF9jb2RlGAogASgFSACIAQESQAoQcmVzaXplX293bmVyc2hpcBgLIAEoCzImLnRlcm14LnByb3RvY29sLndpcmVwYi5SZXNpemVPd25lcnNoaXASJQodcmVzaXplX293bmVyX2F0dGFjaG1lbnRfY291bnQYDCABKAUSGwoTZXhpdGVkX2F0X3VuaXhfbmFubxgNIAEoAxorCglUYWdzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4AUIMCgpfZXhpdF9jb2RlIugBCgxDcmVhdGVQYXJhbXMSDwoHY29tbWFuZBgBIAMoCRIKCgJpZBgCIAEoCRIMCgRuYW1lGAMgASgJEjsKBHRhZ3MYBCADKAsyLS50ZXJteC5wcm90b2NvbC53aXJlcGIuQ3JlYXRlUGFyYW1zLlRhZ3NFbnRyeRIpCgRzaXplGAUgASgLMhsudGVybXgucHJvdG9jb2wud2lyZXBiLlNpemUSCwoDZGlyGAYgASgJEgsKA2VudhgHIAMoCRorCglUYWdzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASIyCgxDcmVhdGVSZXN1bHQSEwoLdGVybWluYWxfaWQYASABKAkSDQoFc3RhdGUYAiABKAkiIAoJR2V0UGFyYW1zEhMKC3Rlcm1pbmFsX2lkGAEgASgJIj8KDFJlc2l6ZVBhcmFtcxITCgt0ZXJtaW5hbF9pZBgBIAEoCRIMCgRjb2xzGAIgASgNEgwKBHJvd3MYAyABKA0ikgEKEkVuc3VyZVJlc2l6ZVBhcmFtcxITCgt0ZXJtaW5hbF9pZBgBIAEoCRIPCgdjaGFubmVsGAIgASgNEgwKBGNvbHMYAyABKA0SDAoEcm93cxgEIAEoDRIVCg1yZXNpemVfcG9saWN5GAUgASgJEhIKCnN1cmZhY2VfaWQYBiABKAkSDwoHdmlld19pZBgHIAEoCSKOAQoSRW5zdXJlUmVzaXplUmVzdWx0EjwKDnJlc2l6ZV9jb250cm9sGAEgASgLMiQudGVybXgucHJvdG9jb2wud2lyZXBiLlJlc2l6ZUNvbnRyb2wSKQoEc2l6ZRgCIAEoCzIbLnRlcm14LnByb3RvY29sLndpcmVwYi5TaXplEg8KB3Jlc2l6ZWQYAyABKAgijwEKDVNldFRhZ3NQYXJhbXMSEwoLdGVybWluYWxfaWQYASABKAkSPAoEdGFncxgCIAMoCzIuLnRlcm14LnByb3RvY29sLndpcmVwYi5TZXRUYWdzUGFyYW1zLlRhZ3NFbnRyeRorCglUYWdzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKlAQoRU2V0TWV0YWRhdGFQYXJhbXMSEwoLdGVybWluYWxfaWQYASABKAkSDAoEbmFtZRgCIAEoCRJACgR0YWdzGAMgAygLMjIudGVybXgucHJvdG9jb2wud2lyZXBiLlNldE1ldGFkYXRhUGFyYW1zLlRhZ3NFbnRyeRorCglUYWdzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJtCgxBdHRhY2hQYXJhbXMSEwoLdGVybWluYWxfaWQYASABKAkSDAoEbW9kZRgCIAEoCRIVCg1yZXNpemVfcG9saWN5GAMgASgJEhIKCnN1cmZhY2VfaWQYBCABKAkSDwoHdmlld19pZBgFIAEoCSJrCgxBdHRhY2hSZXN1bHQSDAoEbW9kZRgBIAEoCRIPCgdjaGFubmVsGAIgASgNEjwKDnJlc2l6ZV9jb250cm9sGAMgASgLMiQudGVybXgucHJvdG9jb2wud2lyZXBiLlJlc2l6ZUNvbnRyb2wiyQEKD1Jlc2l6ZU93bmVyc2hpcBIbChNvd25lcl9hdHRhY2htZW50X2lkGAEgASgJEhgKEG93bmVyX3N1cmZhY2VfaWQYAiABKAkSFQoNb3duZXJfdmlld19pZBgDIAEoCRIZChFvd25lcl9yZW1vdGVfYWRkchgEIAEoCRIpCgRzaXplGAUgASgLMhsudGVybXgucHJvdG9jb2wud2lyZXBiLlNpemUSEwoLc2l6ZV9sb2NrZWQYBiABKAgSDQoFZXBvY2gYByABKAQizwEKDVJlc2l6ZUNvbnRyb2wSEgoKY2FuX3Jlc2l6ZRgBIAEoCBIOCgZyZWFzb24YAiABKAkSEwoLc2l6ZV9sb2NrZWQYAyABKAgSEgoKc3VyZmFjZV9pZBgEIAEoCRIYChBvd25lcl9zdXJmYWNlX2lkGAUgASgJEhUKDW93bmVyX3ZpZXdfaWQYBiABKAkSQAoQcmVzaXplX293bmVyc2hpcBgHIAEoCzImLnRlcm14LnByb3RvY29sLndpcmVwYi5SZXNpemVPd25lcnNoaXAiXwoTVGVybWluYWxDcmVhdGVkRGF0YRIMCgRuYW1lGAEgASgJEg8KB2NvbW1hbmQYAiADKAkSKQoEc2l6ZRgDIAEoCzIbLnRlcm14LnByb3RvY29sLndpcmVwYi5TaXplIoMBChhUZXJtaW5hbFN0YXRlQ2hhbmdlZERhdGESEQoJb2xkX3N0YXRlGAEgASgJEhEKCW5ld19zdGF0ZRgCIAEoCRIWCglleGl0X2NvZGUYAyABKAVIAIgBARIbChNleGl0ZWRfYXRfdW5peF9uYW5vGAQgASgDQgwKCl9leGl0X2NvZGUicwoTVGVybWluYWxSZXNpemVkRGF0YRItCghvbGRfc2l6ZRgBIAEoCzIbLnRlcm14LnByb3RvY29sLndpcmVwYi5TaXplEi0KCG5ld19zaXplGAIgASgLMhsudGVybXgucHJvdG9jb2wud2lyZXBiLlNpemUiJQoTVGVybWluYWxSZW1vdmVkRGF0YRIOCgZyZWFzb24YASABKAkiGgoYQ29sbGFib3JhdG9yc1Jldm9rZWREYXRhIiYKFVRlcm1pbmFsUmVhZEVycm9yRGF0YRINCgVlcnJvchgBIAEoCSKUAQoSU3RvcmFnZUNoYW5nZWREYXRhEg4KBmFwcF9pZBgBIAEoCRIyCgVzY29wZRgCIAEoDjIjLnRlcm14LnByb3RvY29sLndpcmVwYi5TdG9yYWdlU2NvcGUSEAoIb3duZXJfaWQYAyABKAkSCwoDa2V5GAQgASgJEg8KB3ZlcnNpb24YBSABKAQSCgoCb3AYBiABKAkiYgoUV29ya2JlbmNoQ2hhbmdlZERhdGESFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3ZlcnNpb24YAiABKAQSDgoGYWN0aW9uGAMgASgJEhMKC3Jlc291cmNlX2lkGAQgASgJItQECgVFdmVudBIMCgR0eXBlGAEgASgNEhMKC3Rlcm1pbmFsX2lkGAIgASgJEhsKE3RpbWVzdGFtcF91bml4X25hbm8YBCABKAMSOwoHY3JlYXRlZBgFIAEoCzIqLnRlcm14LnByb3RvY29sLndpcmVwYi5UZXJtaW5hbENyZWF0ZWREYXRhEkYKDXN0YXRlX2NoYW5nZWQYBiABKAsyLy50ZXJteC5wcm90b2NvbC53aXJlcGIuVGVybWluYWxTdGF0ZUNoYW5nZWREYXRhEjsKB3Jlc2l6ZWQYByABKAsyKi50ZXJteC5wcm90b2NvbC53aXJlcGIuVGVybWluYWxSZXNpemVkRGF0YRI7CgdyZW1vdmVkGAggASgLMioudGVybXgucHJvdG9jb2wud2lyZXBiLlRlcm1pbmFsUmVtb3ZlZERhdGESTgoVY29sbGFib3JhdG9yc19yZXZva2VkGAkgASgLMi8udGVybXgucHJvdG9jb2wud2lyZXBiLkNvbGxhYm9yYXRvcnNSZXZva2VkRGF0YRJACgpyZWFkX2Vycm9yGAogASgLMiwudGVybXgucHJvdG9jb2wud2lyZXBiLlRlcm1pbmFsUmVhZEVycm9yRGF0YRI6CgdzdG9yYWdlGAwgASgLMikudGVybXgucHJvdG9jb2wud2lyZXBiLlN0b3JhZ2VDaGFuZ2VkRGF0YRI+Cgl3b3JrYmVuY2gYDSABKAsyKy50ZXJteC5wcm90b2NvbC53aXJlcGIuV29ya2JlbmNoQ2hhbmdlZERhdGEi0gEKDEV2ZW50c1BhcmFtcxITCgt0ZXJtaW5hbF9pZBgBIAEoCRINCgV0eXBlcxgDIAMoDRIWCg5zdG9yYWdlX2FwcF9pZBgEIAEoCRI6Cg1zdG9yYWdlX3Njb3BlGAUgASgOMiMudGVybXgucHJvdG9jb2wud2lyZXBiLlN0b3JhZ2VTY29wZRIYChBzdG9yYWdlX293bmVyX2lkGAYgASgJEhoKEnN0b3JhZ2Vfa2V5X3ByZWZpeBgHIAEoCRIUCgx3b3JrYmVuY2hfaWQYCCABKAkiJQoOU25hcHNob3RQYXJhbXMSEwoLdGVybWluYWxfaWQYASABKAkiRAoKTGlzdFJlc3VsdBI2Cgl0ZXJtaW5hbHMYASADKAsyIy50ZXJteC5wcm90b2NvbC53aXJlcGIuVGVybWluYWxJbmZvIlYKC0N1cnNvclN0YXRlEgsKA3JvdxgBIAEoBRILCgNjb2wYAiABKAUSDwoHdmlzaWJsZRgDIAEoCBINCgVzaGFwZRgEIAEoDRINCgVibGluaxgFIAEoCCIdCg1UZXJtaW5hbE1vZGVzEgwKBG1hc2sYASABKA0iXQoGUm93U2V0EhEKCXJvd3NfYmxvYhgBIAEoDBIcChR0aW1lc3RhbXBzX3VuaXhfbmFubxgCIAMoAxIRCglyb3dfa2luZHMYAyADKAkSDwoHd3JhcHBlZBgEIAMoCCKcAgoIU25hcHNob3QSEwoLdGVybWluYWxfaWQYASABKAkSKQoEc2l6ZRgCIAEoCzIbLnRlcm14LnByb3RvY29sLndpcmVwYi5TaXplEhsKE3NjcmVlbl9pc19hbHRlcm5hdGUYAyABKAgSLQoGc2NyZWVuGAQgASgLMh0udGVybXgucHJvdG9jb2wud2lyZXBiLlJvd1NldBIyCgZjdXJzb3IYCSABKAsyIi50ZXJteC5wcm90b2NvbC53aXJlcGIuQ3Vyc29yU3RhdGUSMwoFbW9kZXMYCiABKAsyJC50ZXJteC5wcm90b2NvbC53aXJlcGIuVGVybWluYWxNb2RlcxIbChN0aW1lc3RhbXBfdW5peF9uYW5vGAsgASgDIq8BCgxTdG9yYWdlRW50cnkSDgoGYXBwX2lkGAEgASgJEjIKBXNjb3BlGAIgASgOMiMudGVybXgucHJvdG9jb2wud2lyZXBiLlN0b3JhZ2VTY29wZRIQCghvd25lcl9pZBgDIAEoCRILCgNrZXkYBCABKAkSDQoFdmFsdWUYBSABKAwSDwoHdmVyc2lvbhgGIAEoBBIcChR1cGRhdGVkX2F0X3VuaXhfbmFubxgHIAEoAyJ1ChBTdG9yYWdlR2V0UGFyYW1zEg4KBmFwcF9pZBgBIAEoCRIyCgVzY29wZRgCIAEoDjIjLnRlcm14LnByb3RvY29sLndpcmVwYi5TdG9yYWdlU2NvcGUSEAoIb3duZXJfaWQYAyABKAkSCwoDa2V5GAQgASgJIrUBChBTdG9yYWdlUHV0UGFyYW1zEg4KBmFwcF9pZBgBIAEoCRIyCgVzY29wZRgCIAEoDjIjLnRlcm14LnByb3RvY29sLndpcmVwYi5TdG9yYWdlU2NvcGUSEAoIb3duZXJfaWQYAyABKAkSCwoDa2V5GAQgASgJEg0KBXZhbHVlGAUgASgMEhUKDWNoZWNrX3ZlcnNpb24YBiABKAgSGAoQZXhwZWN0ZWRfdmVyc2lvbhgHIAEoBCKpAQoTU3RvcmFnZURlbGV0ZVBhcmFtcxIOCgZhcHBfaWQYASABKAkSMgoFc2NvcGUYAiABKA4yIy50ZXJteC5wcm90b2NvbC53aXJlcGIuU3RvcmFnZVNjb3BlEhAKCG93bmVyX2lkGAMgASgJEgsKA2tleRgEIAEoCRIVCg1jaGVja192ZXJzaW9uGAUgASgIEhgKEGV4cGVjdGVkX3ZlcnNpb24YBiABKAQimgEKE1N0b3JhZ2VEZWxldGVSZXN1bHQSDgoGYXBwX2lkGAEgASgJEjIKBXNjb3BlGAIgASgOMiMudGVybXgucHJvdG9jb2wud2lyZXBiLlN0b3JhZ2VTY29wZRIQCghvd25lcl9pZBgDIAEoCRILCgNrZXkYBCABKAkSDwoHZGVsZXRlZBgFIAEoCBIPCgd2ZXJzaW9uGAYgASgEInkKEVN0b3JhZ2VMaXN0UGFyYW1zEg4KBmFwcF9pZBgBIAEoCRIyCgVzY29wZRgCIAEoDjIjLnRlcm14LnByb3RvY29sLndpcmVwYi5TdG9yYWdlU2NvcGUSEAoIb3duZXJfaWQYAyABKAkSDgoGcHJlZml4GAQgASgJIkkKEVN0b3JhZ2VMaXN0UmVzdWx0EjQKB2VudHJpZXMYASADKAsyIy50ZXJteC5wcm90b2NvbC53aXJlcGIuU3RvcmFnZUVudHJ5IoABChFXb3JrYmVuY2hTbmFwc2hvdBIPCgd2ZXJzaW9uGAEgASgEEhsKE2FjdGl2ZV93b3Jrc3BhY2VfaWQYAiABKAkSPQoKd29ya3NwYWNlcxgDIAMoCzIpLnRlcm14LnByb3RvY29sLndpcmVwYi5Xb3JrYmVuY2hXb3Jrc3BhY2UieAoSV29ya2JlbmNoV29ya3NwYWNlEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSFQoNYWN0aXZlX3RhYl9pZBgDIAEoCRIxCgR0YWJzGAQgAygLMiMudGVybXgucHJvdG9jb2wud2lyZXBiLldvcmtiZW5jaFRhYiK1AQoMV29ya2JlbmNoVGFiEgoKAmlkGAEgASgJEg0KBXRpdGxlGAIgASgJEhYKDmFjdGl2ZV9wYW5lX2lkGAMgASgJEjMKBXBhbmVzGAQgAygLMiQudGVybXgucHJvdG9jb2wud2lyZXBiLldvcmtiZW5jaFBhbmUSPQoKcm9vdF9zcGxpdBgFIAEoCzIpLnRlcm14LnByb3RvY29sLndpcmVwYi5Xb3JrYmVuY2hTcGxpdE5vZGUiTQoNV29ya2JlbmNoUGFuZRIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRIMCgRraW5kGAMgASgJEhMKC3Rlcm1pbmFsX2lkGAQgASgJItcBChJXb3JrYmVuY2hTcGxpdE5vZGUSDwoHcGFuZV9pZBgBIAEoCRIRCglkaXJlY3Rpb24YAiABKAkSOwoIY2hpbGRyZW4YAyADKAsyKS50ZXJteC5wcm90b2NvbC53aXJlcGIuV29ya2JlbmNoU3BsaXROb2RlEg0KBXJhdGlvGAQgASgBEhIKCmJpYXNfY2VsbHMYBSABKAUSFQoNZml4ZWRfcGFuZV9pZBgGIAEoCRISCgpmaXhlZF9jb2xzGAcgASgFEhIKCmZpeGVkX3Jvd3MYCCABKAUiKgoSV29ya2JlbmNoR2V0UGFyYW1zEhQKDHdvcmtzcGFjZV9pZBgBIAEoCSLsAQoVV29ya2JlbmNoTXV0YXRlUGFyYW1zEg4KBmFjdGlvbhgBIAEoCRIUCgx3b3Jrc3BhY2VfaWQYAiABKAkSDgoGdGFiX2lkGAMgASgJEg8KB3BhbmVfaWQYBCABKAkSEQoJdGFyZ2V0X2lkGAUgASgJEgwKBG5hbWUYBiABKAkSDAoEa2luZBgHIAEoCRITCgt0ZXJtaW5hbF9pZBgIIAEoCRIXCg9zcGxpdF9kaXJlY3Rpb24YCSABKAkSFQoNY2hlY2tfdmVyc2lvbhgKIAEoCBIYChBleHBlY3RlZF92ZXJzaW9uGAsgASgEIngKFVdvcmtiZW5jaE11dGF0ZVJlc3VsdBI6CghzbmFwc2hvdBgBIAEoCzIoLnRlcm14LnByb3RvY29sLndpcmVwYi5Xb3JrYmVuY2hTbmFwc2hvdBIOCgZhY3Rpb24YAiABKAkSEwoLcmVzb3VyY2VfaWQYAyABKAki9gEKDFJlbW90ZVN0YXR1cxINCgVzdGF0ZRgBIAEoCRIOCgZkZXRhaWwYAiABKAkSEQoJZGV2aWNlX2lkGAMgASgJEhMKC2RldmljZV9uYW1lGAQgASgJEhMKC2NvbnRyb2xfdXJsGAUgASgJEg8KB2h1Yl91cmwYBiABKAkSEAoIaHViX3VybHMYByADKAkSEAoIZGF0YV9kaXIYCCABKAkSDAoEbW9kZRgJIAEoCRIRCglhbGxvd19sYW4YCiABKAgSFgoOdGVybWluYWxfY291bnQYCyABKAUSHAoUdXBkYXRlZF9hdF91bml4X25hbm8YDCABKAMiXgoVUmVtb3RlUGFpclN0YXJ0UGFyYW1zEhYKDmxvY2FsX3BhaXJfdXJsGAEgASgJEhMKC3R0bF9zZWNvbmRzGAIgASgFEhgKEGF1dGhfdHRsX3NlY29uZHMYAyABKAUi0AEKFVJlbW90ZVBhaXJTdGFydFJlc3VsdBIMCgR0eXBlGAEgASgJEhIKCm1hY2hpbmVfaWQYAiABKAkSFAoMbWFjaGluZV9uYW1lGAMgASgJEhYKDmxvY2FsX3BhaXJfdXJsGAQgASgJEhcKD3BhaXJfc2Vzc2lvbl9pZBgFIAEoCRITCgtwYWlyX3NlY3JldBgGIAEoCRIbChNhbnN3ZXJfcHJvb2Zfc2VjcmV0GAcgASgJEhwKFGV4cGlyZXNfYXRfdW5peF9uYW5vGAggASgDIpQBChdSZW1vdGVMb2NhbEVuYWJsZVBhcmFtcxIWCg5sb2NhbF93ZWJfYWRkchgBIAEoCRIUCgxpY2VfdGNwX2FkZHIYAiABKAkSEAoIaHViX3VybHMYAyADKAkSEwoLY29udHJvbF91cmwYBCABKAkSFAoMYWNjZXNzX3Rva2VuGAUgASgJEg4KBnJlZ2lvbhgGIAEoCSLJAQoRUmVtb3RlTG9jYWxTdGF0dXMSDwoHZW5hYmxlZBgBIAEoCBIQCghodHRwX3VybBgCIAEoCRIWCg5sb2NhbF93ZWJfYWRkchgDIAEoCRIWCg5sb2NhbF9wYWlyX3VybBgEIAEoCRIXCg9pY2VfdGNwX2VuYWJsZWQYBSABKAgSFAoMaWNlX3RjcF9hZGRyGAYgASgJEhQKDGljZV90Y3BfcG9ydBgHIAEoBRIcChR1cGRhdGVkX2F0X3VuaXhfbmFubxgIIAEoAyKMAgoUVGVybWluYWxHcmlkTWV0YWRhdGESFQoNc3RvcmVfdmVyc2lvbhgBIAEoBRITCgt0ZXJtaW5hbF9pZBgCIAEoCRIRCglyb3dfY29kZWMYAyABKAkSEwoLaW5kZXhfY29kZWMYBCABKAkSFgoOcGFnZV9tYXhfYnl0ZXMYBSABKAMSEQoJcm93X2NvdW50GAYgASgDEhIKCnBhZ2VfY291bnQYByABKAMSFwoPY3JlYXRlZF9hdF91bml4GAggASgDEhcKD3VwZGF0ZWRfYXRfdW5peBgJIAEoAxITCgtiYXNlX3Jvd19pZBgKIAEoBBIaChJoaXN0b3J5X2dlbmVyYXRpb24YCyABKAQqYgoMU3RvcmFnZVNjb3BlEh0KGVNUT1JBR0VfU0NPUEVfVU5TUEVDSUZJRUQQABIYChRTVE9SQUdFX1NDT1BFX1BVQkxJQxABEhkKFVNUT1JBR0VfU0NPUEVfUFJJVkFURRACQixaKmdpdGh1Yi5jb20vbG96em93L3Rlcm14L3Rlcm14LXByb3RvL3dpcmVwYmIGcHJvdG8z");
 
 /**
  * @generated from message termx.protocol.wirepb.Empty
@@ -230,6 +230,11 @@ export type TerminalInfo = Message<"termx.protocol.wirepb.TerminalInfo"> & {
    * @generated from field: int32 resize_owner_attachment_count = 12;
    */
   resizeOwnerAttachmentCount: number;
+
+  /**
+   * @generated from field: int64 exited_at_unix_nano = 13;
+   */
+  exitedAtUnixNano: bigint;
 };
 
 /**
@@ -277,21 +282,6 @@ export type CreateParams = Message<"termx.protocol.wirepb.CreateParams"> & {
    * @generated from field: repeated string env = 7;
    */
   env: string[];
-
-  /**
-   * @generated from field: int32 scrollback_size = 8;
-   */
-  scrollbackSize: number;
-
-  /**
-   * @generated from field: int64 scrollback_max_bytes = 9;
-   */
-  scrollbackMaxBytes: bigint;
-
-  /**
-   * @generated from field: int64 scrollback_max_age_seconds = 10;
-   */
-  scrollbackMaxAgeSeconds: bigint;
 };
 
 /**
@@ -693,6 +683,11 @@ export type TerminalStateChangedData = Message<"termx.protocol.wirepb.TerminalSt
    * @generated from field: optional int32 exit_code = 3;
    */
   exitCode?: number | undefined;
+
+  /**
+   * @generated from field: int64 exited_at_unix_nano = 4;
+   */
+  exitedAtUnixNano: bigint;
 };
 
 /**
@@ -814,6 +809,38 @@ export const StorageChangedDataSchema: GenMessage<StorageChangedData> = /*@__PUR
   messageDesc(file_terminal, 26);
 
 /**
+ * @generated from message termx.protocol.wirepb.WorkbenchChangedData
+ */
+export type WorkbenchChangedData = Message<"termx.protocol.wirepb.WorkbenchChangedData"> & {
+  /**
+   * @generated from field: string workspace_id = 1;
+   */
+  workspaceId: string;
+
+  /**
+   * @generated from field: uint64 version = 2;
+   */
+  version: bigint;
+
+  /**
+   * @generated from field: string action = 3;
+   */
+  action: string;
+
+  /**
+   * @generated from field: string resource_id = 4;
+   */
+  resourceId: string;
+};
+
+/**
+ * Describes the message termx.protocol.wirepb.WorkbenchChangedData.
+ * Use `create(WorkbenchChangedDataSchema)` to create a new message.
+ */
+export const WorkbenchChangedDataSchema: GenMessage<WorkbenchChangedData> = /*@__PURE__*/
+  messageDesc(file_terminal, 27);
+
+/**
  * @generated from message termx.protocol.wirepb.Event
  */
 export type Event = Message<"termx.protocol.wirepb.Event"> & {
@@ -866,6 +893,11 @@ export type Event = Message<"termx.protocol.wirepb.Event"> & {
    * @generated from field: termx.protocol.wirepb.StorageChangedData storage = 12;
    */
   storage?: StorageChangedData | undefined;
+
+  /**
+   * @generated from field: termx.protocol.wirepb.WorkbenchChangedData workbench = 13;
+   */
+  workbench?: WorkbenchChangedData | undefined;
 };
 
 /**
@@ -873,7 +905,7 @@ export type Event = Message<"termx.protocol.wirepb.Event"> & {
  * Use `create(EventSchema)` to create a new message.
  */
 export const EventSchema: GenMessage<Event> = /*@__PURE__*/
-  messageDesc(file_terminal, 27);
+  messageDesc(file_terminal, 28);
 
 /**
  * @generated from message termx.protocol.wirepb.EventsParams
@@ -908,6 +940,11 @@ export type EventsParams = Message<"termx.protocol.wirepb.EventsParams"> & {
    * @generated from field: string storage_key_prefix = 7;
    */
   storageKeyPrefix: string;
+
+  /**
+   * @generated from field: string workbench_id = 8;
+   */
+  workbenchId: string;
 };
 
 /**
@@ -915,7 +952,7 @@ export type EventsParams = Message<"termx.protocol.wirepb.EventsParams"> & {
  * Use `create(EventsParamsSchema)` to create a new message.
  */
 export const EventsParamsSchema: GenMessage<EventsParams> = /*@__PURE__*/
-  messageDesc(file_terminal, 28);
+  messageDesc(file_terminal, 29);
 
 /**
  * @generated from message termx.protocol.wirepb.SnapshotParams
@@ -925,16 +962,6 @@ export type SnapshotParams = Message<"termx.protocol.wirepb.SnapshotParams"> & {
    * @generated from field: string terminal_id = 1;
    */
   terminalId: string;
-
-  /**
-   * @generated from field: int32 scrollback_offset = 2;
-   */
-  scrollbackOffset: number;
-
-  /**
-   * @generated from field: int32 scrollback_limit = 3;
-   */
-  scrollbackLimit: number;
 };
 
 /**
@@ -942,38 +969,6 @@ export type SnapshotParams = Message<"termx.protocol.wirepb.SnapshotParams"> & {
  * Use `create(SnapshotParamsSchema)` to create a new message.
  */
 export const SnapshotParamsSchema: GenMessage<SnapshotParams> = /*@__PURE__*/
-  messageDesc(file_terminal, 29);
-
-/**
- * @generated from message termx.protocol.wirepb.GridViewportParams
- */
-export type GridViewportParams = Message<"termx.protocol.wirepb.GridViewportParams"> & {
-  /**
-   * @generated from field: string terminal_id = 1;
-   */
-  terminalId: string;
-
-  /**
-   * @generated from field: int32 scrollback_offset = 2;
-   */
-  scrollbackOffset: number;
-
-  /**
-   * @generated from field: int32 scrollback_limit = 3;
-   */
-  scrollbackLimit: number;
-
-  /**
-   * @generated from field: int32 cols = 4;
-   */
-  cols: number;
-};
-
-/**
- * Describes the message termx.protocol.wirepb.GridViewportParams.
- * Use `create(GridViewportParamsSchema)` to create a new message.
- */
-export const GridViewportParamsSchema: GenMessage<GridViewportParams> = /*@__PURE__*/
   messageDesc(file_terminal, 30);
 
 /**
@@ -1104,26 +1099,6 @@ export type Snapshot = Message<"termx.protocol.wirepb.Snapshot"> & {
   screen?: RowSet | undefined;
 
   /**
-   * @generated from field: termx.protocol.wirepb.RowSet scrollback = 5;
-   */
-  scrollback?: RowSet | undefined;
-
-  /**
-   * @generated from field: int64 scrollback_offset = 6;
-   */
-  scrollbackOffset: bigint;
-
-  /**
-   * @generated from field: int64 scrollback_total = 7;
-   */
-  scrollbackTotal: bigint;
-
-  /**
-   * @generated from field: bool scrollback_has_more = 8;
-   */
-  scrollbackHasMore: boolean;
-
-  /**
    * @generated from field: termx.protocol.wirepb.CursorState cursor = 9;
    */
   cursor?: CursorState | undefined;
@@ -1137,31 +1112,6 @@ export type Snapshot = Message<"termx.protocol.wirepb.Snapshot"> & {
    * @generated from field: int64 timestamp_unix_nano = 11;
    */
   timestampUnixNano: bigint;
-
-  /**
-   * @generated from field: uint64 history_generation = 12;
-   */
-  historyGeneration: bigint;
-
-  /**
-   * @generated from field: int64 scrollback_loaded_rows = 13;
-   */
-  scrollbackLoadedRows: bigint;
-
-  /**
-   * @generated from field: uint64 scrollback_first_row_id = 14;
-   */
-  scrollbackFirstRowId: bigint;
-
-  /**
-   * @generated from field: uint64 scrollback_last_row_id = 15;
-   */
-  scrollbackLastRowId: bigint;
-
-  /**
-   * @generated from field: int64 scrollback_logical_total = 16;
-   */
-  scrollbackLogicalTotal: bigint;
 };
 
 /**
@@ -1170,83 +1120,6 @@ export type Snapshot = Message<"termx.protocol.wirepb.Snapshot"> & {
  */
 export const SnapshotSchema: GenMessage<Snapshot> = /*@__PURE__*/
   messageDesc(file_terminal, 35);
-
-/**
- * @generated from message termx.protocol.wirepb.GridViewport
- */
-export type GridViewport = Message<"termx.protocol.wirepb.GridViewport"> & {
-  /**
-   * @generated from field: string terminal_id = 1;
-   */
-  terminalId: string;
-
-  /**
-   * @generated from field: termx.protocol.wirepb.Size size = 2;
-   */
-  size?: Size | undefined;
-
-  /**
-   * @generated from field: termx.protocol.wirepb.RowSet rows = 3;
-   */
-  rows?: RowSet | undefined;
-
-  /**
-   * @generated from field: int64 scrollback_offset = 4;
-   */
-  scrollbackOffset: bigint;
-
-  /**
-   * @generated from field: int64 scrollback_limit = 5;
-   */
-  scrollbackLimit: bigint;
-
-  /**
-   * @generated from field: int64 scrollback_total = 6;
-   */
-  scrollbackTotal: bigint;
-
-  /**
-   * @generated from field: bool scrollback_has_more = 7;
-   */
-  scrollbackHasMore: boolean;
-
-  /**
-   * @generated from field: int64 timestamp_unix_nano = 8;
-   */
-  timestampUnixNano: bigint;
-
-  /**
-   * @generated from field: int64 loaded_rows = 9;
-   */
-  loadedRows: bigint;
-
-  /**
-   * @generated from field: uint64 history_generation = 10;
-   */
-  historyGeneration: bigint;
-
-  /**
-   * @generated from field: uint64 first_row_id = 11;
-   */
-  firstRowId: bigint;
-
-  /**
-   * @generated from field: uint64 last_row_id = 12;
-   */
-  lastRowId: bigint;
-
-  /**
-   * @generated from field: int64 scrollback_logical_total = 13;
-   */
-  scrollbackLogicalTotal: bigint;
-};
-
-/**
- * Describes the message termx.protocol.wirepb.GridViewport.
- * Use `create(GridViewportSchema)` to create a new message.
- */
-export const GridViewportSchema: GenMessage<GridViewport> = /*@__PURE__*/
-  messageDesc(file_terminal, 36);
 
 /**
  * @generated from message termx.protocol.wirepb.StorageEntry
@@ -1293,7 +1166,7 @@ export type StorageEntry = Message<"termx.protocol.wirepb.StorageEntry"> & {
  * Use `create(StorageEntrySchema)` to create a new message.
  */
 export const StorageEntrySchema: GenMessage<StorageEntry> = /*@__PURE__*/
-  messageDesc(file_terminal, 37);
+  messageDesc(file_terminal, 36);
 
 /**
  * @generated from message termx.protocol.wirepb.StorageGetParams
@@ -1325,7 +1198,7 @@ export type StorageGetParams = Message<"termx.protocol.wirepb.StorageGetParams">
  * Use `create(StorageGetParamsSchema)` to create a new message.
  */
 export const StorageGetParamsSchema: GenMessage<StorageGetParams> = /*@__PURE__*/
-  messageDesc(file_terminal, 38);
+  messageDesc(file_terminal, 37);
 
 /**
  * @generated from message termx.protocol.wirepb.StoragePutParams
@@ -1372,7 +1245,7 @@ export type StoragePutParams = Message<"termx.protocol.wirepb.StoragePutParams">
  * Use `create(StoragePutParamsSchema)` to create a new message.
  */
 export const StoragePutParamsSchema: GenMessage<StoragePutParams> = /*@__PURE__*/
-  messageDesc(file_terminal, 39);
+  messageDesc(file_terminal, 38);
 
 /**
  * @generated from message termx.protocol.wirepb.StorageDeleteParams
@@ -1414,7 +1287,7 @@ export type StorageDeleteParams = Message<"termx.protocol.wirepb.StorageDeletePa
  * Use `create(StorageDeleteParamsSchema)` to create a new message.
  */
 export const StorageDeleteParamsSchema: GenMessage<StorageDeleteParams> = /*@__PURE__*/
-  messageDesc(file_terminal, 40);
+  messageDesc(file_terminal, 39);
 
 /**
  * @generated from message termx.protocol.wirepb.StorageDeleteResult
@@ -1456,7 +1329,7 @@ export type StorageDeleteResult = Message<"termx.protocol.wirepb.StorageDeleteRe
  * Use `create(StorageDeleteResultSchema)` to create a new message.
  */
 export const StorageDeleteResultSchema: GenMessage<StorageDeleteResult> = /*@__PURE__*/
-  messageDesc(file_terminal, 41);
+  messageDesc(file_terminal, 40);
 
 /**
  * @generated from message termx.protocol.wirepb.StorageListParams
@@ -1488,7 +1361,7 @@ export type StorageListParams = Message<"termx.protocol.wirepb.StorageListParams
  * Use `create(StorageListParamsSchema)` to create a new message.
  */
 export const StorageListParamsSchema: GenMessage<StorageListParams> = /*@__PURE__*/
-  messageDesc(file_terminal, 42);
+  messageDesc(file_terminal, 41);
 
 /**
  * @generated from message termx.protocol.wirepb.StorageListResult
@@ -1505,7 +1378,298 @@ export type StorageListResult = Message<"termx.protocol.wirepb.StorageListResult
  * Use `create(StorageListResultSchema)` to create a new message.
  */
 export const StorageListResultSchema: GenMessage<StorageListResult> = /*@__PURE__*/
+  messageDesc(file_terminal, 42);
+
+/**
+ * @generated from message termx.protocol.wirepb.WorkbenchSnapshot
+ */
+export type WorkbenchSnapshot = Message<"termx.protocol.wirepb.WorkbenchSnapshot"> & {
+  /**
+   * @generated from field: uint64 version = 1;
+   */
+  version: bigint;
+
+  /**
+   * @generated from field: string active_workspace_id = 2;
+   */
+  activeWorkspaceId: string;
+
+  /**
+   * @generated from field: repeated termx.protocol.wirepb.WorkbenchWorkspace workspaces = 3;
+   */
+  workspaces: WorkbenchWorkspace[];
+};
+
+/**
+ * Describes the message termx.protocol.wirepb.WorkbenchSnapshot.
+ * Use `create(WorkbenchSnapshotSchema)` to create a new message.
+ */
+export const WorkbenchSnapshotSchema: GenMessage<WorkbenchSnapshot> = /*@__PURE__*/
   messageDesc(file_terminal, 43);
+
+/**
+ * @generated from message termx.protocol.wirepb.WorkbenchWorkspace
+ */
+export type WorkbenchWorkspace = Message<"termx.protocol.wirepb.WorkbenchWorkspace"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string active_tab_id = 3;
+   */
+  activeTabId: string;
+
+  /**
+   * @generated from field: repeated termx.protocol.wirepb.WorkbenchTab tabs = 4;
+   */
+  tabs: WorkbenchTab[];
+};
+
+/**
+ * Describes the message termx.protocol.wirepb.WorkbenchWorkspace.
+ * Use `create(WorkbenchWorkspaceSchema)` to create a new message.
+ */
+export const WorkbenchWorkspaceSchema: GenMessage<WorkbenchWorkspace> = /*@__PURE__*/
+  messageDesc(file_terminal, 44);
+
+/**
+ * @generated from message termx.protocol.wirepb.WorkbenchTab
+ */
+export type WorkbenchTab = Message<"termx.protocol.wirepb.WorkbenchTab"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string title = 2;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string active_pane_id = 3;
+   */
+  activePaneId: string;
+
+  /**
+   * @generated from field: repeated termx.protocol.wirepb.WorkbenchPane panes = 4;
+   */
+  panes: WorkbenchPane[];
+
+  /**
+   * @generated from field: termx.protocol.wirepb.WorkbenchSplitNode root_split = 5;
+   */
+  rootSplit?: WorkbenchSplitNode | undefined;
+};
+
+/**
+ * Describes the message termx.protocol.wirepb.WorkbenchTab.
+ * Use `create(WorkbenchTabSchema)` to create a new message.
+ */
+export const WorkbenchTabSchema: GenMessage<WorkbenchTab> = /*@__PURE__*/
+  messageDesc(file_terminal, 45);
+
+/**
+ * @generated from message termx.protocol.wirepb.WorkbenchPane
+ */
+export type WorkbenchPane = Message<"termx.protocol.wirepb.WorkbenchPane"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string title = 2;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string kind = 3;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string terminal_id = 4;
+   */
+  terminalId: string;
+};
+
+/**
+ * Describes the message termx.protocol.wirepb.WorkbenchPane.
+ * Use `create(WorkbenchPaneSchema)` to create a new message.
+ */
+export const WorkbenchPaneSchema: GenMessage<WorkbenchPane> = /*@__PURE__*/
+  messageDesc(file_terminal, 46);
+
+/**
+ * @generated from message termx.protocol.wirepb.WorkbenchSplitNode
+ */
+export type WorkbenchSplitNode = Message<"termx.protocol.wirepb.WorkbenchSplitNode"> & {
+  /**
+   * @generated from field: string pane_id = 1;
+   */
+  paneId: string;
+
+  /**
+   * @generated from field: string direction = 2;
+   */
+  direction: string;
+
+  /**
+   * @generated from field: repeated termx.protocol.wirepb.WorkbenchSplitNode children = 3;
+   */
+  children: WorkbenchSplitNode[];
+
+  /**
+   * @generated from field: double ratio = 4;
+   */
+  ratio: number;
+
+  /**
+   * @generated from field: int32 bias_cells = 5;
+   */
+  biasCells: number;
+
+  /**
+   * @generated from field: string fixed_pane_id = 6;
+   */
+  fixedPaneId: string;
+
+  /**
+   * @generated from field: int32 fixed_cols = 7;
+   */
+  fixedCols: number;
+
+  /**
+   * @generated from field: int32 fixed_rows = 8;
+   */
+  fixedRows: number;
+};
+
+/**
+ * Describes the message termx.protocol.wirepb.WorkbenchSplitNode.
+ * Use `create(WorkbenchSplitNodeSchema)` to create a new message.
+ */
+export const WorkbenchSplitNodeSchema: GenMessage<WorkbenchSplitNode> = /*@__PURE__*/
+  messageDesc(file_terminal, 47);
+
+/**
+ * @generated from message termx.protocol.wirepb.WorkbenchGetParams
+ */
+export type WorkbenchGetParams = Message<"termx.protocol.wirepb.WorkbenchGetParams"> & {
+  /**
+   * @generated from field: string workspace_id = 1;
+   */
+  workspaceId: string;
+};
+
+/**
+ * Describes the message termx.protocol.wirepb.WorkbenchGetParams.
+ * Use `create(WorkbenchGetParamsSchema)` to create a new message.
+ */
+export const WorkbenchGetParamsSchema: GenMessage<WorkbenchGetParams> = /*@__PURE__*/
+  messageDesc(file_terminal, 48);
+
+/**
+ * @generated from message termx.protocol.wirepb.WorkbenchMutateParams
+ */
+export type WorkbenchMutateParams = Message<"termx.protocol.wirepb.WorkbenchMutateParams"> & {
+  /**
+   * @generated from field: string action = 1;
+   */
+  action: string;
+
+  /**
+   * @generated from field: string workspace_id = 2;
+   */
+  workspaceId: string;
+
+  /**
+   * @generated from field: string tab_id = 3;
+   */
+  tabId: string;
+
+  /**
+   * @generated from field: string pane_id = 4;
+   */
+  paneId: string;
+
+  /**
+   * @generated from field: string target_id = 5;
+   */
+  targetId: string;
+
+  /**
+   * @generated from field: string name = 6;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string kind = 7;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string terminal_id = 8;
+   */
+  terminalId: string;
+
+  /**
+   * @generated from field: string split_direction = 9;
+   */
+  splitDirection: string;
+
+  /**
+   * @generated from field: bool check_version = 10;
+   */
+  checkVersion: boolean;
+
+  /**
+   * @generated from field: uint64 expected_version = 11;
+   */
+  expectedVersion: bigint;
+};
+
+/**
+ * Describes the message termx.protocol.wirepb.WorkbenchMutateParams.
+ * Use `create(WorkbenchMutateParamsSchema)` to create a new message.
+ */
+export const WorkbenchMutateParamsSchema: GenMessage<WorkbenchMutateParams> = /*@__PURE__*/
+  messageDesc(file_terminal, 49);
+
+/**
+ * @generated from message termx.protocol.wirepb.WorkbenchMutateResult
+ */
+export type WorkbenchMutateResult = Message<"termx.protocol.wirepb.WorkbenchMutateResult"> & {
+  /**
+   * @generated from field: termx.protocol.wirepb.WorkbenchSnapshot snapshot = 1;
+   */
+  snapshot?: WorkbenchSnapshot | undefined;
+
+  /**
+   * @generated from field: string action = 2;
+   */
+  action: string;
+
+  /**
+   * @generated from field: string resource_id = 3;
+   */
+  resourceId: string;
+};
+
+/**
+ * Describes the message termx.protocol.wirepb.WorkbenchMutateResult.
+ * Use `create(WorkbenchMutateResultSchema)` to create a new message.
+ */
+export const WorkbenchMutateResultSchema: GenMessage<WorkbenchMutateResult> = /*@__PURE__*/
+  messageDesc(file_terminal, 50);
 
 /**
  * @generated from message termx.protocol.wirepb.RemoteStatus
@@ -1577,7 +1741,7 @@ export type RemoteStatus = Message<"termx.protocol.wirepb.RemoteStatus"> & {
  * Use `create(RemoteStatusSchema)` to create a new message.
  */
 export const RemoteStatusSchema: GenMessage<RemoteStatus> = /*@__PURE__*/
-  messageDesc(file_terminal, 44);
+  messageDesc(file_terminal, 51);
 
 /**
  * @generated from message termx.protocol.wirepb.RemotePairStartParams
@@ -1604,7 +1768,7 @@ export type RemotePairStartParams = Message<"termx.protocol.wirepb.RemotePairSta
  * Use `create(RemotePairStartParamsSchema)` to create a new message.
  */
 export const RemotePairStartParamsSchema: GenMessage<RemotePairStartParams> = /*@__PURE__*/
-  messageDesc(file_terminal, 45);
+  messageDesc(file_terminal, 52);
 
 /**
  * @generated from message termx.protocol.wirepb.RemotePairStartResult
@@ -1656,7 +1820,7 @@ export type RemotePairStartResult = Message<"termx.protocol.wirepb.RemotePairSta
  * Use `create(RemotePairStartResultSchema)` to create a new message.
  */
 export const RemotePairStartResultSchema: GenMessage<RemotePairStartResult> = /*@__PURE__*/
-  messageDesc(file_terminal, 46);
+  messageDesc(file_terminal, 53);
 
 /**
  * @generated from message termx.protocol.wirepb.RemoteLocalEnableParams
@@ -1698,7 +1862,7 @@ export type RemoteLocalEnableParams = Message<"termx.protocol.wirepb.RemoteLocal
  * Use `create(RemoteLocalEnableParamsSchema)` to create a new message.
  */
 export const RemoteLocalEnableParamsSchema: GenMessage<RemoteLocalEnableParams> = /*@__PURE__*/
-  messageDesc(file_terminal, 47);
+  messageDesc(file_terminal, 54);
 
 /**
  * @generated from message termx.protocol.wirepb.RemoteLocalStatus
@@ -1750,7 +1914,7 @@ export type RemoteLocalStatus = Message<"termx.protocol.wirepb.RemoteLocalStatus
  * Use `create(RemoteLocalStatusSchema)` to create a new message.
  */
 export const RemoteLocalStatusSchema: GenMessage<RemoteLocalStatus> = /*@__PURE__*/
-  messageDesc(file_terminal, 48);
+  messageDesc(file_terminal, 55);
 
 /**
  * @generated from message termx.protocol.wirepb.TerminalGridMetadata
@@ -1817,7 +1981,7 @@ export type TerminalGridMetadata = Message<"termx.protocol.wirepb.TerminalGridMe
  * Use `create(TerminalGridMetadataSchema)` to create a new message.
  */
 export const TerminalGridMetadataSchema: GenMessage<TerminalGridMetadata> = /*@__PURE__*/
-  messageDesc(file_terminal, 49);
+  messageDesc(file_terminal, 56);
 
 /**
  * @generated from enum termx.protocol.wirepb.StorageScope

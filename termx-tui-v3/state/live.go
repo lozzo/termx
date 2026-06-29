@@ -711,6 +711,27 @@ func (store TerminalSessionStore) AttachWithResizeOwner(terminalID string, chann
 	return store
 }
 
+// AdoptAttachmentIdentity 将当前 live session 的发送身份切换到指定 terminal view binding。
+// 领域归属仍在 reducer：该方法只同步 input/resize 所需的 channel、surface 和 view 身份，
+// 不重置尺寸请求序号、退出元数据或命令信息；调用方必须先确认消息链路来自当前有效 view。
+func (store TerminalSessionStore) AdoptAttachmentIdentity(terminalID string, channel uint16, resizePolicy string, surfaceID string, viewID string) TerminalSessionStore {
+	if terminalID != "" {
+		store.TerminalID = terminalID
+	}
+	store.Channel = channel
+	store.InputChannels = cloneInputChannels(store.InputChannels)
+	if store.TerminalID != "" && channel != 0 {
+		store.InputChannels[store.TerminalID] = channel
+		store.Attached = true
+		store.State = TerminalLiveAttached
+		store.LastError = ""
+	}
+	store.ResizePolicy = resizePolicy
+	store.SurfaceID = surfaceID
+	store.ViewID = viewID
+	return store
+}
+
 func (store TerminalSessionStore) InputChannelFor(terminalID string) (uint16, bool) {
 	if terminalID == "" {
 		return 0, false

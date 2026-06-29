@@ -31,8 +31,6 @@ var bindingCatalog = []Binding{
 	{ID: "root-workspace-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "w", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModeWorkspace},
 	{ID: "root-picker", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x06", Ctrl: true, Intent: IntentOpenTerminalPicker},
 	{ID: "root-picker-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "f", Ctrl: true, Intent: IntentOpenTerminalPicker},
-	{ID: "root-copy", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x16", Ctrl: true, Intent: IntentEnterCopyMode},
-	{ID: "root-copy-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "v", Ctrl: true, Intent: IntentEnterCopyMode},
 
 	{ID: "pane-close", Mode: InteractionModePane, Key: KeyChar, Char: "x", Intent: IntentWorkbenchCommand, Command: "pane close"},
 	{ID: "pane-close-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "w", Intent: IntentWorkbenchCommand, Command: "pane close"},
@@ -187,9 +185,6 @@ func routeKey(event InputEvent, options RouteOptions) Intent {
 		if options.Mode != InteractionModeNormal {
 			return Intent{Kind: IntentExitInteraction, Event: event}
 		}
-		if options.CopyModeActive {
-			return Intent{Kind: IntentExitCopyMode, Event: event}
-		}
 		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: []byte{'\x1b'}}
 	}
 	if binding, ok := lookupBinding(options.Mode, event); ok {
@@ -203,23 +198,6 @@ func routeKey(event InputEvent, options RouteOptions) Intent {
 	if options.Mode != InteractionModeNormal {
 		return Intent{Kind: IntentNone, Event: event}
 	}
-	switch event.Key {
-	case KeyPageUp:
-		if options.CopyModeActive {
-			return Intent{Kind: IntentRequestOlder, Event: event}
-		}
-		return Intent{Kind: IntentEnterCopyMode, Event: event}
-	}
-	if options.CopyModeActive && event.Key == KeyChar && !event.Ctrl && !event.Alt && !event.Shift {
-		switch event.Char {
-		case "H":
-			return Intent{Kind: IntentOpenClipboardHistory, Event: event}
-		case "p":
-			return Intent{Kind: IntentPasteLastCopy, Event: event}
-		case "P":
-			return Intent{Kind: IntentPasteClipboard, Event: event}
-		}
-	}
 	if data := terminalBytes(event); len(data) > 0 {
 		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: data}
 	}
@@ -227,21 +205,8 @@ func routeKey(event InputEvent, options RouteOptions) Intent {
 }
 
 func routeMouse(event InputEvent, options RouteOptions) Intent {
-	// 中文说明：copy/history 尚未接管时，前台 terminal 的 mouse tracking 优先于滚轮进历史；
-	// 一旦 copy/history 已经激活，滚轮仍属于 TermX history。
-	if !options.CopyModeActive && options.TerminalMousePassthrough && event.RawSeq != "" {
+	if options.TerminalMousePassthrough && event.RawSeq != "" {
 		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: []byte(event.RawSeq), RawMouse: true}
-	}
-	switch event.Mouse {
-	case MouseWheelUp:
-		if options.CopyModeActive {
-			return Intent{Kind: IntentRequestOlder, Event: event}
-		}
-		return Intent{Kind: IntentEnterCopyMode, Event: event}
-	case MouseLeft, MouseLeftDrag:
-		if options.CopyModeActive {
-			return Intent{Kind: IntentMouseSelect, Event: event}
-		}
 	}
 	return Intent{Kind: IntentNone, Event: event}
 }

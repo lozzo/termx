@@ -16,7 +16,7 @@ const (
 type PaneKind string
 
 const (
-	// 中文说明：pane 只表达连接槽位；copy/exited 由 CopyModeStore 和 terminal lifecycle 投影。
+	// 中文说明：pane 只表达连接槽位；退出态由 terminal lifecycle 投影。
 	PaneEmpty        PaneKind = "empty"
 	PaneTerminalLive PaneKind = "terminal-live"
 )

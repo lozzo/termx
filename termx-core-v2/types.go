@@ -6,11 +6,8 @@ import (
 )
 
 type TerminalCreateOptions struct {
-	Dir                string
-	Env                []string
-	ScrollbackSize     int
-	ScrollbackMaxBytes int64
-	ScrollbackMaxAge   time.Duration
+	Dir string
+	Env []string
 }
 
 func cloneTerminalCreateOptions(options TerminalCreateOptions) TerminalCreateOptions {
@@ -76,7 +73,6 @@ var (
 	ErrDuplicateTerminal          = errors.New("duplicate terminal")
 	ErrTerminalNotFound           = errors.New("terminal not found")
 	ErrTerminalExited             = errors.New("terminal exited")
-	ErrStaleHistoryWindow         = errors.New("stale history window")
 	ErrInvalidServerSize          = errors.New("invalid server size")
 	ErrNilListenerFactory         = errors.New("nil listener factory")
 	ErrInvalidStorageKey          = errors.New("invalid storage key")

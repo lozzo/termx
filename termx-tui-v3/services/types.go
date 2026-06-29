@@ -21,89 +21,6 @@ func (id RequestID) Valid() bool {
 	return id != 0
 }
 
-type HistoryLatestRequest struct {
-	RequestID  RequestID
-	PaneID     string
-	ViewID     string
-	TerminalID string
-	Cols       int
-	Rows       int
-	// GenerationBoundary 是进入 copy 时 TUI 已观察到的 core history generation；
-	// latest 只能冻结到这个边界，避免把进入后的输出混进旧 copy 会话。
-	GenerationBoundary uint64
-}
-
-type HistoryOlderRequest struct {
-	RequestID  RequestID
-	PaneID     string
-	ViewID     string
-	TerminalID string
-	Cols       int
-	Rows       int
-	Token      string
-	Generation uint64
-	Cursor     state.HistoryCursor
-	Boundary   state.HistoryBoundary
-}
-
-type HistoryNewerRequest struct {
-	RequestID  RequestID
-	PaneID     string
-	ViewID     string
-	TerminalID string
-	Cols       int
-	Rows       int
-	Token      string
-	Generation uint64
-	Cursor     state.HistoryCursor
-	Boundary   state.HistoryBoundary
-}
-
-type HistoryOldestRequest struct {
-	RequestID  RequestID
-	PaneID     string
-	ViewID     string
-	TerminalID string
-	Cols       int
-	Rows       int
-	Token      string
-	Generation uint64
-	Boundary   state.HistoryBoundary
-}
-
-type HistoryReleaseRequest struct {
-	TerminalID string
-	Token      string
-}
-
-type HistoryCopyRangeRequest struct {
-	TerminalID string
-	Cols       int
-	Token      string
-	Generation uint64
-	Boundary   state.HistoryBoundary
-	Start      state.CopyLogicalPosition
-	End        state.CopyLogicalPosition
-}
-
-type HistoryResult struct {
-	RequestID RequestID
-	Window    state.HistoryWindow
-}
-
-type HistoryCopyRangeResult struct {
-	Text string
-}
-
-type CoreClient interface {
-	HistoryLatest(context.Context, HistoryLatestRequest) (HistoryResult, error)
-	HistoryOlder(context.Context, HistoryOlderRequest) (HistoryResult, error)
-	HistoryNewer(context.Context, HistoryNewerRequest) (HistoryResult, error)
-	HistoryOldest(context.Context, HistoryOldestRequest) (HistoryResult, error)
-	HistoryCopyRange(context.Context, HistoryCopyRangeRequest) (HistoryCopyRangeResult, error)
-	ReleaseHistory(context.Context, HistoryReleaseRequest) error
-}
-
 type TerminalService interface {
 	Attach(context.Context, TerminalAttachRequest) (TerminalAttachResult, error)
 	Detach(context.Context, TerminalDetachRequest) error
@@ -463,87 +380,10 @@ type ClipboardStorageEvent struct {
 }
 
 var (
-	ErrMissingHistoryResponse   = errors.New("missing history response")
-	ErrUnexpectedHistoryCall    = errors.New("unexpected history call")
-	ErrStaleHistoryWindow       = errors.New("stale history window")
 	ErrMissingTerminalClient    = errors.New("missing terminal client")
 	ErrWorkbenchStorageConflict = errors.New("workbench storage version conflict")
 	ErrClipboardStorageConflict = errors.New("clipboard storage version conflict")
 )
-
-type FakeCoreClient struct {
-	LatestResponses []HistoryResult
-	OlderResponses  []HistoryResult
-	NewerResponses  []HistoryResult
-	OldestResponses []HistoryResult
-	CopyResponses   []HistoryCopyRangeResult
-	LatestRequests  []HistoryLatestRequest
-	OlderRequests   []HistoryOlderRequest
-	NewerRequests   []HistoryNewerRequest
-	OldestRequests  []HistoryOldestRequest
-	CopyRequests    []HistoryCopyRangeRequest
-	ReleaseRequests []HistoryReleaseRequest
-	ReleaseErr      error
-}
-
-func (client *FakeCoreClient) HistoryLatest(_ context.Context, req HistoryLatestRequest) (HistoryResult, error) {
-	client.LatestRequests = append(client.LatestRequests, req)
-	if len(client.LatestResponses) == 0 {
-		return HistoryResult{}, ErrMissingHistoryResponse
-	}
-	result := client.LatestResponses[0]
-	client.LatestResponses = client.LatestResponses[1:]
-	result.RequestID = req.RequestID
-	return result, nil
-}
-
-func (client *FakeCoreClient) HistoryOlder(_ context.Context, req HistoryOlderRequest) (HistoryResult, error) {
-	client.OlderRequests = append(client.OlderRequests, req)
-	if len(client.OlderResponses) == 0 {
-		return HistoryResult{}, ErrMissingHistoryResponse
-	}
-	result := client.OlderResponses[0]
-	client.OlderResponses = client.OlderResponses[1:]
-	result.RequestID = req.RequestID
-	return result, nil
-}
-
-func (client *FakeCoreClient) HistoryNewer(_ context.Context, req HistoryNewerRequest) (HistoryResult, error) {
-	client.NewerRequests = append(client.NewerRequests, req)
-	if len(client.NewerResponses) == 0 {
-		return HistoryResult{}, ErrMissingHistoryResponse
-	}
-	result := client.NewerResponses[0]
-	client.NewerResponses = client.NewerResponses[1:]
-	result.RequestID = req.RequestID
-	return result, nil
-}
-
-func (client *FakeCoreClient) HistoryOldest(_ context.Context, req HistoryOldestRequest) (HistoryResult, error) {
-	client.OldestRequests = append(client.OldestRequests, req)
-	if len(client.OldestResponses) == 0 {
-		return HistoryResult{}, ErrMissingHistoryResponse
-	}
-	result := client.OldestResponses[0]
-	client.OldestResponses = client.OldestResponses[1:]
-	result.RequestID = req.RequestID
-	return result, nil
-}
-
-func (client *FakeCoreClient) HistoryCopyRange(_ context.Context, req HistoryCopyRangeRequest) (HistoryCopyRangeResult, error) {
-	client.CopyRequests = append(client.CopyRequests, req)
-	if len(client.CopyResponses) == 0 {
-		return HistoryCopyRangeResult{}, ErrMissingHistoryResponse
-	}
-	result := client.CopyResponses[0]
-	client.CopyResponses = client.CopyResponses[1:]
-	return result, nil
-}
-
-func (client *FakeCoreClient) ReleaseHistory(_ context.Context, req HistoryReleaseRequest) error {
-	client.ReleaseRequests = append(client.ReleaseRequests, req)
-	return client.ReleaseErr
-}
 
 type FakeTerminalService struct {
 	AttachResult      TerminalAttachResult

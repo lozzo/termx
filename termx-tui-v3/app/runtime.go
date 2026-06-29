@@ -40,7 +40,7 @@ func (QuitMsg) isMsg() {}
 type InputMsg struct {
 	Event input.InputEvent
 	// 中文说明：runtime 命中测试已经确认 raw mouse 属于前台 terminal；
-	// UI/copy reducer 必须避让，交给 terminal input router 发送给子进程。
+	// UI reducer 必须避让，交给 terminal input router 发送给子进程。
 	TerminalMousePassthrough bool
 }
 
@@ -188,7 +188,6 @@ type AppRuntime struct {
 	firstFrameWritten   bool
 	startupFrameReady   bool
 	maxMessagesPerBatch int
-	copyHistoryPatch    copyHistoryPatchCache
 	lastFloatingRepaint floatingRepaintSignature
 	diagnostics         *runtimeDiagnostics
 	stopDiagnostics     func()
@@ -239,8 +238,6 @@ type mouseActionClickState struct {
 type mouseHitResolution struct {
 	Foreground    render.HitRegion
 	HasForeground bool
-	HistoryRow    render.HitRegion
-	HasHistoryRow bool
 	FocusOwner    render.HitRegion
 	HasFocusOwner bool
 }
@@ -978,15 +975,11 @@ func (runtime *AppRuntime) renderFrame() {
 	if runtime.host == nil {
 		return
 	}
-	if runtime.tryRenderCopyHistoryPatch() {
-		return
-	}
 	frame := runtime.render(runtime.state)
 	runtime.markFloatingRepaintFrame(&frame)
 	runtime.lastHitRegions = cloneRenderHitRegions(frame.HitRegions)
 	_ = runtime.host.FrameSink().WriteFrame(frame)
 	runtime.firstFrameWritten = true
-	runtime.rememberCopyHistoryPatchFrame(frame)
 	runtime.observeRuntimeFrame(frame)
 }
 
@@ -1054,21 +1047,12 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 			return msg
 		}
 		// 中文说明：前台程序启用 mouse tracking 后，raw 鼠标事件归子进程所有；
-		// 只有未被 terminal 接管的滚轮才作为 TermX infinite history 入口。
+		// TUI 不在这里从滚轮派生历史视图。
 		if inputMsg.Event.RawSeq != "" && runtime.mouseEventCanPassthrough(inputMsg.Event, resolution) {
 			inputMsg.TerminalMousePassthrough = true
 			return inputMsg
 		}
-		if msg, ok := runtime.copyModeMouseWheelEnterMsg(inputMsg.Event, resolution); ok {
-			return msg
-		}
-		if msg, ok := runtime.copyModeMouseWheelMsg(inputMsg.Event, resolution); ok {
-			return msg
-		}
 		if inputMsg.Event.RawSeq != "" {
-			if runtime.mouseWheelCanRouteToCopyMode(inputMsg.Event, resolution) {
-				return msg
-			}
 			return NoopMsg{}
 		}
 		if runtime.mouseEventHitsUI(inputMsg.Event, resolution) {
@@ -1140,18 +1124,6 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		inputMsg.TerminalMousePassthrough = true
 		return inputMsg
 	}
-	// 中文说明：history row 是内容前景命中区；点击非 active pane 的历史文本时必须先切焦点，
-	// 不能直接进入 copy selection，否则文本区域会吞掉 panel focus。
-	if resolution.HasHistoryRow {
-		if focusMsg, shouldFocus := runtime.historyRowFocusMsg(resolution); shouldFocus {
-			return focusMsg
-		}
-		if !runtime.copyModeMouseSelectAllowed(resolution.HistoryRow) {
-			return NoopMsg{}
-		}
-		col := historyHitRegionDisplayColumn(inputMsg.Event, resolution.HistoryRow)
-		return CopyModeMouseSelectMsg{Position: state.CopyPosition{Row: resolution.HistoryRow.Row, Col: col}, PaneID: resolution.HistoryRow.PaneID, ViewID: runtime.copyHistoryViewIDForRegion(resolution.HistoryRow)}
-	}
 	if command, ok := PaneCommandFromHitRegion(region); ok {
 		runtime.fillMousePaneCommandDefaults(&command)
 		return ShellPaneCommandMsg{Command: command}
@@ -1189,33 +1161,6 @@ func (runtime *AppRuntime) terminalInputActivationMsg(region render.HitRegion) (
 		return ShellActivateTerminalInputMsg{PaneID: region.PaneID, FloatingID: floatingID}, true
 	default:
 		return nil, false
-	}
-}
-
-func (runtime *AppRuntime) mouseWheelCanRouteToCopyMode(event input.InputEvent, resolution mouseHitResolution) bool {
-	if event.Kind != input.EventKindMouse {
-		return false
-	}
-	switch event.Mouse {
-	case input.MouseWheelUp:
-	case input.MouseWheelDown:
-	default:
-		return false
-	}
-	// 中文说明：带 RawSeq 的普通鼠标事件默认会被 terminal mouse tracking 吞掉；上滑需要保留
-	// 进入 copy/history 的入口，已进入 copy/history 后下滑也必须继续交给 copy reducer。
-	if !resolution.HasForeground {
-		return event.Mouse == input.MouseWheelUp || copyModeInputContext(runtime.state.CopyMode)
-	}
-	switch resolution.Foreground.Kind {
-	case render.HitRegionPaneContent, render.HitRegionHistoryRow:
-		if event.Mouse == input.MouseWheelUp {
-			return true
-		}
-		_, copyMode := runtime.state.CopyHistorySessionForView(runtime.copyHistoryViewIDForRegion(resolution.Foreground))
-		return copyModeInputContext(copyMode)
-	default:
-		return false
 	}
 }
 
@@ -1274,35 +1219,6 @@ func (runtime *AppRuntime) consumeTakeResizeOwnerDoubleClick(region render.HitRe
 	return false
 }
 
-func historyHitRegionDisplayColumn(event input.InputEvent, region render.HitRegion) int {
-	col := event.Col - 1
-	if event.Col <= 0 {
-		col = event.Col
-	}
-	col -= region.Rect.X
-	if col < 0 {
-		return 0
-	}
-	return col
-}
-
-func (runtime *AppRuntime) historyRowFocusMsg(resolution mouseHitResolution) (Msg, bool) {
-	if !resolution.HasHistoryRow {
-		return nil, false
-	}
-	region := resolution.HistoryRow
-	if msg, ok := runtime.focusMsgForOwnerRegion(region); ok {
-		return msg, true
-	}
-	if region.PaneID != "" {
-		return nil, false
-	}
-	if !resolution.HasFocusOwner {
-		return nil, false
-	}
-	return runtime.focusMsgForOwnerRegion(resolution.FocusOwner)
-}
-
 func (runtime *AppRuntime) focusMsgForOwnerRegion(region render.HitRegion) (Msg, bool) {
 	if region.Floating {
 		floatingID, ok := runtime.floatingIDForPaneID(region.PaneID)
@@ -1341,113 +1257,6 @@ func (runtime *AppRuntime) focusMsgForOwner(ownerID string) (Msg, bool) {
 	return nil, false
 }
 
-func (runtime *AppRuntime) copyModeMouseSelectAllowed(region render.HitRegion) bool {
-	viewID := runtime.copyHistoryViewIDForRegion(region)
-	_, copyMode := runtime.state.CopyHistorySessionForView(viewID)
-	if !copyMode.Active {
-		return false
-	}
-	if region.PaneID == "" {
-		return true
-	}
-	if copyMode.PaneID == region.PaneID {
-		return true
-	}
-	if region.Floating {
-		if floatingID, ok := runtime.floatingIDForPaneID(region.PaneID); ok && copyMode.ViewID == runtime.state.TerminalViews.FloatingViewID(floatingID) {
-			return true
-		}
-	}
-	if copyMode.ViewID == runtime.state.TerminalViews.FloatingViewID(region.PaneID) {
-		return true
-	}
-	shell := runtime.state.Shell.EnsureDefaults()
-	if shell.ActivePaneID == region.PaneID && shell.ActiveFloatingID() == "" && copyMode.PaneID == "" && copyMode.ViewID == "" {
-		return true
-	}
-	return false
-}
-
-func (runtime *AppRuntime) copyModeMouseWheelEnterMsg(event input.InputEvent, resolution mouseHitResolution) (Msg, bool) {
-	if event.Kind != input.EventKindMouse || event.Mouse != input.MouseWheelUp {
-		return nil, false
-	}
-	region, ok := copyModeWheelTargetRegion(resolution)
-	if !ok {
-		return nil, false
-	}
-	if _, copyMode := runtime.state.CopyHistorySessionForView(runtime.copyHistoryViewIDForRegion(region)); copyModeInputContext(copyMode) {
-		return nil, false
-	}
-	binding, ok := runtime.terminalViewBindingForMouseRegion(region)
-	if !ok || binding.TerminalID == "" {
-		return nil, false
-	}
-	rect := region.Rect
-	if rect.W <= 0 || rect.H <= 0 {
-		if fallback, ok := terminalViewContentRect(runtime.state, runtimeViewportRect(runtime.state.Viewport), binding); ok {
-			rect = fallback
-		}
-	}
-	if rect.W <= 0 {
-		return nil, false
-	}
-	// 中文说明：滚轮上滑是 copy/history 入口，必须绑定鼠标命中的 TerminalView；
-	// 不能先丢给 active pane，否则非 active sibling 要等下一次事件才进入 copy。
-	return CopyModeEnterViewMsg{Binding: binding, Cols: rect.W, Rows: rect.H}, true
-}
-
-func (runtime *AppRuntime) copyModeMouseWheelMsg(event input.InputEvent, resolution mouseHitResolution) (Msg, bool) {
-	if event.Kind != input.EventKindMouse || !mouseEventIsWheel(event) {
-		return nil, false
-	}
-	region, ok := copyModeWheelTargetRegion(resolution)
-	if !ok {
-		return nil, false
-	}
-	viewID := runtime.copyHistoryViewIDForRegion(region)
-	if viewID == "" {
-		return nil, false
-	}
-	_, copyMode := runtime.state.CopyHistorySessionForView(viewID)
-	if !copyModeInputContext(copyMode) {
-		return nil, false
-	}
-	// 中文说明：鼠标滚轮命中的是具体 TerminalView，不能回退到 active pane；
-	// floating/pane 的 copy history 会话必须各自滚动、各自退出。
-	return CopyModeWheelMsg{Event: event, ViewID: viewID}, true
-}
-
-func (runtime *AppRuntime) copyHistoryViewIDForRegion(region render.HitRegion) string {
-	if binding, ok := runtime.terminalViewBindingForMouseRegion(region); ok {
-		return binding.ViewID
-	}
-	if region.Floating {
-		if floatingID, ok := runtime.floatingIDForPaneID(region.PaneID); ok {
-			return runtime.state.TerminalViews.FloatingViewID(floatingID)
-		}
-	}
-	if region.PaneID != "" {
-		return runtime.state.TerminalViews.PaneViewID(region.PaneID)
-	}
-	return ""
-}
-
-func copyModeWheelTargetRegion(resolution mouseHitResolution) (render.HitRegion, bool) {
-	if resolution.HasHistoryRow {
-		return resolution.HistoryRow, true
-	}
-	if !resolution.HasForeground {
-		return render.HitRegion{}, false
-	}
-	switch resolution.Foreground.Kind {
-	case render.HitRegionPaneContent, render.HitRegionHistoryRow, render.HitRegionContentAction:
-		return resolution.Foreground, true
-	default:
-		return render.HitRegion{}, false
-	}
-}
-
 func (runtime *AppRuntime) terminalViewBindingForMouseRegion(region render.HitRegion) (state.TerminalViewBinding, bool) {
 	if region.Floating {
 		if floatingID, ok := runtime.floatingIDForPaneID(region.PaneID); ok {
@@ -1475,7 +1284,7 @@ func (runtime *AppRuntime) mouseEventCanPassthrough(event input.InputEvent, reso
 		return false
 	}
 	shell := runtime.state.Shell.EnsureDefaults()
-	if shell.Overlay.Open || copyModeInputContext(runtime.state.CopyMode) {
+	if shell.Overlay.Open {
 		return false
 	}
 	if shell.InteractionMode != state.InteractionModeNormal {
@@ -1496,7 +1305,7 @@ func (runtime *AppRuntime) mouseEventHitsUI(event input.InputEvent, resolution m
 	}
 	region := resolution.Foreground
 	switch region.Kind {
-	case render.HitRegionPaneContent, render.HitRegionHistoryRow:
+	case render.HitRegionPaneContent:
 		return false
 	case render.HitRegionContentAction:
 		return region.ActionID != render.ActionFloatingRaise.String()
@@ -1795,10 +1604,6 @@ func resolveMouseHitRegions(regions []render.HitRegion, event input.InputEvent) 
 		if !resolution.HasForeground {
 			resolution.Foreground = region
 			resolution.HasForeground = true
-			if region.Kind == render.HitRegionHistoryRow {
-				resolution.HistoryRow = region
-				resolution.HasHistoryRow = true
-			}
 		}
 		if !resolution.HasFocusOwner && mouseFocusOwnerRegion(region) {
 			resolution.FocusOwner = region

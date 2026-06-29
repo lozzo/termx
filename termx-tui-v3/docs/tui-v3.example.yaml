@@ -251,12 +251,6 @@ tui:
       # 示例：terminal_picker: ctrl-space
       terminal_picker: ctrl-f
 
-      # copy_mode 进入 authoritative copy/history 模式。
-      # 默认值：ctrl-v。
-      # 用途：冻结当前 view 并请求 core-v2 history window。
-      # 示例：copy_mode: ctrl-y
-      copy_mode: ctrl-v
-
       # tab_mode 进入 tab sticky shortcut mode。
       # 默认值：ctrl-t。
       # 后续按 c/x/r/n/p 执行 tab create/close/rename/next/previous。

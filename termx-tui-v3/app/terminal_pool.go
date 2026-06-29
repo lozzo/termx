@@ -328,7 +328,6 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		if floating, ok := root.Shell.FloatingByID(msg.TargetFloatingID); ok {
 			paneID = floating.Pane.ID
 		}
-		root = invalidateCopyModeForTerminalRebind(root, paneID, result.ViewID, result.TerminalID)
 		root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView(msg.TargetFloatingID, paneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
 		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 		root.Shell = root.Shell.BindFloatingTerminal(msg.TargetFloatingID, result.TerminalID)
@@ -338,7 +337,6 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		if targetPaneID == "" {
 			targetPaneID = root.Shell.EnsureDefaults().ActivePaneID
 		}
-		root = invalidateCopyModeForTerminalRebind(root, targetPaneID, result.ViewID, result.TerminalID)
 		root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: targetPaneID}, result.TerminalID)
 		root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(targetPaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
 		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
@@ -874,7 +872,7 @@ func removeTerminalFromRoot(root state.Root, terminalID string) state.Root {
 	root.Shell = root.Shell.RemoveTerminalBindings(terminalID)
 	root.Session = root.Session.RemoveTerminal(terminalID)
 	root.Surface = root.Surface.RemoveTerminal(terminalID)
-	return root.WithoutCopyHistorySessionsForTerminal(terminalID)
+	return root
 }
 
 func terminalPoolAttachSize(root state.Root) (int, int) {

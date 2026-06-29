@@ -62,7 +62,7 @@ tui:
 	if cfg.Interaction.StickyPrefixTimeoutMS != 5000 || cfg.Interaction.ClipboardHistory.MaxItems != 500 || cfg.Interaction.ClipboardHistory.PreviewWidthRatio != 0.72 {
 		t.Fatalf("interaction overrides not applied: %#v", cfg.Interaction)
 	}
-	if cfg.Keymap.Root.TerminalPicker != "ctrl-space" || cfg.Keymap.Root.CopyMode != "ctrl-v" {
+	if cfg.Keymap.Root.TerminalPicker != "ctrl-space" || cfg.Keymap.Root.TabMode != "ctrl-t" {
 		t.Fatalf("keymap override/default merge wrong: %#v", cfg.Keymap.Root)
 	}
 }

@@ -9,14 +9,12 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
 	"github.com/lozzow/termx/termx-shared/transport"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 )
 
 type ListenerFactory func(socketPath string) (transport.Listener, error)
-type HistoryStorageFactory func(terminalID string) (history.StorageBackend, error)
 
 type ServerOption func(*serverConfig)
 
@@ -26,7 +24,6 @@ type serverConfig struct {
 	logger                *slog.Logger
 	listenerFactory       ListenerFactory
 	processFactory        ProcessFactory
-	historyStorageFactory HistoryStorageFactory
 	remoteService         RemoteService
 	eventBuffer           int
 }
@@ -127,12 +124,6 @@ func WithProcessFactory(factory ProcessFactory) ServerOption {
 	}
 }
 
-func WithHistoryStorageFactory(factory HistoryStorageFactory) ServerOption {
-	return func(cfg *serverConfig) {
-		cfg.historyStorageFactory = factory
-	}
-}
-
 func WithRemoteService(service RemoteService) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.remoteService = service
@@ -181,13 +172,7 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 		_, _ = server.registry.remove(info.ID)
 		return TerminalInfo{}, err
 	}
-	historyBackend, err := server.newHistoryStorageBackend(info.ID)
-	if err != nil {
-		_ = process.Close()
-		_, _ = server.registry.remove(info.ID)
-		return TerminalInfo{}, err
-	}
-	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyBackend)
+	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo)
 	server.mu.Lock()
 	server.terminals[info.ID] = terminal
 	server.mu.Unlock()
@@ -202,9 +187,6 @@ func processSpecFromTerminal(info TerminalInfo, options TerminalCreateOptions) P
 		Size:               info.Size,
 		Dir:                options.Dir,
 		Env:                append([]string(nil), options.Env...),
-		ScrollbackSize:     options.ScrollbackSize,
-		ScrollbackMaxBytes: options.ScrollbackMaxBytes,
-		ScrollbackMaxAge:   options.ScrollbackMaxAge,
 	}
 }
 
@@ -310,13 +292,6 @@ func (server *Server) RemoveTerminal(id string) error {
 	return nil
 }
 
-func (server *Server) newHistoryStorageBackend(terminalID string) (history.StorageBackend, error) {
-	if server.cfg.historyStorageFactory == nil {
-		return nil, nil
-	}
-	return server.cfg.historyStorageFactory(terminalID)
-}
-
 func (server *Server) updateTerminalInfo(info TerminalInfo) {
 	_ = server.registry.replace(info)
 }
@@ -408,22 +383,6 @@ func (server *Server) LiveSnapshot(id string) (live.SurfaceSnapshot, error) {
 		return live.SurfaceSnapshot{}, err
 	}
 	return terminal.LiveSnapshot(), nil
-}
-
-func (server *Server) LatestWindow(id string, cols, rows int) (history.HistoryWindow, error) {
-	terminal, err := server.Terminal(id)
-	if err != nil {
-		return history.HistoryWindow{}, err
-	}
-	return terminal.LatestWindow(cols, rows)
-}
-
-func (server *Server) OlderWindow(id string, cols, rows int, cursor history.HistoryCursor) (history.HistoryWindow, error) {
-	terminal, err := server.Terminal(id)
-	if err != nil {
-		return history.HistoryWindow{}, err
-	}
-	return terminal.OlderWindow(cols, rows, cursor)
 }
 
 func (server *Server) Events(ctx context.Context, filter EventFilter) <-chan Event {

@@ -143,7 +143,6 @@ func TestLiveInputRoutesLSSequenceAcrossTwoTiledPaneBindings(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain setup: %v", err)
@@ -220,46 +219,6 @@ func TestTerminalInputRouterLogsActiveViewRoute(t *testing.T) {
 	}
 }
 
-func TestCopyModeBoundToSiblingPaneDoesNotConsumeActivePaneInput(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
-	shell := state.DefaultShell().
-		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-shared").
-		SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-shared"}, state.SplitDirectionVertical).
-		FocusPane(state.PaneCommandTarget{PaneID: "pane-2"})
-	root := state.Root{
-		Shell: shell,
-		CopyMode: state.CopyModeStore{
-			Active:     true,
-			PaneID:     state.DefaultPaneID,
-			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
-			TerminalID: "term-shared",
-			BoundToken: "tok-copy",
-			BoundCols:  80,
-			ViewRows:   24,
-		},
-	}
-	root.TerminalViews = root.TerminalViews.
-		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-shared", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true)).
-		BindPane(state.NewPaneTerminalView("pane-2", "term-shared", 8, 80, 24, state.TerminalResizeRoleFollower, "surface-2", state.TerminalPaneViewID("pane-2"), false))
-	reducer := ComposeReducers(
-		NewUIInputReducer(),
-		NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}}),
-		NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal}),
-	)
-
-	_, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l", RawSeq: "l"}})
-	if len(effects) != 1 {
-		t.Fatalf("active sibling pane key should reach terminal router, got %#v", effects)
-	}
-	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveInputResultMsg)
-	if !ok || msg.Err != nil {
-		t.Fatalf("expected terminal input result, got %#v ok=%v", msg, ok)
-	}
-	if len(terminal.Inputs) != 1 || terminal.Inputs[0].Channel != 8 || terminal.Inputs[0].ViewID != state.TerminalPaneViewID("pane-2") || string(terminal.Inputs[0].Bytes) != "l" {
-		t.Fatalf("copy mode must not consume active sibling view input, got %#v", terminal.Inputs)
-	}
-}
-
 func TestLiveInputRoutesBetweenTiledAndFloatingSharedTerminalChannels(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-shared")
@@ -286,7 +245,6 @@ func TestLiveInputRoutesBetweenTiledAndFloatingSharedTerminalChannels(t *testing
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain setup: %v", err)
@@ -346,7 +304,6 @@ func TestLiveInputRoutesBetweenTiledAndFloatingDifferentTerminals(t *testing.T) 
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain setup: %v", err)
@@ -522,7 +479,6 @@ func TestInteractionModeContentClickThenKeyUsesTerminalInputRoute(t *testing.T) 
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain setup: %v", err)
@@ -709,7 +665,6 @@ func TestLiveInputAttachesActiveViewWhenChannelMissing(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}); err != nil {
@@ -752,7 +707,6 @@ func TestLiveInputDoesNotReattachWhileViewAttachPending(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}); err != nil {
@@ -793,7 +747,6 @@ func TestLiveInputRefreshesStaleViewChannelWithoutStealingSibling(t *testing.T) 
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}); err != nil {
@@ -855,7 +808,6 @@ func TestLiveInputReattachesOnlyActiveViewWhenProtocolChannelCheckFails(t *testi
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}); err != nil {
@@ -1496,7 +1448,7 @@ func TestTerminalPoolAttachRequestToSameLockedTerminalDoesNotResize(t *testing.T
 	}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 100, 30, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
 	root.TerminalViews = root.TerminalViews.ApplyTerminalSizeLock("term-1", true)
-	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}})
+	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal})
 
 	if err := runtime.Post(ShellSplitActivePaneMsg{
 		Pane:      state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneEmpty},
@@ -1792,7 +1744,6 @@ func TestLiveInputRoutesToFocusedPaneTerminal(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 90, Rows: 24}}); err != nil {
@@ -1862,7 +1813,6 @@ func TestMousePaneContentActivationExitsInteractionModeBeforeLiveInput(t *testin
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 
 	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
@@ -1917,7 +1867,6 @@ func TestLiveInputTargetsActiveFloatingBeforeTiledPane(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
@@ -1966,7 +1915,6 @@ func TestMouseFloatingContentActivationExitsInteractionModeBeforeLiveInput(t *te
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 
 	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20, ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
@@ -2063,7 +2011,6 @@ func TestLiveInputDoesNotFallbackToSessionForEmptyActivePane(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
@@ -2128,7 +2075,6 @@ func TestFloatingEmptyPaneAttachesExistingTerminalFromPicker(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 90, Rows: 24}}); err != nil {
@@ -2242,7 +2188,6 @@ func TestActiveFloatingResizeCommandResizesAttachedTerminalContentRect(t *testin
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	if err := runtime.Post(TerminalPoolAttachResultMsg{
 		TerminalID:       "term-float",
@@ -3578,7 +3523,6 @@ func TestInteractiveRuntimeIncludesShellReducer(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: &services.FakeTerminalService{}},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 
 	if err := runtime.Post(ShellOpenTerminalPickerMsg{}); err != nil {

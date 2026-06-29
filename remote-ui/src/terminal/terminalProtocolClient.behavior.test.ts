@@ -5,7 +5,6 @@ import {
   decodeTerminalHelloPayload,
   decodeTerminalMethodParams,
   decodeTerminalRequestPayload,
-  encodeGridViewportPayload,
   encodeTerminalErrorPayload,
   encodeTerminalHelloPayload,
   encodeTerminalResponsePayload,
@@ -386,14 +385,11 @@ describe('TerminalProtocolClient', () => {
     expect(snapshotRequest.method).toBe('snapshot')
     expect(snapshotRequest.params).toEqual({
       terminal_id: 'terminal-1',
-      scrollback_offset: 0,
-      scrollback_limit: 1,
     })
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(snapshotRequest.id, pendingMethod(snapshotRequest.id), {
         terminal_id: 'terminal-1',
         size: { cols: 80, rows: 24 },
         screen: { rows: [{ cells: [{ r: 'h' }, { r: 'i' }] }] },
-        scrollback: [{ cells: [{ r: 'o' }, { r: 'k' }] }],
       })))
     await Promise.resolve()
 
@@ -401,7 +397,7 @@ describe('TerminalProtocolClient', () => {
     expect(events[0]).toMatchObject({ type: 'resizeControl' })
     expect(events[1]).toMatchObject({
       type: 'snapshot',
-      snapshot: { text: 'ok\nhi', cols: 80, rows: 24 },
+      snapshot: { text: 'hi', cols: 80, rows: 24 },
     })
     expect((events[1] as { snapshot: { replay?: string } }).snapshot.replay).toContain('\x1b[H\x1b[2J\x1b[H')
     expect((events[1] as { snapshot: { replay?: string } }).snapshot.replay).toContain('\x1b[1;1H')
@@ -557,67 +553,6 @@ describe('TerminalProtocolClient', () => {
     } finally {
       vi.useRealTimers()
     }
-  })
-
-  it('loads older scrollback pages over the active protocol channel', async () => {
-    const channel = new MockBinaryDataChannel('terminal:terminal-1')
-    const client = createTerminalProtocolClient({
-      channel,
-      machineId: 'machine-local',
-      terminalId: 'terminal-1',
-      connectionInfo: connectionInfo(),
-    })
-    const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
-    await Promise.resolve()
-    const attachRequest = decodeRequestFrame(channel, 1)
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), { mode: 'collaborator', channel: 7 })))
-    await terminalPromise
-    expect(decodeSentFrame(channel, 2)).toMatchObject({ channel: 0, type: TERMX_FRAME_TYPES.request })
-
-    const pagePromise = client.loadScrollback('terminal-1', 100, 50)
-    await vi.waitFor(() => expect(channel.sent).toHaveLength(4))
-    const pageRequestFrame = decodeSentFrame(channel, 3)
-    expect(pageRequestFrame.channel).toBe(7)
-    expect(pageRequestFrame.type).toBe(TERMX_FRAME_TYPES.historyRequest)
-    const requestView = new DataView(pageRequestFrame.payload.buffer, pageRequestFrame.payload.byteOffset, pageRequestFrame.payload.byteLength)
-    expect(requestView.getUint32(0)).toBe(100)
-    expect(requestView.getUint32(4)).toBe(50)
-    const viewportPayload = encodeGridViewportPayload({
-      terminal_id: 'terminal-1',
-      size: { cols: 80, rows: 24 },
-      rows: [{
-        cells: Array.from('old').map((char) => ({ r: char })),
-      }],
-      scrollback_offset: 100,
-      scrollback_limit: 50,
-      scrollback_total: 101,
-      scrollback_logical_total: 42,
-      scrollback_has_more: false,
-      loaded_rows: 7,
-      history_generation: 42,
-      first_row_id: 1000,
-      last_row_id: 1006,
-    })
-    const replayPayload = new Uint8Array(5 + viewportPayload.length)
-    const replayView = new DataView(replayPayload.buffer)
-    replayView.setUint32(0, 1)
-    replayView.setUint8(4, 0)
-    replayPayload.set(viewportPayload, 5)
-    channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.historyReplay, replayPayload))
-
-    await expect(pagePromise).resolves.toMatchObject({
-      beforeOffset: 100,
-      limit: 50,
-      hasMore: false,
-      rows: 7,
-      committedTotalRows: 101,
-      logicalTotalRows: 42,
-      historyGeneration: 42,
-      firstRowId: 1000,
-      lastRowId: 1006,
-      replay: 'old',
-    })
   })
 
   it('rejects machine or terminal mismatch before writing protocol frames', async () => {

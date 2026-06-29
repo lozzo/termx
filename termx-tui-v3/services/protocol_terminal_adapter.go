@@ -561,12 +561,6 @@ func liveSnapshotSize(snapshot *protocol.Snapshot, compactSnapshot *protocol.Com
 }
 
 func liveSnapshotRevision(snapshot *protocol.Snapshot, compactSnapshot *protocol.CompactSnapshot) uint64 {
-	if compactSnapshot != nil {
-		return compactSnapshot.HistoryGeneration
-	}
-	if snapshot != nil {
-		return snapshot.HistoryGeneration
-	}
 	return 0
 }
 

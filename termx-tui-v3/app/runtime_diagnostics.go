@@ -112,9 +112,6 @@ func (diag *runtimeDiagnostics) observeMessage(runtime *AppRuntime, msg Msg, eff
 		"viewport", diagnosticsViewport(runtime.state.Viewport),
 		"floatings", len(runtime.state.Shell.ActiveFloatings()),
 		"active_floating", runtime.state.Shell.ActiveFloatingID(),
-		"copy_mode", runtime.state.CopyMode.Active,
-		"copy_view", runtime.state.CopyMode.ViewID,
-		"history_rows", len(runtime.state.History.Rows),
 		"terminal_views", len(runtime.state.TerminalViews.Views),
 		"goroutines", goruntime.NumGoroutine(),
 		"heap_alloc", mem.HeapAlloc,
@@ -159,7 +156,7 @@ func (diag *runtimeDiagnostics) observePatchFrame(runtime *AppRuntime, frame ren
 		return
 	}
 	mem := diagnosticsMemStats()
-	diag.logger.Debug("tui-v3 copy-history patch diagnostic",
+	diag.logger.Debug("tui-v3 frame patch diagnostic",
 		"patch_seq", diag.patchSeq,
 		"root_generation", runtime.state.Generation,
 		"rewrite", patch.Rewrite,
@@ -171,7 +168,6 @@ func (diag *runtimeDiagnostics) observePatchFrame(runtime *AppRuntime, frame ren
 		"line_ansi_bytes", len(patch.LineANSI),
 		"lines_ansi", len(patch.LinesANSI),
 		"lines_ansi_bytes", diagnosticsStringSliceBytes(patch.LinesANSI),
-		"copy_view", runtime.state.CopyMode.ViewID,
 		"active_floating", runtime.state.Shell.ActiveFloatingID(),
 		"heap_alloc", mem.HeapAlloc,
 		"heap_objects", mem.HeapObjects,

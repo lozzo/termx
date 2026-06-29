@@ -86,27 +86,6 @@ describe('TerminalClient', () => {
     expect(callbacks.onInputSendFailed).toHaveBeenCalledWith('terminal channel is not open')
   })
 
-  it('loads scrollback through the active protocol session', async () => {
-    const session = createMockTerminalProtocolSession()
-    const callbacks = callbacksForTest()
-    const client = new TerminalClient(callbacks)
-
-    client.connect('terminal-1', session)
-    await vi.waitFor(() => expect(callbacks.onLifecycle).toHaveBeenCalledTimes(1))
-
-    const page = await client.loadScrollback(100, 50)
-
-    expect(session.scrollbackRequests).toEqual([{ terminalId: 'terminal-1', offset: 100, limit: 50 }])
-    expect(page).toMatchObject({
-      beforeOffset: 100,
-      limit: 50,
-      rows: 1,
-      replay: 'older',
-      hasMore: false,
-      alternate: false,
-    })
-  })
-
   it('ignores stale async terminal opens after switching to another terminal', async () => {
     const session = new DeferredTerminalProtocolSession()
     const callbacks = callbacksForTest()
@@ -159,7 +138,6 @@ class MockTerminalProtocolSession implements TerminalProtocolSession {
   readonly openedTerminalIds: string[] = []
   readonly openedLabels: string[] = []
   readonly closedTerminalIds: string[] = []
-  readonly scrollbackRequests: Array<{ terminalId: string; offset: number; limit: number }> = []
   private readonly channels = new Map<string, MockTerminalProtocolChannel>()
   private readonly subscribers = new Map<string, Set<(event: TerminalProtocolEvent) => void>>()
 
@@ -193,18 +171,6 @@ class MockTerminalProtocolSession implements TerminalProtocolSession {
   closeTerminalChannel(terminalId: string): void {
     this.closedTerminalIds.push(terminalId)
     this.channels.get(terminalId)?.close()
-  }
-
-  async loadScrollback(terminalId: string, offset: number, limit: number) {
-    this.scrollbackRequests.push({ terminalId, offset, limit })
-    return {
-      beforeOffset: offset,
-      limit,
-      rows: 1,
-      replay: 'older',
-      hasMore: false,
-      alternate: false,
-    }
   }
 
   emit(terminalId: string, event: TerminalProtocolEvent): void {
@@ -279,17 +245,6 @@ class DeferredTerminalProtocolSession implements TerminalProtocolSession {
 
   subscribeTerminal(): () => void {
     return () => {}
-  }
-
-  async loadScrollback(terminalId: string, offset: number, limit: number) {
-    return {
-      beforeOffset: offset,
-      limit,
-      rows: 0,
-      replay: '',
-      hasMore: false,
-      alternate: false,
-    }
   }
 
   closeTerminalChannel(terminalId: string): void {

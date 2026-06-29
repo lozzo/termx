@@ -35,7 +35,6 @@ const (
 	ActionResizeLayoutAlign       ActionID = "resize.layout-align"
 	ActionResizeLayoutCenter      ActionID = "resize.layout-center"
 	ActionResizeLayoutReset       ActionID = "resize.layout-reset"
-	ActionCopyOlder               ActionID = "copy.older"
 	ActionTerminalTakeResizeOwner ActionID = "terminal.resize-owner.take"
 
 	ActionTabCreate   ActionID = "tab.create"
@@ -50,7 +49,6 @@ const (
 	ActionFooterTabMode           ActionID = "footer.mode-tab"
 	ActionFooterWorkspaceMode     ActionID = "footer.mode-workspace"
 	ActionFooterFloatingMode      ActionID = "footer.mode-floating"
-	ActionFooterCopyMode          ActionID = "footer.mode-copy"
 	ActionFooterGlobalMode        ActionID = "footer.mode-global"
 	ActionFooterPicker            ActionID = "footer.open-picker"
 	ActionFooterToggleHeader      ActionID = "footer.toggle-header"
@@ -246,7 +244,6 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionResizeLayoutAlign, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("0/$/^/B", "ALIGN", StyleStatusAccent).withHelp("align terminal view content"),
 		actionSpec(ActionResizeLayoutCenter, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("m/|/_", "CENTER", StyleStatusAccent).withHelp("center terminal view content"),
 		actionSpec(ActionResizeLayoutReset, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("r", "RESET", StyleStatusWarning).withHelp("reset terminal view layout"),
-		actionSpec(ActionCopyOlder, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("PgUp", "SCROLL", StyleStatusAccent).withHelp("older history"),
 		actionSpec(ActionTerminalTakeResizeOwner, ActionDispatchApp, ActionSurfacePaneChrome, ActionSurfaceHelp).withChromeGlyph("◇ follow").withHelp("take resize owner"),
 		actionSpec(ActionTabCreate, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("c", "NEW", StyleStatusAccent).withHelp("create"),
 		actionSpec(ActionTabSwitch, ActionDispatchApp, ActionSurfaceLayout, ActionSurfaceHelp).withHelp("switch"),
@@ -259,7 +256,6 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionFooterTabMode, ActionDispatchApp, ActionSurfaceFooter).withFooter("^T", "TAB", StyleFooterKeyTab).withHelp("tab"),
 		actionSpec(ActionFooterWorkspaceMode, ActionDispatchApp, ActionSurfaceFooter).withFooter("^W", "WORKSPACE", StyleFooterKeyWorkspace).withHelp("workspace"),
 		actionSpec(ActionFooterFloatingMode, ActionDispatchApp, ActionSurfaceFooter).withFooter("^O", "FLOAT", StyleFooterKeyFloat).withHelp("floating"),
-		actionSpec(ActionFooterCopyMode, ActionDispatchApp, ActionSurfaceFooter).withFooter("^V", "COPY", StyleFooterKeyCopy).withHelp("copy"),
 		actionSpec(ActionFooterGlobalMode, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("^G", "GLOBAL", StyleFooterKeyGlobal).withHelp("global"),
 		actionSpec(ActionFooterPicker, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("^F", "PICKER", StyleFooterKeyPicker).withHelp("picker"),
 		actionSpec(ActionFooterToggleHeader, ActionDispatchApp, ActionSurfaceFooter).withFooter("h", "HEADER", StyleStatusAccent).withHelp("toggle header"),

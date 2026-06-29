@@ -343,9 +343,6 @@ function terminalCreateRequestInit(value: unknown): MessageInitShape<typeof Term
     dir: stringValue(record.dir ?? record.cwd),
     env: stringArray(record.env),
     tags: stringMap(record.tags),
-    scrollbackSize: numberValue(record.scrollback_size ?? record.scrollbackSize),
-    scrollbackMaxBytes: bigintValue(record.scrollback_max_bytes ?? record.scrollbackMaxBytes),
-    scrollbackMaxAgeSeconds: bigintValue(record.scrollback_max_age_seconds ?? record.scrollbackMaxAgeSeconds),
   }
 }
 
@@ -356,9 +353,6 @@ function terminalCreateRequestToAPI(value: MessageShape<typeof TerminalCreateReq
     dir: value.dir,
     env: value.env,
     tags: value.tags,
-    scrollback_size: value.scrollbackSize,
-    scrollback_max_bytes: numberFromBigInt(value.scrollbackMaxBytes),
-    scrollback_max_age_seconds: numberFromBigInt(value.scrollbackMaxAgeSeconds),
   })
 }
 

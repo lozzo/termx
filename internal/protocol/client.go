@@ -46,14 +46,6 @@ type StreamFrame struct {
 	ScreenSequence uint64
 }
 
-type HistoryReplayPage struct {
-	BeforeOffset int
-	Limit        int
-	Rows         int
-	HasMore      bool
-	Replay       string
-}
-
 type eventSubscription struct {
 	params EventsParams
 	ch     chan Event
@@ -380,11 +372,9 @@ func (c *Client) UnlockResize(ctx context.Context, params ResizeControlParams) (
 	return &out, nil
 }
 
-func (c *Client) Snapshot(ctx context.Context, terminalID string, offset, limit int) (*Snapshot, error) {
+func (c *Client) Snapshot(ctx context.Context, terminalID string, _ int, _ int) (*Snapshot, error) {
 	payload, err := c.doRequestPayload(ctx, "snapshot", SnapshotParams{
-		TerminalID:       terminalID,
-		ScrollbackOffset: offset,
-		ScrollbackLimit:  limit,
+		TerminalID: terminalID,
 	})
 	if err != nil {
 		return nil, err
@@ -392,49 +382,14 @@ func (c *Client) Snapshot(ctx context.Context, terminalID string, offset, limit 
 	return DecodeSnapshotPayload(payload)
 }
 
-func (c *Client) SnapshotCompact(ctx context.Context, terminalID string, offset, limit int) (*CompactSnapshot, error) {
+func (c *Client) SnapshotCompact(ctx context.Context, terminalID string, _ int, _ int) (*CompactSnapshot, error) {
 	payload, err := c.doRequestPayload(ctx, "snapshot", SnapshotParams{
-		TerminalID:       terminalID,
-		ScrollbackOffset: offset,
-		ScrollbackLimit:  limit,
+		TerminalID: terminalID,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return DecodeCompactSnapshotPayload(payload)
-}
-
-func (c *Client) GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*GridViewport, error) {
-	payload, err := c.doRequestPayload(ctx, "grid.viewport", GridViewportParams{
-		TerminalID:       terminalID,
-		ScrollbackOffset: offset,
-		ScrollbackLimit:  limit,
-		Cols:             cols,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return DecodeGridViewportPayload(payload)
-}
-
-func (c *Client) HistoryWindow(ctx context.Context, params HistoryWindowParams) (*HistoryWindow, error) {
-	payload, err := c.doRequestPayload(ctx, "history.window", params)
-	if err != nil {
-		return nil, err
-	}
-	return DecodeHistoryWindowPayload(payload)
-}
-
-func (c *Client) HistoryCopy(ctx context.Context, params HistoryWindowParams) (string, error) {
-	payload, err := c.doRequestPayload(ctx, "history.copy", params)
-	if err != nil {
-		return "", err
-	}
-	return string(payload), nil
-}
-
-func (c *Client) ReleaseHistory(ctx context.Context, params HistoryWindowParams) error {
-	return c.doRequest(ctx, "history.release", params, nil)
 }
 
 func (c *Client) StorageGet(ctx context.Context, params StorageGetParams) (*StorageEntry, error) {
@@ -632,52 +587,6 @@ func (c *Client) Stream(channel uint16) (<-chan StreamFrame, func()) {
 		}
 		delete(c.pending, channel)
 		c.mu.Unlock()
-	}
-}
-
-func (c *Client) HistoryReplay(ctx context.Context, channel uint16, beforeOffset, limit int) (*HistoryReplayPage, error) {
-	stream, stop := c.Stream(channel)
-	defer stop()
-
-	frame, err := wire.EncodeFrame(channel, wire.TypeHistoryRequest, wire.EncodeHistoryRequestPayload(beforeOffset, limit))
-	if err != nil {
-		return nil, err
-	}
-	if err := c.send(frame); err != nil {
-		return nil, err
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case msg, ok := <-stream:
-			if !ok {
-				return nil, io.EOF
-			}
-			switch msg.Type {
-			case wire.TypeHistoryReplay:
-				rows, hasMore, replay, err := wire.DecodeHistoryReplayPayload(msg.Payload)
-				if err != nil {
-					return nil, err
-				}
-				return &HistoryReplayPage{
-					BeforeOffset: beforeOffset,
-					Limit:        limit,
-					Rows:         rows,
-					HasMore:      hasMore,
-					Replay:       string(replay),
-				}, nil
-			case wire.TypeError:
-				msgErr, err := DecodeErrorPayload(msg.Payload)
-				if err != nil {
-					return nil, err
-				}
-				return nil, fmt.Errorf("protocol error %d: %s", msgErr.Error.Code, msgErr.Error.Message)
-			case wire.TypeClosed:
-				return nil, io.EOF
-			}
-		}
 	}
 }
 

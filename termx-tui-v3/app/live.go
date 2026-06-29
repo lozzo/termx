@@ -49,16 +49,14 @@ func NewLiveRuntime(initial state.Root, host TerminalHost, runner EffectRunner, 
 	return runtime
 }
 
-// NewInteractiveRuntime 组合 live 与 copy mode 主路径。copy mode 会消费
-// page up、wheel、selection/copy 等交互；普通 terminal input 仍交给 live path。
+// NewInteractiveRuntime 组合 live、workbench 与 clipboard 主路径；普通 terminal input 交给 live path。
 func NewInteractiveRuntime(
 	initial state.Root,
 	host TerminalHost,
 	runner EffectRunner,
 	live LiveDeps,
-	copyMode CopyModeDeps,
 ) *AppRuntime {
-	return NewInteractiveRuntimeWithStorage(initial, host, runner, live, copyMode, WorkbenchDeps{}, ClipboardDeps{})
+	return NewInteractiveRuntimeWithStorage(initial, host, runner, live, WorkbenchDeps{}, ClipboardDeps{})
 }
 
 func NewInteractiveRuntimeWithWorkbench(
@@ -66,10 +64,9 @@ func NewInteractiveRuntimeWithWorkbench(
 	host TerminalHost,
 	runner EffectRunner,
 	live LiveDeps,
-	copyMode CopyModeDeps,
 	workbench WorkbenchDeps,
 ) *AppRuntime {
-	return NewInteractiveRuntimeWithStorage(initial, host, runner, live, copyMode, workbench, ClipboardDeps{})
+	return NewInteractiveRuntimeWithStorage(initial, host, runner, live, workbench, ClipboardDeps{})
 }
 
 func NewInteractiveRuntimeWithStorage(
@@ -77,14 +74,13 @@ func NewInteractiveRuntimeWithStorage(
 	host TerminalHost,
 	runner EffectRunner,
 	live LiveDeps,
-	copyMode CopyModeDeps,
 	workbench WorkbenchDeps,
 	clipboard ClipboardDeps,
 ) *AppRuntime {
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewTerminalInputRouterReducer(live), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewTerminalInputRouterReducer(live), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
 	runtime.SetLogger(live.Logger)
 	if workbench.Storage != nil {
 		// 启动时先恢复 core-v2 opaque storage 中的 workbench truth，再订阅后续变化。
@@ -366,7 +362,12 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				}
 				root = applyTerminalAttachmentProjectionFromResize(root, msg.Result)
 				root.TerminalViews, _ = root.TerminalViews.ApplyResizeResult(msg.ViewID, msg.Seq, cols, rows, "")
-				if msg.Result.Resized || !hasResizeControlResult(msg.Result) {
+				if binding, ok := root.TerminalViews.Views[msg.ViewID]; ok && binding.TerminalID != "" {
+					// 中文说明：view-scoped resize result 的 session 发送身份来自当前有效 binding；
+					// close pane/owner transfer 后不能继续沿用已关闭 view 的 channel 或 view_id。
+					root.Session = root.Session.AdoptAttachmentIdentity(binding.TerminalID, binding.Channel, binding.ResizeRole, binding.SurfaceID, binding.ViewID)
+				}
+				if resizeResultProjectsLiveSize(msg.Result) {
 					root.Session = root.Session.Resize(cols, rows)
 					root.Surface = root.Surface.Resize(cols, rows)
 				}
@@ -377,17 +378,6 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				}
 				root.Session = nextSession
 				root.Surface = root.Surface.Resize(cols, rows)
-			}
-			if resizeViewID := msg.ViewID; resizeViewID != "" {
-				root = rootWithCopyHistorySessionForView(root, resizeViewID)
-				if root.CopyMode.Active && root.CopyMode.BoundCols != cols {
-					root.CopyMode = root.CopyMode.Resize(cols, rows)
-					root = saveCopyHistorySessionForView(root, resizeViewID)
-				} else if root.CopyMode.Active {
-					root.CopyMode = root.CopyMode.SetViewRows(rows)
-					root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
-					root = saveCopyHistorySessionForView(root, resizeViewID)
-				}
 			}
 			return maybeRefreshFloatingAutoFit(root, liveResizeTerminalID(root, msg))
 		default:
@@ -541,7 +531,6 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			activePaneID = existing.PaneID
 		}
 		if existing.FloatingID != "" {
-			root = invalidateCopyModeForTerminalRebind(root, existing.PaneID, viewID, result.TerminalID)
 			binding := state.NewFloatingTerminalView(existing.FloatingID, existing.PaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
 			binding.Layout = existing.Layout
 			root.TerminalViews = root.TerminalViews.BindFloating(binding)
@@ -565,7 +554,6 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		}
 	}
 	if hasTarget && target.FloatingID != "" {
-		root = invalidateCopyModeForTerminalRebind(root, target.PaneID, viewID, result.TerminalID)
 		binding := state.NewFloatingTerminalView(target.FloatingID, target.PaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
 		root.TerminalViews = root.TerminalViews.BindFloating(binding)
 		root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(viewID, state.TerminalResizeControlProjection{
@@ -589,7 +577,6 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	}
 	root.Shell = root.Shell.EnsureActiveTabForAttach()
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, result.TerminalID)
-	root = invalidateCopyModeForTerminalRebind(root, activePaneID, viewID, result.TerminalID)
 	binding := state.NewPaneTerminalView(activePaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
 	if existing, ok := root.TerminalViews.Views[viewID]; ok {
 		binding.Layout = existing.Layout
@@ -746,45 +733,6 @@ func liveAttachPaneViewID(root state.Root, paneID string) string {
 
 func liveAttachFloatingViewID(root state.Root, floatingID string) string {
 	return root.TerminalViews.FloatingViewID(floatingID)
-}
-
-func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID string, terminalID string) state.Root {
-	if viewID != "" {
-		root = rootWithCopyHistorySessionForView(root, viewID)
-	}
-	if !copyModeInputContext(root.CopyMode) || terminalID == "" || root.CopyMode.TerminalID == terminalID {
-		return root
-	}
-	sameView := viewID != "" && root.CopyMode.ViewID == viewID
-	samePane := paneID != "" && root.CopyMode.PaneID == paneID
-	if !sameView && !samePane {
-		return root
-	}
-	if root.CopyMode.Entering {
-		root.History = root.History.InvalidateWindow()
-		root.History.TerminalID = terminalID
-		root.CopyMode = state.CopyModeStore{}
-		root = root.WithoutCopyHistorySession(viewID)
-		return root
-	}
-	// 当前 pane/view 已经重绑到新的 terminal，旧 frozen history 不能继续留在屏幕上。
-	root.History = root.History.InvalidateWindow()
-	root.History.TerminalID = terminalID
-	root.CopyMode.PaneID = paneID
-	root.CopyMode.ViewID = viewID
-	root.CopyMode.TerminalID = terminalID
-	root.CopyMode.BoundToken = ""
-	root.CopyMode.BoundCols = 0
-	root.CopyMode.ViewportTop = 0
-	root.CopyMode.Cursor = state.CopyPosition{}
-	root.CopyMode.Mark = nil
-	root.CopyMode.Selection = nil
-	root.CopyMode.Query = ""
-	root.CopyMode.Matches = nil
-	root.CopyMode.ActiveMatch = 0
-	root.CopyMode.Empty = true
-	root = saveCopyHistorySessionForView(root, viewID)
-	return root
 }
 
 func liveEffects(terminalID string, cols int, rows int, deps LiveDeps) []Effect {
@@ -1249,7 +1197,7 @@ func liveMousePassthroughEnabled(root state.Root, event input.InputEvent, target
 	if event.Kind != input.EventKindMouse || event.RawSeq == "" {
 		return false
 	}
-	if root.Shell.ReadonlyDefaults().Overlay.Open || copyModeOwnsActiveInput(root) {
+	if root.Shell.ReadonlyDefaults().Overlay.Open {
 		return false
 	}
 	if target.TerminalID == "" {
@@ -1331,6 +1279,13 @@ func adoptActiveOwnerResizeBinding(root state.Root, msg LiveResizeMsg) (state.Ro
 
 func hasResizeControlResult(result services.TerminalResizeResult) bool {
 	return result.TerminalID != "" || result.ControlReason != "" || result.SizeLocked || result.ResizeEpoch != 0 || result.OwnerSurfaceID != "" || result.OwnerViewID != "" || result.ResizePolicy != "" || result.SurfaceID != "" || result.ViewID != "" || result.CanResize || result.Resized
+}
+
+func resizeResultProjectsLiveSize(result services.TerminalResizeResult) bool {
+	if !hasResizeControlResult(result) {
+		return true
+	}
+	return result.Resized || result.Cols > 0 || result.Rows > 0
 }
 
 func liveResizeResultConflictsWithLocalOwner(root state.Root, binding state.TerminalViewBinding, result services.TerminalResizeResult) bool {

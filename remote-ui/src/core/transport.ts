@@ -216,9 +216,6 @@ export interface LocalCreateTerminalInput {
   rows?: number | undefined
   cwd?: string | undefined
   environment?: string | undefined
-  scrollbackSize?: number | undefined
-  scrollbackMaxBytes?: number | undefined
-  scrollbackMaxAgeSeconds?: number | undefined
   sizeLockMode?: 'off' | 'warn' | 'lock' | undefined
 }
 

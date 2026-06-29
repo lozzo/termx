@@ -7,7 +7,7 @@ import (
 )
 
 // terminalLiveLineFromANSI 把 live surface 的基础 SGR 行投影为 styled cells。
-// 它只服务实时内容展示，不参与 copy/history truth。
+// 它只服务实时内容展示，不参与持久历史 truth。
 func terminalLiveLineFromANSI(value string) Line {
 	if value == "" {
 		return NewLine("")

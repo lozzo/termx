@@ -39,17 +39,12 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"Detach",
 		"EnsureResize",
 		"Events",
-		"GridViewport",
 		"Hello",
-		"HistoryCopy",
-		"HistoryReplay",
-		"HistoryWindow",
 		"Input",
 		"InputWithOptions",
 		"Kill",
 		"List",
 		"LockResize",
-		"ReleaseHistory",
 		"Remove",
 		"Resize",
 		"ResizeRequest",
@@ -241,11 +236,8 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 	}
 
 	created, err := client.Create(ctx, CreateParams{
-		Command:            []string{"bash", "--noprofile", "--norc"},
-		Name:               "demo",
-		ScrollbackSize:     123,
-		ScrollbackMaxBytes: 4567,
-		ScrollbackMaxAge:   2 * time.Hour,
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Name:    "demo",
 	})
 	if err != nil {
 		t.Fatalf("create failed: %v", err)
@@ -301,7 +293,7 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snapshot failed: %v", err)
 	}
-	if snap.TerminalID != "term-1" || len(snap.Scrollback) != 1 {
+	if snap.TerminalID != "term-1" || len(snap.Screen.Cells) != 1 {
 		t.Fatalf("unexpected snapshot result: %#v", snap)
 	}
 
@@ -311,22 +303,6 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 	}
 	if compactSnap.TerminalID != "term-1" || len(compactSnap.ScreenRows) != 1 || compactSnap.ScreenRows[0].Text != "hi" {
 		t.Fatalf("unexpected compact snapshot result: %#v", compactSnap)
-	}
-
-	viewport, err := client.GridViewport(ctx, "term-1", 1, 2, 80)
-	if err != nil {
-		t.Fatalf("grid viewport failed: %v", err)
-	}
-	if viewport.TerminalID != "term-1" || len(viewport.Rows) != 1 || viewport.ScrollbackOffset != 1 || viewport.ScrollbackLimit != 2 {
-		t.Fatalf("unexpected grid viewport result: %#v", viewport)
-	}
-
-	history, err := client.HistoryReplay(ctx, attach.Channel, 0, 50)
-	if err != nil {
-		t.Fatalf("history replay failed: %v", err)
-	}
-	if history.Rows != 1 || history.Replay != "old" {
-		t.Fatalf("unexpected history replay result: %#v", history)
 	}
 
 	err = client.Kill(ctx, "missing")
@@ -1114,13 +1090,6 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	createParams, err := requestParams[CreateParams](req)
-	if err != nil {
-		return err
-	}
-	if createParams.ScrollbackSize != 123 || createParams.ScrollbackMaxBytes != 4567 || createParams.ScrollbackMaxAge != 2*time.Hour {
-		return fmt.Errorf("unexpected create params: %#v", createParams)
-	}
 	if err := sendMethodResponse(tr, req, CreateResult{TerminalID: "term-1", State: "running"}); err != nil {
 		return err
 	}
@@ -1213,10 +1182,9 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 		Screen: ScreenData{Cells: [][]Cell{
 			{{Content: "h", Width: 1}, {Content: "i", Width: 1}},
 		}},
-		Scrollback: []CompactRow{CompactRowFromCells([]Cell{{Content: "o", Width: 1}, {Content: "k", Width: 1}})},
-		Cursor:     CursorState{Row: 0, Col: 2, Visible: true, Shape: "block"},
-		Modes:      TerminalModes{AutoWrap: true},
-		Timestamp:  time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC),
+		Cursor:    CursorState{Row: 0, Col: 2, Visible: true, Shape: "block"},
+		Modes:     TerminalModes{AutoWrap: true},
+		Timestamp: time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
 		return err
@@ -1230,56 +1198,6 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 		return err
 	}
 	if err := sendBinaryResponse(tr, req.ID, snapshotResult); err != nil {
-		return err
-	}
-
-	req, err = expectRequest(tr, "grid.viewport")
-	if err != nil {
-		return err
-	}
-	viewportParams, err := requestParams[GridViewportParams](req)
-	if err != nil {
-		return err
-	}
-	if viewportParams.TerminalID != "term-1" || viewportParams.ScrollbackOffset != 1 || viewportParams.ScrollbackLimit != 2 || viewportParams.Cols != 80 {
-		return fmt.Errorf("unexpected grid viewport params: %#v", viewportParams)
-	}
-	viewportResult, err := EncodeGridViewportPayload(&GridViewport{
-		TerminalID:        "term-1",
-		Size:              Size{Cols: 80, Rows: 24},
-		Rows:              []CompactRow{CompactRowFromCells([]Cell{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}})},
-		ScrollbackOffset:  1,
-		ScrollbackLimit:   2,
-		ScrollbackTotal:   3,
-		ScrollbackHasMore: true,
-		Timestamp:         time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC),
-	})
-	if err != nil {
-		return err
-	}
-	if err := sendBinaryResponse(tr, req.ID, viewportResult); err != nil {
-		return err
-	}
-
-	channel, typ, payload, err = recvFrame(tr)
-	if err != nil {
-		return err
-	}
-	if channel != 7 || typ != wire.TypeHistoryRequest {
-		return fmt.Errorf("unexpected history request frame: channel=%d type=%d", channel, typ)
-	}
-	beforeOffset, limit, err := wire.DecodeHistoryRequestPayload(payload)
-	if err != nil {
-		return err
-	}
-	if beforeOffset != 0 || limit != 50 {
-		return fmt.Errorf("unexpected history request payload: before=%d limit=%d", beforeOffset, limit)
-	}
-	historyPayload, err := wire.EncodeHistoryReplayPayload(1, false, []byte("old"))
-	if err != nil {
-		return err
-	}
-	if err := sendFrame(tr, 7, wire.TypeHistoryReplay, historyPayload); err != nil {
 		return err
 	}
 

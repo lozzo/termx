@@ -30,7 +30,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("smoke run detailed: %v", err)
 	}
 	cases := smokeCasesByName(result)
-	required := []string{"workbench-live", "split-hidden-toast", "terminal-picker", "terminal-pool-page", "workbench-tree-page", "copy-empty", "copy-history", "prompt-overlay", "help-overlay", "tab-workspace", "pane-command-flow", "visual-audit-current"}
+	required := []string{"workbench-live", "split-hidden-toast", "terminal-picker", "terminal-pool-page", "workbench-tree-page", "prompt-overlay", "help-overlay", "tab-workspace", "pane-command-flow", "visual-audit-current"}
 	for _, name := range required {
 		if len(cases[name].Lines) == 0 {
 			t.Fatalf("missing smoke case %s in %#v", name, result.Cases)
@@ -112,13 +112,6 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["workbench-tree-page"].Lines, "Open  New  Zoom  Detach  Close") ||
 		frameContains(cases["workbench-tree-page"].Lines, "[open]  Open") {
 		t.Fatalf("workbench tree smoke missing page visual contract: %#v", cases["workbench-tree-page"].Lines)
-	}
-	if !frameContains(cases["copy-empty"].Lines, "copy history empty") {
-		t.Fatalf("copy empty smoke missing pending/empty content: %#v", cases["copy-empty"].Lines)
-	}
-	if !frameContains(cases["copy-history"].Lines, "termx-tui-v3") ||
-		!frameContains(cases["copy-history"].Lines, "copy row") {
-		t.Fatalf("copy history smoke missing authoritative row: %#v", cases["copy-history"].Lines)
 	}
 	if !frameContains(cases["prompt-overlay"].Lines, "Command Prompt") ||
 		!frameContains(cases["prompt-overlay"].Lines, "重命名") ||
@@ -223,7 +216,7 @@ func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Fram
 func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame) {
 	t.Helper()
 	review := cases["visual-audit-current"]
-	requiredReview := []string{"  main", "▎ 1 main  2 logs " + render.HeaderTabCreateText, "visual review", "┌───────────[]─[]─[]─[]─┐", "unconnected", "└───────────────────────────┘", "[Ctrl] • [P] PANE", "[W] WORKSPACE", "[V] COPY", "[G] GLOBAL", "ws:main float:1 terminals:1"}
+	requiredReview := []string{"  main", "▎ 1 main  2 logs " + render.HeaderTabCreateText, "visual review", "┌───────────[]─[]─[]─[]─┐", "unconnected", "└───────────────────────────┘", "[Ctrl] • [P] PANE", "[W] WORKSPACE", "[G] GLOBAL", "ws:main float:1 terminals:1"}
 	for _, marker := range requiredReview {
 		if !frameContains(review.Lines, marker) {
 			t.Fatalf("visual review smoke missing chrome marker %q: %#v", marker, review.Lines)

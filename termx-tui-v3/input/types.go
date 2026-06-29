@@ -91,9 +91,6 @@ type IntentKind string
 const (
 	IntentNone                 IntentKind = "none"
 	IntentOpenTerminalPicker   IntentKind = "open-terminal-picker"
-	IntentEnterCopyMode        IntentKind = "enter-copy-mode"
-	IntentRequestOlder         IntentKind = "request-older"
-	IntentExitCopyMode         IntentKind = "exit-copy-mode"
 	IntentOpenClipboardHistory IntentKind = "open-clipboard-history"
 	IntentPasteLastCopy        IntentKind = "paste-last-copy"
 	IntentPasteClipboard       IntentKind = "paste-clipboard"
@@ -155,18 +152,23 @@ type Intent struct {
 
 type RouteOptions struct {
 	Mode                     InteractionMode
-	CopyModeActive           bool
 	TerminalMousePassthrough bool
 }
 
-func Route(event InputEvent, copyModeActive bool) Intent {
-	return RouteWithOptions(event, RouteOptions{CopyModeActive: copyModeActive})
+// Route 把宿主输入事件映射为 TUI intent。
+// input 层只做按键和鼠标语义分类，不读取历史或 terminal truth。
+func Route(event InputEvent) Intent {
+	return RouteWithOptions(event, RouteOptions{})
 }
 
-func RouteWithMode(event InputEvent, copyModeActive bool, mode InteractionMode) Intent {
-	return RouteWithOptions(event, RouteOptions{Mode: mode, CopyModeActive: copyModeActive})
+// RouteWithMode 在指定交互前缀模式下路由输入事件。
+// mode 由 app reducer-owned shell state 提供；无法命中的输入不会 fallback 到旧历史浏览模式。
+func RouteWithMode(event InputEvent, mode InteractionMode) Intent {
+	return RouteWithOptions(event, RouteOptions{Mode: mode})
 }
 
+// RouteWithOptions 是 input router 的完整入口。
+// 调用方只传入当前 UI 路由选项；terminal raw mouse 是否直通由上游 runtime 判定。
 func RouteWithOptions(event InputEvent, options RouteOptions) Intent {
 	switch event.Kind {
 	case EventKindKey:

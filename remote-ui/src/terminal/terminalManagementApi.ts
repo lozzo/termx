@@ -28,9 +28,6 @@ export function createTerminalManagementApi(
         ...(input.name ? { name: input.name } : {}),
         ...(input.cwd ? { dir: input.cwd } : {}),
         ...(input.environment ? { env: [input.environment] } : {}),
-        ...(typeof input.scrollbackSize === 'number' && Number.isFinite(input.scrollbackSize) ? { scrollback_size: Math.floor(input.scrollbackSize) } : {}),
-        ...(typeof input.scrollbackMaxBytes === 'number' && Number.isFinite(input.scrollbackMaxBytes) ? { scrollback_max_bytes: Math.floor(input.scrollbackMaxBytes) } : {}),
-        ...(typeof input.scrollbackMaxAgeSeconds === 'number' && Number.isFinite(input.scrollbackMaxAgeSeconds) ? { scrollback_max_age_seconds: Math.floor(input.scrollbackMaxAgeSeconds) } : {}),
         tags: terminalTags({
           cwd: input.cwd,
           environment: input.environment,

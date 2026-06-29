@@ -7,21 +7,13 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { hapticSelection } from '../platform/haptics'
 import { addNativeKeyboardListener } from '../platform/nativeKeyboard'
 import { applyTerminalModifiers, type TerminalModifierState } from './mobileTerminalInput'
-import type { TerminalResizeControl, TerminalScrollbackLoadResult } from './terminalClient'
+import type { TerminalResizeControl } from './terminalClient'
 import { logTerminalDiagnostic, terminalNow } from './terminalDiagnostics'
 import { appendTerminalText } from './terminalTextWindow'
 import { useTerminalSession } from './useTerminalSession'
 import type { RtcSession } from '../core/transport'
 import { DEFAULT_TERMINAL_SETTINGS, resolveTerminalTheme, type TerminalSettings } from './terminalSettings'
 
-const historyScrollbackPageRows = 250
-const historyLoadedRowsSoftLimit = 10000
-const historyLoadSkipLogIntervalMs = 1000
-const historyLoadingMinVisibleMs = 500
-const historyApplyBatchDelayMs = 160
-const historyApplyScrollIdleMs = 180
-const historyApplyMaxDelayMs = 900
-const historyApplyWatchdogMs = 4000
 const bottomAnchorSettleMs = 900
 const xtermWriteStatsIntervalMs = 1000
 const xtermWriteSlowMs = 500
@@ -50,10 +42,6 @@ function trustedTerminalDimensions(dimensions: TerminalDimensions | undefined): 
   return { cols, rows }
 }
 
-function terminalHistoryLoadedRowsLimit(settings: TerminalSettings): number {
-  return Math.max(historyLoadedRowsSoftLimit, settings.scrollback)
-}
-
 function isNativeAndroidWebView(): boolean {
   if (typeof navigator === 'undefined') return false
   const userAgent = navigator.userAgent || ''
@@ -66,14 +54,6 @@ function effectiveRendererMode(configuredRenderer: TerminalRenderer): TerminalRe
     return 'canvas'
   }
   return configuredRenderer
-}
-
-interface PendingHistoryApply {
-  revision: number
-  loadedRows: number
-  prependedRows: number
-  restoreViewportY: number | null
-  text: string
 }
 
 export type TerminalRenderer = 'auto' | 'webgl' | 'canvas' | 'dom'
@@ -155,33 +135,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const markLiveOutputSyncLostRef = useRef<(reason?: string) => void>(() => {})
   const surfaceReadyRef = useRef(false)
   const canSendResizeRef = useRef(false)
-  const historyLoadingRef = useRef(false)
-  const historyApplyingRef = useRef(false)
-  const historyRestoreViewportOnLoadRef = useRef(false)
-  const pullingHistoryRef = useRef(false)
-  const historyRevisionAppliedRef = useRef(0)
-  const historyLoadedRowsAppliedRef = useRef(0)
-  const historyLoadedRowsRequestedRef = useRef(0)
-  const historyHasMoreRef = useRef(true)
-  const lastHistoryLoadSkipLogRef = useRef<{ reason: string; at: number } | null>(null)
-  const historyLoadingShownAtRef = useRef(0)
-  const historyLoadingHideTimerRef = useRef<number | null>(null)
   const lastSnapshotTextRef = useRef('')
   const recoveryRevisionAppliedRef = useRef(0)
-  const pendingHistoryViewportRef = useRef<number | null>(null)
-  const pendingHistoryApplyRef = useRef<PendingHistoryApply | null>(null)
-  const historyApplyQueuedAtRef = useRef(0)
-  const historyApplyTimerRef = useRef<number | null>(null)
-  const historyLoadArmedByUserRef = useRef(false)
-  const lastHistoryScrollActivityAtRef = useRef(0)
-  const loadScrollbackRef = useRef<(limit?: number, alternate?: boolean) => Promise<TerminalScrollbackLoadResult>>(async () => ({
-    loadedRows: 0,
-    totalRows: 0,
-    hasMore: false,
-    alternate: false,
-  }))
-  const maybePrefetchScrollbackRef = useRef<() => void>(() => {})
-  const scheduleHistoryApplyRef = useRef<() => void>(() => {})
   const hasTerminalSnapshotRef = useRef(false)
   const snapshotAlternateScreenRef = useRef(false)
   const fitFrameRef = useRef<number | null>(null)
@@ -214,40 +169,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const selectionModeRef = useRef(false)
   const selectionResetHandlersRef = useRef(new Set<() => void>())
   const [surfaceReady, setSurfaceReady] = useState(false)
-  const [historyLoadingVisible, setHistoryLoadingVisible] = useState(false)
-
-  const showHistoryLoading = useCallback(() => {
-    if (historyLoadingHideTimerRef.current !== null) {
-      window.clearTimeout(historyLoadingHideTimerRef.current)
-      historyLoadingHideTimerRef.current = null
-    }
-    historyLoadingShownAtRef.current = terminalNow()
-    setHistoryLoadingVisible(true)
-  }, [])
-
-  const hideHistoryLoading = useCallback((force = false) => {
-    if (historyLoadingHideTimerRef.current !== null) {
-      window.clearTimeout(historyLoadingHideTimerRef.current)
-      historyLoadingHideTimerRef.current = null
-    }
-    if (force || historyLoadingShownAtRef.current === 0) {
-      historyLoadingShownAtRef.current = 0
-      setHistoryLoadingVisible(false)
-      return
-    }
-    const elapsed = terminalNow() - historyLoadingShownAtRef.current
-    const remaining = historyLoadingMinVisibleMs - elapsed
-    if (remaining <= 0) {
-      historyLoadingShownAtRef.current = 0
-      setHistoryLoadingVisible(false)
-      return
-    }
-    historyLoadingHideTimerRef.current = window.setTimeout(() => {
-      historyLoadingHideTimerRef.current = null
-      historyLoadingShownAtRef.current = 0
-      setHistoryLoadingVisible(false)
-    }, remaining)
-  }, [])
 
   const logTerminal = useCallback((event: string, input: {
     level?: 'debug' | 'info' | 'warn' | 'error'
@@ -406,7 +327,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const handleTerminalOutput = useCallback((text: string) => {
     if (terminalDisposedRef.current) return
     if (liveOutputSyncLostRef.current) return
-    historyHasMoreRef.current = true
     const nextLength = pendingLiveOutputRef.current.length + text.length
     if (liveOutputInFlightRef.current && nextLength > liveOutputPendingSoftLimitChars) {
       const droppedChars = nextLength + liveOutputDroppedCharsRef.current
@@ -445,10 +365,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   settingsRef.current = settings
   hasTerminalSnapshotRef.current = terminalSession.terminalSnapshot !== null
   snapshotAlternateScreenRef.current = terminalSession.terminalSnapshot?.alternateScreen === true
-
-  useEffect(() => {
-    loadScrollbackRef.current = terminalSession.loadScrollback
-  }, [terminalSession.loadScrollback])
 
   useEffect(() => {
     surfaceReadyRef.current = false
@@ -768,20 +684,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const generation = terminalGenerationRef.current + 1
     terminalGenerationRef.current = generation
     terminalDisposedRef.current = false
-    if (historyApplyTimerRef.current !== null) {
-      window.clearTimeout(historyApplyTimerRef.current)
-      historyApplyTimerRef.current = null
-    }
-    pendingHistoryApplyRef.current = null
-    historyApplyQueuedAtRef.current = 0
-    historyLoadArmedByUserRef.current = false
-    lastHistoryScrollActivityAtRef.current = 0
-    historyApplyingRef.current = false
-    historyRevisionAppliedRef.current = 0
-    historyLoadedRowsAppliedRef.current = 0
-    historyLoadedRowsRequestedRef.current = 0
-    historyHasMoreRef.current = true
-    hideHistoryLoading(true)
     lastSnapshotTextRef.current = ''
     recoveryRevisionAppliedRef.current = 0
 
@@ -950,7 +852,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     let scrollbarDragging = false
     let scrollbarDragStartY = 0
     let scrollbarDragStartRatio = 0
-    let suppressHistoryLoad = false
     let selectionAnchorCol = 0
     let selectionAnchorRow = 0
     let selectionEndCol = 0
@@ -963,21 +864,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     let selectionPhase: 'idle' | 'anchor-set' = 'idle'
     let selectionExtending = false
 
-    const noteHistoryScrollActivity = () => {
-      lastHistoryScrollActivityAtRef.current = Date.now()
-    }
-
     const noteUserScrollActivity = () => {
       cancelBottomAnchor()
-      noteHistoryScrollActivity()
-    }
-
-    const armHistoryScrollbackLoad = () => {
-      historyLoadArmedByUserRef.current = true
-      if (snapshotAlternateScreenRef.current && term.buffer.active.type === 'alternate') {
-        term.reset()
-      }
-      noteUserScrollActivity()
     }
 
     const clearMomentum = () => {
@@ -1051,199 +939,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       scrollbarThumb.style.transform = `translateY(${thumbTop}px)`
     }
 
-    const historyLoadedRowsLimit = () => terminalHistoryLoadedRowsLimit(settingsRef.current)
-
-    const scrollbackLoadBlockedReason = () => {
-      if (historyLoadingRef.current) return 'loading'
-      if (historyApplyingRef.current) return 'applying'
-      if (pendingHistoryApplyRef.current) return 'pending_apply'
-      if (suppressHistoryLoad) return 'suppressed'
-      if (!historyHasMoreRef.current) return 'no_more'
-      if (historyLoadedRowsRequestedRef.current >= historyLoadedRowsLimit()) return 'soft_limit'
-      if (!hasTerminalSnapshotRef.current && !snapshotAlternateScreenRef.current && term.buffer.active.type !== 'alternate') return 'no_snapshot'
-      if (term.buffer.active.type !== 'normal' && !snapshotAlternateScreenRef.current) return 'alternate_buffer'
-      return null
-    }
-
-    const loadScrollbackPage = async (restoreViewport: boolean): Promise<TerminalScrollbackLoadResult> => {
-      const alternate = snapshotAlternateScreenRef.current || term.buffer.active.type === 'alternate'
-      const emptyResult = { loadedRows: 0, totalRows: 0, hasMore: false, alternate }
-      if (alternate && term.buffer.active.type === 'alternate') {
-        term.reset()
-      }
-      const blockedReason = scrollbackLoadBlockedReason()
-      if (blockedReason) {
-        const now = terminalNow()
-        const lastSkipLog = lastHistoryLoadSkipLogRef.current
-        if (!lastSkipLog || lastSkipLog.reason !== blockedReason || now - lastSkipLog.at >= historyLoadSkipLogIntervalMs) {
-          lastHistoryLoadSkipLogRef.current = { reason: blockedReason, at: now }
-          logTerminal('history_load_skip', {
-            level: 'debug',
-            details: {
-              reason: blockedReason,
-              loadedRows: historyLoadedRowsRequestedRef.current,
-              hasMore: historyHasMoreRef.current,
-              rowsLimit: historyLoadedRowsLimit(),
-              xtermScrollback: term.options.scrollback,
-            },
-          })
-        }
-        return emptyResult
-      }
-      lastHistoryLoadSkipLogRef.current = null
-      const remainingRows = Math.max(0, historyLoadedRowsLimit() - historyLoadedRowsRequestedRef.current)
-      const requestRows = Math.min(historyScrollbackPageRows, remainingRows)
-      if (requestRows <= 0) return emptyResult
-      historyLoadingRef.current = true
-      showHistoryLoading()
-      if (restoreViewport) {
-        pullingHistoryRef.current = true
-      }
-      historyRestoreViewportOnLoadRef.current = restoreViewport
-      pendingHistoryViewportRef.current = restoreViewport ? term.buffer.active.viewportY : null
-      let keepVisibleForApply = false
-      try {
-        const result = await loadScrollbackRef.current(requestRows, alternate)
-        historyLoadedRowsRequestedRef.current = Math.max(historyLoadedRowsRequestedRef.current, result.totalRows)
-        historyHasMoreRef.current = result.hasMore
-        if (result.hasMore && historyLoadedRowsRequestedRef.current >= historyLoadedRowsLimit()) {
-          logTerminal('history_load_soft_limit', {
-            level: 'warn',
-            details: {
-              loadedRows: historyLoadedRowsRequestedRef.current,
-              rowsLimit: historyLoadedRowsLimit(),
-              xtermScrollback: term.options.scrollback,
-            },
-          })
-        }
-        if (result.loadedRows <= 0) {
-          pendingHistoryViewportRef.current = null
-        } else {
-          keepVisibleForApply = true
-        }
-        return result
-      } catch {
-        pendingHistoryViewportRef.current = null
-        return emptyResult
-      } finally {
-        historyLoadingRef.current = false
-        historyRestoreViewportOnLoadRef.current = false
-        if (!keepVisibleForApply) {
-          hideHistoryLoading()
-        }
-      }
-    }
-
-    const maybePrefetchScrollback = () => {
-      if (!historyLoadArmedByUserRef.current) return
-      if (term.buffer.active.viewportY > settingsRef.current.scrollbackPrefetchThresholdRows) return
-      void loadScrollbackPage(true)
-    }
-    maybePrefetchScrollbackRef.current = maybePrefetchScrollback
-
-    const shouldDelayHistoryApply = (pending: PendingHistoryApply) => {
-      if (pending.restoreViewportY === null) return false
-      const elapsed = Date.now() - historyApplyQueuedAtRef.current
-      if (elapsed >= historyApplyMaxDelayMs) return false
-      if (momentumFrame || smoothActive || scrollbarDragging) return true
-      return Date.now() - lastHistoryScrollActivityAtRef.current < historyApplyScrollIdleMs
-    }
-
-    const applyPendingHistory = () => {
-      historyApplyTimerRef.current = null
-      if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
-      const pending = pendingHistoryApplyRef.current
-      if (!pending) return
-      if (shouldDelayHistoryApply(pending)) {
-        historyApplyTimerRef.current = window.setTimeout(applyPendingHistory, historyApplyScrollIdleMs)
-        return
-      }
-      pendingHistoryApplyRef.current = null
-      historyApplyQueuedAtRef.current = 0
-      try {
-        historyApplyingRef.current = true
-        let historyApplyReleased = false
-        let historyApplyWatchdog: number | null = window.setTimeout(() => {
-          historyApplyWatchdog = null
-          if (historyApplyReleased) return
-          historyApplyReleased = true
-          historyApplyingRef.current = false
-          hideHistoryLoading()
-        }, historyApplyWatchdogMs)
-        const finishHistoryApply = () => {
-          if (historyApplyReleased) return
-          historyApplyReleased = true
-          if (historyApplyWatchdog !== null) {
-            window.clearTimeout(historyApplyWatchdog)
-            historyApplyWatchdog = null
-          }
-          historyLoadedRowsAppliedRef.current = pending.loadedRows
-          historyApplyingRef.current = false
-          hideHistoryLoading()
-          if (pending.restoreViewportY !== null) {
-            maybePrefetchScrollbackRef.current()
-          }
-        }
-        const rowsAddedSinceLastApply = Math.max(0, pending.loadedRows - historyLoadedRowsAppliedRef.current)
-        const currentViewportY = term.buffer.active.viewportY
-        const shouldKeepBottom = pending.restoreViewportY === null &&
-          !pullingHistoryRef.current &&
-          (Date.now() <= bottomAnchorUntilRef.current || isScrolledToBottom(term))
-        if (typeof term.options.scrollback === 'number' && rowsAddedSinceLastApply > 0) {
-          term.options.scrollback = Math.max(
-            term.options.scrollback,
-            Math.min(pending.loadedRows, historyLoadedRowsLimit()),
-          )
-        }
-        const latestText = latestTerminalTextRef.current
-        const textToApply = latestText.startsWith(pending.text) ? latestText : pending.text
-        const bufferLengthBeforeApply = term.buffer.active.length
-        term.reset()
-        writeToXterm(term, textToApply, 'history_apply', () => {
-          markSurfaceReady()
-          const bufferLengthAfterApply = term.buffer.active.length
-          const actualPrependedRows = Math.max(0, bufferLengthAfterApply - bufferLengthBeforeApply)
-          const viewportOffsetRows = actualPrependedRows > 0 ? actualPrependedRows : pending.prependedRows
-          if (actualPrependedRows > 0 && Math.abs(actualPrependedRows - pending.prependedRows) > 1) {
-            logTerminal('history_apply_row_delta_mismatch', {
-              level: 'debug',
-              details: {
-                requestedPrependedRows: pending.prependedRows,
-                actualPrependedRows,
-                beforeBufferLength: bufferLengthBeforeApply,
-                afterBufferLength: bufferLengthAfterApply,
-              },
-            })
-          }
-          if (pending.restoreViewportY !== null || pullingHistoryRef.current) {
-            cancelBottomAnchor()
-            term.scrollToLine((pending.restoreViewportY ?? currentViewportY) + viewportOffsetRows)
-          } else if (shouldKeepBottom) {
-            keepBottomAnchored()
-          } else {
-            cancelBottomAnchor()
-            term.scrollToLine(currentViewportY + viewportOffsetRows)
-          }
-          pullingHistoryRef.current = false
-          finishHistoryApply()
-        })
-        lastWrittenTextRef.current = textToApply
-      } catch (error) {
-        historyApplyingRef.current = false
-        hideHistoryLoading()
-        if (!terminalDisposedRef.current) throw error
-      }
-    }
-
-    const scheduleHistoryApply = () => {
-      if (historyApplyQueuedAtRef.current === 0) {
-        historyApplyQueuedAtRef.current = Date.now()
-      }
-      if (historyApplyTimerRef.current !== null) return
-      historyApplyTimerRef.current = window.setTimeout(applyPendingHistory, historyApplyBatchDelayMs)
-    }
-    scheduleHistoryApplyRef.current = scheduleHistoryApply
-
     const isMouseModeActive = () => {
       try {
         return Boolean(coreTerminal._core?.coreMouseService?.areMouseEventsActive)
@@ -1304,17 +999,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const currentViewportY = term.buffer.active.viewportY
       let clamped = false
       if (desiredViewportY !== currentViewportY) {
-        if (px < 0) {
-          armHistoryScrollbackLoad()
-        } else {
-          noteUserScrollActivity()
-        }
+        noteUserScrollActivity()
         term.scrollLines(desiredViewportY - currentViewportY)
         const actualViewportY = term.buffer.active.viewportY
         if (actualViewportY !== desiredViewportY) {
           totalPxOffset = (actualViewportY - baseViewportY) * lineHeightPx
           clamped = true
-          if (px < 0) maybePrefetchScrollback()
         }
       }
       syncTransform()
@@ -1752,9 +1442,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         smoothEnd()
       }
       touchLastY = Number.NaN
-      if (historyApplyTimerRef.current === null && pendingHistoryApplyRef.current) {
-        scheduleHistoryApply()
-      }
     }
 
     const handleRenderDisposable = typeof term.onRender === 'function'
@@ -1764,23 +1451,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           renderedViewportY = viewportY
           if (smoothActive) syncTransform()
           updateScrollbar()
-          if (historyLoadingRef.current) {
-            if (historyRestoreViewportOnLoadRef.current) {
-              pendingHistoryViewportRef.current = term.buffer.active.viewportY
-            }
-          } else {
-            if (historyLoadArmedByUserRef.current) {
-              maybePrefetchScrollback()
-            }
-          }
-          const pendingHistoryApply = pendingHistoryApplyRef.current
-          if (pendingHistoryApply !== null && pendingHistoryApply.restoreViewportY !== null) {
-            pendingHistoryApplyRef.current = {
-              ...pendingHistoryApply,
-              restoreViewportY: term.buffer.active.viewportY,
-            }
-          }
-          noteHistoryScrollActivity()
           showScrollbar()
           hideScrollbarDelayed()
         }
@@ -1801,10 +1471,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     scrollTouchTarget.addEventListener('touchcancel', handleTouchEnd, { passive: true })
 
     const handleWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0 && term.buffer.active.viewportY <= settingsRef.current.scrollbackPrefetchThresholdRows) {
-        armHistoryScrollbackLoad()
-        maybePrefetchScrollback()
-      } else if (event.deltaY !== 0) {
+      if (event.deltaY !== 0) {
         noteUserScrollActivity()
       }
     }
@@ -1839,11 +1506,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const targetY = Math.round(nextRatio * maxScroll)
       const diff = targetY - buffer.viewportY
       if (diff !== 0) {
-        if (diff < 0) {
-          armHistoryScrollbackLoad()
-        } else {
-          noteUserScrollActivity()
-        }
+        noteUserScrollActivity()
         term.scrollLines(diff)
       }
       updateScrollbar()
@@ -1854,9 +1517,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       scrollbarDragging = false
       scrollbarTrack.classList.remove('active')
       hideScrollbarDelayed()
-      if (historyApplyTimerRef.current === null && pendingHistoryApplyRef.current) {
-        scheduleHistoryApply()
-      }
     }
     const handleScrollbarTrackTouchStart = (event: TouchEvent) => {
       if (event.target !== scrollbarTrack) return
@@ -1872,11 +1532,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const targetY = Math.round(ratio * maxScroll)
       const diff = targetY - buffer.viewportY
       if (diff !== 0) {
-        if (diff < 0) {
-          armHistoryScrollbackLoad()
-        } else {
-          noteUserScrollActivity()
-        }
+        noteUserScrollActivity()
         term.scrollLines(diff)
       }
       updateScrollbar()
@@ -1927,8 +1583,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
             pendingWriteCallbacks: xtermWriteStatsRef.current.pendingCallbacks,
             terminalTextChars: latestTerminalTextRef.current.length,
             lastWrittenChars: lastWrittenTextRef.current.length,
-            historyApplying: historyApplyingRef.current,
-            historyLoading: historyLoadingRef.current,
           },
         })
       }
@@ -1965,17 +1619,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       pendingLiveOutputRef.current = ''
       liveOutputDroppedCharsRef.current = 0
       liveOutputSyncLostRef.current = false
-      if (historyApplyTimerRef.current !== null) {
-        window.clearTimeout(historyApplyTimerRef.current)
-        historyApplyTimerRef.current = null
-      }
-      pendingHistoryApplyRef.current = null
-      historyLoadArmedByUserRef.current = false
-      historyLoadedRowsRequestedRef.current = 0
-      historyHasMoreRef.current = true
-      hideHistoryLoading(true)
-      maybePrefetchScrollbackRef.current = () => {}
-      scheduleHistoryApplyRef.current = () => {}
       resizeObserver?.disconnect()
       dataDisposable.dispose()
       binaryDisposable.dispose()
@@ -2045,13 +1688,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (!term) return
 
     const snapshot = terminalSession.terminalSnapshot
-    const history = snapshot?.history
     if (snapshot) {
       hasTerminalSnapshotRef.current = true
       snapshotAlternateScreenRef.current = snapshot.alternateScreen === true
-      if (historyLoadArmedByUserRef.current && (!history || history.revision <= historyRevisionAppliedRef.current)) {
-        maybePrefetchScrollbackRef.current()
-      }
     }
     const snapshotText = snapshot ? (snapshot.replay ?? snapshot.text) : ''
     const recoveryRevision = snapshot?.recovery?.revision ?? 0
@@ -2084,43 +1723,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
     }
     lastSnapshotTextRef.current = snapshotText
-
-    if (history && history.revision > historyRevisionAppliedRef.current) {
-      historyRevisionAppliedRef.current = history.revision
-      const restoreViewportY = pendingHistoryViewportRef.current
-      pendingHistoryViewportRef.current = null
-      const previousPending = pendingHistoryApplyRef.current
-      const previousPendingRows = previousPending?.loadedRows ?? historyLoadedRowsAppliedRef.current
-      const pendingPrependedRows = Math.max(0, history.loadedRows - previousPendingRows)
-      if (history.alternate) {
-        term.options.scrollback = Math.max(
-          typeof term.options.scrollback === 'number' ? term.options.scrollback : 0,
-          Math.min(history.loadedRows + term.rows, terminalHistoryLoadedRowsLimit(settingsRef.current)),
-        )
-        term.reset()
-      }
-      pendingHistoryApplyRef.current = {
-        revision: history.revision,
-        loadedRows: history.loadedRows,
-        prependedRows: (previousPending?.prependedRows ?? 0) + pendingPrependedRows,
-        restoreViewportY: restoreViewportY ?? previousPending?.restoreViewportY ?? null,
-        text: terminalSession.terminalText,
-      }
-      historyLoadedRowsRequestedRef.current = Math.max(historyLoadedRowsRequestedRef.current, history.loadedRows)
-      historyHasMoreRef.current = history.hasMore
-      showHistoryLoading()
-      scheduleHistoryApplyRef.current()
-      return
-    }
-
-    const pendingHistoryApply = pendingHistoryApplyRef.current
-    if (pendingHistoryApply) {
-      pendingHistoryApplyRef.current = {
-        ...pendingHistoryApply,
-        text: terminalSession.terminalText,
-      }
-      return
-    }
   }, [clearLiveOutputWatchdog, keepBottomAnchored, markSurfaceReady, terminalSession.terminalSnapshot, terminalSession.terminalText, writeToXterm])
 
   return (
@@ -2148,21 +1750,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           <div className="flex items-center gap-2">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--termx-muted)] border-t-[var(--termx-text)]" />
             Connecting terminal...
-          </div>
-        </div>
-      ) : null}
-      {historyLoadingVisible && !showConnectingOverlay ? (
-        <div
-          aria-label="Loading terminal history"
-          aria-live="polite"
-          className="pointer-events-none absolute left-1/2 top-3 z-[60] -translate-x-1/2 rounded-full bg-[var(--termx-surface)]/40 px-3 py-1.5 shadow-[0_4px_12px_rgba(0,0,0,0.15)] backdrop-blur-md"
-          data-testid="termx-history-loading"
-          role="status"
-        >
-          <div className="flex h-4 items-center gap-1.5">
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--termx-text)]/60" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--termx-text)]/60 [animation-delay:150ms]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--termx-text)]/60 [animation-delay:300ms]" />
           </div>
         </div>
       ) : null}

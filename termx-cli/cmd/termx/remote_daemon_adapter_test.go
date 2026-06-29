@@ -232,12 +232,11 @@ func TestRemoteRuntimeAPIRoutesTerminalStorageAndEventsThroughCoreV2Truth(t *tes
 	defer unsubscribe()
 
 	createBody := routeRemoteTerminalAPI(t, service, "create", &runtimepb.TerminalCreateRequest{
-		Name:           "api shell",
-		Command:        []string{"shell", "-l"},
-		Dir:            "/srv/app",
-		Env:            []string{"A=B"},
-		Tags:           map[string]string{"termx.size_lock": "warn"},
-		ScrollbackSize: 128,
+		Name:    "api shell",
+		Command: []string{"shell", "-l"},
+		Dir:     "/srv/app",
+		Env:     []string{"A=B"},
+		Tags:    map[string]string{"termx.size_lock": "warn"},
 	})
 	var created runtimepb.TerminalInventoryItem
 	unmarshalRuntimeAPI(t, createBody, &created)
@@ -245,7 +244,7 @@ func TestRemoteRuntimeAPIRoutesTerminalStorageAndEventsThroughCoreV2Truth(t *tes
 		t.Fatalf("unexpected remote create result %#v", &created)
 	}
 	spec := factory.spawnedSpec(created.GetTerminalId())
-	if spec.Dir != "/srv/app" || !equalStringSlices(spec.Env, []string{"A=B"}) || spec.ScrollbackSize != 128 {
+	if spec.Dir != "/srv/app" || !equalStringSlices(spec.Env, []string{"A=B"}) {
 		t.Fatalf("remote create did not reach core-v2 create/process truth: %#v", spec)
 	}
 	requireRuntimeEvent(t, events, "terminal_created", created.GetTerminalId())

@@ -18,15 +18,13 @@ const (
 	TypeError          uint8 = 0x04
 	TypeResponseBinary uint8 = 0x05
 
-	TypeInput          uint8 = 0x11
-	TypeResize         uint8 = 0x12
-	TypeBootstrapDone  uint8 = 0x13
-	TypeScreenUpdate   uint8 = 0x14
-	TypeStreamReady    uint8 = 0x15
-	TypeSyncLost       uint8 = 0x16
-	TypeClosed         uint8 = 0x17
-	TypeHistoryRequest uint8 = 0x18
-	TypeHistoryReplay  uint8 = 0x19
+	TypeInput         uint8 = 0x11
+	TypeResize        uint8 = 0x12
+	TypeBootstrapDone uint8 = 0x13
+	TypeScreenUpdate  uint8 = 0x14
+	TypeStreamReady   uint8 = 0x15
+	TypeSyncLost      uint8 = 0x16
+	TypeClosed        uint8 = 0x17
 )
 
 var (
@@ -161,49 +159,4 @@ func DecodeClosedPayload(payload []byte) (int, error) {
 		return 0, ErrShortPayload
 	}
 	return int(int32(binary.BigEndian.Uint32(payload))), nil
-}
-
-func EncodeHistoryRequestPayload(beforeOffset int, limit int) []byte {
-	payload := make([]byte, 8)
-	if beforeOffset < 0 {
-		beforeOffset = 0
-	}
-	if limit < 0 {
-		limit = 0
-	}
-	binary.BigEndian.PutUint32(payload[:4], uint32(beforeOffset))
-	binary.BigEndian.PutUint32(payload[4:8], uint32(limit))
-	return payload
-}
-
-func DecodeHistoryRequestPayload(payload []byte) (int, int, error) {
-	if len(payload) != 8 && len(payload) != 9 {
-		return 0, 0, ErrShortPayload
-	}
-	beforeOffset := int(binary.BigEndian.Uint32(payload[:4]))
-	limit := int(binary.BigEndian.Uint32(payload[4:8]))
-	return beforeOffset, limit, nil
-}
-
-func EncodeHistoryReplayPayload(rows int, hasMore bool, replay []byte) ([]byte, error) {
-	if rows < 0 {
-		rows = 0
-	}
-	payload := make([]byte, 5+len(replay))
-	binary.BigEndian.PutUint32(payload[:4], uint32(rows))
-	if hasMore {
-		payload[4] = 1
-	}
-	copy(payload[5:], replay)
-	return payload, nil
-}
-
-func DecodeHistoryReplayPayload(payload []byte) (int, bool, []byte, error) {
-	if len(payload) < 5 {
-		return 0, false, nil, ErrShortPayload
-	}
-	rows := int(binary.BigEndian.Uint32(payload[:4]))
-	hasMore := payload[4] == 1
-	replay := append([]byte(nil), payload[5:]...)
-	return rows, hasMore, replay, nil
 }

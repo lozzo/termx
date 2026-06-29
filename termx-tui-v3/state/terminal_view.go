@@ -428,7 +428,7 @@ func (store TerminalViewStore) promoteReplacementOwnerLocked(terminalID string) 
 	if terminalID == "" {
 		return
 	}
-	if _, ok := store.ownerIdentityBinding(terminalID); ok {
+	if _, ok := store.OwnerBinding(terminalID); ok {
 		return
 	}
 	locked := store.terminalSizeLocked(terminalID)
