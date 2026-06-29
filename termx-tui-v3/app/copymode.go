@@ -3,12 +3,15 @@ package app
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
+
+const copyModeHistoryRequestTimeout = 5 * time.Second
 
 type CopyModeDeps struct {
 	Core      services.CoreClient
@@ -363,7 +366,9 @@ func exitCopyModeWithRelease(root state.Root, deps CopyModeDeps) (state.Root, []
 		return root, nil
 	}
 	return root, []Effect{FuncEffect{Async: true, Run: func(ctx context.Context) Msg {
-		_ = deps.Core.ReleaseHistory(ctx, services.HistoryReleaseRequest{TerminalID: terminalID, Token: token})
+		reqCtx, cancel := copyModeHistoryRequestContext(ctx)
+		defer cancel()
+		_ = deps.Core.ReleaseHistory(reqCtx, services.HistoryReleaseRequest{TerminalID: terminalID, Token: token})
 		return NoopMsg{}
 	}}}
 }
@@ -501,28 +506,36 @@ func copyModeLocalCopyText(history state.HistoryStore, copyMode state.CopyModeSt
 
 func copyModeLatestEffect(core services.CoreClient, req services.HistoryLatestRequest) Effect {
 	return FuncEffect{Async: true, ForceSyncInTests: true, Run: func(ctx context.Context) Msg {
-		result, err := core.HistoryLatest(ctx, req)
+		reqCtx, cancel := copyModeHistoryRequestContext(ctx)
+		defer cancel()
+		result, err := core.HistoryLatest(reqCtx, req)
 		return CopyModeHistoryResultMsg{RequestID: req.RequestID, Result: result, Err: err}
 	}}
 }
 
 func copyModeOlderEffect(core services.CoreClient, req services.HistoryOlderRequest) Effect {
 	return FuncEffect{Async: true, ForceSyncInTests: true, Run: func(ctx context.Context) Msg {
-		result, err := core.HistoryOlder(ctx, req)
+		reqCtx, cancel := copyModeHistoryRequestContext(ctx)
+		defer cancel()
+		result, err := core.HistoryOlder(reqCtx, req)
 		return CopyModeHistoryResultMsg{RequestID: req.RequestID, Result: result, Err: err}
 	}}
 }
 
 func copyModeNewerEffect(core services.CoreClient, req services.HistoryNewerRequest) Effect {
 	return FuncEffect{Async: true, ForceSyncInTests: true, Run: func(ctx context.Context) Msg {
-		result, err := core.HistoryNewer(ctx, req)
+		reqCtx, cancel := copyModeHistoryRequestContext(ctx)
+		defer cancel()
+		result, err := core.HistoryNewer(reqCtx, req)
 		return CopyModeHistoryResultMsg{RequestID: req.RequestID, Result: result, Err: err}
 	}}
 }
 
 func copyModeBackendCopyEffect(core services.CoreClient, clipboard services.ClipboardService, req services.HistoryCopyRangeRequest) Effect {
 	return FuncEffect{Async: true, ForceSyncInTests: true, Run: func(ctx context.Context) Msg {
-		result, err := core.HistoryCopyRange(ctx, req)
+		reqCtx, cancel := copyModeHistoryRequestContext(ctx)
+		defer cancel()
+		result, err := core.HistoryCopyRange(reqCtx, req)
 		if err != nil {
 			return CopyModeCopyResultMsg{Err: err}
 		}
@@ -531,6 +544,12 @@ func copyModeBackendCopyEffect(core services.CoreClient, clipboard services.Clip
 		}
 		return CopyModeCopyResultMsg{Text: result.Text, Err: err}
 	}}
+}
+
+func copyModeHistoryRequestContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	// 中文说明：history.window/copy/release 是一次性本机 socket 请求；
+	// 超时只收敛 UI pending 生命周期，不改变 core-v2 的历史 truth。
+	return context.WithTimeout(ctx, copyModeHistoryRequestTimeout)
 }
 
 func copyModeClipboardWriteEffect(clipboard services.ClipboardService, text string) Effect {

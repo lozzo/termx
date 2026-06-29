@@ -93,6 +93,11 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 		return fmt.Errorf("dial core-v2 clipboard storage events client: %w", err)
 	}
 	defer clipboardStorageClient.Close()
+	historyClient, err := v3DialClient(cfg.SocketPath)
+	if err != nil {
+		return fmt.Errorf("dial core-v2 history control client: %w", err)
+	}
+	defer historyClient.Close()
 
 	host := newV3TerminalHost()
 	if loggerHost, ok := host.(v3TerminalHostLogger); ok {
@@ -110,6 +115,7 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	surfaceID := newV3RuntimeSurfaceID()
 	runtime := newV3InteractiveRuntimeWithOptions(cfg.TerminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{
 		RuntimeSurfaceID: surfaceID,
+		HistoryClient:    historyClient,
 		TUIConfig:        cfg.TUIConfig,
 	})
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
@@ -138,6 +144,7 @@ func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *prot
 type v3InteractiveRuntimeOptions struct {
 	SkipWorkbenchInitialLoad bool
 	RuntimeSurfaceID         string
+	HistoryClient            *protocol.Client
 	TUIConfig                state.TUIConfigStore
 }
 
@@ -164,7 +171,13 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 		initial.Shell = v3EmptyRootShell()
 	}
 	terminal := services.ProtocolTerminalServiceAdapter{Client: client}
-	core := services.ProtocolCoreClientAdapter{Client: client}
+	historyClient := opts.HistoryClient
+	if historyClient == nil {
+		historyClient = client
+	}
+	// 中文说明：copy/history 控制请求使用独立 protocol session；
+	// live terminal events 和 history.window 分页请求不能共享长生命周期事件流。
+	core := services.ProtocolCoreClientAdapter{Client: historyClient}
 	systemClipboard := &services.SystemClipboardService{}
 	var storage services.WorkbenchStorageService
 	var clipboardStorage services.ClipboardStorageService

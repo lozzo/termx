@@ -109,6 +109,11 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 		return fmt.Errorf("dial core-v2 clipboard storage events client: %w", err)
 	}
 	defer clipboardStorageClient.Close()
+	historyClient, err := v3DialClient(cfg.SocketPath)
+	if err != nil {
+		return fmt.Errorf("dial core-v2 history control client: %w", err)
+	}
+	defer historyClient.Close()
 
 	host := newV3TerminalHost()
 	if loggerHost, ok := host.(v3TerminalHostLogger); ok {
@@ -125,6 +130,7 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 	}
 	runtime := newV3InteractiveRuntimeWithOptions("", cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{
 		SkipWorkbenchInitialLoad: true,
+		HistoryClient:            historyClient,
 		TUIConfig:                cfg.TUIConfig,
 	})
 	// root 空启动不创建 terminal；先让用户在 picker 中显式选择创建或连接。
