@@ -1131,6 +1131,8 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	switch region.Kind {
 	case render.HitRegionContentAction:
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Floating: region.Floating, Row: region.Row}
+	case render.HitRegionHistoryRow:
+		return CopyModeSetMarkMsg{Position: state.CopyPosition{Row: region.Row, Col: maxAppInt(0, inputMsg.Event.Col-region.Rect.X)}}
 	default:
 		return msg
 	}

@@ -866,3 +866,70 @@ func (service *FakeClipboardService) Write(_ context.Context, req ClipboardWrite
 func (service *FakeClipboardService) LastCopy() string {
 	return service.LastCopied
 }
+
+type FakeCoreClient struct {
+	LatestResult HistoryResult
+	LatestErr    error
+	OlderResult  HistoryResult
+	OlderErr     error
+	NewerResult  HistoryResult
+	NewerErr     error
+	OldestResult HistoryResult
+	OldestErr    error
+	CopyResult   HistoryCopyRangeResult
+	CopyErr      error
+	ReleaseErr   error
+
+	LatestRequests  []HistoryLatestRequest
+	OlderRequests   []HistoryOlderRequest
+	NewerRequests   []HistoryNewerRequest
+	OldestRequests  []HistoryOldestRequest
+	CopyRequests    []HistoryCopyRangeRequest
+	ReleaseRequests []HistoryReleaseRequest
+}
+
+func (client *FakeCoreClient) HistoryLatest(_ context.Context, req HistoryLatestRequest) (HistoryResult, error) {
+	client.LatestRequests = append(client.LatestRequests, req)
+	result := client.LatestResult
+	if result.RequestID == 0 {
+		result.RequestID = req.RequestID
+	}
+	return result, client.LatestErr
+}
+
+func (client *FakeCoreClient) HistoryOlder(_ context.Context, req HistoryOlderRequest) (HistoryResult, error) {
+	client.OlderRequests = append(client.OlderRequests, req)
+	result := client.OlderResult
+	if result.RequestID == 0 {
+		result.RequestID = req.RequestID
+	}
+	return result, client.OlderErr
+}
+
+func (client *FakeCoreClient) HistoryNewer(_ context.Context, req HistoryNewerRequest) (HistoryResult, error) {
+	client.NewerRequests = append(client.NewerRequests, req)
+	result := client.NewerResult
+	if result.RequestID == 0 {
+		result.RequestID = req.RequestID
+	}
+	return result, client.NewerErr
+}
+
+func (client *FakeCoreClient) HistoryOldest(_ context.Context, req HistoryOldestRequest) (HistoryResult, error) {
+	client.OldestRequests = append(client.OldestRequests, req)
+	result := client.OldestResult
+	if result.RequestID == 0 {
+		result.RequestID = req.RequestID
+	}
+	return result, client.OldestErr
+}
+
+func (client *FakeCoreClient) HistoryCopyRange(_ context.Context, req HistoryCopyRangeRequest) (HistoryCopyRangeResult, error) {
+	client.CopyRequests = append(client.CopyRequests, req)
+	return client.CopyResult, client.CopyErr
+}
+
+func (client *FakeCoreClient) ReleaseHistory(_ context.Context, req HistoryReleaseRequest) error {
+	client.ReleaseRequests = append(client.ReleaseRequests, req)
+	return client.ReleaseErr
+}

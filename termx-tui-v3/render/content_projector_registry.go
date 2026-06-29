@@ -20,6 +20,8 @@ type ContentProjectorContext struct {
 	Active   bool
 	Surface  state.TerminalSurfaceStore
 	Session  state.TerminalSessionStore
+	History  state.HistoryStore
+	CopyMode state.CopyModeStore
 }
 
 type ContentProjectorRegistry struct {
@@ -34,6 +36,7 @@ func DefaultContentProjectorRegistry() ContentProjectorRegistry {
 	registry.Register(ContentTerminalPool, ContentProjectorFunc(projectTerminalPoolContent))
 	registry.Register(ContentWorkbenchTree, ContentProjectorFunc(projectWorkbenchTreeContent))
 	registry.Register(ContentClipboardHistory, ContentProjectorFunc(projectClipboardHistoryContent))
+	registry.Register(ContentCopyHistory, ContentProjectorFunc(projectCopyHistoryContent))
 	registry.Register(ContentFloatingOverview, ContentProjectorFunc(projectFloatingOverviewContent))
 	registry.Register(ContentPrompt, ContentProjectorFunc(projectPromptContent))
 	registry.Register(ContentHelp, ContentProjectorFunc(projectHelpContent))
@@ -109,6 +112,10 @@ func projectWorkbenchTreeContent(ctx ContentProjectorContext) ContentVM {
 
 func projectClipboardHistoryContent(ctx ContentProjectorContext) ContentVM {
 	return buildClipboardHistoryContent(ctx.Root, ctx.Shell)
+}
+
+func projectCopyHistoryContent(ctx ContentProjectorContext) ContentVM {
+	return buildCopyHistoryContent(ctx.History, ctx.CopyMode)
 }
 
 func projectFloatingOverviewContent(ctx ContentProjectorContext) ContentVM {

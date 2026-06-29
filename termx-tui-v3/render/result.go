@@ -97,6 +97,7 @@ const (
 	StyleFooterKeyWorkspace  StyleToken = "footer-key-workspace"
 	StyleFooterKeyFloat      StyleToken = "footer-key-float"
 	StyleFooterKeyPicker     StyleToken = "footer-key-picker"
+	StyleFooterKeyCopy       StyleToken = "footer-key-copy"
 	StyleFooterKeyGlobal     StyleToken = "footer-key-global"
 	StyleInfo                StyleToken = "info"
 	StyleSuccess             StyleToken = "success"
@@ -479,6 +480,8 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 		return sgrForeground(mixHostColor(theme.Accent, theme.Info, 0.45), true)
 	case StyleFooterKeyPicker:
 		return sgrForeground(mixHostColor(theme.Danger, theme.Warning, 0.35), true)
+	case StyleFooterKeyCopy:
+		return sgrForeground(mixHostColor(theme.Success, theme.Accent, 0.35), true)
 	case StyleFooterKeyGlobal:
 		return sgrForeground(mixHostColor(theme.Accent, theme.Warning, 0.35), true)
 	case StyleInfo:
@@ -772,6 +775,7 @@ const (
 	ContentTerminalPool     ContentKind = "terminal-pool"
 	ContentWorkbenchTree    ContentKind = "workbench-tree"
 	ContentClipboardHistory ContentKind = "clipboard-history"
+	ContentCopyHistory      ContentKind = "copy-history"
 	ContentFloatingOverview ContentKind = "floating-overview"
 	ContentPrompt           ContentKind = "prompt"
 	ContentHelp             ContentKind = "help"

@@ -24,6 +24,7 @@ const (
 	HitRegionPaneAction    HitRegionKind = "pane-action"
 	HitRegionPaneResize    HitRegionKind = "pane-resize"
 	HitRegionPaneContent   HitRegionKind = "pane-content"
+	HitRegionHistoryRow    HitRegionKind = "history-row"
 	HitRegionContentAction HitRegionKind = "content-action"
 )
 
@@ -388,6 +389,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 			footerActionFor(ActionFooterWorkspaceMode),
 			footerActionFor(ActionFooterFloatingMode),
 			footerActionFor(ActionFooterPicker),
+			footerActionFor(ActionFooterCopyMode),
 			footerActionFor(ActionFooterGlobalMode),
 		)
 	}
@@ -829,6 +831,9 @@ func splitActionLabel(action string) (string, string) {
 func (projector ShellProjector) buildActiveContentVM(root state.Root, shell state.ShellStore) ContentVM {
 	shell = shell.ReadonlyDefaults()
 	if pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID}); ok {
+		if content, ok := projector.copyHistoryContentForView(root, state.TerminalPaneViewID(pane.ID), pane, true); ok {
+			return content
+		}
 		if pane.Kind == state.PaneEmpty {
 			return buildEmptyPaneContentWithSelection(pane, shell.EmptyPaneCTA.SelectedIndex)
 		}
@@ -851,11 +856,17 @@ func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneS
 	if active {
 		return activeContent
 	}
+	if content, ok := projector.copyHistoryContentForView(root, state.TerminalPaneViewID(pane.ID), pane, false); ok {
+		return content
+	}
 	surface, session := terminalContentStoresForPane(root, pane)
 	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: root.Shell.ReadonlyDefaults(), Pane: pane, Kind: contentKindForPane(pane), Surface: surface, Session: session, Active: false})
 }
 
 func (projector ShellProjector) contentForFloating(root state.Root, shell state.ShellStore, floating state.FloatingPaneState) ContentVM {
+	if content, ok := projector.copyHistoryContentForView(root, state.TerminalFloatingViewID(floating.ID), floating.Pane, floating.Active); ok {
+		return content
+	}
 	if floating.Active && floating.Pane.Kind == state.PaneEmpty {
 		return buildEmptyPaneContentWithSelection(floating.Pane, shell.EmptyPaneCTA.SelectedIndex)
 	}
@@ -868,6 +879,23 @@ func (projector ShellProjector) contentForFloating(root state.Root, shell state.
 		Surface: surfaceForFloating(root, floating.ID),
 		Session: sessionForFloating(root, floating.ID),
 	})
+}
+
+func (projector ShellProjector) copyHistoryContentForView(root state.Root, viewID string, pane state.PaneState, active bool) (ContentVM, bool) {
+	history, copyMode := root.CopyHistorySessionForView(viewID)
+	if !copyMode.Active && !copyMode.Entering {
+		return ContentVM{}, false
+	}
+	content := projector.Content.Project(ContentProjectorContext{
+		Root:     root,
+		Shell:    root.Shell.ReadonlyDefaults(),
+		Pane:     pane,
+		Kind:     ContentCopyHistory,
+		Active:   active,
+		History:  history,
+		CopyMode: copyMode,
+	})
+	return content, true
 }
 
 func contentKindForPane(pane state.PaneState) ContentKind {

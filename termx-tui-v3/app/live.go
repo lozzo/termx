@@ -25,8 +25,10 @@ type LiveConfig struct {
 }
 
 type LiveDeps struct {
-	Terminal services.TerminalService
-	Logger   *slog.Logger
+	Terminal  services.TerminalService
+	Core      services.CoreClient
+	Clipboard services.ClipboardService
+	Logger    *slog.Logger
 }
 
 const liveStreamTokenPrefix = "terminal.live.stream:"
@@ -44,7 +46,7 @@ func NewLiveRuntime(initial state.Root, host TerminalHost, runner EffectRunner, 
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(deps), NewTerminalInputRouterReducer(deps), NewLiveReducer(deps), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewCopyModeReducer(CopyModeDeps{Core: deps.Core, Clipboard: deps.Clipboard}), NewUIInputReducer(), NewTerminalPoolReducer(deps), NewTerminalInputRouterReducer(deps), NewLiveReducer(deps), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
 	runtime.SetLogger(deps.Logger)
 	return runtime
 }
@@ -80,7 +82,7 @@ func NewInteractiveRuntimeWithStorage(
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewTerminalInputRouterReducer(live), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewCopyModeReducer(CopyModeDeps{Core: live.Core, Clipboard: live.Clipboard}), NewUIInputReducer(), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewTerminalInputRouterReducer(live), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
 	runtime.SetLogger(live.Logger)
 	if workbench.Storage != nil {
 		// 启动时先恢复 core-v2 opaque storage 中的 workbench truth，再订阅后续变化。

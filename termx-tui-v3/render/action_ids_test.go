@@ -61,6 +61,7 @@ func TestActionSpecCatalogIsSingleSourceForRenderedActions(t *testing.T) {
 		ActionFooterFloatingMode,
 		ActionFooterGlobalMode,
 		ActionFooterPicker,
+		ActionFooterCopyMode,
 		ActionFooterToggleHeader,
 		ActionFooterToggleFooter,
 		ActionFooterOpenPool,

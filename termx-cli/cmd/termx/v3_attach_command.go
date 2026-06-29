@@ -164,6 +164,8 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 		initial.Shell = v3EmptyRootShell()
 	}
 	terminal := services.ProtocolTerminalServiceAdapter{Client: client}
+	core := services.ProtocolCoreClientAdapter{Client: client}
+	systemClipboard := &services.SystemClipboardService{}
 	var storage services.WorkbenchStorageService
 	var clipboardStorage services.ClipboardStorageService
 	if workbenchStorageClient != nil {
@@ -179,7 +181,7 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 		initial,
 		host,
 		app.NewAsyncEffectRunner(),
-		app.LiveDeps{Terminal: terminal, Logger: logger},
+		app.LiveDeps{Terminal: terminal, Core: core, Clipboard: systemClipboard, Logger: logger},
 		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID), Logger: logger, SkipInitialLoad: opts.SkipWorkbenchInitialLoad},
 		app.ClipboardDeps{Storage: clipboardStorage, Ref: state.DefaultClipboardStorageRef(state.DefaultWorkspaceID), Logger: logger},
 	)

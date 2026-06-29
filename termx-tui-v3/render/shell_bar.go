@@ -770,6 +770,8 @@ func footerActionKeyStyle(key string, label string) StyleToken {
 		return StyleFooterKeyWorkspace
 	case strings.Contains(upper, "F") || strings.Contains(upper, "PICK"):
 		return StyleFooterKeyPicker
+	case strings.Contains(upper, "V") || strings.Contains(upper, "COPY"):
+		return StyleFooterKeyCopy
 	case strings.Contains(upper, "O") || strings.Contains(upper, "FLOAT"):
 		return StyleFooterKeyFloat
 	case strings.Contains(upper, "G") || strings.Contains(upper, "GLOBAL"):

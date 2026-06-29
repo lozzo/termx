@@ -429,6 +429,10 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionFooterPicker:
 		root.Shell = root.Shell.OpenTerminalPicker()
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+	case render.ActionFooterCopyMode:
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}}
+		}}}
 	case render.ActionFooterToggleHeader:
 		root.Shell = root.Shell.ToggleHeaderVisible()
 		return root.Advance(), nil

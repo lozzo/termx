@@ -31,6 +31,8 @@ var bindingCatalog = []Binding{
 	{ID: "root-workspace-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "w", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModeWorkspace},
 	{ID: "root-picker", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x06", Ctrl: true, Intent: IntentOpenTerminalPicker},
 	{ID: "root-picker-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "f", Ctrl: true, Intent: IntentOpenTerminalPicker},
+	{ID: "root-copy", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x16", Ctrl: true, Intent: IntentEnterCopyMode},
+	{ID: "root-copy-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "v", Ctrl: true, Intent: IntentEnterCopyMode},
 
 	{ID: "pane-close", Mode: InteractionModePane, Key: KeyChar, Char: "x", Intent: IntentWorkbenchCommand, Command: "pane close"},
 	{ID: "pane-close-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "w", Intent: IntentWorkbenchCommand, Command: "pane close"},
@@ -182,6 +184,9 @@ func BindingCatalog() []Binding {
 
 func routeKey(event InputEvent, options RouteOptions) Intent {
 	if event.Key == KeyEsc {
+		if options.CopyModeActive {
+			return Intent{Kind: IntentExitCopyMode, Event: event}
+		}
 		if options.Mode != InteractionModeNormal {
 			return Intent{Kind: IntentExitInteraction, Event: event}
 		}
@@ -198,6 +203,9 @@ func routeKey(event InputEvent, options RouteOptions) Intent {
 	if options.Mode != InteractionModeNormal {
 		return Intent{Kind: IntentNone, Event: event}
 	}
+	if options.CopyModeActive {
+		return routeCopyModeKey(event)
+	}
 	if data := terminalBytes(event); len(data) > 0 {
 		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: data}
 	}
@@ -205,8 +213,51 @@ func routeKey(event InputEvent, options RouteOptions) Intent {
 }
 
 func routeMouse(event InputEvent, options RouteOptions) Intent {
+	if options.CopyModeActive {
+		switch event.Mouse {
+		case MouseWheelUp:
+			return Intent{Kind: IntentRequestOlder, Event: event}
+		case MouseWheelDown:
+			return Intent{Kind: IntentRequestNewer, Event: event}
+		case MouseLeft:
+			return Intent{Kind: IntentSetCopyMark, Event: event}
+		}
+	}
 	if options.TerminalMousePassthrough && event.RawSeq != "" {
 		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: []byte(event.RawSeq), RawMouse: true}
+	}
+	return Intent{Kind: IntentNone, Event: event}
+}
+
+func routeCopyModeKey(event InputEvent) Intent {
+	if event.Key == KeyPageUp || event.Key == KeyUp {
+		return Intent{Kind: IntentRequestOlder, Event: event}
+	}
+	if event.Key == KeyPageDn || event.Key == KeyDown {
+		return Intent{Kind: IntentRequestNewer, Event: event}
+	}
+	if event.Key == KeyEnter {
+		return Intent{Kind: IntentSetCopyMark, Event: event}
+	}
+	if event.Key == KeyChar {
+		switch event.Char {
+		case "q":
+			return Intent{Kind: IntentExitCopyMode, Event: event}
+		case "y":
+			return Intent{Kind: IntentCopySelection, Event: event}
+		case " ", "\r":
+			return Intent{Kind: IntentSetCopyMark, Event: event}
+		case "H":
+			return Intent{Kind: IntentOpenClipboardHistory, Event: event}
+		case "p":
+			return Intent{Kind: IntentPasteLastCopy, Event: event}
+		case "P":
+			return Intent{Kind: IntentPasteClipboard, Event: event}
+		case "k":
+			return Intent{Kind: IntentRequestOlder, Event: event}
+		case "j":
+			return Intent{Kind: IntentRequestNewer, Event: event}
+		}
 	}
 	return Intent{Kind: IntentNone, Event: event}
 }

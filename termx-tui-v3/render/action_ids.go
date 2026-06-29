@@ -51,6 +51,7 @@ const (
 	ActionFooterFloatingMode      ActionID = "footer.mode-floating"
 	ActionFooterGlobalMode        ActionID = "footer.mode-global"
 	ActionFooterPicker            ActionID = "footer.open-picker"
+	ActionFooterCopyMode          ActionID = "footer.copy-mode"
 	ActionFooterToggleHeader      ActionID = "footer.toggle-header"
 	ActionFooterToggleFooter      ActionID = "footer.toggle-footer"
 	ActionFooterOpenPool          ActionID = "footer.open-pool"
@@ -258,6 +259,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionFooterFloatingMode, ActionDispatchApp, ActionSurfaceFooter).withFooter("^O", "FLOAT", StyleFooterKeyFloat).withHelp("floating"),
 		actionSpec(ActionFooterGlobalMode, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("^G", "GLOBAL", StyleFooterKeyGlobal).withHelp("global"),
 		actionSpec(ActionFooterPicker, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("^F", "PICKER", StyleFooterKeyPicker).withHelp("picker"),
+		actionSpec(ActionFooterCopyMode, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("^V", "COPY", StyleFooterKeyCopy).withHelp("copy history"),
 		actionSpec(ActionFooterToggleHeader, ActionDispatchApp, ActionSurfaceFooter).withFooter("h", "HEADER", StyleStatusAccent).withHelp("toggle header"),
 		actionSpec(ActionFooterToggleFooter, ActionDispatchApp, ActionSurfaceFooter).withFooter("f", "FOOTER", StyleStatusAccent).withHelp("toggle footer"),
 		actionSpec(ActionFooterOpenPool, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("t", "TERMINALS", StyleStatusAccent).withHelp("terminal pool"),

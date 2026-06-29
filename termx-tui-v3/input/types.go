@@ -91,6 +91,12 @@ type IntentKind string
 const (
 	IntentNone                 IntentKind = "none"
 	IntentOpenTerminalPicker   IntentKind = "open-terminal-picker"
+	IntentEnterCopyMode        IntentKind = "enter-copy-mode"
+	IntentRequestOlder         IntentKind = "request-older"
+	IntentRequestNewer         IntentKind = "request-newer"
+	IntentCopySelection        IntentKind = "copy-selection"
+	IntentSetCopyMark          IntentKind = "set-copy-mark"
+	IntentExitCopyMode         IntentKind = "exit-copy-mode"
 	IntentOpenClipboardHistory IntentKind = "open-clipboard-history"
 	IntentPasteLastCopy        IntentKind = "paste-last-copy"
 	IntentPasteClipboard       IntentKind = "paste-clipboard"
@@ -152,6 +158,7 @@ type Intent struct {
 
 type RouteOptions struct {
 	Mode                     InteractionMode
+	CopyModeActive           bool
 	TerminalMousePassthrough bool
 }
 

@@ -1044,7 +1044,7 @@ func v3VisualTargetPlain() string {
 		"│······································································································│···································│",
 		"│······································································································│···································│",
 		"└──────────────────────────────────────────────────────────────────────────────────────────────────────┴───────────────────────────────────┘",
-		"[Ctrl] • [P] PANE • [R] RESIZE • [T] TAB • [W] WORKSPACE • [O] FLOAT • [F] PICKER • [G] GLOBAL                  ws:main float:1 terminals:1",
+		"[Ctrl] • [P] PANE • [R] RESIZE • [T] TAB • [W] WORKSPACE • [O] FLOAT • [F] PICKER • [V] COPY • [G] GLOBAL       ws:main float:1 terminals:1",
 	}
 	return normalizeVisualText(strings.Join(lines, "\n"), 140, 40)
 }
@@ -1294,9 +1294,10 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 	fillBracketToken(40, "[W]", 0, visualStyleSuccess)
 	fillBracketToken(40, "[O]", 0, visualStyleUnknown)
 	fillBracketToken(40, "[F]", 0, visualStyleUnknown)
+	fillBracketToken(40, "[V]", 0, visualStyleSuccess)
 	fillBracketToken(40, "[G]", 0, visualStyleUnknown)
 	fillRangesForSubstrings(40, visualStyleAccent, " float:1")
-	fillRangesForSubstrings(40, visualStyleMuted, " PANE", " RESIZE", " TAB", " WORKSPACE", " FLOAT", " PICKER", " GLOBAL", " • ", " ws:main", " terminals:1")
+	fillRangesForSubstrings(40, visualStyleMuted, " PANE", " RESIZE", " TAB", " WORKSPACE", " FLOAT", " PICKER", " COPY", " GLOBAL", " • ", " ws:main", " terminals:1")
 	return styleMap
 }
 

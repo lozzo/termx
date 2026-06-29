@@ -55,6 +55,33 @@ func TestRouteCtrlFAndCtrlVToUIIntents(t *testing.T) {
 	if namedCtrlF.Kind != IntentOpenTerminalPicker {
 		t.Fatalf("expected named ctrl-f terminal picker intent, got %#v", namedCtrlF)
 	}
+	ctrlV := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x16", Ctrl: true})
+	if ctrlV.Kind != IntentEnterCopyMode {
+		t.Fatalf("expected copy mode intent, got %#v", ctrlV)
+	}
+	namedCtrlV := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "v", Ctrl: true})
+	if namedCtrlV.Kind != IntentEnterCopyMode {
+		t.Fatalf("expected named ctrl-v copy mode intent, got %#v", namedCtrlV)
+	}
+}
+
+func TestRouteCopyModeKeysStayInCopyMode(t *testing.T) {
+	older := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyPageUp}, RouteOptions{CopyModeActive: true})
+	if older.Kind != IntentRequestOlder {
+		t.Fatalf("expected older request intent, got %#v", older)
+	}
+	newer := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyPageDn}, RouteOptions{CopyModeActive: true})
+	if newer.Kind != IntentRequestNewer {
+		t.Fatalf("expected newer request intent, got %#v", newer)
+	}
+	copyIntent := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "y"}, RouteOptions{CopyModeActive: true})
+	if copyIntent.Kind != IntentCopySelection {
+		t.Fatalf("expected copy selection intent, got %#v", copyIntent)
+	}
+	esc := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyEsc}, RouteOptions{CopyModeActive: true})
+	if esc.Kind != IntentExitCopyMode {
+		t.Fatalf("expected copy mode exit intent, got %#v", esc)
+	}
 }
 
 func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
