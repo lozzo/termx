@@ -116,6 +116,12 @@ func (scope TransportScope) constrainTerminalMethod(method string, params any) (
 			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
 		}
 		return params, scope.requireTerminal(method, in.TerminalID)
+	case "history.window", "history.copy", "history.release":
+		in, ok := params.(protocol.HistoryWindowParams)
+		if !ok {
+			return nil, fmt.Errorf("%s params have unexpected type %T", method, params)
+		}
+		return params, scope.requireTerminal(method, in.TerminalID)
 	case "events":
 		in, ok := params.(protocol.EventsParams)
 		if !ok {
