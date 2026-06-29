@@ -163,6 +163,165 @@ func TestR333ED2ClearScreenDoesNotDuplicateAlreadySealedOrdinaryLines(t *testing
 	}
 }
 
+func TestR339CodexClearKeepsShellAndPreviousPrimaryHistory(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r339-clear-iterm2",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 44, Rows: 6},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r339-clear-iterm2",
+		"shell history 1\r\n"+
+			"shell history 2\r\n",
+	); err != nil {
+		t.Fatalf("seed shell history: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r339-clear-iterm2",
+		"\x1b[?2026h"+
+			"screen before clear 1\r\n"+
+			"screen before clear 2"+
+			"\x1b[?2026l",
+	); err != nil {
+		t.Fatalf("seed primary frame: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r339-clear-iterm2",
+		"\x1b[?2026h\x1b[H\x1b[2J"+
+			"screen after clear only"+
+			"\x1b[?2026l",
+	); err != nil {
+		t.Fatalf("ingest repaint: %v", err)
+	}
+
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r339-clear-iterm2", 44, 2)
+	text := strings.Join(historyRowTexts(rows), "\n")
+	for _, want := range []string{
+		"shell history 1",
+		"shell history 2",
+		"screen before clear 1",
+		"screen before clear 2",
+		"screen after clear only",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("/clear history missing %q:\n%s\nrows=%#v", want, text, rows)
+		}
+	}
+	committed := strings.Join(committedHistoryRowTexts(rows), "\n")
+	for _, want := range []string{"shell history 1", "shell history 2", "screen before clear 1", "screen before clear 2"} {
+		if got := strings.Count(committed, want); got != 1 {
+			t.Fatalf("/clear must keep %q exactly once in scrollable history, count=%d:\n%s\nrows=%#v", want, got, committed, rows)
+		}
+	}
+	current := strings.Join(currentPrimaryFrameRowTexts(rows), "\n")
+	if current != "screen after clear only" {
+		t.Fatalf("current primary frame after /clear should only contain post-clear screen, got %q rows=%#v", current, rows)
+	}
+}
+
+func TestR333SynchronizedBeginAloneDoesNotPublishExistingShellScreenAsFrame(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r333-sync-begin",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 24, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r333-sync-begin", "older one\r\nvisible tail\r\n"); err != nil {
+		t.Fatalf("seed ordinary lines: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r333-sync-begin", "\x1b[?2026h"); err != nil {
+		t.Fatalf("ingest synchronized begin: %v", err)
+	}
+
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r333-sync-begin", history.HistoryWindowRequest{
+		TerminalID: "term-r333-sync-begin",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       24,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
+		t.Fatalf("synchronized begin without repaint payload must not publish existing shell screen as current frame, rows=%#v", window.Rows)
+	}
+}
+
+func TestR333SynchronizedEndAloneDoesNotRepublishCurrentFrame(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r333-sync-end",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 24, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r333-sync-end", "\x1b[?2026hcurrent\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest synchronized payload: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r333-sync-end", "\x1b[?2026h\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest synchronized end-only boundary: %v", err)
+	}
+
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r333-sync-end", 24, 2)
+	if got := historyTextCount(rows, "current"); got != 1 {
+		t.Fatalf("sync end-only boundary must not republish current frame, count=%d rows=%#v", got, rows)
+	}
+}
+
+func TestR333NumberedResumeED2HistoryPagesAllSessions(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r333-numbered-resume",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 64, Rows: 8},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-r333-numbered-resume", r333NumberedStreamSession(1, 100, 10)); err != nil {
+		t.Fatalf("ingest S01 stream: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r333-numbered-resume", r333NumberedRedrawSession(2, 100, 10)); err != nil {
+		t.Fatalf("ingest S02 redraw: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r333-numbered-resume", r333NumberedRedrawSession(3, 100, 10)); err != nil {
+		t.Fatalf("ingest S03 redraw: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r333-numbered-resume", "PROMPT_AFTER"); err != nil {
+		t.Fatalf("ingest prompt: %v", err)
+	}
+
+	rows, pages := r326CollectAllHistoryRows(t, server, "term-r333-numbered-resume", 64, 17)
+	texts := historyRowTexts(rows)
+	joined := strings.Join(texts, "\n")
+	for _, needle := range []string{
+		"S01 001/100 | seq=001",
+		"S01 100/100 | seq=100 | 中文编号100中文",
+		"S02 001/100 | seq=001",
+		"S02 100/100 | seq=100 | 中文编号100中文",
+		"S03 001/100 | seq=001",
+		"S03 100/100 | seq=100 | 中文编号100中文",
+	} {
+		if !strings.Contains(joined, needle) {
+			t.Fatalf("numbered resume history missing %q after %d pages:\n%s\nrows=%#v", needle, pages, joined, rows)
+		}
+	}
+	if strings.Contains(joined, "中 文") || strings.Contains(joined, "编 号") {
+		t.Fatalf("CJK text must not gain materialized spaces:\n%s", joined)
+	}
+	promptIndex := historyTextIndex(texts, "PROMPT_AFTER")
+	redrawEndIndex := historyTextIndex(texts, "REDRAW_END S03")
+	if promptIndex < 0 || redrawEndIndex < 0 || promptIndex < redrawEndIndex {
+		t.Fatalf("S03 frame/prompt order is wrong, prompt=%d redraw_end=%d:\n%s", promptIndex, redrawEndIndex, joined)
+	}
+	if pages <= 1 {
+		t.Fatalf("test must exercise older pagination, pages=%d rows=%d", pages, len(rows))
+	}
+}
+
 func TestR332OrdinaryCJKOutputDoesNotInsertContinuationSpaces(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

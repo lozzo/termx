@@ -2,6 +2,7 @@ package termxcorev2
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -131,4 +132,43 @@ func historyCellsForRegression(text string) []history.TerminalSemanticCell {
 		cells = append(cells, history.TerminalSemanticCell{Content: string(r), Width: 1})
 	}
 	return cells
+}
+
+func r333NumberedStreamSession(session int, lines int, cjkEvery int) string {
+	var builder strings.Builder
+	builder.WriteString(r333NumberedMarker("STREAM_BEGIN", session, lines))
+	builder.WriteString("\r\n")
+	for line := 1; line <= lines; line++ {
+		builder.WriteString(r333NumberedLine(session, line, lines, cjkEvery))
+		builder.WriteString("\r\n")
+	}
+	builder.WriteString(r333NumberedMarker("STREAM_END", session, lines))
+	builder.WriteString("\r\n")
+	return builder.String()
+}
+
+func r333NumberedRedrawSession(session int, lines int, cjkEvery int) string {
+	var builder strings.Builder
+	builder.WriteString("\x1b[?2026h\x1b[2J\x1b[H")
+	builder.WriteString(r333NumberedMarker("REDRAW_BEGIN", session, lines))
+	builder.WriteString("\r\n")
+	for line := 1; line <= lines; line++ {
+		builder.WriteString(r333NumberedLine(session, line, lines, cjkEvery))
+		builder.WriteString("\r\n")
+	}
+	builder.WriteString(r333NumberedMarker("REDRAW_END", session, lines))
+	builder.WriteString("\r\n\x1b[?2026l")
+	return builder.String()
+}
+
+func r333NumberedMarker(label string, session int, lines int) string {
+	return fmt.Sprintf("=== %s S%02d lines=%d clear=ed2 sync=1 ===", label, session, lines)
+}
+
+func r333NumberedLine(session int, line int, total int, cjkEvery int) string {
+	text := fmt.Sprintf("S%02d %03d/%03d | seq=%03d", session, line, total, line)
+	if cjkEvery > 0 && line%cjkEvery == 0 {
+		text += fmt.Sprintf(" | 中文编号%03d中文", line)
+	}
+	return text
 }
