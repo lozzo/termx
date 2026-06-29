@@ -1078,9 +1078,9 @@ func (session *protocolSession) nextLiveInvalidation(ctx context.Context, params
 	if params.TerminalID == "" {
 		return Event{}, ErrTerminalNotFound
 	}
-	// 中文说明：protocol 只转发 terminal scope；客户端渲染进度不能进入 core
-	// live wake 合同，否则 core 会重新关心 TUI 已经写到哪一帧。
-	return session.server.NextLiveInvalidation(ctx, params.TerminalID)
+	// 中文说明：ObservedRevision 只表示客户端已观察到 core native screen 的版本，
+	// 不是 rendered revision；core 用它补 one-shot arm 间隙的 wake 边沿。
+	return session.server.NextLiveInvalidation(ctx, params.TerminalID, LiveRevision(params.ObservedRevision))
 }
 
 func (session *protocolSession) stopEvents() {

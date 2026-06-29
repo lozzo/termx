@@ -476,7 +476,7 @@ func TestProtocolServiceNextLiveInvalidationDecodesOneShotParams(t *testing.T) {
 	events := make(chan *protocol.Event, 1)
 	errs := make(chan error, 1)
 	go func() {
-		event, err := client.NextLiveInvalidation(ctx, "term-live-next")
+		event, err := client.NextLiveInvalidation(ctx, "term-live-next", 0)
 		if err != nil {
 			errs <- err
 			return
@@ -503,6 +503,34 @@ func TestProtocolServiceNextLiveInvalidationDecodesOneShotParams(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatalf("timed out waiting for live invalidation event: %v", ctx.Err())
+	}
+}
+
+func TestProtocolServiceNextLiveInvalidationUsesObservedRevision(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-live-observed", Command: []string{"shell"}, Size: protocol.Size{Cols: 12, Rows: 4}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-live-observed", "first\r\n"); err != nil {
+		t.Fatalf("first ingest: %v", err)
+	}
+	first, err := client.LiveScreen(context.Background(), "term-live-observed")
+	if err != nil {
+		t.Fatalf("first live screen: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-live-observed", "second\r\n"); err != nil {
+		t.Fatalf("second ingest: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	event, err := client.NextLiveInvalidation(ctx, "term-live-observed", first.Revision)
+	if err != nil {
+		t.Fatalf("missed live invalidation should return immediately: %v", err)
+	}
+	if event == nil || event.LiveInvalidated == nil || event.LiveInvalidated.Revision <= first.Revision {
+		t.Fatalf("expected wake newer than observed revision %d, got %#v", first.Revision, event)
 	}
 }
 

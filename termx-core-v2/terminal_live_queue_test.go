@@ -107,6 +107,55 @@ func TestTerminalLiveIngestQueueUsesInteractiveBatchLimit(t *testing.T) {
 	close(queue.done)
 }
 
+func TestTerminalLiveIngestQueueSplitsSinglePTYReadChunk(t *testing.T) {
+	if ptyReadBufferBytes <= terminalLiveIngestBatchMaxBytes {
+		t.Fatalf("test requires PTY read chunk larger than live batch, got pty=%d batch=%d", ptyReadBufferBytes, terminalLiveIngestBatchMaxBytes)
+	}
+	queue := newTerminalLiveIngestQueue()
+	chunk := strings.Repeat("x", ptyReadBufferBytes)
+	if !queue.Enqueue(chunk) {
+		t.Fatal("expected enqueue before close")
+	}
+
+	batches := 0
+	totalBytes := 0
+	for totalBytes < len(chunk) {
+		batch, ok := queue.nextBatch()
+		if !ok {
+			t.Fatal("queue closed before pending PTY chunk drained")
+		}
+		batches++
+		batchBytes := 0
+		for _, item := range batch {
+			batchBytes += len(item)
+		}
+		if batchBytes == 0 || batchBytes > terminalLiveIngestBatchMaxBytes {
+			t.Fatalf("live batch should split one PTY read into interactive chunks, got %d limit %d", batchBytes, terminalLiveIngestBatchMaxBytes)
+		}
+		totalBytes += batchBytes
+	}
+
+	wantBatches := (ptyReadBufferBytes + terminalLiveIngestBatchMaxBytes - 1) / terminalLiveIngestBatchMaxBytes
+	if batches != wantBatches {
+		t.Fatalf("expected PTY read chunk to split into %d live batches, got %d", wantBatches, batches)
+	}
+	close(queue.done)
+}
+
+func TestLiveIngestSplitPayloadPrefersLineAndUTF8Boundaries(t *testing.T) {
+	head, tail := splitLiveIngestPayload("first\nsecond\nthird", len("first\nsecond"))
+	if head != "first\n" || tail != "second\nthird" {
+		t.Fatalf("expected split at last complete line, got head=%q tail=%q", head, tail)
+	}
+
+	text := "abc中文def"
+	limitInsideSecondRune := len("abc中") + 1
+	head, tail = splitLiveIngestPayload(text, limitInsideSecondRune)
+	if head != "abc中" || tail != "文def" {
+		t.Fatalf("expected split to avoid UTF-8 continuation byte, got head=%q tail=%q", head, tail)
+	}
+}
+
 func TestTerminalLiveIngestQueueDropsConsumedPayloadReferences(t *testing.T) {
 	queue := newTerminalLiveIngestQueue()
 	chunk := strings.Repeat("x", terminalLiveIngestBatchMaxBytes)

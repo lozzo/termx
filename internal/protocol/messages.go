@@ -509,10 +509,12 @@ type LiveScreenParams struct {
 }
 
 // LiveInvalidationNextParams 是 live display one-shot invalidation 的请求参数。
-// 它只按 terminal scope 注册下一次 live wake；协议不能携带客户端渲染进度，
-// core 也不能根据 TUI 已渲染到哪一帧来过滤 native screen invalidation。
+// ObservedRevision 只表示客户端上次从 core live.screen.get 或 wake 看到的
+// native screen revision，用来补 one-shot arm 间隙丢失的 invalidation 边沿；
+// 它不是 rendered revision，core 不能据此推断 TUI 已经写到哪一帧。
 type LiveInvalidationNextParams struct {
-	TerminalID string
+	TerminalID       string
+	ObservedRevision uint64
 }
 
 // HistoryWindowParams 是 authoritative history path 的请求参数。

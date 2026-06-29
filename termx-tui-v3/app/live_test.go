@@ -1152,7 +1152,9 @@ func TestLiveStreamEffectCoalescesThroughRuntimeQueue(t *testing.T) {
 	}
 	if len(terminal.LiveInvalidationRequests) != 2 ||
 		terminal.LiveInvalidationRequests[0].TerminalID != "term-1" ||
-		terminal.LiveInvalidationRequests[1].TerminalID != "term-1" {
+		terminal.LiveInvalidationRequests[1].TerminalID != "term-1" ||
+		terminal.LiveInvalidationRequests[0].ObservedRevision != 0 ||
+		terminal.LiveInvalidationRequests[1].ObservedRevision != 7 {
 		t.Fatalf("expected stream to re-arm terminal-scoped wake without rendered revision, got %#v", terminal.LiveInvalidationRequests)
 	}
 }

@@ -882,14 +882,16 @@ func liveStreamEffect(terminalID string, cols int, rows int, deps LiveDeps) []Ef
 		StreamEffect{
 			Token: token,
 			Run: func(ctx context.Context, post func(Msg)) {
+				var observedRevision uint64
 				for {
 					if err := ctx.Err(); err != nil {
 						return
 					}
 					event, err := source.ArmLiveInvalidation(ctx, services.TerminalLiveEventRequest{
-						TerminalID: terminalID,
-						Cols:       cols,
-						Rows:       rows,
+						TerminalID:       terminalID,
+						Cols:             cols,
+						Rows:             rows,
+						ObservedRevision: observedRevision,
 					})
 					if err != nil {
 						logEffectError(deps.Logger, "live.invalidation", err,
@@ -906,6 +908,11 @@ func liveStreamEffect(terminalID string, cols int, rows int, deps LiveDeps) []Ef
 					}
 					if event.TerminalID == "" {
 						event.TerminalID = terminalID
+					}
+					if event.Snapshot.Revision > observedRevision {
+						// 中文说明：这里记录的是 service 已观察到的 core live revision，
+						// 不是 FrameSink 已写出的 revision；core 不能把它当渲染 ack。
+						observedRevision = event.Snapshot.Revision
 					}
 					perftrace.Count("tui.live_event", liveEventApproxBytes(event))
 					post(LiveEventMsg{Event: event})

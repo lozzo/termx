@@ -299,10 +299,14 @@ type TerminalSurfaceRequest struct {
 	Rows       int
 }
 
+// TerminalLiveEventRequest 是 TUI service 层 one-shot live wake 请求。
+// ObservedRevision 来自 core native screen/wake 的已观察版本，只用于补 arm 间隙；
+// 它不是 FrameSink 写出进度，不能把 TUI 渲染状态反传成 core truth。
 type TerminalLiveEventRequest struct {
-	TerminalID string
-	Cols       int
-	Rows       int
+	TerminalID       string
+	Cols             int
+	Rows             int
+	ObservedRevision uint64
 }
 
 type TerminalLiveEvent struct {

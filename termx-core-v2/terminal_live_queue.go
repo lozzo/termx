@@ -3,12 +3,13 @@ package termxcorev2
 import (
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 // terminalLiveIngestBatchMaxBytes 是 live native screen 的交互批次上限。
 // core 仍只维护 latest screen，不承诺补放中间 frame；这个上限只防止 PTY
 // 高频输出被攒成超大块后才推进 vterm 和 live invalidation。
-const terminalLiveIngestBatchMaxBytes = 64 * 1024
+const terminalLiveIngestBatchMaxBytes = 16 * 1024
 
 // terminalLiveIngestQueue 把 PTY 高频输出压成 live latest 批次。
 // enqueue 不写 vterm，不持 terminal live 锁；worker 只取当前积压批次写一次 screen。
@@ -77,6 +78,11 @@ func (queue *terminalLiveIngestQueue) nextBatch() ([]string, bool) {
 	bytes := 0
 	for count < len(queue.pending) {
 		nextBytes := len(queue.pending[count])
+		if bytes == 0 && nextBytes > terminalLiveIngestBatchMaxBytes {
+			head, tail := splitLiveIngestPayload(queue.pending[count], terminalLiveIngestBatchMaxBytes)
+			queue.pending[count] = tail
+			return []string{head}, true
+		}
 		if count > 0 && bytes+nextBytes > terminalLiveIngestBatchMaxBytes {
 			break
 		}
@@ -89,6 +95,31 @@ func (queue *terminalLiveIngestQueue) nextBatch() ([]string, bool) {
 		queue.cond.Signal()
 	}
 	return batch, true
+}
+
+func splitLiveIngestPayload(text string, limit int) (string, string) {
+	if limit <= 0 || len(text) <= limit {
+		return text, ""
+	}
+	split := liveIngestSplitOffset(text, limit)
+	return text[:split], text[split:]
+}
+
+func liveIngestSplitOffset(text string, limit int) int {
+	if limit <= 0 || len(text) <= limit {
+		return len(text)
+	}
+	if newline := strings.LastIndexByte(text[:limit], '\n'); newline >= 0 {
+		return newline + 1
+	}
+	split := limit
+	for split > 0 && !utf8.RuneStart(text[split]) {
+		split--
+	}
+	if split == 0 {
+		return limit
+	}
+	return split
 }
 
 func (queue *terminalLiveIngestQueue) dropPendingPrefixLocked(count int) {

@@ -9,8 +9,8 @@ import (
 
 const (
 	// Version 是 control protobuf method 合同的代际边界。
-	// R361 删除 live.invalidation.next 的 rendered revision 参数后，新客户端不能继续连旧 daemon。
-	Version      = 2
+	// R365 增加 observed revision 补 one-shot invalidation 边沿后，新客户端不能继续连旧 daemon。
+	Version      = 3
 	MaxFrameSize = 4 << 20
 
 	TypeHello          uint8 = 0x00

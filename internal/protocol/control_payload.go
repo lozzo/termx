@@ -355,7 +355,9 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 		if !ok {
 			return nil, methodParamsTypeError(method, "protocol.LiveInvalidationNextParams", params)
 		}
-		return proto.Marshal(&wirepb.GetParams{TerminalId: value.TerminalID})
+		msg := &wirepb.GetParams{TerminalId: value.TerminalID}
+		setUint64ProtoFieldOrUnknown(msg, liveInvalidationObservedRevisionFieldNumber, value.ObservedRevision)
+		return proto.Marshal(msg)
 	case "history.window", "history.release", "history.copy":
 		value, ok := params.(HistoryWindowParams)
 		if !ok {
@@ -542,7 +544,8 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return LiveInvalidationNextParams{
-			TerminalID: msg.GetTerminalId(),
+			TerminalID:       msg.GetTerminalId(),
+			ObservedRevision: uint64ProtoFieldOrUnknown(&msg, liveInvalidationObservedRevisionFieldNumber),
 		}, nil
 	case "history.window", "history.release", "history.copy":
 		var msg wirepb.HistoryWindowParams
@@ -1791,6 +1794,7 @@ const (
 	terminalInfoExitedAtFieldNumber                protowire.Number = 13
 	terminalStateChangedExitedAtFieldNumber        protowire.Number = 4
 	eventLiveRevisionFieldNumber                   protowire.Number = 14
+	liveInvalidationObservedRevisionFieldNumber    protowire.Number = 17
 	nativeScreenLiveRevisionFieldNumber            protowire.Number = 17
 	historyWindowModeFieldNumber                   protowire.Number = 12
 	historyWindowAfterCursorValidFieldNumber       protowire.Number = 13

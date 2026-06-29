@@ -48,42 +48,43 @@ func (client *fakeProtocolHistoryClient) ReleaseHistory(_ context.Context, param
 }
 
 type fakeProtocolTerminalClient struct {
-	attachParams       []protocol.AttachParams
-	detachParams       []protocol.DetachParams
-	listCalls          int
-	createParams       []protocol.CreateParams
-	restartIDs         []string
-	killIDs            []string
-	removeIDs          []string
-	metadataIDs        []string
-	metadataNames      []string
-	metadataTags       []map[string]string
-	tagIDs             []string
-	tagSets            []map[string]string
-	inputChannel       []uint16
-	inputData          [][]byte
-	inputParams        []protocol.InputParams
-	resizeChannels     []uint16
-	resizes            []protocol.Size
-	ensureParams       []protocol.EnsureResizeParams
-	eventParams        []protocol.EventsParams
-	eventCh            chan protocol.Event
-	eventSubscribers   []fakeProtocolEventSubscriber
-	eventFanoutStarted bool
-	nextLiveIDs        []string
-	nextLiveEvent      *protocol.Event
-	nextLiveErr        error
-	liveScreenIDs      []string
-	liveScreenResult   *protocol.NativeScreenSnapshot
-	liveScreenResults  map[string]*protocol.NativeScreenSnapshot
-	attachResult       *protocol.AttachResult
-	listResult         *protocol.ListResult
-	createResult       *protocol.CreateResult
-	storageGets        []protocol.StorageGetParams
-	storagePuts        []protocol.StoragePutParams
-	storageEntry       *protocol.StorageEntry
-	storageGetErr      error
-	storagePutErr      error
+	attachParams              []protocol.AttachParams
+	detachParams              []protocol.DetachParams
+	listCalls                 int
+	createParams              []protocol.CreateParams
+	restartIDs                []string
+	killIDs                   []string
+	removeIDs                 []string
+	metadataIDs               []string
+	metadataNames             []string
+	metadataTags              []map[string]string
+	tagIDs                    []string
+	tagSets                   []map[string]string
+	inputChannel              []uint16
+	inputData                 [][]byte
+	inputParams               []protocol.InputParams
+	resizeChannels            []uint16
+	resizes                   []protocol.Size
+	ensureParams              []protocol.EnsureResizeParams
+	eventParams               []protocol.EventsParams
+	eventCh                   chan protocol.Event
+	eventSubscribers          []fakeProtocolEventSubscriber
+	eventFanoutStarted        bool
+	nextLiveIDs               []string
+	nextLiveObservedRevisions []uint64
+	nextLiveEvent             *protocol.Event
+	nextLiveErr               error
+	liveScreenIDs             []string
+	liveScreenResult          *protocol.NativeScreenSnapshot
+	liveScreenResults         map[string]*protocol.NativeScreenSnapshot
+	attachResult              *protocol.AttachResult
+	listResult                *protocol.ListResult
+	createResult              *protocol.CreateResult
+	storageGets               []protocol.StorageGetParams
+	storagePuts               []protocol.StoragePutParams
+	storageEntry              *protocol.StorageEntry
+	storageGetErr             error
+	storagePutErr             error
 }
 
 type fakeProtocolEventSubscriber struct {
@@ -125,8 +126,9 @@ func (client *fakeProtocolTerminalClient) Events(_ context.Context, params proto
 	return ch, nil
 }
 
-func (client *fakeProtocolTerminalClient) NextLiveInvalidation(_ context.Context, terminalID string) (*protocol.Event, error) {
+func (client *fakeProtocolTerminalClient) NextLiveInvalidation(_ context.Context, terminalID string, observedRevision uint64) (*protocol.Event, error) {
 	client.nextLiveIDs = append(client.nextLiveIDs, terminalID)
+	client.nextLiveObservedRevisions = append(client.nextLiveObservedRevisions, observedRevision)
 	if client.nextLiveErr != nil {
 		return nil, client.nextLiveErr
 	}
@@ -1626,15 +1628,15 @@ func TestProtocolTerminalServiceAdapterMapsOrdinaryLiveEventsToRefreshInvalidati
 		nextLiveEvent: &protocol.Event{Type: protocol.EventTerminalLiveInvalidated, TerminalID: "term-1", LiveInvalidated: &protocol.LiveScreenInvalidatedData{Revision: 9}},
 	}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
-	got, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
+	got, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24, ObservedRevision: 7})
 	if err != nil {
 		t.Fatalf("arm live invalidation: %v", err)
 	}
 	if !got.Refresh || got.Ready || got.TerminalID != "term-1" || got.Snapshot.Revision != 9 || got.Snapshot.TerminalID != "" || len(got.Snapshot.Screen) != 0 {
 		t.Fatalf("unexpected live event %#v", got)
 	}
-	if len(client.nextLiveIDs) != 1 || client.nextLiveIDs[0] != "term-1" || len(client.eventParams) != 0 {
-		t.Fatalf("expected one-shot live invalidation RPC, next=%#v events=%#v", client.nextLiveIDs, client.eventParams)
+	if len(client.nextLiveIDs) != 1 || client.nextLiveIDs[0] != "term-1" || len(client.nextLiveObservedRevisions) != 1 || client.nextLiveObservedRevisions[0] != 7 || len(client.eventParams) != 0 {
+		t.Fatalf("expected one-shot live invalidation RPC, next=%#v observed=%#v events=%#v", client.nextLiveIDs, client.nextLiveObservedRevisions, client.eventParams)
 	}
 	if len(client.liveScreenIDs) != 0 {
 		t.Fatalf("live invalidation should not fetch native screen in service layer, got %#v", client.liveScreenIDs)

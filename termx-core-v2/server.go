@@ -469,17 +469,28 @@ func (server *Server) LiveSnapshot(id string) (live.SurfaceSnapshot, error) {
 }
 
 // NextLiveInvalidation 等待指定 terminal 的下一次 live invalidation。
-// core-v2 只维护 latest native screen 和 wake signal；该接口不能接收 TUI 已渲染
-// revision，也不能把客户端渲染进度变成服务端过滤条件。
-func (server *Server) NextLiveInvalidation(ctx context.Context, id string) (Event, error) {
+// observedRevision 是客户端已从 core 看到的 native screen revision，不是 TUI 已渲染
+// revision；core 只用它补 one-shot arm 间隙丢失的 wake，仍不维护客户端渲染进度。
+func (server *Server) NextLiveInvalidation(ctx context.Context, id string, observedRevision LiveRevision) (Event, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if _, err := server.Terminal(id); err != nil {
+	terminal, err := server.Terminal(id)
+	if err != nil {
 		return Event{}, err
 	}
-	// 中文说明：这里故意不读取或比较客户端 rendered revision。live owner
-	// 只提供下一次 terminal wake，TUI 收到 wake 后自行拉 core 当前 latest screen。
+	if revision := terminal.LiveRevision(); revision > observedRevision {
+		// 中文说明：这是 latest native screen 的边沿补偿，不是事件回放队列。
+		// 客户端只得到一个 wake，随后仍自行拉 core 当前 latest screen。
+		return Event{
+			Type:       EventTerminalLiveInvalidated,
+			TerminalID: id,
+			Live: &LiveScreenInvalidated{
+				TerminalID: id,
+				Revision:   revision,
+			},
+		}, nil
+	}
 	waitCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	events := server.Events(waitCtx, EventFilter{
@@ -495,6 +506,9 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string) (Even
 				return Event{}, context.Canceled
 			}
 			if event.Live == nil {
+				continue
+			}
+			if event.Live.Revision <= observedRevision {
 				continue
 			}
 			return event, nil

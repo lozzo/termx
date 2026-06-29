@@ -138,7 +138,7 @@ func TestTerminalHistoryDisabledUsesNativeScreenOnlyWritePath(t *testing.T) {
 	}
 }
 
-func TestServerNextLiveInvalidationDoesNotUseRenderedRevisionState(t *testing.T) {
+func TestServerNextLiveInvalidationReplaysOnlyWhenObservedRevisionIsBehind(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-live-next", Command: []string{"shell"}}); err != nil {
 		t.Fatalf("register terminal: %v", err)
@@ -146,10 +146,25 @@ func TestServerNextLiveInvalidationDoesNotUseRenderedRevisionState(t *testing.T)
 	if err := server.IngestOutput(context.Background(), "term-live-next", "live update\n"); err != nil {
 		t.Fatalf("ingest output: %v", err)
 	}
+	terminal, err := server.Terminal("term-live-next")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	currentRevision := terminal.LiveRevision()
+	if currentRevision == 0 {
+		t.Fatalf("expected live revision after output")
+	}
+	event, err := server.NextLiveInvalidation(context.Background(), "term-live-next", currentRevision-1)
+	if err != nil {
+		t.Fatalf("behind observed revision should get immediate wake: %v", err)
+	}
+	if event.Live == nil || event.Live.Revision != currentRevision {
+		t.Fatalf("unexpected immediate wake %#v current=%#v", event, currentRevision)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	if event, err := server.NextLiveInvalidation(ctx, "term-live-next"); err == nil {
-		t.Fatalf("one-shot arm must wait for a future wake instead of replaying current revision: %#v", event)
+	if event, err := server.NextLiveInvalidation(ctx, "term-live-next", currentRevision); err == nil {
+		t.Fatalf("observed current revision must wait for a future wake instead of replaying current revision: %#v", event)
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected wait timeout without future invalidation, got %v", err)
 	}
@@ -165,7 +180,7 @@ func TestServerNextLiveInvalidationWaitsForNextWake(t *testing.T) {
 	done := make(chan Event, 1)
 	errs := make(chan error, 1)
 	go func() {
-		event, err := server.NextLiveInvalidation(ctx, "term-live-wait")
+		event, err := server.NextLiveInvalidation(ctx, "term-live-wait", 0)
 		if err != nil {
 			errs <- err
 			return
@@ -191,6 +206,33 @@ func TestServerNextLiveInvalidationWaitsForNextWake(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatalf("timed out waiting for live invalidation: %v", ctx.Err())
+	}
+}
+
+func TestServerNextLiveInvalidationCoalescesMissedRevisionsToLatestWake(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-live-coalesce", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	for _, output := range []string{"one\r\n", "two\r\n", "three\r\n"} {
+		if err := server.IngestOutput(context.Background(), "term-live-coalesce", output); err != nil {
+			t.Fatalf("ingest output: %v", err)
+		}
+	}
+	terminal, err := server.Terminal("term-live-coalesce")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	currentRevision := terminal.LiveRevision()
+	if currentRevision < 3 {
+		t.Fatalf("expected multiple live revisions, got %d", currentRevision)
+	}
+	event, err := server.NextLiveInvalidation(context.Background(), "term-live-coalesce", 1)
+	if err != nil {
+		t.Fatalf("missed revisions should coalesce to latest wake: %v", err)
+	}
+	if event.Live == nil || event.Live.Revision != currentRevision {
+		t.Fatalf("expected latest coalesced revision %d, got %#v", currentRevision, event)
 	}
 }
 

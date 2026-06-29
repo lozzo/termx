@@ -11,13 +11,16 @@ import (
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
+// ProtocolTerminalClient 是 tui-v3 service adapter 依赖的 core-v2 protocol 边界。
+// live invalidation 方法只透传 observed native revision 补 wake 边沿；adapter
+// 不把 renderer/FrameSink 状态写回 core，也不从 protocol 侧推断 history truth。
 type ProtocolTerminalClient interface {
 	AttachWithOptions(context.Context, protocol.AttachParams) (*protocol.AttachResult, error)
 	Detach(context.Context, protocol.DetachParams) error
 	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
 	List(context.Context) (*protocol.ListResult, error)
 	LiveScreen(context.Context, string) (*protocol.NativeScreenSnapshot, error)
-	NextLiveInvalidation(context.Context, string) (*protocol.Event, error)
+	NextLiveInvalidation(context.Context, string, uint64) (*protocol.Event, error)
 	Create(context.Context, protocol.CreateParams) (*protocol.CreateResult, error)
 	Restart(context.Context, string) error
 	Kill(context.Context, string) error
@@ -336,7 +339,7 @@ func (adapter ProtocolTerminalServiceAdapter) ArmLiveInvalidation(ctx context.Co
 	if adapter.Client == nil {
 		return TerminalLiveEvent{}, ErrMissingTerminalClient
 	}
-	event, err := adapter.Client.NextLiveInvalidation(ctx, req.TerminalID)
+	event, err := adapter.Client.NextLiveInvalidation(ctx, req.TerminalID, req.ObservedRevision)
 	if err != nil {
 		return TerminalLiveEvent{}, err
 	}

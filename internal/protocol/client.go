@@ -323,11 +323,12 @@ func (c *Client) LiveScreen(ctx context.Context, terminalID string) (*NativeScre
 }
 
 // NextLiveInvalidation 阻塞等待指定 terminal 的下一次 live screen 失效通知。
-// 这是 TUI latest-screen render loop 的 one-shot arm 接口；返回后本次 arm 自动结束，
-// 且不会携带 screen payload 或客户端渲染进度。
-func (c *Client) NextLiveInvalidation(ctx context.Context, terminalID string) (*Event, error) {
+// observedRevision 是客户端已观察到的 latest native screen revision，不是渲染进度；
+// core 只用它补 one-shot arm 间隙丢失的 wake，不维护客户端 frame 队列。
+func (c *Client) NextLiveInvalidation(ctx context.Context, terminalID string, observedRevision uint64) (*Event, error) {
 	payload, err := c.doRequestPayload(ctx, "live.invalidation.next", LiveInvalidationNextParams{
-		TerminalID: terminalID,
+		TerminalID:       terminalID,
+		ObservedRevision: observedRevision,
 	})
 	if err != nil {
 		return nil, err

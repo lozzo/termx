@@ -54,9 +54,10 @@ func TestLiveInvalidatedEventRoundTripCarriesRevision(t *testing.T) {
 	}
 }
 
-func TestLiveInvalidationNextParamsRoundTripCarriesOnlyTerminalScope(t *testing.T) {
+func TestLiveInvalidationNextParamsRoundTripCarriesObservedRevision(t *testing.T) {
 	payload, err := EncodeMethodParams("live.invalidation.next", LiveInvalidationNextParams{
-		TerminalID: "term-live",
+		TerminalID:       "term-live",
+		ObservedRevision: 42,
 	})
 	if err != nil {
 		t.Fatalf("encode live invalidation params: %v", err)
@@ -69,7 +70,7 @@ func TestLiveInvalidationNextParamsRoundTripCarriesOnlyTerminalScope(t *testing.
 	if !ok {
 		t.Fatalf("decoded params type %T", decoded)
 	}
-	if params.TerminalID != "term-live" {
+	if params.TerminalID != "term-live" || params.ObservedRevision != 42 {
 		t.Fatalf("unexpected params %#v", params)
 	}
 }
