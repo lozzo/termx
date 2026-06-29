@@ -120,10 +120,9 @@ type handledEffect struct{}
 func (handledEffect) isEffect() {}
 
 const (
-	defaultToastTickInterval         = time.Second
-	toastTickToken                   = CancelToken("toast.tick")
-	defaultMaxMessagesPerBatch       = 128
-	liveSurfacePressureFrameInterval = 16 * time.Millisecond
+	defaultToastTickInterval   = time.Second
+	toastTickToken             = CancelToken("toast.tick")
+	defaultMaxMessagesPerBatch = 128
 )
 
 // ComposeReducers 按顺序执行多个 reducer，并合并它们产生的 effects。
@@ -194,7 +193,6 @@ type AppRuntime struct {
 	firstFrameWritten   bool
 	startupFrameReady   bool
 	maxMessagesPerBatch int
-	livePressureFrames  map[string]time.Time
 	copyHistoryPatch    copyHistoryPatchCache
 	lastFloatingRepaint floatingRepaintSignature
 	diagnostics         *runtimeDiagnostics
@@ -406,7 +404,6 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 			}
 			continue
 		}
-		msg = runtime.prepareRenderPressureMessage(msg)
 		next, effects := runtime.reduce(runtime.state, msg)
 		runtime.state = next
 		runtime.observeRuntimeMessage(msg, effects)
@@ -421,7 +418,7 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 			needsRender = false
 		}
 		if needsRender && runtime.shouldRenderImmediatelyAfterMessage(msg) {
-			runtime.renderFrame(ctx)
+			runtime.renderFrameForMessage(ctx, msg)
 			needsRender = false
 		}
 		if runtime.shouldWriteFirstFrame() {
@@ -492,67 +489,9 @@ func (runtime *AppRuntime) prepareRuntimeMessage(msg Msg) bool {
 	}
 }
 
-func (runtime *AppRuntime) prepareRenderPressureMessage(msg Msg) Msg {
-	surface, ok := msg.(LiveSurfaceMsg)
-	if !ok || surface.Superseded || !ordinaryLiveSurfaceResult(surface) {
-		return msg
-	}
-	if !runtime.liveSurfaceHasQueuedOrDirtySuccessor(surface.Snapshot.TerminalID) {
-		return msg
-	}
-	if runtime.shouldRenderLiveSurfaceUnderPressure(surface.Snapshot.TerminalID) {
-		// 中文说明：latest-only 可以丢中间 projection，但不能在高压输出下
-		// 因 dirty successor 永远跳过渲染；这里按帧预算放行当前最新屏。
-		perftrace.Count("tui.live_surface_pressure_render", liveSnapshotApproxBytes(surface.Snapshot))
-		return surface
-	}
-	// 中文说明：pressure 下如果当前 surface 已经有后继或 dirty refresh，
-	// 它仍会被 reducer 用来推进 fetch 状态，但这条中间 projection 不触发一帧渲染。
-	surface.Superseded = true
-	perftrace.Count("tui.live_surface_superseded", liveSnapshotApproxBytes(surface.Snapshot))
-	return surface
-}
-
-func (runtime *AppRuntime) shouldRenderLiveSurfaceUnderPressure(terminalID string) bool {
-	if terminalID == "" {
-		return false
-	}
-	now := runtime.currentTime()
-	if runtime.livePressureFrames == nil {
-		runtime.livePressureFrames = make(map[string]time.Time)
-	}
-	last := runtime.livePressureFrames[terminalID]
-	if !last.IsZero() && now.Sub(last) < liveSurfacePressureFrameInterval {
-		return false
-	}
-	runtime.livePressureFrames[terminalID] = now
-	return true
-}
-
 func (runtime *AppRuntime) shouldRenderImmediatelyAfterMessage(msg Msg) bool {
 	surface, ok := msg.(LiveSurfaceMsg)
-	return ok && ordinaryLiveSurfaceResult(surface) && !surface.Superseded
-}
-
-func (runtime *AppRuntime) liveSurfaceHasQueuedOrDirtySuccessor(terminalID string) bool {
-	if terminalID == "" {
-		return false
-	}
-	if refresh, ok := runtime.state.Surface.Refreshes[terminalID]; ok && refresh.Dirty {
-		return true
-	}
-	runtime.mu.Lock()
-	defer runtime.mu.Unlock()
-	for _, queued := range runtime.queue {
-		if liveQueueBoundary(queued) {
-			return false
-		}
-		update, ok := queuedOrdinaryLiveUpdate(queued)
-		if ok && update.terminalID == terminalID {
-			return true
-		}
-	}
-	return false
+	return ok && ordinaryLiveSurfaceResult(surface)
 }
 
 func (runtime *AppRuntime) ingestHostInitialSize() {
@@ -1008,6 +947,10 @@ func (runtime *AppRuntime) nextToastWakeDelay() time.Duration {
 }
 
 func (runtime *AppRuntime) renderFrame(ctx context.Context) bool {
+	return runtime.renderFrameForMessage(ctx, nil)
+}
+
+func (runtime *AppRuntime) renderFrameForMessage(ctx context.Context, msg Msg) bool {
 	if runtime.host == nil {
 		return false
 	}
@@ -1023,14 +966,101 @@ func (runtime *AppRuntime) renderFrame(ctx context.Context) bool {
 	runtime.markFloatingRepaintFrame(&frame)
 	runtime.lastHitRegions = cloneRenderHitRegions(frame.HitRegions)
 	finishSinkEnqueue := perftrace.Measure("tui.frame_sink_enqueue")
-	_ = runtime.host.FrameSink().WriteFrame(frame)
+	done := runtime.writeFrame(frame)
 	finishSinkEnqueue(frameBytes)
 	perftrace.Count("tui.frame", frameBytes)
 	runtime.firstFrameWritten = true
 	runtime.rememberCopyHistoryPatchFrame(frame)
 	runtime.observeRuntimeFrame(frame)
+	runtime.rememberLiveFrameCompletion(msg, done)
 	finishTotal(frameBytes)
 	return true
+}
+
+func (runtime *AppRuntime) writeFrame(frame render.Frame) <-chan render.FrameWriteCompletion {
+	if runtime.host == nil {
+		done := make(chan render.FrameWriteCompletion, 1)
+		done <- render.FrameWriteCompletion{Written: true}
+		close(done)
+		return done
+	}
+	sink := runtime.host.FrameSink()
+	if completion, ok := sink.(render.FrameSinkCompletion); ok {
+		done, err := completion.WriteFrameWithCompletion(frame)
+		if err == nil && done != nil {
+			return done
+		}
+	}
+	_ = sink.WriteFrame(frame)
+	done := make(chan render.FrameWriteCompletion, 1)
+	done <- render.FrameWriteCompletion{Written: true}
+	close(done)
+	return done
+}
+
+func (runtime *AppRuntime) rememberLiveFrameCompletion(msg Msg, done <-chan render.FrameWriteCompletion) {
+	if _, ok := msg.(LiveSurfaceMsg); !ok {
+		return
+	}
+	targets := liveFrameReadyTargetsFromRoot(runtime.state)
+	if len(targets) == 0 {
+		return
+	}
+	if done != nil {
+		select {
+		case completion, ok := <-done:
+			if ok && completion.Written {
+				runtime.enqueueLiveFrameReadyTargets(targets)
+			}
+		default:
+			// 中文说明：TUI 本地完成信号只用于下一次 one-shot enable，
+			// 不上传 core，也不表达 core rendered revision。
+			go runtime.awaitLiveFrameCompletion(targets, done)
+		}
+		return
+	}
+	runtime.enqueueLiveFrameReadyTargets(targets)
+}
+
+func (runtime *AppRuntime) awaitLiveFrameCompletion(targets []liveFrameReadyTarget, done <-chan render.FrameWriteCompletion) {
+	completion, ok := <-done
+	if !ok || !completion.Written {
+		return
+	}
+	runtime.enqueueLiveFrameReadyTargets(targets)
+}
+
+func (runtime *AppRuntime) enqueueLiveFrameReadyTargets(targets []liveFrameReadyTarget) {
+	for _, target := range targets {
+		runtime.enqueue(LiveFrameReadyMsg{TerminalID: target.TerminalID, ObservedRevision: target.ObservedRevision})
+	}
+}
+
+type liveFrameReadyTarget struct {
+	TerminalID       string
+	ObservedRevision uint64
+}
+
+func liveFrameReadyTargetsFromRoot(root state.Root) []liveFrameReadyTarget {
+	seen := map[string]struct{}{}
+	var targets []liveFrameReadyTarget
+	add := func(snapshot state.LiveSurfaceSnapshot) {
+		if snapshot.TerminalID == "" {
+			return
+		}
+		if _, ok := seen[snapshot.TerminalID]; ok {
+			return
+		}
+		seen[snapshot.TerminalID] = struct{}{}
+		targets = append(targets, liveFrameReadyTarget{TerminalID: snapshot.TerminalID, ObservedRevision: snapshot.Revision})
+	}
+	if root.Surface.TerminalID != "" {
+		add(root.Surface.Snapshot())
+	}
+	for _, snapshot := range root.Surface.Surfaces {
+		add(snapshot)
+	}
+	return targets
 }
 
 func frameApproxBytes(frame render.Frame) int {

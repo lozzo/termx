@@ -39,6 +39,36 @@ func TestLatestFrameSinkDropsIntermediateFramesWhileWriterBusy(t *testing.T) {
 	}
 }
 
+func TestLatestFrameSinkReportsDroppedCompleteFrameAsNotWritten(t *testing.T) {
+	underlying := newBlockingRecordingFrameSink()
+	sink := NewLatestFrameSink(underlying)
+	defer sink.Close()
+
+	if err := sink.WriteFrame(render.Frame{Lines: []string{"one"}}); err != nil {
+		t.Fatalf("write first frame: %v", err)
+	}
+	select {
+	case <-underlying.started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first underlying write")
+	}
+	dropped, err := sink.WriteFrameWithCompletion(render.Frame{Lines: []string{"two"}})
+	if err != nil {
+		t.Fatalf("write dropped frame: %v", err)
+	}
+	written, err := sink.WriteFrameWithCompletion(render.Frame{Lines: []string{"three"}})
+	if err != nil {
+		t.Fatalf("write latest frame: %v", err)
+	}
+	if completion := <-dropped; completion.Written {
+		t.Fatalf("overwritten frame must not report written completion: %#v", completion)
+	}
+	close(underlying.release)
+	if completion := <-written; !completion.Written {
+		t.Fatalf("latest frame should report written completion: %#v", completion)
+	}
+}
+
 func TestLatestFrameSinkKeepsIncrementalPatchesInOrder(t *testing.T) {
 	underlying := newBlockingRecordingFrameSink()
 	sink := NewLatestFrameSink(underlying)
@@ -107,26 +137,26 @@ func TestLatestFrameSinkNextClearsDequeuedPatchReferences(t *testing.T) {
 	sink := &LatestFrameSink{}
 	sink.cond = sync.NewCond(&sink.mu)
 	largeLine := strings.Repeat("x", 1024)
-	sink.patches = []render.Frame{
-		{Patch: &render.FramePatch{LineANSI: largeLine}},
-		{Patch: &render.FramePatch{LineANSI: "tail"}},
+	sink.patches = []latestFrameSinkItem{
+		{frame: render.Frame{Patch: &render.FramePatch{LineANSI: largeLine}}, done: make(chan render.FrameWriteCompletion, 1)},
+		{frame: render.Frame{Patch: &render.FramePatch{LineANSI: "tail"}}, done: make(chan render.FrameWriteCompletion, 1)},
 	}
 
-	if frame, ok := sink.next(); !ok || frame.Patch == nil || frame.Patch.LineANSI != largeLine {
-		t.Fatalf("expected first patch frame, got ok=%v frame=%#v", ok, frame)
+	if item, ok := sink.next(); !ok || item.frame.Patch == nil || item.frame.Patch.LineANSI != largeLine {
+		t.Fatalf("expected first patch frame, got ok=%v item=%#v", ok, item)
 	}
 	retained := sink.patches[:cap(sink.patches)]
-	if len(sink.patches) != 1 || retained[1].Patch != nil {
+	if len(sink.patches) != 1 || retained[1].frame.Patch != nil || retained[1].done != nil {
 		t.Fatalf("dequeued patch should not remain in backing array, len=%d retained=%#v", len(sink.patches), retained)
 	}
 
-	if frame, ok := sink.next(); !ok || frame.Patch == nil || frame.Patch.LineANSI != "tail" {
-		t.Fatalf("expected second patch frame, got ok=%v frame=%#v", ok, frame)
+	if item, ok := sink.next(); !ok || item.frame.Patch == nil || item.frame.Patch.LineANSI != "tail" {
+		t.Fatalf("expected second patch frame, got ok=%v item=%#v", ok, item)
 	}
 	retained = sink.patches[:cap(sink.patches)]
-	for i, frame := range retained {
-		if frame.Patch != nil {
-			t.Fatalf("patch backing array kept frame at index %d: %#v", i, frame)
+	for i, item := range retained {
+		if item.frame.Patch != nil || item.done != nil {
+			t.Fatalf("patch backing array kept item at index %d: %#v", i, item)
 		}
 	}
 }

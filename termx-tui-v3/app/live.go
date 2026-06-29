@@ -30,7 +30,7 @@ type LiveDeps struct {
 	Logger   *slog.Logger
 }
 
-const liveStreamTokenPrefix = "terminal.live.stream:"
+const liveInvalidationTokenPrefix = "terminal.live.invalidation:"
 
 func runtimeSurfaceID(root state.Root) string {
 	if root.RuntimeSurfaceID != "" {
@@ -164,17 +164,21 @@ type LiveSurfaceMsg struct {
 	LifecycleKnown bool
 	RequestedCols  int
 	RequestedRows  int
-	Superseded     bool
 }
 
 func (LiveSurfaceMsg) isMsg() {}
 
-func (msg LiveSurfaceMsg) SkipRender() bool {
-	return msg.isSupersededOrdinarySurface()
+// LiveFrameReadyMsg 是 TUI 本地 FrameSink 写出完成后的 ready 信号。
+// 它只控制下一次 live invalidation one-shot arm，不上传 core，也不是 rendered revision。
+type LiveFrameReadyMsg struct {
+	TerminalID       string
+	ObservedRevision uint64
 }
 
-func (msg LiveSurfaceMsg) isSupersededOrdinarySurface() bool {
-	return msg.Superseded && ordinaryLiveSurfaceResult(msg)
+func (LiveFrameReadyMsg) isMsg() {}
+
+func (LiveFrameReadyMsg) SkipRender() bool {
+	return true
 }
 
 type LiveLifecycleQueryTarget struct {
@@ -310,6 +314,8 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			next, effects := maybeRefreshFloatingAutoFit(root, msg.Snapshot.TerminalID)
 			next, dirtyEffects := maybeScheduleDirtyLiveSurfaceRefresh(next, msg.Snapshot.TerminalID, msg.RequestedCols, msg.RequestedRows, deps)
 			return next, append(effects, dirtyEffects...)
+		case LiveFrameReadyMsg:
+			return reduceLiveFrameReady(root, msg, deps)
 		case LiveEventMsg:
 			finishReduce := perftrace.Measure("tui.reducer.live_event")
 			defer finishReduce(liveEventApproxBytes(msg.Event))
@@ -801,9 +807,7 @@ func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID 
 }
 
 func liveEffects(terminalID string, cols int, rows int, deps LiveDeps) []Effect {
-	effects := liveSurfaceEffect(terminalID, cols, rows, true, deps)
-	effects = append(effects, liveStreamEffect(terminalID, cols, rows, deps)...)
-	return effects
+	return liveSurfaceEffect(terminalID, cols, rows, true, deps)
 }
 
 func reduceLiveLifecycleQuery(root state.Root, msg LiveLifecycleQueryMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -883,59 +887,45 @@ func liveSurfaceEffect(terminalID string, cols int, rows int, knownLifecycle boo
 	}}
 }
 
-func liveStreamEffect(terminalID string, cols int, rows int, deps LiveDeps) []Effect {
+func liveInvalidationArmEffect(terminalID string, cols int, rows int, observedRevision uint64, deps LiveDeps) []Effect {
 	source, ok := deps.Terminal.(services.LiveInvalidationSource)
 	if !ok || terminalID == "" {
 		return nil
 	}
-	token := liveStreamTokenForTerminal(terminalID)
-	return []Effect{
-		CancelEffect{Token: token},
-		StreamEffect{
-			Token: token,
-			Run: func(ctx context.Context, post func(Msg)) {
-				var observedRevision uint64
-				for {
-					if err := ctx.Err(); err != nil {
-						return
-					}
-					event, err := source.ArmLiveInvalidation(ctx, services.TerminalLiveEventRequest{
-						TerminalID:       terminalID,
-						Cols:             cols,
-						Rows:             rows,
-						ObservedRevision: observedRevision,
-					})
-					if err != nil {
-						logEffectError(deps.Logger, "live.invalidation", err,
-							"terminal_id", terminalID,
-						)
-						if isContextLifecycleError(err) {
-							return
-						}
-						post(LiveEventMsg{Event: services.TerminalLiveEvent{
-							TerminalID: terminalID,
-							Err:        err,
-						}})
-						return
-					}
-					if event.TerminalID == "" {
-						event.TerminalID = terminalID
-					}
-					if event.Snapshot.Revision > observedRevision {
-						// 中文说明：这里记录的是 service 已观察到的 core live revision，
-						// 不是 FrameSink 已写出的 revision；core 不能把它当渲染 ack。
-						observedRevision = event.Snapshot.Revision
-					}
-					perftrace.Count("tui.live_event", liveEventApproxBytes(event))
-					post(LiveEventMsg{Event: event})
+	token := liveInvalidationTokenForTerminal(terminalID)
+	return []Effect{FuncEffect{
+		Token: token,
+		Async: true,
+		Run: func(ctx context.Context) Msg {
+			event, err := source.ArmLiveInvalidation(ctx, services.TerminalLiveEventRequest{
+				TerminalID:       terminalID,
+				Cols:             cols,
+				Rows:             rows,
+				ObservedRevision: observedRevision,
+			})
+			if err != nil {
+				logEffectError(deps.Logger, "live.invalidation", err,
+					"terminal_id", terminalID,
+				)
+				if isContextLifecycleError(err) {
+					return nil
 				}
-			},
+				return LiveEventMsg{Event: services.TerminalLiveEvent{
+					TerminalID: terminalID,
+					Err:        err,
+				}}
+			}
+			if event.TerminalID == "" {
+				event.TerminalID = terminalID
+			}
+			perftrace.Count("tui.live_event", liveEventApproxBytes(event))
+			return LiveEventMsg{Event: event}
 		},
-	}
+	}}
 }
 
-func liveStreamTokenForTerminal(terminalID string) CancelToken {
-	return CancelToken(liveStreamTokenPrefix + terminalID)
+func liveInvalidationTokenForTerminal(terminalID string) CancelToken {
+	return CancelToken(liveInvalidationTokenPrefix + terminalID)
 }
 
 func liveSurfaceResultApproxBytes(result services.TerminalSurfaceResult) int {
@@ -1108,15 +1098,11 @@ func applyTerminalAttachmentProjectionFromResize(root state.Root, result service
 func maybeScheduleDirtyLiveSurfaceRefresh(root state.Root, terminalID string, fallbackCols int, fallbackRows int, deps LiveDeps) (state.Root, []Effect) {
 	var cols, rows int
 	var shouldFetch bool
-	dirtyCount := 0
-	if refresh, ok := root.Surface.Refreshes[terminalID]; ok {
-		dirtyCount = int(refresh.DirtyCount)
-	}
 	root.Surface, cols, rows, shouldFetch = root.Surface.ConsumeDirtyRefresh(terminalID)
 	if !shouldFetch {
 		return root, nil
 	}
-	perftrace.Count("tui.live_refresh_followup", dirtyCount)
+	perftrace.Count("tui.live_refresh_followup", 0)
 	if cols <= 0 || rows <= 0 {
 		cols, rows = fallbackCols, fallbackRows
 	}
@@ -1124,6 +1110,28 @@ func maybeScheduleDirtyLiveSurfaceRefresh(root state.Root, terminalID string, fa
 		cols, rows = liveSurfaceRefreshSize(root, terminalID)
 	}
 	return root, liveSurfaceEffect(terminalID, cols, rows, false, deps)
+}
+
+func reduceLiveFrameReady(root state.Root, msg LiveFrameReadyMsg, deps LiveDeps) (state.Root, []Effect) {
+	terminalID := strings.TrimSpace(msg.TerminalID)
+	if terminalID == "" {
+		return root, nil
+	}
+	if refresh, ok := root.Surface.Refreshes[terminalID]; ok && (refresh.InFlight || refresh.Dirty) {
+		// 中文说明：写帧完成时若 reducer 已经知道还有 dirty latest fetch，
+		// 下一次 enable 必须等 follow-up surface 写出后再发生，不能重开并行 wake。
+		return root, nil
+	}
+	surface := root.Surface.SurfaceForTerminal(terminalID)
+	if surface.State == state.TerminalLiveExited || surface.State == state.TerminalLiveError {
+		return root, nil
+	}
+	if msg.ObservedRevision != 0 && surface.Revision != msg.ObservedRevision {
+		// 这次 ready 属于已被更新覆盖的本地帧，下一次 enable 由最新帧完成时触发。
+		return root, nil
+	}
+	cols, rows := liveSurfaceRefreshSize(root, terminalID)
+	return root, liveInvalidationArmEffect(terminalID, cols, rows, surface.Revision, deps)
 }
 
 func liveSurfaceRefreshSize(root state.Root, terminalID string) (int, int) {

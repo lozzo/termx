@@ -19,8 +19,8 @@ type LatestFrameSink struct {
 	mu      sync.Mutex
 	cond    *sync.Cond
 	sink    render.FrameSink
-	pending *render.Frame
-	patches []render.Frame
+	pending *latestFrameSinkItem
+	patches []latestFrameSinkItem
 	closed  bool
 	wg      sync.WaitGroup
 
@@ -29,6 +29,11 @@ type LatestFrameSink struct {
 	diagInterval  time.Duration
 	lastDiag      time.Time
 	highWaterMark int
+}
+
+type latestFrameSinkItem struct {
+	frame render.Frame
+	done  chan render.FrameWriteCompletion
 }
 
 func NewLatestFrameSink(sink render.FrameSink) *LatestFrameSink {
@@ -56,33 +61,51 @@ func (sink *LatestFrameSink) NeedsCompleteFrame() bool {
 }
 
 func (sink *LatestFrameSink) WriteFrame(frame render.Frame) error {
+	_, err := sink.WriteFrameWithCompletion(frame)
+	return err
+}
+
+func (sink *LatestFrameSink) WriteFrameWithCompletion(frame render.Frame) (<-chan render.FrameWriteCompletion, error) {
 	cloned := frame.Clone()
+	done := make(chan render.FrameWriteCompletion, 1)
 	sink.mu.Lock()
 	if sink.closed {
 		sink.mu.Unlock()
-		return nil
+		completeLatestFrameSinkItem(done, false)
+		return done, nil
 	}
+	item := latestFrameSinkItem{frame: cloned, done: done}
 	if cloned.Patch != nil {
 		// 中文说明：增量滚动 patch 依赖顺序，不能像完整 live frame 一样丢中间帧。
-		sink.patches = append(sink.patches, cloned)
+		sink.patches = append(sink.patches, item)
 	} else {
 		// 中文说明：完整帧是绝对状态；它会覆盖之前还没写出的增量 patch。
 		if sink.pending != nil {
-			perftrace.Count("tui.frame_sink_overwrite", latestFrameApproxBytes(*sink.pending))
+			perftrace.Count("tui.frame_sink_overwrite", latestFrameApproxBytes(sink.pending.frame))
+			completeLatestFrameSinkItem(sink.pending.done, false)
 		}
-		sink.pending = &cloned
+		for _, patch := range sink.patches {
+			completeLatestFrameSinkItem(patch.done, false)
+		}
+		sink.pending = &item
 		sink.patches = nil
 	}
 	sink.observeQueueLocked(cloned.Patch != nil)
 	sink.cond.Signal()
 	sink.mu.Unlock()
-	return nil
+	return done, nil
 }
 
 func (sink *LatestFrameSink) Close() {
 	sink.mu.Lock()
 	sink.closed = true
-	sink.pending = nil
+	if sink.pending != nil {
+		completeLatestFrameSinkItem(sink.pending.done, false)
+		sink.pending = nil
+	}
+	for _, patch := range sink.patches {
+		completeLatestFrameSinkItem(patch.done, false)
+	}
 	sink.patches = nil
 	sink.cond.Broadcast()
 	sink.mu.Unlock()
@@ -92,43 +115,52 @@ func (sink *LatestFrameSink) Close() {
 func (sink *LatestFrameSink) loop() {
 	defer sink.wg.Done()
 	for {
-		frame, ok := sink.next()
+		item, ok := sink.next()
 		if !ok {
 			return
 		}
 		if sink.sink != nil {
 			finishWrite := perftrace.Measure("tui.frame_sink_write")
-			_ = sink.sink.WriteFrame(frame)
-			finishWrite(latestFrameApproxBytes(frame))
+			_ = sink.sink.WriteFrame(item.frame)
+			finishWrite(latestFrameApproxBytes(item.frame))
 		}
-		perftrace.Count("tui.frame_sink_written", latestFrameApproxBytes(frame))
+		perftrace.Count("tui.frame_sink_written", latestFrameApproxBytes(item.frame))
+		completeLatestFrameSinkItem(item.done, true)
 	}
 }
 
-func (sink *LatestFrameSink) next() (render.Frame, bool) {
+func completeLatestFrameSinkItem(done chan render.FrameWriteCompletion, written bool) {
+	if done == nil {
+		return
+	}
+	done <- render.FrameWriteCompletion{Written: written}
+	close(done)
+}
+
+func (sink *LatestFrameSink) next() (latestFrameSinkItem, bool) {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
 	for sink.pending == nil && len(sink.patches) == 0 && !sink.closed {
 		sink.cond.Wait()
 	}
 	if sink.pending == nil && len(sink.patches) == 0 && sink.closed {
-		return render.Frame{}, false
+		return latestFrameSinkItem{}, false
 	}
 	if sink.pending != nil {
-		frame := *sink.pending
+		item := *sink.pending
 		sink.pending = nil
-		return frame, true
+		return item, true
 	}
-	frame := sink.patches[0]
+	item := sink.patches[0]
 	copy(sink.patches, sink.patches[1:])
 	last := len(sink.patches) - 1
-	sink.patches[last] = render.Frame{}
+	sink.patches[last] = latestFrameSinkItem{}
 	if last == 0 {
 		sink.patches = nil
-		return frame, true
+		return item, true
 	}
 	sink.patches = sink.patches[:last]
-	return frame, true
+	return item, true
 }
 
 func (sink *LatestFrameSink) observeQueueLocked(patch bool) {
@@ -181,9 +213,10 @@ func latestFrameSinkDiagnosticsInterval() time.Duration {
 	return time.Duration(value) * time.Millisecond
 }
 
-func latestFrameSinkPatchBytes(frames []render.Frame) int {
+func latestFrameSinkPatchBytes(items []latestFrameSinkItem) int {
 	total := 0
-	for _, frame := range frames {
+	for _, item := range items {
+		frame := item.frame
 		if frame.Patch == nil {
 			continue
 		}
@@ -197,7 +230,7 @@ func latestFrameSinkPatchBytes(frames []render.Frame) int {
 
 func latestFrameApproxBytes(frame render.Frame) int {
 	if frame.Patch != nil {
-		return latestFrameSinkPatchBytes([]render.Frame{frame})
+		return latestFrameSinkPatchBytes([]latestFrameSinkItem{{frame: frame}})
 	}
 	total := 0
 	for _, line := range frame.Lines {

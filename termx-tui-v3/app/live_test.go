@@ -1118,57 +1118,67 @@ func TestTerminalPoolRemoveDeletesInventoryAndBindings(t *testing.T) {
 	}
 }
 
-func TestLiveStreamEffectCoalescesThroughRuntimeQueue(t *testing.T) {
+func TestLiveInvalidationArmEffectIsOneShot(t *testing.T) {
 	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 2)}
-	effects := liveStreamEffect("term-1", 80, 24, LiveDeps{Terminal: terminal})
-	if len(effects) != 2 {
-		t.Fatalf("expected cancel plus stream effect, got %#v", effects)
+	effects := liveInvalidationArmEffect("term-1", 80, 24, 7, LiveDeps{Terminal: terminal})
+	if len(effects) != 1 {
+		t.Fatalf("expected one arm effect, got %#v", effects)
 	}
-	if cancel := effects[0].(CancelEffect); cancel.Token != liveStreamTokenForTerminal("term-1") {
-		t.Fatalf("expected terminal-scoped stream cancel, got %q", cancel.Token)
+	arm, ok := effects[0].(FuncEffect)
+	if !ok || !arm.Async || arm.ForceSyncInTests || arm.Token != liveInvalidationTokenForTerminal("term-1") {
+		t.Fatalf("expected async terminal-scoped one-shot arm, got %#v", effects[0])
 	}
-	stream := effects[1].(StreamEffect)
-	if stream.Token != liveStreamTokenForTerminal("term-1") {
-		t.Fatalf("expected terminal-scoped stream token, got %q", stream.Token)
-	}
-	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 7}}
 	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
-	var posted []Msg
-	stream.Run(ctx, func(msg Msg) {
-		posted = append(posted, msg)
-		if len(posted) == 2 {
-			cancelCtx()
-		}
-	})
-	if len(posted) != 2 {
-		t.Fatalf("expected stream to post two invalidations before cancel, got %#v", posted)
+	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
+
+	msg := arm.Run(context.Background())
+	live, ok := msg.(LiveEventMsg)
+	if !ok || live.Event.Snapshot.Revision != 8 {
+		t.Fatalf("expected one live invalidation message, got %#v", msg)
 	}
-	first := posted[0].(LiveEventMsg)
-	second := posted[1].(LiveEventMsg)
-	if first.Event.Snapshot.Revision != 7 || second.Event.Snapshot.Revision != 8 {
-		t.Fatalf("expected posted invalidations in order, got %#v", posted)
-	}
-	if len(terminal.LiveInvalidationRequests) != 2 ||
+	if len(terminal.LiveInvalidationRequests) != 1 ||
 		terminal.LiveInvalidationRequests[0].TerminalID != "term-1" ||
-		terminal.LiveInvalidationRequests[1].TerminalID != "term-1" ||
-		terminal.LiveInvalidationRequests[0].ObservedRevision != 0 ||
-		terminal.LiveInvalidationRequests[1].ObservedRevision != 7 {
-		t.Fatalf("expected stream to re-arm terminal-scoped wake without rendered revision, got %#v", terminal.LiveInvalidationRequests)
+		terminal.LiveInvalidationRequests[0].ObservedRevision != 7 {
+		t.Fatalf("expected one-shot arm with observed revision, got %#v", terminal.LiveInvalidationRequests)
 	}
 }
 
-func TestLiveStreamContextCanceledDoesNotPostPanelError(t *testing.T) {
-	terminal := &services.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
-	effects := liveStreamEffect("term-1", 80, 24, LiveDeps{Terminal: terminal})
-	stream := effects[1].(StreamEffect)
-	var posted []Msg
-	stream.Run(context.Background(), func(msg Msg) {
-		posted = append(posted, msg)
+func TestLiveFrameReadyArmsNextInvalidation(t *testing.T) {
+	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 1)}
+	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   8,
+		Cols:       96,
+		Rows:       30,
 	})
-	if len(posted) != 0 {
-		t.Fatalf("context canceled live invalidation stream should stay silent, got %#v", posted)
+	root := state.Root{
+		Surface: surface,
+	}
+
+	_, effects := reducer(root, LiveFrameReadyMsg{TerminalID: "term-1", ObservedRevision: 8})
+	if len(effects) != 1 {
+		t.Fatalf("expected one follow-up arm effect, got %#v", effects)
+	}
+	arm := effects[0].(FuncEffect)
+	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
+	if msg := arm.Run(context.Background()); msg == nil {
+		t.Fatal("expected one-shot arm to return wake message")
+	}
+	if len(terminal.LiveInvalidationRequests) != 1 ||
+		terminal.LiveInvalidationRequests[0].ObservedRevision != 8 ||
+		terminal.LiveInvalidationRequests[0].Cols != 96 ||
+		terminal.LiveInvalidationRequests[0].Rows != 30 {
+		t.Fatalf("frame completion should arm next wake at rendered surface size, got %#v", terminal.LiveInvalidationRequests)
+	}
+}
+
+func TestLiveInvalidationArmContextCanceledDoesNotPostPanelError(t *testing.T) {
+	terminal := &services.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
+	effects := liveInvalidationArmEffect("term-1", 80, 24, 7, LiveDeps{Terminal: terminal})
+	arm := effects[0].(FuncEffect)
+	if msg := arm.Run(context.Background()); msg != nil {
+		t.Fatalf("context canceled live invalidation arm should stay silent, got %#v", msg)
 	}
 
 	root := state.Root{Shell: state.DefaultShell()}
@@ -2594,6 +2604,9 @@ func TestLiveRuntimeConsumesBackendLiveEventsAndRedraws(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain attach: %v", err)
 	}
+	if err := waitForLiveInvalidationRequest(context.Background(), runtime, terminal, "term-1"); err != nil {
+		t.Fatal(err)
+	}
 	liveEvents <- services.TerminalLiveEvent{
 		TerminalID: "term-1",
 		Refresh:    true,
@@ -2601,9 +2614,6 @@ func TestLiveRuntimeConsumesBackendLiveEventsAndRedraws(t *testing.T) {
 	}
 	if err := drainUntilFrameContains(context.Background(), runtime, host, "backend live update"); err != nil {
 		t.Fatal(err)
-	}
-	if len(terminal.LiveInvalidationRequests) == 0 || terminal.LiveInvalidationRequests[0].TerminalID != "term-1" {
-		t.Fatalf("expected live invalidation arm after attach, got %#v", terminal.LiveInvalidationRequests)
 	}
 }
 
@@ -3889,6 +3899,28 @@ func drainUntilFrameContains(ctx context.Context, runtime *AppRuntime, host *Fak
 		}
 		for _, frame := range host.Frames() {
 			if frameContains(frame, value) {
+				return nil
+			}
+		}
+		select {
+		case <-deadlineCtx.Done():
+			return deadlineCtx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func waitForLiveInvalidationRequest(ctx context.Context, runtime *AppRuntime, terminal *services.FakeTerminalService, terminalID string) error {
+	deadlineCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := runtime.Drain(deadlineCtx); err != nil {
+			return err
+		}
+		for _, request := range terminal.LiveInvalidationRequests {
+			if request.TerminalID == terminalID {
 				return nil
 			}
 		}

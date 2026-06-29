@@ -91,6 +91,18 @@ type FrameSink interface {
 	WriteFrame(Frame) error
 }
 
+// FrameWriteCompletion 是 host 对单次写帧的本地完成结果。
+// Written=false 表示 latest-only sink 丢弃了这帧，不能据此重新 enable live wake。
+type FrameWriteCompletion struct {
+	Written bool
+}
+
+// FrameSinkCompletion 允许真实 host 为单次写帧返回完成信号。
+// 该信号只表达 TUI 本地写帧背压边界，不能被上传给 core 当作 rendered revision。
+type FrameSinkCompletion interface {
+	WriteFrameWithCompletion(Frame) (<-chan FrameWriteCompletion, error)
+}
+
 // FrameSinkPreference 允许真实 host 声明自己只需要 ANSI 输出。
 // 测试 recorder 不实现该接口时保留完整 Frame，方便继续断言 plain/styled 内容。
 type FrameSinkPreference interface {

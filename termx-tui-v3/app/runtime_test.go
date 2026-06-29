@@ -35,6 +35,16 @@ func (skipRenderTestMsg) isMsg() {}
 
 func (skipRenderTestMsg) SkipRender() bool { return true }
 
+type recordingRuntimeEffectRunner struct {
+	Effects []Effect
+}
+
+func (runner *recordingRuntimeEffectRunner) Run(_ context.Context, effect Effect, _ func(Msg)) {
+	runner.Effects = append(runner.Effects, effect)
+}
+
+func (runner *recordingRuntimeEffectRunner) Cancel(CancelToken) {}
+
 type retainingMsg struct {
 	Payload []byte
 }
@@ -778,48 +788,78 @@ func TestAppRuntimeSchedulesDirtyLiveFetchAfterSurfaceReturn(t *testing.T) {
 	}
 }
 
-func TestAppRuntimeLiveSurfacePressureBudgetStillSkipsImmediateSuccessor(t *testing.T) {
+func TestAppRuntimeArmsLiveInvalidationAfterFrameWrite(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 1)}
+	liveDeps := LiveDeps{Terminal: terminal}
+	runner := &recordingRuntimeEffectRunner{}
 	runtime := NewAppRuntime(
-		state.Root{Surface: state.TerminalSurfaceStore{
-			TerminalID: "term-1",
-			Refreshes: map[string]state.LiveSurfaceRefreshState{
-				"term-1": {Dirty: true},
-			},
-		}},
-		nil,
-		nil,
-		nil,
-		nil,
+		state.Root{Surface: state.TerminalSurfaceStore{TerminalID: "term-1"}},
+		NewLiveReducer(liveDeps),
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{root.Surface.Lines[0]}}
+		},
+		host,
+		runner,
 	)
-	now := time.Unix(10, 0)
-	runtime.now = func() time.Time { return now }
 
-	first := runtime.prepareRenderPressureMessage(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",
-		Revision:   1,
-		Lines:      []string{"first"},
-	}})
-	if surface, ok := first.(LiveSurfaceMsg); !ok || surface.Superseded {
-		t.Fatalf("first pressure surface within frame budget should render, got %#v", first)
+		Revision:   12,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"ready"},
+	}}); err != nil {
+		t.Fatalf("post surface: %v", err)
 	}
-
-	second := runtime.prepareRenderPressureMessage(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
-		TerminalID: "term-1",
-		Revision:   2,
-		Lines:      []string{"second"},
-	}})
-	if surface, ok := second.(LiveSurfaceMsg); !ok || !surface.Superseded {
-		t.Fatalf("immediate successor should still be latest-only skipped, got %#v", second)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
 	}
+	if len(runner.Effects) != 1 {
+		t.Fatalf("frame write completion should schedule one async arm effect, got %#v", runner.Effects)
+	}
+	arm, ok := runner.Effects[0].(FuncEffect)
+	if !ok || arm.Token != liveInvalidationTokenForTerminal("term-1") || !arm.Async {
+		t.Fatalf("expected terminal-scoped async arm effect, got %#v", runner.Effects[0])
+	}
+}
 
-	now = now.Add(liveSurfacePressureFrameInterval)
-	third := runtime.prepareRenderPressureMessage(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
-		TerminalID: "term-1",
-		Revision:   3,
-		Lines:      []string{"third"},
-	}})
-	if surface, ok := third.(LiveSurfaceMsg); !ok || surface.Superseded {
-		t.Fatalf("next budget window should render again, got %#v", third)
+func TestAppRuntimeDoesNotArmLiveInvalidationForDroppedFrame(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	runner := &recordingRuntimeEffectRunner{}
+	root := state.Root{}
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 12, Lines: []string{"ready"}})
+	runtime := NewAppRuntime(root, NewLiveReducer(LiveDeps{Terminal: terminal}), nil, NewFakeTerminalHost(8), runner)
+	done := make(chan render.FrameWriteCompletion, 1)
+	done <- render.FrameWriteCompletion{Written: false}
+	close(done)
+
+	runtime.rememberLiveFrameCompletion(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 12}}, done)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if len(runner.Effects) != 0 {
+		t.Fatalf("dropped local frame must not arm next invalidation, got %#v", runner.Effects)
+	}
+}
+
+func TestAppRuntimeArmsAllVisibleLiveTerminalsAfterFrameWrite(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	runner := &recordingRuntimeEffectRunner{}
+	root := state.Root{}
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 10, Lines: []string{"one"}})
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-2", Revision: 20, Lines: []string{"two"}})
+	runtime := NewAppRuntime(root, NewLiveReducer(LiveDeps{Terminal: terminal}), nil, NewFakeTerminalHost(8), runner)
+	done := make(chan render.FrameWriteCompletion, 1)
+	done <- render.FrameWriteCompletion{Written: true}
+	close(done)
+
+	runtime.rememberLiveFrameCompletion(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-2", Revision: 20}}, done)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if len(runner.Effects) != 2 {
+		t.Fatalf("frame write should arm every visible terminal once, got %#v", runner.Effects)
 	}
 }
 
