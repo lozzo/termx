@@ -75,6 +75,40 @@ func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
 	}
 }
 
+func TestR377RenderVMBuilderRendersMaterializedProjectionWithoutFrozenToken(t *testing.T) {
+	root := bindTestPaneTerminal(state.Root{
+		History: state.HistoryStore{
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-1",
+			Cols:       80,
+			Rows:       []state.HistoryRow{{Text: "materialized row", LineID: 10}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			Phase:      state.CopyModeMaterializedProjection,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-1",
+			BoundCols:  80,
+			Materialized: state.CopyModeMaterializedProjectionState{
+				Valid:          true,
+				CatchupPending: true,
+				Capabilities:   state.CopyModeCapabilityBits{Selectable: true},
+			},
+		},
+	}, state.DefaultPaneID, "term-1")
+
+	vm := NewRenderVMBuilder().Build(root)
+	content := activeContent(vm.Shell)
+	if content.Kind != ContentCopyHistory || len(content.Lines) != 1 || content.Lines[0].PlainString() != "materialized row" {
+		t.Fatalf("expected materialized copy-history content, got %#v", content)
+	}
+	if !strings.Contains(content.Status, "projection:materialized") || !strings.Contains(content.Status, "catchup:pending") {
+		t.Fatalf("materialized status should expose projection/catchup boundary, got %q", content.Status)
+	}
+}
+
 func TestRenderVMBuilderKeepsCopyHistoryOnBoundPaneWhenInactive(t *testing.T) {
 	shell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical).

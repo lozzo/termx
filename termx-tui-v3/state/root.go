@@ -121,11 +121,11 @@ func (r Root) ClearCopyHistorySessions() Root {
 }
 
 func (r Root) HasActiveCopyMode() bool {
-	if r.CopyMode.Active {
+	if r.CopyMode.InputActive() {
 		return true
 	}
 	for _, copyMode := range r.CopyModeByView {
-		if copyMode.Active {
+		if copyMode.InputActive() {
 			return true
 		}
 	}
@@ -186,11 +186,12 @@ func historyStoreHasState(history HistoryStore) bool {
 }
 
 func copyModeStoreHasState(copyMode CopyModeStore) bool {
-	return copyMode.Active ||
-		copyMode.Entering ||
+	return copyMode.InputActive() ||
 		copyMode.TerminalID != "" ||
 		copyMode.BoundToken != "" ||
-		copyMode.EnteringLive != nil
+		copyMode.EnteringLive != nil ||
+		copyMode.ProjectionRequestID != 0 ||
+		copyMode.Materialized.Valid
 }
 
 func historyStoreMatchesView(history HistoryStore, viewID string) bool {

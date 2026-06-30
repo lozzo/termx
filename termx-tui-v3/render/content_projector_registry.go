@@ -100,7 +100,7 @@ func projectCopyHistoryContent(ctx ContentProjectorContext) ContentVM {
 	if !copyMode.Active && !copyMode.Entering {
 		history, copyMode = ctx.Root.History, ctx.Root.CopyMode
 	}
-	if !ctx.Active && !copyMode.Active {
+	if !ctx.Active && !copyMode.HistoryRenderable() {
 		return placeholderContentForPane(ctx.Pane)
 	}
 	return buildCopyHistoryContentVM(ctx.Root, history, copyMode)

@@ -338,6 +338,9 @@ func runCopyModeHistoryProtocolServer(tr *memory.Transport) error {
 	if err := sendCopyModeProtocolHello(tr); err != nil {
 		return err
 	}
+	if err := serveCopyModeCopyEntryProjection(tr, "term-1", 78, 120); err != nil {
+		return err
+	}
 	req, err := expectCopyModeProtocolRequest(tr, "history.window")
 	if err != nil {
 		return err
@@ -399,6 +402,9 @@ func runCopyModeCodexLatestProtocolServer(tr *memory.Transport) error {
 		return err
 	}
 	if err := sendCopyModeProtocolHello(tr); err != nil {
+		return err
+	}
+	if err := serveCopyModeCopyEntryProjection(tr, "term-1", 78, 120); err != nil {
 		return err
 	}
 	req, err := expectCopyModeProtocolRequest(tr, "history.window")
@@ -483,6 +489,9 @@ func runCopyModeWideStyledLogicalLineProtocolServer(tr *memory.Transport) error 
 	if err := sendCopyModeProtocolHello(tr); err != nil {
 		return err
 	}
+	if err := serveCopyModeCopyEntryProjection(tr, "term-1", 5, 64); err != nil {
+		return err
+	}
 	req, err := expectCopyModeProtocolRequest(tr, "history.window")
 	if err != nil {
 		return err
@@ -531,6 +540,9 @@ func runCopyModeWrappedLogicalLineProtocolServer(tr *memory.Transport) error {
 	if err := sendCopyModeProtocolHello(tr); err != nil {
 		return err
 	}
+	if err := serveCopyModeCopyEntryProjection(tr, "term-1", 8, 64); err != nil {
+		return err
+	}
 	req, err := expectCopyModeProtocolRequest(tr, "history.window")
 	if err != nil {
 		return err
@@ -567,6 +579,9 @@ func runCopyModeCrossRowSearchProtocolServer(tr *memory.Transport) error {
 	if err := sendCopyModeProtocolHello(tr); err != nil {
 		return err
 	}
+	if err := serveCopyModeCopyEntryProjection(tr, "term-1", 8, 64); err != nil {
+		return err
+	}
 	req, err := expectCopyModeProtocolRequest(tr, "history.window")
 	if err != nil {
 		return err
@@ -598,6 +613,39 @@ func runCopyModeCrossRowSearchProtocolServer(tr *memory.Transport) error {
 
 func sendCopyModeHistoryWindow(tr *memory.Transport, req protocol.Request, window protocol.HistoryWindow) error {
 	payload, err := protocol.EncodeHistoryWindowPayload(&window)
+	if err != nil {
+		return err
+	}
+	binaryPayload, err := protocol.EncodeBinaryResponsePayload(req.ID, payload)
+	if err != nil {
+		return err
+	}
+	return sendCopyModeProtocolFrame(tr, 0, wire.TypeResponseBinary, binaryPayload)
+}
+
+func serveCopyModeCopyEntryProjection(tr *memory.Transport, terminalID string, cols int, limit int) error {
+	req, err := expectCopyModeProtocolRequest(tr, "history.copy_entry")
+	if err != nil {
+		return err
+	}
+	params, err := copyModeProtocolRequestParams[protocol.CopyEntryProjectionParams](req)
+	if err != nil {
+		return err
+	}
+	if params.TerminalID != terminalID || params.Cols != cols || params.Limit != limit {
+		return fmt.Errorf("unexpected copy-entry params %#v", params)
+	}
+	projection := protocol.CopyEntryProjection{
+		TerminalID: terminalID,
+		NativeCols: cols,
+		Window: protocol.HistoryWindow{
+			TerminalID: terminalID,
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: uint16(cols), Rows: 20},
+		},
+		Capabilities: protocol.CopyEntryCapabilityBits{Selectable: true},
+	}
+	payload, err := protocol.EncodeCopyEntryProjectionPayload(&projection)
 	if err != nil {
 		return err
 	}

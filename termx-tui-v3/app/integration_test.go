@@ -734,8 +734,8 @@ func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
 	if runtime.State().History.Pending == nil {
 		t.Fatalf("first latest should leave pending request in state, got %#v", runtime.State().History)
 	}
-	if len(runner.Effects) != 1 {
-		t.Fatalf("first latest should schedule exactly one effect, got %#v", runner.Effects)
+	if len(runner.Effects) != 2 {
+		t.Fatalf("first copy entry should schedule projection and frozen latest effects, got %#v", runner.Effects)
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		t.Fatalf("send second page up: %v", err)
@@ -743,7 +743,7 @@ func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain duplicate latest: %v", err)
 	}
-	if len(runner.Effects) != 1 {
+	if len(runner.Effects) != 2 {
 		t.Fatalf("duplicate latest while pending must not schedule another effect, got %#v", runner.Effects)
 	}
 	if runtime.State().Session.LastError != "" || runtime.State().Surface.Err != "" {
@@ -1845,6 +1845,112 @@ func TestCopyModeHistoryRequestsScaleWithPanelHeight(t *testing.T) {
 	}
 	if core.LatestRequests[0].Rows <= 20 {
 		t.Fatalf("history latest request should scale with current panel height, got %#v", core.LatestRequests[0])
+	}
+}
+
+func TestR377CopyModeUsesMaterializedProjectionBeforeFrozenLatest(t *testing.T) {
+	projection := historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"",
+		78,
+		7,
+		[]state.HistoryRow{{Text: "materialized-frontier", LineID: 10}},
+	)
+	latest := historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"tok-1",
+		78,
+		8,
+		[]state.HistoryRow{{Text: "frozen-latest", LineID: 20}},
+	)
+	core := &services.FakeCoreClient{
+		CopyEntryResponses: []services.HistoryCopyEntryProjectionResult{{
+			Window:            projection,
+			NativeCols:        78,
+			AppliedHistorySeq: 4,
+			TargetHistorySeq:  9,
+			CatchupPending:    true,
+			Capabilities:      services.HistoryCopyEntryCapabilities{Selectable: true},
+		}},
+		LatestResponses: []services.HistoryResult{{Window: latest}},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 12)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
+		t.Fatalf("enter copy mode: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain copy entry and latest: %v", err)
+	}
+
+	if len(core.CopyEntryRequests) != 1 || len(core.LatestRequests) != 1 {
+		t.Fatalf("copy enter should request materialized projection and frozen latest, copy=%#v latest=%#v", core.CopyEntryRequests, core.LatestRequests)
+	}
+	if core.CopyEntryRequests[0].RequestID == core.LatestRequests[0].RequestID {
+		t.Fatalf("projection and latest must use independent request ids, copy=%#v latest=%#v", core.CopyEntryRequests[0], core.LatestRequests[0])
+	}
+	if runtime.State().CopyMode.PhaseKind() != state.CopyModeFrozenHistory || runtime.State().CopyMode.BoundToken != "tok-1" {
+		t.Fatalf("sync fake should end on frozen latest after projection, got %#v", runtime.State().CopyMode)
+	}
+	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"frozen-latest"}) {
+		t.Fatalf("frozen latest should replace materialized rows, got %v", got)
+	}
+}
+
+func TestR377MaterializedProjectionDoesNotPageWhenCatchupPending(t *testing.T) {
+	projection := historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"",
+		78,
+		7,
+		[]state.HistoryRow{{Text: "materialized-frontier", LineID: 10}},
+	)
+	core := &services.FakeCoreClient{
+		CopyEntryResponses: []services.HistoryCopyEntryProjectionResult{{
+			Window:         projection,
+			NativeCols:     78,
+			CatchupPending: true,
+			Capabilities:   services.HistoryCopyEntryCapabilities{Selectable: true},
+		}},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 12)
+	runner := &recordingEffectRunner{}
+	runtime := newCopyModeRuntimeWithRunner(host, core, nil, &services.FakeTerminalService{}, runner)
+
+	next, effects := NewCopyModeReducer(CopyModeDeps{Core: core, Rows: 12})(runtime.state, CopyModeEnterViewMsg{
+		Binding: state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 78, 12, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true),
+		Cols:    78,
+		Rows:    12,
+	})
+	runtime.state = next
+	if len(effects) != 3 {
+		t.Fatalf("enter view should return handled + projection + latest effects, got %#v", effects)
+	}
+	// Run only the projection effect; latest remains pending to model high-pressure catchup.
+	msg := effects[1].(FuncEffect).Run(context.Background())
+	next, follow := NewCopyModeReducer(CopyModeDeps{Core: core, Rows: 12})(runtime.state, msg)
+	runtime.state = next
+	if len(follow) != 0 {
+		t.Fatalf("projection result should not schedule follow-up effects, got %#v", follow)
+	}
+	if runtime.State().CopyMode.PhaseKind() != state.CopyModeMaterializedProjection || runtime.State().CopyMode.BoundToken != "" {
+		t.Fatalf("projection should activate materialized copy mode without token, got %#v", runtime.State().CopyMode)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("page up materialized: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain page up: %v", err)
+	}
+	if len(core.OlderRequests) != 0 {
+		t.Fatalf("catchup-pending materialized projection must not request older, got %#v", core.OlderRequests)
 	}
 }
 
@@ -7237,17 +7343,25 @@ func (runner *recordingEffectRunner) Run(_ context.Context, effect Effect, _ fun
 func (runner *recordingEffectRunner) Cancel(CancelToken) {}
 
 type blockingHistoryClient struct {
-	mu            sync.Mutex
-	allowOlder    bool
-	latestReqs    []services.HistoryLatestRequest
-	olderReqs     []services.HistoryOlderRequest
-	newerReqs     []services.HistoryNewerRequest
-	latestResultC chan blockingHistoryResult
-	olderResultC  chan blockingHistoryResult
+	mu                sync.Mutex
+	allowOlder        bool
+	allowProjection   bool
+	latestReqs        []services.HistoryLatestRequest
+	projectionReqs    []services.HistoryCopyEntryProjectionRequest
+	olderReqs         []services.HistoryOlderRequest
+	newerReqs         []services.HistoryNewerRequest
+	latestResultC     chan blockingHistoryResult
+	projectionResultC chan blockingProjectionResult
+	olderResultC      chan blockingHistoryResult
 }
 
 type blockingHistoryResult struct {
 	result services.HistoryResult
+	err    error
+}
+
+type blockingProjectionResult struct {
+	result services.HistoryCopyEntryProjectionResult
 	err    error
 }
 
@@ -7268,8 +7382,21 @@ func (client *blockingHistoryClient) HistoryLatest(ctx context.Context, req serv
 	}
 }
 
-func (client *blockingHistoryClient) HistoryCopyEntryProjection(context.Context, services.HistoryCopyEntryProjectionRequest) (services.HistoryCopyEntryProjectionResult, error) {
-	return services.HistoryCopyEntryProjectionResult{}, errors.New("unexpected copy entry projection request")
+func (client *blockingHistoryClient) HistoryCopyEntryProjection(ctx context.Context, req services.HistoryCopyEntryProjectionRequest) (services.HistoryCopyEntryProjectionResult, error) {
+	client.mu.Lock()
+	client.projectionReqs = append(client.projectionReqs, req)
+	if client.projectionResultC == nil {
+		client.projectionResultC = make(chan blockingProjectionResult, 1)
+	}
+	resultC := client.projectionResultC
+	client.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return services.HistoryCopyEntryProjectionResult{}, ctx.Err()
+	case item := <-resultC:
+		item.result.RequestID = req.RequestID
+		return item.result, item.err
+	}
 }
 
 func (client *blockingHistoryClient) HistoryOlder(ctx context.Context, req services.HistoryOlderRequest) (services.HistoryResult, error) {
@@ -7317,6 +7444,14 @@ func (client *blockingHistoryClient) latestRequests() []services.HistoryLatestRe
 	return out
 }
 
+func (client *blockingHistoryClient) projectionRequests() []services.HistoryCopyEntryProjectionRequest {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	out := make([]services.HistoryCopyEntryProjectionRequest, len(client.projectionReqs))
+	copy(out, client.projectionReqs)
+	return out
+}
+
 func (client *blockingHistoryClient) olderRequests() []services.HistoryOlderRequest {
 	client.mu.Lock()
 	defer client.mu.Unlock()
@@ -7341,6 +7476,16 @@ func (client *blockingHistoryClient) finishLatest(result services.HistoryResult,
 	resultC := client.latestResultC
 	client.mu.Unlock()
 	resultC <- blockingHistoryResult{result: result, err: err}
+}
+
+func (client *blockingHistoryClient) finishProjection(result services.HistoryCopyEntryProjectionResult, err error) {
+	client.mu.Lock()
+	if client.projectionResultC == nil {
+		client.projectionResultC = make(chan blockingProjectionResult, 1)
+	}
+	resultC := client.projectionResultC
+	client.mu.Unlock()
+	resultC <- blockingProjectionResult{result: result, err: err}
 }
 
 func (client *blockingHistoryClient) finishOlder(result services.HistoryResult, err error) {

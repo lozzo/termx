@@ -947,7 +947,7 @@ func (projector ShellProjector) contentForFloating(root state.Root, shell state.
 func copyModeBelongsToPane(root state.Root, paneID string) bool {
 	viewID := copyHistoryViewIDForPane(root, paneID)
 	copyMode := copyModeForView(root, viewID)
-	if !copyMode.Active || paneID == "" {
+	if !copyMode.HistoryRenderable() || paneID == "" {
 		return false
 	}
 	if copyMode.PaneID == "" {
@@ -959,14 +959,14 @@ func copyModeBelongsToPane(root state.Root, paneID string) bool {
 func copyModeBelongsToFloating(root state.Root, floatingID string) bool {
 	viewID := copyHistoryViewIDForFloating(root, floatingID)
 	copyMode := copyModeForView(root, viewID)
-	return copyMode.Active && floatingID != "" && copyMode.ViewID == viewID
+	return copyMode.HistoryRenderable() && floatingID != "" && copyMode.ViewID == viewID
 }
 
 func copyModeForView(root state.Root, viewID string) state.CopyModeStore {
 	if copyModeStoreBelongsToView(root.CopyMode, viewID) {
 		return root.CopyMode
 	}
-	if root.CopyMode.Active && root.CopyMode.ViewID == "" && root.CopyMode.PaneID == "" {
+	if root.CopyMode.HistoryRenderable() && root.CopyMode.ViewID == "" && root.CopyMode.PaneID == "" {
 		return root.CopyMode
 	}
 	_, copyMode := root.CopyHistorySessionForView(viewID)
@@ -1167,14 +1167,23 @@ func sessionForBinding(root state.Root, binding state.TerminalViewBinding) state
 }
 
 func canRenderCopyHistory(root state.Root, history state.HistoryStore, copyMode state.CopyModeStore) bool {
-	return copyMode.Active &&
+	phase := copyMode.PhaseKind()
+	tokenMatches := false
+	switch phase {
+	case state.CopyModeMaterializedProjection:
+		tokenMatches = copyMode.BoundToken == "" && history.Token == ""
+	case state.CopyModeFrozenHistory:
+		tokenMatches = copyMode.BoundToken != "" && copyMode.BoundToken == history.Token
+	default:
+		return false
+	}
+	return copyMode.HistoryRenderable() &&
 		copyMode.TerminalID != "" &&
 		history.TerminalID != "" &&
-		copyMode.BoundToken != "" &&
 		copyMode.BoundCols != 0 &&
 		history.Cols != 0 &&
 		copyModeBindingStillValid(root, copyMode) &&
-		copyMode.BoundToken == history.Token &&
+		tokenMatches &&
 		copyMode.BoundCols == history.Cols &&
 		copyMode.TerminalID == history.TerminalID &&
 		len(history.Rows) > 0
@@ -1182,13 +1191,13 @@ func canRenderCopyHistory(root state.Root, history state.HistoryStore, copyMode 
 
 func copyHistoryPendingReason(root state.Root, history state.HistoryStore, copyMode state.CopyModeStore) string {
 	switch {
-	case !copyMode.Active:
+	case !copyMode.HistoryRenderable():
 		return ""
 	case copyMode.TerminalID == "":
 		return "copy history pending: terminal binding missing"
 	case !copyModeBindingStillValid(root, copyMode):
 		return "copy history pending: copy binding missing"
-	case copyMode.BoundToken == "":
+	case copyMode.PhaseKind() == state.CopyModeFrozenHistory && copyMode.BoundToken == "":
 		return "copy history pending: window pending"
 	case copyMode.BoundCols == 0:
 		return "copy history pending: bound cols missing"
@@ -1196,10 +1205,12 @@ func copyHistoryPendingReason(root state.Root, history state.HistoryStore, copyM
 		return "copy history pending: window pending"
 	case copyMode.TerminalID != history.TerminalID:
 		return "copy history error: terminal mismatch"
-	case copyMode.BoundToken != history.Token:
+	case copyMode.PhaseKind() == state.CopyModeFrozenHistory && copyMode.BoundToken != history.Token:
+		return "copy history pending: stale history token"
+	case copyMode.PhaseKind() == state.CopyModeMaterializedProjection && history.Token != "":
 		return "copy history pending: stale history token"
 	case history.Cols == 0:
-		return "copy history pending: history cols missing"
+		return "copy history pending: window pending"
 	case copyMode.BoundCols != history.Cols:
 		return "copy history pending: history cols changed"
 	case len(history.Rows) == 0:
@@ -1228,17 +1239,20 @@ func buildCopyHistoryContentVM(root state.Root, history state.HistoryStore, copy
 		}
 		return content
 	}
-	return ContentVM{
-		Kind:       ContentCopyHistory,
-		Lines:      copyHistoryLines(history, copyMode),
-		Status:     copyHistoryStatus(history, copyMode),
-		Cursor:     copyHistoryCursor(history, copyMode),
-		HitRegions: copyHistoryHitRegions(history, copyMode),
+	content := ContentVM{
+		Kind:   ContentCopyHistory,
+		Lines:  copyHistoryLines(history, copyMode),
+		Status: copyHistoryStatus(history, copyMode),
 	}
+	if copyMode.CanSelect() {
+		content.Cursor = copyHistoryCursor(history, copyMode)
+		content.HitRegions = copyHistoryHitRegions(history, copyMode)
+	}
+	return content
 }
 
 func copyModeBindingStillValid(root state.Root, copyMode state.CopyModeStore) bool {
-	if !copyMode.Active {
+	if !copyMode.HistoryRenderable() {
 		return false
 	}
 	if copyMode.ViewID != "" {

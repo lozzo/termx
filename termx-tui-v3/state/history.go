@@ -234,10 +234,47 @@ const (
 	NewerRequestMissing NewerRequestState = "missing"
 )
 
+// CopyModePhase 是 TUI copy mode 的 reducer-owned 阶段。
+// preview 只冻结进入瞬间的 live native screen 供显示和吞输入；materialized
+// 只消费 core 已应用 history frontier；frozen 才拥有 core frozen token，可用于
+// older/newer/search/backend copy 合同。
+type CopyModePhase string
+
+const (
+	CopyModePhaseNone              CopyModePhase = ""
+	CopyModeEnteringLivePreview    CopyModePhase = "entering-live-preview"
+	CopyModeMaterializedProjection CopyModePhase = "materialized-projection"
+	CopyModeFrozenHistory          CopyModePhase = "frozen-history"
+)
+
+// CopyModeCapabilityBits 描述当前 copy projection 允许的交互。
+// 这些能力来自 core copy-entry/materialized 合同或 frozen token 合同；TUI 不能
+// 因为本地有 rows 就自行升级成 search/page/backend copy truth。
+type CopyModeCapabilityBits struct {
+	Selectable bool
+	Copyable   bool
+	Searchable bool
+	Pageable   bool
+}
+
+// CopyModeMaterializedProjectionState 保存 copy-entry projection 的元数据。
+// Window rows 仍在 HistoryStore 中；这里仅记录能力位和 history backlog 追平状态，
+// 防止 materialized projection 被误当成 frozen token。
+type CopyModeMaterializedProjectionState struct {
+	Valid             bool
+	NativeCols        int
+	AppliedHistorySeq uint64
+	TargetHistorySeq  uint64
+	CatchupPending    bool
+	Capabilities      CopyModeCapabilityBits
+}
+
 // CopyModeStore 只保存 copy mode 交互态。
 type CopyModeStore struct {
-	Active       bool
-	Entering     bool
+	Active   bool
+	Entering bool
+	// Phase 是 R377 copy 三态的显式阶段；旧测试或恢复态未填时由 PhaseKind 按兼容字段推导。
+	Phase        CopyModePhase
 	PaneID       string
 	ViewID       string
 	TerminalID   string
@@ -255,6 +292,9 @@ type CopyModeStore struct {
 	BoundToken          string
 	BoundCols           int
 	RequestID           RequestID
+	// ProjectionRequestID 只绑定 copy-entry materialized projection，不进入 HistoryStore.Pending。
+	ProjectionRequestID RequestID
+	Materialized        CopyModeMaterializedProjectionState
 	Empty               bool
 }
 
@@ -381,6 +421,21 @@ func (store HistoryStore) ApplyWindow(requestID RequestID, window HistoryWindow)
 	default:
 		return store, 0, ErrHistoryWindowMismatch
 	}
+}
+
+// ApplyMaterializedProjection 接纳 copy-entry projection 的 replace window。
+// copy-entry 不经过 HistoryStore.Pending，也不生成 frozen token；调用方必须先在
+// CopyModeStore 上校验 projection request id，避免把 stale projection 当成 latest。
+func (store HistoryStore) ApplyMaterializedProjection(window HistoryWindow, cols int) (HistoryStore, int, error) {
+	if window.Op != HistoryWindowReplace {
+		return store, 0, ErrHistoryWindowMismatch
+	}
+	store.Exhausted = ExhaustedMarker{}
+	store = store.replace(window, cols)
+	// 中文说明：materialized projection 没有 frozen token；分页能力由 CopyModeStore
+	// 的 materialized capability bits 表达，HistoryStore 不能自行暴露 older/newer ready。
+	store.Token = ""
+	return store, len(store.Rows), nil
 }
 
 func (store HistoryStore) InvalidateWindow() HistoryStore {
@@ -932,29 +987,119 @@ func (store CopyModeStore) BindLatest(paneID string, viewID string, terminalID s
 	// 不把 pane 内容切成 pending 占位；authoritative window 回来后才 Active。
 	store.Active = false
 	store.Entering = true
+	store.Phase = CopyModeEnteringLivePreview
 	store.PaneID = paneID
 	store.ViewID = viewID
 	store.TerminalID = terminalID
 	store.EnteringLive = cloneLiveSurfaceSnapshotPtr(enteringLive)
 	store.EnteringScrollDelta = 0
 	store.RequestID = requestID
+	store.ProjectionRequestID = 0
+	store.Materialized = CopyModeMaterializedProjectionState{}
 	store.BoundCols = cols
 	store.ViewRows = rows
 	store.Empty = true
 	return store
 }
 
-func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRows int) CopyModeStore {
-	store.Active = true
-	store.Entering = false
-	enteringLive := store.EnteringLive
-	store.EnteringLive = nil
-	pendingScroll := store.EnteringScrollDelta
-	store.EnteringScrollDelta = 0
+// BindProjectionRequest 记录 copy-entry materialized 请求边界。
+// 该请求不创建 frozen token，也不占用 HistoryStore.Pending；response 只能按此 id
+// 回到 AcceptMaterializedProjection，不能复用 latest/older 的 stale guard。
+func (store CopyModeStore) BindProjectionRequest(requestID RequestID) CopyModeStore {
+	store.ProjectionRequestID = requestID
+	return store
+}
+
+// PhaseKind 返回 copy mode 的有效阶段。
+// 旧测试和旧恢复态可能只填 Active/Entering/BoundToken，因此这里做只读推导；
+// 新写入路径仍必须显式设置 Phase，避免 materialized/frozen 语义混淆。
+func (store CopyModeStore) PhaseKind() CopyModePhase {
+	if store.Phase != CopyModePhaseNone {
+		return store.Phase
+	}
+	if store.Entering {
+		return CopyModeEnteringLivePreview
+	}
+	if store.Active && store.BoundToken != "" {
+		return CopyModeFrozenHistory
+	}
+	if store.Active && store.Materialized.Valid {
+		return CopyModeMaterializedProjection
+	}
+	if store.Active {
+		return CopyModeFrozenHistory
+	}
+	return CopyModePhaseNone
+}
+
+// InputActive 表示 copy mode 是否应该吞掉当前 view 输入。
+// preview/materialized/frozen 都属于 copy 交互上下文；只有 none 可以把输入继续交给 terminal。
+func (store CopyModeStore) InputActive() bool {
+	return store.PhaseKind() != CopyModePhaseNone || store.Active || store.Entering
+}
+
+// HistoryRenderable 表示 copy-history renderer 可以消费 HistoryStore rows。
+// preview 仍走 live preview 分支；materialized 和 frozen 都必须先通过绑定校验。
+func (store CopyModeStore) HistoryRenderable() bool {
+	phase := store.PhaseKind()
+	return phase == CopyModeMaterializedProjection || phase == CopyModeFrozenHistory
+}
+
+// CanSelect 表示当前 projection 允许在已接纳 rows 内移动 cursor/选区。
+func (store CopyModeStore) CanSelect() bool {
+	switch store.PhaseKind() {
+	case CopyModeMaterializedProjection:
+		return store.Materialized.Capabilities.Selectable
+	case CopyModeFrozenHistory:
+		return store.Active
+	default:
+		return false
+	}
+}
+
+// CanCopy 表示当前 projection 允许复制本地已接纳 rows。
+// frozen token 若需要跨本地裁剪窗口回 backend，仍由 app 层 SelectionNeedsBackend 继续校验 token。
+func (store CopyModeStore) CanCopy() bool {
+	switch store.PhaseKind() {
+	case CopyModeMaterializedProjection:
+		return store.Materialized.Capabilities.Copyable
+	case CopyModeFrozenHistory:
+		return store.Active
+	default:
+		return false
+	}
+}
+
+// CanSearch 表示当前 projection 允许本地搜索已接纳 rows。
+func (store CopyModeStore) CanSearch() bool {
+	switch store.PhaseKind() {
+	case CopyModeMaterializedProjection:
+		return store.Materialized.Capabilities.Searchable
+	case CopyModeFrozenHistory:
+		return store.Active
+	default:
+		return false
+	}
+}
+
+// CanPageHistory 表示当前 projection 允许使用 authoritative older/newer/oldest 合同。
+// materialized projection 即使有 rows，也只有 core 明确给 pageable 能力时才能跨页；
+// frozen token 默认沿用既有分页合同。
+func (store CopyModeStore) CanPageHistory() bool {
+	switch store.PhaseKind() {
+	case CopyModeMaterializedProjection:
+		return store.Materialized.Capabilities.Pageable && !store.Materialized.CatchupPending
+	case CopyModeFrozenHistory:
+		return store.Active && store.BoundToken != ""
+	default:
+		return false
+	}
+}
+
+func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, totalRows int, enteringLive *LiveSurfaceSnapshot, pendingScroll int) CopyModeStore {
 	store.PaneID = window.PaneID
 	store.ViewID = window.ViewID
 	store.TerminalID = window.TerminalID
-	store.BoundToken = window.Token
 	if cols <= 0 {
 		cols = window.Cols
 	}
@@ -990,10 +1135,51 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRow
 	return store
 }
 
+func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRows int) CopyModeStore {
+	store.Active = true
+	store.Entering = false
+	store.Phase = CopyModeFrozenHistory
+	enteringLive := store.EnteringLive
+	store.EnteringLive = nil
+	pendingScroll := store.EnteringScrollDelta
+	store.EnteringScrollDelta = 0
+	store.RequestID = 0
+	store.ProjectionRequestID = 0
+	store.Materialized = CopyModeMaterializedProjectionState{}
+	store.BoundToken = window.Token
+	return store.acceptHistoryRows(window, cols, totalRows, enteringLive, pendingScroll)
+}
+
+// AcceptMaterializedProjection 激活 copy-entry projection 阶段。
+// 它只绑定 core 已应用 frontier 的 rows 和能力位，不写 frozen token；older/newer/search/copy
+// 必须继续受 Capabilities 和 CatchupPending 约束。
+func (store CopyModeStore) AcceptMaterializedProjection(window HistoryWindow, cols int, totalRows int, projection CopyModeMaterializedProjectionState) CopyModeStore {
+	if store.PhaseKind() == CopyModeFrozenHistory {
+		return store
+	}
+	store.Active = true
+	store.Entering = false
+	store.Phase = CopyModeMaterializedProjection
+	enteringLive := store.EnteringLive
+	store.EnteringLive = nil
+	pendingScroll := store.EnteringScrollDelta
+	store.EnteringScrollDelta = 0
+	store.BoundToken = ""
+	store.RequestID = 0
+	store.ProjectionRequestID = 0
+	projection.Valid = true
+	store.Materialized = projection
+	return store.acceptHistoryRows(window, cols, totalRows, enteringLive, pendingScroll)
+}
+
 func (store CopyModeStore) AcceptOldest(window HistoryWindow, cols int, totalRows int) CopyModeStore {
 	store.Active = true
 	store.Entering = false
+	store.Phase = CopyModeFrozenHistory
 	store.EnteringLive = nil
+	store.RequestID = 0
+	store.ProjectionRequestID = 0
+	store.Materialized = CopyModeMaterializedProjectionState{}
 	store.PaneID = window.PaneID
 	store.ViewID = window.ViewID
 	store.TerminalID = window.TerminalID
@@ -1013,6 +1199,10 @@ func (store CopyModeStore) AcceptOldest(window HistoryWindow, cols int, totalRow
 }
 
 func (store CopyModeStore) AcceptOlder(insertedRows int, before HistoryStore, after HistoryStore, window HistoryWindow, cols int) CopyModeStore {
+	store.Phase = CopyModeFrozenHistory
+	store.Active = true
+	store.Entering = false
+	store.Materialized = CopyModeMaterializedProjectionState{}
 	if store.Query == "" && copyModeCanShiftSimpleOlderPrepend(insertedRows, before, after) {
 		store = store.shiftAfterOlderPrepend(insertedRows)
 	} else if len(before.Rows) > 0 && len(after.Rows) > 0 {
