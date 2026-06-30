@@ -346,6 +346,99 @@ func TestR321StreamReducerSoftWrapAndLFBoundaries(t *testing.T) {
 	}
 }
 
+func TestR375StreamReducerFastLaneSealsLinearStdoutLines(t *testing.T) {
+	reducer := NewStreamLineReducer()
+	var sealed []LogicalLine
+	ops := []TerminalSemanticOp{
+		writeOp(0, 0, "alpha"),
+		controlOp("lf", 0, 5, 0),
+		writeOp(1, 0, "beta"),
+		controlOp("lf", 1, 4, 0),
+		writeOp(2, 0, "tail"),
+	}
+	for _, op := range ops {
+		mutations, err := reducer.ApplyOp(op)
+		if err != nil {
+			t.Fatalf("apply op %#v: %v", op, err)
+		}
+		sealed = append(sealed, sealedMutationLines(mutations)...)
+	}
+	if got := joinedLineTexts(sealed); got != "alpha\nbeta" {
+		t.Fatalf("fast lane should seal complete ordinary lines exactly once, got %q", got)
+	}
+	if got := lineText(singleOpenLine(t, reducer).Draft.Line); got != "tail" {
+		t.Fatalf("fast lane should keep incomplete tail mutable, got %q", got)
+	}
+	fast, ok := reducer.(interface{ debugOrdinaryFastLaneStats() ordinaryFastLaneStats })
+	if !ok {
+		t.Fatal("reducer must expose fast lane stats for harness")
+	}
+	stats := fast.debugOrdinaryFastLaneStats()
+	if stats.AppliedOps != 5 || stats.FallbackOps != 0 || stats.SealedLines != 2 {
+		t.Fatalf("unexpected fast lane stats %#v", stats)
+	}
+}
+
+func TestR375StreamReducerFastLaneKeepsLineEditingInMutableLine(t *testing.T) {
+	reducer := NewStreamLineReducer()
+	applyStreamOps(t, reducer,
+		writeOp(0, 0, "abc"),
+		controlOp("cr", 0, 3, 0),
+		writeOp(0, 0, "X"),
+		controlOp("bs", 0, 1, 0),
+		writeOp(0, 0, "Y"),
+		controlOp("cup", 0, 2, 0),
+		writeOp(0, 2, "Z"),
+	)
+	line := singleOpenLine(t, reducer).Draft.Line
+	if got := lineText(line); got != "YbZ" {
+		t.Fatalf("fast lane must keep CR/BS/CUP edits in current mutable line, got %q line=%#v", got, line)
+	}
+	fast := reducer.(interface{ debugOrdinaryFastLaneStats() ordinaryFastLaneStats })
+	if stats := fast.debugOrdinaryFastLaneStats(); stats.FallbackOps != 0 {
+		t.Fatalf("line editing should stay on ordinary fast lane, stats=%#v", stats)
+	}
+}
+
+func TestR375StreamReducerFastLaneErasesMutableLine(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		op   TerminalSemanticOp
+		want string
+	}{
+		{name: "control el", op: controlOp("el", 0, 2, 0), want: "ab"},
+		{name: "clear to eol op", op: TerminalSemanticOp{Code: vterm.ScreenOpClearToEOL, Row: 0, Col: 3}, want: "abc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reducer := NewStreamLineReducer()
+			applyStreamOps(t, reducer, writeOp(0, 0, "abcdef"))
+			if _, err := reducer.ApplyOp(tc.op); err != nil {
+				t.Fatalf("apply erase op: %v", err)
+			}
+			line := singleOpenLine(t, reducer).Draft.Line
+			if got := lineText(line); got != tc.want {
+				t.Fatalf("fast lane EL should mutate current line, got %q want %q line=%#v", got, tc.want, line)
+			}
+			fast := reducer.(interface{ debugOrdinaryFastLaneStats() ordinaryFastLaneStats })
+			if stats := fast.debugOrdinaryFastLaneStats(); stats.FallbackOps != 0 {
+				t.Fatalf("EL should stay on ordinary fast lane, stats=%#v", stats)
+			}
+		})
+	}
+}
+
+func TestR375StreamReducerFastLaneFallsBackForComplexTerminalOps(t *testing.T) {
+	reducer := NewStreamLineReducer()
+	applyStreamOps(t, reducer, writeOp(0, 0, "old"))
+	if _, err := reducer.ApplyOp(controlOp("ed", 0, 0, 2)); err != nil {
+		t.Fatalf("apply ED2: %v", err)
+	}
+	fast := reducer.(interface{ debugOrdinaryFastLaneStats() ordinaryFastLaneStats })
+	if stats := fast.debugOrdinaryFastLaneStats(); stats.FallbackOps == 0 {
+		t.Fatalf("ED2 must stay on complex reducer fallback, stats=%#v", stats)
+	}
+}
+
 func applyStreamOps(t *testing.T, reducer StreamLineReducer, ops ...TerminalSemanticOp) {
 	t.Helper()
 	for _, op := range ops {

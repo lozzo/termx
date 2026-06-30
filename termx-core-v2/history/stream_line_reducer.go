@@ -17,6 +17,7 @@ func NewStreamLineReducer() StreamLineReducer {
 		ids:       newHistoryIDAllocator(),
 		rowOwners: make(map[int]LogicalLineID),
 		lines:     make(map[LogicalLineID]*streamLineDraft),
+		fast:      ordinaryLineSink{},
 	}
 }
 
@@ -24,6 +25,7 @@ type streamLineReducer struct {
 	ids                *historyIDAllocator
 	rowOwners          map[int]LogicalLineID
 	lines              map[LogicalLineID]*streamLineDraft
+	fast               ordinaryLineSink
 	cursorRow          int
 	cursorCol          int
 	scrollTop          int
@@ -46,11 +48,40 @@ type pendingScrollRect struct {
 	dy   int
 }
 
+// ordinaryLineSink 是 ordinary stdout 的 logical-line-first 快路径。
+// domain owner 仍是 history reducer；truth source 只来自已排序的 vterm semantic op。
+// 它只持有一个当前 mutable logical line，不接管 screen app、alt、清屏或滚动几何语义。
+type ordinaryLineSink struct {
+	active bool
+	lineID LogicalLineID
+	cells  []Cell
+	cursor int
+	fill   *RowTailFill
+	stats  ordinaryFastLaneStats
+}
+
+type ordinaryFastLaneStats struct {
+	AppliedOps   int
+	FallbackOps  int
+	SealedLines  int
+	MutableLines int
+}
+
 func (reducer *streamLineReducer) ApplyOp(op TerminalSemanticOp) ([]HistoryMutation, error) {
 	if reducer == nil {
 		return nil, nil
 	}
 	reducer.ensureState()
+	if reducer.canApplyOrdinaryFastLane(op) {
+		return reducer.applyOrdinaryFastLane(op), nil
+	}
+	if reducer.fast.active {
+		// 中文说明：一旦遇到 ED/EL/scroll/copy/full-replace 等屏幕几何语义，
+		// fast lane 必须先物化为原 row ownership draft，再由既有复杂 reducer
+		// 处理；这里不从 live snapshot 或 raw PTY 重建第二份 history truth。
+		reducer.materializeFastLaneToRowOwnership()
+		reducer.fast.stats.FallbackOps++
+	}
 	switch op.Code {
 	case vterm.ScreenOpWriteSpan:
 		return reducer.applyWriteSpan(op), nil
@@ -77,8 +108,9 @@ func (reducer *streamLineReducer) SealOpenLine(reason SealReason) ([]HistoryMuta
 		return nil, nil
 	}
 	reducer.ensureState()
-	ids := reducer.sortedLineIDs()
 	var mutations []HistoryMutation
+	mutations = append(mutations, reducer.sealFastLane(reason)...)
+	ids := reducer.sortedLineIDs()
 	for _, id := range ids {
 		mutations = append(mutations, reducer.sealLine(id, reason, HistoryRecordOrdinaryLine)...)
 	}
@@ -118,8 +150,195 @@ func (reducer *streamLineReducer) ResetForClearScrollback() {
 	reducer.ids = newHistoryIDAllocator()
 	reducer.rowOwners = make(map[int]LogicalLineID)
 	reducer.lines = make(map[LogicalLineID]*streamLineDraft)
+	reducer.fast = ordinaryLineSink{}
 	reducer.cursorRow = 0
 	reducer.cursorCol = 0
+}
+
+// canApplyOrdinaryFastLane 只接受单 logical line 的顺序写入和有限光标编辑。
+// 失败条件：已有 row ownership、多行 wrap、清屏、滚动、区域复制或 screen app frame
+// 语义出现时必须返回 false，让复杂 reducer 继续作为这些几何语义的唯一处理边界。
+func (reducer *streamLineReducer) canApplyOrdinaryFastLane(op TerminalSemanticOp) bool {
+	if reducer == nil {
+		return false
+	}
+	switch op.Code {
+	case vterm.ScreenOpWriteSpan:
+		return op.Row == reducer.cursorRow && op.Col == reducer.fast.cursor && len(reducer.lines) == 0 && len(reducer.rowOwners) == 0
+	case vterm.ScreenOpClearToEOL:
+		return reducer.fast.active && op.Row == reducer.cursorRow && len(reducer.lines) == 0 && len(reducer.rowOwners) == 0
+	case vterm.ScreenOpControl:
+		switch op.Control {
+		case "cr", "lf", "ind", "nel", "bs", "cub", "cuf", "cha", "hpa", "cup", "vpa", "cuu", "cud":
+			return len(reducer.lines) == 0 && len(reducer.rowOwners) == 0
+		case "el":
+			return reducer.fast.active && op.Row == reducer.cursorRow && len(reducer.lines) == 0 && len(reducer.rowOwners) == 0
+		}
+	}
+	return false
+}
+
+func (reducer *streamLineReducer) applyOrdinaryFastLane(op TerminalSemanticOp) []HistoryMutation {
+	reducer.fast.stats.AppliedOps++
+	switch op.Code {
+	case vterm.ScreenOpWriteSpan:
+		reducer.ensureFastLine()
+		reducer.fast.cells = writeCellsAt(reducer.fast.cells, op.Col, historyCellsFromTerminal(op.Cells))
+		reducer.fast.cells = trimTrailingBlankCells(reducer.fast.cells)
+		reducer.fast.cursor = op.Col + terminalCellsDisplayWidth(op.Cells)
+		reducer.cursorRow = op.Row
+		reducer.cursorCol = reducer.fast.cursor
+		reducer.fast.stats.MutableLines++
+		return []HistoryMutation{reducer.fastOpenLineMutation(op.Row)}
+	case vterm.ScreenOpControl:
+		return reducer.applyOrdinaryFastLaneControl(op)
+	case vterm.ScreenOpClearToEOL:
+		return reducer.applyOrdinaryFastLaneEraseLine(op.Row, op.Col, 0)
+	}
+	return nil
+}
+
+func (reducer *streamLineReducer) applyOrdinaryFastLaneControl(op TerminalSemanticOp) []HistoryMutation {
+	switch op.Control {
+	case "cr":
+		reducer.cursorRow = op.Row
+		reducer.cursorCol = 0
+		reducer.fast.cursor = 0
+		if reducer.fast.active {
+			return []HistoryMutation{reducer.fastOpenLineMutation(op.Row)}
+		}
+	case "lf", "ind", "nel":
+		row := reducer.cursorRow
+		if op.TailFill != nil {
+			reducer.fast.fill = rowTailFillFromTerminal(op.TailFill)
+		}
+		mutations := reducer.sealFastLane(SealReasonLineFeed)
+		reducer.cursorRow = row + 1
+		if op.Control == "nel" {
+			reducer.cursorCol = 0
+			reducer.fast.cursor = 0
+		}
+		return mutations
+	case "bs":
+		reducer.fast.cursor = maxInt(0, reducer.fast.cursor-1)
+		reducer.cursorCol = reducer.fast.cursor
+	case "cub":
+		reducer.fast.cursor = maxInt(0, reducer.fast.cursor-controlCount(op))
+		reducer.cursorCol = reducer.fast.cursor
+	case "cuf":
+		reducer.fast.cursor += controlCount(op)
+		reducer.cursorCol = reducer.fast.cursor
+	case "cha", "hpa":
+		reducer.cursorRow = op.Row
+		reducer.fast.cursor = maxInt(0, op.Col)
+		reducer.cursorCol = reducer.fast.cursor
+	case "cup":
+		reducer.cursorRow = maxInt(0, op.Row)
+		reducer.fast.cursor = maxInt(0, op.Col)
+		reducer.cursorCol = reducer.fast.cursor
+	case "vpa":
+		reducer.cursorRow = maxInt(0, op.Row)
+	case "cuu":
+		reducer.cursorRow = maxInt(0, reducer.cursorRow-controlCount(op))
+	case "cud":
+		reducer.cursorRow += controlCount(op)
+	case "el":
+		return reducer.applyOrdinaryFastLaneEraseLine(op.Row, op.Col, op.Mode)
+	}
+	return nil
+}
+
+func (reducer *streamLineReducer) ensureFastLine() {
+	if reducer.fast.active {
+		return
+	}
+	reducer.fast.active = true
+	reducer.fast.lineID = reducer.ids.nextLogicalLineID()
+	reducer.fast.cells = nil
+	reducer.fast.cursor = maxInt(0, reducer.cursorCol)
+}
+
+func (reducer *streamLineReducer) sealFastLane(reason SealReason) []HistoryMutation {
+	if !reducer.fast.active {
+		return nil
+	}
+	line := logicalLineTemplate(HistoryRecordOrdinaryLine)
+	line.ID = reducer.fast.lineID
+	line.Cells = trimTrailingBlankCells(cloneHistoryCells(reducer.fast.cells))
+	line.TailFill = cloneRowTailFill(reducer.fast.fill)
+	line.Seal = SealStateSealed
+	reducer.fast.active = false
+	reducer.fast.cells = nil
+	reducer.fast.cursor = 0
+	reducer.fast.fill = nil
+	reducer.fast.stats.SealedLines++
+	return reducer.sealStandaloneLine(line, reason, HistoryRecordOrdinaryLine)
+}
+
+func (reducer *streamLineReducer) fastOpenLineMutation(row int) HistoryMutation {
+	line := logicalLineTemplate(HistoryRecordOrdinaryLine)
+	line.ID = reducer.fast.lineID
+	line.Cells = cloneHistoryCells(reducer.fast.cells)
+	line.TailFill = cloneRowTailFill(reducer.fast.fill)
+	line.Seal = SealStateOpen
+	open := OpenLine{
+		Active: true,
+		Draft: LogicalLineDraft{
+			Line:      line,
+			CursorCol: reducer.fast.cursor,
+			Row:       row,
+		},
+	}
+	openCopy := open
+	openCopy.Draft.Line = cloneLogicalLine(open.Draft.Line)
+	return HistoryMutation{Kind: HistoryMutationUpsertOpenLine, OpenLine: &openCopy}
+}
+
+func (reducer *streamLineReducer) applyOrdinaryFastLaneEraseLine(row int, col int, mode int) []HistoryMutation {
+	cells := cloneHistoryCells(reducer.fast.cells)
+	switch mode {
+	case 1:
+		cells = ensureCellWidth(cells, col+1)
+		for i := 0; i <= col && i < len(cells); i++ {
+			cells[i] = blankHistoryCell()
+		}
+	case 2:
+		cells = nil
+	default:
+		if col < len(cells) {
+			cells = cells[:maxInt(0, col)]
+		}
+	}
+	reducer.fast.cells = trimTrailingBlankCells(cells)
+	reducer.fast.cursor = maxInt(0, col)
+	reducer.cursorRow = row
+	reducer.cursorCol = reducer.fast.cursor
+	reducer.fast.stats.MutableLines++
+	return []HistoryMutation{reducer.fastOpenLineMutation(row)}
+}
+
+// materializeFastLaneToRowOwnership 把当前 ordinary mutable line 转回
+// streamLineReducer 的 row ownership draft。调用边界是 fast lane 已遇到复杂 op；
+// 转换只搬运同一 logical line id/cells/tail fill，不 seal、不生成新历史记录。
+func (reducer *streamLineReducer) materializeFastLaneToRowOwnership() {
+	if reducer == nil || !reducer.fast.active {
+		return
+	}
+	row := reducer.cursorRow
+	draft := &streamLineDraft{
+		id:        reducer.fast.lineID,
+		rows:      map[int][]Cell{row: cloneHistoryCells(reducer.fast.cells)},
+		rowOrder:  []int{row},
+		cursorRow: row,
+		cursorCol: reducer.fast.cursor,
+		tailFill:  cloneRowTailFill(reducer.fast.fill),
+	}
+	reducer.lines[draft.id] = draft
+	reducer.rowOwners[row] = draft.id
+	reducer.fast.active = false
+	reducer.fast.cells = nil
+	reducer.fast.cursor = 0
+	reducer.fast.fill = nil
 }
 
 func (reducer *streamLineReducer) applyWriteSpan(op TerminalSemanticOp) []HistoryMutation {
@@ -795,6 +1014,16 @@ func (reducer *streamLineReducer) cloneRows() map[LogicalLineID]map[int][]Cell {
 
 func (reducer *streamLineReducer) debugOpenLinesByRow() map[int]OpenLine {
 	out := make(map[int]OpenLine, len(reducer.rowOwners))
+	if reducer.fast.active {
+		out[reducer.cursorRow] = OpenLine{
+			Active: true,
+			Draft: LogicalLineDraft{
+				Line:      reducer.fastLogicalLine(),
+				CursorCol: reducer.fast.cursor,
+				Row:       reducer.cursorRow,
+			},
+		}
+	}
 	for _, row := range reducer.sortedOwnedRows() {
 		draft := reducer.draftForRow(row)
 		if draft == nil {
@@ -812,6 +1041,22 @@ func (reducer *streamLineReducer) debugOpenLinesByRow() map[int]OpenLine {
 		out[row] = open
 	}
 	return out
+}
+
+func (reducer *streamLineReducer) debugOrdinaryFastLaneStats() ordinaryFastLaneStats {
+	if reducer == nil {
+		return ordinaryFastLaneStats{}
+	}
+	return reducer.fast.stats
+}
+
+func (reducer *streamLineReducer) fastLogicalLine() LogicalLine {
+	line := logicalLineTemplate(HistoryRecordOrdinaryLine)
+	line.ID = reducer.fast.lineID
+	line.Cells = cloneHistoryCells(reducer.fast.cells)
+	line.TailFill = cloneRowTailFill(reducer.fast.fill)
+	line.Seal = SealStateOpen
+	return line
 }
 
 func historyCellsFromTerminal(cells []TerminalSemanticCell) []Cell {
