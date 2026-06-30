@@ -59,17 +59,24 @@ func TestR301HistoryCleanupGuard(t *testing.T) {
 	}
 }
 
-func TestR372LegacyHistoryRawBacklogStaysIsolatedFromSemanticTap(t *testing.T) {
+func TestR373TerminalHistoryBacklogOnlyAcceptsSemanticTapTransactions(t *testing.T) {
 	workerSource := r301ReadFile(t, "terminal_history_ingest_worker.go")
-	if !strings.Contains(workerSource, "legacy raw PTY history backlog") {
-		t.Fatal("legacy history raw backlog must be explicitly marked as R373 replacement target")
+	if !strings.Contains(workerSource, "SemanticTap 之后的 history transaction backlog") {
+		t.Fatal("history backlog must be documented as post-SemanticTap transaction queue")
 	}
-	if strings.Contains(workerSource, "SemanticTap") || strings.Contains(workerSource, "TerminalSemanticTransaction") {
-		t.Fatal("legacy raw history backlog must not pretend to be the new SemanticTap transaction queue")
+	for _, forbidden := range []string{"terminalHistoryIngestSpool", "os.CreateTemp", "io.WriteString", "[]string) error", "Enqueue(text string)"} {
+		if strings.Contains(workerSource, forbidden) {
+			t.Fatalf("history backlog must not retain raw PTY replay/spool path: %s", forbidden)
+		}
 	}
 	terminalSource := r301ReadFile(t, "terminal.go")
-	if !strings.Contains(terminalSource, "R373 切换到 single SemanticTap 前的隔离对象") {
-		t.Fatal("terminal historySemantic parser must be documented as isolated legacy double-vterm path")
+	for _, forbidden := range []string{"historySemantic", "splitTerminalHistorySemanticWrites", "consumeTerminalHistoryPrivateCSI", "historyWorker.Enqueue(text)"} {
+		if strings.Contains(terminalSource, forbidden) {
+			t.Fatalf("terminal production path must not retain history raw replay/double-vterm code: %s", forbidden)
+		}
+	}
+	if !strings.Contains(terminalSource, "historyWorker.Enqueue(result.Transaction())") {
+		t.Fatal("terminal production path must fan out tap transaction to history queue")
 	}
 }
 

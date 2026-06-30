@@ -3,6 +3,7 @@ package termxcorev2
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -63,6 +64,43 @@ func TestTerminalLifecycleAndLiveSurface(t *testing.T) {
 	}
 	if info.Size != (Size{Cols: 20, Rows: 5}) {
 		t.Fatalf("expected registry size to follow resize, got %#v", info.Size)
+	}
+}
+
+func TestR373ResizeSerializesProcessOutputWithTapResize(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r373-resize-order",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 5, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	process := factory.process("term-r373-resize-order")
+	if process == nil {
+		t.Fatal("expected process to be spawned")
+	}
+	process.setResizeHook(func(size Size) {
+		process.emitOutput("\x1b[2Jabcdefg")
+	})
+	if err := server.ResizeTerminal(context.Background(), "term-r373-resize-order", 8, 3); err != nil {
+		t.Fatalf("resize terminal: %v", err)
+	}
+	terminal, err := server.Terminal("term-r373-resize-order")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	assertEventually(t, time.Second, func() bool {
+		snapshot := terminal.NativeScreenSnapshot("term-r373-resize-order")
+		return snapshot.Size.Cols == 8 && len(snapshot.Rows) > 0 && len(snapshot.Rows[0].Cells) >= 7
+	}, "resize output should be applied after tap resize")
+	snapshot := terminal.NativeScreenSnapshot("term-r373-resize-order")
+	if snapshot.Size.Cols != 8 {
+		t.Fatalf("tap latest screen should use resized width, got %#v", snapshot.Size)
+	}
+	if got := len(snapshot.Rows[0].Cells); got != 7 {
+		t.Fatalf("resize-triggered output should not wrap at old width, row cells=%d row=%#v", got, snapshot.Rows[0])
 	}
 }
 
@@ -135,6 +173,365 @@ func TestTerminalHistoryDisabledUsesNativeScreenOnlyWritePath(t *testing.T) {
 	}
 	if got := strings.Join(liveSnapshotRows(snapshot), "\n"); !strings.Contains(got, "latest") {
 		t.Fatalf("native screen must still update in history disabled mode, got %q", got)
+	}
+}
+
+func TestR373ProcessOutputFansOutSemanticTapToLiveAndHistory(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	events := server.Events(context.Background(), EventFilter{
+		TerminalID: "term-r373-fanout",
+		Types:      []EventType{EventTerminalLiveInvalidated},
+	})
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r373-fanout",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 30, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	process := factory.process("term-r373-fanout")
+	if process == nil {
+		t.Fatal("expected recording process")
+	}
+	process.emitOutput("alpha\r\nbeta\r\n")
+	event := assertEventValue(t, events, EventTerminalLiveInvalidated, "term-r373-fanout")
+	if event.Live == nil || event.Live.Revision == 0 {
+		t.Fatalf("expected live invalidation from tap output, got %#v", event)
+	}
+
+	rows, err := server.LiveRows("term-r373-fanout")
+	if err != nil {
+		t.Fatalf("live rows: %v", err)
+	}
+	if got := strings.Join(rows, "|"); !strings.Contains(got, "beta") {
+		t.Fatalf("process output must update latest native screen, rows=%#v", rows)
+	}
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r373-fanout", history.HistoryWindowRequest{
+		TerminalID: "term-r373-fanout",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       30,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("history.window should flush tap transaction backlog: %v", err)
+	}
+	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "alpha|beta" {
+		t.Fatalf("history queue must consume tap semantic transaction, got %q window=%#v", got, window)
+	}
+	terminal, err := server.Terminal("term-r373-fanout")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	records := terminal.tap.InputRecords()
+	if len(records) != 1 || records[0].Kind != SemanticTapInputWrite {
+		t.Fatalf("process output must enter single SemanticTap once, records=%#v", records)
+	}
+}
+
+func TestR373HistoryDisabledProcessOutputKeepsLiveOnlyTapBoundary(t *testing.T) {
+	historyDir := t.TempDir()
+	factory := newRecordingProcessFactory()
+	server := NewServer(
+		WithProcessFactory(factory),
+		WithHistoryStorageDir(historyDir),
+		WithHistoryDisabled(),
+	)
+	events := server.Events(context.Background(), EventFilter{
+		TerminalID: "term-r373-live-only",
+		Types:      []EventType{EventTerminalLiveInvalidated},
+	})
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r373-live-only",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 24, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	process := factory.process("term-r373-live-only")
+	if process == nil {
+		t.Fatal("expected recording process")
+	}
+	process.emitOutput("alpha\r\nlive-only-tail")
+	event := assertEventValue(t, events, EventTerminalLiveInvalidated, "term-r373-live-only")
+	if event.Live == nil || event.Live.Revision == 0 {
+		t.Fatalf("expected live invalidation in history disabled mode, got %#v", event)
+	}
+
+	snapshot, err := server.LiveSnapshot("term-r373-live-only")
+	if err != nil {
+		t.Fatalf("live snapshot: %v", err)
+	}
+	if got := strings.Join(liveSnapshotRows(snapshot), "\n"); !strings.Contains(got, "live-only-tail") {
+		t.Fatalf("history disabled process output must still update tap native screen, got %q", got)
+	}
+	terminal, err := server.Terminal("term-r373-live-only")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	terminal.queueMu.Lock()
+	historyQueue := terminal.historyQ
+	terminal.queueMu.Unlock()
+	if historyQueue != nil {
+		t.Fatal("history disabled live-only mode must not create a history transaction queue")
+	}
+	if _, err := server.TerminalHistoryWindow(context.Background(), "term-r373-live-only", history.HistoryWindowRequest{
+		TerminalID: "term-r373-live-only",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       24,
+		Limit:      10,
+	}); !errors.Is(err, ErrHistoryDisabled) {
+		t.Fatalf("history disabled window must stay disabled, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(historyDir, "term-r373-live-only.history-lines.bin")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("history disabled process path must not write payload file, err=%v", err)
+	}
+	if records := terminal.tap.InputRecords(); len(records) != 1 || records[0].Kind != SemanticTapInputWrite {
+		t.Fatalf("live-only process output must still enter SemanticTap once, records=%#v", records)
+	}
+}
+
+func TestR373ProcessOutputResponseOwnerRemainsSingleSemanticTap(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r373-response",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 80, Rows: 24},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	process := factory.process("term-r373-response")
+	if process == nil {
+		t.Fatal("expected recording process")
+	}
+	process.emitOutput("\x1b]11;?\x1b\\")
+	assertEventually(t, time.Second, func() bool {
+		return terminalProcessResponseCount(process, "\x1b]11;") >= 1
+	}, "process PTY query must be answered exactly once by SemanticTap")
+	time.Sleep(20 * time.Millisecond)
+	if got := terminalProcessResponseCount(process, "\x1b]11;"); got != 1 {
+		t.Fatalf("process PTY query must be answered exactly once by SemanticTap, got %d responses", got)
+	}
+	terminal, err := server.Terminal("term-r373-response")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	if records := terminal.tap.InputRecords(); len(records) != 1 || records[0].Kind != SemanticTapInputWrite {
+		t.Fatalf("response-producing output must enter single SemanticTap once, records=%#v", records)
+	}
+}
+
+func TestR373SingleTapSynchronizedTransactionPublishesPrimaryFrame(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r373-sync-one-tx",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r373-sync-one-tx", "\x1b[?2026hline1\r\nline2\r\nline3\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest synchronized single transaction: %v", err)
+	}
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r373-sync-one-tx", history.HistoryWindowRequest{
+		TerminalID: "term-r373-sync-one-tx",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       20,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("history.window: %v", err)
+	}
+	if !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
+		t.Fatalf("single SemanticTap sync begin/payload/end transaction must publish current frame, rows=%#v", window.Rows)
+	}
+	if got := strings.Join(historyRowTexts(window.Rows), "|"); !strings.Contains(got, "line3") {
+		t.Fatalf("current frame should preserve final screen payload, got %q", got)
+	}
+}
+
+func TestR373SingleTapSynchronizedScrollOutKeepsFullPayload(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r373-sync-scrollout",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 12, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	var output strings.Builder
+	output.WriteString("\x1b[?2026h")
+	for i := 1; i <= 8; i++ {
+		output.WriteString(fmt.Sprintf("line%02d\r\n", i))
+	}
+	output.WriteString("\x1b[?2026l")
+	if err := server.IngestOutput(context.Background(), "term-r373-sync-scrollout", output.String()); err != nil {
+		t.Fatalf("ingest long synchronized transaction: %v", err)
+	}
+	rows, pageCount := r326CollectAllHistoryRows(t, server, "term-r373-sync-scrollout", 12, 2)
+	text := strings.Join(historyRowTexts(rows), "\n")
+	for _, want := range []string{"line01", "line08"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("single tap synchronized scroll-out must keep full payload, missing %q:\n%s\nrows=%#v", want, text, rows)
+		}
+	}
+	if pageCount < 2 {
+		t.Fatalf("long synchronized transaction should page beyond latest frame, page_count=%d rows=%#v", pageCount, rows)
+	}
+}
+
+func TestR373SplitSynchronizedEndScrollOutKeepsPayload(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r373-split-sync-end",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 12, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r373-split-sync-end", "\x1b[?2026hline01\r\n"); err != nil {
+		t.Fatalf("ingest synchronized begin: %v", err)
+	}
+	var output strings.Builder
+	for i := 2; i <= 8; i++ {
+		output.WriteString(fmt.Sprintf("line%02d\r\n", i))
+	}
+	output.WriteString("\x1b[?2026l")
+	if err := server.IngestOutput(context.Background(), "term-r373-split-sync-end", output.String()); err != nil {
+		t.Fatalf("ingest synchronized end flush: %v", err)
+	}
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r373-split-sync-end", 12, 2)
+	text := strings.Join(historyRowTexts(rows), "\n")
+	for _, want := range []string{"line01", "line08"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("split sync-end transaction must keep full payload, missing %q:\n%s\nrows=%#v", want, text, rows)
+		}
+	}
+}
+
+func TestR373SingleTapAltTransactionDoesNotEnterPrimaryHistory(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r373-alt-one-tx",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r373-alt-one-tx", "before\r\n"); err != nil {
+		t.Fatalf("seed primary history: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r373-alt-one-tx", "\x1b[?1049hALT\x1b[?1049l"); err != nil {
+		t.Fatalf("ingest alt single transaction: %v", err)
+	}
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r373-alt-one-tx", history.HistoryWindowRequest{
+		TerminalID: "term-r373-alt-one-tx",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       20,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("history.window: %v", err)
+	}
+	for _, row := range window.Rows {
+		if strings.Contains(historyCellsText(row.Cells), "ALT") && row.Segment != history.HistorySegmentCurrentAltFrame {
+			t.Fatalf("alt enter/write/exit in one tap transaction must not enter primary history, row=%#v rows=%#v", row, window.Rows)
+		}
+	}
+	if got := historyTextCount(window.Rows, "ALT"); got != 0 {
+		t.Fatalf("alt transient already exited; latest authoritative primary history must not contain ALT, count=%d rows=%#v", got, window.Rows)
+	}
+}
+
+func TestR373SecondSingleTapRedrawSealsPreviousPrimaryFrame(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r373-second-redraw",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r373-second-redraw", "\x1b[?2026hfirst\r\ncurrent\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest first redraw: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r373-second-redraw", "\x1b[?2026hsecond\r\ncurrent\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest second redraw: %v", err)
+	}
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r373-second-redraw", 20, 2)
+	if got := historyTextCount(rows, "first"); got != 1 {
+		t.Fatalf("second redraw must seal previous current frame once, count=%d rows=%#v", got, rows)
+	}
+	if got := historyTextCount(rows, "second"); got != 1 {
+		t.Fatalf("second redraw must publish new current frame once, count=%d rows=%#v", got, rows)
+	}
+	if current := currentPrimaryFrameRowTexts(rows); len(current) == 0 || !strings.Contains(strings.Join(current, "\n"), "second") {
+		t.Fatalf("latest current frame should be the second redraw, current=%#v rows=%#v", current, rows)
+	}
+}
+
+func TestR373SingleTapSyncThenAltKeepsPrimaryHistory(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r373-sync-alt-one-tx",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 12, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r373-sync-alt-one-tx", "prelude\r\n"); err != nil {
+		t.Fatalf("seed prelude: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r373-sync-alt-one-tx", "\x1b[?2026hsync01\r\nsync02\x1b[?2026l\x1b[?1049hALT-TRANSIENT\x1b[?1049l"); err != nil {
+		t.Fatalf("ingest sync then alt transaction: %v", err)
+	}
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r373-sync-alt-one-tx", 12, 2)
+	text := strings.Join(historyRowTexts(rows), "\n")
+	for _, want := range []string{"prelude", "sync01", "sync02"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("sync content must survive same tap transaction as alt enter, missing %q:\n%s\nrows=%#v", want, text, rows)
+		}
+	}
+	if strings.Contains(text, "ALT-TRANSIENT") {
+		t.Fatalf("alt transient must not enter primary history:\n%s\nrows=%#v", text, rows)
+	}
+	if !historyRowsContainSegment(rows, history.HistorySegmentArchivedPrimaryFrame) {
+		t.Fatalf("alt enter in same tap transaction must archive synchronized primary frame, rows=%#v", rows)
+	}
+}
+
+func TestR373SingleTapPreludeThenSyncThenAltKeepsPrimaryHistory(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r373-prelude-sync-alt-one-tx",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 12, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	var output strings.Builder
+	output.WriteString("prelude\r\n")
+	output.WriteString("\x1b[?2026h")
+	for i := 1; i <= 8; i++ {
+		output.WriteString(fmt.Sprintf("sync%02d\r\n", i))
+	}
+	output.WriteString("\x1b[?2026l\x1b[?1049hALT-TRANSIENT\x1b[?1049l")
+	if err := server.IngestOutput(context.Background(), "term-r373-prelude-sync-alt-one-tx", output.String()); err != nil {
+		t.Fatalf("ingest prelude sync alt transaction: %v", err)
+	}
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r373-prelude-sync-alt-one-tx", 12, 2)
+	text := strings.Join(historyRowTexts(rows), "\n")
+	for _, want := range []string{"prelude", "sync01", "sync08"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("prelude and synchronized payload must survive same tap transaction as alt enter, missing %q:\n%s\nrows=%#v", want, text, rows)
+		}
+	}
+	if strings.Contains(text, "ALT-TRANSIENT") {
+		t.Fatalf("alt transient must not enter primary history:\n%s\nrows=%#v", text, rows)
+	}
+	if !historyRowsContainSegment(rows, history.HistorySegmentArchivedPrimaryFrame) {
+		t.Fatalf("same-transaction alt enter must archive pre-alt primary frame, rows=%#v", rows)
 	}
 }
 
@@ -534,6 +931,17 @@ func liveSnapshotRows(snapshot live.SurfaceSnapshot) []string {
 	return rows
 }
 
+func terminalProcessResponseCount(process *recordingProcess, needle string) int {
+	inputs, _, _, _ := process.snapshot()
+	count := 0
+	for _, input := range inputs {
+		if strings.Contains(string(input), needle) {
+			count++
+		}
+	}
+	return count
+}
+
 func TestTerminalRestartReplacesProcessAndClearsExitMetadata(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -680,6 +1088,7 @@ type recordingProcess struct {
 	inputs     [][]byte
 	resizes    []Size
 	resizeErr  error
+	resizeHook func(Size)
 	outputCh   chan []byte
 	waitCh     chan ProcessExit
 	exitOnce   sync.Once
@@ -700,14 +1109,21 @@ func (process *recordingProcess) Input(data []byte) error {
 
 func (process *recordingProcess) Resize(size Size) error {
 	process.mu.Lock()
-	defer process.mu.Unlock()
 	if process.closed {
+		process.mu.Unlock()
 		return io.ErrClosedPipe
 	}
 	if process.resizeErr != nil {
-		return process.resizeErr
+		err := process.resizeErr
+		process.mu.Unlock()
+		return err
 	}
 	process.resizes = append(process.resizes, size)
+	hook := process.resizeHook
+	process.mu.Unlock()
+	if hook != nil {
+		hook(size)
+	}
 	return nil
 }
 
@@ -715,6 +1131,12 @@ func (process *recordingProcess) setResizeErr(err error) {
 	process.mu.Lock()
 	defer process.mu.Unlock()
 	process.resizeErr = err
+}
+
+func (process *recordingProcess) setResizeHook(hook func(Size)) {
+	process.mu.Lock()
+	defer process.mu.Unlock()
+	process.resizeHook = hook
 }
 
 func (process *recordingProcess) Output() <-chan []byte {

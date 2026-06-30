@@ -35,6 +35,14 @@ type HistoryDecision struct {
 	PublishAltFrame                    bool
 	ClearAltFrame                      bool
 	ClosePrimaryFrame                  bool
+	// ClosePrimaryFrameBeforePrimaryReplace 表示新的 primary repaint session 已经开始，
+	// 旧 current frame 必须先按 lifecycle/session boundary seal，再接收本次 frame。
+	// 它不同于普通 stream 恢复：本次 transaction 的内容仍属于新的 primary frame。
+	ClosePrimaryFrameBeforePrimaryReplace bool
+	// ArchivePrimaryAfterPrimaryFrame 表示同一 transaction 同时携带 primary frame
+	// side proof 和 alt-enter 边界；renderer 必须先发布 primary frame，再按
+	// alt-enter 把它归档，不能等后续普通输出把它 close 成普通 committed frame。
+	ArchivePrimaryAfterPrimaryFrame bool
 	// ClosePrimaryFrameBeforeStream 表示普通输出恢复前必须先关闭 primary
 	// current frame，防止后续 prompt/open line 被投影到旧 screen-frame 前面。
 	ClosePrimaryFrameBeforeStream bool

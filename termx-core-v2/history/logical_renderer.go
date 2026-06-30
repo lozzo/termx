@@ -43,6 +43,17 @@ func (renderer *logicalRenderer) Apply(tx TerminalSemanticTransaction, decision 
 		renderer.recordPrimaryFrameTouchedRowIndexes(tx.PrimaryFrameTouchedRows, tx.Size)
 	}
 	var mutations []HistoryMutation
+	if decision.ClosePrimaryFrameBeforePrimaryReplace {
+		// 中文说明：single SemanticTap 可能把“关闭旧 screen app frame”和“发布新
+		// primary repaint”放进同一 transaction。旧 current frame 先按 session
+		// boundary seal；随后同一 transaction 的 scroll-out proof 和 PrimaryFrame
+		// 继续作为新 session 的真值输入。
+		next, err := renderer.frames.ClosePrimaryCurrent(SealReasonSessionClose)
+		if err != nil {
+			return HistoryMutationBatch{}, err
+		}
+		mutations = append(mutations, next...)
+	}
 	if decision.ClosePrimaryFrameBeforeStream {
 		// 中文说明：primary screen app 结束后出现新的普通 PTY 输出时，旧 current
 		// frame 必须先离开 mutable ownership；若本 transaction 带有 vterm 当前屏幕
@@ -164,10 +175,27 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 		}
 	case HistorySemanticEventPrimaryFrame:
 		if decision.PublishPrimaryFrame && event.Frame != nil {
+			var mutations []HistoryMutation
+			var err error
 			if decision.PublishPrimaryFrameTouchedRowsOnly {
-				return renderer.frames.ReplacePrimaryTouchedRows(*event.Frame, renderer.sortedPrimaryFrameTouchedRows(), FrameReasonPrimaryRepaint)
+				mutations, err = renderer.frames.ReplacePrimaryTouchedRows(*event.Frame, renderer.sortedPrimaryFrameTouchedRows(), FrameReasonPrimaryRepaint)
+			} else {
+				mutations, err = renderer.frames.ReplacePrimaryCurrent(*event.Frame, FrameReasonPrimaryRepaint)
 			}
-			return renderer.frames.ReplacePrimaryCurrent(*event.Frame, FrameReasonPrimaryRepaint)
+			if err != nil {
+				return nil, err
+			}
+			if decision.ArchivePrimaryAfterPrimaryFrame {
+				// 中文说明：single SemanticTap 可能把 primary repaint 和紧随其后的
+				// alt-enter 放进同一 transaction。primary frame 必须先成为 current，
+				// 再由 alt-enter 边界归档，不能留给后续 ordinary stream close。
+				archived, err := renderer.frames.ArchivePrimaryCurrent(SealReasonAltEnter)
+				if err != nil {
+					return nil, err
+				}
+				mutations = append(mutations, archived...)
+			}
+			return mutations, nil
 		}
 	case HistorySemanticEventAltEnter:
 		if decision.ArchivePrimaryBeforeAlt {

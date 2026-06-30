@@ -2,22 +2,21 @@ package termxcorev2
 
 import (
 	"context"
-	"io"
-	"os"
 	"sync"
+
+	"github.com/lozzow/termx/termx-core-v2/history"
 )
 
-const terminalHistoryIngestBatchMaxBytes = 1024 * 1024
+const terminalHistoryIngestBatchMaxTransactions = 1024
 
-// terminalHistoryIngestQueue 是 R358 留下的 legacy raw PTY history backlog。
-// R372 后它只能作为 R373 替换前的隔离对象：当前失败条件是它仍会把 raw text
-// 交给独立 history SemanticSource 追平，不能被包装成新的 single-tap 队列或
-// history truth。R373 必须把 backlog 单位切到 tap 产出的 semantic transaction。
+// terminalHistoryIngestQueue 是 SemanticTap 之后的 history transaction backlog。
+// domain owner 是 core terminal ingest：queue 只接收 tap 产出的 immutable semantic
+// transaction 副本，不保存 raw PTY bytes、不启动第二个 vterm，也不解释 history
+// truth。失败条件是任何 consumer 绕过 tap 往这里塞 raw PTY replay。
 type terminalHistoryIngestQueue struct {
 	mu        sync.Mutex
 	cond      *sync.Cond
 	pending   []terminalHistoryIngestItem
-	spool     *terminalHistoryIngestSpool
 	flushSeq  uint64
 	doneSeq   uint64
 	inFlight  bool
@@ -27,33 +26,25 @@ type terminalHistoryIngestQueue struct {
 }
 
 type terminalHistoryIngestItem struct {
-	offset   int64
-	length   int
-	text     string
+	tx       history.TerminalSemanticTransaction
 	flushSeq uint64
-	err      error
 }
 
 func newTerminalHistoryIngestQueue() *terminalHistoryIngestQueue {
 	queue := &terminalHistoryIngestQueue{
-		spool: newTerminalHistoryIngestSpool(),
-		done:  make(chan struct{}),
+		done: make(chan struct{}),
 	}
 	queue.cond = sync.NewCond(&queue.mu)
 	return queue
 }
 
-func (queue *terminalHistoryIngestQueue) Enqueue(text string) bool {
-	if text == "" {
-		return true
-	}
+func (queue *terminalHistoryIngestQueue) Enqueue(tx history.TerminalSemanticTransaction) bool {
 	queue.mu.Lock()
 	defer queue.mu.Unlock()
 	if queue.closed {
 		return false
 	}
-	item := queue.spool.append(text)
-	queue.pending = append(queue.pending, item)
+	queue.pending = append(queue.pending, terminalHistoryIngestItem{tx: cloneSemanticTapTransaction(tx)})
 	queue.cond.Signal()
 	return true
 }
@@ -122,13 +113,9 @@ func (queue *terminalHistoryIngestQueue) Wait() {
 	<-queue.done
 }
 
-func (queue *terminalHistoryIngestQueue) Run(ingest func([]string) error) {
+func (queue *terminalHistoryIngestQueue) Run(ingest func([]history.TerminalSemanticTransaction) error) {
 	defer func() {
-		queue.closeOnce.Do(func() {
-			if queue.spool != nil {
-				queue.spool.close()
-			}
-		})
+		queue.closeOnce.Do(func() {})
 		close(queue.done)
 	}()
 	for {
@@ -137,35 +124,33 @@ func (queue *terminalHistoryIngestQueue) Run(ingest func([]string) error) {
 			return
 		}
 		if ingest != nil {
-			texts := terminalHistoryIngestBatchTexts(batch)
-			if len(texts) > 0 {
-				_ = ingest(texts)
+			txs := terminalHistoryIngestBatchTransactions(batch)
+			if len(txs) > 0 {
+				_ = ingest(txs)
 			}
 		}
 		if target, ok := terminalHistoryIngestBatchFlushTarget(batch); ok {
 			queue.markFlushed(target)
 		}
 		queue.finishBatch()
-		// 中文说明：history 批次已经交给 store/backend 后才尝试归还临时页；
+		// 中文说明：history transaction 已经交给 store/backend 后才尝试归还临时页；
 		// 这里不删除 history truth，也不是后台定时 scrub。
 		maybeReclaimDaemonBoundaryHeap()
 	}
 }
 
-func terminalHistoryIngestBatchTexts(batch []terminalHistoryIngestItem) []string {
+func terminalHistoryIngestBatchTransactions(batch []terminalHistoryIngestItem) []history.TerminalSemanticTransaction {
 	if len(batch) == 0 {
 		return nil
 	}
-	texts := make([]string, 0, len(batch))
+	txs := make([]history.TerminalSemanticTransaction, 0, len(batch))
 	for _, item := range batch {
-		if item.err != nil {
+		if item.flushSeq != 0 {
 			continue
 		}
-		if item.text != "" {
-			texts = append(texts, item.text)
-		}
+		txs = append(txs, cloneSemanticTapTransaction(item.tx))
 	}
-	return texts
+	return txs
 }
 
 func (queue *terminalHistoryIngestQueue) nextBatch() ([]terminalHistoryIngestItem, bool) {
@@ -178,17 +163,14 @@ func (queue *terminalHistoryIngestQueue) nextBatch() ([]terminalHistoryIngestIte
 		return nil, false
 	}
 	count := 0
-	bytes := 0
 	for count < len(queue.pending) {
 		if queue.pending[count].flushSeq != 0 {
 			count++
 			break
 		}
-		nextBytes := queue.pending[count].length
-		if count > 0 && bytes+nextBytes > terminalHistoryIngestBatchMaxBytes {
+		if count > 0 && count >= terminalHistoryIngestBatchMaxTransactions {
 			break
 		}
-		bytes += nextBytes
 		count++
 	}
 	batch := queue.cloneBatchLocked(queue.pending[:count])
@@ -205,18 +187,9 @@ func (queue *terminalHistoryIngestQueue) cloneBatchLocked(items []terminalHistor
 		return nil
 	}
 	batch := make([]terminalHistoryIngestItem, len(items))
-	copy(batch, items)
-	for i := range batch {
-		if batch[i].length > 0 {
-			text, err := queue.spool.read(batch[i])
-			if err != nil {
-				batch[i].err = err
-				continue
-			}
-			// 中文说明：spool 只在 batch 出队时短暂还原字符串；pending 队列本身只持有
-			// offset/length，避免 history worker 落后时把 PTY payload 常驻 Go heap。
-			batch[i].text = text
-		}
+	for i, item := range items {
+		batch[i] = item
+		batch[i].tx = cloneSemanticTapTransaction(item.tx)
 	}
 	return batch
 }
@@ -260,74 +233,4 @@ func (queue *terminalHistoryIngestQueue) dropPendingPrefixLocked(count int) {
 		return
 	}
 	queue.pending = queue.pending[:remaining]
-}
-
-// terminalHistoryIngestSpool 是 history worker 的 raw PTY backlog 驻留边界。
-// domain owner 是 history ingest queue：spool 只暂存尚未被 semantic source 消费的
-// 原始 PTY bytes，不解释内容、不生成 history truth，也不参与 live latest path。
-type terminalHistoryIngestSpool struct {
-	file   *os.File
-	offset int64
-	err    error
-}
-
-func newTerminalHistoryIngestSpool() *terminalHistoryIngestSpool {
-	file, err := os.CreateTemp("", "termx-history-ingest-*.spool")
-	return &terminalHistoryIngestSpool{file: file, err: err}
-}
-
-func (spool *terminalHistoryIngestSpool) append(text string) terminalHistoryIngestItem {
-	item := terminalHistoryIngestItem{length: len(text)}
-	if spool == nil || spool.err != nil || spool.file == nil {
-		item.err = spoolError(spool)
-		return item
-	}
-	offset := spool.offset
-	n, err := io.WriteString(spool.file, text)
-	if err != nil {
-		spool.err = err
-		item.err = err
-		return item
-	}
-	spool.offset += int64(n)
-	item.offset = offset
-	item.length = n
-	return item
-}
-
-func (spool *terminalHistoryIngestSpool) read(item terminalHistoryIngestItem) (string, error) {
-	if item.length == 0 {
-		return "", item.err
-	}
-	if item.err != nil {
-		return "", item.err
-	}
-	if spool == nil || spool.file == nil {
-		return "", spoolError(spool)
-	}
-	buf := make([]byte, item.length)
-	if _, err := spool.file.ReadAt(buf, item.offset); err != nil {
-		return "", err
-	}
-	return string(buf), nil
-}
-
-func (spool *terminalHistoryIngestSpool) close() {
-	if spool == nil || spool.file == nil {
-		return
-	}
-	name := spool.file.Name()
-	_ = spool.file.Close()
-	_ = os.Remove(name)
-	spool.file = nil
-}
-
-func spoolError(spool *terminalHistoryIngestSpool) error {
-	if spool == nil {
-		return os.ErrInvalid
-	}
-	if spool.err != nil {
-		return spool.err
-	}
-	return os.ErrInvalid
 }

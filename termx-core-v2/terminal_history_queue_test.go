@@ -2,17 +2,17 @@ package termxcorev2
 
 import (
 	"context"
-	"os"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/lozzow/termx/termx-core-v2/history"
 )
 
 func TestTerminalHistoryIngestQueueEnqueueDoesNotWaitForSlowIngest(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue()
 	started := make(chan struct{})
 	release := make(chan struct{})
-	go queue.Run(func([]string) error {
+	go queue.Run(func([]history.TerminalSemanticTransaction) error {
 		select {
 		case <-started:
 		default:
@@ -21,7 +21,7 @@ func TestTerminalHistoryIngestQueueEnqueueDoesNotWaitForSlowIngest(t *testing.T)
 		<-release
 		return nil
 	})
-	if !queue.Enqueue("one") {
+	if !queue.Enqueue(r373HistoryQueueTx(1, "one")) {
 		t.Fatal("expected first enqueue")
 	}
 	select {
@@ -32,7 +32,7 @@ func TestTerminalHistoryIngestQueueEnqueueDoesNotWaitForSlowIngest(t *testing.T)
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < 1000; i++ {
-			if !queue.Enqueue("more") {
+			if !queue.Enqueue(r373HistoryQueueTx(uint64(i+2), "more")) {
 				t.Errorf("enqueue rejected before close")
 				break
 			}
@@ -51,17 +51,18 @@ func TestTerminalHistoryIngestQueueEnqueueDoesNotWaitForSlowIngest(t *testing.T)
 
 func TestTerminalHistoryIngestQueueSplitsLargePendingBatch(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue()
-	chunk := strings.Repeat("x", terminalHistoryIngestBatchMaxBytes/2+1)
-	if !queue.Enqueue(chunk) || !queue.Enqueue(chunk) || !queue.Enqueue("tail") {
-		t.Fatal("expected enqueue before close")
+	for seq := uint64(1); seq <= terminalHistoryIngestBatchMaxTransactions+2; seq++ {
+		if !queue.Enqueue(r373HistoryQueueTx(seq, "payload")) {
+			t.Fatal("expected enqueue before close")
+		}
 	}
 	first, ok := queue.nextBatch()
-	if !ok || len(first) != 1 {
-		t.Fatalf("expected first capped batch with one chunk, got batch=%d ok=%v", len(first), ok)
+	if !ok || len(first) != terminalHistoryIngestBatchMaxTransactions {
+		t.Fatalf("expected first capped batch, got batch=%d ok=%v", len(first), ok)
 	}
 	second, ok := queue.nextBatch()
 	if !ok || len(second) != 2 {
-		t.Fatalf("expected second capped batch with remaining chunks, got batch=%d ok=%v", len(second), ok)
+		t.Fatalf("expected second capped batch with remaining txs, got batch=%d ok=%v", len(second), ok)
 	}
 	queue.Close()
 	third, ok := queue.nextBatch()
@@ -71,83 +72,65 @@ func TestTerminalHistoryIngestQueueSplitsLargePendingBatch(t *testing.T) {
 	close(queue.done)
 }
 
-func TestTerminalHistoryIngestQueueDropsConsumedPayloadReferences(t *testing.T) {
+func TestTerminalHistoryIngestQueueDropsConsumedTransactionReferences(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue()
-	chunk := strings.Repeat("x", terminalHistoryIngestBatchMaxBytes)
-	if !queue.Enqueue(chunk) || !queue.Enqueue("tail") {
+	if !queue.Enqueue(r373HistoryQueueTx(1, "alpha")) || !queue.Enqueue(r373HistoryQueueTx(2, "beta")) {
 		t.Fatal("expected enqueue before close")
 	}
 
 	first, ok := queue.nextBatch()
-	if !ok || len(first) != 1 {
-		t.Fatalf("expected first capped batch, got batch=%d ok=%v", len(first), ok)
+	if !ok || len(first) != 2 {
+		t.Fatalf("expected first batch, got batch=%d ok=%v", len(first), ok)
 	}
 	retained := queue.pending[:cap(queue.pending)]
-	if len(queue.pending) != 1 || retained[1].text != "" {
-		t.Fatalf("consumed history payload should not remain in backing array, len=%d retained=%#v", len(queue.pending), retained)
+	if len(queue.pending) != 0 {
+		t.Fatalf("all transactions should be consumed, got %d pending", len(queue.pending))
 	}
-
-	second, ok := queue.nextBatch()
-	if !ok || len(second) != 1 {
-		t.Fatalf("expected second batch, got batch=%d ok=%v", len(second), ok)
-	}
-	if queue.pending != nil {
-		t.Fatalf("empty history buffer should release backing array, got len=%d cap=%d", len(queue.pending), cap(queue.pending))
+	for index, item := range retained {
+		if item.tx.Seq != 0 || item.tx.PrimaryFrame != nil {
+			t.Fatalf("consumed history transaction %d should not remain in backing array: %#v", index, item)
+		}
 	}
 	close(queue.done)
 }
 
-func TestR362TerminalHistoryIngestQueueSpoolsPendingPayloadsOffHeap(t *testing.T) {
+func TestR373TerminalHistoryIngestQueueStoresSemanticTransactionsNotRawPTY(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue()
-	spoolPath := queue.spool.file.Name()
-	large := strings.Repeat("history-payload-", 4096)
-	for i := 0; i < 8; i++ {
-		if !queue.Enqueue(large) {
-			t.Fatal("expected enqueue before close")
-		}
+	tx := r373HistoryQueueTx(1, "immutable")
+	if !queue.Enqueue(tx) {
+		t.Fatal("expected enqueue before close")
 	}
-	total := 0
-	for index, item := range queue.pending {
-		if item.text != "" {
-			t.Fatalf("pending item %d retained raw text in heap", index)
-		}
-		total += item.length
-	}
-	if total != len(large)*8 {
-		t.Fatalf("pending spool metadata lost payload length, got %d", total)
-	}
-
+	tx.PrimaryFrame.Rows[0][0].Content = "mutated-after-enqueue"
 	batch, ok := queue.nextBatch()
-	if !ok || len(batch) == 0 {
-		t.Fatalf("expected spooled batch, got len=%d ok=%v", len(batch), ok)
+	if !ok || len(batch) != 1 {
+		t.Fatalf("expected one transaction batch, got len=%d ok=%v", len(batch), ok)
 	}
-	if len(batch) != 8 {
-		t.Fatalf("large payloads should stay as separate semantic chunks inside capped batch, got %d", len(batch))
+	txs := terminalHistoryIngestBatchTransactions(batch)
+	if len(txs) != 1 {
+		t.Fatalf("expected one semantic transaction, got %#v", txs)
 	}
-	for index, item := range batch {
-		if item.text != large {
-			t.Fatalf("spooled batch item %d did not restore payload, got len=%d", index, len(item.text))
-		}
+	if txs[0].Raw != "" {
+		t.Fatalf("history backlog must not expose raw PTY replay payload, got %q", txs[0].Raw)
 	}
-	if len(queue.pending) != 0 {
-		t.Fatalf("all capped batch payloads should be consumed, got %d remaining items", len(queue.pending))
+	if got := txs[0].PrimaryFrame.Rows[0][0].Content; got != "immutable" {
+		t.Fatalf("history queue must deep-copy tap transaction at enqueue, got %q", got)
 	}
-	queue.Close()
+	txs[0].PrimaryFrame.Rows[0][0].Content = "mutated-consumer"
+	again := terminalHistoryIngestBatchTransactions(batch)
+	if got := again[0].PrimaryFrame.Rows[0][0].Content; got != "immutable" {
+		t.Fatalf("history queue batch handoff must deep-copy transaction per consumer, got %q", got)
+	}
 	close(queue.done)
-	queue.spool.close()
-	if _, err := os.Stat(spoolPath); !os.IsNotExist(err) {
-		t.Fatalf("spool file should be removed after close, err=%v", err)
-	}
 }
 
 func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue()
 	started := make(chan struct{})
 	release := make(chan struct{})
-	ingested := make(chan string, 2)
-	go queue.Run(func(texts []string) error {
-		for _, text := range texts {
-			ingested <- text
+	ingested := make(chan history.TerminalSemanticTransaction, 2)
+	go queue.Run(func(txs []history.TerminalSemanticTransaction) error {
+		for _, tx := range txs {
+			ingested <- tx
 		}
 		select {
 		case <-started:
@@ -158,7 +141,7 @@ func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
 		return nil
 	})
 
-	if !queue.Enqueue("latest-tail\n") {
+	if !queue.Enqueue(r373HistoryQueueTx(1, "latest-tail")) {
 		t.Fatal("expected enqueue")
 	}
 	select {
@@ -179,8 +162,8 @@ func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
 	if err := <-flushed; err != nil {
 		t.Fatalf("flush: %v", err)
 	}
-	if got := <-ingested; got != "latest-tail\n" {
-		t.Fatalf("unexpected ingested text %q", got)
+	if got := <-ingested; got.Seq != 1 {
+		t.Fatalf("unexpected ingested tx %#v", got)
 	}
 	queue.Close()
 	queue.Wait()
@@ -188,29 +171,43 @@ func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
 
 func TestTerminalHistoryIngestQueueFlushDoesNotPullFutureOutputIntoSameBatch(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue()
-	ingested := make(chan string, 3)
-	go queue.Run(func(texts []string) error {
-		for _, text := range texts {
-			ingested <- text
+	ingested := make(chan history.TerminalSemanticTransaction, 3)
+	go queue.Run(func(txs []history.TerminalSemanticTransaction) error {
+		for _, tx := range txs {
+			ingested <- tx
 		}
 		return nil
 	})
 
-	if !queue.Enqueue("before\n") {
+	if !queue.Enqueue(r373HistoryQueueTx(1, "before")) {
 		t.Fatal("expected enqueue before flush")
 	}
 	if err := queue.Flush(context.Background()); err != nil {
 		t.Fatalf("flush: %v", err)
 	}
-	if !queue.Enqueue("after\n") {
+	if !queue.Enqueue(r373HistoryQueueTx(2, "after")) {
 		t.Fatal("expected enqueue after flush")
 	}
-	if got := <-ingested; got != "before\n" {
-		t.Fatalf("flush should process pre-marker output before returning, got %q", got)
+	if got := <-ingested; got.Seq != 1 {
+		t.Fatalf("flush should process pre-marker tx before returning, got %#v", got)
 	}
-	if got := <-ingested; got != "after\n" {
-		t.Fatalf("future output should stay in later batch, got %q", got)
+	if got := <-ingested; got.Seq != 2 {
+		t.Fatalf("future output should stay in later batch, got %#v", got)
 	}
 	queue.Close()
 	queue.Wait()
+}
+
+func r373HistoryQueueTx(seq uint64, text string) history.TerminalSemanticTransaction {
+	tx := history.TerminalSemanticTransaction{
+		Seq: seq,
+		PrimaryFrame: &history.TerminalSemanticFrame{
+			Cols: 20,
+			Rows: [][]history.TerminalSemanticCell{{
+				{Content: text, Width: 1},
+			}},
+		},
+	}
+	tx.Raw = ""
+	return tx
 }

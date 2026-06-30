@@ -1,6 +1,7 @@
 package termxcorev2
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -168,7 +169,7 @@ func TestTerminalLiveIngestQueueDropsConsumedPayloadReferences(t *testing.T) {
 		t.Fatalf("expected first capped batch, got batch=%d ok=%v", len(first), ok)
 	}
 	retained := queue.pending[:cap(queue.pending)]
-	if len(queue.pending) != 1 || retained[1] != "" {
+	if len(queue.pending) != 1 || retained[1].text != "" || retained[1].seq != 0 {
 		t.Fatalf("consumed live payload should not remain in backing array, len=%d retained=%#v", len(queue.pending), retained)
 	}
 
@@ -180,4 +181,163 @@ func TestTerminalLiveIngestQueueDropsConsumedPayloadReferences(t *testing.T) {
 		t.Fatalf("empty live buffer should release backing array, got len=%d cap=%d", len(queue.pending), cap(queue.pending))
 	}
 	close(queue.done)
+}
+
+func TestTerminalLiveIngestQueueFlushWaitsForCurrentTapBatch(t *testing.T) {
+	queue := newTerminalLiveIngestQueue()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	go queue.Run(func(string) error {
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+		<-release
+		return nil
+	})
+	if !queue.Enqueue("pending") {
+		t.Fatal("expected enqueue before close")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for in-flight tap batch")
+	}
+	flushed := make(chan error, 1)
+	go func() {
+		flushed <- queue.Flush(context.Background())
+	}()
+	select {
+	case err := <-flushed:
+		t.Fatalf("flush returned before in-flight tap batch completed: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case err := <-flushed:
+		if err != nil {
+			t.Fatalf("flush failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for flush after tap batch completed")
+	}
+	queue.Close()
+	queue.Wait()
+}
+
+func TestTerminalLiveIngestQueueFlushDoesNotWaitForFutureOutput(t *testing.T) {
+	queue := newTerminalLiveIngestQueue()
+	releaseFirst := make(chan struct{})
+	releaseSecond := make(chan struct{})
+	seen := make(chan string, 2)
+	go queue.Run(func(text string) error {
+		seen <- text
+		if strings.HasPrefix(text, "first") {
+			<-releaseFirst
+		} else if text == "second" {
+			<-releaseSecond
+		}
+		return nil
+	})
+	firstPayload := "first" + strings.Repeat("x", terminalLiveIngestBatchMaxBytes-len("first"))
+	if !queue.Enqueue(firstPayload) {
+		t.Fatal("expected first enqueue")
+	}
+	select {
+	case got := <-seen:
+		if got != firstPayload {
+			t.Fatalf("expected first batch, got %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first batch")
+	}
+	flushed := make(chan error, 1)
+	go func() {
+		flushed <- queue.Flush(context.Background())
+	}()
+	waitForLiveQueueFlushTargetForTest(t, queue, 1, 1)
+	if !queue.Enqueue("second") {
+		t.Fatal("expected second enqueue before close")
+	}
+	close(releaseFirst)
+	select {
+	case err := <-flushed:
+		if err != nil {
+			t.Fatalf("flush failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("flush should finish after first target, without waiting for future output")
+	}
+	select {
+	case got := <-seen:
+		if got != "second" {
+			t.Fatalf("expected second batch, got %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for second batch")
+	}
+	close(releaseSecond)
+	queue.Close()
+	queue.Wait()
+}
+
+func TestTerminalLiveIngestQueueFlushAllowsConcurrentWaitersForSameTarget(t *testing.T) {
+	queue := newTerminalLiveIngestQueue()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	go queue.Run(func(string) error {
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+		<-release
+		return nil
+	})
+	if !queue.Enqueue("pending") {
+		t.Fatal("expected enqueue before close")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for in-flight tap batch")
+	}
+	first := make(chan error, 1)
+	second := make(chan error, 1)
+	go func() {
+		first <- queue.Flush(context.Background())
+	}()
+	go func() {
+		second <- queue.Flush(context.Background())
+	}()
+	waitForLiveQueueFlushTargetForTest(t, queue, 1, 2)
+	close(release)
+	for name, ch := range map[string]chan error{"first": first, "second": second} {
+		select {
+		case err := <-ch:
+			if err != nil {
+				t.Fatalf("%s flush failed: %v", name, err)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("%s flush should finish after shared target completes", name)
+		}
+	}
+	queue.Close()
+	queue.Wait()
+}
+
+func waitForLiveQueueFlushTargetForTest(t *testing.T, queue *terminalLiveIngestQueue, target uint64, wantWaiters int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		queue.mu.Lock()
+		waiting := len(queue.flushWait[target])
+		queue.mu.Unlock()
+		if waiting >= wantWaiters {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("timed out waiting for live queue flush registration")
 }

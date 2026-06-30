@@ -139,6 +139,55 @@ func (result SemanticTapResult) NativeScreenSnapshot() NativeScreenSnapshot {
 	return cloneSemanticTapSnapshot(result.snapshot)
 }
 
+// ResetForRestartPreservingScreen 在 process restart 时重建 tap vterm owner。
+// terminal identity 不变，latest visible screen 可作为 live context 保留；外部
+// process 已更换，因此旧程序的 alt/mouse/pending parser state 必须丢弃，history
+// truth 仍由 store 持有，不能从这个 live snapshot 反推。
+func (tap *SemanticTap) ResetForRestartPreservingScreen(size Size) NativeScreenSnapshot {
+	if tap == nil {
+		return NativeScreenSnapshot{}
+	}
+	tap.mu.Lock()
+	defer tap.mu.Unlock()
+	tap.ensureSourceLocked()
+	snapshot := tap.snapshotLocked()
+	cols, rows := semanticTapSize(size)
+	screenRows := make([][]vterm.Cell, rows)
+	for _, row := range snapshot.Rows {
+		if row.Index < 0 || row.Index >= rows {
+			continue
+		}
+		screenRows[row.Index] = cloneSemanticTapCells(row.Cells)
+	}
+	cursor := snapshot.Cursor
+	if cursor.Row < 0 || cursor.Row >= rows {
+		cursor.Row = 0
+	}
+	if cursor.Col < 0 || cursor.Col >= cols {
+		cursor.Col = 0
+	}
+	vt := vterm.New(cols, rows, 0, tap.onResponse)
+	vt.LoadSizedSnapshotWithExtendedMetadata(
+		cols,
+		rows,
+		nil,
+		nil,
+		nil,
+		nil,
+		vterm.ScreenData{Cells: screenRows},
+		nil,
+		nil,
+		nil,
+		cursor,
+		vterm.TerminalModes{AutoWrap: true},
+	)
+	tap.source = vterm.NewSemanticSourceFromVTerm(vt)
+	tap.inputSeq = 0
+	tap.inputs = nil
+	tap.revision++
+	return tap.snapshotLocked()
+}
+
 // NativeScreenSnapshot 返回同一 tap vterm state 的 latest native screen。
 // 调用方只能把它当 live projection；search/copy/page 必须继续走 authoritative
 // history projection。
@@ -226,6 +275,9 @@ func semanticTapSize(size Size) (int, int) {
 
 func cloneSemanticTapTransaction(tx vterm.TerminalSemanticTransaction) vterm.TerminalSemanticTransaction {
 	cloned := tx
+	// 中文说明：tap 之后的 fan-out 合同只暴露 semantic transaction，不能把 raw PTY
+	// bytes 继续传给 history queue 或测试 consumer，避免形成第二套 parser owner。
+	cloned.Raw = ""
 	cloned.Ops = cloneSemanticTapOps(tx.Ops)
 	cloned.PrimaryScrollOut = cloneSemanticTapScrollOut(tx.PrimaryScrollOut)
 	cloned.PrimaryFrame = cloneSemanticTapFrame(tx.PrimaryFrame)
