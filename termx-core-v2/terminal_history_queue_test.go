@@ -9,7 +9,7 @@ import (
 )
 
 func TestTerminalHistoryIngestQueueEnqueueDoesNotWaitForSlowIngest(t *testing.T) {
-	queue := newTerminalHistoryIngestQueue()
+	queue := newTerminalHistoryIngestQueue(0)
 	started := make(chan struct{})
 	release := make(chan struct{})
 	go queue.Run(func([]history.TerminalSemanticTransaction) error {
@@ -50,7 +50,7 @@ func TestTerminalHistoryIngestQueueEnqueueDoesNotWaitForSlowIngest(t *testing.T)
 }
 
 func TestTerminalHistoryIngestQueueSplitsLargePendingBatch(t *testing.T) {
-	queue := newTerminalHistoryIngestQueue()
+	queue := newTerminalHistoryIngestQueue(0)
 	for seq := uint64(1); seq <= terminalHistoryIngestBatchMaxTransactions+2; seq++ {
 		if !queue.Enqueue(r373HistoryQueueTx(seq, "payload")) {
 			t.Fatal("expected enqueue before close")
@@ -73,7 +73,7 @@ func TestTerminalHistoryIngestQueueSplitsLargePendingBatch(t *testing.T) {
 }
 
 func TestTerminalHistoryIngestQueueDropsConsumedTransactionReferences(t *testing.T) {
-	queue := newTerminalHistoryIngestQueue()
+	queue := newTerminalHistoryIngestQueue(0)
 	if !queue.Enqueue(r373HistoryQueueTx(1, "alpha")) || !queue.Enqueue(r373HistoryQueueTx(2, "beta")) {
 		t.Fatal("expected enqueue before close")
 	}
@@ -95,7 +95,7 @@ func TestTerminalHistoryIngestQueueDropsConsumedTransactionReferences(t *testing
 }
 
 func TestR373TerminalHistoryIngestQueueStoresSemanticTransactionsNotRawPTY(t *testing.T) {
-	queue := newTerminalHistoryIngestQueue()
+	queue := newTerminalHistoryIngestQueue(0)
 	tx := r373HistoryQueueTx(1, "immutable")
 	if !queue.Enqueue(tx) {
 		t.Fatal("expected enqueue before close")
@@ -124,7 +124,7 @@ func TestR373TerminalHistoryIngestQueueStoresSemanticTransactionsNotRawPTY(t *te
 }
 
 func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
-	queue := newTerminalHistoryIngestQueue()
+	queue := newTerminalHistoryIngestQueue(0)
 	started := make(chan struct{})
 	release := make(chan struct{})
 	ingested := make(chan history.TerminalSemanticTransaction, 2)
@@ -170,11 +170,19 @@ func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
 }
 
 func TestTerminalHistoryIngestQueueFlushDoesNotPullFutureOutputIntoSameBatch(t *testing.T) {
-	queue := newTerminalHistoryIngestQueue()
+	queue := newTerminalHistoryIngestQueue(0)
 	ingested := make(chan history.TerminalSemanticTransaction, 3)
+	releaseFirst := make(chan struct{})
+	releaseSecond := make(chan struct{})
 	go queue.Run(func(txs []history.TerminalSemanticTransaction) error {
 		for _, tx := range txs {
 			ingested <- tx
+		}
+		if len(txs) > 0 && txs[0].Seq == 1 {
+			<-releaseFirst
+		}
+		if len(txs) > 0 && txs[0].Seq == 2 {
+			<-releaseSecond
 		}
 		return nil
 	})
@@ -182,20 +190,130 @@ func TestTerminalHistoryIngestQueueFlushDoesNotPullFutureOutputIntoSameBatch(t *
 	if !queue.Enqueue(r373HistoryQueueTx(1, "before")) {
 		t.Fatal("expected enqueue before flush")
 	}
-	if err := queue.Flush(context.Background()); err != nil {
-		t.Fatalf("flush: %v", err)
+	select {
+	case got := <-ingested:
+		if got.Seq != 1 {
+			t.Fatalf("expected first tx to enter in-flight batch, got %#v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first history tx")
 	}
+	flushed := make(chan error, 1)
+	go func() {
+		flushed <- queue.Flush(context.Background())
+	}()
+	waitForHistoryQueueWaitTargetForTest(t, queue, 1, 1)
 	if !queue.Enqueue(r373HistoryQueueTx(2, "after")) {
 		t.Fatal("expected enqueue after flush")
 	}
-	if got := <-ingested; got.Seq != 1 {
-		t.Fatalf("flush should process pre-marker tx before returning, got %#v", got)
+	status := queue.Status()
+	if status.TargetSeq != 2 || status.AppliedSeq != 0 || !status.CatchupPending {
+		t.Fatalf("expected future tx to raise diagnostic target without satisfying first flush, status=%#v", status)
 	}
-	if got := <-ingested; got.Seq != 2 {
-		t.Fatalf("future output should stay in later batch, got %#v", got)
+	close(releaseFirst)
+	select {
+	case err := <-flushed:
+		if err != nil {
+			t.Fatalf("flush: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("flush should complete after original target")
+	}
+	select {
+	case got := <-ingested:
+		if got.Seq != 2 {
+			t.Fatalf("future output should stay in later batch, got %#v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for future history tx")
+	}
+	close(releaseSecond)
+	queue.Close()
+	queue.Wait()
+}
+
+func TestR374TerminalHistoryIngestQueueReportsAppliedTargetSeq(t *testing.T) {
+	queue := newTerminalHistoryIngestQueue(41)
+	if got := queue.Status(); got.AppliedSeq != 41 || got.TargetSeq != 41 || got.CatchupPending {
+		t.Fatalf("unexpected initial status %#v", got)
+	}
+	if !queue.Enqueue(r373HistoryQueueTx(1, "one")) || !queue.Enqueue(r373HistoryQueueTx(2, "two")) {
+		t.Fatal("expected enqueue")
+	}
+	status := queue.Status()
+	if status.AppliedSeq != 41 || status.TargetSeq != 43 || !status.CatchupPending || status.PendingTransactions != 2 {
+		t.Fatalf("unexpected pending status %#v", status)
+	}
+	batch, ok := queue.nextBatch()
+	if !ok || len(batch) != 2 {
+		t.Fatalf("expected two tx batch, got len=%d ok=%v", len(batch), ok)
+	}
+	queue.finishBatch(terminalHistoryIngestBatchCompleteSeq(batch))
+	status = queue.Status()
+	if status.AppliedSeq != 43 || status.TargetSeq != 43 || status.CatchupPending {
+		t.Fatalf("unexpected applied status %#v", status)
+	}
+	close(queue.done)
+}
+
+func TestR374TerminalHistoryIngestQueueFlushAllowsConcurrentWaitersForSameTarget(t *testing.T) {
+	queue := newTerminalHistoryIngestQueue(0)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	go queue.Run(func([]history.TerminalSemanticTransaction) error {
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+		<-release
+		return nil
+	})
+	if !queue.Enqueue(r373HistoryQueueTx(1, "pending")) {
+		t.Fatal("expected enqueue")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for history worker")
+	}
+	first := make(chan error, 1)
+	second := make(chan error, 1)
+	go func() {
+		first <- queue.Flush(context.Background())
+	}()
+	go func() {
+		second <- queue.Flush(context.Background())
+	}()
+	waitForHistoryQueueWaitTargetForTest(t, queue, 1, 2)
+	close(release)
+	for name, ch := range map[string]chan error{"first": first, "second": second} {
+		select {
+		case err := <-ch:
+			if err != nil {
+				t.Fatalf("%s flush failed: %v", name, err)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("%s flush should finish after target completes", name)
+		}
 	}
 	queue.Close()
 	queue.Wait()
+}
+
+func waitForHistoryQueueWaitTargetForTest(t *testing.T, queue *terminalHistoryIngestQueue, target uint64, wantWaiters int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		queue.mu.Lock()
+		waiting := len(queue.waiters[target])
+		queue.mu.Unlock()
+		if waiting >= wantWaiters {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("timed out waiting for history queue flush registration")
 }
 
 func r373HistoryQueueTx(seq uint64, text string) history.TerminalSemanticTransaction {

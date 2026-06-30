@@ -57,6 +57,17 @@ func coreHistoryBoundaryAttrs(prefix string, boundary history.HistoryBoundary) [
 	}
 }
 
+func coreHistoryBacklogAttrs(prefix string, status HistoryBacklogStatus) []any {
+	return []any{
+		prefix + "_history_enabled", status.HistoryEnabled,
+		prefix + "_applied_history_seq", status.AppliedSeq,
+		prefix + "_target_history_seq", status.TargetSeq,
+		prefix + "_catchup_pending", status.CatchupPending,
+		prefix + "_pending_transactions", status.PendingTransactions,
+		prefix + "_history_in_flight", status.InFlight,
+	}
+}
+
 func coreHistoryTraceSampleIndexes(total int, limit int) []int {
 	if total <= 0 {
 		return nil

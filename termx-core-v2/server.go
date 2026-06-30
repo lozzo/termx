@@ -468,6 +468,17 @@ func (server *Server) LiveSnapshot(id string) (live.SurfaceSnapshot, error) {
 	return terminal.LiveSnapshot(), nil
 }
 
+// TerminalHistoryBacklogStatus 返回 terminal history consumer 的 applied/target seq。
+// 它是只读诊断入口，不触发 FlushHistory，也不读取 live snapshot 或组装 window；
+// 后续 copy materialized projection 可以用它判断 catchup_pending。
+func (server *Server) TerminalHistoryBacklogStatus(id string) (HistoryBacklogStatus, error) {
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return HistoryBacklogStatus{}, err
+	}
+	return terminal.HistoryBacklogStatus(), nil
+}
+
 // NextLiveInvalidation 等待指定 terminal 的下一次 live invalidation。
 // observedRevision 是客户端已从 core 看到的 native screen revision，不是 TUI 已渲染
 // revision；core 只用它补 one-shot arm 间隙丢失的 wake，仍不维护客户端渲染进度。
@@ -551,6 +562,9 @@ func (server *Server) terminalHistoryWindow(ctx context.Context, id string, req 
 		"limit", req.Limit,
 		"token", string(req.Token),
 	}
+	if status, err := server.TerminalHistoryBacklogStatus(id); err == nil {
+		requestAttrs = append(requestAttrs, coreHistoryBacklogAttrs("request", status)...)
+	}
 	requestAttrs = append(requestAttrs, coreHistoryCursorAttrs("request", req.Cursor)...)
 	requestAttrs = append(requestAttrs, coreHistoryBoundaryAttrs("request", req.Boundary)...)
 	coreHistoryTrace(server.cfg.logger, "core.store.request_window", requestAttrs...)
@@ -570,6 +584,9 @@ func (server *Server) terminalHistoryWindow(ctx context.Context, id string, req 
 		"has_more", window.HasMore,
 		"logical_total", window.LogicalTotal,
 		"summary", coreHistoryWindowSummary(window.Rows),
+	}
+	if status, err := server.TerminalHistoryBacklogStatus(id); err == nil {
+		responseAttrs = append(responseAttrs, coreHistoryBacklogAttrs("response", status)...)
 	}
 	responseAttrs = append(responseAttrs, coreHistoryCursorAttrs("response", window.Boundary.Cursor)...)
 	responseAttrs = append(responseAttrs, coreHistoryBoundaryAttrs("response", window.Boundary)...)

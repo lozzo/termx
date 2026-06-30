@@ -229,6 +229,149 @@ func TestR373ProcessOutputFansOutSemanticTapToLiveAndHistory(t *testing.T) {
 	}
 }
 
+func TestR374HistoryBacklogStatusAndFlushBoundary(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	store := newBlockingHistoryStore("term-r374-backlog")
+	server := NewServer(
+		WithProcessFactory(factory),
+		WithHistoryStoreFactory(func(terminalID string) (history.HistoryStore, error) {
+			if terminalID != "term-r374-backlog" {
+				return history.NewInMemoryHistoryStore(terminalID), nil
+			}
+			return store, nil
+		}),
+	)
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r374-backlog",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 30, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	process := factory.process("term-r374-backlog")
+	if process == nil {
+		t.Fatal("expected recording process")
+	}
+	store.block()
+	process.emitOutput("alpha\r\n")
+	select {
+	case <-store.applyStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for blocked history apply")
+	}
+	status, err := server.TerminalHistoryBacklogStatus("term-r374-backlog")
+	if err != nil {
+		t.Fatalf("history backlog status: %v", err)
+	}
+	if !status.HistoryEnabled || status.AppliedSeq != 0 || status.TargetSeq != 1 || !status.CatchupPending || !status.InFlight {
+		t.Fatalf("unexpected blocked backlog status %#v", status)
+	}
+	if rows, err := server.LiveRows("term-r374-backlog"); err != nil || !strings.Contains(strings.Join(rows, "|"), "alpha") {
+		t.Fatalf("live hot path should read latest screen without waiting for history backlog, rows=%#v err=%v", rows, err)
+	}
+	windowDone := make(chan error, 1)
+	go func() {
+		_, err := server.TerminalHistoryWindow(context.Background(), "term-r374-backlog", history.HistoryWindowRequest{
+			TerminalID: "term-r374-backlog",
+			Mode:       history.HistoryWindowModeLatest,
+			Cols:       30,
+			Limit:      10,
+		})
+		windowDone <- err
+	}()
+	select {
+	case err := <-windowDone:
+		t.Fatalf("authoritative history.window returned before backlog catchup: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	store.release()
+	select {
+	case err := <-windowDone:
+		if err != nil {
+			t.Fatalf("history.window after catchup: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for history.window after backlog release")
+	}
+	status, err = server.TerminalHistoryBacklogStatus("term-r374-backlog")
+	if err != nil {
+		t.Fatalf("history backlog status after catchup: %v", err)
+	}
+	if status.AppliedSeq != 1 || status.TargetSeq != 1 || status.CatchupPending {
+		t.Fatalf("unexpected caught-up backlog status %#v", status)
+	}
+}
+
+func TestR374HistoryBacklogSeqDoesNotResetAcrossRestart(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	events := server.Events(context.Background(), EventFilter{
+		TerminalID: "term-r374-restart-seq",
+		Types:      []EventType{EventTerminalLiveInvalidated},
+	})
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r374-restart-seq",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 30, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	first := factory.process("term-r374-restart-seq")
+	if first == nil {
+		t.Fatal("expected first process")
+	}
+	first.emitOutput("alpha\r\n")
+	assertEventValue(t, events, EventTerminalLiveInvalidated, "term-r374-restart-seq")
+	assertEventually(t, time.Second, func() bool {
+		rows, err := server.LiveRows("term-r374-restart-seq")
+		return err == nil && strings.Contains(strings.Join(rows, "|"), "alpha")
+	}, "first output should reach live screen")
+	if _, err := server.TerminalHistoryWindow(context.Background(), "term-r374-restart-seq", history.HistoryWindowRequest{
+		TerminalID: "term-r374-restart-seq",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       30,
+		Limit:      10,
+	}); err != nil {
+		t.Fatalf("history.window before restart: %v", err)
+	}
+	before, err := server.TerminalHistoryBacklogStatus("term-r374-restart-seq")
+	if err != nil {
+		t.Fatalf("status before restart: %v", err)
+	}
+	if before.AppliedSeq == 0 || before.TargetSeq == 0 {
+		t.Fatalf("expected non-zero backlog seq before restart, status=%#v", before)
+	}
+	first.exit(0)
+	waitForTerminalState(t, server, "term-r374-restart-seq", TerminalStateExited)
+	if err := server.RestartTerminal(context.Background(), "term-r374-restart-seq"); err != nil {
+		t.Fatalf("restart terminal: %v", err)
+	}
+	second := factory.process("term-r374-restart-seq")
+	if second == nil || second == first {
+		t.Fatal("expected second process")
+	}
+	second.emitOutput("beta\r\n")
+	assertEventually(t, time.Second, func() bool {
+		rows, err := server.LiveRows("term-r374-restart-seq")
+		return err == nil && strings.Contains(strings.Join(rows, "|"), "beta")
+	}, "second output should reach live screen")
+	if _, err := server.TerminalHistoryWindow(context.Background(), "term-r374-restart-seq", history.HistoryWindowRequest{
+		TerminalID: "term-r374-restart-seq",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       30,
+		Limit:      10,
+	}); err != nil {
+		t.Fatalf("history.window after restart: %v", err)
+	}
+	after, err := server.TerminalHistoryBacklogStatus("term-r374-restart-seq")
+	if err != nil {
+		t.Fatalf("status after restart: %v", err)
+	}
+	if after.AppliedSeq <= before.AppliedSeq || after.TargetSeq <= before.TargetSeq {
+		t.Fatalf("history backlog seq must remain terminal-scoped across restart, before=%#v after=%#v", before, after)
+	}
+}
+
 func TestR373HistoryDisabledProcessOutputKeepsLiveOnlyTapBoundary(t *testing.T) {
 	historyDir := t.TempDir()
 	factory := newRecordingProcessFactory()
@@ -1080,6 +1223,51 @@ func (factory *sessionBoundRecordingProcessFactory) Spawn(ctx context.Context, s
 		recording.exit(-1)
 	}()
 	return recording, nil
+}
+
+type blockingHistoryStore struct {
+	history.HistoryStore
+	mu           sync.Mutex
+	blocked      bool
+	releaseCh    chan struct{}
+	applyStarted chan struct{}
+	startOnce    sync.Once
+}
+
+func newBlockingHistoryStore(terminalID string) *blockingHistoryStore {
+	return &blockingHistoryStore{
+		HistoryStore: history.NewInMemoryHistoryStore(terminalID),
+		releaseCh:    make(chan struct{}),
+		applyStarted: make(chan struct{}),
+	}
+}
+
+func (store *blockingHistoryStore) block() {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.blocked = true
+}
+
+func (store *blockingHistoryStore) release() {
+	store.mu.Lock()
+	releaseCh := store.releaseCh
+	store.blocked = false
+	store.mu.Unlock()
+	close(releaseCh)
+}
+
+func (store *blockingHistoryStore) Apply(batch history.HistoryMutationBatch) error {
+	store.mu.Lock()
+	blocked := store.blocked
+	releaseCh := store.releaseCh
+	store.mu.Unlock()
+	if blocked {
+		store.startOnce.Do(func() {
+			close(store.applyStarted)
+		})
+		<-releaseCh
+	}
+	return store.HistoryStore.Apply(batch)
 }
 
 type recordingProcess struct {

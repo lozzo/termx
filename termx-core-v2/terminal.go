@@ -26,6 +26,7 @@ type Terminal struct {
 	historyRenderer history.HistoryLogicalRenderer
 	historyStore    history.HistoryStore
 	historyEnabled  bool
+	historyStatus   HistoryBacklogStatus
 	queueMu         sync.Mutex
 	tapQ            *terminalLiveIngestQueue
 	historyQ        *terminalHistoryIngestQueue
@@ -44,6 +45,10 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 	}
 	terminal.tap = NewSemanticTap(info.ID, info.Size, terminal.handleLiveSurfaceResponse)
 	if historyEnabled {
+		terminal.historyStatus = HistoryBacklogStatus{
+			TerminalID:     info.ID,
+			HistoryEnabled: true,
+		}
 		terminal.historyRenderer = history.NewHistoryLogicalRenderer(nil, nil)
 		if historyStore == nil {
 			historyStore = history.NewInMemoryHistoryStore(info.ID)
@@ -290,6 +295,36 @@ func (terminal *Terminal) LiveRevision() LiveRevision {
 	return terminal.tap.LiveRevision()
 }
 
+// HistoryBacklogStatus 返回 terminal history semantic transaction backlog 的追平诊断。
+// 它只读取 tap 后 history worker 的 applied/target seq，不 flush、不读取 live screen、
+// 不构造 HistoryWindow；history disabled 时返回 disabled 状态，调用方不能把该诊断
+// 当作 authoritative history payload 或 frozen token。
+func (terminal *Terminal) HistoryBacklogStatus() HistoryBacklogStatus {
+	terminal.mu.Lock()
+	terminalID := terminal.info.ID
+	terminal.mu.Unlock()
+	terminal.queueMu.Lock()
+	status := terminal.historyStatus
+	status.TerminalID = terminalID
+	status.HistoryEnabled = terminal.historyEnabled
+	queue := terminal.historyQ
+	terminal.queueMu.Unlock()
+	if !terminal.historyEnabled {
+		return status
+	}
+	if queue == nil {
+		terminal.historyMu.Lock()
+		enabled := terminal.historyEnabled && terminal.historyStore != nil
+		terminal.historyMu.Unlock()
+		status.HistoryEnabled = enabled
+		return status
+	}
+	status = queue.Status()
+	status.TerminalID = terminalID
+	status.HistoryEnabled = true
+	return status
+}
+
 // FlushHistory 等待当前 terminal 的 tap queue 与 history transaction worker 追平。
 // 第一段 fence 保证已进入 PTY 输出队列的 bytes 先推进 single SemanticTap；第二段
 // fence 再等待 tap 产出的 semantic transaction 落到 authoritative history store。
@@ -306,7 +341,11 @@ func (terminal *Terminal) FlushHistory(ctx context.Context) error {
 	}
 	// 中文说明：history/copy/freeze 只等待 core 内部 tap/history 队列追平；
 	// 不等待 TUI render 或 protocol snapshot ack，避免把客户端速度变成 history truth。
-	return queue.Flush(ctx)
+	if err := queue.Flush(ctx); err != nil {
+		return err
+	}
+	terminal.cacheHistoryBacklogStatus(queue)
+	return nil
 }
 
 func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {
@@ -374,7 +413,8 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 	terminal.setTapQueue(process, tapQueue)
 	var historyWorker *terminalHistoryIngestQueue
 	if terminal.historyEnabled {
-		historyWorker = newTerminalHistoryIngestQueue()
+		startSeq := terminal.historyBacklogStartSeq()
+		historyWorker = newTerminalHistoryIngestQueue(startSeq)
 		terminal.setHistoryQueue(process, historyWorker)
 		go historyWorker.Run(func(txs []history.TerminalSemanticTransaction) error {
 			return terminal.ingestProcessHistoryTransactions(process, txs)
@@ -445,27 +485,67 @@ func (terminal *Terminal) flushTapQueue(ctx context.Context) error {
 func (terminal *Terminal) setHistoryQueue(process TerminalProcess, queue *terminalHistoryIngestQueue) {
 	terminal.mu.Lock()
 	current := terminal.process == process
+	terminalID := terminal.info.ID
 	terminal.mu.Unlock()
 	if !current {
 		return
 	}
 	terminal.queueMu.Lock()
 	terminal.historyQ = queue
+	terminal.cacheHistoryBacklogStatusLocked(queue, terminalID)
 	terminal.queueMu.Unlock()
 }
 
 func (terminal *Terminal) clearHistoryQueue(process TerminalProcess, queue *terminalHistoryIngestQueue) {
 	terminal.mu.Lock()
 	current := terminal.process == process
+	terminalID := terminal.info.ID
 	terminal.mu.Unlock()
 	if !current {
 		return
 	}
 	terminal.queueMu.Lock()
 	if terminal.historyQ == queue {
+		terminal.cacheHistoryBacklogStatusLocked(queue, terminalID)
 		terminal.historyQ = nil
 	}
 	terminal.queueMu.Unlock()
+}
+
+// cacheHistoryBacklogStatus 把当前 worker 的追平序号保存到 terminal 级诊断缓存。
+// queue 对象会随 process lifecycle 重建；缓存保证诊断 owner 仍是 terminal，而不是
+// 短生命周期 worker。
+func (terminal *Terminal) cacheHistoryBacklogStatus(queue *terminalHistoryIngestQueue) {
+	if queue == nil {
+		return
+	}
+	terminal.mu.Lock()
+	terminalID := terminal.info.ID
+	terminal.mu.Unlock()
+	terminal.queueMu.Lock()
+	terminal.cacheHistoryBacklogStatusLocked(queue, terminalID)
+	terminal.queueMu.Unlock()
+}
+
+// cacheHistoryBacklogStatusLocked 在 queueMu 内更新 terminal 级 backlog 诊断。
+// 调用方必须已确认 queue 属于当前 terminal/process；该方法只复制 seq 元数据，
+// 不读取或修改 HistoryStore payload。
+func (terminal *Terminal) cacheHistoryBacklogStatusLocked(queue *terminalHistoryIngestQueue, terminalID string) {
+	terminal.historyStatus = queue.Status()
+	terminal.historyStatus.TerminalID = terminalID
+	terminal.historyStatus.HistoryEnabled = terminal.historyEnabled
+}
+
+// historyBacklogStartSeq 返回新 history worker 的起始序号。
+// worker 可以随 process lifecycle 重建，但 diagnostic seq 代表 terminal history
+// backlog 边界，不能因为 queue 对象重建而倒退。
+func (terminal *Terminal) historyBacklogStartSeq() uint64 {
+	terminal.queueMu.Lock()
+	defer terminal.queueMu.Unlock()
+	if terminal.historyStatus.TargetSeq > terminal.historyStatus.AppliedSeq {
+		return terminal.historyStatus.TargetSeq
+	}
+	return terminal.historyStatus.AppliedSeq
 }
 
 func (terminal *Terminal) enqueueOrApplyHistoryResizeTransaction(tx history.TerminalSemanticTransaction) {
