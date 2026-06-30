@@ -17,10 +17,13 @@ func TestR302CoreConsumesVTermSemanticTransactionContract(t *testing.T) {
 	if tx.Size != (TerminalSemanticSize{Cols: 12, Rows: 2}) {
 		t.Fatalf("transaction should preserve PTY size, got %#v", tx.Size)
 	}
-	if len(tx.Ops) == 0 || len(tx.PrimaryScrollOut) == 0 {
-		t.Fatalf("transaction must expose ordered ops and scroll-out proof: %#v", tx)
+	if len(tx.Ops) == 0 {
+		t.Fatalf("transaction must expose ordered ops: %#v", tx)
 	}
-	if tx.PrimaryFrame == nil || tx.AltFrame != nil {
-		t.Fatalf("ordinary primary output should carry primary frame projection only: %#v", tx)
+	if len(tx.PrimaryScrollOut) != 0 {
+		t.Fatalf("ordinary primary output must not duplicate ordered ops as transaction scroll-out proof: %#v", tx.PrimaryScrollOut)
+	}
+	if tx.PrimaryFrame != nil || tx.AltFrame != nil {
+		t.Fatalf("ordinary primary output history truth should stay in ordered ops, got frame side proof: %#v", tx)
 	}
 }

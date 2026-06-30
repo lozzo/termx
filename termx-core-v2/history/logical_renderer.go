@@ -79,6 +79,13 @@ func (renderer *logicalRenderer) Apply(tx TerminalSemanticTransaction, decision 
 		}
 		mutations = append(mutations, next...)
 	}
+	if (decision.Mode == HistoryOutputModeOrdinaryStream || decision.ConsumeStreamOps) && !decision.SealOpenLine {
+		next, err := renderer.stream.FlushOpenLine()
+		if err != nil {
+			return HistoryMutationBatch{}, err
+		}
+		mutations = append(mutations, next...)
+	}
 	if decision.SealOpenLine {
 		next, err := renderer.stream.SealOpenLine(SealReasonLineFeed)
 		if err != nil {

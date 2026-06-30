@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-core-v2/history"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
@@ -25,11 +26,8 @@ func TestR372SemanticTapOwnsSingleVTermForLiveAndHistory(t *testing.T) {
 	if got := semanticTapSnapshotText(snapshot); !strings.Contains(got, "one") || !strings.Contains(got, "two") {
 		t.Fatalf("live snapshot should reflect same vterm write as history tx, got %q tx=%#v", got, tx)
 	}
-	if tx.PrimaryFrame == nil {
-		t.Fatalf("semantic transaction should carry current frame proof from tap vterm")
-	}
-	if got := semanticTapFrameText(tx.PrimaryFrame); !strings.Contains(got, "one") || !strings.Contains(got, "two") {
-		t.Fatalf("history tx frame and live snapshot diverged, frame=%q snapshot=%q", got, semanticTapSnapshotText(snapshot))
+	if tx.PrimaryFrame != nil {
+		t.Fatalf("ordinary stream transaction should not carry full frame side proof: %#v", tx.PrimaryFrame)
 	}
 }
 
@@ -163,24 +161,76 @@ func TestR372SemanticTapFanOutKeepsConsumersAfterParserBoundary(t *testing.T) {
 
 func TestR372SemanticTapTransactionHandoffIsDeepCopied(t *testing.T) {
 	tap := NewSemanticTap("term-r372", Size{Cols: 12, Rows: 3}, nil)
-	result, err := tap.ApplyPTYWrite([]byte("copy-proof\r\n"))
+	result, err := tap.ApplyPTYWrite([]byte("\x1b[?2026hcopy-proof\r\n\x1b[?2026l"))
 	if err != nil {
 		t.Fatalf("apply PTY write: %v", err)
 	}
 	first := result.Transaction()
-	if len(first.Ops) == 0 || len(first.Ops[0].Cells) == 0 || first.PrimaryFrame == nil || len(first.PrimaryFrame.Rows) == 0 || len(first.PrimaryFrame.Rows[0]) == 0 {
+	if len(first.Ops) == 0 || len(first.Ops[1].Cells) == 0 || first.PrimaryFrame == nil || len(first.PrimaryFrame.Rows) == 0 || len(first.PrimaryFrame.Rows[0]) == 0 || len(first.SourceDamage.DirectDamageTouchedRows) == 0 {
 		t.Fatalf("expected transaction with mutable-looking slices for copy test, got %#v", first)
 	}
-	first.Ops[0].Cells[0].Content = "X"
+	first.Ops[1].Cells[0].Content = "X"
 	first.PrimaryFrame.Rows[0][0].Content = "Y"
-	first.SourceDamage.Ops[0].Cells[0].Content = "Z"
+	first.SourceDamage.DirectDamageTouchedRows[0] = 99
 
 	second := result.Transaction()
 	if got := semanticTapFrameText(second.PrimaryFrame); strings.Contains(got, "Y") {
 		t.Fatalf("mutating one transaction consumer must not affect another, got frame %q", got)
 	}
-	if second.Ops[0].Cells[0].Content == "X" || second.SourceDamage.Ops[0].Cells[0].Content == "Z" {
+	if second.Ops[1].Cells[0].Content == "X" || second.SourceDamage.DirectDamageTouchedRows[0] == 99 {
 		t.Fatalf("transaction handoff should deep-copy op/source damage slices, got tx=%#v", second)
+	}
+}
+
+func TestR378OrdinaryStressTransactionHandoffStaysLightweight(t *testing.T) {
+	tap := NewSemanticTap("term-r378", Size{Cols: 120, Rows: 36}, nil)
+	var payload strings.Builder
+	for i := 0; i < 200; i++ {
+		payload.WriteString("stress line ")
+		payload.WriteString(strings.Repeat("x", 100))
+		payload.WriteString("\r\n")
+	}
+	result, err := tap.ApplyPTYWrite([]byte(payload.String()))
+	if err != nil {
+		t.Fatalf("apply ordinary stress write: %v", err)
+	}
+	tx := result.Transaction()
+	if len(tx.Ops) == 0 {
+		t.Fatalf("ordinary stress must still expose ordered ops: %#v", tx)
+	}
+	if len(tx.PrimaryScrollOut) != 0 {
+		t.Fatalf("ordinary stress must not duplicate ordered ops as transaction scroll-out proof: %#v", tx.PrimaryScrollOut)
+	}
+	if tx.PrimaryFrame != nil || tx.AltFrame != nil {
+		t.Fatalf("ordinary stress handoff must not enqueue full screen frame side proof: %#v", tx.PrimaryFrame)
+	}
+	if len(tx.SourceDamage.Ops) != 0 || len(tx.SourceDamage.SemanticOps) != 0 || len(tx.SourceDamage.ScrollbackAppend) != 0 {
+		t.Fatalf("ordinary stress handoff must not retain duplicate SourceDamage payload: %#v", tx.SourceDamage)
+	}
+
+	renderer := history.NewHistoryLogicalRenderer(nil, nil)
+	batch, err := renderer.Apply(tx, history.HistoryDecision{
+		Mode:                  history.HistoryOutputModeOrdinaryStream,
+		ConsumeStreamOps:      true,
+		ConsumeScrollOutProof: true,
+	})
+	if err != nil {
+		t.Fatalf("ordinary lightweight tx must remain renderable: %v", err)
+	}
+	if len(batch.Mutations) == 0 {
+		t.Fatalf("ordinary lightweight tx should still produce history mutations")
+	}
+	openLineUpserts := 0
+	for _, mutation := range batch.Mutations {
+		if mutation.Kind == history.HistoryMutationAppendTimelineRecord && mutation.Record != nil && mutation.Record.Kind == history.HistoryRecordPrimaryScrollOutLine {
+			t.Fatalf("ordinary lightweight tx must not seal duplicate scroll-out records: %#v", batch.Mutations)
+		}
+		if mutation.Kind == history.HistoryMutationUpsertOpenLine {
+			openLineUpserts++
+		}
+	}
+	if openLineUpserts > 1 {
+		t.Fatalf("ordinary stress tx must flush at most one mutable open line, got %d mutations=%d", openLineUpserts, len(batch.Mutations))
 	}
 }
 

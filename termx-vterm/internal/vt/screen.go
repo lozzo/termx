@@ -153,7 +153,7 @@ func (s *Screen) SetASCIICells(x, y int, data []byte, style uv.Style, link uv.Li
 		}
 	}
 	s.buf.TouchLine(x, y, len(data))
-	if s.damage != nil {
+	if s.damage != nil && s.damage.recordsScreenDiff() {
 		cells := make([]uv.Cell, len(data))
 		copy(cells, line[x:x+len(data)])
 		s.damage.record(SpanDamage{X: x, Y: y, Cells: cells})
@@ -885,7 +885,7 @@ func clampLocalInt(value, low, high int) int {
 }
 
 func (s *Screen) recordCellDamage(x, y int, c *uv.Cell) {
-	if s == nil || s.damage == nil {
+	if s == nil || s.damage == nil || !s.damage.recordsScreenDiff() {
 		return
 	}
 	if isClearDamageCell(c) {
@@ -896,7 +896,7 @@ func (s *Screen) recordCellDamage(x, y int, c *uv.Cell) {
 }
 
 func (s *Screen) recordFillDamage(c *uv.Cell, area uv.Rectangle) {
-	if s == nil || s.damage == nil || area.Empty() {
+	if s == nil || s.damage == nil || !s.damage.recordsScreenDiff() || area.Empty() {
 		return
 	}
 	if isClearDamageCell(c) {

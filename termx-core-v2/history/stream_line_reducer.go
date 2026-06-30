@@ -189,7 +189,7 @@ func (reducer *streamLineReducer) applyOrdinaryFastLane(op TerminalSemanticOp) [
 		reducer.cursorRow = op.Row
 		reducer.cursorCol = reducer.fast.cursor
 		reducer.fast.stats.MutableLines++
-		return []HistoryMutation{reducer.fastOpenLineMutation(op.Row)}
+		return nil
 	case vterm.ScreenOpControl:
 		return reducer.applyOrdinaryFastLaneControl(op)
 	case vterm.ScreenOpClearToEOL:
@@ -205,7 +205,7 @@ func (reducer *streamLineReducer) applyOrdinaryFastLaneControl(op TerminalSemant
 		reducer.cursorCol = 0
 		reducer.fast.cursor = 0
 		if reducer.fast.active {
-			return []HistoryMutation{reducer.fastOpenLineMutation(op.Row)}
+			return nil
 		}
 	case "lf", "ind", "nel":
 		row := reducer.cursorRow
@@ -246,6 +246,28 @@ func (reducer *streamLineReducer) applyOrdinaryFastLaneControl(op TerminalSemant
 		return reducer.applyOrdinaryFastLaneEraseLine(op.Row, op.Col, op.Mode)
 	}
 	return nil
+}
+
+func (reducer *streamLineReducer) FlushOpenLine() ([]HistoryMutation, error) {
+	if reducer == nil {
+		return nil, nil
+	}
+	reducer.ensureState()
+	if reducer.fast.active {
+		return []HistoryMutation{reducer.fastOpenLineMutation(reducer.cursorRow)}, nil
+	}
+	if len(reducer.lines) == 0 {
+		return nil, nil
+	}
+	var mutations []HistoryMutation
+	for _, row := range reducer.sortedOwnedRows() {
+		draft := reducer.draftForRow(row)
+		if draft == nil {
+			continue
+		}
+		mutations = append(mutations, reducer.openLineMutation(draft, row))
+	}
+	return mutations, nil
 }
 
 func (reducer *streamLineReducer) ensureFastLine() {
@@ -351,7 +373,7 @@ func (reducer *streamLineReducer) applyWriteSpan(op TerminalSemanticOp) []Histor
 	draft.cursorRow = op.Row
 	draft.cursorCol = op.Col + terminalCellsDisplayWidth(op.Cells)
 	reducer.cursorCol = draft.cursorCol
-	return []HistoryMutation{reducer.openLineMutation(draft, op.Row)}
+	return nil
 }
 
 func (reducer *streamLineReducer) applyControl(op TerminalSemanticOp) []HistoryMutation {
@@ -362,7 +384,7 @@ func (reducer *streamLineReducer) applyControl(op TerminalSemanticOp) []HistoryM
 		if draft := reducer.draftForRow(op.Row); draft != nil {
 			draft.cursorRow = op.Row
 			draft.cursorCol = 0
-			return []HistoryMutation{reducer.openLineMutation(draft, op.Row)}
+			return nil
 		}
 	case "lf", "ind", "nel":
 		row := reducer.cursorRow
@@ -457,7 +479,7 @@ func (reducer *streamLineReducer) applySoftWrap(op TerminalSemanticOp) []History
 	reducer.cursorCol = 0
 	draft.cursorRow = nextRow
 	draft.cursorCol = 0
-	return []HistoryMutation{reducer.openLineMutation(draft, op.Row)}
+	return nil
 }
 
 func (reducer *streamLineReducer) applyEraseLine(row int, col int, mode int) []HistoryMutation {
@@ -484,7 +506,7 @@ func (reducer *streamLineReducer) applyEraseLine(row int, col int, mode int) []H
 	draft.cursorCol = maxInt(0, col)
 	reducer.cursorRow = row
 	reducer.cursorCol = draft.cursorCol
-	return []HistoryMutation{reducer.openLineMutation(draft, row)}
+	return nil
 }
 
 func (reducer *streamLineReducer) applyEraseDisplay(op TerminalSemanticOp) []HistoryMutation {
@@ -530,7 +552,7 @@ func (reducer *streamLineReducer) applyEraseCharacters(row int, col int, count i
 		cells[i] = blankHistoryCell()
 	}
 	draft.rows[row] = trimTrailingBlankCells(cells)
-	return []HistoryMutation{reducer.openLineMutation(draft, row)}
+	return nil
 }
 
 func (reducer *streamLineReducer) applyDeleteCharacters(row int, col int, count int) []HistoryMutation {
@@ -544,7 +566,7 @@ func (reducer *streamLineReducer) applyDeleteCharacters(row int, col int, count 
 		cells = append(cells[:col], cells[end:]...)
 	}
 	draft.rows[row] = trimTrailingBlankCells(cells)
-	return []HistoryMutation{reducer.openLineMutation(draft, row)}
+	return nil
 }
 
 func (reducer *streamLineReducer) applyInsertCharacters(row int, col int, count int) []HistoryMutation {
@@ -559,7 +581,7 @@ func (reducer *streamLineReducer) applyInsertCharacters(row int, col int, count 
 	}
 	cells = append(cells[:col], append(blanks, cells[col:]...)...)
 	draft.rows[row] = trimTrailingBlankCells(cells)
-	return []HistoryMutation{reducer.openLineMutation(draft, row)}
+	return nil
 }
 
 func (reducer *streamLineReducer) applyClearRect(op TerminalSemanticOp) []HistoryMutation {
@@ -575,7 +597,6 @@ func (reducer *streamLineReducer) applyClearRect(op TerminalSemanticOp) []Histor
 			cells[col] = blankHistoryCell()
 		}
 		draft.rows[row] = trimTrailingBlankCells(cells)
-		mutations = append(mutations, reducer.openLineMutation(draft, row))
 	}
 	return mutations
 }
@@ -600,7 +621,6 @@ func (reducer *streamLineReducer) applyScrollRect(op TerminalSemanticOp) []Histo
 			draft := reducer.ensureDraftWithID(srcID)
 			draft.rows[row] = cloneHistoryCells(beforeRows[srcID][srcRow])
 			reducer.addDraftRow(draft, row)
-			mutations = append(mutations, reducer.openLineMutation(draft, row))
 			continue
 		}
 	}
@@ -679,7 +699,6 @@ func (reducer *streamLineReducer) applyCopyRect(op TerminalSemanticOp) []History
 			dstCells[op.DstX+col] = srcCells[op.Src.X+col]
 		}
 		dstDraft.rows[dstRow] = trimTrailingBlankCells(dstCells)
-		mutations = append(mutations, reducer.openLineMutation(dstDraft, dstRow))
 	}
 	return mutations
 }
@@ -802,7 +821,7 @@ func (reducer *streamLineReducer) clearRow(row int) []HistoryMutation {
 	if draft == nil || len(draft.rowOrder) == 0 {
 		return nil
 	}
-	return []HistoryMutation{reducer.openLineMutation(draft, row)}
+	return nil
 }
 
 func (reducer *streamLineReducer) deleteEmptyDrafts() {

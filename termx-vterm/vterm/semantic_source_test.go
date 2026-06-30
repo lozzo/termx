@@ -20,14 +20,17 @@ func TestSemanticSourceApplyPTYWriteEmitsOrderedTransaction(t *testing.T) {
 	if len(tx.Ops) == 0 {
 		t.Fatalf("transaction must expose ordered semantic ops: %#v", tx)
 	}
-	if len(tx.PrimaryScrollOut) == 0 {
-		t.Fatalf("transaction must expose primary scroll-out proof: %#v", tx)
+	if len(tx.PrimaryScrollOut) != 0 {
+		t.Fatalf("ordinary primary write should keep scroll-out payload in ordered ops only: %#v", tx.PrimaryScrollOut)
 	}
-	if tx.PrimaryFrame == nil || len(tx.PrimaryFrame.Rows) == 0 || tx.AltFrame != nil {
-		t.Fatalf("primary write should publish primary frame only: %#v", tx)
+	if tx.PrimaryFrame != nil || tx.AltFrame != nil {
+		t.Fatalf("ordinary primary write should not carry frame side proof: %#v", tx)
 	}
 	if tx.SourceDamage.SizeCols != 12 || tx.SourceDamage.SizeRows != 2 {
-		t.Fatalf("transaction should keep source damage for current projector adapter: %#v", tx.SourceDamage)
+		t.Fatalf("transaction should keep source damage summary for diagnostics: %#v", tx.SourceDamage)
+	}
+	if len(tx.SourceDamage.Ops) != 0 || len(tx.SourceDamage.ScrollbackAppend) != 0 {
+		t.Fatalf("ordinary transaction must not duplicate source damage payload: %#v", tx.SourceDamage)
 	}
 }
 
@@ -103,8 +106,8 @@ func TestSemanticSourceSynchronizedScrollOutKeepsPayloadRuns(t *testing.T) {
 
 func TestR335SemanticSourceExposesFullReplaceTouchedRows(t *testing.T) {
 	source := NewSemanticSource(80, 24, 100, nil)
-	prevWithDamage := safeEmulatorWriteWithDamage
-	safeEmulatorWriteWithDamage = func(emu *charmvt.SafeEmulator, data []byte) (int, error, []charmvt.Damage, bool) {
+	prevWithDamage := safeEmulatorWriteWithSemanticDamage
+	safeEmulatorWriteWithSemanticDamage = func(emu *charmvt.SafeEmulator, data []byte) (int, error, []charmvt.Damage, bool) {
 		n, err := emu.Write(data)
 		cells := make([]uv.Cell, emu.Width())
 		for col := range cells {
@@ -117,7 +120,7 @@ func TestR335SemanticSourceExposesFullReplaceTouchedRows(t *testing.T) {
 		return n, err, damages, true
 	}
 	t.Cleanup(func() {
-		safeEmulatorWriteWithDamage = prevWithDamage
+		safeEmulatorWriteWithSemanticDamage = prevWithDamage
 	})
 
 	tx, err := source.ApplyPTYWrite([]byte("x"))

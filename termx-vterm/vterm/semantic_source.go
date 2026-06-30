@@ -102,7 +102,7 @@ func (source *SemanticSource) ApplyPTYWrite(raw []byte) (TerminalSemanticTransac
 		return TerminalSemanticTransaction{}, nil
 	}
 	source.ensureVTerm()
-	_, err, damage := source.vt.WriteWithDamage(raw)
+	_, err, damage := source.vt.WriteWithSemanticDamage(raw)
 	source.seq++
 	return source.transactionFromDamage(source.seq, string(raw), damage), err
 }
@@ -139,17 +139,15 @@ func (source *SemanticSource) transactionFromDamage(seq uint64, raw string, dama
 		RequiresFullReplace:     damage.RequiresFullReplace,
 		FullReplaceReason:       damage.FullReplaceReason,
 		ClearScrollback:         terminalSemanticDamageHasClearScrollback(damage),
-		SourceDamage:            damage,
 	}
-	for _, scrollOut := range damage.ScrollbackAppend {
-		tx.PrimaryScrollOut = append(tx.PrimaryScrollOut, TerminalSemanticScrollOut{
-			Cells:      cloneCellSlice(scrollOut.Cells),
-			Runs:       cloneCellRuns(scrollOut.Runs),
-			Row:        scrollOut.Row,
-			RowSet:     scrollOut.RowSet,
-			Wrapped:    scrollOut.Wrapped,
-			WrappedSet: scrollOut.WrappedSet,
-		})
+	// 中文说明：SourceDamage 只保留诊断摘要。payload truth 已在 Ops、必要的
+	// PrimaryScrollOut side proof 和 frame side proof 中，不能把完整 damage
+	// payload 再放进 tap 后 backlog，避免高压普通输出重复拷贝第二份语义数据。
+	tx.SourceDamage = terminalSemanticSourceDamageSummary(damage)
+	for _, op := range tx.Ops {
+		for _, scrollOut := range op.ScrollOut {
+			tx.PrimaryScrollOut = append(tx.PrimaryScrollOut, terminalSemanticScrollOutFromAppend(scrollOut))
+		}
 	}
 	tx.AltEntered = terminalSemanticDamageHasAltMode(damage, true)
 	tx.AltExited = terminalSemanticDamageHasAltMode(damage, false)
@@ -157,6 +155,17 @@ func (source *SemanticSource) transactionFromDamage(seq uint64, raw string, dama
 	tx.SynchronizedEnd = terminalSemanticDamageHasSyncMode(damage, false)
 	if source.vt != nil {
 		tx.SynchronizedActive = source.vt.Modes().SynchronizedOutput
+	}
+	if terminalSemanticShouldAttachTransactionScrollOut(damage, tx) {
+		for _, scrollOut := range damage.ScrollbackAppend {
+			proof := terminalSemanticScrollOutFromDamageOp(scrollOut)
+			if terminalSemanticScrollOutAlreadyIncluded(tx.PrimaryScrollOut, proof) {
+				continue
+			}
+			tx.PrimaryScrollOut = append(tx.PrimaryScrollOut, proof)
+		}
+	}
+	if source.vt != nil && terminalSemanticShouldAttachFrame(damage, tx) {
 		screen := source.vt.UsedScreenContent()
 		frame := &TerminalSemanticFrame{Rows: cloneCellRows(screen.Cells), Cols: size.Cols}
 		if screen.IsAlternateScreen {
@@ -166,6 +175,117 @@ func (source *SemanticSource) transactionFromDamage(seq uint64, raw string, dama
 		}
 	}
 	return tx
+}
+
+func terminalSemanticScrollOutFromAppend(scrollOut ScrollbackRowAppend) TerminalSemanticScrollOut {
+	return TerminalSemanticScrollOut{
+		Cells:      cloneCellSlice(scrollOut.Cells),
+		Runs:       cloneCellRuns(scrollOut.Runs),
+		Row:        scrollOut.Row,
+		RowSet:     scrollOut.RowSet,
+		Wrapped:    scrollOut.Wrapped,
+		WrappedSet: scrollOut.WrappedSet,
+	}
+}
+
+func terminalSemanticScrollOutFromDamageOp(scrollOut DamageOp) TerminalSemanticScrollOut {
+	return TerminalSemanticScrollOut{
+		Cells:      cloneCellSlice(scrollOut.Cells),
+		Runs:       cloneCellRuns(scrollOut.Runs),
+		Row:        scrollOut.Row,
+		RowSet:     scrollOut.RowSet,
+		Wrapped:    scrollOut.Wrapped,
+		WrappedSet: scrollOut.WrappedSet,
+	}
+}
+
+func terminalSemanticScrollOutAlreadyIncluded(existing []TerminalSemanticScrollOut, proof TerminalSemanticScrollOut) bool {
+	for _, current := range existing {
+		if terminalSemanticScrollOutEqual(current, proof) {
+			return true
+		}
+	}
+	return false
+}
+
+func terminalSemanticScrollOutEqual(left TerminalSemanticScrollOut, right TerminalSemanticScrollOut) bool {
+	if left.Row != right.Row || left.RowSet != right.RowSet || left.Wrapped != right.Wrapped || left.WrappedSet != right.WrappedSet {
+		return false
+	}
+	if len(left.Cells) != len(right.Cells) || len(left.Runs) != len(right.Runs) {
+		return false
+	}
+	for i := range left.Cells {
+		if left.Cells[i] != right.Cells[i] {
+			return false
+		}
+	}
+	for i := range left.Runs {
+		if left.Runs[i] != right.Runs[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func terminalSemanticShouldAttachTransactionScrollOut(damage WriteDamage, tx TerminalSemanticTransaction) bool {
+	if len(damage.ScrollbackAppend) == 0 {
+		return false
+	}
+	if tx.AltEntered || tx.AltExited || tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd || tx.RequiresFullReplace {
+		return true
+	}
+	for _, op := range tx.Ops {
+		if op.Code != ScreenOpControl {
+			continue
+		}
+		switch op.Control {
+		case "ed", "ris":
+			return true
+		}
+	}
+	return false
+}
+
+func terminalSemanticShouldAttachFrame(damage WriteDamage, tx TerminalSemanticTransaction) bool {
+	if tx.AltEntered || tx.AltExited || tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd {
+		return true
+	}
+	if tx.RequiresFullReplace {
+		return true
+	}
+	for _, op := range semanticOpsForTransactionDamage(damage) {
+		if op.Code == ScreenOpModes || op.Code == ScreenOpResize {
+			return true
+		}
+		if op.Code == ScreenOpControl {
+			switch op.Control {
+			case "ed", "ris", "cup", "vpa", "hpa", "cha":
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func terminalSemanticSourceDamageSummary(damage WriteDamage) WriteDamage {
+	return WriteDamage{
+		LiveTailAppendRows:      damage.LiveTailAppendRows,
+		ResizeLiveTailRows:      damage.ResizeLiveTailRows,
+		ScrollbackTrim:          damage.ScrollbackTrim,
+		ScreenScroll:            damage.ScreenScroll,
+		RequiresFullReplace:     damage.RequiresFullReplace,
+		FullReplaceReason:       damage.FullReplaceReason,
+		DirectDamageItems:       damage.DirectDamageItems,
+		DirectDamageRows:        damage.DirectDamageRows,
+		DirectDamageCells:       damage.DirectDamageCells,
+		DirectDamageTouchedRows: cloneIntSlice(damage.DirectDamageTouchedRows),
+		Cursor:                  damage.Cursor,
+		Modes:                   damage.Modes,
+		SizeCols:                damage.SizeCols,
+		SizeRows:                damage.SizeRows,
+		DiffCPUNanos:            damage.DiffCPUNanos,
+	}
 }
 
 func (source *SemanticSource) currentSize() TerminalSemanticSize {

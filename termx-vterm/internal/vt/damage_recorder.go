@@ -10,6 +10,7 @@ import (
 
 type screenDamageRecorder struct {
 	scrollbackOnly bool
+	semanticOnly   bool
 	damages        []Damage
 	spanCells      []uv.Cell
 	textCells      []uv.Cell
@@ -27,6 +28,15 @@ func (r *screenDamageRecorder) record(d Damage) {
 			return
 		}
 	}
+	if r.semanticOnly {
+		switch d.(type) {
+		case TextDamage, ControlDamage, ModeDamage, ScrollbackDamage, ScrollDamage, MoveDamage, ScreenDamage:
+			// 中文说明：semantic-only recorder 是 core-v2 history 的 PTY 语义来源；
+			// 它只保留 ordered text/control/mode/scroll proof，不保留 screen diff cell payload。
+		default:
+			return
+		}
+	}
 	if text, ok := d.(TextDamage); ok {
 		r.recordText(text)
 		return
@@ -37,6 +47,10 @@ func (r *screenDamageRecorder) record(d Damage) {
 	}
 	r.tailSpan = nil
 	r.damages = append(r.damages, d)
+}
+
+func (r *screenDamageRecorder) recordsScreenDiff() bool {
+	return r != nil && !r.scrollbackOnly && !r.semanticOnly
 }
 
 func (r *screenDamageRecorder) recordControl(kind string, x int, y int, mode int) {
@@ -106,7 +120,7 @@ func (r *screenDamageRecorder) recordTextSpan(x, y int, cells []uv.Cell) {
 }
 
 func (r *screenDamageRecorder) recordSpanCell(x, y int, cell uv.Cell) {
-	if r == nil || r.scrollbackOnly {
+	if r == nil || !r.recordsScreenDiff() {
 		return
 	}
 	if r.tailSpan != nil && y == r.tailSpan.Y && x == r.tailSpanEnd {
@@ -125,7 +139,7 @@ func (r *screenDamageRecorder) recordSpanCell(x, y int, cell uv.Cell) {
 }
 
 func (r *screenDamageRecorder) recordRepeatedSpan(x, y, count int, cell uv.Cell) {
-	if r == nil || r.scrollbackOnly || count <= 0 {
+	if r == nil || !r.recordsScreenDiff() || count <= 0 {
 		return
 	}
 	start := len(r.spanCells)
@@ -184,7 +198,7 @@ func cloneScrollbackDamage(row ScrollbackDamage) ScrollbackDamage {
 }
 
 func (r *screenDamageRecorder) recordSpan(span SpanDamage) {
-	if r == nil || r.scrollbackOnly || len(span.Cells) == 0 {
+	if r == nil || !r.recordsScreenDiff() || len(span.Cells) == 0 {
 		return
 	}
 	if r.mergeTrailingSpan(span) {

@@ -51,6 +51,18 @@ var safeEmulatorWriteWithScrollbackDamage = func(emu *charmvt.SafeEmulator, data
 	return n, err, nil, false
 }
 
+var safeEmulatorWriteWithSemanticDamage = func(emu *charmvt.SafeEmulator, data []byte) (int, error, []charmvt.Damage, bool) {
+	type semanticDamageWriter interface {
+		WriteWithSemanticDamage([]byte) (int, error, []charmvt.Damage)
+	}
+	if writer, ok := any(emu).(semanticDamageWriter); ok {
+		n, err, damages := writer.WriteWithSemanticDamage(data)
+		return n, err, damages, true
+	}
+	n, err := emu.Write(data)
+	return n, err, nil, false
+}
+
 type Cell struct {
 	Content    string
 	Width      int
@@ -742,13 +754,31 @@ func (v *VTerm) WriteWithDamage(data []byte) (n int, err error, damage WriteDama
 	return v.write(data, true)
 }
 
+// WriteWithSemanticDamage 只收集 core-v2 history 需要的 ordered semantic
+// evidence。domain owner 仍是 vterm；它更新同一个 emulator live screen，但不把
+// screen diff cell payload 当作 history truth 交给上游。
+func (v *VTerm) WriteWithSemanticDamage(data []byte) (n int, err error, damage WriteDamage) {
+	return v.write(data, true, writeDamageSemanticOnly)
+}
+
 // WriteForLatestFrame 只维护当前 live screen；调用方不消费增量 damage，
 // 因此这里不能为压力输出构造 scrollback damage 临时对象。
 func (v *VTerm) WriteForLatestFrame(data []byte) (n int, err error, damage WriteDamage) {
 	return v.writeLatest(data)
 }
 
-func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage WriteDamage) {
+type writeDamageMode int
+
+const (
+	writeDamageFull writeDamageMode = iota
+	writeDamageSemanticOnly
+)
+
+func (v *VTerm) write(data []byte, collectDamage bool, mode ...writeDamageMode) (n int, err error, damage WriteDamage) {
+	damageMode := writeDamageFull
+	if len(mode) > 0 {
+		damageMode = mode[0]
+	}
 	finish := traceMeasure("vterm.write")
 	defer func() {
 		finish(len(data))
@@ -790,7 +820,11 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 		hasDirectDamage bool
 	)
 	if collectDamage {
-		n, err, directDamages, hasDirectDamage = safeEmulatorWriteWithDamage(v.emu, normalized)
+		if damageMode == writeDamageSemanticOnly {
+			n, err, directDamages, hasDirectDamage = safeEmulatorWriteWithSemanticDamage(v.emu, normalized)
+		} else {
+			n, err, directDamages, hasDirectDamage = safeEmulatorWriteWithDamage(v.emu, normalized)
+		}
 	} else {
 		n, err = safeEmulatorWrite(v.emu, normalized)
 	}
@@ -849,26 +883,23 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 				historyOps = nil
 			}
 			directStats := directDamageStats(directDamages, afterWidth, afterHeight)
-			if reason, broad := directStats.fullReplaceReason(); broad {
+			if reason, broad := directStats.fullReplaceReason(); broad && (damageMode != writeDamageSemanticOnly || len(historyOps) == 0) {
 				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, reason)
 				damage.SemanticOps = v.semanticControlOpsFromCharmVTDamagesLocked(directDamages, beforeScreenTimestamps, beforeScreenRowKinds)
 				if len(historyOps) > 0 {
-					damage.ScrollbackAppend = historyOps
-					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
+					applySemanticHistoryOpsToDamage(&damage, cachePlan, historyOps, v.scrollbackRowCountLocked())
 				}
 				traceCount("vterm.write.direct_damage_full_replace", 1)
 			} else if directOps, ok := v.damageOpsFromCharmVTDamages(directDamages, afterWidth, afterHeight, v.screenTimestamps, v.screenRowKinds); ok {
-				damage = v.writeDamageFromDirectOpsLocked(directOps, v.semanticControlOpsFromCharmVTDamagesLocked(directDamages, beforeScreenTimestamps, beforeScreenRowKinds), cachePlan)
+				damage = v.writeDamageFromDirectOpsLocked(directOps, v.semanticControlOpsFromCharmVTDamagesLocked(directDamages, beforeScreenTimestamps, beforeScreenRowKinds), cachePlan, damageMode)
 				if len(historyOps) > 0 {
-					damage.ScrollbackAppend = historyOps
-					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
+					applySemanticHistoryOpsToDamage(&damage, cachePlan, historyOps, v.scrollbackRowCountLocked())
 				}
 			} else {
 				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, "direct_damage_unsupported")
 				damage.SemanticOps = v.semanticControlOpsFromCharmVTDamagesLocked(directDamages, beforeScreenTimestamps, beforeScreenRowKinds)
 				if len(historyOps) > 0 {
-					damage.ScrollbackAppend = historyOps
-					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
+					applySemanticHistoryOpsToDamage(&damage, cachePlan, historyOps, v.scrollbackRowCountLocked())
 				}
 			}
 			if len(alternateOps) > 0 {
@@ -3307,13 +3338,29 @@ func semanticControlEndsPhysicalRow(kind string) bool {
 	}
 }
 
-func (v *VTerm) writeDamageFromDirectOpsLocked(ops []DamageOp, semanticOps []DamageOp, plan rowCacheReconcilePlan) WriteDamage {
+func (v *VTerm) writeDamageFromDirectOpsLocked(ops []DamageOp, semanticOps []DamageOp, plan rowCacheReconcilePlan, mode writeDamageMode) WriteDamage {
 	damage := v.writeDamageHeaderLocked(plan)
 	damage.Ops = ops
+	if mode == writeDamageSemanticOnly {
+		// 中文说明：semantic-only 是 history tap 的热路径。scroll-out proof 已由
+		// recorder 给出，不能再把 live screen scroll rect 当 ordinary history op，
+		// 否则普通 stdout 会从 logical-line fast lane 退化成 row ownership diff。
+		damage.SemanticOps = semanticOps
+		return damage
+	}
 	damage.SemanticOps = appendSemanticScreenOps(semanticOps, ops)
 	v.appendScrollbackDamageLocked(&damage, plan)
 	damage.LiveTailAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
 	return damage
+}
+
+func applySemanticHistoryOpsToDamage(damage *WriteDamage, plan rowCacheReconcilePlan, historyOps []DamageOp, afterScrollbackLen int) {
+	if damage == nil || len(historyOps) == 0 {
+		return
+	}
+	damage.ScrollbackAppend = historyOps
+	damage.ScrollbackTrim = maxInt(0, plan.beforeScrollbackLen+len(historyOps)-afterScrollbackLen)
+	damage.LiveTailAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
 }
 
 func (v *VTerm) writeDamageRequiresFullReplaceLocked(plan rowCacheReconcilePlan, reason string) WriteDamage {
@@ -4244,7 +4291,13 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 	for _, raw := range damages {
 		switch d := raw.(type) {
 		case charmvt.TextDamage:
-			continue
+			width := spanDamageCellWidth(d.Cells)
+			if width <= 0 {
+				continue
+			}
+			stats.Cells += clampedRectArea(d.X, d.Y, width, 1, screenWidth, screenHeight)
+			markClampedRows(changedRows, d.Y, 1, screenHeight)
+			markItemRow(d.Y)
 		case charmvt.SpanDamage:
 			width := spanDamageCellWidth(d.Cells)
 			if width <= 0 {

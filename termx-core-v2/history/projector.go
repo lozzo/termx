@@ -20,6 +20,10 @@ type StreamLineReducer interface {
 	ApplyOp(op TerminalSemanticOp) ([]HistoryMutation, error)
 	// SealOpenLine 把当前 ordinary open line 按 lifecycle/terminal reason seal。
 	SealOpenLine(reason SealReason) ([]HistoryMutation, error)
+	// FlushOpenLine 在 transaction 末尾把仍可见的 ordinary open line 发布给 store。
+	// 它只同步 renderer-owned mutable frontier，不 seal 历史；普通高压输出不能在
+	// 每个 span 都 clone 整条 open line。
+	FlushOpenLine() ([]HistoryMutation, error)
 	// SealScrollOut 把 vterm 提供的 primary scroll-out proof seal 成 logical lines。
 	SealScrollOut(proof TerminalSemanticScrollOut) ([]HistoryMutation, error)
 	// ClearScreenOwnership 只清理 stream reducer 当前屏幕 ownership，不把已按 LF

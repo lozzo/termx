@@ -47,6 +47,14 @@ func (se *SafeEmulator) WriteWithScrollbackDamage(data []byte) (int, error, []Da
 	return se.Emulator.WriteWithScrollbackDamage(data)
 }
 
+// WriteWithSemanticDamage 以并发安全方式返回 history-facing terminal semantic
+// damages；调用方不能把它当完整 screen diff 使用。
+func (se *SafeEmulator) WriteWithSemanticDamage(data []byte) (int, error, []Damage) {
+	se.mu.Lock()
+	defer se.mu.Unlock()
+	return se.Emulator.WriteWithSemanticDamage(data)
+}
+
 // Read reads data from the emulator in a concurrency-safe manner.
 func (se *SafeEmulator) Read(p []byte) (int, error) {
 	return se.Emulator.Read(p)

@@ -369,6 +369,24 @@ func (e *Emulator) WriteWithScrollbackDamage(p []byte) (n int, err error, damage
 	return n, err, recorder.snapshot()
 }
 
+// WriteWithSemanticDamage 写入 PTY 输出，并只记录 history 需要的终端语义：
+// ordered text/control/mode、滚动几何，以及真实离开可见屏的 scrollback rows。
+// 调用边界：它仍更新同一个 emulator live screen，但不记录 screen diff cell payload。
+func (e *Emulator) WriteWithSemanticDamage(p []byte) (n int, err error, damages []Damage) {
+	if e.closed {
+		return 0, io.ErrClosedPipe, nil
+	}
+	recorder := &screenDamageRecorder{semanticOnly: true}
+	e.scrs[0].damage = recorder
+	e.scrs[1].damage = recorder
+	defer func() {
+		e.scrs[0].damage = nil
+		e.scrs[1].damage = nil
+	}()
+	n, err = e.Write(p)
+	return n, err, recorder.snapshot()
+}
+
 // WriteString writes a string to the terminal output buffer.
 func (e *Emulator) WriteString(s string) (n int, err error) {
 	return e.Write([]byte(s))
