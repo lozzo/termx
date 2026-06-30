@@ -520,6 +520,10 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 // projection。调用边界包括 protocol history.window 和 domain harness；实现只能读取
 // core history store，不能 fallback 到 live rows 或 snapshot。
 func (server *Server) TerminalHistoryWindow(ctx context.Context, id string, req history.HistoryWindowRequest) (history.HistoryWindow, error) {
+	return server.terminalHistoryWindow(ctx, id, req, true)
+}
+
+func (server *Server) terminalHistoryWindow(ctx context.Context, id string, req history.HistoryWindowRequest, flush bool) (history.HistoryWindow, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -527,8 +531,15 @@ func (server *Server) TerminalHistoryWindow(ctx context.Context, id string, req 
 	if err != nil {
 		return history.HistoryWindow{}, err
 	}
-	if err := terminal.FlushHistory(ctx); err != nil {
-		return history.HistoryWindow{}, err
+	if flush {
+		// 中文说明：普通 window/copy 调用必须先等 history worker 追平；
+		// protocol latest 已先通过 Freeze 建立 token fence，读取同一 token window 时
+		// 不再重复 flush，避免压力输出后 copy 入口多等一轮 history queue。
+		if err := terminal.FlushHistory(ctx); err != nil {
+			return history.HistoryWindow{}, err
+		}
+	} else if req.Token == "" {
+		return history.HistoryWindow{}, history.ErrHistoryInvalidMutation
 	}
 	if req.TerminalID == "" {
 		req.TerminalID = id

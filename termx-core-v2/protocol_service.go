@@ -786,7 +786,13 @@ func (session *protocolSession) historyWindow(ctx context.Context, params protoc
 			"limit", req.Limit,
 		)
 	}
-	window, err := session.server.TerminalHistoryWindow(ctx, params.TerminalID, req)
+	flushWindow := true
+	if req.Mode == history.HistoryWindowModeLatest && req.Token != "" {
+		// 中文说明：上面的 TerminalHistoryFreeze 已经等待 history worker 追平并固定
+		// token；latest 随后读取同一 frozen token window，不能再把 copy 入口卡在第二个 flush。
+		flushWindow = false
+	}
+	window, err := session.server.terminalHistoryWindow(ctx, params.TerminalID, req, flushWindow)
 	if err != nil {
 		return nil, err
 	}

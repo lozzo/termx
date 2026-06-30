@@ -285,6 +285,49 @@ func TestR324TerminalHistoryReturnsAuthoritativeWindow(t *testing.T) {
 	}
 }
 
+func TestR370ProtocolLatestReadsFrozenTokenWithoutSecondFlush(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r370-no-second-flush",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 30, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r370-no-second-flush", "alpha\r\nbeta\r\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	snapshot, err := server.TerminalHistoryFreeze(context.Background(), "term-r370-no-second-flush", history.FreezeHistoryRequest{
+		TerminalID: "term-r370-no-second-flush",
+		Cols:       30,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("freeze latest: %v", err)
+	}
+	window, err := server.terminalHistoryWindow(context.Background(), "term-r370-no-second-flush", history.HistoryWindowRequest{
+		TerminalID: "term-r370-no-second-flush",
+		Mode:       history.HistoryWindowModeLatest,
+		Token:      snapshot.Token,
+		Cols:       30,
+		Limit:      10,
+	}, false)
+	if err != nil {
+		t.Fatalf("frozen latest window should not need a second flush: %v", err)
+	}
+	if got := historyRowTexts(window.Rows); strings.Join(got, "|") != "alpha|beta" {
+		t.Fatalf("unexpected frozen latest rows %v window=%#v", got, window)
+	}
+	if _, err := server.terminalHistoryWindow(context.Background(), "term-r370-no-second-flush", history.HistoryWindowRequest{
+		TerminalID: "term-r370-no-second-flush",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       30,
+		Limit:      10,
+	}, false); !errors.Is(err, history.ErrHistoryInvalidMutation) {
+		t.Fatalf("no-flush window must require a frozen token, got %v", err)
+	}
+}
+
 func TestR360TerminalHistoryOldestReturnsReplaceWindow(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

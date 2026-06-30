@@ -4451,7 +4451,7 @@ func TestCopyModeFooterOlderActionUsesAuthoritativeHistoryPath(t *testing.T) {
 	}
 }
 
-func TestCopyModeLatestUsesCopyContentRectCols(t *testing.T) {
+func TestCopyModeLatestFallsBackToCopyContentRectColsWithoutNativeSurface(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
@@ -4465,6 +4465,7 @@ func TestCopyModeLatestUsesCopyContentRectCols(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
 	runtime := newCopyModeRuntime(host, core, nil)
+	runtime.state.Surface = state.TerminalSurfaceStore{TerminalID: "term-1", Lines: []string{"live-without-native-size"}}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		t.Fatalf("send page up: %v", err)
@@ -4478,6 +4479,46 @@ func TestCopyModeLatestUsesCopyContentRectCols(t *testing.T) {
 	}
 	if runtime.State().CopyMode.BoundCols != 78 || runtime.State().History.Cols != 78 {
 		t.Fatalf("expected copy/history bound to content cols, got %#v", runtime.State())
+	}
+}
+
+func TestCopyModeLatestUsesNativeSurfaceColsBeforePaneCrop(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			120,
+			7,
+			[]state.HistoryRow{{Text: strings.Repeat("x", 118), LineID: 20}},
+		)}},
+	}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := newCopyModeRuntime(host, core, nil)
+	binding, _ := runtime.state.TerminalViews.PaneBinding(state.DefaultPaneID)
+	binding.ResizeRole = state.TerminalResizeRoleFollower
+	binding.DesiredCols = 78
+	runtime.state.TerminalViews = runtime.state.TerminalViews.BindPane(binding)
+	runtime.state.Surface = runtime.state.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Cols:       120,
+		Rows:       24,
+		Lines:      []string{"native-wide-live"},
+	})
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 120 {
+		t.Fatalf("copy latest must freeze at native surface cols before pane crop, got %#v", core.LatestRequests)
+	}
+	if runtime.State().CopyMode.BoundCols != 120 || runtime.State().History.Cols != 120 {
+		t.Fatalf("expected copy/history bound to native cols, got %#v", runtime.State())
 	}
 }
 
@@ -4803,7 +4844,7 @@ func TestCopyModeResizeRowsOnlyKeepsWindowAndDoesNotRequestLatest(t *testing.T) 
 	}
 }
 
-func TestCopyModePaneSizeCommandRebindsLatestAtContentCols(t *testing.T) {
+func TestCopyModePaneSizeCommandReflowsFrozenWindowAtContentCols(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{
 			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 38, 7, []state.HistoryRow{{Text: "old-window", LineID: 20}})},
@@ -6343,6 +6384,10 @@ func TestCopyModeLocalReflowResizeKeepsSelectionOnOriginalContent(t *testing.T) 
 	host := NewFakeTerminalHost(16)
 	host.SetSize(5, 12)
 	runtime := newCopyModeRuntime(host, core, nil)
+	binding, _ := runtime.state.TerminalViews.PaneBinding(state.DefaultPaneID)
+	binding.DesiredCols = 3
+	runtime.state.TerminalViews = runtime.state.TerminalViews.BindPane(binding)
+	runtime.state.Surface = state.TerminalSurfaceStore{TerminalID: "term-1", Lines: []string{"live"}}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		t.Fatalf("send copy enter: %v", err)
@@ -6927,6 +6972,10 @@ func TestCopyModeOlderBoundaryOverlapKeepsSelectionOnOriginalContent(t *testing.
 		OlderResponses:  []services.HistoryResult{{Window: older}},
 	}
 	runtime := newCopyModeRuntime(host, core, nil)
+	binding, _ := runtime.state.TerminalViews.PaneBinding(state.DefaultPaneID)
+	binding.DesiredCols = 4
+	runtime.state.TerminalViews = runtime.state.TerminalViews.BindPane(binding)
+	runtime.state.Surface = state.TerminalSurfaceStore{TerminalID: "term-1", Lines: []string{"live"}}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		t.Fatalf("enter copy mode: %v", err)

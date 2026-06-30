@@ -774,14 +774,16 @@ func beginCopyModeLatest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 	return beginCopyModeLatestForView(root, deps, binding, rect.W, rect.H)
 }
 
-func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding state.TerminalViewBinding, cols int, rowsHint int) (state.Root, []Effect) {
+func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding state.TerminalViewBinding, visibleCols int, rowsHint int) (state.Root, []Effect) {
 	root = rootWithCopyHistorySessionForView(root, binding.ViewID)
 	if deps.Core == nil {
 		return setCopyModeError(root, "core client missing"), nil
 	}
-	if binding.TerminalID == "" || cols <= 0 {
+	if binding.TerminalID == "" || visibleCols <= 0 {
 		return setCopyModeError(root, "copy mode requires attached terminal and cols"), nil
 	}
+	enteringLive := state.CloneLiveSurfaceSnapshot(root.Surface.SurfaceForTerminal(binding.TerminalID).Snapshot())
+	cols := copyModeLatestRequestCols(root, binding, visibleCols, enteringLive)
 	requestID := nextHistoryRequestID(root)
 	nextHistory, err := root.History.BeginLatest(state.HistoryPendingRequest{
 		ID:         requestID,
@@ -798,7 +800,6 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 		return setCopyModeError(root, err.Error()), nil
 	}
 	root.History = nextHistory
-	enteringLive := state.CloneLiveSurfaceSnapshot(root.Surface.SurfaceForTerminal(binding.TerminalID).Snapshot())
 	root.CopyMode = root.CopyMode.BindLatest(binding.PaneID, binding.ViewID, binding.TerminalID, requestID, cols, rowsHint, enteringLive)
 	rows := requestRows(rowsHint, deps.Rows)
 	logHistoryTrace(deps.Logger, "tui.request.latest",
@@ -834,6 +835,25 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: binding.PaneID, ViewID: binding.ViewID, TerminalID: binding.TerminalID}
 		},
 	}}
+}
+
+func copyModeLatestRequestCols(root state.Root, binding state.TerminalViewBinding, visibleCols int, enteringLive state.LiveSurfaceSnapshot) int {
+	// 中文说明：copy/history 的首个 latest window 要按 terminal native screen 宽度冻结；
+	// pane content rect 只是当前可见裁剪宽度，不能拿它重排 logical line，否则进入 copy
+	// 时会改变 live 最后一屏的软换行边界和行首位置。
+	if binding.ResizeRole == state.TerminalResizeRoleOwner && binding.DesiredCols > 0 {
+		return binding.DesiredCols
+	}
+	if enteringLive.Cols > 0 {
+		return enteringLive.Cols
+	}
+	if surface := root.Surface.SurfaceForTerminal(binding.TerminalID); surface.Cols > 0 {
+		return surface.Cols
+	}
+	if binding.DesiredCols > 0 {
+		return binding.DesiredCols
+	}
+	return visibleCols
 }
 
 func beginCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaAfterPrepend int) (state.Root, []Effect) {
