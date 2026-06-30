@@ -9,10 +9,10 @@ import (
 
 const terminalHistoryIngestBatchMaxBytes = 1024 * 1024
 
-// terminalHistoryIngestQueue 把 PTY 输出和 authoritative history 解析分开。
-// domain owner 是 core terminal ingest：enqueue 只记录 raw text 批次，不写 live
-// screen；worker 再把批次交给 HistoryLogicalRenderer，避免 history store 反压
-// native live screen 最新屏链路。
+// terminalHistoryIngestQueue 是 R358 留下的 legacy raw PTY history backlog。
+// R372 后它只能作为 R373 替换前的隔离对象：当前失败条件是它仍会把 raw text
+// 交给独立 history SemanticSource 追平，不能被包装成新的 single-tap 队列或
+// history truth。R373 必须把 backlog 单位切到 tap 产出的 semantic transaction。
 type terminalHistoryIngestQueue struct {
 	mu        sync.Mutex
 	cond      *sync.Cond

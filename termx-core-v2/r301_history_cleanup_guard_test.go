@@ -59,6 +59,20 @@ func TestR301HistoryCleanupGuard(t *testing.T) {
 	}
 }
 
+func TestR372LegacyHistoryRawBacklogStaysIsolatedFromSemanticTap(t *testing.T) {
+	workerSource := r301ReadFile(t, "terminal_history_ingest_worker.go")
+	if !strings.Contains(workerSource, "legacy raw PTY history backlog") {
+		t.Fatal("legacy history raw backlog must be explicitly marked as R373 replacement target")
+	}
+	if strings.Contains(workerSource, "SemanticTap") || strings.Contains(workerSource, "TerminalSemanticTransaction") {
+		t.Fatal("legacy raw history backlog must not pretend to be the new SemanticTap transaction queue")
+	}
+	terminalSource := r301ReadFile(t, "terminal.go")
+	if !strings.Contains(terminalSource, "R373 切换到 single SemanticTap 前的隔离对象") {
+		t.Fatal("terminal historySemantic parser must be documented as isolated legacy double-vterm path")
+	}
+}
+
 func r301RejectProgramNameLiteral(t *testing.T, path string, text string) {
 	t.Helper()
 	for _, forbidden := range []string{"Codex", "codex", "Claude", "claude", "htop", "vim"} {

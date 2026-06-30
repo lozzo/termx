@@ -24,6 +24,9 @@ type Terminal struct {
 	historyMu       sync.Mutex
 	historyRenderer history.HistoryLogicalRenderer
 	historyStore    history.HistoryStore
+	// 中文说明：这是 R358 legacy history 专用 parser owner，R372 后只作为
+	// R373 切换到 single SemanticTap 前的隔离对象保留。它仍代表当前错误链路：
+	// history worker replay raw PTY 并维护第二个 vterm，不能继续扩展为新模型。
 	historySemantic *vterm.SemanticSource
 	// 中文说明：history semantic worker 只在 vterm parser transaction 边界上保留
 	// 未完成的 private CSI；它不是 raw history parser，也不生成 history truth。
@@ -140,9 +143,9 @@ func normalizeTerminalOutput(output string) string {
 	return output
 }
 
-// splitTerminalHistorySemanticWrites 把 PTY text 按 private CSI mode 边界拆成
-// vterm semantic transaction 输入片段。它只恢复 begin/payload/end 这类 parser
-// transaction 边界，不解释 history，不识别程序名，也不从 raw bytes 直接生成 logical line。
+// splitTerminalHistorySemanticWrites 是 legacy history raw PTY replay 的临时分片器。
+// R372 后它只标识待删除错误路径：history 不能长期从 raw bytes 重新解释 terminal
+// 语义；R373 应由 single SemanticTap 直接 fan-out immutable semantic transaction。
 func splitTerminalHistorySemanticWrites(pending *string, text string) []string {
 	if text == "" && (pending == nil || *pending == "") {
 		return nil
