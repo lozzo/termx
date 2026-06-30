@@ -93,6 +93,7 @@ const (
 	IntentOpenTerminalPicker   IntentKind = "open-terminal-picker"
 	IntentEnterCopyMode        IntentKind = "enter-copy-mode"
 	IntentRequestOlder         IntentKind = "request-older"
+	IntentRequestNewer         IntentKind = "request-newer"
 	IntentExitCopyMode         IntentKind = "exit-copy-mode"
 	IntentOpenClipboardHistory IntentKind = "open-clipboard-history"
 	IntentPasteLastCopy        IntentKind = "paste-last-copy"

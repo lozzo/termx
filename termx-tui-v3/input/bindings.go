@@ -209,6 +209,10 @@ func routeKey(event InputEvent, options RouteOptions) Intent {
 			return Intent{Kind: IntentRequestOlder, Event: event}
 		}
 		return Intent{Kind: IntentEnterCopyMode, Event: event}
+	case KeyPageDn:
+		if options.CopyModeActive {
+			return Intent{Kind: IntentRequestNewer, Event: event}
+		}
 	}
 	if options.CopyModeActive && event.Key == KeyChar && !event.Ctrl && !event.Alt && !event.Shift {
 		switch event.Char {
@@ -238,6 +242,10 @@ func routeMouse(event InputEvent, options RouteOptions) Intent {
 			return Intent{Kind: IntentRequestOlder, Event: event}
 		}
 		return Intent{Kind: IntentEnterCopyMode, Event: event}
+	case MouseWheelDown:
+		if options.CopyModeActive {
+			return Intent{Kind: IntentRequestNewer, Event: event}
+		}
 	case MouseLeft, MouseLeftDrag:
 		if options.CopyModeActive {
 			return Intent{Kind: IntentMouseSelect, Event: event}

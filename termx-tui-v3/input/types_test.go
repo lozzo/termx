@@ -24,6 +24,10 @@ func TestRoutePageUpEntersOrRequestsCopyMode(t *testing.T) {
 	if intent := Route(event, true); intent.Kind != IntentRequestOlder {
 		t.Fatalf("expected older request, got %#v", intent)
 	}
+	down := InputEvent{Kind: EventKindKey, Key: KeyPageDn}
+	if intent := Route(down, true); intent.Kind != IntentRequestNewer {
+		t.Fatalf("expected newer request, got %#v", intent)
+	}
 }
 
 func TestRouteWheelUpEntersOrRequestsCopyMode(t *testing.T) {
@@ -33,6 +37,10 @@ func TestRouteWheelUpEntersOrRequestsCopyMode(t *testing.T) {
 	}
 	if intent := Route(event, true); intent.Kind != IntentRequestOlder {
 		t.Fatalf("expected older request, got %#v", intent)
+	}
+	down := InputEvent{Kind: EventKindMouse, Mouse: MouseWheelDown}
+	if intent := Route(down, true); intent.Kind != IntentRequestNewer {
+		t.Fatalf("expected newer request, got %#v", intent)
 	}
 }
 
@@ -316,6 +324,11 @@ func TestUIModesSwallowUnboundKeysAndMouseRequiresTracking(t *testing.T) {
 	intent = RouteWithOptions(wheel, RouteOptions{CopyModeActive: true, TerminalMousePassthrough: true})
 	if intent.Kind != IntentRequestOlder {
 		t.Fatalf("active copy mode should keep wheel for history, got %#v", intent)
+	}
+	wheelDown := InputEvent{Kind: EventKindMouse, Mouse: MouseWheelDown, RawSeq: "\x1b[<65;10;5M"}
+	intent = RouteWithOptions(wheelDown, RouteOptions{CopyModeActive: true, TerminalMousePassthrough: true})
+	if intent.Kind != IntentRequestNewer {
+		t.Fatalf("active copy mode should keep wheel down for history, got %#v", intent)
 	}
 }
 

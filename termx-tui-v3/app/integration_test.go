@@ -618,7 +618,7 @@ func TestCopyModeEnteringWheelScrollAppliesWhenLatestArrives(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if runtime.State().CopyMode.ViewportTop != 0 || runtime.State().CopyMode.Cursor.Row != 9 {
+	if runtime.State().CopyMode.ViewportTop != 0 || runtime.State().CopyMode.Cursor.Row != 8 {
 		t.Fatalf("latest should apply entering scroll from tail immediately, got copy=%#v", runtime.State().CopyMode)
 	}
 	if runtime.State().CopyMode.EnteringScrollDelta != 0 || runtime.State().CopyMode.Entering {
@@ -1103,7 +1103,7 @@ func TestCopyModeRuntimeFloatingWheelScrollUsesHitView(t *testing.T) {
 	if nextPaneCopy.Cursor.Row != 1 || nextPaneCopy.ViewportTop != 1 {
 		t.Fatalf("floating wheel must not mutate tiled copy session, got %#v", nextPaneCopy)
 	}
-	if nextFloatCopy.Cursor.Row != 1 || nextFloatCopy.ViewportTop != 0 {
+	if nextFloatCopy.Cursor.Row != 0 || nextFloatCopy.ViewportTop != 0 {
 		t.Fatalf("floating wheel should mutate only floating copy session, got %#v", nextFloatCopy)
 	}
 }
@@ -1504,7 +1504,7 @@ func TestCopyModeMouseWheelRawSeqScrollsDown(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain raw wheel down: %v", err)
 	}
-	if runtime.State().CopyMode.Cursor.Row != 11 || runtime.State().CopyMode.ViewportTop != 11 {
+	if runtime.State().CopyMode.Cursor.Row != 11 || runtime.State().CopyMode.ViewportTop != 10 {
 		t.Fatalf("raw wheel down should stay in copy/history reducer, got %#v", runtime.State().CopyMode)
 	}
 }
@@ -1635,7 +1635,7 @@ func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T)
 	}
 }
 
-func TestCopyModeMouseWheelMovesViewportAndKeepsCursorVisible(t *testing.T) {
+func TestCopyModeMouseWheelMovesCursorAndKeepsItVisible(t *testing.T) {
 	latestRows := make([]state.HistoryRow, 0, 40)
 	for i := 1; i <= 40; i++ {
 		latestRows = append(latestRows, state.HistoryRow{Text: fmt.Sprintf("row-%02d", i), LineID: uint64(i)})
@@ -1673,8 +1673,8 @@ func TestCopyModeMouseWheelMovesViewportAndKeepsCursorVisible(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain wheel inside viewport: %v", err)
 	}
-	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 13, Col: 2}) || runtime.State().CopyMode.ViewportTop != 9 {
-		t.Fatalf("wheel should move viewport while keeping cursor screen-relative, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 13, Col: 2}) || runtime.State().CopyMode.ViewportTop != 10 {
+		t.Fatalf("wheel should move copy cursor before moving viewport, got %#v", runtime.State().CopyMode)
 	}
 
 	runtime.state.CopyMode.Cursor = state.CopyPosition{Row: 10, Col: 2}
@@ -1705,6 +1705,49 @@ func TestCopyModeMouseWheelMovesViewportAndKeepsCursorVisible(t *testing.T) {
 	}
 	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: bottomRow + 1, Col: 2}) || runtime.State().CopyMode.ViewportTop != bottomTop+1 {
 		t.Fatalf("wheel should move viewport only after cursor crosses bottom edge, got %#v", runtime.State().CopyMode)
+	}
+}
+
+func TestCopyModePageDownMovesCursorBeforeRequestingNewer(t *testing.T) {
+	rows := make([]state.HistoryRow, 0, 40)
+	for i := 1; i <= 40; i++ {
+		rows = append(rows, state.HistoryRow{Text: fmt.Sprintf("page-row-%02d", i), LineID: uint64(i)})
+	}
+	root := state.Root{
+		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
+		History: state.HistoryStore{
+			PaneID:      state.DefaultPaneID,
+			ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID:  "term-1",
+			Token:       "tok-1",
+			Cols:        78,
+			Cursor:      state.HistoryCursor{Valid: true, BeforeLineID: 1},
+			Generation:  7,
+			Boundary:    state.HistoryBoundary{FirstLineID: 1, LastLineID: 40},
+			SourceLines: historyLogicalLinesForApp(rows),
+			Rows:        rows,
+		},
+		CopyMode: state.CopyModeStore{
+			Active:      true,
+			PaneID:      state.DefaultPaneID,
+			ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID:  "term-1",
+			BoundToken:  "tok-1",
+			BoundCols:   78,
+			ViewRows:    10,
+			ViewportTop: 10,
+			Cursor:      state.CopyPosition{Row: 12, Col: 2},
+		},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 78, 10, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+
+	next, effects := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}})(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageDn}})
+
+	if len(effects) == 0 {
+		t.Fatalf("page down should be handled")
+	}
+	if next.CopyMode.Cursor.Row != 20 || next.CopyMode.ViewportTop != 11 {
+		t.Fatalf("page down should move cursor and then reveal it, got %#v", next.CopyMode)
 	}
 }
 
