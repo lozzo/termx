@@ -450,6 +450,29 @@ HistoryStore stores core window token; CopyModeStore binds core token + cols + v
 RenderVMBuilder uses HistoryStore + CopyModeStore projection
 ```
 
+R371 后，copy mode 进入路径拆成三个显式状态，避免把“快速显示”伪装成 authoritative
+history：
+
+```text
+CopyModeEnteringLivePreview
+  只冻结进入瞬间的 live native screen 作为显示上下文
+  不提供 authoritative selection/search/copy/older cursor
+
+CopyModeMaterializedProjection
+  使用 core 返回的已应用 history frontier
+  可在能力位允许的范围内选择/复制
+  catchup_pending 区域显示 pending 或触发等待
+
+CopyModeFrozenHistory
+  使用 FrozenHistorySnapshot token
+  older/newer/search/full copy 沿现有 authoritative cursor 合同工作
+```
+
+`CopyEntryProjection` / `MaterializedHistoryProjection` 这类新合同不能复用 `Freeze` token，也不能
+把 live native screen 变成可复制 history。TUI 必须在状态中记录 projection 能力位、native cols、
+applied/target history seq 和 catchup pending；跨过未追平区域时只能显示 pending 或请求 core 等待，
+不能从 `TerminalSurfaceStore`、本地 VTerm 或旧 rows 补洞。
+
 ### 10.2 older prepend
 
 ```text
@@ -507,7 +530,7 @@ RenderVM 至少包含：
 - cursor state
 - hit regions
 
-copy mode VM 只能由 `HistoryStore + CopyModeStore` 生成。只有 `CopyModeStore` 的 terminal id、bound core window token 与 bound cols 同 `HistoryStore` 当前窗口一致时，RenderVMBuilder 才能生成 copy mode history VM。缺少 authoritative history window 或绑定不一致时，只能渲染 pending、empty 或 error 状态，不得从 `TerminalSurfaceStore`、snapshot、grid viewport、local VTerm scrollback fallback 生成 copy mode 内容。
+copy mode VM 只能由 `HistoryStore + CopyModeStore` 生成。只有 `CopyModeStore` 的 terminal id、bound core window token 与 bound cols 同 `HistoryStore` 当前窗口一致时，RenderVMBuilder 才能生成 authoritative copy mode history VM。R371 以后允许渲染明确标记为 entering preview 的 live native screen，但该 preview 不是 history VM，不能提供 search/copy/page cursor，也不能和 authoritative rows 拼接。缺少 authoritative history window、materialized projection 或绑定不一致时，只能渲染 pending、preview、empty 或 error 状态，不得从 `TerminalSurfaceStore`、snapshot、grid viewport、local VTerm scrollback fallback 生成 copy mode history 内容。
 
 renderer 禁止：
 

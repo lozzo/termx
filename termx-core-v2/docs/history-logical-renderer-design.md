@@ -1,6 +1,6 @@
 # history logical renderer 设计重写
 
-状态：R319 history logical renderer 设计与清场基准。
+状态：R371 history logical renderer 与 semantic fan-out 设计基准。
 
 本文替代旧 screen app 无限历史文档里的 `commit/committed` 语义。旧文档仍可作为 R300-R317
 问题背景，但只要本文与旧文档、旧代码类型名或旧测试描述冲突，以本文为准。
@@ -58,7 +58,7 @@ sealed 不等于永久不可删除。retention、truncate、clear policy、compa
 
 ```text
 PTY bytes / resize
-  -> termx-vterm
+  -> SemanticTap / termx-vterm
        owns terminal parser, mode state, cursor, screen cells
   -> TerminalSemanticTransaction
        ordered ops + scroll-out proof + primary/alt frame cells
@@ -75,7 +75,7 @@ PTY bytes / resize
 live display 是旁路投影：
 
 ```text
-same vterm state -> LiveSurfaceSnapshot -> TUI renderer -> host screen
+same SemanticTap state -> NativeScreenSnapshot -> TUI renderer -> host screen
 ```
 
 禁止反向读取：
@@ -86,6 +86,30 @@ same vterm state -> LiveSurfaceSnapshot -> TUI renderer -> host screen
 - history 不重新跑 raw PTY parser。
 - history 不按 Codex、Claude Code、vim、htop 等程序名分支。
 - StorageBackend 不决定领域 mutability。
+
+## 3.1 SemanticTap 与 consumer 边界
+
+R371 后，真实 PTY 输出的目标架构是 single `SemanticTap`：
+
+```text
+PTY bytes / resize
+  -> SemanticTap
+       唯一 vterm owner，顺序消费所有输入，维护 native screen 和 terminal response
+       产出 immutable TerminalSemanticTransaction
+       ├─ live publisher: 只发布 latest invalidation / snapshot，可合并 render wakeup
+       └─ history consumer: 完整消费 semantic transaction，不能丢
+```
+
+`SemanticTap` 之前不能做按 consumer 的分叉。live consumer 不能丢 semantic event 后再维护自己的
+screen state；能丢的只是 downstream render wakeup 或已过期 snapshot response。history consumer
+可以异步、批量、spill，但 backlog 的基本单位应是 semantic transaction 或等价 durable event，
+不得回到 raw PTY replay 或第二套 vterm parser。
+
+resize 必须和 PTY bytes 进入同一个 sequence。否则 old-size pending bytes 被 new-size vterm
+解释时，会破坏普通 logical line wrap、screen-frame 固定宽度和 mutable frame resize 边界。
+
+OSC/DA/DSR 等 terminal response 的 owner 也必须是 `SemanticTap`。历史 consumer 不得回写 PTY；
+live/history 两边也不能各自持有 response-capable vterm，避免双回写或漏回写。
 
 ## 4. 数据对象
 
@@ -276,11 +300,10 @@ transaction 必须包含：
 
 R358 后，当前实现为了恢复 `c4ee7923` 的 live native screen 快路径，把 `live.SurfaceTrack`
 和 history semantic source 切开：live surface 不再返回 transaction，真实 PTY 输出通过
-history semantic worker 喂给 `TerminalSemanticSource`。这不改变 history truth 模型：
-renderer 仍只消费 `TerminalSemanticTransaction`，不能读取 live snapshot 或 raw parser fallback。
-但它意味着当前实现暂时不是“live 与 history 共用同一个 VTerm 实例”；后续若要恢复单实例
-semantic tap，必须保证 live hot path 不再被 history transaction 结果、store apply 或 flush fence
-反压。
+history semantic worker 喂给 `TerminalSemanticSource`。这只是遗留实现形态，不是 R371 后的
+目标架构。后续必须迁回 single `SemanticTap`：vterm 只解析一次，live 只合并 downstream
+render wakeup，history 完整消费同一份 immutable semantic transaction，不能读取 live snapshot
+或 raw parser fallback。
 
 ### 5.2 HistorySemanticClassifier
 
@@ -639,6 +662,16 @@ copy/search 只消费 authoritative HistoryWindow 或 FrozenHistorySnapshot。`F
 - selection 保存 logical line id + offset，不保存“当前 visual row 是第几行”作为唯一 truth。
 - search 使用 logical text。
 - visual row markers、clipped markers、scrollbar、status 都是 UI 投影，不写回 HistoryStore。
+
+R371 后允许新增 `CopyEntryProjection` / `MaterializedHistoryProjection` 类快速进入合同，但它
+不能复用 `Freeze` 的语义。该合同只读取 core history store 已经应用的 frontier，不 flush 全部
+history backlog；返回时必须显式说明 `applied_history_seq`、`target_history_seq` 或
+`catchup_pending`，并带有当前 projection 的能力位，例如 selectable/searchable/copyable/pageable。
+
+`FrozenHistorySnapshot` 继续表示 stable authoritative boundary：只有真正建立 frozen token 后，
+older/newer/search/full copy 才能沿现有 token/cursor 合同工作。半追平 projection 不能伪装成 frozen
+token；live native screen 只能作为 entering preview 的显示上下文，不能变成可复制、可搜索、
+可分页的 history truth。
 
 ## 9. 旧词替换
 
