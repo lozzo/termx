@@ -348,6 +348,14 @@ func (c *Client) HistoryWindow(ctx context.Context, params HistoryWindowParams) 
 	return DecodeHistoryWindowPayload(payload)
 }
 
+func (c *Client) CopyEntryProjection(ctx context.Context, params CopyEntryProjectionParams) (*CopyEntryProjection, error) {
+	payload, err := c.doRequestPayload(ctx, "history.copy_entry", params)
+	if err != nil {
+		return nil, err
+	}
+	return DecodeCopyEntryProjectionPayload(payload)
+}
+
 func (c *Client) HistoryCopy(ctx context.Context, params HistoryWindowParams) (string, error) {
 	payload, err := c.doRequestPayload(ctx, "history.copy", params)
 	if err != nil {

@@ -95,6 +95,53 @@ func DecodeHistoryWindowPayload(payload []byte) (*HistoryWindow, error) {
 	return historyWindowFromWirePB(&msg)
 }
 
+func EncodeCopyEntryProjectionPayload(projection *CopyEntryProjection) ([]byte, error) {
+	if projection == nil {
+		return nil, fmt.Errorf("nil copy entry projection")
+	}
+	msg := historyWindowToWirePB(&projection.Window)
+	// 中文说明：R376 copy-entry 结果暂时复用 HistoryWindow protobuf，并把
+	// materialized projection 元数据写入保留 field number；这些元数据不是
+	// history window truth，也不能让 window token 伪装成 frozen snapshot。
+	setUint64UnknownField(msg, copyEntryNativeColsFieldNumber, uint64(projection.NativeCols))
+	setUint64UnknownField(msg, copyEntryAppliedHistorySeqFieldNumber, projection.AppliedHistorySeq)
+	setUint64UnknownField(msg, copyEntryTargetHistorySeqFieldNumber, projection.TargetHistorySeq)
+	setBoolUnknownField(msg, copyEntryCatchupPendingFieldNumber, projection.CatchupPending)
+	setBoolUnknownField(msg, copyEntrySelectableFieldNumber, projection.Capabilities.Selectable)
+	setBoolUnknownField(msg, copyEntryCopyableFieldNumber, projection.Capabilities.Copyable)
+	setBoolUnknownField(msg, copyEntrySearchableFieldNumber, projection.Capabilities.Searchable)
+	setBoolUnknownField(msg, copyEntryPageableFieldNumber, projection.Capabilities.Pageable)
+	setInt64UnknownField(msg, copyEntryTimestampFieldNumber, timeToUnixNano(projection.Timestamp))
+	return proto.Marshal(msg)
+}
+
+func DecodeCopyEntryProjectionPayload(payload []byte) (*CopyEntryProjection, error) {
+	var msg wirepb.HistoryWindow
+	if err := proto.Unmarshal(payload, &msg); err != nil {
+		return nil, err
+	}
+	window, err := historyWindowFromWirePB(&msg)
+	if err != nil {
+		return nil, err
+	}
+	return &CopyEntryProjection{
+		TerminalID:        window.TerminalID,
+		NativeCols:        int(uint64UnknownField(&msg, copyEntryNativeColsFieldNumber)),
+		Generation:        window.Generation,
+		Window:            *window,
+		AppliedHistorySeq: uint64UnknownField(&msg, copyEntryAppliedHistorySeqFieldNumber),
+		TargetHistorySeq:  uint64UnknownField(&msg, copyEntryTargetHistorySeqFieldNumber),
+		CatchupPending:    boolUnknownField(&msg, copyEntryCatchupPendingFieldNumber),
+		Capabilities: CopyEntryCapabilityBits{
+			Selectable: boolUnknownField(&msg, copyEntrySelectableFieldNumber),
+			Copyable:   boolUnknownField(&msg, copyEntryCopyableFieldNumber),
+			Searchable: boolUnknownField(&msg, copyEntrySearchableFieldNumber),
+			Pageable:   boolUnknownField(&msg, copyEntryPageableFieldNumber),
+		},
+		Timestamp: unixNanoToTime(int64UnknownField(&msg, copyEntryTimestampFieldNumber)),
+	}, nil
+}
+
 func historyWindowToWirePB(window *HistoryWindow) *wirepb.HistoryWindow {
 	lineStart := make([]int32, len(window.Lines))
 	lineEnd := make([]int32, len(window.Lines))

@@ -751,6 +751,21 @@ func (terminal *Terminal) HistoryWindow(req history.HistoryWindowRequest) (histo
 	}
 }
 
+// HistoryCopyEntryProjection 返回 copy/history 入口的 materialized projection。
+// 调用边界：它只读取已应用到 HistoryStore 的 frontier，不等待 history backlog 追平，
+// 也不创建 frozen token；调用方必须把 catchup/capability 元数据继续暴露给 UI。
+func (terminal *Terminal) HistoryCopyEntryProjection(req history.CopyEntryProjectionRequest) (history.CopyEntryProjection, error) {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled {
+		return history.CopyEntryProjection{}, ErrHistoryDisabled
+	}
+	if terminal.historyStore == nil {
+		return history.CopyEntryProjection{}, ErrHistoryNotRebuilt
+	}
+	return terminal.historyStore.CopyEntryProjection(req)
+}
+
 func (terminal *Terminal) HistoryCopy(req history.HistoryCopyRequest) (string, error) {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()

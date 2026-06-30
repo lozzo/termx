@@ -324,6 +324,60 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestR376CopyEntryProjectionPayloadRoundTrip(t *testing.T) {
+	projection := &CopyEntryProjection{
+		TerminalID: "term-copy-entry",
+		NativeCols: 120,
+		Generation: 7,
+		Window: HistoryWindow{
+			TerminalID:   "term-copy-entry",
+			Op:           HistoryWindowReplace,
+			Size:         Size{Cols: 80},
+			Rows:         []CompactRow{CompactRowFromCells([]Cell{{Content: "ready", Width: 5}})},
+			RowLineIDs:   []uint64{42},
+			RowInLine:    []int{0},
+			Generation:   7,
+			FirstLineID:  42,
+			LastLineID:   42,
+			CursorValid:  true,
+			CursorLineID: 42,
+		},
+		AppliedHistorySeq: 10,
+		TargetHistorySeq:  12,
+		CatchupPending:    true,
+		Capabilities: CopyEntryCapabilityBits{
+			Selectable: true,
+			Copyable:   false,
+			Searchable: false,
+			Pageable:   false,
+		},
+		Timestamp: time.Date(2026, 6, 30, 1, 2, 3, 0, time.UTC),
+	}
+	payload, err := EncodeCopyEntryProjectionPayload(projection)
+	if err != nil {
+		t.Fatalf("encode copy entry projection: %v", err)
+	}
+	decoded, err := DecodeCopyEntryProjectionPayload(payload)
+	if err != nil {
+		t.Fatalf("decode copy entry projection: %v", err)
+	}
+	if decoded.TerminalID != projection.TerminalID || decoded.NativeCols != 120 || decoded.Generation != 7 {
+		t.Fatalf("unexpected projection header: %#v", decoded)
+	}
+	if decoded.Window.Token != "" || decoded.Window.FirstLineID != 42 || compactRowToStringForTest(decoded.Window.Rows[0]) != "ready" {
+		t.Fatalf("unexpected projection window: %#v", decoded.Window)
+	}
+	if decoded.AppliedHistorySeq != 10 || decoded.TargetHistorySeq != 12 || !decoded.CatchupPending {
+		t.Fatalf("lost backlog metadata: %#v", decoded)
+	}
+	if !decoded.Capabilities.Selectable || decoded.Capabilities.Copyable || decoded.Capabilities.Searchable || decoded.Capabilities.Pageable {
+		t.Fatalf("lost capability bits: %#v", decoded.Capabilities)
+	}
+	if !decoded.Timestamp.Equal(projection.Timestamp) {
+		t.Fatalf("lost projection timestamp: %v", decoded.Timestamp)
+	}
+}
+
 func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
 	encoded, err := EncodeMethodParams("history.window", HistoryWindowParams{
 		TerminalID:          "term-hist",
@@ -389,6 +443,29 @@ func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
 		RangeEndCol:         9,
 	}) {
 		t.Fatalf("unexpected decoded history window params: %#v", params)
+	}
+}
+
+func TestR376CopyEntryProjectionParamsControlPayloadRoundTrip(t *testing.T) {
+	encoded, err := EncodeMethodParams("history.copy_entry", CopyEntryProjectionParams{
+		TerminalID: "term-copy-entry",
+		Limit:      40,
+		Cols:       100,
+		Rows:       20,
+	})
+	if err != nil {
+		t.Fatalf("encode copy entry params failed: %v", err)
+	}
+	decoded, err := DecodeMethodParams("history.copy_entry", encoded)
+	if err != nil {
+		t.Fatalf("decode copy entry params failed: %v", err)
+	}
+	params, ok := decoded.(CopyEntryProjectionParams)
+	if !ok {
+		t.Fatalf("expected CopyEntryProjectionParams, got %T", decoded)
+	}
+	if params != (CopyEntryProjectionParams{TerminalID: "term-copy-entry", Limit: 40, Cols: 100, Rows: 20}) {
+		t.Fatalf("unexpected decoded copy entry params: %#v", params)
 	}
 }
 

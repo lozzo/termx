@@ -510,6 +510,17 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 			return nil, true, protocolErrorInternal, err
 		}
 		return payload, true, 0, nil
+	case "history.copy_entry":
+		in := params.(protocol.CopyEntryProjectionParams)
+		projection, err := session.copyEntryProjection(ctx, in)
+		if err != nil {
+			return nil, true, errorCode(err), err
+		}
+		payload, err := protocol.EncodeCopyEntryProjectionPayload(projection)
+		if err != nil {
+			return nil, true, protocolErrorInternal, err
+		}
+		return payload, true, 0, nil
 	case "history.copy":
 		in := params.(protocol.HistoryWindowParams)
 		payload, err := session.historyCopy(ctx, in)
@@ -815,6 +826,29 @@ func (session *protocolSession) historyWindow(ctx context.Context, params protoc
 	return protocolHistoryWindowFromDomain(window), nil
 }
 
+func (session *protocolSession) copyEntryProjection(ctx context.Context, params protocol.CopyEntryProjectionParams) (*protocol.CopyEntryProjection, error) {
+	if _, err := session.server.GetTerminal(params.TerminalID); err != nil {
+		return nil, err
+	}
+	req := history.CopyEntryProjectionRequest{
+		TerminalID: params.TerminalID,
+		Cols:       params.Cols,
+		Rows:       params.Rows,
+		Limit:      params.Limit,
+	}
+	if req.Cols <= 0 {
+		req.Cols = 80
+	}
+	if req.Limit <= 0 && req.Rows > 0 {
+		req.Limit = req.Rows
+	}
+	projection, err := session.server.TerminalHistoryCopyEntryProjection(ctx, params.TerminalID, req)
+	if err != nil {
+		return nil, err
+	}
+	return protocolCopyEntryProjectionFromDomain(projection), nil
+}
+
 func (session *protocolSession) historyCopy(ctx context.Context, params protocol.HistoryWindowParams) ([]byte, error) {
 	if _, err := session.server.GetTerminal(params.TerminalID); err != nil {
 		return nil, err
@@ -995,6 +1029,25 @@ func protocolHistoryWindowFromDomain(window history.HistoryWindow) *protocol.His
 		RowLineIDs:     rowLineIDs,
 		RowInLine:      rowInLine,
 		Timestamp:      window.Timestamp,
+	}
+}
+
+func protocolCopyEntryProjectionFromDomain(projection history.CopyEntryProjection) *protocol.CopyEntryProjection {
+	return &protocol.CopyEntryProjection{
+		TerminalID:        projection.TerminalID,
+		NativeCols:        projection.NativeCols,
+		Generation:        uint64(projection.Generation),
+		Window:            *protocolHistoryWindowFromDomain(projection.Window),
+		AppliedHistorySeq: projection.AppliedHistorySeq,
+		TargetHistorySeq:  projection.TargetHistorySeq,
+		CatchupPending:    projection.CatchupPending,
+		Capabilities: protocol.CopyEntryCapabilityBits{
+			Selectable: projection.Capabilities.Selectable,
+			Copyable:   projection.Capabilities.Copyable,
+			Searchable: projection.Capabilities.Searchable,
+			Pageable:   projection.Capabilities.Pageable,
+		},
+		Timestamp: projection.Timestamp,
 	}
 }
 

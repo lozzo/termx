@@ -7268,6 +7268,10 @@ func (client *blockingHistoryClient) HistoryLatest(ctx context.Context, req serv
 	}
 }
 
+func (client *blockingHistoryClient) HistoryCopyEntryProjection(context.Context, services.HistoryCopyEntryProjectionRequest) (services.HistoryCopyEntryProjectionResult, error) {
+	return services.HistoryCopyEntryProjectionResult{}, errors.New("unexpected copy entry projection request")
+}
+
 func (client *blockingHistoryClient) HistoryOlder(ctx context.Context, req services.HistoryOlderRequest) (services.HistoryResult, error) {
 	client.mu.Lock()
 	client.olderReqs = append(client.olderReqs, req)
@@ -7364,6 +7368,10 @@ func (client *acceptanceProtocolHistoryClient) HistoryWindow(_ context.Context, 
 	window := client.windows[0]
 	client.windows = client.windows[1:]
 	return window, nil
+}
+
+func (client *acceptanceProtocolHistoryClient) CopyEntryProjection(_ context.Context, params protocol.CopyEntryProjectionParams) (*protocol.CopyEntryProjection, error) {
+	return nil, errors.New("unexpected protocol copy entry projection request")
 }
 
 func (client *acceptanceProtocolHistoryClient) ReleaseHistory(_ context.Context, params protocol.HistoryWindowParams) error {

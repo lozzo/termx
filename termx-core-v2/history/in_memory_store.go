@@ -258,6 +258,41 @@ func (store *inMemoryHistoryStore) NewerWindow(req HistoryWindowRequest) (Histor
 	return HistoryWindow{}, ErrHistoryUnsupportedWindowMode
 }
 
+func (store *inMemoryHistoryStore) CopyEntryProjection(req CopyEntryProjectionRequest) (CopyEntryProjection, error) {
+	if store == nil {
+		return CopyEntryProjection{}, nil
+	}
+	store.ensureState()
+	windowReq := HistoryWindowRequest{
+		TerminalID: req.TerminalID,
+		Mode:       HistoryWindowModeLatest,
+		Cols:       req.Cols,
+		Limit:      req.Limit,
+	}
+	window, err := store.LatestWindow(windowReq)
+	if err != nil {
+		return CopyEntryProjection{}, err
+	}
+	capabilities := CopyEntryCapabilityBits{
+		Selectable: len(window.Rows) > 0,
+		Copyable:   len(window.Rows) > 0 && !req.CatchupPending,
+		Searchable: len(window.Rows) > 0 && !req.CatchupPending,
+		Pageable:   window.HasMore && !req.CatchupPending,
+	}
+	return CopyEntryProjection{
+		TerminalID:        req.TerminalID,
+		NativeCols:        req.NativeCols,
+		Generation:        window.Generation,
+		Window:            window,
+		Boundary:          window.Boundary,
+		AppliedHistorySeq: req.AppliedHistorySeq,
+		TargetHistorySeq:  req.TargetHistorySeq,
+		CatchupPending:    req.CatchupPending,
+		Capabilities:      capabilities,
+		Timestamp:         time.Now().UTC(),
+	}, nil
+}
+
 func (store *inMemoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHistorySnapshot, error) {
 	if store == nil {
 		return FrozenHistorySnapshot{}, nil

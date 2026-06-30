@@ -302,6 +302,75 @@ func TestR374HistoryBacklogStatusAndFlushBoundary(t *testing.T) {
 	}
 }
 
+func TestR376CopyEntryProjectionDoesNotFlushHistoryBacklog(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r376-copy-entry",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 40, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r376-copy-entry", "applied\r\n"); err != nil {
+		t.Fatalf("ingest applied output: %v", err)
+	}
+	if _, err := server.TerminalHistoryWindow(context.Background(), "term-r376-copy-entry", history.HistoryWindowRequest{
+		TerminalID: "term-r376-copy-entry",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       40,
+		Limit:      10,
+	}); err != nil {
+		t.Fatalf("initial history.window: %v", err)
+	}
+	terminal, err := server.Terminal("term-r376-copy-entry")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	queue := newTerminalHistoryIngestQueue(1)
+	if !queue.Enqueue(history.TerminalSemanticTransaction{}) {
+		t.Fatal("expected pending history transaction")
+	}
+	defer queue.Close()
+	terminal.queueMu.Lock()
+	terminal.historyQ = queue
+	terminal.queueMu.Unlock()
+
+	done := make(chan history.CopyEntryProjection, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		projection, err := server.TerminalHistoryCopyEntryProjection(context.Background(), "term-r376-copy-entry", history.CopyEntryProjectionRequest{
+			TerminalID: "term-r376-copy-entry",
+			Cols:       40,
+			Limit:      10,
+		})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		done <- projection
+	}()
+	select {
+	case err := <-errCh:
+		t.Fatalf("copy entry projection: %v", err)
+	case projection := <-done:
+		if got := strings.Join(historyRowTexts(projection.Window.Rows), "|"); got != "applied" {
+			t.Fatalf("copy entry must return already-applied frontier without waiting, got %q projection=%#v", got, projection)
+		}
+		if !projection.CatchupPending || projection.AppliedHistorySeq != 1 || projection.TargetHistorySeq != 2 {
+			t.Fatalf("projection must expose backlog catchup boundary, got %#v", projection)
+		}
+		if projection.NativeCols != 40 || projection.Window.Token != "" {
+			t.Fatalf("projection must carry native cols and no frozen token, got %#v", projection)
+		}
+		if projection.Capabilities.Copyable || projection.Capabilities.Searchable || projection.Capabilities.Pageable {
+			t.Fatalf("catchup projection must not claim complete copy/search/page capabilities, got %#v", projection.Capabilities)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("copy entry projection must not wait for full history backlog flush")
+	}
+}
+
 func TestR374HistoryBacklogSeqDoesNotResetAcrossRestart(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))

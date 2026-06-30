@@ -534,6 +534,50 @@ func (server *Server) TerminalHistoryWindow(ctx context.Context, id string, req 
 	return server.terminalHistoryWindow(ctx, id, req, true)
 }
 
+// TerminalHistoryCopyEntryProjection 返回 copy/history 入口的 materialized projection。
+// 它不 flush history backlog、不创建 FrozenHistorySnapshot，只读取 HistoryStore 已应用
+// frontier；native cols 和 backlog seq 只是 projection 元数据，不能把 live screen rows
+// 提升为可复制 history truth。
+func (server *Server) TerminalHistoryCopyEntryProjection(ctx context.Context, id string, req history.CopyEntryProjectionRequest) (history.CopyEntryProjection, error) {
+	_ = ctx
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return history.CopyEntryProjection{}, err
+	}
+	if req.TerminalID == "" {
+		req.TerminalID = id
+	}
+	status := terminal.HistoryBacklogStatus()
+	req.AppliedHistorySeq = status.AppliedSeq
+	req.TargetHistorySeq = status.TargetSeq
+	req.CatchupPending = status.CatchupPending
+	if req.NativeCols <= 0 {
+		native := terminal.NativeScreenSnapshot(id)
+		req.NativeCols = int(native.Size.Cols)
+	}
+	projection, err := terminal.HistoryCopyEntryProjection(req)
+	if err != nil {
+		return history.CopyEntryProjection{}, err
+	}
+	attrs := []any{
+		"terminal_id", projection.TerminalID,
+		"cols", req.Cols,
+		"native_cols", projection.NativeCols,
+		"rows", len(projection.Window.Rows),
+		"generation", uint64(projection.Generation),
+		"catchup_pending", projection.CatchupPending,
+		"selectable", projection.Capabilities.Selectable,
+		"copyable", projection.Capabilities.Copyable,
+		"searchable", projection.Capabilities.Searchable,
+		"pageable", projection.Capabilities.Pageable,
+		"summary", coreHistoryWindowSummary(projection.Window.Rows),
+	}
+	attrs = append(attrs, coreHistoryBacklogAttrs("projection", status)...)
+	attrs = append(attrs, coreHistoryCursorAttrs("projection", projection.Boundary.Cursor)...)
+	coreHistoryTrace(server.cfg.logger, "core.store.copy_entry_projection", attrs...)
+	return projection, nil
+}
+
 func (server *Server) terminalHistoryWindow(ctx context.Context, id string, req history.HistoryWindowRequest, flush bool) (history.HistoryWindow, error) {
 	if ctx == nil {
 		ctx = context.Background()

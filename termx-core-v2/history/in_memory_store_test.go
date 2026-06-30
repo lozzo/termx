@@ -86,6 +86,73 @@ func TestR323InMemoryStoreFreezeKeepsMutableFrameSnapshot(t *testing.T) {
 	}
 }
 
+func TestR376CopyEntryProjectionUsesAppliedFrontierWithoutFrozenToken(t *testing.T) {
+	store := NewInMemoryHistoryStore("term-r376")
+	applyStoreBatch(t, store,
+		sealedLineMutations(1, 1, "alpha"),
+		sealedLineMutations(2, 2, "beta"),
+		replacePrimaryMutation(10, 3, 80, "current"),
+	)
+
+	projection, err := store.CopyEntryProjection(CopyEntryProjectionRequest{
+		TerminalID:        "term-r376",
+		Cols:              80,
+		Limit:             3,
+		NativeCols:        120,
+		AppliedHistorySeq: 7,
+		TargetHistorySeq:  9,
+		CatchupPending:    true,
+	})
+	if err != nil {
+		t.Fatalf("copy entry projection: %v", err)
+	}
+	if got := strings.Join(rowTexts(projection.Window.Rows), "|"); got != "alpha|beta|current" {
+		t.Fatalf("projection must read already-applied history frontier, got %q projection=%#v", got, projection)
+	}
+	if projection.Window.Token != "" {
+		t.Fatalf("copy entry projection must not create a frozen token, got %#v", projection.Window.Token)
+	}
+	if len(store.(*inMemoryHistoryStore).frozen) != 0 {
+		t.Fatalf("copy entry projection must not allocate frozen snapshots, got %#v", store.(*inMemoryHistoryStore).frozen)
+	}
+	if projection.NativeCols != 120 || projection.AppliedHistorySeq != 7 || projection.TargetHistorySeq != 9 || !projection.CatchupPending {
+		t.Fatalf("projection lost backlog/native metadata: %#v", projection)
+	}
+	if !projection.Capabilities.Selectable || projection.Capabilities.Copyable || projection.Capabilities.Searchable || projection.Capabilities.Pageable {
+		t.Fatalf("catchup pending projection should only be locally selectable, capabilities=%#v", projection.Capabilities)
+	}
+}
+
+func TestR376CopyEntryProjectionCapabilitiesWhenCaughtUp(t *testing.T) {
+	store := NewInMemoryHistoryStore("term-r376-caught-up")
+	applyStoreBatch(t, store,
+		sealedLineMutations(1, 1, "one"),
+		sealedLineMutations(2, 2, "two"),
+		sealedLineMutations(3, 3, "three"),
+	)
+
+	projection, err := store.CopyEntryProjection(CopyEntryProjectionRequest{
+		TerminalID:        "term-r376-caught-up",
+		Cols:              80,
+		Limit:             2,
+		NativeCols:        80,
+		AppliedHistorySeq: 3,
+		TargetHistorySeq:  3,
+	})
+	if err != nil {
+		t.Fatalf("copy entry projection: %v", err)
+	}
+	if got := strings.Join(rowTexts(projection.Window.Rows), "|"); got != "two|three" {
+		t.Fatalf("projection should return latest applied rows, got %q", got)
+	}
+	if !projection.Capabilities.Selectable || !projection.Capabilities.Copyable || !projection.Capabilities.Searchable || !projection.Capabilities.Pageable {
+		t.Fatalf("caught-up projection with older rows should expose full capabilities, got %#v", projection.Capabilities)
+	}
+	if !projection.Boundary.Cursor.Valid || projection.Boundary.Cursor.BeforeRowIndex != 1 {
+		t.Fatalf("projection must preserve latest cursor/boundary for later materialization, got %#v", projection.Boundary)
+	}
+}
+
 func TestR332FrozenHistoryCanPageOlderThanLatestLimit(t *testing.T) {
 	store := NewInMemoryHistoryStore("term-1")
 	applyStoreBatch(t, store,

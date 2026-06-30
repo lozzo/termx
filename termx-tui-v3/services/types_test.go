@@ -20,16 +20,21 @@ func TestRequestIDValid(t *testing.T) {
 
 func TestFakeCoreClientRecordsHistoryRequests(t *testing.T) {
 	client := &FakeCoreClient{
-		LatestResponses: []HistoryResult{{Window: state.HistoryWindow{Token: "latest"}}},
-		OlderResponses:  []HistoryResult{{Window: state.HistoryWindow{Token: "older"}}},
-		NewerResponses:  []HistoryResult{{Window: state.HistoryWindow{Token: "newer"}}},
-		OldestResponses: []HistoryResult{{Window: state.HistoryWindow{Token: "oldest"}}},
-		CopyResponses:   []HistoryCopyRangeResult{{Text: "copied"}},
+		LatestResponses:    []HistoryResult{{Window: state.HistoryWindow{Token: "latest"}}},
+		CopyEntryResponses: []HistoryCopyEntryProjectionResult{{Window: state.HistoryWindow{Token: ""}, NativeCols: 100, CatchupPending: true}},
+		OlderResponses:     []HistoryResult{{Window: state.HistoryWindow{Token: "older"}}},
+		NewerResponses:     []HistoryResult{{Window: state.HistoryWindow{Token: "newer"}}},
+		OldestResponses:    []HistoryResult{{Window: state.HistoryWindow{Token: "oldest"}}},
+		CopyResponses:      []HistoryCopyRangeResult{{Text: "copied"}},
 	}
 
 	latest, err := client.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("latest: %v", err)
+	}
+	copyEntry, err := client.HistoryCopyEntryProjection(context.Background(), HistoryCopyEntryProjectionRequest{RequestID: 6, TerminalID: "term-1", Cols: 80, Rows: 24, Limit: 24})
+	if err != nil {
+		t.Fatalf("copy entry projection: %v", err)
 	}
 	older, err := client.HistoryOlder(context.Background(), HistoryOlderRequest{
 		RequestID:  2,
@@ -88,6 +93,9 @@ func TestFakeCoreClientRecordsHistoryRequests(t *testing.T) {
 	if latest.RequestID != 1 || latest.Window.Token != "latest" {
 		t.Fatalf("unexpected latest result %#v", latest)
 	}
+	if copyEntry.RequestID != 6 || copyEntry.NativeCols != 100 || !copyEntry.CatchupPending {
+		t.Fatalf("unexpected copy entry result %#v", copyEntry)
+	}
 	if older.RequestID != 2 || older.Window.Token != "older" {
 		t.Fatalf("unexpected older result %#v", older)
 	}
@@ -99,6 +107,9 @@ func TestFakeCoreClientRecordsHistoryRequests(t *testing.T) {
 	}
 	if len(client.LatestRequests) != 1 || client.LatestRequests[0].TerminalID != "term-1" {
 		t.Fatalf("unexpected latest requests %#v", client.LatestRequests)
+	}
+	if len(client.CopyEntryRequests) != 1 || client.CopyEntryRequests[0].Limit != 24 {
+		t.Fatalf("unexpected copy entry requests %#v", client.CopyEntryRequests)
 	}
 	if len(client.OlderRequests) != 1 || client.OlderRequests[0].Token != "latest" {
 		t.Fatalf("unexpected older requests %#v", client.OlderRequests)
@@ -121,6 +132,9 @@ func TestFakeCoreClientMissingResponse(t *testing.T) {
 	client := &FakeCoreClient{}
 	if _, err := client.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1}); !errors.Is(err, ErrMissingHistoryResponse) {
 		t.Fatalf("expected ErrMissingHistoryResponse, got %v", err)
+	}
+	if _, err := client.HistoryCopyEntryProjection(context.Background(), HistoryCopyEntryProjectionRequest{RequestID: 2}); !errors.Is(err, ErrMissingHistoryResponse) {
+		t.Fatalf("expected ErrMissingHistoryResponse for copy entry, got %v", err)
 	}
 }
 
