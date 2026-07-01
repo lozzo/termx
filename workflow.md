@@ -309,7 +309,7 @@
 | R405. SK terminal/vterm 真实接入与边界锁定 | 完成 | `termx-core-v2/`、`termx-vterm/`、按需 `internal/protocol/` | 把重建后的 reducer 接入真实 PTY/vterm semantic transaction，锁住 ordinary、primary frame、alt transient、clear、resize、final frame 的 owner、truth source、消息链路和失败条件。 |
 | R406. SK tmux correctness/perf harness | 完成 | `scripts/`、`termx-core-v2/`、`termx-tui-v3/`、按需 `termx-cli/` | 建立真实 tmux harness，对比 PTY 可观察输出、TermX live capture、history-dump、copy-oldest/copy-latest；记录程序实际耗时、DONE 可见耗时、history 可查询耗时、daemon/TUI CPU/RSS。 |
 | R407. SK history consumer 极致性能优化 | 完成 | `termx-core-v2/history/`、`termx-core-v2/`、按需 `termx-vterm/` | 针对 10K/100K/1M 高压输出优化 history consumer，目标接近 live SurfaceTrack 快路径；禁止靠减少 TUI 刷新帧、丢 history 事件或 weak harness 假装变快。 |
-| R408. SK 子 Agent review 与完整准入 | 待开始 | `workflow.md`、相关改动目录 | 使用子 Agent 做只读 review，重点检查补丁式 fallback、双 truth、live/history 反向耦合、正确性缺口和性能热路径；主 Agent 处理 findings 后跑完整准入并提交。 |
+| R408. SK 子 Agent review 与完整准入 | 进行中 | `workflow.md`、相关改动目录 | 使用子 Agent 做只读 review，重点检查补丁式 fallback、双 truth、live/history 反向耦合、正确性缺口和性能热路径；主 Agent 处理 findings 后跑完整准入并提交。 |
 
 ## 7. 测试准入
 
