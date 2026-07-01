@@ -535,8 +535,9 @@ func (store TerminalSurfaceStore) FinishRefresh(terminalID string) TerminalSurfa
 	}
 	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
 	if refresh.Dirty {
-		// 中文说明：fetch 返回期间又有 invalidation，先让当前 latest screen
-		// 进入 runtime 队列；后续由 maybeScheduleDirtyLiveSurfaceRefresh 再拉一次当前最新屏。
+		// 中文说明：fetch 返回期间又有 invalidation，当前返回值已不是
+		// core latest。调用方可选择跳过这张中间屏；此处只释放 in-flight，
+		// 让后续 maybeScheduleDirtyLiveSurfaceRefresh 立即再拉一次当前最新屏。
 		refresh.Armed = false
 		refresh.InFlight = false
 		refresh.Dirty = false

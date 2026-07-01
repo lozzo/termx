@@ -1139,7 +1139,7 @@ func TestLiveInvalidationArmEffectIsOneShot(t *testing.T) {
 	}
 }
 
-func TestR391LiveInvalidationArmEffectDoesNotDelayTailWake(t *testing.T) {
+func TestR394LiveInvalidationArmEffectDoesNotUseFixedDelay(t *testing.T) {
 	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 1)}
 	effects := liveInvalidationArmEffect("term-1", 80, 24, 7, LiveDeps{Terminal: terminal})
 	if len(effects) != 1 {
@@ -1149,7 +1149,7 @@ func TestR391LiveInvalidationArmEffectDoesNotDelayTailWake(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if msg := arm.Run(ctx); msg != nil {
-		t.Fatalf("canceled coalesce wait must not arm live invalidation, got %#v", msg)
+		t.Fatalf("canceled arm must stay silent, got %#v", msg)
 	}
 	if len(terminal.LiveInvalidationRequests) != 0 {
 		t.Fatalf("canceled arm must not call service, got %#v", terminal.LiveInvalidationRequests)
@@ -1343,7 +1343,10 @@ func TestLiveEventRefreshBackpressureSchedulesDirtyLatestFetchAfterSurfaceReturn
 
 	root, effects = reducer(root, LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Lines: []string{"first"}}, RequestedCols: 80, RequestedRows: 24})
 	if len(effects) != 1 {
-		t.Fatalf("surface return should schedule one follow-up latest fetch while dirty, got %#v", effects)
+		t.Fatalf("dirty surface return should skip stale render and schedule one follow-up latest fetch, got %#v", effects)
+	}
+	if snapshot := root.Surface.SurfaceForTerminal("term-1").Snapshot(); len(snapshot.Lines) > 0 && snapshot.Lines[0] == "first" {
+		t.Fatalf("dirty in-flight surface must not apply stale intermediate snapshot, got %#v", snapshot)
 	}
 	if request := root.Surface.Refreshes["term-1"]; !request.InFlight || request.Dirty {
 		t.Fatalf("follow-up fetch should be in-flight and clean, got %#v", request)

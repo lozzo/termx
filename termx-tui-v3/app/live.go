@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
@@ -32,7 +31,6 @@ type LiveDeps struct {
 }
 
 const liveInvalidationTokenPrefix = "terminal.live.invalidation:"
-const liveInvalidationArmCoalesceDelay = 25 * time.Millisecond
 
 func runtimeSurfaceID(root state.Root) string {
 	if root.RuntimeSurfaceID != "" {
@@ -295,6 +293,13 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				root.Surface = root.Surface.SetError(msg.Err.Error())
 				root, effects := maybeScheduleDirtyLiveSurfaceRefresh(root, msg.Snapshot.TerminalID, msg.RequestedCols, msg.RequestedRows, deps)
 				return root.Advance(), effects
+			}
+			if ordinaryLiveSurfaceWasInvalidatedWhileInFlight(root, msg) {
+				// 中文说明：这张 ordinary live surface 返回时已经被后续 invalidation
+				// 标成 dirty，说明它只是中间屏。TUI live truth 是 core latest
+				// native screen，不应先渲染过期 snapshot 再补拉下一帧。
+				root.Surface = root.Surface.FinishRefresh(msg.Snapshot.TerminalID)
+				return maybeScheduleDirtyLiveSurfaceRefresh(root, msg.Snapshot.TerminalID, msg.RequestedCols, msg.RequestedRows, deps)
 			}
 			root.Surface = root.Surface.ApplySnapshotWithLifecycle(msg.Snapshot, msg.LifecycleKnown)
 			if msg.LifecycleKnown && msg.Snapshot.State == state.TerminalLiveAttached && msg.Snapshot.TerminalID == root.Session.TerminalID {
@@ -899,7 +904,7 @@ func liveInvalidationArmEffect(terminalID string, cols int, rows int, observedRe
 		Token: token,
 		Async: true,
 		Run: func(ctx context.Context) Msg {
-			if !waitForLiveInvalidationArmCoalesce(ctx) {
+			if ctx.Err() != nil {
 				return nil
 			}
 			event, err := source.ArmLiveInvalidation(ctx, services.TerminalLiveEventRequest{
@@ -927,20 +932,6 @@ func liveInvalidationArmEffect(terminalID string, cols int, rows int, observedRe
 			return LiveEventMsg{Event: event}
 		},
 	}}
-}
-
-func waitForLiveInvalidationArmCoalesce(ctx context.Context) bool {
-	if liveInvalidationArmCoalesceDelay <= 0 {
-		return true
-	}
-	timer := time.NewTimer(liveInvalidationArmCoalesceDelay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
 }
 
 func liveInvalidationTokenForTerminal(terminalID string) CancelToken {
@@ -1090,6 +1081,14 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Ro
 
 func ordinaryLiveRefreshEvent(event services.TerminalLiveEvent) bool {
 	return event.Refresh && event.Err == nil && !event.Exited && !event.LifecycleKnown && !event.Metadata && !event.Ready
+}
+
+func ordinaryLiveSurfaceWasInvalidatedWhileInFlight(root state.Root, msg LiveSurfaceMsg) bool {
+	if !ordinaryLiveSurfaceResult(msg) {
+		return false
+	}
+	refresh, ok := root.Surface.Refreshes[msg.Snapshot.TerminalID]
+	return ok && refresh.InFlight && refresh.Dirty
 }
 
 func terminalResizeControlReason(sizeLocked bool) string {
