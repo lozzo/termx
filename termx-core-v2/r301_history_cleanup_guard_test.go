@@ -75,11 +75,30 @@ func TestR385TerminalHistoryBacklogOnlyAcceptsSemanticTapJournals(t *testing.T) 
 			t.Fatalf("terminal production path must not retain history raw replay/double-vterm code: %s", forbidden)
 		}
 	}
-	if !strings.Contains(terminalSource, "enqueueOrApplyProcessHistoryJournalTransaction(result.Transaction(), historyWorker, info.ID)") {
-		t.Fatal("terminal production path must fan out tap transaction through journal backlog gate")
+	if !strings.Contains(terminalSource, "enqueueOrApplyProcessHistoryJournal(result, historyWorker, info.ID)") {
+		t.Fatal("terminal production path must fan out tap result through journal backlog gate")
 	}
-	if !strings.Contains(terminalSource, "HistoryJournalFromTransaction(terminalID, tx)") {
-		t.Fatal("terminal production path must enqueue compact HistoryJournal, not full transaction")
+	if !strings.Contains(terminalSource, "result.HistoryJournal()") {
+		t.Fatal("terminal production path must enqueue compact HistoryJournal before pulling full transaction")
+	}
+}
+
+func TestR386ProcessTapHistoryHotPathUsesJournalBeforeTransaction(t *testing.T) {
+	terminalSource := r301ReadFile(t, "terminal.go")
+	start := strings.Index(terminalSource, "func (terminal *Terminal) ingestProcessTapOutput")
+	if start < 0 {
+		t.Fatal("missing ingestProcessTapOutput production hot path")
+	}
+	end := strings.Index(terminalSource[start:], "func (terminal *Terminal) markExited")
+	if end < 0 {
+		t.Fatal("missing ingestProcessTapOutput boundary")
+	}
+	body := terminalSource[start : start+end]
+	if !strings.Contains(body, "enqueueOrApplyProcessHistoryJournal(result, historyWorker, info.ID)") {
+		t.Fatal("process tap hot path must pass SemanticTapResult to journal-first history gate")
+	}
+	if strings.Contains(body, "result.Transaction()") {
+		t.Fatal("process tap hot path must not pull full transaction before journal gate")
 	}
 }
 

@@ -327,6 +327,37 @@ func TestR382TerminalJournalFastPathRequiresSealedBatchWithoutOpenFrontier(t *te
 	}
 }
 
+func TestR386TerminalJournalQueueGateAvoidsTransactionClassifierForPlainSealedBatch(t *testing.T) {
+	plain := history.HistoryJournal{
+		TerminalID: "term-r386-gate",
+		Source:     history.HistoryJournalSourceSemanticTapTransaction,
+		Items: []history.HistoryJournalItem{{
+			Kind: history.HistoryJournalItemOrdinaryLineBatch,
+			Ordinary: &history.OrdinaryLineBatch{
+				Lines: []history.JournalLogicalLine{{Cells: []history.Cell{{Text: "plain", Width: 5}}}},
+			},
+		}},
+	}
+	if !historyJournalAllowsTerminalQueue(plain) {
+		t.Fatalf("plain sealed ordinary journal should enter backlog without full transaction classifier")
+	}
+	withCommands := history.HistoryJournalFromTransaction("term-r386-gate", history.TerminalSemanticTransaction{
+		Ops: []history.TerminalSemanticOp{
+			{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: []history.TerminalSemanticCell{{Content: "plain", Width: 5}}},
+			{Code: vterm.ScreenOpControl, Control: "lf"},
+		},
+	})
+	if !historyJournalAllowsTerminalQueue(withCommands) {
+		t.Fatalf("ordinary command journal should enter backlog without full transaction classifier")
+	}
+	frame := history.HistoryJournalFromTransaction("term-r386-gate", history.TerminalSemanticTransaction{
+		PrimaryFrame: &history.TerminalSemanticFrame{Cols: 20, Rows: [][]history.TerminalSemanticCell{{{Content: "frame", Width: 5}}}},
+	})
+	if historyJournalAllowsTerminalQueue(frame) {
+		t.Fatalf("frame journal must still use full transaction classifier before queueing")
+	}
+}
+
 func TestR384TerminalJournalFastPathAllowsBoundaryProofAndFramePayload(t *testing.T) {
 	boundaryOnly := history.HistoryJournalFromTransaction("term-r383-gate", history.TerminalSemanticTransaction{
 		Seq:  1,

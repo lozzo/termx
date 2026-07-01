@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lozzow/termx/termx-core-v2/history"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
@@ -30,11 +31,13 @@ type SemanticTapInputRecord struct {
 }
 
 // SemanticTapResult 是 single SemanticTap 对一次输入的轻量输出。
-// Transaction 返回 history consumer 唯一可消费的语义消息副本；Revision 只服务
-// live invalidation。R381 后 result 不再携带 native screen snapshot，live.screen.get
-// 或测试需要画面时必须从 SemanticTap.NativeScreenSnapshot 按需读取 latest 状态。
+// HistoryJournal 是生产 history backlog 的优先 handoff；Transaction 只给复杂语义
+// fallback 和旧 harness 拉取完整语义消息副本；Revision 只服务 live invalidation。
+// R381 后 result 不再携带 native screen snapshot，live.screen.get 或测试需要画面时
+// 必须从 SemanticTap.NativeScreenSnapshot 按需读取 latest 状态。
 type SemanticTapResult struct {
 	tx       vterm.TerminalSemanticTransaction
+	journal  history.HistoryJournal
 	revision LiveRevision
 }
 
@@ -84,12 +87,16 @@ func (tap *SemanticTap) ApplyPTYWrite(raw []byte) (SemanticTapResult, error) {
 		Kind: SemanticTapInputWrite,
 	}
 	tx, err := tap.source.ApplyPTYWrite(raw)
-	tx = cloneSemanticTapTransaction(tx)
+	// 中文说明：SemanticSource 返回的 tx 已是本次 tap result 独占 payload。
+	// 这里不再热路径深拷贝 full transaction；外部 consumer 仍只能通过
+	// Transaction/HistoryJournal 拿到各自副本。
 	tx.Raw = ""
+	journal := history.HistoryJournalFromTransaction(tap.terminalID, tx)
 	tap.revision++
 	tap.inputs = append(tap.inputs, record)
 	return SemanticTapResult{
 		tx:       tx,
+		journal:  journal,
 		revision: tap.revision,
 	}, err
 }
@@ -111,12 +118,15 @@ func (tap *SemanticTap) Resize(size Size) (SemanticTapResult, error) {
 		Size: size,
 	}
 	tx, err := tap.source.Resize(vterm.TerminalSemanticSize{Cols: int(size.Cols), Rows: int(size.Rows)})
-	tx = cloneSemanticTapTransaction(tx)
+	// 中文说明：resize result 同样保持 tap 内独占 payload，避免无意义 full
+	// transaction clone；history 仍只能把它作为 semantic boundary 消费。
 	tx.Raw = ""
+	journal := history.HistoryJournalFromTransaction(tap.terminalID, tx)
 	tap.revision++
 	tap.inputs = append(tap.inputs, record)
 	return SemanticTapResult{
 		tx:       tx,
+		journal:  journal,
 		revision: tap.revision,
 	}, err
 }
@@ -126,6 +136,13 @@ func (tap *SemanticTap) Resize(size Size) (SemanticTapResult, error) {
 // 修改自己拿到的 slice，都不能污染其他 consumer 或 tap 内部状态。
 func (result SemanticTapResult) Transaction() vterm.TerminalSemanticTransaction {
 	return cloneSemanticTapTransaction(result.tx)
+}
+
+// HistoryJournal 返回 single SemanticTap 同次语义 pass 产出的 compact journal 副本。
+// 生产 history backlog 应优先消费该命令化 journal；只有复杂语义无法由 journal
+// renderer 安全接管时，调用方才回到 Transaction/完整 renderer。
+func (result SemanticTapResult) HistoryJournal() history.HistoryJournal {
+	return history.CloneHistoryJournal(result.journal)
 }
 
 // Revision 返回本次 tap 输入后的 latest native screen revision。

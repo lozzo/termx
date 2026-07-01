@@ -595,7 +595,7 @@ func (terminal *Terminal) ingestProcessTapOutput(process TerminalProcess, output
 	result, err := terminal.tap.ApplyPTYWrite([]byte(output))
 	finishLiveWrite(len(output))
 	if err == nil && historyWorker != nil {
-		terminal.enqueueOrApplyProcessHistoryJournalTransaction(result.Transaction(), historyWorker, info.ID)
+		terminal.enqueueOrApplyProcessHistoryJournal(result, historyWorker, info.ID)
 	}
 	terminal.tapOpMu.Unlock()
 	if err != nil {
@@ -857,17 +857,21 @@ func (terminal *Terminal) ingestHistoryJournals(journals []history.HistoryJourna
 	}
 }
 
-func (terminal *Terminal) enqueueOrApplyProcessHistoryJournalTransaction(tx history.TerminalSemanticTransaction, queue *terminalHistoryIngestQueue, terminalID string) {
-	journal := history.HistoryJournalFromTransaction(terminalID, tx)
+func (terminal *Terminal) enqueueOrApplyProcessHistoryJournal(result SemanticTapResult, queue *terminalHistoryIngestQueue, terminalID string) {
+	journal := result.HistoryJournal()
+	if journal.TerminalID == "" {
+		journal.TerminalID = terminalID
+	}
 	if queue != nil && queue.NeedsClassifierFlush(journal) {
 		// 中文说明：pending journal 可能改变 HasTimeline/primary-frame/open-line 等
 		// classifier state。普通 sealed line 后接普通 line 可以继续排队；一旦下一条
 		// transaction 需要这些 state，就先把 backlog 落入 HistoryStore 再判定。
 		_ = queue.Flush(context.Background())
 	}
-	if queue != nil && terminal.historyJournalCanQueue(tx, journal) && queue.Enqueue(journal) {
+	if queue != nil && terminal.historyJournalCanQueue(journal) && queue.Enqueue(journal) {
 		return
 	}
+	tx := result.Transaction()
 	if queue != nil {
 		// 中文说明：journal backlog 不能保存 full transaction。遇到当前 journal
 		// renderer 不能接管的语义时，先追平已入队 journal，再按完整 renderer 同步
@@ -877,15 +881,11 @@ func (terminal *Terminal) enqueueOrApplyProcessHistoryJournalTransaction(tx hist
 	terminal.ingestHistoryTransactions([]history.TerminalSemanticTransaction{tx})
 }
 
-func (terminal *Terminal) historyJournalCanQueue(tx history.TerminalSemanticTransaction, journal history.HistoryJournal) bool {
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
+func (terminal *Terminal) historyJournalCanQueue(journal history.HistoryJournal) bool {
 	if !terminal.historyEnabled || terminal.journalRenderer == nil || terminal.historyStore == nil {
 		return false
 	}
-	state := terminal.historyStore.ReadState()
-	decision := terminal.historyDecisionForTransaction(tx, state)
-	return historyDecisionAllowsJournalFastPath(decision) && historyJournalAllowsTerminalFastPath(journal, state, decision)
+	return historyJournalAllowsTerminalQueue(journal)
 }
 
 func (terminal *Terminal) applyHistoryJournalLocked(journal history.HistoryJournal) {
@@ -968,6 +968,24 @@ func historyJournalAllowsTerminalFastPath(journal history.HistoryJournal, state 
 	scan := terminalJournalGateState{decision: decision}
 	for _, item := range journal.Items {
 		if !scan.accept(item) {
+			return false
+		}
+	}
+	return true
+}
+
+func historyJournalAllowsTerminalQueue(journal history.HistoryJournal) bool {
+	// 中文说明：R386 process hot path 先看 compact journal 自身是否能安全排队，
+	// 避免普通 sealed line 为了 classifier 再拉取 full transaction。复杂语义仍回
+	// transaction classifier，不能用 journal 猜测 current-screen close proof。
+	if len(journal.Items) == 0 {
+		return false
+	}
+	for _, item := range journal.Items {
+		if item.Kind != history.HistoryJournalItemOrdinaryLineBatch {
+			return false
+		}
+		if item.Ordinary == nil {
 			return false
 		}
 	}

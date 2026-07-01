@@ -234,6 +234,35 @@ func TestR378OrdinaryStressTransactionHandoffStaysLightweight(t *testing.T) {
 	}
 }
 
+func TestR386SemanticTapOrdinaryStressJournalHandoffAvoidsFullTransactionHotPath(t *testing.T) {
+	tap := NewSemanticTap("term-r386", Size{Cols: 120, Rows: 36}, nil)
+	var payload strings.Builder
+	for i := 0; i < 200; i++ {
+		payload.WriteString("journal stress line ")
+		payload.WriteString(strings.Repeat("x", 80))
+		payload.WriteString("\r\n")
+	}
+	result, err := tap.ApplyPTYWrite([]byte(payload.String()))
+	if err != nil {
+		t.Fatalf("apply ordinary stress write: %v", err)
+	}
+	journal := result.HistoryJournal()
+	if journal.Source != history.HistoryJournalSourceSemanticTapTransaction {
+		t.Fatalf("journal handoff must preserve semantic tap source, got %#v", journal)
+	}
+	if len(journal.Items) != 1 || journal.Items[0].Kind != history.HistoryJournalItemOrdinaryLineBatch || journal.Items[0].Ordinary == nil {
+		t.Fatalf("ordinary stress should hand off one compact line batch, got %#v", journal.Items)
+	}
+	if got := len(journal.Items[0].Ordinary.Lines); got != 200 {
+		t.Fatalf("ordinary stress journal should batch sealed lines, got %d", got)
+	}
+	journal.Items[0].Ordinary.Lines[0].Cells[0].Text = "mutated"
+	again := result.HistoryJournal()
+	if got := again.Items[0].Ordinary.Lines[0].Cells[0].Text; got == "mutated" {
+		t.Fatalf("journal handoff must deep-copy payload per consumer")
+	}
+}
+
 func TestR381SemanticTapSnapshotHandoffIsPulledOnDemand(t *testing.T) {
 	tap := NewSemanticTap("term-r372", Size{Cols: 12, Rows: 3}, nil)
 	if _, err := tap.ApplyPTYWrite([]byte("snapshot\r\n")); err != nil {
