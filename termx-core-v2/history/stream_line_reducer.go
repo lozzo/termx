@@ -13,8 +13,15 @@ import (
 // 调用边界：它不读取 live snapshot、不解析 raw PTY、不判断程序名，只产出
 // HistoryMutation 交给后续 authoritative store 应用。
 func NewStreamLineReducer() StreamLineReducer {
+	return newStreamLineReducerWithAllocator(newHistoryIDAllocator())
+}
+
+func newStreamLineReducerWithAllocator(allocator *historyIDAllocator) StreamLineReducer {
+	if allocator == nil {
+		allocator = newHistoryIDAllocator()
+	}
 	return &streamLineReducer{
-		ids:       newHistoryIDAllocator(),
+		ids:       allocator,
 		rowOwners: make(map[int]LogicalLineID),
 		lines:     make(map[LogicalLineID]*streamLineDraft),
 		fast:      ordinaryLineSink{},
@@ -147,7 +154,9 @@ func (reducer *streamLineReducer) ResetForClearScrollback() {
 	if reducer == nil {
 		return
 	}
-	reducer.ids = newHistoryIDAllocator()
+	if reducer.ids == nil {
+		reducer.ids = newHistoryIDAllocator()
+	}
 	reducer.rowOwners = make(map[int]LogicalLineID)
 	reducer.lines = make(map[LogicalLineID]*streamLineDraft)
 	reducer.fast = ordinaryLineSink{}

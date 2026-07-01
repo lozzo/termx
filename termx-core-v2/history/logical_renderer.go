@@ -20,7 +20,13 @@ func NewHistoryLogicalRenderer(stream StreamLineReducer, frames FrameReducer) Hi
 // 回到完整 transaction renderer，两条路径必须共享 logical line/timeline id。
 func NewHistoryRenderers(stream StreamLineReducer, frames FrameReducer) (HistoryLogicalRenderer, HistoryJournalRenderer) {
 	allocator := newHistoryIDAllocator()
-	return newHistoryLogicalRendererWithAllocator(stream, frames, allocator), newHistoryJournalRenderer(allocator)
+	if stream == nil {
+		stream = newStreamLineReducerWithAllocator(allocator)
+	}
+	if frames == nil {
+		frames = newFrameReducerWithAllocator(allocator)
+	}
+	return newHistoryLogicalRendererWithAllocator(stream, frames, allocator), newHistoryJournalRendererWithReducers(allocator, stream, frames)
 }
 
 func newHistoryLogicalRendererWithAllocator(stream StreamLineReducer, frames FrameReducer, allocator *historyIDAllocator) HistoryLogicalRenderer {

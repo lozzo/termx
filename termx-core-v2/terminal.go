@@ -862,7 +862,7 @@ func (terminal *Terminal) applyHistoryTransactionLocked(tx history.TerminalSeman
 }
 
 func (terminal *Terminal) applyHistoryJournalFastPathLocked(tx history.TerminalSemanticTransaction, decision history.HistoryDecision, state history.HistoryReadState) bool {
-	if terminal.journalRenderer == nil || !historyDecisionAllowsOrdinaryJournalFastPath(decision) {
+	if terminal.journalRenderer == nil || !historyDecisionAllowsJournalFastPath(decision) {
 		return false
 	}
 	journal := history.HistoryJournalFromTransaction(terminal.info.ID, tx)
@@ -873,53 +873,99 @@ func (terminal *Terminal) applyHistoryJournalFastPathLocked(tx history.TerminalS
 	if err != nil {
 		return false
 	}
-	// 中文说明：R382 fast path 只接管 ordinary line batch journal；任何
-	// boundary、scroll-out 或 frame event 都会返回 unsupported 并回到完整
-	// semantic renderer。这里不从 live snapshot 或 raw PTY 补 history。
+	// 中文说明：R383 fast path 只接管 sealed ordinary batch 与 boundary-only
+	// journal；scroll-out、frame replace 或需要 current-screen proof 的 decision
+	// 会回到完整 semantic renderer。这里不从 live snapshot 或 raw PTY 补 history。
 	_ = terminal.historyStore.Apply(batch)
 	return true
 }
 
-func historyDecisionAllowsOrdinaryJournalFastPath(decision history.HistoryDecision) bool {
-	// 中文说明：journal fast path 只能接管纯 ordinary stream。凡是 classifier 已经
-	// 判定需要关闭 primary frame、处理 alt/frame/boundary 或消费 scroll-out proof，
-	// 都必须回到完整 renderer，避免 prompt 绕过 session close 后排到 frame 前面。
-	return decision.Mode == history.HistoryOutputModeOrdinaryStream &&
-		!decision.PublishPrimaryFrame &&
+func historyDecisionAllowsJournalFastPath(decision history.HistoryDecision) bool {
+	// 中文说明：journal fast path 可以处理 sealed ordinary 与明确 boundary，但凡
+	// classifier 判定需要 frame payload、current-screen proof 或 full stream reducer
+	// 状态收口，必须回到完整 renderer，避免 prompt/frame 顺序或 open line owner 分裂。
+	return !decision.PublishPrimaryFrame &&
 		!decision.PublishPrimaryFrameTouchedRowsOnly &&
-		!decision.ArchivePrimaryBeforeAlt &&
-		!decision.ClearPrimaryCurrent &&
 		!decision.PublishAltFrame &&
-		!decision.ClearAltFrame &&
 		!decision.ClosePrimaryFrame &&
 		!decision.ClosePrimaryFrameBeforePrimaryReplace &&
 		!decision.ArchivePrimaryAfterPrimaryFrame &&
 		!decision.ClosePrimaryFrameBeforeStream &&
 		!decision.SealOpenLine &&
-		!decision.ConsumeStreamOps &&
-		!decision.ConsumeScrollOutProof &&
-		!decision.ConsumeClearTimeScrollOutProof &&
-		!decision.ConsumeClearBoundary &&
-		!decision.NonHistoryBoundary
+		!decision.ConsumeStreamOps
 }
 
 func historyJournalAllowsTerminalFastPath(journal history.HistoryJournal, state history.HistoryReadState) bool {
-	// 中文说明：R382 生产 fast path 只接管无 open frontier 的 sealed ordinary
-	// batch。带 open-line command 的 transaction 仍走完整 renderer，否则 journal
-	// renderer 与 logical renderer 会分别持有 ordinary open line，后续 fallback
-	// 会产生双状态。
+	// 中文说明：生产 fast path 不接管 open-line command；R382 的 open-line journal
+	// 仍只在 history domain harness 中验证。Terminal 只允许 sealed ordinary batch
+	// 和 R383 boundary-only item，确保 full renderer fallback 不会丢失 ordinary
+	// open line owner。
 	if len(journal.Items) == 0 || state.HasOpenLine {
 		return false
 	}
+	scan := terminalJournalGateState{}
 	for _, item := range journal.Items {
-		if item.Kind != history.HistoryJournalItemOrdinaryLineBatch || item.Ordinary == nil {
-			return false
-		}
-		if item.Ordinary.OpenUpdate != nil || len(item.Ordinary.Lines) == 0 {
+		if !scan.accept(item) {
 			return false
 		}
 	}
 	return true
+}
+
+type terminalJournalGateState struct {
+	inAlt  bool
+	inSync bool
+}
+
+func (state *terminalJournalGateState) accept(item history.HistoryJournalItem) bool {
+	switch item.Kind {
+	case history.HistoryJournalItemOrdinaryLineBatch:
+		if item.Ordinary == nil || state.inAlt || state.inSync {
+			return false
+		}
+		return item.Ordinary.OpenUpdate == nil && len(item.Ordinary.Lines) > 0
+	case history.HistoryJournalItemBoundary:
+		if item.Boundary == nil {
+			return false
+		}
+		return state.acceptBoundary(item.Boundary.Kind)
+	case history.HistoryJournalItemFrameEvent:
+		return item.Frame != nil && terminalJournalFrameEventIsBoundaryOnly(item.Frame.Kind)
+	case history.HistoryJournalItemScrollOutProof:
+		return false
+	default:
+		return false
+	}
+}
+
+func (state *terminalJournalGateState) acceptBoundary(kind history.HistoryJournalBoundaryKind) bool {
+	switch kind {
+	case history.HistoryJournalBoundaryED2, history.HistoryJournalBoundaryED3, history.HistoryJournalBoundaryRIS, history.HistoryJournalBoundaryResize:
+		return true
+	case history.HistoryJournalBoundaryAltEnter:
+		state.inAlt = true
+		return true
+	case history.HistoryJournalBoundaryAltExit:
+		state.inAlt = false
+		return true
+	case history.HistoryJournalBoundarySyncBegin:
+		state.inSync = true
+		return true
+	case history.HistoryJournalBoundarySyncEnd:
+		state.inSync = false
+		return true
+	default:
+		return false
+	}
+}
+
+func terminalJournalFrameEventIsBoundaryOnly(kind history.HistoryJournalFrameEventKind) bool {
+	switch kind {
+	case history.HistoryJournalFrameArchivePrimary, history.HistoryJournalFrameClearPrimary, history.HistoryJournalFrameClearAlt:
+		return true
+	default:
+		return false
+	}
 }
 
 func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {

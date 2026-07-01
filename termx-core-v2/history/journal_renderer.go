@@ -2,11 +2,12 @@ package history
 
 // HistoryJournalRenderer 把 compact semantic history journal 转成 store mutation。
 // domain owner 是 history；truth source 是 single SemanticTap 后的 HistoryJournal。
-// R382 只接管 ordinary line batch，ED/RIS/alt/sync/frame/scroll-out state machine
-// 留给后续切片，避免提前形成补丁式双路径。
+// R383 支持 ordinary line batch 与不依赖 frame payload 的 boundary state machine；
+// scroll-out proof 和 frame event 仍是 R384 后续边界，遇到时必须原子退出。
 type HistoryJournalRenderer interface {
 	// ApplyJournal 把 compact journal 转成 HistoryMutationBatch。若 journal 含有
-	// 尚未接管的非 ordinary item，返回 ErrHistoryJournalUnsupported。
+	// 尚未接管的 scroll-out/frame item，返回 ErrHistoryJournalUnsupported，且不能
+	// 改写 renderer-owned open line 或 boundary 状态。
 	ApplyJournal(journal HistoryJournal) (HistoryMutationBatch, error)
 }
 
@@ -19,15 +20,33 @@ func NewHistoryJournalRenderer() HistoryJournalRenderer {
 }
 
 func newHistoryJournalRenderer(allocator *historyIDAllocator) HistoryJournalRenderer {
+	return newHistoryJournalRendererWithReducers(allocator, nil, nil)
+}
+
+func newHistoryJournalRendererWithReducers(allocator *historyIDAllocator, stream StreamLineReducer, frames FrameReducer) HistoryJournalRenderer {
 	if allocator == nil {
 		allocator = newHistoryIDAllocator()
 	}
-	return &journalRenderer{ids: allocator}
+	if stream == nil {
+		stream = newStreamLineReducerWithAllocator(allocator)
+	}
+	if frames == nil {
+		frames = newFrameReducerWithAllocator(allocator)
+	}
+	return &journalRenderer{
+		ids:    allocator,
+		stream: stream,
+		frames: frames,
+	}
 }
 
 type journalRenderer struct {
 	ids      *historyIDAllocator
+	stream   StreamLineReducer
+	frames   FrameReducer
 	openLine *journalOpenLineState
+	inAlt    bool
+	inSync   bool
 }
 
 type journalOpenLineState struct {
@@ -42,12 +61,12 @@ func (renderer *journalRenderer) ApplyJournal(journal HistoryJournal) (HistoryMu
 	if renderer == nil {
 		return HistoryMutationBatch{}, nil
 	}
-	if !journalRendererSupportsJournal(journal) {
+	if !renderer.supportsJournal(journal) {
 		return HistoryMutationBatch{}, ErrHistoryJournalUnsupported
 	}
 	var mutations []HistoryMutation
 	for _, item := range journal.Items {
-		next, err := renderer.applyOrdinaryLineBatch(*item.Ordinary)
+		next, err := renderer.applyJournalItem(item)
 		if err != nil {
 			return HistoryMutationBatch{}, err
 		}
@@ -56,16 +75,175 @@ func (renderer *journalRenderer) ApplyJournal(journal HistoryJournal) (HistoryMu
 	return HistoryMutationBatch{Seq: journal.Seq, Mutations: mutations}, nil
 }
 
-func journalRendererSupportsJournal(journal HistoryJournal) bool {
-	// 中文说明：R382 renderer 只支持 ordinary batch。必须先全量校验再应用，
-	// 否则遇到 ordinary+boundary 混合 journal 时会先污染 renderer-owned open
-	// line，随后 full renderer fallback 再消费同一 transaction，形成双 truth。
+func (renderer *journalRenderer) supportsJournal(journal HistoryJournal) bool {
+	// 中文说明：journal renderer 必须先全量校验再应用，避免普通 batch 已改写
+	// renderer-owned open line 后遇到 frame/scroll-out 才 fallback，形成半事务双写。
+	state := journalBoundaryScanState{inAlt: renderer != nil && renderer.inAlt, inSync: renderer != nil && renderer.inSync}
 	for _, item := range journal.Items {
-		if item.Kind != HistoryJournalItemOrdinaryLineBatch || item.Ordinary == nil {
+		if !state.accept(item) {
 			return false
 		}
 	}
 	return true
+}
+
+type journalBoundaryScanState struct {
+	inAlt  bool
+	inSync bool
+}
+
+func (state *journalBoundaryScanState) accept(item HistoryJournalItem) bool {
+	switch item.Kind {
+	case HistoryJournalItemOrdinaryLineBatch:
+		return item.Ordinary != nil && !state.inAlt && !state.inSync
+	case HistoryJournalItemBoundary:
+		if item.Boundary == nil {
+			return false
+		}
+		return state.acceptBoundary(item.Boundary.Kind)
+	case HistoryJournalItemFrameEvent:
+		return item.Frame != nil && journalFrameEventIsBoundaryOnly(item.Frame.Kind)
+	case HistoryJournalItemScrollOutProof:
+		return false
+	default:
+		return false
+	}
+}
+
+func (state *journalBoundaryScanState) acceptBoundary(kind HistoryJournalBoundaryKind) bool {
+	switch kind {
+	case HistoryJournalBoundaryED2, HistoryJournalBoundaryED3, HistoryJournalBoundaryRIS, HistoryJournalBoundaryResize:
+		return true
+	case HistoryJournalBoundaryAltEnter:
+		state.inAlt = true
+		return true
+	case HistoryJournalBoundaryAltExit:
+		state.inAlt = false
+		return true
+	case HistoryJournalBoundarySyncBegin:
+		state.inSync = true
+		return true
+	case HistoryJournalBoundarySyncEnd:
+		state.inSync = false
+		return true
+	default:
+		return false
+	}
+}
+
+func (renderer *journalRenderer) applyJournalItem(item HistoryJournalItem) ([]HistoryMutation, error) {
+	switch item.Kind {
+	case HistoryJournalItemOrdinaryLineBatch:
+		return renderer.applyOrdinaryLineBatch(*item.Ordinary)
+	case HistoryJournalItemBoundary:
+		return renderer.applyBoundary(*item.Boundary)
+	case HistoryJournalItemFrameEvent:
+		return renderer.applyBoundaryFrameEvent(*item.Frame)
+	default:
+		return nil, ErrHistoryJournalUnsupported
+	}
+}
+
+func (renderer *journalRenderer) applyBoundary(boundary HistoryJournalBoundary) ([]HistoryMutation, error) {
+	switch boundary.Kind {
+	case HistoryJournalBoundaryED2:
+		mutations := renderer.sealOpenLine(SealReasonFullReplace)
+		cleared, err := renderer.clearPrimaryForBoundary(FrameReasonPrimaryRepaint)
+		if err != nil {
+			return nil, err
+		}
+		return append(mutations, cleared...), nil
+	case HistoryJournalBoundaryED3:
+		return []HistoryMutation{{Kind: HistoryMutationClearScrollback, Reason: SealReasonFullReplace}}, nil
+	case HistoryJournalBoundaryRIS:
+		mutations := renderer.sealOpenLine(SealReasonFullReplace)
+		renderer.inAlt = false
+		renderer.inSync = false
+		renderer.resetReducersForClearScrollback()
+		return append(mutations, []HistoryMutation{
+			{Kind: HistoryMutationClearPrimaryFrame, Reason: SealReasonFullReplace},
+			{Kind: HistoryMutationClearAltFrame, Reason: SealReasonFullReplace},
+		}...), nil
+	case HistoryJournalBoundaryResize:
+		return renderer.applyNonHistoryBoundary(FrameReasonResize)
+	case HistoryJournalBoundaryAltEnter:
+		renderer.inAlt = true
+		return renderer.archivePrimaryForBoundary(SealReasonAltEnter)
+	case HistoryJournalBoundaryAltExit:
+		renderer.inAlt = false
+		return renderer.clearAltForBoundary(FrameReasonAltExit)
+	case HistoryJournalBoundarySyncBegin:
+		renderer.inSync = true
+		return nil, nil
+	case HistoryJournalBoundarySyncEnd:
+		renderer.inSync = false
+		return nil, nil
+	default:
+		return nil, ErrHistoryJournalUnsupported
+	}
+}
+
+func journalFrameEventIsBoundaryOnly(kind HistoryJournalFrameEventKind) bool {
+	switch kind {
+	case HistoryJournalFrameArchivePrimary, HistoryJournalFrameClearPrimary, HistoryJournalFrameClearAlt:
+		return true
+	default:
+		return false
+	}
+}
+
+func (renderer *journalRenderer) applyBoundaryFrameEvent(event HistoryJournalFrameEvent) ([]HistoryMutation, error) {
+	switch event.Kind {
+	case HistoryJournalFrameArchivePrimary:
+		return renderer.archivePrimaryForBoundary(SealReasonAltEnter)
+	case HistoryJournalFrameClearPrimary:
+		return renderer.clearPrimaryForBoundary(FrameReasonPrimaryRepaint)
+	case HistoryJournalFrameClearAlt:
+		return renderer.clearAltForBoundary(FrameReasonAltExit)
+	default:
+		return nil, ErrHistoryJournalUnsupported
+	}
+}
+
+func (renderer *journalRenderer) clearPrimaryForBoundary(reason FrameReason) ([]HistoryMutation, error) {
+	if renderer.frames == nil {
+		return nil, nil
+	}
+	return renderer.frames.ClearPrimaryCurrent(reason)
+}
+
+func (renderer *journalRenderer) archivePrimaryForBoundary(reason SealReason) ([]HistoryMutation, error) {
+	if renderer.frames == nil {
+		return nil, nil
+	}
+	return renderer.frames.ArchivePrimaryCurrent(reason)
+}
+
+func (renderer *journalRenderer) clearAltForBoundary(reason FrameReason) ([]HistoryMutation, error) {
+	if renderer.frames == nil {
+		return nil, nil
+	}
+	return renderer.frames.ClearAltCurrent(reason)
+}
+
+func (renderer *journalRenderer) applyNonHistoryBoundary(reason FrameReason) ([]HistoryMutation, error) {
+	if renderer.frames == nil {
+		return []HistoryMutation{{Kind: HistoryMutationNonHistoryBoundary, Reason: sealReasonFromFrameReason(reason)}}, nil
+	}
+	return renderer.frames.ApplyNonHistoryBoundary(reason)
+}
+
+func (renderer *journalRenderer) resetReducersForClearScrollback() {
+	if renderer.stream != nil {
+		renderer.stream.ResetForClearScrollback()
+	}
+	if renderer.frames != nil {
+		renderer.frames.ResetForClearScrollback()
+	}
+}
+
+func (renderer *journalRenderer) resetOpenLine() {
+	renderer.openLine = nil
 }
 
 func (renderer *journalRenderer) applyOrdinaryLineBatch(batch OrdinaryLineBatch) ([]HistoryMutation, error) {

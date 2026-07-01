@@ -9,10 +9,17 @@ import (
 // domain owner：history；truth source 只能是 vterm semantic frame payload 和明确
 // lifecycle/boundary reason。它不从 write ops、live snapshot 或程序名重建 frame。
 func NewFrameReducer() FrameReducer {
+	return newFrameReducerWithAllocator(newHistoryIDAllocator())
+}
+
+func newFrameReducerWithAllocator(allocator *historyIDAllocator) FrameReducer {
+	if allocator == nil {
+		allocator = newHistoryIDAllocator()
+	}
 	return &frameReducer{
 		nextSessionID: 1,
 		nextFrameID:   1,
-		ids:           newHistoryIDAllocator(),
+		ids:           allocator,
 	}
 }
 
@@ -277,7 +284,9 @@ func (reducer *frameReducer) ResetForClearScrollback() {
 	reducer.nextSessionID = 1
 	reducer.nextFrameID = 1
 	reducer.forceNewPrimarySession = false
-	reducer.ids = newHistoryIDAllocator()
+	if reducer.ids == nil {
+		reducer.ids = newHistoryIDAllocator()
+	}
 }
 
 func (reducer *frameReducer) ensureCounters() {

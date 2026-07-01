@@ -327,6 +327,78 @@ func TestR382TerminalJournalFastPathRequiresSealedBatchWithoutOpenFrontier(t *te
 	}
 }
 
+func TestR383TerminalJournalFastPathAllowsBoundaryOnlyAndRejectsProofPayload(t *testing.T) {
+	boundaryOnly := history.HistoryJournalFromTransaction("term-r383-gate", history.TerminalSemanticTransaction{
+		Seq:  1,
+		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
+		Ops: []history.TerminalSemanticOp{
+			{Code: vterm.ScreenOpControl, Control: "ed", Mode: 3},
+			{Code: vterm.ScreenOpResize, Size: vterm.Size{Cols: 40, Rows: 6}},
+			{Code: vterm.ScreenOpControl, Control: "ris"},
+		},
+	})
+	if !historyJournalAllowsTerminalFastPath(boundaryOnly, history.HistoryReadState{}) {
+		t.Fatalf("boundary-only journal should be eligible for R383 terminal fast path, journal=%#v", boundaryOnly)
+	}
+
+	withScrollOut := history.HistoryJournalFromTransaction("term-r383-gate", history.TerminalSemanticTransaction{
+		Seq:  2,
+		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
+		Ops: []history.TerminalSemanticOp{{
+			Code:      vterm.ScreenOpControl,
+			Control:   "ed",
+			Mode:      2,
+			ScrollOut: []vterm.ScrollbackRowAppend{{Runs: []vterm.CellRun{{Text: "proof"}}}},
+		}},
+	})
+	if historyJournalAllowsTerminalFastPath(withScrollOut, history.HistoryReadState{}) {
+		t.Fatalf("scroll-out proof must wait for full renderer/R384 frame path, journal=%#v", withScrollOut)
+	}
+}
+
+func TestR383TerminalBoundaryJournalFastPathThenFrameFallback(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r383-boundary-fast-path",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 32, Rows: 5},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r383-boundary-fast-path", "old-a\r\n\x1b[3J\x1bcnew-a\r\n"); err != nil {
+		t.Fatalf("ingest boundary fast path output: %v", err)
+	}
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r383-boundary-fast-path", history.HistoryWindowRequest{
+		TerminalID: "term-r383-boundary-fast-path",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       40,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("latest after boundary fast path: %v", err)
+	}
+	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "old-a|new-a" {
+		t.Fatalf("boundary journal fast path should preserve sealed ordinary history, got %q rows=%#v", got, window.Rows)
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-r383-boundary-fast-path", "\x1b[?2026hframe-a\r\nframe-b\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest sync frame fallback: %v", err)
+	}
+	window, err = server.TerminalHistoryWindow(context.Background(), "term-r383-boundary-fast-path", history.HistoryWindowRequest{
+		TerminalID: "term-r383-boundary-fast-path",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       40,
+		Limit:      20,
+	})
+	if err != nil {
+		t.Fatalf("latest after frame fallback: %v", err)
+	}
+	texts := strings.Join(historyRowTexts(window.Rows), "|")
+	if !strings.Contains(texts, "old-a|new-a") || !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
+		t.Fatalf("frame fallback should work after boundary journal fast path, texts=%q rows=%#v", texts, window.Rows)
+	}
+}
+
 func TestR374HistoryBacklogStatusAndFlushBoundary(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	store := newBlockingHistoryStore("term-r374-backlog")
