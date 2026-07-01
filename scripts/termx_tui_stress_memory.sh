@@ -1214,7 +1214,12 @@ else
 fi
 capture_pane "$TARGET" "copy-latest"
 append_history_trace "copy_latest" "$ROOT/copy-latest.txt"
-append_history_query "copy_latest" "$(history_artifact_tail_status "$ROOT/copy-latest.txt" || true)" "$COPY_LATEST_START_MS" "$COPY_LATEST_VISIBLE_MS" "$ROOT/copy-latest.txt"
+COPY_LATEST_STATUS="$(history_artifact_tail_status "$ROOT/copy-latest.txt" || true)"
+append_history_query "copy_latest" "$COPY_LATEST_STATUS" "$COPY_LATEST_START_MS" "$COPY_LATEST_VISIBLE_MS" "$ROOT/copy-latest.txt"
+if [[ "$COPY_LATEST_STATUS" != "ok" ]]; then
+  echo "copy-latest did not show newest stress line and DONE marker" >&2
+  exit 1
+fi
 record_stage "daemon_copy_latest" "daemon" "$DAEMON_PID"
 maybe_capture_stage_profile "daemon_copy_latest" "daemon" "$DAEMON_PID"
 record_stage "tui_copy_latest" "tui" "$TUI_PID"

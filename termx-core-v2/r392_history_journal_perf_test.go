@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -126,6 +127,11 @@ func TestR407RealStressPayloadHistoryTapPipelineKeepsAllLines(t *testing.T) {
 	if got := strings.Join(historyRowTexts(oldest.Rows), "|"); !strings.Contains(got, "000000 ") || !strings.Contains(got, "000001 ") {
 		t.Fatalf("oldest page must include stress head, got %q", got)
 	}
+	allRows, err := store.Copy(history.HistoryCopyRequest{TerminalID: "term-r407-real-stress", Cols: 100})
+	if err != nil {
+		t.Fatalf("copy full history: %v", err)
+	}
+	assertR407StressSequence(t, strings.Split(allRows, "\n"), 10_000)
 }
 
 func r407BenchmarkHistoryTapPipeline(b *testing.B, batchBytes int) {
@@ -172,6 +178,43 @@ func r407GenerateTerminalStressPayload(t *testing.T, lines int, seed int) string
 		t.Fatalf("generate terminal stress payload: %v", err)
 	}
 	return string(output)
+}
+
+func assertR407StressSequence(t *testing.T, rows []string, lines int) {
+	t.Helper()
+	next := 0
+	for _, row := range rows {
+		if len(row) < 7 {
+			continue
+		}
+		prefix := row[:6]
+		if !r407StressNumericPrefix(prefix) || row[6] != ' ' {
+			continue
+		}
+		got, err := strconv.Atoi(prefix)
+		if err != nil {
+			t.Fatalf("parse stress row prefix %q: %v", prefix, err)
+		}
+		if got != next {
+			t.Fatalf("stress history sequence mismatch: got %06d want %06d around row %q", got, next, row)
+		}
+		next++
+	}
+	if next != lines+1 {
+		t.Fatalf("stress history sequence incomplete: got %d numbered rows want %d", next, lines+1)
+	}
+}
+
+func r407StressNumericPrefix(value string) bool {
+	if len(value) != 6 {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func newR392BenchmarkTerminal(store history.HistoryStore) *Terminal {

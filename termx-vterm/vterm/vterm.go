@@ -4277,6 +4277,11 @@ type directDamageSummary struct {
 	HasPartialScreenDamage bool
 }
 
+type directDamageInterval struct {
+	start int
+	end   int
+}
+
 func (s directDamageSummary) fullReplaceReason() (string, bool) {
 	if s.Items == 0 || s.ScreenWidth <= 0 || s.ScreenHeight <= 0 {
 		return "", false
@@ -4319,6 +4324,7 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 	}
 	changedRows := make(map[int]struct{}, minInt(screenHeight, len(damages)))
 	rowItems := make(map[int]int, minInt(screenHeight, len(damages)))
+	covered := make(map[int][]directDamageInterval, minInt(screenHeight, len(damages)))
 	markItemRow := func(y int) {
 		if y < 0 || y >= screenHeight {
 			return
@@ -4328,16 +4334,21 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 			stats.MaxItemsPerRow = rowItems[y]
 		}
 	}
+	addCoverage := func(y int, x int, width int) {
+		if y < 0 || y >= screenHeight || width <= 0 {
+			return
+		}
+		x0 := maxInt(0, x)
+		x1 := minInt(screenWidth, x+width)
+		if x1 <= x0 {
+			return
+		}
+		covered[y] = append(covered[y], directDamageInterval{start: x0, end: x1})
+	}
 	for _, raw := range damages {
 		switch d := raw.(type) {
 		case charmvt.TextDamage:
-			width := spanDamageCellWidth(d.Cells)
-			if width <= 0 {
-				continue
-			}
-			stats.Cells += clampedRectArea(d.X, d.Y, width, 1, screenWidth, screenHeight)
-			markClampedRows(changedRows, d.Y, 1, screenHeight)
-			markItemRow(d.Y)
+			continue
 		case charmvt.SpanDamage:
 			width := spanDamageCellWidth(d.Cells)
 			if width <= 0 {
@@ -4346,6 +4357,7 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 			stats.Cells += clampedRectArea(d.X, d.Y, width, 1, screenWidth, screenHeight)
 			markClampedRows(changedRows, d.Y, 1, screenHeight)
 			markItemRow(d.Y)
+			addCoverage(d.Y, d.X, width)
 		case charmvt.CellDamage:
 			width := d.Width
 			if width <= 0 {
@@ -4354,19 +4366,30 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 			stats.Cells += clampedRectArea(d.X, d.Y, width, 1, screenWidth, screenHeight)
 			markClampedRows(changedRows, d.Y, 1, screenHeight)
 			markItemRow(d.Y)
+			addCoverage(d.Y, d.X, width)
 		case charmvt.RectDamage:
 			rect := uv.Rectangle(d)
-			stats.Cells += clampedRectArea(rect.Min.X, rect.Min.Y, rect.Dx(), rect.Dy(), screenWidth, screenHeight)
+			area := clampedRectArea(rect.Min.X, rect.Min.Y, rect.Dx(), rect.Dy(), screenWidth, screenHeight)
+			if area <= 0 {
+				continue
+			}
+			stats.Cells += area
 			markClampedRows(changedRows, rect.Min.Y, rect.Dy(), screenHeight)
 			for row := maxInt(0, rect.Min.Y); row < minInt(screenHeight, rect.Max.Y); row++ {
 				markItemRow(row)
+				addCoverage(row, rect.Min.X, rect.Dx())
 			}
 		case charmvt.ClearDamage:
 			rect := uv.Rectangle(d)
-			stats.Cells += clampedRectArea(rect.Min.X, rect.Min.Y, rect.Dx(), rect.Dy(), screenWidth, screenHeight)
+			area := clampedRectArea(rect.Min.X, rect.Min.Y, rect.Dx(), rect.Dy(), screenWidth, screenHeight)
+			if area <= 0 {
+				continue
+			}
+			stats.Cells += area
 			markClampedRows(changedRows, rect.Min.Y, rect.Dy(), screenHeight)
 			for row := maxInt(0, rect.Min.Y); row < minInt(screenHeight, rect.Max.Y); row++ {
 				markItemRow(row)
+				addCoverage(row, rect.Min.X, rect.Dx())
 			}
 		case charmvt.ScrollbackDamage:
 			continue
@@ -4381,6 +4404,7 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 				stats.HasFullScreenDamage = true
 				for row := 0; row < screenHeight; row++ {
 					changedRows[row] = struct{}{}
+					addCoverage(row, 0, screenWidth)
 				}
 				stats.Cells = maxInt(stats.Cells, screenWidth*screenHeight)
 			} else {
@@ -4389,6 +4413,24 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 		default:
 			stats.HasUnsupported = true
 		}
+	}
+	for _, raw := range damages {
+		d, ok := raw.(charmvt.TextDamage)
+		if !ok {
+			continue
+		}
+		width := textDamageDisplayWidth(d)
+		if width <= 0 {
+			continue
+		}
+		uncovered := uncoveredDirectDamageWidth(covered[d.Y], d.X, width, screenWidth)
+		if uncovered <= 0 {
+			continue
+		}
+		stats.Cells += uncovered
+		markClampedRows(changedRows, d.Y, 1, screenHeight)
+		markItemRow(d.Y)
+		addCoverage(d.Y, d.X, width)
 	}
 	stats.Rows = len(changedRows)
 	if len(changedRows) > 0 {
@@ -4399,6 +4441,65 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 		sort.Ints(stats.TouchedRows)
 	}
 	return stats
+}
+
+func textDamageDisplayWidth(d charmvt.TextDamage) int {
+	if d.Text != "" {
+		return len(d.Text)
+	}
+	if len(d.Runs) > 0 {
+		width := 0
+		for _, run := range d.Runs {
+			width += len(run.Text)
+		}
+		return width
+	}
+	return spanDamageCellWidth(d.Cells)
+}
+
+func uncoveredDirectDamageWidth(intervals []directDamageInterval, x int, width int, screenWidth int) int {
+	if width <= 0 || screenWidth <= 0 {
+		return 0
+	}
+	x0 := maxInt(0, x)
+	x1 := minInt(screenWidth, x+width)
+	if x1 <= x0 {
+		return 0
+	}
+	if len(intervals) == 0 {
+		return x1 - x0
+	}
+	sorted := append([]directDamageInterval(nil), intervals...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].start == sorted[j].start {
+			return sorted[i].end < sorted[j].end
+		}
+		return sorted[i].start < sorted[j].start
+	})
+	covered := 0
+	cursor := x0
+	for _, interval := range sorted {
+		if interval.end <= cursor {
+			continue
+		}
+		if interval.start >= x1 {
+			break
+		}
+		start := maxInt(cursor, interval.start)
+		end := minInt(x1, interval.end)
+		if end > start {
+			covered += end - start
+			cursor = end
+		}
+		if cursor >= x1 {
+			break
+		}
+	}
+	total := x1 - x0
+	if covered >= total {
+		return 0
+	}
+	return total - covered
 }
 
 func clampedRectArea(x, y, width, height, maxWidth, maxHeight int) int {

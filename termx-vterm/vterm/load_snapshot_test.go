@@ -3472,6 +3472,76 @@ func TestVTermWriteWithDamageBroadDirectSpanUsesFullReplace(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageBroadCompactTextCountsDirectDamage(t *testing.T) {
+	vt := New(80, 24, 100, nil)
+	var raw strings.Builder
+	for row := 0; row < 20; row++ {
+		if row > 0 {
+			raw.WriteString("\r\n")
+		}
+		raw.WriteString(strings.Repeat("x", 80))
+	}
+
+	_, err, damage := vt.WriteWithDamage([]byte(raw.String()))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if !damage.RequiresFullReplace || damage.FullReplaceReason != "broad_direct_cell_damage" {
+		t.Fatalf("expected compact TextDamage to count toward broad full replace, got %#v", damage)
+	}
+	if damage.DirectDamageRows < 20 || damage.DirectDamageCells < 1600 {
+		t.Fatalf("compact TextDamage must contribute direct stats, rows=%d cells=%d damage=%#v", damage.DirectDamageRows, damage.DirectDamageCells, damage)
+	}
+	if len(damage.DirectDamageTouchedRows) < 20 || damage.DirectDamageTouchedRows[0] != 0 {
+		t.Fatalf("compact TextDamage must expose touched rows, got %#v", damage.DirectDamageTouchedRows)
+	}
+}
+
+func TestVTermWriteWithDamageStyledCompactRunsCountDirectDamage(t *testing.T) {
+	vt := New(80, 4, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[31m" + strings.Repeat("x", 80) + "\x1b[0m"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if damage.DirectDamageRows != 1 || damage.DirectDamageCells != 80 {
+		t.Fatalf("styled compact TextDamage runs must contribute direct stats, rows=%d cells=%d damage=%#v", damage.DirectDamageRows, damage.DirectDamageCells, damage)
+	}
+	if len(damage.SemanticOps) == 0 || len(damage.SemanticOps[0].Runs) == 0 || damage.SemanticOps[0].Runs[0].Text != strings.Repeat("x", 80) {
+		t.Fatalf("expected styled compact run semantic op, got %#v", damage.SemanticOps)
+	}
+}
+
+func TestVTermWriteWithSemanticDamageCompactTextCountsDirectDamage(t *testing.T) {
+	vt := New(80, 24, 100, nil)
+	var raw strings.Builder
+	for row := 0; row < 20; row++ {
+		if row > 0 {
+			raw.WriteString("\r\n")
+		}
+		raw.WriteString("\x1b[31m")
+		raw.WriteString(strings.Repeat("x", 80))
+		raw.WriteString("\x1b[0m")
+	}
+
+	_, err, damage := vt.WriteWithSemanticDamage([]byte(raw.String()))
+	if err != nil {
+		t.Fatalf("write semantic damage: %v", err)
+	}
+	if !damage.RequiresFullReplace || damage.FullReplaceReason != "broad_direct_cell_damage" {
+		t.Fatalf("expected semantic compact TextDamage to count toward broad full replace, got %#v", damage)
+	}
+	if damage.DirectDamageRows < 20 || damage.DirectDamageCells < 1600 {
+		t.Fatalf("semantic compact TextDamage must contribute direct stats, rows=%d cells=%d damage=%#v", damage.DirectDamageRows, damage.DirectDamageCells, damage)
+	}
+	if len(damage.DirectDamageTouchedRows) < 20 || damage.DirectDamageTouchedRows[0] != 0 {
+		t.Fatalf("semantic compact TextDamage must expose touched rows, got %#v", damage.DirectDamageTouchedRows)
+	}
+	if len(damage.SemanticOps) == 0 || len(damage.SemanticOps[0].Runs) == 0 {
+		t.Fatalf("expected compact run semantic ops, got %#v", damage.SemanticOps)
+	}
+}
+
 func TestVTermWriteWithDamageRepeatedDirectSpanUsesFullReplace(t *testing.T) {
 	vt := New(146, 73, 100, nil)
 	prevWithDamage := safeEmulatorWriteWithDamage
