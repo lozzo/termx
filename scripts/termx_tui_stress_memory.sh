@@ -42,6 +42,7 @@ Artifacts:
   baseline-time.txt     outside-termx baseline time(1) output when enabled
   stress-time.txt       captured time(1) output from the last TUI stress run
   stress-times.tsv      parsed per-run time(1) output captured from the TUI pane
+  stress-latency.tsv    per-run wall-clock latency from tmux send-keys to visible DONE
   stress-commands.tsv   exact stress command typed into the TUI pane
   history-trace.tsv     live/copy captures checked for oldest/newest stress markers
   history-files.tsv     file-backed history payload count/bytes after each stress run
@@ -66,6 +67,13 @@ need() {
 
 log() {
   printf '[termx-tui-stress-memory] %s\n' "$*"
+}
+
+now_ms() {
+  python3 - <<'PY'
+import time
+print(int(time.time() * 1000))
+PY
 }
 
 parse_size() {
@@ -124,9 +132,13 @@ wait_for_capture() {
   local target="$1"
   local pattern="$2"
   local deadline="$3"
+  local found_var="${4:-}"
   local attempt
   for attempt in $(seq 1 "$deadline"); do
     if tmux capture-pane -t "$target" -p -S -4000 2>/dev/null | LC_ALL=C grep -Fq "$pattern"; then
+      if [[ -n "$found_var" ]]; then
+        printf -v "$found_var" '%s' "$(now_ms)"
+      fi
       return 0
     fi
     sleep 1
@@ -285,17 +297,60 @@ EOF
 }
 
 append_stress_time() {
-	local run="$1"
-	local seed="$2"
-	local path="$3"
-	local real="" user="" sys="" seed_label
-	seed_label="${seed:--}"
-	if [[ -s "$path" ]]; then
-		real="$(parse_time_field "$path" real)"
-		user="$(parse_time_field "$path" user)"
-		sys="$(parse_time_field "$path" sys)"
-	fi
-	printf '%s\t%s\t%s\t%s\t%s\n' "$run" "$seed_label" "$real" "$user" "$sys" >>"$STRESS_TIMES_REPORT"
+  local run="$1"
+  local seed="$2"
+  local path="$3"
+  local real="" user="" sys="" seed_label
+  seed_label="${seed:--}"
+  if [[ -s "$path" ]]; then
+    real="$(parse_time_field "$path" real)"
+    user="$(parse_time_field "$path" user)"
+    sys="$(parse_time_field "$path" sys)"
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\n' "$run" "$seed_label" "$real" "$user" "$sys" >>"$STRESS_TIMES_REPORT"
+}
+
+append_stress_latency() {
+  local run="$1"
+  local seed="$2"
+  local send_ms="$3"
+  local done_ms="$4"
+  local path="$5"
+  local status="${6:-visible}"
+  local observed_end_ms="${7:-$done_ms}"
+  local real="" observed_ms="" visible_ms="" post_process_ms="" seed_label
+  seed_label="${seed:--}"
+  if [[ -s "$path" ]]; then
+    real="$(parse_time_field "$path" real)"
+  fi
+  if [[ -n "$send_ms" && -n "$observed_end_ms" ]]; then
+    observed_ms=$((observed_end_ms - send_ms))
+  fi
+  if [[ -n "$send_ms" && -n "$done_ms" ]]; then
+    visible_ms=$((done_ms - send_ms))
+  fi
+  post_process_ms="$(latency_delta_ms "$visible_ms" "$real")"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$run" "$seed_label" "$status" "$send_ms" "$done_ms" "$observed_ms" "$visible_ms" "$real" "$post_process_ms" >>"$STRESS_LATENCY_REPORT"
+}
+
+latency_delta_ms() {
+  local visible_ms="$1"
+  local real_seconds="$2"
+  python3 - "$visible_ms" "$real_seconds" <<'PY'
+import sys
+
+visible = sys.argv[1]
+real = sys.argv[2]
+if not visible or not real:
+    print("")
+    raise SystemExit(0)
+try:
+    value = int(visible) - int(round(float(real) * 1000))
+except ValueError:
+    print("")
+else:
+    print(value)
+PY
 }
 
 parse_time_field() {
@@ -475,6 +530,11 @@ write_profile_summary() {
       echo
       echo "## stress time per run"
       cat "$ROOT/stress-times.tsv"
+    fi
+    if [[ -s "$ROOT/stress-latency.tsv" ]]; then
+      echo
+      echo "## stress visible latency per run"
+      cat "$ROOT/stress-latency.tsv"
     fi
     if [[ -s "$ROOT/stress-commands.tsv" ]]; then
       echo
@@ -687,6 +747,7 @@ LOG="$ROOT/termx.log"
 REPORT="$ROOT/memory.tsv"
 HISTORY_REPORT="$ROOT/history-files.tsv"
 STRESS_TIMES_REPORT="$ROOT/stress-times.tsv"
+STRESS_LATENCY_REPORT="$ROOT/stress-latency.tsv"
 STRESS_COMMANDS_REPORT="$ROOT/stress-commands.tsv"
 HISTORY_TRACE_REPORT="$ROOT/history-trace.tsv"
 DAEMON_HEAP_DIR="$ROOT/daemon-heap"
@@ -760,6 +821,7 @@ fi
 printf 'stage\tprocess\tpid\trss_kib\trss_mib\tcpu_percent\tcpu_time\n' >"$REPORT"
 printf 'stage\tfiles\tbytes\tmib\tdir\n' >"$HISTORY_REPORT"
 printf 'run\tseed\treal\tuser\tsys\n' >"$STRESS_TIMES_REPORT"
+printf 'run\tseed\tstatus\tsend_unix_ms\tdone_visible_unix_ms\tobserved_ms\tvisible_ms\tpython_real_s\tpost_process_visible_ms\n' >"$STRESS_LATENCY_REPORT"
 printf 'run\tseed\tcommand\n' >"$STRESS_COMMANDS_REPORT"
 printf 'stage\thas_oldest_000000\thas_newest_line\thas_done_marker\tpath\n' >"$HISTORY_TRACE_REPORT"
 mkdir -p "$TUI_HEAP_DIR"
@@ -866,10 +928,16 @@ for RUN in $(seq 1 "$REPEAT"); do
   rm -f "$SAMPLE_STOP_FILE"
   sample_processes_until_stopped "$SAMPLE_STOP_FILE" 0.2 "$DAEMON_PID" "$TUI_PID" "stress_run_${RUN_LABEL}" &
   SAMPLE_PID=$!
+  # 中文说明：send -> DONE visible 是用户感知 live 延迟；pane 内 time 只量程序本身。
+  STRESS_SEND_MS="$(now_ms)"
+  STRESS_DONE_MS=""
   tmux send-keys -t "$TARGET" "$STRESS_CMD" Enter
-  if ! wait_for_capture "$TARGET" "$DONE_MARKER" "$WAIT_SECONDS"; then
+  if ! wait_for_capture "$TARGET" "$DONE_MARKER" "$WAIT_SECONDS" STRESS_DONE_MS; then
+    STRESS_TIMEOUT_MS="$(now_ms)"
     touch "$SAMPLE_STOP_FILE"
     wait "$SAMPLE_PID" 2>/dev/null || true
+    append_stress_time "$RUN_LABEL" "$RUN_SEED" "$TIME_FILE"
+    append_stress_latency "$RUN_LABEL" "$RUN_SEED" "$STRESS_SEND_MS" "" "$TIME_FILE" "timeout" "$STRESS_TIMEOUT_MS"
     capture_pane "$TARGET" "live-timeout-run-${RUN_LABEL}"
     echo "stress command run $RUN_LABEL did not reach done marker within ${WAIT_SECONDS}s" >&2
     exit 1
@@ -877,6 +945,7 @@ for RUN in $(seq 1 "$REPEAT"); do
   touch "$SAMPLE_STOP_FILE"
   wait "$SAMPLE_PID" 2>/dev/null || true
   append_stress_time "$RUN_LABEL" "$RUN_SEED" "$TIME_FILE"
+  append_stress_latency "$RUN_LABEL" "$RUN_SEED" "$STRESS_SEND_MS" "$STRESS_DONE_MS" "$TIME_FILE"
   capture_pane "$TARGET" "live-run-${RUN_LABEL}"
   append_history_trace "live_run_${RUN_LABEL}" "$ROOT/live-run-${RUN_LABEL}.txt"
   record_stage "daemon_after_stress_run_${RUN_LABEL}" "daemon" "$DAEMON_PID"
@@ -948,6 +1017,14 @@ if [[ -s "$ROOT/stress-times.tsv" ]]; then
     column -t -s $'\t' "$ROOT/stress-times.tsv"
   else
     cat "$ROOT/stress-times.tsv"
+  fi
+fi
+if [[ -s "$ROOT/stress-latency.tsv" ]]; then
+  log "stress visible latency by run"
+  if command -v column >/dev/null 2>&1; then
+    column -t -s $'\t' "$ROOT/stress-latency.tsv"
+  else
+    cat "$ROOT/stress-latency.tsv"
   fi
 fi
 if [[ -s "$ROOT/stress-commands.tsv" ]]; then
