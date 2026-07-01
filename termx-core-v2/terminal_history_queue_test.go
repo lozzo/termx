@@ -2,6 +2,8 @@ package termxcorev2
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +14,7 @@ func TestTerminalHistoryIngestQueueEnqueueDoesNotWaitForSlowIngest(t *testing.T)
 	queue := newTerminalHistoryIngestQueue(0)
 	started := make(chan struct{})
 	release := make(chan struct{})
-	go queue.Run(func([]history.TerminalSemanticTransaction) error {
+	go queue.Run(func([]history.HistoryJournal) error {
 		select {
 		case <-started:
 		default:
@@ -21,7 +23,7 @@ func TestTerminalHistoryIngestQueueEnqueueDoesNotWaitForSlowIngest(t *testing.T)
 		<-release
 		return nil
 	})
-	if !queue.Enqueue(r373HistoryQueueTx(1, "one")) {
+	if !queue.Enqueue(r385HistoryQueueJournal(1, "one")) {
 		t.Fatal("expected first enqueue")
 	}
 	select {
@@ -32,7 +34,7 @@ func TestTerminalHistoryIngestQueueEnqueueDoesNotWaitForSlowIngest(t *testing.T)
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < 1000; i++ {
-			if !queue.Enqueue(r373HistoryQueueTx(uint64(i+2), "more")) {
+			if !queue.Enqueue(r385HistoryQueueJournal(uint64(i+2), "more")) {
 				t.Errorf("enqueue rejected before close")
 				break
 			}
@@ -51,18 +53,18 @@ func TestTerminalHistoryIngestQueueEnqueueDoesNotWaitForSlowIngest(t *testing.T)
 
 func TestTerminalHistoryIngestQueueSplitsLargePendingBatch(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue(0)
-	for seq := uint64(1); seq <= terminalHistoryIngestBatchMaxTransactions+2; seq++ {
-		if !queue.Enqueue(r373HistoryQueueTx(seq, "payload")) {
+	for seq := uint64(1); seq <= terminalHistoryIngestBatchMaxJournals+2; seq++ {
+		if !queue.Enqueue(r385HistoryQueueJournal(seq, "payload")) {
 			t.Fatal("expected enqueue before close")
 		}
 	}
 	first, ok := queue.nextBatch()
-	if !ok || len(first) != terminalHistoryIngestBatchMaxTransactions {
+	if !ok || len(first) != terminalHistoryIngestBatchMaxJournals {
 		t.Fatalf("expected first capped batch, got batch=%d ok=%v", len(first), ok)
 	}
 	second, ok := queue.nextBatch()
 	if !ok || len(second) != 2 {
-		t.Fatalf("expected second capped batch with remaining txs, got batch=%d ok=%v", len(second), ok)
+		t.Fatalf("expected second capped batch with remaining journals, got batch=%d ok=%v", len(second), ok)
 	}
 	queue.Close()
 	third, ok := queue.nextBatch()
@@ -72,9 +74,9 @@ func TestTerminalHistoryIngestQueueSplitsLargePendingBatch(t *testing.T) {
 	close(queue.done)
 }
 
-func TestTerminalHistoryIngestQueueDropsConsumedTransactionReferences(t *testing.T) {
+func TestTerminalHistoryIngestQueueDropsConsumedJournalReferences(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue(0)
-	if !queue.Enqueue(r373HistoryQueueTx(1, "alpha")) || !queue.Enqueue(r373HistoryQueueTx(2, "beta")) {
+	if !queue.Enqueue(r385HistoryQueueJournal(1, "alpha")) || !queue.Enqueue(r385HistoryQueueJournal(2, "beta")) {
 		t.Fatal("expected enqueue before close")
 	}
 
@@ -84,41 +86,100 @@ func TestTerminalHistoryIngestQueueDropsConsumedTransactionReferences(t *testing
 	}
 	retained := queue.pending[:cap(queue.pending)]
 	if len(queue.pending) != 0 {
-		t.Fatalf("all transactions should be consumed, got %d pending", len(queue.pending))
+		t.Fatalf("all journals should be consumed, got %d pending", len(queue.pending))
 	}
 	for index, item := range retained {
-		if item.tx.Seq != 0 || item.tx.PrimaryFrame != nil {
-			t.Fatalf("consumed history transaction %d should not remain in backing array: %#v", index, item)
+		if item.journal.Seq != 0 || len(item.journal.Items) != 0 {
+			t.Fatalf("consumed history journal %d should not remain in backing array: %#v", index, item)
 		}
 	}
 	close(queue.done)
 }
 
-func TestR373TerminalHistoryIngestQueueStoresSemanticTransactionsNotRawPTY(t *testing.T) {
+func TestR385TerminalHistoryIngestQueueStoresCompactJournalsNotTransactions(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue(0)
-	tx := r373HistoryQueueTx(1, "immutable")
-	if !queue.Enqueue(tx) {
+	journal := r385HistoryQueueJournal(1, "immutable")
+	if !queue.Enqueue(journal) {
 		t.Fatal("expected enqueue before close")
 	}
-	tx.PrimaryFrame.Rows[0][0].Content = "mutated-after-enqueue"
+	journal.Items[0].Frame.Frame.Rows[0][0].Content = "mutated-after-enqueue"
 	batch, ok := queue.nextBatch()
 	if !ok || len(batch) != 1 {
-		t.Fatalf("expected one transaction batch, got len=%d ok=%v", len(batch), ok)
+		t.Fatalf("expected one journal batch, got len=%d ok=%v", len(batch), ok)
 	}
-	txs := terminalHistoryIngestBatchTransactions(batch)
-	if len(txs) != 1 {
-		t.Fatalf("expected one semantic transaction, got %#v", txs)
+	journals := terminalHistoryIngestBatchJournals(batch)
+	if len(journals) != 1 {
+		t.Fatalf("expected one compact journal, got %#v", journals)
 	}
-	if txs[0].Raw != "" {
-		t.Fatalf("history backlog must not expose raw PTY replay payload, got %q", txs[0].Raw)
+	if journals[0].Source != history.HistoryJournalSourceSemanticTapTransaction {
+		t.Fatalf("history backlog must preserve semantic tap journal source, got %#v", journals[0])
 	}
-	if got := txs[0].PrimaryFrame.Rows[0][0].Content; got != "immutable" {
-		t.Fatalf("history queue must deep-copy tap transaction at enqueue, got %q", got)
+	if got := journals[0].Items[0].Frame.Frame.Rows[0][0].Content; got != "immutable" {
+		t.Fatalf("history queue must deep-copy compact journal at enqueue, got %q", got)
 	}
-	txs[0].PrimaryFrame.Rows[0][0].Content = "mutated-consumer"
-	again := terminalHistoryIngestBatchTransactions(batch)
-	if got := again[0].PrimaryFrame.Rows[0][0].Content; got != "immutable" {
-		t.Fatalf("history queue batch handoff must deep-copy transaction per consumer, got %q", got)
+	journals[0].Items[0].Frame.Frame.Rows[0][0].Content = "mutated-consumer"
+	again := terminalHistoryIngestBatchJournals(batch)
+	if got := again[0].Items[0].Frame.Frame.Rows[0][0].Content; got != "immutable" {
+		t.Fatalf("history queue batch handoff must deep-copy journal per consumer, got %q", got)
+	}
+	close(queue.done)
+}
+
+func TestR385TerminalHistoryIngestWorkerDoesNotStoreFullTransactions(t *testing.T) {
+	source, err := os.ReadFile("terminal_history_ingest_worker.go")
+	if err != nil {
+		t.Fatalf("read queue source: %v", err)
+	}
+	text := string(source)
+	if strings.Contains(text, "TerminalSemanticTransaction") || strings.Contains(text, "cloneSemanticTapTransaction") {
+		t.Fatalf("history backlog worker must store compact journals, not full semantic transaction queues")
+	}
+	if !strings.Contains(text, "HistoryJournal") || !strings.Contains(text, "CloneHistoryJournal") {
+		t.Fatalf("history backlog worker should explicitly queue cloned HistoryJournal payloads")
+	}
+}
+
+func TestR385TerminalHistoryIngestQueueClassifierFlushTracksBacklogRisk(t *testing.T) {
+	queue := newTerminalHistoryIngestQueue(0)
+	plainNext := r385HistoryQueueOrdinaryJournal(10, "next")
+	frameNext := r385HistoryQueueJournal(11, "next-frame")
+	if !queue.Enqueue(r385HistoryQueueOrdinaryJournal(1, "plain")) {
+		t.Fatal("expected ordinary journal enqueue")
+	}
+	if queue.NeedsClassifierFlush(plainNext) {
+		t.Fatal("sealed ordinary backlog before another ordinary journal should stay async")
+	}
+	if !queue.NeedsClassifierFlush(frameNext) {
+		t.Fatal("sealed ordinary backlog before frame/boundary journal must flush for classifier state")
+	}
+	ordinary, ok := queue.nextBatch()
+	if !ok || len(ordinary) != 1 {
+		t.Fatalf("expected ordinary batch, got len=%d ok=%v", len(ordinary), ok)
+	}
+	if queue.NeedsClassifierFlush(plainNext) {
+		t.Fatal("in-flight sealed ordinary backlog before another ordinary journal should stay async")
+	}
+	if !queue.NeedsClassifierFlush(frameNext) {
+		t.Fatal("in-flight sealed ordinary backlog before frame/boundary journal must flush")
+	}
+	queue.finishBatch(terminalHistoryIngestBatchCompleteSeq(ordinary))
+
+	if !queue.Enqueue(r385HistoryQueueJournal(2, "frame")) {
+		t.Fatal("expected frame journal enqueue")
+	}
+	if !queue.NeedsClassifierFlush(plainNext) {
+		t.Fatal("frame journal must force classifier flush while pending")
+	}
+	frame, ok := queue.nextBatch()
+	if !ok || len(frame) != 1 {
+		t.Fatalf("expected frame batch, got len=%d ok=%v", len(frame), ok)
+	}
+	if !queue.NeedsClassifierFlush(plainNext) {
+		t.Fatal("frame journal must force classifier flush while in-flight")
+	}
+	queue.finishBatch(terminalHistoryIngestBatchCompleteSeq(frame))
+	if queue.NeedsClassifierFlush(plainNext) {
+		t.Fatal("classifier flush should clear after frame journal is applied")
 	}
 	close(queue.done)
 }
@@ -127,10 +188,10 @@ func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue(0)
 	started := make(chan struct{})
 	release := make(chan struct{})
-	ingested := make(chan history.TerminalSemanticTransaction, 2)
-	go queue.Run(func(txs []history.TerminalSemanticTransaction) error {
-		for _, tx := range txs {
-			ingested <- tx
+	ingested := make(chan history.HistoryJournal, 2)
+	go queue.Run(func(journals []history.HistoryJournal) error {
+		for _, journal := range journals {
+			ingested <- journal
 		}
 		select {
 		case <-started:
@@ -141,7 +202,7 @@ func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
 		return nil
 	})
 
-	if !queue.Enqueue(r373HistoryQueueTx(1, "latest-tail")) {
+	if !queue.Enqueue(r385HistoryQueueJournal(1, "latest-tail")) {
 		t.Fatal("expected enqueue")
 	}
 	select {
@@ -163,7 +224,7 @@ func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
 		t.Fatalf("flush: %v", err)
 	}
 	if got := <-ingested; got.Seq != 1 {
-		t.Fatalf("unexpected ingested tx %#v", got)
+		t.Fatalf("unexpected ingested journal %#v", got)
 	}
 	queue.Close()
 	queue.Wait()
@@ -171,44 +232,44 @@ func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
 
 func TestTerminalHistoryIngestQueueFlushDoesNotPullFutureOutputIntoSameBatch(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue(0)
-	ingested := make(chan history.TerminalSemanticTransaction, 3)
+	ingested := make(chan history.HistoryJournal, 3)
 	releaseFirst := make(chan struct{})
 	releaseSecond := make(chan struct{})
-	go queue.Run(func(txs []history.TerminalSemanticTransaction) error {
-		for _, tx := range txs {
-			ingested <- tx
+	go queue.Run(func(journals []history.HistoryJournal) error {
+		for _, journal := range journals {
+			ingested <- journal
 		}
-		if len(txs) > 0 && txs[0].Seq == 1 {
+		if len(journals) > 0 && journals[0].Seq == 1 {
 			<-releaseFirst
 		}
-		if len(txs) > 0 && txs[0].Seq == 2 {
+		if len(journals) > 0 && journals[0].Seq == 2 {
 			<-releaseSecond
 		}
 		return nil
 	})
 
-	if !queue.Enqueue(r373HistoryQueueTx(1, "before")) {
+	if !queue.Enqueue(r385HistoryQueueJournal(1, "before")) {
 		t.Fatal("expected enqueue before flush")
 	}
 	select {
 	case got := <-ingested:
 		if got.Seq != 1 {
-			t.Fatalf("expected first tx to enter in-flight batch, got %#v", got)
+			t.Fatalf("expected first journal to enter in-flight batch, got %#v", got)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for first history tx")
+		t.Fatal("timed out waiting for first history journal")
 	}
 	flushed := make(chan error, 1)
 	go func() {
 		flushed <- queue.Flush(context.Background())
 	}()
 	waitForHistoryQueueWaitTargetForTest(t, queue, 1, 1)
-	if !queue.Enqueue(r373HistoryQueueTx(2, "after")) {
+	if !queue.Enqueue(r385HistoryQueueJournal(2, "after")) {
 		t.Fatal("expected enqueue after flush")
 	}
 	status := queue.Status()
 	if status.TargetSeq != 2 || status.AppliedSeq != 0 || !status.CatchupPending {
-		t.Fatalf("expected future tx to raise diagnostic target without satisfying first flush, status=%#v", status)
+		t.Fatalf("expected future journal to raise diagnostic target without satisfying first flush, status=%#v", status)
 	}
 	close(releaseFirst)
 	select {
@@ -225,7 +286,7 @@ func TestTerminalHistoryIngestQueueFlushDoesNotPullFutureOutputIntoSameBatch(t *
 			t.Fatalf("future output should stay in later batch, got %#v", got)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for future history tx")
+		t.Fatal("timed out waiting for future history journal")
 	}
 	close(releaseSecond)
 	queue.Close()
@@ -237,7 +298,7 @@ func TestR374TerminalHistoryIngestQueueReportsAppliedTargetSeq(t *testing.T) {
 	if got := queue.Status(); got.AppliedSeq != 41 || got.TargetSeq != 41 || got.CatchupPending {
 		t.Fatalf("unexpected initial status %#v", got)
 	}
-	if !queue.Enqueue(r373HistoryQueueTx(1, "one")) || !queue.Enqueue(r373HistoryQueueTx(2, "two")) {
+	if !queue.Enqueue(r385HistoryQueueJournal(1, "one")) || !queue.Enqueue(r385HistoryQueueJournal(2, "two")) {
 		t.Fatal("expected enqueue")
 	}
 	status := queue.Status()
@@ -246,7 +307,7 @@ func TestR374TerminalHistoryIngestQueueReportsAppliedTargetSeq(t *testing.T) {
 	}
 	batch, ok := queue.nextBatch()
 	if !ok || len(batch) != 2 {
-		t.Fatalf("expected two tx batch, got len=%d ok=%v", len(batch), ok)
+		t.Fatalf("expected two journal batch, got len=%d ok=%v", len(batch), ok)
 	}
 	queue.finishBatch(terminalHistoryIngestBatchCompleteSeq(batch))
 	status = queue.Status()
@@ -260,7 +321,7 @@ func TestR374TerminalHistoryIngestQueueFlushAllowsConcurrentWaitersForSameTarget
 	queue := newTerminalHistoryIngestQueue(0)
 	started := make(chan struct{})
 	release := make(chan struct{})
-	go queue.Run(func([]history.TerminalSemanticTransaction) error {
+	go queue.Run(func([]history.HistoryJournal) error {
 		select {
 		case <-started:
 		default:
@@ -269,7 +330,7 @@ func TestR374TerminalHistoryIngestQueueFlushAllowsConcurrentWaitersForSameTarget
 		<-release
 		return nil
 	})
-	if !queue.Enqueue(r373HistoryQueueTx(1, "pending")) {
+	if !queue.Enqueue(r385HistoryQueueJournal(1, "pending")) {
 		t.Fatal("expected enqueue")
 	}
 	select {
@@ -316,8 +377,8 @@ func waitForHistoryQueueWaitTargetForTest(t *testing.T, queue *terminalHistoryIn
 	t.Fatal("timed out waiting for history queue flush registration")
 }
 
-func r373HistoryQueueTx(seq uint64, text string) history.TerminalSemanticTransaction {
-	tx := history.TerminalSemanticTransaction{
+func r385HistoryQueueJournal(seq uint64, text string) history.HistoryJournal {
+	return history.HistoryJournalFromTransaction("term-r385-queue", history.TerminalSemanticTransaction{
 		Seq: seq,
 		PrimaryFrame: &history.TerminalSemanticFrame{
 			Cols: 20,
@@ -325,7 +386,23 @@ func r373HistoryQueueTx(seq uint64, text string) history.TerminalSemanticTransac
 				{Content: text, Width: 1},
 			}},
 		},
+	})
+}
+
+func r385HistoryQueueOrdinaryJournal(seq uint64, text string) history.HistoryJournal {
+	return history.HistoryJournal{
+		TerminalID: "term-r385-queue",
+		Seq:        seq,
+		Source:     history.HistoryJournalSourceSemanticTapTransaction,
+		Items: []history.HistoryJournalItem{{
+			Kind: history.HistoryJournalItemOrdinaryLineBatch,
+			Ordinary: &history.OrdinaryLineBatch{
+				Lines: []history.JournalLogicalLine{{
+					Cells:  []history.Cell{{Text: text, Width: len(text)}},
+					Origin: history.HistoryJournalOriginOrdinaryPrimary,
+				}},
+				Origin: history.HistoryJournalOriginOrdinaryPrimary,
+			},
+		}},
 	}
-	tx.Raw = ""
-	return tx
 }

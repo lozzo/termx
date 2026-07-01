@@ -535,8 +535,8 @@ func TestR376CopyEntryProjectionDoesNotFlushHistoryBacklog(t *testing.T) {
 		t.Fatalf("terminal: %v", err)
 	}
 	queue := newTerminalHistoryIngestQueue(1)
-	if !queue.Enqueue(history.TerminalSemanticTransaction{}) {
-		t.Fatal("expected pending history transaction")
+	if !queue.Enqueue(r385HistoryQueueJournal(1, "pending")) {
+		t.Fatal("expected pending history journal")
 	}
 	defer queue.Close()
 	terminal.queueMu.Lock()

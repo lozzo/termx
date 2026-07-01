@@ -59,14 +59,14 @@ func TestR301HistoryCleanupGuard(t *testing.T) {
 	}
 }
 
-func TestR373TerminalHistoryBacklogOnlyAcceptsSemanticTapTransactions(t *testing.T) {
+func TestR385TerminalHistoryBacklogOnlyAcceptsSemanticTapJournals(t *testing.T) {
 	workerSource := r301ReadFile(t, "terminal_history_ingest_worker.go")
-	if !strings.Contains(workerSource, "SemanticTap 之后的 history transaction backlog") {
-		t.Fatal("history backlog must be documented as post-SemanticTap transaction queue")
+	if !strings.Contains(workerSource, "SemanticTap 之后的 compact history journal backlog") {
+		t.Fatal("history backlog must be documented as post-SemanticTap compact journal queue")
 	}
-	for _, forbidden := range []string{"terminalHistoryIngestSpool", "os.CreateTemp", "io.WriteString", "[]string) error", "Enqueue(text string)"} {
+	for _, forbidden := range []string{"terminalHistoryIngestSpool", "os.CreateTemp", "io.WriteString", "[]string) error", "Enqueue(text string)", "TerminalSemanticTransaction", "cloneSemanticTapTransaction"} {
 		if strings.Contains(workerSource, forbidden) {
-			t.Fatalf("history backlog must not retain raw PTY replay/spool path: %s", forbidden)
+			t.Fatalf("history backlog must not retain raw PTY replay, spool, or full transaction queue path: %s", forbidden)
 		}
 	}
 	terminalSource := r301ReadFile(t, "terminal.go")
@@ -75,8 +75,11 @@ func TestR373TerminalHistoryBacklogOnlyAcceptsSemanticTapTransactions(t *testing
 			t.Fatalf("terminal production path must not retain history raw replay/double-vterm code: %s", forbidden)
 		}
 	}
-	if !strings.Contains(terminalSource, "historyWorker.Enqueue(result.Transaction())") {
-		t.Fatal("terminal production path must fan out tap transaction to history queue")
+	if !strings.Contains(terminalSource, "enqueueOrApplyProcessHistoryJournalTransaction(result.Transaction(), historyWorker, info.ID)") {
+		t.Fatal("terminal production path must fan out tap transaction through journal backlog gate")
+	}
+	if !strings.Contains(terminalSource, "HistoryJournalFromTransaction(terminalID, tx)") {
+		t.Fatal("terminal production path must enqueue compact HistoryJournal, not full transaction")
 	}
 }
 

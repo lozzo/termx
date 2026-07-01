@@ -326,9 +326,9 @@ func (terminal *Terminal) HistoryBacklogStatus() HistoryBacklogStatus {
 	return status
 }
 
-// FlushHistory 等待当前 terminal 的 tap queue 与 history transaction worker 追平。
+// FlushHistory 等待当前 terminal 的 tap queue 与 compact journal worker 追平。
 // 第一段 fence 保证已进入 PTY 输出队列的 bytes 先推进 single SemanticTap；第二段
-// fence 再等待 tap 产出的 semantic transaction 落到 authoritative history store。
+// fence 再等待 tap 产出的 compact journal 落到 authoritative history store。
 // 它不等待客户端 render；调用边界是 history.window/freeze/copy 和 lifecycle close。
 func (terminal *Terminal) FlushHistory(ctx context.Context) error {
 	if err := terminal.flushTapQueue(ctx); err != nil {
@@ -417,8 +417,8 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 		startSeq := terminal.historyBacklogStartSeq()
 		historyWorker = newTerminalHistoryIngestQueue(startSeq)
 		terminal.setHistoryQueue(process, historyWorker)
-		go historyWorker.Run(func(txs []history.TerminalSemanticTransaction) error {
-			return terminal.ingestProcessHistoryTransactions(process, txs)
+		go historyWorker.Run(func(journals []history.HistoryJournal) error {
+			return terminal.ingestProcessHistoryJournals(process, journals)
 		})
 	}
 	go tapQueue.Run(func(output string) error {
@@ -550,10 +550,13 @@ func (terminal *Terminal) historyBacklogStartSeq() uint64 {
 }
 
 func (terminal *Terminal) enqueueOrApplyHistoryResizeTransaction(tx history.TerminalSemanticTransaction) {
+	terminal.mu.Lock()
+	terminalID := terminal.info.ID
+	terminal.mu.Unlock()
 	terminal.queueMu.Lock()
 	queue := terminal.historyQ
 	terminal.queueMu.Unlock()
-	if queue != nil && queue.Enqueue(tx) {
+	if queue != nil && queue.Enqueue(history.HistoryJournalFromTransaction(terminalID, tx)) {
 		return
 	}
 	// 中文说明：没有异步 history worker 时，resize 仍只按 boundary-only 进入 renderer；
@@ -592,9 +595,7 @@ func (terminal *Terminal) ingestProcessTapOutput(process TerminalProcess, output
 	result, err := terminal.tap.ApplyPTYWrite([]byte(output))
 	finishLiveWrite(len(output))
 	if err == nil && historyWorker != nil {
-		// 中文说明：history backlog 的单位是 tap 产出的 semantic transaction；
-		// 这里不能把 raw PTY bytes 交给第二个 vterm replay。
-		historyWorker.Enqueue(result.Transaction())
+		terminal.enqueueOrApplyProcessHistoryJournalTransaction(result.Transaction(), historyWorker, info.ID)
 	}
 	terminal.tapOpMu.Unlock()
 	if err != nil {
@@ -819,6 +820,21 @@ func (terminal *Terminal) ingestProcessHistoryTransactions(process TerminalProce
 	return nil
 }
 
+func (terminal *Terminal) ingestProcessHistoryJournals(process TerminalProcess, journals []history.HistoryJournal) error {
+	terminal.mu.Lock()
+	if terminal.process != process {
+		terminal.mu.Unlock()
+		return nil
+	}
+	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return ErrTerminalExited
+	}
+	terminal.mu.Unlock()
+	terminal.ingestHistoryJournals(journals)
+	return nil
+}
+
 func (terminal *Terminal) ingestHistoryTransactions(txs []history.TerminalSemanticTransaction) {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
@@ -828,6 +844,56 @@ func (terminal *Terminal) ingestHistoryTransactions(txs []history.TerminalSemant
 	for _, tx := range txs {
 		terminal.applyHistoryTransactionLocked(tx)
 	}
+}
+
+func (terminal *Terminal) ingestHistoryJournals(journals []history.HistoryJournal) {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled || terminal.journalRenderer == nil || terminal.historyStore == nil {
+		return
+	}
+	for _, journal := range journals {
+		terminal.applyHistoryJournalLocked(journal)
+	}
+}
+
+func (terminal *Terminal) enqueueOrApplyProcessHistoryJournalTransaction(tx history.TerminalSemanticTransaction, queue *terminalHistoryIngestQueue, terminalID string) {
+	journal := history.HistoryJournalFromTransaction(terminalID, tx)
+	if queue != nil && queue.NeedsClassifierFlush(journal) {
+		// 中文说明：pending journal 可能改变 HasTimeline/primary-frame/open-line 等
+		// classifier state。普通 sealed line 后接普通 line 可以继续排队；一旦下一条
+		// transaction 需要这些 state，就先把 backlog 落入 HistoryStore 再判定。
+		_ = queue.Flush(context.Background())
+	}
+	if queue != nil && terminal.historyJournalCanQueue(tx, journal) && queue.Enqueue(journal) {
+		return
+	}
+	if queue != nil {
+		// 中文说明：journal backlog 不能保存 full transaction。遇到当前 journal
+		// renderer 不能接管的语义时，先追平已入队 journal，再按完整 renderer 同步
+		// 应用当前 transaction，保持 terminal semantic order。
+		_ = queue.Flush(context.Background())
+	}
+	terminal.ingestHistoryTransactions([]history.TerminalSemanticTransaction{tx})
+}
+
+func (terminal *Terminal) historyJournalCanQueue(tx history.TerminalSemanticTransaction, journal history.HistoryJournal) bool {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled || terminal.journalRenderer == nil || terminal.historyStore == nil {
+		return false
+	}
+	state := terminal.historyStore.ReadState()
+	decision := terminal.historyDecisionForTransaction(tx, state)
+	return historyDecisionAllowsJournalFastPath(decision) && historyJournalAllowsTerminalFastPath(journal, state, decision)
+}
+
+func (terminal *Terminal) applyHistoryJournalLocked(journal history.HistoryJournal) {
+	batch, err := terminal.journalRenderer.ApplyJournal(journal)
+	if err != nil {
+		return
+	}
+	_ = terminal.historyStore.Apply(batch)
 }
 
 func (terminal *Terminal) applyHistoryResizeTransaction(tx history.TerminalSemanticTransaction) {

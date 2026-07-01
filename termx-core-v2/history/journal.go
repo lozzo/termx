@@ -671,6 +671,68 @@ func cloneJournalOpenLineCommands(commands []JournalOpenLineCommand) []JournalOp
 	return out
 }
 
+// CloneHistoryJournal 返回 compact journal 的 history-owned 深拷贝。
+// 调用边界是 SemanticTap fan-out 到 backlog；queue 可以保存该副本，但不能把
+// 原始 TerminalSemanticTransaction、raw PTY 或 live snapshot 一起塞进 backlog。
+func CloneHistoryJournal(journal HistoryJournal) HistoryJournal {
+	journal.Items = cloneHistoryJournalItems(journal.Items)
+	return journal
+}
+
+func cloneHistoryJournalItems(items []HistoryJournalItem) []HistoryJournalItem {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]HistoryJournalItem, len(items))
+	for i, item := range items {
+		out[i] = item
+		if item.Ordinary != nil {
+			ordinary := cloneOrdinaryLineBatch(*item.Ordinary)
+			out[i].Ordinary = &ordinary
+		}
+		if item.Boundary != nil {
+			boundary := *item.Boundary
+			out[i].Boundary = &boundary
+		}
+		if item.ScrollOut != nil {
+			scrollOut := HistoryJournalScrollOutProof{
+				Rows:      cloneTerminalSemanticScrollOuts(item.ScrollOut.Rows),
+				ClearTime: item.ScrollOut.ClearTime,
+			}
+			out[i].ScrollOut = &scrollOut
+		}
+		if item.Frame != nil {
+			frame := cloneHistoryJournalFrameEvent(*item.Frame)
+			out[i].Frame = &frame
+		}
+	}
+	return out
+}
+
+func cloneOrdinaryLineBatch(batch OrdinaryLineBatch) OrdinaryLineBatch {
+	if len(batch.Lines) > 0 {
+		lines := make([]JournalLogicalLine, len(batch.Lines))
+		for i, line := range batch.Lines {
+			lines[i] = cloneJournalLogicalLine(line)
+		}
+		batch.Lines = lines
+	}
+	if batch.OpenUpdate != nil {
+		update := *batch.OpenUpdate
+		update.Cells = cloneHistoryCells(update.Cells)
+		update.TailFill = cloneRowTailFill(update.TailFill)
+		batch.OpenUpdate = &update
+	}
+	batch.Commands = cloneJournalOpenLineCommands(batch.Commands)
+	return batch
+}
+
+func cloneHistoryJournalFrameEvent(frame HistoryJournalFrameEvent) HistoryJournalFrameEvent {
+	frame.Frame = cloneTerminalSemanticFrame(frame.Frame)
+	frame.TouchedRows = cloneIntSlice(frame.TouchedRows)
+	return frame
+}
+
 func cloneIntSlice(values []int) []int {
 	if len(values) == 0 {
 		return nil

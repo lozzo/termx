@@ -7,12 +7,13 @@ import (
 	"github.com/lozzow/termx/termx-core-v2/history"
 )
 
-const terminalHistoryIngestBatchMaxTransactions = 1024
+const terminalHistoryIngestBatchMaxJournals = 1024
 
-// terminalHistoryIngestQueue 是 SemanticTap 之后的 history transaction backlog。
-// domain owner 是 core terminal ingest：queue 只接收 tap 产出的 immutable semantic
-// transaction 副本，不保存 raw PTY bytes、不启动第二个 vterm，也不解释 history
-// truth。失败条件是任何 consumer 绕过 tap 往这里塞 raw PTY replay。
+// terminalHistoryIngestQueue 是 SemanticTap 之后的 compact history journal backlog。
+// domain owner 是 core terminal ingest：queue 只接收同一次 semantic pass 裁剪出的
+// HistoryJournal 副本，不保存 raw PTY bytes、不保存 full transaction、不启动第二个
+// vterm，也不解释 history truth。失败条件是任何 consumer 绕过 tap 往这里塞 raw
+// PTY replay 或把 queue 当作第二份 HistoryStore。
 type terminalHistoryIngestQueue struct {
 	mu         sync.Mutex
 	cond       *sync.Cond
@@ -20,15 +21,20 @@ type terminalHistoryIngestQueue struct {
 	targetSeq  uint64
 	appliedSeq uint64
 	waiters    map[uint64][]chan struct{}
-	inFlight   bool
-	closed     bool
-	done       chan struct{}
-	closeOnce  sync.Once
+	// decisionFence 只记录 backlog 中是否存在会改变后续 classifier state 的 journal。
+	// 它不保存 history payload，也不能替代 HistoryStore；用途只是让 producer 必要时 flush。
+	pendingDecisionFence  bool
+	inFlight              bool
+	inFlightDecisionFence bool
+	closed                bool
+	done                  chan struct{}
+	closeOnce             sync.Once
 }
 
 type terminalHistoryIngestItem struct {
-	tx  history.TerminalSemanticTransaction
-	seq uint64
+	journal       history.HistoryJournal
+	seq           uint64
+	decisionFence bool
 }
 
 func newTerminalHistoryIngestQueue(startSeq uint64) *terminalHistoryIngestQueue {
@@ -41,17 +47,20 @@ func newTerminalHistoryIngestQueue(startSeq uint64) *terminalHistoryIngestQueue 
 	return queue
 }
 
-func (queue *terminalHistoryIngestQueue) Enqueue(tx history.TerminalSemanticTransaction) bool {
+func (queue *terminalHistoryIngestQueue) Enqueue(journal history.HistoryJournal) bool {
 	queue.mu.Lock()
 	defer queue.mu.Unlock()
 	if queue.closed {
 		return false
 	}
 	queue.targetSeq++
+	decisionFence := terminalHistoryJournalRequiresDecisionFence(journal)
 	queue.pending = append(queue.pending, terminalHistoryIngestItem{
-		tx:  cloneSemanticTapTransaction(tx),
-		seq: queue.targetSeq,
+		journal:       history.CloneHistoryJournal(journal),
+		seq:           queue.targetSeq,
+		decisionFence: decisionFence,
 	})
+	queue.pendingDecisionFence = queue.pendingDecisionFence || decisionFence
 	queue.cond.Signal()
 	return true
 }
@@ -105,7 +114,7 @@ func (queue *terminalHistoryIngestQueue) Wait() {
 	<-queue.done
 }
 
-func (queue *terminalHistoryIngestQueue) Run(ingest func([]history.TerminalSemanticTransaction) error) {
+func (queue *terminalHistoryIngestQueue) Run(ingest func([]history.HistoryJournal) error) {
 	defer func() {
 		queue.closeOnce.Do(func() {})
 		close(queue.done)
@@ -116,27 +125,27 @@ func (queue *terminalHistoryIngestQueue) Run(ingest func([]history.TerminalSeman
 			return
 		}
 		if ingest != nil {
-			txs := terminalHistoryIngestBatchTransactions(batch)
-			if len(txs) > 0 {
-				_ = ingest(txs)
+			journals := terminalHistoryIngestBatchJournals(batch)
+			if len(journals) > 0 {
+				_ = ingest(journals)
 			}
 		}
 		queue.finishBatch(terminalHistoryIngestBatchCompleteSeq(batch))
-		// 中文说明：history transaction 已经交给 store/backend 后才尝试归还临时页；
+		// 中文说明：history journal 已经交给 store/backend 后才尝试归还临时页；
 		// 这里不删除 history truth，也不是后台定时 scrub。
 		maybeReclaimDaemonBoundaryHeap()
 	}
 }
 
-func terminalHistoryIngestBatchTransactions(batch []terminalHistoryIngestItem) []history.TerminalSemanticTransaction {
+func terminalHistoryIngestBatchJournals(batch []terminalHistoryIngestItem) []history.HistoryJournal {
 	if len(batch) == 0 {
 		return nil
 	}
-	txs := make([]history.TerminalSemanticTransaction, 0, len(batch))
+	journals := make([]history.HistoryJournal, 0, len(batch))
 	for _, item := range batch {
-		txs = append(txs, cloneSemanticTapTransaction(item.tx))
+		journals = append(journals, history.CloneHistoryJournal(item.journal))
 	}
-	return txs
+	return journals
 }
 
 func (queue *terminalHistoryIngestQueue) nextBatch() ([]terminalHistoryIngestItem, bool) {
@@ -150,7 +159,7 @@ func (queue *terminalHistoryIngestQueue) nextBatch() ([]terminalHistoryIngestIte
 	}
 	count := 0
 	for count < len(queue.pending) {
-		if count > 0 && count >= terminalHistoryIngestBatchMaxTransactions {
+		if count > 0 && count >= terminalHistoryIngestBatchMaxJournals {
 			break
 		}
 		count++
@@ -161,6 +170,7 @@ func (queue *terminalHistoryIngestQueue) nextBatch() ([]terminalHistoryIngestIte
 		queue.cond.Signal()
 	}
 	queue.inFlight = true
+	queue.inFlightDecisionFence = terminalHistoryIngestBatchRequiresDecisionFence(batch)
 	return batch, true
 }
 
@@ -171,7 +181,7 @@ func (queue *terminalHistoryIngestQueue) cloneBatchLocked(items []terminalHistor
 	batch := make([]terminalHistoryIngestItem, len(items))
 	for i, item := range items {
 		batch[i] = item
-		batch[i].tx = cloneSemanticTapTransaction(item.tx)
+		batch[i].journal = history.CloneHistoryJournal(item.journal)
 	}
 	return batch
 }
@@ -182,6 +192,7 @@ func (queue *terminalHistoryIngestQueue) finishBatch(seq uint64) {
 		queue.appliedSeq = seq
 	}
 	queue.inFlight = false
+	queue.inFlightDecisionFence = false
 	for target, waiters := range queue.waiters {
 		if target <= queue.appliedSeq {
 			for _, waiter := range waiters {
@@ -213,9 +224,46 @@ func (queue *terminalHistoryIngestQueue) dropPendingPrefixLocked(count int) {
 	}
 	if remaining == 0 {
 		queue.pending = nil
+		queue.pendingDecisionFence = false
 		return
 	}
 	queue.pending = queue.pending[:remaining]
+	queue.pendingDecisionFence = terminalHistoryIngestBatchRequiresDecisionFence(queue.pending)
+}
+
+func (queue *terminalHistoryIngestQueue) NeedsClassifierFlush(next history.HistoryJournal) bool {
+	queue.mu.Lock()
+	hasBacklog := queue.appliedSeq < queue.targetSeq
+	hasDecisionFence := queue.pendingDecisionFence || queue.inFlightDecisionFence
+	queue.mu.Unlock()
+	if hasDecisionFence {
+		return true
+	}
+	return hasBacklog && terminalHistoryJournalRequiresDecisionFence(next)
+}
+
+func terminalHistoryIngestBatchRequiresDecisionFence(items []terminalHistoryIngestItem) bool {
+	for _, item := range items {
+		if item.decisionFence {
+			return true
+		}
+	}
+	return false
+}
+
+func terminalHistoryJournalRequiresDecisionFence(journal history.HistoryJournal) bool {
+	for _, item := range journal.Items {
+		if item.Kind != history.HistoryJournalItemOrdinaryLineBatch {
+			return true
+		}
+		if item.Ordinary == nil {
+			continue
+		}
+		if item.Ordinary.OpenUpdate != nil || len(item.Ordinary.Commands) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (queue *terminalHistoryIngestQueue) removeWaiterLocked(target uint64, waiter chan struct{}) {
@@ -238,7 +286,8 @@ func (queue *terminalHistoryIngestQueue) removeWaiterLocked(target uint64, waite
 
 // Status 返回 history backlog 的已应用/目标序号诊断。
 // 调用方只能用它判断追平进度或 materialized projection 能力，不能据此读取或构造
-// history payload；payload truth 仍只在 HistoryStore/window/copy。
+// history payload；PendingTransactions 是既有协议字段名，R385 后计数的是 backlog
+// journal。payload truth 仍只在 HistoryStore/window/copy。
 func (queue *terminalHistoryIngestQueue) Status() HistoryBacklogStatus {
 	queue.mu.Lock()
 	defer queue.mu.Unlock()

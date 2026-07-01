@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-proto/wire"
 	"github.com/lozzow/termx/termx-shared/transport/memory"
 )
@@ -265,8 +264,8 @@ func TestR376ProtocolServiceCopyEntryProjectionReturnsMaterializedFrontier(t *te
 		t.Fatalf("terminal: %v", err)
 	}
 	queue := newTerminalHistoryIngestQueue(1)
-	if !queue.Enqueue(history.TerminalSemanticTransaction{}) {
-		t.Fatal("expected pending history transaction")
+	if !queue.Enqueue(r385HistoryQueueJournal(1, "pending")) {
+		t.Fatal("expected pending history journal")
 	}
 	defer queue.Close()
 	terminal.queueMu.Lock()
