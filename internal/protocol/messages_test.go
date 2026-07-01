@@ -37,10 +37,20 @@ func TestNativeScreenSnapshotPayloadRoundTripUsesLiveRevision(t *testing.T) {
 
 func TestLiveInvalidatedEventRoundTripCarriesRevision(t *testing.T) {
 	payload, err := EncodeEventPayload(Event{
-		Type:            EventTerminalLiveInvalidated,
-		TerminalID:      "term-live",
-		LiveInvalidated: &LiveScreenInvalidatedData{Revision: 99},
-		Timestamp:       time.Date(2026, 6, 28, 1, 2, 3, 0, time.UTC),
+		Type:       EventTerminalLiveInvalidated,
+		TerminalID: "term-live",
+		LiveInvalidated: &LiveScreenInvalidatedData{
+			Revision: 99,
+			Snapshot: &NativeScreenSnapshot{
+				TerminalID: "term-live",
+				Revision:   99,
+				Size:       Size{Cols: 20, Rows: 3},
+				Rows:       []CompactRow{CompactRowFromCells([]Cell{{Content: "w", Width: 1}, {Content: "k", Width: 1}})},
+				Cursor:     CursorState{Row: 0, Col: 2, Visible: true},
+				Modes:      TerminalModes{AutoWrap: true},
+			},
+		},
+		Timestamp: time.Date(2026, 6, 28, 1, 2, 3, 0, time.UTC),
 	})
 	if err != nil {
 		t.Fatalf("encode event: %v", err)
@@ -51,6 +61,9 @@ func TestLiveInvalidatedEventRoundTripCarriesRevision(t *testing.T) {
 	}
 	if event.Type != EventTerminalLiveInvalidated || event.TerminalID != "term-live" || event.LiveInvalidated == nil || event.LiveInvalidated.Revision != 99 {
 		t.Fatalf("live invalidation event did not round trip: %#v", event)
+	}
+	if event.LiveInvalidated.Snapshot == nil || event.LiveInvalidated.Snapshot.Rows[0].Text != "wk" || !event.LiveInvalidated.Snapshot.Modes.AutoWrap {
+		t.Fatalf("live invalidation snapshot did not round trip: %#v", event.LiveInvalidated)
 	}
 }
 

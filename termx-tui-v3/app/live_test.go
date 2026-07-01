@@ -133,6 +133,12 @@ func (service *blockingOrderedInputTerminalService) inputText() string {
 	return builder.String()
 }
 
+func (service *blockingOrderedInputTerminalService) inputCount() int {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	return len(service.inputs)
+}
+
 func ownerLiveAttachConfig(terminalID string, cols int, rows int) LiveConfig {
 	return ownerLiveAttachConfigForPane(terminalID, cols, rows, state.DefaultPaneID)
 }
@@ -317,28 +323,18 @@ func TestInteractiveRuntimeSerializesAsyncTerminalInputBytes(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("first terminal input did not start")
 	}
-	// 中文说明：第一字节未 ack 前，后续同 terminal/view/channel input
-	// 不能越过它进入 service；否则 tmux send-keys 长命令会被打乱。
-	if got := terminal.inputText(); got != "p" {
-		t.Fatalf("input stream must wait behind first byte while async send is in-flight, got %q", got)
+	// 中文说明：连续普通 key bytes 会在 runtime drain 边界合成一个 PTY
+	// input RPC；SerialKey 仍保证同 terminal/view/channel 的后续输入不能越过它。
+	if got := terminal.inputText(); got != command {
+		t.Fatalf("plain key burst should send as one ordered input batch, got %q", got)
 	}
 	close(terminal.releaseFirst)
-	select {
-	case <-terminal.done:
-	case <-time.After(time.Second):
-		t.Fatal("terminal input queue did not continue after first byte released")
+	time.Sleep(20 * time.Millisecond)
+	if got := terminal.inputText(); got != command {
+		t.Fatalf("terminal input order changed, got %q want %q", got, command)
 	}
-	deadline := time.After(time.Second)
-	for {
-		if got := terminal.inputText(); got == command {
-			return
-		}
-		select {
-		case <-deadline:
-			t.Fatalf("terminal input order changed, got %q want %q", terminal.inputText(), command)
-		default:
-			time.Sleep(time.Millisecond)
-		}
+	if got := terminal.inputCount(); got != 1 {
+		t.Fatalf("plain key burst should send exactly one batched request, got %d", got)
 	}
 }
 
@@ -1143,7 +1139,7 @@ func TestLiveInvalidationArmEffectIsOneShot(t *testing.T) {
 	}
 }
 
-func TestR390LiveInvalidationArmEffectCoalescesAndCancels(t *testing.T) {
+func TestR391LiveInvalidationArmEffectDoesNotDelayTailWake(t *testing.T) {
 	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 1)}
 	effects := liveInvalidationArmEffect("term-1", 80, 24, 7, LiveDeps{Terminal: terminal})
 	if len(effects) != 1 {
@@ -1156,18 +1152,17 @@ func TestR390LiveInvalidationArmEffectCoalescesAndCancels(t *testing.T) {
 		t.Fatalf("canceled coalesce wait must not arm live invalidation, got %#v", msg)
 	}
 	if len(terminal.LiveInvalidationRequests) != 0 {
-		t.Fatalf("canceled coalesce wait must not call service, got %#v", terminal.LiveInvalidationRequests)
+		t.Fatalf("canceled arm must not call service, got %#v", terminal.LiveInvalidationRequests)
 	}
 
 	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
-	start := time.Now()
 	msg := arm.Run(context.Background())
-	if elapsed := time.Since(start); elapsed < liveInvalidationArmCoalesceDelay {
-		t.Fatalf("arm effect should wait before re-arming under live pressure, elapsed=%s", elapsed)
-	}
 	live, ok := msg.(LiveEventMsg)
 	if !ok || live.Event.Snapshot.Revision != 8 {
-		t.Fatalf("expected live event after coalesce wait, got %#v", msg)
+		t.Fatalf("expected live event without artificial arm delay, got %#v", msg)
+	}
+	if len(terminal.LiveInvalidationRequests) != 1 {
+		t.Fatalf("expected one immediate arm request, got %#v", terminal.LiveInvalidationRequests)
 	}
 }
 

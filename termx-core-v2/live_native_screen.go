@@ -38,8 +38,11 @@ type NativeScreenSnapshot struct {
 }
 
 // LiveScreenInvalidated 是 core 发给客户端的 live screen 唤醒信号。
-// 它只表示 terminal 的 latest native screen 至少已经变到 Revision；客户端应自行拉取最新 snapshot。
+// Snapshot 只由 one-shot live.invalidation.next 响应按需填充，来源仍是同一个
+// SemanticTap 的 latest native screen；普通广播事件只需要 Revision，避免把
+// 高压输出 broadcast 路径放大成 screen payload 队列。
 type LiveScreenInvalidated struct {
 	TerminalID string
 	Revision   LiveRevision
+	Snapshot   *NativeScreenSnapshot
 }

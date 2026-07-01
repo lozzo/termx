@@ -315,20 +315,7 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 	finishConvert := perftrace.Measure("tui.protocol.live_surface_convert")
 	// 中文说明：v3 live display 的 screen truth 只能来自 core latest native screen；
 	// lifecycle 由 list/state event 单独承载，不能再混入 snapshot RPC。
-	liveSnapshot := state.LiveSurfaceSnapshot{
-		TerminalID: req.TerminalID,
-		Revision:   snapshot.Revision,
-		Cols:       int(snapshot.Size.Cols),
-		Rows:       int(snapshot.Size.Rows),
-		Screen:     liveSurfaceScreenFromCompactRows(snapshot.Rows),
-		Cursor: state.LiveCursor{
-			Visible: snapshot.Cursor.Visible,
-			Row:     snapshot.Cursor.Row,
-			Col:     snapshot.Cursor.Col,
-			Shape:   snapshot.Cursor.Shape,
-		},
-		Modes: liveSurfaceModesFromProtocol(snapshot.Modes),
-	}
+	liveSnapshot := liveSurfaceSnapshotFromProtocol(req.TerminalID, snapshot)
 	finishConvert(liveSnapshotApproxBytes(liveSnapshot))
 	return TerminalSurfaceResult{
 		Ready:          true,
@@ -391,12 +378,39 @@ func liveInvalidationFromProtocol(req TerminalLiveEventRequest, event protocol.E
 		out.Err = fmt.Errorf("unexpected live invalidation event type: %v", event.Type)
 		return out
 	}
-	// 中文说明：live invalidation 只是唤醒信号；TUI app 自己决定何时拉取 latest screen。
 	out.Refresh = true
 	if event.LiveInvalidated != nil {
 		out.Snapshot.Revision = event.LiveInvalidated.Revision
+		if event.LiveInvalidated.Snapshot != nil {
+			// 中文说明：one-shot live wake 可以直接携带 core latest native screen，
+			// 其 truth source 仍是 core single SemanticTap；TUI 不从本地 rows
+			// 推断历史，也不再 wake 后串行发 live.screen.get。
+			out.Refresh = false
+			out.Ready = true
+			out.Snapshot = liveSurfaceSnapshotFromProtocol(req.TerminalID, event.LiveInvalidated.Snapshot)
+		}
 	}
 	return out
+}
+
+func liveSurfaceSnapshotFromProtocol(terminalID string, snapshot *protocol.NativeScreenSnapshot) state.LiveSurfaceSnapshot {
+	if snapshot == nil {
+		return state.LiveSurfaceSnapshot{TerminalID: terminalID}
+	}
+	return state.LiveSurfaceSnapshot{
+		TerminalID: terminalID,
+		Revision:   snapshot.Revision,
+		Cols:       int(snapshot.Size.Cols),
+		Rows:       int(snapshot.Size.Rows),
+		Screen:     liveSurfaceScreenFromCompactRows(snapshot.Rows),
+		Cursor: state.LiveCursor{
+			Visible: snapshot.Cursor.Visible,
+			Row:     snapshot.Cursor.Row,
+			Col:     snapshot.Cursor.Col,
+			Shape:   snapshot.Cursor.Shape,
+		},
+		Modes: liveSurfaceModesFromProtocol(snapshot.Modes),
+	}
 }
 
 func (adapter ProtocolTerminalServiceAdapter) terminalInfo(ctx context.Context, terminalID string) (protocol.TerminalInfo, error) {

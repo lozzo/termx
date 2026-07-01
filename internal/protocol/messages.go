@@ -288,9 +288,11 @@ type TerminalReadErrorData struct {
 }
 
 // LiveScreenInvalidatedData 是 core native screen 的 latest-only 唤醒事件。
-// 它不携带 screen rows；客户端收到后应按需调用 live.screen.get 拉取当前最新 NativeScreenSnapshot。
+// Snapshot 只允许 one-shot live.invalidation.next 响应携带，用同一个 core
+// native screen payload 合并 wake 与 latest pull；普通广播 event 可以只携带 Revision。
 type LiveScreenInvalidatedData struct {
 	Revision uint64
+	Snapshot *NativeScreenSnapshot
 }
 
 type StorageScope string

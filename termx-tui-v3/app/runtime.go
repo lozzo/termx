@@ -489,9 +489,12 @@ func (runtime *AppRuntime) prepareRuntimeMessage(msg Msg) bool {
 	}
 }
 
-func (runtime *AppRuntime) shouldRenderImmediatelyAfterMessage(msg Msg) bool {
-	surface, ok := msg.(LiveSurfaceMsg)
-	return ok && ordinaryLiveSurfaceResult(surface)
+func (runtime *AppRuntime) shouldRenderImmediatelyAfterMessage(_ Msg) bool {
+	// 中文说明：ordinary live surface 是 core latest screen 的投影结果，
+	// 不是必须逐帧展示的语义边界。它要等 runtime batch/idle 边界统一写出，
+	// 让队列的 latest-only 合并先发生，避免中间 snapshot 写帧后立刻触发
+	// FrameSink ready 并重新 arm 下一次 live invalidation。
+	return false
 }
 
 func (runtime *AppRuntime) ingestHostInitialSize() {
@@ -525,13 +528,27 @@ func (runtime *AppRuntime) ingestHostInput() {
 		return
 	}
 	events := runtime.host.InputEvents()
+	var terminalBatch []byte
+	var terminalBatchEvent input.InputEvent
+	blockTerminalBatch := false
+	flushTerminalBatch := func() {
+		if len(terminalBatch) == 0 {
+			return
+		}
+		payload := append([]byte(nil), terminalBatch...)
+		runtime.enqueue(TerminalInputBytesMsg{Event: terminalBatchEvent, Bytes: payload})
+		terminalBatch = nil
+		terminalBatchEvent = input.InputEvent{}
+	}
 	for {
 		select {
 		case event := <-events:
 			switch event.Kind {
 			case input.EventKindResize:
+				flushTerminalBatch()
 				runtime.enqueue(HostResizeMsg{Cols: event.Cols, Rows: event.Rows})
 			case input.EventKindHostTheme:
+				flushTerminalBatch()
 				runtime.enqueue(HostThemeMsg{Update: state.HostThemeUpdate{
 					DefaultFG:    event.Theme.DefaultFG,
 					DefaultBG:    event.Theme.DefaultBG,
@@ -539,14 +556,79 @@ func (runtime *AppRuntime) ingestHostInput() {
 					PaletteColor: event.Theme.PaletteColor,
 				}})
 			default:
+				if !blockTerminalBatch {
+					if bytes, ok := runtime.coalescableTerminalInputBytes(event); ok {
+						if len(terminalBatch) == 0 {
+							terminalBatchEvent = event
+						}
+						terminalBatch = append(terminalBatch, bytes...)
+						continue
+					}
+				}
+				flushTerminalBatch()
 				msg := runtime.dispatchMouseHitRegion(InputMsg{Event: event})
 				runtime.logHostInputEvent(event, msg)
 				runtime.enqueue(msg)
+				// 中文说明：同一次 host input drain 内，前一个普通 InputMsg 可能打开
+				// overlay/copy/prefix mode，但 reducer 还没来得及更新 runtime.state；
+				// 后续输入保持原消息边界，避免基于旧 state 误合并进 PTY。
+				blockTerminalBatch = true
 			}
 		default:
+			flushTerminalBatch()
 			return
 		}
 	}
+}
+
+func (runtime *AppRuntime) coalescableTerminalInputBytes(event input.InputEvent) ([]byte, bool) {
+	if event.Kind != input.EventKindKey {
+		return nil, false
+	}
+	if event.Alt || event.Ctrl || event.Shift {
+		return nil, false
+	}
+	var bytes []byte
+	switch event.Key {
+	case input.KeyChar:
+		if event.Char == "" {
+			return nil, false
+		}
+		bytes = []byte(event.Char)
+	case input.KeyEnter:
+		bytes = []byte{'\r'}
+	case input.KeyBackspace:
+		bytes = []byte{0x7f}
+	case input.KeyTab:
+		bytes = []byte{'\t'}
+	default:
+		return nil, false
+	}
+	root := runtime.state
+	if copyModeOwnsActiveInput(root) {
+		return nil, false
+	}
+	shell := root.Shell.ReadonlyDefaults()
+	if shell.Overlay.Open || shell.InteractionMode != state.InteractionModeNormal {
+		return nil, false
+	}
+	target, ok := liveInputTarget(root)
+	if !ok || target.Channel == 0 || target.AttachPending {
+		return nil, false
+	}
+	intent := input.RouteWithOptions(event, input.RouteOptions{
+		CopyModeActive:           false,
+		TerminalMousePassthrough: false,
+	})
+	if intent.Kind != input.IntentTerminalInput || len(intent.Bytes) == 0 || intent.RawMouse {
+		return nil, false
+	}
+	if string(intent.Bytes) != string(bytes) {
+		return nil, false
+	}
+	// 中文说明：这里只合并已经明确属于 terminal passthrough 的普通 key bytes；
+	// copy/overlay/prefix/鼠标/resize/theme 保持原消息边界，避免 UI command 被吞进 PTY。
+	return bytes, true
 }
 
 func (runtime *AppRuntime) enqueueDueToastTick() {

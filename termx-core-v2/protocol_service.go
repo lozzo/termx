@@ -612,6 +612,11 @@ func (session *protocolSession) liveNativeScreenSnapshot(params protocol.LiveScr
 		return nil, err
 	}
 	snapshot := terminal.NativeScreenSnapshot(params.TerminalID)
+	out := protocolNativeScreenSnapshotFromCore(snapshot, protocolSizeFromCore(info.Size))
+	return &out, nil
+}
+
+func protocolNativeScreenSnapshotFromCore(snapshot NativeScreenSnapshot, size protocol.Size) protocol.NativeScreenSnapshot {
 	rows := make([]protocol.CompactRow, 0, len(snapshot.Rows))
 	for _, row := range snapshot.Rows {
 		cells := make([]protocol.Cell, len(row.Cells))
@@ -622,16 +627,22 @@ func (session *protocolSession) liveNativeScreenSnapshot(params protocol.LiveScr
 			return cells[index]
 		}))
 	}
-	return &protocol.NativeScreenSnapshot{
+	if size.Cols == 0 {
+		size.Cols = uint16(snapshot.Size.Cols)
+	}
+	if size.Rows == 0 {
+		size.Rows = uint16(snapshot.Size.Rows)
+	}
+	return protocol.NativeScreenSnapshot{
 		TerminalID: snapshot.TerminalID,
 		Revision:   uint64(snapshot.Revision),
-		Size:       protocolSizeFromCore(info.Size),
+		Size:       size,
 		Rows:       rows,
 		AltScreen:  snapshot.AltScreen,
 		Cursor:     vtermCursorToProtocol(snapshot.Cursor),
 		Modes:      vtermModesToProtocol(snapshot.Modes),
 		Timestamp:  snapshot.Timestamp,
-	}, nil
+	}
 }
 
 func nativeScreenSnapshotApproxBytes(snapshot *protocol.NativeScreenSnapshot) int {
@@ -1763,6 +1774,10 @@ func protocolEventFromCoreV2(event Event) protocol.Event {
 			revision = uint64(event.Live.Revision)
 		}
 		out.LiveInvalidated = &protocol.LiveScreenInvalidatedData{Revision: revision}
+		if event.Live != nil && event.Live.Snapshot != nil {
+			snapshot := protocolNativeScreenSnapshotFromCore(*event.Live.Snapshot, protocol.Size{})
+			out.LiveInvalidated.Snapshot = &snapshot
+		}
 	case EventTerminalRemoved:
 		out.Type = protocol.EventTerminalRemoved
 		out.Removed = &protocol.TerminalRemovedData{Reason: "removed"}

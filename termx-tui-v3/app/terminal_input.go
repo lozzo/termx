@@ -15,12 +15,29 @@ import (
 // 必须在这里统一解析 active TerminalView binding，避免 key 和 mouse 走两套目标选择逻辑。
 func NewTerminalInputRouterReducer(deps LiveDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
-		inputMsg, ok := msg.(InputMsg)
-		if !ok {
+		switch msg := msg.(type) {
+		case InputMsg:
+			return reduceTerminalInputRoute(root, msg, deps)
+		case TerminalInputBytesMsg:
+			return reduceTerminalInputBytes(root, msg, deps)
+		default:
 			return root, nil
 		}
-		return reduceTerminalInputRoute(root, inputMsg, deps)
 	}
+}
+
+// TerminalInputBytesMsg 是 runtime 在普通 terminal passthrough 状态下合并出的
+// 有序 PTY byte stream。它只服务 terminal input，不改变 TUI view state；
+// reducer 会在发送前重新检查当前目标，避免 stale batch 穿透 overlay/copy mode。
+type TerminalInputBytesMsg struct {
+	Event input.InputEvent
+	Bytes []byte
+}
+
+func (TerminalInputBytesMsg) isMsg() {}
+
+func (TerminalInputBytesMsg) SkipRender() bool {
+	return true
 }
 
 func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -96,6 +113,41 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		return root, []Effect{liveAttachForInputEffect(root, target, msg.Event, intent.Bytes, deps)}
 	}
 	return root, []Effect{terminalSendInputEffect(target, msg.Event, intent.Bytes, true, deps)}
+}
+
+func reduceTerminalInputBytes(root state.Root, msg TerminalInputBytesMsg, deps LiveDeps) (state.Root, []Effect) {
+	if len(msg.Bytes) == 0 {
+		return root, nil
+	}
+	if deps.Terminal == nil {
+		logTerminalInputRoute(deps, root, terminalInputRouteLog{
+			Event:  msg.Event,
+			Result: "blocked",
+			Reason: "terminal service missing",
+			Bytes:  len(msg.Bytes),
+		})
+		return setLiveError(root, "terminal service missing"), nil
+	}
+	if copyModeOwnsActiveInput(root) || root.Shell.ReadonlyDefaults().Overlay.Open || root.Shell.ReadonlyDefaults().InteractionMode != state.InteractionModeNormal {
+		// 中文说明：batch 是 runtime 基于入队时状态做的优化；真正发送前
+		// reducer 仍以当前 UI owner 为准，overlay/copy/prefix mode 不能漏字节到 PTY。
+		return root, nil
+	}
+	target, ok := liveInputTarget(root)
+	if !ok || target.AttachPending {
+		return root, nil
+	}
+	if target.Channel == 0 {
+		return root, []Effect{liveAttachForInputEffect(root, target, msg.Event, msg.Bytes, deps)}
+	}
+	logTerminalInputRoute(deps, root, terminalInputRouteLog{
+		Event:       msg.Event,
+		Target:      target,
+		Result:      "terminal-batch",
+		Bytes:       len(msg.Bytes),
+		NeedsAttach: false,
+	})
+	return root, []Effect{terminalSendInputEffect(target, msg.Event, msg.Bytes, true, deps)}
 }
 
 func terminalSendInputEffect(target liveInputTargetInfo, event input.InputEvent, bytes []byte, retryOnError bool, deps LiveDeps) Effect {

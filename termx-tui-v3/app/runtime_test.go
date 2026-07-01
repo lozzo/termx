@@ -780,8 +780,8 @@ func TestAppRuntimeSchedulesDirtyLiveFetchAfterSurfaceReturn(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 
-	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"middle", "latest"}) {
-		t.Fatalf("runtime should render pressure-budget surface and follow-up latest frame, got %v", got)
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"latest"}) {
+		t.Fatalf("dirty live follow-up should coalesce middle surface before frame write, got %v", got)
 	}
 	if runtime.State().Surface.Revision != 3 {
 		t.Fatalf("latest surface should win, got %#v", runtime.State().Surface)
@@ -926,8 +926,8 @@ func TestAppRuntimeDirtyLiveFetchIgnoresServiceLifecycleFlagFromOrdinaryRefresh(
 		t.Fatalf("drain: %v", err)
 	}
 
-	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"middle", "latest"}) {
-		t.Fatalf("ordinary refresh surface should render pressure-budget frame and latest follow-up, got %v", got)
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"latest"}) {
+		t.Fatalf("ordinary refresh follow-up should coalesce middle surface before frame write, got %v", got)
 	}
 	if runtime.State().Surface.State == state.TerminalLiveExited {
 		t.Fatalf("ordinary refresh fetch must not become lifecycle boundary, got %#v", runtime.State().Surface)
@@ -1133,6 +1133,79 @@ func TestAppRuntimeIngestsTerminalHostInput(t *testing.T) {
 
 	if !reflect.DeepEqual(seen, []input.EventKind{input.EventKindKey}) {
 		t.Fatalf("unexpected host input events %v", seen)
+	}
+}
+
+func TestAppRuntimeBatchesPlainTerminalInputBytes(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	root := state.Root{Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(
+		state.DefaultPaneID,
+		"term-1",
+		7,
+		80,
+		24,
+		state.TerminalResizeRoleOwner,
+		"surface-1",
+		state.TerminalPaneViewID(state.DefaultPaneID),
+		true,
+	))
+	for _, ch := range "abc" {
+		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: string(ch)}); err != nil {
+			t.Fatalf("send input %q: %v", ch, err)
+		}
+	}
+	var batches []string
+	runtime := NewAppRuntime(
+		root,
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			batch, ok := msg.(TerminalInputBytesMsg)
+			if !ok {
+				t.Fatalf("expected TerminalInputBytesMsg, got %T", msg)
+			}
+			batches = append(batches, string(batch.Bytes))
+			return root, nil
+		},
+		nil,
+		host,
+		nil,
+	)
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if !reflect.DeepEqual(batches, []string{"abc"}) {
+		t.Fatalf("plain terminal input should batch by drain, got %v", batches)
+	}
+}
+
+func TestAppRuntimeDoesNotBatchInputWithoutTerminalBinding(t *testing.T) {
+	host := NewFakeTerminalHost(2)
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"}); err != nil {
+		t.Fatalf("send input: %v", err)
+	}
+	var sawInput bool
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			if _, ok := msg.(InputMsg); !ok {
+				t.Fatalf("expected InputMsg without terminal binding, got %T", msg)
+			}
+			sawInput = true
+			return root, nil
+		},
+		nil,
+		host,
+		nil,
+	)
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if !sawInput {
+		t.Fatal("expected unbound key to remain a normal input message")
 	}
 }
 

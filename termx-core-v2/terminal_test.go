@@ -1061,6 +1061,9 @@ func TestServerNextLiveInvalidationReplaysOnlyWhenObservedRevisionIsBehind(t *te
 	if event.Live == nil || event.Live.Revision != currentRevision {
 		t.Fatalf("unexpected immediate wake %#v current=%#v", event, currentRevision)
 	}
+	if event.Live.Snapshot == nil || event.Live.Snapshot.Revision != currentRevision || !strings.Contains(strings.Join(terminalLiveRowsFromNativeSnapshot(*event.Live.Snapshot), "\n"), "live update") {
+		t.Fatalf("immediate wake should carry latest native snapshot, got %#v", event.Live)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 	if event, err := server.NextLiveInvalidation(ctx, "term-live-next", currentRevision); err == nil {
@@ -1104,6 +1107,9 @@ func TestServerNextLiveInvalidationWaitsForNextWake(t *testing.T) {
 		if event.Type != EventTerminalLiveInvalidated || event.TerminalID != "term-live-wait" || event.Live == nil || event.Live.Revision == 0 {
 			t.Fatalf("expected next live invalidation, got %#v", event)
 		}
+		if event.Live.Snapshot == nil || !strings.Contains(strings.Join(terminalLiveRowsFromNativeSnapshot(*event.Live.Snapshot), "\n"), "live update") {
+			t.Fatalf("waited wake should carry latest native snapshot, got %#v", event.Live)
+		}
 	case <-ctx.Done():
 		t.Fatalf("timed out waiting for live invalidation: %v", ctx.Err())
 	}
@@ -1133,6 +1139,9 @@ func TestServerNextLiveInvalidationCoalescesMissedRevisionsToLatestWake(t *testi
 	}
 	if event.Live == nil || event.Live.Revision != currentRevision {
 		t.Fatalf("expected latest coalesced revision %d, got %#v", currentRevision, event)
+	}
+	if event.Live.Snapshot == nil || event.Live.Snapshot.Revision != currentRevision || !strings.Contains(strings.Join(terminalLiveRowsFromNativeSnapshot(*event.Live.Snapshot), "\n"), "three") {
+		t.Fatalf("coalesced wake should carry latest native snapshot, got %#v", event.Live)
 	}
 }
 
