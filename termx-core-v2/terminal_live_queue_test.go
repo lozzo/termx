@@ -168,17 +168,16 @@ func TestTerminalLiveIngestQueueDropsConsumedPayloadReferences(t *testing.T) {
 	if !ok || len(first) != 1 {
 		t.Fatalf("expected first capped batch, got batch=%d ok=%v", len(first), ok)
 	}
-	retained := queue.pending[:cap(queue.pending)]
-	if len(queue.pending) != 1 || retained[1].text != "" || retained[1].seq != 0 {
-		t.Fatalf("consumed live payload should not remain in backing array, len=%d retained=%#v", len(queue.pending), retained)
+	if queue.pendingCount != 1 || queue.head == nil || queue.head.start != 1 || queue.head.items[0].text != "" || queue.head.items[0].seq != 0 {
+		t.Fatalf("consumed live payload should not remain in active page, count=%d head=%#v", queue.pendingCount, queue.head)
 	}
 
 	second, ok := queue.nextBatch()
 	if !ok || len(second) != 1 {
 		t.Fatalf("expected second batch, got batch=%d ok=%v", len(second), ok)
 	}
-	if queue.pending != nil {
-		t.Fatalf("empty live buffer should release backing array, got len=%d cap=%d", len(queue.pending), cap(queue.pending))
+	if queue.pendingCount != 0 || queue.head != nil || queue.tail != nil {
+		t.Fatalf("empty live buffer should release pages, count=%d head=%#v tail=%#v", queue.pendingCount, queue.head, queue.tail)
 	}
 	close(queue.done)
 }

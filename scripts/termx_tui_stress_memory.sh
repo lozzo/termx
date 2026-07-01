@@ -24,6 +24,8 @@ Options:
   --no-baseline-time    skip outside-termx baseline timing
   --profile-mode MODE   heap profile capture mode: final, all, or none; default final
   --perftrace           capture daemon/TUI aggregated perftrace JSON during the run
+  --history-disabled    start daemon with TERMX_HISTORY_DISABLE=1 and skip copy/history checks;
+                        use this to isolate live consumer timing
   --daemon-memory-limit-mb N
                         set TERMX_DAEMON_MEMORY_LIMIT_MB for daemon runtime GC pacing
   --daemon-request-reclaim-min-heap-mb N
@@ -618,6 +620,7 @@ TUI_MEMORY_LIMIT_MB=""
 BASELINE_TIME=1
 PROFILE_MODE="final"
 PERFTRACE=0
+HISTORY_DISABLED=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -663,6 +666,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --perftrace)
       PERFTRACE=1
+      shift
+      ;;
+    --history-disabled)
+      HISTORY_DISABLED=1
       shift
       ;;
     --daemon-memory-limit-mb)
@@ -846,6 +853,10 @@ fi
 
 log "starting daemon"
 DAEMON_ENV_PREFIX=(TERMX_STRESS_HARNESS=1)
+if [[ "$HISTORY_DISABLED" == "1" ]]; then
+  # 中文说明：该模式只用于隔离 live SurfaceTrack 可见延迟，不改变默认历史准入。
+  DAEMON_ENV_PREFIX+=(TERMX_HISTORY_DISABLE=1)
+fi
 if [[ "$USE_REAL_STATE" == "0" ]]; then
   DAEMON_ENV_PREFIX+=(XDG_STATE_HOME="$DAEMON_DEFAULT_STATE_DIR")
 fi
@@ -854,6 +865,8 @@ if [[ "$PERFTRACE" == "1" ]]; then
 fi
 if [[ "$USE_REAL_STATE" == "1" ]]; then
   log "daemon default history file backend: real user state"
+elif [[ "$HISTORY_DISABLED" == "1" ]]; then
+  log "daemon history disabled: live consumer timing only"
 else
   log "daemon default history file backend: $DAEMON_DEFAULT_HISTORY_BACKEND_DIR"
 fi
@@ -985,6 +998,19 @@ record_stage "tui_after_stress" "tui" "$TUI_PID"
 maybe_capture_stage_profile "tui_after_stress" "tui" "$TUI_PID"
 
 log "entering copy/history latest"
+if [[ "$HISTORY_DISABLED" == "1" ]]; then
+  log "history disabled; skipping copy/history latest and oldest checks"
+  if [[ -s "$ROOT/history-files.tsv" ]]; then
+    log "history file sizes"
+    if command -v column >/dev/null 2>&1; then
+      column -t -s $'\t' "$ROOT/history-files.tsv"
+    else
+      cat "$ROOT/history-files.tsv"
+    fi
+  fi
+  log "artifacts kept at: $ROOT"
+  exit 0
+fi
 tmux send-keys -t "$TARGET" C-v
 sleep 3
 capture_pane "$TARGET" "copy-latest"

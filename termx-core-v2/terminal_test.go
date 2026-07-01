@@ -1366,6 +1366,44 @@ func TestR396NextLiveInvalidationFlushesLiveQueueNotHistoryTapQueue(t *testing.T
 	}
 }
 
+func TestR397LiveIngestQueueDoesNotShiftBacklogOnBatchDrain(t *testing.T) {
+	queue := newTerminalLiveIngestQueue()
+	for i := 0; i < 2048; i++ {
+		if !queue.Enqueue("x") {
+			t.Fatal("enqueue should accept open queue")
+		}
+	}
+	batch, completeSeq, ok := queue.nextBatchWithSeq()
+	if !ok {
+		t.Fatal("expected first batch")
+	}
+	if len(batch) != 2048 || completeSeq != 2048 {
+		t.Fatalf("expected full small backlog batch, len=%d seq=%d", len(batch), completeSeq)
+	}
+	if queue.pendingCount != 0 || queue.head != nil || queue.tail != nil {
+		t.Fatalf("fully drained queue should release pending pages, count=%d head=%#v tail=%#v", queue.pendingCount, queue.head, queue.tail)
+	}
+
+	for i := 0; i < 2048; i++ {
+		if !queue.Enqueue(strings.Repeat("a", 16)) {
+			t.Fatal("enqueue should accept reopened backlog")
+		}
+	}
+	batch, completeSeq, ok = queue.nextBatchWithSeq()
+	if !ok {
+		t.Fatal("expected bounded batch")
+	}
+	if len(batch) == 0 || completeSeq == 0 {
+		t.Fatalf("expected bounded batch with completion seq, len=%d seq=%d", len(batch), completeSeq)
+	}
+	if queue.pendingCount != 1024 || queue.head == nil || queue.head.items[queue.head.start].seq != completeSeq+1 {
+		t.Fatalf("partial drain should release consumed pages and keep remaining order, count=%d seq=%d head=%#v", queue.pendingCount, completeSeq, queue.head)
+	}
+	if queue.pendingLenLocked() != queue.pendingCount {
+		t.Fatalf("pending length helper mismatch, count=%d", queue.pendingCount)
+	}
+}
+
 func TestR324TerminalHistoryReturnsAuthoritativeWindow(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

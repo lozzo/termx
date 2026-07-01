@@ -14,14 +14,21 @@ import (
 // 高频输出被攒成超大块后才推进 live 或 history semantic consumer。
 const terminalLiveIngestBatchMaxBytes = 16 * 1024
 
+const terminalLiveIngestQueuePageSize = 256
+
 // terminalLiveIngestQueue 把 PTY 高频输出压成 consumer 批次。
 // domain owner 是 core terminal ingest；R396 后 live queue 推进 SurfaceTrack，
 // history tap queue 推进 history semantic consumer。它不保存 history truth，也不
 // 解释 PTY bytes，只提供当前已入队 payload 的 flush fence。
+// 中文说明：pending 使用固定页链表而不是 slice 队列。history consumer 慢时可能积压
+// 很多 PTY payload；reader 给 history tap 入队不能在锁内做大 slice 扩容或前移复制，
+// 否则会间接拖住后续 PTY read，从而影响 live SurfaceTrack 看到最新输出。
 type terminalLiveIngestQueue struct {
 	mu           sync.Mutex
 	cond         *sync.Cond
-	pending      []terminalLiveIngestItem
+	head         *terminalLiveIngestPage
+	tail         *terminalLiveIngestPage
+	pendingCount int
 	closed       bool
 	enqueuedSeq  uint64
 	completedSeq uint64
@@ -32,6 +39,13 @@ type terminalLiveIngestQueue struct {
 type terminalLiveIngestItem struct {
 	text string
 	seq  uint64
+}
+
+type terminalLiveIngestPage struct {
+	items [terminalLiveIngestQueuePageSize]terminalLiveIngestItem
+	start int
+	end   int
+	next  *terminalLiveIngestPage
 }
 
 func newTerminalLiveIngestQueue() *terminalLiveIngestQueue {
@@ -50,7 +64,7 @@ func (queue *terminalLiveIngestQueue) Enqueue(text string) bool {
 		return false
 	}
 	queue.enqueuedSeq++
-	queue.pending = append(queue.pending, terminalLiveIngestItem{text: text, seq: queue.enqueuedSeq})
+	queue.pushPendingLocked(terminalLiveIngestItem{text: text, seq: queue.enqueuedSeq})
 	queue.cond.Signal()
 	return true
 }
@@ -125,19 +139,20 @@ func (queue *terminalLiveIngestQueue) nextBatch() ([]string, bool) {
 func (queue *terminalLiveIngestQueue) nextBatchWithSeq() ([]string, uint64, bool) {
 	queue.mu.Lock()
 	defer queue.mu.Unlock()
-	for len(queue.pending) == 0 && !queue.closed {
+	for queue.pendingLenLocked() == 0 && !queue.closed {
 		queue.cond.Wait()
 	}
-	if len(queue.pending) == 0 && queue.closed {
+	if queue.pendingLenLocked() == 0 && queue.closed {
 		return nil, 0, false
 	}
 	count := 0
 	bytes := 0
-	for count < len(queue.pending) {
-		nextBytes := len(queue.pending[count].text)
+	for page, index := queue.head, 0; page != nil && count < queue.pendingLenLocked(); {
+		item := &page.items[page.start+index]
+		nextBytes := len(item.text)
 		if bytes == 0 && nextBytes > terminalLiveIngestBatchMaxBytes {
-			head, tail := splitLiveIngestPayload(queue.pending[count].text, terminalLiveIngestBatchMaxBytes)
-			queue.pending[count].text = tail
+			head, tail := splitLiveIngestPayload(item.text, terminalLiveIngestBatchMaxBytes)
+			item.text = tail
 			return []string{head}, 0, true
 		}
 		if count > 0 && bytes+nextBytes > terminalLiveIngestBatchMaxBytes {
@@ -145,18 +160,22 @@ func (queue *terminalLiveIngestQueue) nextBatchWithSeq() ([]string, uint64, bool
 		}
 		bytes += nextBytes
 		count++
+		index++
+		if page.start+index >= page.end {
+			page = page.next
+			index = 0
+		}
 	}
-	items := append([]terminalLiveIngestItem(nil), queue.pending[:count]...)
-	batch := make([]string, len(items))
-	for index, item := range items {
-		batch[index] = item.text
-	}
-	completeSeq := items[len(items)-1].seq
+	batch, completeSeq := queue.pendingBatchLocked(count)
 	queue.dropPendingPrefixLocked(count)
-	if len(queue.pending) > 0 {
+	if queue.pendingLenLocked() > 0 {
 		queue.cond.Signal()
 	}
 	return batch, completeSeq, true
+}
+
+func (queue *terminalLiveIngestQueue) pendingLenLocked() int {
+	return queue.pendingCount
 }
 
 func splitLiveIngestPayload(text string, limit int) (string, string) {
@@ -196,16 +215,71 @@ func (queue *terminalLiveIngestQueue) dropPendingPrefixLocked(count int) {
 	if count <= 0 {
 		return
 	}
-	remaining := len(queue.pending) - count
-	copy(queue.pending, queue.pending[count:])
-	for i := remaining; i < len(queue.pending); i++ {
-		queue.pending[i] = terminalLiveIngestItem{}
+	for count > 0 && queue.head != nil {
+		page := queue.head
+		available := page.end - page.start
+		if available <= 0 {
+			queue.head = page.next
+			if queue.head == nil {
+				queue.tail = nil
+			}
+			continue
+		}
+		take := count
+		if take > available {
+			take = available
+		}
+		for index := 0; index < take; index++ {
+			page.items[page.start+index] = terminalLiveIngestItem{}
+		}
+		page.start += take
+		queue.pendingCount -= take
+		count -= take
+		if page.start == page.end {
+			queue.head = page.next
+			if queue.head == nil {
+				queue.tail = nil
+			}
+		}
 	}
-	if remaining == 0 {
-		queue.pending = nil
-		return
+	if queue.pendingCount < 0 {
+		queue.pendingCount = 0
 	}
-	queue.pending = queue.pending[:remaining]
+}
+
+func (queue *terminalLiveIngestQueue) pushPendingLocked(item terminalLiveIngestItem) {
+	if queue.tail == nil || queue.tail.end == len(queue.tail.items) {
+		page := &terminalLiveIngestPage{}
+		if queue.tail == nil {
+			queue.head = page
+			queue.tail = page
+		} else {
+			queue.tail.next = page
+			queue.tail = page
+		}
+	}
+	queue.tail.items[queue.tail.end] = item
+	queue.tail.end++
+	queue.pendingCount++
+}
+
+func (queue *terminalLiveIngestQueue) pendingBatchLocked(count int) ([]string, uint64) {
+	if count <= 0 {
+		return nil, 0
+	}
+	batch := make([]string, 0, count)
+	var completeSeq uint64
+	for page, remaining := queue.head, count; page != nil && remaining > 0; page = page.next {
+		for index := page.start; index < page.end && remaining > 0; index++ {
+			item := page.items[index]
+			batch = append(batch, item.text)
+			if item.seq != 0 {
+				completeSeq = item.seq
+			}
+			remaining--
+		}
+	}
+	return batch, completeSeq
 }
 
 func (queue *terminalLiveIngestQueue) completeBatch(seq uint64) {
