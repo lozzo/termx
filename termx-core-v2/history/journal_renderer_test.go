@@ -119,7 +119,7 @@ func TestR383JournalRendererAppliesED2BoundaryAndSealsOpenLine(t *testing.T) {
 	}
 }
 
-func TestR383JournalRendererRejectsScrollOutJournalAtomically(t *testing.T) {
+func TestR384JournalRendererAppliesScrollOutProofAfterOpenLine(t *testing.T) {
 	renderer := NewHistoryJournalRenderer()
 	mixed := HistoryJournalFromTransaction("term-r382-atomic", TerminalSemanticTransaction{
 		Seq:  1,
@@ -129,8 +129,12 @@ func TestR383JournalRendererRejectsScrollOutJournalAtomically(t *testing.T) {
 			{Code: vterm.ScreenOpControl, Control: "ed", Mode: 2, ScrollOut: []vterm.ScrollbackRowAppend{{Runs: []vterm.CellRun{{Text: "scroll-proof"}}}}},
 		},
 	})
-	if _, err := renderer.ApplyJournal(mixed); !errors.Is(err, ErrHistoryJournalUnsupported) {
-		t.Fatalf("scroll-out proof journal must be rejected atomically until R384, err=%v journal=%#v", err, mixed)
+	batch, err := renderer.ApplyJournal(mixed)
+	if err != nil {
+		t.Fatalf("R384 should apply scroll-out proof journal: %v journal=%#v", err, mixed)
+	}
+	if got := joinedLineTexts(sealedMutationLines(batch.Mutations)); got != "scroll-proof\nopen" {
+		t.Fatalf("ED2 journal must preserve vterm journal order for proof then boundary seal, got %q batch=%#v", got, batch)
 	}
 
 	seal := HistoryJournalFromTransaction("term-r382-atomic", TerminalSemanticTransaction{
@@ -138,12 +142,12 @@ func TestR383JournalRendererRejectsScrollOutJournalAtomically(t *testing.T) {
 		Size: TerminalSemanticSize{Cols: 20, Rows: 4},
 		Ops:  []TerminalSemanticOp{{Code: vterm.ScreenOpControl, Control: "lf"}},
 	})
-	batch, err := renderer.ApplyJournal(seal)
+	batch, err = renderer.ApplyJournal(seal)
 	if err != nil {
 		t.Fatalf("LF-only journal after rejected mixed journal should remain valid: %v", err)
 	}
 	if len(batch.Mutations) != 0 {
-		t.Fatalf("rejected journal must not leave renderer open-line state behind, batch=%#v", batch)
+		t.Fatalf("scroll-out journal must not leave stale open-line state behind, batch=%#v", batch)
 	}
 }
 
@@ -267,6 +271,146 @@ func TestR383JournalRendererRISResetsOpenLineState(t *testing.T) {
 	if len(sealedMutationLines(batch.Mutations)) != 0 {
 		t.Fatalf("LF after RIS must not reseal stale open line, batch=%#v", batch)
 	}
+}
+
+func TestR384JournalRendererPrimaryFrameRepaintIsMutableOnly(t *testing.T) {
+	renderer := NewHistoryJournalRenderer()
+	first := HistoryJournal{
+		TerminalID: "term-r384-primary",
+		Seq:        1,
+		Source:     HistoryJournalSourceSemanticTapTransaction,
+		Items: []HistoryJournalItem{
+			{Kind: HistoryJournalItemBoundary, Boundary: &HistoryJournalBoundary{Kind: HistoryJournalBoundarySyncBegin}},
+			{Kind: HistoryJournalItemFrameEvent, Frame: &HistoryJournalFrameEvent{Kind: HistoryJournalFrameReplacePrimary, Frame: &TerminalSemanticFrame{Cols: 20, Rows: [][]TerminalSemanticCell{historyCellsForJournalTest("old")}}}},
+			{Kind: HistoryJournalItemBoundary, Boundary: &HistoryJournalBoundary{Kind: HistoryJournalBoundarySyncEnd}},
+		},
+	}
+	if _, err := renderer.ApplyJournal(first); err != nil {
+		t.Fatalf("apply first primary frame journal: %v", err)
+	}
+	second := HistoryJournal{
+		TerminalID: "term-r384-primary",
+		Seq:        2,
+		Source:     HistoryJournalSourceSemanticTapTransaction,
+		Items: []HistoryJournalItem{
+			{Kind: HistoryJournalItemBoundary, Boundary: &HistoryJournalBoundary{Kind: HistoryJournalBoundarySyncBegin}},
+			{Kind: HistoryJournalItemFrameEvent, Frame: &HistoryJournalFrameEvent{Kind: HistoryJournalFrameReplacePrimary, Frame: &TerminalSemanticFrame{Cols: 20, Rows: [][]TerminalSemanticCell{historyCellsForJournalTest("new")}}}},
+			{Kind: HistoryJournalItemBoundary, Boundary: &HistoryJournalBoundary{Kind: HistoryJournalBoundarySyncEnd}},
+		},
+	}
+	batch, err := renderer.ApplyJournal(second)
+	if err != nil {
+		t.Fatalf("apply second primary frame journal: %v", err)
+	}
+	if len(archivedFrameMutations(batch.Mutations)) != 0 || len(closedFrameMutations(batch.Mutations)) != 0 {
+		t.Fatalf("primary frame repaint must update mutable current only, batch=%#v", batch)
+	}
+	var current []string
+	for _, mutation := range batch.Mutations {
+		if mutation.Mutable != nil {
+			current = append(current, frameDraftText(mutation.Mutable.Rows))
+		}
+	}
+	if got := strings.Join(current, "|"); got != "new" {
+		t.Fatalf("primary frame journal should replace current payload, got %q batch=%#v", got, batch)
+	}
+}
+
+func TestR384JournalRendererAltArchiveAndTransientFrame(t *testing.T) {
+	renderer := NewHistoryJournalRenderer()
+	seed := HistoryJournal{
+		TerminalID: "term-r384-alt",
+		Seq:        1,
+		Source:     HistoryJournalSourceSemanticTapTransaction,
+		Items: []HistoryJournalItem{
+			{Kind: HistoryJournalItemFrameEvent, Frame: &HistoryJournalFrameEvent{Kind: HistoryJournalFrameReplacePrimary, Frame: &TerminalSemanticFrame{Cols: 12, Rows: [][]TerminalSemanticCell{historyCellsForJournalTest("primary")}}}},
+		},
+	}
+	if _, err := renderer.ApplyJournal(seed); err != nil {
+		t.Fatalf("seed primary frame journal: %v", err)
+	}
+	alt := HistoryJournal{
+		TerminalID: "term-r384-alt",
+		Seq:        2,
+		Source:     HistoryJournalSourceSemanticTapTransaction,
+		Items: []HistoryJournalItem{
+			{Kind: HistoryJournalItemBoundary, Boundary: &HistoryJournalBoundary{Kind: HistoryJournalBoundaryAltEnter}},
+			{Kind: HistoryJournalItemFrameEvent, Frame: &HistoryJournalFrameEvent{Kind: HistoryJournalFrameArchivePrimary}},
+			{Kind: HistoryJournalItemFrameEvent, Frame: &HistoryJournalFrameEvent{Kind: HistoryJournalFrameReplaceAlt, Frame: &TerminalSemanticFrame{Cols: 12, Rows: [][]TerminalSemanticCell{historyCellsForJournalTest("alt")}}}},
+			{Kind: HistoryJournalItemBoundary, Boundary: &HistoryJournalBoundary{Kind: HistoryJournalBoundaryAltExit}},
+			{Kind: HistoryJournalItemFrameEvent, Frame: &HistoryJournalFrameEvent{Kind: HistoryJournalFrameClearAlt}},
+		},
+	}
+	batch, err := renderer.ApplyJournal(alt)
+	if err != nil {
+		t.Fatalf("apply alt journal: %v", err)
+	}
+	if got := logicalLinesText(archivedFrameMutations(batch.Mutations)[0].Lines); got != "primary" {
+		t.Fatalf("alt enter must archive existing primary frame, got %q batch=%#v", got, batch)
+	}
+	replaceAlt, clearAlt := 0, 0
+	for _, mutation := range batch.Mutations {
+		if mutation.Kind == HistoryMutationReplaceAltFrame && mutation.Transient != nil && frameDraftText(mutation.Transient.Rows) == "alt" {
+			replaceAlt++
+		}
+		if mutation.Kind == HistoryMutationClearAltFrame {
+			clearAlt++
+		}
+	}
+	if replaceAlt != 1 || clearAlt != 1 {
+		t.Fatalf("alt frame journal must publish transient alt then clear it, replace=%d clear=%d batch=%#v", replaceAlt, clearAlt, batch)
+	}
+}
+
+func TestR384JournalRendererClearTimeScrollOutUsesCurrentFrameOwnership(t *testing.T) {
+	renderer := NewHistoryJournalRenderer()
+	seed := HistoryJournal{
+		TerminalID: "term-r384-clear-proof",
+		Seq:        1,
+		Source:     HistoryJournalSourceSemanticTapTransaction,
+		Items: []HistoryJournalItem{
+			{Kind: HistoryJournalItemFrameEvent, Frame: &HistoryJournalFrameEvent{
+				Kind:        HistoryJournalFrameReplacePrimary,
+				Frame:       &TerminalSemanticFrame{Cols: 30, Rows: [][]TerminalSemanticCell{historyCellsForJournalTest("shell-1"), historyCellsForJournalTest("shell-2"), historyCellsForJournalTest("frame-1"), historyCellsForJournalTest("frame-2")}},
+				TouchedRows: []int{2, 3},
+			}},
+		},
+	}
+	if _, err := renderer.ApplyJournal(seed); err != nil {
+		t.Fatalf("seed touched primary frame journal: %v", err)
+	}
+	clear := HistoryJournal{
+		TerminalID: "term-r384-clear-proof",
+		Seq:        2,
+		Source:     HistoryJournalSourceSemanticTapTransaction,
+		Items: []HistoryJournalItem{
+			{Kind: HistoryJournalItemScrollOutProof, ScrollOut: &HistoryJournalScrollOutProof{
+				ClearTime: true,
+				Rows: []TerminalSemanticScrollOut{
+					{Runs: []TerminalSemanticCellRun{{Text: "shell-1"}}, Row: 0, RowSet: true},
+					{Runs: []TerminalSemanticCellRun{{Text: "shell-2"}}, Row: 1, RowSet: true},
+					{Runs: []TerminalSemanticCellRun{{Text: "frame-1"}}, Row: 2, RowSet: true},
+					{Runs: []TerminalSemanticCellRun{{Text: "frame-2"}}, Row: 3, RowSet: true},
+				},
+			}},
+			{Kind: HistoryJournalItemFrameEvent, Frame: &HistoryJournalFrameEvent{Kind: HistoryJournalFrameClearPrimary}},
+		},
+	}
+	batch, err := renderer.ApplyJournal(clear)
+	if err != nil {
+		t.Fatalf("apply clear-time proof journal: %v", err)
+	}
+	if got := joinedLineTexts(sealedMutationLines(batch.Mutations)); got != "frame-1\nframe-2" {
+		t.Fatalf("clear-time proof must seal only current frame owned rows, got %q batch=%#v", got, batch)
+	}
+}
+
+func historyCellsForJournalTest(text string) []TerminalSemanticCell {
+	cells := make([]TerminalSemanticCell, 0, len(text))
+	for _, r := range text {
+		cells = append(cells, TerminalSemanticCell{Content: string(r), Width: 1})
+	}
+	return cells
 }
 
 func mutationKindsContainInOrder(got []HistoryMutationKind, want []HistoryMutationKind) bool {

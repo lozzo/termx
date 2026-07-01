@@ -149,7 +149,8 @@ type HistoryJournalBoundary struct {
 // 的 proof。Rows 必须来自 vterm transaction 的 ordered proof 或 transaction side
 // proof，不能从最终当前屏幕反推。
 type HistoryJournalScrollOutProof struct {
-	Rows []TerminalSemanticScrollOut
+	Rows      []TerminalSemanticScrollOut
+	ClearTime bool
 }
 
 // HistoryJournalFrameEventKind 描述 screen-app frame journal 的 compact 命令。
@@ -193,6 +194,7 @@ func HistoryJournalFromTransaction(terminalID string, tx TerminalSemanticTransac
 		ordinary:                 newJournalOrdinaryRecorder(tx.Size.Cols),
 		primaryFrameTouchedRows:  cloneIntSlice(tx.PrimaryFrameTouchedRows),
 		skipSideProofFrameEvents: isResizeFullReplace(tx),
+		inSync:                   tx.SynchronizedActive || (tx.SynchronizedEnd && !tx.SynchronizedBegin),
 	}
 	events := HistorySemanticEventsFromTransaction(tx)
 	syncBoundariesInserted := false
@@ -215,6 +217,7 @@ type historyJournalBuilder struct {
 	ordinary                 journalOrdinaryRecorder
 	primaryFrameTouchedRows  []int
 	inAlt                    bool
+	inSync                   bool
 	skipSideProofFrameEvents bool
 }
 
@@ -287,16 +290,20 @@ func (builder *historyJournalBuilder) applyOpEvent(event HistorySemanticEvent) {
 		case HistoryJournalBoundaryAltExit:
 			builder.inAlt = false
 			builder.appendFrame(event, HistoryJournalFrameEvent{Kind: HistoryJournalFrameClearAlt, Reason: string(FrameReasonAltExit)})
+		case HistoryJournalBoundarySyncBegin:
+			builder.inSync = true
+		case HistoryJournalBoundarySyncEnd:
+			builder.inSync = false
 		}
 		if boundary.Kind == HistoryJournalBoundaryED2 {
 			builder.appendFrame(event, HistoryJournalFrameEvent{Kind: HistoryJournalFrameClearPrimary, Reason: string(FrameReasonPrimaryRepaint)})
 		}
 		return
 	}
-	if builder.inAlt {
-		// 中文说明：alt-screen payload 只能由同一 transaction 的 AltFrame proof
-		// 表达 transient frame；ordered write ops 不能退回 ordinary primary batch，
-		// 否则 alt 内容会进入 primary history truth。
+	if builder.inAlt || builder.inSync {
+		// 中文说明：alt-screen 与 synchronized primary repaint 的 payload 只能由
+		// 同一 transaction 的 frame proof 表达；ordered write ops 不能退回
+		// ordinary primary batch，否则 screen app 内容会进入 ordinary timeline。
 		return
 	}
 	if builder.ordinary.ApplyOp(*event.Op) {
@@ -360,7 +367,8 @@ func (builder *historyJournalBuilder) appendScrollOut(event HistorySemanticEvent
 		SemanticOrder: event.Order,
 		OrderSource:   event.OrderSource,
 		ScrollOut: &HistoryJournalScrollOutProof{
-			Rows: cloneTerminalSemanticScrollOuts(rows),
+			Rows:      cloneTerminalSemanticScrollOuts(rows),
+			ClearTime: event.ClearScrollOut,
 		},
 	}
 	builder.journal.Items = append(builder.journal.Items, item)

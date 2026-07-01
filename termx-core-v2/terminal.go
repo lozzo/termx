@@ -866,7 +866,7 @@ func (terminal *Terminal) applyHistoryJournalFastPathLocked(tx history.TerminalS
 		return false
 	}
 	journal := history.HistoryJournalFromTransaction(terminal.info.ID, tx)
-	if !historyJournalAllowsTerminalFastPath(journal, state) {
+	if !historyJournalAllowsTerminalFastPath(journal, state, decision) {
 		return false
 	}
 	batch, err := terminal.journalRenderer.ApplyJournal(journal)
@@ -881,13 +881,10 @@ func (terminal *Terminal) applyHistoryJournalFastPathLocked(tx history.TerminalS
 }
 
 func historyDecisionAllowsJournalFastPath(decision history.HistoryDecision) bool {
-	// 中文说明：journal fast path 可以处理 sealed ordinary 与明确 boundary，但凡
-	// classifier 判定需要 frame payload、current-screen proof 或 full stream reducer
-	// 状态收口，必须回到完整 renderer，避免 prompt/frame 顺序或 open line owner 分裂。
-	return !decision.PublishPrimaryFrame &&
-		!decision.PublishPrimaryFrameTouchedRowsOnly &&
-		!decision.PublishAltFrame &&
-		!decision.ClosePrimaryFrame &&
+	// 中文说明：R384 journal fast path 可以处理 sealed ordinary、boundary、
+	// scroll-out proof 和 frame replace。凡是 classifier 判定需要 current-screen
+	// close proof 或 full stream reducer 状态收口，必须回到完整 renderer。
+	return !decision.ClosePrimaryFrame &&
 		!decision.ClosePrimaryFrameBeforePrimaryReplace &&
 		!decision.ArchivePrimaryAfterPrimaryFrame &&
 		!decision.ClosePrimaryFrameBeforeStream &&
@@ -895,15 +892,14 @@ func historyDecisionAllowsJournalFastPath(decision history.HistoryDecision) bool
 		!decision.ConsumeStreamOps
 }
 
-func historyJournalAllowsTerminalFastPath(journal history.HistoryJournal, state history.HistoryReadState) bool {
-	// 中文说明：生产 fast path 不接管 open-line command；R382 的 open-line journal
-	// 仍只在 history domain harness 中验证。Terminal 只允许 sealed ordinary batch
-	// 和 R383 boundary-only item，确保 full renderer fallback 不会丢失 ordinary
-	// open line owner。
+func historyJournalAllowsTerminalFastPath(journal history.HistoryJournal, state history.HistoryReadState, decision history.HistoryDecision) bool {
+	// 中文说明：生产 fast path 仍不接管 open-line command；R382 的 open-line
+	// journal 只在 history domain harness 中验证。R384 开始允许 scroll-out proof
+	// 和 frame event 进入 journal renderer，但 open line owner 仍不能分裂。
 	if len(journal.Items) == 0 || state.HasOpenLine {
 		return false
 	}
-	scan := terminalJournalGateState{}
+	scan := terminalJournalGateState{decision: decision}
 	for _, item := range journal.Items {
 		if !scan.accept(item) {
 			return false
@@ -913,8 +909,9 @@ func historyJournalAllowsTerminalFastPath(journal history.HistoryJournal, state 
 }
 
 type terminalJournalGateState struct {
-	inAlt  bool
-	inSync bool
+	inAlt    bool
+	inSync   bool
+	decision history.HistoryDecision
 }
 
 func (state *terminalJournalGateState) accept(item history.HistoryJournalItem) bool {
@@ -930,9 +927,9 @@ func (state *terminalJournalGateState) accept(item history.HistoryJournalItem) b
 		}
 		return state.acceptBoundary(item.Boundary.Kind)
 	case history.HistoryJournalItemFrameEvent:
-		return item.Frame != nil && terminalJournalFrameEventIsBoundaryOnly(item.Frame.Kind)
+		return item.Frame != nil && state.acceptFrameEvent(*item.Frame)
 	case history.HistoryJournalItemScrollOutProof:
-		return false
+		return item.ScrollOut != nil && state.decision.ConsumeScrollOutProof
 	default:
 		return false
 	}
@@ -962,6 +959,31 @@ func (state *terminalJournalGateState) acceptBoundary(kind history.HistoryJourna
 func terminalJournalFrameEventIsBoundaryOnly(kind history.HistoryJournalFrameEventKind) bool {
 	switch kind {
 	case history.HistoryJournalFrameArchivePrimary, history.HistoryJournalFrameClearPrimary, history.HistoryJournalFrameClearAlt:
+		return true
+	default:
+		return false
+	}
+}
+
+func (state *terminalJournalGateState) acceptFrameEvent(event history.HistoryJournalFrameEvent) bool {
+	switch event.Kind {
+	case history.HistoryJournalFrameReplacePrimary:
+		if !state.decision.PublishPrimaryFrame {
+			return false
+		}
+		if state.decision.PublishPrimaryFrameTouchedRowsOnly {
+			return len(event.TouchedRows) > 0
+		}
+		return event.Frame != nil
+	case history.HistoryJournalFrameReplaceAlt:
+		return state.decision.PublishAltFrame && event.Frame != nil
+	case history.HistoryJournalFrameArchivePrimary:
+		return state.decision.ArchivePrimaryBeforeAlt
+	case history.HistoryJournalFrameClearPrimary:
+		return state.decision.ClearPrimaryCurrent || state.decision.ConsumeClearTimeScrollOutProof
+	case history.HistoryJournalFrameClearAlt:
+		return state.decision.ClearAltFrame
+	case history.HistoryJournalFrameFinalPrimary:
 		return true
 	default:
 		return false

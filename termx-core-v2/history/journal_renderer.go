@@ -102,9 +102,9 @@ func (state *journalBoundaryScanState) accept(item HistoryJournalItem) bool {
 		}
 		return state.acceptBoundary(item.Boundary.Kind)
 	case HistoryJournalItemFrameEvent:
-		return item.Frame != nil && journalFrameEventIsBoundaryOnly(item.Frame.Kind)
+		return item.Frame != nil
 	case HistoryJournalItemScrollOutProof:
-		return false
+		return item.ScrollOut != nil
 	default:
 		return false
 	}
@@ -139,9 +139,30 @@ func (renderer *journalRenderer) applyJournalItem(item HistoryJournalItem) ([]Hi
 		return renderer.applyBoundary(*item.Boundary)
 	case HistoryJournalItemFrameEvent:
 		return renderer.applyBoundaryFrameEvent(*item.Frame)
+	case HistoryJournalItemScrollOutProof:
+		return renderer.applyScrollOutProof(*item.ScrollOut)
 	default:
 		return nil, ErrHistoryJournalUnsupported
 	}
+}
+
+func (renderer *journalRenderer) applyScrollOutProof(proof HistoryJournalScrollOutProof) ([]HistoryMutation, error) {
+	if renderer.stream == nil {
+		return nil, nil
+	}
+	rows := cloneTerminalSemanticScrollOuts(proof.Rows)
+	if proof.ClearTime && renderer.frames != nil {
+		rows = renderer.frames.FilterPrimaryScrollOutRows(rows)
+	}
+	var mutations []HistoryMutation
+	for _, row := range rows {
+		next, err := renderer.stream.SealScrollOut(row)
+		if err != nil {
+			return nil, err
+		}
+		mutations = append(mutations, next...)
+	}
+	return mutations, nil
 }
 
 func (renderer *journalRenderer) applyBoundary(boundary HistoryJournalBoundary) ([]HistoryMutation, error) {
@@ -194,15 +215,58 @@ func journalFrameEventIsBoundaryOnly(kind HistoryJournalFrameEventKind) bool {
 
 func (renderer *journalRenderer) applyBoundaryFrameEvent(event HistoryJournalFrameEvent) ([]HistoryMutation, error) {
 	switch event.Kind {
+	case HistoryJournalFrameReplacePrimary:
+		if event.Frame == nil {
+			return nil, nil
+		}
+		if len(event.TouchedRows) > 0 {
+			return renderer.replacePrimaryTouchedRows(*event.Frame, event.TouchedRows, FrameReasonPrimaryRepaint)
+		}
+		return renderer.replacePrimaryCurrent(*event.Frame, FrameReasonPrimaryRepaint)
 	case HistoryJournalFrameArchivePrimary:
 		return renderer.archivePrimaryForBoundary(SealReasonAltEnter)
 	case HistoryJournalFrameClearPrimary:
 		return renderer.clearPrimaryForBoundary(FrameReasonPrimaryRepaint)
+	case HistoryJournalFrameReplaceAlt:
+		if event.Frame == nil {
+			return nil, nil
+		}
+		return renderer.replaceAltCurrent(*event.Frame)
 	case HistoryJournalFrameClearAlt:
 		return renderer.clearAltForBoundary(FrameReasonAltExit)
+	case HistoryJournalFrameFinalPrimary:
+		return renderer.closePrimaryForBoundary(SealReasonTerminalClose)
 	default:
 		return nil, ErrHistoryJournalUnsupported
 	}
+}
+
+func (renderer *journalRenderer) replacePrimaryCurrent(frame TerminalSemanticFrame, reason FrameReason) ([]HistoryMutation, error) {
+	if renderer.frames == nil {
+		return nil, nil
+	}
+	return renderer.frames.ReplacePrimaryCurrent(frame, reason)
+}
+
+func (renderer *journalRenderer) replacePrimaryTouchedRows(frame TerminalSemanticFrame, rows []int, reason FrameReason) ([]HistoryMutation, error) {
+	if renderer.frames == nil {
+		return nil, nil
+	}
+	return renderer.frames.ReplacePrimaryTouchedRows(frame, rows, reason)
+}
+
+func (renderer *journalRenderer) replaceAltCurrent(frame TerminalSemanticFrame) ([]HistoryMutation, error) {
+	if renderer.frames == nil {
+		return nil, nil
+	}
+	return renderer.frames.ReplaceAltCurrent(frame)
+}
+
+func (renderer *journalRenderer) closePrimaryForBoundary(reason SealReason) ([]HistoryMutation, error) {
+	if renderer.frames == nil {
+		return nil, nil
+	}
+	return renderer.frames.ClosePrimaryCurrent(reason)
 }
 
 func (renderer *journalRenderer) clearPrimaryForBoundary(reason FrameReason) ([]HistoryMutation, error) {
