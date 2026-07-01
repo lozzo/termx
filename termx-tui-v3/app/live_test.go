@@ -1143,6 +1143,34 @@ func TestLiveInvalidationArmEffectIsOneShot(t *testing.T) {
 	}
 }
 
+func TestR390LiveInvalidationArmEffectCoalescesAndCancels(t *testing.T) {
+	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 1)}
+	effects := liveInvalidationArmEffect("term-1", 80, 24, 7, LiveDeps{Terminal: terminal})
+	if len(effects) != 1 {
+		t.Fatalf("expected one arm effect, got %#v", effects)
+	}
+	arm := effects[0].(FuncEffect)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if msg := arm.Run(ctx); msg != nil {
+		t.Fatalf("canceled coalesce wait must not arm live invalidation, got %#v", msg)
+	}
+	if len(terminal.LiveInvalidationRequests) != 0 {
+		t.Fatalf("canceled coalesce wait must not call service, got %#v", terminal.LiveInvalidationRequests)
+	}
+
+	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
+	start := time.Now()
+	msg := arm.Run(context.Background())
+	if elapsed := time.Since(start); elapsed < liveInvalidationArmCoalesceDelay {
+		t.Fatalf("arm effect should wait before re-arming under live pressure, elapsed=%s", elapsed)
+	}
+	live, ok := msg.(LiveEventMsg)
+	if !ok || live.Event.Snapshot.Revision != 8 {
+		t.Fatalf("expected live event after coalesce wait, got %#v", msg)
+	}
+}
+
 func TestLiveFrameReadyArmsNextInvalidation(t *testing.T) {
 	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 1)}
 	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})

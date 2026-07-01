@@ -23,6 +23,7 @@ Options:
   --baseline-time       run the same stress script outside termx first (default)
   --no-baseline-time    skip outside-termx baseline timing
   --profile-mode MODE   heap profile capture mode: final, all, or none; default final
+  --perftrace           capture daemon/TUI aggregated perftrace JSON during the run
   --daemon-memory-limit-mb N
                         set TERMX_DAEMON_MEMORY_LIMIT_MB for daemon runtime GC pacing
   --daemon-request-reclaim-min-heap-mb N
@@ -48,6 +49,8 @@ Artifacts:
   history-files.tsv     file-backed history payload count/bytes after each stress run
   profile-summary.txt   daemon/TUI pprof top summaries
   profile-graphs/       daemon/TUI pprof DOT graphs and SVG graphs when Graphviz exists
+  daemon-perftrace.json  daemon perftrace events when --perftrace is enabled
+  tui-perftrace.json     TUI perftrace events when --perftrace is enabled
   daemon-memstats/       daemon runtime MemStats samples collected at RSS stages
   tui-memstats/          TUI runtime MemStats samples collected at RSS stages
   state/termx/history-v2/ default daemon file-backed history payloads
@@ -614,6 +617,7 @@ USE_REAL_STATE=0
 TUI_MEMORY_LIMIT_MB=""
 BASELINE_TIME=1
 PROFILE_MODE="final"
+PERFTRACE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -656,6 +660,10 @@ while [[ $# -gt 0 ]]; do
     --profile-mode)
       PROFILE_MODE="$2"
       shift 2
+      ;;
+    --perftrace)
+      PERFTRACE=1
+      shift
       ;;
     --daemon-memory-limit-mb)
       DAEMON_MEMORY_LIMIT_MB="$2"
@@ -754,6 +762,8 @@ DAEMON_HEAP_DIR="$ROOT/daemon-heap"
 TUI_HEAP_DIR="$ROOT/tui-heap"
 DAEMON_MEMSTATS_DIR="$ROOT/daemon-memstats"
 TUI_MEMSTATS_DIR="$ROOT/tui-memstats"
+DAEMON_PERFTRACE="$ROOT/daemon-perftrace.json"
+TUI_PERFTRACE="$ROOT/tui-perftrace.json"
 DAEMON_DEFAULT_STATE_DIR="$ROOT/state"
 DAEMON_DEFAULT_HISTORY_BACKEND_DIR="$DAEMON_DEFAULT_STATE_DIR/termx/history-v2"
 DIAG_STAGE_FILE="$ROOT/diag-stage.txt"
@@ -839,6 +849,9 @@ DAEMON_ENV_PREFIX=(TERMX_STRESS_HARNESS=1)
 if [[ "$USE_REAL_STATE" == "0" ]]; then
   DAEMON_ENV_PREFIX+=(XDG_STATE_HOME="$DAEMON_DEFAULT_STATE_DIR")
 fi
+if [[ "$PERFTRACE" == "1" ]]; then
+  DAEMON_ENV_PREFIX+=(TERMX_PERF_TRACE="$DAEMON_PERFTRACE" TERMX_PERF_TRACE_INTERVAL_MS=200 TERMX_PERF_TRACE_BUCKET_MS=100)
+fi
 if [[ "$USE_REAL_STATE" == "1" ]]; then
   log "daemon default history file backend: real user state"
 else
@@ -876,6 +889,13 @@ export TERMX_TUI_HEAP_PROFILE_DIR=$(shell_quote "$TUI_HEAP_DIR")
 export TERMX_TUI_MEMSTATS_DIR=$(shell_quote "$TUI_MEMSTATS_DIR")
 export TERMX_DIAG_STAGE_FILE=$(shell_quote "$DIAG_STAGE_FILE")
 EOF
+if [[ "$PERFTRACE" == "1" ]]; then
+  {
+    printf 'export TERMX_PERF_TRACE=%s\n' "$(shell_quote "$TUI_PERFTRACE")"
+    printf 'export TERMX_PERF_TRACE_INTERVAL_MS=200\n'
+    printf 'export TERMX_PERF_TRACE_BUCKET_MS=100\n'
+  } >>"$ATTACH_SCRIPT"
+fi
 if [[ "$USE_REAL_STATE" == "0" ]]; then
   printf 'export XDG_STATE_HOME=%s\n' "$(shell_quote "$DAEMON_DEFAULT_STATE_DIR")" >>"$ATTACH_SCRIPT"
 fi

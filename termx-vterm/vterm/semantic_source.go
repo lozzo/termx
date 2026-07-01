@@ -130,15 +130,24 @@ func (source *SemanticSource) transactionFromDamage(seq uint64, raw string, dama
 	if size.Cols == 0 || size.Rows == 0 {
 		size = source.currentSize()
 	}
+	ops := semanticOpsForTransactionDamage(damage)
 	tx := TerminalSemanticTransaction{
 		Seq:                     seq,
 		Raw:                     raw,
 		Size:                    size,
-		Ops:                     cloneSemanticOps(semanticOpsForTransactionDamage(damage)),
+		Ops:                     ops,
 		PrimaryFrameTouchedRows: cloneIntSlice(damage.DirectDamageTouchedRows),
 		RequiresFullReplace:     damage.RequiresFullReplace,
 		FullReplaceReason:       damage.FullReplaceReason,
 		ClearScrollback:         terminalSemanticDamageHasClearScrollback(damage),
+	}
+	// 中文说明：WriteDamage 是本次 write 的临时语义 payload，transaction 在
+	// SemanticSource 边界接管它的所有权；tap 之后的 fan-out deep-copy 仍由
+	// SemanticTapResult.Transaction 负责，避免 live hot path 多做一轮 op/cell clone。
+	if len(damage.SemanticOps) > 0 {
+		damage.SemanticOps = nil
+	} else {
+		damage.Ops = nil
 	}
 	// 中文说明：SourceDamage 只保留诊断摘要。payload truth 已在 Ops、必要的
 	// PrimaryScrollOut side proof 和 frame side proof 中，不能把完整 damage

@@ -34,6 +34,29 @@ func TestSemanticSourceApplyPTYWriteEmitsOrderedTransaction(t *testing.T) {
 	}
 }
 
+func TestR390SemanticSourceTransfersDamageOpsWithoutCrossWriteAlias(t *testing.T) {
+	source := NewSemanticSource(24, 4, 100, nil)
+	first, err := source.ApplyPTYWrite([]byte("first line\r\n"))
+	if err != nil {
+		t.Fatalf("apply first write: %v", err)
+	}
+	if len(first.Ops) == 0 || len(first.Ops[0].Cells) == 0 {
+		t.Fatalf("expected first write to expose ordered ops, got %#v", first)
+	}
+	first.Ops[0].Cells[0].Content = "X"
+
+	second, err := source.ApplyPTYWrite([]byte("second line\r\n"))
+	if err != nil {
+		t.Fatalf("apply second write: %v", err)
+	}
+	if len(second.Ops) == 0 || len(second.Ops[0].Cells) == 0 {
+		t.Fatalf("expected second write to expose ordered ops, got %#v", second)
+	}
+	if got := second.Ops[0].Cells[0].Content; got == "X" {
+		t.Fatalf("mutating one transaction must not alias future semantic damage payload, got %#v", second.Ops[0].Cells)
+	}
+}
+
 func TestSemanticSourceApplyPTYWriteEmitsModeBoundaries(t *testing.T) {
 	source := NewSemanticSource(24, 4, 100, nil)
 	syncTx, err := source.ApplyPTYWrite([]byte("\x1b[?2026hhello\x1b[?2026l"))
