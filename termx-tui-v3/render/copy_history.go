@@ -27,7 +27,13 @@ func copyHistoryLines(history state.HistoryStore, copyMode state.CopyModeStore) 
 	selection := normalizedCopySelection(copyMode)
 	rows := copyVisibleRows(history, copyMode)
 	width := copyHistoryRenderWidth(history, copyMode)
-	lines := make([]Line, 0, len(rows))
+	padding := copyHistoryViewportTopPadding(history, copyMode)
+	lines := make([]Line, 0, padding+len(rows))
+	for i := 0; i < padding; i++ {
+		// 中文说明：顶部 padding 只还原进入 copy/history 前 live viewport 的显示空白，
+		// 不对应 authoritative history row，不能参与复制、搜索或分页。
+		lines = append(lines, Line{Cells: []Cell{NewCell("")}})
+	}
 	for _, visible := range rows {
 		lines = append(lines, copyHistoryLine(history.Rows[visible], visible, selection, activeSearchRange(copyMode, visible), width))
 	}
@@ -435,12 +441,14 @@ func copyHistoryCursor(history state.HistoryStore, copyMode state.CopyModeStore)
 	row := clampCopyColumn(copyMode.Cursor.Row, 0, len(history.Rows)-1)
 	visibleTop := copyHistoryViewportTop(history, copyMode)
 	visibleRows := copyVisibleRows(history, copyMode)
-	visibleRow := row - visibleTop
+	padding := copyHistoryViewportTopPadding(history, copyMode)
+	visibleRow := padding + row - visibleTop
 	if visibleRow < 0 {
 		visibleRow = 0
 	}
-	if len(visibleRows) > 0 && visibleRow >= len(visibleRows) {
-		visibleRow = len(visibleRows) - 1
+	visibleHeight := padding + len(visibleRows)
+	if visibleHeight > 0 && visibleRow >= visibleHeight {
+		visibleRow = visibleHeight - 1
 	}
 	col := clampCopyColumn(copyMode.Cursor.Col, 0, state.HistoryRowDisplayWidth(history.Rows[row]))
 	return Cursor{
@@ -485,6 +493,7 @@ func copyHistoryStatus(history state.HistoryStore, copyMode state.CopyModeStore)
 
 func copyHistoryHitRegions(history state.HistoryStore, copyMode state.CopyModeStore) []HitRegion {
 	rows := copyVisibleRows(history, copyMode)
+	padding := copyHistoryViewportTopPadding(history, copyMode)
 	regions := make([]HitRegion, len(rows))
 	for i, rowIndex := range rows {
 		row := history.Rows[rowIndex]
@@ -495,7 +504,7 @@ func copyHistoryHitRegions(history state.HistoryStore, copyMode state.CopyModeSt
 		}
 		regions[i] = HitRegion{
 			Kind:   HitRegionHistoryRow,
-			Rect:   Rect{X: prefixWidth, Y: i, W: rowWidth, H: 1},
+			Rect:   Rect{X: prefixWidth, Y: padding + i, W: rowWidth, H: 1},
 			LineID: row.LineID,
 			Row:    rowIndex,
 		}
@@ -508,7 +517,10 @@ func copyVisibleRows(history state.HistoryStore, copyMode state.CopyModeStore) [
 		return nil
 	}
 	top := copyHistoryViewportTop(history, copyMode)
-	height := copyHistoryVisibleHeight(copyMode)
+	height := copyHistoryVisibleHeight(copyMode) - copyHistoryViewportTopPadding(history, copyMode)
+	if height <= 0 {
+		height = 1
+	}
 	if height <= 0 || top+height > len(history.Rows) {
 		height = len(history.Rows) - top
 	}
@@ -528,6 +540,17 @@ func copyHistoryVisibleHeight(copyMode state.CopyModeStore) int {
 
 func copyHistoryViewportTop(history state.HistoryStore, copyMode state.CopyModeStore) int {
 	return clampCopyColumn(copyMode.ViewportTop, 0, maxInt(0, len(history.Rows)-1))
+}
+
+func copyHistoryViewportTopPadding(history state.HistoryStore, copyMode state.CopyModeStore) int {
+	if len(history.Rows) == 0 {
+		return 0
+	}
+	visible := copyHistoryVisibleHeight(copyMode)
+	if visible <= 1 || copyMode.ViewportTopPadding <= 0 {
+		return 0
+	}
+	return clampCopyColumn(copyMode.ViewportTopPadding, 0, visible-1)
 }
 
 func activeSearchRange(copyMode state.CopyModeStore, row int) copySearchRange {

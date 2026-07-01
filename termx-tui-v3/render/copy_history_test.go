@@ -129,6 +129,44 @@ func TestCopyHistoryContentANSILineAnchorsAfterStyledWideCells(t *testing.T) {
 	}
 }
 
+func TestCopyHistoryLinesPreserveEnteringLiveTopPadding(t *testing.T) {
+	history := state.HistoryStore{
+		Cols: 80,
+		Rows: []state.HistoryRow{
+			{Text: "prompt", LineID: 15},
+			{Text: "ζ", LineID: 16},
+		},
+	}
+	copyMode := state.CopyModeStore{
+		Active:             true,
+		ViewRows:           9,
+		ViewportTop:        0,
+		ViewportTopPadding: 7,
+		Cursor:             state.CopyPosition{Row: 1},
+	}
+
+	lines := copyHistoryLines(history, copyMode)
+	if len(lines) != 9 {
+		t.Fatalf("expected padded viewport height, got %d lines=%#v", len(lines), lines)
+	}
+	for i := 0; i < 7; i++ {
+		if got := lines[i].PlainString(); got != "" {
+			t.Fatalf("padding line %d should stay blank, got %q", i, got)
+		}
+	}
+	if lines[7].PlainString() != "prompt" || lines[8].PlainString() != "ζ" {
+		t.Fatalf("history rows should render after live top padding, got %#v", []string{lines[7].PlainString(), lines[8].PlainString()})
+	}
+	cursor := copyHistoryCursor(history, copyMode)
+	if !cursor.Visible || cursor.Row != 8 {
+		t.Fatalf("copy cursor should include top padding in visible row, got %#v", cursor)
+	}
+	regions := copyHistoryHitRegions(history, copyMode)
+	if len(regions) != 2 || regions[0].Rect.Y != 7 || regions[1].Rect.Y != 8 {
+		t.Fatalf("hit regions should be offset by display-only padding, got %#v", regions)
+	}
+}
+
 func TestCopyHistoryCursorClampsToVisibleViewport(t *testing.T) {
 	history := state.HistoryStore{
 		Cols: 10,

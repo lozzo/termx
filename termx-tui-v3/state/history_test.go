@@ -870,6 +870,50 @@ func TestCopyModeAcceptLatestMatchesVisibleTailOfEnteringLiveScreenFrame(t *test
 	}
 }
 
+func TestCopyModeAcceptLatestMatchesNewestRepeatedEnteringLiveViewport(t *testing.T) {
+	rows := []HistoryRow{
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < feature/infinity-history-335af-direction?> default (homeapp)", LineID: 1},
+		{Text: "ζ", LineID: 2},
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < feature/infinity-history-335af-direction?> default (homeapp)", LineID: 3},
+		{Text: "ζ", LineID: 4},
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < feature/infinity-history-335af-direction?> default (homeapp)", LineID: 5},
+		{Text: "ζ", LineID: 6},
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < feature/infinity-history-335af-direction?> default (homeapp)", LineID: 7},
+		{Text: "ζ", LineID: 8},
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < feature/infinity-history-335af-direction?> default (homeapp)", LineID: 9},
+		{Text: "ζ", LineID: 10},
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < feature/infinity-history-335af-direction?> default (homeapp)", LineID: 11},
+		{Text: "ζ", LineID: 12},
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < feature/infinity-history-335af-direction?> default (homeapp)", LineID: 13},
+		{Text: "ζ", LineID: 14},
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < feature/infinity-history-335af-direction?> default (homeapp)", LineID: 15, LiveTail: true},
+		{Text: "ζ", LineID: 16, LiveTail: true},
+	}
+	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
+	entering := LiveSurfaceSnapshot{
+		Lines: []string{
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"lozzow@RedmiBook: ~/Documents/workdir/termx < feature/infinity-history-335af-direction?> default (homeapp)",
+			"ζ",
+		},
+	}
+	copyMode := CopyModeStore{ViewRows: 9, EnteringLive: &entering}.AcceptLatest(latest, latest.Cols, len(rows))
+
+	if copyMode.ViewportTop != 14 || copyMode.ViewportTopPadding != 7 || copyMode.Cursor != (CopyPosition{Row: 15}) {
+		t.Fatalf("latest should align to newest repeated live viewport, got %#v", copyMode)
+	}
+	scrolled := copyMode.ScrollCursor(-1, len(rows))
+	if scrolled.ViewportTopPadding != 0 {
+		t.Fatalf("user scroll should drop display-only live viewport padding, got %#v", scrolled)
+	}
+}
+
 func historyRowsContainText(rows []HistoryRow, text string) bool {
 	for _, row := range rows {
 		if row.Text == text {
