@@ -179,11 +179,18 @@ type HistoryJournalFrameEvent struct {
 	Reason      string
 }
 
+// HistoryJournalBuildHook 是测试用诊断 hook，用来证明 journal 裁剪发生在 history
+// fan-out 阶段，而不是 SemanticTap live wake 热路径；生产代码不得依赖它。
+var HistoryJournalBuildHook func()
+
 // HistoryJournalFromTransaction 把 single SemanticTap 之后的一条 terminal semantic
 // transaction 裁剪成 history-specific compact journal。消息链路是
 // PTY/resize -> SemanticTap/vterm -> TerminalSemanticTransaction -> HistoryJournal；
 // 本函数不读取 tx.Raw、SourceDamage、live snapshot 或任何 renderer/TUI rows。
 func HistoryJournalFromTransaction(terminalID string, tx TerminalSemanticTransaction) HistoryJournal {
+	if HistoryJournalBuildHook != nil {
+		HistoryJournalBuildHook()
+	}
 	builder := historyJournalBuilder{
 		journal: HistoryJournal{
 			TerminalID: terminalID,

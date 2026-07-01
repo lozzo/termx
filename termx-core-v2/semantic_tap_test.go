@@ -263,6 +263,37 @@ func TestR386SemanticTapOrdinaryStressJournalHandoffAvoidsFullTransactionHotPath
 	}
 }
 
+func TestR389SemanticTapBuildsHistoryJournalOnlyOnHistoryFanout(t *testing.T) {
+	tap := NewSemanticTap("term-r389", Size{Cols: 120, Rows: 36}, nil)
+	builds := 0
+	previousHook := history.HistoryJournalBuildHook
+	history.HistoryJournalBuildHook = func() { builds++ }
+	defer func() { history.HistoryJournalBuildHook = previousHook }()
+
+	result, err := tap.ApplyPTYWrite([]byte("lazy journal\r\n"))
+	if err != nil {
+		t.Fatalf("apply PTY write: %v", err)
+	}
+	if result.Revision() != 1 || builds != 0 {
+		t.Fatalf("tap write must not build history journal before live wake, revision=%d builds=%d", result.Revision(), builds)
+	}
+	journal := result.HistoryJournal()
+	if builds != 1 || len(journal.Items) == 0 {
+		t.Fatalf("history fanout should build compact journal on demand, builds=%d journal=%#v", builds, journal)
+	}
+	resized, err := tap.Resize(Size{Cols: 100, Rows: 30})
+	if err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	if resized.Revision() != 2 || builds != 1 {
+		t.Fatalf("tap resize must also avoid eager journal build, revision=%d builds=%d", resized.Revision(), builds)
+	}
+	_ = resized.HistoryJournal()
+	if builds != 2 {
+		t.Fatalf("resize journal should build only when requested, builds=%d", builds)
+	}
+}
+
 func TestR381SemanticTapSnapshotHandoffIsPulledOnDemand(t *testing.T) {
 	tap := NewSemanticTap("term-r372", Size{Cols: 12, Rows: 3}, nil)
 	if _, err := tap.ApplyPTYWrite([]byte("snapshot\r\n")); err != nil {

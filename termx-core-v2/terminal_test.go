@@ -230,6 +230,59 @@ func TestR373ProcessOutputFansOutSemanticTapToLiveAndHistory(t *testing.T) {
 	}
 }
 
+func TestR389ProcessOutputPublishesLiveBeforeBlockedHistoryFanout(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	events := server.Events(context.Background(), EventFilter{
+		TerminalID: "term-r389-live-before-history",
+		Types:      []EventType{EventTerminalLiveInvalidated},
+	})
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r389-live-before-history",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 30, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	terminal, err := server.Terminal("term-r389-live-before-history")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	store := newBlockingHistoryStore("term-r389-live-before-history")
+	store.block()
+	terminal.historyMu.Lock()
+	terminal.historyStore = store
+	terminal.historyMu.Unlock()
+
+	process := factory.process("term-r389-live-before-history")
+	if process == nil {
+		t.Fatal("expected recording process")
+	}
+	process.emitOutput("alpha\r\n")
+	select {
+	case <-store.applyStarted:
+	case <-time.After(time.Second):
+		t.Fatal("history worker did not reach blocked Apply")
+	}
+	event := assertEventValue(t, events, EventTerminalLiveInvalidated, "term-r389-live-before-history")
+	if event.Live == nil || event.Live.Revision == 0 {
+		t.Fatalf("expected live invalidation before releasing history worker, got %#v", event)
+	}
+	store.release()
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r389-live-before-history", history.HistoryWindowRequest{
+		TerminalID: "term-r389-live-before-history",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       30,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("history.window after release: %v", err)
+	}
+	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "alpha" {
+		t.Fatalf("history should still receive journal after release, got %q", got)
+	}
+}
+
 func TestR382TerminalOrdinaryJournalFastPathThenComplexFallback(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

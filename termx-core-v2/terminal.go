@@ -594,9 +594,6 @@ func (terminal *Terminal) ingestProcessTapOutput(process TerminalProcess, output
 	finishLiveWrite := perftrace.Measure("core.live.write_screen")
 	result, err := terminal.tap.ApplyPTYWrite([]byte(output))
 	finishLiveWrite(len(output))
-	if err == nil && historyWorker != nil {
-		terminal.enqueueOrApplyProcessHistoryJournal(result, historyWorker, info.ID)
-	}
 	terminal.tapOpMu.Unlock()
 	if err != nil {
 		return err
@@ -608,9 +605,16 @@ func (terminal *Terminal) ingestProcessTapOutput(process TerminalProcess, output
 	if !stillCurrent {
 		return nil
 	}
+	// 中文说明：live latest screen 已经由 single SemanticTap 更新；wake 必须先发出，
+	// history journal 的 queue/flush/store 写入不能反压用户可见的实时屏幕。
 	perftrace.Count("core.terminal.changed", len(output))
 	perftrace.Count("core.live.invalidation_publish", len(output))
 	terminal.publishLiveInvalidated(info.ID, uint64(result.Revision()))
+	if historyWorker != nil {
+		finishHistoryFanout := perftrace.Measure("core.history.journal_fanout")
+		terminal.enqueueOrApplyProcessHistoryJournal(result, historyWorker, info.ID)
+		finishHistoryFanout(len(output))
+	}
 	return nil
 }
 

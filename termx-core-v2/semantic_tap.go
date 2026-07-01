@@ -31,14 +31,16 @@ type SemanticTapInputRecord struct {
 }
 
 // SemanticTapResult 是 single SemanticTap 对一次输入的轻量输出。
-// HistoryJournal 是生产 history backlog 的优先 handoff；Transaction 只给复杂语义
-// fallback 和旧 harness 拉取完整语义消息副本；Revision 只服务 live invalidation。
+// Transaction 只给复杂语义 fallback 和旧 harness 拉取完整语义消息副本；
+// HistoryJournal 在 history fan-out 阶段从同一次 transaction lazy 构造，避免
+// live wake 热路径被 history-specific journal 裁剪成本反压；Revision 只服务
+// live invalidation。
 // R381 后 result 不再携带 native screen snapshot，live.screen.get 或测试需要画面时
 // 必须从 SemanticTap.NativeScreenSnapshot 按需读取 latest 状态。
 type SemanticTapResult struct {
-	tx       vterm.TerminalSemanticTransaction
-	journal  history.HistoryJournal
-	revision LiveRevision
+	terminalID string
+	tx         vterm.TerminalSemanticTransaction
+	revision   LiveRevision
 }
 
 var semanticTapSnapshotBuildHook func()
@@ -91,13 +93,12 @@ func (tap *SemanticTap) ApplyPTYWrite(raw []byte) (SemanticTapResult, error) {
 	// 这里不再热路径深拷贝 full transaction；外部 consumer 仍只能通过
 	// Transaction/HistoryJournal 拿到各自副本。
 	tx.Raw = ""
-	journal := history.HistoryJournalFromTransaction(tap.terminalID, tx)
 	tap.revision++
 	tap.inputs = append(tap.inputs, record)
 	return SemanticTapResult{
-		tx:       tx,
-		journal:  journal,
-		revision: tap.revision,
+		terminalID: tap.terminalID,
+		tx:         tx,
+		revision:   tap.revision,
 	}, err
 }
 
@@ -121,13 +122,12 @@ func (tap *SemanticTap) Resize(size Size) (SemanticTapResult, error) {
 	// 中文说明：resize result 同样保持 tap 内独占 payload，避免无意义 full
 	// transaction clone；history 仍只能把它作为 semantic boundary 消费。
 	tx.Raw = ""
-	journal := history.HistoryJournalFromTransaction(tap.terminalID, tx)
 	tap.revision++
 	tap.inputs = append(tap.inputs, record)
 	return SemanticTapResult{
-		tx:       tx,
-		journal:  journal,
-		revision: tap.revision,
+		terminalID: tap.terminalID,
+		tx:         tx,
+		revision:   tap.revision,
 	}, err
 }
 
@@ -139,10 +139,11 @@ func (result SemanticTapResult) Transaction() vterm.TerminalSemanticTransaction 
 }
 
 // HistoryJournal 返回 single SemanticTap 同次语义 pass 产出的 compact journal 副本。
-// 生产 history backlog 应优先消费该命令化 journal；只有复杂语义无法由 journal
-// renderer 安全接管时，调用方才回到 Transaction/完整 renderer。
+// 生产 history backlog 应优先消费该命令化 journal；这里从 result 持有的独占
+// semantic transaction lazy 裁剪，不在 tap write/live wake 热路径提前构造，也不
+// 读取 raw PTY、live snapshot、TUI rows 或第二个 vterm。
 func (result SemanticTapResult) HistoryJournal() history.HistoryJournal {
-	return history.CloneHistoryJournal(result.journal)
+	return history.HistoryJournalFromTransaction(result.terminalID, result.tx)
 }
 
 // Revision 返回本次 tap 输入后的 latest native screen revision。
