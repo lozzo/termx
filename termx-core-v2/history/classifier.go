@@ -35,9 +35,11 @@ type HistoryDecision struct {
 	PublishAltFrame                    bool
 	ClearAltFrame                      bool
 	ClosePrimaryFrame                  bool
-	// ClosePrimaryFrameBeforePrimaryReplace 表示新的 primary repaint session 已经开始，
-	// 旧 current frame 必须先按 lifecycle/session boundary seal，再接收本次 frame。
-	// 它不同于普通 stream 恢复：本次 transaction 的内容仍属于新的 primary frame。
+	// ClosePrimaryFrameBeforePrimaryReplace 表示 transaction 本身携带明确的
+	// lifecycle/session boundary，旧 current frame 必须先 seal，再接收本次
+	// primary frame。当前 terminal classifier 不在 synchronized repaint 路径设置
+	// 该标记；普通输出恢复、alt archive 和 process close 由独立边界处理，避免
+	// screen app 的每次原地刷新被错误写进 sealed timeline。
 	ClosePrimaryFrameBeforePrimaryReplace bool
 	// ArchivePrimaryAfterPrimaryFrame 表示同一 transaction 同时携带 primary frame
 	// side proof 和 alt-enter 边界；renderer 必须先发布 primary frame，再按

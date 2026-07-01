@@ -1234,7 +1234,10 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 	if tx.PrimaryFrame != nil && isPrimaryFrameSession {
 		decision.Mode = history.HistoryOutputModePrimaryFrameSession
 		decision.PublishPrimaryFrame = true
-		decision.ClosePrimaryFrameBeforePrimaryReplace = state.HasPrimaryCurrent && !hasEraseDisplay && (tx.SynchronizedBegin || tx.AltEntered) && !syncEndThenOrdinaryStream
+		// 中文说明：synchronized output begin/end 只是 screen app 的 repaint
+		// flush 边界，不是 lifecycle boundary。连续 repaint 必须替换 mutable
+		// current primary frame；只有 alt-enter、ordinary stream 恢复或 process
+		// close 这类明确边界才能把旧 frame seal 进 timeline。
 		decision.ArchivePrimaryAfterPrimaryFrame = tx.AltEntered
 		// 中文说明：同步输出或 full-replace direct damage 刚启动时，vterm
 		// PrimaryFrame side proof 会包含屏幕上已经 sealed 的普通 shell tail。

@@ -1013,30 +1013,57 @@ func TestR373SingleTapAltTransactionDoesNotEnterPrimaryHistory(t *testing.T) {
 	}
 }
 
-func TestR373SecondSingleTapRedrawSealsPreviousPrimaryFrame(t *testing.T) {
+func TestR398SecondSingleTapRedrawReplacesMutablePrimaryFrame(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r373-second-redraw",
+		ID:      "term-r398-second-redraw",
 		Command: []string{"shell"},
 		Size:    Size{Cols: 20, Rows: 3},
 	}); err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}
-	if err := server.IngestOutput(context.Background(), "term-r373-second-redraw", "\x1b[?2026hfirst\r\ncurrent\x1b[?2026l"); err != nil {
+	if err := server.IngestOutput(context.Background(), "term-r398-second-redraw", "\x1b[?2026h\x1b[Hfirst\r\ncurrent\x1b[?2026l"); err != nil {
 		t.Fatalf("ingest first redraw: %v", err)
 	}
-	if err := server.IngestOutput(context.Background(), "term-r373-second-redraw", "\x1b[?2026hsecond\r\ncurrent\x1b[?2026l"); err != nil {
+	if err := server.IngestOutput(context.Background(), "term-r398-second-redraw", "\x1b[?2026h\x1b[Hsecond\r\ncurrent\x1b[?2026l"); err != nil {
 		t.Fatalf("ingest second redraw: %v", err)
 	}
-	rows, _ := r326CollectAllHistoryRows(t, server, "term-r373-second-redraw", 20, 2)
-	if got := historyTextCount(rows, "first"); got != 1 {
-		t.Fatalf("second redraw must seal previous current frame once, count=%d rows=%#v", got, rows)
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r398-second-redraw", 20, 2)
+	if got := historyTextCount(rows, "first"); got != 0 {
+		t.Fatalf("second redraw must replace mutable current frame without sealing first repaint, count=%d rows=%#v", got, rows)
 	}
 	if got := historyTextCount(rows, "second"); got != 1 {
 		t.Fatalf("second redraw must publish new current frame once, count=%d rows=%#v", got, rows)
 	}
 	if current := currentPrimaryFrameRowTexts(rows); len(current) == 0 || !strings.Contains(strings.Join(current, "\n"), "second") {
 		t.Fatalf("latest current frame should be the second redraw, current=%#v rows=%#v", current, rows)
+	}
+}
+
+func TestR398SynchronizedProgressRepaintDoesNotAppendEveryFrame(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r398-progress-redraw",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 80, Rows: 12},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	for i := 0; i < 8; i++ {
+		output := fmt.Sprintf("\x1b[?2026h\x1b[Hgpt-5.5 xhigh · ~/Documents/workdir/termx\r\nStarting MCP servers (1/2): computer-use (%ds · esc to interrupt)\r\n\r\n> Improve documentation in @filename\x1b[?2026l", i)
+		if err := server.IngestOutput(context.Background(), "term-r398-progress-redraw", output); err != nil {
+			t.Fatalf("ingest progress repaint %d: %v", i, err)
+		}
+	}
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r398-progress-redraw", 80, 6)
+	if got := historyTextCount(rows, "Starting MCP servers"); got != 1 {
+		t.Fatalf("progress repaint must expose only latest mutable frame, count=%d rows=%#v", got, rows)
+	}
+	if got := strings.Join(currentPrimaryFrameRowTexts(rows), "\n"); !strings.Contains(got, "7s · esc to interrupt") {
+		t.Fatalf("current frame should keep latest progress text, got %q rows=%#v", got, rows)
+	}
+	if historyRowsContainSegment(rows, history.HistorySegmentArchivedPrimaryFrame) {
+		t.Fatalf("pure synchronized progress repaint must not archive intermediate frames, rows=%#v", rows)
 	}
 }
 
