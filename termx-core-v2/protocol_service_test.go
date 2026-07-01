@@ -593,9 +593,6 @@ func TestProtocolServiceNextLiveInvalidationUsesObservedRevision(t *testing.T) {
 	if event == nil || event.LiveInvalidated == nil || event.LiveInvalidated.Revision <= first.Revision {
 		t.Fatalf("expected wake newer than observed revision %d, got %#v", first.Revision, event)
 	}
-	if event.LiveInvalidated.Snapshot == nil || event.LiveInvalidated.Snapshot.Revision != event.LiveInvalidated.Revision || !strings.Contains(strings.Join(protocolRowTexts(event.LiveInvalidated.Snapshot.Rows), "\n"), "second") {
-		t.Fatalf("expected one-shot wake to carry latest native snapshot, got %#v", event.LiveInvalidated)
-	}
 }
 
 func newProtocolClient(t *testing.T) (*Server, *protocol.Client, func()) {

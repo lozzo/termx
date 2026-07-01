@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
@@ -31,6 +32,7 @@ type LiveDeps struct {
 }
 
 const liveInvalidationTokenPrefix = "terminal.live.invalidation:"
+const liveInvalidationArmCoalesceDelay = 25 * time.Millisecond
 
 func runtimeSurfaceID(root state.Root) string {
 	if root.RuntimeSurfaceID != "" {
@@ -897,7 +899,7 @@ func liveInvalidationArmEffect(terminalID string, cols int, rows int, observedRe
 		Token: token,
 		Async: true,
 		Run: func(ctx context.Context) Msg {
-			if ctx.Err() != nil {
+			if !waitForLiveInvalidationArmCoalesce(ctx) {
 				return nil
 			}
 			event, err := source.ArmLiveInvalidation(ctx, services.TerminalLiveEventRequest{
@@ -925,6 +927,20 @@ func liveInvalidationArmEffect(terminalID string, cols int, rows int, observedRe
 			return LiveEventMsg{Event: event}
 		},
 	}}
+}
+
+func waitForLiveInvalidationArmCoalesce(ctx context.Context) bool {
+	if liveInvalidationArmCoalesceDelay <= 0 {
+		return true
+	}
+	timer := time.NewTimer(liveInvalidationArmCoalesceDelay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func liveInvalidationTokenForTerminal(terminalID string) CancelToken {

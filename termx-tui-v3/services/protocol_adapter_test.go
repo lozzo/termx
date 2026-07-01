@@ -1710,37 +1710,6 @@ func TestProtocolTerminalServiceAdapterMapsOrdinaryLiveEventsToRefreshInvalidati
 	}
 }
 
-func TestProtocolTerminalServiceAdapterUsesOneShotLiveSnapshot(t *testing.T) {
-	client := &fakeProtocolTerminalClient{
-		nextLiveEvent: &protocol.Event{
-			Type:       protocol.EventTerminalLiveInvalidated,
-			TerminalID: "term-1",
-			LiveInvalidated: &protocol.LiveScreenInvalidatedData{
-				Revision: 9,
-				Snapshot: &protocol.NativeScreenSnapshot{
-					TerminalID: "term-1",
-					Revision:   9,
-					Size:       protocol.Size{Cols: 80, Rows: 24},
-					Rows:       []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "l"}, {Content: "v"}})},
-					Cursor:     protocol.CursorState{Row: 0, Col: 2, Visible: true},
-					Modes:      protocol.TerminalModes{AutoWrap: true},
-				},
-			},
-		},
-	}
-	adapter := ProtocolTerminalServiceAdapter{Client: client}
-	got, err := adapter.ArmLiveInvalidation(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24, ObservedRevision: 7})
-	if err != nil {
-		t.Fatalf("arm live invalidation: %v", err)
-	}
-	if got.Refresh || !got.Ready || got.TerminalID != "term-1" || got.Snapshot.Revision != 9 || got.Snapshot.Cols != 80 || got.Snapshot.Rows != 24 || liveScreenRowText(got.Snapshot, 0) != "lv" || !got.Snapshot.Cursor.Visible || got.Snapshot.Cursor.Col != 2 {
-		t.Fatalf("one-shot snapshot should become ready live surface, got %#v", got)
-	}
-	if len(client.liveScreenIDs) != 0 {
-		t.Fatalf("one-shot snapshot must avoid follow-up live.screen.get in service layer, got %#v", client.liveScreenIDs)
-	}
-}
-
 func TestProtocolTerminalServiceAdapterLiveInvalidationArmIsTerminalScoped(t *testing.T) {
 	client := &fakeProtocolTerminalClient{}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}

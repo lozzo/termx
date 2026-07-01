@@ -1731,13 +1731,6 @@ func eventToWirePB(event Event) *wirepb.Event {
 	}
 	if event.LiveInvalidated != nil {
 		setUint64UnknownField(out, eventLiveRevisionFieldNumber, event.LiveInvalidated.Revision)
-		if event.LiveInvalidated.Snapshot != nil {
-			// 中文说明：one-shot live wake 可以把同一 core latest native screen
-			// 直接带回，避免客户端先收 wake 再串行 live.screen.get。
-			if payload, err := EncodeNativeScreenSnapshotPayload(event.LiveInvalidated.Snapshot); err == nil {
-				setBytesUnknownField(out, eventLiveSnapshotPayloadFieldNumber, payload)
-			}
-		}
 	}
 	if event.Storage != nil {
 		out.Storage = &wirepb.StorageChangedData{
@@ -1797,11 +1790,6 @@ func eventFromWirePB(msg *wirepb.Event) Event {
 	}
 	if out.Type == EventTerminalLiveInvalidated {
 		out.LiveInvalidated = &LiveScreenInvalidatedData{Revision: uint64UnknownField(msg, eventLiveRevisionFieldNumber)}
-		if payload := bytesUnknownField(msg, eventLiveSnapshotPayloadFieldNumber); len(payload) > 0 {
-			if snapshot, err := DecodeNativeScreenSnapshotPayload(payload); err == nil {
-				out.LiveInvalidated.Snapshot = snapshot
-			}
-		}
 	}
 	if msg.Storage != nil {
 		out.Storage = &StorageChangedData{
@@ -1835,7 +1823,6 @@ const (
 	terminalInfoExitedAtFieldNumber                protowire.Number = 13
 	terminalStateChangedExitedAtFieldNumber        protowire.Number = 4
 	eventLiveRevisionFieldNumber                   protowire.Number = 14
-	eventLiveSnapshotPayloadFieldNumber            protowire.Number = 15
 	liveInvalidationObservedRevisionFieldNumber    protowire.Number = 17
 	nativeScreenLiveRevisionFieldNumber            protowire.Number = 17
 	historyWindowModeFieldNumber                   protowire.Number = 12
@@ -2047,16 +2034,6 @@ func setStringUnknownField(msg proto.Message, field protowire.Number, value stri
 	})
 }
 
-func setBytesUnknownField(msg proto.Message, field protowire.Number, value []byte) {
-	if msg == nil || len(value) == 0 {
-		return
-	}
-	appendUnknownField(msg, field, protowire.BytesType, func(out []byte) []byte {
-		out = protowire.AppendVarint(out, uint64(len(value)))
-		return append(out, value...)
-	})
-}
-
 func appendUnknownField(msg proto.Message, field protowire.Number, typ protowire.Type, appendValue func([]byte) []byte) {
 	unknown := msg.ProtoReflect().GetUnknown()
 	unknown = protowire.AppendTag(unknown, field, typ)
@@ -2130,32 +2107,4 @@ func stringUnknownField(msg proto.Message, field protowire.Number) string {
 		unknown = unknown[n:]
 	}
 	return ""
-}
-
-func bytesUnknownField(msg proto.Message, field protowire.Number) []byte {
-	if msg == nil {
-		return nil
-	}
-	unknown := msg.ProtoReflect().GetUnknown()
-	for len(unknown) > 0 {
-		num, typ, n := protowire.ConsumeTag(unknown)
-		if n < 0 {
-			return nil
-		}
-		unknown = unknown[n:]
-		valueStart := unknown
-		n = protowire.ConsumeFieldValue(num, typ, unknown)
-		if n < 0 {
-			return nil
-		}
-		if num == field && typ == protowire.BytesType {
-			value, consumed := protowire.ConsumeBytes(valueStart)
-			if consumed >= 0 {
-				return append([]byte(nil), value...)
-			}
-			return nil
-		}
-		unknown = unknown[n:]
-	}
-	return nil
 }

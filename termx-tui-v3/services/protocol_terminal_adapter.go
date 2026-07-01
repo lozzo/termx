@@ -381,14 +381,6 @@ func liveInvalidationFromProtocol(req TerminalLiveEventRequest, event protocol.E
 	out.Refresh = true
 	if event.LiveInvalidated != nil {
 		out.Snapshot.Revision = event.LiveInvalidated.Revision
-		if event.LiveInvalidated.Snapshot != nil {
-			// 中文说明：one-shot live wake 可以直接携带 core latest native screen，
-			// 其 truth source 仍是 core single SemanticTap；TUI 不从本地 rows
-			// 推断历史，也不再 wake 后串行发 live.screen.get。
-			out.Refresh = false
-			out.Ready = true
-			out.Snapshot = liveSurfaceSnapshotFromProtocol(req.TerminalID, event.LiveInvalidated.Snapshot)
-		}
 	}
 	return out
 }

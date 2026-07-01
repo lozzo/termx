@@ -1774,10 +1774,6 @@ func protocolEventFromCoreV2(event Event) protocol.Event {
 			revision = uint64(event.Live.Revision)
 		}
 		out.LiveInvalidated = &protocol.LiveScreenInvalidatedData{Revision: revision}
-		if event.Live != nil && event.Live.Snapshot != nil {
-			snapshot := protocolNativeScreenSnapshotFromCore(*event.Live.Snapshot, protocol.Size{})
-			out.LiveInvalidated.Snapshot = &snapshot
-		}
 	case EventTerminalRemoved:
 		out.Type = protocol.EventTerminalRemoved
 		out.Removed = &protocol.TerminalRemovedData{Reason: "removed"}

@@ -492,19 +492,13 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 	}
 	if revision := terminal.LiveRevision(); revision > observedRevision {
 		// 中文说明：这是 latest native screen 的边沿补偿，不是事件回放队列。
-		// one-shot 响应直接带同一 SemanticTap 的 current snapshot，避免客户端
-		// wake 后再串行 live.screen.get；广播 event 仍只带 revision。
-		if err := terminal.flushTapQueue(ctx); err != nil {
-			return Event{}, err
-		}
-		snapshot := terminal.NativeScreenSnapshot(id)
+		// 客户端只得到一个 wake，随后仍自行拉 core 当前 latest screen。
 		return Event{
 			Type:       EventTerminalLiveInvalidated,
 			TerminalID: id,
 			Live: &LiveScreenInvalidated{
 				TerminalID: id,
-				Revision:   snapshot.Revision,
-				Snapshot:   &snapshot,
+				Revision:   revision,
 			},
 		}, nil
 	}
@@ -527,17 +521,6 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 			}
 			if event.Live.Revision <= observedRevision {
 				continue
-			}
-			if event.Live.Snapshot == nil {
-				// 中文说明：one-shot wake 返回前只等待调用时已进入 tap queue 的 PTY
-				// payload，天然合并一段高压输出到 latest screen；不等待 future
-				// output、history backlog 或客户端 frame sink。
-				if err := terminal.flushTapQueue(ctx); err != nil {
-					return Event{}, err
-				}
-				snapshot := terminal.NativeScreenSnapshot(id)
-				event.Live.Snapshot = &snapshot
-				event.Live.Revision = snapshot.Revision
 			}
 			return event, nil
 		}
