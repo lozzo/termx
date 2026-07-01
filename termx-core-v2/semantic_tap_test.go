@@ -16,10 +16,10 @@ func TestR372SemanticTapOwnsSingleVTermForLiveAndHistory(t *testing.T) {
 		t.Fatalf("apply PTY write: %v", err)
 	}
 	tx := result.Transaction()
-	snapshot := result.NativeScreenSnapshot()
 	if tx.Seq != 1 {
 		t.Fatalf("first semantic transaction should be seq 1, got %d", tx.Seq)
 	}
+	snapshot := tap.NativeScreenSnapshot()
 	if result.Revision() != 1 || snapshot.Revision != 1 {
 		t.Fatalf("live revision should come from same tap result, got result=%d snapshot=%d", result.Revision(), snapshot.Revision)
 	}
@@ -67,7 +67,7 @@ func TestR372SemanticTapOrdersPTYBytesAndResizeInOneSequence(t *testing.T) {
 			t.Fatalf("input record %d lost sequence/kind, got %#v want kind %s", i, records[i], want)
 		}
 	}
-	if got := semanticTapSnapshotText(second.NativeScreenSnapshot()); !strings.Contains(got, "zz") {
+	if got := semanticTapSnapshotText(tap.NativeScreenSnapshot()); !strings.Contains(got, "zz") {
 		t.Fatalf("post-resize write should update same latest screen, got %q", got)
 	}
 }
@@ -145,7 +145,7 @@ func TestR372SemanticTapFanOutKeepsConsumersAfterParserBoundary(t *testing.T) {
 	historyConsumer := &r372TransactionOnlyHistoryConsumer{}
 
 	liveConsumer.Invalidate(result.Revision())
-	liveConsumer.ObserveSnapshot(result.NativeScreenSnapshot())
+	liveConsumer.ObserveSnapshot(tap.NativeScreenSnapshot())
 	historyConsumer.Consume(result.Transaction())
 
 	if liveConsumer.rawPTYSeen || historyConsumer.rawPTYSeen {
@@ -234,20 +234,46 @@ func TestR378OrdinaryStressTransactionHandoffStaysLightweight(t *testing.T) {
 	}
 }
 
-func TestR372SemanticTapSnapshotHandoffIsDeepCopied(t *testing.T) {
+func TestR381SemanticTapSnapshotHandoffIsPulledOnDemand(t *testing.T) {
 	tap := NewSemanticTap("term-r372", Size{Cols: 12, Rows: 3}, nil)
-	result, err := tap.ApplyPTYWrite([]byte("snapshot\r\n"))
-	if err != nil {
+	if _, err := tap.ApplyPTYWrite([]byte("snapshot\r\n")); err != nil {
 		t.Fatalf("apply PTY write: %v", err)
 	}
-	first := result.NativeScreenSnapshot()
+	first := tap.NativeScreenSnapshot()
 	if len(first.Rows) == 0 || len(first.Rows[0].Cells) == 0 {
 		t.Fatalf("expected snapshot cells for copy test, got %#v", first)
 	}
 	first.Rows[0].Cells[0].Content = "X"
-	second := result.NativeScreenSnapshot()
+	second := tap.NativeScreenSnapshot()
 	if semanticTapSnapshotText(second) == "" || second.Rows[0].Cells[0].Content == "X" {
 		t.Fatalf("mutating one live snapshot consumer must not affect another, got %#v", second.Rows[0].Cells)
+	}
+}
+
+func TestR381SemanticTapWriteAndResizeDoNotBuildSnapshot(t *testing.T) {
+	tap := NewSemanticTap("term-r381", Size{Cols: 12, Rows: 3}, nil)
+	snapshots := 0
+	previousHook := semanticTapSnapshotBuildHook
+	semanticTapSnapshotBuildHook = func() { snapshots++ }
+	defer func() { semanticTapSnapshotBuildHook = previousHook }()
+
+	result, err := tap.ApplyPTYWrite([]byte("snapshot\r\n"))
+	if err != nil {
+		t.Fatalf("apply PTY write: %v", err)
+	}
+	if result.Revision() != 1 || snapshots != 0 {
+		t.Fatalf("write result must only carry revision/transaction, revision=%d snapshots=%d", result.Revision(), snapshots)
+	}
+	resized, err := tap.Resize(Size{Cols: 10, Rows: 4})
+	if err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	if resized.Revision() != 2 || snapshots != 0 {
+		t.Fatalf("resize result must not build native snapshot, revision=%d snapshots=%d", resized.Revision(), snapshots)
+	}
+	snapshot := tap.NativeScreenSnapshot()
+	if snapshot.Revision != 2 || snapshots != 1 {
+		t.Fatalf("snapshot should be built only when pulled, revision=%d snapshots=%d", snapshot.Revision, snapshots)
 	}
 }
 

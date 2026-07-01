@@ -29,14 +29,16 @@ type SemanticTapInputRecord struct {
 	Size Size
 }
 
-// SemanticTapResult 是 single SemanticTap 对一次输入的不可变输出。
-// Transaction 返回 history consumer 唯一可消费的语义消息副本；NativeScreenSnapshot
-// 和 Revision 只服务 live latest projection，不能被提升为 history/window/copy truth。
+// SemanticTapResult 是 single SemanticTap 对一次输入的轻量输出。
+// Transaction 返回 history consumer 唯一可消费的语义消息副本；Revision 只服务
+// live invalidation。R381 后 result 不再携带 native screen snapshot，live.screen.get
+// 或测试需要画面时必须从 SemanticTap.NativeScreenSnapshot 按需读取 latest 状态。
 type SemanticTapResult struct {
 	tx       vterm.TerminalSemanticTransaction
 	revision LiveRevision
-	snapshot NativeScreenSnapshot
 }
+
+var semanticTapSnapshotBuildHook func()
 
 // SemanticTap 负责单个 terminal 的唯一 vterm owner 合同。
 // domain owner 是 core-v2 Terminal ingest；truth source 是同一个 termx-vterm
@@ -67,7 +69,8 @@ func NewSemanticTap(terminalID string, size Size, onResponse vterm.ResponseHandl
 
 // ApplyPTYWrite 按 tap sequence 消费 PTY bytes。
 // 返回的 transaction 已经由唯一 vterm owner 解码；history consumer 只能消费该
-// transaction，live consumer 只能消费同一 tap 状态生成的 latest snapshot/revision。
+// transaction，live consumer 只收到 revision wake，不能在每个 write 上强制 clone
+// native screen snapshot。
 func (tap *SemanticTap) ApplyPTYWrite(raw []byte) (SemanticTapResult, error) {
 	if tap == nil {
 		return SemanticTapResult{}, nil
@@ -88,7 +91,6 @@ func (tap *SemanticTap) ApplyPTYWrite(raw []byte) (SemanticTapResult, error) {
 	return SemanticTapResult{
 		tx:       tx,
 		revision: tap.revision,
-		snapshot: tap.snapshotLocked(),
 	}, err
 }
 
@@ -116,7 +118,6 @@ func (tap *SemanticTap) Resize(size Size) (SemanticTapResult, error) {
 	return SemanticTapResult{
 		tx:       tx,
 		revision: tap.revision,
-		snapshot: tap.snapshotLocked(),
 	}, err
 }
 
@@ -131,12 +132,6 @@ func (result SemanticTapResult) Transaction() vterm.TerminalSemanticTransaction 
 // 它只服务 live invalidation/snapshot stale guard，不能作为 history generation。
 func (result SemanticTapResult) Revision() LiveRevision {
 	return result.revision
-}
-
-// NativeScreenSnapshot 返回本次 tap 输入后的 latest screen deep copy。
-// 它只能作为 live projection；copy/search/page 必须走 authoritative history。
-func (result SemanticTapResult) NativeScreenSnapshot() NativeScreenSnapshot {
-	return cloneSemanticTapSnapshot(result.snapshot)
 }
 
 // ResetForRestartPreservingScreen 在 process restart 时重建 tap vterm owner。
@@ -233,6 +228,9 @@ func (tap *SemanticTap) ensureSourceLocked() {
 }
 
 func (tap *SemanticTap) snapshotLocked() NativeScreenSnapshot {
+	if semanticTapSnapshotBuildHook != nil {
+		semanticTapSnapshotBuildHook()
+	}
 	vt := tap.source.VTerm()
 	if vt == nil {
 		return NativeScreenSnapshot{TerminalID: tap.terminalID, Revision: tap.revision, Timestamp: time.Now().UTC()}
