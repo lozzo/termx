@@ -153,6 +153,36 @@ func TestR404JournalRendererRejectsUnsupportedFallbackContract(t *testing.T) {
 	}
 }
 
+func TestR405TerminalResizeUsesDecisionAwareBoundaryJournal(t *testing.T) {
+	terminalSource := r301ReadFile(t, "terminal.go")
+	body := r301SourceFunctionBody(t, terminalSource, "func (terminal *Terminal) enqueueOrApplyHistoryResizeTransaction")
+	if !strings.Contains(body, "history.HistoryJournalFromDecision") || !strings.Contains(body, "HistoryOutputModeBoundaryOnly") || !strings.Contains(body, "NonHistoryBoundary: true") {
+		t.Fatal("resize history ingest must enqueue a decision-aware boundary-only journal")
+	}
+	if strings.Contains(body, "HistoryJournalFromTransaction") || strings.Contains(body, "applyHistoryResizeTransaction") {
+		t.Fatal("resize history ingest must not use default transaction journal or separate renderer path")
+	}
+}
+
+func TestR405TerminalLifecycleCloseDoesNotPretendToBePTY(t *testing.T) {
+	terminalSource := r301ReadFile(t, "terminal.go")
+	body := r301SourceFunctionBody(t, terminalSource, "func (terminal *Terminal) forceCloseHistory")
+	if !strings.Contains(body, "historyRenderer.Close(reason)") {
+		t.Fatal("terminal lifecycle close must seal history through renderer.Close(reason)")
+	}
+	for _, forbidden := range []string{
+		"HistoryJournalFromTransaction",
+		"HistoryJournalFromDecision",
+		"ApplyPTYWrite",
+		"NativeScreenSnapshot",
+		"terminal.live",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("terminal lifecycle close must not forge PTY/journal/live snapshot input: %s", forbidden)
+		}
+	}
+}
+
 func r301RejectProgramNameLiteral(t *testing.T, path string, text string) {
 	t.Helper()
 	for _, forbidden := range []string{"Codex", "codex", "Claude", "claude", "htop", "vim"} {

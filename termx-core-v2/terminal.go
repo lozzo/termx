@@ -647,15 +647,19 @@ func (terminal *Terminal) enqueueOrApplyHistoryResizeTransaction(tx history.Term
 	terminal.mu.Lock()
 	terminalID := terminal.info.ID
 	terminal.mu.Unlock()
+	journal := history.HistoryJournalFromDecision(terminalID, tx, history.HistoryDecision{
+		Mode:               history.HistoryOutputModeBoundaryOnly,
+		NonHistoryBoundary: true,
+	})
 	terminal.queueMu.Lock()
 	queue := terminal.historyQ
 	terminal.queueMu.Unlock()
-	if queue != nil && queue.Enqueue(history.HistoryJournalFromTransaction(terminalID, tx)) {
+	if queue != nil && queue.Enqueue(journal) {
 		return
 	}
 	// 中文说明：没有异步 history worker 时，resize 仍只按 boundary-only 进入 renderer；
 	// 不能从 resized live snapshot 回填 committed history，也不能等待未来输出兜底。
-	terminal.applyHistoryResizeTransaction(tx)
+	terminal.applyHistoryJournal(journal)
 }
 
 func (terminal *Terminal) watchExit(process TerminalProcess, outputDone <-chan struct{}) {
@@ -996,16 +1000,6 @@ func (terminal *Terminal) applyHistoryJournal(journal history.HistoryJournal) {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
 	terminal.applyHistoryJournalsLocked([]history.HistoryJournal{journal})
-}
-
-func (terminal *Terminal) applyHistoryResizeTransaction(tx history.TerminalSemanticTransaction) {
-	terminal.mu.Lock()
-	terminalID := terminal.info.ID
-	terminal.mu.Unlock()
-	terminal.applyHistoryJournal(history.HistoryJournalFromDecision(terminalID, tx, history.HistoryDecision{
-		Mode:               history.HistoryOutputModeBoundaryOnly,
-		NonHistoryBoundary: true,
-	}))
 }
 
 func historyJournalAllowsTerminalQueue(journal history.HistoryJournal) bool {

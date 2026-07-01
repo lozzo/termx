@@ -105,6 +105,45 @@ func TestR373ResizeSerializesProcessOutputWithTapResize(t *testing.T) {
 	}
 }
 
+func TestR405TerminalResizeQueuesDecisionAwareBoundaryJournal(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r405-resize-journal",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 6, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	terminal, err := server.Terminal("term-r405-resize-journal")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	queue := newTerminalHistoryIngestQueue(0)
+	defer queue.Close()
+	terminal.queueMu.Lock()
+	terminal.historyQ = queue
+	terminal.queueMu.Unlock()
+
+	if err := server.ResizeTerminal(context.Background(), "term-r405-resize-journal", 12, 4); err != nil {
+		t.Fatalf("resize terminal: %v", err)
+	}
+	batch, ok := queue.nextBatch()
+	if !ok || len(batch) != 1 {
+		t.Fatalf("expected one resize journal batch, ok=%v batch=%#v", ok, batch)
+	}
+	journal := batch[0].journal
+	labels := historyJournalLabelsForTerminalTest(journal)
+	if got := strings.Join(labels, "|"); got != "boundary:resize" {
+		t.Fatalf("resize must enqueue boundary-only decision journal, got labels=%q journal=%#v", got, journal)
+	}
+	for _, item := range journal.Items {
+		if item.Kind == history.HistoryJournalItemOrdinaryLineBatch || item.Kind == history.HistoryJournalItemFrameEvent || item.Kind == history.HistoryJournalItemScrollOutProof {
+			t.Fatalf("resize journal must not carry ordinary/frame/scroll-out payload, labels=%v item=%#v", labels, item)
+		}
+	}
+}
+
 func TestTerminalLiveSurfaceRepliesToOSCBackgroundQuery(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -923,6 +962,45 @@ func TestR373SingleTapSynchronizedTransactionPublishesPrimaryFrame(t *testing.T)
 	}
 }
 
+func TestR405TerminalProcessExitSealsPrimaryFrameAsLifecycleFinalFrame(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r405-exit-final-frame",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r405-exit-final-frame", "\x1b[?2026hfinal-a\r\nfinal-b\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest synchronized frame: %v", err)
+	}
+	process := factory.process("term-r405-exit-final-frame")
+	if process == nil {
+		t.Fatal("expected process")
+	}
+	process.exit(0)
+	assertEventually(t, time.Second, func() bool {
+		info, err := server.GetTerminal("term-r405-exit-final-frame")
+		return err == nil && info.State == TerminalStateExited
+	}, "terminal should exit")
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r405-exit-final-frame", history.HistoryWindowRequest{
+		TerminalID: "term-r405-exit-final-frame",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       20,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("history.window after exit: %v", err)
+	}
+	if historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
+		t.Fatalf("process exit must clear mutable current frame, rows=%#v", window.Rows)
+	}
+	if !historyRowsContainSegment(window.Rows, history.HistorySegmentCommitted) || !historyRowsContain(window.Rows, "final-b") {
+		t.Fatalf("process exit must seal final primary frame into committed history, rows=%#v", window.Rows)
+	}
+}
+
 func TestR373SingleTapSynchronizedScrollOutKeepsFullPayload(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
@@ -1734,6 +1812,33 @@ func historyRowTextsFromLinesForTest(mutations []history.HistoryMutation) []stri
 		texts = append(texts, historyCellsText(mutation.Line.Cells))
 	}
 	return texts
+}
+
+func historyJournalLabelsForTerminalTest(journal history.HistoryJournal) []string {
+	labels := make([]string, 0, len(journal.Items))
+	for _, item := range journal.Items {
+		switch item.Kind {
+		case history.HistoryJournalItemOrdinaryLineBatch:
+			labels = append(labels, "batch")
+		case history.HistoryJournalItemBoundary:
+			if item.Boundary == nil {
+				labels = append(labels, "boundary:<nil>")
+				continue
+			}
+			labels = append(labels, "boundary:"+string(item.Boundary.Kind))
+		case history.HistoryJournalItemFrameEvent:
+			if item.Frame == nil {
+				labels = append(labels, "frame:<nil>")
+				continue
+			}
+			labels = append(labels, "frame:"+string(item.Frame.Kind))
+		case history.HistoryJournalItemScrollOutProof:
+			labels = append(labels, "scroll-out")
+		default:
+			labels = append(labels, string(item.Kind))
+		}
+	}
+	return labels
 }
 
 func historyRowsContain(rows []history.HistoryRow, needle string) bool {
