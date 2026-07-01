@@ -824,6 +824,29 @@ func TestAppRuntimeArmsLiveInvalidationAfterFrameWrite(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeArmsLiveInvalidationAfterNonSurfaceFrameWrite(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	runner := &recordingRuntimeEffectRunner{}
+	root := state.Root{}
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 12, Lines: []string{"ready"}})
+	runtime := NewAppRuntime(root, NewLiveReducer(LiveDeps{Terminal: terminal}), nil, NewFakeTerminalHost(8), runner)
+	done := make(chan render.FrameWriteCompletion, 1)
+	done <- render.FrameWriteCompletion{Written: true}
+	close(done)
+
+	runtime.rememberLiveFrameCompletion(NoopMsg{}, done)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if len(runner.Effects) != 1 {
+		t.Fatalf("written frame carrying live surface should arm next invalidation, got %#v", runner.Effects)
+	}
+	arm, ok := runner.Effects[0].(FuncEffect)
+	if !ok || arm.Token != liveInvalidationTokenForTerminal("term-1") || !arm.Async {
+		t.Fatalf("expected terminal-scoped async arm effect, got %#v", runner.Effects[0])
+	}
+}
+
 func TestAppRuntimeDoesNotArmLiveInvalidationForDroppedFrame(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	runner := &recordingRuntimeEffectRunner{}
@@ -921,12 +944,16 @@ func TestAppRuntimeDoesNotSkipLifecycleLiveSurfaceUnderPressure(t *testing.T) {
 			},
 		}},
 		func(root state.Root, msg Msg) (state.Root, []Effect) {
-			surface, ok := msg.(LiveSurfaceMsg)
-			if !ok {
+			switch msg := msg.(type) {
+			case LiveSurfaceMsg:
+				root.Surface = root.Surface.ApplySnapshotWithLifecycle(msg.Snapshot, msg.LifecycleKnown)
+				return root.Advance(), nil
+			case LiveFrameReadyMsg:
+				return root, nil
+			default:
 				t.Fatalf("expected LiveSurfaceMsg, got %T", msg)
 			}
-			root.Surface = root.Surface.ApplySnapshotWithLifecycle(surface.Snapshot, surface.LifecycleKnown)
-			return root.Advance(), nil
+			return root, nil
 		},
 		func(root state.Root) render.Frame {
 			return render.Frame{Lines: []string{string(root.Surface.State)}}

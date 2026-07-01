@@ -999,13 +999,13 @@ func (runtime *AppRuntime) writeFrame(frame render.Frame) <-chan render.FrameWri
 }
 
 func (runtime *AppRuntime) rememberLiveFrameCompletion(msg Msg, done <-chan render.FrameWriteCompletion) {
-	if _, ok := msg.(LiveSurfaceMsg); !ok {
-		return
-	}
 	targets := liveFrameReadyTargetsFromRoot(runtime.state)
 	if len(targets) == 0 {
 		return
 	}
+	// 中文说明：真实 FrameSink 是 latest-only。LiveSurfaceMsg 对应的帧可能被后续
+	// 普通 UI 帧覆盖，但后续帧仍然携带同一个 live surface；只要最终写出的 frame
+	// 包含 live surface，就必须允许 reducer arm 下一次 one-shot invalidation。
 	if done != nil {
 		select {
 		case completion, ok := <-done:
