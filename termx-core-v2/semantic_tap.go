@@ -31,10 +31,10 @@ type SemanticTapInputRecord struct {
 }
 
 // SemanticTapResult 是 history semantic tap 对一次输入的轻量输出。
-// Transaction 只给复杂语义 fallback 和旧 harness 拉取完整语义消息副本；
-// HistoryJournal 在 history fan-out 阶段从同一次 transaction lazy 构造，避免
-// history-specific journal 裁剪成本反压 PTY ingest；Revision 只保留 history tap
-// 自身诊断，不再作为 Terminal live revision owner。
+// Transaction 只给 decision 构建和 harness 拉取完整语义消息副本；生产 history
+// apply 只能消费同次 transaction 裁剪出的 compact journal，不能把 full transaction
+// renderer 当作 fallback。Revision 只保留 history tap 自身诊断，不再作为 Terminal
+// live revision owner。
 // R396 后 live.screen.get 从 live SurfaceTrack 读取，不能从 history tap snapshot 取屏幕。
 type SemanticTapResult struct {
 	terminalID string

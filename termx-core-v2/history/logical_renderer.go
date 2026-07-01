@@ -15,9 +15,9 @@ func NewHistoryLogicalRenderer(stream StreamLineReducer, frames FrameReducer) Hi
 }
 
 // NewHistoryRenderers 创建共享 id allocator 的 transaction renderer 与 compact
-// journal renderer。domain owner 是 history；调用边界是 Terminal ingest，同一个
-// terminal 可能先用 ordinary journal fast path，再因 ED/RIS/alt/frame boundary
-// 回到完整 transaction renderer，两条路径必须共享 logical line/timeline id。
+// journal renderer。domain owner 是 history；PTY/resize history 生产入口只允许
+// compact journal apply，transaction renderer 仅保留给 domain harness 与 lifecycle
+// close 辅助，不能作为 journal 失败后的 fallback 路径。
 func NewHistoryRenderers(stream StreamLineReducer, frames FrameReducer) (HistoryLogicalRenderer, HistoryJournalRenderer) {
 	allocator := newHistoryIDAllocator()
 	if stream == nil {

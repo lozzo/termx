@@ -1,20 +1,21 @@
 package history
 
+import vterm "github.com/lozzow/termx/termx-vterm/vterm"
+
 // HistoryJournalRenderer 把 compact semantic history journal 转成 store mutation。
 // domain owner 是 history；truth source 是 history semantic consumer 后的 HistoryJournal。
-// R383 支持 ordinary line batch 与不依赖 frame payload 的 boundary state machine；
-// scroll-out proof 和 frame event 仍是 R384 后续边界，遇到时必须原子退出。
+// R404 后它必须覆盖 ordinary stream、scroll-out proof、primary/alt frame、
+// clear/resize/final frame 等 compact journal 命令；失败条件是回退 raw PTY、
+// live snapshot 或第二套 open-line 状态。
 type HistoryJournalRenderer interface {
-	// ApplyJournal 把 compact journal 转成 HistoryMutationBatch。若 journal 含有
-	// 尚未接管的 scroll-out/frame item，返回 ErrHistoryJournalUnsupported，且不能
-	// 改写 renderer-owned open line 或 boundary 状态。
+	// ApplyJournal 把 compact journal 转成 HistoryMutationBatch。
 	ApplyJournal(journal HistoryJournal) (HistoryMutationBatch, error)
 }
 
 // NewHistoryJournalRenderer 创建独立 compact journal renderer。
 // 调用边界：仅适合独立 domain harness。生产 Terminal 应使用 NewHistoryRenderers
-// 创建共享 allocator 的 transaction/journal renderer pair，避免 fallback 混用时
-// logical line id、record id 和 timeline seq 冲突。
+// 创建共享 allocator 的 lifecycle/journal renderer pair；PTY/resize history 只能走
+// compact journal，不能在 journal renderer 失败时回到 full transaction 路径。
 func NewHistoryJournalRenderer() HistoryJournalRenderer {
 	return newHistoryJournalRenderer(newHistoryIDAllocator())
 }
@@ -41,28 +42,16 @@ func newHistoryJournalRendererWithReducers(allocator *historyIDAllocator, stream
 }
 
 type journalRenderer struct {
-	ids      *historyIDAllocator
-	stream   StreamLineReducer
-	frames   FrameReducer
-	openLine *journalOpenLineState
-	inAlt    bool
-	inSync   bool
-}
-
-type journalOpenLineState struct {
-	lineID LogicalLineID
-	cells  []Cell
-	row    int
-	cursor int
-	fill   *RowTailFill
+	ids    *historyIDAllocator
+	stream StreamLineReducer
+	frames FrameReducer
+	inAlt  bool
+	inSync bool
 }
 
 func (renderer *journalRenderer) ApplyJournal(journal HistoryJournal) (HistoryMutationBatch, error) {
 	if renderer == nil {
 		return HistoryMutationBatch{}, nil
-	}
-	if !renderer.supportsJournal(journal) {
-		return HistoryMutationBatch{}, ErrHistoryJournalUnsupported
 	}
 	var mutations []HistoryMutation
 	for _, item := range journal.Items {
@@ -75,74 +64,30 @@ func (renderer *journalRenderer) ApplyJournal(journal HistoryJournal) (HistoryMu
 	return HistoryMutationBatch{Seq: journal.Seq, Mutations: mutations}, nil
 }
 
-func (renderer *journalRenderer) supportsJournal(journal HistoryJournal) bool {
-	// 中文说明：journal renderer 必须先全量校验再应用，避免普通 batch 已改写
-	// renderer-owned open line 后遇到 frame/scroll-out 才 fallback，形成半事务双写。
-	state := journalBoundaryScanState{inAlt: renderer != nil && renderer.inAlt, inSync: renderer != nil && renderer.inSync}
-	for _, item := range journal.Items {
-		if !state.accept(item) {
-			return false
-		}
-	}
-	return true
-}
-
-type journalBoundaryScanState struct {
-	inAlt  bool
-	inSync bool
-}
-
-func (state *journalBoundaryScanState) accept(item HistoryJournalItem) bool {
-	switch item.Kind {
-	case HistoryJournalItemOrdinaryLineBatch:
-		return item.Ordinary != nil && !state.inAlt && !state.inSync
-	case HistoryJournalItemBoundary:
-		if item.Boundary == nil {
-			return false
-		}
-		return state.acceptBoundary(item.Boundary.Kind)
-	case HistoryJournalItemFrameEvent:
-		return item.Frame != nil
-	case HistoryJournalItemScrollOutProof:
-		return item.ScrollOut != nil
-	default:
-		return false
-	}
-}
-
-func (state *journalBoundaryScanState) acceptBoundary(kind HistoryJournalBoundaryKind) bool {
-	switch kind {
-	case HistoryJournalBoundaryED2, HistoryJournalBoundaryED3, HistoryJournalBoundaryRIS, HistoryJournalBoundaryResize:
-		return true
-	case HistoryJournalBoundaryAltEnter:
-		state.inAlt = true
-		return true
-	case HistoryJournalBoundaryAltExit:
-		state.inAlt = false
-		return true
-	case HistoryJournalBoundarySyncBegin:
-		state.inSync = true
-		return true
-	case HistoryJournalBoundarySyncEnd:
-		state.inSync = false
-		return true
-	default:
-		return false
-	}
-}
-
 func (renderer *journalRenderer) applyJournalItem(item HistoryJournalItem) ([]HistoryMutation, error) {
 	switch item.Kind {
 	case HistoryJournalItemOrdinaryLineBatch:
+		if item.Ordinary == nil {
+			return nil, ErrHistoryInvalidMutation
+		}
 		return renderer.applyOrdinaryLineBatch(*item.Ordinary)
 	case HistoryJournalItemBoundary:
+		if item.Boundary == nil {
+			return nil, ErrHistoryInvalidMutation
+		}
 		return renderer.applyBoundary(*item.Boundary)
 	case HistoryJournalItemFrameEvent:
+		if item.Frame == nil {
+			return nil, ErrHistoryInvalidMutation
+		}
 		return renderer.applyBoundaryFrameEvent(*item.Frame)
 	case HistoryJournalItemScrollOutProof:
+		if item.ScrollOut == nil {
+			return nil, ErrHistoryInvalidMutation
+		}
 		return renderer.applyScrollOutProof(*item.ScrollOut)
 	default:
-		return nil, ErrHistoryJournalUnsupported
+		return nil, ErrHistoryInvalidMutation
 	}
 }
 
@@ -200,16 +145,7 @@ func (renderer *journalRenderer) applyBoundary(boundary HistoryJournalBoundary) 
 		renderer.inSync = false
 		return nil, nil
 	default:
-		return nil, ErrHistoryJournalUnsupported
-	}
-}
-
-func journalFrameEventIsBoundaryOnly(kind HistoryJournalFrameEventKind) bool {
-	switch kind {
-	case HistoryJournalFrameArchivePrimary, HistoryJournalFrameClearPrimary, HistoryJournalFrameClearAlt:
-		return true
-	default:
-		return false
+		return nil, ErrHistoryInvalidMutation
 	}
 }
 
@@ -234,10 +170,15 @@ func (renderer *journalRenderer) applyBoundaryFrameEvent(event HistoryJournalFra
 		return renderer.replaceAltCurrent(*event.Frame)
 	case HistoryJournalFrameClearAlt:
 		return renderer.clearAltForBoundary(FrameReasonAltExit)
+	case HistoryJournalFrameClosePrimary:
+		if event.Frame != nil {
+			return renderer.closePrimaryFromFrameForBoundary(*event.Frame, event.TouchedRows, SealReasonSessionClose)
+		}
+		return renderer.closePrimaryForBoundary(SealReasonSessionClose)
 	case HistoryJournalFrameFinalPrimary:
 		return renderer.closePrimaryForBoundary(SealReasonTerminalClose)
 	default:
-		return nil, ErrHistoryJournalUnsupported
+		return nil, ErrHistoryInvalidMutation
 	}
 }
 
@@ -267,6 +208,13 @@ func (renderer *journalRenderer) closePrimaryForBoundary(reason SealReason) ([]H
 		return nil, nil
 	}
 	return renderer.frames.ClosePrimaryCurrent(reason)
+}
+
+func (renderer *journalRenderer) closePrimaryFromFrameForBoundary(frame TerminalSemanticFrame, excludedRows []int, reason SealReason) ([]HistoryMutation, error) {
+	if renderer.frames == nil {
+		return nil, nil
+	}
+	return renderer.frames.ClosePrimaryCurrentFromFrameExcludingRows(frame, excludedRows, reason)
 }
 
 func (renderer *journalRenderer) clearPrimaryForBoundary(reason FrameReason) ([]HistoryMutation, error) {
@@ -306,100 +254,64 @@ func (renderer *journalRenderer) resetReducersForClearScrollback() {
 	}
 }
 
-func (renderer *journalRenderer) resetOpenLine() {
-	renderer.openLine = nil
-}
-
 func (renderer *journalRenderer) applyOrdinaryLineBatch(batch OrdinaryLineBatch) ([]HistoryMutation, error) {
-	if renderer.openLine == nil && batch.OpenUpdate == nil && len(batch.Lines) > 0 {
-		return renderer.applyOrdinaryLineBatchSnapshot(batch), nil
-	}
-	if len(batch.Commands) == 0 {
-		return renderer.applyOrdinaryLineBatchSnapshot(batch), nil
+	if renderer.inAlt || renderer.inSync {
+		// 中文说明：alt/sync scope 内的文字 payload 必须由同一 journal 的
+		// frame proof 表达；即使旧 harness 手工构造了 ordinary batch，也只能
+		// 在当前 reducer 边界内忽略，不能回到另一套 transaction renderer。
+		return nil, nil
 	}
 	var mutations []HistoryMutation
+	if len(batch.Commands) == 0 {
+		for _, line := range batch.Lines {
+			mutations = append(mutations, renderer.sealJournalLine(line, SealReasonLineFeed)...)
+		}
+		if batch.OpenUpdate != nil {
+			next, err := renderer.applyOpenLineUpdate(*batch.OpenUpdate)
+			if err != nil {
+				return nil, err
+			}
+			mutations = append(mutations, next...)
+		}
+		return mutations, nil
+	}
 	for _, command := range batch.Commands {
-		next := renderer.applyOpenLineCommand(command)
+		next, err := renderer.applyOpenLineCommand(command)
+		if err != nil {
+			return nil, err
+		}
 		mutations = append(mutations, next...)
 	}
-	if batch.OpenUpdate != nil && renderer.openLine != nil {
-		// 中文说明：journal command 逐步推进 renderer-owned open line；transaction
-		// 末尾只发布一次 mutable frontier 给 store，避免普通输出每个 op 都
-		// clone/open-line upsert。
-		mutations = append(mutations, renderer.openLineMutation())
+	if batch.OpenUpdate != nil {
+		next, err := renderer.stream.FlushOpenLine()
+		if err != nil {
+			return nil, err
+		}
+		mutations = append(mutations, next...)
 	}
 	return mutations, nil
 }
 
-func (renderer *journalRenderer) applyOrdinaryLineBatchSnapshot(batch OrdinaryLineBatch) []HistoryMutation {
-	var mutations []HistoryMutation
-	for _, line := range batch.Lines {
-		mutations = append(mutations, renderer.sealJournalLine(line, SealReasonLineFeed)...)
+func (renderer *journalRenderer) applyOpenLineCommand(command JournalOpenLineCommand) ([]HistoryMutation, error) {
+	if renderer.stream == nil {
+		return nil, nil
 	}
-	if batch.OpenUpdate != nil {
-		state := renderer.ensureOpenLine()
-		state.cells = cloneHistoryCells(batch.OpenUpdate.Cells)
-		state.cursor = batch.OpenUpdate.CursorCol
-		state.row = batch.OpenUpdate.Row
-		state.fill = cloneRowTailFill(batch.OpenUpdate.TailFill)
-		mutations = append(mutations, renderer.openLineMutation())
+	op, ok := terminalOpFromJournalCommand(command)
+	if !ok {
+		return nil, nil
 	}
-	return mutations
-}
-
-func (renderer *journalRenderer) applyOpenLineCommand(command JournalOpenLineCommand) []HistoryMutation {
-	switch command.Kind {
-	case JournalOpenLineCommandWrite:
-		state := renderer.ensureOpenLine()
-		state.row = command.Row
-		state.cells = writeCellsAt(state.cells, command.Col, command.Cells)
-		state.cells = trimTrailingBlankCells(state.cells)
-		state.cursor = command.Col + historyCellsDisplayWidth(command.Cells)
-	case JournalOpenLineCommandSetCursor:
-		state := renderer.ensureOpenLine()
-		state.row = maxInt(0, command.Row)
-		state.cursor = maxInt(0, command.Col)
-	case JournalOpenLineCommandMoveCol:
-		state := renderer.ensureOpenLine()
-		state.cursor = maxInt(0, state.cursor+command.Delta)
-	case JournalOpenLineCommandMoveRow:
-		state := renderer.ensureOpenLine()
-		state.row = maxInt(0, state.row+command.Delta)
-	case JournalOpenLineCommandEraseLine:
-		state := renderer.ensureOpenLine()
-		state.cells = eraseJournalCells(state.cells, command.Col, command.Mode)
-		if state.cursor > historyCellsDisplayWidth(state.cells) {
-			state.cursor = historyCellsDisplayWidth(state.cells)
-		}
-	case JournalOpenLineCommandSealLine:
-		if command.TailFill != nil {
-			state := renderer.ensureOpenLine()
-			state.fill = cloneRowTailFill(command.TailFill)
-		}
-		return renderer.sealOpenLine(SealReasonLineFeed)
-	}
-	return nil
-}
-
-func (renderer *journalRenderer) ensureOpenLine() *journalOpenLineState {
-	if renderer.openLine == nil {
-		renderer.openLine = &journalOpenLineState{
-			lineID: renderer.ids.nextLogicalLineID(),
-		}
-	}
-	return renderer.openLine
+	return renderer.stream.ApplyOp(op)
 }
 
 func (renderer *journalRenderer) sealOpenLine(reason SealReason) []HistoryMutation {
-	if renderer.openLine == nil {
+	if renderer.stream == nil {
 		return nil
 	}
-	line := renderer.logicalLineFromOpenState()
-	renderer.openLine = nil
-	if len(line.Cells) == 0 {
+	mutations, err := renderer.stream.SealOpenLine(reason)
+	if err != nil {
 		return nil
 	}
-	return renderer.sealStandaloneLine(line, reason, HistoryRecordOrdinaryLine)
+	return mutations
 }
 
 func (renderer *journalRenderer) sealJournalLine(line JournalLogicalLine, reason SealReason) []HistoryMutation {
@@ -411,31 +323,6 @@ func (renderer *journalRenderer) sealJournalLine(line JournalLogicalLine, reason
 		return nil
 	}
 	return renderer.sealStandaloneLine(logical, reason, HistoryRecordOrdinaryLine)
-}
-
-func (renderer *journalRenderer) logicalLineFromOpenState() LogicalLine {
-	line := logicalLineTemplate(HistoryRecordOrdinaryLine)
-	line.ID = renderer.openLine.lineID
-	line.Cells = trimTrailingBlankCells(cloneHistoryCells(renderer.openLine.cells))
-	line.TailFill = cloneRowTailFill(renderer.openLine.fill)
-	line.Seal = SealStateOpen
-	return line
-}
-
-func (renderer *journalRenderer) openLineMutation() HistoryMutation {
-	state := renderer.ensureOpenLine()
-	line := renderer.logicalLineFromOpenState()
-	open := OpenLine{
-		Active: true,
-		Draft: LogicalLineDraft{
-			Line:      line,
-			CursorCol: state.cursor,
-			Row:       state.row,
-		},
-	}
-	openCopy := open
-	openCopy.Draft.Line = cloneLogicalLine(open.Draft.Line)
-	return HistoryMutation{Kind: HistoryMutationUpsertOpenLine, OpenLine: &openCopy}
 }
 
 func (renderer *journalRenderer) sealStandaloneLine(line LogicalLine, reason SealReason, kind HistoryRecordKind) []HistoryMutation {
@@ -463,5 +350,90 @@ func (renderer *journalRenderer) sealStandaloneLine(line LogicalLine, reason Sea
 			LineIDs: []LogicalLineID{line.ID},
 			Reason:  reason,
 		},
+	}
+}
+
+func (renderer *journalRenderer) applyOpenLineUpdate(update JournalOpenLineUpdate) ([]HistoryMutation, error) {
+	if renderer.stream == nil {
+		return nil, nil
+	}
+	if len(update.Cells) > 0 {
+		if _, err := renderer.stream.ApplyOp(TerminalSemanticOp{
+			Code:  vterm.ScreenOpWriteSpan,
+			Row:   update.Row,
+			Col:   0,
+			Cells: terminalCellsFromHistoryCells(update.Cells),
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return renderer.stream.FlushOpenLine()
+}
+
+func terminalOpFromJournalCommand(command JournalOpenLineCommand) (TerminalSemanticOp, bool) {
+	switch command.Kind {
+	case JournalOpenLineCommandWrite:
+		return TerminalSemanticOp{
+			Code:  vterm.ScreenOpWriteSpan,
+			Row:   command.Row,
+			Col:   command.Col,
+			Cells: terminalCellsFromHistoryCells(command.Cells),
+		}, true
+	case JournalOpenLineCommandSetCursor:
+		return TerminalSemanticOp{Code: vterm.ScreenOpControl, Control: "cup", Row: command.Row, Col: command.Col}, true
+	case JournalOpenLineCommandMoveCol:
+		if command.Delta < 0 {
+			return TerminalSemanticOp{Code: vterm.ScreenOpControl, Control: "cub", Mode: -command.Delta}, true
+		}
+		return TerminalSemanticOp{Code: vterm.ScreenOpControl, Control: "cuf", Mode: command.Delta}, true
+	case JournalOpenLineCommandMoveRow:
+		if command.Delta < 0 {
+			return TerminalSemanticOp{Code: vterm.ScreenOpControl, Control: "cuu", Mode: -command.Delta}, true
+		}
+		return TerminalSemanticOp{Code: vterm.ScreenOpControl, Control: "cud", Mode: command.Delta}, true
+	case JournalOpenLineCommandEraseLine:
+		return TerminalSemanticOp{Code: vterm.ScreenOpControl, Control: "el", Row: command.Row, Col: command.Col, Mode: command.Mode}, true
+	case JournalOpenLineCommandSealLine:
+		return TerminalSemanticOp{Code: vterm.ScreenOpControl, Control: "lf", TailFill: terminalTailFillFromHistory(command.TailFill)}, true
+	default:
+		return TerminalSemanticOp{}, false
+	}
+}
+
+func terminalCellsFromHistoryCells(cells []Cell) []TerminalSemanticCell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]TerminalSemanticCell, 0, len(cells))
+	for _, cell := range cells {
+		out = append(out, TerminalSemanticCell{
+			Content:    cell.Text,
+			Width:      cell.Width,
+			Style:      terminalStyleFromHistory(cell.Style),
+			LinkURL:    cell.LinkURL,
+			LinkParams: cell.LinkParams,
+		})
+	}
+	return out
+}
+
+func terminalTailFillFromHistory(fill *RowTailFill) *TerminalSemanticStyle {
+	if fill == nil {
+		return nil
+	}
+	style := terminalStyleFromHistory(fill.Style)
+	return &style
+}
+
+func terminalStyleFromHistory(style CellStyle) TerminalSemanticStyle {
+	return TerminalSemanticStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
 	}
 }

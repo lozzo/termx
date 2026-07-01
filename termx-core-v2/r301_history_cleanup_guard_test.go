@@ -81,8 +81,18 @@ func TestR385TerminalHistoryBacklogOnlyAcceptsSemanticTapJournals(t *testing.T) 
 	if !strings.Contains(terminalSource, "enqueueOrApplyProcessHistoryJournal(result, historyWorker, terminalID)") {
 		t.Fatal("terminal history semantic path must fan out tap result through journal backlog gate")
 	}
-	if !strings.Contains(terminalSource, "result.HistoryJournal()") {
-		t.Fatal("terminal production path must enqueue compact HistoryJournal before pulling full transaction")
+	if !strings.Contains(terminalSource, "history.HistoryJournalFromDecision") {
+		t.Fatal("terminal production path must build decision-aware compact HistoryJournal")
+	}
+	for _, forbidden := range []string{
+		"applyHistoryJournalFastPathLocked",
+		"historyJournalAllowsTerminalFastPath",
+		"ingestHistoryTransactions",
+		"applyHistoryTransactionLocked",
+	} {
+		if strings.Contains(terminalSource, forbidden) {
+			t.Fatalf("R404 production history path must not retain journal/full-transaction fallback gate: %s", forbidden)
+		}
 	}
 }
 
@@ -103,6 +113,12 @@ func TestR386ProcessHistorySemanticHotPathUsesJournalBeforeTransaction(t *testin
 	if strings.Contains(body, "result.Transaction()") {
 		t.Fatal("process history semantic hot path must not pull full transaction before journal gate")
 	}
+	gateBody := r301SourceFunctionBody(t, terminalSource, "func (terminal *Terminal) enqueueOrApplyProcessHistoryJournal")
+	journalIndex := strings.Index(gateBody, "result.HistoryJournal()")
+	transactionIndex := strings.Index(gateBody, "result.Transaction()")
+	if journalIndex < 0 || transactionIndex < 0 || journalIndex > transactionIndex {
+		t.Fatal("journal fanout gate must inspect compact journal before pulling full transaction for classifier")
+	}
 }
 
 func TestR403HistoryRebuildCleanupRejectsTraceAndDisplayAnchors(t *testing.T) {
@@ -119,6 +135,20 @@ func TestR403HistoryRebuildCleanupRejectsTraceAndDisplayAnchors(t *testing.T) {
 			if strings.Contains(source, forbidden) {
 				t.Fatalf("R403 cleanup forbids history trace/display-anchor patch %q in %s", forbidden, path)
 			}
+		}
+	}
+}
+
+func TestR404JournalRendererRejectsUnsupportedFallbackContract(t *testing.T) {
+	historySource := r301ReadFile(t, "history/journal_renderer.go")
+	for _, forbidden := range []string{
+		"ErrHistoryJournalUnsupported",
+		"supportsJournal",
+		"journalBoundaryScanState",
+		"journalFrameEventIsBoundaryOnly",
+	} {
+		if strings.Contains(historySource, forbidden) {
+			t.Fatalf("R404 journal renderer must not keep unsupported/fallback pre-scan contract: %s", forbidden)
 		}
 	}
 }
@@ -175,4 +205,18 @@ func r301ReadFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(data)
+}
+
+func r301SourceFunctionBody(t *testing.T, source string, signature string) string {
+	t.Helper()
+	start := strings.Index(source, signature)
+	if start < 0 {
+		t.Fatalf("source missing function %q", signature)
+	}
+	rest := source[start+len(signature):]
+	next := strings.Index(rest, "\nfunc ")
+	if next < 0 {
+		return rest
+	}
+	return rest[:next]
 }

@@ -283,20 +283,20 @@ func TestR389ProcessOutputPublishesLiveBeforeBlockedHistoryFanout(t *testing.T) 
 	}
 }
 
-func TestR382TerminalOrdinaryJournalFastPathThenComplexFallback(t *testing.T) {
+func TestR404TerminalJournalPipelineHandlesOrdinaryFrameAndPrompt(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r382-fast-path",
+		ID:      "term-r404-journal-pipeline",
 		Command: []string{"shell"},
 		Size:    Size{Cols: 30, Rows: 4},
 	}); err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}
-	if err := server.IngestOutput(context.Background(), "term-r382-fast-path", "plain-1\r\nplain-2\r\n"); err != nil {
+	if err := server.IngestOutput(context.Background(), "term-r404-journal-pipeline", "plain-1\r\nplain-2\r\n"); err != nil {
 		t.Fatalf("ingest ordinary output: %v", err)
 	}
-	window, err := server.TerminalHistoryWindow(context.Background(), "term-r382-fast-path", history.HistoryWindowRequest{
-		TerminalID: "term-r382-fast-path",
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r404-journal-pipeline", history.HistoryWindowRequest{
+		TerminalID: "term-r404-journal-pipeline",
 		Mode:       history.HistoryWindowModeLatest,
 		Cols:       30,
 		Limit:      10,
@@ -305,78 +305,83 @@ func TestR382TerminalOrdinaryJournalFastPathThenComplexFallback(t *testing.T) {
 		t.Fatalf("latest ordinary window: %v", err)
 	}
 	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "plain-1|plain-2" {
-		t.Fatalf("ordinary journal fast path must preserve sealed lines, got %q rows=%#v", got, window.Rows)
+		t.Fatalf("journal pipeline must preserve sealed lines, got %q rows=%#v", got, window.Rows)
 	}
 	if !window.Rows[0].Committed || !window.Rows[1].Committed {
-		t.Fatalf("ordinary journal fast path should preserve sealed ownership, rows=%#v", window.Rows)
+		t.Fatalf("journal pipeline should preserve sealed ownership, rows=%#v", window.Rows)
 	}
 
-	if err := server.IngestOutput(context.Background(), "term-r382-fast-path", "\x1b[?2026hframe\r\ncurrent\x1b[?2026l"); err != nil {
+	if err := server.IngestOutput(context.Background(), "term-r404-journal-pipeline", "\x1b[?2026hframe\r\ncurrent\x1b[?2026l"); err != nil {
 		t.Fatalf("ingest complex output: %v", err)
 	}
-	window, err = server.TerminalHistoryWindow(context.Background(), "term-r382-fast-path", history.HistoryWindowRequest{
-		TerminalID: "term-r382-fast-path",
+	window, err = server.TerminalHistoryWindow(context.Background(), "term-r404-journal-pipeline", history.HistoryWindowRequest{
+		TerminalID: "term-r404-journal-pipeline",
 		Mode:       history.HistoryWindowModeLatest,
 		Cols:       30,
 		Limit:      10,
 	})
 	if err != nil {
-		t.Fatalf("latest after fallback: %v", err)
+		t.Fatalf("latest after frame journal: %v", err)
 	}
 	texts := strings.Join(historyRowTexts(window.Rows), "|")
 	if !strings.Contains(texts, "plain-1|plain-2") || !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
-		t.Fatalf("complex transaction should fallback after ordinary journal without id/order corruption, texts=%q rows=%#v", texts, window.Rows)
+		t.Fatalf("frame journal should preserve prior ordinary rows without id/order corruption, texts=%q rows=%#v", texts, window.Rows)
 	}
 
-	if err := server.IngestOutput(context.Background(), "term-r382-fast-path", "PROMPT_AFTER"); err != nil {
+	if err := server.IngestOutput(context.Background(), "term-r404-journal-pipeline", "PROMPT_AFTER"); err != nil {
 		t.Fatalf("ingest prompt after frame: %v", err)
 	}
-	window, err = server.TerminalHistoryWindow(context.Background(), "term-r382-fast-path", history.HistoryWindowRequest{
-		TerminalID: "term-r382-fast-path",
+	window, err = server.TerminalHistoryWindow(context.Background(), "term-r404-journal-pipeline", history.HistoryWindowRequest{
+		TerminalID: "term-r404-journal-pipeline",
 		Mode:       history.HistoryWindowModeLatest,
 		Cols:       30,
 		Limit:      20,
 	})
 	if err != nil {
-		t.Fatalf("latest after prompt fallback: %v", err)
+		t.Fatalf("latest after prompt journal: %v", err)
 	}
 	textRows := historyRowTexts(window.Rows)
 	promptIndex := historyTextIndex(textRows, "PROMPT_AFTER")
 	frameIndex := historyTextIndex(textRows, "current")
 	if promptIndex < 0 || frameIndex < 0 || promptIndex < frameIndex {
-		t.Fatalf("ordinary journal fast path must yield to frame close decision, prompt=%d frame=%d rows=%#v", promptIndex, frameIndex, window.Rows)
+		t.Fatalf("journal pipeline must close frame before ordinary prompt, prompt=%d frame=%d rows=%#v", promptIndex, frameIndex, window.Rows)
 	}
 }
 
-func TestR382TerminalJournalFastPathRequiresSealedBatchWithoutOpenFrontier(t *testing.T) {
-	sealed := history.HistoryJournalFromTransaction("term-r382-gate", history.TerminalSemanticTransaction{
+func TestR404TerminalJournalRendererAcceptsOpenLineAndBoundaryCommands(t *testing.T) {
+	renderer := history.NewHistoryJournalRenderer()
+	sealed := history.HistoryJournalFromDecision("term-r404-gate", history.TerminalSemanticTransaction{
 		Seq:  1,
 		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
 		Ops: []history.TerminalSemanticOp{
 			{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: []history.TerminalSemanticCell{{Content: "sealed", Width: 6}}},
 			{Code: vterm.ScreenOpControl, Control: "lf"},
 		},
-	})
-	if !historyJournalAllowsTerminalFastPath(sealed, history.HistoryReadState{}, history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream}) {
-		t.Fatalf("sealed ordinary batch should be eligible for R382 terminal fast path, journal=%#v", sealed)
+	}, history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream})
+	if _, err := renderer.ApplyJournal(sealed); err != nil {
+		t.Fatalf("sealed ordinary journal should apply: %v journal=%#v", err, sealed)
 	}
 
-	open := history.HistoryJournalFromTransaction("term-r382-gate", history.TerminalSemanticTransaction{
+	open := history.HistoryJournalFromDecision("term-r404-gate", history.TerminalSemanticTransaction{
 		Seq:  2,
 		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
 		Ops:  []history.TerminalSemanticOp{{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: []history.TerminalSemanticCell{{Content: "open", Width: 4}}}},
-	})
-	if historyJournalAllowsTerminalFastPath(open, history.HistoryReadState{}, history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream}) {
-		t.Fatalf("open-line transaction must stay on full renderer to keep one ordinary owner, journal=%#v", open)
+	}, history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream})
+	if _, err := renderer.ApplyJournal(open); err != nil {
+		t.Fatalf("open-line journal should apply through stream reducer: %v journal=%#v", err, open)
 	}
 
-	lfOnly := history.HistoryJournalFromTransaction("term-r382-gate", history.TerminalSemanticTransaction{
+	lfOnly := history.HistoryJournalFromDecision("term-r404-gate", history.TerminalSemanticTransaction{
 		Seq:  3,
 		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
 		Ops:  []history.TerminalSemanticOp{{Code: vterm.ScreenOpControl, Control: "lf"}},
-	})
-	if historyJournalAllowsTerminalFastPath(lfOnly, history.HistoryReadState{HasOpenLine: true}, history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream}) {
-		t.Fatalf("LF-only seal of existing open line must use full renderer-owned state, journal=%#v", lfOnly)
+	}, history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream})
+	batch, err := renderer.ApplyJournal(lfOnly)
+	if err != nil {
+		t.Fatalf("LF-only journal should seal renderer-owned open line: %v journal=%#v", err, lfOnly)
+	}
+	if got := strings.Join(historyRowTextsFromLinesForTest(batch.Mutations), "|"); got != "open" {
+		t.Fatalf("LF-only journal should seal open line, got %q batch=%#v", got, batch)
 	}
 }
 
@@ -392,7 +397,7 @@ func TestR386TerminalJournalQueueGateAvoidsTransactionClassifierForPlainSealedBa
 		}},
 	}
 	if !historyJournalAllowsTerminalQueue(plain) {
-		t.Fatalf("plain sealed ordinary journal should enter backlog without full transaction classifier")
+		t.Fatalf("plain sealed ordinary journal should enter backlog without synchronous journal apply")
 	}
 	withCommands := history.HistoryJournalFromTransaction("term-r386-gate", history.TerminalSemanticTransaction{
 		Ops: []history.TerminalSemanticOp{
@@ -401,30 +406,31 @@ func TestR386TerminalJournalQueueGateAvoidsTransactionClassifierForPlainSealedBa
 		},
 	})
 	if !historyJournalAllowsTerminalQueue(withCommands) {
-		t.Fatalf("ordinary command journal should enter backlog without full transaction classifier")
+		t.Fatalf("ordinary command journal should enter backlog without synchronous journal apply")
 	}
 	frame := history.HistoryJournalFromTransaction("term-r386-gate", history.TerminalSemanticTransaction{
 		PrimaryFrame: &history.TerminalSemanticFrame{Cols: 20, Rows: [][]history.TerminalSemanticCell{{{Content: "frame", Width: 5}}}},
 	})
 	if historyJournalAllowsTerminalQueue(frame) {
-		t.Fatalf("frame journal must still use full transaction classifier before queueing")
+		t.Fatalf("frame journal must force synchronous journal apply after backlog flush")
 	}
 }
 
-func TestR384TerminalJournalFastPathAllowsBoundaryProofAndFramePayload(t *testing.T) {
-	boundaryOnly := history.HistoryJournalFromTransaction("term-r383-gate", history.TerminalSemanticTransaction{
+func TestR404TerminalJournalRendererAppliesBoundaryProofAndFramePayload(t *testing.T) {
+	renderer := history.NewHistoryJournalRenderer()
+	boundaryOnly := history.HistoryJournalFromDecision("term-r404-renderer", history.TerminalSemanticTransaction{
 		Seq:  1,
 		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
 		Ops: []history.TerminalSemanticOp{
 			{Code: vterm.ScreenOpControl, Control: "ed", Mode: 3},
 			{Code: vterm.ScreenOpResize, Size: vterm.Size{Cols: 40, Rows: 6}},
 		},
-	})
-	if !historyJournalAllowsTerminalFastPath(boundaryOnly, history.HistoryReadState{}, history.HistoryDecision{Mode: history.HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true}) {
-		t.Fatalf("boundary-only journal should be eligible for R383 terminal fast path, journal=%#v", boundaryOnly)
+	}, history.HistoryDecision{Mode: history.HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true})
+	if _, err := renderer.ApplyJournal(boundaryOnly); err != nil {
+		t.Fatalf("boundary-only journal should apply: %v journal=%#v", err, boundaryOnly)
 	}
 
-	withScrollOut := history.HistoryJournalFromTransaction("term-r383-gate", history.TerminalSemanticTransaction{
+	withScrollOut := history.HistoryJournalFromDecision("term-r404-renderer", history.TerminalSemanticTransaction{
 		Seq:  2,
 		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
 		Ops: []history.TerminalSemanticOp{{
@@ -433,15 +439,12 @@ func TestR384TerminalJournalFastPathAllowsBoundaryProofAndFramePayload(t *testin
 			Mode:      2,
 			ScrollOut: []vterm.ScrollbackRowAppend{{Runs: []vterm.CellRun{{Text: "proof"}}}},
 		}},
-	})
-	if historyJournalAllowsTerminalFastPath(withScrollOut, history.HistoryReadState{}, history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream}) {
-		t.Fatalf("scroll-out proof without classifier permission must not enter terminal fast path, journal=%#v", withScrollOut)
-	}
-	if !historyJournalAllowsTerminalFastPath(withScrollOut, history.HistoryReadState{}, history.HistoryDecision{Mode: history.HistoryOutputModePrimaryFrameSession, ConsumeScrollOutProof: true, ConsumeClearTimeScrollOutProof: true, ConsumeClearBoundary: true}) {
-		t.Fatalf("scroll-out proof should be eligible for R384 terminal fast path, journal=%#v", withScrollOut)
+	}, history.HistoryDecision{Mode: history.HistoryOutputModePrimaryFrameSession, ConsumeScrollOutProof: true, ConsumeClearTimeScrollOutProof: true, ConsumeClearBoundary: true})
+	if _, err := renderer.ApplyJournal(withScrollOut); err != nil {
+		t.Fatalf("scroll-out proof journal should apply: %v journal=%#v", err, withScrollOut)
 	}
 
-	withFrame := history.HistoryJournalFromTransaction("term-r384-gate", history.TerminalSemanticTransaction{
+	withFrame := history.HistoryJournalFromDecision("term-r404-renderer", history.TerminalSemanticTransaction{
 		Seq:                     3,
 		Size:                    history.TerminalSemanticSize{Cols: 30, Rows: 4},
 		SynchronizedBegin:       true,
@@ -453,70 +456,70 @@ func TestR384TerminalJournalFastPathAllowsBoundaryProofAndFramePayload(t *testin
 			{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: []history.TerminalSemanticCell{{Content: "f", Width: 1}}},
 			{Code: vterm.ScreenOpModes, Private: true, Mode: 2026, Enabled: false},
 		},
-	})
-	if !historyJournalAllowsTerminalFastPath(withFrame, history.HistoryReadState{}, history.HistoryDecision{Mode: history.HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true}) {
-		t.Fatalf("frame payload should be eligible for R384 terminal fast path, journal=%#v", withFrame)
+	}, history.HistoryDecision{Mode: history.HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true})
+	if _, err := renderer.ApplyJournal(withFrame); err != nil {
+		t.Fatalf("frame payload journal should apply: %v journal=%#v", err, withFrame)
 	}
 }
 
-func TestR384TerminalBoundaryAndFrameJournalFastPathThenPromptFallback(t *testing.T) {
+func TestR404TerminalBoundaryAndFrameJournalThenPrompt(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r383-boundary-fast-path",
+		ID:      "term-r404-boundary-frame",
 		Command: []string{"shell"},
 		Size:    Size{Cols: 32, Rows: 5},
 	}); err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}
-	if err := server.IngestOutput(context.Background(), "term-r383-boundary-fast-path", "old-a\r\n\x1b[3J\x1bcnew-a\r\n"); err != nil {
-		t.Fatalf("ingest boundary fast path output: %v", err)
+	if err := server.IngestOutput(context.Background(), "term-r404-boundary-frame", "old-a\r\n\x1b[3J\x1bcnew-a\r\n"); err != nil {
+		t.Fatalf("ingest boundary journal output: %v", err)
 	}
-	window, err := server.TerminalHistoryWindow(context.Background(), "term-r383-boundary-fast-path", history.HistoryWindowRequest{
-		TerminalID: "term-r383-boundary-fast-path",
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r404-boundary-frame", history.HistoryWindowRequest{
+		TerminalID: "term-r404-boundary-frame",
 		Mode:       history.HistoryWindowModeLatest,
 		Cols:       40,
 		Limit:      10,
 	})
 	if err != nil {
-		t.Fatalf("latest after boundary fast path: %v", err)
+		t.Fatalf("latest after boundary journal: %v", err)
 	}
 	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "old-a|new-a" {
-		t.Fatalf("boundary journal fast path should preserve sealed ordinary history, got %q rows=%#v", got, window.Rows)
+		t.Fatalf("boundary journal should preserve sealed ordinary history, got %q rows=%#v", got, window.Rows)
 	}
 
-	if err := server.IngestOutput(context.Background(), "term-r383-boundary-fast-path", "\x1b[?2026hframe-a\r\nframe-b\x1b[?2026l"); err != nil {
+	if err := server.IngestOutput(context.Background(), "term-r404-boundary-frame", "\x1b[?2026hframe-a\r\nframe-b\x1b[?2026l"); err != nil {
 		t.Fatalf("ingest sync frame journal: %v", err)
 	}
-	window, err = server.TerminalHistoryWindow(context.Background(), "term-r383-boundary-fast-path", history.HistoryWindowRequest{
-		TerminalID: "term-r383-boundary-fast-path",
+	window, err = server.TerminalHistoryWindow(context.Background(), "term-r404-boundary-frame", history.HistoryWindowRequest{
+		TerminalID: "term-r404-boundary-frame",
 		Mode:       history.HistoryWindowModeLatest,
 		Cols:       40,
 		Limit:      20,
 	})
 	if err != nil {
-		t.Fatalf("latest after frame fallback: %v", err)
+		t.Fatalf("latest after frame journal: %v", err)
 	}
 	texts := strings.Join(historyRowTexts(window.Rows), "|")
 	if !strings.Contains(texts, "old-a|new-a") || !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
-		t.Fatalf("frame journal fast path should publish current primary frame, texts=%q rows=%#v", texts, window.Rows)
+		t.Fatalf("frame journal should publish current primary frame, texts=%q rows=%#v", texts, window.Rows)
 	}
-	if err := server.IngestOutput(context.Background(), "term-r383-boundary-fast-path", "PROMPT_AFTER"); err != nil {
-		t.Fatalf("ingest prompt fallback: %v", err)
+	if err := server.IngestOutput(context.Background(), "term-r404-boundary-frame", "PROMPT_AFTER"); err != nil {
+		t.Fatalf("ingest prompt journal: %v", err)
 	}
-	window, err = server.TerminalHistoryWindow(context.Background(), "term-r383-boundary-fast-path", history.HistoryWindowRequest{
-		TerminalID: "term-r383-boundary-fast-path",
+	window, err = server.TerminalHistoryWindow(context.Background(), "term-r404-boundary-frame", history.HistoryWindowRequest{
+		TerminalID: "term-r404-boundary-frame",
 		Mode:       history.HistoryWindowModeLatest,
 		Cols:       40,
 		Limit:      20,
 	})
 	if err != nil {
-		t.Fatalf("latest after prompt fallback: %v", err)
+		t.Fatalf("latest after prompt journal: %v", err)
 	}
 	textRows := historyRowTexts(window.Rows)
 	promptIndex := historyTextIndex(textRows, "PROMPT_AFTER")
 	frameIndex := historyTextIndex(textRows, "frame-b")
 	if promptIndex < 0 || frameIndex < 0 || promptIndex < frameIndex {
-		t.Fatalf("prompt after journal frame must still close frame through full renderer, prompt=%d frame=%d rows=%#v", promptIndex, frameIndex, window.Rows)
+		t.Fatalf("prompt after journal frame must close frame through journal reducer, prompt=%d frame=%d rows=%#v", promptIndex, frameIndex, window.Rows)
 	}
 }
 
@@ -1718,6 +1721,17 @@ func historyRowTexts(rows []history.HistoryRow) []string {
 	texts := make([]string, 0, len(rows))
 	for _, row := range rows {
 		texts = append(texts, historyCellsText(row.Cells))
+	}
+	return texts
+}
+
+func historyRowTextsFromLinesForTest(mutations []history.HistoryMutation) []string {
+	texts := make([]string, 0, len(mutations))
+	for _, mutation := range mutations {
+		if mutation.Line == nil {
+			continue
+		}
+		texts = append(texts, historyCellsText(mutation.Line.Cells))
 	}
 	return texts
 }

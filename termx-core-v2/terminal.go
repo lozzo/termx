@@ -897,21 +897,6 @@ func (terminal *Terminal) HistoryRelease(token history.HistoryToken) error {
 	return terminal.historyStore.Release(token)
 }
 
-func (terminal *Terminal) ingestProcessHistoryTransactions(process TerminalProcess, txs []history.TerminalSemanticTransaction) error {
-	terminal.mu.Lock()
-	if terminal.process != process {
-		terminal.mu.Unlock()
-		return nil
-	}
-	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
-		terminal.mu.Unlock()
-		return ErrTerminalExited
-	}
-	terminal.mu.Unlock()
-	terminal.ingestHistoryTransactions(txs)
-	return nil
-}
-
 func (terminal *Terminal) ingestProcessHistoryJournals(process TerminalProcess, journals []history.HistoryJournal) error {
 	terminal.mu.Lock()
 	if terminal.process != process {
@@ -925,17 +910,6 @@ func (terminal *Terminal) ingestProcessHistoryJournals(process TerminalProcess, 
 	terminal.mu.Unlock()
 	terminal.ingestHistoryJournals(journals)
 	return nil
-}
-
-func (terminal *Terminal) ingestHistoryTransactions(txs []history.TerminalSemanticTransaction) {
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
-	if !terminal.historyEnabled || terminal.historyRenderer == nil || terminal.historyStore == nil {
-		return
-	}
-	for _, tx := range txs {
-		terminal.applyHistoryTransactionLocked(tx)
-	}
 }
 
 func (terminal *Terminal) ingestHistoryJournals(journals []history.HistoryJournal) {
@@ -977,23 +951,38 @@ func (terminal *Terminal) enqueueOrApplyProcessHistoryJournal(result SemanticTap
 	if journal.TerminalID == "" {
 		journal.TerminalID = terminalID
 	}
+	if queue != nil && terminal.historyJournalCanQueue(journal) && !queue.NeedsClassifierFlush(journal) && queue.Enqueue(journal) {
+		return
+	}
 	if queue != nil && queue.NeedsClassifierFlush(journal) {
-		// 中文说明：pending journal 可能改变 HasTimeline/primary-frame/open-line 等
-		// classifier state。普通 sealed line 后接普通 line 可以继续排队；一旦下一条
-		// transaction 需要这些 state，就先把 backlog 落入 HistoryStore 再判定。
+		// 中文说明：普通 sealed-line journal 可直接排队；一旦 backlog 或当前
+		// journal 会改变 classifier state，必须先追平 authoritative store，再
+		// 用同一 semantic transaction 构造 decision-aware journal。这里仍只消费
+		// compact journal 队列，不回放 raw PTY，也不走 full transaction renderer。
 		_ = queue.Flush(context.Background())
+	}
+	tx := result.Transaction()
+	terminal.historyMu.Lock()
+	state := history.HistoryReadState{}
+	if terminal.historyEnabled && terminal.historyStore != nil {
+		state = terminal.historyStore.ReadState()
+	}
+	decision := terminal.historyDecisionForTransaction(tx, state)
+	journal = history.HistoryJournalFromDecision(terminalID, tx, decision)
+	terminal.historyMu.Unlock()
+	if journal.TerminalID == "" {
+		journal.TerminalID = terminalID
 	}
 	if queue != nil && terminal.historyJournalCanQueue(journal) && queue.Enqueue(journal) {
 		return
 	}
-	tx := result.Transaction()
 	if queue != nil {
-		// 中文说明：journal backlog 不能保存 full transaction。遇到当前 journal
-		// renderer 不能接管的语义时，先追平已入队 journal，再按完整 renderer 同步
-		// 应用当前 transaction，保持 terminal semantic order。
+		// 中文说明：history consumer 的生产入口只排 compact journal。若当前
+		// journal 不能进入异步队列，先追平旧队列，再同步应用同一 journal；
+		// 不回拉 full transaction，也不从 live snapshot/raw PTY 建第二条 truth。
 		_ = queue.Flush(context.Background())
 	}
-	terminal.ingestHistoryTransactions([]history.TerminalSemanticTransaction{tx})
+	terminal.applyHistoryJournal(journal)
 }
 
 func (terminal *Terminal) historyJournalCanQueue(journal history.HistoryJournal) bool {
@@ -1003,92 +992,27 @@ func (terminal *Terminal) historyJournalCanQueue(journal history.HistoryJournal)
 	return historyJournalAllowsTerminalQueue(journal)
 }
 
-func (terminal *Terminal) applyHistoryJournalLocked(journal history.HistoryJournal) {
+func (terminal *Terminal) applyHistoryJournal(journal history.HistoryJournal) {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
 	terminal.applyHistoryJournalsLocked([]history.HistoryJournal{journal})
 }
 
 func (terminal *Terminal) applyHistoryResizeTransaction(tx history.TerminalSemanticTransaction) {
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
-	if !terminal.historyEnabled || terminal.historyRenderer == nil || terminal.historyStore == nil {
-		return
-	}
-	// 中文说明：resize 只作为 semantic non-history boundary 进入 renderer，不能从
-	// resized live snapshot 生成 sealed history，也不能重写 sealed records。
-	batch, err := terminal.historyRenderer.Apply(tx, history.HistoryDecision{
+	terminal.mu.Lock()
+	terminalID := terminal.info.ID
+	terminal.mu.Unlock()
+	terminal.applyHistoryJournal(history.HistoryJournalFromDecision(terminalID, tx, history.HistoryDecision{
 		Mode:               history.HistoryOutputModeBoundaryOnly,
 		NonHistoryBoundary: true,
-	})
-	if err != nil {
-		return
-	}
-	_ = terminal.historyStore.Apply(batch)
-}
-
-func (terminal *Terminal) applyHistoryTransactionLocked(tx history.TerminalSemanticTransaction) {
-	state := terminal.historyStore.ReadState()
-	decision := terminal.historyDecisionForTransaction(tx, state)
-	if terminal.applyHistoryJournalFastPathLocked(tx, decision, state) {
-		return
-	}
-	batch, err := terminal.historyRenderer.Apply(tx, decision)
-	if err != nil {
-		return
-	}
-	_ = terminal.historyStore.Apply(batch)
-}
-
-func (terminal *Terminal) applyHistoryJournalFastPathLocked(tx history.TerminalSemanticTransaction, decision history.HistoryDecision, state history.HistoryReadState) bool {
-	if terminal.journalRenderer == nil || !historyDecisionAllowsJournalFastPath(decision) {
-		return false
-	}
-	journal := history.HistoryJournalFromTransaction(terminal.info.ID, tx)
-	if !historyJournalAllowsTerminalFastPath(journal, state, decision) {
-		return false
-	}
-	batch, err := terminal.journalRenderer.ApplyJournal(journal)
-	if err != nil {
-		return false
-	}
-	// 中文说明：R383 fast path 只接管 sealed ordinary batch 与 boundary-only
-	// journal；scroll-out、frame replace 或需要 current-screen proof 的 decision
-	// 会回到完整 semantic renderer。这里不从 live snapshot 或 raw PTY 补 history。
-	_ = terminal.historyStore.Apply(batch)
-	return true
-}
-
-func historyDecisionAllowsJournalFastPath(decision history.HistoryDecision) bool {
-	// 中文说明：R384 journal fast path 可以处理 sealed ordinary、boundary、
-	// scroll-out proof 和 frame replace。凡是 classifier 判定需要 current-screen
-	// close proof 或 full stream reducer 状态收口，必须回到完整 renderer。
-	return !decision.ClosePrimaryFrame &&
-		!decision.ClosePrimaryFrameBeforePrimaryReplace &&
-		!decision.ArchivePrimaryAfterPrimaryFrame &&
-		!decision.ClosePrimaryFrameBeforeStream &&
-		!decision.SealOpenLine &&
-		!decision.ConsumeStreamOps
-}
-
-func historyJournalAllowsTerminalFastPath(journal history.HistoryJournal, state history.HistoryReadState, decision history.HistoryDecision) bool {
-	// 中文说明：生产 fast path 仍不接管 open-line command；R382 的 open-line
-	// journal 只在 history domain harness 中验证。R384 开始允许 scroll-out proof
-	// 和 frame event 进入 journal renderer，但 open line owner 仍不能分裂。
-	if len(journal.Items) == 0 || state.HasOpenLine {
-		return false
-	}
-	scan := terminalJournalGateState{decision: decision}
-	for _, item := range journal.Items {
-		if !scan.accept(item) {
-			return false
-		}
-	}
-	return true
+	}))
 }
 
 func historyJournalAllowsTerminalQueue(journal history.HistoryJournal) bool {
 	// 中文说明：R386 process hot path 先看 compact journal 自身是否能安全排队，
-	// 避免普通 sealed line 为了 classifier 再拉取 full transaction。复杂语义仍回
-	// transaction classifier，不能用 journal 猜测 current-screen close proof。
+	// 避免普通 sealed line 为了 classifier 再同步读取 HistoryStore。复杂语义必须
+	// 先 flush backlog 后用同一 transaction 的 decision-aware journal 同步应用，
+	// 不能回到 full transaction renderer 或从 journal 猜测 current-screen close proof。
 	if len(journal.Items) == 0 {
 		return false
 	}
@@ -1101,88 +1025,6 @@ func historyJournalAllowsTerminalQueue(journal history.HistoryJournal) bool {
 		}
 	}
 	return true
-}
-
-type terminalJournalGateState struct {
-	inAlt    bool
-	inSync   bool
-	decision history.HistoryDecision
-}
-
-func (state *terminalJournalGateState) accept(item history.HistoryJournalItem) bool {
-	switch item.Kind {
-	case history.HistoryJournalItemOrdinaryLineBatch:
-		if item.Ordinary == nil || state.inAlt || state.inSync {
-			return false
-		}
-		return item.Ordinary.OpenUpdate == nil && len(item.Ordinary.Lines) > 0
-	case history.HistoryJournalItemBoundary:
-		if item.Boundary == nil {
-			return false
-		}
-		return state.acceptBoundary(item.Boundary.Kind)
-	case history.HistoryJournalItemFrameEvent:
-		return item.Frame != nil && state.acceptFrameEvent(*item.Frame)
-	case history.HistoryJournalItemScrollOutProof:
-		return item.ScrollOut != nil && state.decision.ConsumeScrollOutProof
-	default:
-		return false
-	}
-}
-
-func (state *terminalJournalGateState) acceptBoundary(kind history.HistoryJournalBoundaryKind) bool {
-	switch kind {
-	case history.HistoryJournalBoundaryED2, history.HistoryJournalBoundaryED3, history.HistoryJournalBoundaryRIS, history.HistoryJournalBoundaryResize:
-		return true
-	case history.HistoryJournalBoundaryAltEnter:
-		state.inAlt = true
-		return true
-	case history.HistoryJournalBoundaryAltExit:
-		state.inAlt = false
-		return true
-	case history.HistoryJournalBoundarySyncBegin:
-		state.inSync = true
-		return true
-	case history.HistoryJournalBoundarySyncEnd:
-		state.inSync = false
-		return true
-	default:
-		return false
-	}
-}
-
-func terminalJournalFrameEventIsBoundaryOnly(kind history.HistoryJournalFrameEventKind) bool {
-	switch kind {
-	case history.HistoryJournalFrameArchivePrimary, history.HistoryJournalFrameClearPrimary, history.HistoryJournalFrameClearAlt:
-		return true
-	default:
-		return false
-	}
-}
-
-func (state *terminalJournalGateState) acceptFrameEvent(event history.HistoryJournalFrameEvent) bool {
-	switch event.Kind {
-	case history.HistoryJournalFrameReplacePrimary:
-		if !state.decision.PublishPrimaryFrame {
-			return false
-		}
-		if state.decision.PublishPrimaryFrameTouchedRowsOnly {
-			return len(event.TouchedRows) > 0
-		}
-		return event.Frame != nil
-	case history.HistoryJournalFrameReplaceAlt:
-		return state.decision.PublishAltFrame && event.Frame != nil
-	case history.HistoryJournalFrameArchivePrimary:
-		return state.decision.ArchivePrimaryBeforeAlt
-	case history.HistoryJournalFrameClearPrimary:
-		return state.decision.ClearPrimaryCurrent || state.decision.ConsumeClearTimeScrollOutProof
-	case history.HistoryJournalFrameClearAlt:
-		return state.decision.ClearAltFrame
-	case history.HistoryJournalFrameFinalPrimary:
-		return true
-	default:
-		return false
-	}
 }
 
 func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {

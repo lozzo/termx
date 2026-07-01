@@ -1,7 +1,6 @@
 package history
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -42,7 +41,7 @@ func TestR382JournalRendererBatchesOrdinaryLinesWithoutPerOpReducer(t *testing.T
 		t.Fatalf("latest window: %v", err)
 	}
 	if got := strings.Join(rowTexts(window.Rows), "|"); got != "line-0997|line-0998|line-0999" {
-		t.Fatalf("journal fast path should preserve latest ordinary history, got %q", got)
+		t.Fatalf("journal reducer should preserve latest ordinary history, got %q", got)
 	}
 }
 
@@ -191,7 +190,7 @@ func TestR383JournalRendererAppliesBoundaryStateMachineWithoutSnapshotFallback(t
 	}
 }
 
-func TestR383JournalRendererRejectsSyncAltPayloadAtomically(t *testing.T) {
+func TestR404JournalRendererIgnoresManualOrdinaryPayloadInsideSyncAlt(t *testing.T) {
 	renderer := NewHistoryJournalRenderer()
 	mixed := HistoryJournal{
 		TerminalID: "term-r383-sync",
@@ -203,8 +202,12 @@ func TestR383JournalRendererRejectsSyncAltPayloadAtomically(t *testing.T) {
 			{Kind: HistoryJournalItemBoundary, Boundary: &HistoryJournalBoundary{Kind: HistoryJournalBoundarySyncEnd}},
 		},
 	}
-	if _, err := renderer.ApplyJournal(mixed); !errors.Is(err, ErrHistoryJournalUnsupported) {
-		t.Fatalf("sync payload must fallback to full renderer, err=%v journal=%#v", err, mixed)
+	batch, err := renderer.ApplyJournal(mixed)
+	if err != nil {
+		t.Fatalf("sync payload journal must stay inside journal reducer: %v journal=%#v", err, mixed)
+	}
+	if got := joinedLineTexts(sealedMutationLines(batch.Mutations)); got != "" {
+		t.Fatalf("sync ordinary payload must not become ordinary timeline, got %q batch=%#v", got, batch)
 	}
 	after := HistoryJournal{
 		TerminalID: "term-r383-sync",
@@ -214,12 +217,12 @@ func TestR383JournalRendererRejectsSyncAltPayloadAtomically(t *testing.T) {
 			{Kind: HistoryJournalItemOrdinaryLineBatch, Ordinary: &OrdinaryLineBatch{Lines: []JournalLogicalLine{{Cells: []Cell{{Text: "ordinary", Width: 8}}}}}},
 		},
 	}
-	batch, err := renderer.ApplyJournal(after)
+	batch, err = renderer.ApplyJournal(after)
 	if err != nil {
 		t.Fatalf("ordinary journal after rejected sync payload should still apply: %v", err)
 	}
 	if got := joinedLineTexts(sealedMutationLines(batch.Mutations)); got != "ordinary" {
-		t.Fatalf("rejected sync journal must not leave renderer in sync mode, got %q batch=%#v", got, batch)
+		t.Fatalf("sync journal must not leave renderer in sync mode, got %q batch=%#v", got, batch)
 	}
 
 	alt := HistoryJournal{
@@ -232,8 +235,12 @@ func TestR383JournalRendererRejectsSyncAltPayloadAtomically(t *testing.T) {
 			{Kind: HistoryJournalItemBoundary, Boundary: &HistoryJournalBoundary{Kind: HistoryJournalBoundaryAltExit}},
 		},
 	}
-	if _, err := renderer.ApplyJournal(alt); !errors.Is(err, ErrHistoryJournalUnsupported) {
-		t.Fatalf("alt payload must fallback to full renderer, err=%v journal=%#v", err, alt)
+	batch, err = renderer.ApplyJournal(alt)
+	if err != nil {
+		t.Fatalf("alt payload journal must stay inside journal reducer: %v journal=%#v", err, alt)
+	}
+	if got := joinedLineTexts(sealedMutationLines(batch.Mutations)); got != "" {
+		t.Fatalf("alt ordinary payload must not enter primary timeline, got %q batch=%#v", got, batch)
 	}
 }
 
@@ -405,12 +412,234 @@ func TestR384JournalRendererClearTimeScrollOutUsesCurrentFrameOwnership(t *testi
 	}
 }
 
+func TestR404JournalRendererDecisionClosesPrimaryBeforeOrdinaryPrompt(t *testing.T) {
+	renderer := NewHistoryJournalRenderer()
+	store := NewInMemoryHistoryStore("term-r404-prompt")
+	seed := HistoryJournalFromDecision("term-r404-prompt", TerminalSemanticTransaction{
+		Seq:                     1,
+		Size:                    TerminalSemanticSize{Cols: 20, Rows: 4},
+		PrimaryFrameTouchedRows: []int{0, 1},
+		PrimaryFrame:            &TerminalSemanticFrame{Cols: 20, Rows: [][]TerminalSemanticCell{historyCellsForJournalTest("codex header"), historyCellsForJournalTest("Shutting down...")}},
+	}, HistoryDecision{
+		Mode:                               HistoryOutputModePrimaryFrameSession,
+		PublishPrimaryFrame:                true,
+		PublishPrimaryFrameTouchedRowsOnly: true,
+	})
+	batch, err := renderer.ApplyJournal(seed)
+	if err != nil {
+		t.Fatalf("seed primary journal: %v", err)
+	}
+	if err := store.Apply(batch); err != nil {
+		t.Fatalf("store seed journal: %v", err)
+	}
+
+	promptFrame := TerminalSemanticFrame{Cols: 20, Rows: [][]TerminalSemanticCell{historyCellsForJournalTest("codex header"), historyCellsForJournalTest("shell prompt")}}
+	prompt := HistoryJournalFromDecision("term-r404-prompt", TerminalSemanticTransaction{
+		Seq:  2,
+		Size: TerminalSemanticSize{Cols: 20, Rows: 4},
+		Ops: []TerminalSemanticOp{{
+			Code:  vterm.ScreenOpWriteSpan,
+			Row:   1,
+			Col:   0,
+			Cells: historyCellsForJournalTest("shell prompt"),
+		}},
+		PrimaryFrame: &promptFrame,
+	}, HistoryDecision{
+		Mode:                          HistoryOutputModeOrdinaryStream,
+		ClosePrimaryFrameBeforeStream: true,
+	})
+	batch, err = renderer.ApplyJournal(prompt)
+	if err != nil {
+		t.Fatalf("apply prompt journal: %v labels=%v", err, journalLabels(prompt))
+	}
+	if got := strings.Join(journalLabels(prompt), "|"); !strings.Contains(got, "frame:close-primary:codex header") {
+		t.Fatalf("decision journal must encode close-primary proof before prompt, labels=%v", journalLabels(prompt))
+	}
+	if err := store.Apply(batch); err != nil {
+		t.Fatalf("store prompt journal: %v", err)
+	}
+	window, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-r404-prompt", Mode: HistoryWindowModeLatest, Cols: 20, Limit: 10})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	texts := rowTexts(window.Rows)
+	joined := strings.Join(texts, "|")
+	if !strings.Contains(joined, "codex header") || !strings.Contains(joined, "shell prompt") {
+		t.Fatalf("journal pipeline should keep final frame row and prompt, got %q rows=%#v", joined, window.Rows)
+	}
+	if strings.Contains(joined, "Shutting down") {
+		t.Fatalf("journal close-primary must exclude prompt-overwritten transient row, got %q rows=%#v", joined, window.Rows)
+	}
+	if journalRendererTextIndex(texts, "shell prompt") < journalRendererTextIndex(texts, "codex header") {
+		t.Fatalf("prompt must project after closed frame row, rows=%#v", window.Rows)
+	}
+}
+
+func TestR404JournalRendererCoversSyncAltResizeWithoutUnsupportedFallback(t *testing.T) {
+	renderer := NewHistoryJournalRenderer()
+	journal := HistoryJournalFromDecision("term-r404-coverage", TerminalSemanticTransaction{
+		Seq:                     1,
+		Size:                    TerminalSemanticSize{Cols: 30, Rows: 5},
+		SynchronizedBegin:       true,
+		SynchronizedEnd:         true,
+		PrimaryFrameTouchedRows: []int{0},
+		PrimaryFrame:            &TerminalSemanticFrame{Cols: 30, Rows: [][]TerminalSemanticCell{historyCellsForJournalTest("sync frame")}},
+		Ops: []TerminalSemanticOp{
+			{Code: vterm.ScreenOpModes, Private: true, Mode: 2026, Enabled: true},
+			{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: historyCellsForJournalTest("sync frame")},
+			{Code: vterm.ScreenOpModes, Private: true, Mode: 2026, Enabled: false},
+		},
+	}, HistoryDecision{
+		Mode:                HistoryOutputModePrimaryFrameSession,
+		PublishPrimaryFrame: true,
+	})
+	if _, err := renderer.ApplyJournal(journal); err != nil {
+		t.Fatalf("sync primary journal must be fully handled, err=%v labels=%v", err, journalLabels(journal))
+	}
+	alt := HistoryJournalFromDecision("term-r404-coverage", TerminalSemanticTransaction{
+		Seq:        2,
+		Size:       TerminalSemanticSize{Cols: 30, Rows: 5},
+		AltEntered: true,
+		AltFrame:   &TerminalSemanticFrame{Cols: 30, Rows: [][]TerminalSemanticCell{historyCellsForJournalTest("alt frame")}},
+	}, HistoryDecision{
+		Mode:                    HistoryOutputModeAltTransient,
+		ArchivePrimaryBeforeAlt: true,
+		PublishAltFrame:         true,
+	})
+	if _, err := renderer.ApplyJournal(alt); err != nil {
+		t.Fatalf("alt journal must be fully handled, err=%v labels=%v", err, journalLabels(alt))
+	}
+	resize := HistoryJournalFromDecision("term-r404-coverage", TerminalSemanticTransaction{
+		Seq:                 3,
+		Size:                TerminalSemanticSize{Cols: 40, Rows: 8},
+		RequiresFullReplace: true,
+		FullReplaceReason:   "resize",
+	}, HistoryDecision{Mode: HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true})
+	if _, err := renderer.ApplyJournal(resize); err != nil {
+		t.Fatalf("resize journal must be fully handled, err=%v labels=%v", err, journalLabels(resize))
+	}
+}
+
+func TestR404JournalRendererArchivesPrimaryAfterFrameBeforeAlt(t *testing.T) {
+	renderer := NewHistoryJournalRenderer()
+	store := NewInMemoryHistoryStore("term-r404-sync-alt")
+	journal := HistoryJournalFromDecision("term-r404-sync-alt", TerminalSemanticTransaction{
+		Seq:                     1,
+		Size:                    TerminalSemanticSize{Cols: 16, Rows: 4},
+		SynchronizedBegin:       true,
+		SynchronizedEnd:         true,
+		AltEntered:              true,
+		PrimaryFrameTouchedRows: []int{0, 1},
+		PrimaryFrame: &TerminalSemanticFrame{Cols: 16, Rows: [][]TerminalSemanticCell{
+			historyCellsForJournalTest("sync01"),
+			historyCellsForJournalTest("sync02"),
+		}},
+		Ops: []TerminalSemanticOp{
+			{Code: vterm.ScreenOpModes, Private: true, Mode: 2026, Enabled: true},
+			{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: historyCellsForJournalTest("sync01")},
+			{Code: vterm.ScreenOpWriteSpan, Row: 1, Col: 0, Cells: historyCellsForJournalTest("sync02")},
+			{Code: vterm.ScreenOpModes, Private: true, Mode: 2026, Enabled: false},
+			{Code: vterm.ScreenOpModes, Private: true, Mode: 1049, Enabled: true},
+		},
+	}, HistoryDecision{
+		Mode:                               HistoryOutputModePrimaryFrameSession,
+		PublishPrimaryFrame:                true,
+		PublishPrimaryFrameTouchedRowsOnly: true,
+		ArchivePrimaryAfterPrimaryFrame:    true,
+	})
+	if labels := strings.Join(journalLabels(journal), "|"); !strings.Contains(labels, "frame:replace-primary:sync01") || !strings.Contains(labels, "frame:archive-primary") {
+		t.Fatalf("journal must encode primary frame publish then archive, labels=%s", labels)
+	}
+	batch, err := renderer.ApplyJournal(journal)
+	if err != nil {
+		t.Fatalf("apply sync-alt journal: %v labels=%v", err, journalLabels(journal))
+	}
+	if err := store.Apply(batch); err != nil {
+		t.Fatalf("store sync-alt journal: %v", err)
+	}
+	window, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-r404-sync-alt", Mode: HistoryWindowModeLatest, Cols: 16, Limit: 4})
+	if err != nil {
+		t.Fatalf("latest sync-alt window: %v", err)
+	}
+	if got := strings.Join(rowTexts(window.Rows), "|"); got != "sync01|sync02" {
+		t.Fatalf("archived primary frame should remain visible without alt payload, got %q rows=%#v", got, window.Rows)
+	}
+	for _, row := range window.Rows {
+		if row.Segment != HistorySegmentArchivedPrimaryFrame {
+			t.Fatalf("sync-alt primary rows must be archived before alt transient, row=%#v", row)
+		}
+	}
+}
+
+func TestR404JournalRendererPreservesFixedGridSpacesAndFinalFrame(t *testing.T) {
+	renderer := NewHistoryJournalRenderer()
+	store := NewInMemoryHistoryStore("term-r404-fixed-grid")
+	journal := HistoryJournalFromDecision("term-r404-fixed-grid", TerminalSemanticTransaction{
+		Seq:                     1,
+		Size:                    TerminalSemanticSize{Cols: 24, Rows: 4},
+		PrimaryFrameTouchedRows: []int{0, 1},
+		PrimaryFrame: &TerminalSemanticFrame{Cols: 24, Rows: [][]TerminalSemanticCell{
+			historyCellsForJournalTest("model:  gpt "),
+			historyCellsForJournalTest("status: ok  "),
+		}},
+	}, HistoryDecision{
+		Mode:                               HistoryOutputModePrimaryFrameSession,
+		PublishPrimaryFrame:                true,
+		PublishPrimaryFrameTouchedRowsOnly: true,
+	})
+	batch, err := renderer.ApplyJournal(journal)
+	if err != nil {
+		t.Fatalf("apply fixed-grid frame journal: %v labels=%v", err, journalLabels(journal))
+	}
+	if err := store.Apply(batch); err != nil {
+		t.Fatalf("store fixed-grid frame journal: %v", err)
+	}
+	final := HistoryJournal{
+		TerminalID: "term-r404-fixed-grid",
+		Seq:        2,
+		Source:     HistoryJournalSourceSemanticTapTransaction,
+		Items: []HistoryJournalItem{{
+			Kind:  HistoryJournalItemFrameEvent,
+			Frame: &HistoryJournalFrameEvent{Kind: HistoryJournalFrameFinalPrimary},
+		}},
+	}
+	batch, err = renderer.ApplyJournal(final)
+	if err != nil {
+		t.Fatalf("apply final-frame journal: %v", err)
+	}
+	if err := store.Apply(batch); err != nil {
+		t.Fatalf("store final-frame journal: %v", err)
+	}
+	window, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-r404-fixed-grid", Mode: HistoryWindowModeLatest, Cols: 24, Limit: 4})
+	if err != nil {
+		t.Fatalf("latest fixed-grid window: %v", err)
+	}
+	texts := rowTexts(window.Rows)
+	if got := strings.Join(texts, "|"); got != "model:  gpt |status: ok  " {
+		t.Fatalf("journal final frame must preserve fixed-grid spaces, got %q rows=%#v", got, window.Rows)
+	}
+	for _, row := range window.Rows {
+		if row.ScreenCols != 24 || row.Kind != LineKindScreenFrame || row.Segment != HistorySegmentCommitted {
+			t.Fatalf("final frame row must preserve fixed-grid metadata, row=%#v", row)
+		}
+	}
+}
+
 func historyCellsForJournalTest(text string) []TerminalSemanticCell {
 	cells := make([]TerminalSemanticCell, 0, len(text))
 	for _, r := range text {
 		cells = append(cells, TerminalSemanticCell{Content: string(r), Width: 1})
 	}
 	return cells
+}
+
+func journalRendererTextIndex(rows []string, needle string) int {
+	for index, row := range rows {
+		if strings.Contains(row, needle) {
+			return index
+		}
+	}
+	return -1
 }
 
 func mutationKindsContainInOrder(got []HistoryMutationKind, want []HistoryMutationKind) bool {

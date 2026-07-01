@@ -1,6 +1,10 @@
 package history
 
-import vterm "github.com/lozzow/termx/termx-vterm/vterm"
+import (
+	"sort"
+
+	vterm "github.com/lozzow/termx/termx-vterm/vterm"
+)
 
 // HistoryJournalSource 描述 compact history journal 的真值入口。
 // 当前只允许来自 history SemanticTap/vterm semantic pass 后的
@@ -106,7 +110,7 @@ const (
 	JournalOpenLineCommandSealLine  JournalOpenLineCommandKind = "seal-line"
 )
 
-// JournalOpenLineCommand 是 ordinary journal fast path 的最小可应用命令。
+// JournalOpenLineCommand 是 ordinary journal reducer 的最小可应用命令。
 // domain owner 是 history renderer；truth source 是 ordered terminal op。它表达
 // write、cursor/edit 和 line seal 生命周期，避免把完整 TerminalSemanticOp 逐条
 // 交给 StreamLineReducer 热路径。
@@ -164,6 +168,7 @@ const (
 	HistoryJournalFrameClearPrimary   HistoryJournalFrameEventKind = "clear-primary"
 	HistoryJournalFrameReplaceAlt     HistoryJournalFrameEventKind = "replace-alt"
 	HistoryJournalFrameClearAlt       HistoryJournalFrameEventKind = "clear-alt"
+	HistoryJournalFrameClosePrimary   HistoryJournalFrameEventKind = "close-primary"
 	HistoryJournalFrameFinalPrimary   HistoryJournalFrameEventKind = "final-primary"
 )
 
@@ -188,6 +193,25 @@ var HistoryJournalBuildHook func()
 // PTY/resize -> history SemanticTap/vterm -> TerminalSemanticTransaction -> HistoryJournal；
 // 本函数不读取 tx.Raw、SourceDamage、live snapshot 或任何 renderer/TUI rows。
 func HistoryJournalFromTransaction(terminalID string, tx TerminalSemanticTransaction) HistoryJournal {
+	return HistoryJournalFromDecision(terminalID, tx, HistoryDecision{
+		Mode:                           HistoryOutputModeOrdinaryStream,
+		PublishPrimaryFrame:            true,
+		PublishAltFrame:                true,
+		ArchivePrimaryBeforeAlt:        true,
+		ClearAltFrame:                  true,
+		ConsumeScrollOutProof:          true,
+		ConsumeClearTimeScrollOutProof: true,
+		ConsumeClearBoundary:           true,
+	})
+}
+
+// HistoryJournalFromDecision 把 terminal classifier 的领域决策编码进 compact journal。
+// domain owner 是 history：这里只消费同一份 vterm semantic transaction 和
+// HistoryDecision，不读取 live snapshot 或 store payload。失败条件是不能把
+// decision 无法证明的 scroll-out/frame proof 写成 history 命令；生产 history
+// consumer 应优先使用该入口，避免 journal renderer 和 full transaction renderer
+// 形成两套 truth。
+func HistoryJournalFromDecision(terminalID string, tx TerminalSemanticTransaction, decision HistoryDecision) HistoryJournal {
 	if HistoryJournalBuildHook != nil {
 		HistoryJournalBuildHook()
 	}
@@ -201,7 +225,23 @@ func HistoryJournalFromTransaction(terminalID string, tx TerminalSemanticTransac
 		ordinary:                 newJournalOrdinaryRecorder(tx.Size.Cols),
 		primaryFrameTouchedRows:  cloneIntSlice(tx.PrimaryFrameTouchedRows),
 		skipSideProofFrameEvents: isResizeFullReplace(tx),
+		decision:                 decision,
+		closePrimaryBeforeStream: decision.ClosePrimaryFrameBeforeStream,
+		consumeStreamOps:         decision.Mode == HistoryOutputModeOrdinaryStream || decision.ConsumeStreamOps,
+		skipClearTimeScrollOut:   !decision.ConsumeClearTimeScrollOutProof,
 		inSync:                   tx.SynchronizedActive || (tx.SynchronizedEnd && !tx.SynchronizedBegin),
+	}
+	if decision.Mode == HistoryOutputModeOrdinaryStream && !decision.ClosePrimaryFrameBeforeStream {
+		builder.closePrimaryBeforeStream = false
+	}
+	if builder.closePrimaryBeforeStream {
+		builder.appendFrameFromSideProof(HistoryJournalFrameEvent{
+			Kind:        HistoryJournalFrameClosePrimary,
+			Frame:       cloneTerminalSemanticFrame(tx.PrimaryFrame),
+			TouchedRows: historyJournalTouchedRowsFromTransaction(tx),
+			Reason:      string(SealReasonSessionClose),
+		})
+		builder.closePrimaryBeforeStream = false
 	}
 	events := HistorySemanticEventsFromTransaction(tx)
 	syncBoundariesInserted := false
@@ -223,9 +263,14 @@ type historyJournalBuilder struct {
 	journal                  HistoryJournal
 	ordinary                 journalOrdinaryRecorder
 	primaryFrameTouchedRows  []int
+	ordinaryTouchedRows      map[int]struct{}
+	decision                 HistoryDecision
 	inAlt                    bool
 	inSync                   bool
 	skipSideProofFrameEvents bool
+	closePrimaryBeforeStream bool
+	consumeStreamOps         bool
+	skipClearTimeScrollOut   bool
 }
 
 func (builder *historyJournalBuilder) applyEvent(event HistorySemanticEvent) {
@@ -236,21 +281,45 @@ func (builder *historyJournalBuilder) applyEvent(event HistorySemanticEvent) {
 		if event.ScrollOut == nil {
 			return
 		}
+		if !builder.decision.ConsumeScrollOutProof {
+			return
+		}
+		if event.ClearScrollOut && builder.skipClearTimeScrollOut {
+			return
+		}
 		builder.flushOrdinary(event.OrderSource, event.Order)
 		builder.appendScrollOut(event, []TerminalSemanticScrollOut{*event.ScrollOut})
 	case HistorySemanticEventPrimaryFrame:
 		if event.Frame == nil || builder.skipSideProofFrameEvents {
 			return
 		}
+		if !builder.decision.PublishPrimaryFrame {
+			return
+		}
 		builder.flushOrdinary(event.OrderSource, event.Order)
+		if builder.closePrimaryBeforeStream {
+			builder.appendFrame(event, HistoryJournalFrameEvent{
+				Kind:        HistoryJournalFrameClosePrimary,
+				Frame:       cloneTerminalSemanticFrame(event.Frame),
+				TouchedRows: builder.sortedOrdinaryTouchedRows(event.Size),
+				Reason:      string(SealReasonSessionClose),
+			})
+			return
+		}
 		builder.appendFrame(event, HistoryJournalFrameEvent{
 			Kind:        HistoryJournalFrameReplacePrimary,
 			Frame:       cloneTerminalSemanticFrame(event.Frame),
 			TouchedRows: nil,
 			Reason:      string(FrameReasonPrimaryRepaint),
 		})
+		if builder.decision.ArchivePrimaryAfterPrimaryFrame {
+			builder.appendFrame(event, HistoryJournalFrameEvent{Kind: HistoryJournalFrameArchivePrimary, Reason: string(SealReasonAltEnter)})
+		}
 	case HistorySemanticEventAltFrame:
 		if event.Frame == nil || builder.skipSideProofFrameEvents {
+			return
+		}
+		if !builder.decision.PublishAltFrame {
 			return
 		}
 		builder.flushOrdinary(event.OrderSource, event.Order)
@@ -262,12 +331,16 @@ func (builder *historyJournalBuilder) applyEvent(event HistorySemanticEvent) {
 	case HistorySemanticEventAltEnter:
 		builder.flushOrdinary(event.OrderSource, event.Order)
 		builder.appendBoundary(event, HistoryJournalBoundary{Kind: HistoryJournalBoundaryAltEnter, Size: event.Size, Reason: "alt-enter"})
-		builder.appendFrame(event, HistoryJournalFrameEvent{Kind: HistoryJournalFrameArchivePrimary, Reason: string(SealReasonAltEnter)})
+		if builder.decision.ArchivePrimaryBeforeAlt {
+			builder.appendFrame(event, HistoryJournalFrameEvent{Kind: HistoryJournalFrameArchivePrimary, Reason: string(SealReasonAltEnter)})
+		}
 		builder.inAlt = true
 	case HistorySemanticEventAltExit:
 		builder.flushOrdinary(event.OrderSource, event.Order)
 		builder.appendBoundary(event, HistoryJournalBoundary{Kind: HistoryJournalBoundaryAltExit, Size: event.Size, Reason: "alt-exit"})
-		builder.appendFrame(event, HistoryJournalFrameEvent{Kind: HistoryJournalFrameClearAlt, Reason: string(FrameReasonAltExit)})
+		if builder.decision.ClearAltFrame {
+			builder.appendFrame(event, HistoryJournalFrameEvent{Kind: HistoryJournalFrameClearAlt, Reason: string(FrameReasonAltExit)})
+		}
 		builder.inAlt = false
 	case HistorySemanticEventResize:
 		builder.flushOrdinary(event.OrderSource, event.Order)
@@ -293,30 +366,120 @@ func (builder *historyJournalBuilder) applyOpEvent(event HistorySemanticEvent) {
 		switch boundary.Kind {
 		case HistoryJournalBoundaryAltEnter:
 			builder.inAlt = true
-			builder.appendFrame(event, HistoryJournalFrameEvent{Kind: HistoryJournalFrameArchivePrimary, Reason: string(SealReasonAltEnter)})
+			if builder.decision.ArchivePrimaryBeforeAlt {
+				builder.appendFrame(event, HistoryJournalFrameEvent{Kind: HistoryJournalFrameArchivePrimary, Reason: string(SealReasonAltEnter)})
+			}
 		case HistoryJournalBoundaryAltExit:
 			builder.inAlt = false
-			builder.appendFrame(event, HistoryJournalFrameEvent{Kind: HistoryJournalFrameClearAlt, Reason: string(FrameReasonAltExit)})
+			if builder.decision.ClearAltFrame {
+				builder.appendFrame(event, HistoryJournalFrameEvent{Kind: HistoryJournalFrameClearAlt, Reason: string(FrameReasonAltExit)})
+			}
 		case HistoryJournalBoundarySyncBegin:
 			builder.inSync = true
 		case HistoryJournalBoundarySyncEnd:
 			builder.inSync = false
 		}
-		if boundary.Kind == HistoryJournalBoundaryED2 {
+		if boundary.Kind == HistoryJournalBoundaryED2 && builder.decision.ConsumeClearBoundary {
 			builder.appendFrame(event, HistoryJournalFrameEvent{Kind: HistoryJournalFrameClearPrimary, Reason: string(FrameReasonPrimaryRepaint)})
 		}
 		return
 	}
-	if builder.inAlt || builder.inSync {
+	if builder.inAlt || builder.inSync || !builder.consumeStreamOps {
 		// 中文说明：alt-screen 与 synchronized primary repaint 的 payload 只能由
 		// 同一 transaction 的 frame proof 表达；ordered write ops 不能退回
 		// ordinary primary batch，否则 screen app 内容会进入 ordinary timeline。
 		return
 	}
+	builder.recordOrdinaryTouchedRows(*event.Op, event.Size)
 	if builder.ordinary.ApplyOp(*event.Op) {
 		return
 	}
 	builder.flushOrdinary(event.OrderSource, event.Order)
+}
+
+func (builder *historyJournalBuilder) recordOrdinaryTouchedRows(op TerminalSemanticOp, size TerminalSemanticSize) {
+	if !historyJournalOpTouchesRows(op) {
+		return
+	}
+	mark := func(row int) {
+		if row < 0 {
+			return
+		}
+		if size.Rows > 0 && row >= size.Rows {
+			return
+		}
+		if builder.ordinaryTouchedRows == nil {
+			builder.ordinaryTouchedRows = make(map[int]struct{})
+		}
+		builder.ordinaryTouchedRows[row] = struct{}{}
+	}
+	markRange := func(start int, end int) {
+		if end < start {
+			start, end = end, start
+		}
+		if size.Rows > 0 && end > size.Rows {
+			end = size.Rows
+		}
+		for row := start; row < end; row++ {
+			mark(row)
+		}
+	}
+	switch op.Code {
+	case vterm.ScreenOpWriteSpan, vterm.ScreenOpClearToEOL:
+		mark(op.Row)
+	case vterm.ScreenOpClearRect:
+		markRange(op.Rect.Y, op.Rect.Y+op.Rect.Height)
+	case vterm.ScreenOpScrollRect:
+		markRange(op.Rect.Y, op.Rect.Y+op.Rect.Height)
+	case vterm.ScreenOpCopyRect:
+		markRange(op.DstY, op.DstY+op.Src.Height)
+	case vterm.ScreenOpControl:
+		switch op.Control {
+		case "ed":
+			if op.Mode == 2 || op.Mode == 3 {
+				markRange(0, size.Rows)
+				return
+			}
+			mark(op.Row)
+		case "el", "ech", "dch", "ich":
+			mark(op.Row)
+		case "il", "dl", "su", "sd":
+			markRange(op.Row, op.Bottom)
+		case "ri":
+			mark(op.Row)
+		}
+	}
+}
+
+func historyJournalOpTouchesRows(op TerminalSemanticOp) bool {
+	switch op.Code {
+	case vterm.ScreenOpWriteSpan, vterm.ScreenOpClearRect, vterm.ScreenOpClearToEOL, vterm.ScreenOpScrollRect, vterm.ScreenOpCopyRect:
+		return true
+	case vterm.ScreenOpControl:
+		switch op.Control {
+		case "ed", "el", "ech", "dch", "ich", "il", "dl", "su", "sd", "ri", "ris":
+			return true
+		}
+	}
+	return len(op.ScrollOut) > 0
+}
+
+func (builder *historyJournalBuilder) sortedOrdinaryTouchedRows(size TerminalSemanticSize) []int {
+	if len(builder.ordinaryTouchedRows) == 0 {
+		return nil
+	}
+	rows := make([]int, 0, len(builder.ordinaryTouchedRows))
+	for row := range builder.ordinaryTouchedRows {
+		if row < 0 {
+			continue
+		}
+		if size.Rows > 0 && row >= size.Rows {
+			continue
+		}
+		rows = append(rows, row)
+	}
+	sort.Ints(rows)
+	return rows
 }
 
 func (builder *historyJournalBuilder) appendTransactionLevelSyncBoundaries(tx TerminalSemanticTransaction) {
@@ -394,6 +557,81 @@ func (builder *historyJournalBuilder) appendFrame(event HistorySemanticEvent, fr
 		Frame:         &frame,
 	}
 	builder.journal.Items = append(builder.journal.Items, item)
+}
+
+func (builder *historyJournalBuilder) appendFrameFromSideProof(frame HistoryJournalFrameEvent) {
+	frame.TouchedRows = cloneIntSlice(frame.TouchedRows)
+	item := HistoryJournalItem{
+		Kind:          HistoryJournalItemFrameEvent,
+		Order:         len(builder.journal.Items),
+		SemanticOrder: -1,
+		OrderSource:   HistorySemanticEventOrderFromTransactionSideProof,
+		Frame:         &frame,
+	}
+	builder.journal.Items = append(builder.journal.Items, item)
+}
+
+func historyJournalTouchedRowsFromTransaction(tx TerminalSemanticTransaction) []int {
+	touched := make(map[int]struct{})
+	mark := func(row int) {
+		if row < 0 {
+			return
+		}
+		if tx.Size.Rows > 0 && row >= tx.Size.Rows {
+			return
+		}
+		touched[row] = struct{}{}
+	}
+	markRange := func(start int, end int) {
+		if end < start {
+			start, end = end, start
+		}
+		if tx.Size.Rows > 0 && end > tx.Size.Rows {
+			end = tx.Size.Rows
+		}
+		for row := start; row < end; row++ {
+			mark(row)
+		}
+	}
+	for _, row := range tx.PrimaryFrameTouchedRows {
+		mark(row)
+	}
+	for _, op := range tx.Ops {
+		if !historyJournalOpTouchesRows(op) {
+			continue
+		}
+		switch op.Code {
+		case vterm.ScreenOpWriteSpan, vterm.ScreenOpClearToEOL:
+			mark(op.Row)
+		case vterm.ScreenOpClearRect:
+			markRange(op.Rect.Y, op.Rect.Y+op.Rect.Height)
+		case vterm.ScreenOpScrollRect:
+			markRange(op.Rect.Y, op.Rect.Y+op.Rect.Height)
+		case vterm.ScreenOpCopyRect:
+			markRange(op.DstY, op.DstY+op.Src.Height)
+		case vterm.ScreenOpControl:
+			switch op.Control {
+			case "ed":
+				if op.Mode == 2 || op.Mode == 3 {
+					markRange(0, tx.Size.Rows)
+					continue
+				}
+				mark(op.Row)
+			case "el", "ech", "dch", "ich":
+				mark(op.Row)
+			case "il", "dl", "su", "sd":
+				markRange(op.Row, op.Bottom)
+			case "ri":
+				mark(op.Row)
+			}
+		}
+	}
+	rows := make([]int, 0, len(touched))
+	for row := range touched {
+		rows = append(rows, row)
+	}
+	sort.Ints(rows)
+	return rows
 }
 
 func journalBoundaryFromOp(op TerminalSemanticOp, size TerminalSemanticSize) (HistoryJournalBoundary, bool) {
