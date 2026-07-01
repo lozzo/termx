@@ -143,7 +143,10 @@ func terminalHistoryIngestBatchJournals(batch []terminalHistoryIngestItem) []his
 	}
 	journals := make([]history.HistoryJournal, 0, len(batch))
 	for _, item := range batch {
-		journals = append(journals, history.CloneHistoryJournal(item.journal))
+		// 中文说明：nextBatch 已经把 queue-owned journal 副本移交给 worker；
+		// 这里不再做第三次 payload deep-copy，避免 100K 普通输出 history backlog
+		// 在 handoff 阶段反复复制同一 logical-line cells。
+		journals = append(journals, item.journal)
 	}
 	return journals
 }
@@ -181,7 +184,6 @@ func (queue *terminalHistoryIngestQueue) cloneBatchLocked(items []terminalHistor
 	batch := make([]terminalHistoryIngestItem, len(items))
 	for i, item := range items {
 		batch[i] = item
-		batch[i].journal = history.CloneHistoryJournal(item.journal)
 	}
 	return batch
 }

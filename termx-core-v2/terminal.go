@@ -856,9 +856,32 @@ func (terminal *Terminal) ingestHistoryJournals(journals []history.HistoryJourna
 	if !terminal.historyEnabled || terminal.journalRenderer == nil || terminal.historyStore == nil {
 		return
 	}
+	terminal.applyHistoryJournalsLocked(journals)
+}
+
+func (terminal *Terminal) applyHistoryJournalsLocked(journals []history.HistoryJournal) {
+	var merged history.HistoryMutationBatch
 	for _, journal := range journals {
-		terminal.applyHistoryJournalLocked(journal)
+		batch, err := terminal.journalRenderer.ApplyJournal(journal)
+		if err != nil {
+			continue
+		}
+		if batch.Seq > merged.Seq {
+			merged.Seq = batch.Seq
+		}
+		if batch.Generation > merged.Generation {
+			merged.Generation = batch.Generation
+		}
+		merged.Mutations = append(merged.Mutations, batch.Mutations...)
 	}
+	if len(merged.Mutations) == 0 {
+		return
+	}
+	// 中文说明：history worker 已经按 SemanticTap seq 顺序拿到 compact journal；
+	// 同一 worker batch 内可以合并 renderer mutations 后一次写入 HistoryStore，
+	// 减少文件 backend 小事务和 storage flush 次数。这里不改变 history truth：
+	// authoritative logical-line/window/cursor 仍只由 HistoryStore.Apply 产生。
+	_ = terminal.historyStore.Apply(merged)
 }
 
 func (terminal *Terminal) enqueueOrApplyProcessHistoryJournal(result SemanticTapResult, queue *terminalHistoryIngestQueue, terminalID string) {
@@ -893,11 +916,7 @@ func (terminal *Terminal) historyJournalCanQueue(journal history.HistoryJournal)
 }
 
 func (terminal *Terminal) applyHistoryJournalLocked(journal history.HistoryJournal) {
-	batch, err := terminal.journalRenderer.ApplyJournal(journal)
-	if err != nil {
-		return
-	}
-	_ = terminal.historyStore.Apply(batch)
+	terminal.applyHistoryJournalsLocked([]history.HistoryJournal{journal})
 }
 
 func (terminal *Terminal) applyHistoryResizeTransaction(tx history.TerminalSemanticTransaction) {

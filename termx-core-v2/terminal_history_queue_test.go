@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -116,11 +117,6 @@ func TestR385TerminalHistoryIngestQueueStoresCompactJournalsNotTransactions(t *t
 	}
 	if got := journals[0].Items[0].Frame.Frame.Rows[0][0].Content; got != "immutable" {
 		t.Fatalf("history queue must deep-copy compact journal at enqueue, got %q", got)
-	}
-	journals[0].Items[0].Frame.Frame.Rows[0][0].Content = "mutated-consumer"
-	again := terminalHistoryIngestBatchJournals(batch)
-	if got := again[0].Items[0].Frame.Frame.Rows[0][0].Content; got != "immutable" {
-		t.Fatalf("history queue batch handoff must deep-copy journal per consumer, got %q", got)
 	}
 	close(queue.done)
 }
@@ -317,6 +313,41 @@ func TestR374TerminalHistoryIngestQueueReportsAppliedTargetSeq(t *testing.T) {
 	close(queue.done)
 }
 
+func TestR392HistoryJournalWorkerBatchAppliesStoreOnce(t *testing.T) {
+	store := &countingHistoryStore{HistoryStore: history.NewInMemoryHistoryStore("term-r392-batch")}
+	server := NewServer(
+		WithProcessFactory(newRecordingProcessFactory()),
+		WithHistoryStoreFactory(func(string) (history.HistoryStore, error) {
+			return store, nil
+		}),
+	)
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r392-batch",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 80, Rows: 24},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	terminal, err := server.Terminal("term-r392-batch")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	terminal.ingestHistoryJournals([]history.HistoryJournal{
+		r385HistoryQueueOrdinaryJournal(1, "one"),
+		r385HistoryQueueOrdinaryJournal(2, "two"),
+	})
+	if got := store.applyCount(); got != 1 {
+		t.Fatalf("worker batch should flush store once, got %d applies", got)
+	}
+	window, err := store.LatestWindow(history.HistoryWindowRequest{TerminalID: "term-r392-batch", Limit: 2, Cols: 80})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "one|two" {
+		t.Fatalf("batched apply must preserve journal order, got %q", got)
+	}
+}
+
 func TestR374TerminalHistoryIngestQueueFlushAllowsConcurrentWaitersForSameTarget(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue(0)
 	started := make(chan struct{})
@@ -360,6 +391,25 @@ func TestR374TerminalHistoryIngestQueueFlushAllowsConcurrentWaitersForSameTarget
 	}
 	queue.Close()
 	queue.Wait()
+}
+
+type countingHistoryStore struct {
+	history.HistoryStore
+	mu      sync.Mutex
+	applies int
+}
+
+func (store *countingHistoryStore) Apply(batch history.HistoryMutationBatch) error {
+	store.mu.Lock()
+	store.applies++
+	store.mu.Unlock()
+	return store.HistoryStore.Apply(batch)
+}
+
+func (store *countingHistoryStore) applyCount() int {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.applies
 }
 
 func waitForHistoryQueueWaitTargetForTest(t *testing.T, queue *terminalHistoryIngestQueue, target uint64, wantWaiters int) {
