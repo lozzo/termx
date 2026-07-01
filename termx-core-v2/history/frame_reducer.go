@@ -376,9 +376,11 @@ func trimmedFrameRows(rows [][]TerminalSemanticCell) [][]Cell {
 	converted := make([][]Cell, len(rows))
 	lastContentRow := -1
 	for row, cells := range rows {
-		trimmed := trimTrailingBlankCells(historyCellsFromTerminal(cells))
-		converted[row] = trimmed
-		if !historyFrameRowIsDefaultBlank(trimmed) {
+		// 中文说明：screen-frame 是 fixed-grid truth，行内和行尾被 PTY 写出的
+		// default blank 都是布局内容，不能按 ordinary logical line 规则裁掉。
+		// 这里只按整行是否为空决定是否裁掉尾部空白行。
+		converted[row] = historyCellsFromTerminal(cells)
+		if !historyFrameRowIsDefaultBlank(converted[row]) {
 			lastContentRow = row
 		}
 	}

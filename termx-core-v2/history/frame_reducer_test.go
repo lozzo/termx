@@ -46,6 +46,40 @@ func TestR334FrameReducerTouchedRowsDoNotAdoptUntouchedShellTail(t *testing.T) {
 	}
 }
 
+func TestR399FrameReducerPreservesScreenFrameDefaultBlankCells(t *testing.T) {
+	reducer := NewFrameReducer()
+	mutations, err := reducer.ReplacePrimaryCurrent(TerminalSemanticFrame{
+		Cols: 12,
+		Rows: [][]TerminalSemanticCell{{
+			{Content: "m", Width: 1},
+			{Content: "o", Width: 1},
+			{Content: "d", Width: 1},
+			{Content: "e", Width: 1},
+			{Content: "l", Width: 1},
+			{Content: ":", Width: 1},
+			{Content: " ", Width: 1},
+			{Content: " ", Width: 1},
+			{Content: "g", Width: 1},
+			{Content: "p", Width: 1},
+			{Content: "t", Width: 1},
+			{Content: " ", Width: 1},
+		}},
+	}, FrameReasonPrimaryRepaint)
+	if err != nil {
+		t.Fatalf("replace primary current: %v", err)
+	}
+	if len(mutations) != 1 || mutations[0].Mutable == nil || len(mutations[0].Mutable.Rows) != 1 {
+		t.Fatalf("expected one mutable frame row, got %#v", mutations)
+	}
+	row := mutations[0].Mutable.Rows[0].Line.Cells
+	if got := logicalLinesText([]LogicalLine{mutations[0].Mutable.Rows[0].Line}); got != "model:  gpt " {
+		t.Fatalf("fixed-grid screen frame must keep default blank layout cells, got %q row=%#v", got, row)
+	}
+	if got := historyCellsDisplayWidth(row); got != 12 {
+		t.Fatalf("fixed-grid row display width must remain at frame cols, got %d row=%#v", got, row)
+	}
+}
+
 func TestR337FrameReducerCloseFromFrameExcludesOrdinaryTouchedRows(t *testing.T) {
 	reducer := NewFrameReducer()
 	if _, err := reducer.ReplacePrimaryTouchedRows(semanticFrame(20,
