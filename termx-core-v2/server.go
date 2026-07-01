@@ -572,22 +572,6 @@ func (server *Server) TerminalHistoryCopyEntryProjection(ctx context.Context, id
 	if err != nil {
 		return history.CopyEntryProjection{}, err
 	}
-	attrs := []any{
-		"terminal_id", projection.TerminalID,
-		"cols", req.Cols,
-		"native_cols", projection.NativeCols,
-		"rows", len(projection.Window.Rows),
-		"generation", uint64(projection.Generation),
-		"catchup_pending", projection.CatchupPending,
-		"selectable", projection.Capabilities.Selectable,
-		"copyable", projection.Capabilities.Copyable,
-		"searchable", projection.Capabilities.Searchable,
-		"pageable", projection.Capabilities.Pageable,
-		"summary", coreHistoryWindowSummary(projection.Window.Rows),
-	}
-	attrs = append(attrs, coreHistoryBacklogAttrs("projection", status)...)
-	attrs = append(attrs, coreHistoryCursorAttrs("projection", projection.Boundary.Cursor)...)
-	coreHistoryTrace(server.cfg.logger, "core.store.copy_entry_projection", attrs...)
 	return projection, nil
 }
 
@@ -612,42 +596,10 @@ func (server *Server) terminalHistoryWindow(ctx context.Context, id string, req 
 	if req.TerminalID == "" {
 		req.TerminalID = id
 	}
-	requestAttrs := []any{
-		"terminal_id", req.TerminalID,
-		"mode", string(req.Mode),
-		"cols", req.Cols,
-		"limit", req.Limit,
-		"token", string(req.Token),
-	}
-	if status, err := server.TerminalHistoryBacklogStatus(id); err == nil {
-		requestAttrs = append(requestAttrs, coreHistoryBacklogAttrs("request", status)...)
-	}
-	requestAttrs = append(requestAttrs, coreHistoryCursorAttrs("request", req.Cursor)...)
-	requestAttrs = append(requestAttrs, coreHistoryBoundaryAttrs("request", req.Boundary)...)
-	coreHistoryTrace(server.cfg.logger, "core.store.request_window", requestAttrs...)
 	window, err := terminal.HistoryWindow(req)
 	if err != nil {
 		return history.HistoryWindow{}, err
 	}
-	responseAttrs := []any{
-		"terminal_id", window.TerminalID,
-		"mode", string(req.Mode),
-		"op", string(window.Op),
-		"cols", window.Cols,
-		"rows", len(window.Rows),
-		"lines", len(window.Lines),
-		"token", string(window.Token),
-		"generation", uint64(window.Generation),
-		"has_more", window.HasMore,
-		"logical_total", window.LogicalTotal,
-		"summary", coreHistoryWindowSummary(window.Rows),
-	}
-	if status, err := server.TerminalHistoryBacklogStatus(id); err == nil {
-		responseAttrs = append(responseAttrs, coreHistoryBacklogAttrs("response", status)...)
-	}
-	responseAttrs = append(responseAttrs, coreHistoryCursorAttrs("response", window.Boundary.Cursor)...)
-	responseAttrs = append(responseAttrs, coreHistoryBoundaryAttrs("response", window.Boundary)...)
-	coreHistoryTrace(server.cfg.logger, "core.store.response_window", responseAttrs...)
 	return window, nil
 }
 

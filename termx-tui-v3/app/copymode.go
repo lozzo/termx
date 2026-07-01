@@ -957,17 +957,6 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 	root.CopyMode = root.CopyMode.BindLatest(binding.PaneID, binding.ViewID, binding.TerminalID, requestID, cols, rowsHint, enteringLive)
 	root.CopyMode = root.CopyMode.BindProjectionRequest(projectionRequestID)
 	rows := requestRows(rowsHint, deps.Rows)
-	logHistoryTrace(deps.Logger, "tui.request.latest",
-		"request_id", uint64(requestID),
-		"projection_request_id", uint64(projectionRequestID),
-		"pane_id", binding.PaneID,
-		"view_id", binding.ViewID,
-		"terminal_id", binding.TerminalID,
-		"cols", cols,
-		"limit", rows,
-		"rows_hint", rowsHint,
-		"live_rows", len(enteringLive.Screen),
-	)
 	root = root.Advance()
 	root = saveCopyHistorySessionForView(root, binding.ViewID)
 	projectionEffect := FuncEffect{
@@ -1064,22 +1053,6 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaAfterPrep
 	}
 	root.History = nextHistory
 	rows := copyModeHistoryRequestRows(root, deps)
-	attrs := []any{
-		"request_id", uint64(requestID),
-		"pane_id", req.PaneID,
-		"view_id", req.ViewID,
-		"terminal_id", req.TerminalID,
-		"cols", req.Cols,
-		"limit", rows,
-		"token", req.Token,
-		"generation", req.Generation,
-		"scroll_delta_after_prepend", scrollDeltaAfterPrepend,
-		"local_rows", len(root.History.Rows),
-		"local_summary", state.HistoryTraceWindowSummary(root.History.Rows),
-	}
-	attrs = append(attrs, historyTraceCursorAttrs("request", req.Cursor)...)
-	attrs = append(attrs, historyTraceBoundaryAttrs("request", req.Boundary)...)
-	logHistoryTrace(deps.Logger, "tui.request.older", attrs...)
 	return root.Advance(), []Effect{FuncEffect{
 		// older 分页也必须异步，否则连续 PageUp / wheel up 会把整个 UI 主循环卡住。
 		Async:            true,
@@ -1139,22 +1112,6 @@ func beginCopyModeNewer(root state.Root, deps CopyModeDeps, scrollDeltaAfterAppe
 	}
 	root.History = nextHistory
 	rows := copyModeHistoryRequestRows(root, deps)
-	newerAttrs := []any{
-		"request_id", uint64(requestID),
-		"pane_id", req.PaneID,
-		"view_id", req.ViewID,
-		"terminal_id", req.TerminalID,
-		"cols", req.Cols,
-		"limit", rows,
-		"token", req.Token,
-		"generation", req.Generation,
-		"scroll_delta_after_append", scrollDeltaAfterAppend,
-		"local_rows", len(root.History.Rows),
-		"local_summary", state.HistoryTraceWindowSummary(root.History.Rows),
-	}
-	newerAttrs = append(newerAttrs, historyTraceCursorAttrs("request", req.Cursor)...)
-	newerAttrs = append(newerAttrs, historyTraceBoundaryAttrs("request", req.Boundary)...)
-	logHistoryTrace(deps.Logger, "tui.request.newer", newerAttrs...)
 	return root.Advance(), []Effect{FuncEffect{
 		// newer 只在本地窗口已回收较新尾部时触发，仍然按事件循环异步拉取。
 		Async:            true,
@@ -1208,18 +1165,6 @@ func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 	}
 	root.History = nextHistory
 	rows := copyModeHistoryRequestRows(root, deps)
-	oldestAttrs := []any{
-		"request_id", uint64(requestID),
-		"pane_id", req.PaneID,
-		"view_id", req.ViewID,
-		"terminal_id", req.TerminalID,
-		"cols", req.Cols,
-		"limit", rows,
-		"token", req.Token,
-		"generation", req.Generation,
-	}
-	oldestAttrs = append(oldestAttrs, historyTraceBoundaryAttrs("request", req.Boundary)...)
-	logHistoryTrace(deps.Logger, "tui.request.oldest", oldestAttrs...)
 	return root.Advance(), []Effect{FuncEffect{
 		Async:            true,
 		ForceSyncInTests: true,
@@ -1313,26 +1258,6 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 		return setCopyModeError(root, msg.Err.Error()), nil
 	}
 	pending := root.History.Pending
-	responseAttrs := []any{
-		"request_id", uint64(msg.Result.RequestID),
-		"pending_kind", historyTracePendingKind(pending),
-		"pane_id", msg.PaneID,
-		"view_id", msg.ViewID,
-		"terminal_id", msg.TerminalID,
-		"window_terminal_id", msg.Result.Window.TerminalID,
-		"op", string(msg.Result.Window.Op),
-		"cols", msg.Result.Window.Cols,
-		"token", msg.Result.Window.Token,
-		"generation", msg.Result.Window.Generation,
-		"rows", len(msg.Result.Window.Rows),
-		"source_lines", len(msg.Result.Window.SourceLines),
-		"spans", len(msg.Result.Window.Lines),
-		"has_more", msg.Result.Window.HasMore,
-		"summary", state.HistoryTraceWindowSummary(msg.Result.Window.Rows),
-	}
-	responseAttrs = append(responseAttrs, historyTraceCursorAttrs("response", msg.Result.Window.Cursor)...)
-	responseAttrs = append(responseAttrs, historyTraceBoundaryAttrs("response", msg.Result.Window.Boundary)...)
-	logHistoryTrace(deps.Logger, "tui.response.window", responseAttrs...)
 	enteringScrollDelta := 0
 	if pending != nil && pending.Kind == state.HistoryRequestLatest {
 		enteringScrollDelta = root.CopyMode.EnteringScrollDelta
@@ -1348,21 +1273,6 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 		}
 		return setCopyModeError(root, err.Error()), nil
 	}
-	applyAttrs := []any{
-		"request_id", uint64(msg.Result.RequestID),
-		"pending_kind", historyTracePendingKind(pending),
-		"inserted_rows", inserted,
-		"before_rows", len(beforeHistory.Rows),
-		"after_rows", len(nextHistory.Rows),
-		"before_summary", state.HistoryTraceWindowSummary(beforeHistory.Rows),
-		"after_summary", state.HistoryTraceWindowSummary(nextHistory.Rows),
-		"token", nextHistory.Token,
-		"generation", nextHistory.Generation,
-		"has_more", nextHistory.HasMore,
-	}
-	applyAttrs = append(applyAttrs, historyTraceCursorAttrs("after", nextHistory.Cursor)...)
-	applyAttrs = append(applyAttrs, historyTraceBoundaryAttrs("after", nextHistory.Boundary)...)
-	logHistoryTrace(deps.Logger, "tui.apply.window", applyAttrs...)
 	root.History = nextHistory
 	remainingEnteringOlderRows := 0
 	if pending != nil && pending.Kind == state.HistoryRequestLatest {
@@ -1397,13 +1307,6 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 	return root.Advance(), nil
 }
 
-func historyTracePendingKind(pending *state.HistoryPendingRequest) string {
-	if pending == nil {
-		return ""
-	}
-	return string(pending.Kind)
-}
-
 func trimCopyModeHistoryWindow(root state.Root, deps CopyModeDeps) state.Root {
 	if !root.CopyMode.Active || len(root.History.Rows) == 0 {
 		return root
@@ -1418,8 +1321,6 @@ func trimCopyModeHistoryWindow(root state.Root, deps CopyModeDeps) state.Root {
 	}
 	root.CopyMode = root.CopyMode.EnsureLogicalSelection(root.History)
 	start, end := copyModeHistoryTrimRange(root.CopyMode, len(root.History.Rows), keepRows)
-	beforeRows := root.History.Rows
-	beforeCursor := root.History.Cursor
 	nextHistory, trim := root.History.TrimRows(start, end)
 	if trim.DroppedRowsBefore == 0 && trim.DroppedRowsAfter == 0 {
 		return root
@@ -1429,24 +1330,6 @@ func trimCopyModeHistoryWindow(root state.Root, deps CopyModeDeps) state.Root {
 	if root.CopyMode.Query != "" {
 		root.CopyMode = root.CopyMode.RefreshQueryMatches(state.FindCopyMatches(root.History, root.CopyMode.Query))
 	}
-	trimAttrs := []any{
-		"view_id", root.History.ViewID,
-		"terminal_id", root.History.TerminalID,
-		"start", start,
-		"end", end,
-		"keep_rows", keepRows,
-		"dropped_rows_before", trim.DroppedRowsBefore,
-		"dropped_rows_after", trim.DroppedRowsAfter,
-		"dropped_lines_before", trim.DroppedLinesBefore,
-		"dropped_lines_after", trim.DroppedLinesAfter,
-		"before_rows", len(beforeRows),
-		"after_rows", len(root.History.Rows),
-		"before_summary", state.HistoryTraceWindowSummary(beforeRows),
-		"after_summary", state.HistoryTraceWindowSummary(root.History.Rows),
-	}
-	trimAttrs = append(trimAttrs, historyTraceCursorAttrs("before", beforeCursor)...)
-	trimAttrs = append(trimAttrs, historyTraceCursorAttrs("after", root.History.Cursor)...)
-	logHistoryTrace(deps.Logger, "tui.trim.window", trimAttrs...)
 	return root
 }
 

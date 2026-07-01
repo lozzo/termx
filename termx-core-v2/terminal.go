@@ -1028,18 +1028,6 @@ func (terminal *Terminal) applyHistoryResizeTransaction(tx history.TerminalSeman
 func (terminal *Terminal) applyHistoryTransactionLocked(tx history.TerminalSemanticTransaction) {
 	state := terminal.historyStore.ReadState()
 	decision := terminal.historyDecisionForTransaction(tx, state)
-	coreHistoryTrace(terminal.logger, "core.ingest.transaction",
-		"terminal_id", terminal.info.ID,
-		"seq", tx.Seq,
-		"mode", string(decision.Mode),
-		"publish_primary", decision.PublishPrimaryFrame,
-		"touched_only", decision.PublishPrimaryFrameTouchedRowsOnly,
-		"touched_rows", fmt.Sprintf("%v", tx.PrimaryFrameTouchedRows),
-		"primary_frame_rows", coreHistoryFrameRowCount(tx.PrimaryFrame),
-		"primary_frame_summary", coreHistoryFrameSummary(tx.PrimaryFrame),
-		"alt_frame_rows", coreHistoryFrameRowCount(tx.AltFrame),
-		"alt_frame_summary", coreHistoryFrameSummary(tx.AltFrame),
-	)
 	if terminal.applyHistoryJournalFastPathLocked(tx, decision, state) {
 		return
 	}
@@ -1062,12 +1050,6 @@ func (terminal *Terminal) applyHistoryJournalFastPathLocked(tx history.TerminalS
 	if err != nil {
 		return false
 	}
-	coreHistoryTrace(terminal.logger, "core.ingest.journal_fast_path",
-		"terminal_id", terminal.info.ID,
-		"seq", tx.Seq,
-		"items", len(journal.Items),
-		"mutations", len(batch.Mutations),
-	)
 	// 中文说明：R383 fast path 只接管 sealed ordinary batch 与 boundary-only
 	// journal；scroll-out、frame replace 或需要 current-screen proof 的 decision
 	// 会回到完整 semantic renderer。这里不从 live snapshot 或 raw PTY 补 history。

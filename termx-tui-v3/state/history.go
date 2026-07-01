@@ -282,19 +282,16 @@ type CopyModeStore struct {
 	// latest 飞行期间只累计净滚动行数；不能保存输入事件队列或历史文本副本。
 	EnteringScrollDelta int
 	ViewportTop         int
-	// ViewportTopPadding 是进入 copy/history 时从 live viewport 继承的顶部空白显示锚点。
-	// 它不是 authoritative history row，也不参与搜索、复制、分页 cursor 或 older 请求；用户滚动后会清零。
-	ViewportTopPadding int
-	ViewRows           int
-	Cursor             CopyPosition
-	Mark               *CopyPosition
-	Selection          *CopySelection
-	Query              string
-	Matches            []CopyMatch
-	ActiveMatch        int
-	BoundToken         string
-	BoundCols          int
-	RequestID          RequestID
+	ViewRows            int
+	Cursor              CopyPosition
+	Mark                *CopyPosition
+	Selection           *CopySelection
+	Query               string
+	Matches             []CopyMatch
+	ActiveMatch         int
+	BoundToken          string
+	BoundCols           int
+	RequestID           RequestID
 	// ProjectionRequestID 只绑定 copy-entry materialized projection，不进入 HistoryStore.Pending。
 	ProjectionRequestID RequestID
 	Materialized        CopyModeMaterializedProjectionState
@@ -1099,7 +1096,7 @@ func (store CopyModeStore) CanPageHistory() bool {
 	}
 }
 
-func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, totalRows int, enteringLive *LiveSurfaceSnapshot, pendingScroll int) CopyModeStore {
+func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, totalRows int, pendingScroll int) CopyModeStore {
 	store.PaneID = window.PaneID
 	store.ViewID = window.ViewID
 	store.TerminalID = window.TerminalID
@@ -1112,29 +1109,18 @@ func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, tot
 	}
 	if totalRows > 0 {
 		// 中文说明：copy cursor 的 truth 是 authoritative latest window 的最新尾行；
-		// live snapshot 只能在仍包含尾行时修正首屏 viewport，不能把 cursor 改锚到
-		// primary current frame 的第一行，否则鼠标轻滚会从顶部开始走。
+		// 进入时的 live preview 不能反向参与 history viewport 定位，否则 TUI 会再次
+		// 从 live rows 推断 history 视图，绕过 core authoritative HistoryWindow。
 		visibleRows := copyVisibleRowsForStore(store)
 		cursorRow := totalRows - 1
 		viewportTop := maxCopyInt(0, totalRows-visibleRows)
-		viewportTopPadding := 0
-		if liveViewport, ok := liveSurfaceMatchedViewport(window.Rows, enteringLive, visibleRows); ok &&
-			cursorRow >= liveViewport.Top &&
-			cursorRow < liveViewport.Top+copyVisibleHistoryRowsAfterPadding(visibleRows, liveViewport.TopPadding) {
-			// 中文说明：live snapshot 只作为进入 copy/history 前的屏幕锚点参照；
-			// 真正渲染、复制和搜索仍全部使用 authoritative HistoryWindow rows。
-			viewportTop = liveViewport.Top
-			viewportTopPadding = liveViewport.TopPadding
-		}
 		store.Cursor = CopyPosition{Row: cursorRow}
 		store.ViewportTop = viewportTop
-		store.ViewportTopPadding = viewportTopPadding
 		if pendingScroll != 0 {
 			store = store.ScrollCursor(pendingScroll, totalRows)
 		}
 	} else {
 		store.ViewportTop = 0
-		store.ViewportTopPadding = 0
 		store.Cursor = CopyPosition{}
 	}
 	store.Matches = nil
@@ -1147,7 +1133,6 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRow
 	store.Active = true
 	store.Entering = false
 	store.Phase = CopyModeFrozenHistory
-	enteringLive := store.EnteringLive
 	store.EnteringLive = nil
 	pendingScroll := store.EnteringScrollDelta
 	store.EnteringScrollDelta = 0
@@ -1155,7 +1140,7 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRow
 	store.ProjectionRequestID = 0
 	store.Materialized = CopyModeMaterializedProjectionState{}
 	store.BoundToken = window.Token
-	return store.acceptHistoryRows(window, cols, totalRows, enteringLive, pendingScroll)
+	return store.acceptHistoryRows(window, cols, totalRows, pendingScroll)
 }
 
 // AcceptMaterializedProjection 激活 copy-entry projection 阶段。
@@ -1168,7 +1153,6 @@ func (store CopyModeStore) AcceptMaterializedProjection(window HistoryWindow, co
 	store.Active = true
 	store.Entering = false
 	store.Phase = CopyModeMaterializedProjection
-	enteringLive := store.EnteringLive
 	store.EnteringLive = nil
 	pendingScroll := store.EnteringScrollDelta
 	store.EnteringScrollDelta = 0
@@ -1177,7 +1161,7 @@ func (store CopyModeStore) AcceptMaterializedProjection(window HistoryWindow, co
 	store.ProjectionRequestID = 0
 	projection.Valid = true
 	store.Materialized = projection
-	return store.acceptHistoryRows(window, cols, totalRows, enteringLive, pendingScroll)
+	return store.acceptHistoryRows(window, cols, totalRows, pendingScroll)
 }
 
 func (store CopyModeStore) AcceptOldest(window HistoryWindow, cols int, totalRows int) CopyModeStore {
@@ -1199,7 +1183,6 @@ func (store CopyModeStore) AcceptOldest(window HistoryWindow, cols int, totalRow
 	// 中文说明：oldest 是用户显式跳到最老页，必须从第 0 行开始显示；
 	// 不能复用 latest 的尾部定位，否则 `g` 会跳过真正最老的第一屏。
 	store.ViewportTop = 0
-	store.ViewportTopPadding = 0
 	store.Cursor = CopyPosition{}
 	store.Matches = nil
 	store.ActiveMatch = 0
@@ -1228,7 +1211,6 @@ func (store CopyModeStore) AcceptOlder(insertedRows int, before HistoryStore, af
 	}
 	store.BoundCols = cols
 	store.Empty = false
-	store.ViewportTopPadding = 0
 	return store
 }
 
@@ -1309,7 +1291,6 @@ func (store CopyModeStore) ApplyDeferredOlderScroll(rows int, totalRows int) Cop
 }
 
 func (store CopyModeStore) ApplyHistoryTrim(trim HistoryTrimResult, totalRows int) CopyModeStore {
-	store.ViewportTopPadding = 0
 	if trim.DroppedRowsBefore <= 0 && trim.DroppedRowsAfter <= 0 {
 		return store.Scroll(0, totalRows)
 	}
@@ -1366,7 +1347,6 @@ func shiftCopyMatchesAfterTrim(matches []CopyMatch, droppedBefore int, totalRows
 func (store CopyModeStore) Resize(cols int, rows int) CopyModeStore {
 	store.BoundCols = cols
 	store.ViewRows = rows
-	store.ViewportTopPadding = 0
 	return store
 }
 
@@ -1376,7 +1356,6 @@ func (store CopyModeStore) RebindToReflowedHistory(before HistoryStore, after Hi
 	store.BoundCols = after.Cols
 	if len(after.Rows) == 0 {
 		store.ViewportTop = 0
-		store.ViewportTopPadding = 0
 		store.Cursor = CopyPosition{}
 		store.Mark = nil
 		store.Selection = nil
@@ -1386,7 +1365,6 @@ func (store CopyModeStore) RebindToReflowedHistory(before HistoryStore, after Hi
 		return store
 	}
 	store.Empty = false
-	store.ViewportTopPadding = 0
 	store.ViewportTop = reflowViewportTop(before, after, store.ViewportTop)
 	store.Cursor = reflowCopyPosition(before, after, store.Cursor)
 	if store.Mark != nil {
@@ -1412,12 +1390,10 @@ func (store CopyModeStore) RebindToReflowedHistory(before HistoryStore, after Hi
 
 func (store CopyModeStore) SetViewRows(rows int) CopyModeStore {
 	store.ViewRows = rows
-	store.ViewportTopPadding = 0
 	return store
 }
 
 func (store CopyModeStore) MoveCursor(pos CopyPosition) CopyModeStore {
-	store.ViewportTopPadding = 0
 	store.Cursor = pos
 	if store.Mark != nil {
 		selection := CopySelection{Anchor: *store.Mark, Focus: pos}
@@ -1432,7 +1408,6 @@ func (store CopyModeStore) MoveCursor(pos CopyPosition) CopyModeStore {
 // ScrollCursor 是 copy/history 的主滚动语义：用户滚动的是 copy cursor。
 // cursor 还在可见区内时只移动 cursor；到达边缘后，viewport 才跟随移动。
 func (store CopyModeStore) ScrollCursor(delta int, totalRows int) CopyModeStore {
-	store.ViewportTopPadding = 0
 	if totalRows <= 0 {
 		store.ViewportTop = 0
 		store.Cursor = CopyPosition{}
@@ -1447,7 +1422,6 @@ func (store CopyModeStore) ScrollCursor(delta int, totalRows int) CopyModeStore 
 // 用户输入主路径应优先使用 ScrollCursor：history truth 继续来自 HistoryStore/core-v2，
 // 这里只在进入态定位、兼容旧锚点或专门 viewport harness 中移动可见窗口。
 func (store CopyModeStore) ScrollViewport(delta int, totalRows int) CopyModeStore {
-	store.ViewportTopPadding = 0
 	if totalRows <= 0 {
 		store.ViewportTop = 0
 		store.Cursor = CopyPosition{}
@@ -1557,7 +1531,6 @@ func (store CopyModeStore) SelectionNeedsBackend(history HistoryStore) bool {
 }
 
 func (store CopyModeStore) SetQuery(query string, matches []CopyMatch) CopyModeStore {
-	store.ViewportTopPadding = 0
 	store.Query = query
 	store.Matches = cloneCopyMatches(matches)
 	store.ActiveMatch = 0
@@ -1570,7 +1543,6 @@ func (store CopyModeStore) SetQuery(query string, matches []CopyMatch) CopyModeS
 // RefreshQueryMatches 在 history 更新后重算 query 命中，但尽量保留当前正在看的
 // active match / cursor；只有找不到原命中时，才退回到第一个 match。
 func (store CopyModeStore) RefreshQueryMatches(matches []CopyMatch) CopyModeStore {
-	store.ViewportTopPadding = 0
 	store.Matches = cloneCopyMatches(matches)
 	if len(store.Matches) == 0 {
 		store.ActiveMatch = 0
@@ -1852,101 +1824,9 @@ func (store CopyModeStore) MoveMatch(delta int) CopyModeStore {
 }
 
 func (store CopyModeStore) Scroll(delta int, totalRows int) CopyModeStore {
-	if delta != 0 {
-		store.ViewportTopPadding = 0
-	}
 	maxTop := maxCopyInt(0, totalRows-copyVisibleRowsForStore(store))
 	store.ViewportTop = clampCopyInt(store.ViewportTop+delta, 0, maxTop)
 	return store
-}
-
-type liveViewportMatch struct {
-	Top        int
-	TopPadding int
-}
-
-func liveSurfaceMatchedViewport(rows []HistoryRow, enteringLive *LiveSurfaceSnapshot, visibleRows int) (liveViewportMatch, bool) {
-	if enteringLive == nil || visibleRows <= 0 || len(rows) == 0 {
-		return liveViewportMatch{}, false
-	}
-	liveRows, topPadding := normalizedEnteringLiveRows(*enteringLive, visibleRows)
-	if len(liveRows) == 0 {
-		return liveViewportMatch{}, false
-	}
-	historyRows := make([]string, len(rows))
-	for i, row := range rows {
-		historyRows[i] = normalizeHistoryViewportRow(row.Text)
-	}
-	start, ok := latestContiguousRowMatch(historyRows, liveRows)
-	if !ok {
-		return liveViewportMatch{}, false
-	}
-	visibleHistoryRows := copyVisibleHistoryRowsAfterPadding(visibleRows, topPadding)
-	return liveViewportMatch{
-		Top:        clampCopyInt(start, 0, maxCopyInt(0, len(rows)-visibleHistoryRows)),
-		TopPadding: topPadding,
-	}, true
-}
-
-func normalizedEnteringLiveRows(snapshot LiveSurfaceSnapshot, visibleRows int) ([]string, int) {
-	rows := cloneStrings(snapshot.Lines)
-	if len(rows) == 0 && len(snapshot.Screen) > 0 {
-		rows = make([]string, 0, len(snapshot.Screen))
-		for _, row := range snapshot.Screen {
-			var builder strings.Builder
-			for _, cell := range row {
-				builder.WriteString(cell.Text)
-			}
-			rows = append(rows, builder.String())
-		}
-	}
-	for i := range rows {
-		rows[i] = normalizeHistoryViewportRow(rows[i])
-	}
-	if visibleRows > 0 && len(rows) > visibleRows {
-		// 中文说明：只保留进入 history 前用户实际可见的 live viewport tail；
-		// 更早的屏幕行必须走 authoritative history older，不可混入首屏锚点。
-		rows = rows[len(rows)-visibleRows:]
-	}
-	return trimOuterEmptyHistoryViewportRows(rows)
-}
-
-func trimOuterEmptyHistoryViewportRows(rows []string) ([]string, int) {
-	start := 0
-	for start < len(rows) && rows[start] == "" {
-		start++
-	}
-	end := len(rows)
-	for end > start && rows[end-1] == "" {
-		end--
-	}
-	if start == end {
-		return nil, 0
-	}
-	return rows[start:end], start
-}
-
-func normalizeHistoryViewportRow(row string) string {
-	return strings.TrimRight(row, " ")
-}
-
-func latestContiguousRowMatch(rows []string, pattern []string) (int, bool) {
-	if len(pattern) == 0 || len(pattern) > len(rows) {
-		return 0, false
-	}
-	for start := len(rows) - len(pattern); start >= 0; start-- {
-		matched := true
-		for offset := range pattern {
-			if rows[start+offset] != pattern[offset] {
-				matched = false
-				break
-			}
-		}
-		if matched {
-			return start, true
-		}
-	}
-	return 0, false
 }
 
 func cloneHistoryRows(rows []HistoryRow) []HistoryRow {

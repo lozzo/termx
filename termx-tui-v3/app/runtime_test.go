@@ -244,14 +244,6 @@ func TestAppRuntimeDiagnosticsRespectsEnvironmentToggle(t *testing.T) {
 	if runtime.diagnostics == nil || runtime.diagnostics.enabled || !runtime.diagnostics.inputTraceEnabled {
 		t.Fatalf("input trace should be independently enabled by %s, got %#v", tuiInputTraceEnv, runtime.diagnostics)
 	}
-
-	t.Setenv(tuiInputTraceEnv, "")
-	t.Setenv(tuiDiagnosticsEnv, "")
-	t.Setenv(tuiHistoryTraceEnv, "1")
-	runtime.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if runtime.diagnostics == nil || runtime.diagnostics.enabled || runtime.diagnostics.inputTraceEnabled || !runtime.diagnostics.historyTraceEnabled {
-		t.Fatalf("history trace should enable diagnostics without input trace, got %#v", runtime.diagnostics)
-	}
 }
 
 func TestAppRuntimeDiagnosticsWritesRequestedHeapProfile(t *testing.T) {

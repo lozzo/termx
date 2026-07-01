@@ -770,24 +770,6 @@ func (session *protocolSession) historyWindow(ctx context.Context, params protoc
 		return nil, err
 	}
 	req := historyWindowRequestFromProtocol(params)
-	requestAttrs := []any{
-		"terminal_id", params.TerminalID,
-		"mode", string(req.Mode),
-		"cols", req.Cols,
-		"limit", req.Limit,
-		"token", string(req.Token),
-		"generation", uint64(req.Cursor.Generation),
-		"protocol_mode", params.Mode,
-		"protocol_cursor_valid", params.CursorValid,
-		"protocol_before_index", params.BeforeRowIndex,
-		"protocol_before_line", params.BeforeLineID,
-		"protocol_before_row", params.BeforeRowInLine,
-		"protocol_after_valid", params.AfterCursorValid,
-		"protocol_after_index", params.AfterRowIndex,
-	}
-	requestAttrs = append(requestAttrs, coreHistoryCursorAttrs("request", req.Cursor)...)
-	requestAttrs = append(requestAttrs, coreHistoryBoundaryAttrs("request", req.Boundary)...)
-	coreHistoryTrace(session.server.cfg.logger, "core.request.history_window", requestAttrs...)
 	if req.Mode == history.HistoryWindowModeLatest {
 		// 中文说明：protocol latest 为 copy/history 会话建立 core-owned frozen token；
 		// TUI 只能原样保存 token/cursor，不能用 live rows 或本地 row count 推断边界。
@@ -800,13 +782,6 @@ func (session *protocolSession) historyWindow(ctx context.Context, params protoc
 			return nil, err
 		}
 		req.Token = snapshot.Token
-		coreHistoryTrace(session.server.cfg.logger, "core.freeze.history_window",
-			"terminal_id", params.TerminalID,
-			"token", string(snapshot.Token),
-			"generation", uint64(snapshot.Generation),
-			"cols", req.Cols,
-			"limit", req.Limit,
-		)
 	}
 	flushWindow := true
 	if req.Mode == history.HistoryWindowModeLatest && req.Token != "" {
@@ -818,22 +793,6 @@ func (session *protocolSession) historyWindow(ctx context.Context, params protoc
 	if err != nil {
 		return nil, err
 	}
-	responseAttrs := []any{
-		"terminal_id", window.TerminalID,
-		"mode", string(req.Mode),
-		"op", string(window.Op),
-		"cols", window.Cols,
-		"rows", len(window.Rows),
-		"lines", len(window.Lines),
-		"token", string(window.Token),
-		"generation", uint64(window.Generation),
-		"has_more", window.HasMore,
-		"logical_total", window.LogicalTotal,
-		"summary", coreHistoryWindowSummary(window.Rows),
-	}
-	responseAttrs = append(responseAttrs, coreHistoryCursorAttrs("response", window.Boundary.Cursor)...)
-	responseAttrs = append(responseAttrs, coreHistoryBoundaryAttrs("response", window.Boundary)...)
-	coreHistoryTrace(session.server.cfg.logger, "core.response.history_window", responseAttrs...)
 	return protocolHistoryWindowFromDomain(window), nil
 }
 

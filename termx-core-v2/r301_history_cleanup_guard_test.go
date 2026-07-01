@@ -105,6 +105,24 @@ func TestR386ProcessHistorySemanticHotPathUsesJournalBeforeTransaction(t *testin
 	}
 }
 
+func TestR403HistoryRebuildCleanupRejectsTraceAndDisplayAnchors(t *testing.T) {
+	for _, path := range append(r301ProductionGoFiles(t), r301TUIProductionGoFiles(t)...) {
+		source := r301ReadFile(t, path)
+		for _, forbidden := range []string{
+			"TERMX_HISTORY_TRACE",
+			"coreHistoryTrace",
+			"HistoryTraceWindowSummary",
+			"ViewportTopPadding",
+			"liveSurfaceMatchedViewport",
+			"copyHistoryViewportTopPadding",
+		} {
+			if strings.Contains(source, forbidden) {
+				t.Fatalf("R403 cleanup forbids history trace/display-anchor patch %q in %s", forbidden, path)
+			}
+		}
+	}
+}
+
 func r301RejectProgramNameLiteral(t *testing.T, path string, text string) {
 	t.Helper()
 	for _, forbidden := range []string{"Codex", "codex", "Claude", "claude", "htop", "vim"} {
@@ -116,8 +134,18 @@ func r301RejectProgramNameLiteral(t *testing.T, path string, text string) {
 
 func r301ProductionGoFiles(t *testing.T) []string {
 	t.Helper()
+	return r301GoFilesUnder(t, ".")
+}
+
+func r301TUIProductionGoFiles(t *testing.T) []string {
+	t.Helper()
+	return r301GoFilesUnder(t, "../termx-tui-v3")
+}
+
+func r301GoFilesUnder(t *testing.T, root string) []string {
+	t.Helper()
 	var files []string
-	err := filepath.WalkDir(".", func(path string, entry os.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -135,7 +163,7 @@ func r301ProductionGoFiles(t *testing.T) []string {
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("walk production files: %v", err)
+		t.Fatalf("walk production files under %s: %v", root, err)
 	}
 	return files
 }

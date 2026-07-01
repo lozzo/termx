@@ -21,18 +21,6 @@ func coreLifecycleTraceEnabled() bool {
 	return coreTraceEnvEnabled("TERMX_TUI_INPUT_TRACE") || coreTraceEnvEnabled("TERMX_TUI_DIAG")
 }
 
-func coreHistoryTraceEnabled() bool {
-	return coreTraceEnvEnabled("TERMX_HISTORY_TRACE")
-}
-
-func coreHistoryTrace(logger *slog.Logger, stage string, attrs ...any) {
-	if logger == nil || !coreHistoryTraceEnabled() {
-		return
-	}
-	values := append([]any{"stage", stage}, attrs...)
-	logger.Info("core-v2 history trace", values...)
-}
-
 func coreTraceEnvEnabled(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
 	case "1", "true", "on", "yes", "debug":

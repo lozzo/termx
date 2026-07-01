@@ -259,7 +259,6 @@ func copyHistoryPatchStateEligible(root state.Root) bool {
 		copyMode.Query == "" &&
 		copyMode.Mark == nil &&
 		copyMode.Selection == nil &&
-		copyMode.ViewportTopPadding == 0 &&
 		len(copyMode.Matches) == 0 &&
 		len(history.Rows) > 0
 }
