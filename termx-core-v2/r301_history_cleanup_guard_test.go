@@ -61,8 +61,8 @@ func TestR301HistoryCleanupGuard(t *testing.T) {
 
 func TestR385TerminalHistoryBacklogOnlyAcceptsSemanticTapJournals(t *testing.T) {
 	workerSource := r301ReadFile(t, "terminal_history_ingest_worker.go")
-	if !strings.Contains(workerSource, "SemanticTap 之后的 compact history journal backlog") {
-		t.Fatal("history backlog must be documented as post-SemanticTap compact journal queue")
+	if !strings.Contains(workerSource, "compact history journal backlog") {
+		t.Fatal("history backlog must be documented as compact journal queue")
 	}
 	for _, forbidden := range []string{"terminalHistoryIngestSpool", "os.CreateTemp", "io.WriteString", "[]string) error", "Enqueue(text string)", "TerminalSemanticTransaction", "cloneSemanticTapTransaction"} {
 		if strings.Contains(workerSource, forbidden) {
@@ -70,35 +70,38 @@ func TestR385TerminalHistoryBacklogOnlyAcceptsSemanticTapJournals(t *testing.T) 
 		}
 	}
 	terminalSource := r301ReadFile(t, "terminal.go")
-	for _, forbidden := range []string{"historySemantic", "splitTerminalHistorySemanticWrites", "consumeTerminalHistoryPrivateCSI", "historyWorker.Enqueue(text)"} {
+	for _, forbidden := range []string{"splitTerminalHistorySemanticWrites", "consumeTerminalHistoryPrivateCSI", "historyWorker.Enqueue(text)", "terminalLiveRowsFromNativeSnapshot("} {
 		if strings.Contains(terminalSource, forbidden) {
-			t.Fatalf("terminal production path must not retain history raw replay/double-vterm code: %s", forbidden)
+			t.Fatalf("terminal production path must not retain history raw parser or live-snapshot history code: %s", forbidden)
 		}
 	}
-	if !strings.Contains(terminalSource, "enqueueOrApplyProcessHistoryJournal(result, historyWorker, info.ID)") {
-		t.Fatal("terminal production path must fan out tap result through journal backlog gate")
+	if !strings.Contains(terminalSource, "terminal.live = live.NewSurfaceTrackWithOptions") || !strings.Contains(terminalSource, "terminal.tap = NewSemanticTap(info.ID, info.Size, nil)") {
+		t.Fatal("R396 production path must split live SurfaceTrack and response-less history SemanticTap owners")
+	}
+	if !strings.Contains(terminalSource, "enqueueOrApplyProcessHistoryJournal(result, historyWorker, terminalID)") {
+		t.Fatal("terminal history semantic path must fan out tap result through journal backlog gate")
 	}
 	if !strings.Contains(terminalSource, "result.HistoryJournal()") {
 		t.Fatal("terminal production path must enqueue compact HistoryJournal before pulling full transaction")
 	}
 }
 
-func TestR386ProcessTapHistoryHotPathUsesJournalBeforeTransaction(t *testing.T) {
+func TestR386ProcessHistorySemanticHotPathUsesJournalBeforeTransaction(t *testing.T) {
 	terminalSource := r301ReadFile(t, "terminal.go")
-	start := strings.Index(terminalSource, "func (terminal *Terminal) ingestProcessTapOutput")
+	start := strings.Index(terminalSource, "func (terminal *Terminal) ingestHistorySemanticOutput")
 	if start < 0 {
-		t.Fatal("missing ingestProcessTapOutput production hot path")
+		t.Fatal("missing ingestHistorySemanticOutput production hot path")
 	}
 	end := strings.Index(terminalSource[start:], "func (terminal *Terminal) markExited")
 	if end < 0 {
-		t.Fatal("missing ingestProcessTapOutput boundary")
+		t.Fatal("missing ingestHistorySemanticOutput boundary")
 	}
 	body := terminalSource[start : start+end]
-	if !strings.Contains(body, "enqueueOrApplyProcessHistoryJournal(result, historyWorker, info.ID)") {
-		t.Fatal("process tap hot path must pass SemanticTapResult to journal-first history gate")
+	if !strings.Contains(body, "enqueueOrApplyProcessHistoryJournal(result, historyWorker, terminalID)") {
+		t.Fatal("process history semantic hot path must pass SemanticTapResult to journal-first history gate")
 	}
 	if strings.Contains(body, "result.Transaction()") {
-		t.Fatal("process tap hot path must not pull full transaction before journal gate")
+		t.Fatal("process history semantic hot path must not pull full transaction before journal gate")
 	}
 }
 

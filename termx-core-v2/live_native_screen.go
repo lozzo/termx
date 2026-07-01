@@ -11,7 +11,7 @@ import (
 type LiveRevision uint64
 
 // NativeScreenSize 是 core-v2 live native screen 的尺寸投影。
-// truth 来源是 terminal 当前 SemanticTap/vterm size，不来自 TUI pane 或 renderer frame。
+// truth 来源是 terminal 当前 live SurfaceTrack/vterm size，不来自 TUI pane 或 renderer frame。
 type NativeScreenSize struct {
 	Cols int
 	Rows int
@@ -25,7 +25,7 @@ type NativeScreenRow struct {
 }
 
 // NativeScreenSnapshot 是 core-v2 当前 native screen 的 latest-only 快照。
-// 它由 Terminal 从 single SemanticTap 读取；不携带 scrollback、history token 或 TUI view 状态。
+// 它由 Terminal 从 live SurfaceTrack 读取；不携带 scrollback、history token 或 TUI view 状态。
 type NativeScreenSnapshot struct {
 	TerminalID string
 	Revision   LiveRevision

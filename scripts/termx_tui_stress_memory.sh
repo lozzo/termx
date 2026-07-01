@@ -940,7 +940,9 @@ for RUN in $(seq 1 "$REPEAT"); do
   DONE_MARKER="TERM_X_TUI_STRESS_DONE_${RUN_LABEL}"
   TIME_FILE="$ROOT/stress-time-run-${RUN_LABEL}.txt"
   STRESS_DISPLAY="$(stress_command_display "$RUN_SEED")"
-  STRESS_CMD="/usr/bin/time -p $(stress_command_shell "$RUN_SEED") 2>$(shell_quote "$TIME_FILE"); printf '\\n$DONE_MARKER\\n'"
+  # 中文说明：等待 DONE 必须匹配程序真正结束后的输出，不能匹配 shell 回显的命令行。
+  # 这里在运行时拼接 marker，避免完整 marker 出现在 tmux 输入回显里造成假 visible 延迟。
+  STRESS_CMD="/usr/bin/time -p $(stress_command_shell "$RUN_SEED") 2>$(shell_quote "$TIME_FILE"); printf '\\n%s_%s\\n' TERM_X_TUI_STRESS_DONE $(shell_quote "$RUN_LABEL")"
   printf '%s\t%s\t%s\n' "$RUN_LABEL" "${RUN_SEED:--}" "$STRESS_DISPLAY" >>"$STRESS_COMMANDS_REPORT"
 
   log "typing stress command in TUI: run=$RUN_LABEL/$REPEAT $STRESS_DISPLAY"

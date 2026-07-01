@@ -492,10 +492,10 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 	}
 	if revision := terminal.LiveRevision(); revision > observedRevision {
 		// 中文说明：这是 latest native screen 的边沿补偿，不是事件回放队列。
-		// 返回 wake 前只等待调用时已经进入 tap queue 的 PTY payload，
+		// 返回 wake 前只等待调用时已经进入 live queue 的 PTY payload，
 		// 把同一批 burst 合并到当前 latest revision；不等待 future output、
 		// history backlog、TUI render，也不携带 screen payload。
-		if err := terminal.flushTapQueue(ctx); err != nil {
+		if err := terminal.flushLiveQueue(ctx); err != nil {
 			return Event{}, err
 		}
 		revision = terminal.LiveRevision()
@@ -531,7 +531,7 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 			// 中文说明：one-shot wake 是唤醒边界，不是 frame delivery。
 			// 这里 coalesce 当前已入队 PTY，避免 TUI 每个中间 revision 都拉一次
 			// live.screen.get；screen rows 仍由客户端随后 pull latest。
-			if err := terminal.flushTapQueue(ctx); err != nil {
+			if err := terminal.flushLiveQueue(ctx); err != nil {
 				return Event{}, err
 			}
 			event.Live.Revision = terminal.LiveRevision()

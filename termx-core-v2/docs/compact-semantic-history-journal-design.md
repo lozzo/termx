@@ -1,16 +1,16 @@
 # compact semantic history journal 设计
 
-状态：R379 起的高压 PTY 输出与无限历史热路径设计基准。
+状态：R396 起的高压 PTY 输出与无限历史热路径设计基准。
 
 本文支撑根目录 `workflow.md` 的 R379+ 切片。它不替代
-`history-logical-renderer-design.md` 的 history truth 定义，也不推翻
-`semantic-tap-history-copy-execution-plan.md` 的 single `SemanticTap` owner 合同。
-本文只修改 tap 后 history ingest 的数据形态：从完整 per-op semantic transaction 热路径，
-收敛为 history 专用的 compact semantic journal。
+`history-logical-renderer-design.md` 的 history truth 定义。R396 之后，R372-R386 的
+single `SemanticTap` 目标被真实 TUI 可见延迟推翻：live latest screen 与 history semantic
+consumer 允许在 PTY 后分成两条 vterm 链路，但只有 live 链路能回写 terminal response，
+history 链路只能产出 compact semantic journal 并进入 authoritative logical-line store。
 
 ## 1. 背景
 
-R372-R373 已经把真实 PTY 输出从 live/history 双 vterm consumer 切到 single `SemanticTap`：
+R372-R373 曾把真实 PTY 输出从 live/history 双 vterm consumer 切到 single `SemanticTap`：
 
 ```text
 PTY bytes / resize
@@ -36,19 +36,26 @@ PTY bytes -> vterm latest screen update -> publish live invalidation
 它不构造完整 history semantic transaction，不在每个 write 上 clone frame/snapshot，也不把
 普通输出拆成大量 ordered ops 交给 logical-line reducer。因此它能接近 PTY 生产速度。
 
-目标不是恢复双 vterm，也不是把 vterm scrollback 直接当 authoritative history。目标是保留
-single terminal semantic owner，同时让普通输出的 history evidence 数据形态接近 scrollback 的
-行生命周期 append。
+R396 的目标不是把 vterm scrollback 直接当 authoritative history，也不是让 history 回到
+raw PTY parser fallback。目标是恢复 `f3c6070` 附近 live latest 的快速观察链路，同时保留
+history 的语义 owner：同一 PTY bytes 分别进入 live `SurfaceTrack` 和 history semantic
+consumer；live 只维护 latest native screen，history semantic consumer 产出 journal，最终
+truth 仍是 core-v2 logical-line history store。
 
 ## 2. 一句话目标
 
-在 single `SemanticTap` 内，一次消费 PTY bytes 后同时完成：
+一次 PTY bytes 到达后分成两条 owner 明确的链路：
 
 ```text
-latest screen fast update
-compact semantic history journal emission
-live invalidation publication
-async journal apply to authoritative HistoryStore
+PTY bytes
+  -> live SurfaceTrack
+       WriteForLatestFrame 更新 latest screen
+       唯一 response owner
+       bump LiveRevision + publish invalidation
+  -> history SemanticTap
+       无 response 回写
+       compact semantic history journal emission
+       async journal apply to authoritative HistoryStore
 ```
 
 live 热路径必须接近 `WriteForLatestFrame` 成本；history backlog 必须保存 compact semantic
@@ -56,10 +63,10 @@ journal，而不是完整 `TerminalSemanticTransaction` 的所有 per-op payload
 
 ## 3. 非目标
 
-- 不恢复 live/history 双 vterm consumer。
 - 不引入 raw PTY history replay、raw parser fallback 或程序名特殊分支。
 - 不从 live snapshot、current screen diff、TUI rows、renderer rows 或 local VTerm scrollback
   反推 authoritative history。
+- 不让 history semantic consumer 回写 OSC/DA/DSR response；response owner 只能是 live path。
 - 不把 physical row store 提升为最终 history truth；history truth 仍是 core-v2 logical line。
 - 不改变 `history.window`、`history.copy`、`history.copy_entry` 对外 authoritative 合同。
 - 不要求第一步删除现有 full semantic transaction path；切片期间可以保留旧路径作为未切换实现，
@@ -67,14 +74,18 @@ journal，而不是完整 `TerminalSemanticTransaction` 的所有 per-op payload
 
 ## 4. 基本原则
 
-### 4.1 single semantic owner 不变
+### 4.1 live/history owner 分层
 
-`SemanticTap` 之前不能分叉。PTY bytes、resize、terminal response owner 和 parser state 仍只有
-一个 vterm owner。
+PTY bytes 可以在 core terminal ingest 处分发给 live 和 history 两个 consumer，但 owner 不能混淆：
 
-compact journal 必须来自同一次 vterm semantic pass。它可以是 `TerminalSemanticTransaction`
-的 history-specific 裁剪或命令化结果，但不能由第二个 parser、raw PTY scanner 或 live snapshot
-diff 生成。
+- live `SurfaceTrack` 是 native latest screen owner，也是唯一 terminal response owner。
+- history semantic consumer 是 history journal owner，必须使用 termx-vterm semantic pass 解释
+  PTY/resize，不能读取 live snapshot、TUI rows 或 raw parser fallback。
+- resize 必须按同一输入顺序进入两条链路，避免 old-size pending bytes 在任一侧被 new-size 解释。
+
+compact journal 必须来自 history semantic consumer 的 vterm semantic pass。它可以是
+`TerminalSemanticTransaction` 的 history-specific 裁剪或命令化结果，但不能由 raw PTY scanner、
+live snapshot diff、TUI rows 或 live `SurfaceTrack` 生成。
 
 ### 4.2 journal 是未应用语义命令，不是第二份 truth
 
@@ -425,10 +436,10 @@ copy entry projection 仍可读取已 applied frontier，并暴露 catchup pendi
 
 ### 13.1 合同 harness
 
-- journal item 必须来自 single tap，不含 raw PTY replay。
-- live/history 不启动第二 vterm。
-- resize 与 PTY write 同 sequence。
-- response exactly once。
+- journal item 必须来自 history semantic tap，不含 raw PTY replay。
+- live SurfaceTrack 与 history semantic tap owner 分离，history 不读取 live snapshot。
+- resize 与 PTY write 在两条 owner 链路内都保持同 sequence。
+- response exactly once，且只能由 live SurfaceTrack 回写。
 - journal 不携带 full snapshot clone。
 
 ### 13.2 ordinary harness
@@ -474,4 +485,3 @@ copy entry projection 仍可读取已 applied frontier，并暴露 catchup pendi
 5. 增加 frame journal。
 6. queue/backlog 改 journal queue。
 7. 压力验证后删除旧 full transaction 热路径依赖。
-

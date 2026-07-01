@@ -48,7 +48,7 @@ func TestR380HistoryJournalCoverageMatrixFromSemanticTransaction(t *testing.T) {
 		t.Fatalf("journal lost transaction envelope: %#v", journal)
 	}
 	if journal.Source != HistoryJournalSourceSemanticTapTransaction {
-		t.Fatalf("journal source must stay behind single SemanticTap transaction boundary, got %q", journal.Source)
+		t.Fatalf("journal source must stay behind history semantic transaction boundary, got %q", journal.Source)
 	}
 	assertJournalOrders(t, journal)
 

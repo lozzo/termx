@@ -177,7 +177,7 @@ func TestTerminalHistoryDisabledUsesNativeScreenOnlyWritePath(t *testing.T) {
 	}
 }
 
-func TestR373ProcessOutputFansOutSemanticTapToLiveAndHistory(t *testing.T) {
+func TestR396ProcessOutputFansOutLiveSurfaceAndHistorySemanticConsumer(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
 	events := server.Events(context.Background(), EventFilter{
@@ -198,7 +198,7 @@ func TestR373ProcessOutputFansOutSemanticTapToLiveAndHistory(t *testing.T) {
 	process.emitOutput("alpha\r\nbeta\r\n")
 	event := assertEventValue(t, events, EventTerminalLiveInvalidated, "term-r373-fanout")
 	if event.Live == nil || event.Live.Revision == 0 {
-		t.Fatalf("expected live invalidation from tap output, got %#v", event)
+		t.Fatalf("expected live invalidation from live SurfaceTrack output, got %#v", event)
 	}
 
 	rows, err := server.LiveRows("term-r373-fanout")
@@ -215,7 +215,7 @@ func TestR373ProcessOutputFansOutSemanticTapToLiveAndHistory(t *testing.T) {
 		Limit:      10,
 	})
 	if err != nil {
-		t.Fatalf("history.window should flush tap transaction backlog: %v", err)
+		t.Fatalf("history.window should flush history semantic backlog: %v", err)
 	}
 	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "alpha|beta" {
 		t.Fatalf("history queue must consume tap semantic transaction, got %q window=%#v", got, window)
@@ -226,7 +226,7 @@ func TestR373ProcessOutputFansOutSemanticTapToLiveAndHistory(t *testing.T) {
 	}
 	records := terminal.tap.InputRecords()
 	if len(records) != 1 || records[0].Kind != SemanticTapInputWrite {
-		t.Fatalf("process output must enter single SemanticTap once, records=%#v", records)
+		t.Fatalf("history semantic consumer must receive process output once, records=%#v", records)
 	}
 }
 
@@ -259,14 +259,14 @@ func TestR389ProcessOutputPublishesLiveBeforeBlockedHistoryFanout(t *testing.T) 
 		t.Fatal("expected recording process")
 	}
 	process.emitOutput("alpha\r\n")
+	event := assertEventValue(t, events, EventTerminalLiveInvalidated, "term-r389-live-before-history")
+	if event.Live == nil || event.Live.Revision == 0 {
+		t.Fatalf("expected live invalidation before releasing history worker, got %#v", event)
+	}
 	select {
 	case <-store.applyStarted:
 	case <-time.After(time.Second):
 		t.Fatal("history worker did not reach blocked Apply")
-	}
-	event := assertEventValue(t, events, EventTerminalLiveInvalidated, "term-r389-live-before-history")
-	if event.Live == nil || event.Live.Revision == 0 {
-		t.Fatalf("expected live invalidation before releasing history worker, got %#v", event)
 	}
 	store.release()
 	window, err := server.TerminalHistoryWindow(context.Background(), "term-r389-live-before-history", history.HistoryWindowRequest{
@@ -732,7 +732,69 @@ func TestR374HistoryBacklogSeqDoesNotResetAcrossRestart(t *testing.T) {
 	}
 }
 
-func TestR373HistoryDisabledProcessOutputKeepsLiveOnlyTapBoundary(t *testing.T) {
+func TestR396RestartFlushesPendingLiveQueueBeforePreservingScreen(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r396-restart-live", Command: []string{"shell"}, Size: Size{Cols: 30, Rows: 4}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	terminal, err := server.Terminal("term-r396-restart-live")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	first := factory.process("term-r396-restart-live")
+	if first == nil {
+		t.Fatal("expected first process")
+	}
+	queue := newTerminalLiveIngestQueue()
+	terminal.setLiveQueue(first, queue)
+	defer func() {
+		queue.Close()
+		queue.Wait()
+		terminal.clearLiveQueue(first, queue)
+	}()
+	queue.Enqueue("pending-before-restart\r\n")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	go queue.Run(func(output string) error {
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+		<-release
+		return terminal.ingestProcessLiveOutput(first, output)
+	})
+	select {
+	case <-started:
+	case <-ctx.Done():
+		t.Fatalf("timed out waiting for live queue worker: %v", ctx.Err())
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- server.RestartTerminal(ctx, "term-r396-restart-live")
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("restart returned before pending live queue write was released: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("restart terminal: %v", err)
+	}
+	rows, err := server.LiveRows("term-r396-restart-live")
+	if err != nil {
+		t.Fatalf("live rows after restart: %v", err)
+	}
+	if !strings.Contains(strings.Join(rows, "|"), "pending-before-restart") {
+		t.Fatalf("restart must preserve live queue output that was already enqueued, rows=%#v", rows)
+	}
+}
+
+func TestR396HistoryDisabledProcessOutputKeepsLiveOnlyFastPath(t *testing.T) {
 	historyDir := t.TempDir()
 	factory := newRecordingProcessFactory()
 	server := NewServer(
@@ -766,7 +828,7 @@ func TestR373HistoryDisabledProcessOutputKeepsLiveOnlyTapBoundary(t *testing.T) 
 		t.Fatalf("live snapshot: %v", err)
 	}
 	if got := strings.Join(liveSnapshotRows(snapshot), "\n"); !strings.Contains(got, "live-only-tail") {
-		t.Fatalf("history disabled process output must still update tap native screen, got %q", got)
+		t.Fatalf("history disabled process output must still update live native screen, got %q", got)
 	}
 	terminal, err := server.Terminal("term-r373-live-only")
 	if err != nil {
@@ -774,9 +836,13 @@ func TestR373HistoryDisabledProcessOutputKeepsLiveOnlyTapBoundary(t *testing.T) 
 	}
 	terminal.queueMu.Lock()
 	historyQueue := terminal.historyQ
+	historyTapQueue := terminal.historyTapQ
 	terminal.queueMu.Unlock()
 	if historyQueue != nil {
 		t.Fatal("history disabled live-only mode must not create a history transaction queue")
+	}
+	if historyTapQueue != nil {
+		t.Fatal("history disabled live-only mode must not create a history semantic tap queue")
 	}
 	if _, err := server.TerminalHistoryWindow(context.Background(), "term-r373-live-only", history.HistoryWindowRequest{
 		TerminalID: "term-r373-live-only",
@@ -789,12 +855,12 @@ func TestR373HistoryDisabledProcessOutputKeepsLiveOnlyTapBoundary(t *testing.T) 
 	if _, err := os.Stat(filepath.Join(historyDir, "term-r373-live-only.history-lines.bin")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("history disabled process path must not write payload file, err=%v", err)
 	}
-	if records := terminal.tap.InputRecords(); len(records) != 1 || records[0].Kind != SemanticTapInputWrite {
-		t.Fatalf("live-only process output must still enter SemanticTap once, records=%#v", records)
+	if terminal.tap != nil {
+		t.Fatalf("history disabled live-only mode must not create history SemanticTap, got %#v", terminal.tap.InputRecords())
 	}
 }
 
-func TestR373ProcessOutputResponseOwnerRemainsSingleSemanticTap(t *testing.T) {
+func TestR396ProcessOutputResponseOwnerRemainsLiveSurfaceOnly(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
 	if _, err := server.RegisterTerminal(TerminalRecord{
@@ -811,17 +877,17 @@ func TestR373ProcessOutputResponseOwnerRemainsSingleSemanticTap(t *testing.T) {
 	process.emitOutput("\x1b]11;?\x1b\\")
 	assertEventually(t, time.Second, func() bool {
 		return terminalProcessResponseCount(process, "\x1b]11;") >= 1
-	}, "process PTY query must be answered exactly once by SemanticTap")
+	}, "process PTY query must be answered exactly once by live SurfaceTrack")
 	time.Sleep(20 * time.Millisecond)
 	if got := terminalProcessResponseCount(process, "\x1b]11;"); got != 1 {
-		t.Fatalf("process PTY query must be answered exactly once by SemanticTap, got %d responses", got)
+		t.Fatalf("process PTY query must be answered exactly once by live SurfaceTrack, got %d responses", got)
 	}
 	terminal, err := server.Terminal("term-r373-response")
 	if err != nil {
 		t.Fatalf("terminal: %v", err)
 	}
 	if records := terminal.tap.InputRecords(); len(records) != 1 || records[0].Kind != SemanticTapInputWrite {
-		t.Fatalf("response-producing output must enter single SemanticTap once, records=%#v", records)
+		t.Fatalf("history semantic consumer must still observe response-producing output without writing response, records=%#v", records)
 	}
 }
 
@@ -847,7 +913,7 @@ func TestR373SingleTapSynchronizedTransactionPublishesPrimaryFrame(t *testing.T)
 		t.Fatalf("history.window: %v", err)
 	}
 	if !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
-		t.Fatalf("single SemanticTap sync begin/payload/end transaction must publish current frame, rows=%#v", window.Rows)
+		t.Fatalf("history semantic sync begin/payload/end transaction must publish current frame, rows=%#v", window.Rows)
 	}
 	if got := strings.Join(historyRowTexts(window.Rows), "|"); !strings.Contains(got, "line3") {
 		t.Fatalf("current frame should preserve final screen payload, got %q", got)
@@ -1180,11 +1246,11 @@ func TestServerNextLiveInvalidationFlushesPendingTapQueueWithoutSnapshot(t *test
 		t.Fatalf("expected recording process")
 	}
 	queue := newTerminalLiveIngestQueue()
-	terminal.setTapQueue(process, queue)
+	terminal.setLiveQueue(process, queue)
 	defer func() {
 		queue.Close()
 		queue.Wait()
-		terminal.clearTapQueue(process, queue)
+		terminal.clearLiveQueue(process, queue)
 	}()
 	queue.Enqueue("second\r\n")
 	queue.Enqueue("third\r\n")
@@ -1227,6 +1293,76 @@ func TestServerNextLiveInvalidationFlushesPendingTapQueueWithoutSnapshot(t *test
 		}
 	case <-ctx.Done():
 		t.Fatalf("timed out waiting for coalesced wake: %v", ctx.Err())
+	}
+}
+
+func TestR396NextLiveInvalidationFlushesLiveQueueNotHistoryTapQueue(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r396-live-split", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	terminal, err := server.Terminal("term-r396-live-split")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r396-live-split", "first\r\n"); err != nil {
+		t.Fatalf("first output: %v", err)
+	}
+	observed := terminal.LiveRevision()
+	process := factory.process("term-r396-live-split")
+	if process == nil {
+		t.Fatalf("expected recording process")
+	}
+	liveQueue := newTerminalLiveIngestQueue()
+	historyTapQueue := newTerminalLiveIngestQueue()
+	terminal.setLiveQueue(process, liveQueue)
+	terminal.setHistoryTapQueue(process, historyTapQueue)
+	defer func() {
+		liveQueue.Close()
+		liveQueue.Wait()
+		terminal.clearLiveQueue(process, liveQueue)
+		historyTapQueue.Close()
+		terminal.clearHistoryTapQueue(process, historyTapQueue)
+	}()
+	liveQueue.Enqueue("live-latest\r\n")
+	historyTapQueue.Enqueue("history-must-not-block-live\r\n")
+	done := make(chan Event, 1)
+	errs := make(chan error, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	go func() {
+		event, err := server.NextLiveInvalidation(ctx, "term-r396-live-split", observed)
+		if err != nil {
+			errs <- err
+			return
+		}
+		done <- event
+	}()
+	select {
+	case event := <-done:
+		t.Fatalf("wake returned before live queue worker drained pending bytes: %#v", event)
+	case err := <-errs:
+		t.Fatalf("wake failed before live queue drain: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	go liveQueue.Run(func(output string) error {
+		return terminal.ingestProcessLiveOutput(process, output)
+	})
+	select {
+	case err := <-errs:
+		t.Fatalf("wake failed: %v", err)
+	case event := <-done:
+		current := terminal.LiveRevision()
+		if event.Live == nil || event.Live.Revision != current || current <= observed {
+			t.Fatalf("wake should coalesce to latest live revision without history tap, event=%#v current=%d observed=%d", event, current, observed)
+		}
+		snapshot := terminal.NativeScreenSnapshot("term-r396-live-split")
+		if snapshot.Revision != current || !strings.Contains(strings.Join(terminalLiveRowsFromNativeSnapshot(snapshot), "\n"), "live-latest") {
+			t.Fatalf("latest live snapshot should come from live SurfaceTrack, got %#v", snapshot)
+		}
+	case <-ctx.Done():
+		t.Fatalf("timed out waiting for live wake while history tap queue was undrained: %v", ctx.Err())
 	}
 }
 
@@ -1526,6 +1662,28 @@ func liveSnapshotRows(snapshot live.SurfaceSnapshot) []string {
 		rows = append(rows, strings.TrimRight(text, " "))
 	}
 	return rows
+}
+
+func terminalLiveRowsFromNativeSnapshot(snapshot NativeScreenSnapshot) []string {
+	if len(snapshot.Rows) == 0 {
+		return nil
+	}
+	out := make([]string, len(snapshot.Rows))
+	for index, row := range snapshot.Rows {
+		out[index] = strings.TrimRight(terminalTestVTermRowText(row.Cells), " ")
+	}
+	for len(out) > 0 && out[len(out)-1] == "" {
+		out = out[:len(out)-1]
+	}
+	return out
+}
+
+func terminalTestVTermRowText(row []vterm.Cell) string {
+	var builder strings.Builder
+	for _, cell := range row {
+		builder.WriteString(cell.Content)
+	}
+	return builder.String()
 }
 
 func terminalProcessResponseCount(process *recordingProcess, needle string) int {

@@ -1,6 +1,6 @@
 # live native screen 重构设计
 
-状态：R371 后 live native screen 与 history fan-out 重构基准。
+状态：R396 后 live native screen 与 history fan-out 重构基准。
 
 本文只定义普通实时终端显示链路，不定义 authoritative history truth。history 仍以
 `termx-core-v2/docs/history-logical-renderer-design.md` 为准。live screen 可以被 copy mode
@@ -14,8 +14,8 @@ dirty，就重新拉 core 当前最新屏幕并渲染。core 不关心任何客�
 
 ```text
 PTY bytes
-  -> core terminal SemanticTap
-  -> termx-vterm
+  -> core terminal live SurfaceTrack
+  -> termx-vterm WriteForLatestFrame
   -> core NativeScreen + LiveRevision
   -> terminal.live.invalidated(termID, revision)
   -> TUI 标记 dirty / wanted revision
@@ -28,29 +28,31 @@ PTY bytes
 live 数据，因为 live screen 的目标是尽快靠近最新状态，不是补放中间帧。中间输出是否进入可回看历史，
 由 history logical renderer 和 history store 决定。
 
-R358 曾为了恢复 `c4ee7923` 的实时体验，把 live native screen 和 authoritative history
-拆成两套 vterm 消费：live `SurfaceTrack` 维护当前屏，history semantic worker 用独立
-`vterm.SemanticSource` 追平同一 PTY 输出。该形态只是当前实现折中，不再作为目标架构。
+R396 重新把 live native screen 和 authoritative history 拆成两条 PTY consumer：live
+`SurfaceTrack` 维护当前屏，history semantic consumer 用独立 `SemanticTap` / `vterm.SemanticSource`
+追平同一 PTY 输出并产出 compact journal。该形态是当前高压输出下的目标架构，不是从 live
+snapshot 反推 history，也不是恢复 raw PTY parser fallback。
 
-R371 后的目标边界是 single `SemanticTap`：
+R396 后的目标边界是 live/history owner 分层：
 
-- `SemanticTap` 是唯一 vterm owner，按序消费所有 PTY bytes 与 resize。
-- `SemanticTap` 维护 latest native screen、cursor、mode、alt state 和 terminal response。
-- `SemanticTap` 产出 immutable terminal semantic transaction，供 history consumer 完整消费。
-- live path 只合并或丢弃 downstream render wakeup / snapshot response；不能丢 vterm 输入、
-  semantic transaction 或 emulator state 后再维护自己的 screen。
-- history path 可以异步追平，但不再起第二个 vterm replay raw PTY。
+- live `SurfaceTrack` 是 latest native screen owner，按序消费所有 PTY bytes 与 resize。
+- live `SurfaceTrack` 是唯一 terminal response owner，OSC/DA/DSR 等响应只能从这里回写 PTY。
+- history semantic consumer 独立按同一 PTY/resize 顺序消费输入，产出 compact semantic journal。
+- history path 可以异步追平，但不能读取 live snapshot、TUI rows 或 raw parser fallback。
+- 两条链路的分叉点只能在 core terminal ingest；TUI/render 不能创建第三份 terminal state。
 
-当前 R358 实现仍有这些遗留点，后续 R372-R374 需要清场：
+R396 保留并收紧这些 live 边界：
 
 - live hot path 只维护 `live.SurfaceTrack` 中的当前 `vterm.VTerm`，写入走 latest-frame 路径。
 - `SurfaceTrack` 不再把 semantic transaction、damage、primary/alt frame clone 放进 live write result。
-- 真实 PTY 输出同时进入独立 history semantic worker；worker 再喂给 `vterm.SemanticSource` 和 history renderer。
-- history worker 可以 flush，live ingest queue 不能有 flush fence；history/copy/freeze 等读取入口只等待 history worker 追平，不等待 live queue。
+- 真实 PTY 输出同时进入独立 history semantic consumer；consumer 再喂给 `vterm.SemanticSource` 和 history renderer。
+- history worker 可以 flush，live ingest queue 只允许为 one-shot wake 合并 flush 已入队 bytes；
+  history/copy/freeze 等读取入口只等待 history worker 追平，不等待 TUI render。
 
-R371 以后的实现不得把 history transaction 再塞回 `SurfaceTrack.WriteWithResult`，也不得让
-live consumer 自己跳过 semantic event 后维护 screen。正确的背压边界在 `SemanticTap` 之后：
-live publisher 可以 latest-only 合并唤醒，history queue 必须完整保留 semantic transaction。
+实现不得把 history transaction 再塞回 `SurfaceTrack.WriteWithResult`，也不得让 history 从
+`SurfaceTrack.Snapshot()` 或 live native rows 反推 authoritative history。正确的背压边界在
+core terminal ingest 之后：live publisher 可以 latest-only 合并唤醒，history queue 必须完整保留
+compact semantic journal。
 
 ## 2. 设计边界
 
@@ -61,8 +63,8 @@ core 是 native screen owner。
 core 负责：
 
 - 持有 terminal process、PTY size、lifecycle、attachment registry、resize ownership。
-- 持有唯一 `SemanticTap` / vterm 当前 screen state。
-- 在同一个 tap 中更新 native screen，并把 semantic transaction fan-out 给 history consumer。
+- 持有 live `SurfaceTrack` / vterm 当前 screen state。
+- 持有 history semantic consumer，并按同一 PTY/resize 顺序分发输入。
 - 为每个 terminal 维护单调 `LiveRevision`。
 - 在 native screen 变化后发布 `terminal.live.invalidated { terminal_id, revision }`。
 - 在客户端请求时返回当前最新 `NativeScreenSnapshot`。
@@ -75,7 +77,7 @@ core 不负责：
 - 不把每次 changed 都转换成需要发送给客户端的完整 screen frame。
 - 不用 snapshot、grid viewport、renderer rows 或 TUI 状态反推 history。
 - 不在 live surface write result 中承载 history transaction 或 frame evidence。
-- 不让 live consumer 跳过 semantic event 后维护另一份 terminal screen state。
+- 不让 history consumer 或 TUI 持有 response-capable live screen state。
 
 ### 2.2 TUI owner
 

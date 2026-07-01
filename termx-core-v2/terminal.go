@@ -18,9 +18,14 @@ type Terminal struct {
 	info    TerminalInfo
 	options TerminalCreateOptions
 	process TerminalProcess
-	tap     *SemanticTap
-	// 中文说明：tapOpMu 串行化生产 PTY 输出与 direct resize/restart tap 操作。
-	// 它定义 single SemanticTap 的输入顺序边界，避免 resize 后的新输出抢先按旧尺寸进 tap。
+	live    *live.SurfaceTrack
+	// 中文说明：liveOpMu 串行化 live SurfaceTrack 的 PTY 输出与 resize/restart 操作。
+	// live 是唯一 response owner；resize 期间产生的新输出必须等 live 调整到新尺寸后再写入。
+	liveOpMu     sync.Mutex
+	liveRevision LiveRevision
+	tap          *SemanticTap
+	// 中文说明：tapOpMu 串行化 history semantic consumer 的 PTY 输出与 resize/restart 操作。
+	// 它只服务 history journal 语义链路；live latest screen 不再被 history semantic write 定速。
 	tapOpMu         sync.Mutex
 	historyMu       sync.Mutex
 	historyRenderer history.HistoryLogicalRenderer
@@ -29,7 +34,8 @@ type Terminal struct {
 	historyEnabled  bool
 	historyStatus   HistoryBacklogStatus
 	queueMu         sync.Mutex
-	tapQ            *terminalLiveIngestQueue
+	liveQ           *terminalLiveIngestQueue
+	historyTapQ     *terminalLiveIngestQueue
 	historyQ        *terminalHistoryIngestQueue
 	events          *eventBroker
 	update          func(TerminalInfo)
@@ -44,12 +50,17 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 		update:         update,
 		historyEnabled: historyEnabled,
 	}
-	terminal.tap = NewSemanticTap(info.ID, info.Size, terminal.handleLiveSurfaceResponse)
+	terminal.live = live.NewSurfaceTrackWithOptions(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)}, live.SurfaceTrackOptions{
+		OnResponse: terminal.handleLiveSurfaceResponse,
+	})
 	if historyEnabled {
 		terminal.historyStatus = HistoryBacklogStatus{
 			TerminalID:     info.ID,
 			HistoryEnabled: true,
 		}
+		// 中文说明：history semantic tap 不持有 response owner；OSC/DA/DSR 只能由
+		// live SurfaceTrack 回写一次，避免 live/history 双 vterm 双回写。
+		terminal.tap = NewSemanticTap(info.ID, info.Size, nil)
 		terminal.historyRenderer, terminal.journalRenderer = history.NewHistoryRenderers(nil, nil)
 		if historyStore == nil {
 			historyStore = history.NewInMemoryHistoryStore(info.ID)
@@ -105,8 +116,8 @@ func (terminal *Terminal) handleLiveSurfaceResponse(data []byte) {
 }
 
 // IngestOutput 是测试和诊断入口，用一段 PTY 输出同步推进 terminal。
-// 它走同一个 SemanticTap owner 更新 native live screen 和 authoritative history，
-// 不能再把 raw PTY 分别交给 live/history 两套 vterm 解释。
+// 它先走 live SurfaceTrack latest 快路径，再把同一 PTY bytes 交给 history semantic
+// consumer；history truth 仍只能来自 HistoryStore，不能从 live rows 反推。
 func (terminal *Terminal) IngestOutput(output string) error {
 	terminal.mu.Lock()
 	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
@@ -116,23 +127,23 @@ func (terminal *Terminal) IngestOutput(output string) error {
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
 
-	terminal.tapOpMu.Lock()
-	result, err := terminal.tap.ApplyPTYWrite([]byte(output))
-	if err == nil && terminal.historyEnabled {
-		terminal.ingestHistoryTransactions([]history.TerminalSemanticTransaction{result.Transaction()})
-	}
-	terminal.tapOpMu.Unlock()
+	revision, err := terminal.applyLiveOutput(output)
 	if err != nil {
 		return err
 	}
 
-	terminal.publishLiveInvalidated(info.ID, uint64(result.Revision()))
+	terminal.publishLiveInvalidated(info.ID, uint64(revision))
+	if terminal.historyEnabled {
+		if err := terminal.ingestHistorySemanticOutput(output, nil, info.ID); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // Resize 调整 terminal PTY 和 core native live screen 的尺寸。
-// resize 和 PTY bytes 共享同一个 SemanticTap owner；history 只消费 tap resize
-// transaction 作为 non-history boundary，不能由 resized snapshot 生成 sealed history。
+// resize 和 PTY bytes 按同一顺序进入 live SurfaceTrack 与 history semantic consumer；
+// history 只消费 resize transaction 作为 non-history boundary，不能由 resized live snapshot 生成 sealed history。
 func (terminal *Terminal) Resize(size Size) error {
 	if !size.Valid() {
 		return ErrInvalidServerSize
@@ -144,12 +155,17 @@ func (terminal *Terminal) Resize(size Size) error {
 		return ErrTerminalExited
 	}
 	terminal.mu.Unlock()
-	if err := terminal.flushTapQueue(context.Background()); err != nil {
+	if err := terminal.flushLiveQueue(context.Background()); err != nil {
+		return err
+	}
+	if err := terminal.flushHistoryTapQueue(context.Background()); err != nil {
 		return err
 	}
 
+	terminal.liveOpMu.Lock()
 	terminal.tapOpMu.Lock()
 	defer terminal.tapOpMu.Unlock()
+	defer terminal.liveOpMu.Unlock()
 
 	terminal.mu.Lock()
 	if terminal.process != process || terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
@@ -170,17 +186,20 @@ func (terminal *Terminal) Resize(size Size) error {
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
 
-	result, err := terminal.tap.Resize(size)
-	if err != nil {
-		return err
-	}
-	if terminal.historyEnabled {
+	terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
+	terminal.liveRevision++
+	revision := terminal.liveRevision
+	if terminal.historyEnabled && terminal.tap != nil {
+		result, err := terminal.tap.Resize(size)
+		if err != nil {
+			return err
+		}
 		terminal.enqueueOrApplyHistoryResizeTransaction(result.Transaction())
 	}
 
 	terminal.syncInfo(info)
 	terminal.publishResize(info, oldSize, size)
-	terminal.publishLiveInvalidated(info.ID, uint64(result.Revision()))
+	terminal.publishLiveInvalidated(info.ID, uint64(revision))
 	return nil
 }
 
@@ -220,6 +239,9 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	info := terminal.info.Clone()
 	options := terminal.options
 	terminal.mu.Unlock()
+	if err := terminal.flushLiveQueue(ctx); err != nil {
+		return err
+	}
 	if err := terminal.FlushHistory(ctx); err != nil {
 		return err
 	}
@@ -240,17 +262,25 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.mu.Unlock()
 	_ = oldInfo
 	terminal.queueMu.Lock()
-	terminal.tapQ = nil
+	terminal.liveQ = nil
+	terminal.historyTapQ = nil
 	terminal.historyQ = nil
 	terminal.queueMu.Unlock()
-	terminal.tapOpMu.Lock()
-	snapshot := terminal.tap.ResetForRestartPreservingScreen(info.Size)
-	terminal.tapOpMu.Unlock()
+	terminal.liveOpMu.Lock()
+	terminal.live.ResetForRestartPreservingScreen()
+	terminal.liveRevision++
+	revision := terminal.liveRevision
+	terminal.liveOpMu.Unlock()
+	if terminal.historyEnabled {
+		terminal.tapOpMu.Lock()
+		terminal.tap = NewSemanticTap(info.ID, info.Size, nil)
+		terminal.tapOpMu.Unlock()
+	}
 	terminal.syncInfo(info)
 	terminal.watchProcess(process)
 	_ = old.Close()
 	terminal.publishLifecycle(EventTerminalChanged, info)
-	terminal.publishLiveInvalidated(info.ID, uint64(snapshot.Revision))
+	terminal.publishLiveInvalidated(info.ID, uint64(revision))
 	return nil
 }
 
@@ -261,30 +291,39 @@ func (terminal *Terminal) Wait() <-chan ProcessExit {
 }
 
 func (terminal *Terminal) LiveRows() []string {
-	return terminalLiveRowsFromNativeSnapshot(terminal.tap.NativeScreenSnapshot())
+	terminal.liveOpMu.Lock()
+	defer terminal.liveOpMu.Unlock()
+	return terminal.live.Rows()
 }
 
 func (terminal *Terminal) LiveSnapshot() live.SurfaceSnapshot {
-	return terminalLiveSurfaceSnapshotFromNative(terminal.tap.NativeScreenSnapshot())
+	terminal.liveOpMu.Lock()
+	defer terminal.liveOpMu.Unlock()
+	return terminal.live.Snapshot()
 }
 
 func (terminal *Terminal) VisitLiveTrimmedScreenRows(visit func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell)) vterm.TrimmedScreenRowsInfo {
-	return terminalVisitNativeScreenSnapshot(terminal.tap.NativeScreenSnapshot(), visit)
+	terminal.liveOpMu.Lock()
+	defer terminal.liveOpMu.Unlock()
+	return terminal.live.VisitTrimmedScreenRows(visit)
 }
 
 // VisitLiveTrimmedScreenRowsWithRevision 在同一 live 锁内读取当前 native screen
 // 与 live projection revision。revision 只表示当前屏投影版本，不是 history truth
 // generation；protocol/TUI 用它拒绝旧 snapshot，不能把它解释成 logical history 版本。
 func (terminal *Terminal) VisitLiveTrimmedScreenRowsWithRevision(visit func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell)) (vterm.TrimmedScreenRowsInfo, uint64) {
-	snapshot := terminal.tap.NativeScreenSnapshot()
-	info := terminalVisitNativeScreenSnapshot(snapshot, visit)
-	return info, uint64(snapshot.Revision)
+	terminal.liveOpMu.Lock()
+	defer terminal.liveOpMu.Unlock()
+	info := terminal.live.VisitTrimmedScreenRows(visit)
+	return info, uint64(terminal.liveRevision)
 }
 
 // NativeScreenSnapshot 返回 core 当前 latest native screen。
 // 调用方只能把它用于实时显示 projection；history/window/copy truth 必须继续走 HistoryWindow/Copy。
 func (terminal *Terminal) NativeScreenSnapshot(terminalID string) NativeScreenSnapshot {
-	snapshot := terminal.tap.NativeScreenSnapshot()
+	terminal.liveOpMu.Lock()
+	snapshot := terminalNativeScreenSnapshotFromLiveSurface(terminalID, terminal.liveRevision, terminal.live.Snapshot())
+	terminal.liveOpMu.Unlock()
 	snapshot.TerminalID = terminalID
 	return snapshot
 }
@@ -293,7 +332,9 @@ func (terminal *Terminal) NativeScreenSnapshot(terminalID string) NativeScreenSn
 // 它只服务 live invalidation one-shot arm 的“是否已经有新屏幕”判断；
 // history/window/copy 不能把它当成 logical history generation。
 func (terminal *Terminal) LiveRevision() LiveRevision {
-	return terminal.tap.LiveRevision()
+	terminal.liveOpMu.Lock()
+	defer terminal.liveOpMu.Unlock()
+	return terminal.liveRevision
 }
 
 // HistoryBacklogStatus 返回 terminal history semantic transaction backlog 的追平诊断。
@@ -326,12 +367,12 @@ func (terminal *Terminal) HistoryBacklogStatus() HistoryBacklogStatus {
 	return status
 }
 
-// FlushHistory 等待当前 terminal 的 tap queue 与 compact journal worker 追平。
-// 第一段 fence 保证已进入 PTY 输出队列的 bytes 先推进 single SemanticTap；第二段
+// FlushHistory 等待当前 terminal 的 history semantic queue 与 compact journal worker 追平。
+// 第一段 fence 保证已进入 history semantic 队列的 bytes 先推进 history tap；第二段
 // fence 再等待 tap 产出的 compact journal 落到 authoritative history store。
 // 它不等待客户端 render；调用边界是 history.window/freeze/copy 和 lifecycle close。
 func (terminal *Terminal) FlushHistory(ctx context.Context) error {
-	if err := terminal.flushTapQueue(ctx); err != nil {
+	if err := terminal.flushHistoryTapQueue(ctx); err != nil {
 		return err
 	}
 	terminal.queueMu.Lock()
@@ -410,26 +451,37 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 		close(done)
 		return done
 	}
-	tapQueue := newTerminalLiveIngestQueue()
-	terminal.setTapQueue(process, tapQueue)
+	liveQueue := newTerminalLiveIngestQueue()
+	terminal.setLiveQueue(process, liveQueue)
+	var historyTapQueue *terminalLiveIngestQueue
 	var historyWorker *terminalHistoryIngestQueue
 	if terminal.historyEnabled {
+		historyTapQueue = newTerminalLiveIngestQueue()
+		terminal.setHistoryTapQueue(process, historyTapQueue)
 		startSeq := terminal.historyBacklogStartSeq()
 		historyWorker = newTerminalHistoryIngestQueue(startSeq)
 		terminal.setHistoryQueue(process, historyWorker)
 		go historyWorker.Run(func(journals []history.HistoryJournal) error {
 			return terminal.ingestProcessHistoryJournals(process, journals)
 		})
+		go historyTapQueue.Run(func(output string) error {
+			return terminal.ingestProcessHistoryTapOutput(process, output, historyWorker)
+		})
 	}
-	go tapQueue.Run(func(output string) error {
-		return terminal.ingestProcessTapOutput(process, output, historyWorker)
+	go liveQueue.Run(func(output string) error {
+		return terminal.ingestProcessLiveOutput(process, output)
 	})
 	go func() {
 		defer close(done)
 		defer func() {
-			tapQueue.Close()
-			tapQueue.Wait()
-			terminal.clearTapQueue(process, tapQueue)
+			liveQueue.Close()
+			liveQueue.Wait()
+			terminal.clearLiveQueue(process, liveQueue)
+			if historyTapQueue != nil {
+				historyTapQueue.Close()
+				historyTapQueue.Wait()
+				terminal.clearHistoryTapQueue(process, historyTapQueue)
+			}
 			if historyWorker != nil {
 				historyWorker.Close()
 				historyWorker.Wait()
@@ -441,13 +493,16 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 				continue
 			}
 			text := string(chunk)
-			tapQueue.Enqueue(text)
+			liveQueue.Enqueue(text)
+			if historyTapQueue != nil {
+				historyTapQueue.Enqueue(text)
+			}
 		}
 	}()
 	return done
 }
 
-func (terminal *Terminal) setTapQueue(process TerminalProcess, queue *terminalLiveIngestQueue) {
+func (terminal *Terminal) setLiveQueue(process TerminalProcess, queue *terminalLiveIngestQueue) {
 	terminal.mu.Lock()
 	current := terminal.process == process
 	terminal.mu.Unlock()
@@ -455,11 +510,11 @@ func (terminal *Terminal) setTapQueue(process TerminalProcess, queue *terminalLi
 		return
 	}
 	terminal.queueMu.Lock()
-	terminal.tapQ = queue
+	terminal.liveQ = queue
 	terminal.queueMu.Unlock()
 }
 
-func (terminal *Terminal) clearTapQueue(process TerminalProcess, queue *terminalLiveIngestQueue) {
+func (terminal *Terminal) clearLiveQueue(process TerminalProcess, queue *terminalLiveIngestQueue) {
 	terminal.mu.Lock()
 	current := terminal.process == process
 	terminal.mu.Unlock()
@@ -467,15 +522,51 @@ func (terminal *Terminal) clearTapQueue(process TerminalProcess, queue *terminal
 		return
 	}
 	terminal.queueMu.Lock()
-	if terminal.tapQ == queue {
-		terminal.tapQ = nil
+	if terminal.liveQ == queue {
+		terminal.liveQ = nil
 	}
 	terminal.queueMu.Unlock()
 }
 
-func (terminal *Terminal) flushTapQueue(ctx context.Context) error {
+func (terminal *Terminal) flushLiveQueue(ctx context.Context) error {
 	terminal.queueMu.Lock()
-	queue := terminal.tapQ
+	queue := terminal.liveQ
+	terminal.queueMu.Unlock()
+	if queue == nil {
+		return nil
+	}
+	return queue.Flush(ctx)
+}
+
+func (terminal *Terminal) setHistoryTapQueue(process TerminalProcess, queue *terminalLiveIngestQueue) {
+	terminal.mu.Lock()
+	current := terminal.process == process
+	terminal.mu.Unlock()
+	if !current {
+		return
+	}
+	terminal.queueMu.Lock()
+	terminal.historyTapQ = queue
+	terminal.queueMu.Unlock()
+}
+
+func (terminal *Terminal) clearHistoryTapQueue(process TerminalProcess, queue *terminalLiveIngestQueue) {
+	terminal.mu.Lock()
+	current := terminal.process == process
+	terminal.mu.Unlock()
+	if !current {
+		return
+	}
+	terminal.queueMu.Lock()
+	if terminal.historyTapQ == queue {
+		terminal.historyTapQ = nil
+	}
+	terminal.queueMu.Unlock()
+}
+
+func (terminal *Terminal) flushHistoryTapQueue(ctx context.Context) error {
+	terminal.queueMu.Lock()
+	queue := terminal.historyTapQ
 	terminal.queueMu.Unlock()
 	if queue == nil {
 		return nil
@@ -577,7 +668,7 @@ func (terminal *Terminal) watchExit(process TerminalProcess, outputDone <-chan s
 	}()
 }
 
-func (terminal *Terminal) ingestProcessTapOutput(process TerminalProcess, output string, historyWorker *terminalHistoryIngestQueue) error {
+func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, output string) error {
 	terminal.mu.Lock()
 	if terminal.process != process {
 		terminal.mu.Unlock()
@@ -590,11 +681,9 @@ func (terminal *Terminal) ingestProcessTapOutput(process TerminalProcess, output
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
 
-	terminal.tapOpMu.Lock()
 	finishLiveWrite := perftrace.Measure("core.live.write_screen")
-	result, err := terminal.tap.ApplyPTYWrite([]byte(output))
+	revision, err := terminal.applyLiveOutput(output)
 	finishLiveWrite(len(output))
-	terminal.tapOpMu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -605,16 +694,55 @@ func (terminal *Terminal) ingestProcessTapOutput(process TerminalProcess, output
 	if !stillCurrent {
 		return nil
 	}
-	// 中文说明：live latest screen 已经由 single SemanticTap 更新；wake 必须先发出，
-	// history journal 的 queue/flush/store 写入不能反压用户可见的实时屏幕。
+	// 中文说明：live latest screen 已经由 SurfaceTrack 快路径更新；wake 必须先发出，
+	// history semantic write / journal queue / store 写入不能反压用户可见的实时屏幕。
 	perftrace.Count("core.terminal.changed", len(output))
 	perftrace.Count("core.live.invalidation_publish", len(output))
-	terminal.publishLiveInvalidated(info.ID, uint64(result.Revision()))
-	if historyWorker != nil {
-		finishHistoryFanout := perftrace.Measure("core.history.journal_fanout")
-		terminal.enqueueOrApplyProcessHistoryJournal(result, historyWorker, info.ID)
-		finishHistoryFanout(len(output))
+	terminal.publishLiveInvalidated(info.ID, uint64(revision))
+	return nil
+}
+
+func (terminal *Terminal) ingestProcessHistoryTapOutput(process TerminalProcess, output string, historyWorker *terminalHistoryIngestQueue) error {
+	terminal.mu.Lock()
+	if terminal.process != process {
+		terminal.mu.Unlock()
+		return nil
 	}
+	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return ErrTerminalExited
+	}
+	info := terminal.info.Clone()
+	terminal.mu.Unlock()
+	return terminal.ingestHistorySemanticOutput(output, historyWorker, info.ID)
+}
+
+func (terminal *Terminal) applyLiveOutput(output string) (LiveRevision, error) {
+	terminal.liveOpMu.Lock()
+	defer terminal.liveOpMu.Unlock()
+	if terminal.live == nil {
+		return terminal.liveRevision, nil
+	}
+	terminal.live.Write(output)
+	terminal.liveRevision++
+	return terminal.liveRevision, nil
+}
+
+func (terminal *Terminal) ingestHistorySemanticOutput(output string, historyWorker *terminalHistoryIngestQueue, terminalID string) error {
+	if !terminal.historyEnabled || terminal.tap == nil {
+		return nil
+	}
+	terminal.tapOpMu.Lock()
+	finishHistoryWrite := perftrace.Measure("core.history.semantic_write")
+	result, err := terminal.tap.ApplyPTYWrite([]byte(output))
+	finishHistoryWrite(len(output))
+	terminal.tapOpMu.Unlock()
+	if err != nil {
+		return err
+	}
+	finishHistoryFanout := perftrace.Measure("core.history.journal_fanout")
+	terminal.enqueueOrApplyProcessHistoryJournal(result, historyWorker, terminalID)
+	finishHistoryFanout(len(output))
 	return nil
 }
 
@@ -645,13 +773,11 @@ func (terminal *Terminal) appendExitMarker(info TerminalInfo) {
 		return
 	}
 	text := "\r\n" + strings.Join(lines, "\r\n") + "\r\n"
-	terminal.tapOpMu.Lock()
-	result, err := terminal.tap.ApplyPTYWrite([]byte(text))
-	terminal.tapOpMu.Unlock()
+	revision, err := terminal.applyLiveOutput(text)
 	if err != nil {
 		return
 	}
-	terminal.publishLiveInvalidated(info.ID, uint64(result.Revision()))
+	terminal.publishLiveInvalidated(info.ID, uint64(revision))
 }
 
 func terminalExitMarkerLines(info TerminalInfo) []string {
@@ -673,65 +799,24 @@ func terminalExitMarkerLines(info TerminalInfo) []string {
 	return lines
 }
 
-func terminalLiveRowsFromNativeSnapshot(snapshot NativeScreenSnapshot) []string {
-	if len(snapshot.Rows) == 0 {
-		return nil
-	}
-	out := make([]string, len(snapshot.Rows))
-	for index, row := range snapshot.Rows {
-		out[index] = strings.TrimRight(terminalVTermRowText(row.Cells), " ")
-	}
-	return terminalTrimTrailingEmptyRows(out)
-}
-
-func terminalLiveSurfaceSnapshotFromNative(snapshot NativeScreenSnapshot) live.SurfaceSnapshot {
-	rows := make([][]vterm.Cell, len(snapshot.Rows))
-	for index, row := range snapshot.Rows {
-		rows[index] = cloneSemanticTapCells(row.Cells)
-	}
-	return live.SurfaceSnapshot{
-		Size:   live.SurfaceSize{Cols: snapshot.Size.Cols, Rows: snapshot.Size.Rows},
-		Screen: vterm.ScreenData{Cells: rows, IsAlternateScreen: snapshot.AltScreen},
-		Cursor: snapshot.Cursor,
-		Modes:  snapshot.Modes,
-	}
-}
-
-func terminalVisitNativeScreenSnapshot(snapshot NativeScreenSnapshot, visit func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell)) vterm.TrimmedScreenRowsInfo {
-	if visit != nil {
-		for _, row := range snapshot.Rows {
-			rowIndex := row.Index
-			cells := cloneSemanticTapCells(row.Cells)
-			visit(rowIndex, len(cells), func(index int) vterm.Cell {
-				if index < 0 || index >= len(cells) {
-					return vterm.Cell{}
-				}
-				return cells[index]
-			})
+func terminalNativeScreenSnapshotFromLiveSurface(terminalID string, revision LiveRevision, snapshot live.SurfaceSnapshot) NativeScreenSnapshot {
+	rows := make([]NativeScreenRow, len(snapshot.Screen.Cells))
+	for index, row := range snapshot.Screen.Cells {
+		rows[index] = NativeScreenRow{
+			Index: index,
+			Cells: cloneSemanticTapCells(row),
 		}
 	}
-	return vterm.TrimmedScreenRowsInfo{
-		Cols:              snapshot.Size.Cols,
-		Rows:              snapshot.Size.Rows,
-		IsAlternateScreen: snapshot.AltScreen,
-		Cursor:            snapshot.Cursor,
-		Modes:             snapshot.Modes,
+	return NativeScreenSnapshot{
+		TerminalID: terminalID,
+		Revision:   revision,
+		Size:       NativeScreenSize{Cols: snapshot.Size.Cols, Rows: snapshot.Size.Rows},
+		Rows:       rows,
+		Cursor:     snapshot.Cursor,
+		Modes:      snapshot.Modes,
+		AltScreen:  snapshot.Screen.IsAlternateScreen,
+		Timestamp:  time.Now().UTC(),
 	}
-}
-
-func terminalVTermRowText(row []vterm.Cell) string {
-	var builder strings.Builder
-	for _, cell := range row {
-		builder.WriteString(cell.Content)
-	}
-	return builder.String()
-}
-
-func terminalTrimTrailingEmptyRows(rows []string) []string {
-	for len(rows) > 0 && rows[len(rows)-1] == "" {
-		rows = rows[:len(rows)-1]
-	}
-	return rows
 }
 
 func (terminal *Terminal) HistoryWindow(req history.HistoryWindowRequest) (history.HistoryWindow, error) {
@@ -877,7 +962,7 @@ func (terminal *Terminal) applyHistoryJournalsLocked(journals []history.HistoryJ
 	if len(merged.Mutations) == 0 {
 		return
 	}
-	// 中文说明：history worker 已经按 SemanticTap seq 顺序拿到 compact journal；
+	// 中文说明：history worker 已经按 history semantic seq 顺序拿到 compact journal；
 	// 同一 worker batch 内可以合并 renderer mutations 后一次写入 HistoryStore，
 	// 减少文件 backend 小事务和 storage flush 次数。这里不改变 history truth：
 	// authoritative logical-line/window/cursor 仍只由 HistoryStore.Apply 产生。
@@ -1117,7 +1202,7 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 	hasEraseDisplay := historyTransactionHasEraseDisplay(tx)
 	hasSynchronizedContent := historyTransactionHasSynchronizedContent(tx)
 	hasContentAfterSyncEnd := historyTransactionHasContentAfterSyncEnd(tx)
-	// 中文说明：single SemanticTap 后 begin/payload/end 可能同属一个 transaction；
+	// 中文说明：history semantic consumer 可能把 begin/payload/end 放在同一个 transaction；
 	// 只要本 transaction 进入或处在 synchronized output mode，就仍是 primary
 	// screen app repaint。只有已有 current frame 后，sync end 后紧跟普通 prompt 的
 	// 同包输出才关闭 session，不能把 prompt 后的整屏再次发布为 current frame。

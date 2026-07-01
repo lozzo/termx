@@ -8,35 +8,34 @@ import (
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
-// SemanticTapInputKind 描述进入 single SemanticTap 的输入类型。
-// domain owner 是 core-v2 terminal ingest；它把 PTY bytes 和 resize 放进同一
-// 序列，避免 live/history consumer 在 tap 前各自解释输入。
+// SemanticTapInputKind 描述进入 history semantic tap 的输入类型。
+// domain owner 是 core-v2 terminal history ingest；它把 PTY bytes 和 resize 放进
+// history 语义序列，避免 history fallback 到 raw parser 或 live snapshot。
 type SemanticTapInputKind string
 
 const (
 	// SemanticTapInputWrite 表示真实 PTY bytes 输入。truth source 是 child process
-	// 输出；tap 会用唯一 vterm owner 解码并产出 semantic transaction。
+	// 输出；history tap 会用 termx-vterm 解码并产出 semantic transaction。
 	SemanticTapInputWrite SemanticTapInputKind = "write"
 	// SemanticTapInputResize 表示 PTY resize 输入。resize 必须和 PTY bytes 在同一
-	// tap sequence 内排序，不能分给 live/history 两套 parser。
+	// history tap sequence 内排序，不能由 history consumer 自行推断。
 	SemanticTapInputResize SemanticTapInputKind = "resize"
 )
 
-// SemanticTapInputRecord 是 R372 harness 可观察的 tap 输入边界。
-// 它不保存 history truth；只用于证明 PTY bytes 与 resize 进入同一个 owner sequence。
+// SemanticTapInputRecord 是 harness 可观察的 history tap 输入边界。
+// 它不保存 history truth；只用于证明 PTY bytes 与 resize 进入同一个 history 语义序列。
 type SemanticTapInputRecord struct {
 	Seq  uint64
 	Kind SemanticTapInputKind
 	Size Size
 }
 
-// SemanticTapResult 是 single SemanticTap 对一次输入的轻量输出。
+// SemanticTapResult 是 history semantic tap 对一次输入的轻量输出。
 // Transaction 只给复杂语义 fallback 和旧 harness 拉取完整语义消息副本；
 // HistoryJournal 在 history fan-out 阶段从同一次 transaction lazy 构造，避免
-// live wake 热路径被 history-specific journal 裁剪成本反压；Revision 只服务
-// live invalidation。
-// R381 后 result 不再携带 native screen snapshot，live.screen.get 或测试需要画面时
-// 必须从 SemanticTap.NativeScreenSnapshot 按需读取 latest 状态。
+// history-specific journal 裁剪成本反压 PTY ingest；Revision 只保留 history tap
+// 自身诊断，不再作为 Terminal live revision owner。
+// R396 后 live.screen.get 从 live SurfaceTrack 读取，不能从 history tap snapshot 取屏幕。
 type SemanticTapResult struct {
 	terminalID string
 	tx         vterm.TerminalSemanticTransaction
@@ -45,11 +44,11 @@ type SemanticTapResult struct {
 
 var semanticTapSnapshotBuildHook func()
 
-// SemanticTap 负责单个 terminal 的唯一 vterm owner 合同。
-// domain owner 是 core-v2 Terminal ingest；truth source 是同一个 termx-vterm
-// emulator。消息链路是 PTY bytes/resize -> tap -> immutable semantic tx +
-// latest native screen。失败条件是 consumer 在 tap 前分叉、history replay raw
-// PTY、resize 脱离同一序列或 OSC/DA/DSR response 被多 owner 回写。
+// SemanticTap 负责单个 terminal 的 history semantic consumer。
+// domain owner 是 core-v2 Terminal history ingest；truth source 是 termx-vterm
+// semantic pass。消息链路是 PTY bytes/resize -> history tap -> immutable semantic
+// tx -> compact journal / renderer。失败条件是 history replay raw PTY、从 live
+// snapshot 反推 history、resize 脱离 history 输入序列或让 history tap 回写 response。
 type SemanticTap struct {
 	mu         sync.Mutex
 	terminalID string
@@ -60,9 +59,9 @@ type SemanticTap struct {
 	inputs     []SemanticTapInputRecord
 }
 
-// NewSemanticTap 创建 single SemanticTap。
-// 无效 size 会回退到 80x24；onResponse 是该 terminal 唯一 response 回写 owner，
-// history/live consumer 不能再各自持有 response-capable vterm。
+// NewSemanticTap 创建 history semantic tap。
+// 无效 size 会回退到 80x24；R396 生产路径必须传 nil onResponse，让 live
+// SurfaceTrack 成为唯一 response 回写 owner。带 onResponse 的用法只留给 tap 自身 harness。
 func NewSemanticTap(terminalID string, size Size, onResponse vterm.ResponseHandler) *SemanticTap {
 	cols, rows := semanticTapSize(size)
 	return &SemanticTap{
@@ -73,9 +72,8 @@ func NewSemanticTap(terminalID string, size Size, onResponse vterm.ResponseHandl
 }
 
 // ApplyPTYWrite 按 tap sequence 消费 PTY bytes。
-// 返回的 transaction 已经由唯一 vterm owner 解码；history consumer 只能消费该
-// transaction，live consumer 只收到 revision wake，不能在每个 write 上强制 clone
-// native screen snapshot。
+// 返回的 transaction 已经由 history vterm pass 解码；history consumer 只能消费该
+// transaction/journal，不能读取 raw PTY、live SurfaceTrack 或 TUI rows。
 func (tap *SemanticTap) ApplyPTYWrite(raw []byte) (SemanticTapResult, error) {
 	if tap == nil {
 		return SemanticTapResult{}, nil
@@ -138,16 +136,16 @@ func (result SemanticTapResult) Transaction() vterm.TerminalSemanticTransaction 
 	return cloneSemanticTapTransaction(result.tx)
 }
 
-// HistoryJournal 返回 single SemanticTap 同次语义 pass 产出的 compact journal 副本。
+// HistoryJournal 返回 history semantic tap 同次语义 pass 产出的 compact journal 副本。
 // 生产 history backlog 应优先消费该命令化 journal；这里从 result 持有的独占
-// semantic transaction lazy 裁剪，不在 tap write/live wake 热路径提前构造，也不
-// 读取 raw PTY、live snapshot、TUI rows 或第二个 vterm。
+// semantic transaction lazy 裁剪，不在 history write 热路径提前构造，也不
+// 读取 raw PTY、live snapshot、TUI rows 或 live SurfaceTrack。
 func (result SemanticTapResult) HistoryJournal() history.HistoryJournal {
 	return history.HistoryJournalFromTransaction(result.terminalID, result.tx)
 }
 
 // Revision 返回本次 tap 输入后的 latest native screen revision。
-// 它只服务 live invalidation/snapshot stale guard，不能作为 history generation。
+// R396 后它只是 history tap 诊断值，不能作为 Terminal live revision 或 history generation。
 func (result SemanticTapResult) Revision() LiveRevision {
 	return result.revision
 }

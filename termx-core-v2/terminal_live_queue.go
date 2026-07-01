@@ -9,14 +9,15 @@ import (
 	"github.com/lozzow/termx/termx-shared/perftrace"
 )
 
-// terminalLiveIngestBatchMaxBytes 是 SemanticTap 热路径的交互批次上限。
+// terminalLiveIngestBatchMaxBytes 是 PTY 输出消费者热路径的交互批次上限。
 // core 仍只维护 latest screen，不承诺补放中间 frame；这个上限只防止 PTY
-// 高频输出被攒成超大块后才推进唯一 vterm owner 和 live invalidation。
+// 高频输出被攒成超大块后才推进 live 或 history semantic consumer。
 const terminalLiveIngestBatchMaxBytes = 16 * 1024
 
-// terminalLiveIngestQueue 把 PTY 高频输出压成 single SemanticTap 批次。
-// enqueue 不写 vterm；worker 只取当前积压批次推进一次 tap，tap result 再 fan-out
-// live latest invalidation 和 history transaction。
+// terminalLiveIngestQueue 把 PTY 高频输出压成 consumer 批次。
+// domain owner 是 core terminal ingest；R396 后 live queue 推进 SurfaceTrack，
+// history tap queue 推进 history semantic consumer。它不保存 history truth，也不
+// 解释 PTY bytes，只提供当前已入队 payload 的 flush fence。
 type terminalLiveIngestQueue struct {
 	mu           sync.Mutex
 	cond         *sync.Cond
@@ -65,8 +66,8 @@ func (queue *terminalLiveIngestQueue) Wait() {
 	<-queue.done
 }
 
-// Flush 等待调用时已经进入 live/tap 队列的 PTY payload 全部推进 single SemanticTap。
-// 它只建立 tap 输入顺序 fence，不等待客户端 render，也不会把未来输出纳入当前等待范围。
+// Flush 等待调用时已经进入该 consumer 队列的 PTY payload 全部推进对应 owner。
+// 它只建立输入顺序 fence，不等待客户端 render，也不会把未来输出纳入当前等待范围。
 func (queue *terminalLiveIngestQueue) Flush(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()

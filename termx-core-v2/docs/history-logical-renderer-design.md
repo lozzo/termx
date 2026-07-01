@@ -89,27 +89,28 @@ same SemanticTap state -> NativeScreenSnapshot -> TUI renderer -> host screen
 
 ## 3.1 SemanticTap 与 consumer 边界
 
-R371 后，真实 PTY 输出的目标架构是 single `SemanticTap`：
+R396 后，真实 PTY 输出的目标架构是 live/history owner 分层：
 
 ```text
 PTY bytes / resize
-  -> SemanticTap
-       唯一 vterm owner，顺序消费所有输入，维护 native screen 和 terminal response
-       产出 immutable TerminalSemanticTransaction
-       ├─ live publisher: 只发布 latest invalidation / snapshot，可合并 render wakeup
-       └─ history consumer: 完整消费 semantic transaction，不能丢
+  -> live SurfaceTrack
+       latest native screen owner，唯一 terminal response owner
+       └─ live publisher: 只发布 latest invalidation / snapshot，可合并 render wakeup
+  -> history SemanticTap
+       无 response 回写，顺序消费同一 PTY/resize 输入
+       └─ history consumer: compact journal -> logical-line renderer/store，不能丢
 ```
 
-`SemanticTap` 之前不能做按 consumer 的分叉。live consumer 不能丢 semantic event 后再维护自己的
-screen state；能丢的只是 downstream render wakeup 或已过期 snapshot response。history consumer
-可以异步、批量、spill，但 backlog 的基本单位应是 semantic transaction 或等价 durable event，
-不得回到 raw PTY replay 或第二套 vterm parser。
+分叉点只能在 core terminal ingest，不能在 TUI/render 层或 live snapshot 后再生成 history。
+live consumer 维护自己的 latest screen，但不能向 history 提供 logical-line truth；history consumer
+可以异步、批量、spill，但 backlog 的基本单位应是 compact semantic journal 或等价 durable event，
+不得回到 raw PTY parser fallback，也不得从 live rows/TUI rows 构造 history。
 
-resize 必须和 PTY bytes 进入同一个 sequence。否则 old-size pending bytes 被 new-size vterm
-解释时，会破坏普通 logical line wrap、screen-frame 固定宽度和 mutable frame resize 边界。
+resize 必须和 PTY bytes 按同一个顺序进入 live 与 history 两条链路。否则 old-size pending bytes
+被 new-size vterm 解释时，会破坏普通 logical line wrap、screen-frame 固定宽度和 mutable frame resize 边界。
 
-OSC/DA/DSR 等 terminal response 的 owner 也必须是 `SemanticTap`。历史 consumer 不得回写 PTY；
-live/history 两边也不能各自持有 response-capable vterm，避免双回写或漏回写。
+OSC/DA/DSR 等 terminal response 的 owner 必须只有一个：live `SurfaceTrack`。历史 consumer
+不得回写 PTY，避免双回写或漏回写。
 
 ## 4. 数据对象
 
@@ -298,12 +299,10 @@ transaction 必须包含：
 如果一次 raw write 同时包含多个 mode boundary，adapter 应拆分 transaction，或者 transaction 必须能表达
 边界的有序位置。history renderer 不能靠 bool flag 猜 raw order。
 
-R358 后，当前实现为了恢复 `c4ee7923` 的 live native screen 快路径，把 `live.SurfaceTrack`
-和 history semantic source 切开：live surface 不再返回 transaction，真实 PTY 输出通过
-history semantic worker 喂给 `TerminalSemanticSource`。这只是遗留实现形态，不是 R371 后的
-目标架构。后续必须迁回 single `SemanticTap`：vterm 只解析一次，live 只合并 downstream
-render wakeup，history 完整消费同一份 immutable semantic transaction，不能读取 live snapshot
-或 raw parser fallback。
+R396 后，`live.SurfaceTrack` 和 history semantic source 的切分是当前目标架构：live surface
+不返回 transaction，真实 PTY 输出同时进入 history semantic consumer 并产出 journal。该切分
+不能扩散成 history raw PTY parser fallback；history 仍必须消费 termx-vterm semantic pass，
+且不能读取 live snapshot 或 TUI rows。
 
 ### 5.2 HistorySemanticClassifier
 

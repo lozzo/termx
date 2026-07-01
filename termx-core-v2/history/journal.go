@@ -3,9 +3,9 @@ package history
 import vterm "github.com/lozzow/termx/termx-vterm/vterm"
 
 // HistoryJournalSource 描述 compact history journal 的真值入口。
-// 当前只允许来自 single SemanticTap/vterm 同一次 semantic pass 后的
+// 当前只允许来自 history SemanticTap/vterm semantic pass 后的
 // TerminalSemanticTransaction；失败条件是把 raw PTY、live snapshot diff、
-// TUI rows 或第二个 vterm consumer 伪造成 journal 来源。
+// TUI rows 或 live SurfaceTrack 伪造成 journal 来源。
 type HistoryJournalSource string
 
 const (
@@ -183,9 +183,9 @@ type HistoryJournalFrameEvent struct {
 // fan-out 阶段，而不是 SemanticTap live wake 热路径；生产代码不得依赖它。
 var HistoryJournalBuildHook func()
 
-// HistoryJournalFromTransaction 把 single SemanticTap 之后的一条 terminal semantic
-// transaction 裁剪成 history-specific compact journal。消息链路是
-// PTY/resize -> SemanticTap/vterm -> TerminalSemanticTransaction -> HistoryJournal；
+// HistoryJournalFromTransaction 把 history semantic consumer 之后的一条 terminal
+// semantic transaction 裁剪成 history-specific compact journal。消息链路是
+// PTY/resize -> history SemanticTap/vterm -> TerminalSemanticTransaction -> HistoryJournal；
 // 本函数不读取 tx.Raw、SourceDamage、live snapshot 或任何 renderer/TUI rows。
 func HistoryJournalFromTransaction(terminalID string, tx TerminalSemanticTransaction) HistoryJournal {
 	if HistoryJournalBuildHook != nil {

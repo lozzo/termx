@@ -1,7 +1,7 @@
 package history
 
 // HistoryJournalRenderer 把 compact semantic history journal 转成 store mutation。
-// domain owner 是 history；truth source 是 single SemanticTap 后的 HistoryJournal。
+// domain owner 是 history；truth source 是 history semantic consumer 后的 HistoryJournal。
 // R383 支持 ordinary line batch 与不依赖 frame payload 的 boundary state machine；
 // scroll-out proof 和 frame event 仍是 R384 后续边界，遇到时必须原子退出。
 type HistoryJournalRenderer interface {

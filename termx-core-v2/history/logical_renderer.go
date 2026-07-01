@@ -66,7 +66,7 @@ func (renderer *logicalRenderer) Apply(tx TerminalSemanticTransaction, decision 
 	}
 	var mutations []HistoryMutation
 	if decision.ClosePrimaryFrameBeforePrimaryReplace {
-		// 中文说明：single SemanticTap 可能把“关闭旧 screen app frame”和“发布新
+		// 中文说明：history semantic transaction 可能把“关闭旧 screen app frame”和“发布新
 		// primary repaint”放进同一 transaction。旧 current frame 先按 session
 		// boundary seal；随后同一 transaction 的 scroll-out proof 和 PrimaryFrame
 		// 继续作为新 session 的真值输入。
@@ -215,7 +215,7 @@ func (renderer *logicalRenderer) applyEvent(event HistorySemanticEvent, decision
 				return nil, err
 			}
 			if decision.ArchivePrimaryAfterPrimaryFrame {
-				// 中文说明：single SemanticTap 可能把 primary repaint 和紧随其后的
+				// 中文说明：history semantic transaction 可能把 primary repaint 和紧随其后的
 				// alt-enter 放进同一 transaction。primary frame 必须先成为 current，
 				// 再由 alt-enter 边界归档，不能留给后续 ordinary stream close。
 				archived, err := renderer.frames.ArchivePrimaryCurrent(SealReasonAltEnter)
