@@ -413,7 +413,7 @@ func (store *inMemoryHistoryStore) applyMutation(mutation HistoryMutation) error
 		if mutation.Line == nil {
 			return ErrHistoryInvalidMutation
 		}
-		line := cloneLogicalLine(*mutation.Line)
+		line := store.logicalLineForSealMutation(*mutation.Line)
 		line.Seal = SealStateSealed
 		store.lines[line.ID] = line
 		store.observeLineID(line.ID)
@@ -606,6 +606,11 @@ func (store *inMemoryHistoryStore) flushStorage() error {
 		if !ok {
 			continue
 		}
+		if store.payload != nil {
+			line.Residency = ResidencyFile
+			lines = append(lines, line)
+			continue
+		}
 		copyLine := cloneLogicalLine(line)
 		copyLine.Residency = ResidencyFile
 		lines = append(lines, copyLine)
@@ -627,6 +632,17 @@ func (store *inMemoryHistoryStore) flushStorage() error {
 	}
 	store.dirtyLines = make(map[LogicalLineID]struct{})
 	return nil
+}
+
+func (store *inMemoryHistoryStore) logicalLineForSealMutation(line LogicalLine) LogicalLine {
+	if store == nil || store.payload == nil {
+		return cloneLogicalLine(line)
+	}
+	// 中文说明：file-backed sealed payload 只在 Apply 当前事务内短暂驻留，
+	// 随后由 flushStorage 写入 backend 并从 store.lines 删除。此处接收
+	// renderer 已拥有的 logical-line cells，避免 100K 普通输出每行多复制一次；
+	// 无 payload backend 时仍 clone，保持内存 store 的 truth 隔离。
+	return line
 }
 
 func (store *inMemoryHistoryStore) mutableLineIDsForStorage() []LogicalLineID {
@@ -780,13 +796,17 @@ func (store *inMemoryHistoryStore) latestWindowFromProjection(req HistoryWindowR
 	if len(page) > 0 {
 		boundary.Cursor = cursorBeforeIndex(page[0], start, generation, req.Token, start > 0)
 	}
-	return store.windowFromProjectedRows(req, page, HistoryWindowReplace, boundary, generation), nil
+	window := store.windowFromProjectedRows(req, page, HistoryWindowReplace, boundary, generation)
+	window.LogicalTotal = projection.total
+	return window, nil
 }
 
 func (store *inMemoryHistoryStore) olderWindowFromProjection(req HistoryWindowRequest, projection projectionSnapshot, generation Generation) (HistoryWindow, error) {
 	limit := normalizedLimit(req.Limit)
 	if !req.Cursor.Valid {
-		return store.windowFromProjectedRows(req, nil, HistoryWindowPrepend, HistoryBoundary{Cursor: HistoryCursor{Generation: generation, Token: req.Token}}, generation), nil
+		window := store.windowFromProjectedRows(req, nil, HistoryWindowPrepend, HistoryBoundary{Cursor: HistoryCursor{Generation: generation, Token: req.Token}}, generation)
+		window.LogicalTotal = projection.total
+		return window, nil
 	}
 	end := req.Cursor.BeforeRowIndex
 	if end <= 0 || end > projection.total {
@@ -803,7 +823,9 @@ func (store *inMemoryHistoryStore) olderWindowFromProjection(req HistoryWindowRe
 	} else {
 		boundary.Cursor = HistoryCursor{Generation: generation, Token: req.Token}
 	}
-	return store.windowFromProjectedRows(req, page, HistoryWindowPrepend, boundary, generation), nil
+	window := store.windowFromProjectedRows(req, page, HistoryWindowPrepend, boundary, generation)
+	window.LogicalTotal = projection.total
+	return window, nil
 }
 
 func (store *inMemoryHistoryStore) oldestWindowFromProjection(req HistoryWindowRequest, projection projectionSnapshot, generation Generation) (HistoryWindow, error) {
@@ -817,7 +839,9 @@ func (store *inMemoryHistoryStore) oldestWindowFromProjection(req HistoryWindowR
 	if len(page) > 0 {
 		boundary.Cursor = HistoryCursor{Generation: generation, Token: req.Token}
 	}
-	return store.windowFromProjectedRows(req, page, HistoryWindowReplace, boundary, generation), nil
+	window := store.windowFromProjectedRows(req, page, HistoryWindowReplace, boundary, generation)
+	window.LogicalTotal = projection.total
+	return window, nil
 }
 
 func cursorBeforeIndex(row HistoryRow, beforeIndex int, generation Generation, token HistoryToken, valid bool) HistoryCursor {
@@ -1175,15 +1199,18 @@ func (store *inMemoryHistoryStore) snapshotAltFrame() *ScreenFrame {
 
 func (store *inMemoryHistoryStore) windowFromProjectedRows(req HistoryWindowRequest, rows []HistoryRow, op HistoryWindowOp, boundary HistoryBoundary, generation Generation) HistoryWindow {
 	return HistoryWindow{
-		TerminalID:   req.TerminalID,
-		Token:        req.Token,
-		Op:           op,
-		Cols:         req.Cols,
-		Rows:         cloneHistoryRows(rows),
-		Lines:        spansForRows(rows),
-		Generation:   generation,
-		Boundary:     boundary,
-		HasMore:      boundary.Cursor.Valid,
+		TerminalID: req.TerminalID,
+		Token:      req.Token,
+		Op:         op,
+		Cols:       req.Cols,
+		Rows:       cloneHistoryRows(rows),
+		Lines:      spansForRows(rows),
+		Generation: generation,
+		Boundary:   boundary,
+		HasMore:    boundary.Cursor.Valid,
+		// 中文说明：row-backed 模式的 rows 是完整 frozen/live projection，因此
+		// 默认 total 等于 rows 长度；file-backed compact projection 调用方会用
+		// projection.total 覆盖，避免把 page size 伪装成 history 总量。
 		LogicalTotal: len(rows),
 		Timestamp:    time.Now().UTC(),
 	}
@@ -1237,7 +1264,7 @@ func rowsFromTransientFrame(frame TransientFrame) []HistoryRow {
 
 func rowFromLogicalLine(line LogicalLine, segment HistorySegment, kind LineKind, committed bool, sessionID ScreenSessionID, frameID ScreenFrameID, fixed bool) HistoryRow {
 	return HistoryRow{
-		Cells:      cloneHistoryCells(line.Cells),
+		Cells:      lineCellsForProjection(line),
 		Kind:       kind,
 		Segment:    segment,
 		LineID:     line.ID,
@@ -1287,7 +1314,7 @@ func spansForRows(rows []HistoryRow) []HistoryLineSpan {
 func frameRowsFromDrafts(drafts []LogicalLineDraft) [][]Cell {
 	rows := make([][]Cell, 0, len(drafts))
 	for _, draft := range drafts {
-		rows = append(rows, cloneHistoryCells(draft.Line.Cells))
+		rows = append(rows, lineCellsForProjection(draft.Line))
 	}
 	return rows
 }

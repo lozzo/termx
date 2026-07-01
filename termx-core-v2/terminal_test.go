@@ -424,6 +424,31 @@ func TestR404TerminalJournalRendererAcceptsOpenLineAndBoundaryCommands(t *testin
 	}
 }
 
+func TestR407EstimatedHistoryMutationCountPreallocatesOrdinaryBatch(t *testing.T) {
+	journals := []history.HistoryJournal{{
+		TerminalID: "term-r407-estimate",
+		Seq:        1,
+		Source:     history.HistoryJournalSourceSemanticTapTransaction,
+		Items: []history.HistoryJournalItem{
+			{
+				Kind: history.HistoryJournalItemOrdinaryLineBatch,
+				Ordinary: &history.OrdinaryLineBatch{
+					Lines: []history.JournalLogicalLine{
+						{Cells: []history.Cell{{Text: "a", Width: 1}}},
+						{Cells: []history.Cell{{Text: "b", Width: 1}}},
+						{Cells: []history.Cell{{Text: "c", Width: 1}}},
+					},
+					Origin: history.HistoryJournalOriginOrdinaryPrimary,
+				},
+			},
+			{Kind: history.HistoryJournalItemBoundary, Boundary: &history.HistoryJournalBoundary{Kind: history.HistoryJournalBoundaryResize}},
+		},
+	}}
+	if got := estimatedHistoryMutationCount(journals); got < 10 {
+		t.Fatalf("ordinary history worker batch should preallocate seal/timeline mutations, got %d", got)
+	}
+}
+
 func TestR386TerminalJournalQueueGateAvoidsTransactionClassifierForPlainSealedBatch(t *testing.T) {
 	plain := history.HistoryJournal{
 		TerminalID: "term-r386-gate",

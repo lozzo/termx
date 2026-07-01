@@ -459,7 +459,7 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 	var historyTapQueue *terminalLiveIngestQueue
 	var historyWorker *terminalHistoryIngestQueue
 	if terminal.historyEnabled {
-		historyTapQueue = newTerminalLiveIngestQueue()
+		historyTapQueue = newTerminalHistoryTapIngestQueue()
 		terminal.setHistoryTapQueue(process, historyTapQueue)
 		startSeq := terminal.historyBacklogStartSeq()
 		historyWorker = newTerminalHistoryIngestQueue(startSeq)
@@ -926,7 +926,9 @@ func (terminal *Terminal) ingestHistoryJournals(journals []history.HistoryJourna
 }
 
 func (terminal *Terminal) applyHistoryJournalsLocked(journals []history.HistoryJournal) {
-	var merged history.HistoryMutationBatch
+	merged := history.HistoryMutationBatch{
+		Mutations: make([]history.HistoryMutation, 0, estimatedHistoryMutationCount(journals)),
+	}
 	for _, journal := range journals {
 		batch, err := terminal.journalRenderer.ApplyJournal(journal)
 		if err != nil {
@@ -948,6 +950,30 @@ func (terminal *Terminal) applyHistoryJournalsLocked(journals []history.HistoryJ
 	// 减少文件 backend 小事务和 storage flush 次数。这里不改变 history truth：
 	// authoritative logical-line/window/cursor 仍只由 HistoryStore.Apply 产生。
 	_ = terminal.historyStore.Apply(merged)
+}
+
+func estimatedHistoryMutationCount(journals []history.HistoryJournal) int {
+	count := 0
+	for _, journal := range journals {
+		for _, item := range journal.Items {
+			switch item.Kind {
+			case history.HistoryJournalItemOrdinaryLineBatch:
+				if item.Ordinary != nil {
+					count += len(item.Ordinary.Lines) * 2
+					if item.Ordinary.OpenUpdate != nil {
+						count++
+					}
+					count += len(item.Ordinary.Commands)
+				}
+			case history.HistoryJournalItemBoundary, history.HistoryJournalItemFrameEvent, history.HistoryJournalItemScrollOutProof:
+				count += 4
+			}
+		}
+	}
+	if count < len(journals) {
+		return len(journals)
+	}
+	return count
 }
 
 func (terminal *Terminal) enqueueOrApplyProcessHistoryJournal(result SemanticTapResult, queue *terminalHistoryIngestQueue, terminalID string) {

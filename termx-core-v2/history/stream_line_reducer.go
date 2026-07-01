@@ -1202,6 +1202,16 @@ func historyCellDisplayWidth(cell Cell) int {
 }
 
 func trimTrailingBlankCells(cells []Cell) []Cell {
+	cells = trimTrailingBlankCellsInPlace(cells)
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]Cell, len(cells))
+	copy(out, cells)
+	return out
+}
+
+func trimTrailingBlankCellsInPlace(cells []Cell) []Cell {
 	end := len(cells)
 	for end > 0 && isDefaultBlankCell(cells[end-1]) {
 		end--
@@ -1209,9 +1219,7 @@ func trimTrailingBlankCells(cells []Cell) []Cell {
 	if end == 0 {
 		return nil
 	}
-	out := make([]Cell, end)
-	copy(out, cells[:end])
-	return out
+	return cells[:end]
 }
 
 func isDefaultBlankCell(cell Cell) bool {
@@ -1247,6 +1255,17 @@ func cellsFromScrollOutProof(proof TerminalSemanticScrollOut) []Cell {
 	if len(proof.Runs) > 0 {
 		var cells []Cell
 		for _, run := range proof.Runs {
+			if isASCIIText(run.Text) {
+				style := historyStyleFromTerminal(run.Style)
+				for i := 0; i < len(run.Text); i++ {
+					cells = append(cells, Cell{
+						Text:  run.Text[i : i+1],
+						Width: 1,
+						Style: style,
+					})
+				}
+				continue
+			}
 			text := run.Text
 			for text != "" {
 				cluster, width := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
@@ -1267,6 +1286,104 @@ func cellsFromScrollOutProof(proof TerminalSemanticScrollOut) []Cell {
 		return trimTrailingBlankCells(cells)
 	}
 	return trimTrailingBlankCells(historyCellsFromTerminal(proof.Cells))
+}
+
+func cellsFromHistoryRuns(runs []CellRun) []Cell {
+	return trimTrailingBlankCellsInPlace(cellsFromHistoryRunsPreserveTrailing(runs))
+}
+
+func cellsFromHistoryRunsPreserveTrailing(runs []CellRun) []Cell {
+	if len(runs) == 0 {
+		return nil
+	}
+	var cells []Cell
+	for _, run := range runs {
+		if isASCIIText(run.Text) {
+			for i := 0; i < len(run.Text); i++ {
+				cells = append(cells, Cell{
+					Text:       run.Text[i : i+1],
+					Width:      1,
+					Style:      run.Style,
+					LinkURL:    run.LinkURL,
+					LinkParams: run.LinkParams,
+				})
+			}
+			continue
+		}
+		text := run.Text
+		for text != "" {
+			cluster, width := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
+			if cluster == "" {
+				break
+			}
+			text = text[len(cluster):]
+			if width <= 0 {
+				continue
+			}
+			cells = append(cells, Cell{
+				Text:       cluster,
+				Width:      width,
+				Style:      run.Style,
+				LinkURL:    run.LinkURL,
+				LinkParams: run.LinkParams,
+			})
+		}
+	}
+	return cells
+}
+
+func lineCellsForProjection(line LogicalLine) []Cell {
+	if len(line.Cells) > 0 {
+		return cloneHistoryCells(line.Cells)
+	}
+	return cellsFromHistoryRuns(line.Runs)
+}
+
+func isASCIIText(text string) bool {
+	for i := 0; i < len(text); i++ {
+		if text[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+func expandHistoryCellsForEditing(cells []Cell) []Cell {
+	if len(cells) == 0 {
+		return nil
+	}
+	var out []Cell
+	for _, cell := range cells {
+		if cell.Width <= 1 || cell.Text == "" {
+			out = append(out, cell)
+			continue
+		}
+		if isASCIIText(cell.Text) && len(cell.Text) == cell.Width {
+			for i := 0; i < len(cell.Text); i++ {
+				next := cell
+				next.Text = cell.Text[i : i+1]
+				next.Width = 1
+				out = append(out, next)
+			}
+			continue
+		}
+		text := cell.Text
+		for text != "" {
+			cluster, width := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
+			if cluster == "" {
+				break
+			}
+			text = text[len(cluster):]
+			if width <= 0 {
+				continue
+			}
+			next := cell
+			next.Text = cluster
+			next.Width = width
+			out = append(out, next)
+		}
+	}
+	return out
 }
 
 func maxInt(a int, b int) int {

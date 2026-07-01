@@ -81,6 +81,9 @@ func TestR385TerminalHistoryBacklogOnlyAcceptsSemanticTapJournals(t *testing.T) 
 	if !strings.Contains(terminalSource, "enqueueOrApplyProcessHistoryJournal(result, historyWorker, terminalID)") {
 		t.Fatal("terminal history semantic path must fan out tap result through journal backlog gate")
 	}
+	if !strings.Contains(terminalSource, "historyTapQueue = newTerminalHistoryTapIngestQueue()") {
+		t.Fatal("history semantic tap queue must use history-sized batches, not the live interactive batch limit")
+	}
 	if !strings.Contains(terminalSource, "history.HistoryJournalFromDecision") {
 		t.Fatal("terminal production path must build decision-aware compact HistoryJournal")
 	}

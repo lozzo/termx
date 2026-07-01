@@ -317,9 +317,10 @@ func (renderer *journalRenderer) sealOpenLine(reason SealReason) []HistoryMutati
 func (renderer *journalRenderer) sealJournalLine(line JournalLogicalLine, reason SealReason) []HistoryMutation {
 	logical := logicalLineTemplate(HistoryRecordOrdinaryLine)
 	logical.ID = renderer.ids.nextLogicalLineID()
-	logical.Cells = trimTrailingBlankCells(cloneHistoryCells(line.Cells))
+	logical.Cells = trimTrailingBlankCellsInPlace(line.Cells)
+	logical.Runs = cloneCellRuns(line.Runs)
 	logical.TailFill = cloneRowTailFill(line.TailFill)
-	if len(logical.Cells) == 0 {
+	if len(logical.Cells) == 0 && len(logical.Runs) == 0 {
 		return nil
 	}
 	return renderer.sealStandaloneLine(logical, reason, HistoryRecordOrdinaryLine)
@@ -328,6 +329,7 @@ func (renderer *journalRenderer) sealJournalLine(line JournalLogicalLine, reason
 func (renderer *journalRenderer) sealStandaloneLine(line LogicalLine, reason SealReason, kind HistoryRecordKind) []HistoryMutation {
 	line.Seal = SealStateSealed
 	line.Kind = string(kind)
+	lineCopy := line
 	record := HistoryRecord{
 		ID:      renderer.ids.nextHistoryRecordID(),
 		Seq:     renderer.ids.nextTimelineSeq(),
@@ -335,20 +337,17 @@ func (renderer *journalRenderer) sealStandaloneLine(line LogicalLine, reason Sea
 		LineIDs: []LogicalLineID{line.ID},
 		Reason:  reason,
 	}
-	lineCopy := cloneLogicalLine(line)
 	recordCopy := cloneHistoryRecord(record)
 	return []HistoryMutation{
 		{
-			Kind:    HistoryMutationSealLine,
-			Line:    &lineCopy,
-			LineIDs: []LogicalLineID{line.ID},
-			Reason:  reason,
+			Kind:   HistoryMutationSealLine,
+			Line:   &lineCopy,
+			Reason: reason,
 		},
 		{
-			Kind:    HistoryMutationAppendTimelineRecord,
-			Record:  &recordCopy,
-			LineIDs: []LogicalLineID{line.ID},
-			Reason:  reason,
+			Kind:   HistoryMutationAppendTimelineRecord,
+			Record: &recordCopy,
+			Reason: reason,
 		},
 	}
 }
@@ -393,6 +392,8 @@ func terminalOpFromJournalCommand(command JournalOpenLineCommand) (TerminalSeman
 		return TerminalSemanticOp{Code: vterm.ScreenOpControl, Control: "cud", Mode: command.Delta}, true
 	case JournalOpenLineCommandEraseLine:
 		return TerminalSemanticOp{Code: vterm.ScreenOpControl, Control: "el", Row: command.Row, Col: command.Col, Mode: command.Mode}, true
+	case JournalOpenLineCommandSoftWrap:
+		return TerminalSemanticOp{Code: vterm.ScreenOpControl, Control: "soft-wrap", Row: command.Row, Col: command.Col, TailFill: terminalTailFillFromHistory(command.TailFill)}, true
 	case JournalOpenLineCommandSealLine:
 		return TerminalSemanticOp{Code: vterm.ScreenOpControl, Control: "lf", TailFill: terminalTailFillFromHistory(command.TailFill)}, true
 	default:

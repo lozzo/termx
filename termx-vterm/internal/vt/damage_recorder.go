@@ -116,7 +116,16 @@ func (r *screenDamageRecorder) recordTextSpan(x, y int, cells []uv.Cell) {
 	if r == nil || r.scrollbackOnly || len(cells) == 0 {
 		return
 	}
-	r.record(TextDamage{X: x, Y: y, Cells: cells})
+	damage := TextDamage{X: x, Y: y}
+	if text, ok := compactASCIIPlainLine(cells); ok {
+		damage.ASCII = true
+		damage.Text = text
+	} else if runs, ok := compactASCIIStyleRuns(cells); ok && len(runs) > 0 {
+		damage.Runs = runs
+	} else {
+		damage.Cells = cells
+	}
+	r.record(damage)
 }
 
 func (r *screenDamageRecorder) recordSpanCell(x, y int, cell uv.Cell) {
@@ -218,7 +227,11 @@ func (r *screenDamageRecorder) recordSpan(span SpanDamage) {
 }
 
 func (r *screenDamageRecorder) recordText(text TextDamage) {
-	if r == nil || r.scrollbackOnly || len(text.Cells) == 0 {
+	if r == nil || r.scrollbackOnly || (len(text.Cells) == 0 && len(text.Runs) == 0 && text.Text == "") {
+		return
+	}
+	if len(text.Runs) > 0 || text.Text != "" {
+		r.damages = append(r.damages, text)
 		return
 	}
 	start := len(r.textCells)
@@ -258,9 +271,16 @@ func (r *screenDamageRecorder) snapshot() []Damage {
 			continue
 		}
 		if text, ok := damage.(TextDamage); ok {
-			cells := make([]uv.Cell, len(text.Cells))
-			copy(cells, text.Cells)
-			text.Cells = cells
+			if len(text.Cells) > 0 {
+				cells := make([]uv.Cell, len(text.Cells))
+				copy(cells, text.Cells)
+				text.Cells = cells
+			}
+			if len(text.Runs) > 0 {
+				runs := make([]ScrollbackRun, len(text.Runs))
+				copy(runs, text.Runs)
+				text.Runs = runs
+			}
 			out[i] = text
 			continue
 		}

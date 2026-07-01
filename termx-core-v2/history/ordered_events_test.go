@@ -340,7 +340,7 @@ func opLabel(op *TerminalSemanticOp) string {
 	}
 	switch op.Code {
 	case vterm.ScreenOpWriteSpan:
-		return "write:" + intString(op.Row) + ":" + intString(op.Col) + ":" + semanticCellsText(op.Cells)
+		return "write:" + intString(op.Row) + ":" + intString(op.Col) + ":" + semanticOpText(op)
 	case vterm.ScreenOpControl:
 		if op.Mode != 0 {
 			return "control:" + op.Control + ":" + intString(op.Mode)
@@ -355,6 +355,20 @@ func opLabel(op *TerminalSemanticOp) string {
 	default:
 		return "op"
 	}
+}
+
+func semanticOpText(op *TerminalSemanticOp) string {
+	if op == nil {
+		return ""
+	}
+	if len(op.Runs) > 0 {
+		var out string
+		for _, run := range op.Runs {
+			out += run.Text
+		}
+		return out
+	}
+	return semanticCellsText(op.Cells)
 }
 
 func modeBoundaryLabel(prefix string, op *TerminalSemanticOp) string {

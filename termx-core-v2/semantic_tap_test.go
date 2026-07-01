@@ -166,10 +166,10 @@ func TestR372SemanticTapTransactionHandoffIsDeepCopied(t *testing.T) {
 		t.Fatalf("apply PTY write: %v", err)
 	}
 	first := result.Transaction()
-	if len(first.Ops) == 0 || len(first.Ops[1].Cells) == 0 || first.PrimaryFrame == nil || len(first.PrimaryFrame.Rows) == 0 || len(first.PrimaryFrame.Rows[0]) == 0 || len(first.SourceDamage.DirectDamageTouchedRows) == 0 {
+	if len(first.Ops) == 0 || len(first.Ops[1].Runs) == 0 || first.PrimaryFrame == nil || len(first.PrimaryFrame.Rows) == 0 || len(first.PrimaryFrame.Rows[0]) == 0 || len(first.SourceDamage.DirectDamageTouchedRows) == 0 {
 		t.Fatalf("expected transaction with mutable-looking slices for copy test, got %#v", first)
 	}
-	first.Ops[1].Cells[0].Content = "X"
+	first.Ops[1].Runs[0].Text = "X"
 	first.PrimaryFrame.Rows[0][0].Content = "Y"
 	first.SourceDamage.DirectDamageTouchedRows[0] = 99
 
@@ -177,7 +177,7 @@ func TestR372SemanticTapTransactionHandoffIsDeepCopied(t *testing.T) {
 	if got := semanticTapFrameText(second.PrimaryFrame); strings.Contains(got, "Y") {
 		t.Fatalf("mutating one transaction consumer must not affect another, got frame %q", got)
 	}
-	if second.Ops[1].Cells[0].Content == "X" || second.SourceDamage.DirectDamageTouchedRows[0] == 99 {
+	if second.Ops[1].Runs[0].Text == "X" || second.SourceDamage.DirectDamageTouchedRows[0] == 99 {
 		t.Fatalf("transaction handoff should deep-copy op/source damage slices, got tx=%#v", second)
 	}
 }
@@ -256,11 +256,70 @@ func TestR386SemanticTapOrdinaryStressJournalHandoffAvoidsFullTransactionHotPath
 	if got := len(journal.Items[0].Ordinary.Lines); got != 200 {
 		t.Fatalf("ordinary stress journal should batch sealed lines, got %d", got)
 	}
-	journal.Items[0].Ordinary.Lines[0].Cells[0].Text = "mutated"
+	if got := len(journal.Items[0].Ordinary.Commands); got != 0 {
+		t.Fatalf("linear ordinary stress must not replay per-op commands, got %d", got)
+	}
+	if len(journal.Items[0].Ordinary.Lines[0].Runs) > 0 {
+		journal.Items[0].Ordinary.Lines[0].Runs[0].Text = "mutated"
+	} else {
+		journal.Items[0].Ordinary.Lines[0].Cells[0].Text = "mutated"
+	}
 	again := result.HistoryJournal()
-	if got := again.Items[0].Ordinary.Lines[0].Cells[0].Text; got == "mutated" {
+	got := ""
+	if len(again.Items[0].Ordinary.Lines[0].Runs) > 0 {
+		got = again.Items[0].Ordinary.Lines[0].Runs[0].Text
+	} else {
+		got = again.Items[0].Ordinary.Lines[0].Cells[0].Text
+	}
+	if got == "mutated" {
 		t.Fatalf("journal handoff must deep-copy payload per consumer")
 	}
+}
+
+func TestR407ChunkedStressJournalDoesNotCarryOpenUpdatesForCompleteLines(t *testing.T) {
+	tap := NewSemanticTap("term-r407-chunked", Size{Cols: 120, Rows: 30}, nil)
+	payload, _ := r407OrdinaryStressPayload(1000)
+	remaining := payload
+	var sealedLines int
+	var openUpdates int
+	var journals int
+	for len(remaining) > 0 {
+		head, tail := splitLiveIngestPayload(remaining, terminalHistoryTapIngestBatchMaxBytes)
+		result, err := tap.ApplyPTYWrite([]byte(head))
+		if err != nil {
+			t.Fatalf("tap write: %v", err)
+		}
+		journals++
+		journal := result.HistoryJournal()
+		for itemIndex, item := range journal.Items {
+			if item.Ordinary == nil {
+				continue
+			}
+			sealedLines += len(item.Ordinary.Lines)
+			if len(item.Ordinary.Lines) > 0 && len(item.Ordinary.Commands) > 0 {
+				t.Fatalf("complete-line stress batch must not replay commands, journal=%d item=%d lines=%d commands=%d open=%v commandKinds=%v", journals, itemIndex, len(item.Ordinary.Lines), len(item.Ordinary.Commands), item.Ordinary.OpenUpdate != nil, r407CommandKinds(item.Ordinary.Commands))
+			}
+			if item.Ordinary.OpenUpdate != nil {
+				openUpdates++
+			}
+		}
+		remaining = tail
+	}
+	if sealedLines != 1000 {
+		t.Fatalf("chunked stress should produce one sealed logical line per input line, got %d journals=%d openUpdates=%d", sealedLines, journals, openUpdates)
+	}
+}
+
+func r407CommandKinds(commands []history.JournalOpenLineCommand) []string {
+	out := make([]string, 0, minInt(len(commands), 12))
+	for index, command := range commands {
+		if index >= 12 {
+			out = append(out, "...")
+			break
+		}
+		out = append(out, string(command.Kind))
+	}
+	return out
 }
 
 func TestR389SemanticTapBuildsHistoryJournalOnlyOnHistoryFanout(t *testing.T) {

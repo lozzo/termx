@@ -40,20 +40,24 @@ func TestR390SemanticSourceTransfersDamageOpsWithoutCrossWriteAlias(t *testing.T
 	if err != nil {
 		t.Fatalf("apply first write: %v", err)
 	}
-	if len(first.Ops) == 0 || len(first.Ops[0].Cells) == 0 {
+	if len(first.Ops) == 0 || (len(first.Ops[0].Cells) == 0 && len(first.Ops[0].Runs) == 0) {
 		t.Fatalf("expected first write to expose ordered ops, got %#v", first)
 	}
-	first.Ops[0].Cells[0].Content = "X"
+	if len(first.Ops[0].Runs) > 0 {
+		first.Ops[0].Runs[0].Text = "X"
+	} else {
+		first.Ops[0].Cells[0].Content = "X"
+	}
 
 	second, err := source.ApplyPTYWrite([]byte("second line\r\n"))
 	if err != nil {
 		t.Fatalf("apply second write: %v", err)
 	}
-	if len(second.Ops) == 0 || len(second.Ops[0].Cells) == 0 {
+	if len(second.Ops) == 0 || (len(second.Ops[0].Cells) == 0 && len(second.Ops[0].Runs) == 0) {
 		t.Fatalf("expected second write to expose ordered ops, got %#v", second)
 	}
-	if got := second.Ops[0].Cells[0].Content; got == "X" {
-		t.Fatalf("mutating one transaction must not alias future semantic damage payload, got %#v", second.Ops[0].Cells)
+	if got := semanticOpTextForSourceTest(second.Ops[0]); got == "X" {
+		t.Fatalf("mutating one transaction must not alias future semantic damage payload, got %#v", second.Ops[0])
 	}
 }
 
@@ -231,4 +235,15 @@ func cellsTextForSemanticTest(cells []TerminalSemanticCell) string {
 		out += cell.Content
 	}
 	return out
+}
+
+func semanticOpTextForSourceTest(op DamageOp) string {
+	var out string
+	for _, run := range op.Runs {
+		out += run.Text
+	}
+	for _, cell := range op.Cells {
+		out += cell.Content
+	}
+	return strings.TrimRight(out, " ")
 }

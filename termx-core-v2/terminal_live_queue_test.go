@@ -108,6 +108,36 @@ func TestTerminalLiveIngestQueueUsesInteractiveBatchLimit(t *testing.T) {
 	close(queue.done)
 }
 
+func TestR407HistoryTapQueueUsesLargeSemanticBatchWithoutChangingLiveLimit(t *testing.T) {
+	if terminalHistoryTapIngestBatchMaxBytes <= terminalLiveIngestBatchMaxBytes {
+		t.Fatalf("history tap batch must be larger than live interactive batch, history=%d live=%d", terminalHistoryTapIngestBatchMaxBytes, terminalLiveIngestBatchMaxBytes)
+	}
+	liveQueue := newTerminalLiveIngestQueue()
+	historyQueue := newTerminalHistoryTapIngestQueue()
+	chunk := strings.Repeat("x", terminalLiveIngestBatchMaxBytes)
+	for i := 0; i < 8; i++ {
+		if !liveQueue.Enqueue(chunk) || !historyQueue.Enqueue(chunk) {
+			t.Fatal("expected enqueue before close")
+		}
+	}
+	liveBatch, ok := liveQueue.nextBatch()
+	if !ok {
+		t.Fatal("expected live batch")
+	}
+	if got := liveIngestBatchBytes(liveBatch); got > terminalLiveIngestBatchMaxBytes {
+		t.Fatalf("live queue must keep interactive batch limit, got %d", got)
+	}
+	historyBatch, ok := historyQueue.nextBatch()
+	if !ok {
+		t.Fatal("expected history tap batch")
+	}
+	if got := liveIngestBatchBytes(historyBatch); got != len(chunk)*8 {
+		t.Fatalf("history tap queue should coalesce semantic backlog into a larger batch, got %d want %d", got, len(chunk)*8)
+	}
+	close(liveQueue.done)
+	close(historyQueue.done)
+}
+
 func TestTerminalLiveIngestQueueSplitsSinglePTYReadChunk(t *testing.T) {
 	if ptyReadBufferBytes <= terminalLiveIngestBatchMaxBytes {
 		t.Fatalf("test requires PTY read chunk larger than live batch, got pty=%d batch=%d", ptyReadBufferBytes, terminalLiveIngestBatchMaxBytes)

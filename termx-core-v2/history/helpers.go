@@ -2,11 +2,21 @@ package history
 
 func cloneLogicalLine(line LogicalLine) LogicalLine {
 	line.Cells = cloneHistoryCells(line.Cells)
+	line.Runs = cloneCellRuns(line.Runs)
 	if line.TailFill != nil {
 		fill := *line.TailFill
 		line.TailFill = &fill
 	}
 	return line
+}
+
+func cloneCellRuns(runs []CellRun) []CellRun {
+	if len(runs) == 0 {
+		return nil
+	}
+	out := make([]CellRun, len(runs))
+	copy(out, runs)
+	return out
 }
 
 func cloneHistoryCells(cells []Cell) []Cell {

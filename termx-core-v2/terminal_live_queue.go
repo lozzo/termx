@@ -13,6 +13,7 @@ import (
 // core 仍只维护 latest screen，不承诺补放中间 frame；这个上限只防止 PTY
 // 高频输出被攒成超大块后才推进 live 或 history semantic consumer。
 const terminalLiveIngestBatchMaxBytes = 16 * 1024
+const terminalHistoryTapIngestBatchMaxBytes = 1024 * 1024
 
 const terminalLiveIngestQueuePageSize = 256
 
@@ -24,16 +25,17 @@ const terminalLiveIngestQueuePageSize = 256
 // 很多 PTY payload；reader 给 history tap 入队不能在锁内做大 slice 扩容或前移复制，
 // 否则会间接拖住后续 PTY read，从而影响 live SurfaceTrack 看到最新输出。
 type terminalLiveIngestQueue struct {
-	mu           sync.Mutex
-	cond         *sync.Cond
-	head         *terminalLiveIngestPage
-	tail         *terminalLiveIngestPage
-	pendingCount int
-	closed       bool
-	enqueuedSeq  uint64
-	completedSeq uint64
-	flushWait    map[uint64][]chan struct{}
-	done         chan struct{}
+	mu            sync.Mutex
+	cond          *sync.Cond
+	head          *terminalLiveIngestPage
+	tail          *terminalLiveIngestPage
+	pendingCount  int
+	closed        bool
+	enqueuedSeq   uint64
+	completedSeq  uint64
+	flushWait     map[uint64][]chan struct{}
+	batchMaxBytes int
+	done          chan struct{}
 }
 
 type terminalLiveIngestItem struct {
@@ -49,7 +51,18 @@ type terminalLiveIngestPage struct {
 }
 
 func newTerminalLiveIngestQueue() *terminalLiveIngestQueue {
-	queue := &terminalLiveIngestQueue{done: make(chan struct{})}
+	return newTerminalLiveIngestQueueWithBatchLimit(terminalLiveIngestBatchMaxBytes)
+}
+
+func newTerminalHistoryTapIngestQueue() *terminalLiveIngestQueue {
+	return newTerminalLiveIngestQueueWithBatchLimit(terminalHistoryTapIngestBatchMaxBytes)
+}
+
+func newTerminalLiveIngestQueueWithBatchLimit(batchMaxBytes int) *terminalLiveIngestQueue {
+	if batchMaxBytes <= 0 {
+		batchMaxBytes = terminalLiveIngestBatchMaxBytes
+	}
+	queue := &terminalLiveIngestQueue{batchMaxBytes: batchMaxBytes, done: make(chan struct{})}
 	queue.cond = sync.NewCond(&queue.mu)
 	return queue
 }
@@ -150,12 +163,12 @@ func (queue *terminalLiveIngestQueue) nextBatchWithSeq() ([]string, uint64, bool
 	for page, index := queue.head, 0; page != nil && count < queue.pendingLenLocked(); {
 		item := &page.items[page.start+index]
 		nextBytes := len(item.text)
-		if bytes == 0 && nextBytes > terminalLiveIngestBatchMaxBytes {
-			head, tail := splitLiveIngestPayload(item.text, terminalLiveIngestBatchMaxBytes)
+		if bytes == 0 && nextBytes > queue.batchMaxBytes {
+			head, tail := splitLiveIngestPayload(item.text, queue.batchMaxBytes)
 			item.text = tail
 			return []string{head}, 0, true
 		}
-		if count > 0 && bytes+nextBytes > terminalLiveIngestBatchMaxBytes {
+		if count > 0 && bytes+nextBytes > queue.batchMaxBytes {
 			break
 		}
 		bytes += nextBytes

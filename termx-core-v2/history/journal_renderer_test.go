@@ -2,6 +2,7 @@ package history
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -42,6 +43,67 @@ func TestR382JournalRendererBatchesOrdinaryLinesWithoutPerOpReducer(t *testing.T
 	}
 	if got := strings.Join(rowTexts(window.Rows), "|"); got != "line-0997|line-0998|line-0999" {
 		t.Fatalf("journal reducer should preserve latest ordinary history, got %q", got)
+	}
+}
+
+func TestR407JournalRendererOrdinarySealPathDoesNotCloneOwnedCells(t *testing.T) {
+	source, err := os.ReadFile("journal_renderer.go")
+	if err != nil {
+		t.Fatalf("read journal renderer source: %v", err)
+	}
+	sealJournalLine := sourceFunctionBody(t, string(source), "func (renderer *journalRenderer) sealJournalLine")
+	for _, forbidden := range []string{"cloneHistoryCells", "trimTrailingBlankCells("} {
+		if strings.Contains(sealJournalLine, forbidden) {
+			t.Fatalf("ordinary journal sealed-line path must use queue-owned cells without extra clone: %s", forbidden)
+		}
+	}
+	if !strings.Contains(sealJournalLine, "trimTrailingBlankCellsInPlace") {
+		t.Fatal("ordinary journal sealed-line path should trim queue-owned cells in place")
+	}
+	sealStandaloneLine := sourceFunctionBody(t, string(source), "func (renderer *journalRenderer) sealStandaloneLine")
+	if strings.Contains(sealStandaloneLine, "cloneLogicalLine(line)") {
+		t.Fatal("ordinary journal standalone seal must not clone logical line before store Apply")
+	}
+}
+
+func TestR407JournalRendererKeepsTrailingSpaceTrimSemantics(t *testing.T) {
+	renderer := NewHistoryJournalRenderer()
+	journal := HistoryJournal{
+		TerminalID: "term-r407-trim",
+		Seq:        1,
+		Size:       TerminalSemanticSize{Cols: 20, Rows: 5},
+		Source:     HistoryJournalSourceSemanticTapTransaction,
+		Items: []HistoryJournalItem{{
+			Kind: HistoryJournalItemOrdinaryLineBatch,
+			Ordinary: &OrdinaryLineBatch{
+				Lines: []JournalLogicalLine{{Cells: []Cell{
+					{Text: "x", Width: 1},
+					{Text: " ", Width: 1},
+				}}},
+				Origin: HistoryJournalOriginOrdinaryPrimary,
+			},
+		}},
+	}
+	batch, err := renderer.ApplyJournal(journal)
+	if err != nil {
+		t.Fatalf("apply journal: %v", err)
+	}
+	if len(batch.Mutations) != 2 {
+		t.Fatalf("expected seal+timeline mutations, got %#v", batch.Mutations)
+	}
+	if len(batch.Mutations[0].LineIDs) != 0 || len(batch.Mutations[1].LineIDs) != 0 || len(batch.Mutations[1].Record.LineIDs) != 1 {
+		t.Fatalf("ordinary journal mutations should avoid duplicate LineIDs slices and keep record ids, mutations=%#v", batch.Mutations)
+	}
+	store := NewInMemoryHistoryStore("term-r407-trim")
+	if err := store.Apply(batch); err != nil {
+		t.Fatalf("apply store: %v", err)
+	}
+	window, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-r407-trim", Mode: HistoryWindowModeLatest, Cols: 20, Limit: 1})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := strings.Join(rowTexts(window.Rows), "|"); got != "x" {
+		t.Fatalf("ordinary sealed line should keep trailing blank trim semantics, got %q", got)
 	}
 }
 

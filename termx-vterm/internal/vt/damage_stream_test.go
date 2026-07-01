@@ -23,7 +23,7 @@ func TestEmulatorWriteWithDamageCoalescesPrintableRun(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected text semantic damage, got %#v", damages)
 	}
-	if text.X != 0 || text.Y != 0 || len(text.Cells) != 3 {
+	if text.X != 0 || text.Y != 0 || text.Text != "abc" || !text.ASCII || len(text.Cells) != 0 || len(text.Runs) != 0 {
 		t.Fatalf("unexpected text semantic damage: %#v", text)
 	}
 }

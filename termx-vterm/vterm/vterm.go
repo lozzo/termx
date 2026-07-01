@@ -3234,11 +3234,11 @@ func (v *VTerm) semanticControlOpsFromCharmVTDamagesLocked(damages []charmvt.Dam
 	for _, raw := range damages {
 		switch d := raw.(type) {
 		case charmvt.TextDamage:
-			if len(d.Cells) == 0 {
+			if len(d.Cells) == 0 && len(d.Runs) == 0 && d.Text == "" {
 				continue
 			}
-			cells := uvCellsToVTermDamageCells(v, d.Cells)
-			if len(cells) == 0 {
+			cells, runs := v.textDamagePayloadLocked(d)
+			if len(cells) == 0 && len(runs) == 0 {
 				continue
 			}
 			ops = append(ops, DamageOp{
@@ -3246,8 +3246,9 @@ func (v *VTerm) semanticControlOpsFromCharmVTDamagesLocked(damages []charmvt.Dam
 				Row:   d.Y,
 				Col:   maxInt(0, d.X),
 				Cells: cells,
+				Runs:  runs,
 			})
-			recordSemanticTailFill(tailRows, d.X, d.Y, cells)
+			recordSemanticTailFillForPayload(tailRows, d.X, d.Y, cells, runs)
 		case charmvt.ControlDamage:
 			if d.Kind == "" {
 				continue
@@ -3284,7 +3285,36 @@ func (v *VTerm) semanticControlOpsFromCharmVTDamagesLocked(damages []charmvt.Dam
 }
 
 func recordSemanticTailFill(rows map[int]*CellStyle, x int, y int, cells []Cell) {
+	recordSemanticTailFillForPayload(rows, x, y, cells, nil)
+}
+
+func recordSemanticTailFillForPayload(rows map[int]*CellStyle, x int, y int, cells []Cell, runs []CellRun) {
 	if rows == nil || len(cells) == 0 {
+		if len(runs) == 0 {
+			return
+		}
+		var lastStyled *CellStyle
+		width := 0
+		for _, run := range runs {
+			if run.Text == "" {
+				continue
+			}
+			width += len(run.Text)
+			if run.Style.BG != "" && run.Style.FG == "" && !run.Style.Bold && !run.Style.Italic && !run.Style.Underline && !run.Style.Blink && !run.Style.Reverse && !run.Style.Strikethrough {
+				cloned := CellStyle{BG: run.Style.BG}
+				lastStyled = &cloned
+				continue
+			}
+			lastStyled = nil
+		}
+		if width <= 0 {
+			return
+		}
+		if lastStyled != nil {
+			rows[y] = lastStyled
+			return
+		}
+		delete(rows, y)
 		return
 	}
 	width := 0
@@ -4117,6 +4147,16 @@ func scrollbackRunsToVTermRuns(v *VTerm, runs []charmvt.ScrollbackRun) []CellRun
 		out = append(out, CellRun{Style: v.convertStyle(run.Style), Text: run.Text})
 	}
 	return out
+}
+
+func (v *VTerm) textDamagePayloadLocked(damage charmvt.TextDamage) ([]Cell, []CellRun) {
+	if damage.Text != "" {
+		return nil, asciiTextToVTermRuns(damage.Text)
+	}
+	if len(damage.Runs) > 0 {
+		return nil, scrollbackRunsToVTermRuns(v, damage.Runs)
+	}
+	return uvCellsToVTermDamageCells(v, damage.Cells), nil
 }
 
 func detectScreenScrollShift(before, after []rowFingerprint) int {

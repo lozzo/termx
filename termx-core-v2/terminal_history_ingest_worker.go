@@ -8,6 +8,7 @@ import (
 )
 
 const terminalHistoryIngestBatchMaxJournals = 1024
+const terminalHistoryIngestQueuePageSize = 256
 
 // terminalHistoryIngestQueue 是 SemanticTap 之后的 compact history journal backlog。
 // domain owner 是 core terminal ingest：queue 只接收同一次 semantic pass 裁剪出的
@@ -17,7 +18,9 @@ const terminalHistoryIngestBatchMaxJournals = 1024
 type terminalHistoryIngestQueue struct {
 	mu         sync.Mutex
 	cond       *sync.Cond
-	pending    []terminalHistoryIngestItem
+	head       *terminalHistoryIngestPage
+	tail       *terminalHistoryIngestPage
+	pendingLen int
 	targetSeq  uint64
 	appliedSeq uint64
 	waiters    map[uint64][]chan struct{}
@@ -35,6 +38,13 @@ type terminalHistoryIngestItem struct {
 	journal       history.HistoryJournal
 	seq           uint64
 	decisionFence bool
+}
+
+type terminalHistoryIngestPage struct {
+	items [terminalHistoryIngestQueuePageSize]terminalHistoryIngestItem
+	start int
+	end   int
+	next  *terminalHistoryIngestPage
 }
 
 func newTerminalHistoryIngestQueue(startSeq uint64) *terminalHistoryIngestQueue {
@@ -55,7 +65,7 @@ func (queue *terminalHistoryIngestQueue) Enqueue(journal history.HistoryJournal)
 	}
 	queue.targetSeq++
 	decisionFence := terminalHistoryJournalRequiresDecisionFence(journal)
-	queue.pending = append(queue.pending, terminalHistoryIngestItem{
+	queue.pushPendingLocked(terminalHistoryIngestItem{
 		journal:       history.CloneHistoryJournal(journal),
 		seq:           queue.targetSeq,
 		decisionFence: decisionFence,
@@ -154,22 +164,19 @@ func terminalHistoryIngestBatchJournals(batch []terminalHistoryIngestItem) []his
 func (queue *terminalHistoryIngestQueue) nextBatch() ([]terminalHistoryIngestItem, bool) {
 	queue.mu.Lock()
 	defer queue.mu.Unlock()
-	for len(queue.pending) == 0 && !queue.closed {
+	for queue.pendingLen == 0 && !queue.closed {
 		queue.cond.Wait()
 	}
-	if len(queue.pending) == 0 && queue.closed {
+	if queue.pendingLen == 0 && queue.closed {
 		return nil, false
 	}
-	count := 0
-	for count < len(queue.pending) {
-		if count > 0 && count >= terminalHistoryIngestBatchMaxJournals {
-			break
-		}
-		count++
+	count := queue.pendingLen
+	if count > terminalHistoryIngestBatchMaxJournals {
+		count = terminalHistoryIngestBatchMaxJournals
 	}
-	batch := queue.cloneBatchLocked(queue.pending[:count])
+	batch := queue.pendingBatchLocked(count)
 	queue.dropPendingPrefixLocked(count)
-	if len(queue.pending) > 0 {
+	if queue.pendingLen > 0 {
 		queue.cond.Signal()
 	}
 	queue.inFlight = true
@@ -177,13 +184,16 @@ func (queue *terminalHistoryIngestQueue) nextBatch() ([]terminalHistoryIngestIte
 	return batch, true
 }
 
-func (queue *terminalHistoryIngestQueue) cloneBatchLocked(items []terminalHistoryIngestItem) []terminalHistoryIngestItem {
-	if len(items) == 0 {
+func (queue *terminalHistoryIngestQueue) pendingBatchLocked(count int) []terminalHistoryIngestItem {
+	if count <= 0 {
 		return nil
 	}
-	batch := make([]terminalHistoryIngestItem, len(items))
-	for i, item := range items {
-		batch[i] = item
+	batch := make([]terminalHistoryIngestItem, 0, count)
+	for page, remaining := queue.head, count; page != nil && remaining > 0; page = page.next {
+		for index := page.start; index < page.end && remaining > 0; index++ {
+			batch = append(batch, page.items[index])
+			remaining--
+		}
 	}
 	return batch
 }
@@ -219,18 +229,68 @@ func (queue *terminalHistoryIngestQueue) dropPendingPrefixLocked(count int) {
 	if count <= 0 {
 		return
 	}
-	remaining := len(queue.pending) - count
-	copy(queue.pending, queue.pending[count:])
-	for i := remaining; i < len(queue.pending); i++ {
-		queue.pending[i] = terminalHistoryIngestItem{}
+	for count > 0 && queue.head != nil {
+		page := queue.head
+		available := page.end - page.start
+		if available <= 0 {
+			queue.head = page.next
+			if queue.head == nil {
+				queue.tail = nil
+			}
+			continue
+		}
+		take := count
+		if take > available {
+			take = available
+		}
+		for index := 0; index < take; index++ {
+			page.items[page.start+index] = terminalHistoryIngestItem{}
+		}
+		page.start += take
+		queue.pendingLen -= take
+		count -= take
+		if page.start == page.end {
+			queue.head = page.next
+			if queue.head == nil {
+				queue.tail = nil
+			}
+		}
 	}
-	if remaining == 0 {
-		queue.pending = nil
+	if queue.pendingLen <= 0 {
+		queue.pendingLen = 0
+		queue.head = nil
+		queue.tail = nil
 		queue.pendingDecisionFence = false
 		return
 	}
-	queue.pending = queue.pending[:remaining]
-	queue.pendingDecisionFence = terminalHistoryIngestBatchRequiresDecisionFence(queue.pending)
+	queue.pendingDecisionFence = queue.pendingRequiresDecisionFenceLocked()
+}
+
+func (queue *terminalHistoryIngestQueue) pushPendingLocked(item terminalHistoryIngestItem) {
+	if queue.tail == nil || queue.tail.end == len(queue.tail.items) {
+		page := &terminalHistoryIngestPage{}
+		if queue.tail == nil {
+			queue.head = page
+			queue.tail = page
+		} else {
+			queue.tail.next = page
+			queue.tail = page
+		}
+	}
+	queue.tail.items[queue.tail.end] = item
+	queue.tail.end++
+	queue.pendingLen++
+}
+
+func (queue *terminalHistoryIngestQueue) pendingRequiresDecisionFenceLocked() bool {
+	for page := queue.head; page != nil; page = page.next {
+		for index := page.start; index < page.end; index++ {
+			if page.items[index].decisionFence {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (queue *terminalHistoryIngestQueue) NeedsClassifierFlush(next history.HistoryJournal) bool {
@@ -298,7 +358,7 @@ func (queue *terminalHistoryIngestQueue) Status() HistoryBacklogStatus {
 		AppliedSeq:          queue.appliedSeq,
 		TargetSeq:           queue.targetSeq,
 		CatchupPending:      queue.appliedSeq < queue.targetSeq,
-		PendingTransactions: len(queue.pending),
+		PendingTransactions: queue.pendingLen,
 		InFlight:            queue.inFlight,
 		Closed:              queue.closed,
 	}

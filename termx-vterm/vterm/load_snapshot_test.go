@@ -598,6 +598,33 @@ func rowText(row []Cell, limit int) string {
 	return b.String()
 }
 
+func damageOpText(op DamageOp) string {
+	if len(op.Runs) > 0 {
+		var b strings.Builder
+		for _, run := range op.Runs {
+			b.WriteString(run.Text)
+		}
+		return b.String()
+	}
+	return semanticCellsContent(op.Cells)
+}
+
+func damageOpCells(op DamageOp) []Cell {
+	if len(op.Cells) > 0 {
+		return op.Cells
+	}
+	if len(op.Runs) == 0 {
+		return nil
+	}
+	var out []Cell
+	for _, run := range op.Runs {
+		for _, r := range run.Text {
+			out = append(out, Cell{Content: string(r), Width: 1, Style: run.Style})
+		}
+	}
+	return out
+}
+
 func damageRowsText(rows []DamageOp) []string {
 	out := make([]string, 0, len(rows))
 	for _, row := range rows {
@@ -1195,12 +1222,12 @@ func TestVTermWriteWithDamageUsesDirectSpanOps(t *testing.T) {
 	if span.Code != ScreenOpWriteSpan || span.Row != 0 || span.Col != 0 {
 		t.Fatalf("unexpected first direct op: %#v", span)
 	}
-	if got := span.Cells[0].Content + span.Cells[1].Content + span.Cells[2].Content; got != "abc" {
-		t.Fatalf("unexpected direct span contents: %#v", span.Cells)
+	if got := damageOpText(span); got != "abc" {
+		t.Fatalf("unexpected direct span contents: %#v", span)
 	}
 	semanticSpan := firstSemanticOpWithCode(t, damage, ScreenOpWriteSpan)
-	if got := semanticSpan.Cells[0].Content + semanticSpan.Cells[1].Content + semanticSpan.Cells[2].Content; got != "abc" {
-		t.Fatalf("unexpected semantic span contents: %#v", semanticSpan.Cells)
+	if got := damageOpText(semanticSpan); got != "abc" {
+		t.Fatalf("unexpected semantic span contents: %#v", semanticSpan)
 	}
 }
 
@@ -1239,7 +1266,7 @@ func TestVTermWriteWithDamageC1CSIControlsKeepSemanticOrder(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+semanticCellsContent(op.Cells))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 			switch op.Control {
@@ -1307,7 +1334,7 @@ func TestVTermWriteWithDamageC1CSIEraseLineModesKeepSemanticOrder(t *testing.T) 
 			for _, op := range damage.SemanticOps {
 				switch op.Code {
 				case ScreenOpWriteSpan:
-					got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+					got = append(got, "write:"+damageOpText(op))
 				case ScreenOpControl:
 					got = append(got, "control:"+op.Control)
 				}
@@ -1345,7 +1372,7 @@ func TestVTermWriteWithDamageC1CSIEraseDisplayModesKeepSemanticOrder(t *testing.
 			case ScreenOpControl:
 				got = append(got, "control:"+op.Control)
 			case ScreenOpWriteSpan:
-				got = append(got, "write:"+semanticCellsContent(op.Cells))
+				got = append(got, "write:"+damageOpText(op))
 			}
 		}
 		want := []string{"control:cup", "control:ed", "write:tail"}
@@ -1374,7 +1401,7 @@ func TestVTermWriteWithDamageC1CSIEraseDisplayModesKeepSemanticOrder(t *testing.
 			case ScreenOpControl:
 				got = append(got, "control:"+op.Control)
 			case ScreenOpWriteSpan:
-				got = append(got, "write:"+semanticCellsContent(op.Cells))
+				got = append(got, "write:"+damageOpText(op))
 			}
 		}
 		want := []string{"control:cup", "control:ed", "write:tail"}
@@ -1403,7 +1430,7 @@ func TestVTermWriteWithDamageC1CSIEraseDisplayModesKeepSemanticOrder(t *testing.
 			case ScreenOpControl:
 				got = append(got, "control:"+op.Control)
 			case ScreenOpWriteSpan:
-				got = append(got, "write:"+semanticCellsContent(op.Cells))
+				got = append(got, "write:"+damageOpText(op))
 			}
 		}
 		want := []string{"control:ed", "write:frame"}
@@ -1435,7 +1462,7 @@ func TestVTermWriteWithDamageC1CSIEraseDisplayModesKeepSemanticOrder(t *testing.
 			case ScreenOpControl:
 				got = append(got, "control:"+op.Control)
 			case ScreenOpWriteSpan:
-				got = append(got, "write:"+semanticCellsContent(op.Cells))
+				got = append(got, "write:"+damageOpText(op))
 			}
 		}
 		want := []string{"control:ed", "write:after"}
@@ -1467,7 +1494,7 @@ func TestVTermWriteWithDamageC1CSIMovementAliasesKeepSemanticOrder(t *testing.T)
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 			switch op.Control {
@@ -1533,7 +1560,7 @@ func TestVTermWriteWithDamageSemanticOpsPreserveRawOrder(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+semanticCellsContent(op.Cells))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		}
@@ -1577,10 +1604,10 @@ func TestVTermWriteWithDamageSemanticTextComesFromPrintPath(t *testing.T) {
 		t.Fatalf("write with damage: %v", err)
 	}
 	span := firstSemanticOpWithCode(t, damage, ScreenOpWriteSpan)
-	if got := rowText(span.Cells, len(span.Cells)); got != "red" {
+	if got := damageOpText(span); got != "red" {
 		t.Fatalf("expected semantic print text, got %q op=%#v damage=%#v", got, span, damage)
 	}
-	for _, cell := range span.Cells {
+	for _, cell := range damageOpCells(span) {
 		if cell.Style.FG != "ansi:1" {
 			t.Fatalf("expected print semantic cells to keep style, got %#v op=%#v", cell, span)
 		}
@@ -1604,18 +1631,18 @@ func TestVTermWriteWithDamageC1CSISGRKeepsSemanticStyledText(t *testing.T) {
 	if len(spans) != 2 {
 		t.Fatalf("expected C1 CSI SGR text to produce styled/plain semantic spans, got %#v damage=%#v", spans, damage)
 	}
-	if rowText(spans[0].Cells, len(spans[0].Cells)) != "ERR" {
+	if damageOpText(spans[0]) != "ERR" {
 		t.Fatalf("expected first C1 CSI SGR span text ERR, got %#v damage=%#v", spans[0], damage)
 	}
-	for _, cell := range spans[0].Cells {
+	for _, cell := range damageOpCells(spans[0]) {
 		if cell.Style.FG != "ansi:1" || !cell.Style.Bold {
 			t.Fatalf("expected C1 CSI SGR styled cell from vterm print path, got %#v damage=%#v", cell, damage)
 		}
 	}
-	if rowText(spans[1].Cells, len(spans[1].Cells)) != " plain" {
+	if damageOpText(spans[1]) != " plain" {
 		t.Fatalf("expected reset plain span, got %#v damage=%#v", spans[1], damage)
 	}
-	for _, cell := range spans[1].Cells {
+	for _, cell := range damageOpCells(spans[1]) {
 		if cell.Style != (CellStyle{}) {
 			t.Fatalf("expected C1 CSI reset to clear style for following text, got %#v damage=%#v", cell, damage)
 		}
@@ -1640,7 +1667,7 @@ func TestVTermWriteWithDamageSemanticModesComeFromParserTransaction(t *testing.T
 			}
 			enabled = append(enabled, op.Enabled)
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"mode", "write:text", "mode"}
@@ -1665,7 +1692,7 @@ func TestVTermWriteWithDamageSemanticLegacyMouseModes(t *testing.T) {
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"mode:9:on", "mode:1001:on", "write:text", "mode:1001:off", "mode:9:off"}
@@ -1687,7 +1714,7 @@ func TestVTermWriteWithDamageSemanticFocusAndSGRMouseModes(t *testing.T) {
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{
@@ -1718,7 +1745,7 @@ func TestVTermWriteWithDamageC1CSIPrivateModesKeepSemanticOrder(t *testing.T) {
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"mode:2026:on", "mode:1004:on", "write:frame", "mode:1004:off", "mode:2026:off"}
@@ -1749,7 +1776,7 @@ func TestVTermWriteWithDamageC1CSILinefeedNewlineModeKeepSemanticOrder(t *testin
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		}
@@ -1779,7 +1806,7 @@ func TestVTermWriteWithDamageSemanticCursorVisibilityMode(t *testing.T) {
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"mode:25:off", "write:frame", "mode:25:on"}
@@ -1803,7 +1830,7 @@ func TestVTermWriteWithDamageSemanticCursorStyle(t *testing.T) {
 				got = append(got, "control:"+op.Control+":"+strconv.Itoa(op.Mode))
 			}
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"control:decscusr:5", "write:frame", "control:decscusr:2"}
@@ -1834,7 +1861,7 @@ func TestVTermWriteWithDamageSemanticReportRequests(t *testing.T) {
 				got = append(got, "control:"+op.Control+":"+strconv.Itoa(op.Mode))
 			}
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"control:dsr:6", "control:decxcpr:6", "control:decrqm:0", "write:frame"}
@@ -1871,7 +1898,7 @@ func TestVTermWriteWithDamageC1CSIReportRequestsKeepSemanticText(t *testing.T) {
 				got = append(got, "control:"+op.Control+":"+strconv.Itoa(op.Mode))
 			}
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"control:dsr:6", "control:decxcpr:6", "control:decrqm:0", "write:frame"}
@@ -1905,7 +1932,7 @@ func TestVTermWriteWithDamageSemanticDeviceAttributes(t *testing.T) {
 				got = append(got, "control:"+op.Control)
 			}
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"control:da", "control:da2", "write:frame"}
@@ -1940,7 +1967,7 @@ func TestVTermWriteWithDamageC1CSIDeviceAttributesKeepSemanticText(t *testing.T)
 				got = append(got, "control:"+op.Control)
 			}
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"control:da", "control:da2", "write:frame"}
@@ -2113,7 +2140,7 @@ func TestVTermWriteWithDamageSemanticApplicationKeyModes(t *testing.T) {
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+semanticCellsContent(op.Cells))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"mode:1:on", "mode:66:on", "write:keys", "mode:66:off", "mode:1:off"}
@@ -2135,7 +2162,7 @@ func TestVTermWriteWithDamageSemanticKeypadEscModes(t *testing.T) {
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"mode:66:on", "write:esc-keys", "mode:66:off"}
@@ -2157,7 +2184,7 @@ func TestVTermWriteWithDamageSemanticAlternateScrollMode(t *testing.T) {
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"mode:1007:on", "write:scroll", "mode:1007:off"}
@@ -2179,7 +2206,7 @@ func TestVTermWriteWithDamageSemanticUTF8MouseMode(t *testing.T) {
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"mode:1005:on", "write:utf8-mouse", "mode:1005:off"}
@@ -2201,7 +2228,7 @@ func TestVTermWriteWithDamageSemanticExtendedMouseEncodingModes(t *testing.T) {
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"mode:1015:on", "mode:1016:on", "write:ext-mouse", "mode:1016:off", "mode:1015:off"}
@@ -2223,7 +2250,7 @@ func TestVTermWriteWithDamageSemanticUnicodeCoreMode(t *testing.T) {
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+semanticCellsContent(op.Cells))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"mode:2027:on", "write:e", "write:́", "write:好", "mode:2027:off"}
@@ -2254,7 +2281,7 @@ func TestVTermWriteWithDamageSemanticBackwardTab(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 			if op.Control == "cbt" && op.Col != 8 {
@@ -2279,7 +2306,7 @@ func TestVTermWriteWithDamageSemanticForwardTab(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 			if op.Control == "ht" && op.Col != 16 {
@@ -2312,7 +2339,7 @@ func TestVTermWriteWithDamageSemanticCustomTabStop(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		}
@@ -2353,7 +2380,7 @@ func TestVTermWriteWithDamageC1ControlsKeepSemanticOrder(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		}
@@ -2384,7 +2411,7 @@ func TestVTermWriteWithDamageC1NELKeepsSemanticOrder(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		}
@@ -2421,7 +2448,7 @@ func TestVTermWriteWithDamageESCNELKeepsSemanticOrder(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		}
@@ -2457,7 +2484,7 @@ func TestVTermWriteWithDamageSemanticTabClear(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		}
@@ -2487,7 +2514,7 @@ func TestVTermWriteWithDamageSemanticTabReset(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		}
@@ -2550,7 +2577,7 @@ func TestVTermWriteWithDamageC1CSITabControlsKeepSemanticOrder(t *testing.T) {
 			for _, op := range damage.SemanticOps {
 				switch op.Code {
 				case ScreenOpWriteSpan:
-					got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+					got = append(got, "write:"+damageOpText(op))
 				case ScreenOpControl:
 					got = append(got, "control:"+op.Control)
 				}
@@ -2585,7 +2612,7 @@ func TestVTermWriteWithDamageSemanticSpecialDrawingCharset(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, rowText(op.Cells, len(op.Cells)))
+			got = append(got, damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		}
@@ -2606,7 +2633,7 @@ func TestVTermWriteWithDamageSemanticLockingShiftCharset(t *testing.T) {
 	var got []string
 	for _, op := range damage.SemanticOps {
 		if op.Code == ScreenOpWriteSpan {
-			got = append(got, rowText(op.Cells, len(op.Cells)))
+			got = append(got, damageOpText(op))
 		}
 	}
 	want := []string{"─", "q"}
@@ -2634,7 +2661,7 @@ func TestVTermWriteWithDamageSemanticG2G3LockingShiftCharset(t *testing.T) {
 			var got []string
 			for _, op := range damage.SemanticOps {
 				if op.Code == ScreenOpWriteSpan {
-					got = append(got, rowText(op.Cells, len(op.Cells)))
+					got = append(got, damageOpText(op))
 				}
 			}
 			want := []string{"─", "q"}
@@ -2655,7 +2682,7 @@ func TestVTermWriteWithDamageSemanticSingleShiftCharset(t *testing.T) {
 	var got []string
 	for _, op := range damage.SemanticOps {
 		if op.Code == ScreenOpWriteSpan {
-			got = append(got, rowText(op.Cells, len(op.Cells)))
+			got = append(got, damageOpText(op))
 		}
 	}
 	want := []string{"─", "q"}
@@ -2678,7 +2705,7 @@ func TestVTermWriteWithDamageSemanticResetInitialState(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		}
@@ -2725,7 +2752,7 @@ func TestVTermWriteWithDamageSemanticEraseCharacter(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 			if op.Control == "ech" && (op.Col != 1 || op.Mode != 2) {
@@ -2750,7 +2777,7 @@ func TestVTermWriteWithDamageSemanticDeleteCharacter(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 			if op.Control == "dch" && (op.Col != 1 || op.Mode != 2) {
@@ -2775,7 +2802,7 @@ func TestVTermWriteWithDamageSemanticInsertCharacter(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 			if op.Control == "ich" && (op.Col != 1 || op.Mode != 2) {
@@ -2801,7 +2828,7 @@ func TestVTermWriteWithDamageSemanticRepeatCharacter(t *testing.T) {
 		if op.Code != ScreenOpWriteSpan {
 			continue
 		}
-		got = append(got, rowText(op.Cells, len(op.Cells)))
+		got = append(got, damageOpText(op))
 	}
 	if strings.Join(got, "|") != "AB|B|B|B|C" {
 		t.Fatalf("REP should emit repeated text semantic ops from print path, got %v damage=%#v", got, damage)
@@ -2847,7 +2874,7 @@ func TestVTermWriteWithDamageC1CSIInlineEditKeepSemanticOrder(t *testing.T) {
 			for _, op := range damage.SemanticOps {
 				switch op.Code {
 				case ScreenOpWriteSpan:
-					got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+					got = append(got, "write:"+damageOpText(op))
 				case ScreenOpControl:
 					got = append(got, "control:"+op.Control)
 					if (op.Control == "ech" || op.Control == "dch" || op.Control == "ich") && (op.Col != 1 || op.Mode != 2) {
@@ -2874,8 +2901,8 @@ func TestVTermWriteWithDamageSemanticSaveRestoreCursor(t *testing.T) {
 		if op.Code != ScreenOpWriteSpan {
 			continue
 		}
-		got = append(got, rowText(op.Cells, len(op.Cells)))
-		if rowText(op.Cells, len(op.Cells)) == "X" && (op.Row != 0 || op.Col != 3) {
+		got = append(got, damageOpText(op))
+		if damageOpText(op) == "X" && (op.Row != 0 || op.Col != 3) {
 			t.Fatalf("restore cursor should write X at saved row=0 col=3, got %#v damage=%#v", op, damage)
 		}
 	}
@@ -2957,7 +2984,7 @@ func TestVTermWriteWithDamageSemanticLineOperations(t *testing.T) {
 			for _, op := range damage.SemanticOps {
 				switch op.Code {
 				case ScreenOpWriteSpan:
-					got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+					got = append(got, "write:"+damageOpText(op))
 				case ScreenOpControl:
 					got = append(got, "control:"+op.Control)
 				}
@@ -3043,7 +3070,7 @@ func TestVTermWriteWithDamageC1CSILineOperationsKeepSemanticOrder(t *testing.T) 
 			for _, op := range damage.SemanticOps {
 				switch op.Code {
 				case ScreenOpWriteSpan:
-					got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+					got = append(got, "write:"+damageOpText(op))
 				case ScreenOpControl:
 					got = append(got, "control:"+op.Control)
 				}
@@ -3097,7 +3124,7 @@ func TestVTermWriteWithDamageSemanticScrollRegionAndRI(t *testing.T) {
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"control:decstbm", "control:cup", "control:ri", "write:region"}
@@ -3132,7 +3159,7 @@ func TestVTermWriteWithDamageC1CSIScrollRegionAndRIKeepSemanticOrder(t *testing.
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"control:decstbm", "control:cup", "control:ri", "write:region"}
@@ -3174,7 +3201,7 @@ func TestVTermWriteWithDamageSemanticOriginModeCursorPosition(t *testing.T) {
 				case ScreenOpModes:
 					got = append(got, modeOpLabel(op))
 				case ScreenOpWriteSpan:
-					got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+					got = append(got, "write:"+damageOpText(op))
 				}
 			}
 			want := []string{"control:decstbm", "mode:6:on", "control:cup", "write:X"}
@@ -3209,7 +3236,7 @@ func TestVTermWriteWithDamageC1CSIOriginModeCursorPosition(t *testing.T) {
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"control:decstbm", "mode:6:on", "control:cup", "write:X"}
@@ -3240,7 +3267,7 @@ func TestVTermWriteWithDamageSemanticAutowrapMode(t *testing.T) {
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"mode:7:off", "write:123456", "write:7", "write:8", "write:9", "write:Z"}
@@ -3270,7 +3297,7 @@ func TestVTermWriteWithDamageSemanticPrivateSaveRestoreCursor(t *testing.T) {
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"write:abc", "mode:1048:on", "control:cup", "write:ZZ", "mode:1048:off", "write:X"}
@@ -3314,7 +3341,7 @@ func TestVTermWriteWithDamageSemanticLeftRightMargins(t *testing.T) {
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"mode:69:on", "control:decslrm", "control:cup", "write:X", "control:cbt", "write:A"}
@@ -3356,7 +3383,7 @@ func TestVTermWriteWithDamageC1CSILeftRightMarginsKeepSemanticOrder(t *testing.T
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+damageOpText(op))
 		}
 	}
 	want := []string{"control:decst8c", "mode:6:on", "mode:69:on", "control:decslrm", "control:cup", "write:X", "control:cbt", "write:A"}
@@ -3569,7 +3596,7 @@ func TestVTermWriteWithDamageDoesNotPadHardNewlineScrollbackCells(t *testing.T) 
 	}
 
 	for _, op := range damage.ScrollbackAppend {
-		if got := rowText(op.Cells, len(op.Cells)); got != "████" {
+		if got := damageOpText(op); got != "████" {
 			continue
 		}
 		if len(op.Cells) != 4 {
@@ -4347,7 +4374,7 @@ func TestWriteWithDamageDoesNotPadHardNewlineScrollbackRowsToScreenWidth(t *test
 	}
 
 	for _, op := range damage.ScrollbackAppend {
-		if rowText(op.Cells, len(op.Cells)) != "████" {
+		if damageOpText(op) != "████" {
 			continue
 		}
 		if op.Wrapped {
@@ -4469,7 +4496,7 @@ func modeOpLabel(op DamageOp) string {
 
 func semanticOpsContainText(ops []DamageOp, text string) bool {
 	for _, op := range ops {
-		if op.Code == ScreenOpWriteSpan && strings.Contains(rowText(op.Cells, len(op.Cells)), text) {
+		if op.Code == ScreenOpWriteSpan && strings.Contains(damageOpText(op), text) {
 			return true
 		}
 	}

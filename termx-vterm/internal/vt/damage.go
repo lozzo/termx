@@ -47,10 +47,26 @@ func (d SpanDamage) Bounds() uv.Rectangle {
 type TextDamage struct {
 	X, Y  int
 	Cells []uv.Cell
+	Runs  []ScrollbackRun
+	ASCII bool
+	Text  string
 }
 
 // Bounds returns the bounds of the text semantic area.
 func (d TextDamage) Bounds() uv.Rectangle {
+	if d.Text != "" {
+		return uv.Rect(d.X, d.Y, d.X+len(d.Text), d.Y+1)
+	}
+	if len(d.Runs) > 0 {
+		width := 0
+		for _, run := range d.Runs {
+			width += len(run.Text)
+		}
+		if width <= 0 {
+			width = 1
+		}
+		return uv.Rect(d.X, d.Y, d.X+width, d.Y+1)
+	}
 	return SpanDamage{X: d.X, Y: d.Y, Cells: d.Cells}.Bounds()
 }
 

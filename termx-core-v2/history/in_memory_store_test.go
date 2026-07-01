@@ -361,6 +361,75 @@ func TestR343InMemoryStoreIncrementalCountersSurviveSequentialApplies(t *testing
 	}
 }
 
+func TestR407MemoryStoreSealMutationStillClonesExternalPayload(t *testing.T) {
+	store := NewInMemoryHistoryStore("term-r407-memory")
+	line := lineForStore(1, "owned", string(LineKindOrdinary), 0)
+	line.Seal = SealStateSealed
+	record := HistoryRecord{ID: 1, Seq: 1, Kind: HistoryRecordOrdinaryLine, LineIDs: []LogicalLineID{1}, Reason: SealReasonLineFeed}
+	if err := store.Apply(HistoryMutationBatch{Mutations: []HistoryMutation{
+		{Kind: HistoryMutationSealLine, Line: &line, LineIDs: []LogicalLineID{1}, Reason: SealReasonLineFeed},
+		{Kind: HistoryMutationAppendTimelineRecord, Record: &record, LineIDs: []LogicalLineID{1}, Reason: SealReasonLineFeed},
+	}}); err != nil {
+		t.Fatalf("apply memory store: %v", err)
+	}
+	line.Cells[0].Text = "X"
+	window, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-r407-memory", Mode: HistoryWindowModeLatest, Cols: 20, Limit: 1})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := strings.Join(rowTexts(window.Rows), "|"); got != "owned" {
+		t.Fatalf("memory store must keep authoritative payload isolated from caller mutation, got %q", got)
+	}
+}
+
+func TestR407BackendFrozenWindowReportsProjectionTotal(t *testing.T) {
+	store := NewBackendHistoryStore("term-r407-total", NewMemoryStorageBackend())
+	for i := 1; i <= 10; i++ {
+		applyStoreBatch(t, store, sealedLineMutations(LogicalLineID(i), HistoryRecordID(i), "line"))
+	}
+	snapshot, err := store.Freeze(FreezeHistoryRequest{TerminalID: "term-r407-total", Limit: 3, Cols: 80})
+	if err != nil {
+		t.Fatalf("freeze: %v", err)
+	}
+	latest, err := store.LatestWindow(HistoryWindowRequest{
+		TerminalID: "term-r407-total",
+		Token:      snapshot.Token,
+		Limit:      3,
+		Cols:       80,
+	})
+	if err != nil {
+		t.Fatalf("frozen latest: %v", err)
+	}
+	if latest.LogicalTotal != 10 || len(latest.Rows) != 3 {
+		t.Fatalf("frozen latest must report full projection total, got total=%d rows=%d", latest.LogicalTotal, len(latest.Rows))
+	}
+	older, err := store.OlderWindow(HistoryWindowRequest{
+		TerminalID: "term-r407-total",
+		Token:      snapshot.Token,
+		Limit:      3,
+		Cols:       80,
+		Cursor:     latest.Boundary.Cursor,
+	})
+	if err != nil {
+		t.Fatalf("frozen older: %v", err)
+	}
+	if older.LogicalTotal != 10 || len(older.Rows) != 3 {
+		t.Fatalf("frozen older must keep full projection total, got total=%d rows=%d", older.LogicalTotal, len(older.Rows))
+	}
+	oldest, err := store.OldestWindow(HistoryWindowRequest{
+		TerminalID: "term-r407-total",
+		Token:      snapshot.Token,
+		Limit:      3,
+		Cols:       80,
+	})
+	if err != nil {
+		t.Fatalf("frozen oldest: %v", err)
+	}
+	if oldest.LogicalTotal != 10 || len(oldest.Rows) != 3 {
+		t.Fatalf("frozen oldest must keep full projection total, got total=%d rows=%d", oldest.LogicalTotal, len(oldest.Rows))
+	}
+}
+
 func TestR323InMemoryStoreCopyUsesFrozenAuthoritativeRows(t *testing.T) {
 	store := NewInMemoryHistoryStore("term-1")
 	applyStoreBatch(t, store, sealedLineMutations(1, 1, "alpha"), replacePrimaryMutation(10, 2, 80, "beta"))

@@ -539,8 +539,12 @@ history_marker_present() {
   case "$(basename "$path")" in
     *dump*)
       # 中文说明：history-dump 每行前缀本身也是六位数字；marker 校验只看
-      # authoritative row payload，不能把 dump 的行号误判成历史内容。
-      LC_ALL=C grep -F ' text=' "$path" | LC_ALL=C grep -Fq "$marker"
+      # authoritative row payload，不能把 dump 的行号误判成历史内容。这里避免
+      # grep 管线配合 pipefail 时被 grep -q 的提前退出误报为 SIGPIPE。
+      LC_ALL=C awk -v marker="$marker" '
+        index($0, " text=") && index($0, marker) { found = 1; exit }
+        END { exit found ? 0 : 1 }
+      ' "$path"
       ;;
     *)
       LC_ALL=C grep -Fq "$marker" "$path"
@@ -570,15 +574,25 @@ history_artifact_tail_status() {
 }
 
 history_artifact_full_status() {
-  local path="$1"
-  local newest
-  newest="$(printf '%06d' "$STRESS_LINES")"
-  if history_marker_present "$path" "000000" && history_marker_present "$path" "$newest" && history_marker_present "$path" "TERM_X_TUI_STRESS_DONE"; then
+	local path="$1"
+	local newest
+	newest="$(printf '%06d' "$STRESS_LINES")"
+	if history_marker_present "$path" "000000" && history_marker_present "$path" "$newest" && history_marker_present "$path" "TERM_X_TUI_STRESS_DONE"; then
     printf 'ok\n'
     return 0
   fi
   printf 'missing_marker\n'
-  return 1
+	return 1
+}
+
+history_artifact_oldest_status() {
+	local path="$1"
+	if history_marker_present "$path" "000000"; then
+		printf 'ok\n'
+		return 0
+	fi
+	printf 'missing_oldest\n'
+	return 1
 }
 
 append_history_query() {
@@ -1217,7 +1231,7 @@ if ! wait_for_copy_oldest "$TARGET" "$WAIT_SECONDS"; then
 fi
 COPY_OLDEST_END_MS="$(now_ms)"
 append_history_trace "copy_oldest" "$ROOT/copy-oldest.txt"
-append_history_query "copy_oldest" "$(history_artifact_full_status "$ROOT/copy-oldest.txt" || true)" "$COPY_OLDEST_START_MS" "$COPY_OLDEST_END_MS" "$ROOT/copy-oldest.txt"
+append_history_query "copy_oldest" "$(history_artifact_oldest_status "$ROOT/copy-oldest.txt" || true)" "$COPY_OLDEST_START_MS" "$COPY_OLDEST_END_MS" "$ROOT/copy-oldest.txt"
 record_stage "daemon_copy_oldest" "daemon" "$DAEMON_PID"
 record_stage "tui_copy_oldest" "tui" "$TUI_PID"
 sleep 2

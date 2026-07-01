@@ -3,7 +3,9 @@ package termxcorev2
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -49,6 +51,129 @@ func BenchmarkR392HistoryJournalFileBackedIngest100K(b *testing.B) {
 	}
 }
 
+func BenchmarkR407HistoryIngestQueueDrain100K(b *testing.B) {
+	const lines = 100_000
+	journals, bytes := r392OrdinaryStressJournals(lines, terminalLiveIngestBatchMaxBytes)
+	b.ReportAllocs()
+	b.SetBytes(int64(bytes))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		queue := newTerminalHistoryIngestQueue(0)
+		for _, journal := range journals {
+			if !queue.Enqueue(journal) {
+				b.Fatal("enqueue rejected before close")
+			}
+		}
+		b.StartTimer()
+		var drained int
+		for drained < len(journals) {
+			batch, ok := queue.nextBatch()
+			if !ok {
+				b.Fatal("queue closed before drain")
+			}
+			drained += len(batch)
+			queue.finishBatch(terminalHistoryIngestBatchCompleteSeq(batch))
+		}
+	}
+}
+
+func BenchmarkR407HistoryTapPipelineChunked100K(b *testing.B) {
+	r407BenchmarkHistoryTapPipeline(b, terminalLiveIngestBatchMaxBytes)
+}
+
+func BenchmarkR407HistoryTapPipelineCoalesced100K(b *testing.B) {
+	r407BenchmarkHistoryTapPipeline(b, terminalHistoryTapIngestBatchMaxBytes)
+}
+
+func TestR407RealStressPayloadHistoryTapPipelineKeepsAllLines(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real stress payload harness is skipped in short mode")
+	}
+	payload := r407GenerateTerminalStressPayload(t, 10_000, 407104)
+	backend, err := history.NewFileStorageBackend(t.TempDir(), "term-r407-real-stress")
+	if err != nil {
+		t.Fatalf("file backend: %v", err)
+	}
+	store := history.NewBackendHistoryStore("term-r407-real-stress", backend)
+	terminal := newR392BenchmarkTerminal(store)
+	tap := NewSemanticTap("term-r407-real-stress", Size{Cols: 100, Rows: 30}, nil)
+
+	for remaining := payload; len(remaining) > 0; {
+		head, tail := splitLiveIngestPayload(remaining, terminalHistoryTapIngestBatchMaxBytes)
+		result, err := tap.ApplyPTYWrite([]byte(head))
+		if err != nil {
+			t.Fatalf("tap write: %v", err)
+		}
+		terminal.ingestHistoryJournals([]history.HistoryJournal{result.HistoryJournal()})
+		remaining = tail
+	}
+
+	window, err := store.LatestWindow(history.HistoryWindowRequest{TerminalID: "term-r407-real-stress", Mode: history.HistoryWindowModeLatest, Cols: 100, Limit: 16})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if window.LogicalTotal < 10_001 {
+		t.Fatalf("real stress payload should preserve every generated logical line, total=%d latest=%q", window.LogicalTotal, strings.Join(historyRowTexts(window.Rows), "|"))
+	}
+	if got := strings.Join(historyRowTexts(window.Rows), "|"); !strings.Contains(got, "010000 ") {
+		t.Fatalf("latest page must include final stress line 010000, got %q", got)
+	}
+	oldest, err := store.OldestWindow(history.HistoryWindowRequest{TerminalID: "term-r407-real-stress", Mode: history.HistoryWindowModeOldest, Cols: 100, Limit: 3})
+	if err != nil {
+		t.Fatalf("oldest window: %v", err)
+	}
+	if got := strings.Join(historyRowTexts(oldest.Rows), "|"); !strings.Contains(got, "000000 ") || !strings.Contains(got, "000001 ") {
+		t.Fatalf("oldest page must include stress head, got %q", got)
+	}
+}
+
+func r407BenchmarkHistoryTapPipeline(b *testing.B, batchBytes int) {
+	const lines = 100_000
+	payload, bytes := r407OrdinaryStressPayload(lines)
+	b.ReportAllocs()
+	b.SetBytes(int64(bytes))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		backend, err := history.NewFileStorageBackend(b.TempDir(), fmt.Sprintf("term-r407-tap-%d", batchBytes))
+		if err != nil {
+			b.Fatalf("file backend: %v", err)
+		}
+		store := history.NewBackendHistoryStore("term-r407-tap", backend)
+		terminal := newR392BenchmarkTerminal(store)
+		tap := NewSemanticTap("term-r407-tap", Size{Cols: 120, Rows: 30}, nil)
+		b.StartTimer()
+		remaining := payload
+		for len(remaining) > 0 {
+			head, tail := splitLiveIngestPayload(remaining, batchBytes)
+			result, err := tap.ApplyPTYWrite([]byte(head))
+			if err != nil {
+				b.Fatalf("tap write: %v", err)
+			}
+			terminal.ingestHistoryJournals([]history.HistoryJournal{result.HistoryJournal()})
+			remaining = tail
+		}
+	}
+}
+
+func r407GenerateTerminalStressPayload(t *testing.T, lines int, seed int) string {
+	t.Helper()
+	python := os.Getenv("PYTHON")
+	if python == "" {
+		python = "python3"
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("stress generator path is POSIX-oriented")
+	}
+	cmd := exec.Command(python, "../scripts/generate_terminal_stress.py", "--lines", fmt.Sprint(lines), "--seed", fmt.Sprint(seed))
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("generate terminal stress payload: %v", err)
+	}
+	return string(output)
+}
+
 func newR392BenchmarkTerminal(store history.HistoryStore) *Terminal {
 	_, journalRenderer := history.NewHistoryRenderers(nil, nil)
 	return &Terminal{
@@ -57,6 +182,16 @@ func newR392BenchmarkTerminal(store history.HistoryStore) *Terminal {
 		historyStore:    store,
 		historyEnabled:  true,
 	}
+}
+
+func r407OrdinaryStressPayload(lines int) (string, int) {
+	var payload strings.Builder
+	for line := 1; line <= lines; line++ {
+		stressLine := r392OrdinaryStressLine(line)
+		payload.WriteString(stressLine)
+		payload.WriteString("\r\n")
+	}
+	return payload.String(), payload.Len()
 }
 
 func r392OrdinaryStressJournals(lines int, targetBytes int) ([]history.HistoryJournal, int) {

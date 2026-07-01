@@ -37,6 +37,17 @@ type Cell struct {
 	LinkParams string
 }
 
+// CellRun 是 logical line 内部的 compact payload 表示。
+// domain owner 仍是 history logical line；truth source 是 vterm semantic
+// WriteSpan run。它只用于 ordinary sealed-line 热路径，HistoryWindow 对外仍按
+// Cells 展开，避免 TUI/protocol 获得第二套 history truth。
+type CellRun struct {
+	Text       string
+	Style      CellStyle
+	LinkURL    string
+	LinkParams string
+}
+
 // CellStyle 保存单个 cell 的 terminal style token。空 FG/BG 表示 terminal default
 // color；viewer 按当前主题解析默认色。
 type CellStyle struct {
@@ -66,6 +77,7 @@ type LogicalLine struct {
 	Seal              SealState
 	Kind              string
 	Cells             []Cell
+	Runs              []CellRun
 	TailFill          *RowTailFill
 	ScreenCols        int
 	Dirty             bool

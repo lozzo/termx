@@ -2,7 +2,9 @@ package history
 
 import (
 	"sort"
+	"strings"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
@@ -81,6 +83,7 @@ type OrdinaryLineBatch struct {
 // 或 live screen row。
 type JournalLogicalLine struct {
 	Cells    []Cell
+	Runs     []CellRun
 	TailFill *RowTailFill
 	Wrapped  bool
 	Origin   HistoryJournalOrigin
@@ -107,6 +110,7 @@ const (
 	JournalOpenLineCommandMoveCol   JournalOpenLineCommandKind = "move-col"
 	JournalOpenLineCommandMoveRow   JournalOpenLineCommandKind = "move-row"
 	JournalOpenLineCommandEraseLine JournalOpenLineCommandKind = "erase-line"
+	JournalOpenLineCommandSoftWrap  JournalOpenLineCommandKind = "soft-wrap"
 	JournalOpenLineCommandSealLine  JournalOpenLineCommandKind = "seal-line"
 )
 
@@ -222,7 +226,7 @@ func HistoryJournalFromDecision(terminalID string, tx TerminalSemanticTransactio
 			Size:       tx.Size,
 			Source:     HistoryJournalSourceSemanticTapTransaction,
 		},
-		ordinary:                 newJournalOrdinaryRecorder(tx.Size.Cols),
+		ordinary:                 newJournalOrdinaryRecorder(tx.Size.Cols, tx.Size.Rows),
 		primaryFrameTouchedRows:  cloneIntSlice(tx.PrimaryFrameTouchedRows),
 		skipSideProofFrameEvents: isResizeFullReplace(tx),
 		decision:                 decision,
@@ -264,6 +268,7 @@ type historyJournalBuilder struct {
 	ordinary                 journalOrdinaryRecorder
 	primaryFrameTouchedRows  []int
 	ordinaryTouchedRows      map[int]struct{}
+	ordinarySealedProofs     map[string]struct{}
 	decision                 HistoryDecision
 	inAlt                    bool
 	inSync                   bool
@@ -285,6 +290,9 @@ func (builder *historyJournalBuilder) applyEvent(event HistorySemanticEvent) {
 			return
 		}
 		if event.ClearScrollOut && builder.skipClearTimeScrollOut {
+			return
+		}
+		if builder.shouldLetOrdinaryOpsOwnScrollOut(event) {
 			return
 		}
 		builder.flushOrdinary(event.OrderSource, event.Order)
@@ -356,6 +364,36 @@ func (builder *historyJournalBuilder) applyEvent(event HistorySemanticEvent) {
 	}
 }
 
+func (builder *historyJournalBuilder) shouldLetOrdinaryOpsOwnScrollOut(event HistorySemanticEvent) bool {
+	if builder.inAlt || builder.inSync || !builder.consumeStreamOps {
+		return false
+	}
+	if builder.decision.Mode != HistoryOutputModeOrdinaryStream {
+		return false
+	}
+	if event.ClearScrollOut {
+		return false
+	}
+	if event.OrderSource == HistorySemanticEventOrderFromTransactionSideProof && !builder.ordinaryProofAlreadyOwned(*event.ScrollOut) {
+		return false
+	}
+	// 中文说明：普通 stdout 的 history truth 是 ordered write/control op
+	// 形成的 logical line。vterm 同时给出的 scroll-out proof 只是屏幕
+	// visual row 离开 viewport 的证据，不能在 ordinary 模式下把 wrapped
+	// row 提前 seal 成第二份 history truth；transaction side proof 也不能
+	// 重新追加同一 visual fragment。clear-time 和 primary frame 场景仍由
+	// proof/frame state machine 消费。
+	return true
+}
+
+func (builder *historyJournalBuilder) ordinaryProofAlreadyOwned(proof TerminalSemanticScrollOut) bool {
+	if len(builder.ordinarySealedProofs) == 0 {
+		return false
+	}
+	_, ok := builder.ordinarySealedProofs[scrollOutProofSignature(proof)]
+	return ok
+}
+
 func (builder *historyJournalBuilder) applyOpEvent(event HistorySemanticEvent) {
 	if event.Op == nil {
 		return
@@ -392,9 +430,17 @@ func (builder *historyJournalBuilder) applyOpEvent(event HistorySemanticEvent) {
 	}
 	builder.recordOrdinaryTouchedRows(*event.Op, event.Size)
 	if builder.ordinary.ApplyOp(*event.Op) {
+		if builder.ordinary.NeedsFlush() {
+			builder.flushOrdinary(event.OrderSource, event.Order)
+		}
 		return
 	}
 	builder.flushOrdinary(event.OrderSource, event.Order)
+	if builder.ordinary.ApplyOp(*event.Op) {
+		if builder.ordinary.NeedsFlush() {
+			builder.flushOrdinary(event.OrderSource, event.Order)
+		}
+	}
 }
 
 func (builder *historyJournalBuilder) recordOrdinaryTouchedRows(op TerminalSemanticOp, size TerminalSemanticSize) {
@@ -498,6 +544,7 @@ func (builder *historyJournalBuilder) flushOrdinary(source HistorySemanticEventO
 	if !ok {
 		return
 	}
+	builder.recordOrdinarySealedLines(batch.Lines)
 	item := HistoryJournalItem{
 		Kind:          HistoryJournalItemOrdinaryLineBatch,
 		Order:         len(builder.journal.Items),
@@ -506,6 +553,22 @@ func (builder *historyJournalBuilder) flushOrdinary(source HistorySemanticEventO
 		Ordinary:      &batch,
 	}
 	builder.journal.Items = append(builder.journal.Items, item)
+}
+
+func (builder *historyJournalBuilder) recordOrdinarySealedLines(lines []JournalLogicalLine) {
+	if len(lines) == 0 {
+		return
+	}
+	if builder.ordinarySealedProofs == nil {
+		builder.ordinarySealedProofs = make(map[string]struct{}, len(lines))
+	}
+	for _, line := range lines {
+		signature := journalLogicalLineSignature(line)
+		if signature == "" {
+			continue
+		}
+		builder.ordinarySealedProofs[signature] = struct{}{}
+	}
 }
 
 func (builder *historyJournalBuilder) appendBoundary(event HistorySemanticEvent, boundary HistoryJournalBoundary) {
@@ -679,34 +742,88 @@ func journalHasSyncModeOp(tx TerminalSemanticTransaction, enabled bool) bool {
 
 type journalOrdinaryRecorder struct {
 	cols   int
+	rows   int
 	active bool
 	row    int
 	cursor int
 	cells  []Cell
+	runs   []CellRun
 	fill   *RowTailFill
 	lines  []JournalLogicalLine
 	cmds   []JournalOpenLineCommand
+	edited bool
+	// 中文说明：ordinary truth 是 logical line；soft-wrap 只是 visual row
+	// continuation。这里记录每个 visual row 在当前 logical line 中的起始列，
+	// 避免高压长行被拆成多条 history line 或反复 open-line update。
+	visualRows []journalOrdinaryVisualRow
+	// 中文说明：普通终端输出常见 CRLF。CR 只有在后面发生覆盖/光标编辑时才是
+	// open-line command；紧跟 LF 时只是换行习惯，不能让线性 stdout 退回命令重放。
+	pendingCR             bool
+	afterLineFeed         bool
+	flushAfterCommandSeal bool
 }
 
-func newJournalOrdinaryRecorder(cols int) journalOrdinaryRecorder {
-	return journalOrdinaryRecorder{cols: cols}
+type journalOrdinaryVisualRow struct {
+	row  int
+	base int
+}
+
+func newJournalOrdinaryRecorder(cols int, rows int) journalOrdinaryRecorder {
+	return journalOrdinaryRecorder{cols: cols, rows: rows}
 }
 
 func (recorder *journalOrdinaryRecorder) ApplyOp(op TerminalSemanticOp) bool {
 	switch op.Code {
 	case vterm.ScreenOpWriteSpan:
-		cells := journalCellsFromOp(op)
-		recorder.appendCommand(JournalOpenLineCommand{
-			Kind:  JournalOpenLineCommandWrite,
-			Row:   op.Row,
-			Col:   op.Col,
-			Cells: cloneHistoryCells(cells),
-		})
+		displayWidth := journalOpDisplayWidth(op)
+		if recorder.pendingCR && recorder.hasDirectLinesBeforeCommand() {
+			return false
+		}
+		if recorder.pendingCR {
+			recorder.flushPendingCRCommand()
+		}
+		requiresCommand := recorder.writeRequiresCommand(op)
+		if requiresCommand && recorder.hasDirectLinesBeforeCommand() {
+			return false
+		}
+		var cells []Cell
+		if requiresCommand {
+			cells = journalCellsFromOp(op)
+			recorder.beginEditedReplay()
+			recorder.appendCommand(JournalOpenLineCommand{
+				Kind:  JournalOpenLineCommandWrite,
+				Row:   op.Row,
+				Col:   op.Col,
+				Cells: cloneHistoryCells(cells),
+			})
+		}
+		logicalCol := recorder.logicalColumnForWrite(op)
 		recorder.active = true
+		recorder.afterLineFeed = false
 		recorder.row = op.Row
-		recorder.cells = writeCellsAt(recorder.cells, op.Col, cells)
-		recorder.cells = trimTrailingBlankCells(recorder.cells)
-		recorder.cursor = op.Col + journalOpDisplayWidth(op)
+		recorder.ensureVisualRowBase(op.Row, logicalCol-op.Col)
+		if !recorder.edited && logicalCol == recorder.cursor {
+			if len(op.Runs) > 0 && len(op.Cells) == 0 {
+				if len(recorder.cells) > 0 {
+					recorder.cells = appendJournalCells(recorder.cells, appendJournalRuns(nil, op.Runs, 0), journalInitialLineCapacity(recorder.cols))
+				} else {
+					recorder.runs = appendJournalSemanticRuns(recorder.runs, op.Runs)
+				}
+			} else {
+				if cells == nil {
+					cells = journalCellsFromOp(op)
+				}
+				recorder.materializeRunsForEditing()
+				recorder.cells = appendJournalCells(recorder.cells, cells, journalInitialLineCapacity(recorder.cols))
+			}
+		} else {
+			if cells == nil {
+				cells = journalCellsFromOp(op)
+			}
+			recorder.cells = writeCellsAt(recorder.cells, logicalCol, cells)
+			recorder.cells = trimTrailingBlankCellsInPlace(recorder.cells)
+		}
+		recorder.cursor = logicalCol + displayWidth
 		return true
 	case vterm.ScreenOpControl:
 		return recorder.applyControl(op)
@@ -714,6 +831,7 @@ func (recorder *journalOrdinaryRecorder) ApplyOp(op TerminalSemanticOp) bool {
 		if !recorder.active || op.Row != recorder.row {
 			return false
 		}
+		recorder.materializeRunsForEditing()
 		recorder.appendCommand(JournalOpenLineCommand{
 			Kind: JournalOpenLineCommandEraseLine,
 			Row:  op.Row,
@@ -731,54 +849,168 @@ func (recorder *journalOrdinaryRecorder) ApplyOp(op TerminalSemanticOp) bool {
 func (recorder *journalOrdinaryRecorder) applyControl(op TerminalSemanticOp) bool {
 	switch op.Control {
 	case "cr":
+		if !recorder.edited && recorder.active && op.Row == recorder.row && recorder.cursor == recorder.contentWidth() {
+			recorder.pendingCR = true
+			recorder.row = op.Row
+			recorder.cursor = 0
+			return true
+		}
+		if recorder.hasDirectLinesBeforeCommand() {
+			return false
+		}
+		recorder.beginEditedReplay()
 		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandSetCursor, Row: op.Row, Col: 0})
 		recorder.row = op.Row
 		recorder.cursor = 0
 		return true
 	case "lf", "ind", "nel":
-		command := JournalOpenLineCommand{Kind: JournalOpenLineCommandSealLine}
+		if recorder.pendingCR {
+			recorder.pendingCR = false
+		}
+		if !recorder.active && len(recorder.cells) == 0 {
+			if recorder.hasDirectLinesBeforeCommand() {
+				return false
+			}
+			recorder.edited = true
+			recorder.appendCommand(JournalOpenLineCommand{
+				Kind:     JournalOpenLineCommandSealLine,
+				TailFill: rowTailFillFromTerminal(op.TailFill),
+			})
+			recorder.flushAfterCommandSeal = true
+			recorder.afterLineFeed = true
+			recorder.row++
+			if op.Control == "nel" {
+				recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandSetCursor, Row: recorder.row, Col: 0})
+				recorder.cursor = 0
+			}
+			return true
+		}
+		var command JournalOpenLineCommand
+		if recorder.edited {
+			command = JournalOpenLineCommand{Kind: JournalOpenLineCommandSealLine}
+		}
 		if op.TailFill != nil {
 			recorder.fill = rowTailFillFromTerminal(op.TailFill)
-			command.TailFill = cloneRowTailFill(recorder.fill)
+			if recorder.edited {
+				command.TailFill = cloneRowTailFill(recorder.fill)
+			}
 		}
-		recorder.appendCommand(command)
+		wasEdited := recorder.edited
+		if recorder.edited {
+			recorder.appendCommand(command)
+		}
 		recorder.sealCurrentLine()
+		if wasEdited {
+			recorder.flushAfterCommandSeal = true
+		}
+		recorder.afterLineFeed = true
 		recorder.row++
 		if op.Control == "nel" {
+			recorder.edited = true
 			recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandSetCursor, Row: recorder.row, Col: 0})
 			recorder.cursor = 0
 		}
 		return true
+	case "soft-wrap":
+		if !recorder.active {
+			return false
+		}
+		if recorder.pendingCR {
+			if recorder.hasDirectLinesBeforeCommand() {
+				return false
+			}
+			recorder.flushPendingCRCommand()
+		}
+		nextRow := op.Row + 1
+		if recorder.rows > 0 && nextRow >= recorder.rows {
+			nextRow = recorder.rows - 1
+		}
+		nextBase := maxInt(recorder.cursor, recorder.contentWidth())
+		if op.TailFill != nil {
+			recorder.fill = rowTailFillFromTerminal(op.TailFill)
+		}
+		if recorder.edited {
+			recorder.appendCommand(JournalOpenLineCommand{
+				Kind:     JournalOpenLineCommandSoftWrap,
+				Row:      op.Row,
+				Col:      op.Col,
+				TailFill: cloneRowTailFill(recorder.fill),
+			})
+		}
+		recorder.row = nextRow
+		recorder.cursor = nextBase
+		recorder.ensureVisualRowBase(nextRow, nextBase)
+		return true
 	case "bs":
+		if recorder.hasDirectLinesBeforeCommand() {
+			return false
+		}
+		recorder.flushPendingCRCommand()
+		recorder.beginEditedReplay()
 		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandMoveCol, Delta: -1})
 		recorder.cursor = maxInt(0, recorder.cursor-1)
 		return true
 	case "cub":
+		if recorder.hasDirectLinesBeforeCommand() {
+			return false
+		}
+		recorder.flushPendingCRCommand()
+		recorder.beginEditedReplay()
 		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandMoveCol, Delta: -controlCount(op)})
 		recorder.cursor = maxInt(0, recorder.cursor-controlCount(op))
 		return true
 	case "cuf":
+		if recorder.hasDirectLinesBeforeCommand() {
+			return false
+		}
+		recorder.flushPendingCRCommand()
+		recorder.beginEditedReplay()
 		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandMoveCol, Delta: controlCount(op)})
 		recorder.cursor += controlCount(op)
 		return true
 	case "cha", "hpa":
+		if recorder.hasDirectLinesBeforeCommand() {
+			return false
+		}
+		recorder.flushPendingCRCommand()
+		recorder.beginEditedReplay()
 		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandSetCursor, Row: recorder.row, Col: maxInt(0, op.Col)})
 		recorder.cursor = maxInt(0, op.Col)
 		return true
 	case "cup":
+		if recorder.hasDirectLinesBeforeCommand() {
+			return false
+		}
+		recorder.flushPendingCRCommand()
+		recorder.beginEditedReplay()
 		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandSetCursor, Row: maxInt(0, op.Row), Col: maxInt(0, op.Col)})
 		recorder.row = maxInt(0, op.Row)
 		recorder.cursor = maxInt(0, op.Col)
 		return true
 	case "vpa":
+		if recorder.hasDirectLinesBeforeCommand() {
+			return false
+		}
+		recorder.flushPendingCRCommand()
+		recorder.beginEditedReplay()
 		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandSetCursor, Row: maxInt(0, op.Row), Col: recorder.cursor})
 		recorder.row = maxInt(0, op.Row)
 		return true
 	case "cuu":
+		if recorder.hasDirectLinesBeforeCommand() {
+			return false
+		}
+		recorder.flushPendingCRCommand()
+		recorder.beginEditedReplay()
 		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandMoveRow, Delta: -controlCount(op)})
 		recorder.row = maxInt(0, recorder.row-controlCount(op))
 		return true
 	case "cud":
+		if recorder.hasDirectLinesBeforeCommand() {
+			return false
+		}
+		recorder.flushPendingCRCommand()
+		recorder.beginEditedReplay()
 		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandMoveRow, Delta: controlCount(op)})
 		recorder.row += controlCount(op)
 		return true
@@ -786,6 +1018,11 @@ func (recorder *journalOrdinaryRecorder) applyControl(op TerminalSemanticOp) boo
 		if !recorder.active {
 			return false
 		}
+		if recorder.hasDirectLinesBeforeCommand() {
+			return false
+		}
+		recorder.flushPendingCRCommand()
+		recorder.beginEditedReplay()
 		recorder.appendCommand(JournalOpenLineCommand{
 			Kind: JournalOpenLineCommandEraseLine,
 			Row:  op.Row,
@@ -799,21 +1036,38 @@ func (recorder *journalOrdinaryRecorder) applyControl(op TerminalSemanticOp) boo
 }
 
 func (recorder *journalOrdinaryRecorder) sealCurrentLine() {
-	if !recorder.active && len(recorder.cells) == 0 {
+	if !recorder.active && len(recorder.cells) == 0 && len(recorder.runs) == 0 {
 		return
 	}
-	recorder.lines = append(recorder.lines, JournalLogicalLine{
-		Cells:    cloneHistoryCells(recorder.cells),
-		TailFill: cloneRowTailFill(recorder.fill),
-		Origin:   HistoryJournalOriginOrdinaryPrimary,
-	})
+	if !recorder.edited {
+		recorder.lines = append(recorder.lines, JournalLogicalLine{
+			Cells:    trimTrailingBlankCellsInPlace(recorder.cells),
+			Runs:     trimTrailingBlankRunsInPlace(recorder.runs),
+			TailFill: cloneRowTailFill(recorder.fill),
+			Origin:   HistoryJournalOriginOrdinaryPrimary,
+		})
+	}
 	recorder.active = false
 	recorder.cells = nil
+	recorder.runs = nil
 	recorder.fill = nil
 	recorder.cursor = 0
+	recorder.visualRows = recorder.visualRows[:0]
+	recorder.edited = false
+	recorder.pendingCR = false
 }
 
 func (recorder *journalOrdinaryRecorder) Flush() (OrdinaryLineBatch, bool) {
+	if recorder.pendingCR {
+		if recorder.hasDirectLinesBeforeCommand() {
+			// 中文说明：batch contract 不允许 direct sealed lines 和 command
+			// replay 混在一起。这里保留 pending CR 后的 cursor=0 open update，
+			// 让下一条 journal item 从 renderer-owned open line 继续命令回放。
+			recorder.pendingCR = false
+		} else {
+			recorder.flushPendingCRCommand()
+		}
+	}
 	if len(recorder.lines) == 0 && !recorder.active && len(recorder.cmds) == 0 {
 		return OrdinaryLineBatch{}, false
 	}
@@ -824,12 +1078,12 @@ func (recorder *journalOrdinaryRecorder) Flush() (OrdinaryLineBatch, bool) {
 	if len(recorder.lines) > 0 {
 		batch.Lines = make([]JournalLogicalLine, len(recorder.lines))
 		for i, line := range recorder.lines {
-			batch.Lines[i] = cloneJournalLogicalLine(line)
+			batch.Lines[i] = line
 		}
 	}
 	if recorder.active {
 		batch.OpenUpdate = &JournalOpenLineUpdate{
-			Cells:     cloneHistoryCells(recorder.cells),
+			Cells:     recorder.openUpdateCells(),
 			CursorCol: recorder.cursor,
 			Row:       recorder.row,
 			TailFill:  cloneRowTailFill(recorder.fill),
@@ -841,10 +1095,76 @@ func (recorder *journalOrdinaryRecorder) Flush() (OrdinaryLineBatch, bool) {
 	recorder.lines = nil
 	recorder.active = false
 	recorder.cells = nil
+	recorder.runs = nil
 	recorder.fill = nil
 	recorder.cursor = 0
 	recorder.cmds = nil
+	recorder.visualRows = recorder.visualRows[:0]
+	recorder.edited = false
+	recorder.pendingCR = false
+	recorder.afterLineFeed = false
+	recorder.flushAfterCommandSeal = false
 	return batch, true
+}
+
+func (recorder *journalOrdinaryRecorder) NeedsFlush() bool {
+	return recorder.flushAfterCommandSeal
+}
+
+func (recorder *journalOrdinaryRecorder) hasDirectLinesBeforeCommand() bool {
+	return len(recorder.lines) > 0 && len(recorder.cmds) == 0 && !recorder.edited
+}
+
+func (recorder *journalOrdinaryRecorder) beginEditedReplay() {
+	if recorder.edited {
+		return
+	}
+	recorder.materializeRunsForEditing()
+	recorder.cells = expandHistoryCellsForEditing(recorder.cells)
+	recorder.edited = true
+	if recorder.active && len(recorder.cmds) == 0 && len(recorder.cells) > 0 {
+		recorder.appendReplaySeedCommands()
+	}
+}
+
+func (recorder *journalOrdinaryRecorder) materializeRunsForEditing() {
+	if len(recorder.runs) == 0 {
+		return
+	}
+	if len(recorder.cells) == 0 {
+		recorder.cells = cellsFromHistoryRunsPreserveTrailing(recorder.runs)
+	} else {
+		recorder.cells = append(recorder.cells, cellsFromHistoryRunsPreserveTrailing(recorder.runs)...)
+	}
+	recorder.runs = nil
+}
+
+func (recorder *journalOrdinaryRecorder) flushPendingCRCommand() {
+	if !recorder.pendingCR {
+		return
+	}
+	recorder.pendingCR = false
+	recorder.beginEditedReplay()
+	recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandSetCursor, Row: recorder.row, Col: 0})
+	recorder.cursor = 0
+}
+
+func (recorder *journalOrdinaryRecorder) writeRequiresCommand(op TerminalSemanticOp) bool {
+	if recorder.edited {
+		return true
+	}
+	if !recorder.active {
+		// 中文说明：普通 LF/IND 只表示 logical line boundary；真实 vterm
+		// 在 LF-only 输入或 journal 分片后会让下一次 WriteSpan 继续使用
+		// 上一列。ordinary history 的 truth 是新 logical line，不应把
+		// physical screen col 解释成 cursor-addressed repaint；真正的
+		// primary repaint 已由 classifier/frame path 拥有。
+		return false
+	}
+	if op.Row != recorder.row {
+		return true
+	}
+	return recorder.logicalColumnForWrite(op) != recorder.cursor
 }
 
 func (recorder *journalOrdinaryRecorder) appendCommand(command JournalOpenLineCommand) {
@@ -853,21 +1173,232 @@ func (recorder *journalOrdinaryRecorder) appendCommand(command JournalOpenLineCo
 	recorder.cmds = append(recorder.cmds, command)
 }
 
+func (recorder *journalOrdinaryRecorder) logicalColumnForWrite(op TerminalSemanticOp) int {
+	if !recorder.active {
+		return 0
+	}
+	base, ok := recorder.visualRowBaseForWrite(op.Row, op.Col)
+	if !ok {
+		return maxInt(0, op.Col)
+	}
+	return maxInt(0, base+op.Col)
+}
+
+func (recorder *journalOrdinaryRecorder) visualRowBaseForWrite(row int, col int) (int, bool) {
+	for index := len(recorder.visualRows) - 1; index >= 0; index-- {
+		current := recorder.visualRows[index]
+		if current.row != row {
+			continue
+		}
+		if current.base+col == recorder.cursor {
+			return current.base, true
+		}
+	}
+	for index := len(recorder.visualRows) - 1; index >= 0; index-- {
+		if recorder.visualRows[index].row == row {
+			return recorder.visualRows[index].base, true
+		}
+	}
+	return 0, false
+}
+
+func (recorder *journalOrdinaryRecorder) ensureVisualRowBase(row int, base int) {
+	for index := range recorder.visualRows {
+		if recorder.visualRows[index].row == row && recorder.visualRows[index].base == base {
+			return
+		}
+	}
+	recorder.visualRows = append(recorder.visualRows, journalOrdinaryVisualRow{row: row, base: base})
+}
+
+func (recorder *journalOrdinaryRecorder) appendReplaySeedCommands() {
+	rows := recorder.visualRows
+	if len(rows) == 0 {
+		rows = []journalOrdinaryVisualRow{{row: recorder.row, base: 0}}
+	}
+	for index, row := range rows {
+		if index > 0 {
+			previous := rows[index-1]
+			recorder.appendCommand(JournalOpenLineCommand{
+				Kind: JournalOpenLineCommandSoftWrap,
+				Row:  previous.row,
+				Col:  recorder.cols,
+			})
+		}
+		end := historyCellsDisplayWidth(recorder.cells)
+		if index+1 < len(rows) {
+			end = rows[index+1].base
+		}
+		cells := sliceHistoryCellsByDisplayColumns(recorder.cells, row.base, end)
+		if len(cells) == 0 {
+			continue
+		}
+		recorder.appendCommand(JournalOpenLineCommand{
+			Kind:  JournalOpenLineCommandWrite,
+			Row:   row.row,
+			Col:   0,
+			Cells: cells,
+		})
+	}
+}
+
+func (recorder *journalOrdinaryRecorder) contentWidth() int {
+	if len(recorder.runs) > 0 && len(recorder.cells) == 0 {
+		return historyRunsDisplayWidth(recorder.runs)
+	}
+	return historyCellsDisplayWidth(recorder.cells)
+}
+
 func journalCellsFromOp(op TerminalSemanticOp) []Cell {
+	cells, _ := journalCellsAndWidthFromOp(op)
+	return cells
+}
+
+func journalCellsAndWidthFromOp(op TerminalSemanticOp) ([]Cell, int) {
 	if len(op.Cells) > 0 {
-		return historyCellsFromTerminal(op.Cells)
+		cells := historyCellsFromTerminal(op.Cells)
+		return cells, terminalCellsDisplayWidth(op.Cells)
 	}
 	if len(op.Runs) > 0 {
-		return cellsFromScrollOutProof(TerminalSemanticScrollOut{Runs: op.Runs})
+		// 中文说明：WriteSpan run 是真实写入 payload，空格会影响后续
+		// cursor/column 语义，不能复用 scroll-out proof 的 trailing blank trim。
+		cells := appendJournalRuns(nil, op.Runs, journalInitialLineCapacity(0))
+		return cells, historyCellsDisplayWidth(cells)
 	}
-	return nil
+	return nil, 0
 }
 
 func journalOpDisplayWidth(op TerminalSemanticOp) int {
 	if len(op.Cells) > 0 {
 		return terminalCellsDisplayWidth(op.Cells)
 	}
-	return historyCellsDisplayWidth(cellsFromScrollOutProof(TerminalSemanticScrollOut{Runs: op.Runs}))
+	width := 0
+	for _, run := range op.Runs {
+		width += xansi.StringWidth(run.Text)
+	}
+	return width
+}
+
+func appendJournalCells(cells []Cell, incoming []Cell, initialCapacity int) []Cell {
+	if len(cells) == 0 && cap(cells) == 0 && len(incoming) > 0 {
+		// 中文说明：普通高压输出通常按 terminal cols 分成多段 soft-wrap。
+		// 当前 line 是 journal-owned payload，可以预留几段 continuation 的容量，
+		// 避免每个 visual row append 都触发整条 logical line 复制。
+		capacity := maxInt(len(incoming), 0)
+		if capacity < initialCapacity {
+			capacity = initialCapacity
+		}
+		cells = make([]Cell, 0, capacity)
+	}
+	for _, cell := range incoming {
+		cells = append(cells, cell)
+	}
+	return cells
+}
+
+func appendJournalRuns(cells []Cell, runs []TerminalSemanticCellRun, initialCapacity int) []Cell {
+	if len(runs) == 0 {
+		return cells
+	}
+	if len(cells) == 0 && cap(cells) == 0 {
+		capacity := initialCapacity
+		cells = make([]Cell, 0, capacity)
+	}
+	for _, run := range runs {
+		style := historyStyleFromTerminal(run.Style)
+		if isASCIIText(run.Text) {
+			// 中文说明：vterm 可以用 compact run 减少 transaction 分配，但
+			// history logical-line truth 的 Cell 仍是一格/一个 grapheme。
+			// 把整段 ASCII 存成宽 Cell 会破坏 copy/history row projection。
+			for i := 0; i < len(run.Text); i++ {
+				cells = append(cells, Cell{Text: run.Text[i : i+1], Width: 1, Style: style})
+			}
+			continue
+		}
+		text := run.Text
+		for text != "" {
+			cluster, width := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
+			if cluster == "" {
+				break
+			}
+			text = text[len(cluster):]
+			if width <= 0 {
+				continue
+			}
+			cells = append(cells, Cell{Text: cluster, Width: width, Style: style})
+		}
+	}
+	return cells
+}
+
+func appendJournalSemanticRuns(out []CellRun, runs []TerminalSemanticCellRun) []CellRun {
+	for _, run := range runs {
+		if run.Text == "" {
+			continue
+		}
+		next := CellRun{
+			Text:  run.Text,
+			Style: historyStyleFromTerminal(run.Style),
+		}
+		if len(out) > 0 {
+			last := &out[len(out)-1]
+			if last.Style == next.Style && last.LinkURL == next.LinkURL && last.LinkParams == next.LinkParams {
+				last.Text += next.Text
+				continue
+			}
+		}
+		out = append(out, next)
+	}
+	return out
+}
+
+func historyRunsDisplayWidth(runs []CellRun) int {
+	width := 0
+	for _, run := range runs {
+		width += xansi.StringWidth(run.Text)
+	}
+	return width
+}
+
+func trimTrailingBlankRunsInPlace(runs []CellRun) []CellRun {
+	for len(runs) > 0 {
+		last := runs[len(runs)-1]
+		if last.Style != (CellStyle{}) || last.LinkURL != "" || last.LinkParams != "" || !strings.HasSuffix(last.Text, " ") {
+			break
+		}
+		trimmed := strings.TrimRight(last.Text, " ")
+		if trimmed != "" {
+			runs[len(runs)-1].Text = trimmed
+			break
+		}
+		runs = runs[:len(runs)-1]
+	}
+	if len(runs) == 0 {
+		return nil
+	}
+	return runs
+}
+
+func journalLogicalLineSignature(line JournalLogicalLine) string {
+	if len(line.Runs) > 0 && len(line.Cells) == 0 {
+		var text strings.Builder
+		for _, run := range trimTrailingBlankRunsInPlace(cloneCellRuns(line.Runs)) {
+			text.WriteString(run.Text)
+		}
+		return text.String()
+	}
+	return rowText(trimTrailingBlankCellsInPlace(cloneHistoryCells(line.Cells)))
+}
+
+func scrollOutProofSignature(proof TerminalSemanticScrollOut) string {
+	return rowText(cellsFromScrollOutProof(proof))
+}
+
+func journalInitialLineCapacity(cols int) int {
+	if cols <= 0 {
+		return 512
+	}
+	return maxInt(cols*4, 512)
 }
 
 func eraseJournalCells(cells []Cell, col int, mode int) []Cell {
@@ -897,8 +1428,33 @@ func eraseJournalCellsBefore(cells []Cell, col int) []Cell {
 	return trimTrailingBlankCells(out)
 }
 
+func sliceHistoryCellsByDisplayColumns(cells []Cell, start int, end int) []Cell {
+	if len(cells) == 0 || end <= start {
+		return nil
+	}
+	start = maxInt(0, start)
+	out := make([]Cell, 0, len(cells))
+	cursor := 0
+	for _, cell := range cells {
+		width := historyCellDisplayWidth(cell)
+		next := cursor + width
+		if width > 0 && cursor >= start && next <= end {
+			out = append(out, cell)
+		}
+		cursor = next
+		if cursor >= end {
+			break
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func cloneJournalLogicalLine(line JournalLogicalLine) JournalLogicalLine {
 	line.Cells = cloneHistoryCells(line.Cells)
+	line.Runs = cloneCellRuns(line.Runs)
 	line.TailFill = cloneRowTailFill(line.TailFill)
 	return line
 }
@@ -914,6 +1470,13 @@ func cloneJournalOpenLineCommands(commands []JournalOpenLineCommand) []JournalOp
 		out[i].TailFill = cloneRowTailFill(command.TailFill)
 	}
 	return out
+}
+
+func (recorder *journalOrdinaryRecorder) openUpdateCells() []Cell {
+	if len(recorder.cells) > 0 {
+		return cloneHistoryCells(recorder.cells)
+	}
+	return cellsFromHistoryRunsPreserveTrailing(recorder.runs)
 }
 
 // CloneHistoryJournal 返回 compact journal 的 history-owned 深拷贝。

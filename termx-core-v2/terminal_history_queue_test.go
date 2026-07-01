@@ -85,16 +85,54 @@ func TestTerminalHistoryIngestQueueDropsConsumedJournalReferences(t *testing.T) 
 	if !ok || len(first) != 2 {
 		t.Fatalf("expected first batch, got batch=%d ok=%v", len(first), ok)
 	}
-	retained := queue.pending[:cap(queue.pending)]
-	if len(queue.pending) != 0 {
-		t.Fatalf("all journals should be consumed, got %d pending", len(queue.pending))
-	}
-	for index, item := range retained {
-		if item.journal.Seq != 0 || len(item.journal.Items) != 0 {
-			t.Fatalf("consumed history journal %d should not remain in backing array: %#v", index, item)
-		}
+	if queue.pendingLen != 0 || queue.head != nil || queue.tail != nil {
+		t.Fatalf("all consumed journals should release queue pages, pending=%d head=%#v tail=%#v", queue.pendingLen, queue.head, queue.tail)
 	}
 	close(queue.done)
+}
+
+func TestR407TerminalHistoryIngestQueueDoesNotShiftBacklogOnBatchDrain(t *testing.T) {
+	queue := newTerminalHistoryIngestQueue(0)
+	total := terminalHistoryIngestBatchMaxJournals + terminalHistoryIngestQueuePageSize + 17
+	for seq := 1; seq <= total; seq++ {
+		if !queue.Enqueue(r385HistoryQueueOrdinaryJournal(uint64(seq), "payload")) {
+			t.Fatal("expected enqueue before close")
+		}
+	}
+	first, ok := queue.nextBatch()
+	if !ok || len(first) != terminalHistoryIngestBatchMaxJournals {
+		t.Fatalf("expected capped first batch, got batch=%d ok=%v", len(first), ok)
+	}
+	if queue.pendingLen != total-terminalHistoryIngestBatchMaxJournals {
+		t.Fatalf("pending count should drop without rebuilding backlog, got %d", queue.pendingLen)
+	}
+	if queue.head == nil || queue.tail == nil {
+		t.Fatalf("remaining backlog should stay page-backed, head=%#v tail=%#v", queue.head, queue.tail)
+	}
+	second, ok := queue.nextBatch()
+	if !ok || len(second) != total-terminalHistoryIngestBatchMaxJournals {
+		t.Fatalf("expected remaining batch, got batch=%d ok=%v", len(second), ok)
+	}
+	if queue.pendingLen != 0 || queue.head != nil || queue.tail != nil {
+		t.Fatalf("queue should release pages after final drain, pending=%d head=%#v tail=%#v", queue.pendingLen, queue.head, queue.tail)
+	}
+	close(queue.done)
+}
+
+func TestR407TerminalHistoryIngestQueueSourceGuard(t *testing.T) {
+	source, err := os.ReadFile("terminal_history_ingest_worker.go")
+	if err != nil {
+		t.Fatalf("read queue source: %v", err)
+	}
+	text := string(source)
+	for _, forbidden := range []string{"pending []terminalHistoryIngestItem", "copy(queue.pending", "queue.pending[:"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("history backlog must stay page-backed and avoid slice front-shift copies: %s", forbidden)
+		}
+	}
+	if !strings.Contains(text, "terminalHistoryIngestPage") || !strings.Contains(text, "pendingLen") {
+		t.Fatal("history backlog must use explicit page-backed pending state")
+	}
 }
 
 func TestR385TerminalHistoryIngestQueueStoresCompactJournalsNotTransactions(t *testing.T) {
