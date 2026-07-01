@@ -11,6 +11,22 @@ import (
 // vterm TerminalSemanticTransaction、HistoryDecision 和 lifecycle CloseReason。
 func NewHistoryLogicalRenderer(stream StreamLineReducer, frames FrameReducer) HistoryLogicalRenderer {
 	allocator := newHistoryIDAllocator()
+	return newHistoryLogicalRendererWithAllocator(stream, frames, allocator)
+}
+
+// NewHistoryRenderers 创建共享 id allocator 的 transaction renderer 与 compact
+// journal renderer。domain owner 是 history；调用边界是 Terminal ingest，同一个
+// terminal 可能先用 ordinary journal fast path，再因 ED/RIS/alt/frame boundary
+// 回到完整 transaction renderer，两条路径必须共享 logical line/timeline id。
+func NewHistoryRenderers(stream StreamLineReducer, frames FrameReducer) (HistoryLogicalRenderer, HistoryJournalRenderer) {
+	allocator := newHistoryIDAllocator()
+	return newHistoryLogicalRendererWithAllocator(stream, frames, allocator), newHistoryJournalRenderer(allocator)
+}
+
+func newHistoryLogicalRendererWithAllocator(stream StreamLineReducer, frames FrameReducer, allocator *historyIDAllocator) HistoryLogicalRenderer {
+	if allocator == nil {
+		allocator = newHistoryIDAllocator()
+	}
 	if stream == nil {
 		stream = &streamLineReducer{
 			ids:       allocator,

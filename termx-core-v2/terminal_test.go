@@ -14,6 +14,7 @@ import (
 
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
+	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 func TestTerminalLifecycleAndLiveSurface(t *testing.T) {
@@ -226,6 +227,103 @@ func TestR373ProcessOutputFansOutSemanticTapToLiveAndHistory(t *testing.T) {
 	records := terminal.tap.InputRecords()
 	if len(records) != 1 || records[0].Kind != SemanticTapInputWrite {
 		t.Fatalf("process output must enter single SemanticTap once, records=%#v", records)
+	}
+}
+
+func TestR382TerminalOrdinaryJournalFastPathThenComplexFallback(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r382-fast-path",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 30, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r382-fast-path", "plain-1\r\nplain-2\r\n"); err != nil {
+		t.Fatalf("ingest ordinary output: %v", err)
+	}
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r382-fast-path", history.HistoryWindowRequest{
+		TerminalID: "term-r382-fast-path",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       30,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("latest ordinary window: %v", err)
+	}
+	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "plain-1|plain-2" {
+		t.Fatalf("ordinary journal fast path must preserve sealed lines, got %q rows=%#v", got, window.Rows)
+	}
+	if !window.Rows[0].Committed || !window.Rows[1].Committed {
+		t.Fatalf("ordinary journal fast path should preserve sealed ownership, rows=%#v", window.Rows)
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-r382-fast-path", "\x1b[?2026hframe\r\ncurrent\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest complex output: %v", err)
+	}
+	window, err = server.TerminalHistoryWindow(context.Background(), "term-r382-fast-path", history.HistoryWindowRequest{
+		TerminalID: "term-r382-fast-path",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       30,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("latest after fallback: %v", err)
+	}
+	texts := strings.Join(historyRowTexts(window.Rows), "|")
+	if !strings.Contains(texts, "plain-1|plain-2") || !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
+		t.Fatalf("complex transaction should fallback after ordinary journal without id/order corruption, texts=%q rows=%#v", texts, window.Rows)
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-r382-fast-path", "PROMPT_AFTER"); err != nil {
+		t.Fatalf("ingest prompt after frame: %v", err)
+	}
+	window, err = server.TerminalHistoryWindow(context.Background(), "term-r382-fast-path", history.HistoryWindowRequest{
+		TerminalID: "term-r382-fast-path",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       30,
+		Limit:      20,
+	})
+	if err != nil {
+		t.Fatalf("latest after prompt fallback: %v", err)
+	}
+	textRows := historyRowTexts(window.Rows)
+	promptIndex := historyTextIndex(textRows, "PROMPT_AFTER")
+	frameIndex := historyTextIndex(textRows, "current")
+	if promptIndex < 0 || frameIndex < 0 || promptIndex < frameIndex {
+		t.Fatalf("ordinary journal fast path must yield to frame close decision, prompt=%d frame=%d rows=%#v", promptIndex, frameIndex, window.Rows)
+	}
+}
+
+func TestR382TerminalJournalFastPathRequiresSealedBatchWithoutOpenFrontier(t *testing.T) {
+	sealed := history.HistoryJournalFromTransaction("term-r382-gate", history.TerminalSemanticTransaction{
+		Seq:  1,
+		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
+		Ops: []history.TerminalSemanticOp{
+			{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: []history.TerminalSemanticCell{{Content: "sealed", Width: 6}}},
+			{Code: vterm.ScreenOpControl, Control: "lf"},
+		},
+	})
+	if !historyJournalAllowsTerminalFastPath(sealed, history.HistoryReadState{}) {
+		t.Fatalf("sealed ordinary batch should be eligible for R382 terminal fast path, journal=%#v", sealed)
+	}
+
+	open := history.HistoryJournalFromTransaction("term-r382-gate", history.TerminalSemanticTransaction{
+		Seq:  2,
+		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
+		Ops:  []history.TerminalSemanticOp{{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: []history.TerminalSemanticCell{{Content: "open", Width: 4}}}},
+	})
+	if historyJournalAllowsTerminalFastPath(open, history.HistoryReadState{}) {
+		t.Fatalf("open-line transaction must stay on full renderer to keep one ordinary owner, journal=%#v", open)
+	}
+
+	lfOnly := history.HistoryJournalFromTransaction("term-r382-gate", history.TerminalSemanticTransaction{
+		Seq:  3,
+		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
+		Ops:  []history.TerminalSemanticOp{{Code: vterm.ScreenOpControl, Control: "lf"}},
+	})
+	if historyJournalAllowsTerminalFastPath(lfOnly, history.HistoryReadState{HasOpenLine: true}) {
+		t.Fatalf("LF-only seal of existing open line must use full renderer-owned state, journal=%#v", lfOnly)
 	}
 }
 

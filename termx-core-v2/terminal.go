@@ -24,6 +24,7 @@ type Terminal struct {
 	tapOpMu         sync.Mutex
 	historyMu       sync.Mutex
 	historyRenderer history.HistoryLogicalRenderer
+	journalRenderer history.HistoryJournalRenderer
 	historyStore    history.HistoryStore
 	historyEnabled  bool
 	historyStatus   HistoryBacklogStatus
@@ -49,7 +50,7 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 			TerminalID:     info.ID,
 			HistoryEnabled: true,
 		}
-		terminal.historyRenderer = history.NewHistoryLogicalRenderer(nil, nil)
+		terminal.historyRenderer, terminal.journalRenderer = history.NewHistoryRenderers(nil, nil)
 		if historyStore == nil {
 			historyStore = history.NewInMemoryHistoryStore(info.ID)
 		}
@@ -848,12 +849,77 @@ func (terminal *Terminal) applyHistoryResizeTransaction(tx history.TerminalSeman
 }
 
 func (terminal *Terminal) applyHistoryTransactionLocked(tx history.TerminalSemanticTransaction) {
-	decision := terminal.historyDecisionForTransaction(tx, terminal.historyStore.ReadState())
+	state := terminal.historyStore.ReadState()
+	decision := terminal.historyDecisionForTransaction(tx, state)
+	if terminal.applyHistoryJournalFastPathLocked(tx, decision, state) {
+		return
+	}
 	batch, err := terminal.historyRenderer.Apply(tx, decision)
 	if err != nil {
 		return
 	}
 	_ = terminal.historyStore.Apply(batch)
+}
+
+func (terminal *Terminal) applyHistoryJournalFastPathLocked(tx history.TerminalSemanticTransaction, decision history.HistoryDecision, state history.HistoryReadState) bool {
+	if terminal.journalRenderer == nil || !historyDecisionAllowsOrdinaryJournalFastPath(decision) {
+		return false
+	}
+	journal := history.HistoryJournalFromTransaction(terminal.info.ID, tx)
+	if !historyJournalAllowsTerminalFastPath(journal, state) {
+		return false
+	}
+	batch, err := terminal.journalRenderer.ApplyJournal(journal)
+	if err != nil {
+		return false
+	}
+	// 中文说明：R382 fast path 只接管 ordinary line batch journal；任何
+	// boundary、scroll-out 或 frame event 都会返回 unsupported 并回到完整
+	// semantic renderer。这里不从 live snapshot 或 raw PTY 补 history。
+	_ = terminal.historyStore.Apply(batch)
+	return true
+}
+
+func historyDecisionAllowsOrdinaryJournalFastPath(decision history.HistoryDecision) bool {
+	// 中文说明：journal fast path 只能接管纯 ordinary stream。凡是 classifier 已经
+	// 判定需要关闭 primary frame、处理 alt/frame/boundary 或消费 scroll-out proof，
+	// 都必须回到完整 renderer，避免 prompt 绕过 session close 后排到 frame 前面。
+	return decision.Mode == history.HistoryOutputModeOrdinaryStream &&
+		!decision.PublishPrimaryFrame &&
+		!decision.PublishPrimaryFrameTouchedRowsOnly &&
+		!decision.ArchivePrimaryBeforeAlt &&
+		!decision.ClearPrimaryCurrent &&
+		!decision.PublishAltFrame &&
+		!decision.ClearAltFrame &&
+		!decision.ClosePrimaryFrame &&
+		!decision.ClosePrimaryFrameBeforePrimaryReplace &&
+		!decision.ArchivePrimaryAfterPrimaryFrame &&
+		!decision.ClosePrimaryFrameBeforeStream &&
+		!decision.SealOpenLine &&
+		!decision.ConsumeStreamOps &&
+		!decision.ConsumeScrollOutProof &&
+		!decision.ConsumeClearTimeScrollOutProof &&
+		!decision.ConsumeClearBoundary &&
+		!decision.NonHistoryBoundary
+}
+
+func historyJournalAllowsTerminalFastPath(journal history.HistoryJournal, state history.HistoryReadState) bool {
+	// 中文说明：R382 生产 fast path 只接管无 open frontier 的 sealed ordinary
+	// batch。带 open-line command 的 transaction 仍走完整 renderer，否则 journal
+	// renderer 与 logical renderer 会分别持有 ordinary open line，后续 fallback
+	// 会产生双状态。
+	if len(journal.Items) == 0 || state.HasOpenLine {
+		return false
+	}
+	for _, item := range journal.Items {
+		if item.Kind != history.HistoryJournalItemOrdinaryLineBatch || item.Ordinary == nil {
+			return false
+		}
+		if item.Ordinary.OpenUpdate != nil || len(item.Ordinary.Lines) == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {

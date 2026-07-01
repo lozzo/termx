@@ -68,6 +68,7 @@ type OrdinaryLineBatch struct {
 	Cols       int
 	Lines      []JournalLogicalLine
 	OpenUpdate *JournalOpenLineUpdate
+	Commands   []JournalOpenLineCommand
 	Origin     HistoryJournalOrigin
 }
 
@@ -89,6 +90,34 @@ type JournalOpenLineUpdate struct {
 	CursorCol int
 	Row       int
 	TailFill  *RowTailFill
+}
+
+// JournalOpenLineCommandKind 描述 ordinary open line 的 compact command。
+// 它是从同一 vterm semantic pass 的 ordered op 裁剪出的 history 专用命令；
+// 不能扩展成 raw PTY replay，也不能引用 live snapshot rows。
+type JournalOpenLineCommandKind string
+
+const (
+	JournalOpenLineCommandWrite     JournalOpenLineCommandKind = "write"
+	JournalOpenLineCommandSetCursor JournalOpenLineCommandKind = "set-cursor"
+	JournalOpenLineCommandMoveCol   JournalOpenLineCommandKind = "move-col"
+	JournalOpenLineCommandMoveRow   JournalOpenLineCommandKind = "move-row"
+	JournalOpenLineCommandEraseLine JournalOpenLineCommandKind = "erase-line"
+	JournalOpenLineCommandSealLine  JournalOpenLineCommandKind = "seal-line"
+)
+
+// JournalOpenLineCommand 是 ordinary journal fast path 的最小可应用命令。
+// domain owner 是 history renderer；truth source 是 ordered terminal op。它表达
+// write、cursor/edit 和 line seal 生命周期，避免把完整 TerminalSemanticOp 逐条
+// 交给 StreamLineReducer 热路径。
+type JournalOpenLineCommand struct {
+	Kind     JournalOpenLineCommandKind
+	Row      int
+	Col      int
+	Delta    int
+	Mode     int
+	Cells    []Cell
+	TailFill *RowTailFill
 }
 
 // HistoryJournalBoundaryKind 枚举会改变 history state machine 的 terminal boundary。
@@ -403,6 +432,7 @@ type journalOrdinaryRecorder struct {
 	cells  []Cell
 	fill   *RowTailFill
 	lines  []JournalLogicalLine
+	cmds   []JournalOpenLineCommand
 }
 
 func newJournalOrdinaryRecorder(cols int) journalOrdinaryRecorder {
@@ -412,9 +442,16 @@ func newJournalOrdinaryRecorder(cols int) journalOrdinaryRecorder {
 func (recorder *journalOrdinaryRecorder) ApplyOp(op TerminalSemanticOp) bool {
 	switch op.Code {
 	case vterm.ScreenOpWriteSpan:
+		cells := journalCellsFromOp(op)
+		recorder.appendCommand(JournalOpenLineCommand{
+			Kind:  JournalOpenLineCommandWrite,
+			Row:   op.Row,
+			Col:   op.Col,
+			Cells: cloneHistoryCells(cells),
+		})
 		recorder.active = true
 		recorder.row = op.Row
-		recorder.cells = writeCellsAt(recorder.cells, op.Col, journalCellsFromOp(op))
+		recorder.cells = writeCellsAt(recorder.cells, op.Col, cells)
 		recorder.cells = trimTrailingBlankCells(recorder.cells)
 		recorder.cursor = op.Col + journalOpDisplayWidth(op)
 		return true
@@ -424,6 +461,11 @@ func (recorder *journalOrdinaryRecorder) ApplyOp(op TerminalSemanticOp) bool {
 		if !recorder.active || op.Row != recorder.row {
 			return false
 		}
+		recorder.appendCommand(JournalOpenLineCommand{
+			Kind: JournalOpenLineCommandEraseLine,
+			Row:  op.Row,
+			Col:  op.Col,
+		})
 		recorder.cells = eraseJournalCells(recorder.cells, op.Col, 0)
 		if recorder.cursor > historyCellsDisplayWidth(recorder.cells) {
 			recorder.cursor = historyCellsDisplayWidth(recorder.cells)
@@ -436,48 +478,67 @@ func (recorder *journalOrdinaryRecorder) ApplyOp(op TerminalSemanticOp) bool {
 func (recorder *journalOrdinaryRecorder) applyControl(op TerminalSemanticOp) bool {
 	switch op.Control {
 	case "cr":
+		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandSetCursor, Row: op.Row, Col: 0})
 		recorder.row = op.Row
 		recorder.cursor = 0
 		return true
 	case "lf", "ind", "nel":
+		command := JournalOpenLineCommand{Kind: JournalOpenLineCommandSealLine}
 		if op.TailFill != nil {
 			recorder.fill = rowTailFillFromTerminal(op.TailFill)
+			command.TailFill = cloneRowTailFill(recorder.fill)
 		}
+		recorder.appendCommand(command)
 		recorder.sealCurrentLine()
 		recorder.row++
 		if op.Control == "nel" {
+			recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandSetCursor, Row: recorder.row, Col: 0})
 			recorder.cursor = 0
 		}
 		return true
 	case "bs":
+		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandMoveCol, Delta: -1})
 		recorder.cursor = maxInt(0, recorder.cursor-1)
 		return true
 	case "cub":
+		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandMoveCol, Delta: -controlCount(op)})
 		recorder.cursor = maxInt(0, recorder.cursor-controlCount(op))
 		return true
 	case "cuf":
+		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandMoveCol, Delta: controlCount(op)})
 		recorder.cursor += controlCount(op)
 		return true
 	case "cha", "hpa":
+		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandSetCursor, Row: recorder.row, Col: maxInt(0, op.Col)})
 		recorder.cursor = maxInt(0, op.Col)
 		return true
 	case "cup":
+		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandSetCursor, Row: maxInt(0, op.Row), Col: maxInt(0, op.Col)})
 		recorder.row = maxInt(0, op.Row)
 		recorder.cursor = maxInt(0, op.Col)
 		return true
 	case "vpa":
+		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandSetCursor, Row: maxInt(0, op.Row), Col: recorder.cursor})
 		recorder.row = maxInt(0, op.Row)
 		return true
 	case "cuu":
+		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandMoveRow, Delta: -controlCount(op)})
 		recorder.row = maxInt(0, recorder.row-controlCount(op))
 		return true
 	case "cud":
+		recorder.appendCommand(JournalOpenLineCommand{Kind: JournalOpenLineCommandMoveRow, Delta: controlCount(op)})
 		recorder.row += controlCount(op)
 		return true
 	case "el":
 		if !recorder.active {
 			return false
 		}
+		recorder.appendCommand(JournalOpenLineCommand{
+			Kind: JournalOpenLineCommandEraseLine,
+			Row:  op.Row,
+			Col:  op.Col,
+			Mode: op.Mode,
+		})
 		recorder.cells = eraseJournalCells(recorder.cells, op.Col, op.Mode)
 		return true
 	}
@@ -500,7 +561,7 @@ func (recorder *journalOrdinaryRecorder) sealCurrentLine() {
 }
 
 func (recorder *journalOrdinaryRecorder) Flush() (OrdinaryLineBatch, bool) {
-	if len(recorder.lines) == 0 && !recorder.active {
+	if len(recorder.lines) == 0 && !recorder.active && len(recorder.cmds) == 0 {
 		return OrdinaryLineBatch{}, false
 	}
 	batch := OrdinaryLineBatch{
@@ -521,12 +582,22 @@ func (recorder *journalOrdinaryRecorder) Flush() (OrdinaryLineBatch, bool) {
 			TailFill:  cloneRowTailFill(recorder.fill),
 		}
 	}
+	if len(recorder.cmds) > 0 {
+		batch.Commands = cloneJournalOpenLineCommands(recorder.cmds)
+	}
 	recorder.lines = nil
 	recorder.active = false
 	recorder.cells = nil
 	recorder.fill = nil
 	recorder.cursor = 0
+	recorder.cmds = nil
 	return batch, true
+}
+
+func (recorder *journalOrdinaryRecorder) appendCommand(command JournalOpenLineCommand) {
+	command.Cells = cloneHistoryCells(command.Cells)
+	command.TailFill = cloneRowTailFill(command.TailFill)
+	recorder.cmds = append(recorder.cmds, command)
 }
 
 func journalCellsFromOp(op TerminalSemanticOp) []Cell {
@@ -577,6 +648,19 @@ func cloneJournalLogicalLine(line JournalLogicalLine) JournalLogicalLine {
 	line.Cells = cloneHistoryCells(line.Cells)
 	line.TailFill = cloneRowTailFill(line.TailFill)
 	return line
+}
+
+func cloneJournalOpenLineCommands(commands []JournalOpenLineCommand) []JournalOpenLineCommand {
+	if len(commands) == 0 {
+		return nil
+	}
+	out := make([]JournalOpenLineCommand, len(commands))
+	for i, command := range commands {
+		out[i] = command
+		out[i].Cells = cloneHistoryCells(command.Cells)
+		out[i].TailFill = cloneRowTailFill(command.TailFill)
+	}
+	return out
 }
 
 func cloneIntSlice(values []int) []int {

@@ -14,3 +14,8 @@ var ErrHistoryUnsupportedWindowMode = errors.New("unsupported history window mod
 // ErrHistoryRendererNotImplemented 表示 R319 已清掉旧 projector/store，但新的
 // logical renderer 尚未接入。这个错误用于防止旧错误模型继续对外提供历史。
 var ErrHistoryRendererNotImplemented = errors.New("history logical renderer not implemented")
+
+// ErrHistoryJournalUnsupported 表示当前 compact journal 含有本切片尚未接管的
+// boundary/frame/scroll-out 语义。调用方必须回到 semantic transaction renderer，
+// 不能用 raw PTY、live snapshot 或本地 TUI rows 兜底。
+var ErrHistoryJournalUnsupported = errors.New("history journal contains unsupported semantic boundary")
