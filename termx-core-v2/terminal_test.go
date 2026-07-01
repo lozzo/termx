@@ -1161,6 +1161,75 @@ func TestServerNextLiveInvalidationCoalescesMissedRevisionsToLatestWake(t *testi
 	}
 }
 
+func TestServerNextLiveInvalidationFlushesPendingTapQueueWithoutSnapshot(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-live-flush", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	terminal, err := server.Terminal("term-live-flush")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-live-flush", "first\r\n"); err != nil {
+		t.Fatalf("first output: %v", err)
+	}
+	observed := terminal.LiveRevision()
+	process := factory.process("term-live-flush")
+	if process == nil {
+		t.Fatalf("expected recording process")
+	}
+	queue := newTerminalLiveIngestQueue()
+	terminal.setTapQueue(process, queue)
+	defer func() {
+		queue.Close()
+		queue.Wait()
+		terminal.clearTapQueue(process, queue)
+	}()
+	queue.Enqueue("second\r\n")
+	queue.Enqueue("third\r\n")
+	done := make(chan Event, 1)
+	errs := make(chan error, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	go func() {
+		event, err := server.NextLiveInvalidation(ctx, "term-live-flush", observed)
+		if err != nil {
+			errs <- err
+			return
+		}
+		done <- event
+	}()
+	select {
+	case event := <-done:
+		t.Fatalf("wake returned before pending tap queue flush: %#v", event)
+	case err := <-errs:
+		t.Fatalf("wake failed before pending tap queue flush: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	go queue.Run(func(output string) error {
+		return terminal.IngestOutput(output)
+	})
+	select {
+	case err := <-errs:
+		t.Fatalf("wake failed: %v", err)
+	case event := <-done:
+		current := terminal.LiveRevision()
+		if event.Live == nil || event.Live.Revision != current || current <= observed {
+			t.Fatalf("wake should coalesce to latest revision after tap flush, event=%#v current=%d observed=%d", event, current, observed)
+		}
+		if strings.Contains(fmt.Sprintf("%#v", event.Live), "Snapshot") {
+			t.Fatalf("coalesced wake must remain wake-only, got %#v", event.Live)
+		}
+		snapshot := terminal.NativeScreenSnapshot("term-live-flush")
+		if snapshot.Revision != current || !strings.Contains(strings.Join(terminalLiveRowsFromNativeSnapshot(snapshot), "\n"), "third") {
+			t.Fatalf("latest native snapshot should be pull-based after flush, got %#v", snapshot)
+		}
+	case <-ctx.Done():
+		t.Fatalf("timed out waiting for coalesced wake: %v", ctx.Err())
+	}
+}
+
 func TestR324TerminalHistoryReturnsAuthoritativeWindow(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
