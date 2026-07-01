@@ -1237,7 +1237,12 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 	fullReplaceFrameOnly := tx.RequiresFullReplace && !state.HasPrimaryCurrent && !historyTransactionHasOrderedContentOps(tx)
 	fullReplaceTouchedRowsOnly := fullReplaceFrameOnly && state.HasTimeline && len(tx.PrimaryFrameTouchedRows) > 0
 	fullReplaceCanPublish := fullReplaceFrameOnly && (!state.HasTimeline || fullReplaceTouchedRowsOnly)
-	isPrimaryFrameSession := (syncFrameSession && !syncEndThenOrdinaryStream) || fullReplaceCanPublish || hasEraseDisplay
+	// 中文说明：有些 primary screen app 不开启 DEC 2026，而是用 CUP/VPA/HPA/CHA
+	// 直接定位光标并重绘当前 viewport。vterm 已经提供 PrimaryFrame side proof；
+	// classifier 必须把它归到 mutable screen-frame，而不是把每次 repaint 的
+	// 中间行写成 ordinary history。
+	cursorAddressedFrameSession := historyTransactionHasCursorAddressedPrimaryFrame(tx) && !syncEndThenOrdinaryStream
+	isPrimaryFrameSession := (syncFrameSession && !syncEndThenOrdinaryStream) || cursorAddressedFrameSession || fullReplaceCanPublish || hasEraseDisplay
 	if tx.RequiresFullReplace && tx.FullReplaceReason == "resize" {
 		return history.HistoryDecision{Mode: history.HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true}
 	}
@@ -1264,7 +1269,7 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 		// PrimaryFrame side proof 会包含屏幕上已经 sealed 的普通 shell tail。
 		// 没有 clear 边界时，只允许本 transaction 触达的 rows 进入 current
 		// frame，不能把旧 shell 屏幕复刻成第二份 screen app history truth。
-		decision.PublishPrimaryFrameTouchedRowsOnly = !hasEraseDisplay && len(tx.PrimaryScrollOut) == 0 && (syncFrameSession || fullReplaceTouchedRowsOnly)
+		decision.PublishPrimaryFrameTouchedRowsOnly = !hasEraseDisplay && len(tx.PrimaryScrollOut) == 0 && (syncFrameSession || cursorAddressedFrameSession || fullReplaceTouchedRowsOnly)
 		// 中文说明：vterm 已经证明真正滚出 primary viewport 的 payload 必须进入
 		// authoritative history；ED2 clear-time proof 只有在已有 primary current
 		// ownership 时才消费，renderer 不能靠更早的 scroll-out 状态补 seal。
@@ -1327,6 +1332,22 @@ func historyTransactionHasContentAfterSyncEnd(tx history.TerminalSemanticTransac
 			continue
 		}
 		if afterSyncEnd && !inAltAfterSyncEnd && historyOpMutatesStreamContent(op) {
+			return true
+		}
+	}
+	return false
+}
+
+func historyTransactionHasCursorAddressedPrimaryFrame(tx history.TerminalSemanticTransaction) bool {
+	if tx.PrimaryFrame == nil || !historyTransactionHasContentMutation(tx) {
+		return false
+	}
+	for _, op := range tx.Ops {
+		if op.Code != vterm.ScreenOpControl {
+			continue
+		}
+		switch op.Control {
+		case "cup", "vpa", "hpa", "cha":
 			return true
 		}
 	}

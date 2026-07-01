@@ -1067,6 +1067,37 @@ func TestR398SynchronizedProgressRepaintDoesNotAppendEveryFrame(t *testing.T) {
 	}
 }
 
+func TestR401CursorAddressedProgressRepaintDoesNotAppendEveryFrame(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r401-cursor-progress-redraw",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 80, Rows: 12},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	for i := 0; i < 8; i++ {
+		output := fmt.Sprintf("\x1b[Hgpt-5.5 xhigh · ~/Documents/workdir/termx\x1b[K\r\nStarting MCP servers (1/2): computer-use (%ds · esc to interrupt)\x1b[K\r\n\r\n> Improve  documentation   in @filename\x1b[K", i)
+		if err := server.IngestOutput(context.Background(), "term-r401-cursor-progress-redraw", output); err != nil {
+			t.Fatalf("ingest cursor-addressed progress repaint %d: %v", i, err)
+		}
+	}
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r401-cursor-progress-redraw", 80, 6)
+	if got := historyTextCount(rows, "Starting MCP servers"); got != 1 {
+		t.Fatalf("cursor-addressed progress repaint must expose only latest mutable frame, count=%d rows=%#v", got, rows)
+	}
+	current := strings.Join(currentPrimaryFrameRowTexts(rows), "\n")
+	if !strings.Contains(current, "7s · esc to interrupt") {
+		t.Fatalf("current frame should keep latest progress text, got %q rows=%#v", current, rows)
+	}
+	if !strings.Contains(current, "> Improve  documentation   in @filename") {
+		t.Fatalf("current frame must preserve intra-line spaces, got %q rows=%#v", current, rows)
+	}
+	if historyRowsContainSegment(rows, history.HistorySegmentArchivedPrimaryFrame) {
+		t.Fatalf("cursor-addressed progress repaint must not archive intermediate frames, rows=%#v", rows)
+	}
+}
+
 func TestR373SingleTapSyncThenAltKeepsPrimaryHistory(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
