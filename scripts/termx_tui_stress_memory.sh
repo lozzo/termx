@@ -43,11 +43,15 @@ Artifacts:
   memory-samples.tsv    daemon/TUI RSS samples collected during stress, grouped by phase
   memory-peaks.tsv      daemon/TUI peak RSS derived from stress samples, grouped by phase
   baseline-time.txt     outside-termx baseline time(1) output when enabled
+  baseline-tmux-live.txt
+                         direct tmux PTY capture of the same stress command when baseline is enabled
+  baseline-tmux-time.txt direct tmux PTY time(1) output when baseline is enabled
   stress-time.txt       captured time(1) output from the last TUI stress run
   stress-times.tsv      parsed per-run time(1) output captured from the TUI pane
   stress-latency.tsv    per-run wall-clock latency from tmux send-keys to visible DONE
   stress-commands.tsv   exact stress command typed into the TUI pane
   history-trace.tsv     live/copy captures checked for oldest/newest stress markers
+  history-query.tsv     history-dump/copy visible latency and marker checks
   history-files.tsv     file-backed history payload count/bytes after each stress run
   profile-summary.txt   daemon/TUI pprof top summaries
   profile-graphs/       daemon/TUI pprof DOT graphs and SVG graphs when Graphviz exists
@@ -57,6 +61,7 @@ Artifacts:
   tui-memstats/          TUI runtime MemStats samples collected at RSS stages
   state/termx/history-v2/ default daemon file-backed history payloads
   live.txt              tmux capture after stress completes
+  history-dump.txt      core-v2 authoritative history dump after stress completes
   copy-oldest.txt       capture after copy/history oldest jump
   daemon-heap/          daemon heap profiles captured by --profile-mode
   tui-heap/             TUI heap profiles captured by --profile-mode
@@ -138,17 +143,31 @@ wait_for_capture() {
   local pattern="$2"
   local deadline="$3"
   local found_var="${4:-}"
-  local attempt
-  for attempt in $(seq 1 "$deadline"); do
+  local deadline_ms now
+  deadline_ms=$(( $(now_ms) + deadline * 1000 ))
+  while true; do
     if tmux capture-pane -t "$target" -p -S -4000 2>/dev/null | LC_ALL=C grep -Fq "$pattern"; then
       if [[ -n "$found_var" ]]; then
         printf -v "$found_var" '%s' "$(now_ms)"
       fi
       return 0
     fi
-    sleep 1
+    now="$(now_ms)"
+    if [[ "$now" -ge "$deadline_ms" ]]; then
+      break
+    fi
+    sleep 0.1
   done
   return 1
+}
+
+send_literal_enter() {
+  local target="$1"
+  local command="$2"
+  # 中文说明：压力命令必须作为字面文本进入真实 TUI 输入链路；长命令里的
+  # 空格、分号和 shell quoting 不能让 tmux send-keys 当成 key name 解释。
+  tmux send-keys -t "$target" -l "$command"
+  tmux send-keys -t "$target" Enter
 }
 
 wait_for_copy_oldest() {
@@ -373,7 +392,7 @@ parse_time_field() {
 
 stress_script_args() {
   local run_seed="$1"
-  printf ' --lines %s' "$LINES"
+  printf ' --lines %s' "$STRESS_LINES"
   if [[ -n "$run_seed" ]]; then
     printf ' --seed %s' "$run_seed"
   fi
@@ -390,8 +409,36 @@ stress_command_display() {
 
 stress_command_shell() {
   local run_seed="$1"
-  printf 'python3 %s' "$(shell_quote "$STRESS_SCRIPT")"
+  printf '%s %s' "$(shell_quote "$(command -v python3)")" "$(shell_quote "$STRESS_SCRIPT")"
   stress_script_args "$run_seed"
+}
+
+run_tmux_stress_baseline() {
+  local run_seed="$1"
+  local baseline_session="termx-stress-baseline-$$"
+  local baseline_target="$baseline_session:0.0"
+  local time_file="$ROOT/baseline-tmux-time.txt"
+  local marker="TERM_X_TMUX_BASELINE_DONE"
+  local command history_limit
+  history_limit=$((STRESS_LINES + 5000))
+  if [[ "$history_limit" -lt 10000 ]]; then
+    history_limit=10000
+  fi
+  command="/usr/bin/time -p $(stress_command_shell "$run_seed") 2>$(shell_quote "$time_file"); printf '\\n%s\\n' $marker"
+  log "running direct tmux PTY stress baseline: $(stress_command_display "$run_seed")"
+  tmux new-session -d -x "$ATTACH_COLS" -y "$ATTACH_ROWS" -s "$baseline_session" /bin/sh -l
+  tmux set-option -t "$baseline_session" history-limit "$history_limit" >/dev/null
+  send_literal_enter "$baseline_target" "$command"
+  if ! wait_for_capture "$baseline_target" "$marker" "$WAIT_SECONDS"; then
+    tmux capture-pane -t "$baseline_target" -p -S - >"$ROOT/baseline-tmux-timeout.txt" || true
+    tmux kill-session -t "$baseline_session" 2>/dev/null || true
+    echo "direct tmux PTY baseline did not reach done marker within ${WAIT_SECONDS}s" >&2
+    return 1
+  fi
+  tmux capture-pane -t "$baseline_target" -p -S - >"$ROOT/baseline-tmux-live.txt" || true
+  tmux capture-pane -t "$baseline_target" -ep -S - >"$ROOT/baseline-tmux-live.raw.txt" || true
+  tmux kill-session -t "$baseline_session" 2>/dev/null || true
+  append_history_trace "baseline_tmux" "$ROOT/baseline-tmux-live.txt"
 }
 
 record_rss() {
@@ -470,14 +517,117 @@ append_history_trace() {
     if LC_ALL=C grep -Fq "000000" "$path"; then
       oldest=1
     fi
-    if LC_ALL=C grep -Fq "$(printf '%06d' "$LINES")" "$path"; then
+    if LC_ALL=C grep -Fq "$(printf '%06d' "$STRESS_LINES")" "$path"; then
       newest=1
     fi
     if LC_ALL=C grep -Fq "TERM_X_TUI_STRESS_DONE" "$path"; then
       done=1
     fi
+    if LC_ALL=C grep -Fq "TERM_X_TMUX_BASELINE_DONE" "$path"; then
+      done=1
+    fi
   fi
   printf '%s\t%s\t%s\t%s\t%s\n' "$stage" "$oldest" "$newest" "$done" "$path" >>"$HISTORY_TRACE_REPORT"
+}
+
+history_marker_present() {
+  local path="$1"
+  local marker="$2"
+  if [[ ! -s "$path" ]]; then
+    return 1
+  fi
+  case "$(basename "$path")" in
+    *dump*)
+      # 中文说明：history-dump 每行前缀本身也是六位数字；marker 校验只看
+      # authoritative row payload，不能把 dump 的行号误判成历史内容。
+      LC_ALL=C grep -F ' text=' "$path" | LC_ALL=C grep -Fq "$marker"
+      ;;
+    *)
+      LC_ALL=C grep -Fq "$marker" "$path"
+      ;;
+  esac
+}
+
+history_dump_row_count() {
+  local path="$1"
+  if [[ ! -s "$path" ]]; then
+    printf '0\n'
+    return 0
+  fi
+  awk '/^[0-9][0-9][0-9][0-9][0-9][0-9] page_row=/ { count++ } END { print count + 0 }' "$path"
+}
+
+history_artifact_tail_status() {
+  local path="$1"
+  local newest
+  newest="$(printf '%06d' "$STRESS_LINES")"
+  if history_marker_present "$path" "$newest" && history_marker_present "$path" "TERM_X_TUI_STRESS_DONE"; then
+    printf 'ok\n'
+    return 0
+  fi
+  printf 'missing_tail\n'
+  return 1
+}
+
+history_artifact_full_status() {
+  local path="$1"
+  local newest
+  newest="$(printf '%06d' "$STRESS_LINES")"
+  if history_marker_present "$path" "000000" && history_marker_present "$path" "$newest" && history_marker_present "$path" "TERM_X_TUI_STRESS_DONE"; then
+    printf 'ok\n'
+    return 0
+  fi
+  printf 'missing_marker\n'
+  return 1
+}
+
+append_history_query() {
+  local stage="$1"
+  local status="$2"
+  local start_ms="$3"
+  local end_ms="$4"
+  local path="$5"
+  local time_file="${6:-}"
+  local elapsed_ms="" time_real="" rows oldest newest done
+  if [[ -n "$start_ms" && -n "$end_ms" ]]; then
+    elapsed_ms=$((end_ms - start_ms))
+  fi
+  if [[ -n "$time_file" && -s "$time_file" ]]; then
+    time_real="$(parse_time_field "$time_file" real)"
+  fi
+  rows="$(history_dump_row_count "$path")"
+  oldest=0
+  newest=0
+  done=0
+  if history_marker_present "$path" "000000"; then
+    oldest=1
+  fi
+  if history_marker_present "$path" "$(printf '%06d' "$STRESS_LINES")"; then
+    newest=1
+  fi
+  if history_marker_present "$path" "TERM_X_TUI_STRESS_DONE"; then
+    done=1
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$stage" "$status" "$start_ms" "$end_ms" "$elapsed_ms" "$time_real" "$rows" "$oldest" "$newest" "$done" "$path" >>"$HISTORY_QUERY_REPORT"
+}
+
+run_history_dump_query() {
+  local stage="$1"
+  local out_path="$2"
+  local stdout_path="$ROOT/${stage}.stdout"
+  local time_path="$ROOT/${stage}-time.txt"
+  local start_ms end_ms status
+  log "dumping authoritative history: $stage"
+  start_ms="$(now_ms)"
+  if /usr/bin/time -p "$BIN" --socket "$SOCK" --log-file "$LOG" v3 history-dump "$TERMINAL_ID" --out "$out_path" --cols "$ATTACH_COLS" --limit 512 >"$stdout_path" 2>"$time_path"; then
+    status="$(history_artifact_full_status "$out_path" || true)"
+  else
+    status="error"
+  fi
+  end_ms="$(now_ms)"
+  append_history_query "$stage" "$status" "$start_ms" "$end_ms" "$out_path" "$time_path"
+  append_history_trace "$stage" "$out_path"
+  [[ "$status" != "error" ]]
 }
 
 latest_profile() {
@@ -556,6 +706,11 @@ write_profile_summary() {
       echo "## history trace"
       cat "$ROOT/history-trace.tsv"
     fi
+    if [[ -s "$ROOT/history-query.tsv" ]]; then
+      echo
+      echo "## history query"
+      cat "$ROOT/history-query.tsv"
+    fi
     if [[ -d "$DAEMON_DEFAULT_HISTORY_BACKEND_DIR" ]]; then
       echo
       echo "## daemon default history file backend"
@@ -606,7 +761,7 @@ positive_integer() {
 
 ROOT=""
 BIN=""
-LINES=100000
+STRESS_LINES=100000
 REPEAT=1
 SEED=""
 WIDTH_HINT=""
@@ -633,7 +788,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --lines)
-      LINES="$2"
+      STRESS_LINES="$2"
       shift 2
       ;;
     --repeat)
@@ -712,7 +867,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-positive_integer "--lines" "$LINES"
+positive_integer "--lines" "$STRESS_LINES"
 positive_integer "--repeat" "$REPEAT"
 positive_integer "--wait-seconds" "$WAIT_SECONDS"
 if [[ -n "$DAEMON_MEMORY_LIMIT_MB" ]]; then
@@ -765,6 +920,7 @@ STRESS_TIMES_REPORT="$ROOT/stress-times.tsv"
 STRESS_LATENCY_REPORT="$ROOT/stress-latency.tsv"
 STRESS_COMMANDS_REPORT="$ROOT/stress-commands.tsv"
 HISTORY_TRACE_REPORT="$ROOT/history-trace.tsv"
+HISTORY_QUERY_REPORT="$ROOT/history-query.tsv"
 DAEMON_HEAP_DIR="$ROOT/daemon-heap"
 TUI_HEAP_DIR="$ROOT/tui-heap"
 DAEMON_MEMSTATS_DIR="$ROOT/daemon-memstats"
@@ -841,6 +997,7 @@ printf 'run\tseed\treal\tuser\tsys\n' >"$STRESS_TIMES_REPORT"
 printf 'run\tseed\tstatus\tsend_unix_ms\tdone_visible_unix_ms\tobserved_ms\tvisible_ms\tpython_real_s\tpost_process_visible_ms\n' >"$STRESS_LATENCY_REPORT"
 printf 'run\tseed\tcommand\n' >"$STRESS_COMMANDS_REPORT"
 printf 'stage\thas_oldest_000000\thas_newest_line\thas_done_marker\tpath\n' >"$HISTORY_TRACE_REPORT"
+printf 'stage\tstatus\tstart_unix_ms\tend_unix_ms\telapsed_ms\ttime_real_s\trows\thas_oldest_000000\thas_newest_line\thas_done_marker\tpath\n' >"$HISTORY_QUERY_REPORT"
 mkdir -p "$TUI_HEAP_DIR"
 mkdir -p "$DAEMON_HEAP_DIR"
 mkdir -p "$TUI_MEMSTATS_DIR"
@@ -849,6 +1006,7 @@ if [[ "$BASELINE_TIME" == "1" ]]; then
   log "running outside-termx stress baseline: $(stress_command_display "$SEED")"
   /usr/bin/time -p "$(command -v python3)" "$STRESS_SCRIPT" $(stress_script_args "$SEED") >"$ROOT/baseline-output.txt" 2>"$ROOT/baseline-time.txt"
   rm -f "$ROOT/baseline-output.txt"
+  run_tmux_stress_baseline "$SEED"
 fi
 
 log "starting daemon"
@@ -940,6 +1098,11 @@ if [[ -z "$TUI_PID" ]]; then
   exit 1
 fi
 sleep 1
+if ! wait_for_capture "$TARGET" "stress-shell" "$WAIT_SECONDS"; then
+  capture_pane "$TARGET" "attach-timeout"
+  echo "TUI attach did not render stress-shell within ${WAIT_SECONDS}s" >&2
+  exit 1
+fi
 record_stage "tui_idle" "tui" "$TUI_PID"
 maybe_capture_stage_profile "tui_idle" "tui" "$TUI_PID"
 
@@ -966,21 +1129,29 @@ for RUN in $(seq 1 "$REPEAT"); do
   # 中文说明：send -> DONE visible 是用户感知 live 延迟；pane 内 time 只量程序本身。
   STRESS_SEND_MS="$(now_ms)"
   STRESS_DONE_MS=""
-  tmux send-keys -t "$TARGET" "$STRESS_CMD" Enter
-  if ! wait_for_capture "$TARGET" "$DONE_MARKER" "$WAIT_SECONDS" STRESS_DONE_MS; then
-    STRESS_TIMEOUT_MS="$(now_ms)"
-    touch "$SAMPLE_STOP_FILE"
-    wait "$SAMPLE_PID" 2>/dev/null || true
-    append_stress_time "$RUN_LABEL" "$RUN_SEED" "$TIME_FILE"
-    append_stress_latency "$RUN_LABEL" "$RUN_SEED" "$STRESS_SEND_MS" "" "$TIME_FILE" "timeout" "$STRESS_TIMEOUT_MS"
+  STRESS_STATUS="visible"
+  STRESS_OBSERVED_END_MS=""
+  send_literal_enter "$TARGET" "$STRESS_CMD"
+  if wait_for_capture "$TARGET" "$DONE_MARKER" "$WAIT_SECONDS" STRESS_DONE_MS; then
+    STRESS_OBSERVED_END_MS="$STRESS_DONE_MS"
+  else
+    STRESS_STATUS="timeout"
+    STRESS_OBSERVED_END_MS="$(now_ms)"
     capture_pane "$TARGET" "live-timeout-run-${RUN_LABEL}"
-    echo "stress command run $RUN_LABEL did not reach done marker within ${WAIT_SECONDS}s" >&2
-    exit 1
+    if [[ ! -s "$TIME_FILE" ]]; then
+      touch "$SAMPLE_STOP_FILE"
+      wait "$SAMPLE_PID" 2>/dev/null || true
+      append_stress_time "$RUN_LABEL" "$RUN_SEED" "$TIME_FILE"
+      append_stress_latency "$RUN_LABEL" "$RUN_SEED" "$STRESS_SEND_MS" "" "$TIME_FILE" "timeout" "$STRESS_OBSERVED_END_MS"
+      echo "stress command run $RUN_LABEL did not create time output within ${WAIT_SECONDS}s" >&2
+      exit 1
+    fi
+    log "DONE marker not visible within ${WAIT_SECONDS}s for run=$RUN_LABEL; continuing to history diagnostics"
   fi
   touch "$SAMPLE_STOP_FILE"
   wait "$SAMPLE_PID" 2>/dev/null || true
   append_stress_time "$RUN_LABEL" "$RUN_SEED" "$TIME_FILE"
-  append_stress_latency "$RUN_LABEL" "$RUN_SEED" "$STRESS_SEND_MS" "$STRESS_DONE_MS" "$TIME_FILE"
+  append_stress_latency "$RUN_LABEL" "$RUN_SEED" "$STRESS_SEND_MS" "$STRESS_DONE_MS" "$TIME_FILE" "$STRESS_STATUS" "$STRESS_OBSERVED_END_MS"
   capture_pane "$TARGET" "live-run-${RUN_LABEL}"
   append_history_trace "live_run_${RUN_LABEL}" "$ROOT/live-run-${RUN_LABEL}.txt"
   record_stage "daemon_after_stress_run_${RUN_LABEL}" "daemon" "$DAEMON_PID"
@@ -1011,21 +1182,42 @@ if [[ "$HISTORY_DISABLED" == "1" ]]; then
   log "artifacts kept at: $ROOT"
   exit 0
 fi
+
+if ! run_history_dump_query "history-dump" "$ROOT/history-dump.txt"; then
+  echo "authoritative history-dump command failed" >&2
+  exit 1
+fi
+record_stage "daemon_history_dump" "daemon" "$DAEMON_PID"
+record_stage "tui_history_dump" "tui" "$TUI_PID"
+
+COPY_LATEST_START_MS="$(now_ms)"
 tmux send-keys -t "$TARGET" C-v
-sleep 3
+COPY_LATEST_VISIBLE_MS=""
+if wait_for_capture "$TARGET" "PgUp] SCROLL" "$WAIT_SECONDS" COPY_LATEST_VISIBLE_MS; then
+  :
+else
+  COPY_LATEST_VISIBLE_MS="$(now_ms)"
+fi
 capture_pane "$TARGET" "copy-latest"
 append_history_trace "copy_latest" "$ROOT/copy-latest.txt"
+append_history_query "copy_latest" "$(history_artifact_tail_status "$ROOT/copy-latest.txt" || true)" "$COPY_LATEST_START_MS" "$COPY_LATEST_VISIBLE_MS" "$ROOT/copy-latest.txt"
 record_stage "daemon_copy_latest" "daemon" "$DAEMON_PID"
 maybe_capture_stage_profile "daemon_copy_latest" "daemon" "$DAEMON_PID"
 record_stage "tui_copy_latest" "tui" "$TUI_PID"
 maybe_capture_stage_profile "tui_copy_latest" "tui" "$TUI_PID"
 
 log "jumping to oldest history page"
+COPY_OLDEST_START_MS="$(now_ms)"
 if ! wait_for_copy_oldest "$TARGET" "$WAIT_SECONDS"; then
+  COPY_OLDEST_END_MS="$(now_ms)"
+  capture_pane "$TARGET" "copy-oldest-timeout"
+  append_history_query "copy_oldest" "timeout" "$COPY_OLDEST_START_MS" "$COPY_OLDEST_END_MS" "$ROOT/copy-oldest-timeout.txt"
   echo "copy-oldest did not show oldest stress line 000000" >&2
   exit 1
 fi
+COPY_OLDEST_END_MS="$(now_ms)"
 append_history_trace "copy_oldest" "$ROOT/copy-oldest.txt"
+append_history_query "copy_oldest" "$(history_artifact_full_status "$ROOT/copy-oldest.txt" || true)" "$COPY_OLDEST_START_MS" "$COPY_OLDEST_END_MS" "$ROOT/copy-oldest.txt"
 record_stage "daemon_copy_oldest" "daemon" "$DAEMON_PID"
 record_stage "tui_copy_oldest" "tui" "$TUI_PID"
 sleep 2
@@ -1105,6 +1297,14 @@ if [[ -s "$ROOT/history-trace.tsv" ]]; then
     column -t -s $'\t' "$ROOT/history-trace.tsv"
   else
     cat "$ROOT/history-trace.tsv"
+  fi
+fi
+if [[ -s "$ROOT/history-query.tsv" ]]; then
+  log "history query"
+  if command -v column >/dev/null 2>&1; then
+    column -t -s $'\t' "$ROOT/history-query.tsv"
+  else
+    cat "$ROOT/history-query.tsv"
   fi
 fi
 if [[ -s "$ROOT/profile-summary.txt" ]]; then
