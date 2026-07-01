@@ -27,7 +27,7 @@ func HistoryTraceWindowSummary(rows []HistoryRow) string {
 // protocol response、TUI merge/trim 和 render-visible 四层是否发生错位。
 func HistoryTraceRowSummary(index int, row HistoryRow) string {
 	return fmt.Sprintf(
-		"i=%d projection=%d line=%d row=%d segment=%s kind=%s session=%d frame=%d fixed=%v cols=%d clip=%v/%v text=%q",
+		"i=%d projection=%d line=%d row=%d segment=%s kind=%s session=%d frame=%d fixed=%v cols=%d cells=%d width=%d trail=%d clip=%v/%v text=%q",
 		index,
 		row.ProjectionRowIndex,
 		row.LineID,
@@ -38,6 +38,9 @@ func HistoryTraceRowSummary(index int, row HistoryRow) string {
 		row.FrameID,
 		row.FixedGrid,
 		row.ScreenCols,
+		len(row.Cells),
+		HistoryRowDisplayWidth(row),
+		historyTraceTrailingSpaces(row.Text),
 		row.ClippedStart,
 		row.ClippedEnd,
 		historyTraceShortText(row.Text),
@@ -63,6 +66,18 @@ func historyTraceSampleIndexes(total int, limit int) []int {
 		out = append(out, index)
 	}
 	return out
+}
+
+func historyTraceTrailingSpaces(text string) int {
+	count := 0
+	for len(text) > 0 {
+		if text[len(text)-1] != ' ' {
+			break
+		}
+		count++
+		text = text[:len(text)-1]
+	}
+	return count
 }
 
 func historyTraceShortText(text string) string {

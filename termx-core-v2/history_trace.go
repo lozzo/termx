@@ -3,8 +3,10 @@ package termxcorev2
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
+	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 const coreHistoryTracePreviewRows = 4
@@ -22,8 +24,9 @@ func coreHistoryWindowSummary(rows []history.HistoryRow) string {
 }
 
 func coreHistoryRowSummary(index int, row history.HistoryRow) string {
+	text := coreHistoryRowText(row)
 	return fmt.Sprintf(
-		"i=%d projection=%d line=%d row=%d segment=%s kind=%s session=%d frame=%d fixed=%v cols=%d text=%q",
+		"i=%d projection=%d line=%d row=%d segment=%s kind=%s session=%d frame=%d fixed=%v cols=%d cells=%d width=%d trail=%d text=%q",
 		index,
 		row.ProjectionRowIndex,
 		row.LineID,
@@ -34,7 +37,45 @@ func coreHistoryRowSummary(index int, row history.HistoryRow) string {
 		row.FrameID,
 		row.FixedGrid,
 		row.ScreenCols,
-		coreHistoryTraceShortText(coreHistoryRowText(row)),
+		len(row.Cells),
+		coreHistoryCellsDisplayWidth(row.Cells),
+		coreHistoryTrailingSpaces(text),
+		coreHistoryTraceShortText(text),
+	)
+}
+
+// 中文说明：history trace 只观察 vterm semantic frame 进入 core history 前的
+// fixed-grid 形态，用来定位空格是在 semantic source、core store 还是 TUI
+// projection/render 层丢失；它不能参与 history truth 或渲染决策。
+func coreHistoryFrameSummary(frame *history.TerminalSemanticFrame) string {
+	if frame == nil || len(frame.Rows) == 0 {
+		return ""
+	}
+	indexes := coreHistoryTraceSampleIndexes(len(frame.Rows), coreHistoryTracePreviewRows)
+	parts := make([]string, 0, len(indexes))
+	for _, index := range indexes {
+		parts = append(parts, coreHistorySemanticFrameRowSummary(index, frame.Cols, frame.Rows[index]))
+	}
+	return strings.Join(parts, " || ")
+}
+
+func coreHistoryFrameRowCount(frame *history.TerminalSemanticFrame) int {
+	if frame == nil {
+		return 0
+	}
+	return len(frame.Rows)
+}
+
+func coreHistorySemanticFrameRowSummary(index int, cols int, cells []vterm.TerminalSemanticCell) string {
+	text := coreHistorySemanticCellsText(cells)
+	return fmt.Sprintf(
+		"i=%d cols=%d cells=%d width=%d trail=%d text=%q",
+		index,
+		cols,
+		len(cells),
+		coreHistorySemanticCellsDisplayWidth(cells),
+		coreHistoryTrailingSpaces(text),
+		coreHistoryTraceShortText(text),
 	)
 }
 
@@ -95,6 +136,66 @@ func coreHistoryRowText(row history.HistoryRow) string {
 		builder.WriteString(cell.Text)
 	}
 	return builder.String()
+}
+
+// 中文说明：semantic cell 的 Content 为空但 Width 为正时代表默认空白格，
+// 这里必须按空格展开，才能在 trace 中看出 fixed-grid 行尾 blank 是否已进入 core。
+func coreHistorySemanticCellsText(cells []vterm.TerminalSemanticCell) string {
+	var builder strings.Builder
+	for _, cell := range cells {
+		if cell.Content == "" && cell.Width == 0 {
+			continue
+		}
+		if cell.Content == "" {
+			width := cell.Width
+			if width < 1 {
+				width = 1
+			}
+			builder.WriteString(strings.Repeat(" ", width))
+			continue
+		}
+		builder.WriteString(cell.Content)
+	}
+	return builder.String()
+}
+
+func coreHistoryCellsDisplayWidth(cells []history.Cell) int {
+	width := 0
+	for _, cell := range cells {
+		if cell.Width > 0 {
+			width += cell.Width
+			continue
+		}
+		width += len([]rune(cell.Text))
+	}
+	return width
+}
+
+func coreHistorySemanticCellsDisplayWidth(cells []vterm.TerminalSemanticCell) int {
+	width := 0
+	for _, cell := range cells {
+		if cell.Width > 0 {
+			width += cell.Width
+			continue
+		}
+		if cell.Content != "" {
+			width += len([]rune(cell.Content))
+		}
+	}
+	return width
+}
+
+func coreHistoryTrailingSpaces(text string) int {
+	count := 0
+	for len(text) > 0 {
+		r, size := utf8.DecodeLastRuneInString(text)
+		if r != ' ' {
+			break
+		}
+		count++
+		text = text[:len(text)-size]
+	}
+	return count
 }
 
 func coreHistoryTraceShortText(text string) string {
