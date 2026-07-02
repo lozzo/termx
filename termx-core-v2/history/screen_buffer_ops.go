@@ -145,6 +145,8 @@ func (buffer *ScreenHistoryBuffer) applyControl(op TerminalSemanticOp, seq uint6
 			return err
 		}
 		return buffer.eraseDisplay(op.Row, op.Col, op.Mode, seq)
+	case "soft-wrap":
+		return buffer.softWrap(op, seq)
 	case "ech":
 		return buffer.eraseCharacters(op.Row, op.Col, controlCount(op), seq)
 	case "dch":
@@ -267,6 +269,32 @@ func (buffer *ScreenHistoryBuffer) eraseDisplay(row int, col int, mode int, seq 
 		}
 		return nil
 	}
+}
+
+func (buffer *ScreenHistoryBuffer) softWrap(op TerminalSemanticOp, seq uint64) error {
+	grid := buffer.activeGrid()
+	if grid == nil || len(grid.Rows) == 0 {
+		return nil
+	}
+	rowIndex := clampInt(op.Row, 0, buffer.Rows-1)
+	row := grid.Rows[rowIndex]
+	row.Wrapped = true
+	row.Version++
+	row.OwnerSeq = seq
+	grid.Rows[rowIndex] = row
+	nextRow := rowIndex + 1
+	if nextRow < len(grid.Rows) {
+		next := grid.Rows[nextRow]
+		next.Continued = true
+		next.Version++
+		next.OwnerSeq = seq
+		grid.Rows[nextRow] = next
+	}
+	// 中文说明：soft-wrap 只标记 physical row continuation；正文 truth 仍在
+	// 后续 WriteSpan cells 中，不能把 wrap 事件自己投影成一行文本。
+	buffer.Cursor.X = 0
+	buffer.Cursor.Y = clampInt(nextRow, 0, maxInt(0, buffer.Rows-1))
+	return nil
 }
 
 func (buffer *ScreenHistoryBuffer) eraseCharacters(row int, col int, count int, seq uint64) error {
