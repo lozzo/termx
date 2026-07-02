@@ -6416,6 +6416,59 @@ func TestCopyModeLatestShowsCodexLiveTailFrameHead(t *testing.T) {
 	}
 }
 
+func TestR414CopyModeLatestKeepsCurrentFrameScreenRowAnchor(t *testing.T) {
+	rows := []state.HistoryRow{
+		{Text: "old shell prompt", LineID: 1, Segment: state.HistoryCursorSegmentCommitted},
+		{Text: "old shell marker", LineID: 2, Segment: state.HistoryCursorSegmentCommitted},
+		{Text: "visible shell prompt", LineID: 3, Segment: state.HistoryCursorSegmentCommitted},
+		{Text: "visible shell marker", LineID: 4, Segment: state.HistoryCursorSegmentCommitted},
+		{
+			Text:         "OpenAI Codex",
+			LineID:       20,
+			Kind:         state.HistoryRowKindScreenFrame,
+			Segment:      state.HistoryCursorSegmentCurrentPrimaryFrame,
+			SessionID:    1,
+			FrameID:      10,
+			FixedGrid:    true,
+			ScreenCols:   80,
+			ScreenRow:    2,
+			ScreenRowSet: true,
+		},
+		{
+			Text:         "> Explain this codebase",
+			LineID:       21,
+			Kind:         state.HistoryRowKindScreenFrame,
+			Segment:      state.HistoryCursorSegmentCurrentPrimaryFrame,
+			SessionID:    1,
+			FrameID:      10,
+			FixedGrid:    true,
+			ScreenCols:   80,
+			ScreenRow:    3,
+			ScreenRowSet: true,
+		},
+	}
+	latest := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
+	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: latest}}}
+	host := NewFakeTerminalHost(32)
+	host.SetSize(80, 16)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send copy enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+
+	if runtime.State().CopyMode.ViewportTop != 2 || runtime.State().CopyMode.Cursor.Row != 5 {
+		t.Fatalf("copy latest should keep current-frame screen-row anchor, got %#v", runtime.State().CopyMode)
+	}
+	lines := activeCopyContentLines(runtime)
+	if copyHistoryLinesContain(lines, "old shell prompt") || !copyHistoryLinesContain(lines, "visible shell prompt") || !copyHistoryLinesContain(lines, "OpenAI Codex") {
+		t.Fatalf("copy history should drop only rows above the screen-row anchor, got %#v", lines)
+	}
+}
+
 func TestCopyModeSearchMatchesAcrossReflowRows(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{{Window: state.HistoryWindow{
@@ -7571,12 +7624,18 @@ func historyLogicalLinesForApp(rows []state.HistoryRow) []state.HistoryLogicalLi
 	lines := make([]state.HistoryLogicalLine, len(rows))
 	for i, row := range rows {
 		lines[i] = state.HistoryLogicalLine{
-			Text:     row.Text,
-			Cells:    append([]state.HistoryCell(nil), row.Cells...),
-			LineID:   row.LineID,
-			Kind:     row.Kind,
-			Segment:  row.Segment,
-			LiveTail: row.LiveTail,
+			Text:         row.Text,
+			Cells:        append([]state.HistoryCell(nil), row.Cells...),
+			LineID:       row.LineID,
+			Kind:         row.Kind,
+			Segment:      row.Segment,
+			SessionID:    row.SessionID,
+			FrameID:      row.FrameID,
+			FixedGrid:    row.FixedGrid,
+			ScreenCols:   row.ScreenCols,
+			ScreenRow:    row.ScreenRow,
+			ScreenRowSet: row.ScreenRowSet,
+			LiveTail:     row.LiveTail,
 		}
 	}
 	return lines

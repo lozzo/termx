@@ -823,7 +823,7 @@ func TestR413CopyModeAcceptMaterializedProjectionUsesAuthoritativeTailWithoutLiv
 	}
 }
 
-func TestR411CopyModeAcceptLatestIgnoresScreenRowForHistoryViewport(t *testing.T) {
+func TestR414CopyModeAcceptLatestAnchorsCurrentFrameByScreenRow(t *testing.T) {
 	rows := []HistoryRow{
 		{Text: "old shell prompt", LineID: 1, Segment: HistoryCursorSegmentCommitted},
 		{Text: "old shell marker", LineID: 2, Segment: HistoryCursorSegmentCommitted},
@@ -857,12 +857,12 @@ func TestR411CopyModeAcceptLatestIgnoresScreenRowForHistoryViewport(t *testing.T
 	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
 	copyMode := CopyModeStore{ViewRows: 8}.AcceptLatest(latest, latest.Cols, len(rows))
 
-	if copyMode.ViewportTop != 0 || copyMode.Cursor != (CopyPosition{Row: 5}) {
-		t.Fatalf("latest should keep a continuous authoritative viewport and ignore ScreenRow padding, got %#v", copyMode)
+	if copyMode.ViewportTop != 2 || copyMode.Cursor != (CopyPosition{Row: 5}) {
+		t.Fatalf("latest should use authoritative current-frame screen row anchor, got %#v", copyMode)
 	}
 	visible := rows[copyMode.ViewportTop:]
-	if !historyRowsContainText(visible, "old shell prompt") || !historyRowsContainText(visible, "visible shell prompt") {
-		t.Fatalf("entry viewport should not drop older rows merely because current frame has ScreenRow, top=%d visible=%#v", copyMode.ViewportTop, visible)
+	if historyRowsContainText(visible, "old shell prompt") || !historyRowsContainText(visible, "visible shell prompt") {
+		t.Fatalf("entry viewport should drop only rows above the PTY screen-row anchor, top=%d visible=%#v", copyMode.ViewportTop, visible)
 	}
 }
 

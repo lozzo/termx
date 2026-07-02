@@ -1228,7 +1228,6 @@ func reduceCopyModeProjectionResult(root state.Root, msg CopyModeProjectionResul
 	} else if !root.CopyMode.CanSearch() {
 		root.CopyMode = root.CopyMode.SetQuery("", nil)
 	}
-	root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
 	root = refreshCopyModeLogicalSelectionFocus(root)
 	return root.Advance(), nil
 }
@@ -1264,9 +1263,11 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 	}
 	root.History = nextHistory
 	remainingEnteringOlderRows := 0
+	clampViewport := true
 	if pending != nil && pending.Kind == state.HistoryRequestLatest {
 		root.CopyMode = root.CopyMode.AcceptLatest(historyWindowForCopyModeAnchor(msg.Result.Window, nextHistory), nextHistory.Cols, len(nextHistory.Rows))
 		remainingEnteringOlderRows = copyModeEnteringOlderRemainder(enteringScrollDelta, len(nextHistory.Rows))
+		clampViewport = false
 	} else if pending != nil && pending.Kind == state.HistoryRequestOldest {
 		root.CopyMode = root.CopyMode.AcceptOldest(msg.Result.Window, nextHistory.Cols, len(nextHistory.Rows))
 	} else if pending != nil && pending.Kind == state.HistoryRequestNewer {
@@ -1285,7 +1286,9 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 	if root.CopyMode.Query != "" {
 		root.CopyMode = root.CopyMode.RefreshQueryMatches(state.FindCopyMatches(root.History, root.CopyMode.Query))
 	}
-	root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
+	if clampViewport {
+		root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
+	}
 	root = refreshCopyModeLogicalSelectionFocus(root)
 	if pending != nil && (pending.Kind == state.HistoryRequestOlder || pending.Kind == state.HistoryRequestNewer) {
 		root = trimCopyModeHistoryWindow(root, deps)

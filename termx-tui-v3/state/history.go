@@ -1118,6 +1118,9 @@ func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, tot
 		visibleRows := copyVisibleRowsForStore(store)
 		cursorRow := totalRows - 1
 		viewportTop := maxCopyInt(0, totalRows-visibleRows)
+		if anchoredTop, ok := currentPrimaryFrameViewportTop(window.Rows); ok && anchoredTop > viewportTop {
+			viewportTop = clampCopyInt(anchoredTop, 0, totalRows-1)
+		}
 		store.Cursor = CopyPosition{Row: cursorRow}
 		store.ViewportTop = viewportTop
 		if pendingScroll != 0 {
@@ -1131,6 +1134,37 @@ func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, tot
 	store.ActiveMatch = 0
 	store.Empty = totalRows == 0
 	return store
+}
+
+func currentPrimaryFrameViewportTop(rows []HistoryRow) (int, bool) {
+	if len(rows) == 0 {
+		return 0, false
+	}
+	last := rows[len(rows)-1]
+	if last.Segment != HistoryCursorSegmentCurrentPrimaryFrame || !last.ScreenRowSet {
+		return 0, false
+	}
+	start := len(rows)
+	minScreenRow := last.ScreenRow
+	for start > 0 {
+		row := rows[start-1]
+		if row.Segment != HistoryCursorSegmentCurrentPrimaryFrame ||
+			row.SessionID != last.SessionID ||
+			row.FrameID != last.FrameID {
+			break
+		}
+		start--
+		if row.ScreenRowSet && row.ScreenRow < minScreenRow {
+			minScreenRow = row.ScreenRow
+		}
+	}
+	if minScreenRow < 0 {
+		minScreenRow = 0
+	}
+	// 中文说明：current primary frame 的 PTY screen row 是 core-v2 传来的
+	// fixed-grid 语义坐标。入口 viewport 只用它丢弃过量的 frame 前 rows，
+	// 不创建 renderer padding，也不从 live surface 匹配当前屏。
+	return maxCopyInt(0, start-minScreenRow), true
 }
 
 func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRows int) CopyModeStore {

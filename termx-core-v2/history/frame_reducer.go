@@ -95,6 +95,7 @@ func (reducer *frameReducer) ReplacePrimaryTouchedRows(frame TerminalSemanticFra
 			Row:  row,
 		}
 	}
+	reducer.fillTouchedFrameBlankGaps(draftByRow, frameRows, rowSet, frame.Cols, string(LineKindScreenFrame), SealStateOpen)
 	mergedRows := logicalLineDraftsFromRowMap(draftByRow)
 	if len(mergedRows) == 0 {
 		return reducer.ClearPrimaryCurrent(reason)
@@ -374,6 +375,54 @@ func (reducer *frameReducer) draftsFromSemanticFrame(frame TerminalSemanticFrame
 		})
 	}
 	return rows
+}
+
+func (reducer *frameReducer) fillTouchedFrameBlankGaps(draftByRow map[int]LogicalLineDraft, frameRows [][]Cell, touched map[int]struct{}, cols int, kind string, seal SealState) {
+	if len(touched) < 2 || len(frameRows) == 0 {
+		return
+	}
+	minRow := len(frameRows)
+	maxRow := -1
+	for row := range touched {
+		if row < 0 || row >= len(frameRows) {
+			continue
+		}
+		if row < minRow {
+			minRow = row
+		}
+		if row > maxRow {
+			maxRow = row
+		}
+	}
+	if maxRow-minRow < 2 {
+		return
+	}
+	for row := minRow + 1; row < maxRow; row++ {
+		if _, exists := draftByRow[row]; exists {
+			continue
+		}
+		cells := frameRows[row]
+		if !historyFrameRowIsDefaultBlank(cells) {
+			continue
+		}
+		// 中文说明：fixed-grid current frame 的内部空白行属于 PTY 语义布局；
+		// 只在已触达 screen-frame 范围内补 default blank gap，避免接管未触达的
+		// 非空 shell tail 或 leading/trailing viewport 空白。
+		line := LogicalLine{
+			ID:           reducer.nextLogicalLineID(),
+			Seal:         seal,
+			Kind:         kind,
+			Cells:        cloneHistoryCells(cells),
+			ScreenCols:   cols,
+			ScreenRow:    row,
+			ScreenRowSet: true,
+			Residency:    ResidencyMemory,
+		}
+		draftByRow[row] = LogicalLineDraft{
+			Line: cloneLogicalLine(line),
+			Row:  row,
+		}
+	}
 }
 
 func trimmedFrameRows(rows [][]TerminalSemanticCell) [][]Cell {

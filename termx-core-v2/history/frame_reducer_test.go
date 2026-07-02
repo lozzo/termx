@@ -80,6 +80,36 @@ func TestR399FrameReducerPreservesScreenFrameDefaultBlankCells(t *testing.T) {
 	}
 }
 
+func TestR414FrameReducerTouchedRowsPreservesInternalBlankScreenRows(t *testing.T) {
+	reducer := NewFrameReducer()
+	mutations, err := reducer.ReplacePrimaryTouchedRows(semanticFrame(16,
+		"codex prompt",
+		"",
+		"codex card",
+		"",
+		"codex input",
+	), []int{0, 2, 4}, FrameReasonPrimaryRepaint)
+	if err != nil {
+		t.Fatalf("replace touched primary rows: %v", err)
+	}
+	if len(mutations) != 1 || mutations[0].Mutable == nil {
+		t.Fatalf("expected mutable frame mutation, got %#v", mutations)
+	}
+	current := mutations[0].Mutable
+	if got := strings.Join(frameDraftTexts(current.Rows), "|"); got != "codex prompt||codex card||codex input" {
+		t.Fatalf("fixed-grid touched frame must keep internal blank rows, got %q rows=%#v", got, current.Rows)
+	}
+	if len(current.Rows) != 5 || current.Rows[1].Row != 1 || current.Rows[3].Row != 3 {
+		t.Fatalf("internal blank rows must keep authoritative screen row indexes, rows=%#v", current.Rows)
+	}
+	for _, row := range []int{1, 3} {
+		line := current.Rows[row].Line
+		if !historyFrameRowIsDefaultBlank(line.Cells) || line.ScreenCols != 16 || !line.ScreenRowSet || line.ScreenRow != row {
+			t.Fatalf("blank screen row %d must remain a fixed-grid default row, line=%#v", row, line)
+		}
+	}
+}
+
 func TestR337FrameReducerCloseFromFrameExcludesOrdinaryTouchedRows(t *testing.T) {
 	reducer := NewFrameReducer()
 	if _, err := reducer.ReplacePrimaryTouchedRows(semanticFrame(20,
@@ -392,6 +422,14 @@ func frameDraftText(rows []LogicalLineDraft) string {
 	var out string
 	for _, row := range rows {
 		out += lineText(row.Line)
+	}
+	return out
+}
+
+func frameDraftTexts(rows []LogicalLineDraft) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, lineText(row.Line))
 	}
 	return out
 }
