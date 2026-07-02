@@ -263,13 +263,26 @@ func terminalSemanticShouldAttachFrame(damage WriteDamage, tx TerminalSemanticTr
 	if tx.RequiresFullReplace {
 		return true
 	}
-	for _, op := range semanticOpsForTransactionDamage(damage) {
+	// 中文说明：frame attach 的 owner 边界只能看本次 transaction 暴露给
+	// history 的 ordered semantic ops。WriteDamage.Ops 可能包含 live diff
+	// 层的屏幕损伤摘要，普通单调 stdout 不能因为 diff 触达行而升级成 frame。
+	ops := tx.Ops
+	if len(ops) == 0 {
+		ops = semanticOpsForTransactionDamage(damage)
+	}
+	for _, op := range ops {
 		if op.Code == ScreenOpModes || op.Code == ScreenOpResize {
+			return true
+		}
+		switch op.Code {
+		case ScreenOpClearToEOL, ScreenOpClearRect, ScreenOpScrollRect, ScreenOpCopyRect:
 			return true
 		}
 		if op.Code == ScreenOpControl {
 			switch op.Control {
-			case "ed", "ris", "cup", "vpa", "hpa", "cha":
+			case "ed", "ris", "cup", "vpa", "hpa", "cha",
+				"cub", "cuf", "cuu", "cud",
+				"el", "ech", "dch", "ich", "il", "dl", "su", "sd":
 				return true
 			}
 		}

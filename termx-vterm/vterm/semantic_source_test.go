@@ -162,6 +162,48 @@ func TestR335SemanticSourceExposesFullReplaceTouchedRows(t *testing.T) {
 	}
 }
 
+func TestR417SemanticSourceAttachesFrameForPrimaryPseudoTUIEdit(t *testing.T) {
+	source := NewSemanticSource(20, 6, 100, nil)
+	if _, err := source.ApplyPTYWrite([]byte("shell prompt\r\n")); err != nil {
+		t.Fatalf("seed source: %v", err)
+	}
+	tx, err := source.ApplyPTYWrite([]byte("\r\x1b[Kcodex edit"))
+	if err != nil {
+		t.Fatalf("apply CR+EL primary edit: %v", err)
+	}
+	if tx.PrimaryFrame == nil {
+		t.Fatalf("primary edit transaction must attach primary frame proof, got %#v", tx)
+	}
+	if len(tx.PrimaryFrameTouchedRows) == 0 {
+		t.Fatalf("primary edit transaction must expose touched rows, got %#v", tx)
+	}
+	if got := cellsTextForSemanticTest(tx.PrimaryFrame.Rows[1]); got != "codex edit" {
+		t.Fatalf("primary frame should contain edited current line, got %q tx=%#v", got, tx)
+	}
+}
+
+func TestR417SemanticSourceFrameAttachCoversPrimaryEditOps(t *testing.T) {
+	cases := []struct {
+		name string
+		op   DamageOp
+	}{
+		{name: "clear to eol", op: DamageOp{Code: ScreenOpClearToEOL, Row: 1, Col: 0}},
+		{name: "clear rect", op: DamageOp{Code: ScreenOpClearRect, Rect: DamageRect{X: 0, Y: 1, Width: 10, Height: 1}}},
+		{name: "scroll rect", op: DamageOp{Code: ScreenOpScrollRect, Rect: DamageRect{X: 0, Y: 1, Width: 10, Height: 3}, Dy: -1}},
+		{name: "copy rect", op: DamageOp{Code: ScreenOpCopyRect, Src: DamageRect{X: 0, Y: 1, Width: 10, Height: 1}, DstX: 0, DstY: 3}},
+		{name: "relative cursor", op: DamageOp{Code: ScreenOpControl, Control: "cuu", Mode: 1}},
+		{name: "line edit", op: DamageOp{Code: ScreenOpControl, Control: "dch", Row: 2, Col: 4, Mode: 1}},
+		{name: "line insert", op: DamageOp{Code: ScreenOpControl, Control: "il", Row: 2, Mode: 1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !terminalSemanticShouldAttachFrame(WriteDamage{SemanticOps: []DamageOp{tc.op}}, TerminalSemanticTransaction{}) {
+				t.Fatalf("semantic source should attach frame for %s op %#v", tc.name, tc.op)
+			}
+		})
+	}
+}
+
 func TestR328SemanticSourceDistinguishesEraseDisplayFromClearScrollback(t *testing.T) {
 	ed2 := NewSemanticSource(12, 3, 100, nil)
 	if _, err := ed2.ApplyPTYWrite([]byte("old1\r\nold2")); err != nil {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
+	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 func TestR334PrimaryFrameStartDoesNotDuplicateAlreadySealedShellTail(t *testing.T) {
@@ -305,5 +306,154 @@ func TestR415RealVTermLongSyncAfterShellKeepsAppScrollOut(t *testing.T) {
 		if got := historyTextCount(rows, want); got != 1 {
 			t.Fatalf("long sync after shell must keep app output %q once, count=%d rows=%#v", want, got, rows)
 		}
+	}
+}
+
+func TestR417PrimaryPseudoTUIEditControlsUseTouchedFrameOwnership(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	terminalID := "term-r417-primary-edit-controls"
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      terminalID,
+		Command: []string{"shell"},
+		Size:    Size{Cols: 80, Rows: 12},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	for i := 1; i <= 5; i++ {
+		if err := server.IngestOutput(context.Background(), terminalID, "shell prompt "+string(rune('0'+i))+"\r\n"); err != nil {
+			t.Fatalf("ingest shell line %d: %v", i, err)
+		}
+	}
+	terminal, err := server.Terminal(terminalID)
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	tx := history.TerminalSemanticTransaction{
+		Seq:                     417,
+		Size:                    history.TerminalSemanticSize{Cols: 80, Rows: 12},
+		PrimaryFrameTouchedRows: []int{7, 8},
+		Ops: []history.TerminalSemanticOp{
+			{Code: vterm.ScreenOpControl, Control: "cuu", Mode: 1},
+			{Code: vterm.ScreenOpControl, Control: "el", Row: 7, Mode: 2},
+			{Code: vterm.ScreenOpWriteSpan, Row: 7, Col: 0, Cells: historyCellsForRegression("codex redraw")},
+			{Code: vterm.ScreenOpControl, Control: "dch", Row: 8, Col: 6, Mode: 1},
+			{Code: vterm.ScreenOpWriteSpan, Row: 8, Col: 0, Cells: historyCellsForRegression("codex prompt")},
+		},
+		PrimaryScrollOut: []history.TerminalSemanticScrollOut{{
+			Runs:   []history.TerminalSemanticCellRun{{Text: "shell prompt 1"}},
+			Row:    0,
+			RowSet: true,
+		}},
+		PrimaryFrame: &history.TerminalSemanticFrame{
+			Cols: 80,
+			Rows: [][]history.TerminalSemanticCell{
+				historyCellsForRegression("shell prompt 1"),
+				historyCellsForRegression("shell prompt 2"),
+				historyCellsForRegression("shell prompt 3"),
+				historyCellsForRegression("shell prompt 4"),
+				historyCellsForRegression("shell prompt 5"),
+				nil,
+				nil,
+				historyCellsForRegression("codex redraw"),
+				historyCellsForRegression("codex prompt"),
+			},
+		},
+	}
+
+	terminal.historyMu.Lock()
+	decision := terminal.historyDecisionForTransaction(tx, terminal.historyStore.ReadState())
+	if decision.Mode != history.HistoryOutputModePrimaryFrameSession || !decision.PublishPrimaryFrameTouchedRowsOnly || !decision.SkipPreExistingPrimaryScrollOut {
+		terminal.historyMu.Unlock()
+		t.Fatalf("primary edit controls must route to touched primary frame ownership, got %#v", decision)
+	}
+	journal := history.HistoryJournalFromDecision(terminalID, tx, decision)
+	batch, err := terminal.journalRenderer.ApplyJournal(journal)
+	if err != nil {
+		terminal.historyMu.Unlock()
+		t.Fatalf("apply primary edit journal: %v labels=%v", err, historyJournalLabelsForTerminalTest(journal))
+	}
+	if err := terminal.historyStore.Apply(batch); err != nil {
+		terminal.historyMu.Unlock()
+		t.Fatalf("store primary edit journal: %v", err)
+	}
+	terminal.historyMu.Unlock()
+
+	rows, _ := r326CollectAllHistoryRows(t, server, terminalID, 80, 4)
+	for i := 1; i <= 5; i++ {
+		needle := "shell prompt " + string(rune('0'+i))
+		if got := historyTextCount(rows, needle); got != 1 {
+			t.Fatalf("primary edit frame must not duplicate sealed shell row %q count=%d rows=%#v", needle, got, rows)
+		}
+	}
+	for _, row := range rows {
+		if row.Segment == history.HistorySegmentCurrentPrimaryFrame && strings.Contains(historyCellsText(row.Cells), "shell prompt") {
+			t.Fatalf("primary edit current frame must not contain sealed shell row: row=%#v rows=%#v", row, rows)
+		}
+	}
+	for _, want := range []string{"codex redraw", "codex prompt"} {
+		if got := historyTextCount(rows, want); got != 1 {
+			t.Fatalf("primary edit payload should appear once, %q count=%d rows=%#v", want, got, rows)
+		}
+	}
+}
+
+func TestR417PrimaryPseudoTUIClassifierCoversRectAndNonMonotonicWrites(t *testing.T) {
+	terminal := &Terminal{}
+	state := history.HistoryReadState{HasTimeline: true}
+	cases := []struct {
+		name string
+		ops  []history.TerminalSemanticOp
+	}{
+		{
+			name: "clear rect",
+			ops: []history.TerminalSemanticOp{
+				{Code: vterm.ScreenOpClearRect, Rect: vterm.DamageRect{X: 0, Y: 4, Width: 10, Height: 1}},
+				{Code: vterm.ScreenOpWriteSpan, Row: 4, Col: 0, Cells: historyCellsForRegression("rect")},
+			},
+		},
+		{
+			name: "scroll rect",
+			ops: []history.TerminalSemanticOp{
+				{Code: vterm.ScreenOpScrollRect, Rect: vterm.DamageRect{X: 0, Y: 2, Width: 20, Height: 5}, Dy: -1},
+				{Code: vterm.ScreenOpWriteSpan, Row: 6, Col: 0, Cells: historyCellsForRegression("scroll")},
+			},
+		},
+		{
+			name: "copy rect",
+			ops: []history.TerminalSemanticOp{
+				{Code: vterm.ScreenOpCopyRect, Src: vterm.DamageRect{X: 0, Y: 1, Width: 10, Height: 1}, DstX: 0, DstY: 5},
+				{Code: vterm.ScreenOpWriteSpan, Row: 5, Col: 0, Cells: historyCellsForRegression("copy")},
+			},
+		},
+		{
+			name: "non monotonic writes",
+			ops: []history.TerminalSemanticOp{
+				{Code: vterm.ScreenOpWriteSpan, Row: 8, Col: 4, Cells: historyCellsForRegression("tail")},
+				{Code: vterm.ScreenOpWriteSpan, Row: 7, Col: 0, Cells: historyCellsForRegression("head")},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tx := history.TerminalSemanticTransaction{
+				Seq:                     417,
+				Size:                    history.TerminalSemanticSize{Cols: 80, Rows: 12},
+				Ops:                     tc.ops,
+				PrimaryFrameTouchedRows: []int{7, 8},
+				PrimaryFrame: &history.TerminalSemanticFrame{
+					Cols: 80,
+					Rows: [][]history.TerminalSemanticCell{
+						nil, nil, nil, nil, nil, nil, nil,
+						historyCellsForRegression("head"),
+						historyCellsForRegression("tail"),
+					},
+				},
+			}
+			decision := terminal.historyDecisionForTransaction(tx, state)
+			if decision.Mode != history.HistoryOutputModePrimaryFrameSession || !decision.PublishPrimaryFrameTouchedRowsOnly || !decision.SkipPreExistingPrimaryScrollOut {
+				t.Fatalf("case %s should route to touched primary frame ownership, got %#v", tc.name, decision)
+			}
+		})
 	}
 }

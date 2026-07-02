@@ -1081,12 +1081,13 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 	fullReplaceFrameOnly := tx.RequiresFullReplace && !state.HasPrimaryCurrent && !historyTransactionHasOrderedContentOps(tx)
 	fullReplaceTouchedRowsOnly := fullReplaceFrameOnly && state.HasTimeline && len(tx.PrimaryFrameTouchedRows) > 0
 	fullReplaceCanPublish := fullReplaceFrameOnly && (!state.HasTimeline || fullReplaceTouchedRowsOnly)
-	// 中文说明：有些 primary screen app 不开启 DEC 2026，而是用 CUP/VPA/HPA/CHA
-	// 直接定位光标并重绘当前 viewport。vterm 已经提供 PrimaryFrame side proof；
-	// classifier 必须把它归到 mutable screen-frame，而不是把每次 repaint 的
-	// 中间行写成 ordinary history。
-	cursorAddressedFrameSession := historyTransactionHasCursorAddressedPrimaryFrame(tx) && !syncEndThenOrdinaryStream
-	isPrimaryFrameSession := (syncFrameSession && !syncEndThenOrdinaryStream) || cursorAddressedFrameSession || fullReplaceCanPublish || hasEraseDisplay
+	// 中文说明：有些 primary screen app 不开启 DEC 2026，而是用主屏 cursor/edit
+	// 语义重绘当前 viewport。vterm 已经提供 PrimaryFrame+touched-row proof；
+	// classifier 必须把“修改已有屏幕内容”的事务归到 mutable screen-frame，
+	// 不能把 repaint 中间态写成 ordinary history，也不能从程序名或 live snapshot
+	// 反推 frame owner。
+	primaryPseudoTUIFrameSession := historyTransactionLooksLikePrimaryPseudoTUI(tx) && !syncEndThenOrdinaryStream
+	isPrimaryFrameSession := (syncFrameSession && !syncEndThenOrdinaryStream) || primaryPseudoTUIFrameSession || fullReplaceCanPublish || hasEraseDisplay
 	if tx.RequiresFullReplace && tx.FullReplaceReason == "resize" {
 		return history.HistoryDecision{Mode: history.HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true}
 	}
@@ -1117,7 +1118,7 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 		// PrimaryFrame side proof 升级成整屏 ownership。没有 ED2 clear 这类明确
 		// 清场边界时，primary repaint 仍只能接管本 transaction 的 touched rows，
 		// 否则已经 seal 的 shell logical line 会被 final/current screen-frame 复制。
-		decision.PublishPrimaryFrameTouchedRowsOnly = !hasEraseDisplay && len(tx.PrimaryFrameTouchedRows) > 0 && (syncFrameSession || cursorAddressedFrameSession || fullReplaceTouchedRowsOnly)
+		decision.PublishPrimaryFrameTouchedRowsOnly = !hasEraseDisplay && len(tx.PrimaryFrameTouchedRows) > 0 && (syncFrameSession || primaryPseudoTUIFrameSession || fullReplaceTouchedRowsOnly)
 		decision.SkipPreExistingPrimaryScrollOut = decision.PublishPrimaryFrameTouchedRowsOnly && state.HasTimeline && !state.HasPrimaryCurrent
 		// 中文说明：vterm 已经证明真正滚出 primary viewport 的 payload 必须进入
 		// authoritative history；ED2 clear-time proof 只有在已有 primary current
@@ -1187,18 +1188,51 @@ func historyTransactionHasContentAfterSyncEnd(tx history.TerminalSemanticTransac
 	return false
 }
 
-func historyTransactionHasCursorAddressedPrimaryFrame(tx history.TerminalSemanticTransaction) bool {
-	if tx.PrimaryFrame == nil || !historyTransactionHasContentMutation(tx) {
+func historyTransactionLooksLikePrimaryPseudoTUI(tx history.TerminalSemanticTransaction) bool {
+	if tx.PrimaryFrame == nil || len(tx.PrimaryFrameTouchedRows) == 0 || !historyTransactionHasContentMutation(tx) {
 		return false
 	}
+	if tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd {
+		return true
+	}
+	if historyTransactionHasPrimaryScreenEditOp(tx) {
+		return true
+	}
+	return historyTransactionWritesTouchNonMonotonicRows(tx)
+}
+
+func historyTransactionHasPrimaryScreenEditOp(tx history.TerminalSemanticTransaction) bool {
 	for _, op := range tx.Ops {
-		if op.Code != vterm.ScreenOpControl {
-			continue
-		}
-		switch op.Control {
-		case "cup", "vpa", "hpa", "cha":
+		switch op.Code {
+		case vterm.ScreenOpClearToEOL, vterm.ScreenOpClearRect, vterm.ScreenOpScrollRect, vterm.ScreenOpCopyRect:
 			return true
 		}
+		if op.Code == vterm.ScreenOpControl {
+			switch op.Control {
+			case "cup", "vpa", "hpa", "cha",
+				"cub", "cuf", "cuu", "cud",
+				"el", "ech", "dch", "ich", "il", "dl", "su", "sd":
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func historyTransactionWritesTouchNonMonotonicRows(tx history.TerminalSemanticTransaction) bool {
+	seenWrite := false
+	lastRow := 0
+	lastCol := 0
+	for _, op := range tx.Ops {
+		if op.Code != vterm.ScreenOpWriteSpan {
+			continue
+		}
+		if seenWrite && (op.Row < lastRow || (op.Row == lastRow && op.Col < lastCol)) {
+			return true
+		}
+		seenWrite = true
+		lastRow = op.Row
+		lastCol = op.Col
 	}
 	return false
 }
