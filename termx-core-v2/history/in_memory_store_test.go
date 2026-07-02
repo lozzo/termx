@@ -12,7 +12,7 @@ func TestR323InMemoryStoreLatestWindowIncludesSealedTailAndActiveFrame(t *testin
 	applyStoreBatch(t, store,
 		sealedLineMutations(1, 1, "old"),
 		sealedLineMutations(2, 2, "tail"),
-		replacePrimaryMutation(10, 1, 80, "current"),
+		replacePrimaryRowsAtMutation(10, 1, 80, map[int]string{1: "current"}),
 	)
 
 	window, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-1", Limit: 2, Cols: 80})
@@ -36,7 +36,7 @@ func TestR323InMemoryStoreOlderWalksUnifiedTimelineWithArchiveInOrder(t *testing
 		sealedLineMutations(1, 1, "before"),
 		archivedFrameMutationsForStore(20, 2, 80, "archive"),
 		sealedLineMutations(3, 3, "after"),
-		replacePrimaryMutation(30, 4, 80, "current"),
+		replacePrimaryRowsAtMutation(30, 4, 80, map[int]string{1: "current"}),
 	)
 
 	latest, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-1", Limit: 2, Cols: 80})
@@ -60,13 +60,13 @@ func TestR323InMemoryStoreOlderWalksUnifiedTimelineWithArchiveInOrder(t *testing
 
 func TestR323InMemoryStoreFreezeKeepsMutableFrameSnapshot(t *testing.T) {
 	store := NewInMemoryHistoryStore("term-1")
-	applyStoreBatch(t, store, sealedLineMutations(1, 1, "sealed"), replacePrimaryMutation(10, 2, 80, "v1"))
+	applyStoreBatch(t, store, sealedLineMutations(1, 1, "sealed"), replacePrimaryRowsAtMutation(10, 2, 80, map[int]string{1: "v1"}))
 
 	snapshot, err := store.Freeze(FreezeHistoryRequest{TerminalID: "term-1", Limit: 2, Cols: 80})
 	if err != nil {
 		t.Fatalf("freeze: %v", err)
 	}
-	applyStoreBatch(t, store, replacePrimaryMutation(10, 2, 80, "v2"))
+	applyStoreBatch(t, store, replacePrimaryRowsAtMutation(10, 2, 80, map[int]string{1: "v2"}))
 
 	latest, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-1", Limit: 2, Cols: 80})
 	if err != nil {
@@ -348,7 +348,7 @@ func TestR343InMemoryStoreIncrementalCountersSurviveSequentialApplies(t *testing
 		t.Fatalf("record counter should advance incrementally without full reindex, got %d", store.nextRecordID)
 	}
 
-	applyStoreBatch(t, store, replacePrimaryRowsMutation(55, 2000, 80, "frame"))
+	applyStoreBatch(t, store, replacePrimaryRowsAtMutation(55, 2000, 80, map[int]string{1: "frame"}))
 	if store.nextFrameID != 56 || store.nextSessionID != 2 {
 		t.Fatalf("primary frame counters should observe mutable frame ids, frame=%d session=%d", store.nextFrameID, store.nextSessionID)
 	}
@@ -518,7 +518,7 @@ func TestR323InMemoryStoreOlderDoesNotDuplicateFullyIncludedTimeline(t *testing.
 	store := NewInMemoryHistoryStore("term-1")
 	applyStoreBatch(t, store,
 		sealedLineMutations(1, 1, "sealed"),
-		replacePrimaryMutation(10, 2, 80, "current"),
+		replacePrimaryRowsAtMutation(10, 2, 80, map[int]string{1: "current"}),
 	)
 	latest, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-1", Limit: 10, Cols: 80})
 	if err != nil {
@@ -555,6 +555,56 @@ func TestR327InMemoryStoreOlderPagesWithinCurrentFrameBeforeTimeline(t *testing.
 	}
 	if got := rowTexts(older.Rows); strings.Join(got, "|") != "sealed|frame-1" {
 		t.Fatalf("older must include frame rows hidden above latest tail before falling back to timeline, got %v window=%#v", got, older)
+	}
+}
+
+func TestR416InMemoryLatestWindowAnchorsCurrentFrameToScreenRow(t *testing.T) {
+	store := NewInMemoryHistoryStore("term-r416-memory-anchor")
+	for i := 1; i <= 30; i++ {
+		applyStoreBatch(t, store, sealedLineMutations(LogicalLineID(i), HistoryRecordID(i), "shell prompt"))
+	}
+	applyStoreBatch(t, store, replacePrimaryRowsAtMutation(100, 1000, 80, map[int]string{
+		6: "codex card",
+		7: "codex tip",
+		8: "codex input",
+	}))
+
+	latest, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-r416-memory-anchor", Limit: 20, Cols: 80})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(latest.Rows); len(got) != 9 || strings.Join(got[0:6], "|") != "shell prompt|shell prompt|shell prompt|shell prompt|shell prompt|shell prompt" || strings.Join(got[6:], "|") != "codex card|codex tip|codex input" {
+		t.Fatalf("latest should keep only screen-row-sized shell lead-in before current frame, got %v window=%#v", got, latest)
+	}
+	if latest.Boundary.Cursor.BeforeRowIndex != 24 || !latest.Boundary.Cursor.Valid {
+		t.Fatalf("older cursor should keep hidden sealed shell rows reachable, cursor=%#v", latest.Boundary.Cursor)
+	}
+	if !latest.Rows[6].ScreenRowSet || latest.Rows[6].ScreenRow != 6 {
+		t.Fatalf("current frame row should retain authoritative screen row, row=%#v", latest.Rows[6])
+	}
+	older, err := store.OlderWindow(HistoryWindowRequest{
+		TerminalID: "term-r416-memory-anchor",
+		Limit:      2,
+		Cols:       80,
+		Cursor:     latest.Boundary.Cursor,
+	})
+	if err != nil {
+		t.Fatalf("older window: %v", err)
+	}
+	if got := rowTexts(older.Rows); strings.Join(got, "|") != "shell prompt|shell prompt" || older.Boundary.Cursor.BeforeRowIndex != 22 {
+		t.Fatalf("older should page sealed shell rows hidden from entry viewport, got %v cursor=%#v", got, older.Boundary.Cursor)
+	}
+
+	snapshot, err := store.Freeze(FreezeHistoryRequest{TerminalID: "term-r416-memory-anchor", Limit: 20, Cols: 80})
+	if err != nil {
+		t.Fatalf("freeze: %v", err)
+	}
+	frozenLatest, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-r416-memory-anchor", Token: snapshot.Token, Limit: 20, Cols: 80})
+	if err != nil {
+		t.Fatalf("frozen latest: %v", err)
+	}
+	if got := rowTexts(frozenLatest.Rows); strings.Join(got, "|") != strings.Join(rowTexts(latest.Rows), "|") || frozenLatest.Boundary.Cursor.BeforeRowIndex != 24 {
+		t.Fatalf("frozen entry should use the same screen-row anchor as latest, got %v cursor=%#v", got, frozenLatest.Boundary.Cursor)
 	}
 }
 

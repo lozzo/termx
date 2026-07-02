@@ -1767,8 +1767,15 @@ func TestR324TerminalHistoryPrimaryRepaintScrollOutAltResizeAndExit(t *testing.T
 	if err != nil {
 		t.Fatalf("history.window after sync output: %v", err)
 	}
-	if !historyRowsContainSegment(window.Rows, history.HistorySegmentCommitted) || !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) || !historyRowsContain(window.Rows, "line4") {
-		t.Fatalf("history should include sealed scroll-out proof and current frame, rows=%v", historyRowTexts(window.Rows))
+	if historyRowsContain(window.Rows, "line1") || !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) || !historyRowsContain(window.Rows, "line4") {
+		t.Fatalf("latest should show current viewport frame and keep scrolled-out proof for older paging, rows=%v", historyRowTexts(window.Rows))
+	}
+	older, err := server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{TerminalID: "term-history-screen", Mode: history.HistoryWindowModeOlder, Cols: 8, Limit: 10, Cursor: window.Boundary.Cursor})
+	if err != nil {
+		t.Fatalf("older window after sync output: %v", err)
+	}
+	if !historyRowsContain(older.Rows, "line1") {
+		t.Fatalf("older should keep synchronized scroll-out proof reachable, rows=%v latest=%v", historyRowTexts(older.Rows), historyRowTexts(window.Rows))
 	}
 
 	if err := server.IngestOutput(context.Background(), "term-history-screen", "\x1b[?1049hALT\x1b[?1049l"); err != nil {

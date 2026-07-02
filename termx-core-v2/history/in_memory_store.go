@@ -272,7 +272,10 @@ func (store *inMemoryHistoryStore) CopyEntryProjection(req CopyEntryProjectionRe
 		Cols:       req.Cols,
 		Limit:      req.Limit,
 	}
-	window, err := store.LatestWindow(windowReq)
+	// 中文说明：CopyEntryProjection 是已应用 frontier 的 materialized preview，
+	// 不创建 frozen token，也不等同正式 latest history 入口；它必须保留 R376
+	// 合同下已经应用的 rows，由 UI 根据 catchup/capability 决定能否复制/分页。
+	window, err := store.copyEntryLatestWindow(windowReq)
 	if err != nil {
 		return CopyEntryProjection{}, err
 	}
@@ -296,6 +299,34 @@ func (store *inMemoryHistoryStore) CopyEntryProjection(req CopyEntryProjectionRe
 	}, nil
 }
 
+func (store *inMemoryHistoryStore) copyEntryLatestWindow(req HistoryWindowRequest) (HistoryWindow, error) {
+	limit := normalizedLimit(req.Limit)
+	if store.canUseIndexedProjection() {
+		projection := store.liveProjectionSnapshot()
+		start := maxInt(0, projection.total-limit)
+		page, _, err := store.rowsFromProjectionWindow(projection, start, projection.total)
+		if err != nil {
+			return HistoryWindow{}, err
+		}
+		boundary := boundaryForRows(page, store.generation, req.Token)
+		if len(page) > 0 {
+			boundary.Cursor = cursorBeforeIndex(page[0], start, store.generation, req.Token, start > 0)
+		}
+		window := store.windowFromProjectedRows(req, page, HistoryWindowReplace, boundary, store.generation)
+		window.LogicalTotal = projection.total
+		return window, nil
+	}
+	rows := store.projectLiveRows()
+	start := maxInt(0, len(rows)-limit)
+	page := cloneHistoryRows(rows[start:])
+	annotateProjectionRowIndexes(page, start)
+	boundary := boundaryForRows(page, store.generation, req.Token)
+	if len(page) > 0 {
+		boundary.Cursor = cursorBeforeIndex(page[0], start, store.generation, req.Token, start > 0)
+	}
+	return store.windowFromProjectedRows(req, page, HistoryWindowReplace, boundary, store.generation), nil
+}
+
 func (store *inMemoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHistorySnapshot, error) {
 	if store == nil {
 		return FrozenHistorySnapshot{}, nil
@@ -309,7 +340,8 @@ func (store *inMemoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHisto
 	var boundary HistoryBoundary
 	if store.canUseIndexedProjection() {
 		projection = store.liveProjectionSnapshot()
-		page, start, err := store.rowsFromProjectionWindow(projection, maxInt(0, projection.total-normalizedLimit(req.Limit)), projection.total)
+		start := latestProjectionWindowStart(projection, normalizedLimit(req.Limit))
+		page, start, err := store.rowsFromProjectionWindow(projection, start, projection.total)
 		if err != nil {
 			return FrozenHistorySnapshot{}, err
 		}
@@ -321,7 +353,7 @@ func (store *inMemoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHisto
 	} else {
 		rows = store.projectLiveRows()
 		limit := normalizedLimit(req.Limit)
-		start := maxInt(0, len(rows)-limit)
+		start := latestRowsWindowStart(rows, limit)
 		latestRows = cloneHistoryRows(rows[start:])
 		annotateProjectionRowIndexes(latestRows, start)
 		boundary = boundaryForRows(latestRows, store.generation, token)
@@ -812,12 +844,11 @@ func latestRowsWindowStart(rows []HistoryRow, limit int) int {
 	if !ok {
 		return defaultStart
 	}
-	if minScreenRow <= 0 {
-		return defaultStart
-	}
 	// 中文说明：latest current primary frame 的上方上下文必须由 history 自己按
 	// PTY semantic ScreenRow 推出。这里用 current frame 第一条物理行之前的行数，
 	// 从 sealed timeline 尾部取对应数量；不能交给 TUI/live surface 做可见行匹配。
+	// ScreenRow=0 表示 current frame 已经顶到屏幕第一行，latest 入口不能再
+	// 把更早 sealed rows 挤进首屏；它们仍通过 cursor older 返回。
 	anchoredStart := maxInt(0, currentStart-minScreenRow)
 	return maxInt(defaultStart, anchoredStart)
 }
@@ -852,12 +883,10 @@ func latestProjectionWindowStart(projection projectionSnapshot, limit int) int {
 	if !ok {
 		return defaultStart
 	}
-	if minScreenRow <= 0 {
-		return defaultStart
-	}
 	// 中文说明：indexed projection 不能 materialize 全量 rows 做 live 匹配；只用
 	// current primary record 自带的 ScreenRows 元数据计算当前屏幕上方应接入的
-	// sealed timeline tail。
+	// sealed timeline tail。ScreenRow=0 是有效锚点，表示 latest 入口不能接入
+	// current frame 之前的 sealed rows。
 	anchoredStart := maxInt(0, currentStart-minScreenRow)
 	return maxInt(defaultStart, anchoredStart)
 }

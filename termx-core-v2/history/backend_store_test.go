@@ -58,6 +58,59 @@ func TestR341BackendStorePagesSealedTimelineWithoutMaterializingAllRows(t *testi
 	}
 }
 
+func TestR416BackendLatestWindowAnchorsCurrentFrameToScreenRow(t *testing.T) {
+	backend := newCountingLineBackend()
+	store := NewBackendHistoryStore("term-r416-backend-anchor", backend)
+	for i := 1; i <= 30; i++ {
+		applyStoreBatch(t, store, sealedLineMutations(LogicalLineID(i), HistoryRecordID(i), "shell prompt"))
+	}
+	applyStoreBatch(t, store, replacePrimaryRowsAtMutation(100, 1000, 80, map[int]string{
+		6: "codex card",
+		7: "codex tip",
+		8: "codex input",
+	}))
+	raw := store.(*inMemoryHistoryStore)
+	if got := len(raw.lines); got != 3 {
+		t.Fatalf("backend store should retain only mutable current frame payloads in hot memory, got %d", got)
+	}
+
+	backend.resetCounts()
+	latest, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-r416-backend-anchor", Limit: 20, Cols: 80})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	got := rowTexts(latest.Rows)
+	if len(got) != 9 || strings.Join(got[0:6], "|") != "shell prompt|shell prompt|shell prompt|shell prompt|shell prompt|shell prompt" || strings.Join(got[6:], "|") != "codex card|codex tip|codex input" {
+		t.Fatalf("indexed latest should keep only screen-row-sized shell lead-in before current frame, got %v window=%#v", got, latest)
+	}
+	if latest.Boundary.Cursor.BeforeRowIndex != 24 || !latest.Boundary.Cursor.Valid {
+		t.Fatalf("indexed cursor should keep hidden sealed shell rows reachable, cursor=%#v", latest.Boundary.Cursor)
+	}
+	if backend.getLineCount != 9 {
+		t.Fatalf("indexed latest should load only returned rows, get=%d", backend.getLineCount)
+	}
+
+	backend.resetCounts()
+	snapshot, err := store.Freeze(FreezeHistoryRequest{TerminalID: "term-r416-backend-anchor", Limit: 20, Cols: 80})
+	if err != nil {
+		t.Fatalf("freeze: %v", err)
+	}
+	if backend.getLineCount != 9 {
+		t.Fatalf("indexed freeze should load only anchored entry rows, get=%d", backend.getLineCount)
+	}
+	backend.resetCounts()
+	frozenLatest, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-r416-backend-anchor", Token: snapshot.Token, Limit: 20, Cols: 80})
+	if err != nil {
+		t.Fatalf("frozen latest: %v", err)
+	}
+	if got := rowTexts(frozenLatest.Rows); strings.Join(got, "|") != strings.Join(rowTexts(latest.Rows), "|") || frozenLatest.Boundary.Cursor.BeforeRowIndex != 24 {
+		t.Fatalf("frozen indexed entry should use screen-row anchor, got %v cursor=%#v", got, frozenLatest.Boundary.Cursor)
+	}
+	if backend.getLineCount != 9 {
+		t.Fatalf("indexed frozen latest should load only anchored rows, get=%d", backend.getLineCount)
+	}
+}
+
 func TestR362BackendStoreCompactsOrdinaryTimelineMetadata(t *testing.T) {
 	backend := newCountingLineBackend()
 	store := NewBackendHistoryStore("term-r362", backend)
