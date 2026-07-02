@@ -1104,7 +1104,7 @@ func (store CopyModeStore) CanPageHistory() bool {
 	}
 }
 
-func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, totalRows int, pendingScroll int) CopyModeStore {
+func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, totalRows int, pendingScroll int, enteringLive *LiveSurfaceSnapshot) CopyModeStore {
 	store.PaneID = window.PaneID
 	store.ViewID = window.ViewID
 	store.TerminalID = window.TerminalID
@@ -1117,16 +1117,19 @@ func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, tot
 	}
 	if totalRows > 0 {
 		// 中文说明：copy cursor 的 truth 是 authoritative latest window 的最新尾行；
-		// current-frame 入口锚点来自 core HistoryWindow 的 ScreenRow，而不是 live
-		// preview。这样既保留 frame 前屏幕上可见的最近历史，也不会把更早 shell
-		// scrollback 塞进 Codex 这类 current frame 上方。
+		// live snapshot 只能作为进入 copy/history 前的首屏 viewport 锚点，不能参与
+		// 复制/搜索 truth，也不能改变 authoritative rows 的连续顺序。
 		visibleRows := copyVisibleRowsForStore(store)
 		cursorRow := totalRows - 1
-		viewportTop := copyEntryViewportTopFromAuthoritativeRows(window.Rows, totalRows, visibleRows)
+		viewportTop := maxCopyInt(0, totalRows-visibleRows)
+		if liveViewportTop, ok := liveSurfaceMatchedViewportTop(window.Rows, enteringLive, visibleRows); ok &&
+			cursorRow >= liveViewportTop && cursorRow < liveViewportTop+visibleRows {
+			viewportTop = liveViewportTop
+		}
 		store.Cursor = CopyPosition{Row: cursorRow}
 		store.ViewportTop = viewportTop
 		if pendingScroll != 0 {
-			store = store.ScrollCursor(pendingScroll, totalRows)
+			store = store.ScrollViewport(pendingScroll, totalRows)
 		}
 	} else {
 		store.ViewportTop = 0
@@ -1138,49 +1141,11 @@ func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, tot
 	return store
 }
 
-func copyEntryViewportTopFromAuthoritativeRows(rows []HistoryRow, totalRows int, visibleRows int) int {
-	tailTop := maxCopyInt(0, totalRows-visibleRows)
-	if visibleRows <= 0 {
-		return tailTop
-	}
-	frameTop, ok := firstCurrentPrimaryFrameViewportAnchor(rows, visibleRows)
-	if !ok {
-		return tailTop
-	}
-	// 中文说明：ScreenRow 是 current frame 在真实 terminal screen 内的物理行；
-	// 入口 viewport 只允许保留同屏可见的 frame 前最近 rows，剩余空位由 renderer
-	// display-only padding 补齐，不能把旧 scrollback 当成 frame 内容。
-	return maxCopyInt(0, frameTop-rowsBeforeCurrentFrameForScreenRow(rows[frameTop].ScreenRow, visibleRows))
-}
-
-func firstCurrentPrimaryFrameViewportAnchor(rows []HistoryRow, visibleRows int) (int, bool) {
-	for index, row := range rows {
-		if !isCurrentPrimaryFrameRow(row) || !row.ScreenRowSet {
-			continue
-		}
-		if row.ScreenRow >= visibleRows {
-			return 0, false
-		}
-		return index, true
-	}
-	return 0, false
-}
-
-func rowsBeforeCurrentFrameForScreenRow(screenRow int, visibleRows int) int {
-	if visibleRows <= 1 || screenRow <= 0 {
-		return 0
-	}
-	return clampCopyInt(screenRow, 0, visibleRows-1)
-}
-
-func isCurrentPrimaryFrameRow(row HistoryRow) bool {
-	return row.FixedGrid && row.Kind == HistoryRowKindScreenFrame && row.Segment == HistoryCursorSegmentCurrentPrimaryFrame
-}
-
 func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRows int) CopyModeStore {
 	store.Active = true
 	store.Entering = false
 	store.Phase = CopyModeFrozenHistory
+	enteringLive := store.EnteringLive
 	store.EnteringLive = nil
 	pendingScroll := store.EnteringScrollDelta
 	store.EnteringScrollDelta = 0
@@ -1188,7 +1153,7 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRow
 	store.ProjectionRequestID = 0
 	store.Materialized = CopyModeMaterializedProjectionState{}
 	store.BoundToken = window.Token
-	return store.acceptHistoryRows(window, cols, totalRows, pendingScroll)
+	return store.acceptHistoryRows(window, cols, totalRows, pendingScroll, enteringLive)
 }
 
 // AcceptMaterializedProjection 激活 copy-entry projection 阶段。
@@ -1201,6 +1166,7 @@ func (store CopyModeStore) AcceptMaterializedProjection(window HistoryWindow, co
 	store.Active = true
 	store.Entering = false
 	store.Phase = CopyModeMaterializedProjection
+	enteringLive := store.EnteringLive
 	store.EnteringLive = nil
 	pendingScroll := store.EnteringScrollDelta
 	store.EnteringScrollDelta = 0
@@ -1209,7 +1175,7 @@ func (store CopyModeStore) AcceptMaterializedProjection(window HistoryWindow, co
 	store.ProjectionRequestID = 0
 	projection.Valid = true
 	store.Materialized = projection
-	return store.acceptHistoryRows(window, cols, totalRows, pendingScroll)
+	return store.acceptHistoryRows(window, cols, totalRows, pendingScroll, enteringLive)
 }
 
 func (store CopyModeStore) AcceptOldest(window HistoryWindow, cols int, totalRows int) CopyModeStore {
@@ -1334,8 +1300,8 @@ func (store CopyModeStore) ApplyDeferredOlderScroll(rows int, totalRows int) Cop
 		return store.FollowCursor(totalRows)
 	}
 	// older prepend 已经把原 visible top 重新锚到同一条 logical line；
-	// 这里继续移动 copy cursor，保持“请求按页、浏览按光标”的 tmux 式语义。
-	return store.ScrollCursor(-rows, totalRows)
+	// 这里仅消费用户在等待分页时还想继续向上的行数，保持“请求按页、浏览按行”。
+	return store.ScrollViewport(-rows, totalRows)
 }
 
 func (store CopyModeStore) ApplyHistoryTrim(trim HistoryTrimResult, totalRows int) CopyModeStore {
@@ -1453,7 +1419,7 @@ func (store CopyModeStore) MoveCursor(pos CopyPosition) CopyModeStore {
 	return store
 }
 
-// ScrollCursor 是 copy/history 的主滚动语义：用户滚动的是 copy cursor。
+// ScrollCursor 只表达显式 cursor 移动或选择扩展。
 // cursor 还在可见区内时只移动 cursor；到达边缘后，viewport 才跟随移动。
 func (store CopyModeStore) ScrollCursor(delta int, totalRows int) CopyModeStore {
 	if totalRows <= 0 {
@@ -1466,9 +1432,8 @@ func (store CopyModeStore) ScrollCursor(delta int, totalRows int) CopyModeStore 
 	return store.FollowCursor(totalRows)
 }
 
-// ScrollViewport 表达少数需要保持屏幕相对位置的内部 viewport 移动。
-// 用户输入主路径应优先使用 ScrollCursor：history truth 继续来自 HistoryStore/core-v2，
-// 这里只在进入态定位、兼容旧锚点或专门 viewport harness 中移动可见窗口。
+// ScrollViewport 是 copy/history 浏览滚动的主语义：用户移动的是观察窗口。
+// history truth 仍来自 core-v2 authoritative rows，cursor 只跟随并保持在可见范围内。
 func (store CopyModeStore) ScrollViewport(delta int, totalRows int) CopyModeStore {
 	if totalRows <= 0 {
 		store.ViewportTop = 0
@@ -1491,6 +1456,86 @@ func (store CopyModeStore) ScrollViewport(delta int, totalRows int) CopyModeStor
 	store.ViewportTop = nextTop
 	store.Cursor = CopyPosition{Row: clampCopyInt(nextTop+offset, 0, totalRows-1), Col: store.Cursor.Col}
 	return store.Scroll(0, totalRows)
+}
+
+func liveSurfaceMatchedViewportTop(rows []HistoryRow, enteringLive *LiveSurfaceSnapshot, visibleRows int) (int, bool) {
+	if enteringLive == nil || visibleRows <= 0 || len(rows) == 0 {
+		return 0, false
+	}
+	liveRows := normalizedEnteringLiveRows(*enteringLive)
+	if len(liveRows) == 0 {
+		return 0, false
+	}
+	if len(liveRows) > visibleRows {
+		// 中文说明：进入 history 时 pane 只能显示 visibleRows 行；live screen
+		// 更高时用用户实际可见的尾部对齐，older context 仍通过向上滚动加载。
+		liveRows = liveRows[len(liveRows)-visibleRows:]
+	}
+	historyRows := make([]string, len(rows))
+	for i, row := range rows {
+		historyRows[i] = normalizeHistoryViewportRow(row.Text)
+	}
+	start, ok := latestContiguousRowMatch(historyRows, liveRows)
+	if !ok {
+		return 0, false
+	}
+	return clampCopyInt(start, 0, maxCopyInt(0, len(rows)-visibleRows)), true
+}
+
+func normalizedEnteringLiveRows(snapshot LiveSurfaceSnapshot) []string {
+	rows := append([]string(nil), snapshot.Lines...)
+	if len(rows) == 0 && len(snapshot.Screen) > 0 {
+		rows = make([]string, 0, len(snapshot.Screen))
+		for _, row := range snapshot.Screen {
+			var builder strings.Builder
+			for _, cell := range row {
+				builder.WriteString(cell.Text)
+			}
+			rows = append(rows, builder.String())
+		}
+	}
+	for i := range rows {
+		rows[i] = normalizeHistoryViewportRow(rows[i])
+	}
+	return trimOuterEmptyHistoryViewportRows(rows)
+}
+
+func trimOuterEmptyHistoryViewportRows(rows []string) []string {
+	start := 0
+	for start < len(rows) && rows[start] == "" {
+		start++
+	}
+	end := len(rows)
+	for end > start && rows[end-1] == "" {
+		end--
+	}
+	if start == end {
+		return nil
+	}
+	return rows[start:end]
+}
+
+func normalizeHistoryViewportRow(row string) string {
+	return strings.TrimRight(row, " ")
+}
+
+func latestContiguousRowMatch(rows []string, pattern []string) (int, bool) {
+	if len(pattern) == 0 || len(pattern) > len(rows) {
+		return 0, false
+	}
+	for start := len(rows) - len(pattern); start >= 0; start-- {
+		matched := true
+		for offset := range pattern {
+			if rows[start+offset] != pattern[offset] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return start, true
+		}
+	}
+	return 0, false
 }
 
 func (store CopyModeStore) FollowCursor(totalRows int) CopyModeStore {

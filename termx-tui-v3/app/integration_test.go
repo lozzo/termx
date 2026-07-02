@@ -618,8 +618,8 @@ func TestCopyModeEnteringWheelScrollAppliesWhenLatestArrives(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if runtime.State().CopyMode.ViewportTop != 0 || runtime.State().CopyMode.Cursor.Row != 8 {
-		t.Fatalf("latest should apply entering scroll from tail immediately, got copy=%#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.ViewportTop != 0 || runtime.State().CopyMode.Cursor.Row != 9 {
+		t.Fatalf("latest should apply entering viewport scroll and clamp when content is shorter than the view, got copy=%#v", runtime.State().CopyMode)
 	}
 	if runtime.State().CopyMode.EnteringScrollDelta != 0 || runtime.State().CopyMode.Entering {
 		t.Fatalf("latest should clear entering scroll state, got %#v", runtime.State().CopyMode)
@@ -1103,7 +1103,7 @@ func TestCopyModeRuntimeFloatingWheelScrollUsesHitView(t *testing.T) {
 	if nextPaneCopy.Cursor.Row != 1 || nextPaneCopy.ViewportTop != 1 {
 		t.Fatalf("floating wheel must not mutate tiled copy session, got %#v", nextPaneCopy)
 	}
-	if nextFloatCopy.Cursor.Row != 0 || nextFloatCopy.ViewportTop != 0 {
+	if nextFloatCopy.Cursor.Row != 1 || nextFloatCopy.ViewportTop != 0 {
 		t.Fatalf("floating wheel should mutate only floating copy session, got %#v", nextFloatCopy)
 	}
 }
@@ -1504,7 +1504,7 @@ func TestCopyModeMouseWheelRawSeqScrollsDown(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain raw wheel down: %v", err)
 	}
-	if runtime.State().CopyMode.Cursor.Row != 11 || runtime.State().CopyMode.ViewportTop != 10 {
+	if runtime.State().CopyMode.Cursor.Row != 11 || runtime.State().CopyMode.ViewportTop != 11 {
 		t.Fatalf("raw wheel down should stay in copy/history reducer, got %#v", runtime.State().CopyMode)
 	}
 }
@@ -1673,8 +1673,8 @@ func TestCopyModeMouseWheelMovesCursorAndKeepsItVisible(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain wheel inside viewport: %v", err)
 	}
-	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 13, Col: 2}) || runtime.State().CopyMode.ViewportTop != 10 {
-		t.Fatalf("wheel should move copy cursor before moving viewport, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 13, Col: 2}) || runtime.State().CopyMode.ViewportTop != 9 {
+		t.Fatalf("wheel should move viewport first and keep cursor visible, got %#v", runtime.State().CopyMode)
 	}
 
 	runtime.state.CopyMode.Cursor = state.CopyPosition{Row: 10, Col: 2}
@@ -1746,8 +1746,8 @@ func TestCopyModePageDownMovesCursorBeforeRequestingNewer(t *testing.T) {
 	if len(effects) == 0 {
 		t.Fatalf("page down should be handled")
 	}
-	if next.CopyMode.Cursor.Row != 20 || next.CopyMode.ViewportTop != 11 {
-		t.Fatalf("page down should move cursor and then reveal it, got %#v", next.CopyMode)
+	if next.CopyMode.Cursor.Row != 20 || next.CopyMode.ViewportTop != 18 {
+		t.Fatalf("page down should move viewport and keep cursor at the same viewport-relative row, got %#v", next.CopyMode)
 	}
 }
 

@@ -100,7 +100,8 @@ func TestCopyHistoryPatchDisabledWhenFloatingOverlapsContent(t *testing.T) {
 	cache.Metadata = render.RenderMetadata{Width: 80, Height: 24}
 	runtime.copyHistoryPatch = cache
 
-	root.CopyMode = root.CopyMode.ScrollCursor(-1, len(root.History.Rows))
+	root.CopyMode = root.CopyMode.ScrollViewport(-1, len(root.History.Rows))
+	root = root.WithCopyHistorySession(root.CopyMode.ViewID, root.History, root.CopyMode)
 	runtime.state = root.Advance()
 	if runtime.tryRenderCopyHistoryPatch() {
 		t.Fatalf("overlapped floating should force complete frame, got patch %#v", copyHistoryPerfFrame.Patch)
@@ -199,7 +200,8 @@ func TestCopyHistoryRewritePatchOffsetsANSIColumnAnchors(t *testing.T) {
 	cache.Metadata = render.RenderMetadata{Width: 80, Height: 24}
 	runtime.copyHistoryPatch = cache
 
-	root.CopyMode = root.CopyMode.ScrollCursor(-1, len(root.History.Rows))
+	root.CopyMode = root.CopyMode.ScrollViewport(-1, len(root.History.Rows))
+	root = root.WithCopyHistorySession(root.CopyMode.ViewID, root.History, root.CopyMode)
 	runtime.state = root.Advance()
 	if !runtime.tryRenderCopyHistoryPatch() {
 		t.Fatal("expected rewrite patch")
@@ -273,7 +275,8 @@ func TestR410CopyHistoryPatchDisabledWhenVisibleRowWouldWrapTTY(t *testing.T) {
 	cache.Metadata = render.RenderMetadata{Width: 80, Height: 24}
 	runtime.copyHistoryPatch = cache
 
-	root.CopyMode = root.CopyMode.ScrollCursor(-1, len(root.History.Rows))
+	root.CopyMode = root.CopyMode.ScrollViewport(-1, len(root.History.Rows))
+	root = root.WithCopyHistorySession(root.CopyMode.ViewID, root.History, root.CopyMode)
 	runtime.state = root.Advance()
 	if runtime.tryRenderCopyHistoryPatch() {
 		t.Fatalf("wrapping history row must force full-frame render, got patch %#v", copyHistoryPerfFrame.Patch)
@@ -283,12 +286,12 @@ func TestR410CopyHistoryPatchDisabledWhenVisibleRowWouldWrapTTY(t *testing.T) {
 	}
 }
 
-func TestR410CopyHistoryPatchDisabledWhenRendererWouldInsertTopPadding(t *testing.T) {
+func TestR411CopyHistoryPatchAllowsScreenRowMetadataInContinuousViewport(t *testing.T) {
 	host := newCopyHistoryPerfIncrementalHost(16)
 	host.SetSize(80, 24)
 	root := copyHistoryPerfRoot(80, 24, 256)
 	root.CopyMode.ViewportTop = 120
-	root.CopyMode.Cursor = state.CopyPosition{Row: 120}
+	root.CopyMode.Cursor = state.CopyPosition{Row: 123}
 	root.History.Rows[120] = state.HistoryRow{
 		Text:         "OpenAI Codex",
 		LineID:       120,
@@ -317,13 +320,17 @@ func TestR410CopyHistoryPatchDisabledWhenRendererWouldInsertTopPadding(t *testin
 	cache.Metadata = render.RenderMetadata{Width: 80, Height: 24}
 	runtime.copyHistoryPatch = cache
 
-	root.CopyMode = root.CopyMode.ScrollCursor(-1, len(root.History.Rows))
+	root.CopyMode = root.CopyMode.ScrollViewport(-1, len(root.History.Rows))
+	root = root.WithCopyHistorySession(root.CopyMode.ViewID, root.History, root.CopyMode)
 	runtime.state = root.Advance()
-	if runtime.tryRenderCopyHistoryPatch() {
-		t.Fatalf("current-frame display padding must force full-frame render, got patch %#v", copyHistoryPerfFrame.Patch)
+	if !runtime.tryRenderCopyHistoryPatch() {
+		t.Fatalf("ScreenRow metadata alone should not disable continuous-viewport patch, got patch %#v", copyHistoryPerfFrame.Patch)
 	}
-	if host.sink.patchFrames != 0 || host.sink.frames != 0 {
-		t.Fatalf("unsafe padding patch should not write partial frame, frames=%d patches=%d", host.sink.frames, host.sink.patchFrames)
+	if host.sink.patchFrames != 1 {
+		t.Fatalf("continuous viewport should use one partial patch, frames=%d patches=%d", host.sink.frames, host.sink.patchFrames)
+	}
+	if runtime.state.CopyMode.ViewportTop != 119 || runtime.state.CopyMode.Cursor.Row != 122 {
+		t.Fatalf("viewport patch should keep cursor viewport-relative offset, got %#v", runtime.state.CopyMode)
 	}
 }
 

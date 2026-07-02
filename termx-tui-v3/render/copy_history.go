@@ -27,11 +27,7 @@ func copyHistoryLines(history state.HistoryStore, copyMode state.CopyModeStore) 
 	selection := normalizedCopySelection(copyMode)
 	rows := copyVisibleRows(history, copyMode)
 	width := copyHistoryRenderWidth(history, copyMode)
-	topPadding := copyHistoryTopPadding(history, copyMode, rows)
-	lines := make([]Line, 0, topPadding+len(rows))
-	for i := 0; i < topPadding; i++ {
-		lines = append(lines, Line{})
-	}
+	lines := make([]Line, 0, len(rows))
 	for _, visible := range rows {
 		lines = append(lines, copyHistoryLine(history.Rows[visible], visible, selection, activeSearchRange(copyMode, visible), width))
 	}
@@ -439,7 +435,6 @@ func copyHistoryCursor(history state.HistoryStore, copyMode state.CopyModeStore)
 	row := clampCopyColumn(copyMode.Cursor.Row, 0, len(history.Rows)-1)
 	visibleTop := copyHistoryViewportTop(history, copyMode)
 	visibleRows := copyVisibleRows(history, copyMode)
-	topPadding := copyHistoryTopPadding(history, copyMode, visibleRows)
 	visibleRow := row - visibleTop
 	if visibleRow < 0 {
 		visibleRow = 0
@@ -450,7 +445,7 @@ func copyHistoryCursor(history state.HistoryStore, copyMode state.CopyModeStore)
 	col := clampCopyColumn(copyMode.Cursor.Col, 0, state.HistoryRowDisplayWidth(history.Rows[row]))
 	return Cursor{
 		Visible: true,
-		Row:     topPadding + visibleRow,
+		Row:     visibleRow,
 		Col:     copyHistoryPrefixWidth(history.Rows[row]) + col,
 		Shape:   CursorShapeBlock,
 	}
@@ -490,7 +485,6 @@ func copyHistoryStatus(history state.HistoryStore, copyMode state.CopyModeStore)
 
 func copyHistoryHitRegions(history state.HistoryStore, copyMode state.CopyModeStore) []HitRegion {
 	rows := copyVisibleRows(history, copyMode)
-	topPadding := copyHistoryTopPadding(history, copyMode, rows)
 	regions := make([]HitRegion, len(rows))
 	for i, rowIndex := range rows {
 		row := history.Rows[rowIndex]
@@ -501,7 +495,7 @@ func copyHistoryHitRegions(history state.HistoryStore, copyMode state.CopyModeSt
 		}
 		regions[i] = HitRegion{
 			Kind:   HitRegionHistoryRow,
-			Rect:   Rect{X: prefixWidth, Y: topPadding + i, W: rowWidth, H: 1},
+			Rect:   Rect{X: prefixWidth, Y: i, W: rowWidth, H: 1},
 			LineID: row.LineID,
 			Row:    rowIndex,
 		}
@@ -515,9 +509,6 @@ func copyVisibleRows(history state.HistoryStore, copyMode state.CopyModeStore) [
 	}
 	top := copyHistoryViewportTop(history, copyMode)
 	height := copyHistoryVisibleHeight(copyMode)
-	if padding := copyHistoryTopPaddingForViewport(history, copyMode, top); padding > 0 && padding < height {
-		height -= padding
-	}
 	if height <= 0 || top+height > len(history.Rows) {
 		height = len(history.Rows) - top
 	}
@@ -526,68 +517,6 @@ func copyVisibleRows(history state.HistoryStore, copyMode state.CopyModeStore) [
 		rows = append(rows, top+i)
 	}
 	return rows
-}
-
-func copyHistoryTopPadding(history state.HistoryStore, copyMode state.CopyModeStore, visibleRows []int) int {
-	if len(visibleRows) == 0 || copyMode.Query != "" || copyMode.ViewRows <= 0 {
-		return 0
-	}
-	top := visibleRows[0]
-	return copyHistoryTopPaddingForViewport(history, copyMode, top)
-}
-
-func copyHistoryTopPaddingForViewport(history state.HistoryStore, copyMode state.CopyModeStore, top int) int {
-	if copyMode.Query != "" || copyMode.ViewRows <= 0 {
-		return 0
-	}
-	if top != copyHistoryViewportTop(history, copyMode) || top < 0 || top >= len(history.Rows) {
-		return 0
-	}
-	anchor, row, ok := currentPrimaryFrameAnchorForViewport(history.Rows, top, copyMode.ViewRows)
-	if !ok {
-		return 0
-	}
-	rowsBeforeAnchor := anchor - top
-	if row.ScreenRow <= rowsBeforeAnchor {
-		return 0
-	}
-	// 中文说明：这是 display projection 的 current-frame 屏幕锚点，truth source
-	// 是 core history window 的 ScreenRow；如果 viewport 已保留部分 frame 前最近
-	// history rows，这里只补剩余空白，不能从 live snapshot 反推。
-	padding := row.ScreenRow - rowsBeforeAnchor
-	if padding >= copyMode.ViewRows {
-		return 0
-	}
-	return padding
-}
-
-func currentPrimaryFrameAnchorForViewport(rows []state.HistoryRow, top int, viewRows int) (int, state.HistoryRow, bool) {
-	limit := top + viewRows
-	if limit > len(rows) {
-		limit = len(rows)
-	}
-	for index := top; index < limit; index++ {
-		row := rows[index]
-		if !row.FixedGrid || row.Kind != state.HistoryRowKindScreenFrame || row.Segment != state.HistoryCursorSegmentCurrentPrimaryFrame || !row.ScreenRowSet {
-			continue
-		}
-		if previousCurrentFrameRow(rows, index, row) {
-			continue
-		}
-		return index, row, true
-	}
-	return 0, state.HistoryRow{}, false
-}
-
-func previousCurrentFrameRow(rows []state.HistoryRow, top int, row state.HistoryRow) bool {
-	for index := top - 1; index >= 0; index-- {
-		previous := rows[index]
-		if previous.FrameID != row.FrameID || previous.SessionID != row.SessionID || previous.Segment != row.Segment || previous.Kind != row.Kind {
-			return false
-		}
-		return true
-	}
-	return false
 }
 
 func copyHistoryVisibleHeight(copyMode state.CopyModeStore) int {

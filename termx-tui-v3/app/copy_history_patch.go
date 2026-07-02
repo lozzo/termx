@@ -154,9 +154,6 @@ func copyHistoryPatchContentSafeForIncremental(history state.HistoryStore, copyM
 	if width <= 0 || len(history.Rows) == 0 {
 		return false
 	}
-	if copyHistoryPatchNeedsRendererTopPadding(history, copyMode) {
-		return false
-	}
 	top := clampCopyHistoryPatchInt(copyMode.ViewportTop, 0, len(history.Rows)-1)
 	visibleRows := copyHistoryPatchVisibleRows(history, copyMode)
 	if visibleRows <= 0 || top+visibleRows > len(history.Rows) {
@@ -169,40 +166,6 @@ func copyHistoryPatchContentSafeForIncremental(history state.HistoryStore, copyM
 		if copyHistoryPatchPrefixWidth(row)+state.HistoryRowDisplayWidth(row) > width {
 			return false
 		}
-	}
-	return true
-}
-
-func copyHistoryPatchNeedsRendererTopPadding(history state.HistoryStore, copyMode state.CopyModeStore) bool {
-	if copyMode.Query != "" || copyMode.ViewRows <= 0 || len(history.Rows) == 0 {
-		return false
-	}
-	top := clampCopyHistoryPatchInt(copyMode.ViewportTop, 0, len(history.Rows)-1)
-	visibleRows := copyHistoryPatchVisibleRows(history, copyMode)
-	limit := top + visibleRows
-	if limit > len(history.Rows) {
-		limit = len(history.Rows)
-	}
-	for rowIndex := top; rowIndex < limit; rowIndex++ {
-		row := history.Rows[rowIndex]
-		if !copyHistoryPatchCurrentPrimaryFrameAnchor(history.Rows, rowIndex, row) {
-			continue
-		}
-		return row.ScreenRow > rowIndex-top
-	}
-	return false
-}
-
-func copyHistoryPatchCurrentPrimaryFrameAnchor(rows []state.HistoryRow, rowIndex int, row state.HistoryRow) bool {
-	if !row.FixedGrid || row.Kind != state.HistoryRowKindScreenFrame || row.Segment != state.HistoryCursorSegmentCurrentPrimaryFrame || !row.ScreenRowSet {
-		return false
-	}
-	for previousIndex := rowIndex - 1; previousIndex >= 0; previousIndex-- {
-		previous := rows[previousIndex]
-		if previous.FrameID != row.FrameID || previous.SessionID != row.SessionID || previous.Segment != row.Segment || previous.Kind != row.Kind {
-			return true
-		}
-		return false
 	}
 	return true
 }

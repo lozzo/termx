@@ -722,7 +722,7 @@ func TestR377FrozenLatestReplacesMaterializedProjection(t *testing.T) {
 	}
 }
 
-func TestCopyModeAcceptLatestAppliesPendingScrollAsCursorMove(t *testing.T) {
+func TestR411CopyModeAcceptLatestAppliesPendingScrollAsViewportMove(t *testing.T) {
 	rows := make([]HistoryRow, 0, 30)
 	for i := 0; i < 30; i++ {
 		rows = append(rows, HistoryRow{Text: "row", LineID: uint64(i + 1)})
@@ -734,8 +734,8 @@ func TestCopyModeAcceptLatestAppliesPendingScrollAsCursorMove(t *testing.T) {
 		EnteringScrollDelta: -3,
 	}.AcceptLatest(latest, latest.Cols, len(rows))
 
-	if copyMode.ViewportTop != 25 || copyMode.Cursor.Row != 26 {
-		t.Fatalf("pending PageUp while latest is flying should move copy cursor first, got %#v", copyMode)
+	if copyMode.ViewportTop != 22 || copyMode.Cursor.Row != 26 {
+		t.Fatalf("pending PageUp while latest is flying should move viewport first, got %#v", copyMode)
 	}
 }
 
@@ -870,7 +870,7 @@ func TestCopyModeAcceptLatestMatchesVisibleTailOfEnteringLiveScreenFrame(t *test
 	}
 }
 
-func TestR410CopyModeAcceptLatestAnchorsCurrentFrameToAuthoritativeScreenRow(t *testing.T) {
+func TestR411CopyModeAcceptLatestIgnoresScreenRowForHistoryViewport(t *testing.T) {
 	rows := []HistoryRow{
 		{Text: "old shell prompt", LineID: 1, Segment: HistoryCursorSegmentCommitted},
 		{Text: "old shell marker", LineID: 2, Segment: HistoryCursorSegmentCommitted},
@@ -904,12 +904,12 @@ func TestR410CopyModeAcceptLatestAnchorsCurrentFrameToAuthoritativeScreenRow(t *
 	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
 	copyMode := CopyModeStore{ViewRows: 8}.AcceptLatest(latest, latest.Cols, len(rows))
 
-	if copyMode.ViewportTop != 2 || copyMode.Cursor != (CopyPosition{Row: 5}) {
-		t.Fatalf("latest should anchor current frame to core ScreenRow and drop older scrollback, got %#v", copyMode)
+	if copyMode.ViewportTop != 0 || copyMode.Cursor != (CopyPosition{Row: 5}) {
+		t.Fatalf("latest should keep a continuous authoritative viewport and ignore ScreenRow padding, got %#v", copyMode)
 	}
 	visible := rows[copyMode.ViewportTop:]
-	if historyRowsContainText(visible, "old shell prompt") || !historyRowsContainText(visible, "visible shell prompt") {
-		t.Fatalf("entry viewport should keep only screen-row-sized recent context, top=%d visible=%#v", copyMode.ViewportTop, visible)
+	if !historyRowsContainText(visible, "old shell prompt") || !historyRowsContainText(visible, "visible shell prompt") {
+		t.Fatalf("entry viewport should not drop older rows merely because current frame has ScreenRow, top=%d visible=%#v", copyMode.ViewportTop, visible)
 	}
 }
 

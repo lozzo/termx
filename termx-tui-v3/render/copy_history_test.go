@@ -151,7 +151,7 @@ func TestCopyHistoryCursorClampsToVisibleViewport(t *testing.T) {
 	}
 }
 
-func TestR409CopyHistoryUsesAuthoritativeScreenRowAsCurrentFrameAnchor(t *testing.T) {
+func TestR411CopyHistoryUsesContinuousRowsWithoutScreenRowPadding(t *testing.T) {
 	history := state.HistoryStore{
 		Cols: 12,
 		Rows: []state.HistoryRow{
@@ -191,28 +191,26 @@ func TestR409CopyHistoryUsesAuthoritativeScreenRowAsCurrentFrameAnchor(t *testin
 	}
 
 	lines := copyHistoryLines(history, copyMode)
-	if len(lines) < 6 {
-		t.Fatalf("expected top padding plus current frame rows, got %#v", lines)
+	if len(lines) != 2 {
+		t.Fatalf("expected only visible authoritative rows, got %#v", lines)
 	}
-	for row := 0; row < 4; row++ {
-		if got := lines[row].String(); got != "" {
-			t.Fatalf("padding row %d should be display-only blank, got %q lines=%#v", row, got, lines)
-		}
+	if got := lines[0].String(); got != "OpenAI Codex" {
+		t.Fatalf("first visible row should be viewport top, got %q lines=%#v", got, lines)
 	}
-	if got := lines[4].String(); got != "OpenAI Codex" {
-		t.Fatalf("current frame first row should stay at authoritative screen row 4, got %q lines=%#v", got, lines)
+	if got := lines[1].String(); got != "Use /skills" {
+		t.Fatalf("second visible row should stay contiguous, got %q lines=%#v", got, lines)
 	}
 	cursor := copyHistoryCursor(history, copyMode)
-	if !cursor.Visible || cursor.Row != 5 {
-		t.Fatalf("cursor row should include authoritative top padding, got %#v", cursor)
+	if !cursor.Visible || cursor.Row != 1 {
+		t.Fatalf("cursor row should use viewport-local y without padding, got %#v", cursor)
 	}
 	regions := copyHistoryHitRegions(history, copyMode)
-	if len(regions) == 0 || regions[0].Rect.Y != 4 {
-		t.Fatalf("hit regions should be shifted by top padding, got %#v", regions)
+	if len(regions) == 0 || regions[0].Rect.Y != 0 {
+		t.Fatalf("hit regions should use contiguous viewport-local y, got %#v", regions)
 	}
 }
 
-func TestR410CopyHistoryEntryKeepsOnlyScreenRowSizedRecentContext(t *testing.T) {
+func TestR411CopyHistoryEntryKeepsContinuousAuthoritativeRows(t *testing.T) {
 	history := state.HistoryStore{
 		Cols: 12,
 		Rows: []state.HistoryRow{
@@ -253,13 +251,13 @@ func TestR410CopyHistoryEntryKeepsOnlyScreenRowSizedRecentContext(t *testing.T) 
 	}, history.Cols, len(history.Rows))
 
 	lines := copyHistoryLines(history, copyMode)
-	if copyMode.ViewportTop != 2 || len(lines) < 4 {
-		t.Fatalf("expected current frame anchored with recent context, copy=%#v lines=%#v", copyMode, lines)
+	if copyMode.ViewportTop != 0 || len(lines) != len(history.Rows) {
+		t.Fatalf("expected continuous rows without screen-row padding or dropped context, copy=%#v lines=%#v", copyMode, lines)
 	}
-	if got := lines[0].String(); got != "visible shell prompt" {
-		t.Fatalf("old scrollback should be outside initial viewport, got first line %q lines=%#v", got, lines)
+	if got := lines[0].String(); got != "old shell prompt" {
+		t.Fatalf("old scrollback should remain in continuous initial viewport, got first line %q lines=%#v", got, lines)
 	}
-	if got := lines[2].String(); got != "OpenAI Codex" {
-		t.Fatalf("current frame should start at authoritative screen row 2, got %q lines=%#v", got, lines)
+	if got := lines[4].String(); got != "OpenAI Codex" {
+		t.Fatalf("current frame should keep authoritative row order, got %q lines=%#v", got, lines)
 	}
 }
