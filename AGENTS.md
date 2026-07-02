@@ -47,7 +47,7 @@
 
 ## 目录职责
 
-- `termx-core-v2/`：新 core 主线目录，负责 logical-line-first 历史模型、terminal semantic transaction 消费、screen app session、segment cursor、`HistoryWindow`、storage/backend 与相关 harness。
+- `termx-core-v2/`：新 core 主线目录，负责 screen-backed history 模型、terminal semantic transaction 消费、`ScreenHistoryBuffer` physical row/cell 真值、logical-line projection、screen app session、segment cursor、`HistoryWindow`、storage/backend 与相关 harness。
 - `termx-core-v2/docs/screen-app-infinite-history-final-plan.md`：当前无限历史定案。
 - `termx-core-v2/docs/architecture.md`：core-v2 技术设计基准。
 - `termx-vterm/`：终端语义解释来源；负责把 PTY bytes 解释成 terminal 语义事件或 transaction，不负责持有无限历史 truth。
@@ -63,19 +63,19 @@
 - 禁止症状补丁：遇到状态错乱、输入错路由、生命周期误判或恢复异常时，必须先定位权威状态边界和消息链路，再修改模型或契约；不得用 storage scrub、fallback、定时刷新、重复 attach、局部 if 分支等方式掩盖根因。
 - 禁止补丁式实现：不得为了让当前 case 通过而堆叠临时分支、局部兜底、重复同步、隐式状态修正或旧路径兼容；每次修复都必须先说清 domain owner、truth source、消息链路和失败条件，再按模型/契约补 harness 后实现。
 - 当前无限历史主线允许先删后写：旧补丁式历史代码、raw parser fallback、程序名特殊分支、snapshot/history 拼接 fallback、重复同步和隐式状态修正可以按 `workflow.md` 当前切片删除。
-- 历史 truth 的基本单位是 logical line，不是 visual row、wrapped row、snapshot scrollback、grid viewport、xterm buffer row 或 DOM/canvas row。
-- core-v2 的 logical-line history 是唯一历史数据模型。
-- `CommittedHistoryIndex`、`MutableFrontier`、segment cursor、storage backend、cache、adapter、TUI/App projection 不能演变成第二份历史 truth。
-- `persisted` 或落盘不表示不可修改；是否可修改由 session/segment/finalization 语义决定。
+- R419 后，history ingest truth 的基本单位是 core-v2 authoritative physical row/cell，不是 append-only logical line、visual row、wrapped row、snapshot scrollback、grid viewport、xterm buffer row 或 DOM/canvas row。
+- core-v2 `ScreenHistoryBuffer` 是 main/alt screen、physical rows、cells、cursor、scroll region、RowID、Version 和 seal-once 的 domain owner；logical line 只是 query/copy/history 阶段的 projection。
+- physical row store、sealed row index、logical projection、segment cursor、storage backend、cache、adapter、TUI/App projection 不能演变成第二份历史 truth。
+- `persisted` 或落盘不表示不可修改；是否可修改由 terminal/session/row lifecycle 语义决定。
 - raw PTY bytes parser 不能作为 terminal 语义 owner，也不能 fallback 出第二套历史。
 - core-v2 应消费 termx-vterm 解释过程中的 semantic transaction，而不是消费最终屏幕快照。
-- vterm 当前屏幕不是无限历史来源；它只能提供终端语义解释后的可记录事件。
+- vterm 当前屏幕不是无限历史来源；它只能提供终端语义解释后的可记录事件和 side proof，history truth 必须由 core-v2 screen buffer 消费语义后维护。
 - tmux 等价目标只覆盖真实经过 PTY 的内容；程序没有输出到 PTY 的内部状态不在目标内。
 - attach、reattach、bootstrap、recovery、full replace、clear screen、resize 不得凭空创建 committed history。
-- resize 不得重写 committed history；普通 logical line 只能在展示层重新 wrap，final screen-frame 必须固定生成时宽度。
+- resize 不得重写 sealed physical history；普通 logical line projection 可以在展示层重新 wrap，final screen-frame 必须固定生成时宽度。
 - alt-screen 不写入 primary history；纯 alt-screen transient 退出时不 commit 屏幕内容。
 - primary screen app 临时进入 alt-screen 前必须 archive/hide 当前 primary frame；退出 alt 后如果出现新的 primary 输出，必须作为新的 primary frame publish，可以接回同一 session journal，但不得复活 pre-alt current frame，也不得凭空 commit alt 屏幕。
-- process exit 必须 force commit primary mutable frontier，并按分类决定是否生成 final screen-frame。
+- process exit 必须按 terminal lifecycle seal 当前 primary mutable physical rows/current frame，并按分类决定是否生成 final screen-frame projection。
 - default fg/bg 应保存为语义属性，由查看历史时的主题解析；明确 RGB 颜色属于内容属性，不能被后续主题替换。
 - 不得为 Codex、Claude Code、htop、vim 等程序名写特殊适配；只能按终端语义和屏幕行为分类。
 - panel/pane 只表达工作台槽位和连接意图：空或连接到 terminal view。terminal 是否 running/exited、退出码、退出时间、命令、restart 判断都属于 core terminal lifecycle，不得写入 workbench storage 或 pane kind。

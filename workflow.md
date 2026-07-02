@@ -23,17 +23,18 @@
 
 ### 1.1 一句话目标
 
-实现接近 tmux/普通终端体验的无限历史：只要内容真实经过 PTY 并被终端语义解释到 primary/history 轨道，就应能在历史模式中回看、搜索和复制；实现方式必须以 core-v2 logical line 为唯一历史真值。
+实现接近 tmux/普通终端体验的无限历史：只要内容真实经过 PTY 并被终端语义解释到 primary/history 轨道，就应能在历史模式中回看、搜索和复制；实现方式必须以 core-v2 authoritative screen model 的 physical row/cell 为 ingest 真值，再在 query/copy/history 阶段投影 logical line。
 
 ### 1.2 这轮只关心什么
 
-当前阶段先清掉旧的补丁式历史实现，再立接口和 harness，最后按接口推进实现：
+当前阶段从 logical-line-first reducer 转向 screen-backed history：先锁定现有链路和迁移基线，再引入 physical row/cell screen model，最后逐步把 pseudo-TUI path、projection、HistoryWindow 和旧 journal reducer 切过去。
 
-1. 删除或隔离旧的 screen app/history 补丁路径，避免后续 Agent 顺着旧逻辑继续打补丁。
-2. 定义 core-v2 与 termx-vterm 之间的 terminal semantic transaction 接口。
-3. 定义普通输出、primary screen app、alt-screen transient、final screen-frame、segment cursor、resize、色彩属性和文件存储的边界。
-4. 先补小 harness 锁住边界，再接真实 PTY/vterm/protocol/TUI。
-5. tui-v3 和 App 只消费 core-v2 authoritative history window，不从本地 VTerm scrollback、snapshot、DOM/canvas rows 或 live cache 推断历史真值。
+1. 引入 `ScreenHistoryBuffer`，把 PTY semantic ops 先作用到 main/alt screen、physical rows、cells、cursor 和 scroll region。
+2. physical row 必须有稳定 RowID 和 Version；同一 RowID 不允许 seal 两次。
+3. 只有真实 scroll-out、明确 boundary、frame close、process close、alt-screen exit 等语义才能把 physical row seal 进 committed physical history。
+4. logical line 只作为 HistoryWindow/Copy/Search 阶段的 projection，必须保留 RowIDs 并按 RowID 去重。
+5. journal 可暂时保留为 backlog/boundary/meta queue，但正文 history truth 必须下沉到 screen model。
+6. tui-v3 和 App 只消费 core-v2 authoritative history window，不从本地 VTerm scrollback、snapshot、DOM/canvas rows 或 live cache 推断历史真值。
 
 ### 1.3 不在当前阶段做什么
 
@@ -47,20 +48,24 @@
 
 ## 2. 技术设计基准
 
-- 当前 history 语义设计基准：`termx-core-v2/docs/history-logical-renderer-design.md`
+- 当前 screen-backed history 重构基准：`termx-core-v2/docs/screen-backed-history-rebuild-design.md`
+  - R419 后，history ingest 真值改为 `ScreenHistoryBuffer` 的 physical row/cell 状态机；logical line 是 query/copy/history 阶段从 physical rows 投影出的视图，不再是 ingest 阶段的正文 truth。
+  - 新模型必须保留 RowID、Version、OwnerKind、seal-once、current/committed RowID 去重、alt-screen 隔离和 scroll region 语义。
+  - 旧 compact journal 可在迁移期作为 backlog/boundary/meta/event queue 存在，但不得继续作为 pseudo-TUI 正文 truth 的最终 owner。
+- 旧 history logical renderer 设计基准：`termx-core-v2/docs/history-logical-renderer-design.md`
   - R318 后，history 被定义为消费 vterm terminal semantic transaction 的 logical-line renderer。
   - 新模型使用 `mutable` / `sealed` / `timeline` / `frame journal` 语义，不再把 `commit` / `committed` 作为领域概念。
-  - 如果旧文档、旧代码类型名、历史聊天记录或旧测试描述仍使用 `commit/committed`，默认按新文档翻译为 sealed/timeline/lifecycle close 语义。
+  - R419 后该文档作为 pre-screen-buffer 背景；若它与 `screen-backed-history-rebuild-design.md` 冲突，以 screen-backed 设计为准。
 - 旧 screen app 无限历史定案：`termx-core-v2/docs/screen-app-infinite-history-final-plan.md`
-  - 该文档保留 R300-R317 的问题背景、vterm transaction 边界和已完成切片记录；其中 `commit/committed` 术语和 projector/store 分层若与新文档冲突，以 `history-logical-renderer-design.md` 为准。
+  - 该文档保留 R300-R317 的问题背景、vterm transaction 边界和已完成切片记录；其中 `commit/committed` 术语和 projector/store 分层若与新文档冲突，以 `screen-backed-history-rebuild-design.md` 为准。
 - core-v2 架构：`termx-core-v2/docs/architecture.md`
 - tui-v3 架构：`termx-tui-v3/docs/architecture.md`
 - live native screen 重构基准：`termx-core-v2/docs/live-native-screen-rebuild-design.md`
   - R348 后，普通实时显示被定义为 core 维护最新 native screen，TUI 主导 render loop；core 只发布 live invalidation，不推送待渲染帧队列，也不关心客户端渲染进度。
   - 旧 `Snapshot/CompactSnapshot`、`ScreenUpdate` stream、`grid.viewport`、snapshot/history 拼接和 TUI live union event 只能作为清场对象，不得继续作为 v3 live display 主合同。
 - compact semantic history journal 设计基准：`termx-core-v2/docs/compact-semantic-history-journal-design.md`
-  - R396 后，高压 PTY 输出恢复 live latest 与 history semantic 的双消费边界：live `SurfaceTrack` 只维护当前 native screen 与唯一 response owner，history `SemanticTap` / journal consumer 只生产 authoritative logical-line history。
-  - journal 必须来自 history semantic consumer 的 vterm 语义 pass，不能来自 raw PTY parser、live snapshot diff、TUI/render rows 或 live `SurfaceTrack`。journal 是未应用语义命令队列，不是第二份 history truth；authoritative truth 仍是 core-v2 logical line history store。
+  - R396 后，高压 PTY 输出恢复 live latest 与 history semantic 的双消费边界：live `SurfaceTrack` 只维护当前 native screen 与唯一 response owner，history `SemanticTap` / journal consumer 只消费同一 PTY semantic pass。
+  - R419 后 journal 必须继续来自 history semantic consumer 的 vterm 语义 pass，不能来自 raw PTY parser、live snapshot diff、TUI/render rows 或 live `SurfaceTrack`。journal 是未应用语义命令队列，不是第二份 history truth；authoritative truth 将迁移为 core-v2 screen-backed physical row store。
   - live latest screen 更新必须恢复到 `SurfaceTrack.Write -> WriteForLatestFrame` 快路径成本；history semantic write hot path 不应反压 live wake，不应为普通输出构造 full frame、full SourceDamage、per-write native snapshot clone 或逐 op history reducer backlog。
 - vterm terminal 语义来源：`termx-vterm/`
 - 旧 history 说明、session history 说明和同步输出说明只能作为问题背景；如果与本文件或定案冲突，以本文件和定案为准。
@@ -118,12 +123,14 @@
 
 ### 4.1 历史真值
 
-- 历史 truth 的基本单位是 logical line，不是 visual row、wrapped row、snapshot scrollback、grid viewport 或 xterm buffer row。
-- core-v2 的 logical-line history 是唯一历史数据模型。
-- R318 后，历史领域语义使用 `mutable` / `sealed`：`mutable` 表示仍可被当前 open line 或 current frame 改写，`sealed` 表示已按 terminal/session 语义离开当前可变区域。
-- `commit` / `committed` 不再是新模型的领域概念；旧代码名若尚未迁移，只能按 sealed/timeline/lifecycle close 语义理解。
-- sealed timeline、open line、mutable/current frame、frame journal、segment cursor、storage backend、cache、adapter、TUI/App projection 都不能演变成第二份历史 truth。
-- `persisted` 或落盘不表示 sealed，也不表示不可修改；是否可修改由 terminal/session 语义决定。
+- R419 后，history ingest truth 的基本单位是 authoritative physical row/cell，不是 append-only logical line、visual row、wrapped row、snapshot scrollback、grid viewport 或 xterm buffer row。
+- core-v2 `ScreenHistoryBuffer` 是 main/alt screen、physical rows、cells、cursor、scroll region、RowID、Version 和 seal-once 的 domain owner。
+- logical line 是 query/copy/history 阶段从 physical rows 投影出的视图；projection 必须保留 RowIDs，不能用纯文本 dedupe 当 correctness。
+- 同一个 RowID 不允许 seal 两次；latest/current screen 与 committed physical history 拼接时必须按 RowID 去重。
+- `mutable` 表示 physical row 仍属于 current screen/session，可被 terminal 语义改写；`sealed` 表示 physical row 已按 scroll-out/boundary/frame close/process close/alt exit 等语义离开当前可变区域。
+- `commit` / `committed` 不是新模型的 ingest 概念；旧代码名若尚未迁移，只能按 sealed physical row 或 projected sealed window 语义理解。
+- physical row store、sealed row index、logical projection、segment cursor、storage backend、cache、adapter、TUI/App projection 都不能演变成第二份历史 truth。
+- `persisted` 或落盘不表示 sealed，也不表示不可修改；是否可修改由 terminal/session/row lifecycle 语义决定。
 
 ### 4.2 terminal 语义来源
 
@@ -134,7 +141,7 @@
 
 ### 4.3 普通输出
 
-- 普通 shell/程序 stdout 一旦按终端语义形成完整 logical line，就可以 seal 进 history timeline。
+- 普通 shell/程序 stdout 先作用到 screen buffer；只有 hard line boundary、真实 scroll-out 或生命周期边界能让对应 physical row seal，随后在查询阶段投影成 logical line。
 - 普通输出不应长时间持有 screen app session。
 - 进程退出必须 seal 普通输出 open line。
 
@@ -161,7 +168,7 @@
 ### 4.7 resize
 
 - resize 不得重写 sealed history。
-- 普通 logical line 可以在展示层按新宽度重新 wrap。
+- 普通 logical line 是 projection，可以在展示层按新宽度重新 wrap；sealed physical row 本身不得因 resize 被重写。
 - mutable screen app session 在 resize 时必须保留可变语义，不能凭空产生 sealed history。
 - final screen-frame 必须固定生成时的列宽。
 - Codex/Claude Code 运行中 resize 是硬 harness，不能靠程序名特殊适配。
@@ -177,7 +184,7 @@
 
 - tui-v3 不拥有 sealed history truth，只消费 core-v2 authoritative `HistoryWindow`。
 - tui-v3 copy mode 不得从本地 VTerm scrollback、snapshot totals、row ownership、LoadedRows、wrapped 拼接结果推断历史。
-- App/Web/native live display 可以有本地短缓存，但 copy/search/history truth 必须走 core-v2 logical-line window。
+- App/Web/native live display 可以有本地短缓存，但 copy/search/history truth 必须走 core-v2 screen-backed authoritative HistoryWindow。
 - renderer 只消费 view-model，不读 core client、history source、runtime service 或 protocol client。
 
 ## 5. 清场规则
@@ -320,6 +327,15 @@
 | R416. SK latest/freeze current-frame screen-row 入口锚点修复 | 完成 | `workflow.md`、`termx-core-v2/history/`、`termx-core-v2/` | 用户复现普通 shell rows 已 sealed，进入 Codex 类 primary current frame 后 copy/history latest 仍把过多旧 prompt 塞到 current frame 前。core latest/freeze 入口必须使用 current primary frame authoritative `ScreenRow` 计算最多可接入多少 sealed tail；`ScreenRow=0` 表示 current frame 已顶到屏幕第一行，不能再接旧 rows。更早 sealed rows 仍通过 older cursor 可达；R376 `CopyEntryProjection` 半追平预览继续读取已应用 frontier，不伪装成正式 frozen latest。 |
 | R417. SK primary pseudo-TUI 语义分类扩展 | 完成 | `workflow.md`、`termx-core-v2/`、`termx-vterm/` | 用户判断重复根因在 parser/classifier 边界：primary screen pseudo-TUI 被当 ordinary stream 写入，又以 current frame 展示。vterm frame attach 只能按 ordered semantic ops 判定，普通单调 stdout 不因 live diff touched rows 升级成 frame；CR+EL、相对光标、字符/行编辑、clear/scroll/copy rect 等主屏改写语义必须携带 PrimaryFrame+touched-row proof。core classifier 将这些“改已有屏幕内容”的 transaction 归到 mutable primary frame session，并继续只发布 touched rows，不按程序名、不做 history-mode 文本去重。 |
 | R418. SK deep research touched-row proof 与 history render guard | 完成 | `workflow.md`、`termx-vterm/`、`termx-tui-v3/render/` | 处理 `/Users/lozzow/Downloads/deep-research-reportx.md` 对 R417 的反馈：R417 仍让 `PrimaryFrameTouchedRows` 直接来自 direct damage touched rows。非 full-replace primary pseudo-TUI 的 ownership proof 必须优先由 ordered semantic ops 推导，full-replace 才保留 direct damage proof；TUI render VM 需要 guard 证明 `HistoryRenderable()` 后同一 pane 的 live surface 不会混入 copy-history 内容。 |
+| R419. SK screen-backed history 勘察与工作流重置 | 完成 | `workflow.md`、`AGENTS.md`、`termx-core-v2/docs/screen-backed-history-rebuild-design.md` | 按用户新目标确认当前 PTY/vterm/HistoryJournal/HistoryStore/TUI window 链路，记录 pseudo-TUI frame/touched rows 仍直接变成 logical history 的位置；把活动基准改为 ScreenHistoryBuffer physical row/cell ingest truth，logical line 只作为 HistoryWindow/Copy/Search projection，并拆出 R420-R427 迁移切片。 |
+| R420. SK ScreenHistoryBuffer domain model 与基础 harness | 待开始 | `termx-core-v2/history/` | 只引入 screen-backed domain model 和单元测试，不接 terminal/TUI：`PhysicalRow`、`Cell`、RowID、Version、OwnerKind、main screen、cursor、CR/LF/BS/TAB、printable text、basic scroll-out、seq idempotency 和 seal-once invariant。 |
+| R421. SK ScreenHistoryBuffer VT 控制语义覆盖 | 待开始 | `termx-core-v2/history/`、按需 `termx-vterm/` | 在 screen buffer 层覆盖 CUP/HVP/CUU/CUD/CUF/CUB/CHA/HPA/VPA、EL/ED/ECH/DCH/ICH、IL/DL/SU/SD、DECSTBM、alt-screen 1047/1048/1049、sync 2026 boundary、wide char continuation；缺失控制序列必须有 TODO 和防重复 seal 测试。 |
+| R422. SK physical row 到 logical line projection | 待开始 | `termx-core-v2/history/` | 新增 projection layer：从 committed physical rows + current main/alt screen rows 生成 logical lines/HistoryWindow rows，保留 RowIDs、Wrapped/Continued、Version，按 RowID 去重，latest window 不重复拼 current screen 与 sealed history。 |
+| R423. SK terminal history ANSI harness 与 fixtures | 待开始 | `scripts/` 或 `termx-core-v2/cmd/history-harness/`、`fixtures/history/`、按需 `termx-core-v2/history/` | 新增可 debug harness，接收 ANSI 文件或 stdin，经过 vterm semantic source 和 ScreenHistoryBuffer 后 dump current screen、committed physical rows、projected logical lines；每行带 RowID、Version、OwnerKind、Sealed、Wrapped、text，并补 plain shell、pseudo-TUI、progress、alt、scroll region、wide char fixtures。 |
+| R424. SK primary pseudo-TUI path 接入 screen buffer | 待开始 | `termx-core-v2/`、`termx-core-v2/history/`、按需 `termx-vterm/` | 把 CUU/EL/DCH/ICH/IL/DL/SU/SD、CUP repaint、sync repaint 等 primary pseudo-TUI path 从 journal logical/frame reducer 切到 ScreenHistoryBuffer；普通 shell append path 可暂留旧逻辑，但 pseudo-TUI 不能再直接 append committed logical rows。 |
+| R425. SK HistoryWindow/Copy screen-backed projection 接入 | 待开始 | `termx-core-v2/history/`、按需 `internal/protocol/`、`termx-tui-v3/` | HistoryStore 新增或迁移为 screen-backed implementation，latest/older/newer/freeze/copy 从 screen snapshot + committed physical rows 投影；保留外部 HistoryWindow/CopyMode 接口和 TUI authoritative boundary。 |
+| R426. SK 旧 journal 正文 reducer 收缩与清场 | 待开始 | `termx-core-v2/history/`、`termx-core-v2/`、按需 `termx-vterm/` | 将 journal 长期职责收缩为 boundary/meta/event backlog，删除或隔离 pseudo-TUI 正文 truth、frame snapshot append、logical-line ingest truth 旧路径；保留必要 boundary、process、clear、alt、sync 事件。 |
+| R427. SK screen-backed history review 与完整验收 | 待开始 | `workflow.md`、相关改动目录 | 进行 Architecture、VT Semantics、History Correctness、Performance、Test/Harness 五类审核；跑 `go test ./...`、r328/r331/r334、新 screen model 单测、harness fixture、Codex-style synthetic、alt/progress/latest RowID 去重和无进程名特判准入。 |
 
 ## 7. 测试准入
 
@@ -343,6 +359,7 @@
 
 ## 9. 当前状态
 
+- `R419` 已完成：已读取用户 screen-backed history 重构目标并勘察当前核心链路。当前实现是 `Terminal.watchOutput` 将 PTY bytes 分给 live `SurfaceTrack` 和 history `SemanticTap`；history path 经 `TerminalSemanticTransaction -> HistoryJournalFromDecision -> terminalHistoryIngestQueue -> HistoryJournalRenderer -> HistoryStore.Apply -> HistoryWindow/Copy`。vterm 已提供 ordered ops、scroll-out proof、PrimaryFrame、AltFrame、PrimaryFrameTouchedRows 和 alt/sync/clear/resize flags；但 pseudo-TUI frame/touched rows 仍在 journal/frame reducer 中转成 logical screen-frame/open-line history，缺少 physical RowID/Version/seal-once truth。本轮新增 `termx-core-v2/docs/screen-backed-history-rebuild-design.md`，把后续 R420-R427 拆成 ScreenHistoryBuffer、VT 语义、projection、ANSI harness、pseudo-TUI 接入、HistoryWindow 迁移、旧 journal 清场和 review 验收。
 - `R418` 已完成：已先总结 deep research 报告并处理其中 R417 未覆盖的两个可执行点。vterm `TerminalSemanticTransaction.PrimaryFrameTouchedRows` 现在按 owner 边界分流：`RequiresFullReplace` 继续保留 direct damage touched-row proof；非 full-replace 且存在 ordered semantic ops 时，由 write/EL/char edit、IL/DL/SU/SD、clear/scroll/copy rect、ED/RIS 等 semantic op 范围推导 touched rows，避免 live screen diff 把普通 current-screen 损伤扩大成 frame ownership。TUI render VM 新增 R418 guard：同一 pane 同时有 live surface 和 authoritative history rows 时，只要 copy mode `HistoryRenderable()` 成立，内容 VM 只能来自 `HistoryStore.Rows`，不能拼入 live surface rows。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 
 - `R417` 已完成：本轮接受用户对根因的判断，修复点前移到 vterm semantic source 与 core terminal classifier。vterm `terminalSemanticShouldAttachFrame` 现在优先读取 transaction 的 ordered semantic ops，避免普通 `write/cr/lf` 因 live diff touched rows 附带 `PrimaryFrame`；同时为 CR+EL、relative cursor、ECH/DCH/ICH、IL/DL/SU/SD、clear/scroll/copy rect 等 primary edit 事务附带 frame proof。core `historyTransactionLooksLikePrimaryPseudoTUI` 只在 `PrimaryFrame + touched rows + content mutation` 且出现 sync、主屏编辑 op 或非单调写入时进入 primary frame session；`RequiresFullReplace` 仍由原来的保守 full-replace 分支处理。新增 R417 harness 覆盖编辑控制只接管 touched rows、sealed shell tail 不重复、rect/non-monotonic classifier 覆盖，以及 vterm 普通 stream 不带 frame、primary edit 带 frame。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
