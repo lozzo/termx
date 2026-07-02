@@ -454,9 +454,9 @@ R371 后，copy mode 进入路径拆成三个显式状态，避免把“快速�
 history：
 
 ```text
-CopyModeEnteringLivePreview
-  只冻结进入瞬间的 live native screen 作为显示上下文
-  不提供 authoritative selection/search/copy/older cursor
+CopyModeEnteringPending
+  只记录 latest/materialized 请求飞行和输入拦截
+  不读取 live surface，也不提供 authoritative selection/search/copy/older cursor
 
 CopyModeMaterializedProjection
   使用 core 返回的已应用 history frontier

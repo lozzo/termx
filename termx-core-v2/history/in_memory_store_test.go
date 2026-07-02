@@ -459,6 +459,38 @@ func TestR409CurrentFrameWindowCarriesAuthoritativeScreenRows(t *testing.T) {
 	}
 }
 
+func TestR413LatestWindowAnchorsCurrentPrimaryFrameBySemanticScreenRow(t *testing.T) {
+	for name, store := range map[string]HistoryStore{
+		"memory":  NewInMemoryHistoryStore("term-r413-screen-anchor"),
+		"backend": NewBackendHistoryStore("term-r413-screen-anchor", NewMemoryStorageBackend()),
+	} {
+		t.Run(name, func(t *testing.T) {
+			applyStoreBatch(t, store,
+				sealedLineMutations(1, 1, "shell-1"),
+				sealedLineMutations(2, 2, "shell-2"),
+				sealedLineMutations(3, 3, "shell-3"),
+				sealedLineMutations(4, 4, "shell-4"),
+				sealedLineMutations(5, 5, "shell-5"),
+				replacePrimaryRowsAtMutation(10, 20, 80, map[int]string{
+					3: "codex-frame",
+					4: "codex-input",
+				}),
+			)
+
+			window, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-r413-screen-anchor", Limit: 6, Cols: 80})
+			if err != nil {
+				t.Fatalf("latest window: %v", err)
+			}
+			if got := rowTexts(window.Rows); strings.Join(got, "|") != "shell-3|shell-4|shell-5|codex-frame|codex-input" {
+				t.Fatalf("latest must use current frame ScreenRow as PTY-derived anchor, got %v window=%#v", got, window)
+			}
+			if !window.HasMore || !window.Boundary.Cursor.Valid || window.Boundary.Cursor.BeforeRowIndex != 2 {
+				t.Fatalf("anchored latest must keep older cursor before hidden shell rows, boundary=%#v", window.Boundary)
+			}
+		})
+	}
+}
+
 func TestR323InMemoryStoreCopyUsesFrozenAuthoritativeRows(t *testing.T) {
 	store := NewInMemoryHistoryStore("term-1")
 	applyStoreBatch(t, store, sealedLineMutations(1, 1, "alpha"), replacePrimaryMutation(10, 2, 80, "beta"))

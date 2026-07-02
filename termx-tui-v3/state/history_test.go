@@ -627,7 +627,7 @@ func TestHistoryStoreRejectsOldestFromDifferentFrozenToken(t *testing.T) {
 }
 
 func TestCopyModeBindsLatestAndAdjustsOlderViewport(t *testing.T) {
-	copyMode := CopyModeStore{}.BindLatest("pane-1", "pane:pane-1", "term-1", 1, 80, 20, LiveSurfaceSnapshot{})
+	copyMode := CopyModeStore{}.BindLatest("pane-1", "pane:pane-1", "term-1", 1, 80, 20)
 	if copyMode.Active || !copyMode.Entering || !copyMode.Empty || copyMode.PaneID != "pane-1" || copyMode.ViewID != "pane:pane-1" || copyMode.TerminalID != "term-1" || copyMode.BoundCols != 80 || copyMode.ViewRows != 20 {
 		t.Fatalf("unexpected bound copy mode %#v", copyMode)
 	}
@@ -683,7 +683,7 @@ func TestR377CopyModeAcceptsMaterializedProjectionWithoutFrozenToken(t *testing.
 	}
 	window := historyWindow(HistoryWindowReplace, "term-1", "", 80, 7, rows)
 	copyMode := CopyModeStore{}.
-		BindLatest("pane-1", "pane:pane-1", "term-1", 2, 80, 3, LiveSurfaceSnapshot{}).
+		BindLatest("pane-1", "pane:pane-1", "term-1", 2, 80, 3).
 		BindProjectionRequest(1)
 
 	copyMode = copyMode.AcceptMaterializedProjection(window, window.Cols, len(rows), CopyModeMaterializedProjectionState{
@@ -730,7 +730,6 @@ func TestR411CopyModeAcceptLatestAppliesPendingScrollAsViewportMove(t *testing.T
 	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
 	copyMode := CopyModeStore{
 		ViewRows:            5,
-		EnteringLive:        &LiveSurfaceSnapshot{},
 		EnteringScrollDelta: -3,
 	}.AcceptLatest(latest, latest.Cols, len(rows))
 
@@ -781,92 +780,46 @@ func TestCopyModeAcceptLatestKeepsPseudoTUILeadInContext(t *testing.T) {
 	}
 }
 
-func TestCopyModeAcceptLatestMatchesEnteringLiveScreenWhenHistoryHasOlderContext(t *testing.T) {
+func TestR413CopyModeAcceptLatestUsesAuthoritativeTailWithoutLiveSurface(t *testing.T) {
 	rows := []HistoryRow{
-		{Text: "shell prompt", LineID: 1},
-		{Text: "codex --yolo", LineID: 2},
-		{Text: "previous command output", LineID: 3},
-		{Text: "Update available! 0.141.0 -> 0.142.0", LineID: 4},
-		{Text: "Run brew upgrade --cask codex to update.", LineID: 5},
-		{Text: "OpenAI Codex", LineID: 6, LiveTail: true},
-		{Text: "Tip: Use /compact when the conversation gets long.", LineID: 7, LiveTail: true},
-		{Text: "> Improve documentation in @filename", LineID: 8, LiveTail: true},
-		{Text: "gpt-5.5 xhigh . ~/Documents/workdir/termx", LineID: 9, LiveTail: true},
-		{Text: "status: running", LineID: 10, LiveTail: true},
+		{Text: "old shell prompt 1", LineID: 1},
+		{Text: "old shell prompt 2", LineID: 2},
+		{Text: "old shell prompt 3", LineID: 3},
+		{Text: "old shell prompt 4", LineID: 4},
+		{Text: "old shell prompt 5", LineID: 5},
+		{Text: "authoritative current 1", LineID: 6, LiveTail: true},
+		{Text: "authoritative current 2", LineID: 7, LiveTail: true},
+		{Text: "authoritative current 3", LineID: 8, LiveTail: true},
+		{Text: "authoritative current 4", LineID: 9, LiveTail: true},
+		{Text: "authoritative current 5", LineID: 10, LiveTail: true},
 	}
 	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
-	entering := LiveSurfaceSnapshot{
-		Lines: []string{
-			"Update available! 0.141.0 -> 0.142.0",
-			"Run brew upgrade --cask codex to update.",
-			"OpenAI Codex",
-			"Tip: Use /compact when the conversation gets long.",
-			"> Improve documentation in @filename",
-			"gpt-5.5 xhigh . ~/Documents/workdir/termx",
-			"status: running",
-		},
-	}
-	copyMode := CopyModeStore{ViewRows: 5, EnteringLive: &entering}.AcceptLatest(latest, latest.Cols, len(rows))
+	copyMode := CopyModeStore{ViewRows: 5}.AcceptLatest(latest, latest.Cols, len(rows))
 
 	if copyMode.ViewportTop != 5 || copyMode.Cursor != (CopyPosition{Row: 9}) {
-		t.Fatalf("latest should align live viewport only when newest tail stays visible, got %#v", copyMode)
+		t.Fatalf("latest should use authoritative newest tail only, got %#v", copyMode)
 	}
 }
 
-func TestCopyModeAcceptLatestMatchesVisibleTailOfEnteringLiveScreenFrame(t *testing.T) {
+func TestR413CopyModeAcceptMaterializedProjectionUsesAuthoritativeTailWithoutLiveSurface(t *testing.T) {
 	rows := []HistoryRow{
-		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < pty-base-remote*> default (homeapp)", LineID: 1},
-		{Text: "ζ", LineID: 2},
-		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < pty-base-remote*> default (homeapp)", LineID: 3},
-		{Text: "ζ", LineID: 4},
-		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < pty-base-remote*> default (homeapp)", LineID: 5},
-		{Text: "ζ codex --yolo", LineID: 6},
-		{Text: "Update available! 0.141.0 -> 0.142.0", LineID: 20, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "Run brew upgrade --cask codex to update.", LineID: 21, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "", LineID: 22, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "OpenAI Codex (v0.141.0)", LineID: 23, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "model: gpt-5.5 xhigh /model to change", LineID: 24, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "directory: ~/Documents/workdir/termx", LineID: 25, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "permissions: YOLO mode", LineID: 26, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "", LineID: 27, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "Tip: New Build faster with the Codex App.", LineID: 28, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "> Run /review on my current changes", LineID: 29, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "gpt-5.5 xhigh . ~/Documents/workdir/termx", LineID: 30, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "shell before frame 1", LineID: 1},
+		{Text: "shell before frame 2", LineID: 2},
+		{Text: "shell before frame 3", LineID: 3},
+		{Text: "screen frame 1", LineID: 4, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "screen frame 2", LineID: 5, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "screen frame 3", LineID: 6, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "screen frame 4", LineID: 7, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "screen frame 5", LineID: 8, Kind: HistoryRowKindScreenFrame, LiveTail: true},
 	}
 	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
-	entering := LiveSurfaceSnapshot{
-		Lines: []string{
-			"lozzow@RedmiBook: ~/Documents/workdir/termx < pty-base-remote*> default (homeapp)",
-			"ζ",
-			"lozzow@RedmiBook: ~/Documents/workdir/termx < pty-base-remote*> default (homeapp)",
-			"ζ",
-			"lozzow@RedmiBook: ~/Documents/workdir/termx < pty-base-remote*> default (homeapp)",
-			"ζ codex --yolo",
-			"Update available! 0.141.0 -> 0.142.0",
-			"Run brew upgrade --cask codex to update.",
-			"",
-			"OpenAI Codex (v0.141.0)",
-			"model: gpt-5.5 xhigh /model to change",
-			"directory: ~/Documents/workdir/termx",
-			"permissions: YOLO mode",
-			"",
-			"Tip: New Build faster with the Codex App.",
-			"> Run /review on my current changes",
-			"gpt-5.5 xhigh . ~/Documents/workdir/termx",
-		},
+	projection := CopyModeMaterializedProjectionState{
+		Capabilities: CopyModeCapabilityBits{Searchable: true},
 	}
-	copyMode := CopyModeStore{ViewRows: 10, EnteringLive: &entering}.AcceptLatest(latest, latest.Cols, len(rows))
+	copyMode := CopyModeStore{ViewRows: 4}.AcceptMaterializedProjection(latest, latest.Cols, len(rows), projection)
 
-	end := copyMode.ViewportTop + copyMode.ViewRows
-	if end > len(rows) {
-		end = len(rows)
-	}
-	visible := rows[copyMode.ViewportTop:end]
-	if !historyRowsContainText(visible, "Tip: New Build faster with the Codex App.") || !historyRowsContainText(visible, "> Run /review on my current changes") {
-		t.Fatalf("latest should align to visible live screen tail and keep Tip/input visible, top=%d visible=%#v", copyMode.ViewportTop, visible)
-	}
-	if historyRowsContainText(visible, "ζ codex --yolo") {
-		t.Fatalf("older shell context should stay scrollback-only on initial history entry, top=%d visible=%#v", copyMode.ViewportTop, visible)
+	if copyMode.ViewportTop != 4 || copyMode.Cursor != (CopyPosition{Row: 7}) {
+		t.Fatalf("materialized projection should use authoritative newest tail only, got %#v", copyMode)
 	}
 }
 

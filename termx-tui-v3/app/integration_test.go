@@ -516,7 +516,7 @@ func TestCopyModeExitReleasesFrozenHistoryToken(t *testing.T) {
 	}
 }
 
-func TestCopyModeEnteringFreezesVisibleLiveFrameDuringOutput(t *testing.T) {
+func TestCopyModeEnteringDoesNotBindLiveSurfaceWhileLatestIsPending(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	core := &blockingHistoryClient{}
@@ -540,8 +540,8 @@ func TestCopyModeEnteringFreezesVisibleLiveFrameDuringOutput(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain ctrl-v: %v", err)
 	}
-	if !runtime.State().CopyMode.Entering || runtime.State().CopyMode.EnteringLive == nil {
-		t.Fatalf("expected copy entering with frozen live frame, got %#v", runtime.State().CopyMode)
+	if !runtime.State().CopyMode.Entering || runtime.State().CopyMode.Active {
+		t.Fatalf("expected copy entering pending without active history, got %#v", runtime.State().CopyMode)
 	}
 	requests := core.latestRequests()
 	if len(requests) != 1 || requests[0].GenerationBoundary != 0 {
@@ -561,8 +561,8 @@ func TestCopyModeEnteringFreezesVisibleLiveFrameDuringOutput(t *testing.T) {
 		t.Fatalf("drain later live: %v", err)
 	}
 	last := lastFrame(t, host.Frames())
-	if !frameContains(last, "live-before-copy") || frameContains(last, "live-after-copy-should-not-move") || frameContains(last, "window pending") {
-		t.Fatalf("entering copy should freeze current live frame without pending text, got %#v", last.Lines)
+	if !frameContains(last, "live-after-copy-should-not-move") || frameContains(last, "window pending") {
+		t.Fatalf("entering copy should leave live render independent from history pending state, got %#v", last.Lines)
 	}
 }
 
@@ -4588,15 +4588,15 @@ func TestCopyModeLatestFallsBackToCopyContentRectColsWithoutNativeSurface(t *tes
 	}
 }
 
-func TestCopyModeLatestUsesNativeSurfaceColsBeforePaneCrop(t *testing.T) {
+func TestCopyModeLatestIgnoresLiveSurfaceColsForHistoryRequest(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
-			120,
+			78,
 			7,
-			[]state.HistoryRow{{Text: strings.Repeat("x", 118), LineID: 20}},
+			[]state.HistoryRow{{Text: strings.Repeat("x", 76), LineID: 20}},
 		)}},
 	}
 	host := NewFakeTerminalHost(8)
@@ -4620,11 +4620,11 @@ func TestCopyModeLatestUsesNativeSurfaceColsBeforePaneCrop(t *testing.T) {
 		t.Fatalf("drain latest: %v", err)
 	}
 
-	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 120 {
-		t.Fatalf("copy latest must freeze at native surface cols before pane crop, got %#v", core.LatestRequests)
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 78 {
+		t.Fatalf("copy latest must use binding cols without live surface input, got %#v", core.LatestRequests)
 	}
-	if runtime.State().CopyMode.BoundCols != 120 || runtime.State().History.Cols != 120 {
-		t.Fatalf("expected copy/history bound to native cols, got %#v", runtime.State())
+	if runtime.State().CopyMode.BoundCols != 78 || runtime.State().History.Cols != 78 {
+		t.Fatalf("expected copy/history bound to requested history cols, got %#v", runtime.State())
 	}
 }
 
@@ -5594,7 +5594,6 @@ func TestCopyModeIgnoresDelayedHistoryErrorForSupersededPendingRequest(t *testin
 		2,
 		78,
 		20,
-		state.LiveSurfaceSnapshot{},
 	)
 
 	if err := runtime.Post(CopyModeHistoryResultMsg{
@@ -5640,7 +5639,6 @@ func TestCopyModeIgnoresDelayedHistoryWindowForSupersededPendingRequest(t *testi
 		2,
 		78,
 		20,
-		state.LiveSurfaceSnapshot{},
 	)
 
 	superseded := historyWindowForApp(
@@ -5715,7 +5713,6 @@ func TestCopyModeClearsOlderPendingForMatchingStaleHistoryWindow(t *testing.T) {
 		4,
 		78,
 		20,
-		state.LiveSurfaceSnapshot{},
 	)
 	runtime.state.CopyMode.BoundToken = "tok-1"
 

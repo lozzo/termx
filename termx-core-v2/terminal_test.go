@@ -564,8 +564,21 @@ func TestR404TerminalBoundaryAndFrameJournalThenPrompt(t *testing.T) {
 		t.Fatalf("latest after frame journal: %v", err)
 	}
 	texts := strings.Join(historyRowTexts(window.Rows), "|")
-	if !strings.Contains(texts, "old-a|new-a") || !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
+	if strings.Contains(texts, "old-a") || !strings.Contains(texts, "new-a|frame-a|frame-b") || !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
 		t.Fatalf("frame journal should publish current primary frame, texts=%q rows=%#v", texts, window.Rows)
+	}
+	olderWindow, err := server.TerminalHistoryWindow(context.Background(), "term-r404-boundary-frame", history.HistoryWindowRequest{
+		TerminalID: "term-r404-boundary-frame",
+		Mode:       history.HistoryWindowModeOlder,
+		Cols:       40,
+		Limit:      20,
+		Cursor:     window.Boundary.Cursor,
+	})
+	if err != nil {
+		t.Fatalf("older after frame journal: %v", err)
+	}
+	if got := strings.Join(historyRowTexts(olderWindow.Rows), "|"); got != "old-a" {
+		t.Fatalf("anchored latest must keep hidden sealed rows reachable via older, got %q rows=%#v", got, olderWindow.Rows)
 	}
 	if err := server.IngestOutput(context.Background(), "term-r404-boundary-frame", "PROMPT_AFTER"); err != nil {
 		t.Fatalf("ingest prompt journal: %v", err)

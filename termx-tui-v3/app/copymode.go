@@ -932,8 +932,7 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 	if binding.TerminalID == "" || visibleCols <= 0 {
 		return setCopyModeError(root, "copy mode requires attached terminal and cols"), nil
 	}
-	enteringLive := state.CloneLiveSurfaceSnapshot(root.Surface.SurfaceForTerminal(binding.TerminalID).Snapshot())
-	cols := copyModeLatestRequestCols(root, binding, visibleCols, enteringLive)
+	cols := copyModeLatestRequestCols(binding, visibleCols)
 	projectionRequestID := nextHistoryRequestID(root)
 	requestID := projectionRequestID + 1
 	nextHistory, err := root.History.BeginLatest(state.HistoryPendingRequest{
@@ -951,7 +950,7 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 		return setCopyModeError(root, err.Error()), nil
 	}
 	root.History = nextHistory
-	root.CopyMode = root.CopyMode.BindLatest(binding.PaneID, binding.ViewID, binding.TerminalID, requestID, cols, rowsHint, enteringLive)
+	root.CopyMode = root.CopyMode.BindLatest(binding.PaneID, binding.ViewID, binding.TerminalID, requestID, cols, rowsHint)
 	root.CopyMode = root.CopyMode.BindProjectionRequest(projectionRequestID)
 	rows := requestRows(rowsHint, deps.Rows)
 	root = root.Advance()
@@ -989,8 +988,8 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 				TerminalID: binding.TerminalID,
 				Cols:       cols,
 				Rows:       rows,
-				// 中文说明：EnteringLive 只冻结等待态显示；history.window 的 frozen
-				// logical-line 边界由 core 请求时建立，不能用可能滞后的 live revision 截断。
+				// 中文说明：history.window 的 frozen logical-line 边界由 core 请求时建立；
+				// TUI copy/history 入口不能用 live surface revision 截断或校验。
 			})
 			result.Window.PaneID = binding.PaneID
 			result.Window.ViewID = binding.ViewID
@@ -1000,18 +999,11 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 	return root, []Effect{projectionEffect, latestEffect}
 }
 
-func copyModeLatestRequestCols(root state.Root, binding state.TerminalViewBinding, visibleCols int, enteringLive state.LiveSurfaceSnapshot) int {
-	// 中文说明：copy/history 的首个 latest window 要按 terminal native screen 宽度冻结；
-	// pane content rect 只是当前可见裁剪宽度，不能拿它重排 logical line，否则进入 copy
-	// 时会改变 live 最后一屏的软换行边界和行首位置。
+func copyModeLatestRequestCols(binding state.TerminalViewBinding, visibleCols int) int {
+	// 中文说明：copy/history 的请求宽度只能来自 pane binding 或可见区域；
+	// live surface 属于实时展示缓存，不能参与 history window 的语义结论。
 	if binding.ResizeRole == state.TerminalResizeRoleOwner && binding.DesiredCols > 0 {
 		return binding.DesiredCols
-	}
-	if enteringLive.Cols > 0 {
-		return enteringLive.Cols
-	}
-	if surface := root.Surface.SurfaceForTerminal(binding.TerminalID); surface.Cols > 0 {
-		return surface.Cols
 	}
 	if binding.DesiredCols > 0 {
 		return binding.DesiredCols

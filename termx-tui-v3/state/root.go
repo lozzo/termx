@@ -189,7 +189,6 @@ func copyModeStoreHasState(copyMode CopyModeStore) bool {
 	return copyMode.InputActive() ||
 		copyMode.TerminalID != "" ||
 		copyMode.BoundToken != "" ||
-		copyMode.EnteringLive != nil ||
 		copyMode.ProjectionRequestID != 0 ||
 		copyMode.Materialized.Valid
 }

@@ -165,7 +165,7 @@ func (store *inMemoryHistoryStore) LatestWindow(req HistoryWindowRequest) (Histo
 
 func (store *inMemoryHistoryStore) latestWindowFromRows(req HistoryWindowRequest, rows []HistoryRow, generation Generation) (HistoryWindow, error) {
 	limit := normalizedLimit(req.Limit)
-	start := maxInt(0, len(rows)-limit)
+	start := latestRowsWindowStart(rows, limit)
 	page := cloneHistoryRows(rows[start:])
 	annotateProjectionRowIndexes(page, start)
 	boundary := boundaryForRows(page, generation, req.Token)
@@ -792,7 +792,7 @@ func lineIDsFromDrafts(drafts []LogicalLineDraft) []LogicalLineID {
 
 func (store *inMemoryHistoryStore) latestWindowFromProjection(req HistoryWindowRequest, projection projectionSnapshot, generation Generation) (HistoryWindow, error) {
 	limit := normalizedLimit(req.Limit)
-	start := maxInt(0, projection.total-limit)
+	start := latestProjectionWindowStart(projection, limit)
 	page, _, err := store.rowsFromProjectionWindow(projection, start, projection.total)
 	if err != nil {
 		return HistoryWindow{}, err
@@ -804,6 +804,97 @@ func (store *inMemoryHistoryStore) latestWindowFromProjection(req HistoryWindowR
 	window := store.windowFromProjectedRows(req, page, HistoryWindowReplace, boundary, generation)
 	window.LogicalTotal = projection.total
 	return window, nil
+}
+
+func latestRowsWindowStart(rows []HistoryRow, limit int) int {
+	defaultStart := maxInt(0, len(rows)-limit)
+	currentStart, minScreenRow, ok := trailingCurrentPrimaryScreenAnchor(rows)
+	if !ok {
+		return defaultStart
+	}
+	if minScreenRow <= 0 {
+		return defaultStart
+	}
+	// 中文说明：latest current primary frame 的上方上下文必须由 history 自己按
+	// PTY semantic ScreenRow 推出。这里用 current frame 第一条物理行之前的行数，
+	// 从 sealed timeline 尾部取对应数量；不能交给 TUI/live surface 做可见行匹配。
+	anchoredStart := maxInt(0, currentStart-minScreenRow)
+	return maxInt(defaultStart, anchoredStart)
+}
+
+func trailingCurrentPrimaryScreenAnchor(rows []HistoryRow) (int, int, bool) {
+	if len(rows) == 0 {
+		return 0, 0, false
+	}
+	last := rows[len(rows)-1]
+	if last.Segment != HistorySegmentCurrentPrimaryFrame || !last.ScreenRowSet {
+		return 0, 0, false
+	}
+	frameID := last.FrameID
+	start := len(rows)
+	minScreenRow := last.ScreenRow
+	for start > 0 {
+		row := rows[start-1]
+		if row.Segment != HistorySegmentCurrentPrimaryFrame || row.FrameID != frameID {
+			break
+		}
+		start--
+		if row.ScreenRowSet && row.ScreenRow < minScreenRow {
+			minScreenRow = row.ScreenRow
+		}
+	}
+	return start, maxInt(0, minScreenRow), true
+}
+
+func latestProjectionWindowStart(projection projectionSnapshot, limit int) int {
+	defaultStart := maxInt(0, projection.total-limit)
+	currentStart, minScreenRow, ok := currentPrimaryProjectionScreenAnchor(projection)
+	if !ok {
+		return defaultStart
+	}
+	if minScreenRow <= 0 {
+		return defaultStart
+	}
+	// 中文说明：indexed projection 不能 materialize 全量 rows 做 live 匹配；只用
+	// current primary record 自带的 ScreenRows 元数据计算当前屏幕上方应接入的
+	// sealed timeline tail。
+	anchoredStart := maxInt(0, currentStart-minScreenRow)
+	return maxInt(defaultStart, anchoredStart)
+}
+
+func currentPrimaryProjectionScreenAnchor(projection projectionSnapshot) (int, int, bool) {
+	recordEnd := projection.total
+	for index := len(projection.records) - 1; index >= 0; index-- {
+		record := projection.records[index]
+		recordStart := recordEnd - len(record.LineIDs)
+		if record.Segment == HistorySegmentCurrentPrimaryFrame && len(record.LineIDs) > 0 {
+			minScreenRow, ok := minProjectedRecordScreenRow(record)
+			if !ok {
+				return 0, 0, false
+			}
+			return recordStart, minScreenRow, true
+		}
+		if len(record.LineIDs) > 0 {
+			break
+		}
+		recordEnd = recordStart
+	}
+	return 0, 0, false
+}
+
+func minProjectedRecordScreenRow(record projectedRecordRef) (int, bool) {
+	if len(record.ScreenRows) == 0 {
+		return 0, false
+	}
+	minRow := 0
+	found := false
+	for _, row := range record.ScreenRows {
+		if !found || row < minRow {
+			minRow = row
+			found = true
+		}
+	}
+	return maxInt(0, minRow), found
 }
 
 func (store *inMemoryHistoryStore) olderWindowFromProjection(req HistoryWindowRequest, projection projectionSnapshot, generation Generation) (HistoryWindow, error) {

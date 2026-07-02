@@ -241,14 +241,13 @@ const (
 )
 
 // CopyModePhase 是 TUI copy mode 的 reducer-owned 阶段。
-// preview 只冻结进入瞬间的 live native screen 供显示和吞输入；materialized
-// 只消费 core 已应用 history frontier；frozen 才拥有 core frozen token，可用于
-// older/newer/search/backend copy 合同。
+// entering 只记录 pending request 和输入拦截；materialized 只消费 core 已应用
+// history frontier；frozen 才拥有 core frozen token，可用于 older/newer/search/backend copy 合同。
 type CopyModePhase string
 
 const (
 	CopyModePhaseNone              CopyModePhase = ""
-	CopyModeEnteringLivePreview    CopyModePhase = "entering-live-preview"
+	CopyModeEnteringPending        CopyModePhase = "entering-pending"
 	CopyModeMaterializedProjection CopyModePhase = "materialized-projection"
 	CopyModeFrozenHistory          CopyModePhase = "frozen-history"
 )
@@ -280,11 +279,10 @@ type CopyModeStore struct {
 	Active   bool
 	Entering bool
 	// Phase 是 R377 copy 三态的显式阶段；旧测试或恢复态未填时由 PhaseKind 按兼容字段推导。
-	Phase        CopyModePhase
-	PaneID       string
-	ViewID       string
-	TerminalID   string
-	EnteringLive *LiveSurfaceSnapshot
+	Phase      CopyModePhase
+	PaneID     string
+	ViewID     string
+	TerminalID string
 	// latest 飞行期间只累计净滚动行数；不能保存输入事件队列或历史文本副本。
 	EnteringScrollDelta int
 	ViewportTop         int
@@ -990,16 +988,15 @@ func historySourceLineIndexForRow(lines []HistoryLogicalLine, row HistoryRow) in
 	return -1
 }
 
-func (store CopyModeStore) BindLatest(paneID string, viewID string, terminalID string, requestID RequestID, cols int, rows int, enteringLive LiveSurfaceSnapshot) CopyModeStore {
+func (store CopyModeStore) BindLatest(paneID string, viewID string, terminalID string, requestID RequestID, cols int, rows int) CopyModeStore {
 	// 中文说明：进入 copy/history 分两步。latest 请求飞行期间只拦截输入，
-	// 不把 pane 内容切成 pending 占位；authoritative window 回来后才 Active。
+	// 不读取 live surface，也不把 pane 内容切成 pending 占位；authoritative window 回来后才 Active。
 	store.Active = false
 	store.Entering = true
-	store.Phase = CopyModeEnteringLivePreview
+	store.Phase = CopyModeEnteringPending
 	store.PaneID = paneID
 	store.ViewID = viewID
 	store.TerminalID = terminalID
-	store.EnteringLive = cloneLiveSurfaceSnapshotPtr(enteringLive)
 	store.EnteringScrollDelta = 0
 	store.RequestID = requestID
 	store.ProjectionRequestID = 0
@@ -1026,7 +1023,7 @@ func (store CopyModeStore) PhaseKind() CopyModePhase {
 		return store.Phase
 	}
 	if store.Entering {
-		return CopyModeEnteringLivePreview
+		return CopyModeEnteringPending
 	}
 	if store.Active && store.BoundToken != "" {
 		return CopyModeFrozenHistory
@@ -1104,7 +1101,7 @@ func (store CopyModeStore) CanPageHistory() bool {
 	}
 }
 
-func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, totalRows int, pendingScroll int, enteringLive *LiveSurfaceSnapshot) CopyModeStore {
+func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, totalRows int, pendingScroll int) CopyModeStore {
 	store.PaneID = window.PaneID
 	store.ViewID = window.ViewID
 	store.TerminalID = window.TerminalID
@@ -1116,16 +1113,11 @@ func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, tot
 		totalRows = len(window.Rows)
 	}
 	if totalRows > 0 {
-		// 中文说明：copy cursor 的 truth 是 authoritative latest window 的最新尾行；
-		// live snapshot 只能作为进入 copy/history 前的首屏 viewport 锚点，不能参与
-		// 复制/搜索 truth，也不能改变 authoritative rows 的连续顺序。
+		// 中文说明：copy/history 的 viewport 只由 core authoritative rows 决定；
+		// live surface 即使存在或出错，也不能参与 history 入口、搜索或复制结论。
 		visibleRows := copyVisibleRowsForStore(store)
 		cursorRow := totalRows - 1
 		viewportTop := maxCopyInt(0, totalRows-visibleRows)
-		if liveViewportTop, ok := liveSurfaceMatchedViewportTop(window.Rows, enteringLive, visibleRows); ok &&
-			cursorRow >= liveViewportTop && cursorRow < liveViewportTop+visibleRows {
-			viewportTop = liveViewportTop
-		}
 		store.Cursor = CopyPosition{Row: cursorRow}
 		store.ViewportTop = viewportTop
 		if pendingScroll != 0 {
@@ -1145,15 +1137,13 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRow
 	store.Active = true
 	store.Entering = false
 	store.Phase = CopyModeFrozenHistory
-	enteringLive := store.EnteringLive
-	store.EnteringLive = nil
 	pendingScroll := store.EnteringScrollDelta
 	store.EnteringScrollDelta = 0
 	store.RequestID = 0
 	store.ProjectionRequestID = 0
 	store.Materialized = CopyModeMaterializedProjectionState{}
 	store.BoundToken = window.Token
-	return store.acceptHistoryRows(window, cols, totalRows, pendingScroll, enteringLive)
+	return store.acceptHistoryRows(window, cols, totalRows, pendingScroll)
 }
 
 // AcceptMaterializedProjection 激活 copy-entry projection 阶段。
@@ -1166,8 +1156,6 @@ func (store CopyModeStore) AcceptMaterializedProjection(window HistoryWindow, co
 	store.Active = true
 	store.Entering = false
 	store.Phase = CopyModeMaterializedProjection
-	enteringLive := store.EnteringLive
-	store.EnteringLive = nil
 	pendingScroll := store.EnteringScrollDelta
 	store.EnteringScrollDelta = 0
 	store.BoundToken = ""
@@ -1175,14 +1163,13 @@ func (store CopyModeStore) AcceptMaterializedProjection(window HistoryWindow, co
 	store.ProjectionRequestID = 0
 	projection.Valid = true
 	store.Materialized = projection
-	return store.acceptHistoryRows(window, cols, totalRows, pendingScroll, enteringLive)
+	return store.acceptHistoryRows(window, cols, totalRows, pendingScroll)
 }
 
 func (store CopyModeStore) AcceptOldest(window HistoryWindow, cols int, totalRows int) CopyModeStore {
 	store.Active = true
 	store.Entering = false
 	store.Phase = CopyModeFrozenHistory
-	store.EnteringLive = nil
 	store.RequestID = 0
 	store.ProjectionRequestID = 0
 	store.Materialized = CopyModeMaterializedProjectionState{}
@@ -1456,86 +1443,6 @@ func (store CopyModeStore) ScrollViewport(delta int, totalRows int) CopyModeStor
 	store.ViewportTop = nextTop
 	store.Cursor = CopyPosition{Row: clampCopyInt(nextTop+offset, 0, totalRows-1), Col: store.Cursor.Col}
 	return store.Scroll(0, totalRows)
-}
-
-func liveSurfaceMatchedViewportTop(rows []HistoryRow, enteringLive *LiveSurfaceSnapshot, visibleRows int) (int, bool) {
-	if enteringLive == nil || visibleRows <= 0 || len(rows) == 0 {
-		return 0, false
-	}
-	liveRows := normalizedEnteringLiveRows(*enteringLive)
-	if len(liveRows) == 0 {
-		return 0, false
-	}
-	if len(liveRows) > visibleRows {
-		// 中文说明：进入 history 时 pane 只能显示 visibleRows 行；live screen
-		// 更高时用用户实际可见的尾部对齐，older context 仍通过向上滚动加载。
-		liveRows = liveRows[len(liveRows)-visibleRows:]
-	}
-	historyRows := make([]string, len(rows))
-	for i, row := range rows {
-		historyRows[i] = normalizeHistoryViewportRow(row.Text)
-	}
-	start, ok := latestContiguousRowMatch(historyRows, liveRows)
-	if !ok {
-		return 0, false
-	}
-	return clampCopyInt(start, 0, maxCopyInt(0, len(rows)-visibleRows)), true
-}
-
-func normalizedEnteringLiveRows(snapshot LiveSurfaceSnapshot) []string {
-	rows := append([]string(nil), snapshot.Lines...)
-	if len(rows) == 0 && len(snapshot.Screen) > 0 {
-		rows = make([]string, 0, len(snapshot.Screen))
-		for _, row := range snapshot.Screen {
-			var builder strings.Builder
-			for _, cell := range row {
-				builder.WriteString(cell.Text)
-			}
-			rows = append(rows, builder.String())
-		}
-	}
-	for i := range rows {
-		rows[i] = normalizeHistoryViewportRow(rows[i])
-	}
-	return trimOuterEmptyHistoryViewportRows(rows)
-}
-
-func trimOuterEmptyHistoryViewportRows(rows []string) []string {
-	start := 0
-	for start < len(rows) && rows[start] == "" {
-		start++
-	}
-	end := len(rows)
-	for end > start && rows[end-1] == "" {
-		end--
-	}
-	if start == end {
-		return nil
-	}
-	return rows[start:end]
-}
-
-func normalizeHistoryViewportRow(row string) string {
-	return strings.TrimRight(row, " ")
-}
-
-func latestContiguousRowMatch(rows []string, pattern []string) (int, bool) {
-	if len(pattern) == 0 || len(pattern) > len(rows) {
-		return 0, false
-	}
-	for start := len(rows) - len(pattern); start >= 0; start-- {
-		matched := true
-		for offset := range pattern {
-			if rows[start+offset] != pattern[offset] {
-				matched = false
-				break
-			}
-		}
-		if matched {
-			return start, true
-		}
-	}
-	return 0, false
 }
 
 func (store CopyModeStore) FollowCursor(totalRows int) CopyModeStore {
