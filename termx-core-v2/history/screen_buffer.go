@@ -164,6 +164,18 @@ func (buffer *ScreenHistoryBuffer) ApplyOp(op TerminalSemanticOp, seq uint64) er
 		return buffer.writeSpan(op, seq)
 	case vtermScreenOpControl():
 		return buffer.applyControl(op, seq)
+	case vtermScreenOpClearToEOL():
+		return buffer.eraseLine(op.Row, op.Col, 0, seq)
+	case vtermScreenOpClearRect():
+		return buffer.clearRect(op, seq)
+	case vtermScreenOpScrollRect():
+		return buffer.applyScrollRect(op, seq)
+	case vtermScreenOpModes():
+		return buffer.applyMode(op, seq)
+	case vtermScreenOpResize(), vtermScreenOpCursor(), vtermScreenOpTitle():
+		// 中文说明：resize/cursor/title 本身不是正文 history truth。后续接入
+		// resize lifecycle 时只允许影响 mutable screen，不得重写 sealed rows。
+		return nil
 	default:
 		return fmt.Errorf("screen history buffer unsupported op code %d", op.Code)
 	}
