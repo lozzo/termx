@@ -150,3 +150,64 @@ func TestCopyHistoryCursorClampsToVisibleViewport(t *testing.T) {
 		t.Fatalf("copy cursor must stay inside visible viewport, got %#v", cursor)
 	}
 }
+
+func TestR409CopyHistoryUsesAuthoritativeScreenRowAsCurrentFrameAnchor(t *testing.T) {
+	history := state.HistoryStore{
+		Cols: 12,
+		Rows: []state.HistoryRow{
+			{Text: "shell prompt", LineID: 1, Segment: state.HistoryCursorSegmentCommitted},
+			{
+				Text:         "OpenAI Codex",
+				LineID:       20,
+				Kind:         state.HistoryRowKindScreenFrame,
+				Segment:      state.HistoryCursorSegmentCurrentPrimaryFrame,
+				SessionID:    1,
+				FrameID:      10,
+				FixedGrid:    true,
+				ScreenCols:   12,
+				ScreenRow:    4,
+				ScreenRowSet: true,
+			},
+			{
+				Text:         "Use /skills",
+				LineID:       21,
+				Kind:         state.HistoryRowKindScreenFrame,
+				Segment:      state.HistoryCursorSegmentCurrentPrimaryFrame,
+				SessionID:    1,
+				FrameID:      10,
+				FixedGrid:    true,
+				ScreenCols:   12,
+				ScreenRow:    5,
+				ScreenRowSet: true,
+			},
+		},
+	}
+	copyMode := state.CopyModeStore{
+		Active:      true,
+		ViewportTop: 1,
+		ViewRows:    8,
+		BoundCols:   12,
+		Cursor:      state.CopyPosition{Row: 2},
+	}
+
+	lines := copyHistoryLines(history, copyMode)
+	if len(lines) < 6 {
+		t.Fatalf("expected top padding plus current frame rows, got %#v", lines)
+	}
+	for row := 0; row < 4; row++ {
+		if got := lines[row].String(); got != "" {
+			t.Fatalf("padding row %d should be display-only blank, got %q lines=%#v", row, got, lines)
+		}
+	}
+	if got := lines[4].String(); got != "OpenAI Codex" {
+		t.Fatalf("current frame first row should stay at authoritative screen row 4, got %q lines=%#v", got, lines)
+	}
+	cursor := copyHistoryCursor(history, copyMode)
+	if !cursor.Visible || cursor.Row != 5 {
+		t.Fatalf("cursor row should include authoritative top padding, got %#v", cursor)
+	}
+	regions := copyHistoryHitRegions(history, copyMode)
+	if len(regions) == 0 || regions[0].Rect.Y != 4 {
+		t.Fatalf("hit regions should be shifted by top padding, got %#v", regions)
+	}
+}

@@ -88,6 +88,8 @@ func TestR407BinaryLogicalLineRoundTripsMixedRuns(t *testing.T) {
 		Seal:              SealStateSealed,
 		Kind:              string(LineKindOrdinary),
 		ScreenCols:        120,
+		ScreenRow:         4,
+		ScreenRowSet:      true,
 		Residency:         ResidencyFile,
 		TailFill:          &RowTailFill{Style: CellStyle{BG: "default", Reverse: true}},
 		Cells: []Cell{
@@ -106,7 +108,7 @@ func TestR407BinaryLogicalLineRoundTripsMixedRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode logical line: %v", err)
 	}
-	if got.ID != line.ID || got.Generation != line.Generation || got.Kind != line.Kind || got.ScreenCols != line.ScreenCols {
+	if got.ID != line.ID || got.Generation != line.Generation || got.Kind != line.Kind || got.ScreenCols != line.ScreenCols || got.ScreenRow != line.ScreenRow || got.ScreenRowSet != line.ScreenRowSet {
 		t.Fatalf("decoded metadata mismatch: %#v", got)
 	}
 	if got.TailFill == nil || got.TailFill.Style != line.TailFill.Style {

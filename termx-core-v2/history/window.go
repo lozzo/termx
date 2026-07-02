@@ -103,6 +103,8 @@ type HistoryLineSpan struct {
 	TimestampEnd   time.Time
 	ClippedBefore  bool
 	ClippedAfter   bool
+	ScreenRow      int
+	ScreenRowSet   bool
 }
 
 // HistoryRow 是 history.window 返回的一行 projected row。它的 cells 来自
@@ -120,6 +122,11 @@ type HistoryRow struct {
 	ProjectionRowIndex int
 	FixedGrid          bool
 	ScreenCols         int
+	// ScreenRow 表达 fixed-grid screen-frame row 在原 terminal frame 中的物理
+	// 行号。它服务 copy/history display projection 的屏幕锚点；ordinary logical
+	// line 不应使用该字段作为历史顺序。
+	ScreenRow    int
+	ScreenRowSet bool
 	// Committed 是旧 protocol/wire 兼容字段；新领域语义只应把它当作
 	// projected row 是否来自 sealed timeline 的标记，不能引入 commit owner。
 	Committed bool

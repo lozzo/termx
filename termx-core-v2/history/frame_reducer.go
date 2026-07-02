@@ -81,12 +81,14 @@ func (reducer *frameReducer) ReplacePrimaryTouchedRows(frame TerminalSemanticFra
 			continue
 		}
 		line := LogicalLine{
-			ID:         reducer.nextLogicalLineID(),
-			Seal:       SealStateOpen,
-			Kind:       string(LineKindScreenFrame),
-			Cells:      cloneHistoryCells(frameRows[row]),
-			ScreenCols: frame.Cols,
-			Residency:  ResidencyMemory,
+			ID:           reducer.nextLogicalLineID(),
+			Seal:         SealStateOpen,
+			Kind:         string(LineKindScreenFrame),
+			Cells:        cloneHistoryCells(frameRows[row]),
+			ScreenCols:   frame.Cols,
+			ScreenRow:    row,
+			ScreenRowSet: true,
+			Residency:    ResidencyMemory,
 		}
 		draftByRow[row] = LogicalLineDraft{
 			Line: cloneLogicalLine(line),
@@ -142,12 +144,14 @@ func (reducer *frameReducer) ClosePrimaryCurrentFromFrameExcludingRows(frame Ter
 			continue
 		}
 		line := LogicalLine{
-			ID:         reducer.nextLogicalLineID(),
-			Seal:       SealStateOpen,
-			Kind:       string(LineKindScreenFrame),
-			Cells:      cloneHistoryCells(cells),
-			ScreenCols: frame.Cols,
-			Residency:  ResidencyMemory,
+			ID:           reducer.nextLogicalLineID(),
+			Seal:         SealStateOpen,
+			Kind:         string(LineKindScreenFrame),
+			Cells:        cloneHistoryCells(cells),
+			ScreenCols:   frame.Cols,
+			ScreenRow:    row,
+			ScreenRowSet: true,
+			Residency:    ResidencyMemory,
 		}
 		draftByRow[row] = LogicalLineDraft{
 			Line: cloneLogicalLine(line),
@@ -355,12 +359,14 @@ func (reducer *frameReducer) draftsFromSemanticFrame(frame TerminalSemanticFrame
 	rows := make([]LogicalLineDraft, 0, len(frameRows))
 	for row, cells := range frameRows {
 		line := LogicalLine{
-			ID:         reducer.nextLogicalLineID(),
-			Seal:       seal,
-			Kind:       kind,
-			Cells:      cells,
-			ScreenCols: frame.Cols,
-			Residency:  ResidencyMemory,
+			ID:           reducer.nextLogicalLineID(),
+			Seal:         seal,
+			Kind:         kind,
+			Cells:        cells,
+			ScreenCols:   frame.Cols,
+			ScreenRow:    row,
+			ScreenRowSet: true,
+			Residency:    ResidencyMemory,
 		}
 		rows = append(rows, LogicalLineDraft{
 			Line: cloneLogicalLine(line),
@@ -446,6 +452,8 @@ func (reducer *frameReducer) sealMutableFrame(frame MutableFrame, reason SealRea
 		line.Seal = SealStateSealed
 		line.Kind = string(LineKindScreenFrame)
 		line.ScreenCols = frame.Cols
+		line.ScreenRow = draft.Row
+		line.ScreenRowSet = true
 		lines = append(lines, line)
 	}
 	return SealedFrame{

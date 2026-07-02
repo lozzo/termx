@@ -223,16 +223,18 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 			{Content: "好", Width: 2, Style: CellStyle{FG: "#ffcc00", Underline: true}, LinkURL: "file://build.log", LinkParams: "line=7"},
 			{Content: " ", Width: 1},
 		}, true)},
-		RowKinds:      []string{"output"},
-		RowWrapped:    []bool{false},
-		RowOwnership:  []string{RowOwnershipPersisted},
-		RowSegments:   []string{HistoryCursorSegmentArchivedPrimaryFrame},
-		RowSessionIDs: []uint64{9},
-		RowFrameIDs:   []uint64{11},
-		RowFixedGrid:  []bool{true},
-		RowScreenCols: []int{120},
-		RowIndexes:    []int{200},
-		RowTimestamps: []time.Time{time.Date(2026, 6, 2, 1, 0, 0, 0, time.UTC)},
+		RowKinds:        []string{"output"},
+		RowWrapped:      []bool{false},
+		RowOwnership:    []string{RowOwnershipPersisted},
+		RowSegments:     []string{HistoryCursorSegmentArchivedPrimaryFrame},
+		RowSessionIDs:   []uint64{9},
+		RowFrameIDs:     []uint64{11},
+		RowFixedGrid:    []bool{true},
+		RowScreenCols:   []int{120},
+		RowScreenRows:   []int{4},
+		RowScreenRowSet: []bool{true},
+		RowIndexes:      []int{200},
+		RowTimestamps:   []time.Time{time.Date(2026, 6, 2, 1, 0, 0, 0, time.UTC)},
 		Lines: []HistoryLineSpan{{
 			StartRow:       0,
 			EndRow:         0,
@@ -300,8 +302,8 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(decoded.RowSegments, []string{HistoryCursorSegmentArchivedPrimaryFrame}) {
 		t.Fatalf("unexpected decoded row segments: %#v", decoded.RowSegments)
 	}
-	if !reflect.DeepEqual(decoded.RowSessionIDs, []uint64{9}) || !reflect.DeepEqual(decoded.RowFrameIDs, []uint64{11}) || !reflect.DeepEqual(decoded.RowFixedGrid, []bool{true}) || !reflect.DeepEqual(decoded.RowScreenCols, []int{120}) || !reflect.DeepEqual(decoded.RowIndexes, []int{200}) {
-		t.Fatalf("unexpected decoded row source identity: sessions=%v frames=%v fixed=%v cols=%v indexes=%v", decoded.RowSessionIDs, decoded.RowFrameIDs, decoded.RowFixedGrid, decoded.RowScreenCols, decoded.RowIndexes)
+	if !reflect.DeepEqual(decoded.RowSessionIDs, []uint64{9}) || !reflect.DeepEqual(decoded.RowFrameIDs, []uint64{11}) || !reflect.DeepEqual(decoded.RowFixedGrid, []bool{true}) || !reflect.DeepEqual(decoded.RowScreenCols, []int{120}) || !reflect.DeepEqual(decoded.RowScreenRows, []int{4}) || !reflect.DeepEqual(decoded.RowScreenRowSet, []bool{true}) || !reflect.DeepEqual(decoded.RowIndexes, []int{200}) {
+		t.Fatalf("unexpected decoded row source identity: sessions=%v frames=%v fixed=%v cols=%v screenRows=%v screenRowSet=%v indexes=%v", decoded.RowSessionIDs, decoded.RowFrameIDs, decoded.RowFixedGrid, decoded.RowScreenCols, decoded.RowScreenRows, decoded.RowScreenRowSet, decoded.RowIndexes)
 	}
 	if got := compactRowToStringForTest(decoded.Rows[0]); got != "ERR 好 " {
 		t.Fatalf("unexpected decoded history row: %q", got)

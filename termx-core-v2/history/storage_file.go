@@ -14,7 +14,7 @@ import (
 
 const (
 	fileLineRecordMagic   uint32 = 0x5458484c // "TXHL"
-	fileLineRecordVersion uint16 = 1
+	fileLineRecordVersion uint16 = 2
 )
 
 // NewFileStorageBackend 创建二进制 append-only payload backend。
@@ -238,6 +238,12 @@ func (writer *binaryPayloadWriter) writeLogicalLine(line LogicalLine) error {
 	if err := writer.writeUint32(uint32(line.ScreenCols)); err != nil {
 		return err
 	}
+	if err := writer.writeBool(line.ScreenRowSet); err != nil {
+		return err
+	}
+	if err := writer.writeUint32(uint32(line.ScreenRow)); err != nil {
+		return err
+	}
 	if err := writer.writeBool(line.Dirty); err != nil {
 		return err
 	}
@@ -303,6 +309,14 @@ func decodeBinaryLogicalLine(data []byte) (LogicalLine, error) {
 		return LogicalLine{}, err
 	}
 	line.ScreenCols = int(screenCols)
+	if line.ScreenRowSet, err = readBool(reader); err != nil {
+		return LogicalLine{}, err
+	}
+	screenRow, err := readUint32(reader)
+	if err != nil {
+		return LogicalLine{}, err
+	}
+	line.ScreenRow = int(screenRow)
 	if line.Dirty, err = readBool(reader); err != nil {
 		return LogicalLine{}, err
 	}
@@ -471,7 +485,7 @@ func (writer *binaryPayloadWriter) writeCellRunText(cells []Cell) error {
 }
 
 func estimatedBinaryLogicalLinePayloadSize(line LogicalLine) int {
-	size := 32 + 4 + 1 + 1 + 4
+	size := 32 + 4 + 1 + 4 + 1 + 1 + 4
 	size += encodedStringSize(string(line.Seal))
 	size += encodedStringSize(line.Kind)
 	size += encodedStringSize(string(line.Residency))

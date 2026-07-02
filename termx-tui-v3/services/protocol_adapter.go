@@ -238,6 +238,8 @@ func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.Hist
 			FrameID:            uint64At(window.RowFrameIDs, i),
 			FixedGrid:          boolAt(window.RowFixedGrid, i) || (hasSpan && span.FixedGrid),
 			ScreenCols:         intAt(window.RowScreenCols, i),
+			ScreenRow:          intAt(window.RowScreenRows, i),
+			ScreenRowSet:       boolAt(window.RowScreenRowSet, i),
 			ProjectionRowIndex: intAt(window.RowIndexes, i),
 			TailFill:           historyTailFillFromProtocol(row.TailFill),
 			LiveTail:           historyProtocolRowIsLiveTail(window, i),
@@ -255,6 +257,10 @@ func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.Hist
 				lines[len(lines)-1].TailFill = tail
 			}
 			lines[len(lines)-1].LiveTail = lines[len(lines)-1].LiveTail || historyProtocolRowIsLiveTail(window, i)
+			if nextLine.ScreenRowSet {
+				lines[len(lines)-1].ScreenRow = nextLine.ScreenRow
+				lines[len(lines)-1].ScreenRowSet = true
+			}
 			continue
 		}
 		lines = append(lines, nextLine)
@@ -323,6 +329,8 @@ func historyRowsFromProtocol(window *protocol.HistoryWindow, sourceLines []state
 			FrameID:            uint64At(window.RowFrameIDs, i),
 			FixedGrid:          boolAt(window.RowFixedGrid, i),
 			ScreenCols:         intAt(window.RowScreenCols, i),
+			ScreenRow:          intAt(window.RowScreenRows, i),
+			ScreenRowSet:       boolAt(window.RowScreenRowSet, i),
 			ProjectionRowIndex: intAt(window.RowIndexes, i),
 			LiveTail:           historyProtocolRowIsLiveTail(window, i),
 		})
@@ -339,6 +347,8 @@ func historyRowsFromProtocol(window *protocol.HistoryWindow, sourceLines []state
 			FrameID:            firstNonZeroUint64(span.FrameID, uint64At(window.RowFrameIDs, span.StartRow)),
 			FixedGrid:          span.FixedGrid || boolAt(window.RowFixedGrid, span.StartRow),
 			ScreenCols:         firstNonZeroInt(span.ScreenCols, intAt(window.RowScreenCols, span.StartRow)),
+			ScreenRow:          intAt(window.RowScreenRows, span.StartRow),
+			ScreenRowSet:       boolAt(window.RowScreenRowSet, span.StartRow),
 			ProjectionRowIndex: intAt(window.RowIndexes, span.StartRow),
 			ClippedBefore:      span.ClippedBefore,
 			ClippedAfter:       span.ClippedAfter,

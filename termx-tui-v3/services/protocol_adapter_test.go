@@ -1052,7 +1052,9 @@ func TestR333ProtocolCoreClientAdapterDoesNotMergeSameLineIDAcrossSegments(t *te
 				10,
 				0,
 			},
-			LoadedLines: 2,
+			RowScreenRows:   []int{4, 0},
+			RowScreenRowSet: []bool{true, false},
+			LoadedLines:     2,
 		},
 	}
 	adapter := ProtocolCoreClientAdapter{Client: client}
@@ -1067,7 +1069,7 @@ func TestR333ProtocolCoreClientAdapterDoesNotMergeSameLineIDAcrossSegments(t *te
 	if result.Window.SourceLines[0].Text != "frame" || result.Window.SourceLines[1].Text != "prompt" {
 		t.Fatalf("unexpected source text after split, got %#v", result.Window.SourceLines)
 	}
-	if !result.Window.SourceLines[0].FixedGrid || result.Window.SourceLines[0].SessionID != 7 || result.Window.SourceLines[0].FrameID != 11 || result.Window.SourceLines[0].ScreenCols != 10 {
+	if !result.Window.SourceLines[0].FixedGrid || result.Window.SourceLines[0].SessionID != 7 || result.Window.SourceLines[0].FrameID != 11 || result.Window.SourceLines[0].ScreenCols != 10 || result.Window.SourceLines[0].ScreenRow != 4 || !result.Window.SourceLines[0].ScreenRowSet {
 		t.Fatalf("source identity must preserve frame metadata, got %#v", result.Window.SourceLines[0])
 	}
 }

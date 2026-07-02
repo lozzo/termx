@@ -80,6 +80,11 @@ type LogicalLine struct {
 	Runs              []CellRun
 	TailFill          *RowTailFill
 	ScreenCols        int
-	Dirty             bool
-	Residency         Residency
+	// ScreenRow 只对 fixed-grid screen-frame payload 有意义，表示该 logical line
+	// 在生成它的 terminal frame 中的物理行号。truth source 是 FrameJournal 的
+	// LogicalLineDraft.Row；ordinary history 不应依赖该字段。
+	ScreenRow    int
+	ScreenRowSet bool
+	Dirty        bool
+	Residency    Residency
 }

@@ -935,6 +935,8 @@ func protocolHistoryWindowFromDomain(window history.HistoryWindow) *protocol.His
 	rowFrameIDs := make([]uint64, 0, len(window.Rows))
 	rowFixedGrid := make([]bool, 0, len(window.Rows))
 	rowScreenCols := make([]int, 0, len(window.Rows))
+	rowScreenRows := make([]int, 0, len(window.Rows))
+	rowScreenRowSet := make([]bool, 0, len(window.Rows))
 	rowIndexes := make([]int, 0, len(window.Rows))
 	for _, row := range window.Rows {
 		rows = append(rows, protocolCompactRowFromHistoryCells(row.Cells))
@@ -948,6 +950,8 @@ func protocolHistoryWindowFromDomain(window history.HistoryWindow) *protocol.His
 		rowFrameIDs = append(rowFrameIDs, uint64(row.FrameID))
 		rowFixedGrid = append(rowFixedGrid, row.FixedGrid)
 		rowScreenCols = append(rowScreenCols, row.ScreenCols)
+		rowScreenRows = append(rowScreenRows, row.ScreenRow)
+		rowScreenRowSet = append(rowScreenRowSet, row.ScreenRowSet)
 		rowIndexes = append(rowIndexes, row.ProjectionRowIndex)
 	}
 	lines := make([]protocol.HistoryLineSpan, 0, len(window.Lines))
@@ -968,37 +972,39 @@ func protocolHistoryWindowFromDomain(window history.HistoryWindow) *protocol.His
 		})
 	}
 	return &protocol.HistoryWindow{
-		TerminalID:     window.TerminalID,
-		Token:          string(window.Token),
-		Op:             protocol.HistoryWindowOp(window.Op),
-		Size:           protocol.Size{Cols: protocolHistoryCols(window.Cols)},
-		Rows:           rows,
-		RowKinds:       rowKinds,
-		RowWrapped:     rowWrapped,
-		RowOwnership:   rowOwnership,
-		RowSegments:    rowSegments,
-		RowSessionIDs:  rowSessionIDs,
-		RowFrameIDs:    rowFrameIDs,
-		RowFixedGrid:   rowFixedGrid,
-		RowScreenCols:  rowScreenCols,
-		RowIndexes:     rowIndexes,
-		Lines:          lines,
-		LoadedRows:     len(rows),
-		TotalRows:      window.LogicalTotal,
-		LoadedLines:    len(lines),
-		LogicalTotal:   window.LogicalTotal,
-		HasMore:        window.HasMore,
-		Generation:     uint64(window.Generation),
-		FirstLineID:    uint64(window.Boundary.FirstLineID),
-		LastLineID:     uint64(window.Boundary.LastLineID),
-		CursorValid:    window.Boundary.Cursor.Valid,
-		CursorLineID:   uint64(window.Boundary.Cursor.LineID),
-		CursorRow:      window.Boundary.Cursor.RowInLine,
-		CursorRowIndex: window.Boundary.Cursor.BeforeRowIndex,
-		CursorSegment:  string(window.Boundary.Cursor.Segment),
-		RowLineIDs:     rowLineIDs,
-		RowInLine:      rowInLine,
-		Timestamp:      window.Timestamp,
+		TerminalID:      window.TerminalID,
+		Token:           string(window.Token),
+		Op:              protocol.HistoryWindowOp(window.Op),
+		Size:            protocol.Size{Cols: protocolHistoryCols(window.Cols)},
+		Rows:            rows,
+		RowKinds:        rowKinds,
+		RowWrapped:      rowWrapped,
+		RowOwnership:    rowOwnership,
+		RowSegments:     rowSegments,
+		RowSessionIDs:   rowSessionIDs,
+		RowFrameIDs:     rowFrameIDs,
+		RowFixedGrid:    rowFixedGrid,
+		RowScreenCols:   rowScreenCols,
+		RowScreenRows:   rowScreenRows,
+		RowScreenRowSet: rowScreenRowSet,
+		RowIndexes:      rowIndexes,
+		Lines:           lines,
+		LoadedRows:      len(rows),
+		TotalRows:       window.LogicalTotal,
+		LoadedLines:     len(lines),
+		LogicalTotal:    window.LogicalTotal,
+		HasMore:         window.HasMore,
+		Generation:      uint64(window.Generation),
+		FirstLineID:     uint64(window.Boundary.FirstLineID),
+		LastLineID:      uint64(window.Boundary.LastLineID),
+		CursorValid:     window.Boundary.Cursor.Valid,
+		CursorLineID:    uint64(window.Boundary.Cursor.LineID),
+		CursorRow:       window.Boundary.Cursor.RowInLine,
+		CursorRowIndex:  window.Boundary.Cursor.BeforeRowIndex,
+		CursorSegment:   string(window.Boundary.Cursor.Segment),
+		RowLineIDs:      rowLineIDs,
+		RowInLine:       rowInLine,
+		Timestamp:       window.Timestamp,
 	}
 }
 

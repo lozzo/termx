@@ -2,6 +2,7 @@ package history
 
 import (
 	"os"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -430,6 +431,34 @@ func TestR407BackendFrozenWindowReportsProjectionTotal(t *testing.T) {
 	}
 }
 
+func TestR409CurrentFrameWindowCarriesAuthoritativeScreenRows(t *testing.T) {
+	for name, store := range map[string]HistoryStore{
+		"memory":  NewInMemoryHistoryStore("term-r409-screen-row"),
+		"backend": NewBackendHistoryStore("term-r409-screen-row", NewMemoryStorageBackend()),
+	} {
+		t.Run(name, func(t *testing.T) {
+			applyStoreBatch(t, store,
+				sealedLineMutations(1, 1, "shell prompt"),
+				replacePrimaryRowsAtMutation(10, 20, 80, map[int]string{
+					4: "OpenAI Codex",
+					5: "Use /skills",
+				}),
+			)
+
+			window, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-r409-screen-row", Limit: 10, Cols: 80})
+			if err != nil {
+				t.Fatalf("latest window: %v", err)
+			}
+			if got := rowTexts(window.Rows); strings.Join(got, "|") != "shell prompt|OpenAI Codex|Use /skills" {
+				t.Fatalf("latest rows mismatch: %v window=%#v", got, window)
+			}
+			if window.Rows[1].ScreenRow != 4 || window.Rows[2].ScreenRow != 5 {
+				t.Fatalf("current frame rows must keep authoritative screen coordinates, rows=%#v", window.Rows)
+			}
+		})
+	}
+}
+
 func TestR323InMemoryStoreCopyUsesFrozenAuthoritativeRows(t *testing.T) {
 	store := NewInMemoryHistoryStore("term-1")
 	applyStoreBatch(t, store, sealedLineMutations(1, 1, "alpha"), replacePrimaryMutation(10, 2, 80, "beta"))
@@ -591,11 +620,28 @@ func replacePrimaryMutation(frameID ScreenFrameID, firstLineID LogicalLineID, co
 }
 
 func replacePrimaryRowsMutation(frameID ScreenFrameID, firstLineID LogicalLineID, cols int, texts ...string) []HistoryMutation {
-	rows := make([]LogicalLineDraft, 0, len(texts))
+	return replacePrimaryRowsAtMutation(frameID, firstLineID, cols, indexedTextsFromSlice(texts))
+}
+
+func indexedTextsFromSlice(texts []string) map[int]string {
+	out := make(map[int]string, len(texts))
 	for index, text := range texts {
-		line := lineForStore(firstLineID+LogicalLineID(index), text, string(LineKindScreenFrame), cols)
+		out[index] = text
+	}
+	return out
+}
+
+func replacePrimaryRowsAtMutation(frameID ScreenFrameID, firstLineID LogicalLineID, cols int, textsByRow map[int]string) []HistoryMutation {
+	indexes := make([]int, 0, len(textsByRow))
+	for row := range textsByRow {
+		indexes = append(indexes, row)
+	}
+	sort.Ints(indexes)
+	rows := make([]LogicalLineDraft, 0, len(indexes))
+	for index, row := range indexes {
+		line := lineForStore(firstLineID+LogicalLineID(index), textsByRow[row], string(LineKindScreenFrame), cols)
 		line.Seal = SealStateOpen
-		rows = append(rows, LogicalLineDraft{Line: line, Row: index})
+		rows = append(rows, LogicalLineDraft{Line: line, Row: row})
 	}
 	frame := MutableFrame{
 		ID:        frameID,

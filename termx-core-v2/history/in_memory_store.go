@@ -75,16 +75,18 @@ type frozenWindowProjection struct {
 }
 
 type projectedRowRef struct {
-	LineID     LogicalLineID
-	Kind       LineKind
-	Segment    HistorySegment
-	SessionID  ScreenSessionID
-	FrameID    ScreenFrameID
-	RowInLine  int
-	Index      int
-	FixedGrid  bool
-	ScreenCols int
-	Committed  bool
+	LineID       LogicalLineID
+	Kind         LineKind
+	Segment      HistorySegment
+	SessionID    ScreenSessionID
+	FrameID      ScreenFrameID
+	RowInLine    int
+	Index        int
+	FixedGrid    bool
+	ScreenCols   int
+	ScreenRow    int
+	ScreenRowSet bool
+	Committed    bool
 }
 
 type projectionSnapshot struct {
@@ -102,6 +104,7 @@ type projectedRecordRef struct {
 	FrameID    ScreenFrameID
 	FixedGrid  bool
 	ScreenCols int
+	ScreenRows []int
 	Committed  bool
 }
 
@@ -737,6 +740,7 @@ func (store *inMemoryHistoryStore) liveProjectionSnapshot() projectionSnapshot {
 			FrameID:    frame.ID,
 			FixedGrid:  true,
 			ScreenCols: frame.Cols,
+			ScreenRows: screenRowsFromDrafts(frame.Rows),
 			Committed:  false,
 		})
 	}
@@ -749,6 +753,7 @@ func (store *inMemoryHistoryStore) liveProjectionSnapshot() projectionSnapshot {
 			FrameID:    frame.ID,
 			FixedGrid:  true,
 			ScreenCols: frame.Cols,
+			ScreenRows: screenRowsFromDrafts(frame.Rows),
 			Committed:  false,
 		})
 	}
@@ -904,15 +909,17 @@ func refsFromProjectionWindow(projection projectionSnapshot, start int, end int)
 		for absolute := from; absolute < to; absolute++ {
 			lineIndex := absolute - recordStart
 			refs = append(refs, projectedRowRef{
-				LineID:     record.LineIDs[lineIndex],
-				Kind:       record.Kind,
-				Segment:    record.Segment,
-				SessionID:  record.SessionID,
-				FrameID:    record.FrameID,
-				Index:      absolute,
-				FixedGrid:  record.FixedGrid,
-				ScreenCols: record.ScreenCols,
-				Committed:  record.Committed,
+				LineID:       record.LineIDs[lineIndex],
+				Kind:         record.Kind,
+				Segment:      record.Segment,
+				SessionID:    record.SessionID,
+				FrameID:      record.FrameID,
+				Index:        absolute,
+				FixedGrid:    record.FixedGrid,
+				ScreenCols:   record.ScreenCols,
+				ScreenRow:    screenRowAt(record.ScreenRows, lineIndex),
+				ScreenRowSet: screenRowSetAt(record.ScreenRows, lineIndex),
+				Committed:    record.Committed,
 			})
 		}
 		recordStart = recordEnd
@@ -952,6 +959,15 @@ func (store *inMemoryHistoryStore) rowsFromIndexWindow(index []projectedRowRef, 
 		row := rowFromLogicalLine(line, ref.Segment, ref.Kind, ref.Committed, ref.SessionID, ref.FrameID, ref.FixedGrid)
 		row.RowInLine = ref.RowInLine
 		row.ProjectionRowIndex = ref.Index
+		if ref.FixedGrid {
+			if ref.ScreenRowSet {
+				row.ScreenRow = ref.ScreenRow
+				row.ScreenRowSet = true
+			} else if line.ScreenRowSet {
+				row.ScreenRow = line.ScreenRow
+				row.ScreenRowSet = true
+			}
+		}
 		rows = append(rows, row)
 	}
 	return rows, start, nil
@@ -1026,6 +1042,7 @@ func cloneProjectionSnapshot(projection projectionSnapshot) projectionSnapshot {
 	for i := range projection.records {
 		out.records[i] = projection.records[i]
 		out.records[i].LineIDs = append([]LogicalLineID(nil), projection.records[i].LineIDs...)
+		out.records[i].ScreenRows = append([]int(nil), projection.records[i].ScreenRows...)
 	}
 	return out
 }
@@ -1249,7 +1266,10 @@ func (store *inMemoryHistoryStore) reindexCounters() {
 func rowsFromMutableFrame(frame MutableFrame, segment HistorySegment, kind LineKind, committed bool) []HistoryRow {
 	rows := make([]HistoryRow, 0, len(frame.Rows))
 	for _, draft := range frame.Rows {
-		rows = append(rows, rowFromLogicalLine(draft.Line, segment, kind, committed, frame.SessionID, frame.ID, true))
+		row := rowFromLogicalLine(draft.Line, segment, kind, committed, frame.SessionID, frame.ID, true)
+		row.ScreenRow = draft.Row
+		row.ScreenRowSet = true
+		rows = append(rows, row)
 	}
 	return rows
 }
@@ -1257,22 +1277,27 @@ func rowsFromMutableFrame(frame MutableFrame, segment HistorySegment, kind LineK
 func rowsFromTransientFrame(frame TransientFrame) []HistoryRow {
 	rows := make([]HistoryRow, 0, len(frame.Rows))
 	for _, draft := range frame.Rows {
-		rows = append(rows, rowFromLogicalLine(draft.Line, HistorySegmentCurrentAltFrame, LineKindAltScreenFrame, false, 0, frame.ID, true))
+		row := rowFromLogicalLine(draft.Line, HistorySegmentCurrentAltFrame, LineKindAltScreenFrame, false, 0, frame.ID, true)
+		row.ScreenRow = draft.Row
+		row.ScreenRowSet = true
+		rows = append(rows, row)
 	}
 	return rows
 }
 
 func rowFromLogicalLine(line LogicalLine, segment HistorySegment, kind LineKind, committed bool, sessionID ScreenSessionID, frameID ScreenFrameID, fixed bool) HistoryRow {
 	return HistoryRow{
-		Cells:      lineCellsForProjection(line),
-		Kind:       kind,
-		Segment:    segment,
-		LineID:     line.ID,
-		SessionID:  sessionID,
-		FrameID:    frameID,
-		FixedGrid:  fixed,
-		ScreenCols: line.ScreenCols,
-		Committed:  committed,
+		Cells:        lineCellsForProjection(line),
+		Kind:         kind,
+		Segment:      segment,
+		LineID:       line.ID,
+		SessionID:    sessionID,
+		FrameID:      frameID,
+		FixedGrid:    fixed,
+		ScreenCols:   line.ScreenCols,
+		ScreenRow:    line.ScreenRow,
+		ScreenRowSet: line.ScreenRowSet,
+		Committed:    committed,
 	}
 }
 
@@ -1306,6 +1331,8 @@ func spansForRows(rows []HistoryRow) []HistoryLineSpan {
 			LogicalLineID: row.LineID,
 			SessionID:     row.SessionID,
 			FrameID:       row.FrameID,
+			ScreenRow:     row.ScreenRow,
+			ScreenRowSet:  row.ScreenRowSet,
 		})
 	}
 	return spans
@@ -1317,6 +1344,28 @@ func frameRowsFromDrafts(drafts []LogicalLineDraft) [][]Cell {
 		rows = append(rows, lineCellsForProjection(draft.Line))
 	}
 	return rows
+}
+
+func screenRowsFromDrafts(drafts []LogicalLineDraft) []int {
+	if len(drafts) == 0 {
+		return nil
+	}
+	rows := make([]int, 0, len(drafts))
+	for _, draft := range drafts {
+		rows = append(rows, draft.Row)
+	}
+	return rows
+}
+
+func screenRowAt(rows []int, index int) int {
+	if index < 0 || index >= len(rows) {
+		return 0
+	}
+	return rows[index]
+}
+
+func screenRowSetAt(rows []int, index int) bool {
+	return index >= 0 && index < len(rows)
 }
 
 func cloneHistoryRows(rows []HistoryRow) []HistoryRow {
