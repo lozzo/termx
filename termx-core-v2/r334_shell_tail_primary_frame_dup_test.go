@@ -309,6 +309,103 @@ func TestR415RealVTermLongSyncAfterShellKeepsAppScrollOut(t *testing.T) {
 	}
 }
 
+func TestR419OrdinarySameRowEditControlsDoNotStartPrimaryPseudoTUI(t *testing.T) {
+	terminal := &Terminal{}
+	state := history.HistoryReadState{HasTimeline: true}
+	cases := []struct {
+		name string
+		ops  []history.TerminalSemanticOp
+	}{
+		{
+			name: "clear to eol progress rewrite",
+			ops: []history.TerminalSemanticOp{
+				{Code: vterm.ScreenOpWriteSpan, Row: 4, Col: 0, Cells: historyCellsForRegression("Counting objects: 10%")},
+				{Code: vterm.ScreenOpClearToEOL, Row: 4, Col: 0},
+				{Code: vterm.ScreenOpWriteSpan, Row: 4, Col: 0, Cells: historyCellsForRegression("Counting objects: 100%")},
+			},
+		},
+		{
+			name: "el progress rewrite",
+			ops: []history.TerminalSemanticOp{
+				{Code: vterm.ScreenOpWriteSpan, Row: 4, Col: 0, Cells: historyCellsForRegression("Enumerating objects: 1%")},
+				{Code: vterm.ScreenOpControl, Control: "el", Row: 4, Col: 0},
+				{Code: vterm.ScreenOpWriteSpan, Row: 4, Col: 0, Cells: historyCellsForRegression("Enumerating objects: 100%")},
+			},
+		},
+		{
+			name: "readline horizontal edit",
+			ops: []history.TerminalSemanticOp{
+				{Code: vterm.ScreenOpWriteSpan, Row: 4, Col: 0, Cells: historyCellsForRegression("git ppush")},
+				{Code: vterm.ScreenOpControl, Control: "cub", Row: 4, Col: 5, Mode: 1},
+				{Code: vterm.ScreenOpControl, Control: "dch", Row: 4, Col: 5, Mode: 1},
+				{Code: vterm.ScreenOpWriteSpan, Row: 4, Col: 0, Cells: historyCellsForRegression("git push")},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tx := history.TerminalSemanticTransaction{
+				Seq:                     419,
+				Size:                    history.TerminalSemanticSize{Cols: 80, Rows: 12},
+				Ops:                     tc.ops,
+				PrimaryFrameTouchedRows: []int{4},
+				PrimaryFrame: &history.TerminalSemanticFrame{
+					Cols: 80,
+					Rows: [][]history.TerminalSemanticCell{
+						nil, nil, nil, nil,
+						historyCellsForRegression("Enumerating objects: 100%"),
+					},
+				},
+			}
+			decision := terminal.historyDecisionForTransaction(tx, state)
+			if decision.Mode != history.HistoryOutputModeOrdinaryStream || decision.PublishPrimaryFrame {
+				t.Fatalf("ordinary same-row edit must stay stream-owned, got %#v", decision)
+			}
+		})
+	}
+}
+
+func TestR419OrdinaryProgressAfterPrimaryFrameStaysStreamOwned(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	terminalID := "term-r419-progress-after-primary-frame"
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      terminalID,
+		Command: []string{"shell"},
+		Size:    Size{Cols: 80, Rows: 12},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), terminalID, "shell prompt\r\n"); err != nil {
+		t.Fatalf("ingest shell prompt: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), terminalID, "\x1b[?2026hcodex welcome\r\ncodex prompt\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest primary frame: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), terminalID, "git push\r\n"); err != nil {
+		t.Fatalf("ingest command echo: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), terminalID, "Enumerating objects: 1%\r\x1b[KEnumerating objects: 113, done.\r\n"); err != nil {
+		t.Fatalf("ingest progress rewrite: %v", err)
+	}
+
+	rows, _ := r326CollectAllHistoryRows(t, server, terminalID, 80, 6)
+	if historyRowsContainSegment(rows, history.HistorySegmentCurrentPrimaryFrame) {
+		t.Fatalf("ordinary progress after primary frame must not leave a current primary frame, rows=%#v", rows)
+	}
+	for _, row := range rows {
+		text := historyCellsText(row.Cells)
+		if row.Kind == history.LineKindScreenFrame && (strings.Contains(text, "git push") || strings.Contains(text, "Enumerating objects")) {
+			t.Fatalf("ordinary git output must not be adopted by screen-frame ownership: row=%#v rows=%#v", row, rows)
+		}
+	}
+	if got := historyTextCount(rows, "git push"); got != 1 {
+		t.Fatalf("command echo should appear once as ordinary history, count=%d rows=%#v", got, rows)
+	}
+	if got := historyTextCount(rows, "Enumerating objects: 113, done."); got != 1 {
+		t.Fatalf("progress completion should appear once as ordinary history, count=%d rows=%#v", got, rows)
+	}
+}
+
 func TestR417PrimaryPseudoTUIEditControlsUseTouchedFrameOwnership(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))

@@ -1180,25 +1180,51 @@ func historyTransactionLooksLikePrimaryPseudoTUI(tx history.TerminalSemanticTran
 	if tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd {
 		return true
 	}
-	if historyTransactionHasPrimaryScreenEditOp(tx) {
+	if historyTransactionHasPrimaryScreenFrameOp(tx) {
 		return true
 	}
 	return historyTransactionWritesTouchNonMonotonicRows(tx)
 }
 
-func historyTransactionHasPrimaryScreenEditOp(tx history.TerminalSemanticTransaction) bool {
+func historyTransactionHasPrimaryScreenFrameOp(tx history.TerminalSemanticTransaction) bool {
+	hasVerticalRelativeMove := false
 	for _, op := range tx.Ops {
 		switch op.Code {
-		case vterm.ScreenOpClearToEOL, vterm.ScreenOpClearRect, vterm.ScreenOpScrollRect, vterm.ScreenOpCopyRect:
+		case vterm.ScreenOpClearRect, vterm.ScreenOpScrollRect, vterm.ScreenOpCopyRect:
 			return true
 		}
 		if op.Code == vterm.ScreenOpControl {
 			switch op.Control {
-			case "cup", "vpa", "hpa", "cha",
-				"cub", "cuf", "cuu", "cud",
-				"el", "ech", "dch", "ich", "il", "dl", "su", "sd":
+			case "cup", "vpa", "il", "dl", "su", "sd":
 				return true
+			case "cuu", "cud":
+				hasVerticalRelativeMove = true
 			}
+		}
+	}
+	// 中文说明：EL、同一行 CR 重写、水平移动和字符插删是 shell/readline/git
+	// progress 的普通输出形态；不能单独接管 primary frame。只有相对纵向移动后
+	// 同一 transaction 真实改到多行，才把它视为主屏 pseudo-TUI viewport repaint。
+	if hasVerticalRelativeMove && historyTransactionWritesTouchMultipleRows(tx) {
+		return true
+	}
+	return false
+}
+
+func historyTransactionWritesTouchMultipleRows(tx history.TerminalSemanticTransaction) bool {
+	seenWrite := false
+	firstRow := 0
+	for _, op := range tx.Ops {
+		if op.Code != vterm.ScreenOpWriteSpan {
+			continue
+		}
+		if !seenWrite {
+			seenWrite = true
+			firstRow = op.Row
+			continue
+		}
+		if op.Row != firstRow {
+			return true
 		}
 	}
 	return false
