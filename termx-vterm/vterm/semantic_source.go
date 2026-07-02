@@ -1,5 +1,7 @@
 package vterm
 
+import "sort"
+
 // TerminalSemanticSource 是 vterm 对 core-v2 暴露的终端语义事务源。
 // domain owner：vterm 解码 PTY bytes；history 只能消费 transaction，不能回放 raw。
 type TerminalSemanticSource interface {
@@ -136,7 +138,7 @@ func (source *SemanticSource) transactionFromDamage(seq uint64, raw string, dama
 		Raw:                     raw,
 		Size:                    size,
 		Ops:                     ops,
-		PrimaryFrameTouchedRows: cloneIntSlice(damage.DirectDamageTouchedRows),
+		PrimaryFrameTouchedRows: terminalSemanticPrimaryFrameTouchedRows(damage, ops, size),
 		RequiresFullReplace:     damage.RequiresFullReplace,
 		FullReplaceReason:       damage.FullReplaceReason,
 		ClearScrollback:         terminalSemanticDamageHasClearScrollback(damage),
@@ -288,6 +290,89 @@ func terminalSemanticShouldAttachFrame(damage WriteDamage, tx TerminalSemanticTr
 		}
 	}
 	return false
+}
+
+func terminalSemanticPrimaryFrameTouchedRows(damage WriteDamage, ops []TerminalSemanticOp, size TerminalSemanticSize) []int {
+	if damage.RequiresFullReplace {
+		return cloneIntSlice(damage.DirectDamageTouchedRows)
+	}
+	// 中文说明：非 full-replace 的 current-frame ownership proof 必须优先来自
+	// ordered semantic ops。live direct damage rows 只能作为没有 ordered proof
+	// 时的诊断兜底，不能把普通 screen diff 扩大成 history frame ownership。
+	if rows := terminalSemanticTouchedRowsFromOps(ops, size); len(rows) > 0 {
+		return rows
+	}
+	return cloneIntSlice(damage.DirectDamageTouchedRows)
+}
+
+func terminalSemanticTouchedRowsFromOps(ops []TerminalSemanticOp, size TerminalSemanticSize) []int {
+	if len(ops) == 0 {
+		return nil
+	}
+	touched := make(map[int]struct{}, len(ops))
+	mark := func(row int) {
+		if row < 0 {
+			return
+		}
+		if size.Rows > 0 && row >= size.Rows {
+			return
+		}
+		touched[row] = struct{}{}
+	}
+	markRange := func(start int, end int) {
+		if end < start {
+			start, end = end, start
+		}
+		if size.Rows > 0 && end > size.Rows {
+			end = size.Rows
+		}
+		for row := start; row < end; row++ {
+			mark(row)
+		}
+	}
+	for _, op := range ops {
+		switch op.Code {
+		case ScreenOpWriteSpan, ScreenOpClearToEOL:
+			mark(op.Row)
+		case ScreenOpClearRect:
+			markRange(op.Rect.Y, op.Rect.Y+op.Rect.Height)
+		case ScreenOpScrollRect:
+			markRange(op.Rect.Y, op.Rect.Y+op.Rect.Height)
+		case ScreenOpCopyRect:
+			markRange(op.DstY, op.DstY+op.Src.Height)
+		case ScreenOpControl:
+			switch op.Control {
+			case "ed":
+				switch op.Mode {
+				case 1:
+					markRange(0, op.Row+1)
+				case 2, 3:
+					markRange(0, size.Rows)
+				default:
+					markRange(op.Row, size.Rows)
+				}
+			case "el", "ech", "dch", "ich", "ri":
+				mark(op.Row)
+			case "il", "dl", "su", "sd":
+				if op.Bottom > op.Row {
+					markRange(op.Row, op.Bottom)
+				} else {
+					mark(op.Row)
+				}
+			case "ris":
+				markRange(0, size.Rows)
+			}
+		}
+	}
+	if len(touched) == 0 {
+		return nil
+	}
+	rows := make([]int, 0, len(touched))
+	for row := range touched {
+		rows = append(rows, row)
+	}
+	sort.Ints(rows)
+	return rows
 }
 
 func terminalSemanticSourceDamageSummary(damage WriteDamage) WriteDamage {

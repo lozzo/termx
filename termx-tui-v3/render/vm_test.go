@@ -75,6 +75,52 @@ func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
 	}
 }
 
+func TestR418RenderVMBuilderHistoryRenderableDoesNotMixLiveSurface(t *testing.T) {
+	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
+	root := bindTestPaneTerminal(state.Root{
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Ready:      true,
+			Cols:       80,
+			Rows:       10,
+			Lines:      []string{"live shell prompt", "live codex frame"},
+		},
+		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 10},
+		History: state.HistoryStore{
+			PaneID:     state.DefaultPaneID,
+			ViewID:     viewID,
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       80,
+			Rows: []state.HistoryRow{
+				{Text: "history shell prompt", LineID: 10},
+				{Text: "history codex frame", LineID: 11, Segment: state.HistoryCursorSegmentCurrentPrimaryFrame},
+			},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     viewID,
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  80,
+		},
+	}, state.DefaultPaneID, "term-1")
+
+	vm := NewRenderVMBuilder().Build(root)
+	content := activeContent(vm.Shell)
+	if content.Kind != ContentCopyHistory {
+		t.Fatalf("history renderable pane must render copy-history content, got %#v", content)
+	}
+	rendered := strings.Join(contentPlainLines(content), "\n")
+	if strings.Contains(rendered, "live shell prompt") || strings.Contains(rendered, "live codex frame") {
+		t.Fatalf("copy-history content must not mix live surface rows, rendered=%q", rendered)
+	}
+	if !strings.Contains(rendered, "history shell prompt") || !strings.Contains(rendered, "history codex frame") {
+		t.Fatalf("copy-history content must come from authoritative history rows, rendered=%q", rendered)
+	}
+}
+
 func TestR377RenderVMBuilderRendersMaterializedProjectionWithoutFrozenToken(t *testing.T) {
 	root := bindTestPaneTerminal(state.Root{
 		History: state.HistoryStore{
@@ -3266,4 +3312,12 @@ func plainLines(lines []Line) string {
 		values[i] = line.PlainString()
 	}
 	return strings.Join(values, "\n")
+}
+
+func contentPlainLines(content ContentVM) []string {
+	values := make([]string, len(content.Lines))
+	for i, line := range content.Lines {
+		values[i] = line.PlainString()
+	}
+	return values
 }

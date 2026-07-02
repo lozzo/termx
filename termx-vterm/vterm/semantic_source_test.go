@@ -1,6 +1,7 @@
 package vterm
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -204,6 +205,65 @@ func TestR417SemanticSourceFrameAttachCoversPrimaryEditOps(t *testing.T) {
 	}
 }
 
+func TestR418SemanticSourceTouchedRowsPreferOrderedPrimaryEditOps(t *testing.T) {
+	damage := WriteDamage{DirectDamageTouchedRows: []int{0, 1, 2, 3, 4, 5}}
+	ops := []TerminalSemanticOp{
+		{Code: ScreenOpControl, Control: "cuu", Row: 3, Mode: 1},
+		{Code: ScreenOpControl, Control: "el", Row: 3, Col: 0, Mode: 2},
+		{Code: ScreenOpWriteSpan, Row: 3, Col: 0, Runs: []CellRun{{Text: "codex edit"}}},
+	}
+
+	rows := terminalSemanticPrimaryFrameTouchedRows(damage, ops, TerminalSemanticSize{Cols: 20, Rows: 6})
+	if got, want := intsForSemanticSourceTest(rows), "3"; got != want {
+		t.Fatalf("ordered primary edit should own only semantic touched rows, got %s want %s", got, want)
+	}
+}
+
+func TestR418SemanticSourceTouchedRowsPreserveFullReplaceDirectProof(t *testing.T) {
+	damage := WriteDamage{
+		RequiresFullReplace:     true,
+		DirectDamageTouchedRows: []int{0, 1, 2, 3, 4, 5},
+	}
+	ops := []TerminalSemanticOp{{Code: ScreenOpWriteSpan, Row: 3, Col: 0, Runs: []CellRun{{Text: "one row"}}}}
+
+	rows := terminalSemanticPrimaryFrameTouchedRows(damage, ops, TerminalSemanticSize{Cols: 20, Rows: 6})
+	if got, want := intsForSemanticSourceTest(rows), "0,1,2,3,4,5"; got != want {
+		t.Fatalf("full replace must preserve direct touched-row proof, got %s want %s", got, want)
+	}
+}
+
+func TestR418SemanticSourceTouchedRowsCoverLineAndRectRanges(t *testing.T) {
+	cases := []struct {
+		name string
+		ops  []TerminalSemanticOp
+		want string
+	}{
+		{
+			name: "line insert range",
+			ops:  []TerminalSemanticOp{{Code: ScreenOpControl, Control: "il", Row: 2, Bottom: 5, Mode: 1}},
+			want: "2,3,4",
+		},
+		{
+			name: "copy rect destination rows",
+			ops:  []TerminalSemanticOp{{Code: ScreenOpCopyRect, Src: DamageRect{X: 0, Y: 1, Width: 10, Height: 2}, DstX: 0, DstY: 4}},
+			want: "4,5",
+		},
+		{
+			name: "clear screen",
+			ops:  []TerminalSemanticOp{{Code: ScreenOpControl, Control: "ed", Mode: 2}},
+			want: "0,1,2,3,4,5",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := terminalSemanticPrimaryFrameTouchedRows(WriteDamage{}, tc.ops, TerminalSemanticSize{Cols: 20, Rows: 6})
+			if got := intsForSemanticSourceTest(rows); got != tc.want {
+				t.Fatalf("unexpected touched rows for %s: got %s want %s", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestR328SemanticSourceDistinguishesEraseDisplayFromClearScrollback(t *testing.T) {
 	ed2 := NewSemanticSource(12, 3, 100, nil)
 	if _, err := ed2.ApplyPTYWrite([]byte("old1\r\nold2")); err != nil {
@@ -277,6 +337,20 @@ func cellsTextForSemanticTest(cells []TerminalSemanticCell) string {
 		out += cell.Content
 	}
 	return out
+}
+
+func intsForSemanticSourceTest(values []int) string {
+	if len(values) == 0 {
+		return ""
+	}
+	var out strings.Builder
+	for index, value := range values {
+		if index > 0 {
+			out.WriteString(",")
+		}
+		out.WriteString(strconv.Itoa(value))
+	}
+	return out.String()
 }
 
 func semanticOpTextForSourceTest(op DamageOp) string {
