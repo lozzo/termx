@@ -250,6 +250,83 @@ func TestCopyHistoryCursorOnlyMoveUsesCursorPatch(t *testing.T) {
 	}
 }
 
+func TestR410CopyHistoryPatchDisabledWhenVisibleRowWouldWrapTTY(t *testing.T) {
+	host := newCopyHistoryPerfIncrementalHost(16)
+	host.SetSize(80, 24)
+	root := copyHistoryPerfRoot(80, 24, 256)
+	root.CopyMode.ViewportTop = 120
+	root.CopyMode.Cursor = state.CopyPosition{Row: 120}
+	root.History.Rows[119] = state.HistoryRow{Text: strings.Repeat("x", root.History.Cols+1), LineID: 119}
+	runtime := NewAppRuntime(
+		root,
+		copyHistoryPerfLineScrollReducer(),
+		func(root state.Root) render.Frame {
+			return render.NewRenderer(render.DefaultTheme()).RenderANSI(render.NewRenderVMBuilder().Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	cache, ok := buildCopyHistoryPatchCache(root, render.DefaultTheme())
+	if !ok {
+		t.Fatal("expected copy history patch cache")
+	}
+	cache.Metadata = render.RenderMetadata{Width: 80, Height: 24}
+	runtime.copyHistoryPatch = cache
+
+	root.CopyMode = root.CopyMode.ScrollCursor(-1, len(root.History.Rows))
+	runtime.state = root.Advance()
+	if runtime.tryRenderCopyHistoryPatch() {
+		t.Fatalf("wrapping history row must force full-frame render, got patch %#v", copyHistoryPerfFrame.Patch)
+	}
+	if host.sink.patchFrames != 0 || host.sink.frames != 0 {
+		t.Fatalf("unsafe patch should not write partial frame, frames=%d patches=%d", host.sink.frames, host.sink.patchFrames)
+	}
+}
+
+func TestR410CopyHistoryPatchDisabledWhenRendererWouldInsertTopPadding(t *testing.T) {
+	host := newCopyHistoryPerfIncrementalHost(16)
+	host.SetSize(80, 24)
+	root := copyHistoryPerfRoot(80, 24, 256)
+	root.CopyMode.ViewportTop = 120
+	root.CopyMode.Cursor = state.CopyPosition{Row: 120}
+	root.History.Rows[120] = state.HistoryRow{
+		Text:         "OpenAI Codex",
+		LineID:       120,
+		Kind:         state.HistoryRowKindScreenFrame,
+		Segment:      state.HistoryCursorSegmentCurrentPrimaryFrame,
+		SessionID:    1,
+		FrameID:      10,
+		FixedGrid:    true,
+		ScreenCols:   root.History.Cols,
+		ScreenRow:    3,
+		ScreenRowSet: true,
+	}
+	runtime := NewAppRuntime(
+		root,
+		copyHistoryPerfLineScrollReducer(),
+		func(root state.Root) render.Frame {
+			return render.NewRenderer(render.DefaultTheme()).RenderANSI(render.NewRenderVMBuilder().Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	cache, ok := buildCopyHistoryPatchCache(root, render.DefaultTheme())
+	if !ok {
+		t.Fatal("expected copy history patch cache")
+	}
+	cache.Metadata = render.RenderMetadata{Width: 80, Height: 24}
+	runtime.copyHistoryPatch = cache
+
+	root.CopyMode = root.CopyMode.ScrollCursor(-1, len(root.History.Rows))
+	runtime.state = root.Advance()
+	if runtime.tryRenderCopyHistoryPatch() {
+		t.Fatalf("current-frame display padding must force full-frame render, got patch %#v", copyHistoryPerfFrame.Patch)
+	}
+	if host.sink.patchFrames != 0 || host.sink.frames != 0 {
+		t.Fatalf("unsafe padding patch should not write partial frame, frames=%d patches=%d", host.sink.frames, host.sink.patchFrames)
+	}
+}
+
 func TestCopyHistoryPatchCursorClampsToVisibleViewport(t *testing.T) {
 	history := state.HistoryStore{
 		Cols: 10,

@@ -64,6 +64,9 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 	if copyHistoryPatchCoveredByFloating(runtime.state, current.ContentRect) {
 		return false
 	}
+	if !copyHistoryPatchContentSafeForIncremental(patchRoot.History, patchRoot.CopyMode, current.ContentRect.W) {
+		return false
+	}
 	scrollRows := delta
 	if scrollRows < 0 {
 		scrollRows = -scrollRows
@@ -145,6 +148,63 @@ func copyHistoryPatchANSILinesAt(history state.HistoryStore, copyMode state.Copy
 		lines[i] = render.CopyHistoryContentANSILineAt(history, copyMode, startRow+i, width, lineX, theme)
 	}
 	return lines
+}
+
+func copyHistoryPatchContentSafeForIncremental(history state.HistoryStore, copyMode state.CopyModeStore, width int) bool {
+	if width <= 0 || len(history.Rows) == 0 {
+		return false
+	}
+	if copyHistoryPatchNeedsRendererTopPadding(history, copyMode) {
+		return false
+	}
+	top := clampCopyHistoryPatchInt(copyMode.ViewportTop, 0, len(history.Rows)-1)
+	visibleRows := copyHistoryPatchVisibleRows(history, copyMode)
+	if visibleRows <= 0 || top+visibleRows > len(history.Rows) {
+		return false
+	}
+	for rowIndex := top; rowIndex < top+visibleRows; rowIndex++ {
+		row := history.Rows[rowIndex]
+		// 中文说明：partial patch 直接写真实 TTY。任何一行如果可能越过内容宽度，
+		// 终端自动换行会污染后续行，所以必须回退完整帧重画。
+		if copyHistoryPatchPrefixWidth(row)+state.HistoryRowDisplayWidth(row) > width {
+			return false
+		}
+	}
+	return true
+}
+
+func copyHistoryPatchNeedsRendererTopPadding(history state.HistoryStore, copyMode state.CopyModeStore) bool {
+	if copyMode.Query != "" || copyMode.ViewRows <= 0 || len(history.Rows) == 0 {
+		return false
+	}
+	top := clampCopyHistoryPatchInt(copyMode.ViewportTop, 0, len(history.Rows)-1)
+	visibleRows := copyHistoryPatchVisibleRows(history, copyMode)
+	limit := top + visibleRows
+	if limit > len(history.Rows) {
+		limit = len(history.Rows)
+	}
+	for rowIndex := top; rowIndex < limit; rowIndex++ {
+		row := history.Rows[rowIndex]
+		if !copyHistoryPatchCurrentPrimaryFrameAnchor(history.Rows, rowIndex, row) {
+			continue
+		}
+		return row.ScreenRow > rowIndex-top
+	}
+	return false
+}
+
+func copyHistoryPatchCurrentPrimaryFrameAnchor(rows []state.HistoryRow, rowIndex int, row state.HistoryRow) bool {
+	if !row.FixedGrid || row.Kind != state.HistoryRowKindScreenFrame || row.Segment != state.HistoryCursorSegmentCurrentPrimaryFrame || !row.ScreenRowSet {
+		return false
+	}
+	for previousIndex := rowIndex - 1; previousIndex >= 0; previousIndex-- {
+		previous := rows[previousIndex]
+		if previous.FrameID != row.FrameID || previous.SessionID != row.SessionID || previous.Segment != row.Segment || previous.Kind != row.Kind {
+			return true
+		}
+		return false
+	}
+	return true
 }
 
 func (runtime *AppRuntime) canUseIncompleteFrameSink() bool {

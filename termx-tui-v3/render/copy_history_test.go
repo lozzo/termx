@@ -211,3 +211,55 @@ func TestR409CopyHistoryUsesAuthoritativeScreenRowAsCurrentFrameAnchor(t *testin
 		t.Fatalf("hit regions should be shifted by top padding, got %#v", regions)
 	}
 }
+
+func TestR410CopyHistoryEntryKeepsOnlyScreenRowSizedRecentContext(t *testing.T) {
+	history := state.HistoryStore{
+		Cols: 12,
+		Rows: []state.HistoryRow{
+			{Text: "old shell prompt", LineID: 1, Segment: state.HistoryCursorSegmentCommitted},
+			{Text: "old shell marker", LineID: 2, Segment: state.HistoryCursorSegmentCommitted},
+			{Text: "visible shell prompt", LineID: 3, Segment: state.HistoryCursorSegmentCommitted},
+			{Text: "visible shell marker", LineID: 4, Segment: state.HistoryCursorSegmentCommitted},
+			{
+				Text:         "OpenAI Codex",
+				LineID:       20,
+				Kind:         state.HistoryRowKindScreenFrame,
+				Segment:      state.HistoryCursorSegmentCurrentPrimaryFrame,
+				SessionID:    1,
+				FrameID:      10,
+				FixedGrid:    true,
+				ScreenCols:   12,
+				ScreenRow:    2,
+				ScreenRowSet: true,
+			},
+			{
+				Text:         "> Use /skills",
+				LineID:       21,
+				Kind:         state.HistoryRowKindScreenFrame,
+				Segment:      state.HistoryCursorSegmentCurrentPrimaryFrame,
+				SessionID:    1,
+				FrameID:      10,
+				FixedGrid:    true,
+				ScreenCols:   12,
+				ScreenRow:    3,
+				ScreenRowSet: true,
+			},
+		},
+	}
+	copyMode := state.CopyModeStore{ViewRows: 8}.AcceptLatest(state.HistoryWindow{
+		Rows:  history.Rows,
+		Cols:  history.Cols,
+		Token: "tok-1",
+	}, history.Cols, len(history.Rows))
+
+	lines := copyHistoryLines(history, copyMode)
+	if copyMode.ViewportTop != 2 || len(lines) < 4 {
+		t.Fatalf("expected current frame anchored with recent context, copy=%#v lines=%#v", copyMode, lines)
+	}
+	if got := lines[0].String(); got != "visible shell prompt" {
+		t.Fatalf("old scrollback should be outside initial viewport, got first line %q lines=%#v", got, lines)
+	}
+	if got := lines[2].String(); got != "OpenAI Codex" {
+		t.Fatalf("current frame should start at authoritative screen row 2, got %q lines=%#v", got, lines)
+	}
+}

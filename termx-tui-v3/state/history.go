@@ -1117,11 +1117,12 @@ func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, tot
 	}
 	if totalRows > 0 {
 		// 中文说明：copy cursor 的 truth 是 authoritative latest window 的最新尾行；
-		// 进入时的 live preview 不能反向参与 history viewport 定位，否则 TUI 会再次
-		// 从 live rows 推断 history 视图，绕过 core authoritative HistoryWindow。
+		// current-frame 入口锚点来自 core HistoryWindow 的 ScreenRow，而不是 live
+		// preview。这样既保留 frame 前屏幕上可见的最近历史，也不会把更早 shell
+		// scrollback 塞进 Codex 这类 current frame 上方。
 		visibleRows := copyVisibleRowsForStore(store)
 		cursorRow := totalRows - 1
-		viewportTop := maxCopyInt(0, totalRows-visibleRows)
+		viewportTop := copyEntryViewportTopFromAuthoritativeRows(window.Rows, totalRows, visibleRows)
 		store.Cursor = CopyPosition{Row: cursorRow}
 		store.ViewportTop = viewportTop
 		if pendingScroll != 0 {
@@ -1135,6 +1136,45 @@ func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, tot
 	store.ActiveMatch = 0
 	store.Empty = totalRows == 0
 	return store
+}
+
+func copyEntryViewportTopFromAuthoritativeRows(rows []HistoryRow, totalRows int, visibleRows int) int {
+	tailTop := maxCopyInt(0, totalRows-visibleRows)
+	if visibleRows <= 0 {
+		return tailTop
+	}
+	frameTop, ok := firstCurrentPrimaryFrameViewportAnchor(rows, visibleRows)
+	if !ok {
+		return tailTop
+	}
+	// 中文说明：ScreenRow 是 current frame 在真实 terminal screen 内的物理行；
+	// 入口 viewport 只允许保留同屏可见的 frame 前最近 rows，剩余空位由 renderer
+	// display-only padding 补齐，不能把旧 scrollback 当成 frame 内容。
+	return maxCopyInt(0, frameTop-rowsBeforeCurrentFrameForScreenRow(rows[frameTop].ScreenRow, visibleRows))
+}
+
+func firstCurrentPrimaryFrameViewportAnchor(rows []HistoryRow, visibleRows int) (int, bool) {
+	for index, row := range rows {
+		if !isCurrentPrimaryFrameRow(row) || !row.ScreenRowSet {
+			continue
+		}
+		if row.ScreenRow >= visibleRows {
+			return 0, false
+		}
+		return index, true
+	}
+	return 0, false
+}
+
+func rowsBeforeCurrentFrameForScreenRow(screenRow int, visibleRows int) int {
+	if visibleRows <= 1 || screenRow <= 0 {
+		return 0
+	}
+	return clampCopyInt(screenRow, 0, visibleRows-1)
+}
+
+func isCurrentPrimaryFrameRow(row HistoryRow) bool {
+	return row.FixedGrid && row.Kind == HistoryRowKindScreenFrame && row.Segment == HistoryCursorSegmentCurrentPrimaryFrame
 }
 
 func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRows int) CopyModeStore {

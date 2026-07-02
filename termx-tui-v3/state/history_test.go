@@ -870,6 +870,49 @@ func TestCopyModeAcceptLatestMatchesVisibleTailOfEnteringLiveScreenFrame(t *test
 	}
 }
 
+func TestR410CopyModeAcceptLatestAnchorsCurrentFrameToAuthoritativeScreenRow(t *testing.T) {
+	rows := []HistoryRow{
+		{Text: "old shell prompt", LineID: 1, Segment: HistoryCursorSegmentCommitted},
+		{Text: "old shell marker", LineID: 2, Segment: HistoryCursorSegmentCommitted},
+		{Text: "visible shell prompt", LineID: 3, Segment: HistoryCursorSegmentCommitted},
+		{Text: "visible shell marker", LineID: 4, Segment: HistoryCursorSegmentCommitted},
+		{
+			Text:         "OpenAI Codex",
+			LineID:       20,
+			Kind:         HistoryRowKindScreenFrame,
+			Segment:      HistoryCursorSegmentCurrentPrimaryFrame,
+			SessionID:    1,
+			FrameID:      10,
+			FixedGrid:    true,
+			ScreenCols:   80,
+			ScreenRow:    2,
+			ScreenRowSet: true,
+		},
+		{
+			Text:         "> Use /skills",
+			LineID:       21,
+			Kind:         HistoryRowKindScreenFrame,
+			Segment:      HistoryCursorSegmentCurrentPrimaryFrame,
+			SessionID:    1,
+			FrameID:      10,
+			FixedGrid:    true,
+			ScreenCols:   80,
+			ScreenRow:    3,
+			ScreenRowSet: true,
+		},
+	}
+	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
+	copyMode := CopyModeStore{ViewRows: 8}.AcceptLatest(latest, latest.Cols, len(rows))
+
+	if copyMode.ViewportTop != 2 || copyMode.Cursor != (CopyPosition{Row: 5}) {
+		t.Fatalf("latest should anchor current frame to core ScreenRow and drop older scrollback, got %#v", copyMode)
+	}
+	visible := rows[copyMode.ViewportTop:]
+	if historyRowsContainText(visible, "old shell prompt") || !historyRowsContainText(visible, "visible shell prompt") {
+		t.Fatalf("entry viewport should keep only screen-row-sized recent context, top=%d visible=%#v", copyMode.ViewportTop, visible)
+	}
+}
+
 func historyRowsContainText(rows []HistoryRow, text string) bool {
 	for _, row := range rows {
 		if row.Text == text {

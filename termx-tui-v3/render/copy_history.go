@@ -543,19 +543,40 @@ func copyHistoryTopPaddingForViewport(history state.HistoryStore, copyMode state
 	if top != copyHistoryViewportTop(history, copyMode) || top < 0 || top >= len(history.Rows) {
 		return 0
 	}
-	row := history.Rows[top]
-	if !row.FixedGrid || row.Kind != state.HistoryRowKindScreenFrame || row.Segment != state.HistoryCursorSegmentCurrentPrimaryFrame || !row.ScreenRowSet || row.ScreenRow <= 0 {
+	anchor, row, ok := currentPrimaryFrameAnchorForViewport(history.Rows, top, copyMode.ViewRows)
+	if !ok {
+		return 0
+	}
+	rowsBeforeAnchor := anchor - top
+	if row.ScreenRow <= rowsBeforeAnchor {
 		return 0
 	}
 	// 中文说明：这是 display projection 的 current-frame 屏幕锚点，truth source
-	// 是 core history window 的 ScreenRow；TUI 不能用 live snapshot 反推该值。
-	if previousCurrentFrameRow(history.Rows, top, row) {
+	// 是 core history window 的 ScreenRow；如果 viewport 已保留部分 frame 前最近
+	// history rows，这里只补剩余空白，不能从 live snapshot 反推。
+	padding := row.ScreenRow - rowsBeforeAnchor
+	if padding >= copyMode.ViewRows {
 		return 0
 	}
-	if row.ScreenRow >= copyMode.ViewRows {
-		return 0
+	return padding
+}
+
+func currentPrimaryFrameAnchorForViewport(rows []state.HistoryRow, top int, viewRows int) (int, state.HistoryRow, bool) {
+	limit := top + viewRows
+	if limit > len(rows) {
+		limit = len(rows)
 	}
-	return row.ScreenRow
+	for index := top; index < limit; index++ {
+		row := rows[index]
+		if !row.FixedGrid || row.Kind != state.HistoryRowKindScreenFrame || row.Segment != state.HistoryCursorSegmentCurrentPrimaryFrame || !row.ScreenRowSet {
+			continue
+		}
+		if previousCurrentFrameRow(rows, index, row) {
+			continue
+		}
+		return index, row, true
+	}
+	return 0, state.HistoryRow{}, false
 }
 
 func previousCurrentFrameRow(rows []state.HistoryRow, top int, row state.HistoryRow) bool {
