@@ -573,6 +573,33 @@ history_artifact_tail_status() {
   return 1
 }
 
+wait_for_history_tail_capture() {
+  local target="$1"
+  local name="$2"
+  local deadline="$3"
+  local found_var="${4:-}"
+  local deadline_ms now path
+  path="$ROOT/$name.txt"
+  deadline_ms=$(( $(now_ms) + deadline * 1000 ))
+  while true; do
+    # 中文说明：copy-latest 的正确性必须以最新 stress 行和 DONE marker 真正
+    # 出现在历史视图为准；不能只看到 copy mode 状态栏就判定 latest window 已落地。
+    capture_pane "$target" "$name"
+    if history_artifact_tail_status "$path" >/dev/null 2>&1; then
+      if [[ -n "$found_var" ]]; then
+        printf -v "$found_var" '%s' "$(now_ms)"
+      fi
+      return 0
+    fi
+    now="$(now_ms)"
+    if [[ "$now" -ge "$deadline_ms" ]]; then
+      break
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
 history_artifact_full_status() {
 	local path="$1"
 	local newest
@@ -1207,12 +1234,11 @@ record_stage "tui_history_dump" "tui" "$TUI_PID"
 COPY_LATEST_START_MS="$(now_ms)"
 tmux send-keys -t "$TARGET" C-v
 COPY_LATEST_VISIBLE_MS=""
-if wait_for_capture "$TARGET" "PgUp] SCROLL" "$WAIT_SECONDS" COPY_LATEST_VISIBLE_MS; then
+if wait_for_history_tail_capture "$TARGET" "copy-latest" "$WAIT_SECONDS" COPY_LATEST_VISIBLE_MS; then
   :
 else
   COPY_LATEST_VISIBLE_MS="$(now_ms)"
 fi
-capture_pane "$TARGET" "copy-latest"
 append_history_trace "copy_latest" "$ROOT/copy-latest.txt"
 COPY_LATEST_STATUS="$(history_artifact_tail_status "$ROOT/copy-latest.txt" || true)"
 append_history_query "copy_latest" "$COPY_LATEST_STATUS" "$COPY_LATEST_START_MS" "$COPY_LATEST_VISIBLE_MS" "$ROOT/copy-latest.txt"
