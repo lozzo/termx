@@ -21,7 +21,8 @@ const (
 // HistoryJournal 是 tap 后 history backlog 的 compact semantic 命令边界。
 // domain owner 是 core-v2 history；truth source 是同一次 vterm semantic pass
 // 产出的 transaction。它只是未应用命令队列，不提供 history.window/copy/search
-// 的 authoritative truth，最终 truth 仍属于 HistoryStore 的 logical-line model。
+// 的 authoritative truth；screen-backed 主线中最终正文 truth 属于
+// ScreenHistoryBuffer physical rows，再由 HistoryStore/HistoryWindow 做 projection。
 type HistoryJournal struct {
 	TerminalID string
 	Seq        uint64

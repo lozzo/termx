@@ -109,10 +109,12 @@ type StorageCompactionPolicy struct {
 	MaxBytes  int64
 }
 
-// HistoryStore 是权威 history truth 的外部契约。它只接收
-// HistoryLogicalRenderer 产出的 mutation batch，不解释 terminal ops。
+// HistoryStore 是权威 history query/copy 的外部契约。mutation-backed legacy store
+// 通过 Apply 接收 renderer batch；screen-backed store 的正文 truth 来自同一
+// terminal 的 ScreenHistoryBuffer，Apply 只能作为兼容边界，不能恢复第二份 truth。
 type HistoryStore interface {
-	// Apply 把 renderer batch 作为唯一写路径应用到 authoritative history truth。
+	// Apply 把 renderer batch 应用到 mutation-backed store；screen-backed store
+	// 可以忽略该 batch，因为写 truth 的入口是 ScreenHistoryBuffer physical rows。
 	Apply(batch HistoryMutationBatch) error
 	// ReadState 返回 classifier 所需的只读 history ownership 边界。调用方只能用它
 	// 判断 semantic transaction 的消费路径，不能从中派生 payload 或 UI rows。

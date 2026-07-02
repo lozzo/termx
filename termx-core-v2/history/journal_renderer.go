@@ -2,13 +2,14 @@ package history
 
 import vterm "github.com/lozzow/termx/termx-vterm/vterm"
 
-// HistoryJournalRenderer 把 compact semantic history journal 转成 store mutation。
+// HistoryJournalRenderer 应用 compact semantic history journal。
 // domain owner 是 history；truth source 是 history semantic consumer 后的 HistoryJournal。
-// R404 后它必须覆盖 ordinary stream、scroll-out proof、primary/alt frame、
-// clear/resize/final frame 等 compact journal 命令；失败条件是回退 raw PTY、
-// live snapshot 或第二套 open-line 状态。
+// mutation-backed legacy renderer 会返回 store mutations；screen-backed renderer
+// 只更新 ScreenHistoryBuffer 并返回空 batch。失败条件是回退 raw PTY、live snapshot
+// 或第二套正文 truth。
 type HistoryJournalRenderer interface {
-	// ApplyJournal 把 compact journal 转成 HistoryMutationBatch。
+	// ApplyJournal 应用 compact journal。返回的 mutation batch 只服务旧 store
+	// 过渡路径；screen-backed 实现不得为了兼容而产出 logical/frame 正文 mutation。
 	ApplyJournal(journal HistoryJournal) (HistoryMutationBatch, error)
 }
 
