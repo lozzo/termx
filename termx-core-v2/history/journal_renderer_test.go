@@ -474,6 +474,45 @@ func TestR384JournalRendererClearTimeScrollOutUsesCurrentFrameOwnership(t *testi
 	}
 }
 
+func TestR424JournalRendererPrimaryRepaintUsesScreenBuffer(t *testing.T) {
+	renderer := newHistoryJournalRendererWithReducers(newHistoryIDAllocator(), nil, nil).(*journalRenderer)
+	journal := HistoryJournalFromDecision("term-r424-screen-buffer", TerminalSemanticTransaction{
+		Seq:                     1,
+		Size:                    TerminalSemanticSize{Cols: 20, Rows: 3},
+		PrimaryFrameTouchedRows: []int{0},
+		PrimaryFrame: &TerminalSemanticFrame{Cols: 20, Rows: [][]TerminalSemanticCell{
+			historyCellsForJournalTest("codex repaint"),
+		}},
+		Ops: []TerminalSemanticOp{{
+			Code:  vterm.ScreenOpWriteSpan,
+			Row:   0,
+			Col:   0,
+			Cells: historyCellsForJournalTest("codex repaint"),
+		}},
+	}, HistoryDecision{
+		Mode:                               HistoryOutputModePrimaryFrameSession,
+		PublishPrimaryFrame:                true,
+		PublishPrimaryFrameTouchedRowsOnly: true,
+	})
+	batch, err := renderer.ApplyJournal(journal)
+	if err != nil {
+		t.Fatalf("apply primary repaint journal: %v labels=%v", err, journalLabels(journal))
+	}
+	if renderer.screen == nil {
+		t.Fatalf("journal renderer must own a ScreenHistoryBuffer after primary repaint")
+	}
+	projection := renderer.screen.ProjectHistory()
+	if len(projection.Rows) != 1 || rowText(projection.Rows[0].Cells) != "codex repaint" {
+		t.Fatalf("primary repaint must first land in screen buffer projection, projection=%#v", projection)
+	}
+	if projection.Rows[0].OwnerKind != RowOwnerPrimaryFrame || projection.Rows[0].RowID == 0 || projection.Rows[0].Version < 2 {
+		t.Fatalf("screen buffer row must carry primary-frame ownership and physical identity, row=%#v", projection.Rows[0])
+	}
+	if got := joinedLineTexts(sealedMutationLines(batch.Mutations)); got != "" {
+		t.Fatalf("primary repaint must not append ordinary sealed logical rows directly, got %q batch=%#v", got, batch)
+	}
+}
+
 func TestR404JournalRendererDecisionClosesPrimaryBeforeOrdinaryPrompt(t *testing.T) {
 	renderer := NewHistoryJournalRenderer()
 	store := NewInMemoryHistoryStore("term-r404-prompt")

@@ -42,17 +42,23 @@ func newHistoryJournalRendererWithReducers(allocator *historyIDAllocator, stream
 }
 
 type journalRenderer struct {
-	ids    *historyIDAllocator
-	stream StreamLineReducer
-	frames FrameReducer
-	inAlt  bool
-	inSync bool
+	ids         *historyIDAllocator
+	stream      StreamLineReducer
+	frames      FrameReducer
+	screen      *ScreenHistoryBuffer
+	currentSeq  uint64
+	currentSize TerminalSemanticSize
+	inAlt       bool
+	inSync      bool
 }
 
 func (renderer *journalRenderer) ApplyJournal(journal HistoryJournal) (HistoryMutationBatch, error) {
 	if renderer == nil {
 		return HistoryMutationBatch{}, nil
 	}
+	renderer.currentSeq = journal.Seq
+	renderer.currentSize = journal.Size
+	renderer.ensureScreenBuffer(journal.Size)
 	var mutations []HistoryMutation
 	for _, item := range journal.Items {
 		next, err := renderer.applyJournalItem(item)
@@ -113,6 +119,7 @@ func (renderer *journalRenderer) applyScrollOutProof(proof HistoryJournalScrollO
 func (renderer *journalRenderer) applyBoundary(boundary HistoryJournalBoundary) ([]HistoryMutation, error) {
 	switch boundary.Kind {
 	case HistoryJournalBoundaryED2:
+		renderer.clearPrimaryScreenBuffer()
 		mutations := renderer.sealOpenLine(SealReasonFullReplace)
 		cleared, err := renderer.clearPrimaryForBoundary(FrameReasonPrimaryRepaint)
 		if err != nil {
@@ -186,14 +193,22 @@ func (renderer *journalRenderer) replacePrimaryCurrent(frame TerminalSemanticFra
 	if renderer.frames == nil {
 		return nil, nil
 	}
-	return renderer.frames.ReplacePrimaryCurrent(frame, reason)
+	screenFrame, err := renderer.applyPrimaryFrameToScreen(frame, nil)
+	if err != nil {
+		return nil, err
+	}
+	return renderer.frames.ReplacePrimaryCurrent(screenFrame, reason)
 }
 
 func (renderer *journalRenderer) replacePrimaryTouchedRows(frame TerminalSemanticFrame, rows []int, reason FrameReason) ([]HistoryMutation, error) {
 	if renderer.frames == nil {
 		return nil, nil
 	}
-	return renderer.frames.ReplacePrimaryTouchedRows(frame, rows, reason)
+	screenFrame, err := renderer.applyPrimaryFrameToScreen(frame, rows)
+	if err != nil {
+		return nil, err
+	}
+	return renderer.frames.ReplacePrimaryTouchedRows(screenFrame, rows, reason)
 }
 
 func (renderer *journalRenderer) replaceAltCurrent(frame TerminalSemanticFrame) ([]HistoryMutation, error) {
@@ -245,6 +260,57 @@ func (renderer *journalRenderer) applyNonHistoryBoundary(reason FrameReason) ([]
 	return renderer.frames.ApplyNonHistoryBoundary(reason)
 }
 
+func (renderer *journalRenderer) ensureScreenBuffer(size TerminalSemanticSize) {
+	if renderer == nil {
+		return
+	}
+	cols := size.Cols
+	rows := size.Rows
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
+	if renderer.screen == nil || renderer.screen.Cols != cols || renderer.screen.Rows != rows {
+		renderer.screen = NewScreenHistoryBuffer(cols, rows)
+	}
+}
+
+func (renderer *journalRenderer) applyPrimaryFrameToScreen(frame TerminalSemanticFrame, touchedRows []int) (TerminalSemanticFrame, error) {
+	renderer.ensureScreenBuffer(renderer.currentSize)
+	if renderer.screen == nil {
+		return frame, nil
+	}
+	if frame.Cols > 0 && frame.Cols != renderer.screen.Cols {
+		renderer.screen = NewScreenHistoryBuffer(frame.Cols, maxInt(1, len(frame.Rows)))
+	}
+	// 中文说明：primary repaint 的正文 truth 先进入 ScreenHistoryBuffer；
+	// FrameReducer 在 R424 只作为旧 HistoryStore 的过渡 projection adapter。
+	if err := renderer.screen.applyPrimaryFrameRows(frame, touchedRows, renderer.currentSeq); err != nil {
+		return TerminalSemanticFrame{}, err
+	}
+	return renderer.primaryFrameFromScreen(), nil
+}
+
+func (renderer *journalRenderer) clearPrimaryScreenBuffer() {
+	renderer.ensureScreenBuffer(renderer.currentSize)
+	if renderer.screen != nil {
+		renderer.screen.clearPrimaryFrameRows(renderer.currentSeq)
+	}
+}
+
+func (renderer *journalRenderer) primaryFrameFromScreen() TerminalSemanticFrame {
+	if renderer == nil || renderer.screen == nil || renderer.screen.Main == nil {
+		return TerminalSemanticFrame{}
+	}
+	rows := make([][]TerminalSemanticCell, len(renderer.screen.Main.Rows))
+	for index, row := range renderer.screen.Main.Rows {
+		rows[index] = terminalCellsFromHistoryCells(row.Cells)
+	}
+	return TerminalSemanticFrame{Cols: renderer.screen.Cols, Rows: rows}
+}
+
 func (renderer *journalRenderer) resetReducersForClearScrollback() {
 	if renderer.stream != nil {
 		renderer.stream.ResetForClearScrollback()
@@ -252,6 +318,7 @@ func (renderer *journalRenderer) resetReducersForClearScrollback() {
 	if renderer.frames != nil {
 		renderer.frames.ResetForClearScrollback()
 	}
+	renderer.screen = nil
 }
 
 func (renderer *journalRenderer) applyOrdinaryLineBatch(batch OrdinaryLineBatch) ([]HistoryMutation, error) {
