@@ -226,15 +226,18 @@ func HistoryJournalFromDecision(terminalID string, tx TerminalSemanticTransactio
 			Size:       tx.Size,
 			Source:     HistoryJournalSourceSemanticTapTransaction,
 		},
-		ordinary:                 newJournalOrdinaryRecorder(tx.Size.Cols, tx.Size.Rows),
-		primaryFrameTouchedRows:  cloneIntSlice(tx.PrimaryFrameTouchedRows),
-		skipSideProofFrameEvents: isResizeFullReplace(tx),
-		decision:                 decision,
-		closePrimaryBeforeStream: decision.ClosePrimaryFrameBeforeStream,
-		consumeStreamOps:         decision.Mode == HistoryOutputModeOrdinaryStream || decision.ConsumeStreamOps,
-		skipClearTimeScrollOut:   !decision.ConsumeClearTimeScrollOutProof,
-		inSync:                   tx.SynchronizedActive || (tx.SynchronizedEnd && !tx.SynchronizedBegin),
+		ordinary:                        newJournalOrdinaryRecorder(tx.Size.Cols, tx.Size.Rows),
+		primaryFrameTouchedRows:         cloneIntSlice(tx.PrimaryFrameTouchedRows),
+		skipSideProofFrameEvents:        isResizeFullReplace(tx),
+		decision:                        decision,
+		closePrimaryBeforeStream:        decision.ClosePrimaryFrameBeforeStream,
+		consumeStreamOps:                decision.Mode == HistoryOutputModeOrdinaryStream || decision.ConsumeStreamOps,
+		skipClearTimeScrollOut:          !decision.ConsumeClearTimeScrollOutProof,
+		inSync:                          tx.SynchronizedActive || (tx.SynchronizedEnd && !tx.SynchronizedBegin),
+		trackPrimaryFrameRows:           decision.PublishPrimaryFrame && decision.PublishPrimaryFrameTouchedRowsOnly,
+		skipPreExistingPrimaryScrollOut: decision.SkipPreExistingPrimaryScrollOut,
 	}
+	builder.seedPreExistingPrimaryScrollOutBudget(tx)
 	if decision.Mode == HistoryOutputModeOrdinaryStream && !decision.ClosePrimaryFrameBeforeStream {
 		builder.closePrimaryBeforeStream = false
 	}
@@ -264,18 +267,24 @@ func HistoryJournalFromDecision(terminalID string, tx TerminalSemanticTransactio
 }
 
 type historyJournalBuilder struct {
-	journal                  HistoryJournal
-	ordinary                 journalOrdinaryRecorder
-	primaryFrameTouchedRows  []int
-	ordinaryTouchedRows      map[int]struct{}
-	ordinarySealedProofs     map[string]struct{}
-	decision                 HistoryDecision
-	inAlt                    bool
-	inSync                   bool
-	skipSideProofFrameEvents bool
-	closePrimaryBeforeStream bool
-	consumeStreamOps         bool
-	skipClearTimeScrollOut   bool
+	journal                           HistoryJournal
+	ordinary                          journalOrdinaryRecorder
+	primaryFrameTouchedRows           []int
+	primaryFrameOwnedRows             map[int]struct{}
+	ordinaryTouchedRows               map[int]struct{}
+	ordinarySealedProofs              map[string]struct{}
+	decision                          HistoryDecision
+	inAlt                             bool
+	inSync                            bool
+	skipSideProofFrameEvents          bool
+	closePrimaryBeforeStream          bool
+	consumeStreamOps                  bool
+	skipClearTimeScrollOut            bool
+	trackPrimaryFrameRows             bool
+	skipPreExistingPrimaryScrollOut   bool
+	preExistingPrimaryScrollOutBudget int
+	preExistingPrimaryScrollOutSeen   bool
+	primaryFrameSideScrollOutCount    int
 }
 
 func (builder *historyJournalBuilder) applyEvent(event HistorySemanticEvent) {
@@ -293,6 +302,9 @@ func (builder *historyJournalBuilder) applyEvent(event HistorySemanticEvent) {
 			return
 		}
 		if builder.shouldLetOrdinaryOpsOwnScrollOut(event) {
+			return
+		}
+		if builder.shouldSkipUnownedPrimaryFrameScrollOut(event) {
 			return
 		}
 		builder.flushOrdinary(event.OrderSource, event.Order)
@@ -386,6 +398,58 @@ func (builder *historyJournalBuilder) shouldLetOrdinaryOpsOwnScrollOut(event His
 	return true
 }
 
+func (builder *historyJournalBuilder) shouldSkipUnownedPrimaryFrameScrollOut(event HistorySemanticEvent) bool {
+	if builder == nil || !builder.trackPrimaryFrameRows || event.ScrollOut == nil || event.ClearScrollOut {
+		return false
+	}
+	if event.OrderSource == HistorySemanticEventOrderFromTransactionSideProof {
+		builder.primaryFrameSideScrollOutCount++
+		builder.advancePrimaryFrameOwnershipForSideScrollOut(event.Size)
+		if builder.skipPreExistingPrimaryScrollOut && builder.preExistingPrimaryScrollOutBudget > 0 {
+			builder.preExistingPrimaryScrollOutBudget--
+			return true
+		}
+		return false
+	}
+	proof := *event.ScrollOut
+	if !proof.RowSet {
+		return false
+	}
+	_, owned := builder.primaryFrameOwnedRows[proof.Row]
+	return !owned
+}
+
+func (builder *historyJournalBuilder) seedPreExistingPrimaryScrollOutBudget(tx TerminalSemanticTransaction) {
+	if builder == nil || !builder.skipPreExistingPrimaryScrollOut {
+		return
+	}
+	for _, row := range tx.PrimaryFrameTouchedRows {
+		builder.notePreExistingPrimaryScrollOutBudget(row)
+	}
+}
+
+func (builder *historyJournalBuilder) notePreExistingPrimaryScrollOutBudget(row int) {
+	if builder == nil || !builder.skipPreExistingPrimaryScrollOut || row < 0 {
+		return
+	}
+	if !builder.preExistingPrimaryScrollOutSeen || row < builder.preExistingPrimaryScrollOutBudget {
+		builder.preExistingPrimaryScrollOutBudget = row
+		builder.preExistingPrimaryScrollOutSeen = true
+	}
+}
+
+func (builder *historyJournalBuilder) advancePrimaryFrameOwnershipForSideScrollOut(size TerminalSemanticSize) {
+	if builder == nil || !builder.trackPrimaryFrameRows {
+		return
+	}
+	builder.scrollPrimaryFrameOwnership(vterm.DamageRect{
+		X:      0,
+		Y:      0,
+		Width:  maxInt(1, size.Cols),
+		Height: maxInt(1, size.Rows),
+	}, -1, size)
+}
+
 func (builder *historyJournalBuilder) ordinaryProofAlreadyOwned(proof TerminalSemanticScrollOut) bool {
 	if len(builder.ordinarySealedProofs) == 0 {
 		return false
@@ -399,6 +463,7 @@ func (builder *historyJournalBuilder) applyOpEvent(event HistorySemanticEvent) {
 		return
 	}
 	if boundary, ok := journalBoundaryFromOp(*event.Op, event.Size); ok {
+		builder.applyPrimaryFrameOwnershipOp(*event.Op, event.Size)
 		builder.flushOrdinary(event.OrderSource, event.Order)
 		builder.appendBoundary(event, boundary)
 		switch boundary.Kind {
@@ -422,6 +487,7 @@ func (builder *historyJournalBuilder) applyOpEvent(event HistorySemanticEvent) {
 		}
 		return
 	}
+	builder.applyPrimaryFrameOwnershipOp(*event.Op, event.Size)
 	if builder.inAlt || builder.inSync || !builder.consumeStreamOps {
 		// 中文说明：alt-screen 与 synchronized primary repaint 的 payload 只能由
 		// 同一 transaction 的 frame proof 表达；ordered write ops 不能退回
@@ -440,6 +506,124 @@ func (builder *historyJournalBuilder) applyOpEvent(event HistorySemanticEvent) {
 		if builder.ordinary.NeedsFlush() {
 			builder.flushOrdinary(event.OrderSource, event.Order)
 		}
+	}
+}
+
+func (builder *historyJournalBuilder) applyPrimaryFrameOwnershipOp(op TerminalSemanticOp, size TerminalSemanticSize) {
+	if builder == nil || !builder.trackPrimaryFrameRows {
+		return
+	}
+	mark := func(row int) {
+		if row < 0 {
+			return
+		}
+		if size.Rows > 0 && row >= size.Rows {
+			return
+		}
+		builder.notePreExistingPrimaryScrollOutBudget(row)
+		if builder.primaryFrameOwnedRows == nil {
+			builder.primaryFrameOwnedRows = make(map[int]struct{})
+		}
+		builder.primaryFrameOwnedRows[row] = struct{}{}
+	}
+	markRange := func(start int, end int) {
+		if end < start {
+			start, end = end, start
+		}
+		if size.Rows > 0 && end > size.Rows {
+			end = size.Rows
+		}
+		for row := start; row < end; row++ {
+			mark(row)
+		}
+	}
+	switch op.Code {
+	case vterm.ScreenOpWriteSpan, vterm.ScreenOpClearToEOL:
+		mark(op.Row)
+	case vterm.ScreenOpClearRect:
+		markRange(op.Rect.Y, op.Rect.Y+op.Rect.Height)
+	case vterm.ScreenOpScrollRect:
+		builder.scrollPrimaryFrameOwnership(op.Rect, op.Dy, size)
+	case vterm.ScreenOpCopyRect:
+		builder.copyPrimaryFrameOwnership(op.Src, op.DstY, size)
+	case vterm.ScreenOpControl:
+		switch op.Control {
+		case "ed":
+			switch op.Mode {
+			case 1:
+				markRange(0, op.Row+1)
+			case 2, 3:
+				builder.primaryFrameOwnedRows = nil
+			default:
+				markRange(op.Row, size.Rows)
+			}
+		case "el", "ech", "dch", "ich":
+			mark(op.Row)
+		case "lf", "ind", "nel":
+			if len(op.ScrollOut) > 0 {
+				builder.primaryFrameSideScrollOutCount += len(op.ScrollOut)
+				builder.scrollPrimaryFrameOwnership(vterm.DamageRect{
+					X:      0,
+					Y:      0,
+					Width:  maxInt(1, size.Cols),
+					Height: maxInt(1, size.Rows),
+				}, -len(op.ScrollOut), size)
+			}
+		case "il", "dl", "su", "sd":
+			markRange(op.Row, op.Bottom)
+		case "ri":
+			mark(op.Row)
+		}
+	}
+}
+
+func (builder *historyJournalBuilder) scrollPrimaryFrameOwnership(rect vterm.DamageRect, dy int, size TerminalSemanticSize) {
+	if builder == nil || len(builder.primaryFrameOwnedRows) == 0 || rect.Width <= 0 || rect.Height <= 0 {
+		return
+	}
+	before := builder.primaryFrameOwnedRows
+	next := make(map[int]struct{}, len(before))
+	for row := range before {
+		if row < rect.Y || row >= rect.Y+rect.Height {
+			next[row] = struct{}{}
+		}
+	}
+	end := rect.Y + rect.Height
+	if size.Rows > 0 && end > size.Rows {
+		end = size.Rows
+	}
+	for row := rect.Y; row < end; row++ {
+		if row < 0 {
+			continue
+		}
+		srcRow := row - dy
+		if srcRow < rect.Y || srcRow >= rect.Y+rect.Height {
+			continue
+		}
+		if _, owned := before[srcRow]; owned {
+			next[row] = struct{}{}
+		}
+	}
+	builder.primaryFrameOwnedRows = next
+}
+
+func (builder *historyJournalBuilder) copyPrimaryFrameOwnership(src vterm.DamageRect, dstY int, size TerminalSemanticSize) {
+	if builder == nil || len(builder.primaryFrameOwnedRows) == 0 || src.Width <= 0 || src.Height <= 0 {
+		return
+	}
+	for offset := 0; offset < src.Height; offset++ {
+		srcRow := src.Y + offset
+		if _, owned := builder.primaryFrameOwnedRows[srcRow]; !owned {
+			continue
+		}
+		dstRow := dstY + offset
+		if dstRow < 0 {
+			continue
+		}
+		if size.Rows > 0 && dstRow >= size.Rows {
+			continue
+		}
+		builder.primaryFrameOwnedRows[dstRow] = struct{}{}
 	}
 }
 
@@ -609,7 +793,7 @@ func (builder *historyJournalBuilder) appendScrollOut(event HistorySemanticEvent
 
 func (builder *historyJournalBuilder) appendFrame(event HistorySemanticEvent, frame HistoryJournalFrameEvent) {
 	if frame.Kind == HistoryJournalFrameReplacePrimary && len(frame.TouchedRows) == 0 {
-		frame.TouchedRows = cloneIntSlice(builder.primaryFrameTouchedRows)
+		frame.TouchedRows = builder.primaryFrameRowsForReplace(event.Size)
 	}
 	frame.TouchedRows = cloneIntSlice(frame.TouchedRows)
 	item := HistoryJournalItem{
@@ -620,6 +804,60 @@ func (builder *historyJournalBuilder) appendFrame(event HistorySemanticEvent, fr
 		Frame:         &frame,
 	}
 	builder.journal.Items = append(builder.journal.Items, item)
+}
+
+func (builder *historyJournalBuilder) primaryFrameRowsForReplace(size TerminalSemanticSize) []int {
+	if builder == nil {
+		return nil
+	}
+	rows := make(map[int]struct{}, len(builder.primaryFrameOwnedRows)+len(builder.primaryFrameTouchedRows))
+	mark := func(row int) {
+		if row < 0 {
+			return
+		}
+		if size.Rows > 0 && row >= size.Rows {
+			return
+		}
+		rows[row] = struct{}{}
+	}
+	for row := range builder.primaryFrameOwnedRows {
+		mark(row)
+	}
+	for _, row := range builder.primaryFrameTouchedRows {
+		mark(row)
+	}
+	if builder.trackPrimaryFrameRows && builder.primaryFrameSideScrollOutCount > 0 && len(builder.primaryFrameTouchedRows) > 0 {
+		minTouched := builder.primaryFrameTouchedRows[0]
+		maxTouched := builder.primaryFrameTouchedRows[0]
+		for _, row := range builder.primaryFrameTouchedRows[1:] {
+			if row < minTouched {
+				minTouched = row
+			}
+			if row > maxTouched {
+				maxTouched = row
+			}
+		}
+		start := minTouched - builder.primaryFrameSideScrollOutCount
+		if start < 0 {
+			start = 0
+		}
+		// 中文说明：vterm 的 transaction side scroll-out 证明没有精确 op order，
+		// 但它证明本次 synchronized repaint 内底部 touched row 被整体上移。final/current
+		// primary frame 必须接管这个上移后的 frame 区间；被顶出的旧 shell proof 仍由
+		// skipPreExistingPrimaryScrollOut 在 scroll-out proof 路径跳过，避免重复 sealed 行。
+		for row := start; row <= maxTouched; row++ {
+			mark(row)
+		}
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]int, 0, len(rows))
+	for row := range rows {
+		out = append(out, row)
+	}
+	sort.Ints(out)
+	return out
 }
 
 func (builder *historyJournalBuilder) appendFrameFromSideProof(frame HistoryJournalFrameEvent) {

@@ -55,8 +55,12 @@ type HistoryDecision struct {
 	// 当前 primary frame ownership 离开 viewport，必须进入 sealed timeline；
 	// 普通 shell 已 sealed 的可见行不能打开这个开关，否则会重复历史。
 	ConsumeClearTimeScrollOutProof bool
-	ConsumeClearBoundary           bool
-	NonHistoryBoundary             bool
+	// SkipPreExistingPrimaryScrollOut 表示一个新的 primary frame session 从已有
+	// sealed shell tail 上启动；本 transaction 开头被 screen app 顶出 viewport
+	// 的旧 shell 行已经有 ordinary logical line，不能再按 primary scroll-out seal。
+	SkipPreExistingPrimaryScrollOut bool
+	ConsumeClearBoundary            bool
+	NonHistoryBoundary              bool
 }
 
 // HistorySemanticClassifier 只能根据 terminal semantic transaction 和

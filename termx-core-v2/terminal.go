@@ -1113,7 +1113,12 @@ func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSeman
 		// PrimaryFrame side proof 会包含屏幕上已经 sealed 的普通 shell tail。
 		// 没有 clear 边界时，只允许本 transaction 触达的 rows 进入 current
 		// frame，不能把旧 shell 屏幕复刻成第二份 screen app history truth。
-		decision.PublishPrimaryFrameTouchedRowsOnly = !hasEraseDisplay && len(tx.PrimaryScrollOut) == 0 && (syncFrameSession || cursorAddressedFrameSession || fullReplaceTouchedRowsOnly)
+		// 中文说明：scroll-out proof 只证明部分内容离开 viewport，不能把
+		// PrimaryFrame side proof 升级成整屏 ownership。没有 ED2 clear 这类明确
+		// 清场边界时，primary repaint 仍只能接管本 transaction 的 touched rows，
+		// 否则已经 seal 的 shell logical line 会被 final/current screen-frame 复制。
+		decision.PublishPrimaryFrameTouchedRowsOnly = !hasEraseDisplay && len(tx.PrimaryFrameTouchedRows) > 0 && (syncFrameSession || cursorAddressedFrameSession || fullReplaceTouchedRowsOnly)
+		decision.SkipPreExistingPrimaryScrollOut = decision.PublishPrimaryFrameTouchedRowsOnly && state.HasTimeline && !state.HasPrimaryCurrent
 		// 中文说明：vterm 已经证明真正滚出 primary viewport 的 payload 必须进入
 		// authoritative history；ED2 clear-time proof 只有在已有 primary current
 		// ownership 时才消费，renderer 不能靠更早的 scroll-out 状态补 seal。
