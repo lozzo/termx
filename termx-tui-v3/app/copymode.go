@@ -40,16 +40,6 @@ type CopyModeHistoryResultMsg struct {
 
 func (CopyModeHistoryResultMsg) isMsg() {}
 
-type CopyModeProjectionResultMsg struct {
-	Result     services.HistoryCopyEntryProjectionResult
-	Err        error
-	PaneID     string
-	ViewID     string
-	TerminalID string
-}
-
-func (CopyModeProjectionResultMsg) isMsg() {}
-
 type CopyModeEnterViewMsg struct {
 	Binding            state.TerminalViewBinding
 	Cols               int
@@ -161,14 +151,6 @@ func rootWithCopyHistorySessionForResult(root state.Root, msg CopyModeHistoryRes
 	return rootWithCopyHistorySessionForView(root, viewID), viewID
 }
 
-func rootWithCopyHistorySessionForProjectionResult(root state.Root, msg CopyModeProjectionResultMsg) (state.Root, string) {
-	viewID := copyProjectionResultViewID(root, msg)
-	if viewID == "" {
-		return root, copyHistoryWorkingViewID(root)
-	}
-	return rootWithCopyHistorySessionForView(root, viewID), viewID
-}
-
 func rootWithCopyHistorySessionForView(root state.Root, viewID string) state.Root {
 	if viewID == "" {
 		return root
@@ -233,31 +215,6 @@ func copyHistoryResultViewID(root state.Root, msg CopyModeHistoryResultMsg) stri
 	return ""
 }
 
-func copyProjectionResultViewID(root state.Root, msg CopyModeProjectionResultMsg) string {
-	requestID := state.RequestID(msg.Result.RequestID)
-	if requestID != 0 {
-		if viewID := copyProjectionPendingViewID(root.CopyMode, requestID); viewID != "" {
-			return viewID
-		}
-		for _, copyMode := range root.CopyModeByView {
-			if pendingViewID := copyProjectionPendingViewID(copyMode, requestID); pendingViewID != "" {
-				return pendingViewID
-			}
-		}
-		return ""
-	}
-	if msg.ViewID != "" {
-		return msg.ViewID
-	}
-	if msg.Result.Window.ViewID != "" {
-		return msg.Result.Window.ViewID
-	}
-	if msg.PaneID != "" {
-		return state.TerminalPaneViewID(msg.PaneID)
-	}
-	return ""
-}
-
 func copyHistoryPendingViewID(history state.HistoryStore, copyMode state.CopyModeStore, requestID state.RequestID) string {
 	if history.Pending == nil || history.Pending.ID != requestID {
 		return ""
@@ -273,19 +230,6 @@ func copyHistoryPendingViewID(history state.HistoryStore, copyMode state.CopyMod
 	}
 	if history.Pending.PaneID != "" {
 		return state.TerminalPaneViewID(history.Pending.PaneID)
-	}
-	return ""
-}
-
-func copyProjectionPendingViewID(copyMode state.CopyModeStore, requestID state.RequestID) string {
-	if copyMode.ProjectionRequestID == 0 || copyMode.ProjectionRequestID != requestID {
-		return ""
-	}
-	if copyMode.ViewID != "" {
-		return copyMode.ViewID
-	}
-	if copyMode.PaneID != "" {
-		return state.TerminalPaneViewID(copyMode.PaneID)
 	}
 	return ""
 }
@@ -316,10 +260,6 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 		case CopyModeHistoryResultMsg:
 			root, viewID := rootWithCopyHistorySessionForResult(root, msg)
 			next, effects := reduceCopyModeHistoryResult(root, msg, deps)
-			return saveCopyHistorySessionForView(next, viewID), effects
-		case CopyModeProjectionResultMsg:
-			root, viewID := rootWithCopyHistorySessionForProjectionResult(root, msg)
-			next, effects := reduceCopyModeProjectionResult(root, msg, deps)
 			return saveCopyHistorySessionForView(next, viewID), effects
 		case CopyModeMoveCursorMsg:
 			root, activeViewID := rootWithActiveCopyHistorySession(root)
@@ -933,8 +873,7 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 		return setCopyModeError(root, "copy mode requires attached terminal and cols"), nil
 	}
 	cols := copyModeLatestRequestCols(binding, visibleCols)
-	projectionRequestID := nextHistoryRequestID(root)
-	requestID := projectionRequestID + 1
+	requestID := nextHistoryRequestID(root)
 	nextHistory, err := root.History.BeginLatest(state.HistoryPendingRequest{
 		ID:         requestID,
 		PaneID:     binding.PaneID,
@@ -951,30 +890,9 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 	}
 	root.History = nextHistory
 	root.CopyMode = root.CopyMode.BindLatest(binding.PaneID, binding.ViewID, binding.TerminalID, requestID, cols, rowsHint)
-	root.CopyMode = root.CopyMode.BindProjectionRequest(projectionRequestID)
 	rows := requestRows(rowsHint, deps.Rows)
 	root = root.Advance()
 	root = saveCopyHistorySessionForView(root, binding.ViewID)
-	projectionEffect := FuncEffect{
-		// copy-entry projection 是进入 copy mode 的快速 authoritative frontier；
-		// 它不 flush 全量 backlog、不创建 frozen token，返回后只能按能力位启用交互。
-		Async:            true,
-		ForceSyncInTests: true,
-		Run: func(ctx context.Context) Msg {
-			result, err := deps.Core.HistoryCopyEntryProjection(ctx, services.HistoryCopyEntryProjectionRequest{
-				RequestID:  services.RequestID(projectionRequestID),
-				PaneID:     binding.PaneID,
-				ViewID:     binding.ViewID,
-				TerminalID: binding.TerminalID,
-				Cols:       cols,
-				Rows:       rows,
-				Limit:      rows,
-			})
-			result.Window.PaneID = binding.PaneID
-			result.Window.ViewID = binding.ViewID
-			return CopyModeProjectionResultMsg{Result: result, Err: err, PaneID: binding.PaneID, ViewID: binding.ViewID, TerminalID: binding.TerminalID}
-		},
-	}
 	latestEffect := FuncEffect{
 		// history.window 真实走 protocol/client 时可能明显慢于一帧；
 		// 这里必须异步请求，不能把 copy mode 入口卡在 runtime 主循环里。
@@ -996,7 +914,7 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: binding.PaneID, ViewID: binding.ViewID, TerminalID: binding.TerminalID}
 		},
 	}
-	return root, []Effect{projectionEffect, latestEffect}
+	return root, []Effect{latestEffect}
 }
 
 func copyModeLatestRequestCols(binding state.TerminalViewBinding, visibleCols int) int {
@@ -1174,62 +1092,6 @@ func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: req.PaneID, ViewID: req.ViewID, TerminalID: req.TerminalID}
 		},
 	}}
-}
-
-func reduceCopyModeProjectionResult(root state.Root, msg CopyModeProjectionResultMsg, deps CopyModeDeps) (state.Root, []Effect) {
-	requestID := state.RequestID(msg.Result.RequestID)
-	if root.CopyMode.ProjectionRequestID == 0 || root.CopyMode.ProjectionRequestID != requestID {
-		return root, nil
-	}
-	if msg.Err != nil {
-		// 中文说明：copy-entry projection 是快速 materialized frontier；失败不能关闭
-		// entering preview，因为 frozen latest 请求仍按 HistoryStore.Pending 独立完成。
-		root.CopyMode.ProjectionRequestID = 0
-		return root.Advance(), nil
-	}
-	if root.CopyMode.PhaseKind() == state.CopyModeFrozenHistory {
-		root.CopyMode.ProjectionRequestID = 0
-		return root.Advance(), nil
-	}
-	window := msg.Result.Window
-	window.PaneID = msg.PaneID
-	window.ViewID = msg.ViewID
-	if window.TerminalID == "" {
-		window.TerminalID = msg.TerminalID
-	}
-	cols := window.Cols
-	if cols <= 0 {
-		cols = root.CopyMode.BoundCols
-	}
-	if msg.Result.NativeCols > 0 {
-		cols = msg.Result.NativeCols
-	}
-	nextHistory, _, err := root.History.ApplyMaterializedProjection(window, cols)
-	if err != nil {
-		root.CopyMode.ProjectionRequestID = 0
-		return setCopyModeError(root, err.Error()), nil
-	}
-	projection := state.CopyModeMaterializedProjectionState{
-		NativeCols:        msg.Result.NativeCols,
-		AppliedHistorySeq: msg.Result.AppliedHistorySeq,
-		TargetHistorySeq:  msg.Result.TargetHistorySeq,
-		CatchupPending:    msg.Result.CatchupPending,
-		Capabilities: state.CopyModeCapabilityBits{
-			Selectable: msg.Result.Capabilities.Selectable,
-			Copyable:   msg.Result.Capabilities.Copyable,
-			Searchable: msg.Result.Capabilities.Searchable,
-			Pageable:   msg.Result.Capabilities.Pageable,
-		},
-	}
-	root.History = nextHistory
-	root.CopyMode = root.CopyMode.AcceptMaterializedProjection(historyWindowForCopyModeAnchor(window, nextHistory), nextHistory.Cols, len(nextHistory.Rows), projection)
-	if root.CopyMode.Query != "" && root.CopyMode.CanSearch() {
-		root.CopyMode = root.CopyMode.RefreshQueryMatches(state.FindCopyMatches(root.History, root.CopyMode.Query))
-	} else if !root.CopyMode.CanSearch() {
-		root.CopyMode = root.CopyMode.SetQuery("", nil)
-	}
-	root = refreshCopyModeLogicalSelectionFocus(root)
-	return root.Advance(), nil
 }
 
 func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, deps CopyModeDeps) (state.Root, []Effect) {
@@ -1700,9 +1562,6 @@ func nextHistoryRequestID(root state.Root) state.RequestID {
 	next := state.RequestID(root.Generation + 1)
 	if root.History.Pending != nil && root.History.Pending.ID >= next {
 		next = root.History.Pending.ID + 1
-	}
-	if root.CopyMode.ProjectionRequestID >= next {
-		next = root.CopyMode.ProjectionRequestID + 1
 	}
 	return next
 }

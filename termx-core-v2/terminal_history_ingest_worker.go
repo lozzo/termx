@@ -347,7 +347,7 @@ func (queue *terminalHistoryIngestQueue) removeWaiterLocked(target uint64, waite
 }
 
 // Status 返回 history backlog 的已应用/目标序号诊断。
-// 调用方只能用它判断追平进度或 materialized projection 能力，不能据此读取或构造
+// 调用方只能用它判断追平进度或 history.window 内部调度，不能据此读取或构造
 // history payload；PendingTransactions 是既有协议字段名，R385 后计数的是 backlog
 // journal。payload truth 仍只在 HistoryStore/window/copy。
 func (queue *terminalHistoryIngestQueue) Status() HistoryBacklogStatus {

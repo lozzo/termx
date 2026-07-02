@@ -662,15 +662,12 @@ copy/search 只消费 authoritative HistoryWindow 或 FrozenHistorySnapshot。`F
 - search 使用 logical text。
 - visual row markers、clipped markers、scrollbar、status 都是 UI 投影，不写回 HistoryStore。
 
-R371 后允许新增 `CopyEntryProjection` / `MaterializedHistoryProjection` 类快速进入合同，但它
-不能复用 `Freeze` 的语义。该合同只读取 core history store 已经应用的 frontier，不 flush 全部
-history backlog；返回时必须显式说明 `applied_history_seq`、`target_history_seq` 或
-`catchup_pending`，并带有当前 projection 的能力位，例如 selectable/searchable/copyable/pageable。
+copy/history 入口只走统一的 `history.window` / `FrozenHistorySnapshot` 合同。如果需要优化入口速度，
+只能在该 API 内部完成 backlog 调度或投影构建，不能再暴露独立的 materialized/copy-entry API。
 
-`FrozenHistorySnapshot` 继续表示 stable authoritative boundary：只有真正建立 frozen token 后，
-older/newer/search/full copy 才能沿现有 token/cursor 合同工作。半追平 projection 不能伪装成 frozen
-token；live native screen 只能作为 entering preview 的显示上下文，不能变成可复制、可搜索、
-可分页的 history truth。
+`FrozenHistorySnapshot` 表示 stable authoritative boundary：只有真正建立 frozen token 后，
+older/newer/search/full copy 才能沿现有 token/cursor 合同工作。live native screen 只能作为
+entering pending 的显示上下文，不能变成可复制、可搜索、可分页的 history truth。
 
 ## 9. 旧词替换
 

@@ -34,7 +34,6 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"AttachWithOptions",
 		"Call",
 		"Close",
-		"CopyEntryProjection",
 		"Create",
 		"Detach",
 		"EnsureResize",

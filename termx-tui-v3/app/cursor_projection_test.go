@@ -57,10 +57,10 @@ func TestHostCursorProjectionLiveCopyPromptFloatingAndOverlayPriority(t *testing
 	}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
-		t.Fatalf("send copy entry: %v", err)
+		t.Fatalf("send copy mode entry: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain copy entry: %v", err)
+		t.Fatalf("drain copy mode entry: %v", err)
 	}
 	copyFrame := lastFrame(t, host.Frames())
 	if !copyFrame.Cursor.Visible || copyFrame.Cursor.Anchor || copyFrame.Cursor.Shape != render.CursorShapeBlock || copyFrame.CursorRect == liveRect {

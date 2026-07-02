@@ -72,8 +72,8 @@ type TerminalRecord struct {
 // HistoryBacklogStatus 描述 terminal history consumer 当前追平边界。
 // domain owner 是 core-v2 Terminal ingest；AppliedSeq 表示已由 history worker
 // 交给 authoritative store 处理完成的 backlog 序号，TargetSeq 表示已经进入
-// SemanticTap 后 history backlog 的最高序号。它只服务诊断和后续 materialized
-// projection 能力判断，不能当作 history payload truth。
+// SemanticTap 后 history backlog 的最高序号。它只服务诊断和 history.window
+// 内部调度判断，不能当作 history payload truth。
 type HistoryBacklogStatus struct {
 	TerminalID          string
 	HistoryEnabled      bool

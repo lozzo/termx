@@ -128,10 +128,6 @@ type HistoryStore interface {
 	OldestWindow(req HistoryWindowRequest) (HistoryWindow, error)
 	// NewerWindow 使用 cursor truth 向最新方向分页。
 	NewerWindow(req HistoryWindowRequest) (HistoryWindow, error)
-	// CopyEntryProjection 返回 copy/history 进入时已应用 frontier 的 materialized
-	// projection。它不创建 frozen token、不 flush backlog，调用方必须把返回的
-	// catchup/capability 元数据继续传给 UI，而不能把该投影伪装成完整 frozen history。
-	CopyEntryProjection(req CopyEntryProjectionRequest) (CopyEntryProjection, error)
 	// Freeze 创建 tokenized copy/history boundary，后续 repaint 不能改写它。
 	Freeze(req FreezeHistoryRequest) (FrozenHistorySnapshot, error)
 	// Copy 从 authoritative history payload 返回选中文本。

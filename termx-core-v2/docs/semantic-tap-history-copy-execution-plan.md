@@ -61,11 +61,13 @@ history consumer：
 - 不直接读 live snapshot、native screen rows、TUI rows、renderer rows 或 process raw PTY。
 - backlog 可以落盘或批量追平，但必须保存 semantic transaction 或等价 durable event。
 
-## 5. Copy entry projection 三态
+## 5. Copy/history 入口状态
 
 - preview：进入 copy/history 的即时显示上下文，只能展示和吞输入；不能 search/copy/page authoritative cursor。
-- materialized：core 已物化到某个 applied frontier 的 projection；按 capability bits 决定可否 selection/copy/search/page，必须暴露 applied/target seq 和 catchup_pending。
 - frozen：`FrozenHistorySnapshot` token，表示稳定权威边界；不得改造成半追平 token。
+
+R376/R377 曾尝试增加独立 materialized/copy-entry projection 合同；该方案已废弃。copy/history 入口
+只能请求统一的 `history.window`，任何快速返回或 backlog 调度都必须封装在该 API 内部。
 
 ## 6. R372-R377 验收
 
@@ -89,7 +91,7 @@ R374 history semantic transaction backlog 与追平边界：
 
 - backlog 从 raw PTY spool 切为 semantic transaction 或等价 durable event。
 - 暴露 applied/target seq。
-- public authoritative history/window/freeze 仍可 flush；copy enter 快速路径不被 full backlog 反压。
+- public authoritative history/window/freeze 仍可 flush；copy/history 入口优化必须封装在 `history.window` 内部。
 
 R375 ordinary LogicalLineSink fast lane：
 
@@ -97,16 +99,15 @@ R375 ordinary LogicalLineSink fast lane：
 - screen-app、alt、ED2/ED3、full-replace、touched rows 保持正确 classifier/frame reducer 边界。
 - 禁止用 raw parser fallback 补普通输出。
 
-R376 copy entry projection 合同：
+R376 copy/history 统一入口合同：
 
-- 新增 materialized projection 合同，返回 native cols、generation、cursor/boundary、applied/target seq、catchup_pending 和 capability bits。
+- 不新增独立 copy-entry/materialized projection API。
 - 不复用 `Freeze` 表达半追平 token。
 - 不把 live native screen 提升为可复制/search/page history truth。
 
-R377 TUI copy preview/materialized/frozen 三态：
+R377 TUI copy preview/frozen 两态：
 
 - preview 只展示和处理输入上下文。
-- materialized 按 capability bits 允许有限选择/复制/搜索/分页。
 - frozen token 继续服务 older/newer/search/full copy。
 
 ## 7. 禁止方案

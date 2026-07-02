@@ -18,12 +18,9 @@ import (
 
 type fakeProtocolHistoryClient struct {
 	requests        []protocol.HistoryWindowParams
-	copyEntryParams []protocol.CopyEntryProjectionParams
 	copyRequests    []protocol.HistoryWindowParams
 	releaseRequests []protocol.HistoryWindowParams
 	window          *protocol.HistoryWindow
-	copyEntry       *protocol.CopyEntryProjection
-	copyEntryErr    error
 	windowErr       error
 	copyText        string
 	copyErr         error
@@ -35,14 +32,6 @@ func (client *fakeProtocolHistoryClient) HistoryWindow(_ context.Context, params
 		return nil, client.windowErr
 	}
 	return client.window, nil
-}
-
-func (client *fakeProtocolHistoryClient) CopyEntryProjection(_ context.Context, params protocol.CopyEntryProjectionParams) (*protocol.CopyEntryProjection, error) {
-	client.copyEntryParams = append(client.copyEntryParams, params)
-	if client.copyEntryErr != nil {
-		return nil, client.copyEntryErr
-	}
-	return client.copyEntry, nil
 }
 
 func (client *fakeProtocolHistoryClient) HistoryCopy(_ context.Context, params protocol.HistoryWindowParams) (string, error) {
@@ -549,62 +538,6 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	copyParams := client.copyRequests[0]
 	if copyParams.Token != "tok-1" || copyParams.Generation != 7 || copyParams.BoundaryFirstLineID != 42 || copyParams.BoundaryLastLineID != 43 || !copyParams.RangeValid || copyParams.RangeStartLineID != 42 || copyParams.RangeStartCol != 1 || copyParams.RangeEndLineID != 43 || copyParams.RangeEndCol != 3 {
 		t.Fatalf("unexpected copy params %#v", copyParams)
-	}
-}
-
-func TestR376ProtocolCoreClientAdapterMapsCopyEntryProjection(t *testing.T) {
-	client := &fakeProtocolHistoryClient{
-		copyEntry: &protocol.CopyEntryProjection{
-			TerminalID: "term-1",
-			NativeCols: 120,
-			Generation: 9,
-			Window: protocol.HistoryWindow{
-				TerminalID:   "term-1",
-				Op:           protocol.HistoryWindowReplace,
-				Size:         protocol.Size{Cols: 80, Rows: 20},
-				Rows:         []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "m"}, {Content: "p"}})},
-				Lines:        []protocol.HistoryLineSpan{{LogicalLineID: 42, StartRow: 0, EndRow: 0}},
-				RowLineIDs:   []uint64{42},
-				RowInLine:    []int{0},
-				Generation:   9,
-				FirstLineID:  42,
-				LastLineID:   42,
-				CursorValid:  true,
-				CursorLineID: 42,
-			},
-			AppliedHistorySeq: 7,
-			TargetHistorySeq:  8,
-			CatchupPending:    true,
-			Capabilities: protocol.CopyEntryCapabilityBits{
-				Selectable: true,
-				Copyable:   false,
-				Searchable: false,
-				Pageable:   false,
-			},
-		},
-	}
-	adapter := ProtocolCoreClientAdapter{Client: client}
-	result, err := adapter.HistoryCopyEntryProjection(context.Background(), HistoryCopyEntryProjectionRequest{
-		RequestID:  9,
-		TerminalID: "term-1",
-		Cols:       80,
-		Rows:       20,
-		Limit:      20,
-	})
-	if err != nil {
-		t.Fatalf("copy entry projection: %v", err)
-	}
-	if len(client.copyEntryParams) != 1 || client.copyEntryParams[0].TerminalID != "term-1" || client.copyEntryParams[0].Rows != 20 {
-		t.Fatalf("unexpected copy entry params %#v", client.copyEntryParams)
-	}
-	if result.RequestID != 9 || result.NativeCols != 120 || result.AppliedHistorySeq != 7 || result.TargetHistorySeq != 8 || !result.CatchupPending {
-		t.Fatalf("lost copy entry metadata: %#v", result)
-	}
-	if result.Window.Token != "" || result.Window.Rows[0].Text != "mp" || result.Window.Boundary.LastLineID != 42 {
-		t.Fatalf("unexpected materialized window: %#v", result.Window)
-	}
-	if !result.Capabilities.Selectable || result.Capabilities.Copyable || result.Capabilities.Searchable || result.Capabilities.Pageable {
-		t.Fatalf("lost copy entry capability bits: %#v", result.Capabilities)
 	}
 }
 

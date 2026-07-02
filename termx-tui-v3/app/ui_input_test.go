@@ -2431,7 +2431,7 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 		Target: state.PaneCommandTarget{PaneID: "pane-2"},
 		Source: state.PaneCommandSourceTest,
 	}}); err != nil {
-		t.Fatalf("restore split pane focus before copy entry: %v", err)
+		t.Fatalf("restore split pane focus before copy mode entry: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain split pane focus: %v", err)
@@ -2443,10 +2443,10 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	runtime.state.Shell, _ = runtime.state.Shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandDeactivate, Source: state.PaneCommandSourceTest})
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
-		t.Fatalf("send copy entry: %v", err)
+		t.Fatalf("send copy mode entry: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain copy entry: %v", err)
+		t.Fatalf("drain copy mode entry: %v", err)
 	}
 	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols <= 0 || core.LatestRequests[0].PaneID != "pane-2" {
 		t.Fatalf("copy mode should bind to hidden split content cols, got %#v", core.LatestRequests)

@@ -384,24 +384,6 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 		}
 		encodeHistoryWindowParamsUnknownFields(msg, value)
 		return proto.Marshal(msg)
-	case "history.copy_entry":
-		value, ok := params.(CopyEntryProjectionParams)
-		if !ok {
-			if ptr, ptrOK := params.(*CopyEntryProjectionParams); ptrOK && ptr != nil {
-				value = *ptr
-				ok = true
-			}
-		}
-		if !ok {
-			return nil, methodParamsTypeError(method, "protocol.CopyEntryProjectionParams", params)
-		}
-		msg := &wirepb.HistoryWindowParams{
-			TerminalId: value.TerminalID,
-			Limit:      int32(value.Limit),
-			Cols:       int32(value.Cols),
-		}
-		setInt32ProtoFieldOrUnknown(msg, copyEntryRowsFieldNumber, int32(value.Rows))
-		return proto.Marshal(msg)
 	case "remote.pair.start":
 		value, ok := params.(RemotePairStartParams)
 		if !ok {
@@ -585,17 +567,6 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 		}
 		decodeHistoryWindowParamsUnknownFields(&msg, &params)
 		return params, nil
-	case "history.copy_entry":
-		var msg wirepb.HistoryWindowParams
-		if err := proto.Unmarshal(payload, &msg); err != nil {
-			return nil, err
-		}
-		return CopyEntryProjectionParams{
-			TerminalID: msg.GetTerminalId(),
-			Limit:      int(msg.GetLimit()),
-			Cols:       int(msg.GetCols()),
-			Rows:       int(int32ProtoFieldOrUnknown(&msg, copyEntryRowsFieldNumber)),
-		}, nil
 	case "remote.pair.start":
 		var msg wirepb.RemotePairStartParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
@@ -1838,7 +1809,6 @@ const (
 	historyWindowAfterCursorSegmentFieldNumber      protowire.Number = 22
 	historyWindowBeforeRowIndexFieldNumber          protowire.Number = 23
 	historyWindowAfterRowIndexFieldNumber           protowire.Number = 24
-	copyEntryRowsFieldNumber                        protowire.Number = 25
 	historyWindowResponseCursorSegmentFieldNumber   protowire.Number = 31
 	historyWindowResponseRowSegmentsFieldNumber     protowire.Number = 32
 	historyWindowResponseCursorRowIndexFieldNumber  protowire.Number = 33
@@ -1853,15 +1823,6 @@ const (
 	historyWindowResponseRowIndexesFieldNumber      protowire.Number = 42
 	historyWindowResponseRowScreenRowsFieldNumber   protowire.Number = 43
 	historyWindowResponseRowScreenRowSetFieldNumber protowire.Number = 44
-	copyEntryNativeColsFieldNumber                  protowire.Number = 51
-	copyEntryAppliedHistorySeqFieldNumber           protowire.Number = 52
-	copyEntryTargetHistorySeqFieldNumber            protowire.Number = 53
-	copyEntryCatchupPendingFieldNumber              protowire.Number = 54
-	copyEntrySelectableFieldNumber                  protowire.Number = 55
-	copyEntryCopyableFieldNumber                    protowire.Number = 56
-	copyEntrySearchableFieldNumber                  protowire.Number = 57
-	copyEntryPageableFieldNumber                    protowire.Number = 58
-	copyEntryTimestampFieldNumber                   protowire.Number = 59
 )
 
 func encodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, params HistoryWindowParams) {

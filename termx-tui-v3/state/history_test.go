@@ -676,52 +676,6 @@ func TestCopyModeAcceptLatestStartsAtNewestTail(t *testing.T) {
 	}
 }
 
-func TestR377CopyModeAcceptsMaterializedProjectionWithoutFrozenToken(t *testing.T) {
-	rows := []HistoryRow{
-		{Text: "applied one", LineID: 10},
-		{Text: "applied two", LineID: 11},
-	}
-	window := historyWindow(HistoryWindowReplace, "term-1", "", 80, 7, rows)
-	copyMode := CopyModeStore{}.
-		BindLatest("pane-1", "pane:pane-1", "term-1", 2, 80, 3).
-		BindProjectionRequest(1)
-
-	copyMode = copyMode.AcceptMaterializedProjection(window, window.Cols, len(rows), CopyModeMaterializedProjectionState{
-		NativeCols:        100,
-		AppliedHistorySeq: 4,
-		TargetHistorySeq:  9,
-		CatchupPending:    true,
-		Capabilities:      CopyModeCapabilityBits{Selectable: true},
-	})
-
-	if copyMode.PhaseKind() != CopyModeMaterializedProjection || !copyMode.Active || copyMode.Entering {
-		t.Fatalf("expected materialized active copy mode, got %#v", copyMode)
-	}
-	if copyMode.BoundToken != "" || copyMode.Materialized.NativeCols != 100 || !copyMode.Materialized.CatchupPending {
-		t.Fatalf("materialized projection must not bind frozen token and must keep metadata, got %#v", copyMode)
-	}
-	if !copyMode.CanSelect() || copyMode.CanCopy() || copyMode.CanSearch() || copyMode.CanPageHistory() {
-		t.Fatalf("capability bits should gate materialized interactions, got %#v", copyMode)
-	}
-}
-
-func TestR377FrozenLatestReplacesMaterializedProjection(t *testing.T) {
-	materialized := historyWindow(HistoryWindowReplace, "term-1", "", 80, 7, []HistoryRow{{Text: "frontier", LineID: 10}})
-	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 8, []HistoryRow{{Text: "frozen", LineID: 20}})
-	copyMode := CopyModeStore{ViewRows: 3}.AcceptMaterializedProjection(materialized, materialized.Cols, len(materialized.Rows), CopyModeMaterializedProjectionState{
-		Capabilities: CopyModeCapabilityBits{Selectable: true},
-	})
-
-	copyMode = copyMode.AcceptLatest(latest, latest.Cols, len(latest.Rows))
-
-	if copyMode.PhaseKind() != CopyModeFrozenHistory || copyMode.BoundToken != "tok-1" || copyMode.Materialized.Valid {
-		t.Fatalf("frozen latest must replace materialized projection, got %#v", copyMode)
-	}
-	if !copyMode.CanSelect() || !copyMode.CanCopy() || !copyMode.CanSearch() || !copyMode.CanPageHistory() {
-		t.Fatalf("frozen copy mode should keep existing authoritative capabilities, got %#v", copyMode)
-	}
-}
-
 func TestR411CopyModeAcceptLatestAppliesPendingScrollAsViewportMove(t *testing.T) {
 	rows := make([]HistoryRow, 0, 30)
 	for i := 0; i < 30; i++ {
@@ -798,28 +752,6 @@ func TestR413CopyModeAcceptLatestUsesAuthoritativeTailWithoutLiveSurface(t *test
 
 	if copyMode.ViewportTop != 5 || copyMode.Cursor != (CopyPosition{Row: 9}) {
 		t.Fatalf("latest should use authoritative newest tail only, got %#v", copyMode)
-	}
-}
-
-func TestR413CopyModeAcceptMaterializedProjectionUsesAuthoritativeTailWithoutLiveSurface(t *testing.T) {
-	rows := []HistoryRow{
-		{Text: "shell before frame 1", LineID: 1},
-		{Text: "shell before frame 2", LineID: 2},
-		{Text: "shell before frame 3", LineID: 3},
-		{Text: "screen frame 1", LineID: 4, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "screen frame 2", LineID: 5, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "screen frame 3", LineID: 6, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "screen frame 4", LineID: 7, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-		{Text: "screen frame 5", LineID: 8, Kind: HistoryRowKindScreenFrame, LiveTail: true},
-	}
-	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
-	projection := CopyModeMaterializedProjectionState{
-		Capabilities: CopyModeCapabilityBits{Searchable: true},
-	}
-	copyMode := CopyModeStore{ViewRows: 4}.AcceptMaterializedProjection(latest, latest.Cols, len(rows), projection)
-
-	if copyMode.ViewportTop != 4 || copyMode.Cursor != (CopyPosition{Row: 7}) {
-		t.Fatalf("materialized projection should use authoritative newest tail only, got %#v", copyMode)
 	}
 }
 

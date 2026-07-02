@@ -68,7 +68,7 @@ journal，而不是完整 `TerminalSemanticTransaction` 的所有 per-op payload
   反推 authoritative history。
 - 不让 history semantic consumer 回写 OSC/DA/DSR response；response owner 只能是 live path。
 - 不把 physical row store 提升为最终 history truth；history truth 仍是 core-v2 logical line。
-- 不改变 `history.window`、`history.copy`、`history.copy_entry` 对外 authoritative 合同。
+- 不改变 `history.window`、`history.copy` 对外 authoritative 合同。
 - 不要求第一步删除现有 full semantic transaction path；切片期间可以保留旧路径作为未切换实现，
   但不能作为新 fast path 的 fallback。
 
@@ -412,7 +412,7 @@ flush 语义保持：
 - 不等待客户端 render。
 - 不把未来输出纳入当前 flush。
 
-copy entry projection 仍可读取已 applied frontier，并暴露 catchup pending。
+copy/history 的快速入口优化必须封装在 `history.window` 内部，不能暴露第二套 copy-entry projection API。
 
 ## 12. Storage 与 projection
 
@@ -421,7 +421,6 @@ copy entry projection 仍可读取已 applied frontier，并暴露 catchup pendi
 - latest/older/oldest/newer window。
 - freeze/release。
 - copy/search。
-- copy-entry materialized projection。
 
 内部可以新增 journal apply 专用 mutation：
 
@@ -463,7 +462,7 @@ copy entry projection 仍可读取已 applied frontier，并暴露 catchup pendi
 - `generate_terminal_stress.py --lines 100000`：live DONE 应接近 Python process 完成时间。
 - `scripts/termx_tui_stress_memory.sh --lines 100000`：latest/copy/oldest 正确，RSS 稳定。
 - 1M 行 stress：daemon RSS 不随 backlog 线性驻留，history file size 符合 payload 规模。
-- copy entry 在 catchup pending 下即时进入 preview/materialized，frozen authoritative 后替换。
+- copy/history 入口只走 `history.window`；catchup 等待或快速返回策略必须封装在该 API 内部。
 
 ## 14. 风险与防线
 

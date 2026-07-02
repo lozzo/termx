@@ -14,7 +14,6 @@ import (
 
 type ProtocolHistoryClient interface {
 	HistoryWindow(context.Context, protocol.HistoryWindowParams) (*protocol.HistoryWindow, error)
-	CopyEntryProjection(context.Context, protocol.CopyEntryProjectionParams) (*protocol.CopyEntryProjection, error)
 	HistoryCopy(context.Context, protocol.HistoryWindowParams) (string, error)
 	ReleaseHistory(context.Context, protocol.HistoryWindowParams) error
 }
@@ -41,32 +40,6 @@ func (adapter ProtocolCoreClientAdapter) HistoryLatest(ctx context.Context, req 
 		return HistoryResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
 	}
 	return HistoryResult{RequestID: req.RequestID, Window: window}, nil
-}
-
-func (adapter ProtocolCoreClientAdapter) HistoryCopyEntryProjection(ctx context.Context, req HistoryCopyEntryProjectionRequest) (HistoryCopyEntryProjectionResult, error) {
-	projection, err := adapter.Client.CopyEntryProjection(ctx, protocol.CopyEntryProjectionParams{
-		TerminalID: req.TerminalID,
-		Limit:      req.Limit,
-		Cols:       req.Cols,
-		Rows:       req.Rows,
-	})
-	if err != nil {
-		return HistoryCopyEntryProjectionResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
-	}
-	return HistoryCopyEntryProjectionResult{
-		RequestID:         req.RequestID,
-		Window:            historyWindowFromProtocol(&projection.Window, req.Cols),
-		NativeCols:        projection.NativeCols,
-		AppliedHistorySeq: projection.AppliedHistorySeq,
-		TargetHistorySeq:  projection.TargetHistorySeq,
-		CatchupPending:    projection.CatchupPending,
-		Capabilities: HistoryCopyEntryCapabilities{
-			Selectable: projection.Capabilities.Selectable,
-			Copyable:   projection.Capabilities.Copyable,
-			Searchable: projection.Capabilities.Searchable,
-			Pageable:   projection.Capabilities.Pageable,
-		},
-	}, nil
 }
 
 func (adapter ProtocolCoreClientAdapter) HistoryOlder(ctx context.Context, req HistoryOlderRequest) (HistoryResult, error) {

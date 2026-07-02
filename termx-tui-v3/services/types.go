@@ -33,16 +33,6 @@ type HistoryLatestRequest struct {
 	GenerationBoundary uint64
 }
 
-type HistoryCopyEntryProjectionRequest struct {
-	RequestID  RequestID
-	PaneID     string
-	ViewID     string
-	TerminalID string
-	Cols       int
-	Rows       int
-	Limit      int
-}
-
 type HistoryOlderRequest struct {
 	RequestID  RequestID
 	PaneID     string
@@ -101,30 +91,12 @@ type HistoryResult struct {
 	Window    state.HistoryWindow
 }
 
-type HistoryCopyEntryCapabilities struct {
-	Selectable bool
-	Copyable   bool
-	Searchable bool
-	Pageable   bool
-}
-
-type HistoryCopyEntryProjectionResult struct {
-	RequestID         RequestID
-	Window            state.HistoryWindow
-	NativeCols        int
-	AppliedHistorySeq uint64
-	TargetHistorySeq  uint64
-	CatchupPending    bool
-	Capabilities      HistoryCopyEntryCapabilities
-}
-
 type HistoryCopyRangeResult struct {
 	Text string
 }
 
 type CoreClient interface {
 	HistoryLatest(context.Context, HistoryLatestRequest) (HistoryResult, error)
-	HistoryCopyEntryProjection(context.Context, HistoryCopyEntryProjectionRequest) (HistoryCopyEntryProjectionResult, error)
 	HistoryOlder(context.Context, HistoryOlderRequest) (HistoryResult, error)
 	HistoryNewer(context.Context, HistoryNewerRequest) (HistoryResult, error)
 	HistoryOldest(context.Context, HistoryOldestRequest) (HistoryResult, error)
@@ -516,20 +488,18 @@ var (
 )
 
 type FakeCoreClient struct {
-	LatestResponses    []HistoryResult
-	CopyEntryResponses []HistoryCopyEntryProjectionResult
-	OlderResponses     []HistoryResult
-	NewerResponses     []HistoryResult
-	OldestResponses    []HistoryResult
-	CopyResponses      []HistoryCopyRangeResult
-	LatestRequests     []HistoryLatestRequest
-	CopyEntryRequests  []HistoryCopyEntryProjectionRequest
-	OlderRequests      []HistoryOlderRequest
-	NewerRequests      []HistoryNewerRequest
-	OldestRequests     []HistoryOldestRequest
-	CopyRequests       []HistoryCopyRangeRequest
-	ReleaseRequests    []HistoryReleaseRequest
-	ReleaseErr         error
+	LatestResponses []HistoryResult
+	OlderResponses  []HistoryResult
+	NewerResponses  []HistoryResult
+	OldestResponses []HistoryResult
+	CopyResponses   []HistoryCopyRangeResult
+	LatestRequests  []HistoryLatestRequest
+	OlderRequests   []HistoryOlderRequest
+	NewerRequests   []HistoryNewerRequest
+	OldestRequests  []HistoryOldestRequest
+	CopyRequests    []HistoryCopyRangeRequest
+	ReleaseRequests []HistoryReleaseRequest
+	ReleaseErr      error
 }
 
 func (client *FakeCoreClient) HistoryLatest(_ context.Context, req HistoryLatestRequest) (HistoryResult, error) {
@@ -539,17 +509,6 @@ func (client *FakeCoreClient) HistoryLatest(_ context.Context, req HistoryLatest
 	}
 	result := client.LatestResponses[0]
 	client.LatestResponses = client.LatestResponses[1:]
-	result.RequestID = req.RequestID
-	return result, nil
-}
-
-func (client *FakeCoreClient) HistoryCopyEntryProjection(_ context.Context, req HistoryCopyEntryProjectionRequest) (HistoryCopyEntryProjectionResult, error) {
-	client.CopyEntryRequests = append(client.CopyEntryRequests, req)
-	if len(client.CopyEntryResponses) == 0 {
-		return HistoryCopyEntryProjectionResult{}, ErrMissingHistoryResponse
-	}
-	result := client.CopyEntryResponses[0]
-	client.CopyEntryResponses = client.CopyEntryResponses[1:]
 	result.RequestID = req.RequestID
 	return result, nil
 }

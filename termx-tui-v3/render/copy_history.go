@@ -466,12 +466,6 @@ func copyHistoryStatus(history state.HistoryStore, copyMode state.CopyModeStore)
 	if span.LineID != 0 {
 		status += fmt.Sprintf(" span:%d-%d", span.StartRow+1, span.EndRow+1)
 	}
-	if copyMode.PhaseKind() == state.CopyModeMaterializedProjection {
-		status += " projection:materialized"
-		if copyMode.Materialized.CatchupPending {
-			status += " catchup:pending"
-		}
-	}
 	if copyMode.Query != "" {
 		status += fmt.Sprintf(" search:%q %d/%d", copyMode.Query, activeCopyMatchOrdinal(copyMode), len(copyMode.Matches))
 	} else {

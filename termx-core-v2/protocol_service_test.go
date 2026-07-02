@@ -247,67 +247,6 @@ func TestProtocolServiceHistoryWindowReturnsAuthoritativeRowsAfterR324(t *testin
 	}
 }
 
-func TestR376ProtocolServiceCopyEntryProjectionReturnsMaterializedFrontier(t *testing.T) {
-	server, client, closeClient := newProtocolClient(t)
-	defer closeClient()
-	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-copy-entry", Command: []string{"shell"}, Size: protocol.Size{Cols: 32, Rows: 4}}); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), "term-copy-entry", "applied\r\n"); err != nil {
-		t.Fatalf("ingest output: %v", err)
-	}
-	if _, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-copy-entry", Cols: 32, Limit: 10}); err != nil {
-		t.Fatalf("prime history window: %v", err)
-	}
-	terminal, err := server.Terminal("term-copy-entry")
-	if err != nil {
-		t.Fatalf("terminal: %v", err)
-	}
-	queue := newTerminalHistoryIngestQueue(1)
-	if !queue.Enqueue(r385HistoryQueueJournal(1, "pending")) {
-		t.Fatal("expected pending history journal")
-	}
-	defer queue.Close()
-	terminal.queueMu.Lock()
-	terminal.historyQ = queue
-	terminal.queueMu.Unlock()
-
-	done := make(chan *protocol.CopyEntryProjection, 1)
-	errCh := make(chan error, 1)
-	go func() {
-		projection, err := client.CopyEntryProjection(context.Background(), protocol.CopyEntryProjectionParams{
-			TerminalID: "term-copy-entry",
-			Cols:       32,
-			Rows:       10,
-			Limit:      10,
-		})
-		if err != nil {
-			errCh <- err
-			return
-		}
-		done <- projection
-	}()
-	select {
-	case err := <-errCh:
-		t.Fatalf("copy entry projection: %v", err)
-	case projection := <-done:
-		if got := strings.Join(protocolRowTexts(projection.Window.Rows), "|"); got != "applied" {
-			t.Fatalf("copy entry should expose applied frontier only, got %q projection=%#v", got, projection)
-		}
-		if projection.Window.Token != "" {
-			t.Fatalf("copy entry projection must not create frozen token, got %#v", projection.Window.Token)
-		}
-		if !projection.CatchupPending || projection.AppliedHistorySeq != 1 || projection.TargetHistorySeq != 2 {
-			t.Fatalf("copy entry must expose backlog seq, got %#v", projection)
-		}
-		if !projection.Capabilities.Selectable || projection.Capabilities.Copyable || projection.Capabilities.Searchable || projection.Capabilities.Pageable {
-			t.Fatalf("catchup projection capability bits mismatch: %#v", projection.Capabilities)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("history.copy_entry must not wait for full backlog flush")
-	}
-}
-
 func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

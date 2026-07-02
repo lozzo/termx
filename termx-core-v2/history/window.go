@@ -148,46 +148,6 @@ type HistoryWindow struct {
 	Timestamp    time.Time
 }
 
-// CopyEntryCapabilityBits 描述 materialized copy-entry projection 当前允许的操作。
-// domain owner：core-v2 history；这些能力只来源于已应用 history frontier 和
-// backlog 追平状态，不能由 live native screen 或 TUI 本地 rows 推断。
-type CopyEntryCapabilityBits struct {
-	Selectable bool
-	Copyable   bool
-	Searchable bool
-	Pageable   bool
-}
-
-// CopyEntryProjectionRequest 请求进入 copy/history 时的 materialized projection。
-// 它读取 HistoryStore 已经应用的 frontier，不创建 frozen token，也不要求调用方
-// 先 flush 全量 history backlog；NativeCols 只记录当前 terminal native width。
-type CopyEntryProjectionRequest struct {
-	TerminalID        string
-	Cols              int
-	Rows              int
-	Limit             int
-	NativeCols        int
-	AppliedHistorySeq uint64
-	TargetHistorySeq  uint64
-	CatchupPending    bool
-}
-
-// CopyEntryProjection 是 R376 copy entry 的半追平投影合同。Window 来自 core
-// authoritative history store 已应用部分；它不是 FrozenHistorySnapshot，不带
-// frozen token，catchup pending 时不得伪装成完整可分页/可搜索历史。
-type CopyEntryProjection struct {
-	TerminalID        string
-	NativeCols        int
-	Generation        Generation
-	Window            HistoryWindow
-	Boundary          HistoryBoundary
-	AppliedHistorySeq uint64
-	TargetHistorySeq  uint64
-	CatchupPending    bool
-	Capabilities      CopyEntryCapabilityBits
-	Timestamp         time.Time
-}
-
 // FrozenHistorySnapshot 记录 copy mode 启动时可见的 logical boundaries。它是
 // tokenized boundary，不是整份历史的完整副本。
 type FrozenHistorySnapshot struct {

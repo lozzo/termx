@@ -550,16 +550,6 @@ type HistoryWindowParams struct {
 	RangeEndCol         int
 }
 
-// CopyEntryProjectionParams 是 copy/history 快速进入的请求参数。
-// 它请求 core 返回已应用 history frontier 的 materialized projection，不要求
-// history backlog 全量 flush，也不能创建 frozen token。
-type CopyEntryProjectionParams struct {
-	TerminalID string
-	Limit      int
-	Cols       int
-	Rows       int
-}
-
 type ListResult struct {
 	Terminals []TerminalInfo
 }
@@ -788,30 +778,6 @@ type HistoryWindow struct {
 	RowLineIDs      []uint64
 	RowInLine       []int
 	Timestamp       time.Time
-}
-
-// CopyEntryCapabilityBits 是 materialized projection 的能力位。catchup pending 时，
-// core 可以允许展示/选择已应用区域，但不得声称未追平区域已经可搜索、可完整复制或可分页。
-type CopyEntryCapabilityBits struct {
-	Selectable bool
-	Copyable   bool
-	Searchable bool
-	Pageable   bool
-}
-
-// CopyEntryProjection 是 R376 copy entry 的 protocol payload。
-// Window 来自 core authoritative history 已应用 frontier；Token 必须为空，后续
-// frozen/older/newer/search 仍要通过独立 frozen history 合同建立。
-type CopyEntryProjection struct {
-	TerminalID        string
-	NativeCols        int
-	Generation        uint64
-	Window            HistoryWindow
-	AppliedHistorySeq uint64
-	TargetHistorySeq  uint64
-	CatchupPending    bool
-	Capabilities      CopyEntryCapabilityBits
-	Timestamp         time.Time
 }
 
 func (s CellStyle) isZero() bool {

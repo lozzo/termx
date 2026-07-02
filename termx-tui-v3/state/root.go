@@ -189,8 +189,7 @@ func copyModeStoreHasState(copyMode CopyModeStore) bool {
 	return copyMode.InputActive() ||
 		copyMode.TerminalID != "" ||
 		copyMode.BoundToken != "" ||
-		copyMode.ProjectionRequestID != 0 ||
-		copyMode.Materialized.Valid
+		copyMode.RequestID != 0
 }
 
 func historyStoreMatchesView(history HistoryStore, viewID string) bool {

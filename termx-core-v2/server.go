@@ -470,7 +470,7 @@ func (server *Server) LiveSnapshot(id string) (live.SurfaceSnapshot, error) {
 
 // TerminalHistoryBacklogStatus 返回 terminal history consumer 的 applied/target seq。
 // 它是只读诊断入口，不触发 FlushHistory，也不读取 live snapshot 或组装 window；
-// 后续 copy materialized projection 可以用它判断 catchup_pending。
+// copy/history 入口必须继续通过统一的 history.window 获取 authoritative rows。
 func (server *Server) TerminalHistoryBacklogStatus(id string) (HistoryBacklogStatus, error) {
 	terminal, err := server.Terminal(id)
 	if err != nil {
@@ -545,34 +545,6 @@ func (server *Server) NextLiveInvalidation(ctx context.Context, id string, obser
 // core history store，不能 fallback 到 live rows 或 snapshot。
 func (server *Server) TerminalHistoryWindow(ctx context.Context, id string, req history.HistoryWindowRequest) (history.HistoryWindow, error) {
 	return server.terminalHistoryWindow(ctx, id, req, true)
-}
-
-// TerminalHistoryCopyEntryProjection 返回 copy/history 入口的 materialized projection。
-// 它不 flush history backlog、不创建 FrozenHistorySnapshot，只读取 HistoryStore 已应用
-// frontier；native cols 和 backlog seq 只是 projection 元数据，不能把 live screen rows
-// 提升为可复制 history truth。
-func (server *Server) TerminalHistoryCopyEntryProjection(ctx context.Context, id string, req history.CopyEntryProjectionRequest) (history.CopyEntryProjection, error) {
-	_ = ctx
-	terminal, err := server.Terminal(id)
-	if err != nil {
-		return history.CopyEntryProjection{}, err
-	}
-	if req.TerminalID == "" {
-		req.TerminalID = id
-	}
-	status := terminal.HistoryBacklogStatus()
-	req.AppliedHistorySeq = status.AppliedSeq
-	req.TargetHistorySeq = status.TargetSeq
-	req.CatchupPending = status.CatchupPending
-	if req.NativeCols <= 0 {
-		native := terminal.NativeScreenSnapshot(id)
-		req.NativeCols = int(native.Size.Cols)
-	}
-	projection, err := terminal.HistoryCopyEntryProjection(req)
-	if err != nil {
-		return history.CopyEntryProjection{}, err
-	}
-	return projection, nil
 }
 
 func (server *Server) terminalHistoryWindow(ctx context.Context, id string, req history.HistoryWindowRequest, flush bool) (history.HistoryWindow, error) {

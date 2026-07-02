@@ -1083,8 +1083,6 @@ func canRenderCopyHistory(root state.Root, history state.HistoryStore, copyMode 
 	phase := copyMode.PhaseKind()
 	tokenMatches := false
 	switch phase {
-	case state.CopyModeMaterializedProjection:
-		tokenMatches = copyMode.BoundToken == "" && history.Token == ""
 	case state.CopyModeFrozenHistory:
 		tokenMatches = copyMode.BoundToken != "" && copyMode.BoundToken == history.Token
 	default:
@@ -1119,8 +1117,6 @@ func copyHistoryPendingReason(root state.Root, history state.HistoryStore, copyM
 	case copyMode.TerminalID != history.TerminalID:
 		return "copy history error: terminal mismatch"
 	case copyMode.PhaseKind() == state.CopyModeFrozenHistory && copyMode.BoundToken != history.Token:
-		return "copy history pending: stale history token"
-	case copyMode.PhaseKind() == state.CopyModeMaterializedProjection && history.Token != "":
 		return "copy history pending: stale history token"
 	case history.Cols == 0:
 		return "copy history pending: window pending"
