@@ -7,9 +7,10 @@ import (
 	"time"
 )
 
-// NewInMemoryHistoryStore 创建新的 R323 内存 HistoryStore。
-// domain owner：history store；写入真值只来自 HistoryMutationBatch，store 不解释
-// terminal ops、不读取 live snapshot，也不恢复旧 memoryHistoryStore 双路径。
+// NewInMemoryHistoryStore 创建旧 mutation-backed 内存 HistoryStore。R430 后它只
+// 服务显式 WithHistoryStoreFactory 迁移路径和 legacy harness；默认生产 truth
+// 必须来自 ScreenHistoryBuffer physical rows，不能因为没有文件 backend 或
+// screen-backed 写入失败而回退到该 store。
 func NewInMemoryHistoryStore(terminalID string) HistoryStore {
 	return &inMemoryHistoryStore{
 		terminalID: terminalID,
@@ -18,9 +19,9 @@ func NewInMemoryHistoryStore(terminalID string) HistoryStore {
 	}
 }
 
-// NewBackendHistoryStore 创建带 payload backend 的 HistoryStore。
-// domain owner 仍是 core-v2 HistoryStore：backend 只承载 sealed payload 驻留和
-// 按 id 读取，timeline/window/cursor truth 仍由 store 内部索引裁决。
+// NewBackendHistoryStore 创建旧 mutation-backed payload backend store。backend
+// 只承载 logical-line payload 驻留和按 id 读取；R430 后默认 daemon 的生产落盘
+// 使用 ScreenPhysicalRowBackend，该构造函数只能由显式 legacy factory 调用。
 func NewBackendHistoryStore(terminalID string, backend StorageBackend) HistoryStore {
 	store := NewInMemoryHistoryStore(terminalID).(*inMemoryHistoryStore)
 	store.storage = backend

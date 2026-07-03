@@ -1,7 +1,8 @@
 package history
 
-// LogicalLineStore 拥有 logical-line payload truth。timeline、journal record 和
-// storage backend 可以引用它的 id，但不能复制成第二份内容 truth。
+// LogicalLineStore 是旧 mutation-backed store 内的 logical-line payload owner。
+// R430 后默认生产 ingest truth 属于 ScreenHistoryBuffer physical rows；该接口
+// 只描述 legacy harness 内部边界，不能恢复为 daemon 默认 history truth。
 type LogicalLineStore interface {
 	// Put 把新的 logical line payload 写入 authoritative store。
 	Put(line LogicalLine) error

@@ -1,5 +1,26 @@
 # termx-core-v2 历史模型架构设计
 
+状态：R430 后本文只保留 daemon storage、attachment、protocol 边界和旧
+logical-line-first 迁移背景。当前无限历史 production 基准以
+`workflow.md` 与 `screen-backed-history-rebuild-design.md` 为准：history ingest
+truth 已切到 `ScreenHistoryBuffer` 的 physical row/cell 状态机，默认 daemon
+链路为：
+
+```text
+PTY bytes / resize
+  -> history SemanticTap
+  -> ScreenHistoryBuffer physical rows/cells
+  -> ScreenPhysicalRowBackend sealed rows
+  -> ScreenBackedHistoryStore
+  -> HistoryWindow / Copy / Search logical projection
+```
+
+logical line 现在只是在 HistoryWindow/Copy/Search 阶段从 physical rows 投影出的
+查看单位，或旧 mutation-backed harness 的兼容 payload；它不再是默认生产 ingest
+truth。本文后续 `LogicalLineStore`、`CommittedHistoryIndex`、`MutableFrontier`、
+`StorageBackend` 等章节若描述为当前唯一 truth，均按 pre-screen-buffer 背景理解，
+不得用于恢复默认 logical-line store 路径。
+
 R318 说明：本文早于 `termx-core-v2/docs/history-logical-renderer-design.md`。
 历史语义、对象命名和接口边界以 R318 新文档为准；本文中 `commit/committed`、
 `CommittedHistoryIndex`、`MutableFrontier` 等旧词只作为历史背景或待迁移类型名，
@@ -9,7 +30,10 @@ R318 说明：本文早于 `termx-core-v2/docs/history-logical-renderer-design.m
 
 当前终端历史相关问题的核心不在实时当前屏幕如何显示，而在历史记录的真相单位不稳定：旧实现长期混用 visual row、wrapped row、snapshot scrollback、grid viewport 与局部 metadata 来表达历史边界。这样会导致滚动、copy mode、older prepend、latest replace、resize、reclaim、process exit、clear scrollback 等路径在不同层各自推断历史真相。
 
-本次重构不要求同步重写所有实时 screen、snapshot、grid viewport 数据结构。实时当前屏幕可以继续沿用现有方式。重构的核心准则是：历史记录必须按照 logical line 记录，并且只有 core-v2 的历史侧拥有 committed history truth。
+下面第 1-5 节记录的是 R318-R418 logical-line-first 架构背景。R430 后当前生产
+核心准则已经改为：历史 ingest 必须先落在 screen-backed physical rows/cells，
+logical line 只作为查询/复制/search 投影；只有 core-v2 的 screen-backed history
+侧拥有 authoritative truth。
 
 本设计不再把“已持久化”和“仍可变尾部”建成两套数据模型。`persisted` 只表示某一时刻的存储落点或提交状态，不表示不可修改。程序发出的 truncate、resize reclaim、retention、process exit replacement 等语义都可以删除、撤回、替换或重新提交已经进入 committed history 的 logical line；终端 `ED3` / clear scrollback 只表达显示 scrollback 边界，不物理删除 authoritative history。
 
@@ -28,8 +52,11 @@ logical line 是解决这些约束的最小稳定单位：写入和落盘按 log
 
 ## 2. 重构目标
 
+R430 说明：本节目标是旧 logical-line-first 阶段目标；当前对应目标见本文顶部
+状态栏和 `screen-backed-history-rebuild-design.md`。
+
 - `termx-core-v2` 拥有唯一历史真相。
-- 历史真相的基本单位是 logical line，不是 visual row、wrapped row、snapshot scrollback 或 grid viewport。
+- 旧 logical-line-first 目标中，历史真相曾以 logical line 为单位，而不是 visual row、wrapped row、snapshot scrollback 或 grid viewport。
 - 历史侧使用单一 `LogicalLineStore` 保存 logical line truth。
 - committed history 与 mutable frontier 是同一批 logical line 的索引、状态和可变边界，不是两套模型。
 - 历史存储必须支持长期保留和按需分页；不能要求 resize 时把全部历史读入内存并全量重排。
@@ -105,9 +132,11 @@ Terminal size lock 是 terminal 级协作控制状态，不是 TUI 的 pane layo
 
 ### 4.1 HistoryTrack
 
-`HistoryTrack` 是 authoritative history truth，内部由四类对象组成：
+`HistoryTrack` 是旧 mutation-backed 架构中的 authoritative history truth。R430 后
+默认 production 对应 owner 是 `ScreenHistoryBuffer`，本节四类对象只说明旧模型
+内部如何避免复制 payload：
 
-- `LogicalLineStore`：唯一 logical line truth，保存 line id、cells/runs、封口状态、版本、投影缓存和 payload metadata。
+- `LogicalLineStore`：旧模型内唯一 logical-line payload owner，保存 line id、cells/runs、封口状态、版本、投影缓存和 payload metadata。
 - `CommittedHistoryIndex`：当前计入 committed history 的 ordered line index，负责 older cursor、retention、truncate、generation 与 logical boundary。
 - `MutableFrontier`：当前仍可能被终端语义修改的 line 范围，包含 open line、sealed but still mutable line、reclaimed committed suffix、shrink resize 隐藏尾部。
 - `StorageBackend`：内存、文件、mmap 或其他持久化实现，只负责保存和恢复 `LogicalLineStore` 与索引状态，不定义 mutability。
@@ -187,7 +216,8 @@ LogicalLine 的 truth 是 logical boundary 与 cells/runs。projection segments 
 
 ### 5.2 LogicalLineStore
 
-`LogicalLineStore` 是唯一历史数据模型。
+`LogicalLineStore` 是旧 mutation-backed 模型内的唯一 logical-line 数据模型。R430
+后默认生产数据模型是 `ScreenHistoryBuffer` physical rows/cells。
 
 - 不能以 visual row 作为主键或唯一边界。
 - 不能只依赖 wrapped metadata 反推出 logical line truth。
@@ -446,8 +476,9 @@ TUI-v3 stale guard 只能使用 core-v2 返回的 token、generation、cursor �
 
 ## 8. 关键硬约束
 
-- 历史 truth 只能来自 `HistoryTrack`。
-- `HistoryTrack` 内部只有一个 `LogicalLineStore` 数据模型。
+- 当前 production 历史 truth 只能来自 `ScreenHistoryBuffer` physical rows/cells。
+- 旧 mutation-backed `HistoryTrack` 若被显式 factory 使用，内部也只能有一个
+  `LogicalLineStore` 数据模型，不能再复制成第二份 payload truth。
 - committed history 与 mutable frontier 是索引、状态和边界，不是两套 payload store。
 - `persisted` 只表示存储落点或提交状态，不表示 immutable。
 - StorageBackend 不得定义 history mutability。
@@ -462,7 +493,7 @@ TUI-v3 stale guard 只能使用 core-v2 返回的 token、generation、cursor �
 
 ## 9. 第一阶段范围
 
-第一阶段只做：
+第一阶段范围是旧 logical-line-first 重构记录，R430 后不再作为当前执行计划。它当时只做：
 
 - 纯内存 `HistoryTrack`
 - 明确的 `HistoryEvent` 类型
@@ -495,7 +526,9 @@ TUI-v3 stale guard 只能使用 core-v2 返回的 token、generation、cursor �
 
 风险：实现为了方便把“已经写到文件”解释成“不可修改”，导致 truncate、reclaim、replacement 无法正确表达，或把终端 `ED3` 误当成 authoritative history 删除。
 
-应对：domain model 只认 `LogicalLineStore`、`CommittedHistoryIndex` 与 `MutableFrontier`；StorageBackend 只是读写实现。测试必须覆盖删除已提交历史、reclaim 后修改再提交、retention 后 cursor 失效。
+应对：旧 mutation-backed domain model 只认 `LogicalLineStore`、`CommittedHistoryIndex`
+与 `MutableFrontier`；R430 后默认 production domain model 只认 screen-backed physical
+rows/cells 与 row backend。StorageBackend 只是读写实现，不能定义 mutability。
 
 ### 10.3 CommittedHistoryIndex 退化为 append-only ledger
 

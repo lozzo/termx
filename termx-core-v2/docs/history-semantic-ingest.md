@@ -1,8 +1,17 @@
 # core-v2 history semantic ingest 设计说明
 
+状态：R430 后本文是 pre-screen-buffer 语义 ingest 背景。当前 production ingest
+truth 已切到 `ScreenHistoryBuffer` physical rows/cells；logical line 不再是
+默认写入阶段的正文 truth，只在 HistoryWindow/Copy/Search 阶段由 physical rows
+投影，或作为显式 legacy harness 的 mutation-backed payload 使用。
+
 ## 1. 目标
 
-core-v2 history ingest 的目标是把 PTY 输出里的终端语义转换成 `HistoryEvent`，再写入 `HistoryTrack` / `LogicalLineStore`。`HistoryTrack` 仍然是唯一 authoritative history truth，vterm 只负责解释终端协议语义。
+本文原目标是把 PTY 输出里的终端语义转换成 `HistoryEvent`，再写入
+`HistoryTrack` / `LogicalLineStore`。R430 后这条链路已降级为旧
+mutation-backed 迁移背景；当前默认目标是把同一 vterm semantic transaction
+写入 `ScreenHistoryBuffer`，由 physical row/cell state 和 sealed row backend
+持有 authoritative history truth。
 
 本设计替代继续扩展手写 `historyANSIParser` 的方向。`historyANSIParser` 可以在迁移期保留为局部文本/style parser 或 fallback harness 对照，但不再作为终端语义来源继续叠补丁。
 
@@ -17,11 +26,11 @@ core-v2 history ingest 的目标是把 PTY 输出里的终端语义转换成 `Hi
 
 ## 2. 不变边界
 
-- 历史 truth 的基本单位仍是 logical line，不是 visual row、wrapped row、snapshot scrollback 或 grid viewport。
+- 默认 production history truth 的基本单位是 physical row/cell；logical line 是查询/复制/search 阶段的 projection。
 - vterm scrollback 不能直接成为 history truth。
 - live snapshot、vterm screen、damage rect 不能被 `HistoryTrack` 反向读取来推导 committed history。
 - semantic ingest 使用的 cols/rows 必须等于真实 PTY size，不能为了“保存更多内容”使用更高的假终端。
-- copy/history window 仍只能来自 core-v2 logical-line history。
+- copy/history window 只能来自 core-v2 authoritative history window；默认由 screen-backed physical rows 投影生成。
 - resize 不重写 committed history，只使投影/window token 失效，并按既有模型 reclaim 或 hide mutable frontier。
 
 ## 3. vterm 归属

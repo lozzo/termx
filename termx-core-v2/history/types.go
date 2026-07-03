@@ -1,4 +1,6 @@
-// Package history 定义 logical-line payload model。
+// Package history 定义 screen-backed history model 以及旧 logical-line projection
+// payload。R430 后默认生产 ingest truth 是 ScreenHistoryBuffer physical rows；
+// logical line 只作为 HistoryWindow/Copy/Search 投影单位或 legacy harness payload。
 package history
 
 // LogicalLineID 标识 authoritative history model 中的一条 logical line。
@@ -67,8 +69,10 @@ type RowTailFill struct {
 	Style CellStyle
 }
 
-// LogicalLine 是 history 重建后唯一允许复用的旧定义：历史 truth 的基本单位
-// 仍是 logical line，不是 visual row、screen row、scrollback row 或 raw bytes。
+// LogicalLine 是旧 mutation-backed store 和 screen-backed projection 复用的行
+// payload。R430 后默认生产 ingest truth 不再是 logical line；它只能由
+// ScreenHistoryBuffer physical rows 投影出来，或在显式 legacy harness 中作为
+// mutation-backed payload 使用。
 type LogicalLine struct {
 	ID                LogicalLineID
 	Generation        Generation

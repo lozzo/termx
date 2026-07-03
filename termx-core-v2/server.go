@@ -271,7 +271,8 @@ func (server *Server) newScreenHistoryBuffer(terminalID string, size Size) (*his
 }
 
 // fileBackedHistoryStoreFactory 保留给显式 WithHistoryStoreFactory 测试/迁移路径。
-// 默认 daemon 不再调用它；R429 会用 physical row backend 替代旧 logical-line backend。
+// 默认 daemon 不再调用它；R430 后生产落盘只走 screen physical row backend，
+// 不能用该 factory 作为 WithHistoryStorageDir 的 silent fallback。
 func fileBackedHistoryStoreFactory(dir string) HistoryStoreFactory {
 	return func(terminalID string) (history.HistoryStore, error) {
 		if strings.TrimSpace(dir) == "" {

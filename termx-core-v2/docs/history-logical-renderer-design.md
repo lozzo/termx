@@ -1,6 +1,12 @@
 # history logical renderer 设计重写
 
-状态：R371 history logical renderer 与 semantic fan-out 设计基准。
+状态：R430 后本文为 R318-R418 mutation-backed logical renderer 的设计背景和
+legacy harness 说明，不再是默认 production history ingest 基准。当前默认链路已经
+由 `ScreenHistoryBuffer` 持有 physical row/cell truth，`ScreenBackedHistoryStore`
+从 sealed physical rows + current screen rows 投影 `HistoryWindow`；本文中的
+`HistoryLogicalRenderer -> HistoryMutationBatch -> HistoryStore logical lines`
+只能用于显式 `WithHistoryStoreFactory` 注入的迁移/测试路径，不能作为 journal
+失败 fallback，也不能重新接回默认 daemon。
 
 本文替代旧 screen app 无限历史文档里的 `commit/committed` 语义。旧文档仍可作为 R300-R317
 问题背景，但只要本文与旧文档、旧代码类型名或旧测试描述冲突，以本文为准。

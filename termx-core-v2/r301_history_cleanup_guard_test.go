@@ -186,6 +186,61 @@ func TestR405TerminalLifecycleCloseDoesNotPretendToBePTY(t *testing.T) {
 	}
 }
 
+func TestR430DefaultHistoryPathDoesNotUseMutationBackedStore(t *testing.T) {
+	serverSource := r301ReadFile(t, "server.go")
+	newHistoryStoreBody := r301SourceFunctionBody(t, serverSource, "func (server *Server) newHistoryStore")
+	for _, forbidden := range []string{
+		"NewInMemoryHistoryStore",
+		"NewFileStorageBackend",
+		"NewBackendHistoryStore",
+		"fileBackedHistoryStoreFactory",
+	} {
+		if strings.Contains(newHistoryStoreBody, forbidden) {
+			t.Fatalf("default newHistoryStore must not create mutation-backed history path: %s", forbidden)
+		}
+	}
+	if !strings.Contains(newHistoryStoreBody, "return nil, nil") {
+		t.Fatal("default newHistoryStore must return nil store so Terminal creates screen-backed history")
+	}
+
+	withStorageBody := r301SourceFunctionBody(t, serverSource, "func WithHistoryStorageDir")
+	if strings.Contains(withStorageBody, "fileBackedHistoryStoreFactory") || strings.Contains(withStorageBody, "historyStoreFactory = fileBackedHistoryStoreFactory") {
+		t.Fatal("WithHistoryStorageDir must not reinstall old logical-line file store factory")
+	}
+
+	terminalSource := r301ReadFile(t, "terminal.go")
+	newTerminalBody := r301SourceFunctionBody(t, terminalSource, "func newTerminal")
+	defaultStart := strings.Index(newTerminalBody, "if historyStore == nil {")
+	if defaultStart < 0 {
+		t.Fatal("newTerminal must have an explicit nil-store default history branch")
+	}
+	defaultRest := newTerminalBody[defaultStart:]
+	defaultEnd := strings.Index(defaultRest, "} else {")
+	if defaultEnd < 0 {
+		t.Fatal("newTerminal default history branch must stay separated from explicit legacy store branch")
+	}
+	defaultBranch := defaultRest[:defaultEnd]
+	for _, required := range []string{
+		"history.NewScreenBackedHistoryRenderers",
+		"history.NewScreenBackedHistoryStore",
+		"terminal.screenHistory",
+	} {
+		if !strings.Contains(defaultBranch, required) {
+			t.Fatalf("default history branch must create screen-backed path: missing %s", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"NewHistoryRenderers",
+		"NewInMemoryHistoryStore",
+		"NewBackendHistoryStore",
+		"NewFileStorageBackend",
+	} {
+		if strings.Contains(defaultBranch, forbidden) {
+			t.Fatalf("default history branch must not use mutation-backed constructor: %s", forbidden)
+		}
+	}
+}
+
 func r301RejectProgramNameLiteral(t *testing.T, path string, text string) {
 	t.Helper()
 	for _, forbidden := range []string{"Codex", "codex", "Claude", "claude", "htop", "vim"} {

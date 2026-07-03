@@ -6,18 +6,19 @@ import (
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
-// NewHistoryLogicalRenderer 组合 stream/frame reducers，创建 semantic transaction
-// 到 mutation batch 的唯一转换层。domain owner：history；truth source 只允许是
-// vterm TerminalSemanticTransaction、HistoryDecision 和 lifecycle CloseReason。
+// NewHistoryLogicalRenderer 创建旧 mutation-backed logical renderer。R430 后它只
+// 服务显式 WithHistoryStoreFactory 迁移路径和 domain harness；默认生产 history
+// truth 由 ScreenHistoryBuffer physical rows 持有，不能把该 renderer 接回默认
+// daemon 或作为 screen-backed journal 失败 fallback。
 func NewHistoryLogicalRenderer(stream StreamLineReducer, frames FrameReducer) HistoryLogicalRenderer {
 	allocator := newHistoryIDAllocator()
 	return newHistoryLogicalRendererWithAllocator(stream, frames, allocator)
 }
 
-// NewHistoryRenderers 创建共享 id allocator 的 transaction renderer 与 compact
-// journal renderer。domain owner 是 history；PTY/resize history 生产入口只允许
-// compact journal apply，transaction renderer 仅保留给 domain harness 与 lifecycle
-// close 辅助，不能作为 journal 失败后的 fallback 路径。
+// NewHistoryRenderers 创建旧 mutation-backed transaction renderer 与 compact
+// journal renderer。R430 后 domain owner 仅限 legacy logical-line store：调用方
+// 必须显式注入对应 HistoryStore，默认 screen-backed daemon 不得调用它来生成正文
+// truth，也不得把它作为 ScreenHistoryBuffer 的 fallback。
 func NewHistoryRenderers(stream StreamLineReducer, frames FrameReducer) (HistoryLogicalRenderer, HistoryJournalRenderer) {
 	allocator := newHistoryIDAllocator()
 	if stream == nil {

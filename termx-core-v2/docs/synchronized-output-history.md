@@ -1,5 +1,11 @@
 # synchronized output 与 primary frame history 设计
 
+状态：R430 后本文是 synchronized output / primary frame 语义背景。当前生产
+frame/session ingest truth 先进入 `ScreenHistoryBuffer` physical rows/cells，再由
+`ScreenBackedHistoryStore` 投影给 HistoryWindow；本文中的 `HistoryTrack`、
+`LogicalLineStore`、latest-only frame 说法若与 screen-backed 设计冲突，以
+`screen-backed-history-rebuild-design.md` 为准。
+
 ## 1. 背景
 
 Codex、Claude Code、opencode 等现代终端应用不一定进入 alt-screen。它们经常在 primary screen 上使用光标定位、清屏、清行、scroll region、reverse index 和 synchronized output 组合来更新界面。

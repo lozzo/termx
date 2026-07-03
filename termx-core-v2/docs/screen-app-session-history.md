@@ -1,5 +1,11 @@
 # screen app 会话历史设计
 
+状态：R430 后本文是 logical-line-first screen app session 的历史设计背景。当前
+screen app 无限历史生产路径以 `ScreenHistoryBuffer` physical rows/cells 为 ingest
+truth，frame/session 内容先归属 screen model，HistoryWindow/Copy 阶段再投影 logical
+rows。本文提到的 `HistoryTrack`、`LogicalLineStore`、`ScreenFrameJournal` truth
+边界若与 `screen-backed-history-rebuild-design.md` 冲突，以 screen-backed 设计为准。
+
 ## 1. 背景
 
 `synchronized-output-history.md` 已经解决了第一层问题：Codex 这类 primary-screen pseudo-TUI 在 `DECSET 2026` / `DECRST 2026` 之间重绘时，history latest 必须看到 ESU 后的最终 primary frame，而不是中间半帧，也不能从 TUI live snapshot 回填。

@@ -17,9 +17,9 @@ const (
 	fileLineRecordVersion uint16 = 2
 )
 
-// NewFileStorageBackend 创建二进制 append-only payload backend。
-// domain boundary：文件只保存 logical-line payload 的最新 record offset；
-// timeline/window/cursor truth 仍由 HistoryStore 持有，不能从文件顺序反推历史顺序。
+// NewFileStorageBackend 创建旧 mutation-backed logical-line payload 文件 backend。
+// R430 后默认生产路径使用 NewFileScreenPhysicalRowBackend；该 backend 只允许
+// 显式 legacy HistoryStoreFactory 调用，不能作为 WithHistoryStorageDir 默认回退。
 func NewFileStorageBackend(dir string, terminalID string) (StorageBackend, error) {
 	if dir == "" {
 		return nil, os.ErrInvalid

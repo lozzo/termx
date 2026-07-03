@@ -1,5 +1,11 @@
 # screen-backed history rebuild design note
 
+状态：R430 后本文是当前 screen-backed infinite history production 基准。R419-R427
+完成 domain model、projection 与验收；R428 已把 Terminal 默认入口切到共享
+`ScreenHistoryBuffer`；R429 已把 sealed physical rows 接入 `.screen-rows.bin`
+production backend；R430 冻结旧 mutation-backed logical-line renderer/store 为显式
+factory 和迁移 harness，不再允许默认 daemon 回退。
+
 本文是 R419 勘察与迁移基线。目标是把 infinite history 的正文真值从
 append-only logical-line reducer 前移到 authoritative screen model：PTY bytes
 先经 vterm 语义事务更新 physical rows/cells，再由 projection 在
@@ -137,6 +143,15 @@ EL/DCH/ICH、scroll region、alt-screen、clear repaint、wide char 和 idempote
 6. R425：HistoryWindow/Copy/Frozen projection 改为 screen-backed projection。
 7. R426：收缩旧 journal 正文 reducer，只保留 boundary/meta/event backlog。
 8. R427：多角色 review、完整准入、性能与 1M stress 回归。
+9. R428：Terminal 默认 history path 创建同一个 `ScreenHistoryBuffer`，transaction
+   renderer、journal renderer 和 `ScreenBackedHistoryStore` 共享 physical row truth；
+   配置 `WithHistoryStorageDir` 不再把默认 daemon 带回旧 logical-line file store。
+10. R429：sealed physical rows 接入 production `ScreenPhysicalRowBackend`；恢复阶段只恢复
+    RowID/row count/applied seq 等 row store 元数据，window 分页按 row range 读取，不把
+    无限历史重新 materialize 到 `ScreenHistoryBuffer.Committed`。
+11. R430：旧 `HistoryLogicalRenderer`、`NewInMemoryHistoryStore`、logical-line file backend
+    冻结为显式 `WithHistoryStoreFactory` / legacy harness 路径；当前生产入口不得调用它们
+    作为默认 truth 或 fallback。
 
 第一轮实现不能暂缓 RowID、seal-once、identity-based projection、current screen 与 committed history
 去重，也不能让 pseudo-TUI repaint 继续直接 append committed logical rows。
