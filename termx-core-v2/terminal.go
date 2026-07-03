@@ -47,7 +47,7 @@ type Terminal struct {
 	update         func(TerminalInfo)
 }
 
-func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyStore history.HistoryStore, historyEnabled bool, logger *slog.Logger) *Terminal {
+func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyStore history.HistoryStore, screenHistory *history.ScreenHistoryBuffer, historyEnabled bool, logger *slog.Logger) *Terminal {
 	terminal := &Terminal{
 		info:           info.Clone(),
 		options:        cloneTerminalCreateOptions(options),
@@ -69,7 +69,10 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 		// live SurfaceTrack 回写一次，避免 live/history 双 vterm 双回写。
 		terminal.tap = NewSemanticTap(info.ID, info.Size, nil)
 		if historyStore == nil {
-			terminal.screenHistory = history.NewScreenHistoryBuffer(int(info.Size.Cols), int(info.Size.Rows))
+			if screenHistory == nil {
+				screenHistory = history.NewScreenHistoryBuffer(int(info.Size.Cols), int(info.Size.Rows))
+			}
+			terminal.screenHistory = screenHistory
 			terminal.historyRenderer, terminal.journalRenderer = history.NewScreenBackedHistoryRenderers(terminal.screenHistory)
 			historyStore = history.NewScreenBackedHistoryStore(info.ID, terminal.screenHistory)
 		} else {

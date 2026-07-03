@@ -1685,6 +1685,10 @@ func TestR428TerminalDefaultsToScreenBackedHistoryStore(t *testing.T) {
 	if _, err := os.Stat(payloadPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("R428 default path must not write old logical payload file %s, err=%v", payloadPath, err)
 	}
+	screenRowsPath := filepath.Join(historyDir, "term-r428-screen-backed.screen-rows.bin")
+	if _, err := os.Stat(screenRowsPath); err != nil {
+		t.Fatalf("R429 default storage dir should write screen physical rows %s: %v", screenRowsPath, err)
+	}
 	window, err := server.TerminalHistoryWindow(context.Background(), "term-r428-screen-backed", history.HistoryWindowRequest{
 		TerminalID: "term-r428-screen-backed",
 		Mode:       history.HistoryWindowModeLatest,
@@ -1699,22 +1703,55 @@ func TestR428TerminalDefaultsToScreenBackedHistoryStore(t *testing.T) {
 	}
 }
 
-func TestR428HistoryStorageDirDoesNotForceLegacyBackendOpen(t *testing.T) {
+func TestR429HistoryStorageDirRecoversScreenPhysicalRows(t *testing.T) {
+	historyDir := t.TempDir()
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory), WithHistoryStorageDir(historyDir))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r429-recover-screen-rows",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 30, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register first terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r429-recover-screen-rows", "alpha\r\nbeta\r\ngamma\r\n"); err != nil {
+		t.Fatalf("ingest recover rows: %v", err)
+	}
+	if err := server.Shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown first server: %v", err)
+	}
+
+	recovered := NewServer(WithProcessFactory(newRecordingProcessFactory()), WithHistoryStorageDir(historyDir))
+	if _, err := recovered.RegisterTerminal(TerminalRecord{
+		ID:      "term-r429-recover-screen-rows",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 30, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register recovered terminal: %v", err)
+	}
+	window, err := recovered.TerminalHistoryWindow(context.Background(), "term-r429-recover-screen-rows", history.HistoryWindowRequest{
+		TerminalID: "term-r429-recover-screen-rows",
+		Mode:       history.HistoryWindowModeLatest,
+		Limit:      3,
+		Cols:       30,
+	})
+	if err != nil {
+		t.Fatalf("recovered history window: %v", err)
+	}
+	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "alpha|beta|gamma" {
+		t.Fatalf("recovered screen physical rows mismatch: %q rows=%#v", got, window.Rows)
+	}
+}
+
+func TestR429HistoryStorageDirFailsWhenPhysicalBackendCannotOpen(t *testing.T) {
 	blockingFile := filepath.Join(t.TempDir(), "blocking-file")
 	badDir := filepath.Join(blockingFile, "child")
 	if err := os.WriteFile(blockingFile, []byte("not-a-directory"), 0o600); err != nil {
 		t.Fatalf("seed blocking file: %v", err)
 	}
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()), WithHistoryStorageDir(badDir))
-	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r428-no-legacy-backend", Command: []string{"shell"}}); err != nil {
-		t.Fatalf("R428 must not open old logical file backend from HistoryStorageDir: %v", err)
-	}
-	terminal, err := server.Terminal("term-r428-no-legacy-backend")
-	if err != nil {
-		t.Fatalf("terminal: %v", err)
-	}
-	if terminal.screenHistory == nil {
-		t.Fatal("R428 storage-dir terminal must still use screen-backed default history")
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r429-bad-screen-backend", Command: []string{"shell"}}); err == nil {
+		t.Fatal("R429 must fail terminal creation when screen physical backend cannot open")
 	}
 }
 

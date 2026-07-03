@@ -93,7 +93,9 @@ type ScreenHistoryBuffer struct {
 	AppliedSeq uint64
 	Committed  []PhysicalRow
 
-	sealedRowIDs map[uint64]struct{}
+	sealedRowIDs    map[uint64]struct{}
+	sealedBackend   ScreenPhysicalRowBackend
+	recentCommitted []PhysicalRow
 }
 
 // NewScreenHistoryBuffer 创建一个独立的 screen-backed history buffer。
@@ -116,6 +118,37 @@ func NewScreenHistoryBuffer(cols int, rows int) *ScreenHistoryBuffer {
 	buffer.Alt = buffer.newGrid(RowOwnerAltScreen)
 	buffer.Margins = MarginState{Top: 0, Bottom: rows, Left: 0, Right: cols}
 	return buffer
+}
+
+// NewScreenHistoryBufferWithPhysicalBackend 创建带 sealed physical row backend 的
+// screen history buffer。恢复只读取 backend row id/seq 元数据，不把历史 rows 全量
+// 放回 Committed；HistoryWindow 必须通过 ScreenBackedHistoryStore 按 range 读取。
+func NewScreenHistoryBufferWithPhysicalBackend(cols int, rows int, backend ScreenPhysicalRowBackend) (*ScreenHistoryBuffer, error) {
+	buffer := NewScreenHistoryBuffer(cols, rows)
+	if backend == nil {
+		return buffer, nil
+	}
+	recovered, err := backend.Recover()
+	if err != nil {
+		return nil, err
+	}
+	buffer.sealedBackend = backend
+	if recovered.NextRowID > buffer.NextRowID {
+		buffer.NextRowID = recovered.NextRowID
+	}
+	if recovered.AppliedSeq > buffer.AppliedSeq {
+		buffer.AppliedSeq = recovered.AppliedSeq
+	}
+	return buffer, nil
+}
+
+// ScreenPhysicalRowBackend 返回当前 buffer 绑定的 sealed physical row backend。
+// 该方法只给同包 store/server glue 使用，调用方不能通过 backend 解释 terminal ops。
+func (buffer *ScreenHistoryBuffer) ScreenPhysicalRowBackend() ScreenPhysicalRowBackend {
+	if buffer == nil {
+		return nil
+	}
+	return buffer.sealedBackend
 }
 
 func (buffer *ScreenHistoryBuffer) newGrid(owner RowOwnerKind) *ScreenGrid {
@@ -245,6 +278,29 @@ func clonePhysicalRows(rows []PhysicalRow) []PhysicalRow {
 		out[index].Cells = cloneHistoryCells(row.Cells)
 	}
 	return out
+}
+
+func (buffer *ScreenHistoryBuffer) recentCommittedCount() int {
+	if buffer == nil {
+		return 0
+	}
+	return len(buffer.recentCommitted)
+}
+
+func (buffer *ScreenHistoryBuffer) recentCommittedRowsFrom(index int) []PhysicalRow {
+	if buffer == nil {
+		return nil
+	}
+	index = clampInt(index, 0, len(buffer.recentCommitted))
+	return clonePhysicalRows(buffer.recentCommitted[index:])
+}
+
+func (buffer *ScreenHistoryBuffer) trimRecentCommittedRows(index int) {
+	if buffer == nil {
+		return
+	}
+	index = clampInt(index, 0, len(buffer.recentCommitted))
+	buffer.recentCommitted = buffer.recentCommitted[:index]
 }
 
 func clampInt(value int, minValue int, maxValue int) int {

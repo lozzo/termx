@@ -219,6 +219,7 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 		return TerminalInfo{}, err
 	}
 	var historyStore history.HistoryStore
+	var screenHistory *history.ScreenHistoryBuffer
 	historyEnabled := !server.cfg.historyDisabled
 	if historyEnabled {
 		var err error
@@ -227,13 +228,20 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 			_, _ = server.registry.remove(info.ID)
 			return TerminalInfo{}, err
 		}
+		if historyStore == nil {
+			screenHistory, err = server.newScreenHistoryBuffer(info.ID, info.Size)
+			if err != nil {
+				_, _ = server.registry.remove(info.ID)
+				return TerminalInfo{}, err
+			}
+		}
 	}
 	process, err := server.cfg.processFactory.Spawn(context.Background(), processSpecFromTerminal(info, record.Options))
 	if err != nil {
 		_, _ = server.registry.remove(info.ID)
 		return TerminalInfo{}, err
 	}
-	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore, historyEnabled, server.cfg.logger)
+	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore, screenHistory, historyEnabled, server.cfg.logger)
 	server.mu.Lock()
 	server.terminals[info.ID] = terminal
 	server.mu.Unlock()
@@ -248,6 +256,18 @@ func (server *Server) newHistoryStore(terminalID string) (history.HistoryStore, 
 		return nil, nil
 	}
 	return server.cfg.historyStoreFactory(terminalID)
+}
+
+func (server *Server) newScreenHistoryBuffer(terminalID string, size Size) (*history.ScreenHistoryBuffer, error) {
+	var backend history.ScreenPhysicalRowBackend
+	if dir := strings.TrimSpace(server.cfg.historyStorageDir); dir != "" {
+		var err error
+		backend, err = history.NewFileScreenPhysicalRowBackend(dir, terminalID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return history.NewScreenHistoryBufferWithPhysicalBackend(int(size.Cols), int(size.Rows), backend)
 }
 
 // fileBackedHistoryStoreFactory 保留给显式 WithHistoryStoreFactory 测试/迁移路径。

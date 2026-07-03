@@ -618,8 +618,17 @@ func (buffer *ScreenHistoryBuffer) sealRow(row PhysicalRow) error {
 		row.ScreenCols = buffer.Cols
 	}
 	row.Sealed = true
+	sealed := clonePhysicalRows([]PhysicalRow{row})[0]
+	if buffer.sealedBackend != nil {
+		if err := buffer.sealedBackend.AppendRows([]PhysicalRow{sealed}); err != nil {
+			return err
+		}
+	}
 	buffer.sealedRowIDs[row.ID] = struct{}{}
-	buffer.Committed = append(buffer.Committed, clonePhysicalRows([]PhysicalRow{row})[0])
+	buffer.recentCommitted = append(buffer.recentCommitted, sealed)
+	if buffer.sealedBackend == nil {
+		buffer.Committed = append(buffer.Committed, sealed)
+	}
 	return nil
 }
 

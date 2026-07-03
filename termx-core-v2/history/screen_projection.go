@@ -129,6 +129,19 @@ func (projection ScreenHistoryProjection) LatestWindow(req HistoryWindowRequest)
 	}
 }
 
+func screenProjectionRowsFromPhysicalRows(cols int, generation Generation, rows []PhysicalRow, segment HistorySegment, sealed bool) []HistoryRow {
+	builder := screenProjectionBuilder{
+		projection: ScreenHistoryProjection{
+			Generation: generation,
+			Cols:       cols,
+		},
+		seenRows:         make(map[uint64]struct{}),
+		currentLineIndex: -1,
+	}
+	builder.addPhysicalRows(rows, segment, sealed)
+	return builder.projection.HistoryRows()
+}
+
 func (row ScreenProjectionRow) historyRow(cols int) HistoryRow {
 	screenCols := cols
 	if row.Kind != LineKindOrdinary && row.ScreenCols > 0 {

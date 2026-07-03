@@ -13,6 +13,7 @@ import (
 type ScreenBackedHistoryStore struct {
 	terminalID string
 	buffer     *ScreenHistoryBuffer
+	backend    ScreenPhysicalRowBackend
 	nextToken  uint64
 	frozen     map[HistoryToken]screenBackedFrozenProjection
 }
@@ -26,12 +27,23 @@ type screenBackedFrozenProjection struct {
 // 调用方必须传入同一 terminal 的 ScreenHistoryBuffer；若 buffer 为 nil，则创建
 // 空 buffer。Apply 在该 store 中不是写 truth 的入口，truth 写入发生在 screen buffer。
 func NewScreenBackedHistoryStore(terminalID string, buffer *ScreenHistoryBuffer) *ScreenBackedHistoryStore {
+	return NewScreenBackedHistoryStoreWithBackend(terminalID, buffer, nil)
+}
+
+// NewScreenBackedHistoryStoreWithBackend 创建带 physical row backend 的
+// screen-backed HistoryStore。backend 只按 sealed physical row range 提供 payload；
+// current rows 仍来自同一个 ScreenHistoryBuffer。
+func NewScreenBackedHistoryStoreWithBackend(terminalID string, buffer *ScreenHistoryBuffer, backend ScreenPhysicalRowBackend) *ScreenBackedHistoryStore {
 	if buffer == nil {
 		buffer = NewScreenHistoryBuffer(80, 24)
+	}
+	if backend == nil {
+		backend = buffer.ScreenPhysicalRowBackend()
 	}
 	return &ScreenBackedHistoryStore{
 		terminalID: terminalID,
 		buffer:     buffer,
+		backend:    backend,
 		frozen:     make(map[HistoryToken]screenBackedFrozenProjection),
 	}
 }
@@ -46,6 +58,9 @@ func (store *ScreenBackedHistoryStore) Apply(batch HistoryMutationBatch) error {
 
 // ReadState 返回 classifier 所需的只读 screen projection 边界。
 func (store *ScreenBackedHistoryStore) ReadState() HistoryReadState {
+	if store.hasPhysicalBackend() {
+		return store.readStateFromBackend()
+	}
 	projection := store.liveProjection()
 	state := HistoryReadState{
 		Generation:  projection.Generation,
@@ -79,6 +94,9 @@ func (store *ScreenBackedHistoryStore) LatestWindow(req HistoryWindowRequest) (H
 		}
 		return screenBackedLatestWindow(req, rows, snapshot.Generation), nil
 	}
+	if store.hasPhysicalBackend() {
+		return store.latestWindowFromBackend(req)
+	}
 	projection := store.liveProjectionForRequest(req)
 	return projection.LatestWindow(store.normalizeWindowRequest(req)), nil
 }
@@ -86,6 +104,9 @@ func (store *ScreenBackedHistoryStore) LatestWindow(req HistoryWindowRequest) (H
 // OlderWindow 返回 screen-backed older/prepend projection。
 func (store *ScreenBackedHistoryStore) OlderWindow(req HistoryWindowRequest) (HistoryWindow, error) {
 	req = store.normalizeWindowRequest(req)
+	if store.hasPhysicalBackend() && req.Token == "" {
+		return store.olderWindowFromBackend(req)
+	}
 	rows, generation, err := store.rowsForWindowRequest(req)
 	if err != nil {
 		return HistoryWindow{}, err
@@ -111,6 +132,9 @@ func (store *ScreenBackedHistoryStore) OlderWindow(req HistoryWindowRequest) (Hi
 // OldestWindow 返回 screen-backed projection head。
 func (store *ScreenBackedHistoryStore) OldestWindow(req HistoryWindowRequest) (HistoryWindow, error) {
 	req = store.normalizeWindowRequest(req)
+	if store.hasPhysicalBackend() && req.Token == "" {
+		return store.oldestWindowFromBackend(req)
+	}
 	rows, generation, err := store.rowsForWindowRequest(req)
 	if err != nil {
 		return HistoryWindow{}, err
@@ -129,6 +153,9 @@ func (store *ScreenBackedHistoryStore) OldestWindow(req HistoryWindowRequest) (H
 // NewerWindow 返回 screen-backed newer/append projection。
 func (store *ScreenBackedHistoryStore) NewerWindow(req HistoryWindowRequest) (HistoryWindow, error) {
 	req = store.normalizeWindowRequest(req)
+	if store.hasPhysicalBackend() && req.Token == "" {
+		return store.newerWindowFromBackend(req)
+	}
 	rows, generation, err := store.rowsForWindowRequest(req)
 	if err != nil {
 		return HistoryWindow{}, err
@@ -156,10 +183,12 @@ func (store *ScreenBackedHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenH
 	store.ensureState()
 	store.nextToken++
 	token := HistoryToken(fmt.Sprintf("screen-hist-%d", store.nextToken))
-	projection := store.liveProjection()
-	rows := projection.HistoryRows()
+	rows, generation, err := store.rowsForWindowRequest(HistoryWindowRequest{TerminalID: req.TerminalID, Cols: req.Cols})
+	if err != nil {
+		return FrozenHistorySnapshot{}, err
+	}
 	windowReq := HistoryWindowRequest{TerminalID: req.TerminalID, Cols: req.Cols, Limit: req.Limit, Token: token}
-	latest := screenBackedLatestWindow(windowReq, rows, projection.Generation)
+	latest := screenBackedLatestWindow(windowReq, rows, generation)
 	snapshot := FrozenHistorySnapshot{
 		Token:                 token,
 		TerminalID:            store.terminalIDFor(req.TerminalID),
@@ -167,7 +196,7 @@ func (store *ScreenBackedHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenH
 		CommittedUpperBound:   lastSealedLineID(latest.Rows),
 		FrozenFrontierLineIDs: mutableLineIDs(latest.Rows),
 		Boundary:              latest.Boundary,
-		Generation:            projection.Generation,
+		Generation:            generation,
 		CreatedAt:             time.Now().UTC(),
 	}
 	store.frozen[token] = screenBackedFrozenProjection{
@@ -223,8 +252,173 @@ func (store *ScreenBackedHistoryStore) rowsForWindowRequest(req HistoryWindowReq
 		}
 		return rows, snapshot.Generation, nil
 	}
+	if store.hasPhysicalBackend() {
+		total := store.backendTotalRows(req)
+		return store.backendRowsForAbsoluteRange(req, 0, total)
+	}
 	projection := store.liveProjectionForRequest(req)
 	return projection.HistoryRows(), projection.Generation, nil
+}
+
+func (store *ScreenBackedHistoryStore) hasPhysicalBackend() bool {
+	return store != nil && store.backend != nil
+}
+
+func (store *ScreenBackedHistoryStore) readStateFromBackend() HistoryReadState {
+	state := HistoryReadState{}
+	if store == nil {
+		return state
+	}
+	generation := Generation(0)
+	if store.buffer != nil {
+		generation = Generation(store.buffer.AppliedSeq)
+		state.InAltScreen = store.buffer.InAlt
+	}
+	state.Generation = generation
+	if store.backend != nil && store.backend.RowCount() > 0 {
+		state.HasTimeline = true
+	}
+	for _, row := range store.currentHistoryRows(HistoryWindowRequest{}) {
+		switch row.Segment {
+		case HistorySegmentCurrentPrimaryFrame:
+			if row.Kind == LineKindScreenFrame {
+				state.HasPrimaryCurrent = true
+			}
+		case HistorySegmentCurrentAltFrame:
+			state.HasAltCurrent = true
+		}
+	}
+	return state
+}
+
+func (store *ScreenBackedHistoryStore) latestWindowFromBackend(req HistoryWindowRequest) (HistoryWindow, error) {
+	total := store.backendTotalRows(req)
+	limit := normalizedLimit(req.Limit)
+	start := maxInt(0, total-limit)
+	page, generation, err := store.backendRowsForAbsoluteRange(req, start, total)
+	if err != nil {
+		return HistoryWindow{}, err
+	}
+	annotateProjectionRowIndexes(page, start)
+	boundary := boundaryForRows(page, generation, req.Token)
+	if len(page) > 0 {
+		boundary.Cursor = cursorBeforeIndex(page[0], start, generation, req.Token, start > 0)
+	}
+	return screenBackedWindow(req, page, total, HistoryWindowReplace, boundary, generation, start > 0), nil
+}
+
+func (store *ScreenBackedHistoryStore) olderWindowFromBackend(req HistoryWindowRequest) (HistoryWindow, error) {
+	total := store.backendTotalRows(req)
+	generation := store.backendGeneration()
+	if !req.Cursor.Valid {
+		return screenBackedWindow(req, nil, total, HistoryWindowPrepend, HistoryBoundary{Cursor: HistoryCursor{Generation: generation, Token: req.Token}}, generation, false), nil
+	}
+	limit := normalizedLimit(req.Limit)
+	end := clampInt(req.Cursor.BeforeRowIndex, 0, total)
+	start := maxInt(0, end-limit)
+	page, generation, err := store.backendRowsForAbsoluteRange(req, start, end)
+	if err != nil {
+		return HistoryWindow{}, err
+	}
+	annotateProjectionRowIndexes(page, start)
+	boundary := boundaryForRows(page, generation, req.Token)
+	if len(page) > 0 {
+		boundary.Cursor = cursorBeforeIndex(page[0], start, generation, req.Token, start > 0)
+	}
+	return screenBackedWindow(req, page, total, HistoryWindowPrepend, boundary, generation, start > 0), nil
+}
+
+func (store *ScreenBackedHistoryStore) oldestWindowFromBackend(req HistoryWindowRequest) (HistoryWindow, error) {
+	total := store.backendTotalRows(req)
+	limit := normalizedLimit(req.Limit)
+	end := minInt(total, limit)
+	page, generation, err := store.backendRowsForAbsoluteRange(req, 0, end)
+	if err != nil {
+		return HistoryWindow{}, err
+	}
+	annotateProjectionRowIndexes(page, 0)
+	boundary := boundaryForRows(page, generation, req.Token)
+	if len(page) > 0 {
+		boundary.Cursor = cursorBeforeIndex(page[len(page)-1], end, generation, req.Token, end < total)
+	}
+	return screenBackedWindow(req, page, total, HistoryWindowReplace, boundary, generation, end < total), nil
+}
+
+func (store *ScreenBackedHistoryStore) newerWindowFromBackend(req HistoryWindowRequest) (HistoryWindow, error) {
+	total := store.backendTotalRows(req)
+	generation := store.backendGeneration()
+	if !req.Cursor.Valid {
+		return screenBackedWindow(req, nil, total, HistoryWindowAppend, HistoryBoundary{Cursor: HistoryCursor{Generation: generation, Token: req.Token}}, generation, false), nil
+	}
+	limit := normalizedLimit(req.Limit)
+	start := clampInt(req.Cursor.BeforeRowIndex, 0, total)
+	end := minInt(total, start+limit)
+	page, generation, err := store.backendRowsForAbsoluteRange(req, start, end)
+	if err != nil {
+		return HistoryWindow{}, err
+	}
+	annotateProjectionRowIndexes(page, start)
+	boundary := boundaryForRows(page, generation, req.Token)
+	if len(page) > 0 {
+		boundary.Cursor = cursorBeforeIndex(page[len(page)-1], end, generation, req.Token, end < total)
+	}
+	return screenBackedWindow(req, page, total, HistoryWindowAppend, boundary, generation, end < total), nil
+}
+
+func (store *ScreenBackedHistoryStore) backendRowsForAbsoluteRange(req HistoryWindowRequest, start int, end int) ([]HistoryRow, Generation, error) {
+	if store == nil || store.backend == nil {
+		return nil, 0, nil
+	}
+	sealedCount := store.backend.RowCount()
+	current := store.currentHistoryRows(req)
+	total := sealedCount + len(current)
+	start = clampInt(start, 0, total)
+	end = clampInt(end, start, total)
+	generation := store.backendGeneration()
+	var rows []HistoryRow
+	if start < sealedCount {
+		sealedEnd := minInt(end, sealedCount)
+		physicalRows, err := store.backend.Rows(start, sealedEnd)
+		if err != nil {
+			return nil, 0, err
+		}
+		rows = append(rows, screenProjectionRowsFromPhysicalRows(req.Cols, generation, physicalRows, HistorySegmentCommitted, true)...)
+	}
+	if end > sealedCount {
+		currentStart := maxInt(0, start-sealedCount)
+		currentEnd := minInt(len(current), end-sealedCount)
+		rows = append(rows, cloneHistoryRows(current[currentStart:currentEnd])...)
+	}
+	return rows, generation, nil
+}
+
+func (store *ScreenBackedHistoryStore) backendTotalRows(req HistoryWindowRequest) int {
+	if store == nil || store.backend == nil {
+		return 0
+	}
+	return store.backend.RowCount() + len(store.currentHistoryRows(req))
+}
+
+func (store *ScreenBackedHistoryStore) backendGeneration() Generation {
+	if store != nil && store.buffer != nil {
+		return Generation(store.buffer.AppliedSeq)
+	}
+	return 0
+}
+
+func (store *ScreenBackedHistoryStore) currentHistoryRows(req HistoryWindowRequest) []HistoryRow {
+	if store == nil || store.buffer == nil {
+		return nil
+	}
+	store.buffer.ensure()
+	cols := req.Cols
+	if cols <= 0 {
+		cols = store.buffer.Cols
+	}
+	if store.buffer.InAlt {
+		return screenProjectionRowsFromPhysicalRows(cols, Generation(store.buffer.AppliedSeq), store.buffer.Alt.Rows, HistorySegmentCurrentAltFrame, false)
+	}
+	return screenProjectionRowsFromPhysicalRows(cols, Generation(store.buffer.AppliedSeq), store.buffer.Main.Rows, HistorySegmentCurrentPrimaryFrame, false)
 }
 
 func (store *ScreenBackedHistoryStore) frozenRows(token HistoryToken) ([]HistoryRow, FrozenHistorySnapshot, bool) {

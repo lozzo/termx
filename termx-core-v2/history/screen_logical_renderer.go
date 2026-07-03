@@ -40,6 +40,8 @@ func (renderer *screenBackedLogicalRenderer) Apply(tx TerminalSemanticTransactio
 		return HistoryMutationBatch{Seq: tx.Seq}, nil
 	}
 	renderer.ensureScreenBuffer(tx.Size, tx.Seq)
+	recentAtEntry := renderer.buffer.recentCommittedCount()
+	defer renderer.buffer.trimRecentCommittedRows(recentAtEntry)
 	if decision.ClosePrimaryFrameBeforePrimaryReplace || decision.ClosePrimaryFrameBeforeStream {
 		// 中文说明：这些 decision 表达 primary mutable ownership 离开当前屏。
 		// screen-backed path 必须先 seal 当前 physical rows，再消费本 transaction
@@ -58,7 +60,7 @@ func (renderer *screenBackedLogicalRenderer) Apply(tx TerminalSemanticTransactio
 		}
 		archivedPrimaryBeforeOps = true
 	}
-	committedBeforeOps := len(renderer.buffer.Committed)
+	recentBeforeOps := renderer.buffer.recentCommittedCount()
 	if err := renderer.buffer.ApplyTransaction(tx); err != nil {
 		return HistoryMutationBatch{}, err
 	}
@@ -72,7 +74,7 @@ func (renderer *screenBackedLogicalRenderer) Apply(tx TerminalSemanticTransactio
 		// physical rows。带 RowSet 的 side proof 很可能对应 ordered ED2/scroll，
 		// 只能在没有 ordered owner 时消费；非 RowSet proof 是 vterm 给出的额外
 		// scrollback payload，必须作为独立 physical row 保留。
-		if err := renderer.buffer.sealScrollOutProofRows(screenBackedSideScrollOutProofs(tx, decision, renderer.buffer.Committed[committedBeforeOps:]), tx.Seq); err != nil {
+		if err := renderer.buffer.sealScrollOutProofRows(screenBackedSideScrollOutProofs(tx, decision, renderer.buffer.recentCommittedRowsFrom(recentBeforeOps)), tx.Seq); err != nil {
 			return HistoryMutationBatch{}, err
 		}
 	}

@@ -131,6 +131,63 @@ func TestR425ScreenBackedStoreOldestNewerAndReadState(t *testing.T) {
 	}
 }
 
+func TestR429ScreenBackedStorePagesPhysicalBackendRows(t *testing.T) {
+	backend, err := NewFileScreenPhysicalRowBackend(t.TempDir(), "term-r429-store")
+	if err != nil {
+		t.Fatalf("create physical backend: %v", err)
+	}
+	buffer, err := NewScreenHistoryBufferWithPhysicalBackend(12, 1, backend)
+	if err != nil {
+		t.Fatalf("create buffer with backend: %v", err)
+	}
+	renderer := NewScreenBackedHistoryLogicalRenderer(buffer)
+	for i := 1; i <= 5; i++ {
+		text := "line-" + string(rune('0'+i))
+		if _, err := renderer.Apply(TerminalSemanticTransaction{
+			Seq: uint64(i),
+			Size: TerminalSemanticSize{
+				Cols: 12,
+				Rows: 1,
+			},
+			Ops: []TerminalSemanticOp{
+				screenBufferWriteOp(0, 0, text),
+				screenBufferControlOp("lf"),
+			},
+		}, HistoryDecision{Mode: HistoryOutputModeOrdinaryStream}); err != nil {
+			t.Fatalf("apply row %d: %v", i, err)
+		}
+	}
+	if got := len(buffer.Committed); got != 0 {
+		t.Fatalf("backend-backed buffer must not retain sealed rows in Committed, got %d", got)
+	}
+	if got := backend.RowCount(); got != 5 {
+		t.Fatalf("physical backend should own sealed row payloads, got %d", got)
+	}
+	store := NewScreenBackedHistoryStore("term-r429-store", buffer)
+	latest, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term-r429-store", Limit: 2, Cols: 12})
+	if err != nil {
+		t.Fatalf("latest backend window: %v", err)
+	}
+	if got := r425HistoryTexts(latest.Rows); got != "line-4|line-5" {
+		t.Fatalf("latest should read tail range from backend, got %q window=%#v", got, latest)
+	}
+	older, err := store.OlderWindow(HistoryWindowRequest{TerminalID: "term-r429-store", Limit: 2, Cols: 12, Cursor: latest.Boundary.Cursor})
+	if err != nil {
+		t.Fatalf("older backend window: %v", err)
+	}
+	if got := r425HistoryTexts(older.Rows); got != "line-2|line-3" {
+		t.Fatalf("older should read previous range from backend, got %q window=%#v", got, older)
+	}
+
+	recoveredBuffer, err := NewScreenHistoryBufferWithPhysicalBackend(12, 1, backend)
+	if err != nil {
+		t.Fatalf("recover buffer from backend: %v", err)
+	}
+	if recoveredBuffer.NextRowID <= 5 || recoveredBuffer.AppliedSeq != 5 {
+		t.Fatalf("recovered buffer should restore row id/seq metadata, next=%d seq=%d", recoveredBuffer.NextRowID, recoveredBuffer.AppliedSeq)
+	}
+}
+
 func r425HistoryTexts(rows []HistoryRow) string {
 	texts := make([]string, 0, len(rows))
 	for _, row := range rows {
