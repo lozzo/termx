@@ -106,8 +106,8 @@ func TestR425ScreenBackedStoreOldestNewerAndReadState(t *testing.T) {
 	store := NewScreenBackedHistoryStore("term-r425", buffer)
 
 	state := store.ReadState()
-	if !state.HasTimeline || !state.HasPrimaryCurrent || state.HasAltCurrent || state.Generation != 1 {
-		t.Fatalf("read state should reflect sealed rows and current screen, state=%#v", state)
+	if !state.HasTimeline || state.HasPrimaryCurrent || state.HasAltCurrent || state.Generation != 1 {
+		t.Fatalf("read state should reflect sealed rows without treating ordinary current rows as primary frame, state=%#v", state)
 	}
 	oldest, err := store.OldestWindow(HistoryWindowRequest{TerminalID: "term-r425", Limit: 1, Cols: 12})
 	if err != nil {

@@ -41,7 +41,7 @@ func TestR334PrimaryFrameStartDoesNotDuplicateAlreadySealedShellTail(t *testing.
 			t.Fatalf("sealed shell tail must appear once, %q count=%d:\n%s\nrows=%#v", needle, got, text, rows)
 		}
 	}
-	if !historyRowsContainSegment(rows, history.HistorySegmentCurrentPrimaryFrame) {
+	if !historyRowsContainCurrentScreenFrame(rows) {
 		t.Fatalf("new synchronized UI payload should still publish current frame, rows=%#v", rows)
 	}
 	if got := historyTextCount(rows, "codex welcome"); got != 1 {
@@ -114,7 +114,7 @@ func TestR335FullReplacePrimaryFrameStartDoesNotDuplicateAlreadySealedShellTail(
 			t.Fatalf("sealed shell tail must appear once after full-replace frame start, %q count=%d:\n%s\nrows=%#v", needle, got, text, rows)
 		}
 	}
-	if !historyRowsContainSegment(rows, history.HistorySegmentCurrentPrimaryFrame) {
+	if !historyRowsContainCurrentScreenFrame(rows) {
 		t.Fatalf("new full-replace UI payload should still publish current frame, rows=%#v", rows)
 	}
 	if got := historyTextCount(rows, "codex welcome"); got != 1 {
@@ -389,7 +389,7 @@ func TestR419OrdinaryProgressAfterPrimaryFrameStaysStreamOwned(t *testing.T) {
 	}
 
 	rows, _ := r326CollectAllHistoryRows(t, server, terminalID, 80, 6)
-	if historyRowsContainSegment(rows, history.HistorySegmentCurrentPrimaryFrame) {
+	if historyRowsContainCurrentScreenFrame(rows) {
 		t.Fatalf("ordinary progress after primary frame must not leave a current primary frame, rows=%#v", rows)
 	}
 	for _, row := range rows {

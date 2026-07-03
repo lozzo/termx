@@ -16,6 +16,7 @@ type ScreenProjectionRow struct {
 	RowInLine          int
 	ProjectionRowIndex int
 	ScreenRow          int
+	ScreenCols         int
 	Sealed             bool
 	Wrapped            bool
 	Continued          bool
@@ -129,6 +130,10 @@ func (projection ScreenHistoryProjection) LatestWindow(req HistoryWindowRequest)
 }
 
 func (row ScreenProjectionRow) historyRow(cols int) HistoryRow {
+	screenCols := cols
+	if row.Kind != LineKindOrdinary && row.ScreenCols > 0 {
+		screenCols = row.ScreenCols
+	}
 	return HistoryRow{
 		Cells:              cloneHistoryCells(row.Cells),
 		Kind:               row.Kind,
@@ -137,7 +142,7 @@ func (row ScreenProjectionRow) historyRow(cols int) HistoryRow {
 		RowInLine:          row.RowInLine,
 		ProjectionRowIndex: row.ProjectionRowIndex,
 		FixedGrid:          row.Kind != LineKindOrdinary,
-		ScreenCols:         cols,
+		ScreenCols:         screenCols,
 		ScreenRow:          row.ScreenRow,
 		ScreenRowSet:       true,
 		Committed:          row.Sealed,
@@ -171,15 +176,16 @@ func (builder *screenProjectionBuilder) addPhysicalRows(rows []PhysicalRow, segm
 			continue
 		}
 		builder.seenRows[row.ID] = struct{}{}
-		kind := screenProjectionLineKind(row, segment)
+		effectiveSegment := screenProjectionSegment(row, segment)
+		kind := screenProjectionLineKind(row, effectiveSegment)
 		continues := builder.currentLineIndex >= 0 &&
-			builder.lastSegment == segment &&
+			builder.lastSegment == effectiveSegment &&
 			(row.Continued || builder.lastWrapped)
 		if !continues {
-			builder.startLine(row, segment, kind, sealed)
+			builder.startLine(row, effectiveSegment, kind, sealed)
 		}
-		builder.appendRow(row, segment, kind, sealed, screenRow)
-		builder.lastSegment = segment
+		builder.appendRow(row, effectiveSegment, kind, sealed, screenRow)
+		builder.lastSegment = effectiveSegment
 		builder.lastWrapped = row.Wrapped
 	}
 }
@@ -209,6 +215,7 @@ func (builder *screenProjectionBuilder) appendRow(row PhysicalRow, segment Histo
 		RowInLine:          len(line.Rows),
 		ProjectionRowIndex: len(builder.projection.Rows),
 		ScreenRow:          screenRow,
+		ScreenCols:         row.ScreenCols,
 		Sealed:             sealed || row.Sealed,
 		Wrapped:            row.Wrapped,
 		Continued:          row.Continued,
@@ -245,4 +252,18 @@ func screenProjectionLineKind(row PhysicalRow, segment HistorySegment) LineKind 
 		}
 		return LineKindOrdinary
 	}
+}
+
+func screenProjectionSegment(row PhysicalRow, segment HistorySegment) HistorySegment {
+	if row.SealSegment != "" {
+		return row.SealSegment
+	}
+	if segment == HistorySegmentCommitted && row.OwnerKind == RowOwnerPrimaryFrame {
+		// 中文说明：screen buffer 的 sealed row payload 以 RowOwnerKind 保存
+		// 来源；投影给 HistoryWindow 时，primary frame 离开 current ownership
+		// 的 rows 继续暴露为 archived-primary-frame segment，避免 TUI/CLI 把
+		// screen app session 历史误判成普通 committed stream。
+		return HistorySegmentArchivedPrimaryFrame
+	}
+	return segment
 }

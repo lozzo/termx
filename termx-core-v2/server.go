@@ -156,13 +156,14 @@ func WithHistoryStoreFactory(factory HistoryStoreFactory) ServerOption {
 	}
 }
 
-// WithHistoryStorageDir 为生产 daemon 配置文件-backed sealed payload store。
-// 文件 backend 只承载 logical-line payload 驻留；timeline/window/cursor truth 仍由
-// core-v2 HistoryStore 持有。
+// WithHistoryStorageDir 记录生产 daemon 的 history storage 目录。
+// R428 后默认 Terminal history truth 已切到 ScreenHistoryBuffer；R429 才会接入
+// screen-backed physical row backend。当前不能因为配置了目录而回到旧
+// mutation-backed logical-line file store。
 func WithHistoryStorageDir(dir string) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.historyStorageDir = dir
-		cfg.historyStoreFactory = fileBackedHistoryStoreFactory(dir)
+		cfg.historyStoreFactory = nil
 		cfg.historyDisabled = false
 	}
 }
@@ -200,9 +201,9 @@ func (server *Server) DefaultSize() Size {
 	return server.cfg.defaultSize
 }
 
-// HistoryStorageDir 返回 daemon 配置的 file-backed history payload 目录。
-// 它只用于诊断和测试确认 residency 配置；history truth 仍由 Terminal 的
-// HistoryStore/window/cursor contract 决定。
+// HistoryStorageDir 返回 daemon 配置的 history payload 目录。
+// R428 阶段它只用于诊断和 R429 physical backend 接入准备；默认 history truth
+// 仍由 Terminal 内同一个 ScreenHistoryBuffer 和 ScreenBackedHistoryStore 决定。
 func (server *Server) HistoryStorageDir() string {
 	return server.cfg.historyStorageDir
 }
@@ -242,11 +243,15 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 
 func (server *Server) newHistoryStore(terminalID string) (history.HistoryStore, error) {
 	if server.cfg.historyStoreFactory == nil {
-		return history.NewInMemoryHistoryStore(terminalID), nil
+		// 中文说明：nil store 表示 Terminal 使用默认 screen-backed history
+		// 创建链路，并让 renderer/store 共享同一个 ScreenHistoryBuffer。
+		return nil, nil
 	}
 	return server.cfg.historyStoreFactory(terminalID)
 }
 
+// fileBackedHistoryStoreFactory 保留给显式 WithHistoryStoreFactory 测试/迁移路径。
+// 默认 daemon 不再调用它；R429 会用 physical row backend 替代旧 logical-line backend。
 func fileBackedHistoryStoreFactory(dir string) HistoryStoreFactory {
 	return func(terminalID string) (history.HistoryStore, error) {
 		if strings.TrimSpace(dir) == "" {

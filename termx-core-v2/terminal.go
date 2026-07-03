@@ -32,15 +32,19 @@ type Terminal struct {
 	historyRenderer history.HistoryLogicalRenderer
 	journalRenderer history.HistoryJournalRenderer
 	historyStore    history.HistoryStore
-	historyEnabled  bool
-	logger          *slog.Logger
-	historyStatus   HistoryBacklogStatus
-	queueMu         sync.Mutex
-	liveQ           *terminalLiveIngestQueue
-	historyTapQ     *terminalLiveIngestQueue
-	historyQ        *terminalHistoryIngestQueue
-	events          *eventBroker
-	update          func(TerminalInfo)
+	// 中文说明：screenHistory 是 R428 后默认 history truth owner。Terminal 默认
+	// path 的 transaction renderer、journal renderer 和 HistoryStore 必须共享它；
+	// 显式注入旧 store 的测试路径不设置该字段，避免混用两套 truth。
+	screenHistory  *history.ScreenHistoryBuffer
+	historyEnabled bool
+	logger         *slog.Logger
+	historyStatus  HistoryBacklogStatus
+	queueMu        sync.Mutex
+	liveQ          *terminalLiveIngestQueue
+	historyTapQ    *terminalLiveIngestQueue
+	historyQ       *terminalHistoryIngestQueue
+	events         *eventBroker
+	update         func(TerminalInfo)
 }
 
 func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyStore history.HistoryStore, historyEnabled bool, logger *slog.Logger) *Terminal {
@@ -64,9 +68,12 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 		// 中文说明：history semantic tap 不持有 response owner；OSC/DA/DSR 只能由
 		// live SurfaceTrack 回写一次，避免 live/history 双 vterm 双回写。
 		terminal.tap = NewSemanticTap(info.ID, info.Size, nil)
-		terminal.historyRenderer, terminal.journalRenderer = history.NewHistoryRenderers(nil, nil)
 		if historyStore == nil {
-			historyStore = history.NewInMemoryHistoryStore(info.ID)
+			terminal.screenHistory = history.NewScreenHistoryBuffer(int(info.Size.Cols), int(info.Size.Rows))
+			terminal.historyRenderer, terminal.journalRenderer = history.NewScreenBackedHistoryRenderers(terminal.screenHistory)
+			historyStore = history.NewScreenBackedHistoryStore(info.ID, terminal.screenHistory)
+		} else {
+			terminal.historyRenderer, terminal.journalRenderer = history.NewHistoryRenderers(nil, nil)
 		}
 		terminal.historyStore = historyStore
 	}
@@ -647,10 +654,15 @@ func (terminal *Terminal) enqueueOrApplyHistoryResizeTransaction(tx history.Term
 	terminal.mu.Lock()
 	terminalID := terminal.info.ID
 	terminal.mu.Unlock()
-	journal := history.HistoryJournalFromDecision(terminalID, tx, history.HistoryDecision{
+	decision := history.HistoryDecision{
 		Mode:               history.HistoryOutputModeBoundaryOnly,
 		NonHistoryBoundary: true,
-	})
+	}
+	journal := history.HistoryJournalFromDecision(terminalID, tx, decision)
+	if terminal.usesScreenBackedHistory() {
+		terminal.applyScreenBackedHistoryDecision(tx, decision, terminalID)
+		return
+	}
 	terminal.queueMu.Lock()
 	queue := terminal.historyQ
 	terminal.queueMu.Unlock()
@@ -966,6 +978,14 @@ func (terminal *Terminal) enqueueOrApplyProcessHistoryJournal(result SemanticTap
 	if journal.TerminalID == "" {
 		journal.TerminalID = terminalID
 	}
+	if terminal.usesScreenBackedHistory() {
+		// 中文说明：R428 默认 production path 的正文 truth 是同一份
+		// ScreenHistoryBuffer。compact journal 仍先被构造用于保持 fanout gate
+		// 边界，但普通输出和 screen repaint 必须消费 full semantic transaction
+		// 写 physical rows，不能继续把 ordinary batch 写入旧 logical store。
+		terminal.applyScreenBackedHistoryTransaction(result.Transaction(), terminalID)
+		return
+	}
 	if queue != nil && terminal.historyJournalCanQueue(journal) && !queue.NeedsClassifierFlush(journal) && queue.Enqueue(journal) {
 		return
 	}
@@ -1011,6 +1031,61 @@ func (terminal *Terminal) applyHistoryJournal(journal history.HistoryJournal) {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
 	terminal.applyHistoryJournalsLocked([]history.HistoryJournal{journal})
+}
+
+func (terminal *Terminal) usesScreenBackedHistory() bool {
+	return terminal != nil && terminal.screenHistory != nil
+}
+
+func (terminal *Terminal) applyScreenBackedHistoryTransaction(tx history.TerminalSemanticTransaction, terminalID string) {
+	terminal.historyMu.Lock()
+	state := history.HistoryReadState{}
+	if terminal.historyEnabled && terminal.historyStore != nil {
+		state = terminal.historyStore.ReadState()
+	}
+	decision := terminal.historyDecisionForTransaction(tx, state)
+	terminal.applyScreenBackedHistoryLocked(tx, decision)
+	terminal.historyMu.Unlock()
+	terminal.cacheScreenBackedHistorySeq(tx.Seq, terminalID)
+}
+
+func (terminal *Terminal) applyScreenBackedHistoryDecision(tx history.TerminalSemanticTransaction, decision history.HistoryDecision, terminalID string) {
+	terminal.historyMu.Lock()
+	terminal.applyScreenBackedHistoryLocked(tx, decision)
+	terminal.historyMu.Unlock()
+	terminal.cacheScreenBackedHistorySeq(tx.Seq, terminalID)
+}
+
+func (terminal *Terminal) applyScreenBackedHistoryLocked(tx history.TerminalSemanticTransaction, decision history.HistoryDecision) {
+	if !terminal.historyEnabled || terminal.historyRenderer == nil || terminal.historyStore == nil {
+		return
+	}
+	// 中文说明：screen-backed renderer 的 mutation batch 通常为空；写 truth 的
+	// 边界是 ScreenHistoryBuffer physical row mutation。保留 Apply 调用只服务
+	// 显式测试 renderer 或未来 meta mutation，不能作为旧 logical fallback。
+	batch, err := terminal.historyRenderer.Apply(tx, decision)
+	if err != nil {
+		return
+	}
+	if len(batch.Mutations) > 0 {
+		_ = terminal.historyStore.Apply(batch)
+	}
+}
+
+func (terminal *Terminal) cacheScreenBackedHistorySeq(seq uint64, terminalID string) {
+	if seq == 0 {
+		return
+	}
+	terminal.queueMu.Lock()
+	defer terminal.queueMu.Unlock()
+	if seq > terminal.historyStatus.TargetSeq {
+		terminal.historyStatus.TargetSeq = seq
+	}
+	if seq > terminal.historyStatus.AppliedSeq {
+		terminal.historyStatus.AppliedSeq = seq
+	}
+	terminal.historyStatus.TerminalID = terminalID
+	terminal.historyStatus.HistoryEnabled = terminal.historyEnabled
 }
 
 func historyJournalAllowsTerminalQueue(journal history.HistoryJournal) bool {

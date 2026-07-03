@@ -62,7 +62,7 @@ func TestR328ED2ClearScreenPreservesClearedScreenAsHistory(t *testing.T) {
 	if got := strings.Join(gotCommitted, "|"); got != "old-a|old-b" {
 		t.Fatalf("ED2 should preserve cleared screen before redraw without reordering or duplication, committed=%v rows=%#v", gotCommitted, rows)
 	}
-	if !historyRowsContainSegment(rows, history.HistorySegmentCurrentPrimaryFrame) {
+	if !historyRowsContainCurrentScreenFrame(rows) {
 		t.Fatalf("redraw after ED2 should publish current primary frame, rows=%#v", rows)
 	}
 	gotCurrent := currentPrimaryFrameRowTexts(rows)
@@ -308,7 +308,7 @@ func TestR333SynchronizedBeginAloneDoesNotPublishExistingShellScreenAsFrame(t *t
 	if err != nil {
 		t.Fatalf("history window: %v", err)
 	}
-	if historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
+	if historyRowsContainCurrentScreenFrame(window.Rows) {
 		t.Fatalf("synchronized begin without repaint payload must not publish existing shell screen as current frame, rows=%#v", window.Rows)
 	}
 }
@@ -438,7 +438,7 @@ func TestR334FullReplacePromptAfterPrimaryFrameDoesNotRepublishScreen(t *testing
 	terminal.historyMu.Unlock()
 
 	rows, _ := r326CollectAllHistoryRows(t, server, "term-r334-full-replace-prompt", 40, 3)
-	if historyRowsContainSegment(rows, history.HistorySegmentCurrentPrimaryFrame) {
+	if historyRowsContainCurrentScreenFrame(rows) {
 		t.Fatalf("ordinary prompt full-replace damage must not republish the whole screen as current frame, rows=%#v", rows)
 	}
 	if got := historyTextCount(rows, "S03 100/100"); got != 1 {
@@ -507,7 +507,7 @@ func TestR334FullReplacePromptWithOrderedOpsClosesFrameAndKeepsPrompt(t *testing
 	terminal.historyMu.Unlock()
 
 	rows, _ := r326CollectAllHistoryRows(t, server, "term-r334-full-replace-prompt-ops", 40, 3)
-	if historyRowsContainSegment(rows, history.HistorySegmentCurrentPrimaryFrame) {
+	if historyRowsContainCurrentScreenFrame(rows) {
 		t.Fatalf("ordered ordinary prompt must close old primary frame instead of republishing screen, rows=%#v", rows)
 	}
 	if got := historyTextCount(rows, "S03 100/100"); got != 1 {
@@ -578,7 +578,7 @@ func TestR334SyncEndAndPromptInSameTransactionDoesNotRepublishScreen(t *testing.
 	terminal.historyMu.Unlock()
 
 	rows, _ := r326CollectAllHistoryRows(t, server, "term-r334-sync-end-prompt", 40, 3)
-	if historyRowsContainSegment(rows, history.HistorySegmentCurrentPrimaryFrame) {
+	if historyRowsContainCurrentScreenFrame(rows) {
 		t.Fatalf("sync end followed by prompt must close current frame, not republish final screen, rows=%#v", rows)
 	}
 	if got := historyTextCount(rows, "S03 100/100"); got != 1 {
@@ -648,7 +648,7 @@ func TestR334ED0PromptAfterPrimaryFrameDoesNotRepublishScreen(t *testing.T) {
 	terminal.historyMu.Unlock()
 
 	rows, _ := r326CollectAllHistoryRows(t, server, "term-r334-ed0-prompt", 40, 3)
-	if historyRowsContainSegment(rows, history.HistorySegmentCurrentPrimaryFrame) {
+	if historyRowsContainCurrentScreenFrame(rows) {
 		t.Fatalf("ED0 prompt must not be classified as screen repaint, rows=%#v", rows)
 	}
 	if got := historyTextCount(rows, "S03 100/100"); got != 1 {
@@ -711,11 +711,20 @@ func r333NumberedLine(session int, line int, total int, cjkEvery int) string {
 func currentPrimaryFrameRowTexts(rows []history.HistoryRow) []string {
 	var out []string
 	for _, row := range rows {
-		if row.Segment == history.HistorySegmentCurrentPrimaryFrame {
+		if row.Segment == history.HistorySegmentCurrentPrimaryFrame && row.Kind == history.LineKindScreenFrame {
 			out = append(out, historyCellsText(row.Cells))
 		}
 	}
 	return out
+}
+
+func historyRowsContainCurrentScreenFrame(rows []history.HistoryRow) bool {
+	for _, row := range rows {
+		if row.Segment == history.HistorySegmentCurrentPrimaryFrame && row.Kind == history.LineKindScreenFrame {
+			return true
+		}
+	}
+	return false
 }
 
 func historyCellsForRegression(text string) []history.TerminalSemanticCell {

@@ -91,8 +91,10 @@ func (renderer *screenBackedJournalRenderer) applyFrameEvent(event HistoryJourna
 			return nil
 		}
 		return renderer.buffer.applyPrimaryFrameRows(*event.Frame, event.TouchedRows, seq)
-	case HistoryJournalFrameArchivePrimary, HistoryJournalFrameClosePrimary, HistoryJournalFrameFinalPrimary:
-		return renderer.buffer.sealPrimaryVisibleRows(seq)
+	case HistoryJournalFrameArchivePrimary:
+		return renderer.buffer.sealPrimaryVisibleRowsAs(seq, HistorySegmentArchivedPrimaryFrame)
+	case HistoryJournalFrameClosePrimary, HistoryJournalFrameFinalPrimary:
+		return renderer.buffer.sealPrimaryVisibleRowsAs(seq, HistorySegmentCommitted)
 	case HistoryJournalFrameClearPrimary:
 		renderer.buffer.clearPrimaryFrameRows(seq)
 	case HistoryJournalFrameReplaceAlt:

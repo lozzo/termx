@@ -10,6 +10,10 @@ func (buffer *ScreenHistoryBuffer) applyPrimaryFrameRows(frame TerminalSemanticF
 	}
 	buffer.ensure()
 	buffer.InAlt = false
+	screenCols := frame.Cols
+	if screenCols <= 0 {
+		screenCols = buffer.Cols
+	}
 	rows := touchedRows
 	if len(rows) == 0 {
 		rows = make([]int, buffer.Rows)
@@ -17,22 +21,25 @@ func (buffer *ScreenHistoryBuffer) applyPrimaryFrameRows(frame TerminalSemanticF
 			rows[index] = index
 		}
 	}
+	frameRows := trimmedFrameRows(frame.Rows)
 	for _, rowIndex := range rows {
 		if rowIndex < 0 || rowIndex >= buffer.Rows {
 			continue
 		}
 		var cells []Cell
-		if rowIndex < len(frame.Rows) {
-			cells = historyCellsFromTerminal(frame.Rows[rowIndex])
+		if rowIndex < len(frameRows) {
+			cells = cloneHistoryCells(frameRows[rowIndex])
 		}
 		row := buffer.Main.Rows[rowIndex]
-		// 中文说明：primary frame 是 fixed-grid 屏幕内容，尾部普通空格也可能是
-		// 用户可见布局；不能沿用 ordinary stream 的 trailing blank trim。
+		// 中文说明：primary frame 是 fixed-grid 屏幕内容，行内普通空格可能是
+		// 用户可见布局；但尾部整行 default blank 按 R315/R328 不能进入
+		// history projection，所以这里使用 frame 级裁尾结果。
 		row.Cells = cells
 		row.Version++
 		row.OwnerSeq = seq
 		row.OwnerKind = RowOwnerPrimaryFrame
 		row.Sealed = false
+		row.ScreenCols = screenCols
 		buffer.Main.Rows[rowIndex] = row
 	}
 	return nil
@@ -62,10 +69,15 @@ func (buffer *ScreenHistoryBuffer) applyAltFrameRows(frame TerminalSemanticFrame
 	}
 	buffer.ensure()
 	buffer.InAlt = true
+	screenCols := frame.Cols
+	if screenCols <= 0 {
+		screenCols = buffer.Cols
+	}
+	frameRows := trimmedFrameRows(frame.Rows)
 	for rowIndex := range buffer.Alt.Rows {
 		var cells []Cell
-		if rowIndex < len(frame.Rows) {
-			cells = historyCellsFromTerminal(frame.Rows[rowIndex])
+		if rowIndex < len(frameRows) {
+			cells = cloneHistoryCells(frameRows[rowIndex])
 		}
 		row := buffer.Alt.Rows[rowIndex]
 		row.Cells = cells
@@ -73,6 +85,7 @@ func (buffer *ScreenHistoryBuffer) applyAltFrameRows(frame TerminalSemanticFrame
 		row.OwnerSeq = seq
 		row.OwnerKind = RowOwnerAltScreen
 		row.Sealed = false
+		row.ScreenCols = screenCols
 		buffer.Alt.Rows[rowIndex] = row
 	}
 	return nil
@@ -91,21 +104,59 @@ func (buffer *ScreenHistoryBuffer) clearAltRows(seq uint64) {
 }
 
 func (buffer *ScreenHistoryBuffer) sealPrimaryVisibleRows(seq uint64) error {
+	return buffer.sealPrimaryVisibleRowsAs(seq, "")
+}
+
+func (buffer *ScreenHistoryBuffer) sealPrimaryVisibleRowsAs(seq uint64, segment HistorySegment) error {
 	if buffer == nil {
 		return nil
 	}
 	buffer.ensure()
 	for rowIndex, row := range buffer.Main.Rows {
 		if !screenProjectionShouldIncludeRow(row, false) {
+			if row.OwnerKind == RowOwnerPrimaryFrame {
+				// 中文说明：primary frame 关闭时，尾部默认空白行不会进入
+				// projection，但它们仍可能持有 frame ownership。必须释放成新
+				// RowID 的 shell row，否则后续普通 prompt 会继承 screen-frame
+				// owner，形成第二份错误 current frame truth。
+				buffer.Main.Rows[rowIndex] = buffer.newPhysicalRow(RowOwnerShellStream, seq)
+			}
 			continue
 		}
 		if _, exists := buffer.sealedRowIDs[row.ID]; !exists {
+			if segment != "" {
+				row.SealSegment = segment
+			}
 			if err := buffer.sealRow(row); err != nil {
 				return err
 			}
 		}
 		buffer.Main.Rows[rowIndex] = buffer.newPhysicalRow(RowOwnerShellStream, seq)
 	}
+	return nil
+}
+
+func (buffer *ScreenHistoryBuffer) sealPrimaryRowAt(rowIndex int, seq uint64) error {
+	if buffer == nil {
+		return nil
+	}
+	buffer.ensure()
+	if rowIndex < 0 || rowIndex >= len(buffer.Main.Rows) {
+		return nil
+	}
+	row := buffer.Main.Rows[rowIndex]
+	if screenProjectionShouldIncludeRow(row, false) {
+		if _, exists := buffer.sealedRowIDs[row.ID]; !exists {
+			row.SealSegment = HistorySegmentCommitted
+			if err := buffer.sealRow(row); err != nil {
+				return err
+			}
+		}
+	}
+	// 中文说明：hard line boundary 后，即使该 physical row 仍在 viewport
+	// 可见，它的历史 truth 已经进入 sealed rows；current screen 必须换新 RowID，
+	// 防止后续 projection 把同一 RowID 同时当 sealed/current。
+	buffer.Main.Rows[rowIndex] = buffer.newPhysicalRow(RowOwnerShellStream, seq)
 	return nil
 }
 
@@ -119,32 +170,31 @@ func (buffer *ScreenHistoryBuffer) sealScrollOutProofRows(proofs []TerminalSeman
 			continue
 		}
 		if proof.RowSet && proof.Row >= 0 && proof.Row < len(buffer.Main.Rows) {
-			row := buffer.Main.Rows[proof.Row]
-			if !screenProjectionShouldIncludeRow(row, false) {
-				row.Cells = cellsFromScrollOutProof(proof)
-				row.OwnerKind = RowOwnerPrimaryFrame
-				row.OwnerSeq = seq
-				row.Version++
+			// 中文说明：Row/RowSet 只标识 proof 来源行，不能在 transaction
+			// 末尾再从 current screen 反读正文。scroll-out truth 是 proof
+			// payload 本身；否则同步输出后置消费会把 sync01 误读成当前尾屏。
+			if err := buffer.sealDetachedScrollOutProofRow(proof, seq); err != nil {
+				return err
 			}
-			if _, exists := buffer.sealedRowIDs[row.ID]; !exists {
-				if err := buffer.sealRow(row); err != nil {
-					return err
-				}
-			}
-			buffer.Main.Rows[proof.Row] = buffer.newPhysicalRow(RowOwnerShellStream, seq)
 			continue
 		}
-		row := buffer.newPhysicalRow(RowOwnerPrimaryFrame, seq)
-		row.Cells = cellsFromScrollOutProof(proof)
-		row.Sealed = true
-		if len(row.Cells) == 0 {
-			continue
-		}
-		if err := buffer.sealRow(row); err != nil {
+		if err := buffer.sealDetachedScrollOutProofRow(proof, seq); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (buffer *ScreenHistoryBuffer) sealDetachedScrollOutProofRow(proof TerminalSemanticScrollOut, seq uint64) error {
+	row := buffer.newPhysicalRow(RowOwnerShellStream, seq)
+	row.Cells = cellsFromScrollOutProof(proof)
+	row.Wrapped = proof.Wrapped
+	row.ScreenCols = buffer.Cols
+	row.SealSegment = HistorySegmentCommitted
+	if len(row.Cells) == 0 && !row.Wrapped {
+		return nil
+	}
+	return buffer.sealRow(row)
 }
 
 func (buffer *ScreenHistoryBuffer) resizeMutableScreen(cols int, rows int, seq uint64) {

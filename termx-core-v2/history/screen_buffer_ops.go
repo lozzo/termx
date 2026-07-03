@@ -167,6 +167,25 @@ func (buffer *ScreenHistoryBuffer) applyControl(op TerminalSemanticOp, seq uint6
 		return buffer.scrollDownRegion(top, bottom, controlCount(op), seq)
 	case "ri":
 		return buffer.reverseIndex(op, seq)
+	case "ris":
+		// 中文说明：RIS 是 terminal reset boundary。screen-backed history 先把
+		// 当前 primary physical rows 按 lifecycle 离开 mutable screen 处理，再
+		// 重建 main/alt mutable grids；不能把 reset 后的空屏当成旧 history fallback。
+		if err := buffer.sealPrimaryVisibleRows(seq); err != nil {
+			return err
+		}
+		buffer.Main = buffer.newGrid(RowOwnerSystem)
+		buffer.Alt = buffer.newGrid(RowOwnerAltScreen)
+		for index := range buffer.Main.Rows {
+			buffer.Main.Rows[index].OwnerSeq = seq
+		}
+		for index := range buffer.Alt.Rows {
+			buffer.Alt.Rows[index].OwnerSeq = seq
+		}
+		buffer.InAlt = false
+		buffer.Cursor = CursorState{}
+		buffer.Margins = MarginState{Top: 0, Bottom: buffer.Rows, Left: 0, Right: buffer.Cols}
+		return nil
 	case "decstbm":
 		buffer.setVerticalMargins(op)
 		return nil
@@ -258,8 +277,9 @@ func (buffer *ScreenHistoryBuffer) eraseDisplay(row int, col int, mode int, seq 
 		return nil
 	case 3:
 		// 中文说明：ED3 是 clear scrollback/boundary 信号；R421 的 screen
-		// buffer 不删除 committed physical history，也不从当前屏反推历史。
-		return nil
+		// buffer 不删除 committed physical history。R428 默认 history path 需要
+		// 把当前可见 primary page seal 成上一页，再让后续输出进入新 RowID。
+		return buffer.sealPrimaryVisibleRows(seq)
 	default:
 		if err := buffer.eraseLine(row, col, 0, seq); err != nil {
 			return err
@@ -573,6 +593,7 @@ func (buffer *ScreenHistoryBuffer) applyScrollOutProofs(proofs []TerminalSemanti
 		}
 		seen[proof.Row] = struct{}{}
 		row := buffer.Main.Rows[proof.Row]
+		row.SealSegment = HistorySegmentCommitted
 		if err := buffer.sealRow(row); err != nil {
 			return err
 		}
@@ -587,8 +608,14 @@ func (buffer *ScreenHistoryBuffer) sealRow(row PhysicalRow) error {
 	if row.ID == 0 {
 		return nil
 	}
+	if !screenProjectionShouldIncludeRow(row, false) {
+		return nil
+	}
 	if _, exists := buffer.sealedRowIDs[row.ID]; exists {
 		return fmt.Errorf("screen history row %d sealed twice", row.ID)
+	}
+	if row.ScreenCols <= 0 {
+		row.ScreenCols = buffer.Cols
 	}
 	row.Sealed = true
 	buffer.sealedRowIDs[row.ID] = struct{}{}

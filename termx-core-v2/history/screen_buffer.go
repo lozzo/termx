@@ -34,6 +34,14 @@ type PhysicalRow struct {
 	OwnerKind RowOwnerKind
 	FrameID   uint64
 	Sealed    bool
+	// ScreenCols 记录该 physical row 生成或被 frame proof 接管时的屏幕宽度。
+	// fixed-grid screen-frame seal 后必须使用这个宽度投影，resize 只能影响
+	// mutable screen，不能改写 archived/final frame 的生成时列数。
+	ScreenCols int
+	// SealSegment 记录 sealed row 在 HistoryWindow 中应暴露的 segment。
+	// 空值表示由 OwnerKind 和默认 committed segment 推导；process close final
+	// frame 与 alt/archive frame 必须在 seal 边界写清，避免 query 阶段猜测原因。
+	SealSegment HistorySegment
 }
 
 // Text 返回 physical row 当前 cells 的 plain text 投影。
@@ -122,10 +130,11 @@ func (buffer *ScreenHistoryBuffer) newPhysicalRow(owner RowOwnerKind, ownerSeq u
 	id := buffer.NextRowID
 	buffer.NextRowID++
 	return PhysicalRow{
-		ID:        id,
-		Version:   1,
-		OwnerSeq:  ownerSeq,
-		OwnerKind: owner,
+		ID:         id,
+		Version:    1,
+		OwnerSeq:   ownerSeq,
+		OwnerKind:  owner,
+		ScreenCols: buffer.Cols,
 	}
 }
 

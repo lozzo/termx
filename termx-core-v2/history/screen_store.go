@@ -53,10 +53,15 @@ func (store *ScreenBackedHistoryStore) ReadState() HistoryReadState {
 	}
 	for _, row := range projection.Rows {
 		switch row.Segment {
-		case HistorySegmentCommitted:
+		case HistorySegmentCommitted, HistorySegmentArchivedPrimaryFrame:
 			state.HasTimeline = true
 		case HistorySegmentCurrentPrimaryFrame:
-			state.HasPrimaryCurrent = true
+			if row.OwnerKind == RowOwnerPrimaryFrame {
+				// 中文说明：screen-backed projection 会把当前 main screen 暴露在
+				// current-primary-frame segment；classifier 的 HasPrimaryCurrent 只表示
+				// primary screen app frame ownership，普通 shell current row 不能置位。
+				state.HasPrimaryCurrent = true
+			}
 		case HistorySegmentCurrentAltFrame:
 			state.HasAltCurrent = true
 		}
