@@ -192,12 +192,32 @@ func (e *Emulator) handleGrapheme(content string, width int) {
 		e.lastChar, _ = utf8.DecodeRuneInString(content)
 	}
 
+	// 中文说明：宽字符（width>1）行尾剩余列不足时不能直接落在行尾——
+	// SetCell 会拒写或擦掉相邻宽字符，字符被静默丢弃。DECAWM 开启时应
+	// 整字软换行到下一行（xterm 行为）；关闭时按能容纳的位置左移。
+	screenWidth := e.scr.Width()
+	if cell.Width > 1 && x+cell.Width > screenWidth {
+		if awm {
+			e.scr.SetLineWrapped(y, true)
+			e.softWrapIndex()
+			_, y = e.scr.CursorPosition()
+			x = 0
+		} else if screenWidth >= cell.Width {
+			x = screenWidth - cell.Width
+		}
+	}
+
 	e.scr.SetCell(x, y, &cell)
 	e.scr.damage.recordTextSpan(x, y, []uv.Cell{cell})
 
 	// Handle phantom state at the end of the line
-	e.atPhantom = awm && x >= e.scr.Width()-1
-	if !e.atPhantom {
+	// 中文说明：pending-wrap 判定必须按 cell 结束列（x+Width）算；
+	// 宽字符恰好填满行尾时起始列到不了 width-1，旧判定会让 cursor 越界
+	// clamp 回行尾，下一个字符覆盖行尾并擦掉刚写入的宽字符。
+	e.atPhantom = awm && x+cell.Width >= screenWidth
+	if e.atPhantom {
+		x = max(screenWidth-1, 0)
+	} else {
 		x += cell.Width
 	}
 
