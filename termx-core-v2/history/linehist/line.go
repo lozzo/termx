@@ -4,7 +4,8 @@
 // 不做 classifier/frame reducer/文本去重对账；它只消费 vterm 事务里
 // ungated 的 EvictedRows（真正离开 primary 可见区的物理行，seal-on-eviction
 // 后不可变），按软换行标志拼成宽度无关的 logical line，append 落盘，
-// 查询时按请求 cols 重新换行投影。
+// copy/history 查询按 logical-line window 返回 source rows；visual reflow
+// 由 TUI 本地完成。
 //
 // 消息链路：PTY bytes -> SemanticTap -> TerminalSemanticTransaction.EvictedRows
 // -> Assembler 拼 logical line -> LineFile append-only 文件。
@@ -30,8 +31,8 @@ type Run struct {
 
 // Line 是存储与分页的最小记录单位。HardEnd=true 表示硬换行结束的完整
 // logical line；HardEnd=false 表示病态超长行的 chunk 截断，投影时与后继
-// 记录连续拼接。Line 宽度无关：不存 fixed grid / ScreenCols，查询时按
-// 当前 cols 重新换行，从而绕开已落盘历史的 resize 重排。
+// 记录连续拼接。Line 宽度无关：不存 fixed grid / ScreenCols；已落盘
+// 历史的 resize 重排只影响 TUI 本地 visual reflow，不改写 cold truth。
 type Line struct {
 	Runs    []Run
 	HardEnd bool

@@ -70,8 +70,8 @@ type RowTailFill struct {
 }
 
 // LogicalLine 是 history 对外 projection 与 linehist 内部转换复用的行 payload。
-// 当前默认实现的 cold truth 是宽度无关 logical line；查询时再按请求 cols 投影
-// 为 HistoryRow。
+// 当前默认实现的 cold truth 是宽度无关 logical line；core 查询返回
+// logical-line source row，visual reflow 由消费方本地派生。
 type LogicalLine struct {
 	ID                LogicalLineID
 	Generation        Generation

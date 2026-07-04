@@ -43,9 +43,9 @@ const (
 	HistoryCursorSegmentCurrentAltFrame      = "current-alt-frame"
 )
 
-// HistoryCursor 是 older pagination 的 logical boundary。
-// BeforeRowIndex 来自 core authoritative projection，是下一次 older 请求的
-// 绝对行号；BeforeRowInLine 只描述 logical line 内部位置，不能参与分页。
+// HistoryCursor 是 copy/history 分页的 logical boundary。
+// BeforeLineID 是 core authoritative logical-line 坐标；BeforeRowInLine 只描述
+// 当前本地 reflow 行内位置。BeforeRowIndex 是旧 wire 兼容字段，不能作为 truth。
 type HistoryCursor struct {
 	Valid           bool
 	BeforeLineID    uint64
@@ -92,8 +92,7 @@ type HistoryRow struct {
 	ScreenCols   int
 	ScreenRow    int
 	ScreenRowSet bool
-	// ProjectionRowIndex 来自 core authoritative projection；copy/history 本地
-	// trim 后用它恢复 older cursor，不能从 RowInLine 或本地 visual row 推断。
+	// ProjectionRowIndex 是旧 wire 兼容字段；copy/history 的权威坐标是 LineID。
 	ProjectionRowIndex int
 	ClippedStart       bool
 	ClippedEnd         bool
@@ -889,9 +888,8 @@ func (store HistoryStore) TrimRows(startRow int, endRow int) (HistoryStore, Hist
 			boundaryLast = store.Rows[len(store.Rows)-1].LineID
 		}
 		store.Boundary.LastLineID = boundaryLast
-		// 中文说明：本地裁剪不能把 core projection cursor 重建成 row-in-line。
-		// ProjectionRowIndex 是 core 发来的 authoritative row index；旧协议缺字段时
-		// 才退回按 source/core row count 平移。
+		// 中文说明：本地裁剪后 older cursor 只表达 retained logical line。
+		// visual row 是本地 reflow 派生值，不能回写成全局 history 坐标。
 		store.Cursor = cursorBeforeFirstLocalRow(store.Rows, store.Cursor, result.DroppedLinesBefore)
 	}
 	return store, result
@@ -908,12 +906,8 @@ func cursorBeforeFirstLocalRow(rows []HistoryRow, previous HistoryCursor, droppe
 	cursor := previous
 	cursor.BeforeLineID = first.LineID
 	cursor.BeforeRowInLine = first.RowInLine
-	if first.ProjectionRowIndex > 0 || previous.BeforeRowIndex == 0 && droppedRowsBefore == 0 {
-		cursor.BeforeRowIndex = first.ProjectionRowIndex
-	} else {
-		cursor.BeforeRowIndex = previous.BeforeRowIndex + droppedRowsBefore
-	}
-	cursor.Valid = previous.Valid || cursor.BeforeRowIndex > 0
+	cursor.BeforeRowIndex = 0
+	cursor.Valid = first.LineID > 1
 	if first.Segment != "" {
 		cursor.Segment = first.Segment
 	}

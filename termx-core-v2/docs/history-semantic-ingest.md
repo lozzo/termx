@@ -24,7 +24,7 @@
 - live snapshot、damage rect、TUI rows 不能被 `HistoryTrack` 反向读取来推导 sealed history；hot projection 只能在 terminal tap gate 内读取 vterm 当前屏。
 - semantic ingest 使用的 cols/rows 必须等于真实 PTY size，不能为了“保存更多内容”使用更高的假终端。
 - copy/history window 只能来自 core-v2 authoritative history window；默认由 linehist cold logical lines + vterm hot screen 投影生成。
-- resize 不重写 cold history；已落盘 logical lines 按请求 cols 重新投影，resize 产生的滚出行继续通过 `EvictedRows` seal。
+- resize 不重写 cold history；已落盘 logical lines 仍按 logical-line source row 查询，当前窗口的 visual reflow 由消费方本地完成，resize 产生的滚出行继续通过 `EvictedRows` seal。
 
 ## 3. vterm 归属
 

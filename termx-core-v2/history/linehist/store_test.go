@@ -75,9 +75,6 @@ func TestStoreLatestWindowJoinsColdAndHotWithoutDupOrLoss(t *testing.T) {
 		t.Fatalf("latest rows = %v, want %v", got, want)
 	}
 	for i, row := range window.Rows {
-		if row.ProjectionRowIndex != i {
-			t.Fatalf("row %d ProjectionRowIndex = %d, want dense absolute index %d", i, row.ProjectionRowIndex, i)
-		}
 		if int(row.LineID) != i+1 {
 			t.Fatalf("row %d LineID = %d, want %d", i, row.LineID, i+1)
 		}
@@ -137,14 +134,9 @@ func TestStoreOlderPagingRoundTripCoversFullProjection(t *testing.T) {
 	if strings.Join(texts, "|") != strings.Join(want, "|") {
 		t.Fatalf("older paging round trip = %v, want %v", texts, want)
 	}
-	for i, row := range rows {
-		if row.ProjectionRowIndex != i {
-			t.Fatalf("row %d ProjectionRowIndex = %d after paging, want %d", i, row.ProjectionRowIndex, i)
-		}
-	}
 }
 
-func TestStoreProjectsColdLinesByRequestCols(t *testing.T) {
+func TestStoreReturnsLogicalColdLinesIndependentOfRequestCols(t *testing.T) {
 	harness := newStoreHarness(t, 6, 2)
 	// 12 字符命令在 6 列屏软换行；滚出后落盘为一条 logical line。
 	harness.write("abcdefghijkl\r\nx\r\ny\r\nz\r\n")
@@ -164,17 +156,11 @@ func TestStoreProjectsColdLinesByRequestCols(t *testing.T) {
 		t.Fatalf("narrow window: %v", err)
 	}
 	narrowTexts := windowTextsForTest(narrow)
-	if strings.Join(narrowTexts[:3], "|") != "abcd|efgh|ijkl" {
-		t.Fatalf("narrow cols must split logical line, got %v", narrowTexts)
+	if narrowTexts[0] != "abcdefghijkl" {
+		t.Fatalf("core history window must stay logical-line based; got %v", narrowTexts)
 	}
-	for i := 0; i < 3; i++ {
-		row := narrow.Rows[i]
-		if row.LineID != 1 || row.RowInLine != i {
-			t.Fatalf("narrow row %d = LineID %d RowInLine %d, want LineID 1 RowInLine %d", i, row.LineID, row.RowInLine, i)
-		}
-		if wantWrapped := i < 2; row.Wrapped != wantWrapped {
-			t.Fatalf("narrow row %d Wrapped = %v, want %v", i, row.Wrapped, wantWrapped)
-		}
+	if narrow.Rows[0].LineID != 1 || narrow.Rows[0].RowInLine != 0 || narrow.Rows[0].Wrapped {
+		t.Fatalf("narrow request must not create global visual rows, got %#v", narrow.Rows[0])
 	}
 }
 

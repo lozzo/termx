@@ -983,12 +983,12 @@ func TestHistoryStoreTrimRowsKeepsAuthoritativeCursorSegment(t *testing.T) {
 
 	trimmed, _ := store.TrimRows(1, 2)
 
-	if trimmed.Cursor != (HistoryCursor{Valid: true, BeforeLineID: 2, BeforeRowIndex: 1, Segment: HistoryCursorSegmentArchivedPrimaryFrame}) {
+	if trimmed.Cursor != (HistoryCursor{Valid: true, BeforeLineID: 2, Segment: HistoryCursorSegmentArchivedPrimaryFrame}) {
 		t.Fatalf("trim must keep core cursor segment while moving local boundary, got %#v", trimmed.Cursor)
 	}
 }
 
-func TestR333HistoryStoreTrimRowsPreservesProjectionCursorIndex(t *testing.T) {
+func TestHistoryStoreTrimRowsUsesLogicalLineCursor(t *testing.T) {
 	source := make([]HistoryLogicalLine, 0, 8)
 	for i := 0; i < 8; i++ {
 		source = append(source, HistoryLogicalLine{
@@ -1010,8 +1010,8 @@ func TestR333HistoryStoreTrimRowsPreservesProjectionCursorIndex(t *testing.T) {
 	if result.DroppedRowsBefore != 2 {
 		t.Fatalf("unexpected trim result %#v", result)
 	}
-	if trimmed.Cursor.BeforeRowIndex != 242 || trimmed.Cursor.BeforeRowInLine != 0 || trimmed.Cursor.BeforeLineID != 242 {
-		t.Fatalf("trim must advance projection cursor without using row-in-line as offset, got %#v", trimmed.Cursor)
+	if trimmed.Cursor.BeforeLineID != 242 || trimmed.Cursor.BeforeRowInLine != 0 || trimmed.Cursor.BeforeRowIndex != 0 {
+		t.Fatalf("trim must advance logical-line cursor without projection row index, got %#v", trimmed.Cursor)
 	}
 }
 
@@ -1033,20 +1033,20 @@ func TestR333HistoryStoreTrimRowsAdvancesCursorBySourceLinesNotVisualRows(t *tes
 	if result.DroppedRowsBefore != 1 || result.DroppedLinesBefore != 1 {
 		t.Fatalf("test setup should drop one source line with one visual row, got %#v", result)
 	}
-	if trimmed.Cursor.BeforeRowIndex != 11 {
-		t.Fatalf("cursor should advance by dropped source rows, got %#v", trimmed.Cursor)
+	if trimmed.Cursor.BeforeLineID != 11 || trimmed.Cursor.BeforeRowIndex != 0 {
+		t.Fatalf("cursor should advance by dropped source lines, got %#v", trimmed.Cursor)
 	}
 
 	trimmed, result = trimmed.TrimRows(2, len(trimmed.Rows)-1)
 	if result.DroppedRowsBefore != 2 || result.DroppedLinesBefore != 1 {
 		t.Fatalf("test setup should drop two visual rows from one source line, got %#v", result)
 	}
-	if trimmed.Cursor.BeforeRowIndex != 12 {
+	if trimmed.Cursor.BeforeLineID != 12 || trimmed.Cursor.BeforeRowIndex != 0 {
 		t.Fatalf("cursor must advance by one source line, not two visual rows, got %#v", trimmed.Cursor)
 	}
 }
 
-func TestR333HistoryStoreTrimRowsUsesProjectionRowIndex(t *testing.T) {
+func TestHistoryStoreTrimRowsIgnoresProjectionRowIndex(t *testing.T) {
 	store := HistoryStore{
 		Cols: 80,
 		SourceLines: []HistoryLogicalLine{
@@ -1064,8 +1064,8 @@ func TestR333HistoryStoreTrimRowsUsesProjectionRowIndex(t *testing.T) {
 	if result.DroppedLinesBefore != 1 {
 		t.Fatalf("test setup should drop one source row, got %#v", result)
 	}
-	if trimmed.Cursor.BeforeRowIndex != 244 || trimmed.Cursor.BeforeLineID != 21 {
-		t.Fatalf("trim must use first retained core ProjectionRowIndex, got %#v", trimmed.Cursor)
+	if trimmed.Cursor.BeforeLineID != 21 || trimmed.Cursor.BeforeRowIndex != 0 {
+		t.Fatalf("trim must use first retained logical line only, got %#v", trimmed.Cursor)
 	}
 }
 
@@ -1086,8 +1086,8 @@ func TestR333HistoryStoreTrimRowsUsesSourceIdentityNotLineID(t *testing.T) {
 	if result.DroppedLinesBefore != 1 || len(trimmed.SourceLines) != 1 {
 		t.Fatalf("trim should keep only the second source identity, result=%#v store=%#v", result, trimmed)
 	}
-	if trimmed.SourceLines[0].FrameID != 11 || trimmed.Cursor.BeforeRowIndex != 241 {
-		t.Fatalf("trim must key by frame identity and projection row, got cursor=%#v source=%#v", trimmed.Cursor, trimmed.SourceLines)
+	if trimmed.SourceLines[0].FrameID != 11 || trimmed.Cursor.BeforeRowIndex != 0 {
+		t.Fatalf("trim must key by frame identity and logical cursor, got cursor=%#v source=%#v", trimmed.Cursor, trimmed.SourceLines)
 	}
 }
 

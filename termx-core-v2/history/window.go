@@ -36,9 +36,9 @@ const (
 	HistoryWindowAppend  HistoryWindowOp = "append"
 )
 
-// HistoryCursor 是 segment-aware cursor；client 只能原样传回，不能猜 older 边界。
-// BeforeRowIndex 是 older 请求使用的 projection 绝对行号；RowInLine 只描述
-// cursor 所在 logical line 内部的局部 row，二者不能复用。
+// HistoryCursor 是 segment-aware logical-line cursor；client 只能原样传回，
+// 不能猜 older 边界。LineID 是权威分页坐标；RowInLine 只描述当前窗口本地
+// reflow 后的局部行。BeforeRowIndex 是旧 wire 兼容字段，不能作为 truth。
 type HistoryCursor struct {
 	Segment        HistorySegment
 	SessionID      ScreenSessionID
@@ -117,8 +117,8 @@ type HistoryRow struct {
 	SessionID ScreenSessionID
 	FrameID   ScreenFrameID
 	RowInLine int
-	// ProjectionRowIndex 是该 row 在 core authoritative projection 中的绝对
-	// row index；TUI 裁剪本地窗口后必须用它恢复 older cursor，不能用 RowInLine。
+	// ProjectionRowIndex 是旧 wire 兼容字段。copy/history 权威坐标是 LineID；
+	// visual row 只存在于当前窗口或 TUI 本地 reflow。
 	ProjectionRowIndex int
 	FixedGrid          bool
 	ScreenCols         int

@@ -48,21 +48,6 @@ func (e *Engine) LineCount() int {
 	return e.file.LineCount()
 }
 
-// RowIndexPath 返回某个 cols 的 projection row-count sidecar 路径。
-// sidecar 只缓存 logical-line 到投影 row 的派生索引；正文 truth 仍由
-// LineFile payload 持有，sidecar 损坏时可按 payload 重建。
-func (e *Engine) RowIndexPath(cols int) string {
-	if e == nil {
-		return ""
-	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.file == nil {
-		return ""
-	}
-	return e.file.RowIndexPath(cols)
-}
-
 // VisibleLineRange 返回当前可见冷段记录区间。R439 后 ED3/ClearScrollback
 // 只是不删除历史的软页边界，所以 live history/copy 继续覆盖全部已落盘
 // logical lines；base 保留为绝对域起点，当前始终为 0。

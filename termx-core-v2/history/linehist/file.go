@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
@@ -100,18 +99,6 @@ func (f *LineFile) IndexPath() string {
 		return ""
 	}
 	return f.indexPath
-}
-
-// RowIndexPath 返回某个 cols 的 row-count sidecar 路径。它只缓存投影索引，
-// 不保存正文 payload。
-func (f *LineFile) RowIndexPath(cols int) string {
-	if f == nil {
-		return ""
-	}
-	if cols <= 0 {
-		cols = 0
-	}
-	return f.path + ".rows." + strconv.Itoa(cols) + ".idx"
 }
 
 // AppendLines 追加 logical line 记录并 flush。记录一旦完整落盘即不可变

@@ -9,8 +9,9 @@ import (
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
-// 本文件是 linehist 的查询投影层：把宽度无关的 logical line 按请求 cols
-// 重新换行成 history.HistoryRow，并提供 window/cursor/boundary 的领域帮助函数。
+// 本文件是 linehist 的查询投影层：把宽度无关的 logical line 展开成
+// history.HistoryRow source row，并提供 window/cursor/boundary 的领域帮助函数。
+// visual reflow 属于 TUI 本地窗口，core 不再构建全局 visual row 坐标。
 // 旧 history 包的同名 helper 是未导出实现；R433 重做不修改旧包，这里按
 // 相同对外语义（TUI/protocol 兼容）独立实现。
 
@@ -73,66 +74,6 @@ func cellsFromVTermCells(cells []vterm.Cell) []history.Cell {
 	return out
 }
 
-// wrapCells 把一条 logical line 的 cells 按 cols 贪心换行。
-// 宽字符整 cell 换行（不劈开）；单 cell 超过 cols 时独占一行保证前进；
-// 空行产出一个空 row，保持段落间距。
-func wrapCells(cells []history.Cell, cols int) [][]history.Cell {
-	if cols <= 0 {
-		return [][]history.Cell{cells}
-	}
-	var rows [][]history.Cell
-	var row []history.Cell
-	width := 0
-	for _, cell := range cells {
-		w := cell.Width
-		if w < 0 {
-			w = 0
-		}
-		if len(row) > 0 && width+w > cols {
-			rows = append(rows, row)
-			row = nil
-			width = 0
-		}
-		row = append(row, cell)
-		width += w
-	}
-	rows = append(rows, row)
-	return rows
-}
-
-// countWrappedRows 只统计 wrapCells 会产出的行数，不 materialize cells。
-// 冷段 row 索引（prefix sum）构建走这里，避免整文件 cells 分配。
-// 换行判定必须与 wrapCells 完全一致。
-func countWrappedRows(runs []Run, cols int) int {
-	if cols <= 0 {
-		return 1
-	}
-	rows := 1
-	width := 0
-	cellsInRow := 0
-	for _, run := range runs {
-		text := run.Text
-		for text != "" {
-			cluster, w := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
-			if cluster == "" {
-				break
-			}
-			text = text[len(cluster):]
-			if w < 0 {
-				w = 0
-			}
-			if cellsInRow > 0 && width+w > cols {
-				rows++
-				width = 0
-				cellsInRow = 0
-			}
-			width += w
-			cellsInRow++
-		}
-	}
-	return rows
-}
-
 // normalizedLimit 与旧 history window 合同一致：非法 limit 回退 100。
 func normalizedLimit(limit int) int {
 	if limit <= 0 {
@@ -157,15 +98,6 @@ func cloneRows(rows []history.HistoryRow) []history.HistoryRow {
 	return out
 }
 
-// annotateProjectionRowIndexes 把绝对 row index 写回 page rows。
-// TUI 裁剪本地窗口后用 ProjectionRowIndex 重建 older cursor，它必须是
-// authoritative projection 中的稠密绝对行号。
-func annotateProjectionRowIndexes(rows []history.HistoryRow, start int) {
-	for index := range rows {
-		rows[index].ProjectionRowIndex = start + index
-	}
-}
-
 func boundaryForRows(rows []history.HistoryRow, generation history.Generation, token history.HistoryToken) history.HistoryBoundary {
 	if len(rows) == 0 {
 		return history.HistoryBoundary{Cursor: history.HistoryCursor{Generation: generation, Token: token}}
@@ -185,17 +117,16 @@ func boundaryForRows(rows []history.HistoryRow, generation history.Generation, t
 	}
 }
 
-func cursorBeforeIndex(row history.HistoryRow, beforeIndex int, generation history.Generation, token history.HistoryToken, valid bool) history.HistoryCursor {
+func cursorBeforeLine(row history.HistoryRow, generation history.Generation, token history.HistoryToken, valid bool) history.HistoryCursor {
 	return history.HistoryCursor{
-		Segment:        row.Segment,
-		SessionID:      row.SessionID,
-		FrameID:        row.FrameID,
-		LineID:         row.LineID,
-		RowInLine:      row.RowInLine,
-		BeforeRowIndex: beforeIndex,
-		Generation:     generation,
-		Token:          token,
-		Valid:          valid,
+		Segment:    row.Segment,
+		SessionID:  row.SessionID,
+		FrameID:    row.FrameID,
+		LineID:     row.LineID,
+		RowInLine:  row.RowInLine,
+		Generation: generation,
+		Token:      token,
+		Valid:      valid,
 	}
 }
 
