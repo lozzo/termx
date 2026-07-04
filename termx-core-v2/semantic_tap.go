@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
+	"github.com/lozzow/termx/termx-core-v2/history/linehist"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
@@ -234,6 +235,19 @@ func (tap *SemanticTap) InputRecords() []SemanticTapInputRecord {
 	out := make([]SemanticTapInputRecord, len(tap.inputs))
 	copy(out, tap.inputs)
 	return out
+}
+
+// LineHistoryScreenSnapshot 在 tap.mu 内采集 tap vterm 的 linehist 热段快照。
+// 调用方（linehist store）必须已持有 Terminal 的 tapOpMu gate：写入被 gate
+// 串行化后，tap.mu 内的两次 vterm 读取（rows + wrapped flags）互相一致。
+func (tap *SemanticTap) LineHistoryScreenSnapshot() linehist.ScreenSnapshot {
+	if tap == nil {
+		return linehist.ScreenSnapshot{}
+	}
+	tap.mu.Lock()
+	defer tap.mu.Unlock()
+	tap.ensureSourceLocked()
+	return linehist.ScreenSnapshotFromVTerm(tap.source.VTerm())
 }
 
 func (tap *SemanticTap) ensureSourceLocked() {

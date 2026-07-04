@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
+	"github.com/lozzow/termx/termx-core-v2/history/linehist"
 	"github.com/lozzow/termx/termx-core-v2/live"
 	"github.com/lozzow/termx/termx-proto/wire"
 	"github.com/lozzow/termx/termx-shared/transport"
@@ -283,6 +284,20 @@ func fileBackedHistoryStoreFactory(dir string) HistoryStoreFactory {
 			return nil, err
 		}
 		return history.NewBackendHistoryStore(terminalID, backend), nil
+	}
+}
+
+// LineHistoryStoreFactory 返回 R433 linehist（logical-line 文件存储）的
+// history store factory。它是无限历史重做的显式入口：Terminal 识别到
+// *linehist.Store 后走单一真值链路（tap 事务 EvictedRows 落盘 + 查询时
+// 投影 emulator 当前屏），旧 journal/classifier fanout 被旁路。
+func LineHistoryStoreFactory(dir string) HistoryStoreFactory {
+	return func(terminalID string) (history.HistoryStore, error) {
+		file, err := linehist.OpenLineFile(dir, terminalID)
+		if err != nil {
+			return nil, err
+		}
+		return linehist.NewStore(terminalID, linehist.NewEngine(file)), nil
 	}
 }
 

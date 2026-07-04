@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
+	"github.com/lozzow/termx/termx-core-v2/history/linehist"
 	"github.com/lozzow/termx/termx-core-v2/live"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
@@ -35,7 +36,11 @@ type Terminal struct {
 	// 中文说明：screenHistory 是 R428 后默认 history truth owner。Terminal 默认
 	// path 的 transaction renderer、journal renderer 和 HistoryStore 必须共享它；
 	// 显式注入旧 store 的测试路径不设置该字段，避免混用两套 truth。
-	screenHistory  *history.ScreenHistoryBuffer
+	screenHistory *history.ScreenHistoryBuffer
+	// 中文说明：lineHistory 是重做后的 logical-line 文件历史（linehist）。它在
+	// tapOpMu 临界区内直接消费 tap 事务的 EvictedRows，查询用同一把 gate 采集
+	// 当前屏热段；设置该字段后 journal/classifier fanout 与 renderer close 全部旁路。
+	lineHistory    *linehist.Store
 	historyEnabled bool
 	logger         *slog.Logger
 	historyStatus  HistoryBacklogStatus
@@ -77,6 +82,15 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 			historyStore = history.NewScreenBackedHistoryStore(info.ID, terminal.screenHistory)
 		} else {
 			terminal.historyRenderer, terminal.journalRenderer = history.NewHistoryRenderers(nil, nil)
+			if lineStore, ok := historyStore.(*linehist.Store); ok {
+				terminal.lineHistory = lineStore
+				// 中文说明：闭包动态读 terminal.tap（Restart 会在 tapOpMu 内换 tap）；
+				// gate 就是 tapOpMu，store 查询在 gate 内采集 coldCount+当前屏，
+				// 保证滚出行在冷段与热段之间不重不漏。
+				lineStore.Bind(func() linehist.ScreenSnapshot {
+					return terminal.tap.LineHistoryScreenSnapshot()
+				}, &terminal.tapOpMu)
+			}
 		}
 		terminal.historyStore = historyStore
 	}
@@ -207,7 +221,15 @@ func (terminal *Terminal) Resize(size Size) error {
 		if err != nil {
 			return err
 		}
-		terminal.enqueueOrApplyHistoryResizeTransaction(result.Transaction())
+		if terminal.lineHistory != nil {
+			// 中文说明：linehist 在 tapOpMu 内直接消费 resize 事务的 EvictedRows
+			//（变窄 reflow 可能挤出行）。不能走 enqueueOrApplyHistoryResizeTransaction：
+			// 那条路径会在持有 tapOpMu 时去拿 historyMu，与查询的
+			// historyMu→tapOpMu 顺序相反。
+			_ = terminal.lineHistory.ApplyTransaction(result.tx)
+		} else {
+			terminal.enqueueOrApplyHistoryResizeTransaction(result.Transaction())
+		}
 	}
 
 	terminal.syncInfo(info)
@@ -239,6 +261,11 @@ func (terminal *Terminal) closeWithReason(reason history.CloseReason) error {
 		// 中文说明：remove/shutdown 不一定会经过 process-exit watcher；running terminal
 		// 的最后 open line/current frame 必须用 lifecycle close reason 交给 history renderer。
 		terminal.forceCloseHistory(reason)
+	}
+	if terminal.lineHistory != nil {
+		// 中文说明：terminal remove/shutdown 后不再有查询与续写；linehist 把
+		// 未闭合尾部按硬结束落盘并关闭文件，重启进程不丢已滚出内容。
+		_ = terminal.lineHistory.Close()
 	}
 	terminal.syncInfo(info)
 	if process == nil {
@@ -758,9 +785,19 @@ func (terminal *Terminal) ingestHistorySemanticOutput(output string, historyWork
 	finishHistoryWrite := perftrace.Measure("core.history.semantic_write")
 	result, err := terminal.tap.ApplyPTYWrite([]byte(output))
 	finishHistoryWrite(len(output))
+	if err == nil && terminal.lineHistory != nil {
+		// 中文说明：EvictedRows 必须在同一 tapOpMu 临界区内落盘——查询用同一把
+		// gate 采集冷段计数与当前屏，任一滚出行要么已在文件、要么还在屏上，
+		// 不存在两边都看不到的窗口。
+		err = terminal.lineHistory.ApplyTransaction(result.tx)
+	}
 	terminal.tapOpMu.Unlock()
 	if err != nil {
 		return err
+	}
+	if terminal.lineHistory != nil {
+		// 中文说明：linehist 是单一真值路径，不再走 journal/classifier fanout。
+		return nil
 	}
 	finishHistoryFanout := perftrace.Measure("core.history.journal_fanout")
 	terminal.enqueueOrApplyProcessHistoryJournal(result, historyWorker, terminalID)
@@ -1111,6 +1148,12 @@ func historyJournalAllowsTerminalQueue(journal history.HistoryJournal) bool {
 }
 
 func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {
+	if terminal.lineHistory != nil {
+		// 中文说明：process exit/remove 后旧行的续写上下文不存在了；linehist 把
+		// 未闭合尾部强制闭合落盘即可，没有 renderer close batch 可发。
+		_ = terminal.lineHistory.SealOpenTail()
+		return
+	}
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
 	if !terminal.historyEnabled || terminal.historyRenderer == nil || terminal.historyStore == nil {
