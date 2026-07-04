@@ -487,9 +487,14 @@ type CellRun struct {
 }
 
 type WriteDamage struct {
-	Ops                 []DamageOp
-	SemanticOps         []DamageOp
-	ScrollbackAppend    []DamageOp
+	Ops              []DamageOp
+	SemanticOps      []DamageOp
+	ScrollbackAppend []DamageOp
+	// EvictedAppend 与 ScrollbackAppend 来自同一份 eviction 捕获，但不做空行过滤：
+	// 旧 proof 消费路径依赖 ScrollbackAppend 丢弃空行的行为，而 logical-line
+	// 无限历史必须保留空行的原始顺序。为空时消费方回退读 ScrollbackAppend
+	// （ring-diff/resize 路径本身保留空行）。
+	EvictedAppend       []DamageOp
 	LiveTailAppendRows  int
 	ResizeLiveTailRows  int
 	AlternateAppend     []DamageOp
@@ -876,12 +881,9 @@ func (v *VTerm) write(data []byte, collectDamage bool, mode ...writeDamageMode) 
 			beforeWidth == afterWidth &&
 			beforeHeight == afterHeight &&
 			beforeAltScreen == afterAltScreen {
-			historyOps := v.scrollbackAppendOpsFromCharmVTDamages(directDamages, beforeScreenTimestamps, beforeScreenRowKinds)
-			alternateOps := []DamageOp(nil)
-			if afterAltScreen {
-				alternateOps = historyOps
-				historyOps = nil
-			}
+			evictedOps, altEvictedOps := v.evictedAppendOpsFromCharmVTDamages(directDamages, beforeAltScreen, beforeScreenTimestamps, beforeScreenRowKinds)
+			historyOps := filterNonEmptyEvictedAppendOps(evictedOps)
+			alternateOps := filterNonEmptyEvictedAppendOps(altEvictedOps)
 			directStats := directDamageStats(directDamages, afterWidth, afterHeight)
 			if reason, broad := directStats.fullReplaceReason(); broad && (damageMode != writeDamageSemanticOnly || len(historyOps) == 0) {
 				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, reason)
@@ -905,6 +907,7 @@ func (v *VTerm) write(data []byte, collectDamage bool, mode ...writeDamageMode) 
 			if len(alternateOps) > 0 {
 				damage.AlternateAppend = alternateOps
 			}
+			damage.EvictedAppend = evictedOps
 			damage.DirectDamageItems = directStats.Items
 			damage.DirectDamageRows = directStats.Rows
 			damage.DirectDamageCells = directStats.Cells
@@ -913,6 +916,13 @@ func (v *VTerm) write(data []byte, collectDamage bool, mode ...writeDamageMode) 
 			damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, "screen_shape_changed")
 			if hasDirectDamage {
 				damage.SemanticOps = v.semanticControlOpsFromCharmVTDamagesLocked(directDamages, beforeScreenTimestamps, beforeScreenRowKinds)
+				// 中文说明：shape-changed 批次（resize / alt 切换跨 write 边界）此前
+				// 完全不带 eviction payload；tap vterm 关闭 ring 时 ScrollbackAppend
+				// 兜底也为空，进 alt 前滚出的主屏行会永久丢失。这里同样按有序
+				// damage 流归属 primary eviction，只填 EvictedAppend，不改旧
+				// AlternateAppend/ScrollbackAppend 消费契约。
+				evictedOps, _ := v.evictedAppendOpsFromCharmVTDamages(directDamages, beforeAltScreen, beforeScreenTimestamps, beforeScreenRowKinds)
+				damage.EvictedAppend = evictedOps
 			}
 		}
 		damage.DiffCPUNanos = time.Since(diffStart).Nanoseconds()
@@ -4063,17 +4073,50 @@ func resizeReflowLineIsBlank(row resizeReflowLine) bool {
 	return true
 }
 
-func (v *VTerm) scrollbackAppendOpsFromCharmVTDamages(damages []charmvt.Damage, timestamps []time.Time, rowKinds []string) []DamageOp {
+// evictedAppendOpsFromCharmVTDamages 把 direct damage 中的 scrollback eviction 转成
+// DamageOp，不丢弃空行——logical-line 无限历史必须保留段落间距。ScrollbackAppend
+// 出于旧 proof 消费路径经 filterNonEmptyEvictedAppendOps 继续过滤空行。
+//
+// damage 流是有序的：用 ModeDamage(47/1047/1049) 在流内跟踪 alt 状态，把每条
+// ScrollbackDamage 归属到 primary eviction 或 alternate scroll。这样同一次写入内
+// "主屏滚出→进 alt" 或 "进 alt→滚动→退 alt" 都不会把 alt 行误入主历史，
+// 也不会丢进 alt 前的主屏 eviction。
+func (v *VTerm) evictedAppendOpsFromCharmVTDamages(damages []charmvt.Damage, altAtStart bool, timestamps []time.Time, rowKinds []string) (evicted []DamageOp, alternate []DamageOp) {
 	if len(damages) == 0 {
+		return nil, nil
+	}
+	altActive := altAtStart
+	for _, raw := range damages {
+		switch d := raw.(type) {
+		case charmvt.ModeDamage:
+			if d.Private && (d.Mode == 47 || d.Mode == 1047 || d.Mode == 1049) {
+				altActive = d.Enabled
+			}
+		case charmvt.ScrollbackDamage:
+			op := damageOpFromScrollbackRowAppend(v.scrollbackRowAppendFromCharmVTDamage(d, timestamps, rowKinds))
+			if altActive {
+				alternate = append(alternate, op)
+			} else {
+				evicted = append(evicted, op)
+			}
+		}
+	}
+	return evicted, alternate
+}
+
+func filterNonEmptyEvictedAppendOps(ops []DamageOp) []DamageOp {
+	if len(ops) == 0 {
 		return nil
 	}
-	out := make([]DamageOp, 0, 1)
-	for _, raw := range damages {
-		row, ok := raw.(charmvt.ScrollbackDamage)
-		if !ok || (row.Text == "" && len(row.Runs) == 0 && len(row.Cells) == 0) {
+	out := make([]DamageOp, 0, len(ops))
+	for _, op := range ops {
+		if len(op.Cells) == 0 && len(op.Runs) == 0 {
 			continue
 		}
-		out = append(out, damageOpFromScrollbackRowAppend(v.scrollbackRowAppendFromCharmVTDamage(row, timestamps, rowKinds)))
+		out = append(out, op)
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

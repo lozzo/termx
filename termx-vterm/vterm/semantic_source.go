@@ -51,7 +51,18 @@ type TerminalSemanticTransaction struct {
 	Ops []TerminalSemanticOp
 
 	PrimaryScrollOut []TerminalSemanticScrollOut
-	PrimaryFrame     *TerminalSemanticFrame
+	// EvictedRows 是本次 transaction 中真正离开 primary 可见区、不可能再被程序寻址
+	// 修改的物理行，按离屏顺序排列。它直接来自 vterm eviction 捕获
+	// （damage.ScrollbackAppend），不经过 PrimaryScrollOut 的 sync/alt/clear gate，
+	// 因此普通 stdout 换行滚出也会出现在这里。alt 屏滚动被 vterm 导流到
+	// AlternateAppend，不进入 EvictedRows。
+	//
+	// 这是 logical-line 无限历史引擎的唯一 seal 信号：滚出即落盘、落盘即不可变。
+	// 每行携带 cells/runs 与 Wrapped 软换行标志，供上层把物理行拼成宽度无关的
+	// logical line。core 只能顺序消费它 append 历史，不能从 current frame 反推。
+	EvictedRows []TerminalSemanticScrollOut
+
+	PrimaryFrame *TerminalSemanticFrame
 	// PrimaryFrameTouchedRows 表示本次 transaction 确认触达的 primary frame 行。
 	// truth source 是 vterm direct damage/ordered ops；core 只能按这些行接管
 	// current frame ownership，不能把整张 PrimaryFrame 快照当作新历史。
@@ -142,6 +153,17 @@ func (source *SemanticSource) transactionFromDamage(seq uint64, raw string, dama
 		RequiresFullReplace:     damage.RequiresFullReplace,
 		FullReplaceReason:       damage.FullReplaceReason,
 		ClearScrollback:         terminalSemanticDamageHasClearScrollback(damage),
+	}
+	// 中文说明：EvictedRows 无条件携带本次 write/resize 真正离屏的行，
+	// 不复用 PrimaryScrollOut 的 attach gate。优先取保留空行的 EvictedAppend，
+	// 无则回退 ScrollbackAppend（ring-diff/resize 路径本身保留空行）。
+	// EvictedRows 是 logical-line 历史引擎的 seal 信号。
+	evictedSource := damage.EvictedAppend
+	if len(evictedSource) == 0 {
+		evictedSource = damage.ScrollbackAppend
+	}
+	for _, scrollOut := range evictedSource {
+		tx.EvictedRows = append(tx.EvictedRows, terminalSemanticScrollOutFromDamageOp(scrollOut))
 	}
 	// 中文说明：WriteDamage 是本次 write 的临时语义 payload，transaction 在
 	// SemanticSource 边界接管它的所有权；tap 之后的 fan-out deep-copy 仍由

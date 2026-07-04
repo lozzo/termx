@@ -586,9 +586,14 @@ func (s *Screen) DeleteLine(n int) bool {
 			for i := range min(linesToSave, s.buf.Height()-y) {
 				if line := s.buf.Line(y + i); line != nil {
 					used := min(len(line), s.LineUsed(y+i))
+					// 中文说明：空行 used=0 时 append(nil, ...) 会得到 nil slice，
+					// recordScrollbackLine 会把 nil 当"无行"丢弃，导致滚出的空白行
+					// 从 scrollback damage 序列消失。用 make 保证空行也是非 nil 捕获。
+					captured := make(uv.Line, used)
+					copy(captured, line[:used])
 					pendingScrollback = append(pendingScrollback, pendingScrollbackDamage{
 						y:       y + i,
-						line:    append(uv.Line(nil), line[:used]...),
+						line:    captured,
 						wrapped: boolAt(s.wrapped, y+i),
 					})
 				}

@@ -294,6 +294,7 @@ func cloneSemanticTapTransaction(tx vterm.TerminalSemanticTransaction) vterm.Ter
 	cloned.Raw = ""
 	cloned.Ops = cloneSemanticTapOps(tx.Ops)
 	cloned.PrimaryScrollOut = cloneSemanticTapScrollOut(tx.PrimaryScrollOut)
+	cloned.EvictedRows = cloneSemanticTapScrollOut(tx.EvictedRows)
 	cloned.PrimaryFrame = cloneSemanticTapFrame(tx.PrimaryFrame)
 	cloned.PrimaryFrameTouchedRows = cloneSemanticTapInts(tx.PrimaryFrameTouchedRows)
 	cloned.AltFrame = cloneSemanticTapFrame(tx.AltFrame)
@@ -307,6 +308,7 @@ func cloneSemanticTapWriteDamage(damage vterm.WriteDamage) vterm.WriteDamage {
 	cloned.Ops = cloneSemanticTapOps(damage.Ops)
 	cloned.SemanticOps = cloneSemanticTapOps(damage.SemanticOps)
 	cloned.ScrollbackAppend = cloneSemanticTapOps(damage.ScrollbackAppend)
+	cloned.EvictedAppend = cloneSemanticTapOps(damage.EvictedAppend)
 	cloned.AlternateAppend = cloneSemanticTapOps(damage.AlternateAppend)
 	cloned.DirectDamageTouchedRows = cloneSemanticTapInts(damage.DirectDamageTouchedRows)
 	return cloned
