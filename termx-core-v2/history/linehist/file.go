@@ -15,13 +15,15 @@ import (
 )
 
 const (
-	lineFileRecordMagic     uint32 = 0x54584C4C // "TXLL"
-	lineFileRecordVersion   uint16 = 1
-	lineFileHeaderSize             = 24
-	lineFileIndexMagic      uint32 = 0x54584C49 // "TXLI"
-	lineFileIndexVersion    uint16 = 1
-	lineFileIndexHeaderSize        = 16
-	lineFileIndexEntrySize         = 24
+	lineFileRecordMagic       uint32 = 0x54584C4C // "TXLL"
+	lineFileRecordVersion     uint16 = 1
+	lineFileHeaderSize               = 24
+	lineFileIndexMagic        uint32 = 0x54584C49 // "TXLI"
+	lineFileIndexVersion      uint16 = 1
+	lineFileIndexHeaderSize          = 16
+	lineFileIndexEntrySize           = 24
+	lineFilePayloadWriterSize        = 256 * 1024
+	lineFileIndexWriterSize          = 64 * 1024
 
 	// lineFileRecordKindLine 是 logical line 正文记录。
 	lineFileRecordKindLine uint8 = 1
@@ -43,6 +45,10 @@ type LineFile struct {
 	indexFile   *os.File
 	writer      *bufio.Writer
 	indexWriter *bufio.Writer
+	writeOffset int64
+	headerBuf   [lineFileHeaderSize]byte
+	indexBuf    [lineFileIndexEntrySize]byte
+	uintBuf     [8]byte
 	offsets     []int64
 	payloadLens []uint32
 	lineFlags   []uint8
@@ -101,8 +107,10 @@ func (f *LineFile) IndexPath() string {
 	return f.indexPath
 }
 
-// AppendLines 追加 logical line 记录并 flush。记录一旦完整落盘即不可变
-// （seal-on-eviction：滚出屏幕的内容程序无法再修改）。
+// AppendLines 追加 logical line 记录到 buffered append stream。调用返回后，
+// 本进程内的 offset 索引即可被 Lines 读取；Lines/Sync/Close 会负责 flush
+// payload writer。sidecar index 只是可重建加速索引，同样按批缓冲写入，
+// 避免高压 seal-on-eviction 路径被每行 fs buffer flush 拖慢。
 func (f *LineFile) AppendLines(lines []Line) error {
 	if f == nil || len(lines) == 0 {
 		return nil
@@ -110,53 +118,52 @@ func (f *LineFile) AppendLines(lines []Line) error {
 	if f.file == nil {
 		return os.ErrInvalid
 	}
-	offset, err := f.file.Seek(0, io.SeekEnd)
-	if err != nil {
-		return err
-	}
 	if f.writer == nil {
-		f.writer = bufio.NewWriterSize(f.file, 256*1024)
+		f.writer = bufio.NewWriterSize(f.file, lineFilePayloadWriterSize)
 	}
-	var entries []lineFileIndexEntry
+	offset := f.writeOffset
 	for _, line := range lines {
-		payload := encodeLineFilePayload(line)
-		var header [lineFileHeaderSize]byte
+		payloadLen, err := lineFilePayloadLen(line)
+		if err != nil {
+			return err
+		}
+		clear(f.headerBuf[:])
+		header := f.headerBuf[:]
 		binary.LittleEndian.PutUint32(header[0:4], lineFileRecordMagic)
 		binary.LittleEndian.PutUint16(header[4:6], lineFileRecordVersion)
 		header[6] = lineFileRecordKindLine
 		if line.HardEnd {
 			header[7] |= lineFileFlagHardEnd
 		}
-		binary.LittleEndian.PutUint64(header[8:16], uint64(len(f.offsets)+len(entries)))
-		binary.LittleEndian.PutUint32(header[16:20], uint32(len(payload)))
+		binary.LittleEndian.PutUint64(header[8:16], uint64(len(f.offsets)))
+		binary.LittleEndian.PutUint32(header[16:20], payloadLen)
 		binary.LittleEndian.PutUint32(header[20:24], 0)
-		if _, err := f.writer.Write(header[:]); err != nil {
+		if _, err := f.writer.Write(header); err != nil {
 			return err
 		}
-		if _, err := f.writer.Write(payload); err != nil {
+		if err := f.writeLineFilePayload(line); err != nil {
 			return err
 		}
-		entries = append(entries, lineFileIndexEntry{
+		entry := lineFileIndexEntry{
 			offset:     offset,
-			payloadLen: uint32(len(payload)),
+			payloadLen: payloadLen,
 			flags:      header[7],
-		})
-		offset += int64(lineFileHeaderSize + len(payload))
-	}
-	if err := f.writer.Flush(); err != nil {
-		return err
-	}
-	for _, entry := range entries {
+		}
+		offset += int64(lineFileHeaderSize) + int64(payloadLen)
+		f.writeOffset = offset
 		f.offsets = append(f.offsets, entry.offset)
 		f.payloadLens = append(f.payloadLens, entry.payloadLen)
 		f.lineFlags = append(f.lineFlags, entry.flags)
+		if err := f.appendIndexEntry(entry); err != nil {
+			return err
+		}
 	}
-	return f.appendIndexEntries(entries)
+	return nil
 }
 
-// AppendBoundary 追加一条 ED3/ClearScrollback 软页边界记录并 flush。
-// 边界只让上层 generation/cursor 失效，不改变 Lines 可见范围；历史
-// 真值仍是全部已落盘 logical lines。
+// AppendBoundary 追加一条 ED3/ClearScrollback 软页边界记录。边界只让上层
+// generation/cursor 失效，不改变 Lines 可见范围；历史真值仍是全部已追加
+// logical lines，payload writer 由后续 Lines/Sync/Close 统一 flush。
 func (f *LineFile) AppendBoundary() error {
 	if f == nil {
 		return nil
@@ -164,29 +171,23 @@ func (f *LineFile) AppendBoundary() error {
 	if f.file == nil {
 		return os.ErrInvalid
 	}
-	if _, err := f.file.Seek(0, io.SeekEnd); err != nil {
-		return err
-	}
 	if f.writer == nil {
-		f.writer = bufio.NewWriterSize(f.file, 256*1024)
+		f.writer = bufio.NewWriterSize(f.file, lineFilePayloadWriterSize)
 	}
-	var header [lineFileHeaderSize]byte
+	clear(f.headerBuf[:])
+	header := f.headerBuf[:]
 	binary.LittleEndian.PutUint32(header[0:4], lineFileRecordMagic)
 	binary.LittleEndian.PutUint16(header[4:6], lineFileRecordVersion)
 	header[6] = lineFileRecordKindBoundary
 	binary.LittleEndian.PutUint64(header[8:16], uint64(len(f.offsets)))
-	binary.LittleEndian.PutUint32(header[16:20], 0)
-	binary.LittleEndian.PutUint32(header[20:24], 0)
-	if _, err := f.writer.Write(header[:]); err != nil {
+	if _, err := f.writer.Write(header); err != nil {
 		return err
 	}
-	if err := f.writer.Flush(); err != nil {
-		return err
-	}
+	f.writeOffset += lineFileHeaderSize
 	return nil
 }
 
-// LineCount 返回已落盘的记录数（含 HardEnd=false 的 chunk 记录），绝对域。
+// LineCount 返回已追加的记录数（含 HardEnd=false 的 chunk 记录），绝对域。
 func (f *LineFile) LineCount() int {
 	if f == nil {
 		return 0
@@ -231,7 +232,8 @@ func (f *LineFile) Lines(start int, end int) ([]Line, error) {
 	return lines, nil
 }
 
-// Sync 把已 flush 的数据落到持久存储。
+// Sync 把 buffered payload 与可重建 sidecar index 落到持久存储。payload 先
+// sync，保证 sidecar 不会比正文 truth 更持久。
 func (f *LineFile) Sync() error {
 	if f == nil || f.file == nil {
 		return nil
@@ -240,6 +242,9 @@ func (f *LineFile) Sync() error {
 		if err := f.writer.Flush(); err != nil {
 			return err
 		}
+	}
+	if err := f.file.Sync(); err != nil {
+		return err
 	}
 	if f.indexWriter != nil {
 		if err := f.indexWriter.Flush(); err != nil {
@@ -251,7 +256,7 @@ func (f *LineFile) Sync() error {
 			return err
 		}
 	}
-	return f.file.Sync()
+	return nil
 }
 
 // Close 关闭底层文件。
@@ -308,6 +313,9 @@ func (f *LineFile) recover() error {
 		}
 		startOffset = 0
 	}
+	if _, err := f.indexFile.Seek(0, io.SeekEnd); err != nil {
+		return err
+	}
 	offset, err := f.scanPayloadIndexFrom(startOffset, size)
 	if err != nil {
 		return err
@@ -317,8 +325,17 @@ func (f *LineFile) recover() error {
 			return err
 		}
 	}
-	_, err = f.file.Seek(0, io.SeekEnd)
-	return err
+	if f.indexWriter != nil {
+		if err := f.indexWriter.Flush(); err != nil {
+			return err
+		}
+	}
+	end, err := f.file.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+	f.writeOffset = end
+	return nil
 }
 
 func (f *LineFile) loadIndex(payloadSize int64) (int64, bool) {
@@ -415,7 +432,7 @@ func (f *LineFile) resetIndexFile() error {
 	f.payloadLens = nil
 	f.lineFlags = nil
 	if f.indexWriter == nil {
-		f.indexWriter = bufio.NewWriterSize(f.indexFile, 64*1024)
+		f.indexWriter = bufio.NewWriterSize(f.indexFile, lineFileIndexWriterSize)
 	}
 	var header [lineFileIndexHeaderSize]byte
 	binary.LittleEndian.PutUint32(header[0:4], lineFileIndexMagic)
@@ -484,25 +501,32 @@ func (f *LineFile) appendIndexEntries(entries []lineFileIndexEntry) error {
 	if f == nil || len(entries) == 0 {
 		return nil
 	}
+	for _, entry := range entries {
+		if err := f.appendIndexEntry(entry); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f *LineFile) appendIndexEntry(entry lineFileIndexEntry) error {
+	if f == nil {
+		return nil
+	}
 	if f.indexFile == nil {
 		return os.ErrInvalid
 	}
 	if f.indexWriter == nil {
-		f.indexWriter = bufio.NewWriterSize(f.indexFile, 64*1024)
+		f.indexWriter = bufio.NewWriterSize(f.indexFile, lineFileIndexWriterSize)
 	}
-	if _, err := f.indexFile.Seek(0, io.SeekEnd); err != nil {
+	clear(f.indexBuf[:])
+	binary.LittleEndian.PutUint64(f.indexBuf[0:8], uint64(entry.offset))
+	binary.LittleEndian.PutUint32(f.indexBuf[8:12], entry.payloadLen)
+	f.indexBuf[12] = entry.flags
+	if _, err := f.indexWriter.Write(f.indexBuf[:]); err != nil {
 		return err
 	}
-	for _, entry := range entries {
-		var raw [lineFileIndexEntrySize]byte
-		binary.LittleEndian.PutUint64(raw[0:8], uint64(entry.offset))
-		binary.LittleEndian.PutUint32(raw[8:12], entry.payloadLen)
-		raw[12] = entry.flags
-		if _, err := f.indexWriter.Write(raw[:]); err != nil {
-			return err
-		}
-	}
-	return f.indexWriter.Flush()
+	return nil
 }
 
 func clampLineIndex(value int, low int, high int) int {
@@ -553,18 +577,48 @@ func readLineFileRecord(reader io.Reader) (Line, uint8, error) {
 	}
 }
 
-func encodeLineFilePayload(line Line) []byte {
-	var buf bytes.Buffer
-	writeLineFileUint32(&buf, uint32(len(line.Runs)))
+func lineFilePayloadLen(line Line) (uint32, error) {
+	const maxUint32 = int64(^uint32(0))
+	size := int64(4)
 	for _, run := range line.Runs {
-		writeLineFileString(&buf, run.Text)
-		writeLineFileString(&buf, run.Style.FG)
-		writeLineFileString(&buf, run.Style.BG)
-		buf.WriteByte(lineFileStyleFlags(run.Style))
-		writeLineFileString(&buf, run.LinkURL)
-		writeLineFileString(&buf, run.LinkParams)
+		size += int64(4 + len(run.Text))
+		size += int64(4 + len(run.Style.FG))
+		size += int64(4 + len(run.Style.BG))
+		size += 1
+		size += int64(4 + len(run.LinkURL))
+		size += int64(4 + len(run.LinkParams))
+		if size > maxUint32 {
+			return 0, errors.New("logical line payload too large")
+		}
 	}
-	return buf.Bytes()
+	return uint32(size), nil
+}
+
+func (f *LineFile) writeLineFilePayload(line Line) error {
+	if err := f.writeLineFileUint32(f.writer, uint32(len(line.Runs))); err != nil {
+		return err
+	}
+	for _, run := range line.Runs {
+		if err := f.writeLineFileString(f.writer, run.Text); err != nil {
+			return err
+		}
+		if err := f.writeLineFileString(f.writer, run.Style.FG); err != nil {
+			return err
+		}
+		if err := f.writeLineFileString(f.writer, run.Style.BG); err != nil {
+			return err
+		}
+		if err := f.writer.WriteByte(lineFileStyleFlags(run.Style)); err != nil {
+			return err
+		}
+		if err := f.writeLineFileString(f.writer, run.LinkURL); err != nil {
+			return err
+		}
+		if err := f.writeLineFileString(f.writer, run.LinkParams); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func decodeLineFilePayload(payload []byte) (Line, error) {
@@ -636,15 +690,18 @@ func applyLineFileStyleFlags(style *history.CellStyle, flags uint8) {
 	style.Strikethrough = flags&(1<<5) != 0
 }
 
-func writeLineFileUint32(buf *bytes.Buffer, value uint32) {
-	var raw [4]byte
-	binary.LittleEndian.PutUint32(raw[:], value)
-	buf.Write(raw[:])
+func (f *LineFile) writeLineFileUint32(writer *bufio.Writer, value uint32) error {
+	binary.LittleEndian.PutUint32(f.uintBuf[:4], value)
+	_, err := writer.Write(f.uintBuf[:4])
+	return err
 }
 
-func writeLineFileString(buf *bytes.Buffer, value string) {
-	writeLineFileUint32(buf, uint32(len(value)))
-	buf.WriteString(value)
+func (f *LineFile) writeLineFileString(writer *bufio.Writer, value string) error {
+	if err := f.writeLineFileUint32(writer, uint32(len(value))); err != nil {
+		return err
+	}
+	_, err := writer.WriteString(value)
+	return err
 }
 
 func readLineFileUint32(reader *bytes.Reader) (uint32, error) {

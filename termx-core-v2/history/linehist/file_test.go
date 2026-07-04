@@ -186,6 +186,51 @@ func TestLineFilePagedReads(t *testing.T) {
 	}
 }
 
+func TestR449LineFileBufferedAppendsVisibleBeforeSync(t *testing.T) {
+	dir := t.TempDir()
+	file, err := OpenLineFile(dir, "term-r449")
+	if err != nil {
+		t.Fatalf("open line file: %v", err)
+	}
+	for _, text := range []string{"one", "two"} {
+		if err := file.AppendLines([]Line{{Runs: []Run{{Text: text}}, HardEnd: true}}); err != nil {
+			t.Fatalf("append %q: %v", text, err)
+		}
+	}
+	if err := file.AppendBoundary(); err != nil {
+		t.Fatalf("append boundary: %v", err)
+	}
+	if err := file.AppendLines([]Line{{Runs: []Run{{Text: "three"}}, HardEnd: true}}); err != nil {
+		t.Fatalf("append after boundary: %v", err)
+	}
+	if got := file.LineCount(); got != 3 {
+		t.Fatalf("line count before sync = %d, want 3", got)
+	}
+	got, err := file.Lines(0, file.LineCount())
+	if err != nil {
+		t.Fatalf("read before sync: %v", err)
+	}
+	if strings.Join(lineTextsForTest(got), "|") != "one|two|three" {
+		t.Fatalf("lines before sync = %v", lineTextsForTest(got))
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	reopened, err := OpenLineFile(dir, "term-r449")
+	if err != nil {
+		t.Fatalf("reopen line file: %v", err)
+	}
+	defer reopened.Close()
+	got, err = reopened.Lines(0, reopened.LineCount())
+	if err != nil {
+		t.Fatalf("read after reopen: %v", err)
+	}
+	if strings.Join(lineTextsForTest(got), "|") != "one|two|three" {
+		t.Fatalf("lines after reopen = %v", lineTextsForTest(got))
+	}
+}
+
 func TestLineFileSidecarFastPathTruncatesPartialTailAfterBoundary(t *testing.T) {
 	dir := t.TempDir()
 	file, err := OpenLineFile(dir, "term-1")
@@ -276,5 +321,38 @@ func TestLineFileTruncatesPartialTailRecord(t *testing.T) {
 	got, err := reopened.Lines(0, 3)
 	if err != nil || strings.Join(lineTextsForTest(got), "|") != "keep1|keep2|after" {
 		t.Fatalf("lines after truncate recover = %v err=%v", lineTextsForTest(got), err)
+	}
+}
+
+func BenchmarkR449LineFileAppendSingleLineBatches(b *testing.B) {
+	file, err := OpenLineFile(b.TempDir(), "bench-r449")
+	if err != nil {
+		b.Fatalf("open line file: %v", err)
+	}
+	line := Line{
+		Runs: []Run{{
+			Text: "0123456789 abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+			Style: history.CellStyle{
+				FG:   "2",
+				Bold: true,
+			},
+		}},
+		HardEnd: true,
+	}
+	lines := []Line{line}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(line.Runs[0].Text)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := file.AppendLines(lines); err != nil {
+			b.Fatalf("append line: %v", err)
+		}
+	}
+	if err := file.Sync(); err != nil {
+		b.Fatalf("sync line file: %v", err)
+	}
+	b.StopTimer()
+	if err := file.Close(); err != nil {
+		b.Fatalf("close line file: %v", err)
 	}
 }
