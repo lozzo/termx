@@ -27,19 +27,14 @@ type Terminal struct {
 	liveRevision LiveRevision
 	tap          *SemanticTap
 	// 中文说明：tapOpMu 串行化 history semantic consumer 的 PTY 输出与 resize/restart 操作。
-	// 它只服务 history journal 语义链路；live latest screen 不再被 history semantic write 定速。
-	tapOpMu         sync.Mutex
-	historyMu       sync.Mutex
-	historyRenderer history.HistoryLogicalRenderer
-	journalRenderer history.HistoryJournalRenderer
-	historyStore    history.HistoryStore
-	// 中文说明：screenHistory 是 R428 后默认 history truth owner。Terminal 默认
-	// path 的 transaction renderer、journal renderer 和 HistoryStore 必须共享它；
-	// 显式注入旧 store 的测试路径不设置该字段，避免混用两套 truth。
-	screenHistory *history.ScreenHistoryBuffer
-	// 中文说明：lineHistory 是重做后的 logical-line 文件历史（linehist）。它在
-	// tapOpMu 临界区内直接消费 tap 事务的 EvictedRows，查询用同一把 gate 采集
-	// 当前屏热段；设置该字段后 journal/classifier fanout 与 renderer close 全部旁路。
+	// 它同时是 linehist 的查询 gate：ingest 与查询共享同一把锁，滚出行在
+	// 冷段（文件）与热段（emulator 当前屏）之间不重不漏。
+	tapOpMu      sync.Mutex
+	historyMu    sync.Mutex
+	historyStore history.HistoryStore
+	// 中文说明：lineHistory 是 R436 后唯一的 history 引擎（logical-line 文件历史）。
+	// 它在 tapOpMu 临界区内直接消费 tap 事务的 EvictedRows，查询用同一把 gate
+	// 采集当前屏热段；vterm emulator 是唯一屏幕真值，没有第二份屏幕模型。
 	lineHistory    *linehist.Store
 	historyEnabled bool
 	logger         *slog.Logger
@@ -47,12 +42,11 @@ type Terminal struct {
 	queueMu        sync.Mutex
 	liveQ          *terminalLiveIngestQueue
 	historyTapQ    *terminalLiveIngestQueue
-	historyQ       *terminalHistoryIngestQueue
 	events         *eventBroker
 	update         func(TerminalInfo)
 }
 
-func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyStore history.HistoryStore, screenHistory *history.ScreenHistoryBuffer, historyEnabled bool, logger *slog.Logger) *Terminal {
+func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyStore history.HistoryStore, historyEnabled bool, logger *slog.Logger) *Terminal {
 	terminal := &Terminal{
 		info:           info.Clone(),
 		options:        cloneTerminalCreateOptions(options),
@@ -73,24 +67,14 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 		// 中文说明：history semantic tap 不持有 response owner；OSC/DA/DSR 只能由
 		// live SurfaceTrack 回写一次，避免 live/history 双 vterm 双回写。
 		terminal.tap = NewSemanticTap(info.ID, info.Size, nil)
-		if historyStore == nil {
-			if screenHistory == nil {
-				screenHistory = history.NewScreenHistoryBuffer(int(info.Size.Cols), int(info.Size.Rows))
-			}
-			terminal.screenHistory = screenHistory
-			terminal.historyRenderer, terminal.journalRenderer = history.NewScreenBackedHistoryRenderers(terminal.screenHistory)
-			historyStore = history.NewScreenBackedHistoryStore(info.ID, terminal.screenHistory)
-		} else {
-			terminal.historyRenderer, terminal.journalRenderer = history.NewHistoryRenderers(nil, nil)
-			if lineStore, ok := historyStore.(*linehist.Store); ok {
-				terminal.lineHistory = lineStore
-				// 中文说明：闭包动态读 terminal.tap（Restart 会在 tapOpMu 内换 tap）；
-				// gate 就是 tapOpMu，store 查询在 gate 内采集 coldCount+当前屏，
-				// 保证滚出行在冷段与热段之间不重不漏。
-				lineStore.Bind(func() linehist.ScreenSnapshot {
-					return terminal.tap.LineHistoryScreenSnapshot()
-				}, &terminal.tapOpMu)
-			}
+		if lineStore, ok := historyStore.(*linehist.Store); ok {
+			terminal.lineHistory = lineStore
+			// 中文说明：闭包动态读 terminal.tap（Restart 会在 tapOpMu 内换 tap）；
+			// gate 就是 tapOpMu，store 查询在 gate 内采集 coldCount+当前屏，
+			// 保证滚出行在冷段与热段之间不重不漏。
+			lineStore.Bind(func() linehist.ScreenSnapshot {
+				return terminal.tap.LineHistoryScreenSnapshot()
+			}, &terminal.tapOpMu)
 		}
 		terminal.historyStore = historyStore
 	}
@@ -161,7 +145,7 @@ func (terminal *Terminal) IngestOutput(output string) error {
 
 	terminal.publishLiveInvalidated(info.ID, uint64(revision))
 	if terminal.historyEnabled {
-		if err := terminal.ingestHistorySemanticOutput(output, nil, info.ID); err != nil {
+		if err := terminal.ingestHistorySemanticOutput(output, info.ID); err != nil {
 			return err
 		}
 	}
@@ -223,12 +207,9 @@ func (terminal *Terminal) Resize(size Size) error {
 		}
 		if terminal.lineHistory != nil {
 			// 中文说明：linehist 在 tapOpMu 内直接消费 resize 事务的 EvictedRows
-			//（变窄 reflow 可能挤出行）。不能走 enqueueOrApplyHistoryResizeTransaction：
-			// 那条路径会在持有 tapOpMu 时去拿 historyMu，与查询的
-			// historyMu→tapOpMu 顺序相反。
+			//（变窄 reflow 可能挤出行）。锁序固定 historyMu→tapOpMu，这里已持有
+			// tapOpMu，不能再绕道 historyMu。
 			_ = terminal.lineHistory.ApplyTransaction(result.tx)
-		} else {
-			terminal.enqueueOrApplyHistoryResizeTransaction(result.Transaction())
 		}
 	}
 
@@ -246,10 +227,10 @@ func (terminal *Terminal) Kill() error {
 }
 
 func (terminal *Terminal) Close() error {
-	return terminal.closeWithReason(history.CloseReasonTerminalRemove)
+	return terminal.closeWithReason()
 }
 
-func (terminal *Terminal) closeWithReason(reason history.CloseReason) error {
+func (terminal *Terminal) closeWithReason() error {
 	_ = terminal.FlushHistory(context.Background())
 	terminal.mu.Lock()
 	process := terminal.process
@@ -259,8 +240,8 @@ func (terminal *Terminal) closeWithReason(reason history.CloseReason) error {
 	terminal.mu.Unlock()
 	if shouldCloseHistory && terminal.historyEnabled {
 		// 中文说明：remove/shutdown 不一定会经过 process-exit watcher；running terminal
-		// 的最后 open line/current frame 必须用 lifecycle close reason 交给 history renderer。
-		terminal.forceCloseHistory(reason)
+		// 的最后 open line 必须交给 linehist 强制闭合。
+		terminal.forceCloseHistory()
 	}
 	if terminal.lineHistory != nil {
 		// 中文说明：terminal remove/shutdown 后不再有查询与续写；linehist 把
@@ -304,7 +285,6 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.queueMu.Lock()
 	terminal.liveQ = nil
 	terminal.historyTapQ = nil
-	terminal.historyQ = nil
 	terminal.queueMu.Unlock()
 	terminal.liveOpMu.Lock()
 	terminal.live.ResetForRestartPreservingScreen()
@@ -377,57 +357,32 @@ func (terminal *Terminal) LiveRevision() LiveRevision {
 	return terminal.liveRevision
 }
 
-// HistoryBacklogStatus 返回 terminal history semantic transaction backlog 的追平诊断。
-// 它只读取 tap 后 history worker 的 applied/target seq，不 flush、不读取 live screen、
-// 不构造 HistoryWindow；history disabled 时返回 disabled 状态，调用方不能把该诊断
-// 当作 authoritative history payload 或 frozen token。
+// HistoryBacklogStatus 返回 terminal history semantic backlog 的追平诊断。
+// R436 后 linehist 在 tap 队列 worker 的 tapOpMu 临界区内同步落盘，
+// 没有独立的 compact journal worker；诊断只反映 history 是否启用。
 func (terminal *Terminal) HistoryBacklogStatus() HistoryBacklogStatus {
 	terminal.mu.Lock()
 	terminalID := terminal.info.ID
 	terminal.mu.Unlock()
 	terminal.queueMu.Lock()
 	status := terminal.historyStatus
+	terminal.queueMu.Unlock()
 	status.TerminalID = terminalID
 	status.HistoryEnabled = terminal.historyEnabled
-	queue := terminal.historyQ
-	terminal.queueMu.Unlock()
-	if !terminal.historyEnabled {
-		return status
-	}
-	if queue == nil {
+	if terminal.historyEnabled {
 		terminal.historyMu.Lock()
-		enabled := terminal.historyEnabled && terminal.historyStore != nil
+		status.HistoryEnabled = terminal.historyStore != nil
 		terminal.historyMu.Unlock()
-		status.HistoryEnabled = enabled
-		return status
 	}
-	status = queue.Status()
-	status.TerminalID = terminalID
-	status.HistoryEnabled = true
 	return status
 }
 
-// FlushHistory 等待当前 terminal 的 history semantic queue 与 compact journal worker 追平。
-// 第一段 fence 保证已进入 history semantic 队列的 bytes 先推进 history tap；第二段
-// fence 再等待 tap 产出的 compact journal 落到 authoritative history store。
-// 它不等待客户端 render；调用边界是 history.window/freeze/copy 和 lifecycle close。
+// FlushHistory 等待当前 terminal 的 history semantic tap 队列追平。
+// linehist 的落盘发生在 tap worker 的同一临界区内，tap 队列追平即 history
+// truth 追平；它不等待客户端 render，调用边界是 history.window/freeze/copy
+// 和 lifecycle close。
 func (terminal *Terminal) FlushHistory(ctx context.Context) error {
-	if err := terminal.flushHistoryTapQueue(ctx); err != nil {
-		return err
-	}
-	terminal.queueMu.Lock()
-	queue := terminal.historyQ
-	terminal.queueMu.Unlock()
-	if queue == nil {
-		return nil
-	}
-	// 中文说明：history/copy/freeze 只等待 core 内部 tap/history 队列追平；
-	// 不等待 TUI render 或 protocol snapshot ack，避免把客户端速度变成 history truth。
-	if err := queue.Flush(ctx); err != nil {
-		return err
-	}
-	terminal.cacheHistoryBacklogStatus(queue)
-	return nil
+	return terminal.flushHistoryTapQueue(ctx)
 }
 
 func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {
@@ -494,18 +449,11 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 	liveQueue := newTerminalLiveIngestQueue()
 	terminal.setLiveQueue(process, liveQueue)
 	var historyTapQueue *terminalLiveIngestQueue
-	var historyWorker *terminalHistoryIngestQueue
 	if terminal.historyEnabled {
 		historyTapQueue = newTerminalHistoryTapIngestQueue()
 		terminal.setHistoryTapQueue(process, historyTapQueue)
-		startSeq := terminal.historyBacklogStartSeq()
-		historyWorker = newTerminalHistoryIngestQueue(startSeq)
-		terminal.setHistoryQueue(process, historyWorker)
-		go historyWorker.Run(func(journals []history.HistoryJournal) error {
-			return terminal.ingestProcessHistoryJournals(process, journals)
-		})
 		go historyTapQueue.Run(func(output string) error {
-			return terminal.ingestProcessHistoryTapOutput(process, output, historyWorker)
+			return terminal.ingestProcessHistoryTapOutput(process, output)
 		})
 	}
 	go liveQueue.Run(func(output string) error {
@@ -521,11 +469,6 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 				historyTapQueue.Close()
 				historyTapQueue.Wait()
 				terminal.clearHistoryTapQueue(process, historyTapQueue)
-			}
-			if historyWorker != nil {
-				historyWorker.Close()
-				historyWorker.Wait()
-				terminal.clearHistoryQueue(process, historyWorker)
 			}
 		}()
 		for chunk := range output {
@@ -614,96 +557,6 @@ func (terminal *Terminal) flushHistoryTapQueue(ctx context.Context) error {
 	return queue.Flush(ctx)
 }
 
-func (terminal *Terminal) setHistoryQueue(process TerminalProcess, queue *terminalHistoryIngestQueue) {
-	terminal.mu.Lock()
-	current := terminal.process == process
-	terminalID := terminal.info.ID
-	terminal.mu.Unlock()
-	if !current {
-		return
-	}
-	terminal.queueMu.Lock()
-	terminal.historyQ = queue
-	terminal.cacheHistoryBacklogStatusLocked(queue, terminalID)
-	terminal.queueMu.Unlock()
-}
-
-func (terminal *Terminal) clearHistoryQueue(process TerminalProcess, queue *terminalHistoryIngestQueue) {
-	terminal.mu.Lock()
-	current := terminal.process == process
-	terminalID := terminal.info.ID
-	terminal.mu.Unlock()
-	if !current {
-		return
-	}
-	terminal.queueMu.Lock()
-	if terminal.historyQ == queue {
-		terminal.cacheHistoryBacklogStatusLocked(queue, terminalID)
-		terminal.historyQ = nil
-	}
-	terminal.queueMu.Unlock()
-}
-
-// cacheHistoryBacklogStatus 把当前 worker 的追平序号保存到 terminal 级诊断缓存。
-// queue 对象会随 process lifecycle 重建；缓存保证诊断 owner 仍是 terminal，而不是
-// 短生命周期 worker。
-func (terminal *Terminal) cacheHistoryBacklogStatus(queue *terminalHistoryIngestQueue) {
-	if queue == nil {
-		return
-	}
-	terminal.mu.Lock()
-	terminalID := terminal.info.ID
-	terminal.mu.Unlock()
-	terminal.queueMu.Lock()
-	terminal.cacheHistoryBacklogStatusLocked(queue, terminalID)
-	terminal.queueMu.Unlock()
-}
-
-// cacheHistoryBacklogStatusLocked 在 queueMu 内更新 terminal 级 backlog 诊断。
-// 调用方必须已确认 queue 属于当前 terminal/process；该方法只复制 seq 元数据，
-// 不读取或修改 HistoryStore payload。
-func (terminal *Terminal) cacheHistoryBacklogStatusLocked(queue *terminalHistoryIngestQueue, terminalID string) {
-	terminal.historyStatus = queue.Status()
-	terminal.historyStatus.TerminalID = terminalID
-	terminal.historyStatus.HistoryEnabled = terminal.historyEnabled
-}
-
-// historyBacklogStartSeq 返回新 history worker 的起始序号。
-// worker 可以随 process lifecycle 重建，但 diagnostic seq 代表 terminal history
-// backlog 边界，不能因为 queue 对象重建而倒退。
-func (terminal *Terminal) historyBacklogStartSeq() uint64 {
-	terminal.queueMu.Lock()
-	defer terminal.queueMu.Unlock()
-	if terminal.historyStatus.TargetSeq > terminal.historyStatus.AppliedSeq {
-		return terminal.historyStatus.TargetSeq
-	}
-	return terminal.historyStatus.AppliedSeq
-}
-
-func (terminal *Terminal) enqueueOrApplyHistoryResizeTransaction(tx history.TerminalSemanticTransaction) {
-	terminal.mu.Lock()
-	terminalID := terminal.info.ID
-	terminal.mu.Unlock()
-	decision := history.HistoryDecision{
-		Mode:               history.HistoryOutputModeBoundaryOnly,
-		NonHistoryBoundary: true,
-	}
-	journal := history.HistoryJournalFromDecision(terminalID, tx, decision)
-	if terminal.usesScreenBackedHistory() {
-		terminal.applyScreenBackedHistoryDecision(tx, decision, terminalID)
-		return
-	}
-	terminal.queueMu.Lock()
-	queue := terminal.historyQ
-	terminal.queueMu.Unlock()
-	if queue != nil && queue.Enqueue(journal) {
-		return
-	}
-	// 中文说明：没有异步 history worker 时，resize 仍只按 boundary-only 进入 renderer；
-	// 不能从 resized live snapshot 回填 committed history，也不能等待未来输出兜底。
-	terminal.applyHistoryJournal(journal)
-}
-
 func (terminal *Terminal) watchExit(process TerminalProcess, outputDone <-chan struct{}) {
 	go func() {
 		exit, ok := <-process.Wait()
@@ -751,7 +604,7 @@ func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, outpu
 	return nil
 }
 
-func (terminal *Terminal) ingestProcessHistoryTapOutput(process TerminalProcess, output string, historyWorker *terminalHistoryIngestQueue) error {
+func (terminal *Terminal) ingestProcessHistoryTapOutput(process TerminalProcess, output string) error {
 	terminal.mu.Lock()
 	if terminal.process != process {
 		terminal.mu.Unlock()
@@ -763,7 +616,7 @@ func (terminal *Terminal) ingestProcessHistoryTapOutput(process TerminalProcess,
 	}
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
-	return terminal.ingestHistorySemanticOutput(output, historyWorker, info.ID)
+	return terminal.ingestHistorySemanticOutput(output, info.ID)
 }
 
 func (terminal *Terminal) applyLiveOutput(output string) (LiveRevision, error) {
@@ -777,7 +630,7 @@ func (terminal *Terminal) applyLiveOutput(output string) (LiveRevision, error) {
 	return terminal.liveRevision, nil
 }
 
-func (terminal *Terminal) ingestHistorySemanticOutput(output string, historyWorker *terminalHistoryIngestQueue, terminalID string) error {
+func (terminal *Terminal) ingestHistorySemanticOutput(output string, terminalID string) error {
 	if !terminal.historyEnabled || terminal.tap == nil {
 		return nil
 	}
@@ -795,14 +648,29 @@ func (terminal *Terminal) ingestHistorySemanticOutput(output string, historyWork
 	if err != nil {
 		return err
 	}
-	if terminal.lineHistory != nil {
-		// 中文说明：linehist 是单一真值路径，不再走 journal/classifier fanout。
-		return nil
-	}
-	finishHistoryFanout := perftrace.Measure("core.history.journal_fanout")
-	terminal.enqueueOrApplyProcessHistoryJournal(result, historyWorker, terminalID)
-	finishHistoryFanout(len(output))
+	// 中文说明：linehist 是 R436 后唯一 history 真值路径；落盘已在上面的
+	// tapOpMu 临界区内完成，没有 journal/classifier fanout。
+	terminal.cacheHistorySeq(result.tx.Seq, terminalID)
 	return nil
+}
+
+// cacheHistorySeq 把最新 history semantic seq 记入 terminal 级诊断缓存。
+// linehist 同步落盘，applied 与 target 始终相等；诊断只反映 seq 推进，不代表
+// 客户端 render 进度。
+func (terminal *Terminal) cacheHistorySeq(seq uint64, terminalID string) {
+	if seq == 0 {
+		return
+	}
+	terminal.queueMu.Lock()
+	defer terminal.queueMu.Unlock()
+	if seq > terminal.historyStatus.TargetSeq {
+		terminal.historyStatus.TargetSeq = seq
+	}
+	if seq > terminal.historyStatus.AppliedSeq {
+		terminal.historyStatus.AppliedSeq = seq
+	}
+	terminal.historyStatus.TerminalID = terminalID
+	terminal.historyStatus.HistoryEnabled = terminal.historyEnabled
 }
 
 func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) {
@@ -819,7 +687,7 @@ func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) 
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
 	if terminal.historyEnabled {
-		terminal.forceCloseHistory(history.CloseReasonProcessExit)
+		terminal.forceCloseHistory()
 	}
 	terminal.appendExitMarker(info)
 	terminal.syncInfo(info)
@@ -938,506 +806,12 @@ func (terminal *Terminal) HistoryRelease(token history.HistoryToken) error {
 	return terminal.historyStore.Release(token)
 }
 
-func (terminal *Terminal) ingestProcessHistoryJournals(process TerminalProcess, journals []history.HistoryJournal) error {
-	terminal.mu.Lock()
-	if terminal.process != process {
-		terminal.mu.Unlock()
-		return nil
-	}
-	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
-		terminal.mu.Unlock()
-		return ErrTerminalExited
-	}
-	terminal.mu.Unlock()
-	terminal.ingestHistoryJournals(journals)
-	return nil
-}
-
-func (terminal *Terminal) ingestHistoryJournals(journals []history.HistoryJournal) {
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
-	if !terminal.historyEnabled || terminal.journalRenderer == nil || terminal.historyStore == nil {
-		return
-	}
-	terminal.applyHistoryJournalsLocked(journals)
-}
-
-func (terminal *Terminal) applyHistoryJournalsLocked(journals []history.HistoryJournal) {
-	merged := history.HistoryMutationBatch{
-		Mutations: make([]history.HistoryMutation, 0, estimatedHistoryMutationCount(journals)),
-	}
-	for _, journal := range journals {
-		batch, err := terminal.journalRenderer.ApplyJournal(journal)
-		if err != nil {
-			continue
-		}
-		if batch.Seq > merged.Seq {
-			merged.Seq = batch.Seq
-		}
-		if batch.Generation > merged.Generation {
-			merged.Generation = batch.Generation
-		}
-		merged.Mutations = append(merged.Mutations, batch.Mutations...)
-	}
-	if len(merged.Mutations) == 0 {
-		return
-	}
-	// 中文说明：history worker 已经按 history semantic seq 顺序拿到 compact journal；
-	// 同一 worker batch 内可以合并 renderer mutations 后一次写入 HistoryStore，
-	// 减少文件 backend 小事务和 storage flush 次数。这里不改变 history truth：
-	// authoritative logical-line/window/cursor 仍只由 HistoryStore.Apply 产生。
-	_ = terminal.historyStore.Apply(merged)
-}
-
-func estimatedHistoryMutationCount(journals []history.HistoryJournal) int {
-	count := 0
-	for _, journal := range journals {
-		for _, item := range journal.Items {
-			switch item.Kind {
-			case history.HistoryJournalItemOrdinaryLineBatch:
-				if item.Ordinary != nil {
-					count += len(item.Ordinary.Lines) * 2
-					if item.Ordinary.OpenUpdate != nil {
-						count++
-					}
-					count += len(item.Ordinary.Commands)
-				}
-			case history.HistoryJournalItemBoundary, history.HistoryJournalItemFrameEvent, history.HistoryJournalItemScrollOutProof:
-				count += 4
-			}
-		}
-	}
-	if count < len(journals) {
-		return len(journals)
-	}
-	return count
-}
-
-func (terminal *Terminal) enqueueOrApplyProcessHistoryJournal(result SemanticTapResult, queue *terminalHistoryIngestQueue, terminalID string) {
-	journal := result.HistoryJournal()
-	if journal.TerminalID == "" {
-		journal.TerminalID = terminalID
-	}
-	if terminal.usesScreenBackedHistory() {
-		// 中文说明：R428 默认 production path 的正文 truth 是同一份
-		// ScreenHistoryBuffer。compact journal 仍先被构造用于保持 fanout gate
-		// 边界，但普通输出和 screen repaint 必须消费 full semantic transaction
-		// 写 physical rows，不能继续把 ordinary batch 写入旧 logical store。
-		terminal.applyScreenBackedHistoryTransaction(result.Transaction(), terminalID)
-		return
-	}
-	if queue != nil && terminal.historyJournalCanQueue(journal) && !queue.NeedsClassifierFlush(journal) && queue.Enqueue(journal) {
-		return
-	}
-	if queue != nil && queue.NeedsClassifierFlush(journal) {
-		// 中文说明：普通 sealed-line journal 可直接排队；一旦 backlog 或当前
-		// journal 会改变 classifier state，必须先追平 authoritative store，再
-		// 用同一 semantic transaction 构造 decision-aware journal。这里仍只消费
-		// compact journal 队列，不回放 raw PTY，也不走 full transaction renderer。
-		_ = queue.Flush(context.Background())
-	}
-	tx := result.Transaction()
-	terminal.historyMu.Lock()
-	state := history.HistoryReadState{}
-	if terminal.historyEnabled && terminal.historyStore != nil {
-		state = terminal.historyStore.ReadState()
-	}
-	decision := terminal.historyDecisionForTransaction(tx, state)
-	journal = history.HistoryJournalFromDecision(terminalID, tx, decision)
-	terminal.historyMu.Unlock()
-	if journal.TerminalID == "" {
-		journal.TerminalID = terminalID
-	}
-	if queue != nil && terminal.historyJournalCanQueue(journal) && queue.Enqueue(journal) {
-		return
-	}
-	if queue != nil {
-		// 中文说明：history consumer 的生产入口只排 compact journal。若当前
-		// journal 不能进入异步队列，先追平旧队列，再同步应用同一 journal；
-		// 不回拉 full transaction，也不从 live snapshot/raw PTY 建第二条 truth。
-		_ = queue.Flush(context.Background())
-	}
-	terminal.applyHistoryJournal(journal)
-}
-
-func (terminal *Terminal) historyJournalCanQueue(journal history.HistoryJournal) bool {
-	if !terminal.historyEnabled || terminal.journalRenderer == nil || terminal.historyStore == nil {
-		return false
-	}
-	return historyJournalAllowsTerminalQueue(journal)
-}
-
-func (terminal *Terminal) applyHistoryJournal(journal history.HistoryJournal) {
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
-	terminal.applyHistoryJournalsLocked([]history.HistoryJournal{journal})
-}
-
-func (terminal *Terminal) usesScreenBackedHistory() bool {
-	return terminal != nil && terminal.screenHistory != nil
-}
-
-func (terminal *Terminal) applyScreenBackedHistoryTransaction(tx history.TerminalSemanticTransaction, terminalID string) {
-	terminal.historyMu.Lock()
-	state := history.HistoryReadState{}
-	if terminal.historyEnabled && terminal.historyStore != nil {
-		state = terminal.historyStore.ReadState()
-	}
-	decision := terminal.historyDecisionForTransaction(tx, state)
-	terminal.applyScreenBackedHistoryLocked(tx, decision)
-	terminal.historyMu.Unlock()
-	terminal.cacheScreenBackedHistorySeq(tx.Seq, terminalID)
-}
-
-func (terminal *Terminal) applyScreenBackedHistoryDecision(tx history.TerminalSemanticTransaction, decision history.HistoryDecision, terminalID string) {
-	terminal.historyMu.Lock()
-	terminal.applyScreenBackedHistoryLocked(tx, decision)
-	terminal.historyMu.Unlock()
-	terminal.cacheScreenBackedHistorySeq(tx.Seq, terminalID)
-}
-
-func (terminal *Terminal) applyScreenBackedHistoryLocked(tx history.TerminalSemanticTransaction, decision history.HistoryDecision) {
-	if !terminal.historyEnabled || terminal.historyRenderer == nil || terminal.historyStore == nil {
-		return
-	}
-	// 中文说明：screen-backed renderer 的 mutation batch 通常为空；写 truth 的
-	// 边界是 ScreenHistoryBuffer physical row mutation。保留 Apply 调用只服务
-	// 显式测试 renderer 或未来 meta mutation，不能作为旧 logical fallback。
-	batch, err := terminal.historyRenderer.Apply(tx, decision)
-	if err != nil {
-		return
-	}
-	if len(batch.Mutations) > 0 {
-		_ = terminal.historyStore.Apply(batch)
-	}
-}
-
-func (terminal *Terminal) cacheScreenBackedHistorySeq(seq uint64, terminalID string) {
-	if seq == 0 {
-		return
-	}
-	terminal.queueMu.Lock()
-	defer terminal.queueMu.Unlock()
-	if seq > terminal.historyStatus.TargetSeq {
-		terminal.historyStatus.TargetSeq = seq
-	}
-	if seq > terminal.historyStatus.AppliedSeq {
-		terminal.historyStatus.AppliedSeq = seq
-	}
-	terminal.historyStatus.TerminalID = terminalID
-	terminal.historyStatus.HistoryEnabled = terminal.historyEnabled
-}
-
-func historyJournalAllowsTerminalQueue(journal history.HistoryJournal) bool {
-	// 中文说明：R386 process hot path 先看 compact journal 自身是否能安全排队，
-	// 避免普通 sealed line 为了 classifier 再同步读取 HistoryStore。复杂语义必须
-	// 先 flush backlog 后用同一 transaction 的 decision-aware journal 同步应用，
-	// 不能回到 full transaction renderer 或从 journal 猜测 current-screen close proof。
-	if len(journal.Items) == 0 {
-		return false
-	}
-	for _, item := range journal.Items {
-		if item.Kind != history.HistoryJournalItemOrdinaryLineBatch {
-			return false
-		}
-		if item.Ordinary == nil {
-			return false
-		}
-	}
-	return true
-}
-
-func (terminal *Terminal) forceCloseHistory(reason history.CloseReason) {
+func (terminal *Terminal) forceCloseHistory() {
 	if terminal.lineHistory != nil {
 		// 中文说明：process exit/remove 后旧行的续写上下文不存在了；linehist 把
 		// 未闭合尾部强制闭合落盘即可，没有 renderer close batch 可发。
 		_ = terminal.lineHistory.SealOpenTail()
-		return
 	}
-	terminal.historyMu.Lock()
-	defer terminal.historyMu.Unlock()
-	if !terminal.historyEnabled || terminal.historyRenderer == nil || terminal.historyStore == nil {
-		return
-	}
-	// 中文说明：process exit 是 lifecycle boundary，只能走 renderer.Close；不能伪造成
-	// PTY bytes，也不能 fallback 到 live snapshot。
-	batch, err := terminal.historyRenderer.Close(reason)
-	if err != nil {
-		return
-	}
-	_ = terminal.historyStore.Apply(batch)
-}
-
-func (terminal *Terminal) historyDecisionForTransaction(tx history.TerminalSemanticTransaction, state history.HistoryReadState) history.HistoryDecision {
-	decision := history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream}
-	hasEraseDisplay := historyTransactionHasEraseDisplay(tx)
-	hasSynchronizedContent := historyTransactionHasSynchronizedContent(tx)
-	hasContentAfterSyncEnd := historyTransactionHasContentAfterSyncEnd(tx)
-	// 中文说明：history semantic consumer 可能把 begin/payload/end 放在同一个 transaction；
-	// 只要本 transaction 进入或处在 synchronized output mode，就仍是 primary
-	// screen app repaint。只有已有 current frame 后，sync end 后紧跟普通 prompt 的
-	// 同包输出才关闭 session，不能把 prompt 后的整屏再次发布为 current frame。
-	syncFrameSession := hasSynchronizedContent
-	syncEndThenOrdinaryStream := tx.SynchronizedEnd && state.HasPrimaryCurrent && hasContentAfterSyncEnd
-	// 中文说明：RequiresFullReplace 只是 vterm/live stale 边界；只有没有 current
-	// primary owner 且缺少 ordered content ops 时，PrimaryFrame side proof 才能作为
-	// 初始 screen redraw 进入 frame reducer。若已有 sealed timeline，full-replace
-	// snapshot 必须带本 transaction 的 touch proof，否则 shell prompt 这类普通输出
-	// 会被最终整屏 frame 又发布一次，和已 sealed 的尾屏形成重复历史。
-	fullReplaceFrameOnly := tx.RequiresFullReplace && !state.HasPrimaryCurrent && !historyTransactionHasOrderedContentOps(tx)
-	fullReplaceTouchedRowsOnly := fullReplaceFrameOnly && state.HasTimeline && len(tx.PrimaryFrameTouchedRows) > 0
-	fullReplaceCanPublish := fullReplaceFrameOnly && (!state.HasTimeline || fullReplaceTouchedRowsOnly)
-	// 中文说明：有些 primary screen app 不开启 DEC 2026，而是用主屏 cursor/edit
-	// 语义重绘当前 viewport。vterm 已经提供 PrimaryFrame+touched-row proof；
-	// classifier 必须把“修改已有屏幕内容”的事务归到 mutable screen-frame，
-	// 不能把 repaint 中间态写成 ordinary history，也不能从程序名或 live snapshot
-	// 反推 frame owner。
-	primaryPseudoTUIFrameSession := historyTransactionLooksLikePrimaryPseudoTUI(tx) && !syncEndThenOrdinaryStream
-	isPrimaryFrameSession := (syncFrameSession && !syncEndThenOrdinaryStream) || primaryPseudoTUIFrameSession || fullReplaceCanPublish || hasEraseDisplay
-	if tx.RequiresFullReplace && tx.FullReplaceReason == "resize" {
-		return history.HistoryDecision{Mode: history.HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true}
-	}
-	if tx.AltEntered && !isPrimaryFrameSession {
-		decision.ArchivePrimaryBeforeAlt = true
-		decision.ClearPrimaryCurrent = true
-	}
-	if tx.AltExited && !isPrimaryFrameSession {
-		decision.ClearAltFrame = true
-	}
-	if (tx.AltEntered || tx.AltExited || tx.AltFrame != nil) && !isPrimaryFrameSession {
-		decision.Mode = history.HistoryOutputModeAltTransient
-		decision.PublishAltFrame = tx.AltFrame != nil
-	}
-	if tx.PrimaryFrame != nil && isPrimaryFrameSession {
-		decision.Mode = history.HistoryOutputModePrimaryFrameSession
-		decision.PublishPrimaryFrame = true
-		// 中文说明：synchronized output begin/end 只是 screen app 的 repaint
-		// flush 边界，不是 lifecycle boundary。连续 repaint 必须替换 mutable
-		// current primary frame；只有 alt-enter、ordinary stream 恢复或 process
-		// close 这类明确边界才能把旧 frame seal 进 timeline。
-		decision.ArchivePrimaryAfterPrimaryFrame = tx.AltEntered
-		// 中文说明：同步输出或 full-replace direct damage 刚启动时，vterm
-		// PrimaryFrame side proof 会包含屏幕上已经 sealed 的普通 shell tail。
-		// 没有 clear 边界时，只允许本 transaction 触达的 rows 进入 current
-		// frame，不能把旧 shell 屏幕复刻成第二份 screen app history truth。
-		// 中文说明：scroll-out proof 只证明部分内容离开 viewport，不能把
-		// PrimaryFrame side proof 升级成整屏 ownership。没有 ED2 clear 这类明确
-		// 清场边界时，primary repaint 仍只能接管本 transaction 的 touched rows，
-		// 否则已经 seal 的 shell logical line 会被 final/current screen-frame 复制。
-		decision.PublishPrimaryFrameTouchedRowsOnly = !hasEraseDisplay && len(tx.PrimaryFrameTouchedRows) > 0 && (syncFrameSession || primaryPseudoTUIFrameSession || fullReplaceTouchedRowsOnly)
-		decision.SkipPreExistingPrimaryScrollOut = decision.PublishPrimaryFrameTouchedRowsOnly && state.HasTimeline && !state.HasPrimaryCurrent
-		// 中文说明：vterm 已经证明真正滚出 primary viewport 的 payload 必须进入
-		// authoritative history；ED2 clear-time proof 只有在已有 primary current
-		// ownership 时才消费，renderer 不能靠更早的 scroll-out 状态补 seal。
-		decision.ConsumeScrollOutProof = historyTransactionShouldConsumeScrollOut(tx, state)
-		// 中文说明：ED2 不等于 ED3。若清屏前有 primary current frame，
-		// vterm 的 clear-time scroll-out proof 表示该 frame 真实离开 viewport，
-		// 应进入 scrollable history；普通 shell 已 sealed 可见行仍不能消费该
-		// proof，否则会复制已经在 timeline 中的 shell tail。
-		decision.ConsumeClearTimeScrollOutProof = hasEraseDisplay && state.HasPrimaryCurrent
-		decision.ConsumeClearBoundary = hasEraseDisplay
-	}
-	if decision.Mode == history.HistoryOutputModeOrdinaryStream && state.HasPrimaryCurrent && (historyTransactionHasContentMutation(tx) || tx.RequiresFullReplace) {
-		// 中文说明：screen app session 后恢复真正的普通输出，才是 terminal
-		// 语义上的 session 边界；纯 synchronized begin/end 这类 mode 边界没有
-		// payload，不能把 current frame close 进 committed history。full replace
-		// stale 边界不能发布最终整屏，但必须关闭旧 current ownership，避免旧尾屏
-		// 在 latest window 中继续作为 mutable frame 重复出现。
-		decision.ClosePrimaryFrameBeforeStream = true
-	}
-	return decision
-}
-
-func historyTransactionHasEraseDisplay(tx history.TerminalSemanticTransaction) bool {
-	for _, op := range tx.Ops {
-		if op.Code == vterm.ScreenOpControl && op.Control == "ed" && op.Mode == 2 {
-			return true
-		}
-	}
-	return false
-}
-
-func historyTransactionHasContentMutation(tx history.TerminalSemanticTransaction) bool {
-	for _, op := range tx.Ops {
-		if historyOpMutatesContent(op) {
-			return true
-		}
-	}
-	return len(tx.PrimaryScrollOut) > 0 || historyTransactionHasOpScrollOut(tx)
-}
-
-func historyTransactionHasOrderedContentOps(tx history.TerminalSemanticTransaction) bool {
-	for _, op := range tx.Ops {
-		if historyOpMutatesContent(op) {
-			return true
-		}
-	}
-	return false
-}
-
-func historyTransactionHasContentAfterSyncEnd(tx history.TerminalSemanticTransaction) bool {
-	afterSyncEnd := false
-	inAltAfterSyncEnd := false
-	for _, op := range tx.Ops {
-		if op.Code == vterm.ScreenOpModes && op.Private && op.Mode == 2026 && !op.Enabled {
-			afterSyncEnd = true
-			continue
-		}
-		if afterSyncEnd && op.Code == vterm.ScreenOpModes && op.Private && (op.Mode == 47 || op.Mode == 1047 || op.Mode == 1049) {
-			inAltAfterSyncEnd = op.Enabled
-			continue
-		}
-		if afterSyncEnd && !inAltAfterSyncEnd && historyOpMutatesStreamContent(op) {
-			return true
-		}
-	}
-	return false
-}
-
-func historyTransactionLooksLikePrimaryPseudoTUI(tx history.TerminalSemanticTransaction) bool {
-	if tx.PrimaryFrame == nil || len(tx.PrimaryFrameTouchedRows) == 0 || !historyTransactionHasContentMutation(tx) {
-		return false
-	}
-	if tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd {
-		return true
-	}
-	if historyTransactionHasPrimaryScreenFrameOp(tx) {
-		return true
-	}
-	return historyTransactionWritesTouchNonMonotonicRows(tx)
-}
-
-func historyTransactionHasPrimaryScreenFrameOp(tx history.TerminalSemanticTransaction) bool {
-	hasVerticalRelativeMove := false
-	for _, op := range tx.Ops {
-		switch op.Code {
-		case vterm.ScreenOpClearRect, vterm.ScreenOpScrollRect, vterm.ScreenOpCopyRect:
-			return true
-		}
-		if op.Code == vterm.ScreenOpControl {
-			switch op.Control {
-			case "cup", "vpa", "il", "dl", "su", "sd":
-				return true
-			case "cuu", "cud":
-				hasVerticalRelativeMove = true
-			}
-		}
-	}
-	// 中文说明：EL、同一行 CR 重写、水平移动和字符插删是 shell/readline/git
-	// progress 的普通输出形态；不能单独接管 primary frame。只有相对纵向移动后
-	// 同一 transaction 真实改到多行，才把它视为主屏 pseudo-TUI viewport repaint。
-	if hasVerticalRelativeMove && historyTransactionWritesTouchMultipleRows(tx) {
-		return true
-	}
-	return false
-}
-
-func historyTransactionWritesTouchMultipleRows(tx history.TerminalSemanticTransaction) bool {
-	seenWrite := false
-	firstRow := 0
-	for _, op := range tx.Ops {
-		if op.Code != vterm.ScreenOpWriteSpan {
-			continue
-		}
-		if !seenWrite {
-			seenWrite = true
-			firstRow = op.Row
-			continue
-		}
-		if op.Row != firstRow {
-			return true
-		}
-	}
-	return false
-}
-
-func historyTransactionWritesTouchNonMonotonicRows(tx history.TerminalSemanticTransaction) bool {
-	seenWrite := false
-	lastRow := 0
-	lastCol := 0
-	for _, op := range tx.Ops {
-		if op.Code != vterm.ScreenOpWriteSpan {
-			continue
-		}
-		if seenWrite && (op.Row < lastRow || (op.Row == lastRow && op.Col < lastCol)) {
-			return true
-		}
-		seenWrite = true
-		lastRow = op.Row
-		lastCol = op.Col
-	}
-	return false
-}
-
-func historyTransactionHasSynchronizedContent(tx history.TerminalSemanticTransaction) bool {
-	// 中文说明：2026 begin 前的 shell 输出仍属于 ordinary stream；不能因为同一
-	// tap transaction 后半段进入 synchronized mode，就把 begin 前内容接管成
-	// primary frame。split end transaction 在 mode disable 前默认处于 sync scope。
-	if tx.SynchronizedEnd && !historyTransactionHasContentAfterSyncEnd(tx) && (len(tx.PrimaryScrollOut) > 0 || len(tx.PrimaryFrameTouchedRows) > 0 || tx.PrimaryFrame != nil) {
-		return true
-	}
-	inSyncScope := tx.SynchronizedEnd && !tx.SynchronizedBegin
-	if tx.SynchronizedActive && !tx.SynchronizedBegin {
-		inSyncScope = true
-	}
-	for _, op := range tx.Ops {
-		if op.Code == vterm.ScreenOpModes && op.Private && op.Mode == 2026 {
-			inSyncScope = op.Enabled
-			continue
-		}
-		if inSyncScope && historyOpMutatesContent(op) {
-			return true
-		}
-	}
-	if inSyncScope && len(tx.PrimaryScrollOut) > 0 {
-		return true
-	}
-	return false
-}
-
-func historyOpMutatesStreamContent(op history.TerminalSemanticOp) bool {
-	switch op.Code {
-	case vterm.ScreenOpWriteSpan, vterm.ScreenOpClearRect, vterm.ScreenOpClearToEOL:
-		return true
-	case vterm.ScreenOpControl:
-		switch op.Control {
-		case "ed", "el", "ech", "dch", "ich", "il", "dl", "su", "sd", "ri", "ris":
-			return true
-		}
-	}
-	return len(op.ScrollOut) > 0
-}
-
-func historyOpMutatesContent(op history.TerminalSemanticOp) bool {
-	switch op.Code {
-	case vterm.ScreenOpWriteSpan, vterm.ScreenOpScrollRect, vterm.ScreenOpCopyRect, vterm.ScreenOpClearRect, vterm.ScreenOpClearToEOL, vterm.ScreenOpResize:
-		return true
-	case vterm.ScreenOpControl:
-		switch op.Control {
-		case "ed", "el", "ech", "dch", "ich", "il", "dl", "su", "sd", "ri", "ris":
-			return true
-		}
-	}
-	return len(op.ScrollOut) > 0
-}
-
-func historyTransactionShouldConsumeScrollOut(tx history.TerminalSemanticTransaction, state history.HistoryReadState) bool {
-	if len(tx.PrimaryScrollOut) == 0 && !historyTransactionHasOpScrollOut(tx) {
-		return false
-	}
-	if state.HasPrimaryCurrent || tx.SynchronizedBegin || tx.SynchronizedActive || tx.SynchronizedEnd || tx.RequiresFullReplace {
-		return true
-	}
-	return !historyTransactionHasEraseDisplay(tx)
-}
-
-func historyTransactionHasOpScrollOut(tx history.TerminalSemanticTransaction) bool {
-	for _, op := range tx.Ops {
-		if len(op.ScrollOut) > 0 {
-			return true
-		}
-	}
-	return false
 }
 
 func (terminal *Terminal) syncInfo(info TerminalInfo) {

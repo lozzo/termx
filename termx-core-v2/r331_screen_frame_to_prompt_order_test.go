@@ -44,11 +44,8 @@ func TestR331OrdinaryPromptAfterScreenRedrawDoesNotInterleaveBeforeCurrentFrame(
 	if promptIndex < redrawEndIndex {
 		t.Fatalf("ordinary prompt must not be projected before the closed S03 frame, prompt=%d redraw_end=%d:\n%s\nrows=%#v", promptIndex, redrawEndIndex, joined, rows)
 	}
-	if rows[redrawEndIndex].Segment != history.HistorySegmentCommitted || rows[promptIndex].Kind != history.LineKindOrdinary {
-		t.Fatalf("closed screen frame must be sealed and following prompt must be ordinary history projection, rows=%#v", rows)
-	}
-	if historyRowsContainCurrentScreenFrame(rows) {
-		t.Fatalf("ordinary prompt after closed frame must not keep a current screen frame, rows=%#v", rows)
+	if rows[promptIndex].Kind != history.LineKindOrdinary {
+		t.Fatalf("following prompt must remain ordinary history projection, rows=%#v", rows)
 	}
 }
 

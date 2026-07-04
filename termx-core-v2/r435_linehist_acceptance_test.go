@@ -106,6 +106,29 @@ func TestR435LinehistCodexFixtureViaServerIngest(t *testing.T) {
 	}
 }
 
+func TestR435LinehistCodexStylePrimaryMutationDoesNotDuplicateHistory(t *testing.T) {
+	server := newR433LinehistServer(t)
+	r433RegisterTerminal(t, server, "term-r435-codex-mutation", 40, 5)
+	payload := "shell prompt 1\r\nshell prompt 2\r\nshell prompt 3\r\ncodex starts\r\n" +
+		"\x1b[1A\x1b[2KOpenAI Codex frame" +
+		"\x1b[1A\x1b[6G\x1b[1Pmodified frame"
+	r433Ingest(t, server, "term-r435-codex-mutation", payload)
+
+	rows, _ := r326CollectAllHistoryRows(t, server, "term-r435-codex-mutation", 40, 10)
+	joined := strings.Join(historyRowTexts(rows), "\n")
+	for _, needle := range []string{"shell prompt 1", "shell prompt 2"} {
+		if got := historyTextCount(rows, needle); got != 1 {
+			t.Fatalf("%q must appear once after primary mutation repaint, count=%d:\n%s\nrows=%#v", needle, got, joined, rows)
+		}
+	}
+	if got := historyTextCount(rows, "OpenAI Codex frame"); got > 1 {
+		t.Fatalf("intermediate primary repaint must not be appended repeatedly, count=%d:\n%s\nrows=%#v", got, joined, rows)
+	}
+	if !strings.Contains(joined, "modified frame") {
+		t.Fatalf("latest projection should include final mutated frame state:\n%s\nrows=%#v", joined, rows)
+	}
+}
+
 // CJK 等价：宽字符行跨滚出/落盘/重投影/复制全程保真。
 func TestR435LinehistCJKAcrossEvictionWindowAndCopy(t *testing.T) {
 	server := newR433LinehistServer(t)

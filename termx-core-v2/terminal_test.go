@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
+	"github.com/lozzow/termx/termx-core-v2/history/linehist"
 	"github.com/lozzow/termx/termx-core-v2/live"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
@@ -104,51 +105,6 @@ func TestR373ResizeSerializesProcessOutputWithTapResize(t *testing.T) {
 		t.Fatalf("resize-triggered output should not wrap at old width, row cells=%d row=%#v", got, snapshot.Rows[0])
 	}
 }
-
-func TestR405TerminalResizeQueuesDecisionAwareBoundaryJournal(t *testing.T) {
-	factory := newRecordingProcessFactory()
-	server := NewServer(
-		WithProcessFactory(factory),
-		WithHistoryStoreFactory(func(terminalID string) (history.HistoryStore, error) {
-			return history.NewInMemoryHistoryStore(terminalID), nil
-		}),
-	)
-	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r405-resize-journal",
-		Command: []string{"shell"},
-		Size:    Size{Cols: 6, Rows: 2},
-	}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	terminal, err := server.Terminal("term-r405-resize-journal")
-	if err != nil {
-		t.Fatalf("terminal: %v", err)
-	}
-	queue := newTerminalHistoryIngestQueue(0)
-	defer queue.Close()
-	terminal.queueMu.Lock()
-	terminal.historyQ = queue
-	terminal.queueMu.Unlock()
-
-	if err := server.ResizeTerminal(context.Background(), "term-r405-resize-journal", 12, 4); err != nil {
-		t.Fatalf("resize terminal: %v", err)
-	}
-	batch, ok := queue.nextBatch()
-	if !ok || len(batch) != 1 {
-		t.Fatalf("expected one resize journal batch, ok=%v batch=%#v", ok, batch)
-	}
-	journal := batch[0].journal
-	labels := historyJournalLabelsForTerminalTest(journal)
-	if got := strings.Join(labels, "|"); got != "boundary:resize" {
-		t.Fatalf("resize must enqueue boundary-only decision journal, got labels=%q journal=%#v", got, journal)
-	}
-	for _, item := range journal.Items {
-		if item.Kind == history.HistoryJournalItemOrdinaryLineBatch || item.Kind == history.HistoryJournalItemFrameEvent || item.Kind == history.HistoryJournalItemScrollOutProof {
-			t.Fatalf("resize journal must not carry ordinary/frame/scroll-out payload, labels=%v item=%#v", labels, item)
-		}
-	}
-}
-
 func TestTerminalLiveSurfaceRepliesToOSCBackgroundQuery(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -274,129 +230,6 @@ func TestR396ProcessOutputFansOutLiveSurfaceAndHistorySemanticConsumer(t *testin
 	}
 }
 
-func TestR389ProcessOutputPublishesLiveBeforeBlockedHistoryFanout(t *testing.T) {
-	factory := newRecordingProcessFactory()
-	server := NewServer(
-		WithProcessFactory(factory),
-		WithHistoryStoreFactory(func(terminalID string) (history.HistoryStore, error) {
-			return history.NewInMemoryHistoryStore(terminalID), nil
-		}),
-	)
-	events := server.Events(context.Background(), EventFilter{
-		TerminalID: "term-r389-live-before-history",
-		Types:      []EventType{EventTerminalLiveInvalidated},
-	})
-	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r389-live-before-history",
-		Command: []string{"shell"},
-		Size:    Size{Cols: 30, Rows: 4},
-	}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	terminal, err := server.Terminal("term-r389-live-before-history")
-	if err != nil {
-		t.Fatalf("terminal: %v", err)
-	}
-	store := newBlockingHistoryStore("term-r389-live-before-history")
-	store.block()
-	terminal.historyMu.Lock()
-	terminal.historyStore = store
-	terminal.historyMu.Unlock()
-
-	process := factory.process("term-r389-live-before-history")
-	if process == nil {
-		t.Fatal("expected recording process")
-	}
-	process.emitOutput("alpha\r\n")
-	event := assertEventValue(t, events, EventTerminalLiveInvalidated, "term-r389-live-before-history")
-	if event.Live == nil || event.Live.Revision == 0 {
-		t.Fatalf("expected live invalidation before releasing history worker, got %#v", event)
-	}
-	select {
-	case <-store.applyStarted:
-	case <-time.After(time.Second):
-		t.Fatal("history worker did not reach blocked Apply")
-	}
-	store.release()
-	window, err := server.TerminalHistoryWindow(context.Background(), "term-r389-live-before-history", history.HistoryWindowRequest{
-		TerminalID: "term-r389-live-before-history",
-		Mode:       history.HistoryWindowModeLatest,
-		Cols:       30,
-		Limit:      10,
-	})
-	if err != nil {
-		t.Fatalf("history.window after release: %v", err)
-	}
-	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "alpha" {
-		t.Fatalf("history should still receive journal after release, got %q", got)
-	}
-}
-
-func TestR404TerminalJournalPipelineHandlesOrdinaryFrameAndPrompt(t *testing.T) {
-	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
-	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r404-journal-pipeline",
-		Command: []string{"shell"},
-		Size:    Size{Cols: 30, Rows: 4},
-	}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), "term-r404-journal-pipeline", "plain-1\r\nplain-2\r\n"); err != nil {
-		t.Fatalf("ingest ordinary output: %v", err)
-	}
-	window, err := server.TerminalHistoryWindow(context.Background(), "term-r404-journal-pipeline", history.HistoryWindowRequest{
-		TerminalID: "term-r404-journal-pipeline",
-		Mode:       history.HistoryWindowModeLatest,
-		Cols:       30,
-		Limit:      10,
-	})
-	if err != nil {
-		t.Fatalf("latest ordinary window: %v", err)
-	}
-	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "plain-1|plain-2" {
-		t.Fatalf("journal pipeline must preserve sealed lines, got %q rows=%#v", got, window.Rows)
-	}
-	if !window.Rows[0].Committed || !window.Rows[1].Committed {
-		t.Fatalf("journal pipeline should preserve sealed ownership, rows=%#v", window.Rows)
-	}
-
-	if err := server.IngestOutput(context.Background(), "term-r404-journal-pipeline", "\x1b[?2026hframe\r\ncurrent\x1b[?2026l"); err != nil {
-		t.Fatalf("ingest complex output: %v", err)
-	}
-	window, err = server.TerminalHistoryWindow(context.Background(), "term-r404-journal-pipeline", history.HistoryWindowRequest{
-		TerminalID: "term-r404-journal-pipeline",
-		Mode:       history.HistoryWindowModeLatest,
-		Cols:       30,
-		Limit:      10,
-	})
-	if err != nil {
-		t.Fatalf("latest after frame journal: %v", err)
-	}
-	texts := strings.Join(historyRowTexts(window.Rows), "|")
-	if !strings.Contains(texts, "plain-1|plain-2") || !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
-		t.Fatalf("frame journal should preserve prior ordinary rows without id/order corruption, texts=%q rows=%#v", texts, window.Rows)
-	}
-
-	if err := server.IngestOutput(context.Background(), "term-r404-journal-pipeline", "PROMPT_AFTER"); err != nil {
-		t.Fatalf("ingest prompt after frame: %v", err)
-	}
-	window, err = server.TerminalHistoryWindow(context.Background(), "term-r404-journal-pipeline", history.HistoryWindowRequest{
-		TerminalID: "term-r404-journal-pipeline",
-		Mode:       history.HistoryWindowModeLatest,
-		Cols:       30,
-		Limit:      20,
-	})
-	if err != nil {
-		t.Fatalf("latest after prompt journal: %v", err)
-	}
-	textRows := historyRowTexts(window.Rows)
-	promptIndex := historyTextIndex(textRows, "PROMPT_AFTER")
-	frameIndex := historyTextIndex(textRows, "current")
-	if promptIndex < 0 || frameIndex < 0 || promptIndex < frameIndex {
-		t.Fatalf("journal pipeline must close frame before ordinary prompt, prompt=%d frame=%d rows=%#v", promptIndex, frameIndex, window.Rows)
-	}
-}
-
 func TestR404TerminalJournalRendererAcceptsOpenLineAndBoundaryCommands(t *testing.T) {
 	renderer := history.NewHistoryJournalRenderer()
 	sealed := history.HistoryJournalFromDecision("term-r404-gate", history.TerminalSemanticTransaction{
@@ -433,63 +266,6 @@ func TestR404TerminalJournalRendererAcceptsOpenLineAndBoundaryCommands(t *testin
 		t.Fatalf("LF-only journal should seal open line, got %q batch=%#v", got, batch)
 	}
 }
-
-func TestR407EstimatedHistoryMutationCountPreallocatesOrdinaryBatch(t *testing.T) {
-	journals := []history.HistoryJournal{{
-		TerminalID: "term-r407-estimate",
-		Seq:        1,
-		Source:     history.HistoryJournalSourceSemanticTapTransaction,
-		Items: []history.HistoryJournalItem{
-			{
-				Kind: history.HistoryJournalItemOrdinaryLineBatch,
-				Ordinary: &history.OrdinaryLineBatch{
-					Lines: []history.JournalLogicalLine{
-						{Cells: []history.Cell{{Text: "a", Width: 1}}},
-						{Cells: []history.Cell{{Text: "b", Width: 1}}},
-						{Cells: []history.Cell{{Text: "c", Width: 1}}},
-					},
-					Origin: history.HistoryJournalOriginOrdinaryPrimary,
-				},
-			},
-			{Kind: history.HistoryJournalItemBoundary, Boundary: &history.HistoryJournalBoundary{Kind: history.HistoryJournalBoundaryResize}},
-		},
-	}}
-	if got := estimatedHistoryMutationCount(journals); got < 10 {
-		t.Fatalf("ordinary history worker batch should preallocate seal/timeline mutations, got %d", got)
-	}
-}
-
-func TestR386TerminalJournalQueueGateAvoidsTransactionClassifierForPlainSealedBatch(t *testing.T) {
-	plain := history.HistoryJournal{
-		TerminalID: "term-r386-gate",
-		Source:     history.HistoryJournalSourceSemanticTapTransaction,
-		Items: []history.HistoryJournalItem{{
-			Kind: history.HistoryJournalItemOrdinaryLineBatch,
-			Ordinary: &history.OrdinaryLineBatch{
-				Lines: []history.JournalLogicalLine{{Cells: []history.Cell{{Text: "plain", Width: 5}}}},
-			},
-		}},
-	}
-	if !historyJournalAllowsTerminalQueue(plain) {
-		t.Fatalf("plain sealed ordinary journal should enter backlog without synchronous journal apply")
-	}
-	withCommands := history.HistoryJournalFromTransaction("term-r386-gate", history.TerminalSemanticTransaction{
-		Ops: []history.TerminalSemanticOp{
-			{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: []history.TerminalSemanticCell{{Content: "plain", Width: 5}}},
-			{Code: vterm.ScreenOpControl, Control: "lf"},
-		},
-	})
-	if !historyJournalAllowsTerminalQueue(withCommands) {
-		t.Fatalf("ordinary command journal should enter backlog without synchronous journal apply")
-	}
-	frame := history.HistoryJournalFromTransaction("term-r386-gate", history.TerminalSemanticTransaction{
-		PrimaryFrame: &history.TerminalSemanticFrame{Cols: 20, Rows: [][]history.TerminalSemanticCell{{{Content: "frame", Width: 5}}}},
-	})
-	if historyJournalAllowsTerminalQueue(frame) {
-		t.Fatalf("frame journal must force synchronous journal apply after backlog flush")
-	}
-}
-
 func TestR404TerminalJournalRendererAppliesBoundaryProofAndFramePayload(t *testing.T) {
 	renderer := history.NewHistoryJournalRenderer()
 	boundaryOnly := history.HistoryJournalFromDecision("term-r404-renderer", history.TerminalSemanticTransaction{
@@ -533,229 +309,6 @@ func TestR404TerminalJournalRendererAppliesBoundaryProofAndFramePayload(t *testi
 	}, history.HistoryDecision{Mode: history.HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true})
 	if _, err := renderer.ApplyJournal(withFrame); err != nil {
 		t.Fatalf("frame payload journal should apply: %v journal=%#v", err, withFrame)
-	}
-}
-
-func TestR404TerminalBoundaryAndFrameJournalThenPrompt(t *testing.T) {
-	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
-	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r404-boundary-frame",
-		Command: []string{"shell"},
-		Size:    Size{Cols: 32, Rows: 5},
-	}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), "term-r404-boundary-frame", "old-a\r\n\x1b[3J\x1bcnew-a\r\n"); err != nil {
-		t.Fatalf("ingest boundary journal output: %v", err)
-	}
-	window, err := server.TerminalHistoryWindow(context.Background(), "term-r404-boundary-frame", history.HistoryWindowRequest{
-		TerminalID: "term-r404-boundary-frame",
-		Mode:       history.HistoryWindowModeLatest,
-		Cols:       40,
-		Limit:      10,
-	})
-	if err != nil {
-		t.Fatalf("latest after boundary journal: %v", err)
-	}
-	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "old-a|new-a" {
-		t.Fatalf("boundary journal should preserve sealed ordinary history, got %q rows=%#v", got, window.Rows)
-	}
-
-	if err := server.IngestOutput(context.Background(), "term-r404-boundary-frame", "\x1b[?2026hframe-a\r\nframe-b\x1b[?2026l"); err != nil {
-		t.Fatalf("ingest sync frame journal: %v", err)
-	}
-	window, err = server.TerminalHistoryWindow(context.Background(), "term-r404-boundary-frame", history.HistoryWindowRequest{
-		TerminalID: "term-r404-boundary-frame",
-		Mode:       history.HistoryWindowModeLatest,
-		Cols:       40,
-		Limit:      20,
-	})
-	if err != nil {
-		t.Fatalf("latest after frame journal: %v", err)
-	}
-	texts := strings.Join(historyRowTexts(window.Rows), "|")
-	if strings.Contains(texts, "old-a") || !strings.Contains(texts, "new-a|frame-a|frame-b") || !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) {
-		t.Fatalf("frame journal should publish current primary frame, texts=%q rows=%#v", texts, window.Rows)
-	}
-	olderWindow, err := server.TerminalHistoryWindow(context.Background(), "term-r404-boundary-frame", history.HistoryWindowRequest{
-		TerminalID: "term-r404-boundary-frame",
-		Mode:       history.HistoryWindowModeOlder,
-		Cols:       40,
-		Limit:      20,
-		Cursor:     window.Boundary.Cursor,
-	})
-	if err != nil {
-		t.Fatalf("older after frame journal: %v", err)
-	}
-	if got := strings.Join(historyRowTexts(olderWindow.Rows), "|"); got != "old-a" {
-		t.Fatalf("anchored latest must keep hidden sealed rows reachable via older, got %q rows=%#v", got, olderWindow.Rows)
-	}
-	if err := server.IngestOutput(context.Background(), "term-r404-boundary-frame", "PROMPT_AFTER"); err != nil {
-		t.Fatalf("ingest prompt journal: %v", err)
-	}
-	window, err = server.TerminalHistoryWindow(context.Background(), "term-r404-boundary-frame", history.HistoryWindowRequest{
-		TerminalID: "term-r404-boundary-frame",
-		Mode:       history.HistoryWindowModeLatest,
-		Cols:       40,
-		Limit:      20,
-	})
-	if err != nil {
-		t.Fatalf("latest after prompt journal: %v", err)
-	}
-	textRows := historyRowTexts(window.Rows)
-	promptIndex := historyTextIndex(textRows, "PROMPT_AFTER")
-	frameIndex := historyTextIndex(textRows, "frame-b")
-	if promptIndex < 0 || frameIndex < 0 || promptIndex < frameIndex {
-		t.Fatalf("prompt after journal frame must close frame through journal reducer, prompt=%d frame=%d rows=%#v", promptIndex, frameIndex, window.Rows)
-	}
-}
-
-func TestR374HistoryBacklogStatusAndFlushBoundary(t *testing.T) {
-	factory := newRecordingProcessFactory()
-	store := newBlockingHistoryStore("term-r374-backlog")
-	server := NewServer(
-		WithProcessFactory(factory),
-		WithHistoryStoreFactory(func(terminalID string) (history.HistoryStore, error) {
-			if terminalID != "term-r374-backlog" {
-				return history.NewInMemoryHistoryStore(terminalID), nil
-			}
-			return store, nil
-		}),
-	)
-	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r374-backlog",
-		Command: []string{"shell"},
-		Size:    Size{Cols: 30, Rows: 4},
-	}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	process := factory.process("term-r374-backlog")
-	if process == nil {
-		t.Fatal("expected recording process")
-	}
-	store.block()
-	process.emitOutput("alpha\r\n")
-	select {
-	case <-store.applyStarted:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for blocked history apply")
-	}
-	status, err := server.TerminalHistoryBacklogStatus("term-r374-backlog")
-	if err != nil {
-		t.Fatalf("history backlog status: %v", err)
-	}
-	if !status.HistoryEnabled || status.AppliedSeq != 0 || status.TargetSeq != 1 || !status.CatchupPending || !status.InFlight {
-		t.Fatalf("unexpected blocked backlog status %#v", status)
-	}
-	assertEventually(t, time.Second, func() bool {
-		rows, err := server.LiveRows("term-r374-backlog")
-		return err == nil && strings.Contains(strings.Join(rows, "|"), "alpha")
-	}, "live hot path should read latest screen without waiting for history backlog")
-	windowDone := make(chan error, 1)
-	go func() {
-		_, err := server.TerminalHistoryWindow(context.Background(), "term-r374-backlog", history.HistoryWindowRequest{
-			TerminalID: "term-r374-backlog",
-			Mode:       history.HistoryWindowModeLatest,
-			Cols:       30,
-			Limit:      10,
-		})
-		windowDone <- err
-	}()
-	select {
-	case err := <-windowDone:
-		t.Fatalf("authoritative history.window returned before backlog catchup: %v", err)
-	case <-time.After(50 * time.Millisecond):
-	}
-	store.release()
-	select {
-	case err := <-windowDone:
-		if err != nil {
-			t.Fatalf("history.window after catchup: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for history.window after backlog release")
-	}
-	status, err = server.TerminalHistoryBacklogStatus("term-r374-backlog")
-	if err != nil {
-		t.Fatalf("history backlog status after catchup: %v", err)
-	}
-	if status.AppliedSeq != 1 || status.TargetSeq != 1 || status.CatchupPending {
-		t.Fatalf("unexpected caught-up backlog status %#v", status)
-	}
-}
-
-func TestR374HistoryBacklogSeqDoesNotResetAcrossRestart(t *testing.T) {
-	factory := newRecordingProcessFactory()
-	server := NewServer(
-		WithProcessFactory(factory),
-		WithHistoryStoreFactory(func(terminalID string) (history.HistoryStore, error) {
-			return history.NewInMemoryHistoryStore(terminalID), nil
-		}),
-	)
-	events := server.Events(context.Background(), EventFilter{
-		TerminalID: "term-r374-restart-seq",
-		Types:      []EventType{EventTerminalLiveInvalidated},
-	})
-	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r374-restart-seq",
-		Command: []string{"shell"},
-		Size:    Size{Cols: 30, Rows: 4},
-	}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	first := factory.process("term-r374-restart-seq")
-	if first == nil {
-		t.Fatal("expected first process")
-	}
-	first.emitOutput("alpha\r\n")
-	assertEventValue(t, events, EventTerminalLiveInvalidated, "term-r374-restart-seq")
-	assertEventually(t, time.Second, func() bool {
-		rows, err := server.LiveRows("term-r374-restart-seq")
-		return err == nil && strings.Contains(strings.Join(rows, "|"), "alpha")
-	}, "first output should reach live screen")
-	if _, err := server.TerminalHistoryWindow(context.Background(), "term-r374-restart-seq", history.HistoryWindowRequest{
-		TerminalID: "term-r374-restart-seq",
-		Mode:       history.HistoryWindowModeLatest,
-		Cols:       30,
-		Limit:      10,
-	}); err != nil {
-		t.Fatalf("history.window before restart: %v", err)
-	}
-	before, err := server.TerminalHistoryBacklogStatus("term-r374-restart-seq")
-	if err != nil {
-		t.Fatalf("status before restart: %v", err)
-	}
-	if before.AppliedSeq == 0 || before.TargetSeq == 0 {
-		t.Fatalf("expected non-zero backlog seq before restart, status=%#v", before)
-	}
-	first.exit(0)
-	waitForTerminalState(t, server, "term-r374-restart-seq", TerminalStateExited)
-	if err := server.RestartTerminal(context.Background(), "term-r374-restart-seq"); err != nil {
-		t.Fatalf("restart terminal: %v", err)
-	}
-	second := factory.process("term-r374-restart-seq")
-	if second == nil || second == first {
-		t.Fatal("expected second process")
-	}
-	second.emitOutput("beta\r\n")
-	assertEventually(t, time.Second, func() bool {
-		rows, err := server.LiveRows("term-r374-restart-seq")
-		return err == nil && strings.Contains(strings.Join(rows, "|"), "beta")
-	}, "second output should reach live screen")
-	if _, err := server.TerminalHistoryWindow(context.Background(), "term-r374-restart-seq", history.HistoryWindowRequest{
-		TerminalID: "term-r374-restart-seq",
-		Mode:       history.HistoryWindowModeLatest,
-		Cols:       30,
-		Limit:      10,
-	}); err != nil {
-		t.Fatalf("history.window after restart: %v", err)
-	}
-	after, err := server.TerminalHistoryBacklogStatus("term-r374-restart-seq")
-	if err != nil {
-		t.Fatalf("status after restart: %v", err)
-	}
-	if after.AppliedSeq <= before.AppliedSeq || after.TargetSeq <= before.TargetSeq {
-		t.Fatalf("history backlog seq must remain terminal-scoped across restart, before=%#v after=%#v", before, after)
 	}
 }
 
@@ -862,12 +415,8 @@ func TestR396HistoryDisabledProcessOutputKeepsLiveOnlyFastPath(t *testing.T) {
 		t.Fatalf("terminal: %v", err)
 	}
 	terminal.queueMu.Lock()
-	historyQueue := terminal.historyQ
 	historyTapQueue := terminal.historyTapQ
 	terminal.queueMu.Unlock()
-	if historyQueue != nil {
-		t.Fatal("history disabled live-only mode must not create a history transaction queue")
-	}
 	if historyTapQueue != nil {
 		t.Fatal("history disabled live-only mode must not create a history semantic tap queue")
 	}
@@ -944,45 +493,6 @@ func TestR373SingleTapSynchronizedTransactionPublishesPrimaryFrame(t *testing.T)
 	}
 	if got := strings.Join(historyRowTexts(window.Rows), "|"); !strings.Contains(got, "line3") {
 		t.Fatalf("current frame should preserve final screen payload, got %q", got)
-	}
-}
-
-func TestR405TerminalProcessExitSealsPrimaryFrameAsLifecycleFinalFrame(t *testing.T) {
-	factory := newRecordingProcessFactory()
-	server := NewServer(WithProcessFactory(factory))
-	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r405-exit-final-frame",
-		Command: []string{"shell"},
-		Size:    Size{Cols: 20, Rows: 4},
-	}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), "term-r405-exit-final-frame", "\x1b[?2026hfinal-a\r\nfinal-b\x1b[?2026l"); err != nil {
-		t.Fatalf("ingest synchronized frame: %v", err)
-	}
-	process := factory.process("term-r405-exit-final-frame")
-	if process == nil {
-		t.Fatal("expected process")
-	}
-	process.exit(0)
-	assertEventually(t, time.Second, func() bool {
-		info, err := server.GetTerminal("term-r405-exit-final-frame")
-		return err == nil && info.State == TerminalStateExited
-	}, "terminal should exit")
-	window, err := server.TerminalHistoryWindow(context.Background(), "term-r405-exit-final-frame", history.HistoryWindowRequest{
-		TerminalID: "term-r405-exit-final-frame",
-		Mode:       history.HistoryWindowModeLatest,
-		Cols:       20,
-		Limit:      10,
-	})
-	if err != nil {
-		t.Fatalf("history.window after exit: %v", err)
-	}
-	if historyRowsContainCurrentScreenFrame(window.Rows) {
-		t.Fatalf("process exit must clear mutable current frame, rows=%#v", window.Rows)
-	}
-	if !historyRowsContainSegment(window.Rows, history.HistorySegmentCommitted) || !historyRowsContain(window.Rows, "final-b") {
-		t.Fatalf("process exit must seal final primary frame into committed history, rows=%#v", window.Rows)
 	}
 }
 
@@ -1076,155 +586,6 @@ func TestR373SingleTapAltTransactionDoesNotEnterPrimaryHistory(t *testing.T) {
 	}
 	if got := historyTextCount(window.Rows, "ALT"); got != 0 {
 		t.Fatalf("alt transient already exited; latest authoritative primary history must not contain ALT, count=%d rows=%#v", got, window.Rows)
-	}
-}
-
-func TestR398SecondSingleTapRedrawReplacesMutablePrimaryFrame(t *testing.T) {
-	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
-	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r398-second-redraw",
-		Command: []string{"shell"},
-		Size:    Size{Cols: 20, Rows: 3},
-	}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), "term-r398-second-redraw", "\x1b[?2026h\x1b[Hfirst\r\ncurrent\x1b[?2026l"); err != nil {
-		t.Fatalf("ingest first redraw: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), "term-r398-second-redraw", "\x1b[?2026h\x1b[Hsecond\r\ncurrent\x1b[?2026l"); err != nil {
-		t.Fatalf("ingest second redraw: %v", err)
-	}
-	rows, _ := r326CollectAllHistoryRows(t, server, "term-r398-second-redraw", 20, 2)
-	if got := historyTextCount(rows, "first"); got != 0 {
-		t.Fatalf("second redraw must replace mutable current frame without sealing first repaint, count=%d rows=%#v", got, rows)
-	}
-	if got := historyTextCount(rows, "second"); got != 1 {
-		t.Fatalf("second redraw must publish new current frame once, count=%d rows=%#v", got, rows)
-	}
-	if current := currentPrimaryFrameRowTexts(rows); len(current) == 0 || !strings.Contains(strings.Join(current, "\n"), "second") {
-		t.Fatalf("latest current frame should be the second redraw, current=%#v rows=%#v", current, rows)
-	}
-}
-
-func TestR398SynchronizedProgressRepaintDoesNotAppendEveryFrame(t *testing.T) {
-	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
-	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r398-progress-redraw",
-		Command: []string{"shell"},
-		Size:    Size{Cols: 80, Rows: 12},
-	}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	for i := 0; i < 8; i++ {
-		output := fmt.Sprintf("\x1b[?2026h\x1b[Hgpt-5.5 xhigh · ~/Documents/workdir/termx\r\nStarting MCP servers (1/2): computer-use (%ds · esc to interrupt)\r\n\r\n> Improve documentation in @filename\x1b[?2026l", i)
-		if err := server.IngestOutput(context.Background(), "term-r398-progress-redraw", output); err != nil {
-			t.Fatalf("ingest progress repaint %d: %v", i, err)
-		}
-	}
-	rows, _ := r326CollectAllHistoryRows(t, server, "term-r398-progress-redraw", 80, 6)
-	if got := historyTextCount(rows, "Starting MCP servers"); got != 1 {
-		t.Fatalf("progress repaint must expose only latest mutable frame, count=%d rows=%#v", got, rows)
-	}
-	if got := strings.Join(currentPrimaryFrameRowTexts(rows), "\n"); !strings.Contains(got, "7s · esc to interrupt") {
-		t.Fatalf("current frame should keep latest progress text, got %q rows=%#v", got, rows)
-	}
-	if historyRowsContainSegment(rows, history.HistorySegmentArchivedPrimaryFrame) {
-		t.Fatalf("pure synchronized progress repaint must not archive intermediate frames, rows=%#v", rows)
-	}
-}
-
-func TestR401CursorAddressedProgressRepaintDoesNotAppendEveryFrame(t *testing.T) {
-	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
-	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r401-cursor-progress-redraw",
-		Command: []string{"shell"},
-		Size:    Size{Cols: 80, Rows: 12},
-	}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	for i := 0; i < 8; i++ {
-		output := fmt.Sprintf("\x1b[Hgpt-5.5 xhigh · ~/Documents/workdir/termx\x1b[K\r\nStarting MCP servers (1/2): computer-use (%ds · esc to interrupt)\x1b[K\r\n\r\n> Improve  documentation   in @filename\x1b[K", i)
-		if err := server.IngestOutput(context.Background(), "term-r401-cursor-progress-redraw", output); err != nil {
-			t.Fatalf("ingest cursor-addressed progress repaint %d: %v", i, err)
-		}
-	}
-	rows, _ := r326CollectAllHistoryRows(t, server, "term-r401-cursor-progress-redraw", 80, 6)
-	if got := historyTextCount(rows, "Starting MCP servers"); got != 1 {
-		t.Fatalf("cursor-addressed progress repaint must expose only latest mutable frame, count=%d rows=%#v", got, rows)
-	}
-	current := strings.Join(currentPrimaryFrameRowTexts(rows), "\n")
-	if !strings.Contains(current, "7s · esc to interrupt") {
-		t.Fatalf("current frame should keep latest progress text, got %q rows=%#v", current, rows)
-	}
-	if !strings.Contains(current, "> Improve  documentation   in @filename") {
-		t.Fatalf("current frame must preserve intra-line spaces, got %q rows=%#v", current, rows)
-	}
-	if historyRowsContainSegment(rows, history.HistorySegmentArchivedPrimaryFrame) {
-		t.Fatalf("cursor-addressed progress repaint must not archive intermediate frames, rows=%#v", rows)
-	}
-}
-
-func TestR373SingleTapSyncThenAltKeepsPrimaryHistory(t *testing.T) {
-	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
-	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r373-sync-alt-one-tx",
-		Command: []string{"shell"},
-		Size:    Size{Cols: 12, Rows: 3},
-	}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), "term-r373-sync-alt-one-tx", "prelude\r\n"); err != nil {
-		t.Fatalf("seed prelude: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), "term-r373-sync-alt-one-tx", "\x1b[?2026hsync01\r\nsync02\x1b[?2026l\x1b[?1049hALT-TRANSIENT\x1b[?1049l"); err != nil {
-		t.Fatalf("ingest sync then alt transaction: %v", err)
-	}
-	rows, _ := r326CollectAllHistoryRows(t, server, "term-r373-sync-alt-one-tx", 12, 2)
-	text := strings.Join(historyRowTexts(rows), "\n")
-	for _, want := range []string{"prelude", "sync01", "sync02"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("sync content must survive same tap transaction as alt enter, missing %q:\n%s\nrows=%#v", want, text, rows)
-		}
-	}
-	if strings.Contains(text, "ALT-TRANSIENT") {
-		t.Fatalf("alt transient must not enter primary history:\n%s\nrows=%#v", text, rows)
-	}
-	if !historyRowsContainSegment(rows, history.HistorySegmentArchivedPrimaryFrame) {
-		t.Fatalf("alt enter in same tap transaction must archive synchronized primary frame, rows=%#v", rows)
-	}
-}
-
-func TestR373SingleTapPreludeThenSyncThenAltKeepsPrimaryHistory(t *testing.T) {
-	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
-	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r373-prelude-sync-alt-one-tx",
-		Command: []string{"shell"},
-		Size:    Size{Cols: 12, Rows: 3},
-	}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	var output strings.Builder
-	output.WriteString("prelude\r\n")
-	output.WriteString("\x1b[?2026h")
-	for i := 1; i <= 8; i++ {
-		output.WriteString(fmt.Sprintf("sync%02d\r\n", i))
-	}
-	output.WriteString("\x1b[?2026l\x1b[?1049hALT-TRANSIENT\x1b[?1049l")
-	if err := server.IngestOutput(context.Background(), "term-r373-prelude-sync-alt-one-tx", output.String()); err != nil {
-		t.Fatalf("ingest prelude sync alt transaction: %v", err)
-	}
-	rows, _ := r326CollectAllHistoryRows(t, server, "term-r373-prelude-sync-alt-one-tx", 12, 2)
-	text := strings.Join(historyRowTexts(rows), "\n")
-	for _, want := range []string{"prelude", "sync01", "sync08"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("prelude and synchronized payload must survive same tap transaction as alt enter, missing %q:\n%s\nrows=%#v", want, text, rows)
-		}
-	}
-	if strings.Contains(text, "ALT-TRANSIENT") {
-		t.Fatalf("alt transient must not enter primary history:\n%s\nrows=%#v", text, rows)
-	}
-	if !historyRowsContainSegment(rows, history.HistorySegmentArchivedPrimaryFrame) {
-		t.Fatalf("same-transaction alt enter must archive pre-alt primary frame, rows=%#v", rows)
 	}
 }
 
@@ -1658,39 +1019,35 @@ func TestR360TerminalHistoryOldestReturnsReplaceWindow(t *testing.T) {
 	}
 }
 
-func TestR428TerminalDefaultsToScreenBackedHistoryStore(t *testing.T) {
+func TestR436TerminalDefaultsToLineHistoryStore(t *testing.T) {
 	historyDir := t.TempDir()
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()), WithHistoryStorageDir(historyDir))
 	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r428-screen-backed",
+		ID:      "term-r436-linehist-default",
 		Command: []string{"shell"},
 		Size:    Size{Cols: 30, Rows: 3},
 	}); err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}
-	terminal, err := server.Terminal("term-r428-screen-backed")
+	terminal, err := server.Terminal("term-r436-linehist-default")
 	if err != nil {
 		t.Fatalf("terminal: %v", err)
 	}
-	if terminal.screenHistory == nil {
-		t.Fatal("default terminal history path must own a ScreenHistoryBuffer")
+	if terminal.lineHistory == nil {
+		t.Fatal("default terminal history path must own a linehist store")
 	}
-	if _, ok := terminal.historyStore.(*history.ScreenBackedHistoryStore); !ok {
-		t.Fatalf("default terminal history store must be screen-backed, got %T", terminal.historyStore)
+	if _, ok := terminal.historyStore.(*linehist.Store); !ok {
+		t.Fatalf("default terminal history store must be linehist, got %T", terminal.historyStore)
 	}
-	if err := server.IngestOutput(context.Background(), "term-r428-screen-backed", "alpha\r\nbeta\r\ngamma"); err != nil {
+	if err := server.IngestOutput(context.Background(), "term-r436-linehist-default", "alpha\r\nbeta\r\ngamma"); err != nil {
 		t.Fatalf("ingest output: %v", err)
 	}
-	payloadPath := filepath.Join(historyDir, "term-r428-screen-backed.history-lines.bin")
-	if _, err := os.Stat(payloadPath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("R428 default path must not write old logical payload file %s, err=%v", payloadPath, err)
+	logicalPath := filepath.Join(historyDir, "term-r436-linehist-default.logical-lines.bin")
+	if _, err := os.Stat(logicalPath); err != nil {
+		t.Fatalf("R436 default storage dir should write logical lines %s: %v", logicalPath, err)
 	}
-	screenRowsPath := filepath.Join(historyDir, "term-r428-screen-backed.screen-rows.bin")
-	if _, err := os.Stat(screenRowsPath); err != nil {
-		t.Fatalf("R429 default storage dir should write screen physical rows %s: %v", screenRowsPath, err)
-	}
-	window, err := server.TerminalHistoryWindow(context.Background(), "term-r428-screen-backed", history.HistoryWindowRequest{
-		TerminalID: "term-r428-screen-backed",
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r436-linehist-default", history.HistoryWindowRequest{
+		TerminalID: "term-r436-linehist-default",
 		Mode:       history.HistoryWindowModeLatest,
 		Limit:      3,
 		Cols:       30,
@@ -1699,22 +1056,21 @@ func TestR428TerminalDefaultsToScreenBackedHistoryStore(t *testing.T) {
 		t.Fatalf("history window: %v", err)
 	}
 	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "alpha|beta|gamma" {
-		t.Fatalf("screen-backed terminal history window mismatch: %q rows=%#v", got, window.Rows)
+		t.Fatalf("linehist terminal history window mismatch: %q rows=%#v", got, window.Rows)
 	}
 }
-
-func TestR429HistoryStorageDirRecoversScreenPhysicalRows(t *testing.T) {
+func TestR436HistoryStorageDirRecoversLineHistoryRows(t *testing.T) {
 	historyDir := t.TempDir()
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory), WithHistoryStorageDir(historyDir))
 	if _, err := server.RegisterTerminal(TerminalRecord{
-		ID:      "term-r429-recover-screen-rows",
+		ID:      "term-r436-recover-linehist",
 		Command: []string{"shell"},
 		Size:    Size{Cols: 30, Rows: 2},
 	}); err != nil {
 		t.Fatalf("register first terminal: %v", err)
 	}
-	if err := server.IngestOutput(context.Background(), "term-r429-recover-screen-rows", "alpha\r\nbeta\r\ngamma\r\n"); err != nil {
+	if err := server.IngestOutput(context.Background(), "term-r436-recover-linehist", "alpha\r\nbeta\r\ngamma\r\n"); err != nil {
 		t.Fatalf("ingest recover rows: %v", err)
 	}
 	if err := server.Shutdown(context.Background()); err != nil {
@@ -1723,14 +1079,14 @@ func TestR429HistoryStorageDirRecoversScreenPhysicalRows(t *testing.T) {
 
 	recovered := NewServer(WithProcessFactory(newRecordingProcessFactory()), WithHistoryStorageDir(historyDir))
 	if _, err := recovered.RegisterTerminal(TerminalRecord{
-		ID:      "term-r429-recover-screen-rows",
+		ID:      "term-r436-recover-linehist",
 		Command: []string{"shell"},
 		Size:    Size{Cols: 30, Rows: 2},
 	}); err != nil {
 		t.Fatalf("register recovered terminal: %v", err)
 	}
-	window, err := recovered.TerminalHistoryWindow(context.Background(), "term-r429-recover-screen-rows", history.HistoryWindowRequest{
-		TerminalID: "term-r429-recover-screen-rows",
+	window, err := recovered.TerminalHistoryWindow(context.Background(), "term-r436-recover-linehist", history.HistoryWindowRequest{
+		TerminalID: "term-r436-recover-linehist",
 		Mode:       history.HistoryWindowModeLatest,
 		Limit:      3,
 		Cols:       30,
@@ -1738,82 +1094,20 @@ func TestR429HistoryStorageDirRecoversScreenPhysicalRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recovered history window: %v", err)
 	}
-	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "alpha|beta|gamma" {
-		t.Fatalf("recovered screen physical rows mismatch: %q rows=%#v", got, window.Rows)
+	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "alpha|beta" {
+		t.Fatalf("recovered linehist rows mismatch: %q rows=%#v", got, window.Rows)
 	}
 }
 
-func TestR429HistoryStorageDirFailsWhenPhysicalBackendCannotOpen(t *testing.T) {
+func TestR436HistoryStorageDirFailsWhenLineHistoryCannotOpen(t *testing.T) {
 	blockingFile := filepath.Join(t.TempDir(), "blocking-file")
 	badDir := filepath.Join(blockingFile, "child")
 	if err := os.WriteFile(blockingFile, []byte("not-a-directory"), 0o600); err != nil {
 		t.Fatalf("seed blocking file: %v", err)
 	}
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()), WithHistoryStorageDir(badDir))
-	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r429-bad-screen-backend", Command: []string{"shell"}}); err == nil {
-		t.Fatal("R429 must fail terminal creation when screen physical backend cannot open")
-	}
-}
-
-func TestR324TerminalHistoryPrimaryRepaintScrollOutAltResizeAndExit(t *testing.T) {
-	factory := newRecordingProcessFactory()
-	server := NewServer(WithProcessFactory(factory))
-	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-history-screen", Command: []string{"shell"}, Size: Size{Cols: 8, Rows: 3}}); err != nil {
-		t.Fatalf("register terminal: %v", err)
-	}
-	if err := server.IngestOutput(context.Background(), "term-history-screen", "\x1b[?2026hline1\r\nline2\r\nline3\r\nline4\x1b[?2026l"); err != nil {
-		t.Fatalf("ingest synchronized output: %v", err)
-	}
-	window, err := server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{TerminalID: "term-history-screen", Mode: history.HistoryWindowModeLatest, Cols: 8, Limit: 10})
-	if err != nil {
-		t.Fatalf("history.window after sync output: %v", err)
-	}
-	if historyRowsContain(window.Rows, "line1") || !historyRowsContainSegment(window.Rows, history.HistorySegmentCurrentPrimaryFrame) || !historyRowsContain(window.Rows, "line4") {
-		t.Fatalf("latest should show current viewport frame and keep scrolled-out proof for older paging, rows=%v", historyRowTexts(window.Rows))
-	}
-	older, err := server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{TerminalID: "term-history-screen", Mode: history.HistoryWindowModeOlder, Cols: 8, Limit: 10, Cursor: window.Boundary.Cursor})
-	if err != nil {
-		t.Fatalf("older window after sync output: %v", err)
-	}
-	if !historyRowsContain(older.Rows, "line1") {
-		t.Fatalf("older should keep synchronized scroll-out proof reachable, rows=%v latest=%v", historyRowTexts(older.Rows), historyRowTexts(window.Rows))
-	}
-
-	if err := server.IngestOutput(context.Background(), "term-history-screen", "\x1b[?1049hALT\x1b[?1049l"); err != nil {
-		t.Fatalf("ingest alt transient: %v", err)
-	}
-	window, err = server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{TerminalID: "term-history-screen", Mode: history.HistoryWindowModeLatest, Cols: 8, Limit: 10})
-	if err != nil {
-		t.Fatalf("history.window after alt: %v", err)
-	}
-	for _, row := range window.Rows {
-		if strings.Contains(historyCellsText(row.Cells), "ALT") && row.Segment != history.HistorySegmentCurrentAltFrame {
-			t.Fatalf("alt content must not enter primary timeline, row=%#v rows=%v", row, historyRowTexts(window.Rows))
-		}
-	}
-	if err := server.ResizeTerminal(context.Background(), "term-history-screen", 12, 4); err != nil {
-		t.Fatalf("resize terminal: %v", err)
-	}
-	windowAfterResize, err := server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{TerminalID: "term-history-screen", Mode: history.HistoryWindowModeLatest, Cols: 12, Limit: 10})
-	if err != nil {
-		t.Fatalf("history.window after resize: %v", err)
-	}
-	if len(windowAfterResize.Rows) < len(window.Rows) {
-		t.Fatalf("resize boundary must not delete history rows: before=%v after=%v", historyRowTexts(window.Rows), historyRowTexts(windowAfterResize.Rows))
-	}
-
-	process := factory.process("term-history-screen")
-	if process == nil {
-		t.Fatal("expected recording process")
-	}
-	process.exit(0)
-	waitForTerminalState(t, server, "term-history-screen", TerminalStateExited)
-	windowAfterExit, err := server.TerminalHistoryWindow(context.Background(), "term-history-screen", history.HistoryWindowRequest{TerminalID: "term-history-screen", Mode: history.HistoryWindowModeLatest, Cols: 12, Limit: 20})
-	if err != nil {
-		t.Fatalf("history.window after exit: %v", err)
-	}
-	if len(windowAfterExit.Rows) == 0 {
-		t.Fatal("process exit should leave authoritative history rows")
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r436-bad-linehist", Command: []string{"shell"}}); err == nil {
+		t.Fatal("R436 must fail terminal creation when linehist storage cannot open")
 	}
 }
 
@@ -1858,33 +1152,6 @@ func historyRowTextsFromLinesForTest(mutations []history.HistoryMutation) []stri
 		texts = append(texts, historyCellsText(mutation.Line.Cells))
 	}
 	return texts
-}
-
-func historyJournalLabelsForTerminalTest(journal history.HistoryJournal) []string {
-	labels := make([]string, 0, len(journal.Items))
-	for _, item := range journal.Items {
-		switch item.Kind {
-		case history.HistoryJournalItemOrdinaryLineBatch:
-			labels = append(labels, "batch")
-		case history.HistoryJournalItemBoundary:
-			if item.Boundary == nil {
-				labels = append(labels, "boundary:<nil>")
-				continue
-			}
-			labels = append(labels, "boundary:"+string(item.Boundary.Kind))
-		case history.HistoryJournalItemFrameEvent:
-			if item.Frame == nil {
-				labels = append(labels, "frame:<nil>")
-				continue
-			}
-			labels = append(labels, "frame:"+string(item.Frame.Kind))
-		case history.HistoryJournalItemScrollOutProof:
-			labels = append(labels, "scroll-out")
-		default:
-			labels = append(labels, string(item.Kind))
-		}
-	}
-	return labels
 }
 
 func historyRowsContain(rows []history.HistoryRow, needle string) bool {

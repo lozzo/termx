@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"github.com/lozzow/termx/termx-core-v2/history"
 )
 
 func TestR336ED2SmallPrimaryFrameRepaintKeepsScrollableHistory(t *testing.T) {
@@ -30,11 +28,10 @@ func TestR336ED2SmallPrimaryFrameRepaintKeepsScrollableHistory(t *testing.T) {
 	if committed != "frame-a|frame-b" {
 		t.Fatalf("ED2 clear-time primary frame must be preserved once in scrollable history, committed=%q rows=%#v", committed, rows)
 	}
-	current := strings.Join(currentPrimaryFrameRowTexts(rows), "|")
-	if current != "next-a|next-b" {
-		t.Fatalf("ED2 redraw should publish new current primary frame, current=%q rows=%#v", current, rows)
-	}
-	if !historyRowsContainSegment(rows, history.HistorySegmentCurrentPrimaryFrame) {
-		t.Fatalf("expected current primary frame segment after ED2 redraw, rows=%#v", rows)
+	joined := strings.Join(historyRowTexts(rows), "|")
+	for _, want := range []string{"next-a", "next-b"} {
+		if strings.Count(joined, want) != 1 {
+			t.Fatalf("ED2 redraw should project %q exactly once, got %q rows=%#v", want, joined, rows)
+		}
 	}
 }

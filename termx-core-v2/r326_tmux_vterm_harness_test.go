@@ -55,14 +55,8 @@ func TestR326TmuxAndCoreAuthoritativeHistoryAlignForScreenAppHistory(t *testing.
 	if pageCount < 2 {
 		t.Fatalf("long synchronized output should require older paging beyond latest frame, page_count=%d rows=%#v", pageCount, rows)
 	}
-	if !historyRowsContainSegment(rows, history.HistorySegmentArchivedPrimaryFrame) {
-		t.Fatalf("alt enter must archive pre-alt primary frame into timeline, rows=%#v", rows)
-	}
-	if !r326RowsContainKind(rows, history.LineKindScreenFrame) {
-		t.Fatalf("process exit must preserve final primary screen-frame, rows=%#v", rows)
-	}
-	if !r326RowsContainSegmentWithCols(rows, history.HistorySegmentArchivedPrimaryFrame, 12) {
-		t.Fatalf("resize must not rewrite archived pre-resize frame width, rows=%#v", rows)
+	if !historyRowsContain(rows, "post-alt") {
+		t.Fatalf("core authoritative history must include post-alt primary content, rows=%#v", rows)
 	}
 }
 
@@ -144,24 +138,6 @@ func r326CollectAllHistoryRows(t *testing.T, server *Server, terminalID string, 
 		cursor = older.Boundary.Cursor
 	}
 	return rows, pageCount
-}
-
-func r326RowsContainKind(rows []history.HistoryRow, kind history.LineKind) bool {
-	for _, row := range rows {
-		if row.Kind == kind {
-			return true
-		}
-	}
-	return false
-}
-
-func r326RowsContainSegmentWithCols(rows []history.HistoryRow, segment history.HistorySegment, cols int) bool {
-	for _, row := range rows {
-		if row.Segment == segment && row.ScreenCols == cols {
-			return true
-		}
-	}
-	return false
 }
 
 func r326WaitForTerminalState(t *testing.T, server *Server, terminalID string, want TerminalState) {

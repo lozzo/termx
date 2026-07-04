@@ -58,6 +58,8 @@ type Server struct {
 	protocolOwnerEpoch    uint64
 	remoteServiceMu       sync.RWMutex
 	remoteService         RemoteService
+	historyFallbackDirMu  sync.Mutex
+	historyFallbackDir    string
 	mu                    sync.Mutex
 	listeners             []transport.Listener
 	transports            map[transport.Transport]struct{}
@@ -158,9 +160,9 @@ func WithHistoryStoreFactory(factory HistoryStoreFactory) ServerOption {
 }
 
 // WithHistoryStorageDir 记录生产 daemon 的 history storage 目录。
-// R428 后默认 Terminal history truth 已切到 ScreenHistoryBuffer；R429 才会接入
-// screen-backed physical row backend。当前不能因为配置了目录而回到旧
-// mutation-backed logical-line file store。
+// R436 后默认 history 引擎是 linehist（logical-line 文件存储）：配置目录时
+// 每 terminal 的 logical-line 文件落在该目录；未配置时 Server 在系统临时
+// 目录下创建私有目录兜底，保证默认路径仍是文件为真值。
 func WithHistoryStorageDir(dir string) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.historyStorageDir = dir
@@ -203,8 +205,8 @@ func (server *Server) DefaultSize() Size {
 }
 
 // HistoryStorageDir 返回 daemon 配置的 history payload 目录。
-// R428 阶段它只用于诊断和 R429 physical backend 接入准备；默认 history truth
-// 仍由 Terminal 内同一个 ScreenHistoryBuffer 和 ScreenBackedHistoryStore 决定。
+// R436 后它是默认 linehist 引擎每 terminal logical-line 文件的落盘位置；
+// 未配置时默认引擎会退到 server 级临时目录（见 historyStoreDir）。
 func (server *Server) HistoryStorageDir() string {
 	return server.cfg.historyStorageDir
 }
@@ -220,7 +222,6 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 		return TerminalInfo{}, err
 	}
 	var historyStore history.HistoryStore
-	var screenHistory *history.ScreenHistoryBuffer
 	historyEnabled := !server.cfg.historyDisabled
 	if historyEnabled {
 		var err error
@@ -229,20 +230,13 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 			_, _ = server.registry.remove(info.ID)
 			return TerminalInfo{}, err
 		}
-		if historyStore == nil {
-			screenHistory, err = server.newScreenHistoryBuffer(info.ID, info.Size)
-			if err != nil {
-				_, _ = server.registry.remove(info.ID)
-				return TerminalInfo{}, err
-			}
-		}
 	}
 	process, err := server.cfg.processFactory.Spawn(context.Background(), processSpecFromTerminal(info, record.Options))
 	if err != nil {
 		_, _ = server.registry.remove(info.ID)
 		return TerminalInfo{}, err
 	}
-	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore, screenHistory, historyEnabled, server.cfg.logger)
+	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore, historyEnabled, server.cfg.logger)
 	server.mu.Lock()
 	server.terminals[info.ID] = terminal
 	server.mu.Unlock()
@@ -251,40 +245,35 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 }
 
 func (server *Server) newHistoryStore(terminalID string) (history.HistoryStore, error) {
-	if server.cfg.historyStoreFactory == nil {
-		// 中文说明：nil store 表示 Terminal 使用默认 screen-backed history
-		// 创建链路，并让 renderer/store 共享同一个 ScreenHistoryBuffer。
-		return nil, nil
+	if server.cfg.historyStoreFactory != nil {
+		return server.cfg.historyStoreFactory(terminalID)
 	}
-	return server.cfg.historyStoreFactory(terminalID)
+	// 中文说明：R436 后默认 history 引擎是 linehist——vterm emulator 是唯一
+	// 屏幕真值，滚出行 seal-on-eviction 落 logical-line 文件，查询时投影。
+	dir, err := server.historyStoreDir()
+	if err != nil {
+		return nil, err
+	}
+	return LineHistoryStoreFactory(dir)(terminalID)
 }
 
-func (server *Server) newScreenHistoryBuffer(terminalID string, size Size) (*history.ScreenHistoryBuffer, error) {
-	var backend history.ScreenPhysicalRowBackend
+// historyStoreDir 返回默认 linehist 引擎的落盘目录。未配置
+// WithHistoryStorageDir 时（测试/临时 daemon）在系统临时目录下创建
+// server 级私有目录兜底：默认路径的 truth 仍是文件，不提供内存实现。
+func (server *Server) historyStoreDir() (string, error) {
 	if dir := strings.TrimSpace(server.cfg.historyStorageDir); dir != "" {
-		var err error
-		backend, err = history.NewFileScreenPhysicalRowBackend(dir, terminalID)
-		if err != nil {
-			return nil, err
-		}
+		return dir, nil
 	}
-	return history.NewScreenHistoryBufferWithPhysicalBackend(int(size.Cols), int(size.Rows), backend)
-}
-
-// fileBackedHistoryStoreFactory 保留给显式 WithHistoryStoreFactory 测试/迁移路径。
-// 默认 daemon 不再调用它；R430 后生产落盘只走 screen physical row backend，
-// 不能用该 factory 作为 WithHistoryStorageDir 的 silent fallback。
-func fileBackedHistoryStoreFactory(dir string) HistoryStoreFactory {
-	return func(terminalID string) (history.HistoryStore, error) {
-		if strings.TrimSpace(dir) == "" {
-			return history.NewInMemoryHistoryStore(terminalID), nil
-		}
-		backend, err := history.NewFileStorageBackend(dir, terminalID)
+	server.historyFallbackDirMu.Lock()
+	defer server.historyFallbackDirMu.Unlock()
+	if server.historyFallbackDir == "" {
+		dir, err := os.MkdirTemp("", "termx-linehist-")
 		if err != nil {
-			return nil, err
+			return "", err
 		}
-		return history.NewBackendHistoryStore(terminalID, backend), nil
+		server.historyFallbackDir = dir
 	}
+	return server.historyFallbackDir, nil
 }
 
 // LineHistoryStoreFactory 返回 R433 linehist（logical-line 文件存储）的
@@ -763,7 +752,7 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	server.terminals = make(map[string]*Terminal)
 	server.mu.Unlock()
 	for _, terminal := range terminals {
-		_ = terminal.closeWithReason(history.CloseReasonDaemonShutdown)
+		_ = terminal.closeWithReason()
 	}
 	server.registry.clear()
 	server.events.publish(Event{Type: EventServerStopped, SocketPath: server.cfg.socketPath})
