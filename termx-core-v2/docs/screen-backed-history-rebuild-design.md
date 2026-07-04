@@ -46,8 +46,9 @@ HistoryWindow/Copy/Search 查询阶段生成 logical lines。
 - alt/sync/clear/resize flags：`AltEntered/AltExited`、`SynchronizedBegin/Active/End`、
   `ClearScrollback`、`RequiresFullReplace`。
 
-这些字段应继续保留。新 `ScreenHistoryBuffer.ApplyTransaction` 应消费同一 transaction，
+这些字段应继续保留。`ScreenHistoryBuffer.ApplyTransaction` 消费同一 transaction，
 不能从 `Raw`、live `SurfaceTrack`、TUI rows 或 parser fallback 建第二份 truth。
+R431 后 `ScreenOpCopyRect` 也按 in-place physical cell mutation 处理：只更新目标 physical row 的 cells/version，不 seal、不 append logical history，也不改变未触及 rows 的 RowID。
 
 ### 1.3 classifier / journal / renderer
 

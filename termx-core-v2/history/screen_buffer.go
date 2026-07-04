@@ -212,6 +212,8 @@ func (buffer *ScreenHistoryBuffer) ApplyOp(op TerminalSemanticOp, seq uint64) er
 		return buffer.clearRect(op, seq)
 	case vtermScreenOpScrollRect():
 		return buffer.applyScrollRect(op, seq)
+	case vtermScreenOpCopyRect():
+		return buffer.applyCopyRect(op, seq)
 	case vtermScreenOpModes():
 		return buffer.applyMode(op, seq)
 	case vtermScreenOpResize(), vtermScreenOpCursor(), vtermScreenOpTitle():

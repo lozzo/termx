@@ -26,6 +26,10 @@ func vtermScreenOpScrollRect() vterm.ScreenOpCode {
 	return vterm.ScreenOpScrollRect
 }
 
+func vtermScreenOpCopyRect() vterm.ScreenOpCode {
+	return vterm.ScreenOpCopyRect
+}
+
 func vtermScreenOpModes() vterm.ScreenOpCode {
 	return vterm.ScreenOpModes
 }
@@ -394,6 +398,41 @@ func (buffer *ScreenHistoryBuffer) applyScrollRect(op TerminalSemanticOp, seq ui
 		return buffer.scrollUpRegion(top, bottom, count, seq, true)
 	}
 	return buffer.scrollDownRegion(top, bottom, count, seq)
+}
+
+func (buffer *ScreenHistoryBuffer) applyCopyRect(op TerminalSemanticOp, seq uint64) error {
+	if op.Src.Width <= 0 || op.Src.Height <= 0 {
+		return nil
+	}
+	grid := buffer.activeGrid()
+	if grid == nil {
+		return nil
+	}
+	before := clonePhysicalRows(grid.Rows)
+	for offset := 0; offset < op.Src.Height; offset++ {
+		srcRowIndex := op.Src.Y + offset
+		dstRowIndex := op.DstY + offset
+		if srcRowIndex < 0 || srcRowIndex >= len(before) || dstRowIndex < 0 || dstRowIndex >= len(grid.Rows) {
+			continue
+		}
+		srcCells := sliceHistoryCellsByDisplayColumns(before[srcRowIndex].Cells, op.Src.X, op.Src.X+op.Src.Width)
+		if len(srcCells) == 0 {
+			srcCells = blankCells(op.Src.Width)
+		}
+		row := grid.Rows[dstRowIndex]
+		row.Cells = writeCellsAt(row.Cells, op.DstX, srcCells)
+		if historyCellsDisplayWidth(srcCells) < op.Src.Width {
+			row.Cells = blankDisplayRange(row.Cells, op.DstX+historyCellsDisplayWidth(srcCells), op.Src.Width-historyCellsDisplayWidth(srcCells))
+		}
+		row.Cells = trimTrailingBlankCells(row.Cells)
+		row.Version++
+		row.OwnerSeq = seq
+		if row.OwnerKind == RowOwnerUnknown {
+			row.OwnerKind = buffer.activeOwner()
+		}
+		grid.Rows[dstRowIndex] = row
+	}
+	return nil
 }
 
 func (buffer *ScreenHistoryBuffer) applyMode(op TerminalSemanticOp, seq uint64) error {

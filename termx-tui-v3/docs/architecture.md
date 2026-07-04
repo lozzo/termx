@@ -10,8 +10,8 @@ TUI-v3 的重构目标不是“功能全部重新发明”，而是：
 
 - 沿用 tuiv2 中已经稳定的能力和行为经验。
 - 重建模块边界，让 app shell、state、services、render、history、copy mode 各自有明确职责。
-- 把唯一必须改的历史/copy mode 路径设计成 core-v2 authoritative logical-line 历史的消费者：普通浏览仍可消费 history window，copy mode 优先消费冻结 logical-line snapshot。
-- 避免继续复制 tuiv2 的单体 app model 和 snapshot/grid viewport history fallback。
+- 把唯一必须改的历史/copy mode 路径设计成 core-v2 authoritative history projection 的消费者：core-v2 内部正文真相是 `ScreenHistoryBuffer` physical rows/cells，logical lines 只在 HistoryWindow/Copy/Search 查询阶段投影生成；普通浏览仍可消费 history window，copy mode 优先消费冻结 projection snapshot。
+- 避免继续复制 tuiv2 的单体 app model 和 snapshot/grid viewport history fallback。TUI-v3 不得用 live surface、local vterm scrollback 或本地 snapshot/grid 作为 committed history/copy/search truth。
 
 ## 2. 设计目标
 

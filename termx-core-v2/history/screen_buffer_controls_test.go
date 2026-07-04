@@ -288,6 +288,69 @@ func TestR421ScreenBufferED2ScrollOutProofSealsRowsOnce(t *testing.T) {
 	}
 }
 
+func TestR431ScreenBufferCopyRectMutatesDestinationRowsInPlace(t *testing.T) {
+	buffer := newR421FilledScreenBuffer(16, "copy-source", "old", "keep")
+	before := buffer.VisibleRows()
+	if err := buffer.ApplyTransaction(TerminalSemanticTransaction{
+		Seq: 2,
+		Ops: []TerminalSemanticOp{{
+			Code: vterm.ScreenOpCopyRect,
+			Src:  vterm.DamageRect{X: 0, Y: 0, Width: 4, Height: 1},
+			DstX: 2,
+			DstY: 1,
+		}},
+	}); err != nil {
+		t.Fatalf("apply copy rect: %v", err)
+	}
+	rows := buffer.VisibleRows()
+	if rows[0].ID != before[0].ID || rows[0].Version != before[0].Version || rows[0].Text() != "copy-source" {
+		t.Fatalf("CopyRect must not mutate source row identity/version/text, before=%#v after=%#v", before[0], rows[0])
+	}
+	if rows[1].ID != before[1].ID {
+		t.Fatalf("CopyRect must mutate destination row in place, before=%#v after=%#v", before[1], rows[1])
+	}
+	if rows[1].Version <= before[1].Version {
+		t.Fatalf("CopyRect must increment destination row Version, before=%#v after=%#v", before[1], rows[1])
+	}
+	if got := rows[1].Text(); got != "olcopy" {
+		t.Fatalf("unexpected copied destination text %q row=%#v", got, rows[1])
+	}
+	if rows[2].ID != before[2].ID || rows[2].Version != before[2].Version || rows[2].Text() != "keep" {
+		t.Fatalf("CopyRect must not touch unrelated rows, before=%#v after=%#v", before[2], rows[2])
+	}
+	if len(buffer.CommittedRows()) != 0 {
+		t.Fatalf("CopyRect is an in-place mutation and must not seal history, committed=%#v", buffer.CommittedRows())
+	}
+}
+
+func TestR431ScreenBufferProgressCRRepaintMutatesSingleCurrentRow(t *testing.T) {
+	buffer := NewScreenHistoryBuffer(24, 2)
+	if err := buffer.ApplyTransaction(TerminalSemanticTransaction{
+		Seq: 1,
+		Ops: []TerminalSemanticOp{
+			screenBufferWriteOp(0, 0, "progress 1%"),
+			screenBufferControlAt("cr", 0, 0, 0),
+			screenBufferWriteOp(0, 0, "progress 2%"),
+			screenBufferControlAt("cr", 0, 0, 0),
+			screenBufferWriteOp(0, 0, "progress 3%"),
+			screenBufferControlAt("el", 0, len("progress 3%"), 0),
+		},
+	}); err != nil {
+		t.Fatalf("apply progress repaint: %v", err)
+	}
+	rows := buffer.VisibleRows()
+	if got := rows[0].Text(); got != "progress 3%" {
+		t.Fatalf("progress repaint should leave only final current text, got %q rows=%#v", got, rows)
+	}
+	if len(buffer.CommittedRows()) != 0 {
+		t.Fatalf("CR repaint without hard boundary must not commit intermediate history, committed=%#v", buffer.CommittedRows())
+	}
+	projection := buffer.ProjectHistory()
+	if len(projection.Rows) != 1 || rowText(projection.Rows[0].Cells) != "progress 3%" || projection.Rows[0].Sealed {
+		t.Fatalf("projection should expose one unsealed current progress row, projection=%#v", projection)
+	}
+}
+
 func newR421FilledScreenBuffer(cols int, rows ...string) *ScreenHistoryBuffer {
 	buffer := NewScreenHistoryBuffer(cols, len(rows))
 	ops := make([]TerminalSemanticOp, 0, len(rows))
