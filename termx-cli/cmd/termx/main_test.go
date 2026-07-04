@@ -1012,6 +1012,44 @@ func TestV3RootRuntimeWithoutTerminalOpensPickerWithoutCreatingTerminal(t *testi
 	}
 }
 
+func TestV3RootEmptyRuntimeEnablesPerfTrace(t *testing.T) {
+	oldDial := v3DialClient
+	oldStart := startV3Daemon
+	t.Cleanup(func() {
+		v3DialClient = oldDial
+		startV3Daemon = oldStart
+	})
+
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	logPath := filepath.Join(t.TempDir(), "termx.log")
+	tracePath := filepath.Join(t.TempDir(), "perftrace.jsonl")
+	t.Setenv("TERMX_PERF_TRACE", tracePath)
+	t.Setenv("TERMX_PERF_TRACE_INTERVAL_MS", "10000")
+
+	v3DialClient = func(path string) (*protocol.Client, error) {
+		return nil, errors.New("dial disabled")
+	}
+	startV3Daemon = func(path string, logFile string) error {
+		return errors.New("start disabled")
+	}
+
+	err := runV3RootEmptyRuntime(context.Background(), v3RootEmptyConfig{
+		SocketPath: socketPath,
+		LogFile:    logPath,
+		TUIConfig:  tuistate.TUIConfigStore{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "start core-v2 daemon") {
+		t.Fatalf("expected daemon start failure after perftrace enable, got %v", err)
+	}
+	data, readErr := os.ReadFile(tracePath)
+	if readErr != nil {
+		t.Fatalf("read perftrace jsonl: %v", readErr)
+	}
+	if !strings.Contains(string(data), `"process":"tui-v3"`) {
+		t.Fatalf("root empty runtime must write tui-v3 perftrace record, got %s", data)
+	}
+}
+
 func TestV3RootRuntimeReusesRunningTerminal(t *testing.T) {
 	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()

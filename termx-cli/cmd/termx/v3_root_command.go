@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 	"github.com/spf13/cobra"
@@ -94,6 +95,11 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 		return err
 	}
 	defer closeLogger()
+	stopPerfTrace, perfTracePath, perfTraceEnabled := perftrace.EnableFromEnvWithProcess(ctx, "tui-v3")
+	defer stopPerfTrace()
+	if perfTraceEnabled {
+		logger.Info("tui-v3 perftrace enabled", "path", perfTracePath)
+	}
 	client, err := dialOrStartV3Client(cfg.SocketPath, logPath, logger)
 	if err != nil {
 		return err
