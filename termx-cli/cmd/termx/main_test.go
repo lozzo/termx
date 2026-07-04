@@ -942,6 +942,82 @@ func TestV3HistoryDumpWritesAuthoritativeWindows(t *testing.T) {
 	}
 }
 
+func TestR448V3HistoryBacklogWritesDiagnostics(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	server := corev2.NewServer(
+		corev2.WithSocketPath(socketPath),
+		corev2.WithProcessFactory(newCoreV2ResizeRecordingProcessFactory()),
+		corev2.WithHistoryBackpressureConfig(corev2.HistoryBackpressureConfig{
+			Mode:        corev2.HistoryBackpressureBounded,
+			BufferBytes: 4096,
+		}),
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- server.ListenAndServe(ctx)
+	}()
+	defer func() {
+		cancel()
+		_ = server.Shutdown(context.Background())
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("core-v2 server did not stop in time")
+		}
+	}()
+	if err := waitForSocket(socketPath, 2*time.Second, func() error {
+		client, err := dialV3Client(socketPath)
+		if err != nil {
+			return err
+		}
+		return client.Close()
+	}); err != nil {
+		t.Fatalf("core-v2 daemon did not become ready: %v", err)
+	}
+	client, err := dialV3Client(socketPath)
+	if err != nil {
+		t.Fatalf("dial core-v2 daemon: %v", err)
+	}
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-backlog", Command: []string{"shell"}, Size: protocol.Size{Cols: 24, Rows: 4}}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-backlog", "alpha\r\nbeta\r\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("close setup client: %v", err)
+	}
+
+	var out bytes.Buffer
+	outPath := filepath.Join(t.TempDir(), "history-backlog.tsv")
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "history-backlog", "term-backlog", "--out", outPath})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("history-backlog returned error: %v", err)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read history backlog output: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		"terminal_id\thistory_enabled",
+		"term-backlog\ttrue",
+		"\tbounded\t4096\t",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("history backlog output missing %q:\n%s", want, text)
+		}
+	}
+	if !strings.Contains(out.String(), "termx v3 history backlog ok") || !strings.Contains(out.String(), outPath) {
+		t.Fatalf("unexpected command output:\n%s", out.String())
+	}
+}
+
 func TestV3AttachRejectsNonInteractiveTerminal(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
 	oldRunAttach := runV3Attach

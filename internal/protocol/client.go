@@ -360,6 +360,17 @@ func (c *Client) ReleaseHistory(ctx context.Context, params HistoryWindowParams)
 	return c.doRequest(ctx, "history.release", params, nil)
 }
 
+// HistoryBacklogStatus 返回 core-v2 history consumer 的只读 backlog 诊断。
+// 它不触发 history flush，也不拉取 history.window；调用方只能用它观测
+// pending bytes 和背压统计，不能把它作为 authoritative history payload。
+func (c *Client) HistoryBacklogStatus(ctx context.Context, terminalID string) (*HistoryBacklogStatus, error) {
+	var out HistoryBacklogStatus
+	if err := c.doRequest(ctx, "history.backlog.status", GetParams{TerminalID: terminalID}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) StorageGet(ctx context.Context, params StorageGetParams) (*StorageEntry, error) {
 	var out StorageEntry
 	if err := c.doRequest(ctx, "storage.get", params, &out); err != nil {

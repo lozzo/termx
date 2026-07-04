@@ -39,6 +39,7 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"EnsureResize",
 		"Events",
 		"Hello",
+		"HistoryBacklogStatus",
 		"HistoryCopy",
 		"HistoryReplay",
 		"HistoryWindow",

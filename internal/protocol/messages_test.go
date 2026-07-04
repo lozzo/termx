@@ -415,6 +415,47 @@ func TestHistoryReleaseParamsControlPayloadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestHistoryBacklogStatusControlPayloadRoundTrip(t *testing.T) {
+	encodedParams, err := EncodeMethodParams("history.backlog.status", GetParams{TerminalID: "term-backlog"})
+	if err != nil {
+		t.Fatalf("encode history backlog params failed: %v", err)
+	}
+	decodedParams, err := DecodeMethodParams("history.backlog.status", encodedParams)
+	if err != nil {
+		t.Fatalf("decode history backlog params failed: %v", err)
+	}
+	if got, ok := decodedParams.(GetParams); !ok || got.TerminalID != "term-backlog" {
+		t.Fatalf("unexpected history backlog params %#v type=%T", decodedParams, decodedParams)
+	}
+
+	want := HistoryBacklogStatus{
+		TerminalID:            "term-backlog",
+		HistoryEnabled:        true,
+		AppliedSeq:            11,
+		TargetSeq:             17,
+		CatchupPending:        true,
+		PendingTransactions:   3,
+		PendingBytes:          4096,
+		BackpressureMode:      "bounded",
+		BufferLimitBytes:      8192,
+		BackpressureEvents:    5,
+		BackpressureWaitNanos: 123456,
+		InFlight:              true,
+		Closed:                true,
+	}
+	encodedResult, err := EncodeMethodResult("history.backlog.status", want)
+	if err != nil {
+		t.Fatalf("encode history backlog result failed: %v", err)
+	}
+	var got HistoryBacklogStatus
+	if err := DecodeMethodResult("history.backlog.status", encodedResult, &got); err != nil {
+		t.Fatalf("decode history backlog result failed: %v", err)
+	}
+	if got != want {
+		t.Fatalf("history backlog status mismatch:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestDetachParamsControlPayloadRoundTripKeepsAttachmentIdentity(t *testing.T) {
 	params := DetachParams{
 		TerminalID: "term-1",

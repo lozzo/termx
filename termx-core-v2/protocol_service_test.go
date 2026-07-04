@@ -247,6 +247,37 @@ func TestProtocolServiceHistoryWindowReturnsAuthoritativeRowsAfterR324(t *testin
 	}
 }
 
+func TestR448ProtocolServiceHistoryBacklogStatus(t *testing.T) {
+	server := NewServer(
+		WithProcessFactory(newRecordingProcessFactory()),
+		WithHistoryBackpressureConfig(HistoryBackpressureConfig{
+			Mode:        HistoryBackpressureBounded,
+			BufferBytes: 4096,
+		}),
+	)
+	_, client, closeClient := newProtocolClientWithServer(t, server)
+	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-r448-backlog", Command: []string{"shell"}, Size: protocol.Size{Cols: 24, Rows: 4}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r448-backlog", "alpha\r\nbeta\r\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	status, err := client.HistoryBacklogStatus(context.Background(), "term-r448-backlog")
+	if err != nil {
+		t.Fatalf("history backlog status: %v", err)
+	}
+	if status.TerminalID != "term-r448-backlog" || !status.HistoryEnabled {
+		t.Fatalf("status lost terminal identity/enabled flag: %#v", status)
+	}
+	if status.BackpressureMode != string(HistoryBackpressureBounded) || status.BufferLimitBytes != 4096 {
+		t.Fatalf("status lost backpressure config: %#v", status)
+	}
+	if status.AppliedSeq == 0 || status.TargetSeq == 0 || status.AppliedSeq != status.TargetSeq {
+		t.Fatalf("status should expose applied target seq after ingest: %#v", status)
+	}
+}
+
 func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

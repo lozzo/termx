@@ -112,7 +112,7 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 		return proto.Marshal(createParamsToWirePB(value))
 	case "list", "remote.status", "remote.local.status", "remote.local.disable":
 		return proto.Marshal(&wirepb.Empty{})
-	case "get", "kill", "restart", "remove":
+	case "get", "kill", "restart", "remove", "history.backlog.status":
 		value, ok := params.(GetParams)
 		if !ok {
 			if ptr, ptrOK := params.(*GetParams); ptrOK && ptr != nil {
@@ -423,7 +423,7 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 		return createParamsFromWirePB(&msg), nil
 	case "list", "remote.status", "remote.local.status", "remote.local.disable":
 		return struct{}{}, decodeEmpty(payload)
-	case "get", "kill", "restart", "remove":
+	case "get", "kill", "restart", "remove", "history.backlog.status":
 		var msg wirepb.GetParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return nil, err
@@ -718,6 +718,18 @@ func EncodeMethodResult(method string, result any) ([]byte, error) {
 			return nil, methodResultTypeError(method, "protocol.WorkbenchMutateResult", result)
 		}
 		return proto.Marshal(workbenchMutateResultToWirePB(value))
+	case "history.backlog.status":
+		value, ok := result.(HistoryBacklogStatus)
+		if !ok {
+			if ptr, ptrOK := result.(*HistoryBacklogStatus); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.HistoryBacklogStatus", result)
+		}
+		return proto.Marshal(historyBacklogStatusToWirePB(value))
 	case "remote.status":
 		value, ok := result.(RemoteStatus)
 		if !ok {
@@ -881,6 +893,17 @@ func DecodeMethodResult(method string, payload []byte, out any) error {
 			return methodOutTypeError(method, "*protocol.WorkbenchMutateResult", out)
 		}
 		*ptr = workbenchMutateResultFromWirePB(&msg)
+		return nil
+	case "history.backlog.status":
+		var msg wirepb.GetParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return err
+		}
+		ptr, ok := out.(*HistoryBacklogStatus)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.HistoryBacklogStatus", out)
+		}
+		*ptr = historyBacklogStatusFromWirePB(&msg)
 		return nil
 	case "remote.status":
 		var msg wirepb.RemoteStatus
@@ -1823,7 +1846,60 @@ const (
 	historyWindowResponseRowIndexesFieldNumber      protowire.Number = 42
 	historyWindowResponseRowScreenRowsFieldNumber   protowire.Number = 43
 	historyWindowResponseRowScreenRowSetFieldNumber protowire.Number = 44
+	historyBacklogStatusHistoryEnabledFieldNumber   protowire.Number = 2
+	historyBacklogStatusAppliedSeqFieldNumber       protowire.Number = 3
+	historyBacklogStatusTargetSeqFieldNumber        protowire.Number = 4
+	historyBacklogStatusCatchupPendingFieldNumber   protowire.Number = 5
+	historyBacklogStatusPendingTxFieldNumber        protowire.Number = 6
+	historyBacklogStatusPendingBytesFieldNumber     protowire.Number = 7
+	historyBacklogStatusModeFieldNumber             protowire.Number = 8
+	historyBacklogStatusBufferLimitFieldNumber      protowire.Number = 9
+	historyBacklogStatusEventsFieldNumber           protowire.Number = 10
+	historyBacklogStatusWaitNanosFieldNumber        protowire.Number = 11
+	historyBacklogStatusInFlightFieldNumber         protowire.Number = 12
+	historyBacklogStatusClosedFieldNumber           protowire.Number = 13
 )
+
+func historyBacklogStatusToWirePB(status HistoryBacklogStatus) *wirepb.GetParams {
+	msg := &wirepb.GetParams{TerminalId: status.TerminalID}
+	// 中文说明：R448 诊断消息暂挂在 GetParams + unknown fields 上，避免在
+	// 没有 protoc 的环境手写生成文件；字段只承载只读 backlog 状态，不承载
+	// history payload truth。
+	setBoolProtoFieldOrUnknown(msg, historyBacklogStatusHistoryEnabledFieldNumber, status.HistoryEnabled)
+	setUint64ProtoFieldOrUnknown(msg, historyBacklogStatusAppliedSeqFieldNumber, status.AppliedSeq)
+	setUint64ProtoFieldOrUnknown(msg, historyBacklogStatusTargetSeqFieldNumber, status.TargetSeq)
+	setBoolProtoFieldOrUnknown(msg, historyBacklogStatusCatchupPendingFieldNumber, status.CatchupPending)
+	setInt32ProtoFieldOrUnknown(msg, historyBacklogStatusPendingTxFieldNumber, int32(status.PendingTransactions))
+	setUint64ProtoFieldOrUnknown(msg, historyBacklogStatusPendingBytesFieldNumber, uint64(status.PendingBytes))
+	setStringProtoFieldOrUnknown(msg, historyBacklogStatusModeFieldNumber, status.BackpressureMode)
+	setUint64ProtoFieldOrUnknown(msg, historyBacklogStatusBufferLimitFieldNumber, uint64(status.BufferLimitBytes))
+	setUint64ProtoFieldOrUnknown(msg, historyBacklogStatusEventsFieldNumber, status.BackpressureEvents)
+	setUint64ProtoFieldOrUnknown(msg, historyBacklogStatusWaitNanosFieldNumber, uint64(status.BackpressureWaitNanos))
+	setBoolProtoFieldOrUnknown(msg, historyBacklogStatusInFlightFieldNumber, status.InFlight)
+	setBoolProtoFieldOrUnknown(msg, historyBacklogStatusClosedFieldNumber, status.Closed)
+	return msg
+}
+
+func historyBacklogStatusFromWirePB(msg *wirepb.GetParams) HistoryBacklogStatus {
+	if msg == nil {
+		return HistoryBacklogStatus{}
+	}
+	return HistoryBacklogStatus{
+		TerminalID:            msg.GetTerminalId(),
+		HistoryEnabled:        boolProtoFieldOrUnknown(msg, historyBacklogStatusHistoryEnabledFieldNumber),
+		AppliedSeq:            uint64ProtoFieldOrUnknown(msg, historyBacklogStatusAppliedSeqFieldNumber),
+		TargetSeq:             uint64ProtoFieldOrUnknown(msg, historyBacklogStatusTargetSeqFieldNumber),
+		CatchupPending:        boolProtoFieldOrUnknown(msg, historyBacklogStatusCatchupPendingFieldNumber),
+		PendingTransactions:   int(int32ProtoFieldOrUnknown(msg, historyBacklogStatusPendingTxFieldNumber)),
+		PendingBytes:          int64(uint64ProtoFieldOrUnknown(msg, historyBacklogStatusPendingBytesFieldNumber)),
+		BackpressureMode:      stringProtoFieldOrUnknown(msg, historyBacklogStatusModeFieldNumber),
+		BufferLimitBytes:      int64(uint64ProtoFieldOrUnknown(msg, historyBacklogStatusBufferLimitFieldNumber)),
+		BackpressureEvents:    uint64ProtoFieldOrUnknown(msg, historyBacklogStatusEventsFieldNumber),
+		BackpressureWaitNanos: int64(uint64ProtoFieldOrUnknown(msg, historyBacklogStatusWaitNanosFieldNumber)),
+		InFlight:              boolProtoFieldOrUnknown(msg, historyBacklogStatusInFlightFieldNumber),
+		Closed:                boolProtoFieldOrUnknown(msg, historyBacklogStatusClosedFieldNumber),
+	}
+}
 
 func encodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, params HistoryWindowParams) {
 	// 中文说明：terminal.pb.go 当前存在历史生成差异；新增 field 先按正式

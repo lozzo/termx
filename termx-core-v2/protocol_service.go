@@ -540,6 +540,13 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 			return nil, false, errorCode(err), err
 		}
 		return encodeMethodResult(req.Method, nil)
+	case "history.backlog.status":
+		in := params.(protocol.GetParams)
+		status, err := session.server.TerminalHistoryBacklogStatus(in.TerminalID)
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, protocolHistoryBacklogStatusFromCore(status))
 	case "remote.status":
 		service, err := session.remoteService()
 		if err != nil {
@@ -603,6 +610,24 @@ func (session *protocolSession) remoteService() (RemoteService, error) {
 		return nil, ErrRemoteServiceUnavailable
 	}
 	return service, nil
+}
+
+func protocolHistoryBacklogStatusFromCore(status HistoryBacklogStatus) protocol.HistoryBacklogStatus {
+	return protocol.HistoryBacklogStatus{
+		TerminalID:            status.TerminalID,
+		HistoryEnabled:        status.HistoryEnabled,
+		AppliedSeq:            status.AppliedSeq,
+		TargetSeq:             status.TargetSeq,
+		CatchupPending:        status.CatchupPending,
+		PendingTransactions:   status.PendingTransactions,
+		PendingBytes:          status.PendingBytes,
+		BackpressureMode:      string(status.BackpressureMode),
+		BufferLimitBytes:      status.BufferLimitBytes,
+		BackpressureEvents:    status.BackpressureEvents,
+		BackpressureWaitNanos: status.BackpressureWaitNanos,
+		InFlight:              status.InFlight,
+		Closed:                status.Closed,
+	}
 }
 
 func (session *protocolSession) liveNativeScreenSnapshot(params protocol.LiveScreenParams) (*protocol.NativeScreenSnapshot, error) {

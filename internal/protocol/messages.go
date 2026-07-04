@@ -550,6 +550,26 @@ type HistoryWindowParams struct {
 	RangeEndCol         int
 }
 
+// HistoryBacklogStatus 是 core-v2 history consumer 的只读诊断快照。
+// 它描述 terminal history tap 调度队列和已应用 seq；调用方只能用它做
+// stress/运维观测，不能把 pending bytes 或 backpressure 字段当作 history
+// payload truth，也不能替代 history.window/copy/freeze。
+type HistoryBacklogStatus struct {
+	TerminalID            string
+	HistoryEnabled        bool
+	AppliedSeq            uint64
+	TargetSeq             uint64
+	CatchupPending        bool
+	PendingTransactions   int
+	PendingBytes          int64
+	BackpressureMode      string
+	BufferLimitBytes      int64
+	BackpressureEvents    uint64
+	BackpressureWaitNanos int64
+	InFlight              bool
+	Closed                bool
+}
+
 type ListResult struct {
 	Terminals []TerminalInfo
 }
