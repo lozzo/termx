@@ -1039,7 +1039,7 @@ func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, tot
 		store.Cursor = CopyPosition{Row: cursorRow}
 		store.ViewportTop = viewportTop
 		if pendingScroll != 0 {
-			store = store.ScrollViewport(pendingScroll, totalRows)
+			store = store.ScrollCursor(pendingScroll, totalRows)
 		}
 	} else {
 		store.ViewportTop = 0
@@ -1211,8 +1211,9 @@ func (store CopyModeStore) ApplyDeferredOlderScroll(rows int, totalRows int) Cop
 		return store.FollowCursor(totalRows)
 	}
 	// older prepend 已经把原 visible top 重新锚到同一条 logical line；
-	// 这里仅消费用户在等待分页时还想继续向上的行数，保持“请求按页、浏览按行”。
-	return store.ScrollViewport(-rows, totalRows)
+	// 这里继续消费用户在等待分页时还想向上的行数。浏览语义必须先移动
+	// copy cursor，只有 cursor 到达可见区边缘时 viewport 才跟随。
+	return store.ScrollCursor(-rows, totalRows)
 }
 
 func (store CopyModeStore) ApplyHistoryTrim(trim HistoryTrimResult, totalRows int) CopyModeStore {
@@ -1343,8 +1344,8 @@ func (store CopyModeStore) ScrollCursor(delta int, totalRows int) CopyModeStore 
 	return store.FollowCursor(totalRows)
 }
 
-// ScrollViewport 是 copy/history 浏览滚动的主语义：用户移动的是观察窗口。
-// history truth 仍来自 core-v2 authoritative rows，cursor 只跟随并保持在可见范围内。
+// ScrollViewport 只表达显式 viewport 重定位或内部锚点修正。
+// 普通用户浏览输入必须优先走 ScrollCursor，避免页面先跳而 cursor 失去 tmux 式位置感。
 func (store CopyModeStore) ScrollViewport(delta int, totalRows int) CopyModeStore {
 	if totalRows <= 0 {
 		store.ViewportTop = 0

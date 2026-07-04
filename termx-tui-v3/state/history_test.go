@@ -676,7 +676,7 @@ func TestCopyModeAcceptLatestStartsAtNewestTail(t *testing.T) {
 	}
 }
 
-func TestR411CopyModeAcceptLatestAppliesPendingScrollAsViewportMove(t *testing.T) {
+func TestCopyModeAcceptLatestAppliesPendingScrollAsCursorMove(t *testing.T) {
 	rows := make([]HistoryRow, 0, 30)
 	for i := 0; i < 30; i++ {
 		rows = append(rows, HistoryRow{Text: "row", LineID: uint64(i + 1)})
@@ -687,8 +687,8 @@ func TestR411CopyModeAcceptLatestAppliesPendingScrollAsViewportMove(t *testing.T
 		EnteringScrollDelta: -3,
 	}.AcceptLatest(latest, latest.Cols, len(rows))
 
-	if copyMode.ViewportTop != 22 || copyMode.Cursor.Row != 26 {
-		t.Fatalf("pending PageUp while latest is flying should move viewport first, got %#v", copyMode)
+	if copyMode.ViewportTop != 25 || copyMode.Cursor.Row != 26 {
+		t.Fatalf("pending PageUp while latest is flying should move cursor before viewport, got %#v", copyMode)
 	}
 }
 
