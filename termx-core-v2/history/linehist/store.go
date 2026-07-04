@@ -2,7 +2,6 @@ package linehist
 
 import (
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -90,17 +89,6 @@ type frozenView struct {
 	cols       int
 	hot        []history.HistoryRow
 	generation history.Generation
-}
-
-// coldRowIndex 是某个 cols 下冷段记录的 rows-per-line prefix sum（绝对域）。
-// prefix[i] = 前 i 条记录投影出的 row 总数；记录 i 覆盖绝对行
-// [prefix[i], prefix[i+1])。冷段 append-only，索引只增量延伸。
-type coldRowIndex struct {
-	prefix []int
-}
-
-func (idx *coldRowIndex) covered() int {
-	return len(idx.prefix) - 1
 }
 
 // liveView 是一次查询的一致性视图：coldBase/coldCount/热段行在 ingest gate
@@ -195,7 +183,12 @@ func (store *Store) Close() error {
 	}
 	unlock := store.lockGate()
 	defer unlock()
-	return store.engine.Close()
+	engineErr := store.engine.Close()
+	indexErr := store.closeColdIndexes()
+	if engineErr != nil {
+		return engineErr
+	}
+	return indexErr
 }
 
 // Apply 是 HistoryStore 兼容入口。linehist 的写 truth 只来自
@@ -559,7 +552,7 @@ func (store *Store) viewForRequest(req history.HistoryWindowRequest) (history.Hi
 	return req, view, nil
 }
 
-// viewTotal 返回视图的 row 总数（视图冷段 prefix sum 区间宽度 + 热段行数）。
+// viewTotal 返回视图的 row 总数（视图冷段持久 row-count 索引区间 + 热段行数）。
 func (store *Store) viewTotal(view liveView) (int, error) {
 	coldRows, err := store.coldRowsTotal(view.cols, view.coldBase, view.coldCount)
 	if err != nil {
@@ -573,39 +566,68 @@ func (store *Store) coldRowsTotal(cols int, coldBase int, coldCount int) (int, e
 	if err != nil {
 		return 0, err
 	}
-	return idx.prefix[coldBase+coldCount] - idx.prefix[coldBase], nil
+	return idx.rowsBetween(coldBase, coldBase+coldCount)
 }
 
 // ensureColdIndex 惰性构建/延伸某个 cols 的冷段 row 索引。
-// 冷段 append-only：已有前缀永不失效，只向后补新记录的行数。
+// 冷段 append-only：已有 row-count sidecar 永不改写正文，只向后补新记录
+// 的派生行数。Store 只保护 map 生命周期；具体文件与 block prefix 由
+// coldRowIndex 自己串行化，避免建索引时形成 Store.mu -> Engine.mu 的
+// 反向锁顺序。
 func (store *Store) ensureColdIndex(cols int, atLeast int) (*coldRowIndex, error) {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	idx := store.indexes[cols]
-	if idx == nil {
-		idx = &coldRowIndex{prefix: []int{0}}
-		store.indexes[cols] = idx
+	if store == nil || store.engine == nil {
+		return nil, fmt.Errorf("linehist: cold index store unavailable")
 	}
-	const batch = 1024
-	for idx.covered() < atLeast {
-		end := minInt(atLeast, idx.covered()+batch)
-		lines, err := store.engine.Lines(idx.covered(), end)
+	store.mu.Lock()
+	idx := store.indexes[cols]
+	store.mu.Unlock()
+	if idx == nil {
+		path := store.engine.RowIndexPath(cols)
+		if path == "" {
+			return nil, fmt.Errorf("linehist: row index path unavailable")
+		}
+		lineCount := store.engine.LineCount()
+		if lineCount < atLeast {
+			lineCount = atLeast
+		}
+		created, err := openColdRowIndex(path, cols, lineCount)
 		if err != nil {
 			return nil, err
 		}
-		if len(lines) == 0 {
-			return nil, fmt.Errorf("linehist: cold index out of range: covered=%d want=%d", idx.covered(), atLeast)
+		store.mu.Lock()
+		if existing := store.indexes[cols]; existing != nil {
+			idx = existing
+			store.mu.Unlock()
+			_ = created.close()
+		} else {
+			idx = created
+			store.indexes[cols] = idx
+			store.mu.Unlock()
 		}
-		for _, line := range lines {
-			idx.prefix = append(idx.prefix, idx.prefix[len(idx.prefix)-1]+countWrappedRows(line.Runs, cols))
-		}
+	}
+	if err := idx.ensure(store.engine, atLeast); err != nil {
+		return nil, err
 	}
 	return idx, nil
 }
 
+func (store *Store) closeColdIndexes() error {
+	store.mu.Lock()
+	indexes := store.indexes
+	store.indexes = make(map[int]*coldRowIndex)
+	store.mu.Unlock()
+	var firstErr error
+	for _, idx := range indexes {
+		if err := idx.close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 // rowsForRange 返回视图内 row 区间 [start,end) 的投影 rows（视图域：
-// 0 = 视图冷段第一行）。冷段用 prefix sum 二分定位记录区间，只读命中
-// 的文件记录。
+// 0 = 视图冷段第一行）。冷段用持久 row-count sidecar 定位记录区间，
+// 只读命中的正文 payload。
 func (store *Store) rowsForRange(view liveView, start int, end int) ([]history.HistoryRow, error) {
 	coldRows, err := store.coldRowsTotal(view.cols, view.coldBase, view.coldCount)
 	if err != nil {
@@ -639,18 +661,27 @@ func (store *Store) coldRowsForRange(cols int, coldBase int, coldCount int, star
 	if err != nil {
 		return nil, err
 	}
-	// 中文说明：prefix/文件都在绝对域；视图域 row 加上 coldBase 之前记录
-	// 的 row 数即得绝对 row，再二分定位记录区间。LineID 用视图域序号
-	// （clear 后从 1 重新计数），文件读取仍用绝对记录序号。
-	store.mu.Lock()
-	prefix := idx.prefix[:coldBase+coldCount+1]
-	baseRows := prefix[coldBase]
+	// 中文说明：row sidecar/文件都在绝对域；视图域 row 加上 coldBase
+	// 之前记录的 row 数即得绝对 row，再定位正文记录区间。LineID 仍按
+	// authoritative logical-line 绝对顺序从 1 开始，ED3 不重置历史域。
+	baseRows, err := idx.rowOffsetForLine(coldBase)
+	if err != nil {
+		return nil, err
+	}
 	absStart := start + baseRows
 	absEnd := end + baseRows
-	firstLine := sort.SearchInts(prefix, absStart+1) - 1
-	lastLine := sort.SearchInts(prefix, absEnd) - 1
-	lineStartRow := prefix[firstLine]
-	store.mu.Unlock()
+	firstLine, err := idx.lineForRow(absStart)
+	if err != nil {
+		return nil, err
+	}
+	lastLine, err := idx.lineForRow(absEnd - 1)
+	if err != nil {
+		return nil, err
+	}
+	lineStartRow, err := idx.rowOffsetForLine(firstLine)
+	if err != nil {
+		return nil, err
+	}
 	lines, err := store.engine.Lines(firstLine, lastLine+1)
 	if err != nil {
 		return nil, err
@@ -692,10 +723,15 @@ func (store *Store) firstRowOfLine(view liveView, id history.LogicalLineID, fall
 		if err != nil {
 			return fallback
 		}
-		store.mu.Lock()
-		row := idx.prefix[view.coldBase+int(id)-1] - idx.prefix[view.coldBase]
-		store.mu.Unlock()
-		return row
+		absoluteRow, err := idx.rowOffsetForLine(view.coldBase + int(id) - 1)
+		if err != nil {
+			return fallback
+		}
+		baseRow, err := idx.rowOffsetForLine(view.coldBase)
+		if err != nil {
+			return fallback
+		}
+		return absoluteRow - baseRow
 	}
 	coldRows, err := store.coldRowsTotal(view.cols, view.coldBase, view.coldCount)
 	if err != nil {

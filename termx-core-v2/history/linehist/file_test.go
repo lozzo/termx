@@ -30,9 +30,9 @@ func TestLineFileRoundTrip(t *testing.T) {
 	defer file.Close()
 	want := []Line{
 		styledLineForTest(),
-		{Runs: nil, HardEnd: true},                      // 空行
-		{Runs: []Run{{Text: "chunk"}}, HardEnd: false},  // chunk 记录
-		{Runs: []Run{{Text: "你好世界"}}, HardEnd: true}, // 宽字符
+		{Runs: nil, HardEnd: true},                     // 空行
+		{Runs: []Run{{Text: "chunk"}}, HardEnd: false}, // chunk 记录
+		{Runs: []Run{{Text: "你好世界"}}, HardEnd: true},   // 宽字符
 	}
 	if err := file.AppendLines(want); err != nil {
 		t.Fatalf("append lines: %v", err)
@@ -106,6 +106,54 @@ func TestLineFileReopenRecoversOffsets(t *testing.T) {
 	}
 }
 
+func TestLineFileSidecarIndexRebuildsAfterCorruption(t *testing.T) {
+	dir := t.TempDir()
+	file, err := OpenLineFile(dir, "term-1")
+	if err != nil {
+		t.Fatalf("open line file: %v", err)
+	}
+	if err := file.AppendLines([]Line{
+		{Runs: []Run{{Text: "one"}}, HardEnd: true},
+		{Runs: []Run{{Text: "two"}}, HardEnd: true},
+	}); err != nil {
+		t.Fatalf("append initial lines: %v", err)
+	}
+	if err := file.AppendBoundary(); err != nil {
+		t.Fatalf("append boundary: %v", err)
+	}
+	if err := file.AppendLines([]Line{{Runs: []Run{{Text: "three"}}, HardEnd: true}}); err != nil {
+		t.Fatalf("append line after boundary: %v", err)
+	}
+	indexPath := file.IndexPath()
+	if err := file.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := os.WriteFile(indexPath, []byte("bad-index"), 0o600); err != nil {
+		t.Fatalf("corrupt sidecar index: %v", err)
+	}
+
+	reopened, err := OpenLineFile(dir, "term-1")
+	if err != nil {
+		t.Fatalf("reopen with corrupt sidecar index: %v", err)
+	}
+	defer reopened.Close()
+	got, err := reopened.Lines(0, reopened.LineCount())
+	if err != nil {
+		t.Fatalf("read rebuilt sidecar lines: %v", err)
+	}
+	if strings.Join(lineTextsForTest(got), "|") != "one|two|three" {
+		t.Fatalf("rebuilt sidecar lines = %v", lineTextsForTest(got))
+	}
+	info, err := os.Stat(indexPath)
+	if err != nil {
+		t.Fatalf("stat rebuilt sidecar index: %v", err)
+	}
+	wantSize := int64(lineFileIndexHeaderSize + 3*lineFileIndexEntrySize)
+	if info.Size() != wantSize {
+		t.Fatalf("rebuilt sidecar size = %d, want %d", info.Size(), wantSize)
+	}
+}
+
 func TestLineFilePagedReads(t *testing.T) {
 	dir := t.TempDir()
 	file, err := OpenLineFile(dir, "term-1")
@@ -135,6 +183,49 @@ func TestLineFilePagedReads(t *testing.T) {
 	empty, err := file.Lines(4, 2)
 	if err != nil || len(empty) != 0 {
 		t.Fatalf("inverted range must be empty, got %d err=%v", len(empty), err)
+	}
+}
+
+func TestLineFileSidecarFastPathTruncatesPartialTailAfterBoundary(t *testing.T) {
+	dir := t.TempDir()
+	file, err := OpenLineFile(dir, "term-1")
+	if err != nil {
+		t.Fatalf("open line file: %v", err)
+	}
+	if err := file.AppendLines([]Line{{Runs: []Run{{Text: "keep"}}, HardEnd: true}}); err != nil {
+		t.Fatalf("append line: %v", err)
+	}
+	if err := file.AppendBoundary(); err != nil {
+		t.Fatalf("append boundary: %v", err)
+	}
+	path := file.Path()
+	if err := file.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read raw file: %v", err)
+	}
+	partial := []byte{0x4C, 0x4C, 0x58, 0x54, 0x01, 0x00, 0x01, 0x01}
+	if err := os.WriteFile(path, append(raw, partial...), 0o600); err != nil {
+		t.Fatalf("write partial tail: %v", err)
+	}
+
+	reopened, err := OpenLineFile(dir, "term-1")
+	if err != nil {
+		t.Fatalf("reopen with partial tail after boundary: %v", err)
+	}
+	defer reopened.Close()
+	got, err := reopened.Lines(0, reopened.LineCount())
+	if err != nil || strings.Join(lineTextsForTest(got), "|") != "keep" {
+		t.Fatalf("lines after boundary tail recover = %v err=%v", lineTextsForTest(got), err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat truncated file: %v", err)
+	}
+	if info.Size() != int64(len(raw)) {
+		t.Fatalf("file size = %d, want %d (partial tail removed after boundary)", info.Size(), len(raw))
 	}
 }
 
