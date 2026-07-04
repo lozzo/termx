@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/services"
@@ -223,7 +224,9 @@ func reduceTerminalPoolListRequest(root state.Root, deps LiveDeps) (state.Root, 
 	seq := root.TerminalPool.RequestSeq
 	return root.Advance(), []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
+			finish := perftrace.Measure("tui.terminal_pool.list.effect")
 			result, err := deps.Terminal.List(ctx, services.TerminalListRequest{})
+			finish(len(result.Items))
 			return TerminalPoolListResultMsg{Seq: seq, Result: result, Err: err}
 		},
 	}}
@@ -281,6 +284,7 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 	surfaceID := runtimeSurfaceID(root)
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
+			finish := perftrace.Measure("tui.terminal_pool.attach.effect")
 			result, err := deps.Terminal.Attach(ctx, services.TerminalAttachRequest{
 				TerminalID:   msg.TerminalID,
 				Cols:         cols,
@@ -290,6 +294,7 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 				SurfaceID:    surfaceID,
 				ViewID:       target.ViewID,
 			})
+			finish(0)
 			return TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: resizePolicy, Result: result, Err: err}
 		},
 	}}
@@ -374,6 +379,7 @@ func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequ
 	tags := cloneStringMap(msg.Tags)
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
+			finish := perftrace.Measure("tui.terminal_pool.create.effect")
 			result, err := deps.Terminal.Create(ctx, services.TerminalCreateRequest{
 				TerminalID: terminalID,
 				Title:      title,
@@ -383,12 +389,15 @@ func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequ
 				Cols:       cols,
 				Rows:       rows,
 			})
+			finish(0)
 			return TerminalPoolCreateResultMsg{TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, Result: result, Err: err}
 		},
 	}}
 }
 
 func reduceTerminalPoolCreateResult(root state.Root, msg TerminalPoolCreateResultMsg) (state.Root, []Effect) {
+	finish := perftrace.Measure("tui.terminal_pool.create.apply")
+	defer finish(0)
 	errText := errorString(msg.Err)
 	root.TerminalPool = root.TerminalPool.ApplyCreated(msg.Result.TerminalID, errText)
 	if errText != "" {

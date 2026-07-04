@@ -49,6 +49,7 @@ func (adapter ProtocolTerminalServiceAdapter) Attach(ctx context.Context, req Te
 	if mode == "" {
 		mode = "collaborator"
 	}
+	finishRPC := perftrace.Measure("tui.protocol.terminal_attach.rpc")
 	result, err := adapter.Client.AttachWithOptions(ctx, protocol.AttachParams{
 		TerminalID:   req.TerminalID,
 		Mode:         mode,
@@ -56,6 +57,7 @@ func (adapter ProtocolTerminalServiceAdapter) Attach(ctx context.Context, req Te
 		SurfaceID:    req.SurfaceID,
 		ViewID:       req.ViewID,
 	})
+	finishRPC(0)
 	if err != nil {
 		return TerminalAttachResult{}, err
 	}
@@ -91,10 +93,13 @@ func (adapter ProtocolTerminalServiceAdapter) List(ctx context.Context, _ Termin
 	if adapter.Client == nil {
 		return TerminalListResult{}, ErrMissingTerminalClient
 	}
+	finishRPC := perftrace.Measure("tui.protocol.terminal_list.rpc")
 	result, err := adapter.Client.List(ctx)
+	finishRPC(0)
 	if err != nil {
 		return TerminalListResult{}, err
 	}
+	finishConvert := perftrace.Measure("tui.protocol.terminal_list.convert")
 	items := make([]TerminalPoolItem, 0, len(result.Terminals))
 	for _, terminal := range result.Terminals {
 		items = append(items, TerminalPoolItem{
@@ -111,6 +116,7 @@ func (adapter ProtocolTerminalServiceAdapter) List(ctx context.Context, _ Termin
 			AttachmentCount: terminal.ResizeOwnerAttachmentCount,
 		})
 	}
+	finishConvert(len(items))
 	return TerminalListResult{Items: items}, nil
 }
 
@@ -122,6 +128,7 @@ func (adapter ProtocolTerminalServiceAdapter) Create(ctx context.Context, req Te
 	if len(command) == 0 {
 		command = DefaultTerminalCommand()
 	}
+	finishRPC := perftrace.Measure("tui.protocol.terminal_create.rpc")
 	result, err := adapter.Client.Create(ctx, protocol.CreateParams{
 		ID:      req.TerminalID,
 		Name:    req.Title,
@@ -130,6 +137,7 @@ func (adapter ProtocolTerminalServiceAdapter) Create(ctx context.Context, req Te
 		Dir:     req.CWD,
 		Size:    protocol.Size{Cols: uint16(req.Cols), Rows: uint16(req.Rows)},
 	})
+	finishRPC(0)
 	if err != nil {
 		return TerminalCreateResult{}, err
 	}
@@ -308,7 +316,9 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 	if adapter.Client == nil {
 		return TerminalSurfaceResult{}, ErrMissingTerminalClient
 	}
+	finishRPC := perftrace.Measure("tui.protocol.live_surface.rpc")
 	snapshot, err := adapter.Client.LiveScreen(ctx, req.TerminalID)
+	finishRPC(0)
 	if err != nil {
 		return TerminalSurfaceResult{}, err
 	}
@@ -328,7 +338,9 @@ func (adapter ProtocolTerminalServiceAdapter) ArmLiveInvalidation(ctx context.Co
 	if adapter.Client == nil {
 		return TerminalLiveEvent{}, ErrMissingTerminalClient
 	}
+	finishRPC := perftrace.Measure("tui.protocol.live_invalidation.rpc")
 	event, err := adapter.Client.NextLiveInvalidation(ctx, req.TerminalID, req.ObservedRevision)
+	finishRPC(0)
 	if err != nil {
 		return TerminalLiveEvent{}, err
 	}

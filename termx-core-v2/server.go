@@ -213,12 +213,16 @@ func (server *Server) HistoryStorageDir() string {
 }
 
 func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, error) {
+	finishTotal := perftrace.Measure("core.server.register_terminal.total")
+	defer finishTotal(0)
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
 	if server.closed.Load() {
 		return TerminalInfo{}, ErrServerClosed
 	}
+	finishRegistry := perftrace.Measure("core.server.register_terminal.registry")
 	info, err := server.registry.register(record, server.cfg.defaultSize)
+	finishRegistry(0)
 	if err != nil {
 		return TerminalInfo{}, err
 	}
@@ -226,22 +230,30 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 	historyEnabled := !server.cfg.historyDisabled
 	if historyEnabled {
 		var err error
+		finishHistory := perftrace.Measure("core.server.register_terminal.history_store")
 		historyStore, err = server.newHistoryStore(info.ID)
+		finishHistory(0)
 		if err != nil {
 			_, _ = server.registry.remove(info.ID)
 			return TerminalInfo{}, err
 		}
 	}
+	finishSpawn := perftrace.Measure("core.server.register_terminal.spawn")
 	process, err := server.cfg.processFactory.Spawn(context.Background(), processSpecFromTerminal(info, record.Options))
+	finishSpawn(0)
 	if err != nil {
 		_, _ = server.registry.remove(info.ID)
 		return TerminalInfo{}, err
 	}
+	finishNewTerminal := perftrace.Measure("core.server.register_terminal.new_terminal")
 	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore, historyEnabled, server.cfg.logger)
 	server.mu.Lock()
 	server.terminals[info.ID] = terminal
 	server.mu.Unlock()
+	finishNewTerminal(0)
+	finishPublish := perftrace.Measure("core.server.register_terminal.publish")
 	server.publishTerminalEvent(EventTerminalCreated, info)
+	finishPublish(0)
 	return info, nil
 }
 
@@ -283,7 +295,9 @@ func (server *Server) historyStoreDir() (string, error) {
 // 投影 emulator 当前屏），旧 journal/classifier fanout 被旁路。
 func LineHistoryStoreFactory(dir string) HistoryStoreFactory {
 	return func(terminalID string) (history.HistoryStore, error) {
+		finish := perftrace.Measure("core.linehist.open_store")
 		file, err := linehist.OpenLineFile(dir, terminalID)
+		finish(0)
 		if err != nil {
 			return nil, err
 		}

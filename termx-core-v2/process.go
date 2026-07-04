@@ -12,6 +12,7 @@ import (
 	"time"
 
 	creackpty "github.com/creack/pty"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 )
 
 type ProcessFactory interface {
@@ -58,6 +59,8 @@ func newPTYProcessFactory() ProcessFactory {
 }
 
 func (ptyProcessFactory) Spawn(ctx context.Context, spec ProcessSpec) (TerminalProcess, error) {
+	finishTotal := perftrace.Measure("core.process.spawn.total")
+	defer finishTotal(0)
 	if len(spec.Command) == 0 {
 		return nil, ErrInvalidCommand
 	}
@@ -68,7 +71,9 @@ func (ptyProcessFactory) Spawn(ctx context.Context, spec ProcessSpec) (TerminalP
 	cmd := exec.CommandContext(ctx, spec.Command[0], spec.Command[1:]...)
 	cmd.Dir = spec.Dir
 	cmd.Env = ptyProcessEnv(spec.TerminalID, spec.Env)
+	finishStart := perftrace.Measure("core.process.pty_start")
 	file, err := creackpty.StartWithSize(cmd, &creackpty.Winsize{Cols: size.Cols, Rows: size.Rows})
+	finishStart(0)
 	if err != nil {
 		return nil, err
 	}

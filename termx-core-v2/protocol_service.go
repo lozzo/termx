@@ -195,16 +195,24 @@ func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint
 }
 
 func (session *protocolSession) handleRequest(ctx context.Context, req protocol.Request) error {
+	finishTotal := perftrace.Measure("core.protocol.request." + req.Method + ".total")
+	responseBytes := 0
+	defer func() { finishTotal(responseBytes) }()
+	finishDispatch := perftrace.Measure("core.protocol.request." + req.Method + ".dispatch")
 	result, binary, code, err := session.dispatchRequest(ctx, req)
+	finishDispatch(len(result))
 	if err != nil {
 		return session.sendError(req.ID, code, err.Error())
 	}
 	if binary {
+		responseBytes = len(result)
 		payload, err := protocol.EncodeBinaryResponsePayload(req.ID, result)
 		if err != nil {
 			return err
 		}
+		finishSend := perftrace.Measure("core.protocol.request." + req.Method + ".send")
 		err = session.sendFrame(0, wire.TypeResponseBinary, payload)
+		finishSend(len(payload))
 		maybeReclaimDaemonBoundaryHeap()
 		return err
 	}
@@ -212,7 +220,10 @@ func (session *protocolSession) handleRequest(ctx context.Context, req protocol.
 	if err != nil {
 		return err
 	}
+	responseBytes = len(payload)
+	finishSend := perftrace.Measure("core.protocol.request." + req.Method + ".send")
 	err = session.sendFrame(0, wire.TypeResponse, payload)
+	finishSend(len(payload))
 	maybeReclaimDaemonBoundaryHeap()
 	return err
 }
