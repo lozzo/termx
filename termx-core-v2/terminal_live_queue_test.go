@@ -138,6 +138,49 @@ func TestR407HistoryTapQueueUsesLargeSemanticBatchWithoutChangingLiveLimit(t *te
 	close(historyQueue.done)
 }
 
+func TestR446HistoryTapQueueStatusTracksPendingBytesAndBackpressureConfig(t *testing.T) {
+	queue := newTerminalHistoryTapIngestQueue(HistoryBackpressureConfig{
+		Mode:        HistoryBackpressureBounded,
+		BufferBytes: 64,
+	})
+	if !queue.Enqueue("abcd") || !queue.Enqueue("ef") {
+		t.Fatal("expected enqueue before close")
+	}
+	status := queue.Status()
+	if status.PendingItems != 2 || status.PendingBytes != 6 {
+		t.Fatalf("unexpected pending status %#v", status)
+	}
+	if status.BackpressureMode != HistoryBackpressureBounded || status.BufferLimitBytes != 64 {
+		t.Fatalf("history tap queue lost backpressure config: %#v", status)
+	}
+	batch, ok := queue.nextBatch()
+	if !ok || strings.Join(batch, "") != "abcdef" {
+		t.Fatalf("unexpected batch %#v ok=%v", batch, ok)
+	}
+	if status = queue.Status(); status.PendingItems != 0 || status.PendingBytes != 0 {
+		t.Fatalf("pending bytes must drop after dequeue, got %#v", status)
+	}
+	close(queue.done)
+}
+
+func TestR446QueueStatusTracksPendingBytesAcrossSplitHead(t *testing.T) {
+	queue := newTerminalLiveIngestQueueWithBatchLimit(4)
+	if !queue.Enqueue("abcdef") {
+		t.Fatal("expected enqueue before close")
+	}
+	if status := queue.Status(); status.PendingBytes != 6 {
+		t.Fatalf("expected full pending bytes before split, got %#v", status)
+	}
+	batch, ok := queue.nextBatch()
+	if !ok || strings.Join(batch, "") != "abcd" {
+		t.Fatalf("unexpected split batch %#v ok=%v", batch, ok)
+	}
+	if status := queue.Status(); status.PendingBytes != 2 || status.PendingItems != 1 {
+		t.Fatalf("split head should leave only tail pending, got %#v", status)
+	}
+	close(queue.done)
+}
+
 func TestTerminalLiveIngestQueueSplitsSinglePTYReadChunk(t *testing.T) {
 	if ptyReadBufferBytes <= terminalLiveIngestBatchMaxBytes {
 		t.Fatalf("test requires PTY read chunk larger than live batch, got pty=%d batch=%d", ptyReadBufferBytes, terminalLiveIngestBatchMaxBytes)

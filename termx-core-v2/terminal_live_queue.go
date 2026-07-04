@@ -17,6 +17,19 @@ const terminalHistoryTapIngestBatchMaxBytes = 1024 * 1024
 
 const terminalLiveIngestQueuePageSize = 256
 
+// terminalLiveIngestQueueStatus 是 PTY output consumer 队列的诊断快照。
+// 它描述调度层 pending 状态和背压统计；这些字段不能被当作 history
+// payload truth，也不能替代 linehist 的 applied/window/cursor 边界。
+type terminalLiveIngestQueueStatus struct {
+	PendingItems          int
+	PendingBytes          int64
+	BackpressureMode      HistoryBackpressureMode
+	BufferLimitBytes      int64
+	BackpressureEvents    uint64
+	BackpressureWaitNanos int64
+	Closed                bool
+}
+
 // terminalLiveIngestQueue 把 PTY 高频输出压成 consumer 批次。
 // domain owner 是 core terminal ingest；R396 后 live queue 推进 SurfaceTrack，
 // history tap queue 推进 history semantic consumer。它不保存 history truth，也不
@@ -25,17 +38,21 @@ const terminalLiveIngestQueuePageSize = 256
 // 很多 PTY payload；reader 给 history tap 入队不能在锁内做大 slice 扩容或前移复制，
 // 否则会间接拖住后续 PTY read，从而影响 live SurfaceTrack 看到最新输出。
 type terminalLiveIngestQueue struct {
-	mu            sync.Mutex
-	cond          *sync.Cond
-	head          *terminalLiveIngestPage
-	tail          *terminalLiveIngestPage
-	pendingCount  int
-	closed        bool
-	enqueuedSeq   uint64
-	completedSeq  uint64
-	flushWait     map[uint64][]chan struct{}
-	batchMaxBytes int
-	done          chan struct{}
+	mu                    sync.Mutex
+	cond                  *sync.Cond
+	head                  *terminalLiveIngestPage
+	tail                  *terminalLiveIngestPage
+	pendingCount          int
+	pendingBytes          int64
+	closed                bool
+	enqueuedSeq           uint64
+	completedSeq          uint64
+	flushWait             map[uint64][]chan struct{}
+	batchMaxBytes         int
+	backpressure          HistoryBackpressureConfig
+	backpressureEvents    uint64
+	backpressureWaitNanos int64
+	done                  chan struct{}
 }
 
 type terminalLiveIngestItem struct {
@@ -54,15 +71,26 @@ func newTerminalLiveIngestQueue() *terminalLiveIngestQueue {
 	return newTerminalLiveIngestQueueWithBatchLimit(terminalLiveIngestBatchMaxBytes)
 }
 
-func newTerminalHistoryTapIngestQueue() *terminalLiveIngestQueue {
-	return newTerminalLiveIngestQueueWithBatchLimit(terminalHistoryTapIngestBatchMaxBytes)
+func newTerminalHistoryTapIngestQueue(backpressure ...HistoryBackpressureConfig) *terminalLiveIngestQueue {
+	queue := newTerminalLiveIngestQueueWithBatchLimit(terminalHistoryTapIngestBatchMaxBytes)
+	if len(backpressure) > 0 {
+		queue.backpressure = backpressure[0].Normalize()
+	}
+	return queue
 }
 
 func newTerminalLiveIngestQueueWithBatchLimit(batchMaxBytes int) *terminalLiveIngestQueue {
 	if batchMaxBytes <= 0 {
 		batchMaxBytes = terminalLiveIngestBatchMaxBytes
 	}
-	queue := &terminalLiveIngestQueue{batchMaxBytes: batchMaxBytes, done: make(chan struct{})}
+	queue := &terminalLiveIngestQueue{
+		batchMaxBytes: batchMaxBytes,
+		backpressure: HistoryBackpressureConfig{
+			Mode:        HistoryBackpressureLowLatency,
+			BufferBytes: DefaultHistoryBackpressureBufferBytes,
+		}.Normalize(),
+		done: make(chan struct{}),
+	}
 	queue.cond = sync.NewCond(&queue.mu)
 	return queue
 }
@@ -80,6 +108,25 @@ func (queue *terminalLiveIngestQueue) Enqueue(text string) bool {
 	queue.pushPendingLocked(terminalLiveIngestItem{text: text, seq: queue.enqueuedSeq})
 	queue.cond.Signal()
 	return true
+}
+
+// Status 返回队列调度诊断快照。pending bytes 只表示尚未交给对应 owner
+// 处理的 PTY payload 驻留，不表示 history 已落盘或可查询。
+func (queue *terminalLiveIngestQueue) Status() terminalLiveIngestQueueStatus {
+	if queue == nil {
+		return terminalLiveIngestQueueStatus{}
+	}
+	queue.mu.Lock()
+	defer queue.mu.Unlock()
+	return terminalLiveIngestQueueStatus{
+		PendingItems:          queue.pendingCount,
+		PendingBytes:          queue.pendingBytes,
+		BackpressureMode:      queue.backpressure.Mode,
+		BufferLimitBytes:      queue.backpressure.BufferBytes,
+		BackpressureEvents:    queue.backpressureEvents,
+		BackpressureWaitNanos: queue.backpressureWaitNanos,
+		Closed:                queue.closed,
+	}
 }
 
 func (queue *terminalLiveIngestQueue) Close() {
@@ -166,6 +213,7 @@ func (queue *terminalLiveIngestQueue) nextBatchWithSeq() ([]string, uint64, bool
 		if bytes == 0 && nextBytes > queue.batchMaxBytes {
 			head, tail := splitLiveIngestPayload(item.text, queue.batchMaxBytes)
 			item.text = tail
+			queue.pendingBytes -= int64(len(head))
 			return []string{head}, 0, true
 		}
 		if count > 0 && bytes+nextBytes > queue.batchMaxBytes {
@@ -243,6 +291,7 @@ func (queue *terminalLiveIngestQueue) dropPendingPrefixLocked(count int) {
 			take = available
 		}
 		for index := 0; index < take; index++ {
+			queue.pendingBytes -= int64(len(page.items[page.start+index].text))
 			page.items[page.start+index] = terminalLiveIngestItem{}
 		}
 		page.start += take
@@ -274,6 +323,7 @@ func (queue *terminalLiveIngestQueue) pushPendingLocked(item terminalLiveIngestI
 	queue.tail.items[queue.tail.end] = item
 	queue.tail.end++
 	queue.pendingCount++
+	queue.pendingBytes += int64(len(item.text))
 }
 
 func (queue *terminalLiveIngestQueue) pendingBatchLocked(count int) ([]string, uint64) {

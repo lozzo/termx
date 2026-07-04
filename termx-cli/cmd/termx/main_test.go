@@ -392,6 +392,38 @@ func TestDaemonCanDisableHistoryFromEnv(t *testing.T) {
 	}
 }
 
+func TestR446DaemonConfiguresHistoryBackpressureFromEnv(t *testing.T) {
+	oldNewCoreV2Server := newCoreV2Server
+	t.Cleanup(func() {
+		newCoreV2Server = oldNewCoreV2Server
+	})
+	t.Setenv("TERMX_HISTORY_BACKPRESSURE_MODE", "bounded")
+	t.Setenv("TERMX_HISTORY_BACKPRESSURE_BUFFER_MB", "12")
+
+	fakeV3 := &fakeCoreV2Server{}
+	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
+		fakeV3.newServerCalls++
+		server := corev2.NewServer(opts...)
+		got := server.HistoryBackpressureConfig()
+		if got.Mode != corev2.HistoryBackpressureBounded || got.BufferBytes != 12<<20 {
+			t.Fatalf("daemon did not pass history backpressure env to core: %#v", got)
+		}
+		return fakeV3
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", filepath.Join(t.TempDir(), "termx-v2.sock"), "--log-file", filepath.Join(t.TempDir(), "termx.log"), "daemon"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if fakeV3.newServerCalls != 1 {
+		t.Fatalf("expected one core-v2 server construction, got %d", fakeV3.newServerCalls)
+	}
+}
+
 func TestV3PingConnectsExistingCoreV2Daemon(t *testing.T) {
 	oldDial := v3DialClient
 	oldStart := startV3Daemon

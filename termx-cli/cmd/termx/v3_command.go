@@ -74,12 +74,13 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 
 			socketPath := resolveV3Socket(*socket)
 			applyDaemonRuntimeTuning(logger)
+			historyBackpressure := daemonHistoryBackpressureConfig(logger)
 			historyDir := resolveV3HistoryStorageDir()
-			opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryStorageDir(historyDir)}
+			opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryStorageDir(historyDir), corev2.WithHistoryBackpressureConfig(historyBackpressure)}
 			historyEnabled := !envBool("TERMX_HISTORY_DISABLE")
 			if !historyEnabled {
 				historyDir = ""
-				opts = []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryDisabled()}
+				opts = []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryDisabled(), corev2.WithHistoryBackpressureConfig(historyBackpressure)}
 			}
 			srv := newCoreV2Server(opts...)
 			remoteCfg, err := remoteConfigFromFileAndEnv(remoteConfigPathValue(configPath))

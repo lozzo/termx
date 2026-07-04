@@ -34,6 +34,7 @@ type serverConfig struct {
 	historyStoreFactory HistoryStoreFactory
 	historyStorageDir   string
 	historyDisabled     bool
+	historyBackpressure HistoryBackpressureConfig
 }
 
 // HistoryStoreFactory 为每个 terminal 创建 core-v2 authoritative history store。
@@ -76,6 +77,10 @@ func NewServer(opts ...ServerOption) *Server {
 		listenerFactory: unixListenerFactory,
 		processFactory:  newPTYProcessFactory(),
 		eventBuffer:     64,
+		historyBackpressure: HistoryBackpressureConfig{
+			Mode:        HistoryBackpressureLowLatency,
+			BufferBytes: DefaultHistoryBackpressureBufferBytes,
+		},
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -91,6 +96,7 @@ func NewServer(opts ...ServerOption) *Server {
 	if cfg.processFactory == nil {
 		cfg.processFactory = newPTYProcessFactory()
 	}
+	cfg.historyBackpressure = cfg.historyBackpressure.Normalize()
 	return &Server{
 		cfg:                  cfg,
 		registry:             newTerminalRegistry(),
@@ -184,6 +190,16 @@ func WithHistoryDisabled() ServerOption {
 	}
 }
 
+// WithHistoryBackpressureConfig 配置 history 输出背压策略。
+// domain owner 是 Server/Terminal 输出调度：该选项只决定 history pending
+// bytes 是否能反压上游 PTY 消费和诊断如何展示，不改变 linehist truth、
+// storage 格式或 HistoryWindow/Copy/Freeze 合同。
+func WithHistoryBackpressureConfig(backpressure HistoryBackpressureConfig) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.historyBackpressure = backpressure.Normalize()
+	}
+}
+
 // SetRemoteService 允许 daemon 完成 core-v2 server 构造后再注入 remote runtime hook。
 func (server *Server) SetRemoteService(service RemoteService) {
 	server.remoteServiceMu.Lock()
@@ -210,6 +226,13 @@ func (server *Server) DefaultSize() Size {
 // 未配置时默认引擎会退到 server 级临时目录（见 historyStoreDir）。
 func (server *Server) HistoryStorageDir() string {
 	return server.cfg.historyStorageDir
+}
+
+// HistoryBackpressureConfig 返回 daemon 当前 history 输出背压配置。
+// 调用边界是诊断与 CLI harness；返回值不能用于推导 history payload，只能解释
+// PTY 输出调度策略和 pending bytes 上限。
+func (server *Server) HistoryBackpressureConfig() HistoryBackpressureConfig {
+	return server.cfg.historyBackpressure.Normalize()
 }
 
 func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, error) {
@@ -246,7 +269,7 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 		return TerminalInfo{}, err
 	}
 	finishNewTerminal := perftrace.Measure("core.server.register_terminal.new_terminal")
-	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore, historyEnabled, server.cfg.logger)
+	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore, historyEnabled, server.cfg.historyBackpressure, server.cfg.logger)
 	server.mu.Lock()
 	server.terminals[info.ID] = terminal
 	server.mu.Unlock()

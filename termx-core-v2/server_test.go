@@ -37,6 +37,46 @@ func TestServerOptions(t *testing.T) {
 	if server.HistoryStorageDir() != "/tmp/termx-core-v2-history" {
 		t.Fatalf("unexpected history storage dir %q", server.HistoryStorageDir())
 	}
+	if got := server.HistoryBackpressureConfig(); got.Mode != HistoryBackpressureLowLatency || got.BufferBytes != DefaultHistoryBackpressureBufferBytes {
+		t.Fatalf("unexpected default history backpressure %#v", got)
+	}
+}
+
+func TestR446ServerHistoryBackpressureConfigOption(t *testing.T) {
+	server := NewServer(WithHistoryBackpressureConfig(HistoryBackpressureConfig{
+		Mode:        HistoryBackpressureBounded,
+		BufferBytes: 7 << 20,
+	}))
+	if got := server.HistoryBackpressureConfig(); got.Mode != HistoryBackpressureBounded || got.BufferBytes != 7<<20 {
+		t.Fatalf("unexpected bounded history backpressure %#v", got)
+	}
+	fallback := NewServer(WithHistoryBackpressureConfig(HistoryBackpressureConfig{
+		Mode:        HistoryBackpressureMode("invalid"),
+		BufferBytes: -1,
+	}))
+	if got := fallback.HistoryBackpressureConfig(); got.Mode != HistoryBackpressureLowLatency || got.BufferBytes != DefaultHistoryBackpressureBufferBytes {
+		t.Fatalf("invalid config must normalize to safe defaults, got %#v", got)
+	}
+}
+
+func TestR446TerminalHistoryBacklogStatusExposesBackpressureConfig(t *testing.T) {
+	server := NewServer(
+		WithProcessFactory(newRecordingProcessFactory()),
+		WithHistoryBackpressureConfig(HistoryBackpressureConfig{
+			Mode:        HistoryBackpressureBounded,
+			BufferBytes: 9 << 20,
+		}),
+	)
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r446-backpressure", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	status, err := server.TerminalHistoryBacklogStatus("term-r446-backpressure")
+	if err != nil {
+		t.Fatalf("history backlog status: %v", err)
+	}
+	if status.BackpressureMode != HistoryBackpressureBounded || status.BufferLimitBytes != 9<<20 {
+		t.Fatalf("status lost history backpressure config: %#v", status)
+	}
 }
 
 func TestServerHistoryDisabledSkipsStoreCreationAndReturnsDisabled(t *testing.T) {

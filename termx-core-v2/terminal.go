@@ -35,34 +35,38 @@ type Terminal struct {
 	// 中文说明：lineHistory 是 R436 后唯一的 history 引擎（logical-line 文件历史）。
 	// 它在 tapOpMu 临界区内直接消费 tap 事务的 EvictedRows，查询用同一把 gate
 	// 采集当前屏热段；vterm emulator 是唯一屏幕真值，没有第二份屏幕模型。
-	lineHistory    *linehist.Store
-	historyEnabled bool
-	logger         *slog.Logger
-	historyStatus  HistoryBacklogStatus
-	queueMu        sync.Mutex
-	liveQ          *terminalLiveIngestQueue
-	historyTapQ    *terminalLiveIngestQueue
-	events         *eventBroker
-	update         func(TerminalInfo)
+	lineHistory         *linehist.Store
+	historyEnabled      bool
+	historyBackpressure HistoryBackpressureConfig
+	logger              *slog.Logger
+	historyStatus       HistoryBacklogStatus
+	queueMu             sync.Mutex
+	liveQ               *terminalLiveIngestQueue
+	historyTapQ         *terminalLiveIngestQueue
+	events              *eventBroker
+	update              func(TerminalInfo)
 }
 
-func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyStore history.HistoryStore, historyEnabled bool, logger *slog.Logger) *Terminal {
+func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyStore history.HistoryStore, historyEnabled bool, historyBackpressure HistoryBackpressureConfig, logger *slog.Logger) *Terminal {
 	terminal := &Terminal{
-		info:           info.Clone(),
-		options:        cloneTerminalCreateOptions(options),
-		process:        process,
-		events:         events,
-		update:         update,
-		historyEnabled: historyEnabled,
-		logger:         logger,
+		info:                info.Clone(),
+		options:             cloneTerminalCreateOptions(options),
+		process:             process,
+		events:              events,
+		update:              update,
+		historyEnabled:      historyEnabled,
+		historyBackpressure: historyBackpressure.Normalize(),
+		logger:              logger,
 	}
 	terminal.live = live.NewSurfaceTrackWithOptions(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)}, live.SurfaceTrackOptions{
 		OnResponse: terminal.handleLiveSurfaceResponse,
 	})
 	if historyEnabled {
 		terminal.historyStatus = HistoryBacklogStatus{
-			TerminalID:     info.ID,
-			HistoryEnabled: true,
+			TerminalID:       info.ID,
+			HistoryEnabled:   true,
+			BackpressureMode: terminal.historyBackpressure.Mode,
+			BufferLimitBytes: terminal.historyBackpressure.BufferBytes,
 		}
 		// 中文说明：history semantic tap 不持有 response owner；OSC/DA/DSR 只能由
 		// live SurfaceTrack 回写一次，避免 live/history 双 vterm 双回写。
@@ -366,6 +370,19 @@ func (terminal *Terminal) HistoryBacklogStatus() HistoryBacklogStatus {
 	terminal.mu.Unlock()
 	terminal.queueMu.Lock()
 	status := terminal.historyStatus
+	if terminal.historyTapQ != nil {
+		queueStatus := terminal.historyTapQ.Status()
+		status.PendingTransactions = queueStatus.PendingItems
+		status.PendingBytes = queueStatus.PendingBytes
+		status.BackpressureMode = queueStatus.BackpressureMode
+		status.BufferLimitBytes = queueStatus.BufferLimitBytes
+		status.BackpressureEvents = queueStatus.BackpressureEvents
+		status.BackpressureWaitNanos = queueStatus.BackpressureWaitNanos
+		status.Closed = queueStatus.Closed
+	} else {
+		status.BackpressureMode = terminal.historyBackpressure.Mode
+		status.BufferLimitBytes = terminal.historyBackpressure.BufferBytes
+	}
 	terminal.queueMu.Unlock()
 	status.TerminalID = terminalID
 	status.HistoryEnabled = terminal.historyEnabled
@@ -450,7 +467,7 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 	terminal.setLiveQueue(process, liveQueue)
 	var historyTapQueue *terminalLiveIngestQueue
 	if terminal.historyEnabled {
-		historyTapQueue = newTerminalHistoryTapIngestQueue()
+		historyTapQueue = newTerminalHistoryTapIngestQueue(terminal.historyBackpressure)
 		terminal.setHistoryTapQueue(process, historyTapQueue)
 		go historyTapQueue.Run(func(output string) error {
 			return terminal.ingestProcessHistoryTapOutput(process, output)
