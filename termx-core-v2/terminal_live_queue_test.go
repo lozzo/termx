@@ -2,7 +2,9 @@ package termxcorev2
 
 import (
 	"context"
+	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -179,6 +181,165 @@ func TestR446QueueStatusTracksPendingBytesAcrossSplitHead(t *testing.T) {
 		t.Fatalf("split head should leave only tail pending, got %#v", status)
 	}
 	close(queue.done)
+}
+
+func TestR447BoundedHistoryTapQueueBackpressuresUntilPendingBytesDrain(t *testing.T) {
+	queue := newTerminalHistoryTapIngestQueue(HistoryBackpressureConfig{
+		Mode:        HistoryBackpressureBounded,
+		BufferBytes: 8,
+	})
+	if !queue.Enqueue("12345678") {
+		t.Fatal("expected initial enqueue before close")
+	}
+	second := make(chan bool, 1)
+	go func() {
+		second <- queue.Enqueue("ab")
+	}()
+	waitForLiveQueueStatusForTest(t, queue, func(status terminalLiveIngestQueueStatus) bool {
+		return status.PendingBytes == 8 && status.BackpressureEvents == 1
+	}, "bounded enqueue did not enter backpressure wait")
+	select {
+	case <-second:
+		t.Fatal("bounded history enqueue returned before pending bytes drained")
+	case <-time.After(20 * time.Millisecond):
+	}
+	batch, ok := queue.nextBatch()
+	if !ok || strings.Join(batch, "") != "12345678" {
+		t.Fatalf("unexpected drained batch %#v ok=%v", batch, ok)
+	}
+	select {
+	case ok := <-second:
+		if !ok {
+			t.Fatal("bounded enqueue should succeed after pending bytes drain")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for bounded enqueue after pending bytes drain")
+	}
+	status := queue.Status()
+	if status.PendingBytes != 2 || status.BackpressureEvents != 1 || status.BackpressureWaitNanos <= 0 {
+		t.Fatalf("bounded queue lost backpressure diagnostics: %#v", status)
+	}
+	close(queue.done)
+}
+
+func TestR447LowLatencyHistoryTapQueueDoesNotBackpressureOnBufferLimit(t *testing.T) {
+	queue := newTerminalHistoryTapIngestQueue(HistoryBackpressureConfig{
+		Mode:        HistoryBackpressureLowLatency,
+		BufferBytes: 4,
+	})
+	done := make(chan bool, 1)
+	go func() {
+		done <- queue.Enqueue("12345678")
+	}()
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Fatal("low-latency enqueue should succeed before close")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("low-latency history queue must not wait on buffer limit")
+	}
+	status := queue.Status()
+	if status.PendingBytes != 8 || status.BackpressureEvents != 0 || status.BackpressureWaitNanos != 0 {
+		t.Fatalf("low-latency queue should expose pending bytes without backpressure: %#v", status)
+	}
+	close(queue.done)
+}
+
+func TestR447BoundedHistoryTapQueueSplitsPayloadLargerThanBuffer(t *testing.T) {
+	queue := newTerminalHistoryTapIngestQueue(HistoryBackpressureConfig{
+		Mode:        HistoryBackpressureBounded,
+		BufferBytes: 4,
+	})
+	done := make(chan bool, 1)
+	go func() {
+		done <- queue.Enqueue("abcdef")
+	}()
+	waitForLiveQueueStatusForTest(t, queue, func(status terminalLiveIngestQueueStatus) bool {
+		return status.PendingBytes == 4 && status.BackpressureEvents == 1
+	}, "bounded queue did not cap oversized payload at buffer limit")
+	select {
+	case <-done:
+		t.Fatal("oversized bounded enqueue must wait before queuing tail")
+	case <-time.After(20 * time.Millisecond):
+	}
+	batch, ok := queue.nextBatch()
+	if !ok || strings.Join(batch, "") != "abcd" {
+		t.Fatalf("unexpected first capped batch %#v ok=%v", batch, ok)
+	}
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Fatal("oversized bounded enqueue should succeed after space is released")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for oversized bounded enqueue")
+	}
+	if status := queue.Status(); status.PendingBytes != 2 {
+		t.Fatalf("bounded oversized enqueue should leave only tail pending, got %#v", status)
+	}
+	close(queue.done)
+}
+
+func TestR447BoundedHistoryBackpressureStopsProcessOutputConsumption(t *testing.T) {
+	factory := newR447OutputProcessFactory()
+	server := NewServer(
+		WithProcessFactory(factory),
+		WithHistoryBackpressureConfig(HistoryBackpressureConfig{
+			Mode:        HistoryBackpressureBounded,
+			BufferBytes: 4,
+		}),
+	)
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r447-output-backpressure",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	terminal, err := server.Terminal("term-r447-output-backpressure")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	process := factory.process
+	if process == nil {
+		t.Fatal("expected spawned test process")
+	}
+	terminal.tapOpMu.Lock()
+	tapLocked := true
+	defer func() {
+		if tapLocked {
+			terminal.tapOpMu.Unlock()
+		}
+		_ = server.RemoveTerminal("term-r447-output-backpressure")
+	}()
+
+	sendAndWaitForOutputConsumedForTest(t, process, "aaaa")
+	waitForLiveQueueStateForTest(t, terminal.historyTapQ, func(queue *terminalLiveIngestQueue) bool {
+		return queue.enqueuedSeq >= 1 && queue.pendingBytes == 0 && queue.pendingCount == 0
+	}, "first history batch did not move into in-flight writer")
+	sendAndWaitForOutputConsumedForTest(t, process, "bbbb")
+	waitForLiveQueueStateForTest(t, terminal.historyTapQ, func(queue *terminalLiveIngestQueue) bool {
+		return queue.enqueuedSeq >= 2 && queue.pendingBytes == 4 && queue.pendingCount == 1
+	}, "second history batch did not fill bounded pending buffer")
+	sendAndWaitForOutputConsumedForTest(t, process, "cccc")
+	waitForLiveQueueStatusForTest(t, terminal.historyTapQ, func(status terminalLiveIngestQueueStatus) bool {
+		return status.PendingBytes == 4 && status.BackpressureEvents == 1
+	}, "third history batch did not stop at bounded pending buffer")
+
+	fourth := sendOutputForTest(process, "dddd")
+	select {
+	case <-fourth:
+		t.Fatal("process output should stop being consumed while history pending buffer is full")
+	case <-time.After(20 * time.Millisecond):
+	}
+	terminal.tapOpMu.Unlock()
+	tapLocked = false
+	select {
+	case <-fourth:
+	case <-time.After(time.Second):
+		t.Fatal("process output did not resume after history writer released pending space")
+	}
 }
 
 func TestTerminalLiveIngestQueueSplitsSinglePTYReadChunk(t *testing.T) {
@@ -412,4 +573,102 @@ func waitForLiveQueueFlushTargetForTest(t *testing.T, queue *terminalLiveIngestQ
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("timed out waiting for live queue flush registration")
+}
+
+func waitForLiveQueueStatusForTest(t *testing.T, queue *terminalLiveIngestQueue, check func(terminalLiveIngestQueueStatus) bool, message string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if check(queue.Status()) {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal(message)
+}
+
+func waitForLiveQueueStateForTest(t *testing.T, queue *terminalLiveIngestQueue, check func(*terminalLiveIngestQueue) bool, message string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		queue.mu.Lock()
+		ok := check(queue)
+		queue.mu.Unlock()
+		if ok {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal(message)
+}
+
+type r447OutputProcessFactory struct {
+	process *r447OutputProcess
+}
+
+func newR447OutputProcessFactory() *r447OutputProcessFactory {
+	return &r447OutputProcessFactory{}
+}
+
+func (factory *r447OutputProcessFactory) Spawn(context.Context, ProcessSpec) (TerminalProcess, error) {
+	process := &r447OutputProcess{
+		outputCh: make(chan []byte),
+		waitCh:   make(chan ProcessExit, 1),
+	}
+	factory.process = process
+	return process, nil
+}
+
+type r447OutputProcess struct {
+	outputCh chan []byte
+	waitCh   chan ProcessExit
+	close    sync.Once
+}
+
+func (process *r447OutputProcess) Input([]byte) error {
+	return nil
+}
+
+func (process *r447OutputProcess) Resize(Size) error {
+	return nil
+}
+
+func (process *r447OutputProcess) Output() <-chan []byte {
+	return process.outputCh
+}
+
+func (process *r447OutputProcess) Kill() error {
+	return process.Close()
+}
+
+func (process *r447OutputProcess) Wait() <-chan ProcessExit {
+	return process.waitCh
+}
+
+func (process *r447OutputProcess) Close() error {
+	process.close.Do(func() {
+		close(process.outputCh)
+		process.waitCh <- ProcessExit{Code: -1, Err: io.ErrClosedPipe}
+		close(process.waitCh)
+	})
+	return nil
+}
+
+func sendOutputForTest(process *r447OutputProcess, text string) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		process.outputCh <- []byte(text)
+		close(done)
+	}()
+	return done
+}
+
+func sendAndWaitForOutputConsumedForTest(t *testing.T, process *r447OutputProcess, text string) {
+	t.Helper()
+	done := sendOutputForTest(process, text)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatalf("timed out waiting for process output %q to be consumed", text)
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/lozzow/termx/termx-shared/perftrace"
@@ -99,8 +100,34 @@ func (queue *terminalLiveIngestQueue) Enqueue(text string) bool {
 	if text == "" {
 		return true
 	}
+	for len(text) > 0 {
+		head := text
+		tail := ""
+		if queue.backpressure.Mode == HistoryBackpressureBounded && queue.backpressure.BufferBytes > 0 && int64(len(text)) > queue.backpressure.BufferBytes {
+			head, tail = splitLiveIngestPayload(text, int(queue.backpressure.BufferBytes))
+		}
+		if !queue.enqueueOne(head) {
+			return false
+		}
+		text = tail
+	}
+	return true
+}
+
+func (queue *terminalLiveIngestQueue) enqueueOne(text string) bool {
 	queue.mu.Lock()
 	defer queue.mu.Unlock()
+	startedWaiting := time.Time{}
+	for queue.shouldWaitForBackpressureLocked(len(text)) && !queue.closed {
+		if startedWaiting.IsZero() {
+			startedWaiting = time.Now()
+			queue.backpressureEvents++
+		}
+		queue.cond.Wait()
+	}
+	if !startedWaiting.IsZero() {
+		queue.backpressureWaitNanos += time.Since(startedWaiting).Nanoseconds()
+	}
 	if queue.closed {
 		return false
 	}
@@ -108,6 +135,17 @@ func (queue *terminalLiveIngestQueue) Enqueue(text string) bool {
 	queue.pushPendingLocked(terminalLiveIngestItem{text: text, seq: queue.enqueuedSeq})
 	queue.cond.Signal()
 	return true
+}
+
+func (queue *terminalLiveIngestQueue) shouldWaitForBackpressureLocked(nextBytes int) bool {
+	if queue.backpressure.Mode != HistoryBackpressureBounded || nextBytes <= 0 {
+		return false
+	}
+	limit := queue.backpressure.BufferBytes
+	if limit <= 0 {
+		return false
+	}
+	return queue.pendingBytes+int64(nextBytes) > limit
 }
 
 // Status 返回队列调度诊断快照。pending bytes 只表示尚未交给对应 owner
@@ -214,6 +252,7 @@ func (queue *terminalLiveIngestQueue) nextBatchWithSeq() ([]string, uint64, bool
 			head, tail := splitLiveIngestPayload(item.text, queue.batchMaxBytes)
 			item.text = tail
 			queue.pendingBytes -= int64(len(head))
+			queue.cond.Broadcast()
 			return []string{head}, 0, true
 		}
 		if count > 0 && bytes+nextBytes > queue.batchMaxBytes {
@@ -232,6 +271,7 @@ func (queue *terminalLiveIngestQueue) nextBatchWithSeq() ([]string, uint64, bool
 	if queue.pendingLenLocked() > 0 {
 		queue.cond.Signal()
 	}
+	queue.cond.Broadcast()
 	return batch, completeSeq, true
 }
 
