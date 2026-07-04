@@ -612,10 +612,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			// matching case 0/1 behavior and real terminals (xterm, kitty).
 			scrollOut = e.scr.ClearWithScrollback(e.scr.blankCell())
 		case 3: // erase display (including scrollback in some terminals)
-			// For ED 3, we clear the screen but also clear scrollback
-			// This matches xterm behavior where ESC[3J clears scrollback.
-			// Use blankCell() to preserve the current pen BG color.
-			e.scr.FillArea(e.scr.blankCell(), e.scr.Bounds())
+			// ED3 是 clear-scrollback 边界，不是当前 viewport 的 truth owner。
+			// 当前屏若要清空必须由同一 PTY 流中的 ED2/ED0 等明确完成。
 			if sb := e.scr.Scrollback(); sb != nil {
 				sb.Clear()
 			}

@@ -81,8 +81,9 @@ func ScreenSnapshotFromVTerm(vt *vterm.VTerm) ScreenSnapshot {
 
 // frozenView 是 Freeze 时刻的投影边界。冷段是 append-only 文件的不可变
 // 记录区间，只需记录 coldBase/coldCount（绝对域）；热段（当时的 mutable
-// 屏幕行）必须 materialize，因为后续 repaint 会改写屏幕。文件记录不可变
-// 且读取按绝对序号，所以 token 视图在后续 ED3 clear 之后仍然有效。
+// 屏幕行）必须 materialize，因为后续 repaint 会改写屏幕。ED3 只写软页
+// 边界、不隐藏旧冷段，所以 token 与 live 视图都按同一份 logical-line truth
+// 投影。
 type frozenView struct {
 	coldBase   int
 	coldCount  int
@@ -154,17 +155,17 @@ func (store *Store) Bind(screen func() ScreenSnapshot, gate sync.Locker) {
 // ApplyTransaction 消费一次 tap 事务的 EvictedRows 与 ClearScrollback 边界。
 // 调用方必须持有 gate（Terminal 在 tapOpMu 临界区内、ApplyPTYWrite 之后
 // 调用）；本方法不能再锁 gate，否则自死锁。
-// 顺序：先落盘本事务滚出的行，再处理 clear——`clear` 命令是 ED2（把整屏
-// 挤进 scrollback）+ ED3（清 scrollback）在同一次写入里，先滚出后清空
-// 才与真实终端一致。ED3 只前移可见分段，不删除已落盘记录（frozen token
-// 仍按绝对序号读取）。RIS 刻意不清历史（与 xterm 默认一致）。
+// 顺序：先落盘本事务滚出的行，再处理 clear-scrollback 软页边界——`clear`
+// 命令常见形态是 ED2（把整屏挤进 scrollback）+ ED3（清 terminal
+// scrollback），先消费 EvictedRows 才能保住 clear 前内容。ED3 不删除也
+// 不隐藏 authoritative history；RIS 刻意不清历史（与 xterm 默认一致）。
 func (store *Store) ApplyTransaction(tx vterm.TerminalSemanticTransaction) error {
 	if store == nil {
 		return nil
 	}
 	err := store.engine.ApplyEvictedRows(tx.EvictedRows)
 	if err == nil && tx.ClearScrollback {
-		err = store.engine.ClearHistory()
+		err = store.engine.ApplyClearScrollbackBoundary()
 	}
 	store.mu.Lock()
 	store.generation++

@@ -22,17 +22,16 @@ const (
 	// lineFileRecordKindLine 是 logical line 正文记录。
 	lineFileRecordKindLine uint8 = 1
 	// lineFileRecordKindBoundary 是 ED3/ClearScrollback 历史分段标记：
-	// 它之前的正文记录不再进入可见投影，但文件保持 append-only，
-	// 旧 frozen token 仍可按绝对序号读到分段前的记录。
+	// 它只表达软页边界，不裁剪 authoritative logical-line 历史。
 	lineFileRecordKindBoundary uint8 = 2
 
 	lineFileFlagHardEnd uint8 = 1 << 0
 )
 
 // LineFile 是单 terminal 的 logical line append-only 二进制文件。
-// 内存只保留 offset 索引（[]int64）与最近一次 clear 分段位置，恢复时只扫
-// record header 不 materialize 正文，保证真正无限；分页读按 line 绝对序号
-// Lines(start,end) 随机访问。
+// 内存只保留 offset 索引（[]int64），恢复时只扫 record header 不
+// materialize 正文，保证真正无限；分页读按 line 绝对序号 Lines(start,end)
+// 随机访问。ED3/ClearScrollback boundary 不删除也不隐藏正文记录。
 type LineFile struct {
 	path    string
 	file    *os.File
@@ -115,9 +114,9 @@ func (f *LineFile) AppendLines(lines []Line) error {
 	return f.writer.Flush()
 }
 
-// AppendBoundary 追加一条 ED3/ClearScrollback 分段记录并 flush。分段之前
-// 的正文记录退出可见投影（Base 前移），但不删除：文件保持 append-only，
-// 旧 frozen token 仍按绝对序号读取。
+// AppendBoundary 追加一条 ED3/ClearScrollback 软页边界记录并 flush。
+// 边界只让上层 generation/cursor 失效，不改变 Lines 可见范围；历史
+// 真值仍是全部已落盘 logical lines。
 func (f *LineFile) AppendBoundary() error {
 	if f == nil {
 		return nil
@@ -144,7 +143,6 @@ func (f *LineFile) AppendBoundary() error {
 	if err := f.writer.Flush(); err != nil {
 		return err
 	}
-	f.base = len(f.offsets)
 	return nil
 }
 
@@ -156,7 +154,9 @@ func (f *LineFile) LineCount() int {
 	return len(f.offsets)
 }
 
-// Base 返回最近一次 clear 分段后第一条可见记录的绝对序号；无分段时为 0。
+// Base 返回当前可见冷历史的起点。R439 后 ClearScrollback 不隐藏历史，
+// 所以 production linehist 始终从 0 开始；该方法仅保留给视图代码统一
+// 使用绝对域计算。
 func (f *LineFile) Base() int {
 	if f == nil {
 		return 0
@@ -250,7 +250,6 @@ func (f *LineFile) recover() error {
 		case lineFileRecordKindLine:
 			f.offsets = append(f.offsets, offset)
 		case lineFileRecordKindBoundary:
-			f.base = len(f.offsets)
 		default:
 			return errors.New("unsupported logical line record kind")
 		}

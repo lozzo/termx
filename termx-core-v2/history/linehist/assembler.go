@@ -77,8 +77,8 @@ func (a *Assembler) SealOpen() (Line, bool) {
 	return line, true
 }
 
-// DiscardOpen 丢弃未闭合尾部（用于 ED3/ClearScrollback：这段头部概念上
-// 在被清掉的 scrollback 里；仍在屏上的续行由 emulator 当前屏继续投影）。
+// DiscardOpen 丢弃未闭合尾部。它只适用于显式 reset/放弃 frontier 的
+// 语义；ED3/ClearScrollback 不是删除 authoritative history，不能走这里。
 func (a *Assembler) DiscardOpen() {
 	if a == nil {
 		return

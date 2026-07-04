@@ -11,7 +11,7 @@ import (
 
 // R434 准入（terminal 级）：linehist 在真实 Terminal 链路上的边界语义。
 // resize 经 Server.ResizeTerminal（tap Resize 事务的 EvictedRows）；
-// ED3 经 IngestOutput（tx.ClearScrollback 分段）；alt 期间 primary
+// ED3 经 IngestOutput（tx.ClearScrollback 软页边界）；alt 期间 primary
 // 时间线尾部保持可见（PrimarySavedScreenRows 投影）。
 
 func TestR434LinehistResizeKeepsHistoryExact(t *testing.T) {
@@ -54,7 +54,7 @@ func TestR434LinehistResizeKeepsHistoryExact(t *testing.T) {
 	}
 }
 
-func TestR434LinehistClearScrollbackHidesHistoryButKeepsToken(t *testing.T) {
+func TestR439LinehistClearScrollbackKeepsHistoryAndToken(t *testing.T) {
 	server := newR433LinehistServer(t)
 	r433RegisterTerminal(t, server, "term-r434-clear", 12, 3)
 	for i := 1; i <= 6; i++ {
@@ -77,8 +77,12 @@ func TestR434LinehistClearScrollbackHidesHistoryButKeepsToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("live window after clear: %v", err)
 	}
-	if joined := strings.Join(historyRowTexts(live.Rows), "|"); strings.Contains(joined, "line") {
-		t.Fatalf("clear must wipe live projection, got %q", joined)
+	liveJoined := strings.Join(historyRowTexts(live.Rows), "|")
+	for i := 1; i <= 6; i++ {
+		want := fmt.Sprintf("line%02d", i)
+		if strings.Count(liveJoined, want) != 1 {
+			t.Fatalf("clear must keep live authoritative history %q exactly once, got %q", want, liveJoined)
+		}
 	}
 	frozen, err := server.TerminalHistoryWindow(context.Background(), "term-r434-clear", history.HistoryWindowRequest{
 		Mode:  history.HistoryWindowModeLatest,
@@ -101,13 +105,10 @@ func TestR434LinehistClearScrollbackHidesHistoryButKeepsToken(t *testing.T) {
 	}
 	rows, _ := r326CollectAllHistoryRows(t, server, "term-r434-clear", 12, 5)
 	joined := strings.Join(historyRowTexts(rows), "|")
-	if strings.Contains(joined, "line01") {
-		t.Fatalf("cleared history must stay hidden, got %q", joined)
-	}
-	for i := 7; i <= 9; i++ {
+	for i := 1; i <= 9; i++ {
 		want := fmt.Sprintf("line%02d", i)
 		if strings.Count(joined, want) != 1 {
-			t.Fatalf("post-clear history must contain %q exactly once, got %q", want, joined)
+			t.Fatalf("history across clear must contain %q exactly once, got %q", want, joined)
 		}
 	}
 }

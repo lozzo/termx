@@ -298,6 +298,13 @@ func TestR328SemanticSourceDistinguishesEraseDisplayFromClearScrollback(t *testi
 	if !ed3Tx.ClearScrollback {
 		t.Fatalf("ED3 must expose explicit clear-scrollback boundary to core history: %#v", ed3Tx)
 	}
+	if len(ed3Tx.EvictedRows) != 0 {
+		t.Fatalf("ED3 alone must not fabricate primary eviction proof, got %#v", ed3Tx.EvictedRows)
+	}
+	screenJoined := strings.Join(trimmedScreenRowsText(ed3.VTerm().ScreenContent().Cells), "|")
+	if !strings.Contains(screenJoined, "old1") || !strings.Contains(screenJoined, "old2new") {
+		t.Fatalf("ED3 must keep current viewport content, got %q", screenJoined)
+	}
 }
 
 func TestSemanticSourceResizeEmitsTransaction(t *testing.T) {

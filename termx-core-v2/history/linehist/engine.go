@@ -48,9 +48,9 @@ func (e *Engine) LineCount() int {
 	return e.file.LineCount()
 }
 
-// VisibleLineRange 返回最近一次 clear 分段之后的可见记录区间：
-// base 是分段后第一条记录的绝对序号，count 是可见记录数。
-// 投影用可见域算窗口；文件读仍走绝对序号（frozen token 因此跨 clear 有效）。
+// VisibleLineRange 返回当前可见冷段记录区间。R439 后 ED3/ClearScrollback
+// 只是不删除历史的软页边界，所以 live history/copy 继续覆盖全部已落盘
+// logical lines；base 保留为绝对域起点，当前始终为 0。
 func (e *Engine) VisibleLineRange() (int, int) {
 	if e == nil {
 		return 0, 0
@@ -61,16 +61,21 @@ func (e *Engine) VisibleLineRange() (int, int) {
 	return base, e.file.LineCount() - base
 }
 
-// ClearHistory 处理 ED3/ClearScrollback：丢弃未闭合尾部（它的头部概念上
-// 在被清掉的 scrollback 里），写一条 boundary 分段记录。已落盘记录不删除，
-// 仍可按绝对序号读取（frozen token）。
-func (e *Engine) ClearHistory() error {
+// ApplyClearScrollbackBoundary 处理 ED3/ClearScrollback 软页边界。
+// authoritative history 不因终端 clear-scrollback 被删除或隐藏；这里仅把
+// assembler 的未闭合尾部封成一条 logical line，避免 clear 前后页面被继续
+// 拼接，然后写入 append-only boundary 记录供 generation/cursor 失效使用。
+func (e *Engine) ApplyClearScrollbackBoundary() error {
 	if e == nil {
 		return nil
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.asm.DiscardOpen()
+	if line, ok := e.asm.SealOpen(); ok {
+		if err := e.file.AppendLines([]Line{line}); err != nil {
+			return err
+		}
+	}
 	return e.file.AppendBoundary()
 }
 

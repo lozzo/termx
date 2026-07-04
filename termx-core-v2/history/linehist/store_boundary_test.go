@@ -70,7 +70,7 @@ func collectAllTextsForTest(t *testing.T, store *Store, cols int, limit int) []s
 	return texts
 }
 
-func TestStoreClearScrollbackHidesColdAndRestartsLineIDs(t *testing.T) {
+func TestStoreClearScrollbackKeepsColdHistoryAndLineIDs(t *testing.T) {
 	harness := newStoreHarness(t, 12, 2)
 	for i := 1; i <= 4; i++ {
 		harness.write(fmt.Sprintf("line%02d\r\n", i))
@@ -80,57 +80,50 @@ func TestStoreClearScrollbackHidesColdAndRestartsLineIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest window: %v", err)
 	}
-	// 本 emulator 的 ED3 同时清屏（handlers.go 'J' case 3）：可见投影全空。
-	texts := windowTextsForTest(window)
-	if strings.Contains(strings.Join(texts, "|"), "line") {
-		t.Fatalf("ED3 must hide all evicted history, got %v", texts)
+	joined := strings.Join(windowTextsForTest(window), "|")
+	for i := 1; i <= 4; i++ {
+		want := fmt.Sprintf("line%02d", i)
+		if strings.Count(joined, want) != 1 {
+			t.Fatalf("ED3 soft boundary must keep %q exactly once, got %q", want, joined)
+		}
 	}
-	// clear 之后新的滚出照常进入可见历史，LineID 从 1 重新计数。
+	if len(window.Rows) == 0 || window.Rows[0].LineID != 1 {
+		t.Fatalf("ED3 must not restart visible LineID space, got %#v", window.Rows)
+	}
+	// clear 之后新的滚出照常进入同一份可翻页历史。
 	for i := 5; i <= 7; i++ {
 		harness.write(fmt.Sprintf("line%02d\r\n", i))
 	}
-	after, err := harness.store.LatestWindow(history.HistoryWindowRequest{Cols: 12, Limit: 100})
-	if err != nil {
-		t.Fatalf("latest window after clear: %v", err)
-	}
-	if len(after.Rows) == 0 || after.Rows[0].LineID != 1 {
-		t.Fatalf("visible LineID must restart at 1 after clear, got %#v", after.Rows)
-	}
 	afterJoined := strings.Join(collectAllTextsForTest(t, harness.store, 12, 100), "|")
-	for _, cleared := range []string{"line01", "line02", "line03", "line04"} {
-		if strings.Contains(afterJoined, cleared) {
-			t.Fatalf("cleared history must stay hidden after new writes, got %q", afterJoined)
-		}
-	}
-	for _, want := range []string{"line05", "line06", "line07"} {
+	for i := 1; i <= 7; i++ {
+		want := fmt.Sprintf("line%02d", i)
 		if strings.Count(afterJoined, want) != 1 {
-			t.Fatalf("post-clear history must contain %q exactly once, got %q", want, afterJoined)
+			t.Fatalf("history across ED3 must contain %q exactly once, got %q", want, afterJoined)
 		}
 	}
 }
 
-func TestStoreClearThenEd2ComboWipesEverything(t *testing.T) {
+func TestStoreClearThenEd2ComboKeepsEverything(t *testing.T) {
 	harness := newStoreHarness(t, 12, 2)
 	for i := 1; i <= 4; i++ {
 		harness.write(fmt.Sprintf("line%02d\r\n", i))
 	}
 	// `clear` 的完整形态：ED2 把屏幕内容挤走 + ED3 清 scrollback，一次写入。
 	harness.write("\x1b[2J\x1b[3J\x1b[H")
-	window, err := harness.store.LatestWindow(history.HistoryWindowRequest{Cols: 12, Limit: 100})
-	if err != nil {
-		t.Fatalf("latest window: %v", err)
-	}
-	texts := windowTextsForTest(window)
-	if strings.Contains(strings.Join(texts, "|"), "line") {
-		t.Fatalf("ED2+ED3 must wipe the whole projection, got %v", texts)
+	joined := strings.Join(collectAllTextsForTest(t, harness.store, 12, 100), "|")
+	for i := 1; i <= 4; i++ {
+		want := fmt.Sprintf("line%02d", i)
+		if strings.Count(joined, want) != 1 {
+			t.Fatalf("ED2+ED3 clear must keep %q exactly once, got %q", want, joined)
+		}
 	}
 	state := harness.store.ReadState()
-	if state.HasTimeline {
-		t.Fatalf("visible timeline must be empty after full clear, got %#v", state)
+	if !state.HasTimeline {
+		t.Fatalf("visible timeline must remain available after full clear, got %#v", state)
 	}
 }
 
-func TestStoreClearScrollbackBoundaryPersistsAcrossReopen(t *testing.T) {
+func TestStoreClearScrollbackBoundaryKeepsHistoryAcrossReopen(t *testing.T) {
 	dir := t.TempDir()
 	harness := newStoreHarnessInDir(t, dir, "term-reopen", 12, 2)
 	for i := 1; i <= 4; i++ {
@@ -147,21 +140,16 @@ func TestStoreClearScrollbackBoundaryPersistsAcrossReopen(t *testing.T) {
 	t.Cleanup(func() { _ = reopened.store.Close() })
 	texts := collectAllTextsForTest(t, reopened.store, 12, 100)
 	joined := strings.Join(texts, "|")
-	// line01..line03 在 clear 前滚出（被分段隐藏）；line04 在 clear 时还在
-	// 屏上、被 ED3 连屏一起清掉，两类都不该出现。
-	for _, cleared := range []string{"line01", "line02", "line03", "line04"} {
-		if strings.Contains(joined, cleared) {
-			t.Fatalf("clear boundary must persist across reopen, still got %q in %v", cleared, texts)
-		}
-	}
-	for _, want := range []string{"line05"} {
+	// reopen 后只能恢复已 seal 的冷段；仍在关闭前 live 屏上的尾行不强行
+	// 从 snapshot 反推，但 clear 前已落盘的 history 必须继续可见。
+	for _, want := range []string{"line01", "line02", "line03", "line04", "line05"} {
 		if strings.Count(joined, want) != 1 {
-			t.Fatalf("post-clear history must survive reopen with %q exactly once, got %v", want, texts)
+			t.Fatalf("history across clear boundary must survive reopen with %q exactly once, got %v", want, texts)
 		}
 	}
 }
 
-func TestStoreFrozenTokenStillServesPreClearContent(t *testing.T) {
+func TestStoreFrozenTokenAndLiveViewServePreClearContent(t *testing.T) {
 	harness := newStoreHarness(t, 12, 2)
 	for i := 1; i <= 4; i++ {
 		harness.write(fmt.Sprintf("line%02d\r\n", i))
@@ -197,8 +185,11 @@ func TestStoreFrozenTokenStillServesPreClearContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("live window after clear: %v", err)
 	}
-	if strings.Contains(strings.Join(windowTextsForTest(live), "|"), "line01") {
-		t.Fatalf("live view must hide cleared history, got %v", windowTextsForTest(live))
+	liveJoined := strings.Join(windowTextsForTest(live), "|")
+	for _, want := range []string{"line01", "line02", "line03", "line04"} {
+		if !strings.Contains(liveJoined, want) {
+			t.Fatalf("live view must keep pre-clear content %q, got %v", want, windowTextsForTest(live))
+		}
 	}
 }
 
