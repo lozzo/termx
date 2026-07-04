@@ -176,6 +176,42 @@ func TestEvictedRowsWorkWithScrollbackRingDisabled(t *testing.T) {
 	}
 }
 
+func TestEvictedRowsCoverED2ClearScreen(t *testing.T) {
+	// ED2 的滚出行不走 recordScrollbackLine，而是随 ControlDamage("ed").ScrollOut
+	// 携带；它们同样真正离开可见区（xterm `clear` 把整屏推进 scrollback），
+	// 必须并入 EvictedRows，否则 clear 前的屏幕内容从历史中消失。
+	source := NewSemanticSource(12, 3, 0, nil)
+	if _, err := source.ApplyPTYWrite([]byte("aaa\r\nbbb\r\n")); err != nil {
+		t.Fatalf("apply prelude write: %v", err)
+	}
+	tx, err := source.ApplyPTYWrite([]byte("\x1b[2J\x1b[H"))
+	if err != nil {
+		t.Fatalf("apply ED2 write: %v", err)
+	}
+	got := evictedTextsForTest(tx.EvictedRows)
+	want := []string{"aaa", "bbb"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("ED2 evicted rows = %v, want %v", got, want)
+	}
+}
+
+func TestEvictedRowsED2InsideAltStaysOutOfPrimary(t *testing.T) {
+	source := NewSemanticSource(12, 3, 0, nil)
+	if _, err := source.ApplyPTYWrite([]byte("shell\r\n")); err != nil {
+		t.Fatalf("apply shell write: %v", err)
+	}
+	// alt 内的 ED2 清屏归属 alternate，不得混进主历史 eviction。
+	tx, err := source.ApplyPTYWrite([]byte("\x1b[?1049haltrow\r\n\x1b[2J\x1b[H"))
+	if err != nil {
+		t.Fatalf("apply alt ED2 write: %v", err)
+	}
+	for _, text := range evictedTextsForTest(tx.EvictedRows) {
+		if strings.Contains(text, "altrow") {
+			t.Fatalf("alt ED2 scroll-out must not evict into primary history, got %v", evictedTextsForTest(tx.EvictedRows))
+		}
+	}
+}
+
 func evictedTextsForTest(rows []TerminalSemanticScrollOut) []string {
 	out := make([]string, 0, len(rows))
 	for _, row := range rows {

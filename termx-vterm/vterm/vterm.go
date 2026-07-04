@@ -4110,11 +4110,22 @@ func resizeReflowLineIsBlank(row resizeReflowLine) bool {
 // ScrollbackDamage 归属到 primary eviction 或 alternate scroll。这样同一次写入内
 // "主屏滚出→进 alt" 或 "进 alt→滚动→退 alt" 都不会把 alt 行误入主历史，
 // 也不会丢进 alt 前的主屏 eviction。
+//
+// ED2（ClearWithScrollback）的滚出行不走 recordScrollbackLine，而是随
+// ControlDamage("ed").ScrollOut 携带——它们同样"真正离开可见区且不可再寻址"，
+// 必须按流内顺序并入 eviction，否则 `clear` 前的屏幕内容会从历史中凭空消失。
 func (v *VTerm) evictedAppendOpsFromCharmVTDamages(damages []charmvt.Damage, altAtStart bool, timestamps []time.Time, rowKinds []string) (evicted []DamageOp, alternate []DamageOp) {
 	if len(damages) == 0 {
 		return nil, nil
 	}
 	altActive := altAtStart
+	appendOp := func(op DamageOp) {
+		if altActive {
+			alternate = append(alternate, op)
+		} else {
+			evicted = append(evicted, op)
+		}
+	}
 	for _, raw := range damages {
 		switch d := raw.(type) {
 		case charmvt.ModeDamage:
@@ -4122,11 +4133,10 @@ func (v *VTerm) evictedAppendOpsFromCharmVTDamages(damages []charmvt.Damage, alt
 				altActive = d.Enabled
 			}
 		case charmvt.ScrollbackDamage:
-			op := damageOpFromScrollbackRowAppend(v.scrollbackRowAppendFromCharmVTDamage(d, timestamps, rowKinds))
-			if altActive {
-				alternate = append(alternate, op)
-			} else {
-				evicted = append(evicted, op)
+			appendOp(damageOpFromScrollbackRowAppend(v.scrollbackRowAppendFromCharmVTDamage(d, timestamps, rowKinds)))
+		case charmvt.ControlDamage:
+			for _, scrollOut := range d.ScrollOut {
+				appendOp(damageOpFromScrollbackRowAppend(v.scrollbackRowAppendFromCharmVTDamage(scrollOut, timestamps, rowKinds)))
 			}
 		}
 	}
