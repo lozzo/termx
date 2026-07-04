@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
@@ -944,8 +945,14 @@ func nextTerminalPoolID(root state.Root) string {
 	if root.Session.TerminalID != "" {
 		used[root.Session.TerminalID] = struct{}{}
 	}
-	for i := len(used) + 1; ; i++ {
-		id := fmt.Sprintf("term-pool-%d", i)
+	// 中文说明：terminal id 也是 linehist 文件名的一部分。新建 terminal 不能
+	// 只按当前 pool 数量复用 term-pool-1/2，否则 daemon 重启后会撞上旧大历史文件。
+	base := fmt.Sprintf("term-pool-%d", time.Now().UTC().UnixNano())
+	for i := 0; ; i++ {
+		id := base
+		if i > 0 {
+			id = fmt.Sprintf("%s-%d", base, i)
+		}
 		if _, ok := used[id]; !ok {
 			return id
 		}
