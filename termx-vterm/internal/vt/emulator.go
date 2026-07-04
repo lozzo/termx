@@ -387,6 +387,24 @@ func (e *Emulator) WriteWithSemanticDamage(p []byte) (n int, err error, damages 
 	return n, err, recorder.snapshot()
 }
 
+// WriteForLineHistoryDamage 写入 PTY 输出，并只记录 linehist 需要的 eviction
+// 与边界 proof。它不记录普通 text/control payload，避免 history ingest 热路径
+// 在 100K/1M stdout 下生成第二份 ordered op backlog。
+func (e *Emulator) WriteForLineHistoryDamage(p []byte) (n int, err error, damages []Damage) {
+	if e.closed {
+		return 0, io.ErrClosedPipe, nil
+	}
+	recorder := &screenDamageRecorder{lineHistoryOnly: true}
+	e.scrs[0].damage = recorder
+	e.scrs[1].damage = recorder
+	defer func() {
+		e.scrs[0].damage = nil
+		e.scrs[1].damage = nil
+	}()
+	n, err = e.Write(p)
+	return n, err, recorder.snapshot()
+}
+
 // WriteString writes a string to the terminal output buffer.
 func (e *Emulator) WriteString(s string) (n int, err error) {
 	return e.Write([]byte(s))

@@ -9,14 +9,15 @@ import (
 )
 
 type screenDamageRecorder struct {
-	scrollbackOnly bool
-	semanticOnly   bool
-	damages        []Damage
-	spanCells      []uv.Cell
-	textCells      []uv.Cell
-	tailSpan       *SpanDamage
-	tailSpanStart  int
-	tailSpanEnd    int
+	scrollbackOnly  bool
+	semanticOnly    bool
+	lineHistoryOnly bool
+	damages         []Damage
+	spanCells       []uv.Cell
+	textCells       []uv.Cell
+	tailSpan        *SpanDamage
+	tailSpanStart   int
+	tailSpanEnd     int
 }
 
 func (r *screenDamageRecorder) record(d Damage) {
@@ -25,6 +26,15 @@ func (r *screenDamageRecorder) record(d Damage) {
 	}
 	if r.scrollbackOnly {
 		if _, ok := d.(ScrollbackDamage); !ok {
+			return
+		}
+	}
+	if r.lineHistoryOnly {
+		switch d.(type) {
+		case ControlDamage, ModeDamage, ScrollbackDamage:
+			// 中文说明：linehist 生产路径只需要 eviction 与边界；
+			// 普通 TextDamage/CR/LF 不应进入高压输出 backlog。
+		default:
 			return
 		}
 	}
@@ -50,11 +60,11 @@ func (r *screenDamageRecorder) record(d Damage) {
 }
 
 func (r *screenDamageRecorder) recordsScreenDiff() bool {
-	return r != nil && !r.scrollbackOnly && !r.semanticOnly
+	return r != nil && !r.scrollbackOnly && !r.semanticOnly && !r.lineHistoryOnly
 }
 
 func (r *screenDamageRecorder) recordControl(kind string, x int, y int, mode int) {
-	if r == nil || r.scrollbackOnly || kind == "" {
+	if r == nil || r.scrollbackOnly || r.lineHistoryOnly || kind == "" {
 		return
 	}
 	r.record(ControlDamage{Kind: kind, X: x, Y: y, Mode: mode})
@@ -68,21 +78,21 @@ func (r *screenDamageRecorder) recordControlWithScrollOut(kind string, x int, y 
 }
 
 func (r *screenDamageRecorder) recordScrollRegion(top int, bottom int) {
-	if r == nil || r.scrollbackOnly {
+	if r == nil || r.scrollbackOnly || r.lineHistoryOnly {
 		return
 	}
 	r.record(ControlDamage{Kind: "decstbm", Mode: top, Bottom: bottom})
 }
 
 func (r *screenDamageRecorder) recordHorizontalScrollRegion(left int, right int) {
-	if r == nil || r.scrollbackOnly {
+	if r == nil || r.scrollbackOnly || r.lineHistoryOnly {
 		return
 	}
 	r.record(ControlDamage{Kind: "decslrm", Mode: left, Bottom: right})
 }
 
 func (r *screenDamageRecorder) recordControlWithCell(kind string, x int, y int, mode int, cell *uv.Cell) {
-	if r == nil || r.scrollbackOnly || kind == "" {
+	if r == nil || r.scrollbackOnly || r.lineHistoryOnly || kind == "" {
 		return
 	}
 	damage := ControlDamage{Kind: kind, X: x, Y: y, Mode: mode}
@@ -94,7 +104,7 @@ func (r *screenDamageRecorder) recordControlWithCell(kind string, x int, y int, 
 }
 
 func (r *screenDamageRecorder) recordControlWithCellAndBottom(kind string, x int, y int, mode int, bottom int, cell *uv.Cell) {
-	if r == nil || r.scrollbackOnly || kind == "" {
+	if r == nil || r.scrollbackOnly || r.lineHistoryOnly || kind == "" {
 		return
 	}
 	damage := ControlDamage{Kind: kind, X: x, Y: y, Mode: mode, Bottom: bottom}
@@ -113,7 +123,7 @@ func (r *screenDamageRecorder) recordMode(mode int, private bool, enabled bool) 
 }
 
 func (r *screenDamageRecorder) recordTextSpan(x, y int, cells []uv.Cell) {
-	if r == nil || r.scrollbackOnly || len(cells) == 0 {
+	if r == nil || r.scrollbackOnly || r.lineHistoryOnly || len(cells) == 0 {
 		return
 	}
 	damage := TextDamage{X: x, Y: y}
@@ -126,6 +136,33 @@ func (r *screenDamageRecorder) recordTextSpan(x, y int, cells []uv.Cell) {
 		damage.Cells = cells
 	}
 	r.record(damage)
+}
+
+func (r *screenDamageRecorder) recordASCIITextRun(x, y int, data []byte, style uv.Style, link uv.Link) {
+	if r == nil || r.scrollbackOnly || r.lineHistoryOnly || len(data) == 0 {
+		return
+	}
+	// 中文说明：semantic-only 是 history 的 ordered text proof；普通 ASCII
+	// 压力输出不能先膨胀成 uv.Cell 切片再压缩，否则 100K/1M 输出会把 RSS 顶高。
+	if !link.IsZero() {
+		cells := make([]uv.Cell, len(data))
+		for i, b := range data {
+			cells[i] = uv.Cell{
+				Content: printableASCIIStrings[b],
+				Width:   1,
+				Style:   style,
+				Link:    link,
+			}
+		}
+		r.recordTextSpan(x, y, cells)
+		return
+	}
+	text := string(data)
+	if style.IsZero() {
+		r.record(TextDamage{X: x, Y: y, ASCII: true, Text: text})
+		return
+	}
+	r.record(TextDamage{X: x, Y: y, Runs: []ScrollbackRun{{Style: style, Text: text}}})
 }
 
 func (r *screenDamageRecorder) recordSpanCell(x, y int, cell uv.Cell) {
@@ -227,7 +264,7 @@ func (r *screenDamageRecorder) recordSpan(span SpanDamage) {
 }
 
 func (r *screenDamageRecorder) recordText(text TextDamage) {
-	if r == nil || r.scrollbackOnly || (len(text.Cells) == 0 && len(text.Runs) == 0 && text.Text == "") {
+	if r == nil || r.scrollbackOnly || r.lineHistoryOnly || (len(text.Cells) == 0 && len(text.Runs) == 0 && text.Text == "") {
 		return
 	}
 	if len(text.Runs) > 0 || text.Text != "" {

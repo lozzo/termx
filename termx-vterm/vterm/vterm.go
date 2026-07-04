@@ -63,6 +63,18 @@ var safeEmulatorWriteWithSemanticDamage = func(emu *charmvt.SafeEmulator, data [
 	return n, err, nil, false
 }
 
+var safeEmulatorWriteForLineHistoryDamage = func(emu *charmvt.SafeEmulator, data []byte) (int, error, []charmvt.Damage, bool) {
+	type lineHistoryDamageWriter interface {
+		WriteForLineHistoryDamage([]byte) (int, error, []charmvt.Damage)
+	}
+	if writer, ok := any(emu).(lineHistoryDamageWriter); ok {
+		n, err, damages := writer.WriteForLineHistoryDamage(data)
+		return n, err, damages, true
+	}
+	n, err := emu.Write(data)
+	return n, err, nil, false
+}
+
 type Cell struct {
 	Content    string
 	Width      int
@@ -766,6 +778,13 @@ func (v *VTerm) WriteWithSemanticDamage(data []byte) (n int, err error, damage W
 	return v.write(data, true, writeDamageSemanticOnly)
 }
 
+// WriteForLineHistory 只返回 linehist 当前需要的 eviction/boundary 语义。
+// domain owner 仍是 vterm emulator；调用方只能消费 EvictedAppend 和 ED3/alt/sync
+// boundary，不能把该结果当作完整 ordered terminal op stream。
+func (v *VTerm) WriteForLineHistory(data []byte) (n int, err error, damage WriteDamage) {
+	return v.write(data, true, writeDamageEvictionOnly)
+}
+
 // WriteForLatestFrame 只维护当前 live screen；调用方不消费增量 damage，
 // 因此这里不能为压力输出构造 scrollback damage 临时对象。
 func (v *VTerm) WriteForLatestFrame(data []byte) (n int, err error, damage WriteDamage) {
@@ -777,6 +796,7 @@ type writeDamageMode int
 const (
 	writeDamageFull writeDamageMode = iota
 	writeDamageSemanticOnly
+	writeDamageEvictionOnly
 )
 
 func (v *VTerm) write(data []byte, collectDamage bool, mode ...writeDamageMode) (n int, err error, damage WriteDamage) {
@@ -825,7 +845,9 @@ func (v *VTerm) write(data []byte, collectDamage bool, mode ...writeDamageMode) 
 		hasDirectDamage bool
 	)
 	if collectDamage {
-		if damageMode == writeDamageSemanticOnly {
+		if damageMode == writeDamageEvictionOnly {
+			n, err, directDamages, hasDirectDamage = safeEmulatorWriteForLineHistoryDamage(v.emu, normalized)
+		} else if damageMode == writeDamageSemanticOnly {
 			n, err, directDamages, hasDirectDamage = safeEmulatorWriteWithSemanticDamage(v.emu, normalized)
 		} else {
 			n, err, directDamages, hasDirectDamage = safeEmulatorWriteWithDamage(v.emu, normalized)
@@ -877,6 +899,22 @@ func (v *VTerm) write(data []byte, collectDamage bool, mode ...writeDamageMode) 
 	v.reconcileRowCachesLocked(beforeScreen, cachePlan)
 	rowCacheFinish(0)
 	if collectDamage {
+		if damageMode == writeDamageEvictionOnly {
+			damage = v.writeDamageHeaderLocked(cachePlan)
+			if hasDirectDamage {
+				evictedOps, altEvictedOps := v.evictedAppendOpsFromCharmVTDamages(directDamages, beforeAltScreen, beforeScreenTimestamps, beforeScreenRowKinds)
+				damage.SemanticOps = v.semanticBoundaryOpsFromCharmVTDamagesLocked(directDamages)
+				damage.EvictedAppend = evictedOps
+				if len(altEvictedOps) > 0 {
+					damage.AlternateAppend = altEvictedOps
+				}
+			}
+			damage.DiffCPUNanos = time.Since(diffStart).Nanoseconds()
+			traceCount("vterm.write.changed_rows", damageChangedRowCount(damage))
+			traceCount("vterm.write.changed_cells", damageChangedCellCount(damage))
+			reconcileFinish(0)
+			return n, err, damage
+		}
 		if hasDirectDamage &&
 			beforeWidth == afterWidth &&
 			beforeHeight == afterHeight &&
@@ -3319,6 +3357,40 @@ func (v *VTerm) semanticControlOpsFromCharmVTDamagesLocked(damages []charmvt.Dam
 				Enabled: d.Enabled,
 			})
 		}
+	}
+	return ops
+}
+
+func (v *VTerm) semanticBoundaryOpsFromCharmVTDamagesLocked(damages []charmvt.Damage) []DamageOp {
+	if len(damages) == 0 {
+		return nil
+	}
+	ops := make([]DamageOp, 0, 4)
+	for _, raw := range damages {
+		switch d := raw.(type) {
+		case charmvt.ModeDamage:
+			ops = append(ops, DamageOp{
+				Code:    ScreenOpModes,
+				Mode:    d.Mode,
+				Private: d.Private,
+				Enabled: d.Enabled,
+			})
+		case charmvt.ControlDamage:
+			// 中文说明：linehist 生产 ingest 不需要每个 CR/LF/Text op；
+			// 但 ED3 是 clear-scrollback 软边界，必须保留下传给 core。
+			if d.Kind == "ed" && d.Mode == 3 {
+				ops = append(ops, DamageOp{
+					Code:    ScreenOpControl,
+					Control: d.Kind,
+					Row:     d.Y,
+					Col:     d.X,
+					Mode:    d.Mode,
+				})
+			}
+		}
+	}
+	if len(ops) == 0 {
+		return nil
 	}
 	return ops
 }

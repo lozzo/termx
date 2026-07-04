@@ -50,25 +50,40 @@ var semanticTapSnapshotBuildHook func()
 // tx -> linehist eviction/boundary ingest。失败条件是 history replay raw PTY、从 live
 // snapshot 反推 history、resize 脱离 history 输入序列或让 history tap 回写 response。
 type SemanticTap struct {
-	mu         sync.Mutex
-	terminalID string
-	source     *vterm.SemanticSource
-	onResponse vterm.ResponseHandler
-	revision   LiveRevision
-	inputSeq   uint64
-	inputs     []SemanticTapInputRecord
+	mu           sync.Mutex
+	terminalID   string
+	source       *vterm.SemanticSource
+	onResponse   vterm.ResponseHandler
+	evictionOnly bool
+	revision     LiveRevision
+	inputSeq     uint64
+	inputs       []SemanticTapInputRecord
 }
 
 // NewSemanticTap 创建 history semantic tap。
 // 无效 size 会回退到 80x24；R396 生产路径必须传 nil onResponse，让 live
 // SurfaceTrack 成为唯一 response 回写 owner。带 onResponse 的用法只留给 tap 自身 harness。
 func NewSemanticTap(terminalID string, size Size, onResponse vterm.ResponseHandler) *SemanticTap {
+	return newSemanticTap(terminalID, size, onResponse, false)
+}
+
+// NewLineHistorySemanticTap 创建生产 linehist ingest 使用的 semantic tap。
+// 它仍用 vterm 作为唯一 terminal semantic owner，但 tap result 只保留
+// EvictedRows/ClearScrollback 等 linehist 真值边界，避免普通输出的 ordered
+// WriteSpan payload 在 core history queue 中形成第二份内存驻留。
+func NewLineHistorySemanticTap(terminalID string, size Size, onResponse vterm.ResponseHandler) *SemanticTap {
+	return newSemanticTap(terminalID, size, onResponse, true)
+}
+
+func newSemanticTap(terminalID string, size Size, onResponse vterm.ResponseHandler, evictionOnly bool) *SemanticTap {
 	cols, rows := semanticTapSize(size)
-	return &SemanticTap{
-		terminalID: terminalID,
-		source:     vterm.NewSemanticSource(cols, rows, 0, onResponse),
-		onResponse: onResponse,
+	tap := &SemanticTap{
+		terminalID:   terminalID,
+		onResponse:   onResponse,
+		evictionOnly: evictionOnly,
 	}
+	tap.source = tap.newSource(cols, rows)
+	return tap
 }
 
 // ApplyPTYWrite 按 tap sequence 消费 PTY bytes。
@@ -184,7 +199,7 @@ func (tap *SemanticTap) ResetForRestartPreservingScreen(size Size) NativeScreenS
 		cursor,
 		vterm.TerminalModes{AutoWrap: true},
 	)
-	tap.source = vterm.NewSemanticSourceFromVTerm(vt)
+	tap.source = tap.newSourceFromVTerm(vt)
 	tap.inputSeq = 0
 	tap.inputs = nil
 	tap.revision++
@@ -245,7 +260,24 @@ func (tap *SemanticTap) ensureSourceLocked() {
 	if tap.source != nil {
 		return
 	}
-	tap.source = vterm.NewSemanticSource(80, 24, 0, tap.onResponse)
+	tap.source = tap.newSource(80, 24)
+}
+
+func (tap *SemanticTap) newSource(cols int, rows int) *vterm.SemanticSource {
+	if tap != nil && tap.evictionOnly {
+		return vterm.NewLineHistorySemanticSource(cols, rows, 0, tap.onResponse)
+	}
+	if tap == nil {
+		return vterm.NewSemanticSource(cols, rows, 0, nil)
+	}
+	return vterm.NewSemanticSource(cols, rows, 0, tap.onResponse)
+}
+
+func (tap *SemanticTap) newSourceFromVTerm(vt *vterm.VTerm) *vterm.SemanticSource {
+	if tap != nil && tap.evictionOnly {
+		return vterm.NewLineHistorySemanticSourceFromVTerm(vt)
+	}
+	return vterm.NewSemanticSourceFromVTerm(vt)
 }
 
 func (tap *SemanticTap) snapshotLocked() NativeScreenSnapshot {

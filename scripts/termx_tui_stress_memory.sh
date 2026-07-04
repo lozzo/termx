@@ -26,6 +26,9 @@ Options:
   --perftrace           capture daemon/TUI aggregated perftrace JSON during the run
   --history-disabled    start daemon with TERMX_HISTORY_DISABLE=1 and skip copy/history checks;
                         use this to isolate live consumer timing
+  --skip-history-queries
+                        keep history enabled but skip history-dump/copy checks after stress;
+                        use this to measure long-output ingest RSS without diagnostic query cost
   --history-backpressure-mode MODE
                         set TERMX_HISTORY_BACKPRESSURE_MODE for daemon; low-latency or bounded
   --history-backpressure-buffer-mb N
@@ -864,6 +867,7 @@ BASELINE_TIME=1
 PROFILE_MODE="final"
 PERFTRACE=0
 HISTORY_DISABLED=0
+SKIP_HISTORY_QUERIES=0
 HISTORY_BACKPRESSURE_MODE=""
 HISTORY_BACKPRESSURE_BUFFER_MB=""
 
@@ -915,6 +919,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --history-disabled)
       HISTORY_DISABLED=1
+      shift
+      ;;
+    --skip-history-queries)
+      SKIP_HISTORY_QUERIES=1
       shift
       ;;
     --history-backpressure-mode)
@@ -1303,6 +1311,28 @@ if [[ "$HISTORY_DISABLED" == "1" ]]; then
       column -t -s $'\t' "$ROOT/history-files.tsv"
     else
       cat "$ROOT/history-files.tsv"
+    fi
+  fi
+  log "artifacts kept at: $ROOT"
+  exit 0
+fi
+
+if [[ "$SKIP_HISTORY_QUERIES" == "1" ]]; then
+  log "history enabled; skipping history-dump/copy query checks"
+  if [[ -s "$ROOT/history-files.tsv" ]]; then
+    log "history file sizes"
+    if command -v column >/dev/null 2>&1; then
+      column -t -s $'\t' "$ROOT/history-files.tsv"
+    else
+      cat "$ROOT/history-files.tsv"
+    fi
+  fi
+  if [[ -s "$HISTORY_BACKPRESSURE_REPORT" ]]; then
+    log "history backpressure"
+    if command -v column >/dev/null 2>&1; then
+      column -t -s $'\t' "$HISTORY_BACKPRESSURE_REPORT"
+    else
+      cat "$HISTORY_BACKPRESSURE_REPORT"
     fi
   fi
   log "artifacts kept at: $ROOT"

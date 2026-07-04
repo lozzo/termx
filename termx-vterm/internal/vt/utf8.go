@@ -103,16 +103,20 @@ func (e *Emulator) handleASCIIPrintRun(data []byte) {
 		count := min(len(data), available)
 		e.scr.SetASCIICells(x, y, data[:count], style, link)
 		if e.scr.damage != nil && !e.scr.damage.scrollbackOnly {
-			cells := make([]uv.Cell, count)
-			for i, b := range data[:count] {
-				cells[i] = uv.Cell{
-					Content: printableASCIIStrings[b],
-					Width:   1,
-					Style:   style,
-					Link:    link,
+			if e.scr.damage.semanticOnly {
+				e.scr.damage.recordASCIITextRun(x, y, data[:count], style, link)
+			} else if !e.scr.damage.lineHistoryOnly {
+				cells := make([]uv.Cell, count)
+				for i, b := range data[:count] {
+					cells[i] = uv.Cell{
+						Content: printableASCIIStrings[b],
+						Width:   1,
+						Style:   style,
+						Link:    link,
+					}
 				}
+				e.scr.damage.recordTextSpan(x, y, cells)
 			}
-			e.scr.damage.recordTextSpan(x, y, cells)
 		}
 		e.lastChar = rune(data[count-1])
 		data = data[count:]

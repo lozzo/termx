@@ -88,12 +88,21 @@ type TerminalSemanticTransaction struct {
 }
 
 type SemanticSource struct {
-	vt  *VTerm
-	seq uint64
+	vt           *VTerm
+	seq          uint64
+	evictionOnly bool
 }
 
 func NewSemanticSource(cols int, rows int, scrollbackSize int, onResponse ResponseHandler) *SemanticSource {
 	return &SemanticSource{vt: New(cols, rows, scrollbackSize, onResponse)}
+}
+
+// NewLineHistorySemanticSource 创建 linehist 生产路径使用的语义源。
+// 它仍由同一个 vterm emulator 解释 PTY bytes，但 transaction 只携带
+// EvictedRows/ClearScrollback 等 linehist 真值边界，避免普通大输出把 ordered
+// text ops payload 重复放进 history backlog。
+func NewLineHistorySemanticSource(cols int, rows int, scrollbackSize int, onResponse ResponseHandler) *SemanticSource {
+	return &SemanticSource{vt: New(cols, rows, scrollbackSize, onResponse), evictionOnly: true}
 }
 
 func NewSemanticSourceFromVTerm(vt *VTerm) *SemanticSource {
@@ -101,6 +110,15 @@ func NewSemanticSourceFromVTerm(vt *VTerm) *SemanticSource {
 		vt = New(80, 24, 0, nil)
 	}
 	return &SemanticSource{vt: vt}
+}
+
+// NewLineHistorySemanticSourceFromVTerm 以现有 vterm state 继续 linehist 生产
+// ingest。用于 terminal restart 后保留当前屏幕，但丢弃旧进程 parser state。
+func NewLineHistorySemanticSourceFromVTerm(vt *VTerm) *SemanticSource {
+	if vt == nil {
+		vt = New(80, 24, 0, nil)
+	}
+	return &SemanticSource{vt: vt, evictionOnly: true}
 }
 
 func (source *SemanticSource) VTerm() *VTerm {
@@ -115,7 +133,13 @@ func (source *SemanticSource) ApplyPTYWrite(raw []byte) (TerminalSemanticTransac
 		return TerminalSemanticTransaction{}, nil
 	}
 	source.ensureVTerm()
-	_, err, damage := source.vt.WriteWithSemanticDamage(raw)
+	var damage WriteDamage
+	var err error
+	if source.evictionOnly {
+		_, err, damage = source.vt.WriteForLineHistory(raw)
+	} else {
+		_, err, damage = source.vt.WriteWithSemanticDamage(raw)
+	}
 	source.seq++
 	return source.transactionFromDamage(source.seq, string(raw), damage), err
 }

@@ -575,7 +575,7 @@ func (s *Screen) DeleteLine(n int) bool {
 	if y == scroll.Min.Y && scroll.Min.X == 0 && scroll.Max.X == s.buf.Width() {
 		// Save lines that will be deleted
 		linesToSave := min(n, scroll.Max.Y-y)
-		if s.damage != nil && s.damage.scrollbackOnly {
+		if s.damage != nil && (s.damage.scrollbackOnly || s.damage.lineHistoryOnly) {
 			for i := range min(linesToSave, s.buf.Height()-y) {
 				if line := s.buf.Line(y + i); line != nil {
 					s.recordScrollbackLine(y+i, line[:min(len(line), s.LineUsed(y+i))], boolAt(s.wrapped, y+i))

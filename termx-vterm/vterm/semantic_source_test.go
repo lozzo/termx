@@ -62,6 +62,72 @@ func TestR390SemanticSourceTransfersDamageOpsWithoutCrossWriteAlias(t *testing.T
 	}
 }
 
+func TestR450SemanticSourceFastASCIISGRKeepsEvictionsAndRuns(t *testing.T) {
+	source := NewSemanticSource(16, 3, 0, nil)
+	var raw strings.Builder
+	for i := 1; i <= 8; i++ {
+		raw.WriteString("row")
+		raw.WriteString(strconv.Itoa(i))
+		raw.WriteString(" \x1b[31mred\x1b[0m\r\n")
+	}
+
+	tx, err := source.ApplyPTYWrite([]byte(raw.String()))
+	if err != nil {
+		t.Fatalf("apply fast ascii/sgr write: %v", err)
+	}
+	if len(tx.PrimaryScrollOut) != 0 {
+		t.Fatalf("ordinary fast path write must keep PrimaryScrollOut gated: %#v", tx.PrimaryScrollOut)
+	}
+	got := evictedTextsForTest(tx.EvictedRows)
+	if len(got) < 6 || got[0] != "row1 red" {
+		t.Fatalf("fast ascii/sgr path must keep eviction proof, got %v", got)
+	}
+	seenStyledRun := false
+	for _, op := range tx.Ops {
+		if op.Code != ScreenOpWriteSpan || len(op.Runs) == 0 {
+			continue
+		}
+		for _, run := range op.Runs {
+			if run.Text == "red" && run.Style.FG != "" {
+				seenStyledRun = true
+			}
+		}
+	}
+	if !seenStyledRun {
+		t.Fatalf("fast ascii/sgr path must keep styled text runs, ops=%#v", tx.Ops)
+	}
+}
+
+func TestR450LineHistorySemanticSourceDropsOrdinaryTextOps(t *testing.T) {
+	source := NewLineHistorySemanticSource(16, 3, 0, nil)
+	var raw strings.Builder
+	for i := 1; i <= 8; i++ {
+		raw.WriteString("row")
+		raw.WriteString(strconv.Itoa(i))
+		raw.WriteString(" \x1b[31mred\x1b[0m\r\n")
+	}
+
+	tx, err := source.ApplyPTYWrite([]byte(raw.String()))
+	if err != nil {
+		t.Fatalf("apply linehist fast ascii/sgr write: %v", err)
+	}
+	if len(tx.Ops) != 0 {
+		t.Fatalf("linehist production source must not retain ordinary ordered text ops, got %#v", tx.Ops)
+	}
+	got := evictedTextsForTest(tx.EvictedRows)
+	if len(got) < 6 || got[0] != "row1 red" {
+		t.Fatalf("linehist production source must keep eviction proof, got %v", got)
+	}
+
+	clearTx, err := source.ApplyPTYWrite([]byte("\x1b[3Jafter"))
+	if err != nil {
+		t.Fatalf("apply ED3: %v", err)
+	}
+	if !clearTx.ClearScrollback {
+		t.Fatalf("linehist production source must keep ED3 clear-scrollback boundary: %#v", clearTx)
+	}
+}
+
 func TestSemanticSourceApplyPTYWriteEmitsModeBoundaries(t *testing.T) {
 	source := NewSemanticSource(24, 4, 100, nil)
 	syncTx, err := source.ApplyPTYWrite([]byte("\x1b[?2026hhello\x1b[?2026l"))
@@ -369,4 +435,57 @@ func semanticOpTextForSourceTest(op DamageOp) string {
 		out += cell.Content
 	}
 	return strings.TrimRight(out, " ")
+}
+
+func BenchmarkR450SemanticSourceFastASCIISGR100K(b *testing.B) {
+	payload := r450FastASCIIBenchmarkPayload(100000)
+	b.SetBytes(int64(len(payload)))
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		source := NewSemanticSource(80, 24, 0, nil)
+		tx, err := source.ApplyPTYWrite(payload)
+		if err != nil {
+			b.Fatalf("apply fast ascii/sgr payload: %v", err)
+		}
+		if len(tx.EvictedRows) == 0 {
+			b.Fatalf("expected evicted rows for benchmark payload")
+		}
+		b.ReportMetric(float64(len(tx.EvictedRows)), "evicted_rows")
+	}
+}
+
+func BenchmarkR450LineHistorySemanticSourceFastASCIISGR100K(b *testing.B) {
+	payload := r450FastASCIIBenchmarkPayload(100000)
+	b.SetBytes(int64(len(payload)))
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		source := NewLineHistorySemanticSource(80, 24, 0, nil)
+		tx, err := source.ApplyPTYWrite(payload)
+		if err != nil {
+			b.Fatalf("apply linehist fast ascii/sgr payload: %v", err)
+		}
+		if len(tx.EvictedRows) == 0 {
+			b.Fatalf("expected evicted rows for benchmark payload")
+		}
+		if len(tx.Ops) != 0 {
+			sample := tx.Ops
+			if len(sample) > 4 {
+				sample = sample[:4]
+			}
+			b.Fatalf("linehist source retained ordered text ops: %#v", sample)
+		}
+		b.ReportMetric(float64(len(tx.EvictedRows)), "evicted_rows")
+	}
+}
+
+func r450FastASCIIBenchmarkPayload(lines int) []byte {
+	var raw strings.Builder
+	raw.Grow(lines * 64)
+	for i := 1; i <= lines; i++ {
+		raw.WriteString("R450 ")
+		raw.WriteString(strconv.Itoa(i))
+		raw.WriteString(" \x1b[32mOK\x1b[0m bounded-history-memory-pressure")
+		raw.WriteString("\r\n")
+	}
+	return []byte(raw.String())
 }

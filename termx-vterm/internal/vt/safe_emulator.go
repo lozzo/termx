@@ -55,6 +55,14 @@ func (se *SafeEmulator) WriteWithSemanticDamage(data []byte) (int, error, []Dama
 	return se.Emulator.WriteWithSemanticDamage(data)
 }
 
+// WriteForLineHistoryDamage 以并发安全方式返回 linehist 生产 ingest 需要的
+// eviction/boundary damages，不携带普通 ordered text payload。
+func (se *SafeEmulator) WriteForLineHistoryDamage(data []byte) (int, error, []Damage) {
+	se.mu.Lock()
+	defer se.mu.Unlock()
+	return se.Emulator.WriteForLineHistoryDamage(data)
+}
+
 // Read reads data from the emulator in a concurrency-safe manner.
 func (se *SafeEmulator) Read(p []byte) (int, error) {
 	return se.Emulator.Read(p)

@@ -16,7 +16,7 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 	if e.scr == nil || e.scr.buf == nil {
 		return false
 	}
-	if e.scr.damage != nil && !e.scr.damage.scrollbackOnly {
+	if e.scr.damage != nil && !e.scr.damage.scrollbackOnly && !e.scr.damage.semanticOnly && !e.scr.damage.lineHistoryOnly {
 		return false
 	}
 	width := e.scr.Width()
@@ -46,6 +46,7 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 	}
 	style := e.scr.cursorPen()
 	link := e.scr.cursorLink()
+	damage := e.scr.damage
 	nextPen := style
 	atPhantom := e.atPhantom
 	lastChar := e.lastChar
@@ -56,7 +57,7 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 	scrollbackDamages := make([]ScrollbackDamage, 0, scrollbackHint)
 
 	flushScrollbackRow := func(row uv.Line, wasWrapped bool) {
-		if e.scr.damage != nil && e.scr.damage.scrollbackOnly {
+		if damage != nil && (damage.scrollbackOnly || damage.semanticOnly || damage.lineHistoryOnly) {
 			damage := ScrollbackDamage{
 				Y:       scrollY,
 				Wrapped: wasWrapped,
@@ -93,13 +94,21 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 		}
 		cursorY++
 	}
+	recordFastControl := func(kind string, x int, y int) {
+		if damage == nil || !damage.semanticOnly {
+			return
+		}
+		damage.recordControl(kind, x, y, 0)
+	}
 	printRun := func(run []byte) {
 		for len(run) > 0 {
 			if atPhantom {
+				oldX, oldY := x, cursorY
 				e.scr.SetLineWrapped(cursorY, true)
 				linefeed()
 				x = 0
 				atPhantom = false
+				recordFastControl("soft-wrap", oldX, oldY)
 			}
 			available := width - x
 			if available <= 0 {
@@ -107,6 +116,7 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 				continue
 			}
 			count := min(len(run), available)
+			startX, startY := x, cursorY
 			row := e.scr.buf.Line(cursorY)
 			if row == nil || len(row) != width {
 				for i, b := range run[:count] {
@@ -128,6 +138,9 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 					}
 				}
 				e.scr.buf.TouchLine(x, cursorY, count)
+			}
+			if damage != nil && damage.semanticOnly {
+				damage.recordASCIITextRun(startX, startY, run[:count], style, link)
 			}
 			lastChar = rune(run[count-1])
 			e.scr.markUsed(cursorY, x+count)
@@ -154,12 +167,16 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 		}
 		switch data[i] {
 		case '\r':
+			oldX, oldY := x, cursorY
 			x = 0
 			atPhantom = false
+			recordFastControl("cr", oldX, oldY)
 			i++
 		case '\n':
+			oldX, oldY := x, cursorY
 			linefeed()
 			atPhantom = false
+			recordFastControl("lf", oldX, oldY)
 			i++
 		case ansi.ESC:
 			next, ok := fastSGRSequenceEnd(data, i)

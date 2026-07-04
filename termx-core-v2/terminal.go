@@ -70,7 +70,7 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 		}
 		// 中文说明：history semantic tap 不持有 response owner；OSC/DA/DSR 只能由
 		// live SurfaceTrack 回写一次，避免 live/history 双 vterm 双回写。
-		terminal.tap = NewSemanticTap(info.ID, info.Size, nil)
+		terminal.tap = NewLineHistorySemanticTap(info.ID, info.Size, nil)
 		if lineStore, ok := historyStore.(*linehist.Store); ok {
 			terminal.lineHistory = lineStore
 			// 中文说明：闭包动态读 terminal.tap（Restart 会在 tapOpMu 内换 tap）；
@@ -297,7 +297,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.liveOpMu.Unlock()
 	if terminal.historyEnabled {
 		terminal.tapOpMu.Lock()
-		terminal.tap = NewSemanticTap(info.ID, info.Size, nil)
+		terminal.tap = NewLineHistorySemanticTap(info.ID, info.Size, nil)
 		terminal.tapOpMu.Unlock()
 	}
 	terminal.syncInfo(info)

@@ -30,6 +30,21 @@ func TestR372SemanticTapOwnsSingleVTermForLiveAndHistory(t *testing.T) {
 	}
 }
 
+func TestR450LineHistorySemanticTapDropsOrdinaryTextOps(t *testing.T) {
+	tap := NewLineHistorySemanticTap("term-r450", Size{Cols: 16, Rows: 3}, nil)
+	result, err := tap.ApplyPTYWrite([]byte("row1 red\r\nrow2 red\r\nrow3 red\r\nrow4 red\r\nrow5 red\r\nrow6 red"))
+	if err != nil {
+		t.Fatalf("apply PTY write: %v", err)
+	}
+	tx := result.Transaction()
+	if len(tx.Ops) != 0 {
+		t.Fatalf("linehist production tap must not retain ordinary ordered text ops, got %#v", tx.Ops)
+	}
+	if got := semanticTapScrollOutText(tx.EvictedRows); !strings.Contains(got, "row1 red") {
+		t.Fatalf("linehist production tap must keep eviction rows, got %q in %#v", got, tx.EvictedRows)
+	}
+}
+
 func TestR372SemanticTapOrdersPTYBytesAndResizeInOneSequence(t *testing.T) {
 	tap := NewSemanticTap("term-r372", Size{Cols: 8, Rows: 2}, nil)
 	first, err := tap.ApplyPTYWrite([]byte("abcdef"))
@@ -273,6 +288,20 @@ func semanticTapFrameText(frame *vterm.TerminalSemanticFrame) string {
 		for _, cell := range row {
 			builder.WriteString(cell.Content)
 		}
+	}
+	return builder.String()
+}
+
+func semanticTapScrollOutText(rows []vterm.TerminalSemanticScrollOut) string {
+	var builder strings.Builder
+	for _, row := range rows {
+		for _, run := range row.Runs {
+			builder.WriteString(run.Text)
+		}
+		for _, cell := range row.Cells {
+			builder.WriteString(cell.Content)
+		}
+		builder.WriteByte('\n')
 	}
 	return builder.String()
 }
