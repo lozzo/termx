@@ -1,17 +1,12 @@
 # compact semantic history journal 设计
 
-状态：R430 后本文只作为 R396-R418 高压 PTY 输出与 compact journal 热路径背景。
-当前 production 正文 truth 已从 logical-line store 迁到 `ScreenHistoryBuffer`
-physical rows；compact journal 在默认路径中只保留 backlog、boundary、meta/event
-角色，不再拥有正文 payload truth。本文提到的 logical-line store 是 pre-screen-buffer
-mutation-backed 路径说明，只能用于显式 legacy harness。
+状态：R437 后本文只作为 R396-R430 高压 PTY 输出与 compact journal 热路径背景。当前 production 正文 truth 已切到 `history/linehist`：`TerminalSemanticTransaction.EvictedRows` seal 到 file-backed logical lines，hot 部分来自 vterm 当前屏投影；compact journal / renderer 不再属于默认 history 正文写入路径。本文提到的 logical-line store、screen-backed store 和 journal renderer 都只能按历史背景理解。
 
 本文支撑根目录 `workflow.md` 的 R379+ 切片。它不替代
 `history-logical-renderer-design.md` 的 history truth 定义。R396 之后，R372-R386 的
 single `SemanticTap` 目标被真实 TUI 可见延迟推翻：live latest screen 与 history semantic
 consumer 允许在 PTY 后分成两条 vterm 链路，但只有 live 链路能回写 terminal response，
-history 链路只能产出 compact semantic journal；R430 后默认正文 truth 由 screen-backed
-physical row store 持有，logical line 只在查询/复制阶段投影。
+history 链路当时只能产出 compact semantic journal；R436 后默认正文 truth 由 linehist 持有，logical line 是冷段存储单位并在查询/复制阶段与 vterm hot screen 一起投影。
 
 ## 1. 背景
 
@@ -44,9 +39,7 @@ PTY bytes -> vterm latest screen update -> publish live invalidation
 R396 的目标不是把 vterm scrollback 直接当 authoritative history，也不是让 history 回到
 raw PTY parser fallback。目标是恢复 `f3c6070` 附近 live latest 的快速观察链路，同时保留
 history 的语义 owner：同一 PTY bytes 分别进入 live `SurfaceTrack` 和 history semantic
-consumer；live 只维护 latest native screen，history semantic consumer 产出 journal。R430
-后默认最终 truth 是 core-v2 `ScreenHistoryBuffer` physical rows，旧 logical-line store
-仅保留为显式迁移路径。
+consumer；live 只维护 latest native screen，history semantic consumer 产出 journal。R436 后默认最终 truth 是 `history/linehist`，compact journal 只保留为历史背景。
 
 ## 2. 一句话目标
 
@@ -73,8 +66,7 @@ journal，而不是完整 `TerminalSemanticTransaction` 的所有 per-op payload
 - 不从 live snapshot、current screen diff、TUI rows、renderer rows 或 local VTerm scrollback
   反推 authoritative history。
 - 不让 history semantic consumer 回写 OSC/DA/DSR response；response owner 只能是 live path。
-- 不把 journal backlog 或 live screen 提升为最终 history truth；R430 后默认 truth 是
-  core-v2 screen-backed physical row/cell state，logical line 是 projection。
+- 不把 journal backlog 或 live screen 提升为最终 history truth；R436 后默认 truth 是 linehist cold logical lines + vterm hot-screen projection。
 - 不改变 `history.window`、`history.copy` 对外 authoritative 合同。
 - 不要求第一步删除现有 full semantic transaction path；切片期间可以保留旧路径作为未切换实现，
   但不能作为新 fast path 的 fallback。
@@ -101,13 +93,11 @@ journal backlog 只是 history renderer/store 尚未应用的命令队列。它�
 
 权威 truth 仍在：
 
-- 默认 production：`ScreenHistoryBuffer` 的 sealed/current physical rows 与
-  `ScreenPhysicalRowBackend` row range。
-- 查询边界：`ScreenBackedHistoryStore` 从 physical rows 生成的 frozen projection。
+- 默认 production：`history/linehist` 的 cold file-backed logical lines、engine open tail 与同一 tap gate 下的 vterm hot-screen snapshot。
+- 查询边界：linehist `Store` 从 cold/hot 两段生成的 `HistoryWindow` / Freeze / Copy projection。
 - protocol 返回的 authoritative `HistoryWindow`。
 
-旧 mutation-backed `HistoryStore` 的 logical lines、sealed timeline、open line 和 frame
-journal 只服务显式 legacy harness，不得重新接成默认 daemon truth。
+旧 mutation-backed `HistoryStore` 的 logical lines、sealed timeline、open line、frame journal 以及 screen-backed store 只作为历史背景，不得重新接成默认 daemon truth。
 
 ### 4.3 ordinary 输出按行生命周期批量化
 

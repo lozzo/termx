@@ -1,10 +1,6 @@
 # screen app 会话历史设计
 
-状态：R430 后本文是 logical-line-first screen app session 的历史设计背景。当前
-screen app 无限历史生产路径以 `ScreenHistoryBuffer` physical rows/cells 为 ingest
-truth，frame/session 内容先归属 screen model，HistoryWindow/Copy 阶段再投影 logical
-rows。本文提到的 `HistoryTrack`、`LogicalLineStore`、`ScreenFrameJournal` truth
-边界若与 `screen-backed-history-rebuild-design.md` 冲突，以 screen-backed 设计为准。
+状态：R437 后本文是 logical-line-first / screen-backed screen app session 的历史设计背景。当前 screen app 无限历史生产路径以 `history/linehist` 为默认实现：vterm 当前屏是唯一 active screen truth，滚出 primary 的行 seal 到 file-backed logical lines，HistoryWindow/Copy 阶段再与 hot screen 一起投影 logical rows。本文提到的 `HistoryTrack`、`LogicalLineStore`、`ScreenFrameJournal`、screen-backed truth 边界若与 linehist 基准冲突，以 `workflow.md` R431+ 和 `history/linehist` 为准。
 
 ## 1. 背景
 

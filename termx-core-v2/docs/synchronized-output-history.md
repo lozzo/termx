@@ -1,10 +1,6 @@
 # synchronized output 与 primary frame history 设计
 
-状态：R430 后本文是 synchronized output / primary frame 语义背景。当前生产
-frame/session ingest truth 先进入 `ScreenHistoryBuffer` physical rows/cells，再由
-`ScreenBackedHistoryStore` 投影给 HistoryWindow；本文中的 `HistoryTrack`、
-`LogicalLineStore`、latest-only frame 说法若与 screen-backed 设计冲突，以
-`screen-backed-history-rebuild-design.md` 为准。
+状态：R437 后本文是 synchronized output / primary frame 的历史背景。当前生产 history ingest truth 已切到 `history/linehist`：vterm 是唯一 active screen truth，滚出 primary 可见区的行通过 `EvictedRows` seal 到 file-backed logical lines，查询时与 vterm hot screen 一起投影给 HistoryWindow。本文中的 `HistoryTrack`、`LogicalLineStore`、latest-only frame、screen-backed 说法若与 linehist 基准冲突，以 `workflow.md` R431+ 和 `history/linehist` 为准。
 
 ## 1. 背景
 

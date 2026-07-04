@@ -1,6 +1,6 @@
-// Package history 定义 screen-backed history model 以及旧 logical-line projection
-// payload。R430 后默认生产 ingest truth 是 ScreenHistoryBuffer physical rows；
-// logical line 只作为 HistoryWindow/Copy/Search 投影单位或 legacy harness payload。
+// Package history 定义 core-v2 对外 history window/copy/freeze 契约和 linehist
+// 共享 payload。R436 后默认生产实现是 history/linehist：冷段存 file-backed
+// logical lines，热段由 vterm 当前屏按需投影。
 package history
 
 // LogicalLineID 标识 authoritative history model 中的一条 logical line。
@@ -69,10 +69,9 @@ type RowTailFill struct {
 	Style CellStyle
 }
 
-// LogicalLine 是旧 mutation-backed store 和 screen-backed projection 复用的行
-// payload。R430 后默认生产 ingest truth 不再是 logical line；它只能由
-// ScreenHistoryBuffer physical rows 投影出来，或在显式 legacy harness 中作为
-// mutation-backed payload 使用。
+// LogicalLine 是 history 对外 projection 与 linehist 内部转换复用的行 payload。
+// 当前默认实现的 cold truth 是宽度无关 logical line；查询时再按请求 cols 投影
+// 为 HistoryRow。
 type LogicalLine struct {
 	ID                LogicalLineID
 	Generation        Generation

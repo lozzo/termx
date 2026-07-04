@@ -23,17 +23,17 @@
 
 ### 1.1 一句话目标
 
-实现接近 tmux/普通终端体验的无限历史：只要内容真实经过 PTY 并被终端语义解释到 primary/history 轨道，就应能在历史模式中回看、搜索和复制；实现方式必须以 core-v2 authoritative screen model 的 physical row/cell 为 ingest 真值，再在 query/copy/history 阶段投影 logical line。
+实现接近 tmux/普通终端体验的无限历史：只要内容真实经过 PTY 并在 primary 屏滚出，就应能在历史模式中回看、搜索和复制；当前实现以 vterm emulator 作为唯一屏幕真值，滚出行通过 `EvictedRows` seal-on-eviction 落到 file-backed logical-line cold storage，查询时再把冷 logical lines 与当前 vterm hot screen 一起投影成 `HistoryWindow` / Copy / Freeze。
 
 ### 1.2 这轮只关心什么
 
-当前阶段从 logical-line-first reducer 转向 screen-backed history：先锁定现有链路和迁移基线，再引入 physical row/cell screen model，最后逐步把 pseudo-TUI path、projection、HistoryWindow 和旧 journal reducer 切过去。
+当前阶段已从 R419-R430 的 screen-backed 尝试转向 R431+ 的 linehist 重做路线。用户确认不继续修补旧 `ScreenHistoryBuffer` 路径；当前清场目标是删除旧 screen-backed/classifier/journal/frame reducer/mutation store，只保留 linehist 默认实现和对外 `HistoryWindow` / Copy / Freeze 协议边界。
 
-1. 引入 `ScreenHistoryBuffer`，把 PTY semantic ops 先作用到 main/alt screen、physical rows、cells、cursor 和 scroll region。
-2. physical row 必须有稳定 RowID 和 Version；同一 RowID 不允许 seal 两次。
-3. 只有真实 scroll-out、明确 boundary、frame close、process close、alt-screen exit 等语义才能把 physical row seal 进 committed physical history。
-4. logical line 只作为 HistoryWindow/Copy/Search 阶段的 projection，必须保留 RowIDs 并按 RowID 去重。
-5. journal 可暂时保留为 backlog/boundary/meta queue，但正文 history truth 必须下沉到 screen model。
+1. vterm 是唯一 active screen truth；history 不能维护第二份 screen/cell 状态机。
+2. 已离开 primary 可见区的行不可再被程序修改，按 `EvictedRows` seal-on-eviction 拼装并追加到 file-backed logical lines。
+3. 冷段存储宽度无关 logical lines；热段来自同一 tap gate 下采集的 vterm 当前屏 + open tail，查询时按请求 cols 投影。
+4. ED3/ClearScrollback 通过 append-only boundary 分段；resize 滚出仍走 eviction；alt 期间主屏保存行只作为 mutable hot tail 投影。
+5. `HistoryStore.Apply(HistoryMutationBatch)` 只保留为旧接口兼容 no-op；正文写入 truth 是 `linehist.Store.ApplyTransaction` 消费 `TerminalSemanticTransaction.EvictedRows`。
 6. tui-v3 和 App 只消费 core-v2 authoritative history window，不从本地 VTerm scrollback、snapshot、DOM/canvas rows 或 live cache 推断历史真值。
 
 ### 1.3 不在当前阶段做什么
@@ -48,25 +48,24 @@
 
 ## 2. 技术设计基准
 
-- 当前 screen-backed history 重构基准：`termx-core-v2/docs/screen-backed-history-rebuild-design.md`
-  - R419 后，history ingest 真值改为 `ScreenHistoryBuffer` 的 physical row/cell 状态机；logical line 是 query/copy/history 阶段从 physical rows 投影出的视图，不再是 ingest 阶段的正文 truth。
-  - 新模型必须保留 RowID、Version、OwnerKind、seal-once、current/committed RowID 去重、alt-screen 隔离和 scroll region 语义。
-  - 旧 compact journal 可在迁移期作为 backlog/boundary/meta/event queue 存在，但不得继续作为 pseudo-TUI 正文 truth 的最终 owner。
-- 旧 history logical renderer 设计基准：`termx-core-v2/docs/history-logical-renderer-design.md`
-  - R318 后，history 被定义为消费 vterm terminal semantic transaction 的 logical-line renderer。
-  - 新模型使用 `mutable` / `sealed` / `timeline` / `frame journal` 语义，不再把 `commit` / `committed` 作为领域概念。
-  - R419 后该文档作为 pre-screen-buffer 背景；若它与 `screen-backed-history-rebuild-design.md` 冲突，以 screen-backed 设计为准。
+- 当前 linehist 重做基准：`/Users/lozzow/.claude/plans/quiet-mapping-whistle.md` 与本文件 R431-R437/R438 记录
+  - R431 后用户确认不再修补 screen-backed 路径；默认无限历史按"单一真值 + seal-on-eviction"重做。
+  - vterm emulator 是唯一 active screen truth；history 只消费 `TerminalSemanticTransaction.EvictedRows`、clear/resize/alt boundary 和同一 gate 下的 hot screen snapshot。
+  - `history/linehist` 保存 file-backed、宽度无关 logical lines；`HistoryWindow` / Copy / Freeze 在查询时由 cold logical lines + hot vterm screen 投影生成。
+- 旧 history logical renderer / screen-backed 设计文档只作为历史背景：`termx-core-v2/docs/history-logical-renderer-design.md`、旧 `screen-backed-history-rebuild-design.md`（已清场）
+  - R318-R430 中的 classifier、journal renderer、ScreenHistoryBuffer、physical row backend、frame reducer、mutation store 均不是当前默认路径。
+  - 若旧文档与 linehist 基准冲突，以 linehist 基准、本文件 R431+ 记录和当前代码为准。
 - 旧 screen app 无限历史定案：`termx-core-v2/docs/screen-app-infinite-history-final-plan.md`
-  - 该文档保留 R300-R317 的问题背景、vterm transaction 边界和已完成切片记录；其中 `commit/committed` 术语和 projector/store 分层若与新文档冲突，以 `screen-backed-history-rebuild-design.md` 为准。
+  - 该文档保留 R300-R317 的问题背景、vterm transaction 边界和已完成切片记录；其中 `commit/committed` 术语、classifier、projector/store 分层若与 linehist 基准冲突，以 linehist 基准为准。
 - core-v2 架构：`termx-core-v2/docs/architecture.md`
 - tui-v3 架构：`termx-tui-v3/docs/architecture.md`
 - live native screen 重构基准：`termx-core-v2/docs/live-native-screen-rebuild-design.md`
   - R348 后，普通实时显示被定义为 core 维护最新 native screen，TUI 主导 render loop；core 只发布 live invalidation，不推送待渲染帧队列，也不关心客户端渲染进度。
   - 旧 `Snapshot/CompactSnapshot`、`ScreenUpdate` stream、`grid.viewport`、snapshot/history 拼接和 TUI live union event 只能作为清场对象，不得继续作为 v3 live display 主合同。
-- compact semantic history journal 设计基准：`termx-core-v2/docs/compact-semantic-history-journal-design.md`
-  - R396 后，高压 PTY 输出恢复 live latest 与 history semantic 的双消费边界：live `SurfaceTrack` 只维护当前 native screen 与唯一 response owner，history `SemanticTap` / journal consumer 只消费同一 PTY semantic pass。
-  - R419 后 journal 必须继续来自 history semantic consumer 的 vterm 语义 pass，不能来自 raw PTY parser、live snapshot diff、TUI/render rows 或 live `SurfaceTrack`。journal 是未应用语义命令队列，不是第二份 history truth；authoritative truth 将迁移为 core-v2 screen-backed physical row store。
-  - live latest screen 更新必须恢复到 `SurfaceTrack.Write -> WriteForLatestFrame` 快路径成本；history semantic write hot path 不应反压 live wake，不应为普通输出构造 full frame、full SourceDamage、per-write native snapshot clone 或逐 op history reducer backlog。
+- compact semantic history journal 设计文档：`termx-core-v2/docs/compact-semantic-history-journal-design.md`
+  - 该文档只保留 R380-R430 的历史背景；R436 后默认 history 正文写入不再走 `HistoryJournal` / renderer。
+  - 当前仍有效的边界是：history `SemanticTap` 只能消费同一 PTY semantic pass，不能来自 raw PTY parser、live snapshot diff、TUI/render rows 或 live `SurfaceTrack`。
+  - live latest screen 更新必须保持快路径；history semantic write hot path 不应反压 live wake，不应为普通输出构造 full frame、full SourceDamage、per-write native snapshot clone 或逐 op history reducer backlog。
 - vterm terminal 语义来源：`termx-vterm/`
 - 旧 history 说明、session history 说明和同步输出说明只能作为问题背景；如果与本文件或定案冲突，以本文件和定案为准。
 
@@ -123,14 +122,14 @@
 
 ### 4.1 历史真值
 
-- R419 后，history ingest truth 的基本单位是 authoritative physical row/cell，不是 append-only logical line、visual row、wrapped row、snapshot scrollback、grid viewport 或 xterm buffer row。
-- core-v2 `ScreenHistoryBuffer` 是 main/alt screen、physical rows、cells、cursor、scroll region、RowID、Version 和 seal-once 的 domain owner。
-- logical line 是 query/copy/history 阶段从 physical rows 投影出的视图；projection 必须保留 RowIDs，不能用纯文本 dedupe 当 correctness。
-- 同一个 RowID 不允许 seal 两次；latest/current screen 与 committed physical history 拼接时必须按 RowID 去重。
-- `mutable` 表示 physical row 仍属于 current screen/session，可被 terminal 语义改写；`sealed` 表示 physical row 已按 scroll-out/boundary/frame close/process close/alt exit 等语义离开当前可变区域。
-- `commit` / `committed` 不是新模型的 ingest 概念；旧代码名若尚未迁移，只能按 sealed physical row 或 projected sealed window 语义理解。
-- physical row store、sealed row index、logical projection、segment cursor、storage backend、cache、adapter、TUI/App projection 都不能演变成第二份历史 truth。
-- `persisted` 或落盘不表示 sealed，也不表示不可修改；是否可修改由 terminal/session/row lifecycle 语义决定。
+- R431 后，history ingest truth 的冷段基本单位是 file-backed logical line；它只能由 vterm `EvictedRows` 的 seal-on-eviction 信号生成，不由第二份 screen model、visual row、snapshot scrollback、grid viewport 或 xterm buffer row 反推。
+- vterm emulator 是 main/alt/current screen、cursor、scroll region 和 wrap flags 的唯一 active screen truth；core-v2 history 不再维护 `ScreenHistoryBuffer` 作为第二份 RowID/Version screen truth。
+- 已滚出 primary 可见区的行不可再被程序修改；linehist 将滚出物理行按 `Wrapped` 拼装成宽度无关 logical line，append 到 cold storage。
+- hot history 来自同一 tap gate 下采集的 vterm 当前屏 + open tail；查询时 cold logical lines 与 hot screen 一起按请求 cols 投影。
+- `mutable` 表示仍属于 vterm 当前屏/open tail，可随后续 terminal 语义变化；`sealed` 表示已离开 primary 可见区并追加到 cold logical-line storage。
+- `commit` / `committed` 不是当前 linehist ingest 概念；旧代码名若尚未迁移，只能按 sealed logical line 或 projected window 语义理解。
+- linehist storage、cold index、hot projection、segment cursor、cache、adapter、TUI/App projection 都不能演变成第二份屏幕 truth。
+- `persisted` 在 linehist cold 段等同于 sealed；hot/open tail 未滚出前不得被写成不可变冷历史。
 
 ### 4.2 terminal 语义来源
 
@@ -184,7 +183,7 @@
 
 - tui-v3 不拥有 sealed history truth，只消费 core-v2 authoritative `HistoryWindow`。
 - tui-v3 copy mode 不得从本地 VTerm scrollback、snapshot totals、row ownership、LoadedRows、wrapped 拼接结果推断历史。
-- App/Web/native live display 可以有本地短缓存，但 copy/search/history truth 必须走 core-v2 screen-backed authoritative HistoryWindow。
+- App/Web/native live display 可以有本地短缓存，但 copy/search/history truth 必须走 core-v2 linehist-backed authoritative HistoryWindow。
 - renderer 只消费 view-model，不读 core client、history source、runtime service 或 protocol client。
 
 ## 5. 清场规则
@@ -345,6 +344,8 @@
 | R434. LL 边界：resize / ED3-RIS / alt-screen | 完成 | `termx-core-v2/history/linehist/`、`termx-vterm/` | resize 滚出走 EvictedRows（ring 关闭无反拉回，无需待定尾）；ED3/ClearScrollback 落 append-only boundary 分段（frozen token 跨 clear 有效，RIS 不清历史）；alt 期间 primary 屏保存行经 `PrimarySavedScreenRows` 继续投影为 mutable 时间线尾部。 |
 | R435. LL 验收：fixture + 回归等价 + e2e + stress | 完成 | `fixtures/history/`、`termx-core-v2/`、`termx-vterm/` | 真实 vterm 事务喂 ANSI fixtures（每行恰一次、CR/pseudo-TUI 重绘不污染、分包不变式、alt 瞬态排除、宽字符保真）；r328/r331/r334 行为期望在 linehist 重建等价断言；2 万行 stress 投影精确 + 冷历史跨重启不丢不重；顺带修复 ED2 滚出行缺失 EvictedRows（ControlDamage.ScrollOut 并入 eviction 流）。真实 daemon+TUI e2e 留到 R436 切默认后手动跑。 |
 | R436. LL 切默认入口与删旧 screen-backed 路径 | 完成 | `termx-core-v2/` | Terminal 默认 history 引擎切到 linehist；移除 terminal 侧旧 journal/classifier/screen-backed runtime 队列与内部架构测试，保留 `history/` 旧包到后续清场 slice 处理（本切片不混入既有 `screen_buffer*` 未提交改动）。 |
+| R437. 保留旧 screen-backed CopyRect 补丁 | 完成 | `termx-core-v2/history/`、`termx-tui-v3/docs/architecture.md` | 按用户要求，先把剩余旧 `ScreenHistoryBuffer` CopyRect / CR repaint 兼容补丁与相关文档单独提交保存，作为删除旧路径前的历史快照；不改变默认 linehist 入口。 |
+| R438. LL 旧 screen-backed 包体清场 | 完成 | `termx-core-v2/history/`、`termx-core-v2/docs/`、`termx-core-v2/semantic_tap.go`、`termx-tui-v3/docs/architecture.md` | 删除旧 `ScreenHistoryBuffer`、screen-backed store/backend/projection、classifier、journal renderer、frame reducer、mutation-backed store/backend 与 history harness；`history` 包只保留 linehist 需要的公共 window/copy/freeze/types 契约，旧 `Apply(HistoryMutationBatch)` 成为兼容 no-op；同步文档把当前 production truth 收敛为 linehist cold logical lines + vterm hot-screen projection。 |
 
 ## 7. 测试准入
 
@@ -368,6 +369,8 @@
 
 ## 9. 当前状态
 
+- `R438` 已完成：旧 screen-backed 包体清场。删除 `cmd/history-harness`、`ScreenHistoryBuffer`、`ScreenBackedHistoryStore`、screen physical backend/file、screen projection、classifier、compact journal、frame reducer、stream reducer、旧 in-memory/file storage backend 和对应旧 harness/tests；`history` 包收敛为 linehist 默认路径需要的 public contract（window/copy/freeze/types/style/error/semantic alias）与 `history/linehist`。`SemanticTapResult.HistoryJournal()`、旧 journal/logical-renderer 测试、`server_test` 对 `NewInMemoryHistoryStore` 的依赖已移除；docs/workflow/tui 架构说明同步标注当前 production truth 是 linehist cold file-backed logical lines + vterm hot-screen projection。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
+- `R437` 已完成：按用户要求先把剩余旧 screen-backed 未提交补丁单独保存为提交 `4e9a9b66 R437 保留旧 screen-backed CopyRect 补丁`，内容包括旧 `ScreenHistoryBuffer` CopyRect/CR repaint 兼容修补和相关文档说明。该提交只是保留删除前状态，不改变 R436 后默认 linehist 入口；后续清场继续删除旧路径。
 - `R436` 已完成：默认 history 入口切到 linehist：`server.newHistoryStore` 不再创建 `ScreenHistoryBuffer`/screen-backed store，未配置 factory 时使用 `LineHistoryStoreFactory` 和 server 级临时/配置目录；`Terminal` 删除旧 history renderer / journal renderer / screenHistory / historyQ 字段，PTY/resize 在 `tapOpMu` 内直接把 vterm `EvictedRows` 交给 linehist，`FlushHistory` 只需等待 history tap 队列，process exit/remove 仅 `SealOpenTail`/`Close`。移除 terminal 侧旧 journal ingest worker 与耦合内部实现的 r301/r327/r328/r334/r392/queue 测试，保留旧 `history/` 包本体到后续清场 slice（本切片不混入既有 `history/screen_buffer*` 未提交改动）。旧 screen-backed ownership 断言改为 linehist 内容/顺序断言：protocol window 不再强制 committed segment，tmux/ED2/prompt-order harness 只断言可观察历史内容不丢、不重、不插队、alt 瞬态不污染；新增/更新 R436 默认 linehist store 与 storage-dir recovery 测试。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 - `R435` 已完成：linehist 验收切片（fixture + 回归等价 + stress），并顺带修复一处 vterm eviction 完整性缺口。**fixture 级**（`history/linehist/fixture_test.go`，真实 vterm 事务喂 `fixtures/history/*.ansi`）：plain-shell 每行恰一次且有序；progress-cr-repaint / pseudo-tui-repaint 的 CR/光标重绘中间态不进历史、只留最终态；codex_pseudotui 已滚出的 shell 尾部（sealed truth）不被 pseudo-TUI 重绘复制、被 2K 擦掉的屏上行不进历史、且按字节分包 ingest 与单次写入投影完全一致（分包不变式）；scroll-region 不重复；alt-screen 瞬态不留在历史；宽字符跨滚出/落盘/窄列重投影不撕裂（codex_pseudotui.ansi 本切片入库）。**stress 级**（`history/linehist/stress_test.go`）：2 万行写入后 latest/oldest/collect-all 全序精确（0.1s 量级，冷索引首查按 cols 一次性 O(N) 扫 header 建 prefix，可接受）；5000 行跨 Close/reopen 冷历史逐行不丢不重（仍在屏上的行随 vterm 生命周期消失，属 seal-on-eviction 口径）。**server 级回归等价**（`r435_linehist_acceptance_test.go`，对应旧 r328/r331/r334 行为期望）：多会话 ED2 clear 之间的内容全部留在可翻页历史且有序恰一次；屏内重绘后的 prompt 不插到已滚出内容之前；codex fixture 走完整 Server 逐字节 ingest 不重复 sealed 尾部；CJK 跨冷热段窗口/Freeze/Copy 逐字保真。**顺带修复（vterm）**：ED2（`ClearWithScrollback`）的滚出行只随 `ControlDamage("ed").ScrollOut` 携带、不走 `recordScrollbackLine`，此前完全进不了 `EvictedAppend`→`EvictedRows`，`clear` 前的屏幕内容会从 linehist 历史凭空消失；`evictedAppendOpsFromCharmVTDamages` 现按流内顺序并入 ControlDamage.ScrollOut（沿用 ModeDamage alt 归属跟踪，alt 内 ED2 归 alternate 不混入主历史），回归测试 `semantic_source_evicted_test.go`（TestEvictedRowsCoverED2ClearScreen / TestEvictedRowsED2InsideAltStaysOutOfPrimary）。真实 daemon+TUI 的 codex 会话 history-dump 对比是手动 e2e，留到 R436 切默认入口后跑更有意义；`cmd/history-harness` 仍用旧 `ScreenHistoryBuffer`，R436 一并处理。已通过 `cd termx-vterm && go test ./... -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。- `R434` 已完成：linehist 三类边界语义落地，全部沿用"单一真值 + 投影"路线，不引入对账。**resize**：调查确认生产 tap 关闭 scrollback ring（size=0）后 `internal/vt/reflow.go` 的变高反拉回分支（`if sb != nil` gate）不生效，resize 事务的滚出行已经由 `resizeWithDamageLocked` 的 `ScrollbackAppend`→`EvictedRows` 兜底路径完整携带——计划里的"待定尾"规则不需要，resize 只补验收（变窄/变高/连续 resize 后 collect-all 不重不漏不乱序）。**ED3/ClearScrollback**：`LineFile` 增加 kind=2 boundary 记录（`AppendBoundary`/`Base`，恢复扫描与顺序读都识别并跳过），文件保持 append-only、记录读取保持绝对序号；`Engine.ClearHistory` = `Assembler.DiscardOpen`（未闭合尾部的头概念上在被清的 scrollback 里，屏上续行由当前屏继续投影）+ 落 boundary，`VisibleLineRange` 暴露分段后可见区间；`Store.ApplyTransaction` 在 EvictedRows 落盘**之后**处理 `tx.ClearScrollback`（`clear` = ED2 挤滚出 + ED3 清空在同一次写入，先滚出后清空才与真实终端一致）；投影/窗口数学转到"视图域"（coldBase+coldCount），LineID 在 clear 后从 1 重新计数，frozen token 记录 coldBase 且文件读走绝对序号，因此跨 clear 仍可窗口/复制；RIS 刻意不清历史（与 xterm 默认一致，本 emulator 的 ED3 同时清屏属 vterm 既有行为，历史照实投影）。**alt-screen**：不在 alt-enter 时 seal（退出 alt 后程序仍可改写主屏行），vterm 新增 `PrimarySavedScreenRows`（`internal/vt` `PrimaryLine/PrimaryLineWrapped/PrimaryHeight` + `vterm.go` 转换包装，live 读投影而非第二份 truth），`ScreenSnapshot` 在 alt 期间带 `PrimaryRows`，`hotRowsFromScreen` 把 openTail+主屏保存行拼成 mutable current-primary-frame 行后再接 alt fixed-grid 行——alt 期间主屏时间线尾部保持可见且退出后不重复。准入：`termx-vterm/vterm/primary_saved_screen_test.go`、`history/linehist/store_boundary_test.go`（ED3 隐藏冷段+LineID 重计数、ED2+ED3 全清、boundary 跨 close/reopen 持久、frozen token 跨 clear、RIS 不清、resize 变窄/变高 collect-all 精确、alt primary 尾部可见且 mutable）、`r434_linehist_boundary_test.go`（真实 Server：ResizeTerminal 前后不重不漏、clear 后 live 清空 frozen 保留、alt 期间 primary 尾部可见退出后恰一次）。已通过 `cd termx-vterm && go test ./... -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 - `R433` 已完成：linehist 接入真实 Terminal ingest 链路并交付完整 `history.HistoryStore` 投影。`history/linehist/store.go` 的 `Store` 是单一真值查询层：冷段 = R432 append-only 文件里的宽度无关 logical line，按请求 cols 用惰性 prefix-sum 行索引（`coldRowIndex`，1024 条/批延伸，`countWrappedRows` 不 materialize cells）投影成绝对稠密 `ProjectionRowIndex` 的 HistoryRow；热段 = 查询时刻 emulator 当前屏（`ScreenSnapshotFromVTerm`：VisitTrimmedScreenRows + ScreenWrapped，尾部空白行裁剪）与 Engine `OpenTail` 按 Wrapped 标志拼回 logical line 后按 cols 重新换行（primary mutable current-primary-frame；alt 期间按 fixed grid 投影 current-alt-frame，openTail 单独成行）。一致性由 ingest gate 保证：Terminal 在 tapOpMu 临界区内 `ApplyPTYWrite` 之后调用 `Store.ApplyTransaction(tx.EvictedRows)` 落盘；`Bind` 把 `SemanticTap.LineHistoryScreenSnapshot` 与 `&terminal.tapOpMu` 注入 store，查询在同一 gate 内采集 coldCount+OpenTail+屏幕快照后释放（冷段是不可变前缀，文件分页读不阻塞 ingest），滚出行在冷/热段间不重不漏；锁序固定为 historyMu → tapOpMu → store.mu，Resize 走 `lineHistory.ApplyTransaction` 直接消费避免旧 resize 队列的锁序倒置，`forceCloseHistory`/`closeWithReason` 映射到 `SealOpenTail`/`Close`。Latest/Older/Oldest/Newer 窗口数学与旧 backend 路径逐字段对齐（BeforeRowIndex 绝对行号分页、boundary cursor 语义），Freeze 只记 coldCount + materialize 当时热段（token `linehist-N`，冷段前缀不可变故文件读有界），Copy 按 LineID 首行区间取行文本，`Apply(mutation batch)` 为 no-op（写 truth 唯一入口是 ApplyTransaction），journal/classifier fanout 在 lineHistory 存在时被旁路。`server.LineHistoryStoreFactory(dir)` 是显式接入入口（默认入口切换留给 R436）；`charmbracelet/x/ansi` 因 grapheme 展开转为 go.mod 直接依赖。准入：`history/linehist/store_test.go`（真实 SemanticSource + gate harness：冷热拼接不重不漏、older 分页闭环、宽/窄 cols 重投影、openTail 与屏上续行拼回、alt fixed-grid、freeze 稳定 + copy 区间、空 store/无效 cursor）与 `r433_linehist_terminal_test.go`（真实 Server+Terminal ingest：latest 恰一次、30 行分页闭环、软换行按查询 cols 拼回、freeze/copy 跨冷热段、alt 内容不进 committed 且退出后不残留）。已通过 `cd termx-vterm && go test ./... -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。

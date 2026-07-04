@@ -4,7 +4,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/history/linehist"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
@@ -32,8 +31,8 @@ type SemanticTapInputRecord struct {
 }
 
 // SemanticTapResult 是 history semantic tap 对一次输入的轻量输出。
-// Transaction 只给 decision 构建和 harness 拉取完整语义消息副本；生产 history
-// apply 只能消费同次 transaction 裁剪出的 compact journal，不能把 full transaction
+// Transaction 只给 linehist ingest 和 harness 拉取完整语义消息副本；生产 history
+// 默认只消费同次 transaction 的 EvictedRows / boundary，不再把 full transaction
 // renderer 当作 fallback。Revision 只保留 history tap 自身诊断，不再作为 Terminal
 // live revision owner。
 // R396 后 live.screen.get 从 live SurfaceTrack 读取，不能从 history tap snapshot 取屏幕。
@@ -48,7 +47,7 @@ var semanticTapSnapshotBuildHook func()
 // SemanticTap 负责单个 terminal 的 history semantic consumer。
 // domain owner 是 core-v2 Terminal history ingest；truth source 是 termx-vterm
 // semantic pass。消息链路是 PTY bytes/resize -> history tap -> immutable semantic
-// tx -> compact journal / renderer。失败条件是 history replay raw PTY、从 live
+// tx -> linehist eviction/boundary ingest。失败条件是 history replay raw PTY、从 live
 // snapshot 反推 history、resize 脱离 history 输入序列或让 history tap 回写 response。
 type SemanticTap struct {
 	mu         sync.Mutex
@@ -74,7 +73,7 @@ func NewSemanticTap(terminalID string, size Size, onResponse vterm.ResponseHandl
 
 // ApplyPTYWrite 按 tap sequence 消费 PTY bytes。
 // 返回的 transaction 已经由 history vterm pass 解码；history consumer 只能消费该
-// transaction/journal，不能读取 raw PTY、live SurfaceTrack 或 TUI rows。
+// transaction 的 eviction/boundary，不能读取 raw PTY、live SurfaceTrack 或 TUI rows。
 func (tap *SemanticTap) ApplyPTYWrite(raw []byte) (SemanticTapResult, error) {
 	if tap == nil {
 		return SemanticTapResult{}, nil
@@ -90,7 +89,7 @@ func (tap *SemanticTap) ApplyPTYWrite(raw []byte) (SemanticTapResult, error) {
 	tx, err := tap.source.ApplyPTYWrite(raw)
 	// 中文说明：SemanticSource 返回的 tx 已是本次 tap result 独占 payload。
 	// 这里不再热路径深拷贝 full transaction；外部 consumer 仍只能通过
-	// Transaction/HistoryJournal 拿到各自副本。
+	// Transaction 或 LineHistoryScreenSnapshot 拿到各自副本/投影。
 	tx.Raw = ""
 	tap.revision++
 	tap.inputs = append(tap.inputs, record)
@@ -135,14 +134,6 @@ func (tap *SemanticTap) Resize(size Size) (SemanticTapResult, error) {
 // 修改自己拿到的 slice，都不能污染其他 consumer 或 tap 内部状态。
 func (result SemanticTapResult) Transaction() vterm.TerminalSemanticTransaction {
 	return cloneSemanticTapTransaction(result.tx)
-}
-
-// HistoryJournal 返回 history semantic tap 同次语义 pass 产出的 compact journal 副本。
-// 生产 history backlog 应优先消费该命令化 journal；这里从 result 持有的独占
-// semantic transaction lazy 裁剪，不在 history write 热路径提前构造，也不
-// 读取 raw PTY、live snapshot、TUI rows 或 live SurfaceTrack。
-func (result SemanticTapResult) HistoryJournal() history.HistoryJournal {
-	return history.HistoryJournalFromTransaction(result.terminalID, result.tx)
 }
 
 // Revision 返回本次 tap 输入后的 latest native screen revision。

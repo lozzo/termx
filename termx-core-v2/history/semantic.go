@@ -8,20 +8,19 @@ import vterm "github.com/lozzow/termx/termx-vterm/vterm"
 type TerminalSemanticSource = vterm.TerminalSemanticSource
 
 // TerminalSemanticSize 携带一个 semantic transaction 关联的 PTY size。history
-// 只把它用于 fixed-grid frame metadata 和 cursor invalidation，不能用它重写
-// sealed logical lines。
+// 只把它用于 vterm/linehist 投影边界，不能用它重写 sealed logical lines。
 type TerminalSemanticSize = vterm.TerminalSemanticSize
 
-// TerminalSemanticTransaction 是一个已排序的 vterm write/resize boundary；它是
-// parser 到 classifier/projector 的 truth-source message。
+// TerminalSemanticTransaction 是一个已排序的 vterm write/resize boundary；linehist
+// 只消费其中的 eviction seal 信号与 clear/resize/alt 边界。
 type TerminalSemanticTransaction = vterm.TerminalSemanticTransaction
 
-// TerminalSemanticOp 是 vterm 产出的已排序 terminal operation；projector 消费
-// 这些 ops，不能比较 live snapshot。
+// TerminalSemanticOp 是 vterm 产出的已排序 terminal operation；当前 linehist
+// 默认路径不再用它重放第二份 screen model。
 type TerminalSemanticOp = vterm.TerminalSemanticOp
 
-// TerminalSemanticCell 是 vterm cell payload，用来构建 logical-line 和 fixed-grid
-// frame content；需要进入 history 时必须复制成 history-owned payload。
+// TerminalSemanticCell 是 vterm cell payload，用来构建 logical-line 和 hot-screen
+// projection content；需要进入 history 时必须复制成 history-owned payload。
 type TerminalSemanticCell = vterm.TerminalSemanticCell
 
 // TerminalSemanticCellRun 是 vterm 在 scroll-out proof 中保留的 styled text run。
@@ -32,15 +31,14 @@ type TerminalSemanticCellRun = vterm.TerminalSemanticCellRun
 // semantics，默认主题解析交给 viewer。
 type TerminalSemanticStyle = vterm.TerminalSemanticStyle
 
-// TerminalSemanticScrollOut 证明同一个 transaction 内 primary screen ownership
-// 离开了可见区域。它是 proof，不是第二份 store。
+// TerminalSemanticScrollOut 表示同一个 transaction 内 primary screen 行离开可见区域。
+// linehist 把它作为 seal-on-eviction 输入，而不是第二份 store。
 type TerminalSemanticScrollOut = vterm.TerminalSemanticScrollOut
 
 // TerminalSemanticScrollbackRowAppend 是 vterm 挂在 ordered op 上的 scrollback
-// row proof，例如 ED2 清屏时旧可见行离开 primary viewport。
+// row payload，例如 ED2 清屏时旧可见行离开 primary viewport。
 type TerminalSemanticScrollbackRowAppend = vterm.ScrollbackRowAppend
 
 // TerminalSemanticFrame 是 vterm 为一个 transaction 产出的 current primary 或 alt
-// fixed-grid frame。它可以 publish current frame，但不能独自创建 ordinary
-// sealed history。
+// fixed-grid frame。旧 screen-backed path 已不再用它创建 ordinary sealed history。
 type TerminalSemanticFrame = vterm.TerminalSemanticFrame

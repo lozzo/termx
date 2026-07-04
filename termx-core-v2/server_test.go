@@ -45,7 +45,7 @@ func TestServerHistoryDisabledSkipsStoreCreationAndReturnsDisabled(t *testing.T)
 		WithProcessFactory(newRecordingProcessFactory()),
 		WithHistoryStoreFactory(func(string) (history.HistoryStore, error) {
 			called = true
-			return history.NewInMemoryHistoryStore("unexpected"), nil
+			return nil, nil
 		}),
 		WithHistoryDisabled(),
 	)

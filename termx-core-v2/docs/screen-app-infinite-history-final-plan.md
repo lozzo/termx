@@ -1,12 +1,8 @@
 # screen app 无限历史定案
 
-状态：历史背景。R318 后，history 语义设计基准曾切换到
-`termx-core-v2/docs/history-logical-renderer-design.md`；R430 后当前 production
-基准已切到 `termx-core-v2/docs/screen-backed-history-rebuild-design.md`。
+状态：历史背景。R318 后，history 语义设计基准曾切换到 `termx-core-v2/docs/history-logical-renderer-design.md`；R430 后曾切到 screen-backed 设计；R431 后用户确认不再修补 screen-backed 路径，当前 production 基准已切到 `history/linehist` 的 file-backed logical-line + vterm hot-screen projection。
 
-本文保留 R300-R317 的问题背景、vterm transaction 边界和旧切片记录；其中
-`commit/committed` 术语、`CommittedHistoryIndex` / `MutableFrontier` 分层或
-projector/store 边界若与 screen-backed 设计冲突，以 screen-backed 设计为准。
+本文保留 R300-R317 的问题背景、vterm transaction 边界和旧切片记录；其中 `commit/committed` 术语、`CommittedHistoryIndex` / `MutableFrontier` 分层、classifier 或 projector/store 边界若与 linehist 基准冲突，以 `workflow.md` R431+ 和 `history/linehist` 为准。
 
 本文把之前的未确认预案升级为后续删代码、重建边界和补接口的技术定案。它不替代
 `workflow.md` 的任务队列和提交准入；真正动代码前，仍必须先把对应切片写入
@@ -395,8 +391,7 @@ StorageBackend persistence
 
 约束：
 
-- 在 R300-R317 旧 logical-line-first 模型内，payload 由 `LogicalLineStore` 统一持有；
-  R430 后默认 production payload truth 已迁到 screen-backed physical rows。
+- 在 R300-R317 旧 logical-line-first 模型内，payload 由 `LogicalLineStore` 统一持有；R430 曾迁到 screen-backed physical rows，R436 后默认 production payload truth 已迁到 linehist cold logical lines + vterm hot-screen projection。
 - `CommittedHistoryIndex` 是索引，不是第二份 store。
 - `MutableFrontier` 可以 reclaim committed suffix，但不复制 payload。
 - `StorageBackend` 只是 residency/persistence，不定义 mutability。

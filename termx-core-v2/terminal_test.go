@@ -230,88 +230,6 @@ func TestR396ProcessOutputFansOutLiveSurfaceAndHistorySemanticConsumer(t *testin
 	}
 }
 
-func TestR404TerminalJournalRendererAcceptsOpenLineAndBoundaryCommands(t *testing.T) {
-	renderer := history.NewHistoryJournalRenderer()
-	sealed := history.HistoryJournalFromDecision("term-r404-gate", history.TerminalSemanticTransaction{
-		Seq:  1,
-		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
-		Ops: []history.TerminalSemanticOp{
-			{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: []history.TerminalSemanticCell{{Content: "sealed", Width: 6}}},
-			{Code: vterm.ScreenOpControl, Control: "lf"},
-		},
-	}, history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream})
-	if _, err := renderer.ApplyJournal(sealed); err != nil {
-		t.Fatalf("sealed ordinary journal should apply: %v journal=%#v", err, sealed)
-	}
-
-	open := history.HistoryJournalFromDecision("term-r404-gate", history.TerminalSemanticTransaction{
-		Seq:  2,
-		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
-		Ops:  []history.TerminalSemanticOp{{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: []history.TerminalSemanticCell{{Content: "open", Width: 4}}}},
-	}, history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream})
-	if _, err := renderer.ApplyJournal(open); err != nil {
-		t.Fatalf("open-line journal should apply through stream reducer: %v journal=%#v", err, open)
-	}
-
-	lfOnly := history.HistoryJournalFromDecision("term-r404-gate", history.TerminalSemanticTransaction{
-		Seq:  3,
-		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
-		Ops:  []history.TerminalSemanticOp{{Code: vterm.ScreenOpControl, Control: "lf"}},
-	}, history.HistoryDecision{Mode: history.HistoryOutputModeOrdinaryStream})
-	batch, err := renderer.ApplyJournal(lfOnly)
-	if err != nil {
-		t.Fatalf("LF-only journal should seal renderer-owned open line: %v journal=%#v", err, lfOnly)
-	}
-	if got := strings.Join(historyRowTextsFromLinesForTest(batch.Mutations), "|"); got != "open" {
-		t.Fatalf("LF-only journal should seal open line, got %q batch=%#v", got, batch)
-	}
-}
-func TestR404TerminalJournalRendererAppliesBoundaryProofAndFramePayload(t *testing.T) {
-	renderer := history.NewHistoryJournalRenderer()
-	boundaryOnly := history.HistoryJournalFromDecision("term-r404-renderer", history.TerminalSemanticTransaction{
-		Seq:  1,
-		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
-		Ops: []history.TerminalSemanticOp{
-			{Code: vterm.ScreenOpControl, Control: "ed", Mode: 3},
-			{Code: vterm.ScreenOpResize, Size: vterm.Size{Cols: 40, Rows: 6}},
-		},
-	}, history.HistoryDecision{Mode: history.HistoryOutputModeBoundaryOnly, NonHistoryBoundary: true})
-	if _, err := renderer.ApplyJournal(boundaryOnly); err != nil {
-		t.Fatalf("boundary-only journal should apply: %v journal=%#v", err, boundaryOnly)
-	}
-
-	withScrollOut := history.HistoryJournalFromDecision("term-r404-renderer", history.TerminalSemanticTransaction{
-		Seq:  2,
-		Size: history.TerminalSemanticSize{Cols: 30, Rows: 4},
-		Ops: []history.TerminalSemanticOp{{
-			Code:      vterm.ScreenOpControl,
-			Control:   "ed",
-			Mode:      2,
-			ScrollOut: []vterm.ScrollbackRowAppend{{Runs: []vterm.CellRun{{Text: "proof"}}}},
-		}},
-	}, history.HistoryDecision{Mode: history.HistoryOutputModePrimaryFrameSession, ConsumeScrollOutProof: true, ConsumeClearTimeScrollOutProof: true, ConsumeClearBoundary: true})
-	if _, err := renderer.ApplyJournal(withScrollOut); err != nil {
-		t.Fatalf("scroll-out proof journal should apply: %v journal=%#v", err, withScrollOut)
-	}
-
-	withFrame := history.HistoryJournalFromDecision("term-r404-renderer", history.TerminalSemanticTransaction{
-		Seq:                     3,
-		Size:                    history.TerminalSemanticSize{Cols: 30, Rows: 4},
-		SynchronizedBegin:       true,
-		SynchronizedEnd:         true,
-		PrimaryFrameTouchedRows: []int{0},
-		PrimaryFrame:            &history.TerminalSemanticFrame{Cols: 30, Rows: [][]history.TerminalSemanticCell{{{Content: "f", Width: 1}}}},
-		Ops: []history.TerminalSemanticOp{
-			{Code: vterm.ScreenOpModes, Private: true, Mode: 2026, Enabled: true},
-			{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: []history.TerminalSemanticCell{{Content: "f", Width: 1}}},
-			{Code: vterm.ScreenOpModes, Private: true, Mode: 2026, Enabled: false},
-		},
-	}, history.HistoryDecision{Mode: history.HistoryOutputModePrimaryFrameSession, PublishPrimaryFrame: true})
-	if _, err := renderer.ApplyJournal(withFrame); err != nil {
-		t.Fatalf("frame payload journal should apply: %v journal=%#v", err, withFrame)
-	}
-}
-
 func TestR396RestartFlushesPendingLiveQueueBeforePreservingScreen(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -1143,17 +1061,6 @@ func historyRowTexts(rows []history.HistoryRow) []string {
 	return texts
 }
 
-func historyRowTextsFromLinesForTest(mutations []history.HistoryMutation) []string {
-	texts := make([]string, 0, len(mutations))
-	for _, mutation := range mutations {
-		if mutation.Line == nil {
-			continue
-		}
-		texts = append(texts, historyCellsText(mutation.Line.Cells))
-	}
-	return texts
-}
-
 func historyRowsContain(rows []history.HistoryRow, needle string) bool {
 	for _, row := range rows {
 		if strings.Contains(historyCellsText(row.Cells), needle) {
@@ -1363,51 +1270,6 @@ func (factory *sessionBoundRecordingProcessFactory) Spawn(ctx context.Context, s
 		recording.exit(-1)
 	}()
 	return recording, nil
-}
-
-type blockingHistoryStore struct {
-	history.HistoryStore
-	mu           sync.Mutex
-	blocked      bool
-	releaseCh    chan struct{}
-	applyStarted chan struct{}
-	startOnce    sync.Once
-}
-
-func newBlockingHistoryStore(terminalID string) *blockingHistoryStore {
-	return &blockingHistoryStore{
-		HistoryStore: history.NewInMemoryHistoryStore(terminalID),
-		releaseCh:    make(chan struct{}),
-		applyStarted: make(chan struct{}),
-	}
-}
-
-func (store *blockingHistoryStore) block() {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	store.blocked = true
-}
-
-func (store *blockingHistoryStore) release() {
-	store.mu.Lock()
-	releaseCh := store.releaseCh
-	store.blocked = false
-	store.mu.Unlock()
-	close(releaseCh)
-}
-
-func (store *blockingHistoryStore) Apply(batch history.HistoryMutationBatch) error {
-	store.mu.Lock()
-	blocked := store.blocked
-	releaseCh := store.releaseCh
-	store.mu.Unlock()
-	if blocked {
-		store.startOnce.Do(func() {
-			close(store.applyStarted)
-		})
-		<-releaseCh
-	}
-	return store.HistoryStore.Apply(batch)
 }
 
 type recordingProcess struct {
