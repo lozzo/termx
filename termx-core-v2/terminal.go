@@ -554,7 +554,10 @@ func (terminal *Terminal) flushHistoryTapQueue(ctx context.Context) error {
 	if queue == nil {
 		return nil
 	}
-	return queue.Flush(ctx)
+	finish := perftrace.Measure("core.terminal.history_tap_queue.flush")
+	err := queue.Flush(ctx)
+	finish(0)
+	return err
 }
 
 func (terminal *Terminal) watchExit(process TerminalProcess, outputDone <-chan struct{}) {
@@ -747,26 +750,35 @@ func terminalNativeScreenSnapshotFromLiveSurface(terminalID string, revision Liv
 }
 
 func (terminal *Terminal) HistoryWindow(req history.HistoryWindowRequest) (history.HistoryWindow, error) {
+	mode := historyWindowPerfMode(req.Mode)
+	finish := perftrace.Measure("core.terminal.history_window." + mode + ".total")
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
 	if !terminal.historyEnabled {
+		finish(0)
 		return history.HistoryWindow{}, ErrHistoryDisabled
 	}
 	if terminal.historyStore == nil {
+		finish(0)
 		return history.HistoryWindow{}, ErrHistoryNotRebuilt
 	}
+	var window history.HistoryWindow
+	var err error
 	switch req.Mode {
 	case "", history.HistoryWindowModeLatest:
-		return terminal.historyStore.LatestWindow(req)
+		window, err = terminal.historyStore.LatestWindow(req)
 	case history.HistoryWindowModeOlder:
-		return terminal.historyStore.OlderWindow(req)
+		window, err = terminal.historyStore.OlderWindow(req)
 	case history.HistoryWindowModeOldest:
-		return terminal.historyStore.OldestWindow(req)
+		window, err = terminal.historyStore.OldestWindow(req)
 	case history.HistoryWindowModeNewer:
-		return terminal.historyStore.NewerWindow(req)
+		window, err = terminal.historyStore.NewerWindow(req)
 	default:
+		finish(0)
 		return history.HistoryWindow{}, history.ErrHistoryUnsupportedWindowMode
 	}
+	finish(len(window.Rows))
+	return window, err
 }
 
 func (terminal *Terminal) HistoryCopy(req history.HistoryCopyRequest) (string, error) {
@@ -782,15 +794,20 @@ func (terminal *Terminal) HistoryCopy(req history.HistoryCopyRequest) (string, e
 }
 
 func (terminal *Terminal) HistoryFreeze(req history.FreezeHistoryRequest) (history.FrozenHistorySnapshot, error) {
+	finish := perftrace.Measure("core.terminal.history_freeze.total")
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
 	if !terminal.historyEnabled {
+		finish(0)
 		return history.FrozenHistorySnapshot{}, ErrHistoryDisabled
 	}
 	if terminal.historyStore == nil {
+		finish(0)
 		return history.FrozenHistorySnapshot{}, ErrHistoryNotRebuilt
 	}
-	return terminal.historyStore.Freeze(req)
+	snapshot, err := terminal.historyStore.Freeze(req)
+	finish(int(snapshot.CommittedUpperBound))
+	return snapshot, err
 }
 
 // HistoryRelease 释放 terminal history store 中的 core-owned token。

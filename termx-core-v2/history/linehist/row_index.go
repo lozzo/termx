@@ -8,6 +8,8 @@ import (
 	"os"
 	"sort"
 	"sync"
+
+	"github.com/lozzow/termx/termx-shared/perftrace"
 )
 
 const (
@@ -136,28 +138,41 @@ func (idx *coldRowIndex) ensure(engine *Engine, atLeast int) error {
 	if idx == nil || engine == nil {
 		return nil
 	}
+	finish := perftrace.Measure("core.linehist.cold_index.ensure")
 	idx.mu.Lock()
-	defer idx.mu.Unlock()
+	before := idx.covered
+	defer func() {
+		finish(maxInt(0, atLeast-before))
+		idx.mu.Unlock()
+	}()
 	if atLeast <= idx.covered {
 		return nil
 	}
+	perftrace.Count("core.linehist.cold_index.extend_lines", atLeast-idx.covered)
 	const batch = 1024
 	for idx.covered < atLeast {
 		end := minInt(atLeast, idx.covered+batch)
+		finishRead := perftrace.Measure("core.linehist.cold_index.engine_lines")
 		lines, err := engine.Lines(idx.covered, end)
+		finishRead(len(lines))
 		if err != nil {
 			return err
 		}
 		if len(lines) == 0 {
 			return errors.New("linehist: row index cold line range out of range")
 		}
+		finishCount := perftrace.Measure("core.linehist.cold_index.count_rows")
 		counts := make([]uint32, len(lines))
 		for i, line := range lines {
 			counts[i] = uint32(countWrappedRows(line.Runs, idx.cols))
 		}
+		finishCount(len(lines))
+		finishAppend := perftrace.Measure("core.linehist.cold_index.append_counts")
 		if err := idx.appendCountsLocked(counts); err != nil {
+			finishAppend(len(counts))
 			return err
 		}
+		finishAppend(len(counts))
 	}
 	return nil
 }

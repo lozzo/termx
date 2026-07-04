@@ -14,6 +14,7 @@ import (
 	"github.com/lozzow/termx/termx-core-v2/history/linehist"
 	"github.com/lozzow/termx/termx-core-v2/live"
 	"github.com/lozzow/termx/termx-proto/wire"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/transport"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 )
@@ -581,6 +582,7 @@ func (server *Server) terminalHistoryWindow(ctx context.Context, id string, req 
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	mode := historyWindowPerfMode(req.Mode)
 	terminal, err := server.Terminal(id)
 	if err != nil {
 		return history.HistoryWindow{}, err
@@ -589,16 +591,22 @@ func (server *Server) terminalHistoryWindow(ctx context.Context, id string, req 
 		// 中文说明：普通 window/copy 调用必须先等 history worker 追平；
 		// protocol latest 已先通过 Freeze 建立 token fence，读取同一 token window 时
 		// 不再重复 flush，避免压力输出后 copy 入口多等一轮 history queue。
+		finishFlush := perftrace.Measure("core.server.history_window." + mode + ".flush")
 		if err := terminal.FlushHistory(ctx); err != nil {
+			finishFlush(0)
 			return history.HistoryWindow{}, err
 		}
+		finishFlush(0)
 	} else if req.Token == "" {
 		return history.HistoryWindow{}, history.ErrHistoryInvalidMutation
 	}
 	if req.TerminalID == "" {
 		req.TerminalID = id
 	}
+	finishStore := perftrace.Measure("core.server.history_window." + mode + ".terminal")
 	window, err := terminal.HistoryWindow(req)
+	finishStore(len(window.Rows))
+	perftrace.Count("core.server.history_window."+mode+".rows", len(window.Rows))
 	if err != nil {
 		return history.HistoryWindow{}, err
 	}
@@ -635,13 +643,34 @@ func (server *Server) TerminalHistoryFreeze(ctx context.Context, id string, req 
 	if err != nil {
 		return history.FrozenHistorySnapshot{}, err
 	}
+	finishFlush := perftrace.Measure("core.server.history_freeze.flush")
 	if err := terminal.FlushHistory(ctx); err != nil {
+		finishFlush(0)
 		return history.FrozenHistorySnapshot{}, err
 	}
+	finishFlush(0)
 	if req.TerminalID == "" {
 		req.TerminalID = id
 	}
-	return terminal.HistoryFreeze(req)
+	finishStore := perftrace.Measure("core.server.history_freeze.terminal")
+	snapshot, err := terminal.HistoryFreeze(req)
+	finishStore(int(snapshot.CommittedUpperBound))
+	return snapshot, err
+}
+
+func historyWindowPerfMode(mode history.HistoryWindowMode) string {
+	switch mode {
+	case "", history.HistoryWindowModeLatest:
+		return "latest"
+	case history.HistoryWindowModeOlder:
+		return "older"
+	case history.HistoryWindowModeNewer:
+		return "newer"
+	case history.HistoryWindowModeOldest:
+		return "oldest"
+	default:
+		return "other"
+	}
 }
 
 // TerminalHistoryRelease 释放 core-v2 authoritative history token。调用边界是

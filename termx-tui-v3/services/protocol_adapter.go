@@ -9,6 +9,7 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -134,11 +135,37 @@ func (adapter ProtocolCoreClientAdapter) HistoryCopyRange(ctx context.Context, r
 }
 
 func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, params protocol.HistoryWindowParams) (state.HistoryWindow, error) {
+	mode := protocolHistoryWindowPerfMode(params.Mode)
+	finishRPC := perftrace.Measure("tui.protocol.history_window." + mode + ".rpc")
 	window, err := adapter.Client.HistoryWindow(ctx, params)
+	if window != nil {
+		finishRPC(len(window.Rows))
+		perftrace.Count("tui.protocol.history_window."+mode+".rows", len(window.Rows))
+	} else {
+		finishRPC(0)
+	}
 	if err != nil {
 		return state.HistoryWindow{}, normalizeProtocolHistoryError(err)
 	}
-	return historyWindowFromProtocol(window, params.Cols), nil
+	finishConvert := perftrace.Measure("tui.protocol.history_window." + mode + ".convert")
+	converted := historyWindowFromProtocol(window, params.Cols)
+	finishConvert(len(converted.Rows))
+	return converted, nil
+}
+
+func protocolHistoryWindowPerfMode(mode string) string {
+	switch strings.TrimSpace(mode) {
+	case "", "latest":
+		return "latest"
+	case "older":
+		return "older"
+	case "newer":
+		return "newer"
+	case "oldest":
+		return "oldest"
+	default:
+		return "other"
+	}
 }
 
 func normalizeProtocolHistoryError(err error) error {

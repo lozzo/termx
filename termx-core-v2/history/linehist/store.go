@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
@@ -215,6 +216,9 @@ func (store *Store) ReadState() history.HistoryReadState {
 
 // LatestWindow 返回投影尾部 replace window。
 func (store *Store) LatestWindow(req history.HistoryWindowRequest) (history.HistoryWindow, error) {
+	finish := perftrace.Measure("core.linehist.window.latest")
+	responseRows := 0
+	defer func() { finish(responseRows) }()
 	req, view, err := store.viewForRequest(req)
 	if err != nil {
 		return history.HistoryWindow{}, err
@@ -229,6 +233,7 @@ func (store *Store) LatestWindow(req history.HistoryWindowRequest) (history.Hist
 	if err != nil {
 		return history.HistoryWindow{}, err
 	}
+	responseRows = len(page)
 	annotateProjectionRowIndexes(page, start)
 	boundary := boundaryForRows(page, view.generation, req.Token)
 	if len(page) > 0 {
@@ -239,6 +244,9 @@ func (store *Store) LatestWindow(req history.HistoryWindowRequest) (history.Hist
 
 // OlderWindow 按 cursor.BeforeRowIndex 向更旧方向 prepend 分页。
 func (store *Store) OlderWindow(req history.HistoryWindowRequest) (history.HistoryWindow, error) {
+	finish := perftrace.Measure("core.linehist.window.older")
+	responseRows := 0
+	defer func() { finish(responseRows) }()
 	req, view, err := store.viewForRequest(req)
 	if err != nil {
 		return history.HistoryWindow{}, err
@@ -258,6 +266,7 @@ func (store *Store) OlderWindow(req history.HistoryWindowRequest) (history.Histo
 	if err != nil {
 		return history.HistoryWindow{}, err
 	}
+	responseRows = len(page)
 	annotateProjectionRowIndexes(page, start)
 	boundary := boundaryForRows(page, view.generation, req.Token)
 	if len(page) > 0 {
@@ -268,6 +277,9 @@ func (store *Store) OlderWindow(req history.HistoryWindowRequest) (history.Histo
 
 // OldestWindow 从投影 head 返回 replace window（TUI copy mode `g` 跳转）。
 func (store *Store) OldestWindow(req history.HistoryWindowRequest) (history.HistoryWindow, error) {
+	finish := perftrace.Measure("core.linehist.window.oldest")
+	responseRows := 0
+	defer func() { finish(responseRows) }()
 	req, view, err := store.viewForRequest(req)
 	if err != nil {
 		return history.HistoryWindow{}, err
@@ -282,6 +294,7 @@ func (store *Store) OldestWindow(req history.HistoryWindowRequest) (history.Hist
 	if err != nil {
 		return history.HistoryWindow{}, err
 	}
+	responseRows = len(page)
 	annotateProjectionRowIndexes(page, 0)
 	boundary := boundaryForRows(page, view.generation, req.Token)
 	if len(page) > 0 {
@@ -292,6 +305,9 @@ func (store *Store) OldestWindow(req history.HistoryWindowRequest) (history.Hist
 
 // NewerWindow 按 cursor.BeforeRowIndex 向更新方向 append 分页。
 func (store *Store) NewerWindow(req history.HistoryWindowRequest) (history.HistoryWindow, error) {
+	finish := perftrace.Measure("core.linehist.window.newer")
+	responseRows := 0
+	defer func() { finish(responseRows) }()
 	req, view, err := store.viewForRequest(req)
 	if err != nil {
 		return history.HistoryWindow{}, err
@@ -311,6 +327,7 @@ func (store *Store) NewerWindow(req history.HistoryWindowRequest) (history.Histo
 	if err != nil {
 		return history.HistoryWindow{}, err
 	}
+	responseRows = len(page)
 	annotateProjectionRowIndexes(page, start)
 	boundary := boundaryForRows(page, view.generation, req.Token)
 	if len(page) > 0 {
@@ -322,10 +339,14 @@ func (store *Store) NewerWindow(req history.HistoryWindowRequest) (history.Histo
 // Freeze 记录当前投影边界。冷段是不可变文件前缀（记 coldCount 即可），
 // 热段 materialize 成 rows；后续 repaint/eviction 不影响 token 视图。
 func (store *Store) Freeze(req history.FreezeHistoryRequest) (history.FrozenHistorySnapshot, error) {
+	finish := perftrace.Measure("core.linehist.freeze")
+	frozenRows := 0
+	defer func() { finish(frozenRows) }()
 	if store == nil {
 		return history.FrozenHistorySnapshot{}, nil
 	}
 	view := store.captureLive(req.Cols)
+	frozenRows = view.coldCount + len(view.hot)
 	store.mu.Lock()
 	store.nextToken++
 	token := history.HistoryToken(fmt.Sprintf("linehist-%d", store.nextToken))
@@ -366,6 +387,9 @@ func (store *Store) Freeze(req history.FreezeHistoryRequest) (history.FrozenHist
 // 一致：start line 未命中回退到 head，end line 未命中回退到 tail，行间
 // 以 "\n" 连接。冷段 LineID 直接映射记录序号，只 materialize 命中区间。
 func (store *Store) Copy(req history.HistoryCopyRequest) (string, error) {
+	finish := perftrace.Measure("core.linehist.copy")
+	copiedRows := 0
+	defer func() { finish(copiedRows) }()
 	_, view, err := store.viewForRequest(history.HistoryWindowRequest{
 		TerminalID: req.TerminalID,
 		Cols:       req.Cols,
@@ -394,6 +418,7 @@ func (store *Store) Copy(req history.HistoryCopyRequest) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	copiedRows = len(rows)
 	texts := make([]string, 0, len(rows))
 	for _, row := range rows {
 		texts = append(texts, rowText(row.Cells))
@@ -420,7 +445,9 @@ func (store *Store) lockGate() func() {
 	if gate == nil {
 		return func() {}
 	}
+	finish := perftrace.Measure("core.linehist.gate_wait")
 	gate.Lock()
+	finish(0)
 	return gate.Unlock
 }
 
@@ -428,6 +455,9 @@ func (store *Store) lockGate() func() {
 // gate 释放后冷段记录 [coldBase, coldBase+coldCount) 是不可变区间，
 // 分页读文件不再阻塞 ingest。
 func (store *Store) captureLive(reqCols int) liveView {
+	finish := perftrace.Measure("core.linehist.capture_live")
+	projectedRows := 0
+	defer func() { finish(projectedRows) }()
 	unlock := store.lockGate()
 	coldBase, coldCount := store.engine.VisibleLineRange()
 	openTail := store.engine.OpenTail()
@@ -447,11 +477,15 @@ func (store *Store) captureLive(reqCols int) liveView {
 	if cols <= 0 {
 		cols = 80
 	}
+	hot := hotRowsFromScreen(coldCount, openTail, snap, cols)
+	projectedRows = coldCount + len(hot)
+	perftrace.Count("core.linehist.capture_live.cold_lines", coldCount)
+	perftrace.Count("core.linehist.capture_live.hot_rows", len(hot))
 	return liveView{
 		coldBase:   coldBase,
 		coldCount:  coldCount,
 		cols:       cols,
-		hot:        hotRowsFromScreen(coldCount, openTail, snap, cols),
+		hot:        hot,
 		generation: generation,
 	}
 }
@@ -554,19 +588,27 @@ func (store *Store) viewForRequest(req history.HistoryWindowRequest) (history.Hi
 
 // viewTotal 返回视图的 row 总数（视图冷段持久 row-count 索引区间 + 热段行数）。
 func (store *Store) viewTotal(view liveView) (int, error) {
+	finish := perftrace.Measure("core.linehist.view_total")
 	coldRows, err := store.coldRowsTotal(view.cols, view.coldBase, view.coldCount)
 	if err != nil {
+		finish(0)
 		return 0, err
 	}
-	return coldRows + len(view.hot), nil
+	total := coldRows + len(view.hot)
+	finish(total)
+	return total, nil
 }
 
 func (store *Store) coldRowsTotal(cols int, coldBase int, coldCount int) (int, error) {
+	finish := perftrace.Measure("core.linehist.cold_rows_total")
 	idx, err := store.ensureColdIndex(cols, coldBase+coldCount)
 	if err != nil {
+		finish(0)
 		return 0, err
 	}
-	return idx.rowsBetween(coldBase, coldBase+coldCount)
+	rows, err := idx.rowsBetween(coldBase, coldBase+coldCount)
+	finish(rows)
+	return rows, err
 }
 
 // ensureColdIndex 惰性构建/延伸某个 cols 的冷段 row 索引。
@@ -575,7 +617,9 @@ func (store *Store) coldRowsTotal(cols int, coldBase int, coldCount int) (int, e
 // coldRowIndex 自己串行化，避免建索引时形成 Store.mu -> Engine.mu 的
 // 反向锁顺序。
 func (store *Store) ensureColdIndex(cols int, atLeast int) (*coldRowIndex, error) {
+	finish := perftrace.Measure("core.linehist.ensure_cold_index")
 	if store == nil || store.engine == nil {
+		finish(0)
 		return nil, fmt.Errorf("linehist: cold index store unavailable")
 	}
 	store.mu.Lock()
@@ -584,6 +628,7 @@ func (store *Store) ensureColdIndex(cols int, atLeast int) (*coldRowIndex, error
 	if idx == nil {
 		path := store.engine.RowIndexPath(cols)
 		if path == "" {
+			finish(0)
 			return nil, fmt.Errorf("linehist: row index path unavailable")
 		}
 		lineCount := store.engine.LineCount()
@@ -592,6 +637,7 @@ func (store *Store) ensureColdIndex(cols int, atLeast int) (*coldRowIndex, error
 		}
 		created, err := openColdRowIndex(path, cols, lineCount)
 		if err != nil {
+			finish(0)
 			return nil, err
 		}
 		store.mu.Lock()
@@ -606,8 +652,10 @@ func (store *Store) ensureColdIndex(cols int, atLeast int) (*coldRowIndex, error
 		}
 	}
 	if err := idx.ensure(store.engine, atLeast); err != nil {
+		finish(0)
 		return nil, err
 	}
+	finish(atLeast)
 	return idx, nil
 }
 
@@ -629,6 +677,9 @@ func (store *Store) closeColdIndexes() error {
 // 0 = 视图冷段第一行）。冷段用持久 row-count sidecar 定位记录区间，
 // 只读命中的正文 payload。
 func (store *Store) rowsForRange(view liveView, start int, end int) ([]history.HistoryRow, error) {
+	finish := perftrace.Measure("core.linehist.rows_for_range")
+	responseRows := 0
+	defer func() { finish(responseRows) }()
 	coldRows, err := store.coldRowsTotal(view.cols, view.coldBase, view.coldCount)
 	if err != nil {
 		return nil, err
@@ -650,10 +701,14 @@ func (store *Store) rowsForRange(view liveView, start int, end int) ([]history.H
 		hotEnd := minInt(len(view.hot), end-coldRows)
 		rows = append(rows, cloneRows(view.hot[hotStart:hotEnd])...)
 	}
+	responseRows = len(rows)
 	return rows, nil
 }
 
 func (store *Store) coldRowsForRange(cols int, coldBase int, coldCount int, start int, end int) ([]history.HistoryRow, error) {
+	finish := perftrace.Measure("core.linehist.cold_rows_for_range")
+	responseRows := 0
+	defer func() { finish(responseRows) }()
 	if end <= start {
 		return nil, nil
 	}
@@ -709,6 +764,7 @@ func (store *Store) coldRowsForRange(cols int, coldBase int, coldCount int, star
 			rowIndex++
 		}
 	}
+	responseRows = len(rows)
 	return rows, nil
 }
 

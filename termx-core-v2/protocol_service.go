@@ -759,15 +759,20 @@ func (session *protocolSession) historyWindow(ctx context.Context, params protoc
 		return nil, err
 	}
 	req := historyWindowRequestFromProtocol(params)
+	mode := historyWindowPerfMode(req.Mode)
+	finishTotal := perftrace.Measure("core.protocol.history_window." + mode + ".total")
 	if req.Mode == history.HistoryWindowModeLatest {
 		// 中文说明：protocol latest 为 copy/history 会话建立 core-owned frozen token；
 		// TUI 只能原样保存 token/cursor，不能用 live rows 或本地 row count 推断边界。
+		finishFreeze := perftrace.Measure("core.protocol.history_window.latest.freeze")
 		snapshot, err := session.server.TerminalHistoryFreeze(ctx, params.TerminalID, history.FreezeHistoryRequest{
 			TerminalID: params.TerminalID,
 			Cols:       req.Cols,
 			Limit:      req.Limit,
 		})
+		finishFreeze(int(snapshot.CommittedUpperBound))
 		if err != nil {
+			finishTotal(0)
 			return nil, err
 		}
 		req.Token = snapshot.Token
@@ -778,11 +783,19 @@ func (session *protocolSession) historyWindow(ctx context.Context, params protoc
 		// token；latest 随后读取同一 frozen token window，不能再把 copy 入口卡在第二个 flush。
 		flushWindow = false
 	}
+	finishWindow := perftrace.Measure("core.protocol.history_window." + mode + ".read")
 	window, err := session.server.terminalHistoryWindow(ctx, params.TerminalID, req, flushWindow)
+	finishWindow(len(window.Rows))
 	if err != nil {
+		finishTotal(0)
 		return nil, err
 	}
-	return protocolHistoryWindowFromDomain(window), nil
+	finishEncode := perftrace.Measure("core.protocol.history_window." + mode + ".encode")
+	out := protocolHistoryWindowFromDomain(window)
+	finishEncode(len(window.Rows))
+	finishTotal(len(window.Rows))
+	perftrace.Count("core.protocol.history_window."+mode+".rows", len(window.Rows))
+	return out, nil
 }
 
 func (session *protocolSession) historyCopy(ctx context.Context, params protocol.HistoryWindowParams) ([]byte, error) {
