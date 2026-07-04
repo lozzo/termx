@@ -88,7 +88,7 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
-			stopPerfTrace, perfTracePath, perfTraceEnabled := perftrace.EnableFromEnv(ctx)
+			stopPerfTrace, perfTracePath, perfTraceEnabled := perftrace.EnableFromEnvWithProcess(ctx, "core-v2-daemon")
 			defer stopPerfTrace()
 			if perfTraceEnabled {
 				logger.Info("core-v2 daemon perftrace enabled", "path", perfTracePath)

@@ -46,6 +46,19 @@ type Snapshot struct {
 	Buckets     []BucketSnapshot `json:"buckets,omitempty"`
 }
 
+// TraceRecord 是 TERMX_PERF_TRACE=.jsonl 统一日志中的单条进程快照。
+// 它携带进程角色和 PID，允许 daemon 与 TUI 继承同一路径并追加写入，
+// 诊断工具再按 process/pid/sequence 还原各自的耗时链路。
+type TraceRecord struct {
+	Format    string    `json:"format"`
+	Process   string    `json:"process"`
+	PID       int       `json:"pid"`
+	Sequence  uint64    `json:"sequence"`
+	Reason    string    `json:"reason,omitempty"`
+	WrittenAt time.Time `json:"written_at"`
+	Snapshot  Snapshot  `json:"snapshot"`
+}
+
 type EventSnapshot struct {
 	Name      string  `json:"name"`
 	Count     uint64  `json:"count"`
@@ -66,6 +79,8 @@ type BucketSnapshot struct {
 
 var active atomic.Pointer[Recorder]
 
+const traceRecordFormat = "termx.perftrace.snapshot.v1"
+
 func NewRecorder() *Recorder {
 	return &Recorder{
 		startedAt:  time.Now().UTC(),
@@ -83,18 +98,31 @@ func Enable() *Recorder {
 
 // EnableFromEnv 按 TERMX_PERF_TRACE 打开进程内聚合性能采样。
 // 返回的 stop 必须在进程退出前调用；未设置环境变量时保持默认空操作。
+// 路径以 .jsonl 结尾时追加写多进程统一日志；其他路径保持旧的 JSON 快照覆盖写。
 func EnableFromEnv(ctx context.Context) (func(), string, bool) {
+	return EnableFromEnvWithProcess(ctx, defaultProcessName())
+}
+
+// EnableFromEnvWithProcess 按 TERMX_PERF_TRACE 打开带进程角色的性能采样。
+// process 是统一日志里的消息链路归属，例如 core-v2-daemon 或 tui-v3；
+// 当 daemon/TUI 共享同一个 .jsonl 路径时，写入边界由追加记录表达，不互相覆盖。
+func EnableFromEnvWithProcess(ctx context.Context, process string) (func(), string, bool) {
 	path := strings.TrimSpace(os.Getenv(envPath))
 	if path == "" {
 		return func() {}, "", false
+	}
+	process = strings.TrimSpace(process)
+	if process == "" {
+		process = defaultProcessName()
 	}
 	recorder := NewRecorder()
 	recorder.bucketSize = bucketIntervalFromEnv()
 	active.Store(recorder)
 	done := make(chan struct{})
 	stopOnce := sync.Once{}
-	write := func() {
-		_ = recorder.WriteJSON(path)
+	writer := newEnvWriter(path, process)
+	write := func(reason string) {
+		_ = writer.Write(recorder.Snapshot(), reason)
 	}
 	interval := intervalFromEnv()
 	go func() {
@@ -107,14 +135,14 @@ func EnableFromEnv(ctx context.Context) (func(), string, bool) {
 			case <-done:
 				return
 			case <-ticker.C:
-				write()
+				write("periodic")
 			}
 		}
 	}()
 	stop := func() {
 		stopOnce.Do(func() {
 			close(done)
-			write()
+			write("final")
 			Disable()
 		})
 	}
@@ -183,6 +211,72 @@ func (r *Recorder) WriteJSON(path string) error {
 		return nil
 	}
 	return WriteJSON(path, r.Snapshot())
+}
+
+type envWriter struct {
+	path    string
+	process string
+	jsonl   bool
+	seq     atomic.Uint64
+}
+
+func newEnvWriter(path, process string) *envWriter {
+	return &envWriter{path: path, process: process, jsonl: perfTraceJSONLinesPath(path)}
+}
+
+func (w *envWriter) Write(snapshot Snapshot, reason string) error {
+	if w == nil || w.path == "" {
+		return nil
+	}
+	if !w.jsonl {
+		return WriteJSON(w.path, snapshot)
+	}
+	return appendTraceRecord(w.path, TraceRecord{
+		Format:    traceRecordFormat,
+		Process:   w.process,
+		PID:       os.Getpid(),
+		Sequence:  w.seq.Add(1),
+		Reason:    reason,
+		WrittenAt: time.Now().UTC(),
+		Snapshot:  snapshot,
+	})
+}
+
+func appendTraceRecord(path string, record TraceRecord) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = file.Write(data)
+	return err
+}
+
+func perfTraceJSONLinesPath(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".jsonl" || ext == ".ndjson"
+}
+
+func defaultProcessName() string {
+	exe, err := os.Executable()
+	if err == nil {
+		name := strings.TrimSpace(filepath.Base(exe))
+		if name != "" {
+			return name
+		}
+	}
+	return "termx"
 }
 
 func intervalFromEnv() time.Duration {

@@ -79,7 +79,7 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 		return err
 	}
 	defer closeLogger()
-	stopPerfTrace, perfTracePath, perfTraceEnabled := perftrace.EnableFromEnv(ctx)
+	stopPerfTrace, perfTracePath, perfTraceEnabled := perftrace.EnableFromEnvWithProcess(ctx, "tui-v3")
 	defer stopPerfTrace()
 	if perfTraceEnabled {
 		logger.Info("tui-v3 perftrace enabled", "path", perfTracePath)
