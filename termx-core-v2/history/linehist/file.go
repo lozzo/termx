@@ -20,20 +20,25 @@ const (
 	lineFileHeaderSize           = 24
 
 	// lineFileRecordKindLine 是 logical line 正文记录。
-	// kind=2 预留给 R434 的 boundary 记录（ED3/ClearScrollback 历史分段标记）。
 	lineFileRecordKindLine uint8 = 1
+	// lineFileRecordKindBoundary 是 ED3/ClearScrollback 历史分段标记：
+	// 它之前的正文记录不再进入可见投影，但文件保持 append-only，
+	// 旧 frozen token 仍可按绝对序号读到分段前的记录。
+	lineFileRecordKindBoundary uint8 = 2
 
 	lineFileFlagHardEnd uint8 = 1 << 0
 )
 
 // LineFile 是单 terminal 的 logical line append-only 二进制文件。
-// 内存只保留 offset 索引（[]int64），恢复时只扫 record header 不 materialize
-// 正文，保证真正无限；分页读按 line 绝对序号 Lines(start,end) 随机访问。
+// 内存只保留 offset 索引（[]int64）与最近一次 clear 分段位置，恢复时只扫
+// record header 不 materialize 正文，保证真正无限；分页读按 line 绝对序号
+// Lines(start,end) 随机访问。
 type LineFile struct {
 	path    string
 	file    *os.File
 	writer  *bufio.Writer
 	offsets []int64
+	base    int
 }
 
 // OpenLineFile 打开（或创建）terminal 的 logical line 文件并恢复 offset 索引。
@@ -110,12 +115,53 @@ func (f *LineFile) AppendLines(lines []Line) error {
 	return f.writer.Flush()
 }
 
-// LineCount 返回已落盘的记录数（含 HardEnd=false 的 chunk 记录）。
+// AppendBoundary 追加一条 ED3/ClearScrollback 分段记录并 flush。分段之前
+// 的正文记录退出可见投影（Base 前移），但不删除：文件保持 append-only，
+// 旧 frozen token 仍按绝对序号读取。
+func (f *LineFile) AppendBoundary() error {
+	if f == nil {
+		return nil
+	}
+	if f.file == nil {
+		return os.ErrInvalid
+	}
+	if _, err := f.file.Seek(0, io.SeekEnd); err != nil {
+		return err
+	}
+	if f.writer == nil {
+		f.writer = bufio.NewWriterSize(f.file, 256*1024)
+	}
+	var header [lineFileHeaderSize]byte
+	binary.LittleEndian.PutUint32(header[0:4], lineFileRecordMagic)
+	binary.LittleEndian.PutUint16(header[4:6], lineFileRecordVersion)
+	header[6] = lineFileRecordKindBoundary
+	binary.LittleEndian.PutUint64(header[8:16], uint64(len(f.offsets)))
+	binary.LittleEndian.PutUint32(header[16:20], 0)
+	binary.LittleEndian.PutUint32(header[20:24], 0)
+	if _, err := f.writer.Write(header[:]); err != nil {
+		return err
+	}
+	if err := f.writer.Flush(); err != nil {
+		return err
+	}
+	f.base = len(f.offsets)
+	return nil
+}
+
+// LineCount 返回已落盘的记录数（含 HardEnd=false 的 chunk 记录），绝对域。
 func (f *LineFile) LineCount() int {
 	if f == nil {
 		return 0
 	}
 	return len(f.offsets)
+}
+
+// Base 返回最近一次 clear 分段后第一条可见记录的绝对序号；无分段时为 0。
+func (f *LineFile) Base() int {
+	if f == nil {
+		return 0
+	}
+	return f.base
 }
 
 // Lines 按绝对序号读取 [start,end) 区间的记录，越界自动收敛。
@@ -183,6 +229,7 @@ func (f *LineFile) recover() error {
 	}
 	size := info.Size()
 	f.offsets = nil
+	f.base = 0
 	var offset int64
 	var header [lineFileHeaderSize]byte
 	for offset+lineFileHeaderSize <= size {
@@ -199,7 +246,14 @@ func (f *LineFile) recover() error {
 		if recordEnd > size {
 			break
 		}
-		f.offsets = append(f.offsets, offset)
+		switch header[6] {
+		case lineFileRecordKindLine:
+			f.offsets = append(f.offsets, offset)
+		case lineFileRecordKindBoundary:
+			f.base = len(f.offsets)
+		default:
+			return errors.New("unsupported logical line record kind")
+		}
 		offset = recordEnd
 	}
 	if offset < size {
@@ -222,30 +276,41 @@ func clampLineIndex(value int, low int, high int) int {
 }
 
 func readLineFileRecord(reader io.Reader) (Line, uint8, error) {
-	var header [lineFileHeaderSize]byte
-	if _, err := io.ReadFull(reader, header[:]); err != nil {
-		return Line{}, 0, err
+	for {
+		var header [lineFileHeaderSize]byte
+		if _, err := io.ReadFull(reader, header[:]); err != nil {
+			return Line{}, 0, err
+		}
+		if binary.LittleEndian.Uint32(header[0:4]) != lineFileRecordMagic {
+			return Line{}, 0, errors.New("invalid logical line record magic")
+		}
+		if binary.LittleEndian.Uint16(header[4:6]) != lineFileRecordVersion {
+			return Line{}, 0, errors.New("unsupported logical line record version")
+		}
+		kind := header[6]
+		payloadLen := int64(binary.LittleEndian.Uint32(header[16:20]))
+		// boundary 记录不占 offset 序号，顺序读时跳过即可（offsets 里的
+		// start 定位到正文记录，中间可能穿插 clear 分段标记）。
+		if kind == lineFileRecordKindBoundary {
+			if _, err := io.CopyN(io.Discard, reader, payloadLen); err != nil {
+				return Line{}, kind, err
+			}
+			continue
+		}
+		if kind != lineFileRecordKindLine {
+			return Line{}, kind, errors.New("unsupported logical line record kind")
+		}
+		payload := make([]byte, int(payloadLen))
+		if _, err := io.ReadFull(reader, payload); err != nil {
+			return Line{}, kind, err
+		}
+		line, err := decodeLineFilePayload(payload)
+		if err != nil {
+			return Line{}, kind, err
+		}
+		line.HardEnd = header[7]&lineFileFlagHardEnd != 0
+		return line, kind, nil
 	}
-	if binary.LittleEndian.Uint32(header[0:4]) != lineFileRecordMagic {
-		return Line{}, 0, errors.New("invalid logical line record magic")
-	}
-	if binary.LittleEndian.Uint16(header[4:6]) != lineFileRecordVersion {
-		return Line{}, 0, errors.New("unsupported logical line record version")
-	}
-	kind := header[6]
-	if kind != lineFileRecordKindLine {
-		return Line{}, kind, errors.New("unsupported logical line record kind")
-	}
-	payload := make([]byte, int(binary.LittleEndian.Uint32(header[16:20])))
-	if _, err := io.ReadFull(reader, payload); err != nil {
-		return Line{}, kind, err
-	}
-	line, err := decodeLineFilePayload(payload)
-	if err != nil {
-		return Line{}, kind, err
-	}
-	line.HardEnd = header[7]&lineFileFlagHardEnd != 0
-	return line, kind, nil
 }
 
 func encodeLineFilePayload(line Line) []byte {

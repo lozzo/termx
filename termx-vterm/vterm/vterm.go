@@ -1969,6 +1969,35 @@ func (v *VTerm) ScrollbackRowOwnershipAt(y int) string {
 	return stringAt(v.scrollbackOwnership, y)
 }
 
+// PrimarySavedScreenRows 返回 primary 屏当前行（used 宽度裁剪）与软换行标志，
+// 与是否处于 alt screen 无关。linehist 无限历史在 alt 期间用它投影"被 alt
+// 覆盖但仍未滚出"的主屏时间线尾部；它是 live 读投影，不是第二份 history truth。
+func (v *VTerm) PrimarySavedScreenRows() ([][]Cell, []bool) {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	if v.emu == nil {
+		return nil, nil
+	}
+	height := v.emu.PrimaryHeight()
+	if height <= 0 {
+		return nil, nil
+	}
+	rows := make([][]Cell, height)
+	wrapped := make([]bool, height)
+	for y := 0; y < height; y++ {
+		line := v.emu.PrimaryLine(y)
+		if len(line) > 0 {
+			cells := make([]Cell, len(line))
+			for i := range line {
+				cells[i] = v.convertCell(&line[i])
+			}
+			rows[y] = cells
+		}
+		wrapped[y] = v.emu.PrimaryLineWrapped(y)
+	}
+	return rows, wrapped
+}
+
 func (v *VTerm) ScreenWrapped() []bool {
 	v.mu.RLock()
 	defer v.mu.RUnlock()

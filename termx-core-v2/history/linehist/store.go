@@ -20,10 +20,13 @@ type ScreenRow struct {
 // ScreenSnapshot 是查询时刻的 emulator 当前屏（热段唯一来源）。
 // 它只在持有 ingest gate 时采集，保证与冷段落盘边界一致：任一物理行
 // 要么已作为 EvictedRows 落盘，要么出现在本快照里，不重不漏。
+// alt 期间 PrimaryRows 携带被 alt 覆盖但仍未滚出的主屏保存行——它们
+// 属于 primary 时间线热段（alt 退出后程序仍可改写），必须继续投影。
 type ScreenSnapshot struct {
-	Cols  int
-	Rows  []ScreenRow
-	InAlt bool
+	Cols        int
+	Rows        []ScreenRow
+	InAlt       bool
+	PrimaryRows []ScreenRow
 }
 
 // ScreenSnapshotFromVTerm 从 tap vterm 采集当前屏快照。
@@ -57,20 +60,38 @@ func ScreenSnapshotFromVTerm(vt *vterm.VTerm) ScreenSnapshot {
 			last = i
 		}
 	}
-	return ScreenSnapshot{Cols: info.Cols, Rows: rows[:last+1], InAlt: info.IsAlternateScreen}
+	snap := ScreenSnapshot{Cols: info.Cols, Rows: rows[:last+1], InAlt: info.IsAlternateScreen}
+	if info.IsAlternateScreen {
+		primaryCells, primaryWrapped := vt.PrimarySavedScreenRows()
+		primary := make([]ScreenRow, len(primaryCells))
+		lastPrimary := -1
+		for i := range primaryCells {
+			primary[i] = ScreenRow{Cells: primaryCells[i]}
+			if i < len(primaryWrapped) {
+				primary[i].Wrapped = primaryWrapped[i]
+			}
+			if len(primary[i].Cells) > 0 || primary[i].Wrapped {
+				lastPrimary = i
+			}
+		}
+		snap.PrimaryRows = primary[:lastPrimary+1]
+	}
+	return snap
 }
 
 // frozenView 是 Freeze 时刻的投影边界。冷段是 append-only 文件的不可变
-// 前缀，只需记录 coldCount；热段（当时的 mutable 屏幕行）必须 materialize，
-// 因为后续 repaint 会改写屏幕。
+// 记录区间，只需记录 coldBase/coldCount（绝对域）；热段（当时的 mutable
+// 屏幕行）必须 materialize，因为后续 repaint 会改写屏幕。文件记录不可变
+// 且读取按绝对序号，所以 token 视图在后续 ED3 clear 之后仍然有效。
 type frozenView struct {
+	coldBase   int
 	coldCount  int
 	cols       int
 	hot        []history.HistoryRow
 	generation history.Generation
 }
 
-// coldRowIndex 是某个 cols 下冷段记录的 rows-per-line prefix sum。
+// coldRowIndex 是某个 cols 下冷段记录的 rows-per-line prefix sum（绝对域）。
 // prefix[i] = 前 i 条记录投影出的 row 总数；记录 i 覆盖绝对行
 // [prefix[i], prefix[i+1])。冷段 append-only，索引只增量延伸。
 type coldRowIndex struct {
@@ -81,9 +102,11 @@ func (idx *coldRowIndex) covered() int {
 	return len(idx.prefix) - 1
 }
 
-// liveView 是一次查询的一致性视图：coldCount/热段行在 ingest gate 内采集，
-// 之后冷段 [0,coldCount) 是不可变前缀，可以在 gate 外分页读文件。
+// liveView 是一次查询的一致性视图：coldBase/coldCount/热段行在 ingest gate
+// 内采集，之后冷段记录 [coldBase, coldBase+coldCount) 是不可变区间，可以在
+// gate 外分页读文件。
 type liveView struct {
+	coldBase   int
 	coldCount  int
 	cols       int
 	hot        []history.HistoryRow
@@ -128,14 +151,21 @@ func (store *Store) Bind(screen func() ScreenSnapshot, gate sync.Locker) {
 	store.mu.Unlock()
 }
 
-// ApplyTransaction 消费一次 tap 事务的 EvictedRows。调用方必须持有 gate
-// （Terminal 在 tapOpMu 临界区内、ApplyPTYWrite 之后调用）；本方法不能
-// 再锁 gate，否则自死锁。
+// ApplyTransaction 消费一次 tap 事务的 EvictedRows 与 ClearScrollback 边界。
+// 调用方必须持有 gate（Terminal 在 tapOpMu 临界区内、ApplyPTYWrite 之后
+// 调用）；本方法不能再锁 gate，否则自死锁。
+// 顺序：先落盘本事务滚出的行，再处理 clear——`clear` 命令是 ED2（把整屏
+// 挤进 scrollback）+ ED3（清 scrollback）在同一次写入里，先滚出后清空
+// 才与真实终端一致。ED3 只前移可见分段，不删除已落盘记录（frozen token
+// 仍按绝对序号读取）。RIS 刻意不清历史（与 xterm 默认一致）。
 func (store *Store) ApplyTransaction(tx vterm.TerminalSemanticTransaction) error {
 	if store == nil {
 		return nil
 	}
 	err := store.engine.ApplyEvictedRows(tx.EvictedRows)
+	if err == nil && tx.ClearScrollback {
+		err = store.engine.ClearHistory()
+	}
 	store.mu.Lock()
 	store.generation++
 	store.mu.Unlock()
@@ -182,9 +212,10 @@ func (store *Store) ReadState() history.HistoryReadState {
 	store.mu.Lock()
 	generation := store.generation
 	store.mu.Unlock()
+	_, visible := store.engine.VisibleLineRange()
 	return history.HistoryReadState{
 		Generation:  generation,
-		HasTimeline: store.engine.LineCount() > 0,
+		HasTimeline: visible > 0,
 	}
 }
 
@@ -305,6 +336,7 @@ func (store *Store) Freeze(req history.FreezeHistoryRequest) (history.FrozenHist
 	store.nextToken++
 	token := history.HistoryToken(fmt.Sprintf("linehist-%d", store.nextToken))
 	store.frozen[token] = &frozenView{
+		coldBase:   view.coldBase,
 		coldCount:  view.coldCount,
 		cols:       view.cols,
 		hot:        cloneRows(view.hot),
@@ -398,11 +430,12 @@ func (store *Store) lockGate() func() {
 	return gate.Unlock
 }
 
-// captureLive 在 gate 内采集一致性视图：冷段计数、未闭合尾部与当前屏。
-// gate 释放后冷段 [0,coldCount) 是不可变前缀，分页读文件不再阻塞 ingest。
+// captureLive 在 gate 内采集一致性视图：可见冷段区间、未闭合尾部与当前屏。
+// gate 释放后冷段记录 [coldBase, coldBase+coldCount) 是不可变区间，
+// 分页读文件不再阻塞 ingest。
 func (store *Store) captureLive(reqCols int) liveView {
 	unlock := store.lockGate()
-	coldCount := store.engine.LineCount()
+	coldBase, coldCount := store.engine.VisibleLineRange()
 	openTail := store.engine.OpenTail()
 	var snap ScreenSnapshot
 	store.mu.Lock()
@@ -421,6 +454,7 @@ func (store *Store) captureLive(reqCols int) liveView {
 		cols = 80
 	}
 	return liveView{
+		coldBase:   coldBase,
 		coldCount:  coldCount,
 		cols:       cols,
 		hot:        hotRowsFromScreen(coldCount, openTail, snap, cols),
@@ -430,35 +464,21 @@ func (store *Store) captureLive(reqCols int) liveView {
 
 // hotRowsFromScreen 把未闭合尾部与当前屏拼成热段 rows。
 // primary：openTail 与屏幕行按 Wrapped 标志拼成 logical line 后按 cols
-// 重新换行（ordinary、mutable）。alt：屏幕行按 fixed grid 原样投影，
-// openTail 单独成行（它属于 primary 时间线，不能混进 alt frame）。
+// 重新换行（ordinary、mutable）。alt：先投影 primary 时间线尾部——
+// openTail 与被 alt 覆盖但仍未滚出的主屏保存行（snap.PrimaryRows）拼成
+// mutable logical line（alt 退出后程序仍可改写它们，不能 seal）——
+// 再把 alt 屏幕行按 fixed grid 原样投影。
 func hotRowsFromScreen(coldCount int, openTail []Run, snap ScreenSnapshot, cols int) []history.HistoryRow {
 	var rows []history.HistoryRow
 	nextID := history.LogicalLineID(coldCount + 1)
+	primaryRows := snap.Rows
 	if snap.InAlt {
-		if len(openTail) > 0 {
-			rows = appendWrappedLineRows(rows, cellsFromRuns(openTail), cols, nextID, history.HistorySegmentCommitted, false)
-			nextID++
-		}
-		for r, screenRow := range snap.Rows {
-			rows = append(rows, history.HistoryRow{
-				Cells:        cellsFromVTermCells(screenRow.Cells),
-				Kind:         history.LineKindAltScreenFrame,
-				Segment:      history.HistorySegmentCurrentAltFrame,
-				LineID:       nextID,
-				FixedGrid:    true,
-				ScreenCols:   snap.Cols,
-				ScreenRow:    r,
-				ScreenRowSet: true,
-			})
-			nextID++
-		}
-		return rows
+		primaryRows = snap.PrimaryRows
 	}
 	var lines [][]history.Cell
 	current := cellsFromRuns(openTail)
 	haveCurrent := len(current) > 0
-	for _, screenRow := range snap.Rows {
+	for _, screenRow := range primaryRows {
 		current = append(current, cellsFromVTermCells(screenRow.Cells)...)
 		haveCurrent = true
 		if !screenRow.Wrapped {
@@ -473,6 +493,21 @@ func hotRowsFromScreen(coldCount int, openTail []Run, snap ScreenSnapshot, cols 
 	for _, lineCells := range lines {
 		rows = appendWrappedLineRows(rows, lineCells, cols, nextID, history.HistorySegmentCurrentPrimaryFrame, false)
 		nextID++
+	}
+	if snap.InAlt {
+		for r, screenRow := range snap.Rows {
+			rows = append(rows, history.HistoryRow{
+				Cells:        cellsFromVTermCells(screenRow.Cells),
+				Kind:         history.LineKindAltScreenFrame,
+				Segment:      history.HistorySegmentCurrentAltFrame,
+				LineID:       nextID,
+				FixedGrid:    true,
+				ScreenCols:   snap.Cols,
+				ScreenRow:    r,
+				ScreenRowSet: true,
+			})
+			nextID++
+		}
 	}
 	return rows
 }
@@ -507,8 +542,9 @@ func (store *Store) viewForRequest(req history.HistoryWindowRequest) (history.Hi
 			req.Cols = frozen.cols
 		}
 		// 中文说明：frozen token 的视图必须按 freeze 时刻的 cols 投影；
-		// token 存在期间冷段前缀与热段 rows 都不随 repaint 改变。
+		// token 存在期间冷段记录区间与热段 rows 都不随 repaint/clear 改变。
 		return req, liveView{
+			coldBase:   frozen.coldBase,
 			coldCount:  frozen.coldCount,
 			cols:       frozen.cols,
 			hot:        cloneRows(frozen.hot),
@@ -522,21 +558,21 @@ func (store *Store) viewForRequest(req history.HistoryWindowRequest) (history.Hi
 	return req, view, nil
 }
 
-// viewTotal 返回视图的绝对 row 总数（冷段 prefix sum 尾值 + 热段行数）。
+// viewTotal 返回视图的 row 总数（视图冷段 prefix sum 区间宽度 + 热段行数）。
 func (store *Store) viewTotal(view liveView) (int, error) {
-	coldRows, err := store.coldRowsTotal(view.cols, view.coldCount)
+	coldRows, err := store.coldRowsTotal(view.cols, view.coldBase, view.coldCount)
 	if err != nil {
 		return 0, err
 	}
 	return coldRows + len(view.hot), nil
 }
 
-func (store *Store) coldRowsTotal(cols int, coldCount int) (int, error) {
-	idx, err := store.ensureColdIndex(cols, coldCount)
+func (store *Store) coldRowsTotal(cols int, coldBase int, coldCount int) (int, error) {
+	idx, err := store.ensureColdIndex(cols, coldBase+coldCount)
 	if err != nil {
 		return 0, err
 	}
-	return idx.prefix[coldCount], nil
+	return idx.prefix[coldBase+coldCount] - idx.prefix[coldBase], nil
 }
 
 // ensureColdIndex 惰性构建/延伸某个 cols 的冷段 row 索引。
@@ -566,10 +602,11 @@ func (store *Store) ensureColdIndex(cols int, atLeast int) (*coldRowIndex, error
 	return idx, nil
 }
 
-// rowsForRange 返回视图内绝对 row 区间 [start,end) 的投影 rows。
-// 冷段用 prefix sum 二分定位记录区间，只读命中的文件记录。
+// rowsForRange 返回视图内 row 区间 [start,end) 的投影 rows（视图域：
+// 0 = 视图冷段第一行）。冷段用 prefix sum 二分定位记录区间，只读命中
+// 的文件记录。
 func (store *Store) rowsForRange(view liveView, start int, end int) ([]history.HistoryRow, error) {
-	coldRows, err := store.coldRowsTotal(view.cols, view.coldCount)
+	coldRows, err := store.coldRowsTotal(view.cols, view.coldBase, view.coldCount)
 	if err != nil {
 		return nil, err
 	}
@@ -579,7 +616,7 @@ func (store *Store) rowsForRange(view liveView, start int, end int) ([]history.H
 	var rows []history.HistoryRow
 	if start < coldRows {
 		coldEnd := minInt(end, coldRows)
-		coldPage, err := store.coldRowsForRange(view.cols, view.coldCount, start, coldEnd)
+		coldPage, err := store.coldRowsForRange(view.cols, view.coldBase, view.coldCount, start, coldEnd)
 		if err != nil {
 			return nil, err
 		}
@@ -593,18 +630,24 @@ func (store *Store) rowsForRange(view liveView, start int, end int) ([]history.H
 	return rows, nil
 }
 
-func (store *Store) coldRowsForRange(cols int, coldCount int, start int, end int) ([]history.HistoryRow, error) {
+func (store *Store) coldRowsForRange(cols int, coldBase int, coldCount int, start int, end int) ([]history.HistoryRow, error) {
 	if end <= start {
 		return nil, nil
 	}
-	idx, err := store.ensureColdIndex(cols, coldCount)
+	idx, err := store.ensureColdIndex(cols, coldBase+coldCount)
 	if err != nil {
 		return nil, err
 	}
+	// 中文说明：prefix/文件都在绝对域；视图域 row 加上 coldBase 之前记录
+	// 的 row 数即得绝对 row，再二分定位记录区间。LineID 用视图域序号
+	// （clear 后从 1 重新计数），文件读取仍用绝对记录序号。
 	store.mu.Lock()
-	prefix := idx.prefix[:coldCount+1]
-	firstLine := sort.SearchInts(prefix, start+1) - 1
-	lastLine := sort.SearchInts(prefix, end) - 1
+	prefix := idx.prefix[:coldBase+coldCount+1]
+	baseRows := prefix[coldBase]
+	absStart := start + baseRows
+	absEnd := end + baseRows
+	firstLine := sort.SearchInts(prefix, absStart+1) - 1
+	lastLine := sort.SearchInts(prefix, absEnd) - 1
 	lineStartRow := prefix[firstLine]
 	store.mu.Unlock()
 	lines, err := store.engine.Lines(firstLine, lastLine+1)
@@ -614,13 +657,13 @@ func (store *Store) coldRowsForRange(cols int, coldCount int, start int, end int
 	var rows []history.HistoryRow
 	rowIndex := lineStartRow
 	for lineOffset, line := range lines {
-		id := history.LogicalLineID(firstLine + lineOffset + 1)
+		id := history.LogicalLineID(firstLine - coldBase + lineOffset + 1)
 		wrapped := wrapCells(cellsFromRuns(line.Runs), cols)
 		for i, rowCells := range wrapped {
-			if rowIndex >= end {
+			if rowIndex >= absEnd {
 				break
 			}
-			if rowIndex >= start {
+			if rowIndex >= absStart {
 				rows = append(rows, history.HistoryRow{
 					Cells:     rowCells,
 					Kind:      history.LineKindOrdinary,
@@ -637,23 +680,23 @@ func (store *Store) coldRowsForRange(cols int, coldCount int, start int, end int
 	return rows, nil
 }
 
-// firstRowOfLine 返回某 LineID 首行的绝对 row index；未命中回退 fallback
+// firstRowOfLine 返回某 LineID 首行的视图域 row index；未命中回退 fallback
 // （与旧 rowsBetweenCursors 的 head/tail 回退语义一致）。
 func (store *Store) firstRowOfLine(view liveView, id history.LogicalLineID, fallback int) int {
 	if id == 0 {
 		return fallback
 	}
 	if int(id) <= view.coldCount {
-		idx, err := store.ensureColdIndex(view.cols, view.coldCount)
+		idx, err := store.ensureColdIndex(view.cols, view.coldBase+view.coldCount)
 		if err != nil {
 			return fallback
 		}
 		store.mu.Lock()
-		row := idx.prefix[int(id)-1]
+		row := idx.prefix[view.coldBase+int(id)-1] - idx.prefix[view.coldBase]
 		store.mu.Unlock()
 		return row
 	}
-	coldRows, err := store.coldRowsTotal(view.cols, view.coldCount)
+	coldRows, err := store.coldRowsTotal(view.cols, view.coldBase, view.coldCount)
 	if err != nil {
 		return fallback
 	}

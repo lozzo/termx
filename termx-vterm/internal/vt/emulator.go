@@ -629,6 +629,25 @@ func (e *Emulator) SetScreenLineWrapped(y int, wrapped bool) {
 	e.scr.SetLineWrapped(y, wrapped)
 }
 
+// PrimaryLine returns the primary (normal) screen row truncated to its
+// logical used width, regardless of which screen is currently active. The
+// returned slice aliases emulator storage.
+func (e *Emulator) PrimaryLine(y int) uv.Line {
+	return e.scrs[0].Line(y)
+}
+
+// PrimaryLineWrapped returns whether the primary screen row visually
+// continues onto the next row, regardless of which screen is active.
+func (e *Emulator) PrimaryLineWrapped(y int) bool {
+	return e.scrs[0].LineWrapped(y)
+}
+
+// PrimaryHeight returns the primary screen height, regardless of which
+// screen is active.
+func (e *Emulator) PrimaryHeight() int {
+	return e.scrs[0].Height()
+}
+
 // SetScrollbackSize sets the maximum number of lines in the scrollback buffer.
 func (e *Emulator) SetScrollbackSize(maxLines int) {
 	e.scrs[0].SetScrollbackSize(maxLines)

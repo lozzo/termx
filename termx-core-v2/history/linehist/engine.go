@@ -38,7 +38,7 @@ func (e *Engine) ApplyEvictedRows(rows []vterm.TerminalSemanticScrollOut) error 
 	return e.file.AppendLines(batch)
 }
 
-// LineCount 返回已落盘记录数（含 chunk 记录）。
+// LineCount 返回已落盘记录数（含 chunk 记录），绝对域。
 func (e *Engine) LineCount() int {
 	if e == nil {
 		return 0
@@ -46,6 +46,32 @@ func (e *Engine) LineCount() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.file.LineCount()
+}
+
+// VisibleLineRange 返回最近一次 clear 分段之后的可见记录区间：
+// base 是分段后第一条记录的绝对序号，count 是可见记录数。
+// 投影用可见域算窗口；文件读仍走绝对序号（frozen token 因此跨 clear 有效）。
+func (e *Engine) VisibleLineRange() (int, int) {
+	if e == nil {
+		return 0, 0
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	base := e.file.Base()
+	return base, e.file.LineCount() - base
+}
+
+// ClearHistory 处理 ED3/ClearScrollback：丢弃未闭合尾部（它的头部概念上
+// 在被清掉的 scrollback 里），写一条 boundary 分段记录。已落盘记录不删除，
+// 仍可按绝对序号读取（frozen token）。
+func (e *Engine) ClearHistory() error {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.asm.DiscardOpen()
+	return e.file.AppendBoundary()
 }
 
 // Lines 按绝对序号分页读取已落盘记录。
@@ -69,7 +95,7 @@ func (e *Engine) OpenTail() []Run {
 	return e.asm.Open()
 }
 
-// SealOpenTail 把未闭合尾部强制闭合落盘，用于 ED3/RIS/进程退出等边界。
+// SealOpenTail 把未闭合尾部强制闭合落盘，用于进程退出等边界。
 func (e *Engine) SealOpenTail() error {
 	if e == nil {
 		return nil

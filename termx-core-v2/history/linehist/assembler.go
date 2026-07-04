@@ -65,8 +65,8 @@ func (a *Assembler) Open() []Run {
 	return out
 }
 
-// SealOpen 把未闭合尾部强制闭合为一条硬结束 line（用于 ED3/RIS/进程退出
-// 等边界：续写上下文已不存在，再等续行没有意义）。没有未闭合内容时返回 false。
+// SealOpen 把未闭合尾部强制闭合为一条硬结束 line（用于进程退出等边界：
+// 续写上下文已不存在，再等续行没有意义）。没有未闭合内容时返回 false。
 func (a *Assembler) SealOpen() (Line, bool) {
 	if a == nil || len(a.open) == 0 {
 		return Line{}, false
@@ -75,4 +75,14 @@ func (a *Assembler) SealOpen() (Line, bool) {
 	a.open = nil
 	a.openBytes = 0
 	return line, true
+}
+
+// DiscardOpen 丢弃未闭合尾部（用于 ED3/ClearScrollback：这段头部概念上
+// 在被清掉的 scrollback 里；仍在屏上的续行由 emulator 当前屏继续投影）。
+func (a *Assembler) DiscardOpen() {
+	if a == nil {
+		return
+	}
+	a.open = nil
+	a.openBytes = 0
 }
