@@ -29,7 +29,7 @@ const (
 )
 
 const daemonBoundaryReclaimMinHeapMBEnv = "TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
-const daemonBoundaryReclaimDefaultMinHeapBytes = 8 << 20
+const daemonBoundaryReclaimDefaultMinHeapBytes = 0
 
 var errProtocolAttachmentMismatch = errors.New("protocol attachment mismatch")
 var daemonBoundaryReclaimMinHeapBytes = parseDaemonBoundaryReclaimMinHeapBytes()
@@ -38,6 +38,9 @@ var daemonBoundaryReclaimLastHeapSys atomic.Uint64
 func parseDaemonBoundaryReclaimMinHeapBytes() uint64 {
 	raw := strings.TrimSpace(os.Getenv(daemonBoundaryReclaimMinHeapMBEnv))
 	if raw == "" {
+		// 中文说明：protocol request 是交互热路径，默认不能在 response 边界
+		// 同步执行 debug.FreeOSMemory；大历史压测后它会把 create/attach/list
+		// 这类后续请求串行卡住。需要诊断 RSS 回收时显式设置 env 开启。
 		return daemonBoundaryReclaimDefaultMinHeapBytes
 	}
 	value, err := strconv.ParseUint(raw, 10, 64)
