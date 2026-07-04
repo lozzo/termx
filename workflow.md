@@ -35,6 +35,8 @@
 4. ED3/ClearScrollback 只写 append-only soft boundary 并失效窗口边界，不隐藏或删除已落盘 logical-line history；resize 滚出仍走 eviction；alt 期间主屏保存行只作为 mutable hot tail 投影。
 5. `HistoryStore.Apply(HistoryMutationBatch)` 只保留为旧接口兼容 no-op；正文写入 truth 是 `linehist.Store.ApplyTransaction` 消费 `TerminalSemanticTransaction.EvictedRows`。
 6. tui-v3 和 App 只消费 core-v2 authoritative history window，不从本地 VTerm scrollback、snapshot、DOM/canvas rows 或 live cache 推断历史真值。
+7. 高压输出下新增可配置 history 背压目标：低延迟/live 优先策略继续允许 live/latest 不等 history；有界 history 策略必须在 pending bytes 超过配置上限时反压 PTY 输出消费，防止 backlog 在内存中线性增长。
+8. 100K/1M 普通输出的 history 相关内存必须接近常量；core daemon + TUI 的 100K peak RSS sum 以接近或低于 100MiB 为优先优化目标，若达不到必须用真实数据说明驻留来源和后续优化项。
 
 ### 1.3 不在当前阶段做什么
 
@@ -65,7 +67,8 @@
 - compact semantic history journal 设计文档：`termx-core-v2/docs/compact-semantic-history-journal-design.md`
   - 该文档只保留 R380-R430 的历史背景；R436 后默认 history 正文写入不再走 `HistoryJournal` / renderer。
   - 当前仍有效的边界是：history `SemanticTap` 只能消费同一 PTY semantic pass，不能来自 raw PTY parser、live snapshot diff、TUI/render rows 或 live `SurfaceTrack`。
-  - live latest screen 更新必须保持快路径；history semantic write hot path 不应反压 live wake，不应为普通输出构造 full frame、full SourceDamage、per-write native snapshot clone 或逐 op history reducer backlog。
+  - live latest screen 更新必须保持快路径；低延迟策略下 history semantic write hot path 不应反压 live wake，不应为普通输出构造 full frame、full SourceDamage、per-write native snapshot clone 或逐 op history reducer backlog。
+  - R446+ 新增有界 history 背压策略：history backlog 反压只能作为可配置的输出调度/内存边界，不能成为第二份 history truth，也不能通过 live snapshot、TUI rows 或 raw PTY replay 补历史。
 - vterm terminal 语义来源：`termx-vterm/`
 - 旧 history 说明、session history 说明和同步输出说明只能作为问题背景；如果与本文件或定案冲突，以本文件和定案为准。
 
@@ -353,6 +356,12 @@
 | R443. protocol request 边界同步 GC 关停 | 完成 | `workflow.md`、`termx-core-v2/protocol_service.go` | 100K/1M 压测后新建 terminal 变慢的高风险点是 protocol response 边界默认同步 `debug.FreeOSMemory`；默认关闭该手动内存归还，只允许通过 env 显式启用诊断，避免 create/list/attach/live 请求被串行卡住。 |
 | R444. 新建 terminal perftrace 链路打点 | 完成 | `workflow.md`、`termx-core-v2/`、`termx-tui-v3/` | 为新建 terminal 的 create/register/history-store/pty-spawn/attach/list/live 首帧链路补统一 perftrace，便于区分慢在 core、protocol RPC、PTY、TUI effect 还是 live 首帧。 |
 | R445. 新建 terminal ID 不复用旧历史文件 | 完成 | `workflow.md`、`termx-tui-v3/app/` | 新建 terminal id 改为时间戳型全局新 id，避免 daemon 重启后重新生成 `term-pool-1` 并打开旧 4GB+ linehist 文件。 |
+| R446. LL history 背压配置与诊断合同 | 待开始 | `workflow.md`、`termx-core-v2/`、按需 `termx-cli/`、`scripts/` | 定义 history 背压策略、buffer 上限、pending bytes、背压次数、等待耗时和内存统计口径；保留低延迟/live 优先策略，同时为有界 history 策略建立 harness；配置必须有默认值、日志、诊断可见性和 daemon auto-start 继承边界。 |
+| R447. LL 有界 history backlog 与 PTY 输出反压 | 待开始 | `termx-core-v2/`、按需 `termx-cli/` | 在有界策略下，history pending bytes 超过配置上限时必须阻塞上游 PTY 输出消费，直到 history 写入释放空间；证明 pending PTY bytes、semantic payload、EvictedRows、logical lines 和 window projection 不随 backlog 线性驻留。 |
+| R448. LL history 背压 stress harness 接入 | 待开始 | `scripts/`、按需 `termx-core-v2/`、`termx-tui-v3/`、`termx-cli/` | 真实 100K/1M stress 同时覆盖低延迟策略和有界策略，记录程序耗时、DONE 可见时间、history/copy latest 可用时间、oldest 正确性、daemon RSS、TUI RSS、peak sum、pending bytes、背压触发次数和等待时长。 |
+| R449. LL linehist 写入吞吐优化 | 待开始 | `termx-core-v2/history/linehist/`、按需 `termx-core-v2/`、`termx-vterm/` | 在不改变 EvictedRows seal-on-eviction truth 的前提下优化落盘批量、flush、索引写入、锁等待和临时分配；本机高速磁盘上 100K 普通输出应尽量跟上程序输出，减少背压触发次数和等待时长。 |
+| R450. LL core+TUI 100MiB 内存预算收敛 | 待开始 | `termx-core-v2/`、`termx-tui-v3/`、`scripts/`、按需 `termx-cli/` | 以 100K core daemon + TUI peak RSS sum 接近或低于 100MiB 为目标做数据驱动优化；若达不到，必须给出 daemon/TUI heap/RSS 分解、history 文件大小、pending bytes、TUI frame/cache 驻留和后续优化项；1M stress 必须证明 RSS 不随行数线性增长。 |
+| R451. LL history 背压完整验收与清场 | 待开始 | `workflow.md`、相关改动目录 | 检查无双 truth、无 raw PTY replay、无 live snapshot/TUI cache history fallback、无程序名分支、无内存线性增长；跑相关 core/vterm/tui/protocol/stress 准入并提交验收记录。 |
 
 ## 7. 测试准入
 
@@ -376,6 +385,7 @@
 
 ## 9. 当前状态
 
+- `R446-R451` 已纳入任务队列：新目标是把 history 写入滞后从 copy/history 入口等待前移为可配置输出背压，并把 history pending 内存变成有界可观测资源。低延迟/live 优先策略必须继续存在；有界 history 策略达到配置上限时必须反压 PTY 输出消费。100K stress 下 core daemon + TUI peak RSS sum 以接近或低于 100MiB 为优先目标，1M stress 必须证明 RSS 不随历史行数线性增长。后续按 R446 最早未完成切片推进，先补配置/诊断合同 harness，再实现反压和性能优化。
 - `R445` 已完成：新建 terminal 不再复用 `term-pool-1/2/...` 这类只按当前 pool 数量生成的 id。perftrace 证明慢点是 `core.linehist.open_store=4240ms`，而实际 `pty_start=2ms`、attach/live/render 均为毫秒级；本机历史目录中存在 `/Users/lozzow/.local/state/termx/history-v2/term-pool-1.logical-lines.bin` 4.6GB 与 `.idx` 231MB，daemon 重启后 TUI 又生成 `term-pool-1`，导致“新建”打开旧大历史文件。现在 `nextTerminalPoolID` 使用纳秒时间戳型 id，并保留当前 used set 避免进程内碰撞。
 - `R444` 已完成：新建 terminal 链路补齐统一 perftrace。core 侧新增 `core.protocol.request.<method>.{total,dispatch,send}`、`core.server.register_terminal.{total,registry,history_store,spawn,new_terminal,publish}`、`core.linehist.open_store`、`core.process.{spawn.total,pty_start}`；TUI 侧新增 `tui.terminal_pool.{list,create,attach}.effect`、`tui.terminal_pool.create.apply`、`tui.protocol.terminal_{list,create,attach}.rpc`、`tui.protocol.live_surface.rpc`、`tui.protocol.live_invalidation.rpc`。下一次用统一 `.jsonl` 跑真实新建 terminal 后，可直接定位慢在 create、attach、live 首帧还是 render/FrameSink。
 - `R443` 已完成：protocol response 边界默认不再同步执行 `debug.FreeOSMemory`。此前 `TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB` 未设置时默认阈值只有 8MiB，大历史压测后 create/list/attach/live 等交互请求会在同一 protocol session 里排队等待手动 GC/归还内存，表现为新建 terminal 卡数秒。现在默认值改为 0，仅当显式设置该 env 时才启用诊断性内存归还；history truth、window/copy 语义不变。
