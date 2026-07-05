@@ -229,6 +229,7 @@ tui:
     # <mode> 可以是 live、pane、resize、tab、workspace、floating、global、copy，
     # 也可以是 overlay mode：terminal-picker、terminal-pool、workbench-tree、clipboard-history、help 等。
     # actions 是逗号分隔的 action alias 或 render action id；当前配置解析器不支持 YAML list。
+    # resize mode 可用语义 alias：left/right/up/down/balance/layout/align/center/reset/global。
     modes:
       live:
         icon: "󰆍"
@@ -247,6 +248,12 @@ tui:
         label: "PICK"
         style: footer-key-picker
         actions: "picker_attach,global"
+
+      # resize:
+      #   icon: "󰙖"
+      #   label: "SIZE"
+      #   style: footer-key-resize
+      #   actions: "left,right,up,down,balance,layout,align,center,reset,global"
 
     # actions.<alias> 定义一个可复用 action token。
     # alias 只用于 footer 配置内部引用。

@@ -252,6 +252,7 @@ tui:
     # name 可写 live、pane、resize、tab、workspace、floating、global、copy，
     # 也可写 overlay mode，例如 terminal-picker、terminal-pool、workbench-tree、clipboard-history。
     # actions 是逗号分隔的 action alias 或 action id；当前配置解析器不支持 YAML list。
+    # resize mode 可用语义 alias：left/right/up/down/balance/layout/align/center/reset/global。
     # 示例：
     # modes:
     #   live:
@@ -259,6 +260,11 @@ tui:
     #     label: "TERM"
     #     style: footer-accent
     #     actions: "pane,resize,tab,workspace,float,copy,picker,global"
+    #   resize:
+    #     icon: "󰙖"
+    #     label: "SIZE"
+    #     style: footer-key-resize
+    #     actions: "left,right,up,down,balance,layout,align,center,reset,global"
     modes:
 
     # actions.<alias> 定义可复用 action token。

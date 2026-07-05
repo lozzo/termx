@@ -363,6 +363,30 @@ func footerBuiltinActionAlias(ref string) ActionID {
 		return ActionFooterPaneMode
 	case "resize":
 		return ActionFooterResizeMode
+	// 中文说明：resize mode 的 footer 配置经常只写语义别名；这里解析到既有 ActionID，
+	// 真实键盘路由仍由 input binding catalog 负责，render 不持有第二份快捷键 truth。
+	case "resize-left", "left", "arrow-left", "←":
+		return ActionResizeLeft
+	case "resize-right", "right", "arrow-right", "→":
+		return ActionResizeRight
+	case "resize-up", "up", "arrow-up", "↑":
+		return ActionResizeUp
+	case "resize-down", "down", "arrow-down", "↓":
+		return ActionResizeDown
+	case "balance", "=":
+		return ActionResizeBalance
+	case "layout-lock", "resize-lock", "lock":
+		return ActionResizeLayoutLock
+	case "layout-toggle", "layout", "space":
+		return ActionResizeLayoutToggle
+	case "layout-pan", "pan", "shift-arrows":
+		return ActionResizeLayoutPan
+	case "layout-align", "align":
+		return ActionResizeLayoutAlign
+	case "layout-center", "center":
+		return ActionResizeLayoutCenter
+	case "layout-reset", "reset":
+		return ActionResizeLayoutReset
 	case "tab":
 		return ActionFooterTabMode
 	case "workspace", "ws":

@@ -457,7 +457,7 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	if strings.HasPrefix(footer, "└") || strings.HasSuffix(footer, "┘") {
 		t.Fatalf("bottom bar should be a product bar, not an outer wireframe, got %#v", footer)
 	}
-	if !strings.Contains(footer, "[Ctrl] • [P] PANE") || !strings.Contains(footer, "PANE • [^R] RESIZE") || !strings.Contains(footer, "ws:main") || !strings.Contains(footer, "float:0") || !strings.Contains(footer, "terminals:1") {
+	if !strings.Contains(footer, "[Ctrl] • [P] PANE") || !strings.Contains(footer, "PANE • [R] RESIZE") || !strings.Contains(footer, "ws:main") || !strings.Contains(footer, "float:0") || !strings.Contains(footer, "terminals:1") {
 		t.Fatalf("bottom bar should contain target wireframe action/summary tokens, got %#v", footer)
 	}
 	if strings.Contains(footer, "LIVE") || strings.Contains(footer, "[Ctrl+P]") || strings.Contains(footer, "»") || strings.Contains(footer, "term-1") || strings.Contains(footer, "● shell") {
@@ -531,7 +531,7 @@ func TestFrameworkRendersFullFooterSummaryWhenWidthAllows(t *testing.T) {
 	}})
 	frame := result.Frame()
 	footer := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footer, "[^G] GLOBAL") || !strings.Contains(footer, "ws:main float:1 terminals:1") {
+	if !strings.Contains(footer, "[G] GLOBAL") || !strings.Contains(footer, "ws:main float:1 terminals:1") {
 		t.Fatalf("wide footer should keep full action strip and summary, got %#v", footer)
 	}
 	if strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[48;2;8;8;13m") {
@@ -558,7 +558,7 @@ func TestFrameworkRendersFullFooterSummaryAtVisualCompareWidth(t *testing.T) {
 	}})
 	frame := result.Frame()
 	footer := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footer, "[Ctrl]") || !strings.Contains(footer, "[P] PANE") || !strings.Contains(footer, "[^G]") {
+	if !strings.Contains(footer, "[Ctrl]") || !strings.Contains(footer, "[P] PANE") || !strings.Contains(footer, "[G]") {
 		t.Fatalf("120-col footer should keep shortcut strip endpoints, got %#v", footer)
 	}
 	if !strings.Contains(footer, "ws:main float:1 terminals:1") {

@@ -456,7 +456,7 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 		} else if keyText == key {
 			if letter, ok := footerCtrlLetter(key); ok {
 				if ctrlPrefixShown {
-					segments = appendFooterBracketTokenSegments(segments, "[^"+letter+"]", style, action.ActionID)
+					segments = appendFooterBracketTokenSegments(segments, "["+letter+"]", style, action.ActionID)
 				} else {
 					segments = appendFooterBracketTokenSegments(segments, "[Ctrl]", StyleFooterAccent, action.ActionID)
 					segments = append(segments, footerSep().withAction(action.ActionID))
@@ -716,7 +716,7 @@ func footerCompactActionLabelMask(actions []FooterActionVM, limit int, separator
 func formatFooterKeyTokenForSelection(key string, ctrlPrefixShown bool) string {
 	if letter, ok := footerCtrlLetter(key); ok {
 		if ctrlPrefixShown {
-			return "[^" + letter + "]"
+			return "[" + letter + "]"
 		}
 		return "[Ctrl] • [" + letter + "]"
 	}

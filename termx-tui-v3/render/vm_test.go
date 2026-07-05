@@ -462,6 +462,76 @@ func TestRenderVMBuilderAppliesFooterConfig(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderAppliesResizeFooterConfigAliases(t *testing.T) {
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical).
+		SetInteractionMode(state.InteractionModeResize)
+	root := state.Root{
+		Shell:    shell,
+		Viewport: state.ViewportStore{Valid: true, Cols: 140, Rows: 20},
+		Config: state.TUIConfigStore{
+			Version: 1,
+			Footer: state.TUIFooterConfig{
+				Templates: state.TUIFooterTemplatesConfig{
+					ModeBadge:        "{{mode_icon}} {{mode_label}}",
+					Key:              "{{key}}",
+					Action:           "{{key}} {{icon}} {{label}}",
+					Separator:        " · ",
+					WorkspaceSummary: "ws:{{workspace}}",
+					FloatingSummary:  "float:{{count}}",
+					TerminalsSummary: "terminals:{{count}}",
+				},
+				Modes: map[string]state.TUIFooterModeConfig{
+					"resize": {
+						Icon:    "󰙖",
+						Label:   "SIZE",
+						Style:   string(StyleFooterKeyResize),
+						Actions: "left,right,center,reset,global",
+					},
+				},
+				Actions: map[string]state.TUIFooterActionConfig{
+					"center": {
+						Icon:  "󰞒",
+						Label: "middle",
+					},
+				},
+			},
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	footer := vm.Shell.Footer
+	if footer.Mode != "resize" || footer.ModeIcon != "󰙖" || footer.ModeLabel != "SIZE" {
+		t.Fatalf("resize footer config metadata not projected, got %#v", footer)
+	}
+	for _, want := range []struct {
+		key      string
+		label    string
+		actionID string
+	}{
+		{key: "←/h", actionID: ActionResizeLeft.String()},
+		{key: "→/l", actionID: ActionResizeRight.String()},
+		{key: "m/|/_", label: "middle", actionID: ActionResizeLayoutCenter.String()},
+		{key: "r", label: "RESET", actionID: ActionResizeLayoutReset.String()},
+		{key: "^G", label: "GLOBAL", actionID: ActionFooterGlobalMode.String()},
+	} {
+		if !containsFooterAction(footer.ActionTokens, want.key, want.label, want.actionID) {
+			t.Fatalf("resize footer config should resolve action %#v, got %#v", want, footer.ActionTokens)
+		}
+	}
+
+	frame := NewRenderer(DefaultTheme()).Render(vm)
+	footerLine := frame.Lines[len(frame.Lines)-1]
+	if !strings.Contains(footerLine, "󰙖 SIZE") ||
+		!strings.Contains(footerLine, "[←/h]") ||
+		!strings.Contains(footerLine, "[→/l]") ||
+		!strings.Contains(footerLine, "󰞒 middle") ||
+		!strings.Contains(footerLine, "[r] RESET") ||
+		!strings.Contains(footerLine, "[G] GLOBAL") {
+		t.Fatalf("resize footer render should include configured resize actions, got %#v", footerLine)
+	}
+}
+
 func TestTerminalLiveCellsPreserveFE0FFootprintBeforeDots(t *testing.T) {
 	line := terminalLiveLineFromCells([]state.LiveCell{
 		{Text: "♻️", Width: 2},
@@ -723,7 +793,7 @@ func TestRenderVMBuilderUsesStructuredFooterActionCatalog(t *testing.T) {
 	}
 }
 
-func TestRenderVMBuilderShowsCtrlRResizeShortcutInLiveFooter(t *testing.T) {
+func TestRenderVMBuilderUsesSharedCtrlPrefixInLiveFooter(t *testing.T) {
 	root := state.Root{
 		Shell:    state.DefaultShell(),
 		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
@@ -731,11 +801,11 @@ func TestRenderVMBuilderShowsCtrlRResizeShortcutInLiveFooter(t *testing.T) {
 
 	frame := NewRenderer(DefaultTheme()).Render(NewRenderVMBuilder().Build(root))
 	footerLine := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footerLine, "^R") || !strings.Contains(footerLine, "RESIZE") {
+	if !strings.Contains(footerLine, "[Ctrl] • [P]") || !strings.Contains(footerLine, "[R] RESIZE") {
 		t.Fatalf("live footer must show ctrl-r resize shortcut, got %q", footerLine)
 	}
-	if strings.Contains(footerLine, "[R] RESIZE") {
-		t.Fatalf("live footer must not render ctrl-r as plain R, got %q", footerLine)
+	if strings.Contains(footerLine, "[^R]") {
+		t.Fatalf("live footer must not repeat caret after shared ctrl prefix, got %q", footerLine)
 	}
 }
 
