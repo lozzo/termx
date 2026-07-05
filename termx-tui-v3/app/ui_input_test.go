@@ -3491,6 +3491,53 @@ func TestShellReducerHandlesResizeOwnerContentAction(t *testing.T) {
 	}
 }
 
+func TestShellReducerFloatingTakeOwnerContentActionRequiresConfirm(t *testing.T) {
+	shell := state.DefaultShell()
+	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-1"},
+		Title:    "float",
+		Rect:     state.FloatingRect{X: 2, Y: 2, W: 42, H: 10},
+	})
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-1", 8, 42, 10, state.TerminalResizeRoleFollower, "surface", state.TerminalFloatingViewID("floating-1"), false))
+
+	reducer := NewShellReducer()
+	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionTerminalTakeResizeOwner.String(), PaneID: "floating-pane-1", Floating: true})
+	if len(effects) != 1 {
+		t.Fatalf("first floating owner click should only arm confirmation timeout, got %#v", effects)
+	}
+	if fn, ok := effects[0].(FuncEffect); !ok || fn.Token != ownerConfirmClearToken {
+		t.Fatalf("first floating owner click should arm owner confirm clear effect, got %#v", effects)
+	}
+	floating, _ := next.TerminalViews.FloatingBinding("floating-1")
+	if floating.ResizeRole != state.TerminalResizeRoleFollower || floating.CanResize {
+		t.Fatalf("first floating owner click must not mutate owner truth, got %#v", floating)
+	}
+	if got := next.Shell.EnsureDefaults().OwnerConfirm.ViewID; got != state.TerminalFloatingViewID("floating-1") {
+		t.Fatalf("first floating owner click should arm floating view confirmation, got %q", got)
+	}
+	vm := render.NewRenderVMBuilder().Build(next)
+	if len(vm.Shell.Layout.Floating) != 1 || vm.Shell.Layout.Floating[0].Chrome.Terminal.Owner.Text != "◆ owner?" {
+		t.Fatalf("floating owner confirmation should project owner? chrome, got %#v", vm.Shell.Layout.Floating)
+	}
+
+	next, effects = reducer(next, ShellContentActionMsg{ActionID: render.ActionTerminalTakeResizeOwner.String(), PaneID: "floating-pane-1", Floating: true})
+	msg, ok := liveResizeMsgFromEffects(effects)
+	if !ok || msg.TerminalID != "term-1" || msg.ViewID != state.TerminalFloatingViewID("floating-1") || msg.Cols != 42 || msg.Rows != 10 {
+		t.Fatalf("second floating owner click should request authoritative resize owner, msg=%#v effects=%#v", msg, effects)
+	}
+	floating, _ = next.TerminalViews.FloatingBinding("floating-1")
+	if floating.ResizeRole != state.TerminalResizeRoleOwner || !floating.CanResize || floating.RequestSeq != msg.Seq {
+		t.Fatalf("second floating owner click should transfer local owner intent, got %#v msg=%#v", floating, msg)
+	}
+	if got := next.Shell.EnsureDefaults().OwnerConfirm.ViewID; got != "" {
+		t.Fatalf("second floating owner click should clear confirmation state, got %q", got)
+	}
+}
+
 func TestResizeModeTerminalSizeLockKeyAndFooterEmitTerminalLockRequest(t *testing.T) {
 	root := state.Root{}
 	root.Shell = state.DefaultShell().SetInteractionMode(state.InteractionModeResize)

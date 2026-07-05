@@ -535,10 +535,10 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}}
 		}}}
 	case render.ActionTerminalTakeResizeOwner:
-		root.Shell = root.Shell.ClearOwnerConfirm(0)
 		if msg.Floating {
-			return requestFloatingResizeOwner(root, floatingTargetIDForContentAction(root, msg))
+			return requestFloatingResizeOwnerWithConfirm(root, floatingTargetIDForContentAction(root, msg))
 		}
+		root.Shell = root.Shell.ClearOwnerConfirm(0)
 		return requestPaneResizeOwner(root, msg.PaneID)
 	case render.ActionEmptyClose, render.ActionExitedClose:
 		if msg.Floating {
@@ -751,7 +751,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.owner", Body: "no active floating"})
 			return root.Advance(), nil
 		}
-		return requestFloatingResizeOwner(root, activeFloatingID)
+		return requestFloatingResizeOwnerWithConfirm(root, activeFloatingID)
 	case render.ActionFloatingResize:
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandResize, TargetID: floatingTargetIDForContentAction(root, msg), DeltaW: 2, DeltaH: 1, Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingCenter:
@@ -836,6 +836,23 @@ func requestFloatingResizeOwner(root state.Root, floatingID string) (state.Root,
 	return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 		return liveAttachMsgForResizeOwner(root, binding)
 	}}}
+}
+
+func requestFloatingResizeOwnerWithConfirm(root state.Root, floatingID string) (state.Root, []Effect) {
+	binding, ok := root.TerminalViews.FloatingBinding(floatingID)
+	if !ok || binding.TerminalID == "" {
+		root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.owner", Body: "no terminal view"})
+		return root.Advance(), nil
+	}
+	if binding.ViewID != "" && !binding.HasResizeOwner() && root.Shell.ReadonlyDefaults().OwnerConfirm.ViewID != binding.ViewID {
+		// 中文说明：浮动 chrome 的 owner token 走 content action，不经过 pane chrome 的鼠标双击拦截；
+		// 首击只设置 UI 确认态，terminal owner truth 必须等第二次确认后才交给 requestFloatingResizeOwner。
+		root.Shell = root.Shell.ArmOwnerConfirm(binding.ViewID)
+		seq := root.Shell.OwnerConfirm.Seq
+		return root.Advance(), []Effect{ownerConfirmClearEffect(seq)}
+	}
+	root.Shell = root.Shell.ClearOwnerConfirm(0)
+	return requestFloatingResizeOwner(root, floatingID)
 }
 
 func liveAttachMsgForResizeOwner(root state.Root, binding state.TerminalViewBinding) LiveAttachMsg {
