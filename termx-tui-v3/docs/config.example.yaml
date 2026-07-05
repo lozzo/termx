@@ -174,7 +174,7 @@ tui:
     # action_left/action_right 是每个 action token 的左右部，默认等价于 "[" 和 "]"。
     # action_group_left/action_group_right 是整组 action 的最外层左右部，可做 Powerline 半圆胶囊。
     # 这些模板支持和 tab_template 相同的 text/template 占位符与 TermX span：
-    # - action token 可用 {{glyph}}、{{action_id}}、{{label}}、{{index}}、{{count}}、{{first}}、{{last}}。
+    # - action token 可用 {{glyph}}、{{action_id}}、{{label}}、{{index}}、{{count}}、{{first}}、{{last}}、{{active}}、{{not_active}}。
     # - owner token 可用 {{text}}。
     # - [fg:#RRGGBB;bg:#RRGGBB;font:bold]、[style:accent]、[reset] 会作为样式解析。
     # - 显式写成 "" 表示隐藏对应左部/右部/分隔符；没写则使用默认值。
@@ -182,8 +182,8 @@ tui:
       action_left: " "
       action_right: " "
       action_separator: ""
-      action_group_left: "[fg:#8ffcff][fg:#071112;bg:#8ffcff;font:bold]"
-      action_group_right: "[reset][fg:#8ffcff][reset]"
+      action_group_left: "[fg:{{if active}}#8ffcff{{else}}#ff6bff{{end}}][fg:#071112;bg:{{if active}}#8ffcff{{else}}#ff6bff{{end}};font:bold]"
+      action_group_right: "[reset][fg:{{if active}}#8ffcff{{else}}#ff6bff{{end}}][reset]"
       owner_left: "[fg:#8ffcff][fg:#071112;bg:#8ffcff;font:bold] "
       owner_right: " [reset][fg:#8ffcff][reset]"
       owner: "owner"

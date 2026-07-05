@@ -135,3 +135,50 @@ func TestPaneChromeActionTemplatesCanHideOneSide(t *testing.T) {
 		t.Fatalf("right-only action template got=%q want=%q", got, want)
 	}
 }
+
+func TestPaneChromeActionGroupTemplateCanUseActiveState(t *testing.T) {
+	ResetPaneChromeGlyphs()
+	defer ResetPaneChromeGlyphs()
+
+	SetPaneChromeGlyphs(PaneChromeGlyphs{
+		ActionLeft:          " ",
+		ActionLeftSet:       true,
+		ActionRight:         " ",
+		ActionRightSet:      true,
+		ActionSeparator:     "",
+		ActionSeparatorSet:  true,
+		ActionGroupLeft:     "[fg:{{if active}}#8ffcff{{else}}#ff6bff{{end}}][fg:#071112;bg:{{if active}}#8ffcff{{else}}#ff6bff{{end}};font:bold]",
+		ActionGroupLeftSet:  true,
+		ActionGroupRight:    "[reset][fg:{{if active}}#8ffcff{{else}}#ff6bff{{end}}][reset]",
+		ActionGroupRightSet: true,
+		Zoom:                "󰁌",
+		SplitVertical:       "",
+		SplitHorizontal:     "",
+		Close:               "󰅙",
+	})
+
+	items := paneChromeActionItems(40)
+	active := paneChromeActionRenderedFromItemsForState(items, StyleAccent, true)
+	inactive := paneChromeActionRenderedFromItemsForState(items, StyleMuted, false)
+	if strings.Contains(active.Text, "│") || strings.Contains(inactive.Text, "│") {
+		t.Fatalf("continuous capsule should not render separator, active=%q inactive=%q", active.Text, inactive.Text)
+	}
+	if got, want := active.Text, inactive.Text; got != want {
+		t.Fatalf("active/inactive color branches should keep stable text width got=%q want=%q", got, want)
+	}
+	if !segmentsContainANSIText(active.Segments, "󰁌", ANSICellStyle{FG: "#071112", BG: "#8ffcff", Bold: true}) {
+		t.Fatalf("active capsule should use primary background, segments=%#v", active.Segments)
+	}
+	if !segmentsContainANSIText(inactive.Segments, "󰁌", ANSICellStyle{FG: "#071112", BG: "#ff6bff", Bold: true}) {
+		t.Fatalf("inactive capsule should use secondary background, segments=%#v", inactive.Segments)
+	}
+}
+
+func segmentsContainANSIText(segments []barSegment, text string, style ANSICellStyle) bool {
+	for _, segment := range segments {
+		if strings.Contains(segment.text, text) && segment.ansi == style {
+			return true
+		}
+	}
+	return false
+}

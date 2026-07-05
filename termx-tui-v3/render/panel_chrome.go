@@ -279,7 +279,7 @@ func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []pane
 	rightLimit := innerRight
 	actionItems := visiblePaneChromeActionItems(panel, rect.W)
 	actionStyle := paneChromeActionClusterStyle(actionItems, paneChromeActionStyle(panel, borderStyle))
-	actions := paneChromeActionRenderedFromItems(actionItems, actionStyle)
+	actions := paneChromeActionRenderedFromItemsForState(actionItems, actionStyle, panel.Active)
 	actionWidth := paneChromeSegmentsWidth(actions.Segments)
 	slots := make([]paneChromeTopSlot, 0, 2)
 	if actionWidth > 0 {
@@ -485,7 +485,7 @@ func renderFloatingTerminalChrome(c *canvas, primitive ChromePrimitive) {
 
 func renderFloatingChromeActions(c *canvas, primitive ChromePrimitive, floating FloatingVM) {
 	controlItems := floatingChromeControlItems(floatingChromeActionItemsFromVM(floating.Chrome.Actions, primitive.Rect.W))
-	rendered := paneChromeActionRenderedFromItems(controlItems, primitive.Style)
+	rendered := paneChromeActionRenderedFromItemsForState(controlItems, primitive.Style, floating.Active)
 	width := paneChromeSegmentsWidth(rendered.Segments)
 	if width <= 0 {
 		return
@@ -493,7 +493,7 @@ func renderFloatingChromeActions(c *canvas, primitive ChromePrimitive, floating 
 	if len(controlItems) == 0 {
 		return
 	}
-	actionRect := floatingActionRectForItems(primitive.Rect, controlItems)
+	actionRect := floatingActionRectForItems(primitive.Rect, controlItems, floating.Active)
 	if actionRect.X < primitive.Rect.X+2 {
 		return
 	}

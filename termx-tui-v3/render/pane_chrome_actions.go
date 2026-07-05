@@ -11,7 +11,7 @@ func paneChromeActionTextFromItems(items []paneChromeActionItem) string {
 	if len(items) == 0 {
 		return ""
 	}
-	return paneChromeActionRenderedFromItems(items, "").Text
+	return paneChromeActionRenderedFromItemsForState(items, "", false).Text
 }
 
 func paneChromeActionItems(width int) []paneChromeActionItem {
@@ -74,10 +74,14 @@ func fitPaneChromeActionItems(actions []paneChromeActionItem, width int) []paneC
 }
 
 func paneChromeActionItemsWidth(items []paneChromeActionItem) int {
+	return paneChromeActionItemsWidthForState(items, false)
+}
+
+func paneChromeActionItemsWidthForState(items []paneChromeActionItem, active bool) int {
 	if len(items) == 0 {
 		return 0
 	}
-	return paneChromeSegmentsWidth(paneChromeActionRenderedFromItems(items, "").Segments)
+	return paneChromeSegmentsWidth(paneChromeActionRenderedFromItemsForState(items, "", active).Segments)
 }
 
 type paneChromeActionItem struct {
@@ -116,40 +120,45 @@ func paneChromeActionItemFromGlyph(glyph string, actionID string, label string, 
 }
 
 func paneChromeActionRenderedFromItems(items []paneChromeActionItem, style StyleToken) paneChromeRenderedText {
+	return paneChromeActionRenderedFromItemsForState(items, style, style == StyleAccent)
+}
+
+func paneChromeActionRenderedFromItemsForState(items []paneChromeActionItem, style StyleToken, active bool) paneChromeRenderedText {
 	if len(items) == 0 {
 		return paneChromeRenderedText{}
 	}
-	markup := paneChromeActionMarkupFromItems(items)
+	markup := paneChromeActionMarkupFromItems(items, active)
 	segments := paneChromeTemplateSegments(markup, style)
 	return paneChromeRenderedText{Text: paneChromeSegmentsText(segments), Segments: segments}
 }
 
-func paneChromeActionMarkupFromItems(items []paneChromeActionItem) string {
+func paneChromeActionMarkupFromItems(items []paneChromeActionItem, active bool) string {
 	if len(items) == 0 {
 		return ""
 	}
 	var out strings.Builder
-	out.WriteString(paneChromeActionGroupPart(paneChromeActionGroupLeft(), items, 0))
+	out.WriteString(paneChromeActionGroupPart(paneChromeActionGroupLeft(), items, 0, active))
 	for index, item := range items {
 		if index > 0 {
-			out.WriteString(paneChromeActionGroupPart(paneChromeActionSeparator(), items, index))
+			out.WriteString(paneChromeActionGroupPart(paneChromeActionSeparator(), items, index, active))
 		}
 		out.WriteString(item.Markup)
 	}
-	out.WriteString(paneChromeActionGroupPart(paneChromeActionGroupRight(), items, len(items)-1))
+	out.WriteString(paneChromeActionGroupPart(paneChromeActionGroupRight(), items, len(items)-1, active))
 	return out.String()
 }
 
-func paneChromeActionGroupPart(format string, items []paneChromeActionItem, index int) string {
+func paneChromeActionGroupPart(format string, items []paneChromeActionItem, index int, active bool) string {
 	if format == "" {
 		return ""
 	}
 	count := len(items)
 	ctx := paneChromeTemplateContext{
-		Index: index,
-		Count: count,
-		First: index == 0,
-		Last:  count > 0 && index == count-1,
+		Index:  index,
+		Count:  count,
+		First:  index == 0,
+		Last:   count > 0 && index == count-1,
+		Active: active,
 	}
 	if index >= 0 && index < count {
 		ctx.Glyph = items[index].Text

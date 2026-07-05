@@ -17,20 +17,23 @@ type paneChromeTemplateContext struct {
 	Count    int
 	First    bool
 	Last     bool
+	Active   bool
 }
 
 type paneChromeTemplateData struct {
-	Glyph    string
-	Text     string
-	ActionID string
-	Action   string
-	Label    string
-	Left     string
-	Right    string
-	Index    int
-	Count    int
-	First    bool
-	Last     bool
+	Glyph     string
+	Text      string
+	ActionID  string
+	Action    string
+	Label     string
+	Left      string
+	Right     string
+	Index     int
+	Count     int
+	First     bool
+	Last      bool
+	Active    bool
+	NotActive bool
 }
 
 type paneChromeTemplateState struct {
@@ -65,17 +68,19 @@ func executePaneChromeTemplate(format string, ctx paneChromeTemplateContext) (st
 	}
 	var out bytes.Buffer
 	if err := tmpl.Execute(&out, paneChromeTemplateData{
-		Glyph:    headerTabTemplateEscapeText(ctx.Glyph),
-		Text:     headerTabTemplateEscapeText(ctx.Text),
-		ActionID: headerTabTemplateEscapeText(ctx.ActionID),
-		Action:   headerTabTemplateEscapeText(ctx.ActionID),
-		Label:    headerTabTemplateEscapeText(ctx.Label),
-		Left:     headerTabTemplateEscapeText(ctx.Left),
-		Right:    headerTabTemplateEscapeText(ctx.Right),
-		Index:    ctx.Index,
-		Count:    ctx.Count,
-		First:    ctx.First,
-		Last:     ctx.Last,
+		Glyph:     headerTabTemplateEscapeText(ctx.Glyph),
+		Text:      headerTabTemplateEscapeText(ctx.Text),
+		ActionID:  headerTabTemplateEscapeText(ctx.ActionID),
+		Action:    headerTabTemplateEscapeText(ctx.ActionID),
+		Label:     headerTabTemplateEscapeText(ctx.Label),
+		Left:      headerTabTemplateEscapeText(ctx.Left),
+		Right:     headerTabTemplateEscapeText(ctx.Right),
+		Index:     ctx.Index,
+		Count:     ctx.Count,
+		First:     ctx.First,
+		Last:      ctx.Last,
+		Active:    ctx.Active,
+		NotActive: !ctx.Active,
 	}); err != nil {
 		return "", false
 	}
@@ -116,6 +121,12 @@ func paneChromeTemplateFuncs(ctx paneChromeTemplateContext) texttemplate.FuncMap
 		},
 		"last": func() bool {
 			return ctx.Last
+		},
+		"active": func() bool {
+			return ctx.Active
+		},
+		"not_active": func() bool {
+			return !ctx.Active
 		},
 		"truncate": func(width int, value string) string {
 			if width <= 0 {

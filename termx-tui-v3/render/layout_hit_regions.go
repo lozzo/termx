@@ -312,15 +312,15 @@ func appendPanelContentHitRegion(out []HitRegion, panel PanelLayoutPlan, viewpor
 }
 
 func paneActionRect(panel PanelVM, rect Rect) Rect {
-	return chromeActionRect(rect, paneChromeActionItemsWidth(visiblePaneChromeActionItems(panel, rect.W)))
+	return chromeActionRect(rect, paneChromeActionItemsWidthForState(visiblePaneChromeActionItems(panel, rect.W), panel.Active))
 }
 
 func floatingActionRect(rect Rect) Rect {
-	return floatingActionRectForItems(rect, floatingChromeActionItems(rect.W))
+	return floatingActionRectForItems(rect, floatingChromeActionItems(rect.W), false)
 }
 
-func floatingActionRectForItems(rect Rect, items []paneChromeActionItem) Rect {
-	width := paneChromeActionItemsWidth(items)
+func floatingActionRectForItems(rect Rect, items []paneChromeActionItem, active bool) Rect {
+	width := paneChromeActionItemsWidthForState(items, active)
 	if rect.W <= 0 || width <= 0 {
 		return Rect{X: rect.X, Y: rect.Y, W: 0, H: 1}
 	}

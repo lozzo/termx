@@ -56,7 +56,7 @@ func PaneChromePrimitive(panel PanelVM, rect Rect, style StyleToken) ChromePrimi
 	}
 	actionRect := paneActionRect(panel, rect)
 	items := visiblePaneChromeActionItems(panel, rect.W)
-	primitive.ActionSlots = append(primitive.ActionSlots, chromeActionSlotsFromItems(items, actionRect)...)
+	primitive.ActionSlots = append(primitive.ActionSlots, chromeActionSlotsFromItems(items, actionRect, panel.Active)...)
 	return primitive
 }
 
@@ -76,8 +76,8 @@ func FloatingChromePrimitive(floating FloatingVM, rect Rect, style StyleToken) C
 	}
 	rightLimit := innerRight
 	actions := floatingChromeActionItemsFromVM(floating.Chrome.Actions, rect.W)
-	actionRect := floatingActionRectForItems(rect, actions)
-	primitive.ActionSlots = chromeActionSlotsFromItems(actions, actionRect)
+	actionRect := floatingActionRectForItems(rect, actions, floating.Active)
+	primitive.ActionSlots = chromeActionSlotsFromItems(actions, actionRect, floating.Active)
 	if len(primitive.ActionSlots) > 0 {
 		rightLimit = primitive.ActionSlots[0].Rect.X - 1
 	}
@@ -132,15 +132,15 @@ func ToastChromePrimitive(toast ToastVM, rect Rect) ChromePrimitive {
 	}
 }
 
-func chromeActionSlotsFromItems(items []paneChromeActionItem, rect Rect) []ChromeSlot {
+func chromeActionSlotsFromItems(items []paneChromeActionItem, rect Rect, active bool) []ChromeSlot {
 	if len(items) == 0 || rect.W <= 0 || rect.H <= 0 {
 		return nil
 	}
 	out := make([]ChromeSlot, 0, len(items))
-	x := rect.X + paneChromeMarkupWidth(paneChromeActionGroupPart(paneChromeActionGroupLeft(), items, 0))
+	x := rect.X + paneChromeMarkupWidth(paneChromeActionGroupPart(paneChromeActionGroupLeft(), items, 0, active))
 	for index, item := range items {
 		if index > 0 {
-			x += paneChromeMarkupWidth(paneChromeActionGroupPart(paneChromeActionSeparator(), items, index))
+			x += paneChromeMarkupWidth(paneChromeActionGroupPart(paneChromeActionSeparator(), items, index, active))
 		}
 		width := DisplayWidth(item.Text)
 		if width <= 0 {
