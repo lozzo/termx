@@ -6,7 +6,7 @@ func renderWorkbenchNavigatorOverlay(c *canvas, overlay OverlayVM, rect Rect, co
 	layer := primitive.Layer
 	c.fillStyledRect(rect, StyleForeground, owner, layer)
 	c.drawStyledBox(rect, squareBoxStyle, StyleForeground, owner, layer)
-	renderChromeCardTitle(c, rect, primitive.Title.Text, overlayChromeState(overlay), "esc", StyleAccent, owner, layer)
+	renderChromeCardTitle(c, rect, primitive.Title.Text, "", "", StyleAccent, owner, layer)
 	contentResult := renderContent(c, overlay.Content, contentRect, owner+":content", layer)
 	renderWorkbenchNavigatorTChrome(c, overlay.Content, rect, contentRect, owner, layer)
 	return Layer{Kind: LayerOverlay, Rect: rect, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow}

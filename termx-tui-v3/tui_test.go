@@ -232,7 +232,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 	requiredOverlays := map[string][]string{
 		"terminal-picker":     {"┌─ terminal picker", "search:", "termx-picker shell", "running", "80x24"},
 		"terminal-pool-page":  {"┌─ terminal pool", "● open", "esc", "Terminal Pool", "⌕ search 日志", "DETAIL 日志🚀", "[kill]  Kill"},
-		"workbench-tree-page": {"┌─ Workbench Navigator", "● open", "esc", "⌕ search 日志", "TREE", "PANE", "SNAPSHOT", "Open  New  Zoom  Detach  Close"},
+		"workbench-tree-page": {"┌─ Workbench Navigator", "⌕ search 日志", "TREE", "PANE", "SNAPSHOT", "Open  New  Zoom  Detach  Close"},
 		"prompt-overlay":      {"┌─ prompt", "Command Prompt", "重命名"},
 		"help-overlay":        {"┌─ help", "● open", "esc", "Most used", "Terminal Pool"},
 	}
@@ -254,6 +254,18 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 	for _, stale := range []string{"● open", "esc"} {
 		if frameContains(prompt.Lines, stale) {
 			t.Fatalf("prompt overlay regressed to engineering label %q: %#v", stale, prompt.Lines)
+		}
+	}
+	workbenchTreeTitle := ""
+	for _, line := range cases["workbench-tree-page"].Lines {
+		if strings.Contains(line, "Workbench Navigator") {
+			workbenchTreeTitle = line
+			break
+		}
+	}
+	for _, stale := range []string{"● open", "esc"} {
+		if strings.Contains(workbenchTreeTitle, stale) {
+			t.Fatalf("workbench navigator title regressed to redundant hint %q: %q", stale, workbenchTreeTitle)
 		}
 	}
 	split := cases["split-hidden-toast"]
