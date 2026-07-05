@@ -118,6 +118,7 @@ tui:
   footer:
     templates:
       mode_badge: "{{mode_icon}} {{mode_label}}"
+      key: "{{key}}"
       action: "{{key}} {{icon}} {{label}}"
       separator: " │ "
       keylock_on: "󰌾 KEYLOCK"

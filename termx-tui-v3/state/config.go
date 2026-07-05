@@ -60,6 +60,7 @@ type TUIFooterConfig struct {
 // 当前只支持文本占位符替换，不执行脚本，也不改变 hit region/action owner。
 type TUIFooterTemplatesConfig struct {
 	ModeBadge  string
+	Key        string
 	Action     string
 	Separator  string
 	KeylockOn  string

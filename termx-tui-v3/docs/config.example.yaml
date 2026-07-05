@@ -180,11 +180,15 @@ tui:
       # 默认值："{{mode_icon}} {{mode_label}}"。
       mode_badge: "{{mode_icon}} {{mode_label}}"
 
+      # key 控制 action 的 key block。
+      # 默认值："{{key}}"，会显示 [Ctrl] • [W] / [enter] 这类结构化 key token。
+      # 设为 "" 时隐藏 key，只保留 icon/label 和 click hit region。
+      key: ""
+
       # action 是 action key 后面的提示模板。
-      # 当前 key 仍由 renderer 固定画成 [Ctrl] • [P] 这类稳定 key token；
-      # 模板里的 {{key}} 只作为兼容占位符处理，不改变 key 的结构化渲染。
+      # 模板里的 {{key}} 只作为兼容占位符处理；key block 是否显示由上面的 templates.key 控制。
       # 可用占位符：
-      # - {{key}}：显示快捷键文本；当前装饰区会吞掉它，避免和结构化 key 重复。
+      # - {{key}}：兼容占位符；当前装饰区会吞掉它，避免和 key block 重复。
       # - {{icon}}：actions.<alias>.icon。
       # - {{label}}：actions.<alias>.label。
       # - {{action}}：actions.<alias>.id。

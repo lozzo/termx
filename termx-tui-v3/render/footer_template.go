@@ -47,6 +47,23 @@ func footerActionDecorText(action FooterActionVM, template string) string {
 	})
 }
 
+func footerKeyTemplateForFooter(footer FooterVM) string {
+	if footer.KeyTemplateSet {
+		return footer.KeyTemplate
+	}
+	return defaultFooterKeyTemplate
+}
+
+func footerActionKeyText(key string, template string) string {
+	key = strings.TrimSpace(key)
+	if key == "" || strings.TrimSpace(template) == "" {
+		return ""
+	}
+	return footerTokenTemplateText(template, map[string]string{
+		"key": key,
+	})
+}
+
 func footerTokenTemplateText(template string, values map[string]string) string {
 	template = strings.TrimSpace(template)
 	if template == "" {

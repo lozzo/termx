@@ -101,6 +101,8 @@ func buildFooterVM(root state.Root, shell state.ShellStore, content ContentVM) F
 		ModeStyle:           footerStyleTokenFromConfig(modeConfig.Style),
 		Hint:                hint,
 		ActionTokens:        footerActionCatalogForRoot(mode, root, shell),
+		KeyTemplate:         footerKeyTemplateForConfig(root.Config),
+		KeyTemplateSet:      true,
 		ActionTemplate:      footerTemplateOrDefault(footerConfig.Templates.Action, defaultFooterActionTemplate),
 		ModeBadgeTemplate:   footerTemplateOrDefault(footerConfig.Templates.ModeBadge, defaultFooterModeBadgeTemplate),
 		ActionSeparator:     footerConfig.Templates.Separator,
@@ -114,6 +116,7 @@ func buildFooterVM(root state.Root, shell state.ShellStore, content ContentVM) F
 
 const (
 	defaultFooterActionTemplate    = "{{key}} {{icon}} {{label}}"
+	defaultFooterKeyTemplate       = "{{key}}"
 	defaultFooterModeBadgeTemplate = "{{mode_icon}} {{mode_label}}"
 )
 
@@ -130,6 +133,13 @@ func footerStyleTokenFromConfig(value string) StyleToken {
 		return ""
 	}
 	return StyleToken(value)
+}
+
+func footerKeyTemplateForConfig(cfg state.TUIConfigStore) string {
+	if cfg.Version == 0 && strings.TrimSpace(cfg.Footer.Templates.Key) == "" {
+		return defaultFooterKeyTemplate
+	}
+	return cfg.Footer.Templates.Key
 }
 
 func activeViewLiveStatus(root state.Root, shell state.ShellStore) string {

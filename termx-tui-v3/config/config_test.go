@@ -63,6 +63,7 @@ tui:
   footer:
     templates:
       mode_badge: "{{mode_icon}} {{mode_label}}"
+      key: ""
       action: "{{key}} {{icon}} {{label}}"
       separator: " · "
       keylock_on: "󰌾 KEYLOCK"
@@ -104,6 +105,7 @@ tui:
 		t.Fatalf("chrome/border overrides not applied: %#v", cfg)
 	}
 	if cfg.Footer.Templates.Separator != " · " ||
+		cfg.Footer.Templates.Key != "" ||
 		cfg.Footer.Modes["live"].Icon != "󰆍" ||
 		cfg.Footer.Modes["live"].Actions != "pane,copy,global" ||
 		cfg.Footer.Actions["pane"].ID != "footer.mode-pane" ||

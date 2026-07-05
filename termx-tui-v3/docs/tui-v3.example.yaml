@@ -202,6 +202,12 @@ tui:
       # 默认值："{{mode_icon}} {{mode_label}}"。
       mode_badge: "{{mode_icon}} {{mode_label}}"
 
+      # key 控制每个 action 的 key block。
+      # 可用占位符：{{key}}。
+      # 默认值："{{key}}"，会渲染成结构化 key token，例如 [Ctrl] • [W]。
+      # 设为 "" 时隐藏 key block，只显示 action 的 icon/label，同时保留 click hit region。
+      key: "{{key}}"
+
       # action 控制每个 action key 后面的展示内容。
       # 当前 key 仍由 renderer 画成稳定的 [Ctrl] • [P] 结构，模板里的 {{key}} 只作为兼容占位符。
       # 可用占位符：{{key}}、{{icon}}、{{label}}、{{action}}。

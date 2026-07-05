@@ -76,7 +76,7 @@ func footerLeftSegments(footer FooterVM, width int) []barSegment {
 	if len(footer.ActionTokens) > 0 || len(footer.Actions) > 0 {
 		actions := footerActionTokensForFooter(footer)
 		actions = footerActionTokensVisibleForWidth(actions, mode, width)
-		left = appendFooterActionSegments(left, actions, available, footer.ActionTemplate, footer.ActionSeparator)
+		left = appendFooterActionSegments(left, actions, available, footerKeyTemplateForFooter(footer), footer.ActionTemplate, footer.ActionSeparator)
 	}
 	if len(left) == 0 {
 		left = appendFooterKeySegments(left, "^G", StyleFooterKeyGlobal, ActionFooterGlobalMode.String())
@@ -403,7 +403,7 @@ func footerActionsLabel(actions []string, width int) string {
 	return "keys:" + strings.Join(kept, " ")
 }
 
-func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM, width int, actionTemplate string, separatorText string) []barSegment {
+func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM, width int, keyTemplate string, actionTemplate string, separatorText string) []barSegment {
 	limit := 58
 	if width < 60 {
 		limit = 34
@@ -416,17 +416,18 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 		limit = width
 	}
 	separator := footerActionSep(width, separatorText)
-	selected := selectFooterActionTokens(actions, limit, DisplayWidth(separator.text))
+	selected := selectFooterActionTokens(actions, limit, DisplayWidth(separator.text), keyTemplate, actionTemplate)
 	var compactLabelMask []bool
-	if footerShouldCompactActionLabelsForSummary(width, actions, limit, DisplayWidth(separator.text)) {
+	if footerShouldCompactActionLabelsForSummary(width, actions, limit, DisplayWidth(separator.text), keyTemplate, actionTemplate) {
 		selected = actions
-		compactLabelMask = footerCompactActionLabelMask(actions, limit, DisplayWidth(separator.text))
+		compactLabelMask = footerCompactActionLabelMask(actions, limit, DisplayWidth(separator.text), keyTemplate, actionTemplate)
 	}
 	ctrlPrefixShown := false
 	for actionIndex, action := range selected {
 		key := strings.TrimSpace(action.Key)
+		keyText := footerActionKeyText(key, keyTemplate)
 		decor := footerActionDecorText(action, actionTemplate)
-		if key == "" {
+		if keyText == "" && decor == "" {
 			continue
 		}
 		if len(segments) > 0 {
@@ -438,15 +439,21 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 		}
 		style = footerActionDisplayStyle(key, decor, style)
 		// footer 延续 tuiv2 状态栏语义：组合键拆成相邻 key token，但共享同一个 action 命中区。
-		if letter, ok := footerCtrlLetter(key); ok {
-			if !ctrlPrefixShown {
-				segments = appendFooterBracketTokenSegments(segments, "[Ctrl]", StyleFooterAccent, action.ActionID)
-				segments = append(segments, footerSep().withAction(action.ActionID))
-				ctrlPrefixShown = true
+		if keyText == "" {
+			// key 模板为空时只展示 icon/label，仍保留 action hit region。
+		} else if keyText == key {
+			if letter, ok := footerCtrlLetter(key); ok {
+				if !ctrlPrefixShown {
+					segments = appendFooterBracketTokenSegments(segments, "[Ctrl]", StyleFooterAccent, action.ActionID)
+					segments = append(segments, footerSep().withAction(action.ActionID))
+					ctrlPrefixShown = true
+				}
+				segments = appendFooterBracketTokenSegments(segments, "["+letter+"]", style, action.ActionID)
+			} else {
+				segments = appendFooterKeySegments(segments, keyText, style, action.ActionID)
 			}
-			segments = appendFooterBracketTokenSegments(segments, "["+letter+"]", style, action.ActionID)
 		} else {
-			segments = appendFooterKeySegments(segments, key, style, action.ActionID)
+			segments = appendFooterKeySegments(segments, keyText, style, action.ActionID)
 		}
 		showLabel := decor != ""
 		if compactLabelMask != nil {
@@ -512,13 +519,13 @@ func footerActionTokensForFooter(footer FooterVM) []FooterActionVM {
 	return out
 }
 
-func selectFooterActionTokens(actions []FooterActionVM, limit int, separatorWidth int) []FooterActionVM {
+func selectFooterActionTokens(actions []FooterActionVM, limit int, separatorWidth int, keyTemplate string, actionTemplate string) []FooterActionVM {
 	selected := make([]FooterActionVM, 0, len(actions))
 	used := 0
 	truncated := false
 	ctrlPrefixShown := false
 	for _, action := range actions {
-		tokenWidth := footerActionTokenDisplayWidthForSelection(action, ctrlPrefixShown)
+		tokenWidth := footerActionTokenDisplayWidthForSelection(action, ctrlPrefixShown, keyTemplate, actionTemplate)
 		if tokenWidth <= 0 {
 			continue
 		}
@@ -535,7 +542,7 @@ func selectFooterActionTokens(actions []FooterActionVM, limit int, separatorWidt
 		}
 		selected = append(selected, action)
 		used += tokenWidth
-		if _, ok := footerCtrlLetter(action.Key); ok {
+		if footerActionKeyText(action.Key, keyTemplate) == action.Key && footerActionHasCtrlPrefix(action.Key) {
 			ctrlPrefixShown = true
 		}
 	}
@@ -546,11 +553,11 @@ func selectFooterActionTokens(actions []FooterActionVM, limit int, separatorWidt
 	if tail.Key == "" || containsFooterActionToken(selected, tail) {
 		return selected
 	}
-	tailWidth := footerTailActionWidth(selected, tail, separatorWidth)
+	tailWidth := footerTailActionWidth(selected, tail, separatorWidth, keyTemplate, actionTemplate)
 	for len(selected) > 0 && used+tailWidth > limit {
 		selected = selected[:len(selected)-1]
-		used = footerSelectedActionWidth(selected, separatorWidth)
-		tailWidth = footerTailActionWidth(selected, tail, separatorWidth)
+		used = footerSelectedActionWidth(selected, separatorWidth, keyTemplate, actionTemplate)
+		tailWidth = footerTailActionWidth(selected, tail, separatorWidth, keyTemplate, actionTemplate)
 	}
 	if tailWidth <= limit && used+tailWidth <= limit {
 		selected = append(selected, tail)
@@ -558,11 +565,11 @@ func selectFooterActionTokens(actions []FooterActionVM, limit int, separatorWidt
 	return selected
 }
 
-func footerSelectedActionWidth(actions []FooterActionVM, separatorWidth int) int {
+func footerSelectedActionWidth(actions []FooterActionVM, separatorWidth int, keyTemplate string, actionTemplate string) int {
 	width := 0
 	ctrlPrefixShown := false
 	for _, action := range actions {
-		tokenWidth := footerActionTokenDisplayWidthForSelection(action, ctrlPrefixShown)
+		tokenWidth := footerActionTokenDisplayWidthForSelection(action, ctrlPrefixShown, keyTemplate, actionTemplate)
 		if tokenWidth <= 0 {
 			continue
 		}
@@ -570,24 +577,24 @@ func footerSelectedActionWidth(actions []FooterActionVM, separatorWidth int) int
 			width += separatorWidth
 		}
 		width += tokenWidth
-		if _, ok := footerCtrlLetter(action.Key); ok {
+		if footerActionKeyText(action.Key, keyTemplate) == action.Key && footerActionHasCtrlPrefix(action.Key) {
 			ctrlPrefixShown = true
 		}
 	}
 	return width
 }
 
-func footerTailActionWidth(selected []FooterActionVM, tail FooterActionVM, separatorWidth int) int {
-	width := footerActionTokenDisplayWidthForSelection(tail, footerSelectionHasCtrlPrefix(selected))
+func footerTailActionWidth(selected []FooterActionVM, tail FooterActionVM, separatorWidth int, keyTemplate string, actionTemplate string) int {
+	width := footerActionTokenDisplayWidthForSelection(tail, footerSelectionHasCtrlPrefix(selected, keyTemplate), keyTemplate, actionTemplate)
 	if width > 0 && len(selected) > 0 {
 		width += separatorWidth
 	}
 	return width
 }
 
-func footerSelectionHasCtrlPrefix(actions []FooterActionVM) bool {
+func footerSelectionHasCtrlPrefix(actions []FooterActionVM, keyTemplate string) bool {
 	for _, action := range actions {
-		if _, ok := footerCtrlLetter(action.Key); ok {
+		if footerActionKeyText(action.Key, keyTemplate) == action.Key && footerActionHasCtrlPrefix(action.Key) {
 			return true
 		}
 	}
@@ -595,26 +602,30 @@ func footerSelectionHasCtrlPrefix(actions []FooterActionVM) bool {
 }
 
 func footerActionTokenDisplayWidth(action FooterActionVM) int {
-	return footerActionTokenDisplayWidthForSelection(action, false)
+	return footerActionTokenDisplayWidthForSelection(action, false, defaultFooterKeyTemplate, defaultFooterActionTemplate)
 }
 
-func footerActionTokenDisplayWidthForSelection(action FooterActionVM, ctrlPrefixShown bool) int {
-	key := strings.TrimSpace(action.Key)
-	if key == "" {
+func footerActionTokenDisplayWidthForSelection(action FooterActionVM, ctrlPrefixShown bool, keyTemplate string, actionTemplate string) int {
+	keyText := footerActionKeyText(action.Key, keyTemplate)
+	decor := footerActionDecorText(action, actionTemplate)
+	if keyText == "" && decor == "" {
 		return 0
 	}
-	width := DisplayWidth(formatFooterKeyTokenForSelection(key, ctrlPrefixShown))
-	if decor := footerActionDecorText(action, defaultFooterActionTemplate); decor != "" {
+	width := 0
+	if keyText != "" {
+		width += DisplayWidth(formatFooterKeyTokenForSelection(keyText, ctrlPrefixShown && keyText == strings.TrimSpace(action.Key)))
+	}
+	if decor != "" {
 		width += 1 + DisplayWidth(decor)
 	}
 	return width
 }
 
-func footerActionKeyOnlyWidth(actions []FooterActionVM, separatorWidth int) int {
+func footerActionKeyOnlyWidth(actions []FooterActionVM, separatorWidth int, keyTemplate string) int {
 	width := 0
 	ctrlPrefixShown := false
 	for _, action := range actions {
-		tokenWidth := footerActionKeyOnlyDisplayWidthForSelection(action, ctrlPrefixShown)
+		tokenWidth := footerActionKeyOnlyDisplayWidthForSelection(action, ctrlPrefixShown, keyTemplate)
 		if tokenWidth <= 0 {
 			continue
 		}
@@ -622,18 +633,18 @@ func footerActionKeyOnlyWidth(actions []FooterActionVM, separatorWidth int) int 
 			width += separatorWidth
 		}
 		width += tokenWidth
-		if _, ok := footerCtrlLetter(action.Key); ok {
+		if footerActionKeyText(action.Key, keyTemplate) == action.Key && footerActionHasCtrlPrefix(action.Key) {
 			ctrlPrefixShown = true
 		}
 	}
 	return width
 }
 
-func footerActionFullWidth(actions []FooterActionVM, separatorWidth int) int {
+func footerActionFullWidth(actions []FooterActionVM, separatorWidth int, keyTemplate string, actionTemplate string) int {
 	width := 0
 	ctrlPrefixShown := false
 	for _, action := range actions {
-		tokenWidth := footerActionTokenDisplayWidthForSelection(action, ctrlPrefixShown)
+		tokenWidth := footerActionTokenDisplayWidthForSelection(action, ctrlPrefixShown, keyTemplate, actionTemplate)
 		if tokenWidth <= 0 {
 			continue
 		}
@@ -641,40 +652,40 @@ func footerActionFullWidth(actions []FooterActionVM, separatorWidth int) int {
 			width += separatorWidth
 		}
 		width += tokenWidth
-		if _, ok := footerCtrlLetter(action.Key); ok {
+		if footerActionKeyText(action.Key, keyTemplate) == action.Key && footerActionHasCtrlPrefix(action.Key) {
 			ctrlPrefixShown = true
 		}
 	}
 	return width
 }
 
-func footerShouldCompactActionLabelsForSummary(width int, actions []FooterActionVM, limit int, separatorWidth int) bool {
+func footerShouldCompactActionLabelsForSummary(width int, actions []FooterActionVM, limit int, separatorWidth int, keyTemplate string, actionTemplate string) bool {
 	if width < 120 {
 		return false
 	}
-	keyOnlyWidth := footerActionKeyOnlyWidth(actions, separatorWidth)
+	keyOnlyWidth := footerActionKeyOnlyWidth(actions, separatorWidth, keyTemplate)
 	if keyOnlyWidth <= 0 || keyOnlyWidth > limit {
 		return false
 	}
-	return footerActionFullWidth(actions, separatorWidth) > limit
+	return footerActionFullWidth(actions, separatorWidth, keyTemplate, actionTemplate) > limit
 }
 
-func footerActionKeyOnlyDisplayWidthForSelection(action FooterActionVM, ctrlPrefixShown bool) int {
-	key := strings.TrimSpace(action.Key)
-	if key == "" {
+func footerActionKeyOnlyDisplayWidthForSelection(action FooterActionVM, ctrlPrefixShown bool, keyTemplate string) int {
+	keyText := footerActionKeyText(action.Key, keyTemplate)
+	if keyText == "" {
 		return 0
 	}
-	return DisplayWidth(formatFooterKeyTokenForSelection(key, ctrlPrefixShown))
+	return DisplayWidth(formatFooterKeyTokenForSelection(keyText, ctrlPrefixShown && keyText == strings.TrimSpace(action.Key)))
 }
 
-func footerCompactActionLabelMask(actions []FooterActionVM, limit int, separatorWidth int) []bool {
+func footerCompactActionLabelMask(actions []FooterActionVM, limit int, separatorWidth int, keyTemplate string, actionTemplate string) []bool {
 	mask := make([]bool, len(actions))
-	remaining := limit - footerActionKeyOnlyWidth(actions, separatorWidth)
+	remaining := limit - footerActionKeyOnlyWidth(actions, separatorWidth, keyTemplate)
 	if remaining <= 0 {
 		return mask
 	}
 	for index, action := range actions {
-		decor := footerActionDecorText(action, defaultFooterActionTemplate)
+		decor := footerActionDecorText(action, actionTemplate)
 		if decor == "" {
 			continue
 		}
@@ -750,6 +761,11 @@ func footerCtrlLetter(key string) (string, bool) {
 		return "", false
 	}
 	return strings.ToUpper(strings.TrimPrefix(key, "^")), true
+}
+
+func footerActionHasCtrlPrefix(key string) bool {
+	_, ok := footerCtrlLetter(key)
+	return ok
 }
 
 func compactFooterActions(actions []string) []string {

@@ -1015,6 +1015,8 @@ type FooterVM struct {
 	Hint                string
 	Actions             []string
 	ActionTokens        []FooterActionVM
+	KeyTemplate         string
+	KeyTemplateSet      bool
 	ActionTemplate      string
 	ModeBadgeTemplate   string
 	ActionSeparator     string

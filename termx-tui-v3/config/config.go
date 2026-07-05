@@ -40,6 +40,7 @@ func Default() state.TUIConfigStore {
 		Footer: state.TUIFooterConfig{
 			Templates: state.TUIFooterTemplatesConfig{
 				ModeBadge: "{{mode_icon}} {{mode_label}}",
+				Key:       "{{key}}",
 				Action:    "{{key}} {{icon}} {{label}}",
 				Separator: " │ ",
 				KeylockOn: "󰌾 KEYLOCK",
@@ -330,6 +331,7 @@ var scalarSetters = map[string]scalarSetter{
 	"tui.chrome.tab_create_icon":                       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabCreateIcon = value }),
 	"tui.chrome.tab_template":                          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabTemplate = value }),
 	"tui.footer.templates.mode_badge":                  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.ModeBadge = value }),
+	"tui.footer.templates.key":                         setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.Key = value }),
 	"tui.footer.templates.action":                      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.Action = value }),
 	"tui.footer.templates.separator":                   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.Separator = value }),
 	"tui.footer.templates.keylock_on":                  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.KeylockOn = value }),
@@ -629,6 +631,7 @@ func validateFooterConfig(footer state.TUIFooterConfig) error {
 		value string
 	}{
 		{"tui.footer.templates.mode_badge", footer.Templates.ModeBadge},
+		{"tui.footer.templates.key", footer.Templates.Key},
 		{"tui.footer.templates.action", footer.Templates.Action},
 		{"tui.footer.templates.separator", footer.Templates.Separator},
 		{"tui.footer.templates.keylock_on", footer.Templates.KeylockOn},
