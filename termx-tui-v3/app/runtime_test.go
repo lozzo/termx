@@ -1745,6 +1745,52 @@ func TestInteractiveRuntimeTerminalSizeLockChromeButtonTogglesTags(t *testing.T)
 	}
 }
 
+func TestInteractiveRuntimeTerminalSizeLockChromeButtonLoadsMissingTags(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{
+			TerminalID:     "term-1",
+			Channel:        7,
+			Cols:           80,
+			Rows:           24,
+			ResizePolicy:   state.TerminalResizeRoleOwner,
+			CanResize:      true,
+			SurfaceID:      "surface",
+			ViewID:         state.TerminalPaneViewID(state.DefaultPaneID),
+			OwnerSurfaceID: "surface",
+			OwnerViewID:    state.TerminalPaneViewID(state.DefaultPaneID),
+		},
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-1", Title: "main", Tags: map[string]string{"role": "shell"}}}},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(96, 28)
+	root := state.Root{Shell: state.DefaultShell().SetPanelPresentation(state.PanelPresentationCard)}
+	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}})
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "test-surface", ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("attach drain: %v", err)
+	}
+
+	frame := lastRuntimeFrame(t, host)
+	action := frameHitRegionByAction(t, frame, render.HitRegionPaneAction, render.ActionResizeLayoutLock.String(), state.DefaultPaneID)
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send size lock click without cached tags: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("click drain: %v", err)
+	}
+	if len(terminal.Lists) != 1 || len(terminal.TagEdits) != 1 || terminal.TagEdits[0].Tags["role"] != "shell" || terminal.TagEdits[0].Tags["termx.size_lock"] != "lock" {
+		t.Fatalf("chrome lock should load tags before edit, lists=%#v edits=%#v", terminal.Lists, terminal.TagEdits)
+	}
+	if binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); !ok || !binding.SizeLocked || binding.CanResize {
+		t.Fatalf("chrome lock with missing cache should project locked owner, binding=%#v ok=%v", binding, ok)
+	}
+	if !frameContains(lastRuntimeFrame(t, host), render.DefaultPaneChromeGlyphs().SizeLock) {
+		t.Fatalf("locked frame should render size lock glyph after loading tags, got %#v", lastRuntimeFrame(t, host).Lines)
+	}
+}
+
 func TestInteractiveRuntimeFloatingSizeLockChromeButtonTargetsFloatingTerminal(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)

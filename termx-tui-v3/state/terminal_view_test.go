@@ -385,6 +385,18 @@ func TestTerminalViewLayoutCommandsNormalizeAndReset(t *testing.T) {
 	if binding.Layout.Mode != TerminalViewLayoutCenter || binding.Layout.AlignX != TerminalViewAlignCenter || binding.Layout.AlignY != TerminalViewAlignCenter {
 		t.Fatalf("center should set centered layout, got %#v", binding.Layout)
 	}
+	store, binding, _ = store.ApplyPaneLayoutCommand("pane-1", TerminalViewLayoutCommand{Action: "align", AlignX: TerminalViewAlignStart})
+	if binding.Layout.Mode != TerminalViewLayoutAuto || binding.Layout.AlignX != TerminalViewAlignStart || binding.Layout.AlignY != TerminalViewAlignCenter {
+		t.Fatalf("align should override full-center mode without reset, got %#v", binding.Layout)
+	}
+	store, binding, _ = store.ApplyPaneLayoutCommand("pane-1", TerminalViewLayoutCommand{Action: "center-x"})
+	if binding.Layout.Mode != TerminalViewLayoutAuto || binding.Layout.AlignX != TerminalViewAlignCenter || binding.Layout.AlignY != TerminalViewAlignStart {
+		t.Fatalf("center-x should express horizontal-only center, got %#v", binding.Layout)
+	}
+	store, binding, _ = store.ApplyPaneLayoutCommand("pane-1", TerminalViewLayoutCommand{Action: "center-y"})
+	if binding.Layout.Mode != TerminalViewLayoutAuto || binding.Layout.AlignX != TerminalViewAlignStart || binding.Layout.AlignY != TerminalViewAlignCenter {
+		t.Fatalf("center-y should express vertical-only center, got %#v", binding.Layout)
+	}
 	_, binding, _ = store.ApplyPaneLayoutCommand("pane-1", TerminalViewLayoutCommand{Action: "reset"})
 	if binding.Layout.SizeLocked || binding.Layout.Mode != TerminalViewLayoutAuto || binding.Layout.AlignX != TerminalViewAlignStart || binding.Layout.AlignY != TerminalViewAlignStart {
 		t.Fatalf("reset should restore normalized default layout, got %#v", binding.Layout)

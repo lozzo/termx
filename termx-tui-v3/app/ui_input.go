@@ -1121,9 +1121,9 @@ func terminalViewLayoutCommandFromString(command string) (state.TerminalViewLayo
 	case "terminal layout center":
 		return state.TerminalViewLayoutCommand{Action: "center"}, true
 	case "terminal layout center-x":
-		return state.TerminalViewLayoutCommand{Action: "align", AlignX: state.TerminalViewAlignCenter}, true
+		return state.TerminalViewLayoutCommand{Action: "center-x"}, true
 	case "terminal layout center-y":
-		return state.TerminalViewLayoutCommand{Action: "align", AlignY: state.TerminalViewAlignCenter}, true
+		return state.TerminalViewLayoutCommand{Action: "center-y"}, true
 	case "terminal layout reset":
 		return state.TerminalViewLayoutCommand{Action: "reset"}, true
 	default:

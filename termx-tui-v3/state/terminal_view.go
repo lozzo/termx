@@ -784,6 +784,9 @@ func (layout TerminalViewLayout) Apply(command TerminalViewLayoutCommand) Termin
 		layout.PanX += command.DeltaX
 		layout.PanY += command.DeltaY
 	case "align":
+		// 中文说明：align 是显式 view-local 布局指令；必须切出 full-center mode，
+		// 否则 render 会继续强制双轴居中，导致后续 0/$/^/B 看起来不生效。
+		layout.Mode = TerminalViewLayoutAuto
 		if command.AlignX != "" {
 			layout.AlignX = normalizeTerminalViewAlign(command.AlignX)
 		}
@@ -795,6 +798,18 @@ func (layout TerminalViewLayout) Apply(command TerminalViewLayoutCommand) Termin
 		layout.PanX = 0
 		layout.PanY = 0
 		layout.AlignX = TerminalViewAlignCenter
+		layout.AlignY = TerminalViewAlignCenter
+	case "center-x":
+		layout.Mode = TerminalViewLayoutAuto
+		layout.PanX = 0
+		layout.PanY = 0
+		layout.AlignX = TerminalViewAlignCenter
+		layout.AlignY = TerminalViewAlignStart
+	case "center-y":
+		layout.Mode = TerminalViewLayoutAuto
+		layout.PanX = 0
+		layout.PanY = 0
+		layout.AlignX = TerminalViewAlignStart
 		layout.AlignY = TerminalViewAlignCenter
 	case "reset":
 		layout = TerminalViewLayout{}.Normalize()

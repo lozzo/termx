@@ -1592,21 +1592,29 @@ func TestTerminalSizeLockToggleWritesTerminalTagsAndProjectsViews(t *testing.T) 
 	}
 }
 
-func TestTerminalSizeLockToggleRequiresTerminalPoolTagsBeforeWriting(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+func TestTerminalSizeLockToggleLoadsTerminalPoolTagsBeforeWriting(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-1", Title: "main", Tags: map[string]string{"role": "shell"}}}},
+	}
 	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
 	root := state.Root{Shell: state.DefaultShell()}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
 
 	next, effects := reducer(root, TerminalSizeLockToggleRequestMsg{})
-	if len(terminal.TagEdits) != 0 || len(effects) != 1 {
-		t.Fatalf("missing pool tags should only request metadata refresh, edits=%#v effects=%#v", terminal.TagEdits, effects)
+	if len(terminal.TagEdits) != 0 || len(effects) != 1 || len(next.Shell.Toasts) != 0 {
+		t.Fatalf("missing pool tags should defer list/edit to one effect without warning, edits=%#v effects=%#v root=%#v", terminal.TagEdits, effects, next)
 	}
-	if _, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolListRequestMsg); !ok {
-		t.Fatalf("missing pool tags should refresh terminal pool, got %#v", effects[0])
+	result, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalSizeLockToggleResultMsg)
+	if !ok || result.TerminalID != "term-1" || !result.Locked {
+		t.Fatalf("missing pool tags should list then write size lock, got %#v", result)
 	}
-	if len(next.Shell.Toasts) == 0 || next.Shell.Toasts[len(next.Shell.Toasts)-1].Body != "terminal metadata pending" {
-		t.Fatalf("missing pool tags should warn instead of overwriting tags, root=%#v", next)
+	if len(terminal.Lists) != 1 || len(terminal.TagEdits) != 1 || terminal.TagEdits[0].Tags["role"] != "shell" || terminal.TagEdits[0].Tags["termx.size_lock"] != "lock" {
+		t.Fatalf("size lock must preserve listed tags when cache is empty, lists=%#v edits=%#v", terminal.Lists, terminal.TagEdits)
+	}
+	next, _ = reducer(next, result)
+	binding, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !binding.SizeLocked || binding.CanResize {
+		t.Fatalf("listed tag result should project terminal size lock, got %#v", binding)
 	}
 }
 
@@ -3543,6 +3551,33 @@ func TestResizeModeTerminalLayoutKeysAndActionsShareViewLocalState(t *testing.T)
 	}
 	if vm.Shell.Layout.Panels[0].Content.Layout.Mode != state.TerminalViewLayoutCenter || vm.Shell.Layout.Panels[0].Content.Layout.AlignX != state.TerminalViewAlignCenter {
 		t.Fatalf("render content should consume terminal view layout, got %#v", vm.Shell.Layout.Panels[0].Content.Layout)
+	}
+}
+
+func TestResizeModeLayoutKeysCanOverrideCenterWithoutReset(t *testing.T) {
+	root := state.Root{}
+	root.Shell = state.DefaultShell().SetInteractionMode(state.InteractionModeResize)
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+
+	inputReducer := NewUIInputReducer()
+	next, _ := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "m"}})
+	binding, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if binding.Layout.Mode != state.TerminalViewLayoutCenter || binding.Layout.AlignX != state.TerminalViewAlignCenter || binding.Layout.AlignY != state.TerminalViewAlignCenter {
+		t.Fatalf("m should center both axes, got %#v", binding.Layout)
+	}
+
+	next.Shell = next.Shell.SetInteractionMode(state.InteractionModeResize)
+	next, _ = inputReducer(next, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "0"}})
+	binding, _ = next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if binding.Layout.Mode != state.TerminalViewLayoutAuto || binding.Layout.AlignX != state.TerminalViewAlignStart || binding.Layout.AlignY != state.TerminalViewAlignCenter {
+		t.Fatalf("align-left should override centered mode without reset, got %#v", binding.Layout)
+	}
+
+	next.Shell = next.Shell.SetInteractionMode(state.InteractionModeResize)
+	next, _ = inputReducer(next, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "|"}})
+	binding, _ = next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if binding.Layout.Mode != state.TerminalViewLayoutAuto || binding.Layout.AlignX != state.TerminalViewAlignCenter || binding.Layout.AlignY != state.TerminalViewAlignStart {
+		t.Fatalf("center-x should become horizontal-only center without reset, got %#v", binding.Layout)
 	}
 }
 

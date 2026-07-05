@@ -791,8 +791,26 @@ func reduceTerminalSizeLockToggleRequest(root state.Root, deps LiveDeps) (state.
 	}
 	tags, ok := terminalPoolTags(root.TerminalPool, target.TerminalID)
 	if !ok {
-		root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.size", Body: "terminal metadata pending"})
-		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+		// 中文说明：size-lock 的写入真值是 terminal metadata tags；本地 cache 缺失时必须先拉最新 tags，
+		// 再合并写入锁标记，不能停在 pending，也不能用空 map 覆盖用户已有 tags。
+		return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
+			result, err := deps.Terminal.List(ctx, services.TerminalListRequest{})
+			if err != nil {
+				return TerminalSizeLockToggleResultMsg{TerminalID: target.TerminalID, Err: fmt.Errorf("terminal metadata: %w", err)}
+			}
+			tags, ok := terminalListTags(result, target.TerminalID)
+			if !ok {
+				return TerminalSizeLockToggleResultMsg{TerminalID: target.TerminalID, Err: fmt.Errorf("terminal metadata missing")}
+			}
+			locked := !terminalmeta.SizeLocked(tags)
+			if locked {
+				tags[terminalmeta.SizeLockTag] = terminalmeta.SizeLockLock
+			} else {
+				delete(tags, terminalmeta.SizeLockTag)
+			}
+			err = deps.Terminal.EditTags(ctx, services.TerminalEditTagsRequest{TerminalID: target.TerminalID, Tags: tags})
+			return TerminalSizeLockToggleResultMsg{TerminalID: target.TerminalID, Tags: tags, Locked: locked, Err: err}
+		}}}
 	}
 	locked := !terminalmeta.SizeLocked(tags)
 	if locked {
@@ -820,6 +838,20 @@ func reduceTerminalSizeLockToggleResult(root state.Root, msg TerminalSizeLockTog
 	}
 	root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "terminal.size", Body: body})
 	return root.Advance(), nil
+}
+
+func terminalListTags(result services.TerminalListResult, terminalID string) (map[string]string, bool) {
+	for _, item := range result.Items {
+		if item.TerminalID != terminalID {
+			continue
+		}
+		tags := cloneStringMap(item.Tags)
+		if tags == nil {
+			tags = map[string]string{}
+		}
+		return tags, true
+	}
+	return nil, false
 }
 
 type terminalSizeLockTarget struct {
