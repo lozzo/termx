@@ -1082,6 +1082,26 @@ func TestCanvasMatrixKeepsSafeASCIIRunAsSingleSegment(t *testing.T) {
 	}
 }
 
+func TestCanvasANSICompactsStyledUnicodeUIRuns(t *testing.T) {
+	c := newCanvas(12, 1)
+	dots := strings.Repeat("·", 12)
+	c.writeLine(0, 0, 12, Line{Cells: []Cell{
+		{Text: dots, Width: 12, Style: "#666666", Safe: true},
+	}}, "panel:outside-extent", LayerPanel)
+
+	line := c.lines()[0]
+	if len(line.Cells) != 1 || line.Cells[0].Text != dots || line.Cells[0].Style != "#666666" {
+		t.Fatalf("styled UI dots should be compacted into one output cell, got %#v", line.Cells)
+	}
+	ansi := c.ansiLines(DefaultTheme())[0]
+	if got := strings.Count(ansi, "\x1b[38;2;102;102;102m"); got != 1 {
+		t.Fatalf("styled UI dots should emit one SGR run, got count=%d ansi=%q", got, ansi)
+	}
+	if strings.Contains(ansi, "\x1b[2G") {
+		t.Fatalf("styled UI dot run should not re-anchor every cell, got %q", ansi)
+	}
+}
+
 func TestCanvasMatrixTracksOwnerLayerContinuationAndSafeFlag(t *testing.T) {
 	c := newCanvas(6, 1)
 	c.writeTextStyled(0, 0, 2, "你", StyleAccent, "pane-1", LayerPanel)

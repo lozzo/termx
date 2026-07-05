@@ -5,14 +5,7 @@ import "strings"
 func (c *canvas) lines() []Line {
 	lines := make([]Line, len(c.rows))
 	for i, row := range c.rows {
-		cells := make([]Cell, 0, canvasOutputCellCapacity(row))
-		for _, cell := range row {
-			if cell.continuation {
-				continue
-			}
-			cells = appendCanvasOutputCell(cells, canvasOutputCellFromMatrix(cell))
-		}
-		lines[i] = Line{Cells: cells}
+		lines[i] = Line{Cells: canvasRowOutputCells(row)}
 	}
 	return lines
 }
@@ -29,98 +22,32 @@ func canvasRowANSIString(row []canvasCell, theme Theme) string {
 	if len(row) == 0 {
 		return ""
 	}
-	var out strings.Builder
-	out.Grow(canvasRowANSICapacity(row))
-	modelCol := 1
-	previous := Cell{}
-	hasPrevious := false
-	for _, cell := range row {
-		if cell.continuation {
-			continue
-		}
-		next := canvasOutputCellFromMatrix(cell)
-		if hasPrevious && !canMergeCanvasOutputCell(previous, next) {
-			// 中文说明：直接 ANSI 路径按输出 cell 边界复位；可合并 ASCII 段不插入额外列跳转。
-			out.WriteString(ansiColumn(modelCol))
-		}
-		writeANSIStyledCell(&out, next, theme, modelCol)
-		modelCol += maxInt(0, next.Width)
-		previous = next
-		hasPrevious = true
-	}
-	return out.String()
+	return Line{Cells: canvasRowOutputCells(row)}.ANSIString(theme)
 }
 
-func canvasRowANSICapacity(row []canvasCell) int {
-	capacity := len(ANSIReset)
-	modelCol := 1
-	previous := Cell{}
-	hasPrevious := false
+func canvasRowOutputCells(row []canvasCell) []Cell {
+	cells := make([]Cell, 0, canvasOutputCellCapacity(row))
 	for _, cell := range row {
 		if cell.continuation {
 			continue
 		}
-		next := canvasOutputCellFromMatrix(cell)
-		if hasPrevious && !canMergeCanvasOutputCell(previous, next) {
-			capacity += ansiColumnCapacity(modelCol)
-		}
-		capacity += ansiStyledCellCapacity(next)
-		modelCol += maxInt(0, next.Width)
-		previous = next
-		hasPrevious = true
+		cells = appendCanvasOutputCell(cells, canvasOutputCellFromMatrix(cell))
 	}
-	if capacity < len(row)+len(ANSIReset) {
-		capacity = len(row) + len(ANSIReset)
-	}
-	return capacity
+	return cells
 }
 
 func canvasOutputCellCapacity(row []canvasCell) int {
 	count := 0
-	previousMergeable := false
-	hasPrevious := false
 	for _, cell := range row {
 		if cell.continuation {
 			continue
 		}
-		mergeable := canvasMatrixCellMergeable(cell)
-		if hasPrevious && previousMergeable && mergeable {
-			continue
-		}
-		previousMergeable = mergeable
-		hasPrevious = true
 		count++
 	}
 	if count <= 0 {
 		return 1
 	}
 	return count
-}
-
-func canvasMatrixCellMergeable(cell canvasCell) bool {
-	if cell.terminal ||
-		cell.style != "" ||
-		!cell.ansiStyle.IsZero() ||
-		cell.linkURL != "" ||
-		cell.linkParams != "" {
-		return false
-	}
-	if cell.text == "" && cell.width == 0 {
-		return true
-	}
-	width := cell.width
-	if width <= 0 {
-		width = 1
-	}
-	if width != len(cell.text) {
-		return false
-	}
-	for i := 0; i < len(cell.text); i++ {
-		if cell.text[i] < 0x20 || cell.text[i] > 0x7e {
-			return false
-		}
-	}
-	return true
 }
 
 func canvasOutputCellFromMatrix(cell canvasCell) Cell {
@@ -155,18 +82,51 @@ func appendCanvasOutputCell(cells []Cell, next Cell) []Cell {
 }
 
 func canMergeCanvasOutputCell(left Cell, right Cell) bool {
-	return !left.TerminalContent &&
-		!right.TerminalContent &&
-		left.Style == "" &&
-		right.Style == "" &&
-		left.ANSIStyle.IsZero() &&
-		right.ANSIStyle.IsZero() &&
-		left.LinkURL == "" &&
-		right.LinkURL == "" &&
-		left.LinkParams == "" &&
-		right.LinkParams == "" &&
-		isASCIIWidthCell(left) &&
-		isASCIIWidthCell(right)
+	if left.TerminalContent ||
+		right.TerminalContent ||
+		left.Style != right.Style ||
+		left.ANSIStyle != right.ANSIStyle ||
+		left.LinkURL != right.LinkURL ||
+		left.LinkParams != right.LinkParams {
+		return false
+	}
+	if left.Style == "" && left.ANSIStyle.IsZero() && left.LinkURL == "" && left.LinkParams == "" {
+		return isASCIIWidthCell(left) && isASCIIWidthCell(right)
+	}
+	// 中文说明：带样式 UI cell 只压缩 live extent 占位 glyph；pane chrome 边角和 emoji 列锚仍保持原 cell 边界。
+	return isRepeatedCanvasOutputExtentPlaceholder(left.Text, right.Text) &&
+		isCanvasOutputMergeSafeDisplayCell(left) &&
+		isCanvasOutputMergeSafeDisplayCell(right)
+}
+
+func isCanvasOutputMergeSafeDisplayCell(cell Cell) bool {
+	if cell.Width < 0 || strings.Contains(cell.Text, "\ufe0f") {
+		return false
+	}
+	if cell.Text == "" {
+		return cell.Width == 0
+	}
+	return cell.Width == DisplayWidth(cell.Text)
+}
+
+func isRepeatedCanvasOutputExtentPlaceholder(text string, unit string) bool {
+	glyph := contentViewportOutsideExtentGlyph()
+	if glyph == "" || glyph == " " || unit != glyph {
+		return false
+	}
+	return isRepeatedCanvasOutputText(text, glyph)
+}
+
+func isRepeatedCanvasOutputText(text string, unit string) bool {
+	if text == "" || unit == "" || len(text)%len(unit) != 0 {
+		return false
+	}
+	for start := 0; start < len(text); start += len(unit) {
+		if text[start:start+len(unit)] != unit {
+			return false
+		}
+	}
+	return true
 }
 
 func isASCIIWidthCell(cell Cell) bool {
