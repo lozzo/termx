@@ -369,6 +369,7 @@
 | R456. LL terminal lifecycle marker 入历史 | 完成 | `workflow.md`、`termx-core-v2/history/linehist/`、`termx-core-v2/` | `terminal started`、`started at`、`terminal exited`、`exited at` 和 `command` 作为 core terminal lifecycle owner 的 synthetic history event 写入 linehist；不经 PTY/raw parser/live/TUI fallback。copy/history 正文测试按 payload row 定位 LineID，lifecycle marker 单独断言。 |
 | R457. live/history start marker 展示对齐 | 完成 | `workflow.md`、`termx-core-v2/` | `terminal started` / `started at` / `command` 现在与 exit marker 一样由 core terminal lifecycle owner 同时写入 live native screen 和 linehist history；创建、history disabled 和 restart 均可在 live 中看到 start marker，one-shot live invalidation 测试以当前 revision 为 arm 边界。 |
 | R458. exit marker 前空行 live/history 对齐 | 完成 | `workflow.md`、`termx-core-v2/` | normal live 中 `terminal exited` 前的空行也是 core lifecycle marker 展示语义；linehist history 现在同步写入同一条空 logical spacer，copy/history 进入后不再吞掉这行。测试 helper 只把紧邻 exit marker 前的 synthetic spacer 当 lifecycle 元数据过滤，不隐藏普通 PTY 空行。 |
+| R459. TUI split-line active 边框归属修复 | 完成 | `workflow.md`、`termx-tui-v3/render/` | split-line 多 pane 共享分隔线时，active pane 必须拥有共享边框的高亮归属；active pane 位于 split 前侧时要主动绘制自己的 trailing edge，后绘制的 inactive pane 不得把该边框压成 muted。 |
 
 ## 7. 测试准入
 
@@ -392,6 +393,7 @@
 
 ## 9. 当前状态
 
+- `R459` 已完成：修复 split-line pane 共享边框的 active 样式归属。render 层现在让 active pane 在内部 split trailing edge 上主动写入自己的边框，并且 box glyph merge 时保留 `StyleAccent` 优先级，避免后绘制的 inactive pane 把共享 divider / joint 压灰。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 - `R458` 已完成：修复普通模式进入 copy/history 后 `terminal exited` 前空行消失的问题。根因是 exit marker 写 live 时使用了 leading blank line，但写 linehist history 时只写 marker 正文行；现在 `appendLifecycleHistoryMarker` 支持同样的 leading blank spacer，exit marker 在 authoritative history 中也会有一条空 logical line。R433 terminal harness 验证 raw history 中空行紧邻 `terminal exited` 之前；测试 helper 只过滤这条 synthetic lifecycle spacer，避免把真实 PTY 空行当元数据。准入已通过 `cd termx-core-v2 && go test ./... -count=1`。
 - `R457` 已完成：修复 R456 后 `started at` 只在 history、未在 live 里展示的问题。`Terminal.appendStartMarker` 现在先写 linehist lifecycle marker，再写 live native screen；创建 terminal 不再受 historyEnabled 限制，history disabled 模式也和 exit marker 一样展示 start marker。Restart 在保留旧 live tail 后追加新的 start marker，并用 marker 写入后的 live revision 发布 invalidation，避免客户端只观察到 reset revision。相关 live/protocol/PTY harness 已改为按当前 revision arm one-shot wake，并按内容而非固定 row0 断言 start marker 与 PTY 输出。准入已通过 `cd termx-core-v2 && go test ./... -count=1`。
 - `R456` 已完成：按用户要求，terminal 退出信息和新 terminal 启动时间现在都会保存到 authoritative history。新增 `linehist.Engine/Store.AppendLifecycleLines`，只允许 core terminal lifecycle owner 在 start/restart/exit 边界写入 synthetic marker；`newTerminal` 和 `Restart` 写入 `terminal started` / `started at` / `command`，process exit 写入既有 `terminal exited` / `exited at` / `command`，失败会写 core warning。测试侧把 PTY 正文 helper 与 lifecycle marker helper 分开，避免 `command:` marker 被误当成程序输出或 copy 范围首行。准入已通过 `cd termx-core-v2 && go test ./... -count=1`。

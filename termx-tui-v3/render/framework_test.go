@@ -287,6 +287,36 @@ func TestFrameworkRendersSplitLineAsSharedOuterFrame(t *testing.T) {
 	assertAllRowsWidth(t, lines, 48)
 }
 
+func TestFrameworkSplitLineActivePaneOwnsSharedDividerStyle(t *testing.T) {
+	vertical := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{
+			Viewport: Rect{W: 48, H: 10},
+			Panels: []PanelVM{
+				{ID: "left", Title: "shell", Presentation: PanelPresentationSplitLine, Active: true, Content: ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine("left body")}}},
+				{ID: "right", Title: "logs", Presentation: PanelPresentationSplitLine, Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("right body")}}},
+			},
+			Split: SplitVM{Direction: SplitVertical, Children: []SplitVM{{PaneID: "left"}, {PaneID: "right"}}},
+		},
+	}})
+	assertStyledCellAt(t, vertical.StyledLines(), 1, 24, "│", StyleAccent)
+	assertStyledCellAt(t, vertical.StyledLines(), 4, 24, "│", StyleAccent)
+	assertStyledCellAt(t, vertical.StyledLines(), 0, 24, "┬", StyleAccent)
+
+	horizontal := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{
+			Viewport: Rect{W: 40, H: 12},
+			Panels: []PanelVM{
+				{ID: "top", Title: "top", Presentation: PanelPresentationSplitLine, Active: true, Content: ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine("top body")}}},
+				{ID: "bottom", Title: "bottom", Presentation: PanelPresentationSplitLine, Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("bottom body")}}},
+			},
+			Split: SplitVM{Direction: SplitHorizontal, Children: []SplitVM{{PaneID: "top"}, {PaneID: "bottom"}}},
+		},
+	}})
+	assertStyledCellAt(t, horizontal.StyledLines(), 6, 10, "─", StyleAccent)
+	assertStyledCellAt(t, horizontal.StyledLines(), 6, 0, "├", StyleAccent)
+	assertStyledCellAt(t, horizontal.StyledLines(), 6, 39, "┤", StyleAccent)
+}
+
 func TestFrameworkPreservesPaneChromeLineBetweenTitleAndAction(t *testing.T) {
 	for _, presentation := range []PanelPresentation{PanelPresentationCard, PanelPresentationSplitLine} {
 		result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
@@ -1496,6 +1526,17 @@ func styledLinesContainANSI(lines []Line, value string, style ANSICellStyle) boo
 		}
 	}
 	return false
+}
+
+func assertStyledCellAt(t *testing.T, lines []Line, row int, column int, text string, style StyleToken) {
+	t.Helper()
+	if row < 0 || row >= len(lines) {
+		t.Fatalf("row %d out of frame bounds lines=%d", row, len(lines))
+	}
+	cell, ok := lineCellAtDisplayColumn(lines[row], column)
+	if !ok || cell.Text != text || cell.Style != style {
+		t.Fatalf("expected styled cell row=%d col=%d text=%q style=%s, got ok=%v cell=%#v line=%#v", row, column, text, style, ok, cell, lines[row])
+	}
 }
 
 func lineCellAtDisplayColumn(line Line, column int) (Cell, bool) {

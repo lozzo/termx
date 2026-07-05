@@ -258,9 +258,11 @@ func (c *canvas) mergeStyledBoxCell(x int, y int, connections uint8, style Style
 	if x < 0 || y < 0 || x >= c.width || y >= c.height {
 		return
 	}
+	existingCell := c.rows[y][x]
 	existing := c.cellText(x, y)
 	if existingConnections, ok := boxConnectionsForGlyph(existing); ok {
 		connections |= existingConnections
+		style = mergeBoxCellStyle(existingCell.style, style)
 	}
 	glyph, ok := boxGlyphForConnections(connections)
 	if !ok {
