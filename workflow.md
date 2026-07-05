@@ -378,6 +378,7 @@
 | R465. TUI content overflow marker 配置与四边定位 | 完成 | `workflow.md`、`termx-tui-v3/render/`、`termx-tui-v3/state/`、`termx-tui-v3/config/`、`termx-tui-v3/docs/`、按需 `termx-tui-v3/app/` | 内容被裁切时，上/左/右/下 marker 分别显示在顶边锁前、左侧 panel、右侧 panel、底边 panel；marker glyph/style 和 live extent 占位点 glyph/style 必须可由 config 配置。 |
 | R466. TUI styled extent placeholder 输出压缩 | 完成 | `workflow.md`、`termx-tui-v3/render/` | R465 允许 live extent 占位点配置浅灰样式后，密集占位点不能退化为逐点 SGR/列锚输出；canvas ANSI 路径必须合并相同样式的非 terminal UI cell，同时保留真实 terminal cell 的列宽保护。 |
 | R467. TUI styled extent placeholder canvas 写入压缩 | 完成 | `workflow.md`、`termx-tui-v3/render/` | R466 只压缩最终 ANSI 输出；占位点仍在 canvas 写入阶段按 grapheme 逐点落格。需要让 live extent 占位 glyph 在 canvas matrix 中也保持整段 segment，降低浮窗拖动时每帧 render 的 cell 写入成本，同时不改变 pane chrome、terminal cell 和 emoji 列锚边界。 |
+| R468. TUI extent placeholder partial clear 修复 | 完成 | `workflow.md`、`termx-tui-v3/render/` | R467 把非 ASCII 占位点合成宽 segment 后，浮窗/覆盖层局部清理该 footprint 时不能把左右未覆盖的小圆点退化成空格；矩阵 partial clear 必须能按当前占位 glyph 切分并保留左右内容。 |
 
 ## 7. 测试准入
 
@@ -401,6 +402,7 @@
 
 ## 9. 当前状态
 
+- `R468` 已完成：用户截图显示浮窗覆盖中间后左右两侧的小圆点消失。根因是 canvas partial clear 已能保留宽 footprint 的左右两段，但旧切分逻辑只按 byte len 处理 ASCII；R467 后小圆点是非 ASCII 宽 segment，局部清理时左右段被降级成空格。现在矩阵 partial clear 会识别当前配置的 live extent 占位 glyph 并按显示宽度重建左右 segment，不回退 R467 的性能优化。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`。
 - `R467` 已完成：继续处理用户反馈的浮窗拖动延迟。R466 已把最终 ANSI 输出从逐点 SGR 压成一段，但 `canvas.writeLine` 对非 ASCII 占位点仍会逐 grapheme 写入 canvas matrix；拖动浮窗时每帧 render 仍会在背景点阵上做大量 cell 写入。现在当前配置的 live extent 占位 glyph 在 canvas 阶段保持整段 segment，`canvasRowOutputCells` 也会跳过 continuation footprint，减少 render 构帧和 ANSI 生成时的逐列扫描；输出 glyph/style 配置、pane hit region、terminal 内容和 FE0F/emoji 列宽保护不变。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`。
 - `R466` 已完成：用户反馈启用浅灰小圆点后浮窗拖动再次变慢。根因是 R465 的 `extent_placeholder_style` 让非 ASCII 占位点经过 canvas 时被拆成逐点 styled cell，真实 FrameSink 虽仍按 row diff 写帧，但浮窗拖动会重写新旧覆盖行，导致这些行输出大量重复 SGR/列锚。现在 canvas 输出层只把当前配置的 live extent 占位 glyph 合并为同一 styled run；普通无样式 ASCII run 保持旧合并行为，pane chrome 边角、横线测试边界、真实 terminal cell 和 FE0F/emoji 列宽保护不被合并。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`。
 - `R465` 已完成：content overflow marker 从旧的左上/右下角合并角标改为四边独立定位：top marker 绘制在顶边锁图标前，left marker 绘制在左侧竖边，right marker 绘制在右侧竖边，bottom marker 绘制在底边右下角内侧并保留 pane 角 glyph。`pane_glyphs` 新增 `overflow_left/right/top/bottom`、`overflow_style`、`extent_placeholder`、`extent_placeholder_style`，配置只影响 chrome glyph/style，不改变 `ContentOverflow` truth、pane ownership 或 terminal resize 语义；style 支持内置 token 或 `#RRGGBB`，live extent 占位点默认使用 muted 样式。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。

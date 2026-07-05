@@ -1110,6 +1110,29 @@ func TestCanvasANSICompactsStyledUnicodeUIRuns(t *testing.T) {
 	}
 }
 
+func TestCanvasPartialClearKeepsStyledUnicodeUIRunSides(t *testing.T) {
+	ResetPaneChromeGlyphs()
+	t.Cleanup(ResetPaneChromeGlyphs)
+	c := newCanvas(12, 1)
+	dots := strings.Repeat("·", 12)
+	c.writeLine(0, 0, 12, Line{Cells: []Cell{
+		{Text: dots, Width: 12, Style: "#666666", Safe: true},
+	}}, "panel:outside-extent", LayerPanel)
+
+	c.writeLine(4, 0, 4, NewLine("ABCD"), "floating", LayerPanel)
+
+	line := c.lines()[0]
+	if got := line.PlainString(); got != "····ABCD····" {
+		t.Fatalf("partial overwrite should preserve dot run sides, got %q cells=%#v", got, line.Cells)
+	}
+	if left, ok := lineCellAtDisplayColumn(line, 0); !ok || left.Text != "····" || left.Style != "#666666" {
+		t.Fatalf("left dot segment should be preserved, got ok=%v cell=%#v line=%#v", ok, left, line)
+	}
+	if right, ok := lineCellAtDisplayColumn(line, 8); !ok || right.Text != "····" || right.Style != "#666666" {
+		t.Fatalf("right dot segment should be preserved, got ok=%v cell=%#v line=%#v", ok, right, line)
+	}
+}
+
 func TestCanvasMatrixTracksOwnerLayerContinuationAndSafeFlag(t *testing.T) {
 	c := newCanvas(6, 1)
 	c.writeTextStyled(0, 0, 2, "你", StyleAccent, "pane-1", LayerPanel)

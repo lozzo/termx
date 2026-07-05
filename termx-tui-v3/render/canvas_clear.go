@@ -33,6 +33,9 @@ func canvasSegmentFromCellPart(cell canvasCell, offset int, width int) canvasSeg
 	text := cell.text
 	if text != "" && cell.width == len(text) && offset >= 0 && offset+width <= len(text) {
 		text = text[offset : offset+width]
+	} else if text != "" && isRepeatedCanvasOutputExtentPlaceholder(text, contentViewportOutsideExtentGlyph()) && offset >= 0 && offset+width <= cell.width {
+		// 中文说明：R467 后 live extent 占位点可作为非 ASCII 宽 segment 存在；局部覆盖时左右段必须保留 glyph，不能退化成空格。
+		text = strings.Repeat(contentViewportOutsideExtentGlyph(), width)
 	} else if text != "" && offset == 0 && width == cell.width {
 		text = cell.text
 	} else {
