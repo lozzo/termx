@@ -1791,6 +1791,38 @@ func TestInteractiveRuntimeTerminalSizeLockChromeButtonLoadsMissingTags(t *testi
 	}
 }
 
+func TestInteractiveRuntimePlainPaneOwnerSizeLockChromeButton(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-1", Title: "main", Tags: map[string]string{"role": "shell"}}}},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(96, 28)
+	root := state.Root{Shell: state.DefaultShell().SetPanelPresentation(state.PanelPresentationCard)}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}})
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("render drain: %v", err)
+	}
+
+	frame := lastRuntimeFrame(t, host)
+	action := frameHitRegionByAction(t, frame, render.HitRegionPaneAction, render.ActionResizeLayoutLock.String(), state.DefaultPaneID)
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send plain pane size lock click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("click drain: %v", err)
+	}
+	if len(terminal.TagEdits) != 1 || terminal.TagEdits[0].TerminalID != "term-1" || terminal.TagEdits[0].Tags["termx.size_lock"] != "lock" {
+		t.Fatalf("plain pane owner size lock should edit tags, edits=%#v", terminal.TagEdits)
+	}
+	if binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); !ok || !binding.SizeLocked || binding.CanResize {
+		t.Fatalf("plain pane owner size lock should project locked binding, binding=%#v ok=%v", binding, ok)
+	}
+}
+
 func TestInteractiveRuntimeFloatingSizeLockChromeButtonTargetsFloatingTerminal(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
