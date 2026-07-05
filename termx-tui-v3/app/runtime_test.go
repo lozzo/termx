@@ -182,6 +182,25 @@ func TestAppRuntimeCoalescedLiveSurfaceClearsStalePayloadReference(t *testing.T)
 	}
 }
 
+func TestInteractiveRuntimeAppliesConfiguredPanelPresentation(t *testing.T) {
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell: state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine),
+			Config: state.TUIConfigStore{Chrome: state.TUIChromeConfig{
+				PanelPresentation: string(state.PanelPresentationCard),
+			}},
+		},
+		NewFakeTerminalHost(1),
+		NewSyncEffectRunner(),
+		LiveDeps{},
+		CopyModeDeps{},
+	)
+
+	if got := runtime.State().Shell.EnsureDefaults().PanelPresentation; got != state.PanelPresentationCard {
+		t.Fatalf("runtime should seed shell presentation from config, got %q", got)
+	}
+}
+
 func TestAppRuntimePrioritizesInputBeforeQueuedOrdinaryLiveUpdate(t *testing.T) {
 	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
 	runtime.enqueue(LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})

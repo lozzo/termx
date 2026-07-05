@@ -41,6 +41,32 @@ func TestWorkbenchStorageReducerLoadsSnapshotFromOpaqueStorage(t *testing.T) {
 	}
 }
 
+func TestWorkbenchStorageLoadAppliesConfiguredPanelPresentation(t *testing.T) {
+	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
+	storage := &services.FakeWorkbenchStorageService{
+		LoadResult: services.WorkbenchStorageLoadResult{
+			Snapshot: state.SnapshotWorkbenchForStorage(shell),
+			Version:  4,
+			Found:    true,
+		},
+	}
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage})
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		Config: state.TUIConfigStore{Chrome: state.TUIChromeConfig{
+			PanelPresentation: string(state.PanelPresentationCard),
+		}},
+	}
+
+	root, effects := reducer(root, WorkbenchStorageLoadRequestMsg{})
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	root, _ = reducer(root, msg)
+
+	if got := root.Shell.EnsureDefaults().PanelPresentation; got != state.PanelPresentationCard {
+		t.Fatalf("configured panel presentation should override restored chrome preference, got %q", got)
+	}
+}
+
 func TestWorkbenchStorageLoadAndSaveEffectsAreAsync(t *testing.T) {
 	storage := &services.FakeWorkbenchStorageService{}
 	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage})

@@ -187,6 +187,7 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 	root.History = state.HistoryStore{TerminalID: previousHistoryTerminalID}
 	preserveLocalOperation := root.WorkbenchSync.LastAppliedVersion != 0 || root.WorkbenchSync.LastSavedVersion != 0
 	root.Shell = mergeLocalWorkbenchRuntimeState(root.Shell, shell, preserveLocalOperation)
+	root.Shell = applyConfiguredShellChrome(root.Shell, root.Config)
 	root.TerminalViews = terminalViews
 	root.WorkbenchSync = root.WorkbenchSync.MarkApplied(msg.Result.Version)
 	restoredAttachBindings := workbenchRestoredTerminalAttachBindings(previousViews, root.TerminalViews.Bindings())
