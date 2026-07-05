@@ -86,6 +86,9 @@ func NewUIInputReducer() Reducer {
 		if root.CopyMode.Entering && copyModeOwnsActiveInput(root) {
 			return root, nil
 		}
+		if next, ok := shortcutPassthroughInput(root, inputMsg.Event); ok {
+			return next, nil
+		}
 		intent := input.RouteWithMode(inputMsg.Event, copyModeOwnsActiveInput(root), inputMode(root.Shell.ReadonlyDefaults().InteractionMode))
 		switch intent.Kind {
 		case input.IntentOpenTerminalPicker:
@@ -114,6 +117,37 @@ func NewUIInputReducer() Reducer {
 			return root, nil
 		}
 	}
+}
+
+func shortcutPassthroughInput(root state.Root, event input.InputEvent) (state.Root, bool) {
+	if event.Kind != input.EventKindKey {
+		return root, false
+	}
+	shell := root.Shell.EnsureDefaults()
+	mode := inputMode(shell.InteractionMode)
+	if shell.StickyInteractionMode() {
+		if _, ok := input.StickyModeEntryShortcutIntent(event, mode); ok {
+			// 中文说明：双击 sticky prefix 的第二击属于用户显式 PTY 输入；
+			// UI reducer 只退出 mode 并把同一 InputMsg 交给 terminal reducer，不能异步补发导致乱序。
+			root.Shell = shell.ExitInteractionMode().ArmTerminalInputPassthroughOnce()
+			return root.Advance(), true
+		}
+		if shell.ShortcutPassthroughLocked {
+			if _, ok := input.LockableRootShortcutIntent(event); ok {
+				root.Shell = shell.ExitInteractionMode().ArmTerminalInputPassthroughOnce()
+				return root.Advance(), true
+			}
+		}
+		return root, false
+	}
+	if shell.InteractionMode == state.InteractionModeNormal && shell.ShortcutPassthroughLocked {
+		if _, ok := input.LockableRootShortcutIntent(event); ok {
+			// 中文说明：shortcut lock 只让 root shortcut 让路；global 入口保留为解锁控制面。
+			root.Shell = shell.ArmTerminalInputPassthroughOnce()
+			return root.Advance(), true
+		}
+	}
+	return root, false
 }
 
 func reduceInteractionModeTimeout(root state.Root, msg ShellInteractionModeTimeoutMsg) (state.Root, []Effect) {
@@ -1018,6 +1052,14 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 		msg = ShellToggleHeaderVisibleMsg{}
 	case input.ShellActionToggleFooter:
 		msg = ShellToggleFooterVisibleMsg{}
+	case input.ShellActionToggleShortcutLock:
+		root.Shell = root.Shell.ToggleShortcutPassthroughLock()
+		status := "off"
+		if root.Shell.ShortcutPassthroughLocked {
+			status = "on"
+		}
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "shortcut lock", Body: status})
+		return root.Advance(), []Effect{handledEffect{}}
 	case input.ShellActionClearToasts:
 		msg = ShellClearToastsMsg{}
 	case input.ShellActionCloseToast:

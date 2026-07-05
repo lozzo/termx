@@ -167,6 +167,39 @@ func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 	}
 }
 
+func TestShortcutPassthroughHelpers(t *testing.T) {
+	ctrlT := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x14", Ctrl: true}
+	intent, ok := LockableRootShortcutIntent(ctrlT)
+	if !ok || intent.Kind != IntentSetInteractionMode || intent.Mode != InteractionModeTab {
+		t.Fatalf("ctrl-t should be a lockable tab shortcut, intent=%#v ok=%v", intent, ok)
+	}
+	ctrlG := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x07", Ctrl: true}
+	if intent, ok := LockableRootShortcutIntent(ctrlG); ok {
+		t.Fatalf("global entry must stay unlock control plane, got %#v", intent)
+	}
+	ctrlW := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x17", Ctrl: true}
+	intent, ok = StickyModeEntryShortcutIntent(ctrlW, InteractionModeWorkspace)
+	if !ok || intent.Kind != IntentSetInteractionMode || intent.Mode != InteractionModeWorkspace {
+		t.Fatalf("ctrl-w should match workspace sticky entry, intent=%#v ok=%v", intent, ok)
+	}
+	if intent, ok = StickyModeEntryShortcutIntent(ctrlW, InteractionModeTab); ok {
+		t.Fatalf("ctrl-w must not match tab sticky entry, got %#v", intent)
+	}
+}
+
+func TestForceTerminalPassthroughBypassesRootShortcutBindings(t *testing.T) {
+	ctrlW := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x17", Ctrl: true}
+	intent := RouteWithOptions(ctrlW, RouteOptions{ForceTerminalPassthrough: true})
+	if intent.Kind != IntentTerminalInput || string(intent.Bytes) != "\x17" {
+		t.Fatalf("forced ctrl-w should become terminal bytes, got %#v", intent)
+	}
+	namedCtrlW := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "w", Ctrl: true}
+	intent = RouteWithOptions(namedCtrlW, RouteOptions{ForceTerminalPassthrough: true})
+	if intent.Kind != IntentTerminalInput || string(intent.Bytes) != "\x17" {
+		t.Fatalf("forced named ctrl-w should become control byte, got %#v", intent)
+	}
+}
+
 func TestBindingCatalogIsUniqueAndContainsDocumentedAliases(t *testing.T) {
 	seen := map[string]string{}
 	for _, binding := range BindingCatalog() {

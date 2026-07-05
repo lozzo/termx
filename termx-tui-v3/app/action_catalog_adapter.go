@@ -11,6 +11,8 @@ func actionIDForShellAction(action input.ShellAction, reason string) (render.Act
 		return render.ActionFooterToggleHeader, true
 	case input.ShellActionToggleFooter:
 		return render.ActionFooterToggleFooter, true
+	case input.ShellActionToggleShortcutLock:
+		return render.ActionFooterShortcutLock, true
 	case input.ShellActionClearToasts:
 		return render.ActionFooterClearToasts, true
 	case input.ShellActionCloseToast:

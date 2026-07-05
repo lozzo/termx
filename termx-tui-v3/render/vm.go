@@ -295,6 +295,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		return footerActionSpecs(
 			footerActionFor(ActionFooterToggleHeader),
 			footerActionFor(ActionFooterToggleFooter),
+			footerActionFor(ActionFooterShortcutLock),
 			footerActionFor(ActionHelpOpen),
 			footerActionFor(ActionFooterOpenPool),
 			footerActionFor(ActionFooterOpenTree),
@@ -458,7 +459,11 @@ func activeTargetSummary(shell state.ShellStore, root state.Root) string {
 }
 
 func globalSummary(root state.Root, shell state.ShellStore) string {
-	return fmt.Sprintf("ws:%s %s terminals:%d", shell.Workspace.Name, floatingSummary(shell), terminalCount(root))
+	summary := fmt.Sprintf("ws:%s %s terminals:%d", shell.Workspace.Name, floatingSummary(shell), terminalCount(root))
+	if shell.ShortcutPassthroughLocked {
+		summary += " keylock:on"
+	}
+	return summary
 }
 
 func tabStripSummary(shell state.ShellStore) string {

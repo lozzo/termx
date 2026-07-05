@@ -439,6 +439,14 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionFooterToggleFooter:
 		root.Shell = root.Shell.ToggleFooterVisible()
 		return root.Advance(), nil
+	case render.ActionFooterShortcutLock:
+		root.Shell = root.Shell.ToggleShortcutPassthroughLock()
+		status := "off"
+		if root.Shell.ShortcutPassthroughLocked {
+			status = "on"
+		}
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "shortcut lock", Body: status})
+		return root.Advance(), nil
 	case render.ActionFooterOpenPool:
 		root.Shell = root.Shell.OpenTerminalPool()
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}

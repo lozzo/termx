@@ -121,16 +121,20 @@ type ShellStore struct {
 	ZoomedPaneID       string
 	InteractionMode    InteractionMode
 	InteractionModeSeq uint64
-	OwnerConfirm       OwnerConfirmState
-	HeaderVisible      bool
-	FooterVisible      bool
-	Overlay            OverlayState
-	EmptyPaneCTA       EmptyPaneCTAState
-	ExitedPaneCTA      ExitedPaneCTAState
-	Toasts             []ToastState
-	nextToastSeq       uint64
-	nextFloatingSeq    uint64
-	initialized        bool
+	// ShortcutPassthroughLocked 表示 root shortcut 是否临时让路给前台 terminal。
+	// 它属于本 TUI 输入路由状态，不写入 workbench storage；global mode 仍作为解锁控制面。
+	ShortcutPassthroughLocked bool
+	OwnerConfirm              OwnerConfirmState
+	HeaderVisible             bool
+	FooterVisible             bool
+	Overlay                   OverlayState
+	EmptyPaneCTA              EmptyPaneCTAState
+	ExitedPaneCTA             ExitedPaneCTAState
+	Toasts                    []ToastState
+	nextToastSeq              uint64
+	nextFloatingSeq           uint64
+	initialized               bool
+	forceTerminalInput        bool
 }
 
 type WorkspaceState struct {
@@ -469,6 +473,31 @@ func (store ShellStore) RearmInteractionMode() ShellStore {
 
 func (store ShellStore) StickyInteractionMode() bool {
 	return stickyInteractionMode(store.EnsureDefaults().InteractionMode)
+}
+
+// ToggleShortcutPassthroughLock 切换 root shortcut 透传锁。
+// domain owner 是 ShellStore；调用方只能改变 TUI 输入路由，不改变 terminal lifecycle 或 workbench storage。
+func (store ShellStore) ToggleShortcutPassthroughLock() ShellStore {
+	store = store.EnsureDefaults()
+	store.ShortcutPassthroughLocked = !store.ShortcutPassthroughLocked
+	return store
+}
+
+// ArmTerminalInputPassthroughOnce 标记当前 InputMsg 必须由 terminal reducer 强制透传一次。
+// 这个标记只解决同一消息链路内的 UI shortcut 让路，消费方必须立刻清掉，避免后续按键串台。
+func (store ShellStore) ArmTerminalInputPassthroughOnce() ShellStore {
+	store = store.EnsureDefaults()
+	store.forceTerminalInput = true
+	return store
+}
+
+// ConsumeTerminalInputPassthroughOnce 消费一次强制 terminal 透传标记。
+// 返回 false 表示当前消息仍应按普通 UI/terminal 路由判断。
+func (store ShellStore) ConsumeTerminalInputPassthroughOnce() (ShellStore, bool) {
+	store = store.EnsureDefaults()
+	forced := store.forceTerminalInput
+	store.forceTerminalInput = false
+	return store, forced
 }
 
 func stickyInteractionMode(mode InteractionMode) bool {

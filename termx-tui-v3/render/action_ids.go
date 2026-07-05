@@ -55,6 +55,7 @@ const (
 	ActionFooterPicker            ActionID = "footer.open-picker"
 	ActionFooterToggleHeader      ActionID = "footer.toggle-header"
 	ActionFooterToggleFooter      ActionID = "footer.toggle-footer"
+	ActionFooterShortcutLock      ActionID = "footer.shortcut-lock"
 	ActionFooterOpenPool          ActionID = "footer.open-pool"
 	ActionFooterOpenTree          ActionID = "footer.open-tree"
 	ActionFooterCloseToast        ActionID = "footer.close-toast"
@@ -264,6 +265,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionFooterPicker, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("^F", "PICKER", StyleFooterKeyPicker).withHelp("picker"),
 		actionSpec(ActionFooterToggleHeader, ActionDispatchApp, ActionSurfaceFooter).withFooter("h", "HEADER", StyleStatusAccent).withHelp("toggle header"),
 		actionSpec(ActionFooterToggleFooter, ActionDispatchApp, ActionSurfaceFooter).withFooter("f", "FOOTER", StyleStatusAccent).withHelp("toggle footer"),
+		actionSpec(ActionFooterShortcutLock, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("l", "KEYLOCK", StyleStatusWarning).withHelp("toggle shortcut passthrough"),
 		actionSpec(ActionFooterOpenPool, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("t", "TERMINALS", StyleStatusAccent).withHelp("terminal pool"),
 		actionSpec(ActionFooterOpenTree, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("w", "TREE", StyleStatusAccent).withHelp("tree"),
 		actionSpec(ActionFooterCloseToast, ActionDispatchApp, ActionSurfaceFooter).withFooter("T", "TOAST", StyleStatusWarning).withHelp("close toast"),

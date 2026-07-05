@@ -105,6 +105,7 @@ var bindingCatalog = []Binding{
 	{ID: "global-pool-tuiv2", Mode: InteractionModeGlobal, Key: KeyChar, Char: "m", Intent: IntentShellAction, Action: ShellActionOpenPool},
 	{ID: "global-pool-tuiv2-status", Mode: InteractionModeGlobal, Key: KeyChar, Char: "t", Intent: IntentShellAction, Action: ShellActionOpenPool},
 	{ID: "global-tree", Mode: InteractionModeGlobal, Key: KeyChar, Char: "w", Intent: IntentShellAction, Action: ShellActionOpenTree},
+	{ID: "global-shortcut-lock", Mode: InteractionModeGlobal, Key: KeyChar, Char: "l", Intent: IntentShellAction, Action: ShellActionToggleShortcutLock},
 	{ID: "global-prompt", Mode: InteractionModeGlobal, Key: KeyChar, Char: ":", Intent: IntentShellAction, Action: ShellActionOpenPrompt},
 	{ID: "global-help", Mode: InteractionModeGlobal, Key: KeyChar, Char: "?", Intent: IntentShellAction, Action: ShellActionOpenHelp},
 	{ID: "global-quit", Mode: InteractionModeGlobal, Key: KeyChar, Char: "q", Intent: IntentShellAction, Action: ShellActionQuit},
@@ -183,6 +184,12 @@ func BindingCatalog() []Binding {
 }
 
 func routeKey(event InputEvent, options RouteOptions) Intent {
+	if options.ForceTerminalPassthrough {
+		if data := terminalBytes(event); len(data) > 0 {
+			return Intent{Kind: IntentTerminalInput, Event: event, Bytes: data}
+		}
+		return Intent{Kind: IntentNone, Event: event, Reason: "forced passthrough without bytes"}
+	}
 	if event.Key == KeyEsc {
 		if options.Mode != InteractionModeNormal {
 			return Intent{Kind: IntentExitInteraction, Event: event}
@@ -284,11 +291,53 @@ func intentFromBinding(event InputEvent, binding Binding) Intent {
 	}
 }
 
+// LockableRootShortcutIntent 返回会被 shortcut lock 透传的 root 快捷键。
+// global mode 入口保留为控制面逃生键；开启 lock 后仍可用 Ctrl-G, l 解除锁定。
+func LockableRootShortcutIntent(event InputEvent) (Intent, bool) {
+	intent, ok := rootShortcutIntent(event)
+	if !ok {
+		return Intent{}, false
+	}
+	if intent.Kind == IntentSetInteractionMode && intent.Mode == InteractionModeGlobal {
+		return Intent{}, false
+	}
+	return intent, true
+}
+
+// StickyModeEntryShortcutIntent 判断当前按键是否是某个 sticky mode 的入口键。
+// UI reducer 用它实现双击前缀透传，例如 Ctrl-W Ctrl-W 将第二个 Ctrl-W 发给 terminal。
+func StickyModeEntryShortcutIntent(event InputEvent, mode InteractionMode) (Intent, bool) {
+	if mode == InteractionModeNormal {
+		return Intent{}, false
+	}
+	intent, ok := rootShortcutIntent(event)
+	if !ok || intent.Kind != IntentSetInteractionMode || intent.Mode != mode {
+		return Intent{}, false
+	}
+	return intent, true
+}
+
+func rootShortcutIntent(event InputEvent) (Intent, bool) {
+	binding, ok := lookupBinding(InteractionModeNormal, event)
+	if !ok {
+		return Intent{}, false
+	}
+	intent := intentFromBinding(event, binding)
+	switch intent.Kind {
+	case IntentOpenTerminalPicker, IntentEnterCopyMode, IntentSetInteractionMode:
+		return intent, true
+	default:
+		return Intent{}, false
+	}
+}
+
 func terminalBytes(event InputEvent) []byte {
 	if event.RawSeq != "" {
 		return []byte(event.RawSeq)
 	}
 	switch event.Key {
+	case KeyEsc:
+		return []byte{'\x1b'}
 	case KeyEnter:
 		return []byte{'\r'}
 	case KeyBackspace:
@@ -297,8 +346,49 @@ func terminalBytes(event InputEvent) []byte {
 		return []byte{'\t'}
 	case KeyChar:
 		if event.Char != "" {
+			if event.Ctrl {
+				if data, ok := ctrlCharBytes(event.Char); ok {
+					return data
+				}
+			}
 			return []byte(event.Char)
 		}
 	}
 	return nil
+}
+
+func ctrlCharBytes(char string) ([]byte, bool) {
+	if len(char) == 0 {
+		return nil, false
+	}
+	if len(char) == 1 && char[0] < 0x20 {
+		return []byte{char[0]}, true
+	}
+	if len(char) != 1 {
+		return nil, false
+	}
+	c := char[0]
+	if c >= 'a' && c <= 'z' {
+		return []byte{c - 'a' + 1}, true
+	}
+	if c >= 'A' && c <= 'Z' {
+		return []byte{c - 'A' + 1}, true
+	}
+	switch c {
+	case ' ':
+		return []byte{0x00}, true
+	case '[':
+		return []byte{0x1b}, true
+	case '\\':
+		return []byte{0x1c}, true
+	case ']':
+		return []byte{0x1d}, true
+	case '^':
+		return []byte{0x1e}, true
+	case '_':
+		return []byte{0x1f}, true
+	case '?':
+		return []byte{0x7f}, true
+	}
+	return nil, false
 }

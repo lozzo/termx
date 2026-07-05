@@ -308,4 +308,9 @@ tui:
       # entry 是从 root 输入态进入 global shortcut mode 的快捷键。
       # 默认值：ctrl-g。
       # 目前 global mode 内部动作仍由运行时 action catalog 定义，配置先只暴露入口。
+      # 当前固定动作包括：
+      # - l：切换 shortcut passthrough lock；开启后 ctrl-v/ctrl-r/ctrl-t/ctrl-w 等 root shortcut 直接发给 terminal。
+      # - q：退出 TUI。
+      # - ?：打开 help。
+      # 注意：ctrl-g 保留为 lock 开启后的解锁控制面；需要把 ctrl-g 发给 terminal 时，可按 ctrl-g ctrl-g 双击透传。
       entry: ctrl-g

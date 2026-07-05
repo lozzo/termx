@@ -108,6 +108,94 @@ func TestUIInputReducerPrefixModeCommandExitPolicy(t *testing.T) {
 	}
 }
 
+func TestShortcutPassthroughLockSendsRootShortcutToTerminal(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	reducer := ComposeReducers(NewUIInputReducer(), NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal}))
+	root := shortcutPassthroughInputRoot()
+
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true}})
+	if root.Shell.InteractionMode != state.InteractionModeGlobal || len(effects) == 0 {
+		t.Fatalf("ctrl-g should enter global mode before lock toggle, shell=%#v effects=%#v", root.Shell, effects)
+	}
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}})
+	if !root.Shell.ShortcutPassthroughLocked || root.Shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("global l should enable shortcut passthrough lock and exit mode, shell=%#v", root.Shell)
+	}
+
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x14", Ctrl: true}})
+	if root.Shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("locked ctrl-t must not enter tab mode, shell=%#v", root.Shell)
+	}
+	runTerminalInputEffects(t, effects)
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "\x14" {
+		t.Fatalf("locked ctrl-t should be sent to terminal, inputs=%#v effects=%#v", terminal.Inputs, effects)
+	}
+
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true}})
+	if root.Shell.InteractionMode != state.InteractionModeGlobal {
+		t.Fatalf("global entry must stay available as unlock control plane, shell=%#v effects=%#v", root.Shell, effects)
+	}
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x12", Ctrl: true}})
+	if root.Shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("locked ctrl-r inside global mode should exit mode before terminal send, shell=%#v", root.Shell)
+	}
+	runTerminalInputEffects(t, effects)
+	if len(terminal.Inputs) != 2 || string(terminal.Inputs[1].Bytes) != "\x12" {
+		t.Fatalf("locked ctrl-r inside global mode should be sent to terminal, inputs=%#v effects=%#v", terminal.Inputs, effects)
+	}
+}
+
+func TestDoubleTapStickyPrefixSendsSecondPrefixToTerminal(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	reducer := ComposeReducers(NewUIInputReducer(), NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal}))
+	root := shortcutPassthroughInputRoot()
+	ctrlW := input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x17", Ctrl: true}
+
+	root, effects := reducer(root, InputMsg{Event: ctrlW})
+	runTerminalInputEffects(t, effects)
+	if root.Shell.InteractionMode != state.InteractionModeWorkspace || len(terminal.Inputs) != 0 {
+		t.Fatalf("first ctrl-w should enter workspace mode only, shell=%#v inputs=%#v", root.Shell, terminal.Inputs)
+	}
+
+	root, effects = reducer(root, InputMsg{Event: ctrlW})
+	if root.Shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("second ctrl-w should exit workspace mode before terminal send, shell=%#v", root.Shell)
+	}
+	runTerminalInputEffects(t, effects)
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "\x17" {
+		t.Fatalf("second ctrl-w should be sent to terminal, inputs=%#v effects=%#v", terminal.Inputs, effects)
+	}
+}
+
+func TestDoubleTapStickyPrefixKeepsTerminalInputOrder(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	host := NewFakeTerminalHost(8)
+	runtime := NewAppRuntime(
+		shortcutPassthroughInputRoot(),
+		ComposeReducers(NewUIInputReducer(), NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal})),
+		nil,
+		host,
+		NewSyncEffectRunner(),
+	)
+	ctrlW := input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x17", Ctrl: true}
+	if err := host.SendInput(ctrlW); err != nil {
+		t.Fatalf("send first ctrl-w: %v", err)
+	}
+	if err := host.SendInput(ctrlW); err != nil {
+		t.Fatalf("send second ctrl-w: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x", RawSeq: "x"}); err != nil {
+		t.Fatalf("send x: %v", err)
+	}
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if len(terminal.Inputs) != 2 || string(terminal.Inputs[0].Bytes) != "\x17" || string(terminal.Inputs[1].Bytes) != "x" {
+		t.Fatalf("double-tap prefix must keep PTY input order, inputs=%#v", terminal.Inputs)
+	}
+}
+
 func TestUIInputReducerStickyTimeoutDoesNotCloseOverlayOrCopyMode(t *testing.T) {
 	reducer := NewUIInputReducer()
 	shell := state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal).OpenTerminalPicker()
@@ -126,6 +214,35 @@ func TestUIInputReducerStickyTimeoutDoesNotCloseOverlayOrCopyMode(t *testing.T) 
 	}
 	if !root.CopyMode.Active || root.CopyMode.TerminalID != "term-1" {
 		t.Fatalf("timeout must not mutate copy mode, copy=%#v", root.CopyMode)
+	}
+}
+
+func shortcutPassthroughInputRoot() state.Root {
+	root := state.Root{
+		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(
+		state.DefaultPaneID,
+		"term-1",
+		7,
+		80,
+		24,
+		state.TerminalResizeRoleOwner,
+		"surface-1",
+		state.TerminalPaneViewID(state.DefaultPaneID),
+		true,
+	))
+	return root
+}
+
+func runTerminalInputEffects(t *testing.T, effects []Effect) {
+	t.Helper()
+	for _, effect := range effects {
+		fn, ok := effect.(FuncEffect)
+		if !ok || fn.Run == nil || !fn.ForceSyncInTests || !strings.HasPrefix(fn.SerialKey, "terminal.input:") {
+			continue
+		}
+		_ = fn.Run(context.Background())
 	}
 }
 

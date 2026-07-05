@@ -58,6 +58,18 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		return root, []Effect{handledEffect{}}
 	}
 	shell := root.Shell.ReadonlyDefaults()
+	forceTerminalPassthrough := false
+	if nextShell, forced := shell.ConsumeTerminalInputPassthroughOnce(); forced {
+		// 中文说明：UI reducer 已确认当前 InputMsg 是显式 passthrough；
+		// terminal reducer 只消费同一消息上的一次性令牌，避免异步补发造成 PTY 输入乱序。
+		root.Shell = nextShell
+		shell = root.Shell.ReadonlyDefaults()
+		forceTerminalPassthrough = true
+	} else if shell.ShortcutPassthroughLocked {
+		if _, ok := input.LockableRootShortcutIntent(msg.Event); ok {
+			forceTerminalPassthrough = true
+		}
+	}
 	if shell.Overlay.Open {
 		logTerminalInputRoute(deps, root, terminalInputRouteLog{
 			Event:  msg.Event,
@@ -87,6 +99,7 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 	intent := input.RouteWithOptions(msg.Event, input.RouteOptions{
 		CopyModeActive:           false,
 		TerminalMousePassthrough: msg.TerminalMousePassthrough || liveMousePassthroughEnabled(root, msg.Event, target),
+		ForceTerminalPassthrough: forceTerminalPassthrough,
 	})
 	if intent.Kind != input.IntentTerminalInput || len(intent.Bytes) == 0 {
 		logTerminalInputRoute(deps, root, terminalInputRouteLog{

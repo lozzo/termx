@@ -139,6 +139,7 @@ const (
 	ShellActionOpenPrompt           ShellAction = "shell.open-prompt"
 	ShellActionOpenHelp             ShellAction = "shell.open-help"
 	ShellActionOpenClipboardHistory ShellAction = "shell.open-clipboard-history"
+	ShellActionToggleShortcutLock   ShellAction = "shell.toggle-shortcut-lock"
 	ShellActionQuit                 ShellAction = "shell.quit"
 )
 
@@ -158,6 +159,7 @@ type RouteOptions struct {
 	Mode                     InteractionMode
 	CopyModeActive           bool
 	TerminalMousePassthrough bool
+	ForceTerminalPassthrough bool
 }
 
 func Route(event InputEvent, copyModeActive bool) Intent {
