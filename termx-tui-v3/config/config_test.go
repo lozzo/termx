@@ -61,6 +61,16 @@ tui:
     tab_create_icon: "+"
     tab_template: "{{tab_id}} {{if active}}▎{{else}}|{{end}} {{title | truncate 8}} [action:tab.close]{{close_icon}}[/action]"
     pane_glyphs:
+      action_left: ""
+      action_right: " "
+      action_separator: ""
+      action_group_left: "[fg:#8ffcff]"
+      action_group_right: "[reset]"
+      owner_left: " "
+      owner_right: " "
+      owner: ""
+      owner_pending: "owner?"
+      take_owner: "follow"
       zoom: "—"
       split_vertical: "□"
       split_horizontal: "▭"
@@ -119,6 +129,22 @@ tui:
 		t.Fatalf("chrome/border overrides not applied: %#v", cfg)
 	}
 	if cfg.Chrome.PaneGlyphs.Zoom != "—" ||
+		!cfg.Chrome.PaneGlyphs.ActionLeftSet ||
+		cfg.Chrome.PaneGlyphs.ActionLeft != "" ||
+		!cfg.Chrome.PaneGlyphs.ActionRightSet ||
+		cfg.Chrome.PaneGlyphs.ActionRight != " " ||
+		!cfg.Chrome.PaneGlyphs.ActionSeparatorSet ||
+		cfg.Chrome.PaneGlyphs.ActionSeparator != "" ||
+		cfg.Chrome.PaneGlyphs.ActionGroupLeft != "[fg:#8ffcff]" ||
+		cfg.Chrome.PaneGlyphs.ActionGroupRight != "[reset]" ||
+		cfg.Chrome.PaneGlyphs.OwnerLeft != " " ||
+		cfg.Chrome.PaneGlyphs.OwnerRight != " " ||
+		!cfg.Chrome.PaneGlyphs.OwnerSet ||
+		cfg.Chrome.PaneGlyphs.Owner != "" ||
+		!cfg.Chrome.PaneGlyphs.OwnerPendingSet ||
+		cfg.Chrome.PaneGlyphs.OwnerPending != "owner?" ||
+		!cfg.Chrome.PaneGlyphs.TakeOwnerSet ||
+		cfg.Chrome.PaneGlyphs.TakeOwner != "follow" ||
 		cfg.Chrome.PaneGlyphs.SplitVertical != "□" ||
 		cfg.Chrome.PaneGlyphs.SplitHorizontal != "▭" ||
 		cfg.Chrome.PaneGlyphs.Close != "⤫" ||

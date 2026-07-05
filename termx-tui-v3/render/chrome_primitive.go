@@ -25,6 +25,7 @@ type ChromePrimitive struct {
 type ChromeSlot struct {
 	Rect     Rect
 	Text     string
+	segments []barSegment
 	Style    StyleToken
 	ActionID string
 }
@@ -41,6 +42,7 @@ func PaneChromePrimitive(panel PanelVM, rect Rect, style StyleToken) ChromePrimi
 		chromeSlot := ChromeSlot{
 			Rect:     Rect{X: slot.x, Y: rect.Y, W: slot.paintWidth(), H: 1},
 			Text:     slot.text,
+			segments: slot.segments,
 			Style:    slot.style,
 			ActionID: slot.actionID,
 		}
@@ -54,7 +56,7 @@ func PaneChromePrimitive(panel PanelVM, rect Rect, style StyleToken) ChromePrimi
 	}
 	actionRect := paneActionRect(panel, rect)
 	items := visiblePaneChromeActionItems(panel, rect.W)
-	primitive.ActionSlots = append(primitive.ActionSlots, chromeActionSlotsFromItems(items, actionRect, 1)...)
+	primitive.ActionSlots = append(primitive.ActionSlots, chromeActionSlotsFromItems(items, actionRect)...)
 	return primitive
 }
 
@@ -75,7 +77,7 @@ func FloatingChromePrimitive(floating FloatingVM, rect Rect, style StyleToken) C
 	rightLimit := innerRight
 	actions := floatingChromeActionItemsFromVM(floating.Chrome.Actions, rect.W)
 	actionRect := floatingActionRectForItems(rect, actions)
-	primitive.ActionSlots = chromeActionSlotsFromItems(actions, actionRect, 1)
+	primitive.ActionSlots = chromeActionSlotsFromItems(actions, actionRect)
 	if len(primitive.ActionSlots) > 0 {
 		rightLimit = primitive.ActionSlots[0].Rect.X - 1
 	}
@@ -83,7 +85,7 @@ func FloatingChromePrimitive(floating FloatingVM, rect Rect, style StyleToken) C
 	if leftWidth > 0 && floating.Chrome.Terminal.TerminalID != "" {
 		x := innerLeft
 		for _, slot := range paneChromeTerminalLabelSlots(PanelVM{ID: floating.ID, Title: floating.Title, Active: floating.Active, Chrome: PanelChromeVM{Terminal: floating.Chrome.Terminal}}, style, leftWidth) {
-			chromeSlot := ChromeSlot{Rect: Rect{X: x, Y: rect.Y, W: slot.paintWidth(), H: 1}, Text: slot.text, Style: slot.style, ActionID: slot.actionID}
+			chromeSlot := ChromeSlot{Rect: Rect{X: x, Y: rect.Y, W: slot.paintWidth(), H: 1}, Text: slot.text, segments: slot.segments, Style: slot.style, ActionID: slot.actionID}
 			primitive.LabelSlots = append(primitive.LabelSlots, chromeSlot)
 			if chromeSlot.ActionID != "" {
 				primitive.ActionSlots = append(primitive.ActionSlots, chromeSlot)
@@ -130,15 +132,15 @@ func ToastChromePrimitive(toast ToastVM, rect Rect) ChromePrimitive {
 	}
 }
 
-func chromeActionSlotsFromItems(items []paneChromeActionItem, rect Rect, gap int) []ChromeSlot {
+func chromeActionSlotsFromItems(items []paneChromeActionItem, rect Rect) []ChromeSlot {
 	if len(items) == 0 || rect.W <= 0 || rect.H <= 0 {
 		return nil
 	}
 	out := make([]ChromeSlot, 0, len(items))
-	x := rect.X
+	x := rect.X + paneChromeMarkupWidth(paneChromeActionGroupPart(paneChromeActionGroupLeft(), items, 0))
 	for index, item := range items {
 		if index > 0 {
-			x += gap
+			x += paneChromeMarkupWidth(paneChromeActionGroupPart(paneChromeActionSeparator(), items, index))
 		}
 		width := DisplayWidth(item.Text)
 		if width <= 0 {

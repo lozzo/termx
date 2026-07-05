@@ -1019,19 +1019,19 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 	if role == "" {
 		role = state.TerminalResizeRoleFollower
 	}
-	ownerText := "◇ follow"
+	ownerText := paneChromeTakeOwnerText()
 	ownerStyle := StyleMuted
 	projectedOwner := binding.HasProjectedResizeOwner()
 	if root.Shell.ReadonlyDefaults().OwnerConfirm.ViewID == binding.ViewID {
-		ownerText = "◆ owner?"
+		ownerText = paneChromeOwnerPendingText()
 		ownerStyle = StyleWarning
 	} else if projectedOwner {
-		ownerText = "◆ owner"
+		ownerText = paneChromeOwnerText()
 		ownerStyle = StyleSuccess
 	} else if binding.HasResizeOwner() {
 		// 中文说明：owner? 只属于鼠标首击后的 UI 确认态；attach/restore 阶段的本地 owner intent
 		// 不能默认展示成中间确认态，否则用户会误以为自己触发了 take-owner。
-		ownerText = "◆ owner"
+		ownerText = paneChromeOwnerText()
 		ownerStyle = StyleSuccess
 	}
 	title := terminalChromeTitle(root, pane, binding.TerminalID)
@@ -1140,7 +1140,7 @@ func paneChromeActionVM(id ActionID, style StyleToken) ChromeActionVM {
 	if !ok {
 		return ChromeActionVM{ActionID: id.String(), Style: style}
 	}
-	return ChromeActionVM{Text: paneChromeBracketToken(spec.ChromeGlyph), ActionID: spec.ID.String(), Style: style}
+	return ChromeActionVM{Text: spec.ChromeGlyph, ActionID: spec.ID.String(), Style: style}
 }
 
 func splitActionLabel(action string) (string, string) {

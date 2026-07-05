@@ -74,7 +74,8 @@ func paneChromeTerminalSizeLockSlot(terminal TerminalChromeVM, borderStyle Style
 	if terminal.CanLockSize {
 		actionID = ActionResizeLayoutLock.String()
 	}
-	return []paneChromeTopSlot{{text: paneChromeBracketToken(lockGlyph), style: borderStyle, priority: 1, actionID: actionID}}
+	item := paneChromeActionItemFromGlyph(lockGlyph, actionID, "layout lock", borderStyle, 0, 1)
+	return []paneChromeTopSlot{{text: item.Text, segments: paneChromeTemplateSegments(item.Markup, borderStyle), style: borderStyle, priority: 1, actionID: actionID}}
 }
 
 func paneChromeTerminalTitlePrefix(terminal TerminalChromeVM) string {
@@ -92,18 +93,21 @@ func paneChromeTerminalRightSlots(terminal TerminalChromeVM, borderStyle StyleTo
 	stateStyle := paneChromeSlotStyle(terminal.State, borderStyle)
 	ownerStyle := paneChromeSlotStyle(terminal.Owner, borderStyle)
 	ownerText := strings.TrimSpace(terminal.Owner.Text)
-	if ownerText == "" {
-		ownerText = "◇ follow"
+	if ownerText == "" && terminal.TakeOwner {
+		ownerText = paneChromeTakeOwnerText()
 	}
 	count := terminal.AttachCount
 	if count < 1 {
 		count = 1
 	}
-	return []paneChromeTopSlot{
+	slots := []paneChromeTopSlot{
 		{text: paneChromeFixedSlot(stateText, 3), style: stateStyle, priority: 2},
 		{text: paneChromeFixedSlot("x"+strconv.Itoa(count), 4), style: borderStyle, priority: 3},
-		{text: paneChromeFixedSlot(ownerText, 8), style: ownerStyle, priority: 4, actionID: terminalOwnerActionID(terminal)},
 	}
+	if owner := paneChromeOwnerSlot(ownerText, ownerStyle, terminalOwnerActionID(terminal)); owner.text != "" || len(owner.segments) > 0 {
+		slots = append(slots, owner)
+	}
+	return slots
 }
 
 func terminalChromeLayoutAdjusted(terminal TerminalChromeVM) bool {
@@ -127,6 +131,25 @@ func paneChromeFixedSlot(text string, width int) string {
 	left := pad / 2
 	right := pad - left
 	return strings.Repeat(" ", left) + text + strings.Repeat(" ", right)
+}
+
+func paneChromeOwnerSlot(text string, style StyleToken, actionID string) paneChromeTopSlot {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return paneChromeTopSlot{}
+	}
+	text = paneChromeFixedSlot(text, maxInt(8, DisplayWidth(text)))
+	ctx := paneChromeTemplateContext{Text: text}
+	format := paneChromeOwnerLeft() + "{{text}}" + paneChromeOwnerRight()
+	markup := paneChromeExecuteTemplateString(format, ctx)
+	segments := paneChromeTemplateSegments(markup, style)
+	return paneChromeTopSlot{
+		text:     paneChromeSegmentsText(segments),
+		segments: segments,
+		style:    style,
+		priority: 4,
+		actionID: actionID,
+	}
 }
 
 func terminalOwnerActionID(terminal TerminalChromeVM) string {

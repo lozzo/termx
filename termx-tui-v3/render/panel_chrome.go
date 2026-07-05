@@ -236,13 +236,18 @@ func renderPaneChromePrimitive(c *canvas, primitive ChromePrimitive, panel Panel
 		return
 	}
 	for _, slot := range paneChromeTopSlots(primitive.Rect, panel, primitive.Style) {
+		if len(slot.segments) > 0 {
+			c.writeLine(slot.x, primitive.Rect.Y, slot.paintWidth(), paneChromeLineFromSegments(slot.segments, slot.style), primitive.Owner, primitive.Layer)
+			continue
+		}
 		c.overlayTextStyled(slot.x, primitive.Rect.Y, slot.paintWidth(), slot.text, slot.style, primitive.Owner, primitive.Layer)
 	}
 }
 
 type paneChromeTopSlot struct {
-	x    int
-	text string
+	x        int
+	text     string
+	segments []barSegment
 	// 中文说明：layoutWidth 只用于保留右侧状态槽锚点；绘制仍按 text 宽度，避免空白覆盖顶边框。
 	layoutWidth int
 	style       StyleToken
@@ -251,6 +256,9 @@ type paneChromeTopSlot struct {
 }
 
 func (slot paneChromeTopSlot) paintWidth() int {
+	if len(slot.segments) > 0 {
+		return paneChromeSegmentsWidth(slot.segments)
+	}
 	return DisplayWidth(slot.text)
 }
 
@@ -270,13 +278,14 @@ func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []pane
 
 	rightLimit := innerRight
 	actionItems := visiblePaneChromeActionItems(panel, rect.W)
-	actions := paneChromeActionTextFromItems(actionItems)
-	actionWidth := DisplayWidth(actions)
+	actionStyle := paneChromeActionClusterStyle(actionItems, paneChromeActionStyle(panel, borderStyle))
+	actions := paneChromeActionRenderedFromItems(actionItems, actionStyle)
+	actionWidth := paneChromeSegmentsWidth(actions.Segments)
 	slots := make([]paneChromeTopSlot, 0, 2)
 	if actionWidth > 0 {
 		actionX := innerRight - actionWidth - 1
 		if actionX >= innerLeft {
-			slots = append(slots, paneChromeTopSlot{x: actionX, text: actions, style: paneChromeActionClusterStyle(actionItems, paneChromeActionStyle(panel, borderStyle))})
+			slots = append(slots, paneChromeTopSlot{x: actionX, text: actions.Text, segments: actions.Segments, style: actionStyle})
 			rightLimit = actionX - 1
 		}
 	}
@@ -340,138 +349,6 @@ func paneChromeMinimumTitleWidth(panel PanelVM) int {
 		return 0
 	}
 	return 3
-}
-
-func paneChromeActionText(width int) string {
-	items := paneChromeActionItems(width)
-	return paneChromeActionTextFromItems(items)
-}
-
-func paneChromeActionTextFromItems(items []paneChromeActionItem) string {
-	if len(items) == 0 {
-		return ""
-	}
-	parts := make([]string, 0, len(items))
-	for _, item := range items {
-		parts = append(parts, item.Text)
-	}
-	return strings.Join(parts, "─")
-}
-
-func paneChromeActionItems(width int) []paneChromeActionItem {
-	if width < 8 {
-		return nil
-	}
-	items := paneChromeActionItemsFromSpecs(ActionPaneClose)
-	full := paneChromeActionItemsFromSpecs(ActionPaneZoom, ActionPaneSplitRight, ActionPaneSplitDown, ActionPaneClose)
-	if paneChromeActionItemsWidth(full) <= maxInt(0, width-6) {
-		return full
-	}
-	return items
-}
-
-func visiblePaneChromeActionItems(panel PanelVM, width int) []paneChromeActionItem {
-	actions := paneChromeActionItemsFromVM(panel.Chrome.Actions)
-	if len(actions) == 0 {
-		actions = paneChromeActionItems(width)
-	}
-	return fitPaneChromeActionItems(actions, width)
-}
-
-func paneChromeActionItemsFromVM(actions []ChromeActionVM) []paneChromeActionItem {
-	out := make([]paneChromeActionItem, 0, len(actions))
-	for _, action := range actions {
-		text := strings.TrimSpace(action.Text)
-		if text == "" || action.ActionID == "" {
-			continue
-		}
-		if !strings.HasPrefix(text, "[") {
-			text = paneChromeBracketToken(text)
-		}
-		out = append(out, paneChromeActionItem{
-			Text:     text,
-			ActionID: action.ActionID,
-			Style:    action.Style,
-		})
-	}
-	return out
-}
-
-func fitPaneChromeActionItems(actions []paneChromeActionItem, width int) []paneChromeActionItem {
-	if width < 8 || len(actions) == 0 {
-		return nil
-	}
-	if paneChromeActionItemsWidth(actions) <= maxInt(0, width-6) {
-		return actions
-	}
-	for i := len(actions) - 1; i >= 0; i-- {
-		if actions[i].ActionID == ActionPaneClose.String() {
-			if DisplayWidth(actions[i].Text) <= maxInt(0, width-5) {
-				return []paneChromeActionItem{actions[i]}
-			}
-			return nil
-		}
-	}
-	return nil
-}
-
-func paneChromeActionItemsWidth(items []paneChromeActionItem) int {
-	if len(items) == 0 {
-		return 0
-	}
-	width := 0
-	for i, item := range items {
-		if i > 0 {
-			width += 1
-		}
-		width += DisplayWidth(item.Text)
-	}
-	return width
-}
-
-type paneChromeActionItem struct {
-	Text     string
-	ActionID string
-	Style    StyleToken
-}
-
-func paneChromeActionItemsFromSpecs(ids ...ActionID) []paneChromeActionItem {
-	out := make([]paneChromeActionItem, 0, len(ids))
-	for _, id := range ids {
-		spec, ok := ActionSpecByID(id)
-		if !ok || spec.ChromeGlyph == "" {
-			continue
-		}
-		out = append(out, paneChromeActionItem{
-			Text:     paneChromeBracketToken(spec.ChromeGlyph),
-			ActionID: spec.ID.String(),
-		})
-	}
-	return out
-}
-
-func paneChromeActionClusterText() string {
-	return strings.Join([]string{
-		paneChromeBracketToken(paneChromeSplitHorizontalGlyph()),
-		paneChromeBracketToken(paneChromeSplitVerticalGlyph()),
-		paneChromeBracketToken(paneChromeZoomGlyph()),
-		paneChromeBracketToken(paneChromeCloseGlyph()),
-	}, "─")
-}
-
-func paneChromeCompactActionText() string {
-	return strings.Join([]string{
-		paneChromeBracketToken(paneChromeZoomGlyph()),
-		paneChromeBracketToken(paneChromeCloseGlyph()),
-	}, "─")
-}
-
-func paneChromeBracketToken(glyph string) string {
-	glyph = strings.TrimSpace(glyph)
-	if glyph == "" {
-		glyph = "?"
-	}
-	return "[" + glyph + "]"
 }
 
 func paneChromeTitleText(panel PanelVM, width int) string {
@@ -551,7 +428,7 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 	}
 	c.drawStyledBox(rect, squareBoxStyle, style, owner, LayerFloating)
 	renderFloatingTerminalChrome(c, primitive)
-	renderFloatingChromeActions(c, primitive)
+	renderFloatingChromeActions(c, primitive, floating)
 	var contentResult ContentRenderResult
 	if !floating.Collapsed {
 		if floating.Content.Kind == ContentTerminalLive {
@@ -598,25 +475,29 @@ func renderFloatingTerminalChrome(c *canvas, primitive ChromePrimitive) {
 		if slot.Rect.W <= 0 || strings.TrimSpace(slot.Text) == "" {
 			continue
 		}
+		if len(slot.segments) > 0 {
+			c.writeLine(slot.Rect.X, primitive.Rect.Y, slot.Rect.W, paneChromeLineFromSegments(slot.segments, slot.Style), primitive.Owner, primitive.Layer)
+			continue
+		}
 		c.overlayTextStyled(slot.Rect.X, primitive.Rect.Y, slot.Rect.W, slot.Text, slot.Style, primitive.Owner, primitive.Layer)
 	}
 }
 
-func renderFloatingChromeActions(c *canvas, primitive ChromePrimitive) {
-	controlSlots := floatingChromeControlSlots(primitive.ActionSlots)
-	text := chromeBracketActionClusterText(controlSlots)
-	width := DisplayWidth(text)
+func renderFloatingChromeActions(c *canvas, primitive ChromePrimitive, floating FloatingVM) {
+	controlItems := floatingChromeControlItems(floatingChromeActionItemsFromVM(floating.Chrome.Actions, primitive.Rect.W))
+	rendered := paneChromeActionRenderedFromItems(controlItems, primitive.Style)
+	width := paneChromeSegmentsWidth(rendered.Segments)
 	if width <= 0 {
 		return
 	}
-	if len(controlSlots) == 0 {
+	if len(controlItems) == 0 {
 		return
 	}
-	actionX := controlSlots[0].Rect.X
-	if actionX < primitive.Rect.X+2 {
+	actionRect := floatingActionRectForItems(primitive.Rect, controlItems)
+	if actionRect.X < primitive.Rect.X+2 {
 		return
 	}
-	c.overlayTextStyled(actionX, primitive.Rect.Y, width, text, primitive.Style, primitive.Owner, primitive.Layer)
+	c.writeLine(actionRect.X, primitive.Rect.Y, width, paneChromeLineFromSegments(rendered.Segments, primitive.Style), primitive.Owner, primitive.Layer)
 }
 
 func floatingChromeControlSlots(slots []ChromeSlot) []ChromeSlot {
@@ -627,6 +508,19 @@ func floatingChromeControlSlots(slots []ChromeSlot) []ChromeSlot {
 			continue
 		default:
 			out = append(out, slot)
+		}
+	}
+	return out
+}
+
+func floatingChromeControlItems(items []paneChromeActionItem) []paneChromeActionItem {
+	out := make([]paneChromeActionItem, 0, len(items))
+	for _, item := range items {
+		switch item.ActionID {
+		case ActionResizeLayoutLock.String(), ActionTerminalTakeResizeOwner.String():
+			continue
+		default:
+			out = append(out, item)
 		}
 	}
 	return out

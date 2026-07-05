@@ -51,21 +51,42 @@ type TUIChromeConfig struct {
 	PaneGlyphs        TUIPaneChromeGlyphsConfig
 }
 
-// TUIPaneChromeGlyphsConfig 描述 pane/floating chrome 可点击动作和状态标记的显示字形。
-// 这些字段只改变 renderer 展示文字，真实 action id、鼠标 hit region 和 reducer 消息链路不随配置改变。
+// TUIPaneChromeGlyphsConfig 描述 pane/floating chrome 可点击动作、状态标记和左右装饰模板。
+// 这些字段只改变 renderer 展示文字；真实 action id、鼠标 hit region、resize owner
+// 消息链路仍由 reducer/app 持有，配置不能改写这些交互语义。
 type TUIPaneChromeGlyphsConfig struct {
-	Zoom             string
-	SplitVertical    string
-	SplitHorizontal  string
-	Close            string
-	SizeLock         string
-	SizeUnlock       string
-	CenterFloating   string
-	CollapseFloating string
-	Running          string
-	Waiting          string
-	Exited           string
-	Killed           string
+	ActionLeft          string
+	ActionLeftSet       bool
+	ActionRight         string
+	ActionRightSet      bool
+	ActionSeparator     string
+	ActionSeparatorSet  bool
+	ActionGroupLeft     string
+	ActionGroupLeftSet  bool
+	ActionGroupRight    string
+	ActionGroupRightSet bool
+	OwnerLeft           string
+	OwnerLeftSet        bool
+	OwnerRight          string
+	OwnerRightSet       bool
+	Owner               string
+	OwnerSet            bool
+	OwnerPending        string
+	OwnerPendingSet     bool
+	TakeOwner           string
+	TakeOwnerSet        bool
+	Zoom                string
+	SplitVertical       string
+	SplitHorizontal     string
+	Close               string
+	SizeLock            string
+	SizeUnlock          string
+	CenterFloating      string
+	CollapseFloating    string
+	Running             string
+	Waiting             string
+	Exited              string
+	Killed              string
 }
 
 // TUIFooterConfig 描述 footer 的用户可配置展示层。

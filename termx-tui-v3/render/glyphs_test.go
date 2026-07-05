@@ -1,6 +1,7 @@
 package render
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -73,5 +74,64 @@ func TestSetPaneChromeGlyphsAllowsUTF8Overrides(t *testing.T) {
 	}
 	if DisplayWidth(paneChromeCloseGlyph()) != 2 {
 		t.Fatalf("emoji override width should be measured with display cells, got %d", DisplayWidth(paneChromeCloseGlyph()))
+	}
+}
+
+func TestPaneChromeActionTemplatesAllowGroupCapsuleAndEmptySides(t *testing.T) {
+	ResetPaneChromeGlyphs()
+	defer ResetPaneChromeGlyphs()
+
+	SetPaneChromeGlyphs(PaneChromeGlyphs{
+		ActionLeft:          " ",
+		ActionLeftSet:       true,
+		ActionRight:         " ",
+		ActionRightSet:      true,
+		ActionSeparator:     "",
+		ActionSeparatorSet:  true,
+		ActionGroupLeft:     "[fg:#8ffcff][fg:#071112;bg:#8ffcff;font:bold]",
+		ActionGroupLeftSet:  true,
+		ActionGroupRight:    "[reset][fg:#8ffcff][reset]",
+		ActionGroupRightSet: true,
+		Zoom:                "—",
+		SplitVertical:       "□",
+		SplitHorizontal:     "▭",
+		Close:               "⤫",
+	})
+
+	got := paneChromeActionText(40)
+	want := " —  □  ▭  ⤫ "
+	if got != want {
+		t.Fatalf("capsule action text got=%q want=%q", got, want)
+	}
+	if strings.Contains(got, "[fg:") || strings.Contains(got, "[reset]") {
+		t.Fatalf("span tags must not render literally, got=%q", got)
+	}
+
+	rendered := paneChromeActionRenderedFromItems(paneChromeActionItems(40), StyleAccent)
+	foundStyledGlyph := false
+	for _, segment := range rendered.Segments {
+		if strings.Contains(segment.text, "—") && segment.ansi.FG == "#071112" && segment.ansi.BG == "#8ffcff" && segment.ansi.Bold {
+			foundStyledGlyph = true
+			break
+		}
+	}
+	if !foundStyledGlyph {
+		t.Fatalf("expected action glyph to inherit configured ANSI style, segments=%#v", rendered.Segments)
+	}
+}
+
+func TestPaneChromeActionTemplatesCanHideOneSide(t *testing.T) {
+	ResetPaneChromeGlyphs()
+	defer ResetPaneChromeGlyphs()
+
+	SetPaneChromeGlyphs(PaneChromeGlyphs{
+		ActionLeft:     "",
+		ActionLeftSet:  true,
+		ActionRight:    ")",
+		ActionRightSet: true,
+		Close:          "x",
+	})
+	if got, want := paneChromeActionText(8), "x)"; got != want {
+		t.Fatalf("right-only action template got=%q want=%q", got, want)
 	}
 }

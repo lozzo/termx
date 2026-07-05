@@ -483,6 +483,48 @@ func TestMeasureLayoutPaneActionRegionsFollowStructuredVisibleSlots(t *testing.T
 	}
 }
 
+func TestMeasureLayoutPaneActionRegionsSkipConfiguredGroupCaps(t *testing.T) {
+	ResetPaneChromeGlyphs()
+	defer ResetPaneChromeGlyphs()
+	SetPaneChromeGlyphs(PaneChromeGlyphs{
+		ActionLeft:          "",
+		ActionLeftSet:       true,
+		ActionRight:         "",
+		ActionRightSet:      true,
+		ActionSeparator:     "",
+		ActionSeparatorSet:  true,
+		ActionGroupLeft:     "",
+		ActionGroupLeftSet:  true,
+		ActionGroupRight:    "",
+		ActionGroupRightSet: true,
+		Close:               "x",
+	})
+
+	panel := PanelVM{
+		ID:           "pane-1",
+		Presentation: PanelPresentationCard,
+		Active:       true,
+		Chrome: PanelChromeVM{Actions: []ChromeActionVM{
+			{Text: "A", ActionID: "pane.alpha"},
+			{Text: "B", ActionID: "pane.beta"},
+			{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String()},
+		}},
+	}
+	rect := Rect{W: 20, H: 8}
+	plan := MeasureLayout(ShellVM{Layout: LayoutVM{Panels: []PanelVM{panel}}}, rect)
+	if len(plan.HitRegions) < 3 {
+		t.Fatalf("expected action regions, got %#v", plan.HitRegions)
+	}
+	actionRect := paneActionRect(panel, rect)
+	if got, want := plan.HitRegions[0].Rect.X, actionRect.X+DisplayWidth(""); got != want {
+		t.Fatalf("first action should start after group left cap got=%d want=%d actionRect=%#v regions=%#v", got, want, actionRect, plan.HitRegions[:3])
+	}
+	actionTokenWidth := plan.HitRegions[0].Rect.W + plan.HitRegions[1].Rect.W + plan.HitRegions[2].Rect.W
+	if got, want := actionTokenWidth, paneChromeActionItemsWidth(visiblePaneChromeActionItems(panel, rect.W))-DisplayWidth("")-DisplayWidth(""); got != want {
+		t.Fatalf("action regions should exclude group caps got=%d want=%d regions=%#v", got, want, plan.HitRegions[:3])
+	}
+}
+
 func TestMeasureLayoutAddsSplitDividerResizeHitRegions(t *testing.T) {
 	shell := ShellVM{
 		Layout: LayoutVM{

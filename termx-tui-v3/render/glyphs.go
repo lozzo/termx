@@ -3,21 +3,51 @@ package render
 // PaneChromeGlyphs 集中管理 pane/floating chrome 的动作和状态字形。
 // 默认 chrome 对齐 tuiv2 的 Nerd Font 字形；测试仍可通过 SetPaneChromeGlyphs 覆盖。
 type PaneChromeGlyphs struct {
-	Zoom             string
-	SplitVertical    string
-	SplitHorizontal  string
-	Close            string
-	SizeLock         string
-	SizeUnlock       string
-	CenterFloating   string
-	CollapseFloating string
-	Running          string
-	Waiting          string
-	Exited           string
-	Killed           string
+	ActionLeft          string
+	ActionLeftSet       bool
+	ActionRight         string
+	ActionRightSet      bool
+	ActionSeparator     string
+	ActionSeparatorSet  bool
+	ActionGroupLeft     string
+	ActionGroupLeftSet  bool
+	ActionGroupRight    string
+	ActionGroupRightSet bool
+	OwnerLeft           string
+	OwnerLeftSet        bool
+	OwnerRight          string
+	OwnerRightSet       bool
+	Owner               string
+	OwnerSet            bool
+	OwnerPending        string
+	OwnerPendingSet     bool
+	TakeOwner           string
+	TakeOwnerSet        bool
+	Zoom                string
+	SplitVertical       string
+	SplitHorizontal     string
+	Close               string
+	SizeLock            string
+	SizeUnlock          string
+	CenterFloating      string
+	CollapseFloating    string
+	Running             string
+	Waiting             string
+	Exited              string
+	Killed              string
 }
 
 var defaultPaneChromeGlyphs = PaneChromeGlyphs{
+	ActionLeft:       "[",
+	ActionRight:      "]",
+	ActionSeparator:  "─",
+	ActionGroupLeft:  "",
+	ActionGroupRight: "",
+	OwnerLeft:        "",
+	OwnerRight:       "",
+	Owner:            "◆ owner",
+	OwnerPending:     "◆ owner?",
+	TakeOwner:        "◇ follow",
 	Zoom:             "",
 	SplitVertical:    "",
 	SplitHorizontal:  "",
@@ -40,6 +70,36 @@ func DefaultPaneChromeGlyphs() PaneChromeGlyphs {
 
 func SetPaneChromeGlyphs(glyphs PaneChromeGlyphs) {
 	next := defaultPaneChromeGlyphs
+	if glyphs.ActionLeftSet {
+		next.ActionLeft = glyphs.ActionLeft
+	}
+	if glyphs.ActionRightSet {
+		next.ActionRight = glyphs.ActionRight
+	}
+	if glyphs.ActionSeparatorSet {
+		next.ActionSeparator = glyphs.ActionSeparator
+	}
+	if glyphs.ActionGroupLeftSet {
+		next.ActionGroupLeft = glyphs.ActionGroupLeft
+	}
+	if glyphs.ActionGroupRightSet {
+		next.ActionGroupRight = glyphs.ActionGroupRight
+	}
+	if glyphs.OwnerLeftSet {
+		next.OwnerLeft = glyphs.OwnerLeft
+	}
+	if glyphs.OwnerRightSet {
+		next.OwnerRight = glyphs.OwnerRight
+	}
+	if glyphs.OwnerSet {
+		next.Owner = glyphs.Owner
+	}
+	if glyphs.OwnerPendingSet {
+		next.OwnerPending = glyphs.OwnerPending
+	}
+	if glyphs.TakeOwnerSet {
+		next.TakeOwner = glyphs.TakeOwner
+	}
 	if glyphs.Zoom != "" {
 		next.Zoom = glyphs.Zoom
 	}
@@ -125,4 +185,44 @@ func paneChromeWaitingGlyph() string {
 
 func paneChromeExitedGlyph() string {
 	return paneChromeGlyphs.Exited
+}
+
+func paneChromeActionLeft() string {
+	return paneChromeGlyphs.ActionLeft
+}
+
+func paneChromeActionRight() string {
+	return paneChromeGlyphs.ActionRight
+}
+
+func paneChromeActionSeparator() string {
+	return paneChromeGlyphs.ActionSeparator
+}
+
+func paneChromeActionGroupLeft() string {
+	return paneChromeGlyphs.ActionGroupLeft
+}
+
+func paneChromeActionGroupRight() string {
+	return paneChromeGlyphs.ActionGroupRight
+}
+
+func paneChromeOwnerLeft() string {
+	return paneChromeGlyphs.OwnerLeft
+}
+
+func paneChromeOwnerRight() string {
+	return paneChromeGlyphs.OwnerRight
+}
+
+func paneChromeOwnerText() string {
+	return paneChromeGlyphs.Owner
+}
+
+func paneChromeOwnerPendingText() string {
+	return paneChromeGlyphs.OwnerPending
+}
+
+func paneChromeTakeOwnerText() string {
+	return paneChromeGlyphs.TakeOwner
 }

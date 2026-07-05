@@ -192,10 +192,23 @@ tui:
     # 示例：tab_template: "{{tab_id}}[fg:#f7f2ff;bg:#332244;font:bold] {{if active}}▎{{else}}|{{end}} {{title | truncate 12}} [action:tab.close]{{close_icon}}[/action][/style]"
     tab_template: ""
 
-    # pane_glyphs 控制 pane/floating chrome 右上角 action 和状态标记的显示字形。
-    # 默认值全部为 ""，表示使用内置 glyph。
-    # 这些字段只改变可见文字，不改变 zoom/split/close 等 action 的语义。
-    # 示例：zoom: "—" / split_vertical: "□" / split_horizontal: "▭" / close: "⤫"
+    # pane_glyphs 控制 pane/floating chrome 右上角 action、状态标记和左右装饰。
+    # glyph 字段默认值为 ""，表示使用内置 glyph。
+    # action_left/action_right/action_group_left/action_group_right 是模板字段；
+    # 没写表示使用内置默认，显式写成 "" 表示隐藏对应部分。
+    # 模板支持 {{glyph}}、{{action_id}}、{{label}}、{{index}}、{{count}}、{{first}}、{{last}}，
+    # 并支持和 tab_template 一样的 [fg:#RRGGBB;bg:#RRGGBB;font:bold] / [style:accent] / [reset] span。
+    # 示例：
+    # action_left: " "
+    # action_right: " "
+    # action_separator: ""
+    # action_group_left: "[fg:#8ffcff][fg:#071112;bg:#8ffcff;font:bold]"
+    # action_group_right: "[reset][fg:#8ffcff][reset]"
+    # owner_left: "[fg:#8ffcff][fg:#071112;bg:#8ffcff;font:bold] "
+    # owner_right: " [reset][fg:#8ffcff][reset]"
+    # owner: "owner"
+    # owner_pending: "owner?"
+    # take_owner: "follow"
     pane_glyphs:
       zoom: ""
       split_vertical: ""

@@ -311,32 +311,72 @@ func knownFooterDynamicSection(path string) bool {
 type scalarSetter func(*state.TUIConfigStore, string) error
 
 var scalarSetters = map[string]scalarSetter{
-	"version":                                          setInt(func(cfg *state.TUIConfigStore, value int) { cfg.Version = value }),
-	"tui.profile":                                      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Profile = value }),
-	"tui.theme.mode":                                   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Mode = value }),
-	"tui.theme.palette":                                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Palette = value }),
-	"tui.theme.primary":                                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Primary = value }),
-	"tui.theme.secondary":                              setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Secondary = value }),
-	"tui.theme.foreground":                             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Foreground = value }),
-	"tui.theme.background":                             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Background = value }),
-	"tui.theme.muted":                                  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Muted = value }),
-	"tui.theme.success":                                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Success = value }),
-	"tui.theme.warning":                                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Warning = value }),
-	"tui.theme.danger":                                 setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Danger = value }),
-	"tui.theme.info":                                   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Info = value }),
-	"tui.theme.border.panel":                           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Panel = value }),
-	"tui.theme.border.active":                          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Active = value }),
-	"tui.theme.border.inactive":                        setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Inactive = value }),
-	"tui.theme.border.muted":                           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Muted = value }),
-	"tui.theme.surface.chrome_bg":                      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.ChromeBG = value }),
-	"tui.theme.surface.status_bg":                      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.StatusBG = value }),
-	"tui.theme.surface.overlay_bg":                     setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.OverlayBG = value }),
-	"tui.theme.surface.toast_bg":                       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.ToastBG = value }),
-	"tui.chrome.header":                                setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Chrome.Header = value }),
-	"tui.chrome.footer":                                setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Chrome.Footer = value }),
-	"tui.chrome.panel_presentation":                    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PanelPresentation = value }),
-	"tui.chrome.tab_create_icon":                       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabCreateIcon = value }),
-	"tui.chrome.tab_template":                          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabTemplate = value }),
+	"version":                       setInt(func(cfg *state.TUIConfigStore, value int) { cfg.Version = value }),
+	"tui.profile":                   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Profile = value }),
+	"tui.theme.mode":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Mode = value }),
+	"tui.theme.palette":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Palette = value }),
+	"tui.theme.primary":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Primary = value }),
+	"tui.theme.secondary":           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Secondary = value }),
+	"tui.theme.foreground":          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Foreground = value }),
+	"tui.theme.background":          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Background = value }),
+	"tui.theme.muted":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Muted = value }),
+	"tui.theme.success":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Success = value }),
+	"tui.theme.warning":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Warning = value }),
+	"tui.theme.danger":              setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Danger = value }),
+	"tui.theme.info":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Info = value }),
+	"tui.theme.border.panel":        setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Panel = value }),
+	"tui.theme.border.active":       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Active = value }),
+	"tui.theme.border.inactive":     setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Inactive = value }),
+	"tui.theme.border.muted":        setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Border.Muted = value }),
+	"tui.theme.surface.chrome_bg":   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.ChromeBG = value }),
+	"tui.theme.surface.status_bg":   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.StatusBG = value }),
+	"tui.theme.surface.overlay_bg":  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.OverlayBG = value }),
+	"tui.theme.surface.toast_bg":    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Theme.Surface.ToastBG = value }),
+	"tui.chrome.header":             setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Chrome.Header = value }),
+	"tui.chrome.footer":             setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Chrome.Footer = value }),
+	"tui.chrome.panel_presentation": setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PanelPresentation = value }),
+	"tui.chrome.tab_create_icon":    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabCreateIcon = value }),
+	"tui.chrome.tab_template":       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabTemplate = value }),
+	"tui.chrome.pane_glyphs.action_left": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.ActionLeft = value
+		cfg.Chrome.PaneGlyphs.ActionLeftSet = true
+	}),
+	"tui.chrome.pane_glyphs.action_right": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.ActionRight = value
+		cfg.Chrome.PaneGlyphs.ActionRightSet = true
+	}),
+	"tui.chrome.pane_glyphs.action_separator": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.ActionSeparator = value
+		cfg.Chrome.PaneGlyphs.ActionSeparatorSet = true
+	}),
+	"tui.chrome.pane_glyphs.action_group_left": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.ActionGroupLeft = value
+		cfg.Chrome.PaneGlyphs.ActionGroupLeftSet = true
+	}),
+	"tui.chrome.pane_glyphs.action_group_right": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.ActionGroupRight = value
+		cfg.Chrome.PaneGlyphs.ActionGroupRightSet = true
+	}),
+	"tui.chrome.pane_glyphs.owner_left": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.OwnerLeft = value
+		cfg.Chrome.PaneGlyphs.OwnerLeftSet = true
+	}),
+	"tui.chrome.pane_glyphs.owner_right": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.OwnerRight = value
+		cfg.Chrome.PaneGlyphs.OwnerRightSet = true
+	}),
+	"tui.chrome.pane_glyphs.owner": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.Owner = value
+		cfg.Chrome.PaneGlyphs.OwnerSet = true
+	}),
+	"tui.chrome.pane_glyphs.owner_pending": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.OwnerPending = value
+		cfg.Chrome.PaneGlyphs.OwnerPendingSet = true
+	}),
+	"tui.chrome.pane_glyphs.take_owner": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.TakeOwner = value
+		cfg.Chrome.PaneGlyphs.TakeOwnerSet = true
+	}),
 	"tui.chrome.pane_glyphs.zoom":                      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Zoom = value }),
 	"tui.chrome.pane_glyphs.split_vertical":            setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SplitVertical = value }),
 	"tui.chrome.pane_glyphs.split_horizontal":          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SplitHorizontal = value }),
@@ -633,6 +673,16 @@ func validatePaneChromeGlyphs(glyphs state.TUIPaneChromeGlyphsConfig) error {
 		name  string
 		value string
 	}{
+		{"tui.chrome.pane_glyphs.action_left", glyphs.ActionLeft},
+		{"tui.chrome.pane_glyphs.action_right", glyphs.ActionRight},
+		{"tui.chrome.pane_glyphs.action_separator", glyphs.ActionSeparator},
+		{"tui.chrome.pane_glyphs.action_group_left", glyphs.ActionGroupLeft},
+		{"tui.chrome.pane_glyphs.action_group_right", glyphs.ActionGroupRight},
+		{"tui.chrome.pane_glyphs.owner_left", glyphs.OwnerLeft},
+		{"tui.chrome.pane_glyphs.owner_right", glyphs.OwnerRight},
+		{"tui.chrome.pane_glyphs.owner", glyphs.Owner},
+		{"tui.chrome.pane_glyphs.owner_pending", glyphs.OwnerPending},
+		{"tui.chrome.pane_glyphs.take_owner", glyphs.TakeOwner},
 		{"tui.chrome.pane_glyphs.zoom", glyphs.Zoom},
 		{"tui.chrome.pane_glyphs.split_vertical", glyphs.SplitVertical},
 		{"tui.chrome.pane_glyphs.split_horizontal", glyphs.SplitHorizontal},

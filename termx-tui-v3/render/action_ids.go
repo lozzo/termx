@@ -249,7 +249,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionResizeLayoutCenter, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("m/|/_", "CENTER", StyleStatusAccent).withHelp("center terminal view content"),
 		actionSpec(ActionResizeLayoutReset, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("r", "RESET", StyleStatusWarning).withHelp("reset terminal view layout"),
 		actionSpec(ActionCopyOlder, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("PgUp", "SCROLL", StyleStatusAccent).withHelp("older history"),
-		actionSpec(ActionTerminalTakeResizeOwner, ActionDispatchApp, ActionSurfacePaneChrome, ActionSurfaceHelp).withChromeGlyph("◇ follow").withHelp("take resize owner"),
+		actionSpec(ActionTerminalTakeResizeOwner, ActionDispatchApp, ActionSurfacePaneChrome, ActionSurfaceHelp).withChromeGlyph(paneChromeTakeOwnerText()).withHelp("take resize owner"),
 		actionSpec(ActionTabCreate, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("c", "NEW", StyleStatusAccent).withHelp("create"),
 		actionSpec(ActionTabSwitch, ActionDispatchApp, ActionSurfaceLayout, ActionSurfaceHelp).withHelp("switch"),
 		actionSpec(ActionTabClose, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("x", "CLOSE", StyleStatusWarning).withHelp("close").withDanger(),
@@ -380,6 +380,8 @@ func actionSpecWithCurrentGlyph(spec ActionSpec) ActionSpec {
 		spec.ChromeGlyph = paneChromeFloatingCenterGlyph()
 	case ActionFloatingCollapse:
 		spec.ChromeGlyph = paneChromeFloatingCollapseGlyph()
+	case ActionTerminalTakeResizeOwner:
+		spec.ChromeGlyph = paneChromeTakeOwnerText()
 	}
 	return spec
 }
