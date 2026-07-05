@@ -455,12 +455,14 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 			// key 模板为空时只展示 icon/label，仍保留 action hit region。
 		} else if keyText == key {
 			if letter, ok := footerCtrlLetter(key); ok {
-				if !ctrlPrefixShown {
+				if ctrlPrefixShown {
+					segments = appendFooterBracketTokenSegments(segments, "[^"+letter+"]", style, action.ActionID)
+				} else {
 					segments = appendFooterBracketTokenSegments(segments, "[Ctrl]", StyleFooterAccent, action.ActionID)
 					segments = append(segments, footerSep().withAction(action.ActionID))
 					ctrlPrefixShown = true
+					segments = appendFooterBracketTokenSegments(segments, "["+letter+"]", style, action.ActionID)
 				}
-				segments = appendFooterBracketTokenSegments(segments, "["+letter+"]", style, action.ActionID)
 			} else {
 				segments = appendFooterKeySegments(segments, keyText, style, action.ActionID)
 			}
@@ -714,7 +716,7 @@ func footerCompactActionLabelMask(actions []FooterActionVM, limit int, separator
 func formatFooterKeyTokenForSelection(key string, ctrlPrefixShown bool) string {
 	if letter, ok := footerCtrlLetter(key); ok {
 		if ctrlPrefixShown {
-			return "[" + letter + "]"
+			return "[^" + letter + "]"
 		}
 		return "[Ctrl] • [" + letter + "]"
 	}
@@ -722,6 +724,13 @@ func formatFooterKeyTokenForSelection(key string, ctrlPrefixShown bool) string {
 }
 
 func footerTailActionToken(actions []FooterActionVM) FooterActionVM {
+	for _, action := range actions {
+		if action.ActionID == ActionPoolRestart.String() {
+			// Terminal Pool 中 Ctrl+R 是高频恢复入口；footer 宽度不足时必须优先展示，
+			// 避免键盘入口可触发但底栏只留下 remove 这类尾部危险动作。
+			return action
+		}
+	}
 	for i := len(actions) - 1; i >= 0; i-- {
 		action := actions[i]
 		if strings.TrimSpace(action.Key) != "" && !strings.HasPrefix(strings.TrimSpace(action.Key), "esc") {

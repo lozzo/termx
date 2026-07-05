@@ -723,6 +723,43 @@ func TestRenderVMBuilderUsesStructuredFooterActionCatalog(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderShowsCtrlRResizeShortcutInLiveFooter(t *testing.T) {
+	root := state.Root{
+		Shell:    state.DefaultShell(),
+		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
+	}
+
+	frame := NewRenderer(DefaultTheme()).Render(NewRenderVMBuilder().Build(root))
+	footerLine := frame.Lines[len(frame.Lines)-1]
+	if !strings.Contains(footerLine, "^R") || !strings.Contains(footerLine, "RESIZE") {
+		t.Fatalf("live footer must show ctrl-r resize shortcut, got %q", footerLine)
+	}
+	if strings.Contains(footerLine, "[R] RESIZE") {
+		t.Fatalf("live footer must not render ctrl-r as plain R, got %q", footerLine)
+	}
+}
+
+func TestRenderVMBuilderKeepsTerminalPoolRestartShortcutVisibleAtDefaultWidth(t *testing.T) {
+	root := state.Root{
+		Shell:    state.DefaultShell().OpenTerminalPool(),
+		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items: []state.TerminalPoolItem{{
+				TerminalID: "term-restart",
+				Title:      "shell",
+				State:      "running",
+			}},
+		},
+	}
+
+	frame := NewRenderer(DefaultTheme()).Render(NewRenderVMBuilder().Build(root))
+	footerLine := frame.Lines[len(frame.Lines)-1]
+	if !strings.Contains(footerLine, "Ctrl+R") || !strings.Contains(footerLine, "RESTART") {
+		t.Fatalf("terminal pool footer must keep restart shortcut visible, got %q", footerLine)
+	}
+}
+
 func TestRenderVMBuilderBuildsPaneStateSlotsFromContent(t *testing.T) {
 	tests := []struct {
 		name    string
