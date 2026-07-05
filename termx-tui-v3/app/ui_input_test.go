@@ -1764,6 +1764,9 @@ func TestInteractiveRuntimeWorkbenchTreeOverlayFlow(t *testing.T) {
 	if !frameContains(frame, "Workbench Navigator") || !frameContains(frame, "TREE") || !frameContains(frame, "PANE") || !frameContains(frame, "日志🚀") || !frameContains(frame, "Open  New  Zoom  Detach  Close") {
 		t.Fatalf("expected workbench navigator frame, got %#v", frame.Lines)
 	}
+	if frameContains(frame, "● open") || frameContains(frame, " esc ") {
+		t.Fatalf("workbench navigator title should not render generic open/esc chrome, got %#v", frame.Lines)
+	}
 	if frame.Cursor.Shape != render.CursorShapeBar {
 		t.Fatalf("tree overlay should own search cursor, got %#v", frame.Cursor)
 	}
@@ -1786,6 +1789,24 @@ func TestInteractiveRuntimeWorkbenchTreeOverlayFlow(t *testing.T) {
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain tree open: %v", err)
+	}
+	frame = lastFrame(t, host.Frames())
+	detailRegion := frameWorkbenchDetailOpenHitRegion(t, frame)
+	if err := host.SendInput(mouseEventAt(detailRegion.Rect)); err != nil {
+		t.Fatalf("send tree detail open click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tree detail open click: %v", err)
+	}
+	if runtime.State().Shell.ActivePaneID != "pane-2" || runtime.State().Shell.Overlay.Open {
+		t.Fatalf("tree detail click should focus selected node and close overlay, got %#v", runtime.State().Shell)
+	}
+
+	if err := runtime.Post(ShellOpenWorkbenchTreeMsg{}); err != nil {
+		t.Fatalf("post tree reopen after detail click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tree reopen after detail click: %v", err)
 	}
 	frame = lastFrame(t, host.Frames())
 	openRegion := frameActionHitRegion(t, frame, "workbench.open", "")
@@ -3449,6 +3470,20 @@ func TestInteractiveRuntimeTabJumpUsesWorkbenchCommand(t *testing.T) {
 	if len(terminal.Inputs) != 0 {
 		t.Fatalf("tab jump shortcuts must not leak terminal input, got %#v", terminal.Inputs)
 	}
+}
+
+func frameWorkbenchDetailOpenHitRegion(t *testing.T, frame render.Frame) render.HitRegion {
+	t.Helper()
+	for _, region := range frame.HitRegions {
+		if region.Kind == render.HitRegionContentAction &&
+			region.ActionID == render.ActionWorkbenchOpen.String() &&
+			region.Row < 0 &&
+			region.Rect.H > 1 {
+			return region
+		}
+	}
+	t.Fatalf("missing right-side workbench detail open hit region in %#v", frame.HitRegions)
+	return render.HitRegion{}
 }
 
 func findWorkspaceForTest(workspaces []state.WorkspaceState, id string) (state.WorkspaceState, bool) {

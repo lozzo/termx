@@ -264,6 +264,7 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 		visibleRows = visibleRows[:layout.BodyRows]
 	}
 	regions := workbenchTreeHitRegions(visibleRows, rowOffset, layout.TreeWidth)
+	regions = append(regions, workbenchNavigatorDetailHitRegions(root, rows, layout)...)
 	regions = append(regions, workbenchNavigatorActionHitRegions(layout)...)
 	return ContentVM{
 		Kind:       ContentWorkbenchTree,
@@ -1646,6 +1647,34 @@ func workbenchTreeHitRegions(rows []state.WorkbenchTreeItem, rowOffset int, tree
 			Rect: Rect{Y: rowOffset + index, W: treeWidth, H: 1},
 			Row:  index,
 			// 中文说明：Workbench Navigator 的鼠标行点击只带 row，由 reducer 用 WorkbenchTreeItem 决定 workspace/tab/pane/floating 真实目标。
+			ActionID: ActionWorkbenchOpen.String(),
+		})
+	}
+	return regions
+}
+
+func workbenchNavigatorDetailHitRegions(root state.Root, rows []state.WorkbenchTreeItem, layout workbenchNavigatorLayout) []HitRegion {
+	selected, ok := selectedWorkbenchTreeItem(rows)
+	if !ok || layout.RightWidth <= 0 {
+		return nil
+	}
+	rightX := layout.TreeWidth + 1
+	// 中文说明：右侧类型/header/detail 只声明打开当前 selected node，真实 workspace/tab/pane/floating 跳转仍由 reducer 读取 WorkbenchTreeItem。
+	regions := []HitRegion{{
+		Kind:     HitRegionContentAction,
+		Rect:     Rect{X: rightX, Y: 2, W: layout.RightWidth, H: minInt(4, layout.BodyRows+1)},
+		Row:      -1,
+		ActionID: ActionWorkbenchOpen.String(),
+	}}
+	previewPanes := workbenchNavigatorPreviewPanes(root, selected)
+	if len(previewPanes) == 0 {
+		return regions
+	}
+	for _, rect := range workbenchNavigatorSnapshotRects(layout, len(previewPanes)) {
+		regions = append(regions, HitRegion{
+			Kind:     HitRegionContentAction,
+			Rect:     rect,
+			Row:      -1,
 			ActionID: ActionWorkbenchOpen.String(),
 		})
 	}

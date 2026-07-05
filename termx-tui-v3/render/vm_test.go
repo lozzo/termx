@@ -2859,6 +2859,16 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		!contentHasAction(content, "workbench.delete") {
 		t.Fatalf("expected workbench hit regions, got %#v", content.HitRegions)
 	}
+	detailOpenRegion := false
+	for _, region := range content.HitRegions {
+		if region.ActionID == ActionWorkbenchOpen.String() && region.Row < 0 && region.Rect.X > content.Meta.WorkbenchTreeWidth && region.Rect.H > 1 {
+			detailOpenRegion = true
+			break
+		}
+	}
+	if !detailOpenRegion {
+		t.Fatalf("expected right-side workbench detail open hit region, got %#v", content.HitRegions)
+	}
 	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("⌕ search 日志") {
 		t.Fatalf("expected workbench search cursor, got %#v", content.Cursor)
 	}
