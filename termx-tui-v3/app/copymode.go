@@ -244,6 +244,15 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			}
 			root, activeViewID := rootWithActiveCopyHistorySession(root)
 			copyOwnsInput := copyModeOwnsActiveInput(root)
+			if copyOwnsInput {
+				if _, ok := input.CopyModeEntryShortcutIntent(msg.Event); ok {
+					// 中文说明：copy/history 的入口键本身不是 sticky mode；
+					// 但在 copy 已拥有当前 view 输入时，第二次入口键表示显式 PTY 透传。
+					next, effects := exitCopyModeWithRelease(root, deps)
+					next.Shell = next.Shell.ArmTerminalInputPassthroughOnce()
+					return saveCopyHistorySessionForView(next.Advance(), activeViewID), effects
+				}
+			}
 			intent := input.Route(msg.Event, copyOwnsInput)
 			if !copyOwnsInput && !copyModeEnterIntent(intent) {
 				return root, nil

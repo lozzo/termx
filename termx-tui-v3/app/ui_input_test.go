@@ -167,6 +167,32 @@ func TestDoubleTapStickyPrefixSendsSecondPrefixToTerminal(t *testing.T) {
 	}
 }
 
+func TestDoubleTapCopyModeEntrySendsSecondCtrlVToTerminal(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	core := &services.FakeCoreClient{}
+	reducer := ComposeReducers(
+		NewUIInputReducer(),
+		NewCopyModeReducer(CopyModeDeps{Core: core, Rows: 20}),
+		NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal}),
+	)
+	root := shortcutPassthroughInputRoot()
+	ctrlV := input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}
+
+	root, _ = reducer(root, InputMsg{Event: ctrlV})
+	if !root.CopyMode.Entering || root.History.Pending == nil {
+		t.Fatalf("first ctrl-v should enter pending copy mode, copy=%#v history=%#v", root.CopyMode, root.History)
+	}
+
+	root, effects := reducer(root, InputMsg{Event: ctrlV})
+	if root.CopyMode.InputActive() || root.History.Pending != nil {
+		t.Fatalf("second ctrl-v should exit pending copy before passthrough, copy=%#v history=%#v", root.CopyMode, root.History)
+	}
+	runTerminalInputEffects(t, effects)
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "\x16" {
+		t.Fatalf("second ctrl-v should be sent to terminal, inputs=%#v effects=%#v", terminal.Inputs, effects)
+	}
+}
+
 func TestDoubleTapStickyPrefixKeepsTerminalInputOrder(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	host := NewFakeTerminalHost(8)
@@ -219,7 +245,8 @@ func TestUIInputReducerStickyTimeoutDoesNotCloseOverlayOrCopyMode(t *testing.T) 
 
 func shortcutPassthroughInputRoot() state.Root {
 	root := state.Root{
-		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
+		Shell:    state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
+		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
 	}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(
 		state.DefaultPaneID,

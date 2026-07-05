@@ -185,6 +185,11 @@ func TestShortcutPassthroughHelpers(t *testing.T) {
 	if intent, ok = StickyModeEntryShortcutIntent(ctrlW, InteractionModeTab); ok {
 		t.Fatalf("ctrl-w must not match tab sticky entry, got %#v", intent)
 	}
+	ctrlV := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x16", Ctrl: true}
+	intent, ok = CopyModeEntryShortcutIntent(ctrlV)
+	if !ok || intent.Kind != IntentEnterCopyMode {
+		t.Fatalf("ctrl-v should match copy mode entry, intent=%#v ok=%v", intent, ok)
+	}
 }
 
 func TestForceTerminalPassthroughBypassesRootShortcutBindings(t *testing.T) {

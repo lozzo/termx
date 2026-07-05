@@ -317,6 +317,16 @@ func StickyModeEntryShortcutIntent(event InputEvent, mode InteractionMode) (Inte
 	return intent, true
 }
 
+// CopyModeEntryShortcutIntent 判断当前按键是否是 copy/history 的 root 入口键。
+// copy mode 本身不是 sticky interaction mode，但第二次按入口键也应显式透传给 terminal。
+func CopyModeEntryShortcutIntent(event InputEvent) (Intent, bool) {
+	intent, ok := rootShortcutIntent(event)
+	if !ok || intent.Kind != IntentEnterCopyMode {
+		return Intent{}, false
+	}
+	return intent, true
+}
+
 func rootShortcutIntent(event InputEvent) (Intent, bool) {
 	binding, ok := lookupBinding(InteractionModeNormal, event)
 	if !ok {

@@ -389,5 +389,6 @@ tui:
       # 用途：全局命令入口；当前固定动作包括 l KEYLOCK、? HELP、t TERMINALS、q QUIT。
       # l KEYLOCK 会切换 shortcut passthrough lock；开启后 ctrl-v/ctrl-r/ctrl-t/ctrl-w 等 root shortcut 直接发给 terminal。
       # ctrl-g 保留为 lock 开启后的解锁控制面；需要把 ctrl-g 发给 terminal 时，可按 ctrl-g ctrl-g。
+      # entry 键都支持双击透传，例如 ctrl-v ctrl-v 会取消 copy/history 进入态并透传第二个 ctrl-v。
       # 示例：entry: alt-g
       entry: ctrl-g

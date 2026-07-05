@@ -313,4 +313,5 @@ tui:
       # - q：退出 TUI。
       # - ?：打开 help。
       # 注意：ctrl-g 保留为 lock 开启后的解锁控制面；需要把 ctrl-g 发给 terminal 时，可按 ctrl-g ctrl-g 双击透传。
+      # entry 键都支持双击透传，例如 ctrl-v ctrl-v 会取消 copy/history 进入态并透传第二个 ctrl-v。
       entry: ctrl-g
