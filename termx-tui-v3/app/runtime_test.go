@@ -3658,8 +3658,8 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	if moved.X != 14 || moved.Y != 7 {
 		t.Fatalf("floating title drag should move rect, got %#v", moved)
 	}
-	if !lastRuntimeNewFrame(t, host, framesBeforeMove).Metadata.ForceFullRepaint {
-		t.Fatalf("floating move frame must force full repaint to restore old rect, got %#v", lastRuntimeNewFrame(t, host, framesBeforeMove).Metadata)
+	if lastRuntimeNewFrame(t, host, framesBeforeMove).Metadata.ForceFullRepaint {
+		t.Fatalf("floating move frame must use row-diff repaint, got %#v", lastRuntimeNewFrame(t, host, framesBeforeMove).Metadata)
 	}
 	if len(runtime.State().Shell.Toasts) != beforeToastCount {
 		t.Fatalf("floating move drag success should not add toast, before=%d after=%#v", beforeToastCount, runtime.State().Shell.Toasts)
@@ -3706,8 +3706,8 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	if resized.W != beforeResize.W+6 || resized.H != beforeResize.H+2 {
 		t.Fatalf("floating resize drag should resize rect, before=%#v after=%#v", beforeResize, resized)
 	}
-	if !lastRuntimeNewFrame(t, host, framesBeforeResize).Metadata.ForceFullRepaint {
-		t.Fatalf("floating resize frame must force full repaint to restore old rect, got %#v", lastRuntimeNewFrame(t, host, framesBeforeResize).Metadata)
+	if lastRuntimeNewFrame(t, host, framesBeforeResize).Metadata.ForceFullRepaint {
+		t.Fatalf("floating resize frame must use row-diff repaint, got %#v", lastRuntimeNewFrame(t, host, framesBeforeResize).Metadata)
 	}
 	if len(runtime.State().Shell.Toasts) != beforeToastCount {
 		t.Fatalf("floating resize drag success should not add toast, before=%d after=%#v", beforeToastCount, runtime.State().Shell.Toasts)
