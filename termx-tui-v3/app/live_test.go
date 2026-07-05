@@ -802,15 +802,60 @@ func TestLiveAttachmentStoreSupportsSameTerminalAcrossTwoPanes(t *testing.T) {
 	if _, ok := root.TerminalViews.PaneBinding("pane-2"); !ok {
 		t.Fatal("close pane should not detach sibling view for same terminal")
 	}
-	root, _ = reduceTerminalPoolKillResult(root, TerminalPoolKillResultMsg{TerminalID: "term-1"})
+	root, _ = reduceTerminalPoolRemoveResult(root, TerminalPoolRemoveResultMsg{TerminalID: "term-1"})
 	if bindings := root.TerminalViews.BindingsForTerminal("term-1"); len(bindings) != 0 {
-		t.Fatalf("kill terminal should clear all view bindings, got %#v", bindings)
+		t.Fatalf("remove terminal should clear all view bindings, got %#v", bindings)
 	}
 	if pane, ok := root.Shell.Pane(state.PaneCommandTarget{PaneID: "pane-2"}); !ok || pane.TerminalID != "" || pane.Kind != state.PaneEmpty {
-		t.Fatalf("kill terminal should clear pane terminal binding, pane=%#v ok=%v", pane, ok)
+		t.Fatalf("remove terminal should clear pane terminal binding, pane=%#v ok=%v", pane, ok)
 	}
 	if root.Session.TerminalID == "term-1" || root.Surface.TerminalID == "term-1" {
-		t.Fatalf("kill terminal should clear active session and surface, session=%#v surface=%#v", root.Session, root.Surface)
+		t.Fatalf("remove terminal should clear active session and surface, session=%#v surface=%#v", root.Session, root.Surface)
+	}
+}
+
+func TestTerminalPoolKillPreservesAttachedPaneAndFloatingViews(t *testing.T) {
+	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-1"},
+		Rect:     state.FloatingRect{X: 10, Y: 4, W: 30, H: 8},
+		Source:   state.PaneCommandSourceTest,
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	root := state.Root{
+		Shell:   shell,
+		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Cols:       80,
+			Rows:       24,
+			Lines:      []string{"live"},
+		},
+	}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindFloating(state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-1", 8, 30, 8, state.TerminalResizeRoleFollower, "surface", state.TerminalFloatingViewID("floating-1"), false))
+
+	next, effects := reduceTerminalPoolKillResult(root, TerminalPoolKillResultMsg{TerminalID: "term-1"})
+	if !hasTerminalPoolListEffect(effects) {
+		t.Fatalf("kill should refresh terminal inventory, effects=%#v", effects)
+	}
+	if bindings := next.TerminalViews.BindingsForTerminal("term-1"); len(bindings) != 2 {
+		t.Fatalf("kill terminal should preserve attached views, got %#v", bindings)
+	}
+	if pane, ok := next.Shell.Pane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}); !ok || pane.TerminalID != "term-1" || pane.Kind != state.PaneTerminalLive {
+		t.Fatalf("kill terminal should keep pane attached to terminal, pane=%#v ok=%v", pane, ok)
+	}
+	if floating, ok := next.Shell.FloatingByID("floating-1"); !ok || floating.Pane.TerminalID != "term-1" || floating.Pane.Kind != state.PaneTerminalLive {
+		t.Fatalf("kill terminal should keep floating attached to terminal, floating=%#v ok=%v", floating, ok)
+	}
+	if next.Session.TerminalID != "term-1" || next.Surface.TerminalID != "term-1" {
+		t.Fatalf("kill terminal should not clear active session or surface, session=%#v surface=%#v", next.Session, next.Surface)
 	}
 }
 

@@ -113,6 +113,7 @@ const (
 	ActionPoolAttach      ActionID = "pool.attach"
 	ActionPoolAttachTab   ActionID = "pool.attach-tab"
 	ActionPoolAttachFloat ActionID = "pool.attach-float"
+	ActionPoolRestart     ActionID = "pool.restart"
 	ActionPoolEdit        ActionID = "pool.edit"
 	ActionPoolKill        ActionID = "pool.kill"
 	ActionPoolDelete      ActionID = "pool.delete"
@@ -318,6 +319,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionPoolAttach, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("enter", "ATTACH", StyleStatusAccent).withHelp("attach here"),
 		actionSpec(ActionPoolAttachTab, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceInput, ActionSurfaceHelp).withFooter("^T", "TAB", StyleStatusAccent).withHelp("attach as new tab"),
 		actionSpec(ActionPoolAttachFloat, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceInput, ActionSurfaceHelp).withFooter("^O", "FLOAT", StyleStatusAccent).withHelp("attach as floating"),
+		actionSpec(ActionPoolRestart, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceInput, ActionSurfaceHelp).withFooter("^R", "RESTART", StyleStatusAccent).withHelp("restart terminal"),
 		actionSpec(ActionPoolEdit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("^E", "RENAME", StyleStatusAccent).withHelp("rename"),
 		actionSpec(ActionPoolKill, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("^K", "KILL", StyleStatusWarning).withHelp("kill").withDanger(),
 		actionSpec(ActionPoolDelete, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceInput, ActionSurfaceHelp).withFooter("^X", "REMOVE", StyleStatusWarning).withHelp("remove terminal inventory entry").withDanger(),

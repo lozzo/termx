@@ -43,7 +43,7 @@ func TestTerminalViewStoreDetachAndKillHaveDifferentScope(t *testing.T) {
 
 	store = store.RemoveTerminal("term-1")
 	if bindings := store.BindingsForTerminal("term-1"); len(bindings) != 0 {
-		t.Fatalf("kill terminal should remove all view bindings, got %#v", bindings)
+		t.Fatalf("remove terminal should remove all view bindings, got %#v", bindings)
 	}
 }
 

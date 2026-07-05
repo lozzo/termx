@@ -146,8 +146,12 @@ type TerminalPoolEditRequestMsg struct {
 
 func (TerminalPoolEditRequestMsg) isMsg() {}
 
+// TerminalPoolEditResultMsg 是 terminal metadata 编辑服务回到 TUI reducer 的确认消息；
+// title/tags 来自已提交请求，用于立即更新 Terminal Manager 的本地列表投影，失败时不得改写列表。
 type TerminalPoolEditResultMsg struct {
 	TerminalID string
+	Title      string
+	Tags       map[string]string
 	Err        error
 }
 
@@ -579,11 +583,10 @@ func reduceTerminalPoolKillResult(root state.Root, msg TerminalPoolKillResultMsg
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: errText})
 		return root.Advance(), nil
 	}
-	root = removeTerminalFromRoot(root, msg.TerminalID)
+	// 中文说明：kill 只改变 core terminal lifecycle，不代表用户断开 pane/floating view。
+	// 绑定清理只能发生在 remove/disconnect 路径，否则已有浮窗会被误删。
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: msg.TerminalID})
-	effects := workbenchPersistEffects("terminal.kill")
-	effects = append(effects, FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }})
-	return root.Advance(), effects
+	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 }
 
 func reduceTerminalPoolRemoveRequest(root state.Root, msg TerminalPoolRemoveRequestMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -623,13 +626,13 @@ func reduceTerminalPoolEditRequest(root state.Root, msg TerminalPoolEditRequestM
 	tags := cloneStringMap(msg.Tags)
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
 		err := deps.Terminal.EditMetadata(ctx, services.TerminalEditMetadataRequest{TerminalID: msg.TerminalID, Title: title, Tags: tags})
-		return TerminalPoolEditResultMsg{TerminalID: msg.TerminalID, Err: err}
+		return TerminalPoolEditResultMsg{TerminalID: msg.TerminalID, Title: title, Tags: cloneStringMap(tags), Err: err}
 	}}}
 }
 
 func reduceTerminalPoolEditResult(root state.Root, msg TerminalPoolEditResultMsg) (state.Root, []Effect) {
 	errText := errorString(msg.Err)
-	root.TerminalPool = root.TerminalPool.ApplyEdited(msg.TerminalID, errText)
+	root.TerminalPool = root.TerminalPool.ApplyEdited(msg.TerminalID, msg.Title, msg.Tags, errText)
 	if errText != "" {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.edit", Body: errText})
 		return root.Advance(), nil

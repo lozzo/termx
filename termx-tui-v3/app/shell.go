@@ -642,6 +642,12 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetFloatingID: floatingID}
 			}})
 		}
+	case render.ActionPoolRestart:
+		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
+			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return TerminalPoolRestartRequestMsg{TerminalID: selected.TerminalID}
+			}}}
+		}
 	case render.ActionPoolKill:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
@@ -904,7 +910,7 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 				root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.rename", Body: err.Error()})
 				return root.Advance(), nil
 			}
-			root.Shell = root.Shell.CloseOverlay()
+			root.Shell = root.Shell.OpenTerminalPool()
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return request }}}
 		}
 		if after.Purpose == "clipboard.edit" {

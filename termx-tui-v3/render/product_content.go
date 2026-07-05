@@ -615,6 +615,9 @@ func buildPromptContent(shell state.ShellStore) ContentVM {
 	if len(prompt.Fields) > 0 {
 		return buildPromptFormContent(prompt, title)
 	}
+	if prompt.Purpose == "terminal.rename" {
+		return buildPromptSingleInputContent(prompt)
+	}
 	placeholder := prompt.Placeholder
 	if placeholder == "" {
 		placeholder = "command"
@@ -636,6 +639,29 @@ func buildPromptContent(shell state.ShellStore) ContentVM {
 		Lines:  lines,
 		Status: "prompt",
 		Cursor: Cursor{Visible: true, Row: 1, Col: DisplayWidth("Name ") + DisplayWidth(value), Shape: CursorShapeBar},
+	}
+}
+
+func buildPromptSingleInputContent(prompt state.PromptState) ContentVM {
+	placeholder := prompt.Placeholder
+	if placeholder == "" {
+		placeholder = "value"
+	}
+	value := prompt.Value
+	displayValue := value
+	valueSet := value != ""
+	if displayValue == "" {
+		displayValue = "[" + placeholder + "]"
+	}
+	valueStyle := StyleForeground
+	if !valueSet {
+		valueStyle = StyleStrongForeground
+	}
+	return ContentVM{
+		Kind:   ContentPrompt,
+		Lines:  []Line{{Cells: []Cell{styledCell(displayValue, valueStyle)}}},
+		Status: "prompt",
+		Cursor: Cursor{Visible: true, Row: 0, Col: DisplayWidth(value), Shape: CursorShapeBar},
 	}
 }
 
@@ -785,6 +811,7 @@ func helpActionGroups() []helpActionGroup {
 			{Action: ActionPoolAttach},
 			{Action: ActionPoolAttachTab},
 			{Action: ActionPoolAttachFloat},
+			{Action: ActionPoolRestart},
 			{Action: ActionPoolEdit},
 			{Action: ActionPoolKill},
 			{Action: ActionPoolDelete},
@@ -1098,7 +1125,8 @@ func terminalManagerDetailLines(root state.Root, selected state.TerminalPoolPage
 	lines = append(lines, terminalManagerPreviewLines(root.Surface.SurfaceForTerminal(selected.TerminalID))...)
 	lines = append(lines,
 		terminalManagerDetailLine("keys", "Enter attach · ^T tab · ^O float"),
-		terminalManagerDetailLine("keys", "^E rename · ^K kill · ^X remove"),
+		terminalManagerDetailLine("keys", "^R restart · ^E rename"),
+		terminalManagerDetailLine("keys", "^K kill · ^X remove"),
 		terminalManagerDetailLine("history", terminalManagerHistoryStatus(root, selected)),
 	)
 	return lines
@@ -1235,6 +1263,7 @@ func terminalManagerLeftActions() []terminalManagerAction {
 
 func terminalManagerRightActions() []terminalManagerAction {
 	return []terminalManagerAction{
+		{ID: ActionPoolRestart, Label: "^R Restart", Style: StyleStatusAccent},
 		{ID: ActionPoolEdit, Label: "^E Rename", Style: StyleAccent},
 		{ID: ActionPoolKill, Label: "^K Kill", Style: StyleWarning},
 		{ID: ActionPoolDelete, Label: "^X Remove", Style: StyleDangerStrong},
@@ -1919,7 +1948,7 @@ func terminalManagerActionHitRegions(layout terminalManagerLayout, enabled bool)
 }
 
 func terminalManagerActionIsRight(actionID ActionID) bool {
-	return actionID == ActionPoolEdit || actionID == ActionPoolKill || actionID == ActionPoolDelete
+	return actionID == ActionPoolRestart || actionID == ActionPoolEdit || actionID == ActionPoolKill || actionID == ActionPoolDelete
 }
 
 func workbenchTreeHitRegions(rows []state.WorkbenchTreeItem, rowOffset int, treeWidth int) []HitRegion {

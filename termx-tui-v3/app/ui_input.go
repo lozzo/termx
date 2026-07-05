@@ -791,6 +791,8 @@ func terminalPoolKeyboardAction(event input.InputEvent) (render.ActionID, bool) 
 		return render.ActionPoolAttachTab, true
 	case "\x0f", "o":
 		return render.ActionPoolAttachFloat, true
+	case "\x12", "r":
+		return render.ActionPoolRestart, true
 	case "\x05", "e":
 		return render.ActionPoolEdit, true
 	case "\x0b", "k":

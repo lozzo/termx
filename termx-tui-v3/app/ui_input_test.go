@@ -1976,11 +1976,8 @@ func TestInteractiveRuntimeTerminalPoolPageFlow(t *testing.T) {
 	if terminal.Edits[0].Title != "shell" {
 		t.Fatalf("expected rename prompt to submit selected title, edits=%#v", terminal.Edits)
 	}
-	if err := runtime.Post(ShellOpenTerminalPoolMsg{}); err != nil {
-		t.Fatalf("post pool open before kill: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain pool open before kill: %v", err)
+	if runtime.State().Shell.Overlay.Kind != state.OverlayTerminalPool {
+		t.Fatalf("terminal rename submit should return to terminal manager, shell=%#v", runtime.State().Shell)
 	}
 	killRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "pool.kill", "")
 	if err := host.SendInput(mouseEventAt(killRegion.Rect)); err != nil {
@@ -3656,6 +3653,43 @@ func TestOverlayDeleteContentActionsDispatchTerminalRemove(t *testing.T) {
 	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolRemoveRequestMsg)
 	if !ok || msg.TerminalID != "term-logs" {
 		t.Fatalf("pool ctrl-x should request terminal inventory remove, got %#v", msg)
+	}
+}
+
+func TestOverlayRestartContentActionsDispatchTerminalRestart(t *testing.T) {
+	reducer := NewShellReducer()
+	root := state.Root{Shell: state.DefaultShell().OpenTerminalPool()}
+	root.TerminalPool, _ = root.TerminalPool.ApplyList(0, []state.TerminalPoolItem{{TerminalID: "term-logs", Title: "logs", State: "exited"}}, "")
+
+	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionPoolRestart.String(), Row: -1})
+	if len(effects) != 1 || len(next.Shell.Toasts) != 0 {
+		t.Fatalf("pool ctrl-r should dispatch terminal restart without local toast, effects=%#v toasts=%#v", effects, next.Shell.Toasts)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolRestartRequestMsg)
+	if !ok || msg.TerminalID != "term-logs" {
+		t.Fatalf("pool ctrl-r should request terminal restart, got %#v", msg)
+	}
+}
+
+func TestTerminalPoolEditResultUpdatesVisibleManagerTitle(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell().OpenTerminalPool()}
+	root.TerminalPool, _ = root.TerminalPool.ApplyList(0, []state.TerminalPoolItem{{
+		TerminalID: "term-logs",
+		Title:      "logs",
+		Tags:       map[string]string{"role": "old"},
+	}}, "")
+
+	next, effects := reduceTerminalPoolEditResult(root, TerminalPoolEditResultMsg{
+		TerminalID: "term-logs",
+		Title:      "renamed",
+		Tags:       map[string]string{"role": "new"},
+	})
+	if len(effects) == 0 || next.Shell.Overlay.Kind != state.OverlayTerminalPool {
+		t.Fatalf("edit result should keep terminal manager visible and refresh later, shell=%#v effects=%#v", next.Shell, effects)
+	}
+	items := state.TerminalPoolPageItems(next)
+	if len(items) != 1 || items[0].Title != "renamed" || items[0].Tags["role"] != "new" {
+		t.Fatalf("edit result should update visible terminal metadata immediately, items=%#v", items)
 	}
 }
 

@@ -120,7 +120,9 @@ func (store TerminalPoolStore) ApplyRemoved(terminalID string, err string) Termi
 	return store
 }
 
-func (store TerminalPoolStore) ApplyEdited(terminalID string, err string) TerminalPoolStore {
+// ApplyEdited 在 terminal metadata 服务确认成功后更新 Terminal Manager 的本地列表投影；
+// TerminalPoolStore 只持有 TUI reducer-owned inventory projection，后台 list 刷新仍是最终校准来源。
+func (store TerminalPoolStore) ApplyEdited(terminalID string, title string, tags map[string]string, err string) TerminalPoolStore {
 	if err != "" {
 		store.LastError = err
 		store.Status = TerminalPoolError
@@ -128,6 +130,7 @@ func (store TerminalPoolStore) ApplyEdited(terminalID string, err string) Termin
 	}
 	store.LastEditedID = terminalID
 	store.LastError = ""
+	store.Items = updateTerminalPoolItemMetadata(store.Items, terminalID, title, tags)
 	return store
 }
 
@@ -198,6 +201,19 @@ func updateTerminalPoolItemTags(items []TerminalPoolItem, terminalID string, tag
 	cloned := cloneTerminalPoolItems(items)
 	for index := range cloned {
 		if cloned[index].TerminalID == terminalID {
+			cloned[index].Tags = cloneStringMap(tags)
+		}
+	}
+	return cloned
+}
+
+func updateTerminalPoolItemMetadata(items []TerminalPoolItem, terminalID string, title string, tags map[string]string) []TerminalPoolItem {
+	cloned := cloneTerminalPoolItems(items)
+	for index := range cloned {
+		if cloned[index].TerminalID == terminalID {
+			if title != "" {
+				cloned[index].Title = title
+			}
 			cloned[index].Tags = cloneStringMap(tags)
 		}
 	}

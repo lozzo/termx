@@ -2686,7 +2686,7 @@ func TestCopyModeRuntimeReattachSameFloatingTerminalKeepsFrozenHistory(t *testin
 	}
 }
 
-func TestCopyModeKillRemovesFrozenHistoryForDeletedTerminal(t *testing.T) {
+func TestCopyModeRemoveClearsFrozenHistoryForDeletedTerminal(t *testing.T) {
 	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
 	root := state.Root{
 		Shell: state.DefaultShell(),
@@ -2724,19 +2724,19 @@ func TestCopyModeKillRemovesFrozenHistoryForDeletedTerminal(t *testing.T) {
 		},
 	}
 
-	next, effects := reducer(root, TerminalPoolKillResultMsg{TerminalID: "term-old"})
+	next, effects := reducer(root, TerminalPoolRemoveResultMsg{TerminalID: "term-old"})
 	if len(effects) == 0 {
-		t.Fatalf("kill result should keep list refresh effect, got %#v", effects)
+		t.Fatalf("remove result should keep list refresh effect, got %#v", effects)
 	}
 	if next.History.Token != "" || next.History.TerminalID != "" || len(next.History.Rows) != 0 {
-		t.Fatalf("kill result must invalidate deleted terminal history window, got %#v", next.History)
+		t.Fatalf("remove result must invalidate deleted terminal history window, got %#v", next.History)
 	}
 	if next.CopyMode.Active || next.CopyMode.TerminalID != "" || next.CopyMode.BoundToken != "" {
-		t.Fatalf("kill result must clear copy mode bound to deleted terminal, got %#v", next.CopyMode)
+		t.Fatalf("remove result must clear copy mode bound to deleted terminal, got %#v", next.CopyMode)
 	}
 }
 
-func TestCopyModeRuntimeKillDoesNotRenderDeletedFrozenHistory(t *testing.T) {
+func TestCopyModeRuntimeRemoveDoesNotRenderDeletedFrozenHistory(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
@@ -2783,19 +2783,19 @@ func TestCopyModeRuntimeKillDoesNotRenderDeletedFrozenHistory(t *testing.T) {
 		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
 	)
 
-	if err := runtime.Post(TerminalPoolKillResultMsg{TerminalID: "term-old"}); err != nil {
-		t.Fatalf("post kill result: %v", err)
+	if err := runtime.Post(TerminalPoolRemoveResultMsg{TerminalID: "term-old"}); err != nil {
+		t.Fatalf("post remove result: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain kill result: %v", err)
+		t.Fatalf("drain remove result: %v", err)
 	}
 
 	last := lastFrame(t, host.Frames())
 	if frameContains(last, "old-history") {
-		t.Fatalf("kill result must not keep rendering deleted frozen history, got %#v", last.Lines)
+		t.Fatalf("remove result must not keep rendering deleted frozen history, got %#v", last.Lines)
 	}
 	if runtime.State().CopyMode.Active {
-		t.Fatalf("kill result must exit copy mode bound to deleted terminal, got %#v", runtime.State().CopyMode)
+		t.Fatalf("remove result must exit copy mode bound to deleted terminal, got %#v", runtime.State().CopyMode)
 	}
 }
 

@@ -405,7 +405,7 @@ func footerActionAvailable(actionID string, mode string, root state.Root, shell 
 		return len(shell.ActiveFloatings()) > 0
 	case ActionFloatingTakeOwner, ActionFloatingFit, ActionFloatingAutoFit, ActionFloatingCenter, ActionFloatingCollapse, ActionFloatingClose:
 		return shell.ActiveFloatingID() != "" || mode == string(state.OverlayFloatingOverview) && len(shell.ActiveFloatings()) > 0
-	case ActionPoolAttach, ActionPoolAttachTab, ActionPoolAttachFloat, ActionPoolEdit, ActionPoolKill, ActionPoolDelete:
+	case ActionPoolAttach, ActionPoolAttachTab, ActionPoolAttachFloat, ActionPoolRestart, ActionPoolEdit, ActionPoolKill, ActionPoolDelete:
 		if mode == string(state.OverlayTerminalPool) {
 			return len(state.TerminalPoolPageItems(root)) > 0
 		}
@@ -491,6 +491,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 			footerActionFor(ActionPoolAttach),
 			footerActionWithKey(ActionPoolAttachTab, "Ctrl+T", "TAB"),
 			footerActionWithKey(ActionPoolAttachFloat, "Ctrl+O", "FLOAT"),
+			footerActionWithKey(ActionPoolRestart, "Ctrl+R", "RESTART"),
 			footerActionWithKey(ActionPoolEdit, "Ctrl+E", "RENAME"),
 			footerActionWithKey(ActionPoolKill, "Ctrl+K", "KILL"),
 			footerActionWithKey(ActionPoolDelete, "Ctrl+X", "REMOVE"),

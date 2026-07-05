@@ -693,6 +693,7 @@ func TestRenderVMBuilderUsesStructuredFooterActionCatalog(t *testing.T) {
 				{Key: "enter", Label: "ATTACH", ActionID: ActionPoolAttach.String()},
 				{Key: "Ctrl+T", Label: "TAB", ActionID: ActionPoolAttachTab.String()},
 				{Key: "Ctrl+O", Label: "FLOAT", ActionID: ActionPoolAttachFloat.String()},
+				{Key: "Ctrl+R", Label: "RESTART", ActionID: ActionPoolRestart.String()},
 				{Key: "Ctrl+E", Label: "RENAME", ActionID: ActionPoolEdit.String()},
 				{Key: "Ctrl+K", Label: "KILL", ActionID: ActionPoolKill.String()},
 				{Key: "Ctrl+X", Label: "REMOVE", ActionID: ActionPoolDelete.String()},
@@ -1783,6 +1784,7 @@ func TestRenderVMBuilderFiltersUnavailableFooterActions(t *testing.T) {
 	poolFooter := builder.Build(state.Root{Shell: state.DefaultShell().OpenTerminalPool()}).Shell.Footer
 	if containsFooterActionID(poolFooter.ActionTokens, ActionPoolAttach.String()) ||
 		containsFooterActionID(poolFooter.ActionTokens, ActionPoolAttachTab.String()) ||
+		containsFooterActionID(poolFooter.ActionTokens, ActionPoolRestart.String()) ||
 		containsFooterActionID(poolFooter.ActionTokens, ActionPoolKill.String()) ||
 		containsFooterActionID(poolFooter.ActionTokens, ActionPoolDelete.String()) {
 		t.Fatalf("empty terminal pool footer should hide item actions, got %#v", poolFooter.ActionTokens)
@@ -2859,10 +2861,11 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 		!strings.Contains(rendered, "│ line two") ||
 		!strings.Contains(rendered, "│ line four") ||
 		!strings.Contains(rendered, "KEYS Enter attach · ^T tab · ^O float") ||
-		!strings.Contains(rendered, "KEYS ^E rename · ^K kill · ^X remove") ||
+		!strings.Contains(rendered, "KEYS ^R restart · ^E rename") ||
+		!strings.Contains(rendered, "KEYS ^K kill · ^X remove") ||
 		!strings.Contains(rendered, "HISTORY not loaded · clear pending") ||
 		!strings.Contains(rendered, "Enter Attach  ^T Tab  ^O Float") ||
-		!strings.Contains(rendered, "^E Rename  ^K Kill  ^X Remove") ||
+		!strings.Contains(rendered, "^R Restart  ^E Rename  ^K Kill  ^X Remove") ||
 		strings.Contains(rendered, "VIEWS 27") ||
 		strings.Contains(rendered, "views:27") {
 		t.Fatalf("expected terminal manager list/detail/actions, got %#v", content.Lines)
@@ -2874,6 +2877,7 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 		!contentHasAction(content, "pool.attach") ||
 		!contentHasAction(content, "pool.attach-tab") ||
 		!contentHasAction(content, "pool.attach-float") ||
+		!contentHasAction(content, "pool.restart") ||
 		!contentHasAction(content, "pool.edit") ||
 		!contentHasAction(content, "pool.kill") ||
 		!contentHasAction(content, "pool.delete") {
@@ -3067,6 +3071,19 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 	}
 	if !content.Cursor.Visible || content.Cursor.Row != 1 || content.Cursor.Col != DisplayWidth("Name 日志🚀") {
 		t.Fatalf("expected prompt cursor after input, got %#v", content.Cursor)
+	}
+
+	content = NewRenderVMBuilder().Build(state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
+		Title:       "Rename Terminal",
+		Purpose:     "terminal.rename",
+		Value:       "shell",
+		Placeholder: "terminal name",
+	})}).Shell.Overlay.Content
+	if len(content.Lines) != 1 || content.Lines[0].PlainString() != "shell" {
+		t.Fatalf("expected compact terminal rename prompt, got %#v", content.Lines)
+	}
+	if content.Cursor.Row != 0 || content.Cursor.Col != DisplayWidth("shell") {
+		t.Fatalf("expected compact prompt cursor after input, got %#v", content.Cursor)
 	}
 
 	content = NewRenderVMBuilder().Build(state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
