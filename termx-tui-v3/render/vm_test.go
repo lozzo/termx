@@ -2403,8 +2403,8 @@ func TestRenderVMBuilderAppendsLiveExitLifecycleAfterFullOutput(t *testing.T) {
 			t.Fatalf("exit lifecycle should follow the visible live tail row=%d got=%#v want=%#v all=%#v", index, got[index], wantLine, got)
 		}
 	}
-	if !strings.HasPrefix(got[3], "                    ") || !strings.Contains(got[6], "► R restart current terminal ◄") {
-		t.Fatalf("exit lifecycle should stay horizontally centered after live tail, got %#v", got)
+	if !strings.HasPrefix(got[3], "terminal exited:") || !strings.Contains(got[6], "► R restart current terminal ◄") {
+		t.Fatalf("exit lifecycle text should remain left-aligned and only actions should center, got %#v", got)
 	}
 	restart := hitRegionByAction(t, rendered.HitRegions, ActionExitedRestart.String())
 	restartWidth := DisplayWidth("► R restart current terminal ◄")

@@ -35,6 +35,9 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 }
 
 func appendTranslatedContentRegions(out []HitRegion, content ContentVM, origin Rect, ownerID string, viewport Rect) []HitRegion {
+	if content.Kind == ContentExitedPane {
+		return appendTranslatedRegionsWithOwner(out, exitedContentHitRegions(content, origin.W, origin.H), origin, ownerID, viewport)
+	}
 	if !centeredActionContentKind(content.Kind) || len(content.Lines) == 0 {
 		return appendTranslatedRegionsWithOwner(out, content.HitRegions, origin, ownerID, viewport)
 	}
@@ -88,7 +91,11 @@ func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, view
 	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingResizeRect(floating.Rect), PaneID: panelID, Floating: true, ActionID: ActionFloatingResizeDrag.String()}, viewport)
 	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneChromeRect(floating.Rect), PaneID: panelID, Floating: true, ActionID: ActionFloatingMoveDrag.String()}, viewport)
 	if floating.ContentRect.W > 0 && floating.ContentRect.H > 0 {
-		out = appendTranslatedRegionsWithOwnerKind(out, floating.Floating.Content.HitRegions, floating.ContentRect, panelID, true, viewport)
+		contentRegions := floating.Floating.Content.HitRegions
+		if floating.Floating.Content.Kind == ContentExitedPane {
+			contentRegions = exitedContentHitRegions(floating.Floating.Content, floating.ContentRect.W, floating.ContentRect.H)
+		}
+		out = appendTranslatedRegionsWithOwnerKind(out, contentRegions, floating.ContentRect, panelID, true, viewport)
 		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floating.ContentRect, PaneID: panelID, Floating: true, ActionID: ActionFloatingRaise.String()}, viewport)
 	}
 	return out

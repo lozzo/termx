@@ -263,7 +263,7 @@ func TestContentViewportCentersEmptyPaneActionsAndStyles(t *testing.T) {
 	}
 }
 
-func TestContentViewportCentersExitedPaneActionsAndStyles(t *testing.T) {
+func TestContentViewportKeepsExitedTextLeftAndCentersActions(t *testing.T) {
 	lines, regions := liveExitedContentLines(
 		state.TerminalSurfaceStore{TerminalID: "term-1", State: state.TerminalLiveExited, ExitCode: 23, Command: []string{"bash", "-lc", "exit 23"}},
 		state.TerminalSessionStore{},
@@ -274,8 +274,8 @@ func TestContentViewportCentersExitedPaneActionsAndStyles(t *testing.T) {
 		Content: ContentVM{Kind: ContentExitedPane, Lines: lines, HitRegions: regions},
 	})
 
-	if got, want := strings.TrimSpace(result.Lines[1].PlainString()), "terminal exited: term-1 code:23"; got != want {
-		t.Fatalf("exited pane headline should be centered got=%q want=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
+	if got, want := result.Lines[1].PlainString(), "terminal exited: term-1 code:23"; !strings.HasPrefix(got, want) {
+		t.Fatalf("exited pane headline should remain left-aligned got=%q want prefix=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
 	}
 	if got, want := strings.TrimSpace(result.Lines[3].PlainString()), "► R restart current terminal ◄"; got != want {
 		t.Fatalf("selected exited restart should be centered got=%q want=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
@@ -334,6 +334,9 @@ func TestContentViewportBottomAlignsExitedPaneTailAndActions(t *testing.T) {
 		if strings.TrimSpace(got[index]) != wantLine {
 			t.Fatalf("exited content should render the tail after history row=%d got=%q want=%q all=%#v", index, got[index], wantLine, got)
 		}
+	}
+	if !strings.HasPrefix(got[0], "history C") || !strings.HasPrefix(got[3], "terminal exited") {
+		t.Fatalf("exited terminal text should stay left-aligned while actions are centered, got %#v", got)
 	}
 	restart := hitRegionByAction(t, result.HitRegions, ActionExitedRestart.String())
 	restartWidth := DisplayWidth("► R restart current terminal ◄")

@@ -324,6 +324,16 @@ func reduceExitedPaneCTAInput(root state.Root, event input.InputEvent) (bool, st
 				return ShellContentActionMsg{ActionID: actionID.String(), PaneID: pane.ID, Floating: floating}
 			}},
 		}
+	case input.KeyChar:
+		if !event.Ctrl && !event.Alt && strings.EqualFold(event.Char, "r") {
+			return true, root, []Effect{
+				handledEffect{},
+				FuncEffect{Run: func(context.Context) Msg {
+					return ShellContentActionMsg{ActionID: render.ActionExitedRestart.String(), PaneID: pane.ID, Floating: floating}
+				}},
+			}
+		}
+		return false, root, nil
 	default:
 		return false, root, nil
 	}

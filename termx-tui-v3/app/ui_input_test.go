@@ -340,6 +340,28 @@ func TestUIInputReducerExitedPaneCTAKeyboardRestartDefault(t *testing.T) {
 	}
 }
 
+func TestUIInputReducerExitedPaneCTARKeyRestarts(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{
+		Shell:   state.DefaultShell(),
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-exited", State: state.TerminalLiveExited, ExitCode: 23},
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-exited", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
+	}
+
+	for _, char := range []string{"R", "r"} {
+		_, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: char}})
+		if len(effects) != 2 {
+			t.Fatalf("%q should emit handled restart action effects, got %#v", char, effects)
+		}
+		msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellContentActionMsg)
+		if !ok || msg.ActionID != render.ActionExitedRestart.String() || msg.PaneID != state.DefaultPaneID {
+			t.Fatalf("%q should execute restart CTA, got %#v", char, msg)
+		}
+	}
+}
+
 func TestUIInputReducerExitedCacheRestartQueriesCoreLifecycle(t *testing.T) {
 	reducer := NewUIInputReducer()
 	root := state.Root{

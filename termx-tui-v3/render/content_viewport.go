@@ -10,8 +10,11 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 		return ContentRenderResult{}
 	}
 	content := request.Content
-	if content.Kind == ContentEmptyPane || content.Kind == ContentExitedPane {
+	if content.Kind == ContentEmptyPane {
 		return renderCenteredActionContentViewport(request)
+	}
+	if content.Kind == ContentExitedPane {
+		return renderExitedContentViewport(request)
 	}
 	lines := content.Lines
 	if len(lines) == 0 {
@@ -182,16 +185,90 @@ func renderCenteredActionContentViewport(request ContentRenderRequest) ContentRe
 	return ContentRenderResult{Lines: rendered, Cursor: Cursor{}, HitRegions: translatedRegions, Metadata: RenderMetadata{Width: rect.W, Height: rect.H}}
 }
 
+func renderExitedContentViewport(request ContentRenderRequest) ContentRenderResult {
+	rect := request.Rect
+	content := request.Content
+	lines := content.Lines
+	if len(lines) == 0 {
+		lines = []Line{NewLine(content.Status)}
+	}
+	rendered := make([]Line, rect.H)
+	for row := 0; row < rect.H; row++ {
+		rendered[row] = NewLine(strings.Repeat(" ", rect.W))
+	}
+	firstLine, startY := exitedContentWindow(len(lines), rect.H)
+	actionRows := exitedContentActionRows(content.HitRegions)
+	for index := firstLine; index < len(lines); index++ {
+		y := startY + index - firstLine
+		if y < 0 || y >= rect.H {
+			continue
+		}
+		line := lines[index]
+		if actionRows[index] {
+			rendered[y] = centerContentLine(line, rect.W)
+			continue
+		}
+		rendered[y] = contentViewportFitLine(line, rect.W)
+	}
+	return ContentRenderResult{
+		Lines:      rendered,
+		Cursor:     Cursor{},
+		HitRegions: exitedContentHitRegions(content, rect.W, rect.H),
+		Metadata:   RenderMetadata{Width: rect.W, Height: rect.H},
+	}
+}
+
+func exitedContentHitRegions(content ContentVM, width int, height int) []HitRegion {
+	lines := content.Lines
+	if len(lines) == 0 {
+		lines = []Line{NewLine(content.Status)}
+	}
+	firstLine, startY := exitedContentWindow(len(lines), height)
+	regions := make([]HitRegion, 0, len(content.HitRegions))
+	for _, region := range content.HitRegions {
+		if region.Rect.Y < firstLine || region.Rect.Y >= len(lines) {
+			continue
+		}
+		line := lines[region.Rect.Y]
+		region.Rect.X = centeredLineTextX(line, width)
+		region.Rect.Y = startY + region.Rect.Y - firstLine
+		region.Rect.W = minInt(line.Width(), width)
+		region.Rect.H = 1
+		regions = append(regions, region)
+	}
+	return regions
+}
+
+func exitedContentActionRows(regions []HitRegion) map[int]bool {
+	rows := make(map[int]bool, len(regions))
+	for _, region := range regions {
+		if region.Kind == HitRegionContentAction && region.ActionID != "" {
+			rows[region.Rect.Y] = true
+		}
+	}
+	return rows
+}
+
 func centeredActionContentKind(kind ContentKind) bool {
-	return kind == ContentEmptyPane || kind == ContentExitedPane
+	return kind == ContentEmptyPane
 }
 
 func centeredActionContentWindow(kind ContentKind, lineCount int, height int) (int, int) {
 	if height <= 0 || lineCount <= 0 {
 		return 0, 0
 	}
-	if kind == ContentExitedPane && lineCount > height {
-		// 中文说明：退出信息属于内容尾部；内容超过视口时默认显示最后几行历史和退出提示。
+	if height >= lineCount+2 {
+		return 0, 1
+	}
+	return 0, 0
+}
+
+func exitedContentWindow(lineCount int, height int) (int, int) {
+	if height <= 0 || lineCount <= 0 {
+		return 0, 0
+	}
+	if lineCount > height {
+		// 中文说明：退出信息属于 live tail 后续内容；溢出时只裁旧尾部，不横向改写 terminal 文本。
 		return lineCount - height, 0
 	}
 	if height >= lineCount+2 {
