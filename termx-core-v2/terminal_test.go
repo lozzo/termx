@@ -1012,8 +1012,13 @@ func TestR436HistoryStorageDirRecoversLineHistoryRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recovered history window: %v", err)
 	}
-	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "alpha|beta" {
+	if got := strings.Join(historyRowTexts(window.Rows), "|"); got != "alpha|beta|gamma" {
 		t.Fatalf("recovered linehist rows mismatch: %q rows=%#v", got, window.Rows)
+	}
+	for _, row := range window.Rows {
+		if !row.Committed || row.Segment != history.HistorySegmentCommitted {
+			t.Fatalf("shutdown lifecycle tail must recover as committed cold history, row=%#v", row)
+		}
 	}
 }
 

@@ -160,6 +160,58 @@ func TestR433LinehistFreezeAndCopyAcrossColdAndHot(t *testing.T) {
 	}
 }
 
+func TestR433LinehistProcessExitSealsCurrentScreenBeforeRestart(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(
+		WithProcessFactory(factory),
+		WithHistoryStoreFactory(LineHistoryStoreFactory(t.TempDir())),
+	)
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r433-exit-tail",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 12, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	first := factory.process("term-r433-exit-tail")
+	if first == nil {
+		t.Fatal("expected first process")
+	}
+	for i := 1; i <= 8; i++ {
+		first.emitOutput(fmt.Sprintf("line%02d\r\n", i))
+	}
+	first.exit(0)
+	waitForTerminalState(t, server, "term-r433-exit-tail", TerminalStateExited)
+	if err := server.RestartTerminal(context.Background(), "term-r433-exit-tail"); err != nil {
+		t.Fatalf("restart terminal: %v", err)
+	}
+	second := factory.process("term-r433-exit-tail")
+	if second == nil || second == first {
+		t.Fatalf("expected restarted process, first=%p second=%p", first, second)
+	}
+	second.emitOutput("newprompt\r\n")
+	waitForLiveRow(t, server, "term-r433-exit-tail", "newprompt")
+	window, err := server.TerminalHistoryWindow(context.Background(), "term-r433-exit-tail", history.HistoryWindowRequest{
+		Mode:  history.HistoryWindowModeLatest,
+		Cols:  12,
+		Limit: 100,
+	})
+	if err != nil {
+		t.Fatalf("latest history window: %v", err)
+	}
+	texts := historyRowTexts(window.Rows)
+	joined := strings.Join(texts, "|")
+	for _, want := range []string{"line01", "line02", "line03", "line04", "line05", "line06", "line07", "line08", "newprompt"} {
+		if strings.Count(joined, want) != 1 {
+			t.Fatalf("history after restart must contain %q exactly once, got %v", want, texts)
+		}
+	}
+	if strings.Index(joined, "line08") > strings.Index(joined, "newprompt") {
+		t.Fatalf("old lifecycle tail must stay before restarted process output, got %v", texts)
+	}
+}
+
 func TestR433LinehistAltScreenContentStaysOutOfCommittedHistory(t *testing.T) {
 	server := newR433LinehistServer(t)
 	r433RegisterTerminal(t, server, "term-r433-alt", 12, 3)

@@ -842,9 +842,10 @@ func (terminal *Terminal) HistoryRelease(token history.HistoryToken) error {
 
 func (terminal *Terminal) forceCloseHistory() {
 	if terminal.lineHistory != nil {
-		// 中文说明：process exit/remove 后旧行的续写上下文不存在了；linehist 把
-		// 未闭合尾部强制闭合落盘即可，没有 renderer close batch 可发。
-		_ = terminal.lineHistory.SealOpenTail()
+		// 中文说明：process exit/remove/restart 会重置旧 process 的 history tap；
+		// 尚未滚出屏幕的最后一屏必须在同一 gate 下封存，否则 live 保留屏幕但
+		// copy/history 只能看到冷段尾部，出现旧进程最后几行缺失。
+		_ = terminal.lineHistory.SealLifecycleTail()
 	}
 }
 

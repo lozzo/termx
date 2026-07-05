@@ -114,6 +114,32 @@ func (e *Engine) SealOpenTail() error {
 	return e.file.AppendLines([]Line{line})
 }
 
+// SealPrimaryScreenRows 在 terminal lifecycle 边界把仍停留在 primary 当前屏的
+// 热段行封存为 cold logical lines。消息链路仍是同一个 Assembler：已滚出的
+// open tail 与当前屏 Wrapped 行按同一规则拼接；alt 当前屏不应传入本方法。
+func (e *Engine) SealPrimaryScreenRows(rows []ScreenRow) error {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var batch []Line
+	for _, row := range rows {
+		batch = append(batch, e.asm.AppendEvictedRow(vterm.TerminalSemanticScrollOut{
+			Cells:      cloneScreenRowCells(row.Cells),
+			Wrapped:    row.Wrapped,
+			WrappedSet: true,
+		})...)
+	}
+	if line, ok := e.asm.SealOpen(); ok {
+		batch = append(batch, line)
+	}
+	if len(batch) == 0 {
+		return nil
+	}
+	return e.file.AppendLines(batch)
+}
+
 // Close 把未闭合尾部按硬结束落盘后关闭文件：重启后旧行的续写上下文
 // 已不存在，把已滚出的内容留在内存里只会丢数据。
 func (e *Engine) Close() error {
@@ -129,4 +155,13 @@ func (e *Engine) Close() error {
 		}
 	}
 	return e.file.Close()
+}
+
+func cloneScreenRowCells(cells []vterm.Cell) []vterm.Cell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]vterm.Cell, len(cells))
+	copy(out, cells)
+	return out
 }

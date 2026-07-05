@@ -177,6 +177,34 @@ func (store *Store) SealOpenTail() error {
 	return err
 }
 
+// SealLifecycleTail 在进程退出、remove 或 restart 前封存当前 primary 时间线热段。
+// truth source 仍是同一把 gate 下的 vterm 当前屏：已经离开屏幕的内容来自
+// Engine open tail，仍在 primary 当前屏的行来自 ScreenSnapshot；alt 当前屏
+// 是 transient，不传入封存，只保留被 alt 覆盖的 primary saved rows。
+func (store *Store) SealLifecycleTail() error {
+	if store == nil {
+		return nil
+	}
+	unlock := store.lockGate()
+	defer unlock()
+	store.mu.Lock()
+	screen := store.screen
+	store.mu.Unlock()
+	var snap ScreenSnapshot
+	if screen != nil {
+		snap = screen()
+	}
+	rows := snap.Rows
+	if snap.InAlt {
+		rows = snap.PrimaryRows
+	}
+	err := store.engine.SealPrimaryScreenRows(rows)
+	store.mu.Lock()
+	store.generation++
+	store.mu.Unlock()
+	return err
+}
+
 // Close 落盘未闭合尾部并关闭文件（terminal remove/shutdown 边界）。
 func (store *Store) Close() error {
 	if store == nil {

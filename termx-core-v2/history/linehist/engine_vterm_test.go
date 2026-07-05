@@ -142,6 +142,26 @@ func TestEngineOpenTailExposedThenSealedOnClose(t *testing.T) {
 	}
 }
 
+func TestEngineLifecycleSealPersistsCurrentPrimaryScreen(t *testing.T) {
+	engine := newEngineForTest(t, t.TempDir())
+	defer engine.Close()
+	source := vterm.NewSemanticSource(6, 2, 0, nil)
+	applyWriteForTest(t, source, engine, "abcdefghi\r\nx")
+	before := storedTextsForTest(t, engine)
+	if len(before) != 0 {
+		t.Fatalf("current screen rows must stay hot before lifecycle seal, got %v", before)
+	}
+	snap := ScreenSnapshotFromVTerm(source.VTerm())
+	if err := engine.SealPrimaryScreenRows(snap.Rows); err != nil {
+		t.Fatalf("seal current screen: %v", err)
+	}
+	got := storedTextsForTest(t, engine)
+	want := []string{"abcdefghi", "x"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("lifecycle seal must persist open tail plus current screen, got %v want %v", got, want)
+	}
+}
+
 func TestEnginePersistsAcrossReopen(t *testing.T) {
 	dir := t.TempDir()
 	engine := newEngineForTest(t, dir)
