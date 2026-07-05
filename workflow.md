@@ -374,6 +374,7 @@
 | R461. TUI 管理 overlay 全屏遮挡 | 完成 | `workflow.md`、`termx-tui-v3/render/`、`termx-tui-v3/app/` | Workbench Navigator 与 Terminal Manager 作为全局管理 screen 渲染，打开后不再绘制背后的 pane/floating/header/footer；Clipboard History 改为更大的快速面板，减少 terminal body 穿透和内容拥挤。 |
 | R462. TUI header/footer 不可遮挡规则 | 完成 | `workflow.md`、`termx-tui-v3/render/` | header/footer 可见时是顶层产品 chrome，Workbench Navigator、Terminal Manager、Clipboard History、prompt/picker 和 floating 都只能占用 body 安全区；header/footer 隐藏时工具面才可使用完整 viewport。 |
 | R463. TUI floating drag 增量重绘修复 | 完成 | `workflow.md`、`termx-tui-v3/app/` | 修复浮动窗口移动/缩放在密集内容背景上拖动卡顿：floating 几何变化不再强制整屏 clear/repaint，而是交给真实 FrameSink 的同尺寸 row-diff 写帧边界恢复旧/新覆盖行。 |
+| R464. TUI floating 默认中心级联摆位 | 完成 | `workflow.md`、`termx-tui-v3/state/`、`termx-tui-v3/app/` | 新建/Terminal Inventory attach-float 的浮窗默认从可见区域中心创建，后续浮窗按小步长重叠级联；默认尺寸改为更稳定的可用终端窗口，显式 rect 和手动移动/缩放不被覆盖。 |
 
 ## 7. 测试准入
 
@@ -397,6 +398,7 @@
 
 ## 9. 当前状态
 
+- `R464` 已完成：`ShellStore.createFloating` 现在把无显式 origin 的新浮窗作为自动摆位处理，默认在 viewport 中心创建，并按已有展开浮窗数量向右下级联；没有 bounds 的纯 state 调用也使用 80x24 作为摆位 fallback，避免落到 `(0,0)`。默认尺寸从小型 `3/5 viewport` 改为更可用的终端窗口比例，例如 80x24 下是 64x18，100x30 下是 80x22；显式 `Rect`、手动 move/resize、保存恢复 rect 不会被自动摆位覆盖。Terminal Pool/Inventory attach-float app harness 已锁定浮窗会居中创建后再 attach。准入已通过 `cd termx-tui-v3 && go test ./state -run 'TestShellFloating' -count=1`、`cd termx-tui-v3 && go test ./app -run 'TestOverlayContentActionsUseSelectedItemsAndReducers|TestOverlayKeyboardCommandsRouteThroughContentActions' -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 - `R463` 已完成：浮窗移动/缩放不再由 `AppRuntime` 标记 `ForceFullRepaint`。真实 TTY host 首帧和尺寸变化仍由 `FrameSink` 全量校准；浮窗几何变化保持完整 frame/hit-region 输出，但写出边界走同尺寸 row-diff，只重写新旧浮窗覆盖的变化行，避免密集点状背景拖动时每个 mouse drag event 都清屏并重发整屏内容。准入已通过 `cd termx-tui-v3 && go test ./app -run TestAppRuntimeDragsFloatingMoveAndResizeHitRegions -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 - `R462` 已完成：layout 现在先计算 header/footer 预留后的 chrome-safe body，并把 overlay、overlay popup 与 floating 都约束在 body 内；management overlay 仍不渲染背后 panes，但 header/footer 会最后绘制并保持命中优先级。content projector 按可见 chrome 扣减后的 rows 计算 Terminal Manager / Workbench Navigator / Clipboard History 内部高度，避免 action row 被 footer 挤掉。新增 layout/render harness 覆盖可见 header/footer 不被管理页或 floating 遮挡、隐藏 header/footer 时管理页仍可占满 viewport。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 - `R461` 已完成：Workbench Navigator 与 Terminal Manager 的 overlay rect 现在占满整个 viewport，render framework 在这两类 opaque 管理页打开时跳过背后 shell frame、pane、floating、toast 和 footer/header 绘制，避免 terminal 内容透到管理界面。Clipboard History 改为更高的大面板并增加可见 body rows，保留 footer 操作提示。新增 render harness 证明 Terminal Manager 不再渲染背后 terminal surface，layout/app/render 测试同步全屏 route 语义。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。

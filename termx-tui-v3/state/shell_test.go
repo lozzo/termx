@@ -823,7 +823,7 @@ func TestShellFloatingCommandsManageRectZOrderAndCollapse(t *testing.T) {
 		t.Fatalf("expected created active floating, result=%#v shell=%#v", result, shell)
 	}
 	created := floatings[0]
-	if created.Rect != (FloatingRect{X: 16, Y: 5, W: 48, H: 14}) || !created.Active {
+	if created.Rect != (FloatingRect{X: 8, Y: 3, W: 64, H: 18}) || !created.Active {
 		t.Fatalf("expected centered clamped floating, got %#v", created)
 	}
 
@@ -860,6 +860,53 @@ func TestShellFloatingCommandsManageRectZOrderAndCollapse(t *testing.T) {
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandClose, TargetID: "float-1"})
 	if result.Status != FloatingCommandOK || len(shell.ActiveFloatings()) != 0 || shell.ActiveFloatingID() != "" {
 		t.Fatalf("expected closed floating, result=%#v shell=%#v", result, shell)
+	}
+}
+
+func TestShellFloatingCreateCascadesDefaultRects(t *testing.T) {
+	shell := DefaultShell()
+	var result FloatingCommandResult
+	for i, id := range []string{"float-1", "float-2", "float-3"} {
+		shell, result = shell.ApplyFloatingCommand(FloatingCommand{
+			Action:   FloatingCommandCreate,
+			TargetID: id,
+			Pane:     PaneState{ID: id + "-pane", Title: id, Kind: PaneEmpty},
+			BoundsW:  80,
+			BoundsH:  24,
+		})
+		if result.Status != FloatingCommandOK {
+			t.Fatalf("create floating %d: %#v", i, result)
+		}
+	}
+
+	floatings := shell.ActiveFloatings()
+	want := []FloatingRect{
+		{X: 8, Y: 3, W: 64, H: 18},
+		{X: 12, Y: 4, W: 64, H: 18},
+		{X: 16, Y: 5, W: 64, H: 18},
+	}
+	if len(floatings) != len(want) {
+		t.Fatalf("unexpected floating count: %#v", floatings)
+	}
+	for index, rect := range want {
+		if floatings[index].Rect != rect {
+			t.Fatalf("floating %d should be center-cascaded, got %#v want %#v all=%#v", index, floatings[index].Rect, rect, floatings)
+		}
+	}
+
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{
+		Action:   FloatingCommandCreate,
+		TargetID: "manual",
+		Pane:     PaneState{ID: "manual-pane", Title: "manual", Kind: PaneEmpty},
+		Rect:     FloatingRect{X: 1, Y: 2, W: 30, H: 8},
+		BoundsW:  80,
+		BoundsH:  24,
+	})
+	if result.Status != FloatingCommandOK {
+		t.Fatalf("create manual floating: %#v", result)
+	}
+	if got := shell.ActiveFloatings()[3].Rect; got != (FloatingRect{X: 1, Y: 2, W: 30, H: 8}) {
+		t.Fatalf("manual floating rect must not be cascaded, got %#v", got)
 	}
 }
 

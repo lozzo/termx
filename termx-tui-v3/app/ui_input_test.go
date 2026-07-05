@@ -3634,6 +3634,9 @@ func TestOverlayContentActionsUseSelectedItemsAndReducers(t *testing.T) {
 	if len(next.Shell.ActiveFloatings()) != 1 || next.Shell.ActiveFloatingID() != "floating-1" {
 		t.Fatalf("pool ctrl-o should create floating before attach, shell=%#v", next.Shell)
 	}
+	if got := next.Shell.ActiveFloatings()[0].Rect; got != (state.FloatingRect{X: 10, Y: 4, W: 80, H: 22}) {
+		t.Fatalf("pool ctrl-o floating should be centered with stable default size, got %#v", got)
+	}
 	var requestMsg TerminalPoolAttachRequestMsg
 	foundAttach := false
 	for _, effect := range effects {

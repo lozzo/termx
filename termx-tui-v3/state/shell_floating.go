@@ -85,9 +85,11 @@ func (store ShellStore) createFloating(command FloatingCommand) (ShellStore, Flo
 		return store, floatingCommandInvalid(command.Action, "floating already exists")
 	}
 	rect := command.Rect
-	rect = defaultFloatingRect(rect, command.BoundsW, command.BoundsH)
-	if rect.X == 0 && rect.Y == 0 && command.BoundsW > 0 && command.BoundsH > 0 {
-		rect = centerFloatingRect(rect, command.BoundsW, command.BoundsH)
+	autoPlace := rect.X == 0 && rect.Y == 0
+	placementBoundsW, placementBoundsH := floatingPlacementBounds(command.BoundsW, command.BoundsH)
+	rect = defaultFloatingRect(rect, placementBoundsW, placementBoundsH)
+	if autoPlace {
+		rect = cascadeFloatingRect(rect, store.activeFloatings(), placementBoundsW, placementBoundsH)
 	}
 	rect = clampFloatingRect(rect, command.BoundsW, command.BoundsH)
 	floating := FloatingPaneState{
@@ -255,22 +257,6 @@ func floatingTitle(title string, pane PaneState) string {
 		return pane.ID
 	}
 	return "floating"
-}
-
-func defaultFloatingRect(rect FloatingRect, boundsW int, boundsH int) FloatingRect {
-	if rect.W <= 0 {
-		rect.W = 64
-		if boundsW > 0 {
-			rect.W = clampIntState(boundsW*3/5, 48, 96)
-		}
-	}
-	if rect.H <= 0 {
-		rect.H = 18
-		if boundsH > 0 {
-			rect.H = clampIntState(boundsH*3/5, 14, 28)
-		}
-	}
-	return rect
 }
 
 func centerFloatingRect(rect FloatingRect, boundsW int, boundsH int) FloatingRect {
