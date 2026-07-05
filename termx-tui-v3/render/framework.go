@@ -38,45 +38,52 @@ func (renderer Renderer) renderFrameworkCanvas(vm RenderVM) renderedFrameworkCan
 	shell.Toasts = nil
 	plan := MeasureLayout(shell, shell.Layout.Viewport)
 	c := acquireCanvas(plan.Viewport.W, plan.Viewport.H)
+	overlayHidesBackground := overlayHidesShellBackground(shell.Overlay)
 
-	renderShellFrame(c, plan)
-	if plan.Header.W > 0 && plan.Header.H > 0 {
-		renderHeader(c, shell.Header, plan.Header, plan.HeaderTopFrame, plan.HeaderDividerFrame)
-	}
-	if plan.Footer.W > 0 && plan.Footer.H > 0 {
-		renderFooter(c, shell.Footer, plan.Footer, plan.FooterFrame)
+	if !overlayHidesBackground {
+		renderShellFrame(c, plan)
+		if plan.Header.W > 0 && plan.Header.H > 0 {
+			renderHeader(c, shell.Header, plan.Header, plan.HeaderTopFrame, plan.HeaderDividerFrame)
+		}
+		if plan.Footer.W > 0 && plan.Footer.H > 0 {
+			renderFooter(c, shell.Footer, plan.Footer, plan.FooterFrame)
+		}
 	}
 
 	layers := make([]Layer, 0)
-	if len(plan.Panels) == 0 && plan.Body.W > 0 && plan.Body.H > 0 {
+	if !overlayHidesBackground && len(plan.Panels) == 0 && plan.Body.W > 0 && plan.Body.H > 0 {
 		contentResult := renderContent(c, shell.Layout.BodyContent, plan.Body, "shell:body:content", LayerPanel)
 		layers = append(layers, Layer{Kind: LayerPanel, Rect: plan.Body, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow})
 	}
 	overlayOwnsChrome := shell.Overlay.Opaque && shell.Overlay.Kind != OverlayNone
-	for _, layout := range plan.Panels {
-		switch layout.Panel.Presentation {
-		case PanelPresentationSplitLine:
-			renderSplitPanel(c, layout)
-		default:
-			renderCardPanel(c, layout)
+	if !overlayHidesBackground {
+		for _, layout := range plan.Panels {
+			switch layout.Panel.Presentation {
+			case PanelPresentationSplitLine:
+				renderSplitPanel(c, layout)
+			default:
+				renderCardPanel(c, layout)
+			}
+			contentResult := renderContent(c, layout.Panel.Content, layout.ContentRect, "panel:"+layout.Panel.ID+":content", LayerPanel)
+			if !overlayOwnsChrome {
+				renderPanelContentOverflowMarkers(c, layout, contentResult.Overflow)
+			}
+			layers = append(layers, Layer{Kind: LayerPanel, Rect: layout.Rect, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow})
 		}
-		contentResult := renderContent(c, layout.Panel.Content, layout.ContentRect, "panel:"+layout.Panel.ID+":content", LayerPanel)
-		if !overlayOwnsChrome {
-			renderPanelContentOverflowMarkers(c, layout, contentResult.Overflow)
+		for _, floating := range plan.Floatings {
+			layer := renderFloating(c, floating)
+			if layer.Rect.W > 0 && layer.Rect.H > 0 {
+				layers = append(layers, layer)
+			}
 		}
-		layers = append(layers, Layer{Kind: LayerPanel, Rect: layout.Rect, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow})
+		applyChromePatches(c, shell.Layout.ChromePatches, plan)
 	}
-	for _, floating := range plan.Floatings {
-		layer := renderFloating(c, floating)
-		if layer.Rect.W > 0 && layer.Rect.H > 0 {
+
+	if !overlayHidesBackground {
+		toastLayers := renderToasts(c, shell.Toasts, plan.Toasts)
+		for _, layer := range toastLayers {
 			layers = append(layers, layer)
 		}
-	}
-	applyChromePatches(c, shell.Layout.ChromePatches, plan)
-
-	toastLayers := renderToasts(c, shell.Toasts, plan.Toasts)
-	for _, layer := range toastLayers {
-		layers = append(layers, layer)
 	}
 	overlayLayer := renderOverlay(c, shell.Overlay, plan.Overlay, plan.OverlayContentRect)
 	if overlayLayer.Rect.W > 0 && overlayLayer.Rect.H > 0 {

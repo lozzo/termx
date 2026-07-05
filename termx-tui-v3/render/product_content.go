@@ -11,7 +11,7 @@ const contentActionWidth = 12
 
 const clipboardHistoryPreviewWidth = 200
 const clipboardHistoryBodyRows = 10
-const clipboardHistoryMaxBodyRows = 12
+const clipboardHistoryMaxBodyRows = 20
 
 const emptyPaneActionCount = 4
 

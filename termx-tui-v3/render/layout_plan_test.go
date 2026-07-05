@@ -68,8 +68,8 @@ func TestMeasureLayoutClipboardHistoryUsesOuterViewportWidth(t *testing.T) {
 	shell := ShellVM{Overlay: OverlayVM{Kind: OverlayClipboardHistory, Content: ContentVM{Kind: ContentClipboardHistory, Lines: []Line{NewLine("Search"), NewLine(""), NewLine("› git commit│git commit -m fix terminal")}}}}
 
 	plan := MeasureLayout(shell, Rect{W: 160, H: 40})
-	if plan.Overlay.W < 120 || plan.Overlay.W > 136 || plan.Overlay.H < 8 || plan.Overlay.H > 16 {
-		t.Fatalf("clipboard history should expand horizontally but stay content-height, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
+	if plan.Overlay.W < 120 || plan.Overlay.W > 136 || plan.Overlay.H < 28 || plan.Overlay.H > 36 {
+		t.Fatalf("clipboard history should expand into a large quick panel, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
 	}
 	if plan.OverlayContentRect.W != plan.Overlay.W-2 || plan.OverlayContentRect.H != plan.Overlay.H-2 {
 		t.Fatalf("clipboard history should keep thin one-cell modal border, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
@@ -884,8 +884,8 @@ func TestMeasureLayoutTerminalPoolUsesPageSizedOverlay(t *testing.T) {
 	}
 
 	plan := MeasureLayout(shell, Rect{W: 80, H: 24})
-	if plan.Overlay.W < 70 || plan.Overlay.H < 14 || plan.OverlayContentRect.H < 12 {
-		t.Fatalf("terminal pool page must not use compact picker overlay, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
+	if plan.Overlay != (Rect{W: 80, H: 24}) || plan.OverlayContentRect != (Rect{X: 1, Y: 1, W: 78, H: 22}) {
+		t.Fatalf("terminal pool page must own the full viewport, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
 	}
 	if got := plan.CursorRect; got.X != plan.OverlayContentRect.X+9 || got.Y != plan.OverlayContentRect.Y {
 		t.Fatalf("unexpected pool cursor rect content=%#v cursor=%#v", plan.OverlayContentRect, got)
@@ -923,8 +923,8 @@ func TestMeasureLayoutWorkbenchTreeUsesPageSizedOverlay(t *testing.T) {
 	}
 
 	plan := MeasureLayout(shell, Rect{W: 80, H: 24})
-	if plan.Overlay.W < 70 || plan.Overlay.H < 14 || plan.OverlayContentRect.H < 12 {
-		t.Fatalf("workbench tree must use page-sized overlay, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
+	if plan.Overlay != (Rect{W: 80, H: 24}) || plan.OverlayContentRect != (Rect{X: 1, Y: 1, W: 78, H: 22}) {
+		t.Fatalf("workbench tree must own the full viewport, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
 	}
 	if got := plan.CursorRect; got.X != plan.OverlayContentRect.X+10 || got.Y != plan.OverlayContentRect.Y {
 		t.Fatalf("unexpected tree cursor rect content=%#v cursor=%#v", plan.OverlayContentRect, got)

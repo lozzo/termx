@@ -901,9 +901,9 @@ func TestRenderVMBuilderKeepsTerminalPoolRestartShortcutVisibleAtDefaultWidth(t 
 	}
 
 	frame := NewRenderer(DefaultTheme()).Render(NewRenderVMBuilder().Build(root))
-	footerLine := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footerLine, "Ctrl+R") || !strings.Contains(footerLine, "RESTART") {
-		t.Fatalf("terminal pool footer must keep restart shortcut visible, got %q", footerLine)
+	rendered := strings.Join(frame.Lines, "\n")
+	if !strings.Contains(rendered, "^R Restart") {
+		t.Fatalf("terminal pool page must keep restart action visible, got %#v", frame.Lines)
 	}
 }
 

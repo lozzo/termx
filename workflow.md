@@ -371,6 +371,7 @@
 | R458. exit marker 前空行 live/history 对齐 | 完成 | `workflow.md`、`termx-core-v2/` | normal live 中 `terminal exited` 前的空行也是 core lifecycle marker 展示语义；linehist history 现在同步写入同一条空 logical spacer，copy/history 进入后不再吞掉这行。测试 helper 只把紧邻 exit marker 前的 synthetic spacer 当 lifecycle 元数据过滤，不隐藏普通 PTY 空行。 |
 | R459. TUI split-line active 边框归属修复 | 完成 | `workflow.md`、`termx-tui-v3/render/` | split-line 多 pane 共享分隔线时，active pane 必须拥有共享边框的高亮归属；active pane 位于 split 前侧时要主动绘制自己的 trailing edge，后绘制的 inactive pane 不得把该边框压成 muted。 |
 | R460. TUI split-line active 边角去 T 化 | 完成 | `workflow.md`、`termx-tui-v3/render/` | active pane 的 split-line 边框应显示为自身 L 角，不再把相邻 inactive pane 的连接位合成 T/十字 junction；无 active 的 shared split 仍保留共享连接语义。 |
+| R461. TUI 管理 overlay 全屏遮挡 | 完成 | `workflow.md`、`termx-tui-v3/render/`、`termx-tui-v3/app/` | Workbench Navigator 与 Terminal Manager 作为全局管理 screen 渲染，打开后不再绘制背后的 pane/floating/header/footer；Clipboard History 改为更大的快速面板，减少 terminal body 穿透和内容拥挤。 |
 
 ## 7. 测试准入
 
@@ -394,6 +395,7 @@
 
 ## 9. 当前状态
 
+- `R461` 已完成：Workbench Navigator 与 Terminal Manager 的 overlay rect 现在占满整个 viewport，render framework 在这两类 opaque 管理页打开时跳过背后 shell frame、pane、floating、toast 和 footer/header 绘制，避免 terminal 内容透到管理界面。Clipboard History 改为更高的大面板并增加可见 body rows，保留 footer 操作提示。新增 render harness 证明 Terminal Manager 不再渲染背后 terminal surface，layout/app/render 测试同步全屏 route 语义。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 - `R460` 已完成：active split-line 边框从 shared junction 改为前景覆盖。box glyph merge 现在按 active 连接位优先级处理，active pane 的水平 split leading/trailing edge 使用局部边框覆盖写入，因此右/下侧 active pane 会显示 `┌/└`、左/上侧 active pane 会显示 `┐/┘`，不再出现看起来伸到邻 pane 的 T 形连接。无 active 的 split 组合测试仍保留 `┬/┴/├/┤`。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 - `R459` 已完成：修复 split-line pane 共享边框的 active 样式归属。render 层现在让 active pane 在内部 split trailing edge 上主动写入自己的边框，并且 box glyph merge 时保留 `StyleAccent` 优先级，避免后绘制的 inactive pane 把共享 divider / joint 压灰。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 - `R458` 已完成：修复普通模式进入 copy/history 后 `terminal exited` 前空行消失的问题。根因是 exit marker 写 live 时使用了 leading blank line，但写 linehist history 时只写 marker 正文行；现在 `appendLifecycleHistoryMarker` 支持同样的 leading blank spacer，exit marker 在 authoritative history 中也会有一条空 logical line。R433 terminal harness 验证 raw history 中空行紧邻 `terminal exited` 之前；测试 helper 只过滤这条 synthetic lifecycle spacer，避免把真实 PTY 空行当元数据。准入已通过 `cd termx-core-v2 && go test ./... -count=1`。

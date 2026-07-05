@@ -143,6 +143,33 @@ func TestFrameworkRendersWorkbenchNavigatorSnapshot(t *testing.T) {
 	assertAllRowsWidth(t, lines, 120)
 }
 
+func TestFrameworkManagementOverlayDoesNotRenderBackgroundTerminal(t *testing.T) {
+	shell := state.DefaultShell().OpenTerminalPool()
+	root := state.Root{
+		Shell:    shell,
+		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items:  []state.TerminalPoolItem{{TerminalID: "term-1", Title: "shell", State: "running"}},
+		},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Ready:      true,
+			Lines:      []string{"background terminal should stay hidden"},
+		},
+	}
+	root = bindTestPaneTerminal(root, state.DefaultPaneID, "term-1")
+
+	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
+	lines := result.Lines()
+	if !linesContain(lines, "Terminal Manager") || linesContain(lines, "background terminal should stay hidden") {
+		t.Fatalf("terminal manager should replace the shell surface, got %#v", lines)
+	}
+	if firstLayer(t, result, LayerOverlay).Rect != (Rect{W: 80, H: 24}) || layerExists(result, LayerPanel) {
+		t.Fatalf("management overlay should be a full-screen route without panel layers, layers=%#v", result.Layers)
+	}
+}
+
 func TestFrameworkRendersUnconnectedPaneWithoutChromeActionCluster(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
 	root.Shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneEmpty
