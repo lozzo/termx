@@ -4136,6 +4136,64 @@ func TestAppRuntimeDispatchesProductContentActions(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeExitedSessionRKeyRestartsAndReattaches(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	terminal := &services.FakeTerminalService{
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-session-exited", Title: "done", State: string(state.TerminalLiveExited)}}},
+		AttachResult: services.TerminalAttachResult{
+			TerminalID:   "term-session-exited",
+			Channel:      11,
+			Cols:         80,
+			Rows:         24,
+			ResizePolicy: state.TerminalResizeRoleOwner,
+			SurfaceID:    "surface",
+			ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
+			CanResize:    true,
+		},
+	}
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		Session: state.TerminalSessionStore{}.
+			AttachWithResizeOwner("term-session-exited", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID)).
+			MarkExitedWithMetadata("term-session-exited", 130, "exited", time.Date(2026, 7, 5, 1, 1, 34, 0, time.UTC), []string{"/bin/zsh"}),
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-session-exited", State: state.TerminalLiveAttached, Lines: []string{"terminal exited: term-session-exited code:130 exited"}},
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-session-exited", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
+	}
+	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{})
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain initial render: %v", err)
+	}
+	if !frameContains(lastRuntimeFrame(t, host), "R restart current terminal") {
+		t.Fatalf("session-exited terminal should render restart CTA, frame=%#v", lastRuntimeFrame(t, host).Lines)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "R"}); err != nil {
+		t.Fatalf("send R restart: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain R restart: %v", err)
+	}
+
+	if len(terminal.Lists) == 0 || len(terminal.Restarts) != 1 || terminal.Restarts[0].TerminalID != "term-session-exited" {
+		t.Fatalf("R should query core lifecycle then restart exited terminal, lists=%#v restarts=%#v", terminal.Lists, terminal.Restarts)
+	}
+	if len(terminal.Attaches) != 1 || terminal.Attaches[0].TerminalID != "term-session-exited" || terminal.Attaches[0].ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
+		t.Fatalf("restart should reattach the bound terminal view, attaches=%#v", terminal.Attaches)
+	}
+	final := runtime.State()
+	if final.Session.State == state.TerminalLiveExited || final.Session.Channel != 11 || !final.Session.Attached {
+		t.Fatalf("restart reattach should clear exited session and install new channel, session=%#v", final.Session)
+	}
+	if final.Surface.State == state.TerminalLiveExited || frameContains(lastRuntimeFrame(t, host), "R restart current terminal") {
+		t.Fatalf("restart should remove exited CTA while waiting for fresh live output, surface=%#v frame=%#v", final.Surface, lastRuntimeFrame(t, host).Lines)
+	}
+}
+
 func TestAppRuntimeContentActionFocusesTargetPane(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	shell := state.DefaultShell().

@@ -1076,6 +1076,23 @@ func sessionForBinding(root state.Root, binding state.TerminalViewBinding) state
 		ExitedAt:     surface.ExitedAt,
 		Command:      append([]string(nil), surface.Command...),
 	}
+	session = mergeSessionExitedLifecycle(session, root.Session)
+	return session
+}
+
+func mergeSessionExitedLifecycle(session state.TerminalSessionStore, lifecycle state.TerminalSessionStore) state.TerminalSessionStore {
+	if session.TerminalID == "" || lifecycle.TerminalID != session.TerminalID || lifecycle.State != state.TerminalLiveExited {
+		return session
+	}
+	// TerminalSessionStore 是 input/live reducer 回投的 lifecycle truth；同一 terminal 的退出态必须
+	// 覆盖仍 attached 的旧 surface 投影，否则渲染、hit region 和键盘 CTA 会看到不同状态。
+	session.Attached = false
+	session.State = state.TerminalLiveExited
+	session.ExitCode = lifecycle.ExitCode
+	session.ExitReason = lifecycle.ExitReason
+	session.ExitedAt = lifecycle.ExitedAt
+	session.Command = append([]string(nil), lifecycle.Command...)
+	session.LastError = ""
 	return session
 }
 

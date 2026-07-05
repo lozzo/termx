@@ -2337,6 +2337,35 @@ func TestRenderVMBuilderProjectsLiveExitLifecycle(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsSessionOnlyExitedLifecycle(t *testing.T) {
+	exitedAt := time.Date(2026, 7, 5, 1, 1, 34, 0, time.UTC)
+	root := state.Root{
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-session-exited",
+			Ready:      true,
+			State:      state.TerminalLiveAttached,
+			Lines:      []string{"terminal exited: term-session-exited code:130 exited"},
+			Cols:       80,
+			Rows:       24,
+		},
+		Session: state.TerminalSessionStore{}.
+			AttachWithResizeOwner("term-session-exited", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID)).
+			MarkExitedWithMetadata("term-session-exited", 130, "exited", exitedAt, []string{"/bin/zsh"}),
+	}
+
+	root = bindTestPaneTerminal(root, state.DefaultPaneID, "term-session-exited")
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if content.Kind != ContentExitedPane || content.Status != "exited: term-session-exited code:130 exited" {
+		t.Fatalf("session-only exited lifecycle should render exited pane, got %#v", content)
+	}
+	if plain := plainLines(content.Lines); strings.Count(plain, "terminal exited: term-session-exited") != 1 || !strings.Contains(plain, "► R restart current terminal ◄") {
+		t.Fatalf("session-only exited lifecycle should keep core marker once and append restart CTA, got %#v", content.Lines)
+	}
+	if !contentHasAction(content, ActionExitedRestart.String()) || !contentHasAction(content, ActionExitedReconnect.String()) {
+		t.Fatalf("session-only exited lifecycle should expose exited CTA hit regions, got %#v", content.HitRegions)
+	}
+}
+
 func TestRenderVMBuilderAppendsLiveExitLifecycleAfterFullOutput(t *testing.T) {
 	exitedAt := time.Date(2026, 6, 17, 12, 30, 0, 0, time.UTC)
 	lines := make([]string, 24)

@@ -362,6 +362,34 @@ func TestUIInputReducerExitedPaneCTARKeyRestarts(t *testing.T) {
 	}
 }
 
+func TestUIInputReducerExitedPaneSessionLifecycleRestarts(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		Session: state.TerminalSessionStore{}.
+			AttachWithResizeOwner("term-session-exited", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID)).
+			MarkExitedWithMetadata("term-session-exited", 130, "exited", time.Date(2026, 7, 5, 1, 1, 34, 0, time.UTC), []string{"/bin/zsh"}),
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-session-exited", State: state.TerminalLiveAttached, Lines: []string{"terminal exited: term-session-exited code:130 exited"}},
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-session-exited", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
+	}
+
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyEnter},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "R"},
+	} {
+		_, effects := reducer(root, InputMsg{Event: event})
+		if len(effects) != 2 {
+			t.Fatalf("session exited CTA input should emit restart action effects event=%#v effects=%#v", event, effects)
+		}
+		msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellContentActionMsg)
+		if !ok || msg.ActionID != render.ActionExitedRestart.String() || msg.PaneID != state.DefaultPaneID {
+			t.Fatalf("session exited CTA input should execute restart action event=%#v msg=%#v", event, msg)
+		}
+	}
+}
+
 func TestUIInputReducerExitedCacheRestartQueriesCoreLifecycle(t *testing.T) {
 	reducer := NewUIInputReducer()
 	root := state.Root{

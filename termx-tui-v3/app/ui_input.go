@@ -370,9 +370,13 @@ func paneHasExitedTerminal(root state.Root, paneID string, floating bool) bool {
 	if terminalID == "" {
 		return false
 	}
-	// 退出 CTA 只认当前进程内 TerminalView binding 对应的 live surface，不从 storage/snapshot 推断。
+	// 退出 CTA 只认当前 TerminalView binding 对应的 reducer lifecycle。
+	// surface/session 都是 core/live 消息回投，不从 pane kind 或 workbench storage 推断。
 	surface := root.Surface.SurfaceForTerminal(terminalID)
-	return surface.State == state.TerminalLiveExited
+	if surface.State == state.TerminalLiveExited {
+		return true
+	}
+	return root.Session.TerminalID == terminalID && root.Session.State == state.TerminalLiveExited
 }
 
 func reduceTerminalPickerInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
