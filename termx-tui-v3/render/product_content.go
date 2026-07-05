@@ -225,7 +225,7 @@ func buildTerminalPoolContent(root state.Root, shell state.ShellStore) ContentVM
 	shell = shell.ReadonlyDefaults()
 	query := strings.TrimSpace(shell.Overlay.Query)
 	rows := state.TerminalPoolPageItems(root)
-	layout := terminalManagerLayoutForViewport(root.Viewport)
+	layout := terminalManagerLayoutForViewport(chromeSafeViewportForShell(root.Viewport, shell))
 	listStart := terminalManagerListStart(rows, layout.BodyRows)
 	lines := terminalManagerLines(root, rows, query, layout, listStart)
 	visibleRows := terminalManagerVisibleRows(rows, listStart, layout.BodyRows)
@@ -250,7 +250,7 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 	shell = shell.ReadonlyDefaults()
 	query := strings.TrimSpace(shell.Overlay.Query)
 	rows := state.WorkbenchTreeItems(root)
-	layout := workbenchNavigatorLayoutForViewport(root.Viewport)
+	layout := workbenchNavigatorLayoutForViewport(chromeSafeViewportForShell(root.Viewport, shell))
 	lines := workbenchNavigatorLines(root, rows, query, layout)
 	rowOffset := 3
 	visibleRows := rows
@@ -279,7 +279,7 @@ func buildClipboardHistoryContent(root state.Root, shell state.ShellStore) Conte
 	nameWidth := clipboardHistoryNameWidth(shell)
 	lines := []Line{clipboardHistorySearchLine(query, nameWidth), clipboardHistoryDividerSpaceLine(nameWidth)}
 	rowOffset := len(lines)
-	bodyRowLimit := clipboardHistoryBodyRowsForViewport(root.Viewport)
+	bodyRowLimit := clipboardHistoryBodyRowsForViewport(chromeSafeViewportForShell(root.Viewport, shell))
 	selectedIndex := clipboardHistorySelectedIndex(rows)
 	listStart := clipboardHistoryListStart(selectedIndex, len(rows), bodyRowLimit)
 	selectedItem, selectedOK := clipboardHistorySelectedItem(rows)
@@ -314,6 +314,19 @@ func buildClipboardHistoryContent(root state.Root, shell state.ShellStore) Conte
 		HitRegions: regions,
 		Empty:      len(rows) == 0,
 	}
+}
+
+func chromeSafeViewportForShell(viewport state.ViewportStore, shell state.ShellStore) state.ViewportStore {
+	if !viewport.Valid || viewport.Rows <= 0 {
+		return viewport
+	}
+	if shell.HeaderVisible && viewport.Rows > 0 {
+		viewport.Rows--
+	}
+	if shell.FooterVisible && viewport.Rows > 0 {
+		viewport.Rows--
+	}
+	return viewport
 }
 
 // Floating Overview 只投影 reducer-owned floating 列表；打开/召回通过 ActionID 回到 app reducer。

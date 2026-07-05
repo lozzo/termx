@@ -3,6 +3,9 @@ package render
 func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 	regions := make([]HitRegion, 0)
 	// 命中区域按前景到背景排序，后续鼠标分发可以直接取第一个匹配项。
+	// 中文说明：header/footer 可见时必须在 overlay/floating 前命中，避免顶层 chrome 被管理面板吞掉。
+	regions = appendHeaderHitRegions(regions, shell.Header, plan.Header, plan.Viewport)
+	regions = appendFooterHitRegions(regions, shell.Footer, plan.Footer, plan.FooterFrame, plan.Viewport)
 	for _, rect := range plan.Toasts {
 		// toast 不再绘制 close token；这里只保留遮挡命中，避免鼠标穿透到底层 pane/overlay。
 		regions = appendRegion(regions, HitRegion{Kind: HitRegionToast, Rect: rect}, plan.Viewport)
@@ -14,8 +17,6 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 	if shell.Overlay.Opaque {
 		return regions
 	}
-	regions = appendHeaderHitRegions(regions, shell.Header, plan.Header, plan.Viewport)
-	regions = appendFooterHitRegions(regions, shell.Footer, plan.Footer, plan.FooterFrame, plan.Viewport)
 	if len(plan.Panels) == 0 && plan.Body.W > 0 && plan.Body.H > 0 {
 		regions = appendTranslatedRegionsWithOwner(regions, shell.Layout.BodyContent.HitRegions, plan.Body, "", plan.Viewport)
 	}

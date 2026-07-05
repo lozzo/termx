@@ -165,8 +165,43 @@ func TestFrameworkManagementOverlayDoesNotRenderBackgroundTerminal(t *testing.T)
 	if !linesContain(lines, "Terminal Manager") || linesContain(lines, "background terminal should stay hidden") {
 		t.Fatalf("terminal manager should replace the shell surface, got %#v", lines)
 	}
-	if firstLayer(t, result, LayerOverlay).Rect != (Rect{W: 80, H: 24}) || layerExists(result, LayerPanel) {
+	if firstLayer(t, result, LayerOverlay).Rect != (Rect{Y: 1, W: 80, H: 22}) || layerExists(result, LayerPanel) {
 		t.Fatalf("management overlay should be a full-screen route without panel layers, layers=%#v", result.Layers)
+	}
+	if !strings.Contains(lines[0], "main") || !strings.Contains(lines[len(lines)-1], "TERMINALS") {
+		t.Fatalf("visible header/footer should stay above manager overlay, got %#v", lines)
+	}
+}
+
+func TestFrameworkFloatingCannotCoverVisibleHeaderFooter(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Header: HeaderVM{Visible: true, Workspace: "main"},
+		Footer: FooterVM{Visible: true, Mode: "floating", ActionTokens: []FooterActionVM{{Key: "esc", Label: "BACK", Style: StyleFooterAccent}}},
+		Layout: LayoutVM{
+			Viewport: Rect{W: 60, H: 12},
+			Panels: []PanelVM{{
+				ID:           "pane-1",
+				Presentation: PanelPresentationCard,
+				Active:       true,
+				Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("body")}},
+			}},
+			Floating: []FloatingVM{{
+				ID:      "float-1",
+				Title:   "float",
+				Rect:    Rect{X: 0, Y: 0, W: 58, H: 12},
+				Active:  true,
+				Content: ContentVM{Kind: ContentEmptyPane, Lines: []Line{NewLine("floating body")}},
+			}},
+		},
+	}})
+
+	lines := result.Lines()
+	if !strings.Contains(lines[0], "main") || !strings.Contains(lines[len(lines)-1], "BACK") {
+		t.Fatalf("visible header/footer should remain visible above floating, got %#v", lines)
+	}
+	floating := firstLayer(t, result, LayerFloating)
+	if floating.Rect.Y < 1 || floating.Rect.Y+floating.Rect.H > len(lines)-1 {
+		t.Fatalf("floating should stay within body rows, got %#v lines=%d", floating.Rect, len(lines))
 	}
 }
 

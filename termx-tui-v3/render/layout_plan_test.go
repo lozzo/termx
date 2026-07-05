@@ -79,6 +79,61 @@ func TestMeasureLayoutClipboardHistoryUsesOuterViewportWidth(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutVisibleHeaderFooterReserveChromeSafeOverlayAndFloatingArea(t *testing.T) {
+	shell := ShellVM{
+		Header: HeaderVM{Visible: true, Title: "main"},
+		Footer: FooterVM{Visible: true, Mode: "live"},
+		Layout: LayoutVM{
+			Floating: []FloatingVM{{
+				ID:      "float-1",
+				Title:   "float",
+				Rect:    Rect{X: 2, Y: 0, W: 20, H: 24},
+				Content: ContentVM{Kind: ContentEmptyPane},
+			}},
+		},
+		Overlay: OverlayVM{
+			Kind:   OverlayTerminalPool,
+			Opaque: true,
+			Content: ContentVM{
+				Kind:   ContentTerminalPool,
+				Cursor: Cursor{Visible: true, Row: 0, Col: 4, Shape: CursorShapeBar},
+			},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 80, H: 24})
+	if plan.Body != (Rect{X: 0, Y: 1, W: 80, H: 22}) {
+		t.Fatalf("body should reserve visible header/footer, got %#v", plan.Body)
+	}
+	if plan.Overlay != plan.Body {
+		t.Fatalf("opaque manager overlay should stay inside body, overlay=%#v body=%#v", plan.Overlay, plan.Body)
+	}
+	if got := plan.CursorRect; got.X != plan.OverlayContentRect.X+4 || got.Y != plan.OverlayContentRect.Y {
+		t.Fatalf("overlay cursor should be relative to body content rect, content=%#v cursor=%#v", plan.OverlayContentRect, got)
+	}
+	if len(plan.Floatings) != 1 || plan.Floatings[0].Rect.Y < plan.Body.Y || plan.Floatings[0].Rect.Y+plan.Floatings[0].Rect.H > plan.Body.Y+plan.Body.H {
+		t.Fatalf("floating should be moved inside chrome-safe body, body=%#v floatings=%#v", plan.Body, plan.Floatings)
+	}
+	if len(plan.HitRegions) < 4 || plan.HitRegions[0].Rect.Y != plan.Header.Y || plan.HitRegions[2].Rect.Y != plan.Footer.Y || plan.HitRegions[3].Kind != HitRegionOverlay {
+		t.Fatalf("visible header/footer hit regions should stay above opaque overlay, got %#v", plan.HitRegions)
+	}
+}
+
+func TestMeasureLayoutHiddenHeaderFooterAllowManagerOverlayFullViewport(t *testing.T) {
+	shell := ShellVM{
+		Overlay: OverlayVM{
+			Kind:    OverlayTerminalPool,
+			Opaque:  true,
+			Content: ContentVM{Kind: ContentTerminalPool},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 80, H: 24})
+	if plan.Header.H != 0 || plan.Footer.H != 0 || plan.Overlay != (Rect{W: 80, H: 24}) {
+		t.Fatalf("hidden chrome should allow full viewport manager overlay, header=%#v footer=%#v overlay=%#v", plan.Header, plan.Footer, plan.Overlay)
+	}
+}
+
 func TestMeasureLayoutUsesKnownNarrowViewportExactly(t *testing.T) {
 	shell := ShellVM{
 		Header: HeaderVM{Visible: true, Title: "main"},

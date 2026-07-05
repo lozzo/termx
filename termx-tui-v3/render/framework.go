@@ -42,12 +42,6 @@ func (renderer Renderer) renderFrameworkCanvas(vm RenderVM) renderedFrameworkCan
 
 	if !overlayHidesBackground {
 		renderShellFrame(c, plan)
-		if plan.Header.W > 0 && plan.Header.H > 0 {
-			renderHeader(c, shell.Header, plan.Header, plan.HeaderTopFrame, plan.HeaderDividerFrame)
-		}
-		if plan.Footer.W > 0 && plan.Footer.H > 0 {
-			renderFooter(c, shell.Footer, plan.Footer, plan.FooterFrame)
-		}
 	}
 
 	layers := make([]Layer, 0)
@@ -92,6 +86,12 @@ func (renderer Renderer) renderFrameworkCanvas(vm RenderVM) renderedFrameworkCan
 	popupLayer := renderOverlayPopup(c, plan.OverlayPopup)
 	if popupLayer.Rect.W > 0 && popupLayer.Rect.H > 0 {
 		layers = append(layers, popupLayer)
+	}
+	if plan.Header.W > 0 && plan.Header.H > 0 {
+		renderHeader(c, shell.Header, plan.Header, plan.HeaderTopFrame, plan.HeaderDividerFrame)
+	}
+	if plan.Footer.W > 0 && plan.Footer.H > 0 {
+		renderFooter(c, shell.Footer, plan.Footer, plan.FooterFrame)
 	}
 
 	return renderedFrameworkCanvas{

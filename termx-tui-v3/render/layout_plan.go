@@ -55,17 +55,20 @@ func MeasureLayout(shell ShellVM, viewport Rect) LayoutPlan {
 		body.H -= footerH
 		plan.Footer = Rect{X: 0, Y: body.Y + body.H, W: viewport.W, H: footerH}
 	}
+	// 中文说明：header/footer 可见时是顶层产品 chrome；所有 pane、floating 和 overlay 只能使用剩余 body。
+	chromeSafeBody := body
 	body = layoutBodyOverride(body, shell.Layout.Body, viewport)
+	body = intersectRect(body, chromeSafeBody)
 	plan.Body = body
 	plan.ShellFrame = shellFrameRect(body, shell.Layout.ShellFrame, viewport)
 	plan.HeaderTopFrame = footerFrameRect(plan.ShellFrame, shell.Layout.HeaderTopFrame, viewport)
 	plan.HeaderDividerFrame = footerFrameRect(plan.ShellFrame, shell.Layout.HeaderDividerFrame, viewport)
 	plan.FooterFrame = footerFrameRect(plan.ShellFrame, shell.Layout.FooterFrame, viewport)
 	plan.Panels = measurePanels(shell.Layout, body, plan.ShellFrame)
-	plan.Floatings = measureFloatings(shell.Layout.Floating, viewport)
-	plan.Overlay = measureOverlay(shell.Overlay, viewport)
+	plan.Floatings = measureFloatings(shell.Layout.Floating, body)
+	plan.Overlay = measureOverlayInRect(shell.Overlay, body)
 	plan.OverlayContentRect = measureOverlayContentRect(shell.Overlay, plan.Overlay)
-	plan.OverlayPopup = measureOverlayPopup(shell.Overlay.Popup, plan.OverlayContentRect, viewport)
+	plan.OverlayPopup = measureOverlayPopup(shell.Overlay.Popup, plan.OverlayContentRect, body)
 	plan.Toasts = measureToasts(shell.Toasts, viewport)
 	plan.Cursor, plan.CursorRect = measureCursor(shell, plan)
 	plan.HitRegions = measureHitRegions(shell, plan)
@@ -178,7 +181,7 @@ func measurePanelContentRect(panel PanelVM, rect Rect, body Rect) Rect {
 	return content
 }
 
-func measureFloatings(floatings []FloatingVM, viewport Rect) []FloatingLayoutPlan {
+func measureFloatings(floatings []FloatingVM, bounds Rect) []FloatingLayoutPlan {
 	if len(floatings) == 0 {
 		return nil
 	}
@@ -194,7 +197,7 @@ func measureFloatings(floatings []FloatingVM, viewport Rect) []FloatingLayoutPla
 			// hide 语义是整个 floating pane 不可见且不可命中，不只是隐藏内容区。
 			continue
 		}
-		rect := intersectRect(floating.Rect, viewport)
+		rect := constrainRectToBounds(floating.Rect, bounds)
 		if rect.W <= 0 || rect.H <= 0 {
 			continue
 		}
@@ -202,6 +205,41 @@ func measureFloatings(floatings []FloatingVM, viewport Rect) []FloatingLayoutPla
 		out = append(out, FloatingLayoutPlan{Floating: floating, Rect: rect, ContentRect: contentRect})
 	}
 	return out
+}
+
+func constrainRectToBounds(rect Rect, bounds Rect) Rect {
+	if bounds.W <= 0 || bounds.H <= 0 || rect.W <= 0 || rect.H <= 0 {
+		return Rect{}
+	}
+	rect.W = minInt(rect.W, bounds.W)
+	rect.H = minInt(rect.H, bounds.H)
+	if rect.X < bounds.X {
+		rect.X = bounds.X
+	}
+	if rect.Y < bounds.Y {
+		rect.Y = bounds.Y
+	}
+	if rect.X+rect.W > bounds.X+bounds.W {
+		rect.X = bounds.X + bounds.W - rect.W
+	}
+	if rect.Y+rect.H > bounds.Y+bounds.H {
+		rect.Y = bounds.Y + bounds.H - rect.H
+	}
+	return intersectRect(rect, bounds)
+}
+
+func measureOverlayInRect(overlay OverlayVM, bounds Rect) Rect {
+	if bounds.W <= 0 || bounds.H <= 0 {
+		return Rect{}
+	}
+	// 中文说明：overlay 先按 body 尺寸自我布局，再平移到 body 原点，不能回到整屏 viewport 遮住 header/footer。
+	rect := measureOverlay(overlay, Rect{W: bounds.W, H: bounds.H})
+	if rect.W <= 0 || rect.H <= 0 {
+		return Rect{}
+	}
+	rect.X += bounds.X
+	rect.Y += bounds.Y
+	return intersectRect(rect, bounds)
 }
 
 func measureOverlay(overlay OverlayVM, viewport Rect) Rect {

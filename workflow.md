@@ -372,6 +372,7 @@
 | R459. TUI split-line active 边框归属修复 | 完成 | `workflow.md`、`termx-tui-v3/render/` | split-line 多 pane 共享分隔线时，active pane 必须拥有共享边框的高亮归属；active pane 位于 split 前侧时要主动绘制自己的 trailing edge，后绘制的 inactive pane 不得把该边框压成 muted。 |
 | R460. TUI split-line active 边角去 T 化 | 完成 | `workflow.md`、`termx-tui-v3/render/` | active pane 的 split-line 边框应显示为自身 L 角，不再把相邻 inactive pane 的连接位合成 T/十字 junction；无 active 的 shared split 仍保留共享连接语义。 |
 | R461. TUI 管理 overlay 全屏遮挡 | 完成 | `workflow.md`、`termx-tui-v3/render/`、`termx-tui-v3/app/` | Workbench Navigator 与 Terminal Manager 作为全局管理 screen 渲染，打开后不再绘制背后的 pane/floating/header/footer；Clipboard History 改为更大的快速面板，减少 terminal body 穿透和内容拥挤。 |
+| R462. TUI header/footer 不可遮挡规则 | 完成 | `workflow.md`、`termx-tui-v3/render/` | header/footer 可见时是顶层产品 chrome，Workbench Navigator、Terminal Manager、Clipboard History、prompt/picker 和 floating 都只能占用 body 安全区；header/footer 隐藏时工具面才可使用完整 viewport。 |
 
 ## 7. 测试准入
 
@@ -395,6 +396,7 @@
 
 ## 9. 当前状态
 
+- `R462` 已完成：layout 现在先计算 header/footer 预留后的 chrome-safe body，并把 overlay、overlay popup 与 floating 都约束在 body 内；management overlay 仍不渲染背后 panes，但 header/footer 会最后绘制并保持命中优先级。content projector 按可见 chrome 扣减后的 rows 计算 Terminal Manager / Workbench Navigator / Clipboard History 内部高度，避免 action row 被 footer 挤掉。新增 layout/render harness 覆盖可见 header/footer 不被管理页或 floating 遮挡、隐藏 header/footer 时管理页仍可占满 viewport。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 - `R461` 已完成：Workbench Navigator 与 Terminal Manager 的 overlay rect 现在占满整个 viewport，render framework 在这两类 opaque 管理页打开时跳过背后 shell frame、pane、floating、toast 和 footer/header 绘制，避免 terminal 内容透到管理界面。Clipboard History 改为更高的大面板并增加可见 body rows，保留 footer 操作提示。新增 render harness 证明 Terminal Manager 不再渲染背后 terminal surface，layout/app/render 测试同步全屏 route 语义。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 - `R460` 已完成：active split-line 边框从 shared junction 改为前景覆盖。box glyph merge 现在按 active 连接位优先级处理，active pane 的水平 split leading/trailing edge 使用局部边框覆盖写入，因此右/下侧 active pane 会显示 `┌/└`、左/上侧 active pane 会显示 `┐/┘`，不再出现看起来伸到邻 pane 的 T 形连接。无 active 的 split 组合测试仍保留 `┬/┴/├/┤`。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
 - `R459` 已完成：修复 split-line pane 共享边框的 active 样式归属。render 层现在让 active pane 在内部 split trailing edge 上主动写入自己的边框，并且 box glyph merge 时保留 `StyleAccent` 优先级，避免后绘制的 inactive pane 把共享 divider / joint 压灰。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。

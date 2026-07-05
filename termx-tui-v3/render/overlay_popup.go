@@ -129,21 +129,26 @@ func measureOverlayPopup(popup OverlayPopupVM, contentRect Rect, viewport Rect) 
 	}
 	width = minInt(width, viewport.W)
 	height = minInt(height, viewport.H)
+	if width <= 0 || height <= 0 {
+		return OverlayPopupLayoutPlan{}
+	}
 	x := contentRect.X + popup.AnchorCol
 	y := contentRect.Y + popup.AnchorRow
-	if x+width > viewport.W {
-		x = maxInt(0, viewport.W-width)
+	right := viewport.X + viewport.W
+	bottom := viewport.Y + viewport.H
+	if x+width > right {
+		x = maxInt(viewport.X, right-width)
 	}
-	if y+height > viewport.H {
+	if y+height > bottom {
 		// 候选框优先贴在字段下方；空间不足时翻到字段上方，避免被 viewport 裁掉。
 		y = contentRect.Y + popup.AnchorRow - height - 1
 	}
-	if y < 0 {
-		y = 0
+	if y < viewport.Y {
+		y = viewport.Y
 	}
 	return OverlayPopupLayoutPlan{
 		Popup: popup,
-		Rect:  Rect{X: maxInt(0, x), Y: y, W: width, H: height},
+		Rect:  Rect{X: maxInt(viewport.X, x), Y: y, W: width, H: height},
 	}
 }
 
