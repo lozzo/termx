@@ -724,20 +724,6 @@ func TestRenderVMBuilderSeparatesTerminalSizeLockFromViewLayoutLock(t *testing.T
 	}
 }
 
-func TestRenderVMBuilderAllowsPlainPaneOwnerSizeLockAction(t *testing.T) {
-	root := state.Root{Shell: state.DefaultShell()}
-	binding := state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true)
-	root.TerminalViews = root.TerminalViews.BindPane(binding)
-
-	panel := NewRenderVMBuilder().Build(root).Shell.Layout.Panels[0]
-	if !panel.Chrome.Terminal.CanLockSize || panel.Chrome.Terminal.TakeOwner {
-		t.Fatalf("plain pane resize owner should expose size-lock action without take-owner, got %#v", panel.Chrome.Terminal)
-	}
-	if panel.Chrome.Terminal.Owner.Text != "◆ owner?" {
-		t.Fatalf("plain local owner without core projection should keep pending owner marker, got %#v", panel.Chrome.Terminal)
-	}
-}
-
 func TestRenderVMBuilderKeepsLockedOwnerChromeAsOwner(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
 	binding := state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", false)

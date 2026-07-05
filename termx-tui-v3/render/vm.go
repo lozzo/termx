@@ -1022,14 +1022,13 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 	ownerText := "◇ follow"
 	ownerStyle := StyleMuted
 	projectedOwner := binding.HasProjectedResizeOwner()
-	sizeLockOwner := binding.HasResizeOwner()
 	if root.Shell.ReadonlyDefaults().OwnerConfirm.ViewID == binding.ViewID {
 		ownerText = "◆ owner?"
 		ownerStyle = StyleWarning
 	} else if projectedOwner {
 		ownerText = "◆ owner"
 		ownerStyle = StyleSuccess
-	} else if sizeLockOwner {
+	} else if binding.HasResizeOwner() {
 		ownerText = "◆ owner?"
 		ownerStyle = StyleWarning
 	}
@@ -1046,8 +1045,8 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 		State:        terminalChromeStateSlot(root, binding.TerminalID, active, content),
 		AttachCount:  terminalChromeAttachCount(root, binding.TerminalID),
 		Owner:        ChromeSlotVM{Text: ownerText, Style: ownerStyle},
-		TakeOwner:    !sizeLockOwner,
-		CanLockSize:  sizeLockOwner,
+		TakeOwner:    !binding.HasResizeOwner(),
+		CanLockSize:  projectedOwner,
 		ResizeRole:   role,
 		CanResize:    binding.CanResize,
 		TerminalID:   binding.TerminalID,
