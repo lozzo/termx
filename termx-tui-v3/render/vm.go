@@ -488,15 +488,12 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		)
 	case string(state.OverlayTerminalPool):
 		return footerActionSpecs(
-			footerActionSpec("type", "SEARCH", "", StyleStatusAccent),
-			footerActionSpec("⌫", "DELETE", "", StyleStatusMuted),
-			footerActionSpec("↑↓", "SELECT", "", StyleStatusAccent),
 			footerActionFor(ActionPoolAttach),
-			footerActionFor(ActionPoolAttachTab),
-			footerActionFor(ActionPoolAttachFloat),
-			footerActionFor(ActionPoolEdit),
-			footerActionFor(ActionPoolKill),
-			footerActionFor(ActionPoolDelete),
+			footerActionWithKey(ActionPoolAttachTab, "Ctrl+T", "TAB"),
+			footerActionWithKey(ActionPoolAttachFloat, "Ctrl+O", "FLOAT"),
+			footerActionWithKey(ActionPoolEdit, "Ctrl+E", "RENAME"),
+			footerActionWithKey(ActionPoolKill, "Ctrl+K", "KILL"),
+			footerActionWithKey(ActionPoolDelete, "Ctrl+X", "REMOVE"),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case string(state.OverlayWorkbenchTree):
