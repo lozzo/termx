@@ -1243,13 +1243,18 @@ func TestFrameworkRendersCopyHistoryOverflowMarkersOnPaneChrome(t *testing.T) {
 		t.Fatalf("copy history overflow should be exposed through panel layer, got %#v", layer.ContentOverflow)
 	}
 	lines := result.Lines()
-	if got := SliceCells(lines[6], 15, 16); got != ">" {
-		t.Fatalf("right overflow marker should be drawn on pane bottom-right corner, got %q frame=%#v", got, lines)
+	rightRow := layer.Rect.Y + layer.Rect.H - 2
+	rightCol := layer.Rect.X + layer.Rect.W - 1
+	if got := SliceCells(lines[rightRow], rightCol, rightCol+1); got != ">" {
+		t.Fatalf("right overflow marker should be drawn on pane right edge, got %q frame=%#v", got, lines)
 	}
-	if got := SliceCells(lines[6], 16, 17); got != "v" {
-		t.Fatalf("bottom overflow marker should be drawn on pane bottom-right corner, got %q frame=%#v", got, lines)
+	bottomRow := layer.Rect.Y + layer.Rect.H - 1
+	bottomCol := layer.Rect.X + layer.Rect.W - 2
+	if got := SliceCells(lines[bottomRow], bottomCol, bottomCol+1); got != "v" {
+		t.Fatalf("bottom overflow marker should be drawn on pane bottom edge, got %q frame=%#v", got, lines)
 	}
-	if got := SliceCells(lines[6], 17, 18); got != "┘" {
+	cornerCol := layer.Rect.X + layer.Rect.W - 1
+	if got := SliceCells(lines[bottomRow], cornerCol, cornerCol+1); got != "┘" {
 		t.Fatalf("overflow marker should keep pane bottom-right corner, got %q frame=%#v", got, lines)
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), ">") ||

@@ -209,6 +209,15 @@ tui:
     # owner: "owner"
     # owner_pending: "owner?"
     # take_owner: "follow"
+    # overflow_left/right/top/bottom 控制内容裁切提示在四边 chrome 上的 glyph。
+    # overflow_style、extent_placeholder_style 可写内置 style token 或 #RRGGBB。
+    # overflow_left: "‹"
+    # overflow_right: "›"
+    # overflow_top: "˄"
+    # overflow_bottom: "˅"
+    # overflow_style: "#c7c7c7"
+    # extent_placeholder: "·"
+    # extent_placeholder_style: "#a8a8a8"
     pane_glyphs:
       zoom: ""
       split_vertical: ""

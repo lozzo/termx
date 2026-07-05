@@ -380,8 +380,8 @@ func TestFrameworkRendersLiveExtentBoundaryDotsWithChromeOverflowMarker(t *testi
 		t.Fatalf("terminal live resize extent mismatch should expose chrome overflow, got %#v", layer.ContentOverflow)
 	}
 	lines := result.Lines()
-	if got := SliceCells(lines[7], 14, 15); got != ">" {
-		t.Fatalf("right overflow marker should be drawn on pane bottom-right corner, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[6], 15, 16); got != ">" {
+		t.Fatalf("right overflow marker should be drawn on pane right edge, got %q frame=%#v", got, lines)
 	}
 	if got := SliceCells(lines[7], 15, 16); got != "┘" {
 		t.Fatalf("right overflow marker should keep pane corner, got %q frame=%#v", got, lines)
@@ -450,12 +450,78 @@ func TestFrameworkRendersTerminalLiveLeftTopOverflowOnPaneChrome(t *testing.T) {
 	if got := SliceCells(lines[0], 0, 1); got != "┌" {
 		t.Fatalf("left/top overflow marker should keep pane corner, got %q frame=%#v", got, lines)
 	}
-	if got := SliceCells(lines[0], 1, 3); got != "<^" {
-		t.Fatalf("left/top overflow marker should be drawn on pane top-left corner, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[0], 1, 2); got != "^" {
+		t.Fatalf("top overflow marker should be drawn before pane title/lock area, got %q frame=%#v", got, lines)
+	}
+	if got := SliceCells(lines[1], 0, 1); got != "<" {
+		t.Fatalf("left overflow marker should be drawn on pane left edge, got %q frame=%#v", got, lines)
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "<") ||
 		strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "^") {
 		t.Fatalf("left/top overflow markers must stay out of content layer, got %#v", layer.Lines)
+	}
+}
+
+func TestFrameworkRendersConfiguredOverflowMarkersAndExtentDots(t *testing.T) {
+	ResetPaneChromeGlyphs()
+	t.Cleanup(ResetPaneChromeGlyphs)
+	SetPaneChromeGlyphs(PaneChromeGlyphs{
+		OverflowLeft:              "‹",
+		OverflowLeftSet:           true,
+		OverflowRight:             "›",
+		OverflowRightSet:          true,
+		OverflowTop:               "˄",
+		OverflowTopSet:            true,
+		OverflowBottom:            "˅",
+		OverflowBottomSet:         true,
+		OverflowStyle:             "#c7c7c7",
+		OverflowStyleSet:          true,
+		ExtentPlaceholder:         "•",
+		ExtentPlaceholderSet:      true,
+		ExtentPlaceholderStyle:    "#a8a8a8",
+		ExtentPlaceholderStyleSet: true,
+	})
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 16, H: 8}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "pane",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content: ContentVM{
+				Kind:   ContentTerminalLive,
+				Lines:  []Line{NewLine("abcdefghijklmn"), NewLine("opqrstuvwxyz")},
+				Extent: ContentExtent{Known: true, Cols: 8, Rows: 8},
+				Layout: ContentLayoutVM{Known: true, PanX: 1, PanY: 1},
+			},
+		}}},
+	}})
+
+	layer := firstLayer(t, result, LayerPanel)
+	if layer.ContentOverflow != (ContentOverflow{Left: true, Right: true, Top: true, Bottom: true}) {
+		t.Fatalf("configured marker case should expose all overflow directions, got %#v", layer.ContentOverflow)
+	}
+	lines := result.Lines()
+	if got := SliceCells(lines[0], 1, 2); got != "˄" {
+		t.Fatalf("configured top marker not rendered at top edge, got %q frame=%#v", got, lines)
+	}
+	if got := SliceCells(lines[1], 0, 1); got != "‹" {
+		t.Fatalf("configured left marker not rendered at left edge, got %q frame=%#v", got, lines)
+	}
+	if got := SliceCells(lines[6], 15, 16); got != "›" {
+		t.Fatalf("configured right marker not rendered at right edge, got %q frame=%#v", got, lines)
+	}
+	if got := SliceCells(lines[7], 14, 15); got != "˅" {
+		t.Fatalf("configured bottom marker not rendered at bottom edge, got %q frame=%#v", got, lines)
+	}
+	if !strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "•") {
+		t.Fatalf("configured extent placeholder should be used in content projection, got %#v", layer.Lines)
+	}
+	ansi := strings.Join(result.ANSILines(), "\n")
+	if !strings.Contains(ansi, "\x1b[38;2;199;199;199m") {
+		t.Fatalf("configured overflow marker color should be rendered as ANSI, got %#v", result.ANSILines())
+	}
+	if !strings.Contains(ansi, "\x1b[38;2;168;168;168m") {
+		t.Fatalf("configured extent placeholder color should be rendered as ANSI, got %#v", result.ANSILines())
 	}
 }
 
@@ -557,7 +623,7 @@ func TestContentViewportKeepsEmojiBeforeExtentDots(t *testing.T) {
 		t.Fatalf("live viewport should keep extent dots after emoji, got %q", got)
 	}
 	ansi := result.Lines[0].ANSIString(DefaultTheme())
-	if !strings.Contains(ansi, "x🚀\x1b[4G·") {
+	if !strings.Contains(ansi, "x🚀\x1b[4G") || !strings.Contains(ansi, "·") {
 		t.Fatalf("live viewport should place dots at the model cell boundary, got %q", ansi)
 	}
 }
@@ -582,13 +648,18 @@ func TestFrameworkRendersTerminalLiveOverflowFromBuilder(t *testing.T) {
 		t.Fatalf("terminal live extent mismatch should expose chrome overflow, got %#v", layer.ContentOverflow)
 	}
 	lines := result.Lines()
-	if got := SliceCells(lines[6], 15, 16); got != ">" {
-		t.Fatalf("right overflow marker should be drawn on pane bottom-right corner, got %q frame=%#v", got, lines)
+	rightRow := layer.Rect.Y + layer.Rect.H - 2
+	rightCol := layer.Rect.X + layer.Rect.W - 1
+	if got := SliceCells(lines[rightRow], rightCol, rightCol+1); got != ">" {
+		t.Fatalf("right overflow marker should be drawn on pane right edge, got %q frame=%#v", got, lines)
 	}
-	if got := SliceCells(lines[6], 16, 17); got != "v" {
-		t.Fatalf("bottom overflow marker should be drawn on pane bottom-right corner, got %q frame=%#v", got, lines)
+	bottomRow := layer.Rect.Y + layer.Rect.H - 1
+	bottomCol := layer.Rect.X + layer.Rect.W - 2
+	if got := SliceCells(lines[bottomRow], bottomCol, bottomCol+1); got != "v" {
+		t.Fatalf("bottom overflow marker should be drawn on pane bottom edge, got %q frame=%#v", got, lines)
 	}
-	if got := SliceCells(lines[6], 17, 18); got != "┘" {
+	cornerCol := layer.Rect.X + layer.Rect.W - 1
+	if got := SliceCells(lines[bottomRow], cornerCol, cornerCol+1); got != "┘" {
 		t.Fatalf("overflow marker should keep pane bottom-right corner, got %q frame=%#v", got, lines)
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), ">") ||

@@ -464,7 +464,7 @@ func contentViewportBlankCell() Cell {
 
 func contentViewportOutsideExtentCell(markOutsideExtent bool) Cell {
 	if markOutsideExtent {
-		return Cell{Text: "·", Width: 1, Safe: true}
+		return Cell{Text: contentViewportOutsideExtentGlyph(), Width: 1, Style: paneChromeExtentPlaceholderStyle(), Safe: true}
 	}
 	return contentViewportBlankCell()
 }
@@ -476,7 +476,22 @@ func contentViewportOutsideExtentRun(width int, markOutsideExtent bool) Cell {
 	if !markOutsideExtent {
 		return contentViewportBlankRun(width)
 	}
-	return Cell{Text: strings.Repeat("·", width), Width: width, Safe: true}
+	glyph := contentViewportOutsideExtentGlyph()
+	if glyph == " " {
+		return contentViewportBlankRun(width)
+	}
+	return Cell{Text: strings.Repeat(glyph, width), Width: width, Style: paneChromeExtentPlaceholderStyle(), Safe: true}
+}
+
+func contentViewportOutsideExtentGlyph() string {
+	glyph := paneChromeExtentPlaceholderGlyph()
+	if glyph == "" {
+		return " "
+	}
+	if DisplayWidth(glyph) != 1 {
+		return "·"
+	}
+	return glyph
 }
 
 func contentViewportOutsideExtentLine(width int, markOutsideExtent bool) Line {

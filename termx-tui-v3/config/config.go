@@ -377,18 +377,46 @@ var scalarSetters = map[string]scalarSetter{
 		cfg.Chrome.PaneGlyphs.TakeOwner = value
 		cfg.Chrome.PaneGlyphs.TakeOwnerSet = true
 	}),
-	"tui.chrome.pane_glyphs.zoom":                      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Zoom = value }),
-	"tui.chrome.pane_glyphs.split_vertical":            setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SplitVertical = value }),
-	"tui.chrome.pane_glyphs.split_horizontal":          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SplitHorizontal = value }),
-	"tui.chrome.pane_glyphs.close":                     setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Close = value }),
-	"tui.chrome.pane_glyphs.size_lock":                 setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SizeLock = value }),
-	"tui.chrome.pane_glyphs.size_unlock":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SizeUnlock = value }),
-	"tui.chrome.pane_glyphs.center_floating":           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.CenterFloating = value }),
-	"tui.chrome.pane_glyphs.collapse_floating":         setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.CollapseFloating = value }),
-	"tui.chrome.pane_glyphs.running":                   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Running = value }),
-	"tui.chrome.pane_glyphs.waiting":                   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Waiting = value }),
-	"tui.chrome.pane_glyphs.exited":                    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Exited = value }),
-	"tui.chrome.pane_glyphs.killed":                    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Killed = value }),
+	"tui.chrome.pane_glyphs.zoom":              setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Zoom = value }),
+	"tui.chrome.pane_glyphs.split_vertical":    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SplitVertical = value }),
+	"tui.chrome.pane_glyphs.split_horizontal":  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SplitHorizontal = value }),
+	"tui.chrome.pane_glyphs.close":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Close = value }),
+	"tui.chrome.pane_glyphs.size_lock":         setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SizeLock = value }),
+	"tui.chrome.pane_glyphs.size_unlock":       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SizeUnlock = value }),
+	"tui.chrome.pane_glyphs.center_floating":   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.CenterFloating = value }),
+	"tui.chrome.pane_glyphs.collapse_floating": setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.CollapseFloating = value }),
+	"tui.chrome.pane_glyphs.running":           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Running = value }),
+	"tui.chrome.pane_glyphs.waiting":           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Waiting = value }),
+	"tui.chrome.pane_glyphs.exited":            setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Exited = value }),
+	"tui.chrome.pane_glyphs.killed":            setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Killed = value }),
+	"tui.chrome.pane_glyphs.overflow_left": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.OverflowLeft = value
+		cfg.Chrome.PaneGlyphs.OverflowLeftSet = true
+	}),
+	"tui.chrome.pane_glyphs.overflow_right": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.OverflowRight = value
+		cfg.Chrome.PaneGlyphs.OverflowRightSet = true
+	}),
+	"tui.chrome.pane_glyphs.overflow_top": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.OverflowTop = value
+		cfg.Chrome.PaneGlyphs.OverflowTopSet = true
+	}),
+	"tui.chrome.pane_glyphs.overflow_bottom": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.OverflowBottom = value
+		cfg.Chrome.PaneGlyphs.OverflowBottomSet = true
+	}),
+	"tui.chrome.pane_glyphs.overflow_style": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.OverflowStyle = value
+		cfg.Chrome.PaneGlyphs.OverflowStyleSet = true
+	}),
+	"tui.chrome.pane_glyphs.extent_placeholder": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.ExtentPlaceholder = value
+		cfg.Chrome.PaneGlyphs.ExtentPlaceholderSet = true
+	}),
+	"tui.chrome.pane_glyphs.extent_placeholder_style": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneGlyphs.ExtentPlaceholderStyle = value
+		cfg.Chrome.PaneGlyphs.ExtentPlaceholderStyleSet = true
+	}),
 	"tui.footer.templates.mode_badge":                  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.ModeBadge = value }),
 	"tui.footer.templates.key":                         setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.Key = value }),
 	"tui.footer.templates.action":                      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.Action = value }),

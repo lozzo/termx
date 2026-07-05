@@ -201,6 +201,17 @@ tui:
       waiting: ""
       exited: ""
       killed: ""
+      # overflow_* 控制内容被裁切时四边 chrome 上的提示 glyph。
+      # overflow_style 可写内置 style token（如 muted/accent）或 #RRGGBB。
+      overflow_left: "‹"
+      overflow_right: "›"
+      overflow_top: "˄"
+      overflow_bottom: "˅"
+      overflow_style: "#c7c7c7"
+      # extent_placeholder 控制 live terminal 尺寸小于 pane 时外部区域的占位点。
+      # glyph 必须是单 cell；style 同样支持 style token 或 #RRGGBB。
+      extent_placeholder: "·"
+      extent_placeholder_style: "#a8a8a8"
 
   footer:
     # templates 控制 footer 的轻量文本模板。

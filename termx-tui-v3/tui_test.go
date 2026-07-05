@@ -307,13 +307,11 @@ func isPaneBorderGlyph(value string) bool {
 }
 
 func isLeftPaneBorderOrOverflowGlyph(row int, left string) bool {
-	return isPaneBorderGlyph(left)
+	return isPaneBorderGlyph(left) || left == render.DefaultPaneChromeGlyphs().OverflowLeft
 }
 
 func isRightPaneBorderOrOverflowGlyph(row int, lineCount int, previousRight string, right string) bool {
-	// overflow.Right/Bottom 角标贴着右下角内侧，最右角本身仍应保留边框。
-	bottomRow := lineCount - 2
-	return isPaneBorderGlyph(right) || (row == bottomRow && previousRight == "v" && right == "┘")
+	return isPaneBorderGlyph(right) || right == render.DefaultPaneChromeGlyphs().OverflowRight
 }
 
 func frameContains(lines []string, value string) bool {

@@ -209,6 +209,7 @@ tui:
 | `chrome.panel_presentation` | `split-line` | layout VM | `split-line` 和 `card` 只改变视觉布局，不改变 pane id、terminal binding 或 copy mode 绑定。 |
 | `chrome.tab_create_icon` | `󰐕` | header renderer | tab create 按钮图标。必须按 cell width 校验，不能挤压 tab hit region。 |
 | `chrome.tab_template` | `""` | header renderer | header tab 的 Go `text/template` 格式；span/action 标签只影响渲染和 hit region，不改变 tab truth。 |
+| `chrome.pane_glyphs.overflow_*` / `extent_placeholder*` | 内置 glyph / muted | pane chrome renderer | 内容裁切 marker 和 live extent 占位点。字段只改变展示 glyph/style；是否裁切仍由 content viewport 计算。style 支持内置 token 或 `#RRGGBB`。 |
 | `footer.templates.*` | 见 schema | footer renderer | footer mode badge、action 装饰、分隔符和 keylock 文案模板；当前只做占位符替换，不执行脚本。 |
 | `footer.modes.*` | 内置 catalog | RenderVM builder | 控制某个 footer mode 的 badge 和 action 顺序；`actions` 是逗号分隔 alias/action id，不是 YAML list。 |
 | `footer.actions.*` | 内置 `ActionSpecCatalog` | RenderVM builder | 覆盖 footer action 的 id、key、icon、label、style；id 为空时只展示，不产生 click hit region。 |

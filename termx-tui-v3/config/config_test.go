@@ -80,6 +80,13 @@ tui:
       running: "●"
       waiting: "○"
       exited: "×"
+      overflow_left: "‹"
+      overflow_right: "›"
+      overflow_top: "˄"
+      overflow_bottom: "˅"
+      overflow_style: "#c7c7c7"
+      extent_placeholder: "·"
+      extent_placeholder_style: "#a8a8a8"
   footer:
     templates:
       mode_badge: "{{mode_icon}} {{mode_label}}"
@@ -149,7 +156,21 @@ tui:
 		cfg.Chrome.PaneGlyphs.SplitHorizontal != "▭" ||
 		cfg.Chrome.PaneGlyphs.Close != "⤫" ||
 		cfg.Chrome.PaneGlyphs.SizeLock != "🔒" ||
-		cfg.Chrome.PaneGlyphs.Running != "●" {
+		cfg.Chrome.PaneGlyphs.Running != "●" ||
+		!cfg.Chrome.PaneGlyphs.OverflowLeftSet ||
+		cfg.Chrome.PaneGlyphs.OverflowLeft != "‹" ||
+		!cfg.Chrome.PaneGlyphs.OverflowRightSet ||
+		cfg.Chrome.PaneGlyphs.OverflowRight != "›" ||
+		!cfg.Chrome.PaneGlyphs.OverflowTopSet ||
+		cfg.Chrome.PaneGlyphs.OverflowTop != "˄" ||
+		!cfg.Chrome.PaneGlyphs.OverflowBottomSet ||
+		cfg.Chrome.PaneGlyphs.OverflowBottom != "˅" ||
+		!cfg.Chrome.PaneGlyphs.OverflowStyleSet ||
+		cfg.Chrome.PaneGlyphs.OverflowStyle != "#c7c7c7" ||
+		!cfg.Chrome.PaneGlyphs.ExtentPlaceholderSet ||
+		cfg.Chrome.PaneGlyphs.ExtentPlaceholder != "·" ||
+		!cfg.Chrome.PaneGlyphs.ExtentPlaceholderStyleSet ||
+		cfg.Chrome.PaneGlyphs.ExtentPlaceholderStyle != "#a8a8a8" {
 		t.Fatalf("pane chrome glyph overrides not applied: %#v", cfg.Chrome.PaneGlyphs)
 	}
 	if cfg.Footer.Templates.Separator != " · " ||

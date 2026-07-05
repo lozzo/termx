@@ -511,6 +511,9 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 	case StyleToastAccent:
 		return sgrForegroundBackground(theme.Accent, theme.ToastBG, true)
 	default:
+		if _, _, _, ok := parseHexColor(string(token)); ok {
+			return sgrForeground(string(token), false)
+		}
 		return "\x1b[1m"
 	}
 }

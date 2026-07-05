@@ -35,31 +35,55 @@ type PaneChromeGlyphs struct {
 	Waiting             string
 	Exited              string
 	Killed              string
+	// OverflowLeft/Right/Top/Bottom 是内容裁切提示的展示 glyph；裁切 truth 仍来自 ContentOverflow。
+	OverflowLeft      string
+	OverflowLeftSet   bool
+	OverflowRight     string
+	OverflowRightSet  bool
+	OverflowTop       string
+	OverflowTopSet    bool
+	OverflowBottom    string
+	OverflowBottomSet bool
+	// OverflowStyle 只控制裁切提示颜色/样式，不参与内容窗口或 resize owner 判定。
+	OverflowStyle    string
+	OverflowStyleSet bool
+	// ExtentPlaceholder 是 live surface 尺寸小于 pane 时用于占位的单元 glyph。
+	ExtentPlaceholder         string
+	ExtentPlaceholderSet      bool
+	ExtentPlaceholderStyle    string
+	ExtentPlaceholderStyleSet bool
 }
 
 var defaultPaneChromeGlyphs = PaneChromeGlyphs{
-	ActionLeft:       "[",
-	ActionRight:      "]",
-	ActionSeparator:  "─",
-	ActionGroupLeft:  "",
-	ActionGroupRight: "",
-	OwnerLeft:        "",
-	OwnerRight:       "",
-	Owner:            "◆ owner",
-	OwnerPending:     "◆ owner?",
-	TakeOwner:        "◇ follow",
-	Zoom:             "",
-	SplitVertical:    "",
-	SplitHorizontal:  "",
-	Close:            "",
-	SizeLock:         "󰌾",
-	SizeUnlock:       "󰍀",
-	CenterFloating:   "",
-	CollapseFloating: "",
-	Running:          "",
-	Waiting:          "○",
-	Exited:           "×",
-	Killed:           "×",
+	ActionLeft:        "[",
+	ActionRight:       "]",
+	ActionSeparator:   "─",
+	ActionGroupLeft:   "",
+	ActionGroupRight:  "",
+	OwnerLeft:         "",
+	OwnerRight:        "",
+	Owner:             "◆ owner",
+	OwnerPending:      "◆ owner?",
+	TakeOwner:         "◇ follow",
+	Zoom:              "",
+	SplitVertical:     "",
+	SplitHorizontal:   "",
+	Close:             "",
+	SizeLock:          "󰌾",
+	SizeUnlock:        "󰍀",
+	CenterFloating:    "",
+	CollapseFloating:  "",
+	Running:           "",
+	Waiting:           "○",
+	Exited:            "×",
+	Killed:            "×",
+	OverflowLeft:      "<",
+	OverflowRight:     ">",
+	OverflowTop:       "^",
+	OverflowBottom:    "v",
+	ExtentPlaceholder: "·",
+	// 默认把 live extent 占位点降为 muted，避免它被误读成 terminal 正文。
+	ExtentPlaceholderStyle: string(StyleMuted),
 }
 
 var paneChromeGlyphs = defaultPaneChromeGlyphs
@@ -135,6 +159,34 @@ func SetPaneChromeGlyphs(glyphs PaneChromeGlyphs) {
 	}
 	if glyphs.Killed != "" {
 		next.Killed = glyphs.Killed
+	}
+	if glyphs.OverflowLeftSet {
+		next.OverflowLeft = glyphs.OverflowLeft
+		next.OverflowLeftSet = true
+	}
+	if glyphs.OverflowRightSet {
+		next.OverflowRight = glyphs.OverflowRight
+		next.OverflowRightSet = true
+	}
+	if glyphs.OverflowTopSet {
+		next.OverflowTop = glyphs.OverflowTop
+		next.OverflowTopSet = true
+	}
+	if glyphs.OverflowBottomSet {
+		next.OverflowBottom = glyphs.OverflowBottom
+		next.OverflowBottomSet = true
+	}
+	if glyphs.OverflowStyleSet {
+		next.OverflowStyle = glyphs.OverflowStyle
+		next.OverflowStyleSet = true
+	}
+	if glyphs.ExtentPlaceholderSet {
+		next.ExtentPlaceholder = glyphs.ExtentPlaceholder
+		next.ExtentPlaceholderSet = true
+	}
+	if glyphs.ExtentPlaceholderStyleSet {
+		next.ExtentPlaceholderStyle = glyphs.ExtentPlaceholderStyle
+		next.ExtentPlaceholderStyleSet = true
 	}
 	paneChromeGlyphs = next
 }
@@ -225,4 +277,35 @@ func paneChromeOwnerPendingText() string {
 
 func paneChromeTakeOwnerText() string {
 	return paneChromeGlyphs.TakeOwner
+}
+
+func paneChromeOverflowLeftGlyph() string {
+	return paneChromeGlyphs.OverflowLeft
+}
+
+func paneChromeOverflowRightGlyph() string {
+	return paneChromeGlyphs.OverflowRight
+}
+
+func paneChromeOverflowTopGlyph() string {
+	return paneChromeGlyphs.OverflowTop
+}
+
+func paneChromeOverflowBottomGlyph() string {
+	return paneChromeGlyphs.OverflowBottom
+}
+
+func paneChromeOverflowStyle(fallback StyleToken) StyleToken {
+	if paneChromeGlyphs.OverflowStyleSet {
+		return StyleToken(paneChromeGlyphs.OverflowStyle)
+	}
+	return fallback
+}
+
+func paneChromeExtentPlaceholderGlyph() string {
+	return paneChromeGlyphs.ExtentPlaceholder
+}
+
+func paneChromeExtentPlaceholderStyle() StyleToken {
+	return StyleToken(paneChromeGlyphs.ExtentPlaceholderStyle)
 }

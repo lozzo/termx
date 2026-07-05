@@ -87,6 +87,23 @@ type TUIPaneChromeGlyphsConfig struct {
 	Waiting             string
 	Exited              string
 	Killed              string
+	// Overflow* 只配置内容裁切提示 glyph；是否裁切仍由 renderer ContentOverflow 计算。
+	OverflowLeft      string
+	OverflowLeftSet   bool
+	OverflowRight     string
+	OverflowRightSet  bool
+	OverflowTop       string
+	OverflowTopSet    bool
+	OverflowBottom    string
+	OverflowBottomSet bool
+	// OverflowStyle 可写内置 style token 或 #RRGGBB，作用域只限 pane/floating chrome marker。
+	OverflowStyle    string
+	OverflowStyleSet bool
+	// ExtentPlaceholder* 配置 live surface 尺寸差异区域的占位点展示，不改变 terminal 内容。
+	ExtentPlaceholder         string
+	ExtentPlaceholderSet      bool
+	ExtentPlaceholderStyle    string
+	ExtentPlaceholderStyleSet bool
 }
 
 // TUIFooterConfig 描述 footer 的用户可配置展示层。
