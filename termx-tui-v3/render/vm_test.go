@@ -701,6 +701,16 @@ func TestRenderVMBuilderProjectsTerminalResizeOwnerChrome(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderDoesNotShowOwnerConfirmForLocalOwnerIntent(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+
+	panel := NewRenderVMBuilder().Build(root).Shell.Layout.Panels[0]
+	if panel.Chrome.Terminal.Owner.Text != "◆ owner" || panel.Chrome.Terminal.Owner.Style != StyleSuccess || panel.Chrome.Terminal.TakeOwner {
+		t.Fatalf("local owner intent should not render as owner confirmation, got %#v", panel.Chrome.Terminal)
+	}
+}
+
 func TestRenderVMBuilderSeparatesTerminalSizeLockFromViewLayoutLock(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
 	binding := state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true)

@@ -1029,8 +1029,10 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 		ownerText = "◆ owner"
 		ownerStyle = StyleSuccess
 	} else if binding.HasResizeOwner() {
-		ownerText = "◆ owner?"
-		ownerStyle = StyleWarning
+		// 中文说明：owner? 只属于鼠标首击后的 UI 确认态；attach/restore 阶段的本地 owner intent
+		// 不能默认展示成中间确认态，否则用户会误以为自己触发了 take-owner。
+		ownerText = "◆ owner"
+		ownerStyle = StyleSuccess
 	}
 	title := terminalChromeTitle(root, pane, binding.TerminalID)
 	layout := binding.Layout.Normalize()
