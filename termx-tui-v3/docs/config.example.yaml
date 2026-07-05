@@ -1,0 +1,301 @@
+# termx-tui-v3 config example
+#
+# 建议保存为：
+#   ~/.config/termx/tui-v3.yaml
+#
+# 解析规则：
+# - 缩进必须使用两个空格。
+# - 当前配置只支持 scalar 值，不支持 YAML list。
+# - 字符串可以不加引号；包含 #、Nerd Font glyph、Go template、前后空格时建议使用双引号。
+# - 颜色字段只接受空字符串 "" 或 "#RRGGBB"。
+# - true/false 必须写成小写布尔值。
+# - 这个文件本身是可加载配置，也可以作为逐项说明使用。
+
+# version 是配置 schema 版本。
+# 当前唯一有效值：1。
+version: 1
+
+tui:
+  # profile 是当前 TUI 客户端配置档名称。
+  # 用途：给未来多 profile、诊断输出或 UI 标识使用；不表达 terminal/session 状态。
+  # 默认值：default。
+  profile: default
+
+  theme:
+    # mode 控制整体明暗偏好。
+    # 可选值：dark、light、system。
+    # system 表示跟随宿主环境；如果宿主无法提供明暗信息，渲染层会按默认主题处理。
+    # 默认值：dark。
+    mode: dark
+
+    # palette 控制基础 palette 来源。
+    # 可选值：host、builtin。
+    # host 会优先尊重宿主终端/环境；builtin 使用 TermX 内置 palette。
+    # 下面的颜色字段非空时会覆盖 palette 派生值。
+    # 默认值：host。
+    palette: host
+
+    # primary 是主要强调色，用于 active、重点 action、匹配高亮等 UI token。
+    # 留空 "" 表示使用 palette 默认值。
+    # 格式："" 或 "#RRGGBB"。
+    primary: "#a970ff"
+
+    # secondary 是次级强调色，用于辅助强调、局部状态或补充高亮。
+    # 留空 "" 表示使用 palette 默认值。
+    # 格式："" 或 "#RRGGBB"。
+    secondary: "#7ab8ff"
+
+    # foreground 是普通 chrome 文本的默认前景色。
+    # 不影响真实 terminal 内容的 SGR 颜色；terminal 内容颜色来自 core/vterm 语义。
+    # 留空 "" 表示使用 palette 默认值。
+    foreground: ""
+
+    # background 是普通 chrome 背景的默认颜色。
+    # 留空 "" 表示使用 palette 默认值。
+    background: ""
+
+    # muted 是弱化文本颜色，用于说明性状态、非活跃 label、低优先级 metadata。
+    # 留空 "" 表示使用 palette 默认值。
+    muted: ""
+
+    # success 是成功状态颜色。
+    # 留空 "" 表示使用 palette 默认值。
+    success: ""
+
+    # warning 是警告状态颜色。
+    # 留空 "" 表示使用 palette 默认值。
+    warning: ""
+
+    # danger 是危险/破坏性操作颜色，例如 close/delete 类 action。
+    # 留空 "" 表示使用 palette 默认值。
+    danger: ""
+
+    # info 是信息状态颜色。
+    # 留空 "" 表示使用 palette 默认值。
+    info: ""
+
+    border:
+      # panel 是 pane 分隔线或普通边框颜色。
+      # 留空 "" 表示使用 palette 默认值。
+      panel: ""
+
+      # active 是 active pane/tab/workspace 相关边框颜色。
+      # 留空 "" 表示使用 palette 默认值。
+      active: ""
+
+      # inactive 是非活跃 pane 边框颜色。
+      # 留空 "" 表示使用 palette 默认值。
+      inactive: ""
+
+      # muted 是弱化边框颜色，用于低优先级或 disabled-like chrome。
+      # 留空 "" 表示使用 palette 默认值。
+      muted: ""
+
+    surface:
+      # chrome_bg 是 header/footer/pane chrome 的背景色。
+      # 留空 "" 表示使用 palette 默认值。
+      chrome_bg: ""
+
+      # status_bg 是状态条、footer action 区域的背景色。
+      # 留空 "" 表示使用 palette 默认值。
+      status_bg: ""
+
+      # overlay_bg 是 overlay/picker/prompt 类浮层背景色。
+      # 留空 "" 表示使用 palette 默认值。
+      overlay_bg: ""
+
+      # toast_bg 是 toast/notice 类临时提示背景色。
+      # 留空 "" 表示使用 palette 默认值。
+      toast_bg: ""
+
+  chrome:
+    # header 控制顶部 header 是否显示。
+    # true：显示 workspace、tab strip、notice 等顶部 chrome。
+    # false：隐藏 header；不改变 workspace/tab/pane 的实际状态。
+    # 默认值：true。
+    header: true
+
+    # footer 控制底部 footer 是否显示。
+    # true：显示 shortcut/action/status footer。
+    # false：隐藏 footer；不改变 keymap 或 action dispatch。
+    # 默认值：true。
+    footer: true
+
+    # panel_presentation 控制 pane chrome 呈现方式。
+    # 可选值：
+    # - split-line：更紧凑，pane 之间主要使用分隔线。
+    # - card：每个 pane 有更完整的边框。
+    # 这个值只影响渲染，不改变 pane id、terminal binding、active pane 或 copy mode 归属。
+    # 默认值：split-line。
+    panel_presentation: split-line
+
+    # tab_create_icon 是 tab strip 上创建新 tab 的按钮内容。
+    # 建议使用 Nerd Font glyph；如果宿主字体不支持，可以改成 "+"。
+    # 这个按钮的 action 仍是固定的 tab.create；这里只配置显示内容。
+    # 默认值："󰐕"。
+    tab_create_icon: "󰐕"
+
+    # tab_template 控制 header tab 的完整格式。
+    # 默认值：""，表示使用内置格式；内置格式保证 active/inactive 宽度一致。
+    #
+    # 表达式引擎：
+    # - 使用 Go 标准库 text/template，不维护自定义 if 表达式语言。
+    # - 可用变量/函数：tab_id、id、index、tab_index、title、active、not_active、marker、close_icon。
+    # - 条件示例：{{if active}}▎{{else}}|{{end}}。
+    # - 宽度裁切：{{title | truncate 14}}，按 terminal cell 宽度裁切。
+    # - span helper：{{fg "#ffffff"}}、{{bg "#332244"}}、{{style "header-active-title"}}、
+    #   {{action "tab.close"}}、{{end_style}}、{{end_action}}。
+    # - 也可以使用 struct 字段：{{.TabID}}、{{.Index}}、{{.Title}}、{{.Active}}。
+    #
+    # TermX span 语法：
+    # - span 在 text/template 执行后解析；动态 title 里的 [action:...] 只会作为文字显示。
+    # - [fg:#RRGGBB] 设置后续片段前景色；[bg:#RRGGBB] 设置背景色。
+    # - [fg:#RRGGBB;bg:#RRGGBB;font:bold] 可以组合多个样式。
+    # - font 支持 bold、italic、underline、strike；也可写成 [bold]、[italic]、[underline]。
+    # - [style:header-active-title] 切换到内置 style token。
+    # - [/style] 或 [reset] 恢复当前 tab 的默认样式。
+    # - [action:tab.close]...[/action] 把片段绑定到关闭当前 tab。
+    # - 未显式标注 action 的片段默认绑定 tab.switch，点击会跳转到该 tab。
+    #
+    # 常用内置 style token：
+    # - header-active-marker、header-active-index、header-active-title、header-active-close
+    # - header-inactive-index、header-inactive-title、header-inactive-close
+    # - header-create、status、status-muted、status-warning、accent、muted
+    #
+    # 注意：
+    # - 这个字段必须是单行字符串。
+    # - 复杂 Powerline/Nerd Font glyph 是否等宽，取决于宿主终端字体。
+    # - 为了避免切换 active 状态时 tab 宽度跳动，active 和 inactive 分支最好输出相同 cell 宽度。
+    tab_template: "{{tab_id}}[fg:#f7f2ff;bg:#332244;font:bold] {{if active}}▎{{else}}|{{end}} {{title | truncate 14}} [action:tab.close]{{close_icon}}[/action][/style]"
+
+  interaction:
+    # mouse 控制是否启用鼠标 hit region。
+    # true：点击 header/tab/pane/overlay 等 UI 可触发 action。
+    # false：关闭鼠标交互，仅保留键盘。
+    # 默认值：true。
+    mouse: true
+
+    # sticky_prefix_timeout_ms 控制 sticky shortcut mode 的空闲退出时间。
+    # 单位：毫秒。
+    # 0 表示进入 sticky mode 后不因空闲超时退出。
+    # 默认值：3000。
+    sticky_prefix_timeout_ms: 3000
+
+    # confirm_destructive 控制危险操作是否需要确认。
+    # true：close/delete 等 destructive action 需要确认。
+    # false：直接执行，适合高度熟悉 keymap 的用户。
+    # 默认值：true。
+    confirm_destructive: true
+
+    clipboard_history:
+      # max_items 控制 TUI 本地 clipboard history 最多保留多少条。
+      # 0 表示不保留历史条目。
+      # 默认值：200。
+      max_items: 200
+
+      # name_width 控制 clipboard history picker 左侧名称列宽。
+      # 单位：terminal cell；必须大于 0。
+      # 默认值：34。
+      name_width: 34
+
+      # preview_width_ratio 控制 picker 里 preview 区占可用宽度的比例。
+      # 取值范围：大于 0 且小于 1。
+      # 默认值：0.68。
+      preview_width_ratio: 0.68
+
+    picker:
+      # fuzzy_match 控制 picker 的模糊匹配算法。
+      # 当前唯一可选值：subsequence。
+      # 默认值：subsequence。
+      fuzzy_match: subsequence
+
+      # highlight_matches 控制 picker 是否高亮匹配字符。
+      # true：高亮匹配片段。
+      # false：只过滤结果，不做字符级高亮。
+      # 默认值：true。
+      highlight_matches: true
+
+  keymap:
+    root:
+      # terminal_picker 打开 terminal picker。
+      # 默认值：ctrl-f。
+      terminal_picker: ctrl-f
+
+      # copy_mode 进入 copy/history 交互态。
+      # 默认值：ctrl-v。
+      copy_mode: ctrl-v
+
+      # tab_mode 进入 tab shortcut mode。
+      # 默认值：ctrl-t。
+      tab_mode: ctrl-t
+
+      # workspace_mode 进入 workspace shortcut mode。
+      # 默认值：ctrl-w。
+      workspace_mode: ctrl-w
+
+      # floating_mode 进入 floating window shortcut mode。
+      # 默认值：ctrl-o。
+      floating_mode: ctrl-o
+
+      # pane_mode 进入 pane shortcut mode。
+      # 默认值：ctrl-p。
+      pane_mode: ctrl-p
+
+      # resize_mode 进入 resize shortcut mode。
+      # 默认值：ctrl-r。
+      resize_mode: ctrl-r
+
+      # global_mode 进入 global shortcut mode。
+      # 默认值：ctrl-g。
+      global_mode: ctrl-g
+
+    copy:
+      # clipboard_history 在 copy mode 内打开 clipboard history。
+      # 默认值：h。
+      clipboard_history: h
+
+      # paste_latest 在 copy mode 内粘贴最近一次复制内容。
+      # 默认值：p。
+      paste_latest: p
+
+      # paste_system 在 copy mode 内粘贴系统剪贴板内容。
+      # 默认值：shift-p。
+      paste_system: shift-p
+
+    tab:
+      # create 在 tab mode 内创建新 tab。
+      # 默认值：c。
+      create: c
+
+      # close 在 tab mode 内关闭当前 tab。
+      # 默认值：x。
+      close: x
+
+      # rename 在 tab mode 内重命名当前 tab。
+      # 默认值：r。
+      rename: r
+
+      # next 在 tab mode 内切到下一个 tab。
+      # 默认值：n。
+      next: n
+
+      # previous 在 tab mode 内切到上一个 tab。
+      # 默认值：p。
+      previous: p
+
+    workspace:
+      # navigator 打开 Workbench Navigator。
+      # 默认值：w。
+      navigator: w
+
+      # create 在 workspace mode 内创建 workspace。
+      # 默认值：c。
+      create: c
+
+      # delete 在 workspace mode 内删除当前 workspace。
+      # 默认值：x。
+      delete: x
+
+      # rename 在 workspace mode 内重命名当前 workspace。
+      # 默认值：r。
+      rename: r

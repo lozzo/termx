@@ -27,6 +27,22 @@ func TestParseExampleConfigMatchesDefaults(t *testing.T) {
 	}
 }
 
+func TestParseDocumentedConfigExample(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "docs", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("read documented example config: %v", err)
+	}
+	cfg, err := Parse(data)
+	if err != nil {
+		t.Fatalf("parse documented example config: %v", err)
+	}
+	if !strings.Contains(cfg.Chrome.TabTemplate, "{{if active}}") ||
+		!strings.Contains(cfg.Chrome.TabTemplate, "font:bold") ||
+		cfg.Chrome.TabCreateIcon == "" {
+		t.Fatalf("documented example should carry text/template tab format and create icon, got %#v", cfg.Chrome)
+	}
+}
+
 func TestParseConfigOverridesScalars(t *testing.T) {
 	cfg, err := Parse([]byte(`
 version: 1
@@ -41,6 +57,8 @@ tui:
   chrome:
     header: false
     panel_presentation: card
+    tab_create_icon: "+"
+    tab_template: "{{tab_id}} {{if active}}▎{{else}}|{{end}} {{title | truncate 8}} [action:tab.close]{{close_icon}}[/action]"
   interaction:
     sticky_prefix_timeout_ms: 5000
     clipboard_history:
@@ -56,7 +74,7 @@ tui:
 	if cfg.Profile != "work" || cfg.Theme.Palette != "builtin" || cfg.Theme.Primary != "#d65cff" || cfg.Theme.Secondary != "#66e3ff" {
 		t.Fatalf("theme/profile overrides not applied: %#v", cfg)
 	}
-	if cfg.Theme.Border.Active != "#ff00aa" || cfg.Chrome.Header || cfg.Chrome.PanelPresentation != "card" {
+	if cfg.Theme.Border.Active != "#ff00aa" || cfg.Chrome.Header || cfg.Chrome.PanelPresentation != "card" || cfg.Chrome.TabCreateIcon != "+" || !strings.Contains(cfg.Chrome.TabTemplate, "{{tab_id}}") {
 		t.Fatalf("chrome/border overrides not applied: %#v", cfg)
 	}
 	if cfg.Interaction.StickyPrefixTimeoutMS != 5000 || cfg.Interaction.ClipboardHistory.MaxItems != 500 || cfg.Interaction.ClipboardHistory.PreviewWidthRatio != 0.72 {

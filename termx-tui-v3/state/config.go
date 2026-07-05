@@ -44,6 +44,7 @@ type TUIChromeConfig struct {
 	Footer            bool
 	PanelPresentation string
 	TabCreateIcon     string
+	TabTemplate       string
 }
 
 type TUIInteractionConfig struct {

@@ -178,6 +178,20 @@ tui:
     # 示例：tab_create_icon: "+"
     tab_create_icon: "󰐕"
 
+    # tab_template 控制 header tab 的格式。
+    # 默认值：""，表示使用内置等宽 tab 槽位：active/inactive 只切换 marker 和样式，不改变宽度。
+    # 表达式语法使用 Go text/template：
+    # - {{tab_id}} / {{index}} / {{title}} / {{marker}} / {{close_icon}} 插入变量。
+    # - {{if active}}▎{{else}}|{{end}} 做 active 条件分支。
+    # - {{title | truncate 12}} 按 terminal cell 宽度裁切。
+    # - {{fg "#ffffff"}} / {{bg "#332244"}} / {{style "header-active-title"}} 可从模板生成 span。
+    # TermX span 语法在模板执行后解析：
+    # - [fg:#ffffff;bg:#332244;font:bold] 切换后续片段的显式 SGR 颜色/字形。
+    # - [style:header-active-title] 切换到内置 style token；[/style] 恢复当前 tab 默认样式。
+    # - [action:tab.close]...[/action] 把片段绑定到 close action；未标注 action 的片段默认切换 tab。
+    # 示例：tab_template: "{{tab_id}}[fg:#f7f2ff;bg:#332244;font:bold] {{if active}}▎{{else}}|{{end}} {{title | truncate 12}} [action:tab.close]{{close_icon}}[/action][/style]"
+    tab_template: ""
+
   # interaction 控制当前 TUI 客户端的交互细节。
   # 这些配置是用户偏好，不进入 workbench storage，也不表达 terminal 状态。
   interaction:

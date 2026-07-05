@@ -989,6 +989,8 @@ type HeaderVM struct {
 	Workspace       string
 	Tab             string
 	Tabs            []HeaderTabVM
+	TabTemplate     string
+	TabCreateIcon   string
 	ActivePane      string
 	TerminalSummary string
 	FloatingSummary string

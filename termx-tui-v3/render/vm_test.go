@@ -3300,6 +3300,22 @@ func TestRenderVMBuilderCarriesUserConfiguredTheme(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderCarriesUserConfiguredHeaderChrome(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Config = state.TUIConfigStore{Chrome: state.TUIChromeConfig{
+		TabCreateIcon: "+",
+		TabTemplate:   "{{tab_id}} {{if active}}▎{{else}}|{{end}} {{title | truncate 8}} [action:tab.close]{{close_icon}}[/action]",
+	}}
+	vm := NewRenderVMBuilder().Build(root)
+	if vm.Shell.Header.TabCreateIcon != "+" || !strings.Contains(vm.Shell.Header.TabTemplate, "{{tab_id}}") {
+		t.Fatalf("header chrome config should be carried into VM, header=%#v", vm.Shell.Header)
+	}
+	frame := NewRenderer(DefaultTheme()).RenderResult(vm)
+	if !strings.Contains(frame.Lines()[0], ""+state.DefaultTabID) || !strings.Contains(frame.Lines()[0], "+") {
+		t.Fatalf("configured header template/create icon should render in top bar, got %#v", frame.Lines()[0])
+	}
+}
+
 func plainLines(lines []Line) string {
 	values := make([]string, len(lines))
 	for i, line := range lines {

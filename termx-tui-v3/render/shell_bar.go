@@ -39,7 +39,7 @@ func headerLeftSegments(header HeaderVM) []barSegment {
 		barText("  "+workspace, StyleHeaderWorkspace, 1).withAction(ActionFooterOpenTree.String()),
 	}
 	left = append(left, headerTabSegmentsForHeader(header, header.Tab)...)
-	left = append(left, barText(HeaderTabCreateText, StyleHeaderCreate, 3).withAction(ActionTabCreate.String()))
+	left = append(left, barText(headerTabCreateText(header.TabCreateIcon), StyleHeaderCreate, 3).withAction(ActionTabCreate.String()))
 	if header.Notice != "" {
 		if active := compactHeaderMeta("pane", header.ActivePane); active != "" {
 			left = append(left, headerSep(), barText(" "+active+" ", StyleStatusMuted, 4))
@@ -275,7 +275,7 @@ func headerTabSegmentsForHeader(header HeaderVM, fallback string) []barSegment {
 		if closeTarget == "" {
 			closeTarget = tab.ID
 		}
-		segments = append(segments, headerTabSegmentParts(tabIndex, label, tab.Active, tab.ID, closeAction, closeTarget)...)
+		segments = append(segments, headerTabSegmentParts(tabIndex, label, tab.Active, tab.ID, closeAction, closeTarget, header.TabTemplate)...)
 	}
 	return segments
 }
@@ -296,30 +296,55 @@ func headerTabSegments(tab string) []barSegment {
 			label = field
 		}
 		if active {
-			segments = append(segments, headerTabSegmentParts(index+1, label, true, "", ActionTabClose.String(), "")...)
+			segments = append(segments, headerTabSegmentParts(index+1, label, true, "", ActionTabClose.String(), "", "")...)
 			continue
 		}
-		segments = append(segments, headerTabSegmentParts(index+1, label, false, "", ActionTabClose.String(), "")...)
+		segments = append(segments, headerTabSegmentParts(index+1, label, false, "", ActionTabClose.String(), "", "")...)
 	}
 	return segments
 }
 
-func headerTabSegmentParts(index int, label string, active bool, tabID string, closeAction string, closeTarget string) []barSegment {
+func headerTabSegmentParts(index int, label string, active bool, tabID string, closeAction string, closeTarget string, template string) []barSegment {
 	tabAction := ActionTabSwitch.String()
+	if segments := headerTabTemplateSegments(template, headerTabTemplateContext{
+		Index:        index,
+		Title:        label,
+		TabID:        tabID,
+		Active:       active,
+		SwitchAction: tabAction,
+		CloseAction:  closeAction,
+		CloseTarget:  closeTarget,
+		CloseIcon:    paneChromeCloseGlyph(),
+	}); len(segments) > 0 {
+		return segments
+	}
+	marker := " "
+	markerStyle := StyleHeaderSpacer
+	indexStyle := StyleHeaderInactiveIndex
+	titleStyle := StyleHeaderInactiveTitle
+	closeStyle := StyleHeaderInactiveClose
 	if active {
-		return []barSegment{
-			barText(" ", StyleHeaderSpacer, 1),
-			barText("▎", StyleHeaderActiveMarker, 1).withAction(tabAction).withTarget(tabID),
-			barText(" "+intLabel(index), StyleHeaderActiveIndex, 1).withAction(tabAction).withTarget(tabID),
-			barText(" "+label+" ", StyleHeaderActiveTitle, 1).withAction(tabAction).withTarget(tabID),
-			barText("", StyleHeaderActiveClose, 2).withAction(closeAction).withTarget(closeTarget),
-		}
+		marker = "▎"
+		markerStyle = StyleHeaderActiveMarker
+		indexStyle = StyleHeaderActiveIndex
+		titleStyle = StyleHeaderActiveTitle
+		closeStyle = StyleHeaderActiveClose
 	}
 	return []barSegment{
-		barText(" "+intLabel(index), StyleHeaderInactiveIndex, 2).withAction(tabAction).withTarget(tabID),
-		barText(" "+label+" ", StyleHeaderInactiveTitle, 2).withAction(tabAction).withTarget(tabID),
-		barText("", StyleHeaderInactiveClose, 2).withAction(closeAction).withTarget(closeTarget),
+		barText(" ", StyleHeaderSpacer, 1),
+		barText(marker, markerStyle, 1).withAction(tabAction).withTarget(tabID),
+		barText(" "+intLabel(index), indexStyle, 1).withAction(tabAction).withTarget(tabID),
+		barText(" "+label+" ", titleStyle, 1).withAction(tabAction).withTarget(tabID),
+		barText(paneChromeCloseGlyph(), closeStyle, 2).withAction(closeAction).withTarget(closeTarget),
 	}
+}
+
+func headerTabCreateText(icon string) string {
+	icon = strings.TrimSpace(icon)
+	if icon == "" {
+		return HeaderTabCreateText
+	}
+	return "  " + icon
 }
 
 func intLabel(value int) string {
@@ -876,6 +901,7 @@ func containsStringValue(values []string, target string) bool {
 type barSegment struct {
 	text     string
 	style    StyleToken
+	ansi     ANSICellStyle
 	priority int
 	actionID string
 	targetID string
@@ -1117,7 +1143,7 @@ func cellsFromBarSegments(segments []barSegment) []Cell {
 		if style == "" {
 			style = StyleStatus
 		}
-		cells = append(cells, Cell{Text: segment.text, Width: DisplayWidth(segment.text), Style: style, Safe: true})
+		cells = append(cells, Cell{Text: segment.text, Width: DisplayWidth(segment.text), Style: style, ANSIStyle: segment.ansi, Safe: true})
 	}
 	return cells
 }

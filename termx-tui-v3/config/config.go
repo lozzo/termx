@@ -35,6 +35,7 @@ func Default() state.TUIConfigStore {
 			Footer:            true,
 			PanelPresentation: "split-line",
 			TabCreateIcon:     "󰐕",
+			TabTemplate:       "",
 		},
 		Interaction: state.TUIInteractionConfig{
 			Mouse:                 true,
@@ -285,6 +286,7 @@ var scalarSetters = map[string]scalarSetter{
 	"tui.chrome.footer":                           setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Chrome.Footer = value }),
 	"tui.chrome.panel_presentation":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PanelPresentation = value }),
 	"tui.chrome.tab_create_icon":                  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabCreateIcon = value }),
+	"tui.chrome.tab_template":                     setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabTemplate = value }),
 	"tui.interaction.mouse":                       setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Interaction.Mouse = value }),
 	"tui.interaction.sticky_prefix_timeout_ms":    setInt(func(cfg *state.TUIConfigStore, value int) { cfg.Interaction.StickyPrefixTimeoutMS = value }),
 	"tui.interaction.confirm_destructive":         setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Interaction.ConfirmDestructive = value }),
@@ -447,6 +449,9 @@ func Validate(cfg state.TUIConfigStore) error {
 	}
 	if strings.TrimSpace(cfg.Chrome.TabCreateIcon) == "" {
 		return fmt.Errorf("tui.chrome.tab_create_icon must not be empty")
+	}
+	if strings.ContainsAny(cfg.Chrome.TabTemplate, "\r\n") {
+		return fmt.Errorf("tui.chrome.tab_template must be a single-line template")
 	}
 	if cfg.Interaction.StickyPrefixTimeoutMS < 0 {
 		return fmt.Errorf("tui.interaction.sticky_prefix_timeout_ms must be >= 0")
