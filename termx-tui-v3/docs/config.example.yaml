@@ -168,6 +168,23 @@ tui:
     # - 为了避免切换 active 状态时 tab 宽度跳动，active 和 inactive 分支最好输出相同 cell 宽度。
     tab_template: "{{tab_id}}[fg:#f7f2ff;bg:#332244;font:bold] {{if active}}▎{{else}}|{{end}} {{title | truncate 14}} [action:tab.close]{{close_icon}}[/action][/style]"
 
+    # pane_glyphs 控制 pane/floating chrome 右上角和状态区的显示字形。
+    # 它只改显示，不改变 action id、鼠标 hit region 或 reducer 消息链路。
+    # 例如右上角默认语义仍是 zoom / split right / split down / close。
+    pane_glyphs:
+      zoom: "—"
+      split_vertical: "□"
+      split_horizontal: "▭"
+      close: "⤫"
+      size_lock: ""
+      size_unlock: ""
+      center_floating: ""
+      collapse_floating: ""
+      running: ""
+      waiting: ""
+      exited: ""
+      killed: ""
+
   footer:
     # templates 控制 footer 的轻量文本模板。
     # 这里不是完整可编程布局；它只做占位符替换，真实 action/hit region 仍由 render ActionSpec 和 app reducer 管。

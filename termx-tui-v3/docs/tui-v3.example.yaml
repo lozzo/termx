@@ -192,6 +192,24 @@ tui:
     # 示例：tab_template: "{{tab_id}}[fg:#f7f2ff;bg:#332244;font:bold] {{if active}}▎{{else}}|{{end}} {{title | truncate 12}} [action:tab.close]{{close_icon}}[/action][/style]"
     tab_template: ""
 
+    # pane_glyphs 控制 pane/floating chrome 右上角 action 和状态标记的显示字形。
+    # 默认值全部为 ""，表示使用内置 glyph。
+    # 这些字段只改变可见文字，不改变 zoom/split/close 等 action 的语义。
+    # 示例：zoom: "—" / split_vertical: "□" / split_horizontal: "▭" / close: "⤫"
+    pane_glyphs:
+      zoom: ""
+      split_vertical: ""
+      split_horizontal: ""
+      close: ""
+      size_lock: ""
+      size_unlock: ""
+      center_floating: ""
+      collapse_floating: ""
+      running: ""
+      waiting: ""
+      exited: ""
+      killed: ""
+
   # footer 控制底部 mode badge、action token 和状态摘要的展示文案。
   # 它只改变显示顺序、图标、label、style 和可点击 action id，不改变键盘路由 truth。
   # 是否显示 footer 仍由 tui.chrome.footer 控制。

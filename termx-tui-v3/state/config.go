@@ -40,12 +40,32 @@ type TUIThemeSurfaceConfig struct {
 	ToastBG   string
 }
 
+// TUIChromeConfig 描述 TUI 外层 chrome 的本地展示偏好。
+// 它只控制 header/footer、pane 呈现和可见 action 字形；pane/tab/workspace 的真实状态仍由 ShellStore 持有。
 type TUIChromeConfig struct {
 	Header            bool
 	Footer            bool
 	PanelPresentation string
 	TabCreateIcon     string
 	TabTemplate       string
+	PaneGlyphs        TUIPaneChromeGlyphsConfig
+}
+
+// TUIPaneChromeGlyphsConfig 描述 pane/floating chrome 可点击动作和状态标记的显示字形。
+// 这些字段只改变 renderer 展示文字，真实 action id、鼠标 hit region 和 reducer 消息链路不随配置改变。
+type TUIPaneChromeGlyphsConfig struct {
+	Zoom             string
+	SplitVertical    string
+	SplitHorizontal  string
+	Close            string
+	SizeLock         string
+	SizeUnlock       string
+	CenterFloating   string
+	CollapseFloating string
+	Running          string
+	Waiting          string
+	Exited           string
+	Killed           string
 }
 
 // TUIFooterConfig 描述 footer 的用户可配置展示层。

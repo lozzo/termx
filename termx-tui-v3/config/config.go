@@ -271,6 +271,7 @@ func knownSection(path string) bool {
 		"tui.theme.border",
 		"tui.theme.surface",
 		"tui.chrome",
+		"tui.chrome.pane_glyphs",
 		"tui.footer",
 		"tui.footer.templates",
 		"tui.footer.modes",
@@ -336,6 +337,18 @@ var scalarSetters = map[string]scalarSetter{
 	"tui.chrome.panel_presentation":                    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PanelPresentation = value }),
 	"tui.chrome.tab_create_icon":                       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabCreateIcon = value }),
 	"tui.chrome.tab_template":                          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabTemplate = value }),
+	"tui.chrome.pane_glyphs.zoom":                      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Zoom = value }),
+	"tui.chrome.pane_glyphs.split_vertical":            setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SplitVertical = value }),
+	"tui.chrome.pane_glyphs.split_horizontal":          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SplitHorizontal = value }),
+	"tui.chrome.pane_glyphs.close":                     setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Close = value }),
+	"tui.chrome.pane_glyphs.size_lock":                 setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SizeLock = value }),
+	"tui.chrome.pane_glyphs.size_unlock":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SizeUnlock = value }),
+	"tui.chrome.pane_glyphs.center_floating":           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.CenterFloating = value }),
+	"tui.chrome.pane_glyphs.collapse_floating":         setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.CollapseFloating = value }),
+	"tui.chrome.pane_glyphs.running":                   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Running = value }),
+	"tui.chrome.pane_glyphs.waiting":                   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Waiting = value }),
+	"tui.chrome.pane_glyphs.exited":                    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Exited = value }),
+	"tui.chrome.pane_glyphs.killed":                    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Killed = value }),
 	"tui.footer.templates.mode_badge":                  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.ModeBadge = value }),
 	"tui.footer.templates.key":                         setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.Key = value }),
 	"tui.footer.templates.action":                      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.Action = value }),
@@ -585,6 +598,9 @@ func Validate(cfg state.TUIConfigStore) error {
 	if strings.ContainsAny(cfg.Chrome.TabTemplate, "\r\n") {
 		return fmt.Errorf("tui.chrome.tab_template must be a single-line template")
 	}
+	if err := validatePaneChromeGlyphs(cfg.Chrome.PaneGlyphs); err != nil {
+		return err
+	}
 	if err := validateFooterConfig(cfg.Footer); err != nil {
 		return err
 	}
@@ -608,6 +624,31 @@ func Validate(cfg state.TUIConfigStore) error {
 	}
 	if err := validateKeymap(cfg.Keymap); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validatePaneChromeGlyphs(glyphs state.TUIPaneChromeGlyphsConfig) error {
+	for _, item := range []struct {
+		name  string
+		value string
+	}{
+		{"tui.chrome.pane_glyphs.zoom", glyphs.Zoom},
+		{"tui.chrome.pane_glyphs.split_vertical", glyphs.SplitVertical},
+		{"tui.chrome.pane_glyphs.split_horizontal", glyphs.SplitHorizontal},
+		{"tui.chrome.pane_glyphs.close", glyphs.Close},
+		{"tui.chrome.pane_glyphs.size_lock", glyphs.SizeLock},
+		{"tui.chrome.pane_glyphs.size_unlock", glyphs.SizeUnlock},
+		{"tui.chrome.pane_glyphs.center_floating", glyphs.CenterFloating},
+		{"tui.chrome.pane_glyphs.collapse_floating", glyphs.CollapseFloating},
+		{"tui.chrome.pane_glyphs.running", glyphs.Running},
+		{"tui.chrome.pane_glyphs.waiting", glyphs.Waiting},
+		{"tui.chrome.pane_glyphs.exited", glyphs.Exited},
+		{"tui.chrome.pane_glyphs.killed", glyphs.Killed},
+	} {
+		if strings.ContainsAny(item.value, "\r\n") {
+			return fmt.Errorf("%s must be a single-line glyph", item.name)
+		}
 	}
 	return nil
 }

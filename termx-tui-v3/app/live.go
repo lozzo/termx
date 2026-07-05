@@ -42,6 +42,7 @@ func runtimeSurfaceID(root state.Root) string {
 // NewLiveRuntime 组合 live app 主路径：TerminalHost 输入 -> reducer/effect ->
 // terminal service -> render VM -> FrameSink。
 func NewLiveRuntime(initial state.Root, host TerminalHost, runner EffectRunner, deps LiveDeps) *AppRuntime {
+	applyConfiguredPaneChromeGlyphs(initial.Config)
 	initial.Shell = applyConfiguredShellChrome(initial.Shell, initial.Config)
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
@@ -83,6 +84,7 @@ func NewInteractiveRuntimeWithStorage(
 	workbench WorkbenchDeps,
 	clipboard ClipboardDeps,
 ) *AppRuntime {
+	applyConfiguredPaneChromeGlyphs(initial.Config)
 	initial.Shell = applyConfiguredShellChrome(initial.Shell, initial.Config)
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()

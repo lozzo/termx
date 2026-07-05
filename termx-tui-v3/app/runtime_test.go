@@ -201,6 +201,36 @@ func TestInteractiveRuntimeAppliesConfiguredPanelPresentation(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeAppliesConfiguredPaneChromeGlyphs(t *testing.T) {
+	render.ResetPaneChromeGlyphs()
+	defer render.ResetPaneChromeGlyphs()
+
+	host := NewFakeTerminalHost(8)
+	root := state.Root{
+		Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical),
+		Config: state.TUIConfigStore{Chrome: state.TUIChromeConfig{
+			PaneGlyphs: state.TUIPaneChromeGlyphsConfig{
+				Zoom:            "—",
+				SplitVertical:   "□",
+				SplitHorizontal: "▭",
+				Close:           "⤫",
+			},
+		}},
+	}
+	host.SetSize(80, 20)
+	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{}, CopyModeDeps{})
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initial drain: %v", err)
+	}
+	frame := lastRuntimeFrame(t, host)
+	if !frameContains(frame, "[—]") || !frameContains(frame, "[□]") || !frameContains(frame, "[▭]") || !frameContains(frame, "[⤫]") {
+		t.Fatalf("configured pane glyphs should render in pane chrome, got %#v", frame.Lines)
+	}
+}
+
 func TestAppRuntimePrioritizesInputBeforeQueuedOrdinaryLiveUpdate(t *testing.T) {
 	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
 	runtime.enqueue(LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})

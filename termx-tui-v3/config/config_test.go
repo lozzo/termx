@@ -60,6 +60,16 @@ tui:
     panel_presentation: card
     tab_create_icon: "+"
     tab_template: "{{tab_id}} {{if active}}▎{{else}}|{{end}} {{title | truncate 8}} [action:tab.close]{{close_icon}}[/action]"
+    pane_glyphs:
+      zoom: "—"
+      split_vertical: "□"
+      split_horizontal: "▭"
+      close: "⤫"
+      size_lock: "🔒"
+      size_unlock: "○"
+      running: "●"
+      waiting: "○"
+      exited: "×"
   footer:
     templates:
       mode_badge: "{{mode_icon}} {{mode_label}}"
@@ -107,6 +117,14 @@ tui:
 	}
 	if cfg.Theme.Border.Active != "#ff00aa" || cfg.Chrome.Header || cfg.Chrome.PanelPresentation != "card" || cfg.Chrome.TabCreateIcon != "+" || !strings.Contains(cfg.Chrome.TabTemplate, "{{tab_id}}") {
 		t.Fatalf("chrome/border overrides not applied: %#v", cfg)
+	}
+	if cfg.Chrome.PaneGlyphs.Zoom != "—" ||
+		cfg.Chrome.PaneGlyphs.SplitVertical != "□" ||
+		cfg.Chrome.PaneGlyphs.SplitHorizontal != "▭" ||
+		cfg.Chrome.PaneGlyphs.Close != "⤫" ||
+		cfg.Chrome.PaneGlyphs.SizeLock != "🔒" ||
+		cfg.Chrome.PaneGlyphs.Running != "●" {
+		t.Fatalf("pane chrome glyph overrides not applied: %#v", cfg.Chrome.PaneGlyphs)
 	}
 	if cfg.Footer.Templates.Separator != " · " ||
 		cfg.Footer.Templates.Key != "" ||

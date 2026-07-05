@@ -285,8 +285,8 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionFloatingPick, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("f", "PICK", StyleStatusAccent).withHelp("pick terminal"),
 		actionSpec(ActionFloatingTakeOwner, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("a", "OWNER", StyleStatusAccent).withHelp("take resize owner"),
 		actionSpec(ActionFloatingResize, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withHelp("resize"),
-		actionSpec(ActionFloatingCenter, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceFloatingChrome, ActionSurfaceInput).withFooter("c", "CENTER", StyleStatusAccent).withChromeGlyph("").withHelp("center"),
-		actionSpec(ActionFloatingCollapse, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceFloatingChrome, ActionSurfaceInput).withFooter("m", "HIDE", StyleStatusAccent).withChromeGlyph("").withHelp("hide"),
+		actionSpec(ActionFloatingCenter, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceFloatingChrome, ActionSurfaceInput).withFooter("c", "CENTER", StyleStatusAccent).withChromeGlyph(paneChromeFloatingCenterGlyph()).withHelp("center"),
+		actionSpec(ActionFloatingCollapse, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceFloatingChrome, ActionSurfaceInput).withFooter("m", "HIDE", StyleStatusAccent).withChromeGlyph(paneChromeFloatingCollapseGlyph()).withHelp("hide"),
 		actionSpec(ActionFloatingToggleAll, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("v", "ALL", StyleStatusAccent).withHelp("toggle all floating panes"),
 		actionSpec(ActionFloatingFit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("=", "FIT", StyleStatusAccent).withHelp("fit floating to live content"),
 		actionSpec(ActionFloatingAutoFit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("s", "AUTO-FIT", StyleStatusAccent).withHelp("toggle floating auto-fit"),
@@ -376,6 +376,10 @@ func actionSpecWithCurrentGlyph(spec ActionSpec) ActionSpec {
 		spec.ChromeGlyph = paneChromeCloseActionText()
 	case ActionFloatingClose:
 		spec.ChromeGlyph = paneChromeCloseGlyph()
+	case ActionFloatingCenter:
+		spec.ChromeGlyph = paneChromeFloatingCenterGlyph()
+	case ActionFloatingCollapse:
+		spec.ChromeGlyph = paneChromeFloatingCollapseGlyph()
 	}
 	return spec
 }
