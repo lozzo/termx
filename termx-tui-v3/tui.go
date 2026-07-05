@@ -407,7 +407,7 @@ func visualAuditFloatingContent() render.ContentVM {
 			render.NewLine(""),
 			render.NewLine(" Attach existing"),
 			render.NewLine(" New terminal"),
-			render.NewLine(" Terminal Pool"),
+			render.NewLine(" Terminal Manager"),
 			render.NewLine(" Close"),
 		},
 		Empty: true,

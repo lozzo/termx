@@ -26,7 +26,11 @@ func renderWorkbenchNavigatorTChrome(c *canvas, content ContentVM, rect Rect, co
 	}
 	c.mergeStyledBoxCell(rect.X, dividerY, boxConnUp|boxConnDown|boxConnRight, StyleForeground, owner, layer)
 	c.mergeStyledBoxCell(rect.X+rect.W-1, dividerY, boxConnUp|boxConnDown|boxConnLeft, StyleForeground, owner, layer)
-	dividerX := contentRect.X + content.Meta.WorkbenchTreeWidth
+	leftWidth := content.Meta.SplitPageLeftWidth
+	if leftWidth <= 0 {
+		leftWidth = content.Meta.WorkbenchTreeWidth
+	}
+	dividerX := contentRect.X + leftWidth
 	if dividerX <= rect.X || dividerX >= rect.X+rect.W-1 {
 		return
 	}

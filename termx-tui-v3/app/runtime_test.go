@@ -2765,7 +2765,7 @@ func TestInteractiveRuntimeTerminalPoolDeleteRemovesBindingsAndReloadsInventory(
 	}
 
 	frame := lastRuntimeFrame(t, host)
-	if !frameContains(frame, "Terminal Pool") || !frameContains(frame, "logs") {
+	if !frameContains(frame, "Terminal Manager") || !frameContains(frame, "logs") {
 		t.Fatalf("expected terminal pool frame, got %#v", frame.Lines)
 	}
 	selectRegion := frameActionHitRegion(t, frame, render.ActionPoolSelect.String(), "")

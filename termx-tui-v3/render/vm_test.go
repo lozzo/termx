@@ -691,8 +691,11 @@ func TestRenderVMBuilderUsesStructuredFooterActionCatalog(t *testing.T) {
 			},
 			want: []FooterActionVM{
 				{Key: "attach", ActionID: ActionPoolAttach.String()},
+				{Key: "tab", ActionID: ActionPoolAttachTab.String()},
+				{Key: "float", ActionID: ActionPoolAttachFloat.String()},
 				{Key: "edit", ActionID: ActionPoolEdit.String()},
 				{Key: "kill", ActionID: ActionPoolKill.String()},
+				{Key: "delete", ActionID: ActionPoolDelete.String()},
 			},
 		},
 		{
@@ -1779,7 +1782,9 @@ func TestRenderVMBuilderFiltersUnavailableFooterActions(t *testing.T) {
 
 	poolFooter := builder.Build(state.Root{Shell: state.DefaultShell().OpenTerminalPool()}).Shell.Footer
 	if containsFooterActionID(poolFooter.ActionTokens, ActionPoolAttach.String()) ||
-		containsFooterActionID(poolFooter.ActionTokens, ActionPoolKill.String()) {
+		containsFooterActionID(poolFooter.ActionTokens, ActionPoolAttachTab.String()) ||
+		containsFooterActionID(poolFooter.ActionTokens, ActionPoolKill.String()) ||
+		containsFooterActionID(poolFooter.ActionTokens, ActionPoolDelete.String()) {
 		t.Fatalf("empty terminal pool footer should hide item actions, got %#v", poolFooter.ActionTokens)
 	}
 }
@@ -2830,19 +2835,26 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 	if vm.Shell.Overlay.Kind != OverlayTerminalPool || content.Kind != ContentTerminalPool {
 		t.Fatalf("expected terminal pool content, got %#v", vm.Shell.Overlay)
 	}
-	if !strings.Contains(content.Lines[0].PlainString(), "Terminal Pool") ||
-		!strings.Contains(content.Lines[1].PlainString(), "⌕ search 日志") ||
-		!strings.Contains(content.Lines[2].PlainString(), "▌ 日志🚀") ||
-		!strings.Contains(content.Lines[3].PlainString(), "DETAIL 日志🚀") ||
-		!strings.Contains(content.Lines[4].PlainString(), "120x36") ||
-		!strings.Contains(content.Lines[6].PlainString(), "role=shell") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[kill]  Kill") {
-		t.Fatalf("expected pool list/detail/preview/actions, got %#v", content.Lines)
+	if !strings.Contains(content.Lines[0].PlainString(), "⌕ search 日志") ||
+		!strings.Contains(content.Lines[2].PlainString(), "TERMINALS") ||
+		!strings.Contains(content.Lines[2].PlainString(), "DETAIL 日志🚀") ||
+		!strings.Contains(content.Lines[3].PlainString(), "▸  日志🚀") ||
+		!strings.Contains(content.Lines[4].PlainString(), "id:term-pool") ||
+		!strings.Contains(content.Lines[5].PlainString(), "SIZE 120x36") ||
+		!strings.Contains(content.Lines[9].PlainString(), "role=shell") ||
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "Attach  Tab  Float  Edit  Kill  Delete") {
+		t.Fatalf("expected terminal manager list/detail/actions, got %#v", content.Lines)
 	}
-	if strings.Contains(content.Lines[2].PlainString(), "worker") {
+	if strings.Contains(content.Lines[3].PlainString(), "worker") {
 		t.Fatalf("query should filter non-matching row, got %#v", content.Lines)
 	}
-	if !contentHasAction(content, "pool.select") || !contentHasAction(content, "pool.attach") || !contentHasAction(content, "pool.edit") || !contentHasAction(content, "pool.kill") {
+	if !contentHasAction(content, "pool.select") ||
+		!contentHasAction(content, "pool.attach") ||
+		!contentHasAction(content, "pool.attach-tab") ||
+		!contentHasAction(content, "pool.attach-float") ||
+		!contentHasAction(content, "pool.edit") ||
+		!contentHasAction(content, "pool.kill") ||
+		!contentHasAction(content, "pool.delete") {
 		t.Fatalf("expected pool action hit regions, got %#v", content.HitRegions)
 	}
 	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("⌕ search 日志") {
@@ -2851,18 +2863,18 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 
 	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolLoading}
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !content.Pending || !strings.Contains(content.Lines[2].PlainString(), "loading terminals") {
+	if !content.Pending || !strings.Contains(plainLines(content.Lines), "loading terminals") {
 		t.Fatalf("expected pool loading page, got %#v", content)
 	}
 	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolError, LastError: "boom"}
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if content.Error != "boom" || !strings.Contains(content.Lines[2].PlainString(), "list error boom") {
+	if content.Error != "boom" || !strings.Contains(plainLines(content.Lines), "list error boom") {
 		t.Fatalf("expected pool error page, got %#v", content)
 	}
 	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolReady}
 	root.Shell = state.DefaultShell().OpenTerminalPool()
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !content.Empty || !strings.Contains(content.Lines[2].PlainString(), "list empty") {
+	if !content.Empty || !strings.Contains(plainLines(content.Lines), "list empty") {
 		t.Fatalf("expected pool empty page, got %#v", content)
 	}
 }
@@ -3113,7 +3125,7 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 		!strings.Contains(helpPlain, "Most used") ||
 		!strings.Contains(helpPlain, "Shell") ||
 		!strings.Contains(helpPlain, "Tab / Workspace") ||
-		!strings.Contains(helpPlain, "Terminal Pool") ||
+		!strings.Contains(helpPlain, "Terminal Manager") ||
 		!strings.Contains(helpPlain, "Display / Copy") ||
 		!contentHasAction(content, "help.close") {
 		t.Fatalf("expected help content, got %#v", content)

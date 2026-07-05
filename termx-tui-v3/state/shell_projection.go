@@ -105,14 +105,18 @@ func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
 			continue
 		}
 		item := TerminalPoolPageItem{
-			TerminalID: poolItem.TerminalID,
-			Title:      terminalPoolTitle(poolItem),
-			State:      poolItem.State,
-			CWD:        poolItem.CWD,
-			Tags:       cloneStringMap(poolItem.Tags),
-			Cols:       poolItem.Cols,
-			Rows:       poolItem.Rows,
-			Attached:   poolItem.Attached,
+			TerminalID:      poolItem.TerminalID,
+			Title:           terminalPoolTitle(poolItem),
+			State:           poolItem.State,
+			CWD:             poolItem.CWD,
+			Command:         append([]string(nil), poolItem.Command...),
+			Tags:            cloneStringMap(poolItem.Tags),
+			ExitCode:        cloneIntPointer(poolItem.ExitCode),
+			ExitedAt:        poolItem.ExitedAt,
+			Cols:            poolItem.Cols,
+			Rows:            poolItem.Rows,
+			AttachmentCount: poolItem.AttachmentCount,
+			Attached:        poolItem.Attached || poolItem.AttachmentCount > 0,
 		}
 		if !matchesTerminalPoolPageQuery(item, query) {
 			continue
@@ -197,7 +201,8 @@ func matchesTerminalPoolPageQuery(item TerminalPoolPageItem, query string) bool 
 	if strings.Contains(strings.ToLower(item.Title), query) ||
 		strings.Contains(strings.ToLower(item.TerminalID), query) ||
 		strings.Contains(strings.ToLower(item.State), query) ||
-		strings.Contains(strings.ToLower(item.CWD), query) {
+		strings.Contains(strings.ToLower(item.CWD), query) ||
+		strings.Contains(strings.ToLower(strings.Join(item.Command, " ")), query) {
 		return true
 	}
 	for key, value := range item.Tags {

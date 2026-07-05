@@ -224,3 +224,11 @@ func cloneStringMap(values map[string]string) map[string]string {
 	}
 	return cloned
 }
+
+func cloneIntPointer(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}

@@ -826,12 +826,15 @@ func TestMeasureLayoutTerminalPoolUsesPageSizedOverlay(t *testing.T) {
 			Opaque: true,
 			Content: ContentVM{
 				Kind:   ContentTerminalPool,
-				Cursor: Cursor{Visible: true, Row: 1, Col: 9, Shape: CursorShapeBar},
+				Cursor: Cursor{Visible: true, Row: 0, Col: 9, Shape: CursorShapeBar},
 				HitRegions: []HitRegion{
-					{Kind: HitRegionContentAction, Rect: Rect{Y: 2, W: 72, H: 1}, ActionID: "pool.select"},
-					{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: 12, H: 1}, ActionID: "pool.attach"},
-					{Kind: HitRegionContentAction, Rect: Rect{Y: 10, W: 12, H: 1}, ActionID: "pool.edit"},
-					{Kind: HitRegionContentAction, Rect: Rect{Y: 11, W: 12, H: 1}, ActionID: "pool.kill"},
+					{Kind: HitRegionContentAction, Rect: Rect{Y: 3, W: 40, H: 1}, ActionID: "pool.select"},
+					{Kind: HitRegionContentAction, Rect: Rect{X: 41, Y: 14, W: 6, H: 1}, ActionID: "pool.attach"},
+					{Kind: HitRegionContentAction, Rect: Rect{X: 49, Y: 14, W: 3, H: 1}, ActionID: "pool.attach-tab"},
+					{Kind: HitRegionContentAction, Rect: Rect{X: 54, Y: 14, W: 5, H: 1}, ActionID: "pool.attach-float"},
+					{Kind: HitRegionContentAction, Rect: Rect{X: 61, Y: 14, W: 4, H: 1}, ActionID: "pool.edit"},
+					{Kind: HitRegionContentAction, Rect: Rect{X: 67, Y: 14, W: 4, H: 1}, ActionID: "pool.kill"},
+					{Kind: HitRegionContentAction, Rect: Rect{X: 73, Y: 14, W: 6, H: 1}, ActionID: "pool.delete"},
 				},
 			},
 		},
@@ -841,10 +844,10 @@ func TestMeasureLayoutTerminalPoolUsesPageSizedOverlay(t *testing.T) {
 	if plan.Overlay.W < 70 || plan.Overlay.H < 14 || plan.OverlayContentRect.H < 12 {
 		t.Fatalf("terminal pool page must not use compact picker overlay, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
 	}
-	if got := plan.CursorRect; got.X != plan.OverlayContentRect.X+9 || got.Y != plan.OverlayContentRect.Y+1 {
+	if got := plan.CursorRect; got.X != plan.OverlayContentRect.X+9 || got.Y != plan.OverlayContentRect.Y {
 		t.Fatalf("unexpected pool cursor rect content=%#v cursor=%#v", plan.OverlayContentRect, got)
 	}
-	for _, action := range []string{"pool.select", "pool.attach", "pool.edit", "pool.kill"} {
+	for _, action := range []string{"pool.select", "pool.attach", "pool.attach-tab", "pool.attach-float", "pool.edit", "pool.kill", "pool.delete"} {
 		if hitRegionIndexByAction(plan.HitRegions, action) < 0 {
 			t.Fatalf("expected visible terminal pool action %s in hit regions %#v", action, plan.HitRegions)
 		}

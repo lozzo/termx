@@ -9,7 +9,11 @@ func footerModeBadgeSegments(footer FooterVM, mode string) []barSegment {
 		if mode == "live" || mode == "normal" || mode == string(OverlayClipboardHistory) {
 			return nil
 		}
-		label = strings.ToUpper(mode)
+		if mode == string(OverlayTerminalPool) {
+			label = "TERMINALS"
+		} else {
+			label = strings.ToUpper(mode)
+		}
 	}
 	text := footerTokenTemplateText(footerTemplateOrDefault(footer.ModeBadgeTemplate, defaultFooterModeBadgeTemplate), map[string]string{
 		"mode":       mode,

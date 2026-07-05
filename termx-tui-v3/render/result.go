@@ -790,8 +790,11 @@ type ContentVM struct {
 	HitRegions []HitRegion
 }
 
+// ContentMetaVM 保存渲染层不能从文本行反推的布局元数据；这些值由对应 content projector 生成，
+// overlay chrome、hit region 和 snapshot 装饰只能消费这里的 reducer-owned 投影。
 type ContentMetaVM struct {
 	ClipboardNameWidth       int
+	SplitPageLeftWidth       int
 	WorkbenchTreeWidth       int
 	WorkbenchBodyRows        int
 	WorkbenchActionRow       int

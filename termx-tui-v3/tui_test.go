@@ -94,12 +94,12 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		frameContains(cases["terminal-picker"].Lines, "[new]") {
 		t.Fatalf("terminal picker smoke missing product content: %#v", cases["terminal-picker"].Lines)
 	}
-	if !frameContains(cases["terminal-pool-page"].Lines, "Terminal Pool") ||
+	if !frameContains(cases["terminal-pool-page"].Lines, "Terminal Manager") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "⌕ search 日志") ||
-		!frameContains(cases["terminal-pool-page"].Lines, "▌ 日志🚀") ||
+		!frameContains(cases["terminal-pool-page"].Lines, "▸  日志🚀") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "DETAIL 日志🚀") ||
-		!frameContains(cases["terminal-pool-page"].Lines, "[attach]  Attach Here") ||
-		!frameContains(cases["terminal-pool-page"].Lines, "[kill]  Kill") {
+		!frameContains(cases["terminal-pool-page"].Lines, "VIEWS 1") ||
+		!frameContains(cases["terminal-pool-page"].Lines, "Attach  Tab  Float  Edit  Kill  Delete") {
 		t.Fatalf("terminal pool smoke missing page visual contract: %#v", cases["terminal-pool-page"].Lines)
 	}
 	if !frameContains(cases["workbench-tree-page"].Lines, "Workbench Navigator") ||
@@ -129,7 +129,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if !frameContains(cases["help-overlay"].Lines, "Help") ||
 		!frameContains(cases["help-overlay"].Lines, "Most used") ||
 		!frameContains(cases["help-overlay"].Lines, "Floating") ||
-		!frameContains(cases["help-overlay"].Lines, "Terminal Pool") {
+		!frameContains(cases["help-overlay"].Lines, "Terminal Manager") {
 		t.Fatalf("help overlay smoke missing help content: %#v", cases["help-overlay"].Lines)
 	}
 	if !frameContains(cases["tab-workspace"].Lines, " remote ") ||
@@ -231,10 +231,10 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 	}
 	requiredOverlays := map[string][]string{
 		"terminal-picker":     {"┌─ terminal picker", "search:", "termx-picker shell", "running", "80x24"},
-		"terminal-pool-page":  {"┌─ terminal pool", "● open", "esc", "Terminal Pool", "⌕ search 日志", "DETAIL 日志🚀", "[kill]  Kill"},
+		"terminal-pool-page":  {"┌─ Terminal Manager", "⌕ search 日志", "TERMINALS", "DETAIL 日志🚀", "Attach  Tab  Float  Edit  Kill  Delete"},
 		"workbench-tree-page": {"┌─ Workbench Navigator", "⌕ search 日志", "TREE", "PANE", "SNAPSHOT", "Open  New  Zoom  Detach  Close"},
 		"prompt-overlay":      {"┌─ prompt", "Command Prompt", "重命名"},
-		"help-overlay":        {"┌─ help", "● open", "esc", "Most used", "Terminal Pool"},
+		"help-overlay":        {"┌─ help", "● open", "esc", "Most used", "Terminal Manager"},
 	}
 	for name, markers := range requiredOverlays {
 		frame := cases[name]

@@ -1900,7 +1900,7 @@ func TestInteractiveRuntimeTerminalPoolPageFlow(t *testing.T) {
 		t.Fatalf("pool query must not leak terminal input, got %#v", terminal.Inputs)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "Terminal Pool") || !frameContains(frame, "▌ 日志🚀") || !frameContains(frame, "role=logs") {
+	if !frameContains(frame, "Terminal Manager") || !frameContains(frame, "▸  日志🚀") || !frameContains(frame, "role=logs") {
 		t.Fatalf("expected terminal pool page frame, got %#v", frame.Lines)
 	}
 
@@ -2137,7 +2137,7 @@ func TestInteractiveRuntimePromptAndHelpOverlayFlow(t *testing.T) {
 		t.Fatalf("expected help overlay, shell=%#v", runtime.State().Shell)
 	}
 	frame = lastFrame(t, host.Frames())
-	if !frameContains(frame, "Help") || !frameContains(frame, "core workflows") || !frameContains(frame, "Shell") || !frameContains(frame, "Terminal Pool") || !frameContains(frame, "Workbench Tree") || frameContains(frame, "clear toasts") {
+	if !frameContains(frame, "Help") || !frameContains(frame, "core workflows") || !frameContains(frame, "Shell") || !frameContains(frame, "Terminal Manager") || !frameContains(frame, "Workbench Tree") || frameContains(frame, "clear toasts") {
 		t.Fatalf("expected help content, got %#v", frame.Lines)
 	}
 	closeRegion := frameActionHitRegion(t, frame, "help.close", "")
@@ -2915,12 +2915,12 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 	sendChar("日")
 	sendChar("志")
 	poolFrame := lastFrame(t, host.Frames())
-	if runtime.State().Shell.Overlay.Kind != state.OverlayTerminalPool || !frameContains(poolFrame, "Terminal Pool") || !frameContains(poolFrame, "日志🚀") {
-		t.Fatalf("expected Terminal Pool page in product shell flow, shell=%#v frame=%#v", runtime.State().Shell, poolFrame.Lines)
+	if runtime.State().Shell.Overlay.Kind != state.OverlayTerminalPool || !frameContains(poolFrame, "Terminal Manager") || !frameContains(poolFrame, "日志🚀") {
+		t.Fatalf("expected Terminal Manager page in product shell flow, shell=%#v frame=%#v", runtime.State().Shell, poolFrame.Lines)
 	}
 	sendKey(input.KeyEnter)
 	if len(terminal.Attaches) < 2 || runtime.State().Session.TerminalID != "term-logs" {
-		t.Fatalf("Terminal Pool attach should use terminal service, attaches=%#v session=%#v", terminal.Attaches, runtime.State().Session)
+		t.Fatalf("Terminal Manager attach should use terminal service, attaches=%#v session=%#v", terminal.Attaches, runtime.State().Session)
 	}
 
 	sendCtrl("\x07")

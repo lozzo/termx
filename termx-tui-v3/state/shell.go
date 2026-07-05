@@ -1,5 +1,7 @@
 package state
 
+import "time"
+
 const (
 	DefaultWorkspaceID = "workspace-main"
 	DefaultTabID       = "tab-main"
@@ -274,16 +276,22 @@ type TerminalPickerItem struct {
 	CreateNew  bool
 }
 
+// TerminalPoolPageItem 是 Terminal Manager 页面使用的只读投影；真值来自 reducer-owned TerminalPoolStore，
+// renderer 只能消费该投影绘制列表和详情，并通过 action 消息回到 app 层执行 attach/kill/edit/delete。
 type TerminalPoolPageItem struct {
-	TerminalID string
-	Title      string
-	State      string
-	CWD        string
-	Tags       map[string]string
-	Cols       int
-	Rows       int
-	Attached   bool
-	Selected   bool
+	TerminalID      string
+	Title           string
+	State           string
+	CWD             string
+	Command         []string
+	Tags            map[string]string
+	ExitCode        *int
+	ExitedAt        time.Time
+	Cols            int
+	Rows            int
+	AttachmentCount int
+	Attached        bool
+	Selected        bool
 }
 
 type WorkbenchTreeItem struct {

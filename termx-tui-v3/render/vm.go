@@ -405,7 +405,10 @@ func footerActionAvailable(actionID string, mode string, root state.Root, shell 
 		return len(shell.ActiveFloatings()) > 0
 	case ActionFloatingTakeOwner, ActionFloatingFit, ActionFloatingAutoFit, ActionFloatingCenter, ActionFloatingCollapse, ActionFloatingClose:
 		return shell.ActiveFloatingID() != "" || mode == string(state.OverlayFloatingOverview) && len(shell.ActiveFloatings()) > 0
-	case ActionPoolAttach, ActionPoolEdit, ActionPoolKill:
+	case ActionPoolAttach, ActionPoolAttachTab, ActionPoolAttachFloat, ActionPoolEdit, ActionPoolKill, ActionPoolDelete:
+		if mode == string(state.OverlayTerminalPool) {
+			return len(state.TerminalPoolPageItems(root)) > 0
+		}
 		return len(root.TerminalPool.Items) > 0
 	case ActionClipboardHistoryPaste, ActionClipboardHistoryEdit, ActionClipboardHistoryDelete:
 		return len(state.ClipboardHistoryItems(root)) > 0
@@ -487,8 +490,11 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		return footerActionSpecs(
 			footerActionSpec("search", "", "", StyleStatusAccent),
 			footerActionFor(ActionPoolAttach),
+			footerActionFor(ActionPoolAttachTab),
+			footerActionFor(ActionPoolAttachFloat),
 			footerActionFor(ActionPoolEdit),
 			footerActionFor(ActionPoolKill),
+			footerActionFor(ActionPoolDelete),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case string(state.OverlayWorkbenchTree):

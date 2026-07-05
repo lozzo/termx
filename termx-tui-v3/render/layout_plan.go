@@ -213,9 +213,9 @@ func measureOverlay(overlay OverlayVM, viewport Rect) Rect {
 		return measureCompactOverlay(overlay.Content, viewport)
 	case ContentClipboardHistory:
 		return measureClipboardHistoryOverlay(overlay.Content, viewport)
-	case ContentWorkbenchTree:
+	case ContentWorkbenchTree, ContentTerminalPool:
 		return measureWorkbenchNavigatorOverlay(viewport)
-	case ContentTerminalPool, ContentHelp:
+	case ContentHelp:
 		return measurePageOverlay(viewport)
 	}
 	return measureDefaultOverlay(viewport)
@@ -232,7 +232,7 @@ func measureOverlayContentRect(overlay OverlayVM, rect Rect) Rect {
 	if overlay.Content.Kind == ContentClipboardHistory {
 		return measureClipboardHistoryContentRect(rect)
 	}
-	if overlay.Content.Kind == ContentWorkbenchTree {
+	if overlay.Content.Kind == ContentWorkbenchTree || overlay.Content.Kind == ContentTerminalPool {
 		return Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
 	}
 	if rect.W >= 48 && rect.H >= 10 {

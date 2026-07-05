@@ -9,7 +9,7 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	if overlay.Content.Kind == ContentClipboardHistory {
 		return renderClipboardHistoryOverlay(c, overlay, rect, contentRect)
 	}
-	if overlay.Content.Kind == ContentWorkbenchTree {
+	if overlay.Content.Kind == ContentWorkbenchTree || overlay.Content.Kind == ContentTerminalPool {
 		return renderWorkbenchNavigatorOverlay(c, overlay, rect, contentRect)
 	}
 	primitive := OverlayChromePrimitive(overlay, rect, contentRect)
@@ -41,6 +41,9 @@ func overlayTitle(kind OverlayKind) string {
 	}
 	if kind == OverlayWorkbenchTree {
 		return "Workbench Navigator"
+	}
+	if kind == OverlayTerminalPool {
+		return "Terminal Manager"
 	}
 	if kind == OverlayFloatingOverview {
 		return "Floating Windows"
