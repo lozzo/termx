@@ -69,9 +69,9 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("split hidden toast smoke invalid: %#v", cases["split-hidden-toast"].Lines)
 	}
 	if !frameContains(cases["split-hidden-toast"].Lines, "┌─ shell") ||
-		!frameContains(cases["split-hidden-toast"].Lines, "┬─ logs") ||
+		!frameContains(cases["split-hidden-toast"].Lines, "┌─ logs") ||
 		render.SliceCells(cases["split-hidden-toast"].Lines[0], render.DisplayWidth(cases["split-hidden-toast"].Lines[0])-1, render.DisplayWidth(cases["split-hidden-toast"].Lines[0])) != "┐" {
-		t.Fatalf("split hidden toast smoke should keep a complete split-line top boundary, got %#v", cases["split-hidden-toast"].Lines)
+		t.Fatalf("split hidden toast smoke should keep active pane as an L-corner top boundary, got %#v", cases["split-hidden-toast"].Lines)
 	}
 	if frameContains(cases["split-hidden-toast"].Lines, " "+render.DefaultPaneChromeGlyphs().Running) ||
 		frameContains(cases["split-hidden-toast"].Lines, "⇄2") ||
@@ -271,7 +271,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		}
 	}
 	split := cases["split-hidden-toast"]
-	for _, marker := range []string{"┌─ shell", "┬─ logs", "┴"} {
+	for _, marker := range []string{"┌─ shell", "┌─ logs", "└"} {
 		if !frameContains(split.Lines, marker) {
 			t.Fatalf("split hidden toast missing styled split marker %q: %#v", marker, split.Lines)
 		}

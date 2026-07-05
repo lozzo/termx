@@ -120,6 +120,7 @@ func renderSplitPanel(c *canvas, layout PanelLayoutPlan) {
 	primitive := PaneChromePrimitive(layout.Panel, rect, style)
 	c.drawStyledSplitPaneChrome(rect, body, style, primitive.Owner, primitive.Layer)
 	if layout.Panel.Active {
+		c.drawStyledActiveSplitLeadingEdge(rect, body, style, primitive.Owner, primitive.Layer)
 		c.drawStyledActiveSplitTrailingEdge(rect, body, style, primitive.Owner, primitive.Layer)
 	}
 	renderPaneChromePrimitive(c, primitive, layout.Panel)

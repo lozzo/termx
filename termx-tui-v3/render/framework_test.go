@@ -217,9 +217,9 @@ func TestFrameworkRendersSplitLineHorizontalAndVertical(t *testing.T) {
 	if !linesContain(horizontal.Lines(), "right") || !linesContain(vertical.Lines(), "right") {
 		t.Fatalf("expected active panel content in both split modes")
 	}
-	assertColumnGlyphs(t, vertical.Lines(), 20, 0, 12, "│┬┴┼")
+	assertColumnGlyphs(t, vertical.Lines(), 20, 0, 12, "│┌└")
 	assertColumnGlyphs(t, vertical.Lines(), 39, 0, 12, "│┐┘┤")
-	if !linesContain(horizontal.Lines(), "logs") || !linesContain(horizontal.Lines(), paneChromeCloseActionText()) || !linesContain(horizontal.Lines(), "├") {
+	if !linesContain(horizontal.Lines(), "logs") || !linesContain(horizontal.Lines(), paneChromeCloseActionText()) || !linesContain(horizontal.Lines(), "right") {
 		t.Fatalf("expected horizontal split chrome/separator, got %#v", horizontal.Lines())
 	}
 	if linesContain(horizontal.Lines(), paneChromeRunningGlyph()) || linesContain(horizontal.Lines(), "⇄2") || linesContain(horizontal.Lines(), "◆ owner") || linesContain(horizontal.Lines(), "1/31") {
@@ -265,7 +265,7 @@ func TestFrameworkRendersSplitLineTopBoundaryWithChromeOverlay(t *testing.T) {
 func TestFrameworkRendersSplitLineAsSharedOuterFrame(t *testing.T) {
 	panels := []PanelVM{
 		{ID: "left", Title: "shell", Presentation: PanelPresentationSplitLine, Content: ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine("left body")}}},
-		{ID: "right", Title: "logs", Presentation: PanelPresentationSplitLine, Active: true, Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("right body")}}},
+		{ID: "right", Title: "logs", Presentation: PanelPresentationSplitLine, Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("right body")}}},
 	}
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Layout: LayoutVM{Viewport: Rect{W: 48, H: 10}, Panels: panels, Split: SplitVM{Direction: SplitVertical, Children: []SplitVM{{PaneID: "left"}, {PaneID: "right"}}}},
@@ -288,7 +288,7 @@ func TestFrameworkRendersSplitLineAsSharedOuterFrame(t *testing.T) {
 }
 
 func TestFrameworkSplitLineActivePaneOwnsSharedDividerStyle(t *testing.T) {
-	vertical := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+	verticalLeft := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Layout: LayoutVM{
 			Viewport: Rect{W: 48, H: 10},
 			Panels: []PanelVM{
@@ -298,11 +298,25 @@ func TestFrameworkSplitLineActivePaneOwnsSharedDividerStyle(t *testing.T) {
 			Split: SplitVM{Direction: SplitVertical, Children: []SplitVM{{PaneID: "left"}, {PaneID: "right"}}},
 		},
 	}})
-	assertStyledCellAt(t, vertical.StyledLines(), 1, 24, "│", StyleAccent)
-	assertStyledCellAt(t, vertical.StyledLines(), 4, 24, "│", StyleAccent)
-	assertStyledCellAt(t, vertical.StyledLines(), 0, 24, "┬", StyleAccent)
+	assertStyledCellAt(t, verticalLeft.StyledLines(), 0, 24, "┐", StyleAccent)
+	assertStyledCellAt(t, verticalLeft.StyledLines(), 1, 24, "│", StyleAccent)
+	assertStyledCellAt(t, verticalLeft.StyledLines(), 9, 24, "┘", StyleAccent)
 
-	horizontal := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+	verticalRight := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{
+			Viewport: Rect{W: 48, H: 10},
+			Panels: []PanelVM{
+				{ID: "left", Title: "shell", Presentation: PanelPresentationSplitLine, Content: ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine("left body")}}},
+				{ID: "right", Title: "logs", Presentation: PanelPresentationSplitLine, Active: true, Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("right body")}}},
+			},
+			Split: SplitVM{Direction: SplitVertical, Children: []SplitVM{{PaneID: "left"}, {PaneID: "right"}}},
+		},
+	}})
+	assertStyledCellAt(t, verticalRight.StyledLines(), 0, 24, "┌", StyleAccent)
+	assertStyledCellAt(t, verticalRight.StyledLines(), 1, 24, "│", StyleAccent)
+	assertStyledCellAt(t, verticalRight.StyledLines(), 9, 24, "└", StyleAccent)
+
+	horizontalTop := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Layout: LayoutVM{
 			Viewport: Rect{W: 40, H: 12},
 			Panels: []PanelVM{
@@ -312,9 +326,23 @@ func TestFrameworkSplitLineActivePaneOwnsSharedDividerStyle(t *testing.T) {
 			Split: SplitVM{Direction: SplitHorizontal, Children: []SplitVM{{PaneID: "top"}, {PaneID: "bottom"}}},
 		},
 	}})
-	assertStyledCellAt(t, horizontal.StyledLines(), 6, 10, "─", StyleAccent)
-	assertStyledCellAt(t, horizontal.StyledLines(), 6, 0, "├", StyleAccent)
-	assertStyledCellAt(t, horizontal.StyledLines(), 6, 39, "┤", StyleAccent)
+	assertStyledCellAt(t, horizontalTop.StyledLines(), 6, 0, "└", StyleAccent)
+	assertStyledCellAt(t, horizontalTop.StyledLines(), 6, 10, "─", StyleAccent)
+	assertStyledCellAt(t, horizontalTop.StyledLines(), 6, 39, "┘", StyleAccent)
+
+	horizontalBottom := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{
+			Viewport: Rect{W: 40, H: 12},
+			Panels: []PanelVM{
+				{ID: "top", Title: "top", Presentation: PanelPresentationSplitLine, Content: ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine("top body")}}},
+				{ID: "bottom", Title: "bottom", Presentation: PanelPresentationSplitLine, Active: true, Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("bottom body")}}},
+			},
+			Split: SplitVM{Direction: SplitHorizontal, Children: []SplitVM{{PaneID: "top"}, {PaneID: "bottom"}}},
+		},
+	}})
+	assertStyledCellAt(t, horizontalBottom.StyledLines(), 6, 0, "┌", StyleAccent)
+	assertStyledCellAt(t, horizontalBottom.StyledLines(), 6, 10, "─", StyleAccent)
+	assertStyledCellAt(t, horizontalBottom.StyledLines(), 6, 39, "┐", StyleAccent)
 }
 
 func TestFrameworkPreservesPaneChromeLineBetweenTitleAndAction(t *testing.T) {
@@ -918,7 +946,7 @@ func TestFrameworkComposesUnicodeSplitConnections(t *testing.T) {
 	panels := []PanelVM{
 		{ID: "left-top", Title: "lt", Presentation: PanelPresentationSplitLine, Content: ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine("lt")}}},
 		{ID: "left-bottom", Title: "lb", Presentation: PanelPresentationSplitLine, Content: ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine("lb")}}},
-		{ID: "right", Title: "right", Presentation: PanelPresentationSplitLine, Active: true, Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("right")}}},
+		{ID: "right", Title: "right", Presentation: PanelPresentationSplitLine, Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("right")}}},
 	}
 	split := SplitVM{Direction: SplitVertical, Children: []SplitVM{
 		{Direction: SplitHorizontal, Children: []SplitVM{{PaneID: "left-top"}, {PaneID: "left-bottom"}}},
