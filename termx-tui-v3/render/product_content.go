@@ -227,7 +227,7 @@ func buildTerminalPoolContent(root state.Root, shell state.ShellStore) ContentVM
 	rows := state.TerminalPoolPageItems(root)
 	layout := terminalManagerLayoutForViewport(root.Viewport)
 	listStart := terminalManagerListStart(rows, layout.BodyRows)
-	lines := terminalManagerLines(root.TerminalPool, rows, query, layout, listStart)
+	lines := terminalManagerLines(root, rows, query, layout, listStart)
 	visibleRows := terminalManagerVisibleRows(rows, listStart, layout.BodyRows)
 	_, selectedOK := selectedTerminalPoolPageItem(rows)
 	regions := terminalManagerHitRegions(visibleRows, 3, listStart, layout)
@@ -954,10 +954,10 @@ func terminalPickerSearchCursorCol(query string) int {
 	return DisplayWidth("search: ") + DisplayWidth(query)
 }
 
-func terminalManagerLines(pool state.TerminalPoolStore, rows []state.TerminalPoolPageItem, query string, layout terminalManagerLayout, listStart int) []Line {
+func terminalManagerLines(root state.Root, rows []state.TerminalPoolPageItem, query string, layout terminalManagerLayout, listStart int) []Line {
 	selected, selectedOK := selectedTerminalPoolPageItem(rows)
-	right := terminalManagerDetailLines(pool, selected, selectedOK)
-	statusLine, hasStatus := terminalPoolPageStateLine(pool, len(rows))
+	right := terminalManagerDetailLines(root, selected, selectedOK)
+	statusLine, hasStatus := terminalPoolPageStateLine(root.TerminalPool, len(rows))
 	lines := []Line{
 		terminalManagerFullLine(searchRowLine(query, "shell"), layout),
 		terminalManagerDividerLine(layout),
@@ -977,7 +977,7 @@ func terminalManagerLines(pool state.TerminalPoolStore, rows []state.TerminalPoo
 		}
 		lines = append(lines, terminalManagerBodyLine(left, rightLine, layout))
 	}
-	lines = append(lines, terminalManagerBodyLine(Line{}, terminalManagerActionLine(selectedOK), layout))
+	lines = append(lines, terminalManagerBodyLine(terminalManagerActionLine(terminalManagerLeftActions(), selectedOK), terminalManagerActionLine(terminalManagerRightActions(), selectedOK), layout))
 	return lines
 }
 
@@ -1076,9 +1076,9 @@ func selectedTerminalPoolPageItem(rows []state.TerminalPoolPageItem) (state.Term
 	return selected, true
 }
 
-func terminalManagerDetailLines(pool state.TerminalPoolStore, selected state.TerminalPoolPageItem, ok bool) []Line {
+func terminalManagerDetailLines(root state.Root, selected state.TerminalPoolPageItem, ok bool) []Line {
 	if !ok {
-		return terminalManagerEmptyDetailLines(pool)
+		return terminalManagerEmptyDetailLines(root.TerminalPool)
 	}
 	lines := []Line{
 		{Cells: []Cell{styledCell(" ", StyleAccent), styledCell(selected.Title, StyleForeground)}},
@@ -1095,6 +1095,12 @@ func terminalManagerDetailLines(pool state.TerminalPoolStore, selected state.Ter
 	if exit := terminalPoolExitLabel(selected); exit != "" {
 		lines = append(lines, terminalManagerDetailLine("exit", exit))
 	}
+	lines = append(lines, terminalManagerPreviewLines(root.Surface.SurfaceForTerminal(selected.TerminalID))...)
+	lines = append(lines,
+		terminalManagerDetailLine("keys", "Enter attach · ^T tab · ^O float"),
+		terminalManagerDetailLine("keys", "^E rename · ^K kill · ^X remove"),
+		terminalManagerDetailLine("history", terminalManagerHistoryStatus(root, selected)),
+	)
 	return lines
 }
 
@@ -1136,25 +1142,112 @@ func terminalManagerDetailLine(label string, value string) Line {
 	}}
 }
 
+func terminalManagerPreviewLines(surface state.TerminalSurfaceStore) []Line {
+	// 中文说明：preview 只消费 TUI 已持有的 live surface 投影，不读取 core history，
+	// 也不把实时快照当成 committed history truth。
+	lines := []Line{{Cells: []Cell{styledCell("PREVIEW ", StyleMuted), styledCell(terminalManagerPreviewStatus(surface), StyleMuted)}}}
+	preview := terminalManagerPreviewText(surface)
+	if len(preview) == 0 {
+		return lines
+	}
+	for _, text := range preview {
+		lines = append(lines, Line{Cells: []Cell{styledCell("│ ", StyleMuted), NewCell(text)}})
+	}
+	return lines
+}
+
+func terminalManagerPreviewStatus(surface state.TerminalSurfaceStore) string {
+	if surface.TerminalID == "" || (!surface.Ready && len(surface.Lines) == 0 && len(surface.Screen) == 0) {
+		return "not loaded"
+	}
+	if surface.Revision > 0 {
+		return fmt.Sprintf("rev:%d", surface.Revision)
+	}
+	return "latest"
+}
+
+func terminalManagerPreviewText(surface state.TerminalSurfaceStore) []string {
+	lines := surface.Lines
+	if len(lines) == 0 && len(surface.Screen) > 0 {
+		lines = liveScreenPlainLines(surface.Screen)
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	start := maxInt(0, len(lines)-3)
+	out := make([]string, 0, len(lines)-start)
+	for _, line := range lines[start:] {
+		line = strings.TrimRight(line, " ")
+		if line == "" {
+			line = " "
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+func liveScreenPlainLines(screen [][]state.LiveCell) []string {
+	lines := make([]string, 0, len(screen))
+	for _, row := range screen {
+		var builder strings.Builder
+		for _, cell := range row {
+			if cell.Text == "" {
+				builder.WriteString(strings.Repeat(" ", maxInt(1, cell.Width)))
+				continue
+			}
+			builder.WriteString(cell.Text)
+		}
+		lines = append(lines, builder.String())
+	}
+	return lines
+}
+
+func terminalManagerHistoryStatus(root state.Root, selected state.TerminalPoolPageItem) string {
+	// 中文说明：当前 manager 只展示 copy/history 投影是否已在 TUI reducer 中加载；
+	// history clear/delete 尚无服务端 action contract，因此明确标成 pending，不伪造可点击能力。
+	if selected.TerminalID == "" {
+		return "-"
+	}
+	if root.History.TerminalID == selected.TerminalID || root.CopyMode.TerminalID == selected.TerminalID {
+		return "active · clear pending"
+	}
+	for _, history := range root.HistoryByView {
+		if history.TerminalID == selected.TerminalID {
+			return "cached · clear pending"
+		}
+	}
+	return "not loaded · clear pending"
+}
+
 type terminalManagerAction struct {
 	ID    ActionID
 	Label string
 	Style StyleToken
 }
 
-func terminalManagerActions() []terminalManagerAction {
+func terminalManagerLeftActions() []terminalManagerAction {
 	return []terminalManagerAction{
-		{ID: ActionPoolAttach, Label: "Attach", Style: StyleAccent},
-		{ID: ActionPoolAttachTab, Label: "Tab", Style: StyleStatusAccent},
-		{ID: ActionPoolAttachFloat, Label: "Float", Style: StyleStatusAccent},
-		{ID: ActionPoolEdit, Label: "Edit", Style: StyleAccent},
-		{ID: ActionPoolKill, Label: "Kill", Style: StyleWarning},
-		{ID: ActionPoolDelete, Label: "Delete", Style: StyleDangerStrong},
+		{ID: ActionPoolAttach, Label: "Enter Attach", Style: StyleAccent},
+		{ID: ActionPoolAttachTab, Label: "^T Tab", Style: StyleStatusAccent},
+		{ID: ActionPoolAttachFloat, Label: "^O Float", Style: StyleStatusAccent},
 	}
 }
 
-func terminalManagerActionLine(enabled bool) Line {
-	actions := terminalManagerActions()
+func terminalManagerRightActions() []terminalManagerAction {
+	return []terminalManagerAction{
+		{ID: ActionPoolEdit, Label: "^E Rename", Style: StyleAccent},
+		{ID: ActionPoolKill, Label: "^K Kill", Style: StyleWarning},
+		{ID: ActionPoolDelete, Label: "^X Remove", Style: StyleDangerStrong},
+	}
+}
+
+func terminalManagerActions() []terminalManagerAction {
+	actions := terminalManagerLeftActions()
+	actions = append(actions, terminalManagerRightActions()...)
+	return actions
+}
+
+func terminalManagerActionLine(actions []terminalManagerAction, enabled bool) Line {
 	cells := make([]Cell, 0, len(actions)*2)
 	for index, action := range actions {
 		if index > 0 {
@@ -1790,27 +1883,43 @@ func terminalManagerHitRegions(rows []state.TerminalPoolPageItem, rowOffset int,
 }
 
 func terminalManagerActionHitRegions(layout terminalManagerLayout, enabled bool) []HitRegion {
-	if !enabled || layout.DetailWidth <= 0 {
+	if !enabled || layout.DetailWidth <= 0 || layout.ListWidth <= 0 {
 		return nil
 	}
-	rightX := layout.ListWidth + 1
-	offset := 0
 	actions := terminalManagerActions()
 	regions := make([]HitRegion, 0, len(actions))
+	leftOffset := 0
+	rightOffset := 0
 	for _, action := range actions {
+		x := 0
+		offset := leftOffset
+		widthLimit := layout.ListWidth
+		if terminalManagerActionIsRight(action.ID) {
+			x = layout.ListWidth + 1
+			offset = rightOffset
+			widthLimit = layout.DetailWidth
+		}
 		width := DisplayWidth(action.Label)
-		if width <= 0 || offset >= layout.DetailWidth {
-			break
+		if width <= 0 || offset >= widthLimit {
+			continue
 		}
 		regions = append(regions, HitRegion{
 			Kind:     HitRegionContentAction,
-			Rect:     Rect{X: rightX + offset, Y: layout.ActionRow, W: minInt(width, layout.DetailWidth-offset), H: 1},
+			Rect:     Rect{X: x + offset, Y: layout.ActionRow, W: minInt(width, widthLimit-offset), H: 1},
 			Row:      -1,
 			ActionID: action.ID.String(),
 		})
-		offset += width + 2
+		if terminalManagerActionIsRight(action.ID) {
+			rightOffset += width + 2
+		} else {
+			leftOffset += width + 2
+		}
 	}
 	return regions
+}
+
+func terminalManagerActionIsRight(actionID ActionID) bool {
+	return actionID == ActionPoolEdit || actionID == ActionPoolKill || actionID == ActionPoolDelete
 }
 
 func workbenchTreeHitRegions(rows []state.WorkbenchTreeItem, rowOffset int, treeWidth int) []HitRegion {

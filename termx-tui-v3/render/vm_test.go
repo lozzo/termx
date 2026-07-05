@@ -690,12 +690,12 @@ func TestRenderVMBuilderUsesStructuredFooterActionCatalog(t *testing.T) {
 				TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "shell", State: "running"}}},
 			},
 			want: []FooterActionVM{
-				{Key: "attach", ActionID: ActionPoolAttach.String()},
-				{Key: "tab", ActionID: ActionPoolAttachTab.String()},
-				{Key: "float", ActionID: ActionPoolAttachFloat.String()},
-				{Key: "edit", ActionID: ActionPoolEdit.String()},
-				{Key: "kill", ActionID: ActionPoolKill.String()},
-				{Key: "delete", ActionID: ActionPoolDelete.String()},
+				{Key: "enter", Label: "ATTACH", ActionID: ActionPoolAttach.String()},
+				{Key: "^T", Label: "TAB", ActionID: ActionPoolAttachTab.String()},
+				{Key: "^O", Label: "FLOAT", ActionID: ActionPoolAttachFloat.String()},
+				{Key: "^E", Label: "RENAME", ActionID: ActionPoolEdit.String()},
+				{Key: "^K", Label: "KILL", ActionID: ActionPoolKill.String()},
+				{Key: "^X", Label: "REMOVE", ActionID: ActionPoolDelete.String()},
 			},
 		},
 		{
@@ -2815,18 +2815,28 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 		TerminalPool: state.TerminalPoolStore{
 			Status: state.TerminalPoolReady,
 			Items: []state.TerminalPoolItem{{
-				TerminalID: "term-pool",
-				Title:      "日志🚀",
-				State:      "running",
-				CWD:        "/tmp/日志",
-				Cols:       120,
-				Rows:       36,
-				Tags:       map[string]string{"role": "shell"},
+				TerminalID:      "term-pool",
+				Title:           "日志🚀",
+				State:           "running",
+				CWD:             "/tmp/日志",
+				Cols:            120,
+				Rows:            36,
+				AttachmentCount: 27,
+				Tags:            map[string]string{"role": "shell"},
 			}, {
 				TerminalID: "term-other",
 				Title:      "worker",
 				State:      "exited",
 			}},
+		},
+		TerminalViews: state.TerminalViewStore{}.
+			BindPane(state.NewPaneTerminalView("pane-main", "term-pool", 7, 120, 36, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID("pane-main"), true)).
+			BindFloating(state.NewFloatingTerminalView("float-main", "float-pane", "term-pool", 8, 120, 36, state.TerminalResizeRoleFollower, "surface", state.TerminalFloatingViewID("float-main"), false)),
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-pool",
+			Revision:   23,
+			Ready:      true,
+			Lines:      []string{"line one", "line two", "line three", "line four"},
 		},
 	}
 
@@ -2835,14 +2845,26 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 	if vm.Shell.Overlay.Kind != OverlayTerminalPool || content.Kind != ContentTerminalPool {
 		t.Fatalf("expected terminal pool content, got %#v", vm.Shell.Overlay)
 	}
-	if !strings.Contains(content.Lines[0].PlainString(), "⌕ search 日志") ||
-		!strings.Contains(content.Lines[2].PlainString(), "TERMINALS") ||
-		!strings.Contains(content.Lines[2].PlainString(), "DETAIL 日志🚀") ||
-		!strings.Contains(content.Lines[3].PlainString(), "▸  日志🚀") ||
-		!strings.Contains(content.Lines[4].PlainString(), "id:term-pool") ||
-		!strings.Contains(content.Lines[5].PlainString(), "SIZE 120x36") ||
-		!strings.Contains(content.Lines[9].PlainString(), "role=shell") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "Attach  Tab  Float  Edit  Kill  Delete") {
+	rendered := plainLines(content.Lines)
+	if !strings.Contains(rendered, "⌕ search 日志") ||
+		!strings.Contains(rendered, "TERMINALS") ||
+		!strings.Contains(rendered, "DETAIL 日志🚀") ||
+		!strings.Contains(rendered, "▸  日志🚀") ||
+		!strings.Contains(rendered, "id:term-pool") ||
+		!strings.Contains(rendered, "SIZE 120x36") ||
+		!strings.Contains(rendered, "VIEWS 2") ||
+		!strings.Contains(rendered, "views:2") ||
+		!strings.Contains(rendered, "role=shell") ||
+		!strings.Contains(rendered, "PREVIEW rev:23") ||
+		!strings.Contains(rendered, "│ line two") ||
+		!strings.Contains(rendered, "│ line four") ||
+		!strings.Contains(rendered, "KEYS Enter attach · ^T tab · ^O float") ||
+		!strings.Contains(rendered, "KEYS ^E rename · ^K kill · ^X remove") ||
+		!strings.Contains(rendered, "HISTORY not loaded · clear pending") ||
+		!strings.Contains(rendered, "Enter Attach  ^T Tab  ^O Float") ||
+		!strings.Contains(rendered, "^E Rename  ^K Kill  ^X Remove") ||
+		strings.Contains(rendered, "VIEWS 27") ||
+		strings.Contains(rendered, "views:27") {
 		t.Fatalf("expected terminal manager list/detail/actions, got %#v", content.Lines)
 	}
 	if strings.Contains(content.Lines[3].PlainString(), "worker") {

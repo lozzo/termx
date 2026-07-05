@@ -1938,11 +1938,26 @@ func TestInteractiveRuntimeTerminalPoolPageFlow(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain pool edit: %v", err)
 	}
+	if runtime.State().Shell.Overlay.Kind != state.OverlayPrompt || runtime.State().Shell.Overlay.Prompt.Purpose != "terminal.rename" {
+		t.Fatalf("expected pool edit to open rename prompt, shell=%#v", runtime.State().Shell)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("send pool rename submit: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pool rename submit: %v", err)
+	}
 	if len(terminal.Edits) != 1 || terminal.Edits[0].TerminalID != "term-shell" {
 		t.Fatalf("expected edit metadata service result, edits=%#v", terminal.Edits)
 	}
-	if terminal.Edits[0].Tags["edited-by"] != "termx-tui-v3" {
-		t.Fatalf("expected edit action to populate metadata tags safely, edits=%#v", terminal.Edits)
+	if terminal.Edits[0].Title != "shell" {
+		t.Fatalf("expected rename prompt to submit selected title, edits=%#v", terminal.Edits)
+	}
+	if err := runtime.Post(ShellOpenTerminalPoolMsg{}); err != nil {
+		t.Fatalf("post pool open before kill: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pool open before kill: %v", err)
 	}
 	killRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "pool.kill", "")
 	if err := host.SendInput(mouseEventAt(killRegion.Rect)); err != nil {

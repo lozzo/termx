@@ -99,7 +99,8 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["terminal-pool-page"].Lines, "▸  日志🚀") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "DETAIL 日志🚀") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "VIEWS 1") ||
-		!frameContains(cases["terminal-pool-page"].Lines, "Attach  Tab  Float  Edit  Kill  Delete") {
+		!frameContains(cases["terminal-pool-page"].Lines, "Enter Attach") ||
+		!frameContains(cases["terminal-pool-page"].Lines, "^E Rename") {
 		t.Fatalf("terminal pool smoke missing page visual contract: %#v", cases["terminal-pool-page"].Lines)
 	}
 	if !frameContains(cases["workbench-tree-page"].Lines, "Workbench Navigator") ||
@@ -231,7 +232,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 	}
 	requiredOverlays := map[string][]string{
 		"terminal-picker":     {"┌─ terminal picker", "search:", "termx-picker shell", "running", "80x24"},
-		"terminal-pool-page":  {"┌─ Terminal Manager", "⌕ search 日志", "TERMINALS", "DETAIL 日志🚀", "Attach  Tab  Float  Edit  Kill  Delete"},
+		"terminal-pool-page":  {"┌─ Terminal Manager", "⌕ search 日志", "TERMINALS", "DETAIL 日志🚀", "Enter Attach", "^E Rename"},
 		"workbench-tree-page": {"┌─ Workbench Navigator", "⌕ search 日志", "TREE", "PANE", "SNAPSHOT", "Open  New  Zoom  Detach  Close"},
 		"prompt-overlay":      {"┌─ prompt", "Command Prompt", "重命名"},
 		"help-overlay":        {"┌─ help", "● open", "esc", "Most used", "Terminal Manager"},

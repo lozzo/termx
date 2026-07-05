@@ -168,6 +168,7 @@ func TestActionSpecCatalogClassifiesVisibleClickableAndDispatchActions(t *testin
 	assertSpec(ActionPoolAttach, ActionSurfaceContent, ActionDispatchApp)
 	assertSpec(ActionPoolAttachTab, ActionSurfaceContent, ActionDispatchApp)
 	assertSpec(ActionPoolAttachFloat, ActionSurfaceContent, ActionDispatchApp)
+	assertSpec(ActionPoolEdit, ActionSurfaceHelp, ActionDispatchApp)
 	assertSpec(ActionPoolDelete, ActionSurfaceContent, ActionDispatchApp)
 	assertSpec(ActionClipboardHistoryOpen, ActionSurfaceFooter, ActionDispatchApp)
 	assertSpec(ActionClipboardHistoryPaste, ActionSurfaceContent, ActionDispatchApp)

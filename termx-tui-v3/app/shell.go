@@ -650,14 +650,8 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		}
 	case render.ActionPoolEdit:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
-			tags := cloneStringMap(selected.Tags)
-			if tags == nil {
-				tags = map[string]string{}
-			}
-			tags["edited-by"] = "termx-tui-v3"
-			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolEditRequestMsg{TerminalID: selected.TerminalID, Title: selected.Title, Tags: tags}
-			}}}
+			root.Shell = root.Shell.OpenPrompt(terminalEditPrompt(selected))
+			return root.Advance(), nil
 		}
 	case render.ActionPoolDelete:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
@@ -899,6 +893,20 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 			root.Shell = root.Shell.CloseOverlay()
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return request }}}
 		}
+		if after.Purpose == "terminal.rename" {
+			request, err := terminalEditRequestFromPrompt(after)
+			if err != nil {
+				shell = root.Shell.EnsureDefaults()
+				prompt := shell.Overlay.Prompt
+				prompt.Submitted = false
+				prompt.LastResult = err.Error()
+				shell.Overlay.Prompt = prompt
+				root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.rename", Body: err.Error()})
+				return root.Advance(), nil
+			}
+			root.Shell = root.Shell.CloseOverlay()
+			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return request }}}
+		}
 		if after.Purpose == "clipboard.edit" {
 			root.Clipboard = root.Clipboard.ReplaceEntryText(after.TargetID, after.LastResult)
 			root.Shell = root.Shell.CloseOverlay()
@@ -1082,6 +1090,33 @@ func terminalCreateRequestFromPrompt(prompt state.PromptState) (TerminalPoolCrea
 		request.TargetPaneID = prompt.TargetID
 	}
 	return request, nil
+}
+
+func terminalEditPrompt(item state.TerminalPoolPageItem) state.PromptState {
+	// 中文说明：rename 输入归 Shell Prompt 管，提交后再生成 TerminalPoolEditRequestMsg；
+	// 这里不直接修改 reducer-owned pool state，也不在 renderer/service 间绕过主消息链。
+	return state.PromptState{
+		Title:       "Rename Terminal",
+		Purpose:     "terminal.rename",
+		TargetID:    item.TerminalID,
+		Value:       item.Title,
+		Placeholder: "terminal name",
+		Tags:        cloneStringMap(item.Tags),
+	}
+}
+
+func terminalEditRequestFromPrompt(prompt state.PromptState) (TerminalPoolEditRequestMsg, error) {
+	name := strings.TrimSpace(prompt.LastResult)
+	if name == "" {
+		name = strings.TrimSpace(prompt.Value)
+	}
+	if strings.TrimSpace(prompt.TargetID) == "" {
+		return TerminalPoolEditRequestMsg{}, fmt.Errorf("terminal id is required")
+	}
+	if name == "" {
+		return TerminalPoolEditRequestMsg{}, fmt.Errorf("name is required")
+	}
+	return TerminalPoolEditRequestMsg{TerminalID: prompt.TargetID, Title: name, Tags: cloneStringMap(prompt.Tags)}, nil
 }
 
 func parsePromptCommand(value string) ([]string, error) {

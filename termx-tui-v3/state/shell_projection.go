@@ -104,6 +104,7 @@ func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
 		if poolItem.TerminalID == "" {
 			continue
 		}
+		attachmentCount := terminalPoolAttachmentCount(root, poolItem)
 		item := TerminalPoolPageItem{
 			TerminalID:      poolItem.TerminalID,
 			Title:           terminalPoolTitle(poolItem),
@@ -115,8 +116,8 @@ func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
 			ExitedAt:        poolItem.ExitedAt,
 			Cols:            poolItem.Cols,
 			Rows:            poolItem.Rows,
-			AttachmentCount: poolItem.AttachmentCount,
-			Attached:        poolItem.Attached || poolItem.AttachmentCount > 0,
+			AttachmentCount: attachmentCount,
+			Attached:        poolItem.Attached || attachmentCount > 0,
 		}
 		if !matchesTerminalPoolPageQuery(item, query) {
 			continue
@@ -134,6 +135,15 @@ func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
 		items[selected].Selected = true
 	}
 	return items
+}
+
+func terminalPoolAttachmentCount(root Root, poolItem TerminalPoolItem) int {
+	// 中文说明：Terminal Manager 的连接数优先采用本地 TerminalViewStore，
+	// 与 panel chrome 使用同一份 TUI reducer-owned view binding 真值；pool metadata 只在本地没有绑定时作为服务端列表摘要。
+	if count := len(root.TerminalViews.BindingsForTerminal(poolItem.TerminalID)); count > 0 {
+		return count
+	}
+	return poolItem.AttachmentCount
 }
 
 func terminalPoolPickerLocation() string {
