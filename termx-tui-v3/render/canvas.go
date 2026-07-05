@@ -220,7 +220,13 @@ func canvasCellTextNeedsSanitize(text string) bool {
 }
 
 func canWriteCanvasCellAsSingleSegment(text string, cell Cell, cellWidth int) bool {
-	if text == "" || cellWidth <= 1 || cellWidth != len(text) {
+	if text == "" || cellWidth <= 1 {
+		return false
+	}
+	if canWriteCanvasExtentPlaceholderAsSingleSegment(text, cell, cellWidth) {
+		return true
+	}
+	if cellWidth != len(text) {
 		return false
 	}
 	for i := 0; i < len(text); i++ {

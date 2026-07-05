@@ -1083,12 +1083,20 @@ func TestCanvasMatrixKeepsSafeASCIIRunAsSingleSegment(t *testing.T) {
 }
 
 func TestCanvasANSICompactsStyledUnicodeUIRuns(t *testing.T) {
+	ResetPaneChromeGlyphs()
+	t.Cleanup(ResetPaneChromeGlyphs)
 	c := newCanvas(12, 1)
 	dots := strings.Repeat("·", 12)
 	c.writeLine(0, 0, 12, Line{Cells: []Cell{
 		{Text: dots, Width: 12, Style: "#666666", Safe: true},
 	}}, "panel:outside-extent", LayerPanel)
 
+	if cell := c.rows[0][0]; cell.text != dots || cell.width != 12 || cell.continuation {
+		t.Fatalf("styled UI dots should stay one canvas segment, got %#v", cell)
+	}
+	if cell := c.rows[0][1]; !cell.continuation || cell.owner != "panel:outside-extent" || cell.layer != LayerPanel {
+		t.Fatalf("styled UI dot run continuation should keep footprint metadata, got %#v", cell)
+	}
 	line := c.lines()[0]
 	if len(line.Cells) != 1 || line.Cells[0].Text != dots || line.Cells[0].Style != "#666666" {
 		t.Fatalf("styled UI dots should be compacted into one output cell, got %#v", line.Cells)

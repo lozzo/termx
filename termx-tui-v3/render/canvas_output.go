@@ -27,22 +27,30 @@ func canvasRowANSIString(row []canvasCell, theme Theme) string {
 
 func canvasRowOutputCells(row []canvasCell) []Cell {
 	cells := make([]Cell, 0, canvasOutputCellCapacity(row))
-	for _, cell := range row {
+	for col := 0; col < len(row); col++ {
+		cell := row[col]
 		if cell.continuation {
 			continue
 		}
 		cells = appendCanvasOutputCell(cells, canvasOutputCellFromMatrix(cell))
+		if cell.width > 1 {
+			col += minInt(cell.width-1, len(row)-col-1)
+		}
 	}
 	return cells
 }
 
 func canvasOutputCellCapacity(row []canvasCell) int {
 	count := 0
-	for _, cell := range row {
+	for col := 0; col < len(row); col++ {
+		cell := row[col]
 		if cell.continuation {
 			continue
 		}
 		count++
+		if cell.width > 1 {
+			col += minInt(cell.width-1, len(row)-col-1)
+		}
 	}
 	if count <= 0 {
 		return 1
