@@ -367,7 +367,7 @@ func (store HistoryStore) ApplyWindow(requestID RequestID, window HistoryWindow)
 	switch window.Op {
 	case HistoryWindowReplace:
 		store = store.replace(window, pending.Cols)
-		return store, len(window.Rows), nil
+		return store, len(store.Rows), nil
 	case HistoryWindowPrepend:
 		beforeRows := len(store.Rows)
 		if len(window.Rows) == 0 && !window.HasMore {
@@ -527,14 +527,11 @@ func (store HistoryStore) replace(window HistoryWindow, cols int) HistoryStore {
 	}
 	store.Cols = cols
 	store.SourceLines = historyWindowSourceLinesOwned(window)
-	if len(window.SourceLines) > 0 && cols == window.Cols && len(window.Rows) > 0 {
-		// 中文说明：带 SourceLines 的 HistoryWindow 经 message 进入 reducer 后由 reducer 接管；
-		// cols 未变化时直接复用已投影 rows/spans，避免 copy/history 入口重复 reflow 和深拷贝 cells。
-		store.Rows = window.Rows
-		store.Lines = window.Lines
-	} else {
-		store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, cols)
-	}
+	// 中文说明：latest replace 必须和 older/newer 使用同一条 frozen source
+	// canonical reflow 链路。protocol rows 只是 core 当时宽度下的投影；首次
+	// 进入 copy/history 时如果直接复用它们，后续 older 触发本地 reflow 后会看到
+	// 行序/换行突然变化。
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, cols)
 	store.Cursor = window.Cursor
 	store.Generation = window.Generation
 	store.Boundary = window.Boundary
@@ -732,9 +729,6 @@ func mergeAppendedHistoryLogicalLines(existing []HistoryLogicalLine, newer []His
 }
 
 func windowRowsForCols(window HistoryWindow, lines []HistoryLogicalLine, cols int) ([]HistoryRow, []HistoryLineSpan) {
-	if len(window.SourceLines) > 0 && cols == window.Cols && len(window.Rows) > 0 {
-		return window.Rows, window.Lines
-	}
 	return ReflowHistoryLogicalLines(lines, cols)
 }
 
@@ -1844,15 +1838,21 @@ func ReflowHistoryLogicalLines(lines []HistoryLogicalLine, cols int) ([]HistoryR
 func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	cells := cloneHistoryCells(line.Cells)
 	if isFixedGridHistoryRowKind(line.Kind) {
-		return fixedGridHistoryRows(line, cells)
+		rows := fixedGridHistoryRows(line, cells)
+		applyHistoryLineClipFlags(rows, line)
+		return rows
 	}
 	if len(cells) == 0 && line.Text != "" {
-		return reflowPlainHistoryLogicalLine(line, cols)
+		rows := reflowPlainHistoryLogicalLine(line, cols)
+		applyHistoryLineClipFlags(rows, line)
+		return rows
 	} else if len(cells) > 0 {
 		cells = normalizeHistoryLogicalLineCells(cells, cols)
 	}
 	if len(cells) == 0 {
-		return []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, ScreenRow: line.ScreenRow, ScreenRowSet: line.ScreenRowSet, ProjectionRowIndex: line.ProjectionRowIndex, LiveTail: line.LiveTail}}
+		rows := []HistoryRow{{LineID: line.LineID, Kind: line.Kind, Segment: line.Segment, SessionID: line.SessionID, FrameID: line.FrameID, FixedGrid: line.FixedGrid, ScreenCols: line.ScreenCols, ScreenRow: line.ScreenRow, ScreenRowSet: line.ScreenRowSet, ProjectionRowIndex: line.ProjectionRowIndex, LiveTail: line.LiveTail}}
+		applyHistoryLineClipFlags(rows, line)
+		return rows
 	}
 	rows := make([]HistoryRow, 0, 1)
 	current := make([]HistoryCell, 0, len(cells))
@@ -1908,7 +1908,20 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 		flush()
 	}
 	applyTailFillToLastHistoryRow(rows, line.TailFill)
+	applyHistoryLineClipFlags(rows, line)
 	return rows
+}
+
+func applyHistoryLineClipFlags(rows []HistoryRow, line HistoryLogicalLine) {
+	if len(rows) == 0 {
+		return
+	}
+	if line.ClippedBefore {
+		rows[0].ClippedStart = true
+	}
+	if line.ClippedAfter {
+		rows[len(rows)-1].ClippedEnd = true
+	}
 }
 
 func isFixedGridHistoryRowKind(kind string) bool {

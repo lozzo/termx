@@ -42,8 +42,8 @@ func TestHistoryStoreAcceptsLatestReplace(t *testing.T) {
 	}
 
 	store.Rows[0].Text = "mutated"
-	if window.Rows[0].Text != "mutated" {
-		t.Fatal("source-backed window rows are reducer-owned and should be reused")
+	if window.Rows[0].Text != "one" {
+		t.Fatal("latest replace must canonicalize rows from source instead of reusing protocol rows")
 	}
 }
 
@@ -72,12 +72,12 @@ func TestHistoryStoreDetachesStyledRowCells(t *testing.T) {
 	}
 	store.Rows[0].Cells[0].Text = "mutated"
 	store.Rows[0].Cells[2].Style.FG = "ansi:2"
-	if window.Rows[0].Cells[0].Text != "mutated" || window.Rows[0].Cells[2].Style.FG != "ansi:2" {
-		t.Fatalf("source-backed window rows should be reducer-owned, window=%#v store=%#v", window.Rows[0].Cells, store.Rows[0].Cells)
+	if window.Rows[0].Cells[0].Text != "ERR" || window.Rows[0].Cells[2].Style.FG != "#ffcc00" {
+		t.Fatalf("latest canonical reflow must detach protocol row cells, window=%#v store=%#v", window.Rows[0].Cells, store.Rows[0].Cells)
 	}
 }
 
-func TestHistoryStoreTakesOwnedSourceLinesAndRowsWhenColsMatch(t *testing.T) {
+func TestHistoryStoreTakesOwnedSourceLinesAndCanonicalizesRowsWhenColsMatch(t *testing.T) {
 	store, err := (HistoryStore{}).BeginLatest(HistoryPendingRequest{
 		ID:         1,
 		TerminalID: "term-1",
@@ -111,8 +111,8 @@ func TestHistoryStoreTakesOwnedSourceLinesAndRowsWhenColsMatch(t *testing.T) {
 	if len(store.SourceLines) != 1 || len(store.SourceLines[0].Cells) == 0 || &store.SourceLines[0].Cells[0] != &source[0].Cells[0] {
 		t.Fatalf("store should take owned source lines without deep clone, store=%#v source=%#v", store.SourceLines, source)
 	}
-	if len(store.Rows) != 1 || len(store.Rows[0].Cells) == 0 || &store.Rows[0].Cells[0] != &rows[0].Cells[0] {
-		t.Fatalf("store should reuse window rows when cols match, store=%#v rows=%#v", store.Rows, rows)
+	if len(store.Rows) != 1 || len(store.Rows[0].Cells) == 0 || &store.Rows[0].Cells[0] == &rows[0].Cells[0] {
+		t.Fatalf("store should reflow canonical rows even when cols match, store=%#v rows=%#v", store.Rows, rows)
 	}
 }
 
@@ -186,14 +186,62 @@ func TestHistoryStoreLatestReplaceReflowsFrozenSourceAtPendingCols(t *testing.T)
 	if err != nil {
 		t.Fatalf("apply latest: %v", err)
 	}
-	if inserted != 2 {
-		t.Fatalf("expected inserted rows to reflect source response rows, got %d", inserted)
+	if inserted != 1 {
+		t.Fatalf("expected inserted rows to reflect local canonical rows, got %d", inserted)
 	}
 	if store.Cols != 6 {
 		t.Fatalf("expected history store to keep local pending cols, got %d", store.Cols)
 	}
 	if got := rowTexts(store.Rows); !reflect.DeepEqual(got, []string{"abcdef"}) {
 		t.Fatalf("expected frozen source to reflow at local pending cols, got %v", got)
+	}
+}
+
+func TestR452HistoryStoreLatestReplaceCanonicalizesSourceRowsOnFirstEntry(t *testing.T) {
+	store, err := (HistoryStore{}).BeginLatest(HistoryPendingRequest{
+		ID:         1,
+		TerminalID: "term-1",
+		Cols:       4,
+	})
+	if err != nil {
+		t.Fatalf("begin latest: %v", err)
+	}
+
+	window := HistoryWindow{
+		TerminalID: "term-1",
+		Token:      "tok-r452",
+		Op:         HistoryWindowReplace,
+		Cols:       4,
+		SourceLines: []HistoryLogicalLine{{
+			Text:   "abcdefgh",
+			LineID: 10,
+			Cells: []HistoryCell{
+				{Text: "abcd", Width: 4},
+				{Text: "efgh", Width: 4},
+			},
+		}},
+		// 模拟 protocol 已投影 rows 和 frozen logical source 暂时不一致的首次 latest：
+		// reducer 必须以 SourceLines 为本地显示真值，不能等 older 之后才重排。
+		Rows: []HistoryRow{
+			{Text: "abcdefgh", LineID: 10, RowInLine: 0},
+		},
+		Lines:      []HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 0}},
+		Generation: 7,
+		Boundary:   HistoryBoundary{FirstLineID: 10, LastLineID: 10},
+	}
+
+	store, inserted, err := store.ApplyWindow(1, window)
+	if err != nil {
+		t.Fatalf("apply latest: %v", err)
+	}
+	if inserted != len(store.Rows) {
+		t.Fatalf("latest inserted count should reflect canonical rows, inserted=%d rows=%d", inserted, len(store.Rows))
+	}
+	if got := rowTexts(store.Rows); !reflect.DeepEqual(got, []string{"abcd", "efgh"}) {
+		t.Fatalf("first latest must reflow canonical logical source rows, got %v", got)
+	}
+	if got := spanRows(store.Lines); !reflect.DeepEqual(got, []spanRow{{id: 10, start: 0, end: 1}}) {
+		t.Fatalf("first latest must rebuild spans from canonical rows, got %v", got)
 	}
 }
 
