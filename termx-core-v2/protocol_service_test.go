@@ -347,6 +347,76 @@ func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceAttachReplacesSameClientViewAttachment(t *testing.T) {
+	_, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-reattach", Command: []string{"shell"}, Size: protocol.Size{Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	first, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{
+		TerminalID:   "term-reattach",
+		ResizePolicy: protocol.ResizePolicyOwner,
+		SurfaceID:    "surface-1",
+		ViewID:       "view-main",
+	})
+	if err != nil {
+		t.Fatalf("first attach: %v", err)
+	}
+	second, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{
+		TerminalID:   "term-reattach",
+		ResizePolicy: protocol.ResizePolicyFollower,
+		SurfaceID:    "surface-1",
+		ViewID:       "view-main",
+	})
+	if err != nil {
+		t.Fatalf("second attach: %v", err)
+	}
+	if second.Channel == first.Channel {
+		t.Fatalf("reattach should allocate a fresh channel, first=%#v second=%#v", first, second)
+	}
+	if err := client.InputWithOptions(context.Background(), protocol.InputParams{
+		TerminalID: "term-reattach",
+		Channel:    first.Channel,
+		SurfaceID:  "surface-1",
+		ViewID:     "view-main",
+		Data:       []byte("old"),
+	}); err == nil {
+		t.Fatal("old reattached channel should be released")
+	}
+	if err := client.InputWithOptions(context.Background(), protocol.InputParams{
+		TerminalID: "term-reattach",
+		Channel:    second.Channel,
+		SurfaceID:  "surface-1",
+		ViewID:     "view-main",
+		Data:       []byte("new"),
+	}); err != nil {
+		t.Fatalf("fresh channel should accept input: %v", err)
+	}
+	list, err := client.List(context.Background())
+	if err != nil {
+		t.Fatalf("list after reattach: %v", err)
+	}
+	if len(list.Terminals) != 1 || list.Terminals[0].ResizeOwnerAttachmentCount != 1 {
+		t.Fatalf("same client view reattach should count as one view attachment, list=%#v", list)
+	}
+	if _, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{
+		TerminalID:   "term-reattach",
+		ResizePolicy: protocol.ResizePolicyFollower,
+		SurfaceID:    "surface-1",
+		ViewID:       "view-side",
+	}); err != nil {
+		t.Fatalf("third attach: %v", err)
+	}
+	list, err = client.List(context.Background())
+	if err != nil {
+		t.Fatalf("list after second view: %v", err)
+	}
+	if len(list.Terminals) != 1 || list.Terminals[0].ResizeOwnerAttachmentCount != 2 {
+		t.Fatalf("distinct client views should count separately, list=%#v", list)
+	}
+}
+
 func TestProtocolServiceStorageMethodsAndEvents(t *testing.T) {
 	_, client, closeClient := newProtocolClient(t)
 	defer closeClient()

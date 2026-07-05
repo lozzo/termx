@@ -1188,6 +1188,8 @@ func (session *protocolSession) attach(params protocol.AttachParams) (protocolAt
 		SurfaceID:    params.SurfaceID,
 		ViewID:       params.ViewID,
 	}
+	replaced := session.replaceProtocolAttachmentsForView(attachment)
+	session.unregisterProtocolAttachments(replaced)
 	session.mu.Lock()
 	session.attachments[channel] = attachment
 	session.mu.Unlock()
@@ -1214,6 +1216,35 @@ func (session *protocolSession) attach(params protocol.AttachParams) (protocolAt
 		"state", string(info.State),
 	)
 	return attachment, control, nil
+}
+
+func (session *protocolSession) replaceProtocolAttachmentsForView(next protocolAttachment) []protocolAttachment {
+	if next.ViewID == "" {
+		return nil
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	detached := make([]protocolAttachment, 0)
+	for channel, current := range session.attachments {
+		if !sameProtocolViewAttachment(next, current) {
+			continue
+		}
+		// 中文说明：同一个 client view 重新 attach 时，新 channel 才是输入/resize
+		// 真值；旧 channel 必须从 daemon attachment registry 释放，避免 chrome 计数膨胀。
+		delete(session.attachments, channel)
+		detached = append(detached, current)
+	}
+	return detached
+}
+
+func sameProtocolViewAttachment(next protocolAttachment, current protocolAttachment) bool {
+	if next.ViewID == "" || current.ViewID != next.ViewID {
+		return false
+	}
+	if next.SurfaceID != "" {
+		return current.SurfaceID == next.SurfaceID
+	}
+	return true
 }
 
 func (session *protocolSession) detach(params protocol.DetachParams) {
@@ -1581,10 +1612,17 @@ func (server *Server) applyProtocolOwnershipToInfo(out *protocol.TerminalInfo, s
 	defer server.protocolAttachmentMu.Unlock()
 	ownerKey := server.protocolResizeOwners[out.ID]
 	owner, hasOwner := server.protocolAttachments[ownerKey]
+	seen := make(map[string]struct{})
 	for _, attachment := range server.protocolAttachments {
-		if attachment.TerminalID == out.ID {
-			out.ResizeOwnerAttachmentCount++
+		if attachment.TerminalID != out.ID {
+			continue
 		}
+		key := protocolAttachmentViewCountKey(attachment)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out.ResizeOwnerAttachmentCount++
 	}
 	if hasOwner && owner.TerminalID == out.ID {
 		out.ResizeOwnership = &protocol.ResizeOwnership{
@@ -1596,6 +1634,15 @@ func (server *Server) applyProtocolOwnershipToInfo(out *protocol.TerminalInfo, s
 			Epoch:             owner.Epoch,
 		}
 	}
+}
+
+func protocolAttachmentViewCountKey(attachment protocolAttachment) string {
+	if attachment.ViewID != "" {
+		// 中文说明：attachment count 对外表达“有几个 client view 连到 terminal”，
+		// 不能把同一 view 重试 attach 产生的历史 channel 算成多个连接。
+		return attachment.SurfaceID + "\x00" + attachment.ViewID
+	}
+	return attachmentKey(attachment)
 }
 
 func (session *protocolSession) publishProtocolAttachmentChangedLocked(terminalID string, changed bool) {

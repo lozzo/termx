@@ -515,7 +515,7 @@ func TestTerminalLiveCellsUseProtocolWidthWhenLocalMeasureDiffers(t *testing.T) 
 func TestRenderVMBuilderProjectsTerminalResizeOwnerChrome(t *testing.T) {
 	shell := state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
 	root := state.Root{Shell: shell.FocusPane(state.PaneCommandTarget{PaneID: "pane-2"})}
-	root.TerminalPool = state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "shell", State: "running", AttachmentCount: 4}}}
+	root.TerminalPool = state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "shell", State: "running", AttachmentCount: 23}}}
 	ownerBinding := state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true)
 	ownerBinding.OwnerSurfaceID = "surface"
 	ownerBinding.OwnerViewID = "view-1"
@@ -536,13 +536,13 @@ func TestRenderVMBuilderProjectsTerminalResizeOwnerChrome(t *testing.T) {
 	if len(owner.Chrome.Meta) != 0 {
 		t.Fatalf("owner pane should keep resize role out of variable meta slots, got %#v", owner.Chrome.Meta)
 	}
-	if owner.Chrome.Terminal.Title.Text != "shell" || owner.Chrome.Terminal.State.Text != paneChromeRunningGlyph() || owner.Chrome.Terminal.AttachCount != 4 || owner.Chrome.Terminal.Owner.Text != "◆ owner" || !owner.Chrome.Terminal.CanResize || owner.Chrome.Terminal.Locked {
+	if owner.Chrome.Terminal.Title.Text != "shell" || owner.Chrome.Terminal.State.Text != paneChromeRunningGlyph() || owner.Chrome.Terminal.AttachCount != 2 || owner.Chrome.Terminal.Owner.Text != "◆ owner" || !owner.Chrome.Terminal.CanResize || owner.Chrome.Terminal.Locked {
 		t.Fatalf("owner pane should expose tuiv2 terminal chrome facts, got %#v", owner.Chrome.Terminal)
 	}
 	if len(follower.Chrome.Meta) != 0 {
 		t.Fatalf("follower pane should keep resize role out of variable meta slots, got %#v", follower.Chrome.Meta)
 	}
-	if follower.Chrome.Terminal.AttachCount != 4 || follower.Chrome.Terminal.Owner.Text != "◇ follow" || follower.Chrome.Terminal.Locked {
+	if follower.Chrome.Terminal.AttachCount != 2 || follower.Chrome.Terminal.Owner.Text != "◇ follow" || follower.Chrome.Terminal.Locked {
 		t.Fatalf("follower pane should expose tuiv2 follower chrome facts, got %#v", follower.Chrome.Terminal)
 	}
 	root.Shell = root.Shell.ArmOwnerConfirm("view-2")

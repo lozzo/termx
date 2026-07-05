@@ -941,12 +941,15 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 }
 
 func terminalChromeAttachCount(root state.Root, terminalID string) int {
+	if count := len(root.TerminalViews.BindingsForTerminal(terminalID)); count > 0 {
+		return count
+	}
 	for _, item := range root.TerminalPool.Items {
 		if item.TerminalID == terminalID && item.AttachmentCount > 0 {
 			return item.AttachmentCount
 		}
 	}
-	return len(root.TerminalViews.BindingsForTerminal(terminalID))
+	return 0
 }
 
 func defaultFloatingChromeActionVMs(style StyleToken) []ChromeActionVM {
