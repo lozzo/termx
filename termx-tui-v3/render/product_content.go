@@ -983,7 +983,7 @@ func terminalPickerSearchCursorCol(query string) int {
 
 func terminalManagerLines(root state.Root, rows []state.TerminalPoolPageItem, query string, layout terminalManagerLayout, listStart int) []Line {
 	selected, selectedOK := selectedTerminalPoolPageItem(rows)
-	right := terminalManagerDetailLines(root, selected, selectedOK)
+	right := terminalManagerDetailLines(root, selected, selectedOK, layout.BodyRows)
 	statusLine, hasStatus := terminalPoolPageStateLine(root.TerminalPool, len(rows))
 	lines := []Line{
 		terminalManagerFullLine(searchRowLine(query, "shell"), layout),
@@ -1107,7 +1107,7 @@ func selectedTerminalPoolPageItem(rows []state.TerminalPoolPageItem) (state.Term
 	return selected, true
 }
 
-func terminalManagerDetailLines(root state.Root, selected state.TerminalPoolPageItem, ok bool) []Line {
+func terminalManagerDetailLines(root state.Root, selected state.TerminalPoolPageItem, ok bool, visibleRows int) []Line {
 	if !ok {
 		return terminalManagerEmptyDetailLines(root.TerminalPool)
 	}
@@ -1127,8 +1127,17 @@ func terminalManagerDetailLines(root state.Root, selected state.TerminalPoolPage
 	if exit := terminalPoolExitLabel(selected); exit != "" {
 		lines = append(lines, terminalManagerDetailLine("exit", exit))
 	}
-	lines = append(lines, terminalManagerPreviewLines(root.Surface.SurfaceForTerminal(selected.TerminalID))...)
-	lines = append(lines, terminalManagerDetailLine("history", terminalManagerHistoryStatus(root, selected)))
+	if visibleRows > 0 && len(lines) >= visibleRows {
+		return lines[:visibleRows]
+	}
+	previewRows := 0
+	if visibleRows > 0 {
+		previewRows = visibleRows - len(lines)
+	}
+	lines = append(lines, terminalManagerPreviewLines(root.Surface.SurfaceForTerminal(selected.TerminalID), previewRows)...)
+	if visibleRows > 0 && len(lines) > visibleRows {
+		return lines[:visibleRows]
+	}
 	return lines
 }
 
@@ -1156,16 +1165,27 @@ func terminalManagerDetailLine(label string, value string) Line {
 	}}
 }
 
-func terminalManagerPreviewLines(surface state.TerminalSurfaceStore) []Line {
+func terminalManagerPreviewLines(surface state.TerminalSurfaceStore, limit int) []Line {
+	if limit <= 0 {
+		return nil
+	}
 	// 中文说明：preview 只消费 TUI 已持有的 live surface 投影，不读取 core history，
 	// 也不把实时快照当成 committed history truth。
-	preview := terminalManagerPreviewText(surface)
+	preview := terminalManagerPreviewContentLines(surface)
 	if len(preview) == 0 {
 		return nil
 	}
+	bodyLimit := limit - 1
 	lines := []Line{{Cells: []Cell{styledCell("PREVIEW ", StyleMuted), styledCell(terminalManagerPreviewStatus(surface), StyleMuted)}}}
-	for _, text := range preview {
-		lines = append(lines, Line{Cells: []Cell{styledCell("│ ", StyleMuted), NewCell(text)}})
+	if bodyLimit <= 0 {
+		return lines
+	}
+	if len(preview) > bodyLimit {
+		preview = preview[len(preview)-bodyLimit:]
+	}
+	lines = append(lines, preview...)
+	for len(lines) < limit {
+		lines = append(lines, Line{})
 	}
 	return lines
 }
@@ -1180,57 +1200,33 @@ func terminalManagerPreviewStatus(surface state.TerminalSurfaceStore) string {
 	return "latest"
 }
 
-func terminalManagerPreviewText(surface state.TerminalSurfaceStore) []string {
-	lines := surface.Lines
-	if len(lines) == 0 && len(surface.Screen) > 0 {
-		lines = liveScreenPlainLines(surface.Screen)
-	}
+func terminalManagerPreviewContentLines(surface state.TerminalSurfaceStore) []Line {
+	lines := terminalLiveLineVMs(surface)
 	if len(lines) == 0 {
 		return nil
 	}
-	start := maxInt(0, len(lines)-3)
-	out := make([]string, 0, len(lines)-start)
-	for _, line := range lines[start:] {
-		line = strings.TrimRight(line, " ")
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		out = append(out, line)
-	}
-	return out
-}
-
-func liveScreenPlainLines(screen [][]state.LiveCell) []string {
-	lines := make([]string, 0, len(screen))
-	for _, row := range screen {
-		var builder strings.Builder
-		for _, cell := range row {
-			if cell.Text == "" {
-				builder.WriteString(strings.Repeat(" ", maxInt(1, cell.Width)))
-				continue
-			}
-			builder.WriteString(cell.Text)
-		}
-		lines = append(lines, builder.String())
+	lines = terminalManagerTrimPreviewBlankRows(lines)
+	if !terminalManagerPreviewHasContent(lines) {
+		return nil
 	}
 	return lines
 }
 
-func terminalManagerHistoryStatus(root state.Root, selected state.TerminalPoolPageItem) string {
-	// 中文说明：当前 manager 只展示 copy/history 投影是否已在 TUI reducer 中加载；
-	// 未实现的 history clear/delete 不在详情区展示，避免把 future action 伪装成可用能力。
-	if selected.TerminalID == "" {
-		return "-"
+func terminalManagerTrimPreviewBlankRows(lines []Line) []Line {
+	end := len(lines)
+	for end > 0 && strings.TrimSpace(lines[end-1].PlainString()) == "" {
+		end--
 	}
-	if root.History.TerminalID == selected.TerminalID || root.CopyMode.TerminalID == selected.TerminalID {
-		return "active"
-	}
-	for _, history := range root.HistoryByView {
-		if history.TerminalID == selected.TerminalID {
-			return "cached"
+	return lines[:end]
+}
+
+func terminalManagerPreviewHasContent(lines []Line) bool {
+	for _, line := range lines {
+		if strings.TrimSpace(line.PlainString()) != "" {
+			return true
 		}
 	}
-	return "not loaded"
+	return false
 }
 
 type terminalManagerAction struct {

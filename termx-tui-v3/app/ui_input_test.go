@@ -776,9 +776,10 @@ func TestOverlayKeyboardCommandsRouteClipboardHistoryContentActions(t *testing.T
 func TestOverlayMouseWheelMovesCurrentSelection(t *testing.T) {
 	inputReducer := NewUIInputReducer()
 	tests := []struct {
-		name     string
-		root     state.Root
-		wantKind state.OverlayKind
+		name        string
+		root        state.Root
+		wantKind    state.OverlayKind
+		wantPreview bool
 	}{
 		{
 			name: "terminal picker",
@@ -794,7 +795,8 @@ func TestOverlayMouseWheelMovesCurrentSelection(t *testing.T) {
 				Shell:        state.DefaultShell().OpenTerminalPool(),
 				TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-a", Title: "a"}, {TerminalID: "term-b", Title: "b"}}},
 			},
-			wantKind: state.OverlayTerminalPool,
+			wantKind:    state.OverlayTerminalPool,
+			wantPreview: true,
 		},
 		{
 			name: "workbench tree",
@@ -832,11 +834,18 @@ func TestOverlayMouseWheelMovesCurrentSelection(t *testing.T) {
 			if next.Shell.Overlay.Kind != tc.wantKind || next.Shell.Overlay.SelectedIndex != 1 {
 				t.Fatalf("wheel down should move overlay selection, overlay=%#v", next.Shell.Overlay)
 			}
-			if len(effects) != 1 {
+			wantEffects := 1
+			if tc.wantPreview {
+				wantEffects = 2
+			}
+			if len(effects) != wantEffects {
 				t.Fatalf("overlay wheel should be handled locally, effects=%#v", effects)
 			}
 			if _, ok := effects[0].(handledEffect); !ok {
 				t.Fatalf("overlay wheel should emit handled effect, got %#v", effects[0])
+			}
+			if tc.wantPreview && !terminalPoolPreviewRefreshScheduled(t, effects) {
+				t.Fatalf("terminal pool wheel should refresh preview, effects=%#v", effects)
 			}
 			next, effects = inputReducer(next, ShellOverlayMouseSelectMsg{Delta: -1})
 			if next.Shell.Overlay.SelectedIndex != 0 {

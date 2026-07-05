@@ -618,7 +618,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionPoolSelect:
 		items := state.TerminalPoolPageItems(root)
 		root.Shell = root.Shell.SetTerminalPoolSelectedIndex(msg.Row, len(items))
-		return root.Advance(), nil
+		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolPreviewRefreshMsg{} }}}
 	case render.ActionPoolAttach:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
 			target := terminalPoolTargetForOverlay(root)

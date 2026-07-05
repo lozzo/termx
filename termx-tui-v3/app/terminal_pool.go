@@ -13,17 +13,61 @@ import (
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
-type TerminalPoolListRequestMsg struct{}
+const (
+	terminalPoolRefreshToken    CancelToken   = "terminal.pool.refresh"
+	terminalPoolRefreshInterval time.Duration = time.Second
+)
+
+// TerminalPoolListRequestMsg 请求刷新 Terminal Manager 的 inventory 投影。
+// Refresh=true 表示后台诊断刷新：只更新资源/连接数/生命周期，不切换 loading 状态，也不让请求消息本身触发渲染。
+type TerminalPoolListRequestMsg struct {
+	Refresh bool
+}
 
 func (TerminalPoolListRequestMsg) isMsg() {}
 
+// SkipRender 避免后台刷新请求产生空 frame；真正的渲染由 list result 或 live surface result 驱动。
+func (msg TerminalPoolListRequestMsg) SkipRender() bool {
+	return msg.Refresh
+}
+
+// TerminalPoolRefreshTickMsg 是 Terminal Manager 打开期间的周期性刷新 tick。
+// 它只回到 reducer 发起一次后台 list，资源真值仍来自 terminal service 的下一次 list result。
+type TerminalPoolRefreshTickMsg struct{}
+
+func (TerminalPoolRefreshTickMsg) isMsg() {}
+
+// SkipRender 表示 tick 自身不改变 reducer-owned view-model。
+func (TerminalPoolRefreshTickMsg) SkipRender() bool {
+	return true
+}
+
+// TerminalPoolPreviewRefreshMsg 请求重新拉取当前选中 terminal 的 latest native screen。
+// 这个消息只负责把 selection/query 变化接到 live surface effect，不读取 history 或本地 scrollback。
+type TerminalPoolPreviewRefreshMsg struct{}
+
+func (TerminalPoolPreviewRefreshMsg) isMsg() {}
+
+// SkipRender 表示 preview 刷新请求本身不产生新画面；LiveSurfaceMsg 回投后才更新右侧 preview。
+func (TerminalPoolPreviewRefreshMsg) SkipRender() bool {
+	return true
+}
+
+// TerminalPoolListResultMsg 是 terminal service inventory 回到 TUI reducer 的结果消息。
+// Refresh 记录它是否来自后台刷新，用于静默处理错误并继续刷新循环。
 type TerminalPoolListResultMsg struct {
-	Seq    uint64
-	Result services.TerminalListResult
-	Err    error
+	Seq     uint64
+	Refresh bool
+	Result  services.TerminalListResult
+	Err     error
 }
 
 func (TerminalPoolListResultMsg) isMsg() {}
+
+// SkipRender 只跳过后台刷新失败 frame；成功刷新需要让资源/连接数变化立即显示。
+func (msg TerminalPoolListResultMsg) SkipRender() bool {
+	return msg.Refresh && msg.Err != nil
+}
 
 type TerminalPoolAttachRequestMsg struct {
 	TerminalID       string
@@ -174,9 +218,13 @@ func NewTerminalPoolReducer(deps LiveDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		switch msg := msg.(type) {
 		case TerminalPoolListRequestMsg:
-			return reduceTerminalPoolListRequest(root, deps)
+			return reduceTerminalPoolListRequest(root, msg, deps)
 		case TerminalPoolListResultMsg:
 			return reduceTerminalPoolListResult(root, msg, deps)
+		case TerminalPoolRefreshTickMsg:
+			return reduceTerminalPoolRefreshTick(root, deps)
+		case TerminalPoolPreviewRefreshMsg:
+			return reduceTerminalPoolPreviewRefresh(root, deps)
 		case TerminalPoolAttachRequestMsg:
 			return reduceTerminalPoolAttachRequest(root, msg, deps)
 		case TerminalPoolAttachResultMsg:
@@ -219,26 +267,36 @@ func NewTerminalPoolReducer(deps LiveDeps) Reducer {
 	}
 }
 
-func reduceTerminalPoolListRequest(root state.Root, deps LiveDeps) (state.Root, []Effect) {
+func reduceTerminalPoolListRequest(root state.Root, msg TerminalPoolListRequestMsg, deps LiveDeps) (state.Root, []Effect) {
 	if deps.Terminal == nil {
+		if msg.Refresh {
+			return root, nil
+		}
 		root.TerminalPool, _ = root.TerminalPool.ApplyList(root.TerminalPool.RequestSeq, nil, "terminal service missing")
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.pool", Body: "terminal service missing"})
 		return root.Advance(), nil
 	}
-	root.TerminalPool = root.TerminalPool.RequestList()
+	if msg.Refresh {
+		root.TerminalPool = root.TerminalPool.RequestRefresh()
+	} else {
+		root.TerminalPool = root.TerminalPool.RequestList()
+	}
 	seq := root.TerminalPool.RequestSeq
 	return root.Advance(), []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.terminal_pool.list.effect")
 			result, err := deps.Terminal.List(ctx, services.TerminalListRequest{})
 			finish(len(result.Items))
-			return TerminalPoolListResultMsg{Seq: seq, Result: result, Err: err}
+			return TerminalPoolListResultMsg{Seq: seq, Refresh: msg.Refresh, Result: result, Err: err}
 		},
 	}}
 }
 
 func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	errText := errorString(msg.Err)
+	if msg.Refresh && errText != "" {
+		return root, terminalPoolRefreshLoopEffects(root)
+	}
 	beforeSurfaceTerminal := root.Surface.TerminalID
 	beforeSurfaceState := root.Surface.State
 	beforeSessionTerminal := root.Session.TerminalID
@@ -262,9 +320,89 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 		"bindings", lifecycleTerminalViewsSummary(root.TerminalViews),
 	)
 	if errText != "" {
-		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.pool", Body: errText})
+		if !msg.Refresh {
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.pool", Body: errText})
+		}
 	}
-	return root.Advance(), nil
+	effects := terminalPoolRefreshLoopEffects(root)
+	effects = append(effects, terminalPoolPreviewRefreshEffects(root, deps)...)
+	return root.Advance(), effects
+}
+
+func reduceTerminalPoolRefreshTick(root state.Root, deps LiveDeps) (state.Root, []Effect) {
+	if !terminalPoolOverlayOpen(root) {
+		return root, nil
+	}
+	return reduceTerminalPoolListRequest(root, TerminalPoolListRequestMsg{Refresh: true}, deps)
+}
+
+func reduceTerminalPoolPreviewRefresh(root state.Root, deps LiveDeps) (state.Root, []Effect) {
+	if !terminalPoolOverlayOpen(root) {
+		return root, nil
+	}
+	return root, terminalPoolPreviewRefreshEffects(root, deps)
+}
+
+func terminalPoolRefreshLoopEffects(root state.Root) []Effect {
+	if !terminalPoolOverlayOpen(root) {
+		return nil
+	}
+	return []Effect{FuncEffect{
+		Token: terminalPoolRefreshToken,
+		Async: true,
+		Run: func(ctx context.Context) Msg {
+			timer := time.NewTimer(terminalPoolRefreshInterval)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-timer.C:
+				return TerminalPoolRefreshTickMsg{}
+			}
+		},
+	}}
+}
+
+func terminalPoolPreviewRefreshEffects(root state.Root, deps LiveDeps) []Effect {
+	if !terminalPoolOverlayOpen(root) {
+		return nil
+	}
+	selected, ok := selectedTerminalPoolPageItem(root)
+	if !ok {
+		return nil
+	}
+	if selected.TerminalID == root.TerminalPool.LastRemovedID {
+		// 中文说明：remove 成功后若后台 list 暂时返回旧项，preview 不能拉 live surface 复活已清理的 session/surface。
+		return nil
+	}
+	cols, rows := selected.Cols, selected.Rows
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
+	// 中文说明：Terminal Manager preview 只拉 core latest native screen；
+	// 它是实时展示投影，不从 history/copy 或本地 scrollback 推断内容。
+	return liveSurfaceEffect(selected.TerminalID, cols, rows, false, deps)
+}
+
+func terminalPoolOverlayOpen(root state.Root) bool {
+	shell := root.Shell.ReadonlyDefaults()
+	return shell.Overlay.Open && shell.Overlay.Kind == state.OverlayTerminalPool
+}
+
+func selectedTerminalPoolPageItem(root state.Root) (state.TerminalPoolPageItem, bool) {
+	items := state.TerminalPoolPageItems(root)
+	if len(items) == 0 {
+		return state.TerminalPoolPageItem{}, false
+	}
+	for _, item := range items {
+		if item.Selected {
+			return item, item.TerminalID != ""
+		}
+	}
+	return items[0], items[0].TerminalID != ""
 }
 
 func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequestMsg, deps LiveDeps) (state.Root, []Effect) {

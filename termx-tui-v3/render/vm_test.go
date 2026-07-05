@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -2864,14 +2865,15 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 		!strings.Contains(rendered, "USAGE cpu 12.3% · mem 64.0 MiB · pid 4321") ||
 		!strings.Contains(rendered, "role=shell") ||
 		!strings.Contains(rendered, "PREVIEW rev:23") ||
-		!strings.Contains(rendered, "│ line two") ||
-		!strings.Contains(rendered, "│ line four") ||
-		!strings.Contains(rendered, "HISTORY not loaded") ||
+		!strings.Contains(rendered, "line one") ||
+		!strings.Contains(rendered, "line four") ||
 		!strings.Contains(rendered, "Enter Attach  ^T Tab  ^O Float") ||
 		!strings.Contains(rendered, "^R Restart  ^E Rename  ^K Kill  ^X Remove") ||
 		strings.Contains(rendered, "id:term-pool") ||
 		strings.Contains(rendered, "KEYS Enter attach") ||
 		strings.Contains(rendered, "clear pending") ||
+		strings.Contains(rendered, "│ line") ||
+		strings.Contains(rendered, "HISTORY not loaded") ||
 		strings.Contains(rendered, "VIEWS 27") ||
 		strings.Contains(rendered, "views:27") {
 		t.Fatalf("expected terminal manager list/detail/actions, got %#v", content.Lines)
@@ -2939,6 +2941,44 @@ func TestRenderVMBuilderOmitsEmptyTerminalPoolPreview(t *testing.T) {
 		strings.Contains(rendered, "PREVIEW") ||
 		strings.Contains(rendered, "│") {
 		t.Fatalf("expected empty preview to be omitted, got %#v", content.Lines)
+	}
+}
+
+func TestRenderVMBuilderTerminalPoolPreviewUsesLiveScreenArea(t *testing.T) {
+	liveRows := make([]string, 0, 14)
+	for index := 0; index < 14; index++ {
+		liveRows = append(liveRows, fmt.Sprintf("screen-%02d", index))
+	}
+	root := state.Root{
+		Shell:    state.DefaultShell().OpenTerminalPool(),
+		Viewport: state.ViewportStore{Valid: true, Cols: 140, Rows: 34},
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items: []state.TerminalPoolItem{{
+				TerminalID: "term-live-preview",
+				Title:      "live-preview",
+				State:      "running",
+				Cols:       100,
+				Rows:       28,
+			}},
+		},
+		Surface: (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+			TerminalID: "term-live-preview",
+			Revision:   42,
+			Cols:       100,
+			Rows:       28,
+			Lines:      liveRows,
+		}),
+	}
+
+	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	rendered := plainLines(content.Lines)
+	if !strings.Contains(rendered, "PREVIEW rev:42") ||
+		!strings.Contains(rendered, "screen-00") ||
+		!strings.Contains(rendered, "screen-13") ||
+		strings.Contains(rendered, "│ screen-") ||
+		strings.Contains(rendered, "HISTORY") {
+		t.Fatalf("expected live terminal rows to fill manager preview area, got %#v", content.Lines)
 	}
 }
 

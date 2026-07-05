@@ -57,6 +57,13 @@ func (store TerminalPoolStore) RequestList() TerminalPoolStore {
 	return store
 }
 
+// RequestRefresh 只推进 Terminal Manager 的后台 list 序号，不切换 loading 状态。
+// 它用于资源/preview 的周期性诊断刷新；TerminalPoolStore 的列表真值仍来自下一次 ApplyList。
+func (store TerminalPoolStore) RequestRefresh() TerminalPoolStore {
+	store.RequestSeq++
+	return store
+}
+
 func (store TerminalPoolStore) ApplyList(seq uint64, items []TerminalPoolItem, err string) (TerminalPoolStore, bool) {
 	if store.IsStale(seq) {
 		return store, false

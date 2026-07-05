@@ -346,11 +346,13 @@ func reduceOverlayMouseSelect(root state.Root, msg ShellOverlayMouseSelectMsg) (
 		return root, []Effect{handledEffect{}}
 	}
 	// 中文说明：overlay 滚轮只移动当前弹层选择，不允许事件继续落到底层 terminal。
+	effects := []Effect{handledEffect{}}
 	switch shell.Overlay.Kind {
 	case state.OverlayTerminalPicker:
 		root.Shell = shell.MoveTerminalPickerSelection(msg.Delta, len(state.TerminalPickerItems(root)))
 	case state.OverlayTerminalPool:
 		root.Shell = shell.MoveTerminalPoolSelection(msg.Delta, len(state.TerminalPoolPageItems(root)))
+		effects = append(effects, terminalPoolPreviewRefreshEffect())
 	case state.OverlayWorkbenchTree:
 		root.Shell = shell.MoveWorkbenchTreeSelection(msg.Delta, len(state.WorkbenchTreeItems(root)))
 	case state.OverlayClipboardHistory:
@@ -360,7 +362,7 @@ func reduceOverlayMouseSelect(root state.Root, msg ShellOverlayMouseSelectMsg) (
 	default:
 		return root, []Effect{handledEffect{}}
 	}
-	return root.Advance(), []Effect{handledEffect{}}
+	return root.Advance(), effects
 }
 
 func reduceEmptyPaneCTAInput(root state.Root, event input.InputEvent) (bool, state.Root, []Effect) {
@@ -580,28 +582,36 @@ func reduceTerminalPoolPageInput(root state.Root, event input.InputEvent) (state
 	switch event.Key {
 	case input.KeyUp:
 		root.Shell = root.Shell.MoveTerminalPoolSelection(-1, len(items))
-		return root.Advance(), []Effect{handledEffect{}}
+		return root.Advance(), terminalPoolPageHandledEffects()
 	case input.KeyDown:
 		root.Shell = root.Shell.MoveTerminalPoolSelection(1, len(items))
-		return root.Advance(), []Effect{handledEffect{}}
+		return root.Advance(), terminalPoolPageHandledEffects()
 	case input.KeyEnter:
 		return reduceTerminalPoolPageAttach(root, items)
 	case input.KeyBackspace, input.KeyDelete:
 		root.Shell = root.Shell.SetTerminalPoolQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
-		return root.Advance(), []Effect{handledEffect{}}
+		return root.Advance(), terminalPoolPageHandledEffects()
 	case input.KeyChar:
 		if isBackspaceEvent(event) {
 			root.Shell = root.Shell.SetTerminalPoolQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
-			return root.Advance(), []Effect{handledEffect{}}
+			return root.Advance(), terminalPoolPageHandledEffects()
 		}
 		if event.Ctrl || event.Char == "" {
 			return root, []Effect{handledEffect{}}
 		}
 		root.Shell = root.Shell.SetTerminalPoolQuery(root.Shell.EnsureDefaults().Overlay.Query + event.Char)
-		return root.Advance(), []Effect{handledEffect{}}
+		return root.Advance(), terminalPoolPageHandledEffects()
 	default:
 		return root, []Effect{handledEffect{}}
 	}
+}
+
+func terminalPoolPageHandledEffects() []Effect {
+	return []Effect{handledEffect{}, terminalPoolPreviewRefreshEffect()}
+}
+
+func terminalPoolPreviewRefreshEffect() Effect {
+	return FuncEffect{Run: func(context.Context) Msg { return TerminalPoolPreviewRefreshMsg{} }}
 }
 
 func reduceTerminalPoolPageAttach(root state.Root, items []state.TerminalPoolPageItem) (state.Root, []Effect) {
