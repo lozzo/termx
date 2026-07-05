@@ -690,6 +690,9 @@ func TestRenderVMBuilderUsesStructuredFooterActionCatalog(t *testing.T) {
 				TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "shell", State: "running"}}},
 			},
 			want: []FooterActionVM{
+				{Key: "type", Label: "SEARCH"},
+				{Key: "⌫", Label: "DELETE"},
+				{Key: "↑↓", Label: "SELECT"},
 				{Key: "enter", Label: "ATTACH", ActionID: ActionPoolAttach.String()},
 				{Key: "^T", Label: "TAB", ActionID: ActionPoolAttachTab.String()},
 				{Key: "^O", Label: "FLOAT", ActionID: ActionPoolAttachFloat.String()},

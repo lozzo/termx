@@ -488,7 +488,9 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		)
 	case string(state.OverlayTerminalPool):
 		return footerActionSpecs(
-			footerActionSpec("search", "", "", StyleStatusAccent),
+			footerActionSpec("type", "SEARCH", "", StyleStatusAccent),
+			footerActionSpec("⌫", "DELETE", "", StyleStatusMuted),
+			footerActionSpec("↑↓", "SELECT", "", StyleStatusAccent),
 			footerActionFor(ActionPoolAttach),
 			footerActionFor(ActionPoolAttachTab),
 			footerActionFor(ActionPoolAttachFloat),

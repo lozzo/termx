@@ -586,6 +586,9 @@ func reduceTerminalPoolPageInput(root state.Root, event input.InputEvent) (state
 		return root.Advance(), []Effect{handledEffect{}}
 	case input.KeyEnter:
 		return reduceTerminalPoolPageAttach(root, items)
+	case input.KeyBackspace, input.KeyDelete:
+		root.Shell = root.Shell.SetTerminalPoolQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
+		return root.Advance(), []Effect{handledEffect{}}
 	case input.KeyChar:
 		if isBackspaceEvent(event) {
 			root.Shell = root.Shell.SetTerminalPoolQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
