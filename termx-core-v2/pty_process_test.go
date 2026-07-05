@@ -34,8 +34,8 @@ func TestPTYProcessFactoryFeedsLiveSurface(t *testing.T) {
 		t.Fatalf("write pty input: %v", err)
 	}
 	waitForLiveRow(t, server, "term-pty", "echo:beta")
-	assertEventuallyEvent(t, events, EventTerminalLiveInvalidated, "term-pty")
 	assertEventuallyEvent(t, events, EventTerminalResized, "term-pty")
+	assertEventuallyEvent(t, events, EventTerminalLiveInvalidated, "term-pty")
 	assertEventuallyEvent(t, events, EventTerminalExited, "term-pty")
 }
 

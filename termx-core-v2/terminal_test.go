@@ -24,7 +24,7 @@ func TestTerminalLifecycleAndLiveSurface(t *testing.T) {
 	info, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-1",
 		Command: []string{"shell"},
-		Size:    Size{Cols: 10, Rows: 3},
+		Size:    Size{Cols: 40, Rows: 6},
 	})
 	if err != nil {
 		t.Fatalf("register terminal: %v", err)
@@ -36,6 +36,14 @@ func TestTerminalLifecycleAndLiveSurface(t *testing.T) {
 	if process == nil {
 		t.Fatal("expected process to be spawned")
 	}
+	rows, err := server.LiveRows("term-1")
+	if err != nil {
+		t.Fatalf("initial live rows: %v", err)
+	}
+	initial := strings.Join(rows, "\n")
+	if !strings.Contains(initial, "terminal started: term-1") || !strings.Contains(initial, "started at: ") {
+		t.Fatalf("live rows must include terminal start marker, got %#v", rows)
+	}
 	if err := server.WriteInput(context.Background(), "term-1", []byte("echo hi\n")); err != nil {
 		t.Fatalf("write input: %v", err)
 	}
@@ -46,11 +54,12 @@ func TestTerminalLifecycleAndLiveSurface(t *testing.T) {
 	if err := server.IngestOutput(context.Background(), "term-1", "hello\nworld"); err != nil {
 		t.Fatalf("ingest output: %v", err)
 	}
-	rows, err := server.LiveRows("term-1")
+	rows, err = server.LiveRows("term-1")
 	if err != nil {
 		t.Fatalf("live rows: %v", err)
 	}
-	if len(rows) != 2 || rows[0] != "hello" || !strings.Contains(rows[1], "world") {
+	joined := strings.Join(rows, "\n")
+	if !strings.Contains(joined, "hello") || !strings.Contains(joined, "world") {
 		t.Fatalf("unexpected live rows %#v", rows)
 	}
 	if err := server.ResizeTerminal(context.Background(), "term-1", 20, 5); err != nil {
@@ -95,14 +104,18 @@ func TestR373ResizeSerializesProcessOutputWithTapResize(t *testing.T) {
 	}
 	assertEventually(t, time.Second, func() bool {
 		snapshot := terminal.NativeScreenSnapshot("term-r373-resize-order")
-		return snapshot.Size.Cols == 8 && len(snapshot.Rows) > 0 && len(snapshot.Rows[0].Cells) >= 7
+		return snapshot.Size.Cols == 8 && terminalSnapshotContainsRowText(snapshot, "abcdefg")
 	}, "resize output should be applied after tap resize")
 	snapshot := terminal.NativeScreenSnapshot("term-r373-resize-order")
 	if snapshot.Size.Cols != 8 {
 		t.Fatalf("tap latest screen should use resized width, got %#v", snapshot.Size)
 	}
-	if got := len(snapshot.Rows[0].Cells); got != 7 {
-		t.Fatalf("resize-triggered output should not wrap at old width, row cells=%d row=%#v", got, snapshot.Rows[0])
+	rowText, rowCells, ok := terminalSnapshotRowText(snapshot, "abcdefg")
+	if !ok {
+		t.Fatalf("resize-triggered output row missing, snapshot=%#v", snapshot)
+	}
+	if got := len(rowCells); got != 7 {
+		t.Fatalf("resize-triggered output should not wrap at old width, row cells=%d text=%q cells=%#v", got, rowText, rowCells)
 	}
 }
 func TestTerminalLiveSurfaceRepliesToOSCBackgroundQuery(t *testing.T) {
@@ -233,7 +246,7 @@ func TestR396ProcessOutputFansOutLiveSurfaceAndHistorySemanticConsumer(t *testin
 func TestR396RestartFlushesPendingLiveQueueBeforePreservingScreen(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
-	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r396-restart-live", Command: []string{"shell"}, Size: Size{Cols: 30, Rows: 4}}); err != nil {
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-r396-restart-live", Command: []string{"shell"}, Size: Size{Cols: 40, Rows: 8}}); err != nil {
 		t.Fatalf("register terminal: %v", err)
 	}
 	terminal, err := server.Terminal("term-r396-restart-live")
@@ -289,6 +302,9 @@ func TestR396RestartFlushesPendingLiveQueueBeforePreservingScreen(t *testing.T) 
 	}
 	if !strings.Contains(strings.Join(rows, "|"), "pending-before-restart") {
 		t.Fatalf("restart must preserve live queue output that was already enqueued, rows=%#v", rows)
+	}
+	if !strings.Contains(strings.Join(rows, "|"), "terminal started: term-r396-restart-live") || !strings.Contains(strings.Join(rows, "|"), "started at: ") {
+		t.Fatalf("restart live rows must include new start marker, rows=%#v", rows)
 	}
 }
 
@@ -556,7 +572,12 @@ func TestServerNextLiveInvalidationWaitsForNextWake(t *testing.T) {
 	done := make(chan Event, 1)
 	errs := make(chan error, 1)
 	go func() {
-		event, err := server.NextLiveInvalidation(ctx, "term-live-wait", 0)
+		terminal, err := server.Terminal("term-live-wait")
+		if err != nil {
+			errs <- err
+			return
+		}
+		event, err := server.NextLiveInvalidation(ctx, "term-live-wait", terminal.LiveRevision())
 		if err != nil {
 			errs <- err
 			return
@@ -1132,6 +1153,21 @@ func terminalLiveRowsFromNativeSnapshot(snapshot NativeScreenSnapshot) []string 
 		out = out[:len(out)-1]
 	}
 	return out
+}
+
+func terminalSnapshotContainsRowText(snapshot NativeScreenSnapshot, want string) bool {
+	_, _, ok := terminalSnapshotRowText(snapshot, want)
+	return ok
+}
+
+func terminalSnapshotRowText(snapshot NativeScreenSnapshot, want string) (string, []vterm.Cell, bool) {
+	for _, row := range snapshot.Rows {
+		text := strings.TrimRight(terminalTestVTermRowText(row.Cells), " ")
+		if text == want {
+			return text, row.Cells, true
+		}
+	}
+	return "", nil, false
 }
 
 func terminalTestVTermRowText(row []vterm.Cell) string {

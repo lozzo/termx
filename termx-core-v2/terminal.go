@@ -82,9 +82,7 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 		}
 		terminal.historyStore = historyStore
 	}
-	if terminal.historyEnabled {
-		terminal.appendStartMarker(info.CreatedAt)
-	}
+	terminal.appendStartMarker(info.CreatedAt)
 	terminal.watchProcess(process)
 	return terminal
 }
@@ -302,7 +300,9 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 		terminal.tapOpMu.Lock()
 		terminal.tap = NewLineHistorySemanticTap(info.ID, info.Size, nil)
 		terminal.tapOpMu.Unlock()
-		terminal.appendStartMarker(time.Now().UTC())
+	}
+	if startRevision, ok := terminal.appendStartMarker(time.Now().UTC()); ok {
+		revision = startRevision
 	}
 	terminal.syncInfo(info)
 	terminal.watchProcess(process)
@@ -724,20 +724,37 @@ func (terminal *Terminal) appendExitMarker(info TerminalInfo) {
 		return
 	}
 	terminal.appendLifecycleHistoryMarker(lines)
-	text := "\r\n" + strings.Join(lines, "\r\n") + "\r\n"
-	revision, err := terminal.applyLiveOutput(text)
-	if err != nil {
+	revision, ok := terminal.appendLifecycleLiveMarker(lines, true)
+	if !ok {
 		return
 	}
 	terminal.publishLiveInvalidated(info.ID, uint64(revision))
 }
 
-func (terminal *Terminal) appendStartMarker(startedAt time.Time) {
+func (terminal *Terminal) appendStartMarker(startedAt time.Time) (LiveRevision, bool) {
 	terminal.mu.Lock()
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
 	lines := terminalStartMarkerLines(info, startedAt)
 	terminal.appendLifecycleHistoryMarker(lines)
+	return terminal.appendLifecycleLiveMarker(lines, false)
+}
+
+func (terminal *Terminal) appendLifecycleLiveMarker(lines []string, leadingBlankLine bool) (LiveRevision, bool) {
+	if len(lines) == 0 {
+		return 0, false
+	}
+	text := strings.Join(lines, "\r\n") + "\r\n"
+	if leadingBlankLine {
+		text = "\r\n" + text
+	}
+	// 中文说明：live marker 与 history marker 同源于 core terminal lifecycle，
+	// 只是写入 live native screen；它不能反向作为 history truth。
+	revision, err := terminal.applyLiveOutput(text)
+	if err != nil {
+		return 0, false
+	}
+	return revision, true
 }
 
 func (terminal *Terminal) appendLifecycleHistoryMarker(lines []string) {

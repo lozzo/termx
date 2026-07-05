@@ -434,7 +434,7 @@ func TestProtocolServiceLiveScreenReturnsNativeRows(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 
-	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 12, Rows: 4}}); err != nil {
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 40, Rows: 6}}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if err := server.IngestOutput(context.Background(), "term-1", "alpha\r\n\x1b[32mOK\x1b[0m"); err != nil {
@@ -445,18 +445,26 @@ func TestProtocolServiceLiveScreenReturnsNativeRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("live screen: %v", err)
 	}
-	if liveScreen.TerminalID != "term-1" || liveScreen.Size != (protocol.Size{Cols: 12, Rows: 4}) || liveScreen.Revision == 0 {
+	if liveScreen.TerminalID != "term-1" || liveScreen.Size != (protocol.Size{Cols: 40, Rows: 6}) || liveScreen.Revision == 0 {
 		t.Fatalf("unexpected live screen metadata %#v", liveScreen)
 	}
-	if got := liveScreen.Rows[0].Text; got != "alpha" {
-		t.Fatalf("live screen should expose native row text, got %#v", liveScreen.Rows[0])
-	}
 	rows := liveScreen.Rows
-	if len(rows) != 4 {
+	if len(rows) != 6 {
 		t.Fatalf("expected size-bound live screen rows, got %#v", rows)
 	}
-	if got := rows[0].Text; got != "alpha" {
-		t.Fatalf("live screen should expose plain native row text, got %#v", got)
+	var rowText strings.Builder
+	for _, row := range rows {
+		if rowText.Len() > 0 {
+			rowText.WriteString("\n")
+		}
+		rowText.WriteString(row.Text)
+	}
+	joined := rowText.String()
+	if !strings.Contains(joined, "terminal started: term-1") || !strings.Contains(joined, "started at: ") {
+		t.Fatalf("live screen should expose terminal start marker, rows=%#v", rows)
+	}
+	if !strings.Contains(joined, "alpha") {
+		t.Fatalf("live screen should expose native row text, got %#v", rows)
 	}
 	var okCells []protocol.Cell
 	for _, row := range rows {
@@ -516,12 +524,16 @@ func TestProtocolServiceNextLiveInvalidationDecodesOneShotParams(t *testing.T) {
 	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-live-next", Command: []string{"shell"}, Size: protocol.Size{Cols: 12, Rows: 4}}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
+	initial, err := client.LiveScreen(context.Background(), "term-live-next")
+	if err != nil {
+		t.Fatalf("initial live screen: %v", err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	events := make(chan *protocol.Event, 1)
 	errs := make(chan error, 1)
 	go func() {
-		event, err := client.NextLiveInvalidation(ctx, "term-live-next", 0)
+		event, err := client.NextLiveInvalidation(ctx, "term-live-next", initial.Revision)
 		if err != nil {
 			errs <- err
 			return
