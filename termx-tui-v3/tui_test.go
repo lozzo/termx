@@ -98,7 +98,8 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["terminal-pool-page"].Lines, "⌕ search 日志") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "▸  日志🚀") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "DETAIL 日志🚀") ||
-		!frameContains(cases["terminal-pool-page"].Lines, "VIEWS 1") ||
+		!frameContains(cases["terminal-pool-page"].Lines, "STATUS running · 1 view · 120x36") ||
+		!frameContains(cases["terminal-pool-page"].Lines, "USAGE n/a") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "Enter Attach") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "^E Rename") {
 		t.Fatalf("terminal pool smoke missing page visual contract: %#v", cases["terminal-pool-page"].Lines)

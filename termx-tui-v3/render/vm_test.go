@@ -2858,23 +2858,20 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 		!strings.Contains(rendered, "TERMINALS") ||
 		!strings.Contains(rendered, "DETAIL 日志🚀") ||
 		!strings.Contains(rendered, "▸  日志🚀") ||
-		!strings.Contains(rendered, "id:term-pool") ||
-		!strings.Contains(rendered, "SIZE 120x36") ||
-		!strings.Contains(rendered, "VIEWS 2") ||
+		!strings.Contains(rendered, "STATUS running · 2 views · 120x36") ||
 		!strings.Contains(rendered, "views:2") ||
 		!strings.Contains(rendered, "12% 64M") ||
-		!strings.Contains(rendered, "CPU 12.3%") ||
-		!strings.Contains(rendered, "MEMORY 64.0 MiB · pid 4321") ||
+		!strings.Contains(rendered, "USAGE cpu 12.3% · mem 64.0 MiB · pid 4321") ||
 		!strings.Contains(rendered, "role=shell") ||
 		!strings.Contains(rendered, "PREVIEW rev:23") ||
 		!strings.Contains(rendered, "│ line two") ||
 		!strings.Contains(rendered, "│ line four") ||
-		!strings.Contains(rendered, "KEYS Enter attach · ^T tab · ^O float") ||
-		!strings.Contains(rendered, "KEYS ^R restart · ^E rename") ||
-		!strings.Contains(rendered, "KEYS ^K kill · ^X remove") ||
-		!strings.Contains(rendered, "HISTORY not loaded · clear pending") ||
+		!strings.Contains(rendered, "HISTORY not loaded") ||
 		!strings.Contains(rendered, "Enter Attach  ^T Tab  ^O Float") ||
 		!strings.Contains(rendered, "^R Restart  ^E Rename  ^K Kill  ^X Remove") ||
+		strings.Contains(rendered, "id:term-pool") ||
+		strings.Contains(rendered, "KEYS Enter attach") ||
+		strings.Contains(rendered, "clear pending") ||
 		strings.Contains(rendered, "VIEWS 27") ||
 		strings.Contains(rendered, "views:27") {
 		t.Fatalf("expected terminal manager list/detail/actions, got %#v", content.Lines)
@@ -2911,6 +2908,37 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	if !content.Empty || !strings.Contains(plainLines(content.Lines), "list empty") {
 		t.Fatalf("expected pool empty page, got %#v", content)
+	}
+}
+
+func TestRenderVMBuilderOmitsEmptyTerminalPoolPreview(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell().OpenTerminalPool(),
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items: []state.TerminalPoolItem{{
+				TerminalID:      "term-blank",
+				Title:           "blank",
+				State:           "running",
+				Cols:            80,
+				Rows:            24,
+				AttachmentCount: 1,
+			}},
+		},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-blank",
+			Revision:   7,
+			Ready:      true,
+			Lines:      []string{"", "   "},
+		},
+	}
+
+	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	rendered := plainLines(content.Lines)
+	if !strings.Contains(rendered, "STATUS running · 1 view · 80x24") ||
+		strings.Contains(rendered, "PREVIEW") ||
+		strings.Contains(rendered, "│") {
+		t.Fatalf("expected empty preview to be omitted, got %#v", content.Lines)
 	}
 }
 

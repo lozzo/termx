@@ -1112,30 +1112,23 @@ func terminalManagerDetailLines(root state.Root, selected state.TerminalPoolPage
 		return terminalManagerEmptyDetailLines(root.TerminalPool)
 	}
 	lines := []Line{
-		{Cells: []Cell{styledCell(" ", StyleAccent), styledCell(selected.Title, StyleForeground)}},
-		terminalManagerTokenLine([]string{
-			"id:" + selected.TerminalID,
-			"state:" + terminalPoolStateLabel(selected),
-		}),
-		terminalManagerDetailLine("size", terminalPoolSizeLabel(selected.Cols, selected.Rows)),
-		terminalManagerDetailLine("views", terminalPoolAttachmentValue(selected)),
+		terminalManagerDetailLine("status", terminalPoolDetailStatus(selected)),
+		terminalManagerDetailLine("usage", terminalPoolResourceDetailLabel(selected)),
 	}
-	lines = append(lines, terminalManagerResourceLines(selected)...)
-	lines = append(lines,
-		terminalManagerDetailLine("cwd", selected.CWD),
-		terminalManagerDetailLine("cmd", terminalPoolCommandLabel(selected.Command)),
-		terminalManagerDetailLine("tags", terminalPoolTagsLabel(selected.Tags)),
-	)
+	if strings.TrimSpace(selected.CWD) != "" {
+		lines = append(lines, terminalManagerDetailLine("cwd", selected.CWD))
+	}
+	if command := terminalPoolCommandLabel(selected.Command); command != "-" {
+		lines = append(lines, terminalManagerDetailLine("cmd", command))
+	}
+	if tags := terminalPoolTagsLabel(selected.Tags); tags != "-" {
+		lines = append(lines, terminalManagerDetailLine("tags", tags))
+	}
 	if exit := terminalPoolExitLabel(selected); exit != "" {
 		lines = append(lines, terminalManagerDetailLine("exit", exit))
 	}
 	lines = append(lines, terminalManagerPreviewLines(root.Surface.SurfaceForTerminal(selected.TerminalID))...)
-	lines = append(lines,
-		terminalManagerDetailLine("keys", "Enter attach · ^T tab · ^O float"),
-		terminalManagerDetailLine("keys", "^R restart · ^E rename"),
-		terminalManagerDetailLine("keys", "^K kill · ^X remove"),
-		terminalManagerDetailLine("history", terminalManagerHistoryStatus(root, selected)),
-	)
+	lines = append(lines, terminalManagerDetailLine("history", terminalManagerHistoryStatus(root, selected)))
 	return lines
 }
 
@@ -1153,20 +1146,6 @@ func terminalManagerEmptyDetailLines(pool state.TerminalPoolStore) []Line {
 	}
 }
 
-func terminalManagerTokenLine(tokens []string) Line {
-	cells := make([]Cell, 0, len(tokens)*2)
-	for index, token := range tokens {
-		if strings.TrimSpace(token) == "" {
-			continue
-		}
-		if index > 0 && len(cells) > 0 {
-			cells = append(cells, NewCell(" "))
-		}
-		cells = append(cells, tokenCell(token, StyleMuted))
-	}
-	return Line{Cells: cells}
-}
-
 func terminalManagerDetailLine(label string, value string) Line {
 	if strings.TrimSpace(value) == "" {
 		value = "-"
@@ -1180,11 +1159,11 @@ func terminalManagerDetailLine(label string, value string) Line {
 func terminalManagerPreviewLines(surface state.TerminalSurfaceStore) []Line {
 	// 中文说明：preview 只消费 TUI 已持有的 live surface 投影，不读取 core history，
 	// 也不把实时快照当成 committed history truth。
-	lines := []Line{{Cells: []Cell{styledCell("PREVIEW ", StyleMuted), styledCell(terminalManagerPreviewStatus(surface), StyleMuted)}}}
 	preview := terminalManagerPreviewText(surface)
 	if len(preview) == 0 {
-		return lines
+		return nil
 	}
+	lines := []Line{{Cells: []Cell{styledCell("PREVIEW ", StyleMuted), styledCell(terminalManagerPreviewStatus(surface), StyleMuted)}}}
 	for _, text := range preview {
 		lines = append(lines, Line{Cells: []Cell{styledCell("│ ", StyleMuted), NewCell(text)}})
 	}
@@ -1213,8 +1192,8 @@ func terminalManagerPreviewText(surface state.TerminalSurfaceStore) []string {
 	out := make([]string, 0, len(lines)-start)
 	for _, line := range lines[start:] {
 		line = strings.TrimRight(line, " ")
-		if line == "" {
-			line = " "
+		if strings.TrimSpace(line) == "" {
+			continue
 		}
 		out = append(out, line)
 	}
@@ -1239,19 +1218,19 @@ func liveScreenPlainLines(screen [][]state.LiveCell) []string {
 
 func terminalManagerHistoryStatus(root state.Root, selected state.TerminalPoolPageItem) string {
 	// 中文说明：当前 manager 只展示 copy/history 投影是否已在 TUI reducer 中加载；
-	// history clear/delete 尚无服务端 action contract，因此明确标成 pending，不伪造可点击能力。
+	// 未实现的 history clear/delete 不在详情区展示，避免把 future action 伪装成可用能力。
 	if selected.TerminalID == "" {
 		return "-"
 	}
 	if root.History.TerminalID == selected.TerminalID || root.CopyMode.TerminalID == selected.TerminalID {
-		return "active · clear pending"
+		return "active"
 	}
 	for _, history := range root.HistoryByView {
 		if history.TerminalID == selected.TerminalID {
-			return "cached · clear pending"
+			return "cached"
 		}
 	}
-	return "not loaded · clear pending"
+	return "not loaded"
 }
 
 type terminalManagerAction struct {
@@ -2479,19 +2458,32 @@ func terminalPoolAttachmentValue(row state.TerminalPoolPageItem) string {
 	return fmt.Sprintf("%d", maxInt(0, count))
 }
 
-func terminalManagerResourceLines(row state.TerminalPoolPageItem) []Line {
+func terminalPoolDetailStatus(row state.TerminalPoolPageItem) string {
+	views := terminalPoolAttachmentValue(row)
+	viewLabel := "views"
+	if views == "1" {
+		viewLabel = "view"
+	}
+	return strings.Join([]string{
+		terminalPoolStateLabel(row),
+		views + " " + viewLabel,
+		terminalPoolSizeLabel(row.Cols, row.Rows),
+	}, " · ")
+}
+
+func terminalPoolResourceDetailLabel(row state.TerminalPoolPageItem) string {
 	usage := row.Resources
 	if usage.SampledAt.IsZero() {
-		return []Line{terminalManagerDetailLine("resources", "n/a")}
+		return "n/a"
 	}
-	memory := terminalPoolMemoryDetailLabel(usage.MemoryBytes)
+	parts := []string{
+		"cpu " + terminalPoolCPUPercentLabel(usage.CPUPercentX100),
+		"mem " + terminalPoolMemoryDetailLabel(usage.MemoryBytes),
+	}
 	if usage.PID > 0 {
-		memory += fmt.Sprintf(" · pid %d", usage.PID)
+		parts = append(parts, fmt.Sprintf("pid %d", usage.PID))
 	}
-	return []Line{
-		terminalManagerDetailLine("cpu", terminalPoolCPUPercentLabel(usage.CPUPercentX100)),
-		terminalManagerDetailLine("memory", memory),
-	}
+	return strings.Join(parts, " · ")
 }
 
 func terminalPoolResourceShortLabel(row state.TerminalPoolPageItem) string {
