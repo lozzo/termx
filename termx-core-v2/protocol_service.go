@@ -1724,6 +1724,12 @@ func protocolInfoFromCoreV2(info TerminalInfo) protocol.TerminalInfo {
 		CreatedAt: info.CreatedAt,
 		ExitCode:  copyIntPtr(info.ExitCode),
 		ExitedAt:  info.ExitedAt,
+		Resources: protocol.TerminalResourceUsage{
+			PID:            info.Resources.PID,
+			CPUPercentX100: info.Resources.CPUPercentX100,
+			MemoryBytes:    info.Resources.MemoryBytes,
+			SampledAt:      info.Resources.SampledAt,
+		},
 	}
 }
 

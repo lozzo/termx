@@ -117,6 +117,7 @@ func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
 			Cols:            poolItem.Cols,
 			Rows:            poolItem.Rows,
 			AttachmentCount: attachmentCount,
+			Resources:       poolItem.Resources,
 			Attached:        poolItem.Attached || attachmentCount > 0,
 		}
 		if !matchesTerminalPoolPageQuery(item, query) {

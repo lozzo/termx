@@ -151,6 +151,16 @@ type TerminalPoolItem struct {
 	Cols            int
 	Rows            int
 	AttachmentCount int
+	Resources       TerminalResourceUsage
+}
+
+// TerminalResourceUsage 是 services 层从 core protocol 映射来的 terminal 资源诊断投影；
+// 真值来自 core-v2 TerminalProcess 的 OS 采样，service 不缓存也不推断进程状态。
+type TerminalResourceUsage struct {
+	PID            int
+	CPUPercentX100 int
+	MemoryBytes    uint64
+	SampledAt      time.Time
 }
 
 type TerminalListRequest struct{}

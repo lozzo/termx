@@ -346,7 +346,28 @@ func (server *Server) GetTerminal(id string) (TerminalInfo, error) {
 }
 
 func (server *Server) ListTerminals() []TerminalInfo {
-	return server.registry.list()
+	items := server.registry.list()
+	if len(items) == 0 {
+		return items
+	}
+	server.mu.Lock()
+	terminals := make(map[string]*Terminal, len(server.terminals))
+	for id, terminal := range server.terminals {
+		terminals[id] = terminal
+	}
+	server.mu.Unlock()
+	for index := range items {
+		terminal := terminals[items[index].ID]
+		if terminal == nil {
+			continue
+		}
+		// 中文说明：resources 是 list 时的诊断投影，不写回 registry；
+		// registry 仍只保存 lifecycle/metadata truth。
+		if usage, ok := terminal.ResourceUsage(); ok {
+			items[index].Resources = usage
+		}
+	}
+	return items
 }
 
 func (server *Server) StorageGet(ctx context.Context, appID string, scope StorageScope, ownerID string, key string) (StorageEntry, error) {

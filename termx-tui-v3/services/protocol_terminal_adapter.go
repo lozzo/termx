@@ -114,6 +114,12 @@ func (adapter ProtocolTerminalServiceAdapter) List(ctx context.Context, _ Termin
 			Cols:            int(terminal.Size.Cols),
 			Rows:            int(terminal.Size.Rows),
 			AttachmentCount: terminal.ResizeOwnerAttachmentCount,
+			Resources: TerminalResourceUsage{
+				PID:            terminal.Resources.PID,
+				CPUPercentX100: terminal.Resources.CPUPercentX100,
+				MemoryBytes:    terminal.Resources.MemoryBytes,
+				SampledAt:      terminal.Resources.SampledAt,
+			},
 		})
 	}
 	finishConvert(len(items))

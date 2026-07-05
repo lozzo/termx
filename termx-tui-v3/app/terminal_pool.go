@@ -800,6 +800,12 @@ func terminalPoolItemsFromService(items []services.TerminalPoolItem) []state.Ter
 			Cols:            item.Cols,
 			Rows:            item.Rows,
 			AttachmentCount: item.AttachmentCount,
+			Resources: state.TerminalResourceUsage{
+				PID:            item.Resources.PID,
+				CPUPercentX100: item.Resources.CPUPercentX100,
+				MemoryBytes:    item.Resources.MemoryBytes,
+				SampledAt:      item.Resources.SampledAt,
+			},
 		}
 	}
 	return out

@@ -70,6 +70,20 @@ func TestPTYProcessFactoryUsesCreateDirAndEnv(t *testing.T) {
 	}
 }
 
+func TestParseProcessResourceUsage(t *testing.T) {
+	sampledAt := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	usage, ok := parseProcessResourceUsage(4321, []byte(" 12.34 65536\n"), sampledAt)
+	if !ok {
+		t.Fatal("expected ps resource output to parse")
+	}
+	if usage.PID != 4321 || usage.CPUPercentX100 != 1234 || usage.MemoryBytes != 65536*1024 || !usage.SampledAt.Equal(sampledAt) {
+		t.Fatalf("unexpected resource usage %#v", usage)
+	}
+	if _, ok := parseProcessResourceUsage(4321, []byte("bad\n"), sampledAt); ok {
+		t.Fatal("invalid ps resource output should not parse")
+	}
+}
+
 func assertEventuallyEvent(t *testing.T, events <-chan Event, typ EventType, terminalID string) Event {
 	t.Helper()
 	deadline := time.After(2 * time.Second)

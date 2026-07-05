@@ -1171,6 +1171,10 @@ func terminalInfoToWirePB(info TerminalInfo) *wirepb.TerminalInfo {
 		msg.ExitCode = &value
 	}
 	setInt64UnknownField(msg, terminalInfoExitedAtFieldNumber, timeToUnixNano(info.ExitedAt))
+	setInt32ProtoFieldOrUnknown(msg, terminalInfoResourcePIDFieldNumber, int32(info.Resources.PID))
+	setInt32ProtoFieldOrUnknown(msg, terminalInfoResourceCPUPercentX100FieldNumber, int32(info.Resources.CPUPercentX100))
+	setUint64ProtoFieldOrUnknown(msg, terminalInfoResourceMemoryBytesFieldNumber, info.Resources.MemoryBytes)
+	setInt64UnknownField(msg, terminalInfoResourceSampledAtFieldNumber, timeToUnixNano(info.Resources.SampledAt))
 	return msg
 }
 
@@ -1191,6 +1195,12 @@ func terminalInfoFromWirePB(msg *wirepb.TerminalInfo) TerminalInfo {
 		ExitedAt:                   unixNanoToTime(msg.GetExitedAtUnixNano()),
 		ResizeOwnership:            resizeOwnershipFromWirePB(msg.GetResizeOwnership()),
 		ResizeOwnerAttachmentCount: int(msg.GetResizeOwnerAttachmentCount()),
+		Resources: TerminalResourceUsage{
+			PID:            int(int32ProtoFieldOrUnknown(msg, terminalInfoResourcePIDFieldNumber)),
+			CPUPercentX100: int(int32ProtoFieldOrUnknown(msg, terminalInfoResourceCPUPercentX100FieldNumber)),
+			MemoryBytes:    uint64ProtoFieldOrUnknown(msg, terminalInfoResourceMemoryBytesFieldNumber),
+			SampledAt:      unixNanoToTime(int64UnknownField(msg, terminalInfoResourceSampledAtFieldNumber)),
+		},
 	}
 	if msg.ExitCode != nil {
 		value := int(msg.GetExitCode())
@@ -1815,6 +1825,10 @@ func timePtrToUnixNano(value *time.Time) int64 {
 
 const (
 	terminalInfoExitedAtFieldNumber                 protowire.Number = 13
+	terminalInfoResourcePIDFieldNumber              protowire.Number = 14
+	terminalInfoResourceCPUPercentX100FieldNumber   protowire.Number = 15
+	terminalInfoResourceMemoryBytesFieldNumber      protowire.Number = 16
+	terminalInfoResourceSampledAtFieldNumber        protowire.Number = 17
 	terminalStateChangedExitedAtFieldNumber         protowire.Number = 4
 	eventLiveRevisionFieldNumber                    protowire.Number = 14
 	liveInvalidationObservedRevisionFieldNumber     protowire.Number = 17

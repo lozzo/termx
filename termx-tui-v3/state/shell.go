@@ -290,6 +290,7 @@ type TerminalPoolPageItem struct {
 	Cols            int
 	Rows            int
 	AttachmentCount int
+	Resources       TerminalResourceUsage
 	Attached        bool
 	Selected        bool
 }

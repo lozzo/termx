@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -49,6 +51,10 @@ type TerminalProcess interface {
 	Kill() error
 	Wait() <-chan ProcessExit
 	Close() error
+}
+
+type terminalProcessResourceSampler interface {
+	ResourceUsage() (TerminalResourceUsage, bool)
 }
 
 // ptyProcessFactory 是 core-v2 真实 terminal process 边界；外部客户端仍只通过 protocol/socket 访问。
@@ -129,6 +135,23 @@ func (process *ptyProcess) Resize(size Size) error {
 
 func (process *ptyProcess) Output() <-chan []byte {
 	return process.outputCh
+}
+
+func (process *ptyProcess) ResourceUsage() (TerminalResourceUsage, bool) {
+	process.mu.Lock()
+	cmd := process.cmd
+	process.mu.Unlock()
+	if cmd == nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
+		return TerminalResourceUsage{}, false
+	}
+	pid := cmd.Process.Pid
+	// 中文说明：资源展示只做 Terminal Manager 诊断采样，真值仍归 OS 进程；
+	// 采样失败时返回空值，不修改 terminal lifecycle，也不做状态 fallback。
+	out, err := exec.Command("ps", "-o", "%cpu=,rss=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return TerminalResourceUsage{}, false
+	}
+	return parseProcessResourceUsage(pid, out, time.Now().UTC())
 }
 
 func (process *ptyProcess) Kill() error {
@@ -221,6 +244,33 @@ func processExitCode(err error, killed bool) int {
 		}
 	}
 	return -1
+}
+
+func parseProcessResourceUsage(pid int, output []byte, sampledAt time.Time) (TerminalResourceUsage, bool) {
+	if pid <= 0 {
+		return TerminalResourceUsage{}, false
+	}
+	fields := strings.Fields(string(output))
+	if len(fields) < 2 {
+		return TerminalResourceUsage{}, false
+	}
+	cpu, err := strconv.ParseFloat(strings.TrimSuffix(fields[0], "%"), 64)
+	if err != nil {
+		return TerminalResourceUsage{}, false
+	}
+	rssKB, err := strconv.ParseUint(fields[1], 10, 64)
+	if err != nil {
+		return TerminalResourceUsage{}, false
+	}
+	if cpu < 0 {
+		cpu = 0
+	}
+	return TerminalResourceUsage{
+		PID:            pid,
+		CPUPercentX100: int(cpu*100 + 0.5),
+		MemoryBytes:    rssKB * 1024,
+		SampledAt:      sampledAt,
+	}, true
 }
 
 func ptyProcessEnv(id string, extra []string) []string {

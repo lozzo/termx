@@ -93,6 +93,24 @@ func (terminal *Terminal) Info() TerminalInfo {
 	return terminal.info.Clone()
 }
 
+// ResourceUsage 返回当前 terminal 进程的资源诊断采样。domain owner 是
+// TerminalProcess/OS 进程；Terminal 只负责在 running 状态下转发采样结果，
+// 采样失败不能改变 lifecycle，也不能被用作 running/exited 的判断依据。
+func (terminal *Terminal) ResourceUsage() (TerminalResourceUsage, bool) {
+	terminal.mu.Lock()
+	process := terminal.process
+	state := terminal.info.State
+	terminal.mu.Unlock()
+	if process == nil || state != TerminalStateRunning {
+		return TerminalResourceUsage{}, false
+	}
+	sampler, ok := process.(terminalProcessResourceSampler)
+	if !ok {
+		return TerminalResourceUsage{}, false
+	}
+	return sampler.ResourceUsage()
+}
+
 func (terminal *Terminal) SetMetadata(name string, tags map[string]string) TerminalInfo {
 	terminal.mu.Lock()
 	terminal.info.Name = name

@@ -150,6 +150,35 @@ func TestServerRegistryPublishesEvents(t *testing.T) {
 	}
 }
 
+func TestServerListTerminalsAddsResourceProjection(t *testing.T) {
+	sampledAt := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	factory := &resourceProcessFactory{usage: TerminalResourceUsage{
+		PID:            4321,
+		CPUPercentX100: 1234,
+		MemoryBytes:    64 * 1024 * 1024,
+		SampledAt:      sampledAt,
+	}}
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-resource", Command: []string{"sh"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	t.Cleanup(func() { _ = server.RemoveTerminal("term-resource") })
+	items := server.ListTerminals()
+	if len(items) != 1 {
+		t.Fatalf("expected one terminal, got %#v", items)
+	}
+	if got := items[0].Resources; got.PID != 4321 || got.CPUPercentX100 != 1234 || got.MemoryBytes != 64*1024*1024 || !got.SampledAt.Equal(sampledAt) {
+		t.Fatalf("list should include resource projection, got %#v", got)
+	}
+	info, err := server.GetTerminal("term-resource")
+	if err != nil {
+		t.Fatalf("get terminal: %v", err)
+	}
+	if !info.Resources.SampledAt.IsZero() {
+		t.Fatalf("resource projection must not be written back to registry: %#v", info.Resources)
+	}
+}
+
 func TestServerRegisterTerminalCarriesCreateOptionsToProcessSpec(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -425,6 +454,30 @@ func assertEventValue(t *testing.T, events <-chan Event, typ EventType, terminal
 		t.Fatalf("timed out waiting for %s event", typ)
 	}
 	return Event{}
+}
+
+type resourceProcessFactory struct {
+	usage TerminalResourceUsage
+}
+
+func (factory *resourceProcessFactory) Spawn(_ context.Context, spec ProcessSpec) (TerminalProcess, error) {
+	return &resourceProcess{
+		recordingProcess: &recordingProcess{
+			id:       spec.TerminalID,
+			outputCh: make(chan []byte, 16),
+			waitCh:   make(chan ProcessExit, 1),
+		},
+		usage: factory.usage,
+	}, nil
+}
+
+type resourceProcess struct {
+	*recordingProcess
+	usage TerminalResourceUsage
+}
+
+func (process *resourceProcess) ResourceUsage() (TerminalResourceUsage, bool) {
+	return process.usage, true
 }
 
 type fakeListener struct {

@@ -173,6 +173,7 @@ func TestCompactRowFromCellsCanPreserveTrailingBlankCells(t *testing.T) {
 
 func TestTerminalExitMetadataCodecRoundTrip(t *testing.T) {
 	exitedAt := time.Unix(1712345678, 987654321).UTC()
+	resourceSampledAt := exitedAt.Add(-time.Minute)
 	exitCode := 23
 	result, err := EncodeMethodResult("list", ListResult{Terminals: []TerminalInfo{{
 		ID:        "term-1",
@@ -182,6 +183,12 @@ func TestTerminalExitMetadataCodecRoundTrip(t *testing.T) {
 		ExitCode:  &exitCode,
 		ExitedAt:  exitedAt,
 		CreatedAt: exitedAt.Add(-time.Hour),
+		Resources: TerminalResourceUsage{
+			PID:            4321,
+			CPUPercentX100: 1234,
+			MemoryBytes:    64 * 1024 * 1024,
+			SampledAt:      resourceSampledAt,
+		},
 	}}})
 	if err != nil {
 		t.Fatalf("encode list result: %v", err)
@@ -192,6 +199,9 @@ func TestTerminalExitMetadataCodecRoundTrip(t *testing.T) {
 	}
 	if len(decoded.Terminals) != 1 || decoded.Terminals[0].ExitCode == nil || *decoded.Terminals[0].ExitCode != exitCode || !decoded.Terminals[0].ExitedAt.Equal(exitedAt) {
 		t.Fatalf("terminal exit metadata did not round trip: %#v", decoded)
+	}
+	if got := decoded.Terminals[0].Resources; got.PID != 4321 || got.CPUPercentX100 != 1234 || got.MemoryBytes != 64*1024*1024 || !got.SampledAt.Equal(resourceSampledAt) {
+		t.Fatalf("terminal resource metadata did not round trip: %#v", got)
 	}
 
 	payload, err := EncodeEventPayload(Event{Type: EventTerminalStateChanged, TerminalID: "term-1", StateChanged: &TerminalStateChangedData{

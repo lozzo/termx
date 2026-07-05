@@ -64,6 +64,16 @@ type TerminalInfo struct {
 	ExitedAt                   time.Time
 	ResizeOwnership            *ResizeOwnership
 	ResizeOwnerAttachmentCount int
+	Resources                  TerminalResourceUsage
+}
+
+// TerminalResourceUsage 是 TerminalInfo 随 list/get 返回的资源诊断投影；
+// 真值来自 core-v2 当前 TerminalProcess 的 OS 采样，SampledAt 为零表示本次没有可用资源数据。
+type TerminalResourceUsage struct {
+	PID            int
+	CPUPercentX100 int
+	MemoryBytes    uint64
+	SampledAt      time.Time
 }
 
 type CreateParams struct {

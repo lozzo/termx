@@ -1076,7 +1076,7 @@ func terminalManagerRowLine(row state.TerminalPoolPageItem) Line {
 		titleStyle = StyleForeground
 	}
 	stateText := terminalPoolStateLabel(row)
-	return Line{Cells: []Cell{
+	cells := []Cell{
 		styledCell(marker, markerStyle),
 		styledCell("", terminalPoolStateStyle(stateText)),
 		NewCell(" "),
@@ -1087,7 +1087,11 @@ func terminalManagerRowLine(row state.TerminalPoolPageItem) Line {
 		tokenCell(terminalPoolAttachmentLabel(row), StyleMuted),
 		NewCell(" "),
 		styledCell(terminalPoolSizeLabel(row.Cols, row.Rows), StyleMuted),
-	}}
+	}
+	if resource := terminalPoolResourceShortLabel(row); resource != "" {
+		cells = append(cells, NewCell(" "), styledCell(resource, StyleMuted))
+	}
+	return Line{Cells: cells}
 }
 
 func selectedTerminalPoolPageItem(rows []state.TerminalPoolPageItem) (state.TerminalPoolPageItem, bool) {
@@ -1115,10 +1119,13 @@ func terminalManagerDetailLines(root state.Root, selected state.TerminalPoolPage
 		}),
 		terminalManagerDetailLine("size", terminalPoolSizeLabel(selected.Cols, selected.Rows)),
 		terminalManagerDetailLine("views", terminalPoolAttachmentValue(selected)),
+	}
+	lines = append(lines, terminalManagerResourceLines(selected)...)
+	lines = append(lines,
 		terminalManagerDetailLine("cwd", selected.CWD),
 		terminalManagerDetailLine("cmd", terminalPoolCommandLabel(selected.Command)),
 		terminalManagerDetailLine("tags", terminalPoolTagsLabel(selected.Tags)),
-	}
+	)
 	if exit := terminalPoolExitLabel(selected); exit != "" {
 		lines = append(lines, terminalManagerDetailLine("exit", exit))
 	}
@@ -2470,6 +2477,72 @@ func terminalPoolAttachmentValue(row state.TerminalPoolPageItem) string {
 		count = 1
 	}
 	return fmt.Sprintf("%d", maxInt(0, count))
+}
+
+func terminalManagerResourceLines(row state.TerminalPoolPageItem) []Line {
+	usage := row.Resources
+	if usage.SampledAt.IsZero() {
+		return []Line{terminalManagerDetailLine("resources", "n/a")}
+	}
+	memory := terminalPoolMemoryDetailLabel(usage.MemoryBytes)
+	if usage.PID > 0 {
+		memory += fmt.Sprintf(" · pid %d", usage.PID)
+	}
+	return []Line{
+		terminalManagerDetailLine("cpu", terminalPoolCPUPercentLabel(usage.CPUPercentX100)),
+		terminalManagerDetailLine("memory", memory),
+	}
+}
+
+func terminalPoolResourceShortLabel(row state.TerminalPoolPageItem) string {
+	usage := row.Resources
+	if usage.SampledAt.IsZero() {
+		return ""
+	}
+	return fmt.Sprintf("%s %s", terminalPoolCPUPercentShortLabel(usage.CPUPercentX100), terminalPoolMemoryShortLabel(usage.MemoryBytes))
+}
+
+func terminalPoolCPUPercentLabel(percentX100 int) string {
+	if percentX100 < 0 {
+		percentX100 = 0
+	}
+	return fmt.Sprintf("%.1f%%", float64(percentX100)/100)
+}
+
+func terminalPoolCPUPercentShortLabel(percentX100 int) string {
+	if percentX100 < 0 {
+		percentX100 = 0
+	}
+	if percentX100 < 100 {
+		return fmt.Sprintf("%.1f%%", float64(percentX100)/100)
+	}
+	return fmt.Sprintf("%.0f%%", float64(percentX100)/100)
+}
+
+func terminalPoolMemoryShortLabel(bytes uint64) string {
+	switch {
+	case bytes >= 1024*1024*1024:
+		return fmt.Sprintf("%.1fG", float64(bytes)/(1024*1024*1024))
+	case bytes >= 1024*1024:
+		return fmt.Sprintf("%.0fM", float64(bytes)/(1024*1024))
+	case bytes >= 1024:
+		return fmt.Sprintf("%.0fK", float64(bytes)/1024)
+	default:
+		return fmt.Sprintf("%dB", bytes)
+	}
+}
+
+func terminalPoolMemoryDetailLabel(bytes uint64) string {
+	switch {
+	case bytes >= 1024*1024*1024:
+		return fmt.Sprintf("%.1f GiB", float64(bytes)/(1024*1024*1024))
+	case bytes >= 1024*1024:
+		return fmt.Sprintf("%.1f MiB", float64(bytes)/(1024*1024))
+	case bytes >= 1024:
+		return fmt.Sprintf("%.1f KiB", float64(bytes)/1024)
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
 }
 
 func terminalPoolCommandLabel(command []string) string {

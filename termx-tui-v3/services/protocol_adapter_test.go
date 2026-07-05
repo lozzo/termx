@@ -1713,6 +1713,7 @@ func TestProtocolTerminalAdapterDoesNotUseFixedLiveFrameInterval(t *testing.T) {
 
 func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
 	exitedAt := time.Date(2026, 6, 17, 12, 46, 0, 0, time.UTC)
+	resourceSampledAt := exitedAt.Add(-time.Minute)
 	exitCode := 23
 	client := &fakeProtocolTerminalClient{
 		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
@@ -1725,6 +1726,12 @@ func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
 			Tags:     map[string]string{"role": "shell"},
 			ExitCode: &exitCode,
 			ExitedAt: exitedAt,
+			Resources: protocol.TerminalResourceUsage{
+				PID:            4321,
+				CPUPercentX100: 1234,
+				MemoryBytes:    64 * 1024 * 1024,
+				SampledAt:      resourceSampledAt,
+			},
 		}}},
 		createResult: &protocol.CreateResult{TerminalID: "term-new", State: "running"},
 	}
@@ -1736,6 +1743,9 @@ func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
 	}
 	if client.listCalls != 1 || len(list.Items) != 1 || list.Items[0].TerminalID != "term-pool" || list.Items[0].Title != "日志🚀" || list.Items[0].Tags["role"] != "shell" || list.Items[0].Cols != 120 || list.Items[0].Rows != 36 || list.Items[0].ExitCode == nil || *list.Items[0].ExitCode != 23 || !list.Items[0].ExitedAt.Equal(exitedAt) || strings.Join(list.Items[0].Command, " ") != "bash -lc make test" {
 		t.Fatalf("unexpected list mapping calls=%d result=%#v", client.listCalls, list)
+	}
+	if got := list.Items[0].Resources; got.PID != 4321 || got.CPUPercentX100 != 1234 || got.MemoryBytes != 64*1024*1024 || !got.SampledAt.Equal(resourceSampledAt) {
+		t.Fatalf("unexpected resource mapping %#v", got)
 	}
 
 	created, err := adapter.Create(context.Background(), TerminalCreateRequest{TerminalID: "term-new", Title: "new", Command: []string{"sh"}, CWD: "/tmp/app", Tags: map[string]string{"role": "dev"}, Cols: 100, Rows: 30})

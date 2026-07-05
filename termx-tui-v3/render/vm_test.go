@@ -2824,7 +2824,13 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 				Cols:            120,
 				Rows:            36,
 				AttachmentCount: 27,
-				Tags:            map[string]string{"role": "shell"},
+				Resources: state.TerminalResourceUsage{
+					PID:            4321,
+					CPUPercentX100: 1234,
+					MemoryBytes:    64 * 1024 * 1024,
+					SampledAt:      time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC),
+				},
+				Tags: map[string]string{"role": "shell"},
 			}, {
 				TerminalID: "term-other",
 				Title:      "worker",
@@ -2856,6 +2862,9 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 		!strings.Contains(rendered, "SIZE 120x36") ||
 		!strings.Contains(rendered, "VIEWS 2") ||
 		!strings.Contains(rendered, "views:2") ||
+		!strings.Contains(rendered, "12% 64M") ||
+		!strings.Contains(rendered, "CPU 12.3%") ||
+		!strings.Contains(rendered, "MEMORY 64.0 MiB · pid 4321") ||
 		!strings.Contains(rendered, "role=shell") ||
 		!strings.Contains(rendered, "PREVIEW rev:23") ||
 		!strings.Contains(rendered, "│ line two") ||

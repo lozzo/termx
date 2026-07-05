@@ -37,7 +37,17 @@ type TerminalPoolItem struct {
 	Cols            int
 	Rows            int
 	AttachmentCount int
+	Resources       TerminalResourceUsage
 	Attached        bool
+}
+
+// TerminalResourceUsage 是 TUI reducer 持有的 terminal 资源诊断投影；
+// 真值来自 core list 响应，renderer 只能展示它，不能据此推断 terminal 生命周期。
+type TerminalResourceUsage struct {
+	PID            int
+	CPUPercentX100 int
+	MemoryBytes    uint64
+	SampledAt      time.Time
 }
 
 func (store TerminalPoolStore) RequestList() TerminalPoolStore {

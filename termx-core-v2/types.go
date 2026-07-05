@@ -95,6 +95,7 @@ type TerminalInfo struct {
 	CreatedAt time.Time
 	ExitCode  *int
 	ExitedAt  time.Time
+	Resources TerminalResourceUsage
 }
 
 func (info TerminalInfo) Clone() TerminalInfo {
@@ -105,6 +106,15 @@ func (info TerminalInfo) Clone() TerminalInfo {
 		info.ExitCode = &code
 	}
 	return info
+}
+
+// TerminalResourceUsage 是 core-v2 对 terminal 进程资源的采样结果；真值来自当前
+// TerminalProcess 的 OS 进程采样，只作为 Terminal Manager 诊断投影，不参与 terminal 生命周期判断。
+type TerminalResourceUsage struct {
+	PID            int
+	CPUPercentX100 int
+	MemoryBytes    uint64
+	SampledAt      time.Time
 }
 
 type TerminalRecord struct {
