@@ -10,7 +10,11 @@ import (
 func historyTextCount(rows []history.HistoryRow, needle string) int {
 	count := 0
 	for _, row := range rows {
-		if strings.Contains(historyCellsText(row.Cells), needle) {
+		text := historyCellsText(row.Cells)
+		if isLifecycleHistoryText(text) {
+			continue
+		}
+		if strings.Contains(text, needle) {
 			count++
 		}
 	}
@@ -20,11 +24,37 @@ func historyTextCount(rows []history.HistoryRow, needle string) int {
 func committedHistoryRowTexts(rows []history.HistoryRow) []string {
 	var out []string
 	for _, row := range rows {
-		if row.Segment == history.HistorySegmentCommitted {
-			out = append(out, historyCellsText(row.Cells))
+		text := historyCellsText(row.Cells)
+		if row.Segment == history.HistorySegmentCommitted && !isLifecycleHistoryText(text) {
+			out = append(out, text)
 		}
 	}
 	return out
+}
+
+func rawHistoryRowTexts(rows []history.HistoryRow) []string {
+	texts := make([]string, 0, len(rows))
+	for _, row := range rows {
+		texts = append(texts, historyCellsText(row.Cells))
+	}
+	return texts
+}
+
+func historyLineIDForText(rows []history.HistoryRow, want string) (history.LogicalLineID, bool) {
+	for _, row := range rows {
+		if historyCellsText(row.Cells) == want {
+			return row.LineID, true
+		}
+	}
+	return 0, false
+}
+
+func isLifecycleHistoryText(text string) bool {
+	return strings.HasPrefix(text, "terminal started: ") ||
+		strings.HasPrefix(text, "started at: ") ||
+		strings.HasPrefix(text, "terminal exited: ") ||
+		strings.HasPrefix(text, "exited at: ") ||
+		strings.HasPrefix(text, "command: ")
 }
 
 func r333NumberedMarker(label string, session int, lines int) string {

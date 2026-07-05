@@ -155,11 +155,19 @@ func TestR435LinehistCJKAcrossEvictionWindowAndCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("freeze: %v", err)
 	}
+	startLineID, ok := historyLineIDForText(window.Rows, "中文历史第一行")
+	if !ok {
+		t.Fatalf("latest window missing CJK copy start row, rows=%#v", window.Rows)
+	}
+	endLineID, ok := historyLineIDForText(window.Rows, "中文第二行")
+	if !ok {
+		t.Fatalf("latest window missing CJK copy end row, rows=%#v", window.Rows)
+	}
 	copied, err := server.TerminalHistoryCopy(context.Background(), "term-r435-cjk", history.HistoryCopyRequest{
 		Token: snapshot.Token,
 		Cols:  40,
-		Start: history.HistoryCursor{LineID: 1, Valid: true},
-		End:   history.HistoryCursor{LineID: 2, Valid: true},
+		Start: history.HistoryCursor{LineID: startLineID, Valid: true},
+		End:   history.HistoryCursor{LineID: endLineID, Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("copy: %v", err)

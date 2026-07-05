@@ -205,6 +205,22 @@ func (store *Store) SealLifecycleTail() error {
 	return err
 }
 
+// AppendLifecycleLines 把 core terminal lifecycle marker 写入 authoritative
+// history。它只服务 core-owned start/exit 边界，不能被用于从 live screen、
+// TUI rows 或 raw PTY fallback 生成程序正文。
+func (store *Store) AppendLifecycleLines(lines []string) error {
+	if store == nil || len(lines) == 0 {
+		return nil
+	}
+	unlock := store.lockGate()
+	defer unlock()
+	err := store.engine.AppendLifecycleLines(lines)
+	store.mu.Lock()
+	store.generation++
+	store.mu.Unlock()
+	return err
+}
+
 // Close 落盘未闭合尾部并关闭文件（terminal remove/shutdown 边界）。
 func (store *Store) Close() error {
 	if store == nil {

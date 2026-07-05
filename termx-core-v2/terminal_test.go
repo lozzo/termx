@@ -831,6 +831,14 @@ func TestR324TerminalHistoryReturnsAuthoritativeWindow(t *testing.T) {
 	if got := historyRowTexts(window.Rows); strings.Join(got, "|") != "alpha|beta" {
 		t.Fatalf("history.window rows mismatch: %v window=%#v", got, window)
 	}
+	startLineID, ok := historyLineIDForText(window.Rows, "alpha")
+	if !ok {
+		t.Fatalf("history.window missing alpha row: %#v", window)
+	}
+	endLineID, ok := historyLineIDForText(window.Rows, "beta")
+	if !ok {
+		t.Fatalf("history.window missing beta row: %#v", window)
+	}
 	snapshot, err := server.TerminalHistoryFreeze(context.Background(), "term-history-r324", history.FreezeHistoryRequest{
 		TerminalID: "term-history-r324",
 		Cols:       30,
@@ -842,8 +850,8 @@ func TestR324TerminalHistoryReturnsAuthoritativeWindow(t *testing.T) {
 	text, err := server.TerminalHistoryCopy(context.Background(), "term-history-r324", history.HistoryCopyRequest{
 		TerminalID: "term-history-r324",
 		Token:      snapshot.Token,
-		Start:      history.HistoryCursor{LineID: window.Rows[0].LineID, Valid: true},
-		End:        history.HistoryCursor{LineID: window.Rows[1].LineID, Valid: true},
+		Start:      history.HistoryCursor{LineID: startLineID, Valid: true},
+		End:        history.HistoryCursor{LineID: endLineID, Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("history.copy should use authoritative frozen token: %v", err)
@@ -924,7 +932,7 @@ func TestR360TerminalHistoryOldestReturnsReplaceWindow(t *testing.T) {
 		Mode:       history.HistoryWindowModeOldest,
 		Token:      snapshot.Token,
 		Cols:       30,
-		Limit:      2,
+		Limit:      5,
 	})
 	if err != nil {
 		t.Fatalf("oldest window: %v", err)
@@ -1006,7 +1014,7 @@ func TestR436HistoryStorageDirRecoversLineHistoryRows(t *testing.T) {
 	window, err := recovered.TerminalHistoryWindow(context.Background(), "term-r436-recover-linehist", history.HistoryWindowRequest{
 		TerminalID: "term-r436-recover-linehist",
 		Mode:       history.HistoryWindowModeLatest,
-		Limit:      3,
+		Limit:      20,
 		Cols:       30,
 	})
 	if err != nil {
@@ -1061,14 +1069,22 @@ func TestR324TerminalHistoryRemoveClosesOpenLine(t *testing.T) {
 func historyRowTexts(rows []history.HistoryRow) []string {
 	texts := make([]string, 0, len(rows))
 	for _, row := range rows {
-		texts = append(texts, historyCellsText(row.Cells))
+		text := historyCellsText(row.Cells)
+		if isLifecycleHistoryText(text) {
+			continue
+		}
+		texts = append(texts, text)
 	}
 	return texts
 }
 
 func historyRowsContain(rows []history.HistoryRow, needle string) bool {
 	for _, row := range rows {
-		if strings.Contains(historyCellsText(row.Cells), needle) {
+		text := historyCellsText(row.Cells)
+		if isLifecycleHistoryText(text) {
+			continue
+		}
+		if strings.Contains(text, needle) {
 			return true
 		}
 	}

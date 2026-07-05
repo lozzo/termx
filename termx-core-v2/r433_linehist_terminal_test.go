@@ -142,12 +142,20 @@ func TestR433LinehistFreezeAndCopyAcrossColdAndHot(t *testing.T) {
 	if !strings.Contains(frozenText, "line06") {
 		t.Fatalf("frozen window missing pre-freeze tail, got %q", frozenText)
 	}
+	startLineID, ok := historyLineIDForText(frozen.Rows, "line02")
+	if !ok {
+		t.Fatalf("frozen window missing copy start row, rows=%#v", frozen.Rows)
+	}
+	endLineID, ok := historyLineIDForText(frozen.Rows, "line05")
+	if !ok {
+		t.Fatalf("frozen window missing copy end row, rows=%#v", frozen.Rows)
+	}
 	// 冷段（已落盘）到热段（当时屏上）的跨段复制。
 	copied, err := server.TerminalHistoryCopy(context.Background(), "term-r433-copy", history.HistoryCopyRequest{
 		Token: snapshot.Token,
 		Cols:  12,
-		Start: history.HistoryCursor{LineID: 2, Valid: true},
-		End:   history.HistoryCursor{LineID: 5, Valid: true},
+		Start: history.HistoryCursor{LineID: startLineID, Valid: true},
+		End:   history.HistoryCursor{LineID: endLineID, Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("copy: %v", err)
@@ -200,15 +208,32 @@ func TestR433LinehistProcessExitSealsCurrentScreenBeforeRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest history window: %v", err)
 	}
-	texts := historyRowTexts(window.Rows)
+	texts := rawHistoryRowTexts(window.Rows)
 	joined := strings.Join(texts, "|")
 	for _, want := range []string{"line01", "line02", "line03", "line04", "line05", "line06", "line07", "line08", "newprompt"} {
 		if strings.Count(joined, want) != 1 {
 			t.Fatalf("history after restart must contain %q exactly once, got %v", want, texts)
 		}
 	}
-	if strings.Index(joined, "line08") > strings.Index(joined, "newprompt") {
-		t.Fatalf("old lifecycle tail must stay before restarted process output, got %v", texts)
+	if strings.Count(joined, "terminal started: term-r433-exit-tail") != 2 {
+		t.Fatalf("initial start and restart markers must be in history, got %v", texts)
+	}
+	if strings.Count(joined, "started at: ") != 2 {
+		t.Fatalf("start time markers must be in history, got %v", texts)
+	}
+	if strings.Count(joined, "terminal exited: term-r433-exit-tail code:0 exited") != 1 {
+		t.Fatalf("exit marker must be in history exactly once, got %v", texts)
+	}
+	if strings.Count(joined, "exited at: ") != 1 {
+		t.Fatalf("exit time marker must be in history exactly once, got %v", texts)
+	}
+	firstStart := strings.Index(joined, "terminal started: term-r433-exit-tail")
+	lineTail := strings.Index(joined, "line08")
+	exitMarker := strings.Index(joined, "terminal exited: term-r433-exit-tail")
+	secondStart := strings.LastIndex(joined, "terminal started: term-r433-exit-tail")
+	newPrompt := strings.Index(joined, "newprompt")
+	if !(firstStart < lineTail && lineTail < exitMarker && exitMarker < secondStart && secondStart < newPrompt) {
+		t.Fatalf("lifecycle markers must bracket old/new process history, got %v", texts)
 	}
 }
 

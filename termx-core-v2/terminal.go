@@ -82,6 +82,9 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 		}
 		terminal.historyStore = historyStore
 	}
+	if terminal.historyEnabled {
+		terminal.appendStartMarker(info.CreatedAt)
+	}
 	terminal.watchProcess(process)
 	return terminal
 }
@@ -299,6 +302,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 		terminal.tapOpMu.Lock()
 		terminal.tap = NewLineHistorySemanticTap(info.ID, info.Size, nil)
 		terminal.tapOpMu.Unlock()
+		terminal.appendStartMarker(time.Now().UTC())
 	}
 	terminal.syncInfo(info)
 	terminal.watchProcess(process)
@@ -719,12 +723,50 @@ func (terminal *Terminal) appendExitMarker(info TerminalInfo) {
 	if len(lines) == 0 {
 		return
 	}
+	terminal.appendLifecycleHistoryMarker(lines)
 	text := "\r\n" + strings.Join(lines, "\r\n") + "\r\n"
 	revision, err := terminal.applyLiveOutput(text)
 	if err != nil {
 		return
 	}
 	terminal.publishLiveInvalidated(info.ID, uint64(revision))
+}
+
+func (terminal *Terminal) appendStartMarker(startedAt time.Time) {
+	terminal.mu.Lock()
+	info := terminal.info.Clone()
+	terminal.mu.Unlock()
+	lines := terminalStartMarkerLines(info, startedAt)
+	terminal.appendLifecycleHistoryMarker(lines)
+}
+
+func (terminal *Terminal) appendLifecycleHistoryMarker(lines []string) {
+	if terminal.lineHistory == nil || len(lines) == 0 {
+		return
+	}
+	// 中文说明：lifecycle marker 是 core terminal owner 明确写入的历史事件，
+	// 不经过 PTY/raw parser，也不从 live screen 反推程序正文。
+	if err := terminal.lineHistory.AppendLifecycleLines(lines); err != nil {
+		terminal.mu.Lock()
+		id := terminal.info.ID
+		terminal.mu.Unlock()
+		terminal.logger.Warn("append terminal lifecycle marker to history failed", "terminal_id", id, "error", err)
+	}
+}
+
+func terminalStartMarkerLines(info TerminalInfo, startedAt time.Time) []string {
+	if info.ID == "" {
+		return nil
+	}
+	if startedAt.IsZero() {
+		startedAt = time.Now().UTC()
+	}
+	lines := []string{"terminal started: " + info.ID}
+	lines = append(lines, "started at: "+startedAt.UTC().Format(time.RFC3339))
+	if len(info.Command) > 0 {
+		lines = append(lines, "command: "+strings.Join(info.Command, " "))
+	}
+	return lines
 }
 
 func terminalExitMarkerLines(info TerminalInfo) []string {

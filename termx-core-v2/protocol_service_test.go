@@ -208,10 +208,24 @@ func TestProtocolServiceHistoryWindowReturnsAuthoritativeRowsAfterR324(t *testin
 	if err != nil {
 		t.Fatalf("history.window should return authoritative rows: %v", err)
 	}
-	if got := protocolRowTexts(window.Rows); strings.Join(got, "|") != "alpha|beta" {
-		t.Fatalf("unexpected history.window rows %v window=%#v", got, window)
+	got := protocolRowTexts(window.Rows)
+	joined := strings.Join(got, "|")
+	if !strings.Contains(joined, "terminal started: term-history-r324") || !strings.Contains(joined, "started at: ") {
+		t.Fatalf("history.window should include core lifecycle start marker, got %v window=%#v", got, window)
 	}
-	if window.Token == "" || len(window.RowLineIDs) < 2 {
+	alphaIdx, betaIdx := -1, -1
+	for i, text := range got {
+		switch text {
+		case "alpha":
+			alphaIdx = i
+		case "beta":
+			betaIdx = i
+		}
+	}
+	if alphaIdx < 0 || betaIdx < 0 || betaIdx != alphaIdx+1 {
+		t.Fatalf("history.window should preserve payload rows after lifecycle marker, got %v window=%#v", got, window)
+	}
+	if window.Token == "" || len(window.RowLineIDs) != len(window.Rows) {
 		t.Fatalf("history.window should carry frozen token and row ids, got %#v", window)
 	}
 	if window.Generation == 0 {
@@ -223,18 +237,18 @@ func TestProtocolServiceHistoryWindowReturnsAuthoritativeRowsAfterR324(t *testin
 	if got := strings.Join(window.RowSegments, "|"); got == "" {
 		t.Fatalf("history.window should preserve row segments, got %q window=%#v", got, window)
 	}
-	if got := strings.Join(window.RowKinds, "|"); got != "ordinary|ordinary" {
-		t.Fatalf("history.window should preserve row kinds, got %q window=%#v", got, window)
+	if len(window.RowKinds) <= betaIdx || window.RowKinds[alphaIdx] != "ordinary" || window.RowKinds[betaIdx] != "ordinary" {
+		t.Fatalf("history.window should preserve payload row kinds, got %#v window=%#v", window.RowKinds, window)
 	}
-	if window.FirstLineID != window.RowLineIDs[0] || window.LastLineID != window.RowLineIDs[1] || len(window.RowInLine) < 2 {
+	if window.FirstLineID != window.RowLineIDs[0] || window.LastLineID != window.RowLineIDs[len(window.RowLineIDs)-1] || len(window.RowInLine) != len(window.Rows) {
 		t.Fatalf("history.window should preserve logical line boundary and row mapping, got %#v", window)
 	}
 	text, err := client.HistoryCopy(context.Background(), protocol.HistoryWindowParams{
 		TerminalID:       "term-history-r324",
 		Token:            window.Token,
 		RangeValid:       true,
-		RangeStartLineID: window.RowLineIDs[0],
-		RangeEndLineID:   window.RowLineIDs[1],
+		RangeStartLineID: window.RowLineIDs[alphaIdx],
+		RangeEndLineID:   window.RowLineIDs[betaIdx],
 	})
 	if err != nil {
 		t.Fatalf("history.copy should use authoritative token: %v", err)

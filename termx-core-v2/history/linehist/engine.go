@@ -140,6 +140,25 @@ func (e *Engine) SealPrimaryScreenRows(rows []ScreenRow) error {
 	return e.file.AppendLines(batch)
 }
 
+// AppendLifecycleLines 追加 core terminal lifecycle marker。它不是 PTY 输出，
+// 而是 core-v2 lifecycle owner 明确写入的历史事件；调用方必须只用于
+// start/exit/restart 这类用户可见 terminal 边界，不能拿来补程序正文。
+func (e *Engine) AppendLifecycleLines(texts []string) error {
+	if e == nil || len(texts) == 0 {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	batch := make([]Line, 0, len(texts))
+	for _, text := range texts {
+		batch = append(batch, Line{
+			Runs:    []Run{{Text: text}},
+			HardEnd: true,
+		})
+	}
+	return e.file.AppendLines(batch)
+}
+
 // Close 把未闭合尾部按硬结束落盘后关闭文件：重启后旧行的续写上下文
 // 已不存在，把已滚出的内容留在内存里只会丢数据。
 func (e *Engine) Close() error {
