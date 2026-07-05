@@ -48,11 +48,12 @@ type TUIChromeConfig struct {
 }
 
 type TUIInteractionConfig struct {
-	Mouse                 bool
-	StickyPrefixTimeoutMS int
-	ConfirmDestructive    bool
-	ClipboardHistory      TUIClipboardHistoryConfig
-	Picker                TUIPickerConfig
+	Mouse                         bool
+	StickyPrefixTimeoutMS         int
+	ShortcutPassthroughIntervalMS int
+	ConfirmDestructive            bool
+	ClipboardHistory              TUIClipboardHistoryConfig
+	Picker                        TUIPickerConfig
 }
 
 type TUIClipboardHistoryConfig struct {

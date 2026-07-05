@@ -242,15 +242,21 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			if msg.TerminalMousePassthrough {
 				return root, nil
 			}
+			if root.Shell.ReadonlyDefaults().TerminalInputPassthroughArmed() {
+				return root, nil
+			}
 			root, activeViewID := rootWithActiveCopyHistorySession(root)
 			copyOwnsInput := copyModeOwnsActiveInput(root)
 			if copyOwnsInput {
 				if _, ok := input.CopyModeEntryShortcutIntent(msg.Event); ok {
-					// 中文说明：copy/history 的入口键本身不是 sticky mode；
-					// 但在 copy 已拥有当前 view 输入时，第二次入口键表示显式 PTY 透传。
-					next, effects := exitCopyModeWithRelease(root, deps)
-					next.Shell = next.Shell.ArmTerminalInputPassthroughOnce()
-					return saveCopyHistorySessionForView(next.Advance(), activeViewID), effects
+					if root.Shell.ReadonlyDefaults().ShortcutPassthroughWindowMatches(shortcutPassthroughKindCopy) {
+						// 中文说明：copy/history 的入口键本身不是 sticky mode；
+						// 但在窗口内第二次按入口键表示显式 PTY 透传，必须让同一 InputMsg 继续到 terminal router。
+						next, effects := exitCopyModeWithRelease(root, deps)
+						next.Shell = next.Shell.ClearShortcutPassthroughWindow(shortcutPassthroughKindCopy).ArmTerminalInputPassthroughOnce()
+						return saveCopyHistorySessionForView(next.Advance(), activeViewID), effects
+					}
+					return root, []Effect{handledEffect{}}
 				}
 			}
 			intent := input.Route(msg.Event, copyOwnsInput)
@@ -441,6 +447,9 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 		next, effects := beginCopyModeLatest(root, deps)
 		if delta, ok := copyModeEnteringScrollDelta(next.CopyMode, intent); ok {
 			next = applyCopyModeEnteringScrollDelta(next, delta)
+		}
+		if next.CopyMode.InputActive() {
+			next, effects = armShortcutPassthroughWindow(next, shortcutPassthroughKindCopy, effects)
 		}
 		return next, append([]Effect{handledEffect{}}, effects...)
 	case input.IntentRequestOlder:

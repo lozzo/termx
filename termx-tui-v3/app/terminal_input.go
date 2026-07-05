@@ -49,14 +49,6 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		})
 		return setLiveError(root, "terminal service missing"), nil
 	}
-	if copyModeOwnsActiveInput(root) {
-		logTerminalInputRoute(deps, root, terminalInputRouteLog{
-			Event:  msg.Event,
-			Result: "consumed",
-			Reason: "copy mode active",
-		})
-		return root, []Effect{handledEffect{}}
-	}
 	shell := root.Shell.ReadonlyDefaults()
 	forceTerminalPassthrough := false
 	if nextShell, forced := shell.ConsumeTerminalInputPassthroughOnce(); forced {
@@ -69,6 +61,14 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		if _, ok := input.LockableRootShortcutIntent(msg.Event); ok {
 			forceTerminalPassthrough = true
 		}
+	}
+	if copyModeOwnsActiveInput(root) && !forceTerminalPassthrough {
+		logTerminalInputRoute(deps, root, terminalInputRouteLog{
+			Event:  msg.Event,
+			Result: "consumed",
+			Reason: "copy mode active",
+		})
+		return root, []Effect{handledEffect{}}
 	}
 	if shell.Overlay.Open {
 		logTerminalInputRoute(deps, root, terminalInputRouteLog{

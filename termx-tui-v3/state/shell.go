@@ -135,6 +135,8 @@ type ShellStore struct {
 	nextFloatingSeq           uint64
 	initialized               bool
 	forceTerminalInput        bool
+	shortcutPassthroughKind   string
+	shortcutPassthroughSeq    uint64
 }
 
 type WorkspaceState struct {

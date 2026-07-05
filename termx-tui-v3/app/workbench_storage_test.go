@@ -209,7 +209,7 @@ func firstWorkbenchPersistRequestMsg(t *testing.T, effects []Effect) WorkbenchSt
 	t.Helper()
 	for _, effect := range effects {
 		fn, ok := effect.(FuncEffect)
-		if !ok || fn.Run == nil || fn.Token == stickyInteractionModeTimeoutToken {
+		if !ok || fn.Run == nil || fn.Token == stickyInteractionModeTimeoutToken || fn.Token == shellShortcutPassthroughTimeoutToken {
 			continue
 		}
 		if msg, ok := fn.Run(context.Background()).(WorkbenchStoragePersistRequestMsg); ok {

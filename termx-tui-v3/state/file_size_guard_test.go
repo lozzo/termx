@@ -8,17 +8,18 @@ import (
 
 func TestShellSourceFilesStaySplitByResponsibility(t *testing.T) {
 	limits := map[string]int{
-		"shell.go":             540,
-		"shell_workbench.go":   660,
-		"shell_pane_tree.go":   860,
-		"shell_overlay.go":     420,
-		"shell_prompt.go":      360,
-		"shell_prompt_path.go": 120,
-		"shell_floating.go":    340,
-		"shell_projection.go":  340,
-		"shell_workspace.go":   140,
-		"shell_clone.go":       120,
-		"shell_readonly.go":    140,
+		"shell.go":                      540,
+		"shell_workbench.go":            660,
+		"shell_pane_tree.go":            860,
+		"shell_overlay.go":              420,
+		"shell_prompt.go":               360,
+		"shell_prompt_path.go":          120,
+		"shell_floating.go":             340,
+		"shell_projection.go":           340,
+		"shell_workspace.go":            140,
+		"shell_clone.go":                120,
+		"shell_readonly.go":             140,
+		"shell_shortcut_passthrough.go": 120,
 	}
 	for path, limit := range limits {
 		data, err := os.ReadFile(path)

@@ -117,6 +117,7 @@ tui:
   interaction:
     mouse: true
     sticky_prefix_timeout_ms: 3000
+    shortcut_passthrough_interval_ms: 1000
     confirm_destructive: true
 
     clipboard_history:
@@ -178,6 +179,7 @@ tui:
 | `chrome.tab_create_icon` | `󰐕` | header renderer | tab create 按钮图标。必须按 cell width 校验，不能挤压 tab hit region。 |
 | `interaction.mouse` | `true` | TerminalHost/input | 控制宿主鼠标模式和 hit region 消费。 |
 | `interaction.sticky_prefix_timeout_ms` | `3000` | app timer | sticky shortcut mode 空闲退出时间。overlay/copy 这类显式页面不受它影响。 |
+| `interaction.shortcut_passthrough_interval_ms` | `1000` | app input window | 入口键双击透传窗口，例如 `ctrl-w ctrl-w` 或 `ctrl-v ctrl-v` 的第二击是否发给 terminal。 |
 | `interaction.confirm_destructive` | `true` | reducer/app | close/delete/kill 这类破坏性动作是否需要确认或二次意图。 |
 | `clipboard_history.*` | 见 schema | overlay VM | 只控制 TUI 展示和条目数量上限；历史内容本身仍由 core 托管的 clipboard storage 保存。 |
 | `picker.fuzzy_match` | `subsequence` | picker reducer | 默认沿用 data picker 式子序列匹配，例如 `gft` 可命中 `git commit fix terminal`。 |

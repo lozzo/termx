@@ -734,7 +734,7 @@ func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
 	if runtime.State().History.Pending == nil {
 		t.Fatalf("first latest should leave pending request in state, got %#v", runtime.State().History)
 	}
-	if len(runner.Effects) != 1 {
+	if historyRequestEffectCount(runner.Effects) != 1 {
 		t.Fatalf("first copy mode entry should schedule one frozen latest effect, got %#v", runner.Effects)
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
@@ -743,7 +743,7 @@ func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain duplicate latest: %v", err)
 	}
-	if len(runner.Effects) != 1 {
+	if historyRequestEffectCount(runner.Effects) != 1 {
 		t.Fatalf("duplicate latest while pending must not schedule another effect, got %#v", runner.Effects)
 	}
 	if runtime.State().Session.LastError != "" || runtime.State().Surface.Err != "" {
@@ -7319,6 +7319,18 @@ func (runner *recordingEffectRunner) Run(_ context.Context, effect Effect, _ fun
 }
 
 func (runner *recordingEffectRunner) Cancel(CancelToken) {}
+
+func historyRequestEffectCount(effects []Effect) int {
+	count := 0
+	for _, effect := range effects {
+		fn, ok := effect.(FuncEffect)
+		if !ok || fn.Run == nil || !fn.ForceSyncInTests || fn.Token == shellShortcutPassthroughTimeoutToken {
+			continue
+		}
+		count++
+	}
+	return count
+}
 
 type blockingHistoryClient struct {
 	mu            sync.Mutex

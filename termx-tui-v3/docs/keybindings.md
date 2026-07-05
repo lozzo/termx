@@ -8,7 +8,7 @@
 - `BindingCatalog` 中存在但 footer 未展示的键必须在本文件列为“未展示但可触发”，否则应删除。
 - pane split right/down 按 `tuiv2 迁移基准` 提供 `%` / `Ctrl-D` 与 `"` / `Ctrl-E` 键盘入口，同时继续复用 pane chrome action、鼠标 hit region、测试/smoke harness 和后续 command palette / CLI mini command 的同一 semantic command。
 - UI mode 下未绑定按键必须被吞掉，不得漏发给 terminal；normal mode 未绑定 raw key 继续透传 terminal。
-- mode 入口键支持双击透传：例如 `Ctrl-W Ctrl-W` 会把第二个 `Ctrl-W` 原样发送给 terminal，并退出 workspace mode；`Ctrl-V Ctrl-V` 会取消 copy/history 进入态并透传第二个 `Ctrl-V`。
+- mode 入口键支持窗口内双击透传：例如 `Ctrl-W Ctrl-W` 会把第二个 `Ctrl-W` 原样发送给 terminal，并退出 workspace mode；`Ctrl-V Ctrl-V` 会取消 copy/history 进入态并透传第二个 `Ctrl-V`。窗口由 `tui.interaction.shortcut_passthrough_interval_ms` 控制。
 - global mode 的 `l KEYLOCK` 切换 shortcut passthrough lock；开启后 `Ctrl-V`、`Ctrl-R`、`Ctrl-T`、`Ctrl-W` 等 root shortcut 直接发给 terminal，`Ctrl-G` 保留为解锁控制面。
 
 ## tuiv2 迁移基准

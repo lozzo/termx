@@ -29,14 +29,28 @@ type ShellInteractionModeTimeoutMsg struct {
 
 func (ShellInteractionModeTimeoutMsg) isMsg() {}
 
-const stickyInteractionModeTimeout = 1 * time.Second
+type ShellShortcutPassthroughTimeoutMsg struct {
+	Kind string
+	Seq  uint64
+}
+
+func (ShellShortcutPassthroughTimeoutMsg) isMsg() {}
+
+const defaultStickyInteractionModeTimeoutMS = 3000
+const defaultShortcutPassthroughIntervalMS = 1000
 
 const stickyInteractionModeTimeoutToken CancelToken = "shell.interaction-mode.timeout"
+const shellShortcutPassthroughTimeoutToken CancelToken = "shell.shortcut-passthrough.timeout"
+
+const shortcutPassthroughKindCopy = "copy"
 
 func NewUIInputReducer() Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		if timeoutMsg, ok := msg.(ShellInteractionModeTimeoutMsg); ok {
 			return reduceInteractionModeTimeout(root, timeoutMsg)
+		}
+		if timeoutMsg, ok := msg.(ShellShortcutPassthroughTimeoutMsg); ok {
+			return reduceShortcutPassthroughTimeout(root, timeoutMsg)
 		}
 		if mouseMsg, ok := msg.(ShellOverlayMouseSelectMsg); ok {
 			return reduceOverlayMouseSelect(root, mouseMsg)
@@ -100,7 +114,8 @@ func NewUIInputReducer() Reducer {
 		case input.IntentSetInteractionMode:
 			root.Shell = root.Shell.SetInteractionMode(stateInteractionMode(intent.Mode))
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: string(root.Shell.InteractionMode) + " mode"})
-			return root.Advance(), appendInteractionModeTimeoutEffect(root.Shell, []Effect{handledEffect{}})
+			root, effects := armShortcutPassthroughWindow(root, shortcutPassthroughKindForMode(root.Shell.InteractionMode), []Effect{handledEffect{}})
+			return root.Advance(), appendInteractionModeTimeoutEffect(root, effects)
 		case input.IntentExitInteraction:
 			root.Shell = root.Shell.ExitInteractionMode()
 			return root.Advance(), []Effect{handledEffect{}}
@@ -127,14 +142,18 @@ func shortcutPassthroughInput(root state.Root, event input.InputEvent) (state.Ro
 	mode := inputMode(shell.InteractionMode)
 	if shell.StickyInteractionMode() {
 		if _, ok := input.StickyModeEntryShortcutIntent(event, mode); ok {
-			// 中文说明：双击 sticky prefix 的第二击属于用户显式 PTY 输入；
-			// UI reducer 只退出 mode 并把同一 InputMsg 交给 terminal reducer，不能异步补发导致乱序。
-			root.Shell = shell.ExitInteractionMode().ArmTerminalInputPassthroughOnce()
-			return root.Advance(), true
+			kind := shortcutPassthroughKindForMode(shell.InteractionMode)
+			if shell.ShortcutPassthroughWindowMatches(kind) {
+				// 中文说明：双击 sticky prefix 的第二击属于用户显式 PTY 输入；
+				// UI reducer 只退出 mode 并把同一 InputMsg 交给 terminal reducer，不能异步补发导致乱序。
+				root.Shell = shell.ClearShortcutPassthroughWindow(kind).ExitInteractionMode().ArmTerminalInputPassthroughOnce()
+				return root.Advance(), true
+			}
+			return root, false
 		}
 		if shell.ShortcutPassthroughLocked {
 			if _, ok := input.LockableRootShortcutIntent(event); ok {
-				root.Shell = shell.ExitInteractionMode().ArmTerminalInputPassthroughOnce()
+				root.Shell = shell.ClearShortcutPassthroughWindow(shortcutPassthroughKindForMode(shell.InteractionMode)).ExitInteractionMode().ArmTerminalInputPassthroughOnce()
 				return root.Advance(), true
 			}
 		}
@@ -150,6 +169,13 @@ func shortcutPassthroughInput(root state.Root, event input.InputEvent) (state.Ro
 	return root, false
 }
 
+func shortcutPassthroughKindForMode(mode state.InteractionMode) string {
+	if mode == state.InteractionModeNormal {
+		return ""
+	}
+	return "mode:" + string(mode)
+}
+
 func reduceInteractionModeTimeout(root state.Root, msg ShellInteractionModeTimeoutMsg) (state.Root, []Effect) {
 	shell := root.Shell.EnsureDefaults()
 	if !shell.StickyInteractionMode() || shell.InteractionMode != msg.Mode || shell.InteractionModeSeq != msg.Seq {
@@ -159,12 +185,36 @@ func reduceInteractionModeTimeout(root state.Root, msg ShellInteractionModeTimeo
 	return root.Advance(), nil
 }
 
-func appendInteractionModeTimeoutEffect(shell state.ShellStore, effects []Effect) []Effect {
-	shell = shell.EnsureDefaults()
+func reduceShortcutPassthroughTimeout(root state.Root, msg ShellShortcutPassthroughTimeoutMsg) (state.Root, []Effect) {
+	nextShell, ok := root.Shell.ClearShortcutPassthroughWindowTimeout(msg.Kind, msg.Seq)
+	if !ok {
+		return root, nil
+	}
+	root.Shell = nextShell
+	return root.Advance(), nil
+}
+
+func appendInteractionModeTimeoutEffect(root state.Root, effects []Effect) []Effect {
+	shell := root.Shell.EnsureDefaults()
 	if !shell.StickyInteractionMode() {
 		return effects
 	}
-	return append(effects, interactionModeTimeoutEffect(shell.InteractionMode, shell.InteractionModeSeq))
+	timeout := stickyInteractionModeTimeout(root)
+	if timeout <= 0 {
+		return effects
+	}
+	return append(effects, interactionModeTimeoutEffect(shell.InteractionMode, shell.InteractionModeSeq, timeout))
+}
+
+func armShortcutPassthroughWindow(root state.Root, kind string, effects []Effect) (state.Root, []Effect) {
+	if kind == "" {
+		return root, effects
+	}
+	root.Shell = root.Shell.ArmShortcutPassthroughWindow(kind)
+	if seq, ok := root.Shell.ShortcutPassthroughWindow(kind); ok {
+		effects = append(effects, shortcutPassthroughTimeoutEffect(kind, seq, shortcutPassthroughInterval(root)))
+	}
+	return root, effects
 }
 
 func rearmInteractionModeTimeout(root state.Root, effects []Effect) (state.Root, []Effect) {
@@ -174,7 +224,7 @@ func rearmInteractionModeTimeout(root state.Root, effects []Effect) (state.Root,
 		return root, effects
 	}
 	root.Shell = shell.RearmInteractionMode()
-	return root, appendInteractionModeTimeoutEffect(root.Shell, effects)
+	return root, appendInteractionModeTimeoutEffect(root, effects)
 }
 
 func finishInteractionModeAfterIntent(root state.Root, effects []Effect, intent input.Intent) (state.Root, []Effect) {
@@ -235,19 +285,56 @@ func workbenchIntentKeepsPrefixMode(command string) bool {
 	}
 }
 
-func interactionModeTimeoutEffect(mode state.InteractionMode, seq uint64) Effect {
+func stickyInteractionModeTimeout(root state.Root) time.Duration {
+	ms := root.Config.Interaction.StickyPrefixTimeoutMS
+	if root.Config.Version == 0 {
+		ms = defaultStickyInteractionModeTimeoutMS
+	}
+	if ms <= 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
+func shortcutPassthroughInterval(root state.Root) time.Duration {
+	ms := root.Config.Interaction.ShortcutPassthroughIntervalMS
+	if root.Config.Version == 0 || ms <= 0 {
+		ms = defaultShortcutPassthroughIntervalMS
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
+func interactionModeTimeoutEffect(mode state.InteractionMode, seq uint64, timeout time.Duration) Effect {
 	return FuncEffect{
 		Token: stickyInteractionModeTimeoutToken,
 		Async: true,
 		Run: func(ctx context.Context) Msg {
 			// sticky mode 是前缀键提示态；超时只退出 mode，不关闭 overlay/copy 页面。
-			timer := time.NewTimer(stickyInteractionModeTimeout)
+			timer := time.NewTimer(timeout)
 			defer timer.Stop()
 			select {
 			case <-ctx.Done():
 				return nil
 			case <-timer.C:
 				return ShellInteractionModeTimeoutMsg{Mode: mode, Seq: seq}
+			}
+		},
+	}
+}
+
+func shortcutPassthroughTimeoutEffect(kind string, seq uint64, timeout time.Duration) Effect {
+	return FuncEffect{
+		Token: shellShortcutPassthroughTimeoutToken,
+		Async: true,
+		Run: func(ctx context.Context) Msg {
+			// entry 双击窗口只决定“第二次入口键是否透传”，不能退出 sticky/copy 状态。
+			timer := time.NewTimer(timeout)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-timer.C:
+				return ShellShortcutPassthroughTimeoutMsg{Kind: kind, Seq: seq}
 			}
 		},
 	}

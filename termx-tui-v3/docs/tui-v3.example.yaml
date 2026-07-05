@@ -209,6 +209,15 @@ tui:
     # 示例：sticky_prefix_timeout_ms: 5000
     sticky_prefix_timeout_ms: 3000
 
+    # shortcut_passthrough_interval_ms 控制入口键双击透传窗口。
+    # 默认值：1000。
+    # 单位：毫秒，必须大于 0。
+    # 例子：ctrl-w 进入 workspace mode 后，在 1000ms 内再按 ctrl-w 会透传一次 ctrl-w 给 terminal。
+    # 例子：ctrl-v 进入 copy/history 后，在 1000ms 内再按 ctrl-v 会退出 copy/history 并透传一次 ctrl-v。
+    # 超过窗口后再次按入口键只按普通 TUI shortcut 路由，不会透传给 terminal。
+    # 示例：shortcut_passthrough_interval_ms: 700
+    shortcut_passthrough_interval_ms: 1000
+
     # confirm_destructive 控制破坏性动作是否需要确认。
     # 默认值：true。
     # 影响：close/delete/kill/remove workspace 等可能丢状态或终止进程的动作。

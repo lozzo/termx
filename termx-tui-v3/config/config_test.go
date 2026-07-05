@@ -61,6 +61,7 @@ tui:
     tab_template: "{{tab_id}} {{if active}}▎{{else}}|{{end}} {{title | truncate 8}} [action:tab.close]{{close_icon}}[/action]"
   interaction:
     sticky_prefix_timeout_ms: 5000
+    shortcut_passthrough_interval_ms: 750
     clipboard_history:
       max_items: 500
       preview_width_ratio: 0.72
@@ -82,7 +83,10 @@ tui:
 	if cfg.Theme.Border.Active != "#ff00aa" || cfg.Chrome.Header || cfg.Chrome.PanelPresentation != "card" || cfg.Chrome.TabCreateIcon != "+" || !strings.Contains(cfg.Chrome.TabTemplate, "{{tab_id}}") {
 		t.Fatalf("chrome/border overrides not applied: %#v", cfg)
 	}
-	if cfg.Interaction.StickyPrefixTimeoutMS != 5000 || cfg.Interaction.ClipboardHistory.MaxItems != 500 || cfg.Interaction.ClipboardHistory.PreviewWidthRatio != 0.72 {
+	if cfg.Interaction.StickyPrefixTimeoutMS != 5000 ||
+		cfg.Interaction.ShortcutPassthroughIntervalMS != 750 ||
+		cfg.Interaction.ClipboardHistory.MaxItems != 500 ||
+		cfg.Interaction.ClipboardHistory.PreviewWidthRatio != 0.72 {
 		t.Fatalf("interaction overrides not applied: %#v", cfg.Interaction)
 	}
 	if cfg.Keymap.Root.TerminalPicker != "ctrl-space" ||
@@ -109,6 +113,11 @@ func TestParseRejectsUnknownFieldAndBadValues(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "must be empty or #RRGGBB") {
 		t.Fatalf("expected color validation error, got %v", err)
 	}
+
+	_, err = Parse([]byte("tui:\n  interaction:\n    shortcut_passthrough_interval_ms: 0\n"))
+	if err == nil || !strings.Contains(err.Error(), "shortcut_passthrough_interval_ms must be > 0") {
+		t.Fatalf("expected passthrough interval validation error, got %v", err)
+	}
 }
 
 func TestLoadUsesMissingDefaultPathButFailsExplicitMissingPath(t *testing.T) {
@@ -134,16 +143,21 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 	env := map[string]string{
-		"TERMX_TUI_THEME_PRIMARY":                   "#010203",
-		"TERMX_TUI_THEME_PALETTE":                   "builtin",
-		"TERMX_TUI_CHROME_HEADER":                   "false",
-		"TERMX_TUI_CLIPBOARD_HISTORY_PREVIEW_RATIO": "0.75",
+		"TERMX_TUI_THEME_PRIMARY":                    "#010203",
+		"TERMX_TUI_THEME_PALETTE":                    "builtin",
+		"TERMX_TUI_CHROME_HEADER":                    "false",
+		"TERMX_TUI_SHORTCUT_PASSTHROUGH_INTERVAL_MS": "650",
+		"TERMX_TUI_CLIPBOARD_HISTORY_PREVIEW_RATIO":  "0.75",
 	}
 	cfg, err := Load(path, func(key string) string { return env[key] })
 	if err != nil {
 		t.Fatalf("load with env overrides: %v", err)
 	}
-	if cfg.Theme.Primary != "#010203" || cfg.Theme.Palette != "builtin" || cfg.Chrome.Header || cfg.Interaction.ClipboardHistory.PreviewWidthRatio != 0.75 {
+	if cfg.Theme.Primary != "#010203" ||
+		cfg.Theme.Palette != "builtin" ||
+		cfg.Chrome.Header ||
+		cfg.Interaction.ShortcutPassthroughIntervalMS != 650 ||
+		cfg.Interaction.ClipboardHistory.PreviewWidthRatio != 0.75 {
 		t.Fatalf("env overrides not applied: %#v", cfg)
 	}
 }

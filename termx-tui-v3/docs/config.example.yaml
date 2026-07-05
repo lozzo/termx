@@ -181,6 +181,13 @@ tui:
     # 默认值：3000。
     sticky_prefix_timeout_ms: 3000
 
+    # shortcut_passthrough_interval_ms 控制“入口键双击透传”的判定窗口。
+    # 例如 ctrl-w 进入 workspace mode 后，在这个时间内再按一次 ctrl-w 会向 terminal 透传一次 ctrl-w。
+    # ctrl-v 进入 copy/history 后，在这个时间内再按一次 ctrl-v 会退出 copy/history 并透传一次 ctrl-v。
+    # 单位：毫秒；必须大于 0。
+    # 默认值：1000。
+    shortcut_passthrough_interval_ms: 1000
+
     # confirm_destructive 控制危险操作是否需要确认。
     # true：close/delete 等 destructive action 需要确认。
     # false：直接执行，适合高度熟悉 keymap 的用户。
