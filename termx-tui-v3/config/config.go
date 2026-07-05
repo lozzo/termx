@@ -54,32 +54,32 @@ func Default() state.TUIConfigStore {
 		Keymap: state.TUIKeymapConfig{
 			Root: state.TUIRootKeymapConfig{
 				TerminalPicker: "ctrl-f",
-				CopyMode:       "ctrl-v",
-				TabMode:        "ctrl-t",
-				WorkspaceMode:  "ctrl-w",
-				FloatingMode:   "ctrl-o",
-				PaneMode:       "ctrl-p",
-				ResizeMode:     "ctrl-r",
-				GlobalMode:     "ctrl-g",
 			},
-			Copy: state.TUICopyKeymapConfig{
+			CopyMode: state.TUICopyKeymapConfig{
+				Entry:            "ctrl-v",
 				ClipboardHistory: "h",
 				PasteLatest:      "p",
 				PasteSystem:      "shift-p",
 			},
-			Tab: state.TUITabKeymapConfig{
+			TabMode: state.TUITabKeymapConfig{
+				Entry:    "ctrl-t",
 				Create:   "c",
 				Close:    "x",
 				Rename:   "r",
 				Next:     "n",
 				Previous: "p",
 			},
-			Workspace: state.TUIWorkspaceKeymapConfig{
+			WorkspaceMode: state.TUIWorkspaceKeymapConfig{
+				Entry:     "ctrl-w",
 				Navigator: "w",
 				Create:    "c",
 				Delete:    "x",
 				Rename:    "r",
 			},
+			FloatingMode: state.TUIModeEntryKeymapConfig{Entry: "ctrl-o"},
+			PaneMode:     state.TUIModeEntryKeymapConfig{Entry: "ctrl-p"},
+			ResizeMode:   state.TUIModeEntryKeymapConfig{Entry: "ctrl-r"},
+			GlobalMode:   state.TUIModeEntryKeymapConfig{Entry: "ctrl-g"},
 		},
 	}
 }
@@ -249,9 +249,13 @@ func knownSection(path string) bool {
 		"tui.interaction.picker",
 		"tui.keymap",
 		"tui.keymap.root",
-		"tui.keymap.copy",
-		"tui.keymap.tab",
-		"tui.keymap.workspace":
+		"tui.keymap.copy_mode",
+		"tui.keymap.tab_mode",
+		"tui.keymap.workspace_mode",
+		"tui.keymap.floating_mode",
+		"tui.keymap.pane_mode",
+		"tui.keymap.resize_mode",
+		"tui.keymap.global_mode":
 		return true
 	default:
 		return false
@@ -300,25 +304,25 @@ var scalarSetters = map[string]scalarSetter{
 	"tui.interaction.picker.fuzzy_match":       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Interaction.Picker.FuzzyMatch = value }),
 	"tui.interaction.picker.highlight_matches": setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Interaction.Picker.HighlightMatches = value }),
 	"tui.keymap.root.terminal_picker":          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.TerminalPicker = value }),
-	"tui.keymap.root.copy_mode":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.CopyMode = value }),
-	"tui.keymap.root.tab_mode":                 setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.TabMode = value }),
-	"tui.keymap.root.workspace_mode":           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.WorkspaceMode = value }),
-	"tui.keymap.root.floating_mode":            setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.FloatingMode = value }),
-	"tui.keymap.root.pane_mode":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.PaneMode = value }),
-	"tui.keymap.root.resize_mode":              setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.ResizeMode = value }),
-	"tui.keymap.root.global_mode":              setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.GlobalMode = value }),
-	"tui.keymap.copy.clipboard_history":        setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Copy.ClipboardHistory = value }),
-	"tui.keymap.copy.paste_latest":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Copy.PasteLatest = value }),
-	"tui.keymap.copy.paste_system":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Copy.PasteSystem = value }),
-	"tui.keymap.tab.create":                    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Tab.Create = value }),
-	"tui.keymap.tab.close":                     setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Tab.Close = value }),
-	"tui.keymap.tab.rename":                    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Tab.Rename = value }),
-	"tui.keymap.tab.next":                      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Tab.Next = value }),
-	"tui.keymap.tab.previous":                  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Tab.Previous = value }),
-	"tui.keymap.workspace.navigator":           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Workspace.Navigator = value }),
-	"tui.keymap.workspace.create":              setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Workspace.Create = value }),
-	"tui.keymap.workspace.delete":              setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Workspace.Delete = value }),
-	"tui.keymap.workspace.rename":              setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Workspace.Rename = value }),
+	"tui.keymap.copy_mode.entry":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.CopyMode.Entry = value }),
+	"tui.keymap.copy_mode.clipboard_history":   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.CopyMode.ClipboardHistory = value }),
+	"tui.keymap.copy_mode.paste_latest":        setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.CopyMode.PasteLatest = value }),
+	"tui.keymap.copy_mode.paste_system":        setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.CopyMode.PasteSystem = value }),
+	"tui.keymap.tab_mode.entry":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.TabMode.Entry = value }),
+	"tui.keymap.tab_mode.create":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.TabMode.Create = value }),
+	"tui.keymap.tab_mode.close":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.TabMode.Close = value }),
+	"tui.keymap.tab_mode.rename":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.TabMode.Rename = value }),
+	"tui.keymap.tab_mode.next":                 setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.TabMode.Next = value }),
+	"tui.keymap.tab_mode.previous":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.TabMode.Previous = value }),
+	"tui.keymap.workspace_mode.entry":          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.WorkspaceMode.Entry = value }),
+	"tui.keymap.workspace_mode.navigator":      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.WorkspaceMode.Navigator = value }),
+	"tui.keymap.workspace_mode.create":         setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.WorkspaceMode.Create = value }),
+	"tui.keymap.workspace_mode.delete":         setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.WorkspaceMode.Delete = value }),
+	"tui.keymap.workspace_mode.rename":         setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.WorkspaceMode.Rename = value }),
+	"tui.keymap.floating_mode.entry":           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.FloatingMode.Entry = value }),
+	"tui.keymap.pane_mode.entry":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.PaneMode.Entry = value }),
+	"tui.keymap.resize_mode.entry":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.ResizeMode.Entry = value }),
+	"tui.keymap.global_mode.entry":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.GlobalMode.Entry = value }),
 }
 
 func setString(assign func(*state.TUIConfigStore, string)) scalarSetter {
@@ -500,48 +504,65 @@ func validOptionalHexColor(value string) bool {
 }
 
 func validateKeymap(keymap state.TUIKeymapConfig) error {
-	modes := map[string]map[string]string{
-		"root": {
-			"terminal_picker": keymap.Root.TerminalPicker,
-			"copy_mode":       keymap.Root.CopyMode,
-			"tab_mode":        keymap.Root.TabMode,
-			"workspace_mode":  keymap.Root.WorkspaceMode,
-			"floating_mode":   keymap.Root.FloatingMode,
-			"pane_mode":       keymap.Root.PaneMode,
-			"resize_mode":     keymap.Root.ResizeMode,
-			"global_mode":     keymap.Root.GlobalMode,
-		},
-		"copy": {
-			"clipboard_history": keymap.Copy.ClipboardHistory,
-			"paste_latest":      keymap.Copy.PasteLatest,
-			"paste_system":      keymap.Copy.PasteSystem,
-		},
-		"tab": {
-			"create":   keymap.Tab.Create,
-			"close":    keymap.Tab.Close,
-			"rename":   keymap.Tab.Rename,
-			"next":     keymap.Tab.Next,
-			"previous": keymap.Tab.Previous,
-		},
-		"workspace": {
-			"navigator": keymap.Workspace.Navigator,
-			"create":    keymap.Workspace.Create,
-			"delete":    keymap.Workspace.Delete,
-			"rename":    keymap.Workspace.Rename,
-		},
+	// entry 键虽然配置在各 mode 下，但输入归属是 root；冲突必须按 root 输入态统一判断。
+	if err := validateKeymapMode("root", []keymapBinding{
+		{Path: "tui.keymap.root.terminal_picker", Key: keymap.Root.TerminalPicker},
+		{Path: "tui.keymap.copy_mode.entry", Key: keymap.CopyMode.Entry},
+		{Path: "tui.keymap.tab_mode.entry", Key: keymap.TabMode.Entry},
+		{Path: "tui.keymap.workspace_mode.entry", Key: keymap.WorkspaceMode.Entry},
+		{Path: "tui.keymap.floating_mode.entry", Key: keymap.FloatingMode.Entry},
+		{Path: "tui.keymap.pane_mode.entry", Key: keymap.PaneMode.Entry},
+		{Path: "tui.keymap.resize_mode.entry", Key: keymap.ResizeMode.Entry},
+		{Path: "tui.keymap.global_mode.entry", Key: keymap.GlobalMode.Entry},
+	}); err != nil {
+		return err
 	}
-	for mode, bindings := range modes {
-		seen := map[string]string{}
-		for action, key := range bindings {
-			key = strings.ToLower(strings.TrimSpace(key))
-			if key == "" {
-				return fmt.Errorf("tui.keymap.%s.%s must not be empty", mode, action)
-			}
-			if previous := seen[key]; previous != "" {
-				return fmt.Errorf("tui.keymap.%s has duplicate key %q for %s and %s", mode, key, previous, action)
-			}
-			seen[key] = action
+	for _, mode := range []struct {
+		name     string
+		bindings []keymapBinding
+	}{
+		{name: "copy_mode", bindings: []keymapBinding{
+			{Path: "tui.keymap.copy_mode.clipboard_history", Key: keymap.CopyMode.ClipboardHistory},
+			{Path: "tui.keymap.copy_mode.paste_latest", Key: keymap.CopyMode.PasteLatest},
+			{Path: "tui.keymap.copy_mode.paste_system", Key: keymap.CopyMode.PasteSystem},
+		}},
+		{name: "tab_mode", bindings: []keymapBinding{
+			{Path: "tui.keymap.tab_mode.create", Key: keymap.TabMode.Create},
+			{Path: "tui.keymap.tab_mode.close", Key: keymap.TabMode.Close},
+			{Path: "tui.keymap.tab_mode.rename", Key: keymap.TabMode.Rename},
+			{Path: "tui.keymap.tab_mode.next", Key: keymap.TabMode.Next},
+			{Path: "tui.keymap.tab_mode.previous", Key: keymap.TabMode.Previous},
+		}},
+		{name: "workspace_mode", bindings: []keymapBinding{
+			{Path: "tui.keymap.workspace_mode.navigator", Key: keymap.WorkspaceMode.Navigator},
+			{Path: "tui.keymap.workspace_mode.create", Key: keymap.WorkspaceMode.Create},
+			{Path: "tui.keymap.workspace_mode.delete", Key: keymap.WorkspaceMode.Delete},
+			{Path: "tui.keymap.workspace_mode.rename", Key: keymap.WorkspaceMode.Rename},
+		}},
+	} {
+		if err := validateKeymapMode(mode.name, mode.bindings); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+type keymapBinding struct {
+	Path string
+	Key  string
+}
+
+func validateKeymapMode(mode string, bindings []keymapBinding) error {
+	seen := map[string]string{}
+	for _, binding := range bindings {
+		key := strings.ToLower(strings.TrimSpace(binding.Key))
+		if key == "" {
+			return fmt.Errorf("%s must not be empty", binding.Path)
+		}
+		if previous := seen[key]; previous != "" {
+			return fmt.Errorf("tui.keymap.%s has duplicate key %q for %s and %s", mode, key, previous, binding.Path)
+		}
+		seen[key] = binding.Path
 	}
 	return nil
 }

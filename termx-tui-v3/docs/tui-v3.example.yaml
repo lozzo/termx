@@ -254,10 +254,11 @@ tui:
       highlight_matches: true
 
   # keymap 控制快捷键绑定。
-  # 加载期必须检测冲突；同一个 mode 下两个 action 不能抢同一个键。
+  # 加载期必须检测冲突；同一个输入态下两个 action 不能抢同一个键。
+  # 各 mode 的 entry 配在对应 mode 下，但这些 entry 都属于 root 输入态。
   # 键名约定：ctrl-x、shift-p、alt-x、enter、esc、tab、backspace、delete、up、down、left、right，普通字符直接写小写字母。
   keymap:
-    # root 是默认工作台状态下可用的全局入口。
+    # root 是默认工作台输入态下可用的直接动作；sticky mode 入口放在各自 mode.entry。
     root:
       # terminal_picker 打开 Terminal Picker。
       # 默认值：ctrl-f。
@@ -265,53 +266,17 @@ tui:
       # 示例：terminal_picker: ctrl-space
       terminal_picker: ctrl-f
 
-      # copy_mode 进入 authoritative copy/history 模式。
+    # copy_mode 是 authoritative copy/history 模式。
+    copy_mode:
+      # entry 从 root 输入态进入 copy/history mode。
       # 默认值：ctrl-v。
       # 用途：冻结当前 view 并请求 core-v2 history window。
-      # 示例：copy_mode: ctrl-y
-      copy_mode: ctrl-v
+      # 示例：entry: ctrl-y
+      entry: ctrl-v
 
-      # tab_mode 进入 tab sticky shortcut mode。
-      # 默认值：ctrl-t。
-      # 后续按 c/x/r/n/p 执行 tab create/close/rename/next/previous。
-      # 示例：tab_mode: alt-t
-      tab_mode: ctrl-t
-
-      # workspace_mode 进入 workspace sticky shortcut mode。
-      # 默认值：ctrl-w。
-      # 后续按 w/c/x/r 等执行 navigator/create/delete/rename。
-      # 示例：workspace_mode: alt-w
-      workspace_mode: ctrl-w
-
-      # floating_mode 进入 floating sticky shortcut mode。
-      # 默认值：ctrl-o。
-      # 用途：创建、显示、聚焦或管理当前 tab 下的 floating pane。
-      # 示例：floating_mode: alt-o
-      floating_mode: ctrl-o
-
-      # pane_mode 进入 pane sticky shortcut mode。
-      # 默认值：ctrl-p。
-      # 用途：pane split/focus/close/zoom 等结构命令入口。
-      # 示例：pane_mode: alt-p
-      pane_mode: ctrl-p
-
-      # resize_mode 进入 pane resize sticky shortcut mode。
-      # 默认值：ctrl-r。
-      # 用途：键盘调整 pane 大小，并触发 owner view resize effect。
-      # 示例：resize_mode: alt-r
-      resize_mode: ctrl-r
-
-      # global_mode 进入 global sticky shortcut mode。
-      # 默认值：ctrl-g。
-      # 用途：全局命令入口，后续可挂 Help、command palette、配置 reload 等。
-      # 示例：global_mode: alt-g
-      global_mode: ctrl-g
-
-    # copy 是 copy/history 模式下的局部快捷键。
-    copy:
       # clipboard_history 打开剪贴板历史 overlay。
       # 默认值：h。
-      # 当前交互语义：先按 ctrl-v 进入 copy/history，再按 h 打开历史。
+      # 当前交互语义：先按 copy_mode.entry 进入 copy/history，再按 h 打开历史。
       # 示例：clipboard_history: y
       clipboard_history: h
 
@@ -327,9 +292,14 @@ tui:
       # 示例：paste_system: ctrl-p
       paste_system: shift-p
 
-    # tab 是 tab sticky shortcut mode 下的快捷键。
-    # 默认入口：先按 root.tab_mode，再按下面的键。
-    tab:
+    # tab_mode 是 tab sticky shortcut mode。
+    tab_mode:
+      # entry 从 root 输入态进入 tab mode。
+      # 默认值：ctrl-t。
+      # 后续按 c/x/r/n/p 执行 tab create/close/rename/next/previous。
+      # 示例：entry: alt-t
+      entry: ctrl-t
+
       # create 新建 tab。
       # 默认值：c。
       # 语义：创建一个带 unconnected full-screen pane 的新 tab，不自动创建 terminal。
@@ -357,9 +327,14 @@ tui:
       # 示例：previous: h
       previous: p
 
-    # workspace 是 workspace sticky shortcut mode 下的快捷键。
-    # 默认入口：先按 root.workspace_mode，再按下面的键。
-    workspace:
+    # workspace_mode 是 workspace sticky shortcut mode。
+    workspace_mode:
+      # entry 从 root 输入态进入 workspace mode。
+      # 默认值：ctrl-w。
+      # 后续按 w/c/x/r 等执行 navigator/create/delete/rename。
+      # 示例：entry: alt-w
+      entry: ctrl-w
+
       # navigator 打开 Workbench Navigator。
       # 默认值：w。
       # 用途：查看所有 workspace/tab/pane/floating，并在右侧预览 terminal snapshot。
@@ -382,3 +357,35 @@ tui:
       # 默认值：r。
       # 示例：rename: e
       rename: r
+
+    # floating_mode 是 floating sticky shortcut mode。
+    floating_mode:
+      # entry 从 root 输入态进入 floating mode。
+      # 默认值：ctrl-o。
+      # 用途：创建、显示、聚焦或管理当前 tab 下的 floating pane。
+      # 示例：entry: alt-o
+      entry: ctrl-o
+
+    # pane_mode 是 pane sticky shortcut mode。
+    pane_mode:
+      # entry 从 root 输入态进入 pane mode。
+      # 默认值：ctrl-p。
+      # 用途：pane split/focus/close/zoom 等结构命令入口。
+      # 示例：entry: alt-p
+      entry: ctrl-p
+
+    # resize_mode 是 pane resize sticky shortcut mode。
+    resize_mode:
+      # entry 从 root 输入态进入 resize mode。
+      # 默认值：ctrl-r。
+      # 用途：键盘调整 pane 大小，并触发 owner view resize effect。
+      # 示例：entry: alt-r
+      entry: ctrl-r
+
+    # global_mode 是 global sticky shortcut mode。
+    global_mode:
+      # entry 从 root 输入态进入 global mode。
+      # 默认值：ctrl-g。
+      # 用途：全局命令入口，后续可挂 Help、command palette、配置 reload 等。
+      # 示例：entry: alt-g
+      entry: ctrl-g

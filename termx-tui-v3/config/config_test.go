@@ -67,6 +67,11 @@ tui:
   keymap:
     root:
       terminal_picker: ctrl-space
+    copy_mode:
+      entry: ctrl-y
+      clipboard_history: y
+    tab_mode:
+      entry: alt-t
 `))
 	if err != nil {
 		t.Fatalf("parse override config: %v", err)
@@ -80,8 +85,12 @@ tui:
 	if cfg.Interaction.StickyPrefixTimeoutMS != 5000 || cfg.Interaction.ClipboardHistory.MaxItems != 500 || cfg.Interaction.ClipboardHistory.PreviewWidthRatio != 0.72 {
 		t.Fatalf("interaction overrides not applied: %#v", cfg.Interaction)
 	}
-	if cfg.Keymap.Root.TerminalPicker != "ctrl-space" || cfg.Keymap.Root.CopyMode != "ctrl-v" {
-		t.Fatalf("keymap override/default merge wrong: %#v", cfg.Keymap.Root)
+	if cfg.Keymap.Root.TerminalPicker != "ctrl-space" ||
+		cfg.Keymap.CopyMode.Entry != "ctrl-y" ||
+		cfg.Keymap.CopyMode.ClipboardHistory != "y" ||
+		cfg.Keymap.TabMode.Entry != "alt-t" ||
+		cfg.Keymap.TabMode.Create != "c" {
+		t.Fatalf("keymap override/default merge wrong: %#v", cfg.Keymap)
 	}
 }
 
@@ -141,9 +150,17 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 
 func TestValidateRejectsDuplicateKeymapWithinMode(t *testing.T) {
 	cfg := Default()
-	cfg.Keymap.Tab.Close = cfg.Keymap.Tab.Create
+	cfg.Keymap.TabMode.Close = cfg.Keymap.TabMode.Create
 	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "duplicate key") {
 		t.Fatalf("expected duplicate keymap error, got %v", err)
+	}
+}
+
+func TestValidateRejectsDuplicateKeymapEntriesInRootInput(t *testing.T) {
+	cfg := Default()
+	cfg.Keymap.CopyMode.Entry = cfg.Keymap.Root.TerminalPicker
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "tui.keymap.root has duplicate key") {
+		t.Fatalf("expected duplicate root entry keymap error, got %v", err)
 	}
 }
 

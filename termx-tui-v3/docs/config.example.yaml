@@ -217,85 +217,95 @@ tui:
 
   keymap:
     root:
-      # terminal_picker 打开 terminal picker。
+      # terminal_picker 是 root 输入态下直接打开 terminal picker 的快捷键。
+      # 它不是 sticky mode entry；按下后直接打开 picker overlay。
       # 默认值：ctrl-f。
       terminal_picker: ctrl-f
 
-      # copy_mode 进入 copy/history 交互态。
+    copy_mode:
+      # entry 是从 root 输入态进入 copy/history mode 的快捷键。
       # 默认值：ctrl-v。
-      copy_mode: ctrl-v
+      # entry 归属 root 输入态冲突检测，不和 copy_mode 内部 h/p/shift-p 这类键冲突。
+      entry: ctrl-v
 
-      # tab_mode 进入 tab shortcut mode。
-      # 默认值：ctrl-t。
-      tab_mode: ctrl-t
-
-      # workspace_mode 进入 workspace shortcut mode。
-      # 默认值：ctrl-w。
-      workspace_mode: ctrl-w
-
-      # floating_mode 进入 floating window shortcut mode。
-      # 默认值：ctrl-o。
-      floating_mode: ctrl-o
-
-      # pane_mode 进入 pane shortcut mode。
-      # 默认值：ctrl-p。
-      pane_mode: ctrl-p
-
-      # resize_mode 进入 resize shortcut mode。
-      # 默认值：ctrl-r。
-      resize_mode: ctrl-r
-
-      # global_mode 进入 global shortcut mode。
-      # 默认值：ctrl-g。
-      global_mode: ctrl-g
-
-    copy:
-      # clipboard_history 在 copy mode 内打开 clipboard history。
+      # clipboard_history 是进入 copy/history mode 后打开 clipboard history 的快捷键。
       # 默认值：h。
       clipboard_history: h
 
-      # paste_latest 在 copy mode 内粘贴最近一次复制内容。
+      # paste_latest 是进入 copy/history mode 后粘贴最近一次复制内容的快捷键。
       # 默认值：p。
       paste_latest: p
 
-      # paste_system 在 copy mode 内粘贴系统剪贴板内容。
+      # paste_system 是进入 copy/history mode 后粘贴系统剪贴板内容的快捷键。
       # 默认值：shift-p。
       paste_system: shift-p
 
-    tab:
-      # create 在 tab mode 内创建新 tab。
+    tab_mode:
+      # entry 是从 root 输入态进入 tab sticky shortcut mode 的快捷键。
+      # 默认值：ctrl-t。
+      entry: ctrl-t
+
+      # create 是进入 tab mode 后创建新 tab 的快捷键。
       # 默认值：c。
       create: c
 
-      # close 在 tab mode 内关闭当前 tab。
+      # close 是进入 tab mode 后关闭当前 tab 的快捷键。
       # 默认值：x。
       close: x
 
-      # rename 在 tab mode 内重命名当前 tab。
+      # rename 是进入 tab mode 后重命名当前 tab 的快捷键。
       # 默认值：r。
       rename: r
 
-      # next 在 tab mode 内切到下一个 tab。
+      # next 是进入 tab mode 后切到下一个 tab 的快捷键。
       # 默认值：n。
       next: n
 
-      # previous 在 tab mode 内切到上一个 tab。
+      # previous 是进入 tab mode 后切到上一个 tab 的快捷键。
       # 默认值：p。
       previous: p
 
-    workspace:
-      # navigator 打开 Workbench Navigator。
+    workspace_mode:
+      # entry 是从 root 输入态进入 workspace sticky shortcut mode 的快捷键。
+      # 默认值：ctrl-w。
+      entry: ctrl-w
+
+      # navigator 是进入 workspace mode 后打开 Workbench Navigator 的快捷键。
       # 默认值：w。
       navigator: w
 
-      # create 在 workspace mode 内创建 workspace。
+      # create 是进入 workspace mode 后创建 workspace 的快捷键。
       # 默认值：c。
       create: c
 
-      # delete 在 workspace mode 内删除当前 workspace。
+      # delete 是进入 workspace mode 后删除当前 workspace 的快捷键。
       # 默认值：x。
       delete: x
 
-      # rename 在 workspace mode 内重命名当前 workspace。
+      # rename 是进入 workspace mode 后重命名当前 workspace 的快捷键。
       # 默认值：r。
       rename: r
+
+    floating_mode:
+      # entry 是从 root 输入态进入 floating window shortcut mode 的快捷键。
+      # 默认值：ctrl-o。
+      # 目前 floating mode 内部动作仍由运行时 action catalog 定义，配置先只暴露入口。
+      entry: ctrl-o
+
+    pane_mode:
+      # entry 是从 root 输入态进入 pane shortcut mode 的快捷键。
+      # 默认值：ctrl-p。
+      # 目前 pane mode 内部动作仍由运行时 action catalog 定义，配置先只暴露入口。
+      entry: ctrl-p
+
+    resize_mode:
+      # entry 是从 root 输入态进入 resize shortcut mode 的快捷键。
+      # 默认值：ctrl-r。
+      # 目前 resize mode 内部动作仍由运行时 action catalog 定义，配置先只暴露入口。
+      entry: ctrl-r
+
+    global_mode:
+      # entry 是从 root 输入态进入 global shortcut mode 的快捷键。
+      # 默认值：ctrl-g。
+      # 目前 global mode 内部动作仍由运行时 action catalog 定义，配置先只暴露入口。
+      entry: ctrl-g
