@@ -2,6 +2,8 @@
 
 本文件是 tui-v3 快捷键实现核查表。实际可触发快捷键以 `termx-tui-v3/input/bindings.go` 的 `BindingCatalog` 为准；footer 展示以 `termx-tui-v3/render/action_ids.go` 的 `ActionSpecCatalog` 和 `termx-tui-v3/render/vm.go` 的 `footerActionCatalog` 为准。
 
+用户可以通过 `tui.footer.*` 配置覆盖 footer 的 mode badge、action 顺序、图标、label、style 和可点击 action id。该配置只影响展示和 hit region 绑定；真实键盘触发仍以 `BindingCatalog` 为准，不能靠改 footer 文案创建新的快捷键。
+
 ## 核查规则
 
 - footer 展示的键必须能触发对应动作，除非它是鼠标/overlay 的可点击 action token。

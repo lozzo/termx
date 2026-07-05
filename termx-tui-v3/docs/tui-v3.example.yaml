@@ -192,6 +192,64 @@ tui:
     # 示例：tab_template: "{{tab_id}}[fg:#f7f2ff;bg:#332244;font:bold] {{if active}}▎{{else}}|{{end}} {{title | truncate 12}} [action:tab.close]{{close_icon}}[/action][/style]"
     tab_template: ""
 
+  # footer 控制底部 mode badge、action token 和状态摘要的展示文案。
+  # 它只改变显示顺序、图标、label、style 和可点击 action id，不改变键盘路由 truth。
+  # 是否显示 footer 仍由 tui.chrome.footer 控制。
+  footer:
+    templates:
+      # mode_badge 控制左侧 mode 徽标。
+      # 可用占位符：{{mode}}、{{mode_icon}}、{{mode_label}}。
+      # 默认值："{{mode_icon}} {{mode_label}}"。
+      mode_badge: "{{mode_icon}} {{mode_label}}"
+
+      # action 控制每个 action key 后面的展示内容。
+      # 当前 key 仍由 renderer 画成稳定的 [Ctrl] • [P] 结构，模板里的 {{key}} 只作为兼容占位符。
+      # 可用占位符：{{key}}、{{icon}}、{{label}}、{{action}}。
+      # 默认值："{{key}} {{icon}} {{label}}"。
+      action: "{{key}} {{icon}} {{label}}"
+
+      # separator 控制 action token 之间的分隔符；留空时使用内置分隔符。
+      # 默认值：" │ "。
+      separator: " │ "
+
+      # keylock_on 控制全局快捷键锁开启时右侧摘要里的显示文本。
+      # 默认值："󰌾 KEYLOCK"。
+      keylock_on: "󰌾 KEYLOCK"
+
+      # keylock_off 当前预留；关闭时 footer 默认不显示 keylock token。
+      # 默认值：""。
+      keylock_off: ""
+
+    # modes.<name> 控制某个 footer mode 的 badge 和 action 顺序。
+    # name 可写 live、pane、resize、tab、workspace、floating、global、copy，
+    # 也可写 overlay mode，例如 terminal-picker、terminal-pool、workbench-tree、clipboard-history。
+    # actions 是逗号分隔的 action alias 或 action id；当前配置解析器不支持 YAML list。
+    # 示例：
+    # modes:
+    #   live:
+    #     icon: "󰆍"
+    #     label: "TERM"
+    #     style: footer-accent
+    #     actions: "pane,resize,tab,workspace,float,copy,picker,global"
+    modes:
+
+    # actions.<alias> 定义可复用 action token。
+    # id 非空时必须对应 render/action_ids.go 里的现有 action id，点击才会触发语义动作。
+    # id 为空时只是展示 token，不产生 click hit region。
+    # key 是显示用快捷键文本；真实键盘触发仍以 input/BindingCatalog 为准。
+    # style 可用：footer-key-pane、footer-key-resize、footer-key-tab、footer-key-workspace、
+    # footer-key-float、footer-key-copy、footer-key-picker、footer-key-global、footer-accent、
+    # footer-muted、status-accent、status-warning、warning、danger 等内置 style token。
+    # 示例：
+    # actions:
+    #   pane:
+    #     id: footer.mode-pane
+    #     key: "^P"
+    #     icon: ""
+    #     label: "pane"
+    #     style: footer-key-pane
+    actions:
+
   # interaction 控制当前 TUI 客户端的交互细节。
   # 这些配置是用户偏好，不进入 workbench storage，也不表达 terminal 状态。
   interaction:

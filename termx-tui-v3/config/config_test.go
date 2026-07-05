@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ func TestParseExampleConfigMatchesDefaults(t *testing.T) {
 	if cfg.Theme.Primary != "" || cfg.Theme.Secondary != "" {
 		t.Fatalf("example config should keep primary/secondary host-aware by default, got %#v", cfg.Theme)
 	}
-	if cfg != want {
+	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("example config should parse to defaults\n got=%#v\nwant=%#v", cfg, want)
 	}
 }
@@ -59,6 +60,25 @@ tui:
     panel_presentation: card
     tab_create_icon: "+"
     tab_template: "{{tab_id}} {{if active}}▎{{else}}|{{end}} {{title | truncate 8}} [action:tab.close]{{close_icon}}[/action]"
+  footer:
+    templates:
+      mode_badge: "{{mode_icon}} {{mode_label}}"
+      action: "{{key}} {{icon}} {{label}}"
+      separator: " · "
+      keylock_on: "󰌾 KEYLOCK"
+    modes:
+      live:
+        icon: "󰆍"
+        label: "TERM"
+        style: footer-accent
+        actions: "pane,copy,global"
+    actions:
+      pane:
+        id: footer.mode-pane
+        key: "^P"
+        icon: ""
+        label: "pane"
+        style: footer-key-pane
   interaction:
     sticky_prefix_timeout_ms: 5000
     shortcut_passthrough_interval_ms: 750
@@ -82,6 +102,13 @@ tui:
 	}
 	if cfg.Theme.Border.Active != "#ff00aa" || cfg.Chrome.Header || cfg.Chrome.PanelPresentation != "card" || cfg.Chrome.TabCreateIcon != "+" || !strings.Contains(cfg.Chrome.TabTemplate, "{{tab_id}}") {
 		t.Fatalf("chrome/border overrides not applied: %#v", cfg)
+	}
+	if cfg.Footer.Templates.Separator != " · " ||
+		cfg.Footer.Modes["live"].Icon != "󰆍" ||
+		cfg.Footer.Modes["live"].Actions != "pane,copy,global" ||
+		cfg.Footer.Actions["pane"].ID != "footer.mode-pane" ||
+		cfg.Footer.Actions["pane"].Icon != "" {
+		t.Fatalf("footer overrides not applied: %#v", cfg.Footer)
 	}
 	if cfg.Interaction.StickyPrefixTimeoutMS != 5000 ||
 		cfg.Interaction.ShortcutPassthroughIntervalMS != 750 ||
@@ -118,6 +145,16 @@ func TestParseRejectsUnknownFieldAndBadValues(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "shortcut_passthrough_interval_ms must be > 0") {
 		t.Fatalf("expected passthrough interval validation error, got %v", err)
 	}
+
+	_, err = Parse([]byte("tui:\n  footer:\n    actions:\n      pane:\n        style: nope\n"))
+	if err == nil || !strings.Contains(err.Error(), "unknown style token") {
+		t.Fatalf("expected footer style validation error, got %v", err)
+	}
+
+	_, err = Parse([]byte("tui:\n  footer:\n    modes:\n      live:\n        actions: \"pane,$bad\"\n"))
+	if err == nil || !strings.Contains(err.Error(), "invalid action ref") {
+		t.Fatalf("expected footer action ref validation error, got %v", err)
+	}
 }
 
 func TestLoadUsesMissingDefaultPathButFailsExplicitMissingPath(t *testing.T) {
@@ -127,7 +164,7 @@ func TestLoadUsesMissingDefaultPathButFailsExplicitMissingPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("missing default config should not fail: %v", err)
 	}
-	if cfg != Default() {
+	if !reflect.DeepEqual(cfg, Default()) {
 		t.Fatalf("missing default config should return defaults, got %#v", cfg)
 	}
 

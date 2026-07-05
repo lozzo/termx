@@ -91,15 +91,45 @@ func buildFooterVM(root state.Root, shell state.ShellStore, content ContentVM) F
 	if hint == "" {
 		hint = activeViewLiveStatus(root, shell)
 	}
+	footerConfig := root.Config.Footer
+	modeConfig := footerConfig.Modes[mode]
 	return FooterVM{
 		Visible:             shell.FooterVisible,
 		Mode:                mode,
+		ModeIcon:            modeConfig.Icon,
+		ModeLabel:           modeConfig.Label,
+		ModeStyle:           footerStyleTokenFromConfig(modeConfig.Style),
 		Hint:                hint,
 		ActionTokens:        footerActionCatalogForRoot(mode, root, shell),
+		ActionTemplate:      footerTemplateOrDefault(footerConfig.Templates.Action, defaultFooterActionTemplate),
+		ModeBadgeTemplate:   footerTemplateOrDefault(footerConfig.Templates.ModeBadge, defaultFooterModeBadgeTemplate),
+		ActionSeparator:     footerConfig.Templates.Separator,
+		KeylockOnTemplate:   footerConfig.Templates.KeylockOn,
+		KeylockOffTemplate:  footerConfig.Templates.KeylockOff,
 		ActiveTarget:        activeTargetSummary(shell, root),
 		GlobalSummary:       globalSummary(root, shell),
 		FloatingSummaryOpen: len(shell.ActiveFloatings()) > 0,
 	}
+}
+
+const (
+	defaultFooterActionTemplate    = "{{key}} {{icon}} {{label}}"
+	defaultFooterModeBadgeTemplate = "{{mode_icon}} {{mode_label}}"
+)
+
+func footerTemplateOrDefault(value string, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func footerStyleTokenFromConfig(value string) StyleToken {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	return StyleToken(value)
 }
 
 func activeViewLiveStatus(root state.Root, shell state.ShellStore) string {
@@ -199,6 +229,7 @@ func footerActions(mode string) []string {
 
 func footerActionCatalogForRoot(mode string, root state.Root, shell state.ShellStore) []FooterActionVM {
 	tokens := footerActionCatalog(mode)
+	tokens = footerActionCatalogFromConfig(mode, tokens, root.Config.Footer)
 	if len(tokens) == 0 {
 		return tokens
 	}
@@ -209,6 +240,122 @@ func footerActionCatalogForRoot(mode string, root state.Root, shell state.ShellS
 		}
 	}
 	return out
+}
+
+func footerActionCatalogFromConfig(mode string, defaults []FooterActionVM, cfg state.TUIFooterConfig) []FooterActionVM {
+	modeConfig, ok := cfg.Modes[mode]
+	if !ok || strings.TrimSpace(modeConfig.Actions) == "" {
+		return defaults
+	}
+	refs := footerActionConfigRefs(modeConfig.Actions)
+	if len(refs) == 0 {
+		return defaults
+	}
+	defaultsByID := footerDefaultActionIndex(defaults)
+	out := make([]FooterActionVM, 0, len(refs))
+	for _, ref := range refs {
+		if token, ok := footerActionFromConfigRef(ref, cfg.Actions[ref], defaultsByID); ok {
+			out = append(out, token)
+		}
+	}
+	if len(out) == 0 {
+		return defaults
+	}
+	return out
+}
+
+func footerActionConfigRefs(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func footerDefaultActionIndex(defaults []FooterActionVM) map[string]FooterActionVM {
+	out := map[string]FooterActionVM{}
+	for _, token := range defaults {
+		if token.ActionID != "" {
+			out[token.ActionID] = token
+		}
+	}
+	return out
+}
+
+func footerActionFromConfigRef(ref string, cfg state.TUIFooterActionConfig, defaultsByID map[string]FooterActionVM) (FooterActionVM, bool) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return FooterActionVM{}, false
+	}
+	base, baseOK := footerActionBaseForRef(ref, defaultsByID)
+	if strings.TrimSpace(cfg.ID) != "" {
+		if action, ok := footerActionBaseForRef(cfg.ID, defaultsByID); ok {
+			base = action
+			baseOK = true
+		} else {
+			base.ActionID = ""
+		}
+	}
+	if strings.TrimSpace(cfg.Key) != "" {
+		base.Key = cfg.Key
+		baseOK = true
+	}
+	if strings.TrimSpace(cfg.Label) != "" {
+		base.Label = cfg.Label
+		baseOK = true
+	}
+	if strings.TrimSpace(cfg.Icon) != "" {
+		base.Icon = cfg.Icon
+		baseOK = true
+	}
+	if strings.TrimSpace(cfg.Style) != "" {
+		base.Style = footerStyleTokenFromConfig(cfg.Style)
+		baseOK = true
+	}
+	if strings.TrimSpace(base.Key) == "" && strings.TrimSpace(base.Icon) == "" && strings.TrimSpace(base.Label) == "" {
+		return FooterActionVM{}, false
+	}
+	return base, baseOK
+}
+
+func footerActionBaseForRef(ref string, defaultsByID map[string]FooterActionVM) (FooterActionVM, bool) {
+	if token, ok := defaultsByID[ref]; ok {
+		return token, true
+	}
+	if aliasID := footerBuiltinActionAlias(ref); aliasID != "" {
+		return footerActionFor(aliasID), true
+	}
+	if spec, ok := ActionSpecByIDString(ref); ok {
+		return footerActionFromSpec(spec), true
+	}
+	return FooterActionVM{}, false
+}
+
+func footerBuiltinActionAlias(ref string) ActionID {
+	switch strings.ToLower(strings.TrimSpace(ref)) {
+	case "pane":
+		return ActionFooterPaneMode
+	case "resize":
+		return ActionFooterResizeMode
+	case "tab":
+		return ActionFooterTabMode
+	case "workspace", "ws":
+		return ActionFooterWorkspaceMode
+	case "floating", "float":
+		return ActionFooterFloatingMode
+	case "copy":
+		return ActionFooterCopyMode
+	case "picker", "pick":
+		return ActionFooterPicker
+	case "global":
+		return ActionFooterGlobalMode
+	default:
+		return ""
+	}
 }
 
 // 中文说明：这里仅过滤可见 footer token；reducer 仍负责最终语义校验和错误反馈。

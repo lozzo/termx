@@ -387,6 +387,68 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderAppliesFooterConfig(t *testing.T) {
+	root := state.Root{
+		Shell:    state.DefaultShell(),
+		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 20},
+		Config: state.TUIConfigStore{
+			Footer: state.TUIFooterConfig{
+				Templates: state.TUIFooterTemplatesConfig{
+					ModeBadge: "{{mode_icon}} {{mode_label}}",
+					Action:    "{{key}} {{icon}} {{label}}",
+					Separator: " · ",
+				},
+				Modes: map[string]state.TUIFooterModeConfig{
+					"live": {
+						Icon:    "󰆍",
+						Label:   "TERM",
+						Style:   string(StyleFooterAccent),
+						Actions: "pane,copy,global",
+					},
+				},
+				Actions: map[string]state.TUIFooterActionConfig{
+					"pane": {
+						ID:    ActionFooterPaneMode.String(),
+						Key:   "^P",
+						Icon:  "",
+						Label: "pane",
+						Style: string(StyleFooterKeyPane),
+					},
+					"copy": {
+						ID:    ActionFooterCopyMode.String(),
+						Key:   "^V",
+						Icon:  "󰆏",
+						Label: "copy",
+						Style: string(StyleFooterKeyCopy),
+					},
+				},
+			},
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	footer := vm.Shell.Footer
+	if footer.ModeIcon != "󰆍" || footer.ModeLabel != "TERM" || footer.ActionSeparator != " · " {
+		t.Fatalf("footer config metadata not projected, got %#v", footer)
+	}
+	if len(footer.ActionTokens) != 3 ||
+		footer.ActionTokens[0].ActionID != ActionFooterPaneMode.String() ||
+		footer.ActionTokens[0].Icon != "" ||
+		footer.ActionTokens[1].ActionID != ActionFooterCopyMode.String() ||
+		footer.ActionTokens[1].Icon != "󰆏" ||
+		footer.ActionTokens[2].ActionID != ActionFooterGlobalMode.String() {
+		t.Fatalf("footer config actions not projected in order, got %#v", footer.ActionTokens)
+	}
+	frame := NewRenderer(DefaultTheme()).Render(vm)
+	footerLine := frame.Lines[len(frame.Lines)-1]
+	if !strings.Contains(footerLine, "󰆍 TERM") ||
+		!strings.Contains(footerLine, " pane") ||
+		!strings.Contains(footerLine, "󰆏 copy") ||
+		strings.Contains(footerLine, "RESIZE") {
+		t.Fatalf("footer render should follow configured badge/actions, got %#v", footerLine)
+	}
+}
+
 func TestTerminalLiveCellsPreserveFE0FFootprintBeforeDots(t *testing.T) {
 	line := terminalLiveLineFromCells([]state.LiveCell{
 		{Text: "♻️", Width: 2},

@@ -168,6 +168,153 @@ tui:
     # - 为了避免切换 active 状态时 tab 宽度跳动，active 和 inactive 分支最好输出相同 cell 宽度。
     tab_template: "{{tab_id}}[fg:#f7f2ff;bg:#332244;font:bold] {{if active}}▎{{else}}|{{end}} {{title | truncate 14}} [action:tab.close]{{close_icon}}[/action][/style]"
 
+  footer:
+    # templates 控制 footer 的轻量文本模板。
+    # 这里不是完整可编程布局；它只做占位符替换，真实 action/hit region 仍由 render ActionSpec 和 app reducer 管。
+    templates:
+      # mode_badge 是 footer 左侧 mode 标识模板。
+      # 可用占位符：
+      # - {{mode}}：当前 mode，例如 live、pane、resize、copy、terminal-picker。
+      # - {{mode_icon}}：modes.<mode>.icon 配置的图标。
+      # - {{mode_label}}：modes.<mode>.label 配置的文字。
+      # 默认值："{{mode_icon}} {{mode_label}}"。
+      mode_badge: "{{mode_icon}} {{mode_label}}"
+
+      # action 是 action key 后面的提示模板。
+      # 当前 key 仍由 renderer 固定画成 [Ctrl] • [P] 这类稳定 key token；
+      # 模板里的 {{key}} 只作为兼容占位符处理，不改变 key 的结构化渲染。
+      # 可用占位符：
+      # - {{key}}：显示快捷键文本；当前装饰区会吞掉它，避免和结构化 key 重复。
+      # - {{icon}}：actions.<alias>.icon。
+      # - {{label}}：actions.<alias>.label。
+      # - {{action}}：actions.<alias>.id。
+      # 默认值："{{key}} {{icon}} {{label}}"。
+      action: "{{key}} {{icon}} {{label}}"
+
+      # separator 是 action token 之间的分隔符。
+      # 留空 "" 时使用内置分隔符；这里用更轻的点号。
+      # 默认值：" │ "。
+      separator: " · "
+
+      # keylock_on 是全局 shortcut lock 开启后，右侧 summary 里的显示文本。
+      # 它只改变文案，不改变 Ctrl-G 解锁和 root shortcut 透传规则。
+      # 默认值："󰌾 KEYLOCK"。
+      keylock_on: "󰌾 KEYLOCK"
+
+      # keylock_off 当前预留；关闭状态默认不显示 keylock token。
+      # 默认值：""。
+      keylock_off: ""
+
+    # modes.<mode> 控制某个 footer mode 的 badge 和 action 排列。
+    # <mode> 可以是 live、pane、resize、tab、workspace、floating、global、copy，
+    # 也可以是 overlay mode：terminal-picker、terminal-pool、workbench-tree、clipboard-history、help 等。
+    # actions 是逗号分隔的 action alias 或 render action id；当前配置解析器不支持 YAML list。
+    modes:
+      live:
+        icon: "󰆍"
+        label: "TERM"
+        style: footer-accent
+        actions: "pane,resize,tab,workspace,float,copy,picker,global"
+
+      copy:
+        icon: "󰆏"
+        label: "COPY"
+        style: footer-key-copy
+        actions: "copy_older,clipboard,global"
+
+      terminal-picker:
+        icon: "󰱼"
+        label: "PICK"
+        style: footer-key-picker
+        actions: "picker_attach,global"
+
+    # actions.<alias> 定义一个可复用 action token。
+    # alias 只用于 footer 配置内部引用。
+    # id 非空时必须对应 render/action_ids.go 中已有 action id；点击 footer 才会触发语义动作。
+    # id 为空时只是展示 token，不产生 click hit region。
+    # key 是展示用快捷键；真实键盘路由仍以 input/BindingCatalog 为准。
+    # icon 建议使用 Nerd Font；宿主字体不支持时可以改成短文本。
+    # style 是内置 style token，例如 footer-key-pane、footer-key-resize、footer-key-tab、
+    # footer-key-workspace、footer-key-float、footer-key-copy、footer-key-picker、footer-key-global、
+    # footer-accent、footer-muted、status-accent、status-warning、warning、danger。
+    actions:
+      pane:
+        id: footer.mode-pane
+        key: "^P"
+        icon: ""
+        label: "pane"
+        style: footer-key-pane
+
+      resize:
+        id: footer.mode-resize
+        key: "^R"
+        icon: "󰙖"
+        label: "resize"
+        style: footer-key-resize
+
+      tab:
+        id: footer.mode-tab
+        key: "^T"
+        icon: "󰓩"
+        label: "tab"
+        style: footer-key-tab
+
+      workspace:
+        id: footer.mode-workspace
+        key: "^W"
+        icon: "󰙅"
+        label: "workspace"
+        style: footer-key-workspace
+
+      float:
+        id: footer.mode-floating
+        key: "^O"
+        icon: "󰹙"
+        label: "float"
+        style: footer-key-float
+
+      copy:
+        id: footer.mode-copy
+        key: "^V"
+        icon: "󰆏"
+        label: "copy"
+        style: footer-key-copy
+
+      picker:
+        id: footer.open-picker
+        key: "^F"
+        icon: "󰱼"
+        label: "picker"
+        style: footer-key-picker
+
+      global:
+        id: footer.mode-global
+        key: "^G"
+        icon: "󰘳"
+        label: "global"
+        style: footer-key-global
+
+      copy_older:
+        id: copy.older
+        key: "PgUp"
+        icon: "󰁝"
+        label: "scroll"
+        style: footer-key-copy
+
+      clipboard:
+        id: clipboard-history.open
+        key: "H"
+        icon: ""
+        label: "clipboard"
+        style: footer-key-copy
+
+      picker_attach:
+        id: picker.attach
+        key: "enter"
+        icon: ""
+        label: "attach"
+        style: footer-key-picker
+
   interaction:
     # mouse 控制是否启用鼠标 hit region。
     # true：点击 header/tab/pane/overlay 等 UI 可触发 action。

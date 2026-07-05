@@ -70,13 +70,13 @@ func footerLeftSegments(footer FooterVM, width int) []barSegment {
 	}
 	available := footerActionAvailableWidth(footer, width)
 	left := []barSegment{}
-	if mode != "live" && mode != "normal" && mode != string(OverlayClipboardHistory) {
-		left = append(left, barText(" "+strings.ToUpper(mode)+" ", StyleFooterAccent, 1))
+	if modeBadge := footerModeBadgeSegments(footer, mode); len(modeBadge) > 0 {
+		left = append(left, modeBadge...)
 	}
 	if len(footer.ActionTokens) > 0 || len(footer.Actions) > 0 {
 		actions := footerActionTokensForFooter(footer)
 		actions = footerActionTokensVisibleForWidth(actions, mode, width)
-		left = appendFooterActionSegments(left, actions, available)
+		left = appendFooterActionSegments(left, actions, available, footer.ActionTemplate, footer.ActionSeparator)
 	}
 	if len(left) == 0 {
 		left = appendFooterKeySegments(left, "^G", StyleFooterKeyGlobal, ActionFooterGlobalMode.String())
@@ -226,6 +226,7 @@ func footerSummarySegmentsForFooter(footer FooterVM) []barSegment {
 		style := StyleFooterMuted
 		priority := 2
 		actionID := ""
+		displayToken := token
 		if strings.HasPrefix(token, "float:") {
 			style = StyleFooterAccent
 			priority = 1
@@ -240,8 +241,13 @@ func footerSummarySegmentsForFooter(footer FooterVM) []barSegment {
 			}
 		} else if strings.HasPrefix(token, "terminals:") {
 			priority = 4
+		} else if token == "keylock:on" {
+			style = StyleStatusWarning
+			if replacement := footerTokenTemplateText(footer.KeylockOnTemplate, map[string]string{"keylock": "on"}); replacement != "" {
+				displayToken = replacement
+			}
 		}
-		segments = append(segments, barText(" "+token, style, priority).withAction(actionID))
+		segments = append(segments, barText(" "+displayToken, style, priority).withAction(actionID))
 	}
 	segments = append(segments, barText(" ", StyleFooterMuted, 4))
 	return segments
@@ -397,7 +403,7 @@ func footerActionsLabel(actions []string, width int) string {
 	return "keys:" + strings.Join(kept, " ")
 }
 
-func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM, width int) []barSegment {
+func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM, width int, actionTemplate string, separatorText string) []barSegment {
 	limit := 58
 	if width < 60 {
 		limit = 34
@@ -409,7 +415,7 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 	} else if width > 0 {
 		limit = width
 	}
-	separator := footerActionSep(width)
+	separator := footerActionSep(width, separatorText)
 	selected := selectFooterActionTokens(actions, limit, DisplayWidth(separator.text))
 	var compactLabelMask []bool
 	if footerShouldCompactActionLabelsForSummary(width, actions, limit, DisplayWidth(separator.text)) {
@@ -419,19 +425,18 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 	ctrlPrefixShown := false
 	for actionIndex, action := range selected {
 		key := strings.TrimSpace(action.Key)
-		label := strings.TrimSpace(action.Label)
+		decor := footerActionDecorText(action, actionTemplate)
 		if key == "" {
 			continue
 		}
-		textToken := label
 		if len(segments) > 0 {
 			segments = append(segments, separator)
 		}
 		style := action.Style
 		if style == "" {
-			style = footerActionKeyStyle(key, textToken)
+			style = footerActionKeyStyle(key, decor)
 		}
-		style = footerActionDisplayStyle(key, textToken, style)
+		style = footerActionDisplayStyle(key, decor, style)
 		// footer 延续 tuiv2 状态栏语义：组合键拆成相邻 key token，但共享同一个 action 命中区。
 		if letter, ok := footerCtrlLetter(key); ok {
 			if !ctrlPrefixShown {
@@ -443,12 +448,12 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 		} else {
 			segments = appendFooterKeySegments(segments, key, style, action.ActionID)
 		}
-		showLabel := textToken != ""
+		showLabel := decor != ""
 		if compactLabelMask != nil {
 			showLabel = actionIndex < len(compactLabelMask) && compactLabelMask[actionIndex]
 		}
 		if showLabel {
-			segments = append(segments, barText(" "+strings.ToUpper(textToken), StyleFooterMuted, 1).withAction(action.ActionID))
+			segments = append(segments, barText(" "+decor, StyleFooterMuted, 1).withAction(action.ActionID))
 		}
 	}
 	return segments
@@ -598,10 +603,9 @@ func footerActionTokenDisplayWidthForSelection(action FooterActionVM, ctrlPrefix
 	if key == "" {
 		return 0
 	}
-	label := strings.TrimSpace(action.Label)
 	width := DisplayWidth(formatFooterKeyTokenForSelection(key, ctrlPrefixShown))
-	if label != "" {
-		width += 1 + DisplayWidth(label)
+	if decor := footerActionDecorText(action, defaultFooterActionTemplate); decor != "" {
+		width += 1 + DisplayWidth(decor)
 	}
 	return width
 }
@@ -670,11 +674,11 @@ func footerCompactActionLabelMask(actions []FooterActionVM, limit int, separator
 		return mask
 	}
 	for index, action := range actions {
-		label := strings.TrimSpace(action.Label)
-		if label == "" {
+		decor := footerActionDecorText(action, defaultFooterActionTemplate)
+		if decor == "" {
 			continue
 		}
-		width := 1 + DisplayWidth(label)
+		width := 1 + DisplayWidth(decor)
 		if width > remaining {
 			continue
 		}
@@ -872,6 +876,7 @@ func metadataTokenStartsField(field string) bool {
 	return strings.HasPrefix(field, "ws:") ||
 		strings.HasPrefix(field, "float:") ||
 		strings.HasPrefix(field, "terminals:") ||
+		strings.HasPrefix(field, "keylock:") ||
 		strings.HasPrefix(field, "tabs:") ||
 		strings.HasPrefix(field, "panes:")
 }
@@ -934,8 +939,11 @@ func footerSep() barSegment {
 	return barText(" • ", StyleFooterMuted, 1)
 }
 
-func footerActionSep(width int) barSegment {
+func footerActionSep(width int, separatorText string) barSegment {
 	_ = width
+	if separatorText = strings.TrimSpace(separatorText); separatorText != "" {
+		return barText(" "+separatorText+" ", StyleFooterMuted, 1)
+	}
 	return footerSep()
 }
 

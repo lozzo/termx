@@ -37,6 +37,14 @@ func Default() state.TUIConfigStore {
 			TabCreateIcon:     "󰐕",
 			TabTemplate:       "",
 		},
+		Footer: state.TUIFooterConfig{
+			Templates: state.TUIFooterTemplatesConfig{
+				ModeBadge: "{{mode_icon}} {{mode_label}}",
+				Action:    "{{key}} {{icon}} {{label}}",
+				Separator: " │ ",
+				KeylockOn: "󰌾 KEYLOCK",
+			},
+		},
 		Interaction: state.TUIInteractionConfig{
 			Mouse:                         true,
 			StickyPrefixTimeoutMS:         3000,
@@ -164,7 +172,18 @@ func Parse(data []byte) (state.TUIConfigStore, error) {
 		}
 		setter, ok := scalarSetters[path]
 		if !ok {
-			return state.TUIConfigStore{}, fmt.Errorf("line %d: unknown field %q", lineNo+1, path)
+			parsedValue, err := parseScalar(value)
+			if err != nil {
+				return state.TUIConfigStore{}, fmt.Errorf("line %d: %w", lineNo+1, err)
+			}
+			handled, err := setFooterDynamicScalar(&cfg, path, parsedValue)
+			if err != nil {
+				return state.TUIConfigStore{}, fmt.Errorf("line %d: %s: %w", lineNo+1, path, err)
+			}
+			if !handled {
+				return state.TUIConfigStore{}, fmt.Errorf("line %d: unknown field %q", lineNo+1, path)
+			}
+			continue
 		}
 		parsedValue, err := parseScalar(value)
 		if err != nil {
@@ -245,6 +264,10 @@ func knownSection(path string) bool {
 		"tui.theme.border",
 		"tui.theme.surface",
 		"tui.chrome",
+		"tui.footer",
+		"tui.footer.templates",
+		"tui.footer.modes",
+		"tui.footer.actions",
 		"tui.interaction",
 		"tui.interaction.clipboard_history",
 		"tui.interaction.picker",
@@ -259,8 +282,22 @@ func knownSection(path string) bool {
 		"tui.keymap.global_mode":
 		return true
 	default:
-		return false
+		return knownFooterDynamicSection(path)
 	}
+}
+
+func knownFooterDynamicSection(path string) bool {
+	for _, prefix := range []string{"tui.footer.modes.", "tui.footer.actions."} {
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(path, prefix)
+		if rest == "" || strings.Contains(rest, ".") {
+			return false
+		}
+		return validFooterConfigName(rest)
+	}
+	return false
 }
 
 type scalarSetter func(*state.TUIConfigStore, string) error
@@ -292,6 +329,11 @@ var scalarSetters = map[string]scalarSetter{
 	"tui.chrome.panel_presentation":                    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PanelPresentation = value }),
 	"tui.chrome.tab_create_icon":                       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabCreateIcon = value }),
 	"tui.chrome.tab_template":                          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabTemplate = value }),
+	"tui.footer.templates.mode_badge":                  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.ModeBadge = value }),
+	"tui.footer.templates.action":                      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.Action = value }),
+	"tui.footer.templates.separator":                   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.Separator = value }),
+	"tui.footer.templates.keylock_on":                  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.KeylockOn = value }),
+	"tui.footer.templates.keylock_off":                 setString(func(cfg *state.TUIConfigStore, value string) { cfg.Footer.Templates.KeylockOff = value }),
 	"tui.interaction.mouse":                            setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Interaction.Mouse = value }),
 	"tui.interaction.sticky_prefix_timeout_ms":         setInt(func(cfg *state.TUIConfigStore, value int) { cfg.Interaction.StickyPrefixTimeoutMS = value }),
 	"tui.interaction.shortcut_passthrough_interval_ms": setInt(func(cfg *state.TUIConfigStore, value int) { cfg.Interaction.ShortcutPassthroughIntervalMS = value }),
@@ -325,6 +367,75 @@ var scalarSetters = map[string]scalarSetter{
 	"tui.keymap.pane_mode.entry":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.PaneMode.Entry = value }),
 	"tui.keymap.resize_mode.entry":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.ResizeMode.Entry = value }),
 	"tui.keymap.global_mode.entry":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.GlobalMode.Entry = value }),
+}
+
+func setFooterDynamicScalar(cfg *state.TUIConfigStore, path string, value string) (bool, error) {
+	if strings.HasPrefix(path, "tui.footer.modes.") {
+		rest := strings.TrimPrefix(path, "tui.footer.modes.")
+		name, field, ok := strings.Cut(rest, ".")
+		if !ok || !validFooterConfigName(name) {
+			return false, nil
+		}
+		mode := cfg.Footer.Modes[name]
+		switch field {
+		case "icon":
+			mode.Icon = value
+		case "label":
+			mode.Label = value
+		case "style":
+			mode.Style = value
+		case "actions":
+			mode.Actions = value
+		default:
+			return false, nil
+		}
+		if cfg.Footer.Modes == nil {
+			cfg.Footer.Modes = map[string]state.TUIFooterModeConfig{}
+		}
+		cfg.Footer.Modes[name] = mode
+		return true, nil
+	}
+	if strings.HasPrefix(path, "tui.footer.actions.") {
+		rest := strings.TrimPrefix(path, "tui.footer.actions.")
+		name, field, ok := strings.Cut(rest, ".")
+		if !ok || !validFooterConfigName(name) {
+			return false, nil
+		}
+		action := cfg.Footer.Actions[name]
+		switch field {
+		case "id":
+			action.ID = value
+		case "key":
+			action.Key = value
+		case "label":
+			action.Label = value
+		case "icon":
+			action.Icon = value
+		case "style":
+			action.Style = value
+		default:
+			return false, nil
+		}
+		if cfg.Footer.Actions == nil {
+			cfg.Footer.Actions = map[string]state.TUIFooterActionConfig{}
+		}
+		cfg.Footer.Actions[name] = action
+		return true, nil
+	}
+	return false, nil
+}
+
+func validFooterConfigName(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func setString(assign func(*state.TUIConfigStore, string)) scalarSetter {
@@ -460,6 +571,9 @@ func Validate(cfg state.TUIConfigStore) error {
 	if strings.ContainsAny(cfg.Chrome.TabTemplate, "\r\n") {
 		return fmt.Errorf("tui.chrome.tab_template must be a single-line template")
 	}
+	if err := validateFooterConfig(cfg.Footer); err != nil {
+		return err
+	}
 	if cfg.Interaction.StickyPrefixTimeoutMS < 0 {
 		return fmt.Errorf("tui.interaction.sticky_prefix_timeout_ms must be >= 0")
 	}
@@ -507,6 +621,137 @@ func validOptionalHexColor(value string) bool {
 		return false
 	}
 	return true
+}
+
+func validateFooterConfig(footer state.TUIFooterConfig) error {
+	for _, item := range []struct {
+		path  string
+		value string
+	}{
+		{"tui.footer.templates.mode_badge", footer.Templates.ModeBadge},
+		{"tui.footer.templates.action", footer.Templates.Action},
+		{"tui.footer.templates.separator", footer.Templates.Separator},
+		{"tui.footer.templates.keylock_on", footer.Templates.KeylockOn},
+		{"tui.footer.templates.keylock_off", footer.Templates.KeylockOff},
+	} {
+		if err := validateSingleLine(item.path, item.value); err != nil {
+			return err
+		}
+	}
+	for name, mode := range footer.Modes {
+		if !validFooterConfigName(name) {
+			return fmt.Errorf("tui.footer.modes.%s has invalid name", name)
+		}
+		for _, item := range []struct {
+			path  string
+			value string
+		}{
+			{"icon", mode.Icon},
+			{"label", mode.Label},
+			{"style", mode.Style},
+			{"actions", mode.Actions},
+		} {
+			if err := validateSingleLine("tui.footer.modes."+name+"."+item.path, item.value); err != nil {
+				return err
+			}
+		}
+		if !validFooterStyleToken(mode.Style) {
+			return fmt.Errorf("tui.footer.modes.%s.style has unknown style token %q", name, mode.Style)
+		}
+		for _, ref := range footerConfigRefs(mode.Actions) {
+			if !validFooterActionRef(ref) {
+				return fmt.Errorf("tui.footer.modes.%s.actions has invalid action ref %q", name, ref)
+			}
+		}
+	}
+	for name, action := range footer.Actions {
+		if !validFooterConfigName(name) {
+			return fmt.Errorf("tui.footer.actions.%s has invalid name", name)
+		}
+		for _, item := range []struct {
+			path  string
+			value string
+		}{
+			{"id", action.ID},
+			{"key", action.Key},
+			{"label", action.Label},
+			{"icon", action.Icon},
+			{"style", action.Style},
+		} {
+			if err := validateSingleLine("tui.footer.actions."+name+"."+item.path, item.value); err != nil {
+				return err
+			}
+		}
+		if action.ID != "" && !validFooterActionRef(action.ID) {
+			return fmt.Errorf("tui.footer.actions.%s.id has invalid action id %q", name, action.ID)
+		}
+		if !validFooterStyleToken(action.Style) {
+			return fmt.Errorf("tui.footer.actions.%s.style has unknown style token %q", name, action.Style)
+		}
+	}
+	return nil
+}
+
+func validateSingleLine(path string, value string) error {
+	if strings.ContainsAny(value, "\r\n") {
+		return fmt.Errorf("%s must be a single-line value", path)
+	}
+	return nil
+}
+
+func footerConfigRefs(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func validFooterActionRef(value string) bool {
+	if strings.TrimSpace(value) == "" {
+		return false
+	}
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' || r == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validFooterStyleToken(value string) bool {
+	return oneOf(strings.TrimSpace(value),
+		"",
+		"accent",
+		"foreground",
+		"strong-foreground",
+		"muted",
+		"status",
+		"status-accent",
+		"status-muted",
+		"status-warning",
+		"footer-chrome",
+		"footer-muted",
+		"footer-accent",
+		"footer-key-pane",
+		"footer-key-resize",
+		"footer-key-tab",
+		"footer-key-workspace",
+		"footer-key-float",
+		"footer-key-copy",
+		"footer-key-picker",
+		"footer-key-global",
+		"info",
+		"success",
+		"warning",
+		"danger",
+		"danger-strong",
+	)
 }
 
 func validateKeymap(keymap state.TUIKeymapConfig) error {
