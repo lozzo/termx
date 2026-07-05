@@ -869,7 +869,7 @@ func TestMeasureLayoutWorkbenchTreeUsesPageSizedOverlay(t *testing.T) {
 				Kind:   ContentWorkbenchTree,
 				Cursor: Cursor{Visible: true, Row: 0, Col: 10, Shape: CursorShapeBar},
 				HitRegions: []HitRegion{
-					{Kind: HitRegionContentAction, Rect: Rect{Y: 2, W: 72, H: 1}, ActionID: "workbench.select"},
+					{Kind: HitRegionContentAction, Rect: Rect{Y: 2, W: 72, H: 1}, ActionID: "workbench.open"},
 					{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: 12, H: 1}, ActionID: "workbench.open"},
 				},
 			},
@@ -883,10 +883,8 @@ func TestMeasureLayoutWorkbenchTreeUsesPageSizedOverlay(t *testing.T) {
 	if got := plan.CursorRect; got.X != plan.OverlayContentRect.X+10 || got.Y != plan.OverlayContentRect.Y {
 		t.Fatalf("unexpected tree cursor rect content=%#v cursor=%#v", plan.OverlayContentRect, got)
 	}
-	for _, action := range []string{"workbench.select", "workbench.open"} {
-		if hitRegionIndexByAction(plan.HitRegions, action) < 0 {
-			t.Fatalf("expected visible workbench tree action %s in hit regions %#v", action, plan.HitRegions)
-		}
+	if hitRegionIndexByAction(plan.HitRegions, "workbench.open") < 0 {
+		t.Fatalf("expected visible workbench tree open action in hit regions %#v", plan.HitRegions)
 	}
 	if hitRegionIndex(plan.HitRegions, HitRegionPaneContent) >= 0 {
 		t.Fatalf("opaque workbench tree must hide body hit regions, got %#v", plan.HitRegions)

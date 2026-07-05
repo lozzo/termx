@@ -1788,28 +1788,21 @@ func TestInteractiveRuntimeWorkbenchTreeOverlayFlow(t *testing.T) {
 		t.Fatalf("drain tree open: %v", err)
 	}
 	frame = lastFrame(t, host.Frames())
-	selectRegion := frameActionHitRegion(t, frame, "workbench.select", "")
-	if err := host.SendInput(mouseEventAt(selectRegion.Rect)); err != nil {
-		t.Fatalf("send tree select click: %v", err)
+	openRegion := frameActionHitRegion(t, frame, "workbench.open", "")
+	if openRegion.Row < 0 {
+		t.Fatalf("expected first workbench open hit region to be a tree row, got %#v", openRegion)
 	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain tree select click: %v", err)
-	}
-	if runtime.State().Shell.Overlay.SelectedIndex < 0 {
-		t.Fatalf("expected row click to select a workbench node, got %#v", runtime.State().Shell.Overlay)
-	}
-	openRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "workbench.open", "")
 	if err := host.SendInput(mouseEventAt(openRegion.Rect)); err != nil {
-		t.Fatalf("send tree open click: %v", err)
+		t.Fatalf("send tree row open click: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain tree open click: %v", err)
+		t.Fatalf("drain tree row open click: %v", err)
 	}
 	if runtime.State().Shell.Overlay.Open {
-		t.Fatalf("workspace open should close tree overlay, got %#v", runtime.State().Shell.Overlay)
+		t.Fatalf("tree row click should open node and close overlay, got %#v", runtime.State().Shell.Overlay)
 	}
 	if len(runtime.State().Shell.Toasts) == 0 || runtime.State().Shell.Toasts[len(runtime.State().Shell.Toasts)-1].Title != "workbench.open" {
-		t.Fatalf("expected workbench open feedback toast, got %#v", runtime.State().Shell.Toasts)
+		t.Fatalf("expected workbench row open feedback toast, got %#v", runtime.State().Shell.Toasts)
 	}
 }
 

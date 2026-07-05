@@ -1640,13 +1640,13 @@ func terminalPoolPageHitRegions(rows []state.TerminalPoolPageItem, rowOffset int
 
 func workbenchTreeHitRegions(rows []state.WorkbenchTreeItem, rowOffset int, treeWidth int) []HitRegion {
 	regions := make([]HitRegion, 0, len(rows)+1)
-	for index, row := range rows {
+	for index := range rows {
 		regions = append(regions, HitRegion{
-			Kind:     HitRegionContentAction,
-			Rect:     Rect{Y: rowOffset + index, W: treeWidth, H: 1},
-			Row:      index,
-			PaneID:   row.PaneID,
-			ActionID: ActionWorkbenchSelect.String(),
+			Kind: HitRegionContentAction,
+			Rect: Rect{Y: rowOffset + index, W: treeWidth, H: 1},
+			Row:  index,
+			// 中文说明：Workbench Navigator 的鼠标行点击只带 row，由 reducer 用 WorkbenchTreeItem 决定 workspace/tab/pane/floating 真实目标。
+			ActionID: ActionWorkbenchOpen.String(),
 		})
 	}
 	return regions

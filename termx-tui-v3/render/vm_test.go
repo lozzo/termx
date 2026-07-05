@@ -2853,7 +2853,6 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		content.Meta.WorkbenchSnapshotPanel == nil ||
 		content.Meta.WorkbenchSnapshotPanel.Content.Kind != ContentTerminalLive ||
 		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshotPanel.Content.Lines), "live snapshot row") ||
-		!contentHasAction(content, "workbench.select") ||
 		!contentHasAction(content, "workbench.open") ||
 		!contentHasAction(content, "workbench.zoom") ||
 		!contentHasAction(content, "workbench.detach") ||
