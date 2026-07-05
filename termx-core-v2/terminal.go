@@ -723,7 +723,7 @@ func (terminal *Terminal) appendExitMarker(info TerminalInfo) {
 	if len(lines) == 0 {
 		return
 	}
-	terminal.appendLifecycleHistoryMarker(lines)
+	terminal.appendLifecycleHistoryMarker(lines, true)
 	revision, ok := terminal.appendLifecycleLiveMarker(lines, true)
 	if !ok {
 		return
@@ -736,7 +736,7 @@ func (terminal *Terminal) appendStartMarker(startedAt time.Time) (LiveRevision, 
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
 	lines := terminalStartMarkerLines(info, startedAt)
-	terminal.appendLifecycleHistoryMarker(lines)
+	terminal.appendLifecycleHistoryMarker(lines, false)
 	return terminal.appendLifecycleLiveMarker(lines, false)
 }
 
@@ -757,9 +757,12 @@ func (terminal *Terminal) appendLifecycleLiveMarker(lines []string, leadingBlank
 	return revision, true
 }
 
-func (terminal *Terminal) appendLifecycleHistoryMarker(lines []string) {
+func (terminal *Terminal) appendLifecycleHistoryMarker(lines []string, leadingBlankLine bool) {
 	if terminal.lineHistory == nil || len(lines) == 0 {
 		return
+	}
+	if leadingBlankLine {
+		lines = append([]string{""}, lines...)
 	}
 	// 中文说明：lifecycle marker 是 core terminal owner 明确写入的历史事件，
 	// 不经过 PTY/raw parser，也不从 live screen 反推程序正文。

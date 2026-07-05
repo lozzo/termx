@@ -227,12 +227,23 @@ func TestR433LinehistProcessExitSealsCurrentScreenBeforeRestart(t *testing.T) {
 	if strings.Count(joined, "exited at: ") != 1 {
 		t.Fatalf("exit time marker must be in history exactly once, got %v", texts)
 	}
+	exitSpacer := -1
+	for index, text := range texts {
+		if text == "" && index+1 < len(texts) && strings.HasPrefix(texts[index+1], "terminal exited: term-r433-exit-tail") {
+			exitSpacer = index
+			break
+		}
+	}
+	if exitSpacer < 0 {
+		t.Fatalf("history must preserve blank lifecycle spacer before exit marker, got %v", texts)
+	}
 	firstStart := strings.Index(joined, "terminal started: term-r433-exit-tail")
 	lineTail := strings.Index(joined, "line08")
 	exitMarker := strings.Index(joined, "terminal exited: term-r433-exit-tail")
 	secondStart := strings.LastIndex(joined, "terminal started: term-r433-exit-tail")
 	newPrompt := strings.Index(joined, "newprompt")
-	if !(firstStart < lineTail && lineTail < exitMarker && exitMarker < secondStart && secondStart < newPrompt) {
+	spacerMarker := strings.Index(joined, "||terminal exited: term-r433-exit-tail")
+	if !(firstStart < lineTail && lineTail < spacerMarker && spacerMarker < exitMarker && exitMarker < secondStart && secondStart < newPrompt) {
 		t.Fatalf("lifecycle markers must bracket old/new process history, got %v", texts)
 	}
 }

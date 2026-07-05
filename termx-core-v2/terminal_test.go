@@ -1088,10 +1088,10 @@ func TestR324TerminalHistoryRemoveClosesOpenLine(t *testing.T) {
 }
 
 func historyRowTexts(rows []history.HistoryRow) []string {
-	texts := make([]string, 0, len(rows))
-	for _, row := range rows {
-		text := historyCellsText(row.Cells)
-		if isLifecycleHistoryText(text) {
+	raw := rawHistoryRowTexts(rows)
+	texts := make([]string, 0, len(raw))
+	for index, text := range raw {
+		if isLifecycleHistoryRowTextAt(raw, index) {
 			continue
 		}
 		texts = append(texts, text)
@@ -1100,9 +1100,9 @@ func historyRowTexts(rows []history.HistoryRow) []string {
 }
 
 func historyRowsContain(rows []history.HistoryRow, needle string) bool {
-	for _, row := range rows {
-		text := historyCellsText(row.Cells)
-		if isLifecycleHistoryText(text) {
+	texts := rawHistoryRowTexts(rows)
+	for index, text := range texts {
+		if isLifecycleHistoryRowTextAt(texts, index) {
 			continue
 		}
 		if strings.Contains(text, needle) {
