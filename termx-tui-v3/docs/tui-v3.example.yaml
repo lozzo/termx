@@ -218,6 +218,28 @@ tui:
       # 默认值：" │ "。
       separator: " │ "
 
+      # workspace_summary 控制右侧 workspace 摘要。
+      # 可用占位符：{{workspace}}、{{value}}。
+      # 默认值："ws:{{workspace}}"。
+      workspace_summary: "ws:{{workspace}}"
+
+      # floating_summary / floating_collapsed_summary 控制 floating 计数摘要。
+      # 可用占位符：{{count}}、{{value}}。
+      # 默认值："float:{{count}}" / "collapsed:{{count}}"。
+      floating_summary: "float:{{count}}"
+      floating_collapsed_summary: "collapsed:{{count}}"
+
+      # terminals_summary 控制 terminal 计数摘要。
+      # 可用占位符：{{count}}、{{value}}。
+      # 默认值："terminals:{{count}}"。
+      terminals_summary: "terminals:{{count}}"
+
+      # tabs_summary / panes_summary 是兼容旧手写 FooterVM 和调试摘要的模板。
+      # 可用占位符：{{count}}、{{value}}。
+      # 默认值："tabs:{{count}}" / "panes:{{count}}"。
+      tabs_summary: "tabs:{{count}}"
+      panes_summary: "panes:{{count}}"
+
       # keylock_on 控制全局快捷键锁开启时右侧摘要里的显示文本。
       # 默认值："󰌾 KEYLOCK"。
       keylock_on: "󰌾 KEYLOCK"

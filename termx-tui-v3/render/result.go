@@ -1007,24 +1007,30 @@ type FooterActionVM struct {
 }
 
 type FooterVM struct {
-	Visible             bool
-	Mode                string
-	ModeIcon            string
-	ModeLabel           string
-	ModeStyle           StyleToken
-	Hint                string
-	Actions             []string
-	ActionTokens        []FooterActionVM
-	KeyTemplate         string
-	KeyTemplateSet      bool
-	ActionTemplate      string
-	ModeBadgeTemplate   string
-	ActionSeparator     string
-	KeylockOnTemplate   string
-	KeylockOffTemplate  string
-	ActiveTarget        string
-	GlobalSummary       string
-	FloatingSummaryOpen bool
+	Visible                          bool
+	Mode                             string
+	ModeIcon                         string
+	ModeLabel                        string
+	ModeStyle                        StyleToken
+	Hint                             string
+	Actions                          []string
+	ActionTokens                     []FooterActionVM
+	KeyTemplate                      string
+	KeyTemplateSet                   bool
+	ActionTemplate                   string
+	ModeBadgeTemplate                string
+	ActionSeparator                  string
+	WorkspaceSummaryTemplate         string
+	FloatingSummaryTemplate          string
+	FloatingCollapsedSummaryTemplate string
+	TerminalsSummaryTemplate         string
+	TabsSummaryTemplate              string
+	PanesSummaryTemplate             string
+	KeylockOnTemplate                string
+	KeylockOffTemplate               string
+	ActiveTarget                     string
+	GlobalSummary                    string
+	FloatingSummaryOpen              bool
 }
 
 type ToastSeverity string

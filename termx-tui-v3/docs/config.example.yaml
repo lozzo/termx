@@ -200,6 +200,22 @@ tui:
       # 默认值：" │ "。
       separator: " · "
 
+      # workspace_summary / floating_summary / terminals_summary 控制 footer 右侧摘要。
+      # 这些字段只改变显示文本，不改变 workspace/floating/terminal 的状态来源。
+      # 可用占位符：
+      # - workspace_summary：{{workspace}}、{{value}}。
+      # - 其他计数字段：{{count}}、{{value}}。
+      # 默认值分别是 "ws:{{workspace}}"、"float:{{count}}"、"collapsed:{{count}}"、"terminals:{{count}}"。
+      workspace_summary: "󰙅 {{workspace}}"
+      floating_summary: "󰹙 {{count}}"
+      floating_collapsed_summary: "󰃄 {{count}}"
+      terminals_summary: " {{count}}"
+
+      # tabs_summary / panes_summary 是旧手写 FooterVM 和调试摘要兼容模板。
+      # 默认值："tabs:{{count}}" / "panes:{{count}}"。
+      tabs_summary: "󰓩 {{count}}"
+      panes_summary: " {{count}}"
+
       # keylock_on 是全局 shortcut lock 开启后，右侧 summary 里的显示文本。
       # 它只改变文案，不改变 Ctrl-G 解锁和 root shortcut 透传规则。
       # 默认值："󰌾 KEYLOCK"。

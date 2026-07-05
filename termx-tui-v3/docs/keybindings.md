@@ -4,6 +4,8 @@
 
 用户可以通过 `tui.footer.*` 配置覆盖 footer 的 mode badge、action 顺序、key block、图标、label、style 和可点击 action id。比如 `tui.footer.templates.key: ""` 可以隐藏 `[Ctrl] • [W]` 这类 key block。该配置只影响展示和 hit region 绑定；真实键盘触发仍以 `BindingCatalog` 为准，不能靠改 footer 文案创建新的快捷键。
 
+footer 右侧的 `ws:*`、`float:*`、`terminals:*` 这类摘要也走 `tui.footer.templates.*_summary` 配置；它们只改变显示文本，workspace/floating/terminal 计数仍由 VM builder 从 reducer state 推导。
+
 ## 核查规则
 
 - footer 展示的键必须能触发对应动作，除非它是鼠标/overlay 的可点击 action token。

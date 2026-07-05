@@ -230,22 +230,34 @@ func footerSummarySegmentsForFooter(footer FooterVM) []barSegment {
 		if strings.HasPrefix(token, "float:") {
 			style = StyleFooterAccent
 			priority = 1
+			displayToken = footerSummaryTemplateText(footer.FloatingSummaryTemplate, defaultFooterFloatingSummaryTemplate, "count", strings.TrimSpace(strings.TrimPrefix(token, "float:")))
 			if footer.FloatingSummaryOpen {
 				actionID = ActionFloatingOverview.String()
 			}
 		} else if strings.HasPrefix(token, "collapsed:") {
 			style = StyleFooterAccent
 			priority = 1
+			displayToken = footerSummaryTemplateText(footer.FloatingCollapsedSummaryTemplate, defaultFooterFloatingCollapsedSummaryTemplate, "count", strings.TrimSpace(strings.TrimPrefix(token, "collapsed:")))
 			if footer.FloatingSummaryOpen {
 				actionID = ActionFloatingOverview.String()
 			}
 		} else if strings.HasPrefix(token, "terminals:") {
 			priority = 4
+			displayToken = footerSummaryTemplateText(footer.TerminalsSummaryTemplate, defaultFooterTerminalsSummaryTemplate, "count", strings.TrimSpace(strings.TrimPrefix(token, "terminals:")))
+		} else if strings.HasPrefix(token, "ws:") {
+			displayToken = footerSummaryTemplateText(footer.WorkspaceSummaryTemplate, defaultFooterWorkspaceSummaryTemplate, "workspace", strings.TrimSpace(strings.TrimPrefix(token, "ws:")))
+		} else if strings.HasPrefix(token, "tabs:") {
+			displayToken = footerSummaryTemplateText(footer.TabsSummaryTemplate, defaultFooterTabsSummaryTemplate, "count", strings.TrimSpace(strings.TrimPrefix(token, "tabs:")))
+		} else if strings.HasPrefix(token, "panes:") {
+			displayToken = footerSummaryTemplateText(footer.PanesSummaryTemplate, defaultFooterPanesSummaryTemplate, "count", strings.TrimSpace(strings.TrimPrefix(token, "panes:")))
 		} else if token == "keylock:on" {
 			style = StyleStatusWarning
 			if replacement := footerTokenTemplateText(footer.KeylockOnTemplate, map[string]string{"keylock": "on"}); replacement != "" {
 				displayToken = replacement
 			}
+		}
+		if displayToken == "" {
+			continue
 		}
 		segments = append(segments, barText(" "+displayToken, style, priority).withAction(actionID))
 	}

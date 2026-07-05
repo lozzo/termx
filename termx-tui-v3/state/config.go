@@ -59,12 +59,18 @@ type TUIFooterConfig struct {
 // TUIFooterTemplatesConfig 描述 footer token 的轻量模板。
 // 当前只支持文本占位符替换，不执行脚本，也不改变 hit region/action owner。
 type TUIFooterTemplatesConfig struct {
-	ModeBadge  string
-	Key        string
-	Action     string
-	Separator  string
-	KeylockOn  string
-	KeylockOff string
+	ModeBadge                string
+	Key                      string
+	Action                   string
+	Separator                string
+	WorkspaceSummary         string
+	FloatingSummary          string
+	FloatingCollapsedSummary string
+	TerminalsSummary         string
+	TabsSummary              string
+	PanesSummary             string
+	KeylockOn                string
+	KeylockOff               string
 }
 
 // TUIFooterModeConfig 描述某个 footer mode 的徽标和 action 引用列表。

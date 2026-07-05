@@ -121,6 +121,12 @@ tui:
       key: "{{key}}"
       action: "{{key}} {{icon}} {{label}}"
       separator: " │ "
+      workspace_summary: "ws:{{workspace}}"
+      floating_summary: "float:{{count}}"
+      floating_collapsed_summary: "collapsed:{{count}}"
+      terminals_summary: "terminals:{{count}}"
+      tabs_summary: "tabs:{{count}}"
+      panes_summary: "panes:{{count}}"
       keylock_on: "󰌾 KEYLOCK"
       keylock_off: ""
 

@@ -94,30 +94,42 @@ func buildFooterVM(root state.Root, shell state.ShellStore, content ContentVM) F
 	footerConfig := root.Config.Footer
 	modeConfig := footerConfig.Modes[mode]
 	return FooterVM{
-		Visible:             shell.FooterVisible,
-		Mode:                mode,
-		ModeIcon:            modeConfig.Icon,
-		ModeLabel:           modeConfig.Label,
-		ModeStyle:           footerStyleTokenFromConfig(modeConfig.Style),
-		Hint:                hint,
-		ActionTokens:        footerActionCatalogForRoot(mode, root, shell),
-		KeyTemplate:         footerKeyTemplateForConfig(root.Config),
-		KeyTemplateSet:      true,
-		ActionTemplate:      footerTemplateOrDefault(footerConfig.Templates.Action, defaultFooterActionTemplate),
-		ModeBadgeTemplate:   footerTemplateOrDefault(footerConfig.Templates.ModeBadge, defaultFooterModeBadgeTemplate),
-		ActionSeparator:     footerConfig.Templates.Separator,
-		KeylockOnTemplate:   footerConfig.Templates.KeylockOn,
-		KeylockOffTemplate:  footerConfig.Templates.KeylockOff,
-		ActiveTarget:        activeTargetSummary(shell, root),
-		GlobalSummary:       globalSummary(root, shell),
-		FloatingSummaryOpen: len(shell.ActiveFloatings()) > 0,
+		Visible:                          shell.FooterVisible,
+		Mode:                             mode,
+		ModeIcon:                         modeConfig.Icon,
+		ModeLabel:                        modeConfig.Label,
+		ModeStyle:                        footerStyleTokenFromConfig(modeConfig.Style),
+		Hint:                             hint,
+		ActionTokens:                     footerActionCatalogForRoot(mode, root, shell),
+		KeyTemplate:                      footerKeyTemplateForConfig(root.Config),
+		KeyTemplateSet:                   true,
+		ActionTemplate:                   footerTemplateOrDefault(footerConfig.Templates.Action, defaultFooterActionTemplate),
+		ModeBadgeTemplate:                footerTemplateOrDefault(footerConfig.Templates.ModeBadge, defaultFooterModeBadgeTemplate),
+		ActionSeparator:                  footerConfig.Templates.Separator,
+		WorkspaceSummaryTemplate:         footerTemplateOrDefault(footerConfig.Templates.WorkspaceSummary, defaultFooterWorkspaceSummaryTemplate),
+		FloatingSummaryTemplate:          footerTemplateOrDefault(footerConfig.Templates.FloatingSummary, defaultFooterFloatingSummaryTemplate),
+		FloatingCollapsedSummaryTemplate: footerTemplateOrDefault(footerConfig.Templates.FloatingCollapsedSummary, defaultFooterFloatingCollapsedSummaryTemplate),
+		TerminalsSummaryTemplate:         footerTemplateOrDefault(footerConfig.Templates.TerminalsSummary, defaultFooterTerminalsSummaryTemplate),
+		TabsSummaryTemplate:              footerTemplateOrDefault(footerConfig.Templates.TabsSummary, defaultFooterTabsSummaryTemplate),
+		PanesSummaryTemplate:             footerTemplateOrDefault(footerConfig.Templates.PanesSummary, defaultFooterPanesSummaryTemplate),
+		KeylockOnTemplate:                footerConfig.Templates.KeylockOn,
+		KeylockOffTemplate:               footerConfig.Templates.KeylockOff,
+		ActiveTarget:                     activeTargetSummary(shell, root),
+		GlobalSummary:                    globalSummary(root, shell),
+		FloatingSummaryOpen:              len(shell.ActiveFloatings()) > 0,
 	}
 }
 
 const (
-	defaultFooterActionTemplate    = "{{key}} {{icon}} {{label}}"
-	defaultFooterKeyTemplate       = "{{key}}"
-	defaultFooterModeBadgeTemplate = "{{mode_icon}} {{mode_label}}"
+	defaultFooterActionTemplate                   = "{{key}} {{icon}} {{label}}"
+	defaultFooterKeyTemplate                      = "{{key}}"
+	defaultFooterModeBadgeTemplate                = "{{mode_icon}} {{mode_label}}"
+	defaultFooterWorkspaceSummaryTemplate         = "ws:{{workspace}}"
+	defaultFooterFloatingSummaryTemplate          = "float:{{count}}"
+	defaultFooterFloatingCollapsedSummaryTemplate = "collapsed:{{count}}"
+	defaultFooterTerminalsSummaryTemplate         = "terminals:{{count}}"
+	defaultFooterTabsSummaryTemplate              = "tabs:{{count}}"
+	defaultFooterPanesSummaryTemplate             = "panes:{{count}}"
 )
 
 func footerTemplateOrDefault(value string, fallback string) string {

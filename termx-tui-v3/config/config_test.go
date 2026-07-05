@@ -66,6 +66,10 @@ tui:
       key: ""
       action: "{{key}} {{icon}} {{label}}"
       separator: " · "
+      workspace_summary: "󰙅 {{workspace}}"
+      floating_summary: "󰹙 {{count}}"
+      floating_collapsed_summary: "󰃄 {{count}}"
+      terminals_summary: " {{count}}"
       keylock_on: "󰌾 KEYLOCK"
     modes:
       live:
@@ -106,6 +110,9 @@ tui:
 	}
 	if cfg.Footer.Templates.Separator != " · " ||
 		cfg.Footer.Templates.Key != "" ||
+		cfg.Footer.Templates.WorkspaceSummary != "󰙅 {{workspace}}" ||
+		cfg.Footer.Templates.FloatingSummary != "󰹙 {{count}}" ||
+		cfg.Footer.Templates.TerminalsSummary != " {{count}}" ||
 		cfg.Footer.Modes["live"].Icon != "󰆍" ||
 		cfg.Footer.Modes["live"].Actions != "pane,copy,global" ||
 		cfg.Footer.Actions["pane"].ID != "footer.mode-pane" ||

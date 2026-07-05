@@ -64,6 +64,15 @@ func footerActionKeyText(key string, template string) string {
 	})
 }
 
+func footerSummaryTemplateText(template string, fallback string, primaryKey string, value string) string {
+	template = footerTemplateOrDefault(template, fallback)
+	return footerTokenTemplateText(template, map[string]string{
+		primaryKey: value,
+		"value":    value,
+		"count":    value,
+	})
+}
+
 func footerTokenTemplateText(template string, values map[string]string) string {
 	template = strings.TrimSpace(template)
 	if template == "" {

@@ -395,10 +395,13 @@ func TestRenderVMBuilderAppliesFooterConfig(t *testing.T) {
 			Version: 1,
 			Footer: state.TUIFooterConfig{
 				Templates: state.TUIFooterTemplatesConfig{
-					ModeBadge: "{{mode_icon}} {{mode_label}}",
-					Key:       "",
-					Action:    "{{key}} {{icon}} {{label}}",
-					Separator: " · ",
+					ModeBadge:        "{{mode_icon}} {{mode_label}}",
+					Key:              "",
+					Action:           "{{key}} {{icon}} {{label}}",
+					Separator:        " · ",
+					WorkspaceSummary: "󰙅 {{workspace}}",
+					FloatingSummary:  "󰹙 {{count}}",
+					TerminalsSummary: " {{count}}",
 				},
 				Modes: map[string]state.TUIFooterModeConfig{
 					"live": {
@@ -430,7 +433,8 @@ func TestRenderVMBuilderAppliesFooterConfig(t *testing.T) {
 
 	vm := NewRenderVMBuilder().Build(root)
 	footer := vm.Shell.Footer
-	if footer.ModeIcon != "󰆍" || footer.ModeLabel != "TERM" || footer.KeyTemplate != "" || !footer.KeyTemplateSet || footer.ActionSeparator != " · " {
+	if footer.ModeIcon != "󰆍" || footer.ModeLabel != "TERM" || footer.KeyTemplate != "" || !footer.KeyTemplateSet || footer.ActionSeparator != " · " ||
+		footer.WorkspaceSummaryTemplate != "󰙅 {{workspace}}" || footer.TerminalsSummaryTemplate != " {{count}}" {
 		t.Fatalf("footer config metadata not projected, got %#v", footer)
 	}
 	if len(footer.ActionTokens) != 3 ||
@@ -446,8 +450,12 @@ func TestRenderVMBuilderAppliesFooterConfig(t *testing.T) {
 	if !strings.Contains(footerLine, "󰆍 TERM") ||
 		!strings.Contains(footerLine, " pane") ||
 		!strings.Contains(footerLine, "󰆏 copy") ||
+		!strings.Contains(footerLine, "󰙅 main") ||
+		!strings.Contains(footerLine, " 0") ||
 		strings.Contains(footerLine, "[Ctrl]") ||
 		strings.Contains(footerLine, "[P]") ||
+		strings.Contains(footerLine, "ws:") ||
+		strings.Contains(footerLine, "terminals:") ||
 		strings.Contains(footerLine, "RESIZE") {
 		t.Fatalf("footer render should follow configured badge/actions, got %#v", footerLine)
 	}
