@@ -86,42 +86,7 @@ func footerLeftSegments(footer FooterVM, width int) []barSegment {
 }
 
 func footerActionTokensVisibleForWidth(actions []FooterActionVM, mode string, width int) []FooterActionVM {
-	if width >= 100 || (mode != "live" && mode != "normal") || !footerActionsMatchKeys(actions, []string{"^P", "^R", "^T", "^W", "^O", "^V", "^F", "^G"}) {
-		return actions
-	}
-	keys := []string{"^P", "^R", "^T", "^G"}
-	if width < 72 {
-		keys = []string{"^P", "^R", "^G"}
-	}
-	if width < 56 {
-		keys = []string{"^P", "^G"}
-	}
-	return footerActionsByKeys(actions, keys)
-}
-
-func footerActionsMatchKeys(actions []FooterActionVM, keys []string) bool {
-	if len(actions) != len(keys) {
-		return false
-	}
-	for index, key := range keys {
-		if strings.TrimSpace(actions[index].Key) != key {
-			return false
-		}
-	}
-	return true
-}
-
-func footerActionsByKeys(actions []FooterActionVM, keys []string) []FooterActionVM {
-	out := make([]FooterActionVM, 0, len(keys))
-	for _, key := range keys {
-		for _, action := range actions {
-			if strings.TrimSpace(action.Key) == key {
-				out = append(out, action)
-				break
-			}
-		}
-	}
-	return out
+	return footerActionTokensVisibleByModeAndWidth(actions, mode, width)
 }
 
 func footerActionAvailableWidth(footer FooterVM, width int) int {

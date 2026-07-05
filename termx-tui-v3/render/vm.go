@@ -250,8 +250,9 @@ func footerActions(mode string) []string {
 }
 
 func footerActionCatalogForRoot(mode string, root state.Root, shell state.ShellStore) []FooterActionVM {
-	tokens := footerActionCatalog(mode)
-	tokens = footerActionCatalogFromConfig(mode, tokens, root.Config.Footer)
+	defaults := footerActionCatalog(mode)
+	tokens := footerActionCatalogFromConfig(mode, defaults, root.Config.Footer)
+	tokens = footerActionCatalogWithModeComplements(mode, tokens, defaults)
 	if len(tokens) == 0 {
 		return tokens
 	}
@@ -262,6 +263,88 @@ func footerActionCatalogForRoot(mode string, root state.Root, shell state.ShellS
 		}
 	}
 	return out
+}
+
+func footerActionCatalogWithModeComplements(mode string, tokens []FooterActionVM, defaults []FooterActionVM) []FooterActionVM {
+	if mode != "resize" || len(tokens) == 0 {
+		return tokens
+	}
+	paneResizeIDs := []ActionID{
+		ActionResizeLeft,
+		ActionResizeRight,
+		ActionResizeUp,
+		ActionResizeDown,
+		ActionResizeBalance,
+	}
+	layoutIDs := []ActionID{
+		ActionResizeLayoutLock,
+		ActionResizeLayoutToggle,
+		ActionResizeLayoutPan,
+		ActionResizeLayoutAlign,
+		ActionResizeLayoutCenter,
+		ActionResizeLayoutReset,
+	}
+	if !footerActionTokensContainAnyID(tokens, paneResizeIDs) || footerActionTokensContainAnyID(tokens, layoutIDs) {
+		return tokens
+	}
+	// 中文说明：旧用户配置只列 pane resize 动作；单 pane 时这些动作会被 availability 过滤。
+	// resize mode 仍有 view-layout 语义快捷键，必须在同一 footer truth 中补回，避免底栏只剩 global。
+	return footerInsertDefaultActionIDsBeforeTail(tokens, defaults, layoutIDs)
+}
+
+func footerActionTokensContainAnyID(tokens []FooterActionVM, ids []ActionID) bool {
+	for _, token := range tokens {
+		for _, id := range ids {
+			if token.ActionID == id.String() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func footerInsertDefaultActionIDsBeforeTail(tokens []FooterActionVM, defaults []FooterActionVM, ids []ActionID) []FooterActionVM {
+	additions := make([]FooterActionVM, 0, len(ids))
+	for _, token := range defaults {
+		if !footerActionIDInSet(token.ActionID, ids) || footerActionTokensContainID(tokens, token.ActionID) {
+			continue
+		}
+		additions = append(additions, token)
+	}
+	if len(additions) == 0 {
+		return tokens
+	}
+	tail := len(tokens)
+	for index, token := range tokens {
+		key := strings.TrimSpace(token.Key)
+		if token.ActionID == ActionFooterGlobalMode.String() || key == "esc" {
+			tail = index
+			break
+		}
+	}
+	out := make([]FooterActionVM, 0, len(tokens)+len(additions))
+	out = append(out, tokens[:tail]...)
+	out = append(out, additions...)
+	out = append(out, tokens[tail:]...)
+	return out
+}
+
+func footerActionTokensContainID(tokens []FooterActionVM, actionID string) bool {
+	for _, token := range tokens {
+		if token.ActionID == actionID {
+			return true
+		}
+	}
+	return false
+}
+
+func footerActionIDInSet(actionID string, ids []ActionID) bool {
+	for _, id := range ids {
+		if actionID == id.String() {
+			return true
+		}
+	}
+	return false
 }
 
 func footerActionCatalogFromConfig(mode string, defaults []FooterActionVM, cfg state.TUIFooterConfig) []FooterActionVM {
@@ -358,7 +441,8 @@ func footerActionBaseForRef(ref string, defaultsByID map[string]FooterActionVM) 
 }
 
 func footerBuiltinActionAlias(ref string) ActionID {
-	switch strings.ToLower(strings.TrimSpace(ref)) {
+	ref = strings.ReplaceAll(strings.ToLower(strings.TrimSpace(ref)), "_", "-")
+	switch ref {
 	case "pane":
 		return ActionFooterPaneMode
 	case "resize":
@@ -373,7 +457,7 @@ func footerBuiltinActionAlias(ref string) ActionID {
 		return ActionResizeUp
 	case "resize-down", "down", "arrow-down", "↓":
 		return ActionResizeDown
-	case "balance", "=":
+	case "resize-balance", "balance", "=":
 		return ActionResizeBalance
 	case "layout-lock", "resize-lock", "lock":
 		return ActionResizeLayoutLock

@@ -532,6 +532,73 @@ func TestRenderVMBuilderAppliesResizeFooterConfigAliases(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderComplementsLegacyResizeFooterConfig(t *testing.T) {
+	root := state.Root{
+		Shell:    state.DefaultShell().SetInteractionMode(state.InteractionModeResize),
+		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 20},
+		Config: state.TUIConfigStore{
+			Version: 1,
+			Footer: state.TUIFooterConfig{
+				Templates: state.TUIFooterTemplatesConfig{
+					ModeBadge:        "{{mode_icon}} {{mode_label}}",
+					Key:              "{{key}}",
+					Action:           "{{key}} {{icon}} {{label}}",
+					Separator:        " · ",
+					WorkspaceSummary: "ws:{{workspace}}",
+					FloatingSummary:  "float:{{count}}",
+					TerminalsSummary: "terminals:{{count}}",
+				},
+				Modes: map[string]state.TUIFooterModeConfig{
+					"resize": {
+						Icon:    "󰙖",
+						Label:   "SIZE",
+						Style:   string(StyleFooterKeyResize),
+						Actions: "resize_left,resize_right,resize_up,resize_down,resize_balance,global",
+					},
+				},
+				Actions: map[string]state.TUIFooterActionConfig{
+					"resize_left":    {ID: ActionResizeLeft.String(), Key: "←/h", Icon: "󰁍", Label: "left", Style: string(StyleFooterKeyResize)},
+					"resize_right":   {ID: ActionResizeRight.String(), Key: "→/l", Icon: "󰁔", Label: "right", Style: string(StyleFooterKeyResize)},
+					"resize_up":      {ID: ActionResizeUp.String(), Key: "↑/k", Icon: "󰁝", Label: "up", Style: string(StyleFooterKeyResize)},
+					"resize_down":    {ID: ActionResizeDown.String(), Key: "↓/j", Icon: "󰁅", Label: "down", Style: string(StyleFooterKeyResize)},
+					"resize_balance": {ID: ActionResizeBalance.String(), Key: "=", Icon: "󰘕", Label: "balance", Style: string(StyleFooterKeyResize)},
+				},
+			},
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	footer := vm.Shell.Footer
+	if containsFooterActionID(footer.ActionTokens, ActionResizeLeft.String()) ||
+		containsFooterActionID(footer.ActionTokens, ActionResizeBalance.String()) {
+		t.Fatalf("single-pane resize footer should still hide unavailable pane resize actions, got %#v", footer.ActionTokens)
+	}
+	for _, want := range []struct {
+		key      string
+		label    string
+		actionID string
+	}{
+		{key: "s", label: "LOCK", actionID: ActionResizeLayoutLock.String()},
+		{key: "space", label: "LAYOUT", actionID: ActionResizeLayoutToggle.String()},
+		{key: "m/|/_", label: "CENTER", actionID: ActionResizeLayoutCenter.String()},
+		{key: "r", label: "RESET", actionID: ActionResizeLayoutReset.String()},
+		{key: "^G", label: "GLOBAL", actionID: ActionFooterGlobalMode.String()},
+	} {
+		if !containsFooterAction(footer.ActionTokens, want.key, want.label, want.actionID) {
+			t.Fatalf("legacy resize footer config should keep available layout action %#v, got %#v", want, footer.ActionTokens)
+		}
+	}
+
+	frame := NewRenderer(DefaultTheme()).Render(vm)
+	footerLine := frame.Lines[len(frame.Lines)-1]
+	if !strings.Contains(footerLine, "󰙖 SIZE") ||
+		!strings.Contains(footerLine, "CENTER") ||
+		!strings.Contains(footerLine, "[r] RESET") ||
+		!strings.Contains(footerLine, "[G] GLOBAL") {
+		t.Fatalf("legacy resize footer config must not collapse to only global, got %#v", footerLine)
+	}
+}
+
 func TestTerminalLiveCellsPreserveFE0FFootprintBeforeDots(t *testing.T) {
 	line := terminalLiveLineFromCells([]state.LiveCell{
 		{Text: "♻️", Width: 2},
