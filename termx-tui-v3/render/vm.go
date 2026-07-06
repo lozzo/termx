@@ -70,17 +70,18 @@ func buildHeaderVM(shell state.ShellStore, root state.Root) HeaderVM {
 		notice = root.Session.LastError
 	}
 	return HeaderVM{
-		Visible:         shell.HeaderVisible,
-		Workspace:       shell.Workspace.Name,
-		Tab:             tabStripSummary(shell),
-		Tabs:            buildHeaderTabVMs(shell),
-		TabTemplate:     root.Config.Chrome.TabTemplate,
-		TabCreateIcon:   root.Config.Chrome.TabCreateIcon,
-		ActivePane:      shell.ActivePaneID,
-		TerminalSummary: terminalSummary(root),
-		FloatingSummary: floatingSummary(shell),
-		Notice:          notice,
-		Title:           shell.Workspace.Name,
+		Visible:           shell.HeaderVisible,
+		Workspace:         shell.Workspace.Name,
+		Tab:               tabStripSummary(shell),
+		Tabs:              buildHeaderTabVMs(shell),
+		WorkspaceTemplate: root.Config.Chrome.WorkspaceTemplate,
+		TabTemplate:       root.Config.Chrome.TabTemplate,
+		TabCreateIcon:     root.Config.Chrome.TabCreateIcon,
+		ActivePane:        shell.ActivePaneID,
+		TerminalSummary:   terminalSummary(root),
+		FloatingSummary:   floatingSummary(shell),
+		Notice:            notice,
+		Title:             shell.Workspace.Name,
 	}
 }
 

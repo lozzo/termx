@@ -37,8 +37,9 @@ func TestParseDocumentedConfigExample(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse documented example config: %v", err)
 	}
-	if !strings.Contains(cfg.Chrome.TabTemplate, "{{if active}}") ||
-		!strings.Contains(cfg.Chrome.TabTemplate, "font:bold") ||
+	if !strings.Contains(cfg.Chrome.WorkspaceTemplate, "{{workspace | truncate 18}}") ||
+		!strings.Contains(cfg.Chrome.TabTemplate, "{{if active}}") ||
+		!strings.Contains(cfg.Chrome.TabTemplate, "header-active-edge") ||
 		cfg.Chrome.TabCreateIcon == "" {
 		t.Fatalf("documented example should carry text/template tab format and create icon, got %#v", cfg.Chrome)
 	}
@@ -59,6 +60,7 @@ tui:
     header: false
     panel_presentation: card
     tab_create_icon: "+"
+    workspace_template: "[style:header-workspace] {{workspace | truncate 8}} [/style]"
     tab_template: "{{tab_id}} {{if active}}▎{{else}}|{{end}} {{title | truncate 8}} [action:tab.close]{{close_icon}}[/action]"
     pane_title_template: "{{terminal}}@{{endpoint}}"
     pane_glyphs:
@@ -133,7 +135,7 @@ tui:
 	if cfg.Profile != "work" || cfg.Theme.Palette != "builtin" || cfg.Theme.Primary != "#d65cff" || cfg.Theme.Secondary != "#66e3ff" {
 		t.Fatalf("theme/profile overrides not applied: %#v", cfg)
 	}
-	if cfg.Theme.Border.Active != "#ff00aa" || cfg.Chrome.Header || cfg.Chrome.PanelPresentation != "card" || cfg.Chrome.TabCreateIcon != "+" || !strings.Contains(cfg.Chrome.TabTemplate, "{{tab_id}}") || cfg.Chrome.PaneTitleTemplate != "{{terminal}}@{{endpoint}}" {
+	if cfg.Theme.Border.Active != "#ff00aa" || cfg.Chrome.Header || cfg.Chrome.PanelPresentation != "card" || cfg.Chrome.TabCreateIcon != "+" || !strings.Contains(cfg.Chrome.WorkspaceTemplate, "{{workspace | truncate 8}}") || !strings.Contains(cfg.Chrome.TabTemplate, "{{tab_id}}") || cfg.Chrome.PaneTitleTemplate != "{{terminal}}@{{endpoint}}" {
 		t.Fatalf("chrome/border overrides not applied: %#v", cfg)
 	}
 	if cfg.Chrome.PaneGlyphs.Zoom != "—" ||
@@ -281,6 +283,14 @@ func TestValidateRejectsMultiLinePaneTitleTemplate(t *testing.T) {
 	cfg.Chrome.PaneTitleTemplate = "{{terminal}}\n{{endpoint}}"
 	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "pane_title_template") {
 		t.Fatalf("expected pane_title_template validation error, got %v", err)
+	}
+}
+
+func TestValidateRejectsMultiLineWorkspaceTemplate(t *testing.T) {
+	cfg := Default()
+	cfg.Chrome.WorkspaceTemplate = "{{workspace}}\n{{title}}"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "workspace_template") {
+		t.Fatalf("expected workspace_template validation error, got %v", err)
 	}
 }
 

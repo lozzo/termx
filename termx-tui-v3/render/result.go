@@ -79,10 +79,12 @@ const (
 	StyleStatusMuted         StyleToken = "status-muted"
 	StyleStatusWarning       StyleToken = "status-warning"
 	StyleHeaderWorkspace     StyleToken = "header-workspace"
+	StyleHeaderWorkspaceEdge StyleToken = "header-workspace-edge"
 	StyleHeaderSpacer        StyleToken = "header-spacer"
 	StyleHeaderInactiveIndex StyleToken = "header-inactive-index"
 	StyleHeaderInactiveTitle StyleToken = "header-inactive-title"
 	StyleHeaderInactiveClose StyleToken = "header-inactive-close"
+	StyleHeaderActiveEdge    StyleToken = "header-active-edge"
 	StyleHeaderActiveMarker  StyleToken = "header-active-marker"
 	StyleHeaderActiveIndex   StyleToken = "header-active-index"
 	StyleHeaderActiveTitle   StyleToken = "header-active-title"
@@ -438,6 +440,8 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 		return sgrForegroundBackground(theme.Warning, theme.StatusBG, false)
 	case StyleHeaderWorkspace:
 		return sgrForegroundBackground(headerWorkspaceFG(theme), headerWorkspaceBG(theme), true)
+	case StyleHeaderWorkspaceEdge:
+		return sgrForegroundBackground(headerWorkspaceBG(theme), theme.StatusBG, false)
 	case StyleHeaderSpacer:
 		return sgrForegroundBackground(theme.StatusFG, theme.StatusBG, false)
 	case StyleHeaderInactiveIndex:
@@ -446,6 +450,8 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 		return sgrForegroundBackground(theme.InactivePane, theme.StatusBG, false)
 	case StyleHeaderInactiveClose:
 		return sgrForegroundBackground(headerInactiveCloseFG(theme), theme.StatusBG, false)
+	case StyleHeaderActiveEdge:
+		return sgrForegroundBackground(headerActiveBG(theme), theme.StatusBG, false)
 	case StyleHeaderActiveMarker:
 		return sgrForegroundBackground(theme.Accent, headerActiveBG(theme), true)
 	case StyleHeaderActiveIndex:
@@ -990,18 +996,22 @@ type HeaderTabVM struct {
 	CloseTargetID string
 }
 
+// HeaderVM 是顶部 workspace/tab chrome 的渲染投影。
+// 它只消费 ShellStore 和本地 TUI 配置生成可点击展示片段；workspace/tab 的真实状态、
+// tab close/switch 以及 navigator 打开动作仍由 reducer 消息链路持有。
 type HeaderVM struct {
-	Visible         bool
-	Workspace       string
-	Tab             string
-	Tabs            []HeaderTabVM
-	TabTemplate     string
-	TabCreateIcon   string
-	ActivePane      string
-	TerminalSummary string
-	FloatingSummary string
-	Notice          string
-	Title           string
+	Visible           bool
+	Workspace         string
+	Tab               string
+	Tabs              []HeaderTabVM
+	WorkspaceTemplate string
+	TabTemplate       string
+	TabCreateIcon     string
+	ActivePane        string
+	TerminalSummary   string
+	FloatingSummary   string
+	Notice            string
+	Title             string
 }
 
 type FooterActionVM struct {

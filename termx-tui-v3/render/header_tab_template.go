@@ -15,6 +15,8 @@ type headerTabTemplateContext struct {
 	Index        int
 	Title        string
 	TabID        string
+	Workspace    string
+	WorkspaceID  string
 	Active       bool
 	SwitchAction string
 	CloseAction  string
@@ -23,14 +25,16 @@ type headerTabTemplateContext struct {
 }
 
 type headerTabTemplateData struct {
-	Index     int
-	TabID     string
-	ID        string
-	Title     string
-	Active    bool
-	NotActive bool
-	Marker    string
-	CloseIcon string
+	Index       int
+	TabID       string
+	ID          string
+	Title       string
+	Workspace   string
+	WorkspaceID string
+	Active      bool
+	NotActive   bool
+	Marker      string
+	CloseIcon   string
 }
 
 type headerTabTemplateState struct {
@@ -116,6 +120,21 @@ func headerTabTemplateSegments(format string, ctx headerTabTemplateContext) []ba
 	return segments
 }
 
+func headerWorkspaceTemplateSegments(format string, workspace string) []barSegment {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		workspace = "termx"
+	}
+	return headerTabTemplateSegments(format, headerTabTemplateContext{
+		Title:        workspace,
+		TabID:        workspace,
+		Workspace:    workspace,
+		WorkspaceID:  workspace,
+		Active:       true,
+		SwitchAction: ActionFooterOpenTree.String(),
+	})
+}
+
 func executeHeaderTabTemplate(format string, ctx headerTabTemplateContext) (string, bool) {
 	tmpl, err := texttemplate.New("header_tab").Option("missingkey=zero").Funcs(headerTabTemplateFuncs(ctx)).Parse(format)
 	if err != nil {
@@ -123,14 +142,16 @@ func executeHeaderTabTemplate(format string, ctx headerTabTemplateContext) (stri
 	}
 	var out bytes.Buffer
 	if err := tmpl.Execute(&out, headerTabTemplateData{
-		Index:     ctx.Index,
-		TabID:     headerTabTemplateEscapeText(ctx.TabID),
-		ID:        headerTabTemplateEscapeText(ctx.TabID),
-		Title:     headerTabTemplateEscapeText(ctx.Title),
-		Active:    ctx.Active,
-		NotActive: !ctx.Active,
-		Marker:    headerTabTemplateEscapeText(headerTabMarker(ctx.Active)),
-		CloseIcon: headerTabTemplateEscapeText(ctx.CloseIcon),
+		Index:       ctx.Index,
+		TabID:       headerTabTemplateEscapeText(ctx.TabID),
+		ID:          headerTabTemplateEscapeText(ctx.TabID),
+		Title:       headerTabTemplateEscapeText(ctx.Title),
+		Workspace:   headerTabTemplateEscapeText(ctx.Workspace),
+		WorkspaceID: headerTabTemplateEscapeText(ctx.WorkspaceID),
+		Active:      ctx.Active,
+		NotActive:   !ctx.Active,
+		Marker:      headerTabTemplateEscapeText(headerTabMarker(ctx.Active)),
+		CloseIcon:   headerTabTemplateEscapeText(ctx.CloseIcon),
 	}); err != nil {
 		return "", false
 	}
@@ -149,6 +170,12 @@ func headerTabTemplateFuncs(ctx headerTabTemplateContext) texttemplate.FuncMap {
 		},
 		"title": func() string {
 			return headerTabTemplateEscapeText(ctx.Title)
+		},
+		"workspace": func() string {
+			return headerTabTemplateEscapeText(ctx.Workspace)
+		},
+		"workspace_id": func() string {
+			return headerTabTemplateEscapeText(ctx.WorkspaceID)
 		},
 		"active": func() bool { return ctx.Active },
 		"not_active": func() bool {
@@ -306,10 +333,10 @@ func headerTabTemplateStyleToken(name string) (StyleToken, bool) {
 	switch StyleToken(name) {
 	case StyleAccent, StyleForeground, StyleStrongForeground, StyleMuted,
 		StyleStatus, StyleStatusAccent, StyleStatusMuted, StyleStatusWarning,
-		StyleHeaderWorkspace, StyleHeaderSpacer, StyleHeaderInactiveIndex,
-		StyleHeaderInactiveTitle, StyleHeaderInactiveClose, StyleHeaderActiveMarker,
-		StyleHeaderActiveIndex, StyleHeaderActiveTitle, StyleHeaderActiveClose,
-		StyleHeaderCreate:
+		StyleHeaderWorkspace, StyleHeaderWorkspaceEdge, StyleHeaderSpacer,
+		StyleHeaderInactiveIndex, StyleHeaderInactiveTitle, StyleHeaderInactiveClose,
+		StyleHeaderActiveEdge, StyleHeaderActiveMarker, StyleHeaderActiveIndex,
+		StyleHeaderActiveTitle, StyleHeaderActiveClose, StyleHeaderCreate:
 		return StyleToken(name), true
 	default:
 		return "", false

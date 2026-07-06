@@ -54,6 +54,40 @@ func TestHeaderTabTemplateSupportsVariablesStyleAndActions(t *testing.T) {
 	}
 }
 
+func TestHeaderWorkspaceTemplateUsesNavigatorActionAndEdgeStyle(t *testing.T) {
+	segments := headerWorkspaceTemplateSegments("[style:header-workspace-edge][/style][style:header-workspace] {{workspace | truncate 4}} [/style]", "build-prod")
+	if len(segments) == 0 {
+		t.Fatalf("expected workspace template segments")
+	}
+	line := Line{Cells: cellsFromBarSegments(segments)}
+	if got := line.PlainString(); got != " buil " {
+		t.Fatalf("workspace template should render truncated workspace pill, got %q", got)
+	}
+	foundEdge := false
+	for _, segment := range segments {
+		if segment.actionID != ActionFooterOpenTree.String() || segment.targetID != "build-prod" {
+			t.Fatalf("workspace template must keep navigator action target, segments=%#v", segments)
+		}
+		if segment.style == StyleHeaderWorkspaceEdge {
+			foundEdge = true
+		}
+	}
+	if !foundEdge {
+		t.Fatalf("workspace template should allow workspace edge style, segments=%#v", segments)
+	}
+}
+
+func TestHeaderSegmentsUseConfiguredWorkspaceTemplate(t *testing.T) {
+	segments := headerLeftSegments(HeaderVM{
+		Workspace:         "ops",
+		WorkspaceTemplate: "[style:header-workspace-edge][/style][style:header-workspace] {{workspace}} [/style][style:header-workspace-edge][/style]",
+	})
+	line := Line{Cells: cellsFromBarSegments(segments)}
+	if got := line.PlainString(); !strings.HasPrefix(got, " ops ") {
+		t.Fatalf("header should render configured workspace template before tabs, got %q", got)
+	}
+}
+
 func TestHeaderTabTemplateEscapesDynamicTextBeforeSpanParse(t *testing.T) {
 	segments := headerTabTemplateSegments("{{title}}", headerTabTemplateContext{
 		Index:        1,

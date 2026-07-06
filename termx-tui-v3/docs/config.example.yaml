@@ -135,8 +135,13 @@ tui:
     # 默认值："󰐕"。
     tab_create_icon: "󰐕"
 
+    # workspace_template 控制 header 左侧 workspace 胶囊。
+    # 这个模板只改变显示和打开 Navigator 的 hit region，不修改 workspace truth。
+    # 可用变量/函数：workspace、workspace_id、title、truncate、fg、bg、style、action、end_style。
+    workspace_template: "[style:header-workspace-edge][/style][style:header-workspace]  {{workspace | truncate 18}} [/style][style:header-workspace-edge][/style][style:header-spacer] [/style]"
+
     # tab_template 控制 header tab 的完整格式。
-    # 默认值：""，表示使用内置格式；内置格式保证 active/inactive 宽度一致。
+    # 默认值使用主题派生色做 active tab 胶囊，并保证 active/inactive 宽度一致。
     #
     # 表达式引擎：
     # - 使用 Go 标准库 text/template，不维护自定义 if 表达式语言。
@@ -158,7 +163,8 @@ tui:
     # - 未显式标注 action 的片段默认绑定 tab.switch，点击会跳转到该 tab。
     #
     # 常用内置 style token：
-    # - header-active-marker、header-active-index、header-active-title、header-active-close
+    # - header-workspace、header-workspace-edge
+    # - header-active-edge、header-active-marker、header-active-index、header-active-title、header-active-close
     # - header-inactive-index、header-inactive-title、header-inactive-close
     # - header-create、status、status-muted、status-warning、accent、muted
     #
@@ -166,7 +172,7 @@ tui:
     # - 这个字段必须是单行字符串。
     # - 复杂 Powerline/Nerd Font glyph 是否等宽，取决于宿主终端字体。
     # - 为了避免切换 active 状态时 tab 宽度跳动，active 和 inactive 分支最好输出相同 cell 宽度。
-    tab_template: "{{tab_id}}[fg:#f7f2ff;bg:#332244;font:bold] {{if active}}▎{{else}}|{{end}} {{title | truncate 14}} [action:tab.close]{{close_icon}}[/action][/style]"
+    tab_template: "{{if active}}[style:header-active-edge][/style][style:header-active-marker]{{marker}}[/style][style:header-active-index] {{index}}[/style][style:header-active-title] {{title | truncate 14}} [/style][action:tab.close][style:header-active-close]{{close_icon}}[/style][/action][style:header-active-edge][/style]{{else}}[style:header-spacer] [/style][style:header-spacer]{{marker}}[/style][style:header-inactive-index] {{index}}[/style][style:header-inactive-title] {{title | truncate 14}} [/style][action:tab.close][style:header-inactive-close]{{close_icon}}[/style][/action][style:header-spacer] [/style]{{end}}"
 
     # pane_title_template 控制 pane/floating 顶部 terminal 标题。
     # 默认值：""，表示使用 terminal pool 名称；可以配置成 terminal@机器名 这类格式。

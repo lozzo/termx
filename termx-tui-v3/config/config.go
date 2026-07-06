@@ -12,6 +12,11 @@ import (
 
 const DefaultFileName = "tui-v3.yaml"
 
+const (
+	DefaultWorkspaceTemplate = "[style:header-workspace-edge][/style][style:header-workspace]  {{workspace | truncate 18}} [/style][style:header-workspace-edge][/style][style:header-spacer] [/style]"
+	DefaultTabTemplate       = "{{if active}}[style:header-active-edge][/style][style:header-active-marker]{{marker}}[/style][style:header-active-index] {{index}}[/style][style:header-active-title] {{title | truncate 14}} [/style][action:tab.close][style:header-active-close]{{close_icon}}[/style][/action][style:header-active-edge][/style]{{else}}[style:header-spacer] [/style][style:header-spacer]{{marker}}[/style][style:header-inactive-index] {{index}}[/style][style:header-inactive-title] {{title | truncate 14}} [/style][action:tab.close][style:header-inactive-close]{{close_icon}}[/style][/action][style:header-spacer] [/style]{{end}}"
+)
+
 func DefaultPath() string {
 	if configHome := os.Getenv("XDG_CONFIG_HOME"); configHome != "" {
 		return filepath.Join(configHome, "termx", DefaultFileName)
@@ -35,7 +40,8 @@ func Default() state.TUIConfigStore {
 			Footer:            true,
 			PanelPresentation: "split-line",
 			TabCreateIcon:     "󰐕",
-			TabTemplate:       "",
+			WorkspaceTemplate: DefaultWorkspaceTemplate,
+			TabTemplate:       DefaultTabTemplate,
 			PaneTitleTemplate: "",
 		},
 		Footer: state.TUIFooterConfig{
@@ -337,7 +343,10 @@ var scalarSetters = map[string]scalarSetter{
 	"tui.chrome.footer":             setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Chrome.Footer = value }),
 	"tui.chrome.panel_presentation": setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PanelPresentation = value }),
 	"tui.chrome.tab_create_icon":    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabCreateIcon = value }),
-	"tui.chrome.tab_template":       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabTemplate = value }),
+	"tui.chrome.workspace_template": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.WorkspaceTemplate = value
+	}),
+	"tui.chrome.tab_template": setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabTemplate = value }),
 	"tui.chrome.pane_title_template": setString(func(cfg *state.TUIConfigStore, value string) {
 		cfg.Chrome.PaneTitleTemplate = value
 	}),
@@ -667,6 +676,9 @@ func Validate(cfg state.TUIConfigStore) error {
 	}
 	if strings.TrimSpace(cfg.Chrome.TabCreateIcon) == "" {
 		return fmt.Errorf("tui.chrome.tab_create_icon must not be empty")
+	}
+	if strings.ContainsAny(cfg.Chrome.WorkspaceTemplate, "\r\n") {
+		return fmt.Errorf("tui.chrome.workspace_template must be a single-line template")
 	}
 	if strings.ContainsAny(cfg.Chrome.TabTemplate, "\r\n") {
 		return fmt.Errorf("tui.chrome.tab_template must be a single-line template")

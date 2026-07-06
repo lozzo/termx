@@ -47,6 +47,10 @@ type TUIChromeConfig struct {
 	Footer            bool
 	PanelPresentation string
 	TabCreateIcon     string
+	// WorkspaceTemplate 是顶部 workspace 槽位的展示模板。
+	// 它只消费当前 ShellStore workspace 名称并绑定打开 Workbench Navigator 的既有 action，
+	// 不保存 workspace truth，也不能改写 workspace/tab/pane 的 reducer-owned 状态。
+	WorkspaceTemplate string
 	TabTemplate       string
 	// PaneTitleTemplate 是 pane/floating terminal chrome 标题模板。
 	// 它只消费 reducer-owned terminal pool 与 endpoint 展示投影，不改变 pane title、terminal identity 或输入路由。

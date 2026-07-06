@@ -35,9 +35,7 @@ func headerLeftSegments(header HeaderVM) []barSegment {
 	if workspace == "" {
 		workspace = "termx"
 	}
-	left := []barSegment{
-		barText("  "+workspace, StyleHeaderWorkspace, 1).withAction(ActionFooterOpenTree.String()),
-	}
+	left := headerWorkspaceSegments(header, workspace)
 	left = append(left, headerTabSegmentsForHeader(header, header.Tab)...)
 	left = append(left, barText(headerTabCreateText(header.TabCreateIcon), StyleHeaderCreate, 3).withAction(ActionTabCreate.String()))
 	if header.Notice != "" {
@@ -46,6 +44,15 @@ func headerLeftSegments(header HeaderVM) []barSegment {
 		}
 	}
 	return left
+}
+
+func headerWorkspaceSegments(header HeaderVM, workspace string) []barSegment {
+	if segments := headerWorkspaceTemplateSegments(header.WorkspaceTemplate, workspace); len(segments) > 0 {
+		return segments
+	}
+	return []barSegment{
+		barText("  "+workspace, StyleHeaderWorkspace, 1).withAction(ActionFooterOpenTree.String()),
+	}
 }
 
 func renderFooter(c *canvas, footer FooterVM, rect Rect, frame Rect) {
