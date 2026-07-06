@@ -269,6 +269,37 @@ func (store TerminalSurfaceStore) AttachRef(ref TerminalRef, cols int, rows int)
 	return store
 }
 
+// CacheAttachRef 只把指定 TerminalRef 的 attach metadata 写入 live surface 缓存。
+// 该方法服务后台 pane/floating restore：view binding 已经拿到 channel，但当前前台
+// surface/session truth 仍属于 active view，不能因为后台 attach 回包而切换全局投影。
+func (store TerminalSurfaceStore) CacheAttachRef(ref TerminalRef, cols int, rows int) TerminalSurfaceStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
+		return store
+	}
+	snapshot, ok := store.Surfaces[liveSurfaceRefKey(ref)]
+	if !ok {
+		snapshot = LiveSurfaceSnapshot{}
+	}
+	snapshot.EndpointID = ref.EndpointID
+	snapshot.TerminalID = ref.TerminalID
+	if cols > 0 {
+		snapshot.Cols = cols
+	}
+	if rows > 0 {
+		snapshot.Rows = rows
+	}
+	snapshot.State = TerminalLiveAttached
+	snapshot.ExitCode = 0
+	snapshot.ExitReason = ""
+	snapshot.ExitedAt = time.Time{}
+	snapshot.Command = nil
+	snapshot.Err = ""
+	store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
+	store.Surfaces[liveSurfaceRefKey(ref)] = snapshot
+	return store
+}
+
 func (store TerminalSurfaceStore) RestartPreservingContent(terminalID string, cols int, rows int) TerminalSurfaceStore {
 	return store.RestartPreservingContentRef(LocalTerminalRef(terminalID), cols, rows)
 }
@@ -937,6 +968,19 @@ func (store TerminalSessionStore) AttachRefWithResizeOwner(ref TerminalRef, chan
 	store.ExitReason = ""
 	store.ExitedAt = time.Time{}
 	store.Command = nil
+	return store
+}
+
+// RecordInputChannelRef 只登记指定 TerminalRef 的输入 channel，不切换当前 active session。
+// 后台 restore/reattach 的 channel 属于对应 TerminalView binding；只有该 view 成为前台
+// 或显式 attach 目标时，AttachRefWithResizeOwner 才能改写全局 session 投影。
+func (store TerminalSessionStore) RecordInputChannelRef(ref TerminalRef, channel uint16) TerminalSessionStore {
+	ref = ref.Normalize()
+	if ref.Empty() || channel == 0 {
+		return store
+	}
+	store.InputChannels = cloneInputChannels(store.InputChannels)
+	store.InputChannels[terminalSessionInputKey(ref)] = channel
 	return store
 }
 

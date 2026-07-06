@@ -575,8 +575,7 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		}
 	}
 	result = normalizeTerminalAttachResultForLock(root, result)
-	root.Session = root.Session.AttachRefWithResizeOwner(ref, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID)
-	root.Surface = root.Surface.AttachRef(ref, result.Cols, result.Rows)
+	root = applyLiveAttachRuntimeProjection(root, result, result.ViewID)
 	root = applyTerminalAttachmentProjectionFromAttach(root, result)
 	if msg.TargetFloatingID != "" {
 		paneID := msg.TargetPaneID

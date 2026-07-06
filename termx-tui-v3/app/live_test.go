@@ -842,6 +842,73 @@ func TestLiveAttachResultRefreshesTerminalPoolProjection(t *testing.T) {
 	}
 }
 
+func TestLiveAttachResultForBackgroundViewDoesNotReplaceActiveProjection(t *testing.T) {
+	reducer := NewLiveReducer(LiveDeps{})
+	shell := state.DefaultShell().
+		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-main").
+		SplitActivePane(state.PaneState{ID: "pane-remote", Title: "remote", Kind: state.PaneTerminalLive, TerminalID: "remote"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	root := state.Root{
+		Shell: shell,
+		Session: state.TerminalSessionStore{}.
+			AttachRefWithResizeOwner(state.LocalTerminalRef("term-main"), 7, 80, 24, state.TerminalResizeRoleOwner, "surface-main", state.TerminalPaneViewID(state.DefaultPaneID)),
+	}
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
+		EndpointID: state.DefaultEndpointID,
+		TerminalID: "term-main",
+		Revision:   10,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"main"},
+		State:      state.TerminalLiveAttached,
+	})
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-main", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-main", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindPane(state.NewEndpointPaneTerminalView("west", "pane-remote", "remote", 0, 100, 30, state.TerminalResizeRoleFollower, "surface-remote", state.TerminalPaneViewID("pane-remote"), false))
+
+	next, _ := reducer(root, LiveAttachResultMsg{EndpointID: "west", TerminalID: "remote", ViewID: state.TerminalPaneViewID("pane-remote"), Result: services.TerminalAttachResult{
+		EndpointID:    "west",
+		TerminalID:    "remote",
+		Channel:       9,
+		Cols:          100,
+		Rows:          30,
+		ResizePolicy:  state.TerminalResizeRoleOwner,
+		SurfaceID:     "surface-remote",
+		ViewID:        state.TerminalPaneViewID("pane-remote"),
+		CanResize:     false,
+		SizeLocked:    true,
+		ControlReason: "size_locked",
+	}})
+	if !next.Session.TerminalRef().Equal(state.LocalTerminalRef("term-main")) || next.Session.Channel != 7 {
+		t.Fatalf("background attach must not replace active session, session=%#v", next.Session)
+	}
+	if !next.Surface.TerminalRef().Equal(state.LocalTerminalRef("term-main")) || next.Surface.Lines[0] != "main" {
+		t.Fatalf("background attach must not replace active surface, surface=%#v", next.Surface)
+	}
+	if channel, ok := next.Session.InputChannelForRef(state.NewTerminalRef("west", "remote")); !ok || channel != 9 {
+		t.Fatalf("background attach should record endpoint-scoped channel, channel=%d ok=%v session=%#v", channel, ok, next.Session)
+	}
+	if binding, ok := next.TerminalViews.PaneBinding("pane-remote"); !ok || binding.Channel != 9 || !binding.TerminalRef().Equal(state.NewTerminalRef("west", "remote")) {
+		t.Fatalf("background view binding should receive attach result, binding=%#v ok=%v", binding, ok)
+	}
+
+	next, _ = reducer(next, LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		EndpointID: "west",
+		TerminalID: "remote",
+		Revision:   11,
+		Cols:       100,
+		Rows:       30,
+		Lines:      []string{"remote"},
+		State:      state.TerminalLiveAttached,
+	}})
+	if !next.Surface.TerminalRef().Equal(state.LocalTerminalRef("term-main")) || next.Surface.Lines[0] != "main" {
+		t.Fatalf("background surface refresh must not replace active surface, surface=%#v", next.Surface)
+	}
+	if remote := next.Surface.SurfaceForTerminalRef(state.NewTerminalRef("west", "remote")); remote.TerminalID != "remote" || len(remote.Lines) != 1 || remote.Lines[0] != "remote" {
+		t.Fatalf("background surface should be cached for its binding, remote=%#v", remote)
+	}
+}
+
 func TestLiveAttachmentStoreSupportsSameTerminalAcrossTwoPanes(t *testing.T) {
 	reducer := NewLiveReducer(LiveDeps{})
 	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneEmpty}, state.SplitDirectionVertical)}

@@ -592,8 +592,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	if hasTarget && target.PaneID != "" {
 		activePaneID = target.PaneID
 	}
-	root.Session = root.Session.AttachRefWithResizeOwner(state.NewTerminalRef(result.EndpointID, result.TerminalID), result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID)
-	root.Surface = root.Surface.AttachRef(state.NewTerminalRef(result.EndpointID, result.TerminalID), result.Cols, result.Rows)
+	root = applyLiveAttachRuntimeProjection(root, result, viewID)
 	root = applyTerminalAttachmentProjectionFromAttach(root, result)
 	if existing, ok := root.TerminalViews.Views[viewID]; ok {
 		if existing.PaneID != "" {
@@ -731,6 +730,43 @@ func logLiveAttachApplied(deps LiveDeps, root state.Root, result services.Termin
 		"session_state", string(root.Session.State),
 		"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminalRef(state.NewTerminalRef(result.EndpointID, result.TerminalID))),
 	)
+}
+
+func applyLiveAttachRuntimeProjection(root state.Root, result services.TerminalAttachResult, viewID string) state.Root {
+	ref := state.NewTerminalRef(result.EndpointID, result.TerminalID)
+	if liveAttachResultOwnsActiveView(root, viewID, ref) {
+		// 中文说明：全局 Session/Surface 只表达当前前台 view 的 live/input 投影。
+		// 后台 restore attach 不能抢走 active pane 的 channel 和实时 surface。
+		root.Session = root.Session.AttachRefWithResizeOwner(ref, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID)
+		root.Surface = root.Surface.AttachRef(ref, result.Cols, result.Rows)
+		return root
+	}
+	root.Session = root.Session.RecordInputChannelRef(ref, result.Channel)
+	root.Surface = root.Surface.CacheAttachRef(ref, result.Cols, result.Rows)
+	return root
+}
+
+func liveAttachResultOwnsActiveView(root state.Root, viewID string, ref state.TerminalRef) bool {
+	if viewID == "" {
+		return true
+	}
+	shell := root.Shell.ReadonlyDefaults()
+	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
+		if viewID == root.TerminalViews.FloatingViewID(activeFloatingID) {
+			return true
+		}
+	} else if shell.ActivePaneID != "" {
+		if viewID == root.TerminalViews.PaneViewID(shell.ActivePaneID) {
+			return true
+		}
+	}
+	if root.Session.TerminalID == "" && root.Surface.TerminalID == "" {
+		return true
+	}
+	if root.Session.TerminalRef().Equal(ref) && !root.Session.Attached && root.Session.Channel == 0 {
+		return true
+	}
+	return false
 }
 
 func liveAttachDefaultViewID(root state.Root) string {
