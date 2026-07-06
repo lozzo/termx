@@ -280,6 +280,27 @@ func TestTerminalInputRouterLogsActiveViewRoute(t *testing.T) {
 	}
 }
 
+func TestTerminalInputRouterRoutesEndpointBinding(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	root := state.Root{
+		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("west", state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	reducer := ComposeReducers(NewUIInputReducer(), NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal}))
+
+	_, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x", RawSeq: "x"}})
+	if len(effects) != 1 {
+		t.Fatalf("ordinary key should produce terminal input effect, got %#v", effects)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveInputResultMsg)
+	if !ok || msg.Err != nil {
+		t.Fatalf("expected terminal input result, got %#v ok=%v", msg, ok)
+	}
+	if len(terminal.Inputs) != 1 || terminal.Inputs[0].EndpointID != "west" || terminal.Inputs[0].TerminalID != "term-1" || string(terminal.Inputs[0].Bytes) != "x" {
+		t.Fatalf("input must route through endpoint-aware binding, got %#v", terminal.Inputs)
+	}
+}
+
 func TestInteractiveRuntimeSerializesAsyncTerminalInputBytes(t *testing.T) {
 	terminal := newBlockingOrderedInputTerminalService()
 	root := state.Root{
@@ -1288,6 +1309,35 @@ func TestLiveFrameReadyArmsNextInvalidation(t *testing.T) {
 		terminal.LiveInvalidationRequests[0].Cols != 96 ||
 		terminal.LiveInvalidationRequests[0].Rows != 30 {
 		t.Fatalf("frame completion should arm next wake at rendered surface size, got %#v", terminal.LiveInvalidationRequests)
+	}
+}
+
+func TestLiveFrameReadyArmsEndpointInvalidation(t *testing.T) {
+	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 1)}
+	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+		EndpointID: "west",
+		TerminalID: "term-1",
+		Revision:   8,
+		Cols:       96,
+		Rows:       30,
+	})
+	root := state.Root{Surface: surface}
+
+	_, effects := reducer(root, LiveFrameReadyMsg{EndpointID: "west", TerminalID: "term-1", ObservedRevision: 8})
+	if len(effects) != 1 {
+		t.Fatalf("expected one endpoint-scoped follow-up arm effect, got %#v", effects)
+	}
+	arm := effects[0].(FuncEffect)
+	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
+	if msg := arm.Run(context.Background()); msg == nil {
+		t.Fatal("expected one-shot arm to return wake message")
+	}
+	if len(terminal.LiveInvalidationRequests) != 1 ||
+		terminal.LiveInvalidationRequests[0].EndpointID != "west" ||
+		terminal.LiveInvalidationRequests[0].TerminalID != "term-1" ||
+		terminal.LiveInvalidationRequests[0].ObservedRevision != 8 {
+		t.Fatalf("frame completion should arm owning endpoint wake, got %#v", terminal.LiveInvalidationRequests)
 	}
 }
 

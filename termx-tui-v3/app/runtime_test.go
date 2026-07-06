@@ -1079,6 +1079,76 @@ func TestAppRuntimeKeepsLiveSemanticBoundariesBetweenQueuedUpdates(t *testing.T)
 	}
 }
 
+func TestAppRuntimeLiveCoalescingIsEndpointScoped(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	var seen []state.TerminalRef
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			switch msg := msg.(type) {
+			case LiveSurfaceMsg:
+				seen = append(seen, msg.Snapshot.TerminalRef())
+			default:
+				t.Fatalf("unexpected message %T", msg)
+			}
+			return root.Advance(), nil
+		},
+		nil,
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	for _, msg := range []Msg{
+		LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", Revision: 1, Lines: []string{"local"}}},
+		LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{EndpointID: "west", TerminalID: "term-1", Revision: 2, Lines: []string{"west"}}},
+	} {
+		if err := runtime.Post(msg); err != nil {
+			t.Fatalf("post %T: %v", msg, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	want := []state.TerminalRef{state.NewTerminalRef(state.DefaultEndpointID, "term-1"), state.NewTerminalRef("west", "term-1")}
+	if !reflect.DeepEqual(seen, want) {
+		t.Fatalf("same daemon-local terminal ids on different endpoints must not coalesce, got %#v want %#v", seen, want)
+	}
+}
+
+func TestLiveFrameReadyTargetsPreserveEndpoint(t *testing.T) {
+	root := state.Root{}
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", Revision: 3})
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{EndpointID: "west", TerminalID: "term-1", Revision: 8})
+
+	targets := liveFrameReadyTargetsFromRoot(root)
+	if len(targets) != 2 {
+		t.Fatalf("expected local and west frame ready targets, got %#v", targets)
+	}
+	runtime := NewAppRuntime(state.Root{}, nil, nil, NewFakeTerminalHost(1), NewSyncEffectRunner())
+	runtime.enqueueLiveFrameReadyTargets(targets)
+	var seen []LiveFrameReadyMsg
+	for {
+		msg, ok := runtime.dequeue()
+		if !ok {
+			break
+		}
+		ready, ok := msg.(LiveFrameReadyMsg)
+		if !ok {
+			t.Fatalf("expected LiveFrameReadyMsg, got %T", msg)
+		}
+		seen = append(seen, ready)
+	}
+
+	want := []LiveFrameReadyMsg{
+		{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", ObservedRevision: 3},
+		{EndpointID: "west", TerminalID: "term-1", ObservedRevision: 8},
+	}
+	if !reflect.DeepEqual(seen, want) {
+		t.Fatalf("frame ready messages must preserve endpoint refs, got %#v want %#v", seen, want)
+	}
+}
+
 func TestAppRuntimeRoutesEffectResultsThroughMessagePath(t *testing.T) {
 	host := NewFakeTerminalHost(4)
 	var seen []string

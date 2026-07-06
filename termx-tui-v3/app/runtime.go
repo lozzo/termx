@@ -749,7 +749,9 @@ func (runtime *AppRuntime) coalesceQueuedLiveUpdate(msg Msg) bool {
 		if !ok {
 			return false
 		}
-		if existing.terminalID != incoming.terminalID {
+		// 中文说明：TerminalID 只在 owning endpoint 内唯一；
+		// 普通 live 帧合并必须按 TerminalRef，不能吞掉远端同名 terminal 的后续输出。
+		if !existing.ref.Equal(incoming.ref) {
 			continue
 		}
 		perftrace.Count("tui.queue_live_coalesce", messageApproxBytes(queued))
@@ -819,7 +821,7 @@ func (runtime *AppRuntime) replaceQueuedWorkbenchStoragePersistLocked(msg Workbe
 }
 
 type queuedLiveUpdate struct {
-	terminalID string
+	ref state.TerminalRef
 }
 
 func queuedOrdinaryLiveUpdate(msg Msg) (queuedLiveUpdate, bool) {
@@ -830,14 +832,14 @@ func queuedOrdinaryLiveUpdate(msg Msg) (queuedLiveUpdate, bool) {
 			if msg.Event.TerminalID == "" {
 				return queuedLiveUpdate{}, false
 			}
-			return queuedLiveUpdate{terminalID: msg.Event.TerminalID}, true
+			return queuedLiveUpdate{ref: state.NewTerminalRef(msg.Event.EndpointID, msg.Event.TerminalID)}, true
 		}
 	case LiveSurfaceMsg:
 		// 中文说明：普通 native screen result 是 live projection，不是语义帧；
 		// 压力输出下同 terminal 已返回的旧 projection 必须 latest-only 合并，
 		// 生命周期/错误 surface 仍是不可丢的语义边界。
 		if ordinaryLiveSurfaceResult(msg) {
-			return queuedLiveUpdate{terminalID: msg.Snapshot.TerminalID}, true
+			return queuedLiveUpdate{ref: msg.Snapshot.TerminalRef()}, true
 		}
 	default:
 		return queuedLiveUpdate{}, false
@@ -1102,11 +1104,14 @@ func (runtime *AppRuntime) awaitLiveFrameCompletion(targets []liveFrameReadyTarg
 
 func (runtime *AppRuntime) enqueueLiveFrameReadyTargets(targets []liveFrameReadyTarget) {
 	for _, target := range targets {
-		runtime.enqueue(LiveFrameReadyMsg{TerminalID: target.TerminalID, ObservedRevision: target.ObservedRevision})
+		// 中文说明：FrameSink completion 只表示本地已写出这一帧；
+		// 下一次 one-shot live wake 必须回到该 surface 的 owning endpoint。
+		runtime.enqueue(LiveFrameReadyMsg{EndpointID: target.EndpointID, TerminalID: target.TerminalID, ObservedRevision: target.ObservedRevision})
 	}
 }
 
 type liveFrameReadyTarget struct {
+	EndpointID       state.EndpointID
 	TerminalID       string
 	ObservedRevision uint64
 }
@@ -1118,11 +1123,16 @@ func liveFrameReadyTargetsFromRoot(root state.Root) []liveFrameReadyTarget {
 		if snapshot.TerminalID == "" {
 			return
 		}
-		if _, ok := seen[snapshot.TerminalID]; ok {
+		ref := snapshot.TerminalRef()
+		key := ref.Key()
+		if key == "" {
 			return
 		}
-		seen[snapshot.TerminalID] = struct{}{}
-		targets = append(targets, liveFrameReadyTarget{TerminalID: snapshot.TerminalID, ObservedRevision: snapshot.Revision})
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		targets = append(targets, liveFrameReadyTarget{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, ObservedRevision: snapshot.Revision})
 	}
 	if root.Surface.TerminalID != "" {
 		add(root.Surface.Snapshot())
