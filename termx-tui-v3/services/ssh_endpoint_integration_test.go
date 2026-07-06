@@ -74,6 +74,14 @@ func TestSSHEndpointCreateAttachIntegration(t *testing.T) {
 			})
 			terminalID := fmt.Sprintf("termx-ssh-harness-%s-%d", strings.ReplaceAll(sshEndpointTestName(target), "-", ""), time.Now().UnixNano())
 
+			defaults, err := manager.Defaults(ctx, PathDefaultsRequest{EndpointID: endpointID})
+			if err != nil {
+				t.Fatalf("remote defaults %s: %v", target, err)
+			}
+			if defaults.EndpointID != endpointID || len(defaults.DefaultCommand) == 0 || strings.TrimSpace(defaults.DefaultCWD) == "" {
+				t.Fatalf("remote defaults should come from endpoint daemon, got %#v", defaults)
+			}
+
 			created, err := manager.Create(ctx, TerminalCreateRequest{
 				EndpointID: endpointID,
 				TerminalID: terminalID,
