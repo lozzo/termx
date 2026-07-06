@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const HeaderTabCreateText = "  󰐕"
+const HeaderTabCreateText = "  󰐕 "
 
 func renderShellFrame(c *canvas, plan LayoutPlan) {
 	// shell 默认不绘制整屏外框；边界由 pane、floating 和 overlay 各自表达。
@@ -334,7 +334,7 @@ func headerTabCreateText(icon string) string {
 	if icon == "" {
 		return HeaderTabCreateText
 	}
-	return "  " + icon
+	return "  " + icon + " "
 }
 
 func intLabel(value int) string {
