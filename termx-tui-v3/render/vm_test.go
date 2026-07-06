@@ -3421,11 +3421,11 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	if !strings.Contains(content.Lines[0].PlainString(), "⌕ search 日志") ||
 		!strings.Contains(content.Lines[2].PlainString(), "WORKBENCH") ||
 		!strings.Contains(content.Lines[2].PlainString(), "DETAIL") ||
-		!strings.Contains(content.Lines[3].PlainString(), "▸") ||
 		!strings.Contains(content.Lines[3].PlainString(), "日志终端") ||
 		!lineHasStyledANSICell(content.Lines[3], "日志终端", StyleAccent, ANSICellStyle{Underline: true}) ||
 		!strings.Contains(content.Lines[4].PlainString(), "浮窗终端") ||
 		!lineHasStyledCell(content.Lines[4], "  ", StyleSuccess) ||
+		strings.HasPrefix(content.Lines[3].PlainString(), "▸") ||
 		strings.Contains(content.Lines[3].PlainString(), "日志🚀") ||
 		strings.Contains(content.Lines[3].PlainString(), "terminal-live") ||
 		strings.Contains(content.Lines[3].PlainString(), "term:") ||
@@ -3481,8 +3481,9 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	root.Shell = root.Shell.MoveWorkbenchTreeSelection(1, len(state.WorkbenchTreeItems(root)))
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	if len(content.Meta.WorkbenchSnapshots) != 3 ||
-		!strings.Contains(content.Lines[3].PlainString(), "▾") ||
-		!strings.Contains(content.Lines[4].PlainString(), "▾") ||
+		!strings.HasPrefix(content.Lines[3].PlainString(), "▾") ||
+		!strings.HasPrefix(content.Lines[4].PlainString(), "  ▾") ||
+		!strings.HasPrefix(content.Lines[5].PlainString(), "      ") ||
 		content.Meta.WorkbenchSnapshots[0].Panel.ID != state.DefaultPaneID ||
 		content.Meta.WorkbenchSnapshots[0].Panel.Title != "shell" ||
 		content.Meta.WorkbenchSnapshots[1].Panel.ID != "pane-2" ||

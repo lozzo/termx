@@ -106,11 +106,10 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	if !frameContains(cases["workbench-tree-page"].Lines, "Workbench Navigator") ||
 		!frameContains(cases["workbench-tree-page"].Lines, "⌕ search 日志") ||
-		!frameContains(cases["workbench-tree-page"].Lines, "TREE") ||
-		!frameContains(cases["workbench-tree-page"].Lines, "PANE") ||
-		!frameContains(cases["workbench-tree-page"].Lines, "▸") ||
+		!frameContains(cases["workbench-tree-page"].Lines, "WORKBENCH") ||
+		!frameContains(cases["workbench-tree-page"].Lines, "DETAIL") ||
+		!frameContains(cases["workbench-tree-page"].Lines, "VIEWS") ||
 		!frameContains(cases["workbench-tree-page"].Lines, "日志终端") ||
-		!frameContains(cases["workbench-tree-page"].Lines, "HIST metrics unavailable") ||
 		frameContains(cases["workbench-tree-page"].Lines, "Open  New  Zoom  Detach  Close") ||
 		frameContains(cases["workbench-tree-page"].Lines, "[open]  Open") {
 		t.Fatalf("workbench tree smoke missing page visual contract: %#v", cases["workbench-tree-page"].Lines)
@@ -153,7 +152,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	if !frameContains(cases["visual-audit-current"].Lines, "visual review") ||
 		!frameContains(cases["visual-audit-current"].Lines, "visual review") ||
-		!frameContains(cases["visual-audit-current"].Lines, "[]─[]") {
+		!frameContains(cases["visual-audit-current"].Lines, paneChromeCompactActionMarker()) {
 		t.Fatalf("visual review smoke missing fixed visual markers: %#v", cases["visual-audit-current"].Lines)
 	}
 	if !frameContains(cases["visual-audit-current"].Lines, "◆ owner") ||
@@ -225,7 +224,7 @@ func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Fram
 func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame) {
 	t.Helper()
 	review := cases["visual-audit-current"]
-	requiredReview := []string{"  main", "▎ 1 main    2 logs " + render.HeaderTabCreateText, "visual review", "┌───────────[]─[]─[]─[]─┐", "unconnected", "└───────────────────────────┘", "[Ctrl] • [P] PANE", "[W] WORKSPACE", "[V] COPY", "[G] GLOBAL", "ws:main float:1 terminals:1"}
+	requiredReview := []string{"  main", "▎ 1 main    2 logs " + render.HeaderTabCreateText, "visual review", floatingChromeFullActionMarker(), "unconnected", "└───────────────────────────┘", "[Ctrl] • [P] PANE", "[W] WORKSPACE", "[V] COPY", "[G] GLOBAL", "ws:main float:1 terminals:1"}
 	for _, marker := range requiredReview {
 		if !frameContains(review.Lines, marker) {
 			t.Fatalf("visual review smoke missing chrome marker %q: %#v", marker, review.Lines)
@@ -234,7 +233,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 	requiredOverlays := map[string][]string{
 		"terminal-picker":     {"┌─ terminal picker", "search:", "termx-picker shell", "running", "80x24"},
 		"terminal-pool-page":  {"┌─ Terminal Manager", "⌕ search 日志", "TERMINALS", "HIST metrics unavailable"},
-		"workbench-tree-page": {"┌─ Workbench Navigator", "⌕ search 日志", "TREE", "PANE", "HIST metrics unavailable"},
+		"workbench-tree-page": {"┌─ Workbench Navigator", "⌕ search 日志", "WORKBENCH", "DETAIL", "VIEWS"},
 		"prompt-overlay":      {"┌─ prompt", "Command Prompt", "重命名"},
 		"help-overlay":        {"┌─ help", "● open", "esc", "Most used", "Terminal Manager"},
 	}
@@ -285,7 +284,12 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 
 func paneChromeFullActionMarker() string {
 	glyphs := render.DefaultPaneChromeGlyphs()
-	return "[" + glyphs.SplitHorizontal + "]─[" + glyphs.SplitVertical + "]─[" + glyphs.Zoom + "]─[" + glyphs.Close + "]"
+	return "[" + glyphs.Zoom + "]─[" + glyphs.SplitVertical + "]─[" + glyphs.SplitHorizontal + "]─[" + glyphs.Close + "]"
+}
+
+func floatingChromeFullActionMarker() string {
+	glyphs := render.DefaultPaneChromeGlyphs()
+	return "[" + glyphs.CenterFloating + "]─[" + glyphs.CollapseFloating + "]─[" + glyphs.Zoom + "]─[" + glyphs.Close + "]"
 }
 
 func paneChromeCompactActionMarker() string {

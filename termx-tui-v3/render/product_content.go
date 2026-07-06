@@ -1718,18 +1718,13 @@ func terminalManagerPreviewHasContent(lines []Line) bool {
 }
 
 func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
-	marker := "  "
-	markerStyle := StyleMuted
 	prefixStyle := StyleMuted
 	if row.Selected {
-		marker = "▸ "
-		markerStyle = StyleAccent
 		prefixStyle = StyleForeground
 	}
 	title := workbenchTreeTitle(row)
 	prefix := workbenchTreeDepthPrefix(row.Depth)
 	cells := []Cell{
-		styledCell(marker, markerStyle),
 		styledCell(prefix, prefixStyle),
 		workbenchTreeDisclosureCell(row),
 		tokenCell(workbenchTreeKindGlyph(row), workbenchTreeKindStyle(row)),
@@ -1744,11 +1739,12 @@ func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
 }
 
 func workbenchTreeDepthPrefix(depth int) string {
-	if depth <= 1 {
+	if depth <= 0 {
 		return ""
 	}
-	// 中文说明：Workbench Navigator 用纯缩进表达层级；展开/折叠由 disclosure glyph 表达，避免连续竖线压过标题。
-	return strings.Repeat("  ", depth-1)
+	// 中文说明：Workbench Navigator 以 workspace 为根层，tab 缩进一层，
+	// pane/floating 再缩进一层；展开/折叠只由 disclosure glyph 表达。
+	return strings.Repeat("  ", depth)
 }
 
 func workbenchTreeDisclosureCell(row state.WorkbenchTreeItem) Cell {
