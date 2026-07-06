@@ -54,7 +54,7 @@
 | ID | 状态 | 范围 | 验收 |
 | --- | --- | --- | --- |
 | ME001 | 完成 | 清理 `workflow.md`，新增多 endpoint / transport 规划文档 | 文档说明术语、边界、阶段、风险和测试准入 |
-| ME002 | 待开始 | 引入 `EndpointID` / `TerminalRef` 状态模型，默认 endpoint 为 `local` | 本地单 endpoint 行为不变；同名 terminal 在不同 endpoint 不冲突 |
+| ME002 | 完成 | 引入 `EndpointID` / `TerminalRef` 状态模型，默认 endpoint 为 `local` | 本地单 endpoint 行为不变；同名 terminal 在不同 endpoint 不冲突 |
 | ME003 | 待开始 | 设计并实现 client 侧 endpoint registry/config 基础结构 | 可列出 local endpoint；配置缺失时有稳定默认；endpoint 名称和连接策略来自 `tui-v3.yaml` |
 | ME004 | 待开始 | Terminal picker / Terminal Pool 支持 endpoint 聚合和局部失败 | picker 展示机器名称、endpoint 状态和 terminal；单 endpoint 失败不影响其他 endpoint |
 | ME005 | 待开始 | live/input/resize/owner/copy/history 路由按 `TerminalRef` 隔离 | owner 转移、输入、history token 不跨 endpoint 串扰 |
@@ -86,4 +86,5 @@
 ## 当前状态
 
 - ME001 已完成：工作流已收敛为多 endpoint / 多 transport 主线，详细规划落到 `termx-tui-v3/docs/multi-endpoint-transport-plan.md`。
-- 下一切片是 ME002：引入 `EndpointID` / `TerminalRef` 状态模型，并保持默认 `local` endpoint 的本地行为不变。
+- ME002 已完成：TUI state 已有 `EndpointID` / `TerminalRef` 基础模型，默认 `local` endpoint 保持现有本地行为，同名 terminal 可在不同 endpoint 下共存。
+- 下一切片是 ME003：实现 endpoint registry/config 基础结构，定义 `tui-v3.yaml` 中 endpoint 名称、transport 参数和 `auto` / `on_demand` / `manual` 连接策略的解析边界。

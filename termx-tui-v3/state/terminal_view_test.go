@@ -121,6 +121,40 @@ func TestTerminalViewStoreTransfersResizeOwnerWithinTerminal(t *testing.T) {
 	}
 }
 
+func TestTerminalViewStoreScopesResizeOwnerByEndpoint(t *testing.T) {
+	store := TerminalViewStore{}
+	store = store.BindPane(NewEndpointPaneTerminalView(DefaultEndpointID, "pane-local-owner", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-local-owner", true))
+	store = store.BindPane(NewEndpointPaneTerminalView(DefaultEndpointID, "pane-local-follower", "term-1", 8, 40, 12, TerminalResizeRoleFollower, "surface", "view-local-follower", false))
+	store = store.BindPane(NewEndpointPaneTerminalView("west", "pane-west-owner", "term-1", 9, 100, 30, TerminalResizeRoleOwner, "surface", "view-west-owner", true))
+	store = store.BindPane(NewEndpointPaneTerminalView("west", "pane-west-follower", "term-1", 10, 60, 20, TerminalResizeRoleFollower, "surface", "view-west-follower", false))
+
+	store = store.TransferPaneResizeOwner("pane-west-follower")
+	localOwner, _ := store.PaneBinding("pane-local-owner")
+	localFollower, _ := store.PaneBinding("pane-local-follower")
+	westOwner, _ := store.PaneBinding("pane-west-owner")
+	westFollower, _ := store.PaneBinding("pane-west-follower")
+	if !localOwner.HasResizeOwner() || !localOwner.CanResize {
+		t.Fatalf("local owner must survive west endpoint owner transfer, got %#v", localOwner)
+	}
+	if localFollower.HasResizeOwner() || localFollower.CanResize {
+		t.Fatalf("local follower must not be changed by west endpoint owner transfer, got %#v", localFollower)
+	}
+	if westOwner.HasResizeOwner() || westOwner.CanResize {
+		t.Fatalf("previous west owner should be demoted, got %#v", westOwner)
+	}
+	if !westFollower.HasResizeOwner() || !westFollower.CanResize || !westFollower.ResizePending {
+		t.Fatalf("west follower should become pending owner, got %#v", westFollower)
+	}
+
+	store = store.RemoveTerminalRef(NewTerminalRef("west", "term-1"))
+	if bindings := store.BindingsForTerminalRef(NewTerminalRef("west", "term-1")); len(bindings) != 0 {
+		t.Fatalf("west terminal removal should remove only west bindings, got %#v", bindings)
+	}
+	if bindings := store.BindingsForTerminalRef(LocalTerminalRef("term-1")); len(bindings) != 2 {
+		t.Fatalf("local bindings for same terminal id must survive west removal, got %#v", bindings)
+	}
+}
+
 func TestTerminalViewStorePromotesReplacementOwnerClearsClosedOwnerIdentity(t *testing.T) {
 	store := TerminalViewStore{}
 	owner := NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true)

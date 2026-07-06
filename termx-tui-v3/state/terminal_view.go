@@ -23,9 +23,12 @@ type TerminalViewStore struct {
 	FloatingViews map[string]string
 }
 
+// TerminalViewBinding 是 pane/floating 到 owning daemon terminal 的连接意图和运行时 attach 投影。
+// EndpointID + TerminalID 是跨 endpoint 真值；Channel、SurfaceID、OwnerViewID 等字段只属于当前 TUI 运行时和 daemon attachment 回包，不是 workbench storage 的长期 truth。
 type TerminalViewBinding struct {
 	ViewID         string             `json:"viewId"`
 	SurfaceID      string             `json:"surfaceId,omitempty"`
+	EndpointID     EndpointID         `json:"endpointId,omitempty"`
 	TerminalID     string             `json:"terminalId"`
 	Channel        uint16             `json:"channel,omitempty"`
 	Layout         TerminalViewLayout `json:"layout,omitempty"`
@@ -75,7 +78,15 @@ type TerminalViewResizeDecision struct {
 	Reason  string
 }
 
+// NewPaneTerminalView 构造默认 local endpoint 的 pane terminal view binding。
+// 这是旧单 daemon 调用边界的兼容入口；新增多 endpoint 路径应使用 NewEndpointPaneTerminalView。
 func NewPaneTerminalView(paneID string, terminalID string, channel uint16, cols int, rows int, resizeRole string, surfaceID string, viewID string, canResize bool) TerminalViewBinding {
+	return NewEndpointPaneTerminalView(DefaultEndpointID, paneID, terminalID, channel, cols, rows, resizeRole, surfaceID, viewID, canResize)
+}
+
+// NewEndpointPaneTerminalView 构造带明确 endpoint 的 pane terminal view binding。
+// 调用方必须把 endpoint 作为 terminal 连接意图的一部分传入，后续 owner transfer、size lock、remove 和 restore 都按该 TerminalRef 作用域执行。
+func NewEndpointPaneTerminalView(endpointID EndpointID, paneID string, terminalID string, channel uint16, cols int, rows int, resizeRole string, surfaceID string, viewID string, canResize bool) TerminalViewBinding {
 	if viewID == "" {
 		viewID = TerminalPaneViewID(paneID)
 	}
@@ -83,10 +94,18 @@ func NewPaneTerminalView(paneID string, terminalID string, channel uint16, cols 
 		surfaceID = "termx-tui-v3"
 	}
 	resizeRole = normalizeTerminalResizeRole(resizeRole)
-	return TerminalViewBinding{ViewID: viewID, SurfaceID: surfaceID, TerminalID: terminalID, Channel: channel, ResizeRole: resizeRole, DesiredCols: cols, DesiredRows: rows, PaneID: paneID, Attached: terminalID != "" && channel != 0, CanResize: canResize}
+	return TerminalViewBinding{ViewID: viewID, SurfaceID: surfaceID, EndpointID: NormalizeEndpointID(endpointID), TerminalID: terminalID, Channel: channel, ResizeRole: resizeRole, DesiredCols: cols, DesiredRows: rows, PaneID: paneID, Attached: terminalID != "" && channel != 0, CanResize: canResize}
 }
 
+// NewFloatingTerminalView 构造默认 local endpoint 的 floating terminal view binding。
+// 这是旧单 daemon 调用边界的兼容入口；新增多 endpoint 路径应使用 NewEndpointFloatingTerminalView。
 func NewFloatingTerminalView(floatingID string, paneID string, terminalID string, channel uint16, cols int, rows int, resizeRole string, surfaceID string, viewID string, canResize bool) TerminalViewBinding {
+	return NewEndpointFloatingTerminalView(DefaultEndpointID, floatingID, paneID, terminalID, channel, cols, rows, resizeRole, surfaceID, viewID, canResize)
+}
+
+// NewEndpointFloatingTerminalView 构造带明确 endpoint 的 floating terminal view binding。
+// floating 和 tiled pane 共享同一 TerminalRef 语义；不同 endpoint 下的同名 TerminalID 不会互相抢 owner 或互相移除。
+func NewEndpointFloatingTerminalView(endpointID EndpointID, floatingID string, paneID string, terminalID string, channel uint16, cols int, rows int, resizeRole string, surfaceID string, viewID string, canResize bool) TerminalViewBinding {
 	if viewID == "" {
 		viewID = TerminalFloatingViewID(floatingID)
 	}
@@ -94,7 +113,7 @@ func NewFloatingTerminalView(floatingID string, paneID string, terminalID string
 		surfaceID = "termx-tui-v3"
 	}
 	resizeRole = normalizeTerminalResizeRole(resizeRole)
-	return TerminalViewBinding{ViewID: viewID, SurfaceID: surfaceID, TerminalID: terminalID, Channel: channel, ResizeRole: resizeRole, DesiredCols: cols, DesiredRows: rows, FloatingID: floatingID, PaneID: paneID, Attached: terminalID != "" && channel != 0, CanResize: canResize}
+	return TerminalViewBinding{ViewID: viewID, SurfaceID: surfaceID, EndpointID: NormalizeEndpointID(endpointID), TerminalID: terminalID, Channel: channel, ResizeRole: resizeRole, DesiredCols: cols, DesiredRows: rows, FloatingID: floatingID, PaneID: paneID, Attached: terminalID != "" && channel != 0, CanResize: canResize}
 }
 
 func TerminalPaneViewID(paneID string) string {
@@ -112,6 +131,7 @@ func TerminalFloatingViewID(floatingID string) string {
 }
 
 func (store TerminalViewStore) BindPane(binding TerminalViewBinding) TerminalViewStore {
+	binding = binding.withDefaultEndpoint()
 	if binding.PaneID == "" || binding.TerminalID == "" {
 		return store
 	}
@@ -122,6 +142,7 @@ func (store TerminalViewStore) BindPane(binding TerminalViewBinding) TerminalVie
 }
 
 func (store TerminalViewStore) BindFloating(binding TerminalViewBinding) TerminalViewStore {
+	binding = binding.withDefaultEndpoint()
 	if binding.FloatingID == "" || binding.TerminalID == "" {
 		return store
 	}
@@ -132,19 +153,21 @@ func (store TerminalViewStore) BindFloating(binding TerminalViewBinding) Termina
 }
 
 func (store TerminalViewStore) bind(binding TerminalViewBinding) TerminalViewStore {
+	binding = binding.withDefaultEndpoint()
+	ref := binding.TerminalRef()
 	binding.ResizeRole = normalizeTerminalResizeRole(binding.ResizeRole)
 	binding.Layout = binding.Layout.Normalize()
 	binding.Attached = binding.TerminalID != "" && binding.Channel != 0
-	binding = binding.applyTerminalSizeLockProjection(binding.SizeLocked || store.terminalSizeLocked(binding.TerminalID))
+	binding = binding.applyTerminalSizeLockProjection(binding.SizeLocked || store.terminalSizeLocked(ref))
 	store.Views = cloneTerminalViewBindings(store.Views)
 	store.PaneViews = cloneTerminalViewIDs(store.PaneViews)
 	store.FloatingViews = cloneTerminalViewIDs(store.FloatingViews)
 	if binding.ResizeRole == TerminalResizeRoleOwner {
-		_, hadDifferentOwner := store.ownerIdentityBinding(binding.TerminalID)
-		if owner, ok := store.ownerIdentityBinding(binding.TerminalID); ok && owner.ViewID == binding.ViewID {
+		_, hadDifferentOwner := store.ownerIdentityBinding(ref)
+		if owner, ok := store.ownerIdentityBinding(ref); ok && owner.ViewID == binding.ViewID {
 			hadDifferentOwner = false
 		}
-		if existing, ok := store.Views[binding.ViewID]; ok && existing.TerminalID == binding.TerminalID && !existing.HasResizeOwner() {
+		if existing, ok := store.Views[binding.ViewID]; ok && existing.TerminalRef().Equal(ref) && !existing.HasResizeOwner() {
 			// 中文说明：attach result 可能把 follower 投影成 owner；这同样需要下一帧主动校验 PTY size。
 			binding.ResizePending = true
 		}
@@ -154,7 +177,7 @@ func (store TerminalViewStore) bind(binding TerminalViewBinding) TerminalViewSto
 		}
 	}
 	if binding.ResizeRole == TerminalResizeRoleOwner {
-		store.demoteResizeOwnersLocked(binding.TerminalID, binding.ViewID)
+		store.demoteResizeOwnersLocked(ref, binding.ViewID)
 	}
 	store.Views[binding.ViewID] = binding
 	if binding.PaneID != "" {
@@ -166,12 +189,13 @@ func (store TerminalViewStore) bind(binding TerminalViewBinding) TerminalViewSto
 	return store
 }
 
-func (store TerminalViewStore) demoteResizeOwnersLocked(terminalID string, exceptViewID string) {
-	if terminalID == "" {
+func (store TerminalViewStore) demoteResizeOwnersLocked(ref TerminalRef, exceptViewID string) {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return
 	}
 	for candidateID, candidate := range store.Views {
-		if candidateID == exceptViewID || candidate.TerminalID != terminalID || candidate.ResizeRole != TerminalResizeRoleOwner {
+		if candidateID == exceptViewID || !candidate.TerminalRef().Equal(ref) || candidate.ResizeRole != TerminalResizeRoleOwner {
 			continue
 		}
 		candidate.ResizeRole = TerminalResizeRoleFollower
@@ -214,7 +238,7 @@ func (store TerminalViewStore) DetachPane(paneID string) TerminalViewStore {
 	store.PaneViews = cloneTerminalViewIDs(store.PaneViews)
 	delete(store.Views, viewID)
 	delete(store.PaneViews, paneID)
-	store.promoteReplacementOwnerLocked(binding.TerminalID)
+	store.promoteReplacementOwnerLocked(binding.TerminalRef())
 	return store
 }
 
@@ -231,19 +255,28 @@ func (store TerminalViewStore) DetachFloating(floatingID string) TerminalViewSto
 	store.FloatingViews = cloneTerminalViewIDs(store.FloatingViews)
 	delete(store.Views, viewID)
 	delete(store.FloatingViews, floatingID)
-	store.promoteReplacementOwnerLocked(binding.TerminalID)
+	store.promoteReplacementOwnerLocked(binding.TerminalRef())
 	return store
 }
 
+// RemoveTerminal 移除默认 local endpoint 下指定 TerminalID 的所有 view binding。
+// 该方法只用于旧单 endpoint 调用边界；跨 endpoint 路径必须使用 RemoveTerminalRef。
 func (store TerminalViewStore) RemoveTerminal(terminalID string) TerminalViewStore {
-	if terminalID == "" {
+	return store.RemoveTerminalRef(LocalTerminalRef(terminalID))
+}
+
+// RemoveTerminalRef 按完整 TerminalRef 移除 view binding。
+// 它是 terminal lifecycle/remove 回投进入 reducer 后的 endpoint-aware 删除边界，不会影响其他 endpoint 下同名 terminal。
+func (store TerminalViewStore) RemoveTerminalRef(ref TerminalRef) TerminalViewStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store
 	}
 	store.Views = cloneTerminalViewBindings(store.Views)
 	store.PaneViews = cloneTerminalViewIDs(store.PaneViews)
 	store.FloatingViews = cloneTerminalViewIDs(store.FloatingViews)
 	for viewID, binding := range store.Views {
-		if binding.TerminalID != terminalID {
+		if !binding.TerminalRef().Equal(ref) {
 			continue
 		}
 		delete(store.Views, viewID)
@@ -296,12 +329,19 @@ func (store TerminalViewStore) FloatingViewID(floatingID string) string {
 }
 
 func (store TerminalViewStore) BindingsForTerminal(terminalID string) []TerminalViewBinding {
-	if terminalID == "" {
+	return store.BindingsForTerminalRef(LocalTerminalRef(terminalID))
+}
+
+// BindingsForTerminalRef 返回绑定到同一个 endpoint terminal 的所有 pane/floating view。
+// attachment count、owner transfer 和 storage restore 都必须使用该 endpoint-aware 查询，避免远端同名 TerminalID 被错误合并。
+func (store TerminalViewStore) BindingsForTerminalRef(ref TerminalRef) []TerminalViewBinding {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return nil
 	}
 	bindings := make([]TerminalViewBinding, 0)
 	for _, binding := range store.Views {
-		if binding.TerminalID == terminalID {
+		if binding.TerminalRef().Equal(ref) {
 			bindings = append(bindings, binding)
 		}
 	}
@@ -317,6 +357,7 @@ func (store TerminalViewStore) Bindings() []TerminalViewBinding {
 }
 
 func (store TerminalViewStore) MarkAttachPending(binding TerminalViewBinding) TerminalViewStore {
+	binding = binding.withDefaultEndpoint()
 	if binding.TerminalID == "" || binding.ViewID == "" {
 		return store
 	}
@@ -375,12 +416,19 @@ func (store TerminalViewStore) ClearAttachPending(viewID string, err string) Ter
 }
 
 func (store TerminalViewStore) MarkTerminalReattaching(terminalID string) TerminalViewStore {
-	if terminalID == "" {
+	return store.MarkTerminalRefReattaching(LocalTerminalRef(terminalID))
+}
+
+// MarkTerminalRefReattaching 清除指定 endpoint terminal 的旧 attach channel，同时保留 pane/floating 连接意图。
+// restart/reconnect 只能影响 owning endpoint；其他 endpoint 下同名 terminal 的 channel 必须保持有效。
+func (store TerminalViewStore) MarkTerminalRefReattaching(ref TerminalRef) TerminalViewStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store
 	}
 	store.Views = cloneTerminalViewBindings(store.Views)
 	for viewID, binding := range store.Views {
-		if binding.TerminalID != terminalID {
+		if !binding.TerminalRef().Equal(ref) {
 			continue
 		}
 		// restart 后旧 channel 已经属于退出前的 attachment；保留 view 绑定意图，
@@ -395,45 +443,55 @@ func (store TerminalViewStore) MarkTerminalReattaching(terminalID string) Termin
 }
 
 func (store TerminalViewStore) OwnerBinding(terminalID string) (TerminalViewBinding, bool) {
+	return store.OwnerBindingRef(LocalTerminalRef(terminalID))
+}
+
+// OwnerBindingRef 返回指定 TerminalRef 的 authoritative resize owner。
+// 该查询只在同一个 endpoint terminal 内寻找 owner，不会因为 daemon-local TerminalID 相同而跨机器串扰。
+func (store TerminalViewStore) OwnerBindingRef(ref TerminalRef) (TerminalViewBinding, bool) {
+	ref = ref.Normalize()
 	for _, binding := range store.Views {
-		if binding.TerminalID == terminalID && binding.HasAuthoritativeResizeOwner() {
+		if binding.TerminalRef().Equal(ref) && binding.HasAuthoritativeResizeOwner() {
 			return binding, true
 		}
 	}
 	return TerminalViewBinding{}, false
 }
 
-func (store TerminalViewStore) ownerIdentityBinding(terminalID string) (TerminalViewBinding, bool) {
+func (store TerminalViewStore) ownerIdentityBinding(ref TerminalRef) (TerminalViewBinding, bool) {
+	ref = ref.Normalize()
 	for _, binding := range store.Views {
-		if binding.TerminalID == terminalID && binding.HasResizeOwner() {
+		if binding.TerminalRef().Equal(ref) && binding.HasResizeOwner() {
 			return binding, true
 		}
 	}
 	return TerminalViewBinding{}, false
 }
 
-func (store TerminalViewStore) terminalSizeLocked(terminalID string) bool {
-	if terminalID == "" {
+func (store TerminalViewStore) terminalSizeLocked(ref TerminalRef) bool {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return false
 	}
 	for _, binding := range store.Views {
-		if binding.TerminalID == terminalID && binding.SizeLocked {
+		if binding.TerminalRef().Equal(ref) && binding.SizeLocked {
 			return true
 		}
 	}
 	return false
 }
 
-func (store TerminalViewStore) promoteReplacementOwnerLocked(terminalID string) {
-	if terminalID == "" {
+func (store TerminalViewStore) promoteReplacementOwnerLocked(ref TerminalRef) {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return
 	}
-	if _, ok := store.ownerIdentityBinding(terminalID); ok {
+	if _, ok := store.ownerIdentityBinding(ref); ok {
 		return
 	}
-	locked := store.terminalSizeLocked(terminalID)
+	locked := store.terminalSizeLocked(ref)
 	for viewID, binding := range store.Views {
-		if binding.TerminalID != terminalID {
+		if !binding.TerminalRef().Equal(ref) {
 			continue
 		}
 		binding.ResizeRole = TerminalResizeRoleOwner
@@ -453,7 +511,7 @@ func (store TerminalViewStore) promoteReplacementOwnerLocked(terminalID string) 
 		// 中文说明：被动接任 owner 后必须至少走一次 ensure_resize，让 core 同步 owner 尺寸语义。
 		binding.ResizePending = true
 		store.Views[viewID] = binding
-		store.demoteResizeOwnersLocked(terminalID, viewID)
+		store.demoteResizeOwnersLocked(ref, viewID)
 		return
 	}
 }
@@ -463,10 +521,11 @@ func (store TerminalViewStore) TransferResizeOwner(viewID string) TerminalViewSt
 	if !ok || target.TerminalID == "" {
 		return store
 	}
+	ref := target.TerminalRef()
 	store.Views = cloneTerminalViewBindings(store.Views)
-	locked := store.terminalSizeLocked(target.TerminalID)
+	locked := store.terminalSizeLocked(ref)
 	for candidateID, binding := range store.Views {
-		if binding.TerminalID != target.TerminalID {
+		if !binding.TerminalRef().Equal(ref) {
 			continue
 		}
 		if candidateID == viewID {
@@ -601,22 +660,29 @@ func (store TerminalViewStore) ApplyResizeControl(viewID string, projection Term
 	binding = binding.applyTerminalSizeLockProjection(binding.SizeLocked)
 	store.Views = cloneTerminalViewBindings(store.Views)
 	if binding.HasResizeOwner() {
-		store.demoteResizeOwnersLocked(binding.TerminalID, viewID)
+		store.demoteResizeOwnersLocked(binding.TerminalRef(), viewID)
 	}
 	store.Views[viewID] = binding
 	return store, true
 }
 
 func (store TerminalViewStore) ApplyTerminalResizeControl(terminalID string, projection TerminalResizeControlProjection) TerminalViewStore {
-	if terminalID == "" {
+	return store.ApplyTerminalRefResizeControl(LocalTerminalRef(terminalID), projection)
+}
+
+// ApplyTerminalRefResizeControl 按 endpoint terminal 应用 daemon resize owner 投影。
+// projection 来自 owning daemon，因此只能更新同一个 TerminalRef 下的 view binding。
+func (store TerminalViewStore) ApplyTerminalRefResizeControl(ref TerminalRef, projection TerminalResizeControlProjection) TerminalViewStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store
 	}
-	if store.terminalResizeControlProjectionStale(terminalID, projection) {
+	if store.terminalResizeControlProjectionStale(ref, projection) {
 		return store
 	}
 	store.Views = cloneTerminalViewBindings(store.Views)
 	for viewID, binding := range store.Views {
-		if binding.TerminalID != terminalID {
+		if !binding.TerminalRef().Equal(ref) {
 			continue
 		}
 		viewProjection := projection
@@ -649,14 +715,15 @@ func (store TerminalViewStore) ApplyTerminalResizeControl(terminalID string, pro
 	return store
 }
 
-func (store TerminalViewStore) terminalResizeControlProjectionStale(terminalID string, projection TerminalResizeControlProjection) bool {
+func (store TerminalViewStore) terminalResizeControlProjectionStale(ref TerminalRef, projection TerminalResizeControlProjection) bool {
+	ref = ref.Normalize()
 	var maxEpoch uint64
 	var localOwner TerminalViewBinding
 	var hasLocalOwner bool
 	var projectedLocalOwner TerminalViewBinding
 	var hasProjectedLocalOwner bool
 	for _, binding := range store.Views {
-		if binding.TerminalID != terminalID {
+		if !binding.TerminalRef().Equal(ref) {
 			continue
 		}
 		if binding.HasResizeOwner() {
@@ -687,12 +754,19 @@ func (store TerminalViewStore) terminalResizeControlProjectionStale(terminalID s
 }
 
 func (store TerminalViewStore) ApplyTerminalSizeLock(terminalID string, locked bool) TerminalViewStore {
-	if terminalID == "" {
+	return store.ApplyTerminalRefSizeLock(LocalTerminalRef(terminalID), locked)
+}
+
+// ApplyTerminalRefSizeLock 把 terminal 级 size lock 投影到同一个 TerminalRef 的所有 view。
+// size lock 是 daemon terminal 级状态，不得传播到其他 endpoint 下同名 terminal。
+func (store TerminalViewStore) ApplyTerminalRefSizeLock(ref TerminalRef, locked bool) TerminalViewStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store
 	}
 	store.Views = cloneTerminalViewBindings(store.Views)
 	for viewID, binding := range store.Views {
-		if binding.TerminalID != terminalID {
+		if !binding.TerminalRef().Equal(ref) {
 			continue
 		}
 		binding = binding.applyTerminalSizeLockProjection(locked)
@@ -718,6 +792,17 @@ func (binding TerminalViewBinding) applyTerminalSizeLockProjection(locked bool) 
 			binding.CanResize = true
 		}
 	}
+	return binding
+}
+
+// TerminalRef 返回该 view binding 连接意图的 endpoint-aware terminal 身份。
+// 如果 binding 来自旧 snapshot 或旧测试数据而缺少 EndpointID，返回值会显式归入默认 local endpoint。
+func (binding TerminalViewBinding) TerminalRef() TerminalRef {
+	return NewTerminalRef(binding.EndpointID, binding.TerminalID)
+}
+
+func (binding TerminalViewBinding) withDefaultEndpoint() TerminalViewBinding {
+	binding.EndpointID = NormalizeEndpointID(binding.EndpointID)
 	return binding
 }
 

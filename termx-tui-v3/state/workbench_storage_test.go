@@ -113,7 +113,7 @@ func TestWorkbenchStorageSnapshotV2RoundTripsTerminalViews(t *testing.T) {
 	if err != nil {
 		t.Fatalf("restore terminal views: %v", err)
 	}
-	if bindings := restored.BindingsForTerminal("term-1"); len(bindings) != 2 {
+	if bindings := restored.BindingsForTerminal("term-1"); len(bindings) != 2 || bindings[0].EndpointID != DefaultEndpointID || bindings[1].EndpointID != DefaultEndpointID {
 		t.Fatalf("expected restored shared terminal bindings, got %#v", bindings)
 	}
 }
@@ -283,13 +283,13 @@ func TestWorkbenchStorageRestoreScrubsLegacyTransientPaneKinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("restore terminal views: %v", err)
 	}
-	if binding, ok := views.PaneBinding(DefaultPaneID); !ok || binding.TerminalID != "term-main" || binding.Channel != 0 || binding.Attached {
+	if binding, ok := views.PaneBinding(DefaultPaneID); !ok || binding.EndpointID != DefaultEndpointID || binding.TerminalID != "term-main" || binding.Channel != 0 || binding.Attached {
 		t.Fatalf("legacy tiled pane terminal intent must migrate to detached view binding, binding=%#v ok=%v", binding, ok)
 	}
-	if binding, ok := views.PaneBinding("pane-secondary"); !ok || binding.TerminalID != "term-secondary" || binding.Channel != 0 || binding.Attached {
+	if binding, ok := views.PaneBinding("pane-secondary"); !ok || binding.EndpointID != DefaultEndpointID || binding.TerminalID != "term-secondary" || binding.Channel != 0 || binding.Attached {
 		t.Fatalf("legacy inactive workspace pane terminal intent must migrate to detached view binding, binding=%#v ok=%v", binding, ok)
 	}
-	if binding, ok := views.FloatingBinding("floating-1"); !ok || binding.TerminalID != "term-float" || binding.Channel != 0 || binding.Attached {
+	if binding, ok := views.FloatingBinding("floating-1"); !ok || binding.EndpointID != DefaultEndpointID || binding.TerminalID != "term-float" || binding.Channel != 0 || binding.Attached {
 		t.Fatalf("legacy floating terminal intent must migrate to detached view binding, binding=%#v ok=%v", binding, ok)
 	}
 }

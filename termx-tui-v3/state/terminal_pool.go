@@ -11,21 +11,32 @@ const (
 	TerminalPoolError   TerminalPoolStatus = "error"
 )
 
+// TerminalPoolStore 是 reducer-owned terminal inventory 投影。
+// Items 来自 endpoint/daemon list 结果，Last*Ref 字段记录最近一次 endpoint-aware 操作结果；旧 Last*ID 仅兼容当前 local 单 daemon UI 路径。
 type TerminalPoolStore struct {
-	Status          TerminalPoolStatus
-	Items           []TerminalPoolItem
-	RequestSeq      uint64
-	AppliedSeq      uint64
-	LastError       string
-	LastCreatedID   string
-	LastAttachedID  string
-	LastKilledID    string
-	LastRemovedID   string
-	LastEditedID    string
-	LastRestartedID string
+	Status           TerminalPoolStatus
+	Items            []TerminalPoolItem
+	RequestSeq       uint64
+	AppliedSeq       uint64
+	LastError        string
+	LastCreatedID    string
+	LastAttachedID   string
+	LastKilledID     string
+	LastRemovedID    string
+	LastEditedID     string
+	LastRestartedID  string
+	LastCreatedRef   TerminalRef
+	LastAttachedRef  TerminalRef
+	LastKilledRef    TerminalRef
+	LastRemovedRef   TerminalRef
+	LastEditedRef    TerminalRef
+	LastRestartedRef TerminalRef
 }
 
+// TerminalPoolItem 是 terminal manager/picker 消费的 endpoint-aware terminal 摘要。
+// EndpointID + TerminalID 是列表项身份；生命周期、资源和尺寸字段仍是 owning daemon list 响应的只读投影。
 type TerminalPoolItem struct {
+	EndpointID      EndpointID
 	TerminalID      string
 	Title           string
 	State           string
@@ -75,99 +86,165 @@ func (store TerminalPoolStore) ApplyList(seq uint64, items []TerminalPoolItem, e
 		return store, true
 	}
 	store.Status = TerminalPoolReady
-	store.Items = cloneTerminalPoolItems(items)
+	store.Items = normalizeTerminalPoolItems(cloneTerminalPoolItems(items))
 	store.LastError = ""
 	return store, true
 }
 
+// ApplyCreated 记录默认 local endpoint 的 create 结果。
+// 新增跨 endpoint 创建路径应调用 ApplyCreatedRef，避免同名 TerminalID 串扰。
 func (store TerminalPoolStore) ApplyCreated(terminalID string, err string) TerminalPoolStore {
+	return store.ApplyCreatedRef(LocalTerminalRef(terminalID), err)
+}
+
+// ApplyCreatedRef 记录指定 endpoint terminal 的 create 结果。
+// 它同时维护旧 LastCreatedID，供当前本地 UI 文案和测试继续读取 daemon-local ID。
+func (store TerminalPoolStore) ApplyCreatedRef(ref TerminalRef, err string) TerminalPoolStore {
+	ref = ref.Normalize()
 	if err != "" {
 		store.LastError = err
 		store.Status = TerminalPoolError
 		return store
 	}
-	store.LastCreatedID = terminalID
+	store.LastCreatedID = ref.TerminalID
+	store.LastCreatedRef = ref
 	store.LastError = ""
 	return store
 }
 
+// ApplyAttached 记录默认 local endpoint 的 attach 结果。
+// 新增跨 endpoint attach 路径应调用 ApplyAttachedRef。
 func (store TerminalPoolStore) ApplyAttached(terminalID string, err string) TerminalPoolStore {
+	return store.ApplyAttachedRef(LocalTerminalRef(terminalID), err)
+}
+
+// ApplyAttachedRef 按 TerminalRef 标记最近 attach 的 terminal。
+// 只有同一个 endpoint 的同一个 terminal 会被标记为 attached；其他 endpoint 下同名 TerminalID 不会被误命中。
+func (store TerminalPoolStore) ApplyAttachedRef(ref TerminalRef, err string) TerminalPoolStore {
+	ref = ref.Normalize()
 	if err != "" {
 		store.LastError = err
 		store.Status = TerminalPoolError
 		return store
 	}
-	store.LastAttachedID = terminalID
+	store.LastAttachedID = ref.TerminalID
+	store.LastAttachedRef = ref
 	store.LastError = ""
-	store.Items = markTerminalPoolAttached(store.Items, terminalID)
+	store.Items = markTerminalPoolAttached(store.Items, ref)
 	return store
 }
 
+// ApplyRestarted 记录默认 local endpoint 的 restart 结果。
 func (store TerminalPoolStore) ApplyRestarted(terminalID string, err string) TerminalPoolStore {
+	return store.ApplyRestartedRef(LocalTerminalRef(terminalID), err)
+}
+
+// ApplyRestartedRef 记录指定 endpoint terminal 的 restart 结果。
+func (store TerminalPoolStore) ApplyRestartedRef(ref TerminalRef, err string) TerminalPoolStore {
+	ref = ref.Normalize()
 	if err != "" {
 		store.LastError = err
 		store.Status = TerminalPoolError
 		return store
 	}
-	store.LastRestartedID = terminalID
+	store.LastRestartedID = ref.TerminalID
+	store.LastRestartedRef = ref
 	store.LastError = ""
 	return store
 }
 
+// ApplyKilled 记录默认 local endpoint 的 kill 结果。
 func (store TerminalPoolStore) ApplyKilled(terminalID string, err string) TerminalPoolStore {
+	return store.ApplyKilledRef(LocalTerminalRef(terminalID), err)
+}
+
+// ApplyKilledRef 记录指定 endpoint terminal 的 kill 结果。
+func (store TerminalPoolStore) ApplyKilledRef(ref TerminalRef, err string) TerminalPoolStore {
+	ref = ref.Normalize()
 	if err != "" {
 		store.LastError = err
 		store.Status = TerminalPoolError
 		return store
 	}
-	store.LastKilledID = terminalID
+	store.LastKilledID = ref.TerminalID
+	store.LastKilledRef = ref
 	store.LastError = ""
 	return store
 }
 
+// ApplyRemoved 记录默认 local endpoint 的 remove 结果。
 func (store TerminalPoolStore) ApplyRemoved(terminalID string, err string) TerminalPoolStore {
+	return store.ApplyRemovedRef(LocalTerminalRef(terminalID), err)
+}
+
+// ApplyRemovedRef 删除指定 TerminalRef 的列表投影。
+// 删除范围严格限制在 endpoint + terminal，避免远端和本地同名 TerminalID 互相清除。
+func (store TerminalPoolStore) ApplyRemovedRef(ref TerminalRef, err string) TerminalPoolStore {
+	ref = ref.Normalize()
 	if err != "" {
 		store.LastError = err
 		store.Status = TerminalPoolError
 		return store
 	}
-	store.LastRemovedID = terminalID
+	store.LastRemovedID = ref.TerminalID
+	store.LastRemovedRef = ref
 	store.LastError = ""
-	store.Items = removeTerminalPoolItem(store.Items, terminalID)
+	store.Items = removeTerminalPoolItem(store.Items, ref)
 	return store
 }
 
 // ApplyEdited 在 terminal metadata 服务确认成功后更新 Terminal Manager 的本地列表投影；
 // TerminalPoolStore 只持有 TUI reducer-owned inventory projection，后台 list 刷新仍是最终校准来源。
 func (store TerminalPoolStore) ApplyEdited(terminalID string, title string, tags map[string]string, err string) TerminalPoolStore {
+	return store.ApplyEditedRef(LocalTerminalRef(terminalID), title, tags, err)
+}
+
+// ApplyEditedRef 在指定 endpoint terminal metadata 服务确认成功后更新本地列表投影。
+// title/tags 只更新对应 TerminalRef，不会碰撞其他 endpoint 下同名 terminal。
+func (store TerminalPoolStore) ApplyEditedRef(ref TerminalRef, title string, tags map[string]string, err string) TerminalPoolStore {
+	ref = ref.Normalize()
 	if err != "" {
 		store.LastError = err
 		store.Status = TerminalPoolError
 		return store
 	}
-	store.LastEditedID = terminalID
+	store.LastEditedID = ref.TerminalID
+	store.LastEditedRef = ref
 	store.LastError = ""
-	store.Items = updateTerminalPoolItemMetadata(store.Items, terminalID, title, tags)
+	store.Items = updateTerminalPoolItemMetadata(store.Items, ref, title, tags)
 	return store
 }
 
 func (store TerminalPoolStore) ApplyTagsEdited(terminalID string, tags map[string]string, err string) TerminalPoolStore {
+	return store.ApplyTagsEditedRef(LocalTerminalRef(terminalID), tags, err)
+}
+
+// ApplyTagsEditedRef 在指定 endpoint terminal tags 服务确认成功后更新本地列表投影。
+func (store TerminalPoolStore) ApplyTagsEditedRef(ref TerminalRef, tags map[string]string, err string) TerminalPoolStore {
+	ref = ref.Normalize()
 	if err != "" {
 		store.LastError = err
 		store.Status = TerminalPoolError
 		return store
 	}
-	store.LastEditedID = terminalID
+	store.LastEditedID = ref.TerminalID
+	store.LastEditedRef = ref
 	store.LastError = ""
-	store.Items = updateTerminalPoolItemTags(store.Items, terminalID, tags)
+	store.Items = updateTerminalPoolItemTags(store.Items, ref, tags)
 	return store
 }
 
 func (store TerminalPoolStore) ApplyAttachmentProjection(terminalID string, attachmentCount int) TerminalPoolStore {
-	if terminalID == "" {
+	return store.ApplyAttachmentProjectionRef(LocalTerminalRef(terminalID), attachmentCount)
+}
+
+// ApplyAttachmentProjectionRef 更新指定 endpoint terminal 的 attachment count 投影。
+func (store TerminalPoolStore) ApplyAttachmentProjectionRef(ref TerminalRef, attachmentCount int) TerminalPoolStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store
 	}
-	store.Items = updateTerminalPoolItemAttachmentCount(store.Items, terminalID, attachmentCount)
+	store.Items = updateTerminalPoolItemAttachmentCount(store.Items, ref, attachmentCount)
 	return store
 }
 
@@ -192,21 +269,25 @@ func cloneTerminalPoolItems(items []TerminalPoolItem) []TerminalPoolItem {
 	return cloned
 }
 
-func markTerminalPoolAttached(items []TerminalPoolItem, terminalID string) []TerminalPoolItem {
+func markTerminalPoolAttached(items []TerminalPoolItem, ref TerminalRef) []TerminalPoolItem {
+	ref = ref.Normalize()
 	cloned := cloneTerminalPoolItems(items)
 	for index := range cloned {
-		cloned[index].Attached = cloned[index].TerminalID == terminalID
+		cloned[index] = normalizeTerminalPoolItem(cloned[index])
+		cloned[index].Attached = cloned[index].TerminalRef().Equal(ref)
 	}
 	return cloned
 }
 
-func removeTerminalPoolItem(items []TerminalPoolItem, terminalID string) []TerminalPoolItem {
-	if terminalID == "" {
+func removeTerminalPoolItem(items []TerminalPoolItem, ref TerminalRef) []TerminalPoolItem {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return cloneTerminalPoolItems(items)
 	}
 	out := make([]TerminalPoolItem, 0, len(items))
 	for _, item := range items {
-		if item.TerminalID == terminalID {
+		item = normalizeTerminalPoolItem(item)
+		if item.TerminalRef().Equal(ref) {
 			continue
 		}
 		out = append(out, item)
@@ -214,20 +295,24 @@ func removeTerminalPoolItem(items []TerminalPoolItem, terminalID string) []Termi
 	return cloneTerminalPoolItems(out)
 }
 
-func updateTerminalPoolItemTags(items []TerminalPoolItem, terminalID string, tags map[string]string) []TerminalPoolItem {
+func updateTerminalPoolItemTags(items []TerminalPoolItem, ref TerminalRef, tags map[string]string) []TerminalPoolItem {
+	ref = ref.Normalize()
 	cloned := cloneTerminalPoolItems(items)
 	for index := range cloned {
-		if cloned[index].TerminalID == terminalID {
+		cloned[index] = normalizeTerminalPoolItem(cloned[index])
+		if cloned[index].TerminalRef().Equal(ref) {
 			cloned[index].Tags = cloneStringMap(tags)
 		}
 	}
 	return cloned
 }
 
-func updateTerminalPoolItemMetadata(items []TerminalPoolItem, terminalID string, title string, tags map[string]string) []TerminalPoolItem {
+func updateTerminalPoolItemMetadata(items []TerminalPoolItem, ref TerminalRef, title string, tags map[string]string) []TerminalPoolItem {
+	ref = ref.Normalize()
 	cloned := cloneTerminalPoolItems(items)
 	for index := range cloned {
-		if cloned[index].TerminalID == terminalID {
+		cloned[index] = normalizeTerminalPoolItem(cloned[index])
+		if cloned[index].TerminalRef().Equal(ref) {
 			if title != "" {
 				cloned[index].Title = title
 			}
@@ -237,14 +322,34 @@ func updateTerminalPoolItemMetadata(items []TerminalPoolItem, terminalID string,
 	return cloned
 }
 
-func updateTerminalPoolItemAttachmentCount(items []TerminalPoolItem, terminalID string, attachmentCount int) []TerminalPoolItem {
+func updateTerminalPoolItemAttachmentCount(items []TerminalPoolItem, ref TerminalRef, attachmentCount int) []TerminalPoolItem {
+	ref = ref.Normalize()
 	cloned := cloneTerminalPoolItems(items)
 	for index := range cloned {
-		if cloned[index].TerminalID == terminalID {
+		cloned[index] = normalizeTerminalPoolItem(cloned[index])
+		if cloned[index].TerminalRef().Equal(ref) {
 			cloned[index].AttachmentCount = attachmentCount
 		}
 	}
 	return cloned
+}
+
+// TerminalRef 返回该 terminal pool 条目的 endpoint-aware 身份。
+// list 结果如果来自旧本地 service 而没有 EndpointID，会被归入默认 local endpoint。
+func (item TerminalPoolItem) TerminalRef() TerminalRef {
+	return NewTerminalRef(item.EndpointID, item.TerminalID)
+}
+
+func normalizeTerminalPoolItems(items []TerminalPoolItem) []TerminalPoolItem {
+	for index := range items {
+		items[index] = normalizeTerminalPoolItem(items[index])
+	}
+	return items
+}
+
+func normalizeTerminalPoolItem(item TerminalPoolItem) TerminalPoolItem {
+	item.EndpointID = NormalizeEndpointID(item.EndpointID)
+	return item
 }
 
 func cloneStringMap(values map[string]string) map[string]string {

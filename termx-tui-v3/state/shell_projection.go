@@ -16,10 +16,12 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 	}
 	seenTerminal := map[string]struct{}{}
 	for _, poolItem := range root.TerminalPool.Items {
+		poolItem = normalizeTerminalPoolItem(poolItem)
 		if poolItem.TerminalID == "" {
 			continue
 		}
 		item := TerminalPickerItem{
+			EndpointID: poolItem.EndpointID,
 			Title:      terminalPoolTitle(poolItem),
 			Kind:       PaneTerminalLive,
 			TerminalID: poolItem.TerminalID,
@@ -33,13 +35,14 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 			continue
 		}
 		items = append(items, item)
-		seenTerminal[poolItem.TerminalID] = struct{}{}
+		seenTerminal[poolItem.TerminalRef().Key()] = struct{}{}
 	}
 	for _, binding := range root.TerminalViews.Bindings() {
+		binding = binding.withDefaultEndpoint()
 		if binding.TerminalID == "" {
 			continue
 		}
-		if _, seen := seenTerminal[binding.TerminalID]; seen {
+		if _, seen := seenTerminal[binding.TerminalRef().Key()]; seen {
 			continue
 		}
 		item := terminalPickerItemFromBinding(root, binding)
@@ -47,10 +50,10 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 			continue
 		}
 		items = append(items, item)
-		seenTerminal[binding.TerminalID] = struct{}{}
+		seenTerminal[binding.TerminalRef().Key()] = struct{}{}
 	}
 	if root.Session.TerminalID != "" {
-		if _, seen := seenTerminal[root.Session.TerminalID]; !seen {
+		if _, seen := seenTerminal[LocalTerminalRef(root.Session.TerminalID).Key()]; !seen {
 			item := terminalPickerItemFromSession(root)
 			if matchesTerminalPickerQuery(item, query) {
 				items = append(items, item)
@@ -84,7 +87,7 @@ func terminalPickerItemFromBinding(root Root, binding TerminalViewBinding) Termi
 	if rows <= 0 {
 		rows = surface.Rows
 	}
-	return TerminalPickerItem{Title: binding.TerminalID, Kind: PaneTerminalLive, TerminalID: binding.TerminalID, Active: binding.Attached, PoolState: stateText, Cols: cols, Rows: rows}
+	return TerminalPickerItem{EndpointID: binding.EndpointID, Title: binding.TerminalID, Kind: PaneTerminalLive, TerminalID: binding.TerminalID, Active: binding.Attached, PoolState: stateText, Cols: cols, Rows: rows}
 }
 
 func terminalPickerItemFromSession(root Root) TerminalPickerItem {
@@ -93,7 +96,7 @@ func terminalPickerItemFromSession(root Root) TerminalPickerItem {
 	if stateText == "" || stateText == string(TerminalLivePending) {
 		stateText = string(root.Session.State)
 	}
-	return TerminalPickerItem{Title: root.Session.TerminalID, Kind: PaneTerminalLive, TerminalID: root.Session.TerminalID, Active: root.Session.Attached, PoolState: stateText, Cols: root.Session.Cols, Rows: root.Session.Rows}
+	return TerminalPickerItem{EndpointID: DefaultEndpointID, Title: root.Session.TerminalID, Kind: PaneTerminalLive, TerminalID: root.Session.TerminalID, Active: root.Session.Attached, PoolState: stateText, Cols: root.Session.Cols, Rows: root.Session.Rows}
 }
 
 func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
@@ -101,11 +104,13 @@ func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
 	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
 	items := make([]TerminalPoolPageItem, 0, len(root.TerminalPool.Items))
 	for _, poolItem := range root.TerminalPool.Items {
+		poolItem = normalizeTerminalPoolItem(poolItem)
 		if poolItem.TerminalID == "" {
 			continue
 		}
 		attachmentCount := terminalPoolAttachmentCount(root, poolItem)
 		item := TerminalPoolPageItem{
+			EndpointID:      poolItem.EndpointID,
 			TerminalID:      poolItem.TerminalID,
 			Title:           terminalPoolTitle(poolItem),
 			State:           poolItem.State,
@@ -141,7 +146,7 @@ func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
 func terminalPoolAttachmentCount(root Root, poolItem TerminalPoolItem) int {
 	// 中文说明：Terminal Manager 的连接数优先采用本地 TerminalViewStore，
 	// 与 panel chrome 使用同一份 TUI reducer-owned view binding 真值；pool metadata 只在本地没有绑定时作为服务端列表摘要。
-	if count := len(root.TerminalViews.BindingsForTerminal(poolItem.TerminalID)); count > 0 {
+	if count := len(root.TerminalViews.BindingsForTerminalRef(poolItem.TerminalRef())); count > 0 {
 		return count
 	}
 	return poolItem.AttachmentCount

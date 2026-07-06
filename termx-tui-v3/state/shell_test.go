@@ -455,6 +455,27 @@ func TestTerminalPickerItemsShowOnlyTerminalPoolInfo(t *testing.T) {
 	}
 }
 
+func TestTerminalPickerItemsKeepSameTerminalIDAcrossEndpoints(t *testing.T) {
+	root := Root{
+		Shell: DefaultShell().OpenTerminalPicker(),
+		TerminalPool: TerminalPoolStore{
+			Status: TerminalPoolReady,
+			Items: []TerminalPoolItem{
+				{EndpointID: DefaultEndpointID, TerminalID: "term-1", Title: "local shell"},
+				{EndpointID: "west", TerminalID: "term-1", Title: "west shell"},
+			},
+		},
+	}
+
+	items := TerminalPickerItems(root)
+	if len(items) != 3 {
+		t.Fatalf("expected create row plus both endpoint terminal rows, got %#v", items)
+	}
+	if items[1].EndpointID != DefaultEndpointID || items[1].TerminalID != "term-1" || items[2].EndpointID != "west" || items[2].TerminalID != "term-1" {
+		t.Fatalf("terminal picker must keep endpoint identity for duplicate terminal ids, got %#v", items)
+	}
+}
+
 func TestTerminalPoolStoreAppliesListWithStaleGuardAndError(t *testing.T) {
 	pool := TerminalPoolStore{}
 	pool = pool.RequestList()
@@ -473,6 +494,42 @@ func TestTerminalPoolStoreAppliesListWithStaleGuardAndError(t *testing.T) {
 	next, applied = next.ApplyList(secondSeq, nil, "boom")
 	if !applied || next.Status != TerminalPoolError || next.LastError != "boom" {
 		t.Fatalf("expected error state, got applied=%v pool=%#v", applied, next)
+	}
+}
+
+func TestTerminalPoolStoreScopesActionsByEndpoint(t *testing.T) {
+	pool := TerminalPoolStore{}
+	pool = pool.RequestList()
+	var applied bool
+	pool, applied = pool.ApplyList(pool.RequestSeq, []TerminalPoolItem{
+		{EndpointID: DefaultEndpointID, TerminalID: "term-1", Title: "local"},
+		{EndpointID: "west", TerminalID: "term-1", Title: "west"},
+	}, "")
+	if !applied || len(pool.Items) != 2 {
+		t.Fatalf("expected two endpoint-scoped items, applied=%v pool=%#v", applied, pool)
+	}
+
+	pool = pool.ApplyAttachedRef(NewTerminalRef("west", "term-1"), "")
+	if pool.LastAttachedID != "term-1" || !pool.LastAttachedRef.Equal(NewTerminalRef("west", "term-1")) {
+		t.Fatalf("attached result should record endpoint ref, got %#v", pool)
+	}
+	if pool.Items[0].Attached || !pool.Items[1].Attached {
+		t.Fatalf("attach should mark only west item, got %#v", pool.Items)
+	}
+
+	pool = pool.ApplyEditedRef(NewTerminalRef("west", "term-1"), "west renamed", map[string]string{"site": "us-west"}, "")
+	if pool.Items[0].Title != "local" || pool.Items[1].Title != "west renamed" || pool.Items[1].Tags["site"] != "us-west" {
+		t.Fatalf("metadata edit should only update west item, got %#v", pool.Items)
+	}
+
+	pool = pool.ApplyAttachmentProjectionRef(LocalTerminalRef("term-1"), 3)
+	if pool.Items[0].AttachmentCount != 3 || pool.Items[1].AttachmentCount != 0 {
+		t.Fatalf("attachment count should only update local item, got %#v", pool.Items)
+	}
+
+	pool = pool.ApplyRemovedRef(NewTerminalRef("west", "term-1"), "")
+	if len(pool.Items) != 1 || pool.Items[0].EndpointID != DefaultEndpointID || pool.Items[0].TerminalID != "term-1" {
+		t.Fatalf("remove should only delete west item, got %#v", pool.Items)
 	}
 }
 
