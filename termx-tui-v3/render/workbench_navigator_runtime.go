@@ -3,7 +3,7 @@ package render
 import "strconv"
 
 func renderWorkbenchNavigatorSnapshotContent(c *canvas, content ContentVM, rect Rect, owner string, layer LayerKind) {
-	if content.Kind != ContentWorkbenchTree {
+	if content.Kind != ContentWorkbenchTree && content.Kind != ContentTerminalPool {
 		return
 	}
 	snapshots := content.Meta.WorkbenchSnapshots

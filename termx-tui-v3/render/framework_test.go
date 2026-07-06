@@ -169,7 +169,7 @@ func TestFrameworkRendersWorkbenchNavigatorSnapshot(t *testing.T) {
 	if !linesContain(lines, "Workbench Navigator") ||
 		!linesContain(lines, "TREE") ||
 		!linesContain(lines, "PANE") ||
-		!linesContain(lines, "SNAPSHOT") ||
+		!linesContain(lines, "HIST metrics unavailable") ||
 		!linesContain(lines, "snapshot live row") {
 		t.Fatalf("expected navigator title/tree/snapshot in frame, got %#v", lines)
 	}
@@ -518,7 +518,7 @@ func TestFrameworkStylesActiveAndInactivePaneChromeDifferently(t *testing.T) {
 	if !styledLinesContain(frame.StyledLines, "┌", StyleMuted) || !styledLinesContain(frame.StyledLines, "┐", StyleMuted) {
 		t.Fatalf("inactive card pane border should use muted style, got %#v", frame.StyledLines)
 	}
-	if !linesContain(frame.ANSILines, "\x1b[1;38;2;169;112;255m") || !linesContain(frame.ANSILines, "\x1b[38;2;119;113;127m") {
+	if !linesContain(frame.ANSILines, "\x1b[1;38;2;169;112;255m") || !linesContain(frame.ANSILines, "\x1b[38;2;184;177;196m") {
 		t.Fatalf("pane chrome should output active accent and inactive muted SGR, got %#v", frame.ANSILines)
 	}
 	assertAllRowsWidth(t, frame.Lines, 54)
@@ -594,18 +594,22 @@ func TestFrameworkHeaderTabStylesMatchTuiv2Levels(t *testing.T) {
 		}}},
 	}})
 	headerANSI := result.Frame().ANSILines[0]
+	theme := DefaultTheme()
 	for _, want := range []string{
-		"38;2;212;192;244", "48;2;60;46;85",
-		"38;2;130;113;155", "48;2;8;8;13",
-		"38;2;119;113;127", "38;2;171;111;119",
-		"38;2;169;112;255", "48;2;42;34;59",
-		"38;2;255;107;107", "48;2;43;54;71",
+		sgrForegroundBackground(headerWorkspaceFG(theme), headerWorkspaceBG(theme), true),
+		sgrForegroundBackground(headerInactiveIndexFG(theme), theme.StatusBG, false),
+		sgrForegroundBackground(theme.InactivePane, theme.StatusBG, false),
+		sgrForegroundBackground(headerInactiveCloseFG(theme), theme.StatusBG, false),
+		sgrForegroundBackground(theme.Accent, headerActiveBG(theme), true),
+		sgrForegroundBackground(theme.StatusFG, headerActiveBG(theme), true),
+		sgrForegroundBackground(theme.Danger, headerActiveBG(theme), false),
+		sgrForegroundBackground(headerCreateFG(theme), headerCreateBG(theme), true),
 	} {
 		if !strings.Contains(headerANSI, want) {
 			t.Fatalf("header ANSI missing tuiv2-style SGR %s: %#v", want, headerANSI)
 		}
 	}
-	if strings.Contains(headerANSI, "\x1b[2;38;2;119;113;127") {
+	if strings.Contains(headerANSI, "\x1b[2;38;2;184;177;196") {
 		t.Fatalf("inactive tab should use muted foreground without dim SGR, got %#v", headerANSI)
 	}
 }

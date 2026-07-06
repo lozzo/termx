@@ -2136,7 +2136,7 @@ func TestInteractiveRuntimeTerminalPoolPageFlow(t *testing.T) {
 		t.Fatalf("pool query must not leak terminal input, got %#v", terminal.Inputs)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "Terminal Manager") || !frameContains(frame, "▸  日志🚀") || !frameContains(frame, "role=logs") {
+	if !frameContains(frame, "Terminal Manager") || !frameContains(frame, "▸  日志🚀") || !frameContains(frame, "HIST metrics unavailable") {
 		t.Fatalf("expected terminal pool page frame, got %#v", frame.Lines)
 	}
 
@@ -2167,9 +2167,8 @@ func TestInteractiveRuntimeTerminalPoolPageFlow(t *testing.T) {
 	if runtime.State().Shell.Overlay.SelectedIndex != 0 {
 		t.Fatalf("expected row click to select first row, got %#v", runtime.State().Shell.Overlay)
 	}
-	editRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "pool.edit", "")
-	if err := host.SendInput(mouseEventAt(editRegion.Rect)); err != nil {
-		t.Fatalf("send pool edit click: %v", err)
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x05", Ctrl: true}); err != nil {
+		t.Fatalf("send pool edit shortcut: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain pool edit: %v", err)
@@ -2192,9 +2191,8 @@ func TestInteractiveRuntimeTerminalPoolPageFlow(t *testing.T) {
 	if runtime.State().Shell.Overlay.Kind != state.OverlayTerminalPool {
 		t.Fatalf("terminal rename submit should return to terminal manager, shell=%#v", runtime.State().Shell)
 	}
-	killRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "pool.kill", "")
-	if err := host.SendInput(mouseEventAt(killRegion.Rect)); err != nil {
-		t.Fatalf("send pool kill click: %v", err)
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x0b", Ctrl: true}); err != nil {
+		t.Fatalf("send pool kill shortcut: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain pool kill: %v", err)
@@ -2247,8 +2245,11 @@ func TestInteractiveRuntimeWorkbenchTreeOverlayFlow(t *testing.T) {
 		t.Fatalf("tree query must not leak terminal input, got %#v", terminal.Inputs)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "Workbench Navigator") || !frameContains(frame, "TREE") || !frameContains(frame, "PANE") || !frameContains(frame, "term-2") || !frameContains(frame, "Open  New  Zoom  Detach  Close") {
+	if !frameContains(frame, "Workbench Navigator") || !frameContains(frame, "TREE") || !frameContains(frame, "PANE") || !frameContains(frame, "term-2") || !frameContains(frame, "HIST metrics unavailable") {
 		t.Fatalf("expected workbench navigator frame, got %#v", frame.Lines)
+	}
+	if frameContains(frame, "Open  New  Zoom  Detach  Close") {
+		t.Fatalf("workbench navigator content should not render footer actions inline, got %#v", frame.Lines)
 	}
 	if frameContains(frame, "● open") || frameContains(frame, " esc ") {
 		t.Fatalf("workbench navigator title should not render generic open/esc chrome, got %#v", frame.Lines)

@@ -926,13 +926,6 @@ func TestMeasureLayoutTerminalPoolUsesPageSizedOverlay(t *testing.T) {
 				Cursor: Cursor{Visible: true, Row: 0, Col: 9, Shape: CursorShapeBar},
 				HitRegions: []HitRegion{
 					{Kind: HitRegionContentAction, Rect: Rect{Y: 3, W: 40, H: 1}, ActionID: "pool.select"},
-					{Kind: HitRegionContentAction, Rect: Rect{X: 41, Y: 14, W: 6, H: 1}, ActionID: "pool.attach"},
-					{Kind: HitRegionContentAction, Rect: Rect{X: 49, Y: 14, W: 3, H: 1}, ActionID: "pool.attach-tab"},
-					{Kind: HitRegionContentAction, Rect: Rect{X: 54, Y: 14, W: 5, H: 1}, ActionID: "pool.attach-float"},
-					{Kind: HitRegionContentAction, Rect: Rect{X: 61, Y: 14, W: 7, H: 1}, ActionID: "pool.restart"},
-					{Kind: HitRegionContentAction, Rect: Rect{X: 61, Y: 14, W: 4, H: 1}, ActionID: "pool.edit"},
-					{Kind: HitRegionContentAction, Rect: Rect{X: 67, Y: 14, W: 4, H: 1}, ActionID: "pool.kill"},
-					{Kind: HitRegionContentAction, Rect: Rect{X: 73, Y: 14, W: 6, H: 1}, ActionID: "pool.delete"},
 				},
 			},
 		},
@@ -945,9 +938,14 @@ func TestMeasureLayoutTerminalPoolUsesPageSizedOverlay(t *testing.T) {
 	if got := plan.CursorRect; got.X != plan.OverlayContentRect.X+9 || got.Y != plan.OverlayContentRect.Y {
 		t.Fatalf("unexpected pool cursor rect content=%#v cursor=%#v", plan.OverlayContentRect, got)
 	}
-	for _, action := range []string{"pool.select", "pool.attach", "pool.attach-tab", "pool.attach-float", "pool.restart", "pool.edit", "pool.kill", "pool.delete"} {
+	for _, action := range []string{"pool.select"} {
 		if hitRegionIndexByAction(plan.HitRegions, action) < 0 {
 			t.Fatalf("expected visible terminal pool action %s in hit regions %#v", action, plan.HitRegions)
+		}
+	}
+	for _, action := range []string{"pool.attach", "pool.restart", "pool.delete"} {
+		if hitRegionIndexByAction(plan.HitRegions, action) >= 0 {
+			t.Fatalf("terminal pool management action %s should live in footer, got %#v", action, plan.HitRegions)
 		}
 	}
 	if hitRegionIndex(plan.HitRegions, HitRegionPaneContent) >= 0 {

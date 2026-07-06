@@ -40,11 +40,14 @@ type workbenchNavigatorLayout struct {
 }
 
 type terminalManagerLayout struct {
-	ContentWidth int
-	BodyRows     int
-	ListWidth    int
-	DetailWidth  int
-	ActionRow    int
+	ContentWidth   int
+	BodyRows       int
+	ListWidth      int
+	DetailWidth    int
+	SnapshotX      int
+	SnapshotY      int
+	SnapshotWidth  int
+	SnapshotHeight int
 }
 
 func EmptyPaneActionCount() int {
@@ -259,12 +262,11 @@ func buildTerminalPoolContent(root state.Root, shell state.ShellStore) ContentVM
 		visibleRows := terminalManagerVisibleRows(rows, listStart, layout.BodyRows)
 		regions = terminalManagerHitRegions(visibleRows, 3, listStart, layout)
 	}
-	_, selectedOK := selectedTerminalPoolPageItem(rows)
-	regions = append(regions, terminalManagerActionHitRegions(layout, selectedOK)...)
+	regions = append(regions, terminalManagerDetailHitRegions(root, rows, layout)...)
 	return ContentVM{
 		Kind:       ContentTerminalPool,
 		Lines:      lines,
-		Meta:       ContentMetaVM{SplitPageLeftWidth: layout.ListWidth},
+		Meta:       terminalManagerMeta(root, rows, layout),
 		Status:     terminalPoolPageStatus(root.TerminalPool, len(rows), query),
 		Cursor:     Cursor{Visible: true, Row: 0, Col: searchCursorCol(query), Shape: CursorShapeBar},
 		HitRegions: regions,
@@ -288,7 +290,6 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 	}
 	regions := workbenchTreeHitRegions(visibleRows, rowOffset, layout.TreeWidth)
 	regions = append(regions, workbenchNavigatorDetailHitRegions(root, rows, layout)...)
-	regions = append(regions, workbenchNavigatorActionHitRegions(layout)...)
 	return ContentVM{
 		Kind:       ContentWorkbenchTree,
 		Lines:      lines,
@@ -1109,11 +1110,11 @@ func terminalPickerSizeLabel(row state.TerminalPickerItem) string {
 func terminalPickerSearchLine(query string) Line {
 	if query == "" {
 		return Line{Cells: []Cell{
-			styledCell("search:", StylePickerMuted),
+			styledCell("search:", StylePickerAccent),
 		}}
 	}
 	return Line{Cells: []Cell{
-		styledCell("search: ", StylePickerMuted),
+		styledCell("search: ", StylePickerAccent),
 		styledCell(query, StylePickerAccent),
 	}}
 }
@@ -1176,7 +1177,6 @@ func terminalManagerLines(root state.Root, rows []state.TerminalPoolPageItem, qu
 		}
 		lines = append(lines, terminalManagerBodyLine(left, rightLine, layout))
 	}
-	lines = append(lines, terminalManagerBodyLine(terminalManagerActionLine(terminalManagerLeftActions(), selectedOK), terminalManagerActionLine(terminalManagerRightActions(), selectedOK), layout))
 	return lines
 }
 
@@ -1218,7 +1218,7 @@ func terminalManagerGroupedLines(root state.Root, rows []state.TerminalPoolPageI
 	lines := []Line{
 		terminalManagerFullLine(searchRowLine(query, "shell"), layout),
 		terminalManagerDividerLine(layout),
-		terminalManagerBodyLine(terminalManagerHeaderLine("ENDPOINTS"), terminalManagerHeaderLine(terminalManagerRightHeader(selected, selectedOK)), layout),
+		terminalManagerBodyLine(terminalManagerHeaderLine("TERMINALS"), terminalManagerHeaderLine(terminalManagerRightHeader(selected, selectedOK)), layout),
 	}
 	for row := 0; row < layout.BodyRows; row++ {
 		left := Line{}
@@ -1234,7 +1234,6 @@ func terminalManagerGroupedLines(root state.Root, rows []state.TerminalPoolPageI
 		}
 		lines = append(lines, terminalManagerBodyLine(left, rightLine, layout))
 	}
-	lines = append(lines, terminalManagerBodyLine(terminalManagerActionLine(terminalManagerLeftActions(), selectedOK), terminalManagerActionLine(terminalManagerRightActions(), selectedOK), layout))
 	return lines
 }
 
@@ -1254,18 +1253,14 @@ func terminalManagerEndpointHeaderLine(group state.TerminalPoolPageGroup) Line {
 	if status == "" {
 		status = "unknown"
 	}
-	countLabel := fmt.Sprintf("%d", group.TerminalCount)
 	cells := []Cell{
-		styledCell("  ", StyleMuted),
-		styledCell(group.Label, StyleStrongForeground),
+		styledCell("▾ ", StyleAccent),
+		styledCell(group.Label, StyleForeground),
 		NewCell(" "),
 		tokenCell(status, endpointStatusStyle(group.Status)),
 		NewCell(" "),
-		tokenCell(string(group.ConnectMode), StyleMuted),
-		NewCell(" "),
-		tokenCell(string(group.Transport), StyleMuted),
-		NewCell(" "),
-		styledCell("terms:"+countLabel, StyleMuted),
+		tokenCell(string(group.Transport), StyleForeground),
+		NewCell(fmt.Sprintf(" %d", group.TerminalCount)),
 	}
 	if group.LastError != "" {
 		cells = append(cells, NewCell(" "), styledCell(group.LastError, StyleWarning))
@@ -1290,7 +1285,7 @@ func terminalManagerEndpointEmptyLine(group state.TerminalPoolPageGroup) Line {
 		label = "unregistered"
 	}
 	return Line{Cells: []Cell{
-		styledCell("    ", StyleMuted),
+		styledCell("  ", StyleMuted),
 		styledCell(label, endpointStatusStyle(group.Status)),
 	}}
 }
@@ -1316,6 +1311,59 @@ func terminalManagerDisplayListStart(rows []terminalManagerDisplayRow, visibleRo
 	}
 	start := selected - visibleRows/2
 	return clampInt(start, 0, maxInt(0, len(rows)-visibleRows))
+}
+
+func terminalManagerMeta(root state.Root, rows []state.TerminalPoolPageItem, layout terminalManagerLayout) ContentMetaVM {
+	meta := ContentMetaVM{
+		SplitPageLeftWidth: layout.ListWidth,
+	}
+	selected, ok := selectedTerminalPoolPageItem(rows)
+	if !ok {
+		return meta
+	}
+	snapshot, ok := terminalManagerSnapshotVM(root, selected, layout)
+	if !ok {
+		return meta
+	}
+	meta.WorkbenchSnapshots = []WorkbenchSnapshotVM{snapshot}
+	meta.WorkbenchSnapshotPanel = &snapshot.Panel
+	meta.WorkbenchSnapshotRect = snapshot.Rect
+	meta.WorkbenchSnapshotContent = snapshot.Content
+	return meta
+}
+
+func terminalManagerSnapshotVM(root state.Root, selected state.TerminalPoolPageItem, layout terminalManagerLayout) (WorkbenchSnapshotVM, bool) {
+	if layout.SnapshotWidth <= 0 || layout.SnapshotHeight <= 0 {
+		return WorkbenchSnapshotVM{}, false
+	}
+	ref := state.NewTerminalRef(selected.EndpointID, selected.TerminalID)
+	surface := root.Surface.SurfaceForTerminalRef(ref)
+	if len(terminalManagerPreviewContentLines(surface)) == 0 {
+		return WorkbenchSnapshotVM{}, false
+	}
+	session := state.TerminalSessionStore{
+		EndpointID: ref.EndpointID,
+		TerminalID: ref.TerminalID,
+		Attached:   selected.Attached,
+		Cols:       selected.Cols,
+		Rows:       selected.Rows,
+		State:      state.TerminalLiveState(selected.State),
+	}
+	content := buildLiveContentVM(surface, session)
+	panel := PanelVM{
+		ID:           "terminal-manager:" + ref.Key(),
+		Title:        "snapshot",
+		Presentation: PanelPresentationCard,
+		Active:       true,
+		Content:      content,
+		Chrome: PanelChromeVM{
+			Title: ChromeSlotVM{Text: "snapshot", Style: StyleAccent},
+			State: ChromeSlotVM{Text: terminalManagerPreviewStatus(surface), Style: StyleForeground},
+		},
+	}
+	rect := Rect{X: layout.SnapshotX, Y: layout.SnapshotY, W: layout.SnapshotWidth, H: layout.SnapshotHeight}
+	contentRect := Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
+	return WorkbenchSnapshotVM{Panel: panel, Rect: rect, Content: contentRect}, true
 }
 
 func terminalManagerSelectedDisplayIndex(rows []terminalManagerDisplayRow) int {
@@ -1380,19 +1428,19 @@ func terminalManagerHeaderLine(label string) Line {
 
 func terminalManagerRightHeader(selected state.TerminalPoolPageItem, ok bool) string {
 	if !ok {
-		return "DETAIL"
+		return "HEALTH"
 	}
-	return "DETAIL " + selected.Title
+	return terminalPoolDetailStatus(selected)
 }
 
 func terminalManagerRowLine(row state.TerminalPoolPageItem) Line {
 	marker := "  "
 	markerStyle := StyleMuted
-	titleStyle := StyleMuted
+	titleStyle := StyleForeground
 	if row.Selected {
 		marker = "▸ "
 		markerStyle = StyleAccent
-		titleStyle = StyleForeground
+		titleStyle = StyleAccent
 	}
 	stateText := terminalPoolStateLabel(row)
 	cells := []Cell{
@@ -1402,17 +1450,8 @@ func terminalManagerRowLine(row state.TerminalPoolPageItem) Line {
 		styledCell(row.Title, titleStyle),
 		NewCell(" "),
 		tokenCell(stateText, terminalPoolStateStyle(stateText)),
-		NewCell(" "),
-		tokenCell(terminalPoolAttachmentLabel(row), StyleMuted),
-		NewCell(" "),
-		styledCell(terminalPoolSizeLabel(row.Cols, row.Rows), StyleMuted),
 	}
-	if resource := terminalPoolResourceShortLabel(row); resource != "" {
-		cells = append(cells, NewCell(" "), styledCell(resource, StyleMuted))
-	}
-	if row.EndpointLabel != "" {
-		cells = append(cells, NewCell(" "), tokenCell(row.EndpointLabel, StyleMuted))
-	}
+	cells = append(cells, terminalManagerRowMetricsCells(row)...)
 	return Line{Cells: cells}
 }
 
@@ -1433,33 +1472,27 @@ func terminalManagerDetailLines(root state.Root, selected state.TerminalPoolPage
 	if !ok {
 		return terminalManagerEmptyDetailLines(root.TerminalPool)
 	}
-	lines := []Line{
-		terminalManagerDetailLine("status", terminalPoolDetailStatus(selected)),
-		terminalManagerDetailLine("usage", terminalPoolResourceDetailLabel(selected)),
-	}
-	if selected.EndpointLabel != "" {
-		lines = append(lines, terminalManagerDetailLine("endpoint", terminalPoolEndpointDetailLabel(selected)))
-	}
+	lines := []Line{}
+	lines = append(lines, terminalManagerResourceGaugeLines(selected)...)
+	lines = append(lines,
+		terminalManagerHistoryLine(),
+		terminalManagerHistoryGaugeLine(),
+		terminalManagerConnectionsLine(root, selected),
+		terminalManagerSnapshotSpacerLine(),
+	)
+	lines = append(lines, terminalManagerSnapshotPlaceholderLines(terminalManagerSnapshotPlaceholderHeight(visibleRows, len(lines)))...)
 	if strings.TrimSpace(selected.CWD) != "" {
 		lines = append(lines, terminalManagerDetailLine("cwd", selected.CWD))
-	}
-	if command := terminalPoolCommandLabel(selected.Command); command != "-" {
-		lines = append(lines, terminalManagerDetailLine("cmd", command))
-	}
-	if tags := terminalPoolTagsLabel(selected.Tags); tags != "-" {
-		lines = append(lines, terminalManagerDetailLine("tags", tags))
-	}
-	if exit := terminalPoolExitLabel(selected); exit != "" {
-		lines = append(lines, terminalManagerDetailLine("exit", exit))
 	}
 	if visibleRows > 0 && len(lines) >= visibleRows {
 		return lines[:visibleRows]
 	}
-	previewRows := 0
-	if visibleRows > 0 {
-		previewRows = visibleRows - len(lines)
+	if command := terminalPoolCommandLabel(selected.Command); command != "-" {
+		lines = append(lines, terminalManagerDetailLine("cmd", command))
 	}
-	lines = append(lines, terminalManagerPreviewLines(root.Surface.SurfaceForTerminalRef(state.NewTerminalRef(selected.EndpointID, selected.TerminalID)), previewRows)...)
+	if exit := terminalPoolExitLabel(selected); exit != "" {
+		lines = append(lines, terminalManagerDetailLine("exit", exit))
+	}
 	if visibleRows > 0 && len(lines) > visibleRows {
 		return lines[:visibleRows]
 	}
@@ -1469,15 +1502,169 @@ func terminalManagerDetailLines(root state.Root, selected state.TerminalPoolPage
 func terminalManagerEmptyDetailLines(pool state.TerminalPoolStore) []Line {
 	switch pool.Status {
 	case state.TerminalPoolLoading:
-		return []Line{{Cells: []Cell{styledCell("Loading terminal inventory", StyleMuted)}}}
+		return []Line{{Cells: []Cell{styledCell("Loading terminal inventory", StyleForeground)}}}
 	case state.TerminalPoolError:
 		return []Line{
 			{Cells: []Cell{styledCell("Terminal inventory error", StyleWarning)}},
-			{Cells: []Cell{styledCell(pool.LastError, StyleMuted)}},
+			{Cells: []Cell{styledCell(pool.LastError, StyleForeground)}},
 		}
 	default:
-		return []Line{{Cells: []Cell{styledCell("No terminal selected", StyleMuted)}}}
+		return []Line{{Cells: []Cell{styledCell("No terminal selected", StyleForeground)}}}
 	}
+}
+
+func terminalManagerRowMetricsCells(row state.TerminalPoolPageItem) []Cell {
+	usage := row.Resources
+	cells := []Cell{NewCell(" ")}
+	if usage.SampledAt.IsZero() {
+		cells = append(cells, styledCell("--", StyleForeground), NewCell(" "), styledCell("--", StyleForeground))
+	} else {
+		cells = append(cells,
+			styledCell(terminalPoolCPUPercentShortLabel(usage.CPUPercentX100), StyleForeground),
+			NewCell(" "),
+			styledCell(terminalPoolMemoryShortLabel(usage.MemoryBytes), StyleForeground),
+		)
+	}
+	cells = append(cells, NewCell(" "), styledCell(terminalPoolAttachmentValue(row)+"v", StyleAccent))
+	return cells
+}
+
+func terminalManagerResourceGaugeLines(row state.TerminalPoolPageItem) []Line {
+	usage := row.Resources
+	if usage.SampledAt.IsZero() {
+		return []Line{
+			metricGaugeLine("CPU", "--", 0, false),
+			metricGaugeLine("MEM", "--", 0, false),
+		}
+	}
+	cpuRatio := float64(maxInt(0, usage.CPUPercentX100)) / 10000
+	memRatio := terminalMemoryGaugeRatio(usage.MemoryBytes)
+	return []Line{
+		metricGaugeLine("CPU", terminalPoolCPUPercentShortLabel(usage.CPUPercentX100), cpuRatio, true),
+		metricGaugeLine("MEM", terminalPoolMemoryShortLabel(usage.MemoryBytes), memRatio, true),
+	}
+}
+
+func metricGaugeLine(label string, value string, ratio float64, known bool) Line {
+	barStyle := StyleAccent
+	if !known {
+		barStyle = StyleForeground
+		ratio = 0
+	}
+	return Line{Cells: []Cell{
+		styledCell(label+" ", StyleAccent),
+		styledCell(padRightCells(value, 6), StyleForeground),
+		NewCell(" "),
+		styledCell(gaugeBar(ratio, 8), barStyle),
+	}}
+}
+
+func gaugeBar(ratio float64, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if ratio < 0 {
+		ratio = 0
+	}
+	if ratio > 1 {
+		ratio = 1
+	}
+	filled := int(ratio*float64(width) + 0.5)
+	if filled < 0 {
+		filled = 0
+	}
+	if filled > width {
+		filled = width
+	}
+	return strings.Repeat("▰", filled) + strings.Repeat("▱", width-filled)
+}
+
+func terminalMemoryGaugeRatio(bytes uint64) float64 {
+	if bytes == 0 {
+		return 0
+	}
+	// 中文说明：core 当前只提供内存用量，没有该进程的内存上限；这里用分档条表达量级，不能解读为容量占比。
+	steps := []uint64{64 << 20, 128 << 20, 256 << 20, 512 << 20, 1 << 30, 2 << 30, 4 << 30, 8 << 30}
+	filled := 0
+	for _, step := range steps {
+		if bytes >= step {
+			filled++
+		}
+	}
+	if filled == 0 {
+		filled = 1
+	}
+	return float64(filled) / float64(len(steps))
+}
+
+func terminalManagerHistoryLine() Line {
+	return Line{Cells: []Cell{
+		styledCell("HIST ", StyleAccent),
+		styledCell("metrics unavailable", StyleForeground),
+	}}
+}
+
+func terminalManagerHistoryGaugeLine() Line {
+	return Line{Cells: []Cell{
+		styledCell("     ", StyleForeground),
+		styledCell("oldest kept → newest live ", StyleForeground),
+		styledCell(gaugeBar(0, 8), StyleForeground),
+	}}
+}
+
+func terminalManagerConnectionsLine(root state.Root, row state.TerminalPoolPageItem) Line {
+	ref := state.NewTerminalRef(row.EndpointID, row.TerminalID)
+	localViews := len(root.TerminalViews.BindingsForTerminalRef(ref))
+	count := row.AttachmentCount
+	if localViews > count {
+		count = localViews
+	}
+	owner := "owner unknown"
+	if binding, ok := terminalManagerOwnerBinding(root, ref); ok {
+		if binding.SizeLocked {
+			owner = "owner locked"
+		} else {
+			owner = "owner"
+		}
+	}
+	return Line{Cells: []Cell{
+		styledCell("CONN ", StyleAccent),
+		styledCell(fmt.Sprintf("%d views", maxInt(0, count)), StyleForeground),
+		NewCell(" · "),
+		styledCell(owner, StyleForeground),
+	}}
+}
+
+func terminalManagerOwnerBinding(root state.Root, ref state.TerminalRef) (state.TerminalViewBinding, bool) {
+	for _, binding := range root.TerminalViews.BindingsForTerminalRef(ref) {
+		if binding.ResizeRole == state.TerminalResizeRoleOwner {
+			return binding, true
+		}
+	}
+	return state.TerminalViewBinding{}, false
+}
+
+func terminalManagerSnapshotSpacerLine() Line {
+	return NewLine("")
+}
+
+func terminalManagerSnapshotPlaceholderHeight(visibleRows int, usedRows int) int {
+	if visibleRows <= 0 {
+		return 4
+	}
+	remaining := visibleRows - usedRows
+	return clampInt(remaining, 3, visibleRows)
+}
+
+func terminalManagerSnapshotPlaceholderLines(height int) []Line {
+	if height <= 0 {
+		return nil
+	}
+	lines := make([]Line, 0, height)
+	for index := 0; index < height; index++ {
+		lines = append(lines, NewLine(""))
+	}
+	return lines
 }
 
 func terminalManagerDetailLine(label string, value string) Line {
@@ -1485,34 +1672,9 @@ func terminalManagerDetailLine(label string, value string) Line {
 		value = "-"
 	}
 	return Line{Cells: []Cell{
-		styledCell(strings.ToUpper(label)+" ", StyleMuted),
+		styledCell(strings.ToUpper(label)+" ", StyleAccent),
 		NewCell(value),
 	}}
-}
-
-func terminalManagerPreviewLines(surface state.TerminalSurfaceStore, limit int) []Line {
-	if limit <= 0 {
-		return nil
-	}
-	// 中文说明：preview 只消费 TUI 已持有的 live surface 投影，不读取 core history，
-	// 也不把实时快照当成 committed history truth。
-	preview := terminalManagerPreviewContentLines(surface)
-	if len(preview) == 0 {
-		return nil
-	}
-	bodyLimit := limit - 1
-	lines := []Line{{Cells: []Cell{styledCell("PREVIEW ", StyleMuted), styledCell(terminalManagerPreviewStatus(surface), StyleMuted)}}}
-	if bodyLimit <= 0 {
-		return lines
-	}
-	if len(preview) > bodyLimit {
-		preview = preview[len(preview)-bodyLimit:]
-	}
-	lines = append(lines, preview...)
-	for len(lines) < limit {
-		lines = append(lines, Line{})
-	}
-	return lines
 }
 
 func terminalManagerPreviewStatus(surface state.TerminalSurfaceStore) string {
@@ -1554,51 +1716,7 @@ func terminalManagerPreviewHasContent(lines []Line) bool {
 	return false
 }
 
-type terminalManagerAction struct {
-	ID    ActionID
-	Label string
-	Style StyleToken
-}
-
-func terminalManagerLeftActions() []terminalManagerAction {
-	return []terminalManagerAction{
-		{ID: ActionPoolAttach, Label: "Enter Attach", Style: StyleAccent},
-		{ID: ActionPoolAttachTab, Label: "^T Tab", Style: StyleStatusAccent},
-		{ID: ActionPoolAttachFloat, Label: "^O Float", Style: StyleStatusAccent},
-	}
-}
-
-func terminalManagerRightActions() []terminalManagerAction {
-	return []terminalManagerAction{
-		{ID: ActionPoolRestart, Label: "^R Restart", Style: StyleStatusAccent},
-		{ID: ActionPoolEdit, Label: "^E Rename", Style: StyleAccent},
-		{ID: ActionPoolKill, Label: "^K Kill", Style: StyleWarning},
-		{ID: ActionPoolDelete, Label: "^X Remove", Style: StyleDangerStrong},
-	}
-}
-
-func terminalManagerActions() []terminalManagerAction {
-	actions := terminalManagerLeftActions()
-	actions = append(actions, terminalManagerRightActions()...)
-	return actions
-}
-
-func terminalManagerActionLine(actions []terminalManagerAction, enabled bool) Line {
-	cells := make([]Cell, 0, len(actions)*2)
-	for index, action := range actions {
-		if index > 0 {
-			cells = append(cells, NewCell("  "))
-		}
-		style := action.Style
-		if !enabled {
-			style = StyleMuted
-		}
-		cells = append(cells, styledCell(action.Label, style))
-	}
-	return Line{Cells: cells}
-}
-
-func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
+func workbenchTreeRowLine(root state.Root, row state.WorkbenchTreeItem) Line {
 	marker := "  "
 	markerStyle := StyleMuted
 	prefixStyle := StyleMuted
@@ -1625,6 +1743,7 @@ func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
 		NewCell(" "),
 	}
 	cells = append(cells, workbenchTreeStatusCells(row, status)...)
+	cells = append(cells, workbenchTreeMetricCells(root, row)...)
 	return Line{Cells: cells}
 }
 
@@ -1639,7 +1758,7 @@ func workbenchNavigatorLines(root state.Root, rows []state.WorkbenchTreeItem, qu
 	for row := 0; row < layout.BodyRows; row++ {
 		left := Line{}
 		if row < len(rows) {
-			left = workbenchTreeRowLine(rows[row])
+			left = workbenchTreeRowLine(root, rows[row])
 		}
 		rightLine := Line{}
 		if row < len(right) {
@@ -1647,7 +1766,6 @@ func workbenchNavigatorLines(root state.Root, rows []state.WorkbenchTreeItem, qu
 		}
 		lines = append(lines, workbenchNavigatorBodyLine(left, rightLine, layout))
 	}
-	lines = append(lines, workbenchNavigatorBodyLine(Line{}, workbenchNavigatorActionLine(), layout))
 	return lines
 }
 
@@ -1668,20 +1786,6 @@ func workbenchNavigatorBodyLine(left Line, right Line, layout workbenchNavigator
 
 func workbenchNavigatorHeaderLine(label string) Line {
 	return Line{Cells: []Cell{styledCell(label, StyleStrongForeground)}}
-}
-
-func workbenchNavigatorActionLine() Line {
-	return Line{Cells: []Cell{
-		styledCell("Open", StyleAccent),
-		NewCell("  "),
-		styledCell("New", StyleStatusAccent),
-		NewCell("  "),
-		styledCell("Zoom", StyleAccent),
-		NewCell("  "),
-		styledCell("Detach", StyleAccent),
-		NewCell("  "),
-		styledCell("Close", StyleAccent),
-	}}
 }
 
 func selectedWorkbenchTreeItem(rows []state.WorkbenchTreeItem) (state.WorkbenchTreeItem, bool) {
@@ -1719,50 +1823,125 @@ func workbenchNavigatorRightLines(root state.Root, selected state.WorkbenchTreeI
 	if selected.Kind == "" {
 		return []Line{NewLine("No workbench node selected")}
 	}
-	title := workbenchTreeTitle(selected)
 	switch selected.Kind {
 	case state.WorkbenchTreeKindPane:
 		return workbenchNavigatorPaneLines(root, selected, layout)
 	case state.WorkbenchTreeKindTab:
 		lines := []Line{
-			{Cells: []Cell{styledCell(title, StyleForeground)}},
 			workbenchNavigatorTokenLine([]string{selected.WorkspaceName, "tab:" + selected.TabTitle, selected.Summary}),
-			{Cells: []Cell{styledCell("PANES", StyleStrongForeground)}},
+			workbenchNavigatorSummaryLine("PANES", workbenchTreePreview(selected)),
+			NewLine(""),
 		}
 		lines = append(lines, workbenchNavigatorPaneSnapshotLines(layout)...)
 		return lines
 	case state.WorkbenchTreeKindWorkspace:
 		return []Line{
-			{Cells: []Cell{styledCell(title, StyleForeground)}},
 			workbenchNavigatorTokenLine([]string{"current", selected.Summary}),
-			{Cells: []Cell{styledCell("SUMMARY", StyleStrongForeground)}},
-			{Cells: []Cell{styledCell(workbenchTreePreview(selected), StyleMuted)}},
+			workbenchNavigatorSummaryLine("SUMMARY", workbenchTreePreview(selected)),
 		}
 	case state.WorkbenchTreeKindFloating:
 		lines := []Line{
-			{Cells: []Cell{styledCell(title, StyleForeground)}},
 			workbenchNavigatorTokenLine([]string{selected.Summary}),
-			{Cells: []Cell{styledCell("SNAPSHOT", StyleStrongForeground)}},
+			NewLine(""),
 		}
 		if selected.FloatingID == "" {
-			lines = append(lines, Line{Cells: []Cell{styledCell(workbenchTreePreview(selected), StyleMuted)}})
+			lines = append(lines, Line{Cells: []Cell{styledCell(workbenchTreePreview(selected), StyleForeground)}})
 			return lines
 		}
+		lines = append(lines, workbenchNavigatorResourceLines(root, selected)...)
 		lines = append(lines, workbenchNavigatorPaneSnapshotLines(layout)...)
+		lines = append(lines, terminalManagerDetailLine("path", workbenchTreePath(selected)))
 		return lines
 	default:
-		return []Line{{Cells: []Cell{styledCell(workbenchTreePreview(selected), StyleMuted)}}}
+		return []Line{{Cells: []Cell{styledCell(workbenchTreePreview(selected), StyleForeground)}}}
 	}
 }
 
 func workbenchNavigatorPaneLines(root state.Root, selected state.WorkbenchTreeItem, layout workbenchNavigatorLayout) []Line {
 	lines := []Line{
-		{Cells: []Cell{styledCell(workbenchTreeTitle(selected), StyleForeground)}},
 		workbenchNavigatorTokenLine([]string{selected.WorkspaceName, "tab:" + selected.TabTitle, workbenchPaneStateLabel(root, selected), workbenchPaneRoleLabel(root, selected)}),
-		{Cells: []Cell{styledCell("SNAPSHOT", StyleStrongForeground)}},
 	}
+	lines = append(lines, workbenchNavigatorResourceLines(root, selected)...)
 	lines = append(lines, workbenchNavigatorPaneSnapshotLines(layout)...)
+	lines = append(lines, terminalManagerDetailLine("path", workbenchTreePath(selected)))
 	return lines
+}
+
+func workbenchNavigatorSummaryLine(label string, value string) Line {
+	return Line{Cells: []Cell{
+		styledCell(label+" ", StyleAccent),
+		styledCell(value, StyleForeground),
+	}}
+}
+
+func workbenchNavigatorResourceLines(root state.Root, selected state.WorkbenchTreeItem) []Line {
+	row, ok := workbenchTerminalPoolItem(root, selected)
+	if !ok {
+		return []Line{
+			metricGaugeLine("CPU", "--", 0, false),
+			metricGaugeLine("MEM", "--", 0, false),
+			terminalManagerHistoryLine(),
+			workbenchNavigatorConnectionLine(root, selected, state.TerminalPoolPageItem{}),
+			terminalManagerSnapshotSpacerLine(),
+		}
+	}
+	gauges := terminalManagerResourceGaugeLines(row)
+	return []Line{
+		gauges[0],
+		gauges[1],
+		terminalManagerHistoryLine(),
+		workbenchNavigatorConnectionLine(root, selected, row),
+		terminalManagerSnapshotSpacerLine(),
+	}
+}
+
+func workbenchNavigatorConnectionLine(root state.Root, selected state.WorkbenchTreeItem, row state.TerminalPoolPageItem) Line {
+	ref := workbenchTreeTerminalRef(root, selected)
+	count := 0
+	if !ref.Empty() {
+		count = len(root.TerminalViews.BindingsForTerminalRef(ref))
+	}
+	if row.AttachmentCount > count {
+		count = row.AttachmentCount
+	}
+	return Line{Cells: []Cell{
+		styledCell("CONN ", StyleAccent),
+		styledCell(fmt.Sprintf("%d views", maxInt(0, count)), StyleForeground),
+	}}
+}
+
+func workbenchTerminalPoolItem(root state.Root, selected state.WorkbenchTreeItem) (state.TerminalPoolPageItem, bool) {
+	ref := workbenchTreeTerminalRef(root, selected)
+	if ref.Empty() {
+		return state.TerminalPoolPageItem{}, false
+	}
+	for _, item := range state.TerminalPoolPageItems(root) {
+		if state.NewTerminalRef(item.EndpointID, item.TerminalID).Equal(ref) {
+			return item, true
+		}
+	}
+	return state.TerminalPoolPageItem{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID}, false
+}
+
+func workbenchTreeTerminalRef(root state.Root, selected state.WorkbenchTreeItem) state.TerminalRef {
+	switch selected.Kind {
+	case state.WorkbenchTreeKindFloating:
+		if selected.FloatingID != "" {
+			if binding, ok := root.TerminalViews.FloatingBinding(selected.FloatingID); ok {
+				return binding.TerminalRef()
+			}
+		}
+	case state.WorkbenchTreeKindPane:
+		if selected.PaneID != "" {
+			if binding, ok := root.TerminalViews.PaneBinding(selected.PaneID); ok {
+				return binding.TerminalRef()
+			}
+		}
+	}
+	if selected.TerminalID == "" {
+		return state.TerminalRef{}
+	}
+	return state.LocalTerminalRef(selected.TerminalID)
 }
 
 func workbenchNavigatorPaneSnapshotLines(layout workbenchNavigatorLayout) []Line {
@@ -1803,11 +1982,11 @@ func workbenchNavigatorLayoutForViewport(viewport state.ViewportStore) workbench
 		treeWidth = minInt(treeWidth+workbenchNavigatorTreeWidthBoost, maxBoostedTreeWidth)
 		rightWidth = maxInt(20, contentWidth-treeWidth-1)
 	}
-	bodyRows := maxInt(6, contentHeight-4)
-	actionRow := bodyRows + 3
+	bodyRows := maxInt(8, contentHeight-3)
+	actionRow := -1
 	// 中文说明：snapshot 坐标以 overlay content rect 为原点，和最终 runtime 叠加坐标保持一致。
 	snapshotWidth := maxInt(0, rightWidth-2)
-	snapshotHeight := clampInt(bodyRows-3, 4, bodyRows)
+	snapshotHeight := clampInt(bodyRows-6, 3, maxInt(3, bodyRows-4))
 	return workbenchNavigatorLayout{
 		ContentWidth:   contentWidth,
 		BodyRows:       bodyRows,
@@ -1815,7 +1994,7 @@ func workbenchNavigatorLayoutForViewport(viewport state.ViewportStore) workbench
 		RightWidth:     rightWidth,
 		ActionRow:      actionRow,
 		SnapshotX:      treeWidth + 2,
-		SnapshotY:      6,
+		SnapshotY:      9,
 		SnapshotWidth:  snapshotWidth,
 		SnapshotHeight: snapshotHeight,
 	}
@@ -2108,7 +2287,7 @@ func workbenchNavigatorTokenLine(tokens []string) Line {
 		if len(cells) > 0 {
 			cells = append(cells, NewCell("  "))
 		}
-		cells = append(cells, styledCell(token, StyleMuted))
+		cells = append(cells, styledCell(token, StyleForeground))
 	}
 	if len(cells) == 0 {
 		return NewLine("")
@@ -2206,7 +2385,7 @@ func workbenchTreeDetailLines(rows []state.WorkbenchTreeItem) []Line {
 }
 
 func terminalManagerHitRegions(rows []state.TerminalPoolPageItem, rowOffset int, listStart int, layout terminalManagerLayout) []HitRegion {
-	regions := make([]HitRegion, 0, len(rows)+len(terminalManagerActions()))
+	regions := make([]HitRegion, 0, len(rows))
 	for index := range rows {
 		regions = append(regions, HitRegion{
 			Kind:     HitRegionContentAction,
@@ -2219,7 +2398,7 @@ func terminalManagerHitRegions(rows []state.TerminalPoolPageItem, rowOffset int,
 }
 
 func terminalManagerGroupedHitRegions(rows []terminalManagerDisplayRow, rowOffset int, layout terminalManagerLayout) []HitRegion {
-	regions := make([]HitRegion, 0, len(rows)+len(terminalManagerActions()))
+	regions := make([]HitRegion, 0, len(rows))
 	for index, row := range rows {
 		if row.Kind != terminalManagerDisplayTerminal || row.ItemIndex < 0 {
 			continue
@@ -2234,6 +2413,14 @@ func terminalManagerGroupedHitRegions(rows []terminalManagerDisplayRow, rowOffse
 	return regions
 }
 
+func terminalManagerDetailHitRegions(root state.Root, rows []state.TerminalPoolPageItem, layout terminalManagerLayout) []HitRegion {
+	_ = root
+	_ = rows
+	_ = layout
+	// 中文说明：Terminal Manager 主内容区只负责选择和观察；attach/restart/delete 等管理动作统一交给全局 footer。
+	return nil
+}
+
 func terminalPoolPageItemIndex(rows []state.TerminalPoolPageItem, target state.TerminalPoolPageItem) int {
 	for index, row := range rows {
 		if state.NewTerminalRef(row.EndpointID, row.TerminalID).Equal(state.NewTerminalRef(target.EndpointID, target.TerminalID)) {
@@ -2241,46 +2428,6 @@ func terminalPoolPageItemIndex(rows []state.TerminalPoolPageItem, target state.T
 		}
 	}
 	return -1
-}
-
-func terminalManagerActionHitRegions(layout terminalManagerLayout, enabled bool) []HitRegion {
-	if !enabled || layout.DetailWidth <= 0 || layout.ListWidth <= 0 {
-		return nil
-	}
-	actions := terminalManagerActions()
-	regions := make([]HitRegion, 0, len(actions))
-	leftOffset := 0
-	rightOffset := 0
-	for _, action := range actions {
-		x := 0
-		offset := leftOffset
-		widthLimit := layout.ListWidth
-		if terminalManagerActionIsRight(action.ID) {
-			x = layout.ListWidth + 1
-			offset = rightOffset
-			widthLimit = layout.DetailWidth
-		}
-		width := DisplayWidth(action.Label)
-		if width <= 0 || offset >= widthLimit {
-			continue
-		}
-		regions = append(regions, HitRegion{
-			Kind:     HitRegionContentAction,
-			Rect:     Rect{X: x + offset, Y: layout.ActionRow, W: minInt(width, widthLimit-offset), H: 1},
-			Row:      -1,
-			ActionID: action.ID.String(),
-		})
-		if terminalManagerActionIsRight(action.ID) {
-			rightOffset += width + 2
-		} else {
-			leftOffset += width + 2
-		}
-	}
-	return regions
-}
-
-func terminalManagerActionIsRight(actionID ActionID) bool {
-	return actionID == ActionPoolRestart || actionID == ActionPoolEdit || actionID == ActionPoolKill || actionID == ActionPoolDelete
 }
 
 func workbenchTreeHitRegions(rows []state.WorkbenchTreeItem, rowOffset int, treeWidth int) []HitRegion {
@@ -2321,33 +2468,6 @@ func workbenchNavigatorDetailHitRegions(root state.Root, rows []state.WorkbenchT
 			Row:      -1,
 			ActionID: ActionWorkbenchOpen.String(),
 		})
-	}
-	return regions
-}
-
-func workbenchNavigatorActionHitRegions(layout workbenchNavigatorLayout) []HitRegion {
-	x := layout.TreeWidth + 1
-	y := layout.ActionRow
-	actions := []struct {
-		action ActionID
-		label  string
-	}{
-		{ActionWorkbenchOpen, "Open"},
-		{ActionWorkbenchNew, "New"},
-		{ActionWorkbenchZoom, "Zoom"},
-		{ActionWorkbenchDetach, "Detach"},
-		{ActionWorkbenchDelete, "Close"},
-	}
-	regions := make([]HitRegion, 0, len(actions))
-	for _, item := range actions {
-		width := DisplayWidth(item.label)
-		regions = append(regions, HitRegion{
-			Kind:     HitRegionContentAction,
-			Rect:     Rect{X: x, Y: y, W: width, H: 1},
-			Row:      -1,
-			ActionID: item.action.String(),
-		})
-		x += width + 2
 	}
 	return regions
 }
@@ -2492,6 +2612,22 @@ func workbenchTreeStatusCells(row state.WorkbenchTreeItem, summary string) []Cel
 	}
 	cells = append(cells, NewCell("]"))
 	return cells
+}
+
+func workbenchTreeMetricCells(root state.Root, row state.WorkbenchTreeItem) []Cell {
+	if row.Kind != state.WorkbenchTreeKindPane && row.Kind != state.WorkbenchTreeKindFloating {
+		return nil
+	}
+	item, ok := workbenchTerminalPoolItem(root, row)
+	if !ok || item.Resources.SampledAt.IsZero() {
+		return nil
+	}
+	return []Cell{
+		NewCell(" "),
+		styledCell(terminalPoolCPUPercentShortLabel(item.Resources.CPUPercentX100), StyleForeground),
+		NewCell(" "),
+		styledCell(terminalPoolMemoryShortLabel(item.Resources.MemoryBytes), StyleForeground),
+	}
 }
 
 func workbenchTreeHasTagPrefix(tags []string, prefix string) bool {
@@ -2674,6 +2810,17 @@ func fitContentLine(line Line, width int, fill StyleToken) Line {
 	return Line{Cells: cells}
 }
 
+func padRightCells(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	value = TruncateCells(value, width)
+	if pad := width - DisplayWidth(value); pad > 0 {
+		value += strings.Repeat(" ", pad)
+	}
+	return value
+}
+
 func terminalPoolPageStateLine(pool state.TerminalPoolStore, rowCount int) (Line, bool) {
 	switch pool.Status {
 	case state.TerminalPoolLoading:
@@ -2718,13 +2865,18 @@ func terminalManagerLayoutForViewport(viewport state.ViewportStore) terminalMana
 		listWidth = minInt(listWidth+terminalManagerListWidthBoost, maxBoostedListWidth)
 		detailWidth = maxInt(22, contentWidth-listWidth-1)
 	}
-	bodyRows := maxInt(6, contentHeight-4)
+	bodyRows := maxInt(8, contentHeight-3)
+	snapshotWidth := maxInt(0, detailWidth-2)
+	snapshotHeight := clampInt(bodyRows-6, 3, maxInt(3, bodyRows-4))
 	return terminalManagerLayout{
-		ContentWidth: contentWidth,
-		BodyRows:     bodyRows,
-		ListWidth:    listWidth,
-		DetailWidth:  detailWidth,
-		ActionRow:    bodyRows + 3,
+		ContentWidth:   contentWidth,
+		BodyRows:       bodyRows,
+		ListWidth:      listWidth,
+		DetailWidth:    detailWidth,
+		SnapshotX:      listWidth + 2,
+		SnapshotY:      9,
+		SnapshotWidth:  snapshotWidth,
+		SnapshotHeight: snapshotHeight,
 	}
 }
 
@@ -2988,10 +3140,10 @@ func searchRowLine(query string, placeholder string) Line {
 	}
 	style := StyleAccent
 	if query == "" {
-		style = StyleMuted
+		style = StyleForeground
 	}
 	return Line{Cells: []Cell{
-		styledCell("⌕ search ", StyleMuted),
+		styledCell("⌕ search ", StyleAccent),
 		styledCell(value, style),
 	}}
 }

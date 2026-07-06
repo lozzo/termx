@@ -43,7 +43,7 @@ func DefaultTheme() Theme {
 		ChromeBG: "#111016",
 
 		Accent: "#a970ff",
-		Muted:  "#77717f",
+		Muted:  "#b8b1c4",
 
 		Success: "#8adf7a",
 		Warning: "#f0c45c",
@@ -51,9 +51,9 @@ func DefaultTheme() Theme {
 		Info:    "#7ab8ff",
 
 		PanelBorder:      "#9b93a6",
-		MutedBorder:      "#4b4754",
+		MutedBorder:      "#6f6878",
 		ActivePaneBorder: "#a970ff",
-		InactivePane:     "#77717f",
+		InactivePane:     "#b8b1c4",
 
 		ToastBG:   "#15131d",
 		OverlayBG: "#14121b",

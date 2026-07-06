@@ -97,11 +97,11 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if !frameContains(cases["terminal-pool-page"].Lines, "Terminal Manager") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "⌕ search 日志") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "▸  日志🚀") ||
-		!frameContains(cases["terminal-pool-page"].Lines, "DETAIL 日志🚀") ||
-		!frameContains(cases["terminal-pool-page"].Lines, "STATUS running · 1 view · 120x36") ||
-		!frameContains(cases["terminal-pool-page"].Lines, "USAGE n/a") ||
-		!frameContains(cases["terminal-pool-page"].Lines, "Enter Attach") ||
-		!frameContains(cases["terminal-pool-page"].Lines, "^E Rename") {
+		!frameContains(cases["terminal-pool-page"].Lines, "running · 1 view · 120x36") ||
+		!frameContains(cases["terminal-pool-page"].Lines, "CPU") ||
+		!frameContains(cases["terminal-pool-page"].Lines, "HIST metrics unavailable") ||
+		frameContains(cases["terminal-pool-page"].Lines, "Enter Attach") ||
+		frameContains(cases["terminal-pool-page"].Lines, "^E Rename") {
 		t.Fatalf("terminal pool smoke missing page visual contract: %#v", cases["terminal-pool-page"].Lines)
 	}
 	if !frameContains(cases["workbench-tree-page"].Lines, "Workbench Navigator") ||
@@ -110,8 +110,8 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["workbench-tree-page"].Lines, "PANE") ||
 		!frameContains(cases["workbench-tree-page"].Lines, "▸") ||
 		!frameContains(cases["workbench-tree-page"].Lines, "日志终端") ||
-		!frameContains(cases["workbench-tree-page"].Lines, "SNAPSHOT") ||
-		!frameContains(cases["workbench-tree-page"].Lines, "Open  New  Zoom  Detach  Close") ||
+		!frameContains(cases["workbench-tree-page"].Lines, "HIST metrics unavailable") ||
+		frameContains(cases["workbench-tree-page"].Lines, "Open  New  Zoom  Detach  Close") ||
 		frameContains(cases["workbench-tree-page"].Lines, "[open]  Open") {
 		t.Fatalf("workbench tree smoke missing page visual contract: %#v", cases["workbench-tree-page"].Lines)
 	}
@@ -233,8 +233,8 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 	}
 	requiredOverlays := map[string][]string{
 		"terminal-picker":     {"┌─ terminal picker", "search:", "termx-picker shell", "running", "80x24"},
-		"terminal-pool-page":  {"┌─ Terminal Manager", "⌕ search 日志", "TERMINALS", "DETAIL 日志🚀", "Enter Attach", "^E Rename"},
-		"workbench-tree-page": {"┌─ Workbench Navigator", "⌕ search 日志", "TREE", "PANE", "SNAPSHOT", "Open  New  Zoom  Detach  Close"},
+		"terminal-pool-page":  {"┌─ Terminal Manager", "⌕ search 日志", "TERMINALS", "HIST metrics unavailable"},
+		"workbench-tree-page": {"┌─ Workbench Navigator", "⌕ search 日志", "TREE", "PANE", "HIST metrics unavailable"},
 		"prompt-overlay":      {"┌─ prompt", "Command Prompt", "重命名"},
 		"help-overlay":        {"┌─ help", "● open", "esc", "Most used", "Terminal Manager"},
 	}

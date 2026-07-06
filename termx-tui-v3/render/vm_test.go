@@ -930,7 +930,7 @@ func TestRenderVMBuilderKeepsTerminalPoolRestartShortcutVisibleAtDefaultWidth(t 
 
 	frame := NewRenderer(DefaultTheme()).Render(NewRenderVMBuilder().Build(root))
 	rendered := strings.Join(frame.Lines, "\n")
-	if !strings.Contains(rendered, "^R Restart") {
+	if !strings.Contains(rendered, "[Ctrl+R] RESTART") {
 		t.Fatalf("terminal pool page must keep restart action visible, got %#v", frame.Lines)
 	}
 }
@@ -3185,39 +3185,37 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 	rendered := plainLines(content.Lines)
 	if !strings.Contains(rendered, "⌕ search 日志") ||
 		!strings.Contains(rendered, "TERMINALS") ||
-		!strings.Contains(rendered, "DETAIL 日志🚀") ||
 		!strings.Contains(rendered, "▸  日志🚀") ||
-		!strings.Contains(rendered, "STATUS running · 2 views · 120x36") ||
-		!strings.Contains(rendered, "views:2") ||
+		!strings.Contains(rendered, "running · 2 views · 120x36") ||
 		!strings.Contains(rendered, "12% 64M") ||
-		!strings.Contains(rendered, "USAGE cpu 12.3% · mem 64.0 MiB · pid 4321") ||
-		!strings.Contains(rendered, "role=shell") ||
-		!strings.Contains(rendered, "PREVIEW rev:23") ||
-		!strings.Contains(rendered, "line one") ||
-		!strings.Contains(rendered, "line four") ||
-		!strings.Contains(rendered, "Enter Attach  ^T Tab  ^O Float") ||
-		!strings.Contains(rendered, "^R Restart  ^E Rename  ^K Kill  ^X Remove") ||
+		!strings.Contains(rendered, "CPU 12%") ||
+		!strings.Contains(rendered, "MEM 64M") ||
+		!strings.Contains(rendered, "HIST metrics unavailable") ||
+		!strings.Contains(rendered, "CONN 2 views") ||
 		strings.Contains(rendered, "id:term-pool") ||
 		strings.Contains(rendered, "KEYS Enter attach") ||
 		strings.Contains(rendered, "clear pending") ||
-		strings.Contains(rendered, "│ line") ||
-		strings.Contains(rendered, "HISTORY not loaded") ||
+		strings.Contains(rendered, "Enter Attach") ||
+		strings.Contains(rendered, "^E Rename") ||
 		strings.Contains(rendered, "VIEWS 27") ||
 		strings.Contains(rendered, "views:27") {
-		t.Fatalf("expected terminal manager list/detail/actions, got %#v", content.Lines)
+		t.Fatalf("expected terminal manager list/detail snapshot scaffold, got %#v", content.Lines)
+	}
+	if content.Meta.WorkbenchSnapshotPanel == nil ||
+		content.Meta.WorkbenchSnapshotPanel.Title != "snapshot" ||
+		content.Meta.WorkbenchSnapshotPanel.Content.Kind != ContentTerminalLive ||
+		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshotPanel.Content.Lines), "line one") ||
+		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshotPanel.Content.Lines), "line four") {
+		t.Fatalf("expected terminal manager snapshot meta, got %#v", content.Meta)
 	}
 	if strings.Contains(content.Lines[3].PlainString(), "worker") {
 		t.Fatalf("query should filter non-matching row, got %#v", content.Lines)
 	}
 	if !contentHasAction(content, "pool.select") ||
-		!contentHasAction(content, "pool.attach") ||
-		!contentHasAction(content, "pool.attach-tab") ||
-		!contentHasAction(content, "pool.attach-float") ||
-		!contentHasAction(content, "pool.restart") ||
-		!contentHasAction(content, "pool.edit") ||
-		!contentHasAction(content, "pool.kill") ||
-		!contentHasAction(content, "pool.delete") {
-		t.Fatalf("expected pool action hit regions, got %#v", content.HitRegions)
+		contentHasAction(content, "pool.attach") ||
+		contentHasAction(content, "pool.restart") ||
+		contentHasAction(content, "pool.delete") {
+		t.Fatalf("expected only pool select in content hit regions, got %#v", content.HitRegions)
 	}
 	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("⌕ search 日志") {
 		t.Fatalf("expected pool search cursor, got %#v", content.Cursor)
@@ -3259,7 +3257,7 @@ func TestRenderVMBuilderProjectsTerminalPoolEndpointGroups(t *testing.T) {
 
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	rendered := plainLines(content.Lines)
-	for _, want := range []string{"ENDPOINTS", "This Mac", "connected", "auto", "US West", "manual", "ssh", "ENDPOINT This Mac connected auto local"} {
+	for _, want := range []string{"TERMINALS", "This Mac", "connected", "US West", "manual", "ssh"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("expected terminal manager endpoint content %q in:\n%s", want, rendered)
 		}
@@ -3295,8 +3293,8 @@ func TestRenderVMBuilderOmitsEmptyTerminalPoolPreview(t *testing.T) {
 
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	rendered := plainLines(content.Lines)
-	if !strings.Contains(rendered, "STATUS running · 1 view · 80x24") ||
-		strings.Contains(rendered, "PREVIEW") ||
+	if !strings.Contains(rendered, "running · 1 view · 80x24") ||
+		content.Meta.WorkbenchSnapshotPanel != nil ||
 		strings.Contains(rendered, "│") {
 		t.Fatalf("expected empty preview to be omitted, got %#v", content.Lines)
 	}
@@ -3330,13 +3328,12 @@ func TestRenderVMBuilderTerminalPoolPreviewUsesLiveScreenArea(t *testing.T) {
 	}
 
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	rendered := plainLines(content.Lines)
-	if !strings.Contains(rendered, "PREVIEW rev:42") ||
-		!strings.Contains(rendered, "screen-00") ||
-		!strings.Contains(rendered, "screen-13") ||
-		strings.Contains(rendered, "│ screen-") ||
-		strings.Contains(rendered, "HISTORY") {
-		t.Fatalf("expected live terminal rows to fill manager preview area, got %#v", content.Lines)
+	if content.Meta.WorkbenchSnapshotPanel == nil ||
+		content.Meta.WorkbenchSnapshotPanel.Chrome.State.Text != "rev:42" ||
+		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshotPanel.Content.Lines), "screen-00") ||
+		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshotPanel.Content.Lines), "screen-13") ||
+		strings.Contains(plainLines(content.Lines), "PREVIEW") {
+		t.Fatalf("expected live terminal rows to fill manager snapshot area, got lines=%#v meta=%#v", content.Lines, content.Meta)
 	}
 }
 
@@ -3384,26 +3381,24 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		!strings.Contains(content.Lines[4].PlainString(), "浮窗终端") ||
 		!lineHasStyledCell(content.Lines[4], "  ", StyleSuccess) ||
 		strings.Contains(content.Lines[3].PlainString(), "日志🚀") ||
-		!strings.Contains(plainLines(content.Lines), "SNAPSHOT") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "Open") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "Zoom") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "Detach") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "Close") ||
+		!strings.Contains(plainLines(content.Lines), "HIST metrics unavailable") ||
+		!strings.Contains(plainLines(content.Lines), "CONN") ||
+		strings.Contains(plainLines(content.Lines), "Open  New  Zoom") ||
 		strings.Contains(plainLines(content.Lines), "[open]") {
-		t.Fatalf("expected navigator tree/snapshot/action content, got %#v", content.Lines)
+		t.Fatalf("expected navigator tree/snapshot summary content, got %#v", content.Lines)
 	}
 	if content.Meta.WorkbenchTreeWidth < 38 ||
 		content.Meta.WorkbenchBodyRows < 8 ||
 		content.Meta.WorkbenchSnapshotRect.W < 30 ||
-		content.Meta.WorkbenchSnapshotRect.H < 6 ||
+		content.Meta.WorkbenchSnapshotRect.H < 3 ||
 		content.Meta.WorkbenchSnapshotRect.X <= content.Meta.WorkbenchTreeWidth ||
 		content.Meta.WorkbenchSnapshotPanel == nil ||
 		content.Meta.WorkbenchSnapshotPanel.Content.Kind != ContentTerminalLive ||
 		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshotPanel.Content.Lines), "live snapshot row") ||
 		!contentHasAction(content, "workbench.open") ||
-		!contentHasAction(content, "workbench.zoom") ||
-		!contentHasAction(content, "workbench.detach") ||
-		!contentHasAction(content, "workbench.delete") {
+		contentHasAction(content, "workbench.zoom") ||
+		contentHasAction(content, "workbench.detach") ||
+		contentHasAction(content, "workbench.delete") {
 		t.Fatalf("expected workbench hit regions, got %#v", content.HitRegions)
 	}
 	detailOpenRegion := false
@@ -3419,8 +3414,8 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("⌕ search 日志") {
 		t.Fatalf("expected workbench search cursor, got %#v", content.Cursor)
 	}
-	if content.Cursor.Row != 0 || content.Meta.WorkbenchActionRow != len(content.Lines)-1 {
-		t.Fatalf("expected workbench cursor on search row and action row at footer, cursor=%#v meta=%#v lines=%d", content.Cursor, content.Meta, len(content.Lines))
+	if content.Cursor.Row != 0 || content.Meta.WorkbenchActionRow != -1 {
+		t.Fatalf("expected workbench cursor on search row and no content action row, cursor=%#v meta=%#v lines=%d", content.Cursor, content.Meta, len(content.Lines))
 	}
 	if len(content.Meta.WorkbenchSnapshots) != 1 ||
 		!lineHasStyledCell(content.Lines[3], "  ", StyleAccent) ||
