@@ -1479,7 +1479,7 @@ func TestCreateTerminalPromptServerFieldUsesEndpointDropdown(t *testing.T) {
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
 	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
-	if prompt.SuggestionFocused || prompt.FieldRawValue("server") != "US West (west)" {
+	if prompt.SuggestionFocused || prompt.FieldRawValue("server") != "US West (west)" || prompt.FieldRawValue("workdir") != "" {
 		t.Fatalf("enter should accept selected endpoint suggestion, prompt=%#v", prompt)
 	}
 
@@ -1489,8 +1489,68 @@ func TestCreateTerminalPromptServerFieldUsesEndpointDropdown(t *testing.T) {
 	}
 	effect := effects[0].(FuncEffect)
 	request := effect.Run(context.Background()).(TerminalPoolCreateRequestMsg)
-	if request.EndpointID != "west" || request.Title != "remote-shell" {
+	if request.EndpointID != "west" || request.Title != "remote-shell" || request.CWD != "" {
 		t.Fatalf("dropdown-selected server should route create request, got %#v", request)
+	}
+}
+
+func TestCreateTerminalPromptWorkdirDefaultFollowsEndpoint(t *testing.T) {
+	root := state.Root{
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+	}
+
+	localPrompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, state.DefaultEndpointID)
+	if localPrompt.Workdir == "" || localPrompt.FieldRawValue("workdir") != localPrompt.Workdir {
+		t.Fatalf("local create prompt should default to local cwd, prompt=%#v", localPrompt)
+	}
+	remotePrompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, "west")
+	if remotePrompt.Workdir == "" || remotePrompt.FieldRawValue("workdir") != "" {
+		t.Fatalf("remote create prompt should leave cwd empty and keep local default only as fallback metadata, prompt=%#v", remotePrompt)
+	}
+}
+
+func TestCreateTerminalPromptDoesNotSendAutoLocalWorkdirToRemote(t *testing.T) {
+	root := state.Root{
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+	}
+	prompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, state.DefaultEndpointID)
+	for index := range prompt.Fields {
+		switch prompt.Fields[index].Key {
+		case "name":
+			prompt.Fields[index].Value = "remote-shell"
+		case "server":
+			prompt.Fields[index].Value = "west"
+		}
+	}
+	root.Shell = state.DefaultShell().OpenPrompt(prompt)
+
+	next, effects := reducePromptSubmit(root)
+	if next.Shell.Overlay.Open || len(effects) != 1 {
+		t.Fatalf("submit should close prompt and emit create effect, root=%#v effects=%#v", next, effects)
+	}
+	request := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolCreateRequestMsg)
+	if request.EndpointID != "west" || request.CWD != "" {
+		t.Fatalf("remote create must not send auto local cwd, got %#v", request)
+	}
+
+	prompt = createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, "west")
+	for index := range prompt.Fields {
+		switch prompt.Fields[index].Key {
+		case "name":
+			prompt.Fields[index].Value = "remote-shell"
+		case "workdir":
+			prompt.Fields[index].Value = "/root"
+		}
+	}
+	root.Shell = state.DefaultShell().OpenPrompt(prompt)
+	_, effects = reducePromptSubmit(root)
+	request = effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolCreateRequestMsg)
+	if request.EndpointID != "west" || request.CWD != "/root" {
+		t.Fatalf("explicit remote cwd should be preserved, got %#v", request)
 	}
 }
 

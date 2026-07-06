@@ -11,6 +11,7 @@ import (
 
 func refreshPromptCompletions(root state.Root, shell state.ShellStore) state.ShellStore {
 	shell = shell.EnsureDefaults()
+	shell = syncCreatePromptWorkdirForServer(root, shell)
 	prompt := shell.Overlay.Prompt
 	field := prompt.ActivePromptField()
 	if field == nil {

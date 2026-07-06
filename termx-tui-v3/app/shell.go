@@ -1065,6 +1065,7 @@ func createTerminalPromptWithEndpoint(root state.Root, targetPaneID string, endp
 	endpointID = state.NormalizeEndpointID(endpointID)
 	endpointValue := terminalCreateEndpointPromptValue(root, endpointID)
 	endpointCursor := len([]rune(endpointValue))
+	workdirValue := terminalCreateDefaultWorkdirForEndpoint(root, endpointID, workdir)
 	return state.PromptState{
 		Title:            "Create Terminal",
 		Purpose:          "terminal.create",
@@ -1077,7 +1078,7 @@ func createTerminalPromptWithEndpoint(root state.Root, targetPaneID string, endp
 			{Key: "name", Label: "name", Required: true},
 			{Key: "command", Label: "command", Placeholder: shellCommand},
 			{Key: "server", Label: "server", Value: endpointValue, Cursor: endpointCursor, Placeholder: "endpoint id or label", Required: true},
-			{Key: "workdir", Label: "workdir", Value: workdir},
+			{Key: "workdir", Label: "workdir", Value: workdirValue, Cursor: len([]rune(workdirValue))},
 		},
 	}
 }
@@ -1127,7 +1128,12 @@ func terminalCreateRequestFromPrompt(root state.Root, prompt state.PromptState) 
 	}
 	workdir := strings.TrimSpace(prompt.FieldValue("workdir"))
 	if workdir == "" {
-		workdir = strings.TrimSpace(prompt.Workdir)
+		if terminalCreateEndpointUsesLocalWorkdir(root, endpointID) {
+			workdir = strings.TrimSpace(prompt.Workdir)
+		}
+	} else if !terminalCreateEndpointUsesLocalWorkdir(root, endpointID) && workdir == strings.TrimSpace(prompt.Workdir) {
+		// 中文说明：远端 daemon 的 CWD 真值在远端；本机自动默认目录不能跨 endpoint 发送。
+		workdir = ""
 	}
 	request := TerminalPoolCreateRequestMsg{EndpointID: endpointID, Title: name, Command: command, CWD: workdir}
 	if prompt.Context == "floating" {
@@ -1234,6 +1240,57 @@ func terminalCreateEndpointIDFromPickerSelection(root state.Root, row int) state
 		return selected.EndpointID
 	}
 	return ""
+}
+
+func terminalCreateDefaultWorkdirForEndpoint(root state.Root, endpointID state.EndpointID, localWorkdir string) string {
+	if terminalCreateEndpointUsesLocalWorkdir(root, endpointID) {
+		return strings.TrimSpace(localWorkdir)
+	}
+	return ""
+}
+
+func terminalCreateEndpointUsesLocalWorkdir(root state.Root, endpointID state.EndpointID) bool {
+	endpointID = state.NormalizeEndpointID(endpointID)
+	if endpointID == state.DefaultEndpointID {
+		return true
+	}
+	if endpoint, ok := root.Endpoints.DisplayEndpoint(endpointID); ok {
+		return endpoint.Transport == state.EndpointTransportLocal
+	}
+	return false
+}
+
+func syncCreatePromptWorkdirForServer(root state.Root, shell state.ShellStore) state.ShellStore {
+	shell = shell.EnsureDefaults()
+	if shell.Overlay.Kind != state.OverlayPrompt || !shell.Overlay.Open {
+		return shell
+	}
+	prompt := shell.Overlay.Prompt
+	if prompt.Purpose != "terminal.create" {
+		return shell
+	}
+	endpointID, ok := terminalCreateEndpointIDFromValue(root, prompt.FieldValue("server"))
+	if !ok {
+		return shell
+	}
+	localWorkdir := strings.TrimSpace(prompt.Workdir)
+	previousDefault := terminalCreateDefaultWorkdirForEndpoint(root, prompt.TargetEndpointID, localWorkdir)
+	nextDefault := terminalCreateDefaultWorkdirForEndpoint(root, endpointID, localWorkdir)
+	for index := range prompt.Fields {
+		if prompt.Fields[index].Key != "workdir" {
+			continue
+		}
+		current := strings.TrimSpace(prompt.Fields[index].Value)
+		// 中文说明：只替换 prompt 自动带入的默认 CWD；用户手写的远端路径必须保留。
+		if current == "" || current == localWorkdir || current == previousDefault {
+			prompt.Fields[index].Value = nextDefault
+			prompt.Fields[index].Cursor = len([]rune(nextDefault))
+		}
+		break
+	}
+	prompt.TargetEndpointID = endpointID
+	shell.Overlay.Prompt = prompt
+	return shell
 }
 
 func terminalEditPrompt(item state.TerminalPoolPageItem) state.PromptState {
