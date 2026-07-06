@@ -3072,7 +3072,7 @@ func TestRenderVMBuilderAlignsTerminalPickerEndpointColumns(t *testing.T) {
 		t.Fatalf("endpoint column should stay aligned:\n%s\n%s\n%s", local, cn, west)
 	}
 	stateCol := displayColumnOf(local, "running")
-	if stateCol < 0 || displayColumnOf(cn, "running") != stateCol || displayColumnOf(west, "attached") != stateCol {
+	if stateCol < 0 || displayColumnOf(cn, "running") != stateCol || displayColumnOf(west, "running") != stateCol {
 		t.Fatalf("state column should stay aligned:\n%s\n%s\n%s", local, cn, west)
 	}
 	sizeCol := displayColumnOf(local, "214x94")

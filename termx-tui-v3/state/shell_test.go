@@ -478,6 +478,44 @@ func TestTerminalPickerItemsKeepSameTerminalIDAcrossEndpoints(t *testing.T) {
 	}
 }
 
+func TestTerminalPickerItemsUseCurrentViewBindingForAttachedState(t *testing.T) {
+	root := Root{
+		Shell:         DefaultShell().OpenTerminalPicker(),
+		TerminalViews: TerminalViewStore{}.BindPane(NewEndpointPaneTerminalView(DefaultEndpointID, "pane-local", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface-local", TerminalPaneViewID("pane-local"), true)),
+		TerminalPool: TerminalPoolStore{
+			Status: TerminalPoolReady,
+			Items: []TerminalPoolItem{
+				{EndpointID: DefaultEndpointID, TerminalID: "term-1", Title: "local shell", State: "running"},
+				{EndpointID: "west", TerminalID: "term-1", Title: "west shell", State: "attached", Attached: true, AttachmentCount: 2},
+			},
+		},
+	}
+
+	items := TerminalPickerItems(root)
+	if len(items) != 3 {
+		t.Fatalf("expected create row plus local and west rows, got %#v", items)
+	}
+	if !items[1].Active || items[1].PoolState != string(TerminalLiveAttached) {
+		t.Fatalf("local exact binding should be projected as attached, got %#v", items[1])
+	}
+	if items[2].Active || items[2].PoolState != "running" {
+		t.Fatalf("remote daemon attached metadata must not become current TUI attached state, got %#v", items[2])
+	}
+
+	root.Shell = root.Shell.SetTerminalPickerQuery("attached")
+	items = TerminalPickerItems(root)
+	if len(items) != 1 || items[0].EndpointID != DefaultEndpointID || items[0].TerminalID != "term-1" {
+		t.Fatalf("attached search should only match current TUI exact binding, got %#v", items)
+	}
+
+	root.Shell = root.Shell.SetTerminalPickerQuery("")
+	root.TerminalViews = root.TerminalViews.BindPane(NewEndpointPaneTerminalView("west", "pane-west", "term-1", 8, 100, 30, TerminalResizeRoleFollower, "surface-west", TerminalPaneViewID("pane-west"), false))
+	items = TerminalPickerItems(root)
+	if len(items) != 3 || !items[2].Active || items[2].PoolState != string(TerminalLiveAttached) {
+		t.Fatalf("west exact binding should be projected as attached only after this TUI attaches it, got %#v", items)
+	}
+}
+
 func TestTerminalPickerAndPoolRowsSortByName(t *testing.T) {
 	root := Root{
 		Shell: DefaultShell().OpenTerminalPicker(),

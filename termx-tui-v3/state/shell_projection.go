@@ -21,14 +21,15 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 		if poolItem.TerminalID == "" {
 			continue
 		}
+		active := terminalPickerPoolItemActive(root, poolItem)
 		item := TerminalPickerItem{
 			EndpointID: poolItem.EndpointID,
 			Title:      terminalPoolTitle(poolItem),
 			Kind:       PaneTerminalLive,
 			TerminalID: poolItem.TerminalID,
-			Active:     poolItem.Attached,
+			Active:     active,
 			FromPool:   true,
-			PoolState:  poolItem.State,
+			PoolState:  terminalPickerPoolState(poolItem, active),
 			Cols:       poolItem.Cols,
 			Rows:       poolItem.Rows,
 		}
@@ -74,6 +75,32 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 		items[selected].Selected = true
 	}
 	return items
+}
+
+func terminalPickerPoolItemActive(root Root, poolItem TerminalPoolItem) bool {
+	ref := poolItem.TerminalRef()
+	if root.Session.Attached && root.Session.TerminalRef().Equal(ref) {
+		return true
+	}
+	for _, binding := range root.TerminalViews.BindingsForTerminalRef(ref) {
+		if binding.Attached {
+			return true
+		}
+	}
+	return false
+}
+
+func terminalPickerPoolState(poolItem TerminalPoolItem, active bool) string {
+	if active {
+		return string(TerminalLiveAttached)
+	}
+	stateText := strings.TrimSpace(poolItem.State)
+	// 中文说明：pool/list 里的 attached 不是当前 TUI view binding 的真值；
+	// picker 只在本地 Session/TerminalView 精确命中 TerminalRef 时展示 attached。
+	if strings.EqualFold(stateText, string(TerminalLiveAttached)) {
+		return "running"
+	}
+	return stateText
 }
 
 func terminalPickerItemFromBinding(root Root, binding TerminalViewBinding) TerminalPickerItem {
