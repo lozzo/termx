@@ -882,6 +882,9 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 		t.Fatalf("drain attach: %v", err)
 	}
 	terminal.AttachResult = services.TerminalAttachResult{Channel: 9, Cols: 80, Rows: 24}
+	terminal.ListResult = services.TerminalListResult{Items: []services.TerminalPoolItem{
+		{TerminalID: "term-1", Title: "term-1", State: "running", Cols: 80, Rows: 24},
+	}}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x06", Ctrl: true}); err != nil {
 		t.Fatalf("send ctrl-f: %v", err)
 	}

@@ -12,7 +12,6 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
 	items := []TerminalPickerItem{}
 	items = append(items, terminalPickerCreateItems(root, query)...)
-	seenTerminal := map[string]struct{}{}
 	for _, poolItem := range root.TerminalPool.Items {
 		poolItem = normalizeTerminalPoolItem(poolItem)
 		if poolItem.TerminalID == "" {
@@ -35,30 +34,6 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 			continue
 		}
 		items = append(items, item)
-		seenTerminal[poolItem.TerminalRef().Key()] = struct{}{}
-	}
-	for _, binding := range root.TerminalViews.Bindings() {
-		binding = binding.withDefaultEndpoint()
-		if binding.TerminalID == "" {
-			continue
-		}
-		if _, seen := seenTerminal[binding.TerminalRef().Key()]; seen {
-			continue
-		}
-		item := terminalPickerItemFromBinding(root, binding)
-		if !matchesTerminalPickerQuery(item, query) {
-			continue
-		}
-		items = append(items, item)
-		seenTerminal[binding.TerminalRef().Key()] = struct{}{}
-	}
-	if root.Session.TerminalID != "" {
-		if _, seen := seenTerminal[LocalTerminalRef(root.Session.TerminalID).Key()]; !seen {
-			item := terminalPickerItemFromSession(root)
-			if matchesTerminalPickerQuery(item, query) {
-				items = append(items, item)
-			}
-		}
 	}
 	sortTerminalPickerItemsByName(items)
 	if len(items) > 0 {
@@ -98,34 +73,6 @@ func terminalPickerPoolState(poolItem TerminalPoolItem, active bool) string {
 		return "running"
 	}
 	return stateText
-}
-
-func terminalPickerItemFromBinding(root Root, binding TerminalViewBinding) TerminalPickerItem {
-	ref := binding.TerminalRef()
-	surface := root.Surface.SurfaceForTerminalRef(ref)
-	stateText := string(surface.State)
-	if (stateText == "" || stateText == string(TerminalLivePending)) && root.Session.TerminalRef().Equal(ref) {
-		stateText = string(root.Session.State)
-	}
-	cols := binding.DesiredCols
-	rows := binding.DesiredRows
-	if cols <= 0 {
-		cols = surface.Cols
-	}
-	if rows <= 0 {
-		rows = surface.Rows
-	}
-	return terminalPickerItemWithEndpoint(root, TerminalPickerItem{EndpointID: ref.EndpointID, Title: binding.TerminalID, Kind: PaneTerminalLive, TerminalID: binding.TerminalID, Active: binding.Attached, PoolState: stateText, Cols: cols, Rows: rows})
-}
-
-func terminalPickerItemFromSession(root Root) TerminalPickerItem {
-	ref := root.Session.TerminalRef()
-	surface := root.Surface.SurfaceForTerminalRef(ref)
-	stateText := string(surface.State)
-	if stateText == "" || stateText == string(TerminalLivePending) {
-		stateText = string(root.Session.State)
-	}
-	return terminalPickerItemWithEndpoint(root, TerminalPickerItem{EndpointID: ref.EndpointID, Title: root.Session.TerminalID, Kind: PaneTerminalLive, TerminalID: root.Session.TerminalID, Active: root.Session.Attached, PoolState: stateText, Cols: root.Session.Cols, Rows: root.Session.Rows})
 }
 
 func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {

@@ -405,7 +405,10 @@ func TestTerminalPickerStateFiltersAndMovesSelection(t *testing.T) {
 		SplitActivePane(PaneState{ID: "pane-2", Title: "日志🚀", Kind: PaneTerminalLive, TerminalID: "term-2"}, SplitDirectionVertical).
 		FocusPane(PaneCommandTarget{PaneID: DefaultPaneID}).
 		OpenTerminalPicker()
-	root := Root{Shell: shell, Session: TerminalSessionStore{TerminalID: "term-main"}}
+	root := Root{
+		Shell:        shell,
+		TerminalPool: TerminalPoolStore{Items: []TerminalPoolItem{{TerminalID: "term-main", Title: "term-main", State: "running"}}},
+	}
 
 	items := TerminalPickerItems(root)
 	if len(items) != 2 || !items[0].Selected || !items[0].CreateNew || items[1].TerminalID != "term-main" || items[1].PaneID != "" {
@@ -421,6 +424,28 @@ func TestTerminalPickerStateFiltersAndMovesSelection(t *testing.T) {
 	items = TerminalPickerItems(root)
 	if len(items) != 2 || !items[1].Selected || items[1].TerminalID != "term-main" {
 		t.Fatalf("selection should move to terminal row, got %#v", items)
+	}
+}
+
+func TestTerminalPickerItemsDoNotAppendStaleLocalBindings(t *testing.T) {
+	root := Root{
+		Shell: DefaultShell().OpenTerminalPicker(),
+		TerminalPool: TerminalPoolStore{Items: []TerminalPoolItem{
+			{EndpointID: "cn-fast", TerminalID: "111", Title: "111", State: "running"},
+			{EndpointID: DefaultEndpointID, TerminalID: "123", Title: "123", State: "running"},
+		}},
+		TerminalViews: TerminalViewStore{}.BindPane(NewEndpointPaneTerminalView("cn-fast", "pane-old", "term-pool-legacy", 7, 218, 94, TerminalResizeRoleOwner, "surface-old", TerminalPaneViewID("pane-old"), true)),
+		Session:       TerminalSessionStore{EndpointID: "cn-fast", TerminalID: "term-pool-legacy", Attached: true, Cols: 218, Rows: 94, State: TerminalLiveAttached},
+	}
+
+	items := TerminalPickerItems(root)
+	if len(items) != 3 || !items[0].CreateNew || items[1].TerminalID != "111" || items[2].TerminalID != "123" {
+		t.Fatalf("picker must only show daemon-listed terminals plus create row, got %#v", items)
+	}
+	for _, item := range items {
+		if item.TerminalID == "term-pool-legacy" {
+			t.Fatalf("stale binding/session must not create picker terminal row, got %#v", items)
+		}
 	}
 }
 
