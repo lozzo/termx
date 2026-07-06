@@ -107,6 +107,7 @@ func (TerminalPoolCreateRequestMsg) isMsg() {}
 
 type TerminalPoolCreateResultMsg struct {
 	EndpointID       state.EndpointID
+	RequestedID      string
 	TargetPaneID     string
 	TargetFloatingID string
 	Result           services.TerminalCreateResult
@@ -354,11 +355,16 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 	beforeSurfaceState := root.Surface.State
 	beforeSessionTerminal := root.Session.TerminalID
 	beforeSessionState := root.Session.State
+	var missingRefs []state.TerminalRef
 	if msg.EndpointID != "" {
 		if root.TerminalPool.IsStale(msg.Seq) {
 			return root, nil
 		}
-		root = root.ApplyEndpointTerminalList(msg.EndpointID, terminalPoolItemsFromService(msg.Result.Items), errText)
+		items := terminalPoolItemsFromService(msg.Result.Items)
+		if msg.Refresh && errText == "" {
+			missingRefs = terminalRefsMissingFromEndpointList(root, msg.EndpointID, items)
+		}
+		root = root.ApplyEndpointTerminalList(msg.EndpointID, items, errText)
 		if errText != "" && root.TerminalPool.Status == state.TerminalPoolLoading {
 			root.TerminalPool.Status = state.TerminalPoolReady
 		}
@@ -367,11 +373,20 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 		if msg.Refresh && errText != "" {
 			return root, terminalPoolRefreshLoopEffects(root)
 		}
-		next, applied := root.TerminalPool.ApplyList(msg.Seq, terminalPoolItemsFromService(msg.Result.Items), errText)
+		items := terminalPoolItemsFromService(msg.Result.Items)
+		if msg.Refresh && errText == "" {
+			missingRefs = terminalRefsMissingFromEndpointList(root, state.DefaultEndpointID, items)
+		}
+		next, applied := root.TerminalPool.ApplyList(msg.Seq, items, errText)
 		if !applied {
 			return root, nil
 		}
 		root.TerminalPool = next
+	}
+	if len(missingRefs) > 0 {
+		for _, ref := range missingRefs {
+			root = removeTerminalRefFromRoot(root, ref)
+		}
 	}
 	if msg.Refresh && errText != "" {
 		return root, terminalPoolRefreshLoopEffects(root)
@@ -396,6 +411,9 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 	}
 	effects := terminalPoolRefreshLoopEffects(root)
 	effects = append(effects, terminalPoolPreviewRefreshEffects(root, deps)...)
+	if len(missingRefs) > 0 {
+		effects = append(effects, workbenchPersistEffects("terminal.inventory-missing")...)
+	}
 	return root.Advance(), effects
 }
 
@@ -618,7 +636,7 @@ func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequ
 				Rows:       rows,
 			})
 			finish(0)
-			return TerminalPoolCreateResultMsg{EndpointID: endpointID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, Result: result, Err: err}
+			return TerminalPoolCreateResultMsg{EndpointID: endpointID, RequestedID: terminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, Result: result, Err: err}
 		},
 	}}
 }
@@ -631,20 +649,27 @@ func reduceTerminalPoolCreateResult(root state.Root, msg TerminalPoolCreateResul
 	if msg.Result.EndpointID != "" {
 		endpointID = state.NormalizeEndpointID(msg.Result.EndpointID)
 	}
-	root.TerminalPool = root.TerminalPool.ApplyCreatedRef(state.NewTerminalRef(endpointID, msg.Result.TerminalID), errText)
+	result := msg.Result
+	if result.EndpointID == "" {
+		result.EndpointID = endpointID
+	}
+	if result.TerminalID == "" {
+		result.TerminalID = msg.RequestedID
+	}
+	root.TerminalPool = root.TerminalPool.ApplyCreatedRef(state.NewTerminalRef(endpointID, result.TerminalID), errText)
 	if errText != "" {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.new", Body: errText})
 		return root.Advance(), nil
 	}
-	if msg.Result.TerminalID == "" {
+	if result.TerminalID == "" {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.new", Body: "missing terminal"})
 		return root.Advance(), nil
 	}
-	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.new", Body: msg.Result.TerminalID})
+	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.new", Body: result.TerminalID})
 	effects := []Effect{
 		FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{EndpointID: endpointID} }},
 		FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolAttachRequestMsg{EndpointID: endpointID, TerminalID: msg.Result.TerminalID, TargetPaneID: msg.TargetPaneID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: state.TerminalResizeRoleOwner}
+			return TerminalPoolAttachRequestMsg{EndpointID: endpointID, TerminalID: result.TerminalID, TargetPaneID: msg.TargetPaneID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: state.TerminalResizeRoleOwner}
 		}},
 	}
 	return root.Advance(), effects
@@ -1144,6 +1169,61 @@ func terminalPoolItemRef(pool state.TerminalPoolStore, ref state.TerminalRef) (s
 	return state.TerminalPoolItem{}, false
 }
 
+func terminalRefsMissingFromEndpointList(root state.Root, endpointID state.EndpointID, items []state.TerminalPoolItem) []state.TerminalRef {
+	endpointID = state.NormalizeEndpointID(endpointID)
+	present := map[string]struct{}{}
+	for _, item := range items {
+		itemRef := state.NewTerminalRef(item.EndpointID, item.TerminalID)
+		if item.EndpointID == "" {
+			itemRef = state.NewTerminalRef(endpointID, item.TerminalID)
+		}
+		if itemRef.Empty() || itemRef.EndpointID != endpointID {
+			continue
+		}
+		present[itemRef.Key()] = struct{}{}
+	}
+	candidates := map[string]state.TerminalRef{}
+	addCandidate := func(ref state.TerminalRef) {
+		ref = ref.Normalize()
+		if ref.Empty() || ref.EndpointID != endpointID {
+			return
+		}
+		if _, ok := present[ref.Key()]; ok {
+			return
+		}
+		candidates[ref.Key()] = ref
+	}
+	for _, binding := range root.TerminalViews.Bindings() {
+		addCandidate(binding.TerminalRef())
+	}
+	addCandidate(root.Session.TerminalRef())
+	addCandidate(root.Surface.TerminalRef())
+	for _, snapshot := range root.Surface.Surfaces {
+		addCandidate(snapshot.TerminalRef())
+	}
+	if root.History.TerminalID != "" {
+		addCandidate(state.NewTerminalRef(root.History.EndpointID, root.History.TerminalID))
+	}
+	if root.CopyMode.TerminalID != "" {
+		addCandidate(state.NewTerminalRef(root.CopyMode.EndpointID, root.CopyMode.TerminalID))
+	}
+	for _, history := range root.HistoryByView {
+		if history.TerminalID != "" {
+			addCandidate(state.NewTerminalRef(history.EndpointID, history.TerminalID))
+		}
+	}
+	for _, copyMode := range root.CopyModeByView {
+		if copyMode.TerminalID != "" {
+			addCandidate(state.NewTerminalRef(copyMode.EndpointID, copyMode.TerminalID))
+		}
+	}
+	out := make([]state.TerminalRef, 0, len(candidates))
+	for _, ref := range candidates {
+		out = append(out, ref)
+	}
+	return out
+}
+
 func restartTerminalViewEffects(root state.Root, terminalID string) []Effect {
 	return restartTerminalViewEffectsRef(root, state.LocalTerminalRef(terminalID))
 }
@@ -1200,8 +1280,8 @@ func removeTerminalFromRoot(root state.Root, terminalID string) state.Root {
 
 func removeTerminalRefFromRoot(root state.Root, ref state.TerminalRef) state.Root {
 	ref = ref.Normalize()
+	root.Shell = root.Shell.RemoveTerminalRefBindings(ref, root.TerminalViews)
 	root.TerminalViews = root.TerminalViews.RemoveTerminalRef(ref)
-	root.Shell = root.Shell.RemoveTerminalBindings(ref.TerminalID)
 	root.Session = root.Session.RemoveTerminalRef(ref)
 	root.Surface = root.Surface.RemoveTerminalRef(ref)
 	return root.WithoutCopyHistorySessionsForTerminalRef(ref)

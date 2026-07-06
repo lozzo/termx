@@ -147,7 +147,11 @@ func (adapter ProtocolTerminalServiceAdapter) Create(ctx context.Context, req Te
 	if err != nil {
 		return TerminalCreateResult{}, err
 	}
-	return TerminalCreateResult{TerminalID: result.TerminalID, State: result.State}, nil
+	terminalID := result.TerminalID
+	if terminalID == "" {
+		terminalID = req.TerminalID
+	}
+	return TerminalCreateResult{TerminalID: terminalID, State: result.State}, nil
 }
 
 func (adapter ProtocolTerminalServiceAdapter) Restart(ctx context.Context, req TerminalRestartRequest) error {

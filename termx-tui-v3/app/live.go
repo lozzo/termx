@@ -1704,7 +1704,7 @@ func markTerminalExitedFromError(root state.Root, terminalID string, err error) 
 }
 
 func markTerminalExitedFromErrorRef(root state.Root, ref state.TerminalRef, err error) (state.Root, bool) {
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "terminal exited") {
+	if err == nil {
 		return root, false
 	}
 	ref = ref.Normalize()
@@ -1714,9 +1714,23 @@ func markTerminalExitedFromErrorRef(root state.Root, ref state.TerminalRef, err 
 	if ref.Empty() {
 		ref = root.Surface.TerminalRef()
 	}
+	if terminalNotFoundError(err) {
+		return removeTerminalRefFromRoot(root, ref), true
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "terminal exited") {
+		return root, false
+	}
 	root.Session = root.Session.MarkExitedWithMetadataRef(ref, 0, "", time.Time{}, nil)
 	root.Surface = root.Surface.MarkExitedWithMetadataRef(ref, 0, "", time.Time{}, nil)
 	return root, true
+}
+
+func terminalNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "terminal not found") || strings.Contains(text, "protocol error 404")
 }
 
 func setLiveInputError(root state.Root, terminalID string, message string) state.Root {

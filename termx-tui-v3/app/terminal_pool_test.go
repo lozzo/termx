@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
@@ -192,6 +193,76 @@ func TestTerminalPoolEndpointListFailureMarksOnlyThatEndpointOffline(t *testing.
 	}
 }
 
+func TestTerminalPoolEndpointListSuccessDisconnectsMissingRemoteBinding(t *testing.T) {
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")
+	shell = shell.SplitActivePane(state.PaneState{ID: "pane-local", Title: "local", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
+	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+		EndpointID: "west",
+		TerminalID: "term-1",
+		Lines:      []string{"old remote"},
+		State:      state.TerminalLiveAttached,
+	})
+	root := state.Root{
+		Shell: shell,
+		Session: state.TerminalSessionStore{
+			EndpointID:       "west",
+			TerminalID:       "term-1",
+			Channel:          9,
+			Attached:         true,
+			InputChannels:    map[string]uint16{"west/term-1": 9},
+			State:            state.TerminalLiveAttached,
+			ResizePolicy:     state.TerminalResizeRoleOwner,
+			SurfaceID:        "surface-west",
+			ViewID:           state.TerminalPaneViewID(state.DefaultPaneID),
+			DesiredCols:      100,
+			DesiredRows:      30,
+			LastError:        "",
+			ResizeRequestSeq: 2,
+		},
+		Surface: surface,
+		TerminalPool: state.TerminalPoolStore{
+			RequestSeq: 4,
+			Status:     state.TerminalPoolReady,
+			Items: []state.TerminalPoolItem{
+				{EndpointID: "west", TerminalID: "term-1", Title: "west"},
+				{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", Title: "local"},
+			},
+		},
+		Endpoints: state.EndpointStore{}.
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "Local", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true, Status: state.EndpointStatusConnected}).
+			Upsert(state.EndpointItem{ID: "west", Label: "West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true, Status: state.EndpointStatusConnected}),
+		History:  state.HistoryStore{EndpointID: "west", TerminalID: "term-1", Token: "tok-remote"},
+		CopyMode: state.CopyModeStore{Active: true, EndpointID: "west", TerminalID: "term-1", BoundToken: "tok-remote"},
+	}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewEndpointPaneTerminalView("west", state.DefaultPaneID, "term-1", 9, 100, 30, state.TerminalResizeRoleOwner, "surface-west", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindPane(state.NewEndpointPaneTerminalView(state.DefaultEndpointID, "pane-local", "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-local", state.TerminalPaneViewID("pane-local"), true))
+
+	next, effects := reducer(root, TerminalPoolListResultMsg{EndpointID: "west", Seq: 4, Refresh: true, Result: services.TerminalListResult{Items: nil}})
+	if _, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID); ok {
+		t.Fatalf("missing remote terminal should clear west pane binding, views=%#v", next.TerminalViews)
+	}
+	if pane, ok := next.Shell.Pane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}); !ok || pane.TerminalID != "" || pane.Kind != state.PaneEmpty {
+		t.Fatalf("missing remote terminal should leave pane unconnected, pane=%#v ok=%v", pane, ok)
+	}
+	if binding, ok := next.TerminalViews.PaneBinding("pane-local"); !ok || !binding.TerminalRef().Equal(state.LocalTerminalRef("term-1")) {
+		t.Fatalf("local same-id binding must survive remote missing list, binding=%#v ok=%v", binding, ok)
+	}
+	if pane, ok := next.Shell.Pane(state.PaneCommandTarget{PaneID: "pane-local"}); !ok || pane.TerminalID != "term-1" || pane.Kind != state.PaneTerminalLive {
+		t.Fatalf("local same-id pane must stay connected, pane=%#v ok=%v", pane, ok)
+	}
+	if next.Session.TerminalID != "" || next.Surface.TerminalID != "" || next.History.TerminalID != "" || next.CopyMode.TerminalID != "" {
+		t.Fatalf("missing remote terminal should clear live and copy state, session=%#v surface=%#v history=%#v copy=%#v", next.Session, next.Surface, next.History, next.CopyMode)
+	}
+	if len(next.TerminalPool.Items) != 1 || !next.TerminalPool.Items[0].TerminalRef().Equal(state.LocalTerminalRef("term-1")) {
+		t.Fatalf("endpoint list should only remove west pool rows, pool=%#v", next.TerminalPool.Items)
+	}
+	if msg := firstWorkbenchPersistEffect(t, effects); msg.Reason != "terminal.inventory-missing" {
+		t.Fatalf("missing terminal disconnect should persist workbench, msg=%#v effects=%#v", msg, effects)
+	}
+}
+
 func TestTerminalPoolRefreshFailureMarksEndpointOfflineSilently(t *testing.T) {
 	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
 	root := state.Root{
@@ -222,6 +293,54 @@ func TestTerminalPoolRefreshFailureMarksEndpointOfflineSilently(t *testing.T) {
 	}
 	if !terminalPoolRefreshLoopScheduled(effects) {
 		t.Fatalf("refresh failure should keep background refresh loop, effects=%#v", effects)
+	}
+}
+
+func TestTerminalPoolCreateResultFallsBackToRequestedRemoteIDForAttach(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	next, effects := reduceTerminalPoolCreateResult(root, TerminalPoolCreateResultMsg{
+		EndpointID:  "west",
+		RequestedID: "term-requested",
+		Result:      services.TerminalCreateResult{State: "running"},
+	})
+	if next.TerminalPool.LastCreatedRef != (state.TerminalRef{EndpointID: "west", TerminalID: "term-requested"}) {
+		t.Fatalf("create result should record requested remote ref, pool=%#v", next.TerminalPool)
+	}
+	if len(effects) != 2 {
+		t.Fatalf("create result should schedule list and attach, effects=%#v", effects)
+	}
+	attach, ok := effects[1].(FuncEffect).Run(context.Background()).(TerminalPoolAttachRequestMsg)
+	if !ok || attach.EndpointID != "west" || attach.TerminalID != "term-requested" {
+		t.Fatalf("create result should attach requested remote terminal, msg=%#v", attach)
+	}
+}
+
+func TestLiveAttachTerminalNotFoundDisconnectsPane(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachErr: errors.New("protocol error 404: terminal not found")}
+	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-missing")}
+
+	pending, effects := reducer(root, LiveAttachMsg{Config: LiveConfig{
+		EndpointID: "west",
+		TerminalID: "term-missing",
+		Cols:       80,
+		Rows:       24,
+		SurfaceID:  "surface-west",
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+	}})
+	if len(effects) != 1 {
+		t.Fatalf("expected attach effect, got %#v", effects)
+	}
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	next, _ := reducer(pending, msg)
+	if _, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID); ok {
+		t.Fatalf("terminal-not-found attach should clear pending binding, views=%#v", next.TerminalViews)
+	}
+	if pane, ok := next.Shell.Pane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}); !ok || pane.TerminalID != "" || pane.Kind != state.PaneEmpty {
+		t.Fatalf("terminal-not-found attach should leave pane unconnected, pane=%#v ok=%v", pane, ok)
+	}
+	if next.Session.TerminalID != "" || next.Surface.TerminalID != "" {
+		t.Fatalf("terminal-not-found attach should clear live state, session=%#v surface=%#v", next.Session, next.Surface)
 	}
 }
 
