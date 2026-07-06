@@ -24,7 +24,7 @@
 
 - TUI 能在同一个 terminal pool 中展示本地和远端 endpoint 的 terminal。
 - Terminal picker 和必要的 chrome 区域能展示 terminal 所属机器/endpoint，避免同名 terminal 难以区分。
-- endpoint 的显示名称、transport 参数和连接策略有明确配置来源。
+- endpoint 的显示名称、transport 参数和连接策略有明确连接注册来源。
 - pane 与 floating window 能绑定到任意 endpoint 的 terminal。
 - input、resize、owner transfer、live frame、copy mode 和 history request 都路由到 terminal 所属 endpoint。
 - workbench/layout storage 继续可以托管在本地客户端域，但 terminal binding 必须保存 `TerminalRef`。
@@ -49,18 +49,31 @@ TUI v3 目前的关键假设是“一个 runtime 只连接一个 daemon”：
 - `TerminalViewBinding` 持久化 pane/floating 到 terminal 的连接关系，但只保存 `TerminalID`。
 - live attach、resize owner、copy/history token、terminal pool refresh、输入 serial key 都没有 endpoint 作用域。
 - CLI attach 路径目前 dial 一个默认本地 socket，并额外创建 workbench/clipboard event sessions。
-- TUI v3 现有配置文件是 `$XDG_CONFIG_HOME/termx/tui-v3.yaml`，fallback 到 `~/.config/termx/tui-v3.yaml`；当前简化 parser 只支持 scalar 值，不支持 endpoint map/list。
+- TUI v3 现有配置文件是 `$XDG_CONFIG_HOME/termx/tui-v3.yaml`，fallback 到 `~/.config/termx/tui-v3.yaml`；该文件只表达 TUI 偏好，不应承载 endpoint/connection 注册表。
 
 底层已经有一个有用基础：`internal/protocol.Client` 基于 `termx-shared/transport.Transport` 工作。也就是说 transport 抽象本身已有雏形，主要缺的是 endpoint identity、配置、状态隔离和 service routing。
 
 ## 架构方向
 
-### Endpoint 配置
+### Connection registry
 
-建议引入客户端本地配置结构：
+endpoint/connection 是 CLI、TUI 和未来其他客户端共享的连接目标注册表，不属于 TUI chrome/theme/keymap 偏好。它应该独立于 `tui-v3.yaml`，使用单独文件：
+
+```text
+$XDG_CONFIG_HOME/termx/connections.yaml
+~/.config/termx/connections.yaml
+```
+
+建议引入客户端本地 registry 结构：
 
 ```go
-type EndpointConfig struct {
+type ConnectionRegistry struct {
+    Version     int
+    Default     EndpointID
+    Connections map[EndpointID]ConnectionConfig
+}
+
+type ConnectionConfig struct {
     ID            EndpointID
     Label         string
     TransportKind TransportKind
@@ -75,23 +88,16 @@ type EndpointConfig struct {
 
 `ID` 是持久化和路由主键；`Label` 只用于展示；`AuthRef` 指向本地凭据或 SSH 配置；`ConnectMode` 决定启动时是否主动连接；`Capabilities` 表达 endpoint 支持的协议能力，不能靠猜测 endpoint 类型替代。
 
-配置文件沿用 TUI v3 的配置位置：
-
-```text
-$XDG_CONFIG_HOME/termx/tui-v3.yaml
-~/.config/termx/tui-v3.yaml
-```
-
 建议 schema 使用 map，而不是 list，把 endpoint id 固定为 key，避免列表重排影响持久化引用：
 
 ```yaml
 version: 1
+default: local
 
-endpoints:
+connections:
   local:
     label: "This Mac"
     enabled: true
-    default: true
     transport: local
     connect_mode: auto       # auto | on_demand | manual
     socket: auto             # auto 表示沿用当前 resolveV3Socket 策略
@@ -124,9 +130,10 @@ endpoints:
 默认行为：
 
 - 未配置任何 endpoint 时，内置一个 `local` endpoint，`label` 优先取本机 hostname，取不到时显示 `local`，`connect_mode = auto`。
-- 配置中没有 `default: true` 时，选择第一个 enabled local endpoint；仍没有则选择第一个 enabled endpoint。
+- registry 中没有 `default` 时，选择第一个 enabled local endpoint；仍没有则选择第一个 enabled endpoint。
 - `label` 可改名但不改变 endpoint 身份；`ID` 一旦被 workbench 引用就不能自动重命名。
-- 当前 config parser 不支持动态 endpoint map。ME003 必须补 parser/harness，或切换到完整 YAML 解析，但仍要保持未知字段报错。
+- `connections.yaml` 不复用当前 TUI scalar parser。ME003 应单独实现 connection registry loader/harness，或使用完整 YAML 解析，但仍要保持未知字段报错。
+- `tui-v3.yaml` 只继续保存 TUI 偏好；renderer/input router 不读取 `connections.yaml`，只消费 reducer view-model。
 
 ### EndpointManager
 
@@ -249,7 +256,7 @@ layout storage 仍可作为当前客户端本地 truth source，保存 pane/floa
 - reconnect epoch：endpoint 重连后旧 channel、surface revision、history token 和 inflight request 需要失效。
 - 安全身份：SSH host key、hub device identity 和 endpoint label 必须分离，避免“改名即信任”。
 - 展示歧义：terminal picker、pane chrome 和 footer summary 不能只展示 terminal title；多 endpoint 下必须能看出所属机器。
-- parser 复杂度：现有 `tui-v3.yaml` parser 不支持动态 map/list，endpoint config 落地时必须补 schema harness，避免半支持导致配置静默无效。
+- parser 复杂度：connection registry 需要动态 map，不能复用当前 `tui-v3.yaml` scalar parser 半支持；必须单独补 schema harness，避免配置静默无效。
 - 配置漂移：workbench 引用的 endpoint 被删除时，应保留 unresolved binding，并给用户明确修复入口。
 - storage 边界：不要把远端 daemon 的 workspace storage 和本地 client layout storage 混成一份 truth。
 - transport fallback：SSH 失败不能自动退化成本地 shell 或另一个 endpoint。
@@ -266,7 +273,7 @@ layout storage 仍可作为当前客户端本地 truth source，保存 pane/floa
 
 ### ME003：Endpoint registry/config
 
-增加 endpoint 配置读取和默认 local endpoint。CLI/TUI 启动时由 registry 生成 endpoint 列表，而不是直接 dial 固定 socket。本阶段要定义 `tui-v3.yaml` 的 endpoint map、`label`、`connect_mode` 和默认 local 行为。
+增加 connection registry 读取和默认 local endpoint。CLI/TUI 启动时由 registry 生成 endpoint 列表，而不是直接 dial 固定 socket。本阶段要定义 `connections.yaml` 的 endpoint map、`label`、`connect_mode` 和默认 local 行为。
 
 ### ME004：Terminal pool 聚合
 
@@ -301,7 +308,7 @@ workbench snapshot 保存 endpoint-aware binding。旧 snapshot 默认迁移到 
 - history token 来自 endpoint A 时，不能被 endpoint B 的 adapter 使用。
 - workbench restore 遇到缺失 endpoint 时保留 binding，并进入 unresolved 状态。
 - endpoint B list 失败时，endpoint A 的 terminal pool 结果仍可展示。
-- `tui-v3.yaml` 配置 `lab.label = "Lab Server"` 后，terminal picker 和非默认 endpoint 的 pane chrome 使用该 label。
+- `connections.yaml` 配置 `lab.label = "Lab Server"` 后，terminal picker 和非默认 endpoint 的 pane chrome 使用该 label。
 - `connect_mode = manual` 的 endpoint 启动时不 dial；用户显式 connect 后才进入 terminal list。
 - `connect_mode = on_demand` 的 endpoint 在 picker 展开或 restore 可见 binding 时才 dial，失败只影响该 endpoint。
 
@@ -309,7 +316,7 @@ workbench snapshot 保存 endpoint-aware binding。旧 snapshot 默认迁移到 
 
 - 文档-only 改动运行 `git diff --check`。
 - TUI 状态或服务改动运行 `cd termx-tui-v3 && go test ./... -count=1`。
-- CLI attach/config 改动运行 `cd termx-cli && go test ./cmd/termx -count=1`。
+- CLI attach/connection registry 改动运行 `cd termx-cli && go test ./cmd/termx -count=1`。
 - protocol 改动运行 `go test ./internal/protocol/... -count=1`。
 - transport 改动运行对应 package 的 `go test ... -count=1`。
 - 任意提交前运行 `git diff --check`。
