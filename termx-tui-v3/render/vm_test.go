@@ -3387,7 +3387,7 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		strings.Contains(content.Lines[3].PlainString(), "│") ||
 		strings.Contains(content.Lines[3].PlainString(), "├") ||
 		strings.Contains(content.Lines[3].PlainString(), "└") ||
-		!strings.Contains(content.Lines[3].PlainString(), "›") ||
+		strings.Contains(content.Lines[3].PlainString(), "›") ||
 		!strings.Contains(plainLines(content.Lines), "HIST metrics unavailable") ||
 		!strings.Contains(plainLines(content.Lines), "CONN") ||
 		strings.Contains(plainLines(content.Lines), "Open  New  Zoom") ||
@@ -3435,6 +3435,8 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	root.Shell = root.Shell.MoveWorkbenchTreeSelection(1, len(state.WorkbenchTreeItems(root)))
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	if len(content.Meta.WorkbenchSnapshots) != 3 ||
+		!strings.Contains(content.Lines[3].PlainString(), "▾") ||
+		!strings.Contains(content.Lines[4].PlainString(), "▾") ||
 		content.Meta.WorkbenchSnapshots[0].Panel.ID != state.DefaultPaneID ||
 		content.Meta.WorkbenchSnapshots[0].Panel.Title != "shell" ||
 		content.Meta.WorkbenchSnapshots[1].Panel.ID != "pane-2" ||

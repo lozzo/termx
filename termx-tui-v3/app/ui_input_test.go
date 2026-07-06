@@ -3881,6 +3881,29 @@ func TestOverlayKeyboardCommandsRouteThroughContentActions(t *testing.T) {
 	assertContentActionEffect(t, effects, render.ActionWorkbenchDetach)
 }
 
+func TestWorkbenchTreeOverlayKeyboardTogglesCollapse(t *testing.T) {
+	inputReducer := NewUIInputReducer()
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
+		OpenWorkbenchTree()
+	root := state.Root{Shell: shell}
+	items := state.WorkbenchTreeItems(root)
+	root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(1, len(items))
+
+	next, effects := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyLeft}})
+	if len(effects) == 0 || len(state.WorkbenchTreeItems(next)) != 2 || !state.WorkbenchTreeItems(next)[1].Collapsed {
+		t.Fatalf("left arrow should collapse selected tab, items=%#v effects=%#v", state.WorkbenchTreeItems(next), effects)
+	}
+	next, effects = inputReducer(next, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyRight}})
+	if len(effects) == 0 || len(state.WorkbenchTreeItems(next)) != 4 || state.WorkbenchTreeItems(next)[1].Collapsed {
+		t.Fatalf("right arrow should expand selected tab, items=%#v effects=%#v", state.WorkbenchTreeItems(next), effects)
+	}
+	next, effects = inputReducer(next, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
+	if len(effects) == 0 || len(state.WorkbenchTreeItems(next)) != 2 || !next.Shell.Overlay.Open {
+		t.Fatalf("enter on expandable row should toggle without opening target, items=%#v shell=%#v effects=%#v", state.WorkbenchTreeItems(next), next.Shell, effects)
+	}
+}
+
 func TestOverlayContentActionsUseSelectedItemsAndReducers(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-logs", Channel: 12, Cols: 100, Rows: 30},

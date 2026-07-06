@@ -212,11 +212,14 @@ type SplitNode struct {
 }
 
 type OverlayState struct {
-	Kind               OverlayKind
-	Open               bool
-	TargetID           string
-	Query              string
-	SelectedIndex      int
+	Kind          OverlayKind
+	Open          bool
+	TargetID      string
+	Query         string
+	SelectedIndex int
+	// WorkbenchCollapsed 保存 Workbench Navigator 当前 overlay 的折叠节点。
+	// 它只影响树投影可见性，不改变 workspace/tab/pane 的真实布局状态。
+	WorkbenchCollapsed map[string]bool
 	Prompt             PromptState
 	HelpSection        string
 	ClipboardNameWidth int
@@ -274,6 +277,8 @@ type WorkbenchTreeItem struct {
 	PaneKind      PaneKind
 	TerminalID    string
 	Depth         int
+	Expandable    bool
+	Collapsed     bool
 	Active        bool
 	Selected      bool
 	Summary       string

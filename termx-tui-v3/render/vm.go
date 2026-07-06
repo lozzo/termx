@@ -608,6 +608,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 	case string(state.OverlayWorkbenchTree):
 		return footerActionSpecs(
 			footerActionSpec("search", "", "", StyleStatusAccent),
+			footerActionSpec("←/→", "FOLD", "", StyleStatusAccent),
 			footerActionFor(ActionWorkbenchOpen),
 			footerActionWithKey(ActionWorkbenchNew, "ctrl-n", "NEW"),
 			footerActionFor(ActionWorkbenchSelect),

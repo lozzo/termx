@@ -847,6 +847,37 @@ func TestWorkbenchTreeItemsProjectStructureSearchAndSelection(t *testing.T) {
 	}
 }
 
+func TestWorkbenchTreeItemsRespectOverlayCollapseState(t *testing.T) {
+	shell := DefaultShell().
+		SplitActivePane(PaneState{ID: "pane-2", Title: "two", Kind: PaneTerminalLive, TerminalID: "term-2"}, SplitDirectionVertical).
+		OpenWorkbenchTree()
+	root := Root{Shell: shell}
+
+	items := WorkbenchTreeItems(root)
+	if len(items) != 4 || !items[0].Expandable || !items[1].Expandable {
+		t.Fatalf("expected expandable workspace and tab rows, got %#v", items)
+	}
+	root.Shell = root.Shell.SetWorkbenchTreeItemCollapsed(items[1], true)
+	items = WorkbenchTreeItems(root)
+	if len(items) != 2 || !items[1].Collapsed || items[1].Kind != WorkbenchTreeKindTab {
+		t.Fatalf("collapsed tab should hide pane children, got %#v", items)
+	}
+
+	root.Shell = root.Shell.SetWorkbenchTreeQuery("two")
+	items = WorkbenchTreeItems(root)
+	if len(items) != 1 || items[0].PaneID != "pane-2" {
+		t.Fatalf("query should still see descendants hidden by collapse, got %#v", items)
+	}
+
+	root.Shell = root.Shell.SetWorkbenchTreeQuery("")
+	items = WorkbenchTreeItems(root)
+	root.Shell = root.Shell.SetWorkbenchTreeItemCollapsed(items[0], true)
+	items = WorkbenchTreeItems(root)
+	if len(items) != 1 || !items[0].Collapsed || items[0].Kind != WorkbenchTreeKindWorkspace {
+		t.Fatalf("collapsed workspace should hide tab subtree, got %#v", items)
+	}
+}
+
 func TestClipboardHistoryItemsFilterAndSelection(t *testing.T) {
 	shell := DefaultShell().OpenClipboardHistory()
 	root := Root{

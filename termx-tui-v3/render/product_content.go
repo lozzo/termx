@@ -1735,6 +1735,7 @@ func workbenchTreeRowLine(root state.Root, row state.WorkbenchTreeItem) Line {
 	cells := []Cell{
 		styledCell(marker, markerStyle),
 		styledCell(prefix, prefixStyle),
+		workbenchTreeDisclosureCell(row),
 		tokenCell(workbenchTreeKindGlyph(row), workbenchTreeKindStyle(row)),
 		NewCell(" "),
 		workbenchTreeTitleCell(title, row),
@@ -1746,11 +1747,26 @@ func workbenchTreeRowLine(root state.Root, row state.WorkbenchTreeItem) Line {
 }
 
 func workbenchTreeDepthPrefix(depth int) string {
-	if depth <= 0 {
+	if depth <= 1 {
 		return ""
 	}
-	// 中文说明：Workbench Navigator 仍用缩进表达树层级，但不画连续竖线，避免左侧结构噪声压过标题和状态。
-	return strings.Repeat("  ", depth-1) + "› "
+	// 中文说明：Workbench Navigator 用纯缩进表达层级；展开/折叠由 disclosure glyph 表达，避免连续竖线压过标题。
+	return strings.Repeat("  ", depth-1)
+}
+
+func workbenchTreeDisclosureCell(row state.WorkbenchTreeItem) Cell {
+	if !row.Expandable {
+		return styledCell("  ", StyleMuted)
+	}
+	glyph := "▾ "
+	if row.Collapsed {
+		glyph = "▸ "
+	}
+	style := StyleForeground
+	if row.Selected {
+		style = StyleAccent
+	}
+	return styledCell(glyph, style)
 }
 
 func workbenchNavigatorLines(root state.Root, rows []state.WorkbenchTreeItem, query string, layout workbenchNavigatorLayout) []Line {

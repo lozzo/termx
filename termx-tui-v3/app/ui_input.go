@@ -654,7 +654,23 @@ func reduceWorkbenchTreeInput(root state.Root, event input.InputEvent) (state.Ro
 	case input.KeyDown:
 		root.Shell = root.Shell.MoveWorkbenchTreeSelection(1, len(items))
 		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyLeft:
+		if selected, ok := workbenchTreeSelectedItem(items); ok && selected.Expandable && !selected.Collapsed {
+			root.Shell = root.Shell.SetWorkbenchTreeItemCollapsed(selected, true)
+			return root.Advance(), []Effect{handledEffect{}}
+		}
+		return root, []Effect{handledEffect{}}
+	case input.KeyRight:
+		if selected, ok := workbenchTreeSelectedItem(items); ok && selected.Expandable && selected.Collapsed {
+			root.Shell = root.Shell.SetWorkbenchTreeItemCollapsed(selected, false)
+			return root.Advance(), []Effect{handledEffect{}}
+		}
+		return root, []Effect{handledEffect{}}
 	case input.KeyEnter:
+		if selected, ok := workbenchTreeSelectedItem(items); ok && selected.Expandable {
+			root.Shell = root.Shell.ToggleWorkbenchTreeItem(selected)
+			return root.Advance(), []Effect{handledEffect{}}
+		}
 		next, effects := reduceWorkbenchTreeOpen(root, items)
 		return next, append([]Effect{handledEffect{}}, effects...)
 	case input.KeyBackspace, input.KeyDelete:

@@ -22,17 +22,23 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 	for _, workspace := range workspaces {
 		workspace = workspace.ensureDefaults()
 		workspaceActive := workspace.ID == shell.Workspace.ID
-		appendItem(WorkbenchTreeItem{
+		workspaceItem := WorkbenchTreeItem{
 			Kind:          WorkbenchTreeKindWorkspace,
 			WorkspaceID:   workspace.ID,
 			WorkspaceName: workspace.Name,
 			Depth:         0,
+			Expandable:    len(workspace.Tabs) > 0,
 			Active:        workspaceActive,
 			Summary:       workbenchWorkspaceSummary(workspace),
-		})
+		}
+		workspaceItem.Collapsed = workbenchTreeItemCollapsed(shell.Overlay, workspaceItem)
+		appendItem(workspaceItem)
+		if query == "" && workspaceItem.Collapsed {
+			continue
+		}
 		for _, tab := range workspace.Tabs {
 			tabActive := workspaceActive && tab.ID == workspace.ActiveTabID
-			appendItem(WorkbenchTreeItem{
+			tabItem := WorkbenchTreeItem{
 				Kind:          WorkbenchTreeKindTab,
 				WorkspaceID:   workspace.ID,
 				WorkspaceName: workspace.Name,
@@ -40,9 +46,15 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 				TabTitle:      tab.Title,
 				PaneID:        tab.ActivePaneID,
 				Depth:         1,
+				Expandable:    len(tab.Panes)+len(tab.Floatings) > 0,
 				Active:        tabActive,
 				Summary:       workbenchTabSummary(tab),
-			})
+			}
+			tabItem.Collapsed = workbenchTreeItemCollapsed(shell.Overlay, tabItem)
+			appendItem(tabItem)
+			if query == "" && tabItem.Collapsed {
+				continue
+			}
 			for _, pane := range tab.Panes {
 				terminalID := workbenchPaneTerminalID(root, pane)
 				displayTitle := ""
@@ -103,6 +115,11 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 		items[selected].Selected = true
 	}
 	return items
+}
+
+func workbenchTreeItemCollapsed(overlay OverlayState, item WorkbenchTreeItem) bool {
+	key, ok := workbenchTreeCollapseKey(item)
+	return ok && overlay.WorkbenchCollapsed[key]
 }
 
 func workbenchFloatingTerminalID(root Root, floating FloatingPaneState) string {
