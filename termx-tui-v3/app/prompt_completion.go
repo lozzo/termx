@@ -9,15 +9,89 @@ import (
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
-func refreshPromptCompletions(shell state.ShellStore) state.ShellStore {
+func refreshPromptCompletions(root state.Root, shell state.ShellStore) state.ShellStore {
 	shell = shell.EnsureDefaults()
 	prompt := shell.Overlay.Prompt
 	field := prompt.ActivePromptField()
-	if field == nil || strings.TrimSpace(field.Key) != "workdir" {
+	if field == nil {
 		return shell.ClearPromptSuggestions()
 	}
-	title, items, empty := workdirSuggestionPopup(field.Value, field.Cursor)
-	return shell.SetActivePromptSuggestions(title, items, empty)
+	switch strings.TrimSpace(field.Key) {
+	case "workdir":
+		title, items, empty := workdirSuggestionPopup(field.Value, field.Cursor)
+		return shell.SetActivePromptSuggestions(title, items, empty)
+	case "server":
+		if prompt.Purpose != "terminal.create" {
+			return shell.ClearPromptSuggestions()
+		}
+		// 中文说明：server 下拉只消费 reducer-owned endpoint 投影；
+		// 选择结果仍通过 TerminalPoolCreateRequestMsg.EndpointID 回到 owning daemon。
+		title, items, empty := terminalCreateEndpointSuggestionPopup(root, field.Value)
+		return shell.SetActivePromptSuggestions(title, items, empty)
+	default:
+		return shell.ClearPromptSuggestions()
+	}
+}
+
+func terminalCreateEndpointSuggestionPopup(root state.Root, value string) (string, []string, string) {
+	options := terminalCreateEndpointSuggestionItems(root)
+	if len(options) == 0 {
+		return "servers", nil, "(no available servers)"
+	}
+	query := strings.TrimSpace(value)
+	if query == "" {
+		return "servers", options, ""
+	}
+	if endpointID, ok := terminalCreateEndpointIDFromValue(root, query); ok {
+		return "servers", reorderPromptSuggestions(options, terminalCreateEndpointPromptValue(root, endpointID)), ""
+	}
+	queryLower := strings.ToLower(query)
+	filtered := make([]string, 0, len(options))
+	for _, option := range options {
+		if strings.Contains(strings.ToLower(option), queryLower) {
+			filtered = append(filtered, option)
+		}
+	}
+	if len(filtered) == 0 {
+		return "servers", nil, "(no matching servers)"
+	}
+	return "servers", filtered, ""
+}
+
+func terminalCreateEndpointSuggestionItems(root state.Root) []string {
+	endpoints := state.TerminalCreateEndpointItems(root)
+	items := make([]string, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		items = append(items, terminalCreateEndpointPromptValue(root, endpoint.ID))
+	}
+	return items
+}
+
+func reorderPromptSuggestions(items []string, current string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	current = strings.TrimSpace(current)
+	for _, item := range items {
+		if strings.EqualFold(strings.TrimSpace(item), current) {
+			out = append(out, item)
+			break
+		}
+	}
+	for _, item := range items {
+		duplicate := false
+		for _, existing := range out {
+			if strings.EqualFold(existing, item) {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func workdirSuggestionPopup(value string, cursor int) (string, []string, string) {

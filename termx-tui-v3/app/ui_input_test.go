@@ -1386,7 +1386,7 @@ func TestCreateTerminalPromptSubmitUsesEditedFields(t *testing.T) {
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "h"},
 		{Kind: input.EventKindKey, Key: input.KeyTab},
-		{Kind: input.EventKindKey, Key: input.KeyTab},
+		{Kind: input.EventKindKey, Key: input.KeyDown},
 		{Kind: input.EventKindKey, Key: input.KeyHome},
 		{Kind: input.EventKindKey, Key: input.KeyEnd},
 	} {
@@ -1435,29 +1435,62 @@ func TestCreateTerminalPromptSubmitUsesEditedFields(t *testing.T) {
 	}
 }
 
-func TestTerminalPickerCreatePromptUsesSelectedEndpoint(t *testing.T) {
+func TestTerminalPickerNewActionDefaultsToSelectedEndpoint(t *testing.T) {
 	root := state.Root{
 		Shell: state.DefaultShell().OpenTerminalPicker(),
 		Endpoints: (state.EndpointStore{}).
 			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
 			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{EndpointID: "west", TerminalID: "term-west", Title: "west shell", State: "running"}}},
 	}
-	root.Shell = root.Shell.SetTerminalPickerSelectedIndex(1, len(state.TerminalPickerItems(root)))
 
-	_, effects := reduceTerminalPickerConfirm(root, state.TerminalPickerItems(root))
-	if len(effects) != 2 {
-		t.Fatalf("expected handled and prompt effects, got %#v", effects)
+	_, effects := reduceShellContentAction(root, ShellContentActionMsg{ActionID: render.ActionPickerNew.String(), Row: 1})
+	if len(effects) != 1 {
+		t.Fatalf("expected prompt effect, got %#v", effects)
 	}
-	effect, ok := effects[1].(FuncEffect)
+	effect, ok := effects[0].(FuncEffect)
 	if !ok || effect.Run == nil {
-		t.Fatalf("expected prompt effect, got %#v", effects[1])
+		t.Fatalf("expected prompt effect, got %#v", effects[0])
 	}
 	msg, ok := effect.Run(context.Background()).(ShellOpenPromptMsg)
 	if !ok {
 		t.Fatalf("expected open prompt msg, got %#v", msg)
 	}
 	if msg.Prompt.TargetEndpointID != "west" || msg.Prompt.FieldRawValue("server") != "US West (west)" {
-		t.Fatalf("selected create row should target west endpoint, prompt=%#v", msg.Prompt)
+		t.Fatalf("new action should default to selected terminal endpoint, prompt=%#v", msg.Prompt)
+	}
+}
+
+func TestCreateTerminalPromptServerFieldUsesEndpointDropdown(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+	}
+	prompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, state.DefaultEndpointID)
+	root.Shell = state.DefaultShell().OpenPrompt(prompt).SetPromptValue("remote-shell").MovePromptField(2)
+
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
+	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
+	if !prompt.SuggestionFocused || prompt.ActiveField != 2 || len(prompt.ActiveSuggestionItems()) != 2 || prompt.ActiveSuggestionItems()[0] != "This Mac (local)" || prompt.ActiveSuggestionItems()[1] != "US West (west)" {
+		t.Fatalf("server field should show endpoint dropdown, prompt=%#v", prompt)
+	}
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
+	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
+	if prompt.SuggestionFocused || prompt.FieldRawValue("server") != "US West (west)" {
+		t.Fatalf("enter should accept selected endpoint suggestion, prompt=%#v", prompt)
+	}
+
+	next, effects := reducePromptSubmit(root)
+	if next.Shell.Overlay.Open || len(effects) != 1 {
+		t.Fatalf("submit should close prompt and emit create effect, root=%#v effects=%#v", next, effects)
+	}
+	effect := effects[0].(FuncEffect)
+	request := effect.Run(context.Background()).(TerminalPoolCreateRequestMsg)
+	if request.EndpointID != "west" || request.Title != "remote-shell" {
+		t.Fatalf("dropdown-selected server should route create request, got %#v", request)
 	}
 }
 

@@ -1064,6 +1064,7 @@ func createTerminalPromptWithEndpoint(root state.Root, targetPaneID string, endp
 	}
 	endpointID = state.NormalizeEndpointID(endpointID)
 	endpointValue := terminalCreateEndpointPromptValue(root, endpointID)
+	endpointCursor := len([]rune(endpointValue))
 	return state.PromptState{
 		Title:            "Create Terminal",
 		Purpose:          "terminal.create",
@@ -1075,7 +1076,7 @@ func createTerminalPromptWithEndpoint(root state.Root, targetPaneID string, endp
 		Fields: []state.PromptFieldState{
 			{Key: "name", Label: "name", Required: true},
 			{Key: "command", Label: "command", Placeholder: shellCommand},
-			{Key: "server", Label: "server", Value: endpointValue, Placeholder: "endpoint id or label", Required: true},
+			{Key: "server", Label: "server", Value: endpointValue, Cursor: endpointCursor, Placeholder: "endpoint id or label", Required: true},
 			{Key: "workdir", Label: "workdir", Value: workdir},
 		},
 	}
