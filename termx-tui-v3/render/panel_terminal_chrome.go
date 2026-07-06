@@ -74,7 +74,7 @@ func paneChromeTerminalSizeLockSlot(terminal TerminalChromeVM, borderStyle Style
 	if terminal.CanLockSize {
 		actionID = ActionResizeLayoutLock.String()
 	}
-	item := paneChromeActionItemFromGlyph(lockGlyph, actionID, "layout lock", borderStyle, 0, 1)
+	item := paneChromeActionItemFromGlyph(lockGlyph, actionID, "layout lock", borderStyle, false, 0, 1)
 	return []paneChromeTopSlot{{text: item.Text, segments: paneChromeTemplateSegments(item.Markup, borderStyle), style: borderStyle, priority: 1, actionID: actionID}}
 }
 

@@ -10,14 +10,15 @@ func TestPaneChromeGlyphsDefaultToWireframeUnicodeAndRemainCellSafe(t *testing.T
 	defer ResetPaneChromeGlyphs()
 
 	glyphs := DefaultPaneChromeGlyphs()
-	if glyphs.Close != "" || glyphs.Zoom != "" || glyphs.SplitVertical != "" || glyphs.SplitHorizontal != "" {
+	if glyphs.Close != "" || glyphs.Zoom != "" || glyphs.Unzoom != "" || glyphs.SplitVertical != "" || glyphs.SplitHorizontal != "" {
 		t.Fatalf("unexpected default Nerd Font glyphs: %#v", glyphs)
 	}
 	for name, glyph := range map[string]string{
-		"close": glyphs.Close,
-		"zoom":  glyphs.Zoom,
-		"split": glyphs.SplitVertical,
-		"run":   glyphs.Running,
+		"close":  glyphs.Close,
+		"zoom":   glyphs.Zoom,
+		"unzoom": glyphs.Unzoom,
+		"split":  glyphs.SplitVertical,
+		"run":    glyphs.Running,
 	} {
 		if DisplayWidth(glyph) != 1 {
 			t.Fatalf("%s glyph must be one terminal cell, got width=%d glyph=%q", name, DisplayWidth(glyph), glyph)
@@ -67,13 +68,29 @@ func TestSetPaneChromeGlyphsAllowsUTF8Overrides(t *testing.T) {
 	SetPaneChromeGlyphs(PaneChromeGlyphs{
 		Close:         "❌",
 		Zoom:          "🔎",
+		Unzoom:        "↙",
 		SplitVertical: "↕",
 	})
-	if paneChromeCloseGlyph() != "❌" || paneChromeZoomGlyph() != "🔎" || paneChromeSplitVerticalGlyph() != "↕" {
-		t.Fatalf("glyph override did not apply, got close=%q zoom=%q splitVertical=%q", paneChromeCloseGlyph(), paneChromeZoomGlyph(), paneChromeSplitVerticalGlyph())
+	if paneChromeCloseGlyph() != "❌" || paneChromeZoomGlyph() != "🔎" || paneChromeUnzoomGlyph() != "↙" || paneChromeSplitVerticalGlyph() != "↕" {
+		t.Fatalf("glyph override did not apply, got close=%q zoom=%q unzoom=%q splitVertical=%q", paneChromeCloseGlyph(), paneChromeZoomGlyph(), paneChromeUnzoomGlyph(), paneChromeSplitVerticalGlyph())
 	}
 	if DisplayWidth(paneChromeCloseGlyph()) != 2 {
 		t.Fatalf("emoji override width should be measured with display cells, got %d", DisplayWidth(paneChromeCloseGlyph()))
+	}
+}
+
+func TestPaneChromeActionTemplatesCanUseZoomMode(t *testing.T) {
+	ResetPaneChromeGlyphs()
+	defer ResetPaneChromeGlyphs()
+
+	SetPaneChromeGlyphs(PaneChromeGlyphs{
+		ActionGroupLeft:    "{{if is_zoom_mode}}Z{{else}}N{{end}}",
+		ActionGroupLeftSet: true,
+	})
+	normal := paneChromeActionRenderedFromItemsForState(paneChromeActionItemsFromVM(defaultPaneChromeActionVMs(StyleAccent)), StyleAccent, true)
+	zoomed := paneChromeActionRenderedFromItemsForState(paneChromeActionItemsFromVM(defaultPaneChromeActionVMsForZoom(StyleAccent, true)), StyleAccent, true)
+	if !strings.HasPrefix(normal.Text, "N") || !strings.HasPrefix(zoomed.Text, "Z") {
+		t.Fatalf("zoom mode template branch not applied, normal=%q zoomed=%q", normal.Text, zoomed.Text)
 	}
 }
 

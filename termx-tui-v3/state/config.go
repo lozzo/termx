@@ -83,17 +83,19 @@ type TUIPaneChromeGlyphsConfig struct {
 	TakeOwner           string
 	TakeOwnerSet        bool
 	Zoom                string
-	SplitVertical       string
-	SplitHorizontal     string
-	Close               string
-	SizeLock            string
-	SizeUnlock          string
-	CenterFloating      string
-	CollapseFloating    string
-	Running             string
-	Waiting             string
-	Exited              string
-	Killed              string
+	// Unzoom 是 zoom 状态下 pane.zoom toggle action 的展示 glyph；配置只影响 renderer。
+	Unzoom           string
+	SplitVertical    string
+	SplitHorizontal  string
+	Close            string
+	SizeLock         string
+	SizeUnlock       string
+	CenterFloating   string
+	CollapseFloating string
+	Running          string
+	Waiting          string
+	Exited           string
+	Killed           string
 	// Overflow* 只配置内容裁切提示 glyph；是否裁切仍由 renderer ContentOverflow 计算。
 	OverflowLeft      string
 	OverflowLeftSet   bool

@@ -893,8 +893,9 @@ func (projector ShellProjector) buildZoomedPanelVMs(shell state.ShellStore, acti
 				Title:        activePaneTitle(pane),
 				Presentation: renderPanelPresentation(shell.PanelPresentation),
 				Active:       focused,
+				IsZoomMode:   true,
 				Content:      content,
-				Chrome:       buildPanelChromeVM(root, pane, focused, content),
+				Chrome:       buildPanelChromeVMWithZoom(root, pane, focused, content, true),
 			}}
 		}
 	}
@@ -969,11 +970,15 @@ func floatingChromeVM(root state.Root, floating state.FloatingPaneState, content
 }
 
 func buildPanelChromeVM(root state.Root, pane state.PaneState, active bool, content ContentVM) PanelChromeVM {
+	return buildPanelChromeVMWithZoom(root, pane, active, content, false)
+}
+
+func buildPanelChromeVMWithZoom(root state.Root, pane state.PaneState, active bool, content ContentVM, zoomMode bool) PanelChromeVM {
 	style := StyleMuted
 	if active {
 		style = StyleAccent
 	}
-	actions := defaultPaneChromeActionVMs(style)
+	actions := defaultPaneChromeActionVMsForZoom(style, zoomMode)
 	terminal := terminalChromeVM(root, pane, active, content, style)
 	var meta []ChromeSlotVM
 	if active && content.Kind == ContentCopyHistory && content.Status != "" {
@@ -1157,8 +1162,18 @@ func paneChromeStateSlot(active bool, content ContentVM) ChromeSlotVM {
 }
 
 func defaultPaneChromeActionVMs(style StyleToken) []ChromeActionVM {
+	return defaultPaneChromeActionVMsForZoom(style, false)
+}
+
+func defaultPaneChromeActionVMsForZoom(style StyleToken, zoomMode bool) []ChromeActionVM {
+	if zoomMode {
+		return []ChromeActionVM{
+			paneChromeZoomActionVM(style, true),
+			paneChromeActionVMWithZoomMode(ActionPaneClose, style, true),
+		}
+	}
 	return []ChromeActionVM{
-		paneChromeActionVM(ActionPaneZoom, style),
+		paneChromeZoomActionVM(style, false),
 		paneChromeActionVM(ActionPaneSplitRight, style),
 		paneChromeActionVM(ActionPaneSplitDown, style),
 		paneChromeActionVM(ActionPaneClose, style),
@@ -1166,11 +1181,24 @@ func defaultPaneChromeActionVMs(style StyleToken) []ChromeActionVM {
 }
 
 func paneChromeActionVM(id ActionID, style StyleToken) ChromeActionVM {
+	return paneChromeActionVMWithZoomMode(id, style, false)
+}
+
+func paneChromeActionVMWithZoomMode(id ActionID, style StyleToken, zoomMode bool) ChromeActionVM {
 	spec, ok := ActionSpecByID(id)
 	if !ok {
-		return ChromeActionVM{ActionID: id.String(), Style: style}
+		return ChromeActionVM{ActionID: id.String(), Style: style, IsZoomMode: zoomMode}
 	}
-	return ChromeActionVM{Text: spec.ChromeGlyph, ActionID: spec.ID.String(), Style: style}
+	return ChromeActionVM{Text: spec.ChromeGlyph, ActionID: spec.ID.String(), Label: spec.HelpLabel, Style: style, IsZoomMode: zoomMode}
+}
+
+func paneChromeZoomActionVM(style StyleToken, zoomMode bool) ChromeActionVM {
+	action := paneChromeActionVMWithZoomMode(ActionPaneZoom, style, zoomMode)
+	if zoomMode {
+		action.Text = paneChromeUnzoomGlyph()
+		action.Label = "unzoom"
+	}
+	return action
 }
 
 func splitActionLabel(action string) (string, string) {

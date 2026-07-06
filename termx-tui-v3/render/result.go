@@ -870,14 +870,20 @@ const (
 	PanelPresentationSplitLine PanelPresentation = "split-line"
 )
 
+// PanelVM 是 renderer 消费的单个 tiled pane 投影。
+// 它只携带 ShellStore/TerminalViewStore 已经归一化后的展示状态；pane identity、
+// terminal binding 和 zoom truth 仍由 state reducer 持有，renderer 不能反写。
 type PanelVM struct {
 	ID           string
 	Title        string
 	Rect         Rect
 	Presentation PanelPresentation
 	Active       bool
-	Chrome       PanelChromeVM
-	Content      ContentVM
+	// IsZoomMode 表示该 pane 来自 ShellStore.ZoomedPaneID 的 zoom 投影。
+	// 它只用于 chrome 条件展示和 action 模板变量，不改变 pane.zoom 的 toggle 命令链路。
+	IsZoomMode bool
+	Chrome     PanelChromeVM
+	Content    ContentVM
 }
 
 type PanelChromeVM struct {
@@ -912,10 +918,17 @@ type ChromeSlotVM struct {
 	Style StyleToken
 }
 
+// ChromeActionVM 是 pane/floating chrome 上一个可见 action token 的展示投影。
+// ActionID 仍是鼠标命中和 reducer 命令分发的唯一语义来源；Text/Label/IsZoomMode
+// 只服务 renderer 和用户配置模板，不能创建新的交互语义。
 type ChromeActionVM struct {
 	Text     string
 	ActionID string
+	Label    string
 	Style    StyleToken
+	// IsZoomMode 把所属 pane 的 zoom 状态传给 chrome 模板。
+	// 命中区仍绑定 ActionID，例如 zoom 状态下的 unzoom 图标仍使用 pane.zoom toggle。
+	IsZoomMode bool
 }
 
 type LayoutVM struct {

@@ -75,6 +75,7 @@ tui:
       owner_pending: "owner?"
       take_owner: "follow"
       zoom: "—"
+      unzoom: "↙"
       split_vertical: "□"
       split_horizontal: "▭"
       close: "⤫"
@@ -139,6 +140,7 @@ tui:
 		t.Fatalf("chrome/border overrides not applied: %#v", cfg)
 	}
 	if cfg.Chrome.PaneGlyphs.Zoom != "—" ||
+		cfg.Chrome.PaneGlyphs.Unzoom != "↙" ||
 		!cfg.Chrome.PaneGlyphs.ActionLeftSet ||
 		cfg.Chrome.PaneGlyphs.ActionLeft != "" ||
 		!cfg.Chrome.PaneGlyphs.ActionRightSet ||

@@ -18,6 +18,7 @@ type paneChromeTemplateContext struct {
 	First    bool
 	Last     bool
 	Active   bool
+	ZoomMode bool
 }
 
 type paneChromeTemplateData struct {
@@ -34,6 +35,10 @@ type paneChromeTemplateData struct {
 	Last      bool
 	Active    bool
 	NotActive bool
+	// IsZoomMode 只表达 pane chrome 当前是否来自 zoom 投影；
+	// 它让模板做条件展示，不能绕过 ActionID 的 reducer 命令链路。
+	IsZoomMode  bool
+	NotZoomMode bool
 }
 
 type paneChromeTemplateState struct {
@@ -68,19 +73,21 @@ func executePaneChromeTemplate(format string, ctx paneChromeTemplateContext) (st
 	}
 	var out bytes.Buffer
 	if err := tmpl.Execute(&out, paneChromeTemplateData{
-		Glyph:     headerTabTemplateEscapeText(ctx.Glyph),
-		Text:      headerTabTemplateEscapeText(ctx.Text),
-		ActionID:  headerTabTemplateEscapeText(ctx.ActionID),
-		Action:    headerTabTemplateEscapeText(ctx.ActionID),
-		Label:     headerTabTemplateEscapeText(ctx.Label),
-		Left:      headerTabTemplateEscapeText(ctx.Left),
-		Right:     headerTabTemplateEscapeText(ctx.Right),
-		Index:     ctx.Index,
-		Count:     ctx.Count,
-		First:     ctx.First,
-		Last:      ctx.Last,
-		Active:    ctx.Active,
-		NotActive: !ctx.Active,
+		Glyph:       headerTabTemplateEscapeText(ctx.Glyph),
+		Text:        headerTabTemplateEscapeText(ctx.Text),
+		ActionID:    headerTabTemplateEscapeText(ctx.ActionID),
+		Action:      headerTabTemplateEscapeText(ctx.ActionID),
+		Label:       headerTabTemplateEscapeText(ctx.Label),
+		Left:        headerTabTemplateEscapeText(ctx.Left),
+		Right:       headerTabTemplateEscapeText(ctx.Right),
+		Index:       ctx.Index,
+		Count:       ctx.Count,
+		First:       ctx.First,
+		Last:        ctx.Last,
+		Active:      ctx.Active,
+		NotActive:   !ctx.Active,
+		IsZoomMode:  ctx.ZoomMode,
+		NotZoomMode: !ctx.ZoomMode,
 	}); err != nil {
 		return "", false
 	}
@@ -127,6 +134,12 @@ func paneChromeTemplateFuncs(ctx paneChromeTemplateContext) texttemplate.FuncMap
 		},
 		"not_active": func() bool {
 			return !ctx.Active
+		},
+		"is_zoom_mode": func() bool {
+			return ctx.ZoomMode
+		},
+		"not_zoom_mode": func() bool {
+			return !ctx.ZoomMode
 		},
 		"truncate": func(width int, value string) string {
 			if width <= 0 {

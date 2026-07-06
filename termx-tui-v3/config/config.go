@@ -391,6 +391,7 @@ var scalarSetters = map[string]scalarSetter{
 		cfg.Chrome.PaneGlyphs.TakeOwnerSet = true
 	}),
 	"tui.chrome.pane_glyphs.zoom":              setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Zoom = value }),
+	"tui.chrome.pane_glyphs.unzoom":            setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Unzoom = value }),
 	"tui.chrome.pane_glyphs.split_vertical":    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SplitVertical = value }),
 	"tui.chrome.pane_glyphs.split_horizontal":  setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.SplitHorizontal = value }),
 	"tui.chrome.pane_glyphs.close":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PaneGlyphs.Close = value }),
@@ -732,6 +733,7 @@ func validatePaneChromeGlyphs(glyphs state.TUIPaneChromeGlyphsConfig) error {
 		{"tui.chrome.pane_glyphs.owner_pending", glyphs.OwnerPending},
 		{"tui.chrome.pane_glyphs.take_owner", glyphs.TakeOwner},
 		{"tui.chrome.pane_glyphs.zoom", glyphs.Zoom},
+		{"tui.chrome.pane_glyphs.unzoom", glyphs.Unzoom},
 		{"tui.chrome.pane_glyphs.split_vertical", glyphs.SplitVertical},
 		{"tui.chrome.pane_glyphs.split_horizontal", glyphs.SplitHorizontal},
 		{"tui.chrome.pane_glyphs.close", glyphs.Close},

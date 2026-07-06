@@ -812,6 +812,36 @@ func TestRenderVMBuilderKeepsChromeActionsForEmptyPane(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsZoomPaneChromeAsUnzoomWithoutSplitActions(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
+		ZoomPane(state.PaneCommandTarget{PaneID: "pane-2"})}
+
+	vm := NewRenderVMBuilder().Build(root)
+	if len(vm.Shell.Layout.Panels) != 1 {
+		t.Fatalf("zoom layout should project only one panel, got %#v", vm.Shell.Layout.Panels)
+	}
+	panel := vm.Shell.Layout.Panels[0]
+	if panel.ID != "pane-2" || !panel.IsZoomMode {
+		t.Fatalf("zoom panel should carry zoom projection state, got %#v", panel)
+	}
+	actions := panel.Chrome.Actions
+	if len(actions) != 2 ||
+		actions[0].ActionID != ActionPaneZoom.String() ||
+		actions[0].Text != paneChromeUnzoomGlyph() ||
+		actions[0].Label != "unzoom" ||
+		!actions[0].IsZoomMode ||
+		actions[1].ActionID != ActionPaneClose.String() ||
+		!actions[1].IsZoomMode {
+		t.Fatalf("zoom chrome should expose unzoom toggle and close only, got %#v", actions)
+	}
+	for _, action := range actions {
+		if action.ActionID == ActionPaneSplitRight.String() || action.ActionID == ActionPaneSplitDown.String() {
+			t.Fatalf("zoom chrome must not expose split actions, got %#v", actions)
+		}
+	}
+}
+
 func TestRenderVMBuilderBuildsGlobalFooterActionIDs(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal)}
 	actions := NewRenderVMBuilder().Build(root).Shell.Footer.ActionTokens

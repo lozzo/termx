@@ -47,6 +47,7 @@ func applyConfiguredPaneChromeGlyphs(cfg state.TUIConfigStore) {
 		TakeOwner:                 glyphs.TakeOwner,
 		TakeOwnerSet:              glyphs.TakeOwnerSet,
 		Zoom:                      glyphs.Zoom,
+		Unzoom:                    glyphs.Unzoom,
 		SplitVertical:             glyphs.SplitVertical,
 		SplitHorizontal:           glyphs.SplitHorizontal,
 		Close:                     glyphs.Close,
@@ -87,6 +88,7 @@ func paneChromeGlyphConfigSet(glyphs state.TUIPaneChromeGlyphsConfig) bool {
 		glyphs.OwnerPendingSet ||
 		glyphs.TakeOwnerSet ||
 		strings.TrimSpace(glyphs.Zoom) != "" ||
+		strings.TrimSpace(glyphs.Unzoom) != "" ||
 		strings.TrimSpace(glyphs.SplitVertical) != "" ||
 		strings.TrimSpace(glyphs.SplitHorizontal) != "" ||
 		strings.TrimSpace(glyphs.Close) != "" ||

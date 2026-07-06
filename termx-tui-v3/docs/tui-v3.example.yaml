@@ -217,7 +217,7 @@ tui:
     # glyph 字段默认值为 ""，表示使用内置 glyph。
     # action_left/action_right/action_group_left/action_group_right 是模板字段；
     # 没写表示使用内置默认，显式写成 "" 表示隐藏对应部分。
-    # 模板支持 {{glyph}}、{{action_id}}、{{label}}、{{index}}、{{count}}、{{first}}、{{last}}、{{active}}、{{not_active}}，
+    # 模板支持 {{glyph}}、{{action_id}}、{{label}}、{{index}}、{{count}}、{{first}}、{{last}}、{{active}}、{{not_active}}、{{is_zoom_mode}}、{{not_zoom_mode}}，
     # 并支持和 tab_template 一样的 [fg:#RRGGBB;bg:#RRGGBB;font:bold] / [style:accent] / [reset] span。
     # 示例：
     # action_left: " "
@@ -241,6 +241,7 @@ tui:
     # extent_placeholder_style: "#a8a8a8"
     pane_glyphs:
       zoom: ""
+      unzoom: ""
       split_vertical: ""
       split_horizontal: ""
       close: ""

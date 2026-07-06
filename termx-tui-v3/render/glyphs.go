@@ -24,17 +24,20 @@ type PaneChromeGlyphs struct {
 	TakeOwner           string
 	TakeOwnerSet        bool
 	Zoom                string
-	SplitVertical       string
-	SplitHorizontal     string
-	Close               string
-	SizeLock            string
-	SizeUnlock          string
-	CenterFloating      string
-	CollapseFloating    string
-	Running             string
-	Waiting             string
-	Exited              string
-	Killed              string
+	// Unzoom 是 zoom 状态下同一个 pane.zoom toggle action 的展示 glyph。
+	// ActionID 不变，renderer 只用它区分“进入 zoom”和“退出 zoom”的视觉状态。
+	Unzoom           string
+	SplitVertical    string
+	SplitHorizontal  string
+	Close            string
+	SizeLock         string
+	SizeUnlock       string
+	CenterFloating   string
+	CollapseFloating string
+	Running          string
+	Waiting          string
+	Exited           string
+	Killed           string
 	// OverflowLeft/Right/Top/Bottom 是内容裁切提示的展示 glyph；裁切 truth 仍来自 ContentOverflow。
 	OverflowLeft      string
 	OverflowLeftSet   bool
@@ -66,6 +69,7 @@ var defaultPaneChromeGlyphs = PaneChromeGlyphs{
 	OwnerPending:      "◆ owner?",
 	TakeOwner:         "◇ follow",
 	Zoom:              "",
+	Unzoom:            "",
 	SplitVertical:     "",
 	SplitHorizontal:   "",
 	Close:             "",
@@ -126,6 +130,9 @@ func SetPaneChromeGlyphs(glyphs PaneChromeGlyphs) {
 	}
 	if glyphs.Zoom != "" {
 		next.Zoom = glyphs.Zoom
+	}
+	if glyphs.Unzoom != "" {
+		next.Unzoom = glyphs.Unzoom
 	}
 	if glyphs.SplitVertical != "" {
 		next.SplitVertical = glyphs.SplitVertical
@@ -209,6 +216,10 @@ func paneChromeSizeUnlockGlyph() string {
 
 func paneChromeZoomGlyph() string {
 	return paneChromeGlyphs.Zoom
+}
+
+func paneChromeUnzoomGlyph() string {
+	return paneChromeGlyphs.Unzoom
 }
 
 func paneChromeSplitVerticalGlyph() string {

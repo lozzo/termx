@@ -509,6 +509,27 @@ func TestMeasureLayoutAddsPaneCommandHitRegionsBeforeContent(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutZoomPaneChromeDropsSplitActionHitRegions(t *testing.T) {
+	panel := PanelVM{
+		ID:           "pane-zoom",
+		Presentation: PanelPresentationCard,
+		Active:       true,
+		IsZoomMode:   true,
+		Content:      ContentVM{Kind: ContentTerminalLive},
+		Chrome: PanelChromeVM{
+			Title:   ChromeSlotVM{Text: "zoomed"},
+			Actions: defaultPaneChromeActionVMsForZoom(StyleAccent, true),
+		},
+	}
+	plan := MeasureLayout(ShellVM{Layout: LayoutVM{Panels: []PanelVM{panel}}}, Rect{W: 40, H: 10})
+	if hitRegionIndexByAction(plan.HitRegions, ActionPaneZoom.String()) < 0 || hitRegionIndexByAction(plan.HitRegions, ActionPaneClose.String()) < 0 {
+		t.Fatalf("zoom pane should keep unzoom toggle and close hit regions, got %#v", plan.HitRegions)
+	}
+	if hitRegionIndexByAction(plan.HitRegions, ActionPaneSplitRight.String()) >= 0 || hitRegionIndexByAction(plan.HitRegions, ActionPaneSplitDown.String()) >= 0 {
+		t.Fatalf("zoom pane must not expose split hit regions, got %#v", plan.HitRegions)
+	}
+}
+
 func TestMeasureLayoutPaneActionRegionsFollowStructuredVisibleSlots(t *testing.T) {
 	panel := PanelVM{
 		ID:           "pane-1",
