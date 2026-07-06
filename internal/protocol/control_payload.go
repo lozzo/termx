@@ -308,6 +308,18 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			return nil, methodParamsTypeError(method, "protocol.StorageListParams", params)
 		}
 		return proto.Marshal(storageListParamsToWirePB(value))
+	case "path.list_dirs":
+		value, ok := params.(PathListDirsParams)
+		if !ok {
+			if ptr, ptrOK := params.(*PathListDirsParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.PathListDirsParams", params)
+		}
+		return proto.Marshal(pathListDirsParamsToWirePB(value))
 	case "workbench.get":
 		value, ok := params.(WorkbenchGetParams)
 		if !ok {
@@ -520,6 +532,12 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return storageListParamsFromWirePB(&msg), nil
+	case "path.list_dirs":
+		var msg wirepb.PathListDirsParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, err
+		}
+		return pathListDirsParamsFromWirePB(&msg), nil
 	case "workbench.get":
 		var msg wirepb.WorkbenchGetParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
@@ -694,6 +712,18 @@ func EncodeMethodResult(method string, result any) ([]byte, error) {
 			return nil, methodResultTypeError(method, "protocol.StorageListResult", result)
 		}
 		return proto.Marshal(storageListResultToWirePB(value))
+	case "path.list_dirs":
+		value, ok := result.(PathListDirsResult)
+		if !ok {
+			if ptr, ptrOK := result.(*PathListDirsResult); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.PathListDirsResult", result)
+		}
+		return proto.Marshal(pathListDirsResultToWirePB(value))
 	case "workbench.get":
 		value, ok := result.(WorkbenchSnapshot)
 		if !ok {
@@ -871,6 +901,17 @@ func DecodeMethodResult(method string, payload []byte, out any) error {
 			return methodOutTypeError(method, "*protocol.StorageListResult", out)
 		}
 		*ptr = storageListResultFromWirePB(&msg)
+		return nil
+	case "path.list_dirs":
+		var msg wirepb.PathListDirsResult
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return err
+		}
+		ptr, ok := out.(*PathListDirsResult)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.PathListDirsResult", out)
+		}
+		*ptr = pathListDirsResultFromWirePB(&msg)
 		return nil
 	case "workbench.get":
 		var msg wirepb.WorkbenchSnapshot
@@ -1489,6 +1530,46 @@ func storageListResultFromWirePB(msg *wirepb.StorageListResult) StorageListResul
 	out := StorageListResult{Entries: make([]StorageEntry, 0, len(msg.GetEntries()))}
 	for _, entry := range msg.GetEntries() {
 		out.Entries = append(out.Entries, storageEntryFromWirePB(entry))
+	}
+	return out
+}
+
+func pathListDirsParamsToWirePB(params PathListDirsParams) *wirepb.PathListDirsParams {
+	return &wirepb.PathListDirsParams{Prefix: params.Prefix, Limit: int32(params.Limit)}
+}
+
+func pathListDirsParamsFromWirePB(msg *wirepb.PathListDirsParams) PathListDirsParams {
+	if msg == nil {
+		return PathListDirsParams{}
+	}
+	return PathListDirsParams{Prefix: msg.GetPrefix(), Limit: int(msg.GetLimit())}
+}
+
+func pathListDirsResultToWirePB(result PathListDirsResult) *wirepb.PathListDirsResult {
+	out := &wirepb.PathListDirsResult{
+		BasePath:  result.BasePath,
+		Missing:   result.Missing,
+		Truncated: result.Truncated,
+		Entries:   make([]*wirepb.PathDirEntry, 0, len(result.Entries)),
+	}
+	for _, entry := range result.Entries {
+		out.Entries = append(out.Entries, &wirepb.PathDirEntry{Name: entry.Name, Path: entry.Path})
+	}
+	return out
+}
+
+func pathListDirsResultFromWirePB(msg *wirepb.PathListDirsResult) PathListDirsResult {
+	if msg == nil {
+		return PathListDirsResult{}
+	}
+	out := PathListDirsResult{
+		BasePath:  msg.GetBasePath(),
+		Missing:   msg.GetMissing(),
+		Truncated: msg.GetTruncated(),
+		Entries:   make([]PathDirEntry, 0, len(msg.GetEntries())),
+	}
+	for _, entry := range msg.GetEntries() {
+		out.Entries = append(out.Entries, PathDirEntry{Name: entry.GetName(), Path: entry.GetPath()})
 	}
 	return out
 }

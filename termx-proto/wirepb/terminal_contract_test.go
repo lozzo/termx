@@ -153,6 +153,21 @@ func TestCoreV2RemoteWireContractFields(t *testing.T) {
 		"version":              6,
 		"updated_at_unix_nano": 7,
 	})
+
+	assertFields(t, (&PathListDirsParams{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"prefix": 1,
+		"limit":  2,
+	})
+	assertFields(t, (&PathDirEntry{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"name": 1,
+		"path": 2,
+	})
+	assertFields(t, (&PathListDirsResult{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"base_path": 1,
+		"entries":   2,
+		"missing":   3,
+		"truncated": 4,
+	})
 }
 
 func assertFields(t *testing.T, message protoreflect.MessageDescriptor, fields map[protoreflect.Name]protoreflect.FieldNumber) {

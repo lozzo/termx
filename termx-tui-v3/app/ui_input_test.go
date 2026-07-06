@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-shared/connection"
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/services"
@@ -1508,6 +1509,64 @@ func TestCreateTerminalPromptWorkdirDefaultFollowsEndpoint(t *testing.T) {
 	remotePrompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, "west")
 	if remotePrompt.Workdir == "" || remotePrompt.FieldRawValue("workdir") != "" {
 		t.Fatalf("remote create prompt should leave cwd empty and keep local default only as fallback metadata, prompt=%#v", remotePrompt)
+	}
+}
+
+func TestCreateTerminalPromptRemoteWorkdirSuggestionsUseEndpointPathService(t *testing.T) {
+	root := state.Root{
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+	}
+	prompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, "west")
+	for index := range prompt.Fields {
+		switch prompt.Fields[index].Key {
+		case "name":
+			prompt.Fields[index].Value = "remote-shell"
+		case "workdir":
+			prompt.Fields[index].Value = "~/p"
+			prompt.Fields[index].Cursor = len([]rune("~/p"))
+			prompt.ActiveField = index
+		}
+	}
+	root.Shell = state.DefaultShell().OpenPrompt(prompt)
+
+	pathService := &services.FakeTerminalService{
+		PathResult: services.PathListDirectoriesResult{
+			BasePath: "/root",
+			Entries: []services.PathDirectoryEntry{
+				{Name: "project", Path: "~/project/"},
+				{Name: "profile", Path: "~/profile/"},
+			},
+		},
+	}
+	registry := connection.Registry{
+		Version: 1,
+		Default: connection.DefaultEndpointID,
+		Connections: map[connection.EndpointID]connection.Config{
+			connection.DefaultEndpointID: {ID: connection.DefaultEndpointID, Label: "This Mac", Transport: connection.TransportLocal, ConnectMode: connection.ConnectAuto, Enabled: true},
+			"west":                       {ID: "west", Label: "US West", Transport: connection.TransportSSH, ConnectMode: connection.ConnectOnDemand, Enabled: true, Address: "root@example.com", RemoteSocket: "auto"},
+		},
+	}
+	manager := services.NewEndpointManager(registry, services.EndpointServiceBundle{EndpointID: "west", Path: pathService})
+	runtime := NewInteractiveRuntime(root, NewFakeTerminalHost(1), NewSyncEffectRunner(), LiveDeps{Path: manager}, CopyModeDeps{})
+
+	if err := runtime.Post(InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}}); err != nil {
+		t.Fatalf("post tab: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if len(pathService.PathRequests) != 1 || pathService.PathRequests[0].EndpointID != "" || pathService.PathRequests[0].Prefix != "~/p" {
+		t.Fatalf("remote path completion should route through endpoint manager and strip endpoint, got %#v", pathService.PathRequests)
+	}
+	prompt = runtime.State().Shell.EnsureDefaults().Overlay.Prompt
+	if !prompt.SuggestionFocused || prompt.ActiveField < 0 || prompt.ActivePromptField().Key != "workdir" {
+		t.Fatalf("remote workdir tab should keep focus on workdir suggestions, prompt=%#v", prompt)
+	}
+	if got := prompt.ActiveSuggestionItems(); len(got) != 2 || got[0] != "~/project/" || got[1] != "~/profile/" {
+		t.Fatalf("remote workdir suggestions should come from path service, got %#v", got)
 	}
 }
 

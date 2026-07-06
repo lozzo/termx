@@ -80,6 +80,8 @@ type fakeProtocolTerminalClient struct {
 	attachResult              *protocol.AttachResult
 	listResult                *protocol.ListResult
 	createResult              *protocol.CreateResult
+	pathListParams            []protocol.PathListDirsParams
+	pathListResult            *protocol.PathListDirsResult
 	storageGets               []protocol.StorageGetParams
 	storagePuts               []protocol.StoragePutParams
 	storageEntry              *protocol.StorageEntry
@@ -210,6 +212,14 @@ func (client *fakeProtocolTerminalClient) List(context.Context) (*protocol.ListR
 	return &protocol.ListResult{}, nil
 }
 
+func (client *fakeProtocolTerminalClient) ListDirectories(_ context.Context, params protocol.PathListDirsParams) (*protocol.PathListDirsResult, error) {
+	client.pathListParams = append(client.pathListParams, params)
+	if client.pathListResult != nil {
+		return client.pathListResult, nil
+	}
+	return &protocol.PathListDirsResult{}, nil
+}
+
 func (client *fakeProtocolTerminalClient) Create(_ context.Context, params protocol.CreateParams) (*protocol.CreateResult, error) {
 	client.createParams = append(client.createParams, params)
 	if client.createResult != nil {
@@ -322,6 +332,36 @@ func (client *fakeProtocolTerminalClient) StoragePut(_ context.Context, params p
 		Value:   append([]byte(nil), params.Value...),
 		Version: params.ExpectedVersion + 1,
 	}, nil
+}
+
+func TestProtocolPathServiceAdapterListsDirectoriesThroughProtocol(t *testing.T) {
+	client := &fakeProtocolTerminalClient{
+		pathListResult: &protocol.PathListDirsResult{
+			BasePath: "/home/root",
+			Entries: []protocol.PathDirEntry{
+				{Name: "project", Path: "~/project/"},
+				{Name: "profile", Path: "~/profile/"},
+			},
+			Truncated: true,
+		},
+	}
+	adapter := ProtocolPathServiceAdapter{Client: client}
+
+	result, err := adapter.ListDirectories(context.Background(), PathListDirectoriesRequest{
+		EndpointID: "west",
+		Prefix:     "~/pro",
+		Limit:      25,
+	})
+	if err != nil {
+		t.Fatalf("list directories: %v", err)
+	}
+	if len(client.pathListParams) != 1 || client.pathListParams[0].Prefix != "~/pro" || client.pathListParams[0].Limit != 25 {
+		t.Fatalf("path adapter should pass typed params to protocol client, got %#v", client.pathListParams)
+	}
+	wantEntries := []PathDirectoryEntry{{Name: "project", Path: "~/project/"}, {Name: "profile", Path: "~/profile/"}}
+	if result.EndpointID != "" || result.BasePath != "/home/root" || !result.Truncated || !reflect.DeepEqual(result.Entries, wantEntries) {
+		t.Fatalf("unexpected path adapter result %#v", result)
+	}
 }
 
 func TestProtocolClipboardStorageAdapterLoadsAndSavesClipboardHistory(t *testing.T) {

@@ -125,6 +125,13 @@ type TerminalService interface {
 	Resize(context.Context, TerminalResizeRequest) (TerminalResizeResult, error)
 }
 
+// PathService 是 TUI/client 对 endpoint daemon 文件系统只读查询的 service 边界。
+// 它只用于 prompt/workdir 这类 endpoint-scoped path completion；目录 truth 来自
+// owning daemon 机器，service 不缓存、不持久化，也不改写 terminal lifecycle。
+type PathService interface {
+	ListDirectories(context.Context, PathListDirectoriesRequest) (PathListDirectoriesResult, error)
+}
+
 // NativeScreenSource 是 TUI live render loop 拉取 core latest native screen 的唯一接口。
 // 它不返回 history token、scrollback 或 lifecycle truth；调用方只能把结果用于当前实时显示。
 type NativeScreenSource interface {
@@ -176,6 +183,32 @@ type TerminalListRequest struct {
 
 type TerminalListResult struct {
 	Items []TerminalPoolItem
+}
+
+// PathListDirectoriesRequest 描述一次目录候选查询。
+// EndpointID 只在 client/TUI manager 层用于路由；进入单 daemon adapter 前必须剥离。
+type PathListDirectoriesRequest struct {
+	EndpointID state.EndpointID
+	Prefix     string
+	Limit      int
+}
+
+// PathDirectoryEntry 是可直接写回 prompt 的目录候选投影。
+// Path 保留用户输入风格（例如 ~/ 或相对路径），Name 只用于排序和测试断言。
+type PathDirectoryEntry struct {
+	Name string
+	Path string
+}
+
+// PathListDirectoriesResult 是目录候选查询结果。
+// Missing 表示 base path 不存在或不可读，属于 prompt 空态；EndpointID 由 EndpointManager
+// 回填，确保异步结果不会覆盖其它 endpoint 的输入。
+type PathListDirectoriesResult struct {
+	EndpointID state.EndpointID
+	BasePath   string
+	Entries    []PathDirectoryEntry
+	Missing    bool
+	Truncated  bool
 }
 
 type TerminalCreateRequest struct {
@@ -617,6 +650,8 @@ type FakeTerminalService struct {
 	SurfaceErr               error
 	LiveInvalidationsCh      chan TerminalLiveEvent
 	LiveInvalidationsErr     error
+	PathResult               PathListDirectoriesResult
+	PathErr                  error
 	Attaches                 []TerminalAttachRequest
 	Detaches                 []TerminalDetachRequest
 	Lists                    []TerminalListRequest
@@ -631,6 +666,7 @@ type FakeTerminalService struct {
 	Resizes                  []TerminalResizeRequest
 	Surfaces                 []TerminalSurfaceRequest
 	LiveInvalidationRequests []TerminalLiveEventRequest
+	PathRequests             []PathListDirectoriesRequest
 }
 
 type FakeWorkbenchStorageService struct {
@@ -907,6 +943,19 @@ func (service *FakeTerminalService) Resize(_ context.Context, req TerminalResize
 	return result, nil
 }
 
+func (service *FakeTerminalService) ListDirectories(_ context.Context, req PathListDirectoriesRequest) (PathListDirectoriesResult, error) {
+	service.PathRequests = append(service.PathRequests, req)
+	if service.PathErr != nil {
+		return PathListDirectoriesResult{}, service.PathErr
+	}
+	result := service.PathResult
+	result.Entries = clonePathDirectoryEntries(result.Entries)
+	if result.EndpointID == "" {
+		result.EndpointID = req.EndpointID
+	}
+	return result, nil
+}
+
 func (service *FakeTerminalService) LiveSurface(_ context.Context, req TerminalSurfaceRequest) (TerminalSurfaceResult, error) {
 	service.Surfaces = append(service.Surfaces, req)
 	if service.SurfaceErr != nil {
@@ -955,6 +1004,15 @@ func (service *FakeTerminalService) ArmLiveInvalidation(ctx context.Context, req
 	}
 	<-ctx.Done()
 	return TerminalLiveEvent{}, ctx.Err()
+}
+
+func clonePathDirectoryEntries(entries []PathDirectoryEntry) []PathDirectoryEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make([]PathDirectoryEntry, len(entries))
+	copy(cloned, entries)
+	return cloned
 }
 
 func cloneTerminalPoolItems(items []TerminalPoolItem) []TerminalPoolItem {

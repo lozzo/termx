@@ -3,6 +3,8 @@ package termxcorev2
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +63,39 @@ func TestProtocolServiceCreateListMetadataRestartRemove(t *testing.T) {
 	}
 	if _, err := server.GetTerminal("term-1"); !errors.Is(err, ErrTerminalNotFound) {
 		t.Fatalf("expected removed terminal, got %v", err)
+	}
+}
+
+func TestProtocolServiceListDirectoriesUsesDaemonPath(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "project"), 0o755); err != nil {
+		t.Fatalf("mkdir project: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "profile"), 0o755); err != nil {
+		t.Fatalf("mkdir profile: %v", err)
+	}
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("resolve temp dir: %v", err)
+	}
+
+	_, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	result, err := client.ListDirectories(context.Background(), protocol.PathListDirsParams{Prefix: "pro", Limit: 10})
+	if err != nil {
+		t.Fatalf("list directories: %v", err)
+	}
+	if result.BasePath != resolvedDir || result.Missing || len(result.Entries) != 2 || result.Entries[0].Path != "profile"+string(os.PathSeparator) || result.Entries[1].Path != "project"+string(os.PathSeparator) {
+		t.Fatalf("unexpected path list result %#v", result)
 	}
 }
 

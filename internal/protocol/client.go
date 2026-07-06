@@ -227,6 +227,17 @@ func (c *Client) List(ctx context.Context) (*ListResult, error) {
 	return &out, nil
 }
 
+// ListDirectories 请求当前 protocol session 所属 daemon 列出目录候选。
+// 该方法只转发 Prefix/Limit 到 owning endpoint；home、cwd 和权限判断都在 daemon
+// 侧完成，客户端不能把本地文件系统结果混入远端补全。
+func (c *Client) ListDirectories(ctx context.Context, params PathListDirsParams) (*PathListDirsResult, error) {
+	var out PathListDirsResult
+	if err := c.doRequest(ctx, "path.list_dirs", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) Kill(ctx context.Context, terminalID string) error {
 	return c.doRequest(ctx, "kill", GetParams{TerminalID: terminalID}, nil)
 }

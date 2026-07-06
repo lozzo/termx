@@ -19,6 +19,9 @@ func refreshPromptCompletions(root state.Root, shell state.ShellStore) state.She
 	}
 	switch strings.TrimSpace(field.Key) {
 	case "workdir":
+		if !promptWorkdirCompletionUsesLocal(root, prompt) {
+			return shell.ClearPromptSuggestions()
+		}
 		title, items, empty := workdirSuggestionPopup(field.Value, field.Cursor)
 		return shell.SetActivePromptSuggestions(title, items, empty)
 	case "server":
@@ -32,6 +35,17 @@ func refreshPromptCompletions(root state.Root, shell state.ShellStore) state.She
 	default:
 		return shell.ClearPromptSuggestions()
 	}
+}
+
+func promptWorkdirCompletionUsesLocal(root state.Root, prompt state.PromptState) bool {
+	if prompt.Purpose != "terminal.create" {
+		return true
+	}
+	endpointID, err := terminalCreateEndpointIDFromPrompt(root, prompt)
+	if err != nil {
+		return true
+	}
+	return terminalCreateEndpointUsesLocalWorkdir(root, endpointID)
 }
 
 func terminalCreateEndpointSuggestionPopup(root state.Root, value string) (string, []string, string) {

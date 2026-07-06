@@ -184,6 +184,7 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 	}
 	terminalAdapter := services.ProtocolTerminalServiceAdapter{Client: client}
 	coreAdapter := services.ProtocolCoreClientAdapter{Client: client}
+	pathAdapter := services.ProtocolPathServiceAdapter{Client: client}
 	endpointCtx := opts.EndpointContext
 	if endpointCtx == nil {
 		endpointCtx = context.Background()
@@ -196,6 +197,7 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 		Core:       coreAdapter,
 		Surface:    terminalAdapter,
 		LiveEvents: terminalAdapter,
+		Path:       pathAdapter,
 	})
 	initial.Endpoints = endpointManager.EndpointStore()
 	terminal := endpointManager
@@ -215,7 +217,7 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 		initial,
 		host,
 		app.NewAsyncEffectRunner(),
-		app.LiveDeps{Terminal: terminal, Logger: logger},
+		app.LiveDeps{Terminal: terminal, Path: endpointManager, Logger: logger},
 		app.CopyModeDeps{Core: core, Clipboard: &services.SystemClipboardService{}, Terminal: terminal, Logger: logger, Rows: rows},
 		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID), Logger: logger, SkipInitialLoad: opts.SkipWorkbenchInitialLoad},
 		app.ClipboardDeps{Storage: clipboardStorage, Ref: state.DefaultClipboardStorageRef(state.DefaultWorkspaceID), Logger: logger},
@@ -242,12 +244,14 @@ func v3SSHEndpointDialer(endpointCtx context.Context) services.EndpointDialer {
 		}
 		terminal := services.ProtocolTerminalServiceAdapter{Client: client}
 		core := services.ProtocolCoreClientAdapter{Client: client}
+		path := services.ProtocolPathServiceAdapter{Client: client}
 		return services.EndpointServiceBundle{
 			EndpointID: state.EndpointID(cfg.ID),
 			Terminal:   terminal,
 			Core:       core,
 			Surface:    terminal,
 			LiveEvents: terminal,
+			Path:       path,
 		}, nil
 	}
 }

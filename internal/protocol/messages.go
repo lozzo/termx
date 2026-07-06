@@ -94,6 +94,31 @@ type CreateResult struct {
 	State      string
 }
 
+// PathListDirsParams 是 daemon endpoint 文件系统目录补全的请求契约。
+// Prefix 来自客户端当前输入光标前的路径片段；解析、home/cwd 和目录权限都以
+// owning daemon 所在机器为真值，客户端不能用本地文件系统推断远端路径。
+type PathListDirsParams struct {
+	Prefix string
+	Limit  int
+}
+
+// PathDirEntry 是 path.list_dirs 返回的单个目录候选。
+// Path 是可直接写回 prompt 的展示/提交路径，Name 只用于排序或诊断。
+type PathDirEntry struct {
+	Name string
+	Path string
+}
+
+// PathListDirsResult 是 daemon endpoint 对目录候选的只读投影。
+// Missing 表示 base path 不存在或不可读取；这属于补全空态，不等同于 protocol
+// transport 失败，TUI 应在 prompt 内展示而不是清空 endpoint 状态。
+type PathListDirsResult struct {
+	BasePath  string
+	Entries   []PathDirEntry
+	Missing   bool
+	Truncated bool
+}
+
 // Remote* 是 core-v2 daemon 暴露给 CLI/App 的显式 remote domain contract。
 // wirepb 只作为跨进程编码格式，不能泄露成调用方依赖的业务类型。
 type RemoteStatus struct {

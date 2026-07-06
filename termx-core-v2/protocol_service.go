@@ -269,6 +269,13 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 			out.Terminals = append(out.Terminals, session.protocolInfoFromCoreV2(item))
 		}
 		return encodeMethodResult(req.Method, out)
+	case "path.list_dirs":
+		in := params.(protocol.PathListDirsParams)
+		out, err := listPathDirectories(in)
+		if err != nil {
+			return nil, false, protocolErrorInternal, pathListDirsProtocolError(err)
+		}
+		return encodeMethodResult(req.Method, out)
 	case "get":
 		in := params.(protocol.GetParams)
 		info, err := session.server.GetTerminal(in.TerminalID)

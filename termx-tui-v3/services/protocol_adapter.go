@@ -25,6 +25,44 @@ type ProtocolStorageClient interface {
 	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
 }
 
+// ProtocolPathClient 是 path service adapter 依赖的 protocol 边界。
+// 实现必须把目录查询发送到当前 protocol session 所属 daemon，不能退回本地文件系统。
+type ProtocolPathClient interface {
+	ListDirectories(context.Context, protocol.PathListDirsParams) (*protocol.PathListDirsResult, error)
+}
+
+// ProtocolPathServiceAdapter 把 endpoint path completion service 映射到 core-v2 protocol。
+// adapter 不读取本地文件系统；Prefix 直接交给当前 protocol session 所属 daemon，
+// 保证 SSH/hub endpoint 的目录候选来自远端机器。
+type ProtocolPathServiceAdapter struct {
+	Client ProtocolPathClient
+}
+
+// ListDirectories 返回当前 daemon 文件系统中的目录候选。
+// EndpointID 已由 EndpointManager 剥离；如果 Client 缺失，调用方会在 prompt 内展示失败。
+func (adapter ProtocolPathServiceAdapter) ListDirectories(ctx context.Context, req PathListDirectoriesRequest) (PathListDirectoriesResult, error) {
+	if adapter.Client == nil {
+		return PathListDirectoriesResult{}, fmt.Errorf("missing path client")
+	}
+	result, err := adapter.Client.ListDirectories(ctx, protocol.PathListDirsParams{
+		Prefix: req.Prefix,
+		Limit:  req.Limit,
+	})
+	if err != nil {
+		return PathListDirectoriesResult{}, err
+	}
+	out := PathListDirectoriesResult{
+		BasePath:  result.BasePath,
+		Missing:   result.Missing,
+		Truncated: result.Truncated,
+		Entries:   make([]PathDirectoryEntry, 0, len(result.Entries)),
+	}
+	for _, entry := range result.Entries {
+		out.Entries = append(out.Entries, PathDirectoryEntry{Name: entry.Name, Path: entry.Path})
+	}
+	return out, nil
+}
+
 // ProtocolCoreClientAdapter 是真实 protocol history.window 的 service adapter。
 type ProtocolCoreClientAdapter struct {
 	Client ProtocolHistoryClient

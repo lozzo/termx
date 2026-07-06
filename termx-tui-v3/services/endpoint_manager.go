@@ -18,6 +18,7 @@ type EndpointServiceBundle struct {
 	Core       CoreClient
 	Surface    TerminalSurfaceService
 	LiveEvents TerminalLiveEventService
+	Path       PathService
 }
 
 // EndpointDialer 是 endpoint manager 的 lazy transport 连接入口。
@@ -188,6 +189,20 @@ func (manager *EndpointManager) List(ctx context.Context, req TerminalListReques
 	return result, err
 }
 
+// ListDirectories 把 path completion 请求路由到目标 endpoint 的 daemon 文件系统。
+// Prefix 进入单 daemon adapter 后不再带 endpoint；结果由 manager 回填 EndpointID，
+// 防止异步补全结果覆盖其它机器的 prompt 状态。
+func (manager *EndpointManager) ListDirectories(ctx context.Context, req PathListDirectoriesRequest) (PathListDirectoriesResult, error) {
+	endpointID, pathService, err := manager.path(ctx, req.EndpointID)
+	if err != nil {
+		return PathListDirectoriesResult{EndpointID: endpointID}, err
+	}
+	req.EndpointID = ""
+	result, err := pathService.ListDirectories(ctx, req)
+	result.EndpointID = endpointID
+	return result, err
+}
+
 // Create 把 terminal create 请求路由到目标 endpoint。
 // create 的 TerminalID 仍由 owning daemon 校验；manager 只补回 endpoint-scoped result。
 func (manager *EndpointManager) Create(ctx context.Context, req TerminalCreateRequest) (TerminalCreateResult, error) {
@@ -339,6 +354,17 @@ func (manager *EndpointManager) terminal(ctx context.Context, endpointID state.E
 		return endpointID, nil, fmt.Errorf("endpoint %q has no terminal service", endpointID)
 	}
 	return endpointID, bundle.Terminal, nil
+}
+
+func (manager *EndpointManager) path(ctx context.Context, endpointID state.EndpointID) (state.EndpointID, PathService, error) {
+	endpointID, bundle, err := manager.bundle(ctx, endpointID)
+	if err != nil {
+		return endpointID, nil, err
+	}
+	if bundle.Path == nil {
+		return endpointID, nil, fmt.Errorf("endpoint %q has no path service", endpointID)
+	}
+	return endpointID, bundle.Path, nil
 }
 
 func (manager *EndpointManager) surface(ctx context.Context, endpointID state.EndpointID) (state.EndpointID, TerminalSurfaceService, error) {

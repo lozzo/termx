@@ -257,6 +257,23 @@ message ListResult {
   repeated TerminalInfo terminals = 1;
 }
 
+message PathListDirsParams {
+  string prefix = 1;
+  int32 limit = 2;
+}
+
+message PathDirEntry {
+  string name = 1;
+  string path = 2;
+}
+
+message PathListDirsResult {
+  string base_path = 1;
+  repeated PathDirEntry entries = 2;
+  bool missing = 3;
+  bool truncated = 4;
+}
+
 message CursorState {
   int32 row = 1;
   int32 col = 2;

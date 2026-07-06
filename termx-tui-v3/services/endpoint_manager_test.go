@@ -16,6 +16,10 @@ func TestEndpointManagerRoutesLocalServicesAndRestoresEndpointID(t *testing.T) {
 			{TerminalID: "term-1", Title: "shell"},
 		}},
 		SurfaceResult: TerminalSurfaceResult{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1"}},
+		PathResult: PathListDirectoriesResult{
+			BasePath: "/home/me",
+			Entries:  []PathDirectoryEntry{{Name: "src", Path: "~/src/"}},
+		},
 	}
 	core := &FakeCoreClient{
 		LatestResponses: []HistoryResult{
@@ -28,6 +32,7 @@ func TestEndpointManagerRoutesLocalServicesAndRestoresEndpointID(t *testing.T) {
 		Core:       core,
 		Surface:    terminal,
 		LiveEvents: terminal,
+		Path:       terminal,
 	})
 
 	list, err := manager.List(context.Background(), TerminalListRequest{EndpointID: state.DefaultEndpointID})
@@ -72,6 +77,17 @@ func TestEndpointManagerRoutesLocalServicesAndRestoresEndpointID(t *testing.T) {
 	}
 	if surface.Snapshot.EndpointID != state.DefaultEndpointID {
 		t.Fatalf("expected endpoint restored on live surface, got %#v", surface)
+	}
+
+	paths, err := manager.ListDirectories(context.Background(), PathListDirectoriesRequest{EndpointID: state.DefaultEndpointID, Prefix: "~/s", Limit: 5})
+	if err != nil {
+		t.Fatalf("path list: %v", err)
+	}
+	if len(terminal.PathRequests) != 1 || terminal.PathRequests[0].EndpointID != "" || terminal.PathRequests[0].Prefix != "~/s" {
+		t.Fatalf("expected endpoint stripped before path list, got %#v", terminal.PathRequests)
+	}
+	if paths.EndpointID != state.DefaultEndpointID || len(paths.Entries) != 1 || paths.Entries[0].Path != "~/src/" {
+		t.Fatalf("expected endpoint restored on path result, got %#v", paths)
 	}
 }
 
