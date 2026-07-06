@@ -913,6 +913,7 @@ func terminalPickerLine(row state.TerminalPickerItem, query string) Line {
 		markerStyle = StylePickerAccent
 	}
 	if row.CreateNew {
+		endpointLabel := terminalPickerEndpointLabel(row)
 		cells := []Cell{
 			styledCell(marker, markerStyle),
 			styledCell("+", StylePickerInfo),
@@ -920,7 +921,7 @@ func terminalPickerLine(row state.TerminalPickerItem, query string) Line {
 		}
 		cells = append(cells, terminalPickerColumnCells(row.Title, query, textStyle, terminalPickerTitleColumnWidth)...)
 		cells = append(cells, pickerSpace("  "))
-		cells = append(cells, terminalPickerColumnCells("select", query, StylePickerInfo, terminalPickerEndpointColumnWidth)...)
+		cells = append(cells, terminalPickerColumnCells(endpointLabel, query, StylePickerInfo, terminalPickerEndpointColumnWidth)...)
 		cells = append(cells, pickerSpace("  "))
 		cells = append(cells, terminalPickerColumnCells("-", query, StylePickerMuted, terminalPickerStateColumnWidth)...)
 		cells = append(cells, pickerSpace("  "))

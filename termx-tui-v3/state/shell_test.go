@@ -533,7 +533,7 @@ func TestTerminalPickerAndPoolRowsSortByName(t *testing.T) {
 	}
 
 	picker := TerminalPickerItems(root)
-	if len(picker) != 4 || !picker[0].CreateNew || picker[1].Title != "alpha" || picker[2].Title != "Beta" || picker[3].Title != "zeta" {
+	if len(picker) != 5 || !picker[0].CreateNew || !picker[1].CreateNew || picker[1].EndpointID != "west" || picker[2].Title != "alpha" || picker[3].Title != "Beta" || picker[4].Title != "zeta" {
 		t.Fatalf("terminal picker rows should sort by display name after create row, got %#v", picker)
 	}
 
@@ -541,6 +541,20 @@ func TestTerminalPickerAndPoolRowsSortByName(t *testing.T) {
 	pool := TerminalPoolPageItems(root)
 	if len(pool) != 3 || pool[0].Title != "alpha" || pool[1].Title != "Beta" || pool[2].Title != "zeta" {
 		t.Fatalf("terminal manager rows should sort by display name, got %#v", pool)
+	}
+}
+
+func TestTerminalPickerCreateRowsAreEndpointScoped(t *testing.T) {
+	root := Root{
+		Shell: DefaultShell().OpenTerminalPicker().SetTerminalPickerQuery("us west"),
+		Endpoints: (EndpointStore{}).
+			Upsert(EndpointItem{ID: DefaultEndpointID, Label: "This Mac", Transport: EndpointTransportLocal, ConnectMode: EndpointConnectAuto, Enabled: true}).
+			Upsert(EndpointItem{ID: "us-west", Label: "US West", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true}),
+	}
+
+	picker := TerminalPickerItems(root)
+	if len(picker) != 1 || !picker[0].CreateNew || picker[0].EndpointID != "us-west" || picker[0].EndpointLabel != "US West" {
+		t.Fatalf("endpoint query should expose remote create row, got %#v", picker)
 	}
 }
 
@@ -683,7 +697,7 @@ func TestTerminalPickerGroupsExposeEndpointMetadataAndSearch(t *testing.T) {
 
 	root.Shell = root.Shell.SetTerminalPickerQuery("US West")
 	items := TerminalPickerItems(root)
-	if len(items) != 1 || items[0].EndpointID != "west" || items[0].TerminalID != "term-1" {
+	if len(items) != 2 || !items[0].CreateNew || items[0].EndpointID != "west" || items[1].EndpointID != "west" || items[1].TerminalID != "term-1" {
 		t.Fatalf("endpoint label query should match west terminal row, got %#v", items)
 	}
 }

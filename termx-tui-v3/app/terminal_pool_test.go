@@ -315,6 +315,37 @@ func TestTerminalPoolCreateResultFallsBackToRequestedRemoteIDForAttach(t *testin
 	}
 }
 
+func TestTerminalPickerRemoteCreateRowOpensEndpointPrompt(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell().OpenTerminalPicker(),
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "us-west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+	}
+	remoteRow := -1
+	for index, item := range state.TerminalPickerItems(root) {
+		if item.CreateNew && item.EndpointID == "us-west" {
+			remoteRow = index
+			break
+		}
+	}
+	if remoteRow < 0 {
+		t.Fatalf("expected remote create row, picker=%#v", state.TerminalPickerItems(root))
+	}
+
+	_, effects := reduceShellContentAction(root, ShellContentActionMsg{ActionID: render.ActionPickerNew.String(), Row: remoteRow})
+	if len(effects) != 1 {
+		t.Fatalf("expected prompt effect, got %#v", effects)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(ShellOpenPromptMsg)
+	if !ok {
+		t.Fatalf("expected prompt message, got %#v", effects[0])
+	}
+	if msg.Prompt.TargetEndpointID != "us-west" || msg.Prompt.FieldRawValue("server") != "US West (us-west)" {
+		t.Fatalf("remote create row should default prompt server to endpoint, prompt=%#v", msg.Prompt)
+	}
+}
+
 func TestLiveAttachTerminalNotFoundDisconnectsPane(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachErr: errors.New("protocol error 404: terminal not found")}
 	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})

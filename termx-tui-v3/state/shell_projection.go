@@ -11,10 +11,7 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 	shell := root.Shell.ReadonlyDefaults()
 	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
 	items := []TerminalPickerItem{}
-	createItem := TerminalPickerItem{Title: "new terminal", Kind: PaneTerminalLive, CreateNew: true}
-	if matchesTerminalPickerQuery(createItem, query) {
-		items = append(items, createItem)
-	}
+	items = append(items, terminalPickerCreateItems(root, query)...)
 	seenTerminal := map[string]struct{}{}
 	for _, poolItem := range root.TerminalPool.Items {
 		poolItem = normalizeTerminalPoolItem(poolItem)
@@ -229,6 +226,28 @@ func terminalPoolPickerLocation() string {
 	return "pool"
 }
 
+func terminalPickerCreateItems(root Root, query string) []TerminalPickerItem {
+	endpoints := TerminalCreateEndpointItems(root)
+	if len(endpoints) == 0 {
+		endpoints = []EndpointItem{DefaultLocalEndpoint()}
+	}
+	items := make([]TerminalPickerItem, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		endpoint = endpoint.withDefaults()
+		item := TerminalPickerItem{
+			EndpointID: endpoint.ID,
+			Title:      "new terminal",
+			Kind:       PaneTerminalLive,
+			CreateNew:  true,
+		}
+		item = terminalPickerItemWithEndpoint(root, item)
+		if matchesTerminalPickerQuery(item, query) {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
 func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 	if query == "" {
 		return true
@@ -236,7 +255,12 @@ func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 	if item.CreateNew {
 		return TerminalPickerQueryMatchIndexes(item.Title, query) != nil ||
 			TerminalPickerQueryMatchIndexes("create terminal", query) != nil ||
-			TerminalPickerQueryMatchIndexes("new terminal", query) != nil
+			TerminalPickerQueryMatchIndexes("new terminal", query) != nil ||
+			TerminalPickerQueryMatchIndexes(string(item.EndpointID), query) != nil ||
+			TerminalPickerQueryMatchIndexes(item.EndpointLabel, query) != nil ||
+			TerminalPickerQueryMatchIndexes(string(item.EndpointTransport), query) != nil ||
+			TerminalPickerQueryMatchIndexes(string(item.EndpointConnectMode), query) != nil ||
+			TerminalPickerQueryMatchIndexes(string(item.EndpointStatus), query) != nil
 	}
 	return TerminalPickerQueryMatchIndexes(item.Title, query) != nil ||
 		TerminalPickerQueryMatchIndexes(item.TerminalID, query) != nil ||
