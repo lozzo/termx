@@ -21,7 +21,8 @@ const (
 // TerminalPoolListRequestMsg 请求刷新 Terminal Manager 的 inventory 投影。
 // Refresh=true 表示后台诊断刷新：只更新资源/连接数/生命周期，不切换 loading 状态，也不让请求消息本身触发渲染。
 type TerminalPoolListRequestMsg struct {
-	Refresh bool
+	EndpointID state.EndpointID
+	Refresh    bool
 }
 
 func (TerminalPoolListRequestMsg) isMsg() {}
@@ -56,10 +57,11 @@ func (TerminalPoolPreviewRefreshMsg) SkipRender() bool {
 // TerminalPoolListResultMsg 是 terminal service inventory 回到 TUI reducer 的结果消息。
 // Refresh 记录它是否来自后台刷新，用于静默处理错误并继续刷新循环。
 type TerminalPoolListResultMsg struct {
-	Seq     uint64
-	Refresh bool
-	Result  services.TerminalListResult
-	Err     error
+	EndpointID state.EndpointID
+	Seq        uint64
+	Refresh    bool
+	Result     services.TerminalListResult
+	Err        error
 }
 
 func (TerminalPoolListResultMsg) isMsg() {}
@@ -70,6 +72,7 @@ func (msg TerminalPoolListResultMsg) SkipRender() bool {
 }
 
 type TerminalPoolAttachRequestMsg struct {
+	EndpointID       state.EndpointID
 	TerminalID       string
 	TargetPaneID     string
 	TargetFloatingID string
@@ -79,6 +82,7 @@ type TerminalPoolAttachRequestMsg struct {
 func (TerminalPoolAttachRequestMsg) isMsg() {}
 
 type TerminalPoolAttachResultMsg struct {
+	EndpointID       state.EndpointID
 	TerminalID       string
 	TargetPaneID     string
 	TargetFloatingID string
@@ -90,6 +94,7 @@ type TerminalPoolAttachResultMsg struct {
 func (TerminalPoolAttachResultMsg) isMsg() {}
 
 type TerminalPoolCreateRequestMsg struct {
+	EndpointID       state.EndpointID
 	Title            string
 	Command          []string
 	CWD              string
@@ -101,6 +106,7 @@ type TerminalPoolCreateRequestMsg struct {
 func (TerminalPoolCreateRequestMsg) isMsg() {}
 
 type TerminalPoolCreateResultMsg struct {
+	EndpointID       state.EndpointID
 	TargetPaneID     string
 	TargetFloatingID string
 	Result           services.TerminalCreateResult
@@ -110,18 +116,21 @@ type TerminalPoolCreateResultMsg struct {
 func (TerminalPoolCreateResultMsg) isMsg() {}
 
 type TerminalPoolRestartRequestMsg struct {
+	EndpointID state.EndpointID
 	TerminalID string
 }
 
 func (TerminalPoolRestartRequestMsg) isMsg() {}
 
 type TerminalPoolRestartIfExitedRequestMsg struct {
+	EndpointID state.EndpointID
 	TerminalID string
 }
 
 func (TerminalPoolRestartIfExitedRequestMsg) isMsg() {}
 
 type TerminalPoolRestartIfExitedResultMsg struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Seq        uint64
 	Result     services.TerminalListResult
@@ -131,6 +140,7 @@ type TerminalPoolRestartIfExitedResultMsg struct {
 func (TerminalPoolRestartIfExitedResultMsg) isMsg() {}
 
 type TerminalPoolRestartResultMsg struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Err        error
 }
@@ -138,6 +148,7 @@ type TerminalPoolRestartResultMsg struct {
 func (TerminalPoolRestartResultMsg) isMsg() {}
 
 type TerminalPoolReconnectRequestMsg struct {
+	EndpointID       state.EndpointID
 	TerminalID       string
 	TargetPaneID     string
 	TargetFloatingID string
@@ -146,6 +157,7 @@ type TerminalPoolReconnectRequestMsg struct {
 func (TerminalPoolReconnectRequestMsg) isMsg() {}
 
 type TerminalPoolReconnectResultMsg struct {
+	EndpointID       state.EndpointID
 	TerminalID       string
 	TargetPaneID     string
 	TargetFloatingID string
@@ -157,12 +169,14 @@ type TerminalPoolReconnectResultMsg struct {
 func (TerminalPoolReconnectResultMsg) isMsg() {}
 
 type TerminalPoolKillRequestMsg struct {
+	EndpointID state.EndpointID
 	TerminalID string
 }
 
 func (TerminalPoolKillRequestMsg) isMsg() {}
 
 type TerminalPoolKillResultMsg struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Err        error
 }
@@ -170,12 +184,14 @@ type TerminalPoolKillResultMsg struct {
 func (TerminalPoolKillResultMsg) isMsg() {}
 
 type TerminalPoolRemoveRequestMsg struct {
+	EndpointID state.EndpointID
 	TerminalID string
 }
 
 func (TerminalPoolRemoveRequestMsg) isMsg() {}
 
 type TerminalPoolRemoveResultMsg struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Err        error
 }
@@ -183,6 +199,7 @@ type TerminalPoolRemoveResultMsg struct {
 func (TerminalPoolRemoveResultMsg) isMsg() {}
 
 type TerminalPoolEditRequestMsg struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Title      string
 	Tags       map[string]string
@@ -193,6 +210,7 @@ func (TerminalPoolEditRequestMsg) isMsg() {}
 // TerminalPoolEditResultMsg 是 terminal metadata 编辑服务回到 TUI reducer 的确认消息；
 // title/tags 来自已提交请求，用于立即更新 Terminal Manager 的本地列表投影，失败时不得改写列表。
 type TerminalPoolEditResultMsg struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Title      string
 	Tags       map[string]string
@@ -206,6 +224,7 @@ type TerminalSizeLockToggleRequestMsg struct{}
 func (TerminalSizeLockToggleRequestMsg) isMsg() {}
 
 type TerminalSizeLockToggleResultMsg struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Tags       map[string]string
 	Locked     bool
@@ -282,12 +301,13 @@ func reduceTerminalPoolListRequest(root state.Root, msg TerminalPoolListRequestM
 		root.TerminalPool = root.TerminalPool.RequestList()
 	}
 	seq := root.TerminalPool.RequestSeq
+	endpointID := state.NormalizeEndpointID(msg.EndpointID)
 	return root.Advance(), []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.terminal_pool.list.effect")
-			result, err := deps.Terminal.List(ctx, services.TerminalListRequest{})
+			result, err := deps.Terminal.List(ctx, services.TerminalListRequest{EndpointID: endpointID})
 			finish(len(result.Items))
-			return TerminalPoolListResultMsg{Seq: seq, Refresh: msg.Refresh, Result: result, Err: err}
+			return TerminalPoolListResultMsg{EndpointID: msg.EndpointID, Seq: seq, Refresh: msg.Refresh, Result: result, Err: err}
 		},
 	}}
 }
@@ -301,11 +321,19 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 	beforeSurfaceState := root.Surface.State
 	beforeSessionTerminal := root.Session.TerminalID
 	beforeSessionState := root.Session.State
-	next, applied := root.TerminalPool.ApplyList(msg.Seq, terminalPoolItemsFromService(msg.Result.Items), errText)
-	if !applied {
-		return root, nil
+	if msg.EndpointID != "" {
+		if root.TerminalPool.IsStale(msg.Seq) {
+			return root, nil
+		}
+		root.TerminalPool = root.TerminalPool.ApplyEndpointList(msg.EndpointID, terminalPoolItemsFromService(msg.Result.Items), errText)
+		root.TerminalPool.AppliedSeq = msg.Seq
+	} else {
+		next, applied := root.TerminalPool.ApplyList(msg.Seq, terminalPoolItemsFromService(msg.Result.Items), errText)
+		if !applied {
+			return root, nil
+		}
+		root.TerminalPool = next
 	}
-	root.TerminalPool = next
 	logLifecycleTrace(deps.Logger, "terminal.pool.list",
 		"seq", msg.Seq,
 		"err", errText,
@@ -384,7 +412,7 @@ func terminalPoolPreviewRefreshEffects(root state.Root, deps LiveDeps) []Effect 
 	}
 	// 中文说明：Terminal Manager preview 只拉 core latest native screen；
 	// 它是实时展示投影，不从 history/copy 或本地 scrollback 推断内容。
-	return liveSurfaceEffect(selected.TerminalID, cols, rows, false, deps)
+	return liveSurfaceEffectForRef(selected.EndpointID, selected.TerminalID, cols, rows, false, deps)
 }
 
 func terminalPoolOverlayOpen(root state.Root) bool {
@@ -424,11 +452,13 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 	if resizePolicy == "" {
 		resizePolicy = state.TerminalResizeRoleFollower
 	}
+	endpointID := state.NormalizeEndpointID(msg.EndpointID)
 	surfaceID := runtimeSurfaceID(root)
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.terminal_pool.attach.effect")
 			result, err := deps.Terminal.Attach(ctx, services.TerminalAttachRequest{
+				EndpointID:   endpointID,
 				TerminalID:   msg.TerminalID,
 				Cols:         cols,
 				Rows:         rows,
@@ -438,22 +468,28 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 				ViewID:       target.ViewID,
 			})
 			finish(0)
-			return TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: resizePolicy, Result: result, Err: err}
+			return TerminalPoolAttachResultMsg{EndpointID: endpointID, TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: resizePolicy, Result: result, Err: err}
 		},
 	}}
 }
 
 func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	errText := errorString(msg.Err)
-	root.TerminalPool = root.TerminalPool.ApplyAttached(msg.TerminalID, errText)
+	endpointID := state.NormalizeEndpointID(msg.EndpointID)
+	ref := state.NewTerminalRef(endpointID, msg.TerminalID)
+	root.TerminalPool = root.TerminalPool.ApplyAttachedRef(ref, errText)
 	if errText != "" {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: errText})
 		return root.Advance(), nil
 	}
 	result := msg.Result
+	if result.EndpointID == "" {
+		result.EndpointID = endpointID
+	}
 	if result.TerminalID == "" {
 		result.TerminalID = msg.TerminalID
 	}
+	ref = state.NewTerminalRef(result.EndpointID, result.TerminalID)
 	target, _ := terminalPoolTargetFromRequest(root, msg.TargetPaneID, msg.TargetFloatingID)
 	if result.ViewID == "" {
 		result.ViewID = target.ViewID
@@ -461,23 +497,23 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	if result.SurfaceID == "" {
 		result.SurfaceID = runtimeSurfaceID(root)
 	}
-	if shouldPreserveTerminalPoolAttachResizePolicy(root, result.TerminalID, msg.ResizePolicy) {
+	if shouldPreserveTerminalPoolAttachResizePolicyRef(root, ref, msg.ResizePolicy) {
 		result.ResizePolicy = msg.ResizePolicy
 		if msg.ResizePolicy != state.TerminalResizeRoleOwner {
 			result.CanResize = false
 		}
 	}
 	result = normalizeTerminalAttachResultForLock(root, result)
-	root.Session = root.Session.AttachWithResizeOwner(result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID)
-	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
+	root.Session = root.Session.AttachRefWithResizeOwner(ref, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID)
+	root.Surface = root.Surface.AttachRef(ref, result.Cols, result.Rows)
 	root = applyTerminalAttachmentProjectionFromAttach(root, result)
 	if msg.TargetFloatingID != "" {
 		paneID := msg.TargetPaneID
 		if floating, ok := root.Shell.FloatingByID(msg.TargetFloatingID); ok {
 			paneID = floating.Pane.ID
 		}
-		root = invalidateCopyModeForTerminalRebind(root, paneID, result.ViewID, result.TerminalID)
-		root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView(msg.TargetFloatingID, paneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
+		root = invalidateCopyModeForTerminalRebindRef(root, paneID, result.ViewID, ref)
+		root.TerminalViews = root.TerminalViews.BindFloating(state.NewEndpointFloatingTerminalView(result.EndpointID, msg.TargetFloatingID, paneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
 		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 		root.Shell = root.Shell.BindFloatingTerminal(msg.TargetFloatingID, result.TerminalID)
 	} else {
@@ -486,15 +522,15 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		if targetPaneID == "" {
 			targetPaneID = root.Shell.EnsureDefaults().ActivePaneID
 		}
-		root = invalidateCopyModeForTerminalRebind(root, targetPaneID, result.ViewID, result.TerminalID)
+		root = invalidateCopyModeForTerminalRebindRef(root, targetPaneID, result.ViewID, ref)
 		root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: targetPaneID}, result.TerminalID)
-		root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(targetPaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
+		root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView(result.EndpointID, targetPaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
 		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 	}
 	root.Shell = root.Shell.CloseOverlay().ExitInteractionMode()
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: result.TerminalID})
 	effects := workbenchPersistEffects("terminal.attach")
-	effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
+	effects = append(effects, liveEffectsForRef(result.EndpointID, result.TerminalID, result.Cols, result.Rows, deps)...)
 	return root.Advance(), effects
 }
 
@@ -520,10 +556,12 @@ func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequ
 	}
 	cwd := strings.TrimSpace(msg.CWD)
 	tags := cloneStringMap(msg.Tags)
+	endpointID := state.NormalizeEndpointID(msg.EndpointID)
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.terminal_pool.create.effect")
 			result, err := deps.Terminal.Create(ctx, services.TerminalCreateRequest{
+				EndpointID: endpointID,
 				TerminalID: terminalID,
 				Title:      title,
 				Command:    command,
@@ -533,7 +571,7 @@ func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequ
 				Rows:       rows,
 			})
 			finish(0)
-			return TerminalPoolCreateResultMsg{TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, Result: result, Err: err}
+			return TerminalPoolCreateResultMsg{EndpointID: endpointID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, Result: result, Err: err}
 		},
 	}}
 }
@@ -542,7 +580,11 @@ func reduceTerminalPoolCreateResult(root state.Root, msg TerminalPoolCreateResul
 	finish := perftrace.Measure("tui.terminal_pool.create.apply")
 	defer finish(0)
 	errText := errorString(msg.Err)
-	root.TerminalPool = root.TerminalPool.ApplyCreated(msg.Result.TerminalID, errText)
+	endpointID := state.NormalizeEndpointID(msg.EndpointID)
+	if msg.Result.EndpointID != "" {
+		endpointID = state.NormalizeEndpointID(msg.Result.EndpointID)
+	}
+	root.TerminalPool = root.TerminalPool.ApplyCreatedRef(state.NewTerminalRef(endpointID, msg.Result.TerminalID), errText)
 	if errText != "" {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.new", Body: errText})
 		return root.Advance(), nil
@@ -553,9 +595,9 @@ func reduceTerminalPoolCreateResult(root state.Root, msg TerminalPoolCreateResul
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.new", Body: msg.Result.TerminalID})
 	effects := []Effect{
-		FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }},
+		FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{EndpointID: endpointID} }},
 		FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolAttachRequestMsg{TerminalID: msg.Result.TerminalID, TargetPaneID: msg.TargetPaneID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: state.TerminalResizeRoleOwner}
+			return TerminalPoolAttachRequestMsg{EndpointID: endpointID, TerminalID: msg.Result.TerminalID, TargetPaneID: msg.TargetPaneID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: state.TerminalResizeRoleOwner}
 		}},
 	}
 	return root.Advance(), effects
@@ -566,17 +608,19 @@ func reduceTerminalPoolRestartRequest(root state.Root, msg TerminalPoolRestartRe
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.restart", Body: "terminal unavailable"})
 		return root.Advance(), nil
 	}
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
 	logLifecycleTrace(deps.Logger, "terminal.restart.request",
+		"endpoint_id", string(ref.EndpointID),
 		"terminal_id", msg.TerminalID,
-		"surface_state", string(root.Surface.SurfaceForTerminal(msg.TerminalID).State),
+		"surface_state", string(root.Surface.SurfaceForTerminalRef(ref).State),
 		"session_terminal", root.Session.TerminalID,
 		"session_state", string(root.Session.State),
-		"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+		"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminalRef(ref)),
 		"input_channels", lifecycleInputChannelsSummary(root.Session.InputChannels),
 	)
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-		err := deps.Terminal.Restart(ctx, services.TerminalRestartRequest{TerminalID: msg.TerminalID})
-		return TerminalPoolRestartResultMsg{TerminalID: msg.TerminalID, Err: err}
+		err := deps.Terminal.Restart(ctx, services.TerminalRestartRequest{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID})
+		return TerminalPoolRestartResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, Err: err}
 	}}}
 }
 
@@ -587,23 +631,27 @@ func reduceTerminalPoolRestartIfExitedRequest(root state.Root, msg TerminalPoolR
 	}
 	root.TerminalPool = root.TerminalPool.RequestList()
 	seq := root.TerminalPool.RequestSeq
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
 	logLifecycleTrace(deps.Logger, "terminal.restart_if_exited.request",
+		"endpoint_id", string(ref.EndpointID),
 		"terminal_id", msg.TerminalID,
 		"seq", seq,
-		"surface_state", string(root.Surface.SurfaceForTerminal(msg.TerminalID).State),
+		"surface_state", string(root.Surface.SurfaceForTerminalRef(ref).State),
 		"session_terminal", root.Session.TerminalID,
 		"session_state", string(root.Session.State),
-		"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+		"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminalRef(ref)),
 	)
 	return root.Advance(), []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-		result, err := deps.Terminal.List(ctx, services.TerminalListRequest{})
-		return TerminalPoolRestartIfExitedResultMsg{TerminalID: msg.TerminalID, Seq: seq, Result: result, Err: err}
+		result, err := deps.Terminal.List(ctx, services.TerminalListRequest{EndpointID: ref.EndpointID})
+		return TerminalPoolRestartIfExitedResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, Seq: seq, Result: result, Err: err}
 	}}}
 }
 
 func reduceTerminalPoolRestartIfExitedResult(root state.Root, msg TerminalPoolRestartIfExitedResultMsg, deps LiveDeps) (state.Root, []Effect) {
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
 	if root.TerminalPool.IsStale(msg.Seq) {
 		logLifecycleTrace(deps.Logger, "terminal.restart_if_exited.result",
+			"endpoint_id", string(ref.EndpointID),
 			"terminal_id", msg.TerminalID,
 			"seq", msg.Seq,
 			"stale", true,
@@ -611,17 +659,18 @@ func reduceTerminalPoolRestartIfExitedResult(root state.Root, msg TerminalPoolRe
 		)
 		return root, nil
 	}
-	next, effects := reduceTerminalPoolListResult(root, TerminalPoolListResultMsg{Seq: msg.Seq, Result: msg.Result, Err: msg.Err}, deps)
+	next, effects := reduceTerminalPoolListResult(root, TerminalPoolListResultMsg{EndpointID: msg.EndpointID, Seq: msg.Seq, Result: msg.Result, Err: msg.Err}, deps)
 	if msg.Err != nil {
 		logLifecycleTrace(deps.Logger, "terminal.restart_if_exited.result",
+			"endpoint_id", string(ref.EndpointID),
 			"terminal_id", msg.TerminalID,
 			"seq", msg.Seq,
 			"err", msg.Err.Error(),
-			"bindings", lifecycleTerminalViewBindingsSummary(next.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+			"bindings", lifecycleTerminalViewBindingsSummary(next.TerminalViews.BindingsForTerminalRef(ref)),
 		)
 		return next, effects
 	}
-	item, ok := terminalPoolItem(next.TerminalPool, msg.TerminalID)
+	item, ok := terminalPoolItemRef(next.TerminalPool, ref)
 	stateValue := ""
 	if ok {
 		stateValue = item.State
@@ -631,40 +680,42 @@ func reduceTerminalPoolRestartIfExitedResult(root state.Root, msg TerminalPoolRe
 		"seq", msg.Seq,
 		"state", stateValue,
 		"found", ok,
-		"surface_state", string(next.Surface.SurfaceForTerminal(msg.TerminalID).State),
+		"surface_state", string(next.Surface.SurfaceForTerminalRef(ref).State),
 		"session_terminal", next.Session.TerminalID,
 		"session_state", string(next.Session.State),
-		"bindings", lifecycleTerminalViewBindingsSummary(next.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+		"bindings", lifecycleTerminalViewBindingsSummary(next.TerminalViews.BindingsForTerminalRef(ref)),
 	)
 	if !ok || item.State != string(state.TerminalLiveExited) {
 		return next, effects
 	}
 	effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
-		return TerminalPoolRestartRequestMsg{TerminalID: msg.TerminalID}
+		return TerminalPoolRestartRequestMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID}
 	}})
 	return next, effects
 }
 
 func reduceTerminalPoolRestartResult(root state.Root, msg TerminalPoolRestartResultMsg, deps LiveDeps) (state.Root, []Effect) {
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
 	if msg.Err != nil {
-		root.TerminalPool = root.TerminalPool.ApplyRestarted(msg.TerminalID, msg.Err.Error())
+		root.TerminalPool = root.TerminalPool.ApplyRestartedRef(ref, msg.Err.Error())
 		logLifecycleTrace(deps.Logger, "terminal.restart.result",
+			"endpoint_id", string(ref.EndpointID),
 			"terminal_id", msg.TerminalID,
 			"err", msg.Err.Error(),
-			"surface_state", string(root.Surface.SurfaceForTerminal(msg.TerminalID).State),
+			"surface_state", string(root.Surface.SurfaceForTerminalRef(ref).State),
 			"session_state", string(root.Session.State),
-			"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+			"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminalRef(ref)),
 		)
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.restart", Body: msg.Err.Error()})
 		return root.Advance(), nil
 	}
-	beforeBindings := lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.TerminalID))
-	beforeSurface := root.Surface.SurfaceForTerminal(msg.TerminalID)
-	root.TerminalPool = root.TerminalPool.ApplyRestarted(msg.TerminalID, "")
+	beforeBindings := lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminalRef(ref))
+	beforeSurface := root.Surface.SurfaceForTerminalRef(ref)
+	root.TerminalPool = root.TerminalPool.ApplyRestartedRef(ref, "")
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.restart", Body: msg.TerminalID})
-	root.Surface = root.Surface.RestartPreservingContent(msg.TerminalID, root.Surface.Cols, root.Surface.Rows)
-	root.TerminalViews = root.TerminalViews.MarkTerminalReattaching(msg.TerminalID)
-	root.Session = root.Session.ClearInputChannel(msg.TerminalID)
+	root.Surface = root.Surface.RestartPreservingContentRef(ref, root.Surface.Cols, root.Surface.Rows)
+	root.TerminalViews = root.TerminalViews.MarkTerminalRefReattaching(ref)
+	root.Session = root.Session.ClearInputChannelRef(ref)
 	logLifecycleTrace(deps.Logger, "terminal.restart.result",
 		"terminal_id", msg.TerminalID,
 		"surface_before", string(beforeSurface.State),
@@ -673,11 +724,11 @@ func reduceTerminalPoolRestartResult(root state.Root, msg TerminalPoolRestartRes
 		"session_state", string(root.Session.State),
 		"active_terminal", lifecycleActiveTerminalID(root),
 		"bindings_before", beforeBindings,
-		"bindings_after", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+		"bindings_after", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminalRef(ref)),
 		"input_channels", lifecycleInputChannelsSummary(root.Session.InputChannels),
 	)
-	effects := []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
-	effects = append(effects, restartTerminalViewEffects(root, msg.TerminalID)...)
+	effects := []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{EndpointID: ref.EndpointID} }}}
+	effects = append(effects, restartTerminalViewEffectsRef(root, ref)...)
 	return root.Advance(), effects
 }
 
@@ -693,14 +744,15 @@ func reduceTerminalPoolReconnectRequest(root state.Root, msg TerminalPoolReconne
 	}
 	cols, rows := terminalPoolAttachSizeForTarget(root, target)
 	surfaceID := runtimeSurfaceID(root)
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: surfaceID, ViewID: target.ViewID})
-		return TerminalPoolReconnectResultMsg{TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: state.TerminalResizeRoleFollower, Result: result, Err: err}
+		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: surfaceID, ViewID: target.ViewID})
+		return TerminalPoolReconnectResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: state.TerminalResizeRoleFollower, Result: result, Err: err}
 	}}}
 }
 
 func reduceTerminalPoolReconnectResult(root state.Root, msg TerminalPoolReconnectResultMsg, deps LiveDeps) (state.Root, []Effect) {
-	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetPaneID: msg.TargetPaneID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: msg.ResizePolicy, Result: msg.Result, Err: msg.Err}, deps)
+	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{EndpointID: msg.EndpointID, TerminalID: msg.TerminalID, TargetPaneID: msg.TargetPaneID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: msg.ResizePolicy, Result: msg.Result, Err: msg.Err}, deps)
 }
 
 func reduceTerminalPoolKillRequest(root state.Root, msg TerminalPoolKillRequestMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -708,15 +760,17 @@ func reduceTerminalPoolKillRequest(root state.Root, msg TerminalPoolKillRequestM
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: "terminal unavailable"})
 		return root.Advance(), nil
 	}
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-		err := deps.Terminal.Kill(ctx, services.TerminalKillRequest{TerminalID: msg.TerminalID})
-		return TerminalPoolKillResultMsg{TerminalID: msg.TerminalID, Err: err}
+		err := deps.Terminal.Kill(ctx, services.TerminalKillRequest{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID})
+		return TerminalPoolKillResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, Err: err}
 	}}}
 }
 
 func reduceTerminalPoolKillResult(root state.Root, msg TerminalPoolKillResultMsg) (state.Root, []Effect) {
 	errText := errorString(msg.Err)
-	root.TerminalPool = root.TerminalPool.ApplyKilled(msg.TerminalID, errText)
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
+	root.TerminalPool = root.TerminalPool.ApplyKilledRef(ref, errText)
 	if errText != "" {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: errText})
 		return root.Advance(), nil
@@ -724,7 +778,7 @@ func reduceTerminalPoolKillResult(root state.Root, msg TerminalPoolKillResultMsg
 	// 中文说明：kill 只改变 core terminal lifecycle，不代表用户断开 pane/floating view。
 	// 绑定清理只能发生在 remove/disconnect 路径，否则已有浮窗会被误删。
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: msg.TerminalID})
-	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{EndpointID: ref.EndpointID} }}}
 }
 
 func reduceTerminalPoolRemoveRequest(root state.Root, msg TerminalPoolRemoveRequestMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -732,23 +786,25 @@ func reduceTerminalPoolRemoveRequest(root state.Root, msg TerminalPoolRemoveRequ
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.delete", Body: "terminal unavailable"})
 		return root.Advance(), nil
 	}
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-		err := deps.Terminal.Remove(ctx, services.TerminalRemoveRequest{TerminalID: msg.TerminalID})
-		return TerminalPoolRemoveResultMsg{TerminalID: msg.TerminalID, Err: err}
+		err := deps.Terminal.Remove(ctx, services.TerminalRemoveRequest{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID})
+		return TerminalPoolRemoveResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, Err: err}
 	}}}
 }
 
 func reduceTerminalPoolRemoveResult(root state.Root, msg TerminalPoolRemoveResultMsg) (state.Root, []Effect) {
 	errText := errorString(msg.Err)
-	root.TerminalPool = root.TerminalPool.ApplyRemoved(msg.TerminalID, errText)
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
+	root.TerminalPool = root.TerminalPool.ApplyRemovedRef(ref, errText)
 	if errText != "" {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.delete", Body: errText})
 		return root.Advance(), nil
 	}
-	root = removeTerminalFromRoot(root, msg.TerminalID)
+	root = removeTerminalRefFromRoot(root, ref)
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.delete", Body: msg.TerminalID})
 	effects := workbenchPersistEffects("terminal.delete")
-	effects = append(effects, FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }})
+	effects = append(effects, FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{EndpointID: ref.EndpointID} }})
 	return root.Advance(), effects
 }
 
@@ -762,21 +818,23 @@ func reduceTerminalPoolEditRequest(root state.Root, msg TerminalPoolEditRequestM
 		title = msg.TerminalID
 	}
 	tags := cloneStringMap(msg.Tags)
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-		err := deps.Terminal.EditMetadata(ctx, services.TerminalEditMetadataRequest{TerminalID: msg.TerminalID, Title: title, Tags: tags})
-		return TerminalPoolEditResultMsg{TerminalID: msg.TerminalID, Title: title, Tags: cloneStringMap(tags), Err: err}
+		err := deps.Terminal.EditMetadata(ctx, services.TerminalEditMetadataRequest{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, Title: title, Tags: tags})
+		return TerminalPoolEditResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, Title: title, Tags: cloneStringMap(tags), Err: err}
 	}}}
 }
 
 func reduceTerminalPoolEditResult(root state.Root, msg TerminalPoolEditResultMsg) (state.Root, []Effect) {
 	errText := errorString(msg.Err)
-	root.TerminalPool = root.TerminalPool.ApplyEdited(msg.TerminalID, msg.Title, msg.Tags, errText)
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
+	root.TerminalPool = root.TerminalPool.ApplyEditedRef(ref, msg.Title, msg.Tags, errText)
 	if errText != "" {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.edit", Body: errText})
 		return root.Advance(), nil
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "pool.edit", Body: msg.TerminalID})
-	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{EndpointID: ref.EndpointID} }}}
 }
 
 func reduceTerminalSizeLockToggleRequest(root state.Root, deps LiveDeps) (state.Root, []Effect) {
@@ -789,18 +847,19 @@ func reduceTerminalSizeLockToggleRequest(root state.Root, deps LiveDeps) (state.
 		root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.size", Body: "no active terminal"})
 		return root.Advance(), nil
 	}
-	tags, ok := terminalPoolTags(root.TerminalPool, target.TerminalID)
+	ref := state.NewTerminalRef(target.EndpointID, target.TerminalID)
+	tags, ok := terminalPoolTagsRef(root.TerminalPool, ref)
 	if !ok {
 		// 中文说明：size-lock 的写入真值是 terminal metadata tags；本地 cache 缺失时必须先拉最新 tags，
 		// 再合并写入锁标记，不能停在 pending，也不能用空 map 覆盖用户已有 tags。
 		return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-			result, err := deps.Terminal.List(ctx, services.TerminalListRequest{})
+			result, err := deps.Terminal.List(ctx, services.TerminalListRequest{EndpointID: ref.EndpointID})
 			if err != nil {
-				return TerminalSizeLockToggleResultMsg{TerminalID: target.TerminalID, Err: fmt.Errorf("terminal metadata: %w", err)}
+				return TerminalSizeLockToggleResultMsg{EndpointID: ref.EndpointID, TerminalID: target.TerminalID, Err: fmt.Errorf("terminal metadata: %w", err)}
 			}
-			tags, ok := terminalListTags(result, target.TerminalID)
+			tags, ok := terminalListTagsRef(result, ref)
 			if !ok {
-				return TerminalSizeLockToggleResultMsg{TerminalID: target.TerminalID, Err: fmt.Errorf("terminal metadata missing")}
+				return TerminalSizeLockToggleResultMsg{EndpointID: ref.EndpointID, TerminalID: target.TerminalID, Err: fmt.Errorf("terminal metadata missing")}
 			}
 			locked := !terminalmeta.SizeLocked(tags)
 			if locked {
@@ -808,8 +867,8 @@ func reduceTerminalSizeLockToggleRequest(root state.Root, deps LiveDeps) (state.
 			} else {
 				delete(tags, terminalmeta.SizeLockTag)
 			}
-			err = deps.Terminal.EditTags(ctx, services.TerminalEditTagsRequest{TerminalID: target.TerminalID, Tags: tags})
-			return TerminalSizeLockToggleResultMsg{TerminalID: target.TerminalID, Tags: tags, Locked: locked, Err: err}
+			err = deps.Terminal.EditTags(ctx, services.TerminalEditTagsRequest{EndpointID: ref.EndpointID, TerminalID: target.TerminalID, Tags: tags})
+			return TerminalSizeLockToggleResultMsg{EndpointID: ref.EndpointID, TerminalID: target.TerminalID, Tags: tags, Locked: locked, Err: err}
 		}}}
 	}
 	locked := !terminalmeta.SizeLocked(tags)
@@ -819,19 +878,20 @@ func reduceTerminalSizeLockToggleRequest(root state.Root, deps LiveDeps) (state.
 		delete(tags, terminalmeta.SizeLockTag)
 	}
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-		err := deps.Terminal.EditTags(ctx, services.TerminalEditTagsRequest{TerminalID: target.TerminalID, Tags: tags})
-		return TerminalSizeLockToggleResultMsg{TerminalID: target.TerminalID, Tags: tags, Locked: locked, Err: err}
+		err := deps.Terminal.EditTags(ctx, services.TerminalEditTagsRequest{EndpointID: ref.EndpointID, TerminalID: target.TerminalID, Tags: tags})
+		return TerminalSizeLockToggleResultMsg{EndpointID: ref.EndpointID, TerminalID: target.TerminalID, Tags: tags, Locked: locked, Err: err}
 	}}}
 }
 
 func reduceTerminalSizeLockToggleResult(root state.Root, msg TerminalSizeLockToggleResultMsg) (state.Root, []Effect) {
 	errText := errorString(msg.Err)
-	root.TerminalPool = root.TerminalPool.ApplyTagsEdited(msg.TerminalID, msg.Tags, errText)
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
+	root.TerminalPool = root.TerminalPool.ApplyTagsEditedRef(ref, msg.Tags, errText)
 	if errText != "" {
 		root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.size", Body: errText})
 		return root.Advance(), nil
 	}
-	root.TerminalViews = root.TerminalViews.ApplyTerminalSizeLock(msg.TerminalID, msg.Locked)
+	root.TerminalViews = root.TerminalViews.ApplyTerminalRefSizeLock(ref, msg.Locked)
 	body := "terminal size lock disabled"
 	if msg.Locked {
 		body = "terminal size is locked"
@@ -841,8 +901,13 @@ func reduceTerminalSizeLockToggleResult(root state.Root, msg TerminalSizeLockTog
 }
 
 func terminalListTags(result services.TerminalListResult, terminalID string) (map[string]string, bool) {
+	return terminalListTagsRef(result, state.LocalTerminalRef(terminalID))
+}
+
+func terminalListTagsRef(result services.TerminalListResult, ref state.TerminalRef) (map[string]string, bool) {
+	ref = ref.Normalize()
 	for _, item := range result.Items {
-		if item.TerminalID != terminalID {
+		if !state.NewTerminalRef(item.EndpointID, item.TerminalID).Equal(ref) {
 			continue
 		}
 		tags := cloneStringMap(item.Tags)
@@ -855,6 +920,7 @@ func terminalListTags(result services.TerminalListResult, terminalID string) (ma
 }
 
 type terminalSizeLockTarget struct {
+	EndpointID state.EndpointID
 	TerminalID string
 }
 
@@ -885,7 +951,7 @@ func terminalPoolTargetFromRequest(root state.Root, paneID string, floatingID st
 func activeTerminalSizeLockTarget(root state.Root) (terminalSizeLockTarget, bool) {
 	if binding, ok := activeTerminalViewBinding(root); ok && binding.TerminalID != "" {
 		if binding.HasResizeOwner() {
-			return terminalSizeLockTarget{TerminalID: binding.TerminalID}, true
+			return terminalSizeLockTarget{EndpointID: binding.EndpointID, TerminalID: binding.TerminalID}, true
 		}
 		return terminalSizeLockTarget{}, false
 	}
@@ -893,8 +959,13 @@ func activeTerminalSizeLockTarget(root state.Root) (terminalSizeLockTarget, bool
 }
 
 func terminalPoolTags(pool state.TerminalPoolStore, terminalID string) (map[string]string, bool) {
+	return terminalPoolTagsRef(pool, state.LocalTerminalRef(terminalID))
+}
+
+func terminalPoolTagsRef(pool state.TerminalPoolStore, ref state.TerminalRef) (map[string]string, bool) {
+	ref = ref.Normalize()
 	for _, item := range pool.Items {
-		if item.TerminalID == terminalID {
+		if item.TerminalRef().Equal(ref) {
 			tags := cloneStringMap(item.Tags)
 			if tags == nil {
 				tags = map[string]string{}
@@ -923,7 +994,7 @@ func projectTerminalAttachResultLock(store state.TerminalViewStore, result servi
 	if !result.SizeLocked {
 		return store
 	}
-	return store.ApplyTerminalSizeLock(result.TerminalID, true)
+	return store.ApplyTerminalRefSizeLock(state.NewTerminalRef(result.EndpointID, result.TerminalID), true)
 }
 
 func terminalAttachResultSizeLocked(root state.Root, result services.TerminalAttachResult) bool {
@@ -934,16 +1005,21 @@ func terminalAttachResultSizeLocked(root state.Root, result services.TerminalAtt
 	if result.SizeLocked {
 		return true
 	}
-	for _, binding := range root.TerminalViews.BindingsForTerminal(terminalID) {
+	ref := state.NewTerminalRef(result.EndpointID, terminalID)
+	for _, binding := range root.TerminalViews.BindingsForTerminalRef(ref) {
 		if binding.SizeLocked {
 			return true
 		}
 	}
-	tags, ok := terminalPoolTags(root.TerminalPool, terminalID)
+	tags, ok := terminalPoolTagsRef(root.TerminalPool, ref)
 	return ok && terminalmeta.SizeLocked(tags)
 }
 
 func shouldPreserveTerminalPoolAttachResizePolicy(root state.Root, terminalID string, resizePolicy string) bool {
+	return shouldPreserveTerminalPoolAttachResizePolicyRef(root, state.LocalTerminalRef(terminalID), resizePolicy)
+}
+
+func shouldPreserveTerminalPoolAttachResizePolicyRef(root state.Root, ref state.TerminalRef, resizePolicy string) bool {
 	if resizePolicy == "" {
 		return false
 	}
@@ -952,13 +1028,14 @@ func shouldPreserveTerminalPoolAttachResizePolicy(root state.Root, terminalID st
 	}
 	// 中文说明：同 terminal 已有本地 binding 时，picker/reconnect attach 是新增 follower view，
 	// 不能因为 core 旧 owner 状态或 auto-owner 结果让新 pane 抢走 resize authority。
-	return len(root.TerminalViews.BindingsForTerminal(terminalID)) > 0
+	return len(root.TerminalViews.BindingsForTerminalRef(ref)) > 0
 }
 
 func terminalPoolItemsFromService(items []services.TerminalPoolItem) []state.TerminalPoolItem {
 	out := make([]state.TerminalPoolItem, len(items))
 	for i, item := range items {
 		out[i] = state.TerminalPoolItem{
+			EndpointID:      item.EndpointID,
 			TerminalID:      item.TerminalID,
 			Title:           item.Title,
 			State:           item.State,
@@ -1004,11 +1081,16 @@ func lifecyclePoolItemsSummary(items []state.TerminalPoolItem) string {
 }
 
 func terminalPoolItem(pool state.TerminalPoolStore, terminalID string) (state.TerminalPoolItem, bool) {
-	if terminalID == "" {
+	return terminalPoolItemRef(pool, state.LocalTerminalRef(terminalID))
+}
+
+func terminalPoolItemRef(pool state.TerminalPoolStore, ref state.TerminalRef) (state.TerminalPoolItem, bool) {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return state.TerminalPoolItem{}, false
 	}
 	for _, item := range pool.Items {
-		if item.TerminalID == terminalID {
+		if item.TerminalRef().Equal(ref) {
 			return item, true
 		}
 	}
@@ -1016,10 +1098,15 @@ func terminalPoolItem(pool state.TerminalPoolStore, terminalID string) (state.Te
 }
 
 func restartTerminalViewEffects(root state.Root, terminalID string) []Effect {
-	if terminalID == "" {
+	return restartTerminalViewEffectsRef(root, state.LocalTerminalRef(terminalID))
+}
+
+func restartTerminalViewEffectsRef(root state.Root, ref state.TerminalRef) []Effect {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return nil
 	}
-	bindings := root.TerminalViews.BindingsForTerminal(terminalID)
+	bindings := root.TerminalViews.BindingsForTerminalRef(ref)
 	if len(bindings) == 0 {
 		return nil
 	}
@@ -1027,7 +1114,8 @@ func restartTerminalViewEffects(root state.Root, terminalID string) []Effect {
 	for _, binding := range bindings {
 		cols, rows := binding.DesiredCols, binding.DesiredRows
 		if cols <= 0 || rows <= 0 {
-			cols, rows = root.Surface.SurfaceForTerminal(terminalID).Cols, root.Surface.SurfaceForTerminal(terminalID).Rows
+			surface := root.Surface.SurfaceForTerminalRef(ref)
+			cols, rows = surface.Cols, surface.Rows
 		}
 		if cols <= 0 {
 			cols = 80
@@ -1044,7 +1132,8 @@ func restartTerminalViewEffects(root state.Root, terminalID string) []Effect {
 			surfaceID = runtimeSurfaceID(root)
 		}
 		cfg := LiveConfig{
-			TerminalID:   terminalID,
+			EndpointID:   ref.EndpointID,
+			TerminalID:   ref.TerminalID,
 			Cols:         cols,
 			Rows:         rows,
 			Mode:         "collaborator",
@@ -1059,11 +1148,16 @@ func restartTerminalViewEffects(root state.Root, terminalID string) []Effect {
 }
 
 func removeTerminalFromRoot(root state.Root, terminalID string) state.Root {
-	root.TerminalViews = root.TerminalViews.RemoveTerminal(terminalID)
-	root.Shell = root.Shell.RemoveTerminalBindings(terminalID)
-	root.Session = root.Session.RemoveTerminal(terminalID)
-	root.Surface = root.Surface.RemoveTerminal(terminalID)
-	return root.WithoutCopyHistorySessionsForTerminal(terminalID)
+	return removeTerminalRefFromRoot(root, state.LocalTerminalRef(terminalID))
+}
+
+func removeTerminalRefFromRoot(root state.Root, ref state.TerminalRef) state.Root {
+	ref = ref.Normalize()
+	root.TerminalViews = root.TerminalViews.RemoveTerminalRef(ref)
+	root.Shell = root.Shell.RemoveTerminalBindings(ref.TerminalID)
+	root.Session = root.Session.RemoveTerminalRef(ref)
+	root.Surface = root.Surface.RemoveTerminalRef(ref)
+	return root.WithoutCopyHistorySessionsForTerminalRef(ref)
 }
 
 func terminalPoolAttachSize(root state.Root) (int, int) {

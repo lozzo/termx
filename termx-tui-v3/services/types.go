@@ -22,6 +22,7 @@ func (id RequestID) Valid() bool {
 }
 
 type HistoryLatestRequest struct {
+	EndpointID state.EndpointID
 	RequestID  RequestID
 	PaneID     string
 	ViewID     string
@@ -34,6 +35,7 @@ type HistoryLatestRequest struct {
 }
 
 type HistoryOlderRequest struct {
+	EndpointID state.EndpointID
 	RequestID  RequestID
 	PaneID     string
 	ViewID     string
@@ -47,6 +49,7 @@ type HistoryOlderRequest struct {
 }
 
 type HistoryNewerRequest struct {
+	EndpointID state.EndpointID
 	RequestID  RequestID
 	PaneID     string
 	ViewID     string
@@ -60,6 +63,7 @@ type HistoryNewerRequest struct {
 }
 
 type HistoryOldestRequest struct {
+	EndpointID state.EndpointID
 	RequestID  RequestID
 	PaneID     string
 	ViewID     string
@@ -72,11 +76,13 @@ type HistoryOldestRequest struct {
 }
 
 type HistoryReleaseRequest struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Token      string
 }
 
 type HistoryCopyRangeRequest struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Cols       int
 	Token      string
@@ -140,6 +146,7 @@ type TerminalLiveEventService interface {
 }
 
 type TerminalPoolItem struct {
+	EndpointID      state.EndpointID
 	TerminalID      string
 	Title           string
 	State           string
@@ -163,13 +170,16 @@ type TerminalResourceUsage struct {
 	SampledAt      time.Time
 }
 
-type TerminalListRequest struct{}
+type TerminalListRequest struct {
+	EndpointID state.EndpointID
+}
 
 type TerminalListResult struct {
 	Items []TerminalPoolItem
 }
 
 type TerminalCreateRequest struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Title      string
 	Command    []string
@@ -180,6 +190,7 @@ type TerminalCreateRequest struct {
 }
 
 type TerminalCreateResult struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	State      string
 }
@@ -194,6 +205,7 @@ func DefaultTerminalCommand() []string {
 }
 
 type TerminalAttachRequest struct {
+	EndpointID   state.EndpointID
 	TerminalID   string
 	Cols         int
 	Rows         int
@@ -204,6 +216,7 @@ type TerminalAttachRequest struct {
 }
 
 type TerminalDetachRequest struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Channel    uint16
 	SurfaceID  string
@@ -211,6 +224,7 @@ type TerminalDetachRequest struct {
 }
 
 type TerminalAttachResult struct {
+	EndpointID      state.EndpointID
 	TerminalID      string
 	Channel         uint16
 	Cols            int
@@ -228,10 +242,12 @@ type TerminalAttachResult struct {
 }
 
 type TerminalRestartRequest struct {
+	EndpointID state.EndpointID
 	TerminalID string
 }
 
 type TerminalReconnectRequest struct {
+	EndpointID   state.EndpointID
 	TerminalID   string
 	Cols         int
 	Rows         int
@@ -242,25 +258,30 @@ type TerminalReconnectRequest struct {
 }
 
 type TerminalKillRequest struct {
+	EndpointID state.EndpointID
 	TerminalID string
 }
 
 type TerminalRemoveRequest struct {
+	EndpointID state.EndpointID
 	TerminalID string
 }
 
 type TerminalEditMetadataRequest struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Title      string
 	Tags       map[string]string
 }
 
 type TerminalEditTagsRequest struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Tags       map[string]string
 }
 
 type TerminalInputRequest struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Channel    uint16
 	SurfaceID  string
@@ -270,6 +291,7 @@ type TerminalInputRequest struct {
 }
 
 type TerminalResizeRequest struct {
+	EndpointID   state.EndpointID
 	TerminalID   string
 	Channel      uint16
 	Cols         int
@@ -280,6 +302,7 @@ type TerminalResizeRequest struct {
 }
 
 type TerminalResizeResult struct {
+	EndpointID      state.EndpointID
 	TerminalID      string
 	Cols            int
 	Rows            int
@@ -304,6 +327,7 @@ type TerminalSurfaceResult struct {
 }
 
 type TerminalSurfaceRequest struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Cols       int
 	Rows       int
@@ -313,6 +337,7 @@ type TerminalSurfaceRequest struct {
 // ObservedRevision 来自 core native screen/wake 的已观察版本，只用于补 arm 间隙；
 // 它不是 FrameSink 写出进度，不能把 TUI 渲染状态反传成 core truth。
 type TerminalLiveEventRequest struct {
+	EndpointID       state.EndpointID
 	TerminalID       string
 	Cols             int
 	Rows             int
@@ -320,6 +345,7 @@ type TerminalLiveEventRequest struct {
 }
 
 type TerminalLiveEvent struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Snapshot   state.LiveSurfaceSnapshot
 	Refresh    bool
@@ -720,6 +746,9 @@ func (service *FakeTerminalService) Attach(_ context.Context, req TerminalAttach
 		return TerminalAttachResult{}, service.AttachErr
 	}
 	result := service.AttachResult
+	if result.EndpointID == "" {
+		result.EndpointID = req.EndpointID
+	}
 	if result.TerminalID == "" {
 		result.TerminalID = req.TerminalID
 	}
@@ -765,6 +794,9 @@ func (service *FakeTerminalService) Create(_ context.Context, req TerminalCreate
 		return TerminalCreateResult{}, service.CreateErr
 	}
 	result := service.CreateResult
+	if result.EndpointID == "" {
+		result.EndpointID = req.EndpointID
+	}
 	if result.TerminalID == "" {
 		result.TerminalID = req.TerminalID
 	}
@@ -785,6 +817,7 @@ func (service *FakeTerminalService) Reconnect(ctx context.Context, req TerminalR
 		return TerminalAttachResult{}, service.ReconnectErr
 	}
 	return service.Attach(ctx, TerminalAttachRequest{
+		EndpointID:   req.EndpointID,
 		TerminalID:   req.TerminalID,
 		Cols:         req.Cols,
 		Rows:         req.Rows,
@@ -807,6 +840,7 @@ func (service *FakeTerminalService) Remove(_ context.Context, req TerminalRemove
 
 func (service *FakeTerminalService) EditMetadata(_ context.Context, req TerminalEditMetadataRequest) error {
 	service.Edits = append(service.Edits, TerminalEditMetadataRequest{
+		EndpointID: req.EndpointID,
 		TerminalID: req.TerminalID,
 		Title:      req.Title,
 		Tags:       cloneStringMap(req.Tags),
@@ -816,6 +850,7 @@ func (service *FakeTerminalService) EditMetadata(_ context.Context, req Terminal
 
 func (service *FakeTerminalService) EditTags(_ context.Context, req TerminalEditTagsRequest) error {
 	service.TagEdits = append(service.TagEdits, TerminalEditTagsRequest{
+		EndpointID: req.EndpointID,
 		TerminalID: req.TerminalID,
 		Tags:       cloneStringMap(req.Tags),
 	})
@@ -836,6 +871,9 @@ func (service *FakeTerminalService) Resize(_ context.Context, req TerminalResize
 		return TerminalResizeResult{}, service.ResizeErr
 	}
 	result := service.ResizeResult
+	if result.EndpointID == "" {
+		result.EndpointID = req.EndpointID
+	}
 	if result.TerminalID == "" {
 		result.TerminalID = req.TerminalID
 	}
@@ -875,6 +913,9 @@ func (service *FakeTerminalService) LiveSurface(_ context.Context, req TerminalS
 		return TerminalSurfaceResult{}, service.SurfaceErr
 	}
 	result := service.SurfaceResult
+	if result.Snapshot.EndpointID == "" {
+		result.Snapshot.EndpointID = req.EndpointID
+	}
 	if result.Snapshot.TerminalID == "" {
 		result.Snapshot.TerminalID = req.TerminalID
 	}
@@ -900,6 +941,12 @@ func (service *FakeTerminalService) ArmLiveInvalidation(ctx context.Context, req
 		case event, ok := <-service.LiveInvalidationsCh:
 			if !ok {
 				return TerminalLiveEvent{}, context.Canceled
+			}
+			if event.EndpointID == "" {
+				event.EndpointID = req.EndpointID
+			}
+			if event.Snapshot.EndpointID == "" {
+				event.Snapshot.EndpointID = req.EndpointID
 			}
 			return event, nil
 		case <-ctx.Done():

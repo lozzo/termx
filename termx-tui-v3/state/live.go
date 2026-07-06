@@ -13,6 +13,7 @@ const (
 
 // TerminalSurfaceStore 保存当前实时 terminal surface 投影，不是历史 truth。
 type TerminalSurfaceStore struct {
+	EndpointID     EndpointID
 	TerminalID     string
 	Revision       uint64
 	Cols           int
@@ -101,6 +102,7 @@ type LiveCell struct {
 
 // TerminalSessionStore 保存当前 attach/live path 的 reducer-owned 会话状态。
 type TerminalSessionStore struct {
+	EndpointID EndpointID
 	TerminalID string
 	Channel    uint16
 	// InputChannels 只保存已 attach terminal 的输入 channel，用于 pane focus 后把输入发回对应 terminal。
@@ -126,6 +128,7 @@ type TerminalSessionStore struct {
 
 // LiveSurfaceSnapshot 是 terminal service/event 回投给 reducer 的实时投影。
 type LiveSurfaceSnapshot struct {
+	EndpointID EndpointID
 	TerminalID string
 	Revision   uint64
 	Cols       int
@@ -143,6 +146,24 @@ type LiveSurfaceSnapshot struct {
 	Err        string
 }
 
+// TerminalRef 返回该 live snapshot 的 endpoint-aware terminal 身份。
+// 空 EndpointID 只在旧本地调用边界允许出现，返回值会规范化到默认 local endpoint。
+func (snapshot LiveSurfaceSnapshot) TerminalRef() TerminalRef {
+	return NewTerminalRef(snapshot.EndpointID, snapshot.TerminalID)
+}
+
+// TerminalRef 返回当前 active live surface 的 endpoint-aware terminal 身份。
+// 该身份只用于 TUI reducer 的实时投影路由，不代表 history truth 或 daemon 安全身份。
+func (store TerminalSurfaceStore) TerminalRef() TerminalRef {
+	return NewTerminalRef(store.EndpointID, store.TerminalID)
+}
+
+// TerminalRef 返回当前 attach/session 的 endpoint-aware terminal 身份。
+// input channel、resize owner 和 lifecycle ack 都必须按该身份隔离。
+func (store TerminalSessionStore) TerminalRef() TerminalRef {
+	return NewTerminalRef(store.EndpointID, store.TerminalID)
+}
+
 func (store TerminalSurfaceStore) ApplySnapshot(snapshot LiveSurfaceSnapshot) TerminalSurfaceStore {
 	return store.ApplySnapshotWithLifecycle(snapshot, false)
 }
@@ -152,16 +173,21 @@ func (store TerminalSurfaceStore) ApplySnapshotWithLifecycle(snapshot LiveSurfac
 	if snapshot.TerminalID == "" {
 		snapshot.TerminalID = store.TerminalID
 	}
+	if snapshot.EndpointID == "" && snapshot.TerminalID == store.TerminalID {
+		snapshot.EndpointID = store.EndpointID
+	}
+	snapshot.EndpointID = NormalizeEndpointID(snapshot.EndpointID)
 	if snapshot.TerminalID == "" {
 		return store
 	}
+	ref := snapshot.TerminalRef()
 	if snapshot.State == "" {
 		snapshot.State = TerminalLiveAttached
 	}
 	if store.resizeBoundaryRejects(snapshot) {
 		return store
 	}
-	if current, ok := store.snapshotForTerminal(snapshot.TerminalID); ok {
+	if current, ok := store.snapshotForTerminalRef(ref); ok {
 		if shouldRejectLiveSnapshotWithLifecycle(current, snapshot, lifecycleKnown) {
 			return store
 		}
@@ -172,9 +198,9 @@ func (store TerminalSurfaceStore) ApplySnapshotWithLifecycle(snapshot LiveSurfac
 	snapshot.Lines = cloneStrings(snapshot.Lines)
 	snapshot.Screen = cloneLiveCellRows(snapshot.Screen)
 	store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
-	store.Surfaces[snapshot.TerminalID] = snapshot
-	store = store.FinishRefresh(snapshot.TerminalID)
-	if store.TerminalID == "" || store.TerminalID == snapshot.TerminalID {
+	store.Surfaces[liveSurfaceRefKey(ref)] = snapshot
+	store = store.FinishRefreshRef(ref)
+	if store.TerminalID == "" || store.TerminalRef().Equal(ref) {
 		store = store.projectSnapshot(snapshot, true)
 		if store.ResizeBoundary.Active && snapshot.Cols == store.ResizeBoundary.Cols && snapshot.Rows == store.ResizeBoundary.Rows {
 			store.ResizeBoundary = LiveResizeBoundary{}
@@ -185,14 +211,22 @@ func (store TerminalSurfaceStore) ApplySnapshotWithLifecycle(snapshot LiveSurfac
 }
 
 func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) TerminalSurfaceStore {
-	if store.TerminalID != "" && store.TerminalID != terminalID {
+	return store.AttachRef(LocalTerminalRef(terminalID), cols, rows)
+}
+
+// AttachRef 把当前 live surface 投影绑定到指定 TerminalRef。
+// Surfaces map 的 key 使用 endpoint-aware 身份，避免不同 daemon 下同名 TerminalID 互相覆盖。
+func (store TerminalSurfaceStore) AttachRef(ref TerminalRef, cols int, rows int) TerminalSurfaceStore {
+	ref = ref.Normalize()
+	if store.TerminalID != "" && !store.TerminalRef().Equal(ref) {
 		store.Lines = nil
 		store.Screen = nil
 		store.Cursor = LiveCursor{}
 		store.Modes = LiveTerminalModes{}
 		store.Ready = false
 	}
-	store.TerminalID = terminalID
+	store.EndpointID = ref.EndpointID
+	store.TerminalID = ref.TerminalID
 	store.Revision = 0
 	store.Cols = cols
 	store.Rows = rows
@@ -203,14 +237,15 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 	store.Command = nil
 	store.Err = ""
 	store.ResizeBoundary = LiveResizeBoundary{}
-	if terminalID != "" {
+	if !ref.Empty() {
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
-		snapshot, ok := store.snapshotForTerminal(terminalID)
+		snapshot, ok := store.snapshotForTerminalRef(ref)
 		if !ok {
 			snapshot = LiveSurfaceSnapshot{}
 		}
 		wasBoundary := liveSnapshotIsBoundary(snapshot)
-		snapshot.TerminalID = terminalID
+		snapshot.EndpointID = ref.EndpointID
+		snapshot.TerminalID = ref.TerminalID
 		if wasBoundary {
 			snapshot.Revision = 0
 		}
@@ -226,7 +261,7 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 		snapshot.ExitedAt = time.Time{}
 		snapshot.Command = nil
 		snapshot.Err = ""
-		store.Surfaces[terminalID] = snapshot
+		store.Surfaces[liveSurfaceRefKey(ref)] = snapshot
 		if len(snapshot.Lines) > 0 || len(snapshot.Screen) > 0 || snapshot.Title != "" || snapshot.Cursor.Visible {
 			store = store.projectSnapshot(snapshot, true)
 		}
@@ -235,15 +270,24 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 }
 
 func (store TerminalSurfaceStore) RestartPreservingContent(terminalID string, cols int, rows int) TerminalSurfaceStore {
-	if terminalID == "" {
+	return store.RestartPreservingContentRef(LocalTerminalRef(terminalID), cols, rows)
+}
+
+// RestartPreservingContentRef 标记指定 TerminalRef 已重启，同时保留该 terminal 既有 live 内容。
+// 该操作只清理 lifecycle 元数据，不创建 history，也不影响其他 endpoint 下同名 TerminalID。
+func (store TerminalSurfaceStore) RestartPreservingContentRef(ref TerminalRef, cols int, rows int) TerminalSurfaceStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store
 	}
-	snapshot, ok := store.snapshotForTerminal(terminalID)
+	snapshot, ok := store.snapshotForTerminalRef(ref)
 	if !ok {
-		return store.Attach(terminalID, cols, rows)
+		return store.AttachRef(ref, cols, rows)
 	}
 	// 中文说明：restart 只重启 terminal process，不能把同 terminal 的 live tail 清空。
 	// lifecycle 元数据清掉后，真实 channel/surface 仍等待 per-view reattach 回投。
+	snapshot.EndpointID = ref.EndpointID
+	snapshot.TerminalID = ref.TerminalID
 	if snapshot.Cols == 0 {
 		snapshot.Cols = cols
 	}
@@ -259,8 +303,8 @@ func (store TerminalSurfaceStore) RestartPreservingContent(terminalID string, co
 	snapshot.Cursor = LiveCursor{}
 	snapshot.Modes = LiveTerminalModes{}
 	store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
-	store.Surfaces[terminalID] = snapshot
-	if store.TerminalID != "" && store.TerminalID != terminalID {
+	store.Surfaces[liveSurfaceRefKey(ref)] = snapshot
+	if store.TerminalID != "" && !store.TerminalRef().Equal(ref) {
 		store.ResizeBoundary = LiveResizeBoundary{}
 		return store
 	}
@@ -270,13 +314,22 @@ func (store TerminalSurfaceStore) RestartPreservingContent(terminalID string, co
 }
 
 func (store TerminalSurfaceStore) MarkAttached(terminalID string) TerminalSurfaceStore {
-	if terminalID == "" {
+	return store.MarkAttachedRef(LocalTerminalRef(terminalID))
+}
+
+// MarkAttachedRef 只把指定 TerminalRef 的 live 投影标记为 attached。
+// terminal pool/list 不能调用它伪造生命周期；只有 live surface/event 明确返回 running 才可进入该路径。
+func (store TerminalSurfaceStore) MarkAttachedRef(ref TerminalRef) TerminalSurfaceStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store
 	}
-	snapshot, ok := store.snapshotForTerminal(terminalID)
+	snapshot, ok := store.snapshotForTerminalRef(ref)
 	if ok {
 		// 中文说明：只有 core live surface/event 明确返回 running 时才调用这里；
 		// terminal pool/list 不能用它把 running 写进 live 投影缓存。
+		snapshot.EndpointID = ref.EndpointID
+		snapshot.TerminalID = ref.TerminalID
 		snapshot.State = TerminalLiveAttached
 		snapshot.ExitCode = 0
 		snapshot.ExitReason = ""
@@ -284,9 +337,9 @@ func (store TerminalSurfaceStore) MarkAttached(terminalID string) TerminalSurfac
 		snapshot.Command = nil
 		snapshot.Err = ""
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
-		store.Surfaces[terminalID] = snapshot
+		store.Surfaces[liveSurfaceRefKey(ref)] = snapshot
 	}
-	if store.TerminalID != terminalID {
+	if !store.TerminalRef().Equal(ref) {
 		return store
 	}
 	if ok {
@@ -304,17 +357,25 @@ func (store TerminalSurfaceStore) MarkAttached(terminalID string) TerminalSurfac
 }
 
 func (store TerminalSurfaceStore) MarkExited(terminalID string, exitCode int, reason string) TerminalSurfaceStore {
-	return store.MarkExitedWithMetadata(terminalID, exitCode, reason, time.Time{}, nil)
+	return store.MarkExitedWithMetadataRef(LocalTerminalRef(terminalID), exitCode, reason, time.Time{}, nil)
 }
 
 func (store TerminalSurfaceStore) MarkExitedWithMetadata(terminalID string, exitCode int, reason string, exitedAt time.Time, command []string) TerminalSurfaceStore {
-	if terminalID != "" {
+	return store.MarkExitedWithMetadataRef(LocalTerminalRef(terminalID), exitCode, reason, exitedAt, command)
+}
+
+// MarkExitedWithMetadataRef 写入指定 TerminalRef 的 exited lifecycle 边界。
+// endpoint 是 lifecycle 投影的隔离边界；远端退出不能把本地同名 terminal 标成 exited。
+func (store TerminalSurfaceStore) MarkExitedWithMetadataRef(ref TerminalRef, exitCode int, reason string, exitedAt time.Time, command []string) TerminalSurfaceStore {
+	ref = ref.Normalize()
+	if !ref.Empty() {
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
-		snapshot, ok := store.snapshotForTerminal(terminalID)
+		snapshot, ok := store.snapshotForTerminalRef(ref)
 		if !ok {
 			snapshot = LiveSurfaceSnapshot{}
 		}
-		snapshot.TerminalID = terminalID
+		snapshot.EndpointID = ref.EndpointID
+		snapshot.TerminalID = ref.TerminalID
 		snapshot.State = TerminalLiveExited
 		snapshot.ExitCode = exitCode
 		snapshot.ExitReason = reason
@@ -323,11 +384,12 @@ func (store TerminalSurfaceStore) MarkExitedWithMetadata(terminalID string, exit
 		snapshot.Err = ""
 		snapshot.Cursor = LiveCursor{}
 		snapshot.Modes = LiveTerminalModes{}
-		store.Surfaces[terminalID] = snapshot
+		store.Surfaces[liveSurfaceRefKey(ref)] = snapshot
 	}
-	if terminalID == "" || store.TerminalID == "" || store.TerminalID == terminalID {
-		if terminalID != "" {
-			store.TerminalID = terminalID
+	if ref.Empty() || store.TerminalID == "" || store.TerminalRef().Equal(ref) {
+		if !ref.Empty() {
+			store.EndpointID = ref.EndpointID
+			store.TerminalID = ref.TerminalID
 		}
 		store.State = TerminalLiveExited
 		store.ExitCode = exitCode
@@ -347,15 +409,17 @@ func (store TerminalSurfaceStore) SetError(err string) TerminalSurfaceStore {
 	store.State = TerminalLiveError
 	store.ResizeBoundary = LiveResizeBoundary{}
 	if store.TerminalID != "" {
+		ref := store.TerminalRef()
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
-		snapshot, ok := store.snapshotForTerminal(store.TerminalID)
+		snapshot, ok := store.snapshotForTerminalRef(ref)
 		if !ok {
 			snapshot = LiveSurfaceSnapshot{}
 		}
+		snapshot.EndpointID = ref.EndpointID
 		snapshot.TerminalID = store.TerminalID
 		snapshot.Err = err
 		snapshot.State = TerminalLiveError
-		store.Surfaces[store.TerminalID] = snapshot
+		store.Surfaces[liveSurfaceRefKey(ref)] = snapshot
 	}
 	return store
 }
@@ -369,35 +433,45 @@ func (store TerminalSurfaceStore) Resize(cols int, rows int) TerminalSurfaceStor
 		store.ResizeBoundary = LiveResizeBoundary{Active: true, PreviousCols: previousCols, PreviousRows: previousRows, Cols: cols, Rows: rows}
 	}
 	if store.TerminalID != "" {
+		ref := store.TerminalRef()
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
-		snapshot, ok := store.snapshotForTerminal(store.TerminalID)
+		snapshot, ok := store.snapshotForTerminalRef(ref)
 		if !ok {
 			snapshot = LiveSurfaceSnapshot{}
 		}
+		snapshot.EndpointID = ref.EndpointID
 		snapshot.TerminalID = store.TerminalID
 		snapshot.Cols = cols
 		snapshot.Rows = rows
 		if snapshot.State == "" {
 			snapshot.State = TerminalLiveAttached
 		}
-		store.Surfaces[store.TerminalID] = snapshot
+		store.Surfaces[liveSurfaceRefKey(ref)] = snapshot
 	}
 	return store
 }
 
 func (store TerminalSurfaceStore) SurfaceForTerminal(terminalID string) TerminalSurfaceStore {
-	if terminalID == "" || terminalID == store.TerminalID {
+	return store.SurfaceForTerminalRef(LocalTerminalRef(terminalID))
+}
+
+// SurfaceForTerminalRef 返回指定 TerminalRef 的 live surface 投影。
+// 未命中时只返回 pending 占位，不会创建或 fallback 到其他 endpoint 的同名 terminal。
+func (store TerminalSurfaceStore) SurfaceForTerminalRef(ref TerminalRef) TerminalSurfaceStore {
+	ref = ref.Normalize()
+	if ref.Empty() || store.TerminalRef().Equal(ref) {
 		return store
 	}
-	snapshot, ok := store.Surfaces[terminalID]
+	snapshot, ok := store.snapshotForTerminalRef(ref)
 	if !ok {
-		return TerminalSurfaceStore{TerminalID: terminalID, State: TerminalLivePending}
+		return TerminalSurfaceStore{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, State: TerminalLivePending}
 	}
 	return (TerminalSurfaceStore{}).projectSnapshot(snapshot, snapshot.State != TerminalLivePending)
 }
 
 func (store TerminalSurfaceStore) Snapshot() LiveSurfaceSnapshot {
 	return LiveSurfaceSnapshot{
+		EndpointID: store.EndpointID,
 		TerminalID: store.TerminalID,
 		Revision:   store.Revision,
 		Cols:       store.Cols,
@@ -417,20 +491,29 @@ func (store TerminalSurfaceStore) Snapshot() LiveSurfaceSnapshot {
 }
 
 func (store TerminalSurfaceStore) RemoveTerminal(terminalID string) TerminalSurfaceStore {
-	if terminalID == "" {
+	return store.RemoveTerminalRef(LocalTerminalRef(terminalID))
+}
+
+// RemoveTerminalRef 删除指定 TerminalRef 的 live surface 和 refresh 状态。
+// 删除范围只覆盖该 endpoint + terminal，不能影响其他 endpoint 的同名 surface/session。
+func (store TerminalSurfaceStore) RemoveTerminalRef(ref TerminalRef) TerminalSurfaceStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store
 	}
+	key := liveSurfaceRefKey(ref)
 	if len(store.Surfaces) > 0 {
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
-		delete(store.Surfaces, terminalID)
+		delete(store.Surfaces, key)
 	}
 	if len(store.Refreshes) > 0 {
 		store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
-		delete(store.Refreshes, terminalID)
+		delete(store.Refreshes, key)
 	}
-	if store.TerminalID != terminalID {
+	if !store.TerminalRef().Equal(ref) {
 		return store
 	}
+	store.EndpointID = ""
 	store.TerminalID = ""
 	store.Revision = 0
 	store.Cols = 0
@@ -452,7 +535,14 @@ func (store TerminalSurfaceStore) RemoveTerminal(terminalID string) TerminalSurf
 }
 
 func (store TerminalSurfaceStore) RequestRefresh(terminalID string, cols int, rows int) (TerminalSurfaceStore, bool) {
-	if terminalID == "" {
+	return store.RequestRefreshRef(LocalTerminalRef(terminalID), cols, rows)
+}
+
+// RequestRefreshRef 申请拉取指定 TerminalRef 的 latest live surface。
+// InFlight/Dirty 是 TUI 本地背压状态，key 必须包含 endpoint，避免跨 daemon 合并刷新。
+func (store TerminalSurfaceStore) RequestRefreshRef(ref TerminalRef, cols int, rows int) (TerminalSurfaceStore, bool) {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store, false
 	}
 	if cols <= 0 {
@@ -461,7 +551,8 @@ func (store TerminalSurfaceStore) RequestRefresh(terminalID string, cols int, ro
 	if rows <= 0 {
 		rows = 24
 	}
-	refresh := store.Refreshes[terminalID]
+	key := liveSurfaceRefKey(ref)
+	refresh := store.Refreshes[key]
 	refresh.Armed = false
 	refresh.Cols = cols
 	refresh.Rows = rows
@@ -470,13 +561,13 @@ func (store TerminalSurfaceStore) RequestRefresh(terminalID string, cols int, ro
 		// fetch 飞行期间不能排 N 个 revision，只记录 dirty，下一次仍取 core latest screen。
 		refresh.Dirty = true
 		store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
-		store.Refreshes[terminalID] = refresh
+		store.Refreshes[key] = refresh
 		return store, false
 	}
 	refresh.InFlight = true
 	refresh.Dirty = false
 	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
-	store.Refreshes[terminalID] = refresh
+	store.Refreshes[key] = refresh
 	return store, true
 }
 
@@ -484,7 +575,14 @@ func (store TerminalSurfaceStore) RequestRefresh(terminalID string, cols int, ro
 // 同一个 TUI+terminalID 在 Armed/InFlight/Dirty 任一状态存在时都不能重复挂 callback；
 // wake 返回后必须通过 RequestRefresh 或 FinishLiveInvalidationArm 释放 Armed。
 func (store TerminalSurfaceStore) ArmLiveInvalidation(terminalID string, cols int, rows int) (TerminalSurfaceStore, bool) {
-	if terminalID == "" {
+	return store.ArmLiveInvalidationRef(LocalTerminalRef(terminalID), cols, rows)
+}
+
+// ArmLiveInvalidationRef 记录指定 TerminalRef 已经挂起一次 core one-shot wake。
+// 该状态不上传 core，也不是 rendered ack，只用于同 endpoint terminal 的本地 callback 去重。
+func (store TerminalSurfaceStore) ArmLiveInvalidationRef(ref TerminalRef, cols int, rows int) (TerminalSurfaceStore, bool) {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store, false
 	}
 	if cols <= 0 {
@@ -493,7 +591,8 @@ func (store TerminalSurfaceStore) ArmLiveInvalidation(terminalID string, cols in
 	if rows <= 0 {
 		rows = 24
 	}
-	refresh := store.Refreshes[terminalID]
+	key := liveSurfaceRefKey(ref)
+	refresh := store.Refreshes[key]
 	if refresh.Armed || refresh.InFlight || refresh.Dirty {
 		return store, false
 	}
@@ -501,35 +600,51 @@ func (store TerminalSurfaceStore) ArmLiveInvalidation(terminalID string, cols in
 	refresh.Cols = cols
 	refresh.Rows = rows
 	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
-	store.Refreshes[terminalID] = refresh
+	store.Refreshes[key] = refresh
 	return store, true
 }
 
 // FinishLiveInvalidationArm 释放一个已经返回或失败的 one-shot callback pending 状态。
 // 如果该 terminal 同时存在 fetch/dirty 状态，只清掉 Armed；否则移除 refresh 记录。
 func (store TerminalSurfaceStore) FinishLiveInvalidationArm(terminalID string) TerminalSurfaceStore {
-	if terminalID == "" {
+	return store.FinishLiveInvalidationArmRef(LocalTerminalRef(terminalID))
+}
+
+// FinishLiveInvalidationArmRef 释放指定 TerminalRef 的 one-shot callback pending 状态。
+// 如果同 ref 同时存在 fetch/dirty 状态，只清掉 Armed，保证刷新链路仍按 endpoint 隔离继续。
+func (store TerminalSurfaceStore) FinishLiveInvalidationArmRef(ref TerminalRef) TerminalSurfaceStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store
 	}
-	refresh, ok := store.Refreshes[terminalID]
+	key := liveSurfaceRefKey(ref)
+	refresh, ok := store.Refreshes[key]
 	if !ok || !refresh.Armed {
 		return store
 	}
 	refresh.Armed = false
 	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
 	if refresh.InFlight || refresh.Dirty {
-		store.Refreshes[terminalID] = refresh
+		store.Refreshes[key] = refresh
 		return store
 	}
-	delete(store.Refreshes, terminalID)
+	delete(store.Refreshes, key)
 	return store
 }
 
 func (store TerminalSurfaceStore) FinishRefresh(terminalID string) TerminalSurfaceStore {
-	if terminalID == "" {
+	return store.FinishRefreshRef(LocalTerminalRef(terminalID))
+}
+
+// FinishRefreshRef 结束指定 TerminalRef 的 latest fetch 状态。
+// Dirty follow-up 只在同 endpoint terminal 内保留，不能让其他 endpoint 继承刷新债务。
+func (store TerminalSurfaceStore) FinishRefreshRef(ref TerminalRef) TerminalSurfaceStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store
 	}
-	refresh, ok := store.Refreshes[terminalID]
+	key := liveSurfaceRefKey(ref)
+	refresh, ok := store.Refreshes[key]
 	if !ok {
 		return store
 	}
@@ -541,43 +656,60 @@ func (store TerminalSurfaceStore) FinishRefresh(terminalID string) TerminalSurfa
 		refresh.Armed = false
 		refresh.InFlight = false
 		refresh.Dirty = false
-		store.Refreshes[terminalID] = refresh
+		store.Refreshes[key] = refresh
 		return store
 	}
 	if refresh.Armed && !refresh.InFlight {
-		store.Refreshes[terminalID] = refresh
+		store.Refreshes[key] = refresh
 		return store
 	}
-	delete(store.Refreshes, terminalID)
+	delete(store.Refreshes, key)
 	return store
 }
 
 func (store TerminalSurfaceStore) ConsumeDirtyRefresh(terminalID string) (TerminalSurfaceStore, int, int, bool) {
-	if terminalID == "" {
+	return store.ConsumeDirtyRefreshRef(LocalTerminalRef(terminalID))
+}
+
+// ConsumeDirtyRefreshRef 取出指定 TerminalRef 的 dirty follow-up 刷新。
+// 返回的尺寸来自同 ref 最近一次 invalidation，不能跨 endpoint 复用。
+func (store TerminalSurfaceStore) ConsumeDirtyRefreshRef(ref TerminalRef) (TerminalSurfaceStore, int, int, bool) {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store, 0, 0, false
 	}
-	refresh, ok := store.Refreshes[terminalID]
+	key := liveSurfaceRefKey(ref)
+	refresh, ok := store.Refreshes[key]
 	if !ok || refresh.Armed || refresh.InFlight || refresh.Dirty {
 		return store, 0, 0, false
 	}
 	refresh.Armed = false
 	refresh.InFlight = true
 	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
-	store.Refreshes[terminalID] = refresh
+	store.Refreshes[key] = refresh
 	return store, refresh.Cols, refresh.Rows, true
 }
 
 func (store TerminalSessionStore) RemoveTerminal(terminalID string) TerminalSessionStore {
-	if terminalID == "" {
+	return store.RemoveTerminalRef(LocalTerminalRef(terminalID))
+}
+
+// RemoveTerminalRef 删除指定 TerminalRef 的 attach/session 投影。
+// InputChannels 是 endpoint-scoped map；移除远端 terminal 不会清掉 local 同名 input channel。
+func (store TerminalSessionStore) RemoveTerminalRef(ref TerminalRef) TerminalSessionStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store
 	}
+	key := terminalSessionInputKey(ref)
 	if len(store.InputChannels) > 0 {
 		store.InputChannels = cloneInputChannels(store.InputChannels)
-		delete(store.InputChannels, terminalID)
+		delete(store.InputChannels, key)
 	}
-	if store.TerminalID != terminalID {
+	if !store.TerminalRef().Equal(ref) {
 		return store
 	}
+	store.EndpointID = ""
 	store.TerminalID = ""
 	store.Channel = 0
 	store.Attached = false
@@ -598,14 +730,22 @@ func (store TerminalSessionStore) RemoveTerminal(terminalID string) TerminalSess
 }
 
 func (store TerminalSessionStore) ClearInputChannel(terminalID string) TerminalSessionStore {
-	if terminalID == "" {
+	return store.ClearInputChannelRef(LocalTerminalRef(terminalID))
+}
+
+// ClearInputChannelRef 清除指定 TerminalRef 的输入 channel。
+// restart/reconnect 期间只能清掉同 endpoint terminal 的 channel，避免输入被误路由到别的 daemon。
+func (store TerminalSessionStore) ClearInputChannelRef(ref TerminalRef) TerminalSessionStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return store
 	}
+	key := terminalSessionInputKey(ref)
 	if len(store.InputChannels) > 0 {
 		store.InputChannels = cloneInputChannels(store.InputChannels)
-		delete(store.InputChannels, terminalID)
+		delete(store.InputChannels, key)
 	}
-	if store.TerminalID == terminalID {
+	if store.TerminalRef().Equal(ref) {
 		store.Channel = 0
 		store.Attached = false
 		store.State = TerminalLivePending
@@ -619,7 +759,14 @@ func (store TerminalSessionStore) ClearInputChannel(terminalID string) TerminalS
 }
 
 func (store TerminalSessionStore) MarkAttached(terminalID string) TerminalSessionStore {
-	if terminalID == "" || store.TerminalID != terminalID {
+	return store.MarkAttachedRef(LocalTerminalRef(terminalID))
+}
+
+// MarkAttachedRef 根据 live lifecycle ack 恢复指定 TerminalRef 的 session attached 状态。
+// 非当前 session 的 ack 不能改写 active session，以免远端同名 terminal 影响本地输入链路。
+func (store TerminalSessionStore) MarkAttachedRef(ref TerminalRef) TerminalSessionStore {
+	ref = ref.Normalize()
+	if ref.Empty() || !store.TerminalRef().Equal(ref) {
 		return store
 	}
 	if store.State == TerminalLiveError && !store.Attached {
@@ -639,6 +786,8 @@ func (store TerminalSessionStore) MarkAttached(terminalID string) TerminalSessio
 }
 
 func (store TerminalSurfaceStore) projectSnapshot(snapshot LiveSurfaceSnapshot, ready bool) TerminalSurfaceStore {
+	snapshot.EndpointID = NormalizeEndpointID(snapshot.EndpointID)
+	store.EndpointID = snapshot.EndpointID
 	store.TerminalID = snapshot.TerminalID
 	store.Revision = snapshot.Revision
 	store.Cols = snapshot.Cols
@@ -664,7 +813,7 @@ func (store TerminalSurfaceStore) projectSnapshot(snapshot LiveSurfaceSnapshot, 
 }
 
 func (store TerminalSurfaceStore) resizeBoundaryRejects(snapshot LiveSurfaceSnapshot) bool {
-	if !store.ResizeBoundary.Active || store.TerminalID == "" || snapshot.TerminalID != store.TerminalID || !liveSnapshotIsOrdinary(snapshot) {
+	if !store.ResizeBoundary.Active || store.TerminalID == "" || !snapshot.TerminalRef().Equal(store.TerminalRef()) || !liveSnapshotIsOrdinary(snapshot) {
 		return false
 	}
 	// resize 后只拒绝明确来自旧尺寸基线的普通帧，避免晚到旧帧回滚投影。
@@ -672,17 +821,23 @@ func (store TerminalSurfaceStore) resizeBoundaryRejects(snapshot LiveSurfaceSnap
 }
 
 func (store TerminalSurfaceStore) snapshotForTerminal(terminalID string) (LiveSurfaceSnapshot, bool) {
-	if terminalID == "" {
+	return store.snapshotForTerminalRef(LocalTerminalRef(terminalID))
+}
+
+func (store TerminalSurfaceStore) snapshotForTerminalRef(ref TerminalRef) (LiveSurfaceSnapshot, bool) {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return LiveSurfaceSnapshot{}, false
 	}
-	if snapshot, ok := store.Surfaces[terminalID]; ok {
+	if snapshot, ok := store.Surfaces[liveSurfaceRefKey(ref)]; ok {
 		return snapshot, true
 	}
-	if store.TerminalID != terminalID {
+	if !store.TerminalRef().Equal(ref) {
 		return LiveSurfaceSnapshot{}, false
 	}
 	return LiveSurfaceSnapshot{
-		TerminalID: terminalID,
+		EndpointID: ref.EndpointID,
+		TerminalID: ref.TerminalID,
 		Revision:   store.Revision,
 		Cols:       store.Cols,
 		Rows:       store.Rows,
@@ -748,15 +903,23 @@ func cloneLiveCellRows(rows [][]LiveCell) [][]LiveCell {
 }
 
 func (store TerminalSessionStore) Attach(terminalID string, channel uint16, cols int, rows int) TerminalSessionStore {
-	return store.AttachWithResizeOwner(terminalID, channel, cols, rows, "", "", "")
+	return store.AttachRefWithResizeOwner(LocalTerminalRef(terminalID), channel, cols, rows, "", "", "")
 }
 
 func (store TerminalSessionStore) AttachWithResizeOwner(terminalID string, channel uint16, cols int, rows int, resizePolicy string, surfaceID string, viewID string) TerminalSessionStore {
-	store.TerminalID = terminalID
+	return store.AttachRefWithResizeOwner(LocalTerminalRef(terminalID), channel, cols, rows, resizePolicy, surfaceID, viewID)
+}
+
+// AttachRefWithResizeOwner 记录指定 TerminalRef 的 attach 结果和输入 channel。
+// EndpointID + TerminalID 是 channel map 的路由真值；同名 terminal 在不同 endpoint 下可以同时 attach。
+func (store TerminalSessionStore) AttachRefWithResizeOwner(ref TerminalRef, channel uint16, cols int, rows int, resizePolicy string, surfaceID string, viewID string) TerminalSessionStore {
+	ref = ref.Normalize()
+	store.EndpointID = ref.EndpointID
+	store.TerminalID = ref.TerminalID
 	store.Channel = channel
 	store.InputChannels = cloneInputChannels(store.InputChannels)
-	if terminalID != "" && channel != 0 {
-		store.InputChannels[terminalID] = channel
+	if !ref.Empty() && channel != 0 {
+		store.InputChannels[terminalSessionInputKey(ref)] = channel
 	}
 	store.Attached = true
 	store.Cols = cols
@@ -778,13 +941,20 @@ func (store TerminalSessionStore) AttachWithResizeOwner(terminalID string, chann
 }
 
 func (store TerminalSessionStore) InputChannelFor(terminalID string) (uint16, bool) {
-	if terminalID == "" {
+	return store.InputChannelForRef(LocalTerminalRef(terminalID))
+}
+
+// InputChannelForRef 查询指定 TerminalRef 的输入 channel。
+// 调用方必须传入 owning endpoint，避免把键盘输入发给其他 daemon 的同名 terminal。
+func (store TerminalSessionStore) InputChannelForRef(ref TerminalRef) (uint16, bool) {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return 0, false
 	}
-	if terminalID == store.TerminalID && store.Channel != 0 {
+	if store.TerminalRef().Equal(ref) && store.Channel != 0 {
 		return store.Channel, true
 	}
-	channel, ok := store.InputChannels[terminalID]
+	channel, ok := store.InputChannels[terminalSessionInputKey(ref)]
 	return channel, ok && channel != 0
 }
 
@@ -846,13 +1016,29 @@ func (store TerminalSessionStore) SetError(err string) TerminalSessionStore {
 }
 
 func (store TerminalSessionStore) MarkExited(terminalID string, exitCode int, reason string) TerminalSessionStore {
-	return store.MarkExitedWithMetadata(terminalID, exitCode, reason, time.Time{}, nil)
+	return store.MarkExitedWithMetadataRef(LocalTerminalRef(terminalID), exitCode, reason, time.Time{}, nil)
 }
 
 func (store TerminalSessionStore) MarkExitedWithMetadata(terminalID string, exitCode int, reason string, exitedAt time.Time, command []string) TerminalSessionStore {
-	if terminalID != "" {
-		store.TerminalID = terminalID
+	return store.MarkExitedWithMetadataRef(LocalTerminalRef(terminalID), exitCode, reason, exitedAt, command)
+}
+
+// MarkExitedWithMetadataRef 把当前 session 标记为指定 TerminalRef 的 exited。
+// 如果该 ref 不是当前 session，只清理已记录的 input channel，不改写 active terminal。
+func (store TerminalSessionStore) MarkExitedWithMetadataRef(ref TerminalRef, exitCode int, reason string, exitedAt time.Time, command []string) TerminalSessionStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
+		return store
 	}
+	if len(store.InputChannels) > 0 {
+		store.InputChannels = cloneInputChannels(store.InputChannels)
+		delete(store.InputChannels, terminalSessionInputKey(ref))
+	}
+	if store.TerminalID != "" && !store.TerminalRef().Equal(ref) {
+		return store
+	}
+	store.EndpointID = ref.EndpointID
+	store.TerminalID = ref.TerminalID
 	store.Attached = false
 	store.State = TerminalLiveExited
 	store.ExitCode = exitCode
@@ -906,6 +1092,26 @@ func cloneLiveSurfaceSnapshotPtr(value LiveSurfaceSnapshot) *LiveSurfaceSnapshot
 	}
 	cloned := CloneLiveSurfaceSnapshot(value)
 	return &cloned
+}
+
+func liveSurfaceRefKey(ref TerminalRef) string {
+	return endpointScopedRuntimeKey(ref)
+}
+
+func terminalSessionInputKey(ref TerminalRef) string {
+	return endpointScopedRuntimeKey(ref)
+}
+
+func endpointScopedRuntimeKey(ref TerminalRef) string {
+	ref = ref.Normalize()
+	if ref.Empty() {
+		return ""
+	}
+	if ref.EndpointID == DefaultEndpointID {
+		// 中文说明：local 保持旧 map key，保证本地单 endpoint 的缓存、测试和调试输出不被格式迁移影响。
+		return ref.TerminalID
+	}
+	return ref.Key()
 }
 
 func cloneInputChannels(values map[string]uint16) map[string]uint16 {

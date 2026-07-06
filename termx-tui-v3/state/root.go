@@ -116,26 +116,47 @@ func (r Root) WithoutCopyHistorySession(viewID string) Root {
 }
 
 func (r Root) WithoutCopyHistorySessionsForTerminal(terminalID string) Root {
-	if terminalID == "" {
+	return r.WithoutCopyHistorySessionsForTerminalRef(LocalTerminalRef(terminalID))
+}
+
+// WithoutCopyHistorySessionsForTerminalRef 删除指定 TerminalRef 绑定的 copy/history 会话。
+// endpoint 是 copy/history 交互态的路由边界；本地和远端同名 terminal 不能互相清掉 frozen window。
+func (r Root) WithoutCopyHistorySessionsForTerminalRef(ref TerminalRef) Root {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return r
 	}
-	if r.History.TerminalID == terminalID || r.CopyMode.TerminalID == terminalID {
+	if copyHistoryStoreMatchesRef(r.History, r.CopyMode, ref) {
 		r.History = HistoryStore{}
 		r.CopyMode = CopyModeStore{}
 	}
 	for viewID, history := range r.HistoryByView {
 		copyMode := r.CopyModeByView[viewID]
-		if history.TerminalID == terminalID || copyMode.TerminalID == terminalID {
+		if copyHistoryStoreMatchesRef(history, copyMode, ref) {
 			r = r.WithoutCopyHistorySession(viewID)
 		}
 	}
 	for viewID, copyMode := range r.CopyModeByView {
 		history := r.HistoryByView[viewID]
-		if history.TerminalID == terminalID || copyMode.TerminalID == terminalID {
+		if copyHistoryStoreMatchesRef(history, copyMode, ref) {
 			r = r.WithoutCopyHistorySession(viewID)
 		}
 	}
 	return r
+}
+
+func copyHistoryStoreMatchesRef(history HistoryStore, copyMode CopyModeStore, ref TerminalRef) bool {
+	ref = ref.Normalize()
+	if ref.Empty() {
+		return false
+	}
+	if history.TerminalID != "" && NewTerminalRef(history.EndpointID, history.TerminalID).Equal(ref) {
+		return true
+	}
+	if copyMode.TerminalID != "" && NewTerminalRef(copyMode.EndpointID, copyMode.TerminalID).Equal(ref) {
+		return true
+	}
+	return false
 }
 
 func (r Root) ClearCopyHistorySessions() Root {

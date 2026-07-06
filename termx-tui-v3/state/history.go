@@ -66,6 +66,7 @@ type HistoryPendingRequest struct {
 	Kind            HistoryRequestKind
 	PaneID          string
 	ViewID          string
+	EndpointID      EndpointID
 	TerminalID      string
 	Cols            int
 	Token           string
@@ -176,6 +177,7 @@ type HistoryLineSpan struct {
 type HistoryWindow struct {
 	ViewID       string
 	PaneID       string
+	EndpointID   EndpointID
 	TerminalID   string
 	Token        string
 	Op           HistoryWindowOp
@@ -196,6 +198,7 @@ type HistoryWindow struct {
 type HistoryStore struct {
 	ViewID      string
 	PaneID      string
+	EndpointID  EndpointID
 	TerminalID  string
 	Token       string
 	Cols        int
@@ -258,6 +261,7 @@ type CopyModeStore struct {
 	Phase      CopyModePhase
 	PaneID     string
 	ViewID     string
+	EndpointID EndpointID
 	TerminalID string
 	// latest 飞行期间只累计净滚动行数；不能保存输入事件队列或历史文本副本。
 	EnteringScrollDelta int
@@ -404,6 +408,7 @@ func (store HistoryStore) InvalidateWindow() HistoryStore {
 	store.Token = ""
 	store.ViewID = ""
 	store.PaneID = ""
+	store.EndpointID = ""
 	store.Cols = 0
 	store.SourceLines = nil
 	store.Rows = nil
@@ -448,6 +453,9 @@ func (store HistoryStore) NewerRequestState() NewerRequestState {
 }
 
 func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryWindow) error {
+	if NormalizeEndpointID(pending.EndpointID) != NormalizeEndpointID(window.EndpointID) {
+		return ErrHistoryWindowMismatch
+	}
 	if pending.TerminalID != "" && pending.TerminalID != window.TerminalID {
 		return ErrHistoryWindowMismatch
 	}
@@ -520,6 +528,7 @@ func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryW
 func (store HistoryStore) replace(window HistoryWindow, cols int) HistoryStore {
 	store.ViewID = window.ViewID
 	store.PaneID = window.PaneID
+	store.EndpointID = NormalizeEndpointID(window.EndpointID)
 	store.TerminalID = window.TerminalID
 	store.Token = window.Token
 	if cols <= 0 {
@@ -936,6 +945,13 @@ func historySourceLineIndexForRow(lines []HistoryLogicalLine, row HistoryRow) in
 }
 
 func (store CopyModeStore) BindLatest(paneID string, viewID string, terminalID string, requestID RequestID, cols int, rows int) CopyModeStore {
+	return store.BindLatestRef(paneID, viewID, LocalTerminalRef(terminalID), requestID, cols, rows)
+}
+
+// BindLatestRef 进入指定 TerminalRef 的 copy/history latest pending 阶段。
+// endpoint 是 copy/history token 的路由边界；同名 terminal 在不同 endpoint 下不能共享 pending、token 或 selection。
+func (store CopyModeStore) BindLatestRef(paneID string, viewID string, ref TerminalRef, requestID RequestID, cols int, rows int) CopyModeStore {
+	ref = ref.Normalize()
 	// 中文说明：进入 copy/history 分两步。latest 请求飞行期间只拦截输入，
 	// 不读取 live surface，也不把 pane 内容切成 pending 占位；authoritative window 回来后才 Active。
 	store.Active = false
@@ -943,7 +959,8 @@ func (store CopyModeStore) BindLatest(paneID string, viewID string, terminalID s
 	store.Phase = CopyModeEnteringPending
 	store.PaneID = paneID
 	store.ViewID = viewID
-	store.TerminalID = terminalID
+	store.EndpointID = ref.EndpointID
+	store.TerminalID = ref.TerminalID
 	store.EnteringScrollDelta = 0
 	store.RequestID = requestID
 	store.BoundCols = cols
@@ -1007,6 +1024,7 @@ func (store CopyModeStore) CanPageHistory() bool {
 func (store CopyModeStore) acceptHistoryRows(window HistoryWindow, cols int, totalRows int, pendingScroll int) CopyModeStore {
 	store.PaneID = window.PaneID
 	store.ViewID = window.ViewID
+	store.EndpointID = NormalizeEndpointID(window.EndpointID)
 	store.TerminalID = window.TerminalID
 	if cols <= 0 {
 		cols = window.Cols
@@ -1088,6 +1106,7 @@ func (store CopyModeStore) AcceptOldest(window HistoryWindow, cols int, totalRow
 	store.RequestID = 0
 	store.PaneID = window.PaneID
 	store.ViewID = window.ViewID
+	store.EndpointID = NormalizeEndpointID(window.EndpointID)
 	store.TerminalID = window.TerminalID
 	store.BoundToken = window.Token
 	if cols <= 0 {

@@ -171,6 +171,7 @@ func terminalSendInputEffect(target liveInputTargetInfo, event input.InputEvent,
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
+				EndpointID: target.EndpointID,
 				TerminalID: target.TerminalID,
 				Channel:    target.Channel,
 				SurfaceID:  target.SurfaceID,
@@ -184,6 +185,7 @@ func terminalSendInputEffect(target liveInputTargetInfo, event input.InputEvent,
 				logTerminalInputSendOK(deps, target, event, len(payload))
 			}
 			return LiveInputResultMsg{
+				EndpointID:   target.EndpointID,
 				TerminalID:   target.TerminalID,
 				ViewID:       target.ViewID,
 				Channel:      target.Channel,
@@ -199,7 +201,7 @@ func terminalSendInputEffect(target liveInputTargetInfo, event input.InputEvent,
 func terminalInputSerialKey(target liveInputTargetInfo) string {
 	// 中文说明：PTY input 是有序 byte stream；真实 runtime 可以异步发送，
 	// 但同一 terminal/view/channel 不能并发乱序，尤其是 tmux paste/长命令输入。
-	return "terminal.input:" + target.TerminalID + ":" + target.ViewID + ":" + strconv.FormatUint(uint64(target.Channel), 10)
+	return "terminal.input:" + state.NewTerminalRef(target.EndpointID, target.TerminalID).Key() + ":" + target.ViewID + ":" + strconv.FormatUint(uint64(target.Channel), 10)
 }
 
 type terminalInputRouteLog struct {

@@ -36,6 +36,7 @@ type CopyModeHistoryResultMsg struct {
 	Err        error
 	PaneID     string
 	ViewID     string
+	EndpointID state.EndpointID
 	TerminalID string
 }
 
@@ -917,6 +918,7 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 		ID:         requestID,
 		PaneID:     binding.PaneID,
 		ViewID:     binding.ViewID,
+		EndpointID: binding.EndpointID,
 		TerminalID: binding.TerminalID,
 		Cols:       cols,
 	})
@@ -928,7 +930,7 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 		return setCopyModeError(root, err.Error()), nil
 	}
 	root.History = nextHistory
-	root.CopyMode = root.CopyMode.BindLatest(binding.PaneID, binding.ViewID, binding.TerminalID, requestID, cols, rowsHint)
+	root.CopyMode = root.CopyMode.BindLatestRef(binding.PaneID, binding.ViewID, binding.TerminalRef(), requestID, cols, rowsHint)
 	rows := requestRows(rowsHint, deps.Rows)
 	root = root.Advance()
 	root = saveCopyHistorySessionForView(root, binding.ViewID)
@@ -940,6 +942,7 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.copy.history_latest.effect")
 			result, err := deps.Core.HistoryLatest(ctx, services.HistoryLatestRequest{
+				EndpointID: binding.EndpointID,
 				RequestID:  services.RequestID(requestID),
 				PaneID:     binding.PaneID,
 				ViewID:     binding.ViewID,
@@ -953,7 +956,8 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 			perftrace.Count("tui.copy.history_latest.rows", len(result.Window.Rows))
 			result.Window.PaneID = binding.PaneID
 			result.Window.ViewID = binding.ViewID
-			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: binding.PaneID, ViewID: binding.ViewID, TerminalID: binding.TerminalID}
+			result.Window.EndpointID = binding.EndpointID
+			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: binding.PaneID, ViewID: binding.ViewID, EndpointID: binding.EndpointID, TerminalID: binding.TerminalID}
 		},
 	}
 	return root, []Effect{latestEffect}
@@ -984,6 +988,7 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaAfterPrep
 		ID:                      requestID,
 		PaneID:                  root.History.PaneID,
 		ViewID:                  root.History.ViewID,
+		EndpointID:              root.History.EndpointID,
 		TerminalID:              root.History.TerminalID,
 		Cols:                    root.History.Cols,
 		Token:                   root.History.Token,
@@ -1009,6 +1014,7 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaAfterPrep
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.copy.history_older.effect")
 			result, err := deps.Core.HistoryOlder(ctx, services.HistoryOlderRequest{
+				EndpointID: req.EndpointID,
 				RequestID:  services.RequestID(requestID),
 				PaneID:     req.PaneID,
 				ViewID:     req.ViewID,
@@ -1024,7 +1030,8 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaAfterPrep
 			perftrace.Count("tui.copy.history_older.rows", len(result.Window.Rows))
 			result.Window.PaneID = req.PaneID
 			result.Window.ViewID = req.ViewID
-			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: req.PaneID, ViewID: req.ViewID, TerminalID: req.TerminalID}
+			result.Window.EndpointID = req.EndpointID
+			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: req.PaneID, ViewID: req.ViewID, EndpointID: req.EndpointID, TerminalID: req.TerminalID}
 		},
 	}}
 }
@@ -1042,6 +1049,7 @@ func beginCopyModeNewer(root state.Root, deps CopyModeDeps, scrollDeltaAfterAppe
 		ID:         requestID,
 		PaneID:     root.History.PaneID,
 		ViewID:     root.History.ViewID,
+		EndpointID: root.History.EndpointID,
 		TerminalID: root.History.TerminalID,
 		Cols:       root.History.Cols,
 		Token:      root.History.Token,
@@ -1071,6 +1079,7 @@ func beginCopyModeNewer(root state.Root, deps CopyModeDeps, scrollDeltaAfterAppe
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.copy.history_newer.effect")
 			result, err := deps.Core.HistoryNewer(ctx, services.HistoryNewerRequest{
+				EndpointID: req.EndpointID,
 				RequestID:  services.RequestID(requestID),
 				PaneID:     req.PaneID,
 				ViewID:     req.ViewID,
@@ -1086,7 +1095,8 @@ func beginCopyModeNewer(root state.Root, deps CopyModeDeps, scrollDeltaAfterAppe
 			perftrace.Count("tui.copy.history_newer.rows", len(result.Window.Rows))
 			result.Window.PaneID = req.PaneID
 			result.Window.ViewID = req.ViewID
-			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: req.PaneID, ViewID: req.ViewID, TerminalID: req.TerminalID}
+			result.Window.EndpointID = req.EndpointID
+			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: req.PaneID, ViewID: req.ViewID, EndpointID: req.EndpointID, TerminalID: req.TerminalID}
 		},
 	}}
 }
@@ -1105,6 +1115,7 @@ func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 		Kind:       state.HistoryRequestOldest,
 		PaneID:     root.History.PaneID,
 		ViewID:     root.History.ViewID,
+		EndpointID: root.History.EndpointID,
 		TerminalID: root.History.TerminalID,
 		Cols:       root.History.Cols,
 		Token:      root.History.Token,
@@ -1126,6 +1137,7 @@ func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.copy.history_oldest.effect")
 			result, err := deps.Core.HistoryOldest(ctx, services.HistoryOldestRequest{
+				EndpointID: req.EndpointID,
 				RequestID:  services.RequestID(requestID),
 				PaneID:     req.PaneID,
 				ViewID:     req.ViewID,
@@ -1140,7 +1152,8 @@ func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 			perftrace.Count("tui.copy.history_oldest.rows", len(result.Window.Rows))
 			result.Window.PaneID = req.PaneID
 			result.Window.ViewID = req.ViewID
-			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: req.PaneID, ViewID: req.ViewID, TerminalID: req.TerminalID}
+			result.Window.EndpointID = req.EndpointID
+			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: req.PaneID, ViewID: req.ViewID, EndpointID: req.EndpointID, TerminalID: req.TerminalID}
 		},
 	}}
 }
@@ -1165,8 +1178,15 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 	}
 	finishApply := perftrace.Measure("tui.copy.history_apply." + copyModePerfRequestKind(pending))
 	beforeHistory := root.History
-	nextHistory, inserted, err := root.History.ApplyWindow(state.RequestID(msg.Result.RequestID), msg.Result.Window)
-	finishApply(len(msg.Result.Window.Rows))
+	window := msg.Result.Window
+	if window.EndpointID == "" {
+		window.EndpointID = msg.EndpointID
+	}
+	if window.EndpointID == "" && pending != nil {
+		window.EndpointID = pending.EndpointID
+	}
+	nextHistory, inserted, err := root.History.ApplyWindow(state.RequestID(msg.Result.RequestID), window)
+	finishApply(len(window.Rows))
 	if err != nil {
 		if errors.Is(err, state.ErrStaleHistoryResponse) {
 			return rejectMatchingHistoryResponse(root, msg, err), nil
@@ -1180,18 +1200,18 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 	remainingEnteringOlderRows := 0
 	clampViewport := true
 	if pending != nil && pending.Kind == state.HistoryRequestLatest {
-		root.CopyMode = root.CopyMode.AcceptLatest(historyWindowForCopyModeAnchor(msg.Result.Window, nextHistory), nextHistory.Cols, len(nextHistory.Rows))
+		root.CopyMode = root.CopyMode.AcceptLatest(historyWindowForCopyModeAnchor(window, nextHistory), nextHistory.Cols, len(nextHistory.Rows))
 		remainingEnteringOlderRows = copyModeEnteringOlderRemainder(enteringScrollDelta, len(nextHistory.Rows))
 		clampViewport = false
 	} else if pending != nil && pending.Kind == state.HistoryRequestOldest {
-		root.CopyMode = root.CopyMode.AcceptOldest(msg.Result.Window, nextHistory.Cols, len(nextHistory.Rows))
+		root.CopyMode = root.CopyMode.AcceptOldest(window, nextHistory.Cols, len(nextHistory.Rows))
 	} else if pending != nil && pending.Kind == state.HistoryRequestNewer {
-		root.CopyMode.BoundToken = msg.Result.Window.Token
+		root.CopyMode.BoundToken = window.Token
 		root.CopyMode.BoundCols = nextHistory.Cols
 		root.CopyMode = root.CopyMode.FollowCursor(len(nextHistory.Rows))
 		root.CopyMode = root.CopyMode.ScrollCursor(pending.ScrollDeltaAfterPrepend, len(nextHistory.Rows))
 	} else {
-		root.CopyMode = root.CopyMode.AcceptOlder(inserted, beforeHistory, nextHistory, msg.Result.Window, nextHistory.Cols)
+		root.CopyMode = root.CopyMode.AcceptOlder(inserted, beforeHistory, nextHistory, window, nextHistory.Cols)
 		deferredRows := 0
 		if pending != nil {
 			deferredRows = pending.ScrollDeltaAfterPrepend
@@ -1396,6 +1416,7 @@ func reduceCopyModeCopySelection(root state.Root, deps CopyModeDeps) (state.Root
 		return root, nil
 	}
 	req := services.HistoryCopyRangeRequest{
+		EndpointID: root.History.EndpointID,
 		TerminalID: root.History.TerminalID,
 		Cols:       root.History.Cols,
 		Token:      root.History.Token,
@@ -1474,11 +1495,12 @@ func reduceCopyModePaste(root state.Root, deps CopyModeDeps, readSystemClipboard
 			// 中文说明：paste 属于发往 active terminal 的语义化输入；
 			// 如果 live surface 开着 bracketed paste，就在 reducer-owned live modes 基础上包裹 200~/201~。
 			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
+				EndpointID: target.EndpointID,
 				TerminalID: target.TerminalID,
 				Channel:    target.Channel,
 				SurfaceID:  target.SurfaceID,
 				ViewID:     target.ViewID,
-				Bytes:      encodeTerminalPaste(text, root.Surface.SurfaceForTerminal(target.TerminalID).Modes),
+				Bytes:      encodeTerminalPaste(text, root.Surface.SurfaceForTerminalRef(state.NewTerminalRef(target.EndpointID, target.TerminalID)).Modes),
 			})
 			return CopyModePasteResultMsg{Text: text, Err: err}
 		},
@@ -1524,11 +1546,12 @@ func reduceCopyModePasteText(root state.Root, deps CopyModeDeps, text string) (s
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
+				EndpointID: target.EndpointID,
 				TerminalID: target.TerminalID,
 				Channel:    target.Channel,
 				SurfaceID:  target.SurfaceID,
 				ViewID:     target.ViewID,
-				Bytes:      encodeTerminalPaste(text, root.Surface.SurfaceForTerminal(target.TerminalID).Modes),
+				Bytes:      encodeTerminalPaste(text, root.Surface.SurfaceForTerminalRef(state.NewTerminalRef(target.EndpointID, target.TerminalID)).Modes),
 			})
 			return CopyModePasteResultMsg{Text: text, Err: err}
 		},
@@ -1732,6 +1755,7 @@ func setCopyModeEnterError(root state.Root, message string) state.Root {
 
 func exitCopyModeWithRelease(root state.Root, deps CopyModeDeps) (state.Root, []Effect) {
 	token := root.CopyMode.BoundToken
+	endpointID := root.CopyMode.EndpointID
 	terminalID := root.CopyMode.TerminalID
 	viewID := copyHistoryWorkingViewID(root)
 	root = exitCopyMode(root)
@@ -1744,6 +1768,7 @@ func exitCopyModeWithRelease(root state.Root, deps CopyModeDeps) (state.Root, []
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			_ = deps.Core.ReleaseHistory(ctx, services.HistoryReleaseRequest{
+				EndpointID: endpointID,
 				TerminalID: terminalID,
 				Token:      token,
 			})

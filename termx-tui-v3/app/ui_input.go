@@ -566,7 +566,7 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 	return root, []Effect{
 		handledEffect{},
 		FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
+			return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
 		}},
 	}
 }
@@ -634,7 +634,7 @@ func reduceTerminalPoolPageAttach(root state.Root, items []state.TerminalPoolPag
 	return root, []Effect{
 		handledEffect{},
 		FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
+			return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
 		}},
 	}
 }

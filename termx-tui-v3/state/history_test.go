@@ -605,6 +605,24 @@ func TestHistoryStoreRejectsStaleResponses(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreRejectsSameTerminalWindowFromDifferentEndpoint(t *testing.T) {
+	store, err := (HistoryStore{}).BeginLatest(HistoryPendingRequest{
+		ID:         41,
+		EndpointID: "west",
+		TerminalID: "term-1",
+		Cols:       80,
+	})
+	if err != nil {
+		t.Fatalf("begin latest: %v", err)
+	}
+
+	window := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 1, []HistoryRow{{Text: "wrong endpoint", LineID: 1}})
+	window.EndpointID = DefaultEndpointID
+	if _, _, err := store.ApplyWindow(41, window); !errors.Is(err, ErrHistoryWindowMismatch) {
+		t.Fatalf("expected endpoint mismatch rejection, got %v", err)
+	}
+}
+
 func TestHistoryStoreRejectsDifferentViewResponse(t *testing.T) {
 	store, err := (HistoryStore{}).BeginLatest(HistoryPendingRequest{
 		ID:         5,

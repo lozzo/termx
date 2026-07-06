@@ -225,6 +225,7 @@ type OverlayState struct {
 type PromptState struct {
 	Title              string
 	Context            string
+	TargetEndpointID   EndpointID
 	TargetID           string
 	TargetTabID        string
 	TargetWorkspaceID  string

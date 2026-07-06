@@ -73,3 +73,33 @@ func TestRootWithoutCopyHistorySessionDropsCurrentWindowReferences(t *testing.T)
 		t.Fatalf("released copy history must not leak terminal ids, got %#v", ids)
 	}
 }
+
+func TestRootWithoutCopyHistorySessionsForTerminalRefKeepsOtherEndpoint(t *testing.T) {
+	localViewID := TerminalPaneViewID("pane-local")
+	westViewID := TerminalPaneViewID("pane-west")
+	root := Root{
+		HistoryByView: map[string]HistoryStore{
+			localViewID: {EndpointID: DefaultEndpointID, TerminalID: "term-1", Token: "local-token"},
+			westViewID:  {EndpointID: "west", TerminalID: "term-1", Token: "west-token"},
+		},
+		CopyModeByView: map[string]CopyModeStore{
+			localViewID: {EndpointID: DefaultEndpointID, TerminalID: "term-1", BoundToken: "local-token"},
+			westViewID:  {EndpointID: "west", TerminalID: "term-1", BoundToken: "west-token"},
+		},
+	}
+
+	root = root.WithoutCopyHistorySessionsForTerminalRef(NewTerminalRef("west", "term-1"))
+
+	if _, ok := root.HistoryByView[westViewID]; ok {
+		t.Fatalf("west history session should be removed")
+	}
+	if _, ok := root.CopyModeByView[westViewID]; ok {
+		t.Fatalf("west copy session should be removed")
+	}
+	if _, ok := root.HistoryByView[localViewID]; !ok {
+		t.Fatalf("local history session must remain")
+	}
+	if _, ok := root.CopyModeByView[localViewID]; !ok {
+		t.Fatalf("local copy session must remain")
+	}
+}

@@ -540,6 +540,56 @@ func TestTerminalPoolReattachCurrentPaneDoesNotOverwriteSiblingBinding(t *testin
 	}
 }
 
+func TestTerminalPoolAttachRoutesEndpointRef(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{
+			TerminalID:   "term-1",
+			Channel:      31,
+			Cols:         100,
+			Rows:         30,
+			ResizePolicy: state.TerminalResizeRoleFollower,
+			SurfaceID:    "surface-west",
+		},
+	}
+	root := state.Root{Shell: state.DefaultShell()}
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+
+	root, effects := reducer(root, TerminalPoolAttachRequestMsg{EndpointID: "west", TerminalID: "term-1", TargetPaneID: state.DefaultPaneID})
+	if len(effects) != 1 {
+		t.Fatalf("expected attach effect, got %#v", effects)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolAttachResultMsg)
+	if !ok {
+		t.Fatalf("expected attach result, got %#v", msg)
+	}
+	if len(terminal.Attaches) != 1 || terminal.Attaches[0].EndpointID != "west" {
+		t.Fatalf("attach request must carry endpoint, got %#v", terminal.Attaches)
+	}
+
+	root, _ = reducer(root, msg)
+	binding, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || binding.EndpointID != "west" || binding.TerminalID != "term-1" {
+		t.Fatalf("pane binding must keep endpoint ref, binding=%#v ok=%v", binding, ok)
+	}
+	if !root.Session.TerminalRef().Equal(state.NewTerminalRef("west", "term-1")) {
+		t.Fatalf("session must attach west ref, got %#v", root.Session.TerminalRef())
+	}
+	if !root.Surface.TerminalRef().Equal(state.NewTerminalRef("west", "term-1")) {
+		t.Fatalf("surface must attach west ref, got %#v", root.Surface.TerminalRef())
+	}
+	if !root.TerminalPool.LastAttachedRef.Equal(state.NewTerminalRef("west", "term-1")) {
+		t.Fatalf("pool attach projection must keep west ref, got %#v", root.TerminalPool.LastAttachedRef)
+	}
+}
+
+func TestTerminalInputSerialKeyIsEndpointScoped(t *testing.T) {
+	local := liveInputTargetInfo{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", ViewID: "view-1", Channel: 7}
+	west := liveInputTargetInfo{EndpointID: "west", TerminalID: "term-1", ViewID: "view-1", Channel: 7}
+	if terminalInputSerialKey(local) == terminalInputSerialKey(west) {
+		t.Fatalf("input serial key must include endpoint, got %q", terminalInputSerialKey(local))
+	}
+}
+
 func TestTerminalPoolAttachExitedTerminalDoesNotCacheLifecycleBeforeSurface(t *testing.T) {
 	exitedAt := time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC)
 	exitCode := 23

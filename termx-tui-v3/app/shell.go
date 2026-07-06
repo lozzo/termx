@@ -568,7 +568,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		if ok && selected.TerminalID != "" {
 			target := terminalPoolTargetForOverlay(root)
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
+				return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
 			}}}
 		}
 	case render.ActionPickerNew:
@@ -586,7 +586,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		next, effects := reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandSplit, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, SplitDirection: state.SplitDirectionVertical, NewPane: state.PaneState{ID: nextKeyboardPaneID(shell), Title: "pane", Kind: state.PaneEmpty}, Source: state.PaneCommandSourceKeyboard})
 		targetPaneID := next.Shell.EnsureDefaults().ActivePaneID
 		return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetPaneID: targetPaneID}
+			return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetPaneID: targetPaneID}
 		}})
 	case render.ActionPickerEdit:
 		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
@@ -595,7 +595,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			return root.Advance(), nil
 		}
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolEditRequestMsg{TerminalID: selected.TerminalID, Title: selected.Title, Tags: map[string]string{"edited-by": "termx-tui-v3"}}
+			return TerminalPoolEditRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, Title: selected.Title, Tags: map[string]string{"edited-by": "termx-tui-v3"}}
 		}}}
 	case render.ActionPickerKill:
 		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
@@ -604,7 +604,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			return root.Advance(), nil
 		}
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolKillRequestMsg{TerminalID: selected.TerminalID}
+			return TerminalPoolKillRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID}
 		}}}
 	case render.ActionPickerDelete:
 		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
@@ -613,7 +613,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			return root.Advance(), nil
 		}
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolRemoveRequestMsg{TerminalID: selected.TerminalID}
+			return TerminalPoolRemoveRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID}
 		}}}
 	case render.ActionPoolSelect:
 		items := state.TerminalPoolPageItems(root)
@@ -623,7 +623,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
 			target := terminalPoolTargetForOverlay(root)
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
+				return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
 			}}}
 		}
 	case render.ActionPoolAttachTab:
@@ -631,7 +631,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			next, effects := reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(root.Shell.EnsureDefaults()), Source: state.PaneCommandSourcePalette})
 			targetPaneID := next.Shell.EnsureDefaults().ActivePaneID
 			return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetPaneID: targetPaneID}
+				return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetPaneID: targetPaneID}
 			}})
 		}
 	case render.ActionPoolAttachFloat:
@@ -639,19 +639,19 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			floatingID := nextFloatingID(root.Shell)
 			next, effects := reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandCreate, TargetID: floatingID, Pane: state.PaneState{ID: nextFloatingPaneID(root.Shell), Title: "floating", Kind: state.PaneEmpty}, Title: "floating", Source: state.PaneCommandSourceKeyboard})
 			return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetFloatingID: floatingID}
+				return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetFloatingID: floatingID}
 			}})
 		}
 	case render.ActionPoolRestart:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolRestartRequestMsg{TerminalID: selected.TerminalID}
+				return TerminalPoolRestartRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID}
 			}}}
 		}
 	case render.ActionPoolKill:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolKillRequestMsg{TerminalID: selected.TerminalID}
+				return TerminalPoolKillRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID}
 			}}}
 		}
 	case render.ActionPoolEdit:
@@ -662,7 +662,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionPoolDelete:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolRemoveRequestMsg{TerminalID: selected.TerminalID}
+				return TerminalPoolRemoveRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID}
 			}}}
 		}
 	case render.ActionWorkbenchSelect:
@@ -1119,12 +1119,13 @@ func terminalEditPrompt(item state.TerminalPoolPageItem) state.PromptState {
 	// 中文说明：rename 输入归 Shell Prompt 管，提交后再生成 TerminalPoolEditRequestMsg；
 	// 这里不直接修改 reducer-owned pool state，也不在 renderer/service 间绕过主消息链。
 	return state.PromptState{
-		Title:       "Rename Terminal",
-		Purpose:     "terminal.rename",
-		TargetID:    item.TerminalID,
-		Value:       item.Title,
-		Placeholder: "terminal name",
-		Tags:        cloneStringMap(item.Tags),
+		Title:            "Rename Terminal",
+		Purpose:          "terminal.rename",
+		TargetEndpointID: item.EndpointID,
+		TargetID:         item.TerminalID,
+		Value:            item.Title,
+		Placeholder:      "terminal name",
+		Tags:             cloneStringMap(item.Tags),
 	}
 }
 
@@ -1139,7 +1140,7 @@ func terminalEditRequestFromPrompt(prompt state.PromptState) (TerminalPoolEditRe
 	if name == "" {
 		return TerminalPoolEditRequestMsg{}, fmt.Errorf("name is required")
 	}
-	return TerminalPoolEditRequestMsg{TerminalID: prompt.TargetID, Title: name, Tags: cloneStringMap(prompt.Tags)}, nil
+	return TerminalPoolEditRequestMsg{EndpointID: prompt.TargetEndpointID, TerminalID: prompt.TargetID, Title: name, Tags: cloneStringMap(prompt.Tags)}, nil
 }
 
 func parsePromptCommand(value string) ([]string, error) {
@@ -1965,6 +1966,7 @@ func terminalDetachRequestFromBinding(binding state.TerminalViewBinding) (servic
 		return services.TerminalDetachRequest{}, false
 	}
 	return services.TerminalDetachRequest{
+		EndpointID: binding.EndpointID,
 		TerminalID: binding.TerminalID,
 		Channel:    binding.Channel,
 		SurfaceID:  binding.SurfaceID,

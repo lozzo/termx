@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
@@ -16,6 +17,7 @@ import (
 const DefaultRuntimeSurfaceID = "termx-tui-v3"
 
 type LiveConfig struct {
+	EndpointID   state.EndpointID
 	TerminalID   string
 	Cols         int
 	Rows         int
@@ -140,6 +142,7 @@ type LiveAttachMsg struct {
 func (LiveAttachMsg) isMsg() {}
 
 type LiveAttachResultMsg struct {
+	EndpointID            state.EndpointID
 	TerminalID            string
 	ViewID                string
 	RequestedResizePolicy string
@@ -175,6 +178,7 @@ func (LiveSurfaceMsg) isMsg() {}
 // LiveFrameReadyMsg 是 TUI 本地 FrameSink 写出完成后的 ready 信号。
 // 它只控制下一次 live invalidation one-shot arm，不上传 core，也不是 rendered revision。
 type LiveFrameReadyMsg struct {
+	EndpointID       state.EndpointID
 	TerminalID       string
 	ObservedRevision uint64
 }
@@ -186,6 +190,7 @@ func (LiveFrameReadyMsg) SkipRender() bool {
 }
 
 type LiveLifecycleQueryTarget struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Cols       int
 	Rows       int
@@ -213,6 +218,7 @@ func (msg LiveEventMsg) isOrdinaryRefresh() bool {
 }
 
 type LiveExitMsg struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	ExitCode   int
 	Reason     string
@@ -221,6 +227,7 @@ type LiveExitMsg struct {
 func (LiveExitMsg) isMsg() {}
 
 type LiveResizeMsg struct {
+	EndpointID state.EndpointID
 	TerminalID string
 	Cols       int
 	Rows       int
@@ -231,17 +238,20 @@ type LiveResizeMsg struct {
 func (LiveResizeMsg) isMsg() {}
 
 type LiveResizeResultMsg struct {
-	Result services.TerminalResizeResult
-	Cols   int
-	Rows   int
-	Seq    uint64
-	ViewID string
-	Err    error
+	EndpointID state.EndpointID
+	TerminalID string
+	Result     services.TerminalResizeResult
+	Cols       int
+	Rows       int
+	Seq        uint64
+	ViewID     string
+	Err        error
 }
 
 func (LiveResizeResultMsg) isMsg() {}
 
 type LiveInputResultMsg struct {
+	EndpointID   state.EndpointID
 	TerminalID   string
 	ViewID       string
 	Channel      uint16
@@ -283,33 +293,40 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 		case LiveSurfaceMsg:
 			finishReduce := perftrace.Measure("tui.reducer.live_surface")
 			defer finishReduce(liveSnapshotApproxBytes(msg.Snapshot))
+			if msg.Snapshot.EndpointID == "" && msg.Snapshot.TerminalID == root.Surface.TerminalID {
+				msg.Snapshot.EndpointID = root.Surface.EndpointID
+			}
+			msg.Snapshot.EndpointID = state.NormalizeEndpointID(msg.Snapshot.EndpointID)
+			snapshotRef := msg.Snapshot.TerminalRef()
 			if msg.Err != nil {
-				root.Surface = root.Surface.FinishRefresh(msg.Snapshot.TerminalID)
-				if next, ok := markTerminalExitedFromError(root, msg.Snapshot.TerminalID, msg.Err); ok {
+				root.Surface = root.Surface.FinishRefreshRef(snapshotRef)
+				if next, ok := markTerminalExitedFromErrorRef(root, snapshotRef, msg.Err); ok {
 					logLifecycleTrace(deps.Logger, "live.surface.error.exited",
+						"endpoint_id", string(snapshotRef.EndpointID),
 						"terminal_id", msg.Snapshot.TerminalID,
 						"error", msg.Err.Error(),
-						"surface_state", string(next.Surface.SurfaceForTerminal(msg.Snapshot.TerminalID).State),
+						"surface_state", string(next.Surface.SurfaceForTerminalRef(snapshotRef).State),
 						"session_state", string(next.Session.State),
 					)
 					return next.Advance(), nil
 				}
 				root.Surface = root.Surface.SetError(msg.Err.Error())
-				root, effects := maybeScheduleDirtyLiveSurfaceRefresh(root, msg.Snapshot.TerminalID, msg.RequestedCols, msg.RequestedRows, deps)
+				root, effects := maybeScheduleDirtyLiveSurfaceRefreshRef(root, snapshotRef, msg.RequestedCols, msg.RequestedRows, deps)
 				return root.Advance(), effects
 			}
 			if ordinaryLiveSurfaceWasInvalidatedWhileInFlight(root, msg) {
 				// 中文说明：这张 ordinary live surface 返回时已经被后续 invalidation
 				// 标成 dirty，说明它只是中间屏。TUI live truth 是 core latest
 				// native screen，不应先渲染过期 snapshot 再补拉下一帧。
-				root.Surface = root.Surface.FinishRefresh(msg.Snapshot.TerminalID)
-				return maybeScheduleDirtyLiveSurfaceRefresh(root, msg.Snapshot.TerminalID, msg.RequestedCols, msg.RequestedRows, deps)
+				root.Surface = root.Surface.FinishRefreshRef(snapshotRef)
+				return maybeScheduleDirtyLiveSurfaceRefreshRef(root, snapshotRef, msg.RequestedCols, msg.RequestedRows, deps)
 			}
 			root.Surface = root.Surface.ApplySnapshotWithLifecycle(msg.Snapshot, msg.LifecycleKnown)
-			if msg.LifecycleKnown && msg.Snapshot.State == state.TerminalLiveAttached && msg.Snapshot.TerminalID == root.Session.TerminalID {
-				root.Session = root.Session.MarkAttached(msg.Snapshot.TerminalID)
+			if msg.LifecycleKnown && msg.Snapshot.State == state.TerminalLiveAttached && root.Session.TerminalRef().Equal(snapshotRef) {
+				root.Session = root.Session.MarkAttachedRef(snapshotRef)
 			}
 			logLifecycleTrace(deps.Logger, "live.surface",
+				"endpoint_id", string(snapshotRef.EndpointID),
 				"terminal_id", msg.Snapshot.TerminalID,
 				"snapshot_state", string(msg.Snapshot.State),
 				"lifecycle_known", msg.LifecycleKnown,
@@ -317,13 +334,13 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				"snapshot_exited_at", lifecycleTimeSummary(msg.Snapshot.ExitedAt),
 				"snapshot_command", strings.Join(msg.Snapshot.Command, " "),
 				"surface_state", string(root.Surface.State),
-				"surface_terminal_state", string(root.Surface.SurfaceForTerminal(msg.Snapshot.TerminalID).State),
+				"surface_terminal_state", string(root.Surface.SurfaceForTerminalRef(snapshotRef).State),
 				"session_state", string(root.Session.State),
 				"active_terminal", lifecycleActiveTerminalID(root),
-				"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.Snapshot.TerminalID)),
+				"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminalRef(snapshotRef)),
 			)
 			next, effects := maybeRefreshFloatingAutoFit(root, msg.Snapshot.TerminalID)
-			next, dirtyEffects := maybeScheduleDirtyLiveSurfaceRefresh(next, msg.Snapshot.TerminalID, msg.RequestedCols, msg.RequestedRows, deps)
+			next, dirtyEffects := maybeScheduleDirtyLiveSurfaceRefreshRef(next, snapshotRef, msg.RequestedCols, msg.RequestedRows, deps)
 			return next, append(effects, dirtyEffects...)
 		case LiveFrameReadyMsg:
 			return reduceLiveFrameReady(root, msg, deps)
@@ -332,25 +349,27 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			defer finishReduce(liveEventApproxBytes(msg.Event))
 			return reduceLiveEvent(root, msg, deps)
 		case LiveExitMsg:
-			root.Session = root.Session.MarkExited(msg.TerminalID, msg.ExitCode, msg.Reason)
-			root.Surface = root.Surface.MarkExited(msg.TerminalID, msg.ExitCode, msg.Reason)
+			ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
+			root.Session = root.Session.MarkExitedWithMetadataRef(ref, msg.ExitCode, msg.Reason, time.Time{}, nil)
+			root.Surface = root.Surface.MarkExitedWithMetadataRef(ref, msg.ExitCode, msg.Reason, time.Time{}, nil)
 			return root.Advance(), nil
 		case LiveInputResultMsg:
 			if msg.Err != nil {
 				if isContextLifecycleError(msg.Err) {
 					return root, nil
 				}
-				if next, ok := markTerminalExitedFromError(root, msg.TerminalID, msg.Err); ok {
+				msgRef := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
+				if next, ok := markTerminalExitedFromErrorRef(root, msgRef, msg.Err); ok {
 					return next.Advance(), nil
 				}
 				if msg.RetryOnError && msg.ViewID != "" && len(msg.Bytes) > 0 {
-					if target, ok := liveInputTargetForView(root, msg.ViewID); ok && target.TerminalID == msg.TerminalID {
+					if target, ok := liveInputTargetForView(root, msg.ViewID); ok && state.NewTerminalRef(target.EndpointID, target.TerminalID).Equal(msgRef) {
 						// 中文说明：channel 是 view attach 身份；发送失败时只重建这一个 view，
 						// 不能退回全局 session 或抢用 sibling panel 的 channel。
 						return root, []Effect{liveAttachForInputEffect(root, target, msg.Event, msg.Bytes, deps)}
 					}
 				}
-				root = setLiveInputError(root, msg.TerminalID, msg.Err.Error())
+				root = setLiveInputErrorRef(root, msgRef, msg.Err.Error())
 				return root.Advance(), nil
 			}
 			return root, nil
@@ -449,6 +468,7 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 		return setLiveError(root, "terminal service missing"), nil
 	}
 	cfg := msg.Config
+	cfg.EndpointID = state.NormalizeEndpointID(cfg.EndpointID)
 	cfg.Cols, cfg.Rows = liveAttachContentSize(root, cfg)
 	if cfg.SurfaceID == "" {
 		cfg.SurfaceID = runtimeSurfaceID(root)
@@ -478,6 +498,7 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Terminal.Attach(ctx, services.TerminalAttachRequest{
+				EndpointID:   cfg.EndpointID,
 				TerminalID:   cfg.TerminalID,
 				Cols:         cfg.Cols,
 				Rows:         cfg.Rows,
@@ -486,7 +507,7 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 				SurfaceID:    cfg.SurfaceID,
 				ViewID:       cfg.ViewID,
 			})
-			return LiveAttachResultMsg{TerminalID: cfg.TerminalID, ViewID: cfg.ViewID, RequestedResizePolicy: cfg.ResizePolicy, Result: result, Err: err}
+			return LiveAttachResultMsg{EndpointID: cfg.EndpointID, TerminalID: cfg.TerminalID, ViewID: cfg.ViewID, RequestedResizePolicy: cfg.ResizePolicy, Result: result, Err: err}
 		},
 	}}
 }
@@ -506,6 +527,7 @@ func markLiveAttachPending(root state.Root, cfg LiveConfig) state.Root {
 	binding := state.TerminalViewBinding{
 		ViewID:      cfg.ViewID,
 		SurfaceID:   cfg.SurfaceID,
+		EndpointID:  state.NormalizeEndpointID(cfg.EndpointID),
 		TerminalID:  cfg.TerminalID,
 		ResizeRole:  role,
 		DesiredCols: cfg.Cols,
@@ -521,11 +543,13 @@ func markLiveAttachPending(root state.Root, cfg LiveConfig) state.Root {
 
 func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
-		if next, ok := markTerminalExitedFromError(root, msg.TerminalID, msg.Err); ok {
+		ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
+		if next, ok := markTerminalExitedFromErrorRef(root, ref, msg.Err); ok {
 			logLifecycleTrace(deps.Logger, "live.attach.result.exited",
+				"endpoint_id", string(ref.EndpointID),
 				"terminal_id", msg.TerminalID,
 				"error", msg.Err.Error(),
-				"surface_state", string(next.Surface.SurfaceForTerminal(msg.TerminalID).State),
+				"surface_state", string(next.Surface.SurfaceForTerminalRef(ref).State),
 				"session_state", string(next.Session.State),
 			)
 			return next.Advance(), nil
@@ -539,6 +563,9 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		return setLiveError(root, msg.Err.Error()), nil
 	}
 	result := msg.Result
+	if result.EndpointID == "" {
+		result.EndpointID = state.NormalizeEndpointID(msg.EndpointID)
+	}
 	if result.TerminalID == "" {
 		result.TerminalID = msg.TerminalID
 	}
@@ -563,16 +590,16 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	if hasTarget && target.PaneID != "" {
 		activePaneID = target.PaneID
 	}
-	root.Session = root.Session.AttachWithResizeOwner(result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID)
-	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
+	root.Session = root.Session.AttachRefWithResizeOwner(state.NewTerminalRef(result.EndpointID, result.TerminalID), result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID)
+	root.Surface = root.Surface.AttachRef(state.NewTerminalRef(result.EndpointID, result.TerminalID), result.Cols, result.Rows)
 	root = applyTerminalAttachmentProjectionFromAttach(root, result)
 	if existing, ok := root.TerminalViews.Views[viewID]; ok {
 		if existing.PaneID != "" {
 			activePaneID = existing.PaneID
 		}
 		if existing.FloatingID != "" {
-			root = invalidateCopyModeForTerminalRebind(root, existing.PaneID, viewID, result.TerminalID)
-			binding := state.NewFloatingTerminalView(existing.FloatingID, existing.PaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
+			root = invalidateCopyModeForTerminalRebindRef(root, existing.PaneID, viewID, state.NewTerminalRef(result.EndpointID, result.TerminalID))
+			binding := state.NewEndpointFloatingTerminalView(result.EndpointID, existing.FloatingID, existing.PaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
 			binding.Layout = existing.Layout
 			root.TerminalViews = root.TerminalViews.BindFloating(binding)
 			root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(viewID, state.TerminalResizeControlProjection{
@@ -588,15 +615,15 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			})
 			root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 			logLiveAttachApplied(deps, root, result, "floating-existing")
-			effects := liveAttachAppliedEffects(result.TerminalID)
-			effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
+			effects := liveAttachAppliedEffects(result.EndpointID, result.TerminalID)
+			effects = append(effects, liveEffectsForRef(result.EndpointID, result.TerminalID, result.Cols, result.Rows, deps)...)
 			root, effects = appendResizeOwnerConfirmAfterAttach(root, msg, result, viewID, effects)
 			return root.Advance(), effects
 		}
 	}
 	if hasTarget && target.FloatingID != "" {
-		root = invalidateCopyModeForTerminalRebind(root, target.PaneID, viewID, result.TerminalID)
-		binding := state.NewFloatingTerminalView(target.FloatingID, target.PaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
+		root = invalidateCopyModeForTerminalRebindRef(root, target.PaneID, viewID, state.NewTerminalRef(result.EndpointID, result.TerminalID))
+		binding := state.NewEndpointFloatingTerminalView(result.EndpointID, target.FloatingID, target.PaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
 		root.TerminalViews = root.TerminalViews.BindFloating(binding)
 		root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(viewID, state.TerminalResizeControlProjection{
 			CanResize:      result.CanResize,
@@ -612,15 +639,15 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 		root.Shell = root.Shell.BindFloatingTerminal(target.FloatingID, result.TerminalID)
 		logLiveAttachApplied(deps, root, result, "floating-target")
-		effects := liveAttachAppliedEffects(result.TerminalID)
-		effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
+		effects := liveAttachAppliedEffects(result.EndpointID, result.TerminalID)
+		effects = append(effects, liveEffectsForRef(result.EndpointID, result.TerminalID, result.Cols, result.Rows, deps)...)
 		root, effects = appendResizeOwnerConfirmAfterAttach(root, msg, result, viewID, effects)
 		return root.Advance(), effects
 	}
 	root.Shell = root.Shell.EnsureActiveTabForAttach()
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, result.TerminalID)
-	root = invalidateCopyModeForTerminalRebind(root, activePaneID, viewID, result.TerminalID)
-	binding := state.NewPaneTerminalView(activePaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
+	root = invalidateCopyModeForTerminalRebindRef(root, activePaneID, viewID, state.NewTerminalRef(result.EndpointID, result.TerminalID))
+	binding := state.NewEndpointPaneTerminalView(result.EndpointID, activePaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
 	if existing, ok := root.TerminalViews.Views[viewID]; ok {
 		binding.Layout = existing.Layout
 	}
@@ -638,19 +665,19 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	})
 	root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 	logLiveAttachApplied(deps, root, result, "pane")
-	effects := liveAttachAppliedEffects(result.TerminalID)
-	effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
+	effects := liveAttachAppliedEffects(result.EndpointID, result.TerminalID)
+	effects = append(effects, liveEffectsForRef(result.EndpointID, result.TerminalID, result.Cols, result.Rows, deps)...)
 	root, effects = appendResizeOwnerConfirmAfterAttach(root, msg, result, viewID, effects)
 	return root.Advance(), effects
 }
 
-func liveAttachAppliedEffects(terminalID string) []Effect {
+func liveAttachAppliedEffects(endpointID state.EndpointID, terminalID string) []Effect {
 	effects := workbenchPersistEffects("terminal.attach")
 	if terminalID == "" {
 		return effects
 	}
 	effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
-		return TerminalPoolListRequestMsg{}
+		return TerminalPoolListRequestMsg{EndpointID: endpointID}
 	}})
 	return effects
 }
@@ -678,7 +705,7 @@ func appendResizeOwnerConfirmAfterAttach(root state.Root, msg LiveAttachResultMs
 		seq = binding.RequestSeq
 	}
 	effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
-		return LiveResizeMsg{TerminalID: binding.TerminalID, Cols: cols, Rows: rows, Seq: seq, ViewID: binding.ViewID}
+		return LiveResizeMsg{EndpointID: binding.EndpointID, TerminalID: binding.TerminalID, Cols: cols, Rows: rows, Seq: seq, ViewID: binding.ViewID}
 	}})
 	return root, effects
 }
@@ -779,10 +806,15 @@ func liveAttachFloatingViewID(root state.Root, floatingID string) string {
 }
 
 func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID string, terminalID string) state.Root {
+	return invalidateCopyModeForTerminalRebindRef(root, paneID, viewID, state.LocalTerminalRef(terminalID))
+}
+
+func invalidateCopyModeForTerminalRebindRef(root state.Root, paneID string, viewID string, ref state.TerminalRef) state.Root {
+	ref = ref.Normalize()
 	if viewID != "" {
 		root = rootWithCopyHistorySessionForView(root, viewID)
 	}
-	if !copyModeInputContext(root.CopyMode) || terminalID == "" || root.CopyMode.TerminalID == terminalID {
+	if !copyModeInputContext(root.CopyMode) || ref.Empty() || state.NewTerminalRef(root.CopyMode.EndpointID, root.CopyMode.TerminalID).Equal(ref) {
 		return root
 	}
 	sameView := viewID != "" && root.CopyMode.ViewID == viewID
@@ -792,17 +824,20 @@ func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID 
 	}
 	if root.CopyMode.Entering {
 		root.History = root.History.InvalidateWindow()
-		root.History.TerminalID = terminalID
+		root.History.EndpointID = ref.EndpointID
+		root.History.TerminalID = ref.TerminalID
 		root.CopyMode = state.CopyModeStore{}
 		root = root.WithoutCopyHistorySession(viewID)
 		return root
 	}
 	// 当前 pane/view 已经重绑到新的 terminal，旧 frozen history 不能继续留在屏幕上。
 	root.History = root.History.InvalidateWindow()
-	root.History.TerminalID = terminalID
+	root.History.EndpointID = ref.EndpointID
+	root.History.TerminalID = ref.TerminalID
 	root.CopyMode.PaneID = paneID
 	root.CopyMode.ViewID = viewID
-	root.CopyMode.TerminalID = terminalID
+	root.CopyMode.EndpointID = ref.EndpointID
+	root.CopyMode.TerminalID = ref.TerminalID
 	root.CopyMode.BoundToken = ""
 	root.CopyMode.BoundCols = 0
 	root.CopyMode.ViewportTop = 0
@@ -818,7 +853,11 @@ func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID 
 }
 
 func liveEffects(terminalID string, cols int, rows int, deps LiveDeps) []Effect {
-	return liveSurfaceEffect(terminalID, cols, rows, true, deps)
+	return liveEffectsForRef(state.DefaultEndpointID, terminalID, cols, rows, deps)
+}
+
+func liveEffectsForRef(endpointID state.EndpointID, terminalID string, cols int, rows int, deps LiveDeps) []Effect {
+	return liveSurfaceEffectForRef(endpointID, terminalID, cols, rows, true, deps)
 }
 
 func reduceLiveLifecycleQuery(root state.Root, msg LiveLifecycleQueryMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -851,22 +890,28 @@ func reduceLiveLifecycleQuery(root state.Root, msg LiveLifecycleQueryMsg, deps L
 			"rows", rows,
 			"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(terminalID)),
 		)
-		effects = append(effects, liveSurfaceEffect(terminalID, cols, rows, true, deps)...)
+		effects = append(effects, liveSurfaceEffectForRef(target.EndpointID, terminalID, cols, rows, true, deps)...)
 	}
 	return root, effects
 }
 
 func liveSurfaceEffect(terminalID string, cols int, rows int, knownLifecycle bool, deps LiveDeps) []Effect {
+	return liveSurfaceEffectForRef(state.DefaultEndpointID, terminalID, cols, rows, knownLifecycle, deps)
+}
+
+func liveSurfaceEffectForRef(endpointID state.EndpointID, terminalID string, cols int, rows int, knownLifecycle bool, deps LiveDeps) []Effect {
 	source, ok := deps.Terminal.(services.NativeScreenSource)
 	if !ok || terminalID == "" {
 		return nil
 	}
+	endpointID = state.NormalizeEndpointID(endpointID)
 	return []Effect{FuncEffect{
 		Async:            true,
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.live_surface")
 			result, err := source.LiveSurface(ctx, services.TerminalSurfaceRequest{
+				EndpointID: endpointID,
 				TerminalID: terminalID,
 				Cols:       cols,
 				Rows:       rows,
@@ -877,8 +922,9 @@ func liveSurfaceEffect(terminalID string, cols int, rows int, knownLifecycle boo
 				if isContextLifecycleError(err) {
 					return nil
 				}
-				return LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: terminalID}, Err: err, RequestedCols: cols, RequestedRows: rows}
+				return LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{EndpointID: endpointID, TerminalID: terminalID}, Err: err, RequestedCols: cols, RequestedRows: rows}
 			}
+			result.Snapshot.EndpointID = endpointID
 			if result.Snapshot.TerminalID == "" {
 				result.Snapshot.TerminalID = terminalID
 			}
@@ -899,11 +945,16 @@ func liveSurfaceEffect(terminalID string, cols int, rows int, knownLifecycle boo
 }
 
 func liveInvalidationArmEffect(terminalID string, cols int, rows int, observedRevision uint64, deps LiveDeps) []Effect {
+	return liveInvalidationArmEffectForRef(state.DefaultEndpointID, terminalID, cols, rows, observedRevision, deps)
+}
+
+func liveInvalidationArmEffectForRef(endpointID state.EndpointID, terminalID string, cols int, rows int, observedRevision uint64, deps LiveDeps) []Effect {
 	source, ok := deps.Terminal.(services.LiveInvalidationSource)
 	if !ok || terminalID == "" {
 		return nil
 	}
-	token := liveInvalidationTokenForTerminal(terminalID)
+	endpointID = state.NormalizeEndpointID(endpointID)
+	token := liveInvalidationTokenForRef(endpointID, terminalID)
 	return []Effect{FuncEffect{
 		Token: token,
 		Async: true,
@@ -912,6 +963,7 @@ func liveInvalidationArmEffect(terminalID string, cols int, rows int, observedRe
 				return nil
 			}
 			event, err := source.ArmLiveInvalidation(ctx, services.TerminalLiveEventRequest{
+				EndpointID:       endpointID,
 				TerminalID:       terminalID,
 				Cols:             cols,
 				Rows:             rows,
@@ -925,10 +977,12 @@ func liveInvalidationArmEffect(terminalID string, cols int, rows int, observedRe
 					return nil
 				}
 				return LiveEventMsg{Event: services.TerminalLiveEvent{
+					EndpointID: endpointID,
 					TerminalID: terminalID,
 					Err:        err,
 				}}
 			}
+			event.EndpointID = endpointID
 			if event.TerminalID == "" {
 				event.TerminalID = terminalID
 			}
@@ -939,7 +993,22 @@ func liveInvalidationArmEffect(terminalID string, cols int, rows int, observedRe
 }
 
 func liveInvalidationTokenForTerminal(terminalID string) CancelToken {
-	return CancelToken(liveInvalidationTokenPrefix + terminalID)
+	return liveInvalidationTokenForRef(state.DefaultEndpointID, terminalID)
+}
+
+func liveInvalidationTokenForRef(endpointID state.EndpointID, terminalID string) CancelToken {
+	return CancelToken(liveInvalidationTokenPrefix + state.NewTerminalRef(endpointID, terminalID).Key())
+}
+
+func liveSurfaceRefreshKey(ref state.TerminalRef) string {
+	ref = ref.Normalize()
+	if ref.Empty() {
+		return ""
+	}
+	if ref.EndpointID == state.DefaultEndpointID {
+		return ref.TerminalID
+	}
+	return ref.Key()
 }
 
 func liveSurfaceResultApproxBytes(result services.TerminalSurfaceResult) int {
@@ -1005,41 +1074,46 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Ro
 	if event.TerminalID == "" {
 		event.TerminalID = root.Surface.TerminalID
 	}
-	root.Surface = root.Surface.FinishLiveInvalidationArm(event.TerminalID)
+	if event.EndpointID == "" && event.TerminalID == root.Surface.TerminalID {
+		event.EndpointID = root.Surface.EndpointID
+	}
+	event.EndpointID = state.NormalizeEndpointID(event.EndpointID)
+	eventRef := state.NewTerminalRef(event.EndpointID, event.TerminalID)
+	root.Surface = root.Surface.FinishLiveInvalidationArmRef(eventRef)
 	if ordinaryLiveRefreshEvent(event) {
 		if event.TerminalID == "" {
 			return root, nil
 		}
-		cols, rows := liveSurfaceRefreshSize(root, event.TerminalID)
+		cols, rows := liveSurfaceRefreshSizeRef(root, eventRef)
 		var shouldFetch bool
-		root.Surface, shouldFetch = root.Surface.RequestRefresh(event.TerminalID, cols, rows)
+		root.Surface, shouldFetch = root.Surface.RequestRefreshRef(eventRef, cols, rows)
 		if !shouldFetch {
 			perftrace.Count("tui.live_refresh_dirty", 0)
 			return root, nil
 		}
 		perftrace.Count("tui.live_refresh_start", 0)
-		return root, liveSurfaceEffect(event.TerminalID, cols, rows, false, deps)
+		return root, liveSurfaceEffectForRef(event.EndpointID, event.TerminalID, cols, rows, false, deps)
 	}
 	if event.Err != nil {
 		if isContextLifecycleError(event.Err) {
 			return root, nil
 		}
-		if next, ok := markTerminalExitedFromError(root, event.TerminalID, event.Err); ok {
+		if next, ok := markTerminalExitedFromErrorRef(root, eventRef, event.Err); ok {
 			return next.Advance(), nil
 		}
-		if event.TerminalID == "" || event.TerminalID == root.Surface.TerminalID {
+		if event.TerminalID == "" || root.Surface.TerminalRef().Equal(eventRef) {
 			root.Surface = root.Surface.SetError(event.Err.Error())
 			root.Session = root.Session.SetError(event.Err.Error())
 			return root.Advance(), nil
 		}
-		root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: event.TerminalID, Err: event.Err.Error(), State: state.TerminalLiveError})
+		root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{EndpointID: event.EndpointID, TerminalID: event.TerminalID, Err: event.Err.Error(), State: state.TerminalLiveError})
 		return root.Advance(), nil
 	}
 	if event.Metadata {
-		root.TerminalPool = root.TerminalPool.ApplyTagsEdited(event.TerminalID, event.Tags, "")
+		root.TerminalPool = root.TerminalPool.ApplyTagsEditedRef(eventRef, event.Tags, "")
 		if event.AttachmentProjection {
-			root.TerminalPool = root.TerminalPool.ApplyAttachmentProjection(event.TerminalID, event.AttachmentCount)
-			root.TerminalViews = root.TerminalViews.ApplyTerminalResizeControl(event.TerminalID, state.TerminalResizeControlProjection{
+			root.TerminalPool = root.TerminalPool.ApplyAttachmentProjectionRef(eventRef, event.AttachmentCount)
+			root.TerminalViews = root.TerminalViews.ApplyTerminalRefResizeControl(eventRef, state.TerminalResizeControlProjection{
 				SizeLocked:     event.SizeLocked || terminalmeta.SizeLocked(event.Tags),
 				ControlReason:  terminalResizeControlReason(event.SizeLocked || terminalmeta.SizeLocked(event.Tags)),
 				OwnerSurfaceID: event.OwnerSurfaceID,
@@ -1047,30 +1121,36 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Ro
 				ResizeEpoch:    event.ResizeEpoch,
 			})
 		} else {
-			root.TerminalViews = root.TerminalViews.ApplyTerminalSizeLock(event.TerminalID, terminalmeta.SizeLocked(event.Tags))
+			root.TerminalViews = root.TerminalViews.ApplyTerminalRefSizeLock(eventRef, terminalmeta.SizeLocked(event.Tags))
 		}
 		return root.Advance(), nil
 	}
 	if event.Exited {
+		event.Snapshot.EndpointID = event.EndpointID
 		event.Snapshot.State = state.TerminalLiveExited
 		event.Snapshot.ExitCode = event.ExitCode
 		event.Snapshot.ExitReason = event.Reason
 		event.Snapshot.ExitedAt = event.ExitedAt
 		event.Snapshot.Command = append([]string(nil), event.Command...)
-		root.Surface = root.Surface.MarkExitedWithMetadata(event.TerminalID, event.ExitCode, event.Reason, event.ExitedAt, event.Command)
-		if event.TerminalID == root.Session.TerminalID {
-			root.Session = root.Session.MarkExitedWithMetadata(event.TerminalID, event.ExitCode, event.Reason, event.ExitedAt, event.Command)
+		root.Surface = root.Surface.MarkExitedWithMetadataRef(eventRef, event.ExitCode, event.Reason, event.ExitedAt, event.Command)
+		if root.Session.TerminalRef().Equal(eventRef) {
+			root.Session = root.Session.MarkExitedWithMetadataRef(eventRef, event.ExitCode, event.Reason, event.ExitedAt, event.Command)
 		}
 	}
 	if event.Ready {
+		if event.Snapshot.EndpointID == "" {
+			event.Snapshot.EndpointID = event.EndpointID
+		}
 		if event.Snapshot.TerminalID == "" {
 			event.Snapshot.TerminalID = event.TerminalID
 		}
 		root.Surface = root.Surface.ApplySnapshotWithLifecycle(event.Snapshot, event.LifecycleKnown)
-		if event.LifecycleKnown && event.Snapshot.State == state.TerminalLiveAttached && event.Snapshot.TerminalID == root.Session.TerminalID {
-			root.Session = root.Session.MarkAttached(event.Snapshot.TerminalID)
+		snapshotRef := event.Snapshot.TerminalRef()
+		if event.LifecycleKnown && event.Snapshot.State == state.TerminalLiveAttached && root.Session.TerminalRef().Equal(snapshotRef) {
+			root.Session = root.Session.MarkAttachedRef(snapshotRef)
 		}
 		logLifecycleTrace(deps.Logger, "live.event",
+			"endpoint_id", string(event.EndpointID),
 			"terminal_id", event.Snapshot.TerminalID,
 			"snapshot_state", string(event.Snapshot.State),
 			"lifecycle_known", event.LifecycleKnown,
@@ -1091,7 +1171,7 @@ func ordinaryLiveSurfaceWasInvalidatedWhileInFlight(root state.Root, msg LiveSur
 	if !ordinaryLiveSurfaceResult(msg) {
 		return false
 	}
-	refresh, ok := root.Surface.Refreshes[msg.Snapshot.TerminalID]
+	refresh, ok := root.Surface.Refreshes[liveSurfaceRefreshKey(msg.Snapshot.TerminalRef())]
 	return ok && refresh.InFlight && refresh.Dirty
 }
 
@@ -1106,7 +1186,7 @@ func applyTerminalAttachmentProjectionFromAttach(root state.Root, result service
 	if result.TerminalID == "" || result.AttachmentCount <= 0 {
 		return root
 	}
-	root.TerminalPool = root.TerminalPool.ApplyAttachmentProjection(result.TerminalID, result.AttachmentCount)
+	root.TerminalPool = root.TerminalPool.ApplyAttachmentProjectionRef(state.NewTerminalRef(result.EndpointID, result.TerminalID), result.AttachmentCount)
 	return root
 }
 
@@ -1114,14 +1194,19 @@ func applyTerminalAttachmentProjectionFromResize(root state.Root, result service
 	if result.TerminalID == "" || result.AttachmentCount <= 0 {
 		return root
 	}
-	root.TerminalPool = root.TerminalPool.ApplyAttachmentProjection(result.TerminalID, result.AttachmentCount)
+	root.TerminalPool = root.TerminalPool.ApplyAttachmentProjectionRef(state.NewTerminalRef(result.EndpointID, result.TerminalID), result.AttachmentCount)
 	return root
 }
 
 func maybeScheduleDirtyLiveSurfaceRefresh(root state.Root, terminalID string, fallbackCols int, fallbackRows int, deps LiveDeps) (state.Root, []Effect) {
+	return maybeScheduleDirtyLiveSurfaceRefreshRef(root, state.LocalTerminalRef(terminalID), fallbackCols, fallbackRows, deps)
+}
+
+func maybeScheduleDirtyLiveSurfaceRefreshRef(root state.Root, ref state.TerminalRef, fallbackCols int, fallbackRows int, deps LiveDeps) (state.Root, []Effect) {
 	var cols, rows int
 	var shouldFetch bool
-	root.Surface, cols, rows, shouldFetch = root.Surface.ConsumeDirtyRefresh(terminalID)
+	ref = ref.Normalize()
+	root.Surface, cols, rows, shouldFetch = root.Surface.ConsumeDirtyRefreshRef(ref)
 	if !shouldFetch {
 		return root, nil
 	}
@@ -1130,9 +1215,9 @@ func maybeScheduleDirtyLiveSurfaceRefresh(root state.Root, terminalID string, fa
 		cols, rows = fallbackCols, fallbackRows
 	}
 	if cols <= 0 || rows <= 0 {
-		cols, rows = liveSurfaceRefreshSize(root, terminalID)
+		cols, rows = liveSurfaceRefreshSizeRef(root, ref)
 	}
-	return root, liveSurfaceEffect(terminalID, cols, rows, false, deps)
+	return root, liveSurfaceEffectForRef(ref.EndpointID, ref.TerminalID, cols, rows, false, deps)
 }
 
 func reduceLiveFrameReady(root state.Root, msg LiveFrameReadyMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -1140,7 +1225,8 @@ func reduceLiveFrameReady(root state.Root, msg LiveFrameReadyMsg, deps LiveDeps)
 	if terminalID == "" {
 		return root, nil
 	}
-	surface := root.Surface.SurfaceForTerminal(terminalID)
+	ref := state.NewTerminalRef(msg.EndpointID, terminalID)
+	surface := root.Surface.SurfaceForTerminalRef(ref)
 	if surface.State == state.TerminalLiveExited || surface.State == state.TerminalLiveError {
 		return root, nil
 	}
@@ -1151,34 +1237,39 @@ func reduceLiveFrameReady(root state.Root, msg LiveFrameReadyMsg, deps LiveDeps)
 	if _, ok := deps.Terminal.(services.LiveInvalidationSource); !ok {
 		return root, nil
 	}
-	cols, rows := liveSurfaceRefreshSize(root, terminalID)
+	cols, rows := liveSurfaceRefreshSizeRef(root, ref)
 	var shouldArm bool
-	root.Surface, shouldArm = root.Surface.ArmLiveInvalidation(terminalID, cols, rows)
+	root.Surface, shouldArm = root.Surface.ArmLiveInvalidationRef(ref, cols, rows)
 	if !shouldArm {
 		// 中文说明：同一个 TUI+terminalID 只能有一个 pending one-shot callback。
 		// 重复 ready、正在拉取或 dirty follow-up 都在 reducer 状态里合并。
 		return root, nil
 	}
-	return root, liveInvalidationArmEffect(terminalID, cols, rows, surface.Revision, deps)
+	return root, liveInvalidationArmEffectForRef(ref.EndpointID, ref.TerminalID, cols, rows, surface.Revision, deps)
 }
 
 func liveSurfaceRefreshSize(root state.Root, terminalID string) (int, int) {
-	if binding, ok := root.TerminalViews.OwnerBinding(terminalID); ok {
+	return liveSurfaceRefreshSizeRef(root, state.LocalTerminalRef(terminalID))
+}
+
+func liveSurfaceRefreshSizeRef(root state.Root, ref state.TerminalRef) (int, int) {
+	ref = ref.Normalize()
+	if binding, ok := root.TerminalViews.OwnerBindingRef(ref); ok {
 		if binding.DesiredCols > 0 && binding.DesiredRows > 0 {
 			return binding.DesiredCols, binding.DesiredRows
 		}
 	}
-	if binding, ok := activeTerminalViewBinding(root); ok && binding.TerminalID == terminalID {
+	if binding, ok := activeTerminalViewBinding(root); ok && binding.TerminalRef().Equal(ref) {
 		if binding.DesiredCols > 0 && binding.DesiredRows > 0 {
 			return binding.DesiredCols, binding.DesiredRows
 		}
 	}
-	if root.Session.TerminalID == terminalID {
+	if root.Session.TerminalRef().Equal(ref) {
 		if cols, rows := root.Session.DesiredSize(); cols > 0 && rows > 0 {
 			return cols, rows
 		}
 	}
-	surface := root.Surface.SurfaceForTerminal(terminalID)
+	surface := root.Surface.SurfaceForTerminalRef(ref)
 	if surface.Cols > 0 && surface.Rows > 0 {
 		return surface.Cols, surface.Rows
 	}
@@ -1189,6 +1280,7 @@ type liveInputTargetInfo struct {
 	PaneID        string
 	FloatingID    string
 	ViewID        string
+	EndpointID    state.EndpointID
 	TerminalID    string
 	Channel       uint16
 	ResizeRole    string
@@ -1235,6 +1327,7 @@ func liveInputTargetFromBinding(binding state.TerminalViewBinding) liveInputTarg
 		PaneID:        binding.PaneID,
 		FloatingID:    binding.FloatingID,
 		ViewID:        binding.ViewID,
+		EndpointID:    state.NormalizeEndpointID(binding.EndpointID),
 		TerminalID:    binding.TerminalID,
 		Channel:       binding.Channel,
 		ResizeRole:    binding.ResizeRole,
@@ -1271,6 +1364,7 @@ func liveInputAttachRequest(root state.Root, target liveInputTargetInfo) service
 		surfaceID = runtimeSurfaceID(root)
 	}
 	return services.TerminalAttachRequest{
+		EndpointID:   target.EndpointID,
 		TerminalID:   target.TerminalID,
 		Cols:         cols,
 		Rows:         rows,
@@ -1303,13 +1397,16 @@ func reduceLiveInputAttachResult(root state.Root, msg LiveInputAttachResultMsg, 
 		if isContextLifecycleError(msg.Err) {
 			return root, nil
 		}
-		if next, ok := markTerminalExitedFromError(root, msg.Target.TerminalID, msg.Err); ok {
+		if next, ok := markTerminalExitedFromErrorRef(root, state.NewTerminalRef(msg.Target.EndpointID, msg.Target.TerminalID), msg.Err); ok {
 			return next.Advance(), nil
 		}
-		root = setLiveInputError(root, msg.Target.TerminalID, msg.Err.Error())
+		root = setLiveInputErrorRef(root, state.NewTerminalRef(msg.Target.EndpointID, msg.Target.TerminalID), msg.Err.Error())
 		return root.Advance(), nil
 	}
 	result := msg.Result
+	if result.EndpointID == "" {
+		result.EndpointID = state.NormalizeEndpointID(msg.Target.EndpointID)
+	}
 	if result.TerminalID == "" {
 		result.TerminalID = msg.Target.TerminalID
 	}
@@ -1334,7 +1431,7 @@ func reduceLiveInputAttachResult(root state.Root, msg LiveInputAttachResultMsg, 
 			result.Rows = rows
 		}
 	}
-	next, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{TerminalID: msg.Target.TerminalID, ViewID: msg.Target.ViewID, RequestedResizePolicy: msg.Target.ResizeRole, Result: result}, deps)
+	next, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{EndpointID: msg.Target.EndpointID, TerminalID: msg.Target.TerminalID, ViewID: msg.Target.ViewID, RequestedResizePolicy: msg.Target.ResizeRole, Result: result}, deps)
 	target, ok := liveInputTargetForView(next, result.ViewID)
 	if !ok || target.Channel == 0 {
 		return next, effects
@@ -1353,7 +1450,7 @@ func liveMousePassthroughEnabled(root state.Root, event input.InputEvent, target
 	if target.TerminalID == "" {
 		return false
 	}
-	return root.Surface.SurfaceForTerminal(target.TerminalID).Modes.MousePassthroughEnabled()
+	return root.Surface.SurfaceForTerminalRef(state.NewTerminalRef(target.EndpointID, target.TerminalID)).Modes.MousePassthroughEnabled()
 }
 
 func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -1371,6 +1468,9 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 		msg.Seq = root.Session.ResizeRequestSeq
 	}
 	session := root.Session
+	if msg.EndpointID != "" {
+		session.EndpointID = state.NormalizeEndpointID(msg.EndpointID)
+	}
 	if msg.ViewID != "" {
 		binding, ok := root.TerminalViews.Views[msg.ViewID]
 		if !ok {
@@ -1378,6 +1478,7 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 			// 否则 close pane 后会把新 owner 已恢复的 PTY size 又改回旧尺寸。
 			return root, nil
 		}
+		session.EndpointID = binding.EndpointID
 		session.TerminalID = binding.TerminalID
 		session.Channel = binding.Channel
 		session.SurfaceID = binding.SurfaceID
@@ -1391,6 +1492,7 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Terminal.Resize(ctx, services.TerminalResizeRequest{
+				EndpointID:   session.EndpointID,
 				TerminalID:   session.TerminalID,
 				Channel:      session.Channel,
 				Cols:         msg.Cols,
@@ -1399,7 +1501,13 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 				SurfaceID:    session.SurfaceID,
 				ViewID:       session.ViewID,
 			})
-			return LiveResizeResultMsg{Result: result, Cols: msg.Cols, Rows: msg.Rows, Seq: msg.Seq, ViewID: msg.ViewID, Err: err}
+			if result.EndpointID == "" {
+				result.EndpointID = session.EndpointID
+			}
+			if result.TerminalID == "" {
+				result.TerminalID = session.TerminalID
+			}
+			return LiveResizeResultMsg{EndpointID: session.EndpointID, TerminalID: session.TerminalID, Result: result, Cols: msg.Cols, Rows: msg.Rows, Seq: msg.Seq, ViewID: msg.ViewID, Err: err}
 		},
 	}}
 }
@@ -1418,6 +1526,8 @@ func adoptActiveOwnerResizeBinding(root state.Root, msg LiveResizeMsg) (state.Ro
 		return root, msg
 	}
 	root.TerminalViews = nextViews
+	msg.EndpointID = binding.EndpointID
+	msg.TerminalID = binding.TerminalID
 	msg.ViewID = viewID
 	// 裸 LiveResizeMsg 如果其实命中当前 owner view，就必须同步 view-local desired size。
 	// 否则 resize 结果回来后，stale recovery 还会拿旧 binding 尺寸把 PTY 拉回去。
@@ -1438,7 +1548,7 @@ func liveResizeResultConflictsWithLocalOwner(root state.Root, binding state.Term
 	if binding.HasResizeOwner() {
 		return false
 	}
-	owner, ok := root.TerminalViews.OwnerBinding(binding.TerminalID)
+	owner, ok := root.TerminalViews.OwnerBindingRef(binding.TerminalRef())
 	if !ok {
 		return false
 	}
@@ -1465,11 +1575,11 @@ func shouldRecoverOwnerDesiredAfterResizeResult(root state.Root, msg LiveResizeR
 	if !msg.Result.Resized {
 		return false
 	}
-	terminalID := staleResizeResultTerminalID(root, msg)
-	if terminalID == "" {
+	ref := staleResizeResultRef(root, msg)
+	if ref.Empty() {
 		return false
 	}
-	desiredCols, desiredRows, _, ok := desiredResizeForTerminal(root, terminalID)
+	desiredCols, desiredRows, _, ok := desiredResizeForTerminalRef(root, ref)
 	if !ok {
 		return false
 	}
@@ -1478,11 +1588,11 @@ func shouldRecoverOwnerDesiredAfterResizeResult(root state.Root, msg LiveResizeR
 }
 
 func recoverLatestResizeAfterStaleResult(root state.Root, msg LiveResizeResultMsg) (state.Root, []Effect) {
-	terminalID := staleResizeResultTerminalID(root, msg)
-	if terminalID == "" {
+	ref := staleResizeResultRef(root, msg)
+	if ref.Empty() {
 		return root, nil
 	}
-	desiredCols, desiredRows, viewID, ok := desiredResizeForTerminal(root, terminalID)
+	desiredCols, desiredRows, viewID, ok := desiredResizeForTerminalRef(root, ref)
 	if !ok {
 		return root, nil
 	}
@@ -1496,30 +1606,46 @@ func recoverLatestResizeAfterStaleResult(root state.Root, msg LiveResizeResultMs
 	seq := root.Session.ResizeRequestSeq
 	return root, []Effect{FuncEffect{
 		Run: func(context.Context) Msg {
-			return LiveResizeMsg{TerminalID: terminalID, Cols: desiredCols, Rows: desiredRows, Seq: seq, ViewID: viewID}
+			return LiveResizeMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, Cols: desiredCols, Rows: desiredRows, Seq: seq, ViewID: viewID}
 		},
 	}}
 }
 
 func staleResizeResultTerminalID(root state.Root, msg LiveResizeResultMsg) string {
+	return staleResizeResultRef(root, msg).TerminalID
+}
+
+func staleResizeResultRef(root state.Root, msg LiveResizeResultMsg) state.TerminalRef {
 	if msg.Result.TerminalID != "" {
-		return msg.Result.TerminalID
+		endpointID := msg.Result.EndpointID
+		if endpointID == "" {
+			endpointID = msg.EndpointID
+		}
+		return state.NewTerminalRef(endpointID, msg.Result.TerminalID)
 	}
 	if msg.ViewID != "" {
 		if binding, ok := root.TerminalViews.Views[msg.ViewID]; ok {
-			return binding.TerminalID
+			return binding.TerminalRef()
 		}
 	}
-	return root.Session.TerminalID
+	if msg.TerminalID != "" {
+		return state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
+	}
+	return root.Session.TerminalRef()
 }
 
 func desiredResizeForTerminal(root state.Root, terminalID string) (int, int, string, bool) {
-	if binding, ok := root.TerminalViews.OwnerBinding(terminalID); ok {
+	return desiredResizeForTerminalRef(root, state.LocalTerminalRef(terminalID))
+}
+
+func desiredResizeForTerminalRef(root state.Root, ref state.TerminalRef) (int, int, string, bool) {
+	ref = ref.Normalize()
+	if binding, ok := root.TerminalViews.OwnerBindingRef(ref); ok {
 		if binding.DesiredCols > 0 && binding.DesiredRows > 0 {
 			return binding.DesiredCols, binding.DesiredRows, binding.ViewID, true
 		}
 	}
-	if root.Session.TerminalID != terminalID {
+	if !root.Session.TerminalRef().Equal(ref) {
 		return 0, 0, "", false
 	}
 	cols, rows := root.Session.DesiredSize()
@@ -1541,15 +1667,15 @@ func resolvedResizeResultSize(msg LiveResizeResultMsg) (int, int) {
 }
 
 func reduceLiveResizeError(root state.Root, msg LiveResizeResultMsg) (state.Root, []Effect) {
-	terminalID := staleResizeResultTerminalID(root, msg)
-	if next, ok := markTerminalExitedFromError(root, terminalID, msg.Err); ok {
+	ref := staleResizeResultRef(root, msg)
+	if next, ok := markTerminalExitedFromErrorRef(root, ref, msg.Err); ok {
 		return next.Advance(), nil
 	}
 	message := msg.Err.Error()
 	if msg.ViewID != "" {
 		if binding, ok := root.TerminalViews.Views[msg.ViewID]; ok {
 			root.TerminalViews, _ = root.TerminalViews.ApplyResizeResult(msg.ViewID, msg.Seq, binding.DesiredCols, binding.DesiredRows, message)
-			if binding.TerminalID == root.Session.TerminalID {
+			if binding.TerminalRef().Equal(root.Session.TerminalRef()) {
 				root.Session = root.Session.SetError(message)
 				root.Surface = root.Surface.SetError(message)
 			}
@@ -1571,31 +1697,42 @@ func setLiveError(root state.Root, message string) state.Root {
 }
 
 func markTerminalExitedFromError(root state.Root, terminalID string, err error) (state.Root, bool) {
+	return markTerminalExitedFromErrorRef(root, state.LocalTerminalRef(terminalID), err)
+}
+
+func markTerminalExitedFromErrorRef(root state.Root, ref state.TerminalRef, err error) (state.Root, bool) {
 	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "terminal exited") {
 		return root, false
 	}
-	if terminalID == "" {
-		terminalID = root.Session.TerminalID
+	ref = ref.Normalize()
+	if ref.Empty() {
+		ref = root.Session.TerminalRef()
 	}
-	if terminalID == "" {
-		terminalID = root.Surface.TerminalID
+	if ref.Empty() {
+		ref = root.Surface.TerminalRef()
 	}
-	root.Session = root.Session.MarkExited(terminalID, 0, "")
-	root.Surface = root.Surface.MarkExited(terminalID, 0, "")
+	root.Session = root.Session.MarkExitedWithMetadataRef(ref, 0, "", time.Time{}, nil)
+	root.Surface = root.Surface.MarkExitedWithMetadataRef(ref, 0, "", time.Time{}, nil)
 	return root, true
 }
 
 func setLiveInputError(root state.Root, terminalID string, message string) state.Root {
+	return setLiveInputErrorRef(root, state.LocalTerminalRef(terminalID), message)
+}
+
+func setLiveInputErrorRef(root state.Root, ref state.TerminalRef, message string) state.Root {
 	if message == "" {
 		message = "unknown terminal input error"
 	}
-	if terminalID == "" || terminalID == root.Session.TerminalID {
+	ref = ref.Normalize()
+	if ref.Empty() || root.Session.TerminalRef().Equal(ref) {
 		root.Session = root.Session.SetError(message)
 		root.Surface = root.Surface.SetError(message)
 		return root
 	}
 	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
-		TerminalID: terminalID,
+		EndpointID: ref.EndpointID,
+		TerminalID: ref.TerminalID,
 		State:      state.TerminalLiveError,
 		Err:        message,
 	})

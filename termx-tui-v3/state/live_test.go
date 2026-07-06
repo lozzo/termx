@@ -529,3 +529,53 @@ func TestTerminalSurfaceRefreshArmsOneCallbackPerTerminal(t *testing.T) {
 		t.Fatalf("fresh snapshot should clear callback/fetch state, store=%#v", store.Refreshes)
 	}
 }
+
+func TestTerminalSurfaceStoreSeparatesSameTerminalAcrossEndpoints(t *testing.T) {
+	var store TerminalSurfaceStore
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 1, Cols: 80, Rows: 24, Lines: []string{"local"}})
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{EndpointID: "west", TerminalID: "term-1", Revision: 2, Cols: 100, Rows: 30, Lines: []string{"west"}})
+
+	if got := store.SurfaceForTerminal("term-1").Lines; len(got) != 1 || got[0] != "local" {
+		t.Fatalf("local surface must keep local content, got %#v", got)
+	}
+	if got := store.SurfaceForTerminalRef(NewTerminalRef("west", "term-1")).Lines; len(got) != 1 || got[0] != "west" {
+		t.Fatalf("west surface must keep west content, got %#v", got)
+	}
+
+	var fetch bool
+	store, fetch = store.RequestRefresh("term-1", 80, 24)
+	if !fetch {
+		t.Fatalf("local refresh should arm independently")
+	}
+	store, fetch = store.RequestRefreshRef(NewTerminalRef("west", "term-1"), 100, 30)
+	if !fetch {
+		t.Fatalf("west refresh should not be blocked by local terminal id")
+	}
+	if _, ok := store.Refreshes["term-1"]; !ok {
+		t.Fatalf("local refresh key missing: %#v", store.Refreshes)
+	}
+	if _, ok := store.Refreshes["west/term-1"]; !ok {
+		t.Fatalf("west refresh key missing: %#v", store.Refreshes)
+	}
+}
+
+func TestTerminalSessionStoreSeparatesInputChannelsAcrossEndpoints(t *testing.T) {
+	session := (TerminalSessionStore{}).
+		AttachWithResizeOwner("term-1", 7, 80, 24, "owner", "surface-local", "view-local").
+		AttachRefWithResizeOwner(NewTerminalRef("west", "term-1"), 9, 100, 30, "follower", "surface-west", "view-west")
+
+	if channel, ok := session.InputChannelFor("term-1"); !ok || channel != 7 {
+		t.Fatalf("local input channel mismatch, channel=%d ok=%v session=%#v", channel, ok, session.InputChannels)
+	}
+	if channel, ok := session.InputChannelForRef(NewTerminalRef("west", "term-1")); !ok || channel != 9 {
+		t.Fatalf("west input channel mismatch, channel=%d ok=%v session=%#v", channel, ok, session.InputChannels)
+	}
+
+	session = session.ClearInputChannelRef(NewTerminalRef("west", "term-1"))
+	if _, ok := session.InputChannelForRef(NewTerminalRef("west", "term-1")); ok {
+		t.Fatalf("west input channel should be cleared, session=%#v", session.InputChannels)
+	}
+	if channel, ok := session.InputChannelFor("term-1"); !ok || channel != 7 {
+		t.Fatalf("local input channel must survive west clear, channel=%d ok=%v session=%#v", channel, ok, session.InputChannels)
+	}
+}
