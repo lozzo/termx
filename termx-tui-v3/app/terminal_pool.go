@@ -301,22 +301,55 @@ func reduceTerminalPoolListRequest(root state.Root, msg TerminalPoolListRequestM
 		root.TerminalPool = root.TerminalPool.RequestList()
 	}
 	seq := root.TerminalPool.RequestSeq
+	if msg.EndpointID == "" && root.Endpoints.HasItems() {
+		targets := terminalPoolListEndpointTargets(root.Endpoints)
+		if len(targets) == 0 {
+			root.TerminalPool, _ = root.TerminalPool.ApplyList(seq, nil, "")
+			return root.Advance(), nil
+		}
+		effects := make([]Effect, 0, len(targets))
+		for _, endpointID := range targets {
+			effects = append(effects, terminalPoolListEffect(endpointID, seq, msg.Refresh, deps))
+		}
+		return root.Advance(), effects
+	}
 	endpointID := state.NormalizeEndpointID(msg.EndpointID)
-	return root.Advance(), []Effect{FuncEffect{
+	return root.Advance(), []Effect{terminalPoolListEffect(endpointID, seq, msg.Refresh, deps)}
+}
+
+func terminalPoolListEffect(endpointID state.EndpointID, seq uint64, refresh bool, deps LiveDeps) Effect {
+	endpointID = state.NormalizeEndpointID(endpointID)
+	return FuncEffect{
+		Async:            true,
+		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.terminal_pool.list.effect")
 			result, err := deps.Terminal.List(ctx, services.TerminalListRequest{EndpointID: endpointID})
 			finish(len(result.Items))
-			return TerminalPoolListResultMsg{EndpointID: msg.EndpointID, Seq: seq, Refresh: msg.Refresh, Result: result, Err: err}
+			return TerminalPoolListResultMsg{EndpointID: endpointID, Seq: seq, Refresh: refresh, Result: result, Err: err}
 		},
-	}}
+	}
+}
+
+func terminalPoolListEndpointTargets(endpoints state.EndpointStore) []state.EndpointID {
+	endpoints = endpoints.Normalize()
+	targets := make([]state.EndpointID, 0, len(endpoints.Items))
+	for _, endpoint := range endpoints.Items {
+		status := endpoint.DisplayStatus()
+		switch status {
+		case state.EndpointStatusDisabled, state.EndpointStatusManual, state.EndpointStatusReconnectRequired, state.EndpointStatusUnregistered:
+			continue
+		}
+		if !endpoint.Enabled {
+			continue
+		}
+		targets = append(targets, endpoint.ID)
+	}
+	return targets
 }
 
 func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	errText := errorString(msg.Err)
-	if msg.Refresh && errText != "" {
-		return root, terminalPoolRefreshLoopEffects(root)
-	}
 	beforeSurfaceTerminal := root.Surface.TerminalID
 	beforeSurfaceState := root.Surface.State
 	beforeSessionTerminal := root.Session.TerminalID
@@ -325,14 +358,23 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 		if root.TerminalPool.IsStale(msg.Seq) {
 			return root, nil
 		}
-		root.TerminalPool = root.TerminalPool.ApplyEndpointList(msg.EndpointID, terminalPoolItemsFromService(msg.Result.Items), errText)
+		root = root.ApplyEndpointTerminalList(msg.EndpointID, terminalPoolItemsFromService(msg.Result.Items), errText)
+		if errText != "" && root.TerminalPool.Status == state.TerminalPoolLoading {
+			root.TerminalPool.Status = state.TerminalPoolReady
+		}
 		root.TerminalPool.AppliedSeq = msg.Seq
 	} else {
+		if msg.Refresh && errText != "" {
+			return root, terminalPoolRefreshLoopEffects(root)
+		}
 		next, applied := root.TerminalPool.ApplyList(msg.Seq, terminalPoolItemsFromService(msg.Result.Items), errText)
 		if !applied {
 			return root, nil
 		}
 		root.TerminalPool = next
+	}
+	if msg.Refresh && errText != "" {
+		return root, terminalPoolRefreshLoopEffects(root)
 	}
 	logLifecycleTrace(deps.Logger, "terminal.pool.list",
 		"seq", msg.Seq,

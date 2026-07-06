@@ -143,6 +143,7 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 		SkipWorkbenchInitialLoad: true,
 		TUIConfig:                cfg.TUIConfig,
 		ConnectionRegistry:       cfg.ConnectionRegistry,
+		EndpointContext:          ctx,
 	})
 	// root 空启动不创建 terminal；先让用户在 picker 中显式选择创建或连接。
 	if err := runtime.Post(app.ShellOpenTerminalPickerMsg{}); err != nil {

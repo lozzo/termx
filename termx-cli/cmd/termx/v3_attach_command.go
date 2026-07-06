@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-proto/wire"
 	"github.com/lozzow/termx/termx-shared/connection"
 	"github.com/lozzow/termx/termx-shared/perftrace"
+	sshtransport "github.com/lozzow/termx/termx-shared/transport/ssh"
 	"github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -125,6 +127,7 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 		RuntimeSurfaceID:   surfaceID,
 		TUIConfig:          cfg.TUIConfig,
 		ConnectionRegistry: cfg.ConnectionRegistry,
+		EndpointContext:    ctx,
 	})
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   cfg.TerminalID,
@@ -154,6 +157,7 @@ type v3InteractiveRuntimeOptions struct {
 	RuntimeSurfaceID         string
 	TUIConfig                state.TUIConfigStore
 	ConnectionRegistry       connection.Registry
+	EndpointContext          context.Context
 }
 
 func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, client *protocol.Client, workbenchStorageClient *protocol.Client, clipboardStorageClient *protocol.Client, host app.TerminalHost, logger *slog.Logger, opts v3InteractiveRuntimeOptions) *app.AppRuntime {
@@ -180,7 +184,13 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 	}
 	terminalAdapter := services.ProtocolTerminalServiceAdapter{Client: client}
 	coreAdapter := services.ProtocolCoreClientAdapter{Client: client}
-	endpointManager := services.NewEndpointManager(normalizeV3ConnectionRegistry(opts.ConnectionRegistry), services.EndpointServiceBundle{
+	endpointCtx := opts.EndpointContext
+	if endpointCtx == nil {
+		endpointCtx = context.Background()
+	}
+	endpointManager := services.NewEndpointManagerWithDialers(normalizeV3ConnectionRegistry(opts.ConnectionRegistry), map[connection.TransportKind]services.EndpointDialer{
+		connection.TransportSSH: v3SSHEndpointDialer(endpointCtx),
+	}, services.EndpointServiceBundle{
 		EndpointID: state.DefaultEndpointID,
 		Terminal:   terminalAdapter,
 		Core:       coreAdapter,
@@ -210,6 +220,36 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID), Logger: logger, SkipInitialLoad: opts.SkipWorkbenchInitialLoad},
 		app.ClipboardDeps{Storage: clipboardStorage, Ref: state.DefaultClipboardStorageRef(state.DefaultWorkspaceID), Logger: logger},
 	)
+}
+
+func v3SSHEndpointDialer(endpointCtx context.Context) services.EndpointDialer {
+	if endpointCtx == nil {
+		endpointCtx = context.Background()
+	}
+	return func(ctx context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
+		transport, err := sshtransport.Dial(endpointCtx, sshtransport.DialOptions{
+			Address:      cfg.Address,
+			AuthRef:      cfg.AuthRef,
+			RemoteSocket: cfg.RemoteSocket,
+		})
+		if err != nil {
+			return services.EndpointServiceBundle{}, fmt.Errorf("ssh endpoint %q dial: %w", cfg.ID, err)
+		}
+		client := protocol.NewClient(transport)
+		if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "termx-cli-v3:ssh:" + string(cfg.ID)}); err != nil {
+			_ = client.Close()
+			return services.EndpointServiceBundle{}, fmt.Errorf("ssh endpoint %q hello: %w", cfg.ID, err)
+		}
+		terminal := services.ProtocolTerminalServiceAdapter{Client: client}
+		core := services.ProtocolCoreClientAdapter{Client: client}
+		return services.EndpointServiceBundle{
+			EndpointID: state.EndpointID(cfg.ID),
+			Terminal:   terminal,
+			Core:       core,
+			Surface:    terminal,
+			LiveEvents: terminal,
+		}, nil
+	}
 }
 
 func newV3RuntimeSurfaceID() string {

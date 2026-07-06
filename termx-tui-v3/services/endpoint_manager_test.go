@@ -124,6 +124,61 @@ func TestEndpointManagerRejectsDisabledUnsupportedAndUnregisteredEndpoints(t *te
 	}
 }
 
+func TestEndpointManagerLazilyDialsSSHTransport(t *testing.T) {
+	registry := connection.Registry{
+		Version: 1,
+		Default: connection.DefaultEndpointID,
+		Connections: map[connection.EndpointID]connection.Config{
+			connection.DefaultEndpointID: {
+				ID:          connection.DefaultEndpointID,
+				Label:       "Local",
+				Transport:   connection.TransportLocal,
+				ConnectMode: connection.ConnectAuto,
+				Enabled:     true,
+				Socket:      "auto",
+			},
+			"west": {
+				ID:           "west",
+				Label:        "West",
+				Transport:    connection.TransportSSH,
+				Address:      "root@example.com",
+				ConnectMode:  connection.ConnectOnDemand,
+				Enabled:      true,
+				RemoteSocket: "auto",
+			},
+		},
+	}
+	sshTerminal := &FakeTerminalService{ListResult: TerminalListResult{Items: []TerminalPoolItem{{TerminalID: "term-1", Title: "remote"}}}}
+	dialCalls := 0
+	manager := NewEndpointManagerWithDialers(registry, map[connection.TransportKind]EndpointDialer{
+		connection.TransportSSH: func(_ context.Context, cfg connection.Config) (EndpointServiceBundle, error) {
+			dialCalls++
+			if cfg.ID != "west" || cfg.RemoteSocket != "auto" {
+				t.Fatalf("unexpected ssh config %#v", cfg)
+			}
+			return EndpointServiceBundle{EndpointID: "west", Terminal: sshTerminal}, nil
+		},
+	})
+
+	first, err := manager.List(context.Background(), TerminalListRequest{EndpointID: "west"})
+	if err != nil {
+		t.Fatalf("first list: %v", err)
+	}
+	second, err := manager.List(context.Background(), TerminalListRequest{EndpointID: "west"})
+	if err != nil {
+		t.Fatalf("second list: %v", err)
+	}
+	if dialCalls != 1 {
+		t.Fatalf("expected one lazy dial, got %d", dialCalls)
+	}
+	if len(sshTerminal.Lists) != 2 || sshTerminal.Lists[0].EndpointID != "" || sshTerminal.Lists[1].EndpointID != "" {
+		t.Fatalf("endpoint must be stripped before per-endpoint service, got %#v", sshTerminal.Lists)
+	}
+	if first.Items[0].EndpointID != "west" || second.Items[0].EndpointID != "west" {
+		t.Fatalf("endpoint must be restored on ssh list rows, got first=%#v second=%#v", first.Items, second.Items)
+	}
+}
+
 func TestEndpointManagerEndpointStoreUsesRegistryProjection(t *testing.T) {
 	registry := connection.Registry{
 		Version: 1,

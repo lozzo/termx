@@ -10,6 +10,7 @@ import (
 
 	corev2 "github.com/lozzow/termx/termx-core-v2"
 	"github.com/lozzow/termx/termx-shared/perftrace"
+	sshtransport "github.com/lozzow/termx/termx-shared/transport/ssh"
 	tuiv3 "github.com/lozzow/termx/termx-tui-v3"
 	tuiapp "github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/render"
@@ -59,6 +60,7 @@ func v3Command(socket *string, logFile *string, configPath *string) *cobra.Comma
 	cmd.AddCommand(v3HistoryDumpCommand(socket, logFile))
 	cmd.AddCommand(v3HistoryBacklogCommand(socket, logFile))
 	cmd.AddCommand(v3PaneCommandAdapterCommand())
+	cmd.AddCommand(v3StdioProxyCommand(socket, logFile, configPath))
 	return cmd
 }
 
@@ -121,6 +123,28 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 				logger.Info("core-v2 daemon exited")
 			}
 			return err
+		},
+	}
+}
+
+func v3StdioProxyCommand(socket *string, logFile *string, configPath *string) *cobra.Command {
+	return &cobra.Command{
+		Use:    "stdio-proxy",
+		Hidden: true,
+		Short:  "Bridge stdin/stdout to the core-v2 daemon socket for SSH transport",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			logger, closeLogger, logPath, err := openLogFileLogger(*logFile)
+			if err != nil {
+				return err
+			}
+			defer closeLogger()
+			socketPath := resolveV3SocketAuto(*socket)
+			transport, err := dialOrStartV3TransportWithConfig(socketPath, logPath, *configPath, logger)
+			if err != nil {
+				return fmt.Errorf("stdio proxy connect core-v2 daemon socket %q: %w", socketPath, err)
+			}
+			defer transport.Close()
+			return sshtransport.ServeProxy(cmd.Context(), transport, cmd.InOrStdin(), cmd.OutOrStdout())
 		},
 	}
 }

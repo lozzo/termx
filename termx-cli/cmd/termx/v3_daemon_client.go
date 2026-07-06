@@ -74,6 +74,38 @@ func dialOrStartV3ClientWithConfig(path string, logFile string, configPath strin
 	return v3DialClient(path)
 }
 
+func dialOrStartV3TransportWithConfig(path string, logFile string, configPath string, logger *slog.Logger) (*unixtransport.Transport, error) {
+	transport, err := unixtransport.Dial(path)
+	if err == nil {
+		if logger != nil {
+			logger.Debug("connected to existing core-v2 daemon transport", "socket", path)
+		}
+		return transport, nil
+	}
+	if logger != nil {
+		logger.Warn("initial core-v2 daemon transport dial failed, attempting v3 auto-start", "socket", path, "error", err)
+	}
+	if startErr := startCoreV2DaemonForConfig(path, logFile, configPath); startErr != nil {
+		return nil, fmt.Errorf("start core-v2 daemon: %w", startErr)
+	}
+	if waitErr := waitForSocket(path, 5*time.Second, func() error {
+		c, dialErr := unixtransport.Dial(path)
+		if dialErr != nil {
+			return dialErr
+		}
+		if c != nil {
+			_ = c.Close()
+		}
+		return nil
+	}); waitErr != nil {
+		return nil, waitErr
+	}
+	if logger != nil {
+		logger.Info("auto-started core-v2 daemon transport became ready", "socket", path)
+	}
+	return unixtransport.Dial(path)
+}
+
 func startCoreV2Daemon(path string, logFile string) error {
 	return startCoreV2DaemonWithConfig(path, logFile, "")
 }

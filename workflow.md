@@ -61,7 +61,7 @@
 | ME005 | 完成 | live/input/resize/owner/copy/history 路由按 `TerminalRef` 隔离 | owner 转移、输入、history token 不跨 endpoint 串扰 |
 | ME006 | 完成 | workbench storage 持久化 endpoint-aware terminal binding | 旧 snapshot 默认映射到 `local`；缺失 endpoint 保留 unresolved binding |
 | ME007 | 完成 | local unix socket 作为标准 endpoint transport | 当前本地 attach 路径迁移到 endpoint manager 后行为不变 |
-| ME008 | 待开始 | SSH transport 连接远端 termx daemon | 明确认证、host key、远端 socket 发现和失败展示 |
+| ME008 | 完成 | SSH transport 连接远端 termx daemon | 明确认证、host key、远端 socket 发现和失败展示 |
 | ME009 | 阻塞 | hub/P2P transport 与跨设备发现 | 先解冻 `termx-hub/` 并补充 hub 身份、安全和中继策略 |
 
 ## 执行规则
@@ -94,4 +94,5 @@
 - ME005 已完成：live surface/session/input channel、Terminal Pool 操作、resize owner、copy/history pending/window/release 均带 `TerminalRef` 路由；同名 terminal 的 input serial、live refresh、history window 和 copy session 不跨 endpoint 串扰。
 - ME006 已完成：workbench snapshot 持久化 `EndpointID + TerminalID` 连接意图，旧 binding 缺 endpoint 时默认恢复为 `local`；缺失、disabled 或 manual endpoint 的 binding 保留在 pane/floating layout 中并标记 unresolved，不自动 attach。
 - ME007 已完成：TUI runtime 启动时加载 `connections.yaml` endpoint registry，local unix socket 作为 `EndpointManager` 的标准 local transport bundle 接入；terminal/core/live 请求进入 per-endpoint adapter 前剥离 `EndpointID`，回包后补回 `EndpointID`，当前本地 attach、list、live、history 行为保持不变；显式 `--socket` 仍覆盖 registry local socket。
-- 下一切片是 ME008：SSH transport 连接远端 termx daemon，需明确认证、host key、远端 socket 发现和失败展示，不得 fallback 成原始 shell。
+- ME008 已完成：新增 OpenSSH stdio-proxy transport，`auth_ref=ssh:<alias>` 使用本机 SSH config，host key 由 known_hosts 严格校验，`remote_socket=auto` 在远端解析默认 socket；EndpointManager 可 lazy dial SSH endpoint，Terminal Manager 对 auto/on_demand endpoint 执行聚合刷新，失败只标记对应 endpoint offline 且不 fallback 成 shell 或 local endpoint。
+- 下一切片 ME009 阻塞：hub/P2P transport 需要先解冻 `termx-hub/` 并补充 hub 身份、安全、中继和发现策略。

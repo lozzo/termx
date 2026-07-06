@@ -316,6 +316,15 @@ workbench snapshot 保存 endpoint-aware binding。旧 snapshot 默认迁移到 
 
 实现 SSH 到远端 termx daemon 的 transport。需要明确认证来源、host key 验证、远端 socket 发现、超时和错误展示。
 
+第一阶段采用 OpenSSH stdio proxy：
+
+- 本地 transport 启动 `ssh -T`，远端只执行 `termx --socket <remote_socket> v3 stdio-proxy`，双方用长度前缀 frame 承载现有 termx protocol payload。
+- `auth_ref = ssh:<alias>` 表示使用本机 OpenSSH config 中的 host alias；为空时使用 `address` 作为 SSH target。私钥、agent、ProxyJump 和用户名都交给 OpenSSH 配置，不在 `connections.yaml` 内保存密钥路径或密码。
+- Host key 必须走 OpenSSH `known_hosts` 校验，默认 `StrictHostKeyChecking=yes` 和 `BatchMode=yes`；未知 host、host key 变化或认证失败都作为该 endpoint 的 transport 错误展示，不得自动改写 known_hosts。
+- `remote_socket: auto` 表示在远端进程内使用远端 termx 默认 socket 解析策略；显式路径只作为远端 daemon socket，不参与本地 socket 解析。
+- SSH 建连成功但远端缺少 `termx`、远端 daemon 无法启动或 socket 无法连接时，只把该 endpoint 标记为 offline 并保留 terminal/workbench 连接意图，不清空其他 endpoint。
+- 失败不能 fallback 成原始 SSH shell/PTY，也不能把请求转发到 local endpoint。
+
 ### ME009：Hub/P2P transport
 
 在解冻 `termx-hub/` 后设计 hub identity、发现、中继、NAT、授权和 revoke 策略。该阶段当前阻塞。

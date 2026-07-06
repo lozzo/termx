@@ -82,6 +82,100 @@ func TestTerminalPoolRefreshTickRequestsSilentList(t *testing.T) {
 	}
 }
 
+func TestTerminalPoolListRequestFansOutToConnectableEndpoints(t *testing.T) {
+	terminal := &services.FakeTerminalService{ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-1", Title: "shell"}}}}
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{
+		Endpoints: state.EndpointStore{}.
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "Local", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "west", Label: "West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "manual", Label: "Manual", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectManual, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "disabled", Label: "Disabled", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectAuto, Enabled: false}),
+	}
+
+	next, effects := reducer(root, TerminalPoolListRequestMsg{})
+	if next.TerminalPool.Status != state.TerminalPoolLoading || len(effects) != 2 {
+		t.Fatalf("expected fan-out effects for local and west only, pool=%#v effects=%#v", next.TerminalPool, effects)
+	}
+	seen := map[state.EndpointID]bool{}
+	for _, effect := range effects {
+		fn, ok := effect.(FuncEffect)
+		if !ok || !fn.Async || !fn.ForceSyncInTests {
+			t.Fatalf("endpoint list effect should be async but syncable in tests, got %#v", effect)
+		}
+		msg, ok := fn.Run(context.Background()).(TerminalPoolListResultMsg)
+		if !ok {
+			t.Fatalf("endpoint list effect returned %#v", msg)
+		}
+		seen[msg.EndpointID] = true
+	}
+	if !seen[state.DefaultEndpointID] || !seen["west"] || seen["manual"] || seen["disabled"] {
+		t.Fatalf("unexpected endpoint fan-out set %#v", seen)
+	}
+}
+
+func TestTerminalPoolEndpointListFailureMarksOnlyThatEndpointOffline(t *testing.T) {
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	root := state.Root{
+		TerminalPool: state.TerminalPoolStore{
+			RequestSeq: 4,
+			Items: []state.TerminalPoolItem{
+				{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", Title: "local"},
+				{EndpointID: "west", TerminalID: "term-1", Title: "west"},
+			},
+		},
+		Endpoints: state.EndpointStore{}.
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "Local", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true, Status: state.EndpointStatusConnected}).
+			Upsert(state.EndpointItem{ID: "west", Label: "West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true, Status: state.EndpointStatusConnected}),
+	}
+
+	next, _ := reducer(root, TerminalPoolListResultMsg{EndpointID: "west", Seq: 4, Err: context.DeadlineExceeded})
+	if len(next.TerminalPool.Items) != 2 {
+		t.Fatalf("endpoint failure must not clear terminal pool rows, got %#v", next.TerminalPool.Items)
+	}
+	west, ok := next.Endpoints.Endpoint("west")
+	if !ok || west.DisplayStatus() != state.EndpointStatusOffline || west.LastError == "" {
+		t.Fatalf("west endpoint should be offline with error, got %#v", west)
+	}
+	local, ok := next.Endpoints.Endpoint(state.DefaultEndpointID)
+	if !ok || local.DisplayStatus() != state.EndpointStatusConnected {
+		t.Fatalf("local endpoint should stay connected, got %#v", local)
+	}
+}
+
+func TestTerminalPoolRefreshFailureMarksEndpointOfflineSilently(t *testing.T) {
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	root := state.Root{
+		Shell: state.DefaultShell().OpenTerminalPool(),
+		TerminalPool: state.TerminalPoolStore{
+			RequestSeq: 7,
+			Status:     state.TerminalPoolReady,
+			Items: []state.TerminalPoolItem{
+				{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", Title: "local"},
+				{EndpointID: "west", TerminalID: "term-1", Title: "west"},
+			},
+		},
+		Endpoints: state.EndpointStore{}.
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "Local", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true, Status: state.EndpointStatusConnected}).
+			Upsert(state.EndpointItem{ID: "west", Label: "West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true, Status: state.EndpointStatusConnected}),
+	}
+
+	next, effects := reducer(root, TerminalPoolListResultMsg{EndpointID: "west", Seq: 7, Refresh: true, Err: context.DeadlineExceeded})
+	if len(next.TerminalPool.Items) != 2 || next.TerminalPool.Status != state.TerminalPoolReady {
+		t.Fatalf("refresh failure must not clear rows or move pool to error, pool=%#v", next.TerminalPool)
+	}
+	west, ok := next.Endpoints.Endpoint("west")
+	if !ok || west.DisplayStatus() != state.EndpointStatusOffline || west.LastError == "" {
+		t.Fatalf("west endpoint should be offline after refresh failure, got %#v", west)
+	}
+	if len(next.Shell.EnsureDefaults().Toasts) != 0 {
+		t.Fatalf("refresh failure should stay silent, got toasts %#v", next.Shell.EnsureDefaults().Toasts)
+	}
+	if !terminalPoolRefreshLoopScheduled(effects) {
+		t.Fatalf("refresh failure should keep background refresh loop, effects=%#v", effects)
+	}
+}
+
 func TestTerminalPoolSelectionInputRefreshesPreview(t *testing.T) {
 	reducer := NewUIInputReducer()
 	root := state.Root{

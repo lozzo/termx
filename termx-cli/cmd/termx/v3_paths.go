@@ -21,6 +21,13 @@ func resolveV3Socket(path string) string {
 	return fmt.Sprintf("%s/termx-v2-wire%d-%d.sock", os.TempDir(), wire.Version, os.Getuid())
 }
 
+func resolveV3SocketAuto(path string) string {
+	if strings.TrimSpace(path) == "" || strings.TrimSpace(path) == "auto" {
+		return resolveV3Socket("")
+	}
+	return resolveV3Socket(path)
+}
+
 func loadV3ConnectionRegistry() (connection.Registry, error) {
 	return connection.Load("")
 }
