@@ -47,6 +47,9 @@ type TUIChromeConfig struct {
 	Footer            bool
 	PanelPresentation string
 	TabCreateIcon     string
+	// TabCreateTemplate 是顶部创建 tab 按钮的展示模板。
+	// 它只改变 tab.create action 的可见片段和 hit region 样式，真实新建 tab 消息仍由 app reducer 处理。
+	TabCreateTemplate string
 	// WorkspaceTemplate 是顶部 workspace 槽位的展示模板。
 	// 它只消费当前 ShellStore workspace 名称并绑定打开 Workbench Navigator 的既有 action，
 	// 不保存 workspace truth，也不能改写 workspace/tab/pane 的 reducer-owned 状态。

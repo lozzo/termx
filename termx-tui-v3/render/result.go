@@ -1020,6 +1020,7 @@ type HeaderVM struct {
 	WorkspaceTemplate string
 	TabTemplate       string
 	TabCreateIcon     string
+	TabCreateTemplate string
 	ActivePane        string
 	TerminalSummary   string
 	FloatingSummary   string

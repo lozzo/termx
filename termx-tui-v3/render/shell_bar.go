@@ -37,13 +37,20 @@ func headerLeftSegments(header HeaderVM) []barSegment {
 	}
 	left := headerWorkspaceSegments(header, workspace)
 	left = append(left, headerTabSegmentsForHeader(header, header.Tab)...)
-	left = append(left, barText(headerTabCreateText(header.TabCreateIcon), StyleHeaderCreate, 3).withAction(ActionTabCreate.String()))
+	left = append(left, headerCreateSegments(header)...)
 	if header.Notice != "" {
 		if active := compactHeaderMeta("pane", header.ActivePane); active != "" {
 			left = append(left, headerSep(), barText(" "+active+" ", StyleStatusMuted, 4))
 		}
 	}
 	return left
+}
+
+func headerCreateSegments(header HeaderVM) []barSegment {
+	if segments := headerCreateTemplateSegments(header.TabCreateTemplate, header.TabCreateIcon); len(segments) > 0 {
+		return segments
+	}
+	return []barSegment{barText(headerTabCreateText(header.TabCreateIcon), StyleHeaderCreate, 3).withAction(ActionTabCreate.String())}
 }
 
 func headerWorkspaceSegments(header HeaderVM, workspace string) []barSegment {

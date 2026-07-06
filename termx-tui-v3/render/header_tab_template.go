@@ -22,6 +22,8 @@ type headerTabTemplateContext struct {
 	CloseAction  string
 	CloseTarget  string
 	CloseIcon    string
+	CreateIcon   string
+	DefaultStyle StyleToken
 }
 
 type headerTabTemplateData struct {
@@ -35,6 +37,7 @@ type headerTabTemplateData struct {
 	NotActive   bool
 	Marker      string
 	CloseIcon   string
+	CreateIcon  string
 }
 
 type headerTabTemplateState struct {
@@ -79,6 +82,9 @@ func headerTabTemplateSegments(format string, ctx headerTabTemplateContext) []ba
 	defaultStyle := StyleHeaderInactiveTitle
 	if ctx.Active {
 		defaultStyle = StyleHeaderActiveTitle
+	}
+	if ctx.DefaultStyle != "" {
+		defaultStyle = ctx.DefaultStyle
 	}
 	state := headerTabTemplateState{
 		style:         defaultStyle,
@@ -135,6 +141,16 @@ func headerWorkspaceTemplateSegments(format string, workspace string) []barSegme
 	})
 }
 
+func headerCreateTemplateSegments(format string, icon string) []barSegment {
+	return headerTabTemplateSegments(format, headerTabTemplateContext{
+		Title:        "create",
+		Active:       true,
+		SwitchAction: ActionTabCreate.String(),
+		CreateIcon:   strings.TrimSpace(icon),
+		DefaultStyle: StyleHeaderCreate,
+	})
+}
+
 func executeHeaderTabTemplate(format string, ctx headerTabTemplateContext) (string, bool) {
 	tmpl, err := texttemplate.New("header_tab").Option("missingkey=zero").Funcs(headerTabTemplateFuncs(ctx)).Parse(format)
 	if err != nil {
@@ -152,6 +168,7 @@ func executeHeaderTabTemplate(format string, ctx headerTabTemplateContext) (stri
 		NotActive:   !ctx.Active,
 		Marker:      headerTabTemplateEscapeText(headerTabMarker(ctx.Active)),
 		CloseIcon:   headerTabTemplateEscapeText(ctx.CloseIcon),
+		CreateIcon:  headerTabTemplateEscapeText(ctx.CreateIcon),
 	}); err != nil {
 		return "", false
 	}
@@ -186,6 +203,9 @@ func headerTabTemplateFuncs(ctx headerTabTemplateContext) texttemplate.FuncMap {
 		},
 		"close_icon": func() string {
 			return headerTabTemplateEscapeText(ctx.CloseIcon)
+		},
+		"create_icon": func() string {
+			return headerTabTemplateEscapeText(ctx.CreateIcon)
 		},
 		"truncate": func(width int, value string) string {
 			if width <= 0 {

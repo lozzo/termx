@@ -178,6 +178,12 @@ tui:
     # 示例：tab_create_icon: "+"
     tab_create_icon: "󰐕"
 
+    # tab_create_template 控制创建 tab 按钮的完整格式。
+    # 默认值为空，表示使用内置按钮格式。
+    # 可用变量/函数：{{create_icon}}、fg、bg、style、action、end_style。
+    # 示例：tab_create_template: "[fg:#050507;bg:#8ffcff] {{create_icon}} [fg:#8ffcff;bg:#040a0d]"
+    tab_create_template: ""
+
     # workspace_template 控制 header 左侧 workspace 槽位。
     # 默认值使用主题派生色做一个紧凑胶囊，点击区域仍是打开 Workbench Navigator。
     # 可用变量/函数：

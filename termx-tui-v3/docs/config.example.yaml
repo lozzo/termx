@@ -135,6 +135,12 @@ tui:
     # 默认值："󰐕"。
     tab_create_icon: "󰐕"
 
+    # tab_create_template 控制创建 tab 按钮的完整格式。
+    # 这个模板只改变显示和 tab.create hit region，不改变新建 tab 的 reducer 消息链路。
+    # 可用变量/函数：create_icon、fg、bg、style、action、end_style。
+    # 留空时使用内置按钮格式。
+    tab_create_template: ""
+
     # workspace_template 控制 header 左侧 workspace 胶囊。
     # 这个模板只改变显示和打开 Navigator 的 hit region，不修改 workspace truth。
     # 可用变量/函数：workspace、workspace_id、title、truncate、fg、bg、style、action、end_style。

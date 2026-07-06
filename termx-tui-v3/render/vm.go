@@ -77,6 +77,7 @@ func buildHeaderVM(shell state.ShellStore, root state.Root) HeaderVM {
 		WorkspaceTemplate: root.Config.Chrome.WorkspaceTemplate,
 		TabTemplate:       root.Config.Chrome.TabTemplate,
 		TabCreateIcon:     root.Config.Chrome.TabCreateIcon,
+		TabCreateTemplate: root.Config.Chrome.TabCreateTemplate,
 		ActivePane:        shell.ActivePaneID,
 		TerminalSummary:   terminalSummary(root),
 		FloatingSummary:   floatingSummary(shell),

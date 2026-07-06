@@ -88,6 +88,49 @@ func TestHeaderSegmentsUseConfiguredWorkspaceTemplate(t *testing.T) {
 	}
 }
 
+func TestHeaderCreateTemplateUsesCreateActionAndIcon(t *testing.T) {
+	segments := headerCreateTemplateSegments("[fg:#040a0d;bg:#8ffcff;font:bold] {{create_icon}} [fg:#8ffcff;bg:#040a0d]", "󰐕")
+	if len(segments) == 0 {
+		t.Fatalf("expected create template segments")
+	}
+	line := Line{Cells: cellsFromBarSegments(segments)}
+	if got := line.PlainString(); got != " 󰐕 " {
+		t.Fatalf("create template should render configured icon, got %q", got)
+	}
+	foundANSI := false
+	for _, segment := range segments {
+		if segment.actionID != ActionTabCreate.String() || segment.targetID != "" {
+			t.Fatalf("create template must keep tab.create action without tab target, segments=%#v", segments)
+		}
+		if segment.ansi.FG == "#040a0d" && segment.ansi.BG == "#8ffcff" && segment.ansi.Bold {
+			foundANSI = true
+		}
+	}
+	if !foundANSI {
+		t.Fatalf("create template should preserve ANSI styling, segments=%#v", segments)
+	}
+}
+
+func TestHeaderSegmentsUseConfiguredCreateTemplate(t *testing.T) {
+	segments := headerLeftSegments(HeaderVM{
+		Workspace:         "ops",
+		TabCreateIcon:     "",
+		TabCreateTemplate: "[fg:#040a0d;bg:#ff6bff] {{create_icon}} [fg:#ff6bff;bg:#040a0d]",
+		WorkspaceTemplate: "[action:none]",
+		TabTemplate:       "",
+		Tab:               "",
+		Tabs:              nil,
+		TerminalSummary:   "",
+		FloatingSummary:   "",
+		Notice:            "",
+		ActivePane:        "",
+	})
+	line := Line{Cells: cellsFromBarSegments(segments)}
+	if got := line.PlainString(); !strings.Contains(got, "  ") {
+		t.Fatalf("header should render configured create template, got %q", got)
+	}
+}
+
 func TestHeaderTabTemplateEscapesDynamicTextBeforeSpanParse(t *testing.T) {
 	segments := headerTabTemplateSegments("{{title}}", headerTabTemplateContext{
 		Index:        1,

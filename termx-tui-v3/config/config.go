@@ -40,6 +40,7 @@ func Default() state.TUIConfigStore {
 			Footer:            true,
 			PanelPresentation: "split-line",
 			TabCreateIcon:     "󰐕",
+			TabCreateTemplate: "",
 			WorkspaceTemplate: DefaultWorkspaceTemplate,
 			TabTemplate:       DefaultTabTemplate,
 			PaneTitleTemplate: "",
@@ -343,6 +344,9 @@ var scalarSetters = map[string]scalarSetter{
 	"tui.chrome.footer":             setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Chrome.Footer = value }),
 	"tui.chrome.panel_presentation": setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PanelPresentation = value }),
 	"tui.chrome.tab_create_icon":    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabCreateIcon = value }),
+	"tui.chrome.tab_create_template": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.TabCreateTemplate = value
+	}),
 	"tui.chrome.workspace_template": setString(func(cfg *state.TUIConfigStore, value string) {
 		cfg.Chrome.WorkspaceTemplate = value
 	}),
@@ -623,6 +627,7 @@ var envScalarPaths = map[string]string{
 	"TERMX_TUI_CHROME_HEADER":                    "tui.chrome.header",
 	"TERMX_TUI_CHROME_FOOTER":                    "tui.chrome.footer",
 	"TERMX_TUI_CHROME_PANEL_PRESENTATION":        "tui.chrome.panel_presentation",
+	"TERMX_TUI_CHROME_TAB_CREATE_TEMPLATE":       "tui.chrome.tab_create_template",
 	"TERMX_TUI_CHROME_PANE_TITLE_TEMPLATE":       "tui.chrome.pane_title_template",
 	"TERMX_TUI_INTERACTION_MOUSE":                "tui.interaction.mouse",
 	"TERMX_TUI_STICKY_PREFIX_TIMEOUT_MS":         "tui.interaction.sticky_prefix_timeout_ms",
@@ -677,6 +682,9 @@ func Validate(cfg state.TUIConfigStore) error {
 	}
 	if strings.TrimSpace(cfg.Chrome.TabCreateIcon) == "" {
 		return fmt.Errorf("tui.chrome.tab_create_icon must not be empty")
+	}
+	if strings.ContainsAny(cfg.Chrome.TabCreateTemplate, "\r\n") {
+		return fmt.Errorf("tui.chrome.tab_create_template must be a single-line template")
 	}
 	if strings.ContainsAny(cfg.Chrome.WorkspaceTemplate, "\r\n") {
 		return fmt.Errorf("tui.chrome.workspace_template must be a single-line template")

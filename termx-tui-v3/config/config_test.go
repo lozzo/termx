@@ -60,6 +60,7 @@ tui:
     header: false
     panel_presentation: card
     tab_create_icon: "+"
+    tab_create_template: "[fg:#040a0d;bg:#8ffcff] {{create_icon}} [/]"
     workspace_template: "[style:header-workspace] {{workspace | truncate 8}} [/style]"
     tab_template: "{{tab_id}} {{if active}}▎{{else}}|{{end}} {{title | truncate 8}} [action:tab.close]{{close_icon}}[/action]"
     pane_title_template: "{{terminal}}@{{endpoint}}"
@@ -136,7 +137,7 @@ tui:
 	if cfg.Profile != "work" || cfg.Theme.Palette != "builtin" || cfg.Theme.Primary != "#d65cff" || cfg.Theme.Secondary != "#66e3ff" {
 		t.Fatalf("theme/profile overrides not applied: %#v", cfg)
 	}
-	if cfg.Theme.Border.Active != "#ff00aa" || cfg.Chrome.Header || cfg.Chrome.PanelPresentation != "card" || cfg.Chrome.TabCreateIcon != "+" || !strings.Contains(cfg.Chrome.WorkspaceTemplate, "{{workspace | truncate 8}}") || !strings.Contains(cfg.Chrome.TabTemplate, "{{tab_id}}") || cfg.Chrome.PaneTitleTemplate != "{{terminal}}@{{endpoint}}" {
+	if cfg.Theme.Border.Active != "#ff00aa" || cfg.Chrome.Header || cfg.Chrome.PanelPresentation != "card" || cfg.Chrome.TabCreateIcon != "+" || !strings.Contains(cfg.Chrome.TabCreateTemplate, "{{create_icon}}") || !strings.Contains(cfg.Chrome.WorkspaceTemplate, "{{workspace | truncate 8}}") || !strings.Contains(cfg.Chrome.TabTemplate, "{{tab_id}}") || cfg.Chrome.PaneTitleTemplate != "{{terminal}}@{{endpoint}}" {
 		t.Fatalf("chrome/border overrides not applied: %#v", cfg)
 	}
 	if cfg.Chrome.PaneGlyphs.Zoom != "󰁌" ||
@@ -262,6 +263,7 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 		"TERMX_TUI_THEME_PRIMARY":                    "#010203",
 		"TERMX_TUI_THEME_PALETTE":                    "builtin",
 		"TERMX_TUI_CHROME_HEADER":                    "false",
+		"TERMX_TUI_CHROME_TAB_CREATE_TEMPLATE":       "{{create_icon}}",
 		"TERMX_TUI_CHROME_PANE_TITLE_TEMPLATE":       "{{terminal}}@{{endpoint}}",
 		"TERMX_TUI_SHORTCUT_PASSTHROUGH_INTERVAL_MS": "650",
 		"TERMX_TUI_CLIPBOARD_HISTORY_PREVIEW_RATIO":  "0.75",
@@ -273,10 +275,19 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	if cfg.Theme.Primary != "#010203" ||
 		cfg.Theme.Palette != "builtin" ||
 		cfg.Chrome.Header ||
+		cfg.Chrome.TabCreateTemplate != "{{create_icon}}" ||
 		cfg.Chrome.PaneTitleTemplate != "{{terminal}}@{{endpoint}}" ||
 		cfg.Interaction.ShortcutPassthroughIntervalMS != 650 ||
 		cfg.Interaction.ClipboardHistory.PreviewWidthRatio != 0.75 {
 		t.Fatalf("env overrides not applied: %#v", cfg)
+	}
+}
+
+func TestValidateRejectsMultiLineTabCreateTemplate(t *testing.T) {
+	cfg := Default()
+	cfg.Chrome.TabCreateTemplate = "{{create_icon}}\n+"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "tab_create_template") {
+		t.Fatalf("expected multiline tab create template validation error, got %v", err)
 	}
 }
 

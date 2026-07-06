@@ -208,6 +208,7 @@ tui:
 | `chrome.header/footer` | `true` | VM builder | 控制 shell header/footer 是否占空间。隐藏时状态必须转入 toast/help，不得丢失关键 mode。 |
 | `chrome.panel_presentation` | `split-line` | layout VM | `split-line` 和 `card` 只改变视觉布局，不改变 pane id、terminal binding 或 copy mode 绑定。 |
 | `chrome.tab_create_icon` | `󰐕` | header renderer | tab create 按钮图标。必须按 cell width 校验，不能挤压 tab hit region。 |
+| `chrome.tab_create_template` | `""` | header renderer | tab create 按钮模板；只改变 `tab.create` hit region 的展示片段，不改变新建 tab 消息链路。 |
 | `chrome.tab_template` | `""` | header renderer | header tab 的 Go `text/template` 格式；span/action 标签只影响渲染和 hit region，不改变 tab truth。 |
 | `chrome.pane_glyphs.*` | 内置 glyph / muted | pane chrome renderer | pane/floating chrome action、owner、裁切 marker 和 live extent 占位点。`zoom/unzoom` 只改变同一个 `pane.zoom` toggle 的展示 glyph；是否裁切仍由 content viewport 计算。style 支持内置 token 或 `#RRGGBB`。 |
 | `footer.templates.*` | 见 schema | footer renderer | footer mode badge、action 装饰、分隔符和 keylock 文案模板；当前只做占位符替换，不执行脚本。 |
