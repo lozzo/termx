@@ -3000,6 +3000,41 @@ func TestRenderVMBuilderProjectsTerminalPickerPoolStateAndRows(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsTerminalPickerEndpointGroups(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell().OpenTerminalPicker(),
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true, Status: state.EndpointStatusConnected}).
+			Upsert(state.EndpointItem{ID: "manual", Label: "Manual Box", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectManual, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true, Status: state.EndpointStatusOffline, LastError: "ssh timeout"}),
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items: []state.TerminalPoolItem{
+				{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", Title: "local shell", State: "running"},
+				{EndpointID: "west", TerminalID: "term-1", Title: "west shell", State: "running"},
+			},
+		},
+	}
+
+	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	plain := plainLines(content.Lines)
+	for _, want := range []string{"This Mac", "connected", "auto", "local shell", "Manual Box", "manual connect", "US West", "offline", "on_demand", "ssh", "ssh timeout", "west shell"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("expected endpoint picker content %q in:\n%s", want, plain)
+		}
+	}
+	if len(content.HitRegions) != 3 || content.HitRegions[0].Row != 0 || content.HitRegions[1].Row != 1 || content.HitRegions[2].Row != 2 {
+		t.Fatalf("endpoint headers must not become picker hit regions, got %#v", content.HitRegions)
+	}
+
+	root.Shell = root.Shell.SetTerminalPickerQuery("US West")
+	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	plain = plainLines(content.Lines)
+	if !strings.Contains(plain, "US West") || !strings.Contains(plain, "west shell") || strings.Contains(plain, "local shell") || len(content.HitRegions) != 1 || content.HitRegions[0].Row != 0 {
+		t.Fatalf("endpoint label query should show only west terminal row, lines=%#v hits=%#v", content.Lines, content.HitRegions)
+	}
+}
+
 func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 	shell := state.DefaultShell().OpenTerminalPool().SetTerminalPoolQuery("日志")
 	root := state.Root{
@@ -3099,6 +3134,36 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	if !content.Empty || !strings.Contains(plainLines(content.Lines), "list empty") {
 		t.Fatalf("expected pool empty page, got %#v", content)
+	}
+}
+
+func TestRenderVMBuilderProjectsTerminalPoolEndpointGroups(t *testing.T) {
+	root := state.Root{
+		Shell:    state.DefaultShell().OpenTerminalPool(),
+		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 32},
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true, Status: state.EndpointStatusConnected}).
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectManual, Enabled: true}),
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items: []state.TerminalPoolItem{
+				{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", Title: "shell", State: "running", Cols: 80, Rows: 24},
+				{EndpointID: "west", TerminalID: "term-1", Title: "shell", State: "running", Cols: 100, Rows: 30},
+			},
+		},
+	}
+
+	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	rendered := plainLines(content.Lines)
+	for _, want := range []string{"ENDPOINTS", "This Mac", "connected", "auto", "US West", "manual", "ssh", "ENDPOINT This Mac connected auto local"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("expected terminal manager endpoint content %q in:\n%s", want, rendered)
+		}
+	}
+	for _, region := range content.HitRegions {
+		if region.ActionID == ActionPoolSelect.String() && region.Row != 0 && region.Row != 1 {
+			t.Fatalf("pool select hit regions must point to terminal flat rows, got %#v", content.HitRegions)
+		}
 	}
 }
 

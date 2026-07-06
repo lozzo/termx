@@ -1,7 +1,5 @@
 package state
 
-import "time"
-
 const (
 	DefaultWorkspaceID = "workspace-main"
 	DefaultTabID       = "tab-main"
@@ -259,44 +257,6 @@ type PromptFieldState struct {
 	SuggestionTitle string
 	SuggestionItems []string
 	SuggestionEmpty string
-}
-
-// TerminalPickerItem 是 terminal picker 的只读行投影。
-// EndpointID + TerminalID 是后续 attach/create/reconnect action 的目标身份；当前 ME002 先携带 endpoint，机器分组和 label 展示在 ME004 接入。
-type TerminalPickerItem struct {
-	EndpointID EndpointID
-	PaneID     string
-	Title      string
-	Kind       PaneKind
-	TerminalID string
-	Location   string
-	Active     bool
-	Selected   bool
-	FromPool   bool
-	PoolState  string
-	Cols       int
-	Rows       int
-	CreateNew  bool
-}
-
-// TerminalPoolPageItem 是 Terminal Manager 页面使用的只读投影；真值来自 reducer-owned TerminalPoolStore，
-// renderer 只能消费该投影绘制列表和详情，并通过 action 消息回到 app 层执行 attach/kill/edit/delete。
-type TerminalPoolPageItem struct {
-	EndpointID      EndpointID
-	TerminalID      string
-	Title           string
-	State           string
-	CWD             string
-	Command         []string
-	Tags            map[string]string
-	ExitCode        *int
-	ExitedAt        time.Time
-	Cols            int
-	Rows            int
-	AttachmentCount int
-	Resources       TerminalResourceUsage
-	Attached        bool
-	Selected        bool
 }
 
 type WorkbenchTreeItem struct {

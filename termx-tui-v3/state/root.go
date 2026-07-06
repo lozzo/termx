@@ -13,6 +13,7 @@ type Root struct {
 	Session          TerminalSessionStore
 	TerminalViews    TerminalViewStore
 	TerminalPool     TerminalPoolStore
+	Endpoints        EndpointStore
 	Viewport         ViewportStore
 	Shell            ShellStore
 	HostTheme        HostThemeStore
@@ -24,6 +25,31 @@ type Root struct {
 func (r Root) Advance() Root {
 	r.Generation++
 	return r
+}
+
+// ApplyEndpointTerminalList 把某个 endpoint 的 terminal list 结果回投到 root。
+// TerminalPool 只替换该 endpoint 的条目；EndpointStore 只更新该 endpoint 的状态，确保局部失败不会影响其他 endpoint。
+func (r Root) ApplyEndpointTerminalList(endpointID EndpointID, items []TerminalPoolItem, err string) Root {
+	endpointID = NormalizeEndpointID(endpointID)
+	r.TerminalPool = r.TerminalPool.ApplyEndpointList(endpointID, items, err)
+	count := len(items)
+	if err != "" {
+		count = endpointTerminalRowCount(r.TerminalPool.Items, endpointID)
+	}
+	r.Endpoints = r.Endpoints.MarkTerminalListResult(endpointID, count, err)
+	return r
+}
+
+func endpointTerminalRowCount(items []TerminalPoolItem, endpointID EndpointID) int {
+	endpointID = NormalizeEndpointID(endpointID)
+	count := 0
+	for _, item := range items {
+		item = normalizeTerminalPoolItem(item)
+		if item.EndpointID == endpointID && item.TerminalID != "" {
+			count++
+		}
+	}
+	return count
 }
 
 func (r Root) CopyHistorySessionForView(viewID string) (HistoryStore, CopyModeStore) {

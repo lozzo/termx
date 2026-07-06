@@ -3,6 +3,8 @@ package state
 import (
 	"strings"
 	"testing"
+
+	"github.com/lozzow/termx/termx-shared/connection"
 )
 
 func TestDefaultShellOwnsWorkbenchTreeAndChromeState(t *testing.T) {
@@ -473,6 +475,155 @@ func TestTerminalPickerItemsKeepSameTerminalIDAcrossEndpoints(t *testing.T) {
 	}
 	if items[1].EndpointID != DefaultEndpointID || items[1].TerminalID != "term-1" || items[2].EndpointID != "west" || items[2].TerminalID != "term-1" {
 		t.Fatalf("terminal picker must keep endpoint identity for duplicate terminal ids, got %#v", items)
+	}
+}
+
+func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) {
+	registry, err := (connection.Registry{Connections: map[connection.EndpointID]connection.Config{
+		connection.DefaultEndpointID: {
+			ID:          connection.DefaultEndpointID,
+			Label:       "This Mac",
+			Transport:   connection.TransportLocal,
+			ConnectMode: connection.ConnectAuto,
+			Enabled:     true,
+			Socket:      "auto",
+		},
+		"west": {
+			ID:           "west",
+			Label:        "US West",
+			Transport:    connection.TransportSSH,
+			Address:      "root@155.94.155.192",
+			AuthRef:      "ssh:west",
+			ConnectMode:  connection.ConnectOnDemand,
+			Enabled:      true,
+			RemoteSocket: "auto",
+		},
+	}}).Normalize()
+	if err != nil {
+		t.Fatalf("normalize registry: %v", err)
+	}
+	store := (EndpointStore{}).ApplyConnectionRegistry(registry)
+	store = store.MarkTerminalListResult("west", 0, "ssh timeout")
+
+	if west, ok := store.Endpoint("west"); !ok || west.DisplayStatus() != EndpointStatusOffline || west.LastError != "ssh timeout" {
+		t.Fatalf("west endpoint should be offline only in endpoint store, got %#v ok=%v", west, ok)
+	}
+
+	renamed := registry
+	cfg := renamed.Connections["west"]
+	cfg.Label = "West Renamed"
+	renamed.Connections["west"] = cfg
+	store = store.ApplyConnectionRegistry(renamed)
+	if west, _ := store.Endpoint("west"); west.DisplayLabel() != "West Renamed" || west.DisplayStatus() != EndpointStatusOffline || west.ReconnectRequired {
+		t.Fatalf("label reload should update display only, got %#v", west)
+	}
+
+	moved := renamed
+	cfg = moved.Connections["west"]
+	cfg.Address = "root@155.94.155.193"
+	moved.Connections["west"] = cfg
+	store = store.ApplyConnectionRegistry(moved)
+	if west, _ := store.Endpoint("west"); west.DisplayStatus() != EndpointStatusReconnectRequired {
+		t.Fatalf("address reload should mark reconnect required, got %#v", west)
+	}
+
+	deleted := moved
+	delete(deleted.Connections, "west")
+	store = store.ApplyConnectionRegistry(deleted)
+	if west, ok := store.Endpoint("west"); !ok || west.DisplayStatus() != EndpointStatusUnregistered {
+		t.Fatalf("deleted active endpoint should remain unregistered, got %#v ok=%v", west, ok)
+	}
+}
+
+func TestEndpointScopedTerminalListFailurePreservesOtherEndpoints(t *testing.T) {
+	root := Root{Endpoints: (EndpointStore{}).
+		Upsert(EndpointItem{ID: DefaultEndpointID, Label: "This Mac", Transport: EndpointTransportLocal, ConnectMode: EndpointConnectAuto, Enabled: true}).
+		Upsert(EndpointItem{ID: "west", Label: "US West", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true})}
+
+	root = root.ApplyEndpointTerminalList(DefaultEndpointID, []TerminalPoolItem{{TerminalID: "term-1", Title: "local"}}, "")
+	root = root.ApplyEndpointTerminalList("west", nil, "ssh timeout")
+
+	if len(root.TerminalPool.Items) != 1 || root.TerminalPool.Items[0].EndpointID != DefaultEndpointID || root.TerminalPool.Items[0].TerminalID != "term-1" {
+		t.Fatalf("west failure must not clear local terminal list, pool=%#v", root.TerminalPool)
+	}
+	if root.TerminalPool.Status != TerminalPoolReady || root.TerminalPool.LastError != "" {
+		t.Fatalf("partial endpoint failure must not become global pool error, pool=%#v", root.TerminalPool)
+	}
+	if west, ok := root.Endpoints.Endpoint("west"); !ok || west.DisplayStatus() != EndpointStatusOffline || west.LastError != "ssh timeout" {
+		t.Fatalf("west endpoint should hold offline state, got %#v ok=%v", west, ok)
+	}
+	if local, ok := root.Endpoints.Endpoint(DefaultEndpointID); !ok || local.DisplayStatus() != EndpointStatusConnected {
+		t.Fatalf("local endpoint should remain connected, got %#v ok=%v", local, ok)
+	}
+}
+
+func TestTerminalPickerGroupsExposeEndpointMetadataAndSearch(t *testing.T) {
+	root := Root{
+		Shell: DefaultShell().OpenTerminalPicker(),
+		Endpoints: (EndpointStore{}).
+			Upsert(EndpointItem{ID: DefaultEndpointID, Label: "This Mac", Transport: EndpointTransportLocal, ConnectMode: EndpointConnectAuto, Enabled: true, Status: EndpointStatusConnected}).
+			Upsert(EndpointItem{ID: "disabled", Label: "Disabled Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectAuto, Enabled: false}).
+			Upsert(EndpointItem{ID: "manual", Label: "Manual Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectManual, Enabled: true}).
+			Upsert(EndpointItem{ID: "reconnect", Label: "Moved Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true, ReconnectRequired: true}).
+			Upsert(EndpointItem{ID: "west", Label: "US West", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true, Status: EndpointStatusOffline, LastError: "ssh timeout"}),
+		TerminalPool: TerminalPoolStore{
+			Status: TerminalPoolReady,
+			Items: []TerminalPoolItem{
+				{EndpointID: DefaultEndpointID, TerminalID: "term-1", Title: "shell"},
+				{EndpointID: "west", TerminalID: "term-1", Title: "shell"},
+				{EndpointID: "orphan", TerminalID: "term-9", Title: "orphan shell"},
+			},
+		},
+	}
+
+	groups := TerminalPickerGroups(root)
+	if len(groups) != 6 {
+		t.Fatalf("expected configured plus unregistered endpoint groups, got %#v", groups)
+	}
+	statusByID := map[EndpointID]EndpointStatusKind{}
+	rowCountByID := map[EndpointID]int{}
+	for _, group := range groups {
+		statusByID[group.EndpointID] = group.Status
+		rowCountByID[group.EndpointID] = len(group.VisibleTerminalRows)
+	}
+	if statusByID[DefaultEndpointID] != EndpointStatusConnected ||
+		statusByID["disabled"] != EndpointStatusDisabled ||
+		statusByID["manual"] != EndpointStatusManual ||
+		statusByID["reconnect"] != EndpointStatusReconnectRequired ||
+		statusByID["west"] != EndpointStatusOffline ||
+		statusByID["orphan"] != EndpointStatusUnregistered {
+		t.Fatalf("unexpected endpoint group statuses %#v", statusByID)
+	}
+	if rowCountByID[DefaultEndpointID] != 1 || rowCountByID["west"] != 1 || rowCountByID["orphan"] != 1 || rowCountByID["manual"] != 0 {
+		t.Fatalf("unexpected endpoint group terminal rows %#v", rowCountByID)
+	}
+
+	root.Shell = root.Shell.SetTerminalPickerQuery("US West")
+	items := TerminalPickerItems(root)
+	if len(items) != 1 || items[0].EndpointID != "west" || items[0].TerminalID != "term-1" {
+		t.Fatalf("endpoint label query should match west terminal row, got %#v", items)
+	}
+}
+
+func TestTerminalPoolPageGroupsExposeEndpointMetadata(t *testing.T) {
+	root := Root{
+		Shell: DefaultShell().OpenTerminalPool(),
+		Endpoints: (EndpointStore{}).
+			Upsert(EndpointItem{ID: DefaultEndpointID, Label: "This Mac", Transport: EndpointTransportLocal, ConnectMode: EndpointConnectAuto, Enabled: true, Status: EndpointStatusConnected}).
+			Upsert(EndpointItem{ID: "west", Label: "US West", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectManual, Enabled: true}),
+		TerminalPool: TerminalPoolStore{Items: []TerminalPoolItem{
+			{EndpointID: DefaultEndpointID, TerminalID: "term-1", Title: "shell"},
+			{EndpointID: "west", TerminalID: "term-1", Title: "shell"},
+		}},
+	}
+
+	rows := TerminalPoolPageItems(root)
+	if len(rows) != 2 || rows[0].EndpointLabel != "This Mac" || rows[1].EndpointLabel != "US West" || rows[1].EndpointStatus != EndpointStatusManual {
+		t.Fatalf("terminal pool rows should carry endpoint metadata, got %#v", rows)
+	}
+	groups := TerminalPoolPageGroups(root)
+	if len(groups) != 2 || groups[0].EndpointID != DefaultEndpointID || groups[1].EndpointID != "west" || len(groups[1].VisibleTerminalRows) != 1 {
+		t.Fatalf("terminal pool should group rows by endpoint, got %#v", groups)
 	}
 }
 

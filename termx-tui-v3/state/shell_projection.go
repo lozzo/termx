@@ -31,6 +31,7 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 			Cols:       poolItem.Cols,
 			Rows:       poolItem.Rows,
 		}
+		item = terminalPickerItemWithEndpoint(root, item)
 		if !matchesTerminalPickerQuery(item, query) {
 			continue
 		}
@@ -87,7 +88,7 @@ func terminalPickerItemFromBinding(root Root, binding TerminalViewBinding) Termi
 	if rows <= 0 {
 		rows = surface.Rows
 	}
-	return TerminalPickerItem{EndpointID: binding.EndpointID, Title: binding.TerminalID, Kind: PaneTerminalLive, TerminalID: binding.TerminalID, Active: binding.Attached, PoolState: stateText, Cols: cols, Rows: rows}
+	return terminalPickerItemWithEndpoint(root, TerminalPickerItem{EndpointID: binding.EndpointID, Title: binding.TerminalID, Kind: PaneTerminalLive, TerminalID: binding.TerminalID, Active: binding.Attached, PoolState: stateText, Cols: cols, Rows: rows})
 }
 
 func terminalPickerItemFromSession(root Root) TerminalPickerItem {
@@ -96,7 +97,7 @@ func terminalPickerItemFromSession(root Root) TerminalPickerItem {
 	if stateText == "" || stateText == string(TerminalLivePending) {
 		stateText = string(root.Session.State)
 	}
-	return TerminalPickerItem{EndpointID: DefaultEndpointID, Title: root.Session.TerminalID, Kind: PaneTerminalLive, TerminalID: root.Session.TerminalID, Active: root.Session.Attached, PoolState: stateText, Cols: root.Session.Cols, Rows: root.Session.Rows}
+	return terminalPickerItemWithEndpoint(root, TerminalPickerItem{EndpointID: DefaultEndpointID, Title: root.Session.TerminalID, Kind: PaneTerminalLive, TerminalID: root.Session.TerminalID, Active: root.Session.Attached, PoolState: stateText, Cols: root.Session.Cols, Rows: root.Session.Rows})
 }
 
 func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
@@ -125,6 +126,7 @@ func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
 			Resources:       poolItem.Resources,
 			Attached:        poolItem.Attached || attachmentCount > 0,
 		}
+		item = terminalPoolPageItemWithEndpoint(root, item)
 		if !matchesTerminalPoolPageQuery(item, query) {
 			continue
 		}
@@ -168,6 +170,11 @@ func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 	return TerminalPickerQueryMatchIndexes(item.Title, query) != nil ||
 		TerminalPickerQueryMatchIndexes(item.TerminalID, query) != nil ||
 		TerminalPickerQueryMatchIndexes(item.PoolState, query) != nil ||
+		TerminalPickerQueryMatchIndexes(string(item.EndpointID), query) != nil ||
+		TerminalPickerQueryMatchIndexes(item.EndpointLabel, query) != nil ||
+		TerminalPickerQueryMatchIndexes(string(item.EndpointTransport), query) != nil ||
+		TerminalPickerQueryMatchIndexes(string(item.EndpointConnectMode), query) != nil ||
+		TerminalPickerQueryMatchIndexes(string(item.EndpointStatus), query) != nil ||
 		TerminalPickerQueryMatchIndexes(terminalPickerSizeText(item), query) != nil
 }
 
@@ -218,6 +225,11 @@ func matchesTerminalPoolPageQuery(item TerminalPoolPageItem, query string) bool 
 		strings.Contains(strings.ToLower(item.TerminalID), query) ||
 		strings.Contains(strings.ToLower(item.State), query) ||
 		strings.Contains(strings.ToLower(item.CWD), query) ||
+		strings.Contains(strings.ToLower(string(item.EndpointID)), query) ||
+		strings.Contains(strings.ToLower(item.EndpointLabel), query) ||
+		strings.Contains(strings.ToLower(string(item.EndpointTransport)), query) ||
+		strings.Contains(strings.ToLower(string(item.EndpointConnectMode)), query) ||
+		strings.Contains(strings.ToLower(string(item.EndpointStatus)), query) ||
 		strings.Contains(strings.ToLower(strings.Join(item.Command, " ")), query) {
 		return true
 	}

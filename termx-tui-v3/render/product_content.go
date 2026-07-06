@@ -207,10 +207,17 @@ func buildTerminalPickerContent(root state.Root, shell state.ShellStore) Content
 	}
 	rowOffset := len(lines)
 	rows := state.TerminalPickerItems(root)
-	for _, row := range rows {
-		lines = append(lines, terminalPickerLine(row, query))
+	var regions []HitRegion
+	if root.Endpoints.HasItems() {
+		var groupedLines []Line
+		groupedLines, regions = terminalPickerGroupedLinesAndRegions(root, rows, query, rowOffset)
+		lines = append(lines, groupedLines...)
+	} else {
+		for _, row := range rows {
+			lines = append(lines, terminalPickerLine(row, query))
+		}
+		regions = terminalPickerHitRegions(rows, rowOffset)
 	}
-	regions := terminalPickerHitRegions(rows, rowOffset)
 	return ContentVM{
 		Kind:       ContentTerminalPicker,
 		Lines:      lines,
@@ -226,11 +233,21 @@ func buildTerminalPoolContent(root state.Root, shell state.ShellStore) ContentVM
 	query := strings.TrimSpace(shell.Overlay.Query)
 	rows := state.TerminalPoolPageItems(root)
 	layout := terminalManagerLayoutForViewport(chromeSafeViewportForShell(root.Viewport, shell))
-	listStart := terminalManagerListStart(rows, layout.BodyRows)
-	lines := terminalManagerLines(root, rows, query, layout, listStart)
-	visibleRows := terminalManagerVisibleRows(rows, listStart, layout.BodyRows)
+	var lines []Line
+	var regions []HitRegion
+	if root.Endpoints.HasItems() {
+		displayRows := terminalManagerDisplayRows(root, rows)
+		listStart := terminalManagerDisplayListStart(displayRows, layout.BodyRows)
+		lines = terminalManagerGroupedLines(root, rows, query, layout, displayRows, listStart)
+		visibleRows := terminalManagerVisibleDisplayRows(displayRows, listStart, layout.BodyRows)
+		regions = terminalManagerGroupedHitRegions(visibleRows, 3, layout)
+	} else {
+		listStart := terminalManagerListStart(rows, layout.BodyRows)
+		lines = terminalManagerLines(root, rows, query, layout, listStart)
+		visibleRows := terminalManagerVisibleRows(rows, listStart, layout.BodyRows)
+		regions = terminalManagerHitRegions(visibleRows, 3, listStart, layout)
+	}
 	_, selectedOK := selectedTerminalPoolPageItem(rows)
-	regions := terminalManagerHitRegions(visibleRows, 3, listStart, layout)
 	regions = append(regions, terminalManagerActionHitRegions(layout, selectedOK)...)
 	return ContentVM{
 		Kind:       ContentTerminalPool,
@@ -917,6 +934,117 @@ func terminalPickerLine(row state.TerminalPickerItem, query string) Line {
 	return Line{Cells: cells}
 }
 
+func terminalPickerGroupedLinesAndRegions(root state.Root, rows []state.TerminalPickerItem, query string, rowOffset int) ([]Line, []HitRegion) {
+	groups := state.TerminalPickerGroups(root)
+	lines := []Line{}
+	regions := []HitRegion{}
+	lineIndex := rowOffset
+	for index, row := range rows {
+		if !row.CreateNew {
+			continue
+		}
+		lines = append(lines, terminalPickerLine(row, query))
+		regions = append(regions, terminalPickerHitRegionForRow(row, index, lineIndex))
+		lineIndex++
+	}
+	for _, group := range groups {
+		lines = append(lines, terminalPickerEndpointHeaderLine(group))
+		lineIndex++
+		if len(group.VisibleTerminalRows) == 0 {
+			lines = append(lines, terminalPickerEndpointEmptyLine(group))
+			lineIndex++
+			continue
+		}
+		for _, row := range group.VisibleTerminalRows {
+			itemIndex := terminalPickerItemIndex(rows, row)
+			lines = append(lines, terminalPickerLine(row, query))
+			if itemIndex >= 0 {
+				regions = append(regions, terminalPickerHitRegionForRow(row, itemIndex, lineIndex))
+			}
+			lineIndex++
+		}
+	}
+	return lines, regions
+}
+
+func terminalPickerEndpointHeaderLine(group state.EndpointPickerGroup) Line {
+	status := string(group.Status)
+	if status == "" {
+		status = "unknown"
+	}
+	countLabel := fmt.Sprintf("%d terminals", group.TerminalCount)
+	if group.TerminalCount == 1 {
+		countLabel = "1 terminal"
+	}
+	cells := []Cell{
+		styledCell("  ", StyleMuted),
+		styledCell(group.Label, StyleStrongForeground),
+		NewCell(" "),
+		tokenCell(status, endpointStatusStyle(group.Status)),
+		NewCell(" "),
+		tokenCell(string(group.ConnectMode), StyleMuted),
+		NewCell(" "),
+		tokenCell(string(group.Transport), StyleMuted),
+		NewCell(" "),
+		styledCell(countLabel, StyleMuted),
+	}
+	if group.LastError != "" {
+		cells = append(cells, NewCell(" "), styledCell(group.LastError, StyleWarning))
+	}
+	return Line{Cells: cells}
+}
+
+func terminalPickerEndpointEmptyLine(group state.EndpointPickerGroup) Line {
+	label := "no terminals"
+	switch group.Status {
+	case state.EndpointStatusOnDemand:
+		label = "on demand"
+	case state.EndpointStatusManual:
+		label = "manual connect"
+	case state.EndpointStatusDisabled:
+		label = "disabled"
+	case state.EndpointStatusOffline:
+		label = "offline"
+	case state.EndpointStatusReconnectRequired:
+		label = "reconnect required"
+	case state.EndpointStatusUnregistered:
+		label = "unregistered"
+	}
+	return Line{Cells: []Cell{
+		styledCell("    ", StyleMuted),
+		styledCell(label, endpointStatusStyle(group.Status)),
+	}}
+}
+
+func terminalPickerHitRegionForRow(row state.TerminalPickerItem, rowIndex int, lineIndex int) HitRegion {
+	actionID := ActionPickerAttach.String()
+	if row.CreateNew {
+		actionID = ActionPickerNew.String()
+	}
+	return HitRegion{
+		Kind:     HitRegionContentAction,
+		Rect:     Rect{Y: lineIndex, W: 72, H: 1},
+		PaneID:   row.PaneID,
+		Row:      rowIndex,
+		ActionID: actionID,
+	}
+}
+
+func terminalPickerItemIndex(rows []state.TerminalPickerItem, target state.TerminalPickerItem) int {
+	for index, row := range rows {
+		if row.CreateNew && target.CreateNew {
+			return index
+		}
+		if row.CreateNew || target.CreateNew {
+			continue
+		}
+		if state.NewTerminalRef(row.EndpointID, row.TerminalID).Equal(state.NewTerminalRef(target.EndpointID, target.TerminalID)) {
+			return index
+		}
+	}
+	return -1
+}
+
 func terminalPickerColumnCells(value string, query string, baseStyle StyleToken, width int) []Cell {
 	cells := highlightPickerText(value, query, baseStyle)
 	pad := width - DisplayWidth(value)
@@ -1021,6 +1149,153 @@ func terminalManagerLines(root state.Root, rows []state.TerminalPoolPageItem, qu
 	return lines
 }
 
+type terminalManagerDisplayRowKind string
+
+const (
+	terminalManagerDisplayEndpoint terminalManagerDisplayRowKind = "endpoint"
+	terminalManagerDisplayEmpty    terminalManagerDisplayRowKind = "empty"
+	terminalManagerDisplayTerminal terminalManagerDisplayRowKind = "terminal"
+)
+
+type terminalManagerDisplayRow struct {
+	Kind      terminalManagerDisplayRowKind
+	Group     state.TerminalPoolPageGroup
+	Item      state.TerminalPoolPageItem
+	ItemIndex int
+}
+
+func terminalManagerDisplayRows(root state.Root, rows []state.TerminalPoolPageItem) []terminalManagerDisplayRow {
+	groups := state.TerminalPoolPageGroups(root)
+	displayRows := make([]terminalManagerDisplayRow, 0, len(rows)+len(groups))
+	for _, group := range groups {
+		displayRows = append(displayRows, terminalManagerDisplayRow{Kind: terminalManagerDisplayEndpoint, Group: group, ItemIndex: -1})
+		if len(group.VisibleTerminalRows) == 0 {
+			displayRows = append(displayRows, terminalManagerDisplayRow{Kind: terminalManagerDisplayEmpty, Group: group, ItemIndex: -1})
+			continue
+		}
+		for _, row := range group.VisibleTerminalRows {
+			displayRows = append(displayRows, terminalManagerDisplayRow{Kind: terminalManagerDisplayTerminal, Group: group, Item: row, ItemIndex: terminalPoolPageItemIndex(rows, row)})
+		}
+	}
+	return displayRows
+}
+
+func terminalManagerGroupedLines(root state.Root, rows []state.TerminalPoolPageItem, query string, layout terminalManagerLayout, displayRows []terminalManagerDisplayRow, listStart int) []Line {
+	selected, selectedOK := selectedTerminalPoolPageItem(rows)
+	right := terminalManagerDetailLines(root, selected, selectedOK, layout.BodyRows)
+	statusLine, hasStatus := terminalPoolPageStateLine(root.TerminalPool, len(rows))
+	lines := []Line{
+		terminalManagerFullLine(searchRowLine(query, "shell"), layout),
+		terminalManagerDividerLine(layout),
+		terminalManagerBodyLine(terminalManagerHeaderLine("ENDPOINTS"), terminalManagerHeaderLine(terminalManagerRightHeader(selected, selectedOK)), layout),
+	}
+	for row := 0; row < layout.BodyRows; row++ {
+		left := Line{}
+		displayIndex := listStart + row
+		if displayIndex >= 0 && displayIndex < len(displayRows) {
+			left = terminalManagerDisplayRowLine(displayRows[displayIndex])
+		} else if row == 0 && hasStatus {
+			left = statusLine
+		}
+		rightLine := Line{}
+		if row < len(right) {
+			rightLine = right[row]
+		}
+		lines = append(lines, terminalManagerBodyLine(left, rightLine, layout))
+	}
+	lines = append(lines, terminalManagerBodyLine(terminalManagerActionLine(terminalManagerLeftActions(), selectedOK), terminalManagerActionLine(terminalManagerRightActions(), selectedOK), layout))
+	return lines
+}
+
+func terminalManagerDisplayRowLine(row terminalManagerDisplayRow) Line {
+	switch row.Kind {
+	case terminalManagerDisplayEndpoint:
+		return terminalManagerEndpointHeaderLine(row.Group)
+	case terminalManagerDisplayEmpty:
+		return terminalManagerEndpointEmptyLine(row.Group)
+	default:
+		return terminalManagerRowLine(row.Item)
+	}
+}
+
+func terminalManagerEndpointHeaderLine(group state.TerminalPoolPageGroup) Line {
+	status := string(group.Status)
+	if status == "" {
+		status = "unknown"
+	}
+	countLabel := fmt.Sprintf("%d", group.TerminalCount)
+	cells := []Cell{
+		styledCell("  ", StyleMuted),
+		styledCell(group.Label, StyleStrongForeground),
+		NewCell(" "),
+		tokenCell(status, endpointStatusStyle(group.Status)),
+		NewCell(" "),
+		tokenCell(string(group.ConnectMode), StyleMuted),
+		NewCell(" "),
+		tokenCell(string(group.Transport), StyleMuted),
+		NewCell(" "),
+		styledCell("terms:"+countLabel, StyleMuted),
+	}
+	if group.LastError != "" {
+		cells = append(cells, NewCell(" "), styledCell(group.LastError, StyleWarning))
+	}
+	return Line{Cells: cells}
+}
+
+func terminalManagerEndpointEmptyLine(group state.TerminalPoolPageGroup) Line {
+	label := "no terminals"
+	switch group.Status {
+	case state.EndpointStatusOnDemand:
+		label = "on demand"
+	case state.EndpointStatusManual:
+		label = "manual connect"
+	case state.EndpointStatusDisabled:
+		label = "disabled"
+	case state.EndpointStatusOffline:
+		label = "offline"
+	case state.EndpointStatusReconnectRequired:
+		label = "reconnect required"
+	case state.EndpointStatusUnregistered:
+		label = "unregistered"
+	}
+	return Line{Cells: []Cell{
+		styledCell("    ", StyleMuted),
+		styledCell(label, endpointStatusStyle(group.Status)),
+	}}
+}
+
+func terminalManagerVisibleDisplayRows(rows []terminalManagerDisplayRow, start int, limit int) []terminalManagerDisplayRow {
+	if limit <= 0 || start >= len(rows) {
+		return nil
+	}
+	if start < 0 {
+		start = 0
+	}
+	end := minInt(len(rows), start+limit)
+	return rows[start:end]
+}
+
+func terminalManagerDisplayListStart(rows []terminalManagerDisplayRow, visibleRows int) int {
+	if visibleRows <= 0 || len(rows) <= visibleRows {
+		return 0
+	}
+	selected := terminalManagerSelectedDisplayIndex(rows)
+	if selected < 0 {
+		selected = 0
+	}
+	start := selected - visibleRows/2
+	return clampInt(start, 0, maxInt(0, len(rows)-visibleRows))
+}
+
+func terminalManagerSelectedDisplayIndex(rows []terminalManagerDisplayRow) int {
+	for index, row := range rows {
+		if row.Kind == terminalManagerDisplayTerminal && row.Item.Selected {
+			return index
+		}
+	}
+	return -1
+}
+
 func terminalManagerVisibleRows(rows []state.TerminalPoolPageItem, start int, limit int) []state.TerminalPoolPageItem {
 	if limit <= 0 || start >= len(rows) {
 		return nil
@@ -1104,6 +1379,9 @@ func terminalManagerRowLine(row state.TerminalPoolPageItem) Line {
 	if resource := terminalPoolResourceShortLabel(row); resource != "" {
 		cells = append(cells, NewCell(" "), styledCell(resource, StyleMuted))
 	}
+	if row.EndpointLabel != "" {
+		cells = append(cells, NewCell(" "), tokenCell(row.EndpointLabel, StyleMuted))
+	}
 	return Line{Cells: cells}
 }
 
@@ -1127,6 +1405,9 @@ func terminalManagerDetailLines(root state.Root, selected state.TerminalPoolPage
 	lines := []Line{
 		terminalManagerDetailLine("status", terminalPoolDetailStatus(selected)),
 		terminalManagerDetailLine("usage", terminalPoolResourceDetailLabel(selected)),
+	}
+	if selected.EndpointLabel != "" {
+		lines = append(lines, terminalManagerDetailLine("endpoint", terminalPoolEndpointDetailLabel(selected)))
 	}
 	if strings.TrimSpace(selected.CWD) != "" {
 		lines = append(lines, terminalManagerDetailLine("cwd", selected.CWD))
@@ -1906,6 +2187,31 @@ func terminalManagerHitRegions(rows []state.TerminalPoolPageItem, rowOffset int,
 	return regions
 }
 
+func terminalManagerGroupedHitRegions(rows []terminalManagerDisplayRow, rowOffset int, layout terminalManagerLayout) []HitRegion {
+	regions := make([]HitRegion, 0, len(rows)+len(terminalManagerActions()))
+	for index, row := range rows {
+		if row.Kind != terminalManagerDisplayTerminal || row.ItemIndex < 0 {
+			continue
+		}
+		regions = append(regions, HitRegion{
+			Kind:     HitRegionContentAction,
+			Rect:     Rect{Y: rowOffset + index, W: layout.ListWidth, H: 1},
+			Row:      row.ItemIndex,
+			ActionID: ActionPoolSelect.String(),
+		})
+	}
+	return regions
+}
+
+func terminalPoolPageItemIndex(rows []state.TerminalPoolPageItem, target state.TerminalPoolPageItem) int {
+	for index, row := range rows {
+		if state.NewTerminalRef(row.EndpointID, row.TerminalID).Equal(state.NewTerminalRef(target.EndpointID, target.TerminalID)) {
+			return index
+		}
+	}
+	return -1
+}
+
 func terminalManagerActionHitRegions(layout terminalManagerLayout, enabled bool) []HitRegion {
 	if !enabled || layout.DetailWidth <= 0 || layout.ListWidth <= 0 {
 		return nil
@@ -2480,6 +2786,23 @@ func terminalPoolDetailStatus(row state.TerminalPoolPageItem) string {
 	}, " · ")
 }
 
+func terminalPoolEndpointDetailLabel(row state.TerminalPoolPageItem) string {
+	parts := []string{row.EndpointLabel}
+	if row.EndpointStatus != "" {
+		parts = append(parts, string(row.EndpointStatus))
+	}
+	if row.EndpointConnectMode != "" {
+		parts = append(parts, string(row.EndpointConnectMode))
+	}
+	if row.EndpointTransport != "" {
+		parts = append(parts, string(row.EndpointTransport))
+	}
+	if row.EndpointLastError != "" {
+		parts = append(parts, row.EndpointLastError)
+	}
+	return strings.Join(parts, " ")
+}
+
 func terminalPoolResourceDetailLabel(row state.TerminalPoolPageItem) string {
 	usage := row.Resources
 	if usage.SampledAt.IsZero() {
@@ -2696,6 +3019,19 @@ func terminalPoolStateStyle(stateText string) StyleToken {
 		return StyleSuccess
 	case "failed", "error", "exited":
 		return StyleWarning
+	default:
+		return StyleMuted
+	}
+}
+
+func endpointStatusStyle(status state.EndpointStatusKind) StyleToken {
+	switch status {
+	case state.EndpointStatusConnected:
+		return StyleSuccess
+	case state.EndpointStatusOffline, state.EndpointStatusDisabled, state.EndpointStatusReconnectRequired, state.EndpointStatusUnregistered:
+		return StyleWarning
+	case state.EndpointStatusConnecting:
+		return StyleAccent
 	default:
 		return StyleMuted
 	}

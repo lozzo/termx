@@ -1,6 +1,9 @@
 package state
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type TerminalPoolStatus string
 
@@ -89,6 +92,35 @@ func (store TerminalPoolStore) ApplyList(seq uint64, items []TerminalPoolItem, e
 	store.Items = normalizeTerminalPoolItems(cloneTerminalPoolItems(items))
 	store.LastError = ""
 	return store, true
+}
+
+// ApplyEndpointList 应用单个 endpoint 的 terminal list 结果。
+// 该入口服务多 endpoint manager：成功只替换同 endpoint 条目，失败不清空任何 terminal，避免局部离线污染其他 daemon 的列表真值。
+func (store TerminalPoolStore) ApplyEndpointList(endpointID EndpointID, items []TerminalPoolItem, err string) TerminalPoolStore {
+	endpointID = NormalizeEndpointID(endpointID)
+	if strings.TrimSpace(err) != "" {
+		return store
+	}
+	nextItems := make([]TerminalPoolItem, 0, len(store.Items)+len(items))
+	for _, item := range store.Items {
+		item = normalizeTerminalPoolItem(item)
+		if item.EndpointID == endpointID {
+			continue
+		}
+		nextItems = append(nextItems, item)
+	}
+	for _, item := range items {
+		item = normalizeTerminalPoolItem(item)
+		item.EndpointID = endpointID
+		if item.TerminalID == "" {
+			continue
+		}
+		nextItems = append(nextItems, item)
+	}
+	store.Status = TerminalPoolReady
+	store.Items = normalizeTerminalPoolItems(cloneTerminalPoolItems(nextItems))
+	store.LastError = ""
+	return store
 }
 
 // ApplyCreated 记录默认 local endpoint 的 create 结果。
