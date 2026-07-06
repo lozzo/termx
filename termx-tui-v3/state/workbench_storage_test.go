@@ -101,7 +101,14 @@ func TestWorkbenchStorageSnapshotV2RoundTripsTerminalViews(t *testing.T) {
 	if snapshot.SchemaVersion != WorkbenchStorageSchemaV2 || len(snapshot.TerminalViews) != 2 {
 		t.Fatalf("expected v2 snapshot with terminal views, got %#v", snapshot)
 	}
-	if snapshot.TerminalViews[1].EndpointID != "west" {
+	hasWestBinding := false
+	for _, binding := range snapshot.TerminalViews {
+		if binding.TerminalRef().Equal(NewTerminalRef("west", "term-1")) {
+			hasWestBinding = true
+			break
+		}
+	}
+	if !hasWestBinding {
 		t.Fatalf("snapshot must persist endpoint-aware terminal ref, got %#v", snapshot.TerminalViews)
 	}
 	data, err := EncodeWorkbenchStorageSnapshotValue(snapshot)

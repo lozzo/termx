@@ -60,7 +60,7 @@
 | ME004 | 完成 | Terminal picker / Terminal Pool 支持 endpoint 聚合和局部失败 | picker 展示机器名称、endpoint 状态和 terminal；单 endpoint 失败不影响其他 endpoint |
 | ME005 | 完成 | live/input/resize/owner/copy/history 路由按 `TerminalRef` 隔离 | owner 转移、输入、history token 不跨 endpoint 串扰 |
 | ME006 | 完成 | workbench storage 持久化 endpoint-aware terminal binding | 旧 snapshot 默认映射到 `local`；缺失 endpoint 保留 unresolved binding |
-| ME007 | 待开始 | local unix socket 作为标准 endpoint transport | 当前本地 attach 路径迁移到 endpoint manager 后行为不变 |
+| ME007 | 完成 | local unix socket 作为标准 endpoint transport | 当前本地 attach 路径迁移到 endpoint manager 后行为不变 |
 | ME008 | 待开始 | SSH transport 连接远端 termx daemon | 明确认证、host key、远端 socket 发现和失败展示 |
 | ME009 | 阻塞 | hub/P2P transport 与跨设备发现 | 先解冻 `termx-hub/` 并补充 hub 身份、安全和中继策略 |
 
@@ -93,4 +93,5 @@
 - ME004 已完成：TUI state 增加 reducer-owned endpoint 展示投影，Terminal picker / Terminal Manager 可按 endpoint 分组展示机器名称、transport、connect mode、状态和局部错误；endpoint-scoped list 失败不会清空其他 endpoint 的 terminal rows。
 - ME005 已完成：live surface/session/input channel、Terminal Pool 操作、resize owner、copy/history pending/window/release 均带 `TerminalRef` 路由；同名 terminal 的 input serial、live refresh、history window 和 copy session 不跨 endpoint 串扰。
 - ME006 已完成：workbench snapshot 持久化 `EndpointID + TerminalID` 连接意图，旧 binding 缺 endpoint 时默认恢复为 `local`；缺失、disabled 或 manual endpoint 的 binding 保留在 pane/floating layout 中并标记 unresolved，不自动 attach。
-- 下一切片是 ME007：local unix socket 作为标准 endpoint transport，当前本地 attach 路径迁移到 endpoint manager 后行为不变。
+- ME007 已完成：TUI runtime 启动时加载 `connections.yaml` endpoint registry，local unix socket 作为 `EndpointManager` 的标准 local transport bundle 接入；terminal/core/live 请求进入 per-endpoint adapter 前剥离 `EndpointID`，回包后补回 `EndpointID`，当前本地 attach、list、live、history 行为保持不变；显式 `--socket` 仍覆盖 registry local socket。
+- 下一切片是 ME008：SSH transport 连接远端 termx daemon，需明确认证、host key、远端 socket 发现和失败展示，不得 fallback 成原始 shell。

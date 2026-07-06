@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/connection"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -19,15 +20,17 @@ type v3RootRunner func(context.Context, v3RootConfig) error
 type v3RootEmptyRunner func(context.Context, v3RootEmptyConfig) error
 
 type v3RootConfig struct {
-	SocketPath string
-	LogFile    string
-	TUIConfig  state.TUIConfigStore
+	SocketPath         string
+	LogFile            string
+	TUIConfig          state.TUIConfigStore
+	ConnectionRegistry connection.Registry
 }
 
 type v3RootEmptyConfig struct {
-	SocketPath string
-	LogFile    string
-	TUIConfig  state.TUIConfigStore
+	SocketPath         string
+	LogFile            string
+	TUIConfig          state.TUIConfigStore
+	ConnectionRegistry connection.Registry
 }
 
 var runV3Root = runV3RootRuntime
@@ -46,10 +49,15 @@ func runV3RootCommand(cmd *cobra.Command, socket string, logFile string) error {
 	if err != nil {
 		return err
 	}
+	connectionRegistry, err := loadV3ConnectionRegistry()
+	if err != nil {
+		return err
+	}
 	return runV3Root(ctx, v3RootConfig{
-		SocketPath: resolveV3Socket(socket),
-		LogFile:    resolveV3LogFilePath(logFile),
-		TUIConfig:  tuiConfig,
+		SocketPath:         resolveV3SocketForConnectionRegistry(socket, connectionRegistry),
+		LogFile:            resolveV3LogFilePath(logFile),
+		TUIConfig:          tuiConfig,
+		ConnectionRegistry: connectionRegistry,
 	})
 }
 
@@ -75,17 +83,19 @@ func runV3RootRuntime(ctx context.Context, cfg v3RootConfig) error {
 	if !ok {
 		logger.Info("starting tui-v3 root empty command", "socket", cfg.SocketPath, "log_file", logPath)
 		return runV3RootEmpty(ctx, v3RootEmptyConfig{
-			SocketPath: cfg.SocketPath,
-			LogFile:    logPath,
-			TUIConfig:  cfg.TUIConfig,
+			SocketPath:         cfg.SocketPath,
+			LogFile:            logPath,
+			TUIConfig:          cfg.TUIConfig,
+			ConnectionRegistry: cfg.ConnectionRegistry,
 		})
 	}
 	logger.Info("starting tui-v3 root command", "terminal_id", terminalID, "socket", cfg.SocketPath, "log_file", logPath)
 	return runV3Attach(ctx, v3AttachConfig{
-		TerminalID: terminalID,
-		SocketPath: cfg.SocketPath,
-		LogFile:    logPath,
-		TUIConfig:  cfg.TUIConfig,
+		TerminalID:         terminalID,
+		SocketPath:         cfg.SocketPath,
+		LogFile:            logPath,
+		TUIConfig:          cfg.TUIConfig,
+		ConnectionRegistry: cfg.ConnectionRegistry,
 	})
 }
 
@@ -132,6 +142,7 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 	runtime := newV3InteractiveRuntimeWithOptions("", cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{
 		SkipWorkbenchInitialLoad: true,
 		TUIConfig:                cfg.TUIConfig,
+		ConnectionRegistry:       cfg.ConnectionRegistry,
 	})
 	// root 空启动不创建 terminal；先让用户在 picker 中显式选择创建或连接。
 	if err := runtime.Post(app.ShellOpenTerminalPickerMsg{}); err != nil {

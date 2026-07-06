@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/connection"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/services"
@@ -32,10 +33,11 @@ type v3TerminalHostLogger interface {
 type v3AttachRunner func(context.Context, v3AttachConfig) error
 
 type v3AttachConfig struct {
-	TerminalID string
-	SocketPath string
-	LogFile    string
-	TUIConfig  state.TUIConfigStore
+	TerminalID         string
+	SocketPath         string
+	LogFile            string
+	TUIConfig          state.TUIConfigStore
+	ConnectionRegistry connection.Registry
 }
 
 var (
@@ -63,11 +65,16 @@ func v3AttachCommand(socket *string, logFile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			connectionRegistry, err := loadV3ConnectionRegistry()
+			if err != nil {
+				return err
+			}
 			return runV3Attach(ctx, v3AttachConfig{
-				TerminalID: args[0],
-				SocketPath: resolveV3Socket(*socket),
-				LogFile:    logPath,
-				TUIConfig:  tuiConfig,
+				TerminalID:         args[0],
+				SocketPath:         resolveV3SocketForConnectionRegistry(*socket, connectionRegistry),
+				LogFile:            logPath,
+				TUIConfig:          tuiConfig,
+				ConnectionRegistry: connectionRegistry,
 			})
 		},
 	}
@@ -115,8 +122,9 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	}
 	surfaceID := newV3RuntimeSurfaceID()
 	runtime := newV3InteractiveRuntimeWithOptions(cfg.TerminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{
-		RuntimeSurfaceID: surfaceID,
-		TUIConfig:        cfg.TUIConfig,
+		RuntimeSurfaceID:   surfaceID,
+		TUIConfig:          cfg.TUIConfig,
+		ConnectionRegistry: cfg.ConnectionRegistry,
 	})
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   cfg.TerminalID,
@@ -145,6 +153,7 @@ type v3InteractiveRuntimeOptions struct {
 	SkipWorkbenchInitialLoad bool
 	RuntimeSurfaceID         string
 	TUIConfig                state.TUIConfigStore
+	ConnectionRegistry       connection.Registry
 }
 
 func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, client *protocol.Client, workbenchStorageClient *protocol.Client, clipboardStorageClient *protocol.Client, host app.TerminalHost, logger *slog.Logger, opts v3InteractiveRuntimeOptions) *app.AppRuntime {
@@ -169,8 +178,18 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 	if terminalID == "" {
 		initial.Shell = v3EmptyRootShell()
 	}
-	terminal := services.ProtocolTerminalServiceAdapter{Client: client}
-	core := services.ProtocolCoreClientAdapter{Client: client}
+	terminalAdapter := services.ProtocolTerminalServiceAdapter{Client: client}
+	coreAdapter := services.ProtocolCoreClientAdapter{Client: client}
+	endpointManager := services.NewEndpointManager(normalizeV3ConnectionRegistry(opts.ConnectionRegistry), services.EndpointServiceBundle{
+		EndpointID: state.DefaultEndpointID,
+		Terminal:   terminalAdapter,
+		Core:       coreAdapter,
+		Surface:    terminalAdapter,
+		LiveEvents: terminalAdapter,
+	})
+	initial.Endpoints = endpointManager.EndpointStore()
+	terminal := endpointManager
+	core := endpointManager
 	var storage services.WorkbenchStorageService
 	var clipboardStorage services.ClipboardStorageService
 	if workbenchStorageClient != nil {

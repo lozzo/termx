@@ -19,6 +19,7 @@ import (
 	corev2 "github.com/lozzow/termx/termx-core-v2"
 	"github.com/lozzow/termx/termx-core-v2/history"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
+	"github.com/lozzow/termx/termx-shared/connection"
 	tuiv3 "github.com/lozzow/termx/termx-tui-v3"
 	"github.com/lozzow/termx/termx-tui-v3/app"
 	tuiinput "github.com/lozzow/termx/termx-tui-v3/input"
@@ -70,6 +71,143 @@ func TestRootCmdRoutesToTUIv3ByDefault(t *testing.T) {
 		t.Fatalf("default root must not create tuiv2 config at %s, stat err=%v", configPath, err)
 	}
 }
+
+func TestRootCmdLoadsConnectionRegistryLocalSocket(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunRoot := runV3Root
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runV3Root = oldRunRoot
+	})
+
+	isInteractiveTerminal = func() bool { return true }
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	socketPath := filepath.Join(t.TempDir(), "configured.sock")
+	writeCLIConnectionRegistry(t, configHome, `
+version: 1
+default: local
+connections:
+  local:
+    label: "Configured Local"
+    enabled: true
+    transport: local
+    connect_mode: auto
+    socket: "`+socketPath+`"
+`)
+
+	var gotCfg v3RootConfig
+	runV3Root = func(ctx context.Context, cfg v3RootConfig) error {
+		gotCfg = cfg
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--log-file", filepath.Join(t.TempDir(), "termx.log")})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if gotCfg.SocketPath != socketPath {
+		t.Fatalf("expected registry socket %q, got %q", socketPath, gotCfg.SocketPath)
+	}
+	local, ok := gotCfg.ConnectionRegistry.Connections[connection.DefaultEndpointID]
+	if !ok {
+		t.Fatalf("local connection missing from registry %#v", gotCfg.ConnectionRegistry)
+	}
+	if local.Label != "Configured Local" || local.Socket != socketPath {
+		t.Fatalf("unexpected local connection %#v", local)
+	}
+}
+
+func TestRootCmdSocketFlagOverridesConnectionRegistrySocket(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunRoot := runV3Root
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runV3Root = oldRunRoot
+	})
+
+	isInteractiveTerminal = func() bool { return true }
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	registrySocket := filepath.Join(t.TempDir(), "registry.sock")
+	flagSocket := filepath.Join(t.TempDir(), "flag.sock")
+	writeCLIConnectionRegistry(t, configHome, `
+version: 1
+default: local
+connections:
+  local:
+    label: "Configured Local"
+    enabled: true
+    transport: local
+    connect_mode: auto
+    socket: "`+registrySocket+`"
+`)
+
+	var gotCfg v3RootConfig
+	runV3Root = func(ctx context.Context, cfg v3RootConfig) error {
+		gotCfg = cfg
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", flagSocket, "--log-file", filepath.Join(t.TempDir(), "termx.log")})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if gotCfg.SocketPath != flagSocket {
+		t.Fatalf("expected --socket to override registry socket %q, got %q", flagSocket, gotCfg.SocketPath)
+	}
+}
+
+func writeCLIConnectionRegistry(t *testing.T, configHome string, content string) {
+	t.Helper()
+	dir := filepath.Join(configHome, "termx")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir connection registry dir: %v", err)
+	}
+	path := filepath.Join(dir, connection.DefaultFileName)
+	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)+"\n"), 0o644); err != nil {
+		t.Fatalf("write connection registry: %v", err)
+	}
+}
+
+func TestV3InteractiveRuntimeInitializesEndpointStoreFromRegistry(t *testing.T) {
+	registry := connection.Registry{
+		Version: 1,
+		Default: connection.DefaultEndpointID,
+		Connections: map[connection.EndpointID]connection.Config{
+			connection.DefaultEndpointID: {
+				ID:          connection.DefaultEndpointID,
+				Label:       "Runtime Local",
+				Transport:   connection.TransportLocal,
+				ConnectMode: connection.ConnectAuto,
+				Enabled:     true,
+				Socket:      "auto",
+			},
+		},
+	}
+	runtime := newV3InteractiveRuntimeWithOptions("", 80, 24, nil, nil, nil, app.NewFakeTerminalHost(8), nil, v3InteractiveRuntimeOptions{
+		SkipWorkbenchInitialLoad: true,
+		ConnectionRegistry:       registry,
+	})
+	local, ok := runtime.State().Endpoints.Endpoint(tuistate.DefaultEndpointID)
+	if !ok {
+		t.Fatalf("local endpoint missing from runtime state %#v", runtime.State().Endpoints)
+	}
+	if local.DisplayLabel() != "Runtime Local" || local.DisplayStatus() != tuistate.EndpointStatusAuto {
+		t.Fatalf("unexpected local endpoint projection %#v", local)
+	}
+}
+
 func TestRootCmdBlocksNestedTUIByDefault(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
 	oldRunRoot := runV3Root
