@@ -1000,15 +1000,6 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 	if len(terminal.Inputs) != 0 {
 		t.Fatalf("picker query must not leak to terminal input, got %#v", terminal.Inputs)
 	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x7f"}); err != nil {
-		t.Fatalf("send backspace: %v", err)
-	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x7f"}); err != nil {
-		t.Fatalf("send backspace: %v", err)
-	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
-		t.Fatalf("send down: %v", err)
-	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
 		t.Fatalf("send enter: %v", err)
 	}

@@ -478,6 +478,34 @@ func TestTerminalPickerItemsKeepSameTerminalIDAcrossEndpoints(t *testing.T) {
 	}
 }
 
+func TestTerminalPickerAndPoolRowsSortByName(t *testing.T) {
+	root := Root{
+		Shell: DefaultShell().OpenTerminalPicker(),
+		Endpoints: (EndpointStore{}).
+			Upsert(EndpointItem{ID: DefaultEndpointID, Label: "This Mac", Transport: EndpointTransportLocal, ConnectMode: EndpointConnectAuto, Enabled: true}).
+			Upsert(EndpointItem{ID: "west", Label: "US West", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true}),
+		TerminalPool: TerminalPoolStore{
+			Status: TerminalPoolReady,
+			Items: []TerminalPoolItem{
+				{EndpointID: "west", TerminalID: "term-z", Title: "zeta"},
+				{EndpointID: DefaultEndpointID, TerminalID: "term-beta", Title: "Beta"},
+				{EndpointID: "west", TerminalID: "term-alpha", Title: "alpha"},
+			},
+		},
+	}
+
+	picker := TerminalPickerItems(root)
+	if len(picker) != 4 || !picker[0].CreateNew || picker[1].Title != "alpha" || picker[2].Title != "Beta" || picker[3].Title != "zeta" {
+		t.Fatalf("terminal picker rows should sort by display name after create row, got %#v", picker)
+	}
+
+	root.Shell = root.Shell.OpenTerminalPool()
+	pool := TerminalPoolPageItems(root)
+	if len(pool) != 3 || pool[0].Title != "alpha" || pool[1].Title != "Beta" || pool[2].Title != "zeta" {
+		t.Fatalf("terminal manager rows should sort by display name, got %#v", pool)
+	}
+}
+
 func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) {
 	registry, err := (connection.Registry{Connections: map[connection.EndpointID]connection.Config{
 		connection.DefaultEndpointID: {

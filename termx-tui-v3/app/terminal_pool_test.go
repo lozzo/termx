@@ -82,6 +82,55 @@ func TestTerminalPoolRefreshTickRequestsSilentList(t *testing.T) {
 	}
 }
 
+func TestTerminalPickerListResultSchedulesBackgroundRefresh(t *testing.T) {
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	root := state.Root{Shell: state.DefaultShell().OpenTerminalPicker()}
+	root.TerminalPool = root.TerminalPool.RequestList()
+	seq := root.TerminalPool.RequestSeq
+
+	next, effects := reducer(root, TerminalPoolListResultMsg{
+		Seq:    seq,
+		Result: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-1", Title: "shell"}}},
+	})
+	if next.TerminalPool.Status != state.TerminalPoolReady || !terminalPoolRefreshLoopScheduled(effects) {
+		t.Fatalf("picker list result should arm background inventory refresh, pool=%#v effects=%#v", next.TerminalPool, effects)
+	}
+	if terminalPoolPreviewRefreshScheduledIgnoringLoop(t, effects) {
+		t.Fatalf("terminal picker must not schedule terminal-manager preview refresh, effects=%#v", effects)
+	}
+}
+
+func TestTerminalPickerRefreshTickFansOutSilentEndpointList(t *testing.T) {
+	terminal := &services.FakeTerminalService{ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-1", Title: "shell"}}}}
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{
+		Shell: state.DefaultShell().OpenTerminalPicker(),
+		Endpoints: state.EndpointStore{}.
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "Local", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "west", Label: "West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items:  []state.TerminalPoolItem{{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", Title: "shell"}},
+		},
+	}
+
+	next, effects := reducer(root, TerminalPoolRefreshTickMsg{})
+	if next.TerminalPool.Status != state.TerminalPoolReady || next.TerminalPool.RequestSeq == root.TerminalPool.RequestSeq || len(effects) != 2 {
+		t.Fatalf("picker refresh tick should silently fan out endpoint lists, before=%#v after=%#v effects=%#v", root.TerminalPool, next.TerminalPool, effects)
+	}
+	seen := map[state.EndpointID]bool{}
+	for _, effect := range effects {
+		msg, ok := effect.(FuncEffect).Run(context.Background()).(TerminalPoolListResultMsg)
+		if !ok || !msg.Refresh || msg.Seq != next.TerminalPool.RequestSeq {
+			t.Fatalf("picker refresh effect should return silent endpoint list result, got %#v", msg)
+		}
+		seen[msg.EndpointID] = true
+	}
+	if !seen[state.DefaultEndpointID] || !seen["west"] {
+		t.Fatalf("picker refresh should include local and west endpoints, got %#v", seen)
+	}
+}
+
 func TestTerminalPoolListRequestFansOutToConnectableEndpoints(t *testing.T) {
 	terminal := &services.FakeTerminalService{ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-1", Title: "shell"}}}}
 	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
@@ -233,6 +282,20 @@ func terminalPoolPreviewRefreshScheduled(t *testing.T, effects []Effect) bool {
 	for _, effect := range effects {
 		fn, ok := effect.(FuncEffect)
 		if !ok || fn.Run == nil {
+			continue
+		}
+		if _, ok := fn.Run(context.Background()).(TerminalPoolPreviewRefreshMsg); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func terminalPoolPreviewRefreshScheduledIgnoringLoop(t *testing.T, effects []Effect) bool {
+	t.Helper()
+	for _, effect := range effects {
+		fn, ok := effect.(FuncEffect)
+		if !ok || fn.Run == nil || fn.Token == terminalPoolRefreshToken {
 			continue
 		}
 		if _, ok := fn.Run(context.Background()).(TerminalPoolPreviewRefreshMsg); ok {

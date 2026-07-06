@@ -1,6 +1,7 @@
 package state
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -61,6 +62,7 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 			}
 		}
 	}
+	sortTerminalPickerItemsByName(items)
 	if len(items) > 0 {
 		selected := shell.Overlay.SelectedIndex
 		if selected < 0 {
@@ -134,6 +136,7 @@ func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
 		}
 		items = append(items, item)
 	}
+	sortTerminalPoolPageItemsByName(items)
 	if len(items) > 0 {
 		selected := shell.Overlay.SelectedIndex
 		if selected < 0 {
@@ -145,6 +148,45 @@ func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
 		items[selected].Selected = true
 	}
 	return items
+}
+
+func sortTerminalPickerItemsByName(items []TerminalPickerItem) {
+	// 中文说明：排序只改变 picker 的展示投影；TerminalRef 仍是 action 路由真值，
+	// 不把 endpoint label 或 terminal title 当成跨 daemon 身份。
+	sort.SliceStable(items, func(i, j int) bool {
+		left := items[i]
+		right := items[j]
+		if left.CreateNew || right.CreateNew {
+			return left.CreateNew && !right.CreateNew
+		}
+		return terminalPickerSortKey(left) < terminalPickerSortKey(right)
+	})
+}
+
+func terminalPickerSortKey(item TerminalPickerItem) string {
+	return strings.ToLower(strings.Join([]string{
+		item.Title,
+		item.EndpointLabel,
+		string(item.EndpointID),
+		item.TerminalID,
+	}, "\x00"))
+}
+
+func sortTerminalPoolPageItemsByName(items []TerminalPoolPageItem) {
+	// 中文说明：Terminal Manager 与 picker 使用同一展示排序语义，
+	// 但 manager action 仍通过 row 中的 EndpointID + TerminalID 回到 owning daemon。
+	sort.SliceStable(items, func(i, j int) bool {
+		return terminalPoolPageSortKey(items[i]) < terminalPoolPageSortKey(items[j])
+	})
+}
+
+func terminalPoolPageSortKey(item TerminalPoolPageItem) string {
+	return strings.ToLower(strings.Join([]string{
+		item.Title,
+		item.EndpointLabel,
+		string(item.EndpointID),
+		item.TerminalID,
+	}, "\x00"))
 }
 
 func terminalPoolAttachmentCount(root Root, poolItem TerminalPoolItem) int {

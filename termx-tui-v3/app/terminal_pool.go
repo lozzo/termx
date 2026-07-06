@@ -32,8 +32,8 @@ func (msg TerminalPoolListRequestMsg) SkipRender() bool {
 	return msg.Refresh
 }
 
-// TerminalPoolRefreshTickMsg 是 Terminal Manager 打开期间的周期性刷新 tick。
-// 它只回到 reducer 发起一次后台 list，资源真值仍来自 terminal service 的下一次 list result。
+// TerminalPoolRefreshTickMsg 是 Terminal Picker/Manager 打开期间的周期性刷新 tick。
+// 它只回到 reducer 发起一次后台 list，inventory 真值仍来自 terminal service 的下一次 list result。
 type TerminalPoolRefreshTickMsg struct{}
 
 func (TerminalPoolRefreshTickMsg) isMsg() {}
@@ -400,7 +400,7 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 }
 
 func reduceTerminalPoolRefreshTick(root state.Root, deps LiveDeps) (state.Root, []Effect) {
-	if !terminalPoolOverlayOpen(root) {
+	if !terminalInventoryOverlayOpen(root) {
 		return root, nil
 	}
 	return reduceTerminalPoolListRequest(root, TerminalPoolListRequestMsg{Refresh: true}, deps)
@@ -414,7 +414,7 @@ func reduceTerminalPoolPreviewRefresh(root state.Root, deps LiveDeps) (state.Roo
 }
 
 func terminalPoolRefreshLoopEffects(root state.Root) []Effect {
-	if !terminalPoolOverlayOpen(root) {
+	if !terminalInventoryOverlayOpen(root) {
 		return nil
 	}
 	return []Effect{FuncEffect{
@@ -460,6 +460,11 @@ func terminalPoolPreviewRefreshEffects(root state.Root, deps LiveDeps) []Effect 
 func terminalPoolOverlayOpen(root state.Root) bool {
 	shell := root.Shell.ReadonlyDefaults()
 	return shell.Overlay.Open && shell.Overlay.Kind == state.OverlayTerminalPool
+}
+
+func terminalInventoryOverlayOpen(root state.Root) bool {
+	shell := root.Shell.ReadonlyDefaults()
+	return shell.Overlay.Open && (shell.Overlay.Kind == state.OverlayTerminalPool || shell.Overlay.Kind == state.OverlayTerminalPicker)
 }
 
 func selectedTerminalPoolPageItem(root state.Root) (state.TerminalPoolPageItem, bool) {
