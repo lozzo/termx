@@ -109,7 +109,7 @@ func NewUIInputReducer() Reducer {
 			root.Shell = root.Shell.OpenTerminalPicker()
 			return root.Advance(), []Effect{
 				handledEffect{},
-				FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }},
+				terminalPickerListRequestEffect(),
 			}
 		case input.IntentSetInteractionMode:
 			root.Shell = root.Shell.SetInteractionMode(stateInteractionMode(intent.Mode))
@@ -1095,7 +1095,7 @@ func reduceViewWorkbenchShortcut(root state.Root, command string) (state.Root, [
 		return next, append([]Effect{handledEffect{}}, effects...), true
 	case "pane reconnect":
 		root.Shell = shell.OpenTerminalPicker()
-		return root.Advance(), []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}, true
+		return root.Advance(), []Effect{handledEffect{}, terminalPickerListRequestEffect()}, true
 	case "pane restart":
 		ref := terminalRefForContentAction(root, shell.ActivePaneID)
 		if ref.Empty() {

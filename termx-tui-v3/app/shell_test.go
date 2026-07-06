@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lozzow/termx/termx-tui-v3/render"
+	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -72,17 +73,49 @@ func TestShellReducerHandlesTerminalPickerOverlaySemanticActions(t *testing.T) {
 	reducer := NewShellReducer()
 	root := state.Root{Shell: state.DefaultShell()}
 
-	root, _ = reducer(root, ShellOpenTerminalPickerMsg{})
+	root, effects := reducer(root, ShellOpenTerminalPickerMsg{})
 	if !root.Shell.Overlay.Open || root.Shell.Overlay.Kind != state.OverlayTerminalPicker {
 		t.Fatalf("expected terminal picker overlay, got %#v", root.Shell.Overlay)
 	}
 	if root.Shell.Overlay.TargetID != state.DefaultPaneID {
 		t.Fatalf("expected overlay target active pane, got %#v", root.Shell.Overlay)
 	}
+	if len(effects) != 1 {
+		t.Fatalf("expected one picker refresh effect, got %#v", effects)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolListRequestMsg)
+	if !ok || !msg.Refresh {
+		t.Fatalf("picker open must request silent inventory refresh, got %#v", msg)
+	}
 
 	root, _ = reducer(root, ShellCloseOverlayMsg{})
 	if root.Shell.Overlay.Open {
 		t.Fatalf("expected closed overlay, got %#v", root.Shell.Overlay)
+	}
+}
+
+func TestTerminalPickerOpenRefreshKeepsExistingRowsOutOfLoading(t *testing.T) {
+	shellReducer := NewShellReducer()
+	poolReducer := NewTerminalPoolReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items:  []state.TerminalPoolItem{{TerminalID: "111", Title: "111", State: "running"}},
+		},
+	}
+
+	root, effects := shellReducer(root, ShellOpenTerminalPickerMsg{})
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolListRequestMsg)
+	if !ok || !msg.Refresh {
+		t.Fatalf("picker open must use silent refresh, got %#v", msg)
+	}
+	next, listEffects := poolReducer(root, msg)
+	if next.TerminalPool.Status != state.TerminalPoolReady || len(next.TerminalPool.Items) != 1 {
+		t.Fatalf("silent picker refresh must keep existing rows visible without loading frame, pool=%#v", next.TerminalPool)
+	}
+	if len(listEffects) != 1 {
+		t.Fatalf("silent picker refresh should still request daemon list, got %#v", listEffects)
 	}
 }
 
@@ -100,8 +133,8 @@ func TestShellReducerTabCreateOpensPickerForUnconnectedPane(t *testing.T) {
 	if len(effects) != 2 {
 		t.Fatalf("tab create should persist and request terminal list, got %#v", effects)
 	}
-	if _, ok := effects[1].(FuncEffect).Run(context.Background()).(TerminalPoolListRequestMsg); !ok {
-		t.Fatalf("expected terminal list request after tab create, got %#v", effects[1])
+	if msg, ok := effects[1].(FuncEffect).Run(context.Background()).(TerminalPoolListRequestMsg); !ok || !msg.Refresh {
+		t.Fatalf("expected silent terminal list request after tab create, got %#v", effects[1])
 	}
 }
 

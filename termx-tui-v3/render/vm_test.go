@@ -3028,6 +3028,21 @@ func TestRenderVMBuilderProjectsTerminalPickerPoolStateAndRows(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderTerminalPickerCreateRowShowsDefaultEndpointOnly(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell().OpenTerminalPicker(),
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "us-west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+	}
+	root.Shell.TerminalCreateDraft = state.TerminalCreateDraft{EndpointID: "us-west"}
+
+	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if len(content.Lines) < 2 || !strings.Contains(content.Lines[1].PlainString(), "US West") || strings.Contains(content.Lines[1].PlainString(), "This Mac") {
+		t.Fatalf("create row should display only selected/default endpoint label, got %#v", content.Lines)
+	}
+}
+
 func TestRenderVMBuilderProjectsTerminalPickerEndpointLabels(t *testing.T) {
 	root := state.Root{
 		Shell: state.DefaultShell().OpenTerminalPicker(),

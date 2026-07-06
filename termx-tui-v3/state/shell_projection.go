@@ -183,6 +183,7 @@ func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 			TerminalPickerQueryMatchIndexes("new terminal", query) != nil ||
 			TerminalPickerQueryMatchIndexes(string(item.EndpointID), query) != nil ||
 			TerminalPickerQueryMatchIndexes(item.EndpointLabel, query) != nil ||
+			TerminalPickerQueryMatchIndexes(item.EndpointSearchText, query) != nil ||
 			TerminalPickerQueryMatchIndexes(string(item.EndpointTransport), query) != nil ||
 			TerminalPickerQueryMatchIndexes(string(item.EndpointConnectMode), query) != nil ||
 			TerminalPickerQueryMatchIndexes(string(item.EndpointStatus), query) != nil

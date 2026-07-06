@@ -578,7 +578,7 @@ func TestTerminalPickerCreateRowIsGlobalButEndpointSearchable(t *testing.T) {
 	}
 
 	picker := TerminalPickerItems(root)
-	if len(picker) != 1 || !picker[0].CreateNew || picker[0].EndpointID != DefaultEndpointID || !strings.Contains(picker[0].EndpointLabel, "US West") {
+	if len(picker) != 1 || !picker[0].CreateNew || picker[0].EndpointID != DefaultEndpointID || picker[0].EndpointLabel != "This Mac" || !strings.Contains(picker[0].EndpointSearchText, "US West") {
 		t.Fatalf("endpoint query should expose one global create row, got %#v", picker)
 	}
 }

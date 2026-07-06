@@ -913,7 +913,7 @@ func terminalPickerLine(row state.TerminalPickerItem, query string) Line {
 		markerStyle = StylePickerAccent
 	}
 	if row.CreateNew {
-		endpointLabel := "-"
+		endpointLabel := terminalPickerEndpointLabel(row)
 		cells := []Cell{
 			styledCell(marker, markerStyle),
 			styledCell("+", StylePickerInfo),

@@ -4,9 +4,11 @@ import "time"
 
 // TerminalPickerItem 是 terminal picker 的只读行投影。
 // EndpointID + TerminalID 是后续 attach/create/reconnect action 的目标身份；Endpoint* 字段来自 reducer-owned EndpointStore，renderer 不读取 registry 或 protocol client。
+// EndpointSearchText 仅服务 create 行的跨 endpoint 搜索，展示仍必须使用 EndpointLabel，避免把搜索聚合文本当成可见 server 名称。
 type TerminalPickerItem struct {
 	EndpointID          EndpointID
 	EndpointLabel       string
+	EndpointSearchText  string
 	EndpointTransport   EndpointTransportKind
 	EndpointConnectMode EndpointConnectMode
 	EndpointStatus      EndpointStatusKind

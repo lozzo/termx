@@ -32,6 +32,12 @@ func (msg TerminalPoolListRequestMsg) SkipRender() bool {
 	return msg.Refresh
 }
 
+func terminalPickerListRequestEffect() Effect {
+	// 中文说明：Terminal Picker 打开时用静默刷新校准 daemon list；
+	// picker 本身先展示 reducer-owned 现有投影，避免普通 list 把列表切到 loading 中间帧。
+	return FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{Refresh: true} }}
+}
+
 // TerminalPoolRefreshTickMsg 是 Terminal Picker/Manager 打开期间的周期性刷新 tick。
 // 它只回到 reducer 发起一次后台 list，inventory 真值仍来自 terminal service 的下一次 list result。
 type TerminalPoolRefreshTickMsg struct{}

@@ -237,7 +237,7 @@ func NewShellReducer() Reducer {
 			root.Shell = root.Shell.ClearToasts()
 		case ShellOpenTerminalPickerMsg:
 			root.Shell = root.Shell.OpenTerminalPicker()
-			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+			return root.Advance(), []Effect{terminalPickerListRequestEffect()}
 		case ShellOpenTerminalPoolMsg:
 			root.Shell = root.Shell.OpenTerminalPool()
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
@@ -437,7 +437,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return root.Advance(), nil
 	case render.ActionFooterPicker:
 		root.Shell = root.Shell.OpenTerminalPicker()
-		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+		return root.Advance(), []Effect{terminalPickerListRequestEffect()}
 	case render.ActionFooterToggleHeader:
 		root.Shell = root.Shell.ToggleHeaderVisible()
 		return root.Advance(), nil
@@ -749,7 +749,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleAutoFit, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingPick:
 		root.Shell = root.Shell.OpenTerminalPicker()
-		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+		return root.Advance(), []Effect{terminalPickerListRequestEffect()}
 	case render.ActionFloatingTakeOwner:
 		shell := root.Shell.EnsureDefaults()
 		activeFloatingID := shell.ActiveFloatingID()
@@ -771,7 +771,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		}}}
 	case render.ActionExitedReconnect:
 		root.Shell = root.Shell.OpenTerminalPicker()
-		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+		return root.Advance(), []Effect{terminalPickerListRequestEffect()}
 	case render.ActionEmptyManager:
 		root.Shell = root.Shell.OpenTerminalPool()
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
@@ -782,7 +782,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		}}}
 	case render.ActionEmptyAttach:
 		root.Shell = root.Shell.OpenTerminalPicker()
-		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+		return root.Advance(), []Effect{terminalPickerListRequestEffect()}
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})
 	return root.Advance(), nil
@@ -2006,7 +2006,7 @@ func terminalRefForTerminalID(root state.Root, terminalID string) state.Terminal
 
 func openTerminalPickerForCreatedTab(root state.Root, effects []Effect) (state.Root, []Effect) {
 	root.Shell = root.Shell.OpenTerminalPicker()
-	effects = append(effects, FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }})
+	effects = append(effects, terminalPickerListRequestEffect())
 	return root, effects
 }
 

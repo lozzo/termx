@@ -37,6 +37,8 @@ func TestUIInputReducerOpensTerminalPickerFromCtrlF(t *testing.T) {
 	}
 	if effect, ok := effects[1].(FuncEffect); !ok || effect.Run == nil {
 		t.Fatalf("expected terminal pool list effect, got %#v", effects[1])
+	} else if msg, ok := effect.Run(context.Background()).(TerminalPoolListRequestMsg); !ok || !msg.Refresh {
+		t.Fatalf("terminal picker shortcut must use silent pool refresh, got %#v", msg)
 	}
 	if hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("terminal picker is an overlay and must not arm sticky timeout, got %#v", effects)
@@ -1947,6 +1949,11 @@ func TestInteractiveRuntimeTerminalPickerUsesTerminalPoolService(t *testing.T) {
 	}
 	if len(terminal.Lists) != 1 || runtime.State().TerminalPool.Status != state.TerminalPoolReady {
 		t.Fatalf("expected picker open to load terminal pool, lists=%#v pool=%#v", terminal.Lists, runtime.State().TerminalPool)
+	}
+	for _, frame := range host.Frames() {
+		if frameContains(frame, "loading terminals") {
+			t.Fatalf("picker open must not render transient loading frame, got %#v", frame.Lines)
+		}
 	}
 	frame := lastFrame(t, host.Frames())
 	if !frameContains(frame, "远程🚀") || !frameContains(frame, "running") || frameContains(frame, "@pool") || frameContains(frame, "term-pool") {

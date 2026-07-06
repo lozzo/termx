@@ -10,7 +10,7 @@ func terminalPickerCreateItems(root Root, query string) []TerminalPickerItem {
 		CreateNew:  true,
 	}
 	item = terminalPickerItemWithEndpoint(root, item)
-	item.EndpointLabel = terminalPickerCreateEndpointSearchText(root, item.EndpointLabel)
+	item.EndpointSearchText = terminalPickerCreateEndpointSearchText(root, item.EndpointLabel)
 	if matchesTerminalPickerQuery(item, query) {
 		return []TerminalPickerItem{item}
 	}
