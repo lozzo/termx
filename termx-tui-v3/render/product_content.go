@@ -1730,10 +1730,7 @@ func workbenchTreeRowLine(root state.Root, row state.WorkbenchTreeItem) Line {
 		status = strings.TrimSpace(status + " active")
 	}
 	title := workbenchTreeTitle(row)
-	prefix := strings.Repeat("│ ", row.Depth)
-	if row.Depth > 0 {
-		prefix = strings.Repeat("│ ", row.Depth-1) + "├─"
-	}
+	prefix := workbenchTreeDepthPrefix(row.Depth)
 	cells := []Cell{
 		styledCell(marker, markerStyle),
 		styledCell(prefix, prefixStyle),
@@ -1745,6 +1742,14 @@ func workbenchTreeRowLine(root state.Root, row state.WorkbenchTreeItem) Line {
 	cells = append(cells, workbenchTreeStatusCells(row, status)...)
 	cells = append(cells, workbenchTreeMetricCells(root, row)...)
 	return Line{Cells: cells}
+}
+
+func workbenchTreeDepthPrefix(depth int) string {
+	if depth <= 0 {
+		return ""
+	}
+	// 中文说明：Workbench Navigator 仍用缩进表达树层级，但不画连续竖线，避免左侧结构噪声压过标题和状态。
+	return strings.Repeat("  ", depth-1) + "› "
 }
 
 func workbenchNavigatorLines(root state.Root, rows []state.WorkbenchTreeItem, query string, layout workbenchNavigatorLayout) []Line {

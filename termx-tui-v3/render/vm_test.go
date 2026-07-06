@@ -3381,6 +3381,10 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		!strings.Contains(content.Lines[4].PlainString(), "浮窗终端") ||
 		!lineHasStyledCell(content.Lines[4], "  ", StyleSuccess) ||
 		strings.Contains(content.Lines[3].PlainString(), "日志🚀") ||
+		strings.Contains(content.Lines[3].PlainString(), "│") ||
+		strings.Contains(content.Lines[3].PlainString(), "├") ||
+		strings.Contains(content.Lines[3].PlainString(), "└") ||
+		!strings.Contains(content.Lines[3].PlainString(), "›") ||
 		!strings.Contains(plainLines(content.Lines), "HIST metrics unavailable") ||
 		!strings.Contains(plainLines(content.Lines), "CONN") ||
 		strings.Contains(plainLines(content.Lines), "Open  New  Zoom") ||
