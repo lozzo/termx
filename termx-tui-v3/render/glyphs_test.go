@@ -10,7 +10,7 @@ func TestPaneChromeGlyphsDefaultToWireframeUnicodeAndRemainCellSafe(t *testing.T
 	defer ResetPaneChromeGlyphs()
 
 	glyphs := DefaultPaneChromeGlyphs()
-	if glyphs.Close != "" || glyphs.Zoom != "" || glyphs.Unzoom != "" || glyphs.SplitVertical != "" || glyphs.SplitHorizontal != "" {
+	if glyphs.Close != "" || glyphs.Zoom != "󰁌" || glyphs.Unzoom != "󰁄" || glyphs.SplitVertical != "" || glyphs.SplitHorizontal != "" {
 		t.Fatalf("unexpected default Nerd Font glyphs: %#v", glyphs)
 	}
 	for name, glyph := range map[string]string{
