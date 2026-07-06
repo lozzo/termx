@@ -167,9 +167,9 @@ func TestFrameworkRendersWorkbenchNavigatorSnapshot(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
 	lines := result.Lines()
 	if !linesContain(lines, "Workbench Navigator") ||
-		!linesContain(lines, "TREE") ||
-		!linesContain(lines, "PANE") ||
-		!linesContain(lines, "HIST metrics unavailable") ||
+		!linesContain(lines, "WORKBENCH") ||
+		!linesContain(lines, "DETAIL") ||
+		!linesContain(lines, "VIEWS 1 view") ||
 		!linesContain(lines, "snapshot live row") {
 		t.Fatalf("expected navigator title/tree/snapshot in frame, got %#v", lines)
 	}

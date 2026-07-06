@@ -1717,7 +1717,7 @@ func terminalManagerPreviewHasContent(lines []Line) bool {
 	return false
 }
 
-func workbenchTreeRowLine(root state.Root, row state.WorkbenchTreeItem) Line {
+func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
 	marker := "  "
 	markerStyle := StyleMuted
 	prefixStyle := StyleMuted
@@ -1725,10 +1725,6 @@ func workbenchTreeRowLine(root state.Root, row state.WorkbenchTreeItem) Line {
 		marker = "▸ "
 		markerStyle = StyleAccent
 		prefixStyle = StyleForeground
-	}
-	status := row.Summary
-	if row.Active {
-		status = strings.TrimSpace(status + " active")
 	}
 	title := workbenchTreeTitle(row)
 	prefix := workbenchTreeDepthPrefix(row.Depth)
@@ -1741,8 +1737,9 @@ func workbenchTreeRowLine(root state.Root, row state.WorkbenchTreeItem) Line {
 		workbenchTreeTitleCell(title, row),
 		NewCell(" "),
 	}
-	cells = append(cells, workbenchTreeStatusCells(row, status)...)
-	cells = append(cells, workbenchTreeMetricCells(root, row)...)
+	// 中文说明：左侧树只表达 workbench 结构和当前选择；terminal id、runtime
+	// 状态与资源采样属于右侧 detail，避免 pane title 后面堆出第二套调试信息。
+	cells = append(cells, workbenchTreeInlineMetaCells(row)...)
 	return Line{Cells: cells}
 }
 
@@ -1775,12 +1772,12 @@ func workbenchNavigatorLines(root state.Root, rows []state.WorkbenchTreeItem, qu
 	lines := []Line{
 		workbenchNavigatorFullLine(searchRowLine(query, "main"), layout),
 		workbenchNavigatorDividerLine(layout),
-		workbenchNavigatorBodyLine(workbenchNavigatorHeaderLine("TREE"), workbenchNavigatorHeaderLine(workbenchNavigatorRightHeader(selected, selectedOK)), layout),
+		workbenchNavigatorBodyLine(workbenchNavigatorHeaderLine("WORKBENCH"), workbenchNavigatorHeaderLine(workbenchNavigatorRightHeader(selected, selectedOK)), layout),
 	}
 	for row := 0; row < layout.BodyRows; row++ {
 		left := Line{}
 		if row < len(rows) {
-			left = workbenchTreeRowLine(root, rows[row])
+			left = workbenchTreeRowLine(rows[row])
 		}
 		rightLine := Line{}
 		if row < len(right) {
@@ -1825,20 +1822,9 @@ func selectedWorkbenchTreeItem(rows []state.WorkbenchTreeItem) (state.WorkbenchT
 
 func workbenchNavigatorRightHeader(selected state.WorkbenchTreeItem, ok bool) string {
 	if !ok {
-		return "PANE"
+		return "DETAIL"
 	}
-	switch selected.Kind {
-	case state.WorkbenchTreeKindWorkspace:
-		return "WORKSPACE"
-	case state.WorkbenchTreeKindTab:
-		return "TAB"
-	case state.WorkbenchTreeKindPane:
-		return "PANE"
-	case state.WorkbenchTreeKindFloating:
-		return "FLOATING"
-	default:
-		return "PANE"
-	}
+	return "DETAIL"
 }
 
 func workbenchNavigatorRightLines(root state.Root, selected state.WorkbenchTreeItem, layout workbenchNavigatorLayout) []Line {
@@ -1850,27 +1836,33 @@ func workbenchNavigatorRightLines(root state.Root, selected state.WorkbenchTreeI
 		return workbenchNavigatorPaneLines(root, selected, layout)
 	case state.WorkbenchTreeKindTab:
 		lines := []Line{
-			workbenchNavigatorTokenLine([]string{selected.WorkspaceName, "tab:" + selected.TabTitle, selected.Summary}),
-			workbenchNavigatorSummaryLine("PANES", workbenchTreePreview(selected)),
+			workbenchNavigatorDetailTitleLine(selected),
+			workbenchNavigatorBadgeLine(workbenchNavigatorBadges(root, selected)),
+			workbenchNavigatorDetailLine("workspace", selected.WorkspaceName),
+			workbenchNavigatorDetailLine("summary", workbenchReadableSummary(selected)),
 			NewLine(""),
 		}
 		lines = append(lines, workbenchNavigatorPaneSnapshotLines(layout)...)
 		return lines
 	case state.WorkbenchTreeKindWorkspace:
 		return []Line{
-			workbenchNavigatorTokenLine([]string{"current", selected.Summary}),
-			workbenchNavigatorSummaryLine("SUMMARY", workbenchTreePreview(selected)),
+			workbenchNavigatorDetailTitleLine(selected),
+			workbenchNavigatorBadgeLine(workbenchNavigatorBadges(root, selected)),
+			workbenchNavigatorDetailLine("summary", workbenchReadableSummary(selected)),
 		}
 	case state.WorkbenchTreeKindFloating:
 		lines := []Line{
-			workbenchNavigatorTokenLine([]string{selected.Summary}),
-			NewLine(""),
+			workbenchNavigatorDetailTitleLine(selected),
+			workbenchNavigatorBadgeLine(workbenchNavigatorBadges(root, selected)),
+			workbenchNavigatorDetailLine("workspace", selected.WorkspaceName),
+			workbenchNavigatorDetailLine("tab", selected.TabTitle),
 		}
 		if selected.FloatingID == "" {
 			lines = append(lines, Line{Cells: []Cell{styledCell(workbenchTreePreview(selected), StyleForeground)}})
 			return lines
 		}
 		lines = append(lines, workbenchNavigatorResourceLines(root, selected)...)
+		lines = append(lines, NewLine(""))
 		lines = append(lines, workbenchNavigatorPaneSnapshotLines(layout)...)
 		lines = append(lines, terminalManagerDetailLine("path", workbenchTreePath(selected)))
 		return lines
@@ -1881,40 +1873,200 @@ func workbenchNavigatorRightLines(root state.Root, selected state.WorkbenchTreeI
 
 func workbenchNavigatorPaneLines(root state.Root, selected state.WorkbenchTreeItem, layout workbenchNavigatorLayout) []Line {
 	lines := []Line{
-		workbenchNavigatorTokenLine([]string{selected.WorkspaceName, "tab:" + selected.TabTitle, workbenchPaneStateLabel(root, selected), workbenchPaneRoleLabel(root, selected)}),
+		workbenchNavigatorDetailTitleLine(selected),
+		workbenchNavigatorBadgeLine(workbenchNavigatorBadges(root, selected)),
+		workbenchNavigatorDetailLine("workspace", selected.WorkspaceName),
+		workbenchNavigatorDetailLine("tab", selected.TabTitle),
 	}
 	lines = append(lines, workbenchNavigatorResourceLines(root, selected)...)
+	lines = append(lines, NewLine(""))
 	lines = append(lines, workbenchNavigatorPaneSnapshotLines(layout)...)
 	lines = append(lines, terminalManagerDetailLine("path", workbenchTreePath(selected)))
 	return lines
 }
 
-func workbenchNavigatorSummaryLine(label string, value string) Line {
+func workbenchNavigatorDetailTitleLine(row state.WorkbenchTreeItem) Line {
+	title := workbenchTreeTitle(row)
+	if title == "" {
+		title = workbenchTreeKindLabel(row)
+	}
 	return Line{Cells: []Cell{
-		styledCell(label+" ", StyleAccent),
+		tokenCell(workbenchTreeKindGlyph(row), workbenchTreeKindStyle(row)),
+		NewCell(" "),
+		styledCell(title, StyleStrongForeground),
+	}}
+}
+
+func workbenchNavigatorBadgeLine(badges []string) Line {
+	if len(badges) == 0 {
+		return NewLine("")
+	}
+	cells := []Cell{}
+	for index, badge := range badges {
+		badge = strings.TrimSpace(badge)
+		if badge == "" {
+			continue
+		}
+		if len(cells) > 0 || index > 0 {
+			cells = append(cells, NewCell("  "))
+		}
+		cells = append(cells, styledCell(badge, workbenchNavigatorBadgeStyle(badge)))
+	}
+	if len(cells) == 0 {
+		return NewLine("")
+	}
+	return Line{Cells: cells}
+}
+
+func workbenchNavigatorBadgeStyle(badge string) StyleToken {
+	switch strings.ToLower(strings.TrimSpace(badge)) {
+	case "active", "running", "bound", "live":
+		return StyleSuccess
+	case "empty", "collapsed", "exited":
+		return StyleWarning
+	case "error":
+		return StyleDanger
+	default:
+		return StyleMuted
+	}
+}
+
+func workbenchNavigatorBadges(root state.Root, row state.WorkbenchTreeItem) []string {
+	badges := []string{workbenchTreeKindLabel(row)}
+	if row.Active {
+		badges = append(badges, "active")
+	}
+	switch row.Kind {
+	case state.WorkbenchTreeKindPane:
+		badges = append(badges, workbenchPaneStateLabel(root, row))
+		if role := workbenchPaneRoleLabel(root, row); role != "" {
+			badges = append(badges, role)
+		}
+	case state.WorkbenchTreeKindFloating:
+		if row.PaneKind == state.PaneEmpty {
+			badges = append(badges, "empty")
+		} else if row.PaneKind != "" {
+			badges = append(badges, "live")
+		}
+		if strings.Contains(strings.ToLower(row.Summary), "collapsed") {
+			badges = append(badges, "collapsed")
+		}
+	}
+	return compactStringTokens(badges)
+}
+
+func workbenchNavigatorDetailLine(label string, value string) Line {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = "-"
+	}
+	return Line{Cells: []Cell{
+		styledCell(strings.ToUpper(label)+" ", StyleAccent),
 		styledCell(value, StyleForeground),
 	}}
+}
+
+func workbenchTreeInlineMetaCells(row state.WorkbenchTreeItem) []Cell {
+	meta := workbenchTreeInlineMeta(row)
+	if meta == "" {
+		return nil
+	}
+	style := StyleMuted
+	if row.Active {
+		style = StyleAccent
+	}
+	return []Cell{styledCell(meta, style)}
+}
+
+func workbenchTreeInlineMeta(row state.WorkbenchTreeItem) string {
+	switch row.Kind {
+	case state.WorkbenchTreeKindWorkspace, state.WorkbenchTreeKindTab:
+		return workbenchReadableSummary(row)
+	case state.WorkbenchTreeKindPane, state.WorkbenchTreeKindFloating:
+		if row.Active {
+			return "active"
+		}
+	}
+	return ""
+}
+
+func workbenchReadableSummary(row state.WorkbenchTreeItem) string {
+	tokens := strings.Fields(row.Summary)
+	parts := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if part := workbenchReadableSummaryToken(token); part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(compactStringTokens(parts), " · ")
+}
+
+func workbenchReadableSummaryToken(token string) string {
+	key, value, ok := strings.Cut(strings.TrimSpace(token), ":")
+	if !ok {
+		return ""
+	}
+	switch strings.ToLower(key) {
+	case "tabs":
+		return pluralCount(value, "tab", "tabs")
+	case "panes":
+		return pluralCount(value, "pane", "panes")
+	case "floating", "float":
+		return pluralCount(value, "floating", "floating")
+	default:
+		return ""
+	}
+}
+
+func pluralCount(value string, singular string, plural string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if value == "1" {
+		return value + " " + singular
+	}
+	return value + " " + plural
+}
+
+func viewCountLabel(count int) string {
+	if count == 1 {
+		return "1 view"
+	}
+	return fmt.Sprintf("%d views", count)
+}
+
+func compactStringTokens(tokens []string) []string {
+	out := make([]string, 0, len(tokens))
+	seen := map[string]struct{}{}
+	for _, token := range tokens {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+		key := strings.ToLower(token)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, token)
+	}
+	return out
 }
 
 func workbenchNavigatorResourceLines(root state.Root, selected state.WorkbenchTreeItem) []Line {
 	row, ok := workbenchTerminalPoolItem(root, selected)
 	if !ok {
 		return []Line{
-			metricGaugeLine("CPU", "--", 0, false),
-			metricGaugeLine("MEM", "--", 0, false),
-			terminalManagerHistoryLine(),
 			workbenchNavigatorConnectionLine(root, selected, state.TerminalPoolPageItem{}),
-			terminalManagerSnapshotSpacerLine(),
 		}
 	}
-	gauges := terminalManagerResourceGaugeLines(row)
-	return []Line{
-		gauges[0],
-		gauges[1],
-		terminalManagerHistoryLine(),
-		workbenchNavigatorConnectionLine(root, selected, row),
-		terminalManagerSnapshotSpacerLine(),
+	lines := []Line{}
+	if !row.Resources.SampledAt.IsZero() {
+		lines = append(lines, terminalManagerResourceGaugeLines(row)...)
 	}
+	lines = append(lines, workbenchNavigatorConnectionLine(root, selected, row))
+	return lines
 }
 
 func workbenchNavigatorConnectionLine(root state.Root, selected state.WorkbenchTreeItem, row state.TerminalPoolPageItem) Line {
@@ -1926,10 +2078,7 @@ func workbenchNavigatorConnectionLine(root state.Root, selected state.WorkbenchT
 	if row.AttachmentCount > count {
 		count = row.AttachmentCount
 	}
-	return Line{Cells: []Cell{
-		styledCell("CONN ", StyleAccent),
-		styledCell(fmt.Sprintf("%d views", maxInt(0, count)), StyleForeground),
-	}}
+	return workbenchNavigatorDetailLine("views", viewCountLabel(maxInt(0, count)))
 }
 
 func workbenchTerminalPoolItem(root state.Root, selected state.WorkbenchTreeItem) (state.TerminalPoolPageItem, bool) {
@@ -2299,24 +2448,6 @@ func workbenchNavigatorFloating(shell state.ShellStore, workspaceID string, tabI
 	return state.FloatingPaneState{}, false
 }
 
-func workbenchNavigatorTokenLine(tokens []string) Line {
-	cells := []Cell{}
-	for _, token := range tokens {
-		token = strings.TrimSpace(token)
-		if token == "" {
-			continue
-		}
-		if len(cells) > 0 {
-			cells = append(cells, NewCell("  "))
-		}
-		cells = append(cells, styledCell(token, StyleForeground))
-	}
-	if len(cells) == 0 {
-		return NewLine("")
-	}
-	return Line{Cells: cells}
-}
-
 func floatingOverviewRowLine(index int, row state.FloatingOverviewItem) Line {
 	_ = index
 	textStyle := StylePicker
@@ -2610,83 +2741,6 @@ func workbenchTreeTitleCell(title string, row state.WorkbenchTreeItem) Cell {
 		cell.ANSIStyle.Underline = true
 	}
 	return cell
-}
-
-func workbenchTreeStatusCells(row state.WorkbenchTreeItem, summary string) []Cell {
-	tags := []string{}
-	if summary != "" {
-		tags = append(tags, strings.Fields(summary)...)
-	}
-	if row.Kind == state.WorkbenchTreeKindPane {
-		if row.TerminalID != "" && !workbenchTreeHasTagPrefix(tags, "term:") {
-			tags = append(tags, "term:"+row.TerminalID)
-		}
-	}
-	if len(tags) == 0 {
-		return nil
-	}
-	cells := []Cell{NewCell("[")}
-	for index, tag := range tags {
-		if index > 0 {
-			cells = append(cells, NewCell("] ["))
-		}
-		cells = append(cells, styledCell(tag, workbenchTreeStatusStyle(row, tag)))
-	}
-	cells = append(cells, NewCell("]"))
-	return cells
-}
-
-func workbenchTreeMetricCells(root state.Root, row state.WorkbenchTreeItem) []Cell {
-	if row.Kind != state.WorkbenchTreeKindPane && row.Kind != state.WorkbenchTreeKindFloating {
-		return nil
-	}
-	item, ok := workbenchTerminalPoolItem(root, row)
-	if !ok || item.Resources.SampledAt.IsZero() {
-		return nil
-	}
-	return []Cell{
-		NewCell(" "),
-		styledCell(terminalPoolCPUPercentShortLabel(item.Resources.CPUPercentX100), StyleForeground),
-		NewCell(" "),
-		styledCell(terminalPoolMemoryShortLabel(item.Resources.MemoryBytes), StyleForeground),
-	}
-}
-
-func workbenchTreeHasTagPrefix(tags []string, prefix string) bool {
-	for _, tag := range tags {
-		if strings.HasPrefix(strings.ToLower(tag), prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-func workbenchTreeStatusStyle(row state.WorkbenchTreeItem, tag string) StyleToken {
-	token := strings.ToLower(strings.Trim(tag, "[]"))
-	switch {
-	case token == "active":
-		return StyleAccent
-	case token == "running" || token == "attached" || token == "open" || token == string(state.PaneTerminalLive):
-		return StyleSuccess
-	case token == "exited" || token == "collapsed" || token == "pending":
-		return StyleWarning
-	case token == "error":
-		return StyleDanger
-	case token == "owner" || token == string(state.TerminalResizeRoleOwner):
-		return StyleSuccess
-	case token == "follower" || token == string(state.TerminalResizeRoleFollower) || token == "manual" || token == "auto-fit":
-		return StyleStatusAccent
-	case strings.HasPrefix(token, "term:") || strings.HasPrefix(token, "tabs:") || strings.HasPrefix(token, "panes:") || strings.HasPrefix(token, "active:") || strings.HasPrefix(token, "float:"):
-		if row.Selected {
-			return StyleForeground
-		}
-		return StyleMuted
-	default:
-		if row.Selected {
-			return StyleForeground
-		}
-		return StyleMuted
-	}
 }
 
 func workbenchTreeTitle(row state.WorkbenchTreeItem) string {

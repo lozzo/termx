@@ -3389,20 +3389,22 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		t.Fatalf("expected workbench tree opaque overlay, got %#v", vm.Shell.Overlay)
 	}
 	if !strings.Contains(content.Lines[0].PlainString(), "⌕ search 日志") ||
-		!strings.Contains(content.Lines[2].PlainString(), "TREE") ||
-		!strings.Contains(content.Lines[2].PlainString(), "PANE") ||
+		!strings.Contains(content.Lines[2].PlainString(), "WORKBENCH") ||
+		!strings.Contains(content.Lines[2].PlainString(), "DETAIL") ||
 		!strings.Contains(content.Lines[3].PlainString(), "▸") ||
 		!strings.Contains(content.Lines[3].PlainString(), "日志终端") ||
 		!lineHasStyledANSICell(content.Lines[3], "日志终端", StyleAccent, ANSICellStyle{Underline: true}) ||
 		!strings.Contains(content.Lines[4].PlainString(), "浮窗终端") ||
 		!lineHasStyledCell(content.Lines[4], "  ", StyleSuccess) ||
 		strings.Contains(content.Lines[3].PlainString(), "日志🚀") ||
+		strings.Contains(content.Lines[3].PlainString(), "terminal-live") ||
+		strings.Contains(content.Lines[3].PlainString(), "term:") ||
+		strings.Contains(content.Lines[3].PlainString(), "0.0%") ||
 		strings.Contains(content.Lines[3].PlainString(), "│") ||
 		strings.Contains(content.Lines[3].PlainString(), "├") ||
 		strings.Contains(content.Lines[3].PlainString(), "└") ||
 		strings.Contains(content.Lines[3].PlainString(), "›") ||
-		!strings.Contains(plainLines(content.Lines), "HIST metrics unavailable") ||
-		!strings.Contains(plainLines(content.Lines), "CONN") ||
+		!strings.Contains(plainLines(content.Lines), "VIEWS") ||
 		strings.Contains(plainLines(content.Lines), "Open  New  Zoom") ||
 		strings.Contains(plainLines(content.Lines), "[open]") {
 		t.Fatalf("expected navigator tree/snapshot summary content, got %#v", content.Lines)
@@ -3440,7 +3442,8 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	if len(content.Meta.WorkbenchSnapshots) != 1 ||
 		!lineHasStyledCell(content.Lines[3], "  ", StyleAccent) ||
 		!lineHasStyledCell(content.Lines[3], "日志终端", StyleAccent) ||
-		!lineHasStyledCell(content.Lines[3], "terminal-live", StyleSuccess) {
+		strings.Contains(content.Lines[3].PlainString(), "terminal-live") ||
+		strings.Contains(content.Lines[3].PlainString(), "term:term-2") {
 		t.Fatalf("expected selected pane row styled tokens and one snapshot, meta=%#v line=%#v", content.Meta, content.Lines[3])
 	}
 
@@ -3498,7 +3501,7 @@ func TestRenderVMBuilderProjectsWorkbenchTreeFloatingSnapshot(t *testing.T) {
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	if !strings.Contains(content.Lines[3].PlainString(), "term-float") ||
 		!lineHasStyledCell(content.Lines[3], "  ", StyleAccent) ||
-		!lineHasStyledCell(content.Lines[3], "terminal-live", StyleSuccess) ||
+		strings.Contains(content.Lines[3].PlainString(), "terminal-live") ||
 		len(content.Meta.WorkbenchSnapshots) != 1 ||
 		content.Meta.WorkbenchSnapshots[0].Panel.Title != "term-float" ||
 		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshots[0].Panel.Content.Lines), "floating live row") {
