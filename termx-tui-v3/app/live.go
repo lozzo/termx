@@ -190,6 +190,20 @@ func (LiveFrameReadyMsg) SkipRender() bool {
 	return true
 }
 
+// LiveInvalidationArmCanceledMsg 表示 one-shot live wake effect 被取消。
+// Armed 状态归 TUI reducer 所有；effect 因 context 取消退出时必须回到 reducer
+// 释放该 pending 标记，否则后续 FrameSink ready 无法重新挂下一次 wake。
+type LiveInvalidationArmCanceledMsg struct {
+	EndpointID state.EndpointID
+	TerminalID string
+}
+
+func (LiveInvalidationArmCanceledMsg) isMsg() {}
+
+func (LiveInvalidationArmCanceledMsg) SkipRender() bool {
+	return true
+}
+
 type LiveLifecycleQueryTarget struct {
 	EndpointID state.EndpointID
 	TerminalID string
@@ -345,6 +359,10 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			return next, append(effects, dirtyEffects...)
 		case LiveFrameReadyMsg:
 			return reduceLiveFrameReady(root, msg, deps)
+		case LiveInvalidationArmCanceledMsg:
+			ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
+			root.Surface = root.Surface.FinishLiveInvalidationArmRef(ref)
+			return root, nil
 		case LiveEventMsg:
 			finishReduce := perftrace.Measure("tui.reducer.live_event")
 			defer finishReduce(liveEventApproxBytes(msg.Event))
@@ -999,7 +1017,7 @@ func liveInvalidationArmEffectForRef(endpointID state.EndpointID, terminalID str
 		Async: true,
 		Run: func(ctx context.Context) Msg {
 			if ctx.Err() != nil {
-				return nil
+				return LiveInvalidationArmCanceledMsg{EndpointID: endpointID, TerminalID: terminalID}
 			}
 			event, err := source.ArmLiveInvalidation(ctx, services.TerminalLiveEventRequest{
 				EndpointID:       endpointID,
@@ -1009,12 +1027,12 @@ func liveInvalidationArmEffectForRef(endpointID state.EndpointID, terminalID str
 				ObservedRevision: observedRevision,
 			})
 			if err != nil {
+				if isContextLifecycleError(err) {
+					return LiveInvalidationArmCanceledMsg{EndpointID: endpointID, TerminalID: terminalID}
+				}
 				logEffectError(deps.Logger, "live.invalidation", err,
 					"terminal_id", terminalID,
 				)
-				if isContextLifecycleError(err) {
-					return nil
-				}
 				return LiveEventMsg{Event: services.TerminalLiveEvent{
 					EndpointID: endpointID,
 					TerminalID: terminalID,

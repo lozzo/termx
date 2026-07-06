@@ -1331,8 +1331,10 @@ func TestR394LiveInvalidationArmEffectDoesNotUseFixedDelay(t *testing.T) {
 	arm := effects[0].(FuncEffect)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if msg := arm.Run(ctx); msg != nil {
-		t.Fatalf("canceled arm must stay silent, got %#v", msg)
+	if msg := arm.Run(ctx); msg == nil {
+		t.Fatal("canceled arm must release reducer-owned pending state")
+	} else if _, ok := msg.(LiveInvalidationArmCanceledMsg); !ok {
+		t.Fatalf("canceled arm should return release message, got %#v", msg)
 	}
 	if len(terminal.LiveInvalidationRequests) != 0 {
 		t.Fatalf("canceled arm must not call service, got %#v", terminal.LiveInvalidationRequests)
@@ -1464,8 +1466,10 @@ func TestLiveInvalidationArmContextCanceledDoesNotPostPanelError(t *testing.T) {
 	terminal := &services.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
 	effects := liveInvalidationArmEffect("term-1", 80, 24, 7, LiveDeps{Terminal: terminal})
 	arm := effects[0].(FuncEffect)
-	if msg := arm.Run(context.Background()); msg != nil {
-		t.Fatalf("context canceled live invalidation arm should stay silent, got %#v", msg)
+	if msg := arm.Run(context.Background()); msg == nil {
+		t.Fatal("context canceled live invalidation arm should release pending state")
+	} else if _, ok := msg.(LiveInvalidationArmCanceledMsg); !ok {
+		t.Fatalf("context canceled live invalidation arm should return release message, got %#v", msg)
 	}
 
 	root := state.Root{Shell: state.DefaultShell()}
@@ -1474,6 +1478,44 @@ func TestLiveInvalidationArmContextCanceledDoesNotPostPanelError(t *testing.T) {
 	next, effects := reduceLiveEvent(root, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Err: context.Canceled}}, LiveDeps{})
 	if len(effects) != 0 || next.Surface.Err != "" || next.Session.LastError != "" {
 		t.Fatalf("context canceled live event must stay silent, root=%#v effects=%#v", next, effects)
+	}
+}
+
+func TestLiveInvalidationArmCancellationReleasesPendingCallback(t *testing.T) {
+	terminal := &services.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
+	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{}
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   8,
+		Cols:       96,
+		Rows:       30,
+		Lines:      []string{"ready"},
+	})
+
+	root, effects := reducer(root, LiveFrameReadyMsg{TerminalID: "term-1", ObservedRevision: 8})
+	if len(effects) != 1 {
+		t.Fatalf("frame ready should arm live invalidation once, got %#v", effects)
+	}
+	if refresh := root.Surface.Refreshes["term-1"]; !refresh.Armed {
+		t.Fatalf("frame ready should mark arm pending, got %#v", root.Surface.Refreshes)
+	}
+	release, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveInvalidationArmCanceledMsg)
+	if !ok {
+		t.Fatalf("canceled arm should return release message, got %#v", release)
+	}
+
+	root, effects = reducer(root, release)
+	if len(effects) != 0 {
+		t.Fatalf("release message should not schedule effects, got %#v", effects)
+	}
+	if _, ok := root.Surface.Refreshes["term-1"]; ok {
+		t.Fatalf("canceled arm must clear pending refresh state, got %#v", root.Surface.Refreshes)
+	}
+
+	root, effects = reducer(root, LiveFrameReadyMsg{TerminalID: "term-1", ObservedRevision: 8})
+	if len(effects) != 1 {
+		t.Fatalf("after cancellation the next frame ready must re-arm, got %#v", effects)
 	}
 }
 
