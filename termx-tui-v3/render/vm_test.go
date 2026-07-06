@@ -769,6 +769,34 @@ func TestRenderVMBuilderUsesTerminalPoolTitleForSharedTerminalChrome(t *testing.
 	}
 }
 
+func TestRenderVMBuilderUsesConfiguredPaneTitleTemplate(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		Config: state.TUIConfigStore{Chrome: state.TUIChromeConfig{
+			PaneTitleTemplate: "{{terminal}}@{{endpoint}}",
+		}},
+		Endpoints: state.EndpointStore{}.Upsert(state.EndpointItem{ID: "cn_fast", Label: "CN Fast", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{
+			EndpointID: "cn_fast",
+			TerminalID: "term-cn",
+			Title:      "deploy",
+			State:      "running",
+		}}},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("cn_fast", state.DefaultPaneID, "term-cn", 7, 80, 24, state.TerminalResizeRoleFollower, "surface-cn", state.TerminalPaneViewID(state.DefaultPaneID), false))
+
+	panel := NewRenderVMBuilder().Build(root).Shell.Layout.Panels[0]
+	if panel.Chrome.Terminal.Title.Text != "deploy@CN Fast" {
+		t.Fatalf("pane title template should include terminal and endpoint labels, got %#v", panel.Chrome.Terminal.Title)
+	}
+
+	root.Config.Chrome.PaneTitleTemplate = "{{"
+	panel = NewRenderVMBuilder().Build(root).Shell.Layout.Panels[0]
+	if panel.Chrome.Terminal.Title.Text != "deploy" {
+		t.Fatalf("invalid pane title template should fall back to terminal title, got %#v", panel.Chrome.Terminal.Title)
+	}
+}
+
 func TestRenderVMBuilderKeepsChromeActionsForEmptyPane(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
 	root.Shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneEmpty

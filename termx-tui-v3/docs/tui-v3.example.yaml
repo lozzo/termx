@@ -192,6 +192,17 @@ tui:
     # 示例：tab_template: "{{tab_id}}[fg:#f7f2ff;bg:#332244;font:bold] {{if active}}▎{{else}}|{{end}} {{title | truncate 12}} [action:tab.close]{{close_icon}}[/action][/style]"
     tab_template: ""
 
+    # pane_title_template 控制 pane/floating 顶部 terminal 标题。
+    # 默认值：""，表示使用内置标题：优先 terminal pool 名称，其次 pane title，最后 terminal id。
+    # 可用变量/函数：
+    # - {{terminal}} / {{terminal_title}}：terminal pool 名称或 fallback 标题。
+    # - {{endpoint}} / {{endpoint_label}}：connections.yaml 中的机器展示名，缺失时为 endpoint id。
+    # - {{terminal_id}} / {{endpoint_id}} / {{pane}} / {{pane_title}}。
+    # - {{terminal | truncate 16}} 按 terminal cell 宽度裁切。
+    # 这个模板只影响展示，不改变 EndpointID + TerminalID 路由。
+    # 示例：pane_title_template: "{{terminal}}@{{endpoint}}"
+    pane_title_template: ""
+
     # pane_glyphs 控制 pane/floating chrome 右上角 action、状态标记和左右装饰。
     # glyph 字段默认值为 ""，表示使用内置 glyph。
     # action_left/action_right/action_group_left/action_group_right 是模板字段；

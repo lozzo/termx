@@ -48,6 +48,9 @@ type TUIChromeConfig struct {
 	PanelPresentation string
 	TabCreateIcon     string
 	TabTemplate       string
+	// PaneTitleTemplate 是 pane/floating terminal chrome 标题模板。
+	// 它只消费 reducer-owned terminal pool 与 endpoint 展示投影，不改变 pane title、terminal identity 或输入路由。
+	PaneTitleTemplate string
 	PaneGlyphs        TUIPaneChromeGlyphsConfig
 }
 

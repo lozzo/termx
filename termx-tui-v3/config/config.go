@@ -36,6 +36,7 @@ func Default() state.TUIConfigStore {
 			PanelPresentation: "split-line",
 			TabCreateIcon:     "󰐕",
 			TabTemplate:       "",
+			PaneTitleTemplate: "",
 		},
 		Footer: state.TUIFooterConfig{
 			Templates: state.TUIFooterTemplatesConfig{
@@ -337,6 +338,9 @@ var scalarSetters = map[string]scalarSetter{
 	"tui.chrome.panel_presentation": setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.PanelPresentation = value }),
 	"tui.chrome.tab_create_icon":    setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabCreateIcon = value }),
 	"tui.chrome.tab_template":       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Chrome.TabTemplate = value }),
+	"tui.chrome.pane_title_template": setString(func(cfg *state.TUIConfigStore, value string) {
+		cfg.Chrome.PaneTitleTemplate = value
+	}),
 	"tui.chrome.pane_glyphs.action_left": setString(func(cfg *state.TUIConfigStore, value string) {
 		cfg.Chrome.PaneGlyphs.ActionLeft = value
 		cfg.Chrome.PaneGlyphs.ActionLeftSet = true
@@ -609,6 +613,7 @@ var envScalarPaths = map[string]string{
 	"TERMX_TUI_CHROME_HEADER":                    "tui.chrome.header",
 	"TERMX_TUI_CHROME_FOOTER":                    "tui.chrome.footer",
 	"TERMX_TUI_CHROME_PANEL_PRESENTATION":        "tui.chrome.panel_presentation",
+	"TERMX_TUI_CHROME_PANE_TITLE_TEMPLATE":       "tui.chrome.pane_title_template",
 	"TERMX_TUI_INTERACTION_MOUSE":                "tui.interaction.mouse",
 	"TERMX_TUI_STICKY_PREFIX_TIMEOUT_MS":         "tui.interaction.sticky_prefix_timeout_ms",
 	"TERMX_TUI_SHORTCUT_PASSTHROUGH_INTERVAL_MS": "tui.interaction.shortcut_passthrough_interval_ms",
@@ -665,6 +670,9 @@ func Validate(cfg state.TUIConfigStore) error {
 	}
 	if strings.ContainsAny(cfg.Chrome.TabTemplate, "\r\n") {
 		return fmt.Errorf("tui.chrome.tab_template must be a single-line template")
+	}
+	if strings.ContainsAny(cfg.Chrome.PaneTitleTemplate, "\r\n") {
+		return fmt.Errorf("tui.chrome.pane_title_template must be a single-line template")
 	}
 	if err := validatePaneChromeGlyphs(cfg.Chrome.PaneGlyphs); err != nil {
 		return err

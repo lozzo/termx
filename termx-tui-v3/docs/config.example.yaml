@@ -168,6 +168,13 @@ tui:
     # - 为了避免切换 active 状态时 tab 宽度跳动，active 和 inactive 分支最好输出相同 cell 宽度。
     tab_template: "{{tab_id}}[fg:#f7f2ff;bg:#332244;font:bold] {{if active}}▎{{else}}|{{end}} {{title | truncate 14}} [action:tab.close]{{close_icon}}[/action][/style]"
 
+    # pane_title_template 控制 pane/floating 顶部 terminal 标题。
+    # 默认值：""，表示使用 terminal pool 名称；可以配置成 terminal@机器名 这类格式。
+    # 可用变量/函数：{{terminal}}、{{terminal_title}}、{{terminal_id}}、{{endpoint}}、
+    # {{endpoint_label}}、{{endpoint_id}}、{{pane}}、{{pane_title}}、{{terminal | truncate 16}}。
+    # 这个模板只影响展示，不改变 EndpointID + TerminalID 路由。
+    pane_title_template: "{{terminal}}@{{endpoint}}"
+
     # pane_glyphs 控制 pane/floating chrome 右上角和状态区的显示字形与左右装饰。
     # 它只改显示，不改变 action id、鼠标 hit region 或 reducer 消息链路。
     # 例如右上角默认语义仍是 zoom / split right / split down / close。

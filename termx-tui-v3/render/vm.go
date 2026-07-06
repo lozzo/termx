@@ -1080,6 +1080,24 @@ func defaultFloatingChromeActionVMs(style StyleToken) []ChromeActionVM {
 
 func terminalChromeTitle(root state.Root, pane state.PaneState, binding state.TerminalViewBinding) string {
 	ref := binding.TerminalRef()
+	title := terminalChromeDefaultTitle(root, pane, binding)
+	if rendered, ok := renderTerminalChromeTitleTemplate(root.Config.Chrome.PaneTitleTemplate, terminalChromeTitleTemplateContext{
+		Terminal:      title,
+		TerminalTitle: title,
+		TerminalID:    binding.TerminalID,
+		Endpoint:      terminalChromeEndpointLabel(root, ref),
+		EndpointLabel: terminalChromeEndpointLabel(root, ref),
+		EndpointID:    string(ref.EndpointID),
+		Pane:          strings.TrimSpace(pane.Title),
+		PaneTitle:     strings.TrimSpace(pane.Title),
+	}); ok && strings.TrimSpace(rendered) != "" {
+		return strings.TrimSpace(rendered)
+	}
+	return title
+}
+
+func terminalChromeDefaultTitle(root state.Root, pane state.PaneState, binding state.TerminalViewBinding) string {
+	ref := binding.TerminalRef()
 	for _, item := range root.TerminalPool.Items {
 		if !item.TerminalRef().Equal(ref) {
 			continue
@@ -1093,6 +1111,14 @@ func terminalChromeTitle(root state.Root, pane state.PaneState, binding state.Te
 		return title
 	}
 	return binding.TerminalID
+}
+
+func terminalChromeEndpointLabel(root state.Root, ref state.TerminalRef) string {
+	if endpoint, ok := root.Endpoints.DisplayEndpoint(ref.EndpointID); ok {
+		return endpoint.DisplayLabel()
+	}
+	ref = ref.Normalize()
+	return string(ref.EndpointID)
 }
 
 func terminalChromeStateSlot(root state.Root, binding state.TerminalViewBinding, active bool, content ContentVM) ChromeSlotVM {
