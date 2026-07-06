@@ -74,19 +74,19 @@ type ConnectionRegistry struct {
 }
 
 type ConnectionConfig struct {
-    ID            EndpointID
-    Label         string
-    TransportKind TransportKind
-    Address       string
-    AuthRef       string
-    ConnectMode   EndpointConnectMode
-    Enabled       bool
-    Default       bool
-    Capabilities  EndpointCapabilities
+    ID           EndpointID
+    Label        string
+    Transport    TransportKind
+    Address      string
+    AuthRef      string
+    ConnectMode  EndpointConnectMode
+    Enabled      bool
+    Socket       string
+    RemoteSocket string
 }
 ```
 
-`ID` 是持久化和路由主键；`Label` 只用于展示；`AuthRef` 指向本地凭据或 SSH 配置；`ConnectMode` 决定启动时是否主动连接；`Capabilities` 表达 endpoint 支持的协议能力，不能靠猜测 endpoint 类型替代。
+`ID` 是持久化和路由主键；`Label` 只用于展示；`AuthRef` 指向本地凭据或 SSH 配置；`ConnectMode` 决定启动时是否主动连接；`Socket` / `RemoteSocket` 属于 dial identity，运行中不能热切换。
 
 建议 schema 使用 map，而不是 list，把 endpoint id 固定为 key，避免列表重排影响持久化引用：
 
@@ -134,6 +134,27 @@ connections:
 - `label` 可改名但不改变 endpoint 身份；`ID` 一旦被 workbench 引用就不能自动重命名。
 - `connections.yaml` 不复用当前 TUI scalar parser。ME003 应单独实现 connection registry loader/harness，或使用完整 YAML 解析，但仍要保持未知字段报错。
 - `tui-v3.yaml` 只继续保存 TUI 偏好；renderer/input router 不读取 `connections.yaml`，只消费 reducer view-model。
+
+### Registry reload 与运行时 session
+
+`connections.yaml` 是连接期望状态；已经连上的 endpoint session 是运行时事实。配置 reload 只能产生 registry diff，不能直接把运行中的 protocol session 原地改成另一台机器。
+
+变更处理规则：
+
+| 变更 | 已连接 session 行为 |
+| --- | --- |
+| 修改 `label` | 立即更新 UI 展示名；terminal title、cwd、history 和 lifecycle 不变。 |
+| `enabled: true -> false` | 不自动断开已连接 session；标记为 `disabled by config`，禁止自动恢复、自动连接和创建新 terminal。 |
+| 修改 `connect_mode` | 只影响未来连接策略；已连接 session 不变。 |
+| 修改 `address` / `transport` / `auth_ref` / `socket` / `remote_socket` | 不热切换；当前 session 继续使用旧 dial 参数，UI 标记 `reconnect required`，断开或用户显式 reconnect 后才使用新配置。 |
+| 删除 connection | 当前 session 可继续存在但标记为 `unregistered`；重启后 layout binding 保留 unresolved，不自动连接。 |
+| 修改 connection ID | 等价于删除旧 connection 并新增新 connection；不得自动迁移 workbench refs。 |
+
+重启 TUI 时：
+
+- `enabled=false` 的 endpoint 不自动连接。
+- layout 中引用 disabled/unregistered endpoint 的 pane/floating 不删除，只进入 unresolved/disabled 状态。
+- 如果 endpoint 的 dial identity 变化，不能直接拿旧 `TerminalID` 去新地址 attach；需要用户显式 reconnect 或后续 daemon identity 校验确认。
 
 ### EndpointManager
 
