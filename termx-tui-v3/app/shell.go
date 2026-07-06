@@ -1054,10 +1054,6 @@ func createTerminalPrompt(targetPaneID string) state.PromptState {
 }
 
 func createTerminalPromptWithEndpoint(root state.Root, targetPaneID string, endpointID state.EndpointID) state.PromptState {
-	shellCommand := strings.TrimSpace(os.Getenv("SHELL"))
-	if shellCommand == "" {
-		shellCommand = "/bin/sh"
-	}
 	workdir, err := os.Getwd()
 	if err != nil {
 		workdir = ""
@@ -1066,21 +1062,50 @@ func createTerminalPromptWithEndpoint(root state.Root, targetPaneID string, endp
 	endpointValue := terminalCreateEndpointPromptValue(root, endpointID)
 	endpointCursor := len([]rune(endpointValue))
 	workdirValue := terminalCreateDefaultWorkdirForEndpoint(root, endpointID, workdir)
+	defaultCommand := terminalCreateDefaultCommandForEndpoint(root, endpointID)
+	commandPlaceholder := terminalCreateCommandDisplay(defaultCommand)
 	return state.PromptState{
 		Title:            "Create Terminal",
 		Purpose:          "terminal.create",
 		TargetEndpointID: endpointID,
 		TargetID:         targetPaneID,
-		Command:          []string{shellCommand},
+		Command:          defaultCommand,
 		Workdir:          workdir,
-		DefaultName:      filepath.Base(shellCommand),
+		DefaultName:      terminalCreateDefaultName(defaultCommand),
 		Fields: []state.PromptFieldState{
 			{Key: "name", Label: "name", Required: true},
-			{Key: "command", Label: "command", Placeholder: shellCommand},
+			{Key: "command", Label: "command", Placeholder: commandPlaceholder},
 			{Key: "server", Label: "server", Value: endpointValue, Cursor: endpointCursor, Placeholder: "endpoint id or label", Required: true},
 			{Key: "workdir", Label: "workdir", Value: workdirValue, Cursor: len([]rune(workdirValue))},
 		},
 	}
+}
+
+func terminalCreateDefaultCommandForEndpoint(root state.Root, endpointID state.EndpointID) []string {
+	// 中文说明：远端 daemon 的执行环境不等于本机；默认命令不能把本机 $SHELL 跨 endpoint 发送。
+	if terminalCreateEndpointUsesLocalWorkdir(root, endpointID) {
+		return []string{terminalCreateLocalShellCommand()}
+	}
+	return []string{"/bin/sh"}
+}
+
+func terminalCreateLocalShellCommand() string {
+	shellCommand := strings.TrimSpace(os.Getenv("SHELL"))
+	if shellCommand == "" {
+		return "/bin/sh"
+	}
+	return shellCommand
+}
+
+func terminalCreateCommandDisplay(command []string) string {
+	return strings.Join(command, " ")
+}
+
+func terminalCreateDefaultName(command []string) string {
+	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
+		return "sh"
+	}
+	return filepath.Base(command[0])
 }
 
 func createTerminalPromptForTarget(root state.Root, target terminalPoolTarget) state.PromptState {
@@ -1121,7 +1146,9 @@ func terminalCreateRequestFromPrompt(root state.Root, prompt state.PromptState) 
 		return TerminalPoolCreateRequestMsg{}, err
 	}
 	if len(command) == 0 {
-		command = append([]string(nil), prompt.Command...)
+		// 中文说明：空 command 表示使用目标 endpoint 默认 shell；提交时重新按 endpoint 解析，
+		// 避免用户切换 server 后把本机 $SHELL 发送到远端 daemon。
+		command = terminalCreateDefaultCommandForEndpoint(root, endpointID)
 	}
 	if len(command) == 0 {
 		command = services.DefaultTerminalCommand()
@@ -1276,17 +1303,31 @@ func syncCreatePromptWorkdirForServer(root state.Root, shell state.ShellStore) s
 	localWorkdir := strings.TrimSpace(prompt.Workdir)
 	previousDefault := terminalCreateDefaultWorkdirForEndpoint(root, prompt.TargetEndpointID, localWorkdir)
 	nextDefault := terminalCreateDefaultWorkdirForEndpoint(root, endpointID, localWorkdir)
+	previousCommand := terminalCreateDefaultCommandForEndpoint(root, prompt.TargetEndpointID)
+	nextCommand := terminalCreateDefaultCommandForEndpoint(root, endpointID)
+	previousCommandValue := strings.TrimSpace(terminalCreateCommandDisplay(previousCommand))
+	nextCommandValue := strings.TrimSpace(terminalCreateCommandDisplay(nextCommand))
 	for index := range prompt.Fields {
-		if prompt.Fields[index].Key != "workdir" {
-			continue
+		switch prompt.Fields[index].Key {
+		case "command":
+			current := strings.TrimSpace(prompt.Fields[index].Value)
+			if current == previousCommandValue {
+				prompt.Fields[index].Value = ""
+				prompt.Fields[index].Cursor = 0
+			}
+			prompt.Fields[index].Placeholder = nextCommandValue
+		case "workdir":
+			current := strings.TrimSpace(prompt.Fields[index].Value)
+			// 中文说明：只替换 prompt 自动带入的默认 CWD；用户手写的远端路径必须保留。
+			if current == "" || current == localWorkdir || current == previousDefault {
+				prompt.Fields[index].Value = nextDefault
+				prompt.Fields[index].Cursor = len([]rune(nextDefault))
+			}
 		}
-		current := strings.TrimSpace(prompt.Fields[index].Value)
-		// 中文说明：只替换 prompt 自动带入的默认 CWD；用户手写的远端路径必须保留。
-		if current == "" || current == localWorkdir || current == previousDefault {
-			prompt.Fields[index].Value = nextDefault
-			prompt.Fields[index].Cursor = len([]rune(nextDefault))
-		}
-		break
+	}
+	prompt.Command = nextCommand
+	if prompt.DefaultName == "" || prompt.DefaultName == terminalCreateDefaultName(previousCommand) {
+		prompt.DefaultName = terminalCreateDefaultName(nextCommand)
 	}
 	prompt.TargetEndpointID = endpointID
 	shell.Overlay.Prompt = prompt

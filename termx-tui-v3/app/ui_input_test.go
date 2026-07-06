@@ -1463,6 +1463,7 @@ func TestTerminalPickerNewActionDefaultsToSelectedEndpoint(t *testing.T) {
 }
 
 func TestCreateTerminalPromptServerFieldUsesEndpointDropdown(t *testing.T) {
+	t.Setenv("SHELL", "/bin/zsh")
 	reducer := NewUIInputReducer()
 	root := state.Root{
 		Endpoints: (state.EndpointStore{}).
@@ -1480,7 +1481,8 @@ func TestCreateTerminalPromptServerFieldUsesEndpointDropdown(t *testing.T) {
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
 	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
-	if prompt.SuggestionFocused || prompt.FieldRawValue("server") != "US West (west)" || prompt.FieldRawValue("workdir") != "" {
+	if prompt.SuggestionFocused || prompt.FieldRawValue("server") != "US West (west)" || prompt.FieldRawValue("workdir") != "" ||
+		strings.Join(prompt.Command, " ") != "/bin/sh" || promptFieldPlaceholder(prompt, "command") != "/bin/sh" {
 		t.Fatalf("enter should accept selected endpoint suggestion, prompt=%#v", prompt)
 	}
 
@@ -1490,7 +1492,7 @@ func TestCreateTerminalPromptServerFieldUsesEndpointDropdown(t *testing.T) {
 	}
 	effect := effects[0].(FuncEffect)
 	request := effect.Run(context.Background()).(TerminalPoolCreateRequestMsg)
-	if request.EndpointID != "west" || request.Title != "remote-shell" || request.CWD != "" {
+	if request.EndpointID != "west" || request.Title != "remote-shell" || request.CWD != "" || strings.Join(request.Command, " ") != "/bin/sh" {
 		t.Fatalf("dropdown-selected server should route create request, got %#v", request)
 	}
 }
@@ -1510,6 +1512,41 @@ func TestCreateTerminalPromptWorkdirDefaultFollowsEndpoint(t *testing.T) {
 	if remotePrompt.Workdir == "" || remotePrompt.FieldRawValue("workdir") != "" {
 		t.Fatalf("remote create prompt should leave cwd empty and keep local default only as fallback metadata, prompt=%#v", remotePrompt)
 	}
+}
+
+func TestCreateTerminalPromptRemoteDefaultCommandDoesNotUseLocalShell(t *testing.T) {
+	t.Setenv("SHELL", "/bin/zsh")
+	root := state.Root{
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+	}
+
+	localPrompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, state.DefaultEndpointID)
+	if strings.Join(localPrompt.Command, " ") != "/bin/zsh" || promptFieldPlaceholder(localPrompt, "command") != "/bin/zsh" {
+		t.Fatalf("local create prompt should use local shell default, prompt=%#v", localPrompt)
+	}
+	remotePrompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, "west")
+	if strings.Join(remotePrompt.Command, " ") != "/bin/sh" || promptFieldPlaceholder(remotePrompt, "command") != "/bin/sh" {
+		t.Fatalf("remote create prompt must not use local shell default, prompt=%#v", remotePrompt)
+	}
+
+	remotePrompt.Fields[0].Value = "remote-shell"
+	root.Shell = state.DefaultShell().OpenPrompt(remotePrompt)
+	_, effects := reducePromptSubmit(root)
+	request := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolCreateRequestMsg)
+	if request.EndpointID != "west" || strings.Join(request.Command, " ") != "/bin/sh" {
+		t.Fatalf("remote create submit should use remote-safe default command, got %#v", request)
+	}
+}
+
+func promptFieldPlaceholder(prompt state.PromptState, key string) string {
+	for _, field := range prompt.Fields {
+		if field.Key == key {
+			return field.Placeholder
+		}
+	}
+	return ""
 }
 
 func TestCreateTerminalPromptRemoteWorkdirSuggestionsUseEndpointPathService(t *testing.T) {
@@ -1636,6 +1673,193 @@ func TestCreateTerminalPromptSubmitRoutesSelectedEndpoint(t *testing.T) {
 	}
 	if request.EndpointID != "west" || request.TargetPaneID != state.DefaultPaneID || request.Title != "remote-shell" {
 		t.Fatalf("create prompt should route to selected endpoint, got %#v", request)
+	}
+}
+
+func TestInteractiveRuntimeRemotePickerCreateRoutesThroughEndpointManager(t *testing.T) {
+	t.Setenv("SHELL", "/bin/zsh")
+	localTerminal := &services.FakeTerminalService{}
+	remoteTerminal := &services.FakeTerminalService{
+		CreateResult: services.TerminalCreateResult{State: "running"},
+		AttachResult: services.TerminalAttachResult{
+			Channel: 9,
+			Cols:    80,
+			Rows:    24,
+		},
+	}
+	registry := connection.Registry{
+		Version: 1,
+		Default: connection.DefaultEndpointID,
+		Connections: map[connection.EndpointID]connection.Config{
+			connection.DefaultEndpointID: {ID: connection.DefaultEndpointID, Label: "This Mac", Transport: connection.TransportLocal, ConnectMode: connection.ConnectAuto, Enabled: true},
+			"us-west":                    {ID: "us-west", Label: "US West", Transport: connection.TransportSSH, ConnectMode: connection.ConnectOnDemand, Enabled: true, Address: "root@example.com", RemoteSocket: "auto"},
+		},
+	}
+	remoteDialCalls := 0
+	manager := services.NewEndpointManagerWithDialers(
+		registry,
+		map[connection.TransportKind]services.EndpointDialer{
+			connection.TransportSSH: func(_ context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
+				remoteDialCalls++
+				if cfg.ID != "us-west" || cfg.Address != "root@example.com" || cfg.RemoteSocket != "auto" {
+					t.Fatalf("unexpected remote config: %#v", cfg)
+				}
+				return services.EndpointServiceBundle{EndpointID: "us-west", Terminal: remoteTerminal, Surface: remoteTerminal, LiveEvents: remoteTerminal}, nil
+			},
+		},
+		services.EndpointServiceBundle{EndpointID: state.DefaultEndpointID, Terminal: localTerminal, Surface: localTerminal, LiveEvents: localTerminal},
+	)
+	host := NewFakeTerminalHost(64)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{Endpoints: manager.EndpointStore()},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: manager},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x06", Ctrl: true}); err != nil {
+		t.Fatalf("open picker: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain picker open: %v", err)
+	}
+	for _, r := range "us west" {
+		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: string(r)}); err != nil {
+			t.Fatalf("type picker query %q: %v", r, err)
+		}
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("open remote create prompt: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain remote create prompt: %v", err)
+	}
+	prompt := runtime.State().Shell.EnsureDefaults().Overlay.Prompt
+	if prompt.TargetEndpointID != "us-west" || prompt.FieldRawValue("server") != "US West (us-west)" {
+		t.Fatalf("picker remote create should open prompt bound to us-west, prompt=%#v", prompt)
+	}
+	for _, r := range "demo-remote" {
+		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: string(r)}); err != nil {
+			t.Fatalf("type create name %q: %v", r, err)
+		}
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("submit remote create prompt: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain remote create: %v", err)
+	}
+
+	if remoteDialCalls != 1 {
+		t.Fatalf("remote endpoint should be dialed once and reused for create/attach, got %d", remoteDialCalls)
+	}
+	if len(localTerminal.Creates) != 0 {
+		t.Fatalf("remote create must not hit local endpoint, local creates=%#v", localTerminal.Creates)
+	}
+	if len(remoteTerminal.Creates) != 1 {
+		t.Fatalf("remote create should hit us-west endpoint once, creates=%#v", remoteTerminal.Creates)
+	}
+	if remoteTerminal.Creates[0].EndpointID != "" || remoteTerminal.Creates[0].Title != "demo-remote" || strings.Join(remoteTerminal.Creates[0].Command, " ") != "/bin/sh" {
+		t.Fatalf("endpoint manager should strip endpoint before daemon create, got %#v", remoteTerminal.Creates[0])
+	}
+	if len(remoteTerminal.Attaches) != 1 || remoteTerminal.Attaches[0].EndpointID != "" || remoteTerminal.Attaches[0].TerminalID == "" {
+		t.Fatalf("successful remote create should attach through us-west daemon boundary, attaches=%#v", remoteTerminal.Attaches)
+	}
+	binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || binding.EndpointID != "us-west" || binding.TerminalID != remoteTerminal.Creates[0].TerminalID {
+		t.Fatalf("created remote terminal should bind default pane to us-west ref, binding=%#v ok=%v", binding, ok)
+	}
+}
+
+func TestInteractiveRuntimeCreatePromptServerDropdownRoutesThroughEndpointManager(t *testing.T) {
+	t.Setenv("SHELL", "/bin/zsh")
+	localTerminal := &services.FakeTerminalService{}
+	remoteTerminal := &services.FakeTerminalService{
+		CreateResult: services.TerminalCreateResult{State: "running"},
+		AttachResult: services.TerminalAttachResult{
+			Channel: 12,
+			Cols:    80,
+			Rows:    24,
+		},
+	}
+	registry := connection.Registry{
+		Version: 1,
+		Default: connection.DefaultEndpointID,
+		Connections: map[connection.EndpointID]connection.Config{
+			connection.DefaultEndpointID: {ID: connection.DefaultEndpointID, Label: "This Mac", Transport: connection.TransportLocal, ConnectMode: connection.ConnectAuto, Enabled: true},
+			"us-west":                    {ID: "us-west", Label: "US West", Transport: connection.TransportSSH, ConnectMode: connection.ConnectOnDemand, Enabled: true, Address: "root@example.com", RemoteSocket: "auto"},
+		},
+	}
+	remoteDialCalls := 0
+	manager := services.NewEndpointManagerWithDialers(
+		registry,
+		map[connection.TransportKind]services.EndpointDialer{
+			connection.TransportSSH: func(_ context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
+				remoteDialCalls++
+				return services.EndpointServiceBundle{EndpointID: "us-west", Terminal: remoteTerminal, Surface: remoteTerminal, LiveEvents: remoteTerminal}, nil
+			},
+		},
+		services.EndpointServiceBundle{EndpointID: state.DefaultEndpointID, Terminal: localTerminal, Surface: localTerminal, LiveEvents: localTerminal},
+	)
+
+	root := state.Root{Endpoints: manager.EndpointStore()}
+	root.Shell = state.DefaultShell().OpenPrompt(createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, state.DefaultEndpointID))
+	host := NewFakeTerminalHost(64)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		root,
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: manager},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	sendInput := func(label string, event input.InputEvent) {
+		t.Helper()
+		if err := runtime.Post(InputMsg{Event: event}); err != nil {
+			t.Fatalf("%s: %v", label, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain %s: %v", label, err)
+		}
+	}
+
+	for _, r := range "demo-remote" {
+		sendInput("type create name", input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: string(r)})
+	}
+	for i := 0; i < 2; i++ {
+		sendInput("move prompt field", input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab})
+	}
+	sendInput("open server suggestions", input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab})
+	prompt := runtime.State().Shell.EnsureDefaults().Overlay.Prompt
+	if !prompt.SuggestionFocused || prompt.ActiveField < 0 || prompt.ActivePromptField().Key != "server" {
+		t.Fatalf("server tab should focus endpoint dropdown, prompt=%#v", prompt)
+	}
+	sendInput("select remote endpoint suggestion", input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab})
+	sendInput("accept remote endpoint suggestion", input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter})
+	prompt = runtime.State().Shell.EnsureDefaults().Overlay.Prompt
+	if prompt.TargetEndpointID != "us-west" || prompt.FieldRawValue("server") != "US West (us-west)" || prompt.FieldRawValue("workdir") != "" {
+		t.Fatalf("remote endpoint selection should sync prompt target and clear local cwd, prompt=%#v", prompt)
+	}
+	sendInput("submit remote create prompt", input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter})
+
+	if remoteDialCalls != 1 {
+		t.Fatalf("remote endpoint should be dialed once for prompt create flow, got %d", remoteDialCalls)
+	}
+	if len(localTerminal.Creates) != 0 {
+		t.Fatalf("server dropdown remote create must not hit local endpoint, local creates=%#v", localTerminal.Creates)
+	}
+	if len(remoteTerminal.Creates) != 1 || remoteTerminal.Creates[0].EndpointID != "" || remoteTerminal.Creates[0].Title != "demo-remote" ||
+		strings.Join(remoteTerminal.Creates[0].Command, " ") != "/bin/sh" {
+		t.Fatalf("server dropdown remote create should hit us-west daemon boundary, creates=%#v", remoteTerminal.Creates)
+	}
+	if len(remoteTerminal.Attaches) != 1 || remoteTerminal.Attaches[0].EndpointID != "" || remoteTerminal.Attaches[0].TerminalID == "" {
+		t.Fatalf("server dropdown remote create should attach through us-west daemon boundary, attaches=%#v", remoteTerminal.Attaches)
+	}
+	binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || binding.EndpointID != "us-west" || binding.TerminalID != remoteTerminal.Creates[0].TerminalID {
+		t.Fatalf("server dropdown remote create should bind default pane to us-west ref, binding=%#v ok=%v", binding, ok)
 	}
 }
 

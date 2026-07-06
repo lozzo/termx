@@ -615,13 +615,15 @@ func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequ
 	if title == "" {
 		title = terminalID
 	}
+	endpointID := state.NormalizeEndpointID(msg.EndpointID)
 	command := append([]string(nil), msg.Command...)
 	if len(command) == 0 {
-		command = services.DefaultTerminalCommand()
+		// 中文说明：create request 的默认 command 属于目标 endpoint 语义；
+		// 远端不能继承本机 $SHELL，否则 Linux daemon 可能收到 macOS 的 /bin/zsh。
+		command = terminalCreateDefaultCommandForEndpoint(root, endpointID)
 	}
 	cwd := strings.TrimSpace(msg.CWD)
 	tags := cloneStringMap(msg.Tags)
-	endpointID := state.NormalizeEndpointID(msg.EndpointID)
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.terminal_pool.create.effect")

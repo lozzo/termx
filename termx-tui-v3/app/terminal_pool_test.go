@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
@@ -312,6 +313,30 @@ func TestTerminalPoolCreateResultFallsBackToRequestedRemoteIDForAttach(t *testin
 	attach, ok := effects[1].(FuncEffect).Run(context.Background()).(TerminalPoolAttachRequestMsg)
 	if !ok || attach.EndpointID != "west" || attach.TerminalID != "term-requested" {
 		t.Fatalf("create result should attach requested remote terminal, msg=%#v", attach)
+	}
+}
+
+func TestTerminalPoolCreateRequestDefaultsRemoteCommandByEndpoint(t *testing.T) {
+	t.Setenv("SHELL", "/bin/zsh")
+	terminal := &services.FakeTerminalService{CreateResult: services.TerminalCreateResult{State: "running"}}
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		Endpoints: state.EndpointStore{}.
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "Local", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "west", Label: "West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+	}
+
+	_, effects := reducer(root, TerminalPoolCreateRequestMsg{EndpointID: "west", Title: "remote", TargetPaneID: state.DefaultPaneID})
+	if len(effects) != 1 {
+		t.Fatalf("create request should schedule one create effect, effects=%#v", effects)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolCreateResultMsg)
+	if !ok || msg.EndpointID != "west" {
+		t.Fatalf("create effect should return west create result, msg=%#v", msg)
+	}
+	if len(terminal.Creates) != 1 || terminal.Creates[0].EndpointID != "west" || strings.Join(terminal.Creates[0].Command, " ") != "/bin/sh" {
+		t.Fatalf("remote create request should default command for target endpoint, creates=%#v", terminal.Creates)
 	}
 }
 
