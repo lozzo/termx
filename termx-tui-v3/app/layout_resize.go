@@ -27,7 +27,7 @@ func NewTerminalLayoutResizeReducer() Reducer {
 			root.Session = root.Session.RequestResize(rect.W, rect.H)
 			return root, []Effect{FuncEffect{
 				Run: func(context.Context) Msg {
-					return LiveResizeMsg{TerminalID: binding.TerminalID, Cols: rect.W, Rows: rect.H, Seq: decision.Seq, ViewID: binding.ViewID}
+					return LiveResizeMsg{EndpointID: binding.EndpointID, TerminalID: binding.TerminalID, Cols: rect.W, Rows: rect.H, Seq: decision.Seq, ViewID: binding.ViewID}
 				},
 			}}
 		}
@@ -39,9 +39,10 @@ func NewTerminalLayoutResizeReducer() Reducer {
 		rows := rect.H
 		root.Session = root.Session.RequestResize(cols, rows)
 		seq := root.Session.ResizeRequestSeq
+		ref := root.Session.TerminalRef()
 		return root, []Effect{FuncEffect{
 			Run: func(context.Context) Msg {
-				return LiveResizeMsg{Cols: cols, Rows: rows, Seq: seq}
+				return LiveResizeMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, Cols: cols, Rows: rows, Seq: seq}
 			},
 		}}
 	}
@@ -56,7 +57,7 @@ func resizeOwnerTerminalContentRect(root state.Root, fallbackViewport render.Rec
 			return state.TerminalViewBinding{}, render.Rect{}, false
 		}
 		if activeBinding.TerminalID != "" {
-			if binding, ok := root.TerminalViews.OwnerBinding(activeBinding.TerminalID); ok {
+			if binding, ok := root.TerminalViews.OwnerBindingRef(activeBinding.TerminalRef()); ok {
 				if rect, ok := terminalViewContentRect(root, fallbackViewport, binding); ok {
 					return binding, rect, true
 				}
@@ -69,7 +70,7 @@ func resizeOwnerTerminalContentRect(root state.Root, fallbackViewport render.Rec
 			return binding, rect, true
 		}
 	}
-	if root.Session.TerminalID != "" && len(root.TerminalViews.BindingsForTerminal(root.Session.TerminalID)) > 0 {
+	if !root.Session.TerminalRef().Empty() && len(root.TerminalViews.BindingsForTerminalRef(root.Session.TerminalRef())) > 0 {
 		// 中文说明：只要 session terminal 已进入 TerminalView 模型，就不能退回全局 session resize；
 		// active pane 为空或 owner 被 size lock 锁住时，fallback 会绕开 owner/follower/lock guard。
 		return state.TerminalViewBinding{}, render.Rect{}, false
@@ -79,11 +80,11 @@ func resizeOwnerTerminalContentRect(root state.Root, fallbackViewport render.Rec
 }
 
 func resizeOwnerBindingForSessionTerminal(root state.Root) (state.TerminalViewBinding, bool) {
-	terminalID := root.Session.TerminalID
-	if terminalID == "" {
+	ref := root.Session.TerminalRef()
+	if ref.Empty() {
 		return state.TerminalViewBinding{}, false
 	}
-	return root.TerminalViews.OwnerBinding(terminalID)
+	return root.TerminalViews.OwnerBindingRef(ref)
 }
 
 func terminalViewContentRect(root state.Root, fallbackViewport render.Rect, binding state.TerminalViewBinding) (render.Rect, bool) {

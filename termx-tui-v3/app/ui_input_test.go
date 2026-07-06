@@ -3432,6 +3432,21 @@ func TestShellReducerHandlesFloatingContentActions(t *testing.T) {
 	}
 }
 
+func TestPaneRestartShortcutPreservesEndpoint(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModePane)}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("west", state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-west", state.TerminalPaneViewID(state.DefaultPaneID), true))
+
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "R"}})
+	if root.Shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("pane restart shortcut should exit prefix mode, shell=%#v", root.Shell)
+	}
+	restartMsg, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalPoolRestartIfExitedRequestMsg)
+	if !ok || restartMsg.EndpointID != "west" || restartMsg.TerminalID != "term-1" {
+		t.Fatalf("pane restart should preserve endpoint ref, got %#v", restartMsg)
+	}
+}
+
 func TestFloatingGroupKeyboardIntentsMapToCommands(t *testing.T) {
 	root := state.Root{
 		Shell:    state.DefaultShell().SetInteractionMode(state.InteractionModeFloating),
@@ -3470,8 +3485,8 @@ func TestFloatingGroupKeyboardIntentsMapToCommands(t *testing.T) {
 
 func TestShellReducerHandlesResizeOwnerContentAction(t *testing.T) {
 	root := state.Root{}
-	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
-	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("west", "pane-1", "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("west", "pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
 
 	next, effects := NewShellReducer()(root, ShellContentActionMsg{ActionID: render.ActionTerminalTakeResizeOwner.String(), PaneID: "pane-2"})
 	if len(effects) != 1 {
@@ -3486,7 +3501,7 @@ func TestShellReducerHandlesResizeOwnerContentAction(t *testing.T) {
 		t.Fatalf("clicked pane should become pending owner before service result, got %#v", second)
 	}
 	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveResizeMsg)
-	if !ok || msg.TerminalID != "term-1" || msg.ViewID != "view-2" || msg.Cols != 40 || msg.Rows != 12 {
+	if !ok || msg.EndpointID != "west" || msg.TerminalID != "term-1" || msg.ViewID != "view-2" || msg.Cols != 40 || msg.Rows != 12 {
 		t.Fatalf("owner request should confirm clicked view with resize control, got %#v", msg)
 	}
 }

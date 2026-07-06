@@ -64,6 +64,29 @@ func TestCopyHistoryOlderResultUsesIncrementalPatchWhenVisibleContentOnlyShifts(
 	}
 }
 
+func TestCopyHistoryPatchStableIncludesEndpoint(t *testing.T) {
+	previous := copyHistoryPatchCache{
+		Valid:       true,
+		ViewID:      "pane:main",
+		EndpointID:  state.DefaultEndpointID,
+		TerminalID:  "term-1",
+		Token:       "tok-1",
+		Cols:        80,
+		RowsLen:     20,
+		HistoryGen:  7,
+		ViewportTop: 1,
+		ViewRows:    10,
+		ContentRect: render.Rect{W: 80, H: 10},
+		Metadata:    render.RenderMetadata{Width: 100, Height: 30},
+		Theme:       render.DefaultTheme().WithFallback(),
+	}
+	current := previous
+	current.EndpointID = "west"
+	if copyHistoryPatchStable(previous, current) {
+		t.Fatalf("same terminal id on different endpoints must not reuse copy-history patch cache")
+	}
+}
+
 func TestCopyHistoryPatchDisabledWhenFloatingOverlapsContent(t *testing.T) {
 	host := newCopyHistoryPerfIncrementalHost(16)
 	host.SetSize(80, 24)

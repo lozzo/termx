@@ -555,9 +555,10 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			return next.Advance(), nil
 		}
 		logLifecycleTrace(deps.Logger, "live.attach.result",
+			"endpoint_id", string(ref.EndpointID),
 			"terminal_id", msg.TerminalID,
 			"error", msg.Err.Error(),
-			"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+			"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminalRef(ref)),
 		)
 		root.TerminalViews = root.TerminalViews.ClearAttachPending(msg.ViewID, msg.Err.Error())
 		return setLiveError(root, msg.Err.Error()), nil
@@ -885,10 +886,11 @@ func reduceLiveLifecycleQuery(root state.Root, msg LiveLifecycleQueryMsg, deps L
 		// 中文说明：这是按需向 core 查询 terminal lifecycle，不把 running/exited 权威性缓存进 TUI。
 		logLifecycleTrace(deps.Logger, "live.lifecycle.query",
 			"reason", msg.Reason,
+			"endpoint_id", string(target.EndpointID),
 			"terminal_id", terminalID,
 			"cols", cols,
 			"rows", rows,
-			"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(terminalID)),
+			"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminalRef(state.NewTerminalRef(target.EndpointID, terminalID))),
 		)
 		effects = append(effects, liveSurfaceEffectForRef(target.EndpointID, terminalID, cols, rows, true, deps)...)
 	}

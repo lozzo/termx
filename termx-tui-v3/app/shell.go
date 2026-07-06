@@ -366,7 +366,7 @@ func reduceShellActivateTerminalInput(root state.Root, msg ShellActivateTerminal
 		root.Shell = deactivateFloatingAfterPaneCommand(nextShell, command).ExitInteractionMode()
 		root = updateTerminalViewsAfterPaneCommand(root, command, targetPane, hasTargetPane)
 		root.Shell = addPaneCommandToast(root.Shell, command, result)
-		return root.Advance(), paneCommandEffects(command, result, targetPane, hasTargetPane)
+		return root.Advance(), paneCommandEffects(root, command, result, targetPane, hasTargetPane)
 	}
 	root.Shell = addPaneCommandToast(shell, command, result)
 	return root.Advance(), []Effect{PaneCommandFeedbackEffect{Result: result, Command: command}}
@@ -760,7 +760,8 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleCollapse, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
 	case render.ActionExitedRestart:
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolRestartIfExitedRequestMsg{TerminalID: terminalIDForShellContentAction(root, msg)}
+			ref := terminalRefForShellContentAction(root, msg)
+			return TerminalPoolRestartIfExitedRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID}
 		}}}
 	case render.ActionExitedReconnect:
 		root.Shell = root.Shell.OpenTerminalPicker()
@@ -803,7 +804,7 @@ func requestPaneResizeOwner(root state.Root, paneID string) (state.Root, []Effec
 		root.TerminalViews, decision = root.TerminalViews.RequestViewResize(binding.ViewID, cols, rows)
 		seq := decision.Seq
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return LiveResizeMsg{TerminalID: binding.TerminalID, Cols: cols, Rows: rows, Seq: seq, ViewID: binding.ViewID}
+			return LiveResizeMsg{EndpointID: binding.EndpointID, TerminalID: binding.TerminalID, Cols: cols, Rows: rows, Seq: seq, ViewID: binding.ViewID}
 		}}}
 	}
 	return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
@@ -830,7 +831,7 @@ func requestFloatingResizeOwner(root state.Root, floatingID string) (state.Root,
 		root.TerminalViews, decision = root.TerminalViews.RequestViewResize(binding.ViewID, cols, rows)
 		seq := decision.Seq
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return LiveResizeMsg{TerminalID: binding.TerminalID, Cols: cols, Rows: rows, Seq: seq, ViewID: binding.ViewID}
+			return LiveResizeMsg{EndpointID: binding.EndpointID, TerminalID: binding.TerminalID, Cols: cols, Rows: rows, Seq: seq, ViewID: binding.ViewID}
 		}}}
 	}
 	return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
@@ -1444,21 +1445,29 @@ func workspaceHasPaneID(workspace state.WorkspaceState, paneID string) bool {
 }
 
 func terminalIDForContentAction(root state.Root, paneID string) string {
+	return terminalRefForContentAction(root, paneID).TerminalID
+}
+
+func terminalRefForContentAction(root state.Root, paneID string) state.TerminalRef {
 	if binding, ok := root.TerminalViews.PaneBinding(paneID); ok && binding.TerminalID != "" {
-		return binding.TerminalID
+		return binding.TerminalRef()
 	}
-	return ""
+	return state.TerminalRef{}
 }
 
 func terminalIDForShellContentAction(root state.Root, msg ShellContentActionMsg) string {
+	return terminalRefForShellContentAction(root, msg).TerminalID
+}
+
+func terminalRefForShellContentAction(root state.Root, msg ShellContentActionMsg) state.TerminalRef {
 	if msg.Floating {
 		floatingID := floatingTargetIDForContentAction(root, msg)
 		if binding, ok := root.TerminalViews.FloatingBinding(floatingID); ok && binding.TerminalID != "" {
-			return binding.TerminalID
+			return binding.TerminalRef()
 		}
-		return ""
+		return state.TerminalRef{}
 	}
-	return terminalIDForContentAction(root, msg.PaneID)
+	return terminalRefForContentAction(root, msg.PaneID)
 }
 
 func terminalPoolTargetForOverlay(root state.Root) terminalPoolTarget {
@@ -1540,11 +1549,11 @@ func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, 
 	command = inheritSplitTerminalPane(root, command, targetPane, hasTargetPane)
 	nextShell, result := root.Shell.ApplyPaneCommand(command)
 	if result.Status == state.PaneCommandOK {
+		effects := paneCommandEffects(root, command, result, targetPane, hasTargetPane)
 		detachEffects := terminalDetachEffectsForPaneCommand(root, command, result)
 		root.Shell = deactivateFloatingAfterPaneCommand(nextShell, command)
 		root = updateTerminalViewsAfterPaneCommand(root, command, targetPane, hasTargetPane)
 		root.Shell = addPaneCommandToast(root.Shell, command, result)
-		effects := paneCommandEffects(command, result, targetPane, hasTargetPane)
 		effects = append(effects, detachEffects...)
 		return root.Advance(), effects
 	}
@@ -1615,6 +1624,7 @@ func reduceWorkbenchCommandWithOptions(root state.Root, command state.WorkbenchC
 		return root.Advance(), nil
 	}
 	detachEffects := terminalDetachEffectsForWorkbenchCommand(root, previousShell, command, result)
+	killEffects := terminalKillEffectsForWorkbenchResult(root, previousShell, result)
 	root = updateTerminalViewsAfterWorkbenchCommand(root, previousShell, command, result)
 	if workbenchCommandChangesActiveView(command.Action) {
 		root = invalidateCopyModeForInactiveView(root)
@@ -1625,14 +1635,129 @@ func reduceWorkbenchCommandWithOptions(root state.Root, command state.WorkbenchC
 	if options.OpenPickerAfterOK && command.Action == state.WorkbenchCommandTabCreate {
 		root, effects = openTerminalPickerForCreatedTab(root, effects)
 	}
-	for _, terminalID := range result.Killed {
-		id := terminalID
-		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolKillRequestMsg{TerminalID: id}
-		}})
-	}
+	effects = append(effects, killEffects...)
 	effects = append(effects, detachEffects...)
 	return root.Advance(), effects
+}
+
+func terminalKillEffectsForWorkbenchResult(root state.Root, previousShell state.ShellStore, result state.WorkbenchCommandResult) []Effect {
+	refs := terminalRefsForWorkbenchResult(root, previousShell, result)
+	if len(refs) == 0 {
+		return nil
+	}
+	effects := make([]Effect, 0, len(refs))
+	for _, ref := range refs {
+		ref := ref.Normalize()
+		if ref.Empty() {
+			continue
+		}
+		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolKillRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID}
+		}})
+	}
+	return effects
+}
+
+func terminalRefsForWorkbenchResult(root state.Root, previousShell state.ShellStore, result state.WorkbenchCommandResult) []state.TerminalRef {
+	if len(result.Killed) == 0 {
+		return nil
+	}
+	// 中文说明：Workbench state 目前只回传 daemon-local TerminalID；
+	// app 层必须在 TerminalView 被删除前从 pane/view binding 还原 TerminalRef，避免 close-and-kill 打到 local 同名 terminal。
+	switch result.Action {
+	case state.WorkbenchCommandPaneKill:
+		if ref := terminalRefForContentAction(root, result.ID); !ref.Empty() {
+			return []state.TerminalRef{ref}
+		}
+	case state.WorkbenchCommandTabKill:
+		if tab, ok := shellTabByID(previousShell, result.ID); ok {
+			refs := terminalRefsForPanes(root, tab.Panes, result.Killed)
+			if len(refs) > 0 {
+				return refs
+			}
+		}
+	}
+	return terminalRefsForTerminalIDs(root, result.Killed)
+}
+
+func shellTabByID(shell state.ShellStore, tabID string) (state.TabState, bool) {
+	if tabID == "" {
+		return state.TabState{}, false
+	}
+	for _, tab := range shell.Workspace.Tabs {
+		if tab.ID == tabID {
+			return tab, true
+		}
+	}
+	for _, workspace := range shell.Workspaces {
+		for _, tab := range workspace.Tabs {
+			if tab.ID == tabID {
+				return tab, true
+			}
+		}
+	}
+	return state.TabState{}, false
+}
+
+func terminalRefsForPanes(root state.Root, panes []state.PaneState, terminalIDs []string) []state.TerminalRef {
+	wanted := map[string]struct{}{}
+	for _, terminalID := range terminalIDs {
+		if terminalID != "" {
+			wanted[terminalID] = struct{}{}
+		}
+	}
+	refs := make([]state.TerminalRef, 0, len(wanted))
+	seen := map[string]struct{}{}
+	for _, pane := range panes {
+		if pane.TerminalID == "" {
+			continue
+		}
+		if _, ok := wanted[pane.TerminalID]; !ok {
+			continue
+		}
+		ref := terminalRefForContentAction(root, pane.ID)
+		if ref.Empty() {
+			ref = state.LocalTerminalRef(pane.TerminalID)
+		}
+		if key := ref.Key(); key != "" {
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			refs = append(refs, ref)
+		}
+	}
+	return refs
+}
+
+func terminalRefsForTerminalIDs(root state.Root, terminalIDs []string) []state.TerminalRef {
+	refs := make([]state.TerminalRef, 0, len(terminalIDs))
+	for _, terminalID := range terminalIDs {
+		if terminalID == "" {
+			continue
+		}
+		refs = append(refs, terminalRefForTerminalID(root, terminalID))
+	}
+	return refs
+}
+
+func terminalRefForTerminalID(root state.Root, terminalID string) state.TerminalRef {
+	seen := map[string]state.TerminalRef{}
+	for _, binding := range root.TerminalViews.Bindings() {
+		if binding.TerminalID != terminalID {
+			continue
+		}
+		ref := binding.TerminalRef()
+		if key := ref.Key(); key != "" {
+			seen[key] = ref
+		}
+	}
+	if len(seen) == 1 {
+		for _, ref := range seen {
+			return ref
+		}
+	}
+	return state.LocalTerminalRef(terminalID)
 }
 
 func openTerminalPickerForCreatedTab(root state.Root, effects []Effect) (state.Root, []Effect) {
@@ -1893,15 +2018,18 @@ func addWorkbenchCommandToast(shell state.ShellStore, result state.WorkbenchComm
 	return shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: string(result.Action), Body: result.Reason})
 }
 
-func paneCommandEffects(command state.PaneCommand, result state.PaneCommandResult, targetPane state.PaneState, hasTargetPane bool) []Effect {
+func paneCommandEffects(root state.Root, command state.PaneCommand, result state.PaneCommandResult, targetPane state.PaneState, hasTargetPane bool) []Effect {
 	effects := []Effect{PaneCommandFeedbackEffect{Result: result, Command: command}}
 	if command.Action != state.PaneCommandCloseAndKill {
 		return effects
 	}
 	if hasTargetPane && targetPane.TerminalID != "" {
-		id := targetPane.TerminalID
+		ref := terminalRefForContentAction(root, targetPane.ID)
+		if ref.Empty() {
+			ref = state.LocalTerminalRef(targetPane.TerminalID)
+		}
 		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolKillRequestMsg{TerminalID: id}
+			return TerminalPoolKillRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID}
 		}})
 	}
 	return effects

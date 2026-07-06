@@ -3023,6 +3023,9 @@ func TestRenderVMBuilderProjectsTerminalPickerEndpointLabels(t *testing.T) {
 			t.Fatalf("expected flat endpoint label picker content %q in:\n%s", want, plain)
 		}
 	}
+	if !lineHasStyledCell(content.Lines[2], "This Mac", StylePickerInfo) || !lineHasStyledCell(content.Lines[3], "US West", StylePickerInfo) {
+		t.Fatalf("terminal picker endpoint ownership should use readable info style, got %#v", content.Lines)
+	}
 	for _, notWant := range []string{"Manual Box", "manual connect", "ssh timeout"} {
 		if strings.Contains(plain, notWant) {
 			t.Fatalf("terminal picker should stay a flat terminal table without endpoint-only rows %q in:\n%s", notWant, plain)
@@ -3037,6 +3040,50 @@ func TestRenderVMBuilderProjectsTerminalPickerEndpointLabels(t *testing.T) {
 	plain = plainLines(content.Lines)
 	if !strings.Contains(plain, "US West") || !strings.Contains(plain, "west shell") || strings.Contains(plain, "local shell") || strings.Contains(plain, "ssh timeout") || len(content.HitRegions) != 1 || content.HitRegions[0].Row != 0 {
 		t.Fatalf("endpoint label query should show only west terminal row, lines=%#v hits=%#v", content.Lines, content.HitRegions)
+	}
+}
+
+func TestRenderVMBuilderAlignsTerminalPickerEndpointColumns(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell().OpenTerminalPicker(),
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true, Status: state.EndpointStatusConnected}).
+			Upsert(state.EndpointItem{ID: "cn_fast", Label: "CN Fast", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true, Status: state.EndpointStatusConnected}).
+			Upsert(state.EndpointItem{ID: "us_west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true, Status: state.EndpointStatusConnected}),
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items: []state.TerminalPoolItem{
+				{EndpointID: state.DefaultEndpointID, TerminalID: "term-local", Title: "123", State: "running", Cols: 214, Rows: 94},
+				{EndpointID: "cn_fast", TerminalID: "term-cn", Title: "cn-123", State: "running", Cols: 281, Rows: 73},
+				{EndpointID: "us_west", TerminalID: "term-pool", Title: "term-pool-1783313349952893063", State: "attached", Cols: 281, Rows: 73},
+			},
+		},
+	}
+
+	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if len(content.Lines) < 5 {
+		t.Fatalf("expected search, create and terminal rows, got %#v", content.Lines)
+	}
+	local := content.Lines[2].PlainString()
+	cn := content.Lines[3].PlainString()
+	west := content.Lines[4].PlainString()
+	endpointCol := displayColumnOf(local, "This Mac")
+	if endpointCol < 0 || displayColumnOf(cn, "CN Fast") != endpointCol || displayColumnOf(west, "US West") != endpointCol {
+		t.Fatalf("endpoint column should stay aligned:\n%s\n%s\n%s", local, cn, west)
+	}
+	stateCol := displayColumnOf(local, "running")
+	if stateCol < 0 || displayColumnOf(cn, "running") != stateCol || displayColumnOf(west, "attached") != stateCol {
+		t.Fatalf("state column should stay aligned:\n%s\n%s\n%s", local, cn, west)
+	}
+	sizeCol := displayColumnOf(local, "214x94")
+	if sizeCol < 0 || displayColumnOf(cn, "281x73") != sizeCol || displayColumnOf(west, "281x73") != sizeCol {
+		t.Fatalf("size column should stay aligned:\n%s\n%s\n%s", local, cn, west)
+	}
+	if DisplayWidth(west) > terminalPickerHitRegionWidth {
+		t.Fatalf("long terminal title should be clipped inside picker row width=%d line=%q", terminalPickerHitRegionWidth, west)
+	}
+	if !lineHasStyledCell(content.Lines[2], "This Mac", StylePickerInfo) || !lineHasStyledCell(content.Lines[3], "CN Fast", StylePickerInfo) || !lineHasStyledCell(content.Lines[4], "US West", StylePickerInfo) {
+		t.Fatalf("endpoint ownership column should use info style, got %#v", content.Lines[2:5])
 	}
 }
 

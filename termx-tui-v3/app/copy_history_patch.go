@@ -10,6 +10,7 @@ import (
 type copyHistoryPatchCache struct {
 	Valid       bool
 	ViewID      string
+	EndpointID  state.EndpointID
 	TerminalID  string
 	Token       string
 	Cols        int
@@ -215,6 +216,7 @@ func buildCopyHistoryPatchCache(root state.Root, theme render.Theme) (copyHistor
 	return copyHistoryPatchCache{
 		Valid:       true,
 		ViewID:      root.CopyMode.ViewID,
+		EndpointID:  state.NormalizeEndpointID(root.CopyMode.EndpointID),
 		TerminalID:  root.CopyMode.TerminalID,
 		Token:       root.CopyMode.BoundToken,
 		Cols:        root.CopyMode.BoundCols,
@@ -253,6 +255,7 @@ func buildCopyHistoryPatchCacheFromPrevious(root state.Root, previous copyHistor
 	}
 	current := previous
 	current.ViewID = root.CopyMode.ViewID
+	current.EndpointID = state.NormalizeEndpointID(root.CopyMode.EndpointID)
 	current.TerminalID = root.CopyMode.TerminalID
 	current.Token = root.CopyMode.BoundToken
 	current.Cols = root.CopyMode.BoundCols
@@ -274,6 +277,7 @@ func copyHistoryPatchStateEligible(root state.Root) bool {
 	history := root.History
 	return copyMode.Active &&
 		copyMode.TerminalID != "" &&
+		state.NormalizeEndpointID(copyMode.EndpointID) == state.NormalizeEndpointID(history.EndpointID) &&
 		copyMode.TerminalID == history.TerminalID &&
 		copyMode.BoundToken != "" &&
 		copyMode.BoundToken == history.Token &&
@@ -288,6 +292,7 @@ func copyHistoryPatchStateEligible(root state.Root) bool {
 
 func copyHistoryPatchStable(previous copyHistoryPatchCache, current copyHistoryPatchCache) bool {
 	return previous.ViewID == current.ViewID &&
+		previous.EndpointID == current.EndpointID &&
 		previous.TerminalID == current.TerminalID &&
 		previous.Token == current.Token &&
 		previous.Cols == current.Cols &&

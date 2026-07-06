@@ -1686,6 +1686,30 @@ func TestTerminalLayoutResizeUsesSharedOwnerWhenActiveViewIsFollower(t *testing.
 	}
 }
 
+func TestTerminalLayoutResizeUsesEndpointSharedOwner(t *testing.T) {
+	reducer := NewTerminalLayoutResizeReducer()
+	shell := state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
+	root := state.Root{
+		Shell:    shell.FocusPane(state.PaneCommandTarget{PaneID: "pane-2"}),
+		Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30},
+		Session:  state.TerminalSessionStore{EndpointID: "west", TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 80, DesiredRows: 24},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("west", state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-west-owner", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("west", "pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-west-follower", false))
+
+	next, effects := reducer(root, HostResizeMsg{Cols: 120, Rows: 40})
+	if len(effects) != 1 {
+		t.Fatalf("west follower should resize west owner, got %#v", effects)
+	}
+	msg := effects[0].(FuncEffect).Run(context.Background()).(LiveResizeMsg)
+	if msg.EndpointID != "west" || msg.ViewID != "view-west-owner" || msg.TerminalID != "term-1" {
+		t.Fatalf("layout resize must preserve owner endpoint, got %#v", msg)
+	}
+	if got, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID); got.EndpointID != "west" || got.RequestSeq != msg.Seq {
+		t.Fatalf("west owner binding should track endpoint-scoped resize, binding=%#v msg=%#v", got, msg)
+	}
+}
+
 func TestTerminalLayoutResizeOwnerPaneResizeChangesPTYSize(t *testing.T) {
 	reducer := ComposeReducers(NewShellReducer(), NewTerminalLayoutResizeReducer())
 	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
@@ -2025,6 +2049,42 @@ func TestViewScopedOwnerResizeUsesBindingResizePolicy(t *testing.T) {
 	}
 	if binding, ok := next.TerminalViews.PaneBinding("pane-owner"); !ok || binding.DesiredCols != 100 || binding.DesiredRows != 30 {
 		t.Fatalf("owner binding should track requested desired size, binding=%#v ok=%v", binding, ok)
+	}
+}
+
+func TestViewScopedOwnerResizeRoutesEndpointBinding(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{
+		Session: state.TerminalSessionStore{
+			EndpointID:    "west",
+			TerminalID:    "term-1",
+			Channel:       8,
+			Attached:      true,
+			ResizePolicy:  state.TerminalResizeRoleFollower,
+			SurfaceID:     "surface-follower",
+			ViewID:        "view-follower",
+			InputChannels: map[string]uint16{"west/term-1": 8},
+		},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("west", "pane-owner", "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-owner", "view-owner", true))
+	var decision state.TerminalViewResizeDecision
+	root.TerminalViews, decision = root.TerminalViews.RequestViewResize("view-owner", 100, 30)
+	if !decision.Allowed || !decision.Changed {
+		t.Fatalf("expected owner view resize decision, got %#v", decision)
+	}
+
+	next, effects := reducer(root, LiveResizeMsg{EndpointID: "west", TerminalID: "term-1", Cols: 100, Rows: 30, Seq: decision.Seq, ViewID: "view-owner"})
+	if len(effects) != 1 {
+		t.Fatalf("view-scoped owner resize should emit terminal resize effect, got %#v", effects)
+	}
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	next, _ = reducer(next, msg)
+	if len(terminal.Resizes) != 1 || terminal.Resizes[0].EndpointID != "west" || terminal.Resizes[0].Channel != 7 {
+		t.Fatalf("resize request must route to west owner binding, got %#v", terminal.Resizes)
+	}
+	if !next.Session.TerminalRef().Equal(state.NewTerminalRef("west", "term-1")) {
+		t.Fatalf("resize result must preserve west session ref, got %#v", next.Session.TerminalRef())
 	}
 }
 

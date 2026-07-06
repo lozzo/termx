@@ -215,6 +215,7 @@ func TestShellReducerRejectsInvalidPaneCommandWithoutStateMutation(t *testing.T)
 func TestShellReducerKeepsCloseAndKillBehindConfirmPolicy(t *testing.T) {
 	reducer := NewShellReducer()
 	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", TerminalID: "term-2"}, state.SplitDirectionVertical)}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("west", "pane-2", "term-2", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-west", "view-west", true))
 
 	next, effects := reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandCloseAndKill, Target: state.PaneCommandTarget{PaneID: "pane-2"}}})
 	if next.Generation != root.Generation+1 || len(next.Shell.Workspace.Tabs[0].Panes) != len(root.Shell.Workspace.Tabs[0].Panes) {
@@ -243,7 +244,7 @@ func TestShellReducerKeepsCloseAndKillBehindConfirmPolicy(t *testing.T) {
 	}
 	killMsg := effects[1].(FuncEffect).Run(context.Background())
 	kill, ok := killMsg.(TerminalPoolKillRequestMsg)
-	if !ok || kill.TerminalID != "term-2" {
+	if !ok || kill.EndpointID != "west" || kill.TerminalID != "term-2" {
 		t.Fatalf("expected terminal kill message boundary, got %#v", killMsg)
 	}
 }
@@ -269,6 +270,7 @@ func TestShellReducerWorkbenchPaneCommandsPersistAndKillThroughMessagePath(t *te
 	root.Shell = root.Shell.
 		SplitActivePane(state.PaneState{ID: "pane-2", TerminalID: "term-2"}, state.SplitDirectionVertical).
 		FocusPane(state.PaneCommandTarget{PaneID: "pane-2"})
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("west", "pane-2", "term-2", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-west", "view-west", true))
 	next, effects = reducer(root, ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{
 		Action:  state.WorkbenchCommandPaneKill,
 		Target:  state.PaneCommandTarget{PaneID: "pane-2"},
@@ -281,7 +283,7 @@ func TestShellReducerWorkbenchPaneCommandsPersistAndKillThroughMessagePath(t *te
 	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandPaneKill) {
 		t.Fatalf("expected pane kill persist request, got %#v", msg)
 	}
-	if msg := effects[1].(FuncEffect).Run(context.Background()); msg.(TerminalPoolKillRequestMsg).TerminalID != "term-2" {
+	if msg := effects[1].(FuncEffect).Run(context.Background()); msg.(TerminalPoolKillRequestMsg).EndpointID != "west" || msg.(TerminalPoolKillRequestMsg).TerminalID != "term-2" {
 		t.Fatalf("expected pane kill terminal request, got %#v", msg)
 	}
 }

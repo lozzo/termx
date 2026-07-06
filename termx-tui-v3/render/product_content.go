@@ -146,6 +146,26 @@ type liveExitedActionSpec struct {
 	Style StyleToken
 }
 
+const (
+	terminalPickerTitleColumnWidth    = 22
+	terminalPickerEndpointColumnWidth = 14
+	terminalPickerStateColumnWidth    = 8
+	terminalPickerSizeColumnWidth     = 7
+	terminalPickerActionColumnWidth   = 6
+	terminalPickerColumnGapWidth      = 2
+	terminalPickerPrefixWidth         = 4
+	terminalPickerHitRegionWidth      = terminalPickerPrefixWidth +
+		terminalPickerTitleColumnWidth +
+		terminalPickerColumnGapWidth +
+		terminalPickerEndpointColumnWidth +
+		terminalPickerColumnGapWidth +
+		terminalPickerStateColumnWidth +
+		terminalPickerColumnGapWidth +
+		terminalPickerSizeColumnWidth +
+		terminalPickerColumnGapWidth +
+		terminalPickerActionColumnWidth
+)
+
 func liveExitedActions() []liveExitedActionSpec {
 	return []liveExitedActionSpec{
 		{ID: ActionExitedRestart, Label: "R restart current terminal", Style: StyleWarning},
@@ -897,11 +917,11 @@ func terminalPickerLine(row state.TerminalPickerItem, query string) Line {
 			styledCell("+", StylePickerInfo),
 			pickerSpace(" "),
 		}
-		cells = append(cells, terminalPickerColumnCells(row.Title, query, textStyle, 24)...)
+		cells = append(cells, terminalPickerColumnCells(row.Title, query, textStyle, terminalPickerTitleColumnWidth)...)
 		cells = append(cells, pickerSpace("  "))
-		cells = append(cells, terminalPickerColumnCells("new", query, StylePickerInfo, 10)...)
+		cells = append(cells, terminalPickerColumnCells("new", query, StylePickerInfo, terminalPickerEndpointColumnWidth)...)
 		cells = append(cells, pickerSpace("  "))
-		cells = append(cells, terminalPickerColumnCells("-", query, StylePickerMuted, 8)...)
+		cells = append(cells, terminalPickerColumnCells("-", query, StylePickerMuted, terminalPickerStateColumnWidth)...)
 		cells = append(cells, pickerSpace("  "))
 		cells = append(cells, highlightPickerText("Create terminal", query, textStyle)...)
 		return Line{Cells: cells}
@@ -917,15 +937,15 @@ func terminalPickerLine(row state.TerminalPickerItem, query string) Line {
 		styledCell("●", terminalPoolStateStyle(stateText)),
 		pickerSpace(" "),
 	}
-	cells = append(cells, terminalPickerColumnCells(row.Title, query, textStyle, 22)...)
+	cells = append(cells, terminalPickerColumnCells(row.Title, query, textStyle, terminalPickerTitleColumnWidth)...)
 	cells = append(cells, pickerSpace("  "))
-	cells = append(cells, terminalPickerColumnCells(endpointLabel, query, StylePickerMuted, 14)...)
+	cells = append(cells, terminalPickerColumnCells(endpointLabel, query, StylePickerInfo, terminalPickerEndpointColumnWidth)...)
 	cells = append(cells, pickerSpace("  "))
-	cells = append(cells, terminalPickerColumnCells(stateText, query, terminalPoolStateStyle(stateText), 10)...)
+	cells = append(cells, terminalPickerColumnCells(stateText, query, terminalPoolStateStyle(stateText), terminalPickerStateColumnWidth)...)
 	cells = append(cells, pickerSpace("  "))
-	cells = append(cells, terminalPickerColumnCells(sizeText, query, textStyle, 8)...)
+	cells = append(cells, terminalPickerColumnCells(sizeText, query, textStyle, terminalPickerSizeColumnWidth)...)
 	cells = append(cells, pickerSpace("  "))
-	cells = append(cells, styledCell("Attach here", StylePickerMuted))
+	cells = append(cells, terminalPickerColumnCells("Attach", query, StylePickerMuted, terminalPickerActionColumnWidth)...)
 	return Line{Cells: cells}
 }
 
@@ -1028,7 +1048,7 @@ func terminalPickerHitRegionForRow(row state.TerminalPickerItem, rowIndex int, l
 	}
 	return HitRegion{
 		Kind:     HitRegionContentAction,
-		Rect:     Rect{Y: lineIndex, W: 72, H: 1},
+		Rect:     Rect{Y: lineIndex, W: terminalPickerHitRegionWidth, H: 1},
 		PaneID:   row.PaneID,
 		Row:      rowIndex,
 		ActionID: actionID,
@@ -1051,6 +1071,12 @@ func terminalPickerItemIndex(rows []state.TerminalPickerItem, target state.Termi
 }
 
 func terminalPickerColumnCells(value string, query string, baseStyle StyleToken, width int) []Cell {
+	if width <= 0 {
+		return nil
+	}
+	// 中文说明：picker 行的列边界属于 render view-model 展示契约；长名称只能在本列内截断，
+	// 不能把 endpoint、状态或尺寸列挤偏，否则同名 terminal 的机器归属会失去可比性。
+	value = TruncateCells(value, width)
 	cells := highlightPickerText(value, query, baseStyle)
 	pad := width - DisplayWidth(value)
 	if pad > 0 {
