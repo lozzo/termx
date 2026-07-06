@@ -103,6 +103,41 @@ func TestFrameworkRendersTuiv2FloatingTerminalHeader(t *testing.T) {
 	}
 }
 
+func TestRenderFloatingTerminalLiveMarksExtentOutsideArea(t *testing.T) {
+	c := newCanvas(16, 8)
+	for row := range c.rows {
+		c.writeTextStyled(0, row, 16, strings.Repeat("B", 16), StyleMuted, "background", LayerPanel)
+	}
+
+	renderFloating(c, FloatingLayoutPlan{
+		Floating: FloatingVM{
+			ID:     "float-1",
+			Title:  "float",
+			Rect:   Rect{X: 1, Y: 1, W: 10, H: 6},
+			Active: true,
+			Content: ContentVM{
+				Kind:   ContentTerminalLive,
+				Lines:  []Line{NewLine("ok")},
+				Extent: ContentExtent{Known: true, Cols: 4, Rows: 2},
+			},
+		},
+		Rect:        Rect{X: 1, Y: 1, W: 10, H: 6},
+		ContentRect: Rect{X: 2, Y: 2, W: 8, H: 4},
+	})
+
+	lines := c.lines()
+	if got := SliceCells(lines[2].PlainString(), 2, 10); got != "ok  ····" {
+		t.Fatalf("floating live right extent area must be marked instead of transparent, got %q frame=%#v", got, plainContentViewportLines(lines))
+	}
+	if got := SliceCells(lines[4].PlainString(), 2, 10); got != "········" {
+		t.Fatalf("floating live bottom extent area must be marked instead of transparent, got %q frame=%#v", got, plainContentViewportLines(lines))
+	}
+	dotRun := c.rows[2][6]
+	if dotRun.text != "····" || dotRun.owner != "floating:float-1:content" || dotRun.layer != LayerFloating {
+		t.Fatalf("extent placeholder must be owned by floating content layer, got %#v", dotRun)
+	}
+}
+
 func TestFrameworkRendersWorkbenchNavigatorSnapshot(t *testing.T) {
 	shell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).
@@ -927,7 +962,7 @@ func TestFrameworkFloatingClearsBackgroundWithoutOverlayFill(t *testing.T) {
 	}
 }
 
-func TestFrameworkFloatingTerminalKeepsBackgroundOutsideLiveExtent(t *testing.T) {
+func TestFrameworkFloatingTerminalMarksOutsideLiveExtent(t *testing.T) {
 	backgroundRows := make([]Line, 12)
 	for i := range backgroundRows {
 		backgroundRows[i] = NewLine(strings.Repeat("b", 48))
@@ -957,11 +992,11 @@ func TestFrameworkFloatingTerminalKeepsBackgroundOutsideLiveExtent(t *testing.T)
 	}})
 	frame := result.Frame()
 
-	if left := SliceCells(frame.Lines[4], 11, 18); left != strings.Repeat("b", 7) {
-		t.Fatalf("floating side band outside terminal extent should keep background text, got %q line=%q", left, frame.Lines[4])
+	if left := SliceCells(frame.Lines[4], 11, 18); left != strings.Repeat("·", 7) {
+		t.Fatalf("floating side band outside terminal extent should show placeholders, got %q line=%q", left, frame.Lines[4])
 	}
-	if right := SliceCells(frame.Lines[4], 29, 39); right != strings.Repeat("b", 10) {
-		t.Fatalf("floating side band outside terminal extent should keep background text, got %q line=%q", right, frame.Lines[4])
+	if right := SliceCells(frame.Lines[4], 29, 39); right != strings.Repeat("·", 10) {
+		t.Fatalf("floating side band outside terminal extent should show placeholders, got %q line=%q", right, frame.Lines[4])
 	}
 	if term := SliceCells(frame.Lines[4], 19, 23); term != "term" {
 		t.Fatalf("terminal extent should still render floating content, got %q line=%q", term, frame.Lines[4])
