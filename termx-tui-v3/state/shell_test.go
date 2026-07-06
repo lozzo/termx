@@ -533,7 +533,7 @@ func TestTerminalPickerAndPoolRowsSortByName(t *testing.T) {
 	}
 
 	picker := TerminalPickerItems(root)
-	if len(picker) != 4 || !picker[0].CreateNew || picker[1].Title != "alpha" || picker[2].Title != "Beta" || picker[3].Title != "zeta" {
+	if len(picker) != 5 || !picker[0].CreateNew || picker[0].EndpointID != DefaultEndpointID || !picker[1].CreateNew || picker[1].EndpointID != "west" || picker[2].Title != "alpha" || picker[3].Title != "Beta" || picker[4].Title != "zeta" {
 		t.Fatalf("terminal picker rows should sort by display name after create row, got %#v", picker)
 	}
 
@@ -541,6 +541,28 @@ func TestTerminalPickerAndPoolRowsSortByName(t *testing.T) {
 	pool := TerminalPoolPageItems(root)
 	if len(pool) != 3 || pool[0].Title != "alpha" || pool[1].Title != "Beta" || pool[2].Title != "zeta" {
 		t.Fatalf("terminal manager rows should sort by display name, got %#v", pool)
+	}
+}
+
+func TestTerminalPickerCreateRowsUseAvailableEndpoints(t *testing.T) {
+	root := Root{
+		Shell: DefaultShell().OpenTerminalPicker(),
+		Endpoints: (EndpointStore{}).
+			Upsert(EndpointItem{ID: DefaultEndpointID, Label: "This Mac", Transport: EndpointTransportLocal, ConnectMode: EndpointConnectAuto, Enabled: true, Status: EndpointStatusConnected}).
+			Upsert(EndpointItem{ID: "disabled", Label: "Disabled Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectAuto, Enabled: false}).
+			Upsert(EndpointItem{ID: "manual", Label: "Manual Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectManual, Enabled: true}).
+			Upsert(EndpointItem{ID: "reconnect", Label: "Moved Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true, ReconnectRequired: true}).
+			Upsert(EndpointItem{ID: "west", Label: "US West", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true, Status: EndpointStatusOffline}),
+	}
+
+	items := TerminalPickerItems(root)
+	if len(items) != 2 || !items[0].CreateNew || items[0].EndpointLabel != "This Mac" || !items[1].CreateNew || items[1].EndpointLabel != "US West" {
+		t.Fatalf("create rows should only use available endpoints, got %#v", items)
+	}
+	root.Shell = root.Shell.SetTerminalPickerQuery("west")
+	items = TerminalPickerItems(root)
+	if len(items) != 1 || !items[0].CreateNew || items[0].EndpointID != "west" {
+		t.Fatalf("endpoint query should match create row target, got %#v", items)
 	}
 }
 
@@ -666,8 +688,8 @@ func TestTerminalPickerGroupsExposeEndpointMetadataAndSearch(t *testing.T) {
 
 	root.Shell = root.Shell.SetTerminalPickerQuery("US West")
 	items := TerminalPickerItems(root)
-	if len(items) != 1 || items[0].EndpointID != "west" || items[0].TerminalID != "term-1" {
-		t.Fatalf("endpoint label query should match west terminal row, got %#v", items)
+	if len(items) != 2 || !items[0].CreateNew || items[0].EndpointID != "west" || items[1].EndpointID != "west" || items[1].TerminalID != "term-1" {
+		t.Fatalf("endpoint label query should match west create and terminal rows, got %#v", items)
 	}
 }
 

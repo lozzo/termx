@@ -562,7 +562,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		if ok && selected.CreateNew {
 			target := terminalPoolTargetForOverlay(root)
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return ShellOpenPromptMsg{Prompt: createTerminalPromptForTarget(root, target)}
+				return ShellOpenPromptMsg{Prompt: createTerminalPromptForTargetEndpoint(root, target, selected.EndpointID)}
 			}}}
 		}
 		if ok && selected.TerminalID != "" {
@@ -573,8 +573,9 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		}
 	case render.ActionPickerNew:
 		target := terminalPoolTargetForOverlay(root)
+		endpointID := terminalCreateEndpointIDFromPickerSelection(root, msg.Row)
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return ShellOpenPromptMsg{Prompt: createTerminalPromptForTarget(root, target)}
+			return ShellOpenPromptMsg{Prompt: createTerminalPromptForTargetEndpoint(root, target, endpointID)}
 		}}}
 	case render.ActionPickerSplit:
 		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
@@ -904,7 +905,7 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 			body = "(empty)"
 		}
 		if after.Purpose == "terminal.create" {
-			request, err := terminalCreateRequestFromPrompt(after)
+			request, err := terminalCreateRequestFromPrompt(root, after)
 			if err != nil {
 				shell = root.Shell.EnsureDefaults()
 				prompt := shell.Overlay.Prompt
@@ -1049,6 +1050,10 @@ func reduceClipboardHistoryDelete(root state.Root) (state.Root, []Effect) {
 }
 
 func createTerminalPrompt(targetPaneID string) state.PromptState {
+	return createTerminalPromptWithEndpoint(state.Root{}, targetPaneID, state.DefaultEndpointID)
+}
+
+func createTerminalPromptWithEndpoint(root state.Root, targetPaneID string, endpointID state.EndpointID) state.PromptState {
 	shellCommand := strings.TrimSpace(os.Getenv("SHELL"))
 	if shellCommand == "" {
 		shellCommand = "/bin/sh"
@@ -1057,24 +1062,36 @@ func createTerminalPrompt(targetPaneID string) state.PromptState {
 	if err != nil {
 		workdir = ""
 	}
+	endpointID = state.NormalizeEndpointID(endpointID)
+	endpointValue := terminalCreateEndpointPromptValue(root, endpointID)
 	return state.PromptState{
-		Title:       "Create Terminal",
-		Purpose:     "terminal.create",
-		TargetID:    targetPaneID,
-		Command:     []string{shellCommand},
-		Workdir:     workdir,
-		DefaultName: filepath.Base(shellCommand),
+		Title:            "Create Terminal",
+		Purpose:          "terminal.create",
+		TargetEndpointID: endpointID,
+		TargetID:         targetPaneID,
+		Command:          []string{shellCommand},
+		Workdir:          workdir,
+		DefaultName:      filepath.Base(shellCommand),
 		Fields: []state.PromptFieldState{
 			{Key: "name", Label: "name", Required: true},
 			{Key: "command", Label: "command", Placeholder: shellCommand},
+			{Key: "server", Label: "server", Value: endpointValue, Placeholder: "endpoint id or label", Required: true},
 			{Key: "workdir", Label: "workdir", Value: workdir},
 		},
 	}
 }
 
 func createTerminalPromptForTarget(root state.Root, target terminalPoolTarget) state.PromptState {
+	return createTerminalPromptForTargetEndpoint(root, target, "")
+}
+
+func createTerminalPromptForTargetEndpoint(root state.Root, target terminalPoolTarget, endpointID state.EndpointID) state.PromptState {
+	if target.PaneID == "" && target.FloatingID == "" {
+		target = terminalPoolTargetForActive(root)
+	}
+	endpointID = terminalCreateDefaultEndpointID(root, target, endpointID)
 	if target.FloatingID != "" {
-		prompt := createTerminalPrompt(target.PaneID)
+		prompt := createTerminalPromptWithEndpoint(root, target.PaneID, endpointID)
 		prompt.Context = "floating"
 		prompt.TargetID = target.FloatingID
 		return prompt
@@ -1082,16 +1099,20 @@ func createTerminalPromptForTarget(root state.Root, target terminalPoolTarget) s
 	if target.PaneID == "" {
 		target = terminalPoolTargetForActive(root)
 	}
-	prompt := createTerminalPrompt(target.PaneID)
+	prompt := createTerminalPromptWithEndpoint(root, target.PaneID, endpointID)
 	prompt.Context = "pane"
 	prompt.TargetID = target.PaneID
 	return prompt
 }
 
-func terminalCreateRequestFromPrompt(prompt state.PromptState) (TerminalPoolCreateRequestMsg, error) {
+func terminalCreateRequestFromPrompt(root state.Root, prompt state.PromptState) (TerminalPoolCreateRequestMsg, error) {
 	name := strings.TrimSpace(prompt.FieldValue("name"))
 	if name == "" {
 		return TerminalPoolCreateRequestMsg{}, fmt.Errorf("name is required")
+	}
+	endpointID, err := terminalCreateEndpointIDFromPrompt(root, prompt)
+	if err != nil {
+		return TerminalPoolCreateRequestMsg{}, err
 	}
 	command, err := parsePromptCommand(prompt.FieldValue("command"))
 	if err != nil {
@@ -1107,13 +1128,111 @@ func terminalCreateRequestFromPrompt(prompt state.PromptState) (TerminalPoolCrea
 	if workdir == "" {
 		workdir = strings.TrimSpace(prompt.Workdir)
 	}
-	request := TerminalPoolCreateRequestMsg{Title: name, Command: command, CWD: workdir}
+	request := TerminalPoolCreateRequestMsg{EndpointID: endpointID, Title: name, Command: command, CWD: workdir}
 	if prompt.Context == "floating" {
 		request.TargetFloatingID = prompt.TargetID
 	} else {
 		request.TargetPaneID = prompt.TargetID
 	}
 	return request, nil
+}
+
+func terminalCreateDefaultEndpointID(root state.Root, target terminalPoolTarget, preferred state.EndpointID) state.EndpointID {
+	// 中文说明：create prompt 的 endpoint 只决定 TerminalPoolCreateRequestMsg 路由；
+	// 当前 pane/floating binding 仍是 TUI 侧连接意图真值，terminal lifecycle 属于 owning daemon。
+	if preferred != "" {
+		if id := state.NormalizeEndpointID(preferred); terminalCreateEndpointAvailable(root, id) {
+			return id
+		}
+	}
+	if target.FloatingID != "" {
+		if binding, ok := root.TerminalViews.FloatingBinding(target.FloatingID); ok && terminalCreateEndpointAvailable(root, binding.EndpointID) {
+			return state.NormalizeEndpointID(binding.EndpointID)
+		}
+	}
+	if target.PaneID != "" {
+		if binding, ok := root.TerminalViews.PaneBinding(target.PaneID); ok && terminalCreateEndpointAvailable(root, binding.EndpointID) {
+			return state.NormalizeEndpointID(binding.EndpointID)
+		}
+	}
+	if root.Session.TerminalID != "" && terminalCreateEndpointAvailable(root, root.Session.EndpointID) {
+		return state.NormalizeEndpointID(root.Session.EndpointID)
+	}
+	for _, endpoint := range state.TerminalCreateEndpointItems(root) {
+		return endpoint.ID
+	}
+	if preferred != "" {
+		return state.NormalizeEndpointID(preferred)
+	}
+	return state.DefaultEndpointID
+}
+
+func terminalCreateEndpointAvailable(root state.Root, endpointID state.EndpointID) bool {
+	endpointID = state.NormalizeEndpointID(endpointID)
+	for _, endpoint := range state.TerminalCreateEndpointItems(root) {
+		if endpoint.ID == endpointID {
+			return true
+		}
+	}
+	return false
+}
+
+func terminalCreateEndpointPromptValue(root state.Root, endpointID state.EndpointID) string {
+	endpointID = state.NormalizeEndpointID(endpointID)
+	if endpoint, ok := root.Endpoints.DisplayEndpoint(endpointID); ok {
+		label := endpoint.DisplayLabel()
+		if label != "" && !strings.EqualFold(label, string(endpointID)) {
+			return fmt.Sprintf("%s (%s)", label, endpointID)
+		}
+	}
+	return string(endpointID)
+}
+
+func terminalCreateEndpointIDFromPrompt(root state.Root, prompt state.PromptState) (state.EndpointID, error) {
+	// 中文说明：server 字段可填 endpoint id、label 或 "label (id)" 展示值；
+	// 解析只接受当前 reducer-owned registry 中可创建的 endpoint，避免 disabled/manual 目标被隐式拨号。
+	value := strings.TrimSpace(prompt.FieldValue("server"))
+	if value == "" {
+		value = strings.TrimSpace(prompt.FieldValue("endpoint"))
+	}
+	if value == "" {
+		value = terminalCreateEndpointPromptValue(root, prompt.TargetEndpointID)
+	}
+	if endpointID, ok := terminalCreateEndpointIDFromValue(root, value); ok {
+		return endpointID, nil
+	}
+	return "", fmt.Errorf("server %q is not available for create", value)
+}
+
+func terminalCreateEndpointIDFromValue(root state.Root, value string) (state.EndpointID, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", false
+	}
+	candidates := []string{value}
+	if paren := strings.LastIndex(value, "("); paren >= 0 && strings.HasSuffix(value, ")") {
+		candidate := strings.TrimSpace(strings.TrimSuffix(value[paren+1:], ")"))
+		if candidate != "" {
+			candidates = append(candidates, candidate)
+		}
+	}
+	for _, endpoint := range state.TerminalCreateEndpointItems(root) {
+		for _, candidate := range candidates {
+			if strings.EqualFold(candidate, string(endpoint.ID)) ||
+				strings.EqualFold(candidate, endpoint.DisplayLabel()) ||
+				strings.EqualFold(candidate, terminalCreateEndpointPromptValue(root, endpoint.ID)) {
+				return endpoint.ID, true
+			}
+		}
+	}
+	return "", false
+}
+
+func terminalCreateEndpointIDFromPickerSelection(root state.Root, row int) state.EndpointID {
+	if selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), row); ok && selected.EndpointID != "" {
+		return selected.EndpointID
+	}
+	return ""
 }
 
 func terminalEditPrompt(item state.TerminalPoolPageItem) state.PromptState {

@@ -11,9 +11,18 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 	shell := root.Shell.ReadonlyDefaults()
 	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
 	items := []TerminalPickerItem{}
-	createItem := TerminalPickerItem{Title: "new terminal", Kind: PaneTerminalLive, CreateNew: true}
-	if matchesTerminalPickerQuery(createItem, query) {
-		items = append(items, createItem)
+	for _, endpoint := range TerminalCreateEndpointItems(root) {
+		createItem := terminalPickerItemWithEndpoint(root, TerminalPickerItem{EndpointID: endpoint.ID, Title: "new terminal", Kind: PaneTerminalLive, CreateNew: true})
+		if createItem.EndpointLabel == "" {
+			createItem.EndpointLabel = endpoint.DisplayLabel()
+			createItem.EndpointTransport = endpoint.Transport
+			createItem.EndpointConnectMode = endpoint.ConnectMode
+			createItem.EndpointStatus = endpoint.DisplayStatus()
+			createItem.EndpointLastError = endpoint.LastError
+		}
+		if matchesTerminalPickerQuery(createItem, query) {
+			items = append(items, createItem)
+		}
 	}
 	seenTerminal := map[string]struct{}{}
 	for _, poolItem := range root.TerminalPool.Items {
@@ -236,7 +245,12 @@ func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 	if item.CreateNew {
 		return TerminalPickerQueryMatchIndexes(item.Title, query) != nil ||
 			TerminalPickerQueryMatchIndexes("create terminal", query) != nil ||
-			TerminalPickerQueryMatchIndexes("new terminal", query) != nil
+			TerminalPickerQueryMatchIndexes("new terminal", query) != nil ||
+			TerminalPickerQueryMatchIndexes(string(item.EndpointID), query) != nil ||
+			TerminalPickerQueryMatchIndexes(item.EndpointLabel, query) != nil ||
+			TerminalPickerQueryMatchIndexes(string(item.EndpointTransport), query) != nil ||
+			TerminalPickerQueryMatchIndexes(string(item.EndpointConnectMode), query) != nil ||
+			TerminalPickerQueryMatchIndexes(string(item.EndpointStatus), query) != nil
 	}
 	return TerminalPickerQueryMatchIndexes(item.Title, query) != nil ||
 		TerminalPickerQueryMatchIndexes(item.TerminalID, query) != nil ||

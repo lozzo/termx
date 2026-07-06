@@ -554,7 +554,7 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 		return root, []Effect{
 			handledEffect{},
 			FuncEffect{Run: func(context.Context) Msg {
-				return ShellOpenPromptMsg{Prompt: createTerminalPromptForTarget(root, target)}
+				return ShellOpenPromptMsg{Prompt: createTerminalPromptForTargetEndpoint(root, target, selected.EndpointID)}
 			}},
 		}
 	}

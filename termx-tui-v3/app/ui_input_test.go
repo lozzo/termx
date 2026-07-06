@@ -1200,7 +1200,7 @@ func TestInteractiveRuntimeCreateTerminalFormSubmitsTerminalCreate(t *testing.T)
 		t.Fatalf("successful create should attach new terminal once, got %#v", terminal.Attaches)
 	}
 	create := terminal.Creates[0]
-	if create.Title != "my-term" || len(create.Command) != 3 || create.Command[2] != "echo hi" || len(create.Tags) != 0 {
+	if create.EndpointID != state.DefaultEndpointID || create.Title != "my-term" || len(create.Command) != 3 || create.Command[2] != "echo hi" || len(create.Tags) != 0 {
 		t.Fatalf("unexpected create request %#v", create)
 	}
 	attach := terminal.Attaches[0]
@@ -1386,6 +1386,7 @@ func TestCreateTerminalPromptSubmitUsesEditedFields(t *testing.T) {
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "h"},
 		{Kind: input.EventKindKey, Key: input.KeyTab},
+		{Kind: input.EventKindKey, Key: input.KeyTab},
 		{Kind: input.EventKindKey, Key: input.KeyHome},
 		{Kind: input.EventKindKey, Key: input.KeyEnd},
 	} {
@@ -1406,7 +1407,7 @@ func TestCreateTerminalPromptSubmitUsesEditedFields(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected terminal create request, got %#v", msg)
 	}
-	if request.Title != "dev" || strings.Join(request.Command, " ") != "bash" || request.CWD != workdir {
+	if request.EndpointID != state.DefaultEndpointID || request.Title != "dev" || strings.Join(request.Command, " ") != "bash" || request.CWD != workdir {
 		t.Fatalf("edited prompt fields should drive create request, got %#v", request)
 	}
 
@@ -1431,6 +1432,58 @@ func TestCreateTerminalPromptSubmitUsesEditedFields(t *testing.T) {
 	request = effect.Run(context.Background()).(TerminalPoolCreateRequestMsg)
 	if request.Title != "cx" || strings.Join(request.Command, " ") != "codex" {
 		t.Fatalf("custom command should override default shell fallback, got %#v", request)
+	}
+}
+
+func TestTerminalPickerCreatePromptUsesSelectedEndpoint(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell().OpenTerminalPicker(),
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+	}
+	root.Shell = root.Shell.SetTerminalPickerSelectedIndex(1, len(state.TerminalPickerItems(root)))
+
+	_, effects := reduceTerminalPickerConfirm(root, state.TerminalPickerItems(root))
+	if len(effects) != 2 {
+		t.Fatalf("expected handled and prompt effects, got %#v", effects)
+	}
+	effect, ok := effects[1].(FuncEffect)
+	if !ok || effect.Run == nil {
+		t.Fatalf("expected prompt effect, got %#v", effects[1])
+	}
+	msg, ok := effect.Run(context.Background()).(ShellOpenPromptMsg)
+	if !ok {
+		t.Fatalf("expected open prompt msg, got %#v", msg)
+	}
+	if msg.Prompt.TargetEndpointID != "west" || msg.Prompt.FieldRawValue("server") != "US West (west)" {
+		t.Fatalf("selected create row should target west endpoint, prompt=%#v", msg.Prompt)
+	}
+}
+
+func TestCreateTerminalPromptSubmitRoutesSelectedEndpoint(t *testing.T) {
+	root := state.Root{
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+	}
+	prompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, "west")
+	root.Shell = state.DefaultShell().OpenPrompt(prompt).SetPromptValue("remote-shell")
+
+	next, effects := reducePromptSubmit(root)
+	if next.Shell.Overlay.Open || len(effects) != 1 {
+		t.Fatalf("submit should close prompt and emit create effect, root=%#v effects=%#v", next, effects)
+	}
+	effect, ok := effects[0].(FuncEffect)
+	if !ok || effect.Run == nil {
+		t.Fatalf("expected create FuncEffect, got %#v", effects)
+	}
+	request, ok := effect.Run(context.Background()).(TerminalPoolCreateRequestMsg)
+	if !ok {
+		t.Fatalf("expected terminal create request, got %#v", effects)
+	}
+	if request.EndpointID != "west" || request.TargetPaneID != state.DefaultPaneID || request.Title != "remote-shell" {
+		t.Fatalf("create prompt should route to selected endpoint, got %#v", request)
 	}
 }
 
