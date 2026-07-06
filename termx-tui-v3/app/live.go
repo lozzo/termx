@@ -488,8 +488,8 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 		"rows", cfg.Rows,
 		"mode", cfg.Mode,
 		"resize_policy", cfg.ResizePolicy,
-		"existing_bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(cfg.TerminalID)),
-		"surface_state", string(root.Surface.SurfaceForTerminal(cfg.TerminalID).State),
+		"existing_bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminalRef(state.NewTerminalRef(cfg.EndpointID, cfg.TerminalID))),
+		"surface_state", string(root.Surface.SurfaceForTerminalRef(state.NewTerminalRef(cfg.EndpointID, cfg.TerminalID)).State),
 		"session_terminal", root.Session.TerminalID,
 		"session_state", string(root.Session.State),
 	)
@@ -724,10 +724,10 @@ func logLiveAttachApplied(deps LiveDeps, root state.Root, result services.Termin
 		"size_locked", result.SizeLocked,
 		"control_reason", result.ControlReason,
 		"owner_view_id", result.OwnerViewID,
-		"surface_state", string(root.Surface.SurfaceForTerminal(result.TerminalID).State),
+		"surface_state", string(root.Surface.SurfaceForTerminalRef(state.NewTerminalRef(result.EndpointID, result.TerminalID)).State),
 		"session_terminal", root.Session.TerminalID,
 		"session_state", string(root.Session.State),
-		"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(result.TerminalID)),
+		"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminalRef(state.NewTerminalRef(result.EndpointID, result.TerminalID))),
 	)
 }
 

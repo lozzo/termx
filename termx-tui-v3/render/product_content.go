@@ -207,23 +207,15 @@ func buildTerminalPickerContent(root state.Root, shell state.ShellStore) Content
 	}
 	rowOffset := len(lines)
 	rows := state.TerminalPickerItems(root)
-	var regions []HitRegion
-	if root.Endpoints.HasItems() {
-		var groupedLines []Line
-		groupedLines, regions = terminalPickerGroupedLinesAndRegions(root, rows, query, rowOffset)
-		lines = append(lines, groupedLines...)
-	} else {
-		for _, row := range rows {
-			lines = append(lines, terminalPickerLine(row, query))
-		}
-		regions = terminalPickerHitRegions(rows, rowOffset)
+	for _, row := range rows {
+		lines = append(lines, terminalPickerLine(row, query))
 	}
 	return ContentVM{
 		Kind:       ContentTerminalPicker,
 		Lines:      lines,
 		Status:     terminalPickerStatus(terminalPickerSelectableCount(rows), query),
 		Cursor:     Cursor{Visible: true, Row: 0, Col: terminalPickerSearchCursorCol(query), Shape: CursorShapeBar},
-		HitRegions: regions,
+		HitRegions: terminalPickerHitRegions(rows, rowOffset),
 	}
 }
 
@@ -919,12 +911,15 @@ func terminalPickerLine(row state.TerminalPickerItem, query string) Line {
 	if sizeText == "" {
 		sizeText = "-"
 	}
+	endpointLabel := terminalPickerEndpointLabel(row)
 	cells := []Cell{
 		styledCell(marker, markerStyle),
 		styledCell("●", terminalPoolStateStyle(stateText)),
 		pickerSpace(" "),
 	}
-	cells = append(cells, terminalPickerColumnCells(row.Title, query, textStyle, 24)...)
+	cells = append(cells, terminalPickerColumnCells(row.Title, query, textStyle, 22)...)
+	cells = append(cells, pickerSpace("  "))
+	cells = append(cells, terminalPickerColumnCells(endpointLabel, query, StylePickerMuted, 14)...)
 	cells = append(cells, pickerSpace("  "))
 	cells = append(cells, terminalPickerColumnCells(stateText, query, terminalPoolStateStyle(stateText), 10)...)
 	cells = append(cells, pickerSpace("  "))
@@ -932,6 +927,16 @@ func terminalPickerLine(row state.TerminalPickerItem, query string) Line {
 	cells = append(cells, pickerSpace("  "))
 	cells = append(cells, styledCell("Attach here", StylePickerMuted))
 	return Line{Cells: cells}
+}
+
+func terminalPickerEndpointLabel(row state.TerminalPickerItem) string {
+	if row.EndpointLabel != "" {
+		return row.EndpointLabel
+	}
+	if row.EndpointID != "" {
+		return string(row.EndpointID)
+	}
+	return "-"
 }
 
 func terminalPickerGroupedLinesAndRegions(root state.Root, rows []state.TerminalPickerItem, query string, rowOffset int) ([]Line, []HitRegion) {
@@ -1428,7 +1433,7 @@ func terminalManagerDetailLines(root state.Root, selected state.TerminalPoolPage
 	if visibleRows > 0 {
 		previewRows = visibleRows - len(lines)
 	}
-	lines = append(lines, terminalManagerPreviewLines(root.Surface.SurfaceForTerminal(selected.TerminalID), previewRows)...)
+	lines = append(lines, terminalManagerPreviewLines(root.Surface.SurfaceForTerminalRef(state.NewTerminalRef(selected.EndpointID, selected.TerminalID)), previewRows)...)
 	if visibleRows > 0 && len(lines) > visibleRows {
 		return lines[:visibleRows]
 	}
@@ -2602,7 +2607,7 @@ func workbenchPaneStateLabel(root state.Root, selected state.WorkbenchTreeItem) 
 	surface := state.TerminalSurfaceStore{}
 	session := state.TerminalSessionStore{}
 	if hasBinding && binding.TerminalID != "" {
-		surface = root.Surface.SurfaceForTerminal(binding.TerminalID)
+		surface = surfaceForBinding(root, binding)
 		session = sessionForBinding(root, binding)
 	}
 	switch {

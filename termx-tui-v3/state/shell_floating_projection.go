@@ -53,13 +53,17 @@ func floatingOverviewTerminalProjection(root Root, floating FloatingPaneState, t
 	stateText := string(floating.Pane.Kind)
 	cols, rows := floating.Rect.W-2, floating.Rect.H-2
 	if terminalID != "" {
+		ref := LocalTerminalRef(terminalID)
+		if binding, ok := root.TerminalViews.FloatingBinding(floating.ID); ok && binding.TerminalID != "" {
+			ref = binding.TerminalRef()
+		}
 		// 中文说明：overview 只做展示投影，terminal lifecycle/size 仍以 core/pool/live/binding 为来源。
-		if poolItem, ok := terminalPoolItemByID(root.TerminalPool, terminalID); ok {
+		if poolItem, ok := terminalPoolItemByRef(root.TerminalPool, ref); ok {
 			title = terminalPoolTitle(poolItem)
 			stateText = poolItem.State
 			cols, rows = poolItem.Cols, poolItem.Rows
 		} else {
-			surface := root.Surface.SurfaceForTerminal(terminalID)
+			surface := root.Surface.SurfaceForTerminalRef(ref)
 			if surface.Title != "" {
 				title = surface.Title
 			}
@@ -109,12 +113,13 @@ func floatingOverviewTerminalProjection(root Root, floating FloatingPaneState, t
 	return title, stateText, cols, rows
 }
 
-func terminalPoolItemByID(pool TerminalPoolStore, terminalID string) (TerminalPoolItem, bool) {
-	if terminalID == "" {
+func terminalPoolItemByRef(pool TerminalPoolStore, ref TerminalRef) (TerminalPoolItem, bool) {
+	ref = ref.Normalize()
+	if ref.Empty() {
 		return TerminalPoolItem{}, false
 	}
 	for _, item := range pool.Items {
-		if item.TerminalID == terminalID {
+		if item.TerminalRef().Equal(ref) {
 			return item, true
 		}
 	}

@@ -1662,7 +1662,7 @@ func (runtime *AppRuntime) paneMouseTrackingEnabled(paneID string) bool {
 	if !ok || binding.TerminalID == "" {
 		return false
 	}
-	surface := runtime.state.Surface.SurfaceForTerminal(binding.TerminalID)
+	surface := runtime.state.Surface.SurfaceForTerminalRef(binding.TerminalRef())
 	return surface.Modes.MousePassthroughEnabled()
 }
 
@@ -1674,7 +1674,7 @@ func (runtime *AppRuntime) floatingMouseTrackingEnabled(floatingID string) bool 
 	if !ok || binding.TerminalID == "" {
 		return false
 	}
-	surface := runtime.state.Surface.SurfaceForTerminal(binding.TerminalID)
+	surface := runtime.state.Surface.SurfaceForTerminalRef(binding.TerminalRef())
 	return surface.Modes.MousePassthroughEnabled()
 }
 

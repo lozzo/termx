@@ -3000,7 +3000,7 @@ func TestRenderVMBuilderProjectsTerminalPickerPoolStateAndRows(t *testing.T) {
 	}
 }
 
-func TestRenderVMBuilderProjectsTerminalPickerEndpointGroups(t *testing.T) {
+func TestRenderVMBuilderProjectsTerminalPickerEndpointLabels(t *testing.T) {
 	root := state.Root{
 		Shell: state.DefaultShell().OpenTerminalPicker(),
 		Endpoints: (state.EndpointStore{}).
@@ -3018,20 +3018,49 @@ func TestRenderVMBuilderProjectsTerminalPickerEndpointGroups(t *testing.T) {
 
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	plain := plainLines(content.Lines)
-	for _, want := range []string{"This Mac", "connected", "auto", "local shell", "Manual Box", "manual connect", "US West", "offline", "on_demand", "ssh", "ssh timeout", "west shell"} {
+	for _, want := range []string{"local shell", "This Mac", "west shell", "US West", "running"} {
 		if !strings.Contains(plain, want) {
-			t.Fatalf("expected endpoint picker content %q in:\n%s", want, plain)
+			t.Fatalf("expected flat endpoint label picker content %q in:\n%s", want, plain)
+		}
+	}
+	for _, notWant := range []string{"Manual Box", "manual connect", "ssh timeout"} {
+		if strings.Contains(plain, notWant) {
+			t.Fatalf("terminal picker should stay a flat terminal table without endpoint-only rows %q in:\n%s", notWant, plain)
 		}
 	}
 	if len(content.HitRegions) != 3 || content.HitRegions[0].Row != 0 || content.HitRegions[1].Row != 1 || content.HitRegions[2].Row != 2 {
-		t.Fatalf("endpoint headers must not become picker hit regions, got %#v", content.HitRegions)
+		t.Fatalf("flat picker rows should own hit regions, got %#v", content.HitRegions)
 	}
 
 	root.Shell = root.Shell.SetTerminalPickerQuery("US West")
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	plain = plainLines(content.Lines)
-	if !strings.Contains(plain, "US West") || !strings.Contains(plain, "west shell") || strings.Contains(plain, "local shell") || len(content.HitRegions) != 1 || content.HitRegions[0].Row != 0 {
+	if !strings.Contains(plain, "US West") || !strings.Contains(plain, "west shell") || strings.Contains(plain, "local shell") || strings.Contains(plain, "ssh timeout") || len(content.HitRegions) != 1 || content.HitRegions[0].Row != 0 {
 		t.Fatalf("endpoint label query should show only west terminal row, lines=%#v hits=%#v", content.Lines, content.HitRegions)
+	}
+}
+
+func TestRenderVMBuilderUsesEndpointSurfaceForBoundTerminal(t *testing.T) {
+	ref := state.NewTerminalRef("west", "term-live")
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		Surface: (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+			EndpointID: ref.EndpointID,
+			TerminalID: ref.TerminalID,
+			Revision:   2,
+			Cols:       100,
+			Rows:       30,
+			Lines:      []string{"west live ready"},
+			State:      state.TerminalLiveAttached,
+		}),
+		Session: (state.TerminalSessionStore{}).AttachRefWithResizeOwner(ref, 7, 100, 30, state.TerminalResizeRoleFollower, "surface-west", state.TerminalPaneViewID(state.DefaultPaneID)),
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView(ref.EndpointID, state.DefaultPaneID, ref.TerminalID, 7, 100, 30, state.TerminalResizeRoleFollower, "surface-west", state.TerminalPaneViewID(state.DefaultPaneID), false))
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, ref.TerminalID)
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if content.Pending || content.Empty || len(content.Lines) == 0 || content.Lines[0].PlainString() != "west live ready" {
+		t.Fatalf("endpoint-bound pane must read west live surface instead of local pending, got %#v", content)
 	}
 }
 

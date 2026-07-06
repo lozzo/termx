@@ -75,9 +75,10 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 }
 
 func terminalPickerItemFromBinding(root Root, binding TerminalViewBinding) TerminalPickerItem {
-	surface := root.Surface.SurfaceForTerminal(binding.TerminalID)
+	ref := binding.TerminalRef()
+	surface := root.Surface.SurfaceForTerminalRef(ref)
 	stateText := string(surface.State)
-	if stateText == "" || stateText == string(TerminalLivePending) {
+	if (stateText == "" || stateText == string(TerminalLivePending)) && root.Session.TerminalRef().Equal(ref) {
 		stateText = string(root.Session.State)
 	}
 	cols := binding.DesiredCols
@@ -88,16 +89,17 @@ func terminalPickerItemFromBinding(root Root, binding TerminalViewBinding) Termi
 	if rows <= 0 {
 		rows = surface.Rows
 	}
-	return terminalPickerItemWithEndpoint(root, TerminalPickerItem{EndpointID: binding.EndpointID, Title: binding.TerminalID, Kind: PaneTerminalLive, TerminalID: binding.TerminalID, Active: binding.Attached, PoolState: stateText, Cols: cols, Rows: rows})
+	return terminalPickerItemWithEndpoint(root, TerminalPickerItem{EndpointID: ref.EndpointID, Title: binding.TerminalID, Kind: PaneTerminalLive, TerminalID: binding.TerminalID, Active: binding.Attached, PoolState: stateText, Cols: cols, Rows: rows})
 }
 
 func terminalPickerItemFromSession(root Root) TerminalPickerItem {
-	surface := root.Surface.SurfaceForTerminal(root.Session.TerminalID)
+	ref := root.Session.TerminalRef()
+	surface := root.Surface.SurfaceForTerminalRef(ref)
 	stateText := string(surface.State)
 	if stateText == "" || stateText == string(TerminalLivePending) {
 		stateText = string(root.Session.State)
 	}
-	return terminalPickerItemWithEndpoint(root, TerminalPickerItem{EndpointID: DefaultEndpointID, Title: root.Session.TerminalID, Kind: PaneTerminalLive, TerminalID: root.Session.TerminalID, Active: root.Session.Attached, PoolState: stateText, Cols: root.Session.Cols, Rows: root.Session.Rows})
+	return terminalPickerItemWithEndpoint(root, TerminalPickerItem{EndpointID: ref.EndpointID, Title: root.Session.TerminalID, Kind: PaneTerminalLive, TerminalID: root.Session.TerminalID, Active: root.Session.Attached, PoolState: stateText, Cols: root.Session.Cols, Rows: root.Session.Rows})
 }
 
 func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {

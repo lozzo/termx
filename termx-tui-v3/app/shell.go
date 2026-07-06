@@ -1850,14 +1850,14 @@ func floatingCommandFitSize(root state.Root, command state.FloatingCommand) (int
 	if !ok || binding.TerminalID == "" {
 		return 0, 0
 	}
-	surface := root.Surface.SurfaceForTerminal(binding.TerminalID)
+	surface := root.Surface.SurfaceForTerminalRef(binding.TerminalRef())
 	if surface.Cols > 0 && surface.Rows > 0 {
 		return surface.Cols, surface.Rows
 	}
 	if binding.DesiredCols > 0 && binding.DesiredRows > 0 {
 		return binding.DesiredCols, binding.DesiredRows
 	}
-	if root.Session.TerminalID == binding.TerminalID {
+	if root.Session.TerminalRef().Equal(binding.TerminalRef()) {
 		return root.Session.DesiredSize()
 	}
 	return 0, 0

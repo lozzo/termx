@@ -804,7 +804,7 @@ func terminalStateSummary(root state.Root, pane state.PaneState) string {
 	surface := state.TerminalSurfaceStore{}
 	session := state.TerminalSessionStore{}
 	if hasBinding && binding.TerminalID != "" {
-		surface = root.Surface.SurfaceForTerminal(binding.TerminalID)
+		surface = surfaceForBinding(root, binding)
 		session = sessionForBinding(root, binding)
 	}
 	switch {
@@ -1034,7 +1034,7 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 		ownerText = paneChromeOwnerText()
 		ownerStyle = StyleSuccess
 	}
-	title := terminalChromeTitle(root, pane, binding.TerminalID)
+	title := terminalChromeTitle(root, pane, binding)
 	layout := binding.Layout.Normalize()
 	return TerminalChromeVM{
 		Locked:       binding.SizeLocked,
@@ -1044,8 +1044,8 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 		AlignX:       layout.AlignX,
 		AlignY:       layout.AlignY,
 		Title:        ChromeSlotVM{Text: title, Style: style},
-		State:        terminalChromeStateSlot(root, binding.TerminalID, active, content),
-		AttachCount:  terminalChromeAttachCount(root, binding.TerminalID),
+		State:        terminalChromeStateSlot(root, binding, active, content),
+		AttachCount:  terminalChromeAttachCount(root, binding),
 		Owner:        ChromeSlotVM{Text: ownerText, Style: ownerStyle},
 		TakeOwner:    !binding.HasResizeOwner(),
 		CanLockSize:  projectedOwner,
@@ -1056,12 +1056,13 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 	}
 }
 
-func terminalChromeAttachCount(root state.Root, terminalID string) int {
-	if count := len(root.TerminalViews.BindingsForTerminal(terminalID)); count > 0 {
+func terminalChromeAttachCount(root state.Root, binding state.TerminalViewBinding) int {
+	ref := binding.TerminalRef()
+	if count := len(root.TerminalViews.BindingsForTerminalRef(ref)); count > 0 {
 		return count
 	}
 	for _, item := range root.TerminalPool.Items {
-		if item.TerminalID == terminalID && item.AttachmentCount > 0 {
+		if item.TerminalRef().Equal(ref) && item.AttachmentCount > 0 {
 			return item.AttachmentCount
 		}
 	}
@@ -1077,9 +1078,10 @@ func defaultFloatingChromeActionVMs(style StyleToken) []ChromeActionVM {
 	}
 }
 
-func terminalChromeTitle(root state.Root, pane state.PaneState, terminalID string) string {
+func terminalChromeTitle(root state.Root, pane state.PaneState, binding state.TerminalViewBinding) string {
+	ref := binding.TerminalRef()
 	for _, item := range root.TerminalPool.Items {
-		if item.TerminalID != terminalID {
+		if !item.TerminalRef().Equal(ref) {
 			continue
 		}
 		if title := strings.TrimSpace(item.Title); title != "" {
@@ -1090,10 +1092,10 @@ func terminalChromeTitle(root state.Root, pane state.PaneState, terminalID strin
 	if title := strings.TrimSpace(pane.Title); title != "" {
 		return title
 	}
-	return terminalID
+	return binding.TerminalID
 }
 
-func terminalChromeStateSlot(root state.Root, terminalID string, active bool, content ContentVM) ChromeSlotVM {
+func terminalChromeStateSlot(root state.Root, binding state.TerminalViewBinding, active bool, content ContentVM) ChromeSlotVM {
 	style := StyleMuted
 	if active {
 		style = StyleSuccess
@@ -1104,7 +1106,7 @@ func terminalChromeStateSlot(root state.Root, terminalID string, active bool, co
 	if content.Error != "" || content.Empty {
 		style = StyleDanger
 	}
-	surface := root.Surface.SurfaceForTerminal(terminalID)
+	surface := surfaceForBinding(root, binding)
 	if surface.State == state.TerminalLiveExited || surface.State == state.TerminalLiveError {
 		style = StyleDanger
 	}
@@ -1338,14 +1340,15 @@ func surfaceForBinding(root state.Root, binding state.TerminalViewBinding) state
 	if binding.TerminalID == "" {
 		return state.TerminalSurfaceStore{}
 	}
-	return root.Surface.SurfaceForTerminal(binding.TerminalID)
+	return root.Surface.SurfaceForTerminalRef(binding.TerminalRef())
 }
 
 func sessionForBinding(root state.Root, binding state.TerminalViewBinding) state.TerminalSessionStore {
 	if binding.TerminalID == "" {
 		return state.TerminalSessionStore{}
 	}
-	surface := root.Surface.SurfaceForTerminal(binding.TerminalID)
+	ref := binding.TerminalRef()
+	surface := root.Surface.SurfaceForTerminalRef(ref)
 	cols, rows := binding.DesiredCols, binding.DesiredRows
 	if cols <= 0 {
 		cols = surface.Cols
@@ -1354,6 +1357,7 @@ func sessionForBinding(root state.Root, binding state.TerminalViewBinding) state
 		rows = surface.Rows
 	}
 	session := state.TerminalSessionStore{
+		EndpointID:   ref.EndpointID,
 		TerminalID:   binding.TerminalID,
 		Channel:      binding.Channel,
 		Attached:     binding.Attached,

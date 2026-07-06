@@ -84,9 +84,9 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["terminal-picker"].Lines, "termx-picker shell") ||
 		!frameContains(cases["terminal-picker"].Lines, "running") ||
 		!frameContains(cases["terminal-picker"].Lines, "80x24") ||
+		!frameContains(cases["terminal-picker"].Lines, "local") ||
 		!frameContains(cases["terminal-picker"].Lines, "+ new terminal") ||
 		!frameContains(cases["terminal-picker"].Lines, "Create terminal") ||
-		!frameContains(cases["terminal-picker"].Lines, "Attach here") ||
 		frameContains(cases["terminal-picker"].Lines, "filter terminals") ||
 		frameContains(cases["terminal-picker"].Lines, "Select terminal source state target") ||
 		frameContains(cases["terminal-picker"].Lines, "DETAIL") ||

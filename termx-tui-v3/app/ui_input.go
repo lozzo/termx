@@ -480,26 +480,26 @@ func activeExitedPaneCTATarget(root state.Root, shell state.ShellStore) (state.P
 }
 
 func paneHasExitedTerminal(root state.Root, paneID string, floating bool) bool {
-	terminalID := ""
+	ref := state.TerminalRef{}
 	if floating {
 		if floatingID, ok := root.Shell.ReadonlyDefaults().FloatingIDForPaneID(paneID); ok {
 			if binding, ok := root.TerminalViews.FloatingBinding(floatingID); ok {
-				terminalID = binding.TerminalID
+				ref = binding.TerminalRef()
 			}
 		}
 	} else if binding, ok := root.TerminalViews.PaneBinding(paneID); ok {
-		terminalID = binding.TerminalID
+		ref = binding.TerminalRef()
 	}
-	if terminalID == "" {
+	if ref.Empty() {
 		return false
 	}
 	// 退出 CTA 只认当前 TerminalView binding 对应的 reducer lifecycle。
 	// surface/session 都是 core/live 消息回投，不从 pane kind 或 workbench storage 推断。
-	surface := root.Surface.SurfaceForTerminal(terminalID)
+	surface := root.Surface.SurfaceForTerminalRef(ref)
 	if surface.State == state.TerminalLiveExited {
 		return true
 	}
-	return root.Session.TerminalID == terminalID && root.Session.State == state.TerminalLiveExited
+	return root.Session.TerminalRef().Equal(ref) && root.Session.State == state.TerminalLiveExited
 }
 
 func reduceTerminalPickerInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
