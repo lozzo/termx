@@ -601,6 +601,7 @@ func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) 
 	}
 	store := (EndpointStore{}).ApplyConnectionRegistry(registry)
 	store = store.MarkTerminalListResult("west", 0, "ssh timeout")
+	store = store.ApplyDefaults("west", []string{"/bin/bash", "-l"}, "/srv/app", "")
 
 	if west, ok := store.Endpoint("west"); !ok || west.DisplayStatus() != EndpointStatusOffline || west.LastError != "ssh timeout" {
 		t.Fatalf("west endpoint should be offline only in endpoint store, got %#v ok=%v", west, ok)
@@ -611,7 +612,7 @@ func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) 
 	cfg.Label = "West Renamed"
 	renamed.Connections["west"] = cfg
 	store = store.ApplyConnectionRegistry(renamed)
-	if west, _ := store.Endpoint("west"); west.DisplayLabel() != "West Renamed" || west.DisplayStatus() != EndpointStatusOffline || west.ReconnectRequired {
+	if west, _ := store.Endpoint("west"); west.DisplayLabel() != "West Renamed" || west.DisplayStatus() != EndpointStatusOffline || west.ReconnectRequired || !west.DefaultsLoaded || west.DefaultCWD != "/srv/app" || strings.Join(west.DefaultCommand, " ") != "/bin/bash -l" {
 		t.Fatalf("label reload should update display only, got %#v", west)
 	}
 

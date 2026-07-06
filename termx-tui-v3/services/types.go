@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"time"
 
@@ -126,10 +125,12 @@ type TerminalService interface {
 }
 
 // PathService 是 TUI/client 对 endpoint daemon 文件系统只读查询的 service 边界。
-// 它只用于 prompt/workdir 这类 endpoint-scoped path completion；目录 truth 来自
-// owning daemon 机器，service 不缓存、不持久化，也不改写 terminal lifecycle。
+// 它只用于 prompt/workdir 这类 endpoint-scoped path completion 和创建默认值；
+// 目录、默认 shell 与默认 cwd truth 来自 owning daemon 机器，service 不缓存、
+// 不持久化，也不改写 terminal lifecycle。
 type PathService interface {
 	ListDirectories(context.Context, PathListDirectoriesRequest) (PathListDirectoriesResult, error)
+	Defaults(context.Context, PathDefaultsRequest) (PathDefaultsResult, error)
 }
 
 // NativeScreenSource 是 TUI live render loop 拉取 core latest native screen 的唯一接口。
@@ -211,6 +212,20 @@ type PathListDirectoriesResult struct {
 	Truncated  bool
 }
 
+// PathDefaultsRequest 描述一次 endpoint 创建默认值查询。
+// EndpointID 只在 EndpointManager 层用于选择 daemon；进入 protocol adapter 前必须清空。
+type PathDefaultsRequest struct {
+	EndpointID state.EndpointID
+}
+
+// PathDefaultsResult 是 endpoint daemon 返回给 TUI 的创建默认值投影。
+// DefaultCommand/DefaultCWD 来自 daemon 进程所在机器，TUI 不得用本地 SHELL 或 cwd 覆盖。
+type PathDefaultsResult struct {
+	EndpointID     state.EndpointID
+	DefaultCommand []string
+	DefaultCWD     string
+}
+
 type TerminalCreateRequest struct {
 	EndpointID state.EndpointID
 	TerminalID string
@@ -226,15 +241,6 @@ type TerminalCreateResult struct {
 	EndpointID state.EndpointID
 	TerminalID string
 	State      string
-}
-
-func DefaultTerminalCommand() []string {
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
-	// TUI-v3 的 first-party create 必须总是给 core-v2 一个真实命令，不能发送空 command。
-	return []string{shell}
 }
 
 type TerminalAttachRequest struct {
@@ -652,6 +658,8 @@ type FakeTerminalService struct {
 	LiveInvalidationsErr     error
 	PathResult               PathListDirectoriesResult
 	PathErr                  error
+	PathDefaultsResult       PathDefaultsResult
+	PathDefaultsErr          error
 	Attaches                 []TerminalAttachRequest
 	Detaches                 []TerminalDetachRequest
 	Lists                    []TerminalListRequest
@@ -667,6 +675,7 @@ type FakeTerminalService struct {
 	Surfaces                 []TerminalSurfaceRequest
 	LiveInvalidationRequests []TerminalLiveEventRequest
 	PathRequests             []PathListDirectoriesRequest
+	PathDefaultsRequests     []PathDefaultsRequest
 }
 
 type FakeWorkbenchStorageService struct {
@@ -950,6 +959,19 @@ func (service *FakeTerminalService) ListDirectories(_ context.Context, req PathL
 	}
 	result := service.PathResult
 	result.Entries = clonePathDirectoryEntries(result.Entries)
+	if result.EndpointID == "" {
+		result.EndpointID = req.EndpointID
+	}
+	return result, nil
+}
+
+func (service *FakeTerminalService) Defaults(_ context.Context, req PathDefaultsRequest) (PathDefaultsResult, error) {
+	service.PathDefaultsRequests = append(service.PathDefaultsRequests, req)
+	if service.PathDefaultsErr != nil {
+		return PathDefaultsResult{}, service.PathDefaultsErr
+	}
+	result := service.PathDefaultsResult
+	result.DefaultCommand = append([]string(nil), result.DefaultCommand...)
 	if result.EndpointID == "" {
 		result.EndpointID = req.EndpointID
 	}

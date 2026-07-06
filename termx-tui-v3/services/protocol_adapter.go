@@ -29,6 +29,7 @@ type ProtocolStorageClient interface {
 // 实现必须把目录查询发送到当前 protocol session 所属 daemon，不能退回本地文件系统。
 type ProtocolPathClient interface {
 	ListDirectories(context.Context, protocol.PathListDirsParams) (*protocol.PathListDirsResult, error)
+	PathDefaults(context.Context) (*protocol.PathDefaultsResult, error)
 }
 
 // ProtocolPathServiceAdapter 把 endpoint path completion service 映射到 core-v2 protocol。
@@ -61,6 +62,22 @@ func (adapter ProtocolPathServiceAdapter) ListDirectories(ctx context.Context, r
 		out.Entries = append(out.Entries, PathDirectoryEntry{Name: entry.Name, Path: entry.Path})
 	}
 	return out, nil
+}
+
+// Defaults 返回当前 daemon 进程所在机器的创建默认值。
+// EndpointID 已由 EndpointManager 剥离；adapter 只消费 protocol 投影，不读取 TUI 本地环境。
+func (adapter ProtocolPathServiceAdapter) Defaults(ctx context.Context, _ PathDefaultsRequest) (PathDefaultsResult, error) {
+	if adapter.Client == nil {
+		return PathDefaultsResult{}, fmt.Errorf("missing path client")
+	}
+	result, err := adapter.Client.PathDefaults(ctx)
+	if err != nil {
+		return PathDefaultsResult{}, err
+	}
+	return PathDefaultsResult{
+		DefaultCommand: append([]string(nil), result.DefaultCommand...),
+		DefaultCWD:     result.DefaultCWD,
+	}, nil
 }
 
 // ProtocolCoreClientAdapter 是真实 protocol history.window 的 service adapter。

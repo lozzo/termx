@@ -238,6 +238,17 @@ func (c *Client) ListDirectories(ctx context.Context, params PathListDirsParams)
 	return &out, nil
 }
 
+// PathDefaults 请求当前 protocol session 所属 daemon 的创建默认值。
+// 默认 shell/cwd 的 truth 在 daemon 机器；该方法避免 TUI 进程用本地 SHELL 或 cwd
+// 猜测 remote endpoint 的终端创建参数。
+func (c *Client) PathDefaults(ctx context.Context) (*PathDefaultsResult, error) {
+	var out PathDefaultsResult
+	if err := c.doRequest(ctx, "path.defaults", map[string]any{}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) Kill(ctx context.Context, terminalID string) error {
 	return c.doRequest(ctx, "kill", GetParams{TerminalID: terminalID}, nil)
 }

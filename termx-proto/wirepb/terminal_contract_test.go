@@ -168,6 +168,10 @@ func TestCoreV2RemoteWireContractFields(t *testing.T) {
 		"missing":   3,
 		"truncated": 4,
 	})
+	assertFields(t, (&PathDefaultsResult{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"default_command": 1,
+		"default_cwd":     2,
+	})
 }
 
 func assertFields(t *testing.T, message protoreflect.MessageDescriptor, fields map[protoreflect.Name]protoreflect.FieldNumber) {

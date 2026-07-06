@@ -274,6 +274,11 @@ message PathListDirsResult {
   bool truncated = 4;
 }
 
+message PathDefaultsResult {
+  repeated string default_command = 1;
+  string default_cwd = 2;
+}
+
 message CursorState {
   int32 row = 1;
   int32 col = 2;

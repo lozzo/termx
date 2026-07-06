@@ -61,6 +61,35 @@ func listPathDirectories(params protocol.PathListDirsParams) (protocol.PathListD
 	return out, nil
 }
 
+func pathDefaults() protocol.PathDefaultsResult {
+	return protocol.PathDefaultsResult{
+		DefaultCommand: defaultPathCommand(),
+		DefaultCWD:     defaultPathCWD(),
+	}
+}
+
+func defaultPathCommand() []string {
+	shell := strings.TrimSpace(os.Getenv("SHELL"))
+	if shell != "" {
+		return []string{shell}
+	}
+	// 中文说明：默认 shell 的 truth 在 daemon 进程所在机器；环境缺失时只退回
+	// 该机器上最小 POSIX shell，不读取 TUI/client 进程环境。
+	return []string{"/bin/sh"}
+}
+
+func defaultPathCWD() string {
+	cwd, err := os.Getwd()
+	if err == nil && strings.TrimSpace(cwd) != "" {
+		return strings.TrimSpace(cwd)
+	}
+	home, err := os.UserHomeDir()
+	if err == nil {
+		return strings.TrimSpace(home)
+	}
+	return ""
+}
+
 func pathCompletionBase(prefix string) (string, string, string, bool) {
 	home, _ := os.UserHomeDir()
 	cwd, err := os.Getwd()

@@ -203,6 +203,21 @@ func (manager *EndpointManager) ListDirectories(ctx context.Context, req PathLis
 	return result, err
 }
 
+// Defaults 把创建默认 shell/cwd 查询路由到目标 endpoint 的 daemon。
+// 结果由 manager 回填 EndpointID，保证 reducer 缓存的是 endpoint-owned 默认值，
+// 而不是 TUI/client 本地进程环境。
+func (manager *EndpointManager) Defaults(ctx context.Context, req PathDefaultsRequest) (PathDefaultsResult, error) {
+	endpointID, pathService, err := manager.path(ctx, req.EndpointID)
+	if err != nil {
+		return PathDefaultsResult{EndpointID: endpointID}, err
+	}
+	req.EndpointID = ""
+	result, err := pathService.Defaults(ctx, req)
+	result.EndpointID = endpointID
+	result.DefaultCommand = append([]string(nil), result.DefaultCommand...)
+	return result, err
+}
+
 // Create 把 terminal create 请求路由到目标 endpoint。
 // create 的 TerminalID 仍由 owning daemon 校验；manager 只补回 endpoint-scoped result。
 func (manager *EndpointManager) Create(ctx context.Context, req TerminalCreateRequest) (TerminalCreateResult, error) {

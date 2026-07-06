@@ -41,11 +41,7 @@ func promptWorkdirCompletionUsesLocal(root state.Root, prompt state.PromptState)
 	if prompt.Purpose != "terminal.create" {
 		return true
 	}
-	endpointID, err := terminalCreateEndpointIDFromPrompt(root, prompt)
-	if err != nil {
-		return true
-	}
-	return terminalCreateEndpointUsesLocalWorkdir(root, endpointID)
+	return false
 }
 
 func terminalCreateEndpointSuggestionPopup(root state.Root, value string) (string, []string, string) {

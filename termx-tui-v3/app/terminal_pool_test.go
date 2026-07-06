@@ -322,9 +322,10 @@ func TestTerminalPoolCreateRequestDefaultsRemoteCommandByEndpoint(t *testing.T) 
 	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Shell: state.DefaultShell(),
-		Endpoints: state.EndpointStore{}.
+		Endpoints: (state.EndpointStore{}.
 			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "Local", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
-			Upsert(state.EndpointItem{ID: "west", Label: "West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+			Upsert(state.EndpointItem{ID: "west", Label: "West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true})).
+			ApplyDefaults("west", []string{"/bin/bash", "-l"}, "/srv/west", ""),
 	}
 
 	_, effects := reducer(root, TerminalPoolCreateRequestMsg{EndpointID: "west", Title: "remote", TargetPaneID: state.DefaultPaneID})
@@ -335,7 +336,7 @@ func TestTerminalPoolCreateRequestDefaultsRemoteCommandByEndpoint(t *testing.T) 
 	if !ok || msg.EndpointID != "west" {
 		t.Fatalf("create effect should return west create result, msg=%#v", msg)
 	}
-	if len(terminal.Creates) != 1 || terminal.Creates[0].EndpointID != "west" || strings.Join(terminal.Creates[0].Command, " ") != "/bin/sh" {
+	if len(terminal.Creates) != 1 || terminal.Creates[0].EndpointID != "west" || strings.Join(terminal.Creates[0].Command, " ") != "/bin/bash -l" {
 		t.Fatalf("remote create request should default command for target endpoint, creates=%#v", terminal.Creates)
 	}
 }

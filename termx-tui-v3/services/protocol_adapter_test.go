@@ -82,6 +82,8 @@ type fakeProtocolTerminalClient struct {
 	createResult              *protocol.CreateResult
 	pathListParams            []protocol.PathListDirsParams
 	pathListResult            *protocol.PathListDirsResult
+	pathDefaultsCalls         int
+	pathDefaultsResult        *protocol.PathDefaultsResult
 	storageGets               []protocol.StorageGetParams
 	storagePuts               []protocol.StoragePutParams
 	storageEntry              *protocol.StorageEntry
@@ -218,6 +220,14 @@ func (client *fakeProtocolTerminalClient) ListDirectories(_ context.Context, par
 		return client.pathListResult, nil
 	}
 	return &protocol.PathListDirsResult{}, nil
+}
+
+func (client *fakeProtocolTerminalClient) PathDefaults(context.Context) (*protocol.PathDefaultsResult, error) {
+	client.pathDefaultsCalls++
+	if client.pathDefaultsResult != nil {
+		return client.pathDefaultsResult, nil
+	}
+	return &protocol.PathDefaultsResult{}, nil
 }
 
 func (client *fakeProtocolTerminalClient) Create(_ context.Context, params protocol.CreateParams) (*protocol.CreateResult, error) {
@@ -361,6 +371,27 @@ func TestProtocolPathServiceAdapterListsDirectoriesThroughProtocol(t *testing.T)
 	wantEntries := []PathDirectoryEntry{{Name: "project", Path: "~/project/"}, {Name: "profile", Path: "~/profile/"}}
 	if result.EndpointID != "" || result.BasePath != "/home/root" || !result.Truncated || !reflect.DeepEqual(result.Entries, wantEntries) {
 		t.Fatalf("unexpected path adapter result %#v", result)
+	}
+}
+
+func TestProtocolPathServiceAdapterLoadsDefaultsThroughProtocol(t *testing.T) {
+	client := &fakeProtocolTerminalClient{
+		pathDefaultsResult: &protocol.PathDefaultsResult{
+			DefaultCommand: []string{"/bin/bash", "-l"},
+			DefaultCWD:     "/srv/app",
+		},
+	}
+	adapter := ProtocolPathServiceAdapter{Client: client}
+
+	result, err := adapter.Defaults(context.Background(), PathDefaultsRequest{EndpointID: "west"})
+	if err != nil {
+		t.Fatalf("path defaults: %v", err)
+	}
+	if client.pathDefaultsCalls != 1 {
+		t.Fatalf("expected one path defaults call, got %d", client.pathDefaultsCalls)
+	}
+	if result.EndpointID != "" || result.DefaultCWD != "/srv/app" || strings.Join(result.DefaultCommand, " ") != "/bin/bash -l" {
+		t.Fatalf("unexpected defaults result %#v", result)
 	}
 }
 
@@ -1795,10 +1826,10 @@ func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
 	if created.TerminalID != "term-new" || len(client.createParams) != 1 || client.createParams[0].Size.Cols != 100 || client.createParams[0].Name != "new" || client.createParams[0].Dir != "/tmp/app" || client.createParams[0].Tags["role"] != "dev" {
 		t.Fatalf("unexpected create mapping created=%#v params=%#v", created, client.createParams)
 	}
-	if _, err := adapter.Create(context.Background(), TerminalCreateRequest{TerminalID: "term-default", Title: "default", Cols: 80, Rows: 24}); err != nil {
-		t.Fatalf("create with default command: %v", err)
+	if _, err := adapter.Create(context.Background(), TerminalCreateRequest{TerminalID: "term-default", Title: "default", Cols: 80, Rows: 24}); err == nil {
+		t.Fatal("expected empty command create to fail before protocol call")
 	}
-	if len(client.createParams) != 2 || len(client.createParams[1].Command) == 0 {
+	if len(client.createParams) != 1 {
 		t.Fatalf("adapter must not send empty create command, params=%#v", client.createParams)
 	}
 	if err := adapter.Restart(context.Background(), TerminalRestartRequest{TerminalID: "term-pool"}); err != nil {

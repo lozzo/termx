@@ -107,6 +107,7 @@ func promptPathCompletionTriggerEffect(root state.Root, focus bool) []Effect {
 
 func promptCompletionHandledEffects(root state.Root, focus bool) []Effect {
 	effects := []Effect{handledEffect{}}
+	effects = append(effects, promptEndpointDefaultsTriggerEffect(root)...)
 	return append(effects, promptPathCompletionTriggerEffect(root, focus)...)
 }
 
@@ -121,7 +122,7 @@ func promptPathCompletionRequestFromRoot(root state.Root, focus bool) (PromptPat
 		return PromptPathCompletionRequestMsg{}, false
 	}
 	endpointID, err := terminalCreateEndpointIDFromPrompt(root, prompt)
-	if err != nil || terminalCreateEndpointUsesLocalWorkdir(root, endpointID) {
+	if err != nil {
 		return PromptPathCompletionRequestMsg{}, false
 	}
 	prefix := promptPathCompletionPrefix(field.Value, field.Cursor)
@@ -137,6 +138,17 @@ func promptPathCompletionRequestFromRoot(root state.Root, focus bool) (PromptPat
 		Limit:       defaultPromptPathCompletionLimit,
 		Focus:       focus,
 	}, true
+}
+
+func promptEndpointDefaultsTriggerEffect(root state.Root) []Effect {
+	endpointID := currentCreatePromptEndpoint(root)
+	if endpointID == "" {
+		return nil
+	}
+	if endpoint, ok := root.Endpoints.DisplayEndpoint(endpointID); ok && endpoint.DefaultsLoaded && endpoint.DefaultsError == "" {
+		return nil
+	}
+	return endpointDefaultsRequestEffect(endpointID, false)
 }
 
 func promptPathCompletionMatches(root state.Root, request PromptPathCompletionRequestMsg) bool {

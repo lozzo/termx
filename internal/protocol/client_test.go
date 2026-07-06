@@ -51,6 +51,7 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"LiveScreen",
 		"LockResize",
 		"NextLiveInvalidation",
+		"PathDefaults",
 		"ReleaseHistory",
 		"Remove",
 		"Resize",

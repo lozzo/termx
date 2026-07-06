@@ -1273,99 +1273,93 @@ func TestUIInputReducerCreateTerminalFormEditsAndCancels(t *testing.T) {
 }
 
 func TestUIInputReducerCreateTerminalWorkdirSuggestions(t *testing.T) {
-	dir := t.TempDir()
-	for _, name := range []string{"demo", "dev", "delta"} {
-		if err := os.Mkdir(filepath.Join(dir, name), 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", name, err)
-		}
-	}
-	nested := filepath.Join(dir, "dev", "src")
-	if err := os.Mkdir(nested, 0o755); err != nil {
-		t.Fatalf("mkdir nested: %v", err)
-	}
-	prefix := filepath.Join(dir, "d")
-	reducer := NewUIInputReducer()
-	root := state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
-		Title:       "Create Terminal",
-		Purpose:     "terminal.create",
-		ActiveField: 2,
-		Fields: []state.PromptFieldState{
-			{Key: "name", Label: "name", Value: "shell", Required: true},
-			{Key: "command", Label: "command", Value: "/bin/sh"},
-			{Key: "workdir", Label: "workdir", Value: prefix, Cursor: len([]rune(prefix))},
-		},
-	})}
+	pathService := &services.FakeTerminalService{PathResult: promptPathResult("demo/", "delta/", "dev/")}
+	runtime := newPromptPathRuntime(pathService, "d")
 
-	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
-	prompt := root.Shell.EnsureDefaults().Overlay.Prompt
+	postPromptKey(t, runtime, input.KeyTab)
+	prompt := runtime.State().Shell.EnsureDefaults().Overlay.Prompt
 	if !prompt.SuggestionFocused || len(prompt.ActiveSuggestionItems()) != 3 || prompt.ActiveField != 2 {
 		t.Fatalf("tab on workdir should enter suggestion focus, prompt=%#v", prompt)
 	}
-	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
-	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
-	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
-	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
-	want := filepath.Join(dir, "dev") + string(os.PathSeparator)
+	if len(pathService.PathRequests) != 1 || pathService.PathRequests[0].EndpointID != state.DefaultEndpointID || pathService.PathRequests[0].Prefix != "d" {
+		t.Fatalf("local create workdir completion should use path service, requests=%#v", pathService.PathRequests)
+	}
+	postPromptKey(t, runtime, input.KeyTab)
+	postPromptKey(t, runtime, input.KeyTab)
+	postPromptKey(t, runtime, input.KeyEnter)
+	prompt = runtime.State().Shell.EnsureDefaults().Overlay.Prompt
+	want := "dev/"
 	if prompt.Submitted || prompt.SuggestionFocused || prompt.FieldRawValue("workdir") != want || prompt.Fields[2].Cursor != len([]rune(want)) {
 		t.Fatalf("enter should accept selected workdir suggestion without submitting, want=%q prompt=%#v", want, prompt)
 	}
 
-	root = state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
-		Title:       "Create Terminal",
-		Purpose:     "terminal.create",
-		ActiveField: 2,
-		Fields: []state.PromptFieldState{
-			{Key: "name", Label: "name", Value: "shell", Required: true},
-			{Key: "command", Label: "command", Value: "/bin/sh"},
-			{Key: "workdir", Label: "workdir", Value: prefix, Cursor: len([]rune(prefix))},
-		},
-	})}
-	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
-	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyShiftTab}})
-	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
+	pathService = &services.FakeTerminalService{PathResult: promptPathResult("demo/", "delta/", "dev/")}
+	runtime = newPromptPathRuntime(pathService, "d")
+	postPromptKey(t, runtime, input.KeyTab)
+	postPromptKey(t, runtime, input.KeyShiftTab)
+	prompt = runtime.State().Shell.EnsureDefaults().Overlay.Prompt
 	if !prompt.SuggestionFocused || prompt.SuggestionSelected != 2 {
 		t.Fatalf("shift-tab in suggestion focus should wrap to previous candidate, prompt=%#v", prompt)
 	}
 
-	root = state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
-		Title:       "Create Terminal",
-		Purpose:     "terminal.create",
-		ActiveField: 2,
-		Fields: []state.PromptFieldState{
-			{Key: "name", Label: "name", Value: "shell", Required: true},
-			{Key: "command", Label: "command", Value: "/bin/sh"},
-			{Key: "workdir", Label: "workdir", Value: prefix, Cursor: len([]rune(prefix))},
-		},
-	})}
-	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
-	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
-	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
-	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyRight}})
-	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
-	if !prompt.SuggestionFocused || prompt.FieldRawValue("workdir") != want || len(prompt.ActiveSuggestionItems()) != 1 || !strings.HasSuffix(prompt.ActiveSuggestionItems()[0], "src"+string(os.PathSeparator)) {
+	pathService = &services.FakeTerminalService{PathResult: promptPathResult("demo/", "delta/", "dev/")}
+	runtime = newPromptPathRuntime(pathService, "d")
+	postPromptKey(t, runtime, input.KeyTab)
+	postPromptKey(t, runtime, input.KeyTab)
+	postPromptKey(t, runtime, input.KeyTab)
+	pathService.PathResult = promptPathResult("dev/src/")
+	postPromptKey(t, runtime, input.KeyRight)
+	prompt = runtime.State().Shell.EnsureDefaults().Overlay.Prompt
+	if !prompt.SuggestionFocused || prompt.FieldRawValue("workdir") != want || len(prompt.ActiveSuggestionItems()) != 1 || prompt.ActiveSuggestionItems()[0] != "dev/src/" {
 		t.Fatalf("right should enter selected directory and keep suggestion focus, want=%q prompt=%#v", want, prompt)
 	}
-	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyLeft}})
-	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
-	if !prompt.SuggestionFocused || prompt.FieldRawValue("workdir") != dir+string(os.PathSeparator) || len(prompt.ActiveSuggestionItems()) != 3 {
-		t.Fatalf("left should move to parent directory and refresh suggestions, prompt=%#v", prompt)
+	pathService.PathResult = promptPathResult("demo/", "delta/", "dev/")
+	postPromptKey(t, runtime, input.KeyLeft)
+	prompt = runtime.State().Shell.EnsureDefaults().Overlay.Prompt
+	if prompt.SuggestionFocused || prompt.FieldRawValue("workdir") != "" || len(prompt.ActiveSuggestionItems()) != 0 {
+		t.Fatalf("left should move to empty parent path and clear suggestions, prompt=%#v", prompt)
 	}
 
-	root = state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
-		Title:       "Create Terminal",
-		Purpose:     "terminal.create",
-		ActiveField: 2,
+	pathService = &services.FakeTerminalService{PathResult: promptPathResult("demo/", "delta/", "dev/")}
+	runtime = newPromptPathRuntime(pathService, "d")
+	postPromptKey(t, runtime, input.KeyTab)
+	postPromptKey(t, runtime, input.KeyEsc)
+	prompt = runtime.State().Shell.EnsureDefaults().Overlay.Prompt
+	if !runtime.State().Shell.EnsureDefaults().Overlay.Open || prompt.SuggestionFocused {
+		t.Fatalf("esc in suggestion focus should only exit suggestions, overlay=%#v", runtime.State().Shell.Overlay)
+	}
+}
+
+func newPromptPathRuntime(pathService services.PathService, prefix string) *AppRuntime {
+	root := state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
+		Title:            "Create Terminal",
+		Purpose:          "terminal.create",
+		TargetEndpointID: state.DefaultEndpointID,
+		ActiveField:      2,
 		Fields: []state.PromptFieldState{
 			{Key: "name", Label: "name", Value: "shell", Required: true},
 			{Key: "command", Label: "command", Value: "/bin/sh"},
 			{Key: "workdir", Label: "workdir", Value: prefix, Cursor: len([]rune(prefix))},
 		},
 	})}
-	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
-	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}})
-	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
-	if !root.Shell.EnsureDefaults().Overlay.Open || prompt.SuggestionFocused || len(effects) != 1 {
-		t.Fatalf("esc in suggestion focus should only exit suggestions, overlay=%#v effects=%#v", root.Shell.Overlay, effects)
+	return NewInteractiveRuntime(root, NewFakeTerminalHost(1), NewSyncEffectRunner(), LiveDeps{Path: pathService}, CopyModeDeps{})
+}
+
+func promptPathResult(paths ...string) services.PathListDirectoriesResult {
+	result := services.PathListDirectoriesResult{BasePath: "/daemon/cwd", Entries: make([]services.PathDirectoryEntry, 0, len(paths))}
+	for _, path := range paths {
+		result.Entries = append(result.Entries, services.PathDirectoryEntry{Name: strings.TrimSuffix(path, "/"), Path: path})
+	}
+	return result
+}
+
+func postPromptKey(t *testing.T, runtime *AppRuntime, key input.Key) {
+	t.Helper()
+	if err := runtime.Post(InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: key}}); err != nil {
+		t.Fatalf("post key %q: %v", key, err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain key %q: %v", key, err)
 	}
 }
 
@@ -1463,12 +1457,13 @@ func TestTerminalPickerNewActionDefaultsToSelectedEndpoint(t *testing.T) {
 }
 
 func TestCreateTerminalPromptServerFieldUsesEndpointDropdown(t *testing.T) {
-	t.Setenv("SHELL", "/bin/zsh")
 	reducer := NewUIInputReducer()
 	root := state.Root{
-		Endpoints: (state.EndpointStore{}).
+		Endpoints: ((state.EndpointStore{}).
 			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
-			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true})).
+			ApplyDefaults(state.DefaultEndpointID, []string{"/bin/zsh"}, "/Users/me", "").
+			ApplyDefaults("west", []string{"/bin/bash", "-l"}, "/srv/west", ""),
 	}
 	prompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, state.DefaultEndpointID)
 	root.Shell = state.DefaultShell().OpenPrompt(prompt).SetPromptValue("remote-shell").MovePromptField(2)
@@ -1481,8 +1476,8 @@ func TestCreateTerminalPromptServerFieldUsesEndpointDropdown(t *testing.T) {
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
 	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
-	if prompt.SuggestionFocused || prompt.FieldRawValue("server") != "US West (west)" || prompt.FieldRawValue("workdir") != "" ||
-		strings.Join(prompt.Command, " ") != "/bin/sh" || promptFieldPlaceholder(prompt, "command") != "/bin/sh" {
+	if prompt.SuggestionFocused || prompt.FieldRawValue("server") != "US West (west)" || prompt.FieldRawValue("workdir") != "/srv/west" ||
+		strings.Join(prompt.Command, " ") != "/bin/bash -l" || promptFieldPlaceholder(prompt, "command") != "/bin/bash -l" {
 		t.Fatalf("enter should accept selected endpoint suggestion, prompt=%#v", prompt)
 	}
 
@@ -1492,51 +1487,54 @@ func TestCreateTerminalPromptServerFieldUsesEndpointDropdown(t *testing.T) {
 	}
 	effect := effects[0].(FuncEffect)
 	request := effect.Run(context.Background()).(TerminalPoolCreateRequestMsg)
-	if request.EndpointID != "west" || request.Title != "remote-shell" || request.CWD != "" || strings.Join(request.Command, " ") != "/bin/sh" {
+	if request.EndpointID != "west" || request.Title != "remote-shell" || request.CWD != "/srv/west" || strings.Join(request.Command, " ") != "/bin/bash -l" {
 		t.Fatalf("dropdown-selected server should route create request, got %#v", request)
 	}
 }
 
 func TestCreateTerminalPromptWorkdirDefaultFollowsEndpoint(t *testing.T) {
 	root := state.Root{
-		Endpoints: (state.EndpointStore{}).
+		Endpoints: ((state.EndpointStore{}).
 			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
-			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true})).
+			ApplyDefaults(state.DefaultEndpointID, []string{"/bin/zsh"}, "/Users/me", "").
+			ApplyDefaults("west", []string{"/bin/bash"}, "/srv/west", ""),
 	}
 
 	localPrompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, state.DefaultEndpointID)
-	if localPrompt.Workdir == "" || localPrompt.FieldRawValue("workdir") != localPrompt.Workdir {
-		t.Fatalf("local create prompt should default to local cwd, prompt=%#v", localPrompt)
+	if localPrompt.Workdir != "/Users/me" || localPrompt.FieldRawValue("workdir") != "/Users/me" {
+		t.Fatalf("local create prompt should default to local core cwd, prompt=%#v", localPrompt)
 	}
 	remotePrompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, "west")
-	if remotePrompt.Workdir == "" || remotePrompt.FieldRawValue("workdir") != "" {
-		t.Fatalf("remote create prompt should leave cwd empty and keep local default only as fallback metadata, prompt=%#v", remotePrompt)
+	if remotePrompt.Workdir != "/srv/west" || remotePrompt.FieldRawValue("workdir") != "/srv/west" {
+		t.Fatalf("remote create prompt should default to remote core cwd, prompt=%#v", remotePrompt)
 	}
 }
 
 func TestCreateTerminalPromptRemoteDefaultCommandDoesNotUseLocalShell(t *testing.T) {
-	t.Setenv("SHELL", "/bin/zsh")
 	root := state.Root{
-		Endpoints: (state.EndpointStore{}).
+		Endpoints: ((state.EndpointStore{}).
 			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
-			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true})).
+			ApplyDefaults(state.DefaultEndpointID, []string{"/bin/zsh"}, "/Users/me", "").
+			ApplyDefaults("west", []string{"/bin/bash", "-l"}, "/srv/west", ""),
 	}
 
 	localPrompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, state.DefaultEndpointID)
 	if strings.Join(localPrompt.Command, " ") != "/bin/zsh" || promptFieldPlaceholder(localPrompt, "command") != "/bin/zsh" {
-		t.Fatalf("local create prompt should use local shell default, prompt=%#v", localPrompt)
+		t.Fatalf("local create prompt should use local core shell default, prompt=%#v", localPrompt)
 	}
 	remotePrompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, "west")
-	if strings.Join(remotePrompt.Command, " ") != "/bin/sh" || promptFieldPlaceholder(remotePrompt, "command") != "/bin/sh" {
-		t.Fatalf("remote create prompt must not use local shell default, prompt=%#v", remotePrompt)
+	if strings.Join(remotePrompt.Command, " ") != "/bin/bash -l" || promptFieldPlaceholder(remotePrompt, "command") != "/bin/bash -l" {
+		t.Fatalf("remote create prompt must use remote core shell default, prompt=%#v", remotePrompt)
 	}
 
 	remotePrompt.Fields[0].Value = "remote-shell"
 	root.Shell = state.DefaultShell().OpenPrompt(remotePrompt)
 	_, effects := reducePromptSubmit(root)
 	request := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolCreateRequestMsg)
-	if request.EndpointID != "west" || strings.Join(request.Command, " ") != "/bin/sh" {
-		t.Fatalf("remote create submit should use remote-safe default command, got %#v", request)
+	if request.EndpointID != "west" || strings.Join(request.Command, " ") != "/bin/bash -l" {
+		t.Fatalf("remote create submit should use remote core default command, got %#v", request)
 	}
 }
 
@@ -1609,9 +1607,11 @@ func TestCreateTerminalPromptRemoteWorkdirSuggestionsUseEndpointPathService(t *t
 
 func TestCreateTerminalPromptDoesNotSendAutoLocalWorkdirToRemote(t *testing.T) {
 	root := state.Root{
-		Endpoints: (state.EndpointStore{}).
+		Endpoints: ((state.EndpointStore{}).
 			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
-			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true})).
+			ApplyDefaults(state.DefaultEndpointID, []string{"/bin/zsh"}, "/Users/me/project", "").
+			ApplyDefaults("west", []string{"/bin/bash"}, "/srv/west", ""),
 	}
 	prompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, state.DefaultEndpointID)
 	for index := range prompt.Fields {
@@ -1629,8 +1629,8 @@ func TestCreateTerminalPromptDoesNotSendAutoLocalWorkdirToRemote(t *testing.T) {
 		t.Fatalf("submit should close prompt and emit create effect, root=%#v effects=%#v", next, effects)
 	}
 	request := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolCreateRequestMsg)
-	if request.EndpointID != "west" || request.CWD != "" {
-		t.Fatalf("remote create must not send auto local cwd, got %#v", request)
+	if request.EndpointID != "west" || request.CWD != "/srv/west" {
+		t.Fatalf("remote create must replace stale local cwd with remote default, got %#v", request)
 	}
 
 	prompt = createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, "west")
@@ -1652,9 +1652,10 @@ func TestCreateTerminalPromptDoesNotSendAutoLocalWorkdirToRemote(t *testing.T) {
 
 func TestCreateTerminalPromptSubmitRoutesSelectedEndpoint(t *testing.T) {
 	root := state.Root{
-		Endpoints: (state.EndpointStore{}).
+		Endpoints: ((state.EndpointStore{}).
 			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
-			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true})).
+			ApplyDefaults("west", []string{"/bin/bash"}, "/srv/west", ""),
 	}
 	prompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, "west")
 	root.Shell = state.DefaultShell().OpenPrompt(prompt).SetPromptValue("remote-shell")
@@ -1677,7 +1678,6 @@ func TestCreateTerminalPromptSubmitRoutesSelectedEndpoint(t *testing.T) {
 }
 
 func TestInteractiveRuntimeRemotePickerCreateRoutesThroughEndpointManager(t *testing.T) {
-	t.Setenv("SHELL", "/bin/zsh")
 	localTerminal := &services.FakeTerminalService{}
 	remoteTerminal := &services.FakeTerminalService{
 		CreateResult: services.TerminalCreateResult{State: "running"},
@@ -1686,6 +1686,7 @@ func TestInteractiveRuntimeRemotePickerCreateRoutesThroughEndpointManager(t *tes
 			Cols:    80,
 			Rows:    24,
 		},
+		PathDefaultsResult: services.PathDefaultsResult{DefaultCommand: []string{"/bin/sh"}, DefaultCWD: "/root"},
 	}
 	registry := connection.Registry{
 		Version: 1,
@@ -1704,10 +1705,10 @@ func TestInteractiveRuntimeRemotePickerCreateRoutesThroughEndpointManager(t *tes
 				if cfg.ID != "us-west" || cfg.Address != "root@example.com" || cfg.RemoteSocket != "auto" {
 					t.Fatalf("unexpected remote config: %#v", cfg)
 				}
-				return services.EndpointServiceBundle{EndpointID: "us-west", Terminal: remoteTerminal, Surface: remoteTerminal, LiveEvents: remoteTerminal}, nil
+				return services.EndpointServiceBundle{EndpointID: "us-west", Terminal: remoteTerminal, Surface: remoteTerminal, LiveEvents: remoteTerminal, Path: remoteTerminal}, nil
 			},
 		},
-		services.EndpointServiceBundle{EndpointID: state.DefaultEndpointID, Terminal: localTerminal, Surface: localTerminal, LiveEvents: localTerminal},
+		services.EndpointServiceBundle{EndpointID: state.DefaultEndpointID, Terminal: localTerminal, Surface: localTerminal, LiveEvents: localTerminal, Path: localTerminal},
 	)
 	host := NewFakeTerminalHost(64)
 	host.SetSize(80, 24)
@@ -1715,7 +1716,7 @@ func TestInteractiveRuntimeRemotePickerCreateRoutesThroughEndpointManager(t *tes
 		state.Root{Endpoints: manager.EndpointStore()},
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: manager},
+		LiveDeps{Terminal: manager, Path: manager},
 		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 
@@ -1774,8 +1775,7 @@ func TestInteractiveRuntimeRemotePickerCreateRoutesThroughEndpointManager(t *tes
 }
 
 func TestInteractiveRuntimeCreatePromptServerDropdownRoutesThroughEndpointManager(t *testing.T) {
-	t.Setenv("SHELL", "/bin/zsh")
-	localTerminal := &services.FakeTerminalService{}
+	localTerminal := &services.FakeTerminalService{PathDefaultsResult: services.PathDefaultsResult{DefaultCommand: []string{"/bin/zsh"}, DefaultCWD: "/Users/me"}}
 	remoteTerminal := &services.FakeTerminalService{
 		CreateResult: services.TerminalCreateResult{State: "running"},
 		AttachResult: services.TerminalAttachResult{
@@ -1783,6 +1783,7 @@ func TestInteractiveRuntimeCreatePromptServerDropdownRoutesThroughEndpointManage
 			Cols:    80,
 			Rows:    24,
 		},
+		PathDefaultsResult: services.PathDefaultsResult{DefaultCommand: []string{"/bin/sh"}, DefaultCWD: "/root"},
 	}
 	registry := connection.Registry{
 		Version: 1,
@@ -1798,10 +1799,10 @@ func TestInteractiveRuntimeCreatePromptServerDropdownRoutesThroughEndpointManage
 		map[connection.TransportKind]services.EndpointDialer{
 			connection.TransportSSH: func(_ context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
 				remoteDialCalls++
-				return services.EndpointServiceBundle{EndpointID: "us-west", Terminal: remoteTerminal, Surface: remoteTerminal, LiveEvents: remoteTerminal}, nil
+				return services.EndpointServiceBundle{EndpointID: "us-west", Terminal: remoteTerminal, Surface: remoteTerminal, LiveEvents: remoteTerminal, Path: remoteTerminal}, nil
 			},
 		},
-		services.EndpointServiceBundle{EndpointID: state.DefaultEndpointID, Terminal: localTerminal, Surface: localTerminal, LiveEvents: localTerminal},
+		services.EndpointServiceBundle{EndpointID: state.DefaultEndpointID, Terminal: localTerminal, Surface: localTerminal, LiveEvents: localTerminal, Path: localTerminal},
 	)
 
 	root := state.Root{Endpoints: manager.EndpointStore()}
@@ -1812,7 +1813,7 @@ func TestInteractiveRuntimeCreatePromptServerDropdownRoutesThroughEndpointManage
 		root,
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: manager},
+		LiveDeps{Terminal: manager, Path: manager},
 		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
 	sendInput := func(label string, event input.InputEvent) {
@@ -1839,8 +1840,8 @@ func TestInteractiveRuntimeCreatePromptServerDropdownRoutesThroughEndpointManage
 	sendInput("select remote endpoint suggestion", input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab})
 	sendInput("accept remote endpoint suggestion", input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter})
 	prompt = runtime.State().Shell.EnsureDefaults().Overlay.Prompt
-	if prompt.TargetEndpointID != "us-west" || prompt.FieldRawValue("server") != "US West (us-west)" || prompt.FieldRawValue("workdir") != "" {
-		t.Fatalf("remote endpoint selection should sync prompt target and clear local cwd, prompt=%#v", prompt)
+	if prompt.TargetEndpointID != "us-west" || prompt.FieldRawValue("server") != "US West (us-west)" || prompt.FieldRawValue("workdir") != "/root" {
+		t.Fatalf("remote endpoint selection should sync prompt target and remote cwd, prompt=%#v", prompt)
 	}
 	sendInput("submit remote create prompt", input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter})
 
@@ -1934,6 +1935,9 @@ func TestTerminalPoolReducerHandlesListErrorCreateAndStaleResult(t *testing.T) {
 
 	terminal = &services.FakeTerminalService{CreateResult: services.TerminalCreateResult{TerminalID: "term-created", State: "running"}}
 	reducer = NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	root.Endpoints = (state.EndpointStore{}).
+		Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+		ApplyDefaults(state.DefaultEndpointID, []string{"/bin/sh"}, "/Users/me", "")
 	root, effects = reducer(root, TerminalPoolCreateRequestMsg{})
 	if len(effects) != 1 {
 		t.Fatalf("expected create effect, got %#v", effects)

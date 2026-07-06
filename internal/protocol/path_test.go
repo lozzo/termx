@@ -45,3 +45,30 @@ func TestPathListDirsProtocolRoundTrip(t *testing.T) {
 		t.Fatal("expected path result decode to reject arbitrary struct target")
 	}
 }
+
+func TestPathDefaultsProtocolRoundTrip(t *testing.T) {
+	payload, err := EncodeMethodParams("path.defaults", nil)
+	if err != nil {
+		t.Fatalf("encode path defaults params: %v", err)
+	}
+	decoded, err := DecodeMethodParams("path.defaults", payload)
+	if err != nil {
+		t.Fatalf("decode path defaults params: %v", err)
+	}
+	if !reflect.DeepEqual(decoded, struct{}{}) {
+		t.Fatalf("path defaults params should decode empty payload, got %#v", decoded)
+	}
+
+	result := PathDefaultsResult{DefaultCommand: []string{"/bin/bash", "-l"}, DefaultCWD: "/srv/app"}
+	resultPayload, err := EncodeMethodResult("path.defaults", &result)
+	if err != nil {
+		t.Fatalf("encode path defaults result: %v", err)
+	}
+	var got PathDefaultsResult
+	if err := DecodeMethodResult("path.defaults", resultPayload, &got); err != nil {
+		t.Fatalf("decode path defaults result: %v", err)
+	}
+	if !reflect.DeepEqual(got, result) {
+		t.Fatalf("path defaults result mismatch:\n got: %#v\nwant: %#v", got, result)
+	}
+}

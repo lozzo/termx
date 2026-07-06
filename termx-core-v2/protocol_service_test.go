@@ -99,6 +99,34 @@ func TestProtocolServiceListDirectoriesUsesDaemonPath(t *testing.T) {
 	}
 }
 
+func TestProtocolServicePathDefaultsUsesDaemonEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+	t.Setenv("SHELL", "/bin/sh")
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("resolve temp dir: %v", err)
+	}
+
+	_, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	result, err := client.PathDefaults(context.Background())
+	if err != nil {
+		t.Fatalf("path defaults: %v", err)
+	}
+	if strings.Join(result.DefaultCommand, " ") != "/bin/sh" || result.DefaultCWD != resolvedDir {
+		t.Fatalf("unexpected path defaults %#v", result)
+	}
+}
+
 func TestProtocolServiceCreateCarriesRemoteProcessContract(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	_, client, closeClient := newProtocolClientWithProcessFactory(t, factory)

@@ -276,6 +276,8 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 			return nil, false, protocolErrorInternal, pathListDirsProtocolError(err)
 		}
 		return encodeMethodResult(req.Method, out)
+	case "path.defaults":
+		return encodeMethodResult(req.Method, pathDefaults())
 	case "get":
 		in := params.(protocol.GetParams)
 		info, err := session.server.GetTerminal(in.TerminalID)

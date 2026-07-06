@@ -20,6 +20,10 @@ func TestEndpointManagerRoutesLocalServicesAndRestoresEndpointID(t *testing.T) {
 			BasePath: "/home/me",
 			Entries:  []PathDirectoryEntry{{Name: "src", Path: "~/src/"}},
 		},
+		PathDefaultsResult: PathDefaultsResult{
+			DefaultCommand: []string{"/bin/zsh"},
+			DefaultCWD:     "/Users/me",
+		},
 	}
 	core := &FakeCoreClient{
 		LatestResponses: []HistoryResult{
@@ -88,6 +92,17 @@ func TestEndpointManagerRoutesLocalServicesAndRestoresEndpointID(t *testing.T) {
 	}
 	if paths.EndpointID != state.DefaultEndpointID || len(paths.Entries) != 1 || paths.Entries[0].Path != "~/src/" {
 		t.Fatalf("expected endpoint restored on path result, got %#v", paths)
+	}
+
+	defaults, err := manager.Defaults(context.Background(), PathDefaultsRequest{EndpointID: state.DefaultEndpointID})
+	if err != nil {
+		t.Fatalf("path defaults: %v", err)
+	}
+	if len(terminal.PathDefaultsRequests) != 1 || terminal.PathDefaultsRequests[0].EndpointID != "" {
+		t.Fatalf("expected endpoint stripped before path defaults, got %#v", terminal.PathDefaultsRequests)
+	}
+	if defaults.EndpointID != state.DefaultEndpointID || defaults.DefaultCWD != "/Users/me" || strings.Join(defaults.DefaultCommand, " ") != "/bin/zsh" {
+		t.Fatalf("expected endpoint restored on path defaults, got %#v", defaults)
 	}
 }
 

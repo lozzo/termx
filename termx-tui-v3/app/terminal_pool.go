@@ -619,8 +619,13 @@ func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequ
 	command := append([]string(nil), msg.Command...)
 	if len(command) == 0 {
 		// 中文说明：create request 的默认 command 属于目标 endpoint 语义；
-		// 远端不能继承本机 $SHELL，否则 Linux daemon 可能收到 macOS 的 /bin/zsh。
+		// 不能继承 TUI 进程本地 SHELL，否则 remote daemon 会收到错误机器的命令。
 		command = terminalCreateDefaultCommandForEndpoint(root, endpointID)
+	}
+	if len(command) == 0 {
+		err := terminalCreateDefaultsError(root, endpointID)
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.new", Body: err.Error()})
+		return root.Advance(), endpointDefaultsRequestEffect(endpointID, false)
 	}
 	cwd := strings.TrimSpace(msg.CWD)
 	tags := cloneStringMap(msg.Tags)

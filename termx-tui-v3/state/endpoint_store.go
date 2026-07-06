@@ -73,7 +73,9 @@ type EndpointConnectMode string
 type EndpointStatusKind string
 
 // EndpointItem 是 reducer-owned endpoint 展示投影。
-// ID 是 workbench/路由主键；Label/Transport/ConnectMode 来自 registry；Status/LastError 来自 endpoint manager 的运行时消息。
+// ID 是 workbench/路由主键；Label/Transport/ConnectMode 来自 registry；
+// Status/LastError 来自 endpoint manager 的运行时消息；DefaultCommand/DefaultCWD
+// 来自 owning daemon 的 path.defaults，不得由 TUI 本地环境推断。
 type EndpointItem struct {
 	ID                EndpointID
 	Label             string
@@ -89,6 +91,10 @@ type EndpointItem struct {
 	TerminalCount     int
 	ReconnectRequired bool
 	Unregistered      bool
+	DefaultCommand    []string
+	DefaultCWD        string
+	DefaultsLoaded    bool
+	DefaultsError     string
 }
 
 // EndpointStore 是 TUI/client 侧 endpoint registry 与运行时连接状态的 reducer-owned 投影。
@@ -129,6 +135,10 @@ func (store EndpointStore) ApplyConnectionRegistry(registry connection.Registry)
 			item.LastError = previous.LastError
 			item.TerminalCount = previous.TerminalCount
 			item.ReconnectRequired = previous.ReconnectRequired || previous.RequiresReconnect(item)
+			item.DefaultCommand = append([]string(nil), previous.DefaultCommand...)
+			item.DefaultCWD = previous.DefaultCWD
+			item.DefaultsLoaded = previous.DefaultsLoaded
+			item.DefaultsError = previous.DefaultsError
 		}
 		next.Items = append(next.Items, item)
 		seen[item.ID] = struct{}{}
@@ -243,6 +253,24 @@ func (store EndpointStore) MarkTerminalListResult(endpointID EndpointID, termina
 	return store.Upsert(item)
 }
 
+// ApplyDefaults 记录某个 endpoint daemon 返回的创建默认值。
+// 成功结果成为后续 create prompt/submit 的 truth；失败只记录错误，不用本地环境补洞。
+func (store EndpointStore) ApplyDefaults(endpointID EndpointID, command []string, cwd string, err string) EndpointStore {
+	endpointID = NormalizeEndpointID(endpointID)
+	item, ok := store.DisplayEndpoint(endpointID)
+	if !ok {
+		item = DefaultLocalEndpoint()
+		item.ID = endpointID
+	}
+	item.DefaultsError = strings.TrimSpace(err)
+	if item.DefaultsError == "" {
+		item.DefaultCommand = append([]string(nil), command...)
+		item.DefaultCWD = strings.TrimSpace(cwd)
+		item.DefaultsLoaded = true
+	}
+	return store.Upsert(item)
+}
+
 // DefaultLocalEndpoint 返回缺省 local endpoint 的展示投影。
 // 该默认值只用于 TUI state/view-model，不代表已经完成 local socket 连接。
 func DefaultLocalEndpoint() EndpointItem {
@@ -318,6 +346,7 @@ func (item EndpointItem) RequiresReconnect(next EndpointItem) bool {
 
 func (item EndpointItem) withDefaults() EndpointItem {
 	item.ID = NormalizeEndpointID(item.ID)
+	item.DefaultCommand = append([]string(nil), item.DefaultCommand...)
 	if strings.TrimSpace(item.Label) == "" {
 		item.Label = string(item.ID)
 	}
@@ -342,5 +371,8 @@ func cloneEndpointItems(items []EndpointItem) []EndpointItem {
 	}
 	cloned := make([]EndpointItem, len(items))
 	copy(cloned, items)
+	for index := range cloned {
+		cloned[index].DefaultCommand = append([]string(nil), cloned[index].DefaultCommand...)
+	}
 	return cloned
 }

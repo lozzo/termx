@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -248,6 +247,12 @@ func NewShellReducer() Reducer {
 			root.Shell = root.Shell.OpenFloatingOverview()
 		case ShellOpenPromptMsg:
 			root.Shell = root.Shell.OpenPrompt(msg.Prompt)
+			if msg.Prompt.Purpose == "terminal.create" {
+				endpointID := currentCreatePromptEndpoint(root)
+				if endpointID != "" {
+					return root.Advance(), endpointDefaultsRequestEffect(endpointID, false)
+				}
+			}
 		case ShellOpenHelpMsg:
 			root.Shell = root.Shell.OpenHelp(msg.Section)
 		case ShellCloseOverlayMsg:
@@ -1054,14 +1059,10 @@ func createTerminalPrompt(targetPaneID string) state.PromptState {
 }
 
 func createTerminalPromptWithEndpoint(root state.Root, targetPaneID string, endpointID state.EndpointID) state.PromptState {
-	workdir, err := os.Getwd()
-	if err != nil {
-		workdir = ""
-	}
 	endpointID = state.NormalizeEndpointID(endpointID)
 	endpointValue := terminalCreateEndpointPromptValue(root, endpointID)
 	endpointCursor := len([]rune(endpointValue))
-	workdirValue := terminalCreateDefaultWorkdirForEndpoint(root, endpointID, workdir)
+	workdirValue := terminalCreateDefaultWorkdirForEndpoint(root, endpointID)
 	defaultCommand := terminalCreateDefaultCommandForEndpoint(root, endpointID)
 	commandPlaceholder := terminalCreateCommandDisplay(defaultCommand)
 	return state.PromptState{
@@ -1070,31 +1071,23 @@ func createTerminalPromptWithEndpoint(root state.Root, targetPaneID string, endp
 		TargetEndpointID: endpointID,
 		TargetID:         targetPaneID,
 		Command:          defaultCommand,
-		Workdir:          workdir,
+		Workdir:          workdirValue,
 		DefaultName:      terminalCreateDefaultName(defaultCommand),
 		Fields: []state.PromptFieldState{
 			{Key: "name", Label: "name", Required: true},
 			{Key: "command", Label: "command", Placeholder: commandPlaceholder},
 			{Key: "server", Label: "server", Value: endpointValue, Cursor: endpointCursor, Placeholder: "endpoint id or label", Required: true},
-			{Key: "workdir", Label: "workdir", Value: workdirValue, Cursor: len([]rune(workdirValue))},
+			{Key: "workdir", Label: "workdir", Value: workdirValue, Cursor: len([]rune(workdirValue)), Placeholder: "endpoint cwd"},
 		},
 	}
 }
 
 func terminalCreateDefaultCommandForEndpoint(root state.Root, endpointID state.EndpointID) []string {
-	// 中文说明：远端 daemon 的执行环境不等于本机；默认命令不能把本机 $SHELL 跨 endpoint 发送。
-	if terminalCreateEndpointUsesLocalWorkdir(root, endpointID) {
-		return []string{terminalCreateLocalShellCommand()}
+	endpoint, ok := root.Endpoints.DisplayEndpoint(endpointID)
+	if !ok || !endpoint.DefaultsLoaded {
+		return nil
 	}
-	return []string{"/bin/sh"}
-}
-
-func terminalCreateLocalShellCommand() string {
-	shellCommand := strings.TrimSpace(os.Getenv("SHELL"))
-	if shellCommand == "" {
-		return "/bin/sh"
-	}
-	return shellCommand
+	return append([]string(nil), endpoint.DefaultCommand...)
 }
 
 func terminalCreateCommandDisplay(command []string) string {
@@ -1147,20 +1140,20 @@ func terminalCreateRequestFromPrompt(root state.Root, prompt state.PromptState) 
 	}
 	if len(command) == 0 {
 		// 中文说明：空 command 表示使用目标 endpoint 默认 shell；提交时重新按 endpoint 解析，
-		// 避免用户切换 server 后把本机 $SHELL 发送到远端 daemon。
+		// 避免用户切换 server 后把其它 endpoint 的默认值发送到 owning daemon。
 		command = terminalCreateDefaultCommandForEndpoint(root, endpointID)
 	}
 	if len(command) == 0 {
-		command = services.DefaultTerminalCommand()
+		return TerminalPoolCreateRequestMsg{}, terminalCreateDefaultsError(root, endpointID)
 	}
 	workdir := strings.TrimSpace(prompt.FieldValue("workdir"))
 	if workdir == "" {
-		if terminalCreateEndpointUsesLocalWorkdir(root, endpointID) {
-			workdir = strings.TrimSpace(prompt.Workdir)
-		}
-	} else if !terminalCreateEndpointUsesLocalWorkdir(root, endpointID) && workdir == strings.TrimSpace(prompt.Workdir) {
-		// 中文说明：远端 daemon 的 CWD 真值在远端；本机自动默认目录不能跨 endpoint 发送。
-		workdir = ""
+		workdir = terminalCreateDefaultWorkdirForEndpoint(root, endpointID)
+	} else if state.NormalizeEndpointID(prompt.TargetEndpointID) != endpointID &&
+		workdir == terminalCreateDefaultWorkdirForEndpoint(root, prompt.TargetEndpointID) {
+		// 中文说明：server 字段可能被手写，未经过 refreshPromptCompletions；
+		// 提交边界仍要防止把旧 endpoint 自动 cwd 发送到新的 owning daemon。
+		workdir = terminalCreateDefaultWorkdirForEndpoint(root, endpointID)
 	}
 	request := TerminalPoolCreateRequestMsg{EndpointID: endpointID, Title: name, Command: command, CWD: workdir}
 	if prompt.Context == "floating" {
@@ -1269,22 +1262,19 @@ func terminalCreateEndpointIDFromPickerSelection(root state.Root, row int) state
 	return ""
 }
 
-func terminalCreateDefaultWorkdirForEndpoint(root state.Root, endpointID state.EndpointID, localWorkdir string) string {
-	if terminalCreateEndpointUsesLocalWorkdir(root, endpointID) {
-		return strings.TrimSpace(localWorkdir)
+func terminalCreateDefaultWorkdirForEndpoint(root state.Root, endpointID state.EndpointID) string {
+	if endpoint, ok := root.Endpoints.DisplayEndpoint(endpointID); ok {
+		return strings.TrimSpace(endpoint.DefaultCWD)
 	}
 	return ""
 }
 
-func terminalCreateEndpointUsesLocalWorkdir(root state.Root, endpointID state.EndpointID) bool {
+func terminalCreateDefaultsError(root state.Root, endpointID state.EndpointID) error {
 	endpointID = state.NormalizeEndpointID(endpointID)
-	if endpointID == state.DefaultEndpointID {
-		return true
+	if endpoint, ok := root.Endpoints.DisplayEndpoint(endpointID); ok && strings.TrimSpace(endpoint.DefaultsError) != "" {
+		return fmt.Errorf("endpoint %q defaults unavailable: %s", endpointID, strings.TrimSpace(endpoint.DefaultsError))
 	}
-	if endpoint, ok := root.Endpoints.DisplayEndpoint(endpointID); ok {
-		return endpoint.Transport == state.EndpointTransportLocal
-	}
-	return false
+	return fmt.Errorf("endpoint %q defaults are not loaded", endpointID)
 }
 
 func syncCreatePromptWorkdirForServer(root state.Root, shell state.ShellStore) state.ShellStore {
@@ -1300,9 +1290,21 @@ func syncCreatePromptWorkdirForServer(root state.Root, shell state.ShellStore) s
 	if !ok {
 		return shell
 	}
-	localWorkdir := strings.TrimSpace(prompt.Workdir)
-	previousDefault := terminalCreateDefaultWorkdirForEndpoint(root, prompt.TargetEndpointID, localWorkdir)
-	nextDefault := terminalCreateDefaultWorkdirForEndpoint(root, endpointID, localWorkdir)
+	return syncCreatePromptDefaultsForEndpoint(root, shell, endpointID)
+}
+
+func syncCreatePromptDefaultsForEndpoint(root state.Root, shell state.ShellStore, endpointID state.EndpointID) state.ShellStore {
+	shell = shell.EnsureDefaults()
+	if shell.Overlay.Kind != state.OverlayPrompt || !shell.Overlay.Open {
+		return shell
+	}
+	prompt := shell.Overlay.Prompt
+	if prompt.Purpose != "terminal.create" {
+		return shell
+	}
+	endpointID = state.NormalizeEndpointID(endpointID)
+	previousDefault := terminalCreateDefaultWorkdirForEndpoint(root, prompt.TargetEndpointID)
+	nextDefault := terminalCreateDefaultWorkdirForEndpoint(root, endpointID)
 	previousCommand := terminalCreateDefaultCommandForEndpoint(root, prompt.TargetEndpointID)
 	nextCommand := terminalCreateDefaultCommandForEndpoint(root, endpointID)
 	previousCommandValue := strings.TrimSpace(terminalCreateCommandDisplay(previousCommand))
@@ -1318,8 +1320,8 @@ func syncCreatePromptWorkdirForServer(root state.Root, shell state.ShellStore) s
 			prompt.Fields[index].Placeholder = nextCommandValue
 		case "workdir":
 			current := strings.TrimSpace(prompt.Fields[index].Value)
-			// 中文说明：只替换 prompt 自动带入的默认 CWD；用户手写的远端路径必须保留。
-			if current == "" || current == localWorkdir || current == previousDefault {
+			// 中文说明：只替换 prompt 自动带入的 endpoint 默认 CWD；用户手写路径必须保留。
+			if current == "" || current == previousDefault {
 				prompt.Fields[index].Value = nextDefault
 				prompt.Fields[index].Cursor = len([]rune(nextDefault))
 			}

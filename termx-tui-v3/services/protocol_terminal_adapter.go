@@ -132,7 +132,9 @@ func (adapter ProtocolTerminalServiceAdapter) Create(ctx context.Context, req Te
 	}
 	command := append([]string(nil), req.Command...)
 	if len(command) == 0 {
-		command = DefaultTerminalCommand()
+		// 中文说明：默认 command 属于目标 daemon endpoint；adapter 这里没有
+		// endpoint 默认值 truth，不能退回 TUI 进程本地 SHELL。
+		return TerminalCreateResult{}, fmt.Errorf("terminal create command is required")
 	}
 	finishRPC := perftrace.Measure("tui.protocol.terminal_create.rpc")
 	result, err := adapter.Client.Create(ctx, protocol.CreateParams{

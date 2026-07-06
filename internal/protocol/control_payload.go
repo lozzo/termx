@@ -110,7 +110,7 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			return nil, methodParamsTypeError(method, "protocol.CreateParams", params)
 		}
 		return proto.Marshal(createParamsToWirePB(value))
-	case "list", "remote.status", "remote.local.status", "remote.local.disable":
+	case "list", "path.defaults", "remote.status", "remote.local.status", "remote.local.disable":
 		return proto.Marshal(&wirepb.Empty{})
 	case "get", "kill", "restart", "remove", "history.backlog.status":
 		value, ok := params.(GetParams)
@@ -433,7 +433,7 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return createParamsFromWirePB(&msg), nil
-	case "list", "remote.status", "remote.local.status", "remote.local.disable":
+	case "list", "path.defaults", "remote.status", "remote.local.status", "remote.local.disable":
 		return struct{}{}, decodeEmpty(payload)
 	case "get", "kill", "restart", "remove", "history.backlog.status":
 		var msg wirepb.GetParams
@@ -724,6 +724,18 @@ func EncodeMethodResult(method string, result any) ([]byte, error) {
 			return nil, methodResultTypeError(method, "protocol.PathListDirsResult", result)
 		}
 		return proto.Marshal(pathListDirsResultToWirePB(value))
+	case "path.defaults":
+		value, ok := result.(PathDefaultsResult)
+		if !ok {
+			if ptr, ptrOK := result.(*PathDefaultsResult); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.PathDefaultsResult", result)
+		}
+		return proto.Marshal(pathDefaultsResultToWirePB(value))
 	case "workbench.get":
 		value, ok := result.(WorkbenchSnapshot)
 		if !ok {
@@ -912,6 +924,17 @@ func DecodeMethodResult(method string, payload []byte, out any) error {
 			return methodOutTypeError(method, "*protocol.PathListDirsResult", out)
 		}
 		*ptr = pathListDirsResultFromWirePB(&msg)
+		return nil
+	case "path.defaults":
+		var msg wirepb.PathDefaultsResult
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return err
+		}
+		ptr, ok := out.(*PathDefaultsResult)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.PathDefaultsResult", out)
+		}
+		*ptr = pathDefaultsResultFromWirePB(&msg)
 		return nil
 	case "workbench.get":
 		var msg wirepb.WorkbenchSnapshot
@@ -1572,6 +1595,23 @@ func pathListDirsResultFromWirePB(msg *wirepb.PathListDirsResult) PathListDirsRe
 		out.Entries = append(out.Entries, PathDirEntry{Name: entry.GetName(), Path: entry.GetPath()})
 	}
 	return out
+}
+
+func pathDefaultsResultToWirePB(result PathDefaultsResult) *wirepb.PathDefaultsResult {
+	return &wirepb.PathDefaultsResult{
+		DefaultCommand: append([]string(nil), result.DefaultCommand...),
+		DefaultCwd:     result.DefaultCWD,
+	}
+}
+
+func pathDefaultsResultFromWirePB(msg *wirepb.PathDefaultsResult) PathDefaultsResult {
+	if msg == nil {
+		return PathDefaultsResult{}
+	}
+	return PathDefaultsResult{
+		DefaultCommand: append([]string(nil), msg.GetDefaultCommand()...),
+		DefaultCWD:     msg.GetDefaultCwd(),
+	}
 }
 
 func workbenchSnapshotToWirePB(snapshot WorkbenchSnapshot) *wirepb.WorkbenchSnapshot {

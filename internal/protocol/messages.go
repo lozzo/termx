@@ -119,6 +119,14 @@ type PathListDirsResult struct {
 	Truncated bool
 }
 
+// PathDefaultsResult 是 daemon endpoint 对创建终端默认环境的只读投影。
+// DefaultCommand 和 DefaultCWD 都来自当前 protocol session 所属 daemon 进程所在机器；
+// TUI 只能消费该投影，不能用客户端本地 SHELL 或 cwd 替代远端 truth。
+type PathDefaultsResult struct {
+	DefaultCommand []string
+	DefaultCWD     string
+}
+
 // Remote* 是 core-v2 daemon 暴露给 CLI/App 的显式 remote domain contract。
 // wirepb 只作为跨进程编码格式，不能泄露成调用方依赖的业务类型。
 type RemoteStatus struct {
