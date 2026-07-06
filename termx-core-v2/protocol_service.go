@@ -240,8 +240,12 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 	switch req.Method {
 	case "create":
 		in := params.(protocol.CreateParams)
+		terminalID := strings.TrimSpace(in.ID)
+		if terminalID == "" {
+			terminalID = strings.TrimSpace(in.Name)
+		}
 		info, err := session.server.RegisterTerminal(TerminalRecord{
-			ID:      in.ID,
+			ID:      terminalID,
 			Name:    in.Name,
 			Command: append([]string(nil), in.Command...),
 			Tags:    cloneStringMap(in.Tags),
@@ -1940,7 +1944,7 @@ func errorCode(err error) int {
 	switch {
 	case errors.Is(err, ErrTerminalNotFound):
 		return protocolErrorNotFound
-	case errors.Is(err, ErrInvalidTerminalID), errors.Is(err, ErrInvalidCommand), errors.Is(err, ErrInvalidServerSize), errors.Is(err, ErrTerminalExited), errors.Is(err, ErrInvalidStorageKey), errors.Is(err, ErrStorageVersionConflict), errors.Is(err, ErrInvalidWorkbenchMutation), errors.Is(err, ErrDuplicateWorkbenchResource), errors.Is(err, ErrWorkbenchVersionConflict), errors.Is(err, errProtocolAttachmentMismatch):
+	case errors.Is(err, ErrInvalidTerminalID), errors.Is(err, ErrInvalidCommand), errors.Is(err, ErrInvalidServerSize), errors.Is(err, ErrTerminalExited), errors.Is(err, ErrInvalidStorageKey), errors.Is(err, ErrStorageVersionConflict), errors.Is(err, ErrInvalidWorkbenchMutation), errors.Is(err, ErrDuplicateTerminal), errors.Is(err, ErrDuplicateWorkbenchResource), errors.Is(err, ErrWorkbenchVersionConflict), errors.Is(err, errProtocolAttachmentMismatch):
 		return protocolErrorBadRequest
 	case errors.Is(err, ErrStorageEntryNotFound), errors.Is(err, ErrWorkbenchNotFound):
 		return protocolErrorNotFound

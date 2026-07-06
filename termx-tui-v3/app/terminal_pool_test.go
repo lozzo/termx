@@ -339,27 +339,54 @@ func TestTerminalPoolCreateRequestDefaultsRemoteCommandByEndpoint(t *testing.T) 
 	if len(terminal.Creates) != 1 || terminal.Creates[0].EndpointID != "west" || strings.Join(terminal.Creates[0].Command, " ") != "/bin/bash -l" {
 		t.Fatalf("remote create request should default command for target endpoint, creates=%#v", terminal.Creates)
 	}
+	if terminal.Creates[0].TerminalID != "remote" || terminal.Creates[0].Title != "remote" {
+		t.Fatalf("create request should use terminal name as daemon-local key, creates=%#v", terminal.Creates)
+	}
 }
 
-func TestTerminalPickerRemoteCreateRowOpensEndpointPrompt(t *testing.T) {
+func TestTerminalPoolCreateRequestRejectsDuplicateNameOnSameEndpoint(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{
+			{EndpointID: "west", TerminalID: "existing-id", Title: "build"},
+			{EndpointID: state.DefaultEndpointID, TerminalID: "build", Title: "build"},
+		}},
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "Local", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "west", Label: "West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}).
+			ApplyDefaults("west", []string{"/bin/sh"}, "/srv/west", ""),
+	}
+
+	next, effects := reducer(root, TerminalPoolCreateRequestMsg{EndpointID: "west", Title: "build", TargetPaneID: state.DefaultPaneID})
+	if len(effects) != 0 || len(terminal.Creates) != 0 {
+		t.Fatalf("duplicate name on same endpoint should not create, effects=%#v creates=%#v", effects, terminal.Creates)
+	}
+	if len(next.Shell.Toasts) != 1 || !strings.Contains(next.Shell.Toasts[0].Body, "already exists") {
+		t.Fatalf("duplicate create should explain name conflict, shell=%#v", next.Shell)
+	}
+
+	_, effects = reducer(root, TerminalPoolCreateRequestMsg{EndpointID: "west", Title: "build-west-2", TargetPaneID: state.DefaultPaneID})
+	if len(effects) != 1 {
+		t.Fatalf("different name on same endpoint should still create, effects=%#v", effects)
+	}
+}
+
+func TestTerminalPickerGlobalCreateRowOpensPromptWithDraftEndpoint(t *testing.T) {
 	root := state.Root{
 		Shell: state.DefaultShell().OpenTerminalPicker(),
 		Endpoints: (state.EndpointStore{}).
 			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
 			Upsert(state.EndpointItem{ID: "us-west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
 	}
-	remoteRow := -1
-	for index, item := range state.TerminalPickerItems(root) {
-		if item.CreateNew && item.EndpointID == "us-west" {
-			remoteRow = index
-			break
-		}
-	}
-	if remoteRow < 0 {
-		t.Fatalf("expected remote create row, picker=%#v", state.TerminalPickerItems(root))
+	root.Shell.TerminalCreateDraft = state.TerminalCreateDraft{EndpointID: "us-west", Command: "/bin/bash", Workdir: "/srv/app"}
+	items := state.TerminalPickerItems(root)
+	if len(items) != 1 || !items[0].CreateNew {
+		t.Fatalf("expected one global create row, picker=%#v", items)
 	}
 
-	_, effects := reduceShellContentAction(root, ShellContentActionMsg{ActionID: render.ActionPickerNew.String(), Row: remoteRow})
+	_, effects := reduceShellContentAction(root, ShellContentActionMsg{ActionID: render.ActionPickerNew.String(), Row: 0})
 	if len(effects) != 1 {
 		t.Fatalf("expected prompt effect, got %#v", effects)
 	}
@@ -368,7 +395,10 @@ func TestTerminalPickerRemoteCreateRowOpensEndpointPrompt(t *testing.T) {
 		t.Fatalf("expected prompt message, got %#v", effects[0])
 	}
 	if msg.Prompt.TargetEndpointID != "us-west" || msg.Prompt.FieldRawValue("server") != "US West (us-west)" {
-		t.Fatalf("remote create row should default prompt server to endpoint, prompt=%#v", msg.Prompt)
+		t.Fatalf("global create row should default prompt server to remembered endpoint, prompt=%#v", msg.Prompt)
+	}
+	if msg.Prompt.FieldRawValue("workdir") != "/srv/app" || msg.Prompt.FieldRawValue("command") != "/bin/bash" {
+		t.Fatalf("global create row should reuse last create draft fields, prompt=%#v", msg.Prompt)
 	}
 }
 

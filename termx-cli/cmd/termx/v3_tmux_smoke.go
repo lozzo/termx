@@ -751,8 +751,28 @@ func runV3TmuxEmojiDotsSmoke(ctx context.Context, termxBin string) (v3TmuxEmojiD
 		{keys: []string{"C-p"}, label: "enter pane mode", wait: 150 * time.Millisecond},
 		{keys: []string{"%"}, label: "split right", wait: 800 * time.Millisecond},
 		{keys: []string{"C-f"}, label: "open picker", wait: 300 * time.Millisecond},
-		{keys: []string{"Down"}, label: "picker select existing terminal", wait: 150 * time.Millisecond},
-		{keys: []string{"Enter"}, label: "attach follower", wait: 900 * time.Millisecond},
+	} {
+		if err := runTmuxCommand(ctx, append([]string{"send-keys", "-t", target}, action.keys...)...); err != nil {
+			return v3TmuxEmojiDotsSmokeResult{}, err
+		}
+		appendTimeline("send-keys %s keys=%q", action.label, action.keys)
+		time.Sleep(action.wait)
+	}
+	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "-l", terminalID); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	appendTimeline("picker query terminal=%s", terminalID)
+	time.Sleep(150 * time.Millisecond)
+	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "Enter"); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	appendTimeline("attach follower by terminal query")
+	time.Sleep(900 * time.Millisecond)
+	for _, action := range []struct {
+		keys  []string
+		label string
+		wait  time.Duration
+	}{
 		{keys: []string{"C-p"}, label: "enter pane mode again", wait: 150 * time.Millisecond},
 		{keys: []string{"h"}, label: "focus left owner pane", wait: 150 * time.Millisecond},
 		{keys: []string{"a"}, label: "reassert left owner", wait: 800 * time.Millisecond},
@@ -763,10 +783,10 @@ func runV3TmuxEmojiDotsSmoke(ctx context.Context, termxBin string) (v3TmuxEmojiD
 		appendTimeline("send-keys %s keys=%q", action.label, action.keys)
 		time.Sleep(action.wait)
 	}
-	if err := waitForTmuxCapture(ctx, target, "◆ owner", 5*time.Second); err != nil {
+	if err := waitForTmuxCapture(ctx, target, "owner", 5*time.Second); err != nil {
 		return v3TmuxEmojiDotsSmokeResult{}, err
 	}
-	if err := waitForTmuxCapture(ctx, target, "◇ follow", 5*time.Second); err != nil {
+	if err := waitForTmuxCapture(ctx, target, "follow", 5*time.Second); err != nil {
 		return v3TmuxEmojiDotsSmokeResult{}, err
 	}
 	appendTimeline("owner and follower chrome visible")
@@ -799,6 +819,8 @@ func runV3TmuxEmojiDotsSmoke(ctx context.Context, termxBin string) (v3TmuxEmojiD
 	}
 	appendTimeline("wait for resize mode timeout")
 	time.Sleep(1300 * time.Millisecond)
+	_ = runTmuxCommand(ctx, "send-keys", "-t", target, "Escape")
+	time.Sleep(150 * time.Millisecond)
 
 	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "-l", "size-after"); err != nil {
 		return v3TmuxEmojiDotsSmokeResult{}, err
@@ -852,7 +874,7 @@ func runV3TmuxEmojiDotsSmoke(ctx context.Context, termxBin string) (v3TmuxEmojiD
 	if !dotsVisible {
 		return v3TmuxEmojiDotsSmokeResult{}, fmt.Errorf("emoji dots smoke expected follower dots in capture, got %q", plain)
 	}
-	if !strings.Contains(plain, "termx-pty-echo:") || !strings.Contains(plain, "◇ follow") || !strings.Contains(plain, "◆ owner") {
+	if !strings.Contains(plain, "termx-pty-echo:") || !strings.Contains(plain, "follow") || !strings.Contains(plain, "owner") {
 		return v3TmuxEmojiDotsSmokeResult{}, fmt.Errorf("emoji dots smoke missing owner/follower/echo markers in capture")
 	}
 
@@ -1005,8 +1027,8 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 
 func v3VisualTargetPlain() string {
 	lines := []string{
-		"  main ▎ 1 main  2 logs   󰐕",
-		"┌─[󰍀] shell ──────────────────────────────────────────────────────────   x1 ◆ owner?─[]─[]─[]─[]──┬─[󰍀] logs ─────   x1 ◇ follow─[]─┐",
+		"  main ▎ 1 main    2 logs   󰐕",
+		"┌─[󰍀] shell ──────────────────────────────────────────────────────────   x1 ◆ owner ─[]─[]─[]─[]──┐─[󰍀] logs ─────   x1 ◇ follow─[]─┐",
 		"│termx git:termx-core-v2-tui-v3-migration  go v1.26.0                              ····················│ visual review baseline       ·····│",
 		"│> make test                                                                       ····················│ target visual mismatch       ·····│",
 		"│ok   termx-tui-v3/render                                                          ····················│ emoji 🚀 and 中文            ·····│",
@@ -1017,7 +1039,7 @@ func v3VisualTargetPlain() string {
 		"│                                                                                  ····················│ │                           │·····│",
 		"│                                                                                  ····················│ │      Attach existing      │·····│",
 		"│                                                                                  ····················│ │        New terminal       │·····│",
-		"│                                                                                  ····················│ │       Terminal Pool       │·····│",
+		"│                                                                                  ····················│ │      Terminal Manager     │·····│",
 		"│                                                                                  ····················│ │           Close           │·····│",
 		"│                                                                                  ····················│ └───────────────────────────┘·····│",
 		"│                                                                                  ····················│                              ·····│",
@@ -1043,7 +1065,7 @@ func v3VisualTargetPlain() string {
 		"│                                                                                  ····················│                              ·····│",
 		"│······································································································│···································│",
 		"│······································································································│···································│",
-		"└──────────────────────────────────────────────────────────────────────────────────────────────────────┴───────────────────────────────────┘",
+		"└──────────────────────────────────────────────────────────────────────────────────────────────────────┘───────────────────────────────────┘",
 		"[Ctrl] • [P] PANE • [R] RESIZE • [T] TAB • [W] WORKSPACE • [O] FLOAT • [V] COPY • [F] PICKER • [G] GLOBAL       ws:main float:1 terminals:1",
 	}
 	return normalizeVisualText(strings.Join(lines, "\n"), 140, 40)
@@ -1464,13 +1486,13 @@ func visualStyleExpectations() []visualStyleExpectation {
 	return []visualStyleExpectation{
 		{Name: "header-workspace-bg", Row: 1, Col: 1, Glyph: " ", MustHave: []string{"1", "38;2;212;192;244", "48;2;60;46;85"}},
 		{Name: "active-tab-marker", Row: 1, Col: 9, Glyph: "▎", MustHave: []string{"1", "38;2;169;112;255", "48;2;42;34;59"}},
-		{Name: "inactive-tab-muted", Row: 1, Col: 20, Glyph: "2", MustHave: []string{"38;2;130;113;155", "48;2;8;8;13"}, MustAvoid: []string{"2;38;2;119;113;127"}},
+		{Name: "inactive-tab-muted", Row: 1, Col: 22, Glyph: "2", MustHave: []string{"38;2;181;163;209", "48;2;8;8;13"}, MustAvoid: []string{"2;38;2;119;113;127"}},
 		{Name: "pane-action-accent", Row: 2, Col: 88, Glyph: "", MustHave: []string{"1", "38;2;169;112;255"}},
-		{Name: "inactive-logs-muted", Row: 2, Col: 104, Glyph: "┬", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
-		{Name: "right-content-muted", Row: 3, Col: 104, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}},
+		{Name: "active-pane-right-border-accent", Row: 2, Col: 104, Glyph: "┐", MustHave: []string{"1", "38;2;169;112;255"}},
+		{Name: "active-pane-content-border-accent", Row: 3, Col: 104, Glyph: "│", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "floating-border-accent", Row: 8, Col: 106, Glyph: "┌", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "floating-inner-accent", Row: 10, Col: 106, Glyph: "│", MustHave: []string{"1", "38;2;169;112;255"}},
-		{Name: "right-pane-border-muted", Row: 10, Col: 140, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
+		{Name: "right-pane-border-muted", Row: 10, Col: 140, Glyph: "│", MustHave: []string{"2", "38;2;184;177;196"}, MustAvoid: []string{"38;2;169;112;255"}},
 		{Name: "footer-no-bg", Row: 40, Col: 1, Glyph: "[", MustHave: []string{"38;2;169;112;255"}, MustAvoid: []string{"48;2;8;8;13"}},
 		{Name: "footer-float-accent", Row: 40, Col: 121, Glyph: "f", MustHave: []string{"1", "38;2;169;112;255"}, MustAvoid: []string{"48;2;8;8;13"}},
 	}

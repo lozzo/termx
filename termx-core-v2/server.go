@@ -431,16 +431,22 @@ func (server *Server) ApplyWorkbenchMutation(ctx context.Context, params Workben
 
 func (server *Server) SetMetadata(ctx context.Context, id string, name string, tags map[string]string) (TerminalInfo, error) {
 	_ = ctx
-	terminal, err := server.Terminal(id)
-	if err == nil {
-		return terminal.SetMetadata(name, tags), nil
+	server.lifecycleMu.Lock()
+	defer server.lifecycleMu.Unlock()
+	if server.closed.Load() {
+		return TerminalInfo{}, ErrServerClosed
 	}
-	if !errors.Is(err, ErrTerminalNotFound) {
-		return TerminalInfo{}, err
-	}
+	// 中文说明：metadata rename 会改变 name-as-key 的查找身份；
+	// 必须先经过 registry 的 daemon-local 唯一性检查，再同步到 running Terminal。
 	info, err := server.registry.setMetadata(id, name, tags)
 	if err != nil {
 		return TerminalInfo{}, err
+	}
+	server.mu.Lock()
+	terminal := server.terminals[id]
+	server.mu.Unlock()
+	if terminal != nil {
+		return terminal.SetMetadata(info.Name, info.Tags), nil
 	}
 	server.publishTerminalEvent(EventTerminalMetadataChanged, info)
 	return info, nil

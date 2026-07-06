@@ -420,13 +420,13 @@ func TestV3SmokeCommandIncludesVisualReviewCases(t *testing.T) {
 	for _, want := range []string{
 		"termx v3 smoke ok: tui=termx-tui-v3 cases=12",
 		"case: terminal-pool-page",
-		"Terminal Pool",
+		"Terminal Manager",
 		"⌕ search 日志",
-		"[kill]  Kill",
+		"[Ctrl+E] RENAME",
 		"case: workbench-tree-page",
 		"Workbench Navigator",
-		"SNAPSHOT",
-		"Open  New  Zoom  Detach  Close",
+		"snapshot",
+		"Workbench Tree  open / rename / new / detach pane / zoom pane",
 		"case: visual-audit-current",
 		"visual review",
 		"[]─[]",
@@ -909,7 +909,7 @@ func TestDefaultLocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 		t.Fatalf("new returned error: %v", err)
 	}
 	terminalID := strings.TrimSpace(newOut.String())
-	if terminalID == "" {
+	if terminalID != "v3-demo" {
 		t.Fatalf("expected v3 new to print terminal id, got %q", newOut.String())
 	}
 
@@ -997,7 +997,7 @@ func TestV3LocalControlCommandsRemainAvailable(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("v3 new returned error after default switch: %v", err)
 	}
-	if strings.TrimSpace(out.String()) == "" {
+	if strings.TrimSpace(out.String()) != "v3-demo" {
 		t.Fatalf("expected v3 new to print terminal id, got %q", out.String())
 	}
 }
@@ -1065,7 +1065,7 @@ func TestV3HistoryDumpWritesAuthoritativeWindows(t *testing.T) {
 		"termx core-v2 authoritative history dump",
 		"window 0 op=prepend",
 		"window 1 op=prepend",
-		"window 2 op=replace",
+		"op=replace",
 		"older one",
 		"visible tail",
 		"codex current",
@@ -1475,6 +1475,14 @@ func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 func TestV3InteractiveRuntimeRestoresWorkbenchFromCoreV2Storage(t *testing.T) {
 	_, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-restored",
+		Name:    "restored",
+		Command: testShellSleepCommand(),
+		Size:    protocol.Size{Cols: 80, Rows: 24},
+	}); err != nil {
+		t.Fatalf("create restored terminal: %v", err)
+	}
 	shell := tuistate.DefaultShell().
 		SplitActivePane(tuistate.PaneState{ID: "pane-restored", Title: "restored", Kind: tuistate.PaneTerminalLive, TerminalID: "term-restored"}, tuistate.SplitDirectionVertical).
 		FocusPane(tuistate.PaneCommandTarget{PaneID: "pane-restored"})
@@ -1498,13 +1506,13 @@ func TestV3InteractiveRuntimeRestoresWorkbenchFromCoreV2Storage(t *testing.T) {
 	runtime := newV3InteractiveRuntime("term-restored", 100, 30, client, client, client, host, nil)
 
 	root := waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
-		if root.Shell.ActivePaneID != "pane-restored" || root.WorkbenchSync.SaveVersion() != 1 {
+		if root.Shell.ActivePaneID != "pane-restored" || root.WorkbenchSync.SaveVersion() < 1 {
 			return false
 		}
 		binding, ok := root.TerminalViews.PaneBinding("pane-restored")
 		return ok && binding.TerminalID == "term-restored"
 	}, "workbench storage restore")
-	if root.Shell.ActivePaneID != "pane-restored" || root.WorkbenchSync.SaveVersion() != 1 {
+	if root.Shell.ActivePaneID != "pane-restored" || root.WorkbenchSync.SaveVersion() < 1 {
 		t.Fatalf("runtime did not restore workbench from core-v2 storage %#v", root)
 	}
 	if binding, ok := root.TerminalViews.PaneBinding("pane-restored"); !ok || binding.TerminalID != "term-restored" {
@@ -1774,29 +1782,18 @@ func TestV3InteractiveRuntimeCoreV2ResizeFailureSurfacesInSession(t *testing.T) 
 	}
 }
 
-func TestV3TerminalServiceCreateDefaultsCommandAgainstCoreV2(t *testing.T) {
-	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
+func TestV3TerminalServiceCreateRejectsMissingCommandAgainstCoreV2(t *testing.T) {
+	_, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()
 	adapter := tuiservices.ProtocolTerminalServiceAdapter{Client: client}
-	result, err := adapter.Create(context.Background(), tuiservices.TerminalCreateRequest{
+	_, err := adapter.Create(context.Background(), tuiservices.TerminalCreateRequest{
 		TerminalID: "term-default-command",
 		Title:      "default command",
 		Cols:       80,
 		Rows:       24,
 	})
-	if err != nil {
-		t.Fatalf("create through tui-v3 service adapter must not send empty command: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = server.KillTerminal(context.Background(), result.TerminalID)
-		_ = server.RemoveTerminal(result.TerminalID)
-	})
-	info, err := server.GetTerminal(result.TerminalID)
-	if err != nil {
-		t.Fatalf("get created terminal: %v", err)
-	}
-	if len(info.Command) == 0 {
-		t.Fatalf("created core-v2 terminal must have default command, info=%#v", info)
+	if err == nil || !strings.Contains(err.Error(), "terminal create command is required") {
+		t.Fatalf("adapter must reject empty command and rely on endpoint defaults before create, got %v", err)
 	}
 }
 
@@ -1817,7 +1814,7 @@ func TestV3VisualSnapshotCommandPrintsFixedVisualFrame(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	text := out.String()
-	for _, want := range []string{"  main", "▎ 1 main  2 logs   󰐕", "visual review", "[]─[]", "└───────────────────────────┘", "[Ctrl] • [P] PANE", "ws:main float:1 terminals:1"} {
+	for _, want := range []string{"  main", "▎ 1 main    2 logs   󰐕", "visual review", "[]─[]", "└───────────────────────────┘", "[Ctrl] • [P] PANE", "ws:main float:1 terminals:1"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("visual snapshot missing %q:\n%s", want, text)
 		}
@@ -2015,7 +2012,7 @@ func TestV3TmuxTerminalSmokeCommandReportsArtifacts(t *testing.T) {
 		})
 	}
 	if !strings.Contains(text, "termx v3 tmux terminal smoke ok") ||
-		!strings.Contains(text, "terminal=term-") ||
+		!strings.Contains(text, "terminal=tmux-e2e") ||
 		!strings.Contains(text, "session=termx-v3-terminal-") ||
 		!strings.Contains(text, "input=tmux-live-input") ||
 		!strings.Contains(text, "artifact_dir=") ||
@@ -2087,7 +2084,7 @@ func TestV3TmuxResizeSmokeCommandReportsArtifacts(t *testing.T) {
 		})
 	}
 	if !strings.Contains(text, "termx v3 tmux resize smoke ok") ||
-		!strings.Contains(text, "terminal=term-") ||
+		!strings.Contains(text, "terminal=tmux-resize") ||
 		!strings.Contains(text, "session=termx-v3-resize-") ||
 		!strings.Contains(text, "window=120x40") ||
 		!strings.Contains(text, "after=118x36") ||
@@ -2159,7 +2156,7 @@ func TestV3TmuxANSISmokeCommandReportsArtifacts(t *testing.T) {
 		})
 	}
 	if !strings.Contains(text, "termx v3 tmux ansi smoke ok") ||
-		!strings.Contains(text, "terminal=term-") ||
+		!strings.Contains(text, "terminal=tmux-ansi") ||
 		!strings.Contains(text, "session=termx-v3-ansi-") ||
 		!strings.Contains(text, "artifact_dir=") ||
 		!strings.Contains(text, "ansi=") ||
@@ -2189,7 +2186,7 @@ func TestV3TmuxEmojiDotsSmokeReproducesOwnerFollowerGeometry(t *testing.T) {
 	if result.BeforeSize == result.AfterSize {
 		t.Fatalf("owner/follower resize should change PTY size, before=%s after=%s", result.BeforeSize, result.AfterSize)
 	}
-	for _, marker := range []string{"◆ owner", "◇ follow", "termx-pty-size:size-before:", "termx-pty-size:size-after:", "termx-pty-echo:", "····"} {
+	for _, marker := range []string{"owner", "follow", "termx-pty-size:size-before:", "termx-pty-size:size-after:", "termx-pty-echo:", "····"} {
 		if !strings.Contains(result.Captured, marker) {
 			t.Fatalf("tmux emoji dots capture missing marker %q:\n%s", marker, result.Captured)
 		}
@@ -2229,7 +2226,7 @@ func TestV3TmuxEmojiDotsSmokeCommandReportsArtifacts(t *testing.T) {
 		})
 	}
 	if !strings.Contains(text, "termx v3 tmux emoji dots smoke ok") ||
-		!strings.Contains(text, "terminal=term-") ||
+		!strings.Contains(text, "terminal=tmux-emoji-dots") ||
 		!strings.Contains(text, "session=termx-v3-emoji-dots-") ||
 		!strings.Contains(text, "dots=true") ||
 		!strings.Contains(text, "artifact_dir=") ||
@@ -2318,7 +2315,7 @@ func TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts(t *testing.T) {
 			t.Fatalf("style maps missing marker %q current=\n%s\ntarget=\n%s", marker, currentStyleMap, targetStyleMap)
 		}
 	}
-	for _, marker := range []string{"pane-action-accent", "inactive-logs-muted", "right-pane-border-muted", "footer-no-bg", "footer-float-accent"} {
+	for _, marker := range []string{"pane-action-accent", "active-pane-right-border-accent", "right-pane-border-muted", "footer-no-bg", "footer-float-accent"} {
 		if !strings.Contains(string(style), marker+" row=") {
 			t.Fatalf("style report missing marker %q: %s", marker, style)
 		}

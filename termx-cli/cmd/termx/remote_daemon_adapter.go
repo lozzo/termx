@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	coreprotocol "github.com/lozzow/termx/internal/protocol"
 	corev2 "github.com/lozzow/termx/termx-core-v2"
@@ -31,7 +32,10 @@ func (adapter *coreV2RemoteDaemonAdapter) Create(_ context.Context, params corep
 	if err != nil {
 		return nil, err
 	}
-	terminalID := params.ID
+	terminalID := strings.TrimSpace(params.ID)
+	if terminalID == "" {
+		terminalID = strings.TrimSpace(params.Name)
+	}
 	if terminalID == "" {
 		terminalID = newV3TerminalID()
 	}

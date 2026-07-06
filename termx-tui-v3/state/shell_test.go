@@ -533,7 +533,7 @@ func TestTerminalPickerAndPoolRowsSortByName(t *testing.T) {
 	}
 
 	picker := TerminalPickerItems(root)
-	if len(picker) != 5 || !picker[0].CreateNew || !picker[1].CreateNew || picker[1].EndpointID != "west" || picker[2].Title != "alpha" || picker[3].Title != "Beta" || picker[4].Title != "zeta" {
+	if len(picker) != 4 || !picker[0].CreateNew || picker[1].Title != "alpha" || picker[2].Title != "Beta" || picker[3].Title != "zeta" {
 		t.Fatalf("terminal picker rows should sort by display name after create row, got %#v", picker)
 	}
 
@@ -544,7 +544,7 @@ func TestTerminalPickerAndPoolRowsSortByName(t *testing.T) {
 	}
 }
 
-func TestTerminalPickerCreateRowsAreEndpointScoped(t *testing.T) {
+func TestTerminalPickerCreateRowIsGlobalButEndpointSearchable(t *testing.T) {
 	root := Root{
 		Shell: DefaultShell().OpenTerminalPicker().SetTerminalPickerQuery("us west"),
 		Endpoints: (EndpointStore{}).
@@ -553,8 +553,8 @@ func TestTerminalPickerCreateRowsAreEndpointScoped(t *testing.T) {
 	}
 
 	picker := TerminalPickerItems(root)
-	if len(picker) != 1 || !picker[0].CreateNew || picker[0].EndpointID != "us-west" || picker[0].EndpointLabel != "US West" {
-		t.Fatalf("endpoint query should expose remote create row, got %#v", picker)
+	if len(picker) != 1 || !picker[0].CreateNew || picker[0].EndpointID != DefaultEndpointID || !strings.Contains(picker[0].EndpointLabel, "US West") {
+		t.Fatalf("endpoint query should expose one global create row, got %#v", picker)
 	}
 }
 
@@ -698,7 +698,7 @@ func TestTerminalPickerGroupsExposeEndpointMetadataAndSearch(t *testing.T) {
 
 	root.Shell = root.Shell.SetTerminalPickerQuery("US West")
 	items := TerminalPickerItems(root)
-	if len(items) != 2 || !items[0].CreateNew || items[0].EndpointID != "west" || items[1].EndpointID != "west" || items[1].TerminalID != "term-1" {
+	if len(items) != 2 || !items[0].CreateNew || items[1].EndpointID != "west" || items[1].TerminalID != "term-1" {
 		t.Fatalf("endpoint label query should match west terminal row, got %#v", items)
 	}
 }

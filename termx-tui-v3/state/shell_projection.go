@@ -226,28 +226,6 @@ func terminalPoolPickerLocation() string {
 	return "pool"
 }
 
-func terminalPickerCreateItems(root Root, query string) []TerminalPickerItem {
-	endpoints := TerminalCreateEndpointItems(root)
-	if len(endpoints) == 0 {
-		endpoints = []EndpointItem{DefaultLocalEndpoint()}
-	}
-	items := make([]TerminalPickerItem, 0, len(endpoints))
-	for _, endpoint := range endpoints {
-		endpoint = endpoint.withDefaults()
-		item := TerminalPickerItem{
-			EndpointID: endpoint.ID,
-			Title:      "new terminal",
-			Kind:       PaneTerminalLive,
-			CreateNew:  true,
-		}
-		item = terminalPickerItemWithEndpoint(root, item)
-		if matchesTerminalPickerQuery(item, query) {
-			items = append(items, item)
-		}
-	}
-	return items
-}
-
 func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 	if query == "" {
 		return true

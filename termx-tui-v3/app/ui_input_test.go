@@ -1430,7 +1430,7 @@ func TestCreateTerminalPromptSubmitUsesEditedFields(t *testing.T) {
 	}
 }
 
-func TestTerminalPickerNewActionDefaultsToSelectedEndpoint(t *testing.T) {
+func TestTerminalPickerNewActionIgnoresTerminalRowEndpoint(t *testing.T) {
 	root := state.Root{
 		Shell: state.DefaultShell().OpenTerminalPicker(),
 		Endpoints: (state.EndpointStore{}).
@@ -1451,8 +1451,8 @@ func TestTerminalPickerNewActionDefaultsToSelectedEndpoint(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected open prompt msg, got %#v", msg)
 	}
-	if msg.Prompt.TargetEndpointID != "west" || msg.Prompt.FieldRawValue("server") != "US West (west)" {
-		t.Fatalf("new action should default to selected terminal endpoint, prompt=%#v", msg.Prompt)
+	if msg.Prompt.TargetEndpointID != state.DefaultEndpointID || msg.Prompt.FieldRawValue("server") != "This Mac (local)" {
+		t.Fatalf("new action should use global create default instead of terminal row endpoint, prompt=%#v", msg.Prompt)
 	}
 }
 
@@ -1489,6 +1489,42 @@ func TestCreateTerminalPromptServerFieldUsesEndpointDropdown(t *testing.T) {
 	request := effect.Run(context.Background()).(TerminalPoolCreateRequestMsg)
 	if request.EndpointID != "west" || request.Title != "remote-shell" || request.CWD != "/srv/west" || strings.Join(request.Command, " ") != "/bin/bash -l" {
 		t.Fatalf("dropdown-selected server should route create request, got %#v", request)
+	}
+}
+
+func TestCreateTerminalPromptRemembersLastEndpointCommandAndWorkdir(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		Endpoints: ((state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true})).
+			ApplyDefaults("west", []string{"/bin/bash"}, "/srv/west", ""),
+	}
+	prompt := createTerminalPromptForTargetEndpoint(root, terminalPoolTarget{PaneID: state.DefaultPaneID}, "west")
+	for index := range prompt.Fields {
+		switch prompt.Fields[index].Key {
+		case "name":
+			prompt.Fields[index].Value = "build"
+		case "command":
+			prompt.Fields[index].Value = "npm run dev"
+		case "workdir":
+			prompt.Fields[index].Value = "/srv/project"
+		}
+	}
+	root.Shell = root.Shell.OpenPrompt(prompt)
+
+	next, effects := reducePromptSubmit(root)
+	if next.Shell.Overlay.Open || len(effects) != 1 {
+		t.Fatalf("submit should close prompt and emit create effect, root=%#v effects=%#v", next, effects)
+	}
+	if draft := next.Shell.TerminalCreateDraft; draft.EndpointID != "west" || draft.Command != "npm run dev" || draft.Workdir != "/srv/project" {
+		t.Fatalf("submit should remember create draft, shell=%#v", next.Shell)
+	}
+	again := createTerminalPromptForTargetEndpoint(next, terminalPoolTarget{PaneID: state.DefaultPaneID}, "")
+	if again.TargetEndpointID != "west" || again.FieldRawValue("server") != "US West (west)" ||
+		again.FieldRawValue("command") != "npm run dev" || again.FieldRawValue("workdir") != "/srv/project" ||
+		again.FieldRawValue("name") != "" {
+		t.Fatalf("next create prompt should reuse endpoint/command/workdir but not unique name, prompt=%#v", again)
 	}
 }
 
@@ -1713,7 +1749,7 @@ func TestInteractiveRuntimeRemotePickerCreateRoutesThroughEndpointManager(t *tes
 	host := NewFakeTerminalHost(64)
 	host.SetSize(80, 24)
 	runtime := NewInteractiveRuntime(
-		state.Root{Endpoints: manager.EndpointStore()},
+		state.Root{Endpoints: manager.EndpointStore().ApplyDefaults("us-west", []string{"/bin/sh"}, "/root", "")},
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: manager, Path: manager},
@@ -1738,13 +1774,31 @@ func TestInteractiveRuntimeRemotePickerCreateRoutesThroughEndpointManager(t *tes
 		t.Fatalf("drain remote create prompt: %v", err)
 	}
 	prompt := runtime.State().Shell.EnsureDefaults().Overlay.Prompt
-	if prompt.TargetEndpointID != "us-west" || prompt.FieldRawValue("server") != "US West (us-west)" {
-		t.Fatalf("picker remote create should open prompt bound to us-west, prompt=%#v", prompt)
+	if prompt.TargetEndpointID != state.DefaultEndpointID || prompt.FieldRawValue("server") != "This Mac (local)" {
+		t.Fatalf("global create row should open prompt with default endpoint before server selection, prompt=%#v", prompt)
 	}
 	for _, r := range "demo-remote" {
 		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: string(r)}); err != nil {
 			t.Fatalf("type create name %q: %v", r, err)
 		}
+	}
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyDown},
+		{Kind: input.EventKindKey, Key: input.KeyDown},
+		{Kind: input.EventKindKey, Key: input.KeyTab},
+		{Kind: input.EventKindKey, Key: input.KeyTab},
+		{Kind: input.EventKindKey, Key: input.KeyEnter},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("select remote server: %v", err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain server selection: %v", err)
+		}
+	}
+	prompt = runtime.State().Shell.EnsureDefaults().Overlay.Prompt
+	if prompt.TargetEndpointID != "us-west" || prompt.FieldRawValue("server") != "US West (us-west)" || prompt.FieldRawValue("workdir") != "/root" {
+		t.Fatalf("server dropdown should bind prompt to us-west before submit, prompt=%#v", prompt)
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
 		t.Fatalf("submit remote create prompt: %v", err)

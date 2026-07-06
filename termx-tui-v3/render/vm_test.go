@@ -3051,10 +3051,8 @@ func TestRenderVMBuilderProjectsTerminalPickerEndpointLabels(t *testing.T) {
 			t.Fatalf("expected flat endpoint label picker content %q in:\n%s", want, plain)
 		}
 	}
-	if !lineHasStyledCell(content.Lines[1], "This Mac", StylePickerInfo) ||
-		!lineHasStyledCell(content.Lines[2], "US West", StylePickerInfo) ||
-		!lineHasStyledCell(content.Lines[3], "This Mac", StylePickerInfo) ||
-		!lineHasStyledCell(content.Lines[4], "US West", StylePickerInfo) {
+	if !lineHasStyledCell(content.Lines[2], "This Mac", StylePickerInfo) ||
+		!lineHasStyledCell(content.Lines[3], "US West", StylePickerInfo) {
 		t.Fatalf("terminal picker endpoint ownership should use readable info style, got %#v", content.Lines)
 	}
 	for _, notWant := range []string{"Manual Box", "manual connect", "ssh timeout"} {
@@ -3062,7 +3060,7 @@ func TestRenderVMBuilderProjectsTerminalPickerEndpointLabels(t *testing.T) {
 			t.Fatalf("terminal picker should stay a flat terminal table without endpoint-only rows %q in:\n%s", notWant, plain)
 		}
 	}
-	if len(content.HitRegions) != 4 || content.HitRegions[0].Row != 0 || content.HitRegions[1].Row != 1 || content.HitRegions[2].Row != 2 || content.HitRegions[3].Row != 3 {
+	if len(content.HitRegions) != 3 || content.HitRegions[0].Row != 0 || content.HitRegions[1].Row != 1 || content.HitRegions[2].Row != 2 {
 		t.Fatalf("flat picker rows should own hit regions, got %#v", content.HitRegions)
 	}
 
@@ -3092,12 +3090,12 @@ func TestRenderVMBuilderAlignsTerminalPickerEndpointColumns(t *testing.T) {
 	}
 
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if len(content.Lines) < 7 {
+	if len(content.Lines) < 5 {
 		t.Fatalf("expected search, create and terminal rows, got %#v", content.Lines)
 	}
-	local := content.Lines[4].PlainString()
-	cn := content.Lines[5].PlainString()
-	west := content.Lines[6].PlainString()
+	local := content.Lines[2].PlainString()
+	cn := content.Lines[3].PlainString()
+	west := content.Lines[4].PlainString()
 	endpointCol := displayColumnOf(local, "This Mac")
 	if endpointCol < 0 || displayColumnOf(cn, "CN Fast") != endpointCol || displayColumnOf(west, "US West") != endpointCol {
 		t.Fatalf("endpoint column should stay aligned:\n%s\n%s\n%s", local, cn, west)
@@ -3113,8 +3111,8 @@ func TestRenderVMBuilderAlignsTerminalPickerEndpointColumns(t *testing.T) {
 	if DisplayWidth(west) > terminalPickerHitRegionWidth {
 		t.Fatalf("long terminal title should be clipped inside picker row width=%d line=%q", terminalPickerHitRegionWidth, west)
 	}
-	if !lineHasStyledCell(content.Lines[4], "This Mac", StylePickerInfo) || !lineHasStyledCell(content.Lines[5], "CN Fast", StylePickerInfo) || !lineHasStyledCell(content.Lines[6], "US West", StylePickerInfo) {
-		t.Fatalf("endpoint ownership column should use info style, got %#v", content.Lines[4:7])
+	if !lineHasStyledCell(content.Lines[2], "This Mac", StylePickerInfo) || !lineHasStyledCell(content.Lines[3], "CN Fast", StylePickerInfo) || !lineHasStyledCell(content.Lines[4], "US West", StylePickerInfo) {
+		t.Fatalf("endpoint ownership column should use info style, got %#v", content.Lines[2:5])
 	}
 }
 

@@ -39,6 +39,8 @@
 ## 硬语义规则
 
 - `TerminalID` 只在单个 daemon/endpoint 内唯一；TUI/client 侧跨 endpoint 状态必须使用 `EndpointID + TerminalID` 的 `TerminalRef`。
+- ME009 起，用户可见 terminal 名称是 first-party 新建 terminal 的默认 canonical key；协议字段仍暂名为 `TerminalID`，但 create 必须优先发送 terminal name，并在单 endpoint 内拒绝重名。
+- 后续 identity 收敛切片才能重命名协议字段或删除旧 ID 兼容；当前不得把随机 ID 继续用于 first-party 新建 terminal 的 history/layout/storage key。
 - Endpoint 表达“当前客户端要连接的 daemon 目标”；Transport 表达“到达该 endpoint 的方式”，例如 local unix socket、SSH、hub/P2P。
 - daemon 侧“有哪些客户端连接到我”与 TUI/client 侧“我连接了哪些 daemon endpoint”是两个不同管理器，不得混成一个模型。
 - connection registry 是 CLI/TUI 共享的 endpoint 注册表，默认文件为 `$XDG_CONFIG_HOME/termx/connections.yaml` 或 `~/.config/termx/connections.yaml`；不得塞进 TUI-only 的 `tui-v3.yaml`。
@@ -62,7 +64,8 @@
 | ME006 | 完成 | workbench storage 持久化 endpoint-aware terminal binding | 旧 snapshot 默认映射到 `local`；缺失 endpoint 保留 unresolved binding |
 | ME007 | 完成 | local unix socket 作为标准 endpoint transport | 当前本地 attach 路径迁移到 endpoint manager 后行为不变 |
 | ME008 | 完成 | SSH transport 连接远端 termx daemon | 明确认证、host key、远端 socket 发现和失败展示 |
-| ME009 | 阻塞 | hub/P2P transport 与跨设备发现 | 先解冻 `termx-hub/` 并补充 hub 身份、安全和中继策略 |
+| ME009 | 完成 | Terminal picker 单一 create 入口与 terminal name identity 第一阶段 | picker 只展示一个 create 行；create prompt 记住上次 endpoint/command/workdir；新建 terminal 在单 endpoint 内按名称唯一，默认以名称作为 daemon-local key |
+| ME010 | 阻塞 | hub/P2P transport 与跨设备发现 | 先解冻 `termx-hub/` 并补充 hub 身份、安全和中继策略 |
 
 ## 执行规则
 
@@ -95,4 +98,5 @@
 - ME006 已完成：workbench snapshot 持久化 `EndpointID + TerminalID` 连接意图，旧 binding 缺 endpoint 时默认恢复为 `local`；缺失、disabled 或 manual endpoint 的 binding 保留在 pane/floating layout 中并标记 unresolved，不自动 attach。
 - ME007 已完成：TUI runtime 启动时加载 `connections.yaml` endpoint registry，local unix socket 作为 `EndpointManager` 的标准 local transport bundle 接入；terminal/core/live 请求进入 per-endpoint adapter 前剥离 `EndpointID`，回包后补回 `EndpointID`，当前本地 attach、list、live、history 行为保持不变；显式 `--socket` 仍覆盖 registry local socket。
 - ME008 已完成：新增 OpenSSH stdio-proxy transport，`auth_ref=ssh:<alias>` 使用本机 SSH config，host key 由 known_hosts 严格校验，`remote_socket=auto` 在远端解析默认 socket；EndpointManager 可 lazy dial SSH endpoint，Terminal Manager 对 auto/on_demand endpoint 执行聚合刷新，失败只标记对应 endpoint offline 且不 fallback 成 shell 或 local endpoint。
-- 下一切片 ME009 阻塞：hub/P2P transport 需要先解冻 `termx-hub/` 并补充 hub 身份、安全、中继和发现策略。
+- ME009 已完成：picker 只保留单一 create 行，create prompt 用 server 下拉选择 endpoint，并记住上次 endpoint/command/workdir；TUI/CLI/protocol first-party create 优先以 terminal name 作为 daemon-local key，core-v2 在 create 与 rename 时拒绝同 daemon 重名。
+- 后续 ME010 阻塞：hub/P2P transport 需要先解冻 `termx-hub/` 并补充 hub 身份、安全、中继和发现策略。

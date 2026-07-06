@@ -66,6 +66,30 @@ func TestProtocolServiceCreateListMetadataRestartRemove(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceCreateUsesNameAsDefaultTerminalID(t *testing.T) {
+	_, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	created, err := client.Create(context.Background(), protocol.CreateParams{
+		Name:    "named-shell",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 12, Rows: 4},
+	})
+	if err != nil {
+		t.Fatalf("create with name-only identity: %v", err)
+	}
+	if created.TerminalID != "named-shell" {
+		t.Fatalf("name-only create should return name as terminal id, got %#v", created)
+	}
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		Name:    "named-shell",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 12, Rows: 4},
+	}); err == nil || !strings.Contains(err.Error(), "duplicate terminal") {
+		t.Fatalf("duplicate name create should fail with duplicate terminal, got %v", err)
+	}
+}
+
 func TestProtocolServiceListDirectoriesUsesDaemonPath(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "project"), 0o755); err != nil {

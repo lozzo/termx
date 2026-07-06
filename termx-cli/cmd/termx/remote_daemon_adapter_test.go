@@ -241,7 +241,7 @@ func TestRemoteRuntimeAPIRoutesTerminalStorageAndEventsThroughCoreV2Truth(t *tes
 	})
 	var created runtimepb.TerminalInventoryItem
 	unmarshalRuntimeAPI(t, createBody, &created)
-	if created.GetTerminalId() == "" || created.GetName() != "api shell" || created.GetCwd() != "/srv/app" {
+	if created.GetTerminalId() != "api shell" || created.GetName() != "api shell" || created.GetCwd() != "/srv/app" {
 		t.Fatalf("unexpected remote create result %#v", &created)
 	}
 	spec := factory.spawnedSpec(created.GetTerminalId())

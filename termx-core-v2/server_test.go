@@ -230,6 +230,29 @@ func TestServerRegistryValidatesRecords(t *testing.T) {
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"sh"}}); !errors.Is(err, ErrDuplicateTerminal) {
 		t.Fatalf("expected ErrDuplicateTerminal, got %v", err)
 	}
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-2", Name: "term-1", Command: []string{"sh"}}); !errors.Is(err, ErrDuplicateTerminal) {
+		t.Fatalf("expected duplicate terminal name to return ErrDuplicateTerminal, got %v", err)
+	}
+}
+
+func TestServerMetadataRejectsDuplicateTerminalName(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Name: "alpha", Command: []string{"sh"}}); err != nil {
+		t.Fatalf("register first terminal: %v", err)
+	}
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-2", Name: "beta", Command: []string{"sh"}}); err != nil {
+		t.Fatalf("register second terminal: %v", err)
+	}
+	if _, err := server.SetMetadata(context.Background(), "term-2", "alpha", nil); !errors.Is(err, ErrDuplicateTerminal) {
+		t.Fatalf("expected duplicate metadata name to return ErrDuplicateTerminal, got %v", err)
+	}
+	info, err := server.GetTerminal("term-2")
+	if err != nil {
+		t.Fatalf("get terminal: %v", err)
+	}
+	if info.Name != "beta" {
+		t.Fatalf("duplicate rename must not mutate metadata, got %#v", info)
+	}
 }
 
 func TestServerStorageVersioningListAndEvents(t *testing.T) {

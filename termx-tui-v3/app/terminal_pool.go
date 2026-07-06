@@ -610,12 +610,17 @@ func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequ
 		return root.Advance(), nil
 	}
 	cols, rows := terminalPoolAttachSizeForTarget(root, target)
-	terminalID := nextTerminalPoolID(root)
 	title := strings.TrimSpace(msg.Title)
 	if title == "" {
-		title = terminalID
+		title = nextTerminalPoolID(root)
 	}
 	endpointID := state.NormalizeEndpointID(msg.EndpointID)
+	terminalID := terminalCreateIDFromName(title)
+	if terminalNameExists(root, endpointID, title) {
+		err := fmt.Sprintf("terminal name %q already exists on endpoint %q", title, endpointID)
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.new", Body: err})
+		return root.Advance(), nil
+	}
 	command := append([]string(nil), msg.Command...)
 	if len(command) == 0 {
 		// 中文说明：create request 的默认 command 属于目标 endpoint 语义；
@@ -646,6 +651,35 @@ func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequ
 			return TerminalPoolCreateResultMsg{EndpointID: endpointID, RequestedID: terminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, Result: result, Err: err}
 		},
 	}}
+}
+
+func terminalCreateIDFromName(name string) string {
+	return strings.TrimSpace(name)
+}
+
+func terminalNameExists(root state.Root, endpointID state.EndpointID, name string) bool {
+	endpointID = state.NormalizeEndpointID(endpointID)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	for _, item := range root.TerminalPool.Items {
+		if item.TerminalRef().EndpointID != endpointID {
+			continue
+		}
+		if strings.TrimSpace(item.Title) == name || strings.TrimSpace(item.TerminalID) == name {
+			return true
+		}
+	}
+	if root.Session.TerminalRef().Equal(state.NewTerminalRef(endpointID, name)) {
+		return true
+	}
+	for _, binding := range root.TerminalViews.BindingsForTerminalRef(state.NewTerminalRef(endpointID, name)) {
+		if strings.TrimSpace(binding.TerminalID) == name {
+			return true
+		}
+	}
+	return false
 }
 
 func reduceTerminalPoolCreateResult(root state.Root, msg TerminalPoolCreateResultMsg) (state.Root, []Effect) {

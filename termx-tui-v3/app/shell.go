@@ -920,6 +920,7 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 				root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.create", Body: err.Error()})
 				return root.Advance(), nil
 			}
+			root.Shell = rememberTerminalCreateDraft(root.Shell, after, request)
 			root.Shell = root.Shell.CloseOverlay()
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return request }}}
 		}
@@ -1065,6 +1066,15 @@ func createTerminalPromptWithEndpoint(root state.Root, targetPaneID string, endp
 	workdirValue := terminalCreateDefaultWorkdirForEndpoint(root, endpointID)
 	defaultCommand := terminalCreateDefaultCommandForEndpoint(root, endpointID)
 	commandPlaceholder := terminalCreateCommandDisplay(defaultCommand)
+	commandValue := ""
+	if draft := root.Shell.ReadonlyDefaults().TerminalCreateDraft; state.NormalizeEndpointID(draft.EndpointID) == endpointID {
+		if strings.TrimSpace(draft.Workdir) != "" {
+			workdirValue = strings.TrimSpace(draft.Workdir)
+		}
+		if strings.TrimSpace(draft.Command) != "" && strings.TrimSpace(draft.Command) != commandPlaceholder {
+			commandValue = strings.TrimSpace(draft.Command)
+		}
+	}
 	return state.PromptState{
 		Title:            "Create Terminal",
 		Purpose:          "terminal.create",
@@ -1075,7 +1085,7 @@ func createTerminalPromptWithEndpoint(root state.Root, targetPaneID string, endp
 		DefaultName:      terminalCreateDefaultName(defaultCommand),
 		Fields: []state.PromptFieldState{
 			{Key: "name", Label: "name", Required: true},
-			{Key: "command", Label: "command", Placeholder: commandPlaceholder},
+			{Key: "command", Label: "command", Value: commandValue, Cursor: len([]rune(commandValue)), Placeholder: commandPlaceholder},
 			{Key: "server", Label: "server", Value: endpointValue, Cursor: endpointCursor, Placeholder: "endpoint id or label", Required: true},
 			{Key: "workdir", Label: "workdir", Value: workdirValue, Cursor: len([]rune(workdirValue)), Placeholder: "endpoint cwd"},
 		},
@@ -1164,6 +1174,17 @@ func terminalCreateRequestFromPrompt(root state.Root, prompt state.PromptState) 
 	return request, nil
 }
 
+func rememberTerminalCreateDraft(shell state.ShellStore, prompt state.PromptState, request TerminalPoolCreateRequestMsg) state.ShellStore {
+	// 中文说明：draft 是下一次 create prompt 的交互默认值；terminal name 是唯一 key，
+	// 不自动复用，避免用户直接回车撞上同 endpoint 已存在名称。
+	shell.TerminalCreateDraft = state.TerminalCreateDraft{
+		EndpointID: state.NormalizeEndpointID(request.EndpointID),
+		Command:    strings.TrimSpace(prompt.FieldValue("command")),
+		Workdir:    strings.TrimSpace(request.CWD),
+	}
+	return shell
+}
+
 func terminalCreateDefaultEndpointID(root state.Root, target terminalPoolTarget, preferred state.EndpointID) state.EndpointID {
 	// 中文说明：create prompt 的 endpoint 只决定 TerminalPoolCreateRequestMsg 路由；
 	// 当前 pane/floating binding 仍是 TUI 侧连接意图真值，terminal lifecycle 属于 owning daemon。
@@ -1171,6 +1192,9 @@ func terminalCreateDefaultEndpointID(root state.Root, target terminalPoolTarget,
 		if id := state.NormalizeEndpointID(preferred); terminalCreateEndpointAvailable(root, id) {
 			return id
 		}
+	}
+	if draftEndpointID := state.NormalizeEndpointID(root.Shell.ReadonlyDefaults().TerminalCreateDraft.EndpointID); terminalCreateEndpointAvailable(root, draftEndpointID) {
+		return draftEndpointID
 	}
 	if target.FloatingID != "" {
 		if binding, ok := root.TerminalViews.FloatingBinding(target.FloatingID); ok && terminalCreateEndpointAvailable(root, binding.EndpointID) {
@@ -1256,7 +1280,7 @@ func terminalCreateEndpointIDFromValue(root state.Root, value string) (state.End
 }
 
 func terminalCreateEndpointIDFromPickerSelection(root state.Root, row int) state.EndpointID {
-	if selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), row); ok && selected.EndpointID != "" {
+	if selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), row); ok && selected.CreateNew && selected.EndpointID != "" {
 		return selected.EndpointID
 	}
 	return ""

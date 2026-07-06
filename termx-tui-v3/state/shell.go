@@ -130,6 +130,7 @@ type ShellStore struct {
 	Overlay                   OverlayState
 	EmptyPaneCTA              EmptyPaneCTAState
 	ExitedPaneCTA             ExitedPaneCTAState
+	TerminalCreateDraft       TerminalCreateDraft
 	Toasts                    []ToastState
 	nextToastSeq              uint64
 	nextFloatingSeq           uint64
@@ -197,6 +198,15 @@ type FloatingAutoFitState struct {
 
 type EmptyPaneCTAState struct {
 	SelectedIndex int
+}
+
+// TerminalCreateDraft 保存上一次成功创建 terminal 时的表单默认值。
+// 该状态属于 TUI reducer 交互记忆；EndpointID/Command/Workdir 只用于下一次打开 create prompt，
+// 不代表 terminal lifecycle truth，也不替代 owning daemon 返回的 terminal list。
+type TerminalCreateDraft struct {
+	EndpointID EndpointID
+	Command    string
+	Workdir    string
 }
 
 type SplitNode struct {
