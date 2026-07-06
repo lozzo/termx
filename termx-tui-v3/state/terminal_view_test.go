@@ -155,6 +155,26 @@ func TestTerminalViewStoreScopesResizeOwnerByEndpoint(t *testing.T) {
 	}
 }
 
+func TestTerminalViewStoreMarksWorkbenchBindingsUnresolvedByEndpointStatus(t *testing.T) {
+	store := TerminalViewStore{}.
+		BindPane(NewEndpointPaneTerminalView("west", "pane-west", "term-1", 0, 80, 24, TerminalResizeRoleFollower, "", TerminalPaneViewID("pane-west"), false)).
+		BindPane(NewEndpointPaneTerminalView("disabled", "pane-disabled", "term-1", 0, 80, 24, TerminalResizeRoleFollower, "", TerminalPaneViewID("pane-disabled"), false)).
+		BindPane(NewPaneTerminalView("pane-local", "term-1", 0, 80, 24, TerminalResizeRoleFollower, "", TerminalPaneViewID("pane-local"), false))
+	endpoints := EndpointStore{}.Upsert(DefaultLocalEndpoint()).Upsert(EndpointItem{ID: "disabled", Enabled: false, Status: EndpointStatusDisabled})
+
+	resolved := store.ApplyWorkbenchEndpointResolution(endpoints)
+
+	if binding, ok := resolved.PaneBinding("pane-west"); !ok || !binding.Unresolved || binding.UnresolvedReason != string(EndpointStatusUnregistered) {
+		t.Fatalf("missing endpoint should preserve unresolved binding, binding=%#v ok=%v", binding, ok)
+	}
+	if binding, ok := resolved.PaneBinding("pane-disabled"); !ok || !binding.Unresolved || binding.UnresolvedReason != string(EndpointStatusDisabled) {
+		t.Fatalf("disabled endpoint should preserve unresolved binding, binding=%#v ok=%v", binding, ok)
+	}
+	if binding, ok := resolved.PaneBinding("pane-local"); !ok || binding.Unresolved {
+		t.Fatalf("local endpoint should stay resolved, binding=%#v ok=%v", binding, ok)
+	}
+}
+
 func TestTerminalViewStorePromotesReplacementOwnerClearsClosedOwnerIdentity(t *testing.T) {
 	store := TerminalViewStore{}
 	owner := NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true)

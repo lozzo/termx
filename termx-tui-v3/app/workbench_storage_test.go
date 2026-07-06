@@ -946,6 +946,45 @@ func TestWorkbenchRestoreInputDoesNotUseStoredOldChannelBeforeAttachEffect(t *te
 	}
 }
 
+func TestWorkbenchRestoreKeepsMissingEndpointBindingUnresolved(t *testing.T) {
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneTerminalLive
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-remote"
+	views := state.TerminalViewStore{}.
+		BindPane(state.NewEndpointPaneTerminalView("west", state.DefaultPaneID, "term-remote", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-west", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	loadResult := services.WorkbenchStorageLoadResult{
+		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
+		Version:  7,
+		Found:    true,
+	}
+	root := state.Root{
+		Shell:     state.DefaultShell(),
+		Endpoints: state.EndpointStore{}.Upsert(state.DefaultLocalEndpoint()),
+	}
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{})
+
+	root, effects := reducer(root, WorkbenchStorageLoadResultMsg{Result: loadResult})
+
+	binding, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || binding.EndpointID != "west" || binding.TerminalID != "term-remote" || !binding.Unresolved || binding.UnresolvedReason != string(state.EndpointStatusUnregistered) {
+		t.Fatalf("missing endpoint binding must be preserved unresolved, binding=%#v ok=%v", binding, ok)
+	}
+	if pane, ok := root.Shell.Pane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}); !ok || pane.TerminalID != "term-remote" || pane.Kind != state.PaneTerminalLive {
+		t.Fatalf("layout pane must remain bound, pane=%#v ok=%v", pane, ok)
+	}
+	for _, effect := range effects {
+		fn, ok := effect.(FuncEffect)
+		if !ok {
+			continue
+		}
+		if msg := fn.Run(context.Background()); msg != nil {
+			if _, attach := msg.(LiveAttachMsg); attach {
+				t.Fatalf("unresolved endpoint must not auto attach, got %#v", msg)
+			}
+		}
+	}
+}
+
 func TestInteractiveRuntimeWorkbenchRestoreShowsExitedTerminalFromCore(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)

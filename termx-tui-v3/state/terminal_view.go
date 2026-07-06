@@ -26,28 +26,30 @@ type TerminalViewStore struct {
 // TerminalViewBinding 是 pane/floating 到 owning daemon terminal 的连接意图和运行时 attach 投影。
 // EndpointID + TerminalID 是跨 endpoint 真值；Channel、SurfaceID、OwnerViewID 等字段只属于当前 TUI 运行时和 daemon attachment 回包，不是 workbench storage 的长期 truth。
 type TerminalViewBinding struct {
-	ViewID         string             `json:"viewId"`
-	SurfaceID      string             `json:"surfaceId,omitempty"`
-	EndpointID     EndpointID         `json:"endpointId,omitempty"`
-	TerminalID     string             `json:"terminalId"`
-	Channel        uint16             `json:"channel,omitempty"`
-	Layout         TerminalViewLayout `json:"layout,omitempty"`
-	ResizeRole     string             `json:"resizeRole,omitempty"`
-	DesiredCols    int                `json:"desiredCols,omitempty"`
-	DesiredRows    int                `json:"desiredRows,omitempty"`
-	RequestSeq     uint64             `json:"requestSeq,omitempty"`
-	LastError      string             `json:"lastError,omitempty"`
-	PaneID         string             `json:"paneId,omitempty"`
-	FloatingID     string             `json:"floatingId,omitempty"`
-	Attached       bool               `json:"attached"`
-	CanResize      bool               `json:"canResize,omitempty"`
-	SizeLocked     bool               `json:"sizeLocked,omitempty"`
-	ControlReason  string             `json:"controlReason,omitempty"`
-	OwnerSurfaceID string             `json:"ownerSurfaceId,omitempty"`
-	OwnerViewID    string             `json:"ownerViewId,omitempty"`
-	ResizeEpoch    uint64             `json:"resizeEpoch,omitempty"`
-	ResizePending  bool               `json:"resizePending,omitempty"`
-	AttachPending  bool               `json:"attachPending,omitempty"`
+	ViewID           string             `json:"viewId"`
+	SurfaceID        string             `json:"surfaceId,omitempty"`
+	EndpointID       EndpointID         `json:"endpointId,omitempty"`
+	TerminalID       string             `json:"terminalId"`
+	Channel          uint16             `json:"channel,omitempty"`
+	Layout           TerminalViewLayout `json:"layout,omitempty"`
+	ResizeRole       string             `json:"resizeRole,omitempty"`
+	DesiredCols      int                `json:"desiredCols,omitempty"`
+	DesiredRows      int                `json:"desiredRows,omitempty"`
+	RequestSeq       uint64             `json:"requestSeq,omitempty"`
+	LastError        string             `json:"lastError,omitempty"`
+	PaneID           string             `json:"paneId,omitempty"`
+	FloatingID       string             `json:"floatingId,omitempty"`
+	Attached         bool               `json:"attached"`
+	CanResize        bool               `json:"canResize,omitempty"`
+	SizeLocked       bool               `json:"sizeLocked,omitempty"`
+	ControlReason    string             `json:"controlReason,omitempty"`
+	OwnerSurfaceID   string             `json:"ownerSurfaceId,omitempty"`
+	OwnerViewID      string             `json:"ownerViewId,omitempty"`
+	ResizeEpoch      uint64             `json:"resizeEpoch,omitempty"`
+	ResizePending    bool               `json:"resizePending,omitempty"`
+	AttachPending    bool               `json:"attachPending,omitempty"`
+	Unresolved       bool               `json:"unresolved,omitempty"`
+	UnresolvedReason string             `json:"unresolvedReason,omitempty"`
 }
 
 // TerminalViewLayout 是 pane/floating 的 view-local 内容布局状态。
@@ -288,6 +290,49 @@ func (store TerminalViewStore) RemoveTerminalRef(ref TerminalRef) TerminalViewSt
 		}
 	}
 	return store
+}
+
+// ApplyWorkbenchEndpointResolution 根据当前 endpoint registry 给 workbench 恢复的 binding 标记 unresolved。
+// 该方法只改变 TUI 本地连接意图投影；缺失、禁用或 manual endpoint 的 pane/floating 必须保留在 layout 中，不能被删除或自动改绑。
+func (store TerminalViewStore) ApplyWorkbenchEndpointResolution(endpoints EndpointStore) TerminalViewStore {
+	if len(store.Views) == 0 || !endpoints.HasItems() {
+		return store
+	}
+	store.Views = cloneTerminalViewBindings(store.Views)
+	for viewID, binding := range store.Views {
+		unresolved, reason := workbenchBindingUnresolvedReason(binding, endpoints)
+		binding.Unresolved = unresolved
+		binding.UnresolvedReason = reason
+		if unresolved {
+			binding.Attached = false
+			binding.Channel = 0
+			binding.AttachPending = false
+			binding.ResizePending = false
+			binding.CanResize = false
+			binding.LastError = "endpoint " + reason
+		}
+		store.Views[viewID] = binding
+	}
+	return store
+}
+
+func workbenchBindingUnresolvedReason(binding TerminalViewBinding, endpoints EndpointStore) (bool, string) {
+	ref := binding.TerminalRef()
+	if ref.Empty() {
+		return false, ""
+	}
+	endpoint, ok := endpoints.DisplayEndpoint(ref.EndpointID)
+	if !ok {
+		return false, ""
+	}
+	status := endpoint.DisplayStatus()
+	switch status {
+	case EndpointStatusDisabled, EndpointStatusUnregistered:
+		return true, string(status)
+	case EndpointStatusManual:
+		return true, string(status)
+	}
+	return false, ""
 }
 
 func (store TerminalViewStore) PaneBinding(paneID string) (TerminalViewBinding, bool) {

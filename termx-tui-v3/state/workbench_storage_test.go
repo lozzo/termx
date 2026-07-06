@@ -95,11 +95,14 @@ func TestWorkbenchStorageSnapshotV2RoundTripsTerminalViews(t *testing.T) {
 	shell := DefaultShell().SplitActivePane(PaneState{ID: "pane-logs", Title: "logs", Kind: PaneTerminalLive, TerminalID: "term-1"}, SplitDirectionVertical)
 	views := TerminalViewStore{}
 	views = views.BindPane(NewPaneTerminalView(DefaultPaneID, "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", TerminalPaneViewID(DefaultPaneID), true))
-	views = views.BindPane(NewPaneTerminalView("pane-logs", "term-1", 8, 40, 12, TerminalResizeRoleFollower, "surface", TerminalPaneViewID("pane-logs"), false))
+	views = views.BindPane(NewEndpointPaneTerminalView("west", "pane-logs", "term-1", 8, 40, 12, TerminalResizeRoleFollower, "surface", TerminalPaneViewID("pane-logs"), false))
 	snapshot := SnapshotRootWorkbenchForStorage(Root{Shell: shell, TerminalViews: views})
 
 	if snapshot.SchemaVersion != WorkbenchStorageSchemaV2 || len(snapshot.TerminalViews) != 2 {
 		t.Fatalf("expected v2 snapshot with terminal views, got %#v", snapshot)
+	}
+	if snapshot.TerminalViews[1].EndpointID != "west" {
+		t.Fatalf("snapshot must persist endpoint-aware terminal ref, got %#v", snapshot.TerminalViews)
 	}
 	data, err := EncodeWorkbenchStorageSnapshotValue(snapshot)
 	if err != nil {
@@ -113,8 +116,36 @@ func TestWorkbenchStorageSnapshotV2RoundTripsTerminalViews(t *testing.T) {
 	if err != nil {
 		t.Fatalf("restore terminal views: %v", err)
 	}
-	if bindings := restored.BindingsForTerminal("term-1"); len(bindings) != 2 || bindings[0].EndpointID != DefaultEndpointID || bindings[1].EndpointID != DefaultEndpointID {
-		t.Fatalf("expected restored shared terminal bindings, got %#v", bindings)
+	if bindings := restored.BindingsForTerminalRef(LocalTerminalRef("term-1")); len(bindings) != 1 || bindings[0].EndpointID != DefaultEndpointID {
+		t.Fatalf("expected restored local terminal binding, got %#v", bindings)
+	}
+	if bindings := restored.BindingsForTerminalRef(NewTerminalRef("west", "term-1")); len(bindings) != 1 || bindings[0].EndpointID != "west" {
+		t.Fatalf("expected restored west terminal binding, got %#v", bindings)
+	}
+}
+
+func TestWorkbenchStorageRestoreDefaultsMissingEndpointToLocal(t *testing.T) {
+	snapshot := WorkbenchStorageSnapshot{
+		Schema:            WorkbenchStorageSchema,
+		SchemaVersion:     WorkbenchStorageSchemaV2,
+		Workspace:         DefaultShell().Workspace,
+		Workspaces:        DefaultShell().Workspaces,
+		PanelPresentation: PanelPresentationCard,
+		ActivePaneID:      DefaultPaneID,
+		TerminalViews: []TerminalViewBinding{{
+			ViewID:     TerminalPaneViewID(DefaultPaneID),
+			PaneID:     DefaultPaneID,
+			TerminalID: "term-legacy",
+		}},
+	}
+
+	restored, err := snapshot.ToTerminalViewStore()
+	if err != nil {
+		t.Fatalf("restore legacy endpoint binding: %v", err)
+	}
+	binding, ok := restored.PaneBinding(DefaultPaneID)
+	if !ok || binding.EndpointID != DefaultEndpointID || binding.TerminalID != "term-legacy" {
+		t.Fatalf("legacy binding should default to local endpoint, binding=%#v ok=%v", binding, ok)
 	}
 }
 

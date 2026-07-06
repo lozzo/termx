@@ -179,12 +179,14 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 		return root.Advance(), nil
 	}
 	previousViews := root.TerminalViews
+	previousHistoryEndpointID := root.History.EndpointID
 	previousHistoryTerminalID := root.History.TerminalID
 	terminalViews = preserveWorkbenchRuntimeTerminalViews(previousViews, terminalViews)
+	terminalViews = terminalViews.ApplyWorkbenchEndpointResolution(root.Endpoints)
 	// 外部 workbench snapshot 会整体替换 pane/view 结构；旧 frozen history、
 	// pending request 和 copy 绑定都不能跨这次替换继续复用。
 	root = root.ClearCopyHistorySessions()
-	root.History = state.HistoryStore{TerminalID: previousHistoryTerminalID}
+	root.History = state.HistoryStore{EndpointID: previousHistoryEndpointID, TerminalID: previousHistoryTerminalID}
 	preserveLocalOperation := root.WorkbenchSync.LastAppliedVersion != 0 || root.WorkbenchSync.LastSavedVersion != 0
 	root.Shell = mergeLocalWorkbenchRuntimeState(root.Shell, shell, preserveLocalOperation)
 	root.Shell = applyConfiguredShellChrome(root.Shell, root.Config)
@@ -508,6 +510,9 @@ func workbenchRestoredTerminalAttachBindings(previous state.TerminalViewStore, b
 		if binding.TerminalID == "" || binding.ViewID == "" {
 			continue
 		}
+		if binding.Unresolved {
+			continue
+		}
 		if workbenchBindingAlreadyLive(previous, binding) {
 			continue
 		}
@@ -537,6 +542,7 @@ func workbenchRestoredTerminalAttachEffectsForBindings(root state.Root, bindings
 		// 中文说明：storage 只保存结构/连接意图；恢复时不继承其它 TUI 的 owner。
 		resizePolicy := state.TerminalResizeRoleFollower
 		cfg := LiveConfig{
+			EndpointID:   binding.EndpointID,
 			TerminalID:   binding.TerminalID,
 			Cols:         cols,
 			Rows:         rows,
@@ -574,13 +580,17 @@ func workbenchRestoredTerminalLifecycleQueryTargets(previous state.TerminalViewS
 		if binding.TerminalID == "" {
 			continue
 		}
+		if binding.Unresolved {
+			continue
+		}
 		if !workbenchBindingAlreadyLive(previous, binding) {
 			continue
 		}
-		if _, ok := seen[binding.TerminalID]; ok {
+		refKey := binding.TerminalRef().Key()
+		if _, ok := seen[refKey]; ok {
 			continue
 		}
-		seen[binding.TerminalID] = struct{}{}
+		seen[refKey] = struct{}{}
 		cols, rows := binding.DesiredCols, binding.DesiredRows
 		if cols <= 0 {
 			cols = 80
@@ -588,17 +598,20 @@ func workbenchRestoredTerminalLifecycleQueryTargets(previous state.TerminalViewS
 		if rows <= 0 {
 			rows = 24
 		}
-		targets = append(targets, LiveLifecycleQueryTarget{TerminalID: binding.TerminalID, Cols: cols, Rows: rows})
+		targets = append(targets, LiveLifecycleQueryTarget{EndpointID: binding.EndpointID, TerminalID: binding.TerminalID, Cols: cols, Rows: rows})
 	}
 	return targets
 }
 
 func workbenchBindingAlreadyLive(previous state.TerminalViewStore, binding state.TerminalViewBinding) bool {
+	if binding.Unresolved {
+		return false
+	}
 	existing, ok := previous.Views[binding.ViewID]
 	if !ok {
 		return false
 	}
-	if existing.TerminalID == "" || existing.TerminalID != binding.TerminalID {
+	if existing.TerminalID == "" || !existing.TerminalRef().Equal(binding.TerminalRef()) {
 		return false
 	}
 	if existing.AttachPending {

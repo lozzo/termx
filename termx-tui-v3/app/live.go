@@ -1295,7 +1295,7 @@ func liveInputTarget(root state.Root) (liveInputTargetInfo, bool) {
 	shell := root.Shell.ReadonlyDefaults()
 	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
 		binding, ok := root.TerminalViews.FloatingBinding(activeFloatingID)
-		if !ok || binding.TerminalID == "" {
+		if !ok || binding.TerminalID == "" || binding.Unresolved {
 			return liveInputTargetInfo{}, false
 		}
 		return liveInputTargetFromBinding(binding), true
@@ -1305,7 +1305,7 @@ func liveInputTarget(root state.Root) (liveInputTargetInfo, bool) {
 		return liveInputTargetInfo{}, false
 	}
 	binding, ok := root.TerminalViews.PaneBinding(pane.ID)
-	if !ok || binding.TerminalID == "" {
+	if !ok || binding.TerminalID == "" || binding.Unresolved {
 		return liveInputTargetInfo{}, false
 	}
 	return liveInputTargetFromBinding(binding), true
@@ -1316,7 +1316,7 @@ func liveInputTargetForView(root state.Root, viewID string) (liveInputTargetInfo
 		return liveInputTargetInfo{}, false
 	}
 	binding, ok := root.TerminalViews.Views[viewID]
-	if !ok || binding.TerminalID == "" {
+	if !ok || binding.TerminalID == "" || binding.Unresolved {
 		return liveInputTargetInfo{}, false
 	}
 	return liveInputTargetFromBinding(binding), true
