@@ -758,6 +758,11 @@ func (runtime *AppRuntime) coalesceQueuedLiveUpdate(msg Msg) bool {
 		if !existing.ref.Equal(incoming.ref) {
 			continue
 		}
+		if existing.kind != incoming.kind {
+			// 中文说明：refresh wake 和 surface result 虽然都不要求逐帧渲染，
+			// 但它们释放不同 reducer-owned 背压状态，不能互相 latest-only 替换。
+			return false
+		}
 		perftrace.Count("tui.queue_live_coalesce", messageApproxBytes(queued))
 		runtime.removeAtLocked(i)
 		runtime.queue = append(runtime.queue, msg)
@@ -825,8 +830,16 @@ func (runtime *AppRuntime) replaceQueuedWorkbenchStoragePersistLocked(msg Workbe
 }
 
 type queuedLiveUpdate struct {
-	ref state.TerminalRef
+	ref  state.TerminalRef
+	kind queuedLiveUpdateKind
 }
+
+type queuedLiveUpdateKind uint8
+
+const (
+	queuedLiveUpdateRefresh queuedLiveUpdateKind = iota + 1
+	queuedLiveUpdateSurface
+)
 
 func queuedOrdinaryLiveUpdate(msg Msg) (queuedLiveUpdate, bool) {
 	switch msg := msg.(type) {
@@ -836,14 +849,14 @@ func queuedOrdinaryLiveUpdate(msg Msg) (queuedLiveUpdate, bool) {
 			if msg.Event.TerminalID == "" {
 				return queuedLiveUpdate{}, false
 			}
-			return queuedLiveUpdate{ref: state.NewTerminalRef(msg.Event.EndpointID, msg.Event.TerminalID)}, true
+			return queuedLiveUpdate{ref: state.NewTerminalRef(msg.Event.EndpointID, msg.Event.TerminalID), kind: queuedLiveUpdateRefresh}, true
 		}
 	case LiveSurfaceMsg:
 		// 中文说明：普通 native screen result 是 live projection，不是语义帧；
 		// 压力输出下同 terminal 已返回的旧 projection 必须 latest-only 合并，
 		// 生命周期/错误 surface 仍是不可丢的语义边界。
 		if ordinaryLiveSurfaceResult(msg) {
-			return queuedLiveUpdate{ref: msg.Snapshot.TerminalRef()}, true
+			return queuedLiveUpdate{ref: msg.Snapshot.TerminalRef(), kind: queuedLiveUpdateSurface}, true
 		}
 	default:
 		return queuedLiveUpdate{}, false

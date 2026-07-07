@@ -182,6 +182,56 @@ func TestAppRuntimeCoalescedLiveSurfaceClearsStalePayloadReference(t *testing.T)
 	}
 }
 
+func TestAppRuntimeDoesNotCoalesceLiveInvalidationWakeWithSurfaceResult(t *testing.T) {
+	terminal := &services.FakeTerminalService{SurfaceResult: services.TerminalSurfaceResult{
+		Ready: true,
+		Snapshot: state.LiveSurfaceSnapshot{
+			TerminalID: "term-1",
+			Revision:   12,
+			Lines:      []string{"latest"},
+		},
+	}}
+	root := state.Root{}
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   10,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"ready"},
+	})
+	var armed bool
+	root.Surface, armed = root.Surface.ArmLiveInvalidation("term-1", 80, 24)
+	if !armed {
+		t.Fatalf("test setup should arm live invalidation, got %#v", root.Surface.Refreshes)
+	}
+	runtime := NewAppRuntime(root, NewLiveReducer(LiveDeps{Terminal: terminal}), nil, nil, NewSyncEffectRunner())
+
+	if err := runtime.Post(LiveEventMsg{Event: services.TerminalLiveEvent{
+		TerminalID: "term-1",
+		Refresh:    true,
+		Snapshot:   state.LiveSurfaceSnapshot{Revision: 11},
+	}}); err != nil {
+		t.Fatalf("post wake: %v", err)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   11,
+		Lines:      []string{"side surface"},
+	}, RequestedCols: 80, RequestedRows: 24}); err != nil {
+		t.Fatalf("post surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if len(terminal.Surfaces) == 0 {
+		t.Fatal("live invalidation wake must survive queue coalescing and request latest surface")
+	}
+	if refresh, ok := runtime.State().Surface.Refreshes["term-1"]; ok && refresh.Armed {
+		t.Fatalf("wake/surface interleave must release armed pending state, got %#v", refresh)
+	}
+}
+
 func TestInteractiveRuntimeAppliesConfiguredPanelPresentation(t *testing.T) {
 	runtime := NewInteractiveRuntime(
 		state.Root{
