@@ -368,6 +368,33 @@ func (store TerminalViewStore) MarkViewRuntimeError(viewID string, message strin
 	return store
 }
 
+// MarkTerminalRefRuntimeError 把同一个 endpoint terminal 的所有 pane/floating view 标成运行时错误。
+// 调用方通常来自 live surface、input 或 invalidation 失败；这些失败属于 terminal/ref 的连接链路，
+// 不能只写全局 Session/Surface，否则非 active view 或后续 render 投影会丢失 pane 级错误原因。
+func (store TerminalViewStore) MarkTerminalRefRuntimeError(ref TerminalRef, message string) TerminalViewStore {
+	ref = ref.Normalize()
+	if ref.Empty() || len(store.Views) == 0 {
+		return store
+	}
+	if message == "" {
+		message = "terminal view disconnected"
+	}
+	store.Views = cloneTerminalViewBindings(store.Views)
+	for viewID, binding := range store.Views {
+		if !binding.TerminalRef().Equal(ref) {
+			continue
+		}
+		binding.Channel = 0
+		binding.Attached = false
+		binding.CanResize = false
+		binding.AttachPending = false
+		binding.ResizePending = false
+		binding.LastError = message
+		store.Views[viewID] = binding
+	}
+	return store
+}
+
 func workbenchBindingUnresolvedReason(binding TerminalViewBinding, endpoints EndpointStore) (bool, string) {
 	ref := binding.TerminalRef()
 	if ref.Empty() {

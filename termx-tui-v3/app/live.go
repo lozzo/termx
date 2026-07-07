@@ -1608,11 +1608,33 @@ func liveMousePassthroughEnabled(root state.Root, event input.InputEvent, target
 	return root.Surface.SurfaceForTerminalRef(state.NewTerminalRef(target.EndpointID, target.TerminalID)).Modes.MousePassthroughEnabled()
 }
 
+func liveResizeShouldPreserveDisconnectedError(root state.Root, msg LiveResizeMsg) bool {
+	if root.Session.State == state.TerminalLiveError && root.Session.LastError != "" {
+		return true
+	}
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
+	if msg.ViewID != "" {
+		if binding, ok := root.TerminalViews.Views[msg.ViewID]; ok {
+			if binding.LastError != "" && !binding.Attached {
+				return true
+			}
+			ref = binding.TerminalRef()
+		}
+	}
+	surface := root.Surface.SurfaceForTerminalRef(ref)
+	// 中文说明：断线后的排队 resize 只能被丢弃，不能把 transport/protocol 错误
+	// 覆盖成泛化的 "terminal is not attached"，否则 pane 无法按 endpoint 错误分类展示。
+	return surface.State == state.TerminalLiveError && surface.Err != ""
+}
+
 func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.Root, []Effect) {
 	if deps.Terminal == nil {
 		return setLiveError(root, "terminal service missing"), nil
 	}
 	if !root.Session.Attached {
+		if liveResizeShouldPreserveDisconnectedError(root, msg) {
+			return root, nil
+		}
 		return setLiveError(root, "terminal is not attached"), nil
 	}
 	if msg.ViewID == "" {
@@ -1874,6 +1896,8 @@ func applyLiveErrorRefWithActive(root state.Root, ref state.TerminalRef, message
 		root.Surface = root.Surface.SetError(message)
 		return root
 	}
+	root.TerminalViews = root.TerminalViews.MarkTerminalRefRuntimeError(ref, message)
+	root = markEndpointOfflineFromLiveError(root, ref, message)
 	if active {
 		root.Session = root.Session.SetErrorRef(ref, message)
 		root.Surface = root.Surface.SetErrorRef(ref, message)
@@ -1882,6 +1906,22 @@ func applyLiveErrorRefWithActive(root state.Root, ref state.TerminalRef, message
 	// 中文说明：endpoint/list/live 的局部失败不能升级成全局 terminal 错误。
 	// 非 active ref 只更新它自己的 surface 缓存，等待对应 pane/floating 被聚焦时展示。
 	root.Surface = root.Surface.SetErrorRef(ref, message)
+	return root
+}
+
+func markEndpointOfflineFromLiveError(root state.Root, ref state.TerminalRef, message string) state.Root {
+	ref = ref.Normalize()
+	if ref.Empty() || ref.EndpointID == state.DefaultEndpointID {
+		return root
+	}
+	kind := state.ClassifyEndpointErrorText(message)
+	if kind == state.EndpointErrorUnknown || kind == state.EndpointErrorUnavailable {
+		return root
+	}
+	// 中文说明：live invalidation/surface/input 的 transport/protocol 错误已经证明
+	// owning endpoint 的连接不可用；这里回投到 EndpointStore，保证 picker/manager/workbench
+	// 与 pane 使用同一份 endpoint-scoped 错误投影。
+	root.Endpoints = root.Endpoints.MarkRuntimeStatus(ref.EndpointID, state.EndpointStatusOffline, kind, endpointTerminalCount(root, ref.EndpointID), message)
 	return root
 }
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -81,6 +82,47 @@ func TestEndpointDisconnectHarnessKeepsPaneReasonAfterEmptyInventory(t *testing.
 		!frameContains(frame, "Disconnect pane") ||
 		frameContains(frame, "Attach existing terminal") {
 		t.Fatalf("empty inventory should keep disconnected pane content, frame=%#v", frame.Lines)
+	}
+}
+
+func TestLiveInvalidationEOFHarnessShowsDisconnectedPane(t *testing.T) {
+	ref := state.NewTerminalRef("cn-fast", "11")
+	root := endpointDisconnectHarnessRoot(ref)
+	host := NewFakeTerminalHost(64)
+	host.SetSize(120, 32)
+	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: &services.FakeTerminalService{}}, CopyModeDeps{})
+
+	if err := runtime.Post(LiveEventMsg{Event: services.TerminalLiveEvent{
+		EndpointID: ref.EndpointID,
+		TerminalID: ref.TerminalID,
+		Err:        errors.New("EOF"),
+	}}); err != nil {
+		t.Fatalf("post live EOF failed: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("live EOF drain failed: %v", err)
+	}
+
+	final := runtime.State()
+	if binding, ok := final.TerminalViews.PaneBinding(state.DefaultPaneID); !ok || !binding.TerminalRef().Equal(ref) || binding.Attached || binding.Channel != 0 || binding.LastError != "EOF" {
+		t.Fatalf("live EOF should mark pane binding as disconnected, binding=%#v ok=%v", binding, ok)
+	}
+	if endpoint, ok := final.Endpoints.Endpoint(ref.EndpointID); !ok || endpoint.DisplayStatus() != state.EndpointStatusOffline || endpoint.LastErrorKind != state.EndpointErrorProtocol || endpoint.LastError != "EOF" {
+		t.Fatalf("live EOF should mark endpoint offline protocol, endpoint=%#v ok=%v", endpoint, ok)
+	}
+	if final.Session.State != state.TerminalLiveError || final.Session.LastError != "EOF" || final.Session.Attached {
+		t.Fatalf("live EOF should mark active session error, session=%#v", final.Session)
+	}
+	if final.Surface.State != state.TerminalLiveError || final.Surface.Err != "EOF" {
+		t.Fatalf("live EOF should mark active surface error, surface=%#v", final.Surface)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "endpoint disconnected") ||
+		!frameContains(frame, "protocol") ||
+		!frameContains(frame, "Reconnect this pane") ||
+		!frameContains(frame, "Disconnect pane") ||
+		frameContains(frame, "Attach existing terminal") {
+		t.Fatalf("live EOF frame should show disconnected pane content, frame=%#v", frame.Lines)
 	}
 }
 
