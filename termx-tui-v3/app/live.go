@@ -325,7 +325,7 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 					)
 					return next.Advance(), nil
 				}
-				root.Surface = root.Surface.SetError(msg.Err.Error())
+				root = applyLiveErrorRef(root, snapshotRef, msg.Err.Error())
 				root, effects := maybeScheduleDirtyLiveSurfaceRefreshRef(root, snapshotRef, msg.RequestedCols, msg.RequestedRows, deps)
 				return root.Advance(), effects
 			}
@@ -580,7 +580,8 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminalRef(ref)),
 		)
 		root.TerminalViews = root.TerminalViews.ClearAttachPending(msg.ViewID, msg.Err.Error())
-		return setLiveError(root, msg.Err.Error()), nil
+		root = applyLiveAttachErrorRef(root, ref, msg.ViewID, msg.Err.Error())
+		return root.Advance(), nil
 	}
 	result := msg.Result
 	if result.EndpointID == "" {
@@ -1158,12 +1159,7 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Ro
 		if next, ok := markTerminalExitedFromErrorRef(root, eventRef, event.Err); ok {
 			return next.Advance(), nil
 		}
-		if event.TerminalID == "" || root.Surface.TerminalRef().Equal(eventRef) {
-			root.Surface = root.Surface.SetError(event.Err.Error())
-			root.Session = root.Session.SetError(event.Err.Error())
-			return root.Advance(), nil
-		}
-		root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{EndpointID: event.EndpointID, TerminalID: event.TerminalID, Err: event.Err.Error(), State: state.TerminalLiveError})
+		root = applyLiveErrorRef(root, eventRef, event.Err.Error())
 		return root.Advance(), nil
 	}
 	if event.Metadata {
@@ -1732,25 +1728,73 @@ func reduceLiveResizeError(root state.Root, msg LiveResizeResultMsg) (state.Root
 	if msg.ViewID != "" {
 		if binding, ok := root.TerminalViews.Views[msg.ViewID]; ok {
 			root.TerminalViews, _ = root.TerminalViews.ApplyResizeResult(msg.ViewID, msg.Seq, binding.DesiredCols, binding.DesiredRows, message)
-			if binding.TerminalRef().Equal(root.Session.TerminalRef()) {
-				root.Session = root.Session.SetError(message)
-				root.Surface = root.Surface.SetError(message)
+			bindingRef := binding.TerminalRef()
+			if liveErrorRefOwnsActiveProjection(root, bindingRef) {
+				root = applyLiveErrorRefWithActive(root, bindingRef, message, true)
+			} else {
+				root.Surface = root.Surface.SetErrorRef(bindingRef, message)
 			}
 			return root.Advance(), nil
 		}
 	}
-	root.Session = root.Session.SetError(message)
-	root.Surface = root.Surface.SetError(message)
+	root = applyLiveErrorRef(root, ref, message)
 	return root.Advance(), nil
 }
 
 func setLiveError(root state.Root, message string) state.Root {
+	return applyLiveErrorRef(root, state.TerminalRef{}, message).Advance()
+}
+
+func applyLiveAttachErrorRef(root state.Root, ref state.TerminalRef, viewID string, message string) state.Root {
+	ref = ref.Normalize()
 	if message == "" {
 		message = "unknown terminal error"
 	}
-	root.Session = root.Session.SetError(message)
-	root.Surface = root.Surface.SetError(message)
-	return root.Advance()
+	if ref.Empty() || liveAttachResultOwnsActiveView(root, viewID, ref) {
+		return applyLiveErrorRefWithActive(root, ref, message, true)
+	}
+	// 中文说明：后台 restore/reattach 失败只属于该 view/ref；前台 live 投影仍由 active view 拥有。
+	root.Surface = root.Surface.SetErrorRef(ref, message)
+	return root
+}
+
+func applyLiveErrorRef(root state.Root, ref state.TerminalRef, message string) state.Root {
+	return applyLiveErrorRefWithActive(root, ref, message, liveErrorRefOwnsActiveProjection(root, ref))
+}
+
+func applyLiveErrorRefWithActive(root state.Root, ref state.TerminalRef, message string, active bool) state.Root {
+	if message == "" {
+		message = "unknown terminal error"
+	}
+	ref = ref.Normalize()
+	if ref.Empty() {
+		root.Session = root.Session.SetError(message)
+		root.Surface = root.Surface.SetError(message)
+		return root
+	}
+	if active {
+		root.Session = root.Session.SetErrorRef(ref, message)
+		root.Surface = root.Surface.SetErrorRef(ref, message)
+		return root
+	}
+	// 中文说明：endpoint/list/live 的局部失败不能升级成全局 terminal 错误。
+	// 非 active ref 只更新它自己的 surface 缓存，等待对应 pane/floating 被聚焦时展示。
+	root.Surface = root.Surface.SetErrorRef(ref, message)
+	return root
+}
+
+func liveErrorRefOwnsActiveProjection(root state.Root, ref state.TerminalRef) bool {
+	ref = ref.Normalize()
+	if ref.Empty() {
+		return true
+	}
+	if root.Session.TerminalRef().Equal(ref) || root.Surface.TerminalRef().Equal(ref) {
+		return true
+	}
+	if binding, ok := activeTerminalBinding(root); ok && binding.TerminalRef().Equal(ref) {
+		return true
+	}
+	return root.Session.TerminalID == "" && root.Surface.TerminalID == ""
 }
 
 func markTerminalExitedFromError(root state.Root, terminalID string, err error) (state.Root, bool) {
@@ -1795,17 +1839,5 @@ func setLiveInputErrorRef(root state.Root, ref state.TerminalRef, message string
 	if message == "" {
 		message = "unknown terminal input error"
 	}
-	ref = ref.Normalize()
-	if ref.Empty() || root.Session.TerminalRef().Equal(ref) {
-		root.Session = root.Session.SetError(message)
-		root.Surface = root.Surface.SetError(message)
-		return root
-	}
-	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
-		EndpointID: ref.EndpointID,
-		TerminalID: ref.TerminalID,
-		State:      state.TerminalLiveError,
-		Err:        message,
-	})
-	return root
+	return applyLiveErrorRef(root, ref, message)
 }

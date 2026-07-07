@@ -436,21 +436,39 @@ func (store TerminalSurfaceStore) MarkExitedWithMetadataRef(ref TerminalRef, exi
 }
 
 func (store TerminalSurfaceStore) SetError(err string) TerminalSurfaceStore {
-	store.Err = err
-	store.State = TerminalLiveError
-	store.ResizeBoundary = LiveResizeBoundary{}
-	if store.TerminalID != "" {
-		ref := store.TerminalRef()
-		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
-		snapshot, ok := store.snapshotForTerminalRef(ref)
-		if !ok {
-			snapshot = LiveSurfaceSnapshot{}
-		}
-		snapshot.EndpointID = ref.EndpointID
-		snapshot.TerminalID = store.TerminalID
-		snapshot.Err = err
-		snapshot.State = TerminalLiveError
-		store.Surfaces[liveSurfaceRefKey(ref)] = snapshot
+	ref := store.TerminalRef()
+	if ref.Empty() {
+		store.Err = err
+		store.State = TerminalLiveError
+		store.ResizeBoundary = LiveResizeBoundary{}
+		return store
+	}
+	return store.SetErrorRef(ref, err)
+}
+
+// SetErrorRef 只把错误生命周期写入指定 TerminalRef 的 live surface。
+// 非当前 active ref 的错误只进入 Surfaces 缓存，不能污染前台 terminal 的实时投影。
+func (store TerminalSurfaceStore) SetErrorRef(ref TerminalRef, err string) TerminalSurfaceStore {
+	ref = ref.Normalize()
+	if ref.Empty() {
+		return store.SetError(err)
+	}
+	store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
+	snapshot, ok := store.snapshotForTerminalRef(ref)
+	if !ok && store.TerminalRef().Equal(ref) {
+		snapshot = store.Snapshot()
+	}
+	snapshot.EndpointID = ref.EndpointID
+	snapshot.TerminalID = ref.TerminalID
+	snapshot.Err = err
+	snapshot.State = TerminalLiveError
+	store.Surfaces[liveSurfaceRefKey(ref)] = snapshot
+	if store.TerminalID == "" || store.TerminalRef().Equal(ref) {
+		store.EndpointID = ref.EndpointID
+		store.TerminalID = ref.TerminalID
+		store.Err = err
+		store.State = TerminalLiveError
+		store.ResizeBoundary = LiveResizeBoundary{}
 	}
 	return store
 }
@@ -1050,6 +1068,26 @@ func (store TerminalSessionStore) IsStaleResizeResult(seq uint64) bool {
 }
 
 func (store TerminalSessionStore) SetError(err string) TerminalSessionStore {
+	return store.SetErrorRef(store.TerminalRef(), err)
+}
+
+// SetErrorRef 把当前前台 attach/session 投影标记为指定 TerminalRef 的错误状态。
+// 调用方必须先确认该 ref 拥有 active view；后台 endpoint 失败不得调用它改写全局 session。
+func (store TerminalSessionStore) SetErrorRef(ref TerminalRef, err string) TerminalSessionStore {
+	ref = ref.Normalize()
+	if !ref.Empty() {
+		if !store.TerminalRef().Equal(ref) {
+			store.Channel = 0
+			store.Cols = 0
+			store.Rows = 0
+			store.DesiredCols = 0
+			store.DesiredRows = 0
+			store.ResizeRequestSeq = 0
+			store.ResizeConfirmedSeq = 0
+		}
+		store.EndpointID = ref.EndpointID
+		store.TerminalID = ref.TerminalID
+	}
 	store.LastError = err
 	store.State = TerminalLiveError
 	store.Attached = false

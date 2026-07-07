@@ -168,6 +168,17 @@ func TestTerminalPoolListRequestFansOutToConnectableEndpoints(t *testing.T) {
 func TestTerminalPoolEndpointListFailureMarksOnlyThatEndpointOffline(t *testing.T) {
 	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
 	root := state.Root{
+		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
+		Session: state.TerminalSessionStore{}.
+			AttachRefWithResizeOwner(state.LocalTerminalRef("term-1"), 7, 80, 24, state.TerminalResizeRoleOwner, "surface-local", state.TerminalPaneViewID(state.DefaultPaneID)),
+		Surface: (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+			EndpointID: state.DefaultEndpointID,
+			TerminalID: "term-1",
+			Lines:      []string{"local"},
+			State:      state.TerminalLiveAttached,
+		}),
+		TerminalViews: state.TerminalViewStore{}.
+			BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-local", state.TerminalPaneViewID(state.DefaultPaneID), true)),
 		TerminalPool: state.TerminalPoolStore{
 			RequestSeq: 4,
 			Items: []state.TerminalPoolItem{
@@ -191,6 +202,12 @@ func TestTerminalPoolEndpointListFailureMarksOnlyThatEndpointOffline(t *testing.
 	local, ok := next.Endpoints.Endpoint(state.DefaultEndpointID)
 	if !ok || local.DisplayStatus() != state.EndpointStatusConnected {
 		t.Fatalf("local endpoint should stay connected, got %#v", local)
+	}
+	if next.Session.State != state.TerminalLiveAttached || !next.Session.TerminalRef().Equal(state.LocalTerminalRef("term-1")) {
+		t.Fatalf("endpoint list failure must not poison active session, session=%#v", next.Session)
+	}
+	if next.Surface.State != state.TerminalLiveAttached || !next.Surface.TerminalRef().Equal(state.LocalTerminalRef("term-1")) || next.Surface.Err != "" || next.Surface.Lines[0] != "local" {
+		t.Fatalf("endpoint list failure must not poison active surface, surface=%#v", next.Surface)
 	}
 }
 
