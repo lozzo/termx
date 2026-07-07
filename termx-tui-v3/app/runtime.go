@@ -1119,11 +1119,11 @@ type liveFrameReadyTarget struct {
 func liveFrameReadyTargetsFromRoot(root state.Root) []liveFrameReadyTarget {
 	seen := map[string]struct{}{}
 	var targets []liveFrameReadyTarget
-	add := func(snapshot state.LiveSurfaceSnapshot) {
-		if snapshot.TerminalID == "" {
+	addRef := func(ref state.TerminalRef) {
+		ref = ref.Normalize()
+		if ref.Empty() {
 			return
 		}
-		ref := snapshot.TerminalRef()
 		key := ref.Key()
 		if key == "" {
 			return
@@ -1132,15 +1132,70 @@ func liveFrameReadyTargetsFromRoot(root state.Root) []liveFrameReadyTarget {
 			return
 		}
 		seen[key] = struct{}{}
+		snapshot := root.Surface.SurfaceForTerminalRef(ref).Snapshot()
 		targets = append(targets, liveFrameReadyTarget{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, ObservedRevision: snapshot.Revision})
 	}
-	if root.Surface.TerminalID != "" {
-		add(root.Surface.Snapshot())
+	addBinding := func(binding state.TerminalViewBinding) {
+		if binding.TerminalID == "" || binding.Unresolved {
+			return
+		}
+		addRef(binding.TerminalRef())
 	}
-	for _, snapshot := range root.Surface.Surfaces {
-		add(snapshot)
+
+	// 中文说明：frame-ready 只为当前帧实际可能展示的 terminal view 续订 one-shot wake。
+	// Surfaces 是跨 endpoint 缓存，不代表可见性；后台 tab/远端缓存不能参与前台实时订阅真值。
+	shell := root.Shell.ReadonlyDefaults()
+	if tab, ok := liveFrameReadyActiveTab(shell); ok {
+		if shell.ZoomedPaneID != "" {
+			if pane, ok := liveFrameReadyPaneByID(tab.Panes, shell.ZoomedPaneID); ok && pane.Kind == state.PaneTerminalLive {
+				if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok {
+					addBinding(binding)
+				}
+			}
+		} else {
+			for _, pane := range tab.Panes {
+				if pane.Kind != state.PaneTerminalLive {
+					continue
+				}
+				if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok {
+					addBinding(binding)
+				}
+			}
+		}
+		for _, floating := range tab.Floatings {
+			if floating.Collapsed || floating.Pane.Kind != state.PaneTerminalLive {
+				continue
+			}
+			if binding, ok := root.TerminalViews.FloatingBinding(floating.ID); ok {
+				addBinding(binding)
+			}
+		}
+	}
+	if len(targets) == 0 && root.Surface.TerminalID != "" {
+		addRef(root.Surface.TerminalRef())
 	}
 	return targets
+}
+
+func liveFrameReadyActiveTab(shell state.ShellStore) (state.TabState, bool) {
+	for _, tab := range shell.Workspace.Tabs {
+		if tab.ID == shell.Workspace.ActiveTabID {
+			return tab, true
+		}
+	}
+	if len(shell.Workspace.Tabs) == 0 {
+		return state.TabState{}, false
+	}
+	return shell.Workspace.Tabs[0], true
+}
+
+func liveFrameReadyPaneByID(panes []state.PaneState, paneID string) (state.PaneState, bool) {
+	for _, pane := range panes {
+		if pane.ID == paneID {
+			return pane, true
+		}
+	}
+	return state.PaneState{}, false
 }
 
 func frameApproxBytes(frame render.Frame) int {

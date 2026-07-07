@@ -910,9 +910,14 @@ func TestAppRuntimeDoesNotArmLiveInvalidationForDroppedFrame(t *testing.T) {
 func TestAppRuntimeArmsAllVisibleLiveTerminalsAfterFrameWrite(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	runner := &recordingRuntimeEffectRunner{}
-	root := state.Root{}
+	root := state.Root{Shell: state.DefaultShell().
+		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1").
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical)}
 	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 10, Lines: []string{"one"}})
 	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-2", Revision: 20, Lines: []string{"two"}})
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindPane(state.NewPaneTerminalView("pane-2", "term-2", 8, 80, 24, state.TerminalResizeRoleOwner, "surface-2", state.TerminalPaneViewID("pane-2"), true))
 	runtime := NewAppRuntime(root, NewLiveReducer(LiveDeps{Terminal: terminal}), nil, NewFakeTerminalHost(8), runner)
 	done := make(chan render.FrameWriteCompletion, 1)
 	done <- render.FrameWriteCompletion{Written: true}
@@ -1117,9 +1122,14 @@ func TestAppRuntimeLiveCoalescingIsEndpointScoped(t *testing.T) {
 }
 
 func TestLiveFrameReadyTargetsPreserveEndpoint(t *testing.T) {
-	root := state.Root{}
+	root := state.Root{Shell: state.DefaultShell().
+		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1").
+		SplitActivePane(state.PaneState{ID: "pane-west", Title: "west", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)}
 	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{EndpointID: state.DefaultEndpointID, TerminalID: "term-1", Revision: 3})
 	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{EndpointID: "west", TerminalID: "term-1", Revision: 8})
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewEndpointPaneTerminalView(state.DefaultEndpointID, state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-local", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindPane(state.NewEndpointPaneTerminalView("west", "pane-west", "term-1", 8, 80, 24, state.TerminalResizeRoleOwner, "surface-west", state.TerminalPaneViewID("pane-west"), true))
 
 	targets := liveFrameReadyTargetsFromRoot(root)
 	if len(targets) != 2 {
@@ -1146,6 +1156,66 @@ func TestLiveFrameReadyTargetsPreserveEndpoint(t *testing.T) {
 	}
 	if !reflect.DeepEqual(seen, want) {
 		t.Fatalf("frame ready messages must preserve endpoint refs, got %#v want %#v", seen, want)
+	}
+}
+
+func TestLiveFrameReadyTargetsIgnoreHiddenSurfaceCache(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell().
+		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-local")}
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{EndpointID: state.DefaultEndpointID, TerminalID: "term-local", Revision: 3})
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{EndpointID: "west", TerminalID: "remote-hidden", Revision: 8})
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewEndpointPaneTerminalView(state.DefaultEndpointID, state.DefaultPaneID, "term-local", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-local", state.TerminalPaneViewID(state.DefaultPaneID), true))
+
+	targets := liveFrameReadyTargetsFromRoot(root)
+	want := []liveFrameReadyTarget{{EndpointID: state.DefaultEndpointID, TerminalID: "term-local", ObservedRevision: 3}}
+	if !reflect.DeepEqual(targets, want) {
+		t.Fatalf("frame ready must follow visible terminal views, got %#v want %#v", targets, want)
+	}
+}
+
+func TestAppRuntimeVisibleLocalInputContinuesAfterHiddenRemoteSurface(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 1)}
+	root := state.Root{Shell: state.DefaultShell().
+		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-local")}
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{EndpointID: state.DefaultEndpointID, TerminalID: "term-local", Revision: 1, Lines: []string{"ready"}})
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{EndpointID: "west", TerminalID: "remote-hidden", Revision: 9, Lines: []string{"hidden"}})
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewEndpointPaneTerminalView(state.DefaultEndpointID, state.DefaultPaneID, "term-local", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-local", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	runtime := NewAppRuntime(
+		root,
+		ComposeReducers(NewLiveReducer(LiveDeps{Terminal: terminal}), NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal})),
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: append([]string(nil), root.Surface.Lines...)}
+		},
+		host,
+		NewAsyncEffectRunner(),
+	)
+
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial frame: %v", err)
+	}
+	if err := waitForLiveInvalidationRequest(context.Background(), runtime, terminal, "term-local"); err != nil {
+		t.Fatalf("local frame should arm live invalidation: %v", err)
+	}
+	if len(terminal.LiveInvalidationRequests) != 1 || terminal.LiveInvalidationRequests[0].EndpointID != state.DefaultEndpointID {
+		t.Fatalf("hidden remote cache must not create an arm request, got %#v", terminal.LiveInvalidationRequests)
+	}
+
+	terminal.SurfaceResult = services.TerminalSurfaceResult{
+		Ready:    true,
+		Snapshot: state.LiveSurfaceSnapshot{EndpointID: state.DefaultEndpointID, TerminalID: "term-local", Revision: 2, Lines: []string{"typed"}},
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x", RawSeq: "x"}); err != nil {
+		t.Fatalf("send input: %v", err)
+	}
+	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{EndpointID: state.DefaultEndpointID, TerminalID: "term-local", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 2}}
+	if err := drainUntilFrameContains(context.Background(), runtime, host, "typed"); err != nil {
+		t.Fatalf("input wake should fetch and render latest local surface: %v", err)
+	}
+	if len(terminal.Inputs) != 1 || terminal.Inputs[0].EndpointID != state.DefaultEndpointID || terminal.Inputs[0].TerminalID != "term-local" {
+		t.Fatalf("input must stay on visible local terminal, got %#v", terminal.Inputs)
 	}
 }
 
