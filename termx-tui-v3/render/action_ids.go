@@ -102,6 +102,9 @@ const (
 	ActionExitedReconnect ActionID = "exited.reconnect"
 	ActionExitedClose     ActionID = "exited.close"
 
+	ActionDisconnectedReconnect  ActionID = "disconnected.reconnect"
+	ActionDisconnectedDisconnect ActionID = "disconnected.disconnect"
+
 	ActionPickerAttach ActionID = "picker.attach"
 	ActionPickerNew    ActionID = "picker.new"
 	ActionPickerSplit  ActionID = "picker.split"
@@ -309,6 +312,8 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionExitedRestart, ActionDispatchApp, ActionSurfaceContent).withHelp("restart"),
 		actionSpec(ActionExitedReconnect, ActionDispatchApp, ActionSurfaceContent).withHelp("reconnect"),
 		actionSpec(ActionExitedClose, ActionDispatchApp, ActionSurfaceContent).withHelp("close").withDanger(),
+		actionSpec(ActionDisconnectedReconnect, ActionDispatchApp, ActionSurfaceContent).withHelp("reconnect endpoint terminal"),
+		actionSpec(ActionDisconnectedDisconnect, ActionDispatchApp, ActionSurfaceContent).withHelp("disconnect pane").withDanger(),
 		actionSpec(ActionPickerAttach, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent).withFooter("attach", "", StyleStatusAccent).withHelp("attach"),
 		actionSpec(ActionPickerNew, ActionDispatchApp, ActionSurfaceContent).withHelp("new"),
 		actionSpec(ActionPickerSplit, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("attach in split"),

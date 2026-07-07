@@ -1222,14 +1222,14 @@ func (projector ShellProjector) buildActiveContentVM(root state.Root, shell stat
 		if copyModeBelongsToPane(root, pane.ID) {
 			return projector.copyHistoryContentForPane(root, shell, pane, true)
 		}
-		if pane.Kind == state.PaneEmpty {
+		if pane.Kind == state.PaneEmpty && !paneHasTerminalBinding(root, pane.ID) {
 			return buildEmptyPaneContentWithSelection(pane, shell.EmptyPaneCTA.SelectedIndex)
 		}
 		if root.Session.LastError != "" && root.Session.TerminalID == "" {
-			return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: contentKindForPane(pane), Session: root.Session, Active: true})
+			return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: contentKindForPaneRoot(root, pane), Session: root.Session, Active: true})
 		}
 		surface, session := terminalContentStoresForPane(root, pane)
-		return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: contentKindForPane(pane), Surface: surface, Session: session, Active: true})
+		return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: contentKindForPaneRoot(root, pane), Surface: surface, Session: session, Active: true})
 	}
 	if len(shell.Workspace.Tabs) == 0 {
 		return buildEmptyWorkspaceContent(shell.Workspace)
@@ -1248,7 +1248,7 @@ func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneS
 		return activeContent
 	}
 	surface, session := terminalContentStoresForPane(root, pane)
-	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: root.Shell.ReadonlyDefaults(), Pane: pane, Kind: contentKindForPane(pane), Surface: surface, Session: session, Active: false})
+	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: root.Shell.ReadonlyDefaults(), Pane: pane, Kind: contentKindForPaneRoot(root, pane), Surface: surface, Session: session, Active: false})
 }
 
 func (projector ShellProjector) copyHistoryContent(root state.Root, shell state.ShellStore, pane state.PaneState, active bool) ContentVM {
@@ -1282,7 +1282,7 @@ func (projector ShellProjector) contentForFloating(root state.Root, shell state.
 		Root:    root,
 		Shell:   shell,
 		Pane:    floating.Pane,
-		Kind:    contentKindForPane(floating.Pane),
+		Kind:    contentKindForFloating(root, floating),
 		Active:  floating.Active,
 		Surface: surfaceForFloating(root, floating.ID),
 		Session: sessionForFloating(root, floating.ID),
@@ -1367,6 +1367,27 @@ func contentKindForPane(pane state.PaneState) ContentKind {
 	default:
 		return ContentPlaceholder
 	}
+}
+
+func contentKindForPaneRoot(root state.Root, pane state.PaneState) ContentKind {
+	if pane.Kind == state.PaneEmpty && paneHasTerminalBinding(root, pane.ID) {
+		return ContentTerminalLive
+	}
+	return contentKindForPane(pane)
+}
+
+func contentKindForFloating(root state.Root, floating state.FloatingPaneState) ContentKind {
+	if floating.Pane.Kind == state.PaneEmpty {
+		if binding, ok := root.TerminalViews.FloatingBinding(floating.ID); ok && binding.TerminalID != "" {
+			return ContentTerminalLive
+		}
+	}
+	return contentKindForPane(floating.Pane)
+}
+
+func paneHasTerminalBinding(root state.Root, paneID string) bool {
+	binding, ok := root.TerminalViews.PaneBinding(paneID)
+	return ok && binding.TerminalID != ""
 }
 
 func terminalContentStoresForPane(root state.Root, pane state.PaneState) (state.TerminalSurfaceStore, state.TerminalSessionStore) {
@@ -1572,6 +1593,9 @@ func buildLiveContentVMWithSelection(surface state.TerminalSurfaceStore, session
 	} else if surface.Err != "" {
 		content.Error = surface.Err
 	}
+	if liveContentIsDisconnected(surface, session) {
+		return liveDisconnectedContent(surface, session, content.Lines, selectedIndex)
+	}
 	if len(content.Lines) == 0 {
 		if session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited {
 			content = liveExitedContent(surface, session, nil, selectedIndex)
@@ -1589,6 +1613,94 @@ func buildLiveContentVMWithSelection(surface state.TerminalSurfaceStore, session
 		content = liveExitedContent(surface, session, content.Lines, selectedIndex)
 	}
 	return content
+}
+
+func liveContentIsDisconnected(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) bool {
+	if session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited {
+		return false
+	}
+	kind := state.ClassifyEndpointErrorText(liveDisconnectedReason(surface, session))
+	if kind == state.EndpointErrorUnknown || kind == state.EndpointErrorUnavailable {
+		return false
+	}
+	if strings.TrimSpace(session.LastError) != "" && !session.Attached {
+		return true
+	}
+	return strings.TrimSpace(surface.Err) != "" && surface.State == state.TerminalLiveError
+}
+
+func liveDisconnectedContent(surface state.TerminalSurfaceStore, session state.TerminalSessionStore, previous []Line, selectedIndex int) ContentVM {
+	if selectedIndex < 0 || selectedIndex >= len(liveDisconnectedActions()) {
+		selectedIndex = 0
+	}
+	ref := session.TerminalRef()
+	if ref.Empty() {
+		ref = surface.TerminalRef()
+	}
+	reason := liveDisconnectedReason(surface, session)
+	kind := state.ClassifyEndpointErrorText(reason)
+	reason = endpointErrorMessageWithoutKind(kind, reason)
+	lines := make([]Line, 0, len(previous)+6)
+	if len(previous) > 0 {
+		lines = append(lines, previous...)
+		lines = append(lines, NewLine(""))
+	}
+	lines = append(lines,
+		Line{Cells: []Cell{styledCell("endpoint disconnected", StyleDanger)}},
+		Line{Cells: []Cell{styledCell("terminal ", StyleMuted), styledCell(liveDisconnectedRefLabel(ref), StyleAccent)}},
+	)
+	if reason != "" {
+		lines = append(lines, Line{Cells: []Cell{styledCell("reason ", StyleMuted), styledCell(endpointErrorLabel(kind, reason), StyleWarning)}})
+	}
+	actionOffset := len(lines)
+	actionLines, regions := liveDisconnectedActionLines(selectedIndex)
+	lines = append(lines, actionLines...)
+	for index := range regions {
+		regions[index].Rect.Y += actionOffset
+	}
+	errorLabel := endpointErrorLabel(kind, reason)
+	if errorLabel == "" {
+		errorLabel = "endpoint disconnected"
+	}
+	return ContentVM{
+		Kind:       ContentTerminalLive,
+		Lines:      lines,
+		Status:     "disconnected: Reconnect / Disconnect",
+		Error:      errorLabel,
+		Cursor:     Cursor{},
+		HitRegions: regions,
+	}
+}
+
+func liveDisconnectedReason(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) string {
+	if strings.TrimSpace(session.LastError) != "" {
+		return strings.TrimSpace(session.LastError)
+	}
+	return strings.TrimSpace(surface.Err)
+}
+
+func liveDisconnectedRefLabel(ref state.TerminalRef) string {
+	ref = ref.Normalize()
+	if ref.TerminalID == "" {
+		return "unknown"
+	}
+	if ref.EndpointID == "" || ref.EndpointID == state.DefaultEndpointID {
+		return ref.TerminalID
+	}
+	return string(ref.EndpointID) + "/" + ref.TerminalID
+}
+
+func endpointErrorMessageWithoutKind(kind state.EndpointErrorKind, message string) string {
+	kind = state.NormalizeEndpointErrorKind(kind)
+	message = strings.TrimSpace(message)
+	if kind == state.EndpointErrorUnknown || message == "" {
+		return message
+	}
+	prefix := string(kind) + ":"
+	if strings.HasPrefix(message, prefix) {
+		return strings.TrimSpace(strings.TrimPrefix(message, prefix))
+	}
+	return message
 }
 
 func liveExitedContent(surface state.TerminalSurfaceStore, session state.TerminalSessionStore, previous []Line, selectedIndex int) ContentVM {
@@ -1645,6 +1757,23 @@ func liveExitedContentLines(surface state.TerminalSurfaceStore, session state.Te
 
 func liveExitedActionLines(selectedIndex int) ([]Line, []HitRegion) {
 	actions := liveExitedActions()
+	if selectedIndex < 0 || selectedIndex >= len(actions) {
+		selectedIndex = 0
+	}
+	lines := make([]Line, 0, len(actions))
+	regions := make([]HitRegion, 0, len(actions))
+	for index, action := range actions {
+		selected := index == selectedIndex
+		text := emptyPaneActionLabel(action.Label, selected)
+		line := centeredStyledLine(text, action.Style)
+		lines = append(lines, line)
+		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: len(lines) - 1, W: DisplayWidth(text), H: 1}, ActionID: action.ID.String()})
+	}
+	return lines, regions
+}
+
+func liveDisconnectedActionLines(selectedIndex int) ([]Line, []HitRegion) {
+	actions := liveDisconnectedActions()
 	if selectedIndex < 0 || selectedIndex >= len(actions) {
 		selectedIndex = 0
 	}

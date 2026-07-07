@@ -141,8 +141,9 @@ func markEndpointOfflineInTerminalViews(root state.Root, endpointID state.Endpoi
 	refs := terminalRefsForEndpointBindings(root, endpointID)
 	root.TerminalViews = root.TerminalViews.MarkEndpointRuntimeError(endpointID, message)
 	for _, ref := range refs {
+		active := liveErrorRefOwnsActiveProjection(root, ref)
 		root.Session = root.Session.ClearInputChannelRef(ref)
-		root = applyLiveErrorRef(root, ref, message)
+		root = applyLiveErrorRefWithActive(root, ref, message, active)
 	}
 	return root
 }

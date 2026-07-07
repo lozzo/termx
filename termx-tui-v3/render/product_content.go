@@ -17,6 +17,8 @@ const emptyPaneActionCount = 4
 
 const exitedPaneActionCount = 2
 
+const disconnectedPaneActionCount = 2
+
 const floatingOverviewTitleWidth = 24
 const floatingOverviewStateWidth = 12
 const floatingOverviewSizeWidth = 8
@@ -58,6 +60,12 @@ func ExitedPaneActionCount() int {
 	return exitedPaneActionCount
 }
 
+// DisconnectedPaneActionCount 返回断线 pane 可选择动作数。
+// 断线态保留 TerminalRef 连接意图，用户只能重连原目标或显式断开当前 pane。
+func DisconnectedPaneActionCount() int {
+	return disconnectedPaneActionCount
+}
+
 func EmptyPaneActionID(index int) ActionID {
 	actions := emptyPaneActions()
 	if index < 0 || index >= len(actions) {
@@ -68,6 +76,16 @@ func EmptyPaneActionID(index int) ActionID {
 
 func ExitedPaneActionID(index int) ActionID {
 	actions := liveExitedActions()
+	if index < 0 || index >= len(actions) {
+		return ""
+	}
+	return actions[index].ID
+}
+
+// DisconnectedPaneActionID 按当前 CTA 选择序号返回断线 pane 的稳定 action id。
+// app reducer 通过该 id 区分重连 endpoint terminal 和用户显式断开 pane。
+func DisconnectedPaneActionID(index int) ActionID {
+	actions := liveDisconnectedActions()
 	if index < 0 || index >= len(actions) {
 		return ""
 	}
@@ -149,6 +167,12 @@ type liveExitedActionSpec struct {
 	Style StyleToken
 }
 
+type liveDisconnectedActionSpec struct {
+	ID    ActionID
+	Label string
+	Style StyleToken
+}
+
 const (
 	terminalPickerTitleColumnWidth    = 22
 	terminalPickerEndpointColumnWidth = 14
@@ -173,6 +197,13 @@ func liveExitedActions() []liveExitedActionSpec {
 	return []liveExitedActionSpec{
 		{ID: ActionExitedRestart, Label: "R restart current terminal", Style: StyleWarning},
 		{ID: ActionExitedReconnect, Label: "Ctrl-F choose another terminal", Style: StyleMuted},
+	}
+}
+
+func liveDisconnectedActions() []liveDisconnectedActionSpec {
+	return []liveDisconnectedActionSpec{
+		{ID: ActionDisconnectedReconnect, Label: "Reconnect this pane", Style: StyleAccent},
+		{ID: ActionDisconnectedDisconnect, Label: "Disconnect pane", Style: StyleDangerStrong},
 	}
 }
 
@@ -2880,9 +2911,6 @@ func workbenchTreePreview(row state.WorkbenchTreeItem) string {
 }
 
 func workbenchPaneStateLabel(root state.Root, selected state.WorkbenchTreeItem) string {
-	if selected.PaneKind == state.PaneEmpty {
-		return "empty"
-	}
 	binding, hasBinding := root.TerminalViews.PaneBinding(selected.PaneID)
 	surface := state.TerminalSurfaceStore{}
 	session := state.TerminalSessionStore{}
@@ -2901,6 +2929,8 @@ func workbenchPaneStateLabel(root state.Root, selected state.WorkbenchTreeItem) 
 		return "bound"
 	case selected.TerminalID != "":
 		return "bound"
+	case selected.PaneKind == state.PaneEmpty:
+		return "empty"
 	default:
 		return string(selected.PaneKind)
 	}

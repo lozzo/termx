@@ -51,6 +51,45 @@ func TestTerminalPoolListResultSchedulesResourceRefreshAndLivePreview(t *testing
 	}
 }
 
+func TestTerminalPoolDisconnectedReconnectErrorStaysInPane(t *testing.T) {
+	ref := state.NewTerminalRef("west", "remote")
+	err := errors.New("ssh transport closed: exit status 255: stdio-proxy connect core-v2 daemon socket: connection refused")
+	root := state.Root{
+		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, ref.TerminalID),
+		Session: state.TerminalSessionStore{
+			EndpointID:    ref.EndpointID,
+			TerminalID:    ref.TerminalID,
+			Channel:       9,
+			Attached:      true,
+			State:         state.TerminalLiveAttached,
+			InputChannels: map[string]uint16{ref.Key(): 9},
+			ViewID:        state.TerminalPaneViewID(state.DefaultPaneID),
+		},
+		Surface: state.TerminalSurfaceStore{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, State: state.TerminalLiveAttached, Ready: true, Lines: []string{"remote"}},
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true, Status: state.EndpointStatusConnected}),
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, Title: "remote"}}},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView(ref.EndpointID, state.DefaultPaneID, ref.TerminalID, 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+
+	reducer := NewTerminalPoolReducer(LiveDeps{})
+	next, effects := reducer(root, TerminalPoolReconnectResultMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, TargetPaneID: state.DefaultPaneID, Err: err, LocalError: true})
+
+	if len(effects) != 0 || len(next.Shell.Toasts) != 0 {
+		t.Fatalf("local reconnect failure should not emit effects or global toasts, effects=%#v toasts=%#v", effects, next.Shell.Toasts)
+	}
+	binding, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || binding.Channel != 0 || binding.Attached || !strings.Contains(binding.LastError, "remote-daemon") {
+		t.Fatalf("pane should keep terminal intent and local error, binding=%#v ok=%v", binding, ok)
+	}
+	if next.Session.LastError == "" || next.Session.State != state.TerminalLiveError {
+		t.Fatalf("active session should show reconnect failure, session=%#v", next.Session)
+	}
+	if west, _ := next.Endpoints.Endpoint("west"); west.LastErrorKind != state.EndpointErrorRemoteDaemon || west.DisplayStatus() != state.EndpointStatusOffline {
+		t.Fatalf("endpoint should show remote daemon reconnect failure, got %#v", west)
+	}
+}
+
 func TestTerminalPoolRefreshTickRequestsSilentList(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{

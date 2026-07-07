@@ -429,6 +429,11 @@ func ClassifyEndpointErrorText(text string) EndpointErrorKind {
 		strings.Contains(lower, "authentication") ||
 		strings.Contains(lower, "auth"):
 		return EndpointErrorAuth
+	case strings.Contains(lower, "stdio-proxy") ||
+		strings.Contains(lower, "remote socket") ||
+		strings.Contains(lower, "daemon") ||
+		strings.Contains(lower, "no such file or directory"):
+		return EndpointErrorRemoteDaemon
 	case strings.Contains(lower, "ssh transport closed") ||
 		strings.Contains(lower, "transport closed") ||
 		strings.Contains(lower, "broken pipe") ||
@@ -440,11 +445,6 @@ func ClassifyEndpointErrorText(text string) EndpointErrorKind {
 		strings.Contains(lower, "no route to host") ||
 		strings.Contains(lower, "network is unreachable"):
 		return EndpointErrorTransportDial
-	case strings.Contains(lower, "stdio-proxy") ||
-		strings.Contains(lower, "remote socket") ||
-		strings.Contains(lower, "daemon") ||
-		strings.Contains(lower, "no such file or directory"):
-		return EndpointErrorRemoteDaemon
 	case strings.Contains(lower, "protocol error") ||
 		strings.Contains(lower, "unexpected frame") ||
 		strings.Contains(lower, "eof"):

@@ -658,6 +658,13 @@ func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) 
 	}
 }
 
+func TestClassifyEndpointErrorTextPrefersRemoteDaemonDetail(t *testing.T) {
+	text := "ssh transport closed: exit status 255: stdio-proxy connect core-v2 daemon socket: connection refused"
+	if got := ClassifyEndpointErrorText(text); got != EndpointErrorRemoteDaemon {
+		t.Fatalf("daemon proxy detail should classify as remote-daemon, got %q", got)
+	}
+}
+
 func TestEndpointScopedTerminalListFailurePreservesOtherEndpoints(t *testing.T) {
 	root := Root{Endpoints: (EndpointStore{}).
 		Upsert(EndpointItem{ID: DefaultEndpointID, Label: "This Mac", Transport: EndpointTransportLocal, ConnectMode: EndpointConnectAuto, Enabled: true}).
@@ -780,6 +787,32 @@ func TestWorkbenchTreeItemsExposeEndpointOfflineMetadata(t *testing.T) {
 	}
 	if pane.EndpointID != "west" || pane.EndpointLabel != "US West" || pane.EndpointStatus != EndpointStatusOffline || pane.EndpointErrorKind != EndpointErrorTransportClosed || pane.DisplayTitle != "remote shell" {
 		t.Fatalf("workbench pane should carry endpoint offline metadata, got %#v", pane)
+	}
+}
+
+func TestWorkbenchTreeItemsKeepErroredBindingWhenPaneLooksEmpty(t *testing.T) {
+	shell := DefaultShell().OpenWorkbenchTree()
+	shell.Workspace.Tabs[0].Panes[0] = PaneState{ID: DefaultPaneID, Title: "unconnected", Kind: PaneEmpty, Active: true}
+	root := Root{
+		Shell: shell,
+		Endpoints: EndpointStore{}.
+			Upsert(EndpointItem{ID: "west", Label: "US West", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true, Status: EndpointStatusOffline, LastError: "daemon socket closed", LastErrorKind: EndpointErrorRemoteDaemon}),
+		TerminalPool: TerminalPoolStore{Items: []TerminalPoolItem{{EndpointID: "west", TerminalID: "remote", Title: "remote shell"}}},
+	}
+	binding := NewEndpointPaneTerminalView("west", DefaultPaneID, "remote", 0, 80, 24, TerminalResizeRoleFollower, "surface", TerminalPaneViewID(DefaultPaneID), false)
+	binding.LastError = "remote-daemon: daemon socket closed"
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
+
+	items := WorkbenchTreeItems(root)
+	var pane WorkbenchTreeItem
+	for _, item := range items {
+		if item.Kind == WorkbenchTreeKindPane && item.PaneID == DefaultPaneID {
+			pane = item
+			break
+		}
+	}
+	if pane.TerminalID != "remote" || pane.EndpointID != "west" || pane.DisplayTitle != "remote shell" || pane.EndpointErrorKind != EndpointErrorRemoteDaemon {
+		t.Fatalf("workbench pane should preserve errored binding metadata, got %#v", pane)
 	}
 }
 

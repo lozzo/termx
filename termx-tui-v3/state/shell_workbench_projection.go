@@ -59,7 +59,7 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 				terminalRef := workbenchPaneTerminalRef(root, pane)
 				terminalID := terminalRef.TerminalID
 				displayTitle := ""
-				if pane.Kind == PaneTerminalLive && terminalID != "" {
+				if terminalID != "" {
 					displayTitle = workbenchTerminalTitle(root.TerminalPool, terminalRef)
 				}
 				item := WorkbenchTreeItem{

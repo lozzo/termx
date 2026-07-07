@@ -193,6 +193,23 @@ func TestTerminalViewStoreMarksEndpointRuntimeError(t *testing.T) {
 	}
 }
 
+func TestTerminalViewStoreMarksSingleViewRuntimeError(t *testing.T) {
+	store := TerminalViewStore{}.
+		BindPane(NewEndpointPaneTerminalView("west", "pane-west", "term-1", 9, 80, 24, TerminalResizeRoleOwner, "surface", TerminalPaneViewID("pane-west"), true)).
+		BindPane(NewEndpointPaneTerminalView("west", "pane-logs", "term-1", 10, 80, 24, TerminalResizeRoleFollower, "surface", TerminalPaneViewID("pane-logs"), false))
+
+	next := store.MarkViewRuntimeError(TerminalPaneViewID("pane-west"), "remote-daemon: daemon socket closed")
+
+	west, _ := next.PaneBinding("pane-west")
+	if west.Channel != 0 || west.Attached || west.CanResize || west.LastError == "" || west.TerminalID != "term-1" {
+		t.Fatalf("target view should keep intent and show runtime error, got %#v", west)
+	}
+	logs, _ := next.PaneBinding("pane-logs")
+	if logs.Channel != 10 || !logs.Attached || logs.LastError != "" {
+		t.Fatalf("other view should stay untouched, got %#v", logs)
+	}
+}
+
 func TestTerminalViewStorePromotesReplacementOwnerClearsClosedOwnerIdentity(t *testing.T) {
 	store := TerminalViewStore{}
 	owner := NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true)

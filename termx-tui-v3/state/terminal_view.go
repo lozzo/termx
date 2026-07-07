@@ -343,6 +343,31 @@ func (store TerminalViewStore) MarkEndpointRuntimeError(endpointID EndpointID, m
 	return store
 }
 
+// MarkViewRuntimeError 把单个 terminal view 标成运行时连接错误。
+// 这是用户对某个断线 pane 发起 reconnect 后失败的局部回投边界；它只清理该 view 的
+// attachment/channel，不删除 TerminalRef 连接意图，也不影响同 endpoint 的其他 pane。
+func (store TerminalViewStore) MarkViewRuntimeError(viewID string, message string) TerminalViewStore {
+	if viewID == "" || len(store.Views) == 0 {
+		return store
+	}
+	if message == "" {
+		message = "terminal view disconnected"
+	}
+	binding, ok := store.Views[viewID]
+	if !ok || binding.TerminalID == "" {
+		return store
+	}
+	binding.Channel = 0
+	binding.Attached = false
+	binding.CanResize = false
+	binding.AttachPending = false
+	binding.ResizePending = false
+	binding.LastError = message
+	store.Views = cloneTerminalViewBindings(store.Views)
+	store.Views[viewID] = binding
+	return store
+}
+
 func workbenchBindingUnresolvedReason(binding TerminalViewBinding, endpoints EndpointStore) (bool, string) {
 	ref := binding.TerminalRef()
 	if ref.Empty() {

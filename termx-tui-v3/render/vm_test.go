@@ -3185,6 +3185,56 @@ func TestRenderVMBuilderUsesEndpointSurfaceForBoundTerminal(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsDisconnectedPaneActions(t *testing.T) {
+	ref := state.NewTerminalRef("west", "remote")
+	errText := "remote-daemon: stdio-proxy connect core-v2 daemon socket: connection refused"
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		Surface: state.TerminalSurfaceStore{
+			EndpointID: ref.EndpointID,
+			TerminalID: ref.TerminalID,
+			State:      state.TerminalLiveError,
+			Err:        errText,
+			Ready:      true,
+			Lines:      []string{"last remote output"},
+		},
+		Session: state.TerminalSessionStore{
+			EndpointID: ref.EndpointID,
+			TerminalID: ref.TerminalID,
+			State:      state.TerminalLiveError,
+			LastError:  errText,
+			Attached:   false,
+		},
+	}
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, ref.TerminalID)
+	binding := state.NewEndpointPaneTerminalView(ref.EndpointID, state.DefaultPaneID, ref.TerminalID, 0, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)
+	binding.LastError = errText
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if content.Kind != ContentTerminalLive || content.Status != "disconnected: Reconnect / Disconnect" || !contentHasAction(content, ActionDisconnectedReconnect.String()) || !contentHasAction(content, ActionDisconnectedDisconnect.String()) {
+		t.Fatalf("disconnected pane should show local reconnect/disconnect choices, got %#v", content)
+	}
+	if !strings.Contains(content.Lines[0].PlainString(), "last remote output") || !contentPlainContains(content, "endpoint disconnected") || !strings.Contains(content.Error, "remote-daemon") {
+		t.Fatalf("disconnected pane should preserve content and reason, lines=%#v error=%q", content.Lines, content.Error)
+	}
+}
+
+func TestRenderVMBuilderDoesNotProjectErroredBindingAsUnconnected(t *testing.T) {
+	ref := state.NewTerminalRef("west", "remote")
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Shell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "unconnected", Kind: state.PaneEmpty, Active: true}
+	binding := state.NewEndpointPaneTerminalView(ref.EndpointID, state.DefaultPaneID, ref.TerminalID, 0, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)
+	binding.LastError = "remote-daemon: daemon socket closed"
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
+	root.Surface = root.Surface.SetErrorRef(ref, binding.LastError)
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if content.Kind == ContentEmptyPane || len(content.Lines) == 0 || content.Lines[0].PlainString() == "unconnected" || !contentHasAction(content, ActionDisconnectedReconnect.String()) {
+		t.Fatalf("errored binding must not collapse into unconnected content, got %#v", content)
+	}
+}
+
 func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 	shell := state.DefaultShell().OpenTerminalPool().SetTerminalPoolQuery("日志")
 	root := state.Root{
@@ -3799,6 +3849,15 @@ func lineHasLinkCell(line Line, text string, linkURL string, linkParams string) 
 func contentHasAction(content ContentVM, actionID string) bool {
 	for _, region := range content.HitRegions {
 		if region.Kind == HitRegionContentAction && region.ActionID == actionID {
+			return true
+		}
+	}
+	return false
+}
+
+func contentPlainContains(content ContentVM, text string) bool {
+	for _, line := range content.Lines {
+		if strings.Contains(line.PlainString(), text) {
 			return true
 		}
 	}

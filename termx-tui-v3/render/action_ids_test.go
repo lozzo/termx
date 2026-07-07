@@ -90,6 +90,8 @@ func TestActionSpecCatalogIsSingleSourceForRenderedActions(t *testing.T) {
 		ActionExitedRestart,
 		ActionExitedReconnect,
 		ActionExitedClose,
+		ActionDisconnectedReconnect,
+		ActionDisconnectedDisconnect,
 		ActionPickerAttach,
 		ActionPickerNew,
 		ActionPoolSelect,

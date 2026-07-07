@@ -533,6 +533,38 @@ func TestUIInputReducerFloatingEmptyPaneCTAKeyboardTargetsFloatingPanel(t *testi
 	}
 }
 
+func TestUIInputReducerDisconnectedPaneCTAKeyboardSelectionAndEnter(t *testing.T) {
+	reducer := NewUIInputReducer()
+	ref := state.NewTerminalRef("west", "remote")
+	root := state.Root{
+		Shell:   state.DefaultShell(),
+		Surface: state.TerminalSurfaceStore{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, State: state.TerminalLiveError, Err: "remote-daemon: daemon socket closed"},
+	}
+	root.Shell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "unconnected", Kind: state.PaneEmpty, Active: true}
+	binding := state.NewEndpointPaneTerminalView(ref.EndpointID, state.DefaultPaneID, ref.TerminalID, 0, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)
+	binding.LastError = "remote-daemon: daemon socket closed"
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
+
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
+	if root.Shell.ExitedPaneCTA.SelectedIndex != 0 || len(effects) != 2 {
+		t.Fatalf("enter should execute default disconnected reconnect action, shell=%#v effects=%#v", root.Shell.ExitedPaneCTA, effects)
+	}
+	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellContentActionMsg)
+	if !ok || msg.ActionID != render.ActionDisconnectedReconnect.String() || msg.PaneID != state.DefaultPaneID {
+		t.Fatalf("enter should execute disconnected reconnect CTA, got %#v", msg)
+	}
+
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}})
+	if root.Shell.ExitedPaneCTA.SelectedIndex != 1 || len(effects) != 1 {
+		t.Fatalf("down should select disconnected disconnect CTA, shell=%#v effects=%#v", root.Shell.ExitedPaneCTA, effects)
+	}
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
+	msg, ok = effects[1].(FuncEffect).Run(context.Background()).(ShellContentActionMsg)
+	if !ok || msg.ActionID != render.ActionDisconnectedDisconnect.String() || msg.PaneID != state.DefaultPaneID {
+		t.Fatalf("enter should execute disconnected disconnect CTA, got %#v", msg)
+	}
+}
+
 func TestUIInputReducerExitedPaneCTAKeyboardSelectionAndEnter(t *testing.T) {
 	reducer := NewUIInputReducer()
 	root := state.Root{

@@ -601,6 +601,10 @@ func (runtime *AppRuntime) coalescableTerminalInputBytes(event input.InputEvent)
 		// 退出态 action 由 UI reducer 拥有；runtime 的 PTY byte 合并不能在 reducer 前吞掉 R/Enter。
 		return nil, false
 	}
+	if _, _, ok := activeDisconnectedPaneCTATarget(root, shell); ok {
+		// 断线态 action 由 UI reducer 拥有；runtime 不能把 R/Enter 发送到已经失效的 channel。
+		return nil, false
+	}
 	target, ok := liveInputTarget(root)
 	if !ok || target.Channel == 0 || target.AttachPending {
 		return nil, false

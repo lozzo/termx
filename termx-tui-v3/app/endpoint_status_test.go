@@ -77,3 +77,52 @@ func TestEndpointRuntimeStatusMarksPanesWithoutGlobalToast(t *testing.T) {
 		t.Fatalf("local input channel should survive, channel=%d ok=%v channels=%#v", channel, ok, next.Session.InputChannels)
 	}
 }
+
+func TestEndpointRuntimeStatusKeepsActiveRemotePaneError(t *testing.T) {
+	ref := state.NewTerminalRef("west", "remote")
+	root := state.Root{
+		Session: state.TerminalSessionStore{
+			EndpointID:    ref.EndpointID,
+			TerminalID:    ref.TerminalID,
+			Channel:       9,
+			Attached:      true,
+			State:         state.TerminalLiveAttached,
+			InputChannels: map[string]uint16{ref.Key(): 9},
+			SurfaceID:     "surface",
+			ViewID:        state.TerminalPaneViewID(state.DefaultPaneID),
+			DesiredCols:   80,
+			DesiredRows:   24,
+		},
+		Surface: state.TerminalSurfaceStore{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, Lines: []string{"remote prompt"}, State: state.TerminalLiveAttached, Ready: true},
+		Endpoints: (state.EndpointStore{}).
+			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true, Status: state.EndpointStatusConnected}),
+		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, ref.TerminalID),
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView(ref.EndpointID, state.DefaultPaneID, ref.TerminalID, 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+
+	reducer := NewEndpointStatusReducer(LiveDeps{})
+	next, effects := reducer(root, EndpointRuntimeStatusMsg{Event: services.EndpointRuntimeEvent{
+		EndpointID: "west",
+		Status:     state.EndpointStatusOffline,
+		ErrorKind:  state.EndpointErrorRemoteDaemon,
+		Message:    "ssh transport closed: exit status 255: stdio-proxy connect core-v2 daemon socket: connection refused",
+	}})
+
+	if len(effects) != 0 || len(next.Shell.Toasts) != 0 {
+		t.Fatalf("active endpoint disconnect should stay local, effects=%#v toasts=%#v", effects, next.Shell.Toasts)
+	}
+	binding, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || binding.TerminalID != ref.TerminalID || binding.Channel != 0 || binding.LastError == "" {
+		t.Fatalf("active remote pane should keep terminal intent and error, binding=%#v ok=%v", binding, ok)
+	}
+	if next.Session.LastError == "" || next.Session.State != state.TerminalLiveError || next.Session.Attached {
+		t.Fatalf("active session should keep local error projection, session=%#v", next.Session)
+	}
+	if next.Surface.Err == "" || next.Surface.State != state.TerminalLiveError || !next.Surface.TerminalRef().Equal(ref) {
+		t.Fatalf("active surface should show remote daemon error, surface=%#v", next.Surface)
+	}
+	west, _ := next.Endpoints.Endpoint("west")
+	if west.LastErrorKind != state.EndpointErrorRemoteDaemon {
+		t.Fatalf("endpoint should classify daemon failure, got %#v", west)
+	}
+}

@@ -159,6 +159,9 @@ type TerminalPoolReconnectRequestMsg struct {
 	TerminalID       string
 	TargetPaneID     string
 	TargetFloatingID string
+	// LocalError 表示该 reconnect 来自断线 pane 的本地 CTA。
+	// 失败时错误必须写回目标 TerminalView，不能升级成 picker/global toast。
+	LocalError bool
 }
 
 func (TerminalPoolReconnectRequestMsg) isMsg() {}
@@ -171,6 +174,8 @@ type TerminalPoolReconnectResultMsg struct {
 	ResizePolicy     string
 	Result           services.TerminalAttachResult
 	Err              error
+	// LocalError 沿用 request 的断线 pane 边界，指导 reducer 进行 view-local 错误投影。
+	LocalError bool
 }
 
 func (TerminalPoolReconnectResultMsg) isMsg() {}
@@ -865,12 +870,34 @@ func reduceTerminalPoolReconnectRequest(root state.Root, msg TerminalPoolReconne
 	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
 		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: surfaceID, ViewID: target.ViewID})
-		return TerminalPoolReconnectResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: state.TerminalResizeRoleFollower, Result: result, Err: err}
+		return TerminalPoolReconnectResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: state.TerminalResizeRoleFollower, Result: result, Err: err, LocalError: msg.LocalError}
 	}}}
 }
 
 func reduceTerminalPoolReconnectResult(root state.Root, msg TerminalPoolReconnectResultMsg, deps LiveDeps) (state.Root, []Effect) {
+	if msg.LocalError && msg.Err != nil {
+		return reduceTerminalPoolReconnectLocalError(root, msg)
+	}
 	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{EndpointID: msg.EndpointID, TerminalID: msg.TerminalID, TargetPaneID: msg.TargetPaneID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: msg.ResizePolicy, Result: msg.Result, Err: msg.Err}, deps)
+}
+
+func reduceTerminalPoolReconnectLocalError(root state.Root, msg TerminalPoolReconnectResultMsg) (state.Root, []Effect) {
+	errText := errorString(msg.Err)
+	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
+	errorKind := state.ClassifyEndpointErrorText(errText)
+	displayMessage := endpointRuntimeDisplayMessage(errorKind, errText)
+	target, ok := terminalPoolTargetFromRequest(root, msg.TargetPaneID, msg.TargetFloatingID)
+	if !ok {
+		return root.Advance(), nil
+	}
+	root.TerminalPool = root.TerminalPool.ApplyAttachedRef(ref, errText)
+	if errorKind != state.EndpointErrorUnknown && errorKind != state.EndpointErrorUnavailable {
+		root.Endpoints = root.Endpoints.MarkRuntimeStatus(ref.EndpointID, state.EndpointStatusOffline, errorKind, endpointTerminalCount(root, ref.EndpointID), errText)
+	}
+	root.TerminalViews = root.TerminalViews.MarkViewRuntimeError(target.ViewID, displayMessage)
+	root.Session = root.Session.ClearInputChannelRef(ref)
+	root = applyLiveAttachErrorRef(root, ref, target.ViewID, displayMessage)
+	return root.Advance(), nil
 }
 
 func reduceTerminalPoolKillRequest(root state.Root, msg TerminalPoolKillRequestMsg, deps LiveDeps) (state.Root, []Effect) {

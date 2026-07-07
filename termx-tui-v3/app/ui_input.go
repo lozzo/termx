@@ -94,6 +94,9 @@ func NewUIInputReducer() Reducer {
 		if handled, next, effects := reduceEmptyPaneCTAInput(root, inputMsg.Event); handled {
 			return next, effects
 		}
+		if handled, next, effects := reduceDisconnectedPaneCTAInput(root, inputMsg.Event); handled {
+			return next, effects
+		}
 		if handled, next, effects := reduceExitedPaneCTAInput(root, inputMsg.Event); handled {
 			return next, effects
 		}
@@ -373,7 +376,7 @@ func reduceEmptyPaneCTAInput(root state.Root, event input.InputEvent) (bool, sta
 	if shell.InteractionMode != state.InteractionModeNormal {
 		return false, root, nil
 	}
-	pane, floating, ok := activeEmptyPaneCTATarget(shell)
+	pane, floating, ok := activeEmptyPaneCTATarget(root, shell)
 	if !ok {
 		return false, root, nil
 	}
@@ -400,18 +403,80 @@ func reduceEmptyPaneCTAInput(root state.Root, event input.InputEvent) (bool, sta
 	}
 }
 
-func activeEmptyPaneCTATarget(shell state.ShellStore) (state.PaneState, bool, bool) {
+func activeEmptyPaneCTATarget(root state.Root, shell state.ShellStore) (state.PaneState, bool, bool) {
 	shell = shell.ReadonlyDefaults()
 	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
 		for _, floating := range shell.ActiveFloatings() {
-			if floating.ID == activeFloatingID && floating.Pane.Kind == state.PaneEmpty {
+			if floating.ID == activeFloatingID && floating.Pane.Kind == state.PaneEmpty && !floatingHasTerminalBinding(root, floating.ID) {
 				return floating.Pane, true, true
 			}
 		}
 		return state.PaneState{}, false, false
 	}
 	pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
-	if !ok || pane.Kind != state.PaneEmpty {
+	if !ok || pane.Kind != state.PaneEmpty || paneHasTerminalBinding(root, pane.ID) {
+		return state.PaneState{}, false, false
+	}
+	return pane, false, true
+}
+
+func reduceDisconnectedPaneCTAInput(root state.Root, event input.InputEvent) (bool, state.Root, []Effect) {
+	if event.Kind != input.EventKindKey {
+		return false, root, nil
+	}
+	shell := root.Shell.EnsureDefaults()
+	if shell.InteractionMode != state.InteractionModeNormal {
+		return false, root, nil
+	}
+	pane, floating, ok := activeDisconnectedPaneCTATarget(root, shell)
+	if !ok {
+		return false, root, nil
+	}
+	switch event.Key {
+	case input.KeyUp:
+		root.Shell = shell.MoveExitedPaneCTASelection(-1, render.DisconnectedPaneActionCount())
+		return true, root.Advance(), []Effect{handledEffect{}}
+	case input.KeyDown:
+		root.Shell = shell.MoveExitedPaneCTASelection(1, render.DisconnectedPaneActionCount())
+		return true, root.Advance(), []Effect{handledEffect{}}
+	case input.KeyEnter:
+		actionID := render.DisconnectedPaneActionID(shell.ExitedPaneCTA.SelectedIndex)
+		if actionID == "" {
+			return true, root, []Effect{handledEffect{}}
+		}
+		return true, root, []Effect{
+			handledEffect{},
+			FuncEffect{Run: func(context.Context) Msg {
+				return ShellContentActionMsg{ActionID: actionID.String(), PaneID: pane.ID, Floating: floating}
+			}},
+		}
+	case input.KeyChar:
+		if !event.Ctrl && !event.Alt && strings.EqualFold(event.Char, "r") {
+			return true, root, []Effect{
+				handledEffect{},
+				FuncEffect{Run: func(context.Context) Msg {
+					return ShellContentActionMsg{ActionID: render.ActionDisconnectedReconnect.String(), PaneID: pane.ID, Floating: floating}
+				}},
+			}
+		}
+		return false, root, nil
+	default:
+		return false, root, nil
+	}
+}
+
+func activeDisconnectedPaneCTATarget(root state.Root, shell state.ShellStore) (state.PaneState, bool, bool) {
+	shell = shell.ReadonlyDefaults()
+	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
+		for _, floating := range shell.ActiveFloatings() {
+			if floating.ID == activeFloatingID && paneHasDisconnectedTerminal(root, floating.Pane.ID, true) {
+				return floating.Pane, true, true
+			}
+		}
+		return state.PaneState{}, false, false
+	}
+	pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
+	if !ok || !paneHasDisconnectedTerminal(root, pane.ID, false) {
 		return state.PaneState{}, false, false
 	}
 	return pane, false, true
@@ -500,6 +565,45 @@ func paneHasExitedTerminal(root state.Root, paneID string, floating bool) bool {
 		return true
 	}
 	return root.Session.TerminalRef().Equal(ref) && root.Session.State == state.TerminalLiveExited
+}
+
+func paneHasDisconnectedTerminal(root state.Root, paneID string, floating bool) bool {
+	binding, ok := terminalBindingForPaneCTA(root, paneID, floating)
+	if !ok || binding.TerminalID == "" {
+		return false
+	}
+	ref := binding.TerminalRef()
+	surface := root.Surface.SurfaceForTerminalRef(ref)
+	if surface.State == state.TerminalLiveExited {
+		return false
+	}
+	if binding.LastError != "" && !binding.Attached {
+		return true
+	}
+	if surface.State == state.TerminalLiveError && surface.Err != "" {
+		return true
+	}
+	return root.Session.TerminalRef().Equal(ref) && root.Session.State == state.TerminalLiveError && root.Session.LastError != ""
+}
+
+func terminalBindingForPaneCTA(root state.Root, paneID string, floating bool) (state.TerminalViewBinding, bool) {
+	if floating {
+		if floatingID, ok := root.Shell.ReadonlyDefaults().FloatingIDForPaneID(paneID); ok {
+			return root.TerminalViews.FloatingBinding(floatingID)
+		}
+		return state.TerminalViewBinding{}, false
+	}
+	return root.TerminalViews.PaneBinding(paneID)
+}
+
+func paneHasTerminalBinding(root state.Root, paneID string) bool {
+	binding, ok := root.TerminalViews.PaneBinding(paneID)
+	return ok && binding.TerminalID != ""
+}
+
+func floatingHasTerminalBinding(root state.Root, floatingID string) bool {
+	binding, ok := root.TerminalViews.FloatingBinding(floatingID)
+	return ok && binding.TerminalID != ""
 }
 
 func reduceTerminalPickerInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {

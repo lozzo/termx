@@ -772,6 +772,25 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionExitedReconnect:
 		root.Shell = root.Shell.OpenTerminalPicker()
 		return root.Advance(), []Effect{terminalPickerListRequestEffect()}
+	case render.ActionDisconnectedReconnect:
+		ref := terminalRefForShellContentAction(root, msg)
+		if ref.Empty() {
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pane.reconnect", Body: "terminal unavailable"})
+			return root.Advance(), nil
+		}
+		target := terminalPoolTargetForContentAction(root, msg)
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolReconnectRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, LocalError: true}
+		}}}
+	case render.ActionDisconnectedDisconnect:
+		if msg.Floating {
+			return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
+		}
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{
+			Action: state.WorkbenchCommandPaneDetach,
+			Target: state.PaneCommandTarget{PaneID: msg.PaneID},
+			Source: state.PaneCommandSourceMouse,
+		})
 	case render.ActionEmptyManager:
 		root.Shell = root.Shell.OpenTerminalPool()
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
