@@ -372,10 +372,17 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 			return root, nil
 		}
 		items := terminalPoolItemsFromService(msg.Result.Items)
+		holdRuntimeError := false
 		if msg.Refresh && errText == "" {
 			missingRefs = terminalRefsMissingFromEndpointList(root, msg.EndpointID, items)
+			missingRefs = removableMissingTerminalRefs(root, missingRefs)
+			holdRuntimeError = shouldHoldEndpointRuntimeErrorOnEmptyRefresh(root, msg.EndpointID, items)
 		}
-		root = root.ApplyEndpointTerminalList(msg.EndpointID, items, errText)
+		if holdRuntimeError {
+			root.TerminalPool.AppliedSeq = msg.Seq
+		} else {
+			root = root.ApplyEndpointTerminalList(msg.EndpointID, items, errText)
+		}
 		if errText != "" && root.TerminalPool.Status == state.TerminalPoolLoading {
 			root.TerminalPool.Status = state.TerminalPoolReady
 		}
@@ -385,14 +392,21 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 			return root, terminalPoolRefreshLoopEffects(root)
 		}
 		items := terminalPoolItemsFromService(msg.Result.Items)
+		holdRuntimeError := false
 		if msg.Refresh && errText == "" {
 			missingRefs = terminalRefsMissingFromEndpointList(root, state.DefaultEndpointID, items)
+			missingRefs = removableMissingTerminalRefs(root, missingRefs)
+			holdRuntimeError = shouldHoldEndpointRuntimeErrorOnEmptyRefresh(root, state.DefaultEndpointID, items)
 		}
-		next, applied := root.TerminalPool.ApplyList(msg.Seq, items, errText)
-		if !applied {
-			return root, nil
+		if holdRuntimeError {
+			root.TerminalPool.AppliedSeq = msg.Seq
+		} else {
+			next, applied := root.TerminalPool.ApplyList(msg.Seq, items, errText)
+			if !applied {
+				return root, nil
+			}
+			root.TerminalPool = next
 		}
-		root.TerminalPool = next
 	}
 	if len(missingRefs) > 0 {
 		for _, ref := range missingRefs {
@@ -1295,6 +1309,82 @@ func terminalRefsMissingFromEndpointList(root state.Root, endpointID state.Endpo
 		out = append(out, ref)
 	}
 	return out
+}
+
+func shouldHoldEndpointRuntimeErrorOnEmptyRefresh(root state.Root, endpointID state.EndpointID, items []state.TerminalPoolItem) bool {
+	// 中文说明：后台 inventory 刷新只是 endpoint 下 terminal 列表的投影，不是
+	// endpoint lifecycle truth。若 watcher 已经标记 transport/daemon 断线，空列表
+	// 很可能是断线竞态里的后到消息，不能把 endpoint 恢复成 connected，也不能删除 pane 的连接意图。
+	if len(items) > 0 {
+		return false
+	}
+	return endpointHasRuntimeError(root, endpointID)
+}
+
+func removableMissingTerminalRefs(root state.Root, refs []state.TerminalRef) []state.TerminalRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]state.TerminalRef, 0, len(refs))
+	for _, ref := range refs {
+		if terminalRefHasEndpointRuntimeError(root, ref) {
+			continue
+		}
+		out = append(out, ref)
+	}
+	return out
+}
+
+func terminalRefHasEndpointRuntimeError(root state.Root, ref state.TerminalRef) bool {
+	ref = ref.Normalize()
+	if ref.Empty() {
+		return false
+	}
+	if endpointHasRuntimeError(root, ref.EndpointID) {
+		return true
+	}
+	for _, binding := range root.TerminalViews.BindingsForTerminalRef(ref) {
+		if endpointRuntimeErrorText(binding.LastError) {
+			return true
+		}
+	}
+	surface := root.Surface.SurfaceForTerminalRef(ref)
+	if surface.State == state.TerminalLiveError && endpointRuntimeErrorText(surface.Err) {
+		return true
+	}
+	if root.Session.TerminalRef().Equal(ref) && root.Session.State == state.TerminalLiveError && endpointRuntimeErrorText(root.Session.LastError) {
+		return true
+	}
+	return false
+}
+
+func endpointHasRuntimeError(root state.Root, endpointID state.EndpointID) bool {
+	endpointID = state.NormalizeEndpointID(endpointID)
+	if endpoint, ok := root.Endpoints.DisplayEndpoint(endpointID); ok {
+		if endpoint.DisplayStatus() == state.EndpointStatusOffline && (endpoint.LastError != "" || endpoint.LastErrorKind != state.EndpointErrorUnknown) {
+			return true
+		}
+		if endpointRuntimeErrorText(endpoint.DisplayErrorLabel()) {
+			return true
+		}
+	}
+	for _, binding := range root.TerminalViews.Bindings() {
+		if state.NormalizeEndpointID(binding.EndpointID) == endpointID && endpointRuntimeErrorText(binding.LastError) {
+			return true
+		}
+	}
+	if root.Session.TerminalRef().EndpointID == endpointID && root.Session.State == state.TerminalLiveError && endpointRuntimeErrorText(root.Session.LastError) {
+		return true
+	}
+	if root.Surface.TerminalRef().EndpointID == endpointID && root.Surface.State == state.TerminalLiveError && endpointRuntimeErrorText(root.Surface.Err) {
+		return true
+	}
+	return false
+}
+
+func endpointRuntimeErrorText(message string) bool {
+	kind := state.ClassifyEndpointErrorText(message)
+	return kind != state.EndpointErrorUnknown && kind != state.EndpointErrorUnavailable
 }
 
 func restartTerminalViewEffects(root state.Root, terminalID string) []Effect {

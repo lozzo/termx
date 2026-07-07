@@ -320,6 +320,74 @@ func TestTerminalPoolEndpointListSuccessDisconnectsMissingRemoteBinding(t *testi
 	}
 }
 
+func TestTerminalPoolEndpointListSuccessKeepsRuntimeDisconnectedPane(t *testing.T) {
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	ref := state.NewTerminalRef("west", "term-1")
+	errText := "remote-daemon: stdio-proxy connect core-v2 daemon socket: connection refused"
+	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, ref.TerminalID)
+	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+		EndpointID: ref.EndpointID,
+		TerminalID: ref.TerminalID,
+		Lines:      []string{"old remote"},
+		State:      state.TerminalLiveError,
+		Err:        errText,
+	})
+	root := state.Root{
+		Shell: shell,
+		Session: state.TerminalSessionStore{
+			EndpointID:    ref.EndpointID,
+			TerminalID:    ref.TerminalID,
+			State:         state.TerminalLiveError,
+			LastError:     errText,
+			InputChannels: map[string]uint16{},
+			SurfaceID:     "surface-west",
+			ViewID:        state.TerminalPaneViewID(state.DefaultPaneID),
+			DesiredCols:   100,
+			DesiredRows:   30,
+		},
+		Surface: surface,
+		TerminalPool: state.TerminalPoolStore{
+			RequestSeq: 4,
+			Status:     state.TerminalPoolReady,
+			Items: []state.TerminalPoolItem{
+				{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, Title: "west"},
+				{EndpointID: state.DefaultEndpointID, TerminalID: "term-local", Title: "local"},
+			},
+		},
+		Endpoints: state.EndpointStore{}.
+			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "Local", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true, Status: state.EndpointStatusConnected}).
+			Upsert(state.EndpointItem{ID: ref.EndpointID, Label: "West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true, Status: state.EndpointStatusOffline, LastError: errText, LastErrorKind: state.EndpointErrorRemoteDaemon}),
+		History:  state.HistoryStore{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, Token: "tok-remote"},
+		CopyMode: state.CopyModeStore{Active: true, EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, BoundToken: "tok-remote"},
+	}
+	binding := state.NewEndpointPaneTerminalView(ref.EndpointID, state.DefaultPaneID, ref.TerminalID, 0, 100, 30, state.TerminalResizeRoleOwner, "surface-west", state.TerminalPaneViewID(state.DefaultPaneID), true)
+	binding.LastError = errText
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
+
+	next, effects := reducer(root, TerminalPoolListResultMsg{EndpointID: ref.EndpointID, Seq: 4, Refresh: true, Result: services.TerminalListResult{Items: nil}})
+	if binding, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID); !ok || !binding.TerminalRef().Equal(ref) || !strings.Contains(binding.LastError, "remote-daemon") {
+		t.Fatalf("runtime-disconnected pane should keep terminal intent and reason, binding=%#v ok=%v", binding, ok)
+	}
+	if pane, ok := next.Shell.Pane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}); !ok || pane.TerminalID != ref.TerminalID || pane.Kind != state.PaneTerminalLive {
+		t.Fatalf("runtime-disconnected pane must not collapse to unconnected, pane=%#v ok=%v", pane, ok)
+	}
+	if _, ok := terminalPoolItemRef(next.TerminalPool, ref); !ok {
+		t.Fatalf("runtime-disconnected endpoint should keep last known pool row until reconnect/disconnect, pool=%#v", next.TerminalPool.Items)
+	}
+	if west, ok := next.Endpoints.Endpoint(ref.EndpointID); !ok || west.DisplayStatus() != state.EndpointStatusOffline || west.LastErrorKind != state.EndpointErrorRemoteDaemon || west.LastError == "" {
+		t.Fatalf("empty inventory refresh must not clear endpoint runtime error, west=%#v ok=%v", west, ok)
+	}
+	if next.Session.State != state.TerminalLiveError || !strings.Contains(next.Session.LastError, "remote-daemon") || !next.Session.TerminalRef().Equal(ref) {
+		t.Fatalf("active session should keep runtime error projection, session=%#v", next.Session)
+	}
+	if next.Surface.State != state.TerminalLiveError || !strings.Contains(next.Surface.Err, "remote-daemon") || !next.Surface.TerminalRef().Equal(ref) {
+		t.Fatalf("active surface should keep runtime error projection, surface=%#v", next.Surface)
+	}
+	if len(effects) != 0 {
+		t.Fatalf("held runtime-disconnected inventory refresh should not persist a missing-terminal detach, effects=%#v", effects)
+	}
+}
+
 func TestTerminalPoolRefreshFailureMarksEndpointOfflineSilently(t *testing.T) {
 	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
 	root := state.Root{
