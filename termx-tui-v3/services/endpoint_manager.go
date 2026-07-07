@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/lozzow/termx/termx-shared/connection"
@@ -19,6 +20,7 @@ type EndpointServiceBundle struct {
 	Surface    TerminalSurfaceService
 	LiveEvents TerminalLiveEventService
 	Path       PathService
+	Lifecycle  EndpointLifecycle
 }
 
 // EndpointDialer 是 endpoint manager 的 lazy transport 连接入口。
@@ -34,6 +36,9 @@ type EndpointManager struct {
 	registryErr error
 	bundles     map[state.EndpointID]EndpointServiceBundle
 	dialers     map[connection.TransportKind]EndpointDialer
+	watchers    map[state.EndpointID]<-chan struct{}
+	subscribers map[uint64]chan EndpointRuntimeEvent
+	nextSubID   uint64
 }
 
 // NewEndpointManager 构造一个按 registry 路由的 endpoint manager。
@@ -55,6 +60,8 @@ func NewEndpointManagerWithDialers(registry connection.Registry, dialers map[con
 		registryErr: err,
 		bundles:     map[state.EndpointID]EndpointServiceBundle{},
 		dialers:     cloneEndpointDialers(dialers),
+		watchers:    map[state.EndpointID]<-chan struct{}{},
+		subscribers: map[uint64]chan EndpointRuntimeEvent{},
 	}
 	for _, bundle := range bundles {
 		endpointID := state.NormalizeEndpointID(bundle.EndpointID)
@@ -74,6 +81,28 @@ func (manager *EndpointManager) EndpointStore() state.EndpointStore {
 		return state.EndpointStore{}
 	}
 	return state.EndpointStore{}.ApplyConnectionRegistry(manager.registry)
+}
+
+// WatchEndpointEvents 订阅 endpoint manager 主动侦测到的 transport/protocol 生命周期事件。
+// manager 只发布 endpoint-scoped 状态，不直接修改 reducer，也不会把断线升级成全局 UI 提示。
+func (manager *EndpointManager) WatchEndpointEvents(ctx context.Context) (<-chan EndpointRuntimeEvent, error) {
+	if manager == nil {
+		return nil, fmt.Errorf("endpoint manager is nil")
+	}
+	out := make(chan EndpointRuntimeEvent, 32)
+	manager.mu.Lock()
+	manager.nextSubID++
+	id := manager.nextSubID
+	manager.subscribers[id] = out
+	for endpointID, bundle := range manager.bundles {
+		manager.startBundleWatcherLocked(endpointID, bundle)
+	}
+	manager.mu.Unlock()
+	go func() {
+		<-ctx.Done()
+		manager.removeEndpointSubscriber(id)
+	}()
+	return out, nil
 }
 
 // HistoryLatest 把 latest history 请求路由到 owning endpoint 的 core adapter。
@@ -440,8 +469,76 @@ func (manager *EndpointManager) bundle(ctx context.Context, endpointID state.End
 		return endpointID, existing, nil
 	}
 	manager.bundles[endpointID] = bundle
+	manager.startBundleWatcherLocked(endpointID, bundle)
 	manager.mu.Unlock()
 	return endpointID, bundle, nil
+}
+
+func (manager *EndpointManager) startBundleWatcherLocked(endpointID state.EndpointID, bundle EndpointServiceBundle) {
+	done := bundle.Lifecycle.Done
+	if done == nil {
+		return
+	}
+	if existing := manager.watchers[endpointID]; existing == done {
+		return
+	}
+	manager.watchers[endpointID] = done
+	go manager.watchBundleLifecycle(endpointID, bundle.Lifecycle)
+}
+
+func (manager *EndpointManager) watchBundleLifecycle(endpointID state.EndpointID, lifecycle EndpointLifecycle) {
+	<-lifecycle.Done
+	err := io.EOF
+	if lifecycle.Err != nil {
+		if lifecycleErr := lifecycle.Err(); lifecycleErr != nil {
+			err = lifecycleErr
+		}
+	}
+	event := EndpointRuntimeEvent{
+		EndpointID: endpointID,
+		Status:     state.EndpointStatusOffline,
+		ErrorKind:  ClassifyEndpointError(err),
+		Message:    err.Error(),
+		Err:        err,
+	}
+	manager.mu.Lock()
+	if current := manager.watchers[endpointID]; current != lifecycle.Done {
+		manager.mu.Unlock()
+		return
+	}
+	if current, ok := manager.bundles[endpointID]; ok && current.Lifecycle.Done == lifecycle.Done {
+		delete(manager.bundles, endpointID)
+	}
+	delete(manager.watchers, endpointID)
+	subscribers := cloneEndpointEventSubscribers(manager.subscribers)
+	manager.mu.Unlock()
+	publishEndpointRuntimeEvent(subscribers, event)
+}
+
+func (manager *EndpointManager) removeEndpointSubscriber(id uint64) {
+	manager.mu.Lock()
+	delete(manager.subscribers, id)
+	manager.mu.Unlock()
+}
+
+func cloneEndpointEventSubscribers(values map[uint64]chan EndpointRuntimeEvent) []chan EndpointRuntimeEvent {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]chan EndpointRuntimeEvent, 0, len(values))
+	for _, ch := range values {
+		out = append(out, ch)
+	}
+	return out
+}
+
+func publishEndpointRuntimeEvent(subscribers []chan EndpointRuntimeEvent, event EndpointRuntimeEvent) {
+	for _, ch := range subscribers {
+		select {
+		case ch <- event:
+		default:
+		}
+	}
 }
 
 func cloneEndpointDialers(dialers map[connection.TransportKind]EndpointDialer) map[connection.TransportKind]EndpointDialer {

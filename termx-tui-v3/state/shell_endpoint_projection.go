@@ -34,6 +34,7 @@ func terminalPickerItemWithEndpoint(root Root, item TerminalPickerItem) Terminal
 		item.EndpointConnectMode = endpoint.ConnectMode
 		item.EndpointStatus = endpoint.DisplayStatus()
 		item.EndpointLastError = endpoint.LastError
+		item.EndpointErrorKind = endpoint.LastErrorKind
 	}
 	return item
 }
@@ -46,6 +47,7 @@ func terminalPoolPageItemWithEndpoint(root Root, item TerminalPoolPageItem) Term
 		item.EndpointConnectMode = endpoint.ConnectMode
 		item.EndpointStatus = endpoint.DisplayStatus()
 		item.EndpointLastError = endpoint.LastError
+		item.EndpointErrorKind = endpoint.LastErrorKind
 	}
 	return item
 }
@@ -124,6 +126,7 @@ func endpointPickerGroupFromEndpoint(endpoint EndpointItem, terminalCount int, c
 		ConnectMode:   endpoint.ConnectMode,
 		Status:        endpoint.DisplayStatus(),
 		LastError:     endpoint.LastError,
+		ErrorKind:     endpoint.LastErrorKind,
 		Configured:    configured && !endpoint.Unregistered,
 		TerminalCount: terminalCount,
 	}
@@ -138,6 +141,7 @@ func endpointPoolGroupFromEndpoint(endpoint EndpointItem, terminalCount int, con
 		ConnectMode:   endpoint.ConnectMode,
 		Status:        endpoint.DisplayStatus(),
 		LastError:     endpoint.LastError,
+		ErrorKind:     endpoint.LastErrorKind,
 		Configured:    configured && !endpoint.Unregistered,
 		TerminalCount: terminalCount,
 	}

@@ -28,9 +28,10 @@ type LiveConfig struct {
 }
 
 type LiveDeps struct {
-	Terminal services.TerminalService
-	Path     services.PathService
-	Logger   *slog.Logger
+	Terminal       services.TerminalService
+	Path           services.PathService
+	EndpointEvents services.EndpointEventSource
+	Logger         *slog.Logger
 }
 
 const liveInvalidationTokenPrefix = "terminal.live.invalidation:"
@@ -50,8 +51,12 @@ func NewLiveRuntime(initial state.Root, host TerminalHost, runner EffectRunner, 
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewEndpointDefaultsReducer(deps), NewPromptPathCompletionReducer(deps), NewTerminalPoolReducer(deps), NewTerminalInputRouterReducer(deps), NewLiveReducer(deps), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	deps = liveDepsWithEndpointEvents(deps)
+	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewEndpointStatusReducer(deps), NewEndpointDefaultsReducer(deps), NewPromptPathCompletionReducer(deps), NewTerminalPoolReducer(deps), NewTerminalInputRouterReducer(deps), NewLiveReducer(deps), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
 	runtime.SetLogger(deps.Logger)
+	if deps.EndpointEvents != nil && shouldAutoStartEndpointWatch(runner) {
+		runtime.enqueue(EndpointWatchRequestMsg{})
+	}
 	return runtime
 }
 
@@ -92,8 +97,12 @@ func NewInteractiveRuntimeWithStorage(
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewEndpointDefaultsReducer(live), NewPromptPathCompletionReducer(live), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewTerminalInputRouterReducer(live), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	live = liveDepsWithEndpointEvents(live)
+	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewEndpointStatusReducer(live), NewEndpointDefaultsReducer(live), NewPromptPathCompletionReducer(live), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewTerminalInputRouterReducer(live), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
 	runtime.SetLogger(live.Logger)
+	if live.EndpointEvents != nil && shouldAutoStartEndpointWatch(runner) {
+		runtime.enqueue(EndpointWatchRequestMsg{})
+	}
 	if workbench.Storage != nil {
 		// 启动时先恢复 core-v2 opaque storage 中的 workbench truth，再订阅后续变化。
 		if !workbench.SkipInitialLoad {
@@ -107,6 +116,23 @@ func NewInteractiveRuntimeWithStorage(
 		runtime.enqueue(ClipboardStorageWatchRequestMsg{})
 	}
 	return runtime
+}
+
+func liveDepsWithEndpointEvents(deps LiveDeps) LiveDeps {
+	if deps.EndpointEvents == nil {
+		if source, ok := deps.Terminal.(services.EndpointEventSource); ok {
+			deps.EndpointEvents = source
+		}
+	}
+	return deps
+}
+
+func shouldAutoStartEndpointWatch(runner EffectRunner) bool {
+	if runner == nil {
+		return false
+	}
+	_, syncRunner := runner.(*SyncEffectRunner)
+	return !syncRunner
 }
 
 func hostRenderFunc(host TerminalHost, builder render.RenderVMBuilder, renderer render.Renderer) RenderFunc {

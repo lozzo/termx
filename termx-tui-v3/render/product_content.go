@@ -1016,7 +1016,7 @@ func terminalPickerEndpointHeaderLine(group state.EndpointPickerGroup) Line {
 		styledCell(countLabel, StyleMuted),
 	}
 	if group.LastError != "" {
-		cells = append(cells, NewCell(" "), styledCell(group.LastError, StyleWarning))
+		cells = append(cells, NewCell(" "), styledCell(endpointErrorLabel(group.ErrorKind, group.LastError), StyleWarning))
 	}
 	return Line{Cells: cells}
 }
@@ -1264,7 +1264,7 @@ func terminalManagerEndpointHeaderLine(group state.TerminalPoolPageGroup) Line {
 		NewCell(fmt.Sprintf(" %d", group.TerminalCount)),
 	}
 	if group.LastError != "" {
-		cells = append(cells, NewCell(" "), styledCell(group.LastError, StyleWarning))
+		cells = append(cells, NewCell(" "), styledCell(endpointErrorLabel(group.ErrorKind, group.LastError), StyleWarning))
 	}
 	return Line{Cells: cells}
 }
@@ -1920,7 +1920,7 @@ func workbenchNavigatorBadgeStyle(badge string) StyleToken {
 		return StyleSuccess
 	case "empty", "collapsed", "exited":
 		return StyleWarning
-	case "error":
+	case "error", "offline", "transport-closed", "transport-dial", "auth", "host-key", "remote-daemon", "protocol", "config", "unavailable":
 		return StyleDanger
 	default:
 		return StyleMuted
@@ -1935,6 +1935,7 @@ func workbenchNavigatorBadges(root state.Root, row state.WorkbenchTreeItem) []st
 	switch row.Kind {
 	case state.WorkbenchTreeKindPane:
 		badges = append(badges, workbenchPaneStateLabel(root, row))
+		badges = append(badges, workbenchEndpointBadges(row)...)
 		if role := workbenchPaneRoleLabel(root, row); role != "" {
 			badges = append(badges, role)
 		}
@@ -1947,8 +1948,24 @@ func workbenchNavigatorBadges(root state.Root, row state.WorkbenchTreeItem) []st
 		if strings.Contains(strings.ToLower(row.Summary), "collapsed") {
 			badges = append(badges, "collapsed")
 		}
+		badges = append(badges, workbenchEndpointBadges(row)...)
 	}
 	return compactStringTokens(badges)
+}
+
+func workbenchEndpointBadges(row state.WorkbenchTreeItem) []string {
+	if row.EndpointID == "" || row.TerminalID == "" {
+		return nil
+	}
+	badges := []string{}
+	switch row.EndpointStatus {
+	case state.EndpointStatusOffline, state.EndpointStatusDisabled, state.EndpointStatusReconnectRequired, state.EndpointStatusUnregistered:
+		badges = append(badges, string(row.EndpointStatus))
+	}
+	if row.EndpointErrorKind != state.EndpointErrorUnknown {
+		badges = append(badges, string(row.EndpointErrorKind))
+	}
+	return badges
 }
 
 func workbenchNavigatorDetailLine(label string, value string) Line {
@@ -1979,6 +1996,12 @@ func workbenchTreeInlineMeta(row state.WorkbenchTreeItem) string {
 	case state.WorkbenchTreeKindWorkspace, state.WorkbenchTreeKindTab:
 		return workbenchReadableSummary(row)
 	case state.WorkbenchTreeKindPane, state.WorkbenchTreeKindFloating:
+		if row.EndpointStatus == state.EndpointStatusOffline {
+			if row.EndpointErrorKind != state.EndpointErrorUnknown {
+				return string(row.EndpointErrorKind)
+			}
+			return string(row.EndpointStatus)
+		}
 		if row.Active {
 			return "active"
 		}
@@ -2055,6 +2078,7 @@ func workbenchNavigatorResourceLines(root state.Root, selected state.WorkbenchTr
 	if !ok {
 		return []Line{
 			workbenchNavigatorConnectionLine(root, selected, state.TerminalPoolPageItem{}),
+			workbenchNavigatorEndpointLine(selected, state.TerminalPoolPageItem{}),
 		}
 	}
 	lines := []Line{}
@@ -2062,6 +2086,7 @@ func workbenchNavigatorResourceLines(root state.Root, selected state.WorkbenchTr
 		lines = append(lines, terminalManagerResourceGaugeLines(row)...)
 	}
 	lines = append(lines, workbenchNavigatorConnectionLine(root, selected, row))
+	lines = append(lines, workbenchNavigatorEndpointLine(selected, row))
 	return lines
 }
 
@@ -2075,6 +2100,27 @@ func workbenchNavigatorConnectionLine(root state.Root, selected state.WorkbenchT
 		count = row.AttachmentCount
 	}
 	return workbenchNavigatorDetailLine("views", viewCountLabel(maxInt(0, count)))
+}
+
+func workbenchNavigatorEndpointLine(selected state.WorkbenchTreeItem, row state.TerminalPoolPageItem) Line {
+	label := selected.EndpointLabel
+	if label == "" {
+		label = row.EndpointLabel
+	}
+	status := selected.EndpointStatus
+	if status == "" {
+		status = row.EndpointStatus
+	}
+	kind := selected.EndpointErrorKind
+	if kind == state.EndpointErrorUnknown {
+		kind = row.EndpointErrorKind
+	}
+	errText := selected.EndpointLastError
+	if errText == "" {
+		errText = row.EndpointLastError
+	}
+	parts := compactStringTokens([]string{label, string(status), endpointErrorLabel(kind, errText)})
+	return workbenchNavigatorDetailLine("endpoint", strings.Join(parts, " "))
 }
 
 func workbenchTerminalPoolItem(root state.Root, selected state.WorkbenchTreeItem) (state.TerminalPoolPageItem, bool) {
@@ -3053,9 +3099,21 @@ func terminalPoolEndpointDetailLabel(row state.TerminalPoolPageItem) string {
 		parts = append(parts, string(row.EndpointTransport))
 	}
 	if row.EndpointLastError != "" {
-		parts = append(parts, row.EndpointLastError)
+		parts = append(parts, endpointErrorLabel(row.EndpointErrorKind, row.EndpointLastError))
 	}
 	return strings.Join(parts, " ")
+}
+
+func endpointErrorLabel(kind state.EndpointErrorKind, message string) string {
+	kind = state.NormalizeEndpointErrorKind(kind)
+	message = strings.TrimSpace(message)
+	if kind == state.EndpointErrorUnknown {
+		return message
+	}
+	if message == "" {
+		return string(kind)
+	}
+	return string(kind) + ": " + message
 }
 
 func terminalPoolResourceDetailLabel(row state.TerminalPoolPageItem) string {

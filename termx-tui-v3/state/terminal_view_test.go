@@ -175,6 +175,24 @@ func TestTerminalViewStoreMarksWorkbenchBindingsUnresolvedByEndpointStatus(t *te
 	}
 }
 
+func TestTerminalViewStoreMarksEndpointRuntimeError(t *testing.T) {
+	store := TerminalViewStore{}.
+		BindPane(NewEndpointPaneTerminalView("west", "pane-west", "term-1", 9, 80, 24, TerminalResizeRoleOwner, "surface", TerminalPaneViewID("pane-west"), true)).
+		BindPane(NewPaneTerminalView("pane-local", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", TerminalPaneViewID("pane-local"), true))
+	store, _ = store.RequestPaneResize("pane-west", 100, 30)
+
+	next := store.MarkEndpointRuntimeError("west", "transport-closed: ssh transport closed")
+
+	west, _ := next.PaneBinding("pane-west")
+	if west.Channel != 0 || west.Attached || west.CanResize || west.AttachPending || west.ResizePending || west.LastError == "" {
+		t.Fatalf("west binding should be marked offline without removing intent, got %#v", west)
+	}
+	local, _ := next.PaneBinding("pane-local")
+	if local.Channel != 7 || !local.Attached || local.LastError != "" {
+		t.Fatalf("local binding should survive west endpoint error, got %#v", local)
+	}
+}
+
 func TestTerminalViewStorePromotesReplacementOwnerClearsClosedOwnerIdentity(t *testing.T) {
 	store := TerminalViewStore{}
 	owner := NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true)

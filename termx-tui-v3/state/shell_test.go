@@ -628,7 +628,7 @@ func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) 
 	store = store.MarkTerminalListResult("west", 0, "ssh timeout")
 	store = store.ApplyDefaults("west", []string{"/bin/bash", "-l"}, "/srv/app", "")
 
-	if west, ok := store.Endpoint("west"); !ok || west.DisplayStatus() != EndpointStatusOffline || west.LastError != "ssh timeout" {
+	if west, ok := store.Endpoint("west"); !ok || west.DisplayStatus() != EndpointStatusOffline || west.LastError != "ssh timeout" || west.LastErrorKind != EndpointErrorUnavailable {
 		t.Fatalf("west endpoint should be offline only in endpoint store, got %#v ok=%v", west, ok)
 	}
 
@@ -672,7 +672,7 @@ func TestEndpointScopedTerminalListFailurePreservesOtherEndpoints(t *testing.T) 
 	if root.TerminalPool.Status != TerminalPoolReady || root.TerminalPool.LastError != "" {
 		t.Fatalf("partial endpoint failure must not become global pool error, pool=%#v", root.TerminalPool)
 	}
-	if west, ok := root.Endpoints.Endpoint("west"); !ok || west.DisplayStatus() != EndpointStatusOffline || west.LastError != "ssh timeout" {
+	if west, ok := root.Endpoints.Endpoint("west"); !ok || west.DisplayStatus() != EndpointStatusOffline || west.LastError != "ssh timeout" || west.LastErrorKind != EndpointErrorUnavailable {
 		t.Fatalf("west endpoint should hold offline state, got %#v ok=%v", west, ok)
 	}
 	if local, ok := root.Endpoints.Endpoint(DefaultEndpointID); !ok || local.DisplayStatus() != EndpointStatusConnected {
@@ -688,7 +688,7 @@ func TestTerminalPickerGroupsExposeEndpointMetadataAndSearch(t *testing.T) {
 			Upsert(EndpointItem{ID: "disabled", Label: "Disabled Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectAuto, Enabled: false}).
 			Upsert(EndpointItem{ID: "manual", Label: "Manual Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectManual, Enabled: true}).
 			Upsert(EndpointItem{ID: "reconnect", Label: "Moved Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true, ReconnectRequired: true}).
-			Upsert(EndpointItem{ID: "west", Label: "US West", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true, Status: EndpointStatusOffline, LastError: "ssh timeout"}),
+			Upsert(EndpointItem{ID: "west", Label: "US West", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true, Status: EndpointStatusOffline, LastError: "ssh timeout", LastErrorKind: EndpointErrorTransportClosed}),
 		TerminalPool: TerminalPoolStore{
 			Status: TerminalPoolReady,
 			Items: []TerminalPoolItem{
@@ -716,6 +716,11 @@ func TestTerminalPickerGroupsExposeEndpointMetadataAndSearch(t *testing.T) {
 		statusByID["west"] != EndpointStatusOffline ||
 		statusByID["orphan"] != EndpointStatusUnregistered {
 		t.Fatalf("unexpected endpoint group statuses %#v", statusByID)
+	}
+	for _, group := range groups {
+		if group.EndpointID == "west" && group.ErrorKind != EndpointErrorTransportClosed {
+			t.Fatalf("west group should carry endpoint error kind, got %#v", group)
+		}
 	}
 	if rowCountByID[DefaultEndpointID] != 1 || rowCountByID["west"] != 1 || rowCountByID["orphan"] != 1 || rowCountByID["manual"] != 0 {
 		t.Fatalf("unexpected endpoint group terminal rows %#v", rowCountByID)
@@ -747,6 +752,34 @@ func TestTerminalPoolPageGroupsExposeEndpointMetadata(t *testing.T) {
 	groups := TerminalPoolPageGroups(root)
 	if len(groups) != 2 || groups[0].EndpointID != DefaultEndpointID || groups[1].EndpointID != "west" || len(groups[1].VisibleTerminalRows) != 1 {
 		t.Fatalf("terminal pool should group rows by endpoint, got %#v", groups)
+	}
+}
+
+func TestWorkbenchTreeItemsExposeEndpointOfflineMetadata(t *testing.T) {
+	shell := DefaultShell().
+		SplitActivePane(PaneState{ID: "pane-west", Title: "remote", Kind: PaneTerminalLive, TerminalID: "remote"}, SplitDirectionVertical).
+		OpenWorkbenchTree()
+	root := Root{
+		Shell: shell,
+		Endpoints: (EndpointStore{}).
+			Upsert(EndpointItem{ID: DefaultEndpointID, Label: "This Mac", Transport: EndpointTransportLocal, ConnectMode: EndpointConnectAuto, Enabled: true, Status: EndpointStatusConnected}).
+			Upsert(EndpointItem{ID: "west", Label: "US West", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true, Status: EndpointStatusOffline, LastError: "ssh transport closed: exit status 255", LastErrorKind: EndpointErrorTransportClosed}),
+		TerminalPool: TerminalPoolStore{Items: []TerminalPoolItem{
+			{EndpointID: "west", TerminalID: "remote", Title: "remote shell"},
+		}},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(NewEndpointPaneTerminalView("west", "pane-west", "remote", 7, 80, 24, TerminalResizeRoleFollower, "surface", TerminalPaneViewID("pane-west"), false))
+
+	items := WorkbenchTreeItems(root)
+	var pane WorkbenchTreeItem
+	for _, item := range items {
+		if item.Kind == WorkbenchTreeKindPane && item.PaneID == "pane-west" {
+			pane = item
+			break
+		}
+	}
+	if pane.EndpointID != "west" || pane.EndpointLabel != "US West" || pane.EndpointStatus != EndpointStatusOffline || pane.EndpointErrorKind != EndpointErrorTransportClosed || pane.DisplayTitle != "remote shell" {
+		t.Fatalf("workbench pane should carry endpoint offline metadata, got %#v", pane)
 	}
 }
 

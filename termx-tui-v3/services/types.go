@@ -407,6 +407,39 @@ type TerminalLiveEvent struct {
 	Ready                bool
 }
 
+// EndpointRuntimeEvent 是 endpoint manager 主动发布的连接生命周期事件。
+// 它只描述某个 EndpointID 的 transport/protocol 状态，不携带 terminal lifecycle truth；
+// TUI reducer 应把它投影到对应 pane/manager/picker，而不是升级成全局 toast。
+type EndpointRuntimeEvent struct {
+	EndpointID state.EndpointID
+	Status     state.EndpointStatusKind
+	ErrorKind  state.EndpointErrorKind
+	Message    string
+	Err        error
+}
+
+// EndpointEventSource 提供 endpoint-scoped 生命周期事件订阅。
+// 该接口用于主动侦测 transport 关闭；订阅者只能通过 message path 回写 reducer state。
+type EndpointEventSource interface {
+	WatchEndpointEvents(context.Context) (<-chan EndpointRuntimeEvent, error)
+}
+
+// EndpointLifecycle 描述一个已连接 service bundle 的底层连接生命周期。
+// Done 来自 transport/protocol close signal；Err 在 Done 后返回关闭原因，供 UI 分类展示。
+type EndpointLifecycle struct {
+	Done <-chan struct{}
+	Err  func() error
+}
+
+// ClassifyEndpointError 把 service/transport 错误归类为 endpoint UI 错误类型。
+// 分类结果不参与重试或安全判断，只让 picker、manager 和 workbench 展示一致的失败标志。
+func ClassifyEndpointError(err error) state.EndpointErrorKind {
+	if err == nil {
+		return state.EndpointErrorUnknown
+	}
+	return state.ClassifyEndpointErrorText(err.Error())
+}
+
 type SessionService interface {
 	Load(context.Context) (SessionSnapshot, error)
 	Save(context.Context, SessionSnapshot) error

@@ -60,6 +60,28 @@ const (
 	EndpointStatusUnregistered EndpointStatusKind = "unregistered"
 )
 
+const (
+	// EndpointErrorUnknown 表示当前 endpoint 没有可分类错误，或错误还未进入 reducer。
+	EndpointErrorUnknown EndpointErrorKind = ""
+	// EndpointErrorTransportClosed 表示已有 transport 主动关闭，例如 SSH 子进程退出。
+	// 这是 endpoint 连接生命周期事件，不应作为全局 toast 独占展示。
+	EndpointErrorTransportClosed EndpointErrorKind = "transport-closed"
+	// EndpointErrorTransportDial 表示 transport 建连失败，通常发生在 lazy dial 或 auto connect 阶段。
+	EndpointErrorTransportDial EndpointErrorKind = "transport-dial"
+	// EndpointErrorAuth 表示认证失败；该分类只服务 UI 展示，不替代 SSH/transport 层的安全判断。
+	EndpointErrorAuth EndpointErrorKind = "auth"
+	// EndpointErrorHostKey 表示 host key 校验失败，必须作为高风险 endpoint 状态展示。
+	EndpointErrorHostKey EndpointErrorKind = "host-key"
+	// EndpointErrorRemoteDaemon 表示远端 termx daemon、stdio-proxy 或 socket 不可用。
+	EndpointErrorRemoteDaemon EndpointErrorKind = "remote-daemon"
+	// EndpointErrorProtocol 表示 transport 已连通但 protocol 层返回错误或断开。
+	EndpointErrorProtocol EndpointErrorKind = "protocol"
+	// EndpointErrorConfig 表示 registry、disabled endpoint 或 unsupported transport 这类本地配置错误。
+	EndpointErrorConfig EndpointErrorKind = "config"
+	// EndpointErrorUnavailable 表示无法进一步分类的连接不可达错误。
+	EndpointErrorUnavailable EndpointErrorKind = "unavailable"
+)
+
 // EndpointTransportKind 是 TUI 展示层使用的 transport 枚举。
 // 它只表达到达 daemon 的方式，不承担安全身份、认证状态或 host key 校验。
 type EndpointTransportKind string
@@ -71,6 +93,11 @@ type EndpointConnectMode string
 // EndpointStatusKind 是 endpoint manager 回投给 reducer 的运行时展示状态。
 // renderer 只能消费该状态；真正的 terminal list、history 和 lifecycle 仍属于 owning daemon。
 type EndpointStatusKind string
+
+// EndpointErrorKind 是 endpoint-scoped 失败类型投影。
+// 它来自 transport/protocol/service 错误分类，只用于 TUI 展示和局部状态标记；
+// renderer 不得根据它重试、fallback 或改写 terminal lifecycle truth。
+type EndpointErrorKind string
 
 // EndpointItem 是 reducer-owned endpoint 展示投影。
 // ID 是 workbench/路由主键；Label/Transport/ConnectMode 来自 registry；
@@ -88,6 +115,7 @@ type EndpointItem struct {
 	RemoteSocket      string
 	Status            EndpointStatusKind
 	LastError         string
+	LastErrorKind     EndpointErrorKind
 	TerminalCount     int
 	ReconnectRequired bool
 	Unregistered      bool
@@ -133,6 +161,7 @@ func (store EndpointStore) ApplyConnectionRegistry(registry connection.Registry)
 		if previous, ok := store.Endpoint(item.ID); ok {
 			item.Status = previous.Status
 			item.LastError = previous.LastError
+			item.LastErrorKind = previous.LastErrorKind
 			item.TerminalCount = previous.TerminalCount
 			item.ReconnectRequired = previous.ReconnectRequired || previous.RequiresReconnect(item)
 			item.DefaultCommand = append([]string(nil), previous.DefaultCommand...)
@@ -237,6 +266,13 @@ func (store EndpointStore) Upsert(item EndpointItem) EndpointStore {
 // MarkTerminalListResult 记录某个 endpoint 的 terminal list 结果。
 // 成功只更新该 endpoint 的数量和 connected 状态；失败只把该 endpoint 标为 offline，不影响其他 endpoint 的列表真值。
 func (store EndpointStore) MarkTerminalListResult(endpointID EndpointID, terminalCount int, err string) EndpointStore {
+	return store.MarkRuntimeStatus(endpointID, EndpointStatusUnknown, EndpointErrorUnknown, terminalCount, err)
+}
+
+// MarkRuntimeStatus 记录 endpoint manager 主动回投的连接状态。
+// Status/ErrorKind 来自 endpoint-scoped service/transport 事件；该方法只更新对应 endpoint，
+// 不删除 terminal pool、workbench binding 或其他 endpoint 的状态。
+func (store EndpointStore) MarkRuntimeStatus(endpointID EndpointID, status EndpointStatusKind, errorKind EndpointErrorKind, terminalCount int, err string) EndpointStore {
 	endpointID = NormalizeEndpointID(endpointID)
 	item, ok := store.DisplayEndpoint(endpointID)
 	if !ok {
@@ -245,11 +281,21 @@ func (store EndpointStore) MarkTerminalListResult(endpointID EndpointID, termina
 	}
 	item.TerminalCount = terminalCount
 	item.LastError = strings.TrimSpace(err)
+	item.LastErrorKind = NormalizeEndpointErrorKind(errorKind)
 	if item.LastError != "" {
-		item.Status = EndpointStatusOffline
-	} else {
-		item.Status = EndpointStatusConnected
+		if item.LastErrorKind == EndpointErrorUnknown {
+			item.LastErrorKind = ClassifyEndpointErrorText(item.LastError)
+		}
+		if status == EndpointStatusUnknown {
+			status = EndpointStatusOffline
+		}
+	} else if status == EndpointStatusUnknown {
+		status = EndpointStatusConnected
 	}
+	if item.LastError == "" && status == EndpointStatusConnected {
+		item.LastErrorKind = EndpointErrorUnknown
+	}
+	item.Status = status
 	return store.Upsert(item)
 }
 
@@ -329,6 +375,86 @@ func (item EndpointItem) DisplayStatus() EndpointStatusKind {
 		return EndpointStatusAuto
 	default:
 		return EndpointStatusUnknown
+	}
+}
+
+// DisplayErrorLabel 返回 endpoint 错误类型和原始摘要的组合展示文本。
+// 错误类型先显示，便于 picker/manager/workbench 在有限宽度内区分 auth、host-key、transport closed 等失败。
+func (item EndpointItem) DisplayErrorLabel() string {
+	item = item.withDefaults()
+	errText := strings.TrimSpace(item.LastError)
+	errKind := NormalizeEndpointErrorKind(item.LastErrorKind)
+	if errKind == EndpointErrorUnknown && errText != "" {
+		errKind = ClassifyEndpointErrorText(errText)
+	}
+	if errKind == EndpointErrorUnknown {
+		return errText
+	}
+	if errText == "" {
+		return string(errKind)
+	}
+	return string(errKind) + ": " + errText
+}
+
+// NormalizeEndpointErrorKind 把未知错误类型归入空值，避免 renderer 展示拼写错误的状态。
+func NormalizeEndpointErrorKind(kind EndpointErrorKind) EndpointErrorKind {
+	switch kind {
+	case EndpointErrorTransportClosed,
+		EndpointErrorTransportDial,
+		EndpointErrorAuth,
+		EndpointErrorHostKey,
+		EndpointErrorRemoteDaemon,
+		EndpointErrorProtocol,
+		EndpointErrorConfig,
+		EndpointErrorUnavailable:
+		return kind
+	default:
+		return EndpointErrorUnknown
+	}
+}
+
+// ClassifyEndpointErrorText 根据服务层错误摘要生成 endpoint 错误类型。
+// 该分类只影响 UI 标志；真实认证、host key 和 transport 行为仍由 connection/transport/protocol 层负责。
+func ClassifyEndpointErrorText(text string) EndpointErrorKind {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	switch {
+	case lower == "":
+		return EndpointErrorUnknown
+	case strings.Contains(lower, "host key") ||
+		strings.Contains(lower, "remote host identification") ||
+		strings.Contains(lower, "known_hosts"):
+		return EndpointErrorHostKey
+	case strings.Contains(lower, "permission denied") ||
+		strings.Contains(lower, "publickey") ||
+		strings.Contains(lower, "authentication") ||
+		strings.Contains(lower, "auth"):
+		return EndpointErrorAuth
+	case strings.Contains(lower, "ssh transport closed") ||
+		strings.Contains(lower, "transport closed") ||
+		strings.Contains(lower, "broken pipe") ||
+		strings.Contains(lower, "connection reset") ||
+		strings.Contains(lower, "connection refused"):
+		return EndpointErrorTransportClosed
+	case strings.Contains(lower, "dial") ||
+		strings.Contains(lower, "connect timeout") ||
+		strings.Contains(lower, "no route to host") ||
+		strings.Contains(lower, "network is unreachable"):
+		return EndpointErrorTransportDial
+	case strings.Contains(lower, "stdio-proxy") ||
+		strings.Contains(lower, "remote socket") ||
+		strings.Contains(lower, "daemon") ||
+		strings.Contains(lower, "no such file or directory"):
+		return EndpointErrorRemoteDaemon
+	case strings.Contains(lower, "protocol error") ||
+		strings.Contains(lower, "unexpected frame") ||
+		strings.Contains(lower, "eof"):
+		return EndpointErrorProtocol
+	case strings.Contains(lower, "not registered") ||
+		strings.Contains(lower, "disabled") ||
+		strings.Contains(lower, "transport") && strings.Contains(lower, "not connected"):
+		return EndpointErrorConfig
+	default:
+		return EndpointErrorUnavailable
 	}
 }
 

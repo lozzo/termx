@@ -56,12 +56,13 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 				continue
 			}
 			for _, pane := range tab.Panes {
-				terminalID := workbenchPaneTerminalID(root, pane)
+				terminalRef := workbenchPaneTerminalRef(root, pane)
+				terminalID := terminalRef.TerminalID
 				displayTitle := ""
 				if pane.Kind == PaneTerminalLive && terminalID != "" {
-					displayTitle = workbenchTerminalTitle(root.TerminalPool, terminalID)
+					displayTitle = workbenchTerminalTitle(root.TerminalPool, terminalRef)
 				}
-				appendItem(WorkbenchTreeItem{
+				item := WorkbenchTreeItem{
 					Kind:          WorkbenchTreeKindPane,
 					WorkspaceID:   workspace.ID,
 					WorkspaceName: workspace.Name,
@@ -71,20 +72,24 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 					PaneTitle:     paneTitle(pane),
 					DisplayTitle:  displayTitle,
 					PaneKind:      pane.Kind,
+					EndpointID:    terminalRef.EndpointID,
 					TerminalID:    terminalID,
 					Depth:         2,
 					Active:        tabActive && pane.ID == shell.ActivePaneID,
 					Summary:       workbenchPaneSummary(pane, terminalID),
-				})
+				}
+				item = workbenchTreeItemWithEndpoint(root, item)
+				appendItem(item)
 			}
 			for _, floating := range tab.Floatings {
 				pane := floating.Pane
-				terminalID := workbenchFloatingTerminalID(root, floating)
+				terminalRef := workbenchFloatingTerminalRef(root, floating)
+				terminalID := terminalRef.TerminalID
 				displayTitle := ""
 				if terminalID != "" {
-					displayTitle = workbenchTerminalTitle(root.TerminalPool, terminalID)
+					displayTitle = workbenchTerminalTitle(root.TerminalPool, terminalRef)
 				}
-				appendItem(WorkbenchTreeItem{
+				item := WorkbenchTreeItem{
 					Kind:          WorkbenchTreeKindFloating,
 					WorkspaceID:   workspace.ID,
 					WorkspaceName: workspace.Name,
@@ -96,11 +101,14 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 					PaneTitle:     paneTitle(pane),
 					DisplayTitle:  displayTitle,
 					PaneKind:      pane.Kind,
+					EndpointID:    terminalRef.EndpointID,
 					TerminalID:    terminalID,
 					Depth:         2,
 					Active:        tabActive && floating.Active,
 					Summary:       workbenchFloatingSummary(floating, terminalID),
-				})
+				}
+				item = workbenchTreeItemWithEndpoint(root, item)
+				appendItem(item)
 			}
 		}
 	}
@@ -122,21 +130,29 @@ func workbenchTreeItemCollapsed(overlay OverlayState, item WorkbenchTreeItem) bo
 	return ok && overlay.WorkbenchCollapsed[key]
 }
 
-func workbenchFloatingTerminalID(root Root, floating FloatingPaneState) string {
+func workbenchFloatingTerminalRef(root Root, floating FloatingPaneState) TerminalRef {
 	if binding, ok := root.TerminalViews.FloatingBinding(floating.ID); ok && binding.TerminalID != "" {
-		return binding.TerminalID
+		return binding.TerminalRef()
 	}
-	return workbenchPaneTerminalID(root, floating.Pane)
+	return workbenchPaneTerminalRef(root, floating.Pane)
+}
+
+func workbenchFloatingTerminalID(root Root, floating FloatingPaneState) string {
+	return workbenchFloatingTerminalRef(root, floating).TerminalID
+}
+
+func workbenchPaneTerminalRef(root Root, pane PaneState) TerminalRef {
+	if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok && binding.TerminalID != "" {
+		return binding.TerminalRef()
+	}
+	if pane.TerminalID != "" {
+		return LocalTerminalRef(pane.TerminalID)
+	}
+	return TerminalRef{}
 }
 
 func workbenchPaneTerminalID(root Root, pane PaneState) string {
-	if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok && binding.TerminalID != "" {
-		return binding.TerminalID
-	}
-	if pane.TerminalID != "" {
-		return pane.TerminalID
-	}
-	return ""
+	return workbenchPaneTerminalRef(root, pane).TerminalID
 }
 
 func pickerTerminalID(root Root, pane PaneState) string {
@@ -155,14 +171,29 @@ func pickerTerminalID(root Root, pane PaneState) string {
 	return ""
 }
 
-func workbenchTerminalTitle(pool TerminalPoolStore, terminalID string) string {
+func workbenchTerminalTitle(pool TerminalPoolStore, ref TerminalRef) string {
+	ref = ref.Normalize()
 	for _, item := range pool.Items {
-		if item.TerminalID != terminalID {
+		if !item.TerminalRef().Equal(ref) {
 			continue
 		}
 		return terminalPoolTitle(item)
 	}
-	return terminalID
+	return ref.TerminalID
+}
+
+func workbenchTreeItemWithEndpoint(root Root, item WorkbenchTreeItem) WorkbenchTreeItem {
+	if item.TerminalID == "" {
+		return item
+	}
+	item.EndpointID = NormalizeEndpointID(item.EndpointID)
+	if endpoint, ok := root.Endpoints.DisplayEndpoint(item.EndpointID); ok {
+		item.EndpointLabel = endpoint.DisplayLabel()
+		item.EndpointStatus = endpoint.DisplayStatus()
+		item.EndpointLastError = endpoint.LastError
+		item.EndpointErrorKind = endpoint.LastErrorKind
+	}
+	return item
 }
 
 func matchesWorkbenchTreeQuery(item WorkbenchTreeItem, query string) bool {

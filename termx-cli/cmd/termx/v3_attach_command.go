@@ -198,6 +198,7 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 		Surface:    terminalAdapter,
 		LiveEvents: terminalAdapter,
 		Path:       pathAdapter,
+		Lifecycle:  services.EndpointLifecycle{Done: client.Done(), Err: client.Err},
 	})
 	initial.Endpoints = endpointManager.EndpointStore()
 	terminal := endpointManager
@@ -252,6 +253,7 @@ func v3SSHEndpointDialer(endpointCtx context.Context) services.EndpointDialer {
 			Surface:    terminal,
 			LiveEvents: terminal,
 			Path:       path,
+			Lifecycle:  services.EndpointLifecycle{Done: client.Done(), Err: client.Err},
 		}, nil
 	}
 }

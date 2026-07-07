@@ -2,8 +2,10 @@ package services
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/termx-shared/connection"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -207,6 +209,71 @@ func TestEndpointManagerLazilyDialsSSHTransport(t *testing.T) {
 	}
 	if first.Items[0].EndpointID != "west" || second.Items[0].EndpointID != "west" {
 		t.Fatalf("endpoint must be restored on ssh list rows, got first=%#v second=%#v", first.Items, second.Items)
+	}
+}
+
+func TestEndpointManagerPublishesTransportCloseAndRedials(t *testing.T) {
+	registry := connection.Registry{
+		Version: 1,
+		Default: connection.DefaultEndpointID,
+		Connections: map[connection.EndpointID]connection.Config{
+			connection.DefaultEndpointID: {
+				ID:          connection.DefaultEndpointID,
+				Label:       "Local",
+				Transport:   connection.TransportLocal,
+				ConnectMode: connection.ConnectAuto,
+				Enabled:     true,
+				Socket:      "auto",
+			},
+			"west": {
+				ID:           "west",
+				Label:        "West",
+				Transport:    connection.TransportSSH,
+				Address:      "root@example.com",
+				ConnectMode:  connection.ConnectOnDemand,
+				Enabled:      true,
+				RemoteSocket: "auto",
+			},
+		},
+	}
+	done := make(chan struct{})
+	closeErr := errors.New("ssh transport closed: exit status 255")
+	initialTerminal := &FakeTerminalService{ListResult: TerminalListResult{Items: []TerminalPoolItem{{TerminalID: "old"}}}}
+	redialTerminal := &FakeTerminalService{ListResult: TerminalListResult{Items: []TerminalPoolItem{{TerminalID: "new"}}}}
+	dialCalls := 0
+	manager := NewEndpointManagerWithDialers(registry, map[connection.TransportKind]EndpointDialer{
+		connection.TransportSSH: func(context.Context, connection.Config) (EndpointServiceBundle, error) {
+			dialCalls++
+			return EndpointServiceBundle{EndpointID: "west", Terminal: redialTerminal}, nil
+		},
+	}, EndpointServiceBundle{
+		EndpointID: "west",
+		Terminal:   initialTerminal,
+		Lifecycle:  EndpointLifecycle{Done: done, Err: func() error { return closeErr }},
+	})
+	events, err := manager.WatchEndpointEvents(context.Background())
+	if err != nil {
+		t.Fatalf("watch endpoint events: %v", err)
+	}
+
+	close(done)
+
+	var event EndpointRuntimeEvent
+	select {
+	case event = <-events:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for endpoint close event")
+	}
+	if event.EndpointID != "west" || event.Status != state.EndpointStatusOffline || event.ErrorKind != state.EndpointErrorTransportClosed || !strings.Contains(event.Message, "ssh transport closed") {
+		t.Fatalf("unexpected endpoint close event %#v", event)
+	}
+
+	result, err := manager.List(context.Background(), TerminalListRequest{EndpointID: "west"})
+	if err != nil {
+		t.Fatalf("redial list: %v", err)
+	}
+	if dialCalls != 1 || len(result.Items) != 1 || result.Items[0].TerminalID != "new" {
+		t.Fatalf("closed bundle should be discarded and redialed, calls=%d result=%#v", dialCalls, result)
 	}
 }
 

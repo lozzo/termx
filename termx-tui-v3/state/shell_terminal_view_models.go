@@ -13,6 +13,7 @@ type TerminalPickerItem struct {
 	EndpointConnectMode EndpointConnectMode
 	EndpointStatus      EndpointStatusKind
 	EndpointLastError   string
+	EndpointErrorKind   EndpointErrorKind
 	PaneID              string
 	Title               string
 	Kind                PaneKind
@@ -36,6 +37,7 @@ type TerminalPoolPageItem struct {
 	EndpointConnectMode EndpointConnectMode
 	EndpointStatus      EndpointStatusKind
 	EndpointLastError   string
+	EndpointErrorKind   EndpointErrorKind
 	TerminalID          string
 	Title               string
 	State               string
@@ -61,6 +63,7 @@ type EndpointPickerGroup struct {
 	ConnectMode         EndpointConnectMode
 	Status              EndpointStatusKind
 	LastError           string
+	ErrorKind           EndpointErrorKind
 	Configured          bool
 	TerminalCount       int
 	VisibleTerminalRows []TerminalPickerItem
@@ -75,6 +78,7 @@ type TerminalPoolPageGroup struct {
 	ConnectMode         EndpointConnectMode
 	Status              EndpointStatusKind
 	LastError           string
+	ErrorKind           EndpointErrorKind
 	Configured          bool
 	TerminalCount       int
 	VisibleTerminalRows []TerminalPoolPageItem

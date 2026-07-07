@@ -939,7 +939,7 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 	if err := runTmuxCommand(ctx, "new-session", "-d", "-x", "140", "-y", "40", "-s", session, "/bin/sh", scriptPath); err != nil {
 		return v3TmuxVisualCompareResult{}, err
 	}
-	if err := waitForTmuxCapture(ctx, target, "[]─[]", 5*time.Second); err != nil {
+	if err := waitForTmuxCapture(ctx, target, "[󰁌]─[]", 5*time.Second); err != nil {
 		return v3TmuxVisualCompareResult{}, err
 	}
 	currentANSI, err := captureTmuxPane(ctx, target, true)
@@ -1028,13 +1028,13 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 func v3VisualTargetPlain() string {
 	lines := []string{
 		"  main ▎ 1 main    2 logs   󰐕",
-		"┌─[󰍀] shell ──────────────────────────────────────────────────────────   x1 ◆ owner ─[]─[]─[]─[]──┐─[󰍀] logs ─────   x1 ◇ follow─[]─┐",
+		"┌─[󰍀] shell ──────────────────────────────────────────────────────────   x1 ◆ owner ─[󰁌]─[]─[]─[]──┐─[󰍀] logs ─────   x1 ◇ follow─[]─┐",
 		"│termx git:termx-core-v2-tui-v3-migration  go v1.26.0                              ····················│ visual review baseline       ·····│",
 		"│> make test                                                                       ····················│ target visual mismatch       ·····│",
 		"│ok   termx-tui-v3/render                                                          ····················│ emoji 🚀 and 中文            ·····│",
 		"│>                                                                                 ····················│                              ·····│",
 		"│                                                                                  ····················│                              ·····│",
-		"│                                                                                  ····················│ ┌───────────[]─[]─[]─[]─┐·····│",
+		"│                                                                                  ····················│ ┌───────────[]─[]─[󰁌]─[]─┐·····│",
 		"│                                                                                  ····················│ │        unconnected        │·····│",
 		"│                                                                                  ····················│ │                           │·····│",
 		"│                                                                                  ····················│ │      Attach existing      │·····│",
@@ -1282,7 +1282,7 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 
 	fill(2, 1, 103, visualStyleAccent)
 	fill(2, 104, width, visualStyleMuted)
-	fillRangesForSubstrings(2, visualStyleAccent, "[]─[]─[]─[]")
+	fillRangesForSubstrings(2, visualStyleAccent, "[󰁌]─[]─[]─[]")
 	for row := 3; row <= 38; row++ {
 		fill(row, 1, 1, visualStyleAccent)
 		fill(row, 104, 104, visualStyleMuted)
@@ -1487,7 +1487,7 @@ func visualStyleExpectations() []visualStyleExpectation {
 		{Name: "header-workspace-bg", Row: 1, Col: 1, Glyph: " ", MustHave: []string{"1", "38;2;212;192;244", "48;2;60;46;85"}},
 		{Name: "active-tab-marker", Row: 1, Col: 9, Glyph: "▎", MustHave: []string{"1", "38;2;169;112;255", "48;2;42;34;59"}},
 		{Name: "inactive-tab-muted", Row: 1, Col: 22, Glyph: "2", MustHave: []string{"38;2;181;163;209", "48;2;8;8;13"}, MustAvoid: []string{"2;38;2;119;113;127"}},
-		{Name: "pane-action-accent", Row: 2, Col: 88, Glyph: "", MustHave: []string{"1", "38;2;169;112;255"}},
+		{Name: "pane-action-accent", Row: 2, Col: 88, Glyph: "󰁌", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "active-pane-right-border-accent", Row: 2, Col: 104, Glyph: "┐", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "active-pane-content-border-accent", Row: 3, Col: 104, Glyph: "│", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "floating-border-accent", Row: 8, Col: 106, Glyph: "┌", MustHave: []string{"1", "38;2;169;112;255"}},

@@ -274,24 +274,29 @@ type PromptFieldState struct {
 }
 
 type WorkbenchTreeItem struct {
-	Kind          string
-	WorkspaceID   string
-	WorkspaceName string
-	TabID         string
-	TabTitle      string
-	FloatingID    string
-	FloatingTitle string
-	PaneID        string
-	PaneTitle     string
-	DisplayTitle  string
-	PaneKind      PaneKind
-	TerminalID    string
-	Depth         int
-	Expandable    bool
-	Collapsed     bool
-	Active        bool
-	Selected      bool
-	Summary       string
+	Kind              string
+	WorkspaceID       string
+	WorkspaceName     string
+	TabID             string
+	TabTitle          string
+	FloatingID        string
+	FloatingTitle     string
+	PaneID            string
+	PaneTitle         string
+	DisplayTitle      string
+	PaneKind          PaneKind
+	EndpointID        EndpointID
+	EndpointLabel     string
+	EndpointStatus    EndpointStatusKind
+	EndpointLastError string
+	EndpointErrorKind EndpointErrorKind
+	TerminalID        string
+	Depth             int
+	Expandable        bool
+	Collapsed         bool
+	Active            bool
+	Selected          bool
+	Summary           string
 }
 
 const (

@@ -18,6 +18,9 @@ type Client struct {
 	transport transport.Transport
 	nextID    atomic.Uint64
 
+	doneErrMu sync.Mutex
+	doneErr   error
+
 	mu               sync.Mutex
 	sendMu           sync.Mutex
 	waiters          map[uint64]chan result
@@ -185,6 +188,33 @@ func (c *Client) Close() error {
 	err := c.transport.Close()
 	<-c.done
 	return err
+}
+
+// Done 返回 protocol client read loop 的关闭信号。
+// 调用方只能把它作为连接生命周期事件源，不能从这里推断 terminal lifecycle 或 history truth。
+func (c *Client) Done() <-chan struct{} {
+	if c == nil {
+		ch := make(chan struct{})
+		close(ch)
+		return ch
+	}
+	return c.done
+}
+
+// Err 返回 read loop 结束时记录的 transport/protocol 错误。
+// 该错误用于 client/TUI 展示 endpoint 断线原因；如果连接尚未关闭或正常关闭则返回 nil。
+func (c *Client) Err() error {
+	if c == nil {
+		return io.EOF
+	}
+	select {
+	case <-c.done:
+	default:
+		return nil
+	}
+	c.doneErrMu.Lock()
+	defer c.doneErrMu.Unlock()
+	return c.doneErr
 }
 
 func (c *Client) Hello(ctx context.Context, hello Hello) error {
@@ -698,11 +728,13 @@ func (c *Client) readLoop() {
 	for {
 		frame, err := c.transport.Recv()
 		if err != nil {
+			c.setDoneErr(err)
 			c.failAll(err)
 			return
 		}
 		channel, typ, payload, err := wire.DecodeFrame(frame)
 		if err != nil {
+			c.setDoneErr(err)
 			c.failAll(err)
 			return
 		}
@@ -713,6 +745,7 @@ func (c *Client) readLoop() {
 			case wire.TypeEvent:
 				evt, err := DecodeEventPayload(payload)
 				if err != nil {
+					c.setDoneErr(err)
 					c.failAll(err)
 					return
 				}
@@ -720,6 +753,7 @@ func (c *Client) readLoop() {
 			case wire.TypeResponse:
 				resp, err := DecodeResponsePayload(payload)
 				if err != nil {
+					c.setDoneErr(err)
 					c.failAll(err)
 					return
 				}
@@ -732,6 +766,7 @@ func (c *Client) readLoop() {
 			case wire.TypeResponseBinary:
 				id, resultPayload, err := DecodeBinaryResponsePayload(payload)
 				if err != nil {
+					c.setDoneErr(err)
 					c.failAll(err)
 					return
 				}
@@ -744,6 +779,7 @@ func (c *Client) readLoop() {
 			case wire.TypeError:
 				msg, err := DecodeErrorPayload(payload)
 				if err != nil {
+					c.setDoneErr(err)
 					c.failAll(err)
 					return
 				}
@@ -778,6 +814,17 @@ func (c *Client) readLoop() {
 		}
 		c.mu.Unlock()
 		stream.send(streamFrame)
+	}
+}
+
+func (c *Client) setDoneErr(err error) {
+	if err == nil {
+		return
+	}
+	c.doneErrMu.Lock()
+	defer c.doneErrMu.Unlock()
+	if c.doneErr == nil {
+		c.doneErr = err
 	}
 }
 

@@ -316,6 +316,33 @@ func (store TerminalViewStore) ApplyWorkbenchEndpointResolution(endpoints Endpoi
 	return store
 }
 
+// MarkEndpointRuntimeError 把同一个 endpoint 下的所有 pane/floating view 标成连接错误。
+// 这是 endpoint transport 生命周期回投进入 view 投影的边界；它只清理本 TUI 的 attachment/channel，
+// 保留 TerminalRef 连接意图，等待 endpoint 恢复后通过正常 attach/reconnect 重新建立。
+func (store TerminalViewStore) MarkEndpointRuntimeError(endpointID EndpointID, message string) TerminalViewStore {
+	endpointID = NormalizeEndpointID(endpointID)
+	if endpointID == "" || len(store.Views) == 0 {
+		return store
+	}
+	if message == "" {
+		message = "endpoint offline"
+	}
+	store.Views = cloneTerminalViewBindings(store.Views)
+	for viewID, binding := range store.Views {
+		if NormalizeEndpointID(binding.EndpointID) != endpointID || binding.TerminalID == "" {
+			continue
+		}
+		binding.Channel = 0
+		binding.Attached = false
+		binding.CanResize = false
+		binding.AttachPending = false
+		binding.ResizePending = false
+		binding.LastError = message
+		store.Views[viewID] = binding
+	}
+	return store
+}
+
 func workbenchBindingUnresolvedReason(binding TerminalViewBinding, endpoints EndpointStore) (bool, string) {
 	ref := binding.TerminalRef()
 	if ref.Empty() {
