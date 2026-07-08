@@ -42,8 +42,8 @@ type EndpointManager struct {
 }
 
 // NewEndpointManager 构造一个按 registry 路由的 endpoint manager。
-// 当前 workflow 切片只允许 local unix socket bundle；非 local transport 会留在展示层，
-// 但真实 service 请求会返回明确错误，避免静默 fallback 成本地 daemon。
+// 未注册 dialer 的 transport 会留在展示层，真实 service 请求返回 endpoint-scoped 错误，
+// 避免 SSH 或 hub/P2P endpoint 静默 fallback 成本地 daemon。
 func NewEndpointManager(registry connection.Registry, bundles ...EndpointServiceBundle) *EndpointManager {
 	return NewEndpointManagerWithDialers(registry, nil, bundles...)
 }
@@ -272,7 +272,7 @@ func (manager *EndpointManager) Restart(ctx context.Context, req TerminalRestart
 }
 
 // Reconnect 把 reconnect/reattach 请求路由到 owning endpoint。
-// 当前切片只支持 local bundle；非 local transport 不会 fallback 成本地 attach。
+// 未连接或无 dialer 的 transport 返回局部错误，不会 fallback 成本地 attach。
 func (manager *EndpointManager) Reconnect(ctx context.Context, req TerminalReconnectRequest) (TerminalAttachResult, error) {
 	endpointID, terminal, err := manager.terminal(ctx, req.EndpointID)
 	if err != nil {

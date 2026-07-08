@@ -23,6 +23,7 @@
 - `internal/protocol/`
 - `termx-proto/`
 - `termx-core-v2/`，仅当 endpoint 能力、terminal 生命周期或 history contract 需要时最小化触及。
+- `termx-hub/`，仅限 ME010+ hub/P2P 身份、安全、中继、发现和 transport contract 需要时触及；不得恢复旧 remote UI/app 路径。
 - `scripts/`、`Makefile`、`go.work`、`go.work.sum`，仅当测试或入口联动需要时最小化触及。
 
 ## 冻结范围
@@ -32,9 +33,8 @@
 - `termx-app/`
 - `remote-ui/`
 - `web-control/`
-- `termx-hub/`
 
-以上目录默认冻结。只有当任务队列明确进入 hub/P2P 或远程 UI 切片，并且先更新本工作流范围说明后，才允许解冻。
+以上目录默认冻结。`termx-hub/` 当前已为 ME010+ hub/P2P 主线受限解冻，但不得牵连 `termx-app/`、`remote-ui/`、`web-control/` 或旧 remote fallback。
 
 ## 硬语义规则
 
@@ -51,6 +51,10 @@
 - cancel token、live channel、surface/session key、input serial key、history token 和 copy token 都必须按 endpoint 作用域隔离。
 - 现有 `internal/protocol` 仍以单 daemon 会话为边界；多 endpoint 路由应在 client/TUI 侧 manager 完成，不要求单个 protocol client 同时承载多个 daemon。
 - SSH 第一阶段只作为连接远端 termx daemon 的 transport；不得悄悄 fallback 成原始 shell/PTY。
+- hub/P2P endpoint 的展示名、endpoint id、hub URL、auth ref、device identity 和 relay 策略必须分离；`hub_device_id` 才是远端设备安全身份，label 只用于 UI。
+- hub/P2P relay 只能承载受限 protocol/datachannel，不能成为 terminal lifecycle、history、workbench storage 或设备信任 truth。
+- hub/P2P 连接失败、授权失效、设备撤销或 relay 不可用时，只影响对应 endpoint，不得 fallback 到 local、SSH、旧 remote app 或原始 shell。
+- `connections.yaml` 不保存 hub 原始 token 或私钥；`auth_ref` 只能引用本地凭据存储、系统 keychain 或后续明确的 hub auth store。
 
 ## 任务队列
 
@@ -65,7 +69,8 @@
 | ME007 | 完成 | local unix socket 作为标准 endpoint transport | 当前本地 attach 路径迁移到 endpoint manager 后行为不变 |
 | ME008 | 完成 | SSH transport 连接远端 termx daemon | 明确认证、host key、远端 socket 发现和失败展示 |
 | ME009 | 完成 | Terminal picker 单一 create 入口与 terminal name identity 第一阶段 | picker 只展示一个 create 行；create prompt 记住上次 endpoint/command/workdir；新建 terminal 在单 endpoint 内按名称唯一，默认以名称作为 daemon-local key |
-| ME010 | 阻塞 | hub/P2P transport 与跨设备发现 | 先解冻 `termx-hub/` 并补充 hub 身份、安全和中继策略 |
+| ME010 | 完成 | hub/P2P 身份、安全、中继策略与 connection registry contract | `connections.yaml` 可表达 hub endpoint；label 不作为安全身份；hub identity/relay 变化触发 reconnect；无真实 dialer 时不 fallback |
+| ME011 | 待开始 | hub/P2P transport dialer 与跨设备发现 | 接入 `termx-hub/` 发现/授权/relay；P2P 或 relay datachannel 只连接远端 termx daemon；局部失败不影响其他 endpoint |
 
 ## 执行规则
 
@@ -99,4 +104,4 @@
 - ME007 已完成：TUI runtime 启动时加载 `connections.yaml` endpoint registry，local unix socket 作为 `EndpointManager` 的标准 local transport bundle 接入；terminal/core/live 请求进入 per-endpoint adapter 前剥离 `EndpointID`，回包后补回 `EndpointID`，当前本地 attach、list、live、history 行为保持不变；显式 `--socket` 仍覆盖 registry local socket。
 - ME008 已完成：新增 OpenSSH stdio-proxy transport，`auth_ref=ssh:<alias>` 使用本机 SSH config，host key 由 known_hosts 严格校验，`remote_socket=auto` 在远端解析默认 socket；EndpointManager 可 lazy dial SSH endpoint，Terminal Manager 对 auto/on_demand endpoint 执行聚合刷新，失败只标记对应 endpoint offline 且不 fallback 成 shell 或 local endpoint。
 - ME009 已完成：picker 只保留单一 create 行，create prompt 用 server 下拉选择 endpoint，并记住上次 endpoint/command/workdir；TUI/CLI/protocol first-party create 优先以 terminal name 作为 daemon-local key，core-v2 在 create 与 rename 时拒绝同 daemon 重名。
-- 后续 ME010 阻塞：hub/P2P transport 需要先解冻 `termx-hub/` 并补充 hub 身份、安全、中继和发现策略。
+- ME010 已完成：`connections.yaml` 可表达 hub/P2P endpoint，hub URL、auth ref、`hub_device_id` 与 relay 策略分离；label 只影响展示，hub identity/relay 变化触发 reconnect；无真实 hub dialer 时 EndpointManager 只返回该 endpoint 的未连接错误，不 fallback。真实 `termx-hub/` transport dialer 和跨设备发现进入 ME011。

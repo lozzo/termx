@@ -658,6 +658,48 @@ func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) 
 	}
 }
 
+func TestEndpointStoreHubIdentityReloadRequiresReconnect(t *testing.T) {
+	registry, err := (connection.Registry{Connections: map[connection.EndpointID]connection.Config{
+		"studio": {
+			ID:          "studio",
+			Label:       "Studio Mac",
+			Transport:   connection.TransportHubP2P,
+			AuthRef:     "hub:personal",
+			ConnectMode: connection.ConnectOnDemand,
+			Enabled:     true,
+			HubURL:      "https://hub.example.com",
+			HubDeviceID: "device_ed25519:studio",
+			RelayMode:   connection.RelayAuto,
+		},
+	}}).Normalize()
+	if err != nil {
+		t.Fatalf("normalize hub registry: %v", err)
+	}
+	store := (EndpointStore{}).ApplyConnectionRegistry(registry)
+	studio, ok := store.Endpoint("studio")
+	if !ok || studio.Transport != EndpointTransportHubP2P || studio.HubURL != "https://hub.example.com" || studio.HubDeviceID != "device_ed25519:studio" || studio.RelayMode != string(connection.RelayAuto) {
+		t.Fatalf("hub endpoint should project identity fields, got %#v ok=%v", studio, ok)
+	}
+
+	renamed := registry
+	cfg := renamed.Connections["studio"]
+	cfg.Label = "Desk"
+	renamed.Connections["studio"] = cfg
+	store = store.ApplyConnectionRegistry(renamed)
+	if studio, _ := store.Endpoint("studio"); studio.DisplayLabel() != "Desk" || studio.ReconnectRequired {
+		t.Fatalf("hub label change should update display only, got %#v", studio)
+	}
+
+	identityChanged := renamed
+	cfg = identityChanged.Connections["studio"]
+	cfg.HubDeviceID = "device_ed25519:other"
+	identityChanged.Connections["studio"] = cfg
+	store = store.ApplyConnectionRegistry(identityChanged)
+	if studio, _ := store.Endpoint("studio"); studio.DisplayStatus() != EndpointStatusReconnectRequired {
+		t.Fatalf("hub identity change should mark reconnect required, got %#v", studio)
+	}
+}
+
 func TestClassifyEndpointErrorTextPrefersRemoteDaemonDetail(t *testing.T) {
 	text := "ssh transport closed: exit status 255: stdio-proxy connect core-v2 daemon socket: connection refused"
 	if got := ClassifyEndpointErrorText(text); got != EndpointErrorRemoteDaemon {

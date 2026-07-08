@@ -139,6 +139,12 @@ func setConnectionScalar(cfg *Config, key string, value string) error {
 		cfg.Socket = value
 	case "remote_socket":
 		cfg.RemoteSocket = value
+	case "hub_url":
+		cfg.HubURL = value
+	case "hub_device_id":
+		cfg.HubDeviceID = value
+	case "relay_mode":
+		cfg.RelayMode = RelayMode(value)
 	default:
 		return fmt.Errorf("unknown field %q", key)
 	}

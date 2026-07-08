@@ -56,6 +56,16 @@ connections:
     connect_mode: manual
     address: "root@155.94.155.192"
     remote_socket: "/run/user/1000/termx-v2-wire1.sock"
+
+  mac-studio:
+    label: "Studio"
+    enabled: true
+    transport: hub-p2p
+    connect_mode: manual
+    auth_ref: "hub:personal"
+    hub_url: "https://hub.example.com"
+    hub_device_id: "device_ed25519:studio"
+    relay_mode: relay_only
 `))
 	if err != nil {
 		t.Fatalf("parse registry: %v", err)
@@ -64,7 +74,7 @@ connections:
 		t.Fatalf("expected default local, got %#v", registry.Default)
 	}
 	items := registry.List()
-	if len(items) != 3 || items[0].ID != "cn-fast" || items[1].ID != DefaultEndpointID || items[2].ID != "us-west-slow" {
+	if len(items) != 4 || items[0].ID != "cn-fast" || items[1].ID != DefaultEndpointID || items[2].ID != "mac-studio" || items[3].ID != "us-west-slow" {
 		t.Fatalf("registry list must be sorted by endpoint id, got %#v", items)
 	}
 	fast := registry.Connections["cn-fast"]
@@ -74,6 +84,10 @@ connections:
 	slow := registry.Connections["us-west-slow"]
 	if slow.Enabled || slow.ConnectMode != ConnectManual || slow.RemoteSocket != "/run/user/1000/termx-v2-wire1.sock" {
 		t.Fatalf("unexpected us-west-slow config %#v", slow)
+	}
+	studio := registry.Connections["mac-studio"]
+	if studio.Label != "Studio" || studio.Transport != TransportHubP2P || studio.ConnectMode != ConnectManual || studio.AuthRef != "hub:personal" || studio.HubURL != "https://hub.example.com" || studio.HubDeviceID != "device_ed25519:studio" || studio.RelayMode != RelayOnly {
+		t.Fatalf("unexpected mac-studio hub config %#v", studio)
 	}
 }
 
@@ -89,7 +103,11 @@ func TestParseRejectsUnknownFieldsAndInvalidValues(t *testing.T) {
 		{name: "bad bool", data: "connections:\n  local:\n    enabled: yes\n"},
 		{name: "ssh missing address", data: "connections:\n  lab:\n    enabled: true\n    transport: ssh\n"},
 		{name: "bad id", data: "connections:\n  bad/id:\n    transport: local\n"},
-		{name: "hub blocked", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n"},
+		{name: "hub missing url", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    auth_ref: hub:personal\n    hub_device_id: device_ed25519:peer\n"},
+		{name: "hub missing device", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    auth_ref: hub:personal\n    hub_url: https://hub.example.com\n"},
+		{name: "hub missing auth", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    hub_url: https://hub.example.com\n    hub_device_id: device_ed25519:peer\n"},
+		{name: "hub must not set address", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    address: peer.example.com\n    auth_ref: hub:personal\n    hub_url: https://hub.example.com\n    hub_device_id: device_ed25519:peer\n"},
+		{name: "hub bad relay mode", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    auth_ref: hub:personal\n    hub_url: https://hub.example.com\n    hub_device_id: device_ed25519:peer\n    relay_mode: open\n"},
 		{name: "disabled default", data: "default: lab\nconnections:\n  lab:\n    enabled: false\n    transport: ssh\n    address: lab.example.com\n"},
 	}
 	for _, tc := range cases {
@@ -98,6 +116,40 @@ func TestParseRejectsUnknownFieldsAndInvalidValues(t *testing.T) {
 				t.Fatalf("expected parse failure")
 			}
 		})
+	}
+}
+
+func TestHubP2PDefaultsAndIdentityClassification(t *testing.T) {
+	registry, err := Parse([]byte(`
+connections:
+  studio:
+    label: "Studio Mac"
+    transport: hub-p2p
+    auth_ref: "hub:personal"
+    hub_url: "https://hub.example.com"
+    hub_device_id: "device_ed25519:studio"
+`))
+	if err != nil {
+		t.Fatalf("parse hub registry: %v", err)
+	}
+	studio := registry.Connections["studio"]
+	if studio.ConnectMode != ConnectOnDemand || studio.RelayMode != RelayAuto || studio.HubURL != "https://hub.example.com" {
+		t.Fatalf("expected hub defaults, got %#v", studio)
+	}
+	renamed := studio
+	renamed.Label = "Desk"
+	if !studio.DisplayChanged(renamed) || studio.RequiresReconnect(renamed) {
+		t.Fatalf("hub label change should be display-only")
+	}
+	movedIdentity := studio
+	movedIdentity.HubDeviceID = "device_ed25519:other"
+	if !studio.RequiresReconnect(movedIdentity) {
+		t.Fatalf("hub device identity change must require reconnect")
+	}
+	relayChanged := studio
+	relayChanged.RelayMode = RelayDirect
+	if !studio.RequiresReconnect(relayChanged) {
+		t.Fatalf("relay policy change must require reconnect")
 	}
 }
 

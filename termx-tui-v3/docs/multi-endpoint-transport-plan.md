@@ -33,7 +33,8 @@
 
 ## 非目标
 
-- 第一阶段不实现手机 App、hub/P2P 或跨账号分享。
+- 第一阶段已完成 local/SSH endpoint；hub/P2P 进入 ME010+ 分阶段落地。ME010 只定义身份、安全、中继和 registry contract，不接真实网络。
+- 当前仍不实现手机 App 或跨账号分享。
 - 第一阶段不实现 daemon 侧 client manager。
 - 不让 TUI 成为 history truth owner；TUI 仍只消费 core-v2 提供的 authoritative history window。
 - SSH transport 第一阶段只连接远端 termx daemon，不隐式 fallback 成原始 SSH shell。
@@ -83,6 +84,9 @@ type ConnectionConfig struct {
     Enabled      bool
     Socket       string
     RemoteSocket string
+    HubURL       string
+    HubDeviceID  string
+    RelayMode    RelayMode
 }
 ```
 
@@ -119,6 +123,16 @@ connections:
     address: "prod.example.com"
     auth_ref: "ssh:prod-readonly"
     remote_socket: "/run/user/1000/termx-v2-wire1.sock"
+
+  studio:
+    label: "Studio Mac"
+    enabled: true
+    transport: hub-p2p
+    connect_mode: on_demand
+    auth_ref: "hub:personal"
+    hub_url: "https://hub.example.com"
+    hub_device_id: "device_ed25519:studio"
+    relay_mode: auto       # auto | direct | relay_only
 ```
 
 连接策略：
@@ -135,6 +149,15 @@ connections:
 - `connections.yaml` 不复用当前 TUI scalar parser。ME003 应单独实现 connection registry loader/harness，或使用完整 YAML 解析，但仍要保持未知字段报错。
 - `tui-v3.yaml` 只继续保存 TUI 偏好；renderer/input router 不读取 `connections.yaml`，只消费 reducer view-model。
 
+hub/P2P registry 规则：
+
+- `hub_url` 是 control/discovery 入口，不是远端设备身份；同一个 hub 下的不同 `hub_device_id` 是不同安全目标。
+- `hub_device_id` 是远端 daemon/device 的安全身份指纹或公钥 ID。`label`、endpoint id、hub URL 和 relay 地址都不能替代它。
+- `auth_ref` 只引用本地凭据存储、系统 keychain 或后续明确的 hub auth store；`connections.yaml` 不保存原始 token、私钥或一次性 pairing code。
+- `relay_mode = auto` 可以先尝试 P2P 直连再使用受控 relay；`direct` 禁止 relay fallback；`relay_only` 用于受限网络或诊断。
+- `address`、`socket`、`remote_socket` 不适用于 `hub-p2p`。hub transport 通过 hub/device identity 找到远端 termx daemon，不应退化成 SSH、local socket 或原始 shell。
+- 修改 `hub_url`、`auth_ref`、`hub_device_id` 或 `relay_mode` 都属于 dial identity 变化，已连接 session 必须标记 `reconnect required`，不能热切换。
+
 ### Registry reload 与运行时 session
 
 `connections.yaml` 是连接期望状态；已经连上的 endpoint session 是运行时事实。配置 reload 只能产生 registry diff，不能直接把运行中的 protocol session 原地改成另一台机器。
@@ -147,6 +170,7 @@ connections:
 | `enabled: true -> false` | 不自动断开已连接 session；标记为 `disabled by config`，禁止自动恢复、自动连接和创建新 terminal。 |
 | 修改 `connect_mode` | 只影响未来连接策略；已连接 session 不变。 |
 | 修改 `address` / `transport` / `auth_ref` / `socket` / `remote_socket` | 不热切换；当前 session 继续使用旧 dial 参数，UI 标记 `reconnect required`，断开或用户显式 reconnect 后才使用新配置。 |
+| 修改 `hub_url` / `hub_device_id` / `relay_mode` | 不热切换；hub URL、远端设备身份和 relay 策略都属于 dial identity，必须显式 reconnect 后生效。 |
 | 删除 connection | 当前 session 可继续存在但标记为 `unregistered`；重启后 layout binding 保留 unresolved，不自动连接。 |
 | 修改 connection ID | 等价于删除旧 connection 并新增新 connection；不得自动迁移 workbench refs。 |
 
@@ -281,6 +305,9 @@ layout storage 仍可作为当前客户端本地 truth source，保存 pane/floa
 - 配置漂移：workbench 引用的 endpoint 被删除时，应保留 unresolved binding，并给用户明确修复入口。
 - storage 边界：不要把远端 daemon 的 workspace storage 和本地 client layout storage 混成一份 truth。
 - transport fallback：SSH 失败不能自动退化成本地 shell 或另一个 endpoint。
+- hub 身份混淆：`label`、endpoint id、hub URL、relay 地址和 `auth_ref` 都不能替代 `hub_device_id`；否则改名或换 hub 会被误当成信任迁移。
+- hub relay 越权：relay 只能承载受限 protocol/datachannel，不能保存 terminal lifecycle、history truth、workbench storage truth 或设备信任决策。
+- hub revoke 漏洞：授权撤销、设备撤销或 auth ref 失效必须只让对应 endpoint offline/reconnect-required，不能保留旧 channel 当作有效连接。
 
 ## 分阶段实施
 
@@ -325,9 +352,20 @@ workbench snapshot 保存 endpoint-aware binding。旧 snapshot 默认迁移到 
 - SSH 建连成功但远端缺少 `termx`、远端 daemon 无法启动或 socket 无法连接时，只把该 endpoint 标记为 offline 并保留 terminal/workbench 连接意图，不清空其他 endpoint。
 - 失败不能 fallback 成原始 SSH shell/PTY，也不能把请求转发到 local endpoint。
 
-### ME009：Hub/P2P transport
+### ME010：Hub/P2P identity contract
 
-在解冻 `termx-hub/` 后设计 hub identity、发现、中继、NAT、授权和 revoke 策略。该阶段当前阻塞。
+解冻 `termx-hub/` 的受限范围，先完成 hub identity、安全、中继和 registry contract。
+
+本阶段不接真实网络，只要求：
+
+- `connections.yaml` 可表达 `transport: hub-p2p` endpoint，并要求 `hub_url`、`auth_ref`、`hub_device_id`。
+- `relay_mode` 支持 `auto`、`direct`、`relay_only`，默认 `auto`。
+- `hub_device_id` 和 `relay_mode` 进入 dial identity，修改后标记 reconnect required。
+- TUI endpoint projection 可展示 hub endpoint，EndpointManager 在无 hub dialer 时返回局部未连接错误，不 fallback 到 local/SSH/旧 remote。
+
+### ME011：Hub/P2P transport
+
+接入 `termx-hub/` 的发现、授权、revoke、NAT traversal 和 relay datachannel。真实 transport 只连接远端 termx daemon 的 protocol session，不能 fallback 成原始 shell、旧 remote UI 或本地 daemon。
 
 ## 必要 harness
 
@@ -341,6 +379,9 @@ workbench snapshot 保存 endpoint-aware binding。旧 snapshot 默认迁移到 
 - `connections.yaml` 配置 `lab.label = "Lab Server"` 后，terminal picker 和非默认 endpoint 的 pane chrome 使用该 label。
 - `connect_mode = manual` 的 endpoint 启动时不 dial；用户显式 connect 后才进入 terminal list。
 - `connect_mode = on_demand` 的 endpoint 在 picker 展开或 restore 可见 binding 时才 dial，失败只影响该 endpoint。
+- `transport: hub-p2p` 缺少 `hub_url`、`auth_ref` 或 `hub_device_id` 时 registry 解析失败。
+- hub endpoint 修改 `label` 只更新展示；修改 `hub_device_id` 或 `relay_mode` 必须标记 reconnect required。
+- 无 hub dialer 时 hub endpoint service 请求只返回该 endpoint 的未连接错误，不调用 local/SSH service。
 
 ## 验收准入
 

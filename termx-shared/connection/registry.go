@@ -3,6 +3,7 @@ package connection
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -22,7 +23,7 @@ const (
 	TransportLocal TransportKind = "local"
 	// TransportSSH 表示通过 SSH 到远端主机后连接该主机上的 termx daemon。
 	TransportSSH TransportKind = "ssh"
-	// TransportHubP2P 是未来 hub/P2P 连接模式的保留 transport 名称。
+	// TransportHubP2P 表示通过 hub 发现并用 P2P/relay data channel 连接远端 termx daemon。
 	TransportHubP2P TransportKind = "hub-p2p"
 )
 
@@ -33,6 +34,15 @@ const (
 	ConnectOnDemand ConnectMode = "on_demand"
 	// ConnectManual 表示只有显式 connect action 才能连接 endpoint。
 	ConnectManual ConnectMode = "manual"
+)
+
+const (
+	// RelayAuto 表示 hub transport 可按策略先尝试直连，失败后使用受控 relay。
+	RelayAuto RelayMode = "auto"
+	// RelayDirect 表示 hub transport 只允许 P2P 直连，不能回退到 hub relay。
+	RelayDirect RelayMode = "direct"
+	// RelayOnly 表示 hub transport 必须走 hub relay，用于受限网络或诊断场景。
+	RelayOnly RelayMode = "relay_only"
 )
 
 // EndpointID 是客户端本地 connection registry 中 endpoint 的稳定主键。
@@ -47,6 +57,10 @@ type TransportKind string
 // 它只影响未来连接时机，不允许热切换已经建立的 protocol session。
 type ConnectMode string
 
+// RelayMode 描述 hub/P2P transport 的 NAT 与中继策略。
+// 它只影响新建 hub transport；远端设备身份仍必须由 HubDeviceID 校验，不能由 relay 策略或展示名替代。
+type RelayMode string
+
 // Registry 是 CLI/TUI 共享的 endpoint 连接注册表。
 // 它表达用户配置期望状态；已经建立的 endpoint session 是运行时事实，不能被 registry reload 直接原地改写。
 type Registry struct {
@@ -56,7 +70,7 @@ type Registry struct {
 }
 
 // Config 描述一个 endpoint 的连接配置。
-// ID 是持久化和路由主键；Label 只用于 UI 展示；Transport/Address/AuthRef/Socket/RemoteSocket 共同组成 dial identity。
+// ID 是持久化和路由主键；Label 只用于 UI 展示；Transport、地址、凭据引用和 hub identity 字段共同组成 dial identity。
 type Config struct {
 	ID           EndpointID
 	Label        string
@@ -67,6 +81,15 @@ type Config struct {
 	Enabled      bool
 	Socket       string
 	RemoteSocket string
+	// HubURL 是 hub control/discovery 入口，只用于 hub-p2p transport 的连接发现。
+	// 它不是远端设备身份；同一个 hub 下的不同 HubDeviceID 仍是不同安全目标。
+	HubURL string
+	// HubDeviceID 是远端 daemon/device 的安全身份指纹或公钥 ID。
+	// TUI 展示 Label 不能替代该字段，修改它必须让已连接 session 进入 reconnect-required。
+	HubDeviceID string
+	// RelayMode 是 hub/P2P 的直连/中继策略，影响 NAT traversal 与 relay 使用边界。
+	// 它属于 dial identity；运行中不能热切换。
+	RelayMode RelayMode
 }
 
 // DialIdentity 是决定已连接 session 是否需要 reconnect 的连接身份。
@@ -77,6 +100,9 @@ type DialIdentity struct {
 	AuthRef      string
 	Socket       string
 	RemoteSocket string
+	HubURL       string
+	HubDeviceID  string
+	RelayMode    RelayMode
 }
 
 // DefaultPath 返回 connection registry 默认读取路径。
@@ -218,12 +244,35 @@ func (cfg Config) Validate() error {
 		if strings.TrimSpace(cfg.Address) != "" {
 			return fmt.Errorf("local connection %q must not set address", cfg.ID)
 		}
+		if strings.TrimSpace(cfg.HubURL) != "" || strings.TrimSpace(cfg.HubDeviceID) != "" {
+			return fmt.Errorf("local connection %q must not set hub identity fields", cfg.ID)
+		}
 	case TransportSSH:
 		if strings.TrimSpace(cfg.Address) == "" {
 			return fmt.Errorf("ssh connection %q requires address", cfg.ID)
 		}
+		if strings.TrimSpace(cfg.HubURL) != "" || strings.TrimSpace(cfg.HubDeviceID) != "" {
+			return fmt.Errorf("ssh connection %q must not set hub identity fields", cfg.ID)
+		}
 	case TransportHubP2P:
-		return fmt.Errorf("hub-p2p connection %q is not enabled in this workflow slice", cfg.ID)
+		if strings.TrimSpace(cfg.Address) != "" {
+			return fmt.Errorf("hub-p2p connection %q must not set address; use hub_url and hub_device_id", cfg.ID)
+		}
+		if strings.TrimSpace(cfg.Socket) != "" || strings.TrimSpace(cfg.RemoteSocket) != "" {
+			return fmt.Errorf("hub-p2p connection %q must not set socket fields", cfg.ID)
+		}
+		if strings.TrimSpace(cfg.AuthRef) == "" {
+			return fmt.Errorf("hub-p2p connection %q requires auth_ref", cfg.ID)
+		}
+		if err := validateHubURL(cfg.ID, cfg.HubURL); err != nil {
+			return err
+		}
+		if err := validateHubDeviceID(cfg.ID, cfg.HubDeviceID); err != nil {
+			return err
+		}
+		if err := validateRelayMode(cfg.ID, cfg.RelayMode); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("connection %q has unknown transport %q", cfg.ID, cfg.Transport)
 	}
@@ -245,6 +294,9 @@ func (cfg Config) DialIdentity() DialIdentity {
 		AuthRef:      strings.TrimSpace(cfg.AuthRef),
 		Socket:       strings.TrimSpace(cfg.Socket),
 		RemoteSocket: strings.TrimSpace(cfg.RemoteSocket),
+		HubURL:       strings.TrimSpace(cfg.HubURL),
+		HubDeviceID:  strings.TrimSpace(cfg.HubDeviceID),
+		RelayMode:    cfg.RelayMode,
 	}
 }
 
@@ -298,6 +350,9 @@ func (cfg Config) withDefaults() Config {
 	if cfg.Transport == TransportSSH && strings.TrimSpace(cfg.RemoteSocket) == "" {
 		cfg.RemoteSocket = "auto"
 	}
+	if cfg.Transport == TransportHubP2P && strings.TrimSpace(string(cfg.RelayMode)) == "" {
+		cfg.RelayMode = RelayAuto
+	}
 	return cfg
 }
 
@@ -321,6 +376,43 @@ func validateEndpointID(id EndpointID) error {
 		}
 	}
 	return nil
+}
+
+func validateHubURL(endpointID EndpointID, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("hub-p2p connection %q requires hub_url", endpointID)
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("hub-p2p connection %q has invalid hub_url", endpointID)
+	}
+	switch parsed.Scheme {
+	case "https", "http":
+	default:
+		return fmt.Errorf("hub-p2p connection %q hub_url must use http or https", endpointID)
+	}
+	return nil
+}
+
+func validateHubDeviceID(endpointID EndpointID, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("hub-p2p connection %q requires hub_device_id", endpointID)
+	}
+	if strings.ContainsAny(value, " \t\r\n") {
+		return fmt.Errorf("hub-p2p connection %q hub_device_id must not contain whitespace", endpointID)
+	}
+	return nil
+}
+
+func validateRelayMode(endpointID EndpointID, mode RelayMode) error {
+	switch mode {
+	case RelayAuto, RelayDirect, RelayOnly:
+		return nil
+	default:
+		return fmt.Errorf("hub-p2p connection %q has unknown relay_mode %q", endpointID, mode)
+	}
 }
 
 func chooseDefaultEndpoint(connections map[EndpointID]Config) EndpointID {

@@ -212,6 +212,59 @@ func TestEndpointManagerLazilyDialsSSHTransport(t *testing.T) {
 	}
 }
 
+func TestEndpointManagerLazilyDialsHubP2PTransport(t *testing.T) {
+	registry := connection.Registry{
+		Version: 1,
+		Default: connection.DefaultEndpointID,
+		Connections: map[connection.EndpointID]connection.Config{
+			connection.DefaultEndpointID: {
+				ID:          connection.DefaultEndpointID,
+				Label:       "Local",
+				Transport:   connection.TransportLocal,
+				ConnectMode: connection.ConnectAuto,
+				Enabled:     true,
+				Socket:      "auto",
+			},
+			"studio": {
+				ID:          "studio",
+				Label:       "Studio",
+				Transport:   connection.TransportHubP2P,
+				AuthRef:     "hub:personal",
+				ConnectMode: connection.ConnectOnDemand,
+				Enabled:     true,
+				HubURL:      "https://hub.example.com",
+				HubDeviceID: "device_ed25519:studio",
+				RelayMode:   connection.RelayAuto,
+			},
+		},
+	}
+	hubTerminal := &FakeTerminalService{ListResult: TerminalListResult{Items: []TerminalPoolItem{{TerminalID: "term-1", Title: "remote"}}}}
+	dialCalls := 0
+	manager := NewEndpointManagerWithDialers(registry, map[connection.TransportKind]EndpointDialer{
+		connection.TransportHubP2P: func(_ context.Context, cfg connection.Config) (EndpointServiceBundle, error) {
+			dialCalls++
+			if cfg.ID != "studio" || cfg.HubURL != "https://hub.example.com" || cfg.HubDeviceID != "device_ed25519:studio" || cfg.RelayMode != connection.RelayAuto {
+				t.Fatalf("unexpected hub config %#v", cfg)
+			}
+			return EndpointServiceBundle{EndpointID: "studio", Terminal: hubTerminal}, nil
+		},
+	})
+
+	result, err := manager.List(context.Background(), TerminalListRequest{EndpointID: "studio"})
+	if err != nil {
+		t.Fatalf("hub list: %v", err)
+	}
+	if dialCalls != 1 {
+		t.Fatalf("expected one hub lazy dial, got %d", dialCalls)
+	}
+	if len(hubTerminal.Lists) != 1 || hubTerminal.Lists[0].EndpointID != "" {
+		t.Fatalf("endpoint must be stripped before hub service, got %#v", hubTerminal.Lists)
+	}
+	if len(result.Items) != 1 || result.Items[0].EndpointID != "studio" || result.Items[0].TerminalID != "term-1" {
+		t.Fatalf("endpoint must be restored on hub list rows, got %#v", result.Items)
+	}
+}
+
 func TestEndpointManagerPublishesTransportCloseAndRedials(t *testing.T) {
 	registry := connection.Registry{
 		Version: 1,

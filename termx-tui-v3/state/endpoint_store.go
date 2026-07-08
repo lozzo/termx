@@ -15,7 +15,7 @@ const (
 	// SSH host key 与认证结果不由 label 或 endpoint id 表达，必须在 transport 连接阶段处理。
 	EndpointTransportSSH EndpointTransportKind = "ssh"
 	// EndpointTransportHubP2P 是未来 hub/P2P transport 的 UI 占位。
-	// 当前 workflow 仍阻塞该 transport；这里只允许展示已知配置状态，不允许触发连接。
+	// 展示层只能显示 hub 连接配置与运行时状态，真实身份校验仍由 hub transport 完成。
 	EndpointTransportHubP2P EndpointTransportKind = "hub-p2p"
 )
 
@@ -113,6 +113,9 @@ type EndpointItem struct {
 	Enabled           bool
 	Socket            string
 	RemoteSocket      string
+	HubURL            string
+	HubDeviceID       string
+	RelayMode         string
 	Status            EndpointStatusKind
 	LastError         string
 	LastErrorKind     EndpointErrorKind
@@ -148,6 +151,9 @@ func EndpointItemFromConnectionConfig(cfg connection.Config) EndpointItem {
 		Enabled:      cfg.Enabled,
 		Socket:       strings.TrimSpace(cfg.Socket),
 		RemoteSocket: strings.TrimSpace(cfg.RemoteSocket),
+		HubURL:       strings.TrimSpace(cfg.HubURL),
+		HubDeviceID:  strings.TrimSpace(cfg.HubDeviceID),
+		RelayMode:    strings.TrimSpace(string(cfg.RelayMode)),
 	}
 }
 
@@ -467,7 +473,10 @@ func (item EndpointItem) RequiresReconnect(next EndpointItem) bool {
 		strings.TrimSpace(item.Address) != strings.TrimSpace(next.Address) ||
 		strings.TrimSpace(item.AuthRef) != strings.TrimSpace(next.AuthRef) ||
 		strings.TrimSpace(item.Socket) != strings.TrimSpace(next.Socket) ||
-		strings.TrimSpace(item.RemoteSocket) != strings.TrimSpace(next.RemoteSocket)
+		strings.TrimSpace(item.RemoteSocket) != strings.TrimSpace(next.RemoteSocket) ||
+		strings.TrimSpace(item.HubURL) != strings.TrimSpace(next.HubURL) ||
+		strings.TrimSpace(item.HubDeviceID) != strings.TrimSpace(next.HubDeviceID) ||
+		strings.TrimSpace(item.RelayMode) != strings.TrimSpace(next.RelayMode)
 }
 
 func (item EndpointItem) withDefaults() EndpointItem {
