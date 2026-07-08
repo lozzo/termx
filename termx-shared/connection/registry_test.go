@@ -62,9 +62,10 @@ connections:
     enabled: true
     transport: hub-p2p
     connect_mode: manual
-    auth_ref: "hub:personal"
     hub_url: "https://hub.example.com"
     hub_device_id: "device_ed25519:studio"
+    device_fingerprint: "SHA256:studio"
+    grant_ref: "grant:studio"
     relay_mode: relay_only
 `))
 	if err != nil {
@@ -86,7 +87,7 @@ connections:
 		t.Fatalf("unexpected us-west-slow config %#v", slow)
 	}
 	studio := registry.Connections["mac-studio"]
-	if studio.Label != "Studio" || studio.Transport != TransportHubP2P || studio.ConnectMode != ConnectManual || studio.AuthRef != "hub:personal" || studio.HubURL != "https://hub.example.com" || studio.HubDeviceID != "device_ed25519:studio" || studio.RelayMode != RelayOnly {
+	if studio.Label != "Studio" || studio.Transport != TransportHubP2P || studio.ConnectMode != ConnectManual || studio.HubURL != "https://hub.example.com" || studio.HubDeviceID != "device_ed25519:studio" || studio.DeviceFingerprint != "SHA256:studio" || studio.GrantRef != "grant:studio" || studio.RelayMode != RelayOnly {
 		t.Fatalf("unexpected mac-studio hub config %#v", studio)
 	}
 }
@@ -103,11 +104,12 @@ func TestParseRejectsUnknownFieldsAndInvalidValues(t *testing.T) {
 		{name: "bad bool", data: "connections:\n  local:\n    enabled: yes\n"},
 		{name: "ssh missing address", data: "connections:\n  lab:\n    enabled: true\n    transport: ssh\n"},
 		{name: "bad id", data: "connections:\n  bad/id:\n    transport: local\n"},
-		{name: "hub missing url", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    auth_ref: hub:personal\n    hub_device_id: device_ed25519:peer\n"},
-		{name: "hub missing device", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    auth_ref: hub:personal\n    hub_url: https://hub.example.com\n"},
-		{name: "hub missing auth", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    hub_url: https://hub.example.com\n    hub_device_id: device_ed25519:peer\n"},
-		{name: "hub must not set address", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    address: peer.example.com\n    auth_ref: hub:personal\n    hub_url: https://hub.example.com\n    hub_device_id: device_ed25519:peer\n"},
-		{name: "hub bad relay mode", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    auth_ref: hub:personal\n    hub_url: https://hub.example.com\n    hub_device_id: device_ed25519:peer\n    relay_mode: open\n"},
+		{name: "hub missing url", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    hub_device_id: device_ed25519:peer\n    device_fingerprint: SHA256:peer\n    grant_ref: grant:peer\n"},
+		{name: "hub missing device", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    hub_url: https://hub.example.com\n    device_fingerprint: SHA256:peer\n    grant_ref: grant:peer\n"},
+		{name: "hub missing fingerprint", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    hub_url: https://hub.example.com\n    hub_device_id: device_ed25519:peer\n    grant_ref: grant:peer\n"},
+		{name: "hub missing grant", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    hub_url: https://hub.example.com\n    hub_device_id: device_ed25519:peer\n    device_fingerprint: SHA256:peer\n"},
+		{name: "hub must not set address", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    address: peer.example.com\n    hub_url: https://hub.example.com\n    hub_device_id: device_ed25519:peer\n    device_fingerprint: SHA256:peer\n    grant_ref: grant:peer\n"},
+		{name: "hub bad relay mode", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    hub_url: https://hub.example.com\n    hub_device_id: device_ed25519:peer\n    device_fingerprint: SHA256:peer\n    grant_ref: grant:peer\n    relay_mode: open\n"},
 		{name: "disabled default", data: "default: lab\nconnections:\n  lab:\n    enabled: false\n    transport: ssh\n    address: lab.example.com\n"},
 	}
 	for _, tc := range cases {
@@ -125,15 +127,16 @@ connections:
   studio:
     label: "Studio Mac"
     transport: hub-p2p
-    auth_ref: "hub:personal"
     hub_url: "https://hub.example.com"
     hub_device_id: "device_ed25519:studio"
+    device_fingerprint: "SHA256:studio"
+    grant_ref: "grant:studio"
 `))
 	if err != nil {
 		t.Fatalf("parse hub registry: %v", err)
 	}
 	studio := registry.Connections["studio"]
-	if studio.ConnectMode != ConnectOnDemand || studio.RelayMode != RelayAuto || studio.HubURL != "https://hub.example.com" {
+	if studio.ConnectMode != ConnectOnDemand || studio.RelayMode != RelayAuto || studio.HubURL != "https://hub.example.com" || studio.DeviceFingerprint != "SHA256:studio" || studio.GrantRef != "grant:studio" {
 		t.Fatalf("expected hub defaults, got %#v", studio)
 	}
 	renamed := studio
@@ -142,9 +145,14 @@ connections:
 		t.Fatalf("hub label change should be display-only")
 	}
 	movedIdentity := studio
-	movedIdentity.HubDeviceID = "device_ed25519:other"
+	movedIdentity.DeviceFingerprint = "SHA256:other"
 	if !studio.RequiresReconnect(movedIdentity) {
-		t.Fatalf("hub device identity change must require reconnect")
+		t.Fatalf("hub device fingerprint change must require reconnect")
+	}
+	grantChanged := studio
+	grantChanged.GrantRef = "grant:other"
+	if !studio.RequiresReconnect(grantChanged) {
+		t.Fatalf("hub grant ref change must require reconnect")
 	}
 	relayChanged := studio
 	relayChanged.RelayMode = RelayDirect

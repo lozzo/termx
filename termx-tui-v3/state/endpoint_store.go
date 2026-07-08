@@ -115,6 +115,8 @@ type EndpointItem struct {
 	RemoteSocket      string
 	HubURL            string
 	HubDeviceID       string
+	DeviceFingerprint string
+	GrantRef          string
 	RelayMode         string
 	Status            EndpointStatusKind
 	LastError         string
@@ -142,18 +144,20 @@ func EndpointItemFromConnectionConfig(cfg connection.Config) EndpointItem {
 		endpointID = DefaultEndpointID
 	}
 	return EndpointItem{
-		ID:           NormalizeEndpointID(endpointID),
-		Label:        strings.TrimSpace(cfg.Label),
-		Transport:    EndpointTransportKind(strings.TrimSpace(string(cfg.Transport))),
-		Address:      strings.TrimSpace(cfg.Address),
-		AuthRef:      strings.TrimSpace(cfg.AuthRef),
-		ConnectMode:  EndpointConnectMode(strings.TrimSpace(string(cfg.ConnectMode))),
-		Enabled:      cfg.Enabled,
-		Socket:       strings.TrimSpace(cfg.Socket),
-		RemoteSocket: strings.TrimSpace(cfg.RemoteSocket),
-		HubURL:       strings.TrimSpace(cfg.HubURL),
-		HubDeviceID:  strings.TrimSpace(cfg.HubDeviceID),
-		RelayMode:    strings.TrimSpace(string(cfg.RelayMode)),
+		ID:                NormalizeEndpointID(endpointID),
+		Label:             strings.TrimSpace(cfg.Label),
+		Transport:         EndpointTransportKind(strings.TrimSpace(string(cfg.Transport))),
+		Address:           strings.TrimSpace(cfg.Address),
+		AuthRef:           strings.TrimSpace(cfg.AuthRef),
+		ConnectMode:       EndpointConnectMode(strings.TrimSpace(string(cfg.ConnectMode))),
+		Enabled:           cfg.Enabled,
+		Socket:            strings.TrimSpace(cfg.Socket),
+		RemoteSocket:      strings.TrimSpace(cfg.RemoteSocket),
+		HubURL:            strings.TrimSpace(cfg.HubURL),
+		HubDeviceID:       strings.TrimSpace(cfg.HubDeviceID),
+		DeviceFingerprint: strings.TrimSpace(cfg.DeviceFingerprint),
+		GrantRef:          strings.TrimSpace(cfg.GrantRef),
+		RelayMode:         strings.TrimSpace(string(cfg.RelayMode)),
 	}
 }
 
@@ -476,6 +480,8 @@ func (item EndpointItem) RequiresReconnect(next EndpointItem) bool {
 		strings.TrimSpace(item.RemoteSocket) != strings.TrimSpace(next.RemoteSocket) ||
 		strings.TrimSpace(item.HubURL) != strings.TrimSpace(next.HubURL) ||
 		strings.TrimSpace(item.HubDeviceID) != strings.TrimSpace(next.HubDeviceID) ||
+		strings.TrimSpace(item.DeviceFingerprint) != strings.TrimSpace(next.DeviceFingerprint) ||
+		strings.TrimSpace(item.GrantRef) != strings.TrimSpace(next.GrantRef) ||
 		strings.TrimSpace(item.RelayMode) != strings.TrimSpace(next.RelayMode)
 }
 

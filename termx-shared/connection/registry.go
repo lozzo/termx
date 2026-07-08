@@ -46,7 +46,7 @@ const (
 )
 
 // EndpointID 是客户端本地 connection registry 中 endpoint 的稳定主键。
-// 它用于 workbench ref、路由和配置 diff，不是展示名，也不能替代 SSH host key 或 hub device identity。
+// 它用于 workbench ref、路由和配置 diff，不是展示名，也不能替代 SSH host key 或 hub device fingerprint。
 type EndpointID string
 
 // TransportKind 描述连接 endpoint 的 transport 类型。
@@ -58,7 +58,7 @@ type TransportKind string
 type ConnectMode string
 
 // RelayMode 描述 hub/P2P transport 的 NAT 与中继策略。
-// 它只影响新建 hub transport；远端设备身份仍必须由 HubDeviceID 校验，不能由 relay 策略或展示名替代。
+// 它只影响新建 hub transport；远端设备信任仍必须由 DeviceFingerprint 校验，不能由 relay 策略或展示名替代。
 type RelayMode string
 
 // Registry 是 CLI/TUI 共享的 endpoint 连接注册表。
@@ -70,7 +70,7 @@ type Registry struct {
 }
 
 // Config 描述一个 endpoint 的连接配置。
-// ID 是持久化和路由主键；Label 只用于 UI 展示；Transport、地址、凭据引用和 hub identity 字段共同组成 dial identity。
+// ID 是持久化和路由主键；Label 只用于 UI 展示；Transport、地址、凭据引用和 hub grant/fingerprint 字段共同组成 dial identity。
 type Config struct {
 	ID           EndpointID
 	Label        string
@@ -82,11 +82,17 @@ type Config struct {
 	Socket       string
 	RemoteSocket string
 	// HubURL 是 hub control/discovery 入口，只用于 hub-p2p transport 的连接发现。
-	// 它不是远端设备身份；同一个 hub 下的不同 HubDeviceID 仍是不同安全目标。
+	// 它不是远端设备身份；同一个 hub 下的不同 HubDeviceID 仍要继续校验 DeviceFingerprint。
 	HubURL string
-	// HubDeviceID 是远端 daemon/device 的安全身份指纹或公钥 ID。
-	// TUI 展示 Label 不能替代该字段，修改它必须让已连接 session 进入 reconnect-required。
+	// HubDeviceID 是 hub 发现和路由使用的远端设备 ID。
+	// 它不是安全信任锚点；远端 daemon 必须继续用 DeviceFingerprint 证明自己。
 	HubDeviceID string
+	// DeviceFingerprint 是远端 daemon/device public key 的信任锚点。
+	// TUI 展示 Label、hub id 和 hub URL 都不能替代该字段，变化时必须显式 reconnect。
+	DeviceFingerprint string
+	// GrantRef 指向本地凭据存储中的 remote-issued capability grant。
+	// grant token 本身不得写入 connections.yaml；remote 通过 grant scope/expiry/revoke 决定客户端权限。
+	GrantRef string
 	// RelayMode 是 hub/P2P 的直连/中继策略，影响 NAT traversal 与 relay 使用边界。
 	// 它属于 dial identity；运行中不能热切换。
 	RelayMode RelayMode
@@ -95,14 +101,16 @@ type Config struct {
 // DialIdentity 是决定已连接 session 是否需要 reconnect 的连接身份。
 // 修改这些字段不能热切换运行中 session；只能标记 reconnect required。
 type DialIdentity struct {
-	Transport    TransportKind
-	Address      string
-	AuthRef      string
-	Socket       string
-	RemoteSocket string
-	HubURL       string
-	HubDeviceID  string
-	RelayMode    RelayMode
+	Transport         TransportKind
+	Address           string
+	AuthRef           string
+	Socket            string
+	RemoteSocket      string
+	HubURL            string
+	HubDeviceID       string
+	DeviceFingerprint string
+	GrantRef          string
+	RelayMode         RelayMode
 }
 
 // DefaultPath 返回 connection registry 默认读取路径。
@@ -244,15 +252,15 @@ func (cfg Config) Validate() error {
 		if strings.TrimSpace(cfg.Address) != "" {
 			return fmt.Errorf("local connection %q must not set address", cfg.ID)
 		}
-		if strings.TrimSpace(cfg.HubURL) != "" || strings.TrimSpace(cfg.HubDeviceID) != "" {
-			return fmt.Errorf("local connection %q must not set hub identity fields", cfg.ID)
+		if cfg.hasHubFields() {
+			return fmt.Errorf("local connection %q must not set hub fields", cfg.ID)
 		}
 	case TransportSSH:
 		if strings.TrimSpace(cfg.Address) == "" {
 			return fmt.Errorf("ssh connection %q requires address", cfg.ID)
 		}
-		if strings.TrimSpace(cfg.HubURL) != "" || strings.TrimSpace(cfg.HubDeviceID) != "" {
-			return fmt.Errorf("ssh connection %q must not set hub identity fields", cfg.ID)
+		if cfg.hasHubFields() {
+			return fmt.Errorf("ssh connection %q must not set hub fields", cfg.ID)
 		}
 	case TransportHubP2P:
 		if strings.TrimSpace(cfg.Address) != "" {
@@ -261,13 +269,16 @@ func (cfg Config) Validate() error {
 		if strings.TrimSpace(cfg.Socket) != "" || strings.TrimSpace(cfg.RemoteSocket) != "" {
 			return fmt.Errorf("hub-p2p connection %q must not set socket fields", cfg.ID)
 		}
-		if strings.TrimSpace(cfg.AuthRef) == "" {
-			return fmt.Errorf("hub-p2p connection %q requires auth_ref", cfg.ID)
-		}
 		if err := validateHubURL(cfg.ID, cfg.HubURL); err != nil {
 			return err
 		}
 		if err := validateHubDeviceID(cfg.ID, cfg.HubDeviceID); err != nil {
+			return err
+		}
+		if err := validateDeviceFingerprint(cfg.ID, cfg.DeviceFingerprint); err != nil {
+			return err
+		}
+		if err := validateGrantRef(cfg.ID, cfg.GrantRef); err != nil {
 			return err
 		}
 		if err := validateRelayMode(cfg.ID, cfg.RelayMode); err != nil {
@@ -289,14 +300,16 @@ func (cfg Config) Validate() error {
 func (cfg Config) DialIdentity() DialIdentity {
 	cfg = cfg.withDefaults()
 	return DialIdentity{
-		Transport:    cfg.Transport,
-		Address:      strings.TrimSpace(cfg.Address),
-		AuthRef:      strings.TrimSpace(cfg.AuthRef),
-		Socket:       strings.TrimSpace(cfg.Socket),
-		RemoteSocket: strings.TrimSpace(cfg.RemoteSocket),
-		HubURL:       strings.TrimSpace(cfg.HubURL),
-		HubDeviceID:  strings.TrimSpace(cfg.HubDeviceID),
-		RelayMode:    cfg.RelayMode,
+		Transport:         cfg.Transport,
+		Address:           strings.TrimSpace(cfg.Address),
+		AuthRef:           strings.TrimSpace(cfg.AuthRef),
+		Socket:            strings.TrimSpace(cfg.Socket),
+		RemoteSocket:      strings.TrimSpace(cfg.RemoteSocket),
+		HubURL:            strings.TrimSpace(cfg.HubURL),
+		HubDeviceID:       strings.TrimSpace(cfg.HubDeviceID),
+		DeviceFingerprint: strings.TrimSpace(cfg.DeviceFingerprint),
+		GrantRef:          strings.TrimSpace(cfg.GrantRef),
+		RelayMode:         cfg.RelayMode,
 	}
 }
 
@@ -310,6 +323,14 @@ func (cfg Config) RequiresReconnect(next Config) bool {
 // 调用方可以把 label 变化热更新到 picker/pane chrome，但不能据此修改 terminal lifecycle truth。
 func (cfg Config) DisplayChanged(next Config) bool {
 	return strings.TrimSpace(cfg.Label) != strings.TrimSpace(next.Label)
+}
+
+func (cfg Config) hasHubFields() bool {
+	return strings.TrimSpace(cfg.HubURL) != "" ||
+		strings.TrimSpace(cfg.HubDeviceID) != "" ||
+		strings.TrimSpace(cfg.DeviceFingerprint) != "" ||
+		strings.TrimSpace(cfg.GrantRef) != "" ||
+		strings.TrimSpace(string(cfg.RelayMode)) != ""
 }
 
 func defaultLocalConfig(label string) Config {
@@ -402,6 +423,28 @@ func validateHubDeviceID(endpointID EndpointID, value string) error {
 	}
 	if strings.ContainsAny(value, " \t\r\n") {
 		return fmt.Errorf("hub-p2p connection %q hub_device_id must not contain whitespace", endpointID)
+	}
+	return nil
+}
+
+func validateDeviceFingerprint(endpointID EndpointID, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("hub-p2p connection %q requires device_fingerprint", endpointID)
+	}
+	if strings.ContainsAny(value, " \t\r\n") {
+		return fmt.Errorf("hub-p2p connection %q device_fingerprint must not contain whitespace", endpointID)
+	}
+	return nil
+}
+
+func validateGrantRef(endpointID EndpointID, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("hub-p2p connection %q requires grant_ref", endpointID)
+	}
+	if strings.ContainsAny(value, " \t\r\n") {
+		return fmt.Errorf("hub-p2p connection %q grant_ref must not contain whitespace", endpointID)
 	}
 	return nil
 }

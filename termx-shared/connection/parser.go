@@ -143,6 +143,10 @@ func setConnectionScalar(cfg *Config, key string, value string) error {
 		cfg.HubURL = value
 	case "hub_device_id":
 		cfg.HubDeviceID = value
+	case "device_fingerprint":
+		cfg.DeviceFingerprint = value
+	case "grant_ref":
+		cfg.GrantRef = value
 	case "relay_mode":
 		cfg.RelayMode = RelayMode(value)
 	default:

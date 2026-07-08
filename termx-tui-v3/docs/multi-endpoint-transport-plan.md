@@ -15,7 +15,7 @@
 
 - `Endpoint`：当前 TUI/client 可连接的一个 daemon 目标。一个 endpoint 对应一个 daemon 的 terminal、history、live 和 storage API 边界。
 - `Transport`：连接 endpoint 的方式，例如 local unix socket、SSH tunnel 或未来 hub/P2P。
-- `EndpointID`：客户端本地稳定 ID，用于持久化、路由和 UI 区分。它不是展示名，也不能替代 SSH host key 或 hub identity。
+- `EndpointID`：客户端本地稳定 ID，用于持久化、路由和 UI 区分。它不是展示名，也不能替代 SSH host key 或 hub device fingerprint。
 - `TerminalRef`：跨 endpoint 的 terminal 引用，形如 `{endpoint_id, terminal_id}`。裸 `TerminalID` 只允许在单 endpoint protocol adapter 内使用。
 - `EndpointManager`：TUI/client 侧 registry、连接生命周期和服务路由器。
 - `AttachmentManager`：daemon 侧已连接客户端管理器。它和 `EndpointManager` 语义不同，不在本文范围内实现。
@@ -84,13 +84,15 @@ type ConnectionConfig struct {
     Enabled      bool
     Socket       string
     RemoteSocket string
-    HubURL       string
-    HubDeviceID  string
-    RelayMode    RelayMode
+    HubURL            string
+    HubDeviceID       string
+    DeviceFingerprint string
+    GrantRef          string
+    RelayMode         RelayMode
 }
 ```
 
-`ID` 是持久化和路由主键；`Label` 只用于展示；`AuthRef` 指向本地凭据或 SSH 配置；`ConnectMode` 决定启动时是否主动连接；`Socket` / `RemoteSocket` 属于 dial identity，运行中不能热切换。
+`ID` 是持久化和路由主键；`Label` 只用于展示；`AuthRef` 只用于 SSH 或未来显式 hub account 凭据；`GrantRef` 指向 hub/P2P 的本地 capability grant；`ConnectMode` 决定启动时是否主动连接；`Socket` / `RemoteSocket` 属于 dial identity，运行中不能热切换。
 
 建议 schema 使用 map，而不是 list，把 endpoint id 固定为 key，避免列表重排影响持久化引用：
 
@@ -129,9 +131,10 @@ connections:
     enabled: true
     transport: hub-p2p
     connect_mode: on_demand
-    auth_ref: "hub:personal"
     hub_url: "https://hub.example.com"
-    hub_device_id: "device_ed25519:studio"
+    hub_device_id: "studio"
+    device_fingerprint: "SHA256:abc123..."
+    grant_ref: "grant:studio"
     relay_mode: auto       # auto | direct | relay_only
 ```
 
@@ -151,12 +154,15 @@ connections:
 
 hub/P2P registry 规则：
 
-- `hub_url` 是 control/discovery 入口，不是远端设备身份；同一个 hub 下的不同 `hub_device_id` 是不同安全目标。
-- `hub_device_id` 是远端 daemon/device 的安全身份指纹或公钥 ID。`label`、endpoint id、hub URL 和 relay 地址都不能替代它。
-- `auth_ref` 只引用本地凭据存储、系统 keychain 或后续明确的 hub auth store；`connections.yaml` 不保存原始 token、私钥或一次性 pairing code。
+- `hub_url` 是 control/discovery 入口，不是远端设备身份；同一个 hub 下的不同 `hub_device_id` 仍必须校验 `device_fingerprint`。
+- `hub_device_id` 只用于 hub 发现/路由，不是安全信任锚点。
+- `device_fingerprint` 是远端 daemon/device public key 的信任锚点。`label`、endpoint id、hub URL、hub device id、relay 地址和 grant ref 都不能替代它。
+- `grant_ref` 只引用本地凭据存储、系统 keychain 或后续明确的 hub grant store；`connections.yaml` 不保存原始 token、私钥、capability grant 或一次性 pairing code。
+- hub 配对保持 remote -> client 单向引导：remote 生成 capability grant，二维码/导入文本把 hub 入口、发现 ID、device fingerprint 和 grant 交给客户端；客户端把 grant 写入本地凭据存储后只在 registry 中保存 `grant_ref`。
+- capability grant 是 remote-issued bearer capability，必须带 scope、expiry、grant id 和 revoke 语义；remote 连接时校验 grant，hub/relay 不能签发或扩大权限。
 - `relay_mode = auto` 可以先尝试 P2P 直连再使用受控 relay；`direct` 禁止 relay fallback；`relay_only` 用于受限网络或诊断。
-- `address`、`socket`、`remote_socket` 不适用于 `hub-p2p`。hub transport 通过 hub/device identity 找到远端 termx daemon，不应退化成 SSH、local socket 或原始 shell。
-- 修改 `hub_url`、`auth_ref`、`hub_device_id` 或 `relay_mode` 都属于 dial identity 变化，已连接 session 必须标记 `reconnect required`，不能热切换。
+- `address`、`socket`、`remote_socket` 不适用于 `hub-p2p`。hub transport 通过 hub 发现目标找到远端 termx daemon，并用 `device_fingerprint` 校验远端身份，不应退化成 SSH、local socket 或原始 shell。
+- 修改 `hub_url`、`hub_device_id`、`device_fingerprint`、`grant_ref` 或 `relay_mode` 都属于 dial identity 变化，已连接 session 必须标记 `reconnect required`，不能热切换。
 
 ### Registry reload 与运行时 session
 
@@ -170,7 +176,7 @@ hub/P2P registry 规则：
 | `enabled: true -> false` | 不自动断开已连接 session；标记为 `disabled by config`，禁止自动恢复、自动连接和创建新 terminal。 |
 | 修改 `connect_mode` | 只影响未来连接策略；已连接 session 不变。 |
 | 修改 `address` / `transport` / `auth_ref` / `socket` / `remote_socket` | 不热切换；当前 session 继续使用旧 dial 参数，UI 标记 `reconnect required`，断开或用户显式 reconnect 后才使用新配置。 |
-| 修改 `hub_url` / `hub_device_id` / `relay_mode` | 不热切换；hub URL、远端设备身份和 relay 策略都属于 dial identity，必须显式 reconnect 后生效。 |
+| 修改 `hub_url` / `hub_device_id` / `device_fingerprint` / `grant_ref` / `relay_mode` | 不热切换；hub 发现目标、远端设备身份、授权能力引用和 relay 策略都属于 dial identity，必须显式 reconnect 后生效。 |
 | 删除 connection | 当前 session 可继续存在但标记为 `unregistered`；重启后 layout binding 保留 unresolved，不自动连接。 |
 | 修改 connection ID | 等价于删除旧 connection 并新增新 connection；不得自动迁移 workbench refs。 |
 
@@ -299,15 +305,16 @@ layout storage 仍可作为当前客户端本地 truth source，保存 pane/floa
 - 输入串扰：`SerialKey` 必须包含 endpoint，否则远端同名 terminal 可能复用本地输入序列。
 - 局部失败：terminal pool 聚合要能展示 endpoint A 正常、endpoint B offline，不能把一个错误提升为全局空列表。
 - reconnect epoch：endpoint 重连后旧 channel、surface revision、history token 和 inflight request 需要失效。
-- 安全身份：SSH host key、hub device identity 和 endpoint label 必须分离，避免“改名即信任”。
+- 安全身份：SSH host key、hub device fingerprint、hub discovery id 和 endpoint label 必须分离，避免“改名即信任”。
 - 展示歧义：terminal picker、pane chrome 和 footer summary 不能只展示 terminal title；多 endpoint 下必须能看出所属机器。
 - parser 复杂度：connection registry 需要动态 map，不能复用当前 `tui-v3.yaml` scalar parser 半支持；必须单独补 schema harness，避免配置静默无效。
 - 配置漂移：workbench 引用的 endpoint 被删除时，应保留 unresolved binding，并给用户明确修复入口。
 - storage 边界：不要把远端 daemon 的 workspace storage 和本地 client layout storage 混成一份 truth。
 - transport fallback：SSH 失败不能自动退化成本地 shell 或另一个 endpoint。
-- hub 身份混淆：`label`、endpoint id、hub URL、relay 地址和 `auth_ref` 都不能替代 `hub_device_id`；否则改名或换 hub 会被误当成信任迁移。
+- hub 身份混淆：`label`、endpoint id、hub URL、hub device id、relay 地址和 `grant_ref` 都不能替代 `device_fingerprint`；否则改名、换 hub 或换 grant 会被误当成信任迁移。
+- grant 泄露：capability grant 是 bearer secret，必须高熵、可过期、可撤销，并保存在本地凭据存储；`connections.yaml` 只能保存 `grant_ref`。
 - hub relay 越权：relay 只能承载受限 protocol/datachannel，不能保存 terminal lifecycle、history truth、workbench storage truth 或设备信任决策。
-- hub revoke 漏洞：授权撤销、设备撤销或 auth ref 失效必须只让对应 endpoint offline/reconnect-required，不能保留旧 channel 当作有效连接。
+- hub revoke 漏洞：授权撤销、设备撤销或 grant ref 失效必须只让对应 endpoint offline/reconnect-required，不能保留旧 channel 当作有效连接。
 
 ## 分阶段实施
 
@@ -354,16 +361,27 @@ workbench snapshot 保存 endpoint-aware binding。旧 snapshot 默认迁移到 
 
 ### ME010：Hub/P2P identity contract
 
-解冻 `termx-hub/` 的受限范围，先完成 hub identity、安全、中继和 registry contract。
+解冻 `termx-hub/` 的受限范围，先完成 hub 发现目标、安全、中继和 registry contract。
 
 本阶段不接真实网络，只要求：
 
-- `connections.yaml` 可表达 `transport: hub-p2p` endpoint，并要求 `hub_url`、`auth_ref`、`hub_device_id`。
+- `connections.yaml` 可表达 `transport: hub-p2p` endpoint，并要求 `hub_url`、`hub_device_id`。
 - `relay_mode` 支持 `auto`、`direct`、`relay_only`，默认 `auto`。
-- `hub_device_id` 和 `relay_mode` 进入 dial identity，修改后标记 reconnect required。
+- `hub_device_id` 和 `relay_mode` 进入 dial identity，修改后标记 reconnect required；ME011 会继续把安全身份收敛到 `device_fingerprint`。
 - TUI endpoint projection 可展示 hub endpoint，EndpointManager 在无 hub dialer 时返回局部未连接错误，不 fallback 到 local/SSH/旧 remote。
 
-### ME011：Hub/P2P transport
+### ME011：Hub/P2P one-way grant contract
+
+按单向配对模型收敛 hub 授权 contract。remote 执行 pair 时生成 capability grant，客户端扫码或导入后保存到本地凭据存储；配对不要求客户端公钥回传，也不要求 remote 维护客户端 allowlist。
+
+本阶段要求：
+
+- `hub_device_id` 只作为 hub 发现/路由 ID。
+- `device_fingerprint` 是远端设备安全身份，必须进入 dial identity。
+- `grant_ref` 指向本地凭据存储中的 remote-issued capability grant，必须进入 dial identity。
+- `connections.yaml` 不保存 grant token；registry 缺少 `device_fingerprint` 或 `grant_ref` 必须失败。
+
+### ME012：Hub/P2P transport
 
 接入 `termx-hub/` 的发现、授权、revoke、NAT traversal 和 relay datachannel。真实 transport 只连接远端 termx daemon 的 protocol session，不能 fallback 成原始 shell、旧 remote UI 或本地 daemon。
 
@@ -379,8 +397,8 @@ workbench snapshot 保存 endpoint-aware binding。旧 snapshot 默认迁移到 
 - `connections.yaml` 配置 `lab.label = "Lab Server"` 后，terminal picker 和非默认 endpoint 的 pane chrome 使用该 label。
 - `connect_mode = manual` 的 endpoint 启动时不 dial；用户显式 connect 后才进入 terminal list。
 - `connect_mode = on_demand` 的 endpoint 在 picker 展开或 restore 可见 binding 时才 dial，失败只影响该 endpoint。
-- `transport: hub-p2p` 缺少 `hub_url`、`auth_ref` 或 `hub_device_id` 时 registry 解析失败。
-- hub endpoint 修改 `label` 只更新展示；修改 `hub_device_id` 或 `relay_mode` 必须标记 reconnect required。
+- `transport: hub-p2p` 缺少 `hub_url`、`hub_device_id`、`device_fingerprint` 或 `grant_ref` 时 registry 解析失败。
+- hub endpoint 修改 `label` 只更新展示；修改 `device_fingerprint`、`grant_ref` 或 `relay_mode` 必须标记 reconnect required。
 - 无 hub dialer 时 hub endpoint service 请求只返回该 endpoint 的未连接错误，不调用 local/SSH service。
 
 ## 验收准入

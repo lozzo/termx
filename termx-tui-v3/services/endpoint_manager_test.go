@@ -226,15 +226,16 @@ func TestEndpointManagerLazilyDialsHubP2PTransport(t *testing.T) {
 				Socket:      "auto",
 			},
 			"studio": {
-				ID:          "studio",
-				Label:       "Studio",
-				Transport:   connection.TransportHubP2P,
-				AuthRef:     "hub:personal",
-				ConnectMode: connection.ConnectOnDemand,
-				Enabled:     true,
-				HubURL:      "https://hub.example.com",
-				HubDeviceID: "device_ed25519:studio",
-				RelayMode:   connection.RelayAuto,
+				ID:                "studio",
+				Label:             "Studio",
+				Transport:         connection.TransportHubP2P,
+				ConnectMode:       connection.ConnectOnDemand,
+				Enabled:           true,
+				HubURL:            "https://hub.example.com",
+				HubDeviceID:       "device_ed25519:studio",
+				DeviceFingerprint: "SHA256:studio",
+				GrantRef:          "grant:studio",
+				RelayMode:         connection.RelayAuto,
 			},
 		},
 	}
@@ -243,7 +244,7 @@ func TestEndpointManagerLazilyDialsHubP2PTransport(t *testing.T) {
 	manager := NewEndpointManagerWithDialers(registry, map[connection.TransportKind]EndpointDialer{
 		connection.TransportHubP2P: func(_ context.Context, cfg connection.Config) (EndpointServiceBundle, error) {
 			dialCalls++
-			if cfg.ID != "studio" || cfg.HubURL != "https://hub.example.com" || cfg.HubDeviceID != "device_ed25519:studio" || cfg.RelayMode != connection.RelayAuto {
+			if cfg.ID != "studio" || cfg.HubURL != "https://hub.example.com" || cfg.HubDeviceID != "device_ed25519:studio" || cfg.DeviceFingerprint != "SHA256:studio" || cfg.GrantRef != "grant:studio" || cfg.RelayMode != connection.RelayAuto {
 				t.Fatalf("unexpected hub config %#v", cfg)
 			}
 			return EndpointServiceBundle{EndpointID: "studio", Terminal: hubTerminal}, nil

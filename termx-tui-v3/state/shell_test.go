@@ -661,15 +661,16 @@ func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) 
 func TestEndpointStoreHubIdentityReloadRequiresReconnect(t *testing.T) {
 	registry, err := (connection.Registry{Connections: map[connection.EndpointID]connection.Config{
 		"studio": {
-			ID:          "studio",
-			Label:       "Studio Mac",
-			Transport:   connection.TransportHubP2P,
-			AuthRef:     "hub:personal",
-			ConnectMode: connection.ConnectOnDemand,
-			Enabled:     true,
-			HubURL:      "https://hub.example.com",
-			HubDeviceID: "device_ed25519:studio",
-			RelayMode:   connection.RelayAuto,
+			ID:                "studio",
+			Label:             "Studio Mac",
+			Transport:         connection.TransportHubP2P,
+			ConnectMode:       connection.ConnectOnDemand,
+			Enabled:           true,
+			HubURL:            "https://hub.example.com",
+			HubDeviceID:       "device_ed25519:studio",
+			DeviceFingerprint: "SHA256:studio",
+			GrantRef:          "grant:studio",
+			RelayMode:         connection.RelayAuto,
 		},
 	}}).Normalize()
 	if err != nil {
@@ -677,11 +678,19 @@ func TestEndpointStoreHubIdentityReloadRequiresReconnect(t *testing.T) {
 	}
 	store := (EndpointStore{}).ApplyConnectionRegistry(registry)
 	studio, ok := store.Endpoint("studio")
-	if !ok || studio.Transport != EndpointTransportHubP2P || studio.HubURL != "https://hub.example.com" || studio.HubDeviceID != "device_ed25519:studio" || studio.RelayMode != string(connection.RelayAuto) {
+	if !ok || studio.Transport != EndpointTransportHubP2P || studio.HubURL != "https://hub.example.com" || studio.HubDeviceID != "device_ed25519:studio" || studio.DeviceFingerprint != "SHA256:studio" || studio.GrantRef != "grant:studio" || studio.RelayMode != string(connection.RelayAuto) {
 		t.Fatalf("hub endpoint should project identity fields, got %#v ok=%v", studio, ok)
 	}
+	cloneRegistry := func(src connection.Registry) connection.Registry {
+		out := src
+		out.Connections = map[connection.EndpointID]connection.Config{}
+		for id, cfg := range src.Connections {
+			out.Connections[id] = cfg
+		}
+		return out
+	}
 
-	renamed := registry
+	renamed := cloneRegistry(registry)
 	cfg := renamed.Connections["studio"]
 	cfg.Label = "Desk"
 	renamed.Connections["studio"] = cfg
@@ -690,13 +699,22 @@ func TestEndpointStoreHubIdentityReloadRequiresReconnect(t *testing.T) {
 		t.Fatalf("hub label change should update display only, got %#v", studio)
 	}
 
-	identityChanged := renamed
+	identityChanged := cloneRegistry(renamed)
 	cfg = identityChanged.Connections["studio"]
-	cfg.HubDeviceID = "device_ed25519:other"
+	cfg.DeviceFingerprint = "SHA256:other"
 	identityChanged.Connections["studio"] = cfg
 	store = store.ApplyConnectionRegistry(identityChanged)
 	if studio, _ := store.Endpoint("studio"); studio.DisplayStatus() != EndpointStatusReconnectRequired {
-		t.Fatalf("hub identity change should mark reconnect required, got %#v", studio)
+		t.Fatalf("hub device fingerprint change should mark reconnect required, got %#v", studio)
+	}
+
+	grantChanged := cloneRegistry(renamed)
+	cfg = grantChanged.Connections["studio"]
+	cfg.GrantRef = "grant:other"
+	grantChanged.Connections["studio"] = cfg
+	store = (EndpointStore{}).ApplyConnectionRegistry(registry).ApplyConnectionRegistry(grantChanged)
+	if studio, _ := store.Endpoint("studio"); studio.DisplayStatus() != EndpointStatusReconnectRequired {
+		t.Fatalf("hub grant ref change should mark reconnect required, got %#v", studio)
 	}
 }
 

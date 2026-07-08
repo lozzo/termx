@@ -51,10 +51,11 @@
 - cancel token、live channel、surface/session key、input serial key、history token 和 copy token 都必须按 endpoint 作用域隔离。
 - 现有 `internal/protocol` 仍以单 daemon 会话为边界；多 endpoint 路由应在 client/TUI 侧 manager 完成，不要求单个 protocol client 同时承载多个 daemon。
 - SSH 第一阶段只作为连接远端 termx daemon 的 transport；不得悄悄 fallback 成原始 shell/PTY。
-- hub/P2P endpoint 的展示名、endpoint id、hub URL、auth ref、device identity 和 relay 策略必须分离；`hub_device_id` 才是远端设备安全身份，label 只用于 UI。
+- hub/P2P endpoint 的展示名、endpoint id、hub URL、hub device id、device fingerprint、grant ref 和 relay 策略必须分离；`device_fingerprint` 才是远端设备安全身份，`hub_device_id` 只用于发现/路由，label 只用于 UI。
+- hub/P2P 配对保持 remote -> client 单向引导：remote 生成 capability grant，客户端扫码或导入后保存到本地凭据存储；remote 不要求客户端公钥回传或写入 allowlist。
 - hub/P2P relay 只能承载受限 protocol/datachannel，不能成为 terminal lifecycle、history、workbench storage 或设备信任 truth。
 - hub/P2P 连接失败、授权失效、设备撤销或 relay 不可用时，只影响对应 endpoint，不得 fallback 到 local、SSH、旧 remote app 或原始 shell。
-- `connections.yaml` 不保存 hub 原始 token 或私钥；`auth_ref` 只能引用本地凭据存储、系统 keychain 或后续明确的 hub auth store。
+- `connections.yaml` 不保存 hub 原始 token、capability grant 或私钥；`grant_ref` 只能引用本地凭据存储、系统 keychain 或后续明确的 hub grant store。
 
 ## 任务队列
 
@@ -69,8 +70,9 @@
 | ME007 | 完成 | local unix socket 作为标准 endpoint transport | 当前本地 attach 路径迁移到 endpoint manager 后行为不变 |
 | ME008 | 完成 | SSH transport 连接远端 termx daemon | 明确认证、host key、远端 socket 发现和失败展示 |
 | ME009 | 完成 | Terminal picker 单一 create 入口与 terminal name identity 第一阶段 | picker 只展示一个 create 行；create prompt 记住上次 endpoint/command/workdir；新建 terminal 在单 endpoint 内按名称唯一，默认以名称作为 daemon-local key |
-| ME010 | 完成 | hub/P2P 身份、安全、中继策略与 connection registry contract | `connections.yaml` 可表达 hub endpoint；label 不作为安全身份；hub identity/relay 变化触发 reconnect；无真实 dialer 时不 fallback |
-| ME011 | 待开始 | hub/P2P transport dialer 与跨设备发现 | 接入 `termx-hub/` 发现/授权/relay；P2P 或 relay datachannel 只连接远端 termx daemon；局部失败不影响其他 endpoint |
+| ME010 | 完成 | hub/P2P 身份、安全、中继策略与 connection registry contract | `connections.yaml` 可表达 hub endpoint；label 不作为安全身份；hub 发现目标/relay 变化触发 reconnect；无真实 dialer 时不 fallback |
+| ME011 | 完成 | hub/P2P 单向配对与 capability grant contract | `hub_device_id` 只做发现；`device_fingerprint` 是远端安全身份；`grant_ref` 指向 remote-issued grant；fingerprint/grant 变化触发 reconnect |
+| ME012 | 待开始 | hub/P2P transport dialer 与跨设备发现 | 接入 `termx-hub/` 发现/授权/relay；P2P 或 relay datachannel 只连接远端 termx daemon；局部失败不影响其他 endpoint |
 
 ## 执行规则
 
@@ -104,4 +106,5 @@
 - ME007 已完成：TUI runtime 启动时加载 `connections.yaml` endpoint registry，local unix socket 作为 `EndpointManager` 的标准 local transport bundle 接入；terminal/core/live 请求进入 per-endpoint adapter 前剥离 `EndpointID`，回包后补回 `EndpointID`，当前本地 attach、list、live、history 行为保持不变；显式 `--socket` 仍覆盖 registry local socket。
 - ME008 已完成：新增 OpenSSH stdio-proxy transport，`auth_ref=ssh:<alias>` 使用本机 SSH config，host key 由 known_hosts 严格校验，`remote_socket=auto` 在远端解析默认 socket；EndpointManager 可 lazy dial SSH endpoint，Terminal Manager 对 auto/on_demand endpoint 执行聚合刷新，失败只标记对应 endpoint offline 且不 fallback 成 shell 或 local endpoint。
 - ME009 已完成：picker 只保留单一 create 行，create prompt 用 server 下拉选择 endpoint，并记住上次 endpoint/command/workdir；TUI/CLI/protocol first-party create 优先以 terminal name 作为 daemon-local key，core-v2 在 create 与 rename 时拒绝同 daemon 重名。
-- ME010 已完成：`connections.yaml` 可表达 hub/P2P endpoint，hub URL、auth ref、`hub_device_id` 与 relay 策略分离；label 只影响展示，hub identity/relay 变化触发 reconnect；无真实 hub dialer 时 EndpointManager 只返回该 endpoint 的未连接错误，不 fallback。真实 `termx-hub/` transport dialer 和跨设备发现进入 ME011。
+- ME010 已完成：`connections.yaml` 可表达 hub/P2P endpoint，hub URL、`hub_device_id` 与 relay 策略分离；label 只影响展示，hub 发现目标/relay 变化触发 reconnect；无真实 hub dialer 时 EndpointManager 只返回该 endpoint 的未连接错误，不 fallback。
+- ME011 已完成：按用户确认的单向配对模型收敛 hub 安全 contract，remote 生成 capability grant 给客户端；`hub_device_id` 只做发现/路由，`device_fingerprint` 作为远端设备安全身份，`grant_ref` 指向本地保存的 grant，真实 `termx-hub/` transport dialer 和跨设备发现进入 ME012。
