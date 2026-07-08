@@ -499,6 +499,91 @@ func TestTerminalSurfaceRefreshBackpressureConsumesDirtyAfterFetch(t *testing.T)
 	}
 }
 
+func TestTerminalSurfaceRejectedSnapshotFinishesRefresh(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   10,
+		Cols:       96,
+		Rows:       30,
+		Lines:      []string{"current"},
+	})
+	var fetch bool
+	store, fetch = store.RequestRefresh("term-1", 96, 30)
+	if !fetch {
+		t.Fatalf("expected refresh request to start fetch, store=%#v", store.Refreshes)
+	}
+
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   9,
+		Cols:       96,
+		Rows:       30,
+		Lines:      []string{"stale"},
+	})
+	if got := store.SurfaceForTerminal("term-1"); got.Revision != 10 || len(got.Lines) != 1 || got.Lines[0] != "current" {
+		t.Fatalf("stale snapshot must not replace current surface, got %#v", got)
+	}
+	if _, ok := store.RefreshStateRef(LocalTerminalRef("term-1")); ok {
+		t.Fatalf("rejected stale snapshot must release in-flight refresh, store=%#v", store.Refreshes)
+	}
+
+	store = store.Resize(120, 40)
+	store.ResizeBoundary = LiveResizeBoundary{Active: true, PreviousCols: 96, PreviousRows: 30, Cols: 120, Rows: 40}
+	store, fetch = store.RequestRefresh("term-1", 120, 40)
+	if !fetch {
+		t.Fatalf("expected resized refresh request to start fetch, store=%#v", store.Refreshes)
+	}
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   11,
+		Cols:       96,
+		Rows:       30,
+		Lines:      []string{"late old size"},
+	})
+	if got := store.SurfaceForTerminal("term-1"); got.Cols != 120 || got.Rows != 40 || len(got.Lines) != 1 || got.Lines[0] != "current" {
+		t.Fatalf("old-size snapshot must not roll back resized surface, got %#v", got)
+	}
+	if _, ok := store.RefreshStateRef(LocalTerminalRef("term-1")); ok {
+		t.Fatalf("rejected old-size snapshot must release in-flight refresh, store=%#v", store.Refreshes)
+	}
+}
+
+func TestTerminalSurfaceRejectedDirtySnapshotKeepsFollowupConsumable(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   10,
+		Cols:       96,
+		Rows:       30,
+		Lines:      []string{"current"},
+	})
+	var fetch bool
+	store, fetch = store.RequestRefresh("term-1", 96, 30)
+	if !fetch {
+		t.Fatalf("expected refresh request to start fetch, store=%#v", store.Refreshes)
+	}
+	store, fetch = store.RequestRefresh("term-1", 120, 40)
+	if fetch {
+		t.Fatalf("dirty invalidation must not start a parallel fetch, store=%#v", store.Refreshes)
+	}
+
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   9,
+		Cols:       96,
+		Rows:       30,
+		Lines:      []string{"stale"},
+	})
+	refresh, ok := store.RefreshStateRef(LocalTerminalRef("term-1"))
+	if !ok || refresh.InFlight || refresh.Dirty || refresh.Cols != 120 || refresh.Rows != 40 {
+		t.Fatalf("rejected dirty snapshot should leave follow-up refresh consumable, got %#v ok=%v", refresh, ok)
+	}
+	var cols, rows int
+	store, cols, rows, fetch = store.ConsumeDirtyRefresh("term-1")
+	if !fetch || cols != 120 || rows != 40 {
+		t.Fatalf("dirty follow-up must stay schedulable after rejected snapshot, cols=%d rows=%d fetch=%v store=%#v", cols, rows, fetch, store.Refreshes)
+	}
+}
+
 func TestTerminalSurfaceRefreshArmsOneCallbackPerTerminal(t *testing.T) {
 	var store TerminalSurfaceStore
 	var arm bool

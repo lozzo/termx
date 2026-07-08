@@ -185,11 +185,15 @@ func (store TerminalSurfaceStore) ApplySnapshotWithLifecycle(snapshot LiveSurfac
 		snapshot.State = TerminalLiveAttached
 	}
 	if store.resizeBoundaryRejects(snapshot) {
-		return store
+		// 中文说明：旧尺寸帧不允许回滚当前展示，但它已经是本次 live.screen.get
+		// 的回包；必须释放 TUI 本地 in-flight，否则后续 frame-ready 永久认为刷新未完成。
+		return store.FinishRefreshRef(ref)
 	}
 	if current, ok := store.snapshotForTerminalRef(ref); ok {
 		if shouldRejectLiveSnapshotWithLifecycle(current, snapshot, lifecycleKnown) {
-			return store
+			// 中文说明：旧 revision / 空白旧帧同样只是不写入 surface truth，
+			// 不能继续占用 refresh 背压状态。
+			return store.FinishRefreshRef(ref)
 		}
 		if snapshot.Revision == 0 {
 			snapshot.Revision = current.Revision
@@ -714,6 +718,18 @@ func (store TerminalSurfaceStore) FinishRefreshRef(ref TerminalRef) TerminalSurf
 	}
 	delete(store.Refreshes, key)
 	return store
+}
+
+// RefreshStateRef 返回指定 TerminalRef 的 live refresh 背压状态。
+// 调用方只用于 diagnostics 或 harness 观察 TUI 本地消息链路；该状态不是 core history truth，
+// 也不能作为渲染内容来源。
+func (store TerminalSurfaceStore) RefreshStateRef(ref TerminalRef) (LiveSurfaceRefreshState, bool) {
+	ref = ref.Normalize()
+	if ref.Empty() {
+		return LiveSurfaceRefreshState{}, false
+	}
+	refresh, ok := store.Refreshes[liveSurfaceRefKey(ref)]
+	return refresh, ok
 }
 
 func (store TerminalSurfaceStore) ConsumeDirtyRefresh(terminalID string) (TerminalSurfaceStore, int, int, bool) {

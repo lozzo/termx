@@ -1373,7 +1373,7 @@ func reduceLiveFrameReady(root state.Root, msg LiveFrameReadyMsg, deps LiveDeps)
 	if !shouldArm {
 		// 中文说明：同一个 TUI+terminalID 只能有一个 pending one-shot callback。
 		// 重复 ready、正在拉取或 dirty follow-up 都在 reducer 状态里合并。
-		logLiveInvalidationTrace(deps.Logger, "frame.ready.skip",
+		attrs := []any{
 			"reason", "refresh-pending",
 			"endpoint_id", string(ref.EndpointID),
 			"terminal_id", ref.TerminalID,
@@ -1381,7 +1381,17 @@ func reduceLiveFrameReady(root state.Root, msg LiveFrameReadyMsg, deps LiveDeps)
 			"surface_revision", surface.Revision,
 			"cols", cols,
 			"rows", rows,
-		)
+		}
+		if refresh, ok := root.Surface.RefreshStateRef(ref); ok {
+			attrs = append(attrs,
+				"refresh_armed", refresh.Armed,
+				"refresh_in_flight", refresh.InFlight,
+				"refresh_dirty", refresh.Dirty,
+				"refresh_cols", refresh.Cols,
+				"refresh_rows", refresh.Rows,
+			)
+		}
+		logLiveInvalidationTrace(deps.Logger, "frame.ready.skip", attrs...)
 		return root, nil
 	}
 	logLiveInvalidationTrace(deps.Logger, "frame.ready.arm",
