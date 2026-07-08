@@ -354,6 +354,64 @@ func TestWorkbenchRestorePreservesLocalFloatingDisplayState(t *testing.T) {
 	}
 }
 
+func TestWorkbenchStorageRestoreInitializesFloatingGeometryFromTerminalSize(t *testing.T) {
+	shell := state.DefaultShell()
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "float-1",
+		Title:    "one",
+		Pane:     state.PaneState{ID: "float-1-pane", Title: "one", Kind: state.PaneTerminalLive, TerminalID: "term-one"},
+		Rect:     state.FloatingRect{X: 2, Y: 3, W: 40, H: 10},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create first floating: %#v", result)
+	}
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "float-2",
+		Title:    "two",
+		Pane:     state.PaneState{ID: "float-2-pane", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-two"},
+		Rect:     state.FloatingRect{X: 8, Y: 5, W: 30, H: 8},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create second floating: %#v", result)
+	}
+	views := state.TerminalViewStore{}
+	views = views.BindFloating(state.NewFloatingTerminalView("float-1", "float-1-pane", "term-one", 7, 90, 20, state.TerminalResizeRoleOwner, "surface-one", state.TerminalFloatingViewID("float-1"), true))
+	views = views.BindFloating(state.NewFloatingTerminalView("float-2", "float-2-pane", "term-two", 8, 50, 10, state.TerminalResizeRoleFollower, "surface-two", state.TerminalFloatingViewID("float-2"), false))
+	storage := &services.FakeWorkbenchStorageService{
+		LoadResult: services.WorkbenchStorageLoadResult{
+			Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
+			Version:  4,
+			Found:    true,
+		},
+	}
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage})
+	root := state.Root{
+		Shell:    state.DefaultShell(),
+		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 40},
+	}
+
+	root, effects := reducer(root, WorkbenchStorageLoadRequestMsg{})
+	if len(effects) != 1 {
+		t.Fatalf("expected load effect, got %#v", effects)
+	}
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	root, _ = reducer(root, msg)
+
+	floatings := root.Shell.ActiveFloatings()
+	if len(floatings) != 2 {
+		t.Fatalf("expected restored floatings, got %#v", floatings)
+	}
+	if floatings[0].Rect != (state.FloatingRect{X: 14, Y: 9, W: 92, H: 22}) {
+		t.Fatalf("first floating should fit terminal size and center, got %#v", floatings[0].Rect)
+	}
+	if floatings[1].Rect != (state.FloatingRect{X: 38, Y: 15, W: 52, H: 12}) {
+		t.Fatalf("second floating should fit terminal size and cascade, got %#v", floatings[1].Rect)
+	}
+}
+
 func TestWorkbenchPaneCRUDPersistsClosedPaneSnapshotWithCAS(t *testing.T) {
 	storage := &services.FakeWorkbenchStorageService{CurrentVersion: 3}
 	reducer := ComposeReducers(NewShellReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))

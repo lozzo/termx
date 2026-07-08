@@ -183,6 +183,9 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 	previousHistoryTerminalID := root.History.TerminalID
 	terminalViews = preserveWorkbenchRuntimeTerminalViews(previousViews, terminalViews)
 	terminalViews = terminalViews.ApplyWorkbenchEndpointResolution(root.Endpoints)
+	// 中文说明：storage 不同步 floating 显示态；新 TUI 没有本地 rect 时，
+	// 在当前 viewport 内按绑定 terminal 的 size 生成本地初始布局，再允许本地状态覆盖。
+	shell = shell.NormalizeRestoredFloatingDisplay(root.Viewport, terminalViews)
 	// 外部 workbench snapshot 会整体替换 pane/view 结构；旧 frozen history、
 	// pending request 和 copy 绑定都不能跨这次替换继续复用。
 	root = root.ClearCopyHistorySessions()
