@@ -86,7 +86,18 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		})
 		return root, []Effect{handledEffect{}}
 	}
+	var target liveInputTargetInfo
 	target, ok := liveInputTarget(root)
+	if msg.TerminalMouseTargetViewID != "" {
+		var targetOK bool
+		target, targetOK = liveInputTargetForView(root, msg.TerminalMouseTargetViewID)
+		if !targetOK {
+			ok = false
+		} else {
+			ok = true
+			root = focusTerminalInputTarget(root, target)
+		}
+	}
 	if !ok {
 		logTerminalInputRoute(deps, root, terminalInputRouteLog{
 			Event:  msg.Event,
@@ -126,6 +137,27 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		return root, []Effect{liveAttachForInputEffect(root, target, msg.Event, intent.Bytes, deps)}
 	}
 	return root, []Effect{terminalSendInputEffect(target, msg.Event, intent.Bytes, true, deps)}
+}
+
+func focusTerminalInputTarget(root state.Root, target liveInputTargetInfo) state.Root {
+	shell := root.Shell.EnsureDefaults()
+	if target.FloatingID != "" {
+		nextShell, result := shell.ApplyFloatingCommand(state.FloatingCommand{
+			Action:   state.FloatingCommandFocusRaise,
+			TargetID: target.FloatingID,
+			Source:   state.PaneCommandSourceMouse,
+		})
+		if result.Status == state.FloatingCommandOK {
+			root.Shell = nextShell.ExitInteractionMode()
+		}
+		return root
+	}
+	if target.PaneID != "" {
+		// 中文说明：tracked mouse 的同一次点击既是 terminal input，也是用户焦点意图；
+		// focus 必须落到命中的 pane，避免 raw mouse 被路由给旧 active terminal。
+		root.Shell = shell.FocusPane(state.PaneCommandTarget{PaneID: target.PaneID}).ExitInteractionMode()
+	}
+	return root
 }
 
 func reduceTerminalInputBytes(root state.Root, msg TerminalInputBytesMsg, deps LiveDeps) (state.Root, []Effect) {

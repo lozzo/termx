@@ -4156,8 +4156,14 @@ func TestInteractiveRuntimeTerminalMouseTrackingPassthroughOnlyFromContent(t *te
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain inactive pane mouse: %v", err)
 	}
-	if len(terminal.Inputs) != 1 {
-		t.Fatalf("inactive pane raw mouse must not leak to active terminal, got %#v", terminal.Inputs)
+	if len(terminal.Inputs) != 2 {
+		t.Fatalf("inactive pane raw mouse should target clicked terminal without leaking to old active terminal, got %#v", terminal.Inputs)
+	}
+	if got := terminal.Inputs[1]; got.TerminalID != "term-1" || string(got.Bytes) != "\x1b[<2;1;1M" || got.Event.Col != 1 || got.Event.Row != 1 {
+		t.Fatalf("inactive pane raw mouse should focus and passthrough content-local event to clicked terminal, got %#v", got)
+	}
+	if runtime.State().Shell.EnsureDefaults().ActivePaneID != state.DefaultPaneID {
+		t.Fatalf("inactive pane raw mouse should focus clicked pane, got %#v", runtime.State().Shell)
 	}
 }
 

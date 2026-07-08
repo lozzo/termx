@@ -42,9 +42,12 @@ func (QuitMsg) isMsg() {}
 // InputMsg 是 TerminalHost 输入事件进入 message path 的边界消息。
 type InputMsg struct {
 	Event input.InputEvent
-	// 中文说明：runtime 命中测试已经确认 raw mouse 属于前台 terminal；
+	// 中文说明：runtime 命中测试已经确认 raw mouse 属于命中的 terminal 内容区；
 	// UI/copy reducer 必须避让，交给 terminal input router 发送给子进程。
 	TerminalMousePassthrough bool
+	// 中文说明：鼠标命中的 TerminalView 是 passthrough 目标；它避免点击非 active pane
+	// 时把 nvim/htop 的 raw mouse 发送到旧 active terminal。
+	TerminalMouseTargetViewID string
 }
 
 func (InputMsg) isMsg() {}
@@ -1330,11 +1333,11 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		}
 		return ShellPaneCommandMsg{Command: command}
 	}
-	if activationMsg, ok := runtime.terminalInputActivationMsg(region); ok {
-		return activationMsg
-	}
 	if passthroughMsg, ok := runtime.mousePassthroughInputMsg(inputMsg, resolution); ok {
 		return passthroughMsg
+	}
+	if activationMsg, ok := runtime.terminalInputActivationMsg(region); ok {
+		return activationMsg
 	}
 	// 中文说明：history row 是内容前景命中区；点击非 active pane 的历史文本时必须先切焦点，
 	// 不能直接进入 copy selection，否则文本区域会吞掉 panel focus。
@@ -1680,15 +1683,20 @@ func (runtime *AppRuntime) mouseEventCanPassthrough(event input.InputEvent, reso
 	if !mouseForegroundAllowsTerminalPassthrough(resolution.Foreground) {
 		return false
 	}
-	return runtime.focusOwnerMouseTrackingEnabled(resolution.FocusOwner)
+	return runtime.mouseTrackingEnabledForRegion(resolution.FocusOwner)
 }
 
 func (runtime *AppRuntime) mousePassthroughInputMsg(msg InputMsg, resolution mouseHitResolution) (InputMsg, bool) {
 	if !runtime.mouseEventCanPassthrough(msg.Event, resolution) {
 		return InputMsg{}, false
 	}
+	binding, ok := runtime.terminalViewBindingForMouseRegion(resolution.FocusOwner)
+	if !ok || binding.ViewID == "" {
+		return InputMsg{}, false
+	}
 	msg.Event = localizeMouseEventForTerminal(msg.Event, resolution.Foreground.Rect)
 	msg.TerminalMousePassthrough = true
+	msg.TerminalMouseTargetViewID = binding.ViewID
 	return msg, true
 }
 
@@ -1777,45 +1785,8 @@ func mouseForegroundAllowsTerminalPassthrough(region render.HitRegion) bool {
 	}
 }
 
-func (runtime *AppRuntime) focusOwnerMouseTrackingEnabled(region render.HitRegion) bool {
-	shell := runtime.state.Shell.EnsureDefaults()
-	switch region.Kind {
-	case render.HitRegionPaneContent:
-		if region.PaneID != shell.ActivePaneID || shell.ActiveFloatingID() != "" {
-			return false
-		}
-		return runtime.paneMouseTrackingEnabled(region.PaneID)
-	case render.HitRegionContentAction:
-		if region.ActionID != render.ActionFloatingRaise.String() || !region.Floating {
-			return false
-		}
-		floatingID, ok := runtime.floatingIDForPaneID(region.PaneID)
-		if !ok || floatingID != shell.ActiveFloatingID() {
-			return false
-		}
-		return runtime.floatingMouseTrackingEnabled(floatingID)
-	default:
-		return false
-	}
-}
-
-func (runtime *AppRuntime) paneMouseTrackingEnabled(paneID string) bool {
-	if paneID == "" {
-		return false
-	}
-	binding, ok := runtime.state.TerminalViews.PaneBinding(paneID)
-	if !ok || binding.TerminalID == "" {
-		return false
-	}
-	surface := runtime.state.Surface.SurfaceForTerminalRef(binding.TerminalRef())
-	return surface.Modes.MousePassthroughEnabled()
-}
-
-func (runtime *AppRuntime) floatingMouseTrackingEnabled(floatingID string) bool {
-	if floatingID == "" {
-		return false
-	}
-	binding, ok := runtime.state.TerminalViews.FloatingBinding(floatingID)
+func (runtime *AppRuntime) mouseTrackingEnabledForRegion(region render.HitRegion) bool {
+	binding, ok := runtime.terminalViewBindingForMouseRegion(region)
 	if !ok || binding.TerminalID == "" {
 		return false
 	}
