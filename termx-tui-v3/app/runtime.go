@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
@@ -1694,13 +1695,14 @@ func (runtime *AppRuntime) mousePassthroughInputMsg(msg InputMsg, resolution mou
 	if !ok || binding.ViewID == "" {
 		return InputMsg{}, false
 	}
-	msg.Event = localizeMouseEventForTerminal(msg.Event, resolution.Foreground.Rect)
+	modes := runtime.state.Surface.SurfaceForTerminalRef(binding.TerminalRef()).Modes
+	msg.Event = encodeMouseEventForTerminal(msg.Event, resolution.Foreground.Rect, modes)
 	msg.TerminalMousePassthrough = true
 	msg.TerminalMouseTargetViewID = binding.ViewID
 	return msg, true
 }
 
-func localizeMouseEventForTerminal(event input.InputEvent, rect render.Rect) input.InputEvent {
+func encodeMouseEventForTerminal(event input.InputEvent, rect render.Rect, modes state.LiveTerminalModes) input.InputEvent {
 	if event.Kind != input.EventKindMouse || event.RawSeq == "" || rect.W <= 0 || rect.H <= 0 {
 		return event
 	}
@@ -1718,9 +1720,19 @@ func localizeMouseEventForTerminal(event input.InputEvent, rect render.Rect) inp
 	if localRow > rect.H {
 		localRow = rect.H
 	}
-	if raw, ok := rewriteSGRMouseRawSeq(event.RawSeq, localCol, localRow); ok {
+	if modes.MouseSGR {
+		if raw, ok := rewriteSGRMouseRawSeq(event.RawSeq, localCol, localRow); ok {
+			// 中文说明：子进程 mouse tracking 的 truth source 是它自己的 PTY 网格，
+			// TermX chrome/header/footer 只属于外层 TUI，透传前必须改成内容区 local 坐标。
+			event.RawSeq = raw
+			event.Col = localCol
+			event.Row = localRow
+		}
+		return event
+	}
+	if raw, ok := encodeLegacyMouseRawSeq(event, localCol, localRow); ok {
 		// 中文说明：子进程 mouse tracking 的 truth source 是它自己的 PTY 网格，
-		// TermX chrome/header/footer 只属于外层 TUI，透传前必须改成内容区 local 坐标。
+		// legacy mouse 程序没有请求 SGR 时必须收到 X10 编码，不能把宿主 SGR 原样转发。
 		event.RawSeq = raw
 		event.Col = localCol
 		event.Row = localRow
@@ -1750,6 +1762,51 @@ func rewriteSGRMouseRawSeq(raw string, col int, row int) (string, bool) {
 		return "", false
 	}
 	return "\x1b[<" + parts[0] + ";" + strconv.Itoa(col) + ";" + strconv.Itoa(row) + string(final), true
+}
+
+func encodeLegacyMouseRawSeq(event input.InputEvent, col int, row int) (string, bool) {
+	button, motion, ok := legacyMouseButton(event.Mouse)
+	if !ok || col <= 0 || row <= 0 {
+		return "", false
+	}
+	if col > 223 {
+		col = 223
+	}
+	if row > 223 {
+		row = 223
+	}
+	code := xansi.EncodeMouseButton(button, motion, event.Shift, event.Alt, event.Ctrl)
+	if code == 0xff {
+		return "", false
+	}
+	return xansi.MouseX10(code, col-1, row-1), true
+}
+
+func legacyMouseButton(button input.MouseButton) (xansi.MouseButton, bool, bool) {
+	switch button {
+	case input.MouseWheelUp:
+		return xansi.MouseWheelUp, false, true
+	case input.MouseWheelDown:
+		return xansi.MouseWheelDown, false, true
+	case input.MouseLeft:
+		return xansi.MouseLeft, false, true
+	case input.MouseMiddle:
+		return xansi.MouseMiddle, false, true
+	case input.MouseRight:
+		return xansi.MouseRight, false, true
+	case input.MouseLeftDrag:
+		return xansi.MouseLeft, true, true
+	case input.MouseMiddleDrag:
+		return xansi.MouseMiddle, true, true
+	case input.MouseRightDrag:
+		return xansi.MouseRight, true, true
+	case input.MouseMove:
+		return xansi.MouseNone, true, true
+	case input.MouseLeftUp, input.MouseMiddleUp, input.MouseRightUp, input.MouseRelease:
+		return xansi.MouseNone, false, true
+	default:
+		return xansi.MouseNone, false, false
+	}
 }
 
 func (runtime *AppRuntime) mouseEventHitsUI(event input.InputEvent, resolution mouseHitResolution) bool {
