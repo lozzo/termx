@@ -1598,6 +1598,55 @@ func TestLiveInvalidationArmCancellationReleasesPendingCallback(t *testing.T) {
 	}
 }
 
+func TestLiveExitClearsPendingRefreshDebt(t *testing.T) {
+	reducer := NewLiveReducer(LiveDeps{})
+	root := rootWithDirtyRefreshForLiveTest(t, state.LocalTerminalRef("term-1"))
+
+	next, effects := reducer(root, LiveExitMsg{TerminalID: "term-1", ExitCode: 0, Reason: "done"})
+	if len(effects) != 0 {
+		t.Fatalf("live exit should not schedule refresh effects, got %#v", effects)
+	}
+	if refresh, ok := next.Surface.RefreshStateRef(state.LocalTerminalRef("term-1")); ok {
+		t.Fatalf("live exit must clear pending refresh debt, got %#v", refresh)
+	}
+	if next.Surface.State != state.TerminalLiveExited || next.Session.State != state.TerminalLiveExited {
+		t.Fatalf("live exit should still project exited lifecycle, surface=%#v session=%#v", next.Surface, next.Session)
+	}
+}
+
+func TestLiveEventBoundaryClearsPendingRefreshDebt(t *testing.T) {
+	reducer := NewLiveReducer(LiveDeps{})
+	cases := []struct {
+		name  string
+		event services.TerminalLiveEvent
+	}{
+		{
+			name:  "exited",
+			event: services.TerminalLiveEvent{TerminalID: "term-1", Exited: true, ExitCode: 0, Reason: "done"},
+		},
+		{
+			name:  "error",
+			event: services.TerminalLiveEvent{TerminalID: "term-1", Err: errors.New("transport offline")},
+		},
+		{
+			name:  "terminal exited error",
+			event: services.TerminalLiveEvent{TerminalID: "term-1", Err: errors.New("protocol error 400: terminal exited")},
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			root := rootWithDirtyRefreshForLiveTest(t, state.LocalTerminalRef("term-1"))
+			next, effects := reducer(root, LiveEventMsg{Event: tt.event})
+			if len(effects) != 0 {
+				t.Fatalf("boundary event should not schedule refresh effects, got %#v", effects)
+			}
+			if refresh, ok := next.Surface.RefreshStateRef(state.LocalTerminalRef("term-1")); ok {
+				t.Fatalf("boundary event must clear pending refresh debt, got %#v", refresh)
+			}
+		})
+	}
+}
+
 func TestLiveEventRefreshRequestsLatestSurfaceAfterEventLoopCoalescing(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		SurfaceResult: services.TerminalSurfaceResult{
@@ -1652,6 +1701,33 @@ func TestLiveEventRefreshRequestsLatestSurfaceAfterEventLoopCoalescing(t *testin
 	if !refreshMsg.SkipRender() {
 		t.Fatal("ordinary refresh invalidation should not render stale frame")
 	}
+}
+
+func rootWithDirtyRefreshForLiveTest(t *testing.T, ref state.TerminalRef) state.Root {
+	t.Helper()
+	root := state.Root{}
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
+		EndpointID: ref.EndpointID,
+		TerminalID: ref.TerminalID,
+		Revision:   10,
+		Cols:       96,
+		Rows:       30,
+		Lines:      []string{"current"},
+	})
+	root.Session = root.Session.AttachRefWithResizeOwner(ref, 7, 96, 30, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID))
+	var fetch bool
+	root.Surface, fetch = root.Surface.RequestRefreshRef(ref, 96, 30)
+	if !fetch {
+		t.Fatalf("expected refresh request to start fetch, store=%#v", root.Surface.Refreshes)
+	}
+	root.Surface, fetch = root.Surface.RequestRefreshRef(ref, 120, 40)
+	if fetch {
+		t.Fatalf("dirty invalidation must not start a parallel fetch, store=%#v", root.Surface.Refreshes)
+	}
+	if refresh, ok := root.Surface.RefreshStateRef(ref); !ok || !refresh.InFlight || !refresh.Dirty {
+		t.Fatalf("expected dirty refresh state, got %#v ok=%v", refresh, ok)
+	}
+	return root
 }
 
 func TestLiveEventRefreshBackpressureSchedulesDirtyLatestFetchAfterSurfaceReturn(t *testing.T) {

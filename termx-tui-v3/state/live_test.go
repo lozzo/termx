@@ -584,6 +584,79 @@ func TestTerminalSurfaceRejectedDirtySnapshotKeepsFollowupConsumable(t *testing.
 	}
 }
 
+func TestTerminalSurfaceLifecycleBoundaryClearsRefresh(t *testing.T) {
+	ref := LocalTerminalRef("term-1")
+	cases := []struct {
+		name  string
+		apply func(TerminalSurfaceStore) TerminalSurfaceStore
+	}{
+		{
+			name: "attach",
+			apply: func(store TerminalSurfaceStore) TerminalSurfaceStore {
+				return store.AttachRef(ref, 120, 40)
+			},
+		},
+		{
+			name: "cache attach",
+			apply: func(store TerminalSurfaceStore) TerminalSurfaceStore {
+				return store.CacheAttachRef(ref, 120, 40)
+			},
+		},
+		{
+			name: "restart",
+			apply: func(store TerminalSurfaceStore) TerminalSurfaceStore {
+				return store.RestartPreservingContentRef(ref, 120, 40)
+			},
+		},
+		{
+			name: "mark attached",
+			apply: func(store TerminalSurfaceStore) TerminalSurfaceStore {
+				return store.MarkAttachedRef(ref)
+			},
+		},
+		{
+			name: "mark exited",
+			apply: func(store TerminalSurfaceStore) TerminalSurfaceStore {
+				return store.MarkExitedWithMetadataRef(ref, 0, "done", time.Time{}, nil)
+			},
+		},
+		{
+			name: "set error",
+			apply: func(store TerminalSurfaceStore) TerminalSurfaceStore {
+				return store.SetErrorRef(ref, "transport offline")
+			},
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			store := terminalSurfaceStoreWithDirtyRefresh(t, ref)
+			store = tt.apply(store)
+			if refresh, ok := store.RefreshStateRef(ref); ok {
+				t.Fatalf("lifecycle boundary must clear refresh debt, got %#v", refresh)
+			}
+		})
+	}
+}
+
+func TestTerminalSurfaceLifecycleBoundaryClearsOnlyMatchingEndpointRefresh(t *testing.T) {
+	local := LocalTerminalRef("term-1")
+	west := NewTerminalRef("west", "term-1")
+	store := terminalSurfaceStoreWithDirtyRefresh(t, local)
+	var fetch bool
+	store, fetch = store.RequestRefreshRef(west, 120, 40)
+	if !fetch {
+		t.Fatalf("expected west refresh request to start fetch, store=%#v", store.Refreshes)
+	}
+
+	store = store.MarkExitedWithMetadataRef(west, 0, "done", time.Time{}, nil)
+	if _, ok := store.RefreshStateRef(west); ok {
+		t.Fatalf("west lifecycle boundary must clear west refresh debt, store=%#v", store.Refreshes)
+	}
+	if refresh, ok := store.RefreshStateRef(local); !ok || !refresh.InFlight || !refresh.Dirty {
+		t.Fatalf("west lifecycle boundary must not clear local refresh debt, got %#v ok=%v", refresh, ok)
+	}
+}
+
 func TestTerminalSurfaceRefreshArmsOneCallbackPerTerminal(t *testing.T) {
 	var store TerminalSurfaceStore
 	var arm bool
@@ -613,6 +686,31 @@ func TestTerminalSurfaceRefreshArmsOneCallbackPerTerminal(t *testing.T) {
 	if _, ok := store.Refreshes["term-1"]; ok {
 		t.Fatalf("fresh snapshot should clear callback/fetch state, store=%#v", store.Refreshes)
 	}
+}
+
+func terminalSurfaceStoreWithDirtyRefresh(t *testing.T, ref TerminalRef) TerminalSurfaceStore {
+	t.Helper()
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		EndpointID: ref.EndpointID,
+		TerminalID: ref.TerminalID,
+		Revision:   10,
+		Cols:       96,
+		Rows:       30,
+		Lines:      []string{"current"},
+	})
+	var fetch bool
+	store, fetch = store.RequestRefreshRef(ref, 96, 30)
+	if !fetch {
+		t.Fatalf("expected refresh request to start fetch, store=%#v", store.Refreshes)
+	}
+	store, fetch = store.RequestRefreshRef(ref, 120, 40)
+	if fetch {
+		t.Fatalf("dirty invalidation must not start a parallel fetch, store=%#v", store.Refreshes)
+	}
+	if refresh, ok := store.RefreshStateRef(ref); !ok || !refresh.InFlight || !refresh.Dirty {
+		t.Fatalf("expected dirty refresh state, got %#v ok=%v", refresh, ok)
+	}
+	return store
 }
 
 func TestTerminalSurfaceStoreSeparatesSameTerminalAcrossEndpoints(t *testing.T) {

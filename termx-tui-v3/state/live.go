@@ -222,6 +222,7 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 // Surfaces map 的 key 使用 endpoint-aware 身份，避免不同 daemon 下同名 TerminalID 互相覆盖。
 func (store TerminalSurfaceStore) AttachRef(ref TerminalRef, cols int, rows int) TerminalSurfaceStore {
 	ref = ref.Normalize()
+	store = store.clearRefreshRef(ref)
 	if store.TerminalID != "" && !store.TerminalRef().Equal(ref) {
 		store.Lines = nil
 		store.Screen = nil
@@ -281,6 +282,7 @@ func (store TerminalSurfaceStore) CacheAttachRef(ref TerminalRef, cols int, rows
 	if ref.Empty() {
 		return store
 	}
+	store = store.clearRefreshRef(ref)
 	snapshot, ok := store.Surfaces[liveSurfaceRefKey(ref)]
 	if !ok {
 		snapshot = LiveSurfaceSnapshot{}
@@ -315,6 +317,7 @@ func (store TerminalSurfaceStore) RestartPreservingContentRef(ref TerminalRef, c
 	if ref.Empty() {
 		return store
 	}
+	store = store.clearRefreshRef(ref)
 	snapshot, ok := store.snapshotForTerminalRef(ref)
 	if !ok {
 		return store.AttachRef(ref, cols, rows)
@@ -359,6 +362,7 @@ func (store TerminalSurfaceStore) MarkAttachedRef(ref TerminalRef) TerminalSurfa
 	if ref.Empty() {
 		return store
 	}
+	store = store.clearRefreshRef(ref)
 	snapshot, ok := store.snapshotForTerminalRef(ref)
 	if ok {
 		// 中文说明：只有 core live surface/event 明确返回 running 时才调用这里；
@@ -403,6 +407,7 @@ func (store TerminalSurfaceStore) MarkExitedWithMetadata(terminalID string, exit
 // endpoint 是 lifecycle 投影的隔离边界；远端退出不能把本地同名 terminal 标成 exited。
 func (store TerminalSurfaceStore) MarkExitedWithMetadataRef(ref TerminalRef, exitCode int, reason string, exitedAt time.Time, command []string) TerminalSurfaceStore {
 	ref = ref.Normalize()
+	store = store.clearRefreshRef(ref)
 	if !ref.Empty() {
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
 		snapshot, ok := store.snapshotForTerminalRef(ref)
@@ -457,6 +462,7 @@ func (store TerminalSurfaceStore) SetErrorRef(ref TerminalRef, err string) Termi
 	if ref.Empty() {
 		return store.SetError(err)
 	}
+	store = store.clearRefreshRef(ref)
 	store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
 	snapshot, ok := store.snapshotForTerminalRef(ref)
 	if !ok && store.TerminalRef().Equal(ref) {
@@ -730,6 +736,22 @@ func (store TerminalSurfaceStore) RefreshStateRef(ref TerminalRef) (LiveSurfaceR
 	}
 	refresh, ok := store.Refreshes[liveSurfaceRefKey(ref)]
 	return refresh, ok
+}
+
+func (store TerminalSurfaceStore) clearRefreshRef(ref TerminalRef) TerminalSurfaceStore {
+	ref = ref.Normalize()
+	if ref.Empty() || len(store.Refreshes) == 0 {
+		return store
+	}
+	key := liveSurfaceRefKey(ref)
+	if _, ok := store.Refreshes[key]; !ok {
+		return store
+	}
+	// 中文说明：exit/error/attach/restart 是 terminal lifecycle 边界，旧 refresh debt
+	// 不能穿过边界继续阻塞新的 frame-ready arm；普通 dirty follow-up 仍由 FinishRefreshRef 管。
+	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
+	delete(store.Refreshes, key)
+	return store
 }
 
 func (store TerminalSurfaceStore) ConsumeDirtyRefresh(terminalID string) (TerminalSurfaceStore, int, int, bool) {
