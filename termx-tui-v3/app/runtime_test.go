@@ -4086,8 +4086,8 @@ func TestInteractiveRuntimeTerminalMouseTrackingPassthroughOnlyFromContent(t *te
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain tracked content mouse: %v", err)
 	}
-	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != mouse.RawSeq {
-		t.Fatalf("tracked content mouse should passthrough raw SGR, got %#v", terminal.Inputs)
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "\x1b[<2;1;1M" || terminal.Inputs[0].Event.Col != 1 || terminal.Inputs[0].Event.Row != 1 {
+		t.Fatalf("tracked content mouse should passthrough content-local SGR, got %#v", terminal.Inputs)
 	}
 
 	runtime.lastHitRegions = append([]render.HitRegion{{
@@ -4210,11 +4210,74 @@ func TestInteractiveRuntimeTrackedWheelPassthroughDoesNotEnterCopyMode(t *testin
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain tracked wheel: %v", err)
 	}
-	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != wheel.RawSeq {
-		t.Fatalf("tracked wheel should passthrough raw SGR, got %#v", terminal.Inputs)
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "\x1b[<64;1;1M" || terminal.Inputs[0].Event.Col != 1 || terminal.Inputs[0].Event.Row != 1 {
+		t.Fatalf("tracked wheel should passthrough content-local SGR, got %#v", terminal.Inputs)
 	}
 	if len(core.LatestRequests) != 0 || runtime.State().CopyMode.Active || runtime.State().CopyMode.Entering {
 		t.Fatalf("tracked wheel must not enter copy/history, latest=%#v copy=%#v", core.LatestRequests, runtime.State().CopyMode)
+	}
+}
+
+func TestInteractiveRuntimeTrackedMouseClickPassthroughUsesContentLocalCoordinates(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Cols:       78,
+		Rows:       22,
+		Lines:      []string{"tracked click"},
+		Modes:      state.LiveTerminalModes{MouseTracking: true, MouseSGR: true},
+	}}); err != nil {
+		t.Fatalf("post live surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain setup: %v", err)
+	}
+	content := frameHitRegion(t, lastRuntimeFrame(t, host), render.HitRegionPaneContent, state.DefaultPaneID)
+	click := input.InputEvent{
+		Kind:   input.EventKindMouse,
+		Mouse:  input.MouseLeft,
+		Row:    content.Rect.Y + 3,
+		Col:    content.Rect.X + 5,
+		RawSeq: "\x1b[<0;99;88M",
+	}
+	release := click
+	release.Mouse = input.MouseLeftUp
+	release.RawSeq = "\x1b[<0;99;88m"
+
+	if err := host.SendInput(click); err != nil {
+		t.Fatalf("send tracked click: %v", err)
+	}
+	if err := host.SendInput(release); err != nil {
+		t.Fatalf("send tracked release: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tracked click: %v", err)
+	}
+	if len(terminal.Inputs) != 2 {
+		t.Fatalf("tracked click/release should passthrough to terminal, got %#v", terminal.Inputs)
+	}
+	if got := string(terminal.Inputs[0].Bytes); got != "\x1b[<0;5;3M" {
+		t.Fatalf("tracked click should use content-local SGR coords, got %q", got)
+	}
+	if got := string(terminal.Inputs[1].Bytes); got != "\x1b[<0;5;3m" {
+		t.Fatalf("tracked release should use content-local SGR coords, got %q", got)
+	}
+	if terminal.Inputs[0].Event.Col != 5 || terminal.Inputs[0].Event.Row != 3 || terminal.Inputs[1].Event.Col != 5 || terminal.Inputs[1].Event.Row != 3 {
+		t.Fatalf("tracked mouse events should carry content-local event coords, got %#v", terminal.Inputs)
 	}
 }
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -1249,9 +1251,10 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		}
 		// 中文说明：前台程序启用 mouse tracking 后，raw 鼠标事件归子进程所有；
 		// 只有未被 terminal 接管的滚轮才作为 TermX infinite history 入口。
-		if inputMsg.Event.RawSeq != "" && runtime.mouseEventCanPassthrough(inputMsg.Event, resolution) {
-			inputMsg.TerminalMousePassthrough = true
-			return inputMsg
+		if inputMsg.Event.RawSeq != "" {
+			if passthroughMsg, ok := runtime.mousePassthroughInputMsg(inputMsg, resolution); ok {
+				return passthroughMsg
+			}
 		}
 		if msg, ok := runtime.copyModeMouseWheelEnterMsg(inputMsg.Event, resolution); ok {
 			return msg
@@ -1330,9 +1333,8 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	if activationMsg, ok := runtime.terminalInputActivationMsg(region); ok {
 		return activationMsg
 	}
-	if runtime.mouseEventCanPassthrough(inputMsg.Event, resolution) {
-		inputMsg.TerminalMousePassthrough = true
-		return inputMsg
+	if passthroughMsg, ok := runtime.mousePassthroughInputMsg(inputMsg, resolution); ok {
+		return passthroughMsg
 	}
 	// 中文说明：history row 是内容前景命中区；点击非 active pane 的历史文本时必须先切焦点，
 	// 不能直接进入 copy selection，否则文本区域会吞掉 panel focus。
@@ -1679,6 +1681,67 @@ func (runtime *AppRuntime) mouseEventCanPassthrough(event input.InputEvent, reso
 		return false
 	}
 	return runtime.focusOwnerMouseTrackingEnabled(resolution.FocusOwner)
+}
+
+func (runtime *AppRuntime) mousePassthroughInputMsg(msg InputMsg, resolution mouseHitResolution) (InputMsg, bool) {
+	if !runtime.mouseEventCanPassthrough(msg.Event, resolution) {
+		return InputMsg{}, false
+	}
+	msg.Event = localizeMouseEventForTerminal(msg.Event, resolution.Foreground.Rect)
+	msg.TerminalMousePassthrough = true
+	return msg, true
+}
+
+func localizeMouseEventForTerminal(event input.InputEvent, rect render.Rect) input.InputEvent {
+	if event.Kind != input.EventKindMouse || event.RawSeq == "" || rect.W <= 0 || rect.H <= 0 {
+		return event
+	}
+	localCol := event.Col - rect.X
+	localRow := event.Row - rect.Y
+	if localCol < 1 {
+		localCol = 1
+	}
+	if localRow < 1 {
+		localRow = 1
+	}
+	if localCol > rect.W {
+		localCol = rect.W
+	}
+	if localRow > rect.H {
+		localRow = rect.H
+	}
+	if raw, ok := rewriteSGRMouseRawSeq(event.RawSeq, localCol, localRow); ok {
+		// 中文说明：子进程 mouse tracking 的 truth source 是它自己的 PTY 网格，
+		// TermX chrome/header/footer 只属于外层 TUI，透传前必须改成内容区 local 坐标。
+		event.RawSeq = raw
+		event.Col = localCol
+		event.Row = localRow
+	}
+	return event
+}
+
+func rewriteSGRMouseRawSeq(raw string, col int, row int) (string, bool) {
+	if col <= 0 || row <= 0 || !strings.HasPrefix(raw, "\x1b[<") || len(raw) < len("\x1b[<0;1;1M") {
+		return "", false
+	}
+	final := raw[len(raw)-1]
+	if final != 'M' && final != 'm' {
+		return "", false
+	}
+	parts := strings.Split(raw[3:len(raw)-1], ";")
+	if len(parts) != 3 {
+		return "", false
+	}
+	if _, err := strconv.Atoi(parts[0]); err != nil {
+		return "", false
+	}
+	if _, err := strconv.Atoi(parts[1]); err != nil {
+		return "", false
+	}
+	if _, err := strconv.Atoi(parts[2]); err != nil {
+		return "", false
+	}
+	return "\x1b[<" + parts[0] + ";" + strconv.Itoa(col) + ";" + strconv.Itoa(row) + string(final), true
 }
 
 func (runtime *AppRuntime) mouseEventHitsUI(event input.InputEvent, resolution mouseHitResolution) bool {
