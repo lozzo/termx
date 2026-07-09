@@ -19,6 +19,8 @@ import (
 	"github.com/lozzow/termx/termx-shared/transport"
 )
 
+// Transport 是本机 unix socket 上的压缩 frame transport。
+// 它只拥有 frame 边界、分片、压缩和连接生命周期，不解析 protocol payload，也不持有 terminal truth。
 type Transport struct {
 	conn net.Conn
 	done chan struct{}
@@ -48,6 +50,7 @@ const (
 	maxPacketPayloadSize = 64 << 10
 	sendBatchWindow      = time.Millisecond
 	maxBatchedBytes      = 128 << 10
+	acceptPollInterval   = 50 * time.Millisecond
 )
 
 const (
@@ -55,6 +58,8 @@ const (
 	zstdTransportDecoderMaxWindow  = 256 << 10
 )
 
+// Dial 连接本机 termx daemon unix socket，并返回 frame transport。
+// path 可以是用户可见长路径；实际 socket 路径由 resolveSocketPath 统一解析，避免调用方绕过别名规则。
 func Dial(path string) (*Transport, error) {
 	actualPath, _ := resolveSocketPath(path)
 	conn, err := net.Dial("unix", actualPath)
@@ -64,6 +69,8 @@ func Dial(path string) (*Transport, error) {
 	return newTransport(conn)
 }
 
+// Send 发送一个完整 protocol frame。
+// unix transport 是 frame 边界 owner：大 frame 会在本层按 packet 上限分片，但不会解释 protocol payload。
 func (t *Transport) Send(frame []byte) error {
 	if t == nil || t.zstdW == nil || t.sendQ == nil {
 		return io.EOF
@@ -85,6 +92,8 @@ func (t *Transport) Send(frame []byte) error {
 	}
 }
 
+// Recv 接收一个完整 protocol frame。
+// 分片重组只发生在 transport 层；异常 packet kind、读错误或关闭都会作为 transport 错误返回。
 func (t *Transport) Recv() ([]byte, error) {
 	if t == nil || t.zstdR == nil {
 		return nil, io.EOF
@@ -120,24 +129,34 @@ func (t *Transport) Recv() ([]byte, error) {
 	}
 }
 
+// Close 关闭 unix transport，并解除正在阻塞的读写。
+// 先关闭 done 和底层 conn，再等待 sender goroutine，避免 zstd Flush 卡住时 Close 永久等待。
 func (t *Transport) Close() error {
+	if t == nil {
+		return nil
+	}
+	var err error
 	t.once.Do(func() {
 		close(t.done)
+		err = t.conn.Close()
 		t.wg.Wait()
-		_ = t.conn.Close()
 		t.sendMu.Lock()
 		if t.zstdW != nil {
 			_ = t.zstdW.Close()
 		}
 		t.sendMu.Unlock()
 	})
-	return nil
+	return err
 }
 
+// Done 返回 transport 生命周期结束信号。
+// protocol client 用它区分阻塞中的 Recv 和已经关闭的底层连接。
 func (t *Transport) Done() <-chan struct{} {
 	return t.done
 }
 
+// Listener 是本机 unix socket listener。
+// 它负责 path/alias 生命周期和 Accept 边界，不拥有 daemon session 或 protocol client 状态。
 type Listener struct {
 	path       string
 	actualPath string
@@ -145,6 +164,8 @@ type Listener struct {
 	ln         net.Listener
 }
 
+// NewListener 创建本机 unix socket listener。
+// 当用户可见 path 超过系统 socket path 限制时，会创建短实际路径并在原路径放置 symlink。
 func NewListener(path string) (*Listener, error) {
 	actualPath, aliasPath := resolveSocketPath(path)
 	_ = os.Remove(path)
@@ -175,27 +196,49 @@ func NewListener(path string) (*Listener, error) {
 	return &Listener{path: path, actualPath: actualPath, aliasPath: aliasPath, ln: ln}, nil
 }
 
+// Accept 接收一个 unix socket 连接。
+// ctx 取消必须只影响本次等待，不能留下阻塞 goroutine 抢走后续 Dial；因此这里用 listener deadline 轮询。
 func (l *Listener) Accept(ctx context.Context) (transport.Transport, error) {
-	type result struct {
-		conn net.Conn
-		err  error
+	if l == nil || l.ln == nil {
+		return nil, transport.ErrListenerClosed
 	}
-	resCh := make(chan result, 1)
-	go func() {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	deadlineLn, _ := l.ln.(interface {
+		SetDeadline(time.Time) error
+	})
+	if deadlineLn != nil {
+		defer deadlineLn.SetDeadline(time.Time{})
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if deadlineLn != nil {
+			_ = deadlineLn.SetDeadline(time.Now().Add(acceptPollInterval))
+		}
 		conn, err := l.ln.Accept()
-		resCh <- result{conn: conn, err: err}
-	}()
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case res := <-resCh:
-		if res.err != nil {
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				continue
+			}
+			if errors.Is(err, net.ErrClosed) {
+				return nil, transport.ErrListenerClosed
+			}
+			return nil, err
+		}
+		if conn == nil {
 			return nil, transport.ErrListenerClosed
 		}
-		return newTransport(res.conn)
+		return newTransport(conn)
 	}
 }
 
+// Close 关闭 listener 并清理短路径/别名路径。
 func (l *Listener) Close() error {
 	err := l.ln.Close()
 	if l.aliasPath != "" {
@@ -208,6 +251,8 @@ func (l *Listener) Close() error {
 	return err
 }
 
+// Addr 返回用户配置的 listener path。
+// 如果实际 socket 因路径过长被映射到短路径，这里仍返回用户可见 alias。
 func (l *Listener) Addr() string {
 	return l.path
 }
@@ -294,7 +339,13 @@ func (t *Transport) readPacket() (byte, []byte, error) {
 		return 0, nil, err
 	}
 	kind := header[0]
+	if !validPacketKind(kind) {
+		return 0, nil, fmt.Errorf("transport/unix: unexpected packet kind %d", kind)
+	}
 	n := binary.BigEndian.Uint32(header[1:])
+	if n > maxPacketPayloadSize {
+		return 0, nil, fmt.Errorf("transport/unix: packet too large: %d > %d", n, maxPacketPayloadSize)
+	}
 	buf := make([]byte, n)
 	if _, err := io.ReadFull(t.zstdR, buf); err != nil {
 		return 0, nil, err
@@ -402,8 +453,11 @@ func (t *Transport) writeLogicalFrame(frame []byte) error {
 }
 
 func (t *Transport) writePacket(kind byte, payload []byte) error {
-	if kind != packetKindFrame && kind != packetKindFragmentStart && kind != packetKindFragmentContinue && kind != packetKindFragmentEnd {
+	if !validPacketKind(kind) {
 		return errors.New("transport/unix: invalid packet kind")
+	}
+	if len(payload) > maxPacketPayloadSize {
+		return fmt.Errorf("transport/unix: packet too large: %d > %d", len(payload), maxPacketPayloadSize)
 	}
 	var header [5]byte
 	header[0] = kind
@@ -412,4 +466,11 @@ func (t *Transport) writePacket(kind byte, payload []byte) error {
 		return err
 	}
 	return writeAll(t.zstdW, payload)
+}
+
+func validPacketKind(kind byte) bool {
+	return kind == packetKindFrame ||
+		kind == packetKindFragmentStart ||
+		kind == packetKindFragmentContinue ||
+		kind == packetKindFragmentEnd
 }

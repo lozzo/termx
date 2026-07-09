@@ -26,7 +26,10 @@ func TestListenerDialAcceptRoundTrip(t *testing.T) {
 		}
 	}()
 
-	client := listener.Dial()
+	client, err := listener.Dial(ctx)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
 	defer client.Close()
 
 	var server transport.Transport
@@ -88,6 +91,31 @@ func TestListenerAcceptContextCanceled(t *testing.T) {
 
 	if _, err := listener.Accept(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestListenerDialContextCanceled(t *testing.T) {
+	listener := NewListener("memory://test")
+	defer listener.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := listener.Dial(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled from dial, got %v", err)
+	}
+}
+
+func TestListenerDialAfterCloseReturnsErr(t *testing.T) {
+	listener := NewListener("memory://test")
+	if err := listener.Close(); err != nil {
+		t.Fatalf("listener close failed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := listener.Dial(ctx); !errors.Is(err, transport.ErrListenerClosed) {
+		t.Fatalf("expected ErrListenerClosed from dial, got %v", err)
 	}
 }
 

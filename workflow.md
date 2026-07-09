@@ -77,6 +77,7 @@
 | CL002 | 完成 | 顶层 Makefile 入口清理 | 默认 help/phony/target 不再暴露 frozen `remote-ui`、localweb、旧 remote daemon/dev/pair/status 入口；保留 v2/v3 build 与测试入口 |
 | CL003 | 完成 | CLI frozen remote 依赖清理 | `termx-cli` 默认命令和 daemon 启动不再装配 frozen `termx-remote` runtime；移除 CLI 对 `termx-remote` module 的 import/replace，保留 core/protocol typed hook 作为后续新控制面契约 |
 | CL004 | 完成 | 恢复远程产品目录与 hub 归位边界修正 | `termx-remote/`、`termx-app/`、`remote-ui/`、`web-control/` 作为有效产品资产保留；`termx-hub` 产品逻辑已归位到 `termx-hub/internal` 且不再依赖旧 `termx-remote` module |
+| CL005 | 完成 | `termx-shared` transport 与 terminal metadata 边界整理 | unix/memory transport 明确读包上限、关闭语义和 listener 生命周期；terminal metadata 只保留共享语义，不承载 TUI 图标/按钮文案 |
 | SI001 | 暂停 | TUI 同步输入组交互与 input 多播 | 用户切换到项目代码整理后暂停；恢复时继续 `Ctrl-P i/v/u` 管理当前 TUI 本地同步输入组 |
 | ME012 | 待开始 | hub/P2P transport dialer 与跨设备发现 | 接入 `termx-hub/` 发现/授权/relay；P2P 或 relay datachannel 只连接远端 termx daemon；局部失败不影响其他 endpoint |
 
@@ -118,4 +119,5 @@
 - CL002 已完成：顶层 Makefile 已移除 frozen `remote-ui`、localweb、旧 remote daemon/dev/pair/status/test 入口，只保留当前 v2/v3 build 与测试入口。
 - CL003 已完成：`termx-cli` 默认命令、daemon 启动、测试、README、脚本和 module 文件已移除 frozen `termx-remote` runtime/命令依赖；core-v2/protocol 的 typed remote hook 暂不在本切片删除。
 - CL004 已完成：撤回“旧 remote/app/web 目录无效可删”的判断，`termx-remote/`、`termx-app/`、`remote-ui/`、`web-control/` 已恢复并保留为远程管理、移动端、共享 UI 和 Web 管理面产品资产；`termx-hub` 产品逻辑仍归位到 `termx-hub/internal`，且不再 require/replace 旧 `termx-remote` module。
+- CL005 已完成：`termx-shared` unix transport 已增加 packet 读包上限、Close 解除阻塞语义和无 goroutine 泄漏的 Accept；memory transport 不再用 channel close panic/recover 表达生命周期；terminal metadata 删除 TUI 图标/按钮文案，只保留共享 tag/mode 语义。本切片未迁移 `perftrace/gridtrace`，诊断包重组后续单独处理。
 - SI001 暂停：按用户确认的交互设计实现 TUI 本地同步输入组；同步状态属于当前 TUI reducer-owned 输入路由状态，不写入 daemon terminal lifecycle、history truth 或 workbench storage。

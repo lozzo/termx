@@ -2,6 +2,7 @@ package memory
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"testing"
 )
@@ -35,5 +36,21 @@ func TestSendAfterLocalCloseReturnsEOF(t *testing.T) {
 
 	if err := client.Send([]byte("hello")); err == nil || err != io.EOF {
 		t.Fatalf("expected EOF after local close, got %v", err)
+	}
+}
+
+func TestSendAfterPeerCloseReturnsEOF(t *testing.T) {
+	client, server := NewPair()
+	defer client.Close()
+
+	if err := server.Close(); err != nil {
+		t.Fatalf("server close failed: %v", err)
+	}
+
+	if err := client.Send([]byte("hello")); !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF after peer close, got %v", err)
+	}
+	if _, err := client.Recv(); !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF from recv after peer close, got %v", err)
 	}
 }

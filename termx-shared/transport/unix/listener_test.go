@@ -3,8 +3,11 @@ package unix
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/lozzow/termx/termx-shared/transport"
 )
 
@@ -95,6 +99,125 @@ func TestListenerAcceptContextCancel(t *testing.T) {
 
 	if _, err := listener.Accept(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestListenerCanceledAcceptDoesNotStealNextDial(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "termx.sock")
+	listener, err := NewListener(path)
+	if err != nil {
+		t.Fatalf("new listener failed: %v", err)
+	}
+	defer listener.Close()
+
+	cancelCtx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := listener.Accept(cancelCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected context deadline from canceled accept, got %v", err)
+	}
+
+	ctx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
+	accepted := make(chan transport.Transport, 1)
+	go func() {
+		conn, err := listener.Accept(ctx)
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	client, err := Dial(path)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+	defer client.Close()
+
+	select {
+	case server := <-accepted:
+		defer server.Close()
+	case <-time.After(time.Second):
+		t.Fatal("canceled accept stole the next dial")
+	}
+}
+
+func TestTransportRejectsOversizedPacketHeader(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	server, err := newTransport(serverConn)
+	if err != nil {
+		t.Fatalf("new transport failed: %v", err)
+	}
+	defer server.Close()
+
+	writer, err := zstd.NewWriter(
+		clientConn,
+		zstd.WithEncoderConcurrency(1),
+		zstd.WithEncoderLevel(zstd.SpeedFastest),
+		zstd.WithWindowSize(zstdTransportEncoderWindowSize),
+		zstd.WithLowerEncoderMem(true),
+	)
+	if err != nil {
+		t.Fatalf("new zstd writer failed: %v", err)
+	}
+	defer writer.Close()
+	defer clientConn.Close()
+
+	writeDone := make(chan error, 1)
+	go func() {
+		var header [5]byte
+		header[0] = packetKindFrame
+		binary.BigEndian.PutUint32(header[1:], uint32(maxPacketPayloadSize+1))
+		if err := writeAll(writer, header[:]); err != nil {
+			writeDone <- err
+			return
+		}
+		writeDone <- writer.Flush()
+	}()
+
+	if _, err := server.Recv(); err == nil || !strings.Contains(err.Error(), "packet too large") {
+		t.Fatalf("expected oversized packet error, got %v", err)
+	}
+	select {
+	case err := <-writeDone:
+		if err != nil {
+			t.Fatalf("writer failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out writing oversized packet header")
+	}
+}
+
+func TestTransportCloseUnblocksBlockedWrite(t *testing.T) {
+	conn := newBlockingWriteConn()
+	tr, err := newTransport(conn)
+	if err != nil {
+		t.Fatalf("new transport failed: %v", err)
+	}
+
+	sendDone := make(chan error, 1)
+	go func() {
+		sendDone <- tr.Send(bytes.Repeat([]byte("x"), maxPacketPayloadSize*2))
+	}()
+	time.Sleep(20 * time.Millisecond)
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- tr.Close()
+	}()
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("close failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("transport close did not unblock blocked write")
+	}
+	select {
+	case err := <-sendDone:
+		if err == nil {
+			t.Fatal("expected send to fail after forced close")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked send did not return after close")
 	}
 }
 
@@ -439,4 +562,60 @@ func TestTransportZstdWindowKeepsConnectionHeapBounded(t *testing.T) {
 	if heapGrowth > maxTransportHeapGrowth {
 		t.Fatalf("transport heap grew too much: got=%d want<=%d", heapGrowth, maxTransportHeapGrowth)
 	}
+}
+
+type blockingWriteConn struct {
+	done chan struct{}
+	once sync.Once
+}
+
+func newBlockingWriteConn() *blockingWriteConn {
+	return &blockingWriteConn{done: make(chan struct{})}
+}
+
+func (c *blockingWriteConn) Read(_ []byte) (int, error) {
+	<-c.done
+	return 0, io.EOF
+}
+
+func (c *blockingWriteConn) Write(_ []byte) (int, error) {
+	<-c.done
+	return 0, net.ErrClosed
+}
+
+func (c *blockingWriteConn) Close() error {
+	c.once.Do(func() {
+		close(c.done)
+	})
+	return nil
+}
+
+func (c *blockingWriteConn) LocalAddr() net.Addr {
+	return testAddr("local")
+}
+
+func (c *blockingWriteConn) RemoteAddr() net.Addr {
+	return testAddr("remote")
+}
+
+func (c *blockingWriteConn) SetDeadline(time.Time) error {
+	return nil
+}
+
+func (c *blockingWriteConn) SetReadDeadline(time.Time) error {
+	return nil
+}
+
+func (c *blockingWriteConn) SetWriteDeadline(time.Time) error {
+	return nil
+}
+
+type testAddr string
+
+func (a testAddr) Network() string {
+	return string(a)
+}
+
+func (a testAddr) String() string {
+	return string(a)
 }
