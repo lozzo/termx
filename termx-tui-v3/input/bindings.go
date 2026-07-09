@@ -1,6 +1,7 @@
 package input
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
@@ -31,6 +32,16 @@ type shortcutDefault struct {
 	Scene  string
 	Key    string
 	Action string
+}
+
+// ShortcutEntry 是 shortcut catalog 面向提示层和 overlay 输入层的只读条目。
+// Scene/Key/ActionID 来自内置默认或 `tui.shortcuts`；Label 只来自配置覆盖，不生成执行语义。
+type ShortcutEntry struct {
+	Scene    string
+	Key      string
+	KeyLabel string
+	ActionID string
+	Label    string
 }
 
 var builtinShortcutDefaults = []shortcutDefault{
@@ -207,6 +218,57 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "copy", Key: "H", Action: "copy.open_clipboard_history"},
 	{Scene: "copy", Key: "p", Action: "copy.paste_latest"},
 	{Scene: "copy", Key: "P", Action: "copy.paste_system"},
+
+	{Scene: "terminal_picker", Key: "enter", Action: "terminal_picker.attach"},
+	{Scene: "terminal_picker", Key: "tab", Action: "terminal_picker.split"},
+	{Scene: "terminal_picker", Key: "ctrl-e", Action: "terminal_picker.edit"},
+	{Scene: "terminal_picker", Key: "ctrl-k", Action: "terminal_picker.kill"},
+	{Scene: "terminal_picker", Key: "ctrl-x", Action: "terminal_picker.delete"},
+	{Scene: "terminal_picker", Key: "esc", Action: "terminal_picker.close"},
+
+	{Scene: "terminal_pool", Key: "enter", Action: "terminal_pool.attach"},
+	{Scene: "terminal_pool", Key: "ctrl-t", Action: "terminal_pool.attach_tab"},
+	{Scene: "terminal_pool", Key: "ctrl-o", Action: "terminal_pool.attach_float"},
+	{Scene: "terminal_pool", Key: "ctrl-r", Action: "terminal_pool.restart"},
+	{Scene: "terminal_pool", Key: "ctrl-e", Action: "terminal_pool.edit"},
+	{Scene: "terminal_pool", Key: "ctrl-k", Action: "terminal_pool.kill"},
+	{Scene: "terminal_pool", Key: "ctrl-x", Action: "terminal_pool.delete"},
+	{Scene: "terminal_pool", Key: "esc", Action: "terminal_pool.close"},
+
+	{Scene: "workbench_tree", Key: "enter", Action: "workbench_tree.open"},
+	{Scene: "workbench_tree", Key: "ctrl-n", Action: "workbench_tree.new"},
+	{Scene: "workbench_tree", Key: "ctrl-r", Action: "workbench_tree.rename"},
+	{Scene: "workbench_tree", Key: "ctrl-x", Action: "workbench_tree.delete"},
+	{Scene: "workbench_tree", Key: "ctrl-d", Action: "workbench_tree.detach"},
+	{Scene: "workbench_tree", Key: "ctrl-z", Action: "workbench_tree.zoom"},
+	{Scene: "workbench_tree", Key: "esc", Action: "workbench_tree.close"},
+
+	{Scene: "clipboard_history", Key: "enter", Action: "clipboard_history.paste"},
+	{Scene: "clipboard_history", Key: "ctrl-n", Action: "clipboard_history.new"},
+	{Scene: "clipboard_history", Key: "ctrl-e", Action: "clipboard_history.edit"},
+	{Scene: "clipboard_history", Key: "ctrl-x", Action: "clipboard_history.delete"},
+	{Scene: "clipboard_history", Key: "esc", Action: "clipboard_history.close"},
+
+	{Scene: "floating_overview", Key: "enter", Action: "floating_overview.open"},
+	{Scene: "floating_overview", Key: "1", Action: "floating.summon.1"},
+	{Scene: "floating_overview", Key: "2", Action: "floating.summon.2"},
+	{Scene: "floating_overview", Key: "3", Action: "floating.summon.3"},
+	{Scene: "floating_overview", Key: "4", Action: "floating.summon.4"},
+	{Scene: "floating_overview", Key: "5", Action: "floating.summon.5"},
+	{Scene: "floating_overview", Key: "6", Action: "floating.summon.6"},
+	{Scene: "floating_overview", Key: "7", Action: "floating.summon.7"},
+	{Scene: "floating_overview", Key: "8", Action: "floating.summon.8"},
+	{Scene: "floating_overview", Key: "9", Action: "floating.summon.9"},
+	{Scene: "floating_overview", Key: "s", Action: "floating_overview.show_all"},
+	{Scene: "floating_overview", Key: "c", Action: "floating_overview.collapse_all"},
+	{Scene: "floating_overview", Key: "x", Action: "floating.close"},
+	{Scene: "floating_overview", Key: "esc", Action: "floating_overview.close"},
+
+	{Scene: "prompt", Key: "enter", Action: "prompt.submit"},
+	{Scene: "prompt", Key: "esc", Action: "prompt.cancel"},
+
+	{Scene: "help", Key: "enter", Action: "help.close"},
+	{Scene: "help", Key: "esc", Action: "help.close"},
 }
 
 type shortcutCatalog struct {
@@ -223,6 +285,51 @@ func (catalog shortcutCatalog) bindingsCopy() []Binding {
 // 它只用于测试和后续提示投影读取默认目录；运行时路由会按当前 config 重新生成 catalog。
 func BindingCatalog() []Binding {
 	return shortcutCatalogForConfig(state.TUIShortcutConfig{}).bindingsCopy()
+}
+
+// ShortcutEntriesForConfig 返回当前配置下的完整 shortcut catalog 条目。
+// 该函数是 footer/help/overlay 提示层的快捷键真值；route 只消费其中可路由的 scene。
+func ShortcutEntriesForConfig(shortcuts state.TUIShortcutConfig) []ShortcutEntry {
+	if shortcutConfigUsesUserCatalog(shortcuts) {
+		return shortcutEntriesFromConfig(shortcuts)
+	}
+	entries := make([]ShortcutEntry, 0, len(builtinShortcutDefaults))
+	for _, item := range builtinShortcutDefaults {
+		entries = append(entries, shortcutEntryFromParts(item.Scene, item.Key, item.Action, ""))
+	}
+	return entries
+}
+
+// ShortcutEntriesForScene 返回某个 scene 下的快捷键条目，保持 catalog 中的定义顺序。
+func ShortcutEntriesForScene(shortcuts state.TUIShortcutConfig, sceneName string) []ShortcutEntry {
+	entries := ShortcutEntriesForConfig(shortcuts)
+	sceneKey := shortcutSceneCatalogKey(sceneName)
+	out := make([]ShortcutEntry, 0, len(entries))
+	for _, entry := range entries {
+		if shortcutSceneCatalogKey(entry.Scene) == sceneKey {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+// ShortcutEntryForEvent 按 route 同源的 key matcher 查找某个 scene 下的 action。
+// overlay reducer 用它把提示 catalog 直接作为键盘动作表，避免 overlay 另写一套快捷键。
+func ShortcutEntryForEvent(shortcuts state.TUIShortcutConfig, sceneName string, event InputEvent) (ShortcutEntry, bool) {
+	if event.Kind != EventKindKey {
+		return ShortcutEntry{}, false
+	}
+	for _, entry := range ShortcutEntriesForScene(shortcuts, sceneName) {
+		key, ok := parseShortcutKeyToken(entry.Key)
+		if !ok {
+			continue
+		}
+		binding := Binding{Key: key.Key, Char: key.Char, Ctrl: key.Ctrl, Alt: key.Alt, Shift: key.Shift}
+		if bindingMatches(binding, event) {
+			return entry, true
+		}
+	}
+	return ShortcutEntry{}, false
 }
 
 func shortcutCatalogForConfig(shortcuts state.TUIShortcutConfig) shortcutCatalog {
@@ -248,6 +355,46 @@ func shortcutCatalogFromConfig(shortcuts state.TUIShortcutConfig) shortcutCatalo
 		}
 	}
 	return catalog
+}
+
+func shortcutEntriesFromConfig(shortcuts state.TUIShortcutConfig) []ShortcutEntry {
+	sceneNames := make([]string, 0, len(shortcuts.Scenes))
+	for sceneName := range shortcuts.Scenes {
+		sceneNames = append(sceneNames, sceneName)
+	}
+	sort.Strings(sceneNames)
+	entries := []ShortcutEntry{}
+	for _, sceneName := range sceneNames {
+		scene := shortcuts.Scenes[sceneName]
+		keys := make([]string, 0, len(scene.Bindings))
+		for key := range scene.Bindings {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			binding := scene.Bindings[key]
+			entries = append(entries, shortcutEntryFromParts(sceneName, key, binding.Action, binding.Label))
+		}
+	}
+	return entries
+}
+
+func shortcutEntryFromParts(sceneName string, keyToken string, actionID string, label string) ShortcutEntry {
+	return ShortcutEntry{
+		Scene:    sceneName,
+		Key:      keyToken,
+		KeyLabel: ShortcutKeyDisplay(keyToken),
+		ActionID: actionID,
+		Label:    label,
+	}
+}
+
+func shortcutSceneCatalogKey(sceneName string) string {
+	sceneName = strings.ReplaceAll(strings.TrimSpace(sceneName), "-", "_")
+	if sceneName == "pane" {
+		return "panel"
+	}
+	return sceneName
 }
 
 func (catalog *shortcutCatalog) add(sceneName string, keyToken string, actionID string, label string) {
@@ -380,6 +527,79 @@ func parseShortcutKeyTokenBase(token string, key shortcutKey) (shortcutKey, bool
 	return key, true
 }
 
+// ShortcutKeyDisplay 将配置里的 key token 转成 footer/help 使用的稳定展示文本。
+// 展示文本由同一解析器生成，避免配置能按但提示显示另一套拼写。
+func ShortcutKeyDisplay(token string) string {
+	key, ok := parseShortcutKeyToken(token)
+	if !ok {
+		return strings.TrimSpace(token)
+	}
+	base := shortcutKeyBaseDisplay(key)
+	if key.Ctrl && key.Key == KeyChar && base != "" {
+		base = "^" + strings.ToUpper(base)
+	} else {
+		prefixes := []string{}
+		if key.Ctrl {
+			prefixes = append(prefixes, "Ctrl")
+		}
+		if key.Alt {
+			prefixes = append(prefixes, "Alt")
+		}
+		if key.Shift {
+			prefixes = append(prefixes, "Shift")
+		}
+		if len(prefixes) > 0 {
+			base = strings.Join(append(prefixes, base), "+")
+		}
+	}
+	if base == "" {
+		return strings.TrimSpace(token)
+	}
+	return base
+}
+
+func shortcutKeyBaseDisplay(key shortcutKey) string {
+	switch key.Key {
+	case KeyChar:
+		if key.Char == " " {
+			return "space"
+		}
+		return key.Char
+	case KeyPageUp:
+		return "PgUp"
+	case KeyPageDn:
+		return "PgDn"
+	case KeyUp:
+		return "↑"
+	case KeyDown:
+		return "↓"
+	case KeyLeft:
+		return "←"
+	case KeyRight:
+		return "→"
+	case KeyHome:
+		return "home"
+	case KeyEnd:
+		return "end"
+	case KeyDelete:
+		return "delete"
+	case KeyInsert:
+		return "insert"
+	case KeyBackspace:
+		return "backspace"
+	case KeyTab:
+		return "tab"
+	case KeyShiftTab:
+		return "shift-tab"
+	case KeyEsc:
+		return "Esc"
+	case KeyEnter:
+		return "enter"
+	default:
+		return string(key.Key)
+	}
+}
+
 func shortcutSceneMode(sceneName string) (InteractionMode, bool) {
 	switch sceneName {
 	case "global":
@@ -429,6 +649,15 @@ func ShortcutBindingSignature(sceneName string, keyToken string) (string, bool) 
 // KnownShortcutActionID 判断 action id 是否属于当前内置 action registry。
 // 配置加载期用它拒绝拼写错误；运行时仍由 builtinActionDefinition 生成真实 reducer intent。
 func KnownShortcutActionID(actionID string) bool {
+	if _, ok := builtinActionDefinition(actionID); ok {
+		return true
+	}
+	return knownOverlayShortcutAction(actionID)
+}
+
+// RoutableShortcutActionID 判断 action 是否能由主 input route 直接产出 reducer intent。
+// overlay 专用 action 只能出现在 overlay scene，不能绑定到 global/panel 等可路由 scene 后静默吞键。
+func RoutableShortcutActionID(actionID string) bool {
 	_, ok := builtinActionDefinition(actionID)
 	return ok
 }
@@ -630,6 +859,18 @@ func menuActionDefinition(sceneName string) (Binding, bool) {
 		return Binding{ActionID: "menu.copy", Intent: IntentEnterCopyMode}, true
 	case "terminal_picker":
 		return Binding{ActionID: "menu.terminal_picker", Intent: IntentOpenTerminalPicker}, true
+	case "terminal_pool":
+		return Binding{ActionID: "menu.terminal_pool", Intent: IntentShellAction, Action: ShellActionOpenPool}, true
+	case "workbench_tree":
+		return Binding{ActionID: "menu.workbench_tree", Intent: IntentShellAction, Action: ShellActionOpenTree}, true
+	case "clipboard_history":
+		return Binding{ActionID: "menu.clipboard_history", Intent: IntentShellAction, Action: ShellActionOpenClipboardHistory}, true
+	case "floating_overview":
+		return Binding{ActionID: "menu.floating_overview", Intent: IntentShellAction, Action: ShellActionFloatingOverview}, true
+	case "prompt":
+		return Binding{ActionID: "menu.prompt", Intent: IntentShellAction, Action: ShellActionOpenPrompt}, true
+	case "help":
+		return Binding{ActionID: "menu.help", Intent: IntentShellAction, Action: ShellActionOpenHelp}, true
 	}
 	mode, ok := shortcutMenuTargetMode(sceneName)
 	if !ok {
@@ -654,6 +895,24 @@ func shortcutMenuTargetMode(sceneName string) (InteractionMode, bool) {
 		return InteractionModeWorkspace, true
 	default:
 		return InteractionModeNormal, false
+	}
+}
+
+func knownOverlayShortcutAction(actionID string) bool {
+	switch actionID {
+	case "terminal_picker.attach", "terminal_picker.split", "terminal_picker.edit", "terminal_picker.kill", "terminal_picker.delete",
+		"terminal_picker.close",
+		"terminal_pool.attach", "terminal_pool.attach_tab", "terminal_pool.attach_float", "terminal_pool.restart", "terminal_pool.edit", "terminal_pool.kill", "terminal_pool.delete",
+		"terminal_pool.close",
+		"workbench_tree.open", "workbench_tree.new", "workbench_tree.rename", "workbench_tree.delete", "workbench_tree.detach", "workbench_tree.zoom",
+		"workbench_tree.close",
+		"clipboard_history.paste", "clipboard_history.new", "clipboard_history.edit", "clipboard_history.delete",
+		"clipboard_history.close",
+		"floating_overview.open", "floating_overview.show_all", "floating_overview.collapse_all", "floating_overview.close",
+		"prompt.submit", "prompt.cancel", "help.close":
+		return true
+	default:
+		return false
 	}
 }
 

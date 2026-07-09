@@ -316,41 +316,21 @@ tui:
       # 默认值：""。
       keylock_off: ""
 
-    # modes.<name> 控制某个 footer mode 的 badge 和 action 顺序。
+    # modes.<name> 只控制某个 footer mode 的 badge。
     # name 可写 live、pane、resize、tab、workspace、floating、global、copy，
     # 也可写 overlay mode，例如 terminal-picker、terminal-pool、workbench-tree、clipboard-history。
-    # actions 是逗号分隔的 action alias 或 action id；当前配置解析器不支持 YAML list。
-    # resize mode 可用语义 alias：left/right/up/down/balance/layout/align/center/reset/global。
+    # footer action、快捷键和文案统一由 tui.shortcuts 生成。
     # 示例：
     # modes:
     #   live:
     #     icon: "󰆍"
     #     label: "TERM"
     #     style: footer-accent
-    #     actions: "pane,resize,tab,workspace,float,copy,picker,global"
     #   resize:
     #     icon: "󰙖"
     #     label: "SIZE"
     #     style: footer-key-resize
-    #     actions: "left,right,up,down,balance,layout,align,center,reset,global"
     modes:
-
-    # actions.<alias> 定义可复用 action token。
-    # id 非空时必须对应 render/action_ids.go 里的现有 action id，点击才会触发语义动作。
-    # id 为空时只是展示 token，不产生 click hit region。
-    # key 是显示用快捷键文本；真实键盘触发仍以 input/BindingCatalog 为准。
-    # style 可用：footer-key-pane、footer-key-resize、footer-key-tab、footer-key-workspace、
-    # footer-key-float、footer-key-copy、footer-key-picker、footer-key-global、footer-accent、
-    # footer-muted、status-accent、status-warning、warning、danger 等内置 style token。
-    # 示例：
-    # actions:
-    #   pane:
-    #     id: footer.mode-pane
-    #     key: "^P"
-    #     icon: ""
-    #     label: "pane"
-    #     style: footer-key-pane
-    actions:
 
   # interaction 控制当前 TUI 客户端的交互细节。
   # 这些配置是用户偏好，不进入 workbench storage，也不表达 terminal 状态。
@@ -423,7 +403,7 @@ tui:
       highlight_matches: true
 
   # shortcuts 是快捷键配置的唯一入口。
-  # 当前 KS003 阶段输入路由已从这里生成；后续 KS004 会让提示系统也从这里生成。
+  # 输入路由、footer/help/overlay 提示都从这里生成。
   # 默认行为：不写 tui.shortcuts 时使用内置默认快捷键。
   # 注意：一旦写出 tui.shortcuts，包括空块，就表示用户配置成为唯一真值，不再启用默认快捷键。
   # 短写：key: action。

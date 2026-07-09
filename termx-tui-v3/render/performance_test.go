@@ -34,7 +34,10 @@ func benchmarkLargeOutputVM(width int, height int, rows int) RenderVM {
 	logLines := makeBenchmarkLines(rows, "logs")
 	return RenderVM{Shell: ShellVM{
 		Header: HeaderVM{Visible: true, Workspace: "bench", Tab: "[large]", ActivePane: "pane-live", TerminalSummary: "term:2", FloatingSummary: "float:0"},
-		Footer: FooterVM{Visible: true, Mode: "live", Hint: "large terminal output", Actions: []string{"^P pane", "^V copy"}, ActiveTarget: "pane:large live"},
+		Footer: FooterVM{Visible: true, Mode: "live", Hint: "large terminal output", ActionTokens: []FooterActionVM{
+			{Key: "^P", Label: "PANE", ActionID: ActionFooterPaneMode.String()},
+			{Key: "^V", Label: "COPY", ActionID: ActionFooterCopyMode.String()},
+		}, ActiveTarget: "pane:large live"},
 		Layout: LayoutVM{
 			Viewport: Rect{W: width, H: height},
 			Panels: []PanelVM{{

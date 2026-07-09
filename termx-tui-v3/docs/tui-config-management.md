@@ -135,15 +135,6 @@ tui:
         icon: "󰆍"
         label: "TERM"
         style: footer-accent
-        actions: "pane,resize,tab,workspace,float,copy,picker,global"
-
-    actions:
-      pane:
-        id: footer.mode-pane
-        key: "^P"
-        icon: ""
-        label: "pane"
-        style: footer-key-pane
 
   interaction:
     mouse: true
@@ -211,8 +202,7 @@ tui:
 | `chrome.tab_template` | `""` | header renderer | header tab 的 Go `text/template` 格式；span/action 标签只影响渲染和 hit region，不改变 tab truth。 |
 | `chrome.pane_glyphs.*` | 内置 glyph / muted | pane chrome renderer | pane/floating chrome action、owner、裁切 marker 和 live extent 占位点。`zoom/unzoom` 只改变同一个 `pane.zoom` toggle 的展示 glyph；是否裁切仍由 content viewport 计算。style 支持内置 token 或 `#RRGGBB`。 |
 | `footer.templates.*` | 见 schema | footer renderer | footer mode badge、action 装饰、分隔符和 keylock 文案模板；当前只做占位符替换，不执行脚本。 |
-| `footer.modes.*` | 内置 catalog | RenderVM builder | 控制某个 footer mode 的 badge 和 action 顺序；`actions` 是逗号分隔 alias/action id，不是 YAML list。 |
-| `footer.actions.*` | 内置 `ActionSpecCatalog` | RenderVM builder | 覆盖 footer action 的 id、key、icon、label、style；id 为空时只展示，不产生 click hit region。 |
+| `footer.modes.*` | 空 | RenderVM builder | 只控制某个 footer mode 的 badge；footer action、快捷键和文案统一由 `tui.shortcuts` 生成。 |
 | `interaction.mouse` | `true` | TerminalHost/input | 控制宿主鼠标模式和 hit region 消费。 |
 | `interaction.sticky_prefix_timeout_ms` | `3000` | app timer | sticky shortcut mode 空闲退出时间。overlay/copy 这类显式页面不受它影响。 |
 | `interaction.shortcut_passthrough_interval_ms` | `1000` | app input window | 入口键双击透传窗口，例如 `ctrl-w ctrl-w` 或 `ctrl-v ctrl-v` 的第二击是否发给 terminal。 |
@@ -262,6 +252,6 @@ tui:
 3. `StateRoot.Config`、`ConfigLoadedMsg`、`ConfigReloadRequestedMsg` 和 reducer。
 4. renderer 全局改用 `ResolvedTheme`，清理散落颜色常量。
 5. shortcuts config resolver 和冲突检测。
-6. chrome/interaction/footer 配置接入 header/footer、panel presentation、sticky timeout、footer action token 和 clipboard history overlay。
+6. chrome/interaction/footer 配置接入 header/footer、panel presentation、sticky timeout 和 clipboard history overlay；footer action token 统一从 shortcuts catalog 派生。
 
 每个切片都要有 harness：配置解析失败、默认值、host palette + 用户覆盖、颜色派生、shortcuts 冲突和 renderer token 消费。

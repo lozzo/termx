@@ -703,6 +703,13 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		root.Shell = root.Shell.CloseOverlay()
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
 		return root.Advance(), nil
+	case render.ActionPromptOpen:
+		root.Shell = root.Shell.OpenPrompt(state.PromptState{
+			Title:       "Command Prompt",
+			Context:     "Type a command. Execution is intentionally a reducer-owned placeholder in this phase.",
+			Placeholder: "command",
+		})
+		return root.Advance(), nil
 	case render.ActionHelpOpen:
 		root.Shell = root.Shell.OpenHelp("most-used")
 		return root.Advance(), nil

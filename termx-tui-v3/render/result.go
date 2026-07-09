@@ -1043,7 +1043,6 @@ type FooterVM struct {
 	ModeLabel                        string
 	ModeStyle                        StyleToken
 	Hint                             string
-	Actions                          []string
 	ActionTokens                     []FooterActionVM
 	KeyTemplate                      string
 	KeyTemplateSet                   bool

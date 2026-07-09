@@ -224,7 +224,7 @@ func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Fram
 func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame) {
 	t.Helper()
 	review := cases["visual-audit-current"]
-	requiredReview := []string{"  main", "▎ 1 main    2 logs " + render.HeaderTabCreateText, "visual review", floatingChromeFullActionMarker(), "unconnected", "└───────────────────────────┘", "[Ctrl] • [P] PANE", "[W] WORKSPACE", "[V] COPY", "[G] GLOBAL", "ws:main float:1 terminals:1"}
+	requiredReview := []string{"  main", "▎ 1 main    2 logs " + render.HeaderTabCreateText, "visual review", floatingChromeFullActionMarker(), "unconnected", "└───────────────────────────┘", "[Ctrl] • [P] PANE", "[W] WORKSPACE", "[V] COPY", "[G] GLOBAL", "ws:main float:1"}
 	for _, marker := range requiredReview {
 		if !frameContains(review.Lines, marker) {
 			t.Fatalf("visual review smoke missing chrome marker %q: %#v", marker, review.Lines)
@@ -235,7 +235,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		"terminal-pool-page":  {"┌─ Terminal Manager", "⌕ search 日志", "TERMINALS", "HIST metrics unavailable"},
 		"workbench-tree-page": {"┌─ Workbench Navigator", "⌕ search 日志", "WORKBENCH", "DETAIL", "VIEWS"},
 		"prompt-overlay":      {"┌─ prompt", "Command Prompt", "重命名"},
-		"help-overlay":        {"┌─ help", "● open", "esc", "Most used", "Terminal Manager"},
+		"help-overlay":        {"┌─ help", "● open", "Esc", "Most used", "Terminal Manager"},
 	}
 	for name, markers := range requiredOverlays {
 		frame := cases[name]

@@ -82,7 +82,7 @@
 | KS001 | 完成 | TUI 快捷键现状盘点与 shortcuts 设计文档 | `shortcut-inventory.md` 覆盖实际按键、展示提示、不一致项；`shortcut-system-plan.md` 固化 `tui.shortcuts` 单一配置入口、提示同源和旧 `tui.keymap` 删除策略 |
 | KS002 | 完成 | shortcuts config schema/parser/validation | 新增 `TUIShortcutConfig`；支持 action label、场景短写/长写；删除旧 `tui.keymap` 配置字段、默认值、parser、validation、示例和测试，不保留 deprecated/fallback |
 | KS003 | 完成 | 内置 action registry 与输入路由接入 | 默认 shortcuts 生成当前实际行为；自定义 shortcuts 是唯一输入真值；旧硬编码只能作为默认 catalog 来源，不保留第二套 route fallback |
-| KS004 | 待开始 | footer/help/overlay 提示同源接入与旧提示清理 | footer、help、overlay/menu 提示全部从 shortcut catalog 生成；用户删除 shortcut 后提示消失；修复当前提示与真实按键不一致问题 |
+| KS004 | 完成 | footer/help/overlay 提示同源接入与旧提示清理 | footer、help、overlay/menu 提示全部从 shortcut catalog 生成；用户删除 shortcut 后提示消失；修复当前提示与真实按键不一致问题 |
 | ME012 | 待开始 | hub/P2P transport dialer 与跨设备发现 | 接入 `termx-hub/` 发现/授权/relay；P2P 或 relay datachannel 只连接远端 termx daemon；局部失败不影响其他 endpoint |
 
 ## 执行规则
@@ -128,3 +128,4 @@
 - KS001 已完成：已新增 TUI 快捷键现状盘点与 `tui.shortcuts` 设计文档；本切片未修改运行时输入路由。后续 KS002-KS004 必须删除旧 `tui.keymap`，不保留 deprecated 双路径、兼容 fallback 或第二份快捷键真值；每个阶段提交前必须运行准入并使用子 Agent 只读审核。
 - KS002 已完成：`tui.shortcuts` config schema/parser/validation 已落地，支持 action label、场景短写/长写和内置 scene 校验；旧 `tui.keymap` 配置入口、默认值、parser、validation、示例和测试已删除，本切片未接入运行时输入路由。
 - KS003 已完成：已建立内置 action registry 与 shortcut catalog 输入路由；默认 catalog 覆盖现有硬编码行为，自定义 `tui.shortcuts` 是唯一输入真值，显式空 `tui.shortcuts` 不回退默认，未知 action 和 runtime key 冲突在配置期拒绝。KS004 接提示/overlay 同源前需要统一 overlay `menu.*` registry。
+- KS004 已完成：footer、help 和 overlay/menu 提示统一从 shortcut catalog 生成，旧 `tui.footer.actions` / `footer.modes.*.actions` 配置入口和 `FooterVM.Actions` 字符串 fallback 已删除；overlay Esc close 等主要动作通过 catalog 映射，用户显式删除 shortcut 后不再展示也不再触发对应动作。

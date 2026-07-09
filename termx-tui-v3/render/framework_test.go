@@ -530,7 +530,10 @@ func TestFrameworkStylesActiveAndInactivePaneChromeDifferently(t *testing.T) {
 func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Header: HeaderVM{Visible: true, Workspace: "main", Tab: "1", ActivePane: "pane-1", TerminalSummary: "term:1", FloatingSummary: "float:0", Notice: "ok"},
-		Footer: FooterVM{Visible: true, Mode: "live", Hint: "term-1", Actions: []string{"^P PANE", "^R RESIZE"}, ActiveTarget: "pane:shell term:term-1", GlobalSummary: "ws:main float:0 terminals:1"},
+		Footer: FooterVM{Visible: true, Mode: "live", Hint: "term-1", ActionTokens: []FooterActionVM{
+			{Key: "^P", Label: "PANE", ActionID: ActionFooterPaneMode.String()},
+			{Key: "^R", Label: "RESIZE", ActionID: ActionFooterResizeMode.String()},
+		}, ActiveTarget: "pane:shell term:term-1", GlobalSummary: "ws:main float:0 terminals:1"},
 		Layout: LayoutVM{Viewport: Rect{W: 120, H: 10}, Panels: []PanelVM{{
 			ID:           "pane-1",
 			Title:        "shell",
@@ -620,7 +623,7 @@ func TestFrameworkRendersFullFooterSummaryWhenWidthAllows(t *testing.T) {
 		Footer: FooterVM{
 			Visible:       true,
 			Mode:          "live",
-			ActionTokens:  footerActionCatalog("live"),
+			ActionTokens:  footerActionCatalogFromShortcuts("live", state.Root{}),
 			GlobalSummary: "ws:main float:1 terminals:1",
 		},
 		Layout: LayoutVM{Viewport: Rect{W: 140, H: 8}, Panels: []PanelVM{{
@@ -632,7 +635,7 @@ func TestFrameworkRendersFullFooterSummaryWhenWidthAllows(t *testing.T) {
 	}})
 	frame := result.Frame()
 	footer := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footer, "[G] GLOBAL") || !strings.Contains(footer, "ws:main float:1 terminals:1") {
+	if !strings.Contains(footer, "[G] GLOBAL") || !strings.Contains(footer, "ws:main float:1") {
 		t.Fatalf("wide footer should keep full action strip and summary, got %#v", footer)
 	}
 	if strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[48;2;8;8;13m") {
@@ -647,7 +650,7 @@ func TestFrameworkRendersFullFooterSummaryAtVisualCompareWidth(t *testing.T) {
 		Footer: FooterVM{
 			Visible:       true,
 			Mode:          "live",
-			ActionTokens:  footerActionCatalog("live"),
+			ActionTokens:  footerActionCatalogFromShortcuts("live", state.Root{}),
 			GlobalSummary: "ws:main float:1 terminals:1",
 		},
 		Layout: LayoutVM{Viewport: Rect{W: 120, H: 8}, Panels: []PanelVM{{
@@ -679,7 +682,7 @@ func TestFrameworkCriticalFooterHintDoesNotRestoreStatusBackground(t *testing.T)
 			Mode:          "live",
 			Hint:          "error: boom",
 			ActiveTarget:  "pane:shell",
-			ActionTokens:  footerActionCatalog("live"),
+			ActionTokens:  footerActionCatalogFromShortcuts("live", state.Root{}),
 			GlobalSummary: "ws:main float:1 terminals:1",
 		},
 		Layout: LayoutVM{Viewport: Rect{W: 140, H: 8}, Panels: []PanelVM{{
@@ -810,9 +813,9 @@ func TestFrameworkRendersClipboardHistoryThinTModal(t *testing.T) {
 		t.Fatalf("clipboard history modal must keep shortcuts out of content, got %#v", lines)
 	}
 	footer := lines[len(lines)-1]
-	for _, token := range []string{"[↑↓] SELECT", "[enter] PASTE", "[n] NEW", "[e] EDIT", "[x] DELETE"} {
+	for _, token := range []string{"[enter] PASTE", "[Ctrl] • [N] NEW", "[E] EDIT", "[X] DELETE"} {
 		if !strings.Contains(footer, token) {
-			t.Fatalf("clipboard history shortcuts should stay in global footer, missing %q from %q", token, footer)
+			t.Fatalf("clipboard history shortcuts should come from shortcut catalog, missing %q from %q", token, footer)
 		}
 	}
 	if !styledLinesContainText(result.StyledLines(), "g", StylePickerMatch) ||
@@ -1013,19 +1016,19 @@ func TestFrameworkRendersModeSpecificFooterHints(t *testing.T) {
 		mode string
 		want string
 	}{
-		{name: "pane", mode: "pane", want: "[%] VSPLIT"},
-		{name: "resize", mode: "resize", want: "[←/h]"},
+		{name: "pane", mode: "pane", want: "[%/^D] VSPLIT"},
+		{name: "resize", mode: "resize", want: "[←/h/H]"},
 		{name: "global", mode: "global", want: "[h] HEADER"},
 		{name: "tab", mode: "tab", want: "[c] NEW"},
 		{name: "workspace", mode: "workspace", want: "[x] DELETE"},
 		{name: "copy", mode: "copy", want: "[PgUp] SCROLL"},
-		{name: "overlay", mode: "terminal-picker", want: "[enter] SELECT"},
+		{name: "overlay", mode: "terminal-picker", want: "[enter] ATTACH"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			frame := NewRenderer(DefaultTheme()).Render(RenderVM{Shell: ShellVM{
 				Header: HeaderVM{Visible: true, Workspace: "main"},
-				Footer: FooterVM{Visible: true, Mode: tc.mode, Actions: footerActions(tc.mode), ActiveTarget: "pane:shell", GlobalSummary: "ws:main tabs:1 panes:1 float:0"},
+				Footer: FooterVM{Visible: true, Mode: tc.mode, ActionTokens: footerActionCatalogFromShortcuts(tc.mode, state.Root{}), ActiveTarget: "pane:shell", GlobalSummary: "ws:main tabs:1 panes:1 float:0"},
 				Layout: LayoutVM{Viewport: Rect{W: 96, H: 9}, Panels: []PanelVM{{
 					ID:           "pane-1",
 					Title:        "shell",

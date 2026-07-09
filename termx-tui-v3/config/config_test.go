@@ -108,14 +108,6 @@ tui:
         icon: "󰆍"
         label: "TERM"
         style: footer-accent
-        actions: "pane,copy,global"
-    actions:
-      pane:
-        id: footer.mode-pane
-        key: "^P"
-        icon: ""
-        label: "pane"
-        style: footer-key-pane
   interaction:
     sticky_prefix_timeout_ms: 5000
     shortcut_passthrough_interval_ms: 750
@@ -193,9 +185,8 @@ tui:
 		cfg.Footer.Templates.FloatingSummary != "󰹙 {{count}}" ||
 		cfg.Footer.Templates.TerminalsSummary != " {{count}}" ||
 		cfg.Footer.Modes["live"].Icon != "󰆍" ||
-		cfg.Footer.Modes["live"].Actions != "pane,copy,global" ||
-		cfg.Footer.Actions["pane"].ID != "footer.mode-pane" ||
-		cfg.Footer.Actions["pane"].Icon != "" {
+		cfg.Footer.Modes["live"].Label != "TERM" ||
+		cfg.Footer.Modes["live"].Style != "footer-accent" {
 		t.Fatalf("footer overrides not applied: %#v", cfg.Footer)
 	}
 	if cfg.Interaction.StickyPrefixTimeoutMS != 5000 ||
@@ -238,13 +229,13 @@ func TestParseRejectsUnknownFieldAndBadValues(t *testing.T) {
 	}
 
 	_, err = Parse([]byte("tui:\n  footer:\n    actions:\n      pane:\n        style: nope\n"))
-	if err == nil || !strings.Contains(err.Error(), "unknown style token") {
-		t.Fatalf("expected footer style validation error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "unknown section") {
+		t.Fatalf("expected removed footer actions section error, got %v", err)
 	}
 
 	_, err = Parse([]byte("tui:\n  footer:\n    modes:\n      live:\n        actions: \"pane,$bad\"\n"))
-	if err == nil || !strings.Contains(err.Error(), "invalid action ref") {
-		t.Fatalf("expected footer action ref validation error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("expected removed footer mode actions field error, got %v", err)
 	}
 
 	_, err = Parse([]byte("tui:\n  keymap:\n    root:\n      terminal_picker: ctrl-f\n"))

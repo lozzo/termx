@@ -277,7 +277,6 @@ func knownSection(path string) bool {
 		"tui.footer",
 		"tui.footer.templates",
 		"tui.footer.modes",
-		"tui.footer.actions",
 		"tui.interaction",
 		"tui.interaction.clipboard_history",
 		"tui.interaction.picker",
@@ -290,17 +289,15 @@ func knownSection(path string) bool {
 }
 
 func knownFooterDynamicSection(path string) bool {
-	for _, prefix := range []string{"tui.footer.modes.", "tui.footer.actions."} {
-		if !strings.HasPrefix(path, prefix) {
-			continue
-		}
-		rest := strings.TrimPrefix(path, prefix)
-		if rest == "" || strings.Contains(rest, ".") {
-			return false
-		}
-		return validFooterConfigName(rest)
+	const prefix = "tui.footer.modes."
+	if !strings.HasPrefix(path, prefix) {
+		return false
 	}
-	return false
+	rest := strings.TrimPrefix(path, prefix)
+	if rest == "" || strings.Contains(rest, ".") {
+		return false
+	}
+	return validFooterConfigName(rest)
 }
 
 func knownShortcutDynamicSection(path string) bool {
@@ -490,8 +487,6 @@ func setFooterDynamicScalar(cfg *state.TUIConfigStore, path string, value string
 			mode.Label = value
 		case "style":
 			mode.Style = value
-		case "actions":
-			mode.Actions = value
 		default:
 			return false, nil
 		}
@@ -499,33 +494,6 @@ func setFooterDynamicScalar(cfg *state.TUIConfigStore, path string, value string
 			cfg.Footer.Modes = map[string]state.TUIFooterModeConfig{}
 		}
 		cfg.Footer.Modes[name] = mode
-		return true, nil
-	}
-	if strings.HasPrefix(path, "tui.footer.actions.") {
-		rest := strings.TrimPrefix(path, "tui.footer.actions.")
-		name, field, ok := strings.Cut(rest, ".")
-		if !ok || !validFooterConfigName(name) {
-			return false, nil
-		}
-		action := cfg.Footer.Actions[name]
-		switch field {
-		case "id":
-			action.ID = value
-		case "key":
-			action.Key = value
-		case "label":
-			action.Label = value
-		case "icon":
-			action.Icon = value
-		case "style":
-			action.Style = value
-		default:
-			return false, nil
-		}
-		if cfg.Footer.Actions == nil {
-			cfg.Footer.Actions = map[string]state.TUIFooterActionConfig{}
-		}
-		cfg.Footer.Actions[name] = action
 		return true, nil
 	}
 	return false, nil
@@ -873,7 +841,6 @@ func validateFooterConfig(footer state.TUIFooterConfig) error {
 			{"icon", mode.Icon},
 			{"label", mode.Label},
 			{"style", mode.Style},
-			{"actions", mode.Actions},
 		} {
 			if err := validateSingleLine("tui.footer.modes."+name+"."+item.path, item.value); err != nil {
 				return err
@@ -881,36 +848,6 @@ func validateFooterConfig(footer state.TUIFooterConfig) error {
 		}
 		if !validFooterStyleToken(mode.Style) {
 			return fmt.Errorf("tui.footer.modes.%s.style has unknown style token %q", name, mode.Style)
-		}
-		for _, ref := range footerConfigRefs(mode.Actions) {
-			if !validFooterActionRef(ref) {
-				return fmt.Errorf("tui.footer.modes.%s.actions has invalid action ref %q", name, ref)
-			}
-		}
-	}
-	for name, action := range footer.Actions {
-		if !validFooterConfigName(name) {
-			return fmt.Errorf("tui.footer.actions.%s has invalid name", name)
-		}
-		for _, item := range []struct {
-			path  string
-			value string
-		}{
-			{"id", action.ID},
-			{"key", action.Key},
-			{"label", action.Label},
-			{"icon", action.Icon},
-			{"style", action.Style},
-		} {
-			if err := validateSingleLine("tui.footer.actions."+name+"."+item.path, item.value); err != nil {
-				return err
-			}
-		}
-		if action.ID != "" && !validFooterActionRef(action.ID) {
-			return fmt.Errorf("tui.footer.actions.%s.id has invalid action id %q", name, action.ID)
-		}
-		if !validFooterStyleToken(action.Style) {
-			return fmt.Errorf("tui.footer.actions.%s.style has unknown style token %q", name, action.Style)
 		}
 	}
 	return nil
@@ -921,31 +858,6 @@ func validateSingleLine(path string, value string) error {
 		return fmt.Errorf("%s must be a single-line value", path)
 	}
 	return nil
-}
-
-func footerConfigRefs(value string) []string {
-	parts := strings.Split(value, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			out = append(out, part)
-		}
-	}
-	return out
-}
-
-func validFooterActionRef(value string) bool {
-	if strings.TrimSpace(value) == "" {
-		return false
-	}
-	for _, r := range value {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' || r == '.' {
-			continue
-		}
-		return false
-	}
-	return true
 }
 
 func validFooterStyleToken(value string) bool {
@@ -1030,6 +942,9 @@ func validateShortcutsConfig(shortcuts state.TUIShortcutConfig) error {
 			}
 			if !input.KnownShortcutActionID(binding.Action) {
 				return fmt.Errorf("%s.action references unknown shortcut action %q", path, binding.Action)
+			}
+			if routedShortcutScene(sceneName) && !input.RoutableShortcutActionID(binding.Action) {
+				return fmt.Errorf("%s.action references non-routable shortcut action %q", path, binding.Action)
 			}
 		}
 	}

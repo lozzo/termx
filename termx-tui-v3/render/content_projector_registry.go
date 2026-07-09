@@ -135,7 +135,7 @@ func projectPromptContent(ctx ContentProjectorContext) ContentVM {
 }
 
 func projectHelpContent(ctx ContentProjectorContext) ContentVM {
-	return buildHelpContent(ctx.Shell)
+	return buildHelpContent(ctx.Root)
 }
 
 func projectPlaceholderContent(ctx ContentProjectorContext) ContentVM {

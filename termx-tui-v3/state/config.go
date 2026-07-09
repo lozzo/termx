@@ -121,11 +121,10 @@ type TUIPaneChromeGlyphsConfig struct {
 }
 
 // TUIFooterConfig 描述 footer 的用户可配置展示层。
-// 它只影响 mode badge、action token 的顺序和文案；真实点击语义仍以 render ActionSpec/app reducer 为准。
+// 它只影响 mode badge、模板和 summary；快捷键 action token 统一由 TUIShortcutConfig 派生。
 type TUIFooterConfig struct {
 	Templates TUIFooterTemplatesConfig
 	Modes     map[string]TUIFooterModeConfig
-	Actions   map[string]TUIFooterActionConfig
 }
 
 // TUIFooterTemplatesConfig 描述 footer token 的轻量模板。
@@ -145,22 +144,11 @@ type TUIFooterTemplatesConfig struct {
 	KeylockOff               string
 }
 
-// TUIFooterModeConfig 描述某个 footer mode 的徽标和 action 引用列表。
-// Actions 是逗号分隔的 action alias 或 render action id，避免配置解析层引入通用 YAML list。
+// TUIFooterModeConfig 描述某个 footer mode 的徽标。
+// action token 不在 footer 配置中保存，避免和 shortcut catalog 形成第二份快捷键真值。
 type TUIFooterModeConfig struct {
-	Icon    string
-	Label   string
-	Style   string
-	Actions string
-}
-
-// TUIFooterActionConfig 描述一个可复用 footer action token。
-// ID 为空时该 token 只是展示提示；ID 非空时必须落到现有 render action 语义边界。
-type TUIFooterActionConfig struct {
-	ID    string
-	Key   string
-	Label string
 	Icon  string
+	Label string
 	Style string
 }
 

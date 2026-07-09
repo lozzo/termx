@@ -208,7 +208,6 @@ func TestActionSpecByIDKeepsDynamicChromeGlyphsCurrent(t *testing.T) {
 
 func TestActionSpecCatalogKeepsInputOnlyActionsSeparate(t *testing.T) {
 	for _, id := range []ActionID{
-		ActionPromptOpen,
 		ActionFloatingMoveLeft,
 		ActionFloatingMoveRight,
 		ActionFloatingMoveUp,

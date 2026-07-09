@@ -103,7 +103,8 @@ func TestTabWorkspaceFooterHintsMatchInputBindings(t *testing.T) {
 			if !ok {
 				continue
 			}
-			intent := input.RouteWithMode(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: token.Key}, false, tc.input)
+			key := firstFooterShortcutKey(token.Key)
+			intent := input.RouteWithMode(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: key}, false, tc.input)
 			if intent.Kind != input.IntentWorkbenchCommand || intent.Command != command {
 				t.Fatalf("%s footer key %q action %q should route to %q, got %#v", tc.name, token.Key, token.ActionID, command, intent)
 			}
@@ -113,6 +114,14 @@ func TestTabWorkspaceFooterHintsMatchInputBindings(t *testing.T) {
 			t.Fatalf("%s footer missed expected actions %#v in %#v", tc.name, tc.expect, vm.Shell.Footer.ActionTokens)
 		}
 	}
+}
+
+func firstFooterShortcutKey(key string) string {
+	parts := strings.Split(key, "/")
+	if len(parts) == 0 {
+		return key
+	}
+	return strings.TrimSpace(parts[0])
 }
 
 func actionCatalogDispatchRoot() state.Root {

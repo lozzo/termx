@@ -96,6 +96,95 @@ func TestUIInputReducerUsesConfiguredShortcutsAsRouteTruth(t *testing.T) {
 	}
 }
 
+func TestUIInputReducerOverlayEscComesFromConfiguredShortcuts(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{
+		Shell: state.DefaultShell().OpenHelp("most-used"),
+		Config: state.TUIConfigStore{
+			Shortcuts: state.TUIShortcutConfig{
+				Configured: true,
+				Scenes: map[string]state.TUIShortcutSceneConfig{
+					"help": {Bindings: map[string]state.TUIShortcutBindingConfig{
+						"enter": {Action: "help.close"},
+					}},
+				},
+			},
+		},
+	}
+
+	footer := render.NewRenderVMBuilder().Build(root).Shell.Footer
+	if footerHasActionKey(footer.ActionTokens, "Esc") {
+		t.Fatalf("removed help esc shortcut must not be displayed, got %#v", footer.ActionTokens)
+	}
+
+	next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}})
+	if !next.Shell.Overlay.Open || next.Shell.Overlay.Kind != state.OverlayHelp {
+		t.Fatalf("removed help esc shortcut must not close overlay, shell=%#v effects=%#v", next.Shell, effects)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("removed help esc should only be consumed by overlay input, effects=%#v", effects)
+	}
+
+	next, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
+	if next.Shell.Overlay.Open || len(effects) != 1 {
+		t.Fatalf("configured help enter shortcut should still close overlay, shell=%#v effects=%#v", next.Shell, effects)
+	}
+}
+
+func TestUIInputReducerTerminalPoolEmptyShortcutSceneRemovesDefaultActions(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{
+		Shell: state.DefaultShell().OpenTerminalPool(),
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items:  []state.TerminalPoolItem{{TerminalID: "term-1", Title: "shell", State: "running"}},
+		},
+		Config: state.TUIConfigStore{
+			Shortcuts: state.TUIShortcutConfig{
+				Configured: true,
+				Scenes: map[string]state.TUIShortcutSceneConfig{
+					"terminal_pool": {Bindings: map[string]state.TUIShortcutBindingConfig{}},
+				},
+			},
+		},
+	}
+
+	footer := render.NewRenderVMBuilder().Build(root).Shell.Footer
+	if len(footer.ActionTokens) != 0 {
+		t.Fatalf("empty terminal_pool shortcut scene must not display default actions, got %#v", footer.ActionTokens)
+	}
+
+	next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
+	if !next.Shell.Overlay.Open || next.Shell.Overlay.Kind != state.OverlayTerminalPool {
+		t.Fatalf("removed terminal_pool enter shortcut must not attach or close overlay, shell=%#v effects=%#v", next.Shell, effects)
+	}
+	if effectEmitsTerminalPoolAttach(effects) {
+		t.Fatalf("removed terminal_pool enter shortcut must not emit attach effect, effects=%#v", effects)
+	}
+}
+
+func footerHasActionKey(actions []render.FooterActionVM, key string) bool {
+	for _, action := range actions {
+		if action.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func effectEmitsTerminalPoolAttach(effects []Effect) bool {
+	for _, effect := range effects {
+		fn, ok := effect.(FuncEffect)
+		if !ok || fn.Run == nil {
+			continue
+		}
+		if _, ok := fn.Run(context.Background()).(TerminalPoolAttachRequestMsg); ok {
+			return true
+		}
+	}
+	return false
+}
+
 func TestUIInputReducerStickyInteractionModeTimeoutAndRearm(t *testing.T) {
 	reducer := NewUIInputReducer()
 	root := state.Root{Shell: state.DefaultShell()}

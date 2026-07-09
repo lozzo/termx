@@ -87,8 +87,8 @@ func footerLeftSegments(footer FooterVM, width int) []barSegment {
 	if modeBadge := footerModeBadgeSegments(footer, mode); len(modeBadge) > 0 {
 		left = append(left, modeBadge...)
 	}
-	if len(footer.ActionTokens) > 0 || len(footer.Actions) > 0 {
-		actions := footerActionTokensForFooter(footer)
+	if len(footer.ActionTokens) > 0 {
+		actions := footer.ActionTokens
 		actions = footerActionTokensVisibleForWidth(actions, mode, width)
 		left = appendFooterActionSegments(left, actions, available, footerKeyTemplateForFooter(footer), footer.ActionTemplate, footer.ActionSeparator)
 	}
@@ -351,49 +351,6 @@ func intLabel(value int) string {
 	return strconv.Itoa(value)
 }
 
-func appendFooterSegment(base string, segment string, width int) string {
-	if segment == "" {
-		return base
-	}
-	next := base + "  " + segment
-	if width <= 0 || DisplayWidth(next) <= width {
-		return next
-	}
-	return base
-}
-
-func footerActionsLabel(actions []string, width int) string {
-	if len(actions) == 0 {
-		return ""
-	}
-	limit := 56
-	if width < 100 {
-		limit = 34
-	}
-	if width >= 140 {
-		limit = 72
-	}
-	kept := make([]string, 0, len(actions))
-	for _, action := range actions {
-		next := append(append([]string{}, kept...), action)
-		if DisplayWidth("keys:"+strings.Join(next, " ")) > limit && len(kept) > 0 {
-			break
-		}
-		kept = next
-	}
-	if len(kept) < len(actions) {
-		tail := footerTailAction(actions)
-		if !containsStringValue(kept, tail) {
-			withTail := append(append([]string{}, kept...), tail)
-			for len(withTail) > 1 && DisplayWidth("keys:"+strings.Join(withTail, " ")) > limit {
-				withTail = append(withTail[:len(withTail)-2], withTail[len(withTail)-1])
-			}
-			kept = withTail
-		}
-	}
-	return "keys:" + strings.Join(kept, " ")
-}
-
 func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM, width int, keyTemplate string, actionTemplate string, separatorText string) []barSegment {
 	limit := 58
 	if width < 60 {
@@ -494,22 +451,6 @@ func footerActionDisplayStyle(key string, label string, style StyleToken) StyleT
 	default:
 		return style
 	}
-}
-
-func footerActionTokensForFooter(footer FooterVM) []FooterActionVM {
-	if len(footer.ActionTokens) > 0 {
-		return footer.ActionTokens
-	}
-	actions := compactFooterActions(footer.Actions)
-	out := make([]FooterActionVM, 0, len(actions))
-	for _, action := range actions {
-		key, label := splitFooterAction(action)
-		if key == "" {
-			continue
-		}
-		out = append(out, FooterActionVM{Key: key, Label: label, Style: footerActionKeyStyle(key, label)})
-	}
-	return out
 }
 
 func selectFooterActionTokens(actions []FooterActionVM, limit int, separatorWidth int, keyTemplate string, actionTemplate string) []FooterActionVM {
@@ -731,18 +672,6 @@ func containsFooterActionToken(values []FooterActionVM, target FooterActionVM) b
 	return false
 }
 
-func footerActionDisplayWidth(action string) int {
-	key, label := splitFooterAction(action)
-	if key == "" {
-		return 0
-	}
-	width := DisplayWidth("  ") + DisplayWidth(formatFooterKeyToken(key))
-	if label != "" {
-		width += 1 + DisplayWidth(label)
-	}
-	return width
-}
-
 func formatFooterKeyToken(key string) string {
 	return strings.Join(formatFooterKeySegments(key), " • ")
 }
@@ -766,46 +695,6 @@ func footerCtrlLetter(key string) (string, bool) {
 func footerActionHasCtrlPrefix(key string) bool {
 	_, ok := footerCtrlLetter(key)
 	return ok
-}
-
-func compactFooterActions(actions []string) []string {
-	out := make([]string, 0, len(actions))
-	for _, action := range actions {
-		action = strings.TrimSpace(action)
-		if action == "" {
-			continue
-		}
-		switch action {
-		case "^R size":
-			action = "^R resize"
-		case "^W ws":
-			action = "^W workspace"
-		case "^F pick":
-			action = "^F picker"
-		case "^T":
-			action = "^T tab"
-		case "^O":
-			action = "^O float"
-		case "^V":
-			action = "^V copy"
-		case "^G":
-			action = "^G global"
-		}
-		out = append(out, action)
-	}
-	return out
-}
-
-func splitFooterAction(action string) (string, string) {
-	parts := strings.Fields(strings.TrimSpace(action))
-	if len(parts) == 0 {
-		return "", ""
-	}
-	key := parts[0]
-	if len(parts) == 1 {
-		return key, ""
-	}
-	return key, strings.Join(parts[1:], " ")
 }
 
 func footerActionKeyStyle(key string, label string) StyleToken {
@@ -895,28 +784,6 @@ func metadataTokenStartsField(field string) bool {
 		strings.HasPrefix(field, "keylock:") ||
 		strings.HasPrefix(field, "tabs:") ||
 		strings.HasPrefix(field, "panes:")
-}
-
-func footerTailAction(actions []string) string {
-	for i := len(actions) - 1; i >= 0; i-- {
-		action := strings.TrimSpace(actions[i])
-		if action != "" && !strings.HasPrefix(action, "esc") {
-			return actions[i]
-		}
-	}
-	if len(actions) == 0 {
-		return ""
-	}
-	return actions[len(actions)-1]
-}
-
-func containsStringValue(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 type barSegment struct {

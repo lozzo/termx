@@ -60,13 +60,6 @@ func NewUIInputReducer() Reducer {
 			return root, nil
 		}
 		shell := root.Shell.EnsureDefaults()
-		if inputMsg.Event.Kind == input.EventKindKey && inputMsg.Event.Key == input.KeyEsc && shell.Overlay.Open {
-			if shell.Overlay.Kind == state.OverlayPrompt && shell.Overlay.Prompt.SuggestionFocused {
-				return reducePromptInput(root, inputMsg.Event)
-			}
-			root.Shell = shell.CloseOverlay()
-			return root.Advance(), []Effect{handledEffect{}}
-		}
 		if inputMsg.TerminalMousePassthrough {
 			return root, nil
 		}
@@ -615,8 +608,8 @@ func reduceTerminalPickerInput(root state.Root, event input.InputEvent) (state.R
 		return root, nil
 	}
 	items := state.TerminalPickerItems(root)
-	if actionID, ok := terminalPickerKeyboardAction(event); ok {
-		return reduceOverlayKeyboardAction(root, actionID)
+	if entry, ok := input.ShortcutEntryForEvent(root.Config.Shortcuts, "terminal_picker", event); ok {
+		return reduceTerminalPickerShortcut(root, entry, items)
 	}
 	switch event.Key {
 	case input.KeyUp:
@@ -625,8 +618,6 @@ func reduceTerminalPickerInput(root state.Root, event input.InputEvent) (state.R
 	case input.KeyDown:
 		root.Shell = root.Shell.MoveTerminalPickerSelection(1, len(items))
 		return root.Advance(), []Effect{handledEffect{}}
-	case input.KeyEnter:
-		return reduceTerminalPickerConfirm(root, items)
 	case input.KeyBackspace, input.KeyDelete:
 		root.Shell = root.Shell.SetTerminalPickerQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
 		return root.Advance(), []Effect{handledEffect{}}
@@ -642,6 +633,15 @@ func reduceTerminalPickerInput(root state.Root, event input.InputEvent) (state.R
 		return root.Advance(), []Effect{handledEffect{}}
 	default:
 		return root, []Effect{handledEffect{}}
+	}
+}
+
+func reduceTerminalPickerShortcut(root state.Root, entry input.ShortcutEntry, items []state.TerminalPickerItem) (state.Root, []Effect) {
+	switch entry.ActionID {
+	case "terminal_picker.attach":
+		return reduceTerminalPickerConfirm(root, items)
+	default:
+		return reduceOverlayShortcutAction(root, entry)
 	}
 }
 
@@ -684,8 +684,8 @@ func reduceTerminalPoolPageInput(root state.Root, event input.InputEvent) (state
 		return root, nil
 	}
 	items := state.TerminalPoolPageItems(root)
-	if actionID, ok := terminalPoolKeyboardAction(event); ok {
-		return reduceOverlayKeyboardAction(root, actionID)
+	if entry, ok := input.ShortcutEntryForEvent(root.Config.Shortcuts, "terminal_pool", event); ok {
+		return reduceTerminalPoolShortcut(root, entry, items)
 	}
 	switch event.Key {
 	case input.KeyUp:
@@ -694,8 +694,6 @@ func reduceTerminalPoolPageInput(root state.Root, event input.InputEvent) (state
 	case input.KeyDown:
 		root.Shell = root.Shell.MoveTerminalPoolSelection(1, len(items))
 		return root.Advance(), terminalPoolPageHandledEffects()
-	case input.KeyEnter:
-		return reduceTerminalPoolPageAttach(root, items)
 	case input.KeyBackspace, input.KeyDelete:
 		root.Shell = root.Shell.SetTerminalPoolQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
 		return root.Advance(), terminalPoolPageHandledEffects()
@@ -711,6 +709,15 @@ func reduceTerminalPoolPageInput(root state.Root, event input.InputEvent) (state
 		return root.Advance(), terminalPoolPageHandledEffects()
 	default:
 		return root, []Effect{handledEffect{}}
+	}
+}
+
+func reduceTerminalPoolShortcut(root state.Root, entry input.ShortcutEntry, items []state.TerminalPoolPageItem) (state.Root, []Effect) {
+	switch entry.ActionID {
+	case "terminal_pool.attach":
+		return reduceTerminalPoolPageAttach(root, items)
+	default:
+		return reduceOverlayShortcutAction(root, entry)
 	}
 }
 
@@ -752,8 +759,8 @@ func reduceWorkbenchTreeInput(root state.Root, event input.InputEvent) (state.Ro
 		return root, nil
 	}
 	items := state.WorkbenchTreeItems(root)
-	if actionID, ok := workbenchTreeKeyboardAction(event); ok {
-		return reduceOverlayKeyboardAction(root, actionID)
+	if entry, ok := input.ShortcutEntryForEvent(root.Config.Shortcuts, "workbench_tree", event); ok {
+		return reduceWorkbenchTreeShortcut(root, entry, items)
 	}
 	switch event.Key {
 	case input.KeyUp:
@@ -774,13 +781,6 @@ func reduceWorkbenchTreeInput(root state.Root, event input.InputEvent) (state.Ro
 			return root.Advance(), []Effect{handledEffect{}}
 		}
 		return root, []Effect{handledEffect{}}
-	case input.KeyEnter:
-		if selected, ok := workbenchTreeSelectedItem(items); ok && selected.Expandable {
-			root.Shell = root.Shell.ToggleWorkbenchTreeItem(selected)
-			return root.Advance(), []Effect{handledEffect{}}
-		}
-		next, effects := reduceWorkbenchTreeOpen(root, items)
-		return next, append([]Effect{handledEffect{}}, effects...)
 	case input.KeyBackspace, input.KeyDelete:
 		root.Shell = root.Shell.SetWorkbenchTreeQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
 		return root.Advance(), []Effect{handledEffect{}}
@@ -799,13 +799,27 @@ func reduceWorkbenchTreeInput(root state.Root, event input.InputEvent) (state.Ro
 	}
 }
 
+func reduceWorkbenchTreeShortcut(root state.Root, entry input.ShortcutEntry, items []state.WorkbenchTreeItem) (state.Root, []Effect) {
+	switch entry.ActionID {
+	case "workbench_tree.open":
+		if selected, ok := workbenchTreeSelectedItem(items); ok && selected.Expandable {
+			root.Shell = root.Shell.ToggleWorkbenchTreeItem(selected)
+			return root.Advance(), []Effect{handledEffect{}}
+		}
+		next, effects := reduceWorkbenchTreeOpen(root, items)
+		return next, append([]Effect{handledEffect{}}, effects...)
+	default:
+		return reduceOverlayShortcutAction(root, entry)
+	}
+}
+
 func reduceClipboardHistoryInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
 	if event.Kind != input.EventKindKey {
 		return root, nil
 	}
 	items := state.ClipboardHistoryItems(root)
-	if actionID, ok := clipboardHistoryKeyboardAction(event); ok {
-		return reduceOverlayKeyboardAction(root, actionID)
+	if entry, ok := input.ShortcutEntryForEvent(root.Config.Shortcuts, "clipboard_history", event); ok {
+		return reduceOverlayShortcutAction(root, entry)
 	}
 	switch event.Key {
 	case input.KeyUp:
@@ -814,8 +828,6 @@ func reduceClipboardHistoryInput(root state.Root, event input.InputEvent) (state
 	case input.KeyDown:
 		root.Shell = root.Shell.MoveClipboardHistorySelection(1, len(items))
 		return root.Advance(), []Effect{handledEffect{}}
-	case input.KeyEnter:
-		return reduceOverlayKeyboardAction(root, render.ActionClipboardHistoryPaste)
 	case input.KeyBackspace, input.KeyDelete:
 		root.Shell = root.Shell.SetClipboardHistoryQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
 		return root.Advance(), []Effect{handledEffect{}}
@@ -839,6 +851,9 @@ func reduceFloatingOverviewInput(root state.Root, event input.InputEvent) (state
 		return root, nil
 	}
 	items := state.FloatingOverviewItems(root)
+	if entry, ok := input.ShortcutEntryForEvent(root.Config.Shortcuts, "floating_overview", event); ok {
+		return reduceFloatingOverviewShortcut(root, entry, items)
+	}
 	switch event.Key {
 	case input.KeyUp:
 		root.Shell = root.Shell.MoveFloatingOverviewSelection(-1, len(items))
@@ -846,31 +861,27 @@ func reduceFloatingOverviewInput(root state.Root, event input.InputEvent) (state
 	case input.KeyDown:
 		root.Shell = root.Shell.MoveFloatingOverviewSelection(1, len(items))
 		return root.Advance(), []Effect{handledEffect{}}
-	case input.KeyEnter:
-		return reduceFloatingOverviewOpen(root, items)
 	case input.KeyChar:
-		if index, ok := floatingSummonIndex(event.Char); ok {
-			return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
-				return ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandSummon, Index: index, Source: state.PaneCommandSourceKeyboard}}
-			}}}
-		}
-		switch event.Char {
-		case "s":
-			return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
-				return ShellContentActionMsg{ActionID: render.ActionFloatingShowAll.String(), Row: -1}
-			}}}
-		case "c":
-			return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
-				return ShellContentActionMsg{ActionID: render.ActionFloatingCollapseAll.String(), Row: -1}
-			}}}
-		case "x":
-			return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
-				return ShellContentActionMsg{ActionID: render.ActionFloatingClose.String(), Row: -1}
-			}}}
-		}
 		return root, []Effect{handledEffect{}}
 	default:
 		return root, []Effect{handledEffect{}}
+	}
+}
+
+func reduceFloatingOverviewShortcut(root state.Root, entry input.ShortcutEntry, items []state.FloatingOverviewItem) (state.Root, []Effect) {
+	switch {
+	case entry.ActionID == "floating_overview.open":
+		return reduceFloatingOverviewOpen(root, items)
+	case strings.HasPrefix(entry.ActionID, "floating.summon."):
+		index, err := strconv.Atoi(strings.TrimPrefix(entry.ActionID, "floating.summon."))
+		if err != nil || index < 1 {
+			return root, []Effect{handledEffect{}}
+		}
+		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
+			return ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandSummon, Index: index - 1, Source: state.PaneCommandSourceKeyboard}}
+		}}}
+	default:
+		return reduceOverlayShortcutAction(root, entry)
 	}
 }
 
@@ -897,81 +908,12 @@ func reduceOverlayKeyboardAction(root state.Root, actionID render.ActionID) (sta
 	}
 }
 
-func terminalPickerKeyboardAction(event input.InputEvent) (render.ActionID, bool) {
-	if event.Key == input.KeyTab && !event.Ctrl && !event.Alt && !event.Shift {
-		return render.ActionPickerSplit, true
+func reduceOverlayShortcutAction(root state.Root, entry input.ShortcutEntry) (state.Root, []Effect) {
+	actionID, ok := render.ShortcutActionRenderID(entry.ActionID)
+	if !ok {
+		return root, []Effect{handledEffect{}}
 	}
-	if event.Key != input.KeyChar || !event.Ctrl || event.Alt || event.Shift {
-		return "", false
-	}
-	switch event.Char {
-	case "\x05", "e":
-		return render.ActionPickerEdit, true
-	case "\x0b", "k":
-		return render.ActionPickerKill, true
-	case "\x18", "x":
-		return render.ActionPickerDelete, true
-	default:
-		return "", false
-	}
-}
-
-func terminalPoolKeyboardAction(event input.InputEvent) (render.ActionID, bool) {
-	if event.Key != input.KeyChar || !event.Ctrl || event.Alt || event.Shift {
-		return "", false
-	}
-	switch event.Char {
-	case "\x14", "t":
-		return render.ActionPoolAttachTab, true
-	case "\x0f", "o":
-		return render.ActionPoolAttachFloat, true
-	case "\x12", "r":
-		return render.ActionPoolRestart, true
-	case "\x05", "e":
-		return render.ActionPoolEdit, true
-	case "\x0b", "k":
-		return render.ActionPoolKill, true
-	case "\x18", "x":
-		return render.ActionPoolDelete, true
-	default:
-		return "", false
-	}
-}
-
-func workbenchTreeKeyboardAction(event input.InputEvent) (render.ActionID, bool) {
-	if event.Key != input.KeyChar || !event.Ctrl || event.Alt || event.Shift {
-		return "", false
-	}
-	switch event.Char {
-	case "\x0e", "n":
-		return render.ActionWorkbenchNew, true
-	case "\x12", "r":
-		return render.ActionWorkbenchRename, true
-	case "\x18", "x":
-		return render.ActionWorkbenchDelete, true
-	case "\x04", "d":
-		return render.ActionWorkbenchDetach, true
-	case "\x1a", "z":
-		return render.ActionWorkbenchZoom, true
-	default:
-		return "", false
-	}
-}
-
-func clipboardHistoryKeyboardAction(event input.InputEvent) (render.ActionID, bool) {
-	if event.Key != input.KeyChar || !event.Ctrl || event.Alt || event.Shift {
-		return "", false
-	}
-	switch event.Char {
-	case "\x0e", "n":
-		return render.ActionClipboardHistoryNew, true
-	case "\x05", "e":
-		return render.ActionClipboardHistoryEdit, true
-	case "\x18", "x":
-		return render.ActionClipboardHistoryDelete, true
-	default:
-		return "", false
-	}
+	return reduceOverlayKeyboardAction(root, actionID)
 }
 
 func reducePromptInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
@@ -982,12 +924,10 @@ func reducePromptInput(root state.Root, event input.InputEvent) (state.Root, []E
 	if shell.Overlay.Prompt.SuggestionFocused {
 		return reducePromptSuggestionInput(root, event)
 	}
+	if entry, ok := input.ShortcutEntryForEvent(root.Config.Shortcuts, "prompt", event); ok {
+		return reducePromptShortcut(root, entry)
+	}
 	switch event.Key {
-	case input.KeyEnter:
-		return root, []Effect{
-			handledEffect{},
-			FuncEffect{Run: func(context.Context) Msg { return ShellPromptSubmitMsg{} }},
-		}
 	case input.KeyTab:
 		root.Shell = refreshPromptCompletions(root, root.Shell)
 		if len(root.Shell.EnsureDefaults().Overlay.Prompt.ActiveSuggestionItems()) > 0 {
@@ -1037,6 +977,21 @@ func reducePromptInput(root state.Root, event input.InputEvent) (state.Root, []E
 		return root.Advance(), promptCompletionHandledEffects(root, false)
 	default:
 		return root, []Effect{handledEffect{}}
+	}
+}
+
+func reducePromptShortcut(root state.Root, entry input.ShortcutEntry) (state.Root, []Effect) {
+	switch entry.ActionID {
+	case "prompt.submit":
+		return root, []Effect{
+			handledEffect{},
+			FuncEffect{Run: func(context.Context) Msg { return ShellPromptSubmitMsg{} }},
+		}
+	case "prompt.cancel":
+		root.Shell = root.Shell.CloseOverlay()
+		return root.Advance(), []Effect{handledEffect{}}
+	default:
+		return reduceOverlayShortcutAction(root, entry)
 	}
 }
 
@@ -1107,13 +1062,11 @@ func reduceHelpInput(root state.Root, event input.InputEvent) (state.Root, []Eff
 	if event.Kind != input.EventKindKey {
 		return root, nil
 	}
-	switch event.Key {
-	case input.KeyEnter:
+	if entry, ok := input.ShortcutEntryForEvent(root.Config.Shortcuts, "help", event); ok && entry.ActionID == "help.close" {
 		root.Shell = root.Shell.CloseOverlay()
 		return root.Advance(), []Effect{handledEffect{}}
-	default:
-		return root, []Effect{handledEffect{}}
 	}
+	return root, []Effect{handledEffect{}}
 }
 
 func isBackspaceEvent(event input.InputEvent) bool {

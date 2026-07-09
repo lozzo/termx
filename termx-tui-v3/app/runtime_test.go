@@ -4416,7 +4416,7 @@ func TestAppRuntimeDispatchesProductContentActions(t *testing.T) {
 	if err := pickerRuntime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain picker render: %v", err)
 	}
-	pickerAction := frameActionHitRegion(t, lastRuntimeFrame(t, pickerHost), "picker.attach", "")
+	pickerAction := frameActionHitRegionRow(t, lastRuntimeFrame(t, pickerHost), "picker.attach", "", 1)
 	if err := pickerHost.SendInput(mouseEventAt(pickerAction.Rect)); err != nil {
 		t.Fatalf("send picker attach click: %v", err)
 	}
@@ -4818,6 +4818,17 @@ func frameActionHitRegion(t *testing.T, frame render.Frame, actionID string, pan
 		}
 	}
 	t.Fatalf("missing content action=%s pane=%s in %#v", actionID, paneID, frame.HitRegions)
+	return render.HitRegion{}
+}
+
+func frameActionHitRegionRow(t *testing.T, frame render.Frame, actionID string, paneID string, row int) render.HitRegion {
+	t.Helper()
+	for _, region := range frame.HitRegions {
+		if region.Kind == render.HitRegionContentAction && region.ActionID == actionID && region.Row == row && (paneID == "" || region.PaneID == paneID) {
+			return region
+		}
+	}
+	t.Fatalf("missing content action=%s pane=%s row=%d in %#v", actionID, paneID, row, frame.HitRegions)
 	return render.HitRegion{}
 }
 

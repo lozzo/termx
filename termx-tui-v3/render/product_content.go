@@ -815,10 +815,9 @@ func promptFieldCursorDisplayWidth(field state.PromptFieldState) int {
 	return DisplayWidth(string(runes[:cursor]))
 }
 
-func buildHelpContent(shell state.ShellStore) ContentVM {
-	shell = shell.ReadonlyDefaults()
+func buildHelpContent(root state.Root) ContentVM {
 	lines := []Line{pageTitleLine("Help", "core workflows")}
-	for _, group := range helpActionGroups() {
+	for _, group := range helpActionGroups(root) {
 		if line, ok := helpActionGroupLine(group); ok {
 			lines = append(lines, line)
 		}
@@ -840,83 +839,31 @@ func buildHelpContent(shell state.ShellStore) ContentVM {
 // Help 只展示当前已接线的 action 或明确存在的键盘入口，避免继续把产品愿景文案画成可用功能。
 type helpActionGroup struct {
 	Label   string
-	Items   []helpActionItem
+	Items   []FooterActionVM
 	Details []string
 }
 
-type helpActionItem struct {
-	Action ActionID
-}
-
-func helpActionGroups() []helpActionGroup {
+func helpActionGroups(root state.Root) []helpActionGroup {
 	return []helpActionGroup{
 		// Help 是产品导航页；toast 清理这类维护动作不放到主说明里。
-		{Label: "Most used", Details: []string{"Ctrl-p pane", "Ctrl-r resize", "Ctrl-f picker", "Ctrl-g global"}},
-		{Label: "Shell", Items: []helpActionItem{
-			{Action: ActionFooterToggleHeader},
-			{Action: ActionFooterToggleFooter},
-			{Action: ActionFooterGlobalMode},
-		}},
-		{Label: "Pane", Items: []helpActionItem{
-			{Action: ActionPaneFooterFocus},
-			{Action: ActionPaneFooterSplitRight},
-			{Action: ActionPaneFooterSplitDown},
-			{Action: ActionPaneFooterDetach},
-			{Action: ActionPaneFooterZoom},
-			{Action: ActionPaneFooterClose},
-		}},
-		{Label: "Tab / Workspace", Items: []helpActionItem{
-			{Action: ActionTabCreate},
-			{Action: ActionTabPrevious},
-			{Action: ActionTabNext},
-			{Action: ActionTabClose},
-			{Action: ActionFooterOpenTree},
-			{Action: ActionFooterNewWorkspace},
-			{Action: ActionFooterRenameWorkspace},
-		}},
-		{Label: "Floating", Items: []helpActionItem{
-			{Action: ActionFloatingNew},
-			{Action: ActionFloatingOverview},
-			{Action: ActionFloatingSummon},
-			{Action: ActionFloatingPick},
-			{Action: ActionFloatingClose},
-		}},
-		{Label: "Terminal Manager", Items: []helpActionItem{
-			{Action: ActionPoolAttach},
-			{Action: ActionPoolAttachTab},
-			{Action: ActionPoolAttachFloat},
-			{Action: ActionPoolRestart},
-			{Action: ActionPoolEdit},
-			{Action: ActionPoolKill},
-			{Action: ActionPoolDelete},
-		}, Details: []string{"search"}},
-		{Label: "Workbench Tree", Items: []helpActionItem{
-			{Action: ActionWorkbenchOpen},
-			{Action: ActionWorkbenchRename},
-			{Action: ActionWorkbenchNew},
-			{Action: ActionWorkbenchDetach},
-			{Action: ActionWorkbenchZoom},
-		}},
-		{Label: "Prompt / Help", Items: []helpActionItem{
-			{Action: ActionPromptOpen},
-			{Action: ActionPromptSubmit},
-			{Action: ActionPromptCancel},
-			{Action: ActionHelpOpen},
-		}, Details: []string{"confirm"}},
-		{Label: "Display / Copy", Items: []helpActionItem{
-			{Action: ActionCopyOlder},
-			{Action: ActionClipboardHistoryPaste},
-			{Action: ActionClipboardHistoryNew},
-			{Action: ActionClipboardHistoryEdit},
-			{Action: ActionClipboardHistoryDelete},
-		}, Details: []string{"authoritative HistoryWindow"}},
+		{Label: "Most used", Items: footerActionCatalogFromShortcuts("live", root)},
+		{Label: "Shell", Items: footerActionCatalogFromShortcuts("global", root)},
+		{Label: "Pane", Items: footerActionCatalogFromShortcuts("pane", root)},
+		{Label: "Resize", Items: footerActionCatalogFromShortcuts("resize", root)},
+		{Label: "Tab / Workspace", Items: append(footerActionCatalogFromShortcuts("tab", root), footerActionCatalogFromShortcuts("workspace", root)...)},
+		{Label: "Floating", Items: footerActionCatalogFromShortcuts("floating", root)},
+		{Label: "Terminal Picker", Items: footerActionCatalogFromShortcuts(string(state.OverlayTerminalPicker), root), Details: []string{"search"}},
+		{Label: "Terminal Manager", Items: footerActionCatalogFromShortcuts(string(state.OverlayTerminalPool), root), Details: []string{"search"}},
+		{Label: "Workbench Tree", Items: footerActionCatalogFromShortcuts(string(state.OverlayWorkbenchTree), root), Details: []string{"search"}},
+		{Label: "Prompt / Help", Items: append(footerActionCatalogFromShortcuts(string(state.OverlayPrompt), root), footerActionCatalogFromShortcuts(string(state.OverlayHelp), root)...)},
+		{Label: "Display / Copy", Items: append(footerActionCatalogFromShortcuts("copy", root), footerActionCatalogFromShortcuts(string(state.OverlayClipboardHistory), root)...), Details: []string{"authoritative HistoryWindow"}},
 	}
 }
 
 func helpActionGroupLine(group helpActionGroup) (Line, bool) {
 	labels := make([]string, 0, len(group.Items)+len(group.Details))
 	for _, item := range group.Items {
-		if label, ok := helpActionLabel(item.Action); ok {
+		if label, ok := helpActionLabel(item); ok {
 			labels = append(labels, label)
 		}
 	}
@@ -927,12 +874,25 @@ func helpActionGroupLine(group helpActionGroup) (Line, bool) {
 	return helpTopicLine(group.Label, strings.Join(labels, " / ")), true
 }
 
-func helpActionLabel(action ActionID) (string, bool) {
-	spec, ok := ActionSpecByID(action)
-	if !ok || spec.HelpLabel == "" {
+func helpActionLabel(action FooterActionVM) (string, bool) {
+	key := strings.TrimSpace(action.Key)
+	label := strings.TrimSpace(action.Label)
+	if label == "" {
+		spec, ok := ActionSpecByIDString(action.ActionID)
+		if ok {
+			label = strings.TrimSpace(spec.HelpLabel)
+		}
+	}
+	if key == "" && label == "" {
 		return "", false
 	}
-	return spec.HelpLabel, true
+	if key == "" {
+		return label, true
+	}
+	if label == "" {
+		return key, true
+	}
+	return key + " " + label, true
 }
 
 func terminalPickerLine(row state.TerminalPickerItem, query string) Line {
