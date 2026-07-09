@@ -73,8 +73,8 @@ func ValidateClientControlCall(params ClientControlCallParams) error {
 	if params.Target.SessionID != "" && params.Target.Broadcast {
 		return fmt.Errorf("client control target cannot set both session id and broadcast")
 	}
-	if params.Target.Broadcast && params.Target.ClientKind == "" && params.Target.WorkspaceID == "" && params.Target.TerminalRef == nil {
-		return fmt.Errorf("client control broadcast requires explicit client kind, workspace, or terminal scope")
+	if params.Target.Broadcast && params.Target.ClientKind == "" && params.Target.WorkspaceID == "" {
+		return fmt.Errorf("client control broadcast requires explicit client kind or workspace scope")
 	}
 	if params.Target.TerminalRef != nil {
 		if params.Target.TerminalRef.EndpointID == "" || params.Target.TerminalRef.TerminalID == "" {
@@ -98,6 +98,9 @@ func ValidateClientControlCallWithPolicy(params ClientControlCallParams, policy 
 	if policy.ActionSpec != nil {
 		if policy.ActionSpec.ID != params.ActionID {
 			return fmt.Errorf("client control action spec %s does not match call action %s", policy.ActionSpec.ID, params.ActionID)
+		}
+		if params.Target.Broadcast && !policy.ActionSpec.BroadcastAllowed {
+			return fmt.Errorf("client control broadcast requires action policy")
 		}
 		if policy.ActionSpec.Danger == plugin.DangerDestructive && params.Target.Broadcast && !policy.AllowDestructiveBroadcast {
 			return fmt.Errorf("client control destructive broadcast requires explicit allow policy")

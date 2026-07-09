@@ -47,6 +47,7 @@ type Server struct {
 	registry              *terminalRegistry
 	storage               *storageStore
 	workbench             *workbenchStore
+	clientControl         *clientControlBroker
 	terminals             map[string]*Terminal
 	events                *eventBroker
 	closed                atomic.Bool
@@ -102,6 +103,7 @@ func NewServer(opts ...ServerOption) *Server {
 		registry:             newTerminalRegistry(),
 		storage:              newStorageStore(),
 		workbench:            newWorkbenchStore(),
+		clientControl:        newClientControlBroker(0),
 		terminals:            make(map[string]*Terminal),
 		events:               newEventBroker(cfg.eventBuffer),
 		protocolAttachments:  make(map[string]protocolAttachment),

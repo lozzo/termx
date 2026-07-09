@@ -11,6 +11,7 @@ import (
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-proto/wire"
+	"github.com/lozzow/termx/termx-shared/plugin"
 	"github.com/lozzow/termx/termx-shared/transport/memory"
 )
 
@@ -148,6 +149,100 @@ func TestProtocolServicePathDefaultsUsesDaemonEnvironment(t *testing.T) {
 	}
 	if strings.Join(result.DefaultCommand, " ") != "/bin/sh" || result.DefaultCWD != resolvedDir {
 		t.Fatalf("unexpected path defaults %#v", result)
+	}
+}
+
+func TestProtocolServiceClientControlMailboxRoundTrip(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	_, tuiClient, closeTUI := newProtocolClientWithServer(t, server)
+	defer closeTUI()
+	_, callerClient, closeCaller := newProtocolClientWithServer(t, server)
+	defer closeCaller()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	action := clientControlBrokerTestAction(plugin.DangerNone)
+	var registered protocol.ClientSessionRegisterResult
+	if err := tuiClient.Call(ctx, protocol.MethodClientSessionRegister, clientControlBrokerRegisterParams("tui-1", plugin.ClientKindTUI, "ws-a", action), &registered); err != nil {
+		t.Fatalf("register client session: %v", err)
+	}
+	if registered.Session.SessionID != "tui-1" || registered.Session.ConnectedAt.IsZero() {
+		t.Fatalf("unexpected register result %#v", registered)
+	}
+
+	var listed protocol.ClientSessionListResult
+	if err := callerClient.Call(ctx, protocol.MethodClientSessionList, protocol.ClientSessionListParams{ClientKind: plugin.ClientKindTUI, IncludeActions: true}, &listed); err != nil {
+		t.Fatalf("list client sessions: %v", err)
+	}
+	if len(listed.Sessions) != 1 || listed.Sessions[0].SessionID != "tui-1" || len(listed.Sessions[0].Actions) != 1 {
+		t.Fatalf("unexpected client session list %#v", listed)
+	}
+
+	var watch protocol.ClientControlWatchResult
+	if err := tuiClient.Call(ctx, protocol.MethodClientControlWatch, protocol.ClientControlWatchParams{SessionID: "tui-1"}, &watch); err != nil {
+		t.Fatalf("watch client control: %v", err)
+	}
+	stream, stop := tuiClient.Stream(watch.Channel)
+	defer stop()
+	var duplicateWatch protocol.ClientControlWatchResult
+	if err := tuiClient.Call(ctx, protocol.MethodClientControlWatch, protocol.ClientControlWatchParams{SessionID: "tui-1"}, &duplicateWatch); err == nil || !strings.Contains(err.Error(), "active control watcher") {
+		t.Fatalf("duplicate watch should fail, got %v", err)
+	}
+
+	trace := plugin.TraceParent{TraceID: "trace-protocol", Token: "token-protocol"}
+	var callResult protocol.ClientControlCallResult
+	if err := callerClient.Call(ctx, protocol.MethodClientControlCall, protocol.ClientControlCallParams{
+		RequestID:   "req-protocol",
+		ActionID:    action.ID,
+		Params:      []byte(`{"from":"protocol"}`),
+		Target:      protocol.ClientControlTarget{SessionID: "tui-1", ActivePanel: true},
+		TraceParent: trace,
+	}, &callResult); err != nil {
+		t.Fatalf("call client control: %v", err)
+	}
+	if len(callResult.Deliveries) != 1 || callResult.Deliveries[0].Status != protocol.ClientControlStatusQueued {
+		t.Fatalf("unexpected call result %#v", callResult)
+	}
+
+	var frame protocol.StreamFrame
+	select {
+	case frame = <-stream:
+	case <-ctx.Done():
+		t.Fatalf("wait mailbox frame: %v", ctx.Err())
+	}
+	if frame.Type != wire.TypeClientControl {
+		t.Fatalf("expected client control frame, got type=%d", frame.Type)
+	}
+	invocation, err := protocol.DecodeClientControlInvocationPayload(frame.Payload)
+	if err != nil {
+		t.Fatalf("decode invocation: %v", err)
+	}
+	if invocation.RequestID != "req-protocol" || invocation.Source.PluginID != clientControlSourcePlugin || invocation.Source.Kind != clientControlSourceProtocol {
+		t.Fatalf("unexpected invocation source/request %#v", invocation)
+	}
+	if invocation.Target.SessionID != "tui-1" || invocation.TraceParent != trace {
+		t.Fatalf("unexpected invocation target/trace %#v", invocation)
+	}
+
+	var response protocol.ClientControlResponseResult
+	if err := tuiClient.Call(ctx, protocol.MethodClientControlRespond, protocol.ClientControlResponseParams{
+		RequestID:   invocation.RequestID,
+		SessionID:   invocation.Target.SessionID,
+		Status:      protocol.ClientControlStatusOK,
+		Result:      []byte(`{"ok":true}`),
+		TraceParent: invocation.TraceParent,
+	}, &response); err != nil {
+		t.Fatalf("respond client control: %v", err)
+	}
+	if !response.Accepted || response.RequestID != invocation.RequestID {
+		t.Fatalf("unexpected response ack %#v", response)
+	}
+	var unwatch protocol.ClientControlUnwatchResult
+	if err := tuiClient.Call(ctx, protocol.MethodClientControlUnwatch, protocol.ClientControlUnwatchParams{SessionID: "tui-1", Channel: watch.Channel}, &unwatch); err != nil {
+		t.Fatalf("unwatch client control: %v", err)
+	}
+	if !unwatch.Stopped || unwatch.SessionID != "tui-1" || unwatch.Channel != watch.Channel {
+		t.Fatalf("unexpected unwatch result %#v", unwatch)
 	}
 }
 

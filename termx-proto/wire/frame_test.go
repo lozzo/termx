@@ -23,6 +23,12 @@ func TestFrameRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFrameTypeContract(t *testing.T) {
+	if TypeClientControl != 0x1a {
+		t.Fatalf("TypeClientControl=%#x want 0x1a", TypeClientControl)
+	}
+}
+
 func TestFrameRejectsOversizePayload(t *testing.T) {
 	var buf bytes.Buffer
 	enc := NewEncoder(&buf)

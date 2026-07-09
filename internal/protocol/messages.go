@@ -190,6 +190,10 @@ const (
 	MethodClientSessionList = "client.session.list"
 	// MethodClientControlCall 是插件或宿主向 daemon broker 提交 client action 请求的入口。
 	MethodClientControlCall = "client.control.call"
+	// MethodClientControlWatch 是 client session 向 daemon broker 打开 control mailbox stream 的入口。
+	MethodClientControlWatch = "client.control.watch"
+	// MethodClientControlUnwatch 是 client session 主动关闭 control mailbox stream 的入口。
+	MethodClientControlUnwatch = "client.control.unwatch"
 	// MethodClientControlRespond 是 client session 异步回写 action 执行结果给 daemon broker 的入口。
 	MethodClientControlRespond = "client.control.respond"
 )
@@ -230,6 +234,9 @@ type ClientControlActionSpec struct {
 	Danger               plugin.DangerLevel
 	ParamsSchema         string
 	Idempotent           bool
+	// BroadcastAllowed 表示该 action catalog 明确允许 daemon broker 向多个 client session 投递。
+	// 默认 false；普通 UI 执行动作必须 unicast，避免 active/current selector 被多个 client 同时解释。
+	BroadcastAllowed bool
 }
 
 // ClientSessionRegisterParams 是 client session 上线时提交给 daemon broker 的注册消息。
@@ -305,6 +312,34 @@ type ClientControlTarget struct {
 type ClientControlSource struct {
 	PluginID plugin.PluginID
 	Kind     string
+}
+
+// ClientControlWatchParams 是 client session 打开 control mailbox stream 的请求。
+// SessionID 必须是已注册 session；watch 只绑定该 session，不进入普通 daemon events 广播。
+type ClientControlWatchParams struct {
+	SessionID string
+}
+
+// ClientControlWatchResult 返回 daemon 分配给 control mailbox 的 stream channel。
+// 后续 ClientControlInvocation 只在该 channel 上传递；Channel 不表达 UI state 或 terminal lifecycle。
+type ClientControlWatchResult struct {
+	SessionID string
+	Channel   uint16
+}
+
+// ClientControlUnwatchParams 是 client session 主动关闭 control mailbox stream 的请求。
+// Channel 必须来自同一 protocol session 的 ClientControlWatchResult，daemon 用它释放 server-side watcher。
+type ClientControlUnwatchParams struct {
+	SessionID string
+	Channel   uint16
+}
+
+// ClientControlUnwatchResult 表示 daemon 是否找到了并停止了对应 mailbox watcher。
+// Stopped=false 只表示 watcher 已不存在或 session 已重连，不代表 UI state。
+type ClientControlUnwatchResult struct {
+	SessionID string
+	Channel   uint16
+	Stopped   bool
 }
 
 // ClientControlCallParams 是插件或宿主发给 daemon broker 的 typed action 调用请求。

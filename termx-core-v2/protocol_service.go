@@ -85,18 +85,22 @@ func claimDaemonBoundaryReclaimHeapSys(heapSys uint64) bool {
 }
 
 type protocolSession struct {
-	server       *Server
-	conn         transport.Transport
-	scope        TransportScope
-	sessionID    uint64
-	sendMu       sync.Mutex
-	nextCh       atomic.Uint32
-	nextSnapshot atomic.Uint64
-	mu           sync.RWMutex
-	attachments  map[uint16]protocolAttachment
-	eventCancels map[uint64]context.CancelFunc
-	nextEventSub uint64
-	requests     sync.WaitGroup
+	server                  *Server
+	conn                    transport.Transport
+	scope                   TransportScope
+	sessionID               uint64
+	sendMu                  sync.Mutex
+	nextCh                  atomic.Uint32
+	nextSnapshot            atomic.Uint64
+	mu                      sync.RWMutex
+	attachments             map[uint16]protocolAttachment
+	eventCancels            map[uint64]context.CancelFunc
+	nextEventSub            uint64
+	clientControlSessionIDs map[string]struct{}
+	clientControlWatches    map[uint64]clientControlWatchState
+	clientControlWatchByCh  map[uint16]uint64
+	nextClientControlWatch  uint64
+	requests                sync.WaitGroup
 }
 
 // protocolAttachment 是 daemon-side channel/view registry；它不保存 TUI workspace/pane truth。
@@ -116,14 +120,24 @@ type protocolAttachmentKey struct {
 	Channel   uint16
 }
 
+type clientControlWatchState struct {
+	SessionID string
+	Channel   uint16
+	Cancel    context.CancelFunc
+	Done      chan struct{}
+}
+
 func newProtocolSession(server *Server, conn transport.Transport, scope TransportScope) *protocolSession {
 	session := &protocolSession{
-		server:       server,
-		conn:         conn,
-		scope:        scope.normalized(),
-		sessionID:    server.nextProtocolSessionID.Add(1),
-		attachments:  make(map[uint16]protocolAttachment),
-		eventCancels: make(map[uint64]context.CancelFunc),
+		server:                  server,
+		conn:                    conn,
+		scope:                   scope.normalized(),
+		sessionID:               server.nextProtocolSessionID.Add(1),
+		attachments:             make(map[uint16]protocolAttachment),
+		eventCancels:            make(map[uint64]context.CancelFunc),
+		clientControlSessionIDs: make(map[string]struct{}),
+		clientControlWatches:    make(map[uint64]clientControlWatchState),
+		clientControlWatchByCh:  make(map[uint16]uint64),
 	}
 	session.nextCh.Store(6)
 	return session
@@ -135,6 +149,8 @@ func (session *protocolSession) run(ctx context.Context) error {
 	defer func() {
 		cancel()
 		session.requests.Wait()
+		session.stopClientControlWatches()
+		session.releaseClientControlSessions()
 		session.stopEvents()
 		session.releaseProtocolAttachments()
 	}()
@@ -457,6 +473,48 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 			return nil, true, protocolErrorInternal, err
 		}
 		return payload, true, 0, nil
+	case protocol.MethodClientSessionRegister:
+		in := params.(protocol.ClientSessionRegisterParams)
+		result, err := session.server.clientControl.register(session.sessionID, in)
+		if err != nil {
+			return nil, false, protocolErrorBadRequest, err
+		}
+		session.rememberClientControlSession(result.Session.SessionID)
+		return encodeMethodResult(req.Method, result)
+	case protocol.MethodClientSessionList:
+		in := params.(protocol.ClientSessionListParams)
+		return encodeMethodResult(req.Method, session.server.clientControl.list(in))
+	case protocol.MethodClientControlWatch:
+		in := params.(protocol.ClientControlWatchParams)
+		result, err := session.startClientControlWatch(ctx, in)
+		if err != nil {
+			return nil, false, protocolErrorBadRequest, err
+		}
+		return encodeMethodResult(req.Method, result)
+	case protocol.MethodClientControlUnwatch:
+		in := params.(protocol.ClientControlUnwatchParams)
+		result, err := session.stopClientControlWatch(ctx, in)
+		if err != nil {
+			return nil, false, protocolErrorBadRequest, err
+		}
+		return encodeMethodResult(req.Method, result)
+	case protocol.MethodClientControlCall:
+		in := params.(protocol.ClientControlCallParams)
+		result, err := session.server.clientControl.call(ctx, protocol.ClientControlSource{
+			PluginID: clientControlSourcePlugin,
+			Kind:     clientControlSourceProtocol,
+		}, in)
+		if err != nil {
+			return nil, false, protocolErrorBadRequest, err
+		}
+		return encodeMethodResult(req.Method, result)
+	case protocol.MethodClientControlRespond:
+		in := params.(protocol.ClientControlResponseParams)
+		result, err := session.server.clientControl.respond(session.sessionID, in)
+		if err != nil {
+			return nil, false, protocolErrorBadRequest, err
+		}
+		return encodeMethodResult(req.Method, result)
 	case "events":
 		in := params.(protocol.EventsParams)
 		session.startEvents(ctx, in)
@@ -1168,6 +1226,124 @@ func (session *protocolSession) stopEvents() {
 func (session *protocolSession) clearEventSubscription(id uint64) {
 	session.mu.Lock()
 	delete(session.eventCancels, id)
+	session.mu.Unlock()
+}
+
+func (session *protocolSession) rememberClientControlSession(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	session.mu.Lock()
+	session.clientControlSessionIDs[sessionID] = struct{}{}
+	session.mu.Unlock()
+}
+
+func (session *protocolSession) releaseClientControlSessions() {
+	session.mu.Lock()
+	sessionIDs := make([]string, 0, len(session.clientControlSessionIDs))
+	for sessionID := range session.clientControlSessionIDs {
+		sessionIDs = append(sessionIDs, sessionID)
+		delete(session.clientControlSessionIDs, sessionID)
+	}
+	session.mu.Unlock()
+	for _, sessionID := range sessionIDs {
+		session.server.clientControl.unregister(session.sessionID, sessionID)
+	}
+}
+
+func (session *protocolSession) startClientControlWatch(ctx context.Context, params protocol.ClientControlWatchParams) (protocol.ClientControlWatchResult, error) {
+	channel := uint16(session.nextCh.Add(1))
+	inbox, err := session.server.clientControl.watch(session.sessionID, channel, params)
+	if err != nil {
+		return protocol.ClientControlWatchResult{}, err
+	}
+	watchCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	session.mu.Lock()
+	session.nextClientControlWatch++
+	watchID := session.nextClientControlWatch
+	session.clientControlWatches[watchID] = clientControlWatchState{
+		SessionID: params.SessionID,
+		Channel:   channel,
+		Cancel:    cancel,
+		Done:      done,
+	}
+	session.clientControlWatchByCh[channel] = watchID
+	session.mu.Unlock()
+	go session.runClientControlWatch(watchCtx, watchID, params.SessionID, channel, inbox, done)
+	return protocol.ClientControlWatchResult{SessionID: params.SessionID, Channel: channel}, nil
+}
+
+func (session *protocolSession) runClientControlWatch(ctx context.Context, watchID uint64, clientSessionID string, channel uint16, inbox <-chan protocol.ClientControlInvocation, done chan<- struct{}) {
+	defer close(done)
+	defer session.server.clientControl.unwatch(session.sessionID, clientSessionID, channel)
+	defer session.clearClientControlWatch(watchID)
+	for {
+		var invocation protocol.ClientControlInvocation
+		var ok bool
+		select {
+		case <-ctx.Done():
+			return
+		case invocation, ok = <-inbox:
+			if !ok {
+				_ = session.sendFrame(channel, wire.TypeClosed, wire.EncodeClosedPayload(0))
+				return
+			}
+		}
+		payload, err := protocol.EncodeClientControlInvocationPayload(invocation)
+		if err != nil {
+			continue
+		}
+		if err := session.sendFrame(channel, wire.TypeClientControl, payload); err != nil {
+			return
+		}
+	}
+}
+
+func (session *protocolSession) stopClientControlWatch(ctx context.Context, params protocol.ClientControlUnwatchParams) (protocol.ClientControlUnwatchResult, error) {
+	if params.SessionID == "" {
+		return protocol.ClientControlUnwatchResult{}, fmt.Errorf("client control unwatch session id is required")
+	}
+	if params.Channel == 0 {
+		return protocol.ClientControlUnwatchResult{}, fmt.Errorf("client control unwatch channel is required")
+	}
+	session.mu.RLock()
+	watchID, ok := session.clientControlWatchByCh[params.Channel]
+	watch := session.clientControlWatches[watchID]
+	session.mu.RUnlock()
+	if !ok || watch.SessionID != params.SessionID {
+		return protocol.ClientControlUnwatchResult{SessionID: params.SessionID, Channel: params.Channel, Stopped: false}, nil
+	}
+	watch.Cancel()
+	select {
+	case <-watch.Done:
+	case <-ctx.Done():
+		return protocol.ClientControlUnwatchResult{}, ctx.Err()
+	}
+	_ = session.server.clientControl.unwatch(session.sessionID, params.SessionID, params.Channel)
+	return protocol.ClientControlUnwatchResult{SessionID: params.SessionID, Channel: params.Channel, Stopped: true}, nil
+}
+
+func (session *protocolSession) stopClientControlWatches() {
+	session.mu.Lock()
+	watches := make([]clientControlWatchState, 0, len(session.clientControlWatches))
+	for id, watch := range session.clientControlWatches {
+		watches = append(watches, watch)
+		delete(session.clientControlWatches, id)
+		delete(session.clientControlWatchByCh, watch.Channel)
+	}
+	session.mu.Unlock()
+	for _, watch := range watches {
+		watch.Cancel()
+	}
+}
+
+func (session *protocolSession) clearClientControlWatch(id uint64) {
+	session.mu.Lock()
+	if watch, ok := session.clientControlWatches[id]; ok {
+		delete(session.clientControlWatchByCh, watch.Channel)
+	}
+	delete(session.clientControlWatches, id)
 	session.mu.Unlock()
 }
 

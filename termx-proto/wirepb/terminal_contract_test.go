@@ -184,6 +184,7 @@ func TestCoreV2RemoteWireContractFields(t *testing.T) {
 		"danger":                 8,
 		"params_schema":          9,
 		"idempotent":             10,
+		"broadcast_allowed":      11,
 	})
 	assertFields(t, (&ClientSessionRegisterParams{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
 		"session_id":   1,
@@ -239,6 +240,37 @@ func TestCoreV2RemoteWireContractFields(t *testing.T) {
 		"broadcast":    4,
 		"active_panel": 5,
 		"terminal_ref": 6,
+	})
+	assertFields(t, (&ClientControlWatchParams{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"session_id": 1,
+	})
+	assertFields(t, (&ClientControlWatchResult{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"channel":    1,
+		"session_id": 2,
+	})
+	assertFields(t, (&ClientControlUnwatchParams{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"session_id": 1,
+		"channel":    2,
+	})
+	assertFields(t, (&ClientControlUnwatchResult{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"session_id": 1,
+		"channel":    2,
+		"stopped":    3,
+	})
+	assertFields(t, (&ClientControlSource{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"plugin_id": 1,
+		"kind":      2,
+	})
+	assertFields(t, (&ClientControlInvocation{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"request_id":         1,
+		"action_id":          2,
+		"params":             3,
+		"source":             4,
+		"target":             5,
+		"trace_parent_id":    6,
+		"trace_parent_token": 7,
+		"deadline_unix_nano": 8,
+		"idempotency_key":    9,
 	})
 	assertFields(t, (&ClientControlResponseParams{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
 		"request_id":         1,

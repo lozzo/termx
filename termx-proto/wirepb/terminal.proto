@@ -549,6 +549,7 @@ message ClientControlActionSpec {
   string danger = 8;
   string params_schema = 9;
   bool idempotent = 10;
+  bool broadcast_allowed = 11;
 }
 
 message ClientSessionRegisterParams {
@@ -601,6 +602,43 @@ message ClientControlTarget {
   bool broadcast = 4;
   bool active_panel = 5;
   ClientTerminalRef terminal_ref = 6;
+}
+
+message ClientControlWatchParams {
+  string session_id = 1;
+}
+
+message ClientControlWatchResult {
+  uint32 channel = 1;
+  string session_id = 2;
+}
+
+message ClientControlUnwatchParams {
+  string session_id = 1;
+  uint32 channel = 2;
+}
+
+message ClientControlUnwatchResult {
+  string session_id = 1;
+  uint32 channel = 2;
+  bool stopped = 3;
+}
+
+message ClientControlSource {
+  string plugin_id = 1;
+  string kind = 2;
+}
+
+message ClientControlInvocation {
+  string request_id = 1;
+  string action_id = 2;
+  bytes params = 3;
+  ClientControlSource source = 4;
+  ClientControlTarget target = 5;
+  string trace_parent_id = 6;
+  string trace_parent_token = 7;
+  int64 deadline_unix_nano = 8;
+  string idempotency_key = 9;
 }
 
 message ClientControlCallParams {

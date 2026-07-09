@@ -94,6 +94,22 @@ func DecodeEventPayload(payload []byte) (Event, error) {
 	return eventFromWirePB(&msg), nil
 }
 
+// EncodeClientControlInvocationPayload 编码 daemon broker 投递给 client mailbox 的 invocation。
+// payload 只用于 client.control.watch 返回的 stream channel，不能混进普通 daemon events。
+func EncodeClientControlInvocationPayload(invocation ClientControlInvocation) ([]byte, error) {
+	return proto.Marshal(clientControlInvocationToWirePB(invocation))
+}
+
+// DecodeClientControlInvocationPayload 解码 client.control.watch mailbox item。
+// 调用方必须把它继续交给 client 本地 action registry/reducer，不得在 protocol 层解释 UI state。
+func DecodeClientControlInvocationPayload(payload []byte) (ClientControlInvocation, error) {
+	var msg wirepb.ClientControlInvocation
+	if err := proto.Unmarshal(payload, &msg); err != nil {
+		return ClientControlInvocation{}, err
+	}
+	return clientControlInvocationFromWirePB(&msg), nil
+}
+
 func EncodeMethodParams(method string, params any) ([]byte, error) {
 	if params == nil {
 		return proto.Marshal(&wirepb.Empty{})
@@ -457,6 +473,30 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			return nil, methodParamsTypeError(method, "protocol.ClientControlCallParams", params)
 		}
 		return proto.Marshal(clientControlCallParamsToWirePB(value))
+	case MethodClientControlWatch:
+		value, ok := params.(ClientControlWatchParams)
+		if !ok {
+			if ptr, ptrOK := params.(*ClientControlWatchParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.ClientControlWatchParams", params)
+		}
+		return proto.Marshal(clientControlWatchParamsToWirePB(value))
+	case MethodClientControlUnwatch:
+		value, ok := params.(ClientControlUnwatchParams)
+		if !ok {
+			if ptr, ptrOK := params.(*ClientControlUnwatchParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.ClientControlUnwatchParams", params)
+		}
+		return proto.Marshal(clientControlUnwatchParamsToWirePB(value))
 	case MethodClientControlRespond:
 		value, ok := params.(ClientControlResponseParams)
 		if !ok {
@@ -664,6 +704,18 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return clientControlCallParamsFromWirePB(&msg), nil
+	case MethodClientControlWatch:
+		var msg wirepb.ClientControlWatchParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, err
+		}
+		return clientControlWatchParamsFromWirePB(&msg), nil
+	case MethodClientControlUnwatch:
+		var msg wirepb.ClientControlUnwatchParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, err
+		}
+		return clientControlUnwatchParamsFromWirePB(&msg)
 	case MethodClientControlRespond:
 		var msg wirepb.ClientControlResponseParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
@@ -917,6 +969,30 @@ func EncodeMethodResult(method string, result any) ([]byte, error) {
 			return nil, methodResultTypeError(method, "protocol.ClientControlCallResult", result)
 		}
 		return proto.Marshal(clientControlCallResultToWirePB(value))
+	case MethodClientControlWatch:
+		value, ok := result.(ClientControlWatchResult)
+		if !ok {
+			if ptr, ptrOK := result.(*ClientControlWatchResult); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.ClientControlWatchResult", result)
+		}
+		return proto.Marshal(clientControlWatchResultToWirePB(value))
+	case MethodClientControlUnwatch:
+		value, ok := result.(ClientControlUnwatchResult)
+		if !ok {
+			if ptr, ptrOK := result.(*ClientControlUnwatchResult); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.ClientControlUnwatchResult", result)
+		}
+		return proto.Marshal(clientControlUnwatchResultToWirePB(value))
 	case MethodClientControlRespond:
 		value, ok := result.(ClientControlResponseResult)
 		if !ok {
@@ -1156,6 +1232,36 @@ func DecodeMethodResult(method string, payload []byte, out any) error {
 		}
 		*ptr = clientControlCallResultFromWirePB(&msg)
 		return nil
+	case MethodClientControlWatch:
+		var msg wirepb.ClientControlWatchResult
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return err
+		}
+		ptr, ok := out.(*ClientControlWatchResult)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.ClientControlWatchResult", out)
+		}
+		value, err := clientControlWatchResultFromWirePB(&msg)
+		if err != nil {
+			return err
+		}
+		*ptr = value
+		return nil
+	case MethodClientControlUnwatch:
+		var msg wirepb.ClientControlUnwatchResult
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return err
+		}
+		ptr, ok := out.(*ClientControlUnwatchResult)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.ClientControlUnwatchResult", out)
+		}
+		value, err := clientControlUnwatchResultFromWirePB(&msg)
+		if err != nil {
+			return err
+		}
+		*ptr = value
+		return nil
 	case MethodClientControlRespond:
 		var msg wirepb.ClientControlResponseResult
 		if err := proto.Unmarshal(payload, &msg); err != nil {
@@ -1359,6 +1465,7 @@ func clientControlActionSpecToWirePB(spec ClientControlActionSpec) *wirepb.Clien
 		Danger:               string(spec.Danger),
 		ParamsSchema:         spec.ParamsSchema,
 		Idempotent:           spec.Idempotent,
+		BroadcastAllowed:     spec.BroadcastAllowed,
 	}
 }
 
@@ -1377,6 +1484,7 @@ func clientControlActionSpecFromWirePB(msg *wirepb.ClientControlActionSpec) Clie
 		Danger:               plugin.DangerLevel(msg.GetDanger()),
 		ParamsSchema:         msg.GetParamsSchema(),
 		Idempotent:           msg.GetIdempotent(),
+		BroadcastAllowed:     msg.GetBroadcastAllowed(),
 	}
 }
 
@@ -1569,6 +1677,110 @@ func clientControlTargetFromWirePB(msg *wirepb.ClientControlTarget) ClientContro
 		Broadcast:   msg.GetBroadcast(),
 		ActivePanel: msg.GetActivePanel(),
 		TerminalRef: clientTerminalRefFromWirePB(msg.GetTerminalRef()),
+	}
+}
+
+func clientControlWatchParamsToWirePB(params ClientControlWatchParams) *wirepb.ClientControlWatchParams {
+	return &wirepb.ClientControlWatchParams{SessionId: params.SessionID}
+}
+
+func clientControlWatchParamsFromWirePB(msg *wirepb.ClientControlWatchParams) ClientControlWatchParams {
+	if msg == nil {
+		return ClientControlWatchParams{}
+	}
+	return ClientControlWatchParams{SessionID: msg.GetSessionId()}
+}
+
+func clientControlWatchResultToWirePB(result ClientControlWatchResult) *wirepb.ClientControlWatchResult {
+	return &wirepb.ClientControlWatchResult{Channel: uint32(result.Channel), SessionId: result.SessionID}
+}
+
+func clientControlWatchResultFromWirePB(msg *wirepb.ClientControlWatchResult) (ClientControlWatchResult, error) {
+	if msg == nil {
+		return ClientControlWatchResult{}, nil
+	}
+	channel, err := clientControlChannelFromWire(msg.GetChannel())
+	if err != nil {
+		return ClientControlWatchResult{}, err
+	}
+	return ClientControlWatchResult{SessionID: msg.GetSessionId(), Channel: channel}, nil
+}
+
+func clientControlUnwatchParamsToWirePB(params ClientControlUnwatchParams) *wirepb.ClientControlUnwatchParams {
+	return &wirepb.ClientControlUnwatchParams{SessionId: params.SessionID, Channel: uint32(params.Channel)}
+}
+
+func clientControlUnwatchParamsFromWirePB(msg *wirepb.ClientControlUnwatchParams) (ClientControlUnwatchParams, error) {
+	if msg == nil {
+		return ClientControlUnwatchParams{}, nil
+	}
+	channel, err := clientControlChannelFromWire(msg.GetChannel())
+	if err != nil {
+		return ClientControlUnwatchParams{}, err
+	}
+	return ClientControlUnwatchParams{SessionID: msg.GetSessionId(), Channel: channel}, nil
+}
+
+func clientControlUnwatchResultToWirePB(result ClientControlUnwatchResult) *wirepb.ClientControlUnwatchResult {
+	return &wirepb.ClientControlUnwatchResult{SessionId: result.SessionID, Channel: uint32(result.Channel), Stopped: result.Stopped}
+}
+
+func clientControlUnwatchResultFromWirePB(msg *wirepb.ClientControlUnwatchResult) (ClientControlUnwatchResult, error) {
+	if msg == nil {
+		return ClientControlUnwatchResult{}, nil
+	}
+	channel, err := clientControlChannelFromWire(msg.GetChannel())
+	if err != nil {
+		return ClientControlUnwatchResult{}, err
+	}
+	return ClientControlUnwatchResult{SessionID: msg.GetSessionId(), Channel: channel, Stopped: msg.GetStopped()}, nil
+}
+
+func clientControlChannelFromWire(channel uint32) (uint16, error) {
+	if channel > uint32(^uint16(0)) {
+		return 0, fmt.Errorf("client control stream channel %d exceeds uint16", channel)
+	}
+	return uint16(channel), nil
+}
+
+func clientControlSourceToWirePB(source ClientControlSource) *wirepb.ClientControlSource {
+	return &wirepb.ClientControlSource{PluginId: string(source.PluginID), Kind: source.Kind}
+}
+
+func clientControlSourceFromWirePB(msg *wirepb.ClientControlSource) ClientControlSource {
+	if msg == nil {
+		return ClientControlSource{}
+	}
+	return ClientControlSource{PluginID: plugin.PluginID(msg.GetPluginId()), Kind: msg.GetKind()}
+}
+
+func clientControlInvocationToWirePB(invocation ClientControlInvocation) *wirepb.ClientControlInvocation {
+	return &wirepb.ClientControlInvocation{
+		RequestId:        invocation.RequestID,
+		ActionId:         string(invocation.ActionID),
+		Params:           append([]byte(nil), invocation.Params...),
+		Source:           clientControlSourceToWirePB(invocation.Source),
+		Target:           clientControlTargetToWirePB(invocation.Target),
+		TraceParentId:    invocation.TraceParent.TraceID,
+		TraceParentToken: invocation.TraceParent.Token,
+		DeadlineUnixNano: timeToUnixNano(invocation.Deadline),
+		IdempotencyKey:   invocation.IdempotencyKey,
+	}
+}
+
+func clientControlInvocationFromWirePB(msg *wirepb.ClientControlInvocation) ClientControlInvocation {
+	if msg == nil {
+		return ClientControlInvocation{}
+	}
+	return ClientControlInvocation{
+		RequestID:      msg.GetRequestId(),
+		ActionID:       plugin.ActionID(msg.GetActionId()),
+		Params:         append([]byte(nil), msg.GetParams()...),
+		Source:         clientControlSourceFromWirePB(msg.GetSource()),
+		Target:         clientControlTargetFromWirePB(msg.GetTarget()),
+		TraceParent:    plugin.TraceParent{TraceID: msg.GetTraceParentId(), Token: msg.GetTraceParentToken()},
+		Deadline:       unixNanoToTime(msg.GetDeadlineUnixNano()),
+		IdempotencyKey: msg.GetIdempotencyKey(),
 	}
 }
 

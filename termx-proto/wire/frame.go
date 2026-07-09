@@ -29,6 +29,7 @@ const (
 	TypeClosed         uint8 = 0x17
 	TypeHistoryRequest uint8 = 0x18
 	TypeHistoryReplay  uint8 = 0x19
+	TypeClientControl  uint8 = 0x1a
 )
 
 var (

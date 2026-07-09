@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wirepb"
 	"github.com/lozzow/termx/termx-shared/plugin"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestClientSessionControlRegisterAndListCodecRoundTrip(t *testing.T) {
@@ -22,6 +24,7 @@ func TestClientSessionControlRegisterAndListCodecRoundTrip(t *testing.T) {
 		DaemonRequiredCaps:   []plugin.Capability{"terminal.kill"},
 		Danger:               plugin.DangerDestructive,
 		ParamsSchema:         `{"type":"object"}`,
+		BroadcastAllowed:     true,
 	}
 	register := ClientSessionRegisterParams{
 		SessionID:    "tui-1",
@@ -98,6 +101,66 @@ func TestClientSessionControlRegisterAndListCodecRoundTrip(t *testing.T) {
 	gotParams := paramsDecoded.(ClientSessionListParams)
 	if gotParams.ClientKind != plugin.ClientKindTUI || gotParams.WorkspaceID != "workspace-main" || !gotParams.IncludeActions {
 		t.Fatalf("unexpected list params: %#v", gotParams)
+	}
+
+	watchPayload, err := EncodeMethodParams(MethodClientControlWatch, ClientControlWatchParams{SessionID: "tui-1"})
+	if err != nil {
+		t.Fatalf("encode watch params: %v", err)
+	}
+	watchDecoded, err := DecodeMethodParams(MethodClientControlWatch, watchPayload)
+	if err != nil {
+		t.Fatalf("decode watch params: %v", err)
+	}
+	if watchDecoded.(ClientControlWatchParams).SessionID != "tui-1" {
+		t.Fatalf("unexpected watch params: %#v", watchDecoded)
+	}
+	watchResultPayload, err := EncodeMethodResult(MethodClientControlWatch, ClientControlWatchResult{SessionID: "tui-1", Channel: 17})
+	if err != nil {
+		t.Fatalf("encode watch result: %v", err)
+	}
+	var watchResult ClientControlWatchResult
+	if err := DecodeMethodResult(MethodClientControlWatch, watchResultPayload, &watchResult); err != nil {
+		t.Fatalf("decode watch result: %v", err)
+	}
+	if watchResult.SessionID != "tui-1" || watchResult.Channel != 17 {
+		t.Fatalf("unexpected watch result: %#v", watchResult)
+	}
+
+	unwatchPayload, err := EncodeMethodParams(MethodClientControlUnwatch, ClientControlUnwatchParams{SessionID: "tui-1", Channel: 17})
+	if err != nil {
+		t.Fatalf("encode unwatch params: %v", err)
+	}
+	unwatchDecoded, err := DecodeMethodParams(MethodClientControlUnwatch, unwatchPayload)
+	if err != nil {
+		t.Fatalf("decode unwatch params: %v", err)
+	}
+	if unwatchDecoded.(ClientControlUnwatchParams).SessionID != "tui-1" || unwatchDecoded.(ClientControlUnwatchParams).Channel != 17 {
+		t.Fatalf("unexpected unwatch params: %#v", unwatchDecoded)
+	}
+	unwatchResultPayload, err := EncodeMethodResult(MethodClientControlUnwatch, ClientControlUnwatchResult{SessionID: "tui-1", Channel: 17, Stopped: true})
+	if err != nil {
+		t.Fatalf("encode unwatch result: %v", err)
+	}
+	var unwatchResult ClientControlUnwatchResult
+	if err := DecodeMethodResult(MethodClientControlUnwatch, unwatchResultPayload, &unwatchResult); err != nil {
+		t.Fatalf("decode unwatch result: %v", err)
+	}
+	if unwatchResult.SessionID != "tui-1" || unwatchResult.Channel != 17 || !unwatchResult.Stopped {
+		t.Fatalf("unexpected unwatch result: %#v", unwatchResult)
+	}
+	oversizeWatch, err := proto.Marshal(&wirepb.ClientControlWatchResult{SessionId: "tui-1", Channel: 70000})
+	if err != nil {
+		t.Fatalf("marshal oversized watch result: %v", err)
+	}
+	if err := DecodeMethodResult(MethodClientControlWatch, oversizeWatch, &watchResult); err == nil || !strings.Contains(err.Error(), "exceeds uint16") {
+		t.Fatalf("oversized watch channel should fail, got %v", err)
+	}
+	oversizeUnwatch, err := proto.Marshal(&wirepb.ClientControlUnwatchParams{SessionId: "tui-1", Channel: 70000})
+	if err != nil {
+		t.Fatalf("marshal oversized unwatch params: %v", err)
+	}
+	if _, err := DecodeMethodParams(MethodClientControlUnwatch, oversizeUnwatch); err == nil || !strings.Contains(err.Error(), "exceeds uint16") {
+		t.Fatalf("oversized unwatch channel should fail, got %v", err)
 	}
 }
 
@@ -188,6 +251,32 @@ func TestClientControlCallResultAndResponseCodecRoundTrip(t *testing.T) {
 	}
 }
 
+func TestClientControlInvocationPayloadRoundTrip(t *testing.T) {
+	invocation, err := DeriveClientControlInvocation(validClientControlCallForTest(), ClientControlSource{PluginID: "acme.deploy", Kind: "one_shot"})
+	if err != nil {
+		t.Fatalf("derive invocation: %v", err)
+	}
+	payload, err := EncodeClientControlInvocationPayload(invocation)
+	if err != nil {
+		t.Fatalf("encode invocation: %v", err)
+	}
+	invocation.Params[0] = '['
+	invocation.Target.TerminalRef.EndpointID = "mutated"
+	got, err := DecodeClientControlInvocationPayload(payload)
+	if err != nil {
+		t.Fatalf("decode invocation: %v", err)
+	}
+	if got.Source.PluginID != "acme.deploy" || got.Source.Kind != "one_shot" {
+		t.Fatalf("source must come from derived invocation payload, got %#v", got.Source)
+	}
+	if got.Target.TerminalRef == nil || got.Target.TerminalRef.EndpointID != "remote-a" || got.Target.TerminalRef.TerminalID != "codex" {
+		t.Fatalf("terminal ref must roundtrip endpoint+terminal only, got %#v", got.Target.TerminalRef)
+	}
+	if !bytes.Equal(got.Params, []byte(`{"ok":true}`)) {
+		t.Fatalf("invocation params were not cloned through payload: %q", string(got.Params))
+	}
+}
+
 func TestClientControlValidation(t *testing.T) {
 	if err := ValidateClientSessionRegister(ClientSessionRegisterParams{ClientKind: plugin.ClientKindTUI}); err == nil || !strings.Contains(err.Error(), "session id") {
 		t.Fatalf("missing session id should fail, got %v", err)
@@ -229,6 +318,11 @@ func TestClientControlValidation(t *testing.T) {
 	unscopedBroadcast.Target = ClientControlTarget{Broadcast: true}
 	if err := ValidateClientControlCall(unscopedBroadcast); err == nil || !strings.Contains(err.Error(), "broadcast requires explicit") {
 		t.Fatalf("unscoped broadcast should fail, got %v", err)
+	}
+	terminalRefOnlyBroadcast := validClientControlCallForTest()
+	terminalRefOnlyBroadcast.Target = ClientControlTarget{Broadcast: true, TerminalRef: &ClientTerminalRef{EndpointID: "remote-a", TerminalID: "codex"}}
+	if err := ValidateClientControlCall(terminalRefOnlyBroadcast); err == nil || !strings.Contains(err.Error(), "client kind or workspace") {
+		t.Fatalf("terminal-ref-only broadcast should fail until broker owns terminal visibility, got %v", err)
 	}
 	scopedBroadcast := validClientControlCallForTest()
 	scopedBroadcast.Target = ClientControlTarget{Broadcast: true, ClientKind: plugin.ClientKindTUI}
@@ -295,11 +389,16 @@ func TestClientControlPolicyAndDerivedInvocation(t *testing.T) {
 	}
 	destructiveBroadcast := validClientControlCallForTest()
 	destructiveBroadcast.Target = ClientControlTarget{Broadcast: true, ClientKind: plugin.ClientKindTUI}
-	if err := ValidateClientControlCallWithPolicy(destructiveBroadcast, ClientControlCallValidationPolicy{ActionSpec: &ClientControlActionSpec{ID: destructiveBroadcast.ActionID, OwnerPluginID: "termx.builtin.tui", Danger: plugin.DangerDestructive}}); err == nil || !strings.Contains(err.Error(), "destructive broadcast") {
+	if err := ValidateClientControlCallWithPolicy(destructiveBroadcast, ClientControlCallValidationPolicy{ActionSpec: &ClientControlActionSpec{ID: destructiveBroadcast.ActionID, OwnerPluginID: "termx.builtin.tui", Danger: plugin.DangerDestructive, BroadcastAllowed: true}}); err == nil || !strings.Contains(err.Error(), "destructive broadcast") {
 		t.Fatalf("destructive broadcast without explicit allow should fail, got %v", err)
 	}
-	if err := ValidateClientControlCallWithPolicy(destructiveBroadcast, ClientControlCallValidationPolicy{ActionSpec: &ClientControlActionSpec{ID: destructiveBroadcast.ActionID, OwnerPluginID: "termx.builtin.tui", Danger: plugin.DangerDestructive}, AllowDestructiveBroadcast: true}); err != nil {
+	if err := ValidateClientControlCallWithPolicy(destructiveBroadcast, ClientControlCallValidationPolicy{ActionSpec: &ClientControlActionSpec{ID: destructiveBroadcast.ActionID, OwnerPluginID: "termx.builtin.tui", Danger: plugin.DangerDestructive, BroadcastAllowed: true}, AllowDestructiveBroadcast: true}); err != nil {
 		t.Fatalf("destructive broadcast with explicit allow should pass: %v", err)
+	}
+	ordinaryBroadcast := validClientControlCallForTest()
+	ordinaryBroadcast.Target = ClientControlTarget{Broadcast: true, ClientKind: plugin.ClientKindTUI}
+	if err := ValidateClientControlCallWithPolicy(ordinaryBroadcast, ClientControlCallValidationPolicy{ActionSpec: &ClientControlActionSpec{ID: ordinaryBroadcast.ActionID, OwnerPluginID: "termx.builtin.tui"}}); err == nil || !strings.Contains(err.Error(), "broadcast requires action policy") {
+		t.Fatalf("broadcast without action policy should fail, got %v", err)
 	}
 }
 
@@ -308,6 +407,8 @@ func TestClientControlMethodCodecTypeErrors(t *testing.T) {
 		MethodClientSessionRegister: ClientControlCallParams{},
 		MethodClientSessionList:     ClientControlCallParams{},
 		MethodClientControlCall:     ClientSessionRegisterParams{},
+		MethodClientControlWatch:    ClientControlCallParams{},
+		MethodClientControlUnwatch:  ClientControlCallParams{},
 		MethodClientControlRespond:  ClientControlCallParams{},
 	} {
 		if _, err := EncodeMethodParams(method, wrong); err == nil {
@@ -318,6 +419,8 @@ func TestClientControlMethodCodecTypeErrors(t *testing.T) {
 		MethodClientSessionRegister: ClientSessionRegisterResult{},
 		MethodClientSessionList:     ClientSessionListResult{},
 		MethodClientControlCall:     ClientControlCallResult{},
+		MethodClientControlWatch:    ClientControlWatchResult{},
+		MethodClientControlUnwatch:  ClientControlUnwatchResult{},
 		MethodClientControlRespond:  ClientControlResponseResult{},
 	} {
 		if _, err := EncodeMethodResult(method, ClientControlResponseParams{}); err == nil {
