@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
 func TestInputEventKind(t *testing.T) {
@@ -205,6 +207,52 @@ func TestForceTerminalPassthroughBypassesRootShortcutBindings(t *testing.T) {
 	}
 }
 
+func TestRouteUsesCustomShortcutsAsOnlyTruth(t *testing.T) {
+	shortcuts := state.TUIShortcutConfig{
+		Scenes: map[string]state.TUIShortcutSceneConfig{
+			"global": {
+				Bindings: map[string]state.TUIShortcutBindingConfig{
+					"ctrl-1": {Action: "tab.jump.1"},
+				},
+			},
+			"panel": {
+				Bindings: map[string]state.TUIShortcutBindingConfig{
+					"q": {Action: "panel.close"},
+					"w": {Action: "panel.close"},
+				},
+			},
+		},
+	}
+
+	jump := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "1", Ctrl: true}, RouteOptions{Shortcuts: shortcuts})
+	if jump.Kind != IntentWorkbenchCommand || jump.Command != "tab jump 1" {
+		t.Fatalf("custom ctrl-1 should jump tab, got %#v", jump)
+	}
+	ctrlP := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p", Ctrl: true}, RouteOptions{Shortcuts: shortcuts})
+	if ctrlP.Kind == IntentSetInteractionMode {
+		t.Fatalf("removed ctrl-p must not fall back to default panel menu, got %#v", ctrlP)
+	}
+	for _, key := range []string{"q", "w"} {
+		intent := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: key}, RouteOptions{Mode: InteractionModePane, Shortcuts: shortcuts})
+		if intent.Kind != IntentWorkbenchCommand || intent.Command != "pane close" {
+			t.Fatalf("custom panel key %q should close pane, got %#v", key, intent)
+		}
+	}
+	removed := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "x"}, RouteOptions{Mode: InteractionModePane, Shortcuts: shortcuts})
+	if removed.Kind != IntentNone {
+		t.Fatalf("removed panel x must not use default close binding, got %#v", removed)
+	}
+}
+
+func TestRouteUsesExplicitEmptyShortcutsAsOnlyTruth(t *testing.T) {
+	shortcuts := state.TUIShortcutConfig{Configured: true}
+
+	intent := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p", Ctrl: true}, RouteOptions{Shortcuts: shortcuts})
+	if intent.Kind == IntentSetInteractionMode {
+		t.Fatalf("explicit empty shortcuts must not fall back to default ctrl-p, got %#v", intent)
+	}
+}
+
 func TestBindingCatalogIsUniqueAndContainsDocumentedAliases(t *testing.T) {
 	seen := map[string]string{}
 	for _, binding := range BindingCatalog() {
@@ -308,7 +356,7 @@ func TestInputBindingCatalogHasSingleProductionOwner(t *testing.T) {
 				return true
 			}
 			for _, name := range spec.Names {
-				if name.Name == "bindingCatalog" {
+				if name.Name == "builtinShortcutDefaults" {
 					owners = append(owners, file)
 				}
 			}
@@ -316,7 +364,7 @@ func TestInputBindingCatalogHasSingleProductionOwner(t *testing.T) {
 		})
 	}
 	if len(owners) != 1 || owners[0] != "bindings.go" {
-		t.Fatalf("input binding catalog must have a single production owner bindings.go, got %#v", owners)
+		t.Fatalf("input shortcut defaults must have a single production owner bindings.go, got %#v", owners)
 	}
 }
 

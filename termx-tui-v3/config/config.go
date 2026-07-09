@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -151,6 +152,9 @@ func Parse(data []byte) (state.TUIConfigStore, error) {
 		if value == "" {
 			if !knownSection(path) {
 				return state.TUIConfigStore{}, fmt.Errorf("line %d: unknown section %q", lineNo+1, path)
+			}
+			if path == "tui.shortcuts" || strings.HasPrefix(path, "tui.shortcuts.") {
+				cfg.Shortcuts.Configured = true
 			}
 			stack[level] = key
 			for existing := range stack {
@@ -529,6 +533,7 @@ func setFooterDynamicScalar(cfg *state.TUIConfigStore, path string, value string
 
 func setShortcutsDynamicScalar(cfg *state.TUIConfigStore, path string, value string) (bool, error) {
 	if strings.HasPrefix(path, "tui.shortcuts.actions.") {
+		cfg.Shortcuts.Configured = true
 		rest := strings.TrimPrefix(path, "tui.shortcuts.actions.")
 		actionID, ok := strings.CutSuffix(rest, ".label")
 		if !ok || !validShortcutActionID(actionID) {
@@ -545,6 +550,7 @@ func setShortcutsDynamicScalar(cfg *state.TUIConfigStore, path string, value str
 	if !strings.HasPrefix(path, "tui.shortcuts.") {
 		return false, nil
 	}
+	cfg.Shortcuts.Configured = true
 	rest := strings.TrimPrefix(path, "tui.shortcuts.")
 	sceneName, tail, ok := strings.Cut(rest, ".")
 	if !ok || sceneName == "actions" || !builtinShortcutScene(sceneName) {
@@ -977,10 +983,14 @@ func validateShortcutsConfig(shortcuts state.TUIShortcutConfig) error {
 		if !validShortcutActionID(actionID) {
 			return fmt.Errorf("tui.shortcuts.actions has invalid action id %q", actionID)
 		}
+		if !input.KnownShortcutActionID(actionID) {
+			return fmt.Errorf("tui.shortcuts.actions.%s references unknown shortcut action %q", actionID, actionID)
+		}
 		if err := validateSingleLine("tui.shortcuts.actions."+actionID+".label", action.Label); err != nil {
 			return err
 		}
 	}
+	effectiveKeys := map[string]string{}
 	for sceneName, scene := range shortcuts.Scenes {
 		if !builtinShortcutScene(sceneName) {
 			return fmt.Errorf("tui.shortcuts has invalid scene %q", sceneName)
@@ -989,6 +999,16 @@ func validateShortcutsConfig(shortcuts state.TUIShortcutConfig) error {
 			path := "tui.shortcuts." + sceneName + "." + key
 			if !validShortcutKey(key) {
 				return fmt.Errorf("%s has invalid key", path)
+			}
+			if routedShortcutScene(sceneName) {
+				signature, ok := input.ShortcutBindingSignature(sceneName, key)
+				if !ok {
+					return fmt.Errorf("%s has invalid key", path)
+				}
+				if previous, ok := effectiveKeys[signature]; ok {
+					return fmt.Errorf("%s conflicts with %s at runtime shortcut key", path, previous)
+				}
+				effectiveKeys[signature] = path
 			}
 			if strings.TrimSpace(binding.Action) == "" {
 				return fmt.Errorf("%s.action must not be empty", path)
@@ -1007,6 +1027,9 @@ func validateShortcutsConfig(shortcuts state.TUIShortcutConfig) error {
 				if _, ok := shortcuts.Scenes[target]; !ok && !builtinShortcutScene(target) {
 					return fmt.Errorf("%s.action references unknown shortcut scene %q", path, target)
 				}
+			}
+			if !input.KnownShortcutActionID(binding.Action) {
+				return fmt.Errorf("%s.action references unknown shortcut action %q", path, binding.Action)
 			}
 		}
 	}
@@ -1046,9 +1069,24 @@ func validShortcutKey(value string) bool {
 	return true
 }
 
+func routedShortcutScene(value string) bool {
+	return oneOf(value,
+		"global",
+		"system",
+		"panel",
+		"pane",
+		"floating",
+		"tab",
+		"workspace",
+		"resize",
+		"copy",
+	)
+}
+
 func builtinShortcutScene(value string) bool {
 	return oneOf(value,
 		"global",
+		"system",
 		"panel",
 		"pane",
 		"floating",

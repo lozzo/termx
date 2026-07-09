@@ -45,6 +45,57 @@ func TestUIInputReducerOpensTerminalPickerFromCtrlF(t *testing.T) {
 	}
 }
 
+func TestUIInputReducerUsesConfiguredShortcutsAsRouteTruth(t *testing.T) {
+	reducer := NewUIInputReducer()
+	shell := state.DefaultShell()
+	var result state.WorkbenchCommandResult
+	shell, result = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("create tab fixture: %#v", result)
+	}
+	secondTabID := shell.Workspace.ActiveTabID
+	shell, result = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabSwitch, TargetID: state.DefaultTabID})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("switch tab fixture: %#v", result)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabSwitch, TargetID: secondTabID})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("switch second tab fixture: %#v", result)
+	}
+	root := state.Root{
+		Shell: shell,
+		Config: state.TUIConfigStore{
+			Shortcuts: state.TUIShortcutConfig{Scenes: map[string]state.TUIShortcutSceneConfig{
+				"global": {Bindings: map[string]state.TUIShortcutBindingConfig{
+					"ctrl-1": {Action: "tab.jump.1"},
+				}},
+			}},
+		},
+	}
+
+	next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "p", Ctrl: true}})
+	if next.Shell.InteractionMode == state.InteractionModePane || len(effects) != 0 {
+		t.Fatalf("removed ctrl-p must not enter pane mode, shell=%#v effects=%#v", next.Shell, effects)
+	}
+
+	next, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "1", Ctrl: true}})
+	if len(effects) != 2 {
+		t.Fatalf("custom ctrl-1 should emit handled workbench command effect, effects=%#v", effects)
+	}
+	fn, ok := effects[1].(FuncEffect)
+	if !ok || fn.Run == nil {
+		t.Fatalf("custom ctrl-1 should emit workbench command effect, got %#v", effects[1])
+	}
+	msg, ok := fn.Run(context.Background()).(ShellWorkbenchCommandMsg)
+	if !ok || msg.Command.Action != state.WorkbenchCommandTabSwitch || msg.Command.TargetID != state.DefaultTabID {
+		t.Fatalf("custom ctrl-1 should request first tab jump, got %#v", msg)
+	}
+	next, _ = NewShellReducer()(next, msg)
+	if next.Shell.Workspace.ActiveTabID != state.DefaultTabID {
+		t.Fatalf("custom ctrl-1 should jump to first tab, active=%q", next.Shell.Workspace.ActiveTabID)
+	}
+}
+
 func TestUIInputReducerStickyInteractionModeTimeoutAndRearm(t *testing.T) {
 	reducer := NewUIInputReducer()
 	root := state.Root{Shell: state.DefaultShell()}

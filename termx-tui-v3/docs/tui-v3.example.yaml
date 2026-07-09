@@ -423,40 +423,32 @@ tui:
       highlight_matches: true
 
   # shortcuts 是快捷键配置的唯一入口。
-  # 当前 KS002 阶段只解析和校验；后续 KS003/KS004 会让输入路由和提示系统都从这里生成。
+  # 当前 KS003 阶段输入路由已从这里生成；后续 KS004 会让提示系统也从这里生成。
+  # 默认行为：不写 tui.shortcuts 时使用内置默认快捷键。
+  # 注意：一旦写出 tui.shortcuts，包括空块，就表示用户配置成为唯一真值，不再启用默认快捷键。
   # 短写：key: action。
   # 长写：key.action / key.label，用于覆盖单个场景里的展示文案。
-  shortcuts:
-    # actions 定义 action 默认展示文案；action id 只能使用字母、数字、_、-、.。
-    # 示例：
-    # actions:
-    #   panel.close:
-    #     label: close
-    actions:
-
-    # global 是默认工作台输入态下可用的直接快捷键。
-    # menu.<scene> 表示进入某个快捷键场景。
-    # 示例：
-    # global:
-    #   ctrl-p: menu.panel
-    #   ctrl-o: menu.floating
-    #   ctrl-t: menu.tab
-    #   ctrl-1: tab.jump.1
-    global:
-
-    # panel/floating/tab/workspace/resize/copy 是内置快捷键场景。
-    # 示例短写：
-    # panel:
-    #   x: panel.close
-    panel:
-
-    # 示例长写：
-    # floating:
-    #   k:
-    #     action: panel.kill_and_close
-    #     label: kill+close
-    floating:
-    tab:
-    workspace:
-    resize:
-    copy:
+  # 示例：
+  # shortcuts:
+  #   actions:
+  #     panel.close:
+  #       label: close
+  #
+  #   global:
+  #     ctrl-p: menu.panel
+  #     ctrl-g: menu.system
+  #     ctrl-o: menu.floating
+  #     ctrl-t: menu.tab
+  #     ctrl-1: tab.jump.1
+  #
+  #   system:
+  #     h: system.toggle_header
+  #     f: system.toggle_footer
+  #
+  #   panel:
+  #     x: panel.close
+  #
+  #   floating:
+  #     k:
+  #       action: panel.kill_and_close
+  #       label: kill+close

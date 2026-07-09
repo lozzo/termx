@@ -106,7 +106,11 @@ func NewUIInputReducer() Reducer {
 		if next, ok := shortcutPassthroughInput(root, inputMsg.Event); ok {
 			return next, nil
 		}
-		intent := input.RouteWithMode(inputMsg.Event, copyModeOwnsActiveInput(root), inputMode(root.Shell.ReadonlyDefaults().InteractionMode))
+		intent := input.RouteWithOptions(inputMsg.Event, input.RouteOptions{
+			Mode:           inputMode(root.Shell.ReadonlyDefaults().InteractionMode),
+			CopyModeActive: copyModeOwnsActiveInput(root),
+			Shortcuts:      root.Config.Shortcuts,
+		})
 		switch intent.Kind {
 		case input.IntentOpenTerminalPicker:
 			root.Shell = root.Shell.OpenTerminalPicker()
@@ -144,7 +148,7 @@ func shortcutPassthroughInput(root state.Root, event input.InputEvent) (state.Ro
 	shell := root.Shell.EnsureDefaults()
 	mode := inputMode(shell.InteractionMode)
 	if shell.StickyInteractionMode() {
-		if _, ok := input.StickyModeEntryShortcutIntent(event, mode); ok {
+		if _, ok := input.StickyModeEntryShortcutIntentWithShortcuts(event, mode, root.Config.Shortcuts); ok {
 			kind := shortcutPassthroughKindForMode(shell.InteractionMode)
 			if shell.ShortcutPassthroughWindowMatches(kind) {
 				// 中文说明：双击 sticky prefix 的第二击属于用户显式 PTY 输入；
@@ -155,7 +159,7 @@ func shortcutPassthroughInput(root state.Root, event input.InputEvent) (state.Ro
 			return root, false
 		}
 		if shell.ShortcutPassthroughLocked {
-			if _, ok := input.LockableRootShortcutIntent(event); ok {
+			if _, ok := input.LockableRootShortcutIntentWithShortcuts(event, root.Config.Shortcuts); ok {
 				root.Shell = shell.ClearShortcutPassthroughWindow(shortcutPassthroughKindForMode(shell.InteractionMode)).ExitInteractionMode().ArmTerminalInputPassthroughOnce()
 				return root.Advance(), true
 			}
@@ -163,7 +167,7 @@ func shortcutPassthroughInput(root state.Root, event input.InputEvent) (state.Ro
 		return root, false
 	}
 	if shell.InteractionMode == state.InteractionModeNormal && shell.ShortcutPassthroughLocked {
-		if _, ok := input.LockableRootShortcutIntent(event); ok {
+		if _, ok := input.LockableRootShortcutIntentWithShortcuts(event, root.Config.Shortcuts); ok {
 			// 中文说明：shortcut lock 只让 root shortcut 让路；global 入口保留为解锁控制面。
 			root.Shell = shell.ArmTerminalInputPassthroughOnce()
 			return root.Advance(), true

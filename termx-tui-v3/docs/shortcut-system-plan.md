@@ -48,10 +48,12 @@ tui:
 
 - `shortcuts.actions` 定义 action 默认展示文案。
 - `shortcuts.global` 定义默认工作台输入态直接可按的键。
+- `shortcuts.system` 定义 `Ctrl-G` 进入后的系统控制场景，避免和 root/global 直接快捷键混用。
 - `shortcuts.panel`、`shortcuts.floating`、`shortcuts.tab`、`shortcuts.workspace`、`shortcuts.resize`、`shortcuts.copy` 定义对应场景内可按的键。
 - overlay 场景也使用同一结构，内置场景名为 `terminal_picker`、`terminal_pool`、`workbench_tree`、`clipboard_history`、`floating_overview`、`prompt`、`help`。
 - `menu.<scene>` 表示进入某个快捷键场景，例如 `ctrl-p: menu.panel`。
 - 用户删除某个 shortcut 后，该按键不能触发，对应提示也不能展示。
+- 用户完全没有写 `tui.shortcuts` 时使用内置默认 catalog；一旦显式写出 `tui.shortcuts`，包括空块，都以用户配置为唯一真值，不再启用默认快捷键。
 
 ## 写法
 
@@ -116,7 +118,9 @@ action id 只允许字母、数字、`_`、`-`、`.`。默认内置 action 使�
 
 - `shortcuts` 下未知顶层块报错，避免静默丢配置。
 - 同一场景内同一个键只能绑定一个 action。
+- 编译到同一输入场景的 scene 别名不能绑定同一个运行时 key，例如 `panel.x` 和 `pane.x` 不能同时存在。
 - action id 必须符合命名规则。
+- action id 必须存在于当前内置 action registry；本分支不接受未知 action 静默空转。
 - label 必须是单行字符串。
 - `menu.xxx` 必须指向内置场景或已配置场景。
 - 默认 catalog 必须能覆盖当前实际可按行为；用户提供 `tui.shortcuts` 后，以用户配置为唯一真值。
@@ -176,4 +180,3 @@ KS004 起清理旧提示真值：
 - 修复提示和真实按键不一致。
 - 用户删除 shortcut 后提示自动消失。
 - 运行准入测试并做子 Agent 只读审核。
-

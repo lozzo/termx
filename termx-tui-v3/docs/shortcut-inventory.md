@@ -17,10 +17,10 @@
 
 | 问题 | 现状 | 后续处理 |
 | --- | --- | --- |
-| 输入真值分散 | 主 binding 在 `input/bindings.go`，copy mode 在 `app/copymode.go`，overlay Ctrl 组合键在 `app/ui_input.go` | KS003 建立 shortcut catalog 和 action registry |
+| 输入真值分散 | KS001 时点主 binding 在 `input/bindings.go`，copy mode 在 `app/copymode.go`，overlay Ctrl 组合键在 `app/ui_input.go` | KS003 已建立 shortcut catalog 和 action registry；overlay 提示/输入同源留到 KS004 |
 | 展示真值分散 | footer 来自 `render/action_ids.go` 和 `render/vm.go`，help 来自 `render/product_content.go` | KS004 由 catalog 派生 footer/help/overlay |
 | 旧 `tui.keymap` 未接入实际路由 | KS001 时点 config 解析和校验存在，但 input router 仍使用硬编码 `bindingCatalog` | KS002 删除旧 keymap，不保留兼容 |
-| sticky mode 会回查 root binding | 处于 pane/resize/global/floating/tab/workspace 时，未命中当前 mode 会继续匹配 root | KS003 在 catalog 中显式建模，不保留隐式 fallback |
+| sticky mode 会回查 root binding | KS001 时点处于 pane/resize/global/floating/tab/workspace 时，未命中当前 mode 会继续匹配 root | KS003 在 catalog 中显式建模，不保留隐式 fallback |
 | 大写键较多 | `X`、`N`、`HJKL`、`T`、`P` 等需要 Shift | 默认 shortcuts 应优先使用小写，必要动作用新键位或长写 label 表达 |
 | overlay footer 有不一致 | Clipboard History footer 显示 `n/e/x`，实际键盘处理是 `Ctrl-N/Ctrl-E/Ctrl-X` | KS004 统一 overlay 提示和输入 |
 | 按键名格式不一致 | footer 混用 `^P`、`Ctrl+T`、`PgUp`、`S+arrows`、`HJKL` | KS002 定义统一 key token，KS004 统一渲染 |

@@ -461,6 +461,7 @@ tui:
       # 默认值：true。
       highlight_matches: true
 
+  # shortcuts 一旦写出就成为唯一快捷键真值；下面没有列出的默认快捷键不会自动继承。
   shortcuts:
     actions:
       panel.close:
@@ -472,9 +473,15 @@ tui:
 
     global:
       ctrl-p: menu.panel
+      ctrl-g: menu.system
       ctrl-o: menu.floating
       ctrl-t: menu.tab
       ctrl-1: tab.jump.1
+
+    system:
+      h: system.toggle_header
+      f: system.toggle_footer
+      q: system.quit
 
     panel:
       x: panel.close

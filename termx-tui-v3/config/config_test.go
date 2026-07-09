@@ -341,6 +341,19 @@ tui:
 	}
 }
 
+func TestParseMarksExplicitEmptyShortcuts(t *testing.T) {
+	cfg, err := Parse([]byte(`
+tui:
+  shortcuts:
+`))
+	if err != nil {
+		t.Fatalf("parse explicit empty shortcuts: %v", err)
+	}
+	if !cfg.Shortcuts.Configured {
+		t.Fatalf("explicit empty shortcuts must be marked configured")
+	}
+}
+
 func TestValidateRejectsInvalidShortcutConfig(t *testing.T) {
 	cfg := Default()
 	cfg.Shortcuts.Actions = map[string]state.TUIShortcutActionConfig{
@@ -356,6 +369,14 @@ func TestValidateRejectsInvalidShortcutConfig(t *testing.T) {
 	}
 	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "single-line") {
 		t.Fatalf("expected multiline shortcut label error, got %v", err)
+	}
+
+	cfg = Default()
+	cfg.Shortcuts.Actions = map[string]state.TUIShortcutActionConfig{
+		"panel.clsoe": {Label: "close"},
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "unknown shortcut action") {
+		t.Fatalf("expected unknown shortcut action label error, got %v", err)
 	}
 
 	cfg = Default()
@@ -380,6 +401,47 @@ func TestValidateRejectsInvalidShortcutConfig(t *testing.T) {
 	}
 	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "unknown shortcut scene") {
 		t.Fatalf("expected unknown menu target error, got %v", err)
+	}
+
+	cfg = Default()
+	cfg.Shortcuts.Scenes = map[string]state.TUIShortcutSceneConfig{
+		"global": {
+			Bindings: map[string]state.TUIShortcutBindingConfig{
+				"ctrl-z": {Action: "panel.clsoe"},
+			},
+		},
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "unknown shortcut action") {
+		t.Fatalf("expected unknown shortcut action error, got %v", err)
+	}
+
+	cfg = Default()
+	cfg.Shortcuts.Scenes = map[string]state.TUIShortcutSceneConfig{
+		"global": {
+			Bindings: map[string]state.TUIShortcutBindingConfig{
+				"ctrl-f": {Action: "menu.terminal_picker"},
+			},
+		},
+	}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected terminal picker menu action to validate, got %v", err)
+	}
+
+	cfg = Default()
+	cfg.Shortcuts.Scenes = map[string]state.TUIShortcutSceneConfig{
+		"panel": {
+			Bindings: map[string]state.TUIShortcutBindingConfig{
+				"x": {Action: "panel.close"},
+			},
+		},
+		"pane": {
+			Bindings: map[string]state.TUIShortcutBindingConfig{
+				"x": {Action: "panel.detach"},
+			},
+		},
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "runtime shortcut key") {
+		t.Fatalf("expected panel/pane runtime key conflict error, got %v", err)
 	}
 }
 

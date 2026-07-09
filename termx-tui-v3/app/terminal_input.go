@@ -58,7 +58,7 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		shell = root.Shell.ReadonlyDefaults()
 		forceTerminalPassthrough = true
 	} else if shell.ShortcutPassthroughLocked {
-		if _, ok := input.LockableRootShortcutIntent(msg.Event); ok {
+		if _, ok := input.LockableRootShortcutIntentWithShortcuts(msg.Event, root.Config.Shortcuts); ok {
 			forceTerminalPassthrough = true
 		}
 	}
@@ -111,6 +111,7 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		CopyModeActive:           false,
 		TerminalMousePassthrough: msg.TerminalMousePassthrough || liveMousePassthroughEnabled(root, msg.Event, target),
 		ForceTerminalPassthrough: forceTerminalPassthrough,
+		Shortcuts:                root.Config.Shortcuts,
 	})
 	if intent.Kind != input.IntentTerminalInput || len(intent.Bytes) == 0 {
 		logTerminalInputRoute(deps, root, terminalInputRouteLog{

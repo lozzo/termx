@@ -1,186 +1,660 @@
 package input
 
-// Binding 是 tui-v3 自有快捷键目录项；它只表达 semantic intent，不携带 app state。
+import (
+	"strconv"
+	"strings"
+
+	"github.com/lozzow/termx/termx-tui-v3/state"
+)
+
+// Binding 是 shortcut catalog 编译后的运行时路由项。
+// 它由内置默认 shortcuts 或用户 `tui.shortcuts` 生成；输入路由只查 Binding，
+// 不再直接读取旧 keymap 或分散硬编码键位。
 type Binding struct {
-	ID      string
-	Mode    InteractionMode
-	Key     Key
-	Char    string
-	Ctrl    bool
-	Alt     bool
-	Shift   bool
-	Intent  IntentKind
-	Command string
-	Action  ShellAction
-	Reason  string
-	Target  InteractionMode
+	ID       string
+	ActionID string
+	Label    string
+	Mode     InteractionMode
+	Key      Key
+	Char     string
+	Ctrl     bool
+	Alt      bool
+	Shift    bool
+	Intent   IntentKind
+	Command  string
+	Action   ShellAction
+	Reason   string
+	Target   InteractionMode
 }
 
-var bindingCatalog = []Binding{
-	{ID: "root-pane", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x10", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModePane},
-	{ID: "root-pane-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "p", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModePane},
-	{ID: "root-resize", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x12", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModeResize},
-	{ID: "root-resize-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "r", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModeResize},
-	{ID: "root-global", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x07", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModeGlobal},
-	{ID: "root-global-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "g", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModeGlobal},
-	{ID: "root-floating", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x0f", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModeFloating},
-	{ID: "root-floating-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "o", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModeFloating},
-	{ID: "root-tab", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x14", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModeTab},
-	{ID: "root-tab-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "t", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModeTab},
-	{ID: "root-workspace", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x17", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModeWorkspace},
-	{ID: "root-workspace-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "w", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModeWorkspace},
-	{ID: "root-picker", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x06", Ctrl: true, Intent: IntentOpenTerminalPicker},
-	{ID: "root-picker-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "f", Ctrl: true, Intent: IntentOpenTerminalPicker},
-	{ID: "root-copy", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x16", Ctrl: true, Intent: IntentEnterCopyMode},
-	{ID: "root-copy-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "v", Ctrl: true, Intent: IntentEnterCopyMode},
-
-	{ID: "pane-close", Mode: InteractionModePane, Key: KeyChar, Char: "x", Intent: IntentWorkbenchCommand, Command: "pane close"},
-	{ID: "pane-close-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "w", Intent: IntentWorkbenchCommand, Command: "pane close"},
-	{ID: "pane-detach-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "d", Intent: IntentWorkbenchCommand, Command: "pane detach"},
-	{ID: "pane-reconnect-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "r", Intent: IntentWorkbenchCommand, Command: "pane reconnect"},
-	{ID: "pane-restart-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "R", Intent: IntentWorkbenchCommand, Command: "pane restart"},
-	{ID: "pane-owner-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "a", Intent: IntentWorkbenchCommand, Command: "pane take-owner"},
-	{ID: "pane-lock-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "s", Intent: IntentWorkbenchCommand, Command: "terminal size lock"},
-	{ID: "pane-split-right-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "%", Intent: IntentPaneCommand, Command: "pane split-right"},
-	{ID: "pane-split-right-ctrl-d", Mode: InteractionModePane, Key: KeyChar, Char: "\x04", Ctrl: true, Intent: IntentPaneCommand, Command: "pane split-right"},
-	{ID: "pane-split-right-ctrl-d-named", Mode: InteractionModePane, Key: KeyChar, Char: "d", Ctrl: true, Intent: IntentPaneCommand, Command: "pane split-right"},
-	{ID: "pane-split-down-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "\"", Intent: IntentPaneCommand, Command: "pane split-down"},
-	{ID: "pane-split-down-ctrl-e", Mode: InteractionModePane, Key: KeyChar, Char: "\x05", Ctrl: true, Intent: IntentPaneCommand, Command: "pane split-down"},
-	{ID: "pane-split-down-ctrl-e-named", Mode: InteractionModePane, Key: KeyChar, Char: "e", Ctrl: true, Intent: IntentPaneCommand, Command: "pane split-down"},
-	{ID: "pane-close-kill", Mode: InteractionModePane, Key: KeyChar, Char: "X", Intent: IntentWorkbenchCommand, Command: "pane kill confirm=accepted"},
-	{ID: "pane-zoom", Mode: InteractionModePane, Key: KeyChar, Char: "z", Intent: IntentPaneCommand, Command: "pane toggle-zoom"},
-	{ID: "pane-balance", Mode: InteractionModePane, Key: KeyChar, Char: "b", Intent: IntentPaneCommand, Command: "pane balance"},
-	{ID: "pane-card", Mode: InteractionModePane, Key: KeyChar, Char: "c", Intent: IntentPaneCommand, Command: "pane presentation card"},
-	{ID: "pane-split-line", Mode: InteractionModePane, Key: KeyChar, Char: "p", Intent: IntentPaneCommand, Command: "pane presentation split-line"},
-	{ID: "pane-focus-next", Mode: InteractionModePane, Key: KeyChar, Char: "n", Intent: IntentPaneCommand, Command: "pane focus-next"},
-	{ID: "pane-focus-prev", Mode: InteractionModePane, Key: KeyChar, Char: "N", Intent: IntentPaneCommand, Command: "pane focus-prev"},
-	{ID: "pane-focus-left", Mode: InteractionModePane, Key: KeyChar, Char: "h", Intent: IntentPaneCommand, Command: "pane focus-prev"},
-	{ID: "pane-focus-up", Mode: InteractionModePane, Key: KeyChar, Char: "k", Intent: IntentPaneCommand, Command: "pane focus-prev"},
-	{ID: "pane-focus-right", Mode: InteractionModePane, Key: KeyChar, Char: "l", Intent: IntentPaneCommand, Command: "pane focus-next"},
-	{ID: "pane-focus-down", Mode: InteractionModePane, Key: KeyChar, Char: "j", Intent: IntentPaneCommand, Command: "pane focus-next"},
-	{ID: "pane-focus-left-arrow", Mode: InteractionModePane, Key: KeyLeft, Intent: IntentPaneCommand, Command: "pane focus-prev"},
-	{ID: "pane-focus-up-arrow", Mode: InteractionModePane, Key: KeyUp, Intent: IntentPaneCommand, Command: "pane focus-prev"},
-	{ID: "pane-focus-right-arrow", Mode: InteractionModePane, Key: KeyRight, Intent: IntentPaneCommand, Command: "pane focus-next"},
-	{ID: "pane-focus-down-arrow", Mode: InteractionModePane, Key: KeyDown, Intent: IntentPaneCommand, Command: "pane focus-next"},
-
-	{ID: "resize-left", Mode: InteractionModeResize, Key: KeyLeft, Intent: IntentPaneCommand, Command: "pane resize left delta=2"},
-	{ID: "resize-right", Mode: InteractionModeResize, Key: KeyRight, Intent: IntentPaneCommand, Command: "pane resize right delta=2"},
-	{ID: "resize-up", Mode: InteractionModeResize, Key: KeyUp, Intent: IntentPaneCommand, Command: "pane resize up delta=2"},
-	{ID: "resize-down", Mode: InteractionModeResize, Key: KeyDown, Intent: IntentPaneCommand, Command: "pane resize down delta=2"},
-	{ID: "resize-left-h", Mode: InteractionModeResize, Key: KeyChar, Char: "h", Intent: IntentPaneCommand, Command: "pane resize left delta=2"},
-	{ID: "resize-right-l", Mode: InteractionModeResize, Key: KeyChar, Char: "l", Intent: IntentPaneCommand, Command: "pane resize right delta=2"},
-	{ID: "resize-up-k", Mode: InteractionModeResize, Key: KeyChar, Char: "k", Intent: IntentPaneCommand, Command: "pane resize up delta=2"},
-	{ID: "resize-down-j", Mode: InteractionModeResize, Key: KeyChar, Char: "j", Intent: IntentPaneCommand, Command: "pane resize down delta=2"},
-	{ID: "resize-owner-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "a", Intent: IntentWorkbenchCommand, Command: "pane take-owner"},
-	{ID: "resize-lock-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "s", Intent: IntentWorkbenchCommand, Command: "terminal size lock"},
-	{ID: "resize-layout-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: " ", Intent: IntentWorkbenchCommand, Command: "terminal layout toggle"},
-	{ID: "resize-pan-left-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "A", Intent: IntentWorkbenchCommand, Command: "terminal layout pan-left"},
-	{ID: "resize-pan-down-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "S", Intent: IntentWorkbenchCommand, Command: "terminal layout pan-down"},
-	{ID: "resize-pan-up-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "W", Intent: IntentWorkbenchCommand, Command: "terminal layout pan-up"},
-	{ID: "resize-pan-right-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "D", Intent: IntentWorkbenchCommand, Command: "terminal layout pan-right"},
-	{ID: "resize-pan-left-arrow-tuiv2", Mode: InteractionModeResize, Key: KeyLeft, Shift: true, Intent: IntentWorkbenchCommand, Command: "terminal layout pan-left"},
-	{ID: "resize-pan-down-arrow-tuiv2", Mode: InteractionModeResize, Key: KeyDown, Shift: true, Intent: IntentWorkbenchCommand, Command: "terminal layout pan-down"},
-	{ID: "resize-pan-up-arrow-tuiv2", Mode: InteractionModeResize, Key: KeyUp, Shift: true, Intent: IntentWorkbenchCommand, Command: "terminal layout pan-up"},
-	{ID: "resize-pan-right-arrow-tuiv2", Mode: InteractionModeResize, Key: KeyRight, Shift: true, Intent: IntentWorkbenchCommand, Command: "terminal layout pan-right"},
-	{ID: "resize-align-left-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "0", Intent: IntentWorkbenchCommand, Command: "terminal layout align-left"},
-	{ID: "resize-align-right-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "$", Intent: IntentWorkbenchCommand, Command: "terminal layout align-right"},
-	{ID: "resize-align-top-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "^", Intent: IntentWorkbenchCommand, Command: "terminal layout align-top"},
-	{ID: "resize-align-bottom-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "B", Intent: IntentWorkbenchCommand, Command: "terminal layout align-bottom"},
-	{ID: "resize-center-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "m", Intent: IntentWorkbenchCommand, Command: "terminal layout center"},
-	{ID: "resize-center-horizontal-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "|", Intent: IntentWorkbenchCommand, Command: "terminal layout center-x"},
-	{ID: "resize-center-vertical-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "_", Intent: IntentWorkbenchCommand, Command: "terminal layout center-y"},
-	{ID: "resize-layout-reset-tuiv2", Mode: InteractionModeResize, Key: KeyChar, Char: "r", Intent: IntentWorkbenchCommand, Command: "terminal layout reset"},
-	{ID: "resize-left-large", Mode: InteractionModeResize, Key: KeyChar, Char: "H", Intent: IntentPaneCommand, Command: "pane resize left delta=6"},
-	{ID: "resize-right-large", Mode: InteractionModeResize, Key: KeyChar, Char: "L", Intent: IntentPaneCommand, Command: "pane resize right delta=6"},
-	{ID: "resize-up-large", Mode: InteractionModeResize, Key: KeyChar, Char: "K", Intent: IntentPaneCommand, Command: "pane resize up delta=6"},
-	{ID: "resize-down-large", Mode: InteractionModeResize, Key: KeyChar, Char: "J", Intent: IntentPaneCommand, Command: "pane resize down delta=6"},
-	{ID: "resize-balance", Mode: InteractionModeResize, Key: KeyChar, Char: "b", Intent: IntentPaneCommand, Command: "pane balance"},
-	{ID: "resize-balance-equals", Mode: InteractionModeResize, Key: KeyChar, Char: "=", Intent: IntentPaneCommand, Command: "pane balance"},
-
-	{ID: "global-header", Mode: InteractionModeGlobal, Key: KeyChar, Char: "h", Intent: IntentShellAction, Action: ShellActionToggleHeader},
-	{ID: "global-footer", Mode: InteractionModeGlobal, Key: KeyChar, Char: "f", Intent: IntentShellAction, Action: ShellActionToggleFooter},
-	{ID: "global-clear-toasts", Mode: InteractionModeGlobal, Key: KeyChar, Char: "c", Intent: IntentShellAction, Action: ShellActionClearToasts},
-	{ID: "global-close-toast", Mode: InteractionModeGlobal, Key: KeyChar, Char: "T", Intent: IntentShellAction, Action: ShellActionCloseToast},
-	{ID: "global-pool", Mode: InteractionModeGlobal, Key: KeyChar, Char: "p", Intent: IntentShellAction, Action: ShellActionOpenPool},
-	{ID: "global-pool-tuiv2", Mode: InteractionModeGlobal, Key: KeyChar, Char: "m", Intent: IntentShellAction, Action: ShellActionOpenPool},
-	{ID: "global-pool-tuiv2-status", Mode: InteractionModeGlobal, Key: KeyChar, Char: "t", Intent: IntentShellAction, Action: ShellActionOpenPool},
-	{ID: "global-tree", Mode: InteractionModeGlobal, Key: KeyChar, Char: "w", Intent: IntentShellAction, Action: ShellActionOpenTree},
-	{ID: "global-shortcut-lock", Mode: InteractionModeGlobal, Key: KeyChar, Char: "l", Intent: IntentShellAction, Action: ShellActionToggleShortcutLock},
-	{ID: "global-prompt", Mode: InteractionModeGlobal, Key: KeyChar, Char: ":", Intent: IntentShellAction, Action: ShellActionOpenPrompt},
-	{ID: "global-help", Mode: InteractionModeGlobal, Key: KeyChar, Char: "?", Intent: IntentShellAction, Action: ShellActionOpenHelp},
-	{ID: "global-quit", Mode: InteractionModeGlobal, Key: KeyChar, Char: "q", Intent: IntentShellAction, Action: ShellActionQuit},
-
-	{ID: "floating-new", Mode: InteractionModeFloating, Key: KeyChar, Char: "n", Intent: IntentShellAction, Action: ShellActionFloatingNew},
-	{ID: "floating-overview-tuiv2", Mode: InteractionModeFloating, Key: KeyChar, Char: "o", Intent: IntentShellAction, Action: ShellActionFloatingOverview},
-	{ID: "floating-summon-1", Mode: InteractionModeFloating, Key: KeyChar, Char: "1", Intent: IntentShellAction, Action: ShellActionFloatingSummon, Reason: "1"},
-	{ID: "floating-summon-2", Mode: InteractionModeFloating, Key: KeyChar, Char: "2", Intent: IntentShellAction, Action: ShellActionFloatingSummon, Reason: "2"},
-	{ID: "floating-summon-3", Mode: InteractionModeFloating, Key: KeyChar, Char: "3", Intent: IntentShellAction, Action: ShellActionFloatingSummon, Reason: "3"},
-	{ID: "floating-summon-4", Mode: InteractionModeFloating, Key: KeyChar, Char: "4", Intent: IntentShellAction, Action: ShellActionFloatingSummon, Reason: "4"},
-	{ID: "floating-summon-5", Mode: InteractionModeFloating, Key: KeyChar, Char: "5", Intent: IntentShellAction, Action: ShellActionFloatingSummon, Reason: "5"},
-	{ID: "floating-summon-6", Mode: InteractionModeFloating, Key: KeyChar, Char: "6", Intent: IntentShellAction, Action: ShellActionFloatingSummon, Reason: "6"},
-	{ID: "floating-summon-7", Mode: InteractionModeFloating, Key: KeyChar, Char: "7", Intent: IntentShellAction, Action: ShellActionFloatingSummon, Reason: "7"},
-	{ID: "floating-summon-8", Mode: InteractionModeFloating, Key: KeyChar, Char: "8", Intent: IntentShellAction, Action: ShellActionFloatingSummon, Reason: "8"},
-	{ID: "floating-summon-9", Mode: InteractionModeFloating, Key: KeyChar, Char: "9", Intent: IntentShellAction, Action: ShellActionFloatingSummon, Reason: "9"},
-	{ID: "floating-pick-tuiv2", Mode: InteractionModeFloating, Key: KeyChar, Char: "f", Intent: IntentShellAction, Action: ShellActionOpenPicker},
-	{ID: "floating-owner-tuiv2", Mode: InteractionModeFloating, Key: KeyChar, Char: "a", Intent: IntentWorkbenchCommand, Command: "floating take-owner"},
-	{ID: "floating-close", Mode: InteractionModeFloating, Key: KeyChar, Char: "x", Intent: IntentShellAction, Action: ShellActionFloatingCtrl, Reason: "close"},
-	{ID: "floating-collapse", Mode: InteractionModeFloating, Key: KeyChar, Char: "z", Intent: IntentShellAction, Action: ShellActionFloatingCtrl, Reason: "collapse"},
-	{ID: "floating-collapse-tuiv2", Mode: InteractionModeFloating, Key: KeyChar, Char: "m", Intent: IntentShellAction, Action: ShellActionFloatingCtrl, Reason: "collapse"},
-	{ID: "floating-center", Mode: InteractionModeFloating, Key: KeyChar, Char: "c", Intent: IntentShellAction, Action: ShellActionFloatingCtrl, Reason: "center"},
-	{ID: "floating-toggle-all", Mode: InteractionModeFloating, Key: KeyChar, Char: "v", Intent: IntentShellAction, Action: ShellActionFloatingGroup, Reason: "toggle-all"},
-	{ID: "floating-fit", Mode: InteractionModeFloating, Key: KeyChar, Char: "=", Intent: IntentShellAction, Action: ShellActionFloatingGroup, Reason: "fit"},
-	{ID: "floating-auto-fit", Mode: InteractionModeFloating, Key: KeyChar, Char: "s", Intent: IntentShellAction, Action: ShellActionFloatingGroup, Reason: "toggle-auto-fit"},
-	{ID: "floating-left", Mode: InteractionModeFloating, Key: KeyChar, Char: "h", Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "left"},
-	{ID: "floating-right", Mode: InteractionModeFloating, Key: KeyChar, Char: "l", Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "right"},
-	{ID: "floating-up", Mode: InteractionModeFloating, Key: KeyChar, Char: "k", Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "up"},
-	{ID: "floating-down", Mode: InteractionModeFloating, Key: KeyChar, Char: "j", Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "down"},
-	{ID: "floating-left-arrow", Mode: InteractionModeFloating, Key: KeyLeft, Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "left"},
-	{ID: "floating-right-arrow", Mode: InteractionModeFloating, Key: KeyRight, Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "right"},
-	{ID: "floating-up-arrow", Mode: InteractionModeFloating, Key: KeyUp, Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "up"},
-	{ID: "floating-down-arrow", Mode: InteractionModeFloating, Key: KeyDown, Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "down"},
-	{ID: "floating-narrow", Mode: InteractionModeFloating, Key: KeyChar, Char: "H", Intent: IntentShellAction, Action: ShellActionFloatingSize, Reason: "narrow"},
-	{ID: "floating-wide", Mode: InteractionModeFloating, Key: KeyChar, Char: "L", Intent: IntentShellAction, Action: ShellActionFloatingSize, Reason: "wide"},
-	{ID: "floating-short", Mode: InteractionModeFloating, Key: KeyChar, Char: "K", Intent: IntentShellAction, Action: ShellActionFloatingSize, Reason: "short"},
-	{ID: "floating-tall", Mode: InteractionModeFloating, Key: KeyChar, Char: "J", Intent: IntentShellAction, Action: ShellActionFloatingSize, Reason: "tall"},
-
-	{ID: "tab-create", Mode: InteractionModeTab, Key: KeyChar, Char: "c", Intent: IntentWorkbenchCommand, Command: "tab create"},
-	{ID: "tab-next", Mode: InteractionModeTab, Key: KeyChar, Char: "n", Intent: IntentWorkbenchCommand, Command: "tab next"},
-	{ID: "tab-next-vim", Mode: InteractionModeTab, Key: KeyChar, Char: "l", Intent: IntentWorkbenchCommand, Command: "tab next"},
-	{ID: "tab-next-bracket", Mode: InteractionModeTab, Key: KeyChar, Char: "]", Intent: IntentWorkbenchCommand, Command: "tab next"},
-	{ID: "tab-prev", Mode: InteractionModeTab, Key: KeyChar, Char: "p", Intent: IntentWorkbenchCommand, Command: "tab previous"},
-	{ID: "tab-prev-vim", Mode: InteractionModeTab, Key: KeyChar, Char: "h", Intent: IntentWorkbenchCommand, Command: "tab previous"},
-	{ID: "tab-prev-bracket", Mode: InteractionModeTab, Key: KeyChar, Char: "[", Intent: IntentWorkbenchCommand, Command: "tab previous"},
-	{ID: "tab-jump-1", Mode: InteractionModeTab, Key: KeyChar, Char: "1", Intent: IntentWorkbenchCommand, Command: "tab jump 1"},
-	{ID: "tab-jump-2", Mode: InteractionModeTab, Key: KeyChar, Char: "2", Intent: IntentWorkbenchCommand, Command: "tab jump 2"},
-	{ID: "tab-jump-3", Mode: InteractionModeTab, Key: KeyChar, Char: "3", Intent: IntentWorkbenchCommand, Command: "tab jump 3"},
-	{ID: "tab-jump-4", Mode: InteractionModeTab, Key: KeyChar, Char: "4", Intent: IntentWorkbenchCommand, Command: "tab jump 4"},
-	{ID: "tab-jump-5", Mode: InteractionModeTab, Key: KeyChar, Char: "5", Intent: IntentWorkbenchCommand, Command: "tab jump 5"},
-	{ID: "tab-jump-6", Mode: InteractionModeTab, Key: KeyChar, Char: "6", Intent: IntentWorkbenchCommand, Command: "tab jump 6"},
-	{ID: "tab-jump-7", Mode: InteractionModeTab, Key: KeyChar, Char: "7", Intent: IntentWorkbenchCommand, Command: "tab jump 7"},
-	{ID: "tab-jump-8", Mode: InteractionModeTab, Key: KeyChar, Char: "8", Intent: IntentWorkbenchCommand, Command: "tab jump 8"},
-	{ID: "tab-jump-9", Mode: InteractionModeTab, Key: KeyChar, Char: "9", Intent: IntentWorkbenchCommand, Command: "tab jump 9"},
-	{ID: "tab-rename", Mode: InteractionModeTab, Key: KeyChar, Char: "r", Intent: IntentWorkbenchCommand, Command: "tab rename"},
-	{ID: "tab-close", Mode: InteractionModeTab, Key: KeyChar, Char: "x", Intent: IntentWorkbenchCommand, Command: "tab close"},
-	{ID: "tab-kill-tuiv2", Mode: InteractionModeTab, Key: KeyChar, Char: "X", Intent: IntentWorkbenchCommand, Command: "tab kill confirm=accepted"},
-
-	{ID: "workspace-create", Mode: InteractionModeWorkspace, Key: KeyChar, Char: "c", Intent: IntentWorkbenchCommand, Command: "workspace create"},
-	{ID: "workspace-next", Mode: InteractionModeWorkspace, Key: KeyChar, Char: "n", Intent: IntentWorkbenchCommand, Command: "workspace next"},
-	{ID: "workspace-next-vim", Mode: InteractionModeWorkspace, Key: KeyChar, Char: "l", Intent: IntentWorkbenchCommand, Command: "workspace next"},
-	{ID: "workspace-next-bracket", Mode: InteractionModeWorkspace, Key: KeyChar, Char: "]", Intent: IntentWorkbenchCommand, Command: "workspace next"},
-	{ID: "workspace-prev", Mode: InteractionModeWorkspace, Key: KeyChar, Char: "p", Intent: IntentWorkbenchCommand, Command: "workspace previous"},
-	{ID: "workspace-prev-vim", Mode: InteractionModeWorkspace, Key: KeyChar, Char: "h", Intent: IntentWorkbenchCommand, Command: "workspace previous"},
-	{ID: "workspace-prev-bracket", Mode: InteractionModeWorkspace, Key: KeyChar, Char: "[", Intent: IntentWorkbenchCommand, Command: "workspace previous"},
-	{ID: "workspace-rename", Mode: InteractionModeWorkspace, Key: KeyChar, Char: "r", Intent: IntentWorkbenchCommand, Command: "workspace rename"},
-	{ID: "workspace-delete-tuiv2", Mode: InteractionModeWorkspace, Key: KeyChar, Char: "x", Intent: IntentWorkbenchCommand, Command: "workspace delete confirm=accepted"},
-	{ID: "workspace-tree", Mode: InteractionModeWorkspace, Key: KeyChar, Char: "t", Intent: IntentShellAction, Action: ShellActionOpenTree},
-	{ID: "workspace-tree-tuiv2", Mode: InteractionModeWorkspace, Key: KeyChar, Char: "f", Intent: IntentShellAction, Action: ShellActionOpenTree},
-	{ID: "workspace-tree-tuiv2-alias", Mode: InteractionModeWorkspace, Key: KeyChar, Char: "s", Intent: IntentShellAction, Action: ShellActionOpenTree},
+type shortcutDefault struct {
+	Scene  string
+	Key    string
+	Action string
 }
 
-func BindingCatalog() []Binding {
-	out := make([]Binding, len(bindingCatalog))
-	copy(out, bindingCatalog)
+var builtinShortcutDefaults = []shortcutDefault{
+	{Scene: "global", Key: "ctrl-p", Action: "menu.panel"},
+	{Scene: "global", Key: "ctrl-r", Action: "menu.resize"},
+	{Scene: "global", Key: "ctrl-g", Action: "menu.system"},
+	{Scene: "global", Key: "ctrl-o", Action: "menu.floating"},
+	{Scene: "global", Key: "ctrl-t", Action: "menu.tab"},
+	{Scene: "global", Key: "ctrl-w", Action: "menu.workspace"},
+	{Scene: "global", Key: "ctrl-f", Action: "terminal_picker.open"},
+	{Scene: "global", Key: "ctrl-v", Action: "copy.enter"},
+	{Scene: "global", Key: "page-up", Action: "copy.enter"},
+
+	{Scene: "panel", Key: "x", Action: "panel.close"},
+	{Scene: "panel", Key: "w", Action: "panel.close"},
+	{Scene: "panel", Key: "d", Action: "panel.detach"},
+	{Scene: "panel", Key: "r", Action: "panel.reconnect"},
+	{Scene: "panel", Key: "R", Action: "panel.restart"},
+	{Scene: "panel", Key: "a", Action: "panel.take_owner"},
+	{Scene: "panel", Key: "s", Action: "panel.size_lock"},
+	{Scene: "panel", Key: "%", Action: "panel.split_right"},
+	{Scene: "panel", Key: "ctrl-d", Action: "panel.split_right"},
+	{Scene: "panel", Key: "\"", Action: "panel.split_down"},
+	{Scene: "panel", Key: "ctrl-e", Action: "panel.split_down"},
+	{Scene: "panel", Key: "X", Action: "panel.kill"},
+	{Scene: "panel", Key: "z", Action: "panel.toggle_zoom"},
+	{Scene: "panel", Key: "b", Action: "panel.balance"},
+	{Scene: "panel", Key: "c", Action: "panel.presentation_card"},
+	{Scene: "panel", Key: "p", Action: "panel.presentation_split_line"},
+	{Scene: "panel", Key: "n", Action: "panel.focus_next"},
+	{Scene: "panel", Key: "N", Action: "panel.focus_prev"},
+	{Scene: "panel", Key: "h", Action: "panel.focus_prev"},
+	{Scene: "panel", Key: "k", Action: "panel.focus_prev"},
+	{Scene: "panel", Key: "l", Action: "panel.focus_next"},
+	{Scene: "panel", Key: "j", Action: "panel.focus_next"},
+	{Scene: "panel", Key: "left", Action: "panel.focus_prev"},
+	{Scene: "panel", Key: "up", Action: "panel.focus_prev"},
+	{Scene: "panel", Key: "right", Action: "panel.focus_next"},
+	{Scene: "panel", Key: "down", Action: "panel.focus_next"},
+
+	{Scene: "resize", Key: "left", Action: "resize.left"},
+	{Scene: "resize", Key: "right", Action: "resize.right"},
+	{Scene: "resize", Key: "up", Action: "resize.up"},
+	{Scene: "resize", Key: "down", Action: "resize.down"},
+	{Scene: "resize", Key: "h", Action: "resize.left"},
+	{Scene: "resize", Key: "l", Action: "resize.right"},
+	{Scene: "resize", Key: "k", Action: "resize.up"},
+	{Scene: "resize", Key: "j", Action: "resize.down"},
+	{Scene: "resize", Key: "a", Action: "panel.take_owner"},
+	{Scene: "resize", Key: "s", Action: "panel.size_lock"},
+	{Scene: "resize", Key: "space", Action: "resize.layout_toggle"},
+	{Scene: "resize", Key: "A", Action: "resize.pan_left"},
+	{Scene: "resize", Key: "S", Action: "resize.pan_down"},
+	{Scene: "resize", Key: "W", Action: "resize.pan_up"},
+	{Scene: "resize", Key: "D", Action: "resize.pan_right"},
+	{Scene: "resize", Key: "shift-left", Action: "resize.pan_left"},
+	{Scene: "resize", Key: "shift-down", Action: "resize.pan_down"},
+	{Scene: "resize", Key: "shift-up", Action: "resize.pan_up"},
+	{Scene: "resize", Key: "shift-right", Action: "resize.pan_right"},
+	{Scene: "resize", Key: "0", Action: "resize.align_left"},
+	{Scene: "resize", Key: "$", Action: "resize.align_right"},
+	{Scene: "resize", Key: "^", Action: "resize.align_top"},
+	{Scene: "resize", Key: "B", Action: "resize.align_bottom"},
+	{Scene: "resize", Key: "m", Action: "resize.center"},
+	{Scene: "resize", Key: "|", Action: "resize.center_x"},
+	{Scene: "resize", Key: "_", Action: "resize.center_y"},
+	{Scene: "resize", Key: "r", Action: "resize.layout_reset"},
+	{Scene: "resize", Key: "H", Action: "resize.left_large"},
+	{Scene: "resize", Key: "L", Action: "resize.right_large"},
+	{Scene: "resize", Key: "K", Action: "resize.up_large"},
+	{Scene: "resize", Key: "J", Action: "resize.down_large"},
+	{Scene: "resize", Key: "b", Action: "panel.balance"},
+	{Scene: "resize", Key: "=", Action: "panel.balance"},
+
+	{Scene: "system", Key: "h", Action: "system.toggle_header"},
+	{Scene: "system", Key: "f", Action: "system.toggle_footer"},
+	{Scene: "system", Key: "c", Action: "system.clear_toasts"},
+	{Scene: "system", Key: "T", Action: "system.close_toast"},
+	{Scene: "system", Key: "p", Action: "system.open_terminal_pool"},
+	{Scene: "system", Key: "m", Action: "system.open_terminal_pool"},
+	{Scene: "system", Key: "t", Action: "system.open_terminal_pool"},
+	{Scene: "system", Key: "w", Action: "system.open_workbench_tree"},
+	{Scene: "system", Key: "l", Action: "system.toggle_shortcut_lock"},
+	{Scene: "system", Key: ":", Action: "system.open_prompt"},
+	{Scene: "system", Key: "?", Action: "system.open_help"},
+	{Scene: "system", Key: "q", Action: "system.quit"},
+
+	{Scene: "floating", Key: "n", Action: "floating.new"},
+	{Scene: "floating", Key: "o", Action: "floating.overview"},
+	{Scene: "floating", Key: "1", Action: "floating.summon.1"},
+	{Scene: "floating", Key: "2", Action: "floating.summon.2"},
+	{Scene: "floating", Key: "3", Action: "floating.summon.3"},
+	{Scene: "floating", Key: "4", Action: "floating.summon.4"},
+	{Scene: "floating", Key: "5", Action: "floating.summon.5"},
+	{Scene: "floating", Key: "6", Action: "floating.summon.6"},
+	{Scene: "floating", Key: "7", Action: "floating.summon.7"},
+	{Scene: "floating", Key: "8", Action: "floating.summon.8"},
+	{Scene: "floating", Key: "9", Action: "floating.summon.9"},
+	{Scene: "floating", Key: "f", Action: "system.open_terminal_picker"},
+	{Scene: "floating", Key: "a", Action: "floating.take_owner"},
+	{Scene: "floating", Key: "x", Action: "floating.close"},
+	{Scene: "floating", Key: "z", Action: "floating.collapse"},
+	{Scene: "floating", Key: "m", Action: "floating.collapse"},
+	{Scene: "floating", Key: "c", Action: "floating.center"},
+	{Scene: "floating", Key: "v", Action: "floating.toggle_all"},
+	{Scene: "floating", Key: "=", Action: "floating.fit"},
+	{Scene: "floating", Key: "s", Action: "floating.auto_fit"},
+	{Scene: "floating", Key: "h", Action: "floating.move_left"},
+	{Scene: "floating", Key: "l", Action: "floating.move_right"},
+	{Scene: "floating", Key: "k", Action: "floating.move_up"},
+	{Scene: "floating", Key: "j", Action: "floating.move_down"},
+	{Scene: "floating", Key: "left", Action: "floating.move_left"},
+	{Scene: "floating", Key: "right", Action: "floating.move_right"},
+	{Scene: "floating", Key: "up", Action: "floating.move_up"},
+	{Scene: "floating", Key: "down", Action: "floating.move_down"},
+	{Scene: "floating", Key: "H", Action: "floating.narrow"},
+	{Scene: "floating", Key: "L", Action: "floating.wide"},
+	{Scene: "floating", Key: "K", Action: "floating.short"},
+	{Scene: "floating", Key: "J", Action: "floating.tall"},
+
+	{Scene: "tab", Key: "c", Action: "tab.create"},
+	{Scene: "tab", Key: "n", Action: "tab.next"},
+	{Scene: "tab", Key: "l", Action: "tab.next"},
+	{Scene: "tab", Key: "]", Action: "tab.next"},
+	{Scene: "tab", Key: "p", Action: "tab.previous"},
+	{Scene: "tab", Key: "h", Action: "tab.previous"},
+	{Scene: "tab", Key: "[", Action: "tab.previous"},
+	{Scene: "tab", Key: "1", Action: "tab.jump.1"},
+	{Scene: "tab", Key: "2", Action: "tab.jump.2"},
+	{Scene: "tab", Key: "3", Action: "tab.jump.3"},
+	{Scene: "tab", Key: "4", Action: "tab.jump.4"},
+	{Scene: "tab", Key: "5", Action: "tab.jump.5"},
+	{Scene: "tab", Key: "6", Action: "tab.jump.6"},
+	{Scene: "tab", Key: "7", Action: "tab.jump.7"},
+	{Scene: "tab", Key: "8", Action: "tab.jump.8"},
+	{Scene: "tab", Key: "9", Action: "tab.jump.9"},
+	{Scene: "tab", Key: "r", Action: "tab.rename"},
+	{Scene: "tab", Key: "x", Action: "tab.close"},
+	{Scene: "tab", Key: "X", Action: "tab.kill"},
+
+	{Scene: "workspace", Key: "c", Action: "workspace.create"},
+	{Scene: "workspace", Key: "n", Action: "workspace.next"},
+	{Scene: "workspace", Key: "l", Action: "workspace.next"},
+	{Scene: "workspace", Key: "]", Action: "workspace.next"},
+	{Scene: "workspace", Key: "p", Action: "workspace.previous"},
+	{Scene: "workspace", Key: "h", Action: "workspace.previous"},
+	{Scene: "workspace", Key: "[", Action: "workspace.previous"},
+	{Scene: "workspace", Key: "r", Action: "workspace.rename"},
+	{Scene: "workspace", Key: "x", Action: "workspace.delete"},
+	{Scene: "workspace", Key: "t", Action: "system.open_workbench_tree"},
+	{Scene: "workspace", Key: "f", Action: "system.open_workbench_tree"},
+	{Scene: "workspace", Key: "s", Action: "system.open_workbench_tree"},
+
+	{Scene: "copy", Key: "page-up", Action: "copy.request_older"},
+	{Scene: "copy", Key: "page-down", Action: "copy.request_newer"},
+	{Scene: "copy", Key: "home", Action: "copy.line_start"},
+	{Scene: "copy", Key: "end", Action: "copy.line_end"},
+	{Scene: "copy", Key: "left", Action: "copy.cursor_left"},
+	{Scene: "copy", Key: "right", Action: "copy.cursor_right"},
+	{Scene: "copy", Key: "down", Action: "copy.cursor_down"},
+	{Scene: "copy", Key: "up", Action: "copy.cursor_up"},
+	{Scene: "copy", Key: "enter", Action: "copy.accept"},
+	{Scene: "copy", Key: "h", Action: "copy.cursor_left"},
+	{Scene: "copy", Key: "l", Action: "copy.cursor_right"},
+	{Scene: "copy", Key: "j", Action: "copy.cursor_down"},
+	{Scene: "copy", Key: "k", Action: "copy.cursor_up"},
+	{Scene: "copy", Key: "g", Action: "copy.oldest"},
+	{Scene: "copy", Key: "G", Action: "copy.newest"},
+	{Scene: "copy", Key: "u", Action: "copy.half_page_older"},
+	{Scene: "copy", Key: "d", Action: "copy.half_page_newer"},
+	{Scene: "copy", Key: "space", Action: "copy.mark"},
+	{Scene: "copy", Key: "y", Action: "copy.copy_selection"},
+	{Scene: "copy", Key: "/", Action: "copy.search_start"},
+	{Scene: "copy", Key: "H", Action: "copy.open_clipboard_history"},
+	{Scene: "copy", Key: "p", Action: "copy.paste_latest"},
+	{Scene: "copy", Key: "P", Action: "copy.paste_system"},
+}
+
+type shortcutCatalog struct {
+	bindings []Binding
+}
+
+func (catalog shortcutCatalog) bindingsCopy() []Binding {
+	out := make([]Binding, len(catalog.bindings))
+	copy(out, catalog.bindings)
 	return out
+}
+
+// BindingCatalog 返回内置默认 shortcuts 编译出的路由项。
+// 它只用于测试和后续提示投影读取默认目录；运行时路由会按当前 config 重新生成 catalog。
+func BindingCatalog() []Binding {
+	return shortcutCatalogForConfig(state.TUIShortcutConfig{}).bindingsCopy()
+}
+
+func shortcutCatalogForConfig(shortcuts state.TUIShortcutConfig) shortcutCatalog {
+	if shortcutConfigUsesUserCatalog(shortcuts) {
+		return shortcutCatalogFromConfig(shortcuts)
+	}
+	catalog := shortcutCatalog{bindings: make([]Binding, 0, len(builtinShortcutDefaults))}
+	for _, item := range builtinShortcutDefaults {
+		catalog.add(item.Scene, item.Key, item.Action, "")
+	}
+	return catalog
+}
+
+func shortcutConfigUsesUserCatalog(shortcuts state.TUIShortcutConfig) bool {
+	return shortcuts.Configured || len(shortcuts.Actions) > 0 || len(shortcuts.Scenes) > 0
+}
+
+func shortcutCatalogFromConfig(shortcuts state.TUIShortcutConfig) shortcutCatalog {
+	catalog := shortcutCatalog{}
+	for sceneName, scene := range shortcuts.Scenes {
+		for key, binding := range scene.Bindings {
+			catalog.add(sceneName, key, binding.Action, binding.Label)
+		}
+	}
+	return catalog
+}
+
+func (catalog *shortcutCatalog) add(sceneName string, keyToken string, actionID string, label string) {
+	mode, ok := shortcutSceneMode(sceneName)
+	if !ok {
+		return
+	}
+	key, ok := parseShortcutKeyToken(keyToken)
+	if !ok {
+		return
+	}
+	definition, ok := builtinActionDefinition(actionID)
+	if !ok {
+		definition = Binding{ActionID: actionID, Intent: IntentNone, Reason: "unknown shortcut action " + actionID}
+	}
+	definition.ID = sceneName + ":" + keyToken + ":" + actionID
+	definition.Mode = mode
+	definition.Key = key.Key
+	definition.Char = key.Char
+	definition.Ctrl = key.Ctrl
+	definition.Alt = key.Alt
+	definition.Shift = key.Shift
+	definition.Label = label
+	catalog.bindings = append(catalog.bindings, definition)
+}
+
+type shortcutKey struct {
+	Key   Key
+	Char  string
+	Ctrl  bool
+	Alt   bool
+	Shift bool
+}
+
+func parseShortcutKeyToken(token string) (shortcutKey, bool) {
+	rest := strings.TrimSpace(token)
+	if rest == "" {
+		return shortcutKey{}, false
+	}
+	key := shortcutKey{}
+	for {
+		lower := strings.ToLower(rest)
+		switch {
+		case strings.HasPrefix(lower, "ctrl-"):
+			key.Ctrl = true
+			rest = rest[len("ctrl-"):]
+		case strings.HasPrefix(lower, "alt-"):
+			key.Alt = true
+			rest = rest[len("alt-"):]
+		case strings.HasPrefix(lower, "shift-"):
+			key.Shift = true
+			rest = rest[len("shift-"):]
+		default:
+			return parseShortcutKeyTokenBase(rest, key)
+		}
+		if rest == "" {
+			return shortcutKey{}, false
+		}
+	}
+}
+
+func parseShortcutKeyTokenBase(token string, key shortcutKey) (shortcutKey, bool) {
+	switch strings.ToLower(token) {
+	case "space":
+		key.Key = KeyChar
+		key.Char = " "
+	case "page-up", "pgup":
+		key.Key = KeyPageUp
+	case "page-down", "pgdn":
+		key.Key = KeyPageDn
+	case "up":
+		key.Key = KeyUp
+	case "down":
+		key.Key = KeyDown
+	case "left":
+		key.Key = KeyLeft
+	case "right":
+		key.Key = KeyRight
+	case "home":
+		key.Key = KeyHome
+	case "end":
+		key.Key = KeyEnd
+	case "delete":
+		key.Key = KeyDelete
+	case "insert":
+		key.Key = KeyInsert
+	case "backspace":
+		key.Key = KeyBackspace
+	case "tab":
+		if key.Shift {
+			key.Key = KeyShiftTab
+		} else {
+			key.Key = KeyTab
+		}
+	case "esc", "escape":
+		key.Key = KeyEsc
+	case "enter", "return":
+		key.Key = KeyEnter
+	case "f1":
+		key.Key = KeyF1
+	case "f2":
+		key.Key = KeyF2
+	case "f3":
+		key.Key = KeyF3
+	case "f4":
+		key.Key = KeyF4
+	case "f5":
+		key.Key = KeyF5
+	case "f6":
+		key.Key = KeyF6
+	case "f7":
+		key.Key = KeyF7
+	case "f8":
+		key.Key = KeyF8
+	case "f9":
+		key.Key = KeyF9
+	case "f10":
+		key.Key = KeyF10
+	case "f11":
+		key.Key = KeyF11
+	case "f12":
+		key.Key = KeyF12
+	default:
+		if len([]rune(token)) != 1 {
+			return shortcutKey{}, false
+		}
+		key.Key = KeyChar
+		key.Char = token
+	}
+	return key, true
+}
+
+func shortcutSceneMode(sceneName string) (InteractionMode, bool) {
+	switch sceneName {
+	case "global":
+		return InteractionModeNormal, true
+	case "system":
+		return InteractionModeGlobal, true
+	case "panel", "pane":
+		return InteractionModePane, true
+	case "resize":
+		return InteractionModeResize, true
+	case "floating":
+		return InteractionModeFloating, true
+	case "tab":
+		return InteractionModeTab, true
+	case "workspace":
+		return InteractionModeWorkspace, true
+	case "copy":
+		return InteractionModeCopy, true
+	default:
+		return InteractionModeNormal, false
+	}
+}
+
+// ShortcutBindingSignature 返回 scene/key 在运行时路由里的唯一签名。
+// 配置校验用它发现 panel/pane 这类 scene 别名编译到同一 InteractionMode 后的按键冲突；
+// 返回 false 表示该 scene/key 不能由当前输入路由识别。
+func ShortcutBindingSignature(sceneName string, keyToken string) (string, bool) {
+	mode, ok := shortcutSceneMode(sceneName)
+	if !ok {
+		return "", false
+	}
+	key, ok := parseShortcutKeyToken(keyToken)
+	if !ok {
+		return "", false
+	}
+	parts := []string{
+		string(mode),
+		string(key.Key),
+		strconv.Quote(key.Char),
+		strconv.FormatBool(key.Ctrl),
+		strconv.FormatBool(key.Alt),
+		strconv.FormatBool(key.Shift),
+	}
+	return strings.Join(parts, "\x00"), true
+}
+
+// KnownShortcutActionID 判断 action id 是否属于当前内置 action registry。
+// 配置加载期用它拒绝拼写错误；运行时仍由 builtinActionDefinition 生成真实 reducer intent。
+func KnownShortcutActionID(actionID string) bool {
+	_, ok := builtinActionDefinition(actionID)
+	return ok
+}
+
+func builtinActionDefinition(actionID string) (Binding, bool) {
+	if strings.HasPrefix(actionID, "menu.") {
+		return menuActionDefinition(strings.TrimPrefix(actionID, "menu."))
+	}
+	switch actionID {
+	case "terminal_picker.open", "picker.open":
+		return Binding{ActionID: actionID, Intent: IntentOpenTerminalPicker}, true
+	case "copy.enter":
+		return Binding{ActionID: actionID, Intent: IntentEnterCopyMode}, true
+	case "copy.request_older":
+		return Binding{ActionID: actionID, Intent: IntentRequestOlder}, true
+	case "copy.request_newer":
+		return Binding{ActionID: actionID, Intent: IntentRequestNewer}, true
+	case "copy.open_clipboard_history":
+		return Binding{ActionID: actionID, Intent: IntentOpenClipboardHistory}, true
+	case "copy.paste_latest":
+		return Binding{ActionID: actionID, Intent: IntentPasteLastCopy}, true
+	case "copy.paste_system":
+		return Binding{ActionID: actionID, Intent: IntentPasteClipboard}, true
+	case "copy.line_start", "copy.line_end", "copy.cursor_left", "copy.cursor_right", "copy.cursor_down",
+		"copy.cursor_up", "copy.accept", "copy.oldest", "copy.newest", "copy.half_page_older",
+		"copy.half_page_newer", "copy.mark", "copy.copy_selection", "copy.search_start":
+		return Binding{ActionID: actionID, Intent: IntentCopyCommand, Command: actionID}, true
+	case "panel.close", "pane.close":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "pane close"}, true
+	case "panel.detach", "pane.detach":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "pane detach"}, true
+	case "panel.reconnect", "pane.reconnect":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "pane reconnect"}, true
+	case "panel.restart", "pane.restart":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "pane restart"}, true
+	case "panel.take_owner", "pane.take_owner":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "pane take-owner"}, true
+	case "panel.size_lock", "pane.size_lock":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal size lock"}, true
+	case "panel.split_right", "pane.split_right":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane split-right"}, true
+	case "panel.split_down", "pane.split_down":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane split-down"}, true
+	case "panel.kill", "panel.kill_and_close", "pane.kill":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "pane kill confirm=accepted"}, true
+	case "panel.toggle_zoom", "pane.toggle_zoom":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane toggle-zoom"}, true
+	case "panel.balance", "pane.balance":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane balance"}, true
+	case "panel.presentation_card", "pane.presentation_card":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane presentation card"}, true
+	case "panel.presentation_split_line", "pane.presentation_split_line":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane presentation split-line"}, true
+	case "panel.focus_next", "pane.focus_next":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane focus-next"}, true
+	case "panel.focus_prev", "pane.focus_prev":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane focus-prev"}, true
+	case "resize.left":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize left delta=2"}, true
+	case "resize.right":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize right delta=2"}, true
+	case "resize.up":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize up delta=2"}, true
+	case "resize.down":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize down delta=2"}, true
+	case "resize.left_large":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize left delta=6"}, true
+	case "resize.right_large":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize right delta=6"}, true
+	case "resize.up_large":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize up delta=6"}, true
+	case "resize.down_large":
+		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize down delta=6"}, true
+	case "resize.layout_toggle":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout toggle"}, true
+	case "resize.pan_left":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout pan-left"}, true
+	case "resize.pan_down":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout pan-down"}, true
+	case "resize.pan_up":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout pan-up"}, true
+	case "resize.pan_right":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout pan-right"}, true
+	case "resize.align_left":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout align-left"}, true
+	case "resize.align_right":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout align-right"}, true
+	case "resize.align_top":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout align-top"}, true
+	case "resize.align_bottom":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout align-bottom"}, true
+	case "resize.center":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout center"}, true
+	case "resize.center_x":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout center-x"}, true
+	case "resize.center_y":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout center-y"}, true
+	case "resize.layout_reset":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout reset"}, true
+	case "system.toggle_header":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionToggleHeader}, true
+	case "system.toggle_footer":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionToggleFooter}, true
+	case "system.clear_toasts":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionClearToasts}, true
+	case "system.close_toast":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionCloseToast}, true
+	case "system.open_terminal_pool":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionOpenPool}, true
+	case "system.open_terminal_picker":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionOpenPicker}, true
+	case "system.open_workbench_tree":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionOpenTree}, true
+	case "system.toggle_shortcut_lock":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionToggleShortcutLock}, true
+	case "system.open_prompt":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionOpenPrompt}, true
+	case "system.open_help":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionOpenHelp}, true
+	case "system.quit":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionQuit}, true
+	case "floating.new":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingNew}, true
+	case "floating.overview":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingOverview}, true
+	case "floating.take_owner":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "floating take-owner"}, true
+	case "floating.close":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingCtrl, Reason: "close"}, true
+	case "floating.collapse":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingCtrl, Reason: "collapse"}, true
+	case "floating.center":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingCtrl, Reason: "center"}, true
+	case "floating.toggle_all":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingGroup, Reason: "toggle-all"}, true
+	case "floating.fit":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingGroup, Reason: "fit"}, true
+	case "floating.auto_fit":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingGroup, Reason: "toggle-auto-fit"}, true
+	case "floating.move_left":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "left"}, true
+	case "floating.move_right":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "right"}, true
+	case "floating.move_up":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "up"}, true
+	case "floating.move_down":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "down"}, true
+	case "floating.narrow":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingSize, Reason: "narrow"}, true
+	case "floating.wide":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingSize, Reason: "wide"}, true
+	case "floating.short":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingSize, Reason: "short"}, true
+	case "floating.tall":
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingSize, Reason: "tall"}, true
+	case "tab.create":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab create"}, true
+	case "tab.next":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab next"}, true
+	case "tab.previous":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab previous"}, true
+	case "tab.rename":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab rename"}, true
+	case "tab.close":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab close"}, true
+	case "tab.kill":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab kill confirm=accepted"}, true
+	case "workspace.create":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "workspace create"}, true
+	case "workspace.next":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "workspace next"}, true
+	case "workspace.previous":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "workspace previous"}, true
+	case "workspace.rename":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "workspace rename"}, true
+	case "workspace.delete":
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "workspace delete confirm=accepted"}, true
+	}
+	if strings.HasPrefix(actionID, "tab.jump.") {
+		n := strings.TrimPrefix(actionID, "tab.jump.")
+		if _, err := strconv.Atoi(n); err != nil {
+			return Binding{}, false
+		}
+		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab jump " + n}, true
+	}
+	if strings.HasPrefix(actionID, "floating.summon.") {
+		n := strings.TrimPrefix(actionID, "floating.summon.")
+		if _, err := strconv.Atoi(n); err != nil {
+			return Binding{}, false
+		}
+		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingSummon, Reason: n}, true
+	}
+	return Binding{}, false
+}
+
+func menuActionDefinition(sceneName string) (Binding, bool) {
+	switch sceneName {
+	case "copy":
+		return Binding{ActionID: "menu.copy", Intent: IntentEnterCopyMode}, true
+	case "terminal_picker":
+		return Binding{ActionID: "menu.terminal_picker", Intent: IntentOpenTerminalPicker}, true
+	}
+	mode, ok := shortcutMenuTargetMode(sceneName)
+	if !ok {
+		return Binding{}, false
+	}
+	return Binding{ActionID: "menu." + sceneName, Intent: IntentSetInteractionMode, Target: mode}, true
+}
+
+func shortcutMenuTargetMode(sceneName string) (InteractionMode, bool) {
+	switch sceneName {
+	case "panel", "pane":
+		return InteractionModePane, true
+	case "resize":
+		return InteractionModeResize, true
+	case "system":
+		return InteractionModeGlobal, true
+	case "floating":
+		return InteractionModeFloating, true
+	case "tab":
+		return InteractionModeTab, true
+	case "workspace":
+		return InteractionModeWorkspace, true
+	default:
+		return InteractionModeNormal, false
+	}
 }
 
 func routeKey(event InputEvent, options RouteOptions) Intent {
@@ -199,37 +673,25 @@ func routeKey(event InputEvent, options RouteOptions) Intent {
 		}
 		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: []byte{'\x1b'}}
 	}
-	if binding, ok := lookupBinding(options.Mode, event); ok {
-		return intentFromBinding(event, binding)
-	}
+	catalog := shortcutCatalogForConfig(options.Shortcuts)
 	if options.Mode != InteractionModeNormal {
-		if binding, ok := lookupBinding(InteractionModeNormal, event); ok {
+		if binding, ok := lookupBinding(options.Mode, event, catalog); ok {
+			return intentFromBinding(event, binding)
+		}
+		// 中文说明：sticky 场景下 root/global 菜单键仍可用，但这个顺序来自同一个 catalog；
+		// 用户删掉 global shortcut 后不会回落到旧硬编码 route。
+		if binding, ok := lookupBinding(InteractionModeNormal, event, catalog); ok {
+			return intentFromBinding(event, binding)
+		}
+		return Intent{Kind: IntentNone, Event: event}
+	}
+	if options.CopyModeActive {
+		if binding, ok := lookupBinding(InteractionModeCopy, event, catalog); ok {
 			return intentFromBinding(event, binding)
 		}
 	}
-	if options.Mode != InteractionModeNormal {
-		return Intent{Kind: IntentNone, Event: event}
-	}
-	switch event.Key {
-	case KeyPageUp:
-		if options.CopyModeActive {
-			return Intent{Kind: IntentRequestOlder, Event: event}
-		}
-		return Intent{Kind: IntentEnterCopyMode, Event: event}
-	case KeyPageDn:
-		if options.CopyModeActive {
-			return Intent{Kind: IntentRequestNewer, Event: event}
-		}
-	}
-	if options.CopyModeActive && event.Key == KeyChar && !event.Ctrl && !event.Alt && !event.Shift {
-		switch event.Char {
-		case "H":
-			return Intent{Kind: IntentOpenClipboardHistory, Event: event}
-		case "p":
-			return Intent{Kind: IntentPasteLastCopy, Event: event}
-		case "P":
-			return Intent{Kind: IntentPasteClipboard, Event: event}
-		}
+	if binding, ok := lookupBinding(InteractionModeNormal, event, catalog); ok {
+		return intentFromBinding(event, binding)
 	}
 	if data := terminalBytes(event); len(data) > 0 {
 		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: data}
@@ -261,8 +723,8 @@ func routeMouse(event InputEvent, options RouteOptions) Intent {
 	return Intent{Kind: IntentNone, Event: event}
 }
 
-func lookupBinding(mode InteractionMode, event InputEvent) (Binding, bool) {
-	for _, binding := range bindingCatalog {
+func lookupBinding(mode InteractionMode, event InputEvent, catalog shortcutCatalog) (Binding, bool) {
+	for _, binding := range catalog.bindings {
 		if binding.Mode == mode && bindingMatches(binding, event) {
 			return binding, true
 		}
@@ -274,10 +736,21 @@ func bindingMatches(binding Binding, event InputEvent) bool {
 	if binding.Key != event.Key {
 		return false
 	}
-	if binding.Char != event.Char {
+	if !bindingCharMatches(binding, event) {
 		return false
 	}
 	return binding.Ctrl == event.Ctrl && binding.Alt == event.Alt && binding.Shift == event.Shift
+}
+
+func bindingCharMatches(binding Binding, event InputEvent) bool {
+	if binding.Char == event.Char {
+		return true
+	}
+	if binding.Key != KeyChar || !binding.Ctrl || !event.Ctrl {
+		return false
+	}
+	data, ok := ctrlCharBytes(binding.Char)
+	return ok && string(data) == event.Char
 }
 
 func intentFromBinding(event InputEvent, binding Binding) Intent {
@@ -292,9 +765,14 @@ func intentFromBinding(event InputEvent, binding Binding) Intent {
 }
 
 // LockableRootShortcutIntent 返回会被 shortcut lock 透传的 root 快捷键。
-// global mode 入口保留为控制面逃生键；开启 lock 后仍可用 Ctrl-G, l 解除锁定。
+// global/system mode 入口保留为控制面逃生键；开启 lock 后仍可用 Ctrl-G, l 解除锁定。
 func LockableRootShortcutIntent(event InputEvent) (Intent, bool) {
-	intent, ok := rootShortcutIntent(event)
+	return LockableRootShortcutIntentWithShortcuts(event, state.TUIShortcutConfig{})
+}
+
+// LockableRootShortcutIntentWithShortcuts 使用当前 shortcuts 判断会被 shortcut lock 透传的 root 快捷键。
+func LockableRootShortcutIntentWithShortcuts(event InputEvent, shortcuts state.TUIShortcutConfig) (Intent, bool) {
+	intent, ok := rootShortcutIntent(event, shortcuts)
 	if !ok {
 		return Intent{}, false
 	}
@@ -307,10 +785,15 @@ func LockableRootShortcutIntent(event InputEvent) (Intent, bool) {
 // StickyModeEntryShortcutIntent 判断当前按键是否是某个 sticky mode 的入口键。
 // UI reducer 用它实现双击前缀透传，例如 Ctrl-W Ctrl-W 将第二个 Ctrl-W 发给 terminal。
 func StickyModeEntryShortcutIntent(event InputEvent, mode InteractionMode) (Intent, bool) {
+	return StickyModeEntryShortcutIntentWithShortcuts(event, mode, state.TUIShortcutConfig{})
+}
+
+// StickyModeEntryShortcutIntentWithShortcuts 使用当前 shortcuts 判断 sticky mode 入口键。
+func StickyModeEntryShortcutIntentWithShortcuts(event InputEvent, mode InteractionMode, shortcuts state.TUIShortcutConfig) (Intent, bool) {
 	if mode == InteractionModeNormal {
 		return Intent{}, false
 	}
-	intent, ok := rootShortcutIntent(event)
+	intent, ok := rootShortcutIntent(event, shortcuts)
 	if !ok || intent.Kind != IntentSetInteractionMode || intent.Mode != mode {
 		return Intent{}, false
 	}
@@ -320,15 +803,24 @@ func StickyModeEntryShortcutIntent(event InputEvent, mode InteractionMode) (Inte
 // CopyModeEntryShortcutIntent 判断当前按键是否是 copy/history 的 root 入口键。
 // copy mode 本身不是 sticky interaction mode，但第二次按入口键也应显式透传给 terminal。
 func CopyModeEntryShortcutIntent(event InputEvent) (Intent, bool) {
-	intent, ok := rootShortcutIntent(event)
+	return CopyModeEntryShortcutIntentWithShortcuts(event, state.TUIShortcutConfig{})
+}
+
+// CopyModeEntryShortcutIntentWithShortcuts 使用当前 shortcuts 判断 copy/history 入口键。
+func CopyModeEntryShortcutIntentWithShortcuts(event InputEvent, shortcuts state.TUIShortcutConfig) (Intent, bool) {
+	intent, ok := rootShortcutIntent(event, shortcuts)
 	if !ok || intent.Kind != IntentEnterCopyMode {
+		return Intent{}, false
+	}
+	if event.Key != KeyChar || !event.Ctrl {
 		return Intent{}, false
 	}
 	return intent, true
 }
 
-func rootShortcutIntent(event InputEvent) (Intent, bool) {
-	binding, ok := lookupBinding(InteractionModeNormal, event)
+func rootShortcutIntent(event InputEvent, shortcuts state.TUIShortcutConfig) (Intent, bool) {
+	catalog := shortcutCatalogForConfig(shortcuts)
+	binding, ok := lookupBinding(InteractionModeNormal, event, catalog)
 	if !ok {
 		return Intent{}, false
 	}

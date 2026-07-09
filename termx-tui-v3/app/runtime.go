@@ -618,6 +618,7 @@ func (runtime *AppRuntime) coalescableTerminalInputBytes(event input.InputEvent)
 	intent := input.RouteWithOptions(event, input.RouteOptions{
 		CopyModeActive:           false,
 		TerminalMousePassthrough: false,
+		Shortcuts:                root.Config.Shortcuts,
 	})
 	if intent.Kind != input.IntentTerminalInput || len(intent.Bytes) == 0 || intent.RawMouse {
 		return nil, false

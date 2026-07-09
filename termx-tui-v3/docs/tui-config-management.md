@@ -167,9 +167,15 @@ tui:
 
     global:
       ctrl-p: menu.panel
+      ctrl-g: menu.system
       ctrl-o: menu.floating
       ctrl-t: menu.tab
       ctrl-1: tab.jump.1
+
+    system:
+      h: system.toggle_header
+      f: system.toggle_footer
+      q: system.quit
 
     panel:
       x: panel.close

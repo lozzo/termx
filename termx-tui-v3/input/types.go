@@ -1,5 +1,7 @@
 package input
 
+import "github.com/lozzow/termx/termx-tui-v3/state"
+
 // EventKind 分类宿主输入，不依赖 Bubble Tea key/mouse 类型。
 type EventKind string
 
@@ -105,6 +107,7 @@ const (
 	IntentShellAction          IntentKind = "shell-action"
 	IntentPaneCommand          IntentKind = "pane-command"
 	IntentWorkbenchCommand     IntentKind = "workbench-command"
+	IntentCopyCommand          IntentKind = "copy-command"
 )
 
 type InteractionMode string
@@ -117,6 +120,7 @@ const (
 	InteractionModeFloating  InteractionMode = "floating"
 	InteractionModeTab       InteractionMode = "tab"
 	InteractionModeWorkspace InteractionMode = "workspace"
+	InteractionModeCopy      InteractionMode = "copy"
 )
 
 type ShellAction string
@@ -155,11 +159,14 @@ type Intent struct {
 	RawMouse bool
 }
 
+// RouteOptions 是 input router 的只读上下文。
+// Shortcuts 来自 reducer-owned config 快照；router 只消费已经解析过的配置，不读取文件也不修改 state。
 type RouteOptions struct {
 	Mode                     InteractionMode
 	CopyModeActive           bool
 	TerminalMousePassthrough bool
 	ForceTerminalPassthrough bool
+	Shortcuts                state.TUIShortcutConfig
 }
 
 func Route(event InputEvent, copyModeActive bool) Intent {
