@@ -1,7 +1,10 @@
 // Package plugin 定义 TermX 插件 action / hook / message trace 的共享纯模型。
 package plugin
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // PluginID 是已安装插件的稳定身份。
 // 它由 manifest/安装源决定，不能由外部 runner 在请求体里自报。
@@ -60,8 +63,8 @@ type TerminalID string
 // TerminalRef 是 client 侧跨 endpoint terminal 引用。
 // daemon/core 只拥有 daemon-local TerminalID，不能凭空生成 TerminalRef。
 type TerminalRef struct {
-	EndpointID EndpointID
-	TerminalID TerminalID
+	EndpointID EndpointID `json:"endpoint_id"`
+	TerminalID TerminalID `json:"terminal_id"`
 }
 
 // Equal 判断两个 TerminalRef 是否指向同一 client 视角 terminal。
@@ -137,12 +140,12 @@ type InvocationSource struct {
 // ActionTarget 描述 action 目标选择器。
 // active/current 这类 selector 只能由目标 client 本地解释，不能由 daemon 推断。
 type ActionTarget struct {
-	SessionID   string
-	ClientKind  ClientKind
-	WorkspaceID string
-	ActivePanel bool
-	TerminalRef *TerminalRef
-	Broadcast   bool
+	SessionID   string       `json:"session_id,omitempty"`
+	ClientKind  ClientKind   `json:"client_kind,omitempty"`
+	WorkspaceID string       `json:"workspace_id,omitempty"`
+	ActivePanel bool         `json:"active_panel,omitempty"`
+	TerminalRef *TerminalRef `json:"terminal_ref,omitempty"`
+	Broadcast   bool         `json:"broadcast,omitempty"`
 }
 
 // ActionInvocation 是插件或快捷键发起的 action 请求模型。
@@ -222,33 +225,33 @@ type HookSubscription struct {
 // HookEvent 是系统 hook 投递给插件前的统一 envelope。
 // daemon/core 只能填写 daemon-local identity；client 可在 EndpointManager 后补 TerminalRef。
 type HookEvent struct {
-	EventID       string
-	Type          EventType
-	SourceHost    HostPlacement
-	SourceSession string
-	ClientKind    ClientKind
-	WorkspaceID   string
+	EventID       string        `json:"event_id"`
+	Type          EventType     `json:"type"`
+	SourceHost    HostPlacement `json:"source_host"`
+	SourceSession string        `json:"source_session,omitempty"`
+	ClientKind    ClientKind    `json:"client_kind,omitempty"`
+	WorkspaceID   string        `json:"workspace_id,omitempty"`
 
-	DaemonID         string
-	DaemonTerminalID TerminalID
+	DaemonID         string     `json:"daemon_id,omitempty"`
+	DaemonTerminalID TerminalID `json:"daemon_terminal_id,omitempty"`
 
-	EndpointID  EndpointID
-	TerminalRef *TerminalRef
-	ObjectKind  string
-	ObjectID    string
+	EndpointID  EndpointID   `json:"endpoint_id,omitempty"`
+	TerminalRef *TerminalRef `json:"terminal_ref,omitempty"`
+	ObjectKind  string       `json:"object_kind,omitempty"`
+	ObjectID    string       `json:"object_id,omitempty"`
 
-	Sequence uint64
-	Time     time.Time
-	Trace    MessageTrace
-	Payload  []byte
-	Lossy    bool
+	Sequence uint64          `json:"sequence,omitempty"`
+	Time     time.Time       `json:"time"`
+	Trace    MessageTrace    `json:"trace"`
+	Payload  json.RawMessage `json:"payload,omitempty"`
+	Lossy    bool            `json:"lossy,omitempty"`
 }
 
 // Clone 返回 hook event 的深拷贝。
 // router 修改 Trace/ActorPath 时必须复制，避免污染调用方持有的事件。
 func (event HookEvent) Clone() HookEvent {
 	out := event
-	out.Payload = append([]byte(nil), event.Payload...)
+	out.Payload = append(json.RawMessage(nil), event.Payload...)
 	out.Trace = event.Trace.Clone()
 	if event.TerminalRef != nil {
 		ref := *event.TerminalRef

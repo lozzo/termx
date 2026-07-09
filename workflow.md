@@ -80,7 +80,7 @@
 | PL004 | 完成 | client session control protocol 草案落地 | `internal/protocol` 定义 client session register/list/call/response 基础消息；daemon 只做 broker，不解释 UI state |
 | PL005 | 完成 | daemon broker + TUI mailbox | 支持 daemon 按 SessionID 或授权广播向 TUI 投递 action，并接收 typed response/error |
 | PL006 | 完成 | hook source adapter | 接入 TUI panel/float/tab after-event 与 daemon terminal lifecycle/PTY activity 元数据 hook；不做 before/veto hook |
-| PL007 | 待开始 | one-shot external stdio JSON runner | 通过 stdio JSON 协议执行 one-shot 插件；PL007 前不引入 Lua/JS/Risor/WASM 核心依赖 |
+| PL007 | 完成 | one-shot external stdio JSON runner | 通过 stdio JSON 协议执行 one-shot 插件；PL007 前不引入 Lua/JS/Risor/WASM 核心依赖 |
 | SI001 | 暂停 | TUI 同步输入组交互与 input 多播 | 用户确认先切入插件消息流基础模型；恢复后继续 `Ctrl-P i/v/u` 同步输入组 |
 | ME012 | 待开始 | hub/P2P transport dialer 与跨设备发现 | 接入 `termx-hub/` 发现/授权/relay；P2P 或 relay datachannel 只连接远端 termx daemon；局部失败不影响其他 endpoint |
 
@@ -102,7 +102,7 @@
 - `termx-cli/` 改动：`cd termx-cli && go test ./cmd/termx -count=1`
 - `internal/protocol/` 改动：`go test ./internal/protocol/... -count=1`
 - `termx-shared/connection/` 改动：`cd termx-shared && go test ./connection -count=1`
-- `termx-shared/plugin/` 改动：`cd termx-shared && go test ./plugin -count=1`
+- `termx-shared/plugin/` 改动：`cd termx-shared && go test ./plugin/... -count=1`
 - `termx-shared/transport/` 改动：运行对应 package 的 `go test ... -count=1`
 - 任意提交前都必须运行 `git diff --check`
 
@@ -125,4 +125,5 @@
 - PL004 已完成：`internal/protocol` 已定义 client session register/list 与 client control call/respond 的 typed protocol contract；`client.control.call` 请求不携带 Source，broker 必须由 runner session/grant 派生 `ClientControlInvocation`，TerminalRef 只保留 `EndpointID + TerminalID`，本切片未实现 daemon broker 或 TUI mailbox。
 - PL005 已完成：daemon client session broker 已接入 protocol register/list/watch/unwatch/call/respond；TUI services 提供 mailbox adapter，daemon 按 SessionID 或显式 BroadcastAllowed action catalog 路由，Source 由 host 派生，TerminalRef 只透传给目标 client，不作为 broker broadcast scope。
 - PL006 已完成：`termx-shared/plugin` 提供第一阶段系统 event catalog 与 source owner 校验；core-v2 从 terminal lifecycle/resize/PTY bytes truth 发布 daemon-local hook stream，TUI 在启用 client hook host 后从 panel/float/tab reducer 成功路径输出 after-event effect，并提供 daemon hook 的 EndpointID/TerminalRef 补全桥；本切片不接 runner、不做 before/veto hook、不暴露 raw PTY 输出内容。
+- PL007 已完成：`termx-shared/plugin` 定义 one-shot stdio JSON request/response 协议，要求 host-derived plugin identity、deadline 和 signed trace parent；`termx-shared/plugin/stdiojson` 提供外部进程 runner，使用 argv 启动、最小环境注入、严格 JSON response、输出限额、WaitDelay 和超时/cancel 边界；runner 只返回 result/action intent，不执行 action、不派生 capability/trace，也不引入 Lua/JS/Risor/WASM 依赖。
 - SI001 暂停：按用户确认先切入插件消息流基础模型；恢复时继续 TUI 本地同步输入组，且同步状态仍属于当前 TUI reducer-owned 输入路由状态。

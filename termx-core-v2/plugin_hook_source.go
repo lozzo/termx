@@ -136,7 +136,7 @@ func (source *DaemonHookSource) terminalHookEvent(eventType plugin.EventType, te
 		Sequence:         seq,
 		Time:             at,
 		Trace:            hookTrace(eventID, cause),
-		Payload:          payload,
+		Payload:          json.RawMessage(payload),
 		Lossy:            lossy,
 	}
 }

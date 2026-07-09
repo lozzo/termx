@@ -20,13 +20,13 @@ const (
 // MessageTrace 是贯穿 hook、plugin、action 和后续 hook 的因果链。
 // 它由 host 生成和递增，插件只能携带 opaque TraceParent，不能伪造 Depth 或 ActorPath。
 type MessageTrace struct {
-	TraceID        string
-	ParentEventID  string
-	ParentActionID string
-	OriginPluginID PluginID
-	LastPluginID   PluginID
-	ActorPath      []PluginID
-	Depth          int
+	TraceID        string     `json:"trace_id"`
+	ParentEventID  string     `json:"parent_event_id,omitempty"`
+	ParentActionID string     `json:"parent_action_id,omitempty"`
+	OriginPluginID PluginID   `json:"origin_plugin_id,omitempty"`
+	LastPluginID   PluginID   `json:"last_plugin_id,omitempty"`
+	ActorPath      []PluginID `json:"actor_path,omitempty"`
+	Depth          int        `json:"depth"`
 }
 
 // Clone 返回 trace 的深拷贝。
@@ -51,8 +51,8 @@ func (trace MessageTrace) ContainsActor(pluginID PluginID) bool {
 // TraceParent 是插件可携带的 opaque trace 引用。
 // Token 由 host 签发，包含签名后的 trace 状态；外部 runner 不能自行构造可信 TraceParent。
 type TraceParent struct {
-	TraceID string
-	Token   string
+	TraceID string `json:"trace_id"`
+	Token   string `json:"token"`
 }
 
 // TraceManagerConfig 描述 trace manager 的 host-enforced policy。

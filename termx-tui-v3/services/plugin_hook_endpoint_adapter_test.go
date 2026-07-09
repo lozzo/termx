@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/lozzow/termx/termx-shared/plugin"
@@ -16,7 +17,7 @@ func TestEnrichDaemonHookForEndpointKeepsDaemonOwnerAndAddsTerminalRef(t *testin
 		DaemonTerminalID: "term-1",
 		ObjectKind:       plugin.ObjectKindTerminal,
 		ObjectID:         "term-1",
-		Payload:          []byte(`{"idle":true}`),
+		Payload:          json.RawMessage(`{"idle":true}`),
 	}
 	enriched := EnrichDaemonHookForEndpoint(event, "remote-a")
 	if enriched.SourceHost != plugin.HostDaemon || enriched.DaemonTerminalID != "term-1" {

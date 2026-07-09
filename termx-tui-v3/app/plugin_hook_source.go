@@ -492,10 +492,10 @@ func cloneClientHookRect(rect *ClientHookRect) *ClientHookRect {
 	return &out
 }
 
-func mustClientHookJSON(value any) []byte {
+func mustClientHookJSON(value any) json.RawMessage {
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return nil
 	}
-	return payload
+	return json.RawMessage(payload)
 }
