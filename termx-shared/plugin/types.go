@@ -30,6 +30,8 @@ const (
 	HostClient HostPlacement = "client"
 	// HostWorkspace 表示事件或 action side effect 属于 workspace 信任域。
 	HostWorkspace HostPlacement = "workspace"
+	// HostOneShot 表示插件代码由 host 按需启动，执行完即退出。
+	HostOneShot HostPlacement = "one_shot"
 )
 
 // ClientKind 描述正在运行的客户端类型。

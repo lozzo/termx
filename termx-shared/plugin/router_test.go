@@ -142,6 +142,106 @@ func TestHookScopeSeparatesDaemonLocalAndClientTerminalRef(t *testing.T) {
 	}
 }
 
+func TestHookRouterDedupeAndScopeSeparateEndpointTerminalRefs(t *testing.T) {
+	router := NewHookRouter(HookRouterConfig{MaxDepth: 8})
+	remoteA := TerminalRef{EndpointID: "remote-a", TerminalID: "term-1"}
+	remoteB := TerminalRef{EndpointID: "remote-b", TerminalID: "term-1"}
+	subA := HookSubscription{
+		PluginID:   "plugin-a",
+		Host:       HostClient,
+		EventTypes: []EventType{"termx.daemon.terminal.output_idle"},
+		Scope: HookScope{
+			EndpointID:  "remote-a",
+			TerminalRef: &remoteA,
+		},
+		Delivery: HookDelivery{Mode: DeliveryCoalesced},
+	}
+	eventA := HookEvent{
+		EventID:     "event-a",
+		Type:        "termx.daemon.terminal.output_idle",
+		SourceHost:  HostClient,
+		EndpointID:  "remote-a",
+		TerminalRef: &remoteA,
+		ObjectKind:  "terminal",
+		ObjectID:    "term-1",
+		Trace:       MessageTrace{TraceID: "trace-endpoint"},
+	}
+	eventB := eventA
+	eventB.EventID = "event-b"
+	eventB.EndpointID = "remote-b"
+	eventB.TerminalRef = &remoteB
+
+	got := router.Dispatch(eventA, []HookSubscription{subA})
+	if len(got.Deliveries) != 1 {
+		t.Fatalf("remote-a event should deliver, got %#v", got)
+	}
+	got = router.Dispatch(eventB, []HookSubscription{subA})
+	if len(got.Deliveries) != 0 || !hasDrop(got.Drops, "plugin-a", DropScope) {
+		t.Fatalf("remote-b event should not match remote-a scope, got %#v", got)
+	}
+
+	subAll := subA
+	subAll.Scope = HookScope{}
+	router = NewHookRouter(HookRouterConfig{MaxDepth: 8})
+	got = router.Dispatch(eventA, []HookSubscription{subAll})
+	if len(got.Deliveries) != 1 {
+		t.Fatalf("first endpoint should deliver for broad scope, got %#v", got)
+	}
+	got = router.Dispatch(eventB, []HookSubscription{subAll})
+	if len(got.Deliveries) != 1 {
+		t.Fatalf("same terminal id on different endpoint should not dedupe, got %#v", got)
+	}
+}
+
+func TestHookRouterUsesTerminalRefEndpointWhenTopLevelEndpointMissing(t *testing.T) {
+	router := NewHookRouter(HookRouterConfig{MaxDepth: 8})
+	remoteA := TerminalRef{EndpointID: "remote-a", TerminalID: "term-1"}
+	remoteB := TerminalRef{EndpointID: "remote-b", TerminalID: "term-1"}
+	subA := HookSubscription{
+		PluginID:   "plugin-a",
+		Host:       HostClient,
+		EventTypes: []EventType{"termx.daemon.terminal.output_idle"},
+		Scope: HookScope{
+			EndpointID:  "remote-a",
+			TerminalRef: &remoteA,
+		},
+		Delivery: HookDelivery{Mode: DeliveryCoalesced},
+	}
+	eventA := HookEvent{
+		EventID:     "event-a",
+		Type:        "termx.daemon.terminal.output_idle",
+		SourceHost:  HostClient,
+		TerminalRef: &remoteA,
+		ObjectKind:  "terminal",
+		ObjectID:    "term-1",
+		Trace:       MessageTrace{TraceID: "trace-terminal-ref-only"},
+	}
+	eventB := eventA
+	eventB.EventID = "event-b"
+	eventB.TerminalRef = &remoteB
+
+	got := router.Dispatch(eventA, []HookSubscription{subA})
+	if len(got.Deliveries) != 1 {
+		t.Fatalf("terminal ref endpoint should satisfy scope when top-level endpoint is empty, got %#v", got)
+	}
+	got = router.Dispatch(eventB, []HookSubscription{subA})
+	if len(got.Deliveries) != 0 || !hasDrop(got.Drops, "plugin-a", DropScope) {
+		t.Fatalf("different terminal ref endpoint should not match scope, got %#v", got)
+	}
+
+	router = NewHookRouter(HookRouterConfig{MaxDepth: 8})
+	broad := subA
+	broad.Scope = HookScope{}
+	got = router.Dispatch(eventA, []HookSubscription{broad})
+	if len(got.Deliveries) != 1 {
+		t.Fatalf("first terminal-ref-only event should deliver, got %#v", got)
+	}
+	got = router.Dispatch(eventB, []HookSubscription{broad})
+	if len(got.Deliveries) != 1 {
+		t.Fatalf("terminal-ref-only events on different endpoints should not dedupe, got %#v", got)
+	}
+}
+
 func TestHookRouterEnforcesTraceBudgetAndDepth(t *testing.T) {
 	router := NewHookRouter(HookRouterConfig{MaxDepth: 1, MaxTraceDeliveries: 1})
 	subA := HookSubscription{PluginID: "plugin-a", EventTypes: []EventType{"event"}, Delivery: HookDelivery{Mode: DeliveryQueued}}

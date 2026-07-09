@@ -149,8 +149,12 @@ func (router *HookRouter) Dispatch(event HookEvent, subscriptions []HookSubscrip
 // key 包含 source/session/daemon/endpoint identity，避免同名 terminal 或 panel 互相影响。
 func DedupeKey(pluginID PluginID, event HookEvent) TraceDedupeKey {
 	terminalID := TerminalID("")
+	endpointID := event.EndpointID
 	if event.TerminalRef != nil {
 		terminalID = event.TerminalRef.TerminalID
+		if endpointID == "" {
+			endpointID = event.TerminalRef.EndpointID
+		}
 	}
 	return TraceDedupeKey{
 		TraceID:          event.Trace.TraceID,
@@ -158,7 +162,7 @@ func DedupeKey(pluginID PluginID, event HookEvent) TraceDedupeKey {
 		SourceSession:    event.SourceSession,
 		DaemonID:         event.DaemonID,
 		DaemonTerminalID: event.DaemonTerminalID,
-		EndpointID:       event.EndpointID,
+		EndpointID:       endpointID,
 		TerminalID:       terminalID,
 		PluginID:         pluginID,
 		EventType:        event.Type,
@@ -212,8 +216,14 @@ func scopeMatches(scope HookScope, event HookEvent) bool {
 	if scope.ClientSessionID != "" && scope.ClientSessionID != event.SourceSession {
 		return false
 	}
-	if scope.EndpointID != "" && scope.EndpointID != event.EndpointID {
-		return false
+	if scope.EndpointID != "" {
+		endpointID := event.EndpointID
+		if endpointID == "" && event.TerminalRef != nil {
+			endpointID = event.TerminalRef.EndpointID
+		}
+		if scope.EndpointID != endpointID {
+			return false
+		}
 	}
 	if scope.TerminalRef != nil {
 		if event.TerminalRef == nil || !scope.TerminalRef.Equal(*event.TerminalRef) {

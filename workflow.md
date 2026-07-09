@@ -2,7 +2,7 @@
 
 ## 当前目标
 
-- 当前分支从多 endpoint / 多 transport 主线临时切入插件消息流基础模型。
+- 当前分支从多 endpoint / 多 transport 主线临时切入插件系统第一阶段基础落地。
 - 插件控制面设计以 `termx-tui-v3/docs/client-session-plugin-control-design.md` 为准。
 - 多 endpoint / 多 transport 详细技术规划仍以 `termx-tui-v3/docs/multi-endpoint-transport-plan.md` 为准。
 - 旧 screen app 无限历史清场与重建记录不再保留在本活动文件中；需要追溯时查看 git 历史和对应文档。
@@ -75,6 +75,12 @@
 | ME010 | 完成 | hub/P2P 身份、安全、中继策略与 connection registry contract | `connections.yaml` 可表达 hub endpoint；label 不作为安全身份；hub 发现目标/relay 变化触发 reconnect；无真实 dialer 时不 fallback |
 | ME011 | 完成 | hub/P2P 单向配对与 capability grant contract | `hub_device_id` 只做发现；`device_fingerprint` 是远端安全身份；`grant_ref` 指向 remote-issued grant；fingerprint/grant 变化触发 reconnect |
 | PL001 | 完成 | 插件 action / hook / message trace 基础模型 | `termx-shared/plugin` 提供纯模型与 harness：host-derived identity、trace/depth、hook scope/filter/delivery、self-caused 与 dedupe 防循环；不接 runner、protocol 或真实 UI |
+| PL002 | 完成 | 插件 manifest / catalog / grant 纯模型与 harness | `termx-shared/plugin` 定义 manifest、contribution catalog、event catalog、capability grant 与 namespace 校验；host 从 manifest+grant 推导 action/hook，不信任 runner 自报 |
+| PL003 | 待开始 | TUI client action registry，把快捷键背后操作收敛到 ActionID | TUI 内建操作注册为 `termx.client.*` action；快捷键只绑定 ActionID，同一 action 可绑定多组 key sequence |
+| PL004 | 待开始 | client session control protocol 草案落地 | `internal/protocol` 定义 client session register/list/call/response 基础消息；daemon 只做 broker，不解释 UI state |
+| PL005 | 待开始 | daemon broker + TUI mailbox | 支持 daemon 按 SessionID 或授权广播向 TUI 投递 action，并接收 typed response/error |
+| PL006 | 待开始 | hook source adapter | 接入 TUI panel/float/tab after-event 与 daemon terminal lifecycle/PTY activity 元数据 hook；不做 before/veto hook |
+| PL007 | 待开始 | one-shot external stdio JSON runner | 通过 stdio JSON 协议执行 one-shot 插件；PL007 前不引入 Lua/JS/Risor/WASM 核心依赖 |
 | SI001 | 暂停 | TUI 同步输入组交互与 input 多播 | 用户确认先切入插件消息流基础模型；恢复后继续 `Ctrl-P i/v/u` 同步输入组 |
 | ME012 | 待开始 | hub/P2P transport dialer 与跨设备发现 | 接入 `termx-hub/` 发现/授权/relay；P2P 或 relay datachannel 只连接远端 termx daemon；局部失败不影响其他 endpoint |
 
@@ -114,4 +120,5 @@
 - ME010 已完成：`connections.yaml` 可表达 hub/P2P endpoint，hub URL、`hub_device_id` 与 relay 策略分离；label 只影响展示，hub 发现目标/relay 变化触发 reconnect；无真实 hub dialer 时 EndpointManager 只返回该 endpoint 的未连接错误，不 fallback。
 - ME011 已完成：按用户确认的单向配对模型收敛 hub 安全 contract，remote 生成 capability grant 给客户端；`hub_device_id` 只做发现/路由，`device_fingerprint` 作为远端设备安全身份，`grant_ref` 指向本地保存的 grant，真实 `termx-hub/` transport dialer 和跨设备发现进入 ME012。
 - PL001 已完成：`termx-shared/plugin` 已落 action / hook / message trace 纯模型与 harness；覆盖 host-derived identity、opaque trace token、depth/budget、hook scope/filter/delivery、self-caused 与 dedupe 防循环，不接 external runner、WASM、protocol、core terminal truth 或 TUI 真实 UI。
+- PL002 已完成：`termx-shared/plugin` 已落 manifest / catalog / grant 纯模型与 harness；host 按 manifest+event catalog+grant 解析 action、hook、keybinding，限制第三方 `termx.*`、builtin runner、wildcard hook、delivery policy override、跨 owner keybinding、one-shot hooks/keybindings 和 client kind 越界。
 - SI001 暂停：按用户确认先切入插件消息流基础模型；恢复时继续 TUI 本地同步输入组，且同步状态仍属于当前 TUI reducer-owned 输入路由状态。
