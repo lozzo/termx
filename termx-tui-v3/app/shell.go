@@ -1807,6 +1807,7 @@ func floatingIDForContentAction(root state.Root, msg ShellContentActionMsg) (str
 }
 
 func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, []Effect) {
+	previousRoot := root
 	command = command.WithDefaults(root.Shell)
 	targetPane, hasTargetPane := root.Shell.Pane(command.Target)
 	command = inheritSplitTerminalPane(root, command, targetPane, hasTargetPane)
@@ -1818,6 +1819,7 @@ func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, 
 		root = updateTerminalViewsAfterPaneCommand(root, command, targetPane, hasTargetPane)
 		root.Shell = addPaneCommandToast(root.Shell, command, result)
 		effects = append(effects, detachEffects...)
+		effects = append(effects, clientHookPaneCommandEffects(previousRoot, root, command, result)...)
 		return root.Advance(), effects
 	}
 	root.Shell = addPaneCommandToast(root.Shell, command, result)
@@ -1850,6 +1852,7 @@ func inheritSplitTerminalPane(root state.Root, command state.PaneCommand, target
 }
 
 func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (state.Root, []Effect) {
+	previousRoot := root
 	command = withFloatingCommandDefaults(root, command)
 	detachEffects := terminalDetachEffectsForFloatingCommand(root, command)
 	nextShell, result := root.Shell.ApplyFloatingCommand(command)
@@ -1867,6 +1870,9 @@ func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (stat
 		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
 			return WorkbenchStoragePersistRequestMsg{Reason: string(result.Action)}
 		}})
+	}
+	if result.Status == state.FloatingCommandOK {
+		effects = append(effects, clientHookFloatingCommandEffects(previousRoot, root, command, result)...)
 	}
 	return root.Advance(), effects
 }
@@ -1898,6 +1904,7 @@ func reduceWorkbenchCommandWithOptions(root state.Root, command state.WorkbenchC
 	if options.OpenPickerAfterOK && command.Action == state.WorkbenchCommandTabCreate {
 		root, effects = openTerminalPickerForCreatedTab(root, effects)
 	}
+	effects = append(effects, clientHookWorkbenchCommandEffects(root, command, result)...)
 	effects = append(effects, killEffects...)
 	effects = append(effects, detachEffects...)
 	return root.Advance(), effects

@@ -90,7 +90,7 @@ func TestHookRouterDedupeIncludesSourceScope(t *testing.T) {
 }
 
 func TestHookScopeSeparatesDaemonLocalAndClientTerminalRef(t *testing.T) {
-	router := NewHookRouter(HookRouterConfig{MaxDepth: 8})
+	router := NewHookRouter(HookRouterConfig{MaxDepth: 8, EventCatalog: DefaultSystemEventCatalog()})
 	daemonSub := HookSubscription{
 		PluginID: "plugin-daemon",
 		Host:     HostDaemon,
@@ -126,8 +126,6 @@ func TestHookScopeSeparatesDaemonLocalAndClientTerminalRef(t *testing.T) {
 	}
 	clientEvent := daemonEvent
 	clientEvent.EventID = "event-client"
-	clientEvent.SourceHost = HostClient
-	clientEvent.SourceSession = "tui-1"
 	clientEvent.EndpointID = "remote-a"
 	clientEvent.TerminalRef = &clientRef
 	clientEvent.Trace = MessageTrace{TraceID: "trace-client"}
@@ -138,7 +136,15 @@ func TestHookScopeSeparatesDaemonLocalAndClientTerminalRef(t *testing.T) {
 	}
 	gotClient := router.Dispatch(clientEvent, []HookSubscription{daemonSub, clientSub})
 	if len(gotClient.Deliveries) != 2 {
-		t.Fatalf("client-enriched event should match both daemon and client scopes, got %#v", gotClient)
+		t.Fatalf("client-enriched daemon event should match both daemon and terminal-ref scopes, got %#v", gotClient)
+	}
+
+	wrongOwner := clientEvent
+	wrongOwner.EventID = "event-wrong-owner"
+	wrongOwner.SourceHost = HostClient
+	gotWrongOwner := router.Dispatch(wrongOwner, []HookSubscription{daemonSub, clientSub})
+	if len(gotWrongOwner.Deliveries) != 0 || !hasDrop(gotWrongOwner.Drops, "plugin-daemon", DropSourceHost) || !hasDrop(gotWrongOwner.Drops, "plugin-client", DropSourceHost) {
+		t.Fatalf("daemon system event with client source host should be rejected, got %#v", gotWrongOwner)
 	}
 }
 
@@ -159,7 +165,7 @@ func TestHookRouterDedupeAndScopeSeparateEndpointTerminalRefs(t *testing.T) {
 	eventA := HookEvent{
 		EventID:     "event-a",
 		Type:        "termx.daemon.terminal.output_idle",
-		SourceHost:  HostClient,
+		SourceHost:  HostDaemon,
 		EndpointID:  "remote-a",
 		TerminalRef: &remoteA,
 		ObjectKind:  "terminal",
@@ -210,7 +216,7 @@ func TestHookRouterUsesTerminalRefEndpointWhenTopLevelEndpointMissing(t *testing
 	eventA := HookEvent{
 		EventID:     "event-a",
 		Type:        "termx.daemon.terminal.output_idle",
-		SourceHost:  HostClient,
+		SourceHost:  HostDaemon,
 		TerminalRef: &remoteA,
 		ObjectKind:  "terminal",
 		ObjectID:    "term-1",

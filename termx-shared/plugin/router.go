@@ -12,6 +12,7 @@ const (
 type HookRouterConfig struct {
 	MaxDepth           int
 	MaxTraceDeliveries int
+	EventCatalog       []EventSpec
 }
 
 // HookRouter 是 host-local 的 hook 调度器纯模型。
@@ -19,6 +20,7 @@ type HookRouterConfig struct {
 type HookRouter struct {
 	maxDepth           int
 	maxTraceDeliveries int
+	eventsByType       map[EventType]EventSpec
 	seen               map[TraceDedupeKey]struct{}
 	deliveriesByTrace  map[string]int
 }
@@ -79,6 +81,8 @@ const (
 	DropScope HookDropReason = "scope"
 	// DropEventType 表示事件类型不在订阅 event catalog 中。
 	DropEventType HookDropReason = "event_type"
+	// DropSourceHost 表示系统事件的 SourceHost 与 host 事件目录中的 truth owner 不一致。
+	DropSourceHost HookDropReason = "source_host"
 )
 
 // NewHookRouter 创建 host-local hook router。
@@ -92,9 +96,17 @@ func NewHookRouter(config HookRouterConfig) *HookRouter {
 	if maxTraceDeliveries <= 0 {
 		maxTraceDeliveries = defaultMaxTraceDeliveries
 	}
+	eventsByType := make(map[EventType]EventSpec, len(config.EventCatalog))
+	for _, event := range config.EventCatalog {
+		if event.Type == "" {
+			continue
+		}
+		eventsByType[event.Type] = cloneEventSpec(event)
+	}
 	return &HookRouter{
 		maxDepth:           maxDepth,
 		maxTraceDeliveries: maxTraceDeliveries,
+		eventsByType:       eventsByType,
 		seen:               make(map[TraceDedupeKey]struct{}),
 		deliveriesByTrace:  make(map[string]int),
 	}
@@ -105,6 +117,10 @@ func NewHookRouter(config HookRouterConfig) *HookRouter {
 func (router *HookRouter) Dispatch(event HookEvent, subscriptions []HookSubscription) DispatchResult {
 	var result DispatchResult
 	for _, sub := range subscriptions {
+		if !router.sourceHostMatchesCatalog(event) {
+			result.Drops = append(result.Drops, dropFor(sub, event, DropSourceHost))
+			continue
+		}
 		if !subscriptionMatchesEventType(sub, event.Type) {
 			result.Drops = append(result.Drops, dropFor(sub, event, DropEventType))
 			continue
@@ -143,6 +159,17 @@ func (router *HookRouter) Dispatch(event HookEvent, subscriptions []HookSubscrip
 		})
 	}
 	return result
+}
+
+func (router *HookRouter) sourceHostMatchesCatalog(event HookEvent) bool {
+	if len(router.eventsByType) == 0 {
+		return true
+	}
+	spec, ok := router.eventsByType[event.Type]
+	if !ok {
+		return true
+	}
+	return spec.SourceHost == event.SourceHost
 }
 
 // DedupeKey 生成同一 trace 内用于防循环和防重复投递的键。

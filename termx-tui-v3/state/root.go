@@ -19,6 +19,13 @@ type Root struct {
 	HostTheme        HostThemeStore
 	Config           TUIConfigStore
 	WorkbenchSync    WorkbenchSyncStore
+	ClientHooks      ClientHookStore
+}
+
+// ClientHookStore 保存当前 client session 是否启用插件 hook after-event 输出。
+// 它只控制 reducer 是否把已发生的 UI 事实交给插件 hook host；不保存订阅、不执行插件，也不改变 UI state truth。
+type ClientHookStore struct {
+	Enabled bool
 }
 
 // Advance 返回 generation 递增后的副本。

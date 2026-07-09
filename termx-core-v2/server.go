@@ -9,12 +9,14 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/history/linehist"
 	"github.com/lozzow/termx/termx-core-v2/live"
 	"github.com/lozzow/termx/termx-proto/wire"
 	"github.com/lozzow/termx/termx-shared/perftrace"
+	"github.com/lozzow/termx/termx-shared/plugin"
 	"github.com/lozzow/termx/termx-shared/transport"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 )
@@ -48,6 +50,8 @@ type Server struct {
 	storage               *storageStore
 	workbench             *workbenchStore
 	clientControl         *clientControlBroker
+	hookSource            *DaemonHookSource
+	hookEvents            *pluginHookBroker
 	terminals             map[string]*Terminal
 	events                *eventBroker
 	closed                atomic.Bool
@@ -104,6 +108,8 @@ func NewServer(opts ...ServerOption) *Server {
 		storage:              newStorageStore(),
 		workbench:            newWorkbenchStore(),
 		clientControl:        newClientControlBroker(0),
+		hookSource:           NewDaemonHookSource(DaemonHookSourceConfig{DaemonID: ModuleName}),
+		hookEvents:           newPluginHookBroker(cfg.eventBuffer),
 		terminals:            make(map[string]*Terminal),
 		events:               newEventBroker(cfg.eventBuffer),
 		protocolAttachments:  make(map[string]protocolAttachment),
@@ -271,7 +277,7 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 		return TerminalInfo{}, err
 	}
 	finishNewTerminal := perftrace.Measure("core.server.register_terminal.new_terminal")
-	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyStore, historyEnabled, server.cfg.historyBackpressure, server.cfg.logger)
+	terminal := newTerminal(info, record.Options, process, server.events, server.hookSource, server.hookEvents, server.updateTerminalInfo, historyStore, historyEnabled, server.cfg.historyBackpressure, server.cfg.logger)
 	server.mu.Lock()
 	server.terminals[info.ID] = terminal
 	server.mu.Unlock()
@@ -370,6 +376,29 @@ func (server *Server) ListTerminals() []TerminalInfo {
 		}
 	}
 	return items
+}
+
+// SubscribePluginHooks 订阅 daemon/core 拥有的系统 hook 事件。
+// 该 stream 只包含 daemon-local identity；EndpointID/TerminalRef 必须由 client endpoint adapter 在接收后补充。
+func (server *Server) SubscribePluginHooks(ctx context.Context, filter PluginHookFilter) <-chan plugin.HookEvent {
+	return server.hookEvents.subscribe(ctx, filter)
+}
+
+// PollTerminalOutputIdle 按当前 daemon terminal truth 检查 PTY idle hook。
+// 它只读取 TerminalActivityTracker 的 PTY bytes 元数据；live invalidation、resize 或程序名都不能触发 idle 判断。
+func (server *Server) PollTerminalOutputIdle(at time.Time) int {
+	server.mu.Lock()
+	terminals := make([]*Terminal, 0, len(server.terminals))
+	for _, terminal := range server.terminals {
+		terminals = append(terminals, terminal)
+	}
+	server.mu.Unlock()
+	total := 0
+	for _, terminal := range terminals {
+		info := terminal.Info()
+		total += terminal.publishPTYIdle(at, string(info.State))
+	}
+	return total
 }
 
 func (server *Server) StorageGet(ctx context.Context, appID string, scope StorageScope, ownerID string, key string) (StorageEntry, error) {
@@ -852,6 +881,7 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	server.registry.clear()
 	server.events.publish(Event{Type: EventServerStopped, SocketPath: server.cfg.socketPath})
 	server.events.close()
+	server.hookEvents.close()
 	server.waitTransports()
 	server.cfg.logger.Info("core-v2 server stopped", "socket_path", server.cfg.socketPath)
 	return nil
@@ -912,11 +942,22 @@ func (server *Server) untrackTransport(conn transport.Transport) {
 
 func (server *Server) publishTerminalEvent(typ EventType, info TerminalInfo) {
 	terminal := info.Clone()
-	server.events.publish(Event{
+	event := Event{
 		Type:       typ,
 		TerminalID: info.ID,
 		Terminal:   &terminal,
-	})
+	}
+	server.events.publish(event)
+	server.publishPluginHookFromEvent(event)
+}
+
+func (server *Server) publishPluginHookFromEvent(event Event) {
+	if server.hookSource == nil || server.hookEvents == nil {
+		return
+	}
+	if hook, ok := server.hookSource.TerminalEvent(event); ok {
+		server.hookEvents.publish(hook)
+	}
 }
 
 func (server *Server) publishStorageEvent(change StorageChanged) {

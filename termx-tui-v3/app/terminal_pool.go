@@ -596,11 +596,13 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	result = normalizeTerminalAttachResultForLock(root, result)
 	root = applyLiveAttachRuntimeProjection(root, result, result.ViewID)
 	root = applyTerminalAttachmentProjectionFromAttach(root, result)
+	boundPaneID := msg.TargetPaneID
 	if msg.TargetFloatingID != "" {
 		paneID := msg.TargetPaneID
 		if floating, ok := root.Shell.FloatingByID(msg.TargetFloatingID); ok {
 			paneID = floating.Pane.ID
 		}
+		boundPaneID = paneID
 		root = invalidateCopyModeForTerminalRebindRef(root, paneID, result.ViewID, ref)
 		root.TerminalViews = root.TerminalViews.BindFloating(state.NewEndpointFloatingTerminalView(result.EndpointID, msg.TargetFloatingID, paneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
 		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
@@ -611,6 +613,7 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		if targetPaneID == "" {
 			targetPaneID = root.Shell.EnsureDefaults().ActivePaneID
 		}
+		boundPaneID = targetPaneID
 		root = invalidateCopyModeForTerminalRebindRef(root, targetPaneID, result.ViewID, ref)
 		root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: targetPaneID}, result.TerminalID)
 		root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView(result.EndpointID, targetPaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
@@ -619,6 +622,7 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	root.Shell = root.Shell.CloseOverlay().ExitInteractionMode()
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: result.TerminalID})
 	effects := workbenchPersistEffects("terminal.attach")
+	effects = append(effects, clientHookPanelBoundEffect(root, boundPaneID, ref, "terminal.attach")...)
 	effects = append(effects, liveEffectsForRef(result.EndpointID, result.TerminalID, result.Cols, result.Rows, deps)...)
 	return root.Advance(), effects
 }

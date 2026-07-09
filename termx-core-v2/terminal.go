@@ -44,19 +44,29 @@ type Terminal struct {
 	liveQ               *terminalLiveIngestQueue
 	historyTapQ         *terminalLiveIngestQueue
 	events              *eventBroker
+	hookSource          *DaemonHookSource
+	hookEvents          *pluginHookBroker
+	activity            *TerminalActivityTracker
 	update              func(TerminalInfo)
 }
 
-func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyStore history.HistoryStore, historyEnabled bool, historyBackpressure HistoryBackpressureConfig, logger *slog.Logger) *Terminal {
+func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, hookSource *DaemonHookSource, hookEvents *pluginHookBroker, update func(TerminalInfo), historyStore history.HistoryStore, historyEnabled bool, historyBackpressure HistoryBackpressureConfig, logger *slog.Logger) *Terminal {
 	terminal := &Terminal{
 		info:                info.Clone(),
 		options:             cloneTerminalCreateOptions(options),
 		process:             process,
 		events:              events,
+		hookSource:          hookSource,
+		hookEvents:          hookEvents,
 		update:              update,
 		historyEnabled:      historyEnabled,
 		historyBackpressure: historyBackpressure.Normalize(),
 		logger:              logger,
+	}
+	if hookSource != nil && hookEvents != nil {
+		if tracker, err := NewTerminalActivityTracker(TerminalActivityTrackerConfig{Source: hookSource, TerminalID: info.ID}); err == nil {
+			terminal.activity = tracker
+		}
 	}
 	terminal.live = live.NewSurfaceTrackWithOptions(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)}, live.SurfaceTrackOptions{
 		OnResponse: terminal.handleLiveSurfaceResponse,
@@ -166,6 +176,7 @@ func (terminal *Terminal) IngestOutput(output string) error {
 		return err
 	}
 
+	terminal.publishPTYActivity(time.Now().UTC(), len(output))
 	terminal.publishLiveInvalidated(info.ID, uint64(revision))
 	if terminal.historyEnabled {
 		if err := terminal.ingestHistorySemanticOutput(output, info.ID); err != nil {
@@ -433,16 +444,17 @@ func (terminal *Terminal) publishLifecycle(typ EventType, info TerminalInfo) {
 }
 
 func (terminal *Terminal) publishEvent(typ EventType, info TerminalInfo, lifecycleKnown bool) {
-	if terminal.events == nil {
-		return
-	}
 	terminalCopy := info.Clone()
-	terminal.events.publish(Event{
+	event := Event{
 		Type:           typ,
 		TerminalID:     info.ID,
 		Terminal:       &terminalCopy,
 		LifecycleKnown: lifecycleKnown,
-	})
+	}
+	if terminal.events != nil {
+		terminal.events.publish(event)
+	}
+	terminal.publishPluginHookFromEvent(event)
 }
 
 func (terminal *Terminal) publishLiveInvalidated(terminalID string, revision uint64) {
@@ -460,17 +472,47 @@ func (terminal *Terminal) publishLiveInvalidated(terminalID string, revision uin
 }
 
 func (terminal *Terminal) publishResize(info TerminalInfo, oldSize Size, newSize Size) {
-	if terminal.events == nil {
-		return
-	}
 	terminalCopy := info.Clone()
-	terminal.events.publish(Event{
+	event := Event{
 		Type:       EventTerminalResized,
 		TerminalID: info.ID,
 		Terminal:   &terminalCopy,
 		OldSize:    oldSize,
 		NewSize:    newSize,
-	})
+	}
+	if terminal.events != nil {
+		terminal.events.publish(event)
+	}
+	terminal.publishPluginHookFromEvent(event)
+}
+
+func (terminal *Terminal) publishPluginHookFromEvent(event Event) {
+	if terminal.hookSource == nil || terminal.hookEvents == nil {
+		return
+	}
+	if hook, ok := terminal.hookSource.TerminalEvent(event); ok {
+		terminal.hookEvents.publish(hook)
+	}
+}
+
+func (terminal *Terminal) publishPTYActivity(at time.Time, bytes int) {
+	if terminal.activity == nil || terminal.hookEvents == nil {
+		return
+	}
+	for _, event := range terminal.activity.RecordPTYOutput(at, bytes) {
+		terminal.hookEvents.publish(event)
+	}
+}
+
+func (terminal *Terminal) publishPTYIdle(at time.Time, state string) int {
+	if terminal.activity == nil || terminal.hookEvents == nil {
+		return 0
+	}
+	events := terminal.activity.Tick(at, state)
+	for _, event := range events {
+		terminal.hookEvents.publish(event)
+	}
+	return len(events)
 }
 
 func (terminal *Terminal) watchProcess(process TerminalProcess) {
@@ -515,6 +557,7 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 				continue
 			}
 			text := string(chunk)
+			terminal.publishPTYActivity(time.Now().UTC(), len(chunk))
 			liveQueue.Enqueue(text)
 			if historyTapQueue != nil {
 				historyTapQueue.Enqueue(text)
