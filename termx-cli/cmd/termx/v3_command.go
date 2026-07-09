@@ -86,10 +86,6 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 				opts = []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryDisabled(), corev2.WithHistoryBackpressureConfig(historyBackpressure)}
 			}
 			srv := newCoreV2Server(opts...)
-			remoteCfg, err := remoteConfigFromFileAndEnv(remoteConfigPathValue(configPath))
-			if err != nil {
-				return err
-			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 			stopPerfTrace, perfTracePath, perfTraceEnabled := perftrace.EnableFromEnvWithProcess(ctx, "core-v2-daemon")
@@ -98,19 +94,7 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 				logger.Info("core-v2 daemon perftrace enabled", "path", perfTracePath)
 			}
 			writeHeapProfile := startDaemonHeapProfiler(ctx, logger)
-			var remoteRuntime *coreV2DaemonRemoteRuntime
-			if coreServer, ok := srv.(*corev2.Server); ok {
-				remoteRuntime, err = configureCoreV2DaemonRemoteRuntime(ctx, coreServer, remoteCfg, logger)
-				if err != nil {
-					return err
-				}
-			}
 			defer func() {
-				if remoteRuntime != nil {
-					if err := remoteRuntime.Close(context.Background()); err != nil {
-						logger.Warn("core-v2 daemon remote runtime close failed", "error", err)
-					}
-				}
 				_ = srv.Shutdown(context.Background())
 			}()
 

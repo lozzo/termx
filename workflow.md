@@ -75,6 +75,7 @@
 | ME011 | 完成 | hub/P2P 单向配对与 capability grant contract | `hub_device_id` 只做发现；`device_fingerprint` 是远端安全身份；`grant_ref` 指向 remote-issued grant；fingerprint/grant 变化触发 reconnect |
 | CL001 | 完成 | 项目代码整理基线 | `workflow.md`、根 `AGENTS.md`、局部代理说明与当前 master 主线一致；明确 frozen legacy 目录只读边界和后续入口/依赖清理顺序 |
 | CL002 | 完成 | 顶层 Makefile 入口清理 | 默认 help/phony/target 不再暴露 frozen `remote-ui`、localweb、旧 remote daemon/dev/pair/status 入口；保留 v2/v3 build 与测试入口 |
+| CL003 | 完成 | CLI frozen remote 依赖清理 | `termx-cli` 默认命令和 daemon 启动不再装配 frozen `termx-remote` runtime；移除 CLI 对 `termx-remote` module 的 import/replace，保留 core/protocol typed hook 作为后续新控制面契约 |
 | SI001 | 暂停 | TUI 同步输入组交互与 input 多播 | 用户切换到项目代码整理后暂停；恢复时继续 `Ctrl-P i/v/u` 管理当前 TUI 本地同步输入组 |
 | ME012 | 待开始 | hub/P2P transport dialer 与跨设备发现 | 接入 `termx-hub/` 发现/授权/relay；P2P 或 relay datachannel 只连接远端 termx daemon；局部失败不影响其他 endpoint |
 
@@ -114,4 +115,5 @@
 - ME011 已完成：按用户确认的单向配对模型收敛 hub 安全 contract，remote 生成 capability grant 给客户端；`hub_device_id` 只做发现/路由，`device_fingerprint` 作为远端设备安全身份，`grant_ref` 指向本地保存的 grant，真实 `termx-hub/` transport dialer 和跨设备发现进入 ME012。
 - CL001 已完成：master 项目整理基线已对齐，`workflow.md`、根 `AGENTS.md` 和 `termx-cli/AGENTS.md` 均明确当前整理主线、插件分支隔离、frozen legacy 边界与 remote CLI 清理债务。
 - CL002 已完成：顶层 Makefile 已移除 frozen `remote-ui`、localweb、旧 remote daemon/dev/pair/status/test 入口，只保留当前 v2/v3 build 与测试入口。
+- CL003 已完成：`termx-cli` 默认命令、daemon 启动、测试、README、脚本和 module 文件已移除 frozen `termx-remote` runtime/命令依赖；core-v2/protocol 的 typed remote hook 暂不在本切片删除。
 - SI001 暂停：按用户确认的交互设计实现 TUI 本地同步输入组；同步状态属于当前 TUI reducer-owned 输入路由状态，不写入 daemon terminal lifecycle、history truth 或 workbench storage。

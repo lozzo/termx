@@ -30,13 +30,11 @@ require (
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/lozzow/termx/internal v0.0.0
 	github.com/lozzow/termx/termx-proto v0.0.0
-	github.com/lozzow/termx/termx-remote v0.0.0
 	github.com/lozzow/termx/termx-shared v0.0.0
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sync v0.19.0 // indirect
@@ -48,8 +46,6 @@ require (
 replace github.com/lozzow/termx/termx-core-v2 => ../termx-core-v2
 
 replace github.com/lozzow/termx/termx-tui-v3 => ../termx-tui-v3
-
-replace github.com/lozzow/termx/termx-remote => ../termx-remote
 
 replace github.com/lozzow/termx/termx-vterm => ../termx-vterm
 

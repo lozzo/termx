@@ -31,6 +31,7 @@ func TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI(t *testing.T) {
 		for _, forbidden := range []string{
 			"\"github.com/lozzow/termx/termx-core\"",
 			"\"github.com/lozzow/termx/tuiv2",
+			"\"github.com/lozzow/termx/termx-remote",
 		} {
 			if strings.Contains(text, forbidden) {
 				t.Fatalf("default runtime file %s must not import legacy dependency %s", path, forbidden)
@@ -45,6 +46,7 @@ func TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI(t *testing.T) {
 	for _, legacyModule := range []string{
 		"github.com/lozzow/termx/termx-core v0.0.0",
 		"github.com/lozzow/termx/tuiv2 v0.0.0",
+		"github.com/lozzow/termx/termx-remote v0.0.0",
 	} {
 		if strings.Contains(string(goMod), legacyModule) {
 			t.Fatalf("legacy module %s must not remain in termx-cli/go.mod:\n%s", legacyModule, goMod)

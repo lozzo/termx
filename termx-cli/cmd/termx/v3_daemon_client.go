@@ -137,7 +137,7 @@ func startCoreV2DaemonForConfig(path string, logFile string, configPath string) 
 	if startV3DaemonWithConfig == nil {
 		return fmt.Errorf("core-v2 daemon config starter is nil")
 	}
-	// 中文说明：remote 命令携带 --config 时，auto-start 必须启动同一
+	// 中文说明：显式 --config 入口触发 auto-start 时，必须启动同一
 	// config 的 daemon；普通 v3 auto-start 仍走可替换的 startV3Daemon。
 	return startV3DaemonWithConfig(path, logFile, configPath)
 }
