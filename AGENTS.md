@@ -4,8 +4,9 @@
 
 - 仓库根目录 `workflow.md` 是当前分支唯一有效的活动驱动文件。
 - 本仓库内所有工作必须先读取 `workflow.md`，并以它作为范围、任务顺序、测试准入和提交规则的唯一基准。
-- 当前主线是 screen app 无限历史清场与重建；旧 remote + app 迁移队列已经退出当前活动范围，只能按 git 历史追溯。
-- `termx-core-v2/docs/screen-app-infinite-history-final-plan.md` 是当前无限历史技术定案。
+- 当前主线是 master 项目代码整理与 TUI/client 侧多 endpoint / 多 transport 管理；旧 screen app 无限历史清场与重建只作为历史记录追溯。
+- 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
+- `termx-tui-v3/docs/multi-endpoint-transport-plan.md` 是当前多 endpoint / 多 transport 技术规划。
 - `termx-core-v2/docs/architecture.md` 是 core-v2 技术设计基准。
 - `termx-tui-v3/docs/architecture.md` 是 tui-v3 技术设计基准。
 - `AGENTS.md` 只规定代理执行方式和目录职责，不替代 `workflow.md` 的范围判断。
@@ -22,7 +23,7 @@
 5. 如果最早未完成切片是 `阻塞`，停止并向用户说明阻塞，不得跳到后续 `待开始` 切片。
 6. 如果最早未完成切片是 `待开始`，先把它改为 `进行中`，并提交或与本切片首个实现提交同切片提交。
 7. 只执行该切片，不跨切片扩展范围。
-8. 需要技术细节时读取对应 architecture 文档和 `termx-core-v2/docs/screen-app-infinite-history-final-plan.md`。
+8. 需要技术细节时读取 `workflow.md` 指定的当前规划文档和对应 architecture 文档。
 9. 实现最小可验证改动，先补齐该切片要求的 harness，再接真实实现。
 10. 运行该切片的测试准入命令。
 11. 更新 `workflow.md` 中该切片状态和必要的当前状态说明。
@@ -39,30 +40,34 @@
 - 当前默认本地 CLI 入口必须走 `termx-core-v2/` 与 `termx-tui-v3/`；不得重新引入 `termx legacy ...`、旧 daemon、旧 TUI 或 remote legacy/fallback。
 - `termx-cli/cmd/termx/legacy_*.go` 不得重新出现；旧本地入口已经删除。
 - `termx-cli/cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
-- `termx-remote/`、`termx-remote-v2/`、`termx-app/`、`remote-ui/`、`web-control/`、`termx-hub/` 当前冻结，除非 `workflow.md` 当前切片明确解冻。
+- `termx-remote/`、`termx-remote-v2/`、`termx-app/`、`remote-ui/`、`web-control/` 当前冻结，除非 `workflow.md` 当前切片明确解冻。
+- `termx-hub/` 是受限联动目录，只能在 ME010+ hub/P2P 身份、安全、中继、发现和 transport contract 需要时最小化触及；不得牵连旧 remote UI/app 路径。
 - `termx-vterm/` 是受限联动目录，只能在 terminal semantic transaction 接口、事件或 harness 需要时最小化触及。
-- `internal/protocol/` 与 `termx-proto/` 是受限联动目录，只能在 `history.window`、history copy 或 semantic history contract 需要跨进程时最小化触及。
+- `internal/protocol/` 与 `termx-proto/` 是受限联动目录，只能在 endpoint routing、history window/copy 或 semantic history contract 需要跨进程时最小化触及。
 - 如果确实必须恢复旧目录或解冻目录，先修改 `workflow.md` 的范围表并说明原因；默认不允许恢复。
 - 关键代码需要写简短中文注释，说明 domain owner、truth source、消息链路或失败条件。
 
 ## 目录职责
 
-- `termx-core-v2/`：新 core 主线目录，负责 screen-backed history 模型、terminal semantic transaction 消费、`ScreenHistoryBuffer` physical row/cell 真值、logical-line projection、screen app session、segment cursor、`HistoryWindow`、storage/backend 与相关 harness。
-- `termx-core-v2/docs/screen-app-infinite-history-final-plan.md`：当前无限历史定案。
+- `termx-core-v2/`：新 core 主线目录，负责 terminal lifecycle、daemon-local terminal identity、screen-backed history 模型、terminal semantic transaction 消费、`HistoryWindow`、storage/backend 与相关 harness。
+- `termx-core-v2/docs/screen-app-infinite-history-final-plan.md`：旧无限历史定案，当前只在触及 history truth 时作为背景基准读取。
 - `termx-core-v2/docs/architecture.md`：core-v2 技术设计基准。
 - `termx-vterm/`：终端语义解释来源；负责把 PTY bytes 解释成 terminal 语义事件或 transaction，不负责持有无限历史 truth。
-- `termx-tui-v3/`：新 TUI 主线目录，负责自有 `AppRuntime`、`TerminalHost`、`EffectRunner`、`FrameSink`、authoritative history source、copy mode、滚动、selection、render 与相关 harness；不拥有 committed history truth。
+- `termx-tui-v3/`：新 TUI 主线目录，负责自有 `AppRuntime`、`TerminalHost`、`EffectRunner`、`FrameSink`、endpoint manager、workbench/layout 投影、authoritative history source、copy mode、同步输入、滚动、selection、render 与相关 harness；不拥有 committed history truth 或 daemon terminal lifecycle。
 - `termx-tui-v3/docs/architecture.md`：tui-v3 技术设计基准。
 - `termx-core/`：已删除旧 core 目录；不得作为 fallback 恢复。
 - `tuiv2/`：已删除旧 TUI 目录；不得作为 fallback 恢复。
-- `internal/protocol/` 与 `termx-proto/`：受限联动目录，只在 history window/copy 或 semantic history contract 需要时最小化触及。
+- `internal/protocol/` 与 `termx-proto/`：受限联动目录，只在 endpoint-aware routing、history window/copy 或 semantic history contract 需要时最小化触及。
 - `termx-cli/`、`termx-shared/`、`termx-testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前切片需要时最小化触及。
 
 ## 硬语义规则
 
 - 禁止症状补丁：遇到状态错乱、输入错路由、生命周期误判或恢复异常时，必须先定位权威状态边界和消息链路，再修改模型或契约；不得用 storage scrub、fallback、定时刷新、重复 attach、局部 if 分支等方式掩盖根因。
 - 禁止补丁式实现：不得为了让当前 case 通过而堆叠临时分支、局部兜底、重复同步、隐式状态修正或旧路径兼容；每次修复都必须先说清 domain owner、truth source、消息链路和失败条件，再按模型/契约补 harness 后实现。
-- 当前无限历史主线允许先删后写：旧补丁式历史代码、raw parser fallback、程序名特殊分支、snapshot/history 拼接 fallback、重复同步和隐式状态修正可以按 `workflow.md` 当前切片删除。
+- 多 endpoint / 多 transport 主线必须保持 endpoint 边界清晰：跨 endpoint 状态使用 `EndpointID + TerminalID` 的 `TerminalRef`，不得把裸 `TerminalID` 当成全局唯一真值。
+- Endpoint 表达“当前客户端要连接的 daemon 目标”，Transport 表达“到达该 endpoint 的方式”；daemon 侧客户端连接管理与 TUI/client 侧 endpoint 管理不得混成一个模型。
+- TUI 不拥有 terminal lifecycle、committed history 或 history truth；history/live/input/resize 必须路由到 owning endpoint 的 daemon。
+- frozen legacy 目录只能按 `workflow.md` 明确切片处理；不得通过 fallback、桥接或旧入口把 frozen remote app/web-control 路径重新引回当前主线。
 - R419 后，history ingest truth 的基本单位是 core-v2 authoritative physical row/cell，不是 append-only logical line、visual row、wrapped row、snapshot scrollback、grid viewport、xterm buffer row 或 DOM/canvas row。
 - core-v2 `ScreenHistoryBuffer` 是 main/alt screen、physical rows、cells、cursor、scroll region、RowID、Version 和 seal-once 的 domain owner；logical line 只是 query/copy/history 阶段的 projection。
 - physical row store、sealed row index、logical projection、segment cursor、storage backend、cache、adapter、TUI/App projection 不能演变成第二份历史 truth。

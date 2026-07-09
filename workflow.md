@@ -1,9 +1,10 @@
-# 工作流：多 endpoint / 多 transport 管理主线
+# 工作流：项目代码整理与多 endpoint / 多 transport 管理主线
 
 ## 当前目标
 
-- 当前分支切换到 TUI/client 侧多 endpoint 与多 transport 管理设计和落地。
+- 当前分支进入项目代码整理收敛阶段，先对齐活动范围、代理说明、工程入口和 frozen legacy 边界，再继续 TUI/client 侧多 endpoint 与多 transport 管理落地。
 - 详细技术规划以 `termx-tui-v3/docs/multi-endpoint-transport-plan.md` 为准。
+- 插件系统已经拆到独立分支，本分支不继续新增插件系统代码、协议或文档。
 - 旧 screen app 无限历史清场与重建记录不再保留在本活动文件中；需要追溯时查看 git 历史和对应文档。
 
 ## 基准文档
@@ -72,7 +73,8 @@
 | ME009 | 完成 | Terminal picker 单一 create 入口与 terminal name identity 第一阶段 | picker 只展示一个 create 行；create prompt 记住上次 endpoint/command/workdir；新建 terminal 在单 endpoint 内按名称唯一，默认以名称作为 daemon-local key |
 | ME010 | 完成 | hub/P2P 身份、安全、中继策略与 connection registry contract | `connections.yaml` 可表达 hub endpoint；label 不作为安全身份；hub 发现目标/relay 变化触发 reconnect；无真实 dialer 时不 fallback |
 | ME011 | 完成 | hub/P2P 单向配对与 capability grant contract | `hub_device_id` 只做发现；`device_fingerprint` 是远端安全身份；`grant_ref` 指向 remote-issued grant；fingerprint/grant 变化触发 reconnect |
-| SI001 | 进行中 | TUI 同步输入组交互与 input 多播 | `Ctrl-P i/v/u` 管理当前 TUI 本地同步输入组；普通键盘/paste 多播到组内 terminal；overlay/copy/prefix 和 raw mouse 不误发；同一 `TerminalRef` 不重复发送 |
+| CL001 | 完成 | 项目代码整理基线 | `workflow.md`、根 `AGENTS.md`、局部代理说明与当前 master 主线一致；明确 frozen legacy 目录只读边界和后续入口/依赖清理顺序 |
+| SI001 | 暂停 | TUI 同步输入组交互与 input 多播 | 用户切换到项目代码整理后暂停；恢复时继续 `Ctrl-P i/v/u` 管理当前 TUI 本地同步输入组 |
 | ME012 | 待开始 | hub/P2P transport dialer 与跨设备发现 | 接入 `termx-hub/` 发现/授权/relay；P2P 或 relay datachannel 只连接远端 termx daemon；局部失败不影响其他 endpoint |
 
 ## 执行规则
@@ -109,4 +111,5 @@
 - ME009 已完成：picker 只保留单一 create 行，create prompt 用 server 下拉选择 endpoint，并记住上次 endpoint/command/workdir；TUI/CLI/protocol first-party create 优先以 terminal name 作为 daemon-local key，core-v2 在 create 与 rename 时拒绝同 daemon 重名。
 - ME010 已完成：`connections.yaml` 可表达 hub/P2P endpoint，hub URL、`hub_device_id` 与 relay 策略分离；label 只影响展示，hub 发现目标/relay 变化触发 reconnect；无真实 hub dialer 时 EndpointManager 只返回该 endpoint 的未连接错误，不 fallback。
 - ME011 已完成：按用户确认的单向配对模型收敛 hub 安全 contract，remote 生成 capability grant 给客户端；`hub_device_id` 只做发现/路由，`device_fingerprint` 作为远端设备安全身份，`grant_ref` 指向本地保存的 grant，真实 `termx-hub/` transport dialer 和跨设备发现进入 ME012。
-- SI001 进行中：按用户确认的交互设计实现 TUI 本地同步输入组；同步状态属于当前 TUI reducer-owned 输入路由状态，不写入 daemon terminal lifecycle、history truth 或 workbench storage。
+- CL001 已完成：master 项目整理基线已对齐，`workflow.md`、根 `AGENTS.md` 和 `termx-cli/AGENTS.md` 均明确当前整理主线、插件分支隔离、frozen legacy 边界与 remote CLI 清理债务。
+- SI001 暂停：按用户确认的交互设计实现 TUI 本地同步输入组；同步状态属于当前 TUI reducer-owned 输入路由状态，不写入 daemon terminal lifecycle、history truth 或 workbench storage。
