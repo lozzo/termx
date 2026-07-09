@@ -95,7 +95,7 @@ termx-tui-v3 / future GUI / future mobile entry
 - `termx-testkit/`：测试辅助能力。
 - `scripts/`、`Makefile`、`go.work`：开发、测试和 workspace 支撑。
 
-当前分支冻结的旧路径包括 `termx-remote/`、`termx-remote-v2/`、`termx-app/`、`remote-ui/`、`web-control/`。它们不属于当前主动开发主线；需要判断范围时以 `workflow.md` 为准。
+当前分支已删除旧路径 `termx-remote/`、`termx-remote-v2/`、`termx-app/`、`remote-ui/`、`web-control/`。它们不属于当前主动开发主线，不得作为 fallback、只读参考或默认依赖恢复；需要判断范围时以 `workflow.md` 为准。
 
 ## 开发状态
 

@@ -40,7 +40,7 @@
 - 当前默认本地 CLI 入口必须走 `termx-core-v2/` 与 `termx-tui-v3/`；不得重新引入 `termx legacy ...`、旧 daemon、旧 TUI 或 remote legacy/fallback。
 - `termx-cli/cmd/termx/legacy_*.go` 不得重新出现；旧本地入口已经删除。
 - `termx-cli/cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
-- `termx-remote/`、`termx-remote-v2/`、`termx-app/`、`remote-ui/`、`web-control/` 当前冻结，除非 `workflow.md` 当前切片明确解冻。
+- `termx-remote/`、`termx-remote-v2/`、`termx-app/`、`remote-ui/`、`web-control/` 已退出当前 master 主线；不得恢复为 fallback、只读参考或默认依赖。
 - `termx-hub/` 是受限联动目录，只能在 ME010+ hub/P2P 身份、安全、中继、发现和 transport contract 需要时最小化触及；不得牵连旧 remote UI/app 路径。
 - `termx-vterm/` 是受限联动目录，只能在 terminal semantic transaction 接口、事件或 harness 需要时最小化触及。
 - `internal/protocol/` 与 `termx-proto/` 是受限联动目录，只能在 endpoint routing、history window/copy 或 semantic history contract 需要跨进程时最小化触及。
@@ -67,7 +67,7 @@
 - 多 endpoint / 多 transport 主线必须保持 endpoint 边界清晰：跨 endpoint 状态使用 `EndpointID + TerminalID` 的 `TerminalRef`，不得把裸 `TerminalID` 当成全局唯一真值。
 - Endpoint 表达“当前客户端要连接的 daemon 目标”，Transport 表达“到达该 endpoint 的方式”；daemon 侧客户端连接管理与 TUI/client 侧 endpoint 管理不得混成一个模型。
 - TUI 不拥有 terminal lifecycle、committed history 或 history truth；history/live/input/resize 必须路由到 owning endpoint 的 daemon。
-- frozen legacy 目录只能按 `workflow.md` 明确切片处理；不得通过 fallback、桥接或旧入口把 frozen remote app/web-control 路径重新引回当前主线。
+- 已删除 legacy 目录只能按 `workflow.md` 明确切片重新设计；不得通过 fallback、桥接或旧入口把旧 remote app/web-control 路径重新引回当前主线。
 - R419 后，history ingest truth 的基本单位是 core-v2 authoritative physical row/cell，不是 append-only logical line、visual row、wrapped row、snapshot scrollback、grid viewport、xterm buffer row 或 DOM/canvas row。
 - core-v2 `ScreenHistoryBuffer` 是 main/alt screen、physical rows、cells、cursor、scroll region、RowID、Version 和 seal-once 的 domain owner；logical line 只是 query/copy/history 阶段的 projection。
 - physical row store、sealed row index、logical projection、segment cursor、storage backend、cache、adapter、TUI/App projection 不能演变成第二份历史 truth。

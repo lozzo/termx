@@ -87,7 +87,7 @@ primary screen app session 关闭时，把最后一个 primary current frame 转
 - EventRouter 只从同一 write transaction 的 ordered semantic ops、mode、screen cells 和 frame boundary 生成 domain event。
 - `HistoryTrack` 维护 ordinary committed history、mutable frontier、screen app session、current frame 和 frame journal。
 - protocol adapter 只把 `HistoryTrack` 投影成 `history.window` / `history.copy`。
-- TUI-v3、App、remote-ui 只消费协议结果。
+- TUI-v3 和后续重新设计的客户端只消费协议结果。
 
 ### 禁止路径
 

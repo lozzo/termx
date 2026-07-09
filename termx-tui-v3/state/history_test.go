@@ -1682,11 +1682,11 @@ func TestHistoryStoreReflowSplitsLongCellsAndKeepsLsSpacing(t *testing.T) {
 	lines := []HistoryLogicalLine{{
 		LineID: 10,
 		Cells: []HistoryCell{
-			{Text: "AGENTS.md   go.work.sum   remote-ui", Width: 35},
+			{Text: "AGENTS.md   go.work.sum   termx-tui", Width: 35},
 		},
 	}}
 	rows, spans := ReflowHistoryLogicalLines(lines, 12)
-	if got := rowTexts(rows); !reflect.DeepEqual(got, []string{"AGENTS.md   ", "go.work.sum ", "  remote-ui"}) {
+	if got := rowTexts(rows); !reflect.DeepEqual(got, []string{"AGENTS.md   ", "go.work.sum ", "  termx-tui"}) {
 		t.Fatalf("reflow should split long cells by display cols without losing ls spacing, got %q", got)
 	}
 	if got := spanRows(spans); !reflect.DeepEqual(got, []spanRow{{id: 10, start: 0, end: 2}}) {
