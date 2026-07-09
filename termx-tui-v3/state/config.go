@@ -1,5 +1,7 @@
 package state
 
+// TUIConfigStore 是 reducer 持有的已验证 TUI 配置快照。
+// 它只保存当前客户端视觉、交互和 shortcuts 偏好；workspace、terminal lifecycle 与 history truth 分属各自 domain owner。
 type TUIConfigStore struct {
 	Version     int
 	Profile     string
@@ -7,7 +9,7 @@ type TUIConfigStore struct {
 	Chrome      TUIChromeConfig
 	Footer      TUIFooterConfig
 	Interaction TUIInteractionConfig
-	Keymap      TUIKeymapConfig
+	Shortcuts   TUIShortcutConfig
 }
 
 type TUIThemeConfig struct {
@@ -182,51 +184,29 @@ type TUIPickerConfig struct {
 	HighlightMatches bool
 }
 
-// TUIKeymapConfig 描述当前 TUI 客户端的键盘入口与各 sticky mode 内部动作；配置只影响输入路由，不持有 reducer 状态。
-type TUIKeymapConfig struct {
-	Root          TUIRootKeymapConfig
-	CopyMode      TUICopyKeymapConfig
-	TabMode       TUITabKeymapConfig
-	WorkspaceMode TUIWorkspaceKeymapConfig
-	FloatingMode  TUIModeEntryKeymapConfig
-	PaneMode      TUIModeEntryKeymapConfig
-	ResizeMode    TUIModeEntryKeymapConfig
-	GlobalMode    TUIModeEntryKeymapConfig
+// TUIShortcutConfig 是当前 TUI 客户端快捷键配置的唯一入口。
+// Actions 只声明 action 默认展示文案；Scenes 按场景保存 key -> action 绑定。
+// 真实执行仍由后续 shortcut catalog / action registry 转成 reducer 消息，配置层不持有运行时状态。
+type TUIShortcutConfig struct {
+	Actions map[string]TUIShortcutActionConfig
+	Scenes  map[string]TUIShortcutSceneConfig
 }
 
-// TUIRootKeymapConfig 描述默认工作台输入态下不进入 sticky mode 的直接动作。
-type TUIRootKeymapConfig struct {
-	TerminalPicker string
+// TUIShortcutActionConfig 描述一个 action 的默认展示文案。
+// action id 是后续输入路由、footer/help 展示和 action registry 的共享语义键；label 不能改写 action 的执行链路。
+type TUIShortcutActionConfig struct {
+	Label string
 }
 
-// TUIModeEntryKeymapConfig 描述 sticky mode 从 root 输入态进入该 mode 的入口键。
-type TUIModeEntryKeymapConfig struct {
-	Entry string
+// TUIShortcutSceneConfig 描述某个输入场景内的按键绑定集合。
+// 同一场景内 key 必须唯一；是否进入该场景由 global 里的 menu.<scene> action 或运行时 overlay 状态决定。
+type TUIShortcutSceneConfig struct {
+	Bindings map[string]TUIShortcutBindingConfig
 }
 
-// TUICopyKeymapConfig 描述 copy/history mode 的入口键与 mode 内部动作键。
-type TUICopyKeymapConfig struct {
-	Entry            string
-	ClipboardHistory string
-	PasteLatest      string
-	PasteSystem      string
-}
-
-// TUITabKeymapConfig 描述 tab sticky mode 的入口键与 mode 内部动作键。
-type TUITabKeymapConfig struct {
-	Entry    string
-	Create   string
-	Close    string
-	Rename   string
-	Next     string
-	Previous string
-}
-
-// TUIWorkspaceKeymapConfig 描述 workspace sticky mode 的入口键与 mode 内部动作键。
-type TUIWorkspaceKeymapConfig struct {
-	Entry     string
-	Navigator string
-	Create    string
-	Delete    string
-	Rename    string
+// TUIShortcutBindingConfig 描述一个按键到 action 的绑定。
+// Action 是必填语义目标；Label 只覆盖该场景下的展示文案，不能产生新的执行语义。
+type TUIShortcutBindingConfig struct {
+	Action string
+	Label  string
 }

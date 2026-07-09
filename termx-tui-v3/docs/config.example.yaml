@@ -117,7 +117,7 @@ tui:
 
     # footer 控制底部 footer 是否显示。
     # true：显示 shortcut/action/status footer。
-    # false：隐藏 footer；不改变 keymap 或 action dispatch。
+    # false：隐藏 footer；不改变 shortcuts 或 action dispatch。
     # 默认值：true。
     footer: true
 
@@ -429,7 +429,7 @@ tui:
 
     # confirm_destructive 控制危险操作是否需要确认。
     # true：close/delete 等 destructive action 需要确认。
-    # false：直接执行，适合高度熟悉 keymap 的用户。
+    # false：直接执行，适合高度熟悉 shortcuts 的用户。
     # 默认值：true。
     confirm_destructive: true
 
@@ -461,103 +461,36 @@ tui:
       # 默认值：true。
       highlight_matches: true
 
-  keymap:
-    root:
-      # terminal_picker 是 root 输入态下直接打开 terminal picker 的快捷键。
-      # 它不是 sticky mode entry；按下后直接打开 picker overlay。
-      # 默认值：ctrl-f。
-      terminal_picker: ctrl-f
+  shortcuts:
+    actions:
+      panel.close:
+        label: close
+      panel.kill_and_close:
+        label: kill+close
+      floating.new:
+        label: new
 
-    copy_mode:
-      # entry 是从 root 输入态进入 copy/history mode 的快捷键。
-      # 默认值：ctrl-v。
-      # entry 归属 root 输入态冲突检测，不和 copy_mode 内部 h/p/shift-p 这类键冲突。
-      entry: ctrl-v
+    global:
+      ctrl-p: menu.panel
+      ctrl-o: menu.floating
+      ctrl-t: menu.tab
+      ctrl-1: tab.jump.1
 
-      # clipboard_history 是进入 copy/history mode 后打开 clipboard history 的快捷键。
-      # 默认值：h。
-      clipboard_history: h
+    panel:
+      x: panel.close
+      k:
+        action: panel.kill_and_close
+        label: kill+close
 
-      # paste_latest 是进入 copy/history mode 后粘贴最近一次复制内容的快捷键。
-      # 默认值：p。
-      paste_latest: p
+    floating:
+      n: floating.new
+      o: floating.overview
+      x: floating.close
 
-      # paste_system 是进入 copy/history mode 后粘贴系统剪贴板内容的快捷键。
-      # 默认值：shift-p。
-      paste_system: shift-p
-
-    tab_mode:
-      # entry 是从 root 输入态进入 tab sticky shortcut mode 的快捷键。
-      # 默认值：ctrl-t。
-      entry: ctrl-t
-
-      # create 是进入 tab mode 后创建新 tab 的快捷键。
-      # 默认值：c。
-      create: c
-
-      # close 是进入 tab mode 后关闭当前 tab 的快捷键。
-      # 默认值：x。
-      close: x
-
-      # rename 是进入 tab mode 后重命名当前 tab 的快捷键。
-      # 默认值：r。
-      rename: r
-
-      # next 是进入 tab mode 后切到下一个 tab 的快捷键。
-      # 默认值：n。
-      next: n
-
-      # previous 是进入 tab mode 后切到上一个 tab 的快捷键。
-      # 默认值：p。
-      previous: p
-
-    workspace_mode:
-      # entry 是从 root 输入态进入 workspace sticky shortcut mode 的快捷键。
-      # 默认值：ctrl-w。
-      entry: ctrl-w
-
-      # navigator 是进入 workspace mode 后打开 Workbench Navigator 的快捷键。
-      # 默认值：w。
-      navigator: w
-
-      # create 是进入 workspace mode 后创建 workspace 的快捷键。
-      # 默认值：c。
-      create: c
-
-      # delete 是进入 workspace mode 后删除当前 workspace 的快捷键。
-      # 默认值：x。
-      delete: x
-
-      # rename 是进入 workspace mode 后重命名当前 workspace 的快捷键。
-      # 默认值：r。
-      rename: r
-
-    floating_mode:
-      # entry 是从 root 输入态进入 floating window shortcut mode 的快捷键。
-      # 默认值：ctrl-o。
-      # 目前 floating mode 内部动作仍由运行时 action catalog 定义，配置先只暴露入口。
-      entry: ctrl-o
-
-    pane_mode:
-      # entry 是从 root 输入态进入 pane shortcut mode 的快捷键。
-      # 默认值：ctrl-p。
-      # 目前 pane mode 内部动作仍由运行时 action catalog 定义，配置先只暴露入口。
-      entry: ctrl-p
-
-    resize_mode:
-      # entry 是从 root 输入态进入 resize shortcut mode 的快捷键。
-      # 默认值：ctrl-r。
-      # 目前 resize mode 内部动作仍由运行时 action catalog 定义，配置先只暴露入口。
-      entry: ctrl-r
-
-    global_mode:
-      # entry 是从 root 输入态进入 global shortcut mode 的快捷键。
-      # 默认值：ctrl-g。
-      # 目前 global mode 内部动作仍由运行时 action catalog 定义，配置先只暴露入口。
-      # 当前固定动作包括：
-      # - l：切换 shortcut passthrough lock；开启后 ctrl-v/ctrl-r/ctrl-t/ctrl-w 等 root shortcut 直接发给 terminal。
-      # - q：退出 TUI。
-      # - ?：打开 help。
-      # 注意：ctrl-g 保留为 lock 开启后的解锁控制面；需要把 ctrl-g 发给 terminal 时，可按 ctrl-g ctrl-g 双击透传。
-      # entry 键都支持双击透传，例如 ctrl-v ctrl-v 会取消 copy/history 进入态并透传第二个 ctrl-v。
-      entry: ctrl-g
+    tab:
+      "1": tab.jump.1
+      "2": tab.jump.2
+      n: tab.next
+      p: tab.previous
+      c: tab.create
+      x: tab.close

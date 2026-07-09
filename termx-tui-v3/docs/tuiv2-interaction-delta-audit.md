@@ -22,7 +22,7 @@
 - `tuiv2/app/update_mouse_overlay.go`
 - `tuiv2/app/update_mouse_pane_surface.go`
 - `tuiv2/app/status_hints.go`
-- `termx-tui-v3/docs/keybindings.md`
+- `termx-tui-v3/docs/shortcut-inventory.md`
 - `termx-tui-v3/docs/tuiv2-product-contract-alignment.md`
 - `termx-tui-v3/app/runtime.go`
 - `termx-tui-v3/app/ui_input.go`

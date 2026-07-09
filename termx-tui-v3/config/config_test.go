@@ -122,14 +122,22 @@ tui:
     clipboard_history:
       max_items: 500
       preview_width_ratio: 0.72
-  keymap:
-    root:
-      terminal_picker: ctrl-space
-    copy_mode:
-      entry: ctrl-y
-      clipboard_history: y
-    tab_mode:
-      entry: alt-t
+  shortcuts:
+    actions:
+      panel.close:
+        label: close
+      panel.kill_and_close:
+        label: kill+close
+    global:
+      ctrl-p: menu.panel
+      ctrl-1: tab.jump.1
+    panel:
+      x: panel.close
+      k:
+        action: panel.kill_and_close
+        label: kill terminal + close
+    tab:
+      "1": tab.jump.1
 `))
 	if err != nil {
 		t.Fatalf("parse override config: %v", err)
@@ -196,12 +204,15 @@ tui:
 		cfg.Interaction.ClipboardHistory.PreviewWidthRatio != 0.72 {
 		t.Fatalf("interaction overrides not applied: %#v", cfg.Interaction)
 	}
-	if cfg.Keymap.Root.TerminalPicker != "ctrl-space" ||
-		cfg.Keymap.CopyMode.Entry != "ctrl-y" ||
-		cfg.Keymap.CopyMode.ClipboardHistory != "y" ||
-		cfg.Keymap.TabMode.Entry != "alt-t" ||
-		cfg.Keymap.TabMode.Create != "c" {
-		t.Fatalf("keymap override/default merge wrong: %#v", cfg.Keymap)
+	if cfg.Shortcuts.Actions["panel.close"].Label != "close" ||
+		cfg.Shortcuts.Actions["panel.kill_and_close"].Label != "kill+close" ||
+		cfg.Shortcuts.Scenes["global"].Bindings["ctrl-p"].Action != "menu.panel" ||
+		cfg.Shortcuts.Scenes["global"].Bindings["ctrl-1"].Action != "tab.jump.1" ||
+		cfg.Shortcuts.Scenes["panel"].Bindings["x"].Action != "panel.close" ||
+		cfg.Shortcuts.Scenes["panel"].Bindings["k"].Action != "panel.kill_and_close" ||
+		cfg.Shortcuts.Scenes["panel"].Bindings["k"].Label != "kill terminal + close" ||
+		cfg.Shortcuts.Scenes["tab"].Bindings["1"].Action != "tab.jump.1" {
+		t.Fatalf("shortcuts overrides not applied: %#v", cfg.Shortcuts)
 	}
 }
 
@@ -234,6 +245,16 @@ func TestParseRejectsUnknownFieldAndBadValues(t *testing.T) {
 	_, err = Parse([]byte("tui:\n  footer:\n    modes:\n      live:\n        actions: \"pane,$bad\"\n"))
 	if err == nil || !strings.Contains(err.Error(), "invalid action ref") {
 		t.Fatalf("expected footer action ref validation error, got %v", err)
+	}
+
+	_, err = Parse([]byte("tui:\n  keymap:\n    root:\n      terminal_picker: ctrl-f\n"))
+	if err == nil || !strings.Contains(err.Error(), "unknown section") {
+		t.Fatalf("expected removed keymap section error, got %v", err)
+	}
+
+	_, err = Parse([]byte("tui:\n  shortcuts:\n    pnale:\n      x: panel.close\n"))
+	if err == nil || !strings.Contains(err.Error(), "unknown section") {
+		t.Fatalf("expected unknown shortcut scene error, got %v", err)
 	}
 }
 
@@ -307,19 +328,58 @@ func TestValidateRejectsMultiLineWorkspaceTemplate(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsDuplicateKeymapWithinMode(t *testing.T) {
-	cfg := Default()
-	cfg.Keymap.TabMode.Close = cfg.Keymap.TabMode.Create
-	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "duplicate key") {
-		t.Fatalf("expected duplicate keymap error, got %v", err)
+func TestParseRejectsDuplicateShortcutKeyWithinScene(t *testing.T) {
+	_, err := Parse([]byte(`
+tui:
+  shortcuts:
+    panel:
+      x: panel.close
+      x: panel.detach
+`))
+	if err == nil || !strings.Contains(err.Error(), "duplicate shortcut key") {
+		t.Fatalf("expected duplicate shortcut key error, got %v", err)
 	}
 }
 
-func TestValidateRejectsDuplicateKeymapEntriesInRootInput(t *testing.T) {
+func TestValidateRejectsInvalidShortcutConfig(t *testing.T) {
 	cfg := Default()
-	cfg.Keymap.CopyMode.Entry = cfg.Keymap.Root.TerminalPicker
-	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "tui.keymap.root has duplicate key") {
-		t.Fatalf("expected duplicate root entry keymap error, got %v", err)
+	cfg.Shortcuts.Actions = map[string]state.TUIShortcutActionConfig{
+		"panel$close": {Label: "close"},
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "invalid action id") {
+		t.Fatalf("expected invalid action id error, got %v", err)
+	}
+
+	cfg = Default()
+	cfg.Shortcuts.Actions = map[string]state.TUIShortcutActionConfig{
+		"panel.close": {Label: "close\nnow"},
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "single-line") {
+		t.Fatalf("expected multiline shortcut label error, got %v", err)
+	}
+
+	cfg = Default()
+	cfg.Shortcuts.Scenes = map[string]state.TUIShortcutSceneConfig{
+		"pnale": {
+			Bindings: map[string]state.TUIShortcutBindingConfig{
+				"x": {Action: "panel.close"},
+			},
+		},
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "invalid scene") {
+		t.Fatalf("expected invalid shortcut scene error, got %v", err)
+	}
+
+	cfg = Default()
+	cfg.Shortcuts.Scenes = map[string]state.TUIShortcutSceneConfig{
+		"global": {
+			Bindings: map[string]state.TUIShortcutBindingConfig{
+				"ctrl-z": {Action: "menu.unknown"},
+			},
+		},
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "unknown shortcut scene") {
+		t.Fatalf("expected unknown menu target error, got %v", err)
 	}
 }
 

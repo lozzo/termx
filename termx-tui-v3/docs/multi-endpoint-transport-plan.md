@@ -58,7 +58,7 @@ TUI v3 目前的关键假设是“一个 runtime 只连接一个 daemon”：
 
 ### Connection registry
 
-endpoint/connection 是 CLI、TUI 和未来其他客户端共享的连接目标注册表，不属于 TUI chrome/theme/keymap 偏好。它应该独立于 `tui-v3.yaml`，使用单独文件：
+endpoint/connection 是 CLI、TUI 和未来其他客户端共享的连接目标注册表，不属于 TUI chrome/theme/shortcuts 偏好。它应该独立于 `tui-v3.yaml`，使用单独文件：
 
 ```text
 $XDG_CONFIG_HOME/termx/connections.yaml

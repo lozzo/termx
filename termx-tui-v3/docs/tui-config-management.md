@@ -54,7 +54,7 @@ reducer-owned StateRoot.Config
   |
   +--> ResolveTheme(Config.Theme, StateRoot.HostTheme)
   |
-  +--> ResolveKeymap(Config.Keymap)
+  +--> ResolveShortcuts(Config.Shortcuts)
   |
   v
 RenderVMBuilder / input router / app timers
@@ -69,7 +69,7 @@ Renderer / TerminalHost
 - reducer 持有已验证的 `TUIConfigSnapshot`，配置变更必须通过 message/effect 回到主循环。
 - `HostThemeStore` 只表达宿主探测结果，不是用户配置。
 - renderer 只消费 `ResolvedTheme` 和 view-model，不读文件、env、CLI flag、core client 或 service。
-- input router 只消费 `ResolvedKeymap`，不读配置文件。
+- input router 只消费解析后的 shortcut catalog，不读配置文件。
 - terminal live 内容的 ANSI 颜色直通，不被 TUI theme 重映射。
 
 ## 4. 初始 schema
@@ -160,34 +160,27 @@ tui:
       fuzzy_match: subsequence
       highlight_matches: true
 
-  keymap:
-    root:
-      terminal_picker: ctrl-f
-      copy_mode: ctrl-v
-      tab_mode: ctrl-t
-      workspace_mode: ctrl-w
-      floating_mode: ctrl-o
-      pane_mode: ctrl-p
-      resize_mode: ctrl-r
-      global_mode: ctrl-g
+  shortcuts:
+    actions:
+      panel.close:
+        label: close
 
-    copy:
-      clipboard_history: h
-      paste_latest: p
-      paste_system: shift-p
+    global:
+      ctrl-p: menu.panel
+      ctrl-o: menu.floating
+      ctrl-t: menu.tab
+      ctrl-1: tab.jump.1
 
-    tab:
-      create: c
-      close: x
-      rename: r
-      next: n
-      previous: p
+    panel:
+      x: panel.close
+      k:
+        action: panel.kill_and_close
+        label: kill+close
 
-    workspace:
-      navigator: w
-      create: c
-      delete: x
-      rename: r
+    floating:
+      n: floating.new
+      o: floating.overview
+      x: floating.close
 ```
 
 ## 5. 配置项定义
@@ -220,7 +213,7 @@ tui:
 | `interaction.confirm_destructive` | `true` | reducer/app | close/delete/kill 这类破坏性动作是否需要确认或二次意图。 |
 | `clipboard_history.*` | 见 schema | overlay VM | 只控制 TUI 展示和条目数量上限；历史内容本身仍由 core 托管的 clipboard storage 保存。 |
 | `picker.fuzzy_match` | `subsequence` | picker reducer | 默认沿用 data picker 式子序列匹配，例如 `gft` 可命中 `git commit fix terminal`。 |
-| `keymap.*` | 内置键位 | input router | 快捷键覆盖。冲突在加载期报错，不能运行时让两个 action 抢同一按键。 |
+| `shortcuts.*` | 内置 shortcut catalog | input router / footer / help | 快捷键和提示的统一配置入口。短写为 `key: action`，长写为 `key.action` / `key.label`；冲突在加载期报错，不能运行时让两个 action 抢同一按键。 |
 
 ## 6. Theme resolution
 
@@ -262,7 +255,7 @@ tui:
 2. v3 独立 config loader，接入 `tui-v3.yaml`、env 覆盖和 CLI session override。
 3. `StateRoot.Config`、`ConfigLoadedMsg`、`ConfigReloadRequestedMsg` 和 reducer。
 4. renderer 全局改用 `ResolvedTheme`，清理散落颜色常量。
-5. keymap config resolver 和冲突检测。
+5. shortcuts config resolver 和冲突检测。
 6. chrome/interaction/footer 配置接入 header/footer、panel presentation、sticky timeout、footer action token 和 clipboard history overlay。
 
-每个切片都要有 harness：配置解析失败、默认值、host palette + 用户覆盖、颜色派生、keymap 冲突和 renderer token 消费。
+每个切片都要有 harness：配置解析失败、默认值、host palette + 用户覆盖、颜色派生、shortcuts 冲突和 renderer token 消费。

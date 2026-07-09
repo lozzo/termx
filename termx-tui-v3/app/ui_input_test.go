@@ -2953,7 +2953,7 @@ func TestInteractiveRuntimeShellSemanticActionsReachRenderPath(t *testing.T) {
 	}
 }
 
-func TestInteractiveRuntimePaneAndResizeModeKeymapUsesPaneCommandPath(t *testing.T) {
+func TestInteractiveRuntimePaneAndResizeModeShortcutsUsePaneCommandPath(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
 	}

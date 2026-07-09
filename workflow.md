@@ -80,7 +80,7 @@
 | CL005 | 完成 | `termx-shared` transport 与 terminal metadata 边界整理 | unix/memory transport 明确读包上限、关闭语义和 listener 生命周期；terminal metadata 只保留共享语义，不承载 TUI 图标/按钮文案 |
 | SI001 | 暂停 | TUI 同步输入组交互与 input 多播 | 用户切换到项目代码整理后暂停；恢复时继续 `Ctrl-P i/v/u` 管理当前 TUI 本地同步输入组 |
 | KS001 | 完成 | TUI 快捷键现状盘点与 shortcuts 设计文档 | `shortcut-inventory.md` 覆盖实际按键、展示提示、不一致项；`shortcut-system-plan.md` 固化 `tui.shortcuts` 单一配置入口、提示同源和旧 `tui.keymap` 删除策略 |
-| KS002 | 待开始 | shortcuts config schema/parser/validation | 新增 `TUIShortcutConfig`；支持 action label、场景短写/长写；删除旧 `tui.keymap` 配置字段、默认值、parser、validation、示例和测试，不保留 deprecated/fallback |
+| KS002 | 完成 | shortcuts config schema/parser/validation | 新增 `TUIShortcutConfig`；支持 action label、场景短写/长写；删除旧 `tui.keymap` 配置字段、默认值、parser、validation、示例和测试，不保留 deprecated/fallback |
 | KS003 | 待开始 | 内置 action registry 与输入路由接入 | 默认 shortcuts 生成当前实际行为；自定义 shortcuts 是唯一输入真值；旧硬编码只能作为默认 catalog 来源，不保留第二套 route fallback |
 | KS004 | 待开始 | footer/help/overlay 提示同源接入与旧提示清理 | footer、help、overlay/menu 提示全部从 shortcut catalog 生成；用户删除 shortcut 后提示消失；修复当前提示与真实按键不一致问题 |
 | ME012 | 待开始 | hub/P2P transport dialer 与跨设备发现 | 接入 `termx-hub/` 发现/授权/relay；P2P 或 relay datachannel 只连接远端 termx daemon；局部失败不影响其他 endpoint |
@@ -126,3 +126,4 @@
 - CL005 已完成：`termx-shared` unix transport 已增加 packet 读包上限、Close 解除阻塞语义和无 goroutine 泄漏的 Accept；memory transport 不再用 channel close panic/recover 表达生命周期；terminal metadata 删除 TUI 图标/按钮文案，只保留共享 tag/mode 语义。本切片未迁移 `perftrace/gridtrace`，诊断包重组后续单独处理。
 - SI001 暂停：按用户确认的交互设计实现 TUI 本地同步输入组；同步状态属于当前 TUI reducer-owned 输入路由状态，不写入 daemon terminal lifecycle、history truth 或 workbench storage。
 - KS001 已完成：已新增 TUI 快捷键现状盘点与 `tui.shortcuts` 设计文档；本切片未修改运行时输入路由。后续 KS002-KS004 必须删除旧 `tui.keymap`，不保留 deprecated 双路径、兼容 fallback 或第二份快捷键真值；每个阶段提交前必须运行准入并使用子 Agent 只读审核。
+- KS002 已完成：`tui.shortcuts` config schema/parser/validation 已落地，支持 action label、场景短写/长写和内置 scene 校验；旧 `tui.keymap` 配置入口、默认值、parser、validation、示例和测试已删除，本切片未接入运行时输入路由。

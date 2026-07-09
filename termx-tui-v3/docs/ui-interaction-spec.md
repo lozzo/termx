@@ -734,9 +734,9 @@ normal 状态主要负责 terminal 输入直通。
 
 pane、tab、workspace、floating 等结构操作必须先定义为稳定动作语义，再映射到快捷键、鼠标或后续 CLI mini command。快捷键只是入口，不是产品语义本身。
 
-### 13.2 Root Keymap
+### 13.2 Root Shortcuts
 
-第一阶段 root keymap：
+第一阶段 root shortcuts：
 
 - `Ctrl-p`：pane mode。
 - `Ctrl-r`：resize mode。
@@ -762,13 +762,13 @@ pane、tab、workspace、floating 等结构操作必须先定义为稳定动作�
 
 当前尚未产品化的入口：
 
-- 更完整的 command palette、可配置 keymap 和跨 workspace terminal attach 尚未产品化。
+- 更完整的 command palette、可配置 shortcuts 和跨 workspace terminal attach 尚未产品化。
 
 ### 13.2.1 当前快捷键实现核查
 
-当前快捷键实现核查表维护在 `termx-tui-v3/docs/keybindings.md`。该文件以 `termx-tui-v3/input/bindings.go` 的 `BindingCatalog` 和 `termx-tui-v3/render/action_ids.go` 的 footer action spec 为来源，记录“实际可触发快捷键”“footer 已展示快捷键”和“特意不做键盘入口的 semantic command”。
+当前快捷键实现核查表维护在 `termx-tui-v3/docs/shortcut-inventory.md`。该文件以 `termx-tui-v3/input/bindings.go`、overlay/copy 输入处理和 render footer/help 为来源，记录“实际可触发快捷键”“已展示快捷键”和“提示不一致或未展示的入口”。
 
-本 spec 不重复维护完整快捷键表；新增、删除或改名快捷键时必须同步更新 `termx-tui-v3/docs/keybindings.md`，并补充对应 input/render/app harness。
+本 spec 不重复维护完整快捷键表；新增、删除或改名快捷键时必须同步更新 `termx-tui-v3/docs/shortcut-inventory.md`，并补充对应 input/render/app harness。
 
 ### 13.3 Mode 职责
 
@@ -1700,7 +1700,7 @@ Prompt / Help overlay 一期的目标是补齐全局短输入和帮助入口，�
 - 命令面板和命令执行器。
 - 多字段表单。
 - Prompt input click 精确移动光标。
-- Help 搜索、分页、分类折叠或可配置 keymap 生成。
+- Help 搜索、分页、分类折叠或可配置 shortcuts 生成。
 - metadata edit、kill confirm 等更多业务动作全部接入 Prompt；这些由后续 Terminal Pool 深化切片接入。
 
 本阶段完成后的基本手工测试入口：

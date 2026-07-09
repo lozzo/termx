@@ -75,36 +75,6 @@ func Default() state.TUIConfigStore {
 				HighlightMatches: true,
 			},
 		},
-		Keymap: state.TUIKeymapConfig{
-			Root: state.TUIRootKeymapConfig{
-				TerminalPicker: "ctrl-f",
-			},
-			CopyMode: state.TUICopyKeymapConfig{
-				Entry:            "ctrl-v",
-				ClipboardHistory: "h",
-				PasteLatest:      "p",
-				PasteSystem:      "shift-p",
-			},
-			TabMode: state.TUITabKeymapConfig{
-				Entry:    "ctrl-t",
-				Create:   "c",
-				Close:    "x",
-				Rename:   "r",
-				Next:     "n",
-				Previous: "p",
-			},
-			WorkspaceMode: state.TUIWorkspaceKeymapConfig{
-				Entry:     "ctrl-w",
-				Navigator: "w",
-				Create:    "c",
-				Delete:    "x",
-				Rename:    "r",
-			},
-			FloatingMode: state.TUIModeEntryKeymapConfig{Entry: "ctrl-o"},
-			PaneMode:     state.TUIModeEntryKeymapConfig{Entry: "ctrl-p"},
-			ResizeMode:   state.TUIModeEntryKeymapConfig{Entry: "ctrl-r"},
-			GlobalMode:   state.TUIModeEntryKeymapConfig{Entry: "ctrl-g"},
-		},
 	}
 }
 
@@ -168,6 +138,11 @@ func Parse(data []byte) (state.TUIConfigStore, error) {
 			return state.TUIConfigStore{}, fmt.Errorf("line %d: expected key: value", lineNo+1)
 		}
 		key = strings.TrimSpace(key)
+		parsedKey, err := parseConfigKey(key)
+		if err != nil {
+			return state.TUIConfigStore{}, fmt.Errorf("line %d: %w", lineNo+1, err)
+		}
+		key = parsedKey
 		value = strings.TrimSpace(value)
 		if key == "" {
 			return state.TUIConfigStore{}, fmt.Errorf("line %d: empty key", lineNo+1)
@@ -191,7 +166,7 @@ func Parse(data []byte) (state.TUIConfigStore, error) {
 			if err != nil {
 				return state.TUIConfigStore{}, fmt.Errorf("line %d: %w", lineNo+1, err)
 			}
-			handled, err := setFooterDynamicScalar(&cfg, path, parsedValue)
+			handled, err := setDynamicScalar(&cfg, path, parsedValue)
 			if err != nil {
 				return state.TUIConfigStore{}, fmt.Errorf("line %d: %s: %w", lineNo+1, path, err)
 			}
@@ -272,6 +247,21 @@ func parseScalar(value string) (string, error) {
 	return strings.TrimSpace(value), nil
 }
 
+func parseConfigKey(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(value, "\"") || strings.HasPrefix(value, "'") {
+		parsed, err := parseScalar(value)
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(parsed), nil
+	}
+	return value, nil
+}
+
 func knownSection(path string) bool {
 	switch path {
 	case "tui",
@@ -287,18 +277,11 @@ func knownSection(path string) bool {
 		"tui.interaction",
 		"tui.interaction.clipboard_history",
 		"tui.interaction.picker",
-		"tui.keymap",
-		"tui.keymap.root",
-		"tui.keymap.copy_mode",
-		"tui.keymap.tab_mode",
-		"tui.keymap.workspace_mode",
-		"tui.keymap.floating_mode",
-		"tui.keymap.pane_mode",
-		"tui.keymap.resize_mode",
-		"tui.keymap.global_mode":
+		"tui.shortcuts",
+		"tui.shortcuts.actions":
 		return true
 	default:
-		return knownFooterDynamicSection(path)
+		return knownFooterDynamicSection(path) || knownShortcutDynamicSection(path)
 	}
 }
 
@@ -314,6 +297,25 @@ func knownFooterDynamicSection(path string) bool {
 		return validFooterConfigName(rest)
 	}
 	return false
+}
+
+func knownShortcutDynamicSection(path string) bool {
+	if strings.HasPrefix(path, "tui.shortcuts.actions.") {
+		rest := strings.TrimPrefix(path, "tui.shortcuts.actions.")
+		return validShortcutActionID(rest)
+	}
+	if !strings.HasPrefix(path, "tui.shortcuts.") {
+		return false
+	}
+	rest := strings.TrimPrefix(path, "tui.shortcuts.")
+	scene, key, ok := strings.Cut(rest, ".")
+	if !ok {
+		return builtinShortcutScene(scene)
+	}
+	if scene == "actions" || !builtinShortcutScene(scene) {
+		return false
+	}
+	return validShortcutKey(key)
 }
 
 type scalarSetter func(*state.TUIConfigStore, string) error
@@ -460,26 +462,13 @@ var scalarSetters = map[string]scalarSetter{
 	}),
 	"tui.interaction.picker.fuzzy_match":       setString(func(cfg *state.TUIConfigStore, value string) { cfg.Interaction.Picker.FuzzyMatch = value }),
 	"tui.interaction.picker.highlight_matches": setBool(func(cfg *state.TUIConfigStore, value bool) { cfg.Interaction.Picker.HighlightMatches = value }),
-	"tui.keymap.root.terminal_picker":          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.Root.TerminalPicker = value }),
-	"tui.keymap.copy_mode.entry":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.CopyMode.Entry = value }),
-	"tui.keymap.copy_mode.clipboard_history":   setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.CopyMode.ClipboardHistory = value }),
-	"tui.keymap.copy_mode.paste_latest":        setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.CopyMode.PasteLatest = value }),
-	"tui.keymap.copy_mode.paste_system":        setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.CopyMode.PasteSystem = value }),
-	"tui.keymap.tab_mode.entry":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.TabMode.Entry = value }),
-	"tui.keymap.tab_mode.create":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.TabMode.Create = value }),
-	"tui.keymap.tab_mode.close":                setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.TabMode.Close = value }),
-	"tui.keymap.tab_mode.rename":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.TabMode.Rename = value }),
-	"tui.keymap.tab_mode.next":                 setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.TabMode.Next = value }),
-	"tui.keymap.tab_mode.previous":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.TabMode.Previous = value }),
-	"tui.keymap.workspace_mode.entry":          setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.WorkspaceMode.Entry = value }),
-	"tui.keymap.workspace_mode.navigator":      setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.WorkspaceMode.Navigator = value }),
-	"tui.keymap.workspace_mode.create":         setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.WorkspaceMode.Create = value }),
-	"tui.keymap.workspace_mode.delete":         setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.WorkspaceMode.Delete = value }),
-	"tui.keymap.workspace_mode.rename":         setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.WorkspaceMode.Rename = value }),
-	"tui.keymap.floating_mode.entry":           setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.FloatingMode.Entry = value }),
-	"tui.keymap.pane_mode.entry":               setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.PaneMode.Entry = value }),
-	"tui.keymap.resize_mode.entry":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.ResizeMode.Entry = value }),
-	"tui.keymap.global_mode.entry":             setString(func(cfg *state.TUIConfigStore, value string) { cfg.Keymap.GlobalMode.Entry = value }),
+}
+
+func setDynamicScalar(cfg *state.TUIConfigStore, path string, value string) (bool, error) {
+	if handled, err := setFooterDynamicScalar(cfg, path, value); handled || err != nil {
+		return handled, err
+	}
+	return setShortcutsDynamicScalar(cfg, path, value)
 }
 
 func setFooterDynamicScalar(cfg *state.TUIConfigStore, path string, value string) (bool, error) {
@@ -536,6 +525,65 @@ func setFooterDynamicScalar(cfg *state.TUIConfigStore, path string, value string
 		return true, nil
 	}
 	return false, nil
+}
+
+func setShortcutsDynamicScalar(cfg *state.TUIConfigStore, path string, value string) (bool, error) {
+	if strings.HasPrefix(path, "tui.shortcuts.actions.") {
+		rest := strings.TrimPrefix(path, "tui.shortcuts.actions.")
+		actionID, ok := strings.CutSuffix(rest, ".label")
+		if !ok || !validShortcutActionID(actionID) {
+			return false, nil
+		}
+		action := cfg.Shortcuts.Actions[actionID]
+		action.Label = value
+		if cfg.Shortcuts.Actions == nil {
+			cfg.Shortcuts.Actions = map[string]state.TUIShortcutActionConfig{}
+		}
+		cfg.Shortcuts.Actions[actionID] = action
+		return true, nil
+	}
+	if !strings.HasPrefix(path, "tui.shortcuts.") {
+		return false, nil
+	}
+	rest := strings.TrimPrefix(path, "tui.shortcuts.")
+	sceneName, tail, ok := strings.Cut(rest, ".")
+	if !ok || sceneName == "actions" || !builtinShortcutScene(sceneName) {
+		return false, nil
+	}
+	key := tail
+	field := "action"
+	if base, ok := strings.CutSuffix(tail, ".action"); ok {
+		key = base
+		field = "action"
+	} else if base, ok := strings.CutSuffix(tail, ".label"); ok {
+		key = base
+		field = "label"
+	}
+	if !validShortcutKey(key) {
+		return false, nil
+	}
+	if cfg.Shortcuts.Scenes == nil {
+		cfg.Shortcuts.Scenes = map[string]state.TUIShortcutSceneConfig{}
+	}
+	scene := cfg.Shortcuts.Scenes[sceneName]
+	if scene.Bindings == nil {
+		scene.Bindings = map[string]state.TUIShortcutBindingConfig{}
+	}
+	binding := scene.Bindings[key]
+	switch field {
+	case "action":
+		if strings.TrimSpace(binding.Action) != "" {
+			return false, fmt.Errorf("duplicate shortcut key %q in scene %q", key, sceneName)
+		}
+		binding.Action = value
+	case "label":
+		binding.Label = value
+	default:
+		return false, nil
+	}
+	scene.Bindings[key] = binding
+	cfg.Shortcuts.Scenes[sceneName] = scene
+	return true, nil
 }
 
 func validFooterConfigName(value string) bool {
@@ -719,7 +767,7 @@ func Validate(cfg state.TUIConfigStore) error {
 	if !oneOf(cfg.Interaction.Picker.FuzzyMatch, "subsequence") {
 		return fmt.Errorf("tui.interaction.picker.fuzzy_match must be subsequence, got %q", cfg.Interaction.Picker.FuzzyMatch)
 	}
-	if err := validateKeymap(cfg.Keymap); err != nil {
+	if err := validateShortcutsConfig(cfg.Shortcuts); err != nil {
 		return err
 	}
 	return nil
@@ -924,66 +972,96 @@ func validFooterStyleToken(value string) bool {
 	)
 }
 
-func validateKeymap(keymap state.TUIKeymapConfig) error {
-	// entry 键虽然配置在各 mode 下，但输入归属是 root；冲突必须按 root 输入态统一判断。
-	if err := validateKeymapMode("root", []keymapBinding{
-		{Path: "tui.keymap.root.terminal_picker", Key: keymap.Root.TerminalPicker},
-		{Path: "tui.keymap.copy_mode.entry", Key: keymap.CopyMode.Entry},
-		{Path: "tui.keymap.tab_mode.entry", Key: keymap.TabMode.Entry},
-		{Path: "tui.keymap.workspace_mode.entry", Key: keymap.WorkspaceMode.Entry},
-		{Path: "tui.keymap.floating_mode.entry", Key: keymap.FloatingMode.Entry},
-		{Path: "tui.keymap.pane_mode.entry", Key: keymap.PaneMode.Entry},
-		{Path: "tui.keymap.resize_mode.entry", Key: keymap.ResizeMode.Entry},
-		{Path: "tui.keymap.global_mode.entry", Key: keymap.GlobalMode.Entry},
-	}); err != nil {
-		return err
-	}
-	for _, mode := range []struct {
-		name     string
-		bindings []keymapBinding
-	}{
-		{name: "copy_mode", bindings: []keymapBinding{
-			{Path: "tui.keymap.copy_mode.clipboard_history", Key: keymap.CopyMode.ClipboardHistory},
-			{Path: "tui.keymap.copy_mode.paste_latest", Key: keymap.CopyMode.PasteLatest},
-			{Path: "tui.keymap.copy_mode.paste_system", Key: keymap.CopyMode.PasteSystem},
-		}},
-		{name: "tab_mode", bindings: []keymapBinding{
-			{Path: "tui.keymap.tab_mode.create", Key: keymap.TabMode.Create},
-			{Path: "tui.keymap.tab_mode.close", Key: keymap.TabMode.Close},
-			{Path: "tui.keymap.tab_mode.rename", Key: keymap.TabMode.Rename},
-			{Path: "tui.keymap.tab_mode.next", Key: keymap.TabMode.Next},
-			{Path: "tui.keymap.tab_mode.previous", Key: keymap.TabMode.Previous},
-		}},
-		{name: "workspace_mode", bindings: []keymapBinding{
-			{Path: "tui.keymap.workspace_mode.navigator", Key: keymap.WorkspaceMode.Navigator},
-			{Path: "tui.keymap.workspace_mode.create", Key: keymap.WorkspaceMode.Create},
-			{Path: "tui.keymap.workspace_mode.delete", Key: keymap.WorkspaceMode.Delete},
-			{Path: "tui.keymap.workspace_mode.rename", Key: keymap.WorkspaceMode.Rename},
-		}},
-	} {
-		if err := validateKeymapMode(mode.name, mode.bindings); err != nil {
+func validateShortcutsConfig(shortcuts state.TUIShortcutConfig) error {
+	for actionID, action := range shortcuts.Actions {
+		if !validShortcutActionID(actionID) {
+			return fmt.Errorf("tui.shortcuts.actions has invalid action id %q", actionID)
+		}
+		if err := validateSingleLine("tui.shortcuts.actions."+actionID+".label", action.Label); err != nil {
 			return err
 		}
 	}
-	return nil
-}
-
-type keymapBinding struct {
-	Path string
-	Key  string
-}
-
-func validateKeymapMode(mode string, bindings []keymapBinding) error {
-	seen := map[string]string{}
-	for _, binding := range bindings {
-		key := strings.ToLower(strings.TrimSpace(binding.Key))
-		if key == "" {
-			return fmt.Errorf("%s must not be empty", binding.Path)
+	for sceneName, scene := range shortcuts.Scenes {
+		if !builtinShortcutScene(sceneName) {
+			return fmt.Errorf("tui.shortcuts has invalid scene %q", sceneName)
 		}
-		if previous := seen[key]; previous != "" {
-			return fmt.Errorf("tui.keymap.%s has duplicate key %q for %s and %s", mode, key, previous, binding.Path)
+		for key, binding := range scene.Bindings {
+			path := "tui.shortcuts." + sceneName + "." + key
+			if !validShortcutKey(key) {
+				return fmt.Errorf("%s has invalid key", path)
+			}
+			if strings.TrimSpace(binding.Action) == "" {
+				return fmt.Errorf("%s.action must not be empty", path)
+			}
+			if !validShortcutActionID(binding.Action) {
+				return fmt.Errorf("%s.action has invalid action id %q", path, binding.Action)
+			}
+			if err := validateSingleLine(path+".label", binding.Label); err != nil {
+				return err
+			}
+			if strings.HasPrefix(binding.Action, "menu.") {
+				target := strings.TrimPrefix(binding.Action, "menu.")
+				if !validShortcutSceneName(target) {
+					return fmt.Errorf("%s.action has invalid menu target %q", path, target)
+				}
+				if _, ok := shortcuts.Scenes[target]; !ok && !builtinShortcutScene(target) {
+					return fmt.Errorf("%s.action references unknown shortcut scene %q", path, target)
+				}
+			}
 		}
-		seen[key] = binding.Path
 	}
 	return nil
+}
+
+func validShortcutActionID(value string) bool {
+	if strings.TrimSpace(value) == "" {
+		return false
+	}
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' || r == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validShortcutSceneName(value string) bool {
+	if strings.TrimSpace(value) == "" {
+		return false
+	}
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validShortcutKey(value string) bool {
+	if strings.TrimSpace(value) == "" || strings.Contains(value, ".") || strings.ContainsAny(value, "\r\n\t ") {
+		return false
+	}
+	return true
+}
+
+func builtinShortcutScene(value string) bool {
+	return oneOf(value,
+		"global",
+		"panel",
+		"pane",
+		"floating",
+		"tab",
+		"workspace",
+		"resize",
+		"copy",
+		"terminal_picker",
+		"terminal_pool",
+		"workbench_tree",
+		"clipboard_history",
+		"floating_overview",
+		"prompt",
+		"help",
+	)
 }

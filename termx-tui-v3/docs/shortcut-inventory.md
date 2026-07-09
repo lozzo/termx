@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | 输入真值分散 | 主 binding 在 `input/bindings.go`，copy mode 在 `app/copymode.go`，overlay Ctrl 组合键在 `app/ui_input.go` | KS003 建立 shortcut catalog 和 action registry |
 | 展示真值分散 | footer 来自 `render/action_ids.go` 和 `render/vm.go`，help 来自 `render/product_content.go` | KS004 由 catalog 派生 footer/help/overlay |
-| 旧 `tui.keymap` 未接入实际路由 | config 解析和校验存在，但 input router 仍使用硬编码 `bindingCatalog` | KS002 删除旧 keymap，不保留兼容 |
+| 旧 `tui.keymap` 未接入实际路由 | KS001 时点 config 解析和校验存在，但 input router 仍使用硬编码 `bindingCatalog` | KS002 删除旧 keymap，不保留兼容 |
 | sticky mode 会回查 root binding | 处于 pane/resize/global/floating/tab/workspace 时，未命中当前 mode 会继续匹配 root | KS003 在 catalog 中显式建模，不保留隐式 fallback |
 | 大写键较多 | `X`、`N`、`HJKL`、`T`、`P` 等需要 Shift | 默认 shortcuts 应优先使用小写，必要动作用新键位或长写 label 表达 |
 | overlay footer 有不一致 | Clipboard History footer 显示 `n/e/x`，实际键盘处理是 `Ctrl-N/Ctrl-E/Ctrl-X` | KS004 统一 overlay 提示和输入 |
@@ -224,6 +224,6 @@
 
 ## 旧配置入口
 
-`tui.keymap` 当前存在于 `state/config.go`、`config/config.go`、示例配置和测试中，但运行时输入路由不消费它。也就是说，用户改 `tui.keymap.tab_mode.create` 只会通过解析和校验，不会改变 `input/bindings.go` 的实际按键。
+KS001 时点，`tui.keymap` 存在于 `state/config.go`、`config/config.go`、示例配置和测试中，但运行时输入路由不消费它。也就是说，用户改 `tui.keymap.tab_mode.create` 只会通过解析和校验，不会改变 `input/bindings.go` 的实际按键。
 
-KS002 必须删除旧 `tui.keymap`，并用 `tui.shortcuts` 替换示例和测试。不得保留旧配置读取、自动迁移、deprecated 警告或 fallback。
+KS002 已删除旧 `tui.keymap`，并用 `tui.shortcuts` 替换示例和测试。不得保留旧配置读取、自动迁移、deprecated 警告或 fallback。

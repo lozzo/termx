@@ -20,7 +20,7 @@ TUI-v3 的重构目标不是“功能全部重新发明”，而是：
 - 普通实时终端显示可以继续消费 live surface snapshot/grid viewport。
 - TUI 内部状态和副作用分离：state reducer 不做 IO，service/effect 不直接绕过 message path 修改 UI state。
 - renderer 只消费 render view-model，不读取 runtime、history source 或 protocol client。
-- TUI 用户配置以 `termx-tui-v3/docs/tui-config-management.md` 为基准；配置 loader 负责文件/env/flag，reducer 持有已验证快照，renderer 和 input router 只消费解析后的 theme/keymap，不直接读配置源。
+- TUI 用户配置以 `termx-tui-v3/docs/tui-config-management.md` 为基准；配置 loader 负责文件/env/flag，reducer 持有已验证快照，renderer 和 input router 只消费解析后的 theme/shortcuts，不直接读配置源。
 - input 和 mouse 只输出 semantic intent，不直接修改 workspace/history/copy mode。
 - TUI-v3 不以 Bubble Tea 作为主运行时；消息循环、effect 调度、终端输入、终端模式和最终 frame 输出都由 v3 自己的 runtime/terminal host 管理。
 - 可以使用 `lipgloss/v2`、`x/ansi` 这类纯渲染、样式、ANSI 辅助库，但不得引入绑定 Bubble Tea `Model/Msg/Cmd` contract 的 UI 组件作为主结构。
@@ -130,10 +130,10 @@ terminalhost/
 
 config/
   loader            v3 独立 TUI 配置文件、env、CLI 覆盖读取与校验
-  resolver          theme/keymap/chrome/interaction 默认值、host-aware 推导和用户覆盖合成
+  resolver          theme/shortcuts/chrome/interaction 默认值、host-aware 推导和用户覆盖合成
 
 input/
-  keymap            key binding catalog
+  shortcuts         shortcut binding catalog
   router            key -> semantic intent / terminal input
   mouse             mouse event -> semantic intent
 
