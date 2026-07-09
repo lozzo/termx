@@ -26,12 +26,16 @@ func TestActionCatalogDispatchAppActionsReachReducerAdapter(t *testing.T) {
 
 func TestInputShellActionsMapToActionCatalog(t *testing.T) {
 	for _, binding := range input.BindingCatalog() {
-		if binding.Intent != input.IntentShellAction {
+		intent, ok := input.ResolveClientAction(binding.ActionID, binding.ActionArgs, input.InputEvent{Kind: input.EventKindKey, Key: binding.Key, Char: binding.Char, Ctrl: binding.Ctrl, Alt: binding.Alt, Shift: binding.Shift})
+		if !ok {
+			t.Fatalf("binding %q references unresolved action %q", binding.ID, binding.ActionID)
+		}
+		if intent.Kind != input.IntentShellAction {
 			continue
 		}
-		actionID, ok := actionIDForShellAction(binding.Action, binding.Reason)
+		actionID, ok := actionIDForShellAction(intent.Action, intent.Reason)
 		if !ok {
-			t.Fatalf("shell binding %q action=%q reason=%q must map to ActionSpecCatalog", binding.ID, binding.Action, binding.Reason)
+			t.Fatalf("shell binding %q action=%q reason=%q must map to ActionSpecCatalog", binding.ID, intent.Action, intent.Reason)
 		}
 		spec, ok := render.ActionSpecByID(actionID)
 		if !ok {

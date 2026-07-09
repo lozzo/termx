@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lozzow/termx/termx-shared/plugin"
 )
 
 func TestInputEventKind(t *testing.T) {
@@ -177,6 +179,11 @@ func TestShortcutPassthroughHelpers(t *testing.T) {
 	if intent, ok := LockableRootShortcutIntent(ctrlG); ok {
 		t.Fatalf("global entry must stay unlock control plane, got %#v", intent)
 	}
+	ctrl3 := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "3", Ctrl: true}
+	intent, ok = LockableRootShortcutIntent(ctrl3)
+	if !ok || intent.ActionID != ActionClientTabActivate || intent.ActionArgs["index"] != "3" {
+		t.Fatalf("ctrl-3 should be a lockable tab activate shortcut, intent=%#v ok=%v", intent, ok)
+	}
 	ctrlW := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x17", Ctrl: true}
 	intent, ok = StickyModeEntryShortcutIntent(ctrlW, InteractionModeWorkspace)
 	if !ok || intent.Kind != IntentSetInteractionMode || intent.Mode != InteractionModeWorkspace {
@@ -259,6 +266,124 @@ func TestBindingCatalogIsUniqueAndContainsDocumentedAliases(t *testing.T) {
 		intent := RouteWithMode(tc.event, false, tc.mode)
 		if intent.Kind != tc.kind || intent.Command != tc.command || intent.Action != tc.action {
 			t.Fatalf("%s: unexpected intent %#v", tc.name, intent)
+		}
+	}
+}
+
+func TestBindingCatalogBindsClientActionIDs(t *testing.T) {
+	seenAction := map[string]bool{}
+	for _, binding := range BindingCatalog() {
+		if binding.ActionID == "" {
+			t.Fatalf("binding %s must bind a client action id", binding.ID)
+		}
+		if !strings.HasPrefix(string(binding.ActionID), "termx.client.") {
+			t.Fatalf("binding %s action id must use termx.client namespace, got %q", binding.ID, binding.ActionID)
+		}
+		if _, ok := ClientActionSpecByID(binding.ActionID); !ok {
+			t.Fatalf("binding %s references unregistered action %q", binding.ID, binding.ActionID)
+		}
+		if binding.Intent != "" || binding.Command != "" || binding.Action != "" || binding.Reason != "" || binding.Target != "" {
+			t.Fatalf("binding %s must expose action id instead of direct intent fields, got %#v", binding.ID, binding)
+		}
+		seenAction[string(binding.ActionID)] = true
+	}
+	for _, spec := range ClientActionSpecCatalog() {
+		if !strings.HasPrefix(string(spec.ID), "termx.client.") {
+			t.Fatalf("client action spec must use termx.client namespace, got %q", spec.ID)
+		}
+		if spec.Kind == "" {
+			t.Fatalf("client action spec %q must define intent kind", spec.ID)
+		}
+	}
+	if !seenAction[string(ActionClientPanelCloseKill)] {
+		t.Fatalf("close-and-kill action should be reachable from keybinding catalog")
+	}
+}
+
+func TestAllLegacyBindingsResolveThroughClientActionsWithoutBehaviorRegression(t *testing.T) {
+	for _, legacy := range legacyBindingCatalog {
+		event := InputEvent{Kind: EventKindKey, Key: legacy.Key, Char: legacy.Char, Ctrl: legacy.Ctrl, Alt: legacy.Alt, Shift: legacy.Shift}
+		got := RouteWithMode(event, false, legacy.Mode)
+		want := intentFromBinding(event, legacy)
+		if got.Kind != want.Kind ||
+			got.Command != want.Command ||
+			got.Action != want.Action ||
+			got.Reason != want.Reason ||
+			got.Mode != want.Mode {
+			t.Fatalf("legacy binding %s behavior changed: got %#v want %#v", legacy.ID, got, want)
+		}
+	}
+}
+
+func TestTabActivateActionHasPrefixAndDirectCtrlNumberBindings(t *testing.T) {
+	prefix := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "3"}, false, InteractionModeTab)
+	if prefix.Kind != IntentWorkbenchCommand || prefix.Command != "tab jump 3" || prefix.ActionID != ActionClientTabActivate || prefix.ActionArgs["index"] != "3" {
+		t.Fatalf("ctrl-t then 3 should resolve tab activate action, got %#v", prefix)
+	}
+	direct := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "3", Ctrl: true}, false)
+	if direct.Kind != IntentWorkbenchCommand || direct.Command != "tab jump 3" || direct.ActionID != ActionClientTabActivate || direct.ActionArgs["index"] != "3" {
+		t.Fatalf("ctrl-3 should resolve same tab activate action, got %#v", direct)
+	}
+}
+
+func TestResolveAndRouteCloneIntentActionArgs(t *testing.T) {
+	args := map[string]string{"index": "3"}
+	intent, ok := ResolveClientAction(ActionClientTabActivate, args, InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "3"})
+	if !ok || intent.ActionArgs["index"] != "3" {
+		t.Fatalf("resolve tab activate: intent=%#v ok=%v", intent, ok)
+	}
+	args["index"] = "7"
+	if intent.ActionArgs["index"] != "3" {
+		t.Fatalf("resolved intent args should not alias caller map, got %#v", intent.ActionArgs)
+	}
+	intent.ActionArgs["index"] = "9"
+	routed := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "3", Ctrl: true}, false)
+	if routed.ActionArgs["index"] != "3" {
+		t.Fatalf("route should clone binding args into intent, got %#v", routed.ActionArgs)
+	}
+}
+
+func TestBindingCatalogActionArgsAreCloned(t *testing.T) {
+	first := BindingCatalog()
+	for index := range first {
+		if first[index].ActionID == ActionClientTabActivate && first[index].ActionArgs["index"] == "3" {
+			first[index].ActionArgs["index"] = "9"
+			break
+		}
+	}
+	second := BindingCatalog()
+	for _, binding := range second {
+		if binding.ID == "root-tab-jump-3" && binding.ActionArgs["index"] != "3" {
+			t.Fatalf("binding action args must be cloned, got %#v", binding.ActionArgs)
+		}
+	}
+}
+
+func TestClientActionSpecLookupClonesParamKeys(t *testing.T) {
+	spec, ok := ClientActionSpecByID(ActionClientTabActivate)
+	if !ok || len(spec.ParamKeys) != 1 || spec.ParamKeys[0] != "index" {
+		t.Fatalf("tab activate should declare index param, spec=%#v ok=%v", spec, ok)
+	}
+	spec.ParamKeys[0] = "mutated"
+	again, ok := ClientActionSpecByID(ActionClientTabActivate)
+	if !ok || again.ParamKeys[0] != "index" {
+		t.Fatalf("client action spec lookup must clone param keys, got %#v ok=%v", again, ok)
+	}
+}
+
+func TestClientActionCatalogMarksDangerousActions(t *testing.T) {
+	for _, actionID := range []plugin.ActionID{
+		ActionClientPanelClose,
+		ActionClientPanelCloseKill,
+		ActionClientFloatClose,
+		ActionClientTabClose,
+		ActionClientTabCloseKillTerminals,
+		ActionClientWorkspaceDelete,
+		ActionClientSessionQuit,
+	} {
+		spec, ok := ClientActionSpecByID(actionID)
+		if !ok || !spec.Danger {
+			t.Fatalf("action %q should be registered as dangerous, spec=%#v ok=%v", actionID, spec, ok)
 		}
 	}
 }

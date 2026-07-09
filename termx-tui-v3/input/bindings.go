@@ -1,22 +1,28 @@
 package input
 
+import "github.com/lozzow/termx/termx-shared/plugin"
+
 // Binding 是 tui-v3 自有快捷键目录项；它只表达 semantic intent，不携带 app state。
 type Binding struct {
-	ID      string
-	Mode    InteractionMode
-	Key     Key
-	Char    string
-	Ctrl    bool
-	Alt     bool
-	Shift   bool
-	Intent  IntentKind
-	Command string
-	Action  ShellAction
-	Reason  string
-	Target  InteractionMode
+	ID         string
+	Mode       InteractionMode
+	Key        Key
+	Char       string
+	Ctrl       bool
+	Alt        bool
+	Shift      bool
+	ActionID   plugin.ActionID
+	ActionArgs map[string]string
+	Intent     IntentKind
+	Command    string
+	Action     ShellAction
+	Reason     string
+	Target     InteractionMode
 }
 
-var bindingCatalog = []Binding{
+var bindingCatalog = buildActionBindingCatalog(legacyBindingCatalog)
+
+var legacyBindingCatalog = []Binding{
 	{ID: "root-pane", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x10", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModePane},
 	{ID: "root-pane-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "p", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModePane},
 	{ID: "root-resize", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x12", Ctrl: true, Intent: IntentSetInteractionMode, Target: InteractionModeResize},
@@ -33,6 +39,15 @@ var bindingCatalog = []Binding{
 	{ID: "root-picker-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "f", Ctrl: true, Intent: IntentOpenTerminalPicker},
 	{ID: "root-copy", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x16", Ctrl: true, Intent: IntentEnterCopyMode},
 	{ID: "root-copy-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "v", Ctrl: true, Intent: IntentEnterCopyMode},
+	{ID: "root-tab-jump-1", Mode: InteractionModeNormal, Key: KeyChar, Char: "1", Ctrl: true, Intent: IntentWorkbenchCommand, Command: "tab jump 1"},
+	{ID: "root-tab-jump-2", Mode: InteractionModeNormal, Key: KeyChar, Char: "2", Ctrl: true, Intent: IntentWorkbenchCommand, Command: "tab jump 2"},
+	{ID: "root-tab-jump-3", Mode: InteractionModeNormal, Key: KeyChar, Char: "3", Ctrl: true, Intent: IntentWorkbenchCommand, Command: "tab jump 3"},
+	{ID: "root-tab-jump-4", Mode: InteractionModeNormal, Key: KeyChar, Char: "4", Ctrl: true, Intent: IntentWorkbenchCommand, Command: "tab jump 4"},
+	{ID: "root-tab-jump-5", Mode: InteractionModeNormal, Key: KeyChar, Char: "5", Ctrl: true, Intent: IntentWorkbenchCommand, Command: "tab jump 5"},
+	{ID: "root-tab-jump-6", Mode: InteractionModeNormal, Key: KeyChar, Char: "6", Ctrl: true, Intent: IntentWorkbenchCommand, Command: "tab jump 6"},
+	{ID: "root-tab-jump-7", Mode: InteractionModeNormal, Key: KeyChar, Char: "7", Ctrl: true, Intent: IntentWorkbenchCommand, Command: "tab jump 7"},
+	{ID: "root-tab-jump-8", Mode: InteractionModeNormal, Key: KeyChar, Char: "8", Ctrl: true, Intent: IntentWorkbenchCommand, Command: "tab jump 8"},
+	{ID: "root-tab-jump-9", Mode: InteractionModeNormal, Key: KeyChar, Char: "9", Ctrl: true, Intent: IntentWorkbenchCommand, Command: "tab jump 9"},
 
 	{ID: "pane-close", Mode: InteractionModePane, Key: KeyChar, Char: "x", Intent: IntentWorkbenchCommand, Command: "pane close"},
 	{ID: "pane-close-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "w", Intent: IntentWorkbenchCommand, Command: "pane close"},
@@ -180,6 +195,9 @@ var bindingCatalog = []Binding{
 func BindingCatalog() []Binding {
 	out := make([]Binding, len(bindingCatalog))
 	copy(out, bindingCatalog)
+	for index := range out {
+		out[index].ActionArgs = cloneActionArgs(out[index].ActionArgs)
+	}
 	return out
 }
 
@@ -281,6 +299,12 @@ func bindingMatches(binding Binding, event InputEvent) bool {
 }
 
 func intentFromBinding(event InputEvent, binding Binding) Intent {
+	if binding.ActionID != "" {
+		if intent, ok := ResolveClientAction(binding.ActionID, binding.ActionArgs, event); ok {
+			return intent
+		}
+		return Intent{Kind: IntentNone, Event: event, Reason: "unresolved client action " + string(binding.ActionID)}
+	}
 	return Intent{
 		Kind:    binding.Intent,
 		Event:   event,
@@ -333,6 +357,9 @@ func rootShortcutIntent(event InputEvent) (Intent, bool) {
 		return Intent{}, false
 	}
 	intent := intentFromBinding(event, binding)
+	if intent.ActionID != "" {
+		return intent, true
+	}
 	switch intent.Kind {
 	case IntentOpenTerminalPicker, IntentEnterCopyMode, IntentSetInteractionMode:
 		return intent, true

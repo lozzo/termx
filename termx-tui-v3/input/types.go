@@ -1,5 +1,7 @@
 package input
 
+import "github.com/lozzow/termx/termx-shared/plugin"
+
 // EventKind 分类宿主输入，不依赖 Bubble Tea key/mouse 类型。
 type EventKind string
 
@@ -145,14 +147,16 @@ const (
 
 // Intent 是 input router 输出的 semantic intent，不直接修改 state。
 type Intent struct {
-	Kind     IntentKind
-	Event    InputEvent
-	Bytes    []byte
-	Reason   string
-	Command  string
-	Mode     InteractionMode
-	Action   ShellAction
-	RawMouse bool
+	Kind       IntentKind
+	Event      InputEvent
+	Bytes      []byte
+	Reason     string
+	Command    string
+	Mode       InteractionMode
+	Action     ShellAction
+	ActionID   plugin.ActionID
+	ActionArgs map[string]string
+	RawMouse   bool
 }
 
 type RouteOptions struct {
