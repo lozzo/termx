@@ -1,0 +1,116 @@
+---
+title: 快速开始
+description: 分别用本地直连和远程访问两种方式快速跑通 termx。
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## 快速开始
+
+开始之前，请确认目标机器满足以下条件：
+
+- 已安装 `termx`
+- 能运行 `termx` 二进制
+- 如果要远程访问，已经准备好 Web 账号与订阅
+
+<Tabs items={['本地直连', '远程访问']}>
+<Tab value="本地直连">
+
+<Steps>
+<Step>
+### 安装 termx
+
+```bash
+curl -sL https://termx.omscd.com/install.sh | bash
+```
+
+如果你不想使用安装脚本，也可以参考 [安装指南](/docs/getting-started/installation) 手动下载二进制。
+</Step>
+
+<Step>
+### 启动本地模式
+
+```bash
+termx --listen :8080
+```
+
+- `--listen` 默认就是 `:8080`
+- 未指定 `--password` 时会自动生成一个本地连接密码
+- 启动后终端会展示二维码和连接信息
+</Step>
+
+<Step>
+### 下载 Android 客户端并扫码
+
+下载地址：[/api/v1/app/releases/latest?platform=android&type=apk&redirect=true](/api/v1/app/releases/latest?platform=android&type=apk&redirect=true)
+
+打开 Android 客户端后扫描终端中的二维码；如果当前二维码包含本地模式信息，客户端会直接尝试连接机器。
+</Step>
+
+<Step>
+### 开始使用
+
+连接成功后，你就可以：
+
+- 查看并进入 TermX 终端
+- 使用虚拟键盘、Fn 面板和命令片段
+- 在支持的连接能力下浏览或传输文件
+</Step>
+</Steps>
+
+</Tab>
+<Tab value="远程访问">
+
+<Steps>
+<Step>
+### 登录 Web 控制台
+
+访问 `/register` 注册账号，或使用 `/login` 登录已有账号。
+</Step>
+
+<Step>
+### 开通订阅并创建连接密钥
+
+在控制台完成订阅后，进入“连接密钥”页面创建一个密钥。远程节点注册依赖这个密钥。
+</Step>
+
+<Step>
+### 启动 Hub 或混合模式
+
+只走远程访问：
+
+```bash
+termx remote enable --mode online
+termx daemon
+termx remote pair
+```
+
+同时保留局域网直连：
+
+```bash
+termx remote enable --mode both
+termx daemon
+termx remote pair
+```
+</Step>
+
+<Step>
+### 用 Android 客户端扫码完成配对
+
+`termx remote pair` 会显示新的二维码。Android 客户端扫码后会保存与该节点对应的配对信息，之后即可在外网环境通过 Hub 远程连接。
+</Step>
+</Steps>
+
+</Tab>
+</Tabs>
+
+<Callout type="info">
+`online` 模式适合只关心远程访问的场景；`both` 模式更适合常驻机器，因为它会同时保留局域网与 Hub 两条路径。
+</Callout>
+
+下一步建议：
+
+- 看 [配置说明](/docs/getting-started/configuration) 了解 CLI 参数、环境变量和守护运行方式
+- 看 [控制台与节点管理](/docs/guide/dashboard) 了解密钥、节点、Fn 快捷键与片段管理

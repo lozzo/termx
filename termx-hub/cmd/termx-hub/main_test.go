@@ -226,8 +226,8 @@ func TestDeployEnvExampleDocumentsCloudHeartbeatConfig(t *testing.T) {
 			t.Fatalf("%s is missing an explanatory comment token %q", name, commentToken)
 		}
 	}
-	if !strings.Contains(env, "control-plane shared secret") {
-		t.Fatalf("control secret comment must mention the external control-plane shared secret:\n%s", env)
+	if !strings.Contains(env, "HUB_SECRET") {
+		t.Fatalf("control secret comment must mention matching web-control HUB_SECRET:\n%s", env)
 	}
 	if !strings.Contains(env, "curl http://127.0.0.1:8447/api/health") {
 		t.Fatalf("deploy env example should include a minimal health check command:\n%s", env)

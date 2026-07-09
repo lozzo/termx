@@ -1,0 +1,503 @@
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowDownToLine, ArrowUpFromLine, CheckSquare, Download, Pause, Play, RotateCw, Square, Trash2, X } from 'lucide-react'
+import { hapticImpact, hapticSelection } from '../platform/haptics'
+import type { TransferInfo } from './fileApi'
+
+interface Props {
+  transfers: TransferInfo[]
+  hasActiveTransfers: boolean
+  resolveMachineLabel?: ((machineId: string | undefined) => string | null | undefined) | undefined
+  onCancel: (id: string) => void
+  onDismiss: (id: string) => void
+  onPause?: ((id: string) => void | Promise<void>) | undefined
+  onResume?: ((id: string) => void | Promise<void>) | undefined
+  onResumeAll?: (() => void | Promise<void>) | undefined
+  variant?: 'inline' | 'floating' | 'icon' | undefined
+  open?: boolean | undefined
+  onOpenChange?: ((open: boolean) => void) | undefined
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
+function formatSpeed(bytesPerSecond: number): string {
+  const speed = Math.max(0, bytesPerSecond)
+  if (speed < 1024) return `${Math.round(speed)} B/s`
+  if (speed < 1024 * 1024) return `${(speed / 1024).toFixed(1)} KB/s`
+  return `${(speed / (1024 * 1024)).toFixed(1)} MB/s`
+}
+
+function transferSpeed(transfer: TransferInfo, now: number): string {
+  if (transfer.status === 'pending' || transfer.status === 'paused' || transfer.status === 'missing') return '0 B/s'
+  const updatedAt = transfer.updatedAt ?? transfer.startedAt
+  if (now - updatedAt > 4000) return '0 B/s'
+  const measured = transfer.bytesPerSecond
+  if (typeof measured === 'number' && Number.isFinite(measured) && measured >= 0) {
+    return formatSpeed(measured)
+  }
+  const elapsed = (now - transfer.startedAt) / 1000
+  if (!Number.isFinite(elapsed) || elapsed <= 0) return '0 B/s'
+  return formatSpeed(Math.max(0, transfer.transferredSize / elapsed))
+}
+
+export function FileTransferPanel({
+  transfers,
+  hasActiveTransfers,
+  resolveMachineLabel,
+  onCancel,
+  onDismiss,
+  onPause,
+  onResume,
+  onResumeAll,
+  variant = 'floating',
+  open: controlledOpen,
+  onOpenChange,
+}: Props) {
+  const active = useMemo(() => sortTransfersByNewestFirst(transfers), [transfers])
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
+
+  useEffect(() => {
+    if (active.length === 0) return undefined
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [active.length])
+
+  if (active.length === 0 && !open) return null
+
+  const inProgressCount = active.filter((t) => t.status === 'pending' || t.status === 'transferring').length
+  const pausedCount = active.filter((t) => t.status === 'paused' || t.status === 'missing').length
+  const failedCount = active.filter((t) => t.status === 'failed' || t.status === 'missing').length
+  const completedCount = active.filter((t) => t.status === 'completed').length
+  const summaryParts: string[] = []
+  if (inProgressCount > 0) summaryParts.push(`${inProgressCount} active`)
+  if (pausedCount > 0) summaryParts.push(`${pausedCount} paused`)
+  if (failedCount > 0) summaryParts.push(`${failedCount} failed`)
+  if (completedCount > 0) summaryParts.push(`${completedCount} done`)
+  const summary = summaryParts.join(' · ') || (active.length > 0 ? `${active.length} transfers` : 'No transfers')
+  const measurable = active.filter((t) => t.totalSize > 0 && (t.status === 'pending' || t.status === 'transferring' || t.status === 'paused' || t.status === 'missing'))
+  const totalSize = measurable.reduce((sum, t) => sum + t.totalSize, 0)
+  const totalTransferred = measurable.reduce((sum, t) => sum + Math.min(t.transferredSize, t.totalSize), 0)
+  const totalProgress = totalSize > 0 ? (totalTransferred / totalSize) * 100 : 0
+  const rootClass = variant === 'inline'
+    ? 'border-t border-zinc-200 bg-white'
+    : variant === 'icon'
+      ? 'relative'
+      : 'pointer-events-auto fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-3 z-40'
+
+  return (
+    <div className={rootClass}>
+      <button
+        onClick={() => { hapticSelection(); setOpen(true) }}
+        aria-label={`Open transfer center, ${summary}`}
+        className={variant === 'inline'
+          ? 'flex w-full items-center justify-between px-4 py-2 text-left'
+          : variant === 'icon'
+            ? 'flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 transition-colors active:scale-95 hover:bg-zinc-800 active:bg-zinc-800'
+            : 'flex min-h-12 items-center gap-3 rounded-full border border-zinc-200 bg-white px-3 py-2 text-left shadow-[0_12px_36px_rgba(15,23,42,0.18)] active:scale-[0.98]'}
+      >
+        <span className={variant === 'icon' ? 'relative flex h-8 w-8 items-center justify-center' : 'relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600'}>
+          <Download className={variant === 'icon' ? 'h-4 w-4' : 'h-4 w-4'} />
+          {hasActiveTransfers ? <span className="absolute right-0 top-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" /> : null}
+        </span>
+        {variant === 'icon' ? null : (
+          <span className={variant === 'inline' ? 'text-xs font-medium text-zinc-500' : 'min-w-0 pr-1'}>
+            <span className="block text-[12px] font-semibold leading-4 text-zinc-900">Data Transfers</span>
+            <span className="block text-[11px] font-medium leading-4 text-zinc-500">{summary}</span>
+          </span>
+        )}
+      </button>
+
+      {variant === 'floating' && hasActiveTransfers && totalProgress > 0 ? (
+        <div className="absolute inset-x-4 bottom-1 h-0.5 overflow-hidden rounded-full bg-zinc-100">
+          <div className="h-full rounded-full bg-blue-500 transition-all duration-500" style={{ width: `${Math.min(100, totalProgress)}%` }} />
+        </div>
+      ) : null}
+
+      {open ? (
+        <TransferCenterDialog
+          transfers={active}
+          now={now}
+          summary={summary}
+          resolveMachineLabel={resolveMachineLabel}
+          onCancel={onCancel}
+          onDismiss={onDismiss}
+          onPause={onPause}
+          onResume={onResume}
+          onResumeAll={onResumeAll}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function TransferCenterDialog({
+  transfers,
+  now,
+  summary,
+  resolveMachineLabel,
+  onCancel,
+  onDismiss,
+  onPause,
+  onResume,
+  onResumeAll,
+  onClose,
+}: {
+  transfers: TransferInfo[]
+  now: number
+  summary: string
+  resolveMachineLabel?: ((machineId: string | undefined) => string | null | undefined) | undefined
+  onCancel: (id: string) => void
+  onDismiss: (id: string) => void
+  onPause?: ((id: string) => void | Promise<void>) | undefined
+  onResume?: ((id: string) => void | Promise<void>) | undefined
+  onResumeAll?: (() => void | Promise<void>) | undefined
+  onClose: () => void
+}) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [selectionMode, setSelectionMode] = useState(false)
+
+  useEffect(() => {
+    setSelectedIds((current) => {
+      if (current.size === 0) return current
+      const availableIds = new Set(transfers.map((transfer) => transfer.id))
+      let changed = false
+      const next = new Set<string>()
+      for (const id of current) {
+        if (availableIds.has(id)) {
+          next.add(id)
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+  }, [transfers])
+
+  useEffect(() => {
+    if (transfers.length > 0 || !selectionMode) return
+    setSelectionMode(false)
+  }, [selectionMode, transfers.length])
+
+  const resumableCount = transfers.filter((t) => isResumable(t.status)).length
+  const selectedTransfers = transfers.filter((transfer) => selectedIds.has(transfer.id))
+  const selectedPausableCount = selectedTransfers.filter((transfer) => isPausable(transfer.status)).length
+  const selectedStartableCount = selectedTransfers.filter((transfer) => isResumable(transfer.status)).length
+  const completedCount = transfers.filter((transfer) => transfer.status === 'completed').length
+  const failedCount = transfers.filter((transfer) => isFailedClearable(transfer.status)).length
+  const allSelected = transfers.length > 0 && selectedIds.size === transfers.length
+  const enterSelectionMode = () => {
+    hapticImpact()
+    setSelectionMode(true)
+  }
+  const exitSelectionMode = () => {
+    hapticSelection()
+    setSelectionMode(false)
+    setSelectedIds(new Set())
+  }
+  const toggleSelectAll = () => {
+    setSelectedIds((current) => {
+      if (transfers.length > 0 && current.size === transfers.length) return new Set()
+      return new Set(transfers.map((transfer) => transfer.id))
+    })
+  }
+  const toggleSelected = (transferId: string) => {
+    if (!selectionMode) return
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(transferId)) next.delete(transferId)
+      else next.add(transferId)
+      return next
+    })
+  }
+  const pauseSelected = () => {
+    if (!onPause) return
+    const pausable = selectedTransfers.filter((transfer) => isPausable(transfer.status))
+    if (pausable.length === 0) return
+    hapticImpact()
+    for (const transfer of pausable) onPause(transfer.id)
+  }
+  const startSelected = () => {
+    if (!onResume) return
+    const startable = selectedTransfers.filter((transfer) => isResumable(transfer.status))
+    if (startable.length === 0) return
+    hapticImpact()
+    for (const transfer of startable) onResume(transfer.id)
+  }
+  const clearCompleted = () => {
+    const completed = transfers.filter((transfer) => transfer.status === 'completed')
+    if (completed.length === 0) return
+    hapticImpact()
+    for (const transfer of completed) onDismiss(transfer.id)
+  }
+  const clearFailed = () => {
+    const failed = transfers.filter((transfer) => isFailedClearable(transfer.status))
+    if (failed.length === 0) return
+    hapticImpact()
+    for (const transfer of failed) onDismiss(transfer.id)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex bg-white" role="dialog" aria-modal="true">
+      <section className="flex h-full min-h-0 w-full flex-col bg-white">
+        {selectionMode ? (
+          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+            <button
+              type="button"
+              className="text-[15px] font-medium text-zinc-500 hover:text-zinc-700 active:text-zinc-800"
+              onClick={exitSelectionMode}
+            >
+              Cancel
+            </button>
+            <div className="min-w-0 text-center">
+              <h2 className="truncate text-[17px] font-semibold text-zinc-950">{selectedIds.size} selected</h2>
+              <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{summary}</p>
+            </div>
+            <button
+              type="button"
+              aria-label={allSelected ? 'Clear transfer selection' : 'Select all transfers'}
+              className="text-[15px] font-medium text-blue-600 hover:text-blue-700 active:text-blue-800"
+              onClick={() => { hapticSelection(); toggleSelectAll() }}
+            >
+              {allSelected ? 'Deselect All' : 'Select All'}
+            </button>
+          </header>
+        ) : (
+          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+            <div className="min-w-0">
+              <h2 className="text-[18px] font-semibold text-zinc-950">Data Transfer Center</h2>
+              <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{summary}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {onResumeAll && resumableCount > 0 ? (
+                <button
+                  type="button"
+                  aria-label="Resume all transfers"
+                  className="flex h-9 items-center gap-1.5 rounded-md bg-zinc-900 px-3 text-[12px] font-semibold text-white hover:bg-zinc-800 active:bg-zinc-800"
+                  onClick={() => { hapticImpact(); onResumeAll() }}
+                >
+                  <RotateCw className="h-4 w-4" />
+                  Resume All
+                </button>
+              ) : null}
+              <button
+                type="button"
+                aria-label="Close data transfer center"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100"
+                onClick={() => { hapticSelection(); onClose() }}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </header>
+        )}
+        <div className="min-h-0 flex-1 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+5rem)]" role="list">
+          {transfers.length === 0 ? (
+            <div className="flex h-48 items-center justify-center px-6 text-center text-[14px] font-medium text-zinc-500">
+              No transfer tasks.
+            </div>
+          ) : null}
+          {transfers.map((t) => {
+            const progress = t.totalSize > 0 ? (t.transferredSize / t.totalSize) * 100 : 0
+            const isFailed = t.status === 'failed'
+            const isMissing = t.status === 'missing'
+            const isActive = t.status === 'pending' || t.status === 'transferring'
+            const isPaused = t.status === 'paused' || isMissing
+            const isCompleted = t.status === 'completed'
+            const machineLabel = resolveMachineLabel?.(t.machineId) ?? t.machineId ?? 'Unknown machine'
+            const transferTarget = describeTransferTarget(t)
+            const selected = selectedIds.has(t.id)
+            return (
+              <div key={t.id} role="listitem" className="border-b border-zinc-100 px-4 py-3 last:border-b-0">
+                <div className="flex items-start gap-3">
+                  {selectionMode ? (
+                    <button
+                      type="button"
+                      aria-label={`${selected ? 'Deselect' : 'Select'} ${t.name}`}
+                      className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-50 active:bg-zinc-100 hover:text-zinc-700 active:text-zinc-800"
+                      onClick={() => { hapticSelection(); toggleSelected(t.id) }}
+                    >
+                      {selected ? <CheckSquare className="h-4 w-4 text-zinc-900" /> : <Square className="h-4 w-4" />}
+                    </button>
+                  ) : null}
+                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${t.direction === 'download' ? 'bg-blue-50 text-blue-600' : 'bg-violet-50 text-violet-600'}`}>
+                    {t.direction === 'download' ? <ArrowDownToLine className="h-4 w-4" /> : <ArrowUpFromLine className="h-4 w-4" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-semibold text-zinc-900">{t.name}</p>
+                        <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
+                          {t.direction === 'download' ? 'From' : 'To'} {machineLabel}
+                        </p>
+                        {transferTarget ? (
+                          <p className="mt-1 truncate text-[11px] font-medium text-zinc-500">{transferTarget}</p>
+                        ) : null}
+                        <p className="mt-0.5 text-[11px] font-medium text-zinc-500">
+                          {isActive && t.totalSize > 0 ? `${formatSize(t.transferredSize)} / ${formatSize(t.totalSize)} · ${transferSpeed(t, now)}` : null}
+                          {t.status === 'paused' ? `${formatSize(t.transferredSize)} / ${formatSize(t.totalSize)} · Paused` : null}
+                          {isMissing ? `${formatSize(t.transferredSize)} / ${formatSize(t.totalSize)} · File missing` : null}
+                          {isCompleted ? `${formatSize(t.totalSize)}${t.savedPath ? ` · ${t.savedPath}` : ' · Saved to Downloads'}` : null}
+                          {isFailed ? t.error || 'Transfer failed' : null}
+                          {!isActive && !isPaused && !isCompleted && !isFailed && !isMissing ? t.status : null}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {!selectionMode && isActive && onPause ? (
+                          <button
+                            type="button"
+                            aria-label={`Pause ${t.name}`}
+                            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100 hover:text-zinc-700 active:text-zinc-800"
+                            onClick={() => { hapticImpact(); onPause(t.id) }}
+                          >
+                            <Pause className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                        {!selectionMode && isPaused && onResume ? (
+                          <button
+                            type="button"
+                            aria-label={`${isMissing ? 'Retry' : 'Resume'} ${t.name}`}
+                            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100 hover:text-zinc-700 active:text-zinc-800"
+                            onClick={() => { hapticImpact(); onResume(t.id) }}
+                          >
+                            <Play className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                        {!selectionMode ? (
+                          <button
+                            aria-label={`${isActive || t.status === 'paused' ? 'Cancel' : 'Clear'} ${t.name}`}
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100 hover:text-zinc-700 active:text-zinc-800"
+                            onClick={() => {
+                              if (isActive || t.status === 'paused') hapticImpact()
+                              else hapticSelection()
+                              if (isActive || t.status === 'paused') onCancel(t.id)
+                              else onDismiss(t.id)
+                            }}
+                          >
+                            {isActive || t.status === 'paused' ? <X className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className={`mt-2 h-1.5 overflow-hidden rounded-full ${isFailed || isMissing ? 'bg-red-100' : 'bg-zinc-100'}`}>
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${isFailed || isMissing ? 'bg-red-500' : isCompleted ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                        style={{ width: `${Math.min(100, isCompleted ? 100 : progress)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {transfers.length > 0 ? (
+          <div className="absolute bottom-0 left-0 right-0 z-40 border-t border-zinc-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
+            {selectionMode ? (
+              <div className="flex h-[60px] items-stretch justify-around px-2">
+                <button
+                  type="button"
+                  aria-label="Pause selected transfers"
+                  disabled={!onPause || selectedPausableCount === 0}
+                  className="flex flex-col items-center justify-center gap-1 rounded-lg px-3 text-zinc-600 disabled:opacity-40 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
+                  onClick={pauseSelected}
+                >
+                  <Pause className="h-5 w-5" />
+                  <span className="text-[11px] font-medium">Pause</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label="Start selected transfers"
+                  disabled={!onResume || selectedStartableCount === 0}
+                  className="flex flex-col items-center justify-center gap-1 rounded-lg px-3 text-zinc-600 disabled:opacity-40 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
+                  onClick={startSelected}
+                >
+                  <Play className="h-5 w-5" />
+                  <span className="text-[11px] font-medium">Start</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex h-[60px] items-center justify-around px-2">
+                <button
+                  type="button"
+                  aria-label="Select transfers"
+                  className="flex flex-col items-center justify-center gap-1 rounded-lg px-3 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
+                  onClick={enterSelectionMode}
+                >
+                  <CheckSquare className="h-5 w-5" />
+                  <span className="text-[11px] font-medium">Select</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label="Delete all completed transfers"
+                  disabled={completedCount === 0}
+                  className="flex flex-col items-center justify-center gap-1 rounded-lg px-3 text-zinc-600 disabled:opacity-40 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
+                  onClick={clearCompleted}
+                >
+                  <Trash2 className="h-5 w-5" />
+                  <span className="text-[11px] font-medium">Done</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label="Delete all failed transfers"
+                  disabled={failedCount === 0}
+                  className="flex flex-col items-center justify-center gap-1 rounded-lg px-3 text-zinc-600 disabled:opacity-40 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
+                  onClick={clearFailed}
+                >
+                  <Trash2 className="h-5 w-5" />
+                  <span className="text-[11px] font-medium">Failed</span>
+                </button>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </section>
+    </div>
+  )
+}
+
+function sortTransfersByNewestFirst(transfers: TransferInfo[]): TransferInfo[] {
+  return [...transfers].sort((left, right) => {
+    const startedDelta = right.startedAt - left.startedAt
+    if (startedDelta !== 0) return startedDelta
+    return right.id.localeCompare(left.id)
+  })
+}
+
+function isPausable(status: TransferInfo['status']): boolean {
+  return status === 'pending' || status === 'transferring'
+}
+
+function isResumable(status: TransferInfo['status']): boolean {
+  return status === 'paused' || status === 'failed' || status === 'missing' || status === 'pending'
+}
+
+function isFailedClearable(status: TransferInfo['status']): boolean {
+  return status === 'failed' || status === 'missing'
+}
+
+function describeTransferTarget(transfer: TransferInfo): string | null {
+  if (transfer.direction === 'download') {
+    if (transfer.status === 'completed' && transfer.savedPath) {
+      return `${transfer.filePath ?? transfer.name} -> ${transfer.savedPath}`
+    }
+    if (transfer.filePath) return transfer.filePath
+    if (transfer.savedPath) return transfer.savedPath
+    return null
+  }
+  if (transfer.targetDir) {
+    return `${transfer.targetDir.replace(/\/+$/, '') || '/'} / ${transfer.name}`
+  }
+  if (transfer.localUri) return transfer.localUri
+  return null
+}

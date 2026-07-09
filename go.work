@@ -6,6 +6,7 @@ use (
 	./termx-core-v2
 	./termx-hub
 	./termx-proto
+	./termx-remote
 	./termx-shared
 	./termx-testkit
 	./termx-tui-v3

@@ -3,7 +3,7 @@
 `termx-hub` is the standalone cloud Hub process. Product logic lives in
 `termx-hub/internal/hub`; this executable reads environment variables, starts the Hub
 HTTP API, optionally starts embedded TURN, and optionally runs management-plane
-heartbeat to an external control-plane service.
+heartbeat to `web-control` / control-plane service.
 
 ## Minimal Startup
 
@@ -27,11 +27,11 @@ Expected response includes `ok`.
 For cloud registration, set:
 
 - `TERMX_HUB_PUBLIC_HTTP_URL` to the URL browsers can reach.
-- `TERMX_HUB_CONTROL_URL` to the external control-plane base URL.
-- `TERMX_HUB_CONTROL_SECRET` to the shared secret configured by that control-plane service.
+- `TERMX_HUB_CONTROL_URL` to the web-control / control-plane base URL.
+- `TERMX_HUB_CONTROL_SECRET` to the same value as web-control `HUB_SECRET`.
 
 When all three are present, the Hub starts periodic management heartbeat and
-the control plane should show the hub online. Missing any of those values disables
+web-control / control plane should show the hub online. Missing any of those values disables
 heartbeat without affecting local Hub signaling.
 
 ## systemd

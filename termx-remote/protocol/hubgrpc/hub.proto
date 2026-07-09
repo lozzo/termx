@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package termxhub.v1;
+
+option go_package = "github.com/lozzow/termx/termx-remote/protocol/hubgrpc";
+
+service AgentHub {
+  rpc Connect(stream AgentToHub) returns (stream HubToAgent);
+}
+
+message AgentToHub {
+  oneof payload {
+    RegisterRequest register = 1;
+    HeartbeatRequest heartbeat = 2;
+    SignalingAnswer signaling_answer = 3;
+    PairingResult pairing_result = 4;
+  }
+}
+
+message HubToAgent {
+  oneof payload {
+    RegisterResponse register_ack = 1;
+    SignalingOffer signaling_offer = 2;
+    PairingClaim pairing_claim = 3;
+    Kick kick = 4;
+  }
+}
+
+message RegisterRequest {
+  string agent_id = 1;
+  string device_id = 2;
+  string machine_id = 3;
+  string display_name = 4;
+  string hostname = 5;
+  string platform = 6;
+  string version = 7;
+  repeated Terminal terminals = 8;
+}
+
+message RegisterResponse {
+  string agent_session_id = 1;
+  repeated RTCIceServer ice_servers = 2;
+  int32 heartbeat_interval_seconds = 3;
+  RelayPolicy relay_policy = 4;
+}
+
+message Terminal {
+  string terminal_id = 1;
+  string name = 2;
+  bool remote_enabled = 3;
+}
+
+message RTCIceServer {
+  repeated string urls = 1;
+  string username = 2;
+  string credential = 3;
+}
+
+message RelayPolicy {
+  bool allow_relay = 1;
+  bool allow_relay_transfer = 2;
+}
+
+message HeartbeatRequest {
+  string agent_session_id = 1;
+  repeated Terminal terminals = 2;
+}
+
+message SignalingOffer {
+  string session_id = 1;
+  string machine_id = 2;
+  string terminal_id = 3;
+  string sdp = 4;
+  repeated string ice_candidates = 5;
+  string session_token = 6;
+  string answer_proof_challenge = 7;
+  string path = 8;
+  string nonce = 20;
+  int64 issued_at = 21;
+}
+
+message SignalingAnswer {
+  string session_id = 1;
+  string sdp = 2;
+  repeated string ice_candidates = 3;
+  string error = 4;
+  string answer_proof = 5;
+}
+
+message PairingClaim {
+  string claim_id = 1;
+  string pair_session_id = 2;
+  string pair_secret = 3;
+  string app_device_id = 4;
+  string app_name = 5;
+  repeated string requested_capabilities = 6;
+}
+
+message PairingResult {
+  string claim_id = 1;
+  string session_token = 2;
+  string expires_at = 3;
+  string machine_id = 4;
+  string machine_name = 5;
+  string error = 6;
+}
+
+message Kick {
+  string reason = 1;
+}

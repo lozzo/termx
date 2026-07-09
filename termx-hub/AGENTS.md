@@ -11,8 +11,8 @@
 - `termx-hub` is the standalone Hub executable and deployment configuration wrapper.
 - Hub product logic (registry, signaling, ICE, heartbeat) belongs in `termx-hub/internal/hub/`.
 - `termx-hub/cmd` may only: read environment variables, construct `termx-hub/internal/hub` services, start HTTP server and cleanup loops.
-- Hub must NOT call the control-plane service to verify app certificates, session tokens, connection tickets, offers, or answers.
-- Hub may call the control-plane service only through periodic management-plane heartbeat for hub registration, online agent list, relay traffic reporting, and forced disconnect commands.
+- Hub must NOT call Web Controller/control-plane service to verify app certificates, session tokens, connection tickets, offers, or answers.
+- Hub may call Web Controller/control-plane service only through periodic management-plane heartbeat for hub registration, online agent list, relay traffic reporting, and forced disconnect commands.
 - Hub must NOT make any authentication decisions. It is a dumb relay.
 - Hub must NOT be a terminal/file/api/events HTTP or WebSocket runtime proxy.
 - Runtime data path is always WebRTC DataChannel (never HTTP/WebSocket).
@@ -27,24 +27,24 @@ Hub 是纯信令中继，职责边界：
 - 转发 offer 给对应 agent（poll/answer）
 - 处理 pairing claims（中转）
 - 提供 ICE 配置（STUN/TURN URLs）
-- 云端部署时周期性向 control-plane 服务汇报管理面状态：hub 在线、online agents、relay/TURN 流量
-- 接收 control-plane 服务返回的 `kick_agents`，并在本地 registry 标记 forced offline
+- 云端部署时周期性向 Web Controller/control-plane 服务汇报管理面状态：hub 在线、online agents、relay/TURN 流量
+- 接收 Web Controller/control-plane 服务返回的 `kick_agents`，并在本地 registry 标记 forced offline
 
 **Hub 不做的：**
 - 验证 app certificate（这是 agent 的职责）
-- 连接时调用 control-plane 服务验证 app certificate、session token、ticket、offer/answer 或做 per-session policy 决策
+- 连接时调用 Web Controller/control-plane 服务验证 app certificate、session token、ticket、offer/answer 或做 per-session policy 决策
 - 保存任何 durable state
-- 在 Hub 内做任何用户级 policy 或 quota 决策（只能执行 control-plane 管理面返回的 forced disconnect / rate metadata）
+- 在 Hub 内做任何用户级 policy 或 quota 决策（只能执行 Web Controller/control-plane 管理面返回的 forced disconnect / rate metadata）
 
 ## Current P0 Task（WF-503）
 
 更新 `termx-hub/deploy/termx-hub.env.example`，补充缺失字段（带注释）：
 
 ```
-# Control-plane URL（外部管理面服务地址；web-control 旧实现已从本仓库删除）
+# Web Controller / control-plane URL（web-control 管理面服务地址）
 TERMX_HUB_CONTROL_URL=http://localhost:3000
 
-# Hub 与 control-plane 服务之间的共享密钥（必须与外部管理面服务配置一致）
+# Hub 与 Web Controller/control-plane 服务之间的共享密钥（必须与 web-control 的 HUB_SECRET 一致）
 TERMX_HUB_CONTROL_SECRET=termx-development-hub-secret-change-me
 ```
 
@@ -63,12 +63,12 @@ Hub 启动只需要：
 | 变量 | 必需 | 说明 |
 |------|------|------|
 | `TERMX_HUB_ADDR` | 否 | 监听地址，默认 `127.0.0.1:8447` |
-| `TERMX_HUB_ID` | 否 | Hub 唯一 ID，默认 hostname；同一 control-plane 下多 hub 需不同 ID |
+| `TERMX_HUB_ID` | 否 | Hub 唯一 ID，默认 hostname；同一 Web Controller/control-plane 下多 hub 需不同 ID |
 | `TERMX_HUB_NAME` | 否 | 展示名 |
 | `TERMX_HUB_REGION` | 否 | 区域标识（如 `cn`、`us-west`） |
-| `TERMX_HUB_PUBLIC_HTTP_URL` | heartbeat 需要 | hub 对外 HTTP 地址，heartbeat 上报给 control-plane 后，browser 凭此直连 hub |
-| `TERMX_HUB_CONTROL_URL` | heartbeat 需要 | 外部 control-plane 地址 |
-| `TERMX_HUB_CONTROL_SECRET` | heartbeat 需要 | 与外部 control-plane 共享密钥一致 |
+| `TERMX_HUB_PUBLIC_HTTP_URL` | heartbeat 需要 | hub 对外 HTTP 地址，heartbeat 上报给 Web Controller/control-plane 后，browser 凭此直连 hub |
+| `TERMX_HUB_CONTROL_URL` | heartbeat 需要 | Web Controller/control-plane 地址 |
+| `TERMX_HUB_CONTROL_SECRET` | heartbeat 需要 | 与 web-control `HUB_SECRET` 一致 |
 | `TERMX_HUB_STUN_SERVERS` | 否 | 逗号分隔 STUN URL，如 `stun:stun.l.google.com:19302` |
 | `TERMX_HUB_TURN_SECRET` | 否 | 启用内嵌 TURN 的密钥 |
 | `TERMX_HUB_TURN_ADDR` | 否 | 内嵌 TURN 监听地址，默认 `0.0.0.0:3478` |
@@ -76,7 +76,7 @@ Hub 启动只需要：
 | `TERMX_HUB_HEARTBEAT_INTERVAL` | 否 | 心跳间隔，默认 `1m` |
 | `TERMX_HUB_MAX_AGENTS` | 否 | 最大在线 agent 数 |
 
-**禁止**：任何用于连接时 cert/ticket/offer 验证的 control-plane 配置或 control verifier。
+**禁止**：任何用于连接时 cert/ticket/offer 验证的 Web Controller/control-plane 配置或 control verifier。
 
 ## Build Rules
 
@@ -95,7 +95,7 @@ Hub 启动只需要：
 
 - Hub httpapi に controlclient の呼び出しが残っていないか（残ってはいけない）
 - Hub に durable state / DB / migration がないか
-- Hub が接続時認証のために control-plane サービスを呼び出していないか（管理面 heartbeat は許可）
+- Hub が接続時認証のために Web Controller/control-plane サービスを呼び出していないか（管理面 heartbeat は許可）
 - 管理面 heartbeat が hub/httpapi の offer/answer request path に入っていないか
 - Registry/signaling map に unbounded な状態がなく TTL cleanup があるか
 - Rate limit と backpressure の動作がテストされているか

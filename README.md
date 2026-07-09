@@ -92,10 +92,14 @@ termx-tui-v3 / future GUI / future mobile entry
 - `termx-shared/`：共享 connection registry、transport 等基础包。
 - `internal/protocol/`、`termx-proto/`：daemon/client wire contract 与协议类型。
 - `termx-hub/`：hub/P2P 身份、发现、中继和受限 transport 方向。
+- `termx-remote/`：远程管理 runtime、agent/bridge/session 等远程产品能力。
+- `remote-ui/`：远程管理与移动端共享的 Web UI 组件和浏览器端运行时。
+- `termx-app/`：移动端 App 壳与原生桥接。
+- `web-control/`：Web 管理与商业化控制台。
 - `termx-testkit/`：测试辅助能力。
 - `scripts/`、`Makefile`、`go.work`：开发、测试和 workspace 支撑。
 
-当前分支已删除旧路径 `termx-remote/`、`termx-remote-v2/`、`termx-app/`、`remote-ui/`、`web-control/`。它们不属于当前主动开发主线，不得作为 fallback、只读参考或默认依赖恢复；需要判断范围时以 `workflow.md` 为准。
+当前分支保留 `termx-remote/`、`termx-app/`、`remote-ui/`、`web-control/` 这些远程产品资产；它们不属于当前 TUI/core 整理切片的主动修改范围。需要判断是否能触碰这些目录时，以 `workflow.md` 为准。
 
 ## 开发状态
 
