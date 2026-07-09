@@ -538,6 +538,115 @@ message RemoteLocalStatus {
   int64 updated_at_unix_nano = 8;
 }
 
+message ClientControlActionSpec {
+  string id = 1;
+  string owner_plugin_id = 2;
+  string scope = 3;
+  repeated string supported_client_kinds = 4;
+  repeated string required_caps = 5;
+  repeated string client_required_caps = 6;
+  repeated string daemon_required_caps = 7;
+  string danger = 8;
+  string params_schema = 9;
+  bool idempotent = 10;
+}
+
+message ClientSessionRegisterParams {
+  string session_id = 1;
+  string client_kind = 2;
+  string workspace_id = 3;
+  string instance_id = 4;
+  int32 pid = 5;
+  repeated string capabilities = 6;
+  repeated ClientControlActionSpec actions = 7;
+  map<string, string> metadata = 8;
+}
+
+message ClientSessionRegisterResult {
+  ClientSessionInfo session = 1;
+}
+
+message ClientSessionListParams {
+  string client_kind = 1;
+  string workspace_id = 2;
+  bool include_actions = 3;
+}
+
+message ClientSessionListResult {
+  repeated ClientSessionInfo sessions = 1;
+}
+
+message ClientSessionInfo {
+  string session_id = 1;
+  string client_kind = 2;
+  string workspace_id = 3;
+  string instance_id = 4;
+  int32 pid = 5;
+  repeated string capabilities = 6;
+  repeated ClientControlActionSpec actions = 7;
+  int64 connected_at_unix_nano = 8;
+  int64 last_seen_at_unix_nano = 9;
+  map<string, string> metadata = 10;
+}
+
+message ClientTerminalRef {
+  string endpoint_id = 1;
+  string terminal_id = 2;
+}
+
+message ClientControlTarget {
+  string session_id = 1;
+  string client_kind = 2;
+  string workspace_id = 3;
+  bool broadcast = 4;
+  bool active_panel = 5;
+  ClientTerminalRef terminal_ref = 6;
+}
+
+message ClientControlCallParams {
+  string request_id = 1;
+  string action_id = 2;
+  bytes params = 3;
+  ClientControlTarget target = 4;
+  string trace_parent_id = 5;
+  string trace_parent_token = 6;
+  int64 deadline_unix_nano = 7;
+  string idempotency_key = 8;
+}
+
+message ClientControlCallResult {
+  string request_id = 1;
+  bool broadcast = 2;
+  repeated ClientControlDelivery deliveries = 3;
+}
+
+message ClientControlDelivery {
+  string session_id = 1;
+  string status = 2;
+  ClientControlError error = 3;
+}
+
+message ClientControlResponseParams {
+  string request_id = 1;
+  string session_id = 2;
+  string status = 3;
+  bytes result = 4;
+  ClientControlError error = 5;
+  string trace_parent_id = 6;
+  string trace_parent_token = 7;
+}
+
+message ClientControlResponseResult {
+  string request_id = 1;
+  bool accepted = 2;
+}
+
+message ClientControlError {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+}
+
 message TerminalGridMetadata {
   int32 store_version = 1;
   string terminal_id = 2;

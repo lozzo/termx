@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/lozzow/termx/termx-shared/plugin"
 )
 
 var compactASCIIStrings = buildCompactASCIIStrings()
@@ -179,6 +181,198 @@ type RemoteLocalStatus struct {
 	ICETCPAddr    string
 	ICETCPPort    int
 	UpdatedAt     time.Time
+}
+
+const (
+	// MethodClientSessionRegister 是 client session 向本 daemon broker 声明自身可被插件控制的入口。
+	MethodClientSessionRegister = "client.session.register"
+	// MethodClientSessionList 是插件或客户端查询当前 daemon broker 已知 client session 的入口。
+	MethodClientSessionList = "client.session.list"
+	// MethodClientControlCall 是插件或宿主向 daemon broker 提交 client action 请求的入口。
+	MethodClientControlCall = "client.control.call"
+	// MethodClientControlRespond 是 client session 异步回写 action 执行结果给 daemon broker 的入口。
+	MethodClientControlRespond = "client.control.respond"
+)
+
+// ClientControlStatus 描述 client control broker 与目标 client 之间的投递或执行状态。
+// queued/delivered 只表示 daemon broker 的消息状态；ok/error/rejected/timeout 才是 client session
+// 对 action 执行结果的回报，daemon 不能据此解释 UI state。
+type ClientControlStatus string
+
+const (
+	// ClientControlStatusQueued 表示 daemon broker 已接受调用并排队等待目标 client session 处理。
+	ClientControlStatusQueued ClientControlStatus = "queued"
+	// ClientControlStatusDelivered 表示 daemon broker 已把调用写入目标 client session mailbox。
+	ClientControlStatusDelivered ClientControlStatus = "delivered"
+	// ClientControlStatusOK 表示目标 client session 已完成 action。
+	ClientControlStatusOK ClientControlStatus = "ok"
+	// ClientControlStatusError 表示目标 client session 执行 action 时返回可诊断错误。
+	ClientControlStatusError ClientControlStatus = "error"
+	// ClientControlStatusRejected 表示目标 client session 因权限、确认或本地状态拒绝 action。
+	ClientControlStatusRejected ClientControlStatus = "rejected"
+	// ClientControlStatusTimeout 表示 broker 或目标 client session 等待 action 超时。
+	ClientControlStatusTimeout ClientControlStatus = "timeout"
+	// ClientControlStatusNotFound 表示 broker 没有找到匹配的 client session。
+	ClientControlStatusNotFound ClientControlStatus = "not_found"
+)
+
+// ClientControlActionSpec 是 client session 注册给 daemon broker 的 action 能力投影。
+// 真值来自 client 本地 action registry 或 host 解析后的插件 catalog；daemon 只按 ID/capability 做路由和授权，
+// 不解释 active panel、tab、float 等 UI 语义。
+type ClientControlActionSpec struct {
+	ID                   plugin.ActionID
+	OwnerPluginID        plugin.PluginID
+	Scope                plugin.ActionScope
+	SupportedClientKinds []plugin.ClientKind
+	RequiredCaps         []plugin.Capability
+	ClientRequiredCaps   []plugin.Capability
+	DaemonRequiredCaps   []plugin.Capability
+	Danger               plugin.DangerLevel
+	ParamsSchema         string
+	Idempotent           bool
+}
+
+// ClientSessionRegisterParams 是 client session 上线时提交给 daemon broker 的注册消息。
+// SessionID/ClientKind/WorkspaceID 描述 broker 可路由的客户端身份；Actions/Capabilities 是客户端可执行能力，
+// 不能被 daemon 用来推断或持久化 UI 内部状态。
+type ClientSessionRegisterParams struct {
+	SessionID    string
+	ClientKind   plugin.ClientKind
+	WorkspaceID  string
+	InstanceID   string
+	PID          int
+	Capabilities []plugin.Capability
+	Actions      []ClientControlActionSpec
+	Metadata     map[string]string
+}
+
+// ClientSessionRegisterResult 是 daemon broker 对注册请求的确认。
+// ConnectedAt/LastSeenAt 由 broker 写入，表示 broker 看到该 session 的时间，不是 client UI 状态时间戳。
+type ClientSessionRegisterResult struct {
+	Session ClientSessionInfo
+}
+
+// ClientSessionListParams 是查询 daemon broker 已知 client session 的过滤条件。
+// 空过滤表示查询所有 session；IncludeActions 为 false 时 broker 可以省略 action 列表以降低 payload。
+type ClientSessionListParams struct {
+	ClientKind     plugin.ClientKind
+	WorkspaceID    string
+	IncludeActions bool
+}
+
+// ClientSessionListResult 是 daemon broker 返回的 client session 只读目录。
+// 目录只表达“哪些 client session 可被路由”，不代表这些 client 当前 UI 焦点、panel 或 tab 状态。
+type ClientSessionListResult struct {
+	Sessions []ClientSessionInfo
+}
+
+// ClientSessionInfo 是 daemon broker 持有的 client session 投影。
+// Actions 仍由对应 client 注册或刷新，broker 不能在本地补造 client-only action。
+type ClientSessionInfo struct {
+	SessionID    string
+	ClientKind   plugin.ClientKind
+	WorkspaceID  string
+	InstanceID   string
+	PID          int
+	Capabilities []plugin.Capability
+	Actions      []ClientControlActionSpec
+	ConnectedAt  time.Time
+	LastSeenAt   time.Time
+	Metadata     map[string]string
+}
+
+// ClientTerminalRef 是协议层的跨 endpoint terminal selector。
+// EndpointID 来自 client 侧 connection registry；daemon-local terminal 生命周期仍必须回到 owning endpoint 裁决。
+type ClientTerminalRef struct {
+	EndpointID plugin.EndpointID
+	TerminalID plugin.TerminalID
+}
+
+// ClientControlTarget 描述 client control call 的路由和目标选择器。
+// SessionID/ClientKind/WorkspaceID/Broadcast 供 daemon broker 选择收件 client；ActivePanel/TerminalRef
+// 必须透传给目标 client 本地解释，broker 不得把 active/current 解析成 UI state。
+type ClientControlTarget struct {
+	SessionID   string
+	ClientKind  plugin.ClientKind
+	WorkspaceID string
+	Broadcast   bool
+	ActivePanel bool
+	TerminalRef *ClientTerminalRef
+}
+
+// ClientControlSource 是 host 派生后的 action 调用来源。
+// 它不在 client.control.call 请求体中编码；PluginID/Kind 必须由宿主根据 runner session 和 grant 写入。
+type ClientControlSource struct {
+	PluginID plugin.PluginID
+	Kind     string
+}
+
+// ClientControlCallParams 是插件或宿主发给 daemon broker 的 typed action 调用请求。
+// Params 是 action 自己的 opaque payload；TraceParent 是 host 签发的 opaque 引用。
+// Source 不允许出现在请求体中，必须由 daemon/client host 从已认证 runner session 和 grant 派生。
+type ClientControlCallParams struct {
+	RequestID      string
+	ActionID       plugin.ActionID
+	Params         []byte
+	Target         ClientControlTarget
+	TraceParent    plugin.TraceParent
+	Deadline       time.Time
+	IdempotencyKey string
+}
+
+// ClientControlInvocation 是 daemon broker 派生 source 后准备投递给 client mailbox 的内部 envelope。
+// 它继承 ClientControlCallParams 的 action/target/trace，并加入 host-derived Source；PL004 只定义模型，不实现 mailbox。
+type ClientControlInvocation struct {
+	RequestID      string
+	ActionID       plugin.ActionID
+	Params         []byte
+	Source         ClientControlSource
+	Target         ClientControlTarget
+	TraceParent    plugin.TraceParent
+	Deadline       time.Time
+	IdempotencyKey string
+}
+
+// ClientControlCallResult 是 daemon broker 对 action call 的投递确认。
+// 它不表示 action 已执行完成；真实执行结果必须由目标 client 通过 client.control.respond 回写。
+type ClientControlCallResult struct {
+	RequestID  string
+	Broadcast  bool
+	Deliveries []ClientControlDelivery
+}
+
+// ClientControlDelivery 描述 daemon broker 对单个 client session 的投递结果。
+// Error 只覆盖 broker 路由或 mailbox 写入失败，不覆盖 client action 的业务执行错误。
+type ClientControlDelivery struct {
+	SessionID string
+	Status    ClientControlStatus
+	Error     *ClientControlError
+}
+
+// ClientControlResponseParams 是目标 client session 对异步 action 的执行回执。
+// Result 是 action 自己的 opaque payload；Error 为结构化错误，便于 broker 或插件 runner 做可诊断展示。
+type ClientControlResponseParams struct {
+	RequestID   string
+	SessionID   string
+	Status      ClientControlStatus
+	Result      []byte
+	Error       *ClientControlError
+	TraceParent plugin.TraceParent
+}
+
+// ClientControlResponseResult 是 daemon broker 对 client action 回执的 ack。
+// Accepted 只表示 broker 接受了该回执，不代表上游插件一定仍在等待。
+type ClientControlResponseResult struct {
+	RequestID string
+	Accepted  bool
+}
+
+// ClientControlError 是 client control broker 和目标 client 共享的结构化错误。
+// Code 应稳定用于策略判断；Message 用于诊断展示；Retryable 仅表达 transport/mailbox 层重试建议。
+type ClientControlError struct {
+	Code      string
+	Message   string
+	Retryable bool
 }
 
 type GetParams struct {

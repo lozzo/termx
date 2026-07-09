@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-proto/wirepb"
+	"github.com/lozzow/termx/termx-shared/plugin"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -420,6 +421,54 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			return nil, methodParamsTypeError(method, "protocol.RemoteLocalEnableParams", params)
 		}
 		return proto.Marshal(remoteLocalEnableParamsToWirePB(value))
+	case MethodClientSessionRegister:
+		value, ok := params.(ClientSessionRegisterParams)
+		if !ok {
+			if ptr, ptrOK := params.(*ClientSessionRegisterParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.ClientSessionRegisterParams", params)
+		}
+		return proto.Marshal(clientSessionRegisterParamsToWirePB(value))
+	case MethodClientSessionList:
+		value, ok := params.(ClientSessionListParams)
+		if !ok {
+			if ptr, ptrOK := params.(*ClientSessionListParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.ClientSessionListParams", params)
+		}
+		return proto.Marshal(clientSessionListParamsToWirePB(value))
+	case MethodClientControlCall:
+		value, ok := params.(ClientControlCallParams)
+		if !ok {
+			if ptr, ptrOK := params.(*ClientControlCallParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.ClientControlCallParams", params)
+		}
+		return proto.Marshal(clientControlCallParamsToWirePB(value))
+	case MethodClientControlRespond:
+		value, ok := params.(ClientControlResponseParams)
+		if !ok {
+			if ptr, ptrOK := params.(*ClientControlResponseParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.ClientControlResponseParams", params)
+		}
+		return proto.Marshal(clientControlResponseParamsToWirePB(value))
 	default:
 		return nil, fmt.Errorf("protocol: no protobuf params codec for method %q", method)
 	}
@@ -597,6 +646,30 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return remoteLocalEnableParamsFromWirePB(&msg), nil
+	case MethodClientSessionRegister:
+		var msg wirepb.ClientSessionRegisterParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, err
+		}
+		return clientSessionRegisterParamsFromWirePB(&msg), nil
+	case MethodClientSessionList:
+		var msg wirepb.ClientSessionListParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, err
+		}
+		return clientSessionListParamsFromWirePB(&msg), nil
+	case MethodClientControlCall:
+		var msg wirepb.ClientControlCallParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, err
+		}
+		return clientControlCallParamsFromWirePB(&msg), nil
+	case MethodClientControlRespond:
+		var msg wirepb.ClientControlResponseParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, err
+		}
+		return clientControlResponseParamsFromWirePB(&msg), nil
 	default:
 		return nil, fmt.Errorf("protocol: no protobuf params codec for method %q", method)
 	}
@@ -808,6 +881,54 @@ func EncodeMethodResult(method string, result any) ([]byte, error) {
 			return nil, methodResultTypeError(method, "protocol.RemoteLocalStatus", result)
 		}
 		return proto.Marshal(remoteLocalStatusToWirePB(value))
+	case MethodClientSessionRegister:
+		value, ok := result.(ClientSessionRegisterResult)
+		if !ok {
+			if ptr, ptrOK := result.(*ClientSessionRegisterResult); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.ClientSessionRegisterResult", result)
+		}
+		return proto.Marshal(clientSessionRegisterResultToWirePB(value))
+	case MethodClientSessionList:
+		value, ok := result.(ClientSessionListResult)
+		if !ok {
+			if ptr, ptrOK := result.(*ClientSessionListResult); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.ClientSessionListResult", result)
+		}
+		return proto.Marshal(clientSessionListResultToWirePB(value))
+	case MethodClientControlCall:
+		value, ok := result.(ClientControlCallResult)
+		if !ok {
+			if ptr, ptrOK := result.(*ClientControlCallResult); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.ClientControlCallResult", result)
+		}
+		return proto.Marshal(clientControlCallResultToWirePB(value))
+	case MethodClientControlRespond:
+		value, ok := result.(ClientControlResponseResult)
+		if !ok {
+			if ptr, ptrOK := result.(*ClientControlResponseResult); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.ClientControlResponseResult", result)
+		}
+		return proto.Marshal(clientControlResponseResultToWirePB(value))
 	default:
 		return nil, fmt.Errorf("protocol: no protobuf result codec for method %q", method)
 	}
@@ -1002,6 +1123,50 @@ func DecodeMethodResult(method string, payload []byte, out any) error {
 		}
 		*ptr = remoteLocalStatusFromWirePB(&msg)
 		return nil
+	case MethodClientSessionRegister:
+		var msg wirepb.ClientSessionRegisterResult
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return err
+		}
+		ptr, ok := out.(*ClientSessionRegisterResult)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.ClientSessionRegisterResult", out)
+		}
+		*ptr = clientSessionRegisterResultFromWirePB(&msg)
+		return nil
+	case MethodClientSessionList:
+		var msg wirepb.ClientSessionListResult
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return err
+		}
+		ptr, ok := out.(*ClientSessionListResult)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.ClientSessionListResult", out)
+		}
+		*ptr = clientSessionListResultFromWirePB(&msg)
+		return nil
+	case MethodClientControlCall:
+		var msg wirepb.ClientControlCallResult
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return err
+		}
+		ptr, ok := out.(*ClientControlCallResult)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.ClientControlCallResult", out)
+		}
+		*ptr = clientControlCallResultFromWirePB(&msg)
+		return nil
+	case MethodClientControlRespond:
+		var msg wirepb.ClientControlResponseResult
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return err
+		}
+		ptr, ok := out.(*ClientControlResponseResult)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.ClientControlResponseResult", out)
+		}
+		*ptr = clientControlResponseResultFromWirePB(&msg)
+		return nil
 	default:
 		return fmt.Errorf("protocol: no protobuf result codec for method %q", method)
 	}
@@ -1180,6 +1345,414 @@ func remoteLocalStatusFromWirePB(msg *wirepb.RemoteLocalStatus) RemoteLocalStatu
 		ICETCPPort:    int(msg.GetIceTcpPort()),
 		UpdatedAt:     unixNanoToTime(msg.GetUpdatedAtUnixNano()),
 	}
+}
+
+func clientControlActionSpecToWirePB(spec ClientControlActionSpec) *wirepb.ClientControlActionSpec {
+	return &wirepb.ClientControlActionSpec{
+		Id:                   string(spec.ID),
+		OwnerPluginId:        string(spec.OwnerPluginID),
+		Scope:                string(spec.Scope),
+		SupportedClientKinds: clientKindsToStrings(spec.SupportedClientKinds),
+		RequiredCaps:         capabilitiesToStrings(spec.RequiredCaps),
+		ClientRequiredCaps:   capabilitiesToStrings(spec.ClientRequiredCaps),
+		DaemonRequiredCaps:   capabilitiesToStrings(spec.DaemonRequiredCaps),
+		Danger:               string(spec.Danger),
+		ParamsSchema:         spec.ParamsSchema,
+		Idempotent:           spec.Idempotent,
+	}
+}
+
+func clientControlActionSpecFromWirePB(msg *wirepb.ClientControlActionSpec) ClientControlActionSpec {
+	if msg == nil {
+		return ClientControlActionSpec{}
+	}
+	return ClientControlActionSpec{
+		ID:                   plugin.ActionID(msg.GetId()),
+		OwnerPluginID:        plugin.PluginID(msg.GetOwnerPluginId()),
+		Scope:                plugin.ActionScope(msg.GetScope()),
+		SupportedClientKinds: clientKindsFromStrings(msg.GetSupportedClientKinds()),
+		RequiredCaps:         capabilitiesFromStrings(msg.GetRequiredCaps()),
+		ClientRequiredCaps:   capabilitiesFromStrings(msg.GetClientRequiredCaps()),
+		DaemonRequiredCaps:   capabilitiesFromStrings(msg.GetDaemonRequiredCaps()),
+		Danger:               plugin.DangerLevel(msg.GetDanger()),
+		ParamsSchema:         msg.GetParamsSchema(),
+		Idempotent:           msg.GetIdempotent(),
+	}
+}
+
+func clientControlActionSpecsToWirePB(specs []ClientControlActionSpec) []*wirepb.ClientControlActionSpec {
+	if len(specs) == 0 {
+		return nil
+	}
+	out := make([]*wirepb.ClientControlActionSpec, 0, len(specs))
+	for _, spec := range specs {
+		out = append(out, clientControlActionSpecToWirePB(spec))
+	}
+	return out
+}
+
+func clientControlActionSpecsFromWirePB(msgs []*wirepb.ClientControlActionSpec) []ClientControlActionSpec {
+	if len(msgs) == 0 {
+		return nil
+	}
+	out := make([]ClientControlActionSpec, 0, len(msgs))
+	for _, msg := range msgs {
+		out = append(out, clientControlActionSpecFromWirePB(msg))
+	}
+	return out
+}
+
+func clientSessionRegisterParamsToWirePB(params ClientSessionRegisterParams) *wirepb.ClientSessionRegisterParams {
+	return &wirepb.ClientSessionRegisterParams{
+		SessionId:    params.SessionID,
+		ClientKind:   string(params.ClientKind),
+		WorkspaceId:  params.WorkspaceID,
+		InstanceId:   params.InstanceID,
+		Pid:          int32(params.PID),
+		Capabilities: capabilitiesToStrings(params.Capabilities),
+		Actions:      clientControlActionSpecsToWirePB(params.Actions),
+		Metadata:     cloneStringMap(params.Metadata),
+	}
+}
+
+func clientSessionRegisterParamsFromWirePB(msg *wirepb.ClientSessionRegisterParams) ClientSessionRegisterParams {
+	if msg == nil {
+		return ClientSessionRegisterParams{}
+	}
+	return ClientSessionRegisterParams{
+		SessionID:    msg.GetSessionId(),
+		ClientKind:   plugin.ClientKind(msg.GetClientKind()),
+		WorkspaceID:  msg.GetWorkspaceId(),
+		InstanceID:   msg.GetInstanceId(),
+		PID:          int(msg.GetPid()),
+		Capabilities: capabilitiesFromStrings(msg.GetCapabilities()),
+		Actions:      clientControlActionSpecsFromWirePB(msg.GetActions()),
+		Metadata:     cloneStringMap(msg.GetMetadata()),
+	}
+}
+
+func clientSessionRegisterResultToWirePB(result ClientSessionRegisterResult) *wirepb.ClientSessionRegisterResult {
+	return &wirepb.ClientSessionRegisterResult{Session: clientSessionInfoToWirePB(result.Session)}
+}
+
+func clientSessionRegisterResultFromWirePB(msg *wirepb.ClientSessionRegisterResult) ClientSessionRegisterResult {
+	if msg == nil {
+		return ClientSessionRegisterResult{}
+	}
+	return ClientSessionRegisterResult{Session: clientSessionInfoFromWirePB(msg.GetSession())}
+}
+
+func clientSessionListParamsToWirePB(params ClientSessionListParams) *wirepb.ClientSessionListParams {
+	return &wirepb.ClientSessionListParams{
+		ClientKind:     string(params.ClientKind),
+		WorkspaceId:    params.WorkspaceID,
+		IncludeActions: params.IncludeActions,
+	}
+}
+
+func clientSessionListParamsFromWirePB(msg *wirepb.ClientSessionListParams) ClientSessionListParams {
+	if msg == nil {
+		return ClientSessionListParams{}
+	}
+	return ClientSessionListParams{
+		ClientKind:     plugin.ClientKind(msg.GetClientKind()),
+		WorkspaceID:    msg.GetWorkspaceId(),
+		IncludeActions: msg.GetIncludeActions(),
+	}
+}
+
+func clientSessionListResultToWirePB(result ClientSessionListResult) *wirepb.ClientSessionListResult {
+	return &wirepb.ClientSessionListResult{Sessions: clientSessionInfosToWirePB(result.Sessions)}
+}
+
+func clientSessionListResultFromWirePB(msg *wirepb.ClientSessionListResult) ClientSessionListResult {
+	if msg == nil {
+		return ClientSessionListResult{}
+	}
+	return ClientSessionListResult{Sessions: clientSessionInfosFromWirePB(msg.GetSessions())}
+}
+
+func clientSessionInfoToWirePB(info ClientSessionInfo) *wirepb.ClientSessionInfo {
+	return &wirepb.ClientSessionInfo{
+		SessionId:           info.SessionID,
+		ClientKind:          string(info.ClientKind),
+		WorkspaceId:         info.WorkspaceID,
+		InstanceId:          info.InstanceID,
+		Pid:                 int32(info.PID),
+		Capabilities:        capabilitiesToStrings(info.Capabilities),
+		Actions:             clientControlActionSpecsToWirePB(info.Actions),
+		ConnectedAtUnixNano: timeToUnixNano(info.ConnectedAt),
+		LastSeenAtUnixNano:  timeToUnixNano(info.LastSeenAt),
+		Metadata:            cloneStringMap(info.Metadata),
+	}
+}
+
+func clientSessionInfoFromWirePB(msg *wirepb.ClientSessionInfo) ClientSessionInfo {
+	if msg == nil {
+		return ClientSessionInfo{}
+	}
+	return ClientSessionInfo{
+		SessionID:    msg.GetSessionId(),
+		ClientKind:   plugin.ClientKind(msg.GetClientKind()),
+		WorkspaceID:  msg.GetWorkspaceId(),
+		InstanceID:   msg.GetInstanceId(),
+		PID:          int(msg.GetPid()),
+		Capabilities: capabilitiesFromStrings(msg.GetCapabilities()),
+		Actions:      clientControlActionSpecsFromWirePB(msg.GetActions()),
+		ConnectedAt:  unixNanoToTime(msg.GetConnectedAtUnixNano()),
+		LastSeenAt:   unixNanoToTime(msg.GetLastSeenAtUnixNano()),
+		Metadata:     cloneStringMap(msg.GetMetadata()),
+	}
+}
+
+func clientSessionInfosToWirePB(infos []ClientSessionInfo) []*wirepb.ClientSessionInfo {
+	if len(infos) == 0 {
+		return nil
+	}
+	out := make([]*wirepb.ClientSessionInfo, 0, len(infos))
+	for _, info := range infos {
+		out = append(out, clientSessionInfoToWirePB(info))
+	}
+	return out
+}
+
+func clientSessionInfosFromWirePB(msgs []*wirepb.ClientSessionInfo) []ClientSessionInfo {
+	if len(msgs) == 0 {
+		return nil
+	}
+	out := make([]ClientSessionInfo, 0, len(msgs))
+	for _, msg := range msgs {
+		out = append(out, clientSessionInfoFromWirePB(msg))
+	}
+	return out
+}
+
+func clientTerminalRefToWirePB(ref *ClientTerminalRef) *wirepb.ClientTerminalRef {
+	if ref == nil {
+		return nil
+	}
+	return &wirepb.ClientTerminalRef{
+		EndpointId: string(ref.EndpointID),
+		TerminalId: string(ref.TerminalID),
+	}
+}
+
+func clientTerminalRefFromWirePB(msg *wirepb.ClientTerminalRef) *ClientTerminalRef {
+	if msg == nil {
+		return nil
+	}
+	return &ClientTerminalRef{
+		EndpointID: plugin.EndpointID(msg.GetEndpointId()),
+		TerminalID: plugin.TerminalID(msg.GetTerminalId()),
+	}
+}
+
+func clientControlTargetToWirePB(target ClientControlTarget) *wirepb.ClientControlTarget {
+	return &wirepb.ClientControlTarget{
+		SessionId:   target.SessionID,
+		ClientKind:  string(target.ClientKind),
+		WorkspaceId: target.WorkspaceID,
+		Broadcast:   target.Broadcast,
+		ActivePanel: target.ActivePanel,
+		TerminalRef: clientTerminalRefToWirePB(target.TerminalRef),
+	}
+}
+
+func clientControlTargetFromWirePB(msg *wirepb.ClientControlTarget) ClientControlTarget {
+	if msg == nil {
+		return ClientControlTarget{}
+	}
+	return ClientControlTarget{
+		SessionID:   msg.GetSessionId(),
+		ClientKind:  plugin.ClientKind(msg.GetClientKind()),
+		WorkspaceID: msg.GetWorkspaceId(),
+		Broadcast:   msg.GetBroadcast(),
+		ActivePanel: msg.GetActivePanel(),
+		TerminalRef: clientTerminalRefFromWirePB(msg.GetTerminalRef()),
+	}
+}
+
+func clientControlCallParamsToWirePB(params ClientControlCallParams) *wirepb.ClientControlCallParams {
+	return &wirepb.ClientControlCallParams{
+		RequestId:        params.RequestID,
+		ActionId:         string(params.ActionID),
+		Params:           append([]byte(nil), params.Params...),
+		Target:           clientControlTargetToWirePB(params.Target),
+		TraceParentId:    params.TraceParent.TraceID,
+		TraceParentToken: params.TraceParent.Token,
+		DeadlineUnixNano: timeToUnixNano(params.Deadline),
+		IdempotencyKey:   params.IdempotencyKey,
+	}
+}
+
+func clientControlCallParamsFromWirePB(msg *wirepb.ClientControlCallParams) ClientControlCallParams {
+	if msg == nil {
+		return ClientControlCallParams{}
+	}
+	return ClientControlCallParams{
+		RequestID:      msg.GetRequestId(),
+		ActionID:       plugin.ActionID(msg.GetActionId()),
+		Params:         append([]byte(nil), msg.GetParams()...),
+		Target:         clientControlTargetFromWirePB(msg.GetTarget()),
+		TraceParent:    plugin.TraceParent{TraceID: msg.GetTraceParentId(), Token: msg.GetTraceParentToken()},
+		Deadline:       unixNanoToTime(msg.GetDeadlineUnixNano()),
+		IdempotencyKey: msg.GetIdempotencyKey(),
+	}
+}
+
+func clientControlCallResultToWirePB(result ClientControlCallResult) *wirepb.ClientControlCallResult {
+	return &wirepb.ClientControlCallResult{
+		RequestId:  result.RequestID,
+		Broadcast:  result.Broadcast,
+		Deliveries: clientControlDeliveriesToWirePB(result.Deliveries),
+	}
+}
+
+func clientControlCallResultFromWirePB(msg *wirepb.ClientControlCallResult) ClientControlCallResult {
+	if msg == nil {
+		return ClientControlCallResult{}
+	}
+	return ClientControlCallResult{
+		RequestID:  msg.GetRequestId(),
+		Broadcast:  msg.GetBroadcast(),
+		Deliveries: clientControlDeliveriesFromWirePB(msg.GetDeliveries()),
+	}
+}
+
+func clientControlDeliveryToWirePB(delivery ClientControlDelivery) *wirepb.ClientControlDelivery {
+	return &wirepb.ClientControlDelivery{
+		SessionId: delivery.SessionID,
+		Status:    string(delivery.Status),
+		Error:     clientControlErrorToWirePB(delivery.Error),
+	}
+}
+
+func clientControlDeliveryFromWirePB(msg *wirepb.ClientControlDelivery) ClientControlDelivery {
+	if msg == nil {
+		return ClientControlDelivery{}
+	}
+	return ClientControlDelivery{
+		SessionID: msg.GetSessionId(),
+		Status:    ClientControlStatus(msg.GetStatus()),
+		Error:     clientControlErrorFromWirePB(msg.GetError()),
+	}
+}
+
+func clientControlDeliveriesToWirePB(deliveries []ClientControlDelivery) []*wirepb.ClientControlDelivery {
+	if len(deliveries) == 0 {
+		return nil
+	}
+	out := make([]*wirepb.ClientControlDelivery, 0, len(deliveries))
+	for _, delivery := range deliveries {
+		out = append(out, clientControlDeliveryToWirePB(delivery))
+	}
+	return out
+}
+
+func clientControlDeliveriesFromWirePB(msgs []*wirepb.ClientControlDelivery) []ClientControlDelivery {
+	if len(msgs) == 0 {
+		return nil
+	}
+	out := make([]ClientControlDelivery, 0, len(msgs))
+	for _, msg := range msgs {
+		out = append(out, clientControlDeliveryFromWirePB(msg))
+	}
+	return out
+}
+
+func clientControlResponseParamsToWirePB(params ClientControlResponseParams) *wirepb.ClientControlResponseParams {
+	return &wirepb.ClientControlResponseParams{
+		RequestId:        params.RequestID,
+		SessionId:        params.SessionID,
+		Status:           string(params.Status),
+		Result:           append([]byte(nil), params.Result...),
+		Error:            clientControlErrorToWirePB(params.Error),
+		TraceParentId:    params.TraceParent.TraceID,
+		TraceParentToken: params.TraceParent.Token,
+	}
+}
+
+func clientControlResponseParamsFromWirePB(msg *wirepb.ClientControlResponseParams) ClientControlResponseParams {
+	if msg == nil {
+		return ClientControlResponseParams{}
+	}
+	return ClientControlResponseParams{
+		RequestID:   msg.GetRequestId(),
+		SessionID:   msg.GetSessionId(),
+		Status:      ClientControlStatus(msg.GetStatus()),
+		Result:      append([]byte(nil), msg.GetResult()...),
+		Error:       clientControlErrorFromWirePB(msg.GetError()),
+		TraceParent: plugin.TraceParent{TraceID: msg.GetTraceParentId(), Token: msg.GetTraceParentToken()},
+	}
+}
+
+func clientControlResponseResultToWirePB(result ClientControlResponseResult) *wirepb.ClientControlResponseResult {
+	return &wirepb.ClientControlResponseResult{RequestId: result.RequestID, Accepted: result.Accepted}
+}
+
+func clientControlResponseResultFromWirePB(msg *wirepb.ClientControlResponseResult) ClientControlResponseResult {
+	if msg == nil {
+		return ClientControlResponseResult{}
+	}
+	return ClientControlResponseResult{RequestID: msg.GetRequestId(), Accepted: msg.GetAccepted()}
+}
+
+func clientControlErrorToWirePB(err *ClientControlError) *wirepb.ClientControlError {
+	if err == nil {
+		return nil
+	}
+	return &wirepb.ClientControlError{Code: err.Code, Message: err.Message, Retryable: err.Retryable}
+}
+
+func clientControlErrorFromWirePB(msg *wirepb.ClientControlError) *ClientControlError {
+	if msg == nil {
+		return nil
+	}
+	return &ClientControlError{Code: msg.GetCode(), Message: msg.GetMessage(), Retryable: msg.GetRetryable()}
+}
+
+func capabilitiesToStrings(caps []plugin.Capability) []string {
+	if len(caps) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(caps))
+	for _, cap := range caps {
+		out = append(out, string(cap))
+	}
+	return out
+}
+
+func capabilitiesFromStrings(values []string) []plugin.Capability {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]plugin.Capability, 0, len(values))
+	for _, value := range values {
+		out = append(out, plugin.Capability(value))
+	}
+	return out
+}
+
+func clientKindsToStrings(kinds []plugin.ClientKind) []string {
+	if len(kinds) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		out = append(out, string(kind))
+	}
+	return out
+}
+
+func clientKindsFromStrings(values []string) []plugin.ClientKind {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]plugin.ClientKind, 0, len(values))
+	for _, value := range values {
+		out = append(out, plugin.ClientKind(value))
+	}
+	return out
 }
 
 func createParamsToWirePB(params CreateParams) *wirepb.CreateParams {

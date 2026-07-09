@@ -5078,6 +5078,1046 @@ func (x *RemoteLocalStatus) GetUpdatedAtUnixNano() int64 {
 	return 0
 }
 
+type ClientControlActionSpec struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Id                   string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	OwnerPluginId        string                 `protobuf:"bytes,2,opt,name=owner_plugin_id,json=ownerPluginId,proto3" json:"owner_plugin_id,omitempty"`
+	Scope                string                 `protobuf:"bytes,3,opt,name=scope,proto3" json:"scope,omitempty"`
+	SupportedClientKinds []string               `protobuf:"bytes,4,rep,name=supported_client_kinds,json=supportedClientKinds,proto3" json:"supported_client_kinds,omitempty"`
+	RequiredCaps         []string               `protobuf:"bytes,5,rep,name=required_caps,json=requiredCaps,proto3" json:"required_caps,omitempty"`
+	ClientRequiredCaps   []string               `protobuf:"bytes,6,rep,name=client_required_caps,json=clientRequiredCaps,proto3" json:"client_required_caps,omitempty"`
+	DaemonRequiredCaps   []string               `protobuf:"bytes,7,rep,name=daemon_required_caps,json=daemonRequiredCaps,proto3" json:"daemon_required_caps,omitempty"`
+	Danger               string                 `protobuf:"bytes,8,opt,name=danger,proto3" json:"danger,omitempty"`
+	ParamsSchema         string                 `protobuf:"bytes,9,opt,name=params_schema,json=paramsSchema,proto3" json:"params_schema,omitempty"`
+	Idempotent           bool                   `protobuf:"varint,10,opt,name=idempotent,proto3" json:"idempotent,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *ClientControlActionSpec) Reset() {
+	*x = ClientControlActionSpec{}
+	mi := &file_wirepb_terminal_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientControlActionSpec) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientControlActionSpec) ProtoMessage() {}
+
+func (x *ClientControlActionSpec) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientControlActionSpec.ProtoReflect.Descriptor instead.
+func (*ClientControlActionSpec) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *ClientControlActionSpec) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ClientControlActionSpec) GetOwnerPluginId() string {
+	if x != nil {
+		return x.OwnerPluginId
+	}
+	return ""
+}
+
+func (x *ClientControlActionSpec) GetScope() string {
+	if x != nil {
+		return x.Scope
+	}
+	return ""
+}
+
+func (x *ClientControlActionSpec) GetSupportedClientKinds() []string {
+	if x != nil {
+		return x.SupportedClientKinds
+	}
+	return nil
+}
+
+func (x *ClientControlActionSpec) GetRequiredCaps() []string {
+	if x != nil {
+		return x.RequiredCaps
+	}
+	return nil
+}
+
+func (x *ClientControlActionSpec) GetClientRequiredCaps() []string {
+	if x != nil {
+		return x.ClientRequiredCaps
+	}
+	return nil
+}
+
+func (x *ClientControlActionSpec) GetDaemonRequiredCaps() []string {
+	if x != nil {
+		return x.DaemonRequiredCaps
+	}
+	return nil
+}
+
+func (x *ClientControlActionSpec) GetDanger() string {
+	if x != nil {
+		return x.Danger
+	}
+	return ""
+}
+
+func (x *ClientControlActionSpec) GetParamsSchema() string {
+	if x != nil {
+		return x.ParamsSchema
+	}
+	return ""
+}
+
+func (x *ClientControlActionSpec) GetIdempotent() bool {
+	if x != nil {
+		return x.Idempotent
+	}
+	return false
+}
+
+type ClientSessionRegisterParams struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	SessionId     string                     `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ClientKind    string                     `protobuf:"bytes,2,opt,name=client_kind,json=clientKind,proto3" json:"client_kind,omitempty"`
+	WorkspaceId   string                     `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	InstanceId    string                     `protobuf:"bytes,4,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	Pid           int32                      `protobuf:"varint,5,opt,name=pid,proto3" json:"pid,omitempty"`
+	Capabilities  []string                   `protobuf:"bytes,6,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	Actions       []*ClientControlActionSpec `protobuf:"bytes,7,rep,name=actions,proto3" json:"actions,omitempty"`
+	Metadata      map[string]string          `protobuf:"bytes,8,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientSessionRegisterParams) Reset() {
+	*x = ClientSessionRegisterParams{}
+	mi := &file_wirepb_terminal_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientSessionRegisterParams) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientSessionRegisterParams) ProtoMessage() {}
+
+func (x *ClientSessionRegisterParams) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientSessionRegisterParams.ProtoReflect.Descriptor instead.
+func (*ClientSessionRegisterParams) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *ClientSessionRegisterParams) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ClientSessionRegisterParams) GetClientKind() string {
+	if x != nil {
+		return x.ClientKind
+	}
+	return ""
+}
+
+func (x *ClientSessionRegisterParams) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ClientSessionRegisterParams) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *ClientSessionRegisterParams) GetPid() int32 {
+	if x != nil {
+		return x.Pid
+	}
+	return 0
+}
+
+func (x *ClientSessionRegisterParams) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *ClientSessionRegisterParams) GetActions() []*ClientControlActionSpec {
+	if x != nil {
+		return x.Actions
+	}
+	return nil
+}
+
+func (x *ClientSessionRegisterParams) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+type ClientSessionRegisterResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Session       *ClientSessionInfo     `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientSessionRegisterResult) Reset() {
+	*x = ClientSessionRegisterResult{}
+	mi := &file_wirepb_terminal_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientSessionRegisterResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientSessionRegisterResult) ProtoMessage() {}
+
+func (x *ClientSessionRegisterResult) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientSessionRegisterResult.ProtoReflect.Descriptor instead.
+func (*ClientSessionRegisterResult) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *ClientSessionRegisterResult) GetSession() *ClientSessionInfo {
+	if x != nil {
+		return x.Session
+	}
+	return nil
+}
+
+type ClientSessionListParams struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ClientKind     string                 `protobuf:"bytes,1,opt,name=client_kind,json=clientKind,proto3" json:"client_kind,omitempty"`
+	WorkspaceId    string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	IncludeActions bool                   `protobuf:"varint,3,opt,name=include_actions,json=includeActions,proto3" json:"include_actions,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ClientSessionListParams) Reset() {
+	*x = ClientSessionListParams{}
+	mi := &file_wirepb_terminal_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientSessionListParams) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientSessionListParams) ProtoMessage() {}
+
+func (x *ClientSessionListParams) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientSessionListParams.ProtoReflect.Descriptor instead.
+func (*ClientSessionListParams) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *ClientSessionListParams) GetClientKind() string {
+	if x != nil {
+		return x.ClientKind
+	}
+	return ""
+}
+
+func (x *ClientSessionListParams) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ClientSessionListParams) GetIncludeActions() bool {
+	if x != nil {
+		return x.IncludeActions
+	}
+	return false
+}
+
+type ClientSessionListResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sessions      []*ClientSessionInfo   `protobuf:"bytes,1,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientSessionListResult) Reset() {
+	*x = ClientSessionListResult{}
+	mi := &file_wirepb_terminal_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientSessionListResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientSessionListResult) ProtoMessage() {}
+
+func (x *ClientSessionListResult) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientSessionListResult.ProtoReflect.Descriptor instead.
+func (*ClientSessionListResult) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{68}
+}
+
+func (x *ClientSessionListResult) GetSessions() []*ClientSessionInfo {
+	if x != nil {
+		return x.Sessions
+	}
+	return nil
+}
+
+type ClientSessionInfo struct {
+	state               protoimpl.MessageState     `protogen:"open.v1"`
+	SessionId           string                     `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ClientKind          string                     `protobuf:"bytes,2,opt,name=client_kind,json=clientKind,proto3" json:"client_kind,omitempty"`
+	WorkspaceId         string                     `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	InstanceId          string                     `protobuf:"bytes,4,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	Pid                 int32                      `protobuf:"varint,5,opt,name=pid,proto3" json:"pid,omitempty"`
+	Capabilities        []string                   `protobuf:"bytes,6,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	Actions             []*ClientControlActionSpec `protobuf:"bytes,7,rep,name=actions,proto3" json:"actions,omitempty"`
+	ConnectedAtUnixNano int64                      `protobuf:"varint,8,opt,name=connected_at_unix_nano,json=connectedAtUnixNano,proto3" json:"connected_at_unix_nano,omitempty"`
+	LastSeenAtUnixNano  int64                      `protobuf:"varint,9,opt,name=last_seen_at_unix_nano,json=lastSeenAtUnixNano,proto3" json:"last_seen_at_unix_nano,omitempty"`
+	Metadata            map[string]string          `protobuf:"bytes,10,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *ClientSessionInfo) Reset() {
+	*x = ClientSessionInfo{}
+	mi := &file_wirepb_terminal_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientSessionInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientSessionInfo) ProtoMessage() {}
+
+func (x *ClientSessionInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientSessionInfo.ProtoReflect.Descriptor instead.
+func (*ClientSessionInfo) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{69}
+}
+
+func (x *ClientSessionInfo) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ClientSessionInfo) GetClientKind() string {
+	if x != nil {
+		return x.ClientKind
+	}
+	return ""
+}
+
+func (x *ClientSessionInfo) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ClientSessionInfo) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *ClientSessionInfo) GetPid() int32 {
+	if x != nil {
+		return x.Pid
+	}
+	return 0
+}
+
+func (x *ClientSessionInfo) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *ClientSessionInfo) GetActions() []*ClientControlActionSpec {
+	if x != nil {
+		return x.Actions
+	}
+	return nil
+}
+
+func (x *ClientSessionInfo) GetConnectedAtUnixNano() int64 {
+	if x != nil {
+		return x.ConnectedAtUnixNano
+	}
+	return 0
+}
+
+func (x *ClientSessionInfo) GetLastSeenAtUnixNano() int64 {
+	if x != nil {
+		return x.LastSeenAtUnixNano
+	}
+	return 0
+}
+
+func (x *ClientSessionInfo) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+type ClientTerminalRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EndpointId    string                 `protobuf:"bytes,1,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
+	TerminalId    string                 `protobuf:"bytes,2,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientTerminalRef) Reset() {
+	*x = ClientTerminalRef{}
+	mi := &file_wirepb_terminal_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientTerminalRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientTerminalRef) ProtoMessage() {}
+
+func (x *ClientTerminalRef) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientTerminalRef.ProtoReflect.Descriptor instead.
+func (*ClientTerminalRef) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *ClientTerminalRef) GetEndpointId() string {
+	if x != nil {
+		return x.EndpointId
+	}
+	return ""
+}
+
+func (x *ClientTerminalRef) GetTerminalId() string {
+	if x != nil {
+		return x.TerminalId
+	}
+	return ""
+}
+
+type ClientControlTarget struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ClientKind    string                 `protobuf:"bytes,2,opt,name=client_kind,json=clientKind,proto3" json:"client_kind,omitempty"`
+	WorkspaceId   string                 `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Broadcast     bool                   `protobuf:"varint,4,opt,name=broadcast,proto3" json:"broadcast,omitempty"`
+	ActivePanel   bool                   `protobuf:"varint,5,opt,name=active_panel,json=activePanel,proto3" json:"active_panel,omitempty"`
+	TerminalRef   *ClientTerminalRef     `protobuf:"bytes,6,opt,name=terminal_ref,json=terminalRef,proto3" json:"terminal_ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientControlTarget) Reset() {
+	*x = ClientControlTarget{}
+	mi := &file_wirepb_terminal_proto_msgTypes[71]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientControlTarget) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientControlTarget) ProtoMessage() {}
+
+func (x *ClientControlTarget) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[71]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientControlTarget.ProtoReflect.Descriptor instead.
+func (*ClientControlTarget) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{71}
+}
+
+func (x *ClientControlTarget) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ClientControlTarget) GetClientKind() string {
+	if x != nil {
+		return x.ClientKind
+	}
+	return ""
+}
+
+func (x *ClientControlTarget) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ClientControlTarget) GetBroadcast() bool {
+	if x != nil {
+		return x.Broadcast
+	}
+	return false
+}
+
+func (x *ClientControlTarget) GetActivePanel() bool {
+	if x != nil {
+		return x.ActivePanel
+	}
+	return false
+}
+
+func (x *ClientControlTarget) GetTerminalRef() *ClientTerminalRef {
+	if x != nil {
+		return x.TerminalRef
+	}
+	return nil
+}
+
+type ClientControlCallParams struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	RequestId        string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ActionId         string                 `protobuf:"bytes,2,opt,name=action_id,json=actionId,proto3" json:"action_id,omitempty"`
+	Params           []byte                 `protobuf:"bytes,3,opt,name=params,proto3" json:"params,omitempty"`
+	Target           *ClientControlTarget   `protobuf:"bytes,4,opt,name=target,proto3" json:"target,omitempty"`
+	TraceParentId    string                 `protobuf:"bytes,5,opt,name=trace_parent_id,json=traceParentId,proto3" json:"trace_parent_id,omitempty"`
+	TraceParentToken string                 `protobuf:"bytes,6,opt,name=trace_parent_token,json=traceParentToken,proto3" json:"trace_parent_token,omitempty"`
+	DeadlineUnixNano int64                  `protobuf:"varint,7,opt,name=deadline_unix_nano,json=deadlineUnixNano,proto3" json:"deadline_unix_nano,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,8,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ClientControlCallParams) Reset() {
+	*x = ClientControlCallParams{}
+	mi := &file_wirepb_terminal_proto_msgTypes[72]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientControlCallParams) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientControlCallParams) ProtoMessage() {}
+
+func (x *ClientControlCallParams) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[72]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientControlCallParams.ProtoReflect.Descriptor instead.
+func (*ClientControlCallParams) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{72}
+}
+
+func (x *ClientControlCallParams) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ClientControlCallParams) GetActionId() string {
+	if x != nil {
+		return x.ActionId
+	}
+	return ""
+}
+
+func (x *ClientControlCallParams) GetParams() []byte {
+	if x != nil {
+		return x.Params
+	}
+	return nil
+}
+
+func (x *ClientControlCallParams) GetTarget() *ClientControlTarget {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *ClientControlCallParams) GetTraceParentId() string {
+	if x != nil {
+		return x.TraceParentId
+	}
+	return ""
+}
+
+func (x *ClientControlCallParams) GetTraceParentToken() string {
+	if x != nil {
+		return x.TraceParentToken
+	}
+	return ""
+}
+
+func (x *ClientControlCallParams) GetDeadlineUnixNano() int64 {
+	if x != nil {
+		return x.DeadlineUnixNano
+	}
+	return 0
+}
+
+func (x *ClientControlCallParams) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type ClientControlCallResult struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	RequestId     string                   `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Broadcast     bool                     `protobuf:"varint,2,opt,name=broadcast,proto3" json:"broadcast,omitempty"`
+	Deliveries    []*ClientControlDelivery `protobuf:"bytes,3,rep,name=deliveries,proto3" json:"deliveries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientControlCallResult) Reset() {
+	*x = ClientControlCallResult{}
+	mi := &file_wirepb_terminal_proto_msgTypes[73]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientControlCallResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientControlCallResult) ProtoMessage() {}
+
+func (x *ClientControlCallResult) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[73]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientControlCallResult.ProtoReflect.Descriptor instead.
+func (*ClientControlCallResult) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{73}
+}
+
+func (x *ClientControlCallResult) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ClientControlCallResult) GetBroadcast() bool {
+	if x != nil {
+		return x.Broadcast
+	}
+	return false
+}
+
+func (x *ClientControlCallResult) GetDeliveries() []*ClientControlDelivery {
+	if x != nil {
+		return x.Deliveries
+	}
+	return nil
+}
+
+type ClientControlDelivery struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	Error         *ClientControlError    `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientControlDelivery) Reset() {
+	*x = ClientControlDelivery{}
+	mi := &file_wirepb_terminal_proto_msgTypes[74]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientControlDelivery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientControlDelivery) ProtoMessage() {}
+
+func (x *ClientControlDelivery) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[74]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientControlDelivery.ProtoReflect.Descriptor instead.
+func (*ClientControlDelivery) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{74}
+}
+
+func (x *ClientControlDelivery) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ClientControlDelivery) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ClientControlDelivery) GetError() *ClientControlError {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
+type ClientControlResponseParams struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	RequestId        string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SessionId        string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Status           string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Result           []byte                 `protobuf:"bytes,4,opt,name=result,proto3" json:"result,omitempty"`
+	Error            *ClientControlError    `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
+	TraceParentId    string                 `protobuf:"bytes,6,opt,name=trace_parent_id,json=traceParentId,proto3" json:"trace_parent_id,omitempty"`
+	TraceParentToken string                 `protobuf:"bytes,7,opt,name=trace_parent_token,json=traceParentToken,proto3" json:"trace_parent_token,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ClientControlResponseParams) Reset() {
+	*x = ClientControlResponseParams{}
+	mi := &file_wirepb_terminal_proto_msgTypes[75]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientControlResponseParams) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientControlResponseParams) ProtoMessage() {}
+
+func (x *ClientControlResponseParams) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[75]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientControlResponseParams.ProtoReflect.Descriptor instead.
+func (*ClientControlResponseParams) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{75}
+}
+
+func (x *ClientControlResponseParams) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ClientControlResponseParams) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ClientControlResponseParams) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ClientControlResponseParams) GetResult() []byte {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
+func (x *ClientControlResponseParams) GetError() *ClientControlError {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
+func (x *ClientControlResponseParams) GetTraceParentId() string {
+	if x != nil {
+		return x.TraceParentId
+	}
+	return ""
+}
+
+func (x *ClientControlResponseParams) GetTraceParentToken() string {
+	if x != nil {
+		return x.TraceParentToken
+	}
+	return ""
+}
+
+type ClientControlResponseResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Accepted      bool                   `protobuf:"varint,2,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientControlResponseResult) Reset() {
+	*x = ClientControlResponseResult{}
+	mi := &file_wirepb_terminal_proto_msgTypes[76]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientControlResponseResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientControlResponseResult) ProtoMessage() {}
+
+func (x *ClientControlResponseResult) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[76]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientControlResponseResult.ProtoReflect.Descriptor instead.
+func (*ClientControlResponseResult) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{76}
+}
+
+func (x *ClientControlResponseResult) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ClientControlResponseResult) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+type ClientControlError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Retryable     bool                   `protobuf:"varint,3,opt,name=retryable,proto3" json:"retryable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientControlError) Reset() {
+	*x = ClientControlError{}
+	mi := &file_wirepb_terminal_proto_msgTypes[77]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientControlError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientControlError) ProtoMessage() {}
+
+func (x *ClientControlError) ProtoReflect() protoreflect.Message {
+	mi := &file_wirepb_terminal_proto_msgTypes[77]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientControlError.ProtoReflect.Descriptor instead.
+func (*ClientControlError) Descriptor() ([]byte, []int) {
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{77}
+}
+
+func (x *ClientControlError) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *ClientControlError) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *ClientControlError) GetRetryable() bool {
+	if x != nil {
+		return x.Retryable
+	}
+	return false
+}
+
 type TerminalGridMetadata struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	StoreVersion      int32                  `protobuf:"varint,1,opt,name=store_version,json=storeVersion,proto3" json:"store_version,omitempty"`
@@ -5097,7 +6137,7 @@ type TerminalGridMetadata struct {
 
 func (x *TerminalGridMetadata) Reset() {
 	*x = TerminalGridMetadata{}
-	mi := &file_wirepb_terminal_proto_msgTypes[64]
+	mi := &file_wirepb_terminal_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5109,7 +6149,7 @@ func (x *TerminalGridMetadata) String() string {
 func (*TerminalGridMetadata) ProtoMessage() {}
 
 func (x *TerminalGridMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_wirepb_terminal_proto_msgTypes[64]
+	mi := &file_wirepb_terminal_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5122,7 +6162,7 @@ func (x *TerminalGridMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalGridMetadata.ProtoReflect.Descriptor instead.
 func (*TerminalGridMetadata) Descriptor() ([]byte, []int) {
-	return file_wirepb_terminal_proto_rawDescGZIP(), []int{64}
+	return file_wirepb_terminal_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *TerminalGridMetadata) GetStoreVersion() int32 {
@@ -5685,7 +6725,117 @@ const file_wirepb_terminal_proto_rawDesc = "" +
 	"iceTcpAddr\x12 \n" +
 	"\fice_tcp_port\x18\a \x01(\x05R\n" +
 	"iceTcpPort\x12/\n" +
-	"\x14updated_at_unix_nano\x18\b \x01(\x03R\x11updatedAtUnixNano\"\x9b\x03\n" +
+	"\x14updated_at_unix_nano\x18\b \x01(\x03R\x11updatedAtUnixNano\"\x83\x03\n" +
+	"\x17ClientControlActionSpec\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12&\n" +
+	"\x0fowner_plugin_id\x18\x02 \x01(\tR\rownerPluginId\x12\x14\n" +
+	"\x05scope\x18\x03 \x01(\tR\x05scope\x124\n" +
+	"\x16supported_client_kinds\x18\x04 \x03(\tR\x14supportedClientKinds\x12#\n" +
+	"\rrequired_caps\x18\x05 \x03(\tR\frequiredCaps\x120\n" +
+	"\x14client_required_caps\x18\x06 \x03(\tR\x12clientRequiredCaps\x120\n" +
+	"\x14daemon_required_caps\x18\a \x03(\tR\x12daemonRequiredCaps\x12\x16\n" +
+	"\x06danger\x18\b \x01(\tR\x06danger\x12#\n" +
+	"\rparams_schema\x18\t \x01(\tR\fparamsSchema\x12\x1e\n" +
+	"\n" +
+	"idempotent\x18\n" +
+	" \x01(\bR\n" +
+	"idempotent\"\xbc\x03\n" +
+	"\x1bClientSessionRegisterParams\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1f\n" +
+	"\vclient_kind\x18\x02 \x01(\tR\n" +
+	"clientKind\x12!\n" +
+	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x12\x1f\n" +
+	"\vinstance_id\x18\x04 \x01(\tR\n" +
+	"instanceId\x12\x10\n" +
+	"\x03pid\x18\x05 \x01(\x05R\x03pid\x12\"\n" +
+	"\fcapabilities\x18\x06 \x03(\tR\fcapabilities\x12H\n" +
+	"\aactions\x18\a \x03(\v2..termx.protocol.wirepb.ClientControlActionSpecR\aactions\x12\\\n" +
+	"\bmetadata\x18\b \x03(\v2@.termx.protocol.wirepb.ClientSessionRegisterParams.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"a\n" +
+	"\x1bClientSessionRegisterResult\x12B\n" +
+	"\asession\x18\x01 \x01(\v2(.termx.protocol.wirepb.ClientSessionInfoR\asession\"\x86\x01\n" +
+	"\x17ClientSessionListParams\x12\x1f\n" +
+	"\vclient_kind\x18\x01 \x01(\tR\n" +
+	"clientKind\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12'\n" +
+	"\x0finclude_actions\x18\x03 \x01(\bR\x0eincludeActions\"_\n" +
+	"\x17ClientSessionListResult\x12D\n" +
+	"\bsessions\x18\x01 \x03(\v2(.termx.protocol.wirepb.ClientSessionInfoR\bsessions\"\x91\x04\n" +
+	"\x11ClientSessionInfo\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1f\n" +
+	"\vclient_kind\x18\x02 \x01(\tR\n" +
+	"clientKind\x12!\n" +
+	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x12\x1f\n" +
+	"\vinstance_id\x18\x04 \x01(\tR\n" +
+	"instanceId\x12\x10\n" +
+	"\x03pid\x18\x05 \x01(\x05R\x03pid\x12\"\n" +
+	"\fcapabilities\x18\x06 \x03(\tR\fcapabilities\x12H\n" +
+	"\aactions\x18\a \x03(\v2..termx.protocol.wirepb.ClientControlActionSpecR\aactions\x123\n" +
+	"\x16connected_at_unix_nano\x18\b \x01(\x03R\x13connectedAtUnixNano\x122\n" +
+	"\x16last_seen_at_unix_nano\x18\t \x01(\x03R\x12lastSeenAtUnixNano\x12R\n" +
+	"\bmetadata\x18\n" +
+	" \x03(\v26.termx.protocol.wirepb.ClientSessionInfo.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"U\n" +
+	"\x11ClientTerminalRef\x12\x1f\n" +
+	"\vendpoint_id\x18\x01 \x01(\tR\n" +
+	"endpointId\x12\x1f\n" +
+	"\vterminal_id\x18\x02 \x01(\tR\n" +
+	"terminalId\"\x86\x02\n" +
+	"\x13ClientControlTarget\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1f\n" +
+	"\vclient_kind\x18\x02 \x01(\tR\n" +
+	"clientKind\x12!\n" +
+	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x12\x1c\n" +
+	"\tbroadcast\x18\x04 \x01(\bR\tbroadcast\x12!\n" +
+	"\factive_panel\x18\x05 \x01(\bR\vactivePanel\x12K\n" +
+	"\fterminal_ref\x18\x06 \x01(\v2(.termx.protocol.wirepb.ClientTerminalRefR\vterminalRef\"\xde\x02\n" +
+	"\x17ClientControlCallParams\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1b\n" +
+	"\taction_id\x18\x02 \x01(\tR\bactionId\x12\x16\n" +
+	"\x06params\x18\x03 \x01(\fR\x06params\x12B\n" +
+	"\x06target\x18\x04 \x01(\v2*.termx.protocol.wirepb.ClientControlTargetR\x06target\x12&\n" +
+	"\x0ftrace_parent_id\x18\x05 \x01(\tR\rtraceParentId\x12,\n" +
+	"\x12trace_parent_token\x18\x06 \x01(\tR\x10traceParentToken\x12,\n" +
+	"\x12deadline_unix_nano\x18\a \x01(\x03R\x10deadlineUnixNano\x12'\n" +
+	"\x0fidempotency_key\x18\b \x01(\tR\x0eidempotencyKey\"\xa4\x01\n" +
+	"\x17ClientControlCallResult\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1c\n" +
+	"\tbroadcast\x18\x02 \x01(\bR\tbroadcast\x12L\n" +
+	"\n" +
+	"deliveries\x18\x03 \x03(\v2,.termx.protocol.wirepb.ClientControlDeliveryR\n" +
+	"deliveries\"\x8f\x01\n" +
+	"\x15ClientControlDelivery\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12?\n" +
+	"\x05error\x18\x03 \x01(\v2).termx.protocol.wirepb.ClientControlErrorR\x05error\"\xa2\x02\n" +
+	"\x1bClientControlResponseParams\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x16\n" +
+	"\x06result\x18\x04 \x01(\fR\x06result\x12?\n" +
+	"\x05error\x18\x05 \x01(\v2).termx.protocol.wirepb.ClientControlErrorR\x05error\x12&\n" +
+	"\x0ftrace_parent_id\x18\x06 \x01(\tR\rtraceParentId\x12,\n" +
+	"\x12trace_parent_token\x18\a \x01(\tR\x10traceParentToken\"X\n" +
+	"\x1bClientControlResponseResult\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1a\n" +
+	"\baccepted\x18\x02 \x01(\bR\baccepted\"`\n" +
+	"\x12ClientControlError\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
+	"\tretryable\x18\x03 \x01(\bR\tretryable\"\x9b\x03\n" +
 	"\x14TerminalGridMetadata\x12#\n" +
 	"\rstore_version\x18\x01 \x01(\x05R\fstoreVersion\x12\x1f\n" +
 	"\vterminal_id\x18\x02 \x01(\tR\n" +
@@ -5720,90 +6870,106 @@ func file_wirepb_terminal_proto_rawDescGZIP() []byte {
 }
 
 var file_wirepb_terminal_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_wirepb_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 69)
+var file_wirepb_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 85)
 var file_wirepb_terminal_proto_goTypes = []any{
-	(StorageScope)(0),                // 0: termx.protocol.wirepb.StorageScope
-	(*Empty)(nil),                    // 1: termx.protocol.wirepb.Empty
-	(*Hello)(nil),                    // 2: termx.protocol.wirepb.Hello
-	(*RequestEnvelope)(nil),          // 3: termx.protocol.wirepb.RequestEnvelope
-	(*ResponseEnvelope)(nil),         // 4: termx.protocol.wirepb.ResponseEnvelope
-	(*ProtocolError)(nil),            // 5: termx.protocol.wirepb.ProtocolError
-	(*ErrorEnvelope)(nil),            // 6: termx.protocol.wirepb.ErrorEnvelope
-	(*Size)(nil),                     // 7: termx.protocol.wirepb.Size
-	(*TerminalInfo)(nil),             // 8: termx.protocol.wirepb.TerminalInfo
-	(*CreateParams)(nil),             // 9: termx.protocol.wirepb.CreateParams
-	(*CreateResult)(nil),             // 10: termx.protocol.wirepb.CreateResult
-	(*GetParams)(nil),                // 11: termx.protocol.wirepb.GetParams
-	(*ResizeParams)(nil),             // 12: termx.protocol.wirepb.ResizeParams
-	(*EnsureResizeParams)(nil),       // 13: termx.protocol.wirepb.EnsureResizeParams
-	(*EnsureResizeResult)(nil),       // 14: termx.protocol.wirepb.EnsureResizeResult
-	(*SetTagsParams)(nil),            // 15: termx.protocol.wirepb.SetTagsParams
-	(*SetMetadataParams)(nil),        // 16: termx.protocol.wirepb.SetMetadataParams
-	(*AttachParams)(nil),             // 17: termx.protocol.wirepb.AttachParams
-	(*AttachResult)(nil),             // 18: termx.protocol.wirepb.AttachResult
-	(*ResizeOwnership)(nil),          // 19: termx.protocol.wirepb.ResizeOwnership
-	(*ResizeControl)(nil),            // 20: termx.protocol.wirepb.ResizeControl
-	(*TerminalCreatedData)(nil),      // 21: termx.protocol.wirepb.TerminalCreatedData
-	(*TerminalStateChangedData)(nil), // 22: termx.protocol.wirepb.TerminalStateChangedData
-	(*TerminalResizedData)(nil),      // 23: termx.protocol.wirepb.TerminalResizedData
-	(*TerminalRemovedData)(nil),      // 24: termx.protocol.wirepb.TerminalRemovedData
-	(*CollaboratorsRevokedData)(nil), // 25: termx.protocol.wirepb.CollaboratorsRevokedData
-	(*TerminalReadErrorData)(nil),    // 26: termx.protocol.wirepb.TerminalReadErrorData
-	(*StorageChangedData)(nil),       // 27: termx.protocol.wirepb.StorageChangedData
-	(*WorkbenchChangedData)(nil),     // 28: termx.protocol.wirepb.WorkbenchChangedData
-	(*Event)(nil),                    // 29: termx.protocol.wirepb.Event
-	(*EventsParams)(nil),             // 30: termx.protocol.wirepb.EventsParams
-	(*SnapshotParams)(nil),           // 31: termx.protocol.wirepb.SnapshotParams
-	(*GridViewportParams)(nil),       // 32: termx.protocol.wirepb.GridViewportParams
-	(*HistoryWindowParams)(nil),      // 33: termx.protocol.wirepb.HistoryWindowParams
-	(*ListResult)(nil),               // 34: termx.protocol.wirepb.ListResult
-	(*PathListDirsParams)(nil),       // 35: termx.protocol.wirepb.PathListDirsParams
-	(*PathDirEntry)(nil),             // 36: termx.protocol.wirepb.PathDirEntry
-	(*PathListDirsResult)(nil),       // 37: termx.protocol.wirepb.PathListDirsResult
-	(*PathDefaultsResult)(nil),       // 38: termx.protocol.wirepb.PathDefaultsResult
-	(*CursorState)(nil),              // 39: termx.protocol.wirepb.CursorState
-	(*TerminalModes)(nil),            // 40: termx.protocol.wirepb.TerminalModes
-	(*RowSet)(nil),                   // 41: termx.protocol.wirepb.RowSet
-	(*Snapshot)(nil),                 // 42: termx.protocol.wirepb.Snapshot
-	(*GridViewport)(nil),             // 43: termx.protocol.wirepb.GridViewport
-	(*HistoryWindow)(nil),            // 44: termx.protocol.wirepb.HistoryWindow
-	(*StorageEntry)(nil),             // 45: termx.protocol.wirepb.StorageEntry
-	(*StorageGetParams)(nil),         // 46: termx.protocol.wirepb.StorageGetParams
-	(*StoragePutParams)(nil),         // 47: termx.protocol.wirepb.StoragePutParams
-	(*StorageDeleteParams)(nil),      // 48: termx.protocol.wirepb.StorageDeleteParams
-	(*StorageDeleteResult)(nil),      // 49: termx.protocol.wirepb.StorageDeleteResult
-	(*StorageListParams)(nil),        // 50: termx.protocol.wirepb.StorageListParams
-	(*StorageListResult)(nil),        // 51: termx.protocol.wirepb.StorageListResult
-	(*WorkbenchSnapshot)(nil),        // 52: termx.protocol.wirepb.WorkbenchSnapshot
-	(*WorkbenchWorkspace)(nil),       // 53: termx.protocol.wirepb.WorkbenchWorkspace
-	(*WorkbenchTab)(nil),             // 54: termx.protocol.wirepb.WorkbenchTab
-	(*WorkbenchPane)(nil),            // 55: termx.protocol.wirepb.WorkbenchPane
-	(*WorkbenchSplitNode)(nil),       // 56: termx.protocol.wirepb.WorkbenchSplitNode
-	(*WorkbenchGetParams)(nil),       // 57: termx.protocol.wirepb.WorkbenchGetParams
-	(*WorkbenchMutateParams)(nil),    // 58: termx.protocol.wirepb.WorkbenchMutateParams
-	(*WorkbenchMutateResult)(nil),    // 59: termx.protocol.wirepb.WorkbenchMutateResult
-	(*RemoteStatus)(nil),             // 60: termx.protocol.wirepb.RemoteStatus
-	(*RemotePairStartParams)(nil),    // 61: termx.protocol.wirepb.RemotePairStartParams
-	(*RemotePairStartResult)(nil),    // 62: termx.protocol.wirepb.RemotePairStartResult
-	(*RemoteLocalEnableParams)(nil),  // 63: termx.protocol.wirepb.RemoteLocalEnableParams
-	(*RemoteLocalStatus)(nil),        // 64: termx.protocol.wirepb.RemoteLocalStatus
-	(*TerminalGridMetadata)(nil),     // 65: termx.protocol.wirepb.TerminalGridMetadata
-	nil,                              // 66: termx.protocol.wirepb.TerminalInfo.TagsEntry
-	nil,                              // 67: termx.protocol.wirepb.CreateParams.TagsEntry
-	nil,                              // 68: termx.protocol.wirepb.SetTagsParams.TagsEntry
-	nil,                              // 69: termx.protocol.wirepb.SetMetadataParams.TagsEntry
+	(StorageScope)(0),                   // 0: termx.protocol.wirepb.StorageScope
+	(*Empty)(nil),                       // 1: termx.protocol.wirepb.Empty
+	(*Hello)(nil),                       // 2: termx.protocol.wirepb.Hello
+	(*RequestEnvelope)(nil),             // 3: termx.protocol.wirepb.RequestEnvelope
+	(*ResponseEnvelope)(nil),            // 4: termx.protocol.wirepb.ResponseEnvelope
+	(*ProtocolError)(nil),               // 5: termx.protocol.wirepb.ProtocolError
+	(*ErrorEnvelope)(nil),               // 6: termx.protocol.wirepb.ErrorEnvelope
+	(*Size)(nil),                        // 7: termx.protocol.wirepb.Size
+	(*TerminalInfo)(nil),                // 8: termx.protocol.wirepb.TerminalInfo
+	(*CreateParams)(nil),                // 9: termx.protocol.wirepb.CreateParams
+	(*CreateResult)(nil),                // 10: termx.protocol.wirepb.CreateResult
+	(*GetParams)(nil),                   // 11: termx.protocol.wirepb.GetParams
+	(*ResizeParams)(nil),                // 12: termx.protocol.wirepb.ResizeParams
+	(*EnsureResizeParams)(nil),          // 13: termx.protocol.wirepb.EnsureResizeParams
+	(*EnsureResizeResult)(nil),          // 14: termx.protocol.wirepb.EnsureResizeResult
+	(*SetTagsParams)(nil),               // 15: termx.protocol.wirepb.SetTagsParams
+	(*SetMetadataParams)(nil),           // 16: termx.protocol.wirepb.SetMetadataParams
+	(*AttachParams)(nil),                // 17: termx.protocol.wirepb.AttachParams
+	(*AttachResult)(nil),                // 18: termx.protocol.wirepb.AttachResult
+	(*ResizeOwnership)(nil),             // 19: termx.protocol.wirepb.ResizeOwnership
+	(*ResizeControl)(nil),               // 20: termx.protocol.wirepb.ResizeControl
+	(*TerminalCreatedData)(nil),         // 21: termx.protocol.wirepb.TerminalCreatedData
+	(*TerminalStateChangedData)(nil),    // 22: termx.protocol.wirepb.TerminalStateChangedData
+	(*TerminalResizedData)(nil),         // 23: termx.protocol.wirepb.TerminalResizedData
+	(*TerminalRemovedData)(nil),         // 24: termx.protocol.wirepb.TerminalRemovedData
+	(*CollaboratorsRevokedData)(nil),    // 25: termx.protocol.wirepb.CollaboratorsRevokedData
+	(*TerminalReadErrorData)(nil),       // 26: termx.protocol.wirepb.TerminalReadErrorData
+	(*StorageChangedData)(nil),          // 27: termx.protocol.wirepb.StorageChangedData
+	(*WorkbenchChangedData)(nil),        // 28: termx.protocol.wirepb.WorkbenchChangedData
+	(*Event)(nil),                       // 29: termx.protocol.wirepb.Event
+	(*EventsParams)(nil),                // 30: termx.protocol.wirepb.EventsParams
+	(*SnapshotParams)(nil),              // 31: termx.protocol.wirepb.SnapshotParams
+	(*GridViewportParams)(nil),          // 32: termx.protocol.wirepb.GridViewportParams
+	(*HistoryWindowParams)(nil),         // 33: termx.protocol.wirepb.HistoryWindowParams
+	(*ListResult)(nil),                  // 34: termx.protocol.wirepb.ListResult
+	(*PathListDirsParams)(nil),          // 35: termx.protocol.wirepb.PathListDirsParams
+	(*PathDirEntry)(nil),                // 36: termx.protocol.wirepb.PathDirEntry
+	(*PathListDirsResult)(nil),          // 37: termx.protocol.wirepb.PathListDirsResult
+	(*PathDefaultsResult)(nil),          // 38: termx.protocol.wirepb.PathDefaultsResult
+	(*CursorState)(nil),                 // 39: termx.protocol.wirepb.CursorState
+	(*TerminalModes)(nil),               // 40: termx.protocol.wirepb.TerminalModes
+	(*RowSet)(nil),                      // 41: termx.protocol.wirepb.RowSet
+	(*Snapshot)(nil),                    // 42: termx.protocol.wirepb.Snapshot
+	(*GridViewport)(nil),                // 43: termx.protocol.wirepb.GridViewport
+	(*HistoryWindow)(nil),               // 44: termx.protocol.wirepb.HistoryWindow
+	(*StorageEntry)(nil),                // 45: termx.protocol.wirepb.StorageEntry
+	(*StorageGetParams)(nil),            // 46: termx.protocol.wirepb.StorageGetParams
+	(*StoragePutParams)(nil),            // 47: termx.protocol.wirepb.StoragePutParams
+	(*StorageDeleteParams)(nil),         // 48: termx.protocol.wirepb.StorageDeleteParams
+	(*StorageDeleteResult)(nil),         // 49: termx.protocol.wirepb.StorageDeleteResult
+	(*StorageListParams)(nil),           // 50: termx.protocol.wirepb.StorageListParams
+	(*StorageListResult)(nil),           // 51: termx.protocol.wirepb.StorageListResult
+	(*WorkbenchSnapshot)(nil),           // 52: termx.protocol.wirepb.WorkbenchSnapshot
+	(*WorkbenchWorkspace)(nil),          // 53: termx.protocol.wirepb.WorkbenchWorkspace
+	(*WorkbenchTab)(nil),                // 54: termx.protocol.wirepb.WorkbenchTab
+	(*WorkbenchPane)(nil),               // 55: termx.protocol.wirepb.WorkbenchPane
+	(*WorkbenchSplitNode)(nil),          // 56: termx.protocol.wirepb.WorkbenchSplitNode
+	(*WorkbenchGetParams)(nil),          // 57: termx.protocol.wirepb.WorkbenchGetParams
+	(*WorkbenchMutateParams)(nil),       // 58: termx.protocol.wirepb.WorkbenchMutateParams
+	(*WorkbenchMutateResult)(nil),       // 59: termx.protocol.wirepb.WorkbenchMutateResult
+	(*RemoteStatus)(nil),                // 60: termx.protocol.wirepb.RemoteStatus
+	(*RemotePairStartParams)(nil),       // 61: termx.protocol.wirepb.RemotePairStartParams
+	(*RemotePairStartResult)(nil),       // 62: termx.protocol.wirepb.RemotePairStartResult
+	(*RemoteLocalEnableParams)(nil),     // 63: termx.protocol.wirepb.RemoteLocalEnableParams
+	(*RemoteLocalStatus)(nil),           // 64: termx.protocol.wirepb.RemoteLocalStatus
+	(*ClientControlActionSpec)(nil),     // 65: termx.protocol.wirepb.ClientControlActionSpec
+	(*ClientSessionRegisterParams)(nil), // 66: termx.protocol.wirepb.ClientSessionRegisterParams
+	(*ClientSessionRegisterResult)(nil), // 67: termx.protocol.wirepb.ClientSessionRegisterResult
+	(*ClientSessionListParams)(nil),     // 68: termx.protocol.wirepb.ClientSessionListParams
+	(*ClientSessionListResult)(nil),     // 69: termx.protocol.wirepb.ClientSessionListResult
+	(*ClientSessionInfo)(nil),           // 70: termx.protocol.wirepb.ClientSessionInfo
+	(*ClientTerminalRef)(nil),           // 71: termx.protocol.wirepb.ClientTerminalRef
+	(*ClientControlTarget)(nil),         // 72: termx.protocol.wirepb.ClientControlTarget
+	(*ClientControlCallParams)(nil),     // 73: termx.protocol.wirepb.ClientControlCallParams
+	(*ClientControlCallResult)(nil),     // 74: termx.protocol.wirepb.ClientControlCallResult
+	(*ClientControlDelivery)(nil),       // 75: termx.protocol.wirepb.ClientControlDelivery
+	(*ClientControlResponseParams)(nil), // 76: termx.protocol.wirepb.ClientControlResponseParams
+	(*ClientControlResponseResult)(nil), // 77: termx.protocol.wirepb.ClientControlResponseResult
+	(*ClientControlError)(nil),          // 78: termx.protocol.wirepb.ClientControlError
+	(*TerminalGridMetadata)(nil),        // 79: termx.protocol.wirepb.TerminalGridMetadata
+	nil,                                 // 80: termx.protocol.wirepb.TerminalInfo.TagsEntry
+	nil,                                 // 81: termx.protocol.wirepb.CreateParams.TagsEntry
+	nil,                                 // 82: termx.protocol.wirepb.SetTagsParams.TagsEntry
+	nil,                                 // 83: termx.protocol.wirepb.SetMetadataParams.TagsEntry
+	nil,                                 // 84: termx.protocol.wirepb.ClientSessionRegisterParams.MetadataEntry
+	nil,                                 // 85: termx.protocol.wirepb.ClientSessionInfo.MetadataEntry
 }
 var file_wirepb_terminal_proto_depIdxs = []int32{
 	5,  // 0: termx.protocol.wirepb.ErrorEnvelope.error:type_name -> termx.protocol.wirepb.ProtocolError
-	66, // 1: termx.protocol.wirepb.TerminalInfo.tags:type_name -> termx.protocol.wirepb.TerminalInfo.TagsEntry
+	80, // 1: termx.protocol.wirepb.TerminalInfo.tags:type_name -> termx.protocol.wirepb.TerminalInfo.TagsEntry
 	7,  // 2: termx.protocol.wirepb.TerminalInfo.size:type_name -> termx.protocol.wirepb.Size
 	19, // 3: termx.protocol.wirepb.TerminalInfo.resize_ownership:type_name -> termx.protocol.wirepb.ResizeOwnership
-	67, // 4: termx.protocol.wirepb.CreateParams.tags:type_name -> termx.protocol.wirepb.CreateParams.TagsEntry
+	81, // 4: termx.protocol.wirepb.CreateParams.tags:type_name -> termx.protocol.wirepb.CreateParams.TagsEntry
 	7,  // 5: termx.protocol.wirepb.CreateParams.size:type_name -> termx.protocol.wirepb.Size
 	20, // 6: termx.protocol.wirepb.EnsureResizeResult.resize_control:type_name -> termx.protocol.wirepb.ResizeControl
 	7,  // 7: termx.protocol.wirepb.EnsureResizeResult.size:type_name -> termx.protocol.wirepb.Size
-	68, // 8: termx.protocol.wirepb.SetTagsParams.tags:type_name -> termx.protocol.wirepb.SetTagsParams.TagsEntry
-	69, // 9: termx.protocol.wirepb.SetMetadataParams.tags:type_name -> termx.protocol.wirepb.SetMetadataParams.TagsEntry
+	82, // 8: termx.protocol.wirepb.SetTagsParams.tags:type_name -> termx.protocol.wirepb.SetTagsParams.TagsEntry
+	83, // 9: termx.protocol.wirepb.SetMetadataParams.tags:type_name -> termx.protocol.wirepb.SetMetadataParams.TagsEntry
 	20, // 10: termx.protocol.wirepb.AttachResult.resize_control:type_name -> termx.protocol.wirepb.ResizeControl
 	7,  // 11: termx.protocol.wirepb.ResizeOwnership.size:type_name -> termx.protocol.wirepb.Size
 	19, // 12: termx.protocol.wirepb.ResizeControl.resize_ownership:type_name -> termx.protocol.wirepb.ResizeOwnership
@@ -5844,11 +7010,22 @@ var file_wirepb_terminal_proto_depIdxs = []int32{
 	56, // 47: termx.protocol.wirepb.WorkbenchTab.root_split:type_name -> termx.protocol.wirepb.WorkbenchSplitNode
 	56, // 48: termx.protocol.wirepb.WorkbenchSplitNode.children:type_name -> termx.protocol.wirepb.WorkbenchSplitNode
 	52, // 49: termx.protocol.wirepb.WorkbenchMutateResult.snapshot:type_name -> termx.protocol.wirepb.WorkbenchSnapshot
-	50, // [50:50] is the sub-list for method output_type
-	50, // [50:50] is the sub-list for method input_type
-	50, // [50:50] is the sub-list for extension type_name
-	50, // [50:50] is the sub-list for extension extendee
-	0,  // [0:50] is the sub-list for field type_name
+	65, // 50: termx.protocol.wirepb.ClientSessionRegisterParams.actions:type_name -> termx.protocol.wirepb.ClientControlActionSpec
+	84, // 51: termx.protocol.wirepb.ClientSessionRegisterParams.metadata:type_name -> termx.protocol.wirepb.ClientSessionRegisterParams.MetadataEntry
+	70, // 52: termx.protocol.wirepb.ClientSessionRegisterResult.session:type_name -> termx.protocol.wirepb.ClientSessionInfo
+	70, // 53: termx.protocol.wirepb.ClientSessionListResult.sessions:type_name -> termx.protocol.wirepb.ClientSessionInfo
+	65, // 54: termx.protocol.wirepb.ClientSessionInfo.actions:type_name -> termx.protocol.wirepb.ClientControlActionSpec
+	85, // 55: termx.protocol.wirepb.ClientSessionInfo.metadata:type_name -> termx.protocol.wirepb.ClientSessionInfo.MetadataEntry
+	71, // 56: termx.protocol.wirepb.ClientControlTarget.terminal_ref:type_name -> termx.protocol.wirepb.ClientTerminalRef
+	72, // 57: termx.protocol.wirepb.ClientControlCallParams.target:type_name -> termx.protocol.wirepb.ClientControlTarget
+	75, // 58: termx.protocol.wirepb.ClientControlCallResult.deliveries:type_name -> termx.protocol.wirepb.ClientControlDelivery
+	78, // 59: termx.protocol.wirepb.ClientControlDelivery.error:type_name -> termx.protocol.wirepb.ClientControlError
+	78, // 60: termx.protocol.wirepb.ClientControlResponseParams.error:type_name -> termx.protocol.wirepb.ClientControlError
+	61, // [61:61] is the sub-list for method output_type
+	61, // [61:61] is the sub-list for method input_type
+	61, // [61:61] is the sub-list for extension type_name
+	61, // [61:61] is the sub-list for extension extendee
+	0,  // [0:61] is the sub-list for field type_name
 }
 
 func init() { file_wirepb_terminal_proto_init() }
@@ -5864,7 +7041,7 @@ func file_wirepb_terminal_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wirepb_terminal_proto_rawDesc), len(file_wirepb_terminal_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   69,
+			NumMessages:   85,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

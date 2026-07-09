@@ -172,6 +172,104 @@ func TestCoreV2RemoteWireContractFields(t *testing.T) {
 		"default_command": 1,
 		"default_cwd":     2,
 	})
+
+	assertFields(t, (&ClientControlActionSpec{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"id":                     1,
+		"owner_plugin_id":        2,
+		"scope":                  3,
+		"supported_client_kinds": 4,
+		"required_caps":          5,
+		"client_required_caps":   6,
+		"daemon_required_caps":   7,
+		"danger":                 8,
+		"params_schema":          9,
+		"idempotent":             10,
+	})
+	assertFields(t, (&ClientSessionRegisterParams{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"session_id":   1,
+		"client_kind":  2,
+		"workspace_id": 3,
+		"instance_id":  4,
+		"pid":          5,
+		"capabilities": 6,
+		"actions":      7,
+		"metadata":     8,
+	})
+	assertFields(t, (&ClientSessionRegisterResult{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"session": 1,
+	})
+	assertFields(t, (&ClientSessionListParams{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"client_kind":     1,
+		"workspace_id":    2,
+		"include_actions": 3,
+	})
+	assertFields(t, (&ClientSessionListResult{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"sessions": 1,
+	})
+	assertFields(t, (&ClientSessionInfo{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"session_id":             1,
+		"client_kind":            2,
+		"workspace_id":           3,
+		"instance_id":            4,
+		"pid":                    5,
+		"capabilities":           6,
+		"actions":                7,
+		"connected_at_unix_nano": 8,
+		"last_seen_at_unix_nano": 9,
+		"metadata":               10,
+	})
+	assertFields(t, (&ClientTerminalRef{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"endpoint_id": 1,
+		"terminal_id": 2,
+	})
+	assertFields(t, (&ClientControlCallParams{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"request_id":         1,
+		"action_id":          2,
+		"params":             3,
+		"target":             4,
+		"trace_parent_id":    5,
+		"trace_parent_token": 6,
+		"deadline_unix_nano": 7,
+		"idempotency_key":    8,
+	})
+	assertFields(t, (&ClientControlTarget{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"session_id":   1,
+		"client_kind":  2,
+		"workspace_id": 3,
+		"broadcast":    4,
+		"active_panel": 5,
+		"terminal_ref": 6,
+	})
+	assertFields(t, (&ClientControlResponseParams{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"request_id":         1,
+		"session_id":         2,
+		"status":             3,
+		"result":             4,
+		"error":              5,
+		"trace_parent_id":    6,
+		"trace_parent_token": 7,
+	})
+	assertFields(t, (&ClientControlCallResult{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"request_id": 1,
+		"broadcast":  2,
+		"deliveries": 3,
+	})
+	assertFields(t, (&ClientControlDelivery{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"session_id": 1,
+		"status":     2,
+		"error":      3,
+	})
+	assertFields(t, (&ClientControlResponseResult{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"request_id": 1,
+		"accepted":   2,
+	})
+	assertFields(t, (&ClientControlError{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"code":      1,
+		"message":   2,
+		"retryable": 3,
+	})
+	assertNoFields(t, (&ClientControlCallParams{}).ProtoReflect().Descriptor(), "source")
+	assertNoFields(t, (&ClientTerminalRef{}).ProtoReflect().Descriptor(), "display_name")
 }
 
 func assertFields(t *testing.T, message protoreflect.MessageDescriptor, fields map[protoreflect.Name]protoreflect.FieldNumber) {
@@ -183,6 +281,15 @@ func assertFields(t *testing.T, message protoreflect.MessageDescriptor, fields m
 		}
 		if field.Number() != number {
 			t.Fatalf("%s.%s field number = %d, want %d", message.FullName(), name, field.Number(), number)
+		}
+	}
+}
+
+func assertNoFields(t *testing.T, message protoreflect.MessageDescriptor, names ...protoreflect.Name) {
+	t.Helper()
+	for _, name := range names {
+		if field := message.Fields().ByName(name); field != nil {
+			t.Fatalf("%s must not expose field %s", message.FullName(), name)
 		}
 	}
 }
