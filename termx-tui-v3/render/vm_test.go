@@ -2831,14 +2831,14 @@ func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 		Shell:   emptyShell,
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true, Lines: []string{"live must not replace empty"}},
 	})
-	if content := activeContent(emptyVM.Shell); content.Kind != ContentEmptyPane || !content.Empty || content.Lines[0].PlainString() != "unconnected" || content.Status != "unconnected: Attach / Create / Manager / Close" || !strings.Contains(content.Lines[1].PlainString(), "► Attach existing terminal ◄") || content.Cursor.Visible || content.Cursor.Anchor {
+	if content := activeContent(emptyVM.Shell); content.Kind != ContentEmptyPane || !content.Empty || content.Lines[0].PlainString() != "○ No terminal connected" || content.Status != "not connected: choose or create terminal" || !contentPlainContains(content, "► Attach existing terminal ◄") || !contentPlainContains(content, "Choose a terminal or create one.") || content.Cursor.Visible || content.Cursor.Anchor {
 		t.Fatalf("expected active empty pane placeholder, got %#v", content)
 	} else if !contentHasAction(content, "empty.attach") || !contentHasAction(content, "empty.create") || !contentHasAction(content, "empty.manager") || !contentHasAction(content, "empty.close") {
 		t.Fatalf("expected empty pane CTA action regions, got %#v", content.HitRegions)
 	}
 	emptyShell.EmptyPaneCTA.SelectedIndex = 2
 	emptyVM = NewRenderVMBuilder().Build(state.Root{Shell: emptyShell})
-	if content := activeContent(emptyVM.Shell); !strings.Contains(content.Lines[3].PlainString(), "► Open terminal manager ◄") || !strings.Contains(content.Lines[1].PlainString(), "[ Attach existing terminal ]") {
+	if content := activeContent(emptyVM.Shell); !contentPlainContains(content, "► Open terminal manager ◄") || !contentPlainContains(content, "[ Attach existing terminal ]") {
 		t.Fatalf("expected reducer-owned empty pane CTA selection, got %#v", content.Lines)
 	}
 	floatingShell := state.DefaultShell()
@@ -2852,7 +2852,7 @@ func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 	if len(floatingVM.Shell.Layout.Floating) != 1 {
 		t.Fatalf("expected active floating VM, got %#v", floatingVM.Shell.Layout.Floating)
 	}
-	if content := floatingVM.Shell.Layout.Floating[0].Content; content.Kind != ContentEmptyPane || !strings.Contains(content.Lines[2].PlainString(), "► Create new terminal ◄") || !strings.Contains(content.Lines[1].PlainString(), "[ Attach existing terminal ]") {
+	if content := floatingVM.Shell.Layout.Floating[0].Content; content.Kind != ContentEmptyPane || !contentPlainContains(content, "► Create new terminal ◄") || !contentPlainContains(content, "[ Attach existing terminal ]") {
 		t.Fatalf("expected reducer-owned floating empty CTA selection, got %#v", content.Lines)
 	}
 
@@ -2897,7 +2897,7 @@ func TestRenderVMBuilderProjectsCreatedTabAsUnconnectedPane(t *testing.T) {
 	}
 	panel := vm.Shell.Layout.Panels[0]
 	content := panel.Content
-	if panel.ID == "" || panel.ID != shell.ActivePaneID || content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "unconnected") || !strings.Contains(content.Lines[1].PlainString(), "Attach existing terminal") {
+	if panel.ID == "" || panel.ID != shell.ActivePaneID || content.Kind != ContentEmptyPane || !content.Empty || !contentPlainContains(content, "No terminal connected") || !contentPlainContains(content, "Attach existing terminal") {
 		t.Fatalf("expected created tab unconnected pane, panel=%#v shell=%#v", panel, shell)
 	}
 	if content.Cursor.Visible || content.Cursor.Anchor {
@@ -3208,10 +3208,10 @@ func TestRenderVMBuilderProjectsDisconnectedPaneActions(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(binding)
 
 	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if content.Kind != ContentTerminalLive || content.Status != "disconnected: Reconnect / Disconnect" || !contentHasAction(content, ActionDisconnectedReconnect.String()) || !contentHasAction(content, ActionDisconnectedDisconnect.String()) {
+	if content.Kind != ContentTerminalLive || content.Status != "connection interrupted: reconnect or detach" || !contentHasAction(content, ActionDisconnectedReconnect.String()) || !contentHasAction(content, ActionDisconnectedDisconnect.String()) {
 		t.Fatalf("disconnected pane should show local reconnect/disconnect choices, got %#v", content)
 	}
-	if !strings.Contains(content.Lines[0].PlainString(), "last remote output") || !contentPlainContains(content, "● endpoint disconnected") || !contentPlainContains(content, "West Lab (west)") || !contentPlainContains(content, "transport ssh") || !strings.Contains(content.Error, "remote-daemon") {
+	if !strings.Contains(content.Lines[0].PlainString(), "last remote output") || !contentPlainContains(content, "● Connection interrupted") || !contentPlainContains(content, "last terminal frame is preserved") || !contentPlainContains(content, "West Lab (west)") || !contentPlainContains(content, "transport ssh") || !contentPlainContains(content, "Remote termx daemon unavailable") || !contentPlainContains(content, "remote termx daemon is running") || !strings.Contains(content.Error, "remote-daemon") {
 		t.Fatalf("disconnected pane should preserve content and reason, lines=%#v error=%q", content.Lines, content.Error)
 	}
 }
@@ -3227,8 +3227,38 @@ func TestRenderVMBuilderProjectsConnectingPaneFromAttachPending(t *testing.T) {
 	root.Surface = state.TerminalSurfaceStore{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, Lines: []string{"last remote output"}, Ready: true}
 
 	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if !content.Pending || content.Status != "connecting endpoint" || !contentPlainContains(content, "● connecting") || !contentPlainContains(content, "West Lab (west)") || !contentPlainContains(content, "transport ssh") || contentHasAction(content, ActionDisconnectedReconnect.String()) {
+	if !content.Pending || content.Status != "connecting: input paused" || !contentPlainContains(content, "◌ Reconnecting terminal") || !contentPlainContains(content, "Input resumes after attach succeeds") || !contentPlainContains(content, "West Lab (west)") || !contentPlainContains(content, "transport ssh") || contentHasAction(content, ActionDisconnectedReconnect.String()) {
 		t.Fatalf("attach pending should render structured connecting state, got %#v", content)
+	}
+}
+
+func TestEndpointRecoveryHintUsesErrorCategory(t *testing.T) {
+	cases := map[state.EndpointErrorKind]string{
+		state.EndpointErrorAuth:         "credentials",
+		state.EndpointErrorHostKey:      "host identity",
+		state.EndpointErrorRemoteDaemon: "termx daemon",
+		state.EndpointErrorProtocol:     "protocol session",
+		state.EndpointErrorConfig:       "endpoint configuration",
+	}
+	for kind, want := range cases {
+		if got := endpointRecoveryHint(kind); !strings.Contains(got, want) {
+			t.Fatalf("recovery hint kind=%q got=%q want substring=%q", kind, got, want)
+		}
+	}
+}
+
+func TestEndpointIssueLabelUsesReadableCategory(t *testing.T) {
+	cases := map[state.EndpointErrorKind]string{
+		state.EndpointErrorAuth:            "Authentication failed",
+		state.EndpointErrorHostKey:         "Remote host identity changed",
+		state.EndpointErrorRemoteDaemon:    "Remote termx daemon unavailable",
+		state.EndpointErrorTransportClosed: "Transport connection closed",
+		state.EndpointErrorProtocol:        "Protocol session ended",
+	}
+	for kind, want := range cases {
+		if got := endpointIssueLabel(kind); got != want {
+			t.Fatalf("issue label kind=%q got=%q want=%q", kind, got, want)
+		}
 	}
 }
 

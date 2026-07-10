@@ -99,7 +99,7 @@ func buildEmptyPaneContent(pane state.PaneState) ContentVM {
 	return ContentVM{
 		Kind:       ContentEmptyPane,
 		Lines:      lines,
-		Status:     "unconnected: Attach / Create / Manager / Close",
+		Status:     "not connected: choose or create terminal",
 		Cursor:     cursor,
 		Empty:      true,
 		HitRegions: regions,
@@ -111,7 +111,7 @@ func buildEmptyPaneContentWithSelection(pane state.PaneState, selectedIndex int)
 	return ContentVM{
 		Kind:       ContentEmptyPane,
 		Lines:      lines,
-		Status:     "unconnected: Attach / Create / Manager / Close",
+		Status:     "not connected: choose or create terminal",
 		Cursor:     cursor,
 		Empty:      true,
 		HitRegions: regions,
@@ -123,7 +123,12 @@ func emptyPaneContentLayout(paneID string, selectedIndex int) ([]Line, []HitRegi
 	if selectedIndex < 0 || selectedIndex >= len(actions) {
 		selectedIndex = 0
 	}
-	lines := []Line{centeredStyledLine("unconnected", StyleForeground)}
+	lines := []Line{
+		centeredStyledLine("○ No terminal connected", StyleForeground),
+		centeredStyledLine("Choose a terminal or create one.", StyleMuted),
+		NewLine(""),
+		centeredStyledLine("Choose how to start", StyleMuted),
+	}
 	regions := make([]HitRegion, 0, len(actions))
 	for index, action := range actions {
 		selected := index == selectedIndex
@@ -134,7 +139,7 @@ func emptyPaneContentLayout(paneID string, selectedIndex int) ([]Line, []HitRegi
 		}
 		line := centeredStyledLine(text, style)
 		lines = append(lines, line)
-		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: index + 1, W: DisplayWidth(text), H: 1}, PaneID: paneID, ActionID: action.ID.String()})
+		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: len(lines) - 1, W: DisplayWidth(text), H: 1}, PaneID: paneID, ActionID: action.ID.String()})
 	}
 	return lines, regions, Cursor{}
 }

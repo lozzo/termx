@@ -91,6 +91,7 @@
 | KS010 | 完成 | 组合 action 与 terminal lifecycle 执行语义 | 先补成功、失败、TerminalRef 路由 harness；只实现 `panel.kill` / `panel.kill_and_close` handler、步骤和关闭时机，不再调整 registry 基础结构或开放脚本系统 |
 | KS011 | 暂停 | 增强键盘协议与 Ctrl+数字 | 用户切换到连接体验优化后暂停；恢复时先补 raw bytes 到 invocation harness，再接 TerminalHost capability 与 available 投影 |
 | CX001 | 完成 | endpoint 连接中与断线 pane UI 收敛 | 复用 reducer-owned `AttachPending` 和 endpoint runtime status；重连请求立即显示连接中，断线保留最后画面并结构化展示 endpoint、transport、原因和局部操作；不新增自动重试或 transport fallback |
+| CX002 | 完成 | pane 未连接、重连中与异常断开统一状态面板 | 三态使用一致的信息层级与操作布局；只展示 reducer 已知状态，不伪造连接进度；异常断开按错误类别给出可执行提示并保留最后画面 |
 | KS012 | 待开始 | 快捷键跨切片总契约守卫 | 汇总默认 catalog 完备性、键盘/点击等价、空 catalog、overlay、组合 action 和 capability 回归守卫，不在本切片首次补关键 harness |
 | KS013 | 待开始 | 快捷键文档与示例收尾 | 更新现状统计、配置示例、支持键位和限制；删除错误可用性声明，确保可加载示例不会意外禁用未展示的必要入口 |
 | ME012 | 待开始 | hub/P2P transport dialer 与跨设备发现 | 接入 `termx-hub/` 发现/授权/relay；P2P 或 relay datachannel 只连接远端 termx daemon；局部失败不影响其他 endpoint |
@@ -147,3 +148,4 @@
 - KS010 已完成：`panel.kill` 与 `panel.kill_and_close` 直接进入独立 pane command 链路；两者都只从 pane binding 读取 owning `TerminalRef` 发 kill，不 fallback 裸 `TerminalID`；kill-only 成功保留 pane，kill-and-close 仅在成功且 result/close 消费两次确认 pane 仍绑定同一 `TerminalRef` 后进入标准 workbench pane-close/persist 路径，失败、重绑定和 last-pane close 拒绝都保留 pane；配置仍只引用 action id，不开放脚本。
 - KS011 暂停：用户要求先优化断线与连接中体验；当前未新增增强键盘实现，恢复时仍从 raw bytes -> `InputEvent` -> invocation harness 开始。
 - CX001 已完成：reconnect 请求先以目标 view 的 `AttachPending` 投影连接中，并把 owning endpoint 标为 connecting；成功回包收敛为 connected，失败清除 pending 并按错误分类回投 offline。断线 pane 保留最后 live surface，结构化显示 endpoint label/id、transport、terminal、reason 和局部 Reconnect/Disconnect 操作；未引入定时刷新、自动重试或 fallback。
+- CX002 已完成：未连接态展示清晰的起始说明和主次操作；连接/重连态保留最后画面并说明输入暂停、新 endpoint session 正在建立；异常断开态把错误分类投影为用户可读 issue，原始错误降为 detail，并按 auth、host-key、transport、remote daemon、protocol、config 给出对应 next step。三态未伪造百分比、重试次数或 transport 阶段。

@@ -239,13 +239,13 @@ func TestContentViewportCentersEmptyPaneActionsAndStyles(t *testing.T) {
 		Content: ContentVM{Kind: ContentEmptyPane, Lines: lines, HitRegions: regions, Cursor: cursor},
 	})
 
-	if got, want := SliceCells(result.Lines[1].PlainString(), 14, 25), "unconnected"; got != want {
+	if got, want := SliceCells(result.Lines[0].PlainString(), 8, 31), "○ No terminal connected"; got != want {
 		t.Fatalf("empty pane headline should be centered got=%q want=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
 	}
-	if got, want := SliceCells(result.Lines[2].PlainString(), 6, 34), "► Attach existing terminal ◄"; got != want {
+	if got, want := SliceCells(result.Lines[4].PlainString(), 6, 34), "► Attach existing terminal ◄"; got != want {
 		t.Fatalf("selected empty action should use tuiv2 arrows got=%q want=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
 	}
-	if got, want := SliceCells(result.Lines[3].PlainString(), 8, 31), "[ Create new terminal ]"; got != want {
+	if got, want := SliceCells(result.Lines[5].PlainString(), 8, 31), "[ Create new terminal ]"; got != want {
 		t.Fatalf("unselected empty action should use brackets got=%q want=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
 	}
 	if !styledLinesContainText(result.Lines, "► Attach existing terminal ◄", StyleAccent) ||
@@ -255,7 +255,7 @@ func TestContentViewportCentersEmptyPaneActionsAndStyles(t *testing.T) {
 		t.Fatalf("empty actions should keep action-specific styles, got %#v", result.Lines)
 	}
 	attach := hitRegionByAction(t, result.HitRegions, ActionEmptyAttach.String())
-	if attach.Rect != (Rect{X: 6, Y: 2, W: 28, H: 1}) {
+	if attach.Rect != (Rect{X: 6, Y: 4, W: 28, H: 1}) {
 		t.Fatalf("selected empty action hit region should follow centered text, got %#v", attach)
 	}
 	if result.Cursor.Visible || result.Cursor.Anchor {

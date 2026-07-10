@@ -1194,10 +1194,10 @@ func TestMeasureLayoutCentersEmptyPaneActionHitRegions(t *testing.T) {
 	create := hitRegionByAction(t, plan.HitRegions, ActionEmptyCreate.String())
 	attachWidth := DisplayWidth("► Attach existing terminal ◄")
 	createWidth := DisplayWidth("[ Create new terminal ]")
-	if attach.Rect != (Rect{X: contentRect.X + (contentRect.W-attachWidth)/2, Y: contentRect.Y + 2, W: attachWidth, H: 1}) {
+	if attach.Rect != (Rect{X: contentRect.X + (contentRect.W-attachWidth)/2, Y: contentRect.Y + 4, W: attachWidth, H: 1}) {
 		t.Fatalf("attach hit region should match centered selected row content=%#v got=%#v", contentRect, attach)
 	}
-	if create.Rect != (Rect{X: contentRect.X + (contentRect.W-createWidth)/2, Y: contentRect.Y + 3, W: createWidth, H: 1}) {
+	if create.Rect != (Rect{X: contentRect.X + (contentRect.W-createWidth)/2, Y: contentRect.Y + 5, W: createWidth, H: 1}) {
 		t.Fatalf("create hit region should match centered bracket row content=%#v got=%#v", contentRect, create)
 	}
 }

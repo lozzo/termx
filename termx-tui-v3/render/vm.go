@@ -1232,14 +1232,22 @@ func liveConnectingContent(surface state.TerminalSurfaceStore, session state.Ter
 	if len(lines) > 0 {
 		lines = append(lines, NewLine(""))
 	}
+	title := "◌ Connecting terminal"
+	if len(previous) > 0 || strings.TrimSpace(surface.Err) != "" || strings.TrimSpace(session.LastError) != "" {
+		title = "◌ Reconnecting terminal"
+	}
 	lines = append(lines,
-		Line{Cells: []Cell{styledCell("● connecting", StyleWarning)}},
+		Line{Cells: []Cell{styledCell(title, StyleWarning)}},
+		Line{Cells: []Cell{styledCell("Opening a new endpoint session.", StyleMuted)}},
+		Line{Cells: []Cell{styledCell("Input resumes after attach succeeds.", StyleMuted)}},
+		NewLine(""),
 		Line{Cells: []Cell{styledCell("endpoint  ", StyleMuted), styledCell(endpointDisplayLabel(endpoint, ref.EndpointID), StyleAccent)}},
 		Line{Cells: []Cell{styledCell("transport ", StyleMuted), styledCell(endpointTransportLabel(endpoint), StyleForeground)}},
 		Line{Cells: []Cell{styledCell("terminal  ", StyleMuted), styledCell(ref.TerminalID, StyleForeground)}},
-		Line{Cells: []Cell{styledCell("Establishing a new endpoint session…", StyleMuted)}},
+		NewLine(""),
+		Line{Cells: []Cell{styledCell("Please keep this pane open.", StyleMuted)}},
 	)
-	return ContentVM{Kind: ContentTerminalLive, Lines: lines, Status: "connecting endpoint", Pending: true, Cursor: Cursor{}}
+	return ContentVM{Kind: ContentTerminalLive, Lines: lines, Status: "connecting: input paused", Pending: true, Cursor: Cursor{}}
 }
 
 func liveDisconnectedContent(surface state.TerminalSurfaceStore, session state.TerminalSessionStore, binding state.TerminalViewBinding, endpoint state.EndpointItem, previous []Line, selectedIndex int) ContentVM {
@@ -1259,14 +1267,23 @@ func liveDisconnectedContent(surface state.TerminalSurfaceStore, session state.T
 		lines = append(lines, NewLine(""))
 	}
 	lines = append(lines,
-		Line{Cells: []Cell{styledCell("● endpoint disconnected", StyleDanger)}},
+		Line{Cells: []Cell{styledCell("● Connection interrupted", StyleDanger)}},
+		Line{Cells: []Cell{styledCell("The last terminal frame is preserved.", StyleMuted)}},
+		Line{Cells: []Cell{styledCell("Input is paused.", StyleMuted)}},
+		NewLine(""),
 		Line{Cells: []Cell{styledCell("endpoint  ", StyleMuted), styledCell(endpointDisplayLabel(endpoint, ref.EndpointID), StyleAccent)}},
 		Line{Cells: []Cell{styledCell("transport ", StyleMuted), styledCell(endpointTransportLabel(endpoint), StyleForeground)}},
 		Line{Cells: []Cell{styledCell("terminal  ", StyleMuted), styledCell(ref.TerminalID, StyleForeground)}},
 	)
+	lines = append(lines, Line{Cells: []Cell{styledCell("issue     ", StyleMuted), styledCell(endpointIssueLabel(kind), StyleWarning)}})
 	if reason != "" {
-		lines = append(lines, Line{Cells: []Cell{styledCell("reason ", StyleMuted), styledCell(endpointErrorLabel(kind, reason), StyleWarning)}})
+		lines = append(lines, Line{Cells: []Cell{styledCell("detail    ", StyleMuted), styledCell(reason, StyleForeground)}})
 	}
+	lines = append(lines,
+		NewLine(""),
+		Line{Cells: []Cell{styledCell("next step ", StyleMuted), styledCell(endpointRecoveryHint(kind), StyleForeground)}},
+		NewLine(""),
+	)
 	actionOffset := len(lines)
 	actionLines, regions := liveDisconnectedActionLines(selectedIndex)
 	lines = append(lines, actionLines...)
@@ -1280,10 +1297,50 @@ func liveDisconnectedContent(surface state.TerminalSurfaceStore, session state.T
 	return ContentVM{
 		Kind:       ContentTerminalLive,
 		Lines:      lines,
-		Status:     "disconnected: Reconnect / Disconnect",
+		Status:     "connection interrupted: reconnect or detach",
 		Error:      errorLabel,
 		Cursor:     Cursor{},
 		HitRegions: regions,
+	}
+}
+
+func endpointIssueLabel(kind state.EndpointErrorKind) string {
+	switch state.NormalizeEndpointErrorKind(kind) {
+	case state.EndpointErrorAuth:
+		return "Authentication failed"
+	case state.EndpointErrorHostKey:
+		return "Remote host identity changed"
+	case state.EndpointErrorRemoteDaemon:
+		return "Remote termx daemon unavailable"
+	case state.EndpointErrorTransportClosed:
+		return "Transport connection closed"
+	case state.EndpointErrorTransportDial:
+		return "Endpoint unreachable"
+	case state.EndpointErrorProtocol:
+		return "Protocol session ended"
+	case state.EndpointErrorConfig:
+		return "Endpoint configuration invalid"
+	default:
+		return "Endpoint unavailable"
+	}
+}
+
+func endpointRecoveryHint(kind state.EndpointErrorKind) string {
+	switch state.NormalizeEndpointErrorKind(kind) {
+	case state.EndpointErrorAuth:
+		return "Check endpoint credentials, then reconnect."
+	case state.EndpointErrorHostKey:
+		return "Review the remote host identity before reconnecting."
+	case state.EndpointErrorRemoteDaemon:
+		return "Check that the remote termx daemon is running, then reconnect."
+	case state.EndpointErrorTransportClosed, state.EndpointErrorTransportDial:
+		return "Check the network or remote host, then reconnect."
+	case state.EndpointErrorProtocol:
+		return "Reconnect to open a new protocol session."
+	case state.EndpointErrorConfig:
+		return "Review the endpoint configuration before reconnecting."
+	default:
+		return "Reconnect to open a new endpoint session."
 	}
 }
 

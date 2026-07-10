@@ -42,12 +42,14 @@ func TestEndpointDisconnectHarnessKeepsPaneReasonAfterEmptyInventory(t *testing.
 		Message:    errText,
 	})
 
-	if err := drainUntilFrameContains(ctx, runtime, host, "endpoint disconnected"); err != nil {
+	if err := drainUntilFrameContains(ctx, runtime, host, "Connection interrupted"); err != nil {
 		t.Fatalf("disconnect frame was not rendered: %v\nframes=%s", err, endpointDisconnectHarnessFrames(host))
 	}
 	frame := lastFrame(t, host.Frames())
 	if !frameContains(frame, "last remote output") ||
-		!frameContains(frame, "remote-daemon") ||
+		!frameContains(frame, "Remote termx daemon unavailable") ||
+		!frameContains(frame, "detail") ||
+		!frameContains(frame, "next step") ||
 		!frameContains(frame, "Reconnect this pane") ||
 		!frameContains(frame, "Disconnect pane") ||
 		frameContains(frame, "Attach existing terminal") {
@@ -77,7 +79,9 @@ func TestEndpointDisconnectHarnessKeepsPaneReasonAfterEmptyInventory(t *testing.
 		t.Fatalf("surface should retain endpoint disconnect reason, surface=%#v", final.Surface)
 	}
 	frame = lastFrame(t, host.Frames())
-	if !frameContains(frame, "endpoint disconnected") ||
+	if !frameContains(frame, "Connection interrupted") ||
+		!frameContains(frame, "last terminal frame is preserved") ||
+		!frameContains(frame, "next step") ||
 		!frameContains(frame, "Reconnect this pane") ||
 		!frameContains(frame, "Disconnect pane") ||
 		frameContains(frame, "Attach existing terminal") {
@@ -117,7 +121,8 @@ func TestLiveInvalidationEOFHarnessShowsDisconnectedPane(t *testing.T) {
 		t.Fatalf("live EOF should mark active surface error, surface=%#v", final.Surface)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "endpoint disconnected") ||
+	if !frameContains(frame, "Connection interrupted") ||
+		!frameContains(frame, "protocol session") ||
 		!frameContains(frame, "protocol") ||
 		!frameContains(frame, "Reconnect this pane") ||
 		!frameContains(frame, "Disconnect pane") ||

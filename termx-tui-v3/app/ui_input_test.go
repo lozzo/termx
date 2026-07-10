@@ -3629,7 +3629,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 	sendKey(input.KeyEsc)
 	floatingFrame := lastFrame(t, host.Frames())
 	if len(runtime.State().Shell.ActiveFloatings()) != 1 ||
-		!frameContains(floatingFrame, "unconnected") ||
+		!frameContains(floatingFrame, "No terminal connected") ||
 		!frameContains(floatingFrame, "Attach existing terminal") ||
 		!frameContains(floatingFrame, "["+render.DefaultPaneChromeGlyphs().Zoom+"]─["+render.DefaultPaneChromeGlyphs().Close+"]") ||
 		frameContains(floatingFrame, render.DefaultPaneChromeGlyphs().Running+" float") {
@@ -3915,7 +3915,7 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 		}
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "unconnected") || !frameContains(frame, "Attach existing terminal") {
+	if !frameContains(frame, "No terminal connected") || !frameContains(frame, "Choose a terminal or create one") || !frameContains(frame, "Attach existing terminal") {
 		t.Fatalf("expected rendered floating pane, got %#v", frame.Lines)
 	}
 
