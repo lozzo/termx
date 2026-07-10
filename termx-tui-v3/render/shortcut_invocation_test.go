@@ -54,6 +54,39 @@ func TestActionOnlyShortcutConfigKeepsDefaultFooterBindings(t *testing.T) {
 	}
 }
 
+func TestShortcutShowPolicyOnlyFiltersFooter(t *testing.T) {
+	hide := false
+	show := true
+	root := state.Root{Config: state.TUIConfigStore{Shortcuts: state.TUIShortcutConfig{
+		Configured: true,
+		Scenes: map[string]state.TUIShortcutSceneConfig{
+			"floating": {Bindings: map[string]state.TUIShortcutBindingConfig{
+				"n": {Action: "floating.new", Show: &hide},
+				"o": {Action: "floating.overview"},
+			}},
+			"copy": {Bindings: map[string]state.TUIShortcutBindingConfig{
+				"h": {Action: "copy.cursor_left", Show: &show},
+			}},
+		},
+	}}}
+	footerActions := footerActionCatalogFromShortcuts("floating", root)
+	if containsFooterActionID(footerActions, ActionFloatingNew.String()) || !containsFooterActionID(footerActions, ActionFloatingOverview.String()) {
+		t.Fatalf("show false must only remove the selected footer action: %#v", footerActions)
+	}
+	copyFooter := footerActionCatalogFromShortcuts("copy", root)
+	if !containsFooterActionID(copyFooter, "copy.cursor_left") {
+		t.Fatalf("show true must expose a domain-default hidden action without a render ActionID mapping: %#v", copyFooter)
+	}
+	helpActions := helpActionCatalogFromShortcuts("floating", root)
+	if !containsFooterActionID(helpActions, ActionFloatingNew.String()) || !containsFooterActionID(helpActions, ActionFloatingOverview.String()) {
+		t.Fatalf("help must retain all effective bindings regardless of footer show: %#v", helpActions)
+	}
+	copyHelp := helpActionCatalogFromShortcuts("copy", root)
+	if !containsFooterActionID(copyHelp, "copy.cursor_left") {
+		t.Fatalf("help must include Help-visible actions without a render ActionID mapping: %#v", copyHelp)
+	}
+}
+
 func TestFooterHitRegionCarriesExactShortcutInvocation(t *testing.T) {
 	invocation, _, err := shortcut.ParseInvocation("panel.close")
 	if err != nil {

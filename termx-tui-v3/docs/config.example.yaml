@@ -398,9 +398,19 @@ tui:
         label: kill+close
 
     floating:
-      n: floating.new
-      o: floating.overview
-      x: floating.close
+      n:
+        action: floating.new
+        show: true
+      "[1...9]":
+        action: floating.summon.{key}
+        label: summon
+        show: true
+      o:
+        action: floating.overview
+        show: true
+      x:
+        action: floating.close
+        show: true
 
     tab:
       "1": tab.jump.1

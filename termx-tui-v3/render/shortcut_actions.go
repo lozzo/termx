@@ -309,11 +309,19 @@ func overlayShortcutRenderAction(id ActionID) bool {
 }
 
 func footerActionCatalogFromShortcuts(mode string, root state.Root) []FooterActionVM {
+	return shortcutActionCatalogFromShortcuts(mode, root, false)
+}
+
+func helpActionCatalogFromShortcuts(mode string, root state.Root) []FooterActionVM {
+	return shortcutActionCatalogFromShortcuts(mode, root, true)
+}
+
+func shortcutActionCatalogFromShortcuts(mode string, root state.Root, includeHidden bool) []FooterActionVM {
 	scene := shortcutSceneForFooterMode(mode)
 	entries := input.ShortcutEntriesForScene(root.Config.Shortcuts, scene)
 	out := make([]FooterActionVM, 0, len(entries))
 	for _, entry := range entries {
-		action, ok := footerActionFromShortcutEntry(entry, root.Config)
+		action, ok := shortcutActionFromShortcutEntry(entry, root.Config, includeHidden)
 		if ok {
 			out = append(out, action)
 		}
@@ -322,16 +330,28 @@ func footerActionCatalogFromShortcuts(mode string, root state.Root) []FooterActi
 	return out
 }
 
-func footerActionFromShortcutEntry(entry input.ShortcutEntry, cfg state.TUIConfigStore) (FooterActionVM, bool) {
+func shortcutActionFromShortcutEntry(entry input.ShortcutEntry, cfg state.TUIConfigStore, forHelp bool) (FooterActionVM, bool) {
 	invocation, spec, err := shortcut.ParseInvocation(entry.ActionID)
-	if err != nil || spec.Display.Footer != shortcut.VisibilityVisible {
+	if err != nil {
 		return FooterActionVM{}, false
 	}
-	renderID, ok := shortcutActionRenderIDForEntry(entry)
-	if !ok {
+	visible := spec.Display.Footer == shortcut.VisibilityVisible
+	if entry.Show != nil {
+		visible = *entry.Show
+	}
+	if forHelp {
+		visible = spec.Display.Help == shortcut.VisibilityVisible
+	}
+	if !visible {
 		return FooterActionVM{}, false
 	}
-	action := footerActionFor(renderID)
+	action := FooterActionVM{ActionID: invocation.ID}
+	if renderID, ok := shortcutActionRenderIDForEntry(entry); ok {
+		action = footerActionFor(renderID)
+	} else if !forHelp && (entry.Show == nil || !*entry.Show) {
+		// 默认 footer 仍按现有 render product catalog 收敛；只有用户显式 show:true 才扩展提示面。
+		return FooterActionVM{}, false
+	}
 	action.Key = entry.KeyLabel
 	if action.Key == "" {
 		action.Key = input.ShortcutKeyDisplay(entry.Key)

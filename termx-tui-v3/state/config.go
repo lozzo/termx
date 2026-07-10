@@ -197,7 +197,9 @@ type TUIShortcutSceneConfig struct {
 
 // TUIShortcutBindingConfig 描述一个按键到 action 的绑定。
 // Action 是必填语义目标；Label 只覆盖该场景下的展示文案，不能产生新的执行语义。
+// Show 是 footer 展示意图：nil 沿用 action domain 默认值，false 只隐藏 footer 提示但不移除键盘路由或 Help 条目。
 type TUIShortcutBindingConfig struct {
 	Action string
 	Label  string
+	Show   *bool
 }

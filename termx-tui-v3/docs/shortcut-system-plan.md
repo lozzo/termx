@@ -39,9 +39,19 @@ tui:
         label: kill+close
 
     floating:
-      n: floating.new
-      o: floating.overview
-      x: floating.close
+      n:
+        action: floating.new
+        show: true
+      "[1...9]":
+        action: floating.summon.{key}
+        label: summon
+        show: true
+      o:
+        action: floating.overview
+        show: true
+      x:
+        action: floating.close
+        show: true
 ```
 
 语义：
@@ -53,6 +63,7 @@ tui:
 - overlay 场景也使用同一结构，内置场景名为 `terminal_picker`、`terminal_pool`、`workbench_tree`、`clipboard_history`、`floating_overview`、`prompt`、`help`。
 - `menu.<scene>` 只能进入 domain registry 声明为可进入的内置场景，例如 `ctrl-p: menu.panel`；当前分支不开放用户自定义 scene，未来扩展由插件分支单独设计。
 - 用户删除某个 shortcut 后，该按键不能触发，对应提示也不能展示。
+- binding 的 `show: false` 只隐藏 footer 提示，按键执行和 Help 完整目录仍保留；省略 `show` 时沿用 action domain 的默认 footer 可见性。
 - 用户完全没有写 `tui.shortcuts` 时使用内置默认 catalog。
 - 只配置 `shortcuts.actions` 时继承默认按键，只覆盖 action 文案。
 - 一旦配置任意 scene，该 scene catalog 集合就是完整按键真值，不再继承未配置的默认 scene；parser 必须保留 scene 是否显式出现，显式空 scene catalog 不回退默认。
@@ -90,14 +101,36 @@ panel:
   x: panel.close
 ```
 
-长写用于覆盖单个场景内的展示文案：
+长写用于覆盖单个场景内的展示文案和 footer 可见性：
 
 ```yaml
 panel:
-  k:
-    action: panel.kill_and_close
-    label: kill+close
+      k:
+        action: panel.kill_and_close
+        label: kill+close
+        show: true
 ```
+
+同类数字按键可以在配置加载期展开，运行时 catalog 仍只保存具体按键：
+
+```yaml
+floating:
+  "[1...9]":
+    action: floating.summon.{key}
+    label: summon
+    show: true
+
+global:
+  "ctrl+[1...5]":
+    action: tab.jump.{key}
+    label: tab
+    show: false
+```
+
+- 范围只支持升序单数字区间；`[1...9]` 展开为 `1` 到 `9`，`ctrl+[1...5]` canonicalize 为 `ctrl-1` 到 `ctrl-5`。
+- `{key}` 只允许出现在范围 binding 的 action 中，替换值是当前展开数字。
+- 展开后的每个具体键继续走既有 key canonicalization、scene/action、参数范围和重复绑定校验；范围重叠直接报错。
+- `show: true` 表示进入 footer，`show: false` 表示仅从 footer 隐藏；按键和文案在 footer 中必须整体保留或整体隐藏。
 
 文案优先级：
 

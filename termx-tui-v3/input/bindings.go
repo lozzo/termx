@@ -39,6 +39,7 @@ type ShortcutEntry struct {
 	KeyLabel string
 	ActionID string
 	Label    string
+	Show     *bool
 }
 
 var builtinShortcutDefaults = []shortcutDefault{
@@ -379,7 +380,9 @@ func shortcutEntriesFromConfig(shortcuts state.TUIShortcutConfig) []ShortcutEntr
 		sort.Strings(keys)
 		for _, key := range keys {
 			binding := scene.Bindings[key]
-			entries = append(entries, shortcutEntryFromParts(sceneName, key, binding.Action, binding.Label))
+			entry := shortcutEntryFromParts(sceneName, key, binding.Action, binding.Label)
+			entry.Show = binding.Show
+			entries = append(entries, entry)
 		}
 	}
 	return entries

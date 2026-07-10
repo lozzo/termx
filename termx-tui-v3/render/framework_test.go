@@ -674,6 +674,32 @@ func TestFrameworkRendersFullFooterSummaryAtVisualCompareWidth(t *testing.T) {
 	assertAllRowsWidth(t, frame.Lines, 120)
 }
 
+func TestFrameworkFooterNeverRendersKeyWithoutItsActionLabel(t *testing.T) {
+	actions := []FooterActionVM{
+		{Key: "n", Label: "NEW"},
+		{Key: "o", Label: "OVERVIEW"},
+		{Key: "1-9", Label: "SUMMON"},
+		{Key: "f", Label: "PICK"},
+		{Key: "a", Label: "OWNER"},
+		{Key: "c", Label: "CENTER"},
+		{Key: "h/←", Label: "MOVE LEFT"},
+		{Key: "j/↓", Label: "MOVE DOWN"},
+		{Key: "k/↑", Label: "MOVE UP"},
+		{Key: "l/→", Label: "MOVE RIGHT"},
+	}
+	segments := appendFooterActionSegments(nil, actions, 100, defaultFooterKeyTemplate, defaultFooterActionTemplate, " · ")
+	plain := ""
+	for _, segment := range segments {
+		plain += segment.text
+	}
+	for _, action := range actions {
+		key := formatFooterKeyToken(action.Key)
+		if strings.Contains(plain, key) && !strings.Contains(plain, key+" "+action.Label) {
+			t.Fatalf("footer rendered a key without its action label: key=%q footer=%q", key, plain)
+		}
+	}
+}
+
 func TestFrameworkCriticalFooterHintDoesNotRestoreStatusBackground(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Header: HeaderVM{Visible: true, Workspace: "main"},

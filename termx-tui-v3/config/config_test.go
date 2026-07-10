@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -329,6 +330,59 @@ tui:
 `))
 	if err == nil || !strings.Contains(err.Error(), "duplicate shortcut key") {
 		t.Fatalf("expected duplicate shortcut key error, got %v", err)
+	}
+}
+
+func TestParseExpandsShortcutKeyRangesAndBindingDisplayPolicy(t *testing.T) {
+	cfg, err := Parse([]byte(`
+tui:
+  shortcuts:
+    floating:
+      "[1...3]":
+        action: floating.summon.{key}
+        label: summon
+        show: true
+    global:
+      "ctrl+[1...2]": tab.jump.{key}
+`))
+	if err != nil {
+		t.Fatalf("parse shortcut ranges: %v", err)
+	}
+	for index := 1; index <= 3; index++ {
+		key := strconv.Itoa(index)
+		binding, ok := cfg.Shortcuts.Scenes["floating"].Bindings[key]
+		if !ok || binding.Action != "floating.summon."+key || binding.Label != "summon" || binding.Show == nil || !*binding.Show {
+			t.Fatalf("floating range did not expand binding %s: %#v", key, binding)
+		}
+	}
+	for index := 1; index <= 2; index++ {
+		key := "ctrl-" + strconv.Itoa(index)
+		binding, ok := cfg.Shortcuts.Scenes["global"].Bindings[key]
+		if !ok || binding.Action != "tab.jump."+strconv.Itoa(index) {
+			t.Fatalf("modified range did not expand binding %s: %#v", key, binding)
+		}
+	}
+}
+
+func TestParseRejectsInvalidOrOverlappingShortcutKeyRanges(t *testing.T) {
+	cases := []struct {
+		name    string
+		config  string
+		wantErr string
+	}{
+		{name: "descending", config: `tui:\n  shortcuts:\n    floating:\n      "[9...1]": floating.summon.{key}\n`, wantErr: "invalid shortcut key range"},
+		{name: "placeholder without range", config: `tui:\n  shortcuts:\n    floating:\n      "1": floating.summon.{key}\n`, wantErr: "requires a shortcut key range"},
+		{name: "overlap", config: `tui:\n  shortcuts:\n    floating:\n      "[1...3]": floating.summon.{key}\n      "3": floating.summon.3\n`, wantErr: "duplicate shortcut key"},
+		{name: "canonical overlap", config: `tui:\n  shortcuts:\n    global:\n      "ctrl+[1...2]": tab.jump.{key}\n      "Ctrl-1": tab.jump.1\n`, wantErr: "runtime shortcut key"},
+		{name: "expanded parameter out of range", config: `tui:\n  shortcuts:\n    tab:\n      "[0...1]": tab.jump.{key}\n`, wantErr: "invalid index"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Parse([]byte(strings.ReplaceAll(tc.config, `\n`, "\n")))
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected %q error, got %v", tc.wantErr, err)
+			}
+		})
 	}
 }
 

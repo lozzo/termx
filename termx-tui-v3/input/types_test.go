@@ -196,6 +196,21 @@ func TestRouteUsesCustomShortcutsAsOnlyTruth(t *testing.T) {
 	}
 }
 
+func TestShortcutShowPolicyDoesNotChangeKeyboardRouting(t *testing.T) {
+	hide := false
+	shortcuts := state.TUIShortcutConfig{Configured: true, Scenes: map[string]state.TUIShortcutSceneConfig{
+		"floating": {Bindings: map[string]state.TUIShortcutBindingConfig{
+			"n": {Action: "floating.new", Show: &hide},
+		}},
+	}}
+	intent := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, RouteOptions{Mode: InteractionModeFloating, Shortcuts: shortcuts})
+	assertShortcutAction(t, intent, "floating.new")
+	entry, ok := ShortcutEntryForEvent(shortcuts, "floating", InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"})
+	if !ok || entry.Show == nil || *entry.Show {
+		t.Fatalf("hidden footer binding must remain in keyboard catalog: %#v ok=%v", entry, ok)
+	}
+}
+
 func TestCtrlNULAliasesMatchRoutedAndOverlayBindings(t *testing.T) {
 	nulEvent := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x00", Ctrl: true, RawSeq: "\x00"}
 	for _, key := range []string{"ctrl-space", "ctrl-@"} {

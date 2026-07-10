@@ -864,17 +864,17 @@ type helpActionGroup struct {
 func helpActionGroups(root state.Root) []helpActionGroup {
 	return []helpActionGroup{
 		// Help 是产品导航页；toast 清理这类维护动作不放到主说明里。
-		{Label: "Most used", Items: footerActionCatalogFromShortcuts("live", root)},
-		{Label: "Shell", Items: footerActionCatalogFromShortcuts("global", root)},
-		{Label: "Pane", Items: footerActionCatalogFromShortcuts("pane", root)},
-		{Label: "Resize", Items: footerActionCatalogFromShortcuts("resize", root)},
-		{Label: "Tab / Workspace", Items: append(footerActionCatalogFromShortcuts("tab", root), footerActionCatalogFromShortcuts("workspace", root)...)},
-		{Label: "Floating", Items: footerActionCatalogFromShortcuts("floating", root)},
-		{Label: "Terminal Picker", Items: footerActionCatalogFromShortcuts(string(state.OverlayTerminalPicker), root), Details: []string{"search"}},
-		{Label: "Terminal Manager", Items: footerActionCatalogFromShortcuts(string(state.OverlayTerminalPool), root), Details: []string{"search"}},
-		{Label: "Workbench Tree", Items: footerActionCatalogFromShortcuts(string(state.OverlayWorkbenchTree), root), Details: []string{"search"}},
-		{Label: "Prompt / Help", Items: append(footerActionCatalogFromShortcuts(string(state.OverlayPrompt), root), footerActionCatalogFromShortcuts(string(state.OverlayHelp), root)...)},
-		{Label: "Display / Copy", Items: append(footerActionCatalogFromShortcuts("copy", root), footerActionCatalogFromShortcuts(string(state.OverlayClipboardHistory), root)...), Details: []string{"authoritative HistoryWindow"}},
+		{Label: "Most used", Items: helpActionCatalogFromShortcuts("live", root)},
+		{Label: "Shell", Items: helpActionCatalogFromShortcuts("global", root)},
+		{Label: "Pane", Items: helpActionCatalogFromShortcuts("pane", root)},
+		{Label: "Resize", Items: helpActionCatalogFromShortcuts("resize", root)},
+		{Label: "Tab / Workspace", Items: append(helpActionCatalogFromShortcuts("tab", root), helpActionCatalogFromShortcuts("workspace", root)...)},
+		{Label: "Floating", Items: helpActionCatalogFromShortcuts("floating", root)},
+		{Label: "Terminal Picker", Items: helpActionCatalogFromShortcuts(string(state.OverlayTerminalPicker), root), Details: []string{"search"}},
+		{Label: "Terminal Manager", Items: helpActionCatalogFromShortcuts(string(state.OverlayTerminalPool), root), Details: []string{"search"}},
+		{Label: "Workbench Tree", Items: helpActionCatalogFromShortcuts(string(state.OverlayWorkbenchTree), root), Details: []string{"search"}},
+		{Label: "Prompt / Help", Items: append(helpActionCatalogFromShortcuts(string(state.OverlayPrompt), root), helpActionCatalogFromShortcuts(string(state.OverlayHelp), root)...)},
+		{Label: "Display / Copy", Items: append(helpActionCatalogFromShortcuts("copy", root), helpActionCatalogFromShortcuts(string(state.OverlayClipboardHistory), root)...), Details: []string{"authoritative HistoryWindow"}},
 	}
 }
 

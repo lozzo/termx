@@ -386,7 +386,7 @@ func knownShortcutDynamicSection(path string) bool {
 	if scene == "actions" || !builtinShortcutScene(scene) {
 		return false
 	}
-	return validShortcutKey(key)
+	return validShortcutKeyExpression(key)
 }
 
 type scalarSetter func(*state.TUIConfigStore, string) error
@@ -608,8 +608,15 @@ func setShortcutsDynamicScalar(cfg *state.TUIConfigStore, path string, value str
 	} else if base, ok := strings.CutSuffix(tail, ".label"); ok {
 		key = base
 		field = "label"
+	} else if base, ok := strings.CutSuffix(tail, ".show"); ok {
+		key = base
+		field = "show"
 	}
-	if !validShortcutKey(key) {
+	expandedKeys, ranged, ok := expandShortcutKeyExpression(key)
+	if !ok {
+		if strings.Contains(key, "[") || strings.Contains(key, "]") {
+			return false, fmt.Errorf("invalid shortcut key range %q; expected an ascending single-digit range such as [1...9]", key)
+		}
 		return false, nil
 	}
 	if cfg.Shortcuts.Scenes == nil {
@@ -619,21 +626,85 @@ func setShortcutsDynamicScalar(cfg *state.TUIConfigStore, path string, value str
 	if scene.Bindings == nil {
 		scene.Bindings = map[string]state.TUIShortcutBindingConfig{}
 	}
-	binding := scene.Bindings[key]
-	switch field {
-	case "action":
-		if strings.TrimSpace(binding.Action) != "" {
-			return false, fmt.Errorf("duplicate shortcut key %q in scene %q", key, sceneName)
+	for _, expanded := range expandedKeys {
+		binding := scene.Bindings[expanded]
+		switch field {
+		case "action":
+			if strings.TrimSpace(binding.Action) != "" {
+				return false, fmt.Errorf("duplicate shortcut key %q in scene %q", expanded, sceneName)
+			}
+			if !ranged && strings.Contains(value, "{key}") {
+				return false, fmt.Errorf("action placeholder {key} requires a shortcut key range")
+			}
+			binding.Action = strings.ReplaceAll(value, "{key}", shortcutRangeValue(expanded))
+		case "label":
+			binding.Label = value
+		case "show":
+			show, err := parseShortcutShow(value)
+			if err != nil {
+				return false, err
+			}
+			binding.Show = &show
+		default:
+			return false, nil
 		}
-		binding.Action = value
-	case "label":
-		binding.Label = value
-	default:
-		return false, nil
+		scene.Bindings[expanded] = binding
 	}
-	scene.Bindings[key] = binding
 	cfg.Shortcuts.Scenes[sceneName] = scene
 	return true, nil
+}
+
+func parseShortcutShow(value string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("show expects boolean true or false, got %q", value)
+	}
+}
+
+func validShortcutKeyExpression(value string) bool {
+	_, _, ok := expandShortcutKeyExpression(value)
+	return ok
+}
+
+// expandShortcutKeyExpression 只在配置边界展开升序单数字范围；运行时 catalog 继续只持有具体 key。
+func expandShortcutKeyExpression(value string) ([]string, bool, bool) {
+	value = strings.TrimSpace(value)
+	open := strings.Index(value, "[")
+	if open < 0 {
+		return []string{value}, false, validShortcutKey(value)
+	}
+	if strings.Count(value, "[") != 1 || strings.Count(value, "]") != 1 || !strings.HasSuffix(value, "]") {
+		return nil, false, false
+	}
+	inside := value[open+1 : len(value)-1]
+	parts := strings.Split(inside, "...")
+	if len(parts) != 2 || len(parts[0]) != 1 || len(parts[1]) != 1 || parts[0][0] < '0' || parts[0][0] > '9' || parts[1][0] < '0' || parts[1][0] > '9' || parts[0][0] > parts[1][0] {
+		return nil, false, false
+	}
+	prefix := value[:open]
+	if strings.HasSuffix(prefix, "+") {
+		prefix = strings.TrimSuffix(prefix, "+") + "-"
+	}
+	keys := make([]string, 0, int(parts[1][0]-parts[0][0])+1)
+	for digit := parts[0][0]; digit <= parts[1][0]; digit++ {
+		key := prefix + string(digit)
+		if !validShortcutKey(key) {
+			return nil, false, false
+		}
+		keys = append(keys, key)
+	}
+	return keys, true, true
+}
+
+func shortcutRangeValue(expandedKey string) string {
+	if expandedKey == "" {
+		return ""
+	}
+	return expandedKey[len(expandedKey)-1:]
 }
 
 func validFooterConfigName(value string) bool {

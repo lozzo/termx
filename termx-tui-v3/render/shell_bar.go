@@ -363,13 +363,8 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 	}
 	separator := footerActionSep(width, separatorText)
 	selected := selectFooterActionTokens(actions, limit, DisplayWidth(separator.text), keyTemplate, actionTemplate)
-	var compactLabelMask []bool
-	if footerShouldCompactActionLabelsForSummary(width, actions, limit, DisplayWidth(separator.text), keyTemplate, actionTemplate) {
-		selected = actions
-		compactLabelMask = footerCompactActionLabelMask(actions, limit, DisplayWidth(separator.text), keyTemplate, actionTemplate)
-	}
 	ctrlPrefixShown := false
-	for actionIndex, action := range selected {
+	for _, action := range selected {
 		key := strings.TrimSpace(action.Key)
 		keyText := footerActionKeyText(key, keyTemplate)
 		decor := footerActionDecorText(action, actionTemplate)
@@ -416,9 +411,6 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 			segments = appendFooterKeySegmentsWithInvocation(segments, keyText, style, actionID, invocation)
 		}
 		showLabel := decor != ""
-		if compactLabelMask != nil {
-			showLabel = actionIndex < len(compactLabelMask) && compactLabelMask[actionIndex]
-		}
 		if showLabel {
 			segments = append(segments, withAction(barText(" "+decor, StyleFooterMuted, 1)))
 		}
@@ -585,84 +577,6 @@ func footerActionTokenDisplayWidthForSelection(action FooterActionVM, ctrlPrefix
 		width += 1 + DisplayWidth(decor)
 	}
 	return width
-}
-
-func footerActionKeyOnlyWidth(actions []FooterActionVM, separatorWidth int, keyTemplate string) int {
-	width := 0
-	ctrlPrefixShown := false
-	for _, action := range actions {
-		tokenWidth := footerActionKeyOnlyDisplayWidthForSelection(action, ctrlPrefixShown, keyTemplate)
-		if tokenWidth <= 0 {
-			continue
-		}
-		if width > 0 {
-			width += separatorWidth
-		}
-		width += tokenWidth
-		if footerActionKeyText(action.Key, keyTemplate) == action.Key && footerActionHasCtrlPrefix(action.Key) {
-			ctrlPrefixShown = true
-		}
-	}
-	return width
-}
-
-func footerActionFullWidth(actions []FooterActionVM, separatorWidth int, keyTemplate string, actionTemplate string) int {
-	width := 0
-	ctrlPrefixShown := false
-	for _, action := range actions {
-		tokenWidth := footerActionTokenDisplayWidthForSelection(action, ctrlPrefixShown, keyTemplate, actionTemplate)
-		if tokenWidth <= 0 {
-			continue
-		}
-		if width > 0 {
-			width += separatorWidth
-		}
-		width += tokenWidth
-		if footerActionKeyText(action.Key, keyTemplate) == action.Key && footerActionHasCtrlPrefix(action.Key) {
-			ctrlPrefixShown = true
-		}
-	}
-	return width
-}
-
-func footerShouldCompactActionLabelsForSummary(width int, actions []FooterActionVM, limit int, separatorWidth int, keyTemplate string, actionTemplate string) bool {
-	if width < 120 {
-		return false
-	}
-	keyOnlyWidth := footerActionKeyOnlyWidth(actions, separatorWidth, keyTemplate)
-	if keyOnlyWidth <= 0 || keyOnlyWidth > limit {
-		return false
-	}
-	return footerActionFullWidth(actions, separatorWidth, keyTemplate, actionTemplate) > limit
-}
-
-func footerActionKeyOnlyDisplayWidthForSelection(action FooterActionVM, ctrlPrefixShown bool, keyTemplate string) int {
-	keyText := footerActionKeyText(action.Key, keyTemplate)
-	if keyText == "" {
-		return 0
-	}
-	return DisplayWidth(formatFooterKeyTokenForSelection(keyText, ctrlPrefixShown && keyText == strings.TrimSpace(action.Key)))
-}
-
-func footerCompactActionLabelMask(actions []FooterActionVM, limit int, separatorWidth int, keyTemplate string, actionTemplate string) []bool {
-	mask := make([]bool, len(actions))
-	remaining := limit - footerActionKeyOnlyWidth(actions, separatorWidth, keyTemplate)
-	if remaining <= 0 {
-		return mask
-	}
-	for index, action := range actions {
-		decor := footerActionDecorText(action, actionTemplate)
-		if decor == "" {
-			continue
-		}
-		width := 1 + DisplayWidth(decor)
-		if width > remaining {
-			continue
-		}
-		mask[index] = true
-		remaining -= width
-	}
-	return mask
 }
 
 func formatFooterKeyTokenForSelection(key string, ctrlPrefixShown bool) string {
