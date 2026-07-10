@@ -614,7 +614,7 @@ func setShortcutsDynamicScalar(cfg *state.TUIConfigStore, path string, value str
 	}
 	expandedKeys, ranged, ok := expandShortcutKeyExpression(key)
 	if !ok {
-		if strings.Contains(key, "[") || strings.Contains(key, "]") {
+		if strings.Contains(key, "...") {
 			return false, fmt.Errorf("invalid shortcut key range %q; expected an ascending single-digit range such as [1...9]", key)
 		}
 		return false, nil
@@ -673,11 +673,14 @@ func validShortcutKeyExpression(value string) bool {
 // expandShortcutKeyExpression 只在配置边界展开升序单数字范围；运行时 catalog 继续只持有具体 key。
 func expandShortcutKeyExpression(value string) ([]string, bool, bool) {
 	value = strings.TrimSpace(value)
-	open := strings.Index(value, "[")
-	if open < 0 {
-		return []string{value}, false, validShortcutKey(value)
+	if validShortcutKey(value) {
+		return []string{value}, false, true
 	}
-	if strings.Count(value, "[") != 1 || strings.Count(value, "]") != 1 || !strings.HasSuffix(value, "]") {
+	if !strings.Contains(value, "...") {
+		return nil, false, false
+	}
+	open := strings.Index(value, "[")
+	if open < 0 || strings.Count(value, "[") != 1 || strings.Count(value, "]") != 1 || !strings.HasSuffix(value, "]") {
 		return nil, false, false
 	}
 	inside := value[open+1 : len(value)-1]

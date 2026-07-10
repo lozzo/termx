@@ -91,6 +91,7 @@
 | KS010 | 完成 | 组合 action 与 terminal lifecycle 执行语义 | 先补成功、失败、TerminalRef 路由 harness；只实现 `panel.kill` / `panel.kill_and_close` handler、步骤和关闭时机，不再调整 registry 基础结构或开放脚本系统 |
 | KS011 | 暂停 | 增强键盘协议与 Ctrl+数字 | 用户切换到连接体验优化后暂停；恢复时先补 raw bytes 到 invocation harness，再接 TerminalHost capability 与 available 投影 |
 | KS011A | 完成 | shortcut 单键展示策略与数字范围表达式 | binding 长写支持 `show`；`[1...9]` / `ctrl+[1...5]` 在配置加载期配合 `{key}` 展开；footer 只展示显式可见项且不产生裸按键，Help 保留全部有效绑定 |
+| KS011B | 完成 | shortcut bracket 字面量与范围识别回归修复 | `[`、`]` 及带修饰符 bracket 继续作为合法具体按键；仅范围表达式进入展开；真实用户配置可加载 |
 | CX001 | 完成 | endpoint 连接中与断线 pane UI 收敛 | 复用 reducer-owned `AttachPending` 和 endpoint runtime status；重连请求立即显示连接中，断线保留最后画面并结构化展示 endpoint、transport、原因和局部操作；不新增自动重试或 transport fallback |
 | CX002 | 完成 | pane 未连接、重连中与异常断开统一状态面板 | 三态使用一致的信息层级与操作布局；只展示 reducer 已知状态，不伪造连接进度；异常断开按错误类别给出可执行提示并保留最后画面 |
 | KS012 | 待开始 | 快捷键跨切片总契约守卫 | 汇总默认 catalog 完备性、键盘/点击等价、空 catalog、overlay、组合 action 和 capability 回归守卫，不在本切片首次补关键 harness |
@@ -151,3 +152,4 @@
 - CX001 已完成：reconnect 请求先以目标 view 的 `AttachPending` 投影连接中，并把 owning endpoint 标为 connecting；成功回包收敛为 connected，失败清除 pending 并按错误分类回投 offline。断线 pane 保留最后 live surface，结构化显示 endpoint label/id、transport、terminal、reason 和局部 Reconnect/Disconnect 操作；未引入定时刷新、自动重试或 fallback。
 - CX002 已完成：未连接态展示清晰的起始说明和主次操作；连接/重连态保留最后画面并说明输入暂停、新 endpoint session 正在建立；异常断开态把错误分类投影为用户可读 issue，原始错误降为 detail，并按 auth、host-key、transport、remote daemon、protocol、config 给出对应 next step。三态未伪造百分比、重试次数或 transport 阶段。
 - KS011A 已完成：shortcut binding 长写新增三态 `show`，显式 false 只隐藏 footer、键盘与 Help 保留，显式 true 可覆盖 domain 默认 footer hidden；升序单数字 `[1...9]` 与 `ctrl+[1...5]` 在配置加载期用 `{key}` 展开并继续走 canonical key、scene/action、参数与冲突校验；footer 宽度不足时按键和文案整体裁剪，不再保留裸按键旧路径。
+- KS011B 已完成：范围 parser 先识别合法具体 key，`[`、`]` 与 `ctrl-[` 不再被误判为范围；只有包含 `...` 的非法 token 才返回范围专用错误，完整用户配置已通过真实 CLI 加载验证。

@@ -364,6 +364,30 @@ tui:
 	}
 }
 
+func TestParseKeepsLiteralBracketShortcutKeys(t *testing.T) {
+	cfg, err := Parse([]byte(`
+tui:
+  shortcuts:
+    tab:
+      "[": tab.previous
+      "]": tab.next
+    global:
+      "ctrl-[": menu.tab
+`))
+	if err != nil {
+		t.Fatalf("parse literal bracket shortcut keys: %v", err)
+	}
+	if got := cfg.Shortcuts.Scenes["tab"].Bindings["["]; got.Action != "tab.previous" {
+		t.Fatalf("literal [ shortcut was not preserved: %#v", got)
+	}
+	if got := cfg.Shortcuts.Scenes["tab"].Bindings["]"]; got.Action != "tab.next" {
+		t.Fatalf("literal ] shortcut was not preserved: %#v", got)
+	}
+	if got := cfg.Shortcuts.Scenes["global"].Bindings["ctrl-["]; got.Action != "menu.tab" {
+		t.Fatalf("modified literal bracket shortcut was not preserved: %#v", got)
+	}
+}
+
 func TestParseRejectsInvalidOrOverlappingShortcutKeyRanges(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -371,6 +395,14 @@ func TestParseRejectsInvalidOrOverlappingShortcutKeyRanges(t *testing.T) {
 		wantErr string
 	}{
 		{name: "descending", config: `tui:\n  shortcuts:\n    floating:\n      "[9...1]": floating.summon.{key}\n`, wantErr: "invalid shortcut key range"},
+		{name: "missing brackets", config: `tui:\n  shortcuts:\n    floating:\n      "1...9": floating.summon.{key}\n`, wantErr: "invalid shortcut key range"},
+		{name: "missing range end", config: `tui:\n  shortcuts:\n    floating:\n      "[1...]": floating.summon.{key}\n`, wantErr: "invalid shortcut key range"},
+		{name: "missing range start", config: `tui:\n  shortcuts:\n    floating:\n      "[...9]": floating.summon.{key}\n`, wantErr: "invalid shortcut key range"},
+		{name: "non-digit range", config: `tui:\n  shortcuts:\n    floating:\n      "[a...9]": floating.summon.{key}\n`, wantErr: "invalid shortcut key range"},
+		{name: "missing closing bracket", config: `tui:\n  shortcuts:\n    floating:\n      "[1...9": floating.summon.{key}\n`, wantErr: "invalid shortcut key range"},
+		{name: "nested brackets", config: `tui:\n  shortcuts:\n    floating:\n      "[[1...9]]": floating.summon.{key}\n`, wantErr: "invalid shortcut key range"},
+		{name: "multiple ranges", config: `tui:\n  shortcuts:\n    floating:\n      "[1...2...3]": floating.summon.{key}\n`, wantErr: "invalid shortcut key range"},
+		{name: "modified missing closing bracket", config: `tui:\n  shortcuts:\n    global:\n      "ctrl+[1...9": tab.jump.{key}\n`, wantErr: "invalid shortcut key range"},
 		{name: "placeholder without range", config: `tui:\n  shortcuts:\n    floating:\n      "1": floating.summon.{key}\n`, wantErr: "requires a shortcut key range"},
 		{name: "overlap", config: `tui:\n  shortcuts:\n    floating:\n      "[1...3]": floating.summon.{key}\n      "3": floating.summon.3\n`, wantErr: "duplicate shortcut key"},
 		{name: "canonical overlap", config: `tui:\n  shortcuts:\n    global:\n      "ctrl+[1...2]": tab.jump.{key}\n      "Ctrl-1": tab.jump.1\n`, wantErr: "runtime shortcut key"},
