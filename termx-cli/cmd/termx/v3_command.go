@@ -97,12 +97,6 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
-			stopRemoteAgent, err := startV3RemoteAgent(ctx, srv, logger)
-			if err != nil {
-				return fmt.Errorf("start hub/P2P daemon agent: %w", err)
-			}
-			defer stopRemoteAgent()
-
 			logger.Info("starting core-v2 daemon", "socket", socketPath, "log_file", logPath, "history_dir", historyDir, "history_enabled", historyEnabled)
 			err = srv.ListenAndServe(ctx)
 			writeHeapProfile("exit")

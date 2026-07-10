@@ -5,124 +5,126 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
-	"time"
 
-	hubclient "github.com/lozzow/termx/termx-hub/client"
+	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/termx-shared/cloudcompanion"
 )
 
-// ErrHubKick 表示 Hub 管理面显式要求当前 daemon agent 下线。
-// 它只结束当前 Hub agent session，不修改 core-v2 terminal lifecycle 或本地 socket listener。
-var ErrHubKick = errors.New("termx hub kicked daemon agent")
+// ErrPresenceClosed 表示 Cloud Companion 已结束当前 daemon presence。
+// 它只结束当前 managed cloud presence，不修改 core-v2 terminal lifecycle、本地 listener 或其他 endpoint。
+var ErrPresenceClosed = errors.New("cloud companion closed daemon presence")
 
-// HubStream 是 daemon agent 消费的 Hub 双向信令边界。
-// Hub 只中继 discovery/offer/answer；capability grant 的验证和 protocol session 创建由 OfferAnswerer/SessionAcceptor 完成。
-type HubStream interface {
-	Receive() (hubclient.Message, error)
-	Heartbeat(sessionID string, terminals []hubclient.Terminal) error
-	SendAnswer(answer hubclient.Answer) error
-	Close() error
-}
-
-// HubConnect 建立并注册一个 daemon agent stream。
-// bearer token 只认证 agent 到 Hub，不授予客户端访问 daemon 的 capability。
-type HubConnect func(context.Context, string, hubclient.Registration) (HubStream, hubclient.RegistrationAck, error)
-
-// OfferAnswerer 消费 Hub 中继的 offer，校验 capability grant，并建立 WebRTC DataChannel session。
-// 授权或协商失败返回局部 answer error，不得启动 core session 或 fallback 到本地/SSH transport。
+// OfferAnswerer 把 companion 中继的 WebRTC offer 协商为公开进程拥有的 answer。
+// 实现只能接收 signaling DTO 和 ICE 配置；CapabilityGrant 必须在 DTLS DataChannel 内由目标 daemon 验证。
 type OfferAnswerer interface {
-	Answer(context.Context, hubclient.Offer, hubclient.RegistrationAck) (hubclient.Answer, error)
+	// Answer 协商单个 signaling offer；iceServers 是当前 PresenceReady 固定的服务准入配置。
+	Answer(context.Context, *cloudpb.SignalingOffer, []*cloudpb.IceServer) (*cloudpb.SignalingAnswer, error)
 }
 
-// Agent 管理一个 daemon 到一个 Hub 的注册、心跳和 offer/answer stream。
-// terminal inventory 是 core-v2 的只读投影；Agent 不拥有 terminal lifecycle、history truth 或 endpoint manager state。
+// Agent 管理 daemon 通过本机 Cloud Companion 建立的一条 presence stream。
+// Companion 只拥有账号会话、设备目录和 signaling；Agent 不发布 terminal inventory，也不把 terminal capability 交给云侧。
 type Agent struct {
-	BearerToken       string
-	Registration      hubclient.Registration
-	Connect           HubConnect
-	Answerer          OfferAnswerer
-	Inventory         func(context.Context) []hubclient.Terminal
-	HeartbeatInterval time.Duration
+	Companion cloudcompanion.Client
+	Presence  *cloudpb.OpenPresenceRequest
+	Answerer  OfferAnswerer
 }
 
-// Run 持续处理当前 Hub session，直到 context、stream 错误或显式 kick。
-// 单个 offer 失败只发送该 session 的 answer error；不会让其他 endpoint、terminal 或本地 daemon listener 离线。
+// Run 持续消费当前 daemon presence，直到 context、stream 或 companion 明确结束。
+// 单个 offer 的协商失败通过 CompleteSignalingOffer 回传稳定错误，并继续处理同一 presence 上的其他 session。
 func (agent Agent) Run(ctx context.Context) error {
-	if agent.Connect == nil {
-		return fmt.Errorf("remote daemon hub connector is not configured")
+	if agent.Companion == nil {
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING, "remote daemon cloud companion is not configured")
 	}
 	if agent.Answerer == nil {
-		return fmt.Errorf("remote daemon offer answerer is not configured")
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon offer answerer is not configured")
 	}
-	stream, ack, err := agent.Connect(ctx, agent.BearerToken, agent.Registration)
+	if agent.Presence == nil {
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon presence request is not configured")
+	}
+	stream, err := agent.Companion.OpenPresence(ctx, agent.Presence)
 	if err != nil {
 		return err
 	}
+	if stream == nil {
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an empty presence stream")
+	}
 	defer stream.Close()
-	heartbeatInterval := agent.HeartbeatInterval
-	if heartbeatInterval <= 0 {
-		heartbeatInterval = time.Duration(ack.HeartbeatSeconds) * time.Second
-	}
-	if heartbeatInterval <= 0 {
-		heartbeatInterval = 30 * time.Second
-	}
-	heartbeatCtx, cancelHeartbeat := context.WithCancel(ctx)
-	defer cancelHeartbeat()
-	heartbeatErr := make(chan error, 1)
-	go agent.runHeartbeat(heartbeatCtx, stream, ack.SessionID, heartbeatInterval, heartbeatErr)
 
+	var managedSessionID string
+	var iceServers []*cloudpb.IceServer
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case err := <-heartbeatErr:
-			return err
+		event, receiveErr := stream.Receive()
+		if receiveErr != nil {
+			return receiveErr
+		}
+		if event == nil {
+			return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an empty presence event")
+		}
+		switch payload := event.GetPayload().(type) {
+		case *cloudpb.PresenceEvent_Ready:
+			if payload.Ready == nil {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an empty presence ready event")
+			}
+			managedSessionID = strings.TrimSpace(payload.Ready.GetManagedSessionId())
+			if managedSessionID == "" {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an empty managed session")
+			}
+			iceServers = cloneIceServers(payload.Ready.GetIceServers())
+		case *cloudpb.PresenceEvent_Offer:
+			if payload.Offer == nil || strings.TrimSpace(payload.Offer.GetSignalingSessionId()) == "" {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an invalid signaling offer")
+			}
+			if managedSessionID == "" || strings.TrimSpace(payload.Offer.GetManagedSessionId()) != managedSessionID {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion routed an offer outside the active managed session")
+			}
+			if err := agent.completeOffer(ctx, payload.Offer, iceServers); err != nil {
+				return err
+			}
+		case *cloudpb.PresenceEvent_Error:
+			return cloudcompanion.ErrorFromWire(payload.Error)
+		case *cloudpb.PresenceEvent_Closed:
+			reason := ""
+			if payload.Closed != nil {
+				reason = strings.TrimSpace(payload.Closed.GetReason())
+			}
+			if reason == "" {
+				return ErrPresenceClosed
+			}
+			return fmt.Errorf("%w: %s", ErrPresenceClosed, reason)
+		case *cloudpb.PresenceEvent_Candidate:
+			return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "trickle ICE is not enabled for the current public answerer")
 		default:
-		}
-		message, err := stream.Receive()
-		if err != nil {
-			return err
-		}
-		if reason := strings.TrimSpace(message.Kick); reason != "" {
-			return fmt.Errorf("%w: %s", ErrHubKick, reason)
-		}
-		if message.Offer == nil {
-			continue
-		}
-		answer, answerErr := agent.Answerer.Answer(ctx, *message.Offer, ack)
-		answer.SessionID = message.Offer.SessionID
-		if answerErr != nil {
-			answer = hubclient.Answer{SessionID: message.Offer.SessionID, Error: answerErr.Error()}
-		}
-		if err := stream.SendAnswer(answer); err != nil {
-			return err
+			return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an unknown presence event")
 		}
 	}
 }
 
-func (agent Agent) runHeartbeat(ctx context.Context, stream HubStream, sessionID string, interval time.Duration, errCh chan<- error) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	var sendMu sync.Mutex
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			terminals := []hubclient.Terminal(nil)
-			if agent.Inventory != nil {
-				terminals = agent.Inventory(ctx)
-			}
-			sendMu.Lock()
-			err := stream.Heartbeat(sessionID, terminals)
-			sendMu.Unlock()
-			if err != nil {
-				select {
-				case errCh <- err:
-				default:
-				}
-				return
-			}
-		}
+func (agent Agent) completeOffer(ctx context.Context, offer *cloudpb.SignalingOffer, iceServers []*cloudpb.IceServer) error {
+	answer, answerErr := agent.Answerer.Answer(ctx, offer, iceServers)
+	request := &cloudpb.CompleteSignalingOfferRequest{SignalingSessionId: offer.GetSignalingSessionId()}
+	if answerErr != nil {
+		request.Result = &cloudpb.CompleteSignalingOfferRequest_Error{Error: cloudcompanion.ErrorToWire(answerErr)}
+	} else if answer == nil || strings.TrimSpace(answer.GetSdp()) == "" {
+		request.Result = &cloudpb.CompleteSignalingOfferRequest_Error{Error: &cloudpb.CloudError{
+			Code: cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, Message: "remote daemon answerer returned an empty answer",
+		}}
+	} else {
+		answer.SignalingSessionId = offer.GetSignalingSessionId()
+		request.Result = &cloudpb.CompleteSignalingOfferRequest_Answer{Answer: answer}
 	}
+	_, err := agent.Companion.CompleteSignalingOffer(ctx, request)
+	return err
+}
+
+func cloneIceServers(servers []*cloudpb.IceServer) []*cloudpb.IceServer {
+	cloned := make([]*cloudpb.IceServer, 0, len(servers))
+	for _, server := range servers {
+		if server == nil {
+			continue
+		}
+		cloned = append(cloned, &cloudpb.IceServer{
+			Urls: append([]string(nil), server.GetUrls()...), Username: server.GetUsername(), Credential: server.GetCredential(),
+		})
+	}
+	return cloned
 }

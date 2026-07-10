@@ -5,122 +5,132 @@ import (
 	"errors"
 	"io"
 	"testing"
-	"time"
 
-	hubclient "github.com/lozzow/termx/termx-hub/client"
+	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/termx-shared/cloudcompanion"
 )
 
-func TestAgentRegistersAnswersOfferAndStopsOnKick(t *testing.T) {
-	stream := &fakeHubStream{messages: []hubclient.Message{
-		{Offer: &hubclient.Offer{SessionID: "session-1", CapabilityGrant: "grant-1", SDP: "offer-sdp"}},
-		{Kick: "device revoked"},
-	}}
-	answerer := &fakeOfferAnswerer{answer: hubclient.Answer{SessionID: "session-1", SDP: "answer-sdp"}}
-	agent := Agent{
-		Registration: hubclient.Registration{AgentID: "agent-1", DeviceID: "device-1", MachineID: "device-1"},
-		Connect: func(context.Context, string, hubclient.Registration) (HubStream, hubclient.RegistrationAck, error) {
-			return stream, hubclient.RegistrationAck{SessionID: "agent-session-1", HeartbeatSeconds: 60}, nil
+func TestAgentAnswersOfferWithoutPublishingTerminalInventory(t *testing.T) {
+	stream := cloudcompanion.NewFakePresenceStream(3)
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{
+		ManagedSessionId: "managed-1",
+		IceServers:       []*cloudpb.IceServer{{Urls: []string{"stun:example.test"}}},
+	}}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
+		SignalingSessionId: "signal-1", ManagedSessionId: "managed-1", Sdp: "offer-sdp",
+	}}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "device revoked"}}})
+
+	answerer := &fakeOfferAnswerer{answer: &cloudpb.SignalingAnswer{Sdp: "answer-sdp"}}
+	companion := &cloudcompanion.FakeClient{
+		OpenPresenceFunc: func(context.Context, *cloudpb.OpenPresenceRequest) (cloudcompanion.PresenceStream, error) {
+			return stream, nil
 		},
-		Answerer: answerer,
+		CompleteSignalingOfferFunc: func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
+			return &cloudpb.CompleteSignalingOfferResponse{}, nil
+		},
 	}
-	err := agent.Run(context.Background())
-	if err == nil || !errors.Is(err, ErrHubKick) {
-		t.Fatalf("expected hub kick, got %v", err)
+	agent := Agent{Companion: companion, Presence: &cloudpb.OpenPresenceRequest{}, Answerer: answerer}
+	if err := agent.Run(context.Background()); !errors.Is(err, ErrPresenceClosed) {
+		t.Fatalf("Run error = %v, want ErrPresenceClosed", err)
 	}
-	if answerer.offers != 1 || len(stream.answers) != 1 || stream.answers[0].SDP != "answer-sdp" {
-		t.Fatalf("offer was not answered: answerer=%d answers=%#v", answerer.offers, stream.answers)
+	if answerer.calls != 1 || len(answerer.iceServers) != 1 || answerer.iceServers[0].GetUrls()[0] != "stun:example.test" {
+		t.Fatalf("offer answerer calls=%d ice=%v", answerer.calls, answerer.iceServers)
+	}
+	recorded := companion.Requests()
+	if len(recorded.OpenPresence) != 1 || len(recorded.CompleteSignalingOffer) != 1 {
+		t.Fatalf("recorded requests = %+v", recorded)
+	}
+	completed := recorded.CompleteSignalingOffer[0]
+	if completed.GetSignalingSessionId() != "signal-1" || completed.GetAnswer().GetSdp() != "answer-sdp" {
+		t.Fatalf("completed offer = %+v", completed)
 	}
 }
 
-func TestAgentSendsOfferErrorWithoutStoppingOtherEndpointState(t *testing.T) {
-	stream := &fakeHubStream{messages: []hubclient.Message{
-		{Offer: &hubclient.Offer{SessionID: "session-1", CapabilityGrant: "bad-grant"}},
-	}}
-	agent := Agent{
-		Registration: hubclient.Registration{AgentID: "agent-1", DeviceID: "device-1", MachineID: "device-1"},
-		Connect: func(context.Context, string, hubclient.Registration) (HubStream, hubclient.RegistrationAck, error) {
-			return stream, hubclient.RegistrationAck{SessionID: "agent-session-1", HeartbeatSeconds: 60}, nil
+func TestAgentReturnsOfferFailureWithoutEndingPresence(t *testing.T) {
+	stream := cloudcompanion.NewFakePresenceStream(3)
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{
+		ManagedSessionId: "managed-1",
+	}}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
+		SignalingSessionId: "signal-1", ManagedSessionId: "managed-1", Sdp: "offer-sdp",
+	}}})
+	if err := stream.Fail(io.EOF); err != nil {
+		t.Fatalf("queue stream EOF: %v", err)
+	}
+	companion := &cloudcompanion.FakeClient{
+		OpenPresenceFunc: func(context.Context, *cloudpb.OpenPresenceRequest) (cloudcompanion.PresenceStream, error) {
+			return stream, nil
 		},
-		Answerer: &fakeOfferAnswerer{err: errors.New("grant revoked")},
+		CompleteSignalingOfferFunc: func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
+			return &cloudpb.CompleteSignalingOfferResponse{}, nil
+		},
+	}
+	agent := Agent{
+		Companion: companion,
+		Presence:  &cloudpb.OpenPresenceRequest{},
+		Answerer:  &fakeOfferAnswerer{err: errors.New("webrtc negotiation failed")},
 	}
 	if err := agent.Run(context.Background()); !errors.Is(err, io.EOF) {
-		t.Fatalf("agent should continue until stream ends, got %v", err)
+		t.Fatalf("Run error = %v, want stream EOF after offer failure", err)
 	}
-	if len(stream.answers) != 1 || stream.answers[0].Error != "grant revoked" {
-		t.Fatalf("expected endpoint-scoped answer error, got %#v", stream.answers)
+	completed := companion.Requests().CompleteSignalingOffer
+	if len(completed) != 1 || completed[0].GetError().GetCode() != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL {
+		t.Fatalf("completed offer error = %+v", completed)
 	}
 }
 
-func TestAgentHeartbeatUsesCurrentInventory(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	stream := &fakeHubStream{blockReceive: make(chan struct{})}
-	agent := Agent{
-		Registration: hubclient.Registration{AgentID: "agent-1", DeviceID: "device-1", MachineID: "device-1"},
-		Connect: func(context.Context, string, hubclient.Registration) (HubStream, hubclient.RegistrationAck, error) {
-			return stream, hubclient.RegistrationAck{SessionID: "agent-session-1", HeartbeatSeconds: 1}, nil
+func TestAgentRequiresCompanionAndAnswerer(t *testing.T) {
+	agent := Agent{Presence: &cloudpb.OpenPresenceRequest{}, Answerer: &fakeOfferAnswerer{}}
+	if err := agent.Run(context.Background()); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING) {
+		t.Fatalf("Run error = %v, want COMPANION_MISSING", err)
+	}
+	companion := &cloudcompanion.FakeClient{}
+	agent = Agent{Companion: companion, Presence: &cloudpb.OpenPresenceRequest{}}
+	if err := agent.Run(context.Background()); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {
+		t.Fatalf("Run error = %v, want PROTOCOL", err)
+	}
+}
+
+func TestAgentRejectsOfferFromDifferentManagedSession(t *testing.T) {
+	stream := cloudcompanion.NewFakePresenceStream(2)
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{
+		ManagedSessionId: "managed-1",
+	}}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
+		SignalingSessionId: "signal-1", ManagedSessionId: "managed-2", Sdp: "offer-sdp",
+	}}})
+	answerer := &fakeOfferAnswerer{}
+	companion := &cloudcompanion.FakeClient{
+		OpenPresenceFunc: func(context.Context, *cloudpb.OpenPresenceRequest) (cloudcompanion.PresenceStream, error) {
+			return stream, nil
 		},
-		Answerer: &fakeOfferAnswerer{},
-		Inventory: func(context.Context) []hubclient.Terminal {
-			return []hubclient.Terminal{{ID: "term-1", Name: "shell", RemoteEnabled: true}}
-		},
-		HeartbeatInterval: 10 * time.Millisecond,
 	}
-	done := make(chan error, 1)
-	go func() { done <- agent.Run(ctx) }()
-	deadline := time.After(time.Second)
-	for len(stream.heartbeats) == 0 {
-		select {
-		case <-deadline:
-			t.Fatal("heartbeat was not sent")
-		case <-time.After(time.Millisecond):
-		}
+	err := (Agent{Companion: companion, Presence: &cloudpb.OpenPresenceRequest{}, Answerer: answerer}).Run(context.Background())
+	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {
+		t.Fatalf("Run error = %v, want PROTOCOL", err)
 	}
-	cancel()
-	close(stream.blockReceive)
-	<-done
-	if len(stream.heartbeats[0]) != 1 || stream.heartbeats[0][0].ID != "term-1" {
-		t.Fatalf("heartbeat lost current inventory: %#v", stream.heartbeats)
+	if answerer.calls != 0 || len(companion.Requests().CompleteSignalingOffer) != 0 {
+		t.Fatalf("cross-session offer reached answer path: calls=%d requests=%+v", answerer.calls, companion.Requests())
 	}
 }
 
-type fakeHubStream struct {
-	messages     []hubclient.Message
-	answers      []hubclient.Answer
-	heartbeats   [][]hubclient.Terminal
-	blockReceive chan struct{}
-}
-
-func (stream *fakeHubStream) Receive() (hubclient.Message, error) {
-	if len(stream.messages) > 0 {
-		message := stream.messages[0]
-		stream.messages = stream.messages[1:]
-		return message, nil
+func mustPushPresence(t *testing.T, stream *cloudcompanion.FakePresenceStream, event *cloudpb.PresenceEvent) {
+	t.Helper()
+	if err := stream.Push(event); err != nil {
+		t.Fatalf("Push presence event: %v", err)
 	}
-	if stream.blockReceive != nil {
-		<-stream.blockReceive
-	}
-	return hubclient.Message{}, io.EOF
 }
-
-func (stream *fakeHubStream) Heartbeat(_ string, terminals []hubclient.Terminal) error {
-	stream.heartbeats = append(stream.heartbeats, append([]hubclient.Terminal(nil), terminals...))
-	return nil
-}
-
-func (stream *fakeHubStream) SendAnswer(answer hubclient.Answer) error {
-	stream.answers = append(stream.answers, answer)
-	return nil
-}
-
-func (stream *fakeHubStream) Close() error { return nil }
 
 type fakeOfferAnswerer struct {
-	offers int
-	answer hubclient.Answer
-	err    error
+	calls      int
+	iceServers []*cloudpb.IceServer
+	answer     *cloudpb.SignalingAnswer
+	err        error
 }
 
-func (answerer *fakeOfferAnswerer) Answer(context.Context, hubclient.Offer, hubclient.RegistrationAck) (hubclient.Answer, error) {
-	answerer.offers++
+func (answerer *fakeOfferAnswerer) Answer(_ context.Context, _ *cloudpb.SignalingOffer, iceServers []*cloudpb.IceServer) (*cloudpb.SignalingAnswer, error) {
+	answerer.calls++
+	answerer.iceServers = iceServers
 	return answerer.answer, answerer.err
 }

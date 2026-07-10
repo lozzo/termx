@@ -9,7 +9,7 @@ import (
 var _ datachannel.Channel = (*Channel)(nil)
 
 // Channel 把 Pion DataChannel 适配为共享 datachannel.Channel。
-// 它不创建 peer connection、不验证 grant，也不决定 core-v2 scope；这些职责分别属于信令层和 daemon SessionAcceptor。
+// 它不创建 peer connection、不验证 grant，也不决定 core-v2 scope；端到端授权属于 daemon DataChannel handler。
 type Channel struct {
 	channel *webrtc.DataChannel
 }

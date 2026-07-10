@@ -3,36 +3,49 @@ package webrtc
 import (
 	"context"
 	"fmt"
-	"time"
+	"strings"
 
-	hubclient "github.com/lozzow/termx/termx-hub/client"
-	"github.com/lozzow/termx/termx-remote-v2/daemon"
+	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/termx-shared/transport/datachannel"
 	pion "github.com/pion/webrtc/v4"
 )
 
 const protocolChannelLabel = "termx-protocol"
 
-// Answerer 把 Hub offer 协商成受 capability grant 约束的 daemon protocol DataChannel。
-// PeerConnection 只负责 ICE/DTLS/SCTP；远端身份、grant 和 core scope 均由 SessionAcceptor 决定。
-type Answerer struct {
-	Acceptor daemon.SessionAcceptor
+// DataChannelSessionHandler 是 daemon 侧 DTLS DataChannel 的端到端授权 owner。
+// 实现必须先在 DataChannel 内完成 DeviceIdentity proof 与 CapabilityGrant 校验，再把受限 scope 交给 core-v2；云信令不能替代该步骤。
+type DataChannelSessionHandler interface {
+	// ServeDataChannel 接收尚未授权的可靠有序 DataChannel；实现完成握手前不得调用 core-v2。
+	ServeDataChannel(context.Context, datachannel.Channel) error
 }
 
-// Answer 先验证 grant，再创建 WebRTC answer。
-// 只有可靠有序且无部分重传配置的 `termx-protocol` channel 会进入 core-v2；其他 channel 会被关闭。
-func (answerer Answerer) Answer(ctx context.Context, offer hubclient.Offer, ack hubclient.RegistrationAck) (hubclient.Answer, error) {
-	if _, err := answerer.Acceptor.Authorize(offer.CapabilityGrant, time.Now().UTC()); err != nil {
-		return hubclient.Answer{}, err
+// Answerer 把 Cloud Companion 中继的公开 WebRTC offer 协商成 daemon answer。
+// PeerConnection 只负责 ICE/DTLS/SCTP；它不接收 grant、terminal payload 或 Hub 私有 runtime 类型。
+type Answerer struct {
+	Handler DataChannelSessionHandler
+}
+
+// Answer 创建 WebRTC answer，并把唯一可靠有序的 termx DataChannel 交给端到端授权 handler。
+// Handler 缺失时在创建 PeerConnection 前 fail closed；RP003 接入真实握手前不能启动 managed remote runtime。
+func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOffer, iceServers []*cloudpb.IceServer) (*cloudpb.SignalingAnswer, error) {
+	if answerer.Handler == nil {
+		return nil, fmt.Errorf("remote daemon authorized data channel handler is not configured")
 	}
-	configuration := pion.Configuration{ICEServers: make([]pion.ICEServer, 0, len(ack.ICEServers))}
-	for _, server := range ack.ICEServers {
+	if offer == nil || strings.TrimSpace(offer.GetSdp()) == "" {
+		return nil, fmt.Errorf("remote daemon signaling offer is empty")
+	}
+	configuration := pion.Configuration{ICEServers: make([]pion.ICEServer, 0, len(iceServers))}
+	for _, server := range iceServers {
+		if server == nil || len(server.GetUrls()) == 0 {
+			continue
+		}
 		configuration.ICEServers = append(configuration.ICEServers, pion.ICEServer{
-			URLs: append([]string(nil), server.URLs...), Username: server.Username, Credential: server.Credential,
+			URLs: append([]string(nil), server.GetUrls()...), Username: server.GetUsername(), Credential: server.GetCredential(),
 		})
 	}
 	peer, err := pion.NewPeerConnection(configuration)
 	if err != nil {
-		return hubclient.Answer{}, fmt.Errorf("create remote daemon peer connection: %w", err)
+		return nil, fmt.Errorf("create remote daemon peer connection: %w", err)
 	}
 	sessionCtx, cancel := context.WithCancel(ctx)
 	peer.OnConnectionStateChange(func(state pion.PeerConnectionState) {
@@ -47,43 +60,41 @@ func (answerer Answerer) Answer(ctx context.Context, offer hubclient.Offer, ack 
 		}
 		channel.OnOpen(func() {
 			go func() {
-				_ = answerer.Acceptor.Serve(sessionCtx, daemon.SessionRequest{
-					Channel: NewChannel(channel), Grant: offer.CapabilityGrant, Now: time.Now().UTC(),
-				})
+				_ = answerer.Handler.ServeDataChannel(sessionCtx, NewChannel(channel))
 				cancel()
 				_ = peer.Close()
 			}()
 		})
 	})
-	if err := peer.SetRemoteDescription(pion.SessionDescription{Type: pion.SDPTypeOffer, SDP: offer.SDP}); err != nil {
+	if err := peer.SetRemoteDescription(pion.SessionDescription{Type: pion.SDPTypeOffer, SDP: offer.GetSdp()}); err != nil {
 		cancel()
 		_ = peer.Close()
-		return hubclient.Answer{}, fmt.Errorf("set remote daemon offer: %w", err)
+		return nil, fmt.Errorf("set remote daemon offer: %w", err)
 	}
 	localAnswer, err := peer.CreateAnswer(nil)
 	if err != nil {
 		cancel()
 		_ = peer.Close()
-		return hubclient.Answer{}, fmt.Errorf("create remote daemon answer: %w", err)
+		return nil, fmt.Errorf("create remote daemon answer: %w", err)
 	}
 	gatherComplete := pion.GatheringCompletePromise(peer)
 	if err := peer.SetLocalDescription(localAnswer); err != nil {
 		cancel()
 		_ = peer.Close()
-		return hubclient.Answer{}, fmt.Errorf("set remote daemon answer: %w", err)
+		return nil, fmt.Errorf("set remote daemon answer: %w", err)
 	}
 	select {
 	case <-ctx.Done():
 		cancel()
 		_ = peer.Close()
-		return hubclient.Answer{}, ctx.Err()
+		return nil, ctx.Err()
 	case <-gatherComplete:
 	}
 	description := peer.LocalDescription()
-	if description == nil {
+	if description == nil || strings.TrimSpace(description.SDP) == "" {
 		cancel()
 		_ = peer.Close()
-		return hubclient.Answer{}, fmt.Errorf("remote daemon answer has no local description")
+		return nil, fmt.Errorf("remote daemon answer has no local description")
 	}
-	return hubclient.Answer{SessionID: offer.SessionID, SDP: description.SDP}, nil
+	return &cloudpb.SignalingAnswer{SignalingSessionId: offer.GetSignalingSessionId(), Sdp: description.SDP}, nil
 }

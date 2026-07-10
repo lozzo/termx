@@ -34,8 +34,8 @@ type SessionAcceptor struct {
 	Revocations       remoteauth.RevocationChecker
 }
 
-// Authorize 在创建 PeerConnection 或 core-v2 session 前验证 capability grant。
-// 信令 answerer 使用该入口提前拒绝过期、撤销或 fingerprint 不匹配的 offer，避免未授权连接进入 ICE/DataChannel 阶段。
+// Authorize 验证已经从端到端 DataChannel 握手中收到的 capability grant。
+// 调用方不得从 signaling、Companion 或 Hub 提取 grant；验证必须发生在创建 core-v2 session 之前。
 func (acceptor SessionAcceptor) Authorize(grant string, now time.Time) (remoteauth.Claims, error) {
 	claims, err := remoteauth.Verify(grant, acceptor.DeviceFingerprint, now, acceptor.Revocations)
 	if err != nil {

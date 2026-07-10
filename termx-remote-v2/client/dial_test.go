@@ -4,22 +4,18 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/internal/protocol"
-	termxcorev2 "github.com/lozzow/termx/termx-core-v2"
-	hubclient "github.com/lozzow/termx/termx-hub/client"
-	"github.com/lozzow/termx/termx-proto/wire"
-	remotev2daemon "github.com/lozzow/termx/termx-remote-v2/daemon"
+	"github.com/lozzow/termx/termx-proto/cloudpb"
 	remotev2webrtc "github.com/lozzow/termx/termx-remote-v2/webrtc"
+	"github.com/lozzow/termx/termx-shared/cloudcompanion"
 	"github.com/lozzow/termx/termx-shared/remoteauth"
+	"github.com/lozzow/termx/termx-shared/transport"
+	"github.com/lozzow/termx/termx-shared/transport/datachannel"
 )
 
-func TestDialCarriesProtocolThroughHubOfferAnswer(t *testing.T) {
+func TestDialUsesCompanionSignalingWithoutSendingCapabilityGrant(t *testing.T) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("generate identity: %v", err)
@@ -32,63 +28,116 @@ func TestDialCarriesProtocolThroughHubOfferAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue grant: %v", err)
 	}
-	core := termxcorev2.NewServer()
-	answerer := remotev2webrtc.Answerer{Acceptor: remotev2daemon.SessionAcceptor{
-		Core: core, DeviceFingerprint: remoteauth.Fingerprint(publicKey), Revocations: remoteauth.NewRevocations(),
-	}}
-	hub := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		writer.Header().Set("Content-Type", "application/json")
-		switch request.URL.Path {
-		case "/api/v1/sessions/ice":
-			_ = json.NewEncoder(writer).Encode(map[string]any{"ice_servers": []any{}, "relay_policy": map[string]any{"allow_relay": false}})
-		case "/api/v1/sessions":
-			var input struct {
-				SessionToken string `json:"session_token"`
-				Offer        struct {
-					SDP string `json:"sdp"`
-				} `json:"offer"`
+	handler := &blockingAuthorizedHandler{called: make(chan struct{})}
+	answerer := remotev2webrtc.Answerer{Handler: handler}
+	companion := &cloudcompanion.FakeClient{
+		ResolveEndpointFunc: func(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
+			return &cloudpb.ResolvedEndpoint{EndpointId: "lab", TargetDeviceId: "device-1", ManagedSessionId: "managed-1"}, nil
+		},
+		CreateSignalingSessionFunc: func(ctx context.Context, request *cloudpb.CreateSignalingSessionRequest) (cloudcompanion.SignalingStream, error) {
+			answer, answerErr := answerer.Answer(ctx, &cloudpb.SignalingOffer{
+				SignalingSessionId: "signal-1", ManagedSessionId: request.GetManagedSessionId(), Sdp: request.GetOfferSdp(),
+			}, nil)
+			if answerErr != nil {
+				return nil, answerErr
 			}
-			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
-				t.Fatalf("decode session request: %v", err)
+			stream := cloudcompanion.NewFakeSignalingStream(1)
+			if err := stream.Push(&cloudpb.SignalingEvent{Payload: &cloudpb.SignalingEvent_Answer{Answer: answer}}); err != nil {
+				return nil, err
 			}
-			answer, err := answerer.Answer(request.Context(), hubclient.Offer{SessionID: "session-1", SDP: input.Offer.SDP, CapabilityGrant: input.SessionToken}, hubclient.RegistrationAck{})
-			if err != nil {
-				t.Fatalf("answer offer: %v", err)
-			}
-			_ = json.NewEncoder(writer).Encode(map[string]any{"answer": map[string]any{"sdp": answer.SDP}})
-		default:
-			http.NotFound(writer, request)
-		}
-	}))
-	defer hub.Close()
-
-	transport, err := Dial(context.Background(), DialOptions{
-		HubURL: hub.URL, HubDeviceID: "device-1", DeviceFingerprint: remoteauth.Fingerprint(publicKey),
-		CapabilityGrant: grant, RelayMode: RelayAuto,
+			return stream, nil
+		},
+	}
+	authenticator := &recordingAuthenticator{}
+	connection, err := Dial(context.Background(), DialOptions{
+		Companion: companion, EndpointID: "lab", TargetDeviceID: "device-1",
+		DeviceFingerprint: remoteauth.Fingerprint(publicKey), CapabilityGrant: grant,
+		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY,
+		Authenticator:   authenticator,
+		Now:             now,
 	})
 	if err != nil {
-		t.Fatalf("dial hub endpoint: %v", err)
+		t.Fatalf("Dial: %v", err)
 	}
-	client := protocol.NewClient(transport)
-	defer client.Close()
-	if err := client.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "hub-client-test"}); err != nil {
-		t.Fatalf("hello over hub endpoint: %v", err)
+	defer connection.Close()
+	select {
+	case <-handler.called:
+	case <-time.After(10 * time.Second):
+		t.Fatal("daemon authorized channel handler was not invoked")
 	}
-	if _, err := client.List(context.Background()); err != nil {
-		t.Fatalf("list over hub endpoint: %v", err)
+	if authenticator.calls != 1 || authenticator.authentication.CapabilityGrant != grant {
+		t.Fatalf("authenticator = %+v", authenticator)
+	}
+	recorded := companion.Requests()
+	if len(recorded.ResolveEndpoint) != 1 || len(recorded.CreateSignalingSession) != 1 {
+		t.Fatalf("recorded companion requests = %+v", recorded)
+	}
+	signaling := recorded.CreateSignalingSession[0]
+	if signaling.GetEndpointId() != "lab" || signaling.GetTargetDeviceId() != "device-1" || signaling.GetOfferSdp() == "" {
+		t.Fatalf("signaling request = %+v", signaling)
 	}
 }
 
-func TestDialRejectsGrantDeviceMismatchBeforeHubRequest(t *testing.T) {
+func TestDialRejectsGrantDeviceMismatchBeforeCompanionRequest(t *testing.T) {
 	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
 	now := time.Now().UTC()
 	grant, _ := remoteauth.Issue(privateKey, remoteauth.Claims{
 		GrantID: "grant-1", DeviceID: "device-1", Scope: remoteauth.Scope{AllowDaemon: true},
 		IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
 	})
+	companion := &cloudcompanion.FakeClient{}
 	if _, err := Dial(context.Background(), DialOptions{
-		HubURL: "http://127.0.0.1:1", HubDeviceID: "device-2", DeviceFingerprint: remoteauth.Fingerprint(publicKey), CapabilityGrant: grant,
+		Companion: companion, EndpointID: "lab", TargetDeviceID: "device-2",
+		DeviceFingerprint: remoteauth.Fingerprint(publicKey), CapabilityGrant: grant,
+		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY,
+		Authenticator:   &recordingAuthenticator{},
+		Now:             now,
 	}); err == nil {
-		t.Fatal("grant device mismatch must fail before Hub request")
+		t.Fatal("grant device mismatch must fail before Companion request")
 	}
+	if requests := companion.Requests(); len(requests.ResolveEndpoint) != 0 {
+		t.Fatalf("Companion saw request before local grant validation: %+v", requests)
+	}
+}
+
+func TestDialFailsClosedWithoutDataChannelAuthenticator(t *testing.T) {
+	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+	now := time.Now().UTC()
+	grant, _ := remoteauth.Issue(privateKey, remoteauth.Claims{
+		GrantID: "grant-1", DeviceID: "device-1", Scope: remoteauth.Scope{AllowDaemon: true},
+		IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+	})
+	companion := &cloudcompanion.FakeClient{}
+	_, err := Dial(context.Background(), DialOptions{
+		Companion: companion, EndpointID: "lab", TargetDeviceID: "device-1",
+		DeviceFingerprint: remoteauth.Fingerprint(publicKey), CapabilityGrant: grant,
+		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, Now: now,
+	})
+	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {
+		t.Fatalf("Dial error = %v, want fail-closed PROTOCOL error", err)
+	}
+	if requests := companion.Requests(); len(requests.ResolveEndpoint) != 0 {
+		t.Fatalf("Companion saw request without authenticator: %+v", requests)
+	}
+}
+
+type recordingAuthenticator struct {
+	calls          int
+	authentication SessionAuthentication
+}
+
+func (authenticator *recordingAuthenticator) Authenticate(_ context.Context, _ transport.Transport, authentication SessionAuthentication) error {
+	authenticator.calls++
+	authenticator.authentication = authentication
+	return nil
+}
+
+type blockingAuthorizedHandler struct {
+	called chan struct{}
+}
+
+func (handler *blockingAuthorizedHandler) ServeDataChannel(ctx context.Context, _ datachannel.Channel) error {
+	close(handler.called)
+	<-ctx.Done()
+	return ctx.Err()
 }

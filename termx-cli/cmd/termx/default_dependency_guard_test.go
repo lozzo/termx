@@ -33,6 +33,12 @@ func TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI(t *testing.T) {
 			"\"github.com/lozzow/termx/tuiv2",
 			"\"github.com/lozzow/termx/termx-remote\"",
 			"\"github.com/lozzow/termx/termx-remote/",
+			"\"github.com/lozzow/termx/termx-hub",
+			"\"github.com/lozzow/termx/web-control",
+			"github.com/lozzow/termx/private/",
+			"TERMX_HUB_AGENT_TOKEN",
+			"TERMX_HUB_URL",
+			"session_token",
 		} {
 			if strings.Contains(text, forbidden) {
 				t.Fatalf("default runtime file %s must not import legacy dependency %s", path, forbidden)
@@ -48,6 +54,9 @@ func TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI(t *testing.T) {
 		"github.com/lozzow/termx/termx-core v0.0.0",
 		"github.com/lozzow/termx/tuiv2 v0.0.0",
 		"github.com/lozzow/termx/termx-remote v0.0.0",
+		"github.com/lozzow/termx/termx-hub v0.0.0",
+		"github.com/lozzow/termx/web-control v0.0.0",
+		"github.com/lozzow/termx/private/",
 	} {
 		if strings.Contains(string(goMod), legacyModule) {
 			t.Fatalf("legacy module %s must not remain in termx-cli/go.mod:\n%s", legacyModule, goMod)
