@@ -47,7 +47,7 @@ func (channel *Channel) SetBufferedAmountLowHandler(handler func()) {
 	channel.channel.OnBufferedAmountLow(handler)
 }
 
-// Send 发送一个完整 termx protocol frame。
+// Send 发送一个完整 DataChannel message；内容由当前 remote-auth/termx-protocol 状态机解释。
 func (channel *Channel) Send(payload []byte) error {
 	return channel.channel.Send(payload)
 }

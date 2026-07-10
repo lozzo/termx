@@ -27,8 +27,8 @@ type Channel interface {
 	Close() error
 }
 
-// Transport 把一个已经完成身份验证和协商的可靠有序 DataChannel 投影为 termx transport.Transport。
-// 调用方必须先验证远端 device fingerprint 与 capability grant，再把该 transport 交给 protocol client 或 core-v2 scoped server。
+// Transport 把一个已经协商的可靠有序 DataChannel 投影为 message transport。
+// 同一实例可以先承载 remote auth envelope，再在 CapabilityAccepted 后承载 termx frame；调用方在授权成功前不得交给 protocol client 或 core-v2。
 type Transport struct {
 	channel Channel
 	recvCh  chan []byte
@@ -38,8 +38,8 @@ type Transport struct {
 	close   sync.Once
 }
 
-// New 创建 DataChannel protocol transport。
-// channel 必须保证消息可靠且有序；该构造函数不会创建 peer connection，也不会提供旧 remote/session-token fallback。
+// New 创建 DataChannel message transport。
+// channel 必须保证消息可靠且有序；该构造函数不判断 auth/protocol 阶段、不创建 peer connection，也不提供旧 remote/session-token fallback。
 func New(channel Channel) *Transport {
 	transport := &Transport{
 		channel: channel,

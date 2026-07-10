@@ -14,6 +14,7 @@ import (
 )
 
 const revocationStoreFile = "remote_grant_revocations.json"
+const revocationStoreVersion = 2
 
 var grantRefPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
@@ -87,14 +88,14 @@ func credentialFileName(ref string) string {
 // RevocationStore 是 daemon-local 持久化 grant 撤销真值。
 // Hub 只中继连接数据；remote daemon 重启后仍必须拒绝已撤销 grant。
 type RevocationStore struct {
-	mu     sync.RWMutex
-	path   string
-	grants map[string]time.Time
+	mu          sync.RWMutex
+	path        string
+	revocations map[string]time.Time
 }
 
 type storedRevocations struct {
-	Version int                  `json:"version"`
-	Grants  map[string]time.Time `json:"grants"`
+	Version     int                  `json:"version"`
+	Revocations map[string]time.Time `json:"revocations"`
 }
 
 // LoadRevocationStore 加载 daemon-local grant 撤销集合。
@@ -107,7 +108,7 @@ func LoadRevocationStore(dir string) (*RevocationStore, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create remote revocation directory: %w", err)
 	}
-	store := &RevocationStore{path: filepath.Join(dir, revocationStoreFile), grants: map[string]time.Time{}}
+	store := &RevocationStore{path: filepath.Join(dir, revocationStoreFile), revocations: map[string]time.Time{}}
 	payload, err := os.ReadFile(store.path)
 	if os.IsNotExist(err) {
 		return store, nil
@@ -119,12 +120,12 @@ func LoadRevocationStore(dir string) (*RevocationStore, error) {
 	if err := json.Unmarshal(payload, &stored); err != nil {
 		return nil, fmt.Errorf("decode remote grant revocations: %w", err)
 	}
-	if stored.Version != 1 {
+	if stored.Version != revocationStoreVersion {
 		return nil, fmt.Errorf("unsupported remote grant revocation version %d", stored.Version)
 	}
-	for grantID, revokedAt := range stored.Grants {
-		if grantID = strings.TrimSpace(grantID); grantID != "" {
-			store.grants[grantID] = revokedAt.UTC()
+	for revocationID, revokedAt := range stored.Revocations {
+		if revocationID = strings.TrimSpace(revocationID); revocationID != "" {
+			store.revocations[revocationID] = revokedAt.UTC()
 		}
 	}
 	if err := os.Chmod(store.path, 0o600); err != nil {
@@ -133,51 +134,51 @@ func LoadRevocationStore(dir string) (*RevocationStore, error) {
 	return store, nil
 }
 
-// Revoke 持久化撤销一个 grant ID。
+// Revoke 持久化撤销一个 revocation ID。
 // 撤销是幂等的，只影响指定 capability，不改变 terminal lifecycle 或其他 endpoint session。
-func (store *RevocationStore) Revoke(grantID string) error {
+func (store *RevocationStore) Revoke(revocationID string) error {
 	if store == nil {
 		return fmt.Errorf("remote revocation store is nil")
 	}
-	grantID = strings.TrimSpace(grantID)
-	if grantID == "" {
-		return fmt.Errorf("remote revocation requires grant_id")
+	revocationID = strings.TrimSpace(revocationID)
+	if revocationID == "" {
+		return fmt.Errorf("remote revocation requires revocation_id")
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if _, ok := store.grants[grantID]; ok {
+	if _, ok := store.revocations[revocationID]; ok {
 		return nil
 	}
-	store.grants[grantID] = time.Now().UTC()
+	store.revocations[revocationID] = time.Now().UTC()
 	if err := store.persistLocked(); err != nil {
-		delete(store.grants, grantID)
+		delete(store.revocations, revocationID)
 		return err
 	}
 	return nil
 }
 
-// Revoked 返回 grant ID 是否已被签发 daemon 撤销。
-func (store *RevocationStore) Revoked(grantID string) bool {
+// Revoked 返回 revocation ID 是否已被签发 daemon 撤销。
+func (store *RevocationStore) Revoked(revocationID string) bool {
 	if store == nil {
 		return false
 	}
 	store.mu.RLock()
-	_, ok := store.grants[strings.TrimSpace(grantID)]
+	_, ok := store.revocations[strings.TrimSpace(revocationID)]
 	store.mu.RUnlock()
 	return ok
 }
 
 func (store *RevocationStore) persistLocked() error {
-	ordered := make([]string, 0, len(store.grants))
-	for grantID := range store.grants {
-		ordered = append(ordered, grantID)
+	ordered := make([]string, 0, len(store.revocations))
+	for revocationID := range store.revocations {
+		ordered = append(ordered, revocationID)
 	}
 	sort.Strings(ordered)
-	grants := make(map[string]time.Time, len(ordered))
-	for _, grantID := range ordered {
-		grants[grantID] = store.grants[grantID]
+	revocations := make(map[string]time.Time, len(ordered))
+	for _, revocationID := range ordered {
+		revocations[revocationID] = store.revocations[revocationID]
 	}
-	payload, err := json.MarshalIndent(storedRevocations{Version: 1, Grants: grants}, "", "  ")
+	payload, err := json.MarshalIndent(storedRevocations{Version: revocationStoreVersion, Revocations: revocations}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode remote grant revocations: %w", err)
 	}

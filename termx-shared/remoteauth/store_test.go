@@ -45,14 +45,14 @@ func TestRevocationStorePersistsAcrossReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load revocations: %v", err)
 	}
-	if err := store.Revoke("grant-1"); err != nil {
+	if err := store.Revoke("revocation-1"); err != nil {
 		t.Fatalf("revoke grant: %v", err)
 	}
 	reloaded, err := LoadRevocationStore(dir)
 	if err != nil {
 		t.Fatalf("reload revocations: %v", err)
 	}
-	if !reloaded.Revoked("grant-1") {
+	if !reloaded.Revoked("revocation-1") {
 		t.Fatal("revocation did not persist across daemon restart")
 	}
 }

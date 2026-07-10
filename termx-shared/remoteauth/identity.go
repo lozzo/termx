@@ -30,6 +30,19 @@ type storedIdentity struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+// NewIdentity 从 daemon 已持有的 Ed25519 私钥构造 DeviceIdentity。
+// privateKey 必须来自 daemon-local 安全存储；该函数复制 key material，调用方不得把返回值交给 Companion、Hub 或日志。
+func NewIdentity(deviceID string, privateKey ed25519.PrivateKey) (Identity, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return Identity{}, fmt.Errorf("remote identity requires device_id")
+	}
+	if len(privateKey) != ed25519.PrivateKeySize {
+		return Identity{}, fmt.Errorf("remote identity requires ed25519 private key")
+	}
+	return identityFromPrivateKey(deviceID, privateKey), nil
+}
+
 // LoadOrCreateIdentity 加载或创建 daemon-local 设备身份。
 // 已有 identity 的 DeviceID 不允许被调用方静默替换；私钥文件固定为 0600，避免展示名或 Hub 路由变化升级成信任迁移。
 func LoadOrCreateIdentity(dir string, deviceID string) (Identity, error) {

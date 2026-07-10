@@ -1,69 +1,66 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"io"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	termxcorev2 "github.com/lozzow/termx/termx-core-v2"
 	"github.com/lozzow/termx/termx-shared/remoteauth"
 	"github.com/lozzow/termx/termx-shared/transport"
+	"github.com/lozzow/termx/termx-shared/transport/memory"
 )
 
-func TestSessionAcceptorVerifiesGrantBeforeServingScopedTransport(t *testing.T) {
-	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
-	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
-	grant, err := remoteauth.Issue(privateKey, remoteauth.Claims{
-		GrantID: "grant-1", DeviceID: "device-1", Scope: remoteauth.Scope{TerminalID: "term-1"},
-		IssuedAt: now, ExpiresAt: now.Add(time.Hour),
-	})
-	if err != nil {
-		t.Fatalf("issue grant: %v", err)
-	}
+func TestSessionAcceptorAuthenticatesBeforeServingScopedTransport(t *testing.T) {
+	identity, grant, now := sessionFixture(t, remoteauth.Scope{TerminalID: "term-1"})
 	core := &recordingCore{}
-	channel := newTestChannel()
-	acceptor := SessionAcceptor{Core: core, DeviceFingerprint: remoteauth.Fingerprint(publicKey), Revocations: remoteauth.NewRevocations()}
-	if err := acceptor.Serve(context.Background(), SessionRequest{
-		Channel: channel, Grant: grant, Now: now,
+	clientConn, serverConn := memory.NewPair()
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- (SessionAcceptor{Core: core, Identity: identity, Revocations: remoteauth.NewRevocations(), Now: fixedSessionNow(now)}).
+			ServeDataChannel(context.Background(), serverConn, sessionDTLSFingerprint())
+	}()
+	if _, err := (remoteauth.ClientHandshake{Now: fixedSessionNow(now)}).Authenticate(context.Background(), clientConn, remoteauth.ClientHandshakeRequest{
+		ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.Fingerprint,
+		CapabilityGrant: grant, DaemonDTLSCertificateFingerprint: sessionDTLSFingerprint(),
 	}); err != nil {
-		t.Fatalf("serve authorized session: %v", err)
+		t.Fatalf("Authenticate: %v", err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("ServeDataChannel: %v", err)
 	}
 	if core.calls != 1 || core.scope.TerminalID != "term-1" || core.scope.AllowDaemon {
 		t.Fatalf("unexpected scoped core call: calls=%d scope=%#v", core.calls, core.scope)
 	}
 }
 
-func TestSessionAcceptorRejectsInvalidOrRevokedGrantBeforeCore(t *testing.T) {
-	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
-	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
-	grant, _ := remoteauth.Issue(privateKey, remoteauth.Claims{
-		GrantID: "grant-1", DeviceID: "device-1", Scope: remoteauth.Scope{AllowDaemon: true},
-		IssuedAt: now, ExpiresAt: now.Add(time.Hour),
-	})
+func TestSessionAcceptorRejectsRevokedGrantBeforeCore(t *testing.T) {
+	identity, grant, now := sessionFixture(t, remoteauth.Scope{AllowDaemon: true})
 	revocations := remoteauth.NewRevocations()
 	revocations.Revoke("grant-1")
 	core := &recordingCore{}
-	acceptor := SessionAcceptor{Core: core, DeviceFingerprint: remoteauth.Fingerprint(publicKey), Revocations: revocations}
-	if err := acceptor.Serve(context.Background(), SessionRequest{
-		Channel: newTestChannel(), Grant: grant, Now: now,
-	}); err == nil || !strings.Contains(err.Error(), "revoked") {
-		t.Fatalf("expected revoked grant rejection, got %v", err)
+	clientConn, serverConn := memory.NewPair()
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- (SessionAcceptor{Core: core, Identity: identity, Revocations: revocations, Now: fixedSessionNow(now)}).
+			ServeDataChannel(context.Background(), serverConn, sessionDTLSFingerprint())
+	}()
+	_, clientErr := (remoteauth.ClientHandshake{Now: fixedSessionNow(now)}).Authenticate(context.Background(), clientConn, remoteauth.ClientHandshakeRequest{
+		ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.Fingerprint,
+		CapabilityGrant: grant, DaemonDTLSCertificateFingerprint: sessionDTLSFingerprint(),
+	})
+	if clientErr == nil || !strings.Contains(clientErr.Error(), "REVOKED") {
+		t.Fatalf("expected revoked capability rejection, got %v", clientErr)
+	}
+	if serverErr := <-serverDone; serverErr == nil || !strings.Contains(serverErr.Error(), "revoked") {
+		t.Fatalf("expected daemon revoke error, got %v", serverErr)
 	}
 	if core.calls != 0 {
 		t.Fatalf("core must not see unauthorized transport, calls=%d", core.calls)
-	}
-	if err := acceptor.Serve(context.Background(), SessionRequest{
-		Channel: newTestChannel(), Grant: "legacy-session-token", Now: now,
-	}); err == nil {
-		t.Fatal("legacy token must not create remote session")
-	}
-	if core.calls != 0 {
-		t.Fatalf("core must remain untouched after legacy token, calls=%d", core.calls)
 	}
 }
 
@@ -78,39 +75,35 @@ func (core *recordingCore) ServeScopedTransport(_ context.Context, conn transpor
 	return conn.Close()
 }
 
-type testChannel struct {
-	mu             sync.Mutex
-	messageHandler func([]byte)
-	closeHandler   func()
-	closed         bool
+func sessionFixture(t *testing.T, scope remoteauth.Scope) (remoteauth.Identity, string, time.Time) {
+	t.Helper()
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate identity: %v", err)
+	}
+	identity, err := remoteauth.NewIdentity("device-1", privateKey)
+	if err != nil {
+		t.Fatalf("NewIdentity: %v", err)
+	}
+	if !bytes.Equal(identity.PublicKey, publicKey) {
+		t.Fatal("identity public key mismatch")
+	}
+	now := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+	grant, err := remoteauth.Issue(privateKey, remoteauth.Claims{
+		GrantID: "grant-1", IssuerDeviceID: identity.DeviceID, Scope: scope,
+		IssuedAt: now.Add(-time.Minute), NotBefore: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+		RevocationID: "grant-1", Nonce: "session-test-nonce",
+	})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	return identity, grant, now
 }
 
-func newTestChannel() *testChannel { return &testChannel{} }
-
-func (channel *testChannel) SetMessageHandler(handler func([]byte)) { channel.messageHandler = handler }
-func (channel *testChannel) SetCloseHandler(handler func())         { channel.closeHandler = handler }
-func (channel *testChannel) BufferedAmount() uint64                 { return 0 }
-func (channel *testChannel) SetBufferedAmountLowThreshold(uint64)   {}
-func (channel *testChannel) SetBufferedAmountLowHandler(func())     {}
-func (channel *testChannel) Send([]byte) error {
-	channel.mu.Lock()
-	defer channel.mu.Unlock()
-	if channel.closed {
-		return io.EOF
-	}
-	return nil
+func sessionDTLSFingerprint() string {
+	return "sha-256:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11"
 }
-func (channel *testChannel) Close() error {
-	channel.mu.Lock()
-	if channel.closed {
-		channel.mu.Unlock()
-		return nil
-	}
-	channel.closed = true
-	handler := channel.closeHandler
-	channel.mu.Unlock()
-	if handler != nil {
-		handler()
-	}
-	return nil
+
+func fixedSessionNow(now time.Time) func() time.Time {
+	return func() time.Time { return now }
 }

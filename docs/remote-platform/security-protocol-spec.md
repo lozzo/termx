@@ -1,6 +1,6 @@
 # TermX Remote Platform 安全与协议规范
 
-状态：RP001 活动基线
+状态：RP003 已实现基线
 
 版本：v1 draft
 
@@ -207,6 +207,17 @@ AuthEnvelope {
 }
 ```
 
+DataChannel 中每条授权消息编码为：
+
+```text
+ASCII "TXRA" || deterministic protobuf(AuthEnvelope)
+```
+
+- protobuf schema 固定在 `termx-proto/remoteauthpb/remote_auth.proto`。
+- 单帧最大 64 KiB；错误 magic、错误版本、空/多义 payload 和任意层级 unknown field 一律拒绝。
+- canonical input 不使用 JSON、map 或本地结构体字段拼接；Go/Kotlin/Swift 必须使用 schema 中独立的 canonical message 和 deterministic protobuf bytes。
+- `CapabilityAccepted` 后立即切换为原有 termx protocol frame；不得继续解析 `AuthEnvelope`，也不得为旧 auth 格式保留 fallback。
+
 v1 消息：
 
 - `DeviceHello`
@@ -231,7 +242,23 @@ DeviceHello {
 }
 ```
 
-`signature` 覆盖 canonical message、`auth_session_id`、`server_nonce` 和当前 PeerConnection 使用的 daemon DTLS certificate fingerprint。公开 WebRTC adapter 必须能取得已建立连接的实际 peer certificate fingerprint；不能只信任 Hub 转发的 SDP 字段。
+`signature` 使用 Ed25519 覆盖 `DeviceHelloSignatureInput` 的 deterministic protobuf bytes：
+
+```text
+DeviceHelloSignatureInput {
+    protocol
+    version
+    auth_session_id
+    device_id
+    device_public_key
+    device_fingerprint
+    server_nonce
+    daemon_dtls_certificate_fingerprint
+    issued_at_unix_nano
+}
+```
+
+公开 WebRTC adapter 必须从已建立连接的真实 `DTLSTransport` 取得 fingerprint：daemon 读取本端 DTLS 参数，client 对 Pion 返回的对端原始证书计算 SHA-256。不能只信任 Hub/Companion 转发的 SDP fingerprint 字段。
 
 客户端验证：
 
@@ -257,15 +284,18 @@ CapabilityOpen {
 }
 ```
 
-`proof` 使用成熟 HMAC-SHA-256 实现，以原始 grant 的规范化字节作为 bearer secret material，对以下内容计算：
+`proof` 使用成熟 HMAC-SHA-256 实现。HMAC key 是去除首尾空白后的原始 grant UTF-8 bytes，message 是下面 `CapabilityProofInput` 的 deterministic protobuf bytes：
 
 ```text
-"termx-remote-auth-v1" ||
-auth_session_id ||
-server_nonce ||
-client_nonce ||
-daemon_dtls_certificate_fingerprint ||
-hash(grant)
+CapabilityProofInput {
+    protocol = "termx-remote-auth"
+    version = 1
+    auth_session_id
+    server_nonce
+    client_nonce
+    daemon_dtls_certificate_fingerprint
+    grant_sha256
+}
 ```
 
 这不把 bearer grant 变成客户端身份凭据；它只证明发送者当前持有完整 grant，并将授权 frame 绑定到本次 channel/challenge，避免直接重放历史 `CapabilityOpen`。
@@ -299,6 +329,7 @@ remote auth frames -> CapabilityAccepted -> termx protocol frames
 - 切换后出现 remote auth frame：拒绝并关闭。
 - 每个 DataChannel 只对应一个 capability scope；scope 变化必须建立新 channel/session。
 - reconnect 必须重新执行完整设备证明和 challenge，不复用上次 accepted 状态。
+- `termx-shared/remoteauth/handshake_test.go` 固化 v1 grant、DeviceHello signing bytes 和 CapabilityOpen proof 的跨平台十六进制向量；其他语言实现必须逐字节匹配。
 
 ## 6. 配对与 grant 交付
 

@@ -4,6 +4,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -18,21 +19,6 @@ import (
 
 const protocolChannelLabel = "termx-protocol"
 
-// SessionAuthentication 是 client 在 DTLS DataChannel 内验证目标设备并提交 capability 时使用的本地输入。
-// CapabilityGrant 只能交给目标 daemon；Authenticator 不得把它转发给 Cloud Companion、Hub、日志或 endpoint registry。
-type SessionAuthentication struct {
-	TargetDeviceID    string
-	DeviceFingerprint string
-	CapabilityGrant   string
-	Now               time.Time
-}
-
-// SessionAuthenticator 是 managed WebRTC transport 返回给 termx protocol 前的端到端安全门。
-// 实现必须通过 DataChannel 完成 daemon DeviceIdentity proof 和 CapabilityGrant open；失败时 Dial 关闭 PeerConnection 且不返回 transport。
-type SessionAuthenticator interface {
-	Authenticate(context.Context, transport.Transport, SessionAuthentication) error
-}
-
 // DialOptions 是一个 managed cloud endpoint 的公开连接输入。
 // Companion 只接收 endpoint、device、signaling 和 route preference；fingerprint 与 grant 始终留在当前公开进程。
 type DialOptions struct {
@@ -42,7 +28,7 @@ type DialOptions struct {
 	DeviceFingerprint string
 	CapabilityGrant   string
 	RoutePreference   cloudpb.RoutePreference
-	Authenticator     SessionAuthenticator
+	AuthRandom        io.Reader
 	Now               time.Time
 }
 
@@ -58,11 +44,8 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 	if err != nil {
 		return nil, fmt.Errorf("verify managed endpoint capability grant: %w", err)
 	}
-	if claims.DeviceID != targetDeviceID {
-		return nil, fmt.Errorf("managed endpoint device mismatch: grant %q registry %q", claims.DeviceID, targetDeviceID)
-	}
-	if options.Authenticator == nil {
-		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "DataChannel end-to-end authenticator is not available")
+	if claims.IssuerDeviceID != targetDeviceID {
+		return nil, fmt.Errorf("managed endpoint device mismatch: grant %q registry %q", claims.IssuerDeviceID, targetDeviceID)
 	}
 	if options.Companion == nil {
 		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING, "Cloud Companion is not configured")
@@ -96,28 +79,29 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 		_ = peer.Close()
 		return nil, fmt.Errorf("create managed endpoint protocol data channel: %w", err)
 	}
+	// DataChannel 一创建就注册 message/close handler，避免 daemon 在 OnOpen 立即发送的 DeviceHello 早于 client Recv 注册而丢失。
+	secured := newPeerTransport(datachannel.New(remotev2webrtc.NewChannel(channel)), peer)
 	opened := make(chan struct{})
 	channel.OnOpen(func() { close(opened) })
-	channel.OnClose(func() { _ = peer.Close() })
 	offer, err := peer.CreateOffer(nil)
 	if err != nil {
-		_ = peer.Close()
+		_ = secured.Close()
 		return nil, fmt.Errorf("create managed endpoint offer: %w", err)
 	}
 	gatherComplete := pion.GatheringCompletePromise(peer)
 	if err := peer.SetLocalDescription(offer); err != nil {
-		_ = peer.Close()
+		_ = secured.Close()
 		return nil, fmt.Errorf("set managed endpoint local offer: %w", err)
 	}
 	select {
 	case <-ctx.Done():
-		_ = peer.Close()
+		_ = secured.Close()
 		return nil, ctx.Err()
 	case <-gatherComplete:
 	}
 	localDescription := peer.LocalDescription()
 	if localDescription == nil || strings.TrimSpace(localDescription.SDP) == "" {
-		_ = peer.Close()
+		_ = secured.Close()
 		return nil, fmt.Errorf("managed endpoint offer has no local description")
 	}
 	signaling, err := options.Companion.CreateSignalingSession(ctx, &cloudpb.CreateSignalingSessionRequest{
@@ -128,41 +112,49 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 		RoutePreference:  options.RoutePreference,
 	})
 	if err != nil {
-		_ = peer.Close()
+		_ = secured.Close()
 		return nil, err
 	}
 	if signaling == nil {
-		_ = peer.Close()
+		_ = secured.Close()
 		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Cloud Companion returned an empty signaling stream")
 	}
 	defer signaling.Close()
 	answer, candidates, err := receiveAnswer(signaling)
 	if err != nil {
-		_ = peer.Close()
+		_ = secured.Close()
 		return nil, err
 	}
 	if err := peer.SetRemoteDescription(pion.SessionDescription{Type: pion.SDPTypeAnswer, SDP: answer.GetSdp()}); err != nil {
-		_ = peer.Close()
+		_ = secured.Close()
 		return nil, fmt.Errorf("set managed endpoint remote answer: %w", err)
 	}
 	for _, candidate := range append(candidates, answer.GetCandidates()...) {
 		if err := peer.AddICECandidate(toPionCandidate(candidate)); err != nil {
-			_ = peer.Close()
+			_ = secured.Close()
 			return nil, fmt.Errorf("add managed endpoint ICE candidate: %w", err)
 		}
 	}
 	select {
 	case <-ctx.Done():
-		_ = peer.Close()
+		_ = secured.Close()
 		return nil, ctx.Err()
 	case <-opened:
 	}
-	secured := &peerTransport{Transport: datachannel.New(remotev2webrtc.NewChannel(channel)), peer: peer}
-	authentication := SessionAuthentication{
-		TargetDeviceID: targetDeviceID, DeviceFingerprint: options.DeviceFingerprint,
-		CapabilityGrant: options.CapabilityGrant, Now: options.Now,
+	dtlsFingerprint, err := remotev2webrtc.RemoteCertificateFingerprint(peer)
+	if err != nil {
+		_ = secured.Close()
+		return nil, fmt.Errorf("read managed endpoint DTLS certificate: %w", err)
 	}
-	if err := options.Authenticator.Authenticate(ctx, secured, authentication); err != nil {
+	authenticator := remoteauth.ClientHandshake{Random: options.AuthRandom}
+	if !options.Now.IsZero() {
+		now := options.Now.UTC()
+		authenticator.Now = func() time.Time { return now }
+	}
+	if _, err := authenticator.Authenticate(ctx, secured, remoteauth.ClientHandshakeRequest{
+		ExpectedDeviceID: targetDeviceID, ExpectedDeviceFingerprint: options.DeviceFingerprint,
+		CapabilityGrant: options.CapabilityGrant, DaemonDTLSCertificateFingerprint: dtlsFingerprint,
+	}); err != nil {
 		_ = secured.Close()
 		return nil, fmt.Errorf("authenticate managed endpoint DataChannel: %w", err)
 	}
@@ -258,6 +250,15 @@ func toPionCandidate(candidate *cloudpb.IceCandidate) pion.ICECandidateInit {
 type peerTransport struct {
 	transport.Transport
 	peer *pion.PeerConnection
+}
+
+func newPeerTransport(protocolTransport transport.Transport, peer *pion.PeerConnection) *peerTransport {
+	connection := &peerTransport{Transport: protocolTransport, peer: peer}
+	go func() {
+		<-protocolTransport.Done()
+		_ = peer.Close()
+	}()
+	return connection
 }
 
 func (connection *peerTransport) Close() error {

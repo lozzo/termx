@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/termx-shared/transport"
 	"github.com/lozzow/termx/termx-shared/transport/datachannel"
 	pion "github.com/pion/webrtc/v4"
 )
@@ -16,7 +17,8 @@ const protocolChannelLabel = "termx-protocol"
 // 实现必须先在 DataChannel 内完成 DeviceIdentity proof 与 CapabilityGrant 校验，再把受限 scope 交给 core-v2；云信令不能替代该步骤。
 type DataChannelSessionHandler interface {
 	// ServeDataChannel 接收尚未授权的可靠有序 DataChannel；实现完成握手前不得调用 core-v2。
-	ServeDataChannel(context.Context, datachannel.Channel) error
+	// daemonDTLSFingerprint 必须由 WebRTC adapter 从当前本端 DTLSTransport 读取，不能来自 SDP。
+	ServeDataChannel(context.Context, transport.Transport, string) error
 }
 
 // Answerer 把 Cloud Companion 中继的公开 WebRTC offer 协商成 daemon answer。
@@ -58,9 +60,16 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 			channel.OnOpen(func() { _ = channel.Close() })
 			return
 		}
+		// 先注册 message handler，再等待 open；client 的 CapabilityOpen 不能早于 daemon auth transport 的接收队列。
+		protocolTransport := datachannel.New(NewChannel(channel))
 		channel.OnOpen(func() {
 			go func() {
-				_ = answerer.Handler.ServeDataChannel(sessionCtx, NewChannel(channel))
+				dtlsFingerprint, err := LocalCertificateFingerprint(peer)
+				if err == nil {
+					err = answerer.Handler.ServeDataChannel(sessionCtx, protocolTransport, dtlsFingerprint)
+				} else {
+					_ = protocolTransport.Close()
+				}
 				cancel()
 				_ = peer.Close()
 			}()

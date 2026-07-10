@@ -11,4 +11,4 @@
 - 不得 import 或复制冻结 `termx-remote/` runtime。
 - 不得恢复 session token、client public-key allowlist、localweb、remote UI 或原始 shell fallback。
 - Companion/Hub 只能处理服务准入和 signaling，不能接收 CapabilityGrant、DeviceIdentity private key、DataChannel 或 terminal payload。
-- 未经 DataChannel 内 DeviceIdentity proof 与 capability handshake 的 session 不得进入 core-v2；RP003 完成前相关真实 runtime 必须 fail closed。
+- 未经 DataChannel 内 DeviceIdentity proof、实际 DTLS certificate binding 与 capability challenge 的 session 不得进入 core-v2；任何新 adapter 都必须复用 `termx-shared/remoteauth` 状态机，不得注入“已授权”标记绕过。
