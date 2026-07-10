@@ -1,6 +1,6 @@
 # TermX Remote Platform 安全与协议规范
 
-状态：RP003 已实现基线
+状态：RP004 已实现基线
 
 版本：v1 draft
 
@@ -168,6 +168,20 @@ signature
 - session-specific、region/route-specific、短 TTL。
 - `single_relay` 只授权一个 Relay；`relay_mesh` 只授权 lease 中的两个 Edge Relay、route version 和受限 internal transit 数。
 - Relay/TURN 可以从私有派生密钥和 `credential_binding_id` 验证 principal-specific 短期 credential，但不得把派生 seed 或长期 shared secret 下发给任何 endpoint。
+
+### 3.6 Control Plane 服务凭据 v1 编码
+
+RP004 固定 Hub admission 与 Relay lease 的签名算法和 canonical encoding：
+
+- 签名算法固定为 Ed25519，不携带 `alg` 字段，也不接受调用方选择算法。
+- Hub admission token 为 `TXHA1.<base64url(canonical-json)>.<base64url(signature)>`。
+- Relay lease token 为 `TXRL1.<base64url(canonical-json)>.<base64url(signature)>`。
+- signature input 是前两段的原始 ASCII bytes；base64url 不带 padding。
+- canonical JSON 使用 UTF-8、无额外空白、整数 Unix 秒和 schema 定义顺序；未知字段、重复 operation、非 canonical operation 顺序和尾随 JSON 一律拒绝。
+- `key_id` 选择离线验签公钥；Control Plane 同时发布新旧公钥形成重叠验证窗口，紧急撤销会立即拒绝该 key 签发且尚未过期的凭据。
+- `TXHA1`、`TXRL1` 与 usage 的 `TXUE1` domain separator 不可互换，因此 Hub ticket、Relay lease 和 usage event 不能跨用途验签。
+
+固定测试向量由 `private/termx-cloud/control-plane/servicecredential/credential_test.go` 维护；向量使用公开测试 seed 和虚构身份，不包含生产密钥或真实账号数据。
 - Client 与 daemon 只获得各自 Edge Relay credential；Relay 间 tunnel 使用独立服务身份，不能把 endpoint credential 复用为内部节点身份。
 - lease entitlement 不表达 terminal scope。
 - refresh 必须重新经过 entitlement/quota 判断，不能无限续用旧 lease。
@@ -422,6 +436,7 @@ UsageEvent {
     bytes_down
     active_seconds
     termination_reason
+    key_id
     signature
 }
 ```
@@ -433,6 +448,7 @@ UsageEvent {
 - Control Plane 拒绝重复、回退或越界事件。
 - Relay Mesh 可以有多个 hop-level event，但结算必须按 `route_id + managed_session_id` 聚合为一次用户 session，不能按 hop 重复计算同一字节。
 - usage 不包含 IP 以外不必要的 payload metadata；IP 保留策略单独受隐私政策约束。
+- v1 signature input 为 `TXUE1.<base64url(canonical-json-without-signature)>` 的原始 ASCII bytes；event 的 `key_id` 必须与 Control Plane 注册的 Relay 部署身份匹配，签名算法固定为 Ed25519。
 
 ## 9. 撤销与失效
 
