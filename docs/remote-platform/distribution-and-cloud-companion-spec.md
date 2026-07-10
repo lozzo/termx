@@ -1,6 +1,6 @@
 # TermX 发布、安装与 Cloud Companion 规范
 
-状态：RP001C 活动基线
+状态：RP004A companion 实现基线；RP006A 安装与进程激活待实现
 
 日期：2026-07-11
 
