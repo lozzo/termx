@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
+	"github.com/lozzow/termx/termx-tui-v3/shortcut"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -909,19 +910,14 @@ func validateShortcutsConfig(shortcuts state.TUIShortcutConfig) error {
 		}
 		for key, binding := range scene.Bindings {
 			path := "tui.shortcuts." + sceneName + "." + key
-			if !validShortcutKey(key) {
+			signature, ok := input.ShortcutBindingSignature(sceneName, key)
+			if !ok {
 				return fmt.Errorf("%s has invalid key", path)
 			}
-			if routedShortcutScene(sceneName) {
-				signature, ok := input.ShortcutBindingSignature(sceneName, key)
-				if !ok {
-					return fmt.Errorf("%s has invalid key", path)
-				}
-				if previous, ok := effectiveKeys[signature]; ok {
-					return fmt.Errorf("%s conflicts with %s at runtime shortcut key", path, previous)
-				}
-				effectiveKeys[signature] = path
+			if previous, ok := effectiveKeys[signature]; ok {
+				return fmt.Errorf("%s conflicts with %s at runtime shortcut key", path, previous)
 			}
+			effectiveKeys[signature] = path
 			if strings.TrimSpace(binding.Action) == "" {
 				return fmt.Errorf("%s.action must not be empty", path)
 			}
@@ -940,10 +936,14 @@ func validateShortcutsConfig(shortcuts state.TUIShortcutConfig) error {
 					return fmt.Errorf("%s.action references unknown shortcut scene %q", path, target)
 				}
 			}
-			if !input.KnownShortcutActionID(binding.Action) {
-				return fmt.Errorf("%s.action references unknown shortcut action %q", path, binding.Action)
+			_, spec, err := shortcut.ParseInvocation(binding.Action)
+			if err != nil {
+				return fmt.Errorf("%s.action %w", path, err)
 			}
-			if routedShortcutScene(sceneName) && !input.RoutableShortcutActionID(binding.Action) {
+			if !spec.AllowsScene(sceneName) {
+				return fmt.Errorf("%s.action %q is not allowed in scene %q", path, binding.Action, sceneName)
+			}
+			if routedShortcutScene(sceneName) && !spec.Routable {
 				return fmt.Errorf("%s.action references non-routable shortcut action %q", path, binding.Action)
 			}
 		}
@@ -978,10 +978,12 @@ func validShortcutSceneName(value string) bool {
 }
 
 func validShortcutKey(value string) bool {
-	if strings.TrimSpace(value) == "" || strings.Contains(value, ".") || strings.ContainsAny(value, "\r\n\t ") {
+	if strings.TrimSpace(value) == "" || strings.ContainsAny(value, "\r\n\t ") {
 		return false
 	}
-	return true
+	// 手写 YAML parser 以点拼接配置 path；单字符 "." 仍是合法 shortcut key，
+	// 其他含点 token 会与 long-form 的 .action/.label 字段产生歧义，且输入 parser 本身也不接受。
+	return value == "." || !strings.Contains(value, ".")
 }
 
 func routedShortcutScene(value string) bool {

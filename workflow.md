@@ -86,8 +86,8 @@
 | KS005 | 完成 | 统一 action invocation、domain spec 与 dispatcher contract | 先补 registry/invocation 完备性 harness；底层 shortcut domain spec 统一 action id、参数 schema、allowed scenes、默认文案和展示策略；input 保留 invocation，app dispatcher 只拥有执行 handler |
 | KS006 | 完成 | 键盘与点击统一 action 执行链路 | 先补键盘/点击 invocation 等价 harness；footer/content 点击与键盘派发同一 invocation；方向、focus、`tab.jump.N`、`floating.summon.N` 不丢语义或参数，歧义聚合提示只允许 hint-only |
 | KS007 | 完成 | 删除快捷键硬编码 fallback 并补齐提示 | 先补显式空 catalog 无 fallback harness；sticky/copy Esc、空 footer `Ctrl-G`、Help close、Prompt suggestion 回到 catalog；每个 action 在 domain spec 明确 footer/help/click 策略 |
-| KS008 | 进行中 | shortcut key、scene、action 和参数校验收敛 | 先补 canonical key、scene-action 和参数矩阵；config 基于 KS005 domain spec 校验 routed/overlay scene，拒绝等价冲突、理论不可表达 token、错误 scene-action 组合及越界参数 |
-| KS009 | 待开始 | action 文案覆盖与 catalog 替换语义 | 先补默认、action-only、scene-only、显式空 scene 和 actions+scenes 矩阵；action-only 只覆盖默认文案，出现 scene 后用户 scene catalog 是完整按键真值 |
+| KS008 | 完成 | shortcut key、scene、action 和参数校验收敛 | 先补 canonical key、scene-action 和参数矩阵；config 基于 KS005 domain spec 校验 routed/overlay scene，拒绝等价冲突、理论不可表达 token、错误 scene-action 组合及越界参数 |
+| KS009 | 进行中 | action 文案覆盖与 catalog 替换语义 | 先补默认、action-only、scene-only、显式空 scene 和 actions+scenes 矩阵；action-only 只覆盖默认文案，出现 scene 后用户 scene catalog 是完整按键真值 |
 | KS010 | 待开始 | 组合 action 与 terminal lifecycle 执行语义 | 先补成功、失败、TerminalRef 路由 harness；只实现 `panel.kill` / `panel.kill_and_close` handler、步骤和关闭时机，不再调整 registry 基础结构或开放脚本系统 |
 | KS011 | 待开始 | 增强键盘协议与 Ctrl+数字 | 先补 raw bytes 到 invocation harness；配置期验证协议理论支持，启动期检测 TerminalHost capability，运行期投影 available 状态；不支持时保持 `Ctrl-T` 后按数字路径 |
 | KS012 | 待开始 | 快捷键跨切片总契约守卫 | 汇总默认 catalog 完备性、键盘/点击等价、空 catalog、overlay、组合 action 和 capability 回归守卫，不在本切片首次补关键 harness |
@@ -141,4 +141,5 @@
 - KS005 已完成：新增无 app/render/config 依赖的 shortcut domain registry，统一 canonical action id、typed 参数、allowed scenes、默认文案和显式展示策略；input binding 只产出 `ActionInvocation`，app dispatcher 负责投影到 reducer intent；旧 input action switch 和 shell-to-render adapter 已删除，默认 catalog/spec/dispatcher 完备性 harness 已落地。
 - KS006 已完成：footer 与受 shortcut catalog 控制的 overlay/content 命中区携带 canonical `ActionInvocation`；点击消息保留 pane/floating/row 目标上下文，copy 与 overlay 分别由 owning reducer 消费；零值 click policy 不可点击，不同方向/参数的聚合提示只保留 hint-only；`floating.summon.N` 使用 typed index，overview 行使用 `floating_overview.open + Row`，不再混淆两种语义。
 - KS007 已完成：sticky/copy Esc、Prompt suggestion Esc、Help close 都由各自 scene catalog 驱动；显式空 catalog 不再退出或执行旧 fallback，normal Esc 仍透传 PTY；空 footer 不再虚构 `Ctrl-G`；Help 内容关闭文案与 hit region 随 catalog 同步消失；`interaction.exit`、`copy.exit`、`prompt.suggestion_exit` 已进入 domain spec，`shortcut.exit` 只作为 render metadata，不能通过裸 ActionID 执行。
-- KS008 进行中：下一步以 domain `AllowedScenes` 为配置校验真值，补 canonical key、scene-action、参数和运行时等价冲突矩阵，拒绝错误 overlay/routed action 组合与越界参数。
+- KS008 已完成：config 以 shortcut domain `ParseInvocation`、`AllowedScenes` 和 `Routable` 为 action/scene/参数真值；routed 与 overlay 共用 canonical key signature，拒绝 panel/pane、Esc/Return、modifier 顺序、Ctrl 字符大小写及 `Ctrl-@`/`Ctrl-Space` 等价冲突；quoted `.` 的短写和长写均通过真实 YAML parser；增强键盘 token 只做协议理论校验，实际 capability/available 状态仍由 KS011 负责。
+- KS009 进行中：下一步补齐默认、action-only、scene-only、显式空 scene 和 actions+scenes 的 catalog 替换矩阵，确保 action-only 只覆盖默认文案，任意 scene 出现后用户 scene catalog 成为完整按键真值。

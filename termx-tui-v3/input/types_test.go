@@ -196,6 +196,24 @@ func TestRouteUsesCustomShortcutsAsOnlyTruth(t *testing.T) {
 	}
 }
 
+func TestCtrlNULAliasesMatchRoutedAndOverlayBindings(t *testing.T) {
+	nulEvent := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x00", Ctrl: true, RawSeq: "\x00"}
+	for _, key := range []string{"ctrl-space", "ctrl-@"} {
+		shortcuts := state.TUIShortcutConfig{Configured: true, Scenes: map[string]state.TUIShortcutSceneConfig{
+			"global": {Bindings: map[string]state.TUIShortcutBindingConfig{key: {Action: "menu.panel"}}},
+			"help":   {Bindings: map[string]state.TUIShortcutBindingConfig{key: {Action: "help.close"}}},
+		}}
+		intent := RouteWithOptions(nulEvent, RouteOptions{Shortcuts: shortcuts})
+		if intent.Kind != IntentShortcutAction || intent.Invocation.ID != "menu.panel" {
+			t.Fatalf("routed %q should match NUL input, got %#v", key, intent)
+		}
+		entry, ok := ShortcutEntryForEvent(shortcuts, "help", nulEvent)
+		if !ok || entry.ActionID != "help.close" {
+			t.Fatalf("overlay %q should match NUL input, entry=%#v ok=%v", key, entry, ok)
+		}
+	}
+}
+
 func TestRouteUsesExplicitEmptyShortcutsAsOnlyTruth(t *testing.T) {
 	shortcuts := state.TUIShortcutConfig{Configured: true}
 

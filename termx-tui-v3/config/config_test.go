@@ -436,6 +436,102 @@ func TestValidateRejectsInvalidShortcutConfig(t *testing.T) {
 	}
 }
 
+func TestShortcutValidationUsesDomainScenesParametersAndCanonicalKeys(t *testing.T) {
+	cases := []struct {
+		name    string
+		scenes  map[string]state.TUIShortcutSceneConfig
+		wantErr string
+	}{
+		{name: "wrong overlay action scene", scenes: map[string]state.TUIShortcutSceneConfig{
+			"prompt_suggestion": {Bindings: map[string]state.TUIShortcutBindingConfig{"esc": {Action: "help.close"}}},
+		}, wantErr: "not allowed in scene"},
+		{name: "wrong routed action scene", scenes: map[string]state.TUIShortcutSceneConfig{
+			"panel": {Bindings: map[string]state.TUIShortcutBindingConfig{"x": {Action: "workspace.delete"}}},
+		}, wantErr: "not allowed in scene"},
+		{name: "parameter missing", scenes: map[string]state.TUIShortcutSceneConfig{
+			"tab": {Bindings: map[string]state.TUIShortcutBindingConfig{"1": {Action: "tab.jump"}}},
+		}, wantErr: "requires index"},
+		{name: "parameter out of range", scenes: map[string]state.TUIShortcutSceneConfig{
+			"tab": {Bindings: map[string]state.TUIShortcutBindingConfig{"0": {Action: "tab.jump.0"}}},
+		}, wantErr: "invalid index"},
+		{name: "canonical key alias conflict", scenes: map[string]state.TUIShortcutSceneConfig{
+			"help": {Bindings: map[string]state.TUIShortcutBindingConfig{
+				"esc": {Action: "help.close"}, "escape": {Action: "help.close"},
+			}},
+		}, wantErr: "runtime shortcut key"},
+		{name: "ctrl character case conflict", scenes: map[string]state.TUIShortcutSceneConfig{
+			"global": {Bindings: map[string]state.TUIShortcutBindingConfig{
+				"ctrl-a": {Action: "menu.panel"}, "ctrl-A": {Action: "menu.tab"},
+			}},
+		}, wantErr: "runtime shortcut key"},
+		{name: "ctrl nul alias conflict", scenes: map[string]state.TUIShortcutSceneConfig{
+			"global": {Bindings: map[string]state.TUIShortcutBindingConfig{
+				"ctrl-space": {Action: "menu.panel"}, "ctrl-@": {Action: "menu.tab"},
+			}},
+		}, wantErr: "runtime shortcut key"},
+		{name: "overlay ctrl nul alias conflict", scenes: map[string]state.TUIShortcutSceneConfig{
+			"help": {Bindings: map[string]state.TUIShortcutBindingConfig{
+				"ctrl-space": {Action: "help.close"}, "ctrl-@": {Action: "help.close"},
+			}},
+		}, wantErr: "runtime shortcut key"},
+		{name: "modifier order conflict", scenes: map[string]state.TUIShortcutSceneConfig{
+			"global": {Bindings: map[string]state.TUIShortcutBindingConfig{
+				"ctrl-alt-x": {Action: "menu.panel"}, "alt-ctrl-x": {Action: "menu.tab"},
+			}},
+		}, wantErr: "runtime shortcut key"},
+		{name: "repeated modifier conflict", scenes: map[string]state.TUIShortcutSceneConfig{
+			"global": {Bindings: map[string]state.TUIShortcutBindingConfig{
+				"ctrl-x": {Action: "menu.panel"}, "ctrl-ctrl-x": {Action: "menu.tab"},
+			}},
+		}, wantErr: "runtime shortcut key"},
+		{name: "unrepresentable overlay key", scenes: map[string]state.TUIShortcutSceneConfig{
+			"help": {Bindings: map[string]state.TUIShortcutBindingConfig{"ctrl-not-a-real-key": {Action: "help.close"}}},
+		}, wantErr: "invalid key"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Default()
+			cfg.Shortcuts.Configured = true
+			cfg.Shortcuts.Scenes = tc.scenes
+			if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected %q error, got %v", tc.wantErr, err)
+			}
+		})
+	}
+
+	cfg := Default()
+	cfg.Shortcuts.Configured = true
+	cfg.Shortcuts.Scenes = map[string]state.TUIShortcutSceneConfig{
+		"global": {Bindings: map[string]state.TUIShortcutBindingConfig{
+			"ctrl-1":     {Action: "tab.jump.1"},
+			"ctrl-enter": {Action: "menu.tab"},
+			"ctrl-i":     {Action: "menu.panel"},
+			".":          {Action: "menu.pane"},
+		}},
+		"help": {Bindings: map[string]state.TUIShortcutBindingConfig{"return": {Action: "help.close"}}},
+	}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("valid aliases and parameterized actions should pass: %v", err)
+	}
+
+	parsed, err := Parse([]byte("tui:\n  shortcuts:\n    global:\n      \".\": menu.pane\n"))
+	if err != nil {
+		t.Fatalf("quoted dot shortcut should load through the real parser: %v", err)
+	}
+	if got := parsed.Shortcuts.Scenes["global"].Bindings["."].Action; got != "menu.pane" {
+		t.Fatalf("quoted dot shortcut action mismatch: %q", got)
+	}
+
+	parsed, err = Parse([]byte("tui:\n  shortcuts:\n    global:\n      \".\":\n        action: menu.pane\n        label: dot menu\n"))
+	if err != nil {
+		t.Fatalf("quoted dot long-form shortcut should load through the real parser: %v", err)
+	}
+	dotBinding := parsed.Shortcuts.Scenes["global"].Bindings["."]
+	if dotBinding.Action != "menu.pane" || dotBinding.Label != "dot menu" {
+		t.Fatalf("quoted dot long-form shortcut mismatch: %#v", dotBinding)
+	}
+}
+
 func TestDefaultPathUsesXDGConfigHome(t *testing.T) {
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)

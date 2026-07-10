@@ -629,20 +629,23 @@ func shortcutSceneMode(sceneName string) (InteractionMode, bool) {
 	}
 }
 
-// ShortcutBindingSignature 返回 scene/key 在运行时路由里的唯一签名。
-// 配置校验用它发现 panel/pane 这类 scene 别名编译到同一 InteractionMode 后的按键冲突；
-// 返回 false 表示该 scene/key 不能由当前输入路由识别。
+// ShortcutBindingSignature 返回 scene/key 在配置层输入模型里的唯一签名。
+// routed scene 按 InteractionMode 合并 panel/pane 等别名，overlay scene 按 canonical scene 隔离；
+// 它只归一协议无关的 token 别名；实际宿主 capability 与 binding available 状态由 TerminalHost 阶段决定。
 func ShortcutBindingSignature(sceneName string, keyToken string) (string, bool) {
-	mode, ok := shortcutSceneMode(sceneName)
-	if !ok {
-		return "", false
-	}
 	key, ok := parseShortcutKeyToken(keyToken)
 	if !ok {
 		return "", false
 	}
+	key.Char = canonicalShortcutChar(key.Key, key.Char, key.Ctrl, key.Shift)
+	sceneKey := shortcutSceneCatalogKey(sceneName)
+	if mode, routed := shortcutSceneMode(sceneName); routed {
+		sceneKey = "route:" + string(mode)
+	} else {
+		sceneKey = "overlay:" + sceneKey
+	}
 	parts := []string{
-		string(mode),
+		sceneKey,
 		string(key.Key),
 		strconv.Quote(key.Char),
 		strconv.FormatBool(key.Ctrl),
@@ -752,8 +755,25 @@ func bindingCharMatches(binding Binding, event InputEvent) bool {
 	if binding.Key != KeyChar || !binding.Ctrl || !event.Ctrl {
 		return false
 	}
+	if canonicalShortcutChar(binding.Key, binding.Char, binding.Ctrl, binding.Shift) == canonicalShortcutChar(event.Key, event.Char, event.Ctrl, event.Shift) {
+		return true
+	}
 	data, ok := ctrlCharBytes(binding.Char)
 	return ok && string(data) == event.Char
+}
+
+func canonicalShortcutChar(key Key, char string, ctrl bool, shift bool) string {
+	if key != KeyChar || !ctrl || shift {
+		return char
+	}
+	if char == " " || char == "@" || char == "\x00" {
+		return "\x00"
+	}
+	if len(char) == 1 && char[0] >= 'A' && char[0] <= 'Z' {
+		// Ctrl-A 与 Ctrl-a 是配置拼写别名；显式 Shift 必须写成 ctrl-shift-a。
+		return strings.ToLower(char)
+	}
+	return char
 }
 
 func intentFromBinding(event InputEvent, binding Binding) Intent {
