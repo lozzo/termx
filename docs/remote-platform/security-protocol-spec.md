@@ -146,20 +146,28 @@ managed_session_id
 client_device_id
 target_device_id
 region
+path_kind             # single_relay | relay_mesh
+route_id              # relay_mesh 时必填
+route_version         # relay_mesh 时必填
+client_edge_relay_id  # relay_mesh 时必填
+daemon_edge_relay_id  # relay_mesh 时必填
+max_internal_transit
 not_before
 expires_at
 max_bytes
 max_bitrate_kbps
 max_concurrency
-credential_seed_or_reference
+credential_binding_id
 key_id
 signature
 ```
 
 约束：
 
-- session-specific、region-specific、短 TTL。
-- Relay/TURN 可以从 lease 派生短期 credential，但不得向客户端暴露长期 shared secret。
+- session-specific、region/route-specific、短 TTL。
+- `single_relay` 只授权一个 Relay；`relay_mesh` 只授权 lease 中的两个 Edge Relay、route version 和受限 internal transit 数。
+- Relay/TURN 可以从私有派生密钥和 `credential_binding_id` 验证 principal-specific 短期 credential，但不得把派生 seed 或长期 shared secret 下发给任何 endpoint。
+- Client 与 daemon 只获得各自 Edge Relay credential；Relay 间 tunnel 使用独立服务身份，不能把 endpoint credential 复用为内部节点身份。
 - lease entitlement 不表达 terminal scope。
 - refresh 必须重新经过 entitlement/quota 判断，不能无限续用旧 lease。
 
@@ -372,6 +380,9 @@ UsageEvent {
     lease_id
     managed_session_id
     relay_id
+    route_id
+    path_kind
+    hop_id
     sequence
     interval_start
     interval_end
@@ -388,6 +399,7 @@ UsageEvent {
 - `(relay_id, lease_id, sequence)` 幂等。
 - 单调 sequence，允许延迟补报。
 - Control Plane 拒绝重复、回退或越界事件。
+- Relay Mesh 可以有多个 hop-level event，但结算必须按 `route_id + managed_session_id` 聚合为一次用户 session，不能按 hop 重复计算同一字节。
 - usage 不包含 IP 以外不必要的 payload metadata；IP 保留策略单独受隐私政策约束。
 
 ## 9. 撤销与失效
@@ -432,6 +444,7 @@ UsageEvent {
 - scope harness：single-terminal grant 无法 List/Attach 其他 terminal。
 - revoke/expiry harness：daemon 拒绝且不创建 core-v2 session。
 - relay harness：无 lease、错 region、过期、超额和重复 usage event 均 fail closed。
+- relay-mesh harness：错 Edge、错 route version、超出 transit 数、未授权邻接和 hop event 重复均 fail closed；session 账单只聚合一次。
 - subscription harness：套餐失效不影响 local/SSH，也不改变已有 grant 的 daemon 验证结果。
 - cross-platform canonical fixture：Go/Kotlin/Swift 对 DeviceHello、grant 和 proof 计算一致。
 - log redaction harness：所有 credential 类型不能进入默认日志输出。

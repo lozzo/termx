@@ -88,6 +88,7 @@ control-plane/              account/device/entitlement/admission/lease
 web-controller/             private admin and customer control UI/API
 hub/                        regional presence and signaling runtime
 relay/                      TURN/relay enforcement and usage meter
+route-planner/              private quality graph, SmartRoute and Relay Mesh
 contracts-adapter/          implementation of public client contracts
 infra/                      deployment, secrets, observability, runbooks
 ```

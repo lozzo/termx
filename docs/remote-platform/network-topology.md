@@ -10,8 +10,8 @@
 
 - local 和 SSH 完全绕过 TermX 托管云。
 - WebRTC 使用 Hub 交换 signaling，但 Hub 不承载 terminal protocol。
-- WebRTC 优先 direct；失败且存在有效 `RelayLease` 时才走 Relay。
-- direct 和 Relay 最终都建立同一种 DTLS DataChannel，运行同一种端到端 capability handshake 和 termx protocol。
+- 基础 WebRTC 策略优先 direct；失败且存在有效 `RelayLease` 时才走 Relay。启用 SmartRoute 后，direct 可达但质量较差时也可以主动选择 Relay。
+- direct、single Relay 和 Relay Mesh 最终都建立同一种 DTLS DataChannel，运行同一种端到端 capability handshake 和 termx protocol。
 - Control Plane、Hub 和 Relay 都不能看到原始 `CapabilityGrant`。
 
 ## 2. 全部连接方式
@@ -223,6 +223,10 @@ flowchart LR
     class C,D,DI,CG e2e;
 ```
 
-## 7. 一句话总结
+## 7. 全球网络加速
+
+SmartRoute、双 Edge Relay 和受控 inter-region backbone 的网络图见 `global-acceleration-spec.md` 的“Relay Mesh 网络图”。该路径仍承载同一个端到端 DTLS DataChannel；加速节点增加不会扩大 terminal capability，也不会创建新的 endpoint。
+
+## 8. 一句话总结
 
 Hub 帮两端找到彼此，Relay 在直连失败时搬运密文，Control Plane 决定谁能使用这些托管服务；只有 daemon 能决定客户端最终可以访问哪些 terminal 能力。

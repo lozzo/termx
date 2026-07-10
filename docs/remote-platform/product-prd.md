@@ -75,6 +75,7 @@ Managed Free 的价值是降低首次成功连接的门槛。具体设备数、�
 个人订阅，收费核心是稳定的托管连接服务：
 
 - Managed Relay 正式配额、更多区域和更高并发。
+- SmartRoute：根据实时质量在 direct 与 single-relay 候选中选择更稳定路径，而不是把“打洞成功”直接等同于最佳路径。
 - 网络变化后的快速重连和 Relay failover 策略。
 - 更多托管设备和跨端 endpoint 配置同步。
 - 加密的客户端配置备份、配对记录管理和设备撤销入口。
@@ -101,6 +102,7 @@ Team 不把 Web Controller 变成 terminal 权限真值。它可以管理“谁�
 合同制服务：
 
 - 专属或区域固定 Relay。
+- 双 Edge Relay Mesh、专属优化骨干或第三方优质传输线路。
 - 私有 Control Plane/Hub 部署或混合部署。
 - 合规、数据驻留、SLA、支持和定制策略。
 - 企业身份系统、审计存档和运维集成。
@@ -118,6 +120,7 @@ Enterprise 私有部署是商业授权和交付能力，不要求公开托管 Hu
 | 官方设备目录和 Hub signaling | 不提供 | 基础额度 | 扩展额度 | 组织额度/SLA |
 | Direct P2P | 可由公开客户端实现 | 官方托管协助 | 官方托管协助 | 策略化管理 |
 | 官方 Managed Relay | 不提供 | 试用或极小额度 | 包含配额/可加购 | 团队配额/专属区域 |
+| SmartRoute / 全球加速 | 不提供 | 不提供 | single-relay 智能选区；Mesh 可作为附加项 | Relay Mesh、专属线路和策略 |
 | 跨端配置同步 | 本地文件 | 基础 metadata | 加密同步 | 组织策略 |
 | 团队 RBAC/审计 | 不提供 | 不提供 | 个人记录 | 收费能力 |
 
@@ -174,8 +177,8 @@ Enterprise 私有部署是商业授权和交付能力，不要求公开托管 Hu
 
 ### 7.2 连接体验
 
-- 默认策略优先 direct，超过明确超时后才尝试允许的 Relay candidate。
-- UI 必须区分“正在 signaling”“正在 direct 建连”“正在申请 Relay”“通过 Relay 已连接”等状态。
+- 基础策略优先 direct，超过明确超时后才尝试允许的 Relay candidate；SmartRoute 可以在 direct 可达但质量较差时主动选择 Relay。
+- UI 必须区分“正在 signaling”“正在 direct 建连”“正在测量路径”“正在申请 Relay”“通过 single Relay/Relay Mesh 已连接”等状态。
 - 失败只影响 owning endpoint，保留其他 endpoint 和最后可用画面。
 - 不允许隐式 fallback 到原始 SSH shell、旧 remote runtime 或未授权 Relay。
 
@@ -206,6 +209,7 @@ Enterprise 私有部署是商业授权和交付能力，不要求公开托管 Hu
 - v1 不按 terminal 数、SSH endpoint 数或 TUI pane 数收费。
 - v1 不承诺自建 Hub/Relay 服务端开源；公开的是客户端 contract 和安全协议。
 - v1 不实现任意 transport plugin 系统。
+- v1 基础 Relay 不实现固定地区链或任意 N 跳 Relay Mesh；全球加速按独立阶段和成本门禁建设。
 - v1 不保留旧 session token、旧 machine-scoped RTC API 或双协议兼容。
 
 ## 9. 产品指标
@@ -220,6 +224,7 @@ Enterprise 私有部署是商业授权和交付能力，不要求公开托管 Hu
 ### 9.2 连接质量指标
 
 - direct P2P 成功率和 P50/P95 建连时间。
+- direct、single-relay、relay-mesh 各路径的 RTT、丢包、抖动、有效吞吐与稳定会话比例。
 - Relay fallback 比例、各区域失败率和重连成功率。
 - Relay 每会话字节数、时长、峰值并发和单位成本。
 - capability handshake 拒绝原因分布，不采集 grant 内容。

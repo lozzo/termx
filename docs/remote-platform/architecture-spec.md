@@ -90,7 +90,7 @@ TerminalRef = EndpointID + daemon-local TerminalID
 - `ssh`：通过 OpenSSH stdio proxy 到远端 daemon socket。
 - `webrtc`：通过 Hub signaling 协商的 DataChannel。
 
-`direct` 和 `relay` 不是 transport kind，而是 `webrtc` transport 的 `ObservedPath`。因此以下状态保持不变：
+`direct`、`single_relay` 和 `relay_mesh` 不是 transport kind，而是 `webrtc` transport 的 `ObservedPath`。其中 `relay_mesh` 表示两端各自就近接入 Edge Relay，再经受控 inter-region backbone 转发。详细阶段和限制见 `global-acceleration-spec.md`。因此以下状态保持不变：
 
 - endpoint identity；
 - device fingerprint；
@@ -171,7 +171,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - pin 并验证 daemon DeviceIdentity。
 - 在 DataChannel 内完成 capability handshake。
 - 建立标准 termx protocol client bundle。
-- 向 UI 投影 connecting/direct/relay/offline/auth-expired 等状态。
+- 向 UI 投影 connecting/probing/direct/single-relay/relay-mesh/offline/auth-expired 等状态。
 
 不负责：
 
@@ -312,20 +312,20 @@ Client <--------------------------> Daemon: device/capability handshake
 Client <--------------------------> Daemon: termx protocol
 ```
 
-Control Plane 不转发 SDP，Hub 不看到 capability。direct 成功后不申请 Relay lease。
+Control Plane 不转发 SDP，Hub 不看到 capability。基础策略下 direct 达到质量门槛后不申请 Relay lease；启用 SmartRoute 时，direct 即使可达也必须与允许的 Relay candidate 比较稳定性和成本，不能把“打洞成功”直接当成最佳路径。
 
 ### 7.4 Managed WebRTC Relay
 
 ```text
-direct attempt fails within policy window
-Client -> Control Plane: request RelayLease
-Client/Daemon -> Relay/TURN: lease-derived credentials
-Client <---------- encrypted DTLS via Relay ----------> Daemon
-Client <---------- capability + protocol -------------> Daemon
-Relay -> Control Plane: signed idempotent usage events
+path policy selects a relayed candidate
+Client -> Control Plane: request RelayLease(route class)
+Client/Daemon -> Edge Relay(s): lease-derived credentials
+Client <----- encrypted DTLS via single Relay or Relay Mesh -----> Daemon
+Client <-------------- capability + protocol --------------------> Daemon
+Relay(s) -> Control Plane: signed idempotent usage events
 ```
 
-Relay lease 失败只终止 relayed candidate。若 direct 仍可用则可以继续 direct；不得切换到 SSH/local 或旧 remote path。
+Relay lease 失败只终止对应 relayed candidate。若 direct 或其他已授权 route 仍可用则可以继续；不得切换到 SSH/local、旧 remote path 或未授权 route class。Relay Mesh 只能按 `global-acceleration-spec.md` 分阶段启用，不进入基础 Relay 首版。
 
 ## 8. 状态机与失败边界
 
@@ -337,11 +337,13 @@ resolving_endpoint
 obtaining_admission
 signaling
 connecting_direct
+probing_paths
+selecting_route
 obtaining_relay_lease
 connecting_relay
 authenticating_device
 authorizing_capability
-connected_direct | connected_relay
+connected_direct | connected_single_relay | connected_relay_mesh
 offline(error_class)
 ```
 
@@ -408,6 +410,7 @@ TUI 和 App 必须共享：
 - Control Plane 是持久状态 owner，可按账号/组织分区。
 - Hub 是短 TTL 状态服务，按 region 横向扩展；票据应支持离线验签，避免每次 signaling 查询主数据库。
 - Relay 是高带宽数据面，按 region 独立扩容和计费；usage event 异步上报。
+- Global Accelerator 启用后，Relay 还可以作为 Client/Daemon Edge；私有 Route Planner 只基于质量、容量、成本和 policy 选择受限 backbone route，不参与 terminal authorization。
 - Hub 与 Relay 可以同区域部署，但必须保持逻辑职责和凭据隔离。
 - presence、signaling 和 lease 过期都必须有明确 TTL；禁止永久 agent token 驱动长期隐式会话。
 
@@ -416,6 +419,7 @@ TUI 和 App 必须共享：
 - public core/TUI/App/CLI 构建不依赖私有 Hub/Web Controller 源码。
 - fake Control Plane + fake Hub 可以驱动完整 client contract harness。
 - 真实 direct 和 Relay harness 都在 DataChannel 建立后运行同一 E2E handshake 和 protocol 测试。
+- 启用全球加速后，direct、single-relay 和 relay-mesh harness 使用同一 endpoint、grant、DataChannel auth 和 termx protocol fixture；只允许 `ObservedPath`、route diagnostics 和 usage 不同。
 - Hub 请求 schema 不含 grant、terminal 或 scope 字段。
 - daemon 不向 Hub 注册 terminal inventory。
 - Control Plane 的 subscription/entitlement 代码无法 import core-v2 scope package。

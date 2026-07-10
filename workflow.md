@@ -14,6 +14,7 @@
 - `docs/remote-platform/product-prd.md`：产品、版本、商业模式和收费边界基准。
 - `docs/remote-platform/architecture-spec.md`：公开客户端/daemon 与私有 control plane/Hub/Relay 架构基准。
 - `docs/remote-platform/network-topology.md`：local/SSH/WebRTC 全景、direct/Relay 网络拓扑和连接时序图。
+- `docs/remote-platform/global-acceleration-spec.md`：SmartRoute、single-relay 选区、双 Edge Relay Mesh、质量测量和商业分阶段基准。
 - `docs/remote-platform/security-protocol-spec.md`：设备身份、终端授权、云服务准入和 Relay 租约安全基准。
 - `docs/remote-platform/source-boundary-and-migration-plan.md`：公开/私有仓库分拆、旧资产保留和实施切片基准。
 - `termx-tui-v3/docs/multi-endpoint-transport-plan.md`：当前多 endpoint / 多 transport 技术规划。
@@ -52,6 +53,9 @@
 - 后续 identity 收敛切片才能重命名协议字段或删除旧 ID 兼容；当前不得把随机 ID 继续用于 first-party 新建 terminal 的 history/layout/storage key。
 - Endpoint 表达“当前客户端要连接的 daemon 目标”；Transport 表达“到达该 endpoint 的方式”，例如 local unix socket、SSH、hub/P2P。
 - WebRTC 表达一种到达 endpoint 的 transport；一次 WebRTC session 实际走 direct candidate 还是 managed Relay 是连接路径结果，不得建模成两种 endpoint 或两种终端协议。
+- `direct`、`single_relay`、`relay_mesh` 只是 WebRTC `ObservedPath`；SmartRoute 必须基于质量、容量、成本和 entitlement 选路，不得按国家或城市硬编码固定 Relay 链。
+- Relay Mesh 第一阶段只能有两个 Edge Relay 和一个逻辑 backbone segment；后续最多增加一个内部 transit，必须由真实 corridor 数据证明收益，禁止用户配置或系统生成任意 N 跳。
+- Relay Mesh 全程保持 Client 到 daemon 的 DTLS 端到端加密；hop-level usage 可以分别采集，但账单必须按 route/session 聚合一次，不能机械重复计费同一字节。
 - daemon 侧“有哪些客户端连接到我”与 TUI/client 侧“我连接了哪些 daemon endpoint”是两个不同管理器，不得混成一个模型。
 - connection registry 是 CLI/TUI 共享的 endpoint 注册表，默认文件为 `$XDG_CONFIG_HOME/termx/connections.yaml` 或 `~/.config/termx/connections.yaml`；不得塞进 TUI-only 的 `tui-v3.yaml`。
 - TUI 不拥有 terminal lifecycle、committed history 或 history truth；history/live/input/resize 必须路由到 owning endpoint 的 daemon。
@@ -117,12 +121,17 @@
 | ME012D | 完成 | TUI/CLI hub endpoint dialer | 注册 `hub-p2p` dialer，建立 protocol client bundle；失败只影响 owning endpoint，不 fallback 到 local/SSH/旧 remote |
 | RP001 | 完成 | 远程平台产品、架构、安全与源码边界文档基线 | 完成 PRD、架构 spec、安全协议 spec、公开/私有仓库分拆与旧资产迁移计划；冻结实现门禁，文档之间术语和责任一致 |
 | RP001A | 完成 | 远程平台网络拓扑与连接时序图 | Mermaid 图覆盖 local/SSH 云旁路、managed WebRTC direct、Relay fallback、凭据可见性和 E2E capability 握手 |
+| RP001B | 完成 | 全球网络加速产品与 Relay Mesh 预研 | 明确是否建设、阶段边界、质量选路、双边 Edge Relay、计量、安全和网络图；不把任意 N 跳加入首版 Relay |
 | RP002 | 待开始 | 公开 remote contract 与私有服务边界抽取 | 公开仓库只保留 endpoint/transport、信令 wire contract、client interface 与 fake harness；Hub/Web Controller runtime 不再被 client 直接 import |
 | RP003 | 待开始 | DataChannel 端到端设备证明与 capability handshake | Hub/Control Plane 全链路看不到 capability grant；daemon 在 DTLS DataChannel 内完成设备证明、challenge 和 scope 映射后才接 core-v2 |
 | RP004 | 待开始 | 私有 control plane 服务票据与 Relay entitlement | 账号、设备目录、Hub admission、Relay lease、套餐 entitlement 和 usage event 形成独立领域；订阅不参与 terminal authorization |
 | RP005 | 待开始 | 私有 Hub/Relay 重建与旧实现迁移 | Hub 只做 presence/rendezvous/signaling，Relay 按短租约和会话计量；旧 session token、terminal inventory 和 bearer grant 信令全部删除 |
 | RP006 | 待开始 | TUI 与 App 统一远程 endpoint contract | TUI/App 共用 endpoint、配对、凭据和错误模型；平台只各自实现 WebRTC primitive，不复制业务协议 |
 | RP007 | 待开始 | 私有仓库分拆与公开仓库清场 | 保留 git 历史和归档 tag 后迁出 Hub/Web Controller 服务实现；公开构建、测试和文档不依赖私有源码 |
+| GA001 | 待开始 | direct/Relay 网络质量观测基线 | 只采集 RTT、丢包、抖动、吞吐、断线和成本 summary；不含 terminal/grant 数据，不自动改路 |
+| GA002 | 待开始 | SmartRoute single-relay 智能选区 | direct 与受限 single-relay 候选按质量和成本竞争；具备 hysteresis、cost guard、选择原因和局部失败 |
+| GA003 | 待开始 | 双 Edge Relay Mesh corridor pilot | 两端就近 TURN、单逻辑 backbone、route-bound RelayLease、内部服务身份和 session-level usage reconciliation 完整通过 |
+| GA004 | 待开始 | 单 transit 受控加速试点 | 仅当 GA003 数据证明特定 corridor 需要时启用，`max_internal_transit=1`；任意 N 跳保持禁止 |
 | KS012 | 待开始 | 快捷键跨切片总契约守卫 | 汇总默认 catalog 完备性、键盘/点击等价、空 catalog、overlay、组合 action 和 capability 回归守卫，不在本切片首次补关键 harness |
 | KS013 | 待开始 | 快捷键文档与示例收尾 | 更新现状统计、配置示例、支持键位和限制；删除错误可用性声明，确保可加载示例不会意外禁用未展示的必要入口 |
 
@@ -149,6 +158,7 @@
 
 ## 当前状态
 
+- RP001B 已完成：全球网络加速被定义为 Relay 之上的可选付费能力；先做质量观测和 single-relay SmartRoute，再按 corridor 数据门禁试点双 Edge Relay Mesh，最多允许一个内部 transit；固定地区链、任意 N 跳和中国特例不进入公开协议。Relay Mesh 图已用 Mermaid CLI 实际渲染并完成视觉检查，本切片未修改 runtime。
 - RP001A 已完成：新增五张可直接在 Markdown/GitHub 渲染的 Mermaid 图，覆盖全部 transport、managed WebRTC 网络、direct 时序、Relay fallback 和五类凭据边界；图形已使用 Mermaid CLI 实际渲染验证，本切片未修改 runtime。
 - RP001 已完成：远程平台 PRD、架构 spec、安全协议 spec 与源码边界/迁移计划已建立；Hub/Web Controller 服务端目标为私有仓库，公开仓库保留 client/daemon contract 与 fake harness，旧实现保留私有可追溯 archive；本切片未修改 runtime。
 - ME012A-D 保留为已验证的技术原型，不再作为目标安全架构：当前 opaque grant 经 Hub 信令、Hub agent token、terminal inventory 注册和订阅 kick 等行为必须在 RP002-RP005 中按新 contract 删除，不保留兼容 fallback。

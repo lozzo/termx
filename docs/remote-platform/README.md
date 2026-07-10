@@ -4,7 +4,7 @@
 
 生效日期：2026-07-11
 
-基线切片：RP001（完成）
+基线切片：RP001、RP001A、RP001B（完成）
 
 ## 1. 文档目的
 
@@ -17,10 +17,11 @@
 1. `product-prd.md`：回答为谁解决什么问题、哪些能力免费、哪些持续服务收费。
 2. `architecture-spec.md`：回答公开客户端、daemon、私有 Control Plane、Hub 和 Relay 各自拥有什么状态。
 3. `network-topology.md`：用网络拓扑和时序图解释 local、SSH、direct WebRTC、Relay fallback 与端到端授权链路。
-4. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
-5. `source-boundary-and-migration-plan.md`：回答哪些代码公开、哪些代码私有、旧资产如何保留并按什么顺序迁移。
+4. `global-acceleration-spec.md`：回答何时需要 single-relay 智能选区或双 Edge Relay Mesh，以及如何测量、计量和分阶段建设。
+5. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
+6. `source-boundary-and-migration-plan.md`：回答哪些代码公开、哪些代码私有、旧资产如何保留并按什么顺序迁移。
 
-若四份文档发生冲突，按以下顺序处理：
+若这些文档发生冲突，按以下顺序处理：
 
 1. 安全不变量优先于实现便利。
 2. domain owner 与 truth source 优先于历史代码行为。
@@ -33,6 +34,7 @@
 - App 客户端和公开 remote client/daemon contract 默认开源；平台特定 WebRTC primitive 可以分别实现，但业务协议必须共用。
 - Web Controller、托管 Hub、托管 Relay、计费、entitlement、风控和云运维服务不进入公开源码发布。
 - WebRTC 是一种 endpoint transport；direct P2P 与 Relay 是同一次连接的候选路径结果，不是两套 terminal protocol。
+- 全球加速属于 WebRTC Relay path 的内部实现；`single_relay` 与 `relay_mesh` 不创建新的 endpoint、terminal protocol 或 capability 类型。
 - terminal capability 由 owning daemon 签发和验证。Hub、Relay、Web Controller 永远看不到 capability grant，也不拥有 terminal authorization。
 - Control Plane 可以签发短期 Hub 服务准入票据；Relay entitlement 通过独立短期 `RelayLease` 表达。
 - 旧代码保留 git 历史和归档引用，但迁移完成后不得继续存在公开/私有双实现或旧 session token fallback。
@@ -43,7 +45,7 @@
 | --- | --- | --- |
 | Endpoint | 客户端想连接的一个 daemon 目标 | 不是网络地址，也不是 Relay 节点 |
 | Transport | 到达 endpoint 的方式，例如 local、SSH、WebRTC | 不是 endpoint 身份 |
-| Path | 一次 WebRTC transport 最终采用 direct 或 Relay 的运行结果 | 不是可持久化的 terminal identity |
+| Path | 一次 WebRTC transport 最终采用 direct、single relay 或 relay mesh 的运行结果 | 不是可持久化的 terminal identity |
 | Device | 运行 daemon 的长期安全主体 | 不是用户展示 label |
 | CapabilityGrant | daemon 签发给客户端的 terminal 权限凭据 | 不是账号 token、Hub token 或订阅凭据 |
 | Control Plane | 账号、设备目录、entitlement、票据和计量控制面 | 不转发 terminal protocol，不拥有 terminal history |
