@@ -1065,6 +1065,9 @@ func validateShortcutsConfig(shortcuts state.TUIShortcutConfig) error {
 		}
 		for key, binding := range scene.Bindings {
 			path := "tui.shortcuts." + sceneName + "." + key
+			if input.ShortcutKeyIsGlobalEscape(key) {
+				return fmt.Errorf("%s uses reserved global back key; Esc is not configurable", path)
+			}
 			signature, ok := input.ShortcutBindingSignature(sceneName, key)
 			if !ok {
 				return fmt.Errorf("%s has invalid key", path)
@@ -1172,7 +1175,6 @@ func builtinShortcutScene(value string) bool {
 		"clipboard_history",
 		"floating_overview",
 		"prompt",
-		"prompt_suggestion",
 		"help",
 	)
 }

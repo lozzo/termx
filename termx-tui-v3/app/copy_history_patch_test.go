@@ -143,7 +143,10 @@ func TestCopyHistoryExitClearsSessionsAndPatchCache(t *testing.T) {
 	root = root.WithCopyHistorySession(viewID, root.History, root.CopyMode)
 	runtime := NewAppRuntime(
 		root,
-		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: core, Rows: 20})),
+		ComposeReducers(
+			NewBackNavigationReducer(CopyModeDeps{Core: core, Rows: 20}),
+			NewCopyModeReducer(CopyModeDeps{Core: core, Rows: 20}),
+		),
 		func(root state.Root) render.Frame {
 			return render.NewRenderer(render.DefaultTheme()).RenderANSI(render.NewRenderVMBuilder().Build(root))
 		},

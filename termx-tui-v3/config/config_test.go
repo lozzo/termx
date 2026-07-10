@@ -573,9 +573,9 @@ func TestShortcutValidationUsesDomainScenesParametersAndCanonicalKeys(t *testing
 		scenes  map[string]state.TUIShortcutSceneConfig
 		wantErr string
 	}{
-		{name: "wrong overlay action scene", scenes: map[string]state.TUIShortcutSceneConfig{
-			"prompt_suggestion": {Bindings: map[string]state.TUIShortcutBindingConfig{"esc": {Action: "help.close"}}},
-		}, wantErr: "not allowed in scene"},
+		{name: "unknown prompt suggestion scene", scenes: map[string]state.TUIShortcutSceneConfig{
+			"prompt_suggestion": {Bindings: map[string]state.TUIShortcutBindingConfig{"x": {Action: "help.close"}}},
+		}, wantErr: "invalid scene"},
 		{name: "wrong routed action scene", scenes: map[string]state.TUIShortcutSceneConfig{
 			"panel": {Bindings: map[string]state.TUIShortcutBindingConfig{"x": {Action: "workspace.delete"}}},
 		}, wantErr: "not allowed in scene"},
@@ -587,9 +587,12 @@ func TestShortcutValidationUsesDomainScenesParametersAndCanonicalKeys(t *testing
 		}, wantErr: "invalid index"},
 		{name: "canonical key alias conflict", scenes: map[string]state.TUIShortcutSceneConfig{
 			"help": {Bindings: map[string]state.TUIShortcutBindingConfig{
-				"esc": {Action: "help.close"}, "escape": {Action: "help.close"},
+				"enter": {Action: "help.close"}, "return": {Action: "help.close"},
 			}},
 		}, wantErr: "runtime shortcut key"},
+		{name: "reserved global back key", scenes: map[string]state.TUIShortcutSceneConfig{
+			"help": {Bindings: map[string]state.TUIShortcutBindingConfig{"escape": {Action: "help.close"}}},
+		}, wantErr: "reserved global back key"},
 		{name: "ctrl character case conflict", scenes: map[string]state.TUIShortcutSceneConfig{
 			"global": {Bindings: map[string]state.TUIShortcutBindingConfig{
 				"ctrl-a": {Action: "menu.panel"}, "ctrl-A": {Action: "menu.tab"},

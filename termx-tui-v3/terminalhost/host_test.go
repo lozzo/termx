@@ -232,6 +232,80 @@ func TestInputParserKeepsPlainDigitsUnmodified(t *testing.T) {
 	}
 }
 
+func TestInputParserDecodesKittyCSIUControlKeys(t *testing.T) {
+	got := NewInputParser().Feed([]byte("\x1b[27u\x1b[13u\x1b[9u\x1b[127u\x1b[9;2u\x1b[13;3u\x1b[27;3u\x1b[127;3u\x1b[9;5u"))
+	want := []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyEsc, RawSeq: "\x1b[27u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+		{Kind: input.EventKindKey, Key: input.KeyEnter, RawSeq: "\x1b[13u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+		{Kind: input.EventKindKey, Key: input.KeyTab, RawSeq: "\x1b[9u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+		{Kind: input.EventKindKey, Key: input.KeyBackspace, RawSeq: "\x1b[127u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+		{Kind: input.EventKindKey, Key: input.KeyShiftTab, Shift: true, RawSeq: "\x1b[9;2u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+		{Kind: input.EventKindKey, Key: input.KeyEnter, Alt: true, RawSeq: "\x1b[13;3u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+		{Kind: input.EventKindKey, Key: input.KeyEsc, Alt: true, RawSeq: "\x1b[27;3u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+		{Kind: input.EventKindKey, Key: input.KeyBackspace, Alt: true, RawSeq: "\x1b[127;3u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+		{Kind: input.EventKindKey, Key: input.KeyTab, Ctrl: true, RawSeq: "\x1b[9;5u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("CSI-u control key decode mismatch\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestKittyCSIUEscClosesConfiguredOverlays(t *testing.T) {
+	events := NewInputParser().Feed([]byte("\x1b[27u"))
+	if len(events) != 1 {
+		t.Fatalf("expected one CSI-u esc event, got %#v", events)
+	}
+	cases := []struct {
+		name string
+		root state.Root
+	}{
+		{name: "create terminal prompt", root: state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{Title: "Create Terminal", Purpose: "terminal.create"})}},
+		{name: "help", root: state.Root{Shell: state.DefaultShell().OpenHelp("most-used")}},
+		{name: "terminal picker", root: state.Root{Shell: state.DefaultShell().OpenTerminalPicker()}},
+		{name: "terminal manager", root: state.Root{Shell: state.DefaultShell().OpenTerminalPool()}},
+		{name: "workbench tree", root: state.Root{Shell: state.DefaultShell().OpenWorkbenchTree()}},
+		{name: "clipboard history", root: state.Root{Shell: state.DefaultShell().OpenClipboardHistory()}},
+		{name: "floating overview", root: state.Root{Shell: state.DefaultShell().OpenFloatingOverview()}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := app.NewInteractiveRuntime(tc.root, app.NewFakeTerminalHost(1), app.NewSyncEffectRunner(), app.LiveDeps{}, app.CopyModeDeps{})
+			if err := runtime.Post(app.InputMsg{Event: events[0]}); err != nil {
+				t.Fatalf("post CSI-u esc: %v", err)
+			}
+			if err := runtime.Drain(context.Background()); err != nil {
+				t.Fatalf("drain CSI-u esc: %v", err)
+			}
+			if runtime.State().Shell.EnsureDefaults().Overlay.Open {
+				t.Fatalf("CSI-u esc should close overlay: shell=%#v", runtime.State().Shell)
+			}
+		})
+	}
+}
+
+func TestKittyCSIUEscReleaseDoesNotCloseOverlay(t *testing.T) {
+	events := NewInputParser().Feed([]byte("\x1b[27;1:3u"))
+	if len(events) != 1 || events[0].Key != input.KeyUnknown {
+		t.Fatalf("expected one CSI-u esc release event, got %#v", events)
+	}
+	runtime := app.NewInteractiveRuntime(
+		state.Root{Shell: state.DefaultShell().OpenHelp("most-used")},
+		app.NewFakeTerminalHost(1),
+		app.NewSyncEffectRunner(),
+		app.LiveDeps{},
+		app.CopyModeDeps{},
+	)
+	if err := runtime.Post(app.InputMsg{Event: events[0]}); err != nil {
+		t.Fatalf("post CSI-u esc release: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain CSI-u esc release: %v", err)
+	}
+	if !runtime.State().Shell.EnsureDefaults().Overlay.Open {
+		t.Fatal("CSI-u esc release must not close overlay")
+	}
+}
+
 func TestHostThemeProbeCanBeDisabled(t *testing.T) {
 	ops := &fakeTerminalOps{terminal: true}
 	reader := newBlockingCancelReader()

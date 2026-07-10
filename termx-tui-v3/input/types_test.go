@@ -118,7 +118,9 @@ func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: ":"}, false, InteractionModeGlobal), "system.open_prompt")
 	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "?"}, false, InteractionModeGlobal), "system.open_help")
 	esc := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyEsc}, false, InteractionModePane)
-	assertShortcutAction(t, esc, "interaction.exit")
+	if esc.Kind != IntentNone {
+		t.Fatalf("global back key must not be owned by shortcut routing, got %#v", esc)
+	}
 }
 
 func TestShortcutPassthroughHelpers(t *testing.T) {
@@ -378,6 +380,10 @@ func TestEnhancedKeyboardInputDoesNotLeakHostProtocolToPTY(t *testing.T) {
 		{name: "ctrl letter", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c", Ctrl: true, RawSeq: "\x1b[99;5u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x03"},
 		{name: "plain unicode", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "好", RawSeq: "\x1b[22909u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "好"},
 		{name: "alt char", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "x", Alt: true, RawSeq: "\x1b[120;3u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x1bx"},
+		{name: "alt enter", event: InputEvent{Kind: EventKindKey, Key: KeyEnter, Alt: true, RawSeq: "\x1b[13;3u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x1b\r"},
+		{name: "alt esc", event: InputEvent{Kind: EventKindKey, Key: KeyEsc, Alt: true, RawSeq: "\x1b[27;3u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x1b\x1b"},
+		{name: "alt tab", event: InputEvent{Kind: EventKindKey, Key: KeyTab, Alt: true, RawSeq: "\x1b[9;3u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x1b\t"},
+		{name: "alt backspace", event: InputEvent{Kind: EventKindKey, Key: KeyBackspace, Alt: true, RawSeq: "\x1b[127;3u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x1b\x7f"},
 		{name: "unrepresentable ctrl digit", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "1", Ctrl: true, RawSeq: "\x1b[49;5u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: ""},
 	}
 	for _, tc := range cases {

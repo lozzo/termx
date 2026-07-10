@@ -106,7 +106,6 @@ var defaultLabels = map[string]string{
 	"panel.presentation_split_line":  "LINE",
 	"panel.focus_next":               "FOCUS",
 	"panel.focus_prev":               "FOCUS",
-	"interaction.exit":               "BACK",
 	"resize.left":                    "resize left",
 	"resize.right":                   "resize right",
 	"resize.up":                      "resize up",
@@ -158,7 +157,6 @@ var defaultLabels = map[string]string{
 	"workspace.delete":               "DELETE",
 	"copy.request_older":             "SCROLL",
 	"copy.open_clipboard_history":    "CLIPBOARD",
-	"copy.exit":                      "BACK",
 	"terminal_pool.attach_tab":       "TAB",
 	"terminal_pool.attach_float":     "FLOAT",
 	"terminal_pool.attach":           "ATTACH",
@@ -208,9 +206,6 @@ func buildSpecs() map[string]ActionSpec {
 	}
 	add(ActionSpec{ID: "terminal_picker.open", Aliases: []string{"picker.open"}, AllowedScenes: routedScenes(), Display: displayAction, Routable: true})
 	add(ActionSpec{ID: "copy.enter", AllowedScenes: []string{"global"}, Display: displayAction, Routable: true})
-	add(ActionSpec{ID: "interaction.exit", AllowedScenes: []string{"panel", "resize", "system", "floating", "tab", "workspace"}, Display: displayAction, Routable: true})
-	add(ActionSpec{ID: "copy.exit", AllowedScenes: []string{"copy"}, Display: displayAction, Routable: true})
-	add(ActionSpec{ID: "prompt.suggestion_exit", AllowedScenes: []string{"prompt_suggestion"}, Display: displayHelpHint, Routable: false})
 	addFixed := func(scene string, routable bool, ids ...string) {
 		for _, id := range ids {
 			add(ActionSpec{ID: id, AllowedScenes: []string{scene}, Display: displayAction, Routable: routable})

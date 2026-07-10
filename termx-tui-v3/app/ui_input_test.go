@@ -96,8 +96,8 @@ func TestUIInputReducerUsesConfiguredShortcutsAsRouteTruth(t *testing.T) {
 	}
 }
 
-func TestUIInputReducerOverlayEscComesFromConfiguredShortcuts(t *testing.T) {
-	reducer := NewUIInputReducer()
+func TestBackNavigationClosesOverlayWithoutConfiguredShortcut(t *testing.T) {
+	reducer := ComposeReducers(NewBackNavigationReducer(CopyModeDeps{}), NewUIInputReducer())
 	root := state.Root{
 		Shell: state.DefaultShell().OpenHelp("most-used"),
 		Config: state.TUIConfigStore{
@@ -113,20 +113,20 @@ func TestUIInputReducerOverlayEscComesFromConfiguredShortcuts(t *testing.T) {
 	}
 
 	footer := render.NewRenderVMBuilder().Build(root).Shell.Footer
-	if footerHasActionKey(footer.ActionTokens, "Esc") {
-		t.Fatalf("removed help esc shortcut must not be displayed, got %#v", footer.ActionTokens)
+	if !footerHasActionKey(footer.ActionTokens, "Esc") {
+		t.Fatalf("global back key must be displayed independently from shortcut config, got %#v", footer.ActionTokens)
 	}
 
 	next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}})
-	if !next.Shell.Overlay.Open || next.Shell.Overlay.Kind != state.OverlayHelp {
-		t.Fatalf("removed help esc shortcut must not close overlay, shell=%#v effects=%#v", next.Shell, effects)
+	if next.Shell.Overlay.Open {
+		t.Fatalf("global back key must close overlay without scene binding, shell=%#v effects=%#v", next.Shell, effects)
 	}
-	if len(effects) != 1 {
-		t.Fatalf("removed help esc should only be consumed by overlay input, effects=%#v", effects)
+	if len(effects) != 0 {
+		t.Fatalf("global back key should be consumed once, effects=%#v", effects)
 	}
 
 	next, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
-	if next.Shell.Overlay.Open || len(effects) != 1 {
+	if next.Shell.Overlay.Open || len(effects) != 0 {
 		t.Fatalf("configured help enter shortcut should still close overlay, shell=%#v effects=%#v", next.Shell, effects)
 	}
 }
@@ -150,8 +150,8 @@ func TestUIInputReducerTerminalPoolEmptyShortcutSceneRemovesDefaultActions(t *te
 	}
 
 	footer := render.NewRenderVMBuilder().Build(root).Shell.Footer
-	if len(footer.ActionTokens) != 0 {
-		t.Fatalf("empty terminal_pool shortcut scene must not display default actions, got %#v", footer.ActionTokens)
+	if len(footer.ActionTokens) != 1 || !footerHasActionKey(footer.ActionTokens, "Esc") {
+		t.Fatalf("empty terminal_pool shortcut scene must only display global back, got %#v", footer.ActionTokens)
 	}
 
 	next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
@@ -1422,7 +1422,7 @@ func TestInteractiveRuntimeCreateTerminalFormRequiresName(t *testing.T) {
 }
 
 func TestUIInputReducerCreateTerminalFormEditsAndCancels(t *testing.T) {
-	reducer := NewUIInputReducer()
+	reducer := ComposeReducers(NewBackNavigationReducer(CopyModeDeps{}), NewUIInputReducer())
 	root := state.Root{Shell: state.DefaultShell().OpenPrompt(createTerminalPrompt(state.DefaultPaneID))}
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "a"}})
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "b"}})
@@ -1444,7 +1444,7 @@ func TestUIInputReducerCreateTerminalFormEditsAndCancels(t *testing.T) {
 		t.Fatalf("tab should move between editable form fields without losing cursor values, prompt=%#v", prompt)
 	}
 	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}})
-	if root.Shell.EnsureDefaults().Overlay.Open || len(effects) != 1 {
+	if root.Shell.EnsureDefaults().Overlay.Open || len(effects) != 0 {
 		t.Fatalf("esc should close create form and consume input, root=%#v effects=%#v", root, effects)
 	}
 }
@@ -1506,16 +1506,9 @@ func TestUIInputReducerCreateTerminalWorkdirSuggestions(t *testing.T) {
 		t.Fatalf("esc in suggestion focus should only exit suggestions, overlay=%#v", runtime.State().Shell.Overlay)
 	}
 
-	pathService = &services.FakeTerminalService{PathResult: promptPathResult("demo/", "delta/", "dev/")}
-	runtime = newPromptPathRuntime(pathService, "d")
-	runtime.state.Config.Shortcuts = state.TUIShortcutConfig{Configured: true, Scenes: map[string]state.TUIShortcutSceneConfig{
-		"prompt": {Bindings: map[string]state.TUIShortcutBindingConfig{"esc": {Action: "prompt.cancel"}}},
-	}}
-	postPromptKey(t, runtime, input.KeyTab)
 	postPromptKey(t, runtime, input.KeyEsc)
-	prompt = runtime.State().Shell.EnsureDefaults().Overlay.Prompt
-	if !prompt.SuggestionFocused {
-		t.Fatalf("removed prompt_suggestion esc must not use hardcoded fallback, prompt=%#v", prompt)
+	if runtime.State().Shell.EnsureDefaults().Overlay.Open {
+		t.Fatalf("second esc should close prompt after leaving suggestions, overlay=%#v", runtime.State().Shell.Overlay)
 	}
 }
 

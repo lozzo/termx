@@ -408,6 +408,7 @@ tui:
   # 注意：一旦写出 tui.shortcuts，包括空块，就表示用户配置成为唯一真值，不再启用默认快捷键。
   # 短写：key: action。
   # 长写：key.action / key.label，用于覆盖单个场景里的展示文案。
+  # 未修饰 Esc 是全局返回保留键，不需要也不允许写入任何 scene。
   # 示例：
   # shortcuts:
   #   actions:

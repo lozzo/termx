@@ -372,12 +372,35 @@ func csiUnicodeKeyEvent(body string, raw string) (input.InputEvent, bool) {
 		RawSeq:           raw,
 		KeyboardProtocol: input.KeyboardProtocolKittyCSIU,
 	}
+	applyCSIUControlKey(&event, codepoint)
 	applyKeyModifier(&event, modifier)
+	if event.Key == input.KeyTab && event.Shift {
+		event.Key = input.KeyShiftTab
+	}
 	if eventType == 3 {
 		event.Key = input.KeyUnknown
 		event.Char = ""
 	}
 	return event, true
+}
+
+// applyCSIUControlKey 把增强协议中的控制 codepoint 还原为 TUI 通用命名键。
+// overlay、prompt 和普通 route 只消费标准 Key，不应感知 Kitty CSI-u 的编码差异。
+func applyCSIUControlKey(event *input.InputEvent, codepoint int) {
+	switch codepoint {
+	case 9:
+		event.Key = input.KeyTab
+		event.Char = ""
+	case 13:
+		event.Key = input.KeyEnter
+		event.Char = ""
+	case 27:
+		event.Key = input.KeyEsc
+		event.Char = ""
+	case 127:
+		event.Key = input.KeyBackspace
+		event.Char = ""
+	}
 }
 
 func splitCSIParams(body string) []string {

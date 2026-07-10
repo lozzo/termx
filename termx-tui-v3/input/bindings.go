@@ -79,7 +79,6 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "panel", Key: "up", Action: "panel.focus_prev"},
 	{Scene: "panel", Key: "right", Action: "panel.focus_next"},
 	{Scene: "panel", Key: "down", Action: "panel.focus_next"},
-	{Scene: "panel", Key: "esc", Action: "interaction.exit"},
 
 	{Scene: "resize", Key: "left", Action: "resize.left"},
 	{Scene: "resize", Key: "right", Action: "resize.right"},
@@ -114,7 +113,6 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "resize", Key: "J", Action: "resize.down_large"},
 	{Scene: "resize", Key: "b", Action: "panel.balance"},
 	{Scene: "resize", Key: "=", Action: "panel.balance"},
-	{Scene: "resize", Key: "esc", Action: "interaction.exit"},
 
 	{Scene: "system", Key: "h", Action: "system.toggle_header"},
 	{Scene: "system", Key: "f", Action: "system.toggle_footer"},
@@ -128,7 +126,6 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "system", Key: ":", Action: "system.open_prompt"},
 	{Scene: "system", Key: "?", Action: "system.open_help"},
 	{Scene: "system", Key: "q", Action: "system.quit"},
-	{Scene: "system", Key: "esc", Action: "interaction.exit"},
 
 	{Scene: "floating", Key: "n", Action: "floating.new"},
 	{Scene: "floating", Key: "o", Action: "floating.overview"},
@@ -162,7 +159,6 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "floating", Key: "L", Action: "floating.wide"},
 	{Scene: "floating", Key: "K", Action: "floating.short"},
 	{Scene: "floating", Key: "J", Action: "floating.tall"},
-	{Scene: "floating", Key: "esc", Action: "interaction.exit"},
 
 	{Scene: "tab", Key: "c", Action: "tab.create"},
 	{Scene: "tab", Key: "n", Action: "tab.next"},
@@ -183,7 +179,6 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "tab", Key: "r", Action: "tab.rename"},
 	{Scene: "tab", Key: "x", Action: "tab.close"},
 	{Scene: "tab", Key: "X", Action: "tab.kill"},
-	{Scene: "tab", Key: "esc", Action: "interaction.exit"},
 
 	{Scene: "workspace", Key: "c", Action: "workspace.create"},
 	{Scene: "workspace", Key: "n", Action: "workspace.next"},
@@ -197,7 +192,6 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "workspace", Key: "t", Action: "system.open_workbench_tree"},
 	{Scene: "workspace", Key: "f", Action: "system.open_workbench_tree"},
 	{Scene: "workspace", Key: "s", Action: "system.open_workbench_tree"},
-	{Scene: "workspace", Key: "esc", Action: "interaction.exit"},
 
 	{Scene: "copy", Key: "page-up", Action: "copy.request_older"},
 	{Scene: "copy", Key: "page-down", Action: "copy.request_newer"},
@@ -222,14 +216,12 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "copy", Key: "H", Action: "copy.open_clipboard_history"},
 	{Scene: "copy", Key: "p", Action: "copy.paste_latest"},
 	{Scene: "copy", Key: "P", Action: "copy.paste_system"},
-	{Scene: "copy", Key: "esc", Action: "copy.exit"},
 
 	{Scene: "terminal_picker", Key: "enter", Action: "terminal_picker.attach"},
 	{Scene: "terminal_picker", Key: "tab", Action: "terminal_picker.split"},
 	{Scene: "terminal_picker", Key: "ctrl-e", Action: "terminal_picker.edit"},
 	{Scene: "terminal_picker", Key: "ctrl-k", Action: "terminal_picker.kill"},
 	{Scene: "terminal_picker", Key: "ctrl-x", Action: "terminal_picker.delete"},
-	{Scene: "terminal_picker", Key: "esc", Action: "terminal_picker.close"},
 
 	{Scene: "terminal_pool", Key: "enter", Action: "terminal_pool.attach"},
 	{Scene: "terminal_pool", Key: "ctrl-t", Action: "terminal_pool.attach_tab"},
@@ -238,7 +230,6 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "terminal_pool", Key: "ctrl-e", Action: "terminal_pool.edit"},
 	{Scene: "terminal_pool", Key: "ctrl-k", Action: "terminal_pool.kill"},
 	{Scene: "terminal_pool", Key: "ctrl-x", Action: "terminal_pool.delete"},
-	{Scene: "terminal_pool", Key: "esc", Action: "terminal_pool.close"},
 
 	{Scene: "workbench_tree", Key: "enter", Action: "workbench_tree.open"},
 	{Scene: "workbench_tree", Key: "ctrl-n", Action: "workbench_tree.new"},
@@ -246,13 +237,11 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "workbench_tree", Key: "ctrl-x", Action: "workbench_tree.delete"},
 	{Scene: "workbench_tree", Key: "ctrl-d", Action: "workbench_tree.detach"},
 	{Scene: "workbench_tree", Key: "ctrl-z", Action: "workbench_tree.zoom"},
-	{Scene: "workbench_tree", Key: "esc", Action: "workbench_tree.close"},
 
 	{Scene: "clipboard_history", Key: "enter", Action: "clipboard_history.paste"},
 	{Scene: "clipboard_history", Key: "ctrl-n", Action: "clipboard_history.new"},
 	{Scene: "clipboard_history", Key: "ctrl-e", Action: "clipboard_history.edit"},
 	{Scene: "clipboard_history", Key: "ctrl-x", Action: "clipboard_history.delete"},
-	{Scene: "clipboard_history", Key: "esc", Action: "clipboard_history.close"},
 
 	{Scene: "floating_overview", Key: "enter", Action: "floating_overview.open"},
 	{Scene: "floating_overview", Key: "1", Action: "floating.summon.1"},
@@ -267,14 +256,10 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "floating_overview", Key: "s", Action: "floating_overview.show_all"},
 	{Scene: "floating_overview", Key: "c", Action: "floating_overview.collapse_all"},
 	{Scene: "floating_overview", Key: "x", Action: "floating.close"},
-	{Scene: "floating_overview", Key: "esc", Action: "floating_overview.close"},
 
 	{Scene: "prompt", Key: "enter", Action: "prompt.submit"},
-	{Scene: "prompt", Key: "esc", Action: "prompt.cancel"},
-	{Scene: "prompt_suggestion", Key: "esc", Action: "prompt.suggestion_exit"},
 
 	{Scene: "help", Key: "enter", Action: "help.close"},
-	{Scene: "help", Key: "esc", Action: "help.close"},
 }
 
 type shortcutCatalog struct {
@@ -672,6 +657,13 @@ func ShortcutBindingSignature(sceneName string, keyToken string) (string, bool) 
 	return strings.Join(parts, "\x00"), true
 }
 
+// ShortcutKeyIsGlobalEscape 判断配置 key 是否占用了 TUI 保留的全局返回键。
+// 未修饰的 esc/escape 由 app back-navigation 统一处理，不进入用户 shortcut catalog。
+func ShortcutKeyIsGlobalEscape(keyToken string) bool {
+	key, ok := parseShortcutKeyToken(keyToken)
+	return ok && key.Key == KeyEsc && !key.Ctrl && !key.Alt && !key.Shift
+}
+
 // KnownShortcutActionID 判断 action id 是否属于 shortcut domain registry。
 // 配置加载期用它拒绝拼写错误；运行时 input 只生成 canonical invocation。
 func KnownShortcutActionID(actionID string) bool {
@@ -887,15 +879,16 @@ func terminalBytes(event InputEvent) []byte {
 	if event.RawSeq != "" && event.KeyboardProtocol == "" {
 		return []byte(event.RawSeq)
 	}
+	var data []byte
 	switch event.Key {
 	case KeyEsc:
-		return []byte{'\x1b'}
+		data = []byte{'\x1b'}
 	case KeyEnter:
-		return []byte{'\r'}
+		data = []byte{'\r'}
 	case KeyBackspace:
-		return []byte{0x7f}
+		data = []byte{0x7f}
 	case KeyTab:
-		return []byte{'\t'}
+		data = []byte{'\t'}
 	case KeyChar:
 		if event.Char != "" {
 			if event.Ctrl {
@@ -912,6 +905,12 @@ func terminalBytes(event InputEvent) []byte {
 			}
 			return []byte(event.Char)
 		}
+	}
+	if len(data) > 0 {
+		if event.Alt {
+			return append([]byte{'\x1b'}, data...)
+		}
+		return data
 	}
 	return nil
 }

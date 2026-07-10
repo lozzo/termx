@@ -2,7 +2,7 @@
 
 ## 目标
 
-本计划定义 `termx-tui-v3` 后续快捷键系统的唯一目标形态：所有键盘入口、sticky 场景按钮、footer/help/overlay 提示都从同一份 `tui.shortcuts` 配置解析出的 shortcut catalog 生成，并通过同一种 action invocation 进入 app action registry。
+本计划定义 `termx-tui-v3` 后续快捷键系统的唯一目标形态：所有可配置键盘入口、sticky 场景按钮、footer/help/overlay 提示都从同一份 `tui.shortcuts` 配置解析出的 shortcut catalog 生成，并通过同一种 action invocation 进入 app action registry。未修饰 Esc 是 catalog 之外的全局返回导航，由 reducer-owned state 层级决定。
 
 当前分支仍处于开发阶段，本次改造不保留旧 `tui.keymap` 兼容，不做 deprecated 双路径，不用 fallback 掩盖旧行为。旧硬编码只允许作为默认 catalog 的迁移来源，迁移完成后不得继续作为第二份运行时真值。
 
@@ -61,6 +61,7 @@ tui:
 - `shortcuts.system` 定义 `Ctrl-G` 进入后的系统控制场景，避免和 root/global 直接快捷键混用。
 - `shortcuts.panel`、`shortcuts.floating`、`shortcuts.tab`、`shortcuts.workspace`、`shortcuts.resize`、`shortcuts.copy` 定义对应场景内可按的键。
 - overlay 场景也使用同一结构，内置场景名为 `terminal_picker`、`terminal_pool`、`workbench_tree`、`clipboard_history`、`floating_overview`、`prompt`、`help`。
+- 未修饰 `Esc` 不属于任何 scene，也不能配置。它固定按 prompt suggestion、overlay、当前 view copy/history、sticky interaction 的顺序返回一层；没有可返回层时透传给前台 terminal。
 - `menu.<scene>` 只能进入 domain registry 声明为可进入的内置场景，例如 `ctrl-p: menu.panel`；当前分支不开放用户自定义 scene，未来扩展由插件分支单独设计。
 - 用户删除某个 shortcut 后，该按键不能触发，对应提示也不能展示。
 - binding 的 `show: false` 只隐藏 footer 提示，按键执行和 Help 完整目录仍保留；省略 `show` 时沿用 action domain 的默认 footer 可见性。
@@ -182,7 +183,8 @@ action id 只允许字母、数字、`_`、`-`、`.`。默认内置 action 使�
 - action id 必须存在于当前内置 action registry；本分支不接受未知 action 静默空转。
 - action 必须允许出现在目标 scene；overlay 不能引用其他 overlay 的领域 action。
 - 参数化 action 必须在加载期验证参数范围；`tab.jump.N` 和 `floating.summon.N` 当前只接受 `1..9`。
-- routed 和 overlay scene 都必须使用同一 canonical key 签名检查冲突；`ctrl-a`/`ctrl-A`、`esc`/`escape` 等等价输入不能重复绑定。
+- routed 和 overlay scene 都必须使用同一 canonical key 签名检查冲突；`ctrl-a`/`ctrl-A`、`enter`/`return` 等等价输入不能重复绑定。
+- 未修饰 `esc`/`escape` 是保留的全局返回键，配置加载期直接拒绝；带修饰的 `ctrl-esc`、`alt-esc` 等仍按普通 binding 处理。
 - 配置期验证 key token 的语法和协议理论支持能力；启动期由 TerminalHost 检测实际 capability；运行期按 capability 激活 binding 并投影 available/unavailable 状态。
 - 同一份配置不因启动环境不同而解析失败；当前宿主不支持的增强键位不能触发，footer/help 必须隐藏或明确标记 unavailable。只有同一 invocation 另有 available binding 时才展示替代键，不自动生成用户未配置的 fallback；默认 catalog 自身保留 `Ctrl-T` 后按数字的路径。
 - label 必须是单行字符串。
@@ -261,8 +263,16 @@ KS004 起清理旧提示真值：
 ### KS007：删除 fallback 与提示完备性
 
 - 先补显式空 catalog 下输入、footer、help、overlay 都无 fallback 的 harness。
-- sticky/copy Esc、空 footer global、Help close 和 Prompt suggestion 键位全部回到 catalog。
+- 当时 sticky/copy Esc、Help close 和 Prompt suggestion 键位回到 catalog；KS011D 已用统一返回导航取代这部分历史实现，并删除 `interaction.exit`、`copy.exit`、`prompt.suggestion_exit` 配置 action及 `prompt_suggestion` scene。
 - help 的普通说明可静态存在，任何键位、按钮和 hit region 必须来自 catalog。
+
+### KS011D：全局返回导航
+
+- Esc 的 domain owner 是 `Root.CurrentBackNavigationLayer` 与 `NewBackNavigationReducer`，不是 shortcut scene。
+- 返回优先级固定为 prompt suggestion、overlay、当前 view copy/history、sticky interaction；每次只退出一层。
+- footer 根据同一层级模型自动展示 `Esc BACK`，用户配置为空也不能移除该逃生入口。
+- 普通 live terminal 没有可返回层时，Esc 不被 TUI 消费，继续发送给 PTY。
+- CSI-u Esc/Enter/Tab/Backspace 必须归一为标准命名 Key；Shift-Tab 归一为 `KeyShiftTab`，Alt 控制键降级到传统 PTY 字节时保留 ESC 前缀。
 
 ### KS008：配置校验
 

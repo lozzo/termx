@@ -45,6 +45,8 @@ $XDG_CONFIG_HOME/termx/tui-v3.yaml
 
 `tui.shortcuts` 是按键执行、footer 提示和 Help 展示的共同来源。同一个 action 可以绑定多个按键；每个 binding 可以通过 `show` 单独控制是否进入 footer。
 
+未修饰的 `Esc` 是 TUI 保留的全局返回键，不写入 `tui.shortcuts`，也不能被配置覆盖。它固定按交互层级返回一层：先退出 prompt suggestion，再关闭当前 dialog/overlay，然后退出 copy/history，最后退出 Panel/Resize/System/Floating/Tab/Workspace 快捷模式；普通 live terminal 没有可返回层时，`Esc` 会继续发送给前台程序。
+
 下面只是 `workspace` scene 片段，必须合并到已有的完整 shortcut catalog，不能把它作为唯一的 `tui.shortcuts` 配置：
 
 ```yaml

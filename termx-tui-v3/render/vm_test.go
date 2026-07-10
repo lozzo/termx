@@ -2061,6 +2061,25 @@ func TestRenderVMBuilderDerivesFooterModePrecedence(t *testing.T) {
 	}).Shell.Footer.Mode; got != "resize" {
 		t.Fatalf("expected interaction footer mode, got %q", got)
 	}
+	copyBeforeInteraction := builder.Build(state.Root{
+		Shell:    state.DefaultShell().SetInteractionMode(state.InteractionModeResize),
+		CopyMode: state.CopyModeStore{Active: true, TerminalID: "term-copy", BoundCols: 80},
+	}).Shell.Footer
+	if copyBeforeInteraction.Mode != "copy" || !containsFooterAction(copyBeforeInteraction.ActionTokens, "Esc", "BACK", ActionShortcutExit.String()) {
+		t.Fatalf("current copy must own footer before sticky interaction, got %#v", copyBeforeInteraction)
+	}
+
+	foreignCopy := state.Root{
+		Shell: state.DefaultShell(),
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-live", 4, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
+		CopyMode: state.CopyModeStore{Active: true, ViewID: "pane:other", TerminalID: "term-other", BoundCols: 80},
+	}
+	foreignFooter := builder.Build(foreignCopy).Shell.Footer
+	if foreignFooter.Mode != "live" || containsFooterAction(foreignFooter.ActionTokens, "Esc", "BACK", ActionShortcutExit.String()) {
+		t.Fatalf("non-current copy session must not change active footer, got %#v", foreignFooter)
+	}
 }
 
 func TestRenderVMBuilderShowsCopyHistoryBindingErrorWithoutLiveFallback(t *testing.T) {

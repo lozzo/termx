@@ -1140,7 +1140,10 @@ func TestCopyModeRuntimeWheelHitRegionsKeepFloatingAndTiledViewsIsolated(t *test
 	host.SetSize(100, 28)
 	runtime := NewAppRuntime(
 		root,
-		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 10})),
+		ComposeReducers(
+			NewBackNavigationReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 10}),
+			NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 10}),
+		),
 		func(root state.Root) render.Frame {
 			return render.NewRenderer(render.DefaultTheme()).RenderANSI(render.NewRenderVMBuilder().Build(root))
 		},
@@ -1248,7 +1251,8 @@ func TestCopyModeEnteringSecondViewKeepsFirstUntilEsc(t *testing.T) {
 		9,
 		[]state.HistoryRow{{Text: "float-history", LineID: 10}},
 	)}}}
-	reducer := NewCopyModeReducer(CopyModeDeps{Core: core, Rows: 10})
+	deps := CopyModeDeps{Core: core, Rows: 10}
+	reducer := ComposeReducers(NewBackNavigationReducer(deps), NewCopyModeReducer(deps))
 	next, effects := reducer(root, CopyModeEnterViewMsg{
 		Binding: state.NewFloatingTerminalView("floating-1", "float-pane", "term-float", 5, 40, 10, state.TerminalResizeRoleOwner, "surface-float", floatingView, true),
 		Cols:    40,
@@ -1331,7 +1335,8 @@ func TestCopyModeEnteringFloatingWithBoundViewIDKeepsPaneUntilEsc(t *testing.T) 
 		9,
 		[]state.HistoryRow{{Text: "float-history", LineID: 10}},
 	)}}}
-	reducer := NewCopyModeReducer(CopyModeDeps{Core: core, Rows: 10})
+	deps := CopyModeDeps{Core: core, Rows: 10}
+	reducer := ComposeReducers(NewBackNavigationReducer(deps), NewCopyModeReducer(deps))
 	next, effects := reducer(root, CopyModeEnterViewMsg{
 		Binding: state.NewFloatingTerminalView("floating-1", "float-pane", "term-float", 5, 40, 10, state.TerminalResizeRoleOwner, "surface-float", floatingView, true),
 		Cols:    40,
@@ -7253,6 +7258,7 @@ func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClie
 			)),
 		},
 		ComposeReducers(
+			NewBackNavigationReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 20}),
 			NewCopyModeReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 20}),
 			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 20}),
 		),

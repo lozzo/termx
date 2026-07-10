@@ -2448,8 +2448,7 @@ func TestInteractiveRuntimeResizeModeFooterActions(t *testing.T) {
 			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
 			Config: state.TUIConfigStore{Shortcuts: state.TUIShortcutConfig{Configured: true, Scenes: map[string]state.TUIShortcutSceneConfig{
 				"resize": {Bindings: map[string]state.TUIShortcutBindingConfig{
-					"=":   {Action: "panel.balance"},
-					"esc": {Action: "interaction.exit"},
+					"=": {Action: "panel.balance"},
 				}},
 			}}},
 		},

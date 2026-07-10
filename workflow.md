@@ -93,6 +93,7 @@
 | KS011A | 完成 | shortcut 单键展示策略与数字范围表达式 | binding 长写支持 `show`；`[1...9]` / `ctrl+[1...5]` 在配置加载期配合 `{key}` 展开；footer 只展示显式可见项且不产生裸按键，Help 保留全部有效绑定 |
 | KS011B | 完成 | shortcut bracket 字面量与范围识别回归修复 | `[`、`]` 及带修饰符 bracket 继续作为合法具体按键；仅范围表达式进入展开；真实用户配置可加载 |
 | KS011C | 完成 | README 快捷键与增强键盘使用说明 | 主 README 覆盖 `show`、数字范围、Ctrl+数字 capability、iTerm2 条件、fallback 与诊断入口 |
+| KS011D | 完成 | 全局返回导航与 CSI-u 控制键回归修复 | Esc 从 shortcut catalog 移出并按 suggestion、overlay、copy、interaction 层级统一返回；CSI-u 控制键还原为标准命名 Key且保留修饰语义 |
 | CX001 | 完成 | endpoint 连接中与断线 pane UI 收敛 | 复用 reducer-owned `AttachPending` 和 endpoint runtime status；重连请求立即显示连接中，断线保留最后画面并结构化展示 endpoint、transport、原因和局部操作；不新增自动重试或 transport fallback |
 | CX002 | 完成 | pane 未连接、重连中与异常断开统一状态面板 | 三态使用一致的信息层级与操作布局；只展示 reducer 已知状态，不伪造连接进度；异常断开按错误类别给出可执行提示并保留最后画面 |
 | KS012 | 待开始 | 快捷键跨切片总契约守卫 | 汇总默认 catalog 完备性、键盘/点击等价、空 catalog、overlay、组合 action 和 capability 回归守卫，不在本切片首次补关键 harness |
@@ -145,7 +146,7 @@
 - KS004 已完成：footer、help 和 overlay/menu 提示统一从 shortcut catalog 生成，旧 `tui.footer.actions` / `footer.modes.*.actions` 配置入口和 `FooterVM.Actions` 字符串 fallback 已删除；overlay Esc close 等主要动作通过 catalog 映射，用户显式删除 shortcut 后不再展示也不再触发对应动作。
 - KS005 已完成：新增无 app/render/config 依赖的 shortcut domain registry，统一 canonical action id、typed 参数、allowed scenes、默认文案和显式展示策略；input binding 只产出 `ActionInvocation`，app dispatcher 负责投影到 reducer intent；旧 input action switch 和 shell-to-render adapter 已删除，默认 catalog/spec/dispatcher 完备性 harness 已落地。
 - KS006 已完成：footer 与受 shortcut catalog 控制的 overlay/content 命中区携带 canonical `ActionInvocation`；点击消息保留 pane/floating/row 目标上下文，copy 与 overlay 分别由 owning reducer 消费；零值 click policy 不可点击，不同方向/参数的聚合提示只保留 hint-only；`floating.summon.N` 使用 typed index，overview 行使用 `floating_overview.open + Row`，不再混淆两种语义。
-- KS007 已完成：sticky/copy Esc、Prompt suggestion Esc、Help close 都由各自 scene catalog 驱动；显式空 catalog 不再退出或执行旧 fallback，normal Esc 仍透传 PTY；空 footer 不再虚构 `Ctrl-G`；Help 内容关闭文案与 hit region 随 catalog 同步消失；`interaction.exit`、`copy.exit`、`prompt.suggestion_exit` 已进入 domain spec，`shortcut.exit` 只作为 render metadata，不能通过裸 ActionID 执行。
+- KS007 已完成：该阶段曾将 sticky/copy Esc、Prompt suggestion Esc、Help close 收进 scene catalog；KS011D 已以全局返回导航替换 Esc 相关路径，并删除 `interaction.exit`、`copy.exit`、`prompt.suggestion_exit` 配置 action及 `prompt_suggestion` scene。空 footer 不虚构 `Ctrl-G`，Help 内容关闭文案与 hit region 仍随可配置 action catalog 同步。
 - KS008 已完成：config 以 shortcut domain `ParseInvocation`、`AllowedScenes` 和 `Routable` 为 action/scene/参数真值；routed 与 overlay 共用 canonical key signature，拒绝 panel/pane、Esc/Return、modifier 顺序、Ctrl 字符大小写及 `Ctrl-@`/`Ctrl-Space` 等价冲突；quoted `.` 的短写和长写均通过真实 YAML parser；增强键盘 token 只做协议理论校验，实际 capability/available 状态仍由 KS011 负责。
 - KS009 已完成：仅配置 `actions` 时保留全部默认 bindings 并覆盖文案；任意显式 scene（包括空 scene）声明完整用户 catalog，不继承其他默认 scene；`shortcuts: {}` 保留默认，`shortcuts:`、`actions:`、`scene:` null 明确拒绝；action alias 在 parser 中 canonicalize 且重复声明报错；按键 label > action label > shortcut domain `DefaultLabel`，footer 聚合只合并键和 invocation，不再覆盖文案。
 - KS010 已完成：`panel.kill` 与 `panel.kill_and_close` 直接进入独立 pane command 链路；两者都只从 pane binding 读取 owning `TerminalRef` 发 kill，不 fallback 裸 `TerminalID`；kill-only 成功保留 pane，kill-and-close 仅在成功且 result/close 消费两次确认 pane 仍绑定同一 `TerminalRef` 后进入标准 workbench pane-close/persist 路径，失败、重绑定和 last-pane close 拒绝都保留 pane；配置仍只引用 action id，不开放脚本。
@@ -155,3 +156,4 @@
 - KS011A 已完成：shortcut binding 长写新增三态 `show`，显式 false 只隐藏 footer、键盘与 Help 保留，显式 true 可覆盖 domain 默认 footer hidden；升序单数字 `[1...9]` 与 `ctrl+[1...5]` 在配置加载期用 `{key}` 展开并继续走 canonical key、scene/action、参数与冲突校验；footer 宽度不足时按键和文案整体裁剪，不再保留裸按键旧路径。
 - KS011B 已完成：范围 parser 先识别合法具体 key，`[`、`]` 与 `ctrl-[` 不再被误判为范围；只有包含 `...` 的非法 token 才返回范围专用错误，完整用户配置已通过真实 CLI 加载验证。
 - KS011C 已完成：主 README 新增快捷键单一配置入口、`show` 展示策略、数字范围表达式、Ctrl+数字增强键盘 capability、iTerm2 条件、`Ctrl-T` fallback 和输入诊断说明；示例明确是合并到完整 catalog 的片段，避免意外替换其他 scene。
+- KS011D 已完成：`Root.CurrentBackNavigationLayer` 与 `NewBackNavigationReducer` 成为 Esc 的唯一 owner，固定按 prompt suggestion、overlay、当前 view copy/history、sticky interaction 返回一层；配置拒绝未修饰 esc/escape，footer 从同一层级自动补 `Esc BACK`，普通 live Esc 继续透传 PTY。Kitty CSI-u Esc/Enter/Tab/Backspace 归一为标准命名 Key，Shift-Tab 与 Alt 控制键修饰语义得到保留。`termx-tui-v3` 全量测试、真实用户配置 CLI 加载和 `git diff --check` 已通过；`termx-cli` 全包测试仍有两个既有 visual smoke 基线失败，已在未修改的 `HEAD 99eeb6e8` 独立复现，本切片未修改对应 CLI/visual target。

@@ -223,19 +223,21 @@ func footerMode(root state.Root, shell state.ShellStore) string {
 	if shell.Overlay.Open {
 		return string(shell.Overlay.Kind)
 	}
+	if root.ActiveViewOwnsCopyInput() {
+		return "copy"
+	}
 	if shell.InteractionMode != state.InteractionModeNormal {
 		return string(shell.InteractionMode)
-	}
-	if root.HasActiveCopyMode() {
-		return "copy"
 	}
 	return "live"
 }
 
 func footerActionCatalogForRoot(mode string, root state.Root, shell state.ShellStore) []FooterActionVM {
 	tokens := footerActionCatalogFromShortcuts(mode, root)
-	if len(tokens) == 0 {
-		return tokens
+	if root.CurrentBackNavigationLayer() != state.BackNavigationNone {
+		back := footerActionFor(ActionShortcutExit)
+		back.Key = "Esc"
+		tokens = append(tokens, back)
 	}
 	out := make([]FooterActionVM, 0, len(tokens))
 	for _, token := range tokens {

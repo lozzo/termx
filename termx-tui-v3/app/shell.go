@@ -309,7 +309,7 @@ func NewShellReducer() Reducer {
 				return root, nil
 			}
 			next, effects := reduceShortcutIntent(root, intent)
-			if intent.Kind == input.IntentOpenTerminalPicker || intent.Kind == input.IntentSetInteractionMode || intent.Kind == input.IntentExitInteraction {
+			if intent.Kind == input.IntentOpenTerminalPicker || intent.Kind == input.IntentSetInteractionMode {
 				return next, effects
 			}
 			return finishInteractionModeAfterIntent(next, effects, intent)

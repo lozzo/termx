@@ -123,9 +123,6 @@ func NewUIInputReducer() Reducer {
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: string(root.Shell.InteractionMode) + " mode"})
 			root, effects := armShortcutPassthroughWindow(root, shortcutPassthroughKindForMode(root.Shell.InteractionMode), []Effect{handledEffect{}})
 			return root.Advance(), appendInteractionModeTimeoutEffect(root, effects)
-		case input.IntentExitInteraction:
-			root.Shell = root.Shell.ExitInteractionMode()
-			return root.Advance(), []Effect{handledEffect{}}
 		case input.IntentShellAction:
 			next, effects := reduceShellActionIntent(root, intent)
 			return finishInteractionModeAfterIntent(next, effects, intent)
@@ -1024,13 +1021,6 @@ func reducePromptShortcut(root state.Root, entry input.ShortcutEntry) (state.Roo
 }
 
 func reducePromptSuggestionInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
-	if entry, ok := input.ShortcutEntryForEvent(root.Config.Shortcuts, "prompt_suggestion", event); ok {
-		if entry.ActionID == "prompt.suggestion_exit" {
-			root.Shell = refreshPromptCompletions(root, root.Shell.SetPromptSuggestionFocused(false))
-			return root.Advance(), []Effect{handledEffect{}}
-		}
-		return root, []Effect{handledEffect{}}
-	}
 	triggerCompletion := false
 	focusCompletion := false
 	switch event.Key {

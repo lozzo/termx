@@ -438,23 +438,7 @@ func copyModeInputContext(copyMode state.CopyModeStore) bool {
 }
 
 func copyModeOwnsActiveInput(root state.Root) bool {
-	if !copyModeInputContext(root.CopyMode) {
-		return false
-	}
-	if root.CopyMode.ViewID == "" && root.CopyMode.PaneID == "" {
-		return true
-	}
-	binding, ok := activeTerminalViewBinding(root)
-	if !ok {
-		return false
-	}
-	if root.CopyMode.ViewID != "" {
-		return binding.ViewID == root.CopyMode.ViewID
-	}
-	if root.CopyMode.PaneID != "" {
-		return binding.PaneID == root.CopyMode.PaneID
-	}
-	return true
+	return root.ActiveViewOwnsCopyInput()
 }
 
 func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDeps) (state.Root, []Effect) {
@@ -491,9 +475,6 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 		rows := copyModeNewerScrollRows(root.CopyMode, intent.Event)
 		next, effects := reduceCopyModeScrollNewer(root, deps, rows)
 		return next, append([]Effect{handledEffect{}}, effects...)
-	case input.IntentExitCopyMode:
-		next, effects := exitCopyModeWithRelease(root, deps)
-		return next.Advance(), append([]Effect{handledEffect{}}, effects...)
 	case input.IntentOpenClipboardHistory:
 		root.Shell = root.Shell.OpenClipboardHistory()
 		return root.Advance(), []Effect{
@@ -550,10 +531,6 @@ func copyModeEnterIntent(intent input.Intent) bool {
 func reduceCopyModeEnteringIntent(root state.Root, intent input.Intent) (state.Root, []Effect, bool) {
 	if !root.CopyMode.Entering {
 		return root, nil, false
-	}
-	if intent.Kind == input.IntentExitCopyMode {
-		next, effects := exitCopyModeWithRelease(root, CopyModeDeps{})
-		return next.Advance(), append([]Effect{handledEffect{}}, effects...), true
 	}
 	if intent.Kind == input.IntentOpenClipboardHistory {
 		root.Shell = root.Shell.OpenClipboardHistory()

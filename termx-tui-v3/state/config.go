@@ -191,6 +191,7 @@ type TUIShortcutActionConfig struct {
 
 // TUIShortcutSceneConfig 描述某个输入场景内的按键绑定集合。
 // 同一场景内 key 必须唯一；是否进入该场景由 global 里的 menu.<scene> action 或运行时 overlay 状态决定。
+// 未修饰 Esc 是运行时保留的全局返回键，不属于任何 scene，也不能在这里覆盖。
 type TUIShortcutSceneConfig struct {
 	Bindings map[string]TUIShortcutBindingConfig
 }

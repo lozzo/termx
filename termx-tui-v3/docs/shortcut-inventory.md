@@ -38,7 +38,7 @@
 | `Ctrl-F` | 打开 Terminal Picker | footer `^F PICKER`，help `Ctrl-f picker` | empty/exited 内容也写死 `Ctrl-F` 文案 |
 | `Ctrl-V` | 进入 copy/history | footer `^V COPY` | root 下抢占 terminal 的 literal Ctrl-V |
 | `PageUp` | 进入 copy/history，copy active 时请求 older | copy footer `PgUp SCROLL` | 鼠标滚轮也有类似入口 |
-| `Esc` | normal 下透传 ESC；sticky/copy/overlay 下退出 | 多数 footer 显示 `esc` | 语义随状态变化 |
+| `Esc` | normal 下透传 ESC；按 suggestion、overlay、copy、sticky 层级返回一层 | 可返回时 footer 自动显示 `Esc BACK` | 全局保留键，不来自 shortcut 配置 |
 | mouse wheel up/down | normal 下进入 copy 或请求 older/newer；copy active 时翻历史 | copy footer 显示 `wheel` | terminal mouse passthrough 时不接管 |
 
 ## Pane 场景
@@ -62,7 +62,7 @@
 | `p` | split-line presentation | footer `p LINE` |  |
 | `n` / `l` / `j` / right/down | focus next | footer 合并 `h/j/k/l FOCUS` | `n` 未展示 |
 | `N` / `h` / `k` / left/up | focus previous | footer 合并 `h/j/k/l FOCUS` | `N` 未展示且需 Shift |
-| `Esc` | 退出 pane 场景 | footer `esc` |  |
+| `Esc` | 退出 pane 场景 | footer 自动显示 `Esc BACK` | 全局返回导航 |
 
 ## Resize 场景
 
@@ -80,7 +80,7 @@
 | `m` / `|` / `_` | center / center-x / center-y | footer `m/|/_ CENTER` | `|`、`_` 需要 Shift |
 | `r` | layout reset | footer `r RESET` |  |
 | `b` / `=` | pane balance | footer `= BALANCE` | `b` 能按但未展示 |
-| `Esc` | 退出 resize 场景 | footer `esc` |  |
+| `Esc` | 退出 resize 场景 | footer 自动显示 `Esc BACK` | 全局返回导航 |
 
 ## Global 场景
 
@@ -98,7 +98,7 @@
 | `:` | open prompt | 未展示在 global footer | help 分组展示 prompt |
 | `?` | open help | footer `? HELP` |  |
 | `q` | quit TUI | footer `q QUIT` |  |
-| `Esc` | 退出 global 场景 | footer `esc` |  |
+| `Esc` | 退出 global 场景 | footer 自动显示 `Esc BACK` | 全局返回导航 |
 
 ## Floating 场景
 
@@ -119,7 +119,7 @@
 | `s` | toggle auto-fit | footer `s AUTO-FIT` | floating overview 中 `s` 是 show all |
 | arrows / `h` / `j` / `k` / `l` | move | footer `arrows move` | hjkl 能按但 footer 未列 |
 | `H/J/K/L` | resize floating | footer `HJKL size` | 大写 |
-| `Esc` | 退出 floating 场景 | footer `esc` |  |
+| `Esc` | 退出 floating 场景 | footer 自动显示 `Esc BACK` | 全局返回导航 |
 
 ## Tab 场景
 
@@ -134,7 +134,7 @@
 | `r` | rename tab | footer `r RENAME` |  |
 | `x` | close tab | footer `x CLOSE` |  |
 | `X` | kill tab accepted | 未展示 | 大写破坏性动作 |
-| `Esc` | 退出 tab 场景 | footer `esc` |  |
+| `Esc` | 退出 tab 场景 | footer 自动显示 `Esc BACK` | 全局返回导航 |
 
 ## Workspace 场景
 
@@ -148,7 +148,7 @@
 | `r` | rename workspace | footer `r RENAME` |  |
 | `x` | delete workspace accepted | footer `x DELETE` |  |
 | `t` / `f` / `s` | open Workbench Tree | footer 覆盖显示 `f PICK` | `t`、`s` 能按但未展示 |
-| `Esc` | 退出 workspace 场景 | footer `esc` |  |
+| `Esc` | 退出 workspace 场景 | footer 自动显示 `Esc BACK` | 全局返回导航 |
 
 ## Copy/history 输入
 
@@ -168,7 +168,7 @@
 | backspace | edit search query | 未展示 |  |
 | `p` / `P` | paste latest/system clipboard | 旧 keymap 文档写 `p` / `shift-p` | `P` 大写 |
 | `H` | open Clipboard History overlay | footer/action spec 显示 `H CLIPBOARD` | 旧 keymap 文档写默认 `h`，和实际不一致 |
-| `Esc` | exit copy mode | footer `esc` |  |
+| `Esc` | exit copy mode | footer 自动显示 `Esc BACK` | 全局返回导航，并释放当前 view history token |
 
 ## Overlay 输入
 
@@ -179,32 +179,32 @@
 | Terminal Picker | `Backspace` / `Delete` / 普通字符 | 编辑搜索 query | footer 未展示 | 普通字符会被 overlay 吃掉，不透传 terminal |
 | Terminal Picker | `Tab` | attach in split | help action 存在，footer 未展示 |  |
 | Terminal Picker | `Ctrl-E` / `Ctrl-K` / `Ctrl-X` | edit / kill / delete | action spec 有 help，picker footer 只显示 enter/esc | 能按但 footer 不展示 |
-| Terminal Picker | `Esc` | 关闭 overlay | footer `esc` | 由通用 overlay 逻辑处理 |
+| Terminal Picker | `Esc` | 关闭 overlay | footer 自动显示 `Esc BACK` | 全局返回导航 |
 | Terminal Pool | `Up` / `Down` | 移动选择并刷新 preview | footer 未展示 | 实际是 overlay 基础导航键 |
 | Terminal Pool | `Enter` | attach here | footer `enter ATTACH` |  |
 | Terminal Pool | `Backspace` / `Delete` / 普通字符 | 编辑搜索 query 并刷新 preview | footer 未展示 | 普通字符会被 overlay 吃掉 |
 | Terminal Pool | `Ctrl-T` / `Ctrl-O` / `Ctrl-R` / `Ctrl-E` / `Ctrl-K` / `Ctrl-X` | attach tab / float / restart / rename / kill / remove | footer 显示 `Ctrl+T/O/R/E/K/X` | 与 root `^T/^O/^R` 表达格式不同 |
-| Terminal Pool | `Esc` | 关闭 overlay | footer `esc` |  |
+| Terminal Pool | `Esc` | 关闭 overlay | footer 自动显示 `Esc BACK` | 全局返回导航 |
 | Workbench Tree | `Up` / `Down` | 移动选择 | footer 未展示 |  |
 | Workbench Tree | `Left` / `Right` | 折叠/展开当前节点 | footer `←/→ FOLD` |  |
 | Workbench Tree | `Enter` | 展开/折叠节点或 open 当前项 | footer `open` |  |
 | Workbench Tree | `Backspace` / `Delete` / 普通字符 | 编辑搜索 query | footer `search` |  |
 | Workbench Tree | `Ctrl-N` / `Ctrl-R` / `Ctrl-X` / `Ctrl-D` / `Ctrl-Z` | new / rename / delete / detach / zoom | footer 只显示 search、fold、open、ctrl-n、focus、esc | 多数能按但没展示 |
-| Workbench Tree | `Esc` | 关闭 overlay | footer `esc` |  |
+| Workbench Tree | `Esc` | 关闭 overlay | footer 自动显示 `Esc BACK` | 全局返回导航 |
 | Clipboard History | `Up` / `Down` | 移动选择 | footer `↑↓ SELECT` |  |
 | Clipboard History | `Enter` | paste | footer `enter PASTE` |  |
 | Clipboard History | `Backspace` / `Delete` / 普通字符 | 编辑搜索 query | footer 未展示 | `Delete` 在 query 为空时仍按删除 query 字符处理，不是删除条目 |
 | Clipboard History | `Ctrl-N` / `Ctrl-E` / `Ctrl-X` | new / edit / delete | footer 显示 `n/e/x` | 展示和实际按键不一致 |
-| Clipboard History | `Esc` | 关闭 overlay | footer `esc` |  |
+| Clipboard History | `Esc` | 关闭 overlay | footer 自动显示 `Esc BACK` | 全局返回导航 |
 | Floating Overview | arrows | select | footer `↑/↓ select` |  |
 | Floating Overview | `Enter` | summon/open | footer `enter OPEN` |  |
 | Floating Overview | `1..9` | summon floating by index | footer 使用 `floating.summon` / row action | 之前容易被误归到 floating sticky 场景 |
 | Floating Overview | `s` / `c` / `x` | show all / collapse all / close | footer 使用 action 默认 key，部分来自 floating 场景 | 与 floating 主场景 `s/c/x` 语义不同 |
-| Floating Overview | `Esc` | 关闭 overlay | footer `esc` |  |
+| Floating Overview | `Esc` | 关闭 overlay | footer 自动显示 `Esc BACK` | 全局返回导航 |
 | Prompt | 普通字符 / `Backspace` / `Delete` / `Left` / `Right` / `Home` / `End` | 编辑当前 prompt 字段 | footer `type` | help 只概括 Prompt / Help |
 | Prompt | `Tab` / `Shift-Tab` / `Up` / `Down` | 字段移动、路径补全或 suggestion 选择 | 未完整展示 | suggestion focused 时语义会变成移动/接受建议 |
-| Prompt | `Enter` / `Esc` | 提交 / 取消或退出 suggestion focus | footer `enter submit`，prompt cancel action spec 存在 | Esc 也由 overlay 通用逻辑参与 |
-| Help | `Enter` | close help | footer `enter close` | Esc 由通用 overlay 逻辑关闭 |
+| Prompt | `Enter` / `Esc` | 提交 / 先退出 suggestion focus，再次 Esc 取消 prompt | footer `enter submit` + 自动 `Esc BACK` | Esc 每次只返回一层 |
+| Help | `Enter` / `Esc` | close help | footer `enter close` + 自动 `Esc BACK` | Enter 可配置，Esc 固定全局返回 |
 
 ## 内容区 CTA 与写死提示
 
