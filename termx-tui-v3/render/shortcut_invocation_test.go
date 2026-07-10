@@ -5,9 +5,54 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/shortcut"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
+
+func TestShortcutActionLabelPriorityUsesCanonicalDomainSpec(t *testing.T) {
+	action := FooterActionVM{Label: "render fallback", ActionID: ActionFooterPaneMode.String()}
+	cases := []struct {
+		name  string
+		entry input.ShortcutEntry
+		cfg   state.TUIConfigStore
+		want  string
+	}{
+		{name: "binding label", entry: input.ShortcutEntry{ActionID: "menu.panel", Label: "binding"}, cfg: state.TUIConfigStore{Shortcuts: state.TUIShortcutConfig{Actions: map[string]state.TUIShortcutActionConfig{"menu.panel": {Label: "action"}}}}, want: "binding"},
+		{name: "action label", entry: input.ShortcutEntry{ActionID: "menu.panel"}, cfg: state.TUIConfigStore{Shortcuts: state.TUIShortcutConfig{Actions: map[string]state.TUIShortcutActionConfig{"menu.panel": {Label: "action"}}}}, want: "action"},
+		{name: "canonical alias action label", entry: input.ShortcutEntry{ActionID: "menu.pane"}, cfg: state.TUIConfigStore{Shortcuts: state.TUIShortcutConfig{Actions: map[string]state.TUIShortcutActionConfig{"menu.panel": {Label: "canonical action"}}}}, want: "canonical action"},
+		{name: "domain default", entry: input.ShortcutEntry{ActionID: "panel.close"}, want: "CLOSE"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shortcutActionLabel(tc.entry, tc.cfg, action); got != tc.want {
+				t.Fatalf("label priority mismatch: got=%q want=%q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestActionOnlyShortcutConfigKeepsDefaultFooterBindings(t *testing.T) {
+	root := state.Root{Config: state.TUIConfigStore{Shortcuts: state.TUIShortcutConfig{
+		Configured: true,
+		Actions: map[string]state.TUIShortcutActionConfig{
+			"menu.panel": {Label: "custom panel"},
+		},
+	}}}
+	actions := footerActionCatalogFromShortcuts("live", root)
+	if !containsFooterAction(actions, "^P", "custom panel", ActionFooterPaneMode.String()) {
+		t.Fatalf("action-only config must retain default ctrl-p with overridden label, got %#v", actions)
+	}
+	if !containsFooterActionID(actions, ActionFooterResizeMode.String()) {
+		t.Fatalf("action-only config must retain other default bindings, got %#v", actions)
+	}
+
+	root.Config.Shortcuts.Actions["panel.close"] = state.TUIShortcutActionConfig{Label: "dismiss pane"}
+	panelActions := footerActionCatalogFromShortcuts("panel", root)
+	if !containsFooterAction(panelActions, "x/w", "dismiss pane", ActionPaneFooterClose.String()) {
+		t.Fatalf("aggregated default bindings must preserve action-only label override, got %#v", panelActions)
+	}
+}
 
 func TestFooterHitRegionCarriesExactShortcutInvocation(t *testing.T) {
 	invocation, _, err := shortcut.ParseInvocation("panel.close")

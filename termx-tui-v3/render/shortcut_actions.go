@@ -373,61 +373,34 @@ func shortcutActionLabel(entry input.ShortcutEntry, cfg state.TUIConfigStore, ac
 	if label := strings.TrimSpace(entry.Label); label != "" {
 		return label
 	}
-	if label := strings.TrimSpace(cfg.Shortcuts.Actions[entry.ActionID].Label); label != "" {
+	if label := configuredShortcutActionLabel(cfg.Shortcuts.Actions, entry.ActionID); label != "" {
 		return label
 	}
-	if label := shortcutActionDefaultLabel(entry.ActionID); label != "" {
-		return label
-	}
-	if label := strings.TrimSpace(action.Label); label != "" {
-		return label
-	}
-	if spec, ok := ActionSpecByIDString(action.ActionID); ok {
-		if label := strings.TrimSpace(spec.FooterLabel); label != "" {
-			return label
-		}
-		if label := strings.TrimSpace(spec.HelpLabel); label != "" {
-			return label
-		}
-	}
-	return shortcutActionIDLabel(entry.ActionID)
-}
-
-func shortcutActionDefaultLabel(actionID string) string {
-	switch actionID {
-	case "system.open_prompt", "menu.prompt":
-		return "PROMPT"
-	case "floating_overview.open":
-		return "OPEN"
-	case "clipboard_history.paste":
-		return "PASTE"
-	case "clipboard_history.new":
-		return "NEW"
-	case "clipboard_history.edit":
-		return "EDIT"
-	case "clipboard_history.delete":
-		return "DELETE"
+	_, spec, err := shortcut.ParseInvocation(entry.ActionID)
+	if err == nil {
+		return strings.TrimSpace(spec.DefaultLabel)
 	}
 	return ""
 }
 
-func shortcutActionIDLabel(actionID string) string {
-	if actionID == "" {
+func configuredShortcutActionLabel(actions map[string]state.TUIShortcutActionConfig, actionID string) string {
+	_, target, err := shortcut.ParseInvocation(actionID)
+	if err != nil {
 		return ""
 	}
-	parts := strings.FieldsFunc(actionID, func(r rune) bool {
-		return r == '.' || r == '_' || r == '-'
-	})
-	if len(parts) == 0 {
-		return actionID
+	for configuredID, action := range actions {
+		_, configured, err := shortcut.ParseInvocation(configuredID)
+		if err == nil && configured.ID == target.ID {
+			return strings.TrimSpace(action.Label)
+		}
 	}
-	return strings.ToUpper(parts[len(parts)-1])
+	return ""
 }
 
 func compactShortcutFooterActions(scene string, actions []FooterActionVM) []FooterActionVM {
 	scene = shortcutCatalogScene(scene)
 	if scene == "global" || scene == "system" {
-		actions = compactFooterActionGroup(actions, ActionFooterOpenPool, "TERMINALS")
+		actions = compactFooterActionGroup(actions, ActionFooterOpenPool)
 		actions = orderShortcutFooterActions(actions, []ActionID{
 			ActionFooterToggleHeader,
 			ActionFooterToggleFooter,
@@ -442,38 +415,38 @@ func compactShortcutFooterActions(scene string, actions []FooterActionVM) []Foot
 		})
 	}
 	if scene == "panel" {
-		actions = compactFooterActionGroup(actions, ActionPaneFooterClose, "CLOSE")
-		actions = compactFooterActionGroup(actions, ActionPaneFooterSplitRight, "VSPLIT")
-		actions = compactFooterActionGroup(actions, ActionPaneFooterSplitDown, "HSPLIT")
-		actions = compactFooterActionGroup(actions, ActionPaneFooterFocus, "FOCUS")
+		actions = compactFooterActionGroup(actions, ActionPaneFooterClose)
+		actions = compactFooterActionGroup(actions, ActionPaneFooterSplitRight)
+		actions = compactFooterActionGroup(actions, ActionPaneFooterSplitDown)
+		actions = compactFooterActionGroup(actions, ActionPaneFooterFocus)
 	}
 	if scene == "resize" {
-		actions = compactFooterActionGroup(actions, ActionResizeLeft, "")
-		actions = compactFooterActionGroup(actions, ActionResizeRight, "")
-		actions = compactFooterActionGroup(actions, ActionResizeUp, "")
-		actions = compactFooterActionGroup(actions, ActionResizeDown, "")
-		actions = compactFooterActionGroup(actions, ActionResizeBalance, "BALANCE")
-		actions = compactFooterActionGroup(actions, ActionResizeLayoutPan, "PAN")
-		actions = compactFooterActionGroup(actions, ActionResizeLayoutAlign, "ALIGN")
-		actions = compactFooterActionGroup(actions, ActionResizeLayoutCenter, "CENTER")
+		actions = compactFooterActionGroup(actions, ActionResizeLeft)
+		actions = compactFooterActionGroup(actions, ActionResizeRight)
+		actions = compactFooterActionGroup(actions, ActionResizeUp)
+		actions = compactFooterActionGroup(actions, ActionResizeDown)
+		actions = compactFooterActionGroup(actions, ActionResizeBalance)
+		actions = compactFooterActionGroup(actions, ActionResizeLayoutPan)
+		actions = compactFooterActionGroup(actions, ActionResizeLayoutAlign)
+		actions = compactFooterActionGroup(actions, ActionResizeLayoutCenter)
 	}
 	if scene == "tab" {
-		actions = compactFooterActionGroup(actions, ActionTabSwitch, "JUMP")
-		actions = compactFooterActionGroup(actions, ActionTabNext, "NEXT")
-		actions = compactFooterActionGroup(actions, ActionTabPrevious, "PREV")
+		actions = compactFooterActionGroup(actions, ActionTabSwitch)
+		actions = compactFooterActionGroup(actions, ActionTabNext)
+		actions = compactFooterActionGroup(actions, ActionTabPrevious)
 	}
 	if scene == "workspace" {
-		actions = compactFooterActionGroup(actions, ActionFooterNextWorkspace, "NEXT")
-		actions = compactFooterActionGroup(actions, ActionFooterPreviousWorkspace, "PREV")
-		actions = compactFooterActionGroup(actions, ActionFooterOpenTree, "TREE")
+		actions = compactFooterActionGroup(actions, ActionFooterNextWorkspace)
+		actions = compactFooterActionGroup(actions, ActionFooterPreviousWorkspace)
+		actions = compactFooterActionGroup(actions, ActionFooterOpenTree)
 	}
 	if scene == "floating" || scene == "floating_overview" {
 		actions = compactFloatingSummonActions(actions)
-		actions = compactFooterActionGroup(actions, ActionFloatingCollapse, "HIDE")
-		actions = compactFooterActionGroup(actions, ActionFloatingMoveLeft, "MOVE LEFT")
-		actions = compactFooterActionGroup(actions, ActionFloatingMoveRight, "MOVE RIGHT")
-		actions = compactFooterActionGroup(actions, ActionFloatingMoveUp, "MOVE UP")
-		actions = compactFooterActionGroup(actions, ActionFloatingMoveDown, "MOVE DOWN")
+		actions = compactFooterActionGroup(actions, ActionFloatingCollapse)
+		actions = compactFooterActionGroup(actions, ActionFloatingMoveLeft)
+		actions = compactFooterActionGroup(actions, ActionFloatingMoveRight)
+		actions = compactFooterActionGroup(actions, ActionFloatingMoveUp)
+		actions = compactFooterActionGroup(actions, ActionFloatingMoveDown)
 	}
 	return actions
 }
@@ -504,7 +477,6 @@ func compactFloatingSummonActions(actions []FooterActionVM) []FooterActionVM {
 	} else {
 		base.Key = strings.Join(keys, "/")
 	}
-	base.Label = "SUMMON"
 	base.Click = shortcut.ClickHintOnly
 	base.Invocation = shortcut.ActionInvocation{}
 	return replaceFooterActionIndexes(actions, indexes, base)
@@ -531,7 +503,7 @@ func orderShortcutFooterActions(actions []FooterActionVM, order []ActionID) []Fo
 	return out
 }
 
-func compactFooterActionGroup(actions []FooterActionVM, id ActionID, label string) []FooterActionVM {
+func compactFooterActionGroup(actions []FooterActionVM, id ActionID) []FooterActionVM {
 	actionID := id.String()
 	indexes := []int{}
 	keys := []string{}
@@ -553,9 +525,6 @@ func compactFooterActionGroup(actions []FooterActionVM, id ActionID, label strin
 		base.Key = collapsed
 	} else {
 		base.Key = strings.Join(keys, "/")
-	}
-	if label != "" {
-		base.Label = label
 	}
 	for _, index := range indexes[1:] {
 		if actions[index].Invocation.Signature() != base.Invocation.Signature() {

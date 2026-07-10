@@ -175,7 +175,8 @@ type TUIPickerConfig struct {
 // TUIShortcutConfig 是当前 TUI 客户端快捷键配置的唯一入口。
 // Actions 只声明 action 默认展示文案；Scenes 按场景保存 key -> action 绑定。
 // 真实执行仍由后续 shortcut catalog / action registry 转成 reducer 消息，配置层不持有运行时状态。
-// Configured 用于区分“用户没有写 shortcuts，使用内置默认”和“用户显式写了空 shortcuts，禁用默认”。
+// Configured 只记录 shortcuts 配置参与过解析，供配置诊断使用；它不决定 binding catalog。
+// Actions 只覆盖默认文案；Scenes 只要包含任意显式 scene，就声明完整用户 binding catalog，空 scene 也不回退默认。
 type TUIShortcutConfig struct {
 	Configured bool
 	Actions    map[string]TUIShortcutActionConfig

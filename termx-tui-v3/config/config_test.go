@@ -332,21 +332,66 @@ tui:
 	}
 }
 
-func TestParseMarksExplicitEmptyShortcuts(t *testing.T) {
-	cfg, err := Parse([]byte(`
-tui:
-  shortcuts:
-`))
+func TestParseShortcutCatalogDeclarationMatrix(t *testing.T) {
+	cfg, err := Parse([]byte("tui:\n  shortcuts: {}\n"))
 	if err != nil {
-		t.Fatalf("parse explicit empty shortcuts: %v", err)
+		t.Fatalf("parse inline empty shortcuts map: %v", err)
 	}
-	if !cfg.Shortcuts.Configured {
-		t.Fatalf("explicit empty shortcuts must be marked configured")
+	if cfg.Shortcuts.Configured || len(cfg.Shortcuts.Scenes) != 0 {
+		t.Fatalf("inline empty shortcuts map must keep defaults, got %#v", cfg.Shortcuts)
+	}
+
+	if _, err := Parse([]byte("tui:\n  shortcuts:\n")); err == nil || !strings.Contains(err.Error(), "must be a map") {
+		t.Fatalf("null shortcuts must be rejected, got %v", err)
+	}
+	if _, err := Parse([]byte("tui:\n  shortcuts:\n    global:\n    panel: {}\n")); err == nil || !strings.Contains(err.Error(), "global must be a map") {
+		t.Fatalf("null shortcut scene must be rejected before its sibling, got %v", err)
+	}
+	if _, err := Parse([]byte("tui:\n  shortcuts:\n    actions:\n")); err == nil || !strings.Contains(err.Error(), "actions must be a map") {
+		t.Fatalf("null shortcut actions must be rejected, got %v", err)
+	}
+
+	cfg, err = Parse([]byte("tui:\n  shortcuts:\n    global: {}\n"))
+	if err != nil {
+		t.Fatalf("parse explicit empty shortcut scene: %v", err)
+	}
+	global, ok := cfg.Shortcuts.Scenes["global"]
+	if !cfg.Shortcuts.Configured || !ok || len(global.Bindings) != 0 {
+		t.Fatalf("explicit empty scene must be preserved, got %#v", cfg.Shortcuts)
+	}
+
+	cfg, err = Parse([]byte("tui:\n  shortcuts:\n    actions:\n      menu.panel:\n        label: custom panel\n"))
+	if err != nil {
+		t.Fatalf("parse action-only shortcuts: %v", err)
+	}
+	if !cfg.Shortcuts.Configured || len(cfg.Shortcuts.Scenes) != 0 || cfg.Shortcuts.Actions["menu.panel"].Label != "custom panel" {
+		t.Fatalf("action-only shortcuts must not declare a scene catalog, got %#v", cfg.Shortcuts)
+	}
+
+	cfg, err = Parse([]byte("tui:\n  shortcuts:\n    actions:\n      menu.pane:\n        label: alias panel\n"))
+	if err != nil {
+		t.Fatalf("parse alias action label: %v", err)
+	}
+	if len(cfg.Shortcuts.Actions) != 1 || cfg.Shortcuts.Actions["menu.panel"].Label != "alias panel" {
+		t.Fatalf("alias action label must be stored by canonical id, got %#v", cfg.Shortcuts.Actions)
+	}
+
+	if _, err := Parse([]byte("tui:\n  shortcuts:\n    actions:\n      menu.panel:\n        label: panel\n      menu.pane:\n        label: pane\n")); err == nil || !strings.Contains(err.Error(), "duplicate shortcut action label") {
+		t.Fatalf("canonical and alias action labels must not overwrite each other, got %v", err)
 	}
 }
 
 func TestValidateRejectsInvalidShortcutConfig(t *testing.T) {
 	cfg := Default()
+	cfg.Shortcuts.Actions = map[string]state.TUIShortcutActionConfig{
+		"menu.panel": {Label: "panel"},
+		"menu.pane":  {Label: "pane"},
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "duplicates canonical shortcut action") {
+		t.Fatalf("expected canonical action label duplicate error, got %v", err)
+	}
+
+	cfg = Default()
 	cfg.Shortcuts.Actions = map[string]state.TUIShortcutActionConfig{
 		"panel$close": {Label: "close"},
 	}

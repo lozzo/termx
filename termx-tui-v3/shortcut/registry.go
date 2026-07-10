@@ -85,14 +85,111 @@ func (invocation ActionInvocation) Param(name string) (int, bool) {
 var displayAction = DisplayPolicy{Footer: VisibilityVisible, Help: VisibilityVisible, Click: ClickClickable}
 var displayHelpHint = DisplayPolicy{Footer: VisibilityHidden, Help: VisibilityVisible, Click: ClickHintOnly}
 
+var defaultLabels = map[string]string{
+	"menu.panel":                     "PANE",
+	"menu.resize":                    "RESIZE",
+	"menu.system":                    "GLOBAL",
+	"menu.floating":                  "FLOAT",
+	"menu.tab":                       "TAB",
+	"menu.workspace":                 "WORKSPACE",
+	"terminal_picker.open":           "PICKER",
+	"copy.enter":                     "COPY",
+	"panel.close":                    "CLOSE",
+	"panel.detach":                   "DETACH",
+	"panel.take_owner":               "OWNER",
+	"panel.size_lock":                "LOCK",
+	"panel.split_right":              "VSPLIT",
+	"panel.split_down":               "HSPLIT",
+	"panel.toggle_zoom":              "ZOOM",
+	"panel.balance":                  "BALANCE",
+	"panel.presentation_card":        "CARD",
+	"panel.presentation_split_line":  "LINE",
+	"panel.focus_next":               "FOCUS",
+	"panel.focus_prev":               "FOCUS",
+	"interaction.exit":               "BACK",
+	"resize.left":                    "resize left",
+	"resize.right":                   "resize right",
+	"resize.up":                      "resize up",
+	"resize.down":                    "resize down",
+	"resize.layout_toggle":           "LAYOUT",
+	"resize.pan_left":                "PAN",
+	"resize.pan_down":                "PAN",
+	"resize.pan_up":                  "PAN",
+	"resize.pan_right":               "PAN",
+	"resize.align_left":              "ALIGN",
+	"resize.align_right":             "ALIGN",
+	"resize.align_top":               "ALIGN",
+	"resize.align_bottom":            "ALIGN",
+	"resize.center_x":                "CENTER",
+	"resize.center_y":                "CENTER",
+	"resize.center":                  "CENTER",
+	"resize.layout_reset":            "RESET",
+	"system.toggle_header":           "HEADER",
+	"system.toggle_footer":           "FOOTER",
+	"system.clear_toasts":            "CLEAR",
+	"system.close_toast":             "TOAST",
+	"system.open_terminal_pool":      "TERMINALS",
+	"system.open_workbench_tree":     "TREE",
+	"system.toggle_shortcut_lock":    "KEYLOCK",
+	"system.open_prompt":             "PROMPT",
+	"system.open_help":               "HELP",
+	"system.quit":                    "QUIT",
+	"floating.new":                   "NEW FLOAT",
+	"floating.overview":              "OVERVIEW",
+	"system.open_terminal_picker":    "PICK",
+	"floating.take_owner":            "OWNER",
+	"floating.collapse":              "HIDE",
+	"floating.toggle_all":            "ALL",
+	"floating.auto_fit":              "AUTO-FIT",
+	"floating.summon":                "SUMMON",
+	"floating.close":                 "CLOSE",
+	"floating.center":                "CENTER",
+	"floating.fit":                   "FIT",
+	"tab.create":                     "NEW",
+	"tab.next":                       "NEXT",
+	"tab.previous":                   "PREV",
+	"tab.rename":                     "RENAME",
+	"tab.close":                      "CLOSE",
+	"tab.kill":                       "CLOSE",
+	"workspace.create":               "NEW",
+	"workspace.next":                 "NEXT",
+	"workspace.previous":             "PREV",
+	"workspace.rename":               "RENAME",
+	"workspace.delete":               "DELETE",
+	"copy.request_older":             "SCROLL",
+	"copy.open_clipboard_history":    "CLIPBOARD",
+	"copy.exit":                      "BACK",
+	"terminal_pool.attach_tab":       "TAB",
+	"terminal_pool.attach_float":     "FLOAT",
+	"terminal_pool.attach":           "ATTACH",
+	"terminal_pool.restart":          "RESTART",
+	"terminal_pool.edit":             "RENAME",
+	"terminal_pool.kill":             "KILL",
+	"terminal_pool.delete":           "REMOVE",
+	"floating_overview.open":         "OPEN",
+	"floating_overview.show_all":     "SHOW ALL",
+	"floating_overview.collapse_all": "COLLAPSE ALL",
+	"clipboard_history.paste":        "PASTE",
+	"clipboard_history.new":          "NEW",
+	"clipboard_history.edit":         "EDIT",
+	"clipboard_history.delete":       "DELETE",
+}
+
 var specs = buildSpecs()
 
 func buildSpecs() map[string]ActionSpec {
 	out := map[string]ActionSpec{}
 	add := func(spec ActionSpec) {
 		if spec.DefaultLabel == "" {
-			spec.DefaultLabel = strings.ReplaceAll(strings.TrimPrefix(spec.ID, "menu."), "_", " ")
-			spec.DefaultLabel = strings.ReplaceAll(spec.DefaultLabel, ".", " ")
+			if label := defaultLabels[spec.ID]; label != "" {
+				spec.DefaultLabel = label
+			} else {
+				labelID := spec.ID
+				if _, suffix, ok := strings.Cut(labelID, "."); ok {
+					labelID = suffix
+				}
+				spec.DefaultLabel = strings.NewReplacer("_", " ", "-", " ", ".", " ").Replace(labelID)
+			}
 		}
 		if spec.Display.Footer == "" || spec.Display.Help == "" || spec.Display.Click == "" {
 			panic("shortcut action " + spec.ID + " has incomplete display policy")

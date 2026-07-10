@@ -349,7 +349,8 @@ func shortcutCatalogForConfig(shortcuts state.TUIShortcutConfig) shortcutCatalog
 }
 
 func shortcutConfigUsesUserCatalog(shortcuts state.TUIShortcutConfig) bool {
-	return shortcuts.Configured || len(shortcuts.Actions) > 0 || len(shortcuts.Scenes) > 0
+	// 只有显式 scene 才声明用户 binding catalog；actions 只覆盖文案，必须继续复用默认 bindings。
+	return len(shortcuts.Scenes) > 0
 }
 
 func shortcutCatalogFromConfig(shortcuts state.TUIShortcutConfig) shortcutCatalog {

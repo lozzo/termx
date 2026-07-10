@@ -215,7 +215,9 @@ func TestCtrlNULAliasesMatchRoutedAndOverlayBindings(t *testing.T) {
 }
 
 func TestRouteUsesExplicitEmptyShortcutsAsOnlyTruth(t *testing.T) {
-	shortcuts := state.TUIShortcutConfig{Configured: true}
+	shortcuts := state.TUIShortcutConfig{Configured: true, Scenes: map[string]state.TUIShortcutSceneConfig{
+		"global": {Bindings: map[string]state.TUIShortcutBindingConfig{}},
+	}}
 
 	intent := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p", Ctrl: true}, RouteOptions{Shortcuts: shortcuts})
 	if intent.Kind == IntentShortcutAction {

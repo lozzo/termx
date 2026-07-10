@@ -117,6 +117,9 @@ func Parse(data []byte) (state.TUIConfigStore, error) {
 		return cfg, nil
 	}
 	stack := map[int]string{}
+	sectionPaths := map[int]string{}
+	sectionLines := map[int]int{}
+	sectionHasChild := map[int]bool{}
 	for lineNo, raw := range strings.Split(string(data), "\n") {
 		raw = strings.TrimRight(raw, "\r")
 		line := strings.TrimSpace(raw)
@@ -150,6 +153,21 @@ func Parse(data []byte) (state.TUIConfigStore, error) {
 			return state.TUIConfigStore{}, fmt.Errorf("line %d: empty key", lineNo+1)
 		}
 		path := joinPath(stack, level, key)
+		for parentLevel := 0; parentLevel < level; parentLevel++ {
+			if sectionPaths[parentLevel] != "" {
+				sectionHasChild[parentLevel] = true
+			}
+		}
+		for existing := range sectionPaths {
+			if existing >= level {
+				if err := validateClosedConfigSection(sectionPaths[existing], sectionLines[existing], sectionHasChild[existing]); err != nil {
+					return state.TUIConfigStore{}, err
+				}
+				delete(sectionPaths, existing)
+				delete(sectionLines, existing)
+				delete(sectionHasChild, existing)
+			}
+		}
 		if value == "" {
 			if !knownSection(path) {
 				return state.TUIConfigStore{}, fmt.Errorf("line %d: unknown section %q", lineNo+1, path)
@@ -157,11 +175,23 @@ func Parse(data []byte) (state.TUIConfigStore, error) {
 			if path == "tui.shortcuts" || strings.HasPrefix(path, "tui.shortcuts.") {
 				cfg.Shortcuts.Configured = true
 			}
+			sectionPaths[level] = path
+			sectionLines[level] = lineNo + 1
 			stack[level] = key
 			for existing := range stack {
 				if existing > level {
 					delete(stack, existing)
 				}
+			}
+			continue
+		}
+		if value == "{}" {
+			handled, err := applyEmptyMap(&cfg, path)
+			if err != nil {
+				return state.TUIConfigStore{}, fmt.Errorf("line %d: %s: %w", lineNo+1, path, err)
+			}
+			if !handled {
+				return state.TUIConfigStore{}, fmt.Errorf("line %d: unknown field %q", lineNo+1, path)
 			}
 			continue
 		}
@@ -188,10 +218,49 @@ func Parse(data []byte) (state.TUIConfigStore, error) {
 			return state.TUIConfigStore{}, fmt.Errorf("line %d: %s: %w", lineNo+1, path, err)
 		}
 	}
+	for level, path := range sectionPaths {
+		if err := validateClosedConfigSection(path, sectionLines[level], sectionHasChild[level]); err != nil {
+			return state.TUIConfigStore{}, err
+		}
+	}
 	if err := Validate(cfg); err != nil {
 		return state.TUIConfigStore{}, err
 	}
 	return cfg, nil
+}
+
+func validateClosedConfigSection(path string, line int, hasChild bool) error {
+	if hasChild || (path != "tui.shortcuts" && !strings.HasPrefix(path, "tui.shortcuts.")) {
+		return nil
+	}
+	return fmt.Errorf("line %d: %s must be a map; use %s: {} for an empty map", line, path, path[strings.LastIndex(path, ".")+1:])
+}
+
+func applyEmptyMap(cfg *state.TUIConfigStore, path string) (bool, error) {
+	switch path {
+	case "tui.shortcuts":
+		return true, nil
+	case "tui.shortcuts.actions":
+		cfg.Shortcuts.Configured = true
+		if cfg.Shortcuts.Actions == nil {
+			cfg.Shortcuts.Actions = map[string]state.TUIShortcutActionConfig{}
+		}
+		return true, nil
+	}
+	const prefix = "tui.shortcuts."
+	if !strings.HasPrefix(path, prefix) {
+		return false, nil
+	}
+	sceneName := strings.TrimPrefix(path, prefix)
+	if !builtinShortcutScene(sceneName) {
+		return false, nil
+	}
+	cfg.Shortcuts.Configured = true
+	if cfg.Shortcuts.Scenes == nil {
+		cfg.Shortcuts.Scenes = map[string]state.TUIShortcutSceneConfig{}
+	}
+	cfg.Shortcuts.Scenes[sceneName] = state.TUIShortcutSceneConfig{Bindings: map[string]state.TUIShortcutBindingConfig{}}
+	return true, nil
 }
 
 func joinPath(stack map[int]string, level int, key string) string {
@@ -508,12 +577,18 @@ func setShortcutsDynamicScalar(cfg *state.TUIConfigStore, path string, value str
 		if !ok || !validShortcutActionID(actionID) {
 			return false, nil
 		}
-		action := cfg.Shortcuts.Actions[actionID]
-		action.Label = value
+		_, spec, err := shortcut.ParseInvocation(actionID)
+		if err != nil {
+			return false, nil
+		}
+		canonicalID := spec.ID
 		if cfg.Shortcuts.Actions == nil {
 			cfg.Shortcuts.Actions = map[string]state.TUIShortcutActionConfig{}
 		}
-		cfg.Shortcuts.Actions[actionID] = action
+		if _, exists := cfg.Shortcuts.Actions[canonicalID]; exists {
+			return true, fmt.Errorf("duplicate shortcut action label for canonical action %q", canonicalID)
+		}
+		cfg.Shortcuts.Actions[canonicalID] = state.TUIShortcutActionConfig{Label: value}
 		return true, nil
 	}
 	if !strings.HasPrefix(path, "tui.shortcuts.") {
@@ -892,13 +967,19 @@ func validFooterStyleToken(value string) bool {
 }
 
 func validateShortcutsConfig(shortcuts state.TUIShortcutConfig) error {
+	canonicalActions := map[string]string{}
 	for actionID, action := range shortcuts.Actions {
 		if !validShortcutActionID(actionID) {
 			return fmt.Errorf("tui.shortcuts.actions has invalid action id %q", actionID)
 		}
-		if !input.KnownShortcutActionID(actionID) {
+		_, spec, err := shortcut.ParseInvocation(actionID)
+		if err != nil {
 			return fmt.Errorf("tui.shortcuts.actions.%s references unknown shortcut action %q", actionID, actionID)
 		}
+		if previous, ok := canonicalActions[spec.ID]; ok {
+			return fmt.Errorf("tui.shortcuts.actions.%s duplicates canonical shortcut action configured by %s", actionID, previous)
+		}
+		canonicalActions[spec.ID] = actionID
 		if err := validateSingleLine("tui.shortcuts.actions."+actionID+".label", action.Label); err != nil {
 			return err
 		}
