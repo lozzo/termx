@@ -184,6 +184,13 @@ type ShellPaneCommandMsg struct {
 
 func (ShellPaneCommandMsg) isMsg() {}
 
+type ShellClosePaneIfTerminalRefMsg struct {
+	PaneID      string
+	ExpectedRef state.TerminalRef
+}
+
+func (ShellClosePaneIfTerminalRefMsg) isMsg() {}
+
 type ShellFloatingCommandMsg struct {
 	Command state.FloatingCommand
 }
@@ -324,6 +331,8 @@ func NewShellReducer() Reducer {
 			})
 		case ShellPaneCommandMsg:
 			return reducePaneCommand(root, msg.Command)
+		case ShellClosePaneIfTerminalRefMsg:
+			return reduceClosePaneIfTerminalRef(root, msg)
 		case ShellFloatingCommandMsg:
 			return reduceFloatingCommand(root, msg.Command)
 		case ShellWorkbenchCommandMsg:
@@ -333,6 +342,13 @@ func NewShellReducer() Reducer {
 		}
 		return root.Advance(), nil
 	}
+}
+
+func reduceClosePaneIfTerminalRef(root state.Root, msg ShellClosePaneIfTerminalRefMsg) (state.Root, []Effect) {
+	if !paneStillOwnsTerminalRef(root, msg.PaneID, msg.ExpectedRef) {
+		return root, nil
+	}
+	return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneClose, Target: state.PaneCommandTarget{PaneID: msg.PaneID}, Source: state.PaneCommandSourceKeyboard})
 }
 
 func ownerConfirmClearEffect(seq uint64) Effect {
@@ -2099,13 +2115,6 @@ func updateTerminalViewsAfterPaneCommand(root state.Root, command state.PaneComm
 	case state.PaneCommandClose:
 		root = invalidateCopyModeForClosedPane(root, command.Target.PaneID)
 		root.TerminalViews = root.TerminalViews.DetachPane(command.Target.PaneID)
-	case state.PaneCommandCloseAndKill:
-		root = invalidateCopyModeForClosedPane(root, command.Target.PaneID)
-		if hasTargetPane && targetPane.TerminalID != "" {
-			root.TerminalViews = root.TerminalViews.RemoveTerminal(targetPane.TerminalID)
-		} else {
-			root.TerminalViews = root.TerminalViews.DetachPane(command.Target.PaneID)
-		}
 	}
 	return root
 }
@@ -2322,18 +2331,21 @@ func addWorkbenchCommandToast(shell state.ShellStore, result state.WorkbenchComm
 
 func paneCommandEffects(root state.Root, command state.PaneCommand, result state.PaneCommandResult, targetPane state.PaneState, hasTargetPane bool) []Effect {
 	effects := []Effect{PaneCommandFeedbackEffect{Result: result, Command: command}}
-	if command.Action != state.PaneCommandCloseAndKill {
+	if command.Action != state.PaneCommandKill && command.Action != state.PaneCommandCloseAndKill {
 		return effects
 	}
-	if hasTargetPane && targetPane.TerminalID != "" {
-		ref := terminalRefForContentAction(root, targetPane.ID)
-		if ref.Empty() {
-			ref = state.LocalTerminalRef(targetPane.TerminalID)
-		}
-		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolKillRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID}
+	if !hasTargetPane {
+		return effects
+	}
+	ref := terminalRefForContentAction(root, targetPane.ID)
+	if ref.Empty() {
+		return append(effects, FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolKillResultMsg{PaneID: targetPane.ID, CloseOnSuccess: command.Action == state.PaneCommandCloseAndKill, Err: fmt.Errorf("pane terminal binding unavailable")}
 		}})
 	}
+	effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
+		return TerminalPoolKillRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, PaneID: targetPane.ID, CloseOnSuccess: command.Action == state.PaneCommandCloseAndKill}
+	}})
 	return effects
 }
 
@@ -2430,7 +2442,8 @@ func addPaneCommandToast(shell state.ShellStore, command state.PaneCommand, resu
 
 func shouldSuppressPaneCommandSuccessToast(command state.PaneCommand) bool {
 	switch command.Action {
-	case state.PaneCommandFocus, state.PaneCommandFocusNext, state.PaneCommandFocusPrevious, state.PaneCommandResize:
+	case state.PaneCommandFocus, state.PaneCommandFocusNext, state.PaneCommandFocusPrevious, state.PaneCommandResize,
+		state.PaneCommandKill, state.PaneCommandCloseAndKill:
 		return true
 	default:
 		return false

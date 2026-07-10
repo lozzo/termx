@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/lozzow/termx/termx-tui-v3/render"
@@ -269,16 +270,82 @@ func TestShellReducerKeepsCloseAndKillBehindConfirmPolicy(t *testing.T) {
 	if next.Generation != root.Generation+1 {
 		t.Fatalf("accepted command should advance state boundary, got %#v", next)
 	}
-	if len(next.Shell.Workspace.Tabs[0].Panes) != 1 || next.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
-		t.Fatalf("accepted close-and-kill should remove pane from shell state, got %#v", next.Shell)
+	if !next.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
+		t.Fatalf("close-and-kill must keep pane until kill succeeds, got %#v", next.Shell)
 	}
 	if len(effects) != 2 {
 		t.Fatalf("expected feedback and terminal kill effect boundary, got %#v", effects)
 	}
 	killMsg := effects[1].(FuncEffect).Run(context.Background())
 	kill, ok := killMsg.(TerminalPoolKillRequestMsg)
-	if !ok || kill.EndpointID != "west" || kill.TerminalID != "term-2" {
+	if !ok || kill.EndpointID != "west" || kill.TerminalID != "term-2" || kill.PaneID != "pane-2" || !kill.CloseOnSuccess {
 		t.Fatalf("expected terminal kill message boundary, got %#v", killMsg)
+	}
+
+	failed, closeEffects := reduceTerminalPoolKillResult(next, TerminalPoolKillResultMsg{EndpointID: "west", TerminalID: "term-2", PaneID: "pane-2", CloseOnSuccess: true, Err: errors.New("denied")})
+	if !failed.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) || len(closeEffects) != 0 {
+		t.Fatalf("failed kill must keep pane and emit no close, root=%#v effects=%#v", failed, closeEffects)
+	}
+
+	rebound := next
+	rebound.TerminalViews = rebound.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("east", "pane-2", "term-3", 8, 80, 24, state.TerminalResizeRoleOwner, "surface-east", "view-east", true))
+	rebound, closeEffects = reduceTerminalPoolKillResult(rebound, TerminalPoolKillResultMsg{EndpointID: "west", TerminalID: "term-2", PaneID: "pane-2", CloseOnSuccess: true})
+	if !rebound.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) || len(closeEffects) != 1 {
+		t.Fatalf("rebound pane must not close after old terminal kill, root=%#v effects=%#v", rebound, closeEffects)
+	}
+
+	succeeded, closeEffects := reduceTerminalPoolKillResult(next, TerminalPoolKillResultMsg{EndpointID: "west", TerminalID: "term-2", PaneID: "pane-2", CloseOnSuccess: true})
+	if !succeeded.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) || len(closeEffects) != 2 {
+		t.Fatalf("successful kill should schedule close after list refresh, root=%#v effects=%#v", succeeded, closeEffects)
+	}
+	closeMsg, ok := closeEffects[1].(FuncEffect).Run(context.Background()).(ShellClosePaneIfTerminalRefMsg)
+	if !ok || closeMsg.PaneID != "pane-2" || !closeMsg.ExpectedRef.Equal(state.NewTerminalRef("west", "term-2")) {
+		t.Fatalf("successful kill must schedule normal pane close, got %#v", closeEffects[1])
+	}
+	closed, persistEffects := reducer(succeeded, closeMsg)
+	if closed.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
+		t.Fatalf("scheduled normal close must remove pane, got %#v", closed.Shell)
+	}
+	if len(persistEffects) == 0 {
+		t.Fatalf("successful conditional close must persist workbench layout")
+	}
+	persisted := false
+	for _, effect := range persistEffects {
+		funcEffect, ok := effect.(FuncEffect)
+		if !ok {
+			continue
+		}
+		if msg, ok := funcEffect.Run(context.Background()).(WorkbenchStoragePersistRequestMsg); ok && msg.Reason == string(state.WorkbenchCommandPaneClose) {
+			persisted = true
+		}
+	}
+	if !persisted {
+		t.Fatalf("successful conditional close must emit pane-close persist, effects=%#v", persistEffects)
+	}
+
+	lateRebound := succeeded
+	lateRebound.TerminalViews = lateRebound.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("east", "pane-2", "term-3", 8, 80, 24, state.TerminalResizeRoleOwner, "surface-east", "view-east", true))
+	lateRebound, lateEffects := reducer(lateRebound, closeMsg)
+	if !lateRebound.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) || len(lateEffects) != 0 {
+		t.Fatalf("conditional close must recheck binding at consume time, root=%#v effects=%#v", lateRebound, lateEffects)
+	}
+}
+
+func TestShellReducerPanelKillKeepsPaneAfterSuccess(t *testing.T) {
+	reducer := NewShellReducer()
+	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", TerminalID: "term-2"}, state.SplitDirectionVertical)}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("west", "pane-2", "term-2", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-west", "view-west", true))
+	next, effects := reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandKill, Target: state.PaneCommandTarget{PaneID: "pane-2"}, Confirm: state.PaneConfirmAccepted}})
+	if !next.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) || len(effects) != 2 {
+		t.Fatalf("panel kill must keep pane and request kill, root=%#v effects=%#v", next, effects)
+	}
+	kill := effects[1].(FuncEffect).Run(context.Background()).(TerminalPoolKillRequestMsg)
+	if kill.EndpointID != "west" || kill.TerminalID != "term-2" || kill.PaneID != "pane-2" || kill.CloseOnSuccess {
+		t.Fatalf("panel kill request context mismatch: %#v", kill)
+	}
+	result, resultEffects := reduceTerminalPoolKillResult(next, TerminalPoolKillResultMsg{EndpointID: "west", TerminalID: "term-2", PaneID: "pane-2"})
+	if !result.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) || len(resultEffects) != 1 {
+		t.Fatalf("panel kill success must preserve pane, root=%#v effects=%#v", result, resultEffects)
 	}
 }
 

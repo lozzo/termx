@@ -40,6 +40,14 @@ func TestParsePaneMiniCommandCoversStructuralActions(t *testing.T) {
 	if command.Action != state.PaneCommandCloseAndKill || command.Confirm != state.PaneConfirmAccepted {
 		t.Fatalf("unexpected close-kill command %#v", command)
 	}
+
+	command, err = ParsePaneMiniCommand("pane kill pane=right confirm=accepted")
+	if err != nil {
+		t.Fatalf("parse kill: %v", err)
+	}
+	if command.Action != state.PaneCommandKill || command.Confirm != state.PaneConfirmAccepted {
+		t.Fatalf("unexpected kill command %#v", command)
+	}
 }
 
 func TestPaneCommandAdaptersFromHitRegionAndIntent(t *testing.T) {

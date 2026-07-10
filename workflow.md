@@ -88,8 +88,8 @@
 | KS007 | 完成 | 删除快捷键硬编码 fallback 并补齐提示 | 先补显式空 catalog 无 fallback harness；sticky/copy Esc、空 footer `Ctrl-G`、Help close、Prompt suggestion 回到 catalog；每个 action 在 domain spec 明确 footer/help/click 策略 |
 | KS008 | 完成 | shortcut key、scene、action 和参数校验收敛 | 先补 canonical key、scene-action 和参数矩阵；config 基于 KS005 domain spec 校验 routed/overlay scene，拒绝等价冲突、理论不可表达 token、错误 scene-action 组合及越界参数 |
 | KS009 | 完成 | action 文案覆盖与 catalog 替换语义 | 先补默认、action-only、scene-only、显式空 scene 和 actions+scenes 矩阵；action-only 只覆盖默认文案，出现 scene 后用户 scene catalog 是完整按键真值 |
-| KS010 | 进行中 | 组合 action 与 terminal lifecycle 执行语义 | 先补成功、失败、TerminalRef 路由 harness；只实现 `panel.kill` / `panel.kill_and_close` handler、步骤和关闭时机，不再调整 registry 基础结构或开放脚本系统 |
-| KS011 | 待开始 | 增强键盘协议与 Ctrl+数字 | 先补 raw bytes 到 invocation harness；配置期验证协议理论支持，启动期检测 TerminalHost capability，运行期投影 available 状态；不支持时保持 `Ctrl-T` 后按数字路径 |
+| KS010 | 完成 | 组合 action 与 terminal lifecycle 执行语义 | 先补成功、失败、TerminalRef 路由 harness；只实现 `panel.kill` / `panel.kill_and_close` handler、步骤和关闭时机，不再调整 registry 基础结构或开放脚本系统 |
+| KS011 | 进行中 | 增强键盘协议与 Ctrl+数字 | 先补 raw bytes 到 invocation harness；配置期验证协议理论支持，启动期检测 TerminalHost capability，运行期投影 available 状态；不支持时保持 `Ctrl-T` 后按数字路径 |
 | KS012 | 待开始 | 快捷键跨切片总契约守卫 | 汇总默认 catalog 完备性、键盘/点击等价、空 catalog、overlay、组合 action 和 capability 回归守卫，不在本切片首次补关键 harness |
 | KS013 | 待开始 | 快捷键文档与示例收尾 | 更新现状统计、配置示例、支持键位和限制；删除错误可用性声明，确保可加载示例不会意外禁用未展示的必要入口 |
 | ME012 | 待开始 | hub/P2P transport dialer 与跨设备发现 | 接入 `termx-hub/` 发现/授权/relay；P2P 或 relay datachannel 只连接远端 termx daemon；局部失败不影响其他 endpoint |
@@ -143,4 +143,5 @@
 - KS007 已完成：sticky/copy Esc、Prompt suggestion Esc、Help close 都由各自 scene catalog 驱动；显式空 catalog 不再退出或执行旧 fallback，normal Esc 仍透传 PTY；空 footer 不再虚构 `Ctrl-G`；Help 内容关闭文案与 hit region 随 catalog 同步消失；`interaction.exit`、`copy.exit`、`prompt.suggestion_exit` 已进入 domain spec，`shortcut.exit` 只作为 render metadata，不能通过裸 ActionID 执行。
 - KS008 已完成：config 以 shortcut domain `ParseInvocation`、`AllowedScenes` 和 `Routable` 为 action/scene/参数真值；routed 与 overlay 共用 canonical key signature，拒绝 panel/pane、Esc/Return、modifier 顺序、Ctrl 字符大小写及 `Ctrl-@`/`Ctrl-Space` 等价冲突；quoted `.` 的短写和长写均通过真实 YAML parser；增强键盘 token 只做协议理论校验，实际 capability/available 状态仍由 KS011 负责。
 - KS009 已完成：仅配置 `actions` 时保留全部默认 bindings 并覆盖文案；任意显式 scene（包括空 scene）声明完整用户 catalog，不继承其他默认 scene；`shortcuts: {}` 保留默认，`shortcuts:`、`actions:`、`scene:` null 明确拒绝；action alias 在 parser 中 canonicalize 且重复声明报错；按键 label > action label > shortcut domain `DefaultLabel`，footer 聚合只合并键和 invocation，不再覆盖文案。
-- KS010 进行中：下一步围绕 owning endpoint `TerminalRef` 补 `panel.kill` 与 `panel.kill_and_close` 的成功、失败和关闭时机 harness，组合步骤仍由 app dispatcher 拥有，配置不开放脚本。
+- KS010 已完成：`panel.kill` 与 `panel.kill_and_close` 直接进入独立 pane command 链路；两者都只从 pane binding 读取 owning `TerminalRef` 发 kill，不 fallback 裸 `TerminalID`；kill-only 成功保留 pane，kill-and-close 仅在成功且 result/close 消费两次确认 pane 仍绑定同一 `TerminalRef` 后进入标准 workbench pane-close/persist 路径，失败、重绑定和 last-pane close 拒绝都保留 pane；配置仍只引用 action id，不开放脚本。
+- KS011 进行中：下一步先用 raw bytes -> `InputEvent` -> invocation harness 固化增强键盘协议，TerminalHost 负责 capability 检测、启停恢复与 available 投影；不支持时仍保留 `Ctrl-T` 后数字跳转。

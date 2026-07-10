@@ -46,6 +46,17 @@ func TestPaneCommandValidateCloseAndKillRequiresAcceptedConfirmation(t *testing.
 	}
 }
 
+func TestPaneCommandKillDoesNotRequireClosablePane(t *testing.T) {
+	shell := DefaultShell()
+	for _, action := range []PaneCommandAction{PaneCommandKill, PaneCommandCloseAndKill} {
+		command := PaneCommand{Action: action, Target: PaneCommandTarget{PaneID: DefaultPaneID}, Confirm: PaneConfirmAccepted}
+		next, result := shell.ApplyPaneCommand(command)
+		if result.Status != PaneCommandOK || !next.HasPane(PaneCommandTarget{PaneID: DefaultPaneID}) {
+			t.Fatalf("%s should validate on last pane without closing it, shell=%#v result=%#v", action, next, result)
+		}
+	}
+}
+
 func TestPaneCommandValidateResizeAndSetSizeParameters(t *testing.T) {
 	shell := DefaultShell()
 	resize := PaneCommand{Action: PaneCommandResize, ResizeDirection: PaneResizeRight, Delta: 4}

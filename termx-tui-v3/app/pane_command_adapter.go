@@ -35,7 +35,9 @@ func ParsePaneMiniCommand(text string) (state.PaneCommand, error) {
 		command.SplitDirection = state.SplitDirectionHorizontal
 	case "close":
 		command.Action = state.PaneCommandClose
-	case "close-kill", "kill":
+	case "kill":
+		command.Action = state.PaneCommandKill
+	case "close-kill":
 		command.Action = state.PaneCommandCloseAndKill
 	case "focus":
 		command.Action = state.PaneCommandFocus

@@ -5,6 +5,7 @@ type PaneCommandAction string
 const (
 	PaneCommandSplit              PaneCommandAction = "pane.split"
 	PaneCommandClose              PaneCommandAction = "pane.close"
+	PaneCommandKill               PaneCommandAction = "pane.kill"
 	PaneCommandCloseAndKill       PaneCommandAction = "pane.close-and-kill"
 	PaneCommandFocus              PaneCommandAction = "pane.focus"
 	PaneCommandFocusNext          PaneCommandAction = "pane.focus-next"
@@ -145,10 +146,11 @@ func (command PaneCommand) Validate(shell ShellStore) PaneCommandResult {
 		if shell.paneCountForTarget(command.Target) <= 1 {
 			return paneCommandInvalid(command.Action, "cannot close last pane")
 		}
-	case PaneCommandCloseAndKill:
-		if shell.paneCountForTarget(command.Target) <= 1 {
-			return paneCommandInvalid(command.Action, "cannot close last pane")
+	case PaneCommandKill:
+		if command.Confirm != PaneConfirmAccepted {
+			return PaneCommandResult{Status: PaneCommandNeedsConfirmation, Action: command.Action, Reason: "confirmation required"}
 		}
+	case PaneCommandCloseAndKill:
 		if command.Confirm != PaneConfirmAccepted {
 			return PaneCommandResult{Status: PaneCommandNeedsConfirmation, Action: command.Action, Reason: "confirmation required"}
 		}
@@ -202,8 +204,10 @@ func (store ShellStore) ApplyPaneCommand(command PaneCommand) (ShellStore, PaneC
 	case PaneCommandSplit:
 		// 鼠标命中区会携带 target pane；先聚焦 target，保证 split 的结构落在被点击的 pane 上。
 		return store.FocusPane(command.Target).SplitActivePane(command.NewPane, command.SplitDirection), result
-	case PaneCommandClose, PaneCommandCloseAndKill:
+	case PaneCommandClose:
 		return store.ClosePane(command.Target), result
+	case PaneCommandKill, PaneCommandCloseAndKill:
+		return store, result
 	case PaneCommandFocus:
 		return store.FocusPane(command.Target), result
 	case PaneCommandFocusNext:

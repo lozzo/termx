@@ -128,13 +128,16 @@ func TestFloatingSummonShortcutUsesInvocationIndexWithoutRowFallback(t *testing.
 }
 
 func TestShortcutDispatcherKeepsKillActionsDistinct(t *testing.T) {
-	for _, source := range []string{"panel.kill", "panel.kill_and_close"} {
+	for source, wantCommand := range map[string]string{
+		"panel.kill":           "pane kill confirm=accepted",
+		"panel.kill_and_close": "pane close-kill confirm=accepted",
+	} {
 		invocation, _, err := shortcut.ParseInvocation(source)
 		if err != nil {
 			t.Fatal(err)
 		}
 		intent, ok := shortcutIntentForInvocation(invocation, input.InputEvent{})
-		if !ok || intent.Invocation.ID != source {
+		if !ok || intent.Kind != input.IntentPaneCommand || intent.Invocation.ID != source || intent.Command != wantCommand {
 			t.Fatalf("dispatch %q lost action identity: %#v", source, intent)
 		}
 	}

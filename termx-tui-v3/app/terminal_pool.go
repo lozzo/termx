@@ -181,16 +181,20 @@ type TerminalPoolReconnectResultMsg struct {
 func (TerminalPoolReconnectResultMsg) isMsg() {}
 
 type TerminalPoolKillRequestMsg struct {
-	EndpointID state.EndpointID
-	TerminalID string
+	EndpointID     state.EndpointID
+	TerminalID     string
+	PaneID         string
+	CloseOnSuccess bool
 }
 
 func (TerminalPoolKillRequestMsg) isMsg() {}
 
 type TerminalPoolKillResultMsg struct {
-	EndpointID state.EndpointID
-	TerminalID string
-	Err        error
+	EndpointID     state.EndpointID
+	TerminalID     string
+	PaneID         string
+	CloseOnSuccess bool
+	Err            error
 }
 
 func (TerminalPoolKillResultMsg) isMsg() {}
@@ -922,7 +926,7 @@ func reduceTerminalPoolKillRequest(root state.Root, msg TerminalPoolKillRequestM
 	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
 		err := deps.Terminal.Kill(ctx, services.TerminalKillRequest{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID})
-		return TerminalPoolKillResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, Err: err}
+		return TerminalPoolKillResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, PaneID: msg.PaneID, CloseOnSuccess: msg.CloseOnSuccess, Err: err}
 	}}}
 }
 
@@ -937,7 +941,21 @@ func reduceTerminalPoolKillResult(root state.Root, msg TerminalPoolKillResultMsg
 	// 中文说明：kill 只改变 core terminal lifecycle，不代表用户断开 pane/floating view。
 	// 绑定清理只能发生在 remove/disconnect 路径，否则已有浮窗会被误删。
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: msg.TerminalID})
-	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{EndpointID: ref.EndpointID} }}}
+	effects := []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{EndpointID: ref.EndpointID} }}}
+	if msg.CloseOnSuccess && paneStillOwnsTerminalRef(root, msg.PaneID, ref) {
+		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
+			return ShellClosePaneIfTerminalRefMsg{PaneID: msg.PaneID, ExpectedRef: ref}
+		}})
+	}
+	return root.Advance(), effects
+}
+
+func paneStillOwnsTerminalRef(root state.Root, paneID string, ref state.TerminalRef) bool {
+	if paneID == "" || ref.Empty() || !root.Shell.HasPane(state.PaneCommandTarget{PaneID: paneID}) {
+		return false
+	}
+	binding, ok := root.TerminalViews.PaneBinding(paneID)
+	return ok && binding.TerminalRef().Equal(ref)
 }
 
 func reduceTerminalPoolRemoveRequest(root state.Root, msg TerminalPoolRemoveRequestMsg, deps LiveDeps) (state.Root, []Effect) {

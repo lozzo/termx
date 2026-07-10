@@ -142,6 +142,7 @@ func shortcutMenuIntent(scene string, intent input.Intent) (input.Intent, bool) 
 func shortcutPaneCommand(id string) (string, bool) {
 	commands := map[string]string{
 		"panel.split_right": "pane split-right", "panel.split_down": "pane split-down", "panel.toggle_zoom": "pane toggle-zoom", "panel.balance": "pane balance", "panel.presentation_card": "pane presentation card", "panel.presentation_split_line": "pane presentation split-line", "panel.focus_next": "pane focus-next", "panel.focus_prev": "pane focus-prev",
+		"panel.kill": "pane kill confirm=accepted", "panel.kill_and_close": "pane close-kill confirm=accepted",
 		"resize.left": "pane resize left delta=2", "resize.right": "pane resize right delta=2", "resize.up": "pane resize up delta=2", "resize.down": "pane resize down delta=2", "resize.left_large": "pane resize left delta=6", "resize.right_large": "pane resize right delta=6", "resize.up_large": "pane resize up delta=6", "resize.down_large": "pane resize down delta=6",
 	}
 	command, ok := commands[id]
@@ -151,7 +152,7 @@ func shortcutPaneCommand(id string) (string, bool) {
 func shortcutWorkbenchCommand(invocation shortcut.ActionInvocation) (string, bool) {
 	id := invocation.ID
 	commands := map[string]string{
-		"panel.close": "pane close", "panel.detach": "pane detach", "panel.reconnect": "pane reconnect", "panel.restart": "pane restart", "panel.take_owner": "pane take-owner", "panel.size_lock": "terminal size lock", "panel.kill": "pane kill confirm=accepted", "panel.kill_and_close": "pane kill confirm=accepted",
+		"panel.close": "pane close", "panel.detach": "pane detach", "panel.reconnect": "pane reconnect", "panel.restart": "pane restart", "panel.take_owner": "pane take-owner", "panel.size_lock": "terminal size lock",
 		"resize.layout_toggle": "terminal layout toggle", "resize.pan_left": "terminal layout pan-left", "resize.pan_right": "terminal layout pan-right", "resize.pan_up": "terminal layout pan-up", "resize.pan_down": "terminal layout pan-down", "resize.align_left": "terminal layout align-left", "resize.align_right": "terminal layout align-right", "resize.align_top": "terminal layout align-top", "resize.align_bottom": "terminal layout align-bottom", "resize.center": "terminal layout center", "resize.center_x": "terminal layout center-x", "resize.center_y": "terminal layout center-y", "resize.layout_reset": "terminal layout reset",
 		"floating.take_owner": "floating take-owner", "tab.create": "tab create", "tab.next": "tab next", "tab.previous": "tab previous", "tab.rename": "tab rename", "tab.close": "tab close", "tab.kill": "tab kill confirm=accepted", "workspace.create": "workspace create", "workspace.next": "workspace next", "workspace.previous": "workspace previous", "workspace.rename": "workspace rename", "workspace.delete": "workspace delete confirm=accepted",
 	}
