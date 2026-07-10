@@ -1015,6 +1015,7 @@ func builtinShortcutScene(value string) bool {
 		"clipboard_history",
 		"floating_overview",
 		"prompt",
+		"prompt_suggestion",
 		"help",
 	)
 }

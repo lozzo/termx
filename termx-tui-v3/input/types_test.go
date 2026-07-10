@@ -118,9 +118,7 @@ func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: ":"}, false, InteractionModeGlobal), "system.open_prompt")
 	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "?"}, false, InteractionModeGlobal), "system.open_help")
 	esc := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyEsc}, false, InteractionModePane)
-	if esc.Kind != IntentExitInteraction {
-		t.Fatalf("expected interaction exit, got %#v", esc)
-	}
+	assertShortcutAction(t, esc, "interaction.exit")
 }
 
 func TestShortcutPassthroughHelpers(t *testing.T) {
@@ -204,6 +202,15 @@ func TestRouteUsesExplicitEmptyShortcutsAsOnlyTruth(t *testing.T) {
 	intent := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p", Ctrl: true}, RouteOptions{Shortcuts: shortcuts})
 	if intent.Kind == IntentShortcutAction {
 		t.Fatalf("explicit empty shortcuts must not fall back to default ctrl-p, got %#v", intent)
+	}
+	for name, options := range map[string]RouteOptions{
+		"sticky": {Mode: InteractionModePane, Shortcuts: shortcuts},
+		"copy":   {CopyModeActive: true, Shortcuts: shortcuts},
+	} {
+		intent := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyEsc}, options)
+		if intent.Kind != IntentNone {
+			t.Fatalf("explicit empty shortcuts must not hardcode %s esc, got %#v", name, intent)
+		}
 	}
 }
 

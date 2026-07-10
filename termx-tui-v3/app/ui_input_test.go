@@ -1505,6 +1505,18 @@ func TestUIInputReducerCreateTerminalWorkdirSuggestions(t *testing.T) {
 	if !runtime.State().Shell.EnsureDefaults().Overlay.Open || prompt.SuggestionFocused {
 		t.Fatalf("esc in suggestion focus should only exit suggestions, overlay=%#v", runtime.State().Shell.Overlay)
 	}
+
+	pathService = &services.FakeTerminalService{PathResult: promptPathResult("demo/", "delta/", "dev/")}
+	runtime = newPromptPathRuntime(pathService, "d")
+	runtime.state.Config.Shortcuts = state.TUIShortcutConfig{Configured: true, Scenes: map[string]state.TUIShortcutSceneConfig{
+		"prompt": {Bindings: map[string]state.TUIShortcutBindingConfig{"esc": {Action: "prompt.cancel"}}},
+	}}
+	postPromptKey(t, runtime, input.KeyTab)
+	postPromptKey(t, runtime, input.KeyEsc)
+	prompt = runtime.State().Shell.EnsureDefaults().Overlay.Prompt
+	if !prompt.SuggestionFocused {
+		t.Fatalf("removed prompt_suggestion esc must not use hardcoded fallback, prompt=%#v", prompt)
+	}
 }
 
 func newPromptPathRuntime(pathService services.PathService, prefix string) *AppRuntime {

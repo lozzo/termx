@@ -141,8 +141,9 @@ const (
 	ActionPromptCancel ActionID = "prompt.cancel"
 	ActionPromptOpen   ActionID = "prompt.open"
 
-	ActionHelpClose ActionID = "help.close"
-	ActionHelpOpen  ActionID = "help.open"
+	ActionHelpClose    ActionID = "help.close"
+	ActionHelpOpen     ActionID = "help.open"
+	ActionShortcutExit ActionID = "shortcut.exit"
 )
 
 func actionID(id ActionID) string {
@@ -347,6 +348,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionPromptOpen, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceInput).withHelp("open prompt"),
 		actionSpec(ActionHelpClose, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp, ActionSurfaceContent).withFooter("enter", "close", StyleStatusAccent).withHelp("close"),
 		actionSpec(ActionHelpOpen, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceInput).withFooter("?", "HELP", StyleStatusAccent).withHelp("open help"),
+		actionSpec(ActionShortcutExit, ActionDispatchNone, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("esc", "BACK", StyleStatusWarning).withHelp("exit current shortcut scene"),
 	}
 }
 

@@ -2,6 +2,7 @@ package render
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/lozzow/termx/termx-tui-v3/shortcut"
@@ -47,6 +48,31 @@ func TestFooterZeroClickPolicyDoesNotCreateHitRegion(t *testing.T) {
 	regions := appendFooterHitRegions(nil, footer, Rect{W: 80, H: 1}, Rect{}, Rect{W: 80, H: 1})
 	if len(regions) != 0 {
 		t.Fatalf("zero click policy must be non-clickable: %#v", regions)
+	}
+}
+
+func TestEmptyFooterDoesNotInventGlobalShortcut(t *testing.T) {
+	footer := FooterVM{Visible: true, Mode: "live"}
+	if segments := footerLeftSegments(footer, 80); len(segments) != 0 {
+		t.Fatalf("empty footer must not invent ctrl-g display or click target: %#v", segments)
+	}
+	if regions := appendFooterHitRegions(nil, footer, Rect{W: 80, H: 1}, Rect{}, Rect{W: 80, H: 1}); len(regions) != 0 {
+		t.Fatalf("empty footer must not invent hit regions: %#v", regions)
+	}
+}
+
+func TestEmptyHelpSceneRemovesCloseContentAction(t *testing.T) {
+	root := state.Root{Config: state.TUIConfigStore{Shortcuts: state.TUIShortcutConfig{Configured: true, Scenes: map[string]state.TUIShortcutSceneConfig{
+		"help": {Bindings: map[string]state.TUIShortcutBindingConfig{}},
+	}}}}
+	content := buildHelpContent(root)
+	for _, line := range content.Lines {
+		if strings.Contains(line.PlainString(), "Close Help") {
+			t.Fatalf("empty help scene must remove close action text: %#v", content.Lines)
+		}
+	}
+	if len(content.HitRegions) != 0 {
+		t.Fatalf("empty help scene must remove close hit region: %#v", content.HitRegions)
 	}
 }
 

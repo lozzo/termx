@@ -78,6 +78,7 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "panel", Key: "up", Action: "panel.focus_prev"},
 	{Scene: "panel", Key: "right", Action: "panel.focus_next"},
 	{Scene: "panel", Key: "down", Action: "panel.focus_next"},
+	{Scene: "panel", Key: "esc", Action: "interaction.exit"},
 
 	{Scene: "resize", Key: "left", Action: "resize.left"},
 	{Scene: "resize", Key: "right", Action: "resize.right"},
@@ -112,6 +113,7 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "resize", Key: "J", Action: "resize.down_large"},
 	{Scene: "resize", Key: "b", Action: "panel.balance"},
 	{Scene: "resize", Key: "=", Action: "panel.balance"},
+	{Scene: "resize", Key: "esc", Action: "interaction.exit"},
 
 	{Scene: "system", Key: "h", Action: "system.toggle_header"},
 	{Scene: "system", Key: "f", Action: "system.toggle_footer"},
@@ -125,6 +127,7 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "system", Key: ":", Action: "system.open_prompt"},
 	{Scene: "system", Key: "?", Action: "system.open_help"},
 	{Scene: "system", Key: "q", Action: "system.quit"},
+	{Scene: "system", Key: "esc", Action: "interaction.exit"},
 
 	{Scene: "floating", Key: "n", Action: "floating.new"},
 	{Scene: "floating", Key: "o", Action: "floating.overview"},
@@ -158,6 +161,7 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "floating", Key: "L", Action: "floating.wide"},
 	{Scene: "floating", Key: "K", Action: "floating.short"},
 	{Scene: "floating", Key: "J", Action: "floating.tall"},
+	{Scene: "floating", Key: "esc", Action: "interaction.exit"},
 
 	{Scene: "tab", Key: "c", Action: "tab.create"},
 	{Scene: "tab", Key: "n", Action: "tab.next"},
@@ -178,6 +182,7 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "tab", Key: "r", Action: "tab.rename"},
 	{Scene: "tab", Key: "x", Action: "tab.close"},
 	{Scene: "tab", Key: "X", Action: "tab.kill"},
+	{Scene: "tab", Key: "esc", Action: "interaction.exit"},
 
 	{Scene: "workspace", Key: "c", Action: "workspace.create"},
 	{Scene: "workspace", Key: "n", Action: "workspace.next"},
@@ -191,6 +196,7 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "workspace", Key: "t", Action: "system.open_workbench_tree"},
 	{Scene: "workspace", Key: "f", Action: "system.open_workbench_tree"},
 	{Scene: "workspace", Key: "s", Action: "system.open_workbench_tree"},
+	{Scene: "workspace", Key: "esc", Action: "interaction.exit"},
 
 	{Scene: "copy", Key: "page-up", Action: "copy.request_older"},
 	{Scene: "copy", Key: "page-down", Action: "copy.request_newer"},
@@ -215,6 +221,7 @@ var builtinShortcutDefaults = []shortcutDefault{
 	{Scene: "copy", Key: "H", Action: "copy.open_clipboard_history"},
 	{Scene: "copy", Key: "p", Action: "copy.paste_latest"},
 	{Scene: "copy", Key: "P", Action: "copy.paste_system"},
+	{Scene: "copy", Key: "esc", Action: "copy.exit"},
 
 	{Scene: "terminal_picker", Key: "enter", Action: "terminal_picker.attach"},
 	{Scene: "terminal_picker", Key: "tab", Action: "terminal_picker.split"},
@@ -263,6 +270,7 @@ var builtinShortcutDefaults = []shortcutDefault{
 
 	{Scene: "prompt", Key: "enter", Action: "prompt.submit"},
 	{Scene: "prompt", Key: "esc", Action: "prompt.cancel"},
+	{Scene: "prompt_suggestion", Key: "esc", Action: "prompt.suggestion_exit"},
 
 	{Scene: "help", Key: "enter", Action: "help.close"},
 	{Scene: "help", Key: "esc", Action: "help.close"},
@@ -665,15 +673,6 @@ func routeKey(event InputEvent, options RouteOptions) Intent {
 		}
 		return Intent{Kind: IntentNone, Event: event, Reason: "forced passthrough without bytes"}
 	}
-	if event.Key == KeyEsc {
-		if options.Mode != InteractionModeNormal {
-			return Intent{Kind: IntentExitInteraction, Event: event}
-		}
-		if options.CopyModeActive {
-			return Intent{Kind: IntentExitCopyMode, Event: event}
-		}
-		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: []byte{'\x1b'}}
-	}
 	catalog := shortcutCatalogForConfig(options.Shortcuts)
 	if options.Mode != InteractionModeNormal {
 		if binding, ok := lookupBinding(options.Mode, event, catalog); ok {
@@ -693,6 +692,9 @@ func routeKey(event InputEvent, options RouteOptions) Intent {
 	}
 	if binding, ok := lookupBinding(InteractionModeNormal, event, catalog); ok {
 		return intentFromBinding(event, binding)
+	}
+	if options.CopyModeActive {
+		return Intent{Kind: IntentNone, Event: event}
 	}
 	if data := terminalBytes(event); len(data) > 0 {
 		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: data}

@@ -41,6 +41,8 @@ func ShortcutActionRenderID(actionID string) (ActionID, bool) {
 		return ActionPromptOpen, true
 	case "menu.help", "system.open_help":
 		return ActionHelpOpen, true
+	case "interaction.exit", "copy.exit":
+		return ActionShortcutExit, true
 	case "system.toggle_header":
 		return ActionFooterToggleHeader, true
 	case "system.toggle_footer":

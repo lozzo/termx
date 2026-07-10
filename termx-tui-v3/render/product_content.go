@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -822,18 +823,30 @@ func buildHelpContent(root state.Root) ContentVM {
 			lines = append(lines, line)
 		}
 	}
-	lines = append(lines, contentActionLine("close", "Close Help"))
-	return ContentVM{
+	content := ContentVM{
 		Kind:   ContentHelp,
 		Lines:  lines,
 		Status: "help: core workflows",
 		Cursor: Cursor{Visible: false},
-		HitRegions: []HitRegion{{
-			Kind:     HitRegionContentAction,
-			Rect:     Rect{Y: len(lines) - 1, W: contentActionWidth, H: 1},
-			ActionID: ActionHelpClose.String(),
-		}},
 	}
+	if shortcutSceneHasAction(root.Config.Shortcuts, "help", "help.close") {
+		content.Lines = append(content.Lines, contentActionLine("close", "Close Help"))
+		content.HitRegions = []HitRegion{{
+			Kind:     HitRegionContentAction,
+			Rect:     Rect{Y: len(content.Lines) - 1, W: contentActionWidth, H: 1},
+			ActionID: ActionHelpClose.String(),
+		}}
+	}
+	return content
+}
+
+func shortcutSceneHasAction(shortcuts state.TUIShortcutConfig, scene string, actionID string) bool {
+	for _, entry := range input.ShortcutEntriesForScene(shortcuts, scene) {
+		if entry.ActionID == actionID {
+			return true
+		}
+	}
+	return false
 }
 
 // Help 只展示当前已接线的 action 或明确存在的键盘入口，避免继续把产品愿景文案画成可用功能。

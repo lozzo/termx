@@ -116,7 +116,7 @@ func TestMeasureLayoutVisibleHeaderFooterReserveChromeSafeOverlayAndFloatingArea
 	if len(plan.Floatings) != 1 || plan.Floatings[0].Rect.Y < plan.Body.Y || plan.Floatings[0].Rect.Y+plan.Floatings[0].Rect.H > plan.Body.Y+plan.Body.H {
 		t.Fatalf("floating should be moved inside chrome-safe body, body=%#v floatings=%#v", plan.Body, plan.Floatings)
 	}
-	if len(plan.HitRegions) < 4 || plan.HitRegions[0].Rect.Y != plan.Header.Y || plan.HitRegions[2].Rect.Y != plan.Footer.Y || plan.HitRegions[3].Kind != HitRegionOverlay {
+	if len(plan.HitRegions) < 3 || plan.HitRegions[0].Rect.Y != plan.Header.Y || plan.HitRegions[1].Rect.Y != plan.Header.Y || plan.HitRegions[2].Kind != HitRegionOverlay {
 		t.Fatalf("visible header/footer hit regions should stay above opaque overlay, got %#v", plan.HitRegions)
 	}
 }

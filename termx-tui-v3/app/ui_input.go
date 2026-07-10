@@ -1024,6 +1024,13 @@ func reducePromptShortcut(root state.Root, entry input.ShortcutEntry) (state.Roo
 }
 
 func reducePromptSuggestionInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
+	if entry, ok := input.ShortcutEntryForEvent(root.Config.Shortcuts, "prompt_suggestion", event); ok {
+		if entry.ActionID == "prompt.suggestion_exit" {
+			root.Shell = refreshPromptCompletions(root, root.Shell.SetPromptSuggestionFocused(false))
+			return root.Advance(), []Effect{handledEffect{}}
+		}
+		return root, []Effect{handledEffect{}}
+	}
 	triggerCompletion := false
 	focusCompletion := false
 	switch event.Key {
@@ -1052,8 +1059,6 @@ func reducePromptSuggestionInput(root state.Root, event input.InputEvent) (state
 		root.Shell = root.Shell.MovePromptSuggestionSelection(1)
 	case input.KeyShiftTab:
 		root.Shell = root.Shell.MovePromptSuggestionSelection(-1)
-	case input.KeyEsc:
-		root.Shell = refreshPromptCompletions(root, root.Shell.SetPromptSuggestionFocused(false))
 	case input.KeyBackspace:
 		root.Shell = refreshPromptCompletions(root, root.Shell.SetPromptSuggestionFocused(false).DeletePromptBackward())
 		triggerCompletion = true
@@ -1071,7 +1076,7 @@ func reducePromptSuggestionInput(root state.Root, event input.InputEvent) (state
 			triggerCompletion = true
 		}
 	default:
-		root.Shell = root.Shell.SetPromptSuggestionFocused(false)
+		return root, []Effect{handledEffect{}}
 	}
 	if triggerCompletion {
 		return root.Advance(), promptCompletionHandledEffects(root, focusCompletion)

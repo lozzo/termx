@@ -94,10 +94,6 @@ func footerLeftSegments(footer FooterVM, width int) []barSegment {
 		actions = footerActionTokensVisibleForWidth(actions, mode, width)
 		left = appendFooterActionSegments(left, actions, available, footerKeyTemplateForFooter(footer), footer.ActionTemplate, footer.ActionSeparator)
 	}
-	if len(left) == 0 {
-		left = appendFooterKeySegments(left, "^G", StyleFooterKeyGlobal, ActionFooterGlobalMode.String())
-		left = append(left, barText(" GLOBAL", StyleFooterMuted, 1).withAction(ActionFooterGlobalMode.String()))
-	}
 	return left
 }
 

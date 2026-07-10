@@ -53,7 +53,7 @@ func shortcutContentActionID(invocation shortcut.ActionInvocation) (render.Actio
 
 func shortcutIntentOwnedByCopy(intent input.Intent) bool {
 	switch intent.Kind {
-	case input.IntentEnterCopyMode, input.IntentRequestOlder, input.IntentRequestNewer,
+	case input.IntentEnterCopyMode, input.IntentRequestOlder, input.IntentRequestNewer, input.IntentExitCopyMode,
 		input.IntentOpenClipboardHistory, input.IntentPasteLastCopy, input.IntentPasteClipboard,
 		input.IntentCopyCommand:
 		return true
@@ -76,6 +76,10 @@ func shortcutIntentForInvocation(invocation shortcut.ActionInvocation, event inp
 		intent.Kind = input.IntentOpenTerminalPicker
 	case "copy.enter":
 		intent.Kind = input.IntentEnterCopyMode
+	case "interaction.exit":
+		intent.Kind = input.IntentExitInteraction
+	case "copy.exit":
+		intent.Kind = input.IntentExitCopyMode
 	case "copy.request_older":
 		intent.Kind = input.IntentRequestOlder
 	case "copy.request_newer":

@@ -2413,6 +2413,12 @@ func TestInteractiveRuntimeResizeModeFooterActions(t *testing.T) {
 		state.Root{
 			Shell:   shell,
 			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+			Config: state.TUIConfigStore{Shortcuts: state.TUIShortcutConfig{Configured: true, Scenes: map[string]state.TUIShortcutSceneConfig{
+				"resize": {Bindings: map[string]state.TUIShortcutBindingConfig{
+					"=":   {Action: "panel.balance"},
+					"esc": {Action: "interaction.exit"},
+				}},
+			}}},
 		},
 		host,
 		NewSyncEffectRunner(),
@@ -2895,6 +2901,13 @@ func TestAppRuntimeDispatchesFooterActionHitRegions(t *testing.T) {
 		t.Fatalf("drain tree esc: %v", err)
 	}
 
+	globalHost.SetSize(240, 20)
+	if err := globalRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post wide global footer render: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain wide global footer render: %v", err)
+	}
 	quitAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterQuit.String(), "")
 	if err := globalHost.SendInput(mouseEventAt(quitAction.Rect)); err != nil {
 		t.Fatalf("send footer quit click: %v", err)

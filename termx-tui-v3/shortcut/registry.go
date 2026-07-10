@@ -111,6 +111,9 @@ func buildSpecs() map[string]ActionSpec {
 	}
 	add(ActionSpec{ID: "terminal_picker.open", Aliases: []string{"picker.open"}, AllowedScenes: routedScenes(), Display: displayAction, Routable: true})
 	add(ActionSpec{ID: "copy.enter", AllowedScenes: []string{"global"}, Display: displayAction, Routable: true})
+	add(ActionSpec{ID: "interaction.exit", AllowedScenes: []string{"panel", "resize", "system", "floating", "tab", "workspace"}, Display: displayAction, Routable: true})
+	add(ActionSpec{ID: "copy.exit", AllowedScenes: []string{"copy"}, Display: displayAction, Routable: true})
+	add(ActionSpec{ID: "prompt.suggestion_exit", AllowedScenes: []string{"prompt_suggestion"}, Display: displayHelpHint, Routable: false})
 	addFixed := func(scene string, routable bool, ids ...string) {
 		for _, id := range ids {
 			add(ActionSpec{ID: id, AllowedScenes: []string{scene}, Display: displayAction, Routable: routable})
