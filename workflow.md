@@ -83,6 +83,15 @@
 | KS002 | 完成 | shortcuts config schema/parser/validation | 新增 `TUIShortcutConfig`；支持 action label、场景短写/长写；删除旧 `tui.keymap` 配置字段、默认值、parser、validation、示例和测试，不保留 deprecated/fallback |
 | KS003 | 完成 | 内置 action registry 与输入路由接入 | 默认 shortcuts 生成当前实际行为；自定义 shortcuts 是唯一输入真值；旧硬编码只能作为默认 catalog 来源，不保留第二套 route fallback |
 | KS004 | 完成 | footer/help/overlay 提示同源接入与旧提示清理 | footer、help、overlay/menu 提示全部从 shortcut catalog 生成；用户删除 shortcut 后提示消失；修复当前提示与真实按键不一致问题 |
+| KS005 | 进行中 | 统一 action invocation、domain spec 与 dispatcher contract | 先补 registry/invocation 完备性 harness；底层 shortcut domain spec 统一 action id、参数 schema、allowed scenes、默认文案和展示策略；input 保留 invocation，app dispatcher 只拥有执行 handler |
+| KS006 | 待开始 | 键盘与点击统一 action 执行链路 | 先补键盘/点击 invocation 等价 harness；footer/content 点击与键盘派发同一 invocation；方向、focus、`tab.jump.N`、`floating.summon.N` 不丢语义或参数，歧义聚合提示只允许 hint-only |
+| KS007 | 待开始 | 删除快捷键硬编码 fallback 并补齐提示 | 先补显式空 catalog 无 fallback harness；sticky/copy Esc、空 footer `Ctrl-G`、Help close、Prompt suggestion 回到 catalog；每个 action 在 domain spec 明确 footer/help/click 策略 |
+| KS008 | 待开始 | shortcut key、scene、action 和参数校验收敛 | 先补 canonical key、scene-action 和参数矩阵；config 基于 KS005 domain spec 校验 routed/overlay scene，拒绝等价冲突、理论不可表达 token、错误 scene-action 组合及越界参数 |
+| KS009 | 待开始 | action 文案覆盖与 catalog 替换语义 | 先补默认、action-only、scene-only、显式空 scene 和 actions+scenes 矩阵；action-only 只覆盖默认文案，出现 scene 后用户 scene catalog 是完整按键真值 |
+| KS010 | 待开始 | 组合 action 与 terminal lifecycle 执行语义 | 先补成功、失败、TerminalRef 路由 harness；只实现 `panel.kill` / `panel.kill_and_close` handler、步骤和关闭时机，不再调整 registry 基础结构或开放脚本系统 |
+| KS011 | 待开始 | 增强键盘协议与 Ctrl+数字 | 先补 raw bytes 到 invocation harness；配置期验证协议理论支持，启动期检测 TerminalHost capability，运行期投影 available 状态；不支持时保持 `Ctrl-T` 后按数字路径 |
+| KS012 | 待开始 | 快捷键跨切片总契约守卫 | 汇总默认 catalog 完备性、键盘/点击等价、空 catalog、overlay、组合 action 和 capability 回归守卫，不在本切片首次补关键 harness |
+| KS013 | 待开始 | 快捷键文档与示例收尾 | 更新现状统计、配置示例、支持键位和限制；删除错误可用性声明，确保可加载示例不会意外禁用未展示的必要入口 |
 | ME012 | 待开始 | hub/P2P transport dialer 与跨设备发现 | 接入 `termx-hub/` 发现/授权/relay；P2P 或 relay datachannel 只连接远端 termx daemon；局部失败不影响其他 endpoint |
 
 ## 执行规则
@@ -129,3 +138,4 @@
 - KS002 已完成：`tui.shortcuts` config schema/parser/validation 已落地，支持 action label、场景短写/长写和内置 scene 校验；旧 `tui.keymap` 配置入口、默认值、parser、validation、示例和测试已删除，本切片未接入运行时输入路由。
 - KS003 已完成：已建立内置 action registry 与 shortcut catalog 输入路由；默认 catalog 覆盖现有硬编码行为，自定义 `tui.shortcuts` 是唯一输入真值，显式空 `tui.shortcuts` 不回退默认，未知 action 和 runtime key 冲突在配置期拒绝。KS004 接提示/overlay 同源前需要统一 overlay `menu.*` registry。
 - KS004 已完成：footer、help 和 overlay/menu 提示统一从 shortcut catalog 生成，旧 `tui.footer.actions` / `footer.modes.*.actions` 配置入口和 `FooterVM.Actions` 字符串 fallback 已删除；overlay Esc close 等主要动作通过 catalog 映射，用户显式删除 shortcut 后不再展示也不再触发对应动作。
+- KS005 进行中：review 发现 action id/参数在 input 到 render/app 链路中过早丢失，造成方向动作、参数化动作、组合动作和点击语义分裂；本切片先建立底层 shortcut domain spec、保留原始 action id/参数的 invocation 和 app dispatcher contract，避免 config/render 反向依赖 app 或复制 registry。
