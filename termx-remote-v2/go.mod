@@ -5,7 +5,10 @@ go 1.26.0
 toolchain go1.26.1
 
 require (
+	github.com/lozzow/termx/internal v0.0.0
 	github.com/lozzow/termx/termx-core-v2 v0.0.0
+	github.com/lozzow/termx/termx-hub v0.0.0
+	github.com/lozzow/termx/termx-proto v0.0.0
 	github.com/lozzow/termx/termx-shared v0.0.0
 	github.com/pion/webrtc/v4 v4.2.9
 )
@@ -23,8 +26,6 @@ require (
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
-	github.com/lozzow/termx/internal v0.0.0 // indirect
-	github.com/lozzow/termx/termx-proto v0.0.0 // indirect
 	github.com/lozzow/termx/termx-vterm v0.0.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
@@ -53,10 +54,14 @@ require (
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/time v0.10.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240318140521-94a12d6c2237 // indirect
+	google.golang.org/grpc v1.64.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
 replace github.com/lozzow/termx/termx-core-v2 => ../termx-core-v2
+
+replace github.com/lozzow/termx/termx-hub => ../termx-hub
 
 replace github.com/lozzow/termx/termx-shared => ../termx-shared
 
