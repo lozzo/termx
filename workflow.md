@@ -1,14 +1,20 @@
-# 工作流：项目代码整理与多 endpoint / 多 transport 管理主线
+# 工作流：远程平台产品与架构重构主线
 
 ## 当前目标
 
-- 当前分支进入项目代码整理收敛阶段，先对齐活动范围、代理说明、工程入口和 frozen legacy 边界，再继续 TUI/client 侧多 endpoint 与多 transport 管理落地。
-- 详细技术规划以 `termx-tui-v3/docs/multi-endpoint-transport-plan.md` 为准。
+- 当前分支转入远程平台文档先行重构：先冻结产品版本、商业边界、公开/私有源码边界、领域归属、安全协议和迁移顺序，再开始任何 runtime 改造。
+- `docs/remote-platform/` 是当前远程平台产品与技术设计的唯一活动基线；ME012 已实现代码只作为原型和迁移输入，不再反向定义新架构。
+- TUI/client 侧已经完成的多 endpoint / 多 transport 模型继续有效，详细技术背景以 `termx-tui-v3/docs/multi-endpoint-transport-plan.md` 为准。
 - 插件系统已经拆到独立分支，本分支不继续新增插件系统代码、协议或文档。
 - 旧 screen app 无限历史清场与重建记录不再保留在本活动文件中；需要追溯时查看 git 历史和对应文档。
 
 ## 基准文档
 
+- `docs/remote-platform/README.md`：当前远程平台文档索引、有效性和冻结决策。
+- `docs/remote-platform/product-prd.md`：产品、版本、商业模式和收费边界基准。
+- `docs/remote-platform/architecture-spec.md`：公开客户端/daemon 与私有 control plane/Hub/Relay 架构基准。
+- `docs/remote-platform/security-protocol-spec.md`：设备身份、终端授权、云服务准入和 Relay 租约安全基准。
+- `docs/remote-platform/source-boundary-and-migration-plan.md`：公开/私有仓库分拆、旧资产保留和实施切片基准。
 - `termx-tui-v3/docs/multi-endpoint-transport-plan.md`：当前多 endpoint / 多 transport 技术规划。
 - `termx-tui-v3/docs/architecture.md`：TUI v3 架构基准。
 - `termx-core-v2/docs/architecture.md`：core-v2 架构基准。
@@ -18,14 +24,15 @@
 
 - `workflow.md`
 - `AGENTS.md`
+- `docs/remote-platform/`
 - `termx-tui-v3/`
 - `termx-cli/`
 - `termx-shared/`
 - `internal/protocol/`
 - `termx-proto/`
 - `termx-core-v2/`，仅当 endpoint 能力、terminal 生命周期或 history contract 需要时最小化触及。
-- `termx-remote-v2/`，仅限 ME012+ 新 hub/P2P daemon/client transport、设备身份和 capability grant runtime；不得搬回旧 remote UI、session token 或 localweb 产品面。
-- `termx-hub/`，仅限 ME010+ hub/P2P 身份、安全、中继、发现和 transport contract 需要时触及；不得把 remote/mobile/web 产品面当作 TUI/core fallback。
+- `termx-remote-v2/`，仅在 RP002、RP003、RP006 对应公开 contract、端到端授权和客户端接入切片触及；不承载私有云服务实现。
+- `termx-hub/`，仅在 RP005、RP007 私有服务迁移和公开仓库清场切片触及；现有代码作为待迁移的私有 Hub/Relay 历史实现资产保留，不再作为公开 client contract 的 owner。
 - `scripts/`、`Makefile`、`go.work`、`go.work.sum`，仅当测试或入口联动需要时最小化触及。
 
 ## 保留但非当前主线主动改造范围
@@ -35,7 +42,7 @@
 - `remote-ui/`
 - `web-control/`
 
-以上目录是远程管理、移动端、共享 UI 和 Web 管理面产品资产，必须保留。它们不属于当前 TUI/core 整理切片的主动修改范围；不得把它们作为本地 TUI/core fallback 重新接回，也不得因为当前主线暂不活跃而按“无效包”删除。`termx-hub/` 当前已为 ME010+ hub/P2P 主线受限解冻，但只能承载 hub/P2P 身份、安全、中继、发现和 transport contract。
+以上目录是远程管理、移动端、共享 UI 和 Web 管理面历史产品资产，必须保留但不得作为新架构 fallback。`termx-app/` 与客户端 UI 后续只在 RP006 按公开 client contract 重构；`web-control/` 与 `termx-hub/` 的服务端实现目标为私有仓库，当前目录在迁移完成前只作为可追溯参考，不再承载公开产品契约。runtime 目录只能按任务队列对应 RP 切片解冻。
 
 ## 硬语义规则
 
@@ -43,6 +50,7 @@
 - ME009 起，用户可见 terminal 名称是 first-party 新建 terminal 的默认 canonical key；协议字段仍暂名为 `TerminalID`，但 create 必须优先发送 terminal name，并在单 endpoint 内拒绝重名。
 - 后续 identity 收敛切片才能重命名协议字段或删除旧 ID 兼容；当前不得把随机 ID 继续用于 first-party 新建 terminal 的 history/layout/storage key。
 - Endpoint 表达“当前客户端要连接的 daemon 目标”；Transport 表达“到达该 endpoint 的方式”，例如 local unix socket、SSH、hub/P2P。
+- WebRTC 表达一种到达 endpoint 的 transport；一次 WebRTC session 实际走 direct candidate 还是 managed Relay 是连接路径结果，不得建模成两种 endpoint 或两种终端协议。
 - daemon 侧“有哪些客户端连接到我”与 TUI/client 侧“我连接了哪些 daemon endpoint”是两个不同管理器，不得混成一个模型。
 - connection registry 是 CLI/TUI 共享的 endpoint 注册表，默认文件为 `$XDG_CONFIG_HOME/termx/connections.yaml` 或 `~/.config/termx/connections.yaml`；不得塞进 TUI-only 的 `tui-v3.yaml`。
 - TUI 不拥有 terminal lifecycle、committed history 或 history truth；history/live/input/resize 必须路由到 owning endpoint 的 daemon。
@@ -53,10 +61,15 @@
 - 现有 `internal/protocol` 仍以单 daemon 会话为边界；多 endpoint 路由应在 client/TUI 侧 manager 完成，不要求单个 protocol client 同时承载多个 daemon。
 - SSH 第一阶段只作为连接远端 termx daemon 的 transport；不得悄悄 fallback 成原始 shell/PTY。
 - hub/P2P endpoint 的展示名、endpoint id、hub URL、hub device id、device fingerprint、grant ref 和 relay 策略必须分离；`device_fingerprint` 才是远端设备安全身份，`hub_device_id` 只用于发现/路由，label 只用于 UI。
-- hub/P2P 配对保持 remote -> client 单向引导：remote 生成 capability grant，客户端扫码或导入后保存到本地凭据存储；remote 不要求客户端公钥回传或写入 allowlist。
+- hub/P2P 配对保持 daemon -> client 单向引导：daemon 生成 capability grant，客户端扫码或导入后保存到本地凭据存储；grant 只能在 WebRTC DTLS DataChannel 建立后的端到端握手中提交给 daemon，禁止进入 Hub/Web Controller 的 HTTP、gRPC、SDP、日志或持久化。
 - hub/P2P relay 只能承载受限 protocol/datachannel，不能成为 terminal lifecycle、history、workbench storage 或设备信任 truth。
 - hub/P2P 连接失败、授权失效、设备撤销或 relay 不可用时，只影响对应 endpoint，不得 fallback 到 local、SSH、旧 remote app 或原始 shell。
 - `connections.yaml` 不保存 hub 原始 token、capability grant 或私钥；`grant_ref` 只能引用本地凭据存储、系统 keychain 或后续明确的 hub grant store。
+- `AccountAccessToken`、`DeviceIdentity`、`CapabilityGrant`、`HubAdmissionTicket` 和 `RelayLease` 是五种不同凭据；不得复用字段、token 或验证责任。
+- Hub/Relay 可以离线验证 control plane 签发的短期服务准入票据和 Relay 租约，但不得授予、扩大、撤销或解释 terminal capability；terminal 授权只属于 owning daemon。
+- 免费本地连接、免费 SSH 和公开的多 endpoint 管理不得依赖 Web Controller、Hub、订阅或云账号。商业收费只建立在托管发现、托管 Relay、云同步、团队治理和运维 SLA 等持续服务成本上。
+- 订阅失效只能拒绝新的付费 Relay/团队能力或按策略结束对应租约，不得踢掉 daemon 的免费本地/SSH 能力，也不得把 direct P2P 的 terminal capability 变成云端授权。
+- `termx-hub/` 与 `web-control/` 的服务实现不进入公开源码发布；公开仓库必须保留足够的 wire contract、client SDK interface、错误语义和 fake harness，使 TUI、App 与 daemon 可独立开发和验证。
 
 ## 任务队列
 
@@ -97,10 +110,17 @@
 | CX001 | 完成 | endpoint 连接中与断线 pane UI 收敛 | 复用 reducer-owned `AttachPending` 和 endpoint runtime status；重连请求立即显示连接中，断线保留最后画面并结构化展示 endpoint、transport、原因和局部操作；不新增自动重试或 transport fallback |
 | CX002 | 完成 | pane 未连接、重连中与异常断开统一状态面板 | 三态使用一致的信息层级与操作布局；只展示 reducer 已知状态，不伪造连接进度；异常断开按错误类别给出可执行提示并保留最后画面 |
 | ME012A | 完成 | hub/P2P protocol transport primitive 与 scope harness | 新 DataChannel transport 只承载 termx protocol frame；daemon 必须按 capability scope 接入 core-v2，不依赖冻结 `termx-remote` runtime |
-| ME012B | 完成 | remote-issued capability grant 与设备身份 | 定义 grant scope/expiry/revoke、凭据解析和 device fingerprint proof；Hub 不参与认证，旧 session token 不作为 fallback |
+| ME012B | 完成 | remote-issued capability grant 与设备身份 | 定义 grant scope/expiry/revoke、凭据解析和 device fingerprint proof；Hub 不参与 terminal capability 授权，旧 session token 不作为 fallback |
 | ME012C1 | 完成 | daemon 授权 DataChannel session acceptor | 已协商 DataChannel 只有在 grant/fingerprint/expiry/revoke 校验成功后才能进入 core-v2 scoped transport |
-| ME012C2 | 完成 | daemon hub agent 与 offer/answer | 注册/发现/offer-answer/NAT traversal/relay 建立 DataChannel；Hub 不验权，失败不创建 protocol session |
+| ME012C2 | 完成 | daemon hub agent 与 offer/answer | 注册/发现/offer-answer/NAT traversal/relay 建立 DataChannel；原型 Hub 不验证 terminal capability，失败不创建 protocol session |
 | ME012D | 完成 | TUI/CLI hub endpoint dialer | 注册 `hub-p2p` dialer，建立 protocol client bundle；失败只影响 owning endpoint，不 fallback 到 local/SSH/旧 remote |
+| RP001 | 完成 | 远程平台产品、架构、安全与源码边界文档基线 | 完成 PRD、架构 spec、安全协议 spec、公开/私有仓库分拆与旧资产迁移计划；冻结实现门禁，文档之间术语和责任一致 |
+| RP002 | 待开始 | 公开 remote contract 与私有服务边界抽取 | 公开仓库只保留 endpoint/transport、信令 wire contract、client interface 与 fake harness；Hub/Web Controller runtime 不再被 client 直接 import |
+| RP003 | 待开始 | DataChannel 端到端设备证明与 capability handshake | Hub/Control Plane 全链路看不到 capability grant；daemon 在 DTLS DataChannel 内完成设备证明、challenge 和 scope 映射后才接 core-v2 |
+| RP004 | 待开始 | 私有 control plane 服务票据与 Relay entitlement | 账号、设备目录、Hub admission、Relay lease、套餐 entitlement 和 usage event 形成独立领域；订阅不参与 terminal authorization |
+| RP005 | 待开始 | 私有 Hub/Relay 重建与旧实现迁移 | Hub 只做 presence/rendezvous/signaling，Relay 按短租约和会话计量；旧 session token、terminal inventory 和 bearer grant 信令全部删除 |
+| RP006 | 待开始 | TUI 与 App 统一远程 endpoint contract | TUI/App 共用 endpoint、配对、凭据和错误模型；平台只各自实现 WebRTC primitive，不复制业务协议 |
+| RP007 | 待开始 | 私有仓库分拆与公开仓库清场 | 保留 git 历史和归档 tag 后迁出 Hub/Web Controller 服务实现；公开构建、测试和文档不依赖私有源码 |
 | KS012 | 待开始 | 快捷键跨切片总契约守卫 | 汇总默认 catalog 完备性、键盘/点击等价、空 catalog、overlay、组合 action 和 capability 回归守卫，不在本切片首次补关键 harness |
 | KS013 | 待开始 | 快捷键文档与示例收尾 | 更新现状统计、配置示例、支持键位和限制；删除错误可用性声明，确保可加载示例不会意外禁用未展示的必要入口 |
 
@@ -127,6 +147,8 @@
 
 ## 当前状态
 
+- RP001 已完成：远程平台 PRD、架构 spec、安全协议 spec 与源码边界/迁移计划已建立；Hub/Web Controller 服务端目标为私有仓库，公开仓库保留 client/daemon contract 与 fake harness，旧实现保留私有可追溯 archive；本切片未修改 runtime。
+- ME012A-D 保留为已验证的技术原型，不再作为目标安全架构：当前 opaque grant 经 Hub 信令、Hub agent token、terminal inventory 注册和订阅 kick 等行为必须在 RP002-RP005 中按新 contract 删除，不保留兼容 fallback。
 - ME001 已完成：工作流已收敛为多 endpoint / 多 transport 主线，详细规划落到 `termx-tui-v3/docs/multi-endpoint-transport-plan.md`。
 - ME002 已完成：TUI state 已有 `EndpointID` / `TerminalRef` 基础模型，默认 `local` endpoint 保持现有本地行为，同名 terminal 可在不同 endpoint 下共存。
 - ME003 已完成：`termx-shared/connection` 提供独立 `connections.yaml` registry loader，缺省返回稳定 `local` endpoint，并定义 label 热更新与 dial identity 变更需要 reconnect 的基础判断。
@@ -139,7 +161,7 @@
 - ME010 已完成：`connections.yaml` 可表达 hub/P2P endpoint，hub URL、`hub_device_id` 与 relay 策略分离；label 只影响展示，hub 发现目标/relay 变化触发 reconnect；无真实 hub dialer 时 EndpointManager 只返回该 endpoint 的未连接错误，不 fallback。
 - ME011 已完成：按用户确认的单向配对模型收敛 hub 安全 contract，remote 生成 capability grant 给客户端；`hub_device_id` 只做发现/路由，`device_fingerprint` 作为远端设备安全身份，`grant_ref` 指向本地保存的 grant，真实 `termx-hub/` transport dialer 和跨设备发现进入 ME012。
 - ME012A 已完成：ME012 已拆为 transport primitive、grant/identity、daemon agent 和 client dialer 四个连续切片；`termx-shared/transport/datachannel` 以可靠有序消息抽象承载完整 termx protocol frame，明确背压、关闭和复制语义，不依赖 Pion 或冻结 `termx-remote`；core-v2 harness 证明 DataChannel session 必须经 `ServeScopedTransport` 接入，跨 capability terminal 的请求在 protocol method 入口被拒绝。
-- ME012B 已完成：`termx-shared/remoteauth` 新增 daemon-local Ed25519 设备身份、稳定 `device_fingerprint`、remote-issued capability grant、受限 terminal/machine-events scope、expiry/signature/fingerprint/revoke 校验、客户端 `grant_ref` 文件凭据存储和 daemon 持久化撤销 store；Hub 不持有私钥、不做授权判断，旧 session token 不能被解析为 grant，配置文件仍只保存 `grant_ref`。
+- ME012B 已完成：`termx-shared/remoteauth` 新增 daemon-local Ed25519 设备身份、稳定 `device_fingerprint`、remote-issued capability grant、受限 terminal/machine-events scope、expiry/signature/fingerprint/revoke 校验、客户端 `grant_ref` 文件凭据存储和 daemon 持久化撤销 store；Hub 不持有 daemon 私钥、不做 terminal capability 授权判断，旧 session token 不能被解析为 grant，配置文件仍只保存 `grant_ref`。
 - ME012C1 已完成：`termx-remote-v2/` 按新模型解冻为 hub/P2P daemon/client transport owner；Pion adapter 只实现共享 DataChannel primitive，`daemon.SessionAcceptor` 使用 daemon-owned fingerprint 校验 grant 的签名、expiry 和 revoke 后才映射 core-v2 `TransportScope`。core-v2 scope 已改为显式 `AllowDaemon`/single-terminal/machine-events 三选一，零值 scope 拒绝，避免远程装配遗漏字段时意外获得 daemon 全权。
 - ME012C2 已完成：`termx-hub/client` 以公开 gRPC agent stream 封装 Hub internal wire，remote-v2 只看到 opaque `CapabilityGrant`；daemon agent 注册、heartbeat、offer/answer 和 kick 均按单 Hub session 驱动，offer 授权失败只回该 session error。Pion answerer 先验 grant，再协商可靠有序 `termx-protocol` DataChannel；真实 WebRTC harness 已通过 protocol Hello/List 到 core-v2。CLI daemon 仅在 `TERMX_HUB_URL`、`TERMX_REMOTE_DEVICE_ID`、`TERMX_HUB_AGENT_TOKEN` 显式配置时启动 agent，默认本地 daemon 不变，远程 agent 后续运行失败只记录错误、不停止本地 listener。Hub/remote-v2 全量与 CLI remote/daemon 定向准入通过；CLI 全量仍有本切片前已存在的两个快捷键视觉基线失败（旧 `[Ctrl+E] RENAME` 标记和 footer 顺序/`PgUp` 差异），未在 remote 切片修改 UI。
 - ME012D 已完成：`termx-remote-v2/client` 在访问 Hub 前先校验 grant 签名/fingerprint/expiry 和 `hub_device_id`，使用 Hub session HTTP 做 opaque grant 信令、按 `relay_mode` 约束 ICE/TURN，再建立可靠有序 `termx-protocol` DataChannel；真实 fake-Hub + Pion + daemon answerer + core-v2 harness 已通过 Hello/List。CLI `EndpointManager` 已注册 `hub-p2p` dialer，从 `$XDG_STATE_HOME/termx/remote-v2/credentials`（或默认 state dir）按 `grant_ref` 解析 secret，并复用现有 terminal/core/live/path protocol adapters；凭据缺失和 dial 失败只返回 owning endpoint 错误，不调用 local/SSH。remote-v2 与 tui-v3 全量通过，CLI remote/daemon/dialer 定向通过；CLI 全量仍只有已记录的两项快捷键视觉基线失败。

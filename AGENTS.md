@@ -4,8 +4,9 @@
 
 - 仓库根目录 `workflow.md` 是当前分支唯一有效的活动驱动文件。
 - 本仓库内所有工作必须先读取 `workflow.md`，并以它作为范围、任务顺序、测试准入和提交规则的唯一基准。
-- 当前主线是 master 项目代码整理与 TUI/client 侧多 endpoint / 多 transport 管理；旧 screen app 无限历史清场与重建只作为历史记录追溯。
+- 当前主线是远程平台产品与架构重构；先完成 PRD、架构、安全协议和源码分拆文档门禁，再进入 runtime 实现。已完成的 TUI/client 多 endpoint / 多 transport 模型继续作为公开客户端基座。
 - 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
+- `docs/remote-platform/` 是当前远程平台产品、架构、安全和迁移基准。
 - `termx-tui-v3/docs/multi-endpoint-transport-plan.md` 是当前多 endpoint / 多 transport 技术规划。
 - `termx-core-v2/docs/architecture.md` 是 core-v2 技术设计基准。
 - `termx-tui-v3/docs/architecture.md` 是 tui-v3 技术设计基准。
@@ -40,8 +41,8 @@
 - 当前默认本地 CLI 入口必须走 `termx-core-v2/` 与 `termx-tui-v3/`；不得重新引入 `termx legacy ...`、旧 daemon、旧 TUI 或 remote legacy/fallback。
 - `termx-cli/cmd/termx/legacy_*.go` 不得重新出现；旧本地入口已经删除。
 - `termx-cli/cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
-- `termx-remote/`、`termx-remote-v2/`、`termx-app/`、`remote-ui/`、`web-control/` 是保留的远程管理、移动端、共享 UI 和 Web 管理面产品资产；当前 TUI/core 整理不得把它们当 fallback 或默认依赖，也不得按“无效包”删除。
-- `termx-hub/` 是受限联动目录，只能在 ME010+ hub/P2P 身份、安全、中继、发现和 transport contract 需要时最小化触及；不得牵连旧 remote UI/app 路径。
+- `termx-remote/`、`termx-remote-v2/`、`termx-app/`、`remote-ui/`、`web-control/` 是保留的远程产品资产；runtime 只能按 `workflow.md` 中 RP002-RP007 对应切片解冻，不得作为 fallback 或按“无效包”删除。
+- `termx-hub/` 与 `web-control/` 的服务端实现目标为私有仓库；当前目录只作为待迁移历史资产。公开仓库后续只保留 wire contract、client interface 和 fake harness，不得让私有实现反向成为公开客户端依赖。
 - `termx-vterm/` 是受限联动目录，只能在 terminal semantic transaction 接口、事件或 harness 需要时最小化触及。
 - `internal/protocol/` 与 `termx-proto/` 是受限联动目录，只能在 endpoint routing、history window/copy 或 semantic history contract 需要跨进程时最小化触及。
 - 如果确实必须恢复旧目录或解冻目录，先修改 `workflow.md` 的范围表并说明原因；默认不允许恢复。
@@ -68,6 +69,8 @@
 - Endpoint 表达“当前客户端要连接的 daemon 目标”，Transport 表达“到达该 endpoint 的方式”；daemon 侧客户端连接管理与 TUI/client 侧 endpoint 管理不得混成一个模型。
 - TUI 不拥有 terminal lifecycle、committed history 或 history truth；history/live/input/resize 必须路由到 owning endpoint 的 daemon。
 - 远程产品目录只能按 `workflow.md` 明确切片重新设计；不得通过 fallback、桥接或旧入口把 remote app/web-control 路径重新引回当前 TUI/core 主线。
+- Hub/Relay 可以验证云服务准入和 Relay 租约，但不能看到或判断 terminal capability；capability grant 只能在端到端加密 DataChannel 内由 owning daemon 验证。
+- 免费 local、SSH、多 endpoint 和 terminal protocol 不得依赖私有服务、账号订阅或 Relay；收费边界只建立在托管云服务能力上。
 - R419 后，history ingest truth 的基本单位是 core-v2 authoritative physical row/cell，不是 append-only logical line、visual row、wrapped row、snapshot scrollback、grid viewport、xterm buffer row 或 DOM/canvas row。
 - core-v2 `ScreenHistoryBuffer` 是 main/alt screen、physical rows、cells、cursor、scroll region、RowID、Version 和 seal-once 的 domain owner；logical line 只是 query/copy/history 阶段的 projection。
 - physical row store、sealed row index、logical projection、segment cursor、storage backend、cache、adapter、TUI/App projection 不能演变成第二份历史 truth。
