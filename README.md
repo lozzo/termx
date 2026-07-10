@@ -33,6 +33,90 @@
 - hub/P2P 的身份、安全、中继策略和 registry contract 已收敛；真实 dialer 和跨设备发现属于后续切片。
 - TUI 本地同步输入组正在实现，用于向一组 terminal 多播普通键盘输入和 paste。
 
+## 快捷键配置与 Ctrl+数字
+
+TUI 快捷键配置文件优先使用：
+
+```text
+$XDG_CONFIG_HOME/termx/tui-v3.yaml
+```
+
+未设置 `XDG_CONFIG_HOME` 时，默认路径是 `~/.config/termx/tui-v3.yaml`。
+
+`tui.shortcuts` 是按键执行、footer 提示和 Help 展示的共同来源。同一个 action 可以绑定多个按键；每个 binding 可以通过 `show` 单独控制是否进入 footer。
+
+下面只是 `workspace` scene 片段，必须合并到已有的完整 shortcut catalog，不能把它作为唯一的 `tui.shortcuts` 配置：
+
+```yaml
+tui:
+  shortcuts:
+    workspace:
+      "t":
+        action: system.open_workbench_tree
+        show: true
+      "f":
+        action: system.open_workbench_tree
+        show: false
+      "s":
+        action: system.open_workbench_tree
+        show: false
+```
+
+上面的 `t`、`f`、`s` 都可以打开 Workbench Tree，但 footer 只展示 `[t] TREE`。`show: false` 不会删除按键，也不会把它从 Help 的完整快捷键目录中移除。
+
+连续数字 binding 可以在配置加载阶段展开。下面同样只是需要合并到现有完整 catalog 的 `global` 和 `tab` 片段；现有其他 scene 必须继续保留：
+
+```yaml
+tui:
+  shortcuts:
+    global:
+      "ctrl-t": menu.tab
+      "ctrl+[1...9]":
+        action: tab.jump.{key}
+        label: TAB
+        show: false
+
+    tab:
+      "[1...9]":
+        action: tab.jump.{key}
+        label: JUMP
+        show: true
+```
+
+这两组配置分别提供：
+
+```text
+Ctrl+1 ... Ctrl+9  -> 全局直接切换到对应 Tab
+Ctrl+T，再按 1-9   -> 进入 Tab 场景后切换到对应 Tab
+```
+
+`[1...9]` 只在配置加载时展开；运行时仍然处理具体的 `1` 到 `9`。`{key}` 会替换成当前数字，例如 `Ctrl+3` 生成 `tab.jump.3`。
+
+### 增强键盘协议
+
+传统 TTY 输入无法可靠区分 `Ctrl+1` 和普通数字。`termx-tui-v3` 启动时会启用 Kitty keyboard protocol 的 disambiguate 模式，并查询宿主 terminal emulator 是否确认支持。只有 capability 确认后，`Ctrl+数字` 才会进入 footer/Help 的可用快捷键提示；实际执行以 TerminalHost 是否收到可解析的 CSI-u 输入为准。
+
+在 iTerm2 中，对应 Profile 必须允许应用改变按键报告方式。若 iTerm2 禁止应用切换 keyboard reporting mode，或者当前 terminal emulator 不支持 Kitty keyboard protocol，`Ctrl+1...9` 不会产生可区分的输入事件。
+
+此时仍可使用稳定 fallback：
+
+```text
+Ctrl+T，然后按 1-9
+```
+
+修改增强键盘相关配置或 iTerm2 Profile 设置后，需要彻底退出并重新启动 `termx`，因为协议启用和 capability 查询发生在 TerminalHost 启动阶段。
+
+如果 `Ctrl+数字` 没有反应，可用输入诊断启动：
+
+```bash
+TERMX_TUI_DIAG=1 \
+TERMX_TUI_INPUT_TRACE=1 \
+TERMX_LOG_FILE=/tmp/termx.log \
+termx
+```
+
+更完整的 action、scene、范围表达式和展示规则见 [`termx-tui-v3/docs/shortcut-system-plan.md`](termx-tui-v3/docs/shortcut-system-plan.md)。
+
 ## 适合的使用场景
 
 `termx` 主要面向高强度 terminal 用户：
