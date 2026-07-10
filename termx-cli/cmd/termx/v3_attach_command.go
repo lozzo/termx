@@ -11,8 +11,10 @@ import (
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-proto/wire"
+	remotev2client "github.com/lozzow/termx/termx-remote-v2/client"
 	"github.com/lozzow/termx/termx-shared/connection"
 	"github.com/lozzow/termx/termx-shared/perftrace"
+	"github.com/lozzow/termx/termx-shared/remoteauth"
 	sshtransport "github.com/lozzow/termx/termx-shared/transport/ssh"
 	"github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/services"
@@ -190,7 +192,8 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 		endpointCtx = context.Background()
 	}
 	endpointManager := services.NewEndpointManagerWithDialers(normalizeV3ConnectionRegistry(opts.ConnectionRegistry), map[connection.TransportKind]services.EndpointDialer{
-		connection.TransportSSH: v3SSHEndpointDialer(endpointCtx),
+		connection.TransportSSH:    v3SSHEndpointDialer(endpointCtx),
+		connection.TransportHubP2P: v3HubEndpointDialer(endpointCtx, remoteauth.NewCredentialStore(resolveStateFilePath("remote-v2/credentials"))),
 	}, services.EndpointServiceBundle{
 		EndpointID: state.DefaultEndpointID,
 		Terminal:   terminalAdapter,
@@ -223,6 +226,37 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID), Logger: logger, SkipInitialLoad: opts.SkipWorkbenchInitialLoad},
 		app.ClipboardDeps{Storage: clipboardStorage, Ref: state.DefaultClipboardStorageRef(state.DefaultWorkspaceID), Logger: logger},
 	)
+}
+
+func v3HubEndpointDialer(endpointCtx context.Context, credentials *remoteauth.CredentialStore) services.EndpointDialer {
+	if endpointCtx == nil {
+		endpointCtx = context.Background()
+	}
+	return func(ctx context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
+		grant, err := credentials.Resolve(cfg.GrantRef)
+		if err != nil {
+			return services.EndpointServiceBundle{}, fmt.Errorf("hub endpoint %q resolve grant_ref %q: %w", cfg.ID, cfg.GrantRef, err)
+		}
+		transport, err := remotev2client.Dial(endpointCtx, remotev2client.DialOptions{
+			HubURL: cfg.HubURL, HubDeviceID: cfg.HubDeviceID, DeviceFingerprint: cfg.DeviceFingerprint,
+			CapabilityGrant: grant, RelayMode: remotev2client.RelayMode(cfg.RelayMode),
+		})
+		if err != nil {
+			return services.EndpointServiceBundle{}, fmt.Errorf("hub endpoint %q dial: %w", cfg.ID, err)
+		}
+		client := protocol.NewClient(transport)
+		if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "termx-cli-v3:hub:" + string(cfg.ID)}); err != nil {
+			_ = client.Close()
+			return services.EndpointServiceBundle{}, fmt.Errorf("hub endpoint %q hello: %w", cfg.ID, err)
+		}
+		terminal := services.ProtocolTerminalServiceAdapter{Client: client}
+		core := services.ProtocolCoreClientAdapter{Client: client}
+		path := services.ProtocolPathServiceAdapter{Client: client}
+		return services.EndpointServiceBundle{
+			EndpointID: state.EndpointID(cfg.ID), Terminal: terminal, Core: core, Surface: terminal, LiveEvents: terminal, Path: path,
+			Lifecycle: services.EndpointLifecycle{Done: client.Done(), Err: client.Err},
+		}, nil
+	}
 }
 
 func v3SSHEndpointDialer(endpointCtx context.Context) services.EndpointDialer {
