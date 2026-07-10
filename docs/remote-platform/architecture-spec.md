@@ -25,6 +25,8 @@
 
 ## 2. 总体拓扑
 
+可渲染的完整网络图和 direct/Relay 时序见 `network-topology.md`。下图保留最小文本拓扑，便于纯终端阅读。
+
 ```text
                            private managed services
                     +--------------------------------+

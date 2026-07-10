@@ -13,6 +13,7 @@
 - `docs/remote-platform/README.md`：当前远程平台文档索引、有效性和冻结决策。
 - `docs/remote-platform/product-prd.md`：产品、版本、商业模式和收费边界基准。
 - `docs/remote-platform/architecture-spec.md`：公开客户端/daemon 与私有 control plane/Hub/Relay 架构基准。
+- `docs/remote-platform/network-topology.md`：local/SSH/WebRTC 全景、direct/Relay 网络拓扑和连接时序图。
 - `docs/remote-platform/security-protocol-spec.md`：设备身份、终端授权、云服务准入和 Relay 租约安全基准。
 - `docs/remote-platform/source-boundary-and-migration-plan.md`：公开/私有仓库分拆、旧资产保留和实施切片基准。
 - `termx-tui-v3/docs/multi-endpoint-transport-plan.md`：当前多 endpoint / 多 transport 技术规划。
@@ -115,6 +116,7 @@
 | ME012C2 | 完成 | daemon hub agent 与 offer/answer | 注册/发现/offer-answer/NAT traversal/relay 建立 DataChannel；原型 Hub 不验证 terminal capability，失败不创建 protocol session |
 | ME012D | 完成 | TUI/CLI hub endpoint dialer | 注册 `hub-p2p` dialer，建立 protocol client bundle；失败只影响 owning endpoint，不 fallback 到 local/SSH/旧 remote |
 | RP001 | 完成 | 远程平台产品、架构、安全与源码边界文档基线 | 完成 PRD、架构 spec、安全协议 spec、公开/私有仓库分拆与旧资产迁移计划；冻结实现门禁，文档之间术语和责任一致 |
+| RP001A | 完成 | 远程平台网络拓扑与连接时序图 | Mermaid 图覆盖 local/SSH 云旁路、managed WebRTC direct、Relay fallback、凭据可见性和 E2E capability 握手 |
 | RP002 | 待开始 | 公开 remote contract 与私有服务边界抽取 | 公开仓库只保留 endpoint/transport、信令 wire contract、client interface 与 fake harness；Hub/Web Controller runtime 不再被 client 直接 import |
 | RP003 | 待开始 | DataChannel 端到端设备证明与 capability handshake | Hub/Control Plane 全链路看不到 capability grant；daemon 在 DTLS DataChannel 内完成设备证明、challenge 和 scope 映射后才接 core-v2 |
 | RP004 | 待开始 | 私有 control plane 服务票据与 Relay entitlement | 账号、设备目录、Hub admission、Relay lease、套餐 entitlement 和 usage event 形成独立领域；订阅不参与 terminal authorization |
@@ -147,6 +149,7 @@
 
 ## 当前状态
 
+- RP001A 已完成：新增五张可直接在 Markdown/GitHub 渲染的 Mermaid 图，覆盖全部 transport、managed WebRTC 网络、direct 时序、Relay fallback 和五类凭据边界；图形已使用 Mermaid CLI 实际渲染验证，本切片未修改 runtime。
 - RP001 已完成：远程平台 PRD、架构 spec、安全协议 spec 与源码边界/迁移计划已建立；Hub/Web Controller 服务端目标为私有仓库，公开仓库保留 client/daemon contract 与 fake harness，旧实现保留私有可追溯 archive；本切片未修改 runtime。
 - ME012A-D 保留为已验证的技术原型，不再作为目标安全架构：当前 opaque grant 经 Hub 信令、Hub agent token、terminal inventory 注册和订阅 kick 等行为必须在 RP002-RP005 中按新 contract 删除，不保留兼容 fallback。
 - ME001 已完成：工作流已收敛为多 endpoint / 多 transport 主线，详细规划落到 `termx-tui-v3/docs/multi-endpoint-transport-plan.md`。

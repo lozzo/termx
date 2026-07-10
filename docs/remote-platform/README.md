@@ -16,8 +16,9 @@
 
 1. `product-prd.md`：回答为谁解决什么问题、哪些能力免费、哪些持续服务收费。
 2. `architecture-spec.md`：回答公开客户端、daemon、私有 Control Plane、Hub 和 Relay 各自拥有什么状态。
-3. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
-4. `source-boundary-and-migration-plan.md`：回答哪些代码公开、哪些代码私有、旧资产如何保留并按什么顺序迁移。
+3. `network-topology.md`：用网络拓扑和时序图解释 local、SSH、direct WebRTC、Relay fallback 与端到端授权链路。
+4. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
+5. `source-boundary-and-migration-plan.md`：回答哪些代码公开、哪些代码私有、旧资产如何保留并按什么顺序迁移。
 
 若四份文档发生冲突，按以下顺序处理：
 
