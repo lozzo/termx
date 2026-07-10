@@ -1,6 +1,6 @@
 # TermX Remote Platform 安全与协议规范
 
-状态：RP004 已实现基线
+状态：RP005 已实现基线
 
 版本：v1 draft
 

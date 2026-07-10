@@ -4,10 +4,11 @@ use (
 	./internal
 	./private/termx-cloud/companion
 	./private/termx-cloud/control-plane
+	./private/termx-cloud/hub
+	./private/termx-cloud/relay
 	./private/termx-cloud/web-controller
 	./termx-cli
 	./termx-core-v2
-	./termx-hub
 	./termx-proto
 	./termx-remote
 	./termx-remote-v2

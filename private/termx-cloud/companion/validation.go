@@ -23,7 +23,7 @@ func sanitizePresenceEvent(event *cloudpb.PresenceEvent, managedSessionID, targe
 			return nil, err
 		}
 	case *cloudpb.PresenceEvent_Offer:
-		if payload.Offer == nil || payload.Offer.GetSignalingSessionId() == "" || payload.Offer.GetManagedSessionId() != managedSessionID || payload.Offer.GetSourceDeviceId() == "" || payload.Offer.GetTargetDeviceId() != targetDeviceID || payload.Offer.GetSdp() == "" {
+		if payload.Offer == nil || payload.Offer.GetSignalingSessionId() == "" || payload.Offer.GetManagedSessionId() == "" || payload.Offer.GetSourceDeviceId() == "" || payload.Offer.GetTargetDeviceId() != targetDeviceID || payload.Offer.GetSdp() == "" {
 			return nil, protocolError("Hub returned an invalid signaling offer")
 		}
 		if err := validateCandidates(payload.Offer.GetCandidates()); err != nil {

@@ -177,7 +177,7 @@ termx-tui-v3 / future GUI / future mobile entry
 - `termx-vterm/`：终端语义解释来源，把 PTY bytes 解释成 terminal 语义事件或 transaction。
 - `termx-shared/`：共享 connection registry、transport 等基础包。
 - `internal/protocol/`、`termx-proto/`：daemon/client wire contract 与协议类型。
-- `termx-hub/`：hub/P2P 身份、发现、中继和受限 transport 方向。
+- `private/termx-cloud/hub/`、`private/termx-cloud/relay/`：闭源 managed presence/signaling 与短租约 TURN 数据面；旧实现位于私有 archive。
 - `termx-remote/`：远程管理 runtime、agent/bridge/session 等远程产品能力。
 - `remote-ui/`：远程管理与移动端共享的 Web UI 组件和浏览器端运行时。
 - `termx-app/`：移动端 App 壳与原生桥接。

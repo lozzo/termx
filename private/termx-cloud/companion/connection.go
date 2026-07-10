@@ -28,7 +28,7 @@ type Connection struct {
 	nextStreamID uint64
 	streams      map[uint64]ownedStream
 	presenceOpen bool
-	offers       map[string]struct{}
+	offers       map[string]string
 }
 
 // Hello 协商 protocol v1、caller role 和 capability 交集。
@@ -228,10 +228,20 @@ func (connection *Connection) CompleteSignalingOffer(ctx context.Context, reques
 	if err := validateCompleteOfferRequest(request); err != nil {
 		return nil, err
 	}
-	if !connection.ownsOffer(request.GetSignalingSessionId()) {
+	managedSessionID, ownsOffer := connection.ownedOffer(request.GetSignalingSessionId())
+	if !ownsOffer {
 		return nil, protocolError("signaling offer does not belong to this daemon connection")
 	}
-	response, err := connection.service.hub.CompleteSignalingOffer(ctx, authorization, cloneMessage(request))
+	request = cloneMessage(request)
+	admission, err := connection.service.controlPlane.AcquireDaemonAnswerAdmission(ctx, authorization, managedSessionID, request)
+	if err != nil {
+		return nil, sanitizeAdapterError(err)
+	}
+	defer admission.Destroy()
+	if err := validateAdmission(admission, managedSessionID, connection.service.now()); err != nil {
+		return nil, err
+	}
+	response, err := connection.service.hub.CompleteSignalingOffer(ctx, authorization, admission, request)
 	if err != nil {
 		return nil, sanitizeAdapterError(err)
 	}
@@ -433,19 +443,19 @@ func (connection *Connection) endPresence() {
 	connection.mu.Unlock()
 }
 
-func (connection *Connection) trackOffer(signalingSessionID string) {
+func (connection *Connection) trackOffer(signalingSessionID, managedSessionID string) {
 	connection.mu.Lock()
 	if connection.presenceOpen && !connection.closed {
-		connection.offers[signalingSessionID] = struct{}{}
+		connection.offers[signalingSessionID] = managedSessionID
 	}
 	connection.mu.Unlock()
 }
 
-func (connection *Connection) ownsOffer(signalingSessionID string) bool {
+func (connection *Connection) ownedOffer(signalingSessionID string) (string, bool) {
 	connection.mu.Lock()
 	defer connection.mu.Unlock()
-	_, ok := connection.offers[signalingSessionID]
-	return ok
+	managedSessionID, ok := connection.offers[signalingSessionID]
+	return managedSessionID, ok
 }
 
 func (connection *Connection) completeOffer(signalingSessionID string) {

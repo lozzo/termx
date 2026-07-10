@@ -54,6 +54,7 @@ type fakeControlPlane struct {
 	resolveErr        error
 	presenceAdmission cloudservice.HubAdmission
 	clientAdmission   cloudservice.HubAdmission
+	daemonAdmission   cloudservice.HubAdmission
 	leaseResponse     *cloudpb.RelayLease
 	qualityCount      int
 	outcomeCount      int
@@ -78,6 +79,11 @@ func (controlPlane *fakeControlPlane) AcquirePresenceAdmission(_ context.Context
 func (controlPlane *fakeControlPlane) AcquireClientAdmission(_ context.Context, authorization session.Authorization, _ *cloudpb.CreateSignalingSessionRequest) (cloudservice.HubAdmission, error) {
 	controlPlane.capture(authorization)
 	return controlPlane.clientAdmission, nil
+}
+
+func (controlPlane *fakeControlPlane) AcquireDaemonAnswerAdmission(_ context.Context, authorization session.Authorization, _ string, _ *cloudpb.CompleteSignalingOfferRequest) (cloudservice.HubAdmission, error) {
+	controlPlane.capture(authorization)
+	return controlPlane.daemonAdmission, nil
 }
 
 func (controlPlane *fakeControlPlane) AcquireRelayLease(_ context.Context, authorization session.Authorization, _ *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
@@ -116,7 +122,7 @@ func (hub *fakeHub) CreateSignalingSession(_ context.Context, _ session.Authoriz
 	return hub.signaling, nil
 }
 
-func (hub *fakeHub) CompleteSignalingOffer(_ context.Context, _ session.Authorization, _ *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
+func (hub *fakeHub) CompleteSignalingOffer(_ context.Context, _ session.Authorization, _ cloudservice.HubAdmission, _ *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
 	hub.mu.Lock()
 	hub.completed++
 	hub.mu.Unlock()
@@ -336,7 +342,7 @@ func TestPresenceStreamRejectsCrossSessionOrWrongTargetOffer(t *testing.T) {
 		t.Fatal(err)
 	}
 	hub.presence.items <- &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
-		SignalingSessionId: "signal-1", ManagedSessionId: "presence-1", SourceDeviceId: "client-1", TargetDeviceId: "another-daemon", Sdp: "offer",
+		SignalingSessionId: "signal-1", ManagedSessionId: "managed-1", SourceDeviceId: "client-1", TargetDeviceId: "another-daemon", Sdp: "offer",
 	}}}
 	if _, err := stream.Receive(); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {
 		t.Fatalf("wrong-target presence offer error = %v", err)
@@ -359,7 +365,7 @@ func TestDaemonCanCompleteOnlyOfferConsumedFromOwnPresence(t *testing.T) {
 		t.Fatalf("unseen offer completion error = %v", err)
 	}
 	hub.presence.items <- &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
-		SignalingSessionId: "signal-1", ManagedSessionId: "presence-1", SourceDeviceId: "client-1", TargetDeviceId: "daemon-1", Sdp: "offer",
+		SignalingSessionId: "signal-1", ManagedSessionId: "managed-1", SourceDeviceId: "client-1", TargetDeviceId: "daemon-1", Sdp: "offer",
 	}}}
 	if _, err := stream.Receive(); err != nil {
 		t.Fatal(err)
@@ -444,11 +450,13 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 		t.Fatal(err)
 	}
 	clientAdmission, _ := cloudservice.NewHubAdmission("admission-client", "hub-1", "managed-1", now.Add(time.Minute), []byte("client-ticket"), now)
+	daemonAdmission, _ := cloudservice.NewHubAdmission("admission-answer", "hub-1", "managed-1", now.Add(time.Minute), []byte("answer-ticket"), now)
 	presenceAdmission, _ := cloudservice.NewHubAdmission("admission-daemon", "hub-1", "presence-1", now.Add(time.Minute), []byte("daemon-ticket"), now)
 	controlPlane := &fakeControlPlane{
 		resolveResponse:   &cloudpb.ResolvedEndpoint{EndpointId: "cloud-prod", TargetDeviceId: "daemon-1", Presence: cloudpb.PresenceState_PRESENCE_STATE_ONLINE, HubId: "hub-1", HubUrl: "https://hub.example.test", ManagedSessionId: "managed-1"},
 		presenceAdmission: presenceAdmission,
 		clientAdmission:   clientAdmission,
+		daemonAdmission:   daemonAdmission,
 		leaseResponse: &cloudpb.RelayLease{LeaseId: "lease-1", SignedLease: []byte("signed-lease"), ExpiresAtUnix: uint64(now.Add(5 * time.Minute).Unix()), PathKind: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
 			IceServers: []*cloudpb.IceServer{{Urls: []string{"turn:relay.example.test"}, Username: "user", Credential: "credential"}}},
 	}

@@ -4,13 +4,13 @@
 
 生效日期：2026-07-11
 
-基线切片：RP001、RP001A、RP001B、RP001C（完成）
+基线切片：RP001-RP005（含 RP001A-C、RP004A，完成）
 
 ## 1. 文档目的
 
 本目录定义 TermX 远程平台重构后的产品、架构、安全和源码分发边界。任何新的 Hub、Relay、Web Controller、TUI 远程连接或 App 远程连接实现，都必须先满足本目录约束。
 
-当前仓库中的 `termx-hub/`、`web-control/`、`termx-remote/`、`termx-remote-v2/`、`termx-app/` 和 `remote-ui/` 含有可复用资产，但它们是迁移输入，不是新设计的真值来源。旧代码不得以兼容、fallback 或“先继续沿用”的方式反向约束新模型。
+当前仓库中的 `web-control/`、`termx-remote/`、`termx-remote-v2/`、`termx-app/` 和 `remote-ui/` 含有可复用资产，但它们是迁移输入，不是新设计的真值来源。旧 `termx-hub/` 已迁入 `private/archive/termx-platform-legacy/termx-hub/`；新实现只位于 `private/termx-cloud/hub/` 与 `private/termx-cloud/relay/`。旧代码不得以兼容、fallback 或“先继续沿用”的方式反向约束新模型。
 
 ## 2. 文档顺序
 

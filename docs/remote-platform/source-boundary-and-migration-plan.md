@@ -1,6 +1,6 @@
 # TermX Remote Platform 源码边界与迁移计划
 
-状态：RP001 活动基线
+状态：RP005 Hub/Relay 迁移基线
 
 版本：v1 draft
 
@@ -120,8 +120,8 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 | `termx-shared/remoteauth/` | grant 概念可用，交付链路需重做 | DeviceIdentity、fingerprint、scope、revoke | public namespace 演进为 E2E auth owner |
 | `termx-shared/transport/datachannel/` | primitive 基本可用 | reliable ordered packet transport | public namespace 保留 |
 | `termx-remote-v2/` | grant 经 Hub signaling；pending answer 不完整 | Pion adapter、dial/answer harness、core scoped session 接线 | public namespace 重写 orchestration；旧版本进 private archive |
-| `termx-hub/client/` | client 与 server module/内部 wire 耦合 | stream/signaling API 经验 | contract 抽到 public namespace；实现迁 `private/` |
-| `termx-hub/internal/hub/` | 非空 Bearer 即通过、长期 agent token、terminal inventory | TTL presence、offer/answer correlation、ICE/traffic 思路 | `private/` Hub/Relay 按新模型重建；旧代码进 archive |
+| `private/archive/termx-platform-legacy/termx-hub/client/` | client 与 server module/内部 wire 耦合 | stream/signaling API 经验 | contract 已抽到 public namespace；旧 client 只留 archive |
+| `private/archive/termx-platform-legacy/termx-hub/internal/hub/` | 非空 Bearer 即通过、长期 agent token、terminal inventory | TTL presence、offer/answer correlation、ICE/traffic 思路 | `private/termx-cloud/hub/` 与 `relay/` 已按新模型重建；旧代码只留 archive |
 | `web-control/` | agent/server 限额、heartbeat kick、订阅直接控制在线状态 | 用户、订单、支付、管理 UI 和运维经验 | `private/` Control Plane 重建；旧 schema 进 archive |
 | `termx-app/` | Android `HubConnector` 维护独立 session token/WebRTC 流程 | 原生 WebRTC、Keystore、前后台生命周期 | public App 保留，业务流改接共同 contract |
 | `remote-ui/` | machine/session-token contract 已归档 | 产品交互、配对和 Relay 策略历史 | 设计资产进 private archive；不作为 runtime fallback |

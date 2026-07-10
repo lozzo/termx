@@ -79,7 +79,7 @@ func NewService(config Config, sessions *session.Manager, controlPlane cloudserv
 // NewConnection 创建一个 caller-scoped public contract implementation。
 // 新连接在成功 Hello 前只能调用 Hello；关闭该连接只取消它拥有的 streams。
 func (service *Service) NewConnection() *Connection {
-	return &Connection{service: service, capabilities: make(map[cloudpb.CompanionCapability]struct{}), streams: make(map[uint64]ownedStream), offers: make(map[string]struct{})}
+	return &Connection{service: service, capabilities: make(map[cloudpb.CompanionCapability]struct{}), streams: make(map[uint64]ownedStream), offers: make(map[string]string)}
 }
 
 func knownCapability(capability cloudpb.CompanionCapability) bool {

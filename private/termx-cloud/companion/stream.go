@@ -116,10 +116,10 @@ func (stream *boundedStream[T]) finish(err error) {
 
 type presenceStream struct {
 	stream     *boundedStream[*cloudpb.PresenceEvent]
-	trackOffer func(string)
+	trackOffer func(string, string)
 }
 
-func newPresenceStream(ctx context.Context, source cloudservice.PresenceSource, managedSessionID, targetDeviceID string, capacity int, register func(ownedStream) func(), trackOffer func(string), onFinish func()) *presenceStream {
+func newPresenceStream(ctx context.Context, source cloudservice.PresenceSource, managedSessionID, targetDeviceID string, capacity int, register func(ownedStream) func(), trackOffer func(string, string), onFinish func()) *presenceStream {
 	owner := &presenceStream{trackOffer: trackOffer}
 	receive := func(ctx context.Context) (*cloudpb.PresenceEvent, error) {
 		event, err := source.Receive(ctx)
@@ -140,7 +140,7 @@ func newPresenceStream(ctx context.Context, source cloudservice.PresenceSource, 
 func (stream *presenceStream) Receive() (*cloudpb.PresenceEvent, error) {
 	event, err := stream.stream.receive()
 	if err == nil && event.GetOffer() != nil {
-		stream.trackOffer(event.GetOffer().GetSignalingSessionId())
+		stream.trackOffer(event.GetOffer().GetSignalingSessionId(), event.GetOffer().GetManagedSessionId())
 	}
 	return event, err
 }

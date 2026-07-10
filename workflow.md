@@ -35,7 +35,7 @@
 - `termx-proto/`
 - `termx-core-v2/`，仅当 endpoint 能力、terminal 生命周期或 history contract 需要时最小化触及。
 - `termx-remote-v2/`，仅在 RP002、RP003、RP006 对应公开 contract、端到端授权和客户端接入切片触及；不承载私有云服务实现。
-- `termx-hub/`，仅在 RP005、RP007 私有服务迁移和开源快照准备切片触及；现有代码作为待迁移的私有 Hub/Relay 历史实现资产保留，不再作为公开 client contract 的 owner。
+- `private/termx-cloud/hub/` 与 `private/termx-cloud/relay/` 是 RP005+ 私有服务实现；旧 `termx-hub/` 已迁入 `private/archive/termx-platform-legacy/termx-hub/`，archive 不进入 workspace、依赖图或 runtime fallback。
 - `private/`，当前私有 monorepo 的目标闭源命名空间；只在 RP004+ 对应 companion/control-plane/Hub/Relay/route-planner、归档和 public export 切片触及，public package 不得反向依赖。
 - `scripts/`、`Makefile`、`go.work`、`go.work.sum`，仅当测试或入口联动需要时最小化触及。
 
@@ -46,7 +46,7 @@
 - `remote-ui/`
 - `web-control/`
 
-以上目录是远程管理、移动端、共享 UI 和 Web 管理面历史产品资产，必须保留但不得作为新架构 fallback。`termx-app/` 与客户端 UI 后续只在 RP006 按公开 client contract 重构；`web-control/` 与 `termx-hub/` 的服务端实现目标迁入当前私有 monorepo 的 `private/` 命名空间，当前目录在迁移完成前只作为可追溯参考，不再承载公开产品契约。runtime 目录只能按任务队列对应 RP 切片解冻。
+以上目录是远程管理、移动端、共享 UI 和 Web 管理面历史产品资产，必须保留但不得作为新架构 fallback。`termx-app/` 与客户端 UI 后续只在 RP006 按公开 client contract 重构；`web-control/` 服务端实现目标迁入当前私有 monorepo 的 `private/` 命名空间，当前目录在迁移完成前只作为可追溯参考，不再承载公开产品契约。旧 Hub 已归档，runtime 目录只能按任务队列对应 RP 切片解冻。
 
 ## 硬语义规则
 
@@ -76,7 +76,7 @@
 - Hub/Relay 可以离线验证 control plane 签发的短期服务准入票据和 Relay 租约，但不得授予、扩大、撤销或解释 terminal capability；terminal 授权只属于 owning daemon。
 - 免费本地连接、免费 SSH 和公开的多 endpoint 管理不得依赖 Web Controller、Hub、订阅或云账号。商业收费只建立在托管发现、托管 Relay、云同步、团队治理和运维 SLA 等持续服务成本上。
 - 订阅失效只能拒绝新的付费 Relay/团队能力或按策略结束对应租约，不得踢掉 daemon 的免费本地/SSH 能力，也不得把 direct P2P 的 terminal capability 变成云端授权。
-- `termx-hub/` 与 `web-control/` 的服务实现不进入公开源码发布；public namespace 必须保留足够的 wire contract、client SDK interface、错误语义和 fake harness，使 TUI、App 与 daemon 可独立开发和验证。
+- `private/termx-cloud/hub/`、`private/termx-cloud/relay/` 与 `web-control/` 的服务实现不进入公开源码发布；public namespace 必须保留足够的 wire contract、client SDK interface、错误语义和 fake harness，使 TUI、App 与 daemon 可独立开发和验证。
 - 官方 cloud 用户侧闭源能力只能通过专用的 out-of-process Cloud Companion 或移动端私有构建模块提供；当前分支不得恢复通用插件系统、进程内动态库注入或任意第三方代码加载。
 - 公开 `termx` 进程拥有 WebRTC、DTLS DataChannel、DeviceIdentity、CapabilityGrant 和 termx protocol；Cloud Companion 只拥有账号 session、官方云 API、signaling、RelayLease、网络质量 summary 和 route plan，禁止接收 grant 或 terminal payload。
 - Cloud Companion 缺失、崩溃、版本不兼容或未登录只影响 managed cloud endpoint；local、SSH、公开 daemon 和其他 endpoint 必须保持可用。
@@ -135,7 +135,7 @@
 | RP003 | 完成 | DataChannel 端到端设备证明与 capability handshake | Hub/Control Plane 全链路看不到 capability grant；daemon 在 DTLS DataChannel 内完成设备证明、challenge 和 scope 映射后才接 core-v2 |
 | RP004 | 完成 | `private/` control plane 服务票据与 Relay entitlement | 账号、设备目录、Hub admission、Relay lease、套餐 entitlement 和 usage event 形成独立领域；订阅不参与 terminal authorization |
 | RP004A | 完成 | 私有桌面 Cloud Companion | 在 `private/termx-cloud/companion` 实现账号 session、Control Plane/Hub adapter、signaling、RelayLease、质量上报和 route plan；不接触 grant/DataChannel |
-| RP005 | 待开始 | 私有 Hub/Relay 重建与旧实现迁移 | Hub 只做 presence/rendezvous/signaling，Relay 按短租约和会话计量；旧 session token、terminal inventory 和 bearer grant 信令全部删除 |
+| RP005 | 完成 | 私有 Hub/Relay 重建与旧实现迁移 | Hub 只做 presence/rendezvous/signaling，Relay 按短租约和会话计量；旧 session token、terminal inventory 和 bearer grant 信令全部删除 |
 | RP006 | 待开始 | TUI 与 App 统一远程 endpoint contract | TUI/App 共用 endpoint、配对、凭据和错误模型；平台只各自实现 WebRTC primitive，不复制业务协议 |
 | RP006A | 待开始 | Cloud Companion 签名安装与官方构建集成 | CLI install/login/enroll/status/update/uninstall、原子更新、版本协商、桌面服务激活和移动端官方私有模块构建完整通过 |
 | LIC001 | 待开始 | 公开许可证与闭源分发审查 | 根许可证、第三方 notice、贡献协议、sidecar IPC 边界和企业私有交付完成正式发布前审查 |
@@ -170,6 +170,7 @@
 
 ## 当前状态
 
+- RP005 已完成：新增独立 module `private/termx-cloud/hub` 与 `private/termx-cloud/relay`。Hub 只离线验证 Control Plane Ed25519 admission，按 ticket replay、Hub/principal/account/device/managed-session/operation binding 接纳 TTL presence 和 signaling；presence 不含 terminal inventory，client/daemon 分别使用 session-specific offer/answer admission，双向 candidate 显式携带 signaling session ID，queue、global/per-client capacity、TTL、cancel 和 async answer 全部 fail closed。Relay 只在 signed RelayLease 的 pool/region/route/credential binding 验证后派生 client/daemon 不同的短期 TURN credential；Pion TURN AuthHandler 无 lease/错 realm/并发超限即拒绝，allocation meter 执行 session 总字节和每秒 bitrate 上限，只生成 Ed25519 签名 UsageEvent。single-relay 只按 client allocation 计量一次，mesh edge 只允许本 edge principal，避免同一 session 字节重复结算。真实 Pion harness 同时验证 host direct 与强制 TURN relay 都能承载同一 opaque DataChannel，Relay API 只能观察字节/usage。Companion answer 路径改为按实际消费 offer 的 managed session 再取 daemon answer admission，presence ticket 不复用。旧顶层 `termx-hub/` 已原样迁入 `private/archive/termx-platform-legacy/termx-hub/` 并移出 `go.work`；旧 Bearer/session token、agent token、terminal inventory、heartbeat kick、24h credential 和共享 TURN secret 不再处于活动构建或 runtime 路径。Hub/Relay/Companion 全量、重复、race、vet，Control Plane usage settlement、legacy boundary、public dependency guard 和 `git diff --check` 通过。
 - RP004A 已完成：新增独立 Go module `private/termx-cloud/companion`，`Connection` 实现公开 `cloudcompanion.Client` contract，并以每连接 Hello、caller role、capability intersection 和独立 stream registry 作为 IPC domain 状态。账号登录与 daemon enrollment 使用同 profile 下独立 `account/device` OS credential slots；运行时必须注入 Keychain/Keystore/Credential Manager adapter，不提供明文文件、环境变量或内存 fallback，Authorization/Session 使用后主动清理且 String 全部脱敏。Control Plane/Hub adapters 只接收账号/device cloud authorization、公开 DeviceProof、SDP/ICE、短期 admission/RelayLease、quality summary 和 route outcome；不 import WebRTC、remoteauth、DataChannel、core/protocol 或 terminal owner。presence/signaling stream 有界、可取消、背压 fail closed，connection close 不跨 caller 停止 daemon presence；daemon 只能完成本连接实际消费的 offer。Hub URL 强制 HTTPS，TURN credential、managed session、target、route shape 和 cloud error enum 均严格校验；SmartRoute/Global Accelerator 必须先协商 capability。公开 v1 daemon presence candidate 因 DTO 不含 signaling session binding 而明确 fail closed，禁止按最近 offer 猜测；初始 offer/answer candidates 与 client-scoped trickle stream保持可用。companion 全量、race、vet、20 次重复，public cloudpb/cloudcompanion contract 与 RP003 恶意 companion E2E harness 均通过。
 - RP004 已完成：新增独立 Go module `private/termx-cloud/control-plane` 与 `private/termx-cloud/web-controller`，按 Account/User/Organization、DeviceRegistration/Ownership、Entitlement/QuotaPolicy、ManagedSession/HubAssignment、HubAdmission/SigningKey、RelayLease/UsageLedger、PairingApproval/AuditEvent 建立私有领域。Control Plane 以 managed session 真值推导 Hub/principal ticket，以当前 entitlement 重新校验新签和 refresh 后签发短期 Relay lease；订阅失效只拒绝新付费租约，不存在 heartbeat kick、grant revoke 或 terminal authorization 路径。服务凭据 v1 固定 Ed25519 与 `TXHA1`/`TXRL1`/`TXUE1` domain separator，支持 key rotation overlap、紧急撤销、canonical vector、类型混淆拒绝和脱敏 String。usage ledger 按 `(relay_id, lease_id, sequence)` 幂等，拒绝冲突/回退/越界，允许受限延迟补报，并按 managed session/route 窗口最大值归并 Relay Mesh hop，避免重复计费。私有模块全量、race、vet、public/private 依赖守卫和 `git diff --check` 通过。
 - RP003 已完成：`termx-proto/remoteauthpb` 固化 `TXRA + deterministic protobuf` versioned envelope、DeviceHello signing input、CapabilityOpen proof input、稳定 rejection code 和 raw-grant-only-in-CapabilityOpen 描述符守卫；`termx-shared/remoteauth` 实现 Ed25519 DeviceIdentity、实际 DTLS certificate binding、HMAC-SHA-256 challenge、clock window、nonce/session replay 防护、expiry/revocation/scope 校验、脱敏 rejection、协议切换与跨平台固定向量。grant claims 已直接收敛为 version/issuer/not-before/revocation-id/nonce 新模型并拒绝旧 signed claims。`termx-remote-v2` client/daemon 从 Pion 实际 DTLSTransport 读取本端/对端证书指纹，只有 CapabilityAccepted 后才把同一 transport 交给 termx protocol/core-v2；真实 WebRTC harness 覆盖 Hello/List、impostor companion routing 拒绝和 single-terminal scope 越权拒绝。修复了 DataChannel open 后晚注册 `OnMessage` 导致 DeviceHello 偶发丢失及 OnClose handler 覆盖的生命周期根因。`termx-proto`、`termx-shared`、`termx-remote-v2` 全量与 CLI 依赖守卫通过；remote-v2 全量连续 20 次、remoteauth 与 Pion client/webrtc race 准入通过。

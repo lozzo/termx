@@ -1,68 +1,22 @@
 package remote_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestWF003HubProductImplementationOwnedByTermxRemote(t *testing.T) {
+func TestRP005TopLevelHubWasReplacedByPrivateServices(t *testing.T) {
+	if _, err := os.Stat(filepath.Join("..", "termx-hub")); !os.IsNotExist(err) {
+		t.Fatalf("legacy top-level termx-hub still exists: %v", err)
+	}
 	for _, dir := range []string{
-		"hub/cloud",
-		"hub/httpapi",
-		"hub/ice",
-		"hub/registry",
+		filepath.Join("..", "private", "termx-cloud", "hub"),
+		filepath.Join("..", "private", "termx-cloud", "relay"),
 	} {
-		requireGoPackageDir(t, dir)
-	}
-	forbiddenControlClientPackage := strings.Join([]string{"control", "client"}, "")
-	for _, dir := range []string{
-		"../termx-hub/internal/cloud",
-		filepath.Join("..", "termx-hub", "internal", forbiddenControlClientPackage),
-		"../termx-hub/internal/httpapi",
-		"../termx-hub/internal/ice",
-		"../termx-hub/internal/registry",
-	} {
-		if files := nonTestGoFiles(t, dir); len(files) > 0 {
-			t.Fatalf("termx-hub still owns hub product implementation files in %s: %v", dir, files)
-		}
-		if testFiles, err := filepath.Glob(filepath.Join(dir, "*_test.go")); err == nil && len(testFiles) > 0 {
-			t.Fatalf("termx-hub still owns hub product tests in %s: %v", dir, testFiles)
-		}
-	}
-	requireSourceNotContains(t, "../termx-hub/cmd/termx-hub/main.go", []string{
-		"type hubHeartbeatConfig",
-		"func runHubHeartbeatLoop",
-		"func postHubHeartbeat",
-		forbiddenControlClientPackage,
-		"ConnectionTicket" + "Verifier",
-		"Ticket" + "Verifier",
-		"ControlVerifier",
-		"Agent" + "Policy",
-	})
-}
-
-func TestWF301TermxHubCmdAllowsManagementHeartbeatEnvOnly(t *testing.T) {
-	data := string(readFile(t, "../termx-hub/cmd/termx-hub/main.go"))
-	for _, allowed := range []string{
-		"TERMX_HUB_CONTROL_URL",
-		"TERMX_HUB_CONTROL_SECRET",
-		"TERMX_HUB_PUBLIC_HTTP_URL",
-		"hub/heartbeat",
-	} {
-		if !strings.Contains(data, allowed) {
-			t.Fatalf("termx-hub cmd does not wire allowed management heartbeat symbol %q", allowed)
-		}
-	}
-	for _, forbidden := range []string{
-		"hub/controlclient",
-		"ConnectionTicket" + "Verifier",
-		"Ticket" + "Verifier",
-		"ControlVerifier",
-		"Agent" + "Policy",
-	} {
-		if strings.Contains(data, forbidden) {
-			t.Fatalf("termx-hub cmd contains forbidden connection-time control symbol %q", forbidden)
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
+			t.Fatalf("private service module %s is missing: %v", dir, err)
 		}
 	}
 }
@@ -72,7 +26,7 @@ func requireSourceNotContains(t *testing.T, path string, forbidden []string) {
 	data := string(readFile(t, path))
 	for _, value := range forbidden {
 		if strings.Contains(data, value) {
-			t.Fatalf("%s still contains hub product implementation symbol %q", path, value)
+			t.Fatalf("%s still contains forbidden implementation symbol %q", path, value)
 		}
 	}
 }

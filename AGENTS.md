@@ -42,7 +42,7 @@
 - `termx-cli/cmd/termx/legacy_*.go` 不得重新出现；旧本地入口已经删除。
 - `termx-cli/cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
 - `termx-remote/`、`termx-remote-v2/`、`termx-app/`、`remote-ui/`、`web-control/` 是保留的远程产品资产；runtime 只能按 `workflow.md` 中 RP002-RP007 对应切片解冻，不得作为 fallback 或按“无效包”删除。
-- `termx-hub/` 与 `web-control/` 的服务端实现目标为当前私有 monorepo 的 `private/` 命名空间；当前目录只作为待迁移历史资产。未来复制出的 public repo 只保留 wire contract、client interface 和 fake harness，不得让 public package 反向依赖私有实现。
+- Hub/Relay 服务端实现位于 `private/termx-cloud/hub/` 与 `private/termx-cloud/relay/`；旧 `termx-hub/` 已迁入 `private/archive/termx-platform-legacy/termx-hub/`，只能作为只读历史资产。未来复制出的 public repo 只保留 wire contract、client interface 和 fake harness，不得让 public package 反向依赖私有实现。
 - `termx-vterm/` 是受限联动目录，只能在 terminal semantic transaction 接口、事件或 harness 需要时最小化触及。
 - `internal/protocol/` 与 `termx-proto/` 是受限联动目录，只能在 endpoint routing、history window/copy 或 semantic history contract 需要跨进程时最小化触及。
 - 如果确实必须恢复旧目录或解冻目录，先修改 `workflow.md` 的范围表并说明原因；默认不允许恢复。

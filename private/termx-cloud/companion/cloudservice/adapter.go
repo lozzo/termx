@@ -62,6 +62,8 @@ type ControlPlaneAdapter interface {
 	AcquirePresenceAdmission(context.Context, session.Authorization, *cloudpb.OpenPresenceRequest) (HubAdmission, error)
 	// AcquireClientAdmission 为固定 managed session 与 target 获取 client signaling admission。
 	AcquireClientAdmission(context.Context, session.Authorization, *cloudpb.CreateSignalingSessionRequest) (HubAdmission, error)
+	// AcquireDaemonAnswerAdmission 为 presence 收到的固定 managed session 获取 daemon answer admission。
+	AcquireDaemonAnswerAdmission(context.Context, session.Authorization, string, *cloudpb.CompleteSignalingOfferRequest) (HubAdmission, error)
 	// AcquireRelayLease 根据当前 entitlement 获取 caller-specific 短期 Relay lease 和 route plan。
 	AcquireRelayLease(context.Context, session.Authorization, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
 	// ReportPathQuality 转发不含 payload 和 terminal identity 的聚合质量摘要。
@@ -92,5 +94,5 @@ type HubAdapter interface {
 	// CreateSignalingSession 使用 client-specific admission 转发 offer/ICE 并返回 answer source。
 	CreateSignalingSession(context.Context, session.Authorization, HubAdmission, *cloudpb.CreateSignalingSessionRequest) (SignalingSource, error)
 	// CompleteSignalingOffer 把 daemon 对当前 presence 中 offer 的 answer 或稳定错误返回 Hub。
-	CompleteSignalingOffer(context.Context, session.Authorization, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
+	CompleteSignalingOffer(context.Context, session.Authorization, HubAdmission, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
 }
