@@ -24,13 +24,13 @@
 - `internal/protocol/`
 - `termx-proto/`
 - `termx-core-v2/`，仅当 endpoint 能力、terminal 生命周期或 history contract 需要时最小化触及。
+- `termx-remote-v2/`，仅限 ME012+ 新 hub/P2P daemon/client transport、设备身份和 capability grant runtime；不得搬回旧 remote UI、session token 或 localweb 产品面。
 - `termx-hub/`，仅限 ME010+ hub/P2P 身份、安全、中继、发现和 transport contract 需要时触及；不得把 remote/mobile/web 产品面当作 TUI/core fallback。
 - `scripts/`、`Makefile`、`go.work`、`go.work.sum`，仅当测试或入口联动需要时最小化触及。
 
 ## 保留但非当前主线主动改造范围
 
 - `termx-remote/`
-- `termx-remote-v2/`
 - `termx-app/`
 - `remote-ui/`
 - `web-control/`
@@ -98,7 +98,8 @@
 | CX002 | 完成 | pane 未连接、重连中与异常断开统一状态面板 | 三态使用一致的信息层级与操作布局；只展示 reducer 已知状态，不伪造连接进度；异常断开按错误类别给出可执行提示并保留最后画面 |
 | ME012A | 完成 | hub/P2P protocol transport primitive 与 scope harness | 新 DataChannel transport 只承载 termx protocol frame；daemon 必须按 capability scope 接入 core-v2，不依赖冻结 `termx-remote` runtime |
 | ME012B | 完成 | remote-issued capability grant 与设备身份 | 定义 grant scope/expiry/revoke、凭据解析和 device fingerprint proof；Hub 不参与认证，旧 session token 不作为 fallback |
-| ME012C | 待开始 | daemon hub agent 与信令接入 | daemon 注册/发现/offer-answer/NAT traversal/relay 后把授权 DataChannel 接入 core-v2 scoped transport |
+| ME012C1 | 完成 | daemon 授权 DataChannel session acceptor | 已协商 DataChannel 只有在 grant/fingerprint/expiry/revoke 校验成功后才能进入 core-v2 scoped transport |
+| ME012C2 | 待开始 | daemon hub agent 与 offer/answer | 注册/发现/offer-answer/NAT traversal/relay 建立 DataChannel；Hub 不验权，失败不创建 protocol session |
 | ME012D | 待开始 | TUI/CLI hub endpoint dialer | 注册 `hub-p2p` dialer，建立 protocol client bundle；失败只影响 owning endpoint，不 fallback 到 local/SSH/旧 remote |
 | KS012 | 待开始 | 快捷键跨切片总契约守卫 | 汇总默认 catalog 完备性、键盘/点击等价、空 catalog、overlay、组合 action 和 capability 回归守卫，不在本切片首次补关键 harness |
 | KS013 | 待开始 | 快捷键文档与示例收尾 | 更新现状统计、配置示例、支持键位和限制；删除错误可用性声明，确保可加载示例不会意外禁用未展示的必要入口 |
@@ -139,6 +140,7 @@
 - ME011 已完成：按用户确认的单向配对模型收敛 hub 安全 contract，remote 生成 capability grant 给客户端；`hub_device_id` 只做发现/路由，`device_fingerprint` 作为远端设备安全身份，`grant_ref` 指向本地保存的 grant，真实 `termx-hub/` transport dialer 和跨设备发现进入 ME012。
 - ME012A 已完成：ME012 已拆为 transport primitive、grant/identity、daemon agent 和 client dialer 四个连续切片；`termx-shared/transport/datachannel` 以可靠有序消息抽象承载完整 termx protocol frame，明确背压、关闭和复制语义，不依赖 Pion 或冻结 `termx-remote`；core-v2 harness 证明 DataChannel session 必须经 `ServeScopedTransport` 接入，跨 capability terminal 的请求在 protocol method 入口被拒绝。
 - ME012B 已完成：`termx-shared/remoteauth` 新增 daemon-local Ed25519 设备身份、稳定 `device_fingerprint`、remote-issued capability grant、受限 terminal/machine-events scope、expiry/signature/fingerprint/revoke 校验、客户端 `grant_ref` 文件凭据存储和 daemon 持久化撤销 store；Hub 不持有私钥、不做授权判断，旧 session token 不能被解析为 grant，配置文件仍只保存 `grant_ref`。
+- ME012C1 已完成：`termx-remote-v2/` 按新模型解冻为 hub/P2P daemon/client transport owner；Pion adapter 只实现共享 DataChannel primitive，`daemon.SessionAcceptor` 使用 daemon-owned fingerprint 校验 grant 的签名、expiry 和 revoke 后才映射 core-v2 `TransportScope`。core-v2 scope 已改为显式 `AllowDaemon`/single-terminal/machine-events 三选一，零值 scope 拒绝，避免远程装配遗漏字段时意外获得 daemon 全权。
 - CL001 已完成：master 项目整理基线已对齐，`workflow.md`、根 `AGENTS.md` 和 `termx-cli/AGENTS.md` 均明确当前整理主线、插件分支隔离、frozen legacy 边界与 remote CLI 清理债务。
 - CL002 已完成：顶层 Makefile 已移除 frozen `remote-ui`、localweb、旧 remote daemon/dev/pair/status/test 入口，只保留当前 v2/v3 build 与测试入口。
 - CL003 已完成：`termx-cli` 默认命令、daemon 启动、测试、README、脚本和 module 文件已移除 frozen `termx-remote` runtime/命令依赖；core-v2/protocol 的 typed remote hook 暂不在本切片删除。

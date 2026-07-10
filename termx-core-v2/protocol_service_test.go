@@ -762,7 +762,7 @@ func newProtocolClientWithServer(t *testing.T, server *Server) (*Server, *protoc
 	clientTransport, serverTransport := memory.NewPair()
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- newProtocolSession(server, serverTransport, TransportScope{}).run(context.Background())
+		errCh <- newProtocolSession(server, serverTransport, TransportScope{AllowDaemon: true}).run(context.Background())
 	}()
 	client := protocol.NewClient(clientTransport)
 	if err := client.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {

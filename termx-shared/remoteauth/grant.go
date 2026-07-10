@@ -18,6 +18,7 @@ const grantPrefix = "termx-grant-v1"
 // Scope 描述一条获授权 protocol session 可见的 core-v2 能力边界。
 // 当前只允许单 terminal session 或 machine-events-only session；空 scope 不得生成无限制远程 daemon 会话。
 type Scope struct {
+	AllowDaemon       bool   `json:"allow_daemon,omitempty"`
 	TerminalID        string `json:"terminal_id,omitempty"`
 	MachineEventsOnly bool   `json:"machine_events_only,omitempty"`
 }
@@ -179,11 +180,21 @@ func validateClaims(claims Claims) error {
 	if claims.DeviceFingerprint == "" {
 		return fmt.Errorf("remote capability grant requires device_fingerprint")
 	}
-	if claims.Scope.TerminalID == "" && !claims.Scope.MachineEventsOnly {
-		return fmt.Errorf("remote capability grant requires restricted scope")
+	capabilities := 0
+	if claims.Scope.AllowDaemon {
+		capabilities++
 	}
-	if claims.Scope.TerminalID != "" && claims.Scope.MachineEventsOnly {
-		return fmt.Errorf("remote capability grant scope cannot combine terminal and machine events")
+	if claims.Scope.TerminalID != "" {
+		capabilities++
+	}
+	if claims.Scope.MachineEventsOnly {
+		capabilities++
+	}
+	if capabilities == 0 {
+		return fmt.Errorf("remote capability grant requires explicit scope")
+	}
+	if capabilities != 1 {
+		return fmt.Errorf("remote capability grant scopes are mutually exclusive")
 	}
 	if claims.IssuedAt.IsZero() || claims.ExpiresAt.IsZero() || !claims.ExpiresAt.After(claims.IssuedAt) {
 		return fmt.Errorf("remote capability grant requires valid issued_at and expires_at")

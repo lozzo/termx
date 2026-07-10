@@ -33,6 +33,17 @@ func TestServeTransportRunsUnscopedProtocolSession(t *testing.T) {
 	}
 }
 
+func TestServeScopedTransportRejectsZeroValueScope(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+
+	err := server.ServeScopedTransport(context.Background(), serverTransport, TransportScope{})
+	if err == nil || !strings.Contains(err.Error(), "explicit capability") {
+		t.Fatalf("zero-value remote scope must be rejected, got %v", err)
+	}
+}
+
 func TestServeScopedTransportRestrictsTerminalMethods(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	registerScopedTestTerminal(t, server, "term-1")

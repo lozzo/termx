@@ -9,7 +9,14 @@ import (
 
 // TransportScope 只约束一条 protocol session 的可见能力，不保存 terminal truth。
 type TransportScope struct {
-	TerminalID        string
+	// AllowDaemon 表示该 session 拥有当前 daemon 的完整 protocol 能力。
+	// 该字段必须由本地 listener 或已验证的 daemon-level capability 显式设置；零值不能代表无限权限。
+	AllowDaemon bool
+	// TerminalID 把 session 限制到单个 daemon-local terminal。
+	// terminal lifecycle 和 history truth 仍由 core-v2 持有，scope 只在 protocol method/stream 入口执行授权。
+	TerminalID string
+	// MachineEventsOnly 只允许订阅 daemon 的受限 terminal lifecycle 事件。
+	// 它不能与 AllowDaemon 或 TerminalID 组合，也不能访问 storage、history、input 或 terminal management method。
 	MachineEventsOnly bool
 }
 
@@ -19,14 +26,27 @@ func (scope TransportScope) normalized() TransportScope {
 }
 
 func (scope TransportScope) validate() error {
-	if scope.TerminalID != "" && scope.MachineEventsOnly {
-		return fmt.Errorf("transport scope cannot combine terminal_id with machine_events_only")
+	capabilities := 0
+	if scope.AllowDaemon {
+		capabilities++
+	}
+	if scope.TerminalID != "" {
+		capabilities++
+	}
+	if scope.MachineEventsOnly {
+		capabilities++
+	}
+	if capabilities == 0 {
+		return fmt.Errorf("transport scope requires explicit capability")
+	}
+	if capabilities != 1 {
+		return fmt.Errorf("transport scope capabilities are mutually exclusive")
 	}
 	return nil
 }
 
 func (scope TransportScope) unrestricted() bool {
-	return scope.TerminalID == "" && !scope.MachineEventsOnly
+	return scope.AllowDaemon
 }
 
 func (scope TransportScope) constrainMethod(method string, params any) (any, error) {

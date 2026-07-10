@@ -50,3 +50,21 @@ func TestGrantRejectsFingerprintMismatchExpiryRevocationAndLegacyToken(t *testin
 		t.Fatal("legacy session token must not be accepted as capability grant")
 	}
 }
+
+func TestGrantRequiresExactlyOneExplicitScope(t *testing.T) {
+	_, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	for _, scope := range []Scope{
+		{},
+		{AllowDaemon: true, TerminalID: "term-1"},
+		{AllowDaemon: true, MachineEventsOnly: true},
+		{TerminalID: "term-1", MachineEventsOnly: true},
+	} {
+		if _, err := Issue(privateKey, Claims{GrantID: "grant-1", DeviceID: "device-1", Scope: scope, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}); err == nil {
+			t.Fatalf("expected invalid scope %#v rejection", scope)
+		}
+	}
+	if _, err := Issue(privateKey, Claims{GrantID: "grant-daemon", DeviceID: "device-1", Scope: Scope{AllowDaemon: true}, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatalf("explicit daemon scope should be valid: %v", err)
+	}
+}
