@@ -5,8 +5,62 @@ import (
 	"strings"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
+	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/shortcut"
 )
+
+// shortcutContentActionID 把配置 action 投影到仍由 shell overlay reducer 持有的内容动作。
+// 这是开发期收敛边界：点击与键盘共享 invocation，但 overlay 状态变更仍只有 shell reducer 能执行。
+func shortcutContentActionID(invocation shortcut.ActionInvocation) (render.ActionID, bool) {
+	actions := map[string]render.ActionID{
+		"terminal_picker.attach":         render.ActionPickerAttach,
+		"terminal_picker.split":          render.ActionPickerSplit,
+		"terminal_picker.edit":           render.ActionPickerEdit,
+		"terminal_picker.kill":           render.ActionPickerKill,
+		"terminal_picker.delete":         render.ActionPickerDelete,
+		"terminal_picker.close":          render.ActionHelpClose,
+		"terminal_pool.attach":           render.ActionPoolAttach,
+		"terminal_pool.attach_tab":       render.ActionPoolAttachTab,
+		"terminal_pool.attach_float":     render.ActionPoolAttachFloat,
+		"terminal_pool.restart":          render.ActionPoolRestart,
+		"terminal_pool.edit":             render.ActionPoolEdit,
+		"terminal_pool.kill":             render.ActionPoolKill,
+		"terminal_pool.delete":           render.ActionPoolDelete,
+		"terminal_pool.close":            render.ActionHelpClose,
+		"workbench_tree.open":            render.ActionWorkbenchOpen,
+		"workbench_tree.new":             render.ActionWorkbenchNew,
+		"workbench_tree.rename":          render.ActionWorkbenchRename,
+		"workbench_tree.delete":          render.ActionWorkbenchDelete,
+		"workbench_tree.detach":          render.ActionWorkbenchDetach,
+		"workbench_tree.zoom":            render.ActionWorkbenchZoom,
+		"workbench_tree.close":           render.ActionHelpClose,
+		"clipboard_history.paste":        render.ActionClipboardHistoryPaste,
+		"clipboard_history.new":          render.ActionClipboardHistoryNew,
+		"clipboard_history.edit":         render.ActionClipboardHistoryEdit,
+		"clipboard_history.delete":       render.ActionClipboardHistoryDelete,
+		"clipboard_history.close":        render.ActionHelpClose,
+		"floating_overview.open":         render.ActionFloatingSummon,
+		"floating_overview.show_all":     render.ActionFloatingShowAll,
+		"floating_overview.collapse_all": render.ActionFloatingCollapseAll,
+		"floating_overview.close":        render.ActionHelpClose,
+		"prompt.submit":                  render.ActionPromptSubmit,
+		"prompt.cancel":                  render.ActionPromptCancel,
+		"help.close":                     render.ActionHelpClose,
+	}
+	action, ok := actions[invocation.ID]
+	return action, ok
+}
+
+func shortcutIntentOwnedByCopy(intent input.Intent) bool {
+	switch intent.Kind {
+	case input.IntentEnterCopyMode, input.IntentRequestOlder, input.IntentRequestNewer,
+		input.IntentOpenClipboardHistory, input.IntentPasteLastCopy, input.IntentPasteClipboard,
+		input.IntentCopyCommand:
+		return true
+	default:
+		return false
+	}
+}
 
 // shortcutIntentForInvocation 是 app action dispatcher 的兼容执行边界。
 // shortcut domain 保留 action 身份和参数；这里把 invocation 投影为现有 reducer intent，

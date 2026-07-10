@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lozzow/termx/termx-tui-v3/shortcut"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -49,6 +50,7 @@ type HitRegion struct {
 	PaneID             string
 	Floating           bool
 	ActionID           string
+	Invocation         shortcut.ActionInvocation
 	Direction          string
 	SplitPath          string
 	ResizeBeforePaneID string
@@ -1523,49 +1525,52 @@ func (projector ShellProjector) buildOverlayVM(root state.Root, shell state.Shel
 	if !shell.Overlay.Open {
 		return OverlayVM{}
 	}
+	var overlay OverlayVM
 	switch shell.Overlay.Kind {
 	case state.OverlayTerminalPicker:
-		return OverlayVM{
+		overlay = OverlayVM{
 			Kind:    OverlayTerminalPicker,
 			Opaque:  false,
 			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentTerminalPicker}),
 		}
 	case state.OverlayTerminalPool:
-		return OverlayVM{
+		overlay = OverlayVM{
 			Kind:    OverlayTerminalPool,
 			Opaque:  true,
 			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentTerminalPool}),
 		}
 	case state.OverlayWorkbenchTree:
-		return OverlayVM{
+		overlay = OverlayVM{
 			Kind:    OverlayWorkbenchTree,
 			Opaque:  true,
 			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentWorkbenchTree}),
 		}
 	case state.OverlayClipboardHistory:
-		return OverlayVM{
+		overlay = OverlayVM{
 			Kind:    OverlayClipboardHistory,
 			Opaque:  true,
 			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentClipboardHistory}),
 		}
 	case state.OverlayFloatingOverview:
-		return OverlayVM{
+		overlay = OverlayVM{
 			Kind:    OverlayFloatingOverview,
 			Opaque:  true,
 			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentFloatingOverview}),
 		}
 	case state.OverlayPrompt:
-		return OverlayVM{
+		overlay = OverlayVM{
 			Kind:    OverlayPrompt,
 			Opaque:  true,
 			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentPrompt}),
 			Popup:   buildPromptSuggestionPopupVM(shell.Overlay.Prompt),
 		}
 	case state.OverlayHelp:
-		return OverlayVM{Kind: OverlayHelp, Opaque: true, Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentHelp})}
+		overlay = OverlayVM{Kind: OverlayHelp, Opaque: true, Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentHelp})}
 	default:
 		return OverlayVM{}
 	}
+	overlay.Content.HitRegions = bindOverlayShortcutInvocations(overlay.Kind, overlay.Content.HitRegions, root.Config.Shortcuts)
+	return overlay
 }
 
 func buildToastVMs(shell state.ShellStore) []ToastVM {

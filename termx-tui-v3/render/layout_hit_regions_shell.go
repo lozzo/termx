@@ -1,5 +1,7 @@
 package render
 
+import "github.com/lozzow/termx/termx-tui-v3/shortcut"
+
 func appendHeaderHitRegions(out []HitRegion, header HeaderVM, rect Rect, viewport Rect) []HitRegion {
 	if rect.W <= 0 || rect.H <= 0 || !header.Visible {
 		return out
@@ -33,16 +35,19 @@ func appendFooterHitRegions(out []HitRegion, footer FooterVM, rect Rect, frame R
 	} else {
 		right = nil
 	}
+	currentInvocation := shortcut.ActionInvocation{}
 	flush := func(action *string, region *Rect) {
 		if *action != "" && region.W > 0 {
-			out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: *region, ActionID: *action}, viewport)
+			out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: *region, ActionID: *action, Invocation: currentInvocation}, viewport)
 		}
 		*action = ""
 		*region = Rect{}
+		currentInvocation = shortcut.ActionInvocation{}
 	}
 	appendSegments := func(segments []barSegment, startX int) {
 		x := startX
 		currentAction := ""
+		currentSignature := ""
 		currentRect := Rect{}
 		for _, segment := range segments {
 			width := DisplayWidth(segment.text)
@@ -54,11 +59,14 @@ func appendFooterHitRegions(out []HitRegion, footer FooterVM, rect Rect, frame R
 				x += width
 				continue
 			}
-			if currentAction == segment.actionID && currentRect.X+currentRect.W == x {
+			signature := segment.invocation.Signature()
+			if currentAction == segment.actionID && currentSignature == signature && currentRect.X+currentRect.W == x {
 				currentRect.W += width
 			} else {
 				flush(&currentAction, &currentRect)
 				currentAction = segment.actionID
+				currentSignature = signature
+				currentInvocation = segment.invocation
 				currentRect = Rect{X: x, Y: rect.Y, W: width, H: 1}
 			}
 			x += width

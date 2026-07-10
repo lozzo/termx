@@ -11,6 +11,7 @@ import (
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/services"
+	"github.com/lozzow/termx/termx-tui-v3/shortcut"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -118,6 +119,16 @@ type ShellContentActionMsg struct {
 }
 
 func (ShellContentActionMsg) isMsg() {}
+
+// ShellShortcutActionMsg 让键盘和点击共享同一个 app action dispatcher。
+type ShellShortcutActionMsg struct {
+	Invocation shortcut.ActionInvocation
+	PaneID     string
+	Floating   bool
+	Row        int
+}
+
+func (ShellShortcutActionMsg) isMsg() {}
 
 type ShellMoveClipboardHistoryDividerMsg struct {
 	Delta int
@@ -267,6 +278,27 @@ func NewShellReducer() Reducer {
 		case ShellContentActionMsg:
 			next, effects := reduceShellContentAction(root, msg)
 			return rearmInteractionModeTimeout(next, effects)
+		case ShellShortcutActionMsg:
+			if actionID, ok := shortcutContentActionID(msg.Invocation); ok {
+				return reduceShellContentAction(root, ShellContentActionMsg{
+					ActionID: actionID.String(),
+					PaneID:   msg.PaneID,
+					Floating: msg.Floating,
+					Row:      msg.Row,
+				})
+			}
+			intent, ok := shortcutIntentForInvocation(msg.Invocation, input.InputEvent{})
+			if !ok {
+				return root, nil
+			}
+			if shortcutIntentOwnedByCopy(intent) {
+				return root, nil
+			}
+			next, effects := reduceShortcutIntent(root, intent)
+			if intent.Kind == input.IntentOpenTerminalPicker || intent.Kind == input.IntentSetInteractionMode || intent.Kind == input.IntentExitInteraction {
+				return next, effects
+			}
+			return finishInteractionModeAfterIntent(next, effects, intent)
 		case ShellMoveClipboardHistoryDividerMsg:
 			root.Shell = root.Shell.MoveClipboardHistoryNameWidth(msg.Delta)
 		case ShellActivateTerminalInputMsg:

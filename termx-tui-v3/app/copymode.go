@@ -276,6 +276,17 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 				activeViewID = copyHistoryWorkingViewID(next)
 			}
 			return saveCopyHistorySessionForView(next, activeViewID), effects
+		case ShellShortcutActionMsg:
+			intent, ok := shortcutIntentForInvocation(msg.Invocation, input.InputEvent{})
+			if !ok || !shortcutIntentOwnedByCopy(intent) {
+				return root, nil
+			}
+			root, activeViewID := rootWithActiveCopyHistorySession(root)
+			next, effects := reduceCopyModeIntent(root, intent, deps)
+			if copyModeEnterIntent(intent) {
+				activeViewID = copyHistoryWorkingViewID(next)
+			}
+			return saveCopyHistorySessionForView(next, activeViewID), effects
 		case CopyModeEnterViewMsg:
 			next, effects := beginCopyModeLatestForView(root, deps, msg.Binding, msg.Cols, msg.Rows)
 			next = applyCopyModeEnteringScrollDelta(next, msg.InitialScrollDelta)

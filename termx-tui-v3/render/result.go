@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/termx-tui-v3/shortcut"
 )
 
 // ANSIReset 是 FrameSink 写完 styled frame 后必须输出的 SGR reset。
@@ -1029,11 +1030,13 @@ type HeaderVM struct {
 }
 
 type FooterActionVM struct {
-	Key      string
-	Label    string
-	Icon     string
-	ActionID string
-	Style    StyleToken
+	Key        string
+	Label      string
+	Icon       string
+	ActionID   string
+	Style      StyleToken
+	Invocation shortcut.ActionInvocation
+	Click      shortcut.ClickPolicy
 }
 
 type FooterVM struct {

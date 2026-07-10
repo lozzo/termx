@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
+	"github.com/lozzow/termx/termx-tui-v3/shortcut"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -110,7 +111,7 @@ func ShortcutActionRenderID(actionID string) (ActionID, bool) {
 		return ActionFooterDeleteWorkspace, true
 	case "floating.new":
 		return ActionFloatingNew, true
-	case "floating.summon", "floating_overview.open":
+	case "floating.summon":
 		return ActionFloatingSummon, true
 	case "floating.take_owner":
 		return ActionFloatingTakeOwner, true
@@ -146,6 +147,8 @@ func ShortcutActionRenderID(actionID string) (ActionID, bool) {
 		return ActionFloatingShowAll, true
 	case "floating_overview.collapse_all":
 		return ActionFloatingCollapseAll, true
+	case "floating_overview.open":
+		return ActionFloatingSummon, true
 	case "copy.request_older":
 		return ActionCopyOlder, true
 	case "terminal_picker.attach":
@@ -241,6 +244,68 @@ func shortcutSceneForFooterMode(mode string) string {
 	}
 }
 
+// bindOverlayShortcutInvocations 把 overlay content 的可配置点击动作绑定到当前 catalog。
+// invocation 是“执行什么”的真值，HitRegion 上的 row/pane 仍只是点击目标上下文；catalog 未配置的
+// shortcut action 不保留旧 ActionID 点击入口，行选择和拖拽等非 shortcut 交互不受影响。
+func bindOverlayShortcutInvocations(kind OverlayKind, regions []HitRegion, shortcuts state.TUIShortcutConfig) []HitRegion {
+	scene := shortcutSceneForFooterMode(string(kind))
+	entries := input.ShortcutEntriesForScene(shortcuts, scene)
+	invocations := map[ActionID][]shortcut.ActionInvocation{}
+	for _, entry := range entries {
+		invocation, _, err := shortcut.ParseInvocation(entry.ActionID)
+		if err != nil {
+			continue
+		}
+		renderID, ok := shortcutActionRenderIDForEntry(entry)
+		if !ok {
+			continue
+		}
+		if scene == "floating_overview" && renderID == ActionFloatingSummon && invocation.ID != "floating_overview.open" {
+			continue
+		}
+		invocations[renderID] = appendUniqueInvocation(invocations[renderID], invocation)
+	}
+	out := make([]HitRegion, 0, len(regions))
+	for _, region := range regions {
+		renderID := ActionID(region.ActionID)
+		if !overlayShortcutRenderAction(renderID) {
+			out = append(out, region)
+			continue
+		}
+		candidates := invocations[renderID]
+		if len(candidates) != 1 {
+			continue
+		}
+		region.Invocation = candidates[0]
+		out = append(out, region)
+	}
+	return out
+}
+
+func appendUniqueInvocation(items []shortcut.ActionInvocation, invocation shortcut.ActionInvocation) []shortcut.ActionInvocation {
+	signature := invocation.Signature()
+	for _, item := range items {
+		if item.Signature() == signature {
+			return items
+		}
+	}
+	return append(items, invocation)
+}
+
+func overlayShortcutRenderAction(id ActionID) bool {
+	switch id {
+	case ActionPickerAttach, ActionPickerSplit, ActionPickerEdit, ActionPickerKill, ActionPickerDelete,
+		ActionPoolAttach, ActionPoolAttachTab, ActionPoolAttachFloat, ActionPoolRestart, ActionPoolEdit, ActionPoolKill, ActionPoolDelete,
+		ActionWorkbenchOpen, ActionWorkbenchNew, ActionWorkbenchRename, ActionWorkbenchDelete, ActionWorkbenchDetach, ActionWorkbenchZoom,
+		ActionClipboardHistoryPaste, ActionClipboardHistoryNew, ActionClipboardHistoryEdit, ActionClipboardHistoryDelete,
+		ActionFloatingSummon, ActionFloatingShowAll, ActionFloatingCollapseAll,
+		ActionPromptSubmit, ActionPromptCancel, ActionHelpClose:
+		return true
+	default:
+		return false
+	}
+}
+
 func footerActionCatalogFromShortcuts(mode string, root state.Root) []FooterActionVM {
 	scene := shortcutSceneForFooterMode(mode)
 	entries := input.ShortcutEntriesForScene(root.Config.Shortcuts, scene)
@@ -256,6 +321,10 @@ func footerActionCatalogFromShortcuts(mode string, root state.Root) []FooterActi
 }
 
 func footerActionFromShortcutEntry(entry input.ShortcutEntry, cfg state.TUIConfigStore) (FooterActionVM, bool) {
+	invocation, spec, err := shortcut.ParseInvocation(entry.ActionID)
+	if err != nil || spec.Display.Footer != shortcut.VisibilityVisible {
+		return FooterActionVM{}, false
+	}
 	renderID, ok := shortcutActionRenderIDForEntry(entry)
 	if !ok {
 		return FooterActionVM{}, false
@@ -268,6 +337,8 @@ func footerActionFromShortcutEntry(entry input.ShortcutEntry, cfg state.TUIConfi
 	if label := shortcutActionLabel(entry, cfg, action); label != "" {
 		action.Label = label
 	}
+	action.Invocation = invocation
+	action.Click = spec.Display.Click
 	return action, true
 }
 
@@ -432,6 +503,8 @@ func compactFloatingSummonActions(actions []FooterActionVM) []FooterActionVM {
 		base.Key = strings.Join(keys, "/")
 	}
 	base.Label = "SUMMON"
+	base.Click = shortcut.ClickHintOnly
+	base.Invocation = shortcut.ActionInvocation{}
 	return replaceFooterActionIndexes(actions, indexes, base)
 }
 
@@ -481,6 +554,13 @@ func compactFooterActionGroup(actions []FooterActionVM, id ActionID, label strin
 	}
 	if label != "" {
 		base.Label = label
+	}
+	for _, index := range indexes[1:] {
+		if actions[index].Invocation.Signature() != base.Invocation.Signature() {
+			base.Click = shortcut.ClickHintOnly
+			base.Invocation = shortcut.ActionInvocation{}
+			break
+		}
 	}
 	return replaceFooterActionIndexes(actions, indexes, base)
 }

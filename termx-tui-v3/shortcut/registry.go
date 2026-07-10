@@ -63,6 +63,19 @@ type ActionInvocation struct {
 	SourceActionID string
 }
 
+// Signature 返回可稳定比较的 invocation 身份。
+// shortcut domain 用它判断多个展示项是否仍指向同一个 action 与参数；当前 canonical 参数只有 index，
+// 新增参数时必须同步扩展这里，避免 renderer 把语义不同的动作合并成可点击提示。
+func (invocation ActionInvocation) Signature() string {
+	parts := []string{invocation.ID}
+	if invocation.Params != nil {
+		if value, ok := invocation.Params["index"]; ok {
+			parts = append(parts, "index="+strconv.Itoa(value))
+		}
+	}
+	return strings.Join(parts, "\x00")
+}
+
 // Param returns a canonical integer parameter.
 func (invocation ActionInvocation) Param(name string) (int, bool) {
 	value, ok := invocation.Params[name]

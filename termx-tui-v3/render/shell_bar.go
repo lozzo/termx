@@ -3,6 +3,8 @@ package render
 import (
 	"strconv"
 	"strings"
+
+	"github.com/lozzow/termx/termx-tui-v3/shortcut"
 )
 
 const HeaderTabCreateText = "  󰐕 "
@@ -386,31 +388,65 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 			style = footerActionKeyStyle(key, decor)
 		}
 		style = footerActionDisplayStyle(key, decor, style)
+		actionID := action.ActionID
+		invocation := action.Invocation
+		if action.Click != shortcut.ClickClickable || invocation.ID == "" {
+			actionID = ""
+			invocation = shortcut.ActionInvocation{}
+		}
+		withAction := func(segment barSegment) barSegment {
+			if actionID == "" {
+				return segment
+			}
+			return segment.withAction(actionID).withInvocation(invocation)
+		}
 		// footer 延续 tuiv2 状态栏语义：组合键拆成相邻 key token，但共享同一个 action 命中区。
 		if keyText == "" {
 			// key 模板为空时只展示 icon/label，仍保留 action hit region。
 		} else if keyText == key {
 			if letter, ok := footerCtrlLetter(key); ok {
 				if ctrlPrefixShown {
-					segments = appendFooterBracketTokenSegments(segments, "["+letter+"]", style, action.ActionID)
+					segments = appendFooterBracketTokenSegmentsWithInvocation(segments, "["+letter+"]", style, actionID, invocation)
 				} else {
-					segments = appendFooterBracketTokenSegments(segments, "[Ctrl]", StyleFooterAccent, action.ActionID)
-					segments = append(segments, footerSep().withAction(action.ActionID))
+					segments = appendFooterBracketTokenSegmentsWithInvocation(segments, "[Ctrl]", StyleFooterAccent, actionID, invocation)
+					segments = append(segments, withAction(footerSep()))
 					ctrlPrefixShown = true
-					segments = appendFooterBracketTokenSegments(segments, "["+letter+"]", style, action.ActionID)
+					segments = appendFooterBracketTokenSegmentsWithInvocation(segments, "["+letter+"]", style, actionID, invocation)
 				}
 			} else {
-				segments = appendFooterKeySegments(segments, keyText, style, action.ActionID)
+				segments = appendFooterKeySegmentsWithInvocation(segments, keyText, style, actionID, invocation)
 			}
 		} else {
-			segments = appendFooterKeySegments(segments, keyText, style, action.ActionID)
+			segments = appendFooterKeySegmentsWithInvocation(segments, keyText, style, actionID, invocation)
 		}
 		showLabel := decor != ""
 		if compactLabelMask != nil {
 			showLabel = actionIndex < len(compactLabelMask) && compactLabelMask[actionIndex]
 		}
 		if showLabel {
-			segments = append(segments, barText(" "+decor, StyleFooterMuted, 1).withAction(action.ActionID))
+			segments = append(segments, withAction(barText(" "+decor, StyleFooterMuted, 1)))
+		}
+	}
+	return segments
+}
+
+func appendFooterKeySegmentsWithInvocation(segments []barSegment, key string, style StyleToken, actionID string, invocation shortcut.ActionInvocation) []barSegment {
+	start := len(segments)
+	segments = appendFooterKeySegments(segments, key, style, actionID)
+	for index := start; index < len(segments); index++ {
+		if segments[index].actionID != "" {
+			segments[index].invocation = invocation
+		}
+	}
+	return segments
+}
+
+func appendFooterBracketTokenSegmentsWithInvocation(segments []barSegment, token string, style StyleToken, actionID string, invocation shortcut.ActionInvocation) []barSegment {
+	start := len(segments)
+	segments = appendFooterBracketTokenSegments(segments, token, style, actionID)
+	for index := start; index < len(segments); index++ {
+		if segments[index].actionID != "" {
+			segments[index].invocation = invocation
 		}
 	}
 	return segments
@@ -787,13 +823,14 @@ func metadataTokenStartsField(field string) bool {
 }
 
 type barSegment struct {
-	text     string
-	style    StyleToken
-	ansi     ANSICellStyle
-	priority int
-	actionID string
-	targetID string
-	joint    bool
+	text       string
+	style      StyleToken
+	ansi       ANSICellStyle
+	priority   int
+	actionID   string
+	invocation shortcut.ActionInvocation
+	targetID   string
+	joint      bool
 }
 
 func barText(text string, style StyleToken, priority int) barSegment {
@@ -802,6 +839,11 @@ func barText(text string, style StyleToken, priority int) barSegment {
 
 func (segment barSegment) withAction(actionID string) barSegment {
 	segment.actionID = actionID
+	return segment
+}
+
+func (segment barSegment) withInvocation(invocation shortcut.ActionInvocation) barSegment {
+	segment.invocation = invocation
 	return segment
 }
 

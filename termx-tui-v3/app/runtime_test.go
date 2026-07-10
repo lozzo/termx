@@ -18,6 +18,7 @@ import (
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/services"
+	"github.com/lozzow/termx/termx-tui-v3/shortcut"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -2333,16 +2334,8 @@ func TestInteractiveRuntimePaneModeFooterActions(t *testing.T) {
 		t.Fatalf("pane split chrome action should create and activate vertical split, shell=%#v", runtime.State().Shell.EnsureDefaults())
 	}
 
-	focusAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionPaneFooterFocus.String(), "")
-	if err := host.SendInput(mouseEventAt(focusAction.Rect)); err != nil {
-		t.Fatalf("send pane focus footer click: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain pane focus footer click: %v", err)
-	}
-	if got := runtime.State().Shell.EnsureDefaults().ActivePaneID; got != state.DefaultPaneID {
-		t.Fatalf("pane focus footer action should focus next pane, got %q", got)
-	}
+	assertFrameMissingActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionPaneFooterFocus.String())
+	activePaneID := runtime.State().Shell.EnsureDefaults().ActivePaneID
 
 	zoomAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionPaneFooterZoom.String(), "")
 	if err := host.SendInput(mouseEventAt(zoomAction.Rect)); err != nil {
@@ -2351,10 +2344,17 @@ func TestInteractiveRuntimePaneModeFooterActions(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain pane zoom footer click: %v", err)
 	}
-	if got := runtime.State().Shell.EnsureDefaults().ZoomedPaneID; got != state.DefaultPaneID {
+	if got := runtime.State().Shell.EnsureDefaults().ZoomedPaneID; got != activePaneID {
 		t.Fatalf("pane zoom footer action should toggle zoom on active pane, got %q", got)
 	}
 
+	paneModeAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFooterPaneMode.String(), "")
+	if err := host.SendInput(mouseEventAt(paneModeAction.Rect)); err != nil {
+		t.Fatalf("send pane mode footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane mode footer click: %v", err)
+	}
 	closeAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionPaneFooterClose.String(), "")
 	if err := host.SendInput(mouseEventAt(closeAction.Rect)); err != nil {
 		t.Fatalf("send pane close footer click: %v", err)
@@ -2363,7 +2363,7 @@ func TestInteractiveRuntimePaneModeFooterActions(t *testing.T) {
 		t.Fatalf("drain pane close footer click: %v", err)
 	}
 	shell := runtime.State().Shell.EnsureDefaults()
-	if shell.HasPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}) || len(shell.Workspace.Tabs[0].Panes) != 1 {
+	if shell.HasPane(state.PaneCommandTarget{PaneID: activePaneID}) || len(shell.Workspace.Tabs[0].Panes) != 1 {
 		t.Fatalf("pane close footer action should close active pane through workbench command, shell=%#v", shell)
 	}
 	if len(terminal.Inputs) != 0 {
@@ -2426,16 +2426,10 @@ func TestInteractiveRuntimeResizeModeFooterActions(t *testing.T) {
 		t.Fatalf("drain render: %v", err)
 	}
 
-	rightAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionResizeRight.String(), "")
-	if err := host.SendInput(mouseEventAt(rightAction.Rect)); err != nil {
-		t.Fatalf("send resize right footer click: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain resize right footer click: %v", err)
-	}
+	assertFrameMissingActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionResizeRight.String())
 	split := runtime.State().Shell.EnsureDefaults().Workspace.Tabs[0].RootSplit
-	if split.BiasCells != 2 {
-		t.Fatalf("resize right footer action should update split bias by keyboard step, got %#v", split)
+	if split.BiasCells != 0 {
+		t.Fatalf("hint-only resize aggregate must not mutate split bias, got %#v", split)
 	}
 
 	balanceAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionResizeBalance.String(), "")
@@ -2802,6 +2796,13 @@ func TestAppRuntimeDispatchesFooterActionHitRegions(t *testing.T) {
 	if err := globalRuntime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain restore header: %v", err)
 	}
+	globalModeAction = frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterGlobalMode.String(), "")
+	if err := globalHost.SendInput(mouseEventAt(globalModeAction.Rect)); err != nil {
+		t.Fatalf("reenter global mode before footer toggle: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain global mode before footer toggle: %v", err)
+	}
 	footerAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterToggleFooter.String(), "")
 	if err := globalHost.SendInput(mouseEventAt(footerAction.Rect)); err != nil {
 		t.Fatalf("send footer toggle click: %v", err)
@@ -2817,6 +2818,13 @@ func TestAppRuntimeDispatchesFooterActionHitRegions(t *testing.T) {
 	}
 	if err := globalRuntime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain restore footer: %v", err)
+	}
+	globalModeAction = frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterGlobalMode.String(), "")
+	if err := globalHost.SendInput(mouseEventAt(globalModeAction.Rect)); err != nil {
+		t.Fatalf("reenter global mode before help: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain global mode before help: %v", err)
 	}
 
 	helpAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionHelpOpen.String(), "")
@@ -2839,6 +2847,13 @@ func TestAppRuntimeDispatchesFooterActionHitRegions(t *testing.T) {
 		t.Fatalf("help esc should close overlay, got %#v", globalRuntime.State().Shell.EnsureDefaults().Overlay)
 	}
 
+	globalModeAction = frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterGlobalMode.String(), "")
+	if err := globalHost.SendInput(mouseEventAt(globalModeAction.Rect)); err != nil {
+		t.Fatalf("reenter global mode before pool: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain global mode before pool: %v", err)
+	}
 	poolAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterOpenPool.String(), "")
 	if err := globalHost.SendInput(mouseEventAt(poolAction.Rect)); err != nil {
 		t.Fatalf("send footer pool click: %v", err)
@@ -2856,6 +2871,13 @@ func TestAppRuntimeDispatchesFooterActionHitRegions(t *testing.T) {
 		t.Fatalf("drain pool esc: %v", err)
 	}
 
+	globalModeAction = frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterGlobalMode.String(), "")
+	if err := globalHost.SendInput(mouseEventAt(globalModeAction.Rect)); err != nil {
+		t.Fatalf("reenter global mode before tree: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain global mode before tree: %v", err)
+	}
 	treeAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterOpenTree.String(), "")
 	if err := globalHost.SendInput(mouseEventAt(treeAction.Rect)); err != nil {
 		t.Fatalf("send footer tree click: %v", err)
@@ -3113,6 +3135,12 @@ func TestInteractiveRuntimeWorkspaceNewRenameFooterActions(t *testing.T) {
 		t.Fatalf("workspace new footer action should show create feedback, got %#v", shell.Toasts)
 	}
 
+	if err := runtime.Post(ShellShortcutActionMsg{Invocation: shortcut.ActionInvocation{ID: "menu.workspace", SourceActionID: "menu.workspace"}}); err != nil {
+		t.Fatalf("reenter workspace mode before rename: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain workspace mode before rename: %v", err)
+	}
 	renameAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFooterRenameWorkspace.String(), "")
 	if err := host.SendInput(mouseEventAt(renameAction.Rect)); err != nil {
 		t.Fatalf("send workspace rename footer click: %v", err)

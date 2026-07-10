@@ -141,6 +141,27 @@ func NewUIInputReducer() Reducer {
 	}
 }
 
+func reduceShortcutIntent(root state.Root, intent input.Intent) (state.Root, []Effect) {
+	switch intent.Kind {
+	case input.IntentOpenTerminalPicker:
+		root.Shell = root.Shell.OpenTerminalPicker()
+		return root.Advance(), []Effect{handledEffect{}, terminalPickerListRequestEffect()}
+	case input.IntentSetInteractionMode:
+		root.Shell = root.Shell.SetInteractionMode(stateInteractionMode(intent.Mode))
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: string(root.Shell.InteractionMode) + " mode"})
+		root, effects := armShortcutPassthroughWindow(root, shortcutPassthroughKindForMode(root.Shell.InteractionMode), []Effect{handledEffect{}})
+		return root.Advance(), appendInteractionModeTimeoutEffect(root, effects)
+	case input.IntentShellAction:
+		return reduceShellActionIntent(root, intent)
+	case input.IntentPaneCommand:
+		return reducePaneCommandIntent(root, intent)
+	case input.IntentWorkbenchCommand:
+		return reduceWorkbenchCommandIntent(root, intent)
+	default:
+		return root, []Effect{handledEffect{}}
+	}
+}
+
 func shortcutPassthroughInput(root state.Root, event input.InputEvent) (state.Root, bool) {
 	if event.Kind != input.EventKindKey {
 		return root, false

@@ -1359,6 +1359,14 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	}
 	switch region.Kind {
 	case render.HitRegionContentAction:
+		if region.Invocation.ID != "" {
+			return ShellShortcutActionMsg{
+				Invocation: region.Invocation,
+				PaneID:     region.PaneID,
+				Floating:   region.Floating,
+				Row:        region.Row,
+			}
+		}
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Floating: region.Floating, Row: region.Row}
 	default:
 		return msg
