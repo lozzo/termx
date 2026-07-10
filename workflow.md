@@ -89,7 +89,7 @@
 | KS008 | 完成 | shortcut key、scene、action 和参数校验收敛 | 先补 canonical key、scene-action 和参数矩阵；config 基于 KS005 domain spec 校验 routed/overlay scene，拒绝等价冲突、理论不可表达 token、错误 scene-action 组合及越界参数 |
 | KS009 | 完成 | action 文案覆盖与 catalog 替换语义 | 先补默认、action-only、scene-only、显式空 scene 和 actions+scenes 矩阵；action-only 只覆盖默认文案，出现 scene 后用户 scene catalog 是完整按键真值 |
 | KS010 | 完成 | 组合 action 与 terminal lifecycle 执行语义 | 先补成功、失败、TerminalRef 路由 harness；只实现 `panel.kill` / `panel.kill_and_close` handler、步骤和关闭时机，不再调整 registry 基础结构或开放脚本系统 |
-| KS011 | 暂停 | 增强键盘协议与 Ctrl+数字 | 用户切换到连接体验优化后暂停；恢复时先补 raw bytes 到 invocation harness，再接 TerminalHost capability 与 available 投影 |
+| KS011 | 完成 | 增强键盘协议与 Ctrl+数字 | Kitty CSI-u raw bytes 可生成 Ctrl+数字 invocation；TerminalHost 成对 push/query/pop disambiguate 协议，capability 控制提示 availability，宿主序列不泄漏 PTY |
 | KS011A | 完成 | shortcut 单键展示策略与数字范围表达式 | binding 长写支持 `show`；`[1...9]` / `ctrl+[1...5]` 在配置加载期配合 `{key}` 展开；footer 只展示显式可见项且不产生裸按键，Help 保留全部有效绑定 |
 | KS011B | 完成 | shortcut bracket 字面量与范围识别回归修复 | `[`、`]` 及带修饰符 bracket 继续作为合法具体按键；仅范围表达式进入展开；真实用户配置可加载 |
 | CX001 | 完成 | endpoint 连接中与断线 pane UI 收敛 | 复用 reducer-owned `AttachPending` 和 endpoint runtime status；重连请求立即显示连接中，断线保留最后画面并结构化展示 endpoint、transport、原因和局部操作；不新增自动重试或 transport fallback |
@@ -148,7 +148,7 @@
 - KS008 已完成：config 以 shortcut domain `ParseInvocation`、`AllowedScenes` 和 `Routable` 为 action/scene/参数真值；routed 与 overlay 共用 canonical key signature，拒绝 panel/pane、Esc/Return、modifier 顺序、Ctrl 字符大小写及 `Ctrl-@`/`Ctrl-Space` 等价冲突；quoted `.` 的短写和长写均通过真实 YAML parser；增强键盘 token 只做协议理论校验，实际 capability/available 状态仍由 KS011 负责。
 - KS009 已完成：仅配置 `actions` 时保留全部默认 bindings 并覆盖文案；任意显式 scene（包括空 scene）声明完整用户 catalog，不继承其他默认 scene；`shortcuts: {}` 保留默认，`shortcuts:`、`actions:`、`scene:` null 明确拒绝；action alias 在 parser 中 canonicalize 且重复声明报错；按键 label > action label > shortcut domain `DefaultLabel`，footer 聚合只合并键和 invocation，不再覆盖文案。
 - KS010 已完成：`panel.kill` 与 `panel.kill_and_close` 直接进入独立 pane command 链路；两者都只从 pane binding 读取 owning `TerminalRef` 发 kill，不 fallback 裸 `TerminalID`；kill-only 成功保留 pane，kill-and-close 仅在成功且 result/close 消费两次确认 pane 仍绑定同一 `TerminalRef` 后进入标准 workbench pane-close/persist 路径，失败、重绑定和 last-pane close 拒绝都保留 pane；配置仍只引用 action id，不开放脚本。
-- KS011 暂停：用户要求先优化断线与连接中体验；当前未新增增强键盘实现，恢复时仍从 raw bytes -> `InputEvent` -> invocation harness 开始。
+- KS011 已完成：TerminalHost 分步完整写入 Kitty keyboard protocol disambiguate push、capability query，并只在 push 成功后 pop；`CSI ? flags u` 回投 reducer-owned `HostCapabilities`，增强 binding 仅在 flag 1 确认后进入 footer/Help；CSI-u Ctrl+数字经 raw parser、标准 InputEvent 和 shortcut catalog 生成参数化 invocation，普通数字不误判，release/拒绝结构不触发 action，所有宿主 CSI-u 都不会原样泄漏到 PTY；不支持宿主继续使用 `Ctrl-T` 后数字 fallback。
 - CX001 已完成：reconnect 请求先以目标 view 的 `AttachPending` 投影连接中，并把 owning endpoint 标为 connecting；成功回包收敛为 connected，失败清除 pending 并按错误分类回投 offline。断线 pane 保留最后 live surface，结构化显示 endpoint label/id、transport、terminal、reason 和局部 Reconnect/Disconnect 操作；未引入定时刷新、自动重试或 fallback。
 - CX002 已完成：未连接态展示清晰的起始说明和主次操作；连接/重连态保留最后画面并说明输入暂停、新 endpoint session 正在建立；异常断开态把错误分类投影为用户可读 issue，原始错误降为 detail，并按 auth、host-key、transport、remote daemon、protocol、config 给出对应 next step。三态未伪造百分比、重试次数或 transport 阶段。
 - KS011A 已完成：shortcut binding 长写新增三态 `show`，显式 false 只隐藏 footer、键盘与 Help 保留，显式 true 可覆盖 domain 默认 footer hidden；升序单数字 `[1...9]` 与 `ctrl+[1...5]` 在配置加载期用 `{key}` 展开并继续走 canonical key、scene/action、参数与冲突校验；footer 宽度不足时按键和文案整体裁剪，不再保留裸按键旧路径。

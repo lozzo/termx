@@ -321,6 +321,9 @@ func shortcutActionCatalogFromShortcuts(mode string, root state.Root, includeHid
 	entries := input.ShortcutEntriesForScene(root.Config.Shortcuts, scene)
 	out := make([]FooterActionVM, 0, len(entries))
 	for _, entry := range entries {
+		if input.ShortcutKeyRequiresEnhancedKeyboard(entry.Key) && !root.HostCapabilities.KeyboardDisambiguation {
+			continue
+		}
 		action, ok := shortcutActionFromShortcutEntry(entry, root.Config, includeHidden)
 		if ok {
 			out = append(out, action)

@@ -87,6 +87,28 @@ func TestShortcutShowPolicyOnlyFiltersFooter(t *testing.T) {
 	}
 }
 
+func TestEnhancedShortcutVisibilityUsesHostCapability(t *testing.T) {
+	show := true
+	root := state.Root{Config: state.TUIConfigStore{Shortcuts: state.TUIShortcutConfig{
+		Configured: true,
+		Scenes: map[string]state.TUIShortcutSceneConfig{
+			"global": {Bindings: map[string]state.TUIShortcutBindingConfig{
+				"ctrl-1": {Action: "tab.jump.1", Show: &show},
+				"ctrl-t": {Action: "menu.tab", Show: &show},
+			}},
+		},
+	}}}
+	withoutCapability := footerActionCatalogFromShortcuts("live", root)
+	if containsFooterActionID(withoutCapability, ActionTabSwitch.String()) || !containsFooterActionID(withoutCapability, ActionFooterTabMode.String()) {
+		t.Fatalf("unavailable enhanced binding must be hidden while stable fallback remains: %#v", withoutCapability)
+	}
+	root.HostCapabilities = state.HostCapabilityStore{KeyboardProbed: true, KeyboardDisambiguation: true}
+	withCapability := footerActionCatalogFromShortcuts("live", root)
+	if !containsFooterActionID(withCapability, ActionTabSwitch.String()) {
+		t.Fatalf("confirmed enhanced binding should enter footer catalog: %#v", withCapability)
+	}
+}
+
 func TestFooterHitRegionCarriesExactShortcutInvocation(t *testing.T) {
 	invocation, _, err := shortcut.ParseInvocation("panel.close")
 	if err != nil {

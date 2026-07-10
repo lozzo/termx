@@ -15,6 +15,7 @@ import (
 	"github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
+	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
 type fakeTerminalOps struct {
@@ -65,6 +66,34 @@ func (ops *fakeTerminalOps) RestoredCount() int {
 type blockingCancelReader struct {
 	events chan []byte
 	done   chan struct{}
+}
+
+type failNthWriter struct {
+	writes int
+	failAt int
+	buffer bytes.Buffer
+}
+
+type shortNthWriter struct {
+	writes  int
+	shortAt int
+	buffer  bytes.Buffer
+}
+
+func (writer *shortNthWriter) Write(data []byte) (int, error) {
+	writer.writes++
+	if writer.writes == writer.shortAt && len(data) > 1 {
+		return len(data) - 1, nil
+	}
+	return writer.buffer.Write(data)
+}
+
+func (writer *failNthWriter) Write(data []byte) (int, error) {
+	writer.writes++
+	if writer.writes == writer.failAt {
+		return 0, errors.New("enter write failed")
+	}
+	return writer.buffer.Write(data)
 }
 
 func newBlockingCancelReader() *blockingCancelReader {
@@ -118,7 +147,7 @@ func TestHostEnterCloseRestoresTerminal(t *testing.T) {
 		t.Fatalf("expected raw mode once, got %d", got)
 	}
 	gotEnter := output.String()
-	for _, seq := range []string{enterAltScreen, hideCursor, enableBracketPaste, enableMouseCell, enableMouseButton, enableMouseSGR} {
+	for _, seq := range []string{enterAltScreen, hideCursor, enableKeyboardDisambiguation, queryKeyboardEnhancements, enableBracketPaste, enableMouseCell, enableMouseButton, enableMouseSGR} {
 		if !strings.Contains(gotEnter, seq) {
 			t.Fatalf("missing enter sequence %q in %q", seq, gotEnter)
 		}
@@ -138,10 +167,68 @@ func TestHostEnterCloseRestoresTerminal(t *testing.T) {
 		t.Fatalf("expected restore once, got %d", got)
 	}
 	gotAll := output.String()
-	for _, seq := range []string{disableMouseSGR, disableMouseButton, disableMouseCell, disableBracketPaste, showCursor, exitAltScreen} {
+	for _, seq := range []string{disableMouseSGR, disableMouseButton, disableMouseCell, disableBracketPaste, disableKeyboardEnhancements, showCursor, exitAltScreen} {
 		if !strings.Contains(gotAll, seq) {
 			t.Fatalf("missing exit sequence %q in %q", seq, gotAll)
 		}
+	}
+	if got := strings.Count(gotAll, disableKeyboardEnhancements); got != 1 {
+		t.Fatalf("normal close and repeated close must pop keyboard protocol exactly once, got %d in %q", got, gotAll)
+	}
+}
+
+func TestInputParserDecodesKittyCSIUCtrlDigits(t *testing.T) {
+	parser := NewInputParser()
+	got := parser.Feed([]byte("\x1b[49;5u\x1b[57;5:1u"))
+	want := []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "1", Ctrl: true, RawSeq: "\x1b[49;5u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "9", Ctrl: true, RawSeq: "\x1b[57;5:1u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected CSI-u ctrl digit events\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestInputParserProjectsKeyboardCapabilityAndSuppressesRelease(t *testing.T) {
+	got := NewInputParser().Feed([]byte("\x1b[?1u\x1b[49;5:3u"))
+	want := []input.InputEvent{
+		{Kind: input.EventKindHostCapability, Capability: input.HostCapabilityEvent{KeyboardDisambiguation: true}, RawSeq: "\x1b[?1u"},
+		{Kind: input.EventKindKey, Key: input.KeyUnknown, Ctrl: true, RawSeq: "\x1b[49;5:3u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("capability/release decode mismatch: got=%#v want=%#v", got, want)
+	}
+}
+
+func TestInputParserBuffersAndValidatesKittyCSIU(t *testing.T) {
+	parser := NewInputParser()
+	if got := parser.Feed([]byte("\x1b[49;")); len(got) != 0 {
+		t.Fatalf("partial CSI-u must stay buffered, got %#v", got)
+	}
+	got := parser.Feed([]byte("5u"))
+	want := []input.InputEvent{{Kind: input.EventKindKey, Key: input.KeyChar, Char: "1", Ctrl: true, RawSeq: "\x1b[49;5u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("buffered CSI-u mismatch: got=%#v want=%#v", got, want)
+	}
+
+	invalid := NewInputParser().Feed([]byte("\x1b[49;0u"))
+	if len(invalid) != 1 || invalid[0].Key != input.KeyUnknown {
+		t.Fatalf("invalid CSI-u must remain unknown, got %#v", invalid)
+	}
+	for _, raw := range []string{"\x1b[49:97;5u", "\x1b[49;9u", "\x1b[49;5:4u"} {
+		invalid := NewInputParser().Feed([]byte(raw))
+		if len(invalid) != 1 || invalid[0].Key != input.KeyUnknown {
+			t.Fatalf("unsupported CSI-u structure %q must remain unknown, got %#v", raw, invalid)
+		}
+	}
+}
+
+func TestInputParserKeepsPlainDigitsUnmodified(t *testing.T) {
+	parser := NewInputParser()
+	got := parser.Feed([]byte("1"))
+	want := []input.InputEvent{{Kind: input.EventKindKey, Key: input.KeyChar, Char: "1", RawSeq: "1"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("plain digit must not be guessed as ctrl input: got=%#v want=%#v", got, want)
 	}
 }
 
@@ -166,6 +253,100 @@ func TestHostThemeProbeCanBeDisabled(t *testing.T) {
 	}
 	if err := host.Close(); err != nil {
 		t.Fatalf("close: %v", err)
+	}
+}
+
+func TestHostEnterWriteFailureRestoresKeyboardProtocolAndTerminal(t *testing.T) {
+	ops := &fakeTerminalOps{terminal: true}
+	output := &failNthWriter{failAt: 1}
+	host := New(
+		WithInput(strings.NewReader(""), 7),
+		WithOutput(output),
+		WithTerminalOps(ops),
+		WithThemeProbe(false),
+	)
+	err := host.Enter(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "enter write failed") {
+		t.Fatalf("expected original enter write error, got %v", err)
+	}
+	if got := ops.RestoredCount(); got != 1 {
+		t.Fatalf("enter write failure must restore terminal once, got %d", got)
+	}
+	if got := output.buffer.String(); strings.Contains(got, disableKeyboardEnhancements) || !strings.Contains(got, exitAltScreen) {
+		t.Fatalf("failure before keyboard push must not pop an empty keyboard stack, got %q", got)
+	}
+}
+
+func TestHostFailureAfterKeyboardPushPopsProtocol(t *testing.T) {
+	ops := &fakeTerminalOps{terminal: true}
+	output := &failNthWriter{failAt: 3}
+	host := New(
+		WithInput(strings.NewReader(""), 7),
+		WithOutput(output),
+		WithTerminalOps(ops),
+		WithThemeProbe(false),
+	)
+	if err := host.Enter(context.Background()); err == nil {
+		t.Fatal("expected capability query write failure")
+	}
+	if got := output.buffer.String(); !strings.Contains(got, enableKeyboardDisambiguation) || !strings.Contains(got, disableKeyboardEnhancements) {
+		t.Fatalf("failure after keyboard push must pop the pushed mode, got %q", got)
+	}
+	if got := strings.Count(output.buffer.String(), disableKeyboardEnhancements); got != 1 {
+		t.Fatalf("failure after push must pop exactly once, got %d", got)
+	}
+}
+
+func TestHostKeyboardPushShortWriteDoesNotPop(t *testing.T) {
+	ops := &fakeTerminalOps{terminal: true}
+	output := &shortNthWriter{shortAt: 2}
+	host := New(WithInput(strings.NewReader(""), 7), WithOutput(output), WithTerminalOps(ops), WithThemeProbe(false))
+	if err := host.Enter(context.Background()); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("expected keyboard push short write, got %v", err)
+	}
+	if strings.Contains(output.buffer.String(), disableKeyboardEnhancements) {
+		t.Fatalf("partial keyboard push must not pop an unconfirmed stack entry: %q", output.buffer.String())
+	}
+}
+
+func TestHostKeyboardQueryShortWritePopsSuccessfulPush(t *testing.T) {
+	ops := &fakeTerminalOps{terminal: true}
+	output := &shortNthWriter{shortAt: 3}
+	host := New(WithInput(strings.NewReader(""), 7), WithOutput(output), WithTerminalOps(ops), WithThemeProbe(false))
+	if err := host.Enter(context.Background()); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("expected keyboard query short write, got %v", err)
+	}
+	if got := strings.Count(output.buffer.String(), disableKeyboardEnhancements); got != 1 {
+		t.Fatalf("query short write after successful push must pop exactly once, got %d in %q", got, output.buffer.String())
+	}
+}
+
+func TestRawKittyCSIUCtrlDigitRoutesToConfiguredTabJump(t *testing.T) {
+	events := NewInputParser().Feed([]byte("\x1b[49;5u"))
+	if len(events) != 1 {
+		t.Fatalf("expected one parsed event, got %#v", events)
+	}
+	shortcuts := state.TUIShortcutConfig{Scenes: map[string]state.TUIShortcutSceneConfig{
+		"global": {Bindings: map[string]state.TUIShortcutBindingConfig{"ctrl-1": {Action: "tab.jump.1"}}},
+	}}
+	intent := input.RouteWithOptions(events[0], input.RouteOptions{Shortcuts: shortcuts})
+	if intent.Kind != input.IntentShortcutAction || intent.Invocation.ID != "tab.jump" {
+		t.Fatalf("raw CSI-u ctrl-1 did not reach tab jump invocation: event=%#v intent=%#v", events[0], intent)
+	}
+	if index, ok := intent.Invocation.Param("index"); !ok || index != 1 {
+		t.Fatalf("raw CSI-u ctrl-1 lost index: %#v", intent.Invocation)
+	}
+}
+
+func TestRejectedKittyCSIUNeverLeaksToPTY(t *testing.T) {
+	for _, raw := range []string{"\x1b[49:97;5u", "\x1b[49;9u", "\x1b[49;5:4u"} {
+		events := NewInputParser().Feed([]byte(raw))
+		if len(events) != 1 || events[0].KeyboardProtocol != input.KeyboardProtocolKittyCSIU {
+			t.Fatalf("rejected CSI-u must retain protocol source: raw=%q events=%#v", raw, events)
+		}
+		if intent := input.RouteWithOptions(events[0], input.RouteOptions{}); intent.Kind != input.IntentNone {
+			t.Fatalf("rejected CSI-u must not leak to PTY: raw=%q intent=%#v", raw, intent)
+		}
 	}
 }
 

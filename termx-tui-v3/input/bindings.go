@@ -568,6 +568,19 @@ func ShortcutKeyDisplay(token string) string {
 	return base
 }
 
+// ShortcutKeyRequiresEnhancedKeyboard 判断某个 binding 是否依赖传统 TTY 无法区分的修饰键编码。
+// capability availability 由宿主 TerminalHost 探测；该函数只复用 canonical key parser 判定键位语义。
+func ShortcutKeyRequiresEnhancedKeyboard(token string) bool {
+	key, ok := parseShortcutKeyToken(token)
+	if !ok || key.Key != KeyChar || !key.Ctrl {
+		return false
+	}
+	if _, ok := ctrlCharBytes(key.Char); ok {
+		return false
+	}
+	return true
+}
+
 func shortcutKeyBaseDisplay(key shortcutKey) string {
 	switch key.Key {
 	case KeyChar:
@@ -871,7 +884,7 @@ func shortcutInvocationMode(invocation shortcut.ActionInvocation) InteractionMod
 }
 
 func terminalBytes(event InputEvent) []byte {
-	if event.RawSeq != "" {
+	if event.RawSeq != "" && event.KeyboardProtocol == "" {
 		return []byte(event.RawSeq)
 	}
 	switch event.Key {
@@ -887,8 +900,15 @@ func terminalBytes(event InputEvent) []byte {
 		if event.Char != "" {
 			if event.Ctrl {
 				if data, ok := ctrlCharBytes(event.Char); ok {
+					if event.Alt {
+						return append([]byte{'\x1b'}, data...)
+					}
 					return data
 				}
+				return nil
+			}
+			if event.Alt {
+				return append([]byte{'\x1b'}, []byte(event.Char)...)
 			}
 			return []byte(event.Char)
 		}

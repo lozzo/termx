@@ -196,6 +196,22 @@ func TestRouteUsesCustomShortcutsAsOnlyTruth(t *testing.T) {
 	}
 }
 
+func TestKittyCSIUCtrlDigitRoutesToConfiguredTabJump(t *testing.T) {
+	shortcuts := state.TUIShortcutConfig{Scenes: map[string]state.TUIShortcutSceneConfig{
+		"global": {Bindings: map[string]state.TUIShortcutBindingConfig{
+			"ctrl-1": {Action: "tab.jump.1"},
+		}},
+	}}
+	event := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "1", Ctrl: true, RawSeq: "\x1b[49;5u"}
+	intent := RouteWithOptions(event, RouteOptions{Shortcuts: shortcuts})
+	if intent.Kind != IntentShortcutAction || intent.Invocation.ID != "tab.jump" {
+		t.Fatalf("CSI-u ctrl-1 should route to tab jump, got %#v", intent)
+	}
+	if index, ok := intent.Invocation.Param("index"); !ok || index != 1 {
+		t.Fatalf("CSI-u ctrl-1 lost tab index: %#v", intent.Invocation)
+	}
+}
+
 func TestShortcutShowPolicyDoesNotChangeKeyboardRouting(t *testing.T) {
 	hide := false
 	shortcuts := state.TUIShortcutConfig{Configured: true, Scenes: map[string]state.TUIShortcutSceneConfig{
@@ -350,6 +366,33 @@ func TestNormalModePassesUnboundRawKeysAndCommonCtrlToTerminal(t *testing.T) {
 		if intent.Kind != IntentTerminalInput || string(intent.Bytes) != tc.want {
 			t.Fatalf("%s: unexpected terminal passthrough %#v", tc.name, intent)
 		}
+	}
+}
+
+func TestEnhancedKeyboardInputDoesNotLeakHostProtocolToPTY(t *testing.T) {
+	cases := []struct {
+		name  string
+		event InputEvent
+		want  string
+	}{
+		{name: "ctrl letter", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c", Ctrl: true, RawSeq: "\x1b[99;5u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x03"},
+		{name: "plain unicode", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "好", RawSeq: "\x1b[22909u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "好"},
+		{name: "alt char", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "x", Alt: true, RawSeq: "\x1b[120;3u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x1bx"},
+		{name: "unrepresentable ctrl digit", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "1", Ctrl: true, RawSeq: "\x1b[49;5u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			intent := RouteWithOptions(tc.event, RouteOptions{})
+			if tc.want == "" {
+				if intent.Kind != IntentNone {
+					t.Fatalf("unrepresentable enhanced key must not leak to PTY: %#v", intent)
+				}
+				return
+			}
+			if intent.Kind != IntentTerminalInput || string(intent.Bytes) != tc.want {
+				t.Fatalf("enhanced key semantic passthrough mismatch: got=%#v want=%q", intent, tc.want)
+			}
+		})
 	}
 }
 

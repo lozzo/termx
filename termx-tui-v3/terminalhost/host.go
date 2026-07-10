@@ -25,14 +25,18 @@ const (
 	showCursor          = "\x1b[?25h"
 	enableBracketPaste  = "\x1b[?2004h"
 	disableBracketPaste = "\x1b[?2004l"
-	enableMouseCell     = "\x1b[?1000h"
-	disableMouseCell    = "\x1b[?1000l"
-	enableMouseButton   = "\x1b[?1002h"
-	disableMouseButton  = "\x1b[?1002l"
-	enableMouseSGR      = "\x1b[?1006h"
-	disableMouseSGR     = "\x1b[?1006l"
-	requestHostFG       = "\x1b]10;?\x07"
-	requestHostBG       = "\x1b]11;?\x07"
+	// Kitty keyboard protocol flag 1 只消除歧义键编码；普通文本仍保持 UTF-8，不改变 PTY 输入语义。
+	enableKeyboardDisambiguation = "\x1b[>1u"
+	disableKeyboardEnhancements  = "\x1b[<u"
+	queryKeyboardEnhancements    = "\x1b[?u"
+	enableMouseCell              = "\x1b[?1000h"
+	disableMouseCell             = "\x1b[?1000l"
+	enableMouseButton            = "\x1b[?1002h"
+	disableMouseButton           = "\x1b[?1002l"
+	enableMouseSGR               = "\x1b[?1006h"
+	disableMouseSGR              = "\x1b[?1006l"
+	requestHostFG                = "\x1b]10;?\x07"
+	requestHostBG                = "\x1b]11;?\x07"
 )
 
 var (
@@ -185,12 +189,13 @@ type Host struct {
 	themeProbe  bool
 	logger      *slog.Logger
 
-	mu      sync.Mutex
-	state   TerminalState
-	entered bool
-	closed  bool
-	done    chan struct{}
-	wg      sync.WaitGroup
+	mu             sync.Mutex
+	state          TerminalState
+	entered        bool
+	closed         bool
+	keyboardPushed bool
+	done           chan struct{}
+	wg             sync.WaitGroup
 }
 
 // New 建立真实 host。调用 Enter 后才会进入 raw mode 和启动输入循环。
@@ -241,10 +246,19 @@ func (host *Host) Enter(ctx context.Context) error {
 		// theme probe 必须在 alt-screen/raw mode 后发送，避免宿主把响应回到普通 shell。
 		sequence += hostThemeProbeSequence()
 	}
-	if _, err := io.WriteString(host.output, sequence); err != nil {
-		_ = host.ops.Restore(host.fd, state)
-		host.state = nil
-		host.entered = false
+	if err := writeFullString(host.output, sequence); err != nil {
+		_ = host.restoreLocked()
+		host.mu.Unlock()
+		return err
+	}
+	if err := writeFullString(host.output, enableKeyboardDisambiguation); err != nil {
+		_ = host.restoreLocked()
+		host.mu.Unlock()
+		return err
+	}
+	host.keyboardPushed = true
+	if err := writeFullString(host.output, queryKeyboardEnhancements); err != nil {
+		_ = host.restoreLocked()
 		host.mu.Unlock()
 		return err
 	}
@@ -317,13 +331,14 @@ func (host *Host) restoreLocked() error {
 	}
 	var writeErr error
 	if host.entered {
-		_, writeErr = io.WriteString(host.output, exitSequence())
+		writeErr = writeFullString(host.output, exitSequence(host.keyboardPushed))
 	}
 	var restoreErr error
 	if host.entered && host.state != nil {
 		restoreErr = host.ops.Restore(host.fd, host.state)
 	}
 	host.entered = false
+	host.keyboardPushed = false
 	host.state = nil
 	if writeErr != nil {
 		return writeErr
@@ -332,6 +347,17 @@ func (host *Host) restoreLocked() error {
 		return restoreErr
 	}
 	return closeErr
+}
+
+func writeFullString(writer io.Writer, value string) error {
+	written, err := io.WriteString(writer, value)
+	if err != nil {
+		return err
+	}
+	if written != len(value) {
+		return io.ErrShortWrite
+	}
+	return nil
 }
 
 // Size 返回当前宿主终端尺寸，单位是 cols/rows。
@@ -422,9 +448,13 @@ func hostThemeProbeSequence() string {
 	return builder.String()
 }
 
-func exitSequence() string {
+func exitSequence(keyboardPushed bool) string {
 	// 恢复顺序与进入顺序相反，避免退出时遗留鼠标或隐藏光标状态。
-	return disableMouseSGR + disableMouseButton + disableMouseCell + disableBracketPaste + showCursor + exitAltScreen
+	sequence := disableMouseSGR + disableMouseButton + disableMouseCell + disableBracketPaste
+	if keyboardPushed {
+		sequence += disableKeyboardEnhancements
+	}
+	return sequence + showCursor + exitAltScreen
 }
 
 func defaultResizeSignalFactory() (<-chan os.Signal, func()) {

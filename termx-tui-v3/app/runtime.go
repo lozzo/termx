@@ -546,6 +546,11 @@ func (runtime *AppRuntime) ingestHostInput() {
 					PaletteIndex: event.Theme.PaletteIndex,
 					PaletteColor: event.Theme.PaletteColor,
 				}})
+			case input.EventKindHostCapability:
+				flushTerminalBatch()
+				runtime.enqueue(HostCapabilityMsg{Update: state.HostCapabilityUpdate{
+					KeyboardDisambiguation: event.Capability.KeyboardDisambiguation,
+				}})
 			default:
 				if !blockTerminalBatch {
 					if bytes, ok := runtime.coalescableTerminalInputBytes(event); ok {

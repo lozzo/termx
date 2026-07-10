@@ -286,10 +286,13 @@ KS005-KS010 每个切片都运行 `cd termx-tui-v3 && go test ./... -count=1`、
 
 ### KS011：增强键盘协议
 
-- 采用终端生态支持的增强键盘协议前先由 harness 固化字节格式；TerminalHost 生命周期 owner 负责启用、正常退出和错误清理时恢复模式。
-- 配置期只验证协议理论支持；启动期检测实际 capability；运行期决定 binding 是否 available。
-- raw TTY parser 必须真实产生 `Ctrl+1..9` 等事件后，文档和默认配置才允许声明可用。
-- 不支持增强协议时保留 sticky tab 场景数字跳转，不伪造 root `Ctrl+数字` 能力。
+- TerminalHost 是宿主键盘协议 owner：进入 raw/alt-screen 后独立 push Kitty keyboard protocol disambiguate flag，只有 push 成功才记录并在正常退出或后续启动失败时 pop；push 前失败不能 pop 空栈。
+- push 后发送 `CSI ? u` 查询，响应 `CSI ? flags u` 经 `HostCapabilityMsg` 写入 reducer-owned `HostCapabilities`；flag 1 才表示宿主确认 disambiguate 生效。
+- raw TTY parser 以 CSI-u 字节为 truth，例如 `CSI 49;5 u` 解析为 `InputEvent{Char:"1", Ctrl:true}`；普通 `1` 不得猜测为 Ctrl 输入。
+- CSI-u 只负责生成标准 InputEvent，真实动作仍由 shortcut catalog 决定；`ctrl+[1...9] -> tab.jump.{key}` 不新增第二套路由。
+- 未命中的 CSI-u 不能把宿主协议 escape sequence 原样发送给 PTY；可降级的 Ctrl 字母、Alt 字符按语义编码，不可由传统 PTY 表达的 Ctrl+数字直接丢弃。
+- 当前只启用 disambiguate flag，不启用 report-all-keys 或 key release reporting，普通 UTF-8 文本输入保持不变。
+- 不支持 Kitty keyboard protocol、或宿主关闭“允许应用改变键报告模式”时，保留 `Ctrl-T` 后数字的 sticky tab fallback，不把普通数字伪装成 root Ctrl+数字。
 
 ### KS012-KS013：契约与文档收尾
 

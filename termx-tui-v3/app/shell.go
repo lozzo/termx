@@ -167,6 +167,13 @@ type HostThemeMsg struct {
 
 func (HostThemeMsg) isMsg() {}
 
+// HostCapabilityMsg 把 TerminalHost 已确认的宿主能力回投 reducer-owned state。
+type HostCapabilityMsg struct {
+	Update state.HostCapabilityUpdate
+}
+
+func (HostCapabilityMsg) isMsg() {}
+
 const ownerConfirmDelay = 500 * time.Millisecond
 
 const ownerConfirmClearToken CancelToken = "terminal.owner.confirm.clear"
@@ -318,6 +325,8 @@ func NewShellReducer() Reducer {
 			root.Shell = root.Shell.ClearOwnerConfirm(msg.Seq)
 		case HostThemeMsg:
 			root.HostTheme = root.HostTheme.ApplyUpdate(msg.Update)
+		case HostCapabilityMsg:
+			root.HostCapabilities = root.HostCapabilities.ApplyUpdate(msg.Update)
 		case ShellSplitActivePaneMsg:
 			return reduceWorkbenchCommand(root, state.WorkbenchCommand{
 				Action: state.WorkbenchCommandPaneSplit,

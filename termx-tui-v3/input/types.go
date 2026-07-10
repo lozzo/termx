@@ -9,11 +9,18 @@ import (
 type EventKind string
 
 const (
-	EventKindKey       EventKind = "key"
-	EventKindMouse     EventKind = "mouse"
-	EventKindResize    EventKind = "resize"
-	EventKindHostTheme EventKind = "host-theme"
+	EventKindKey            EventKind = "key"
+	EventKindMouse          EventKind = "mouse"
+	EventKindResize         EventKind = "resize"
+	EventKindHostTheme      EventKind = "host-theme"
+	EventKindHostCapability EventKind = "host-capability"
 )
+
+// KeyboardProtocol 标记 InputEvent 来自哪一种宿主键盘协议。
+// input router 只用它阻止宿主控制序列泄漏到 PTY；动作匹配仍只依赖标准化后的 key/char/modifier。
+type KeyboardProtocol string
+
+const KeyboardProtocolKittyCSIU KeyboardProtocol = "kitty-csi-u"
 
 type Key string
 
@@ -69,19 +76,27 @@ const (
 
 // InputEvent 是 TerminalHost 拥有的宿主输入边界。
 type InputEvent struct {
-	Kind   EventKind
-	Key    Key
-	Char   string
-	Mouse  MouseButton
-	Row    int
-	Col    int
-	Cols   int
-	Rows   int
-	Theme  HostThemeEvent
-	Alt    bool
-	Ctrl   bool
-	Shift  bool
-	RawSeq string
+	Kind             EventKind
+	Key              Key
+	Char             string
+	Mouse            MouseButton
+	Row              int
+	Col              int
+	Cols             int
+	Rows             int
+	Theme            HostThemeEvent
+	Capability       HostCapabilityEvent
+	KeyboardProtocol KeyboardProtocol
+	Alt              bool
+	Ctrl             bool
+	Shift            bool
+	RawSeq           string
+}
+
+// HostCapabilityEvent 是 TerminalHost capability query 的结构化结果。
+// 它只描述当前宿主 terminal emulator 的会话能力，不代表远端 terminal 或 daemon 能力。
+type HostCapabilityEvent struct {
+	KeyboardDisambiguation bool
 }
 
 type HostThemeEvent struct {

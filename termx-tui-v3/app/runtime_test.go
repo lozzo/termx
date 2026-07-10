@@ -1477,6 +1477,39 @@ func TestAppRuntimeIngestsHostThemeWithoutTerminalInputLeak(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeIngestsHostKeyboardCapabilityWithoutInputLeak(t *testing.T) {
+	host := NewFakeTerminalHost(2)
+	if err := host.SendInput(input.InputEvent{
+		Kind:       input.EventKindHostCapability,
+		Capability: input.HostCapabilityEvent{KeyboardDisambiguation: true},
+	}); err != nil {
+		t.Fatalf("send host capability: %v", err)
+	}
+	var leaked bool
+	runtime := NewAppRuntime(
+		state.Root{},
+		ComposeReducers(NewShellReducer(), func(root state.Root, msg Msg) (state.Root, []Effect) {
+			if _, ok := msg.(InputMsg); ok {
+				leaked = true
+			}
+			return root, nil
+		}),
+		func(state.Root) render.Frame { return render.Frame{} },
+		host,
+		NewSyncEffectRunner(),
+	)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	got := runtime.State().HostCapabilities
+	if !got.KeyboardDisambiguation {
+		t.Fatalf("expected keyboard disambiguation capability, got %#v", got)
+	}
+	if leaked {
+		t.Fatal("host capability event must not leak as terminal InputMsg")
+	}
+}
+
 func TestAppRuntimeInitializesViewportFromHostSizeAndRenders(t *testing.T) {
 	host := NewFakeTerminalHost(4)
 	host.SetSize(132, 43)

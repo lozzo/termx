@@ -115,7 +115,11 @@ func parseEscape(buffer []byte) (input.InputEvent, int, bool) {
 			if event, ok := csiKeyEvent(buffer[:i+1]); ok {
 				return event, i + 1, true
 			}
-			return unknownKey(buffer[:i+1]), i + 1, true
+			event := unknownKey(buffer[:i+1])
+			if buffer[i] == 'u' {
+				event.KeyboardProtocol = input.KeyboardProtocolKittyCSIU
+			}
+			return event, i + 1, true
 		}
 	}
 	return input.InputEvent{}, 0, false
@@ -270,6 +274,11 @@ func csiKeyEvent(seq []byte) (input.InputEvent, bool) {
 	final := seq[len(seq)-1]
 	event := input.InputEvent{Kind: input.EventKindKey, RawSeq: string(seq)}
 	switch final {
+	case 'u':
+		if strings.HasPrefix(body, "?") {
+			return csiKeyboardCapabilityEvent(strings.TrimPrefix(body, "?"), string(seq))
+		}
+		return csiUnicodeKeyEvent(body, string(seq))
 	case 'A', 'B', 'C', 'D', 'F', 'H', 'Z':
 		parts := splitCSIParams(body)
 		applyKeyModifier(&event, modifierParam(parts, 1))
@@ -307,6 +316,68 @@ func csiKeyEvent(seq []byte) (input.InputEvent, bool) {
 	default:
 		return input.InputEvent{}, false
 	}
+}
+
+func csiKeyboardCapabilityEvent(body string, raw string) (input.InputEvent, bool) {
+	flags, err := strconv.Atoi(body)
+	if err != nil || flags < 0 {
+		return input.InputEvent{}, false
+	}
+	return input.InputEvent{
+		Kind: input.EventKindHostCapability,
+		Capability: input.HostCapabilityEvent{
+			KeyboardDisambiguation: flags&1 != 0,
+		},
+		RawSeq: raw,
+	}, true
+}
+
+// csiUnicodeKeyEvent 解码 Kitty keyboard protocol 的 CSI-u 键事件。
+// TerminalHost 只负责把宿主协议还原为 InputEvent；快捷键命中仍由 input catalog 决定。
+func csiUnicodeKeyEvent(body string, raw string) (input.InputEvent, bool) {
+	parts := splitCSIParams(body)
+	if len(parts) == 0 || len(parts) > 2 {
+		return input.InputEvent{}, false
+	}
+	codeText := parts[0]
+	if strings.Contains(codeText, ":") {
+		return input.InputEvent{}, false
+	}
+	codepoint, err := strconv.Atoi(codeText)
+	if err != nil || codepoint < 0 || codepoint > utf8.MaxRune || codepoint >= 0xd800 && codepoint <= 0xdfff {
+		return input.InputEvent{}, false
+	}
+	modifier := 1
+	eventType := 1
+	if len(parts) == 2 {
+		modifierParts := strings.Split(parts[1], ":")
+		if len(modifierParts) > 2 {
+			return input.InputEvent{}, false
+		}
+		modifier, err = strconv.Atoi(modifierParts[0])
+		if err != nil || modifier < 1 || modifier > 8 {
+			return input.InputEvent{}, false
+		}
+		if len(modifierParts) == 2 {
+			eventType, err = strconv.Atoi(modifierParts[1])
+			if err != nil || eventType < 1 || eventType > 3 {
+				return input.InputEvent{}, false
+			}
+		}
+	}
+	event := input.InputEvent{
+		Kind:             input.EventKindKey,
+		Key:              input.KeyChar,
+		Char:             string(rune(codepoint)),
+		RawSeq:           raw,
+		KeyboardProtocol: input.KeyboardProtocolKittyCSIU,
+	}
+	applyKeyModifier(&event, modifier)
+	if eventType == 3 {
+		event.Key = input.KeyUnknown
+		event.Char = ""
+	}
+	return event, true
 }
 
 func splitCSIParams(body string) []string {
