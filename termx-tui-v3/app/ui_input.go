@@ -104,6 +104,13 @@ func NewUIInputReducer() Reducer {
 			CopyModeActive: copyModeOwnsActiveInput(root),
 			Shortcuts:      root.Config.Shortcuts,
 		})
+		if intent.Kind == input.IntentShortcutAction {
+			var ok bool
+			intent, ok = shortcutIntentForInvocation(intent.Invocation, intent.Event)
+			if !ok {
+				return root, []Effect{handledEffect{}}
+			}
+		}
 		switch intent.Kind {
 		case input.IntentOpenTerminalPicker:
 			root.Shell = root.Shell.OpenTerminalPicker()
@@ -1237,13 +1244,6 @@ func terminalViewLayoutToast(layout state.TerminalViewLayout) string {
 }
 
 func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, []Effect) {
-	actionID, ok := actionIDForShellAction(intent.Action, intent.Reason)
-	if !ok {
-		return root, []Effect{handledEffect{}}
-	}
-	if _, ok := render.ActionSpecByID(actionID); !ok {
-		return root, []Effect{handledEffect{}}
-	}
 	var msg Msg
 	switch intent.Action {
 	case input.ShellActionToggleHeader:

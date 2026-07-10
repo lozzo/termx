@@ -1,6 +1,9 @@
 package input
 
-import "github.com/lozzow/termx/termx-tui-v3/state"
+import (
+	"github.com/lozzow/termx/termx-tui-v3/shortcut"
+	"github.com/lozzow/termx/termx-tui-v3/state"
+)
 
 // EventKind 分类宿主输入，不依赖 Bubble Tea key/mouse 类型。
 type EventKind string
@@ -108,6 +111,7 @@ const (
 	IntentPaneCommand          IntentKind = "pane-command"
 	IntentWorkbenchCommand     IntentKind = "workbench-command"
 	IntentCopyCommand          IntentKind = "copy-command"
+	IntentShortcutAction       IntentKind = "shortcut-action"
 )
 
 type InteractionMode string
@@ -157,6 +161,8 @@ type Intent struct {
 	Mode     InteractionMode
 	Action   ShellAction
 	RawMouse bool
+	// Invocation 只由 shortcut catalog 命中产生；app dispatcher 是其执行语义 owner。
+	Invocation shortcut.ActionInvocation
 }
 
 // RouteOptions 是 input router 的只读上下文。

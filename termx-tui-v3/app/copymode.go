@@ -261,6 +261,13 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 				}
 			}
 			intent := input.RouteWithOptions(msg.Event, input.RouteOptions{CopyModeActive: copyOwnsInput, Shortcuts: root.Config.Shortcuts})
+			if intent.Kind == input.IntentShortcutAction {
+				var ok bool
+				intent, ok = shortcutIntentForInvocation(intent.Invocation, intent.Event)
+				if !ok {
+					return root, []Effect{handledEffect{}}
+				}
+			}
 			if !copyOwnsInput && !copyModeEnterIntent(intent) {
 				return root, nil
 			}
@@ -440,6 +447,13 @@ func copyModeOwnsActiveInput(root state.Root) bool {
 }
 
 func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDeps) (state.Root, []Effect) {
+	if intent.Kind == input.IntentShortcutAction {
+		var ok bool
+		intent, ok = shortcutIntentForInvocation(intent.Invocation, intent.Event)
+		if !ok {
+			return root, []Effect{handledEffect{}}
+		}
+	}
 	if next, effects, handled := reduceCopyModeEnteringIntent(root, intent); handled {
 		return next, effects
 	}

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lozzow/termx/termx-tui-v3/shortcut"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -12,20 +13,16 @@ import (
 // 它由内置默认 shortcuts 或用户 `tui.shortcuts` 生成；输入路由只查 Binding，
 // 不再直接读取旧 keymap 或分散硬编码键位。
 type Binding struct {
-	ID       string
-	ActionID string
-	Label    string
-	Mode     InteractionMode
-	Key      Key
-	Char     string
-	Ctrl     bool
-	Alt      bool
-	Shift    bool
-	Intent   IntentKind
-	Command  string
-	Action   ShellAction
-	Reason   string
-	Target   InteractionMode
+	ID         string
+	ActionID   string
+	Label      string
+	Mode       InteractionMode
+	Key        Key
+	Char       string
+	Ctrl       bool
+	Alt        bool
+	Shift      bool
+	Invocation shortcut.ActionInvocation
 }
 
 type shortcutDefault struct {
@@ -406,10 +403,11 @@ func (catalog *shortcutCatalog) add(sceneName string, keyToken string, actionID 
 	if !ok {
 		return
 	}
-	definition, ok := builtinActionDefinition(actionID)
-	if !ok {
-		definition = Binding{ActionID: actionID, Intent: IntentNone, Reason: "unknown shortcut action " + actionID}
+	invocation, _, err := shortcut.ParseInvocation(actionID)
+	if err != nil {
+		return
 	}
+	definition := Binding{ActionID: actionID, Invocation: invocation}
 	definition.ID = sceneName + ":" + keyToken + ":" + actionID
 	definition.Mode = mode
 	definition.Key = key.Key
@@ -646,274 +644,18 @@ func ShortcutBindingSignature(sceneName string, keyToken string) (string, bool) 
 	return strings.Join(parts, "\x00"), true
 }
 
-// KnownShortcutActionID 判断 action id 是否属于当前内置 action registry。
-// 配置加载期用它拒绝拼写错误；运行时仍由 builtinActionDefinition 生成真实 reducer intent。
+// KnownShortcutActionID 判断 action id 是否属于 shortcut domain registry。
+// 配置加载期用它拒绝拼写错误；运行时 input 只生成 canonical invocation。
 func KnownShortcutActionID(actionID string) bool {
-	if _, ok := builtinActionDefinition(actionID); ok {
-		return true
-	}
-	return knownOverlayShortcutAction(actionID)
+	_, _, err := shortcut.ParseInvocation(actionID)
+	return err == nil
 }
 
 // RoutableShortcutActionID 判断 action 是否能由主 input route 直接产出 reducer intent。
 // overlay 专用 action 只能出现在 overlay scene，不能绑定到 global/panel 等可路由 scene 后静默吞键。
 func RoutableShortcutActionID(actionID string) bool {
-	_, ok := builtinActionDefinition(actionID)
-	return ok
-}
-
-func builtinActionDefinition(actionID string) (Binding, bool) {
-	if strings.HasPrefix(actionID, "menu.") {
-		return menuActionDefinition(strings.TrimPrefix(actionID, "menu."))
-	}
-	switch actionID {
-	case "terminal_picker.open", "picker.open":
-		return Binding{ActionID: actionID, Intent: IntentOpenTerminalPicker}, true
-	case "copy.enter":
-		return Binding{ActionID: actionID, Intent: IntentEnterCopyMode}, true
-	case "copy.request_older":
-		return Binding{ActionID: actionID, Intent: IntentRequestOlder}, true
-	case "copy.request_newer":
-		return Binding{ActionID: actionID, Intent: IntentRequestNewer}, true
-	case "copy.open_clipboard_history":
-		return Binding{ActionID: actionID, Intent: IntentOpenClipboardHistory}, true
-	case "copy.paste_latest":
-		return Binding{ActionID: actionID, Intent: IntentPasteLastCopy}, true
-	case "copy.paste_system":
-		return Binding{ActionID: actionID, Intent: IntentPasteClipboard}, true
-	case "copy.line_start", "copy.line_end", "copy.cursor_left", "copy.cursor_right", "copy.cursor_down",
-		"copy.cursor_up", "copy.accept", "copy.oldest", "copy.newest", "copy.half_page_older",
-		"copy.half_page_newer", "copy.mark", "copy.copy_selection", "copy.search_start":
-		return Binding{ActionID: actionID, Intent: IntentCopyCommand, Command: actionID}, true
-	case "panel.close", "pane.close":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "pane close"}, true
-	case "panel.detach", "pane.detach":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "pane detach"}, true
-	case "panel.reconnect", "pane.reconnect":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "pane reconnect"}, true
-	case "panel.restart", "pane.restart":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "pane restart"}, true
-	case "panel.take_owner", "pane.take_owner":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "pane take-owner"}, true
-	case "panel.size_lock", "pane.size_lock":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal size lock"}, true
-	case "panel.split_right", "pane.split_right":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane split-right"}, true
-	case "panel.split_down", "pane.split_down":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane split-down"}, true
-	case "panel.kill", "panel.kill_and_close", "pane.kill":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "pane kill confirm=accepted"}, true
-	case "panel.toggle_zoom", "pane.toggle_zoom":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane toggle-zoom"}, true
-	case "panel.balance", "pane.balance":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane balance"}, true
-	case "panel.presentation_card", "pane.presentation_card":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane presentation card"}, true
-	case "panel.presentation_split_line", "pane.presentation_split_line":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane presentation split-line"}, true
-	case "panel.focus_next", "pane.focus_next":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane focus-next"}, true
-	case "panel.focus_prev", "pane.focus_prev":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane focus-prev"}, true
-	case "resize.left":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize left delta=2"}, true
-	case "resize.right":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize right delta=2"}, true
-	case "resize.up":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize up delta=2"}, true
-	case "resize.down":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize down delta=2"}, true
-	case "resize.left_large":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize left delta=6"}, true
-	case "resize.right_large":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize right delta=6"}, true
-	case "resize.up_large":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize up delta=6"}, true
-	case "resize.down_large":
-		return Binding{ActionID: actionID, Intent: IntentPaneCommand, Command: "pane resize down delta=6"}, true
-	case "resize.layout_toggle":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout toggle"}, true
-	case "resize.pan_left":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout pan-left"}, true
-	case "resize.pan_down":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout pan-down"}, true
-	case "resize.pan_up":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout pan-up"}, true
-	case "resize.pan_right":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout pan-right"}, true
-	case "resize.align_left":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout align-left"}, true
-	case "resize.align_right":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout align-right"}, true
-	case "resize.align_top":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout align-top"}, true
-	case "resize.align_bottom":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout align-bottom"}, true
-	case "resize.center":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout center"}, true
-	case "resize.center_x":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout center-x"}, true
-	case "resize.center_y":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout center-y"}, true
-	case "resize.layout_reset":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "terminal layout reset"}, true
-	case "system.toggle_header":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionToggleHeader}, true
-	case "system.toggle_footer":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionToggleFooter}, true
-	case "system.clear_toasts":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionClearToasts}, true
-	case "system.close_toast":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionCloseToast}, true
-	case "system.open_terminal_pool":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionOpenPool}, true
-	case "system.open_terminal_picker":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionOpenPicker}, true
-	case "system.open_workbench_tree":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionOpenTree}, true
-	case "system.toggle_shortcut_lock":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionToggleShortcutLock}, true
-	case "system.open_prompt":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionOpenPrompt}, true
-	case "system.open_help":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionOpenHelp}, true
-	case "system.quit":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionQuit}, true
-	case "floating.new":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingNew}, true
-	case "floating.overview":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingOverview}, true
-	case "floating.take_owner":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "floating take-owner"}, true
-	case "floating.close":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingCtrl, Reason: "close"}, true
-	case "floating.collapse":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingCtrl, Reason: "collapse"}, true
-	case "floating.center":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingCtrl, Reason: "center"}, true
-	case "floating.toggle_all":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingGroup, Reason: "toggle-all"}, true
-	case "floating.fit":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingGroup, Reason: "fit"}, true
-	case "floating.auto_fit":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingGroup, Reason: "toggle-auto-fit"}, true
-	case "floating.move_left":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "left"}, true
-	case "floating.move_right":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "right"}, true
-	case "floating.move_up":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "up"}, true
-	case "floating.move_down":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingMove, Reason: "down"}, true
-	case "floating.narrow":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingSize, Reason: "narrow"}, true
-	case "floating.wide":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingSize, Reason: "wide"}, true
-	case "floating.short":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingSize, Reason: "short"}, true
-	case "floating.tall":
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingSize, Reason: "tall"}, true
-	case "tab.create":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab create"}, true
-	case "tab.next":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab next"}, true
-	case "tab.previous":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab previous"}, true
-	case "tab.rename":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab rename"}, true
-	case "tab.close":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab close"}, true
-	case "tab.kill":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab kill confirm=accepted"}, true
-	case "workspace.create":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "workspace create"}, true
-	case "workspace.next":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "workspace next"}, true
-	case "workspace.previous":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "workspace previous"}, true
-	case "workspace.rename":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "workspace rename"}, true
-	case "workspace.delete":
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "workspace delete confirm=accepted"}, true
-	}
-	if strings.HasPrefix(actionID, "tab.jump.") {
-		n := strings.TrimPrefix(actionID, "tab.jump.")
-		if _, err := strconv.Atoi(n); err != nil {
-			return Binding{}, false
-		}
-		return Binding{ActionID: actionID, Intent: IntentWorkbenchCommand, Command: "tab jump " + n}, true
-	}
-	if strings.HasPrefix(actionID, "floating.summon.") {
-		n := strings.TrimPrefix(actionID, "floating.summon.")
-		if _, err := strconv.Atoi(n); err != nil {
-			return Binding{}, false
-		}
-		return Binding{ActionID: actionID, Intent: IntentShellAction, Action: ShellActionFloatingSummon, Reason: n}, true
-	}
-	return Binding{}, false
-}
-
-func menuActionDefinition(sceneName string) (Binding, bool) {
-	switch sceneName {
-	case "copy":
-		return Binding{ActionID: "menu.copy", Intent: IntentEnterCopyMode}, true
-	case "terminal_picker":
-		return Binding{ActionID: "menu.terminal_picker", Intent: IntentOpenTerminalPicker}, true
-	case "terminal_pool":
-		return Binding{ActionID: "menu.terminal_pool", Intent: IntentShellAction, Action: ShellActionOpenPool}, true
-	case "workbench_tree":
-		return Binding{ActionID: "menu.workbench_tree", Intent: IntentShellAction, Action: ShellActionOpenTree}, true
-	case "clipboard_history":
-		return Binding{ActionID: "menu.clipboard_history", Intent: IntentShellAction, Action: ShellActionOpenClipboardHistory}, true
-	case "floating_overview":
-		return Binding{ActionID: "menu.floating_overview", Intent: IntentShellAction, Action: ShellActionFloatingOverview}, true
-	case "prompt":
-		return Binding{ActionID: "menu.prompt", Intent: IntentShellAction, Action: ShellActionOpenPrompt}, true
-	case "help":
-		return Binding{ActionID: "menu.help", Intent: IntentShellAction, Action: ShellActionOpenHelp}, true
-	}
-	mode, ok := shortcutMenuTargetMode(sceneName)
-	if !ok {
-		return Binding{}, false
-	}
-	return Binding{ActionID: "menu." + sceneName, Intent: IntentSetInteractionMode, Target: mode}, true
-}
-
-func shortcutMenuTargetMode(sceneName string) (InteractionMode, bool) {
-	switch sceneName {
-	case "panel", "pane":
-		return InteractionModePane, true
-	case "resize":
-		return InteractionModeResize, true
-	case "system":
-		return InteractionModeGlobal, true
-	case "floating":
-		return InteractionModeFloating, true
-	case "tab":
-		return InteractionModeTab, true
-	case "workspace":
-		return InteractionModeWorkspace, true
-	default:
-		return InteractionModeNormal, false
-	}
-}
-
-func knownOverlayShortcutAction(actionID string) bool {
-	switch actionID {
-	case "terminal_picker.attach", "terminal_picker.split", "terminal_picker.edit", "terminal_picker.kill", "terminal_picker.delete",
-		"terminal_picker.close",
-		"terminal_pool.attach", "terminal_pool.attach_tab", "terminal_pool.attach_float", "terminal_pool.restart", "terminal_pool.edit", "terminal_pool.kill", "terminal_pool.delete",
-		"terminal_pool.close",
-		"workbench_tree.open", "workbench_tree.new", "workbench_tree.rename", "workbench_tree.delete", "workbench_tree.detach", "workbench_tree.zoom",
-		"workbench_tree.close",
-		"clipboard_history.paste", "clipboard_history.new", "clipboard_history.edit", "clipboard_history.delete",
-		"clipboard_history.close",
-		"floating_overview.open", "floating_overview.show_all", "floating_overview.collapse_all", "floating_overview.close",
-		"prompt.submit", "prompt.cancel", "help.close":
-		return true
-	default:
-		return false
-	}
+	_, spec, err := shortcut.ParseInvocation(actionID)
+	return err == nil && spec.Routable
 }
 
 func routeKey(event InputEvent, options RouteOptions) Intent {
@@ -1014,12 +756,9 @@ func bindingCharMatches(binding Binding, event InputEvent) bool {
 
 func intentFromBinding(event InputEvent, binding Binding) Intent {
 	return Intent{
-		Kind:    binding.Intent,
-		Event:   event,
-		Command: binding.Command,
-		Action:  binding.Action,
-		Reason:  binding.Reason,
-		Mode:    binding.Target,
+		Kind:       IntentShortcutAction,
+		Event:      event,
+		Invocation: binding.Invocation,
 	}
 }
 
@@ -1035,7 +774,7 @@ func LockableRootShortcutIntentWithShortcuts(event InputEvent, shortcuts state.T
 	if !ok {
 		return Intent{}, false
 	}
-	if intent.Kind == IntentSetInteractionMode && intent.Mode == InteractionModeGlobal {
+	if intent.Invocation.ID == "menu.system" {
 		return Intent{}, false
 	}
 	return intent, true
@@ -1053,7 +792,7 @@ func StickyModeEntryShortcutIntentWithShortcuts(event InputEvent, mode Interacti
 		return Intent{}, false
 	}
 	intent, ok := rootShortcutIntent(event, shortcuts)
-	if !ok || intent.Kind != IntentSetInteractionMode || intent.Mode != mode {
+	if !ok || shortcutInvocationMode(intent.Invocation) != mode {
 		return Intent{}, false
 	}
 	return intent, true
@@ -1068,7 +807,7 @@ func CopyModeEntryShortcutIntent(event InputEvent) (Intent, bool) {
 // CopyModeEntryShortcutIntentWithShortcuts 使用当前 shortcuts 判断 copy/history 入口键。
 func CopyModeEntryShortcutIntentWithShortcuts(event InputEvent, shortcuts state.TUIShortcutConfig) (Intent, bool) {
 	intent, ok := rootShortcutIntent(event, shortcuts)
-	if !ok || intent.Kind != IntentEnterCopyMode {
+	if !ok || (intent.Invocation.ID != "copy.enter" && intent.Invocation.ID != "menu.copy") {
 		return Intent{}, false
 	}
 	if event.Key != KeyChar || !event.Ctrl {
@@ -1083,12 +822,25 @@ func rootShortcutIntent(event InputEvent, shortcuts state.TUIShortcutConfig) (In
 	if !ok {
 		return Intent{}, false
 	}
-	intent := intentFromBinding(event, binding)
-	switch intent.Kind {
-	case IntentOpenTerminalPicker, IntentEnterCopyMode, IntentSetInteractionMode:
-		return intent, true
+	return intentFromBinding(event, binding), true
+}
+
+func shortcutInvocationMode(invocation shortcut.ActionInvocation) InteractionMode {
+	switch invocation.ID {
+	case "menu.panel":
+		return InteractionModePane
+	case "menu.resize":
+		return InteractionModeResize
+	case "menu.system":
+		return InteractionModeGlobal
+	case "menu.floating":
+		return InteractionModeFloating
+	case "menu.tab":
+		return InteractionModeTab
+	case "menu.workspace":
+		return InteractionModeWorkspace
 	default:
-		return Intent{}, false
+		return InteractionModeNormal
 	}
 }
 

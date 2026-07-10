@@ -11,6 +11,13 @@ import (
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
+func assertShortcutAction(t *testing.T, intent Intent, actionID string) {
+	t.Helper()
+	if intent.Kind != IntentShortcutAction || intent.Invocation.ID != actionID {
+		t.Fatalf("expected shortcut action %q, got %#v", actionID, intent)
+	}
+}
+
 func TestInputEventKind(t *testing.T) {
 	event := InputEvent{Kind: EventKindKey}
 	if event.Kind != EventKindKey {
@@ -20,16 +27,10 @@ func TestInputEventKind(t *testing.T) {
 
 func TestRoutePageUpEntersOrRequestsCopyMode(t *testing.T) {
 	event := InputEvent{Kind: EventKindKey, Key: KeyPageUp}
-	if intent := Route(event, false); intent.Kind != IntentEnterCopyMode {
-		t.Fatalf("expected enter copy mode, got %#v", intent)
-	}
-	if intent := Route(event, true); intent.Kind != IntentRequestOlder {
-		t.Fatalf("expected older request, got %#v", intent)
-	}
+	assertShortcutAction(t, Route(event, false), "copy.enter")
+	assertShortcutAction(t, Route(event, true), "copy.request_older")
 	down := InputEvent{Kind: EventKindKey, Key: KeyPageDn}
-	if intent := Route(down, true); intent.Kind != IntentRequestNewer {
-		t.Fatalf("expected newer request, got %#v", intent)
-	}
+	assertShortcutAction(t, Route(down, true), "copy.request_newer")
 }
 
 func TestRouteWheelUpEntersOrRequestsCopyMode(t *testing.T) {
@@ -78,91 +79,44 @@ func TestRouteHostThemeEventDoesNotBecomeTerminalInput(t *testing.T) {
 
 func TestRouteCtrlFAndCtrlVToUIIntents(t *testing.T) {
 	ctrlF := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x06", Ctrl: true}, false)
-	if ctrlF.Kind != IntentOpenTerminalPicker {
-		t.Fatalf("expected terminal picker intent, got %#v", ctrlF)
-	}
+	assertShortcutAction(t, ctrlF, "terminal_picker.open")
 	ctrlV := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x16", Ctrl: true}, false)
-	if ctrlV.Kind != IntentEnterCopyMode {
-		t.Fatalf("expected display/copy intent, got %#v", ctrlV)
-	}
+	assertShortcutAction(t, ctrlV, "copy.enter")
 	namedCtrlF := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f", Ctrl: true}, false)
-	if namedCtrlF.Kind != IntentOpenTerminalPicker {
-		t.Fatalf("expected named ctrl-f terminal picker intent, got %#v", namedCtrlF)
-	}
+	assertShortcutAction(t, namedCtrlF, "terminal_picker.open")
 }
 
 func TestRouteCopyModePasteShortcuts(t *testing.T) {
 	history := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "H"}, true)
-	if history.Kind != IntentOpenClipboardHistory {
-		t.Fatalf("expected clipboard history intent, got %#v", history)
-	}
+	assertShortcutAction(t, history, "copy.open_clipboard_history")
 	lastCopy := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p"}, true)
-	if lastCopy.Kind != IntentPasteLastCopy {
-		t.Fatalf("expected paste last copy intent, got %#v", lastCopy)
-	}
+	assertShortcutAction(t, lastCopy, "copy.paste_latest")
 	systemClipboard := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "P"}, true)
-	if systemClipboard.Kind != IntentPasteClipboard {
-		t.Fatalf("expected paste clipboard intent, got %#v", systemClipboard)
-	}
+	assertShortcutAction(t, systemClipboard, "copy.paste_system")
 }
 
 func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 	ctrlP := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x10", Ctrl: true}, false)
-	if ctrlP.Kind != IntentSetInteractionMode || ctrlP.Mode != InteractionModePane {
-		t.Fatalf("expected pane mode intent, got %#v", ctrlP)
-	}
+	assertShortcutAction(t, ctrlP, "menu.panel")
 	ctrlT := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x14", Ctrl: true}, false)
-	if ctrlT.Kind != IntentSetInteractionMode || ctrlT.Mode != InteractionModeTab {
-		t.Fatalf("expected tab mode intent, got %#v", ctrlT)
-	}
+	assertShortcutAction(t, ctrlT, "menu.tab")
 	ctrlW := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x17", Ctrl: true}, false)
-	if ctrlW.Kind != IntentSetInteractionMode || ctrlW.Mode != InteractionModeWorkspace {
-		t.Fatalf("expected workspace mode intent, got %#v", ctrlW)
-	}
-	paneFocus := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, false, InteractionModePane)
-	if paneFocus.Kind != IntentPaneCommand || paneFocus.Command != "pane focus-next" {
-		t.Fatalf("expected focus-next pane command, got %#v", paneFocus)
-	}
-	tabNew := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c"}, false, InteractionModeTab)
-	if tabNew.Kind != IntentWorkbenchCommand || tabNew.Command != "tab create" {
-		t.Fatalf("expected tab create command, got %#v", tabNew)
-	}
-	tabNext := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, false, InteractionModeTab)
-	if tabNext.Kind != IntentWorkbenchCommand || tabNext.Command != "tab next" {
-		t.Fatalf("expected tab next command, got %#v", tabNext)
-	}
-	tabRename := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "r"}, false, InteractionModeTab)
-	if tabRename.Kind != IntentWorkbenchCommand || tabRename.Command != "tab rename" {
-		t.Fatalf("expected tab rename command, got %#v", tabRename)
-	}
+	assertShortcutAction(t, ctrlW, "menu.workspace")
+	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, false, InteractionModePane), "panel.focus_next")
+	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c"}, false, InteractionModeTab), "tab.create")
+	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, false, InteractionModeTab), "tab.next")
+	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "r"}, false, InteractionModeTab), "tab.rename")
 	tabJump := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "3"}, false, InteractionModeTab)
-	if tabJump.Kind != IntentWorkbenchCommand || tabJump.Command != "tab jump 3" {
-		t.Fatalf("expected tab jump command, got %#v", tabJump)
+	assertShortcutAction(t, tabJump, "tab.jump")
+	if index, ok := tabJump.Invocation.Param("index"); !ok || index != 3 {
+		t.Fatalf("expected tab jump index 3, got %#v", tabJump)
 	}
-	workspaceNext := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "l"}, false, InteractionModeWorkspace)
-	if workspaceNext.Kind != IntentWorkbenchCommand || workspaceNext.Command != "workspace next" {
-		t.Fatalf("expected workspace next command, got %#v", workspaceNext)
-	}
-	resizeRight := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyRight}, false, InteractionModeResize)
-	if resizeRight.Kind != IntentPaneCommand || resizeRight.Command != "pane resize right delta=2" {
-		t.Fatalf("expected resize-right pane command, got %#v", resizeRight)
-	}
-	globalFooter := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f"}, false, InteractionModeGlobal)
-	if globalFooter.Kind != IntentShellAction || globalFooter.Action != ShellActionToggleFooter {
-		t.Fatalf("expected global footer action, got %#v", globalFooter)
-	}
-	globalPool := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "t"}, false, InteractionModeGlobal)
-	if globalPool.Kind != IntentShellAction || globalPool.Action != ShellActionOpenPool {
-		t.Fatalf("expected global terminal pool action, got %#v", globalPool)
-	}
-	globalPrompt := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: ":"}, false, InteractionModeGlobal)
-	if globalPrompt.Kind != IntentShellAction || globalPrompt.Action != ShellActionOpenPrompt {
-		t.Fatalf("expected global prompt action, got %#v", globalPrompt)
-	}
-	globalHelp := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "?"}, false, InteractionModeGlobal)
-	if globalHelp.Kind != IntentShellAction || globalHelp.Action != ShellActionOpenHelp {
-		t.Fatalf("expected global help action, got %#v", globalHelp)
-	}
+	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "l"}, false, InteractionModeWorkspace), "workspace.next")
+	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyRight}, false, InteractionModeResize), "resize.right")
+	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f"}, false, InteractionModeGlobal), "system.toggle_footer")
+	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "t"}, false, InteractionModeGlobal), "system.open_terminal_pool")
+	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: ":"}, false, InteractionModeGlobal), "system.open_prompt")
+	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "?"}, false, InteractionModeGlobal), "system.open_help")
 	esc := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyEsc}, false, InteractionModePane)
 	if esc.Kind != IntentExitInteraction {
 		t.Fatalf("expected interaction exit, got %#v", esc)
@@ -172,7 +126,7 @@ func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 func TestShortcutPassthroughHelpers(t *testing.T) {
 	ctrlT := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x14", Ctrl: true}
 	intent, ok := LockableRootShortcutIntent(ctrlT)
-	if !ok || intent.Kind != IntentSetInteractionMode || intent.Mode != InteractionModeTab {
+	if !ok || intent.Invocation.ID != "menu.tab" {
 		t.Fatalf("ctrl-t should be a lockable tab shortcut, intent=%#v ok=%v", intent, ok)
 	}
 	ctrlG := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x07", Ctrl: true}
@@ -181,7 +135,7 @@ func TestShortcutPassthroughHelpers(t *testing.T) {
 	}
 	ctrlW := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x17", Ctrl: true}
 	intent, ok = StickyModeEntryShortcutIntent(ctrlW, InteractionModeWorkspace)
-	if !ok || intent.Kind != IntentSetInteractionMode || intent.Mode != InteractionModeWorkspace {
+	if !ok || intent.Invocation.ID != "menu.workspace" {
 		t.Fatalf("ctrl-w should match workspace sticky entry, intent=%#v ok=%v", intent, ok)
 	}
 	if intent, ok = StickyModeEntryShortcutIntent(ctrlW, InteractionModeTab); ok {
@@ -189,7 +143,7 @@ func TestShortcutPassthroughHelpers(t *testing.T) {
 	}
 	ctrlV := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x16", Ctrl: true}
 	intent, ok = CopyModeEntryShortcutIntent(ctrlV)
-	if !ok || intent.Kind != IntentEnterCopyMode {
+	if !ok || intent.Invocation.ID != "copy.enter" {
 		t.Fatalf("ctrl-v should match copy mode entry, intent=%#v ok=%v", intent, ok)
 	}
 }
@@ -225,16 +179,16 @@ func TestRouteUsesCustomShortcutsAsOnlyTruth(t *testing.T) {
 	}
 
 	jump := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "1", Ctrl: true}, RouteOptions{Shortcuts: shortcuts})
-	if jump.Kind != IntentWorkbenchCommand || jump.Command != "tab jump 1" {
+	if jump.Kind != IntentShortcutAction || jump.Invocation.ID != "tab.jump" {
 		t.Fatalf("custom ctrl-1 should jump tab, got %#v", jump)
 	}
 	ctrlP := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p", Ctrl: true}, RouteOptions{Shortcuts: shortcuts})
-	if ctrlP.Kind == IntentSetInteractionMode {
+	if ctrlP.Kind == IntentShortcutAction {
 		t.Fatalf("removed ctrl-p must not fall back to default panel menu, got %#v", ctrlP)
 	}
 	for _, key := range []string{"q", "w"} {
 		intent := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: key}, RouteOptions{Mode: InteractionModePane, Shortcuts: shortcuts})
-		if intent.Kind != IntentWorkbenchCommand || intent.Command != "pane close" {
+		if intent.Kind != IntentShortcutAction || intent.Invocation.ID != "panel.close" {
 			t.Fatalf("custom panel key %q should close pane, got %#v", key, intent)
 		}
 	}
@@ -248,7 +202,7 @@ func TestRouteUsesExplicitEmptyShortcutsAsOnlyTruth(t *testing.T) {
 	shortcuts := state.TUIShortcutConfig{Configured: true}
 
 	intent := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p", Ctrl: true}, RouteOptions{Shortcuts: shortcuts})
-	if intent.Kind == IntentSetInteractionMode {
+	if intent.Kind == IntentShortcutAction {
 		t.Fatalf("explicit empty shortcuts must not fall back to default ctrl-p, got %#v", intent)
 	}
 }
@@ -263,51 +217,22 @@ func TestBindingCatalogIsUniqueAndContainsDocumentedAliases(t *testing.T) {
 		seen[key] = binding.ID
 	}
 	cases := []struct {
-		name    string
-		event   InputEvent
-		mode    InteractionMode
-		kind    IntentKind
-		command string
-		action  ShellAction
+		name   string
+		event  InputEvent
+		mode   InteractionMode
+		action string
 	}{
-		{name: "pane w close", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "w"}, kind: IntentWorkbenchCommand, command: "pane close"},
-		{name: "pane d detach", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "d"}, kind: IntentWorkbenchCommand, command: "pane detach"},
-		{name: "pane r reconnect", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "r"}, kind: IntentWorkbenchCommand, command: "pane reconnect"},
-		{name: "pane R restart", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "R"}, kind: IntentWorkbenchCommand, command: "pane restart"},
-		{name: "pane a owner", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "a"}, kind: IntentWorkbenchCommand, command: "pane take-owner"},
-		{name: "pane s size lock", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "s"}, kind: IntentWorkbenchCommand, command: "terminal size lock"},
-		{name: "pane percent split right", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "%"}, kind: IntentPaneCommand, command: "pane split-right"},
-		{name: "pane quote split down", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\""}, kind: IntentPaneCommand, command: "pane split-down"},
-		{name: "pane ctrl-d split right", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x04", Ctrl: true}, kind: IntentPaneCommand, command: "pane split-right"},
-		{name: "pane ctrl-e split down", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x05", Ctrl: true}, kind: IntentPaneCommand, command: "pane split-down"},
-		{name: "pane X kill", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "X"}, kind: IntentWorkbenchCommand, command: "pane kill confirm=accepted"},
-		{name: "resize a owner", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "a"}, kind: IntentWorkbenchCommand, command: "pane take-owner"},
-		{name: "resize s size lock", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "s"}, kind: IntentWorkbenchCommand, command: "terminal size lock"},
-		{name: "resize space layout", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: " "}, kind: IntentWorkbenchCommand, command: "terminal layout toggle"},
-		{name: "resize shift left pan", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyLeft, Shift: true}, kind: IntentWorkbenchCommand, command: "terminal layout pan-left"},
-		{name: "resize align right", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "$"}, kind: IntentWorkbenchCommand, command: "terminal layout align-right"},
-		{name: "resize center", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "m"}, kind: IntentWorkbenchCommand, command: "terminal layout center"},
-		{name: "resize reset", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "r"}, kind: IntentWorkbenchCommand, command: "terminal layout reset"},
-		{name: "resize equals balance", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "="}, kind: IntentPaneCommand, command: "pane balance"},
-		{name: "floating f pick", mode: InteractionModeFloating, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f"}, kind: IntentShellAction, action: ShellActionOpenPicker},
-		{name: "floating o overview", mode: InteractionModeFloating, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "o"}, kind: IntentShellAction, action: ShellActionFloatingOverview},
-		{name: "floating 3 summon", mode: InteractionModeFloating, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "3"}, kind: IntentShellAction, action: ShellActionFloatingSummon},
-		{name: "floating a owner", mode: InteractionModeFloating, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "a"}, kind: IntentWorkbenchCommand, command: "floating take-owner"},
-		{name: "tab c create", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c"}, kind: IntentWorkbenchCommand, command: "tab create"},
-		{name: "tab n next", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, kind: IntentWorkbenchCommand, command: "tab next"},
-		{name: "tab p previous", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p"}, kind: IntentWorkbenchCommand, command: "tab previous"},
-		{name: "tab X kill", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "X"}, kind: IntentWorkbenchCommand, command: "tab kill confirm=accepted"},
-		{name: "workspace c create", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c"}, kind: IntentWorkbenchCommand, command: "workspace create"},
-		{name: "workspace n next", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, kind: IntentWorkbenchCommand, command: "workspace next"},
-		{name: "workspace p previous", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p"}, kind: IntentWorkbenchCommand, command: "workspace previous"},
-		{name: "workspace x delete", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "x"}, kind: IntentWorkbenchCommand, command: "workspace delete confirm=accepted"},
-		{name: "workspace f tree", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f"}, kind: IntentShellAction, action: ShellActionOpenTree},
+		{name: "pane w close", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "w"}, action: "panel.close"},
+		{name: "pane d detach", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "d"}, action: "panel.detach"},
+		{name: "pane percent split right", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "%"}, action: "panel.split_right"},
+		{name: "pane quote split down", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\""}, action: "panel.split_down"},
+		{name: "resize shift left pan", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyLeft, Shift: true}, action: "resize.pan_left"},
+		{name: "floating 3 summon", mode: InteractionModeFloating, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "3"}, action: "floating.summon"},
+		{name: "tab c create", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c"}, action: "tab.create"},
+		{name: "workspace f tree", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f"}, action: "system.open_workbench_tree"},
 	}
 	for _, tc := range cases {
-		intent := RouteWithMode(tc.event, false, tc.mode)
-		if intent.Kind != tc.kind || intent.Command != tc.command || intent.Action != tc.action {
-			t.Fatalf("%s: unexpected intent %#v", tc.name, intent)
-		}
+		assertShortcutAction(t, RouteWithMode(tc.event, false, tc.mode), tc.action)
 	}
 }
 
@@ -317,16 +242,13 @@ func TestPaneModeUsesTuiv2KeyboardSplitAliases(t *testing.T) {
 		event InputEvent
 		want  string
 	}{
-		{name: "percent", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "%"}, want: "pane split-right"},
-		{name: "ctrl-d", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "d", Ctrl: true}, want: "pane split-right"},
-		{name: "quote", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\""}, want: "pane split-down"},
-		{name: "ctrl-e", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "e", Ctrl: true}, want: "pane split-down"},
+		{name: "percent", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "%"}, want: "panel.split_right"},
+		{name: "ctrl-d", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "d", Ctrl: true}, want: "panel.split_right"},
+		{name: "quote", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\""}, want: "panel.split_down"},
+		{name: "ctrl-e", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "e", Ctrl: true}, want: "panel.split_down"},
 	}
 	for _, tc := range cases {
-		intent := RouteWithMode(tc.event, false, InteractionModePane)
-		if intent.Kind != IntentPaneCommand || intent.Command != tc.want {
-			t.Fatalf("%s: unexpected split intent %#v", tc.name, intent)
-		}
+		assertShortcutAction(t, RouteWithMode(tc.event, false, InteractionModePane), tc.want)
 	}
 	for _, char := range []string{"v"} {
 		intent := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: char}, false, InteractionModePane)

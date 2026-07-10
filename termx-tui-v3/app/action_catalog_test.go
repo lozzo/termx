@@ -24,21 +24,14 @@ func TestActionCatalogDispatchAppActionsReachReducerAdapter(t *testing.T) {
 	}
 }
 
-func TestInputShellActionsMapToActionCatalog(t *testing.T) {
+func TestShortcutBindingsHaveCanonicalInvocationsAndDispatcherHandlers(t *testing.T) {
 	for _, binding := range input.BindingCatalog() {
-		if binding.Intent != input.IntentShellAction {
-			continue
-		}
-		actionID, ok := actionIDForShellAction(binding.Action, binding.Reason)
+		intent, ok := shortcutIntentForInvocation(binding.Invocation, input.InputEvent{})
 		if !ok {
-			t.Fatalf("shell binding %q action=%q reason=%q must map to ActionSpecCatalog", binding.ID, binding.Action, binding.Reason)
+			t.Fatalf("shortcut binding %q invocation=%#v has no app dispatcher handler", binding.ID, binding.Invocation)
 		}
-		spec, ok := render.ActionSpecByID(actionID)
-		if !ok {
-			t.Fatalf("shell binding %q maps to unregistered action id %q", binding.ID, actionID)
-		}
-		if spec.Dispatch == render.ActionDispatchNone {
-			t.Fatalf("shell binding %q maps to action without dispatch semantics: %#v", binding.ID, spec)
+		if intent.Kind == input.IntentNone || intent.Kind == input.IntentShortcutAction {
+			t.Fatalf("shortcut binding %q did not dispatch to reducer intent: %#v", binding.ID, intent)
 		}
 	}
 }
@@ -105,6 +98,12 @@ func TestTabWorkspaceFooterHintsMatchInputBindings(t *testing.T) {
 			}
 			key := firstFooterShortcutKey(token.Key)
 			intent := input.RouteWithMode(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: key}, false, tc.input)
+			if intent.Kind == input.IntentShortcutAction {
+				intent, ok = shortcutIntentForInvocation(intent.Invocation, intent.Event)
+				if !ok {
+					t.Fatalf("%s footer key %q action %q has no dispatcher", tc.name, token.Key, token.ActionID)
+				}
+			}
 			if intent.Kind != input.IntentWorkbenchCommand || intent.Command != command {
 				t.Fatalf("%s footer key %q action %q should route to %q, got %#v", tc.name, token.Key, token.ActionID, command, intent)
 			}
