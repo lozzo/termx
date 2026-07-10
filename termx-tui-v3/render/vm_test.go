@@ -917,9 +917,9 @@ func TestRenderVMBuilderUsesStructuredFooterActionCatalog(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			footer := builder.Build(tc.root).Shell.Footer
-				for _, want := range tc.want {
-					if !containsFooterAction(footer.ActionTokens, want.Key, want.Label, want.ActionID) {
-						t.Fatalf("missing structured footer action %#v in %#v", want, footer.ActionTokens)
+			for _, want := range tc.want {
+				if !containsFooterAction(footer.ActionTokens, want.Key, want.Label, want.ActionID) {
+					t.Fatalf("missing structured footer action %#v in %#v", want, footer.ActionTokens)
 				}
 			}
 		})
@@ -3202,6 +3202,7 @@ func TestRenderVMBuilderProjectsDisconnectedPaneActions(t *testing.T) {
 		},
 	}
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, ref.TerminalID)
+	root.Endpoints = root.Endpoints.Upsert(state.EndpointItem{ID: ref.EndpointID, Label: "West Lab", Transport: state.EndpointTransportSSH, Enabled: true, Status: state.EndpointStatusOffline})
 	binding := state.NewEndpointPaneTerminalView(ref.EndpointID, state.DefaultPaneID, ref.TerminalID, 0, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)
 	binding.LastError = errText
 	root.TerminalViews = root.TerminalViews.BindPane(binding)
@@ -3210,8 +3211,24 @@ func TestRenderVMBuilderProjectsDisconnectedPaneActions(t *testing.T) {
 	if content.Kind != ContentTerminalLive || content.Status != "disconnected: Reconnect / Disconnect" || !contentHasAction(content, ActionDisconnectedReconnect.String()) || !contentHasAction(content, ActionDisconnectedDisconnect.String()) {
 		t.Fatalf("disconnected pane should show local reconnect/disconnect choices, got %#v", content)
 	}
-	if !strings.Contains(content.Lines[0].PlainString(), "last remote output") || !contentPlainContains(content, "endpoint disconnected") || !strings.Contains(content.Error, "remote-daemon") {
+	if !strings.Contains(content.Lines[0].PlainString(), "last remote output") || !contentPlainContains(content, "● endpoint disconnected") || !contentPlainContains(content, "West Lab (west)") || !contentPlainContains(content, "transport ssh") || !strings.Contains(content.Error, "remote-daemon") {
 		t.Fatalf("disconnected pane should preserve content and reason, lines=%#v error=%q", content.Lines, content.Error)
+	}
+}
+
+func TestRenderVMBuilderProjectsConnectingPaneFromAttachPending(t *testing.T) {
+	ref := state.NewTerminalRef("west", "remote")
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, ref.TerminalID)
+	root.Endpoints = root.Endpoints.Upsert(state.EndpointItem{ID: ref.EndpointID, Label: "West Lab", Transport: state.EndpointTransportSSH, Enabled: true, Status: state.EndpointStatusConnecting})
+	binding := state.NewEndpointPaneTerminalView(ref.EndpointID, state.DefaultPaneID, ref.TerminalID, 0, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID(state.DefaultPaneID), false)
+	binding.AttachPending = true
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
+	root.Surface = state.TerminalSurfaceStore{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, Lines: []string{"last remote output"}, Ready: true}
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if !content.Pending || content.Status != "connecting endpoint" || !contentPlainContains(content, "● connecting") || !contentPlainContains(content, "West Lab (west)") || !contentPlainContains(content, "transport ssh") || contentHasAction(content, ActionDisconnectedReconnect.String()) {
+		t.Fatalf("attach pending should render structured connecting state, got %#v", content)
 	}
 }
 

@@ -16,6 +16,7 @@ type ContentProjectorContext struct {
 	Root     state.Root
 	Shell    state.ShellStore
 	Pane     state.PaneState
+	Binding  state.TerminalViewBinding
 	Kind     ContentKind
 	Active   bool
 	Surface  state.TerminalSurfaceStore
@@ -81,7 +82,15 @@ func projectTerminalLiveContent(ctx ContentProjectorContext) ContentVM {
 	if ctx.Active {
 		selectedIndex = ctx.Shell.ReadonlyDefaults().ExitedPaneCTA.SelectedIndex
 	}
-	return buildLiveContentVMWithSelection(surface, session, selectedIndex)
+	return buildLiveContentVMWithSelection(surface, session, ctx.Binding, endpointForBinding(ctx.Root, ctx.Binding), selectedIndex)
+}
+
+func endpointForBinding(root state.Root, binding state.TerminalViewBinding) state.EndpointItem {
+	if binding.TerminalID == "" {
+		return state.EndpointItem{}
+	}
+	endpoint, _ := root.Endpoints.DisplayEndpoint(binding.EndpointID)
+	return endpoint
 }
 
 func liveSurfaceIsPending(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) bool {

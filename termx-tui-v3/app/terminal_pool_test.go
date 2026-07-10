@@ -71,6 +71,8 @@ func TestTerminalPoolDisconnectedReconnectErrorStaysInPane(t *testing.T) {
 		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, Title: "remote"}}},
 	}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView(ref.EndpointID, state.DefaultPaneID, ref.TerminalID, 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	pending, _ := root.TerminalViews.PaneBinding(state.DefaultPaneID)
+	root.TerminalViews = root.TerminalViews.MarkAttachPending(pending)
 
 	reducer := NewTerminalPoolReducer(LiveDeps{})
 	next, effects := reducer(root, TerminalPoolReconnectResultMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, TargetPaneID: state.DefaultPaneID, Err: err, LocalError: true})
@@ -79,7 +81,7 @@ func TestTerminalPoolDisconnectedReconnectErrorStaysInPane(t *testing.T) {
 		t.Fatalf("local reconnect failure should not emit effects or global toasts, effects=%#v toasts=%#v", effects, next.Shell.Toasts)
 	}
 	binding, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID)
-	if !ok || binding.Channel != 0 || binding.Attached || !strings.Contains(binding.LastError, "remote-daemon") {
+	if !ok || binding.AttachPending || binding.Channel != 0 || binding.Attached || !strings.Contains(binding.LastError, "remote-daemon") {
 		t.Fatalf("pane should keep terminal intent and local error, binding=%#v ok=%v", binding, ok)
 	}
 	if next.Session.LastError == "" || next.Session.State != state.TerminalLiveError {
@@ -87,6 +89,30 @@ func TestTerminalPoolDisconnectedReconnectErrorStaysInPane(t *testing.T) {
 	}
 	if west, _ := next.Endpoints.Endpoint("west"); west.LastErrorKind != state.EndpointErrorRemoteDaemon || west.DisplayStatus() != state.EndpointStatusOffline {
 		t.Fatalf("endpoint should show remote daemon reconnect failure, got %#v", west)
+	}
+}
+
+func TestTerminalPoolPickerReconnectFailureClearsConnectingAndKeepsToast(t *testing.T) {
+	ref := state.NewTerminalRef("west", "remote")
+	err := errors.New("ssh transport closed: exit status 255")
+	root := state.Root{
+		Shell:     state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, ref.TerminalID),
+		Endpoints: (state.EndpointStore{}).Upsert(state.EndpointItem{ID: ref.EndpointID, Label: "US West", Transport: state.EndpointTransportSSH, Enabled: true, Status: state.EndpointStatusConnecting}),
+	}
+	binding := state.NewEndpointPaneTerminalView(ref.EndpointID, state.DefaultPaneID, ref.TerminalID, 0, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID(state.DefaultPaneID), false)
+	binding.AttachPending = true
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
+
+	next, effects := NewTerminalPoolReducer(LiveDeps{})(root, TerminalPoolReconnectResultMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, TargetPaneID: state.DefaultPaneID, Err: err})
+	if len(effects) != 0 || len(next.Shell.Toasts) != 1 {
+		t.Fatalf("picker reconnect failure should keep one toast and no follow-up effects, effects=%#v toasts=%#v", effects, next.Shell.Toasts)
+	}
+	view, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || view.AttachPending || view.LastError == "" {
+		t.Fatalf("picker reconnect failure should close connecting projection, view=%#v ok=%v", view, ok)
+	}
+	if endpoint, ok := next.Endpoints.Endpoint(ref.EndpointID); !ok || endpoint.DisplayStatus() != state.EndpointStatusOffline {
+		t.Fatalf("picker reconnect failure should mark owning endpoint offline, endpoint=%#v ok=%v", endpoint, ok)
 	}
 }
 

@@ -2368,6 +2368,12 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	if len(effects) != 1 {
 		t.Fatalf("expected reconnect effect, got %#v", effects)
 	}
+	if binding, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID); !ok || !binding.AttachPending || binding.Attached || binding.Channel != 0 {
+		t.Fatalf("reconnect request should immediately project connecting state, binding=%#v ok=%v", binding, ok)
+	}
+	if endpoint, ok := root.Endpoints.Endpoint(state.DefaultEndpointID); !ok || endpoint.DisplayStatus() != state.EndpointStatusConnecting {
+		t.Fatalf("reconnect request should mark only owning endpoint connecting, endpoint=%#v ok=%v", endpoint, ok)
+	}
 	reconnectEffect, ok := effects[0].(FuncEffect)
 	if !ok {
 		t.Fatalf("expected reconnect FuncEffect, got %#v", effects[0])
@@ -2379,6 +2385,9 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	root, _ = reducer(root, reconnectMsg)
 	if !root.Session.Attached || root.Session.TerminalID != "term-1" || root.TerminalPool.LastAttachedID != "term-1" {
 		t.Fatalf("expected reconnect result to attach session, got session=%#v pool=%#v", root.Session, root.TerminalPool)
+	}
+	if endpoint, ok := root.Endpoints.Endpoint(state.DefaultEndpointID); !ok || endpoint.DisplayStatus() != state.EndpointStatusConnected {
+		t.Fatalf("reconnect success should close connecting state, endpoint=%#v ok=%v", endpoint, ok)
 	}
 }
 

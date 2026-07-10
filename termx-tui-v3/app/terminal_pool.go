@@ -584,6 +584,7 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		result.TerminalID = msg.TerminalID
 	}
 	ref = state.NewTerminalRef(result.EndpointID, result.TerminalID)
+	root.Endpoints = root.Endpoints.MarkRuntimeStatus(ref.EndpointID, state.EndpointStatusConnected, state.EndpointErrorUnknown, endpointTerminalCount(root, ref.EndpointID), "")
 	target, _ := terminalPoolTargetFromRequest(root, msg.TargetPaneID, msg.TargetFloatingID)
 	if result.ViewID == "" {
 		result.ViewID = target.ViewID
@@ -886,15 +887,25 @@ func reduceTerminalPoolReconnectRequest(root state.Root, msg TerminalPoolReconne
 	cols, rows := terminalPoolAttachSizeForTarget(root, target)
 	surfaceID := runtimeSurfaceID(root)
 	ref := state.NewTerminalRef(msg.EndpointID, msg.TerminalID)
-	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
+	binding := state.TerminalViewBinding{ViewID: target.ViewID, SurfaceID: surfaceID, EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, DesiredCols: cols, DesiredRows: rows, ResizeRole: state.TerminalResizeRoleFollower, PaneID: target.PaneID, FloatingID: target.FloatingID}
+	// 中文说明：连接中的唯一真值是 view attach pending；renderer 直接消费该投影，
+	// 不用定时器、toast 或 transport 猜测伪造连接进度。
+	root.TerminalViews = root.TerminalViews.MarkAttachPending(binding)
+	root.Endpoints = root.Endpoints.MarkRuntimeStatus(ref.EndpointID, state.EndpointStatusConnecting, state.EndpointErrorUnknown, endpointTerminalCount(root, ref.EndpointID), "")
+	return root.Advance(), []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
 		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: surfaceID, ViewID: target.ViewID})
 		return TerminalPoolReconnectResultMsg{EndpointID: ref.EndpointID, TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: state.TerminalResizeRoleFollower, Result: result, Err: err, LocalError: msg.LocalError}
 	}}}
 }
 
 func reduceTerminalPoolReconnectResult(root state.Root, msg TerminalPoolReconnectResultMsg, deps LiveDeps) (state.Root, []Effect) {
-	if msg.LocalError && msg.Err != nil {
-		return reduceTerminalPoolReconnectLocalError(root, msg)
+	if msg.Err != nil {
+		root, effects := reduceTerminalPoolReconnectLocalError(root, msg)
+		if !msg.LocalError {
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.reconnect", Body: msg.Err.Error()})
+			root = root.Advance()
+		}
+		return root, effects
 	}
 	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{EndpointID: msg.EndpointID, TerminalID: msg.TerminalID, TargetPaneID: msg.TargetPaneID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: msg.ResizePolicy, Result: msg.Result, Err: msg.Err}, deps)
 }
