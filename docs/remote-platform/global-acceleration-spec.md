@@ -223,7 +223,7 @@ route_score =
 | Backbone Tunnel | Relay-to-Relay 受控传输 | 接受公网任意代理流量 |
 | Usage Reconciler | 汇总各 hop 事件并生成一次 session 账单 | 按 hop 重复收费 |
 
-这些组件属于私有 `termx-cloud`，公开仓库只需要 path enum、诊断结果、RelayLease wire contract 和 fake fixtures。
+这些组件属于当前 private monorepo 的 `private/termx-cloud` 命名空间，未来 public repo 只需要 path enum、诊断结果、RelayLease wire contract 和 fake fixtures。
 
 ## 10. RelayLease 扩展
 

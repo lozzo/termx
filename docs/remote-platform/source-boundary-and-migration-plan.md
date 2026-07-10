@@ -18,9 +18,9 @@
 
 ## 2. 源码分发原则
 
-### 2.1 公开仓库必须足以独立使用
+### 2.1 Public namespace 必须可以独立复制
 
-公开仓库在没有任何私有源码时必须可以：
+当前 private monorepo 中计划开源的目录，在复制到全新仓库且没有任何 `private/` 源码时必须可以：
 
 - 构建 daemon、TUI、CLI 和 App client。
 - 使用 local 与 SSH endpoint。
@@ -29,11 +29,11 @@
 - 使用公开 interface 对接官方私有 Control Plane/Hub/Relay。
 - 用 fake Control Plane、fake Hub 和 in-process WebRTC harness 完成测试。
 
-公开仓库不能依赖私有仓库才能完成 `go test`、App build 或 local/SSH runtime。
+public namespace 不能依赖 `private/` 才能完成 `go test`、App build 或 local/SSH runtime。
 
-### 2.2 私有仓库只拥有持续服务实现
+### 2.2 `private/` 只拥有闭源能力
 
-私有仓库拥有：
+当前 monorepo 的 `private/` 命名空间拥有：
 
 - 账号、organization、登录和 subscription/billing。
 - device directory、managed presence projection 和云端配置 metadata。
@@ -42,17 +42,17 @@
 - Relay/TURN runtime、lease enforcement、usage collection 和结算。
 - Web Controller 管理 UI/API、风控、审计、运维和基础设施配置。
 
-私有仓库可以依赖发布后的公开 contract module，但公开仓库不得反向依赖私有实现。
+`private/` 可以依赖 public contract，但 public namespace 不得反向依赖私有实现。
 
 ### 2.3 安全边界必须与源码边界一致
 
 把服务端代码设为私有不是安全机制。所有公开 wire contract 仍按恶意 Hub/Relay/Control Plane 设计；terminal capability 的保密和 daemon 最终授权不依赖服务端源码不可见。
 
-## 3. 目标仓库布局
+## 3. 目标 Monorepo 布局
 
-仓库名称是工作名，可在迁移切片中调整；边界不可调整。
+当前开发阶段只维护本 private monorepo。开源时复制 public namespace 到全新空 Git 仓库，不复制当前历史；目录边界不可调整。
 
-### 3.1 Public: `termx`
+### 3.1 Public namespace：未来复制到 `termx`
 
 目标公开内容：
 
@@ -62,7 +62,7 @@ termx-vterm/                terminal semantic interpreter
 termx-tui-v3/               TUI and EndpointManager
 termx-cli/                  daemon/CLI assembly
 termx-app/                  mobile client UI and platform adapters
-termx-shared/               endpoint/transport/remote auth contracts
+termx-shared/               endpoint/transport/remote auth/cloud companion contracts
 internal/protocol/          termx protocol implementation
 termx-proto/                versioned public wire messages
 termx-remote-v2/            public WebRTC client/daemon orchestration only
@@ -79,33 +79,34 @@ docs/remote-platform/       public product/security/client architecture docs
 
 它不得包含 Hub server、Relay server、数据库、billing、plan limits、私有签名 key management 或 Web Controller API implementation。
 
-### 3.2 Private: `termx-cloud`
+### 3.2 Private namespace：仅留在当前 monorepo
 
 目标私有内容：
 
 ```text
-control-plane/              account/device/entitlement/admission/lease
-web-controller/             private admin and customer control UI/API
-hub/                        regional presence and signaling runtime
-relay/                      TURN/relay enforcement and usage meter
-route-planner/              private quality graph, SmartRoute and Relay Mesh
-contracts-adapter/          implementation of public client contracts
-infra/                      deployment, secrets, observability, runbooks
+private/termx-cloud/control-plane/      account/device/entitlement/admission/lease
+private/termx-cloud/companion/          desktop/headless official cloud sidecar
+private/termx-cloud/web-controller/     private admin and customer control UI/API
+private/termx-cloud/hub/                regional presence and signaling runtime
+private/termx-cloud/relay/              TURN/relay enforcement and usage meter
+private/termx-cloud/route-planner/      quality graph, SmartRoute and Relay Mesh
+private/termx-cloud/contracts-adapter/  implementation of public client contracts
+private/termx-cloud/infra/              deployment, secrets, observability, runbooks
 ```
 
 Control Plane、Hub 和 Relay 即使同仓库也保持独立 package/module 和部署单元。Hub 不允许直接 import billing database model；它只消费签名 admission 或明确的私有 service interface。
 
-### 3.3 Private archive: `termx-platform-legacy`
+### 3.3 Private archive
 
 旧实现资产进入只读私有 archive，保留原始路径、commit metadata 和迁移说明：
 
 ```text
-termx-hub/
-web-control/
-termx-remote/
-remote-ui/
-termx-app/legacy-remote-parts
-termx-remote-v2/pre-rp-contract
+private/archive/termx-platform-legacy/termx-hub/
+private/archive/termx-platform-legacy/web-control/
+private/archive/termx-platform-legacy/termx-remote/
+private/archive/termx-platform-legacy/remote-ui/
+private/archive/termx-platform-legacy/app-legacy-remote/
+private/archive/termx-platform-legacy/remote-v2-pre-rp-contract/
 ```
 
 archive 不是 module dependency、git submodule 或 runtime fallback。需要借鉴代码时，开发者必须把概念按新 contract 重新实现，而不是从 archive 建立 import/replace。
@@ -114,52 +115,55 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 
 | 当前资产 | 现状问题 | 可保留资产 | 目标去向 |
 | --- | --- | --- | --- |
-| `termx-core-v2/` | 无远程领域所有权问题 | scoped transport、terminal/history truth | 公开仓库保留 |
-| `termx-tui-v3/` | Hub dialer 仍绑定旧信令语义 | EndpointID、TerminalRef、EndpointManager、局部失败状态 | 公开仓库保留并接新 contract |
-| `termx-shared/remoteauth/` | grant 概念可用，交付链路需重做 | DeviceIdentity、fingerprint、scope、revoke | 公开仓库演进为 E2E auth owner |
-| `termx-shared/transport/datachannel/` | primitive 基本可用 | reliable ordered packet transport | 公开仓库保留 |
-| `termx-remote-v2/` | grant 经 Hub signaling；pending answer 不完整 | Pion adapter、dial/answer harness、core scoped session 接线 | 公开仓库重写 orchestration；旧版本进 archive |
-| `termx-hub/client/` | client 与 server module/内部 wire 耦合 | stream/signaling API 经验 | contract 抽到公开仓库；实现迁私有 |
-| `termx-hub/internal/hub/` | 非空 Bearer 即通过、长期 agent token、terminal inventory | TTL presence、offer/answer correlation、ICE/traffic 思路 | 私有 Hub/Relay 按新模型重建；旧代码进 archive |
-| `web-control/` | agent/server 限额、heartbeat kick、订阅直接控制在线状态 | 用户、订单、支付、管理 UI 和运维经验 | 私有 Control Plane 重建；旧 schema 进 archive |
-| `termx-app/` | Android `HubConnector` 维护独立 session token/WebRTC 流程 | 原生 WebRTC、Keystore、前后台生命周期 | 公开 App 保留，业务流改接共同 contract |
-| `remote-ui/` | machine/session-token contract 已归档 | 产品交互、配对和 Relay 策略历史 | 设计资产进 archive；不作为 runtime fallback |
-| `termx-remote/` | 旧 remote/localweb 模型 | 历史行为和 UI 参考 | 私有 archive，不恢复依赖 |
+| `termx-core-v2/` | 无远程领域所有权问题 | scoped transport、terminal/history truth | public namespace 保留 |
+| `termx-tui-v3/` | Hub dialer 仍绑定旧信令语义 | EndpointID、TerminalRef、EndpointManager、局部失败状态 | public namespace 保留并接新 contract |
+| `termx-shared/remoteauth/` | grant 概念可用，交付链路需重做 | DeviceIdentity、fingerprint、scope、revoke | public namespace 演进为 E2E auth owner |
+| `termx-shared/transport/datachannel/` | primitive 基本可用 | reliable ordered packet transport | public namespace 保留 |
+| `termx-remote-v2/` | grant 经 Hub signaling；pending answer 不完整 | Pion adapter、dial/answer harness、core scoped session 接线 | public namespace 重写 orchestration；旧版本进 private archive |
+| `termx-hub/client/` | client 与 server module/内部 wire 耦合 | stream/signaling API 经验 | contract 抽到 public namespace；实现迁 `private/` |
+| `termx-hub/internal/hub/` | 非空 Bearer 即通过、长期 agent token、terminal inventory | TTL presence、offer/answer correlation、ICE/traffic 思路 | `private/` Hub/Relay 按新模型重建；旧代码进 archive |
+| `web-control/` | agent/server 限额、heartbeat kick、订阅直接控制在线状态 | 用户、订单、支付、管理 UI 和运维经验 | `private/` Control Plane 重建；旧 schema 进 archive |
+| `termx-app/` | Android `HubConnector` 维护独立 session token/WebRTC 流程 | 原生 WebRTC、Keystore、前后台生命周期 | public App 保留，业务流改接共同 contract |
+| `remote-ui/` | machine/session-token contract 已归档 | 产品交互、配对和 Relay 策略历史 | 设计资产进 private archive；不作为 runtime fallback |
+| `termx-remote/` | 旧 remote/localweb 模型 | 历史行为和 UI 参考 | private archive，不恢复依赖 |
 
 ## 5. Git 历史和许可证处理
 
-### 5.1 先确认是否已经公开发布
+### 5.1 当前开发方式
 
-在执行 RP007 前必须确认：
+当前仓库保持私有，公开和闭源代码都在本地 Git 正常提交：
 
-- 当前仓库或相关 commit 是否已推送到公开远端。
-- `termx-hub/`、`web-control/` 是否已按开源许可证发布或分发。
-- 第三方贡献是否允许迁入私有服务仓库。
+- 不维护第二个开发仓库。
+- 不做 public mirror 同步、exporter 或日常历史过滤。
+- public namespace 保持不依赖 `private/`，为未来复制做准备。
+- 闭源实现逐步收口到 `private/`，但迁移只按对应实现切片执行。
 
-如果代码已经公开或已经按开源许可证分发，删除文件或重写公开 git 历史不能撤回外部已有副本和既有许可证授权。此时只能把后续重写版本设为私有，并保留必要的 attribution/许可证义务。该问题需要在正式发布前做法律和许可证核对。
+### 5.2 未来开源方式
 
-### 5.2 推荐迁移方式
+正式开源时：
 
-1. 在受控私有远端创建完整镜像和不可变归档 tag，例如 `remote-platform-legacy-2026-07`。
-2. 使用 path-filtered history 分别生成 `termx-cloud` 和 `termx-platform-legacy`，尽量保留相关 commit author、date 和 message。
-3. 对私有迁移结果做 hash/commit mapping 清单，记录原 commit 到新 commit 的映射。
-4. 在公开仓库完成新 contract 后再删除服务实现路径，避免中途丢失可参考资产。
-5. 若仓库尚未公开，首次公开发布应从过滤后的 clean public history 生成，确保私有路径从未进入公开对象库。
-6. 若仓库已经公开，不宣称历史实现已被“隐藏”；对外只说明后续托管服务实现私有。
+1. 选择一个通过测试的 private monorepo commit 作为快照来源。
+2. 创建全新的空 Git 仓库，不复制 `.git/`。
+3. 按最终公开目录清单复制 public namespace 文件。
+4. 删除内部配置、secret、private docs、私有 module reference 和不可分发资产。
+5. 添加公开许可证、notice、贡献说明和公开 README。
+6. 在新目录独立运行构建、测试、license 和 secret scan。
+7. 通过后创建 public repo 的第一个 commit 并推送公开远端。
 
-以上操作具有历史重写和发布影响，必须在 RP007 单独执行并备份；RP001 不运行任何 `git filter-repo`、force push 或 destructive command。
+当前不实现复制脚本；RP007 只要求人工可重复的目录清单和发布检查。若未来重复发布频率使手工复制容易出错，再单独评估自动化。
 
 ## 6. 实施顺序
 
-### RP002：公开 remote contract 抽取
+### RP002：public remote contract 抽取
 
-范围：公开仓库。
+范围：当前 private monorepo 的 public namespace。
 
 先建立：
 
 - `ControlPlaneClient`、`HubClient`、`RelayLeaseProvider` interface。
+- `CloudCompanionClient`、versioned local IPC DTO、caller role/capability negotiation 和稳定 lifecycle error。
 - versioned DTO、credential envelope tag 和稳定 error taxonomy。
-- fake Control Plane/Hub/Relay lease provider。
+- fake Companion/Control Plane/Hub/Relay lease provider。
 - contract fixture，证明信令 schema 不含 grant、terminal 或 scope。
 - dependency guard，禁止 public client import Hub server/private schema。
 
@@ -181,7 +185,7 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 
 ### RP004：私有 Control Plane 领域重建
 
-范围：私有 `termx-cloud/control-plane` 与 Web Controller。
+范围：`private/termx-cloud/control-plane` 与 `private/termx-cloud/web-controller`。
 
 按以下 aggregate 建模：
 
@@ -195,9 +199,19 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 
 完成条件：订阅代码不能 import terminal scope；heartbeat 不再按未订阅踢掉 daemon；Control Plane 能签发短期 admission/lease 并对 usage 幂等结算。
 
+### RP004A：私有 Cloud Companion
+
+范围：`private/termx-cloud/companion`。
+
+- 实现 account/device cloud session、Control Plane/Hub adapter、presence/signaling、RelayLease、quality summary 和 route plan。
+- 使用 OS credential store 和 public companion contract fixtures。
+- 不接收 grant、DeviceIdentity private key、DataChannel 或 terminal payload。
+
+完成条件：private companion 可以驱动 public fake/real adapter contract；恶意或崩溃 companion 只影响 managed endpoint，不能绕过 E2E DeviceIdentity/capability 验证。
+
 ### RP005：私有 Hub/Relay 重建
 
-范围：私有 Hub 和 Relay。
+范围：`private/termx-cloud/hub` 与 `private/termx-cloud/relay`。
 
 先建立：
 
@@ -221,24 +235,35 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 
 完成条件：同一 endpoint 配置和 grant 可以在 TUI/App 中得到一致授权结果；平台差异只停留在 WebRTC primitive 和安全存储。
 
-### RP007：仓库分拆与清场
+### RP006A：Companion 安装与官方构建
+
+范围：公开 CLI installer/lifecycle、私有 desktop artifact 和官方移动构建。
+
+- CLI 实现 install/login/enroll/status/doctor/update/logout/uninstall。
+- manifest、artifact、hash、签名、平台和 protocol version 全部验证后原子安装。
+- Android/iOS official build 接私有 cloud module；Community build 使用 disabled/fake adapter。
+- companion 缺失、崩溃和不兼容只影响 managed endpoint。
+
+完成条件：桌面 signed install/update/uninstall harness 与移动端 contract fixture 通过；普通公开构建不需要私有源码。
+
+### RP007：私有命名空间与开源快照准备
 
 范围：发布和仓库治理。
 
-- 创建私有完整备份、archive 和 cloud 服务仓库。
-- 验证历史映射、第三方许可证和 secret scanning。
-- 公开仓库删除 `termx-hub` server、`web-control` server 和旧 remote runtime。
-- 删除公开 module 对私有路径的 replace/import/script/Makefile 入口。
-- 保留公开 contract、fake harness 和服务 API 文档。
-- 对公开仓库做 dependency、license、secret 和 object-history 审计。
+- 闭源实现和 legacy assets 收口到 `private/`。
+- 建立未来公开目录清单，不实现日常 exporter/sync。
+- 删除 public namespace 对私有路径的 import/replace/script/Makefile 依赖。
+- 在临时空目录按清单复制公开文件，验证独立构建、测试、license 和 secret scan。
+- 记录创建全新 public Git 仓库的发布步骤，不复制 private `.git/` 历史。
 
-完成条件：公开 clone 无法访问私有服务源码且仍能完成所有公开构建/测试；私有 archive 可按 commit mapping 追溯旧资产；运行时不存在旧 fallback。
+完成条件：从选定 private commit 手工复制出的 public snapshot 可独立构建测试且不含 `private/`；当前 private monorepo 继续作为完整开发真值；运行时不存在旧 fallback。
 
 ## 7. 迁移期间的禁止项
 
-- 不在当前仓库新建 `legacy/` 目录复制 Hub/Web Controller 源码；这会继续把闭源目标放在未来公开仓库中。
+- 不把闭源实现散落到计划公开目录；legacy 只能进入 `private/archive/`。
 - 不用 build tag 同时保留 public/private 两个 Hub 实现。
-- 不把私有仓库作为公开仓库 submodule。
+- 不让 public package import `private/`，也不靠复制时临时删除 import 修补构建。
+- 不把当前 private `.git/` 目录复制或直接改成 public remote。
 - 不让 fake Hub 逐渐演变为可部署的第二套服务端。
 - 不保留 `session_token` 字段承载“新票据或旧 grant 两种含义”。
 - 不迁移旧数据库 schema 后再靠 nullable 新字段叠加；开发周期直接建立新 aggregate 和新库。
@@ -261,11 +286,11 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 - 已完成订单、支付和发票记录；
 - 法律要求保留的审计/财务 metadata。
 
-迁移脚本只存在私有仓库，并经过一次性 dry run、行数核对和回滚备份。
+迁移脚本只存在 `private/`，并经过一次性 dry run、行数核对和回滚备份。
 
 ## 9. 测试与准入矩阵
 
-| 门禁 | Public | Private | Cross-repo |
+| 门禁 | Public namespace | `private/` | Future public snapshot |
 | --- | --- | --- | --- |
 | local/SSH 无云可用 | 必须 | 不涉及 | 云服务关闭 integration |
 | contract fixtures | owner | consumer | 双方版本兼容 |
@@ -274,7 +299,7 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 | Relay lease/usage | DTO fixture | enforcement/ledger | over-quota integration |
 | App/TUI 一致性 | owner | fake service | staging smoke |
 | secret/log scan | grant/ticket redaction | service credentials | release gate |
-| dependency guard | 不依赖 private | 只依赖 public release | CI graph audit |
+| dependency guard | 不依赖 `private/` | 可以依赖 public contract | copy 后独立构建 |
 
 公开 contract 的 breaking change 必须显式升 version。私有服务可以先向后兼容一个公开客户端版本窗口，但公开客户端不得保留旧安全协议 fallback；服务端兼容窗口只允许同一安全模型内的字段/version 演进。
 
@@ -288,7 +313,7 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 4. 完成 direct、Relay、quota、revocation 和 region failure 测试。
 5. 切换默认 managed endpoint 到新服务。
 6. 删除旧服务和旧客户端路径。
-7. 执行仓库分拆与公开发布审计。
+7. 发布前从选定 private commit 复制 public snapshot 到全新 Git 仓库并完成审计。
 
 ### 10.2 回滚边界
 
@@ -313,6 +338,7 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 - PRD 明确免费/收费能力和目标用户旅程。
 - 架构 spec 明确所有 domain owner、truth source 和消息链路。
 - 安全 spec 明确五类凭据、E2E handshake、Hub admission 和 Relay lease。
+- 发布 spec 明确同一 private monorepo、独立 artifact、Cloud Companion 和未来新仓库复制流程。
 - 本计划明确公开/私有/归档边界、旧资产映射和 RP002-RP007 顺序。
 - `workflow.md` 与根 `AGENTS.md` 使用相同术语，不再把现有 Hub/Web Controller runtime 当目标 contract。
 - 文档通过 `git diff --check` 并作为单独中文提交落库。

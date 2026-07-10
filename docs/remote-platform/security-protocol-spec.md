@@ -23,6 +23,7 @@ TermX 远程平台必须同时满足两个独立授权问题：
 - 控制恶意 Hub 节点、Relay 节点或云服务内部日志读取权限。
 - 猜测 DeviceID、ManagedSessionID 和 signaling correlation ID。
 - 获取过期、撤销或属于其他 session 的服务票据。
+- 控制恶意、被替换或被攻破的本地 Cloud Companion，并返回错误 DeviceID、SDP/ICE、RelayLease 或 route plan。
 - 诱导客户端连接到相同 label 的冒充 daemon。
 - 重放以前 DataChannel 内捕获的授权 frame。
 
@@ -174,14 +175,14 @@ signature
 ## 4. 信任边界
 
 ```text
-AccountAccessToken  -> Control Plane only
+AccountAccessToken  -> local Cloud Companion custody, Control Plane audience only
 HubAdmissionTicket  -> Hub only
 RelayLease          -> Relay/TURN only
 DeviceIdentity proof <-> Client and daemon E2E only
 CapabilityGrant       -> Client secure store and daemon E2E only
 ```
 
-任何服务接收到不属于自己的 credential type 都必须拒绝并避免记录 credential body。公开类型应使用不同 envelope tag 和 audience，防止“看起来都是 token”导致误用。
+任何服务接收到不属于自己的 credential type 都必须拒绝并避免记录 credential body。公开类型应使用不同 envelope tag 和 audience，防止“看起来都是 token”导致误用。桌面 Cloud Companion 可以保管 AccountAccessToken 并短期转交 caller-specific admission/lease credential，但禁止接收 CapabilityGrant 或 DeviceIdentity private key。
 
 ## 5. 端到端 DataChannel 授权协议
 
@@ -440,6 +441,7 @@ UsageEvent {
 
 - Hub request/response fixture 扫描，证明不存在 grant/terminal/scope 字段。
 - malicious Hub harness：替换 offer target 后，客户端因 DeviceFingerprint/DTLS binding 失败拒绝。
+- malicious companion harness：替换 target、SDP/ICE、lease 或 route 后仍不能绕过 pinned DeviceFingerprint、DTLS binding、RelayLease audience 和 daemon capability 验证。
 - replay harness：历史 `CapabilityOpen` 在新 nonce/channel 上失败。
 - scope harness：single-terminal grant 无法 List/Attach 其他 terminal。
 - revoke/expiry harness：daemon 拒绝且不创建 core-v2 session。

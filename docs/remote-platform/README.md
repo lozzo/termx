@@ -4,7 +4,7 @@
 
 生效日期：2026-07-11
 
-基线切片：RP001、RP001A、RP001B（完成）
+基线切片：RP001、RP001A、RP001B、RP001C（完成）
 
 ## 1. 文档目的
 
@@ -18,8 +18,9 @@
 2. `architecture-spec.md`：回答公开客户端、daemon、私有 Control Plane、Hub 和 Relay 各自拥有什么状态。
 3. `network-topology.md`：用网络拓扑和时序图解释 local、SSH、direct WebRTC、Relay fallback 与端到端授权链路。
 4. `global-acceleration-spec.md`：回答何时需要 single-relay 智能选区或双 Edge Relay Mesh，以及如何测量、计量和分阶段建设。
-5. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
-6. `source-boundary-and-migration-plan.md`：回答哪些代码公开、哪些代码私有、旧资产如何保留并按什么顺序迁移。
+5. `distribution-and-cloud-companion-spec.md`：回答公开主程序与闭源 cloud 能力如何拆包、安装、通信、升级和跨平台发布。
+6. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
+7. `source-boundary-and-migration-plan.md`：回答哪些代码公开、哪些代码私有、旧资产如何保留并按什么顺序迁移。
 
 若这些文档发生冲突，按以下顺序处理：
 
@@ -35,6 +36,8 @@
 - Web Controller、托管 Hub、托管 Relay、计费、entitlement、风控和云运维服务不进入公开源码发布。
 - WebRTC 是一种 endpoint transport；direct P2P 与 Relay 是同一次连接的候选路径结果，不是两套 terminal protocol。
 - 全球加速属于 WebRTC Relay path 的内部实现；`single_relay` 与 `relay_mesh` 不创建新的 endpoint、terminal protocol 或 capability 类型。
+- 桌面官方 cloud 能力通过可选闭源 `termx-cloud` companion 提供，普通开源 `termx` 不静态或动态链接私有代码；移动端官方构建使用同一 contract 的私有模块。
+- Control Plane、Hub、Relay 和 Web Controller 服务端不进入普通用户安装包；企业私有部署使用单独商业交付物。
 - terminal capability 由 owning daemon 签发和验证。Hub、Relay、Web Controller 永远看不到 capability grant，也不拥有 terminal authorization。
 - Control Plane 可以签发短期 Hub 服务准入票据；Relay entitlement 通过独立短期 `RelayLease` 表达。
 - 旧代码保留 git 历史和归档引用，但迁移完成后不得继续存在公开/私有双实现或旧 session token fallback。

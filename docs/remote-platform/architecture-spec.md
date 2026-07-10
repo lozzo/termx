@@ -152,7 +152,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - 建立公开 RemoteSessionAcceptor。
 - 在 DataChannel 内证明设备身份并验证 capability challenge。
 - 将接受后的 scope 映射到 core-v2 `ServeScopedTransport`。
-- 通过独立 cloud connector 注册 presence 和接收 signaling。
+- 通过公开 cloud connector interface 注册 presence 和接收 signaling；桌面官方服务由独立 Cloud Companion IPC adapter 实现。
 
 不负责：
 
@@ -166,7 +166,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 
 - 统一加载 EndpointSpec、transport config 和 `grant_ref`。
 - 通过平台安全存储读取原始 grant。
-- 调用公开 ControlPlaneClient/HubClient interface 获取短期票据并交换 signaling。
+- 调用公开 ControlPlaneClient/HubClient interface 获取短期票据并交换 signaling；桌面官方服务通过 Cloud Companion IPC adapter 实现这些 interface。
 - 创建平台特定 WebRTC primitive。
 - pin 并验证 daemon DeviceIdentity。
 - 在 DataChannel 内完成 capability handshake。
@@ -179,7 +179,25 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - 从 Hub terminal list 建立 terminal pool。
 - 在 capability handshake 前发送 termx protocol 请求。
 
-### 5.3 Private Control Plane
+### 5.3 Private Cloud Companion
+
+桌面/headless 官方 cloud 使用可选闭源 `termx-cloud` sidecar；移动端官方构建使用实现同一 contract 的私有模块。详细分发和 IPC 见 `distribution-and-cloud-companion-spec.md`。
+
+负责：
+
+- 持有本地 AccountAccessToken/account session。
+- 调用官方 Control Plane/Hub，转发 presence、SDP/ICE 和稳定错误。
+- 获取 caller-specific Hub admission、RelayLease/TURN credential 和 route plan。
+- 转发不含 terminal/grant 的网络质量 summary。
+
+不负责：
+
+- 创建或终止 WebRTC DataChannel。
+- 接收 DeviceIdentity private key、CapabilityGrant 或 terminal protocol frame。
+- 改变 daemon scope、endpoint identity 或 terminal lifecycle。
+- 在缺失或失败时触发 local/SSH/旧 remote fallback。
+
+### 5.4 Private Control Plane
 
 负责：
 
@@ -197,7 +215,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - 判断某个 terminal request 是否在 capability scope 内。
 - 保存 terminal list、history、输入或屏幕内容。
 
-### 5.4 Private Hub
+### 5.5 Private Hub
 
 负责：
 
@@ -215,7 +233,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - 直接查询套餐数据库；只离线验证短期票据或调用明确的私有 control interface。
 - 代理 termx protocol frame。
 
-### 5.5 Private Relay/TURN
+### 5.6 Private Relay/TURN
 
 负责：
 
@@ -230,7 +248,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - 读取 capability grant。
 - 扩大或缩小 daemon scope。
 
-### 5.6 Web Controller
+### 5.7 Web Controller
 
 Web Controller 是私有 Control Plane 的管理 UI/API surface，不是独立安全域。它可以提供账号、设备、套餐、Relay 使用量、组织、审批和审计管理，但不能成为 client 与 daemon 之间的 protocol gateway。
 
@@ -238,9 +256,25 @@ Web Controller 是私有 Control Plane 的管理 UI/API surface，不是独立�
 
 ## 6. 公开接口边界
 
-公开仓库提供 interface 和 wire contract，私有服务实现这些 contract。
+public namespace 提供 interface、Cloud Companion IPC contract 和 wire DTO；桌面 private companion 或移动端 private module 实现 official cloud adapter，私有服务实现网络端 contract。
 
-### 6.1 ControlPlaneClient
+### 6.1 CloudCompanionClient
+
+桌面公开进程通过固定用途的 versioned local IPC 使用 official cloud：
+
+```text
+Hello(protocol range, caller role, capabilities) -> selected version
+GetStatus() -> install/session/capability summary
+ResolveEndpoint(target device id) -> managed endpoint metadata
+OpenPresence(signed device proof) -> presence/signaling stream
+CreateSignalingSession(offer/ICE) -> answer/ICE/error stream
+AcquireRelayLease(session, route preference) -> caller-specific lease credential
+ReportPathQuality(redacted summary) -> ack
+```
+
+IPC 禁止包含 CapabilityGrant、DeviceIdentity private key、terminal inventory/content 或 DataChannel frame。完整安装、版本和错误 contract 见 `distribution-and-cloud-companion-spec.md`。
+
+### 6.2 ControlPlaneClient
 
 概念接口：
 
@@ -254,7 +288,7 @@ ReportClientOutcome(session id, path, error class) -> accepted
 
 客户端只能看到最小错误类别，例如 unauthenticated、device-not-found、entitlement-denied、quota-exhausted、region-unavailable。数据库字段和套餐实现不得泄漏进公开 contract。
 
-### 6.2 HubClient
+### 6.3 HubClient
 
 概念接口：
 
@@ -268,7 +302,7 @@ CloseSignaling(signaling session, reason) -> ack
 
 所有 payload 都禁止包含 CapabilityGrant、terminal ID、terminal inventory 或 core-v2 scope。
 
-### 6.3 RelayLeaseProvider
+### 6.4 RelayLeaseProvider
 
 Relay credential 获取与 Hub signaling 解耦：
 
@@ -277,9 +311,9 @@ AcquireRelayLease(managed session, requested region) -> RelayLease
 RefreshRelayLease(existing lease id) -> RelayLease
 ```
 
-客户端在 relay policy 不允许或 direct 已成功时不请求 lease。Hub 不得把长期共享 TURN 密钥下发给客户端。
+基础策略下，客户端在 relay policy 不允许或 direct 已达到质量门槛时不请求 lease；SmartRoute 可以在 direct 可达但质量较差时请求允许的 route class。Hub 不得把长期共享 TURN 密钥下发给客户端。
 
-### 6.4 RemoteSessionAcceptor
+### 6.5 RemoteSessionAcceptor
 
 公开 daemon interface 接收已经建立的可靠有序 DataChannel，先运行端到端授权状态机，再将成功 session 交给 core-v2。它不接受来自 Hub 的预验证 grant 标记。
 
@@ -390,6 +424,7 @@ TUI 和 App 必须共享：
 ### 10.1 Control Plane 可保存
 
 - account、organization 和 billing metadata。
+- account/device cloud session 由 companion/platform secret store 持有；普通 `termx` 配置不保存 token。
 - device ID、public key/fingerprint、owner、label 和最后在线时间。
 - Hub/region assignment、ManagedSession metadata 和 outcome。
 - entitlement、RelayLease metadata 和聚合 usage。
@@ -417,6 +452,7 @@ TUI 和 App 必须共享：
 ## 12. 架构验收
 
 - public core/TUI/App/CLI 构建不依赖私有 Hub/Web Controller 源码。
+- public build 不依赖 private companion；fake companion 可以驱动完整 cloud contract harness，缺失 companion 不影响 local/SSH。
 - fake Control Plane + fake Hub 可以驱动完整 client contract harness。
 - 真实 direct 和 Relay harness 都在 DataChannel 建立后运行同一 E2E handshake 和 protocol 测试。
 - 启用全球加速后，direct、single-relay 和 relay-mesh harness 使用同一 endpoint、grant、DataChannel auth 和 termx protocol fixture；只允许 `ObservedPath`、route diagnostics 和 usage 不同。

@@ -15,8 +15,9 @@
 - `docs/remote-platform/architecture-spec.md`：公开客户端/daemon 与私有 control plane/Hub/Relay 架构基准。
 - `docs/remote-platform/network-topology.md`：local/SSH/WebRTC 全景、direct/Relay 网络拓扑和连接时序图。
 - `docs/remote-platform/global-acceleration-spec.md`：SmartRoute、single-relay 选区、双 Edge Relay Mesh、质量测量和商业分阶段基准。
+- `docs/remote-platform/distribution-and-cloud-companion-spec.md`：公开主程序、闭源 Cloud Companion、签名安装、IPC、移动端构建和服务端交付基准。
 - `docs/remote-platform/security-protocol-spec.md`：设备身份、终端授权、云服务准入和 Relay 租约安全基准。
-- `docs/remote-platform/source-boundary-and-migration-plan.md`：公开/私有仓库分拆、旧资产保留和实施切片基准。
+- `docs/remote-platform/source-boundary-and-migration-plan.md`：private monorepo 命名空间、未来开源快照、旧资产保留和实施切片基准。
 - `termx-tui-v3/docs/multi-endpoint-transport-plan.md`：当前多 endpoint / 多 transport 技术规划。
 - `termx-tui-v3/docs/architecture.md`：TUI v3 架构基准。
 - `termx-core-v2/docs/architecture.md`：core-v2 架构基准。
@@ -34,7 +35,8 @@
 - `termx-proto/`
 - `termx-core-v2/`，仅当 endpoint 能力、terminal 生命周期或 history contract 需要时最小化触及。
 - `termx-remote-v2/`，仅在 RP002、RP003、RP006 对应公开 contract、端到端授权和客户端接入切片触及；不承载私有云服务实现。
-- `termx-hub/`，仅在 RP005、RP007 私有服务迁移和公开仓库清场切片触及；现有代码作为待迁移的私有 Hub/Relay 历史实现资产保留，不再作为公开 client contract 的 owner。
+- `termx-hub/`，仅在 RP005、RP007 私有服务迁移和开源快照准备切片触及；现有代码作为待迁移的私有 Hub/Relay 历史实现资产保留，不再作为公开 client contract 的 owner。
+- `private/`，当前私有 monorepo 的目标闭源命名空间；只在 RP004+ 对应 companion/control-plane/Hub/Relay/route-planner、归档和 public export 切片触及，public package 不得反向依赖。
 - `scripts/`、`Makefile`、`go.work`、`go.work.sum`，仅当测试或入口联动需要时最小化触及。
 
 ## 保留但非当前主线主动改造范围
@@ -44,7 +46,7 @@
 - `remote-ui/`
 - `web-control/`
 
-以上目录是远程管理、移动端、共享 UI 和 Web 管理面历史产品资产，必须保留但不得作为新架构 fallback。`termx-app/` 与客户端 UI 后续只在 RP006 按公开 client contract 重构；`web-control/` 与 `termx-hub/` 的服务端实现目标为私有仓库，当前目录在迁移完成前只作为可追溯参考，不再承载公开产品契约。runtime 目录只能按任务队列对应 RP 切片解冻。
+以上目录是远程管理、移动端、共享 UI 和 Web 管理面历史产品资产，必须保留但不得作为新架构 fallback。`termx-app/` 与客户端 UI 后续只在 RP006 按公开 client contract 重构；`web-control/` 与 `termx-hub/` 的服务端实现目标迁入当前私有 monorepo 的 `private/` 命名空间，当前目录在迁移完成前只作为可追溯参考，不再承载公开产品契约。runtime 目录只能按任务队列对应 RP 切片解冻。
 
 ## 硬语义规则
 
@@ -74,7 +76,13 @@
 - Hub/Relay 可以离线验证 control plane 签发的短期服务准入票据和 Relay 租约，但不得授予、扩大、撤销或解释 terminal capability；terminal 授权只属于 owning daemon。
 - 免费本地连接、免费 SSH 和公开的多 endpoint 管理不得依赖 Web Controller、Hub、订阅或云账号。商业收费只建立在托管发现、托管 Relay、云同步、团队治理和运维 SLA 等持续服务成本上。
 - 订阅失效只能拒绝新的付费 Relay/团队能力或按策略结束对应租约，不得踢掉 daemon 的免费本地/SSH 能力，也不得把 direct P2P 的 terminal capability 变成云端授权。
-- `termx-hub/` 与 `web-control/` 的服务实现不进入公开源码发布；公开仓库必须保留足够的 wire contract、client SDK interface、错误语义和 fake harness，使 TUI、App 与 daemon 可独立开发和验证。
+- `termx-hub/` 与 `web-control/` 的服务实现不进入公开源码发布；public namespace 必须保留足够的 wire contract、client SDK interface、错误语义和 fake harness，使 TUI、App 与 daemon 可独立开发和验证。
+- 官方 cloud 用户侧闭源能力只能通过专用的 out-of-process Cloud Companion 或移动端私有构建模块提供；当前分支不得恢复通用插件系统、进程内动态库注入或任意第三方代码加载。
+- 公开 `termx` 进程拥有 WebRTC、DTLS DataChannel、DeviceIdentity、CapabilityGrant 和 termx protocol；Cloud Companion 只拥有账号 session、官方云 API、signaling、RelayLease、网络质量 summary 和 route plan，禁止接收 grant 或 terminal payload。
+- Cloud Companion 缺失、崩溃、版本不兼容或未登录只影响 managed cloud endpoint；local、SSH、公开 daemon 和其他 endpoint 必须保持可用。
+- `termx cloud install/update` 必须由用户显式触发，验证平台、版本、hash 和发布签名后原子安装；禁止静默下载执行、`curl | sh`、未签名 fallback 或从 Hub 返回任意 executable URL。
+- 当前开发阶段只维护一个私有 Git monorepo，public namespace 与 `private/` 闭源实现都在本仓库正常提交，不建设 public mirror/exporter 或双仓同步。
+- public namespace 不得 import `private/`；`private/` 可以依赖 public contract。正式开源时从选定 commit 把审核通过的公开目录复制到全新的空 Git 仓库，再执行构建、测试、license 和 secret 审计；不复制本私有仓库历史。
 
 ## 任务队列
 
@@ -119,15 +127,19 @@
 | ME012C1 | 完成 | daemon 授权 DataChannel session acceptor | 已协商 DataChannel 只有在 grant/fingerprint/expiry/revoke 校验成功后才能进入 core-v2 scoped transport |
 | ME012C2 | 完成 | daemon hub agent 与 offer/answer | 注册/发现/offer-answer/NAT traversal/relay 建立 DataChannel；原型 Hub 不验证 terminal capability，失败不创建 protocol session |
 | ME012D | 完成 | TUI/CLI hub endpoint dialer | 注册 `hub-p2p` dialer，建立 protocol client bundle；失败只影响 owning endpoint，不 fallback 到 local/SSH/旧 remote |
-| RP001 | 完成 | 远程平台产品、架构、安全与源码边界文档基线 | 完成 PRD、架构 spec、安全协议 spec、公开/私有仓库分拆与旧资产迁移计划；冻结实现门禁，文档之间术语和责任一致 |
+| RP001 | 完成 | 远程平台产品、架构、安全与源码边界文档基线 | 完成 PRD、架构 spec、安全协议 spec、public/private 命名空间与旧资产迁移计划；冻结实现门禁，文档之间术语和责任一致 |
 | RP001A | 完成 | 远程平台网络拓扑与连接时序图 | Mermaid 图覆盖 local/SSH 云旁路、managed WebRTC direct、Relay fallback、凭据可见性和 E2E capability 握手 |
 | RP001B | 完成 | 全球网络加速产品与 Relay Mesh 预研 | 明确是否建设、阶段边界、质量选路、双边 Edge Relay、计量、安全和网络图；不把任意 N 跳加入首版 Relay |
-| RP002 | 待开始 | 公开 remote contract 与私有服务边界抽取 | 公开仓库只保留 endpoint/transport、信令 wire contract、client interface 与 fake harness；Hub/Web Controller runtime 不再被 client 直接 import |
+| RP001C | 完成 | 发布、安装与 Cloud Companion 边界 | 明确公开/闭源 artifact、专用 IPC、签名安装、版本协商、桌面/移动端差异、服务端交付和许可证门禁 |
+| RP002 | 待开始 | 公开 remote 与 Cloud Companion contract 抽取 | public namespace 只保留 endpoint/transport、cloud companion/signaling wire contract、client interface 与 fake harness；Hub/Web Controller runtime 不再被 client 直接 import |
 | RP003 | 待开始 | DataChannel 端到端设备证明与 capability handshake | Hub/Control Plane 全链路看不到 capability grant；daemon 在 DTLS DataChannel 内完成设备证明、challenge 和 scope 映射后才接 core-v2 |
-| RP004 | 待开始 | 私有 control plane 服务票据与 Relay entitlement | 账号、设备目录、Hub admission、Relay lease、套餐 entitlement 和 usage event 形成独立领域；订阅不参与 terminal authorization |
+| RP004 | 待开始 | `private/` control plane 服务票据与 Relay entitlement | 账号、设备目录、Hub admission、Relay lease、套餐 entitlement 和 usage event 形成独立领域；订阅不参与 terminal authorization |
+| RP004A | 待开始 | 私有桌面 Cloud Companion | 在 `private/termx-cloud/companion` 实现账号 session、Control Plane/Hub adapter、signaling、RelayLease、质量上报和 route plan；不接触 grant/DataChannel |
 | RP005 | 待开始 | 私有 Hub/Relay 重建与旧实现迁移 | Hub 只做 presence/rendezvous/signaling，Relay 按短租约和会话计量；旧 session token、terminal inventory 和 bearer grant 信令全部删除 |
 | RP006 | 待开始 | TUI 与 App 统一远程 endpoint contract | TUI/App 共用 endpoint、配对、凭据和错误模型；平台只各自实现 WebRTC primitive，不复制业务协议 |
-| RP007 | 待开始 | 私有仓库分拆与公开仓库清场 | 保留 git 历史和归档 tag 后迁出 Hub/Web Controller 服务实现；公开构建、测试和文档不依赖私有源码 |
+| RP006A | 待开始 | Cloud Companion 签名安装与官方构建集成 | CLI install/login/enroll/status/update/uninstall、原子更新、版本协商、桌面服务激活和移动端官方私有模块构建完整通过 |
+| LIC001 | 待开始 | 公开许可证与闭源分发审查 | 根许可证、第三方 notice、贡献协议、sidecar IPC 边界和企业私有交付完成正式发布前审查 |
+| RP007 | 待开始 | 私有命名空间收口与开源快照准备 | 闭源实现归入 `private/`；公开目录可复制到全新空 Git 仓库并独立构建测试，不携带私有代码或历史 |
 | GA001 | 待开始 | direct/Relay 网络质量观测基线 | 只采集 RTT、丢包、抖动、吞吐、断线和成本 summary；不含 terminal/grant 数据，不自动改路 |
 | GA002 | 待开始 | SmartRoute single-relay 智能选区 | direct 与受限 single-relay 候选按质量和成本竞争；具备 hysteresis、cost guard、选择原因和局部失败 |
 | GA003 | 待开始 | 双 Edge Relay Mesh corridor pilot | 两端就近 TURN、单逻辑 backbone、route-bound RelayLease、内部服务身份和 session-level usage reconciliation 完整通过 |
@@ -158,9 +170,10 @@
 
 ## 当前状态
 
+- RP001C 已完成：公开 `termx`、闭源用户侧 Cloud Companion、移动端官方私有模块和托管服务端的 artifact、IPC、签名安装、升级与许可证边界已冻结；源码统一在当前 private monorepo 正常提交，闭源实现收口 `private/`，未来开源时复制 public namespace 到全新空 Git 仓库。本切片未修改 runtime。
 - RP001B 已完成：全球网络加速被定义为 Relay 之上的可选付费能力；先做质量观测和 single-relay SmartRoute，再按 corridor 数据门禁试点双 Edge Relay Mesh，最多允许一个内部 transit；固定地区链、任意 N 跳和中国特例不进入公开协议。Relay Mesh 图已用 Mermaid CLI 实际渲染并完成视觉检查，本切片未修改 runtime。
 - RP001A 已完成：新增五张可直接在 Markdown/GitHub 渲染的 Mermaid 图，覆盖全部 transport、managed WebRTC 网络、direct 时序、Relay fallback 和五类凭据边界；图形已使用 Mermaid CLI 实际渲染验证，本切片未修改 runtime。
-- RP001 已完成：远程平台 PRD、架构 spec、安全协议 spec 与源码边界/迁移计划已建立；Hub/Web Controller 服务端目标为私有仓库，公开仓库保留 client/daemon contract 与 fake harness，旧实现保留私有可追溯 archive；本切片未修改 runtime。
+- RP001 已完成：远程平台 PRD、架构 spec、安全协议 spec 与源码边界/迁移计划已建立；Hub/Web Controller 服务端目标为当前 monorepo 的 `private/`，public namespace 保留 client/daemon contract 与 fake harness，旧实现保留私有可追溯 archive；本切片未修改 runtime。
 - ME012A-D 保留为已验证的技术原型，不再作为目标安全架构：当前 opaque grant 经 Hub 信令、Hub agent token、terminal inventory 注册和订阅 kick 等行为必须在 RP002-RP005 中按新 contract 删除，不保留兼容 fallback。
 - ME001 已完成：工作流已收敛为多 endpoint / 多 transport 主线，详细规划落到 `termx-tui-v3/docs/multi-endpoint-transport-plan.md`。
 - ME002 已完成：TUI state 已有 `EndpointID` / `TerminalRef` 基础模型，默认 `local` endpoint 保持现有本地行为，同名 terminal 可在不同 endpoint 下共存。

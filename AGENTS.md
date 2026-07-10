@@ -42,7 +42,7 @@
 - `termx-cli/cmd/termx/legacy_*.go` 不得重新出现；旧本地入口已经删除。
 - `termx-cli/cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
 - `termx-remote/`、`termx-remote-v2/`、`termx-app/`、`remote-ui/`、`web-control/` 是保留的远程产品资产；runtime 只能按 `workflow.md` 中 RP002-RP007 对应切片解冻，不得作为 fallback 或按“无效包”删除。
-- `termx-hub/` 与 `web-control/` 的服务端实现目标为私有仓库；当前目录只作为待迁移历史资产。公开仓库后续只保留 wire contract、client interface 和 fake harness，不得让私有实现反向成为公开客户端依赖。
+- `termx-hub/` 与 `web-control/` 的服务端实现目标为当前私有 monorepo 的 `private/` 命名空间；当前目录只作为待迁移历史资产。未来复制出的 public repo 只保留 wire contract、client interface 和 fake harness，不得让 public package 反向依赖私有实现。
 - `termx-vterm/` 是受限联动目录，只能在 terminal semantic transaction 接口、事件或 harness 需要时最小化触及。
 - `internal/protocol/` 与 `termx-proto/` 是受限联动目录，只能在 endpoint routing、history window/copy 或 semantic history contract 需要跨进程时最小化触及。
 - 如果确实必须恢复旧目录或解冻目录，先修改 `workflow.md` 的范围表并说明原因；默认不允许恢复。
@@ -71,6 +71,9 @@
 - 远程产品目录只能按 `workflow.md` 明确切片重新设计；不得通过 fallback、桥接或旧入口把 remote app/web-control 路径重新引回当前 TUI/core 主线。
 - Hub/Relay 可以验证云服务准入和 Relay 租约，但不能看到或判断 terminal capability；capability grant 只能在端到端加密 DataChannel 内由 owning daemon 验证。
 - 免费 local、SSH、多 endpoint 和 terminal protocol 不得依赖私有服务、账号订阅或 Relay；收费边界只建立在托管云服务能力上。
+- 桌面 closed cloud client 使用专用 out-of-process Cloud Companion 和 versioned local IPC，不得恢复通用插件系统或把私有模块链接进公开 `termx`；移动端使用同一 contract 的官方私有构建模块。
+- WebRTC、DTLS、CapabilityGrant 与 terminal protocol 必须留在公开进程；Cloud Companion 失败只影响 managed cloud endpoint。
+- 当前开发阶段只维护这个 private monorepo 并正常提交；闭源代码统一进入 `private/`。正式开源时复制审核后的公开目录到全新空 Git 仓库，不复制当前私有历史，当前不建设 exporter 或双仓同步。
 - R419 后，history ingest truth 的基本单位是 core-v2 authoritative physical row/cell，不是 append-only logical line、visual row、wrapped row、snapshot scrollback、grid viewport、xterm buffer row 或 DOM/canvas row。
 - core-v2 `ScreenHistoryBuffer` 是 main/alt screen、physical rows、cells、cursor、scroll region、RowID、Version 和 seal-once 的 domain owner；logical line 只是 query/copy/history 阶段的 projection。
 - physical row store、sealed row index、logical projection、segment cursor、storage backend、cache、adapter、TUI/App projection 不能演变成第二份历史 truth。

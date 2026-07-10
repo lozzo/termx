@@ -58,6 +58,8 @@ TermX 的商业产品不是“解锁 terminal 功能”，而是降低跨网络�
 
 Community 不依赖 Web Controller、Hub、Relay 或订阅状态。多机 TUI 观察和 SSH 不作为收费项，因为它们是产品建立信任、传播和开发者采用的关键入口，而且不会持续消耗官方基础设施。
 
+桌面 Community 只安装公开 `termx`；不安装 Cloud Companion 也必须完整使用 local、SSH 和公开 daemon 能力。
+
 ### 4.2 Managed Free
 
 免费账号，使用官方托管服务的基础能力：
@@ -69,6 +71,8 @@ Community 不依赖 Web Controller、Hub、Relay 或订阅状态。多机 TUI �
 - 可以提供小额试用 Relay 配额，但不承诺可用性、区域或持续带宽。
 
 Managed Free 的价值是降低首次成功连接的门槛。具体设备数、试用流量和速率属于运营配置，不写死在公开协议中。
+
+桌面 managed cloud 用户显式安装闭源 `termx-cloud` companion；移动端 official build 使用同一 contract 的私有 cloud module。Companion 缺失或未登录只影响 managed endpoint。
 
 ### 4.3 Pro
 
@@ -172,6 +176,7 @@ Enterprise 私有部署是商业授权和交付能力，不要求公开托管 Hu
 ### 7.1 统一 endpoint 管理
 
 - TUI 和 App 共享 endpoint identity、transport 配置、device fingerprint、grant reference、relay policy 和连接错误分类。
+- 桌面 cloud adapter 通过专用 Cloud Companion IPC 接入；它不是通用插件，也不能接收 grant、DataChannel 或 terminal payload。
 - 同一个 endpoint 可以存在 local、SSH 或 WebRTC 配置，但同时只由选定 transport 建立一个 protocol session。
 - endpoint label 仅用于展示，不参与认证或路由真值。
 
@@ -245,6 +250,7 @@ Enterprise 私有部署是商业授权和交付能力，不要求公开托管 Hu
 - direct 与 Relay 共用同一 protocol 和 capability handshake。
 - 订阅失效只影响付费云服务，不改变 daemon terminal authorization。
 - App 与 TUI 通过相同 contract harness。
+- 公开 `termx` 在不安装 private companion 时可构建、测试并完整使用 local/SSH；signed companion 安装失败不影响这些能力。
 - 旧 session token 和旧 Hub terminal inventory 路径已删除，不存在 fallback。
 - Relay 成本、试用额度和 Pro 定价已通过真实流量数据校准；PRD 不提前承诺未经验证的固定数值。
 
