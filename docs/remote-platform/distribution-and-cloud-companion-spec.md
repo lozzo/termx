@@ -403,17 +403,21 @@ Control Plane、Web Controller、Hub、Relay 和 Route Planner 不随 `termx clo
 
 ## 12. 许可证与源码边界
 
-当前仓库是私有 authoritative monorepo 且没有根 `LICENSE`，因此现在可以继续同时开发公开和闭源代码，但不能把仓库现状视为已完成开源发布准备。正式公开发布前必须完成：
+当前仓库是 private authoritative monorepo，根 `LICENSE` 对 TermX 自有材料保留全部权利。计划未来公开的目录在本仓库内不会因为“public namespace”名称自动获得开源许可。
 
-- 选择并添加公开代码许可证。
-- 生成第三方依赖 license/notice 清单。
-- 核对历史代码和第三方贡献的再分发权限。
-- 明确 public contract、private companion 和 private server 的版权主体。
-- 审查 sidecar IPC、官方 App 私有模块和 Enterprise bundle 的许可证义务。
-- 定义贡献者协议或贡献规则。
-- 建立最终公开目录清单，把审核后的文件复制到全新 public repo；不复制当前 private monorepo 的 Git history、`private/` 或内部配置。
+未来 public snapshot 选择 Apache-2.0，使用 `docs/legal/public-snapshot/` 中的 LICENSE、NOTICE、DCO、CONTRIBUTING 和 third-party notice 模板；只有复制到全新公开仓库并附带这些文件后，所选公开材料才按该许可证发布。初始贡献治理使用 DCO 1.1，不默认收集 CLA。
 
-out-of-process IPC 是清晰的工程边界，但不自动构成法律结论。若公开部分选择 copyleft 许可证，必须在发布前由专业人员审查 closed companion 和 official App 的组合分发方式。
+当前 artifact notice 门禁：
+
+- `termx licenses` 输出 public CLI/daemon 三平台依赖的内嵌完整文本。
+- `termx-cloud licenses` 输出 private Companion 三平台依赖的内嵌完整文本。
+- Community/Official App 静态 assets 包含 npm、Gradle、WebRTC native 和字体 notice；APK 必须验证这些文件实际进入 `assets/public/`。
+- `scripts/license-audit.sh` 校验 pinned hash、generated bundle 和 public -> private Go import 禁止方向。
+- Companion、Official App、managed service 与 Enterprise bundle 分别使用 `docs/legal/private-artifact-distribution-gates.md` 定义的专有条款和审批；Apache-2.0 不授权 private module/server。
+
+out-of-process IPC 是清晰的工程边界，但不自动构成法律结论。当前选择 permissive Apache-2.0，不依赖 copyleft linkage 例外来维持 private Companion；若公开许可证、IPC 或移动端组合分发改变，必须重新审核。
+
+正式发布仍需确认法定版权/签约主体、品牌政策、EULA/服务条款/隐私政策，并生成实际 artifact 的 SBOM、provenance、签名和审批记录。工程文件不伪装替代这些外部法律决定。
 
 ## 13. 测试门禁
 
@@ -485,7 +489,8 @@ out-of-process IPC 是清晰的工程边界，但不自动构成法律结论。�
 
 ### LIC001：发布许可证门禁
 
-- 在首次 public release 和 private companion 分发前完成许可证、notice、贡献和组合分发审查。
+- 根 private license、future Apache-2.0 public snapshot、DCO、第三方 notice、sidecar/Official App/Enterprise 组合分发门禁必须同时成立。
+- 实现结果：Go、npm、Android、WebRTC native 与字体 notice 已形成可重复生成和 artifact 内展示入口；private consumer/enterprise 条款的必备字段已冻结。法定主体、最终 EULA/隐私/服务合同和目标法域专业审批保持 production release blocker，不阻塞后续代码开发。
 
 ## 15. 非目标
 

@@ -21,6 +21,7 @@
 5. `distribution-and-cloud-companion-spec.md`：回答公开主程序与闭源 cloud 能力如何拆包、安装、通信、升级和跨平台发布。
 6. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
 7. `source-boundary-and-migration-plan.md`：回答哪些代码公开、哪些代码私有、旧资产如何保留并按什么顺序迁移。
+8. `../legal/`：回答 private monorepo、future Apache-2.0 snapshot、第三方 notice、DCO 和私有 artifact 发布门禁。
 
 若这些文档发生冲突，按以下顺序处理：
 
@@ -38,6 +39,8 @@
 - 全球加速属于 WebRTC Relay path 的内部实现；`single_relay` 与 `relay_mesh` 不创建新的 endpoint、terminal protocol 或 capability 类型。
 - 桌面官方 cloud 能力通过可选闭源 `termx-cloud` companion 提供，普通开源 `termx` 不静态或动态链接私有代码；当前 Android 官方构建通过固定私有 source set 使用同一 contract，Community 构建不引用私有路径。
 - Control Plane、Hub、Relay 和 Web Controller 服务端不进入普通用户安装包；企业私有部署使用单独商业交付物。
+- 当前 private monorepo 根许可证保留全部权利；未来公开快照使用 Apache-2.0 + DCO，并从全新空 Git 仓库建立历史。
+- public CLI、private Companion 与 App 分别携带可重复生成的第三方 notice；sidecar IPC 不替代 Official/Enterprise 的书面商业条款和专业审查。
 - terminal capability 由 owning daemon 签发和验证。Hub、Relay、Web Controller 永远看不到 capability grant，也不拥有 terminal authorization。
 - Control Plane 可以签发短期 Hub 服务准入票据；Relay entitlement 通过独立短期 `RelayLease` 表达。
 - 旧代码保留 git 历史和归档引用，但迁移完成后不得继续存在公开/私有双实现或旧 session token fallback。

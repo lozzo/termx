@@ -1,0 +1,19 @@
+gradle.projectsEvaluated {
+    def appProject = gradle.rootProject.findProject(':app')
+    if (appProject == null) {
+        throw new GradleException('TermX Android app project was not found')
+    }
+    appProject.tasks.register('termxResolvedRuntimeDependencies') {
+        doLast {
+            def configuration = appProject.configurations.getByName('releaseRuntimeClasspath')
+            def coordinates = configuration.incoming.resolutionResult.allComponents
+                .collect { it.id }
+                .findAll { it instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier }
+                .collect { "${it.group}:${it.module}:${it.version}" }
+                .toSet()
+                .toList()
+                .sort()
+            coordinates.each { println "TERMX_DEPENDENCY ${it}" }
+        }
+    }
+}

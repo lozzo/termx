@@ -87,6 +87,17 @@ func TestVersionCommandIsMachineReadable(t *testing.T) {
 	}
 }
 
+func TestLicensesCommandPrintsEmbeddedThirdPartyNotices(t *testing.T) {
+	var stdout bytes.Buffer
+	if err := run(context.Background(), []string{"licenses"}, &stdout, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("TermX Cloud Companion Third-Party Notices")) ||
+		!bytes.Contains(stdout.Bytes(), []byte("github.com/zalando/go-keyring")) {
+		t.Fatalf("licenses output does not contain embedded notices: %s", stdout.String())
+	}
+}
+
 func TestBuiltArtifactPassesPublicActivationSmoke(t *testing.T) {
 	binaryPath := filepath.Join(t.TempDir(), "termx-cloud")
 	build := exec.Command("go", "build", "-o", binaryPath, ".")

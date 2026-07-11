@@ -137,6 +137,7 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 - 不做 public mirror 同步、exporter 或日常历史过滤。
 - public namespace 保持不依赖 `private/`，为未来复制做准备。
 - 闭源实现逐步收口到 `private/`，但迁移只按对应实现切片执行。
+- 根 `LICENSE` 对当前 monorepo 自有材料保留全部权利；目录规划不在当前仓库内产生隐式开源授权。
 
 ### 5.2 未来开源方式
 
@@ -146,8 +147,8 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 2. 创建全新的空 Git 仓库，不复制 `.git/`。
 3. 按最终公开目录清单复制 public namespace 文件。
 4. 删除内部配置、secret、private docs、私有 module reference 和不可分发资产。
-5. 添加公开许可证、notice、贡献说明和公开 README。
-6. 在新目录独立运行构建、测试、license 和 secret scan。
+5. 从 `docs/legal/public-snapshot/` 复制 Apache-2.0、NOTICE、DCO、CONTRIBUTING 和 public third-party notice，并添加公开 README。
+6. 在新目录独立运行构建、测试、`scripts/license-audit.sh`、SBOM、secret 和 private dependency scan。
 7. 通过后创建 public repo 的第一个 commit 并推送公开远端。
 
 当前不实现复制脚本；RP007 只要求人工可重复的目录清单和发布检查。若未来重复发布频率使手工复制容易出错，再单独评估自动化。
@@ -259,6 +260,7 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 - 删除 public namespace 对私有路径的 import/replace/script/Makefile 依赖。
 - 在临时空目录按清单复制公开文件，验证独立构建、测试、license 和 secret scan。
 - 记录创建全新 public Git 仓库的发布步骤，不复制 private `.git/` 历史。
+- 使用 `docs/legal/public-snapshot/` 法律模板，不把 private root license、Companion notice 或企业交付条款误复制为 public project license。
 
 完成条件：从选定 private commit 手工复制出的 public snapshot 可独立构建测试且不含 `private/`；当前 private monorepo 继续作为完整开发真值；运行时不存在旧 fallback。
 

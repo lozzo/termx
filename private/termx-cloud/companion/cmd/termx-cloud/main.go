@@ -42,11 +42,17 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: termx-cloud serve|version")
+		return fmt.Errorf("usage: termx-cloud serve|version|licenses")
 	}
 	switch args[0] {
 	case "version":
 		return json.NewEncoder(stdout).Encode(map[string]string{"version": companionVersion, "build_channel": buildChannel})
+	case "licenses":
+		if len(args) != 1 {
+			return fmt.Errorf("unexpected termx-cloud licenses arguments")
+		}
+		_, err := io.WriteString(stdout, thirdPartyNotices)
+		return err
 	case "serve":
 		flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 		flags.SetOutput(stderr)
