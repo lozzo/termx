@@ -8,6 +8,8 @@ trap 'rm -rf "$tmp_root"' EXIT
 snapshot="$tmp_root/snapshot"
 
 mkdir -p \
+  "$snapshot/docs/development" \
+  "$snapshot/docs/history" \
   "$snapshot/docs/legal/public-snapshot" \
   "$snapshot/docs/legal/third-party" \
   "$snapshot/docs/remote-platform" \
@@ -38,6 +40,8 @@ for file in LICENSE NOTICE DCO CONTRIBUTING.md THIRD_PARTY_NOTICES.md THIRD_PART
 done
 printf '%s\n' "fixture" >"$snapshot/docs/legal/third-party-inventory.md"
 printf '%s\n' "fixture" >"$snapshot/docs/legal/third-party/LICENSE.txt"
+printf '%s\n' "fixture" >"$snapshot/docs/development/README.md"
+printf '%s\n' "fixture" >"$snapshot/docs/history/README.md"
 printf '%s\n' "fixture" >"$snapshot/docs/remote-platform/README.md"
 printf '%s\n' 'VITE_CONTROL_URL=https://control.example.test' \
   >"$snapshot/clients/ui/.env.example"
@@ -45,14 +49,18 @@ printf '%s\n' 'VITE_CONTROL_URL=https://control.example.test' \
 cp "$source_root/scripts/public-snapshot-guard.sh" "$snapshot/scripts/public-snapshot-guard.sh"
 for script in \
   android-resolved-dependencies.init.gradle \
+  check-generated-code.sh \
   client-workspace-guard.mjs \
+  doctor.sh \
   fetch-pinned-third-party-notices.sh \
   generate-android-notices.sh \
   generate-go-notices.sh \
   generate-npm-notices.mjs \
   license-audit.sh \
   public-snapshot-guard.test.sh \
-  verify-android-apk-boundary.sh; do
+  repository-layout-guard.sh \
+  verify-android-apk-boundary.sh \
+  with-clean-termx-env.sh; do
   printf '%s\n' "fixture" >"$snapshot/scripts/$script"
 done
 chmod +x "$snapshot/scripts/public-snapshot-guard.sh"

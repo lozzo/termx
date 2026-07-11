@@ -174,7 +174,7 @@ GA001 已冻结为 measurement-only 链路：公开 `termx` 从当前 selected I
 - connected duration 与 `connected -> disconnected/failed` 状态转移次数；正常 local close 不计为异常断线。
 - 匿名 `network_class`、region、carrier/provider taxonomy tag 和短期 managed-session correlation ID。
 
-公开 `PathQualitySummary` 不包含成本字段。`private/termx-cloud/route-planner/quality` 先幂等接收质量窗口，再让稍后结算的已验签 Relay usage 或受控 provider rate card 通过 `ObservationRef` 异步附加 cost summary；“尚未定价”和显式 `none` 零成本是两种状态，公开 caller 不能填写或覆盖成本。Baseline 查询必须按保留期过滤陈旧窗口。该破坏性窗口 contract 使用 Cloud Companion IPC v2，旧 companion 必须在 Hello 阶段明确不兼容。
+公开 `PathQualitySummary` 不包含成本字段。`private/cloud/route-planner/quality` 先幂等接收质量窗口，再让稍后结算的已验签 Relay usage 或受控 provider rate card 通过 `ObservationRef` 异步附加 cost summary；“尚未定价”和显式 `none` 零成本是两种状态，公开 caller 不能填写或覆盖成本。Baseline 查询必须按保留期过滤陈旧窗口。该破坏性窗口 contract 使用 Cloud Companion IPC v2，旧 companion 必须在 Hello 阶段明确不兼容。
 
 GA001 不实现候选 Relay active probe、Relay-to-Relay link probe、route score、hysteresis、RelayLease 获取、ICE restart 或任何自动切换。质量上报失败只丢弃当前 telemetry 窗口，不改变当前 transport 和 endpoint 状态；主动 probe 与实际选路从 GA002 开始按独立 harness 建设。
 
@@ -260,7 +260,7 @@ route_score =
 | Backbone Tunnel | Relay-to-Relay 受控传输 | 接受公网任意代理流量 |
 | Usage Reconciler | 汇总各 hop 事件并生成一次 session 账单 | 按 hop 重复收费 |
 
-这些组件属于当前 private monorepo 的 `private/termx-cloud` 命名空间，未来 public repo 只需要 path enum、诊断结果、RelayLease wire contract 和 fake fixtures。
+这些组件属于当前 private monorepo 的 `private/cloud` 命名空间，未来 public repo 只需要 path enum、诊断结果、RelayLease wire contract 和 fake fixtures。
 
 ## 10. RelayLease 扩展
 

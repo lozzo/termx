@@ -1,244 +1,106 @@
-# 工作流：仓库可维护性收口与远程平台主线
+# 工作流：单区域 Cloud 纵向闭环
 
 ## 当前目标
 
-- GA002 完成后暂停新增全球加速功能，先执行 RM001-RM004 仓库可维护性收口；RM004 完成前不得开始 GA003。
-- `docs/repository-maintenance-plan.md` 是当前目录、Go module、client workspace、Android truth source、文档和维护命令的迁移基准。
-- 仓库整理只改变物理路径、module/workspace 和维护入口，不改变 terminal、endpoint、remote auth、WebRTC、SmartRoute 或云服务业务语义。
-- `docs/remote-platform/` 是当前远程平台产品与技术设计的唯一活动基线；ME012 已实现代码只作为原型和迁移输入，不再反向定义新架构。
-- TUI/client 侧已经完成的多 endpoint / 多 transport 模型继续有效，详细技术背景以 `tui/docs/multi-endpoint-transport-plan.md` 为准。
-- 插件系统已经拆到独立分支，本分支不继续新增插件系统代码、协议或文档。
-- 旧 screen app 无限历史清场与重建记录不再保留在本活动文件中；需要追溯时查看 git 历史和对应文档。
+- REC001 已完成仓库可控状态恢复：尚未提交的 RM004 目录与维护改动已经审计收口，误触发的发布期验证扩展已经清理。
+- 下一切片是 CLOUD001；随后按 CLOUD002-CLOUD005 顺序，让桌面 TUI 和 Official Android App 通过同一套单区域 managed cloud 链路连接真实 daemon。
+- 当前仓库是唯一 private monorepo；当前不是正式开源或生产发布阶段。public snapshot、开源许可证模板替换、secret audit、第二仓和发布自动化全部延后。
+- GA003 Relay Mesh、GA004 transit、多区域高可用、复杂计费、SSO 和 live reroute 在单区域 direct/single-relay 闭环完成前不得启动。
+- 插件系统位于独立分支，本分支不新增插件系统代码、协议或文档。
 
-## 基准文档
+## 活动基线
 
-- `docs/repository-maintenance-plan.md`：当前仓库目标布局、module 决策、迁移切片和准入基准。
-- `docs/remote-platform/README.md`：当前远程平台文档索引、有效性和冻结决策。
-- `docs/remote-platform/product-prd.md`：产品、版本、商业模式和收费边界基准。
-- `docs/remote-platform/architecture-spec.md`：公开客户端/daemon 与私有 control plane/Hub/Relay 架构基准。
-- `docs/remote-platform/network-topology.md`：local/SSH/WebRTC 全景、direct/Relay 网络拓扑和连接时序图。
-- `docs/remote-platform/global-acceleration-spec.md`：SmartRoute、single-relay 选区、双 Edge Relay Mesh、质量测量和商业分阶段基准。
-- `docs/remote-platform/distribution-and-cloud-companion-spec.md`：公开主程序、闭源 Cloud Companion、签名安装、IPC、移动端构建和服务端交付基准。
-- `docs/remote-platform/security-protocol-spec.md`：设备身份、终端授权、云服务准入和 Relay 租约安全基准。
-- `docs/remote-platform/source-boundary-and-migration-plan.md`：private monorepo 命名空间、未来开源快照、旧资产保留和实施切片基准。
-- `tui/docs/multi-endpoint-transport-plan.md`：当前多 endpoint / 多 transport 技术规划。
-- `tui/docs/architecture.md`：TUI v3 架构基准。
-- `core/docs/architecture.md`：core-v2 架构基准。
-- `internal/protocol/` 与 `shared/transport/`：现有协议和 transport 抽象基线。
+- `AGENTS.md`：当前私有开发阶段、自动执行、领域边界和实现纪律。
+- `docs/remote-platform/README.md`：现有远程平台产品、架构、安全和分发文档索引；这些文档是设计背景，不代表用户链路已经完成。
+- `docs/remote-platform/product-prd.md`：免费/付费边界和商业方向。
+- `docs/remote-platform/architecture-spec.md`：公开 terminal 数据面与私有云服务的逻辑 ownership。
+- `docs/remote-platform/security-protocol-spec.md`：设备身份、CapabilityGrant、Hub admission 和 Relay lease 安全边界。
+- `docs/remote-platform/global-acceleration-spec.md`：GA001/GA002 已有质量与 single-relay 算法背景；Relay Mesh 仅作延后设计输入。
+- `tui/docs/multi-endpoint-transport-plan.md`、`tui/docs/architecture.md`：TUI endpoint/transport 与 runtime 基准。
+- `core/docs/architecture.md`：core terminal lifecycle、live/history 与 storage 边界。
+- CLOUD001 将新增唯一活动 Cloud staging roadmap，并把现有散落状态收敛成纵向验收基准。
 
-## 当前允许主动修改范围
+## 当前产品真值
 
-- `workflow.md`
-- `AGENTS.md`
-- `docs/repository-maintenance-plan.md`
-- RM002-RM004 可按该计划移动和更新当前活动 public/private 源码、workspace、构建、发布和文档路径；不得借目录整理改变业务 contract。
-- `docs/remote-platform/`
-- `tui/`
-- `cmd/termx/`
-- `shared/`
-- `internal/protocol/`
-- `proto/`
-- `core/`，仅当 endpoint 能力、terminal 生命周期或 history contract 需要时最小化触及。
-- `remote/`，仅在 RP002、RP003、RP006、GA001 与 GA002 对应公开 contract、端到端授权、客户端接入、WebRTC 被动质量观测和受控 SmartRoute ICE 计划切片触及；不承载私有云服务实现。
-- `clients/mobile/` 与 `clients/ui/`，在 RP006 统一客户端 contract、LIC001 notice 分发、RP007 public snapshot 边界、GA001A Android 质量观测和 GA002 跨平台 SmartRoute contract/ICE 计划切片内触及；不得引入私有源码构建依赖或 legacy fallback。
-- `private/termx-cloud/hub/` 与 `private/termx-cloud/relay/` 是 RP005+ 私有服务实现；旧 `termx-hub/` 已迁入 `private/archive/termx-platform-legacy/termx-hub/`，archive 不进入 workspace、依赖图或 runtime fallback。
-- `private/`，当前私有 monorepo 的目标闭源命名空间；只在 RP004+ 对应 companion/control-plane/Hub/Relay/route-planner、归档和 public export 切片触及，public package 不得反向依赖。
-- `scripts/`、`Makefile`、`go.work`、`go.work.sum`，仅当测试或入口联动需要时最小化触及。
-- `README.md`、`LICENSE`、`THIRD_PARTY_NOTICES.md`、`docs/legal/`、`clients/mobile/public/`，以及 CLI/Companion 中只读 third-party notice 展示入口：仅在 LIC001 与 RP007 建立当前私有 monorepo、未来 public snapshot 和闭源 artifact 的许可/notice 分发门禁；不得借此改动业务 runtime。
+- `core/` 拥有 terminal lifecycle、screen-backed history 和 daemon-local terminal identity。
+- `tui/` 与 `clients/` 拥有客户端 endpoint manager、交互和展示，不拥有 terminal/history truth。
+- `remote/` 与公开进程拥有 WebRTC、DTLS、DeviceIdentity、CapabilityGrant、DataChannel 和 termx protocol。
+- `private/cloud/companion` 与 Official mobile adapter 只拥有账号 session、云 API、signaling、RelayLease、质量 summary 和 route plan。
+- `private/cloud/{control-plane,hub,relay,route-planner,web-controller}` 保存私有云领域组件；当前多数仍是内存或进程内实现，不能描述为可部署产品。
+- Companion 默认仍使用 `UnconfiguredAdapter`，Android Official development gateway 仍返回 `login_required`；当前 APK 只能验证 UI、装配边界和失败态，不能验证真实 managed endpoint。
+- Relay 已有真实 Pion TURN 与 lease/meter harness，SmartRoute 已有 direct/single-relay 决策实现，但尚未接入一条用户可运行的云链路。
 
-## 私有归档边界
+## 私有开发阶段边界
 
-- `private/archive/termx-platform-legacy/termx-hub/`
-- `private/archive/termx-platform-legacy/termx-remote/`
-- `private/archive/termx-platform-legacy/web-control/`
-
-以上目录只供代码考古和迁移决策参考，不加入 `go.work`、构建脚本、依赖图或 runtime fallback。活动公开客户端位于 `remote/`、`clients/mobile/` 与 `clients/ui/`；活动闭源服务位于 `private/termx-cloud/`。
+- public/private 目录只表达领域 ownership 与安全责任；当前不继续为未来开源移动文件、拆 module、复制源码或增加额外隔离层。
+- 公开 package 不应依赖私有云实现，私有代码可以依赖公开 contract；该逻辑边界不得演变成当前阶段的发布工程主线。
+- `private/archive` 只读，不进入 workspace、构建或 runtime fallback。
+- public snapshot manifest、guard 和许可证模板作为未来发布资产保留，但不属于当前日常测试准入，也不得主动扩展。
+- 显式 dev/staging harness 可以使用内存 store、固定测试账号和本地进程装配；默认产品路径必须 fail closed，禁止旧 session token、宽松 Bearer、grant-in-signaling 或 local/SSH fallback。
+- 当前优先级是最小真实纵向闭环，不做 Kubernetes、数据库集群、多区域调度、Relay Mesh、复杂 billing、通用插件或假设性扩展抽象。
 
 ## 硬语义规则
 
-- `TerminalID` 只在单个 daemon/endpoint 内唯一；TUI/client 侧跨 endpoint 状态必须使用 `EndpointID + TerminalID` 的 `TerminalRef`。
-- ME009 起，用户可见 terminal 名称是 first-party 新建 terminal 的默认 canonical key；协议字段仍暂名为 `TerminalID`，但 create 必须优先发送 terminal name，并在单 endpoint 内拒绝重名。
-- 后续 identity 收敛切片才能重命名协议字段或删除旧 ID 兼容；当前不得把随机 ID 继续用于 first-party 新建 terminal 的 history/layout/storage key。
-- Endpoint 表达“当前客户端要连接的 daemon 目标”；Transport 表达“到达该 endpoint 的方式”，例如 local unix socket、SSH、hub/P2P。
-- WebRTC 表达一种到达 endpoint 的 transport；一次 WebRTC session 实际走 direct candidate 还是 managed Relay 是连接路径结果，不得建模成两种 endpoint 或两种终端协议。
-- `direct`、`single_relay`、`relay_mesh` 只是 WebRTC `ObservedPath`；SmartRoute 必须基于质量、容量、成本和 entitlement 选路，不得按国家或城市硬编码固定 Relay 链。
-- Relay Mesh 第一阶段只能有两个 Edge Relay 和一个逻辑 backbone segment；后续最多增加一个内部 transit，必须由真实 corridor 数据证明收益，禁止用户配置或系统生成任意 N 跳。
-- Relay Mesh 全程保持 Client 到 daemon 的 DTLS 端到端加密；hop-level usage 可以分别采集，但账单必须按 route/session 聚合一次，不能机械重复计费同一字节。
-- daemon 侧“有哪些客户端连接到我”与 TUI/client 侧“我连接了哪些 daemon endpoint”是两个不同管理器，不得混成一个模型。
-- connection registry 是 CLI/TUI 共享的 endpoint 注册表，默认文件为 `$XDG_CONFIG_HOME/termx/connections.yaml` 或 `~/.config/termx/connections.yaml`；不得塞进 TUI-only 的 `tui-v3.yaml`。
-- TUI 不拥有 terminal lifecycle、committed history 或 history truth；history/live/input/resize 必须路由到 owning endpoint 的 daemon。
-- Workbench/layout storage 可以继续保存在本地客户端域，但其中的 terminal 连接意图必须持久化 `TerminalRef`，不能只持久化裸 `TerminalID`。
-- endpoint label、transport address、hub identity、SSH host key 和 auth ref 不得互相替代；展示名不能作为安全身份。
-- endpoint 离线、认证失败、transport 断开只能影响该 endpoint；不得清空其他 endpoint 的 terminal pool、layout、copy/history 状态。
-- cancel token、live channel、surface/session key、input serial key、history token 和 copy token 都必须按 endpoint 作用域隔离。
-- 现有 `internal/protocol` 仍以单 daemon 会话为边界；多 endpoint 路由应在 client/TUI 侧 manager 完成，不要求单个 protocol client 同时承载多个 daemon。
-- SSH 第一阶段只作为连接远端 termx daemon 的 transport；不得悄悄 fallback 成原始 shell/PTY。
-- hub/P2P endpoint 的展示名、endpoint id、hub URL、hub device id、device fingerprint、grant ref 和 relay 策略必须分离；`device_fingerprint` 才是远端设备安全身份，`hub_device_id` 只用于发现/路由，label 只用于 UI。
-- hub/P2P 配对保持 daemon -> client 单向引导：daemon 生成 capability grant，客户端扫码或导入后保存到本地凭据存储；grant 只能在 WebRTC DTLS DataChannel 建立后的端到端握手中提交给 daemon，禁止进入 Hub/Web Controller 的 HTTP、gRPC、SDP、日志或持久化。
-- hub/P2P relay 只能承载受限 protocol/datachannel，不能成为 terminal lifecycle、history、workbench storage 或设备信任 truth。
-- hub/P2P 连接失败、授权失效、设备撤销或 relay 不可用时，只影响对应 endpoint，不得 fallback 到 local、SSH、旧 remote app 或原始 shell。
-- `connections.yaml` 不保存 hub 原始 token、capability grant 或私钥；`grant_ref` 只能引用本地凭据存储、系统 keychain 或后续明确的 hub grant store。
-- `AccountAccessToken`、`DeviceIdentity`、`CapabilityGrant`、`HubAdmissionTicket` 和 `RelayLease` 是五种不同凭据；不得复用字段、token 或验证责任。
-- Hub/Relay 可以离线验证 control plane 签发的短期服务准入票据和 Relay 租约，但不得授予、扩大、撤销或解释 terminal capability；terminal 授权只属于 owning daemon。
-- 免费本地连接、免费 SSH 和公开的多 endpoint 管理不得依赖 Web Controller、Hub、订阅或云账号。商业收费只建立在托管发现、托管 Relay、云同步、团队治理和运维 SLA 等持续服务成本上。
-- 订阅失效只能拒绝新的付费 Relay/团队能力或按策略结束对应租约，不得踢掉 daemon 的免费本地/SSH 能力，也不得把 direct P2P 的 terminal capability 变成云端授权。
-- `private/termx-cloud/hub/`、`private/termx-cloud/relay/` 与 `private/termx-cloud/web-controller/` 的服务实现不进入公开源码发布；public namespace 必须保留足够的 wire contract、client SDK interface、错误语义和 fake harness，使 TUI、App 与 daemon 可独立开发和验证。
-- 官方 cloud 用户侧闭源能力只能通过专用的 out-of-process Cloud Companion 或移动端私有构建模块提供；当前分支不得恢复通用插件系统、进程内动态库注入或任意第三方代码加载。
-- 公开 `termx` 进程拥有 WebRTC、DTLS DataChannel、DeviceIdentity、CapabilityGrant 和 termx protocol；Cloud Companion 只拥有账号 session、官方云 API、signaling、RelayLease、网络质量 summary 和 route plan，禁止接收 grant 或 terminal payload。
-- Cloud Companion 缺失、崩溃、版本不兼容或未登录只影响 managed cloud endpoint；local、SSH、公开 daemon 和其他 endpoint 必须保持可用。
-- `termx cloud install/update` 必须由用户显式触发，验证平台、版本、hash 和发布签名后原子安装；禁止静默下载执行、`curl | sh`、未签名 fallback 或从 Hub 返回任意 executable URL。
-- 当前开发阶段只维护一个私有 Git monorepo，public namespace 与 `private/` 闭源实现都在本仓库正常提交，不建设 public mirror/exporter 或双仓同步。
-- public namespace 不得 import `private/`；`private/` 可以依赖 public contract。正式开源时从选定 commit 把审核通过的公开目录复制到全新的空 Git 仓库，再执行构建、测试、license 和 secret 审计；不复制本私有仓库历史。
+- `TerminalID` 只在 owning daemon/endpoint 内唯一；跨 endpoint 状态使用 `TerminalRef{EndpointID, TerminalID}`。
+- Endpoint 表达 daemon 目标，Transport 表达到达方式；local、SSH、WebRTC 不改变 terminal protocol、history owner 或 endpoint identity。
+- TUI/App 不拥有 terminal lifecycle、committed history 或 history truth；live/input/resize/history/copy 路由到 owning endpoint。
+- CapabilityGrant 只由 owning daemon 签发和验证，只能在 DTLS DataChannel 端到端握手中提交。
+- Control Plane、Companion、Hub、Relay、Route Planner 不得接收 CapabilityGrant、DeviceIdentity private key、terminal payload、history 或输入。
+- Account token、DeviceIdentity、CapabilityGrant、HubAdmissionTicket 和 RelayLease 是不同凭据，不得复用字段、签名输入或验证责任。
+- local、SSH 和 direct P2P 不依赖账号、订阅、Hub 或 Relay；云服务失败只影响 owning managed endpoint。
+- 禁止 legacy remote、旧 Hub/session-token、grant-in-signaling、原始 shell fallback、通用插件恢复和按应用名特殊适配。
+- 文档、接口、领域模型和 fake 测试不等于产品完成；活动切片必须证明当前阶段的真实跨组件消息链路或用户可观察行为。
+
+## 允许范围
+
+- REC001：`workflow.md`、`AGENTS.md`、当前 RM004 已识别改动、原有 tmux 冷启动测试夹具，以及必要的维护 guard；不得新增 Cloud runtime。
+- CLOUD001：`workflow.md`、`AGENTS.md`、`docs/remote-platform/`；只建立纵向 roadmap 和验收链路，不新增实现。
+- CLOUD002：`private/cloud/`、必要 `shared/`/`proto/` contract 与显式 dev harness；不触及 TUI/Android 产品接线。
+- CLOUD003：`private/cloud/companion`、`remote/`、`shared/`、`proto/`、`tui/` 与必要 CLI/dev harness；只完成 desktop managed direct。
+- CLOUD004：`private/cloud/{control-plane,relay,route-planner,companion}`、`remote/` 与必要 harness；只完成单区域 single Relay。
+- CLOUD005：`private/cloud/mobile`、`clients/mobile` 与必要共享 contract/harness；只完成 Official Android 接线与手测材料。
+- `core/` 只有 terminal lifecycle、history 或 scoped protocol contract 确实需要时才最小联动；`private/archive/` 始终禁止主动修改。
 
 ## 任务队列
 
-| ID | 状态 | 范围 | 验收 |
+| ID | 状态 | 范围 | 用户可观察验收 |
 | --- | --- | --- | --- |
-| ME001 | 完成 | 清理 `workflow.md`，新增多 endpoint / transport 规划文档 | 文档说明术语、边界、阶段、风险和测试准入 |
-| ME002 | 完成 | 引入 `EndpointID` / `TerminalRef` 状态模型，默认 endpoint 为 `local` | 本地单 endpoint 行为不变；同名 terminal 在不同 endpoint 不冲突 |
-| ME003 | 完成 | 设计并实现 client 侧 connection registry 基础结构 | 可列出 local endpoint；配置缺失时有稳定默认；endpoint 名称和连接策略来自 `connections.yaml` |
-| ME004 | 完成 | Terminal picker / Terminal Pool 支持 endpoint 聚合和局部失败 | picker 展示机器名称、endpoint 状态和 terminal；单 endpoint 失败不影响其他 endpoint |
-| ME005 | 完成 | live/input/resize/owner/copy/history 路由按 `TerminalRef` 隔离 | owner 转移、输入、history token 不跨 endpoint 串扰 |
-| ME006 | 完成 | workbench storage 持久化 endpoint-aware terminal binding | 旧 snapshot 默认映射到 `local`；缺失 endpoint 保留 unresolved binding |
-| ME007 | 完成 | local unix socket 作为标准 endpoint transport | 当前本地 attach 路径迁移到 endpoint manager 后行为不变 |
-| ME008 | 完成 | SSH transport 连接远端 termx daemon | 明确认证、host key、远端 socket 发现和失败展示 |
-| ME009 | 完成 | Terminal picker 单一 create 入口与 terminal name identity 第一阶段 | picker 只展示一个 create 行；create prompt 记住上次 endpoint/command/workdir；新建 terminal 在单 endpoint 内按名称唯一，默认以名称作为 daemon-local key |
-| ME010 | 完成 | hub/P2P 身份、安全、中继策略与 connection registry contract | `connections.yaml` 可表达 hub endpoint；label 不作为安全身份；hub 发现目标/relay 变化触发 reconnect；无真实 dialer 时不 fallback |
-| ME011 | 完成 | hub/P2P 单向配对与 capability grant contract | `hub_device_id` 只做发现；`device_fingerprint` 是远端安全身份；`grant_ref` 指向 remote-issued grant；fingerprint/grant 变化触发 reconnect |
-| CL001 | 完成 | 项目代码整理基线 | `workflow.md`、根 `AGENTS.md`、局部代理说明与当前 master 主线一致；明确 frozen legacy 目录只读边界和后续入口/依赖清理顺序 |
-| CL002 | 完成 | 顶层 Makefile 入口清理 | 默认 help/phony/target 不再暴露 frozen `remote-ui`、localweb、旧 remote daemon/dev/pair/status 入口；保留 v2/v3 build 与测试入口 |
-| CL003 | 完成 | CLI frozen remote 依赖清理 | `cmd/termx` 默认命令和 daemon 启动不再装配 frozen `termx-remote` runtime；移除 CLI 对 `termx-remote` module 的 import/replace，保留 core/protocol typed hook 作为后续新控制面契约 |
-| CL004 | 完成 | 恢复远程产品目录与 hub 归位边界修正 | `termx-remote/`、`clients/mobile/`、`clients/ui/`、`web-control/` 作为有效产品资产保留；`termx-hub` 产品逻辑已归位到 `termx-hub/internal` 且不再依赖旧 `termx-remote` module |
-| CL005 | 完成 | `shared` transport 与 terminal metadata 边界整理 | unix/memory transport 明确读包上限、关闭语义和 listener 生命周期；terminal metadata 只保留共享语义，不承载 TUI 图标/按钮文案 |
-| SI001 | 暂停 | TUI 同步输入组交互与 input 多播 | 用户切换到项目代码整理后暂停；恢复时继续 `Ctrl-P i/v/u` 管理当前 TUI 本地同步输入组 |
-| KS001 | 完成 | TUI 快捷键现状盘点与 shortcuts 设计文档 | `shortcut-inventory.md` 覆盖实际按键、展示提示、不一致项；`shortcut-system-plan.md` 固化 `tui.shortcuts` 单一配置入口、提示同源和旧 `tui.keymap` 删除策略 |
-| KS002 | 完成 | shortcuts config schema/parser/validation | 新增 `TUIShortcutConfig`；支持 action label、场景短写/长写；删除旧 `tui.keymap` 配置字段、默认值、parser、validation、示例和测试，不保留 deprecated/fallback |
-| KS003 | 完成 | 内置 action registry 与输入路由接入 | 默认 shortcuts 生成当前实际行为；自定义 shortcuts 是唯一输入真值；旧硬编码只能作为默认 catalog 来源，不保留第二套 route fallback |
-| KS004 | 完成 | footer/help/overlay 提示同源接入与旧提示清理 | footer、help、overlay/menu 提示全部从 shortcut catalog 生成；用户删除 shortcut 后提示消失；修复当前提示与真实按键不一致问题 |
-| KS005 | 完成 | 统一 action invocation、domain spec 与 dispatcher contract | 先补 registry/invocation 完备性 harness；底层 shortcut domain spec 统一 action id、参数 schema、allowed scenes、默认文案和展示策略；input 保留 invocation，app dispatcher 只拥有执行 handler |
-| KS006 | 完成 | 键盘与点击统一 action 执行链路 | 先补键盘/点击 invocation 等价 harness；footer/content 点击与键盘派发同一 invocation；方向、focus、`tab.jump.N`、`floating.summon.N` 不丢语义或参数，歧义聚合提示只允许 hint-only |
-| KS007 | 完成 | 删除快捷键硬编码 fallback 并补齐提示 | 先补显式空 catalog 无 fallback harness；sticky/copy Esc、空 footer `Ctrl-G`、Help close、Prompt suggestion 回到 catalog；每个 action 在 domain spec 明确 footer/help/click 策略 |
-| KS008 | 完成 | shortcut key、scene、action 和参数校验收敛 | 先补 canonical key、scene-action 和参数矩阵；config 基于 KS005 domain spec 校验 routed/overlay scene，拒绝等价冲突、理论不可表达 token、错误 scene-action 组合及越界参数 |
-| KS009 | 完成 | action 文案覆盖与 catalog 替换语义 | 先补默认、action-only、scene-only、显式空 scene 和 actions+scenes 矩阵；action-only 只覆盖默认文案，出现 scene 后用户 scene catalog 是完整按键真值 |
-| KS010 | 完成 | 组合 action 与 terminal lifecycle 执行语义 | 先补成功、失败、TerminalRef 路由 harness；只实现 `panel.kill` / `panel.kill_and_close` handler、步骤和关闭时机，不再调整 registry 基础结构或开放脚本系统 |
-| KS011 | 完成 | 增强键盘协议与 Ctrl+数字 | Kitty CSI-u raw bytes 可生成 Ctrl+数字 invocation；TerminalHost 成对 push/query/pop disambiguate 协议，capability 控制提示 availability，宿主序列不泄漏 PTY |
-| KS011A | 完成 | shortcut 单键展示策略与数字范围表达式 | binding 长写支持 `show`；`[1...9]` / `ctrl+[1...5]` 在配置加载期配合 `{key}` 展开；footer 只展示显式可见项且不产生裸按键，Help 保留全部有效绑定 |
-| KS011B | 完成 | shortcut bracket 字面量与范围识别回归修复 | `[`、`]` 及带修饰符 bracket 继续作为合法具体按键；仅范围表达式进入展开；真实用户配置可加载 |
-| KS011C | 完成 | README 快捷键与增强键盘使用说明 | 主 README 覆盖 `show`、数字范围、Ctrl+数字 capability、iTerm2 条件、fallback 与诊断入口 |
-| KS011D | 完成 | 全局返回导航与 CSI-u 控制键回归修复 | Esc 从 shortcut catalog 移出并按 suggestion、overlay、copy、interaction 层级统一返回；CSI-u 控制键还原为标准命名 Key且保留修饰语义 |
-| CX001 | 完成 | endpoint 连接中与断线 pane UI 收敛 | 复用 reducer-owned `AttachPending` 和 endpoint runtime status；重连请求立即显示连接中，断线保留最后画面并结构化展示 endpoint、transport、原因和局部操作；不新增自动重试或 transport fallback |
-| CX002 | 完成 | pane 未连接、重连中与异常断开统一状态面板 | 三态使用一致的信息层级与操作布局；只展示 reducer 已知状态，不伪造连接进度；异常断开按错误类别给出可执行提示并保留最后画面 |
-| ME012A | 完成 | hub/P2P protocol transport primitive 与 scope harness | 新 DataChannel transport 只承载 termx protocol frame；daemon 必须按 capability scope 接入 core-v2，不依赖冻结 `termx-remote` runtime |
-| ME012B | 完成 | remote-issued capability grant 与设备身份 | 定义 grant scope/expiry/revoke、凭据解析和 device fingerprint proof；Hub 不参与 terminal capability 授权，旧 session token 不作为 fallback |
-| ME012C1 | 完成 | daemon 授权 DataChannel session acceptor | 已协商 DataChannel 只有在 grant/fingerprint/expiry/revoke 校验成功后才能进入 core-v2 scoped transport |
-| ME012C2 | 完成 | daemon hub agent 与 offer/answer | 注册/发现/offer-answer/NAT traversal/relay 建立 DataChannel；原型 Hub 不验证 terminal capability，失败不创建 protocol session |
-| ME012D | 完成 | TUI/CLI hub endpoint dialer | 注册 `hub-p2p` dialer，建立 protocol client bundle；失败只影响 owning endpoint，不 fallback 到 local/SSH/旧 remote |
-| RP001 | 完成 | 远程平台产品、架构、安全与源码边界文档基线 | 完成 PRD、架构 spec、安全协议 spec、public/private 命名空间与旧资产迁移计划；冻结实现门禁，文档之间术语和责任一致 |
-| RP001A | 完成 | 远程平台网络拓扑与连接时序图 | Mermaid 图覆盖 local/SSH 云旁路、managed WebRTC direct、Relay fallback、凭据可见性和 E2E capability 握手 |
-| RP001B | 完成 | 全球网络加速产品与 Relay Mesh 预研 | 明确是否建设、阶段边界、质量选路、双边 Edge Relay、计量、安全和网络图；不把任意 N 跳加入首版 Relay |
-| RP001C | 完成 | 发布、安装与 Cloud Companion 边界 | 明确公开/闭源 artifact、专用 IPC、签名安装、版本协商、桌面/移动端差异、服务端交付和许可证门禁 |
-| RP002 | 完成 | 公开 remote 与 Cloud Companion contract 抽取 | public namespace 只保留 endpoint/transport、cloud companion/signaling wire contract、client interface 与 fake harness；Hub/Web Controller runtime 不再被 client 直接 import |
-| RP003 | 完成 | DataChannel 端到端设备证明与 capability handshake | Hub/Control Plane 全链路看不到 capability grant；daemon 在 DTLS DataChannel 内完成设备证明、challenge 和 scope 映射后才接 core-v2 |
-| RP004 | 完成 | `private/` control plane 服务票据与 Relay entitlement | 账号、设备目录、Hub admission、Relay lease、套餐 entitlement 和 usage event 形成独立领域；订阅不参与 terminal authorization |
-| RP004A | 完成 | 私有桌面 Cloud Companion | 在 `private/termx-cloud/companion` 实现账号 session、Control Plane/Hub adapter、signaling、RelayLease、质量上报和 route plan；不接触 grant/DataChannel |
-| RP005 | 完成 | 私有 Hub/Relay 重建与旧实现迁移 | Hub 只做 presence/rendezvous/signaling，Relay 按短租约和会话计量；旧 session token、terminal inventory 和 bearer grant 信令全部删除 |
-| RP006 | 完成 | TUI 与 App 统一远程 endpoint contract | TUI/App 共用 endpoint、配对、凭据和错误模型；平台只各自实现 WebRTC primitive，不复制业务协议 |
-| RP006A | 完成 | Cloud Companion 签名安装与官方构建集成 | CLI install/login/enroll/status/update/uninstall、原子更新、版本协商、桌面服务激活和移动端官方私有模块构建完整通过 |
-| LIC001 | 完成 | 公开许可证与闭源分发审查 | 根许可证、第三方 notice、贡献协议、sidecar IPC 边界和企业私有交付完成正式发布前审查 |
-| RP007 | 完成 | 私有命名空间收口与开源快照准备 | 闭源实现归入 `private/`；公开目录可复制到全新空 Git 仓库并独立构建测试，不携带私有代码或历史 |
-| GA001 | 完成 | Go desktop/headless direct/Relay 网络质量观测基线 | 只采集 RTT、丢包、抖动、吞吐、断线和成本 summary；不含 terminal/grant 数据，不自动改路 |
-| GA001A | 完成 | Android managed WebRTC 质量观测对齐 | Android stats 使用同一窗口、隐私和异步成本语义；Community/official 构建边界不变，不自动改路 |
-| GA002 | 完成 | SmartRoute single-relay 智能选区 | direct 与受限 single-relay 候选按质量和成本竞争；具备 hysteresis、cost guard、选择原因和局部失败 |
-| RM001 | 完成 | 冻结目标目录与迁移门禁 | 明确单一公开 Go module、领域目录、client workspace、Android truth source、私有部署边界和四阶段准入 |
-| RM002 | 完成 | 公开 Go module 与领域目录收口 | 根 module 全量通过；公开子 module、旧 `termx-*-vN` 路径和本地 replace 删除，不保留 import adapter |
-| RM003 | 完成 | Client workspace 与 Android 单一源码 | `clients/ui`、`clients/mobile` 使用根 npm workspace；Android 自定义源码无镜像复制；Community/Official 边界不变 |
-| RM004 | 待开始 | 私有目录、维护入口与文档收尾 | `private/cloud`、统一 Make 入口、精简 workflow、public snapshot/license/path guard 和 `.artifacts` 全部通过 |
-| GA003 | 待开始 | 双 Edge Relay Mesh corridor pilot | 两端就近 TURN、单逻辑 backbone、route-bound RelayLease、内部服务身份和 session-level usage reconciliation 完整通过 |
-| GA004 | 待开始 | 单 transit 受控加速试点 | 仅当 GA003 数据证明特定 corridor 需要时启用，`max_internal_transit=1`；任意 N 跳保持禁止 |
-| KS012 | 待开始 | 快捷键跨切片总契约守卫 | 汇总默认 catalog 完备性、键盘/点击等价、空 catalog、overlay、组合 action 和 capability 回归守卫，不在本切片首次补关键 harness |
-| KS013 | 待开始 | 快捷键文档与示例收尾 | 更新现状统计、配置示例、支持键位和限制；删除错误可用性声明，确保可加载示例不会意外禁用未展示的必要入口 |
+| REC001 | 完成 | 恢复仓库可控状态并收口未提交 RM004 | Git 工作树干净；维护入口有效；开源发布工作已明确延后 |
+| CLOUD001 | 待开始 | 建立唯一 Cloud staging roadmap | direct、single Relay、Android 的消息链路和完成条件清晰且不互相冒充 |
+| CLOUD002 | 待开始 | 最小单区域开发云服务 | 一个命令启动显式 dev cloud；账号、设备、resolve、admission、signaling 跨真实服务边界通过 |
+| CLOUD003 | 待开始 | Desktop managed direct 闭环 | TUI 经 Companion/Hub/WebRTC direct 列出、attach 并操作真实 daemon terminal |
+| CLOUD004 | 待开始 | 单区域 single Relay 闭环 | 显式 Relay 策略通过 lease-bound TURN 连接；quota、到期、usage 和局部失败可验证 |
+| CLOUD005 | 待开始 | Official Android 闭环 | Official APK 可扫码/导入、连接、列出/attach terminal、输入并完成后台恢复手测 |
+| GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
+| GA004 | 延后 | 单 transit 受控加速 | 仅在 GA003 数据证明需要时恢复 |
+| KS012 | 暂停 | 快捷键跨切片总契约守卫 | Cloud 单区域主线完成后重新排序 |
+| KS013 | 暂停 | 快捷键文档与示例 | Cloud 单区域主线完成后重新排序 |
+| SI001 | 暂停 | TUI 同步输入组 | 恢复前重新确认范围 |
+| OPEN001 | 延后 | 正式开源与发布隔离 | 用户明确进入发布阶段后再执行 public snapshot、许可证、secret audit 和新仓初始化 |
 
 ## 执行规则
 
-1. 每轮先读取 `workflow.md`。
-2. 开始实现前检查 `git status --short --branch`，不得混入用户或其他代理的未提交改动。
-3. 按任务队列顺序推进最早的 `待开始` 或 `进行中` 切片；遇到 `阻塞` 不得跳过。
-4. 切片开始时先把状态改为 `进行中`，可与首个实现提交同提交。
-5. 只执行当前切片，不跨切片扩展范围。
-6. 先补模型和 harness，再接真实 protocol、transport 或 CLI 入口。
-7. 完成后更新任务状态、当前说明和必要文档。
-8. 每个有效变动都必须提交，提交信息使用中文；用户明确要求不提交时除外。
+1. 每轮先读取本文件、适用 `AGENTS.md` 并检查 `git status --short --branch`。
+2. 只处理任务队列中最早的 `进行中` 或 `待开始` 切片；一次只做一个切片。
+3. REC001 已按用户授权完成现有未提交改动审计；后续发现非本轮已识别改动时，仍不得覆盖未知用户工作。
+4. 先补最小跨组件 harness，再接真实实现；不得用更多文档或抽象替代用户链路。
+5. 切片完成后运行对应准入、更新本文件、使用中文提交信息提交，再进入下一切片。
+6. 若发现 release-only、multi-region 或假设性优化工作，记录为 deferred，不得偏离当前纵向目标。
+7. 外部 OAuth、生产 TLS、数据库和云资源缺失时，使用显式 dev/staging harness 推进；不得恢复旧 fallback。
 
 ## 测试准入
 
-- 文档-only 改动：`git diff --check`
-- `tui/` 改动：`go test ./tui/... -count=1`
-- `cmd/termx/` 改动：清空当前 `TERMX*` 环境后运行 `go test ./cmd/termx -count=1`；三个既有视觉基线按当前状态单独记录。
-- `internal/protocol/` 改动：`go test ./internal/protocol/... -count=1`
-- `shared/connection/` 改动：`go test ./shared/connection -count=1`
-- `shared/transport/` 改动：运行对应 package 的 `go test ... -count=1`
-- LIC001 许可与分发改动：`scripts/license-audit.sh`，并验证 CLI/Companion notice 命令及 Community/Official APK 内静态 notice 与私有 class 边界
-- RP007 开源快照改动：`scripts/public-snapshot-guard.test.sh`、`scripts/license-audit.sh`，并按 `docs/remote-platform/public-snapshot-manifest.md` 在临时空目录验证 public guard、独立 Go/CLI/UI/App/Android build 与 `scripts/license-audit.sh --public-snapshot`
-- 任意提交前都必须运行 `git diff --check`
+- REC001：`scripts/check_file_modes.sh`、`make doctor`、`make test-all`、`scripts/license-audit.sh`、`git diff --check`。不运行 public snapshot 独立构建或 public license audit。
+- CLOUD001 文档-only：`git diff --check`。
+- CLOUD002：受影响私有 module 测试、dev service 跨组件 harness、`git diff --check`。
+- CLOUD003：Companion、remote、TUI 定向测试和 managed direct E2E harness、`git diff --check`。
+- CLOUD004：Control Plane、Relay、Route Planner、remote 定向测试和真实 TURN E2E harness、`git diff --check`。
+- CLOUD005：client workspace 测试、Community/Official Android 单测与 APK 构建边界、ADB 手测步骤审查、`git diff --check`。
+- 只有切片真实跨越全仓 contract 时才运行 `make test-all`；当前开发阶段不运行 public snapshot 或 public-only release gate。
 
 ## 当前状态
 
-- RM003 已完成：活动共享 UI 与移动端分别迁入 `clients/ui`、`clients/mobile`，根 `package.json` 与唯一 `package-lock.json` 统一 npm workspace；包名收口为 `@termx/ui`、`@termx/mobile`，移动端通过 workspace link 消费 UI，React 统一为 19.2.6。UI 显式拥有 Vite 8，移动端保留 Vite 5，根 esbuild peer 与嵌套 esbuild 由 guard 固化，clean `npm ls --all` 无无效依赖；production graph 相比旧双锁只去掉重复的 React 19.2.5，`npm audit --omit=dev` 为零，完整 audit 仍只有既有 Vite 5/esbuild 两个开发依赖 advisory。Android 自定义 Kotlin/Java 与 network config 只保留 Gradle source tree，旧 `native/android` 镜像和复制脚本已删除，`cap sync` 后只读完整性 guard 会拒绝源码缺失或镜像恢复；Official 私有 source set 仍只由 init script 注入。根 clean `npm ci`、proto 生成、UI 61 个文件/433 项测试、typecheck、UI/Mobile build、Capacitor sync、Community/Official clean Android unit/APK、DEX 私有类边界、公开 remote Go 测试、public snapshot guard harness、116 项 npm/Android/Go notice 幂等、私有 license audit 与 `git diff --check` 全部通过；endpoint、WebRTC、credential、UI 业务 contract 未改变。
-- RM002 已完成：公开 Go 代码收口为根 module `github.com/lozzow/termx`，CLI、core、TUI、remote、shared、proto、vterm、testkit 与 internal 分别归位到 `cmd/termx`、`core`、`tui`、`remote`、`shared`、`proto`、`vterm`、`testkit` 与 `internal`；九个公开子 module、本地 replace 和旧 `termx-*-vN` import/path 已删除，六个私有部署 module 通过根 module replace 消费公开 contract，`go.work.sum` 只保留 workspace 实际需要的测试依赖校验和。protobuf Go/TypeScript 生成物、Go workspace、Make 入口、public snapshot/dependency guard、license notice 与活动路径均已同步。清空 `TERMX*` 后的根公开全量测试（排除三个既有视觉基线）、六个私有 module 全量、相关公开/私有 race、非 TUI 全量 vet、CLI build、remote-ui 433 项测试/typecheck/build、移动 Web/Capacitor build、Android unit、public snapshot guard、notice 幂等和 `git diff --check` 通过。额外全公开 race 仍复现切片前 `vterm` response drain goroutine 与 emulator close/reset 的生命周期竞争；全量 vet 仍只有已记录的 `tui/state/history.go` self-assignment 与 `tui/app/runtime.go` unreachable code，本切片未把这些运行时问题混入目录迁移。
-- RM001 已完成：`docs/repository-maintenance-plan.md` 冻结一个根公开 Go module、无版本后缀的领域目录、`clients/ui` + `clients/mobile` npm workspace、Gradle source tree 单一 Android 源码、`private/cloud` 独立部署 module、`.artifacts` 构建产物和精简活动工作流目标；RM002-RM004 只允许改变物理路径、module/workspace 和维护入口，不得改变 terminal、endpoint、remote auth、WebRTC、SmartRoute 或云服务业务语义。GA003 在 RM004 完成前暂停。
-- GA002 已完成：Cloud Companion IPC 提升到 v3，公开 contract 只暴露 managed session/target、受控 direct 或 single-relay route plan、稳定选择原因、短 TTL 和执行所需 ICE material，不泄漏私有分数、权重、阈值、成本、容量或供应商信息。私有 Route Planner 以质量时效/样本、可达性、健康、容量、策略、entitlement 和可信成本为硬约束，使用容量有界的确定性评分、minimum hold、cooldown、最小改善和基于新质量窗口的连续胜出；候选失败保持局部，成本未知与显式零成本分离，relay mesh 在本阶段拒绝。只有显式 `smart_route` 才在 endpoint resolution 后请求计划；Go 与 Android 公开 WebRTC runtime 二次校验 plan、只执行选中 ICE，并在端到端授权前核对实际 selected candidate path，`auto` 仍保持基础 direct/relay 行为，公开进程不申请 RelayLease，也不做 live ICE restart。TUI、App 与共享 UI 投影同一稳定选择原因。proto/shared/remote-v2/tui-v3/CLI、私有 Companion/Planner 全量，相关 race/vet、remote-ui 433 项、App `cap:build`、Community/Official clean Android unit/APK、DEX 私有类边界、public snapshot guard 和私有许可审计均通过；同一暂存树的无 `.git`/`private` public snapshot 也通过八个 Go module、干净 CLI、UI/App/Community Android 独立构建与 production npm audit。public snapshot 的固定第三方 notice 重抓取因外部 GitHub/Go proxy 超时未重复联网完成，但这些文件已在根仓库本轮联网校验并与快照逐文件一致，其余 public license gate 使用缓存的固定 `go-licenses v2.0.1` 离线通过。生产 OAuth/TLS、真实候选目录、route material 和官方云 adapter 仍未注入，保持 fail closed；GA003 mesh 不在本切片。
-- GA001A 已完成：Go protobuf 描述符与 Android `ManagedPathQualitySummary` 由同一个 v2 JSON fixture 守卫 18 个公开字段及 cost/terminal/grant/payload/address/credential 禁止边界；Android collector 与 GA001 使用相同 nearest-rank RTT P50/P95、相邻 RTT jitter、累计密文字节吞吐、ICE retransmission/send-discard loss estimate、connected duration、断线计数和大计数舍入语义。公开 `WebRTCTransport` 优先读取 selected candidate pair，缺失索引时只确定性接受 `nominated + succeeded` pair；5 秒采样、60 秒窗口的 reporter 仅在 DeviceIdentity/capability authorizer 成功后启动，关闭前使用非阻塞缓存最终样本，2 秒上报超时或 cloud 错误只丢 telemetry，不请求 lease、不重连、不修改 endpoint 或自动切路。移动端公开 `ManagedCloudAdapter.reportPathQuality` 只接脱敏 summary，Official 私有 adapter 校验后转发，Community 与损坏 official module 均 fail closed；可信成本继续由服务端异步关联。`shared` 全量与 pathquality 重复 10 次、App Web build、Community/Official clean unit test 与 APK assemble、APK 质量类/私有 factory 边界、public snapshot guard、private license audit均通过；同一暂存树复制出的无 `.git`/`private` public snapshot 也通过 shared 全量、App `cap:build`、Community Android unit/assemble、DEX class 边界和 public license audit。当前 Official development gateway 与 App authorizer 仍因未注入生产 OAuth/TLS/E2E 实现而 fail closed，本切片不把 contract/runtime 对齐伪装成生产云连接已上线。
-- GA001 已完成：Cloud Companion IPC 提升到 v2，公开 `shared/cloudcompanion/pathquality` 以单个 selected candidate pair 的累计 stats 形成严格时间窗口，计算 RTT P50/P95、相邻 RTT jitter、ICE retransmission/send-discard loss estimate、双向密文字节吞吐、connected duration 和异常断线次数；proto 描述符只允许 managed-session correlation、observed path 和匿名 network/region/carrier/provider taxonomy，不存在 cost、terminal、grant、payload 或地址字段。`remote/client` 默认仅在 CLI 显式开启后按 5 秒采样、60 秒窗口上报，candidate/path/counter 变化会切分窗口，report 失败只丢 telemetry，不请求 RelayLease、不重连、不改变 endpoint；CLI 保持 Companion 到 transport 结束且最终 observation 完成后再关闭。私有 `private/termx-cloud/route-planner/quality` 是容量有界、带时效过滤的 Probe Aggregator：质量先幂等入库，Relay usage/provider rate card 后续通过 `ObservationRef` 异步附加成本，未定价与显式零成本严格分离；当前没有 score、hysteresis、route selection 或自动切路 API。proto/shared/remote-v2/Companion/route-planner 全量、真实 Pion 重复 10 次、相关 race、vet、CLI 干净环境排除三个既有视觉基线后的全包、public snapshot guard 与 private license audit 均通过。当前 Android official cloud 仍是未配置 OAuth/TLS/authorizer 的 contract scaffold，且不在 GA001 允许范围内，本切片不宣称移动端 telemetry 已接通；后续移动端实现必须复用相同数据最小化和 cost 分离语义，不能另建业务协议。
-- RP007 已完成：旧顶层 `termx-remote/`、`web-control/` 及 remote-ui 历史 localweb/docs 已迁入 `private/archive/termx-platform-legacy/` 并移出 `go.work`；活动 `clients/ui/` 继续作为 future public App/shared UI，runtime proto 源码真值迁入 `proto/runtimepb/`。未来公开仓库使用人工 `git archive` 白名单、public `go.work` 与 Apache-2.0/NOTICE/DCO/CONTRIBUTING 模板覆盖，不建设 exporter/mirror，也不复制 private `.git`、workflow/Agent、私有文档或服务代码。结构 guard/harness 拒绝私有顶层、越界 symlink、secret/credential/PEM、private build metadata 和 legacy localweb；staged-tree 快照还暴露并修复 memory transport 在 peer write-before-close 时随机丢帧，以及 protocol `Events` 已确认 subscriber 被 close 误报 EOF 的顺序问题，定向 100 次与 race 20 次通过。临时 837 文件快照在无 `.git`/`private` 条件下通过八个非 CLI Go module 全量、干净 CLI 排除三个既有视觉基线后的全量、CLI 本机与 Linux build、remote-ui proto 幂等/全量 test/typecheck/build、App `cap:build`、Community Android unit/assemble、APK 不含 `OfficialManagedCloudFactory` 且含 7 个 notice asset、public/private license audit，两个 npm production audit 均为零。`tar` 已从 7.5.15 更新到 7.5.19；Vite/Babel 开发工具 advisories、三个既有 CLI 视觉基线、正式 SBOM 与组织 secret scanner 仍是 production public release blocker，但不阻塞后续工程切片。
-- LIC001 已完成：当前 private monorepo 根 `LICENSE` 对 TermX 自有材料保留全部权利；future public snapshot 冻结为 Apache-2.0 + NOTICE + DCO 1.1 + CONTRIBUTING，并明确只有复制到全新公开仓库后才授权所选公开材料。`docs/legal/` 已冻结 public/private artifact 矩阵、sidecar IPC 非法律结论、Companion/Official App/managed service/Enterprise 的书面条款和审批门禁；法定主体、品牌、最终 EULA/隐私/服务合同和目标法域专业审查仍是 production release blocker，但不阻塞后续工程开发。固定 `go-licenses v2.0.1` 的三平台 Go graph、根 production npm lockfile 的 116 个 package/version、Gradle release runtime 的 55 个 Maven component、WebRTC tag/commit/hash 和 10 个字体 asset 已形成可重复审计；`termx licenses`、`termx-cloud licenses` 内嵌 artifact-specific notice，App public assets 携带 npm/Android/WebRTC/font 完整文本。`scripts/license-audit.sh`、Companion 全量、CLI 干净环境排除三个既有视觉基线后的全量、两个 notice race/vet、App Web build、Community/Official `testDebugUnitTest assembleDebug` 均通过；两个 APK 都包含 7 个 notice asset，Community 不含而 Official 包含 `OfficialManagedCloudFactory`。干净 CLI 不排除时仍只有已记录的三个视觉基线失败；CLI Linux/amd64 和 Companion Linux/Windows 编译通过，完整 CLI Windows 编译仍被未修改的 core-v2 `syscall.Kill` 与 TUI `SIGWINCH` 阻断，本切片未扩散修复。
-- RP006A 已完成：公开 `cloudpb`/`cloudcompanion` 增加 login、device enrollment、logout、doctor、shutdown lifecycle 与 deterministic framed protobuf IPC；每连接 Hello、单调 request ID、cancel、stream ownership/backpressure 和 4 MiB frame 上限均由 harness 固化。Unix socket 双向校验 peer UID，Windows current-user Named Pipe 同时使用 owner-only ACL 与 client/server process SID 反向校验。公开 installer 只接受内置 Ed25519 root 和固定 HTTPS origin，严格验证 manifest 未知字段、签名、channel/platform/protocol、archive hash/size、单 executable tar、downgrade 授权与无 script/hook；staging Hello 必须让 binary 自报 version/channel 与签名 manifest 一致，随后按 versioned directory + `active.json` 原子激活，每次运行前复验 root/version/binary owner、mode 或 Windows owner SID、symlink 和 hash。activation 只启动固定 active binary/serve 参数，发现旧版本进程先有序 Shutdown、等待 endpoint 释放，再受限启动一次；取消中的晚到 stream 会被显式关闭，不形成第二份 IPC ownership。CLI 已提供 `cloud install/update/login/enroll/status/doctor/logout/uninstall`，one-time code 默认隐藏输入，DeviceIdentity challenge 始终在公开进程本地签名，private key/grant/DataChannel/terminal payload 不进入 Companion。私有 `termx-cloud` artifact 使用系统 Keychain/Secret Service/Credential Manager 保存 account/device session，release tool 只读取仓库外 Ed25519 PKCS#8 key；源码构建没有 official release root 时 fail closed。Android 以固定 `OfficialManagedCloudFactory` 装配私有 source set，clean Community APK 已验证不含该 class，clean Official APK 已验证包含；两种 `testDebugUnitTest assembleDebug` 均通过。proto/shared/companion/remote-v2 全量、相关 race/vet、公开依赖守卫、Windows IPC/installer/activation/Companion 与 Linux Companion 纯编译通过；CLI 清空当前 `TERMX*` 环境并排除三个既有视觉基线断言后全量通过，新增 cloud/managed 定向 race 与 vet 通过。正式 release root/key custody/artifact origin、桌面与移动 OAuth/TLS adapter 由 LIC001/发布环境注入，缺失时保持显式 unavailable/login-required；当前仓库无活动 iOS target，不宣称 iOS 已实现。daemon presence 仍缺独立 presence-proof challenge contract，后续协议切片补齐前不得复用 enrollment proof、legacy heartbeat 或猜测 online。
-- RP006 已完成：`shared/cloudcompanion` 新增平台中立 managed endpoint phase、relay policy、observed path 和 cloud error 语义，并以单一 JSON fixture 同时驱动 Go 与 Android contract harness。CLI/TUI `hub-p2p` dialer 已接公开 `remote/client`：从文件 credential store 按 `grant_ref` 解析 capability，只把 endpoint/device pin/grant 交给公开 E2E runtime，通过 Companion 交换 SDP/ICE，完成 DTLS DataChannel DeviceIdentity/capability handshake 后建立标准 protocol bundle；`relay_only` 使用真实 Pion ICE relay policy，selected candidate pair 投影 direct/single_relay，EndpointManager 只更新 owning endpoint 并在断线时清除旧 path。Cloud login/enrollment 映射 auth，Companion protocol 映射 protocol，其余 entitlement/quota/route/backpressure 映射 endpoint unavailable。Android 删除 `HubConnector`、`LocalConnector`、`RaceConnector` 和 WebRTCTransport 内旧 Bearer/session-token/`/api/v1/sessions` 业务协议，改为公开 `ManagedCloudAdapter + WebRTC primitive + ManagedEndpointAuthorizer` 边界；raw grant 由 Android Keystore AES-GCM store 按 `grant_ref` 保存，Web storage 只持 fingerprint/ref。Community adapter/authorizer fail closed，官方私有移动 cloud module、桌面 IPC 安装与激活进入 RP006A。App Web build、Android contract unit test/assembleDebug、shared/remote-v2/tui-v3 全量通过；CLI 清空当前 `TERMX*` 环境并排除三个既有视觉基线断言后全量通过，未排除时仍只有已记录视觉断言失败。额外全量 TUI race/vet 暴露切片前既有 live invalidation fake data race，以及 `history.go` self-assignment、`runtime.go` unreachable code 告警；RP006 定向 race 与正常准入均已通过，本切片未扩散修复。
-- RP005 已完成：新增独立 module `private/termx-cloud/hub` 与 `private/termx-cloud/relay`。Hub 只离线验证 Control Plane Ed25519 admission，按 ticket replay、Hub/principal/account/device/managed-session/operation binding 接纳 TTL presence 和 signaling；presence 不含 terminal inventory，client/daemon 分别使用 session-specific offer/answer admission，双向 candidate 显式携带 signaling session ID，queue、global/per-client capacity、TTL、cancel 和 async answer 全部 fail closed。Relay 只在 signed RelayLease 的 pool/region/route/credential binding 验证后派生 client/daemon 不同的短期 TURN credential；Pion TURN AuthHandler 无 lease/错 realm/并发超限即拒绝，allocation meter 执行 session 总字节和每秒 bitrate 上限，只生成 Ed25519 签名 UsageEvent。single-relay 只按 client allocation 计量一次，mesh edge 只允许本 edge principal，避免同一 session 字节重复结算。真实 Pion harness 同时验证 host direct 与强制 TURN relay 都能承载同一 opaque DataChannel，Relay API 只能观察字节/usage。Companion answer 路径改为按实际消费 offer 的 managed session 再取 daemon answer admission，presence ticket 不复用。旧顶层 `termx-hub/` 已原样迁入 `private/archive/termx-platform-legacy/termx-hub/` 并移出 `go.work`；旧 Bearer/session token、agent token、terminal inventory、heartbeat kick、24h credential 和共享 TURN secret 不再处于活动构建或 runtime 路径。Hub/Relay/Companion 全量、重复、race、vet，Control Plane usage settlement、legacy boundary、public dependency guard 和 `git diff --check` 通过。
-- RP004A 已完成：新增独立 Go module `private/termx-cloud/companion`，`Connection` 实现公开 `cloudcompanion.Client` contract，并以每连接 Hello、caller role、capability intersection 和独立 stream registry 作为 IPC domain 状态。账号登录与 daemon enrollment 使用同 profile 下独立 `account/device` OS credential slots；运行时必须注入 Keychain/Keystore/Credential Manager adapter，不提供明文文件、环境变量或内存 fallback，Authorization/Session 使用后主动清理且 String 全部脱敏。Control Plane/Hub adapters 只接收账号/device cloud authorization、公开 DeviceProof、SDP/ICE、短期 admission/RelayLease、quality summary 和 route outcome；不 import WebRTC、remoteauth、DataChannel、core/protocol 或 terminal owner。presence/signaling stream 有界、可取消、背压 fail closed，connection close 不跨 caller 停止 daemon presence；daemon 只能完成本连接实际消费的 offer。Hub URL 强制 HTTPS，TURN credential、managed session、target、route shape 和 cloud error enum 均严格校验；SmartRoute/Global Accelerator 必须先协商 capability。公开 v1 daemon presence candidate 因 DTO 不含 signaling session binding 而明确 fail closed，禁止按最近 offer 猜测；初始 offer/answer candidates 与 client-scoped trickle stream保持可用。companion 全量、race、vet、20 次重复，public cloudpb/cloudcompanion contract 与 RP003 恶意 companion E2E harness 均通过。
-- RP004 已完成：新增独立 Go module `private/termx-cloud/control-plane` 与 `private/termx-cloud/web-controller`，按 Account/User/Organization、DeviceRegistration/Ownership、Entitlement/QuotaPolicy、ManagedSession/HubAssignment、HubAdmission/SigningKey、RelayLease/UsageLedger、PairingApproval/AuditEvent 建立私有领域。Control Plane 以 managed session 真值推导 Hub/principal ticket，以当前 entitlement 重新校验新签和 refresh 后签发短期 Relay lease；订阅失效只拒绝新付费租约，不存在 heartbeat kick、grant revoke 或 terminal authorization 路径。服务凭据 v1 固定 Ed25519 与 `TXHA1`/`TXRL1`/`TXUE1` domain separator，支持 key rotation overlap、紧急撤销、canonical vector、类型混淆拒绝和脱敏 String。usage ledger 按 `(relay_id, lease_id, sequence)` 幂等，拒绝冲突/回退/越界，允许受限延迟补报，并按 managed session/route 窗口最大值归并 Relay Mesh hop，避免重复计费。私有模块全量、race、vet、public/private 依赖守卫和 `git diff --check` 通过。
-- RP003 已完成：`proto/remoteauthpb` 固化 `TXRA + deterministic protobuf` versioned envelope、DeviceHello signing input、CapabilityOpen proof input、稳定 rejection code 和 raw-grant-only-in-CapabilityOpen 描述符守卫；`shared/remoteauth` 实现 Ed25519 DeviceIdentity、实际 DTLS certificate binding、HMAC-SHA-256 challenge、clock window、nonce/session replay 防护、expiry/revocation/scope 校验、脱敏 rejection、协议切换与跨平台固定向量。grant claims 已直接收敛为 version/issuer/not-before/revocation-id/nonce 新模型并拒绝旧 signed claims。`remote` client/daemon 从 Pion 实际 DTLSTransport 读取本端/对端证书指纹，只有 CapabilityAccepted 后才把同一 transport 交给 termx protocol/core-v2；真实 WebRTC harness 覆盖 Hello/List、impostor companion routing 拒绝和 single-terminal scope 越权拒绝。修复了 DataChannel open 后晚注册 `OnMessage` 导致 DeviceHello 偶发丢失及 OnClose handler 覆盖的生命周期根因。`proto`、`shared`、`remote` 全量与 CLI 依赖守卫通过；remote-v2 全量连续 20 次、remoteauth 与 Pion client/webrtc race 准入通过。
-- RP002 已完成：`proto/cloudpb` 建立带 Hello 版本协商的跨平台 companion/signaling DTO、CloudError taxonomy 和禁止 grant/private key/terminal/DataChannel/session token 的描述符守卫；`shared/cloudcompanion` 提供 public domain interface、稳定错误、请求记录 fake 和有界 stream harness。`remote` client/daemon/WebRTC 已删除对 `termx-hub` 的 import、旧 HTTP session token、grant-in-signaling、terminal inventory/heartbeat 和 agent bearer token，CLI 删除旧环境变量 Hub agent，managed endpoint 在 RP006 接真实 companion IPC 前返回 `COMPANION_MISSING` 且不 fallback。`proto`、`shared`、`remote` 全量通过；CLI 新 companion/依赖守卫通过，清理当前 `TERMX_*` 环境并排除三个已记录的视觉断言后 `go test ./cmd/termx -count=1` 全量通过；未排除时仍只有旧 rename marker 与 footer 顺序/`PgUp` 对应的 `TestV3SmokeCommandIncludesVisualReviewCases`、`TestV3VisualSnapshotCommandPrintsFixedVisualFrame`、`TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts` 失败。真实 DataChannel DeviceIdentity/capability handshake 已由 RP003 接入。
-- RP001C 已完成：公开 `termx`、闭源用户侧 Cloud Companion、移动端官方私有模块和托管服务端的 artifact、IPC、签名安装、升级与许可证边界已冻结；源码统一在当前 private monorepo 正常提交，闭源实现收口 `private/`，未来开源时复制 public namespace 到全新空 Git 仓库。本切片未修改 runtime。
-- RP001B 已完成：全球网络加速被定义为 Relay 之上的可选付费能力；先做质量观测和 single-relay SmartRoute，再按 corridor 数据门禁试点双 Edge Relay Mesh，最多允许一个内部 transit；固定地区链、任意 N 跳和中国特例不进入公开协议。Relay Mesh 图已用 Mermaid CLI 实际渲染并完成视觉检查，本切片未修改 runtime。
-- RP001A 已完成：新增五张可直接在 Markdown/GitHub 渲染的 Mermaid 图，覆盖全部 transport、managed WebRTC 网络、direct 时序、Relay fallback 和五类凭据边界；图形已使用 Mermaid CLI 实际渲染验证，本切片未修改 runtime。
-- RP001 已完成：远程平台 PRD、架构 spec、安全协议 spec 与源码边界/迁移计划已建立；Hub/Web Controller 服务端目标为当前 monorepo 的 `private/`，public namespace 保留 client/daemon contract 与 fake harness，旧实现保留私有可追溯 archive；本切片未修改 runtime。
-- ME012A-D 保留为已验证的技术原型，不再作为目标安全架构：当前 opaque grant 经 Hub 信令、Hub agent token、terminal inventory 注册和订阅 kick 等行为必须在 RP002-RP005 中按新 contract 删除，不保留兼容 fallback。
-- ME001 已完成：工作流已收敛为多 endpoint / 多 transport 主线，详细规划落到 `tui/docs/multi-endpoint-transport-plan.md`。
-- ME002 已完成：TUI state 已有 `EndpointID` / `TerminalRef` 基础模型，默认 `local` endpoint 保持现有本地行为，同名 terminal 可在不同 endpoint 下共存。
-- ME003 已完成：`shared/connection` 提供独立 `connections.yaml` registry loader，缺省返回稳定 `local` endpoint，并定义 label 热更新与 dial identity 变更需要 reconnect 的基础判断。
-- ME004 已完成：TUI state 增加 reducer-owned endpoint 展示投影，Terminal picker / Terminal Manager 可按 endpoint 分组展示机器名称、transport、connect mode、状态和局部错误；endpoint-scoped list 失败不会清空其他 endpoint 的 terminal rows。
-- ME005 已完成：live surface/session/input channel、Terminal Pool 操作、resize owner、copy/history pending/window/release 均带 `TerminalRef` 路由；同名 terminal 的 input serial、live refresh、history window 和 copy session 不跨 endpoint 串扰。
-- ME006 已完成：workbench snapshot 持久化 `EndpointID + TerminalID` 连接意图，旧 binding 缺 endpoint 时默认恢复为 `local`；缺失、disabled 或 manual endpoint 的 binding 保留在 pane/floating layout 中并标记 unresolved，不自动 attach。
-- ME007 已完成：TUI runtime 启动时加载 `connections.yaml` endpoint registry，local unix socket 作为 `EndpointManager` 的标准 local transport bundle 接入；terminal/core/live 请求进入 per-endpoint adapter 前剥离 `EndpointID`，回包后补回 `EndpointID`，当前本地 attach、list、live、history 行为保持不变；显式 `--socket` 仍覆盖 registry local socket。
-- ME008 已完成：新增 OpenSSH stdio-proxy transport，`auth_ref=ssh:<alias>` 使用本机 SSH config，host key 由 known_hosts 严格校验，`remote_socket=auto` 在远端解析默认 socket；EndpointManager 可 lazy dial SSH endpoint，Terminal Manager 对 auto/on_demand endpoint 执行聚合刷新，失败只标记对应 endpoint offline 且不 fallback 成 shell 或 local endpoint。
-- ME009 已完成：picker 只保留单一 create 行，create prompt 用 server 下拉选择 endpoint，并记住上次 endpoint/command/workdir；TUI/CLI/protocol first-party create 优先以 terminal name 作为 daemon-local key，core-v2 在 create 与 rename 时拒绝同 daemon 重名。
-- ME010 已完成：`connections.yaml` 可表达 hub/P2P endpoint，hub URL、`hub_device_id` 与 relay 策略分离；label 只影响展示，hub 发现目标/relay 变化触发 reconnect；无真实 hub dialer 时 EndpointManager 只返回该 endpoint 的未连接错误，不 fallback。
-- ME011 已完成：按用户确认的单向配对模型收敛 hub 安全 contract，remote 生成 capability grant 给客户端；`hub_device_id` 只做发现/路由，`device_fingerprint` 作为远端设备安全身份，`grant_ref` 指向本地保存的 grant，真实 `termx-hub/` transport dialer 和跨设备发现进入 ME012。
-- ME012A 已完成：ME012 已拆为 transport primitive、grant/identity、daemon agent 和 client dialer 四个连续切片；`shared/transport/datachannel` 以可靠有序消息抽象承载完整 termx protocol frame，明确背压、关闭和复制语义，不依赖 Pion 或冻结 `termx-remote`；core-v2 harness 证明 DataChannel session 必须经 `ServeScopedTransport` 接入，跨 capability terminal 的请求在 protocol method 入口被拒绝。
-- ME012B 已完成：`shared/remoteauth` 新增 daemon-local Ed25519 设备身份、稳定 `device_fingerprint`、remote-issued capability grant、受限 terminal/machine-events scope、expiry/signature/fingerprint/revoke 校验、客户端 `grant_ref` 文件凭据存储和 daemon 持久化撤销 store；Hub 不持有 daemon 私钥、不做 terminal capability 授权判断，旧 session token 不能被解析为 grant，配置文件仍只保存 `grant_ref`。
-- ME012C1 已完成：`remote/` 按新模型解冻为 hub/P2P daemon/client transport owner；Pion adapter 只实现共享 DataChannel primitive，`daemon.SessionAcceptor` 使用 daemon-owned fingerprint 校验 grant 的签名、expiry 和 revoke 后才映射 core-v2 `TransportScope`。core-v2 scope 已改为显式 `AllowDaemon`/single-terminal/machine-events 三选一，零值 scope 拒绝，避免远程装配遗漏字段时意外获得 daemon 全权。
-- ME012C2 已完成：`termx-hub/client` 以公开 gRPC agent stream 封装 Hub internal wire，remote-v2 只看到 opaque `CapabilityGrant`；daemon agent 注册、heartbeat、offer/answer 和 kick 均按单 Hub session 驱动，offer 授权失败只回该 session error。Pion answerer 先验 grant，再协商可靠有序 `protocol` DataChannel；真实 WebRTC harness 已通过 protocol Hello/List 到 core-v2。CLI daemon 仅在 `TERMX_HUB_URL`、`TERMX_REMOTE_DEVICE_ID`、`TERMX_HUB_AGENT_TOKEN` 显式配置时启动 agent，默认本地 daemon 不变，远程 agent 后续运行失败只记录错误、不停止本地 listener。Hub/remote-v2 全量与 CLI remote/daemon 定向准入通过；CLI 全量仍有本切片前已存在的两个快捷键视觉基线失败（旧 `[Ctrl+E] RENAME` 标记和 footer 顺序/`PgUp` 差异），未在 remote 切片修改 UI。
-- ME012D 已完成：`remote/client` 在访问 Hub 前先校验 grant 签名/fingerprint/expiry 和 `hub_device_id`，使用 Hub session HTTP 做 opaque grant 信令、按 `relay_mode` 约束 ICE/TURN，再建立可靠有序 `protocol` DataChannel；真实 fake-Hub + Pion + daemon answerer + core-v2 harness 已通过 Hello/List。CLI `EndpointManager` 已注册 `hub-p2p` dialer，从 `$XDG_STATE_HOME/termx/remote-v2/credentials`（或默认 state dir）按 `grant_ref` 解析 secret，并复用现有 terminal/core/live/path protocol adapters；凭据缺失和 dial 失败只返回 owning endpoint 错误，不调用 local/SSH。remote-v2 与 tui-v3 全量通过，CLI remote/daemon/dialer 定向通过；CLI 全量仍只有已记录的两项快捷键视觉基线失败。
-- CL001 已完成：master 项目整理基线已对齐，`workflow.md`、根 `AGENTS.md` 和 `cmd/termx/AGENTS.md` 均明确当前整理主线、插件分支隔离、frozen legacy 边界与 remote CLI 清理债务。
-- CL002 已完成：顶层 Makefile 已移除 frozen `remote-ui`、localweb、旧 remote daemon/dev/pair/status/test 入口，只保留当前 v2/v3 build 与测试入口。
-- CL003 已完成：`cmd/termx` 默认命令、daemon 启动、测试、README、脚本和 module 文件已移除 frozen `termx-remote` runtime/命令依赖；core-v2/protocol 的 typed remote hook 暂不在本切片删除。
-- CL004 已完成（历史状态）：当时撤回“旧 remote/app/web 目录无效可删”的判断并恢复资产；RP005/RP007 随后已把旧 Hub、`termx-remote/` 与 `web-control/` 收口到私有 archive，活动 `clients/mobile/`、`clients/ui/` 和 `remote/` 按公开 contract 保留。
-- CL005 已完成：`shared` unix transport 已增加 packet 读包上限、Close 解除阻塞语义和无 goroutine 泄漏的 Accept；memory transport 不再用 channel close panic/recover 表达生命周期；terminal metadata 删除 TUI 图标/按钮文案，只保留共享 tag/mode 语义。本切片未迁移 `perftrace/gridtrace`，诊断包重组后续单独处理。
-- SI001 暂停：按用户确认的交互设计实现 TUI 本地同步输入组；同步状态属于当前 TUI reducer-owned 输入路由状态，不写入 daemon terminal lifecycle、history truth 或 workbench storage。
-- KS001 已完成：已新增 TUI 快捷键现状盘点与 `tui.shortcuts` 设计文档；本切片未修改运行时输入路由。后续 KS002-KS004 必须删除旧 `tui.keymap`，不保留 deprecated 双路径、兼容 fallback 或第二份快捷键真值；每个阶段提交前必须运行准入并使用子 Agent 只读审核。
-- KS002 已完成：`tui.shortcuts` config schema/parser/validation 已落地，支持 action label、场景短写/长写和内置 scene 校验；旧 `tui.keymap` 配置入口、默认值、parser、validation、示例和测试已删除，本切片未接入运行时输入路由。
-- KS003 已完成：已建立内置 action registry 与 shortcut catalog 输入路由；默认 catalog 覆盖现有硬编码行为，自定义 `tui.shortcuts` 是唯一输入真值，显式空 `tui.shortcuts` 不回退默认，未知 action 和 runtime key 冲突在配置期拒绝。KS004 接提示/overlay 同源前需要统一 overlay `menu.*` registry。
-- KS004 已完成：footer、help 和 overlay/menu 提示统一从 shortcut catalog 生成，旧 `tui.footer.actions` / `footer.modes.*.actions` 配置入口和 `FooterVM.Actions` 字符串 fallback 已删除；overlay Esc close 等主要动作通过 catalog 映射，用户显式删除 shortcut 后不再展示也不再触发对应动作。
-- KS005 已完成：新增无 app/render/config 依赖的 shortcut domain registry，统一 canonical action id、typed 参数、allowed scenes、默认文案和显式展示策略；input binding 只产出 `ActionInvocation`，app dispatcher 负责投影到 reducer intent；旧 input action switch 和 shell-to-render adapter 已删除，默认 catalog/spec/dispatcher 完备性 harness 已落地。
-- KS006 已完成：footer 与受 shortcut catalog 控制的 overlay/content 命中区携带 canonical `ActionInvocation`；点击消息保留 pane/floating/row 目标上下文，copy 与 overlay 分别由 owning reducer 消费；零值 click policy 不可点击，不同方向/参数的聚合提示只保留 hint-only；`floating.summon.N` 使用 typed index，overview 行使用 `floating_overview.open + Row`，不再混淆两种语义。
-- KS007 已完成：该阶段曾将 sticky/copy Esc、Prompt suggestion Esc、Help close 收进 scene catalog；KS011D 已以全局返回导航替换 Esc 相关路径，并删除 `interaction.exit`、`copy.exit`、`prompt.suggestion_exit` 配置 action及 `prompt_suggestion` scene。空 footer 不虚构 `Ctrl-G`，Help 内容关闭文案与 hit region 仍随可配置 action catalog 同步。
-- KS008 已完成：config 以 shortcut domain `ParseInvocation`、`AllowedScenes` 和 `Routable` 为 action/scene/参数真值；routed 与 overlay 共用 canonical key signature，拒绝 panel/pane、Esc/Return、modifier 顺序、Ctrl 字符大小写及 `Ctrl-@`/`Ctrl-Space` 等价冲突；quoted `.` 的短写和长写均通过真实 YAML parser；增强键盘 token 只做协议理论校验，实际 capability/available 状态仍由 KS011 负责。
-- KS009 已完成：仅配置 `actions` 时保留全部默认 bindings 并覆盖文案；任意显式 scene（包括空 scene）声明完整用户 catalog，不继承其他默认 scene；`shortcuts: {}` 保留默认，`shortcuts:`、`actions:`、`scene:` null 明确拒绝；action alias 在 parser 中 canonicalize 且重复声明报错；按键 label > action label > shortcut domain `DefaultLabel`，footer 聚合只合并键和 invocation，不再覆盖文案。
-- KS010 已完成：`panel.kill` 与 `panel.kill_and_close` 直接进入独立 pane command 链路；两者都只从 pane binding 读取 owning `TerminalRef` 发 kill，不 fallback 裸 `TerminalID`；kill-only 成功保留 pane，kill-and-close 仅在成功且 result/close 消费两次确认 pane 仍绑定同一 `TerminalRef` 后进入标准 workbench pane-close/persist 路径，失败、重绑定和 last-pane close 拒绝都保留 pane；配置仍只引用 action id，不开放脚本。
-- KS011 已完成：TerminalHost 分步完整写入 Kitty keyboard protocol disambiguate push、capability query，并只在 push 成功后 pop；`CSI ? flags u` 回投 reducer-owned `HostCapabilities`，增强 binding 仅在 flag 1 确认后进入 footer/Help；CSI-u Ctrl+数字经 raw parser、标准 InputEvent 和 shortcut catalog 生成参数化 invocation，普通数字不误判，release/拒绝结构不触发 action，所有宿主 CSI-u 都不会原样泄漏到 PTY；不支持宿主继续使用 `Ctrl-T` 后数字 fallback。
-- CX001 已完成：reconnect 请求先以目标 view 的 `AttachPending` 投影连接中，并把 owning endpoint 标为 connecting；成功回包收敛为 connected，失败清除 pending 并按错误分类回投 offline。断线 pane 保留最后 live surface，结构化显示 endpoint label/id、transport、terminal、reason 和局部 Reconnect/Disconnect 操作；未引入定时刷新、自动重试或 fallback。
-- CX002 已完成：未连接态展示清晰的起始说明和主次操作；连接/重连态保留最后画面并说明输入暂停、新 endpoint session 正在建立；异常断开态把错误分类投影为用户可读 issue，原始错误降为 detail，并按 auth、host-key、transport、remote daemon、protocol、config 给出对应 next step。三态未伪造百分比、重试次数或 transport 阶段。
-- KS011A 已完成：shortcut binding 长写新增三态 `show`，显式 false 只隐藏 footer、键盘与 Help 保留，显式 true 可覆盖 domain 默认 footer hidden；升序单数字 `[1...9]` 与 `ctrl+[1...5]` 在配置加载期用 `{key}` 展开并继续走 canonical key、scene/action、参数与冲突校验；footer 宽度不足时按键和文案整体裁剪，不再保留裸按键旧路径。
-- KS011B 已完成：范围 parser 先识别合法具体 key，`[`、`]` 与 `ctrl-[` 不再被误判为范围；只有包含 `...` 的非法 token 才返回范围专用错误，完整用户配置已通过真实 CLI 加载验证。
-- KS011C 已完成：主 README 新增快捷键单一配置入口、`show` 展示策略、数字范围表达式、Ctrl+数字增强键盘 capability、iTerm2 条件、`Ctrl-T` fallback 和输入诊断说明；示例明确是合并到完整 catalog 的片段，避免意外替换其他 scene。
-- KS011D 已完成：`Root.CurrentBackNavigationLayer` 与 `NewBackNavigationReducer` 成为 Esc 的唯一 owner，固定按 prompt suggestion、overlay、当前 view copy/history、sticky interaction 返回一层；配置拒绝未修饰 esc/escape，footer 从同一层级自动补 `Esc BACK`，普通 live Esc 继续透传 PTY。Kitty CSI-u Esc/Enter/Tab/Backspace 归一为标准命名 Key，Shift-Tab 与 Alt 控制键修饰语义得到保留。`tui` 全量测试、真实用户配置 CLI 加载和 `git diff --check` 已通过；`cmd/termx` 全包测试仍有两个既有 visual smoke 基线失败，已在未修改的 `HEAD 99eeb6e8` 独立复现，本切片未修改对应 CLI/visual target。
+- RM001-RM003 已提交：公开 Go module、npm workspace 和 Android 单一源码已经收口。
+- RM004 原未提交改动已由 REC001 审计接管：`private/cloud` 路径迁移、canonical Make 入口、`.artifacts`、doctor/layout/generated guard、文档归档和原有 tmux 冷启动诊断已经收口并通过 REC001 全部准入。
+- RP002-RP007、GA001/GA001A/GA002 已建立 contract、领域组件和 harness；这些成果是 CLOUD002-CLOUD005 的输入，不代表 managed cloud 已可用。
+- 正式开源隔离、生产 OAuth/TLS、持久化数据库、计费、团队治理、Relay Mesh 和多区域运维全部延后。

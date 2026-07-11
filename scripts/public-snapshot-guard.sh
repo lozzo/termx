@@ -67,13 +67,15 @@ done < <(find clients -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort)
 while IFS= read -r path; do
   name="${path#docs/}"
   case "$name" in
-    legal|remote-platform)
+    development|history|legal|remote-platform)
       ;;
     *)
       fail "unexpected public docs entry: docs/$name"
       ;;
   esac
 done < <(find docs -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort)
+[[ -s docs/development/README.md ]] || fail "public development guide is missing"
+[[ -d docs/history ]] || fail "public history directory is missing"
 
 while IFS= read -r path; do
   name="${path#docs/legal/}"
@@ -88,7 +90,9 @@ done < <(find docs/legal -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort)
 
 required_scripts=(
   android-resolved-dependencies.init.gradle
+  check-generated-code.sh
   client-workspace-guard.mjs
+  doctor.sh
   fetch-pinned-third-party-notices.sh
   generate-android-notices.sh
   generate-go-notices.sh
@@ -96,7 +100,9 @@ required_scripts=(
   license-audit.sh
   public-snapshot-guard.sh
   public-snapshot-guard.test.sh
+  repository-layout-guard.sh
   verify-android-apk-boundary.sh
+  with-clean-termx-env.sh
 )
 for script in "${required_scripts[@]}"; do
   [[ -s "scripts/$script" ]] || fail "required public release script is missing: scripts/$script"
@@ -104,7 +110,7 @@ done
 while IFS= read -r path; do
   name="${path#scripts/}"
   case "$name" in
-    android-resolved-dependencies.init.gradle|client-workspace-guard.mjs|fetch-pinned-third-party-notices.sh|generate-android-notices.sh|generate-go-notices.sh|generate-npm-notices.mjs|license-audit.sh|public-snapshot-guard.sh|public-snapshot-guard.test.sh|verify-android-apk-boundary.sh)
+    android-resolved-dependencies.init.gradle|check-generated-code.sh|client-workspace-guard.mjs|doctor.sh|fetch-pinned-third-party-notices.sh|generate-android-notices.sh|generate-go-notices.sh|generate-npm-notices.mjs|license-audit.sh|public-snapshot-guard.sh|public-snapshot-guard.test.sh|repository-layout-guard.sh|verify-android-apk-boundary.sh|with-clean-termx-env.sh)
       ;;
     *)
       fail "unexpected public release script: scripts/$name"

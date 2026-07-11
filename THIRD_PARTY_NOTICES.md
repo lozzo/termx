@@ -7,7 +7,7 @@
 | Artifact | 随包 notice | 用户入口 |
 | --- | --- | --- |
 | public `termx` CLI/daemon | `cmd/termx/THIRD_PARTY_NOTICES.txt` | `termx licenses` |
-| private `termx-cloud` Companion | `private/termx-cloud/companion/cmd/termx-cloud/THIRD_PARTY_NOTICES.txt` | `termx-cloud licenses` |
+| private `termx-cloud` Companion | `private/cloud/companion/cmd/termx-cloud/THIRD_PARTY_NOTICES.txt` | `termx-cloud licenses` |
 | Community/Official Android App | `clients/mobile/public/THIRD_PARTY_NOTICES.txt` 与 `clients/mobile/public/third-party/` | App web assets 与 APK `assets/public/` |
 | future public source snapshot | `docs/legal/public-snapshot/THIRD_PARTY_NOTICES.md` | 新公开仓库根目录 |
 

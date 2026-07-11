@@ -3,7 +3,7 @@
 状态：R396 后 live native screen 与 history fan-out 重构基准。
 
 本文只定义普通实时终端显示链路，不定义 authoritative history truth。history 仍以
-`core/docs/history-logical-renderer-design.md` 为准。live screen 可以被 copy mode
+`docs/history/core/history-logical-renderer-design.md` 为准。live screen 可以被 copy mode
 进入瞬间冻结为“当时正在看的屏幕”，但它不能成为 history/window/search/copy 的历史真值来源。
 
 ## 1. 一句话

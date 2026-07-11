@@ -862,7 +862,7 @@ cache 原则：
 当前状态：
 
 - 上述目标中的 renderer 结构、styled `RenderResult`、ANSI `FrameSink`、cell matrix、theme token、基础 pane/header/footer/toast/overlay 路径已经作为工程基线落地。
-- 根据 `tui/docs/visual-alignment-audit.md` 与 `tui/docs/default-tui-visual-review.md`，当前默认 TUI 仍未达到用户截图要求的完整 `tuiv2` 视觉等级；后续必须继续按视觉返工切片推进。
+- 根据 `tui/docs/visual-alignment-audit.md` 与 `docs/history/tui/default-tui-visual-review.md`，当前默认 TUI 仍未达到用户截图要求的完整 `tuiv2` 视觉等级；后续必须继续按视觉返工切片推进。
 - 切片 80 已把 shell header/footer 从稀疏文本条推进到分段产品栏。
 - 切片 84 已把 shell header/footer 从工程 key-value 标签继续推进到高密度产品栏：top bar 使用 workspace、tab strip、`[⊕]`、active pane、`◆ owner`、terminal/floating 和 action token；bottom bar 使用 `MODE • [KEY] ACTION`、active target 和 summary。
 - 切片 81 已把 pane chrome / split line 从基础线框推进到 shared chrome：card panel 与 split line 都使用 square 细线、title/state/action 槽位、active accent、inactive muted、共享外框、连接点合成和 content rect 宽度安全。

@@ -1,14 +1,9 @@
-bin/
-*.test
-*.cover
-cover.out
+/.artifacts/
 .swp
 .toolchain/
-/termx
-/termx-core/termx
 .worktrees/
 *.tsbuildinfo
-.build/
 /node_modules/
+/private/archive/**/.build/
 Screenshot_*.jpg
 termx-debug-*.zip

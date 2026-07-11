@@ -46,9 +46,13 @@ Copy only these documentation and release-support paths:
 ```text
 docs/legal/public-snapshot/
 docs/legal/third-party/
+docs/development/
+docs/history/
 docs/remote-platform/
 scripts/android-resolved-dependencies.init.gradle
+scripts/check-generated-code.sh
 scripts/client-workspace-guard.mjs
+scripts/doctor.sh
 scripts/fetch-pinned-third-party-notices.sh
 scripts/generate-android-notices.sh
 scripts/generate-go-notices.sh
@@ -56,7 +60,9 @@ scripts/generate-npm-notices.mjs
 scripts/license-audit.sh
 scripts/public-snapshot-guard.sh
 scripts/public-snapshot-guard.test.sh
+scripts/repository-layout-guard.sh
 scripts/verify-android-apk-boundary.sh
+scripts/with-clean-termx-env.sh
 ```
 
 Do not copy root `LICENSE`, root `THIRD_PARTY_NOTICES.md`, `go.work`, `go.work.sum`, `workflow.md`, any `AGENTS.md`, `private/`, legacy top-level remote directories, ignored build outputs, local configuration, or the source repository history. The reviewed public templates replace the root legal and workspace files. `go work sync` may create a new public-only `go.work.sum`; its absence is valid when the root module sum already closes the public dependency graph.
@@ -98,9 +104,13 @@ PUBLIC_PATHS=(
   vterm
   docs/legal/public-snapshot
   docs/legal/third-party
+  docs/development
+  docs/history
   docs/remote-platform
   scripts/android-resolved-dependencies.init.gradle
+  scripts/check-generated-code.sh
   scripts/client-workspace-guard.mjs
+  scripts/doctor.sh
   scripts/fetch-pinned-third-party-notices.sh
   scripts/generate-android-notices.sh
   scripts/generate-go-notices.sh
@@ -108,7 +118,9 @@ PUBLIC_PATHS=(
   scripts/license-audit.sh
   scripts/public-snapshot-guard.sh
   scripts/public-snapshot-guard.test.sh
+  scripts/repository-layout-guard.sh
   scripts/verify-android-apk-boundary.sh
+  scripts/with-clean-termx-env.sh
 )
 
 git -C "$SOURCE_REPO" archive "$SOURCE_COMMIT" -- "${PUBLIC_PATHS[@]}" \
@@ -145,13 +157,12 @@ Install the exact root npm workspace before license generation:
 (cd "$DEST" && npm audit --omit=dev)
 ```
 
-Run all public Go module tests, the CLI build, shared UI tests/build, Community App build, Android Community tests, and release audit:
+Run the canonical repository doctor, build, all public tests, Community App build, Android Community tests, and release audit. `make test-private` reports an explicit skip because the public snapshot has no `private/cloud` tree:
 
 ```bash
-(cd "$DEST" && GOWORK=off go test ./... -count=1 && GOWORK=off go build ./cmd/termx)
-(cd "$DEST" && npm run proto && npm test && npm run typecheck && npm run build && npm run cap:sync)
-(cd "$DEST/clients/mobile/android" && ./gradlew testDebugUnitTest assembleDebug)
-(cd "$DEST" && scripts/verify-android-apk-boundary.sh clients/mobile/android/app/build/outputs/apk/debug/app-debug.apk)
+(cd "$DEST" && make doctor)
+(cd "$DEST" && make build)
+(cd "$DEST" && make test-all)
 (cd "$DEST" && scripts/license-audit.sh --public-snapshot)
 ```
 

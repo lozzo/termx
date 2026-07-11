@@ -1,150 +1,85 @@
-.PHONY: help termx-build test-cli test-core test-tui test-cli-v3-smoke test-cli-v3-tmux-smoke test-cli-v3-tmux-terminal-smoke test-cli-v3-tmux-resize-smoke test-cli-v3-tmux-ansi-smoke test-cli-v3-tmux-visual-compare test-cli-v3-tmux-stability-smoke test-cli-default-smoke test-cli-default-deps test-repository
+SHELL := /bin/bash
+.SHELLFLAGS := -eu -o pipefail -c
+.DEFAULT_GOAL := help
 
-BIN_DIR := $(CURDIR)/bin
-TERMX_BIN := $(BIN_DIR)/termx
+ARTIFACT_DIR := $(CURDIR)/.artifacts
+TERMX_BIN := $(ARTIFACT_DIR)/bin/termx
+ANDROID_DIR := $(CURDIR)/clients/mobile/android
+ANDROID_ARTIFACT_DIR := $(ARTIFACT_DIR)/android
+PRIVATE_MODULES := \
+	private/cloud/companion \
+	private/cloud/control-plane \
+	private/cloud/hub \
+	private/cloud/relay \
+	private/cloud/route-planner \
+	private/cloud/web-controller
+
+.PHONY: help build test test-private test-clients test-android test-all doctor clean
 
 help:
 	@printf '%s\n' \
 		'Targets:' \
-		'  make termx-build     Build ./bin/termx from cmd/termx' \
-		'  make test-cli        Run CLI package tests' \
-		'  make test-core       Run core package tests' \
-		'  make test-tui        Run TUI package tests' \
-		'  make test-cli-v3-smoke Run v3 CLI smoke harness' \
-		'  make test-cli-default-smoke Run default CLI daemon smoke' \
-		'  make test-cli-default-deps Guard default CLI source against legacy imports' \
-		'  make test-cli-v3-tmux-smoke Run optional tmux black-box v3 harness smoke' \
-		'  make test-cli-v3-tmux-terminal-smoke Run optional tmux terminal create/attach/input smoke' \
-		'  make test-cli-v3-tmux-resize-smoke Run optional tmux resize/layout smoke' \
-		'  make test-cli-v3-tmux-ansi-smoke Run optional tmux ANSI/theme/live surface smoke' \
-		'  make test-cli-v3-tmux-visual-compare Run optional tmux visual capture and target diff' \
-		'  make test-cli-v3-tmux-stability-smoke Run optional tmux short stability smoke' \
-		'  make test-repository Test public domains and default CLI smoke'
+		'  make build         Build termx into .artifacts/bin/' \
+		'  make test          Test the public Go module' \
+		'  make test-private  Test each private cloud Go module when present' \
+		'  make test-clients  Generate, test, typecheck, and build both clients' \
+		'  make test-android  Build/test Community and optional Official APKs' \
+		'  make test-all      Run all repository test gates sequentially' \
+		'  make doctor        Check toolchain, generated code, and repository layout' \
+		'  make clean         Remove known generated build outputs'
 
-termx-build:
-	mkdir -p "$(BIN_DIR)"
-	go build -o "$(TERMX_BIN)" ./cmd/termx
+build:
+	mkdir -p "$(dir $(TERMX_BIN))"
+	GOWORK=off go build -o "$(TERMX_BIN)" ./cmd/termx
 
-test-cli:
-	go test ./cmd/termx -count=1
+test:
+	scripts/with-clean-termx-env.sh env GOWORK=off go test ./... -count=1
 
-test-core:
-	go test ./core/... -count=1
-
-test-tui:
-	go test ./tui/... -count=1
-
-test-cli-v3-smoke:
-	set -e; \
-	tmp="$$(mktemp -d)"; \
-	go build -o "$$tmp/termx" ./cmd/termx; \
-	"$$tmp/termx" v3 smoke; \
-	"$$tmp/termx" v3 e2e-smoke; \
-	rm -rf "$$tmp"
-
-test-cli-v3-tmux-smoke:
-	set -e; \
-	if ! command -v tmux >/dev/null 2>&1; then \
-		echo "tmux not installed; skipping tmux smoke"; \
-		exit 0; \
-	fi; \
-	tmp="$$(mktemp -d)"; \
-	go build -o "$$tmp/termx" ./cmd/termx; \
-	"$$tmp/termx" v3 tmux-smoke; \
-	rm -rf "$$tmp"
-
-test-cli-v3-tmux-terminal-smoke:
-	set -e; \
-	if ! command -v tmux >/dev/null 2>&1; then \
-		echo "tmux not installed; skipping tmux terminal smoke"; \
-		exit 0; \
-	fi; \
-	tmp="$$(mktemp -d)"; \
-	go build -o "$$tmp/termx" ./cmd/termx; \
-	"$$tmp/termx" v3 tmux-terminal-smoke --termx-bin "$$tmp/termx"; \
-	rm -rf "$$tmp"
-
-test-cli-v3-tmux-resize-smoke:
-	set -e; \
-	if ! command -v tmux >/dev/null 2>&1; then \
-		echo "tmux not installed; skipping tmux resize smoke"; \
-		exit 0; \
-	fi; \
-	tmp="$$(mktemp -d)"; \
-	go build -o "$$tmp/termx" ./cmd/termx; \
-	"$$tmp/termx" v3 tmux-resize-smoke --termx-bin "$$tmp/termx"; \
-	rm -rf "$$tmp"
-
-test-cli-v3-tmux-ansi-smoke:
-	set -e; \
-	if ! command -v tmux >/dev/null 2>&1; then \
-		echo "tmux not installed; skipping tmux ansi smoke"; \
-		exit 0; \
-	fi; \
-	tmp="$$(mktemp -d)"; \
-	go build -o "$$tmp/termx" ./cmd/termx; \
-	"$$tmp/termx" v3 tmux-ansi-smoke --termx-bin "$$tmp/termx"; \
-	rm -rf "$$tmp"
-
-test-cli-v3-tmux-visual-compare:
-	set -e; \
-	if ! command -v tmux >/dev/null 2>&1; then \
-		echo "tmux not installed; skipping tmux visual compare"; \
-		exit 0; \
-	fi; \
-	tmp="$$(mktemp -d)"; \
-	go build -o "$$tmp/termx" ./cmd/termx; \
-	"$$tmp/termx" v3 tmux-visual-compare --termx-bin "$$tmp/termx"; \
-	rm -rf "$$tmp"
-
-test-cli-v3-tmux-stability-smoke:
-	set -e; \
-	if ! command -v tmux >/dev/null 2>&1; then \
-		echo "tmux not installed; skipping tmux stability smoke"; \
-		exit 0; \
-	fi; \
-	tmp="$$(mktemp -d)"; \
-	go build -o "$$tmp/termx" ./cmd/termx; \
-	"$$tmp/termx" v3 tmux-stability-smoke --termx-bin "$$tmp/termx" --rounds 2; \
-	rm -rf "$$tmp"
-
-test-cli-default-smoke:
-	set -e; \
-	tmp="$$(mktemp -d)"; \
-	daemon_pid=""; \
-	cleanup() { \
-		if [ -n "$$daemon_pid" ]; then \
-			kill "$$daemon_pid" 2>/dev/null || true; \
-			wait "$$daemon_pid" 2>/dev/null || true; \
-		fi; \
-		rm -rf "$$tmp"; \
-	}; \
-	trap cleanup EXIT; \
-	go build -o "$$tmp/termx" ./cmd/termx; \
-	"$$tmp/termx" --help >/dev/null; \
-	socket="$$tmp/termx-default.sock"; \
-	log="$$tmp/termx-default.log"; \
-	"$$tmp/termx" --socket "$$socket" --log-file "$$log" daemon >/dev/null 2>&1 & \
-	daemon_pid="$$!"; \
-	for _ in $$(seq 1 50); do \
-		[ -S "$$socket" ] && break; \
-		sleep 0.1; \
-	done; \
-	if [ ! -S "$$socket" ]; then \
-		echo "default core-v2 daemon did not create socket" >&2; \
-		exit 1; \
-	fi; \
-	id="$$("$$tmp/termx" --socket "$$socket" --log-file "$$log" new --name default-smoke -- sleep 30)"; \
-	test -n "$$id"; \
-	"$$tmp/termx" --socket "$$socket" --log-file "$$log" ls | grep "$$id" >/dev/null; \
-	"$$tmp/termx" --socket "$$socket" --log-file "$$log" kill "$$id"; \
-	"$$tmp/termx" --socket "$$socket" --log-file "$$log" rm "$$id"; \
-	if "$$tmp/termx" --socket "$$socket" --log-file "$$log" ls | grep "$$id" >/dev/null; then \
-		echo "removed default smoke terminal is still listed" >&2; \
-		exit 1; \
+test-private:
+	@if [[ ! -d "$(CURDIR)/private/cloud" ]]; then \
+		printf '%s\n' 'private cloud modules are absent; skipping private tests'; \
+	else \
+		set -e; \
+		for module in $(PRIVATE_MODULES); do \
+			printf '%s\n' "==> $$module"; \
+			(cd "$$module" && "$(CURDIR)/scripts/with-clean-termx-env.sh" env GOWORK=off go test ./... -count=1); \
+		done; \
 	fi
 
-test-cli-default-deps:
-	go test ./cmd/termx -count=1 -run TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI
+test-clients:
+	node scripts/client-workspace-guard.mjs
+	npm run proto
+	npm test
+	npm run typecheck
+	npm run build
 
-test-repository: test-core test-tui test-cli-v3-smoke test-cli-default-smoke test-cli-default-deps
+test-android:
+	npm run cap:build
+	mkdir -p "$(ANDROID_ARTIFACT_DIR)"
+	cd "$(ANDROID_DIR)" && ./gradlew clean testDebugUnitTest assembleDebug
+	cp "$(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk" "$(ANDROID_ARTIFACT_DIR)/community-debug.apk"
+	@if [[ -d "$(CURDIR)/private/cloud/mobile/android" ]]; then \
+		cd "$(ANDROID_DIR)"; \
+		./gradlew -I ../../../private/cloud/mobile/android/official-cloud.init.gradle clean testDebugUnitTest assembleDebug; \
+		cp app/build/outputs/apk/debug/app-debug.apk "$(ANDROID_ARTIFACT_DIR)/official-debug.apk"; \
+		scripts="$(CURDIR)/scripts/verify-android-apk-boundary.sh"; \
+		"$$scripts" "$(ANDROID_ARTIFACT_DIR)/community-debug.apk" "$(ANDROID_ARTIFACT_DIR)/official-debug.apk"; \
+	else \
+		"$(CURDIR)/scripts/verify-android-apk-boundary.sh" "$(ANDROID_ARTIFACT_DIR)/community-debug.apk"; \
+	fi
+
+test-all:
+	$(MAKE) test
+	$(MAKE) test-private
+	$(MAKE) test-clients
+	$(MAKE) test-android
+
+doctor:
+	scripts/doctor.sh
+
+clean:
+	rm -rf "$(ARTIFACT_DIR)" "$(CURDIR)/bin" "$(CURDIR)/.build"
+	rm -rf "$(CURDIR)/clients/ui/dist" "$(CURDIR)/clients/mobile/dist"
+	find "$(CURDIR)" -maxdepth 1 -type f \( -name '*.test' -o -name '*.cover' -o -name 'cover.out' \) -delete
+	find "$(CURDIR)/core" "$(CURDIR)/tui" -type f -name '*.test' -delete
+	find "$(ANDROID_DIR)" -type d \( -name build -o -name .gradle \) -prune -exec rm -rf {} +

@@ -14,6 +14,8 @@ import (
 	"github.com/lozzow/termx/tui/render"
 )
 
+const v3TmuxDaemonReadyTimeout = 10 * time.Second
+
 type v3TmuxSmokeResult struct {
 	Session     string
 	ArtifactDir string
@@ -224,14 +226,14 @@ func runV3TmuxTerminalSmoke(ctx context.Context, termxBin string) (v3TmuxTermina
 		_ = daemonCmd.Wait()
 	}()
 	appendTimeline("daemon start socket=%s log=%s", socketPath, daemonLog)
-	if err := waitForSocket(socketPath, 5*time.Second, func() error {
+	if err := waitForSocket(socketPath, v3TmuxDaemonReadyTimeout, func() error {
 		client, dialErr := dialV3Client(socketPath)
 		if dialErr != nil {
 			return dialErr
 		}
 		return client.Close()
 	}); err != nil {
-		return v3TmuxTerminalSmokeResult{}, err
+		return v3TmuxTerminalSmokeResult{}, tmuxDaemonReadyError(err, daemonStdout, daemonStderr)
 	}
 	appendTimeline("daemon ready")
 
@@ -370,7 +372,7 @@ func runV3TmuxResizeSmoke(ctx context.Context, termxBin string) (v3TmuxResizeSmo
 		_ = daemonCmd.Wait()
 	}()
 	appendTimeline("daemon start socket=%s log=%s", socketPath, daemonLog)
-	if err := waitForSocket(socketPath, 5*time.Second, func() error {
+	if err := waitForSocket(socketPath, v3TmuxDaemonReadyTimeout, func() error {
 		client, dialErr := dialV3Client(socketPath)
 		if dialErr != nil {
 			return dialErr
@@ -539,7 +541,7 @@ func runV3TmuxANSISmoke(ctx context.Context, termxBin string) (v3TmuxANSISmokeRe
 		_ = daemonCmd.Wait()
 	}()
 	appendTimeline("daemon start socket=%s log=%s", socketPath, daemonLog)
-	if err := waitForSocket(socketPath, 5*time.Second, func() error {
+	if err := waitForSocket(socketPath, v3TmuxDaemonReadyTimeout, func() error {
 		client, dialErr := dialV3Client(socketPath)
 		if dialErr != nil {
 			return dialErr
@@ -681,7 +683,7 @@ func runV3TmuxEmojiDotsSmoke(ctx context.Context, termxBin string) (v3TmuxEmojiD
 		_ = daemonCmd.Wait()
 	}()
 	appendTimeline("daemon start socket=%s log=%s", socketPath, daemonLog)
-	if err := waitForSocket(socketPath, 5*time.Second, func() error {
+	if err := waitForSocket(socketPath, v3TmuxDaemonReadyTimeout, func() error {
 		client, dialErr := dialV3Client(socketPath)
 		if dialErr != nil {
 			return dialErr
@@ -1029,9 +1031,9 @@ func v3VisualTargetPlain() string {
 	lines := []string{
 		"  main ▎ 1 main    2 logs   󰐕",
 		"┌─[󰍀] shell ──────────────────────────────────────────────────────────   x1 ◆ owner ─[󰁌]─[]─[]─[]──┐─[󰍀] logs ─────   x1 ◇ follow─[]─┐",
-		"│termx git:core-tui-v3-migration  go v1.26.0                              ····················│ visual review baseline       ·····│",
+		"│termx git:core-tui-v3-migration  go v1.26.0                                       ····················│ visual review baseline       ·····│",
 		"│> make test                                                                       ····················│ target visual mismatch       ·····│",
-		"│ok   tui/render                                                          ····················│ emoji 🚀 and 中文            ·····│",
+		"│ok   tui/render                                                                   ····················│ emoji 🚀 and 中文            ·····│",
 		"│>                                                                                 ····················│                              ·····│",
 		"│                                                                                  ····················│                              ·····│",
 		"│                                                                                  ····················│ ┌───────────[]─[]─[󰁌]─[]─┐·····│",
@@ -1066,7 +1068,7 @@ func v3VisualTargetPlain() string {
 		"│······································································································│···································│",
 		"│······································································································│···································│",
 		"└──────────────────────────────────────────────────────────────────────────────────────────────────────┘───────────────────────────────────┘",
-		"[Ctrl] • [P] PANE • [R] RESIZE • [T] TAB • [W] WORKSPACE • [O] FLOAT • [V] COPY • [F] PICKER • [G] GLOBAL       ws:main float:1 terminals:1",
+		"[Ctrl] • [P] PANE • [R] RESIZE • [G] GLOBAL • [O] FLOAT • [T] TAB • [W] WORKSPACE • [F] PICKER • [V] COPY • [PgUp] COPY      ws:main float:1",
 	}
 	return normalizeVisualText(strings.Join(lines, "\n"), 140, 40)
 }
@@ -1494,7 +1496,7 @@ func visualStyleExpectations() []visualStyleExpectation {
 		{Name: "floating-inner-accent", Row: 10, Col: 106, Glyph: "│", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "right-pane-border-muted", Row: 10, Col: 140, Glyph: "│", MustHave: []string{"2", "38;2;184;177;196"}, MustAvoid: []string{"38;2;169;112;255"}},
 		{Name: "footer-no-bg", Row: 40, Col: 1, Glyph: "[", MustHave: []string{"38;2;169;112;255"}, MustAvoid: []string{"48;2;8;8;13"}},
-		{Name: "footer-float-accent", Row: 40, Col: 121, Glyph: "f", MustHave: []string{"1", "38;2;169;112;255"}, MustAvoid: []string{"48;2;8;8;13"}},
+		{Name: "footer-float-accent", Row: 40, Col: 134, Glyph: "f", MustHave: []string{"1", "38;2;169;112;255"}, MustAvoid: []string{"48;2;8;8;13"}},
 	}
 }
 
@@ -1773,6 +1775,27 @@ func waitForFileContent(ctx context.Context, path string, timeout time.Duration)
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func tmuxDaemonReadyError(startupErr error, stdoutFile *os.File, stderrFile *os.File) error {
+	readOutput := func(file *os.File) string {
+		if file == nil {
+			return ""
+		}
+		_ = file.Sync()
+		data, err := os.ReadFile(file.Name())
+		if err != nil {
+			return "<read failed: " + err.Error() + ">"
+		}
+		return strings.TrimSpace(string(data))
+	}
+	// 冷启动超时必须保留子进程证据，不得把 daemon 退出伪装成单纯 socket 超时。
+	return fmt.Errorf(
+		"%w; daemon stdout=%q stderr=%q",
+		startupErr,
+		readOutput(stdoutFile),
+		readOutput(stderrFile),
+	)
 }
 
 func appendFile(path string, text string) error {

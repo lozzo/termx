@@ -181,7 +181,7 @@ RP004 固定 Hub admission 与 Relay lease 的签名算法和 canonical encoding
 - `key_id` 选择离线验签公钥；Control Plane 同时发布新旧公钥形成重叠验证窗口，紧急撤销会立即拒绝该 key 签发且尚未过期的凭据。
 - `TXHA1`、`TXRL1` 与 usage 的 `TXUE1` domain separator 不可互换，因此 Hub ticket、Relay lease 和 usage event 不能跨用途验签。
 
-固定测试向量由 `private/termx-cloud/control-plane/servicecredential/credential_test.go` 维护；向量使用公开测试 seed 和虚构身份，不包含生产密钥或真实账号数据。
+固定测试向量由 `private/cloud/control-plane/servicecredential/credential_test.go` 维护；向量使用公开测试 seed 和虚构身份，不包含生产密钥或真实账号数据。
 - Client 与 daemon 只获得各自 Edge Relay credential；Relay 间 tunnel 使用独立服务身份，不能把 endpoint credential 复用为内部节点身份。
 - lease entitlement 不表达 terminal scope。
 - refresh 必须重新经过 entitlement/quota 判断，不能无限续用旧 lease。

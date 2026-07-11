@@ -91,14 +91,14 @@ scripts/                    allowlisted build/license/snapshot guards only
 目标私有内容：
 
 ```text
-private/termx-cloud/control-plane/      account/device/entitlement/admission/lease
-private/termx-cloud/companion/          desktop/headless official cloud sidecar
-private/termx-cloud/web-controller/     private admin and customer control UI/API
-private/termx-cloud/hub/                regional presence and signaling runtime
-private/termx-cloud/relay/              TURN/relay enforcement and usage meter
-private/termx-cloud/route-planner/      quality graph, SmartRoute and Relay Mesh
-private/termx-cloud/contracts-adapter/  implementation of public client contracts
-private/termx-cloud/infra/              deployment, secrets, observability, runbooks
+private/cloud/control-plane/      account/device/entitlement/admission/lease
+private/cloud/companion/          desktop/headless official cloud sidecar
+private/cloud/web-controller/     private admin and customer control UI/API
+private/cloud/hub/                regional presence and signaling runtime
+private/cloud/relay/              TURN/relay enforcement and usage meter
+private/cloud/route-planner/      quality graph, SmartRoute and Relay Mesh
+private/cloud/contracts-adapter/  implementation of public client contracts
+private/cloud/infra/              deployment, secrets, observability, runbooks
 ```
 
 Control Plane、Hub 和 Relay 即使同仓库也保持独立 package/module 和部署单元。Hub 不允许直接 import billing database model；它只消费签名 admission 或明确的私有 service interface。
@@ -127,8 +127,8 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 | `shared/transport/datachannel/` | primitive 基本可用 | reliable ordered packet transport | public namespace 保留 |
 | `remote/` | 已完成公开 WebRTC/E2E runtime 收口 | Pion adapter、dial/answer harness、core scoped session 接线 | public namespace 保留；不得承载服务端业务 |
 | `private/archive/termx-platform-legacy/termx-hub/client/` | client 与 server module/内部 wire 耦合 | stream/signaling API 经验 | contract 已抽到 public namespace；旧 client 只留 archive |
-| `private/archive/termx-platform-legacy/termx-hub/internal/hub/` | 非空 Bearer 即通过、长期 agent token、terminal inventory | TTL presence、offer/answer correlation、ICE/traffic 思路 | `private/termx-cloud/hub/` 与 `relay/` 已按新模型重建；旧代码只留 archive |
-| `private/archive/termx-platform-legacy/web-control/` | agent/server 限额、heartbeat kick、订阅直接控制在线状态 | 用户、订单、支付、管理 UI 和运维经验 | 只留 archive；活动服务已在 `private/termx-cloud/` 重建 |
+| `private/archive/termx-platform-legacy/termx-hub/internal/hub/` | 非空 Bearer 即通过、长期 agent token、terminal inventory | TTL presence、offer/answer correlation、ICE/traffic 思路 | `private/cloud/hub/` 与 `relay/` 已按新模型重建；旧代码只留 archive |
+| `private/archive/termx-platform-legacy/web-control/` | agent/server 限额、heartbeat kick、订阅直接控制在线状态 | 用户、订单、支付、管理 UI 和运维经验 | 只留 archive；活动服务已在 `private/cloud/` 重建 |
 | `clients/mobile/` | 旧独立 session-token/WebRTC 流程已删除 | 原生 WebRTC、Keystore、前后台生命周期 | public App 保留并消费共同 contract |
 | `clients/ui/` | 旧 machine/session-token/localweb 入口已归档 | 当前共享 UI、平台中立 runtime interface、产品交互 | public namespace 保留；历史 docs/localweb 只留 archive |
 | `private/archive/termx-platform-legacy/termx-remote/` | 旧 remote/localweb 模型 | 历史行为和 UI 参考 | 只留 archive，不恢复依赖 |
@@ -192,7 +192,7 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 
 ### RP004：私有 Control Plane 领域重建
 
-范围：`private/termx-cloud/control-plane` 与 `private/termx-cloud/web-controller`。
+范围：`private/cloud/control-plane` 与 `private/cloud/web-controller`。
 
 按以下 aggregate 建模：
 
@@ -208,7 +208,7 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 
 ### RP004A：私有 Cloud Companion
 
-范围：`private/termx-cloud/companion`。
+范围：`private/cloud/companion`。
 
 - 实现 account/device cloud session、Control Plane/Hub adapter、presence/signaling、RelayLease、quality summary 和 route plan。
 - 使用 OS credential store 和 public companion contract fixtures。
@@ -218,7 +218,7 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 
 ### RP005：私有 Hub/Relay 重建
 
-范围：`private/termx-cloud/hub` 与 `private/termx-cloud/relay`。
+范围：`private/cloud/hub` 与 `private/cloud/relay`。
 
 先建立：
 

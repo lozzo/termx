@@ -165,9 +165,9 @@ generate_artifact \
 if [[ "$public_only" == false ]]; then
   generate_artifact \
     "Cloud Companion" \
-    "$repo_root/private/termx-cloud/companion" \
+    "$repo_root/private/cloud/companion" \
     "./cmd/termx-cloud" \
-    "private/termx-cloud/companion/cmd/termx-cloud/THIRD_PARTY_NOTICES.txt"
+    "private/cloud/companion/cmd/termx-cloud/THIRD_PARTY_NOTICES.txt"
 fi
 
 echo "Go notices are $mode"

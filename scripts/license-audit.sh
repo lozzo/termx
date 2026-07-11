@@ -68,6 +68,7 @@ if [[ "$audit_scope" == "public-snapshot" ]]; then
 fi
 
 scripts/fetch-pinned-third-party-notices.sh --check
+scripts/repository-layout-guard.sh
 scripts/client-workspace-guard.mjs
 go_notice_args=(--check)
 if [[ "$audit_scope" == "public-snapshot" ]]; then

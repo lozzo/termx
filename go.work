@@ -2,10 +2,10 @@ go 1.26.0
 
 use (
 	.
-	./private/termx-cloud/companion
-	./private/termx-cloud/control-plane
-	./private/termx-cloud/hub
-	./private/termx-cloud/relay
-	./private/termx-cloud/route-planner
-	./private/termx-cloud/web-controller
+	./private/cloud/companion
+	./private/cloud/control-plane
+	./private/cloud/hub
+	./private/cloud/relay
+	./private/cloud/route-planner
+	./private/cloud/web-controller
 )

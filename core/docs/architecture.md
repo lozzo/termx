@@ -15,7 +15,7 @@ PTY bytes / resize
 
 logical line 重新成为当前生产存储单位：冷段是宽度无关 file-backed logical lines，热段由 vterm 当前屏按 wrapped flags 拼装并按查询 cols 投影。本文后续 `LogicalLineStore`、`CommittedHistoryIndex`、`MutableFrontier`、`StorageBackend`、screen-backed physical row 等旧章节若描述为当前 truth，均按 R318-R430 迁移背景理解，不得用于恢复旧默认路径。
 
-R318 说明：本文早于 `core/docs/history-logical-renderer-design.md`。
+R318 说明：本文早于 `docs/history/core/history-logical-renderer-design.md`。
 历史语义、对象命名和接口边界以 R318 新文档为准；本文中 `commit/committed`、
 `CommittedHistoryIndex`、`MutableFrontier` 等旧词只作为历史背景或待迁移类型名，
 不得继续解释为新的领域概念。

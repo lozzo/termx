@@ -4,7 +4,7 @@
 
 本文档是切片 79 的视觉基线文档，用来纠正一个关键判断：当前 `tui` 已经具备 styled chrome renderer 和第一版可操作产品壳，但还没有达到用户要求的 `tuiv2` 截图级界面效果。
 
-切片 83 已完成真实默认 TUI 复核，结论仍是未通过。切片 84-86 已完成对应返工，但切片 87 根据用户真实反馈再次确认当前 TUI 仍与目标截图不一致。切片 88 已完成 shell/pane 二轮视觉重绘，切片 89 已完成默认入口真实 PTY 证据归档；切片 90 根据用户反馈确认视觉仍不通过。切片 91 已完成整体 UI 构图三轮重绘；切片 92-96 已继续按用户最新反馈收敛按钮可见性、toast 样式/生命周期、pane 鼠标拖动 resize、横纵分屏入口和 floating 鼠标连续拖动；切片 98-100 已继续处理 toast 去重/拖动反馈降噪、分屏图标命中优先级和中文输入法 host cursor anchor。复核记录见 `tui/docs/default-tui-visual-review.md`。
+切片 83 已完成真实默认 TUI 复核，结论仍是未通过。切片 84-86 已完成对应返工，但切片 87 根据用户真实反馈再次确认当前 TUI 仍与目标截图不一致。切片 88 已完成 shell/pane 二轮视觉重绘，切片 89 已完成默认入口真实 PTY 证据归档；切片 90 根据用户反馈确认视觉仍不通过。切片 91 已完成整体 UI 构图三轮重绘；切片 92-96 已继续按用户最新反馈收敛按钮可见性、toast 样式/生命周期、pane 鼠标拖动 resize、横纵分屏入口和 floating 鼠标连续拖动；切片 98-100 已继续处理 toast 去重/拖动反馈降噪、分屏图标命中优先级和中文输入法 host cursor anchor。复核记录见 `docs/history/tui/default-tui-visual-review.md`。
 
 视觉返工必须以本文档作为验收入口。实现仍必须遵守 `tui/docs/architecture.md` 与 `tui/docs/render-architecture.md`，不得因为追求视觉相似而复制旧 `tuiv2` runtime/model、Bubble Tea contract、snapshot/grid history fallback 或旧 renderer 大状态结构。
 
@@ -213,7 +213,7 @@
 
 - 已完成真实默认入口视觉复核。
 - 复核结论是未通过，不能标记为截图级视觉完成。
-- 已把失败原因、手工复核入口和后续切片写入 `tui/docs/default-tui-visual-review.md`。
+- 已把失败原因、手工复核入口和后续切片写入 `docs/history/tui/default-tui-visual-review.md`。
 - 后续继续通过切片 84-91 处理 shell bar、pane chrome、overlay/page/copy polish、二轮重绘、真实 PTY 证据、用户不通过归档和整体 UI 构图三轮重绘。
 
 切片 84 负责：

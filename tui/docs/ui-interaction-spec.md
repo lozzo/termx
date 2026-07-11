@@ -1812,7 +1812,7 @@ render 兼容投影清理与性能基线已经完成：旧 `RenderVM{Lines, Stat
 
 当前默认 TUI 已经可以通过上述交互入口完成基本操作。切片 83 和切片 87 的真实视觉复核结论均是未通过：界面仍不像用户给出的 `tuiv2` 目标截图。切片 88 已完成二轮视觉重绘，但不是最终截图级验收。
 
-复核记录见 `tui/docs/default-tui-visual-review.md`。后续产品验收必须区分两个层级：
+复核记录见 `docs/history/tui/default-tui-visual-review.md`。后续产品验收必须区分两个层级：
 
 - 工程可运行：header/footer、pane、overlay、toast、floating、copy mode 和鼠标/键盘入口可操作。
 - 截图级视觉完成：shell bar、pane chrome、active/inactive、toast、overlay、floating 和内容页视觉密度接近目标截图。

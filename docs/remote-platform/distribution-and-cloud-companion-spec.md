@@ -364,7 +364,7 @@ CloudCompanionRelease {
 ```bash
 cd clients/mobile/android
 ./gradlew testDebugUnitTest assembleDebug
-./gradlew -I ../../../private/termx-cloud/mobile/android/official-cloud.init.gradle testDebugUnitTest assembleDebug
+./gradlew -I ../../../private/cloud/mobile/android/official-cloud.init.gradle testDebugUnitTest assembleDebug
 ```
 
 Official init script 只把固定 `com.termx.cloud.OfficialManagedCloudFactory` 私有 source set 装入官方 APK；Community classpath 不引用 `private/`。未来建立 iOS target 时必须先补同一 contract 的 Swift vector 和私有装配，不把 Android 完成状态外推为 iOS 已实现。

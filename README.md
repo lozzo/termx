@@ -182,8 +182,11 @@ tui / clients/mobile / other public clients
 - `remote/`：公开 WebRTC client/daemon orchestration、DataChannel 授权与 fake harness。
 - `clients/ui/`：App 与浏览器客户端共享的公开 UI、状态编排和平台中立 runtime interface。
 - `clients/mobile/`：Android App 壳、native bridge 和 Community managed-cloud fail-closed 实现。
+- `private/cloud/`：闭源 Companion、Control Plane、Hub、Relay、Route Planner、Web Controller 与 Official App source set；保持独立部署 module。
+- `private/archive/`：只读历史资产，不进入 workspace、构建或 runtime fallback。
 - `testkit/`：测试辅助能力。
-- `fixtures/`、`scripts/`、`Makefile`、`go.work`：测试、发布审计和 workspace 支撑。
+- `fixtures/`、`scripts/`、`Makefile`、`go.work`：测试、生成、发布审计和 workspace 支撑。
+- `docs/development/`、`docs/history/`：当前维护入口与已完成计划/审计记录。
 
 托管 Control Plane、Hub、Relay、计费和官方 Cloud Companion 是独立交付能力，不属于公开源码构建依赖。Community CLI、TUI、daemon、App 以及 local/SSH runtime 在没有这些服务时仍可独立构建和使用。
 
@@ -205,31 +208,26 @@ tui / clients/mobile / other public clients
 
 ## 构建与测试
 
-常用命令：
-
-```bash
-go test ./cmd/termx -count=1
-go build ./cmd/termx
-```
-
-按模块运行测试：
-
-```bash
-go test ./tui/... -count=1
-go test ./core/... -count=1
-go test ./shared/... -count=1
-go test ./internal/protocol/... -count=1
-```
-
-共享 UI 与 App：
+首次运行先安装根 npm workspace，并确保 Go、Node.js、Java 21、Android SDK、`protoc`、`protoc-gen-go` 和 `apkanalyzer` 可用：
 
 ```bash
 npm ci
-npm run proto && npm test && npm run typecheck && npm run build
-npm run cap:sync
-export ANDROID_HOME=/absolute/path/to/android-sdk
-cd clients/mobile/android && ./gradlew testDebugUnitTest assembleDebug
+make doctor
 ```
+
+日常维护只使用根 canonical 入口：
+
+```bash
+make build
+make test
+make test-private
+make test-clients
+make test-android
+make test-all
+make clean
+```
+
+仓库级产物写入 `.artifacts/`。命令语义、测试矩阵、生成代码和 Android 单一源码说明见 [`docs/development/README.md`](docs/development/README.md)。
 
 完整公开快照和许可证准入见 [`docs/remote-platform/public-snapshot-manifest.md`](docs/remote-platform/public-snapshot-manifest.md)。
 
