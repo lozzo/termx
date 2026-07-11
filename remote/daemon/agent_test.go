@@ -50,6 +50,41 @@ func TestAgentAnswersOfferWithoutPublishingTerminalInventory(t *testing.T) {
 	}
 }
 
+func TestAgentAcquiresDaemonCredentialForRelayOnlyOffer(t *testing.T) {
+	stream := cloudcompanion.NewFakePresenceStream(3)
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{PresenceSessionId: "presence-1"}}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
+		SignalingSessionId: "signal-relay", ManagedSessionId: "managed-relay", TargetDeviceId: "device-relay", Sdp: "offer-sdp",
+		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true,
+	}}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "done"}}})
+
+	identity := testAgentIdentity(t, "device-relay")
+	now := time.Date(2026, 7, 12, 1, 0, 0, 0, time.UTC)
+	companion := agentCompanion(t, identity, now, stream)
+	companion.AcquireRelayLeaseFunc = func(context.Context, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
+		return &cloudpb.RelayLease{
+			LeaseId: "lease-relay", SignedLease: []byte("signed-lease"), ExpiresAtUnix: uint64(now.Add(time.Minute).Unix()),
+			PathKind:   cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
+			IceServers: []*cloudpb.IceServer{{Urls: []string{"turn:127.0.0.1:3478?transport=udp"}, Username: "daemon-short", Credential: "daemon-secret"}},
+		}, nil
+	}
+	companion.CompleteSignalingOfferFunc = func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
+		return &cloudpb.CompleteSignalingOfferResponse{}, nil
+	}
+	answerer := &fakeOfferAnswerer{answer: &cloudpb.SignalingAnswer{Sdp: "answer-sdp"}}
+	if err := (Agent{Companion: companion, Identity: identity, Answerer: answerer, Now: func() time.Time { return now }}).Run(context.Background()); !errors.Is(err, ErrPresenceClosed) {
+		t.Fatalf("Run error = %v", err)
+	}
+	requests := companion.Requests().AcquireRelayLease
+	if len(requests) != 1 || requests[0].GetManagedSessionId() != "managed-relay" || requests[0].GetTargetDeviceId() != identity.DeviceID {
+		t.Fatalf("daemon Relay lease requests = %#v", requests)
+	}
+	if len(answerer.iceServers) != 1 || answerer.iceServers[0].GetUsername() != "daemon-short" {
+		t.Fatalf("daemon answer ICE = %#v", answerer.iceServers)
+	}
+}
+
 func TestAgentSignsFreshPresenceChallengeInsideDaemon(t *testing.T) {
 	stream := cloudcompanion.NewFakePresenceStream(1)
 	if err := stream.Fail(io.EOF); err != nil {

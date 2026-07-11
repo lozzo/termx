@@ -43,14 +43,15 @@ func TestHubRoutesOfferCandidateAndAsyncAnswerWithSeparateAdmissions(t *testing.
 	client, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{
 		Admission: clientTicket, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1",
 		ManagedSessionID: "managed-1", SignalingSessionID: "signal-1", SDP: "offer-sdp",
-		Candidates: []hub.Candidate{{Candidate: "candidate:offer"}},
+		Candidates: []hub.Candidate{{Candidate: "candidate:offer"}}, RoutePreference: hub.RoutePreferenceStandardRelay, RelayOnly: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()
 	offerEvent, err := presence.Receive(context.Background())
-	if err != nil || offerEvent.Offer == nil || offerEvent.Offer.SignalingSessionID != "signal-1" || offerEvent.Offer.TargetDeviceID != "daemon-1" {
+	if err != nil || offerEvent.Offer == nil || offerEvent.Offer.SignalingSessionID != "signal-1" || offerEvent.Offer.TargetDeviceID != "daemon-1" ||
+		offerEvent.Offer.RoutePreference != hub.RoutePreferenceStandardRelay || !offerEvent.Offer.RelayOnly {
 		t.Fatalf("presence offer = (%#v, %v)", offerEvent, err)
 	}
 	if err := client.SendCandidate(hub.Candidate{Candidate: "candidate:client-trickle"}); err != nil {
@@ -100,16 +101,16 @@ func TestHubRejectsTicketReplayWrongTargetAndBackpressure(t *testing.T) {
 	}
 
 	wrongTarget := fixture.issue(t, "wrong-target", servicecredential.PrincipalClient, "client-1", "managed-wrong", "daemon-2", []servicecredential.HubOperation{servicecredential.HubOperationOffer}, time.Minute)
-	if _, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{Admission: wrongTarget, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1", ManagedSessionID: "managed-wrong", SignalingSessionID: "wrong", SDP: "offer"}); !errors.Is(err, hub.ErrAdmission) {
+	if _, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{Admission: wrongTarget, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1", ManagedSessionID: "managed-wrong", SignalingSessionID: "wrong", SDP: "offer", RoutePreference: hub.RoutePreferenceDirectOnly}); !errors.Is(err, hub.ErrAdmission) {
 		t.Fatalf("wrong target error = %v", err)
 	}
 
 	first := fixture.issue(t, "client-1", servicecredential.PrincipalClient, "client-1", "managed-1", "daemon-1", []servicecredential.HubOperation{servicecredential.HubOperationOffer}, time.Minute)
-	if _, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{Admission: first, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1", ManagedSessionID: "managed-1", SignalingSessionID: "signal-1", SDP: "offer"}); err != nil {
+	if _, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{Admission: first, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1", ManagedSessionID: "managed-1", SignalingSessionID: "signal-1", SDP: "offer", RoutePreference: hub.RoutePreferenceDirectOnly}); err != nil {
 		t.Fatal(err)
 	}
 	second := fixture.issue(t, "client-2", servicecredential.PrincipalClient, "client-2", "managed-2", "daemon-1", []servicecredential.HubOperation{servicecredential.HubOperationOffer}, time.Minute)
-	if _, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{Admission: second, AccountID: "account-1", ClientDeviceID: "client-2", TargetDeviceID: "daemon-1", ManagedSessionID: "managed-2", SignalingSessionID: "signal-2", SDP: "offer"}); !errors.Is(err, hub.ErrBackpressure) {
+	if _, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{Admission: second, AccountID: "account-1", ClientDeviceID: "client-2", TargetDeviceID: "daemon-1", ManagedSessionID: "managed-2", SignalingSessionID: "signal-2", SDP: "offer", RoutePreference: hub.RoutePreferenceDirectOnly}); !errors.Is(err, hub.ErrBackpressure) {
 		t.Fatalf("presence backpressure error = %v", err)
 	}
 }
@@ -125,7 +126,7 @@ func TestHubRoutesStableFailureWithoutRawMessage(t *testing.T) {
 	clientTicket := fixture.issue(t, "client-failure", servicecredential.PrincipalClient, "client-1", "managed-failure", "daemon-1", []servicecredential.HubOperation{servicecredential.HubOperationOffer}, time.Minute)
 	client, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{
 		Admission: clientTicket, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1",
-		ManagedSessionID: "managed-failure", SignalingSessionID: "signal-failure", SDP: "offer",
+		ManagedSessionID: "managed-failure", SignalingSessionID: "signal-failure", SDP: "offer", RoutePreference: hub.RoutePreferenceDirectOnly,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +159,7 @@ func TestHubCleanupExpiresPresenceAndAssociatedSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	clientTicket := fixture.issue(t, "client", servicecredential.PrincipalClient, "client-1", "managed-1", "daemon-1", []servicecredential.HubOperation{servicecredential.HubOperationOffer}, 30*time.Second)
-	client, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{Admission: clientTicket, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1", ManagedSessionID: "managed-1", SignalingSessionID: "signal", SDP: "offer"})
+	client, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{Admission: clientTicket, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1", ManagedSessionID: "managed-1", SignalingSessionID: "signal", SDP: "offer", RoutePreference: hub.RoutePreferenceDirectOnly})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -147,7 +147,11 @@ func (agent Agent) createPresenceRequest(ctx context.Context) (*cloudpb.OpenPres
 }
 
 func (agent Agent) completeOffer(ctx context.Context, offer *cloudpb.SignalingOffer, iceServers []*cloudpb.IceServer) error {
-	answer, answerErr := agent.Answerer.Answer(ctx, offer, iceServers)
+	offerIceServers, answerErr := agent.iceServersForOffer(ctx, offer, iceServers)
+	var answer *cloudpb.SignalingAnswer
+	if answerErr == nil {
+		answer, answerErr = agent.Answerer.Answer(ctx, offer, offerIceServers)
+	}
 	request := &cloudpb.CompleteSignalingOfferRequest{SignalingSessionId: offer.GetSignalingSessionId()}
 	if answerErr != nil {
 		request.Result = &cloudpb.CompleteSignalingOfferRequest_Error{Error: cloudcompanion.ErrorToWire(answerErr)}
@@ -161,6 +165,33 @@ func (agent Agent) completeOffer(ctx context.Context, offer *cloudpb.SignalingOf
 	}
 	_, err := agent.Companion.CompleteSignalingOffer(ctx, request)
 	return err
+}
+
+// iceServersForOffer 只为显式 relay-only offer 获取当前 daemon principal 的短期 TURN material。
+// 普通 direct/auto offer 继续使用 presence ICE；租约失败直接回传当前 signaling failure，不能改走 direct 或共享 credential。
+func (agent Agent) iceServersForOffer(ctx context.Context, offer *cloudpb.SignalingOffer, presenceServers []*cloudpb.IceServer) ([]*cloudpb.IceServer, error) {
+	if offer == nil || !offer.GetRelayOnly() {
+		return cloneIceServers(presenceServers), nil
+	}
+	if offer.GetRoutePreference() != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY || offer.GetManagedSessionId() == "" || offer.GetTargetDeviceId() != agent.Identity.DeviceID {
+		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "relay-only offer binding is invalid")
+	}
+	request := &cloudpb.AcquireRelayLeaseRequest{
+		ManagedSessionId: offer.GetManagedSessionId(), TargetDeviceId: agent.Identity.DeviceID,
+		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY,
+	}
+	lease, err := agent.Companion.AcquireRelayLease(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Time{}
+	if agent.Now != nil {
+		now = agent.Now().UTC()
+	}
+	if err := cloudcompanion.ValidateSingleRelayLease(request, lease, now); err != nil {
+		return nil, err
+	}
+	return cloneIceServers(lease.GetIceServers()), nil
 }
 
 func cloneIceServers(servers []*cloudpb.IceServer) []*cloudpb.IceServer {

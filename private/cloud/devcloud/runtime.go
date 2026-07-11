@@ -1,6 +1,6 @@
-// Package devcloud 装配显式 dev-local 单区域 Control Plane 与 Hub。
+// Package devcloud 装配显式 dev-local 单区域 Control Plane、Hub 与 Relay。
 //
-// 本包只服务开发纵向 harness：两个服务使用独立 loopback listener、HTTP 序列化与认证边界，
+// 本包只服务开发纵向 harness：控制服务使用独立 loopback listener，Relay 使用 lease-bound UDP TURN，
 // 但可以由同一 supervisor 进程托管。它不提供生产 OAuth、TLS、数据库或隐式 fallback。
 package devcloud
 
@@ -29,24 +29,31 @@ import (
 	"github.com/lozzow/termx/private/cloud/control-plane/presence"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
+	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
 	"github.com/lozzow/termx/proto/cloudpb"
 )
 
 const (
-	devAccountID       = "account-dev-local"
-	devAccountLabel    = "TermX Dev Account"
-	devUserID          = "user-dev-local"
-	devClientDeviceID  = "client-dev-local"
-	devHubID           = "hub-dev-local"
-	devRegion          = "local-1"
-	devAdmissionIssuer = "control-plane.dev-local"
-	devPublicHubURL    = "https://hub.dev.invalid"
+	devAccountID        = "account-dev-local"
+	devAccountLabel     = "TermX Dev Account"
+	devUserID           = "user-dev-local"
+	devClientDeviceID   = "client-dev-local"
+	devHubID            = "hub-dev-local"
+	devRegion           = "local-1"
+	devAdmissionIssuer  = "control-plane.dev-local"
+	devPublicHubURL     = "https://hub.dev.invalid"
+	devRelayID          = "relay-dev-local"
+	devRelayPool        = "relay-pool-dev-local"
+	devRelayRealm       = "termx-dev-relay"
+	devRelayBindingID   = "relay-binding-dev-local"
+	devRelayLeaseIssuer = "control-plane.dev-local.relay"
 
 	loginTTL        = 5 * time.Minute
 	enrollmentTTL   = 2 * time.Minute
 	cloudSessionTTL = 8 * time.Hour
 	managedTTL      = 5 * time.Minute
 	admissionTTL    = 2 * time.Minute
+	relayLeaseTTL   = 5 * time.Minute
 )
 
 // Config 控制 dev-local runtime 的 listener、时间、随机源和一次性 enrollment code。
@@ -54,12 +61,13 @@ const (
 type Config struct {
 	ControlPlaneListener net.Listener
 	HubListener          net.Listener
+	RelayListenAddr      string
 	Now                  func() time.Time
 	Random               io.Reader
 	EnrollmentCode       string
 }
 
-// Runtime 是一组已启动的 dev-local Control Plane/Hub listener。
+// Runtime 是一组已启动的 dev-local Control Plane/Hub listener 与单个 UDP TURN Relay。
 // Manifest 只公开连接 metadata；账号 token、admission signing key 和 DeviceIdentity 私钥不会导出。
 type Runtime struct {
 	manifest httpapi.Manifest
@@ -68,10 +76,13 @@ type Runtime struct {
 	hubListener     net.Listener
 	controlServer   *http.Server
 	hubServer       *http.Server
+	relayServer     *cloudrelay.Server
+	state           *serviceState
 
 	waitGroup sync.WaitGroup
 	errors    chan error
 	done      chan struct{}
+	usageStop chan struct{}
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -128,10 +139,11 @@ type serviceState struct {
 	enrollmentFlows   map[string]enrollmentFlow
 	sessions          map[[sha256.Size]byte]cloudSession
 
-	directory *directory.Store
-	presence  *presence.Service
-	admission *admission.Service
-	hub       *cloudhub.Service
+	directory    *directory.Store
+	presence     *presence.Service
+	admission    *admission.Service
+	hub          *cloudhub.Service
+	relayControl *relayControlState
 
 	presenceQueueSize int
 	clientQueueSize   int
@@ -185,22 +197,34 @@ func start(config Config, options runtimeOptions) (*Runtime, error) {
 	if err := state.initializeDomain(now); err != nil {
 		return nil, err
 	}
+	relayListenAddr, err := prepareRelayListenAddr(config.RelayListenAddr)
+	if err != nil {
+		return nil, err
+	}
+	relayServer, err := cloudrelay.NewServer(cloudrelay.ServerConfig{Authority: state.relayControl.authority, ListenAddr: relayListenAddr})
+	if err != nil {
+		return nil, err
+	}
+	state.relayControl.url = relayServer.URL()
 
 	startedAt := now.Truncate(time.Second)
 	runtime := &Runtime{
 		manifest: httpapi.Manifest{
 			Version: httpapi.ManifestVersion, Profile: httpapi.ProfileDevLocal,
-			ControlPlaneURL: listenerOrigin(controlListener), HubURL: listenerOrigin(hubListener),
+			ControlPlaneURL: listenerOrigin(controlListener), HubURL: listenerOrigin(hubListener), RelayURL: state.relayControl.url,
 			HubID: devHubID, Region: devRegion, AccountLabel: devAccountLabel,
 			EnrollmentCode: config.EnrollmentCode, StartedAtRFC3339: startedAt.Format(time.RFC3339),
 		},
 		controlListener: controlListener, hubListener: hubListener,
 		controlServer: &http.Server{Handler: state.controlHandler(), ReadHeaderTimeout: 5 * time.Second},
 		hubServer:     &http.Server{Handler: state.hubHandler(), ReadHeaderTimeout: 5 * time.Second},
-		errors:        make(chan error, 2), done: make(chan struct{}),
+		relayServer:   relayServer,
+		state:         state,
+		errors:        make(chan error, 2), done: make(chan struct{}), usageStop: make(chan struct{}),
 	}
 	runtime.serve("Control Plane", runtime.controlServer, controlListener)
 	runtime.serve("Hub", runtime.hubServer, hubListener)
+	runtime.reportRelayUsage()
 	if err := waitForHealth(runtime.manifest.ControlPlaneURL, runtime.manifest.HubURL); err != nil {
 		shutdownContext, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
@@ -271,7 +295,7 @@ func (state *serviceState) initializeDomain(now time.Time) error {
 	state.presence = presenceService
 	state.admission = admissionService
 	state.hub = hubService
-	return nil
+	return state.initializeRelay(now)
 }
 
 // Manifest 返回当前 runtime 的非秘密连接 metadata 副本。
@@ -339,22 +363,37 @@ func (runtime *Runtime) Wait() error {
 	}
 }
 
-// Close 幂等关闭 Control Plane 与 Hub，并等待两个 Serve goroutine 退出。
+// Close 幂等关闭 Relay、Control Plane 与 Hub，并等待两个 HTTP Serve goroutine 退出。
 // 关闭一个 dev runtime 不修改公开 daemon、terminal lifecycle 或本地/SSH endpoint。
 func (runtime *Runtime) Close(ctx context.Context) error {
 	if runtime == nil {
 		return nil
 	}
 	runtime.closeOnce.Do(func() {
+		close(runtime.usageStop)
+		relayErr := runtime.relayServer.Close()
+		usageErr := runtime.flushRelayUsage(ctx, "runtime_closed")
 		controlErr := runtime.controlServer.Shutdown(ctx)
 		hubErr := runtime.hubServer.Shutdown(ctx)
 		_ = runtime.controlListener.Close()
 		_ = runtime.hubListener.Close()
 		runtime.waitGroup.Wait()
-		runtime.closeErr = errors.Join(controlErr, hubErr)
+		runtime.closeErr = errors.Join(usageErr, relayErr, controlErr, hubErr)
 		close(runtime.done)
 	})
 	return runtime.closeErr
+}
+
+func prepareRelayListenAddr(address string) (string, error) {
+	if address == "" {
+		return "127.0.0.1:0", nil
+	}
+	host, _, err := net.SplitHostPort(address)
+	ip := net.ParseIP(host)
+	if err != nil || ip == nil || !ip.IsLoopback() {
+		return "", fmt.Errorf("Relay listen address must be loopback UDP")
+	}
+	return address, nil
 }
 
 func (runtime *Runtime) serve(name string, server *http.Server, listener net.Listener) {

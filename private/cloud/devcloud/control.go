@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,9 +14,13 @@ import (
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	"github.com/lozzow/termx/private/cloud/companion/session"
 	"github.com/lozzow/termx/private/cloud/control-plane/admission"
+	"github.com/lozzow/termx/private/cloud/control-plane/directory"
 	"github.com/lozzow/termx/private/cloud/control-plane/domain"
+	"github.com/lozzow/termx/private/cloud/control-plane/entitlement"
 	"github.com/lozzow/termx/private/cloud/control-plane/presence"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
+	"github.com/lozzow/termx/private/cloud/control-plane/usage"
+	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
 	"google.golang.org/protobuf/proto"
@@ -33,6 +38,8 @@ func (state *serviceState) controlHandler() http.Handler {
 	mux.HandleFunc(httpapi.ControlPresenceAdmissionPath, state.handlePresenceAdmission)
 	mux.HandleFunc(httpapi.ControlClientAdmissionPath, state.handleClientAdmission)
 	mux.HandleFunc(httpapi.ControlAnswerAdmissionPath, state.handleAnswerAdmission)
+	mux.HandleFunc(httpapi.ControlAcquireRelayLeasePath, state.handleAcquireRelayLease)
+	mux.HandleFunc(controlRelayUsagePath, state.handleRelayUsage)
 	return mux
 }
 
@@ -292,6 +299,89 @@ func (state *serviceState) handleResolveEndpoint(writer http.ResponseWriter, req
 		EndpointId: payload.GetEndpointId(), TargetDeviceId: target.ID, Presence: presenceState,
 		HubId: devHubID, HubUrl: devPublicHubURL, ManagedSessionId: managedSessionID,
 	})
+}
+
+func (state *serviceState) handleAcquireRelayLease(writer http.ResponseWriter, request *http.Request) {
+	if !requireMethod(writer, request, http.MethodPost) {
+		return
+	}
+	cloudSession, ok := state.authenticateKinds(writer, request, session.KindAccount, session.KindDevice)
+	if !ok {
+		return
+	}
+	payload := &cloudpb.AcquireRelayLeaseRequest{}
+	if !readProto(writer, request, payload) {
+		return
+	}
+	if payload.GetManagedSessionId() == "" || payload.GetTargetDeviceId() == "" ||
+		payload.GetRoutePreference() != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY ||
+		payload.GetPreferredRegion() != "" && payload.GetPreferredRegion() != devRegion {
+		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "single Relay request is invalid", false)
+		return
+	}
+	now := state.now().UTC()
+	managedSession, err := state.directory.ManagedSession(cloudSession.accountID, payload.GetManagedSessionId(), now)
+	if err != nil || managedSession.TargetDeviceID != payload.GetTargetDeviceId() ||
+		cloudSession.kind == session.KindAccount && cloudSession.deviceID != managedSession.ClientDeviceID ||
+		cloudSession.kind == session.KindDevice && cloudSession.deviceID != managedSession.TargetDeviceID {
+		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay lease session binding was rejected", false)
+		return
+	}
+	lease, activation, err := state.acquireSingleRelay(managedSession)
+	if err != nil {
+		state.writeRelayAcquireError(writer, err)
+		return
+	}
+	// 同一 signed lease 的两套 TURN credential 不能同时出现在一个 caller response 中。
+	credential := activation.ClientCredential
+	if cloudSession.kind == session.KindDevice {
+		credential = activation.DaemonCredential
+	}
+	if credential.Username == "" || credential.Password == "" {
+		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE, "single Relay credential is unavailable", true)
+		return
+	}
+	writeProto(writer, http.StatusOK, &cloudpb.RelayLease{
+		LeaseId: lease.claims.LeaseID, SignedLease: lease.signedLease,
+		ExpiresAtUnix: uint64(lease.claims.ExpiresAtUnix), PathKind: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
+		IceServers: []*cloudpb.IceServer{{Urls: []string{state.relayControl.url}, Username: credential.Username, Credential: credential.Password}},
+	})
+}
+
+func (state *serviceState) writeRelayAcquireError(writer http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, entitlement.ErrNotEntitled), errors.Is(err, entitlement.ErrEntitlementNotFound):
+		writeCloudError(writer, http.StatusForbidden, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED, "Relay entitlement is unavailable", false)
+	case errors.Is(err, entitlement.ErrQuotaPolicy):
+		writeCloudError(writer, http.StatusTooManyRequests, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED, "Relay quota policy rejected the request", false)
+	case errors.Is(err, directory.ErrNotFound), errors.Is(err, directory.ErrOwnership), errors.Is(err, servicecredential.ErrCredentialBinding):
+		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay lease session binding was rejected", false)
+	case errors.Is(err, cloudrelay.ErrLeaseRejected):
+		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE, "single Relay admission failed", true)
+	default:
+		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "single Relay service is unavailable", true)
+	}
+}
+
+func (state *serviceState) handleRelayUsage(writer http.ResponseWriter, request *http.Request) {
+	if !requireMethod(writer, request, http.MethodPost) || !requireNoAuthorization(writer, request) {
+		return
+	}
+	event := usage.Event{}
+	if !readJSON(writer, request, &event) {
+		return
+	}
+	claims, ok := state.relayLeaseClaims(event.LeaseID)
+	if !ok {
+		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay usage lease binding was rejected", false)
+		return
+	}
+	if _, err := state.relayControl.usageLedger.Apply(claims, event, state.now().UTC()); err != nil {
+		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Relay usage event was rejected", false)
+		return
+	}
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 func (state *serviceState) handlePresenceAdmission(writer http.ResponseWriter, request *http.Request) {

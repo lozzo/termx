@@ -9,6 +9,7 @@ require (
 	github.com/lozzow/termx/private/cloud/companion v0.0.0
 	github.com/lozzow/termx/private/cloud/control-plane v0.0.0
 	github.com/lozzow/termx/private/cloud/hub v0.0.0
+	github.com/lozzow/termx/private/cloud/relay v0.0.0
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -66,3 +67,5 @@ replace github.com/lozzow/termx/private/cloud/companion => ../companion
 replace github.com/lozzow/termx/private/cloud/control-plane => ../control-plane
 
 replace github.com/lozzow/termx/private/cloud/hub => ../hub
+
+replace github.com/lozzow/termx/private/cloud/relay => ../relay

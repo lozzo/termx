@@ -1,0 +1,238 @@
+package devcloud
+
+import (
+	"bytes"
+	"context"
+	"crypto/ed25519"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
+	"github.com/lozzow/termx/private/cloud/control-plane/domain"
+	"github.com/lozzow/termx/private/cloud/control-plane/entitlement"
+	"github.com/lozzow/termx/private/cloud/control-plane/relaylease"
+	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
+	"github.com/lozzow/termx/private/cloud/control-plane/usage"
+	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
+)
+
+const controlRelayUsagePath = "/v1/internal/relay/usage"
+
+type relaySessionState struct {
+	signedLease []byte
+	claims      servicecredential.RelayLeaseClaims
+}
+
+type relayControlState struct {
+	mu      sync.Mutex
+	usageMu sync.Mutex
+
+	leaseService *relaylease.Service
+	authority    *cloudrelay.Authority
+	usageLedger  *usage.Ledger
+	sessions     map[string]relaySessionState
+	pendingUsage []usage.Event
+	url          string
+}
+
+func (state *serviceState) initializeRelay(now time.Time) error {
+	_, leasePrivateKey, err := ed25519.GenerateKey(state.random)
+	if err != nil {
+		return fmt.Errorf("generate dev Relay lease signing key: %w", err)
+	}
+	leaseSigner, err := servicecredential.NewSigner("dev-relay-lease-key", leasePrivateKey, now.Add(-time.Minute), now.Add(24*time.Hour))
+	clear(leasePrivateKey)
+	if err != nil {
+		return err
+	}
+	leaseIssuer, err := servicecredential.NewRelayLeaseIssuer(devRelayLeaseIssuer, leaseSigner)
+	if err != nil {
+		return err
+	}
+	leaseKeyRing, err := servicecredential.NewKeyRing(leaseSigner.PublicKey())
+	if err != nil {
+		return err
+	}
+
+	_, usagePrivateKey, err := ed25519.GenerateKey(state.random)
+	if err != nil {
+		return fmt.Errorf("generate dev Relay usage signing key: %w", err)
+	}
+	usageSigner, err := servicecredential.NewSigner("dev-relay-usage-key", usagePrivateKey, now.Add(-time.Minute), now.Add(24*time.Hour))
+	clear(usagePrivateKey)
+	if err != nil {
+		return err
+	}
+	usageKeyRing, err := servicecredential.NewKeyRing(usageSigner.PublicKey())
+	if err != nil {
+		return err
+	}
+	usageLedger, err := usage.NewLedger(usageKeyRing, map[string]string{devRelayID: usageSigner.KeyID()}, time.Minute)
+	if err != nil {
+		return err
+	}
+
+	entitlements := entitlement.NewStore()
+	if err := entitlements.Put(entitlement.Entitlement{
+		AccountID: devAccountID, Status: entitlement.StatusActive, ValidUntil: now.Add(24 * time.Hour),
+		SourcePlanRef: "dev-local-standard-relay",
+		Policy: entitlement.QuotaPolicy{
+			AllowedRegions: []string{devRegion}, AllowRelayMesh: false, MaxLeaseDuration: relayLeaseTTL,
+			MaxBytesPerLease: 64 << 20, MaxBitrateKbps: 100_000, MaxConcurrency: 2,
+		},
+		UpdatedAt: now,
+	}); err != nil {
+		return err
+	}
+	leaseService, err := relaylease.NewService(state.directory, entitlements, leaseIssuer)
+	if err != nil {
+		return err
+	}
+	credentialSecret, err := state.randomBytes(32)
+	if err != nil {
+		return err
+	}
+	authority, err := cloudrelay.NewAuthority(cloudrelay.Config{
+		RelayID: devRelayID, RelayPool: devRelayPool, Region: devRegion, LeaseIssuer: devRelayLeaseIssuer,
+		Realm: devRelayRealm, KeyRing: leaseKeyRing,
+		Bindings:         cloudrelay.StaticBindings{devRelayBindingID: {devRelayID: {}}},
+		CredentialSecret: credentialSecret, UsageSigner: usageSigner, Clock: runtimeClock{now: state.now},
+		CredentialTTL: relayLeaseTTL, PendingAuthTTL: 10 * time.Second, NonceReader: state.random,
+	})
+	clear(credentialSecret)
+	if err != nil {
+		return err
+	}
+	state.relayControl = &relayControlState{
+		leaseService: leaseService,
+		authority:    authority,
+		usageLedger:  usageLedger,
+		sessions:     make(map[string]relaySessionState),
+	}
+	return nil
+}
+
+func (state *serviceState) acquireSingleRelay(session domain.ManagedSession) (relaySessionState, cloudrelay.Activation, error) {
+	control := state.relayControl
+	if control == nil {
+		return relaySessionState{}, cloudrelay.Activation{}, fmt.Errorf("dev Relay is not configured")
+	}
+	now := state.now().UTC()
+	control.mu.Lock()
+	defer control.mu.Unlock()
+
+	// ManagedSession 是两端领取同一签名 lease 的复用真值；client/daemon credential 由 Relay Authority 分别派生。
+	current, ok := control.sessions[session.ID]
+	if ok && !now.Before(time.Unix(current.claims.ExpiresAtUnix, 0)) {
+		clear(current.signedLease)
+		delete(control.sessions, session.ID)
+		ok = false
+	}
+	if !ok {
+		leaseID, err := state.randomID("relay-lease")
+		if err != nil {
+			return relaySessionState{}, cloudrelay.Activation{}, err
+		}
+		lease, claims, err := control.leaseService.Issue(relaylease.Command{
+			LeaseID: leaseID, AccountID: session.AccountID, ManagedSessionID: session.ID,
+			AudienceRelayPool: devRelayPool, Region: devRegion, PathKind: servicecredential.RelayPathSingle,
+			RequestedTTL: relayLeaseTTL, CredentialBindingID: devRelayBindingID,
+		}, now)
+		if err != nil {
+			return relaySessionState{}, cloudrelay.Activation{}, err
+		}
+		current = relaySessionState{signedLease: lease.Bytes(), claims: claims}
+		control.sessions[session.ID] = current
+	}
+	activation, err := control.authority.ActivateLease(cloudrelay.ActivationRequest{
+		SignedLease: current.signedLease, AccountID: session.AccountID, ManagedSessionID: session.ID,
+		ClientDeviceID: session.ClientDeviceID, TargetDeviceID: session.TargetDeviceID,
+		PathKind: servicecredential.RelayPathSingle,
+	})
+	if err != nil {
+		return relaySessionState{}, cloudrelay.Activation{}, err
+	}
+	current.signedLease = append([]byte(nil), current.signedLease...)
+	return current, activation, nil
+}
+
+func (state *serviceState) relayLeaseClaims(leaseID string) (servicecredential.RelayLeaseClaims, bool) {
+	control := state.relayControl
+	if control == nil {
+		return servicecredential.RelayLeaseClaims{}, false
+	}
+	control.mu.Lock()
+	defer control.mu.Unlock()
+	for _, current := range control.sessions {
+		if current.claims.LeaseID == leaseID {
+			return current.claims, true
+		}
+	}
+	return servicecredential.RelayLeaseClaims{}, false
+}
+
+func (runtime *Runtime) reportRelayUsage() {
+	runtime.waitGroup.Add(1)
+	go func() {
+		defer runtime.waitGroup.Done()
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-runtime.usageStop:
+				return
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				_ = runtime.flushRelayUsage(ctx, "")
+				cancel()
+			}
+		}
+	}()
+}
+
+func (runtime *Runtime) flushRelayUsage(ctx context.Context, terminationReason string) error {
+	if runtime == nil || runtime.state == nil || runtime.state.relayControl == nil {
+		return nil
+	}
+	control := runtime.state.relayControl
+	control.usageMu.Lock()
+	defer control.usageMu.Unlock()
+	events, err := control.authority.DrainUsage(terminationReason)
+	if err != nil {
+		return err
+	}
+	control.pendingUsage = append(control.pendingUsage, events...)
+	// 只有 Control Plane 明确确认后才移除事件；响应丢失时重发同一签名 event，由 ledger 幂等收敛。
+	for len(control.pendingUsage) > 0 {
+		if err := runtime.postRelayUsage(ctx, control.pendingUsage[0]); err != nil {
+			return err
+		}
+		control.pendingUsage = control.pendingUsage[1:]
+	}
+	return nil
+}
+
+func (runtime *Runtime) postRelayUsage(ctx context.Context, event usage.Event) error {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("encode dev Relay usage: %w", err)
+	}
+	defer clear(payload)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, runtime.manifest.ControlPlaneURL+controlRelayUsagePath, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("create dev Relay usage request: %w", err)
+	}
+	request.Header.Set("Content-Type", httpapi.JSONMediaType)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return fmt.Errorf("report dev Relay usage: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("report dev Relay usage: Control Plane returned status %d", response.StatusCode)
+	}
+	return nil
+}

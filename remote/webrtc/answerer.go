@@ -36,7 +36,16 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 	if offer == nil || strings.TrimSpace(offer.GetSdp()) == "" {
 		return nil, fmt.Errorf("remote daemon signaling offer is empty")
 	}
+	if offer.GetRelayOnly() && offer.GetRoutePreference() != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY {
+		return nil, fmt.Errorf("remote daemon relay-only offer has invalid route preference")
+	}
+	if offer.GetRelayOnly() && len(iceServers) == 0 {
+		return nil, fmt.Errorf("remote daemon relay-only offer has no TURN material")
+	}
 	configuration := pion.Configuration{ICEServers: make([]pion.ICEServer, 0, len(iceServers))}
+	if offer.GetRelayOnly() {
+		configuration.ICETransportPolicy = pion.ICETransportPolicyRelay
+	}
 	for _, server := range iceServers {
 		if server == nil || len(server.GetUrls()) == 0 {
 			continue
@@ -45,7 +54,7 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 			URLs: append([]string(nil), server.GetUrls()...), Username: server.GetUsername(), Credential: server.GetCredential(),
 		})
 	}
-	peer, err := pion.NewPeerConnection(configuration)
+	peer, err := NewPeerConnection(configuration)
 	if err != nil {
 		return nil, fmt.Errorf("create remote daemon peer connection: %w", err)
 	}

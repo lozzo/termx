@@ -135,6 +135,10 @@ func writeCloudError(writer http.ResponseWriter, status int, code cloudpb.CloudE
 }
 
 func (state *serviceState) authenticate(writer http.ResponseWriter, request *http.Request, expected session.Kind) (cloudSession, bool) {
+	return state.authenticateKinds(writer, request, expected)
+}
+
+func (state *serviceState) authenticateKinds(writer http.ResponseWriter, request *http.Request, allowed ...session.Kind) (cloudSession, bool) {
 	header := request.Header.Get("Authorization")
 	if header == "" || strings.Count(header, " ") != 1 {
 		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "cloud authorization is required", false)
@@ -158,11 +162,20 @@ func (state *serviceState) authenticate(writer http.ResponseWriter, request *htt
 	state.cleanupLocked(now)
 	storedSession, ok := state.sessions[key]
 	state.mu.Unlock()
-	if !ok || storedSession.kind != expected || !now.Before(storedSession.expiresAt) {
+	if !ok || !containsSessionKind(allowed, storedSession.kind) || !now.Before(storedSession.expiresAt) {
 		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "cloud authorization is invalid", false)
 		return cloudSession{}, false
 	}
 	return storedSession, true
+}
+
+func containsSessionKind(allowed []session.Kind, current session.Kind) bool {
+	for _, candidate := range allowed {
+		if candidate == current {
+			return true
+		}
+	}
+	return false
 }
 
 func (state *serviceState) issueSession(kind session.Kind, deviceID string) (cloudSession, []byte, error) {

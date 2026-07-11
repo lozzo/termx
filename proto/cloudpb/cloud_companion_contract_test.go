@@ -33,6 +33,8 @@ func TestSignalingOfferHasOnlyRoutingAndWebRTCFields(t *testing.T) {
 		"target_device_id":     true,
 		"sdp":                  true,
 		"candidates":           true,
+		"route_preference":     true,
+		"relay_only":           true,
 	}
 	if descriptor.Fields().Len() != len(want) {
 		t.Fatalf("SignalingOffer field count = %d, want %d", descriptor.Fields().Len(), len(want))

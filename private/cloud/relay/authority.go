@@ -134,6 +134,7 @@ type allocationState struct {
 	leaseID   string
 	username  string
 	principal Principal
+	sourceID  string
 }
 
 // Principal 区分 Relay lease 的 client 与 daemon endpoint credential。
@@ -283,6 +284,10 @@ func (authority *Authority) AuthenticateTURN(username, realm, sourceID string) (
 	if lease == nil || !now.Before(time.Unix(lease.claims.ExpiresAtUnix, 0)) {
 		return nil, false
 	}
+	// TURN permission/channel 请求会对已确认 allocation 再次鉴权；它们复用同一 source，不应重复占用并发配额。
+	if authority.activeSourceAuthorizedLocked(sourceID, username) {
+		return pionturn.GenerateAuthKey(username, authority.realm, credential.password), true
+	}
 	if pending, exists := authority.pending[sourceID]; exists {
 		if pending.username != username {
 			return nil, false
@@ -304,7 +309,7 @@ func (authority *Authority) ConfirmAllocation(sourceID, allocationID, username s
 	defer authority.mu.Unlock()
 	authority.cleanupLocked(now)
 	if current, ok := authority.allocations[allocationID]; ok {
-		if current.username == username {
+		if current.username == username && current.sourceID == sourceID {
 			return nil
 		}
 		return ErrCredentialRejected
@@ -320,7 +325,7 @@ func (authority *Authority) ConfirmAllocation(sourceID, allocationID, username s
 	}
 	delete(authority.pending, sourceID)
 	lease.activeAllocations++
-	authority.allocations[allocationID] = allocationState{leaseID: pending.leaseID, username: username, principal: credential.principal}
+	authority.allocations[allocationID] = allocationState{leaseID: pending.leaseID, username: username, principal: credential.principal, sourceID: sourceID}
 	return nil
 }
 
@@ -456,6 +461,15 @@ func (authority *Authority) pendingCountLocked(leaseID string) int {
 		}
 	}
 	return count
+}
+
+func (authority *Authority) activeSourceAuthorizedLocked(sourceID, username string) bool {
+	for _, allocation := range authority.allocations {
+		if allocation.sourceID == sourceID && allocation.username == username {
+			return true
+		}
+	}
+	return false
 }
 
 func (authority *Authority) principalAllowed(claims servicecredential.RelayLeaseClaims, principal Principal) bool {

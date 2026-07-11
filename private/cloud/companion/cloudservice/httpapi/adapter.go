@@ -135,22 +135,27 @@ func (adapter *Adapter) AcquireDaemonAnswerAdmission(ctx context.Context, author
 	return adapter.postAdmissionJSON(ctx, ControlAnswerAdmissionPath, authorization, wire)
 }
 
-// AcquireRelayLease 在 CLOUD004 前稳定 fail closed；CLOUD002 不伪造 TURN material。
-func (*Adapter) AcquireRelayLease(context.Context, session.Authorization, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
-	return nil, deferredServiceError("Relay lease")
+// AcquireRelayLease 通过真实 Control Plane listener 获取 caller-specific 短期 TURN material。
+// signed lease 与 credential 只返回公开 WebRTC primitive；adapter 不缓存、不记录，也不把它们写进 endpoint registry。
+func (adapter *Adapter) AcquireRelayLease(ctx context.Context, authorization session.Authorization, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
+	response := &cloudpb.RelayLease{}
+	if err := adapter.postProto(ctx, adapter.controlURL+ControlAcquireRelayLeasePath, authorization, request, response); err != nil {
+		return nil, err
+	}
+	return response, nil
 }
 
-// PlanManagedRoute 在 CLOUD004 前稳定 fail closed；CLOUD002 不返回猜测 route。
+// PlanManagedRoute 在 single Relay 闭环后仍稳定 fail closed；自动 SmartRoute 不属于 CLOUD004。
 func (*Adapter) PlanManagedRoute(context.Context, session.Authorization, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
 	return nil, deferredServiceError("managed route planning")
 }
 
-// ReportPathQuality 在 CLOUD004 前稳定 fail closed，不缓存或伪造 cloud telemetry 成功。
+// ReportPathQuality 在自动选路恢复前稳定 fail closed，不缓存或伪造 cloud telemetry 成功。
 func (*Adapter) ReportPathQuality(context.Context, session.Authorization, *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error) {
 	return nil, deferredServiceError("path quality reporting")
 }
 
-// ReportConnectionOutcome 在 CLOUD004 前稳定 fail closed，不把本地结果描述为已结算。
+// ReportConnectionOutcome 在自动选路恢复前稳定 fail closed，不把本地结果描述为已结算。
 func (*Adapter) ReportConnectionOutcome(context.Context, session.Authorization, *cloudpb.ReportConnectionOutcomeRequest) (*cloudpb.ReportConnectionOutcomeResponse, error) {
 	return nil, deferredServiceError("connection outcome reporting")
 }

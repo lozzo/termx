@@ -118,7 +118,7 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 	if err != nil {
 		return nil, err
 	}
-	peer, err := pion.NewPeerConnection(configuration)
+	peer, err := remotev2webrtc.NewPeerConnection(configuration)
 	if err != nil {
 		return nil, fmt.Errorf("create managed endpoint peer connection: %w", err)
 	}
@@ -159,6 +159,7 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 		TargetDeviceId:   targetDeviceID,
 		OfferSdp:         localDescription.SDP,
 		RoutePreference:  options.RoutePreference,
+		RelayOnly:        route.relayOnly,
 	})
 	if err != nil {
 		_ = secured.Close()

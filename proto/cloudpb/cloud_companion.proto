@@ -349,6 +349,9 @@ message SignalingOffer {
   string target_device_id = 4;
   string sdp = 5;
   repeated IceCandidate candidates = 6;
+  // route_preference 保留原始服务能力意图；relay_only 才表示本次 ICE 必须只使用租约绑定的 TURN。
+  RoutePreference route_preference = 7;
+  bool relay_only = 8;
 }
 
 // SignalingAnswer 是 daemon 返回的 WebRTC answer。
@@ -390,6 +393,8 @@ message CreateSignalingSessionRequest {
   string offer_sdp = 4;
   repeated IceCandidate candidates = 5;
   RoutePreference route_preference = 6;
+  // relay_only 是本次执行约束，不得从 STANDARD_RELAY 自动推断。
+  bool relay_only = 7;
 }
 
 // SignalingClosed 表示 Hub 已关闭一条 signaling session。

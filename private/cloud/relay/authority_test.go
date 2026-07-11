@@ -61,6 +61,9 @@ func TestAuthorityRequiresSignedLeaseAndEnforcesConcurrencyQuota(t *testing.T) {
 	if err := fixture.authority.ConfirmAllocation("source-daemon", "allocation-daemon", activation.DaemonCredential.Username); err != nil {
 		t.Fatal(err)
 	}
+	if key, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "termx-relay", "source-client"); !ok || len(key) == 0 {
+		t.Fatal("existing allocation reauthentication consumed concurrency")
+	}
 	if _, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "termx-relay", "source-third"); ok {
 		t.Fatal("TURN auth exceeded lease concurrency")
 	}
@@ -130,6 +133,21 @@ func TestAuthorityRejectsWrongRelayBinding(t *testing.T) {
 	fixture.activationRequest.RouteID = "wrong-route"
 	if _, err := fixture.authority.ActivateLease(fixture.activationRequest); !errors.Is(err, relay.ErrLeaseRejected) {
 		t.Fatalf("wrong route error = %v", err)
+	}
+}
+
+func TestAuthorityRejectsExpiredLeaseAndCredential(t *testing.T) {
+	fixture := newRelayFixture(t, 2, 10_000, 100)
+	activation, err := fixture.authority.ActivateLease(fixture.activationRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.clock.Advance(5*time.Minute + time.Second)
+	if _, ok := fixture.authority.AuthenticateTURN(activation.ClientCredential.Username, "termx-relay", "source-expired"); ok {
+		t.Fatal("TURN auth accepted an expired lease credential")
+	}
+	if _, err := fixture.authority.ActivateLease(fixture.activationRequest); !errors.Is(err, relay.ErrLeaseRejected) {
+		t.Fatalf("expired lease activation error = %v", err)
 	}
 }
 

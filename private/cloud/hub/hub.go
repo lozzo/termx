@@ -189,6 +189,8 @@ type CreateSessionRequest struct {
 	SignalingSessionID string
 	SDP                string
 	Candidates         []Candidate
+	RoutePreference    RoutePreference
+	RelayOnly          bool
 }
 
 // CreateSession 离线验签、查找 target presence，并把 offer 放入有界 daemon queue。
@@ -213,7 +215,12 @@ func (service *Service) CreateSession(_ context.Context, request CreateSessionRe
 		allowedOperations: append([]servicecredential.HubOperation(nil), claims.AllowedOperations...), expiresAt: expiresAt,
 		clientEvents: make(chan ClientEvent, service.clientQueue), done: make(chan struct{}),
 	}
-	offer := Offer{SignalingSessionID: state.id, ManagedSessionID: state.managedSessionID, SourceDeviceID: state.clientDeviceID, TargetDeviceID: state.targetDeviceID, SDP: request.SDP, Candidates: cloneCandidates(request.Candidates)}
+	offer := Offer{
+		SignalingSessionID: state.id, ManagedSessionID: state.managedSessionID,
+		SourceDeviceID: state.clientDeviceID, TargetDeviceID: state.targetDeviceID,
+		SDP: request.SDP, Candidates: cloneCandidates(request.Candidates),
+		RoutePreference: request.RoutePreference, RelayOnly: request.RelayOnly,
+	}
 
 	service.mu.Lock()
 	service.cleanupLocked(now)
@@ -367,10 +374,19 @@ func (service *Service) HasPresence(deviceID string) bool {
 }
 
 func (service *Service) validateOffer(request CreateSessionRequest) error {
-	if request.AccountID == "" || request.ClientDeviceID == "" || request.TargetDeviceID == "" || request.ClientDeviceID == request.TargetDeviceID || request.ManagedSessionID == "" || request.SignalingSessionID == "" || request.SDP == "" || len(request.SDP) > service.maxSDPBytes || len(request.Candidates) > service.maxCandidates || !validCandidates(request.Candidates) {
+	if request.AccountID == "" || request.ClientDeviceID == "" || request.TargetDeviceID == "" || request.ClientDeviceID == request.TargetDeviceID || request.ManagedSessionID == "" || request.SignalingSessionID == "" || request.SDP == "" || len(request.SDP) > service.maxSDPBytes || len(request.Candidates) > service.maxCandidates || !validCandidates(request.Candidates) || !validRoutePreference(request.RoutePreference) || request.RelayOnly && request.RoutePreference == RoutePreferenceDirectOnly {
 		return ErrInvalidSignal
 	}
 	return nil
+}
+
+func validRoutePreference(preference RoutePreference) bool {
+	switch preference {
+	case RoutePreferenceDirectOnly, RoutePreferenceStandardRelay, RoutePreferenceSmartRoute, RoutePreferenceGlobalAccelerator:
+		return true
+	default:
+		return false
+	}
 }
 
 func (service *Service) consumeTicketLocked(ticketID string, expiresAt, now time.Time) error {

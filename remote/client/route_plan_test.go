@@ -47,6 +47,31 @@ func TestDialSessionExecutesSmartRoutePlanWithoutAcquiringRelayLease(t *testing.
 	}
 }
 
+func TestResolveDialRouteAcquiresLeaseForExplicitRelayOnly(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0).UTC()
+	companion := &cloudcompanion.FakeClient{AcquireRelayLeaseFunc: func(_ context.Context, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
+		return &cloudpb.RelayLease{
+			LeaseId: "lease-1", SignedLease: []byte("signed-lease"), ExpiresAtUnix: uint64(now.Add(5 * time.Minute).Unix()),
+			PathKind:   cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
+			IceServers: []*cloudpb.IceServer{{Urls: []string{"turn:127.0.0.1:3478?transport=udp"}, Username: "client-short", Credential: "client-secret"}},
+		}, nil
+	}}
+	resolved := &cloudpb.ResolvedEndpoint{ManagedSessionId: "managed-1", TargetDeviceId: "device-1"}
+	route, err := resolveDialRoute(context.Background(), DialOptions{
+		Companion: companion, RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true, Now: now,
+	}, "lab", "device-1", resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if route.preference != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY || !route.relayOnly || route.expectedPath != cloudcompanion.PathSingleRelay || len(route.iceServers) != 1 {
+		t.Fatalf("explicit Relay route = %#v", route)
+	}
+	requests := companion.Requests().AcquireRelayLease
+	if len(requests) != 1 || requests[0].GetManagedSessionId() != "managed-1" || requests[0].GetTargetDeviceId() != "device-1" || requests[0].GetRoutePreference() != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY {
+		t.Fatalf("Relay lease requests = %#v", requests)
+	}
+}
+
 func TestValidateManagedRoutePlanProducesRelayOnlyICEPolicy(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0).UTC()
 	request := routePlanRequest()

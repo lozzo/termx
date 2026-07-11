@@ -18,6 +18,21 @@ type Candidate struct {
 	UsernameFragment string
 }
 
+// RoutePreference 是 Hub 透明转发的 managed service intent。
+// Hub 只验证它属于冻结枚举；是否签发 RelayLease 仍由 Control Plane 决定，terminal capability 不进入该字段。
+type RoutePreference int32
+
+const (
+	// RoutePreferenceDirectOnly 表示本次 signaling 不允许付费 Relay。
+	RoutePreferenceDirectOnly RoutePreference = 1
+	// RoutePreferenceStandardRelay 表示账号允许单 Relay，但是否强制 Relay 由独立 RelayOnly 决定。
+	RoutePreferenceStandardRelay RoutePreference = 2
+	// RoutePreferenceSmartRoute 表示客户端已经取得短期 SmartRoute 计划。
+	RoutePreferenceSmartRoute RoutePreference = 3
+	// RoutePreferenceGlobalAccelerator 是延后的受控全球加速 intent；CLOUD004 不执行该路径。
+	RoutePreferenceGlobalAccelerator RoutePreference = 4
+)
+
 // Offer 是 client admission 验证后投递给固定 target presence 的 WebRTC offer。
 type Offer struct {
 	SignalingSessionID string
@@ -26,6 +41,8 @@ type Offer struct {
 	TargetDeviceID     string
 	SDP                string
 	Candidates         []Candidate
+	RoutePreference    RoutePreference
+	RelayOnly          bool
 }
 
 // Answer 是 daemon answer admission 验证后投递给 owning client 的 WebRTC answer。

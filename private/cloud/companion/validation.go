@@ -168,7 +168,8 @@ func validatePresenceChallenge(challenge *cloudpb.PresenceChallenge, now time.Ti
 }
 
 func validateSignalingRequest(request *cloudpb.CreateSignalingSessionRequest) error {
-	if request == nil || request.GetEndpointId() == "" || request.GetManagedSessionId() == "" || request.GetTargetDeviceId() == "" || request.GetOfferSdp() == "" || !validRoutePreference(request.GetRoutePreference()) {
+	if request == nil || request.GetEndpointId() == "" || request.GetManagedSessionId() == "" || request.GetTargetDeviceId() == "" || request.GetOfferSdp() == "" || !validRoutePreference(request.GetRoutePreference()) ||
+		request.GetRelayOnly() && request.GetRoutePreference() == cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY {
 		return protocolError("invalid signaling session request")
 	}
 	return validateCandidates(request.GetCandidates())

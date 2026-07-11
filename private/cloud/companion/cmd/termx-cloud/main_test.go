@@ -170,7 +170,8 @@ func writeDevManifest(t *testing.T) string {
 	manifest := httpapi.Manifest{
 		Version: httpapi.ManifestVersion, Profile: httpapi.ProfileDevLocal,
 		ControlPlaneURL: "http://127.0.0.1:41001", HubURL: "http://127.0.0.1:41002",
-		HubID: "hub-dev", Region: "local-1", AccountLabel: "Dev Account",
+		RelayURL: "turn:127.0.0.1:41003?transport=udp",
+		HubID:    "hub-dev", Region: "local-1", AccountLabel: "Dev Account",
 		EnrollmentCode: "enroll-dev", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := json.NewEncoder(file).Encode(manifest); err != nil {

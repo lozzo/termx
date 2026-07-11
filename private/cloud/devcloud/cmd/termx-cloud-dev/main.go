@@ -47,7 +47,7 @@ func run(ctx context.Context, args []string) error {
 	manifest := runtime.Manifest()
 	if err := json.NewEncoder(os.Stdout).Encode(map[string]string{
 		"profile": manifest.Profile, "control_plane": manifest.ControlPlaneURL,
-		"hub": manifest.HubURL, "manifest": *manifestPath, "readiness": "ready",
+		"hub": manifest.HubURL, "relay": manifest.RelayURL, "manifest": *manifestPath, "readiness": "ready",
 	}); err != nil {
 		return err
 	}

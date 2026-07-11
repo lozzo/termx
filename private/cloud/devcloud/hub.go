@@ -110,6 +110,7 @@ func (state *serviceState) handleHubCreateSignaling(writer http.ResponseWriter, 
 		ClientDeviceID: envelope.Admission.DeviceID, TargetDeviceID: createRequest.GetTargetDeviceId(),
 		ManagedSessionID: createRequest.GetManagedSessionId(), SignalingSessionID: signalingSessionID,
 		SDP: createRequest.GetOfferSdp(), Candidates: candidatesFromWire(createRequest.GetCandidates()),
+		RoutePreference: cloudhub.RoutePreference(createRequest.GetRoutePreference()), RelayOnly: createRequest.GetRelayOnly(),
 	})
 	if err != nil {
 		mapHubError(writer, err)
@@ -222,6 +223,7 @@ func presenceEventToWire(event cloudhub.PresenceEvent) (*cloudpb.PresenceEvent, 
 			SignalingSessionId: event.Offer.SignalingSessionID, ManagedSessionId: event.Offer.ManagedSessionID,
 			SourceDeviceId: event.Offer.SourceDeviceID, TargetDeviceId: event.Offer.TargetDeviceID,
 			Sdp: event.Offer.SDP, Candidates: candidatesToWire(event.Offer.Candidates),
+			RoutePreference: cloudpb.RoutePreference(event.Offer.RoutePreference), RelayOnly: event.Offer.RelayOnly,
 		}}}, true
 	case event.Closed != nil:
 		return &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: event.Closed.Reason}}}, true

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -82,6 +83,31 @@ func TestStableBuildRejectsExplicitDevelopmentCompanionSocket(t *testing.T) {
 	_, err := defaultOpenV3CloudLifecycleClient(context.Background(), cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING)
 	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED) {
 		t.Fatalf("stable explicit socket error = %v", err)
+	}
+}
+
+func TestDefaultDaemonCompanionRequestsRelayLeaseCapability(t *testing.T) {
+	previousOpen := openV3CloudLifecycleClient
+	defer func() { openV3CloudLifecycleClient = previousOpen }()
+	var role cloudpb.CallerRole
+	var capabilities []cloudpb.CompanionCapability
+	openV3CloudLifecycleClient = func(_ context.Context, currentRole cloudpb.CallerRole, currentCapabilities ...cloudpb.CompanionCapability) (v3CloudClient, error) {
+		role = currentRole
+		capabilities = append([]cloudpb.CompanionCapability(nil), currentCapabilities...)
+		return &closableCloudFake{FakeClient: &cloudcompanion.FakeClient{}}, nil
+	}
+	client, err := defaultOpenV3CloudDaemonCompanion(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = client.Close()
+	want := []cloudpb.CompanionCapability{
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE,
+	}
+	if role != cloudpb.CallerRole_CALLER_ROLE_DAEMON || !slices.Equal(capabilities, want) {
+		t.Fatalf("daemon Companion Hello = role %s capabilities %v, want %s %v", role, capabilities, cloudpb.CallerRole_CALLER_ROLE_DAEMON, want)
 	}
 }
 

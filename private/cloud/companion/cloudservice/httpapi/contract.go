@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,7 +26,7 @@ import (
 const (
 	// ManifestVersion 是 dev-local runtime manifest 的当前 schema 版本。
 	// 读取方必须精确匹配该版本，未知版本不得按旧字段集合继续连接。
-	ManifestVersion = 1
+	ManifestVersion = 2
 	// ProfileDevLocal 是允许 loopback 明文 HTTP 与固定开发账号的唯一 profile 名称。
 	// production channel 必须拒绝该 profile，不能把它当作默认或 fallback 配置。
 	ProfileDevLocal = "dev-local"
@@ -58,6 +59,8 @@ const (
 	ControlClientAdmissionPath = "/v1/admissions/client"
 	// ControlAnswerAdmissionPath 是 daemon managed answer ticket endpoint。
 	ControlAnswerAdmissionPath = "/v1/admissions/answer"
+	// ControlAcquireRelayLeasePath 是 account/device caller 获取同一 ManagedSession principal-specific TURN material 的 endpoint。
+	ControlAcquireRelayLeasePath = "/v1/relay/leases/acquire"
 
 	// HubHealthPath 是 dev Hub readiness endpoint。
 	HubHealthPath = "/healthz"
@@ -76,6 +79,7 @@ type Manifest struct {
 	Profile          string `json:"profile"`
 	ControlPlaneURL  string `json:"control_plane_url"`
 	HubURL           string `json:"hub_url"`
+	RelayURL         string `json:"relay_url"`
 	HubID            string `json:"hub_id"`
 	Region           string `json:"region"`
 	AccountLabel     string `json:"account_label"`
@@ -108,10 +112,33 @@ func LoadManifest(path string) (Manifest, error) {
 	if _, err := validateLoopbackURL(manifest.HubURL); err != nil {
 		return Manifest{}, fmt.Errorf("invalid dev Hub URL: %w", err)
 	}
+	if err := validateLoopbackTURNURL(manifest.RelayURL); err != nil {
+		return Manifest{}, fmt.Errorf("invalid dev Relay URL: %w", err)
+	}
 	if _, err := time.Parse(time.RFC3339, manifest.StartedAtRFC3339); err != nil {
 		return Manifest{}, fmt.Errorf("invalid dev cloud start time")
 	}
 	return manifest, nil
+}
+
+func validateLoopbackTURNURL(raw string) error {
+	if raw == "" || raw != strings.TrimSpace(raw) || !strings.HasPrefix(strings.ToLower(raw), "turn:") {
+		return fmt.Errorf("URL must be a canonical TURN UDP URL")
+	}
+	address, query, ok := strings.Cut(raw[len("turn:"):], "?")
+	if !ok || query != "transport=udp" {
+		return fmt.Errorf("URL must require UDP transport")
+	}
+	host, port, err := net.SplitHostPort(address)
+	portNumber, portErr := strconv.Atoi(port)
+	if err != nil || portErr != nil || portNumber < 1 || portNumber > 65535 {
+		return fmt.Errorf("URL must include a Relay host and port")
+	}
+	ip := net.ParseIP(host)
+	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return fmt.Errorf("URL host must be loopback")
+	}
+	return nil
 }
 
 // SessionWire 是 Control Plane 返回给 Companion 的 private cloud session。

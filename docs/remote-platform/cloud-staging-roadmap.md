@@ -32,20 +32,20 @@
 
 | 组件 | 已存在的真实能力 | 当前阻塞 |
 | --- | --- | --- |
-| `core/` | terminal lifecycle、scoped transport、live/history 真值；desktop direct 已经由授权后的 DataChannel 接入 | single Relay 与 Android 尚未复用该真实链路 |
-| `tui/` | 多 endpoint manager、managed dial、局部失败、连接 phase、observed path 与远程 terminal 投影 | single Relay 尚未接线 |
-| `remote/client` | Pion offer、ICE、DTLS fingerprint 校验、DataChannel capability handshake、protocol transport | desktop direct 已有真实网络 E2E；Relay material 尚未进入 ICE 配置 |
-| `remote/daemon` 与 `remote/webrtc` | fresh-proof presence agent、answerer、DataChannel auth、core scoped transport adapter | `termx daemon --cloud` 已显式装配 desktop direct；Relay 路径待接入 |
-| `shared/cloudcompanion` | versioned local IPC、错误语义、stream、fake 和 installer contract | contract 本身不提供云服务 |
-| `private/cloud/companion` | 可运行 sidecar、本地 IPC、账号/device session manager、显式 dev HTTP adapter 与 desktop direct orchestration | 默认路径继续 fail closed；single Relay material 尚未接入 |
-| `private/cloud/control-plane` | 独立 PresenceSession/ManagedSession、fresh challenge、设备目录、admission、entitlement、Relay lease、usage 与 loopback API | Relay lease/usage 尚未进入用户链路 |
-| `private/cloud/hub` | admission-bound presence、offer/answer/candidate 路由、过期清理与真实 loopback listener | desktop direct 已闭环；Relay route 尚未联动 |
-| `private/cloud/relay` | 真实 Pion UDP TURN、lease authority、quota、meter 和 opaque DataChannel harness | 没有 dev service 装配，也未进入 managed route |
-| `private/cloud/route-planner` | direct/single-relay 决策和短期 route plan contract | 候选、lease material 和运行服务均未装配 |
-| Desktop endpoint registry | `hub-p2p`、device pin、`grant_ref`、relay mode、pairing create/import 和原子 registry writer | desktop direct 已可配置；single Relay 策略尚未闭环 |
+| `core/` | terminal lifecycle、scoped transport、live/history 真值；desktop direct 与 single Relay 共用授权后的 DataChannel | Official Android 尚未复用该真实链路 |
+| `tui/` | 多 endpoint manager、managed dial、局部失败、连接 phase、实际 direct/single_relay path 与远程 terminal 投影 | desktop 纵向链路已闭环；不承担 Android 装配 |
+| `remote/client` | Pion offer、relay-only ICE、caller-specific RelayLease、DTLS fingerprint、capability handshake 和 protocol transport | 自动 SmartRoute 继续延后，不影响显式 single Relay |
+| `remote/daemon` 与 `remote/webrtc` | fresh-proof presence、principal-specific TURN material、relay-only answerer、DataChannel auth 和 core scoped transport | desktop direct/single Relay 已闭环 |
+| `shared/cloudcompanion` | versioned local IPC、single Relay material 校验、错误语义、stream、fake 和 installer contract | contract 本身不提供云服务 |
+| `private/cloud/companion` | sidecar、本地 IPC、账号/device session、显式 dev HTTP adapter、direct signaling 和 Relay lease orchestration | 默认路径继续 fail closed；Official Android 使用独立私有装配 |
+| `private/cloud/control-plane` | PresenceSession/ManagedSession、admission、entitlement、session-bound Relay lease、principal credential 与 usage ledger | 生产 entitlement/billing 与持久化继续延后 |
+| `private/cloud/hub` | admission-bound presence、offer/answer/candidate 路由和 ManagedSession-bound relay-only intent | 不接收 TURN credential、grant 或 terminal payload |
+| `private/cloud/relay` | dev service 中的真实 Pion UDP TURN、lease authority、到期/并发/quota、meter 和 signed usage | 多区域与 Relay Mesh 继续延后 |
+| `private/cloud/route-planner` | direct/single-relay 决策和短期 route plan contract | 自动 SmartRoute 未进入当前用户链路，继续延后 |
+| Desktop endpoint registry | `hub-p2p`、device pin、`grant_ref`、relay mode、pairing create/import 和原子 registry writer | direct 与显式 relay-only 均可配置 |
 | Official Android | Official factory、公开 WebRTC primitive、Keystore grant store、managed connector | gateway 固定返回 `login_required`，公开 authorizer 仍 fail closed |
 
-结论：Desktop managed direct 已经跨真实 Companion IPC、Control Plane/Hub listener、Pion DataChannel、capability handshake 和 core-v2 protocol 闭环；当前剩余主线是 single Relay 与 Official Android，不能把 direct 完成度外推到这两条链路。
+结论：Desktop managed direct 与显式 single Relay 都已跨真实 Companion IPC、Control Plane/Hub listener、Pion TURN/DTLS DataChannel、capability handshake 和 core-v2 protocol 闭环；当前剩余主线是 Official Android，不能把 desktop 完成度外推到 APK。
 
 ## 4. 单区域纵向拓扑
 
@@ -222,7 +222,7 @@ Official module 不能接收原始 grant。Community APK 继续使用 disabled a
 CLOUD002 建立名为 `dev-local` 的显式 staging 剖面：
 
 - `make cloud-dev` 是唯一启动入口，前台运行并响应 SIGINT/SIGTERM。
-- 默认只绑定 loopback；Control Plane 和 Hub 使用不同 listener、独立序列化边界和各自认证检查。
+- 默认只绑定 loopback；Control Plane 和 Hub 使用不同 HTTP listener，Relay 使用独立 UDP TURN listener、短期凭据和计量边界。
 - 一个 dev supervisor 可以在同一进程托管多个 listener；当前不为了生产部署提前引入容器编排或多进程 supervisor。
 - 每次启动生成短期 admission/lease signing key、固定 dev account、一次性 enrollment code 和运行 manifest。
 - 运行 manifest 写入 `.artifacts/cloud-dev/`，包含地址、公开 key 和 dev profile，不包含 CapabilityGrant、DeviceIdentity private key 或长期生产 secret。
@@ -280,6 +280,8 @@ CLOUD002 建立名为 `dev-local` 的显式 staging 剖面：
 不算完成：只能跑 `remote/client` 单测、只能 ping Companion、手工把 offer/answer 粘贴到测试中、或 TUI 只展示一个假 online 状态。
 
 ### 8.3 CLOUD004：单区域 single Relay
+
+状态：完成。
 
 实现范围：
 

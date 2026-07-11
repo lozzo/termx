@@ -20,8 +20,8 @@ type dialRoute struct {
 	selectionReason cloudcompanion.RouteSelectionReason
 }
 
-// resolveDialRoute 只在显式 smart_route 下请求私有 Planner 的短期计划。
-// 其他模式继续使用 endpoint resolution；公开进程不得自行申请 RelayLease 或猜测候选评分。
+// resolveDialRoute 在显式 relay_only 下通过 Companion 获取 principal-specific RelayLease，在 smart_route 下请求私有 Planner 的短期计划。
+// 公开进程只执行受信 material，不自行签发 lease、选择未授权 TURN URL 或猜测候选评分。
 func resolveDialRoute(
 	ctx context.Context,
 	options DialOptions,
@@ -29,13 +29,30 @@ func resolveDialRoute(
 	targetDeviceID string,
 	resolved *cloudpb.ResolvedEndpoint,
 ) (dialRoute, error) {
+	if options.RelayOnly {
+		if options.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY {
+			return dialRoute{}, routePlanProtocolError("relay-only policy requires standard Relay service intent")
+		}
+		request := &cloudpb.AcquireRelayLeaseRequest{
+			ManagedSessionId: resolved.GetManagedSessionId(), TargetDeviceId: targetDeviceID,
+			RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY,
+		}
+		lease, err := options.Companion.AcquireRelayLease(ctx, request)
+		if err != nil {
+			return dialRoute{}, err
+		}
+		if err := cloudcompanion.ValidateSingleRelayLease(request, lease, dialRouteNow(options.Now)); err != nil {
+			return dialRoute{}, err
+		}
+		return dialRoute{
+			iceServers: lease.GetIceServers(), preference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY,
+			relayOnly: true, expectedPath: cloudcompanion.PathSingleRelay,
+		}, nil
+	}
 	if options.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE {
 		return dialRoute{
 			iceServers: resolved.GetIceServers(), preference: options.RoutePreference, relayOnly: options.RelayOnly,
 		}, nil
-	}
-	if options.RelayOnly {
-		return dialRoute{}, routePlanProtocolError("smart route policy cannot be combined with caller relay-only state")
 	}
 	request := &cloudpb.PlanManagedRouteRequest{
 		EndpointId: endpointID, ManagedSessionId: resolved.GetManagedSessionId(), TargetDeviceId: targetDeviceID,
