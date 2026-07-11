@@ -1,6 +1,6 @@
 # TermX Remote Platform 文档基线
 
-状态：活动基线
+状态：设计基线；活动实现真值见 `cloud-staging-roadmap.md`
 
 生效日期：2026-07-11
 
@@ -10,19 +10,20 @@
 
 本目录定义 TermX 远程平台重构后的产品、架构、安全和源码分发边界。任何新的 Hub、Relay、Web Controller、TUI 远程连接或 App 远程连接实现，都必须先满足本目录约束。
 
+`cloud-staging-roadmap.md` 是 CLOUD001-CLOUD005 的唯一活动实现真值。其他文档中的 RP/GA “完成”只表示设计、contract、领域组件或 harness 资产已经形成，不代表 managed cloud 已经可以由用户运行。
+
 `remote/` 是公开 managed WebRTC/E2E auth runtime，`clients/ui/` 与 `clients/mobile/` 消费同一公开 endpoint contract。旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已收口到 `private/archive/termx-platform-legacy/`；archive 不得以兼容、fallback 或“先继续沿用”的方式反向约束新模型。
 
 ## 2. 文档顺序
 
-1. `product-prd.md`：回答为谁解决什么问题、哪些能力免费、哪些持续服务收费。
-2. `architecture-spec.md`：回答公开客户端、daemon、私有 Control Plane、Hub 和 Relay 各自拥有什么状态。
-3. `network-topology.md`：用网络拓扑和时序图解释 local、SSH、direct WebRTC、Relay fallback 与端到端授权链路。
-4. `global-acceleration-spec.md`：回答何时需要 single-relay 智能选区或双 Edge Relay Mesh，以及如何测量、计量和分阶段建设。
-5. `distribution-and-cloud-companion-spec.md`：回答公开主程序与闭源 cloud 能力如何拆包、安装、通信、升级和跨平台发布。
-6. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
-7. `source-boundary-and-migration-plan.md`：回答哪些代码公开、哪些代码私有、旧资产如何保留并按什么顺序迁移。
-8. `public-snapshot-manifest.md`：给出从已提交 private revision 手工复制到全新公开仓库的精确白名单和准入命令。
-9. `../legal/`：回答 private monorepo、future Apache-2.0 snapshot、第三方 notice、DCO 和私有 artifact 发布门禁。
+1. `cloud-staging-roadmap.md`：回答当前真实完成度、单区域纵向消息链路和 CLOUD002-CLOUD005 的用户 DoD。
+2. `product-prd.md`：回答为谁解决什么问题、哪些能力免费、哪些持续服务收费。
+3. `architecture-spec.md`：回答公开客户端、daemon、私有 Control Plane、Hub 和 Relay 各自拥有什么状态。
+4. `network-topology.md`：用目标网络拓扑解释 local、SSH、direct WebRTC、Relay 与端到端授权链路。
+5. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
+6. `distribution-and-cloud-companion-spec.md`：回答公开主程序与闭源 cloud 能力如何拆包、安装、通信、升级和跨平台发布。
+7. `global-acceleration-spec.md`：保留 single-relay 算法背景和延后的 Relay Mesh 输入；不是当前实施队列。
+8. `source-boundary-and-migration-plan.md`、`public-snapshot-manifest.md` 与 `../legal/`：正式开源/发布阶段资产；当前 private monorepo 开发不主动扩展或执行。
 
 若这些文档发生冲突，按以下顺序处理：
 
@@ -74,7 +75,7 @@
 
 ## 6. 实现门禁
 
-RP001 完成前不修改 remote、Hub、Web Controller 或 App runtime。进入后续实现时，至少满足：
+当前实现顺序和完成条件以 `cloud-staging-roadmap.md` 为准。进入 CLOUD002-CLOUD005 时，至少满足：
 
 - 每个切片先有 contract/harness，再接真实服务。
 - 公开 client contract 可以用 fake Hub/Control Plane 独立测试。

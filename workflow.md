@@ -3,7 +3,7 @@
 ## 当前目标
 
 - REC001 已完成仓库可控状态恢复：尚未提交的 RM004 目录与维护改动已经审计收口，误触发的发布期验证扩展已经清理。
-- 下一切片是 CLOUD001；随后按 CLOUD002-CLOUD005 顺序，让桌面 TUI 和 Official Android App 通过同一套单区域 managed cloud 链路连接真实 daemon。
+- CLOUD001 已建立唯一 Cloud staging roadmap；下一切片是 CLOUD002，随后按 CLOUD003-CLOUD005 顺序让桌面 TUI 和 Official Android App 通过同一套单区域 managed cloud 链路连接真实 daemon。
 - 当前仓库是唯一 private monorepo；当前不是正式开源或生产发布阶段。public snapshot、开源许可证模板替换、secret audit、第二仓和发布自动化全部延后。
 - GA003 Relay Mesh、GA004 transit、多区域高可用、复杂计费、SSO 和 live reroute 在单区域 direct/single-relay 闭环完成前不得启动。
 - 插件系统位于独立分支，本分支不新增插件系统代码、协议或文档。
@@ -18,7 +18,7 @@
 - `docs/remote-platform/global-acceleration-spec.md`：GA001/GA002 已有质量与 single-relay 算法背景；Relay Mesh 仅作延后设计输入。
 - `tui/docs/multi-endpoint-transport-plan.md`、`tui/docs/architecture.md`：TUI endpoint/transport 与 runtime 基准。
 - `core/docs/architecture.md`：core terminal lifecycle、live/history 与 storage 边界。
-- CLOUD001 将新增唯一活动 Cloud staging roadmap，并把现有散落状态收敛成纵向验收基准。
+- `docs/remote-platform/cloud-staging-roadmap.md`：唯一活动实现真值，收敛当前代码缺口、四类 session 身份、真实消息链路和 CLOUD002-CLOUD005 用户 DoD。
 
 ## 当前产品真值
 
@@ -55,10 +55,10 @@
 
 - REC001：`workflow.md`、`AGENTS.md`、当前 RM004 已识别改动、原有 tmux 冷启动测试夹具，以及必要的维护 guard；不得新增 Cloud runtime。
 - CLOUD001：`workflow.md`、`AGENTS.md`、`docs/remote-platform/`；只建立纵向 roadmap 和验收链路，不新增实现。
-- CLOUD002：`private/cloud/`、必要 `shared/`/`proto/` contract 与显式 dev harness；不触及 TUI/Android 产品接线。
-- CLOUD003：`private/cloud/companion`、`remote/`、`shared/`、`proto/`、`tui/` 与必要 CLI/dev harness；只完成 desktop managed direct。
-- CLOUD004：`private/cloud/{control-plane,relay,route-planner,companion}`、`remote/` 与必要 harness；只完成单区域 single Relay。
-- CLOUD005：`private/cloud/mobile`、`clients/mobile` 与必要共享 contract/harness；只完成 Official Android 接线与手测材料。
+- CLOUD002：`private/cloud/`、必要 `shared/`/`proto/` contract、`Makefile` 和显式 dev launcher/harness；不触及 TUI/Android 产品接线。
+- CLOUD003：`private/cloud/companion`、`remote/`、`shared/`、`proto/`、`tui/`、`cmd/termx/` 与必要 CLI/dev harness；只完成 desktop managed direct。
+- CLOUD004：`private/cloud/{control-plane,relay,route-planner,companion}`、`remote/`、必要 `Makefile`/dev launcher 与 harness；只完成单区域 single Relay。
+- CLOUD005：`private/cloud/mobile`、`clients/mobile`、`docs/remote-platform/` 与必要共享 contract/harness；只完成 Official Android 接线与手测材料。
 - `core/` 只有 terminal lifecycle、history 或 scoped protocol contract 确实需要时才最小联动；`private/archive/` 始终禁止主动修改。
 
 ## 任务队列
@@ -66,7 +66,7 @@
 | ID | 状态 | 范围 | 用户可观察验收 |
 | --- | --- | --- | --- |
 | REC001 | 完成 | 恢复仓库可控状态并收口未提交 RM004 | Git 工作树干净；维护入口有效；开源发布工作已明确延后 |
-| CLOUD001 | 待开始 | 建立唯一 Cloud staging roadmap | direct、single Relay、Android 的消息链路和完成条件清晰且不互相冒充 |
+| CLOUD001 | 完成 | 建立唯一 Cloud staging roadmap | direct、single Relay、Android 的消息链路和完成条件清晰且不互相冒充 |
 | CLOUD002 | 待开始 | 最小单区域开发云服务 | 一个命令启动显式 dev cloud；账号、设备、resolve、admission、signaling 跨真实服务边界通过 |
 | CLOUD003 | 待开始 | Desktop managed direct 闭环 | TUI 经 Companion/Hub/WebRTC direct 列出、attach 并操作真实 daemon terminal |
 | CLOUD004 | 待开始 | 单区域 single Relay 闭环 | 显式 Relay 策略通过 lease-bound TURN 连接；quota、到期、usage 和局部失败可验证 |
@@ -103,4 +103,5 @@
 - RM001-RM003 已提交：公开 Go module、npm workspace 和 Android 单一源码已经收口。
 - RM004 原未提交改动已由 REC001 审计接管：`private/cloud` 路径迁移、canonical Make 入口、`.artifacts`、doctor/layout/generated guard、文档归档和原有 tmux 冷启动诊断已经收口并通过 REC001 全部准入。
 - RP002-RP007、GA001/GA001A/GA002 已建立 contract、领域组件和 harness；这些成果是 CLOUD002-CLOUD005 的输入，不代表 managed cloud 已可用。
+- CLOUD001 已完成：活动 roadmap 明确当前没有用户可运行的 managed cloud，CLOUD002 必须先修正 PresenceSession/ManagedSession 混用与 fresh presence proof，再建立真实 Control Plane/Hub 网络边界。
 - 正式开源隔离、生产 OAuth/TLS、持久化数据库、计费、团队治理、Relay Mesh 和多区域运维全部延后。
