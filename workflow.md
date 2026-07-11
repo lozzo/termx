@@ -80,7 +80,7 @@
 | CLOUD004 | 完成 | 单区域 single Relay 闭环 | 显式 Relay 策略通过 lease-bound TURN 连接；quota、到期、usage 和局部失败可验证 |
 | CLOUD005 | 完成 | Official Android 闭环 | Official APK 可扫码/导入、连接、列出/attach terminal、输入并完成后台恢复手测 |
 | FILE001 | 完成 | 统一文件能力设计门禁 | 文件 owner、权限、方法、流控、失败语义和旧 API 迁移边界清晰 |
-| FILE002 | 待开始 | daemon 文件 metadata 与预览 | local protocol 可安全 list/stat/preview/mkdir/rename/delete/copy/move |
+| FILE002 | 进行中 | daemon 文件 metadata 与预览 | local protocol 可安全 list/stat/preview/mkdir/rename/delete/copy/move |
 | FILE003 | 待开始 | 文件上传下载数据流 | local 与 WebRTC 使用同一流协议完成背压、取消、续传和摘要校验 |
 | FILE004 | 待开始 | 共享 UI 与 Official Android 闭环 | App 可浏览、预览、上传、下载并经 direct/single Relay 手测 |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
@@ -125,4 +125,5 @@
 - CLOUD004 已完成：`make cloud-dev` 装配一个 lease-bound Pion UDP TURN；client/daemon 通过同一 ManagedSession 获取不同短期凭据，TUI 在真实 `single_relay` path 完成 List/Attach/Input/Live/History；Authority/Control Plane 验证并发、quota、到期与 signed idempotent usage，race E2E 证明 Relay 停止后不回退 direct 且 local endpoint 仍可用。
 - CLOUD005 已完成：Official dev gateway、真实 DTLS/capability auth、Keystore pairing、单一 `protocol` DataChannel、core-v2 live screen 和 fresh-proof presence 续约已接通；真机 List/Attach/Input/Output、2 秒/10 秒恢复、Hub 局部失败和 Community `companion_missing` 均已通过，准入全绿。Community 验收后设备物理断开，重连后只需恢复安装 Official dev APK，不影响切片完成度。
 - FILE001 已完成：统一规范明确 daemon 文件系统 truth、显式四类文件权限、metadata 方法、单 protocol DataChannel 流、背压/续传/摘要失败语义和旧 `/files/*`/独立 file channel 删除路线；UI/schema 存量不再冒充可用能力。
+- FILE002 已启动：当前实现从 `proto/wirepb`、`internal/protocol` typed codec/client、`core` 文件系统 owner 与 `TransportScope` 四层建立 harness；在全部 metadata 方法可编译验证前不接 UI，也不恢复旧 HTTP-like runtime API。
 - 正式开源隔离、生产 OAuth/TLS、持久化数据库、计费、团队治理、Relay Mesh 和多区域运维全部延后。
