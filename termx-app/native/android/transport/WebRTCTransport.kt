@@ -3,13 +3,13 @@ package com.termx.app.transport
 import android.content.Context
 import android.util.Log
 import com.termx.app.network.BridgeServer
-import com.termx.app.util.HttpHelper
-import org.json.JSONArray
+import com.termx.app.managed.ManagedIceServer
+import com.termx.app.managed.ManagedSignalAnswer
+import com.termx.app.managed.ManagedSignalOffer
 import org.json.JSONObject
 import org.webrtc.*
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
-import java.util.*
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -18,12 +18,8 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * WebRTCTransport — termx PeerConnection 生命周期
  *
- * 信令协议：
- *   GET  /api/v1/sessions/ice     → ICE 服务器列表
- *   POST /api/v1/sessions         → 发 offer，拿 answer（或 pending sessionId）
- *   POST /api/v1/sessions/{id}/answer → poll answer
- *
- * 认证：sessionToken 在请求体中，Bearer token 形式在 Authorization header。
+ * 该类只拥有 Android PeerConnection、ICE/DTLS 和 DataChannel primitive。
+ * Cloud adapter 在外部交换 SDP/ICE；本类不访问 Hub HTTP，不接收账号 token，也不解释 terminal capability。
  */
 class WebRTCTransport(
     private val bridge: BridgeServer?,
@@ -36,9 +32,6 @@ class WebRTCTransport(
         private const val ICE_GATHER_TIMEOUT_LOCAL = 3000
         private const val CONNECT_TIMEOUT = 15000
         private const val DATA_CHANNEL_OPEN_TIMEOUT = 10000
-        private const val SIGNALING_TIMEOUT = 15000
-        private const val ANSWER_POLL_MAX = 30
-        private const val ANSWER_POLL_DELAY_MS = 2000L
         private const val RESUME_STALE_THRESHOLD_MS = 7000L
 
         private var factory: PeerConnectionFactory? = null
@@ -83,141 +76,46 @@ class WebRTCTransport(
 
     // ─── Connect ─────────────────────────────────────────────────────────────
 
-    /** Hub 连接（local or hub，都走同一套信令协议，只是 hubUrl 不同） */
-    fun connectHub(
-        hubUrl: String,
-        sessionToken: String,
-        iceServers: JSONArray?,
-        forceRelay: Boolean = false,
-        onProgress: ((String) -> Unit)? = null,
-    ): Boolean {
+    /** startManaged 创建 PeerConnection/DataChannel 和完整 offer；调用方负责通过 ManagedCloudAdapter 交换该 offer。 */
+    fun startManaged(iceServers: List<ManagedIceServer>, relayOnly: Boolean): ManagedSignalOffer? {
         lastFailureReason = null
         relayInUse = false
         return try {
-            val f = factory ?: run { markFailure("init"); return false }
+            val f = factory ?: run { markFailure("init"); return null }
             val servers = parseIceServers(iceServers)
             val config = PeerConnection.RTCConfiguration(servers).apply {
                 sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-                if (forceRelay) {
+                if (relayOnly) {
                     iceTransportsType = PeerConnection.IceTransportsType.RELAY
                 }
             }
             pc = f.createPeerConnection(config, createObserver()) ?: run {
-                markFailure("init"); return false
+                markFailure("init"); return null
             }
             channelManager.createInitialChannels(pc!!)
 
-            val offer = createOffer() ?: run { markFailure("offer"); disconnect(); return false }
-            if (!setLocalDesc(offer)) { markFailure("offer"); disconnect(); return false }
+            val offer = createOffer() ?: run { markFailure("offer"); disconnect(); return null }
+            if (!setLocalDesc(offer)) { markFailure("offer"); disconnect(); return null }
 
-            onProgress?.invoke("Gathering ICE candidates...")
-            val waitRelay = forceRelay || (iceServers != null && iceServers.length() > 0)
+            val waitRelay = relayOnly || iceServers.isNotEmpty()
             waitForICEGathering(if (waitRelay) ICE_GATHER_TIMEOUT_HUB else ICE_GATHER_TIMEOUT_LOCAL, waitRelay)
-
-            val localSdp = pc!!.localDescription.description
-            onProgress?.invoke("Exchanging signals with hub...")
-
-            val sessionId = UUID.randomUUID().toString()
-            val body = JSONObject()
-                .put("machine_id", machineId)
-                .put("session_token", sessionToken)
-                .put("offer", JSONObject()
-                    .put("session_id", sessionId)
-                    .put("sdp", localSdp)
-                    .put("ice_candidates", JSONArray()))
-                .toString()
-
-            val headers = mapOf(
-                "Content-Type" to "application/json",
-                "Authorization" to "Bearer $sessionToken",
-            )
-
-            val resp = HttpHelper.post("$hubUrl/api/v1/sessions", headers, body, SIGNALING_TIMEOUT)
-            Log.i(TAG, "createSession response: ${resp.statusCode}")
-            if (!resp.isOk) {
-                Log.w(TAG, "createSession failed: ${resp.statusCode} ${resp.bodyString().take(300)}")
-                markFailure(if (isAuthStatus(resp.statusCode)) "auth" else "signal")
-                disconnect()
-                return false
-            }
-
-            val answer = resolveAnswer(hubUrl, sessionToken, JSONObject(resp.bodyString()), onProgress)
-                ?: return false
-
-            processAnswer(answer)
+            ManagedSignalOffer(pc!!.localDescription.description)
         } catch (e: Exception) {
             if (lastFailureReason == null) markFailure("unknown")
-            Log.e(TAG, "connectHub failed", e)
+            Log.e(TAG, "startManaged failed", e)
             disconnect()
-            false
+            null
         }
     }
 
-    // ─── Private helpers ─────────────────────────────────────────────────────
-
-    private fun resolveAnswer(
-        hubUrl: String,
-        sessionToken: String,
-        response: JSONObject,
-        onProgress: ((String) -> Unit)?,
-    ): JSONObject? {
-        if (response.optBoolean("pending", false)) {
-            val sessionId = response.optString("session_id")
-            onProgress?.invoke("Waiting for machine to respond...")
-            return pollAnswer(hubUrl, sessionToken, sessionId, onProgress)
-        }
-        return response
-    }
-
-    private fun pollAnswer(
-        hubUrl: String,
-        sessionToken: String,
-        sessionId: String,
-        onProgress: ((String) -> Unit)?,
-    ): JSONObject? {
-        val headers = mapOf(
-            "Content-Type" to "application/json",
-            "Authorization" to "Bearer $sessionToken",
-        )
-        val body = JSONObject().put("machine_id", machineId).toString()
-
-        for (attempt in 1..ANSWER_POLL_MAX) {
-            Thread.sleep(ANSWER_POLL_DELAY_MS)
-            try {
-                val resp = HttpHelper.post(
-                    "$hubUrl/api/v1/sessions/${sessionId}/answer",
-                    headers, body, SIGNALING_TIMEOUT,
-                )
-                if (resp.statusCode == 202) continue // still pending
-                if (!resp.isOk) {
-                    Log.w(TAG, "pollAnswer failed: ${resp.statusCode} ${resp.bodyString().take(300)}")
-                    markFailure(if (isAuthStatus(resp.statusCode)) "auth" else "signal")
-                    disconnect()
-                    return null
-                }
-                return JSONObject(resp.bodyString())
-            } catch (e: Exception) {
-                Log.w(TAG, "pollAnswer attempt $attempt failed: ${e.message}")
-            }
-        }
-        markFailure("timeout")
-        disconnect()
-        return null
-    }
-
-    private fun isAuthStatus(statusCode: Int): Boolean = statusCode == 401 || statusCode == 403
-
-    private fun processAnswer(answer: JSONObject): Boolean {
-        val sdpObj = answer.optJSONObject("answer")
-        val sdp = sdpObj?.optString("sdp") ?: answer.optString("sdp")
-        if (sdp.isNullOrBlank()) {
+    /** finishManaged 消费 Cloud adapter 返回的 answer/ICE 并等待 PeerConnection 与初始 DataChannel 就绪。 */
+    fun finishManaged(answer: ManagedSignalAnswer): Boolean {
+        if (answer.sdp.isBlank()) {
             markFailure("signal")
             disconnect()
             return false
         }
-
-        val remoteCandidates = answer.optJSONArray("ice_candidates")
-        val remoteSDP = SessionDescription(SessionDescription.Type.ANSWER, sdp)
+        val remoteSDP = SessionDescription(SessionDescription.Type.ANSWER, answer.sdp)
 
         val latch = CountDownLatch(1)
         val ok = AtomicBoolean(true)
@@ -239,12 +137,8 @@ class WebRTCTransport(
         }
 
         // Add any extra ICE candidates from answer
-        remoteCandidates?.let { arr ->
-            for (i in 0 until arr.length()) {
-                val candidateSdp = arr.optString(i) ?: continue
-                if (candidateSdp.isBlank()) continue
-                pc!!.addIceCandidate(IceCandidate("", 0, candidateSdp))
-            }
+        answer.candidates.forEach { candidateSdp ->
+            if (candidateSdp.isNotBlank()) pc!!.addIceCandidate(IceCandidate("", 0, candidateSdp))
         }
 
         // Wait for connection
@@ -381,26 +275,12 @@ class WebRTCTransport(
         override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent?) {}
     }
 
-    private fun parseIceServers(arr: JSONArray?): List<PeerConnection.IceServer> {
-        if (arr == null) return emptyList()
-        val result = mutableListOf<PeerConnection.IceServer>()
-        for (i in 0 until arr.length()) {
-            val obj = arr.optJSONObject(i) ?: continue
-            val urlsArr = obj.optJSONArray("urls")
-            val urls = if (urlsArr != null) {
-                (0 until urlsArr.length()).mapNotNull { urlsArr.optString(it) }
-            } else {
-                listOfNotNull(obj.optString("url").takeIf { it.isNotBlank() })
-            }
-            if (urls.isEmpty()) continue
-            val username = obj.optString("username").takeIf { it.isNotBlank() }
-            val credential = obj.optString("credential").takeIf { it.isNotBlank() }
-            val builder = PeerConnection.IceServer.builder(urls)
-            if (username != null) builder.setUsername(username)
-            if (credential != null) builder.setPassword(credential)
-            result.add(builder.createIceServer())
-        }
-        return result
+    private fun parseIceServers(servers: List<ManagedIceServer>): List<PeerConnection.IceServer> = servers.mapNotNull { server ->
+        if (server.urls.isEmpty()) return@mapNotNull null
+        PeerConnection.IceServer.builder(server.urls).apply {
+            if (server.username.isNotBlank()) setUsername(server.username)
+            if (server.credential.isNotBlank()) setPassword(server.credential)
+        }.createIceServer()
     }
 
     // ─── Public API ──────────────────────────────────────────────────────────

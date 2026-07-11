@@ -16,6 +16,9 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    sourceSets {
+        test.resources.srcDir '../../../termx-shared/cloudcompanion/testdata'
+    }
     if (project.hasProperty("termxArmOnly")) {
         splits {
             abi {

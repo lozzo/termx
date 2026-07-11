@@ -1,6 +1,6 @@
 # TermX Remote Platform 架构规范
 
-状态：RP005 私有 Hub/Relay 实现基线
+状态：RP006 统一公开客户端实现基线
 
 版本：v1 draft
 

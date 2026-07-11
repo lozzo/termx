@@ -20,7 +20,10 @@ type EndpointServiceBundle struct {
 	Surface    TerminalSurfaceService
 	LiveEvents TerminalLiveEventService
 	Path       PathService
-	Lifecycle  EndpointLifecycle
+	// ObservedPath 是 managed WebRTC 实际使用的 direct/single_relay/relay_mesh 路径。
+	// 它只是 endpoint 运行时投影；local/SSH bundle 保持为空，不能据此改变 endpoint identity 或授权。
+	ObservedPath string
+	Lifecycle    EndpointLifecycle
 }
 
 // EndpointDialer 是 endpoint manager 的 lazy transport 连接入口。
@@ -470,7 +473,11 @@ func (manager *EndpointManager) bundle(ctx context.Context, endpointID state.End
 	}
 	manager.bundles[endpointID] = bundle
 	manager.startBundleWatcherLocked(endpointID, bundle)
+	subscribers := cloneEndpointEventSubscribers(manager.subscribers)
 	manager.mu.Unlock()
+	publishEndpointRuntimeEvent(subscribers, EndpointRuntimeEvent{
+		EndpointID: endpointID, Status: state.EndpointStatusConnected, ObservedPath: bundle.ObservedPath,
+	})
 	return endpointID, bundle, nil
 }
 

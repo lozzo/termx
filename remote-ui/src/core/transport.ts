@@ -4,6 +4,10 @@ export type ConnectionPath = 'local' | 'hub'
 
 export const CONNECTION_PATHS = ['local', 'hub'] as const satisfies readonly ConnectionPath[]
 
+export type ObservedPath = 'direct' | 'single_relay' | 'relay_mesh'
+
+export const OBSERVED_PATHS = ['direct', 'single_relay', 'relay_mesh'] as const satisfies readonly ObservedPath[]
+
 export type RemoteRuntimeFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 export interface RemoteRuntimeStorage {
@@ -56,12 +60,13 @@ export interface RtcSubscription {
   close(): void
 }
 
-export type RtcConnectionPhase = 'idle' | 'probing' | 'connecting' | 'connected' | 'verifying' | 'reconnecting' | 'waiting_network' | 'failed'
+export type RtcConnectionPhase = 'idle' | 'probing' | 'resolving' | 'signaling' | 'connecting' | 'authorizing' | 'connected' | 'verifying' | 'reconnecting' | 'waiting_network' | 'failed'
 
 export interface RtcConnectionStateSnapshot {
   machineId: string
   phase: RtcConnectionPhase
   path?: ConnectionPath | undefined
+  observedPath?: ObservedPath | undefined
   statusText: string
   relayInUse: boolean
   failReason?: string | undefined
@@ -74,6 +79,7 @@ export interface RtcEvent {
 
 export interface ConnectionInfo {
   path: ConnectionPath
+  observedPath?: ObservedPath | undefined
   connectionId: string
   machineId: string
   terminalId?: string

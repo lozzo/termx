@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "transport": "hub-p2p",
+  "phases": [
+    "idle",
+    "resolving",
+    "signaling",
+    "connecting",
+    "authorizing",
+    "connected",
+    "failed"
+  ],
+  "observed_paths": [
+    "direct",
+    "single_relay",
+    "relay_mesh"
+  ],
+  "relay_policies": [
+    {"relay_mode": "auto", "route_preference": "standard_relay", "relay_only": false},
+    {"relay_mode": "direct", "route_preference": "direct_only", "relay_only": false},
+    {"relay_mode": "relay_only", "route_preference": "standard_relay", "relay_only": true}
+  ],
+  "cloud_errors": [
+    "companion_missing",
+    "companion_not_running",
+    "companion_incompatible",
+    "companion_untrusted",
+    "login_required",
+    "device_enrollment_required",
+    "unauthenticated",
+    "device_not_found",
+    "entitlement_denied",
+    "quota_exhausted",
+    "region_unavailable",
+    "route_unavailable",
+    "backpressure",
+    "protocol",
+    "temporary"
+  ],
+  "authorization_cases": [
+    {
+      "name": "valid-managed-endpoint",
+      "endpoint_id": "studio",
+      "target_device_id": "device-studio",
+      "device_fingerprint": "SHA256:studio",
+      "grant_ref": "grant-studio",
+      "relay_mode": "auto",
+      "valid": true
+    },
+    {
+      "name": "missing-grant-ref",
+      "endpoint_id": "studio",
+      "target_device_id": "device-studio",
+      "device_fingerprint": "SHA256:studio",
+      "grant_ref": "",
+      "relay_mode": "auto",
+      "valid": false
+    },
+    {
+      "name": "missing-device-fingerprint",
+      "endpoint_id": "studio",
+      "target_device_id": "device-studio",
+      "device_fingerprint": "",
+      "grant_ref": "grant-studio",
+      "relay_mode": "auto",
+      "valid": false
+    },
+    {
+      "name": "unknown-relay-mode",
+      "endpoint_id": "studio",
+      "target_device_id": "device-studio",
+      "device_fingerprint": "SHA256:studio",
+      "grant_ref": "grant-studio",
+      "relay_mode": "legacy",
+      "valid": false
+    }
+  ]
+}

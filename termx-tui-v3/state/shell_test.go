@@ -755,7 +755,7 @@ func TestTerminalPickerGroupsExposeEndpointMetadataAndSearch(t *testing.T) {
 			Upsert(EndpointItem{ID: "disabled", Label: "Disabled Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectAuto, Enabled: false}).
 			Upsert(EndpointItem{ID: "manual", Label: "Manual Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectManual, Enabled: true}).
 			Upsert(EndpointItem{ID: "reconnect", Label: "Moved Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true, ReconnectRequired: true}).
-			Upsert(EndpointItem{ID: "west", Label: "US West", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true, Status: EndpointStatusOffline, LastError: "ssh timeout", LastErrorKind: EndpointErrorTransportClosed}),
+			Upsert(EndpointItem{ID: "west", Label: "US West", Transport: EndpointTransportHubP2P, ConnectMode: EndpointConnectOnDemand, Enabled: true, Status: EndpointStatusOffline, LastError: "route unavailable", LastErrorKind: EndpointErrorTransportClosed, ObservedPath: "single_relay"}),
 		TerminalPool: TerminalPoolStore{
 			Status: TerminalPoolReady,
 			Items: []TerminalPoolItem{
@@ -787,6 +787,9 @@ func TestTerminalPickerGroupsExposeEndpointMetadataAndSearch(t *testing.T) {
 	for _, group := range groups {
 		if group.EndpointID == "west" && group.ErrorKind != EndpointErrorTransportClosed {
 			t.Fatalf("west group should carry endpoint error kind, got %#v", group)
+		}
+		if group.EndpointID == "west" && group.ObservedPath != "single_relay" {
+			t.Fatalf("west group should carry managed observed path, got %#v", group)
 		}
 	}
 	if rowCountByID[DefaultEndpointID] != 1 || rowCountByID["west"] != 1 || rowCountByID["orphan"] != 1 || rowCountByID["manual"] != 0 {

@@ -5,7 +5,6 @@ import { Keyboard } from '@capacitor/keyboard'
 import { Html5Qrcode } from 'html5-qrcode'
 import {
   RemoteControlApp,
-  createMachineSessionStore,
   createMachineStore,
   dispatchNativeKeyboardEvent,
   dispatchNativeBack,
@@ -49,7 +48,7 @@ type NativeConnector = Pick<NativeRtcConnector, 'connect'> & {
   release?(machineId: string): Promise<void>
 }
 type NativeSessionEntry = {
-  sessionToken: string | null
+  endpointIdentity: string
   connector: NativeConnector
   manager: NativeSessionManager
 }
@@ -391,17 +390,20 @@ function createNativeMachineRuntime(
     transferStore: NativeFileTransferStore
   },
 ): MachineRuntime {
-  const sessionStore = createMachineSessionStore(storage)
   const machineStore = createMachineStore({ storage })
   const storedMachine = machineStore.getMachine(machine.id)
-  const sessionToken = sessionStore.getSessionToken(machine.id)
+  const endpointIdentity = [
+    machine.id,
+    storage.getItem(`termx.endpoint.${machine.id}.deviceFingerprint`)?.trim() ?? '',
+    storage.getItem(`termx.endpoint.${machine.id}.grantRef`)?.trim() ?? '',
+  ].join('|')
   let entry = shared.sessionManagers.get(machine.id)
-  if (!entry || entry.sessionToken !== sessionToken) {
+  if (!entry || entry.endpointIdentity !== endpointIdentity) {
     void entry?.manager.reset().catch(() => {})
     void entry?.connector.release?.(machine.id).catch(() => {})
     const connector = createNativeConnector(machine, storedMachine, storage)
     entry = {
-      sessionToken,
+      endpointIdentity,
       connector,
       manager: createNativeSessionManager(machine.id, connector),
     }
@@ -429,8 +431,6 @@ function createNativeMachineRuntime(
       }
     },
     async listTerminals(options) {
-      const sessionToken = sessionStore.getSessionToken(machine.id)
-      if (!sessionToken) throw new Error('Pair this machine before opening the runtime channel')
       emitNativeRuntimeConnectionState(options, machine.id, 'connecting', 'Connecting through native runtime...')
       const session = await sessionManager.get({
         forceRelay: options?.forceRelay,
@@ -515,39 +515,29 @@ function createFileTransferContext(machineId: string | undefined, store: NativeF
 
 function createNativeConnector(
   machine: WebControlMachine,
-  storedMachine: StoredMachineRecord | null,
+  _storedMachine: StoredMachineRecord | null,
   storage: RemoteRuntimeStorage,
 ): NativeConnector {
-  const sessionStore = createMachineSessionStore(storage)
-  const sessionToken = sessionStore.getSessionToken(machine.id)
-  if (!sessionToken) {
+  const deviceFingerprint = storage.getItem(`termx.endpoint.${machine.id}.deviceFingerprint`)?.trim() ?? ''
+  const grantRef = storage.getItem(`termx.endpoint.${machine.id}.grantRef`)?.trim() ?? ''
+  if (!deviceFingerprint || !grantRef) {
     return {
       async connect() {
-        throw new Error('auth')
+        throw new Error('Managed endpoint requires a device fingerprint and grant reference from the new pairing flow')
       },
     }
   }
 
-  const localAddresses = compactStrings([
-    ...(storedMachine?.addresses.local ?? []),
-    ...(storedMachine?.addresses.lan ?? []),
-    ...(storedMachine?.addresses.public ?? []),
-  ])
-  const hubUrls = compactStrings([
-    machine.currentHubUrl,
-    ...machine.hubUrls,
-    storedMachine?.endpoints.hub,
-  ])
-  const connectOpts: Omit<NativeConnectOpts, 'machineId'> = {
-    localAddresses,
-    hubUrls,
-    sessionToken,
-    answerProofSecret: sessionStore.getAnswerProofSecret(machine.id) ?? undefined,
+  const connectOpts: Omit<NativeConnectOpts, 'endpointId'> = {
+    targetDeviceId: machine.id,
+    deviceFingerprint,
+    grantRef,
+    relayMode: 'auto',
   }
   const connector = new NativeRtcConnector(connectOpts)
   return {
     connect: (target, options) => connector.connect(target, options),
-    release: (machineId) => NativeConnection.release({ machineId }),
+    release: (endpointId) => NativeConnection.release({ endpointId }),
   }
 }
 
@@ -695,7 +685,7 @@ function createNativeConnectionStateEvents(machineId: string) {
       let listenerHandle: { remove(): void } | null = null
       let sawLiveEvent = false
       NativeConnection.addListener('stateChange', (event: NativeStateChangeEvent) => {
-        if (closed || event.machineId !== machineId) return
+        if (closed || event.endpointId !== machineId) return
         sawLiveEvent = true
         handler(nativeConnectionStateSnapshot(event))
       }).then((handle) => {
@@ -705,7 +695,7 @@ function createNativeConnectionStateEvents(machineId: string) {
         }
         listenerHandle = handle
       }).catch(() => {})
-      NativeConnection.getSnapshot({ machineId }).then((snapshot) => {
+      NativeConnection.getSnapshot({ endpointId: machineId }).then((snapshot) => {
         if (closed || sawLiveEvent || snapshot.phase === 'failed') return
         handler(nativeConnectionStateSnapshot(snapshot))
       }).catch(() => {})
@@ -722,9 +712,10 @@ function createNativeConnectionStateEvents(machineId: string) {
 
 function nativeConnectionStateSnapshot(data: NativeConnectionSnapshot | NativeStateChangeEvent): RtcConnectionStateSnapshot {
   return {
-    machineId: data.machineId,
+    machineId: data.endpointId,
     phase: nativeConnectionPhase(data.phase),
     ...(data.path ? { path: nativeConnectionPath(data.path) } : {}),
+    ...(data.observedPath ? { observedPath: data.observedPath } : {}),
     statusText: data.statusText || 'Connecting...',
     relayInUse: data.relayInUse === true,
     ...(data.failReason ? { failReason: data.failReason } : {}),
@@ -734,8 +725,10 @@ function nativeConnectionStateSnapshot(data: NativeConnectionSnapshot | NativeSt
 function nativeConnectionPhase(phase: string): RtcConnectionStateSnapshot['phase'] {
   if (
     phase === 'idle' ||
-    phase === 'probing' ||
+    phase === 'resolving' ||
+    phase === 'signaling' ||
     phase === 'connecting' ||
+    phase === 'authorizing' ||
     phase === 'connected' ||
     phase === 'verifying' ||
     phase === 'reconnecting' ||
@@ -748,8 +741,7 @@ function nativeConnectionPhase(phase: string): RtcConnectionStateSnapshot['phase
 }
 
 function nativeConnectionPath(path: string): RtcConnectionStateSnapshot['path'] {
-  if (path === 'hub') return 'hub'
-  return 'local'
+  return path === 'local' ? 'local' : 'hub'
 }
 
 function emitNativeRuntimeConnectionState(

@@ -10,9 +10,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/termx-proto/cloudpb"
 	"github.com/lozzow/termx/termx-proto/wire"
-	"github.com/lozzow/termx/termx-shared/cloudcompanion"
 	"github.com/lozzow/termx/termx-shared/connection"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	sshtransport "github.com/lozzow/termx/termx-shared/transport/ssh"
@@ -226,14 +224,6 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID), Logger: logger, SkipInitialLoad: opts.SkipWorkbenchInitialLoad},
 		app.ClipboardDeps{Storage: clipboardStorage, Ref: state.DefaultClipboardStorageRef(state.DefaultWorkspaceID), Logger: logger},
 	)
-}
-
-func v3ManagedCloudEndpointDialer() services.EndpointDialer {
-	return func(_ context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
-		// RP006 接入签名安装的本机 IPC；当前删除旧 Hub HTTP/grant-in-signaling 后必须明确 fail closed。
-		err := cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING, "Cloud Companion is not installed or connected")
-		return services.EndpointServiceBundle{}, fmt.Errorf("managed cloud endpoint %q: %w", cfg.ID, err)
-	}
 }
 
 func v3SSHEndpointDialer(endpointCtx context.Context) services.EndpointDialer {

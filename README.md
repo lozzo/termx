@@ -30,7 +30,8 @@
 - Workbench/layout storage 持久化 endpoint-aware terminal binding。
 - live/input/resize/owner/copy/history 按 `TerminalRef` 路由隔离。
 - first-party create 优先使用用户可见 terminal name 作为 daemon-local key，并在单 endpoint 内拒绝重名。
-- hub/P2P 的身份、安全、中继策略和 registry contract 已收敛；真实 dialer 和跨设备发现属于后续切片。
+- managed WebRTC endpoint 已通过公开 Cloud Companion contract 接入 TUI；Companion 缺失时只让对应 endpoint unavailable，不影响 local/SSH。
+- Android App 已删除旧 Hub/session-token Connector，使用同一 endpoint/relay/error fixture；Community build 对官方 cloud 明确 fail closed，官方私有模块装配属于 RP006A。
 - TUI 本地同步输入组正在实现，用于向一组 terminal 多播普通键盘输入和 paste。
 
 ## 快捷键配置与 Ctrl+数字

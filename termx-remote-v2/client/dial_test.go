@@ -18,6 +18,7 @@ import (
 	"github.com/lozzow/termx/termx-shared/cloudcompanion"
 	"github.com/lozzow/termx/termx-shared/remoteauth"
 	"github.com/lozzow/termx/termx-shared/transport"
+	pion "github.com/pion/webrtc/v4"
 )
 
 func TestDialRunsE2EHandshakeBeforeTermxProtocolWithoutSendingGrantToCompanion(t *testing.T) {
@@ -118,6 +119,20 @@ func TestDialSingleTerminalGrantCannotEscapeCoreScope(t *testing.T) {
 	var info protocol.TerminalInfo
 	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "denied"}, &info); err == nil || !strings.Contains(err.Error(), "transport scope") {
 		t.Fatalf("single-terminal grant escaped through get: %v", err)
+	}
+}
+
+func TestPeerConfigurationEnforcesRelayOnlyPolicy(t *testing.T) {
+	servers := []*cloudpb.IceServer{{Urls: []string{"stun:stun.example.com", "turn:turn.example.com"}, Username: "client", Credential: "secret"}}
+	configuration, err := peerConfiguration(servers, cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, true)
+	if err != nil {
+		t.Fatalf("relay-only configuration: %v", err)
+	}
+	if configuration.ICETransportPolicy != pion.ICETransportPolicyRelay || len(configuration.ICEServers) != 1 {
+		t.Fatalf("relay-only policy not enforced: %#v", configuration)
+	}
+	if _, err := peerConfiguration(servers, cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, true); err == nil {
+		t.Fatal("direct-only route must reject relay-only ICE policy")
 	}
 }
 

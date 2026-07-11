@@ -30,6 +30,7 @@ require (
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/lozzow/termx/internal v0.0.0
 	github.com/lozzow/termx/termx-proto v0.0.0
+	github.com/lozzow/termx/termx-remote-v2 v0.0.0
 	github.com/lozzow/termx/termx-shared v0.0.0
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
@@ -56,3 +57,5 @@ replace github.com/lozzow/termx/termx-proto => ../termx-proto
 replace github.com/lozzow/termx/internal => ../internal
 
 replace github.com/lozzow/termx/termx-testkit => ../termx-testkit
+
+replace github.com/lozzow/termx/termx-remote-v2 => ../termx-remote-v2

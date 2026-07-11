@@ -60,6 +60,7 @@ type EndpointPickerGroup struct {
 	EndpointID          EndpointID
 	Label               string
 	Transport           EndpointTransportKind
+	ObservedPath        string
 	ConnectMode         EndpointConnectMode
 	Status              EndpointStatusKind
 	LastError           string
@@ -75,6 +76,7 @@ type TerminalPoolPageGroup struct {
 	EndpointID          EndpointID
 	Label               string
 	Transport           EndpointTransportKind
+	ObservedPath        string
 	ConnectMode         EndpointConnectMode
 	Status              EndpointStatusKind
 	LastError           string

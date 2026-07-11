@@ -4,7 +4,10 @@ import android.content.Context
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
-import com.termx.app.connectors.RaceConnector
+import com.termx.app.connectors.ManagedWebRTCConnector
+import com.termx.app.managed.ManagedEndpointPhase
+import com.termx.app.managed.ManagedEndpointSpec
+import com.termx.app.managed.RelayMode
 import com.termx.app.network.BridgeServer
 import com.termx.app.network.NetworkStateManager
 import com.termx.app.transfer.FileTransferManager
@@ -19,14 +22,16 @@ import org.json.JSONObject
  */
 class ConnectionStore(
     private val context: Context,
-    val machineId: String,
-    private val localAddresses: List<String>,
-    private val hubUrls: List<String>,
-    private val sessionToken: String,
-    private val answerProofSecret: String?,
-    private var forceRelay: Boolean,
+    val endpointId: String,
+    private val targetDeviceId: String,
+    private val deviceFingerprint: String,
+    private val grantRef: String,
+    private val relayMode: RelayMode,
     private val bridge: BridgeServer?,
+    private val connector: ManagedWebRTCConnector = ManagedWebRTCConnector.community(),
 ) {
+    val machineId: String get() = endpointId
+    private val endpointSpec = ManagedEndpointSpec(endpointId, targetDeviceId, deviceFingerprint, grantRef, relayMode)
     companion object {
         private const val TAG = "TermxConnStore"
         private val RECONNECT_DELAYS = doubleArrayOf(0.5, 2.0, 4.0, 8.0, 15.0)
@@ -42,8 +47,10 @@ class ConnectionStore(
 
     sealed class Phase {
         object Idle : Phase()
-        object Probing : Phase()
+        object Resolving : Phase()
+        object Signaling : Phase()
         data class Connecting(val path: String) : Phase()
+        object Authorizing : Phase()
         data class Connected(val path: String, val relayInUse: Boolean) : Phase()
         data class Verifying(val path: String, val relayInUse: Boolean) : Phase()
         data class Reconnecting(val attempt: Int) : Phase()
@@ -52,8 +59,10 @@ class ConnectionStore(
 
         val name: String get() = when (this) {
             Idle -> "idle"
-            Probing -> "probing"
+            Resolving -> "resolving"
+            Signaling -> "signaling"
             is Connecting -> "connecting"
+            Authorizing -> "authorizing"
             is Connected -> "connected"
             is Verifying -> "verifying"
             is Reconnecting -> "reconnecting"
@@ -94,33 +103,21 @@ class ConnectionStore(
     private val workerHandler = Handler(workerThread.looper)
 
     fun matchesConnectionInput(
-        newLocalAddresses: List<String>,
-        newHubUrls: List<String>,
-        newSessionToken: String,
-        newAnswerProofSecret: String?,
+        newTargetDeviceId: String,
+        newDeviceFingerprint: String,
+        newGrantRef: String,
+        newRelayMode: RelayMode,
     ): Boolean {
-        return localAddresses == newLocalAddresses &&
-            hubUrls == newHubUrls &&
-            sessionToken == newSessionToken &&
-            answerProofSecret == newAnswerProofSecret
-    }
-
-    fun setForceRelay(value: Boolean) {
-        forceRelay = value
-    }
-
-    fun isForceRelay(): Boolean = forceRelay
-
-    fun updateForceRelay(value: Boolean): Boolean {
-        val changed = forceRelay != value
-        forceRelay = value
-        return changed
+        return targetDeviceId == newTargetDeviceId &&
+            deviceFingerprint == newDeviceFingerprint &&
+            grantRef == newGrantRef &&
+            relayMode == newRelayMode
     }
 
     fun connect() {
         if (released) return
         val p = phase
-        if (p is Phase.Connecting || p is Phase.Probing) {
+        if (p is Phase.Connecting || p is Phase.Resolving || p is Phase.Signaling || p is Phase.Authorizing) {
             if (!isActiveConnectStale()) return
             Log.i(TAG, "restarting stale connect request [$machineId]")
             cancelConnect()
@@ -196,13 +193,17 @@ class ConnectionStore(
     fun getSnapshot(): JSONObject {
         val p = phase
         return JSONObject().apply {
-            put("machineId", machineId)
+            put("endpointId", endpointId)
+            put("targetDeviceId", targetDeviceId)
             put("phase", p.name)
             put("statusText", statusText)
             put("path", when (p) {
+                is Phase.Connected, is Phase.Verifying, is Phase.Connecting -> "hub"
+                else -> null
+            })
+            put("observedPath", when (p) {
                 is Phase.Connected -> p.path
                 is Phase.Verifying -> p.path
-                is Phase.Connecting -> p.path
                 else -> null
             })
             put("relayInUse", when (p) {
@@ -211,7 +212,7 @@ class ConnectionStore(
                 else -> false
             })
             put("failReason", if (p is Phase.Failed) p.reason else null)
-            put("forceRelay", forceRelay)
+            put("relayMode", relayMode.wireName)
             put("version", version)
         }
     }
@@ -222,31 +223,35 @@ class ConnectionStore(
         val generation = connectGeneration
         connectStartedAt = System.currentTimeMillis()
         connectStartedWhileInactive = !appActive
-        setPhase(Phase.Probing, "Probing...")
+        setPhase(Phase.Resolving, "Resolving managed endpoint...")
         if (resumeReconnect) scheduleResumeConnectWatchdog(generation)
 
         connectJob = scope.launch {
             var transport: WebRTCTransport? = null
             try {
-                val result = RaceConnector.race(
-                    machineId = machineId,
-                    localAddresses = localAddresses,
-                    hubUrls = hubUrls,
-                    sessionToken = sessionToken,
+                val result = connector.connect(
+                    spec = endpointSpec,
                     bridge = bridge,
-                    forceRelay = forceRelay,
-                    onProgress = { msg ->
-                        if (isCurrentConnect(generation)) setStatus(msg)
+                    onProgress = { progress ->
+                        if (isCurrentConnect(generation)) {
+                            when (progress) {
+                                ManagedEndpointPhase.RESOLVING -> setPhase(Phase.Resolving, "Resolving managed endpoint...")
+                                ManagedEndpointPhase.SIGNALING -> setPhase(Phase.Signaling, "Exchanging WebRTC signaling...")
+                                ManagedEndpointPhase.CONNECTING -> setPhase(Phase.Connecting(""), "Connecting WebRTC transport...")
+                                ManagedEndpointPhase.AUTHORIZING -> setPhase(Phase.Authorizing, "Authorizing daemon endpoint...")
+                                else -> Unit
+                            }
+                        }
                     },
                 )
                 if (!isCurrentConnect(generation)) {
-                    if (result is RaceConnector.Result.Success) result.transport.disconnect()
+                    if (result is ManagedWebRTCConnector.Result.Success) result.transport.disconnect()
                     return@launch
                 }
                 ensureActive()
 
                 when (result) {
-                    is RaceConnector.Result.Success -> {
+                    is ManagedWebRTCConnector.Result.Success -> {
                         transport = result.transport
                         attachTransportResetHandler(transport)
                         transport.onDisconnectListener = { onTransportDisconnected() }
@@ -256,17 +261,17 @@ class ConnectionStore(
                         resumeReconnect = false
                         resetVerificationWatchdogBackoff()
                         clearConnectStartedAt(generation)
-                        val path = result.path
-                        setPhase(Phase.Connected(path, result.relayInUse), "Connected via $path")
+                        val path = result.observedPath.wireName
+                        setPhase(Phase.Connected(path, result.observedPath != com.termx.app.managed.ObservedPath.DIRECT), "Connected via $path")
                         fileTransferManager?.resumeInterruptedTransfers(transport)
                     }
-                    is RaceConnector.Result.Failure -> {
+                    is ManagedWebRTCConnector.Result.Failure -> {
                         if (!isCurrentConnect(generation)) return@launch
                         clearConnectStartedAt(generation)
-                        if (result.reason == "auth") {
-                            setPhase(Phase.Failed("auth"), "Authentication failed")
+                        if (result.code in setOf("login_required", "device_enrollment_required", "unauthenticated")) {
+                            setPhase(Phase.Failed(result.code), "Authentication failed")
                         } else {
-                            scheduleReconnect()
+                            setPhase(Phase.Failed(result.code), "Managed endpoint unavailable")
                         }
                     }
                 }
@@ -309,7 +314,7 @@ class ConnectionStore(
             if (previous.phoneOnline && !current.phoneOnline) {
                 val p = phase
                 if (p is Phase.Connected || p is Phase.Verifying || p is Phase.Connecting ||
-                    p is Phase.Probing || p is Phase.Reconnecting) {
+                    p is Phase.Resolving || p is Phase.Signaling || p is Phase.Authorizing || p is Phase.Reconnecting) {
                     cancelConnect()
                     clearReconnectTimer()
                     verifyGeneration += 1
@@ -322,7 +327,7 @@ class ConnectionStore(
         if (previous.phoneOnline && !current.phoneOnline) {
             val p = phase
             if (p is Phase.Connected || p is Phase.Verifying || p is Phase.Connecting ||
-                p is Phase.Probing || p is Phase.Reconnecting) {
+                p is Phase.Resolving || p is Phase.Signaling || p is Phase.Authorizing || p is Phase.Reconnecting) {
                 cancelConnect()
                 clearReconnectTimer()
                 verifyGeneration += 1
@@ -364,7 +369,7 @@ class ConnectionStore(
         appActive = true
         val p = phase
         clearReconnectTimer()
-        if (p is Phase.Connecting || p is Phase.Probing) {
+        if (p is Phase.Connecting || p is Phase.Resolving || p is Phase.Signaling || p is Phase.Authorizing) {
             val staleThreshold = if (backgroundDurationMs > 0L) {
                 RESUME_CONNECT_STALE_MS.coerceAtMost(backgroundDurationMs)
             } else {
@@ -408,7 +413,8 @@ class ConnectionStore(
         }
     }
 
-    private fun isAuthFailed(p: Phase): Boolean = p is Phase.Failed && p.reason == "auth"
+    private fun isAuthFailed(p: Phase): Boolean = p is Phase.Failed &&
+        p.reason in setOf("login_required", "device_enrollment_required", "unauthenticated")
 
     private fun verifyExistingTransport(status: String) {
         val p = phase
@@ -420,7 +426,7 @@ class ConnectionStore(
         val path = when (p) {
             is Phase.Connected -> p.path
             is Phase.Verifying -> p.path
-            else -> if (hubUrls.isNotEmpty() && localAddresses.isEmpty()) "hub" else "local"
+            else -> ""
         }
         val relayInUse = when (p) {
             is Phase.Connected -> p.relayInUse
@@ -536,7 +542,7 @@ class ConnectionStore(
         reconnectRunnable = Runnable {
             reconnectRunnable = null
             if (!released && phase !is Phase.Connected && phase !is Phase.Verifying &&
-                phase !is Phase.Connecting && phase !is Phase.Probing) {
+                phase !is Phase.Connecting && phase !is Phase.Resolving && phase !is Phase.Signaling && phase !is Phase.Authorizing) {
                 launchConnect()
             }
         }.also { workerHandler.postDelayed(it, delayMs) }
@@ -616,7 +622,7 @@ class ConnectionStore(
 
     private fun isActiveConnectStale(now: Long = System.currentTimeMillis()): Boolean {
         val p = phase
-        if (p !is Phase.Connecting && p !is Phase.Probing) return false
+        if (p !is Phase.Connecting && p !is Phase.Resolving && p !is Phase.Signaling && p !is Phase.Authorizing) return false
         return connectStartedAt > 0L && now - connectStartedAt >= ACTIVE_CONNECT_STALE_MS
     }
 
@@ -649,7 +655,7 @@ class ConnectionStore(
     private fun handleAppBackgrounded() {
         clearReconnectTimer()
         val p = phase
-        if (p is Phase.Connecting || p is Phase.Probing) {
+        if (p is Phase.Connecting || p is Phase.Resolving || p is Phase.Signaling || p is Phase.Authorizing) {
             Log.i(TAG, "app backgrounded, cancelling active connection attempt after ${activeConnectAgeMs()}ms [$machineId]")
             cancelConnect()
             reconnectAttempt = 0
@@ -668,7 +674,7 @@ class ConnectionStore(
         workerHandler.postDelayed({
             if (!isCurrentConnect(generation) || released) return@postDelayed
             val p = phase
-            if (p !is Phase.Connecting && p !is Phase.Probing) return@postDelayed
+            if (p !is Phase.Connecting && p !is Phase.Resolving && p !is Phase.Signaling && p !is Phase.Authorizing) return@postDelayed
             Log.i(TAG, "resume connection attempt stale after ${activeConnectAgeMs()}ms, restarting [$machineId]")
             cancelConnect()
             reconnectAttempt = 0

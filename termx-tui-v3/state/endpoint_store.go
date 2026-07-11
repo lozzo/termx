@@ -118,6 +118,9 @@ type EndpointItem struct {
 	DeviceFingerprint string
 	GrantRef          string
 	RelayMode         string
+	// ObservedPath 是当前 managed WebRTC session 的 direct/single_relay/relay_mesh 投影。
+	// registry reload 不提供该值；断线或新 session 会由 endpoint runtime event 更新。
+	ObservedPath      string
 	Status            EndpointStatusKind
 	LastError         string
 	LastErrorKind     EndpointErrorKind
@@ -174,6 +177,7 @@ func (store EndpointStore) ApplyConnectionRegistry(registry connection.Registry)
 			item.LastErrorKind = previous.LastErrorKind
 			item.TerminalCount = previous.TerminalCount
 			item.ReconnectRequired = previous.ReconnectRequired || previous.RequiresReconnect(item)
+			item.ObservedPath = previous.ObservedPath
 			item.DefaultCommand = append([]string(nil), previous.DefaultCommand...)
 			item.DefaultCWD = previous.DefaultCWD
 			item.DefaultsLoaded = previous.DefaultsLoaded
@@ -306,6 +310,23 @@ func (store EndpointStore) MarkRuntimeStatus(endpointID EndpointID, status Endpo
 		item.LastErrorKind = EndpointErrorUnknown
 	}
 	item.Status = status
+	return store.Upsert(item)
+}
+
+// MarkObservedPath 更新单个 managed endpoint 的实际 WebRTC 路径。
+// 空值会清除旧 session 路径；该方法不改变连接状态、terminal count 或授权结果。
+func (store EndpointStore) MarkObservedPath(endpointID EndpointID, observedPath string) EndpointStore {
+	endpointID = NormalizeEndpointID(endpointID)
+	item, ok := store.DisplayEndpoint(endpointID)
+	if !ok {
+		return store
+	}
+	switch observedPath = strings.TrimSpace(observedPath); observedPath {
+	case "", "direct", "single_relay", "relay_mesh":
+		item.ObservedPath = observedPath
+	default:
+		return store
+	}
 	return store.Upsert(item)
 }
 

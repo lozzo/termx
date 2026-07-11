@@ -1,6 +1,6 @@
 # TermX 发布、安装与 Cloud Companion 规范
 
-状态：RP004A companion 实现基线；RP006A 安装与进程激活待实现
+状态：RP006 公开客户端接入基线；RP006A 安装、进程激活与官方移动构建待实现
 
 日期：2026-07-11
 
@@ -446,10 +446,17 @@ out-of-process IPC 是清晰的工程边界，但不自动构成法律结论。�
 - 实现 companion 调用的 signaling/lease server contract。
 - Hub/Relay 不依赖 companion process internals。
 
-### RP006/RP006A：客户端与安装
+### RP006：公开客户端
 
 - TUI/daemon 接 public companion adapter。
-- Official App 接同一 contract 的 private mobile module。
+- Android App 删除独立 Hub/session-token Connector，公开 `WebRTCTransport` 只保留 ICE/DTLS/DataChannel primitive。
+- TUI 与 App 共用 endpoint phase、relay policy、observed path、cloud error 和 authorization fixture。
+- 桌面使用文件型 `grant_ref` store，Android 使用 Keystore AES-GCM store；raw grant 不进入 Companion 或 Web storage。
+- Community App 使用 disabled cloud adapter 和 fail-closed authorizer。
+
+### RP006A：安装与官方构建
+
+- Official App 接同一 contract 的 private mobile cloud module；DeviceIdentity/capability authorizer 继续属于公开 App 层。
 - CLI 完成 install/login/enroll/status/doctor/update/uninstall。
 - 完成 signed manifest、atomic update 和 package integration。
 

@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/termx-shared/cloudcompanion"
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
@@ -414,8 +416,11 @@ type EndpointRuntimeEvent struct {
 	EndpointID state.EndpointID
 	Status     state.EndpointStatusKind
 	ErrorKind  state.EndpointErrorKind
-	Message    string
-	Err        error
+	// ObservedPath 是 managed WebRTC 已建立连接的 direct/single_relay/relay_mesh 运行时投影。
+	// 它不参与 endpoint 路由或授权，空值表示 local/SSH 或尚未观测到 candidate path。
+	ObservedPath string
+	Message      string
+	Err          error
 }
 
 // EndpointEventSource 提供 endpoint-scoped 生命周期事件订阅。
@@ -436,6 +441,26 @@ type EndpointLifecycle struct {
 func ClassifyEndpointError(err error) state.EndpointErrorKind {
 	if err == nil {
 		return state.EndpointErrorUnknown
+	}
+	switch cloudcompanion.CodeOf(err) {
+	case cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_LOGIN_REQUIRED,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED:
+		return state.EndpointErrorAuth
+	case cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_INCOMPATIBLE,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL:
+		return state.EndpointErrorProtocol
+	case cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_NOT_RUNNING,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_NOT_FOUND,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_REGION_UNAVAILABLE,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_BACKPRESSURE,
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY:
+		return state.EndpointErrorUnavailable
 	}
 	return state.ClassifyEndpointErrorText(err.Error())
 }

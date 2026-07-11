@@ -105,6 +105,11 @@ func reduceEndpointRuntimeStatus(root state.Root, msg EndpointRuntimeStatusMsg) 
 	}
 	count := endpointTerminalCount(root, event.EndpointID)
 	root.Endpoints = root.Endpoints.MarkRuntimeStatus(event.EndpointID, status, errorKind, count, message)
+	if status == state.EndpointStatusConnected {
+		root.Endpoints = root.Endpoints.MarkObservedPath(event.EndpointID, event.ObservedPath)
+	} else if status == state.EndpointStatusOffline {
+		root.Endpoints = root.Endpoints.MarkObservedPath(event.EndpointID, "")
+	}
 	if status == state.EndpointStatusOffline {
 		root = markEndpointOfflineInTerminalViews(root, event.EndpointID, endpointRuntimeDisplayMessage(errorKind, message))
 	}

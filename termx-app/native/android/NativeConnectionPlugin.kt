@@ -9,6 +9,12 @@ import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.termx.app.connection.BridgeRouter
 import com.termx.app.connection.ConnectionStoreManager
+import com.termx.app.connectors.ManagedWebRTCConnector
+import com.termx.app.managed.AndroidGrantCredentialStore
+import com.termx.app.managed.CommunityCloudAdapter
+import com.termx.app.managed.CommunityEndpointAuthorizer
+import com.termx.app.managed.ManagedEndpointFailure
+import com.termx.app.managed.RelayMode
 import com.termx.app.network.BridgeServer
 import com.termx.app.network.NetworkStateManager
 import com.termx.app.transfer.FileTransferManager
@@ -33,6 +39,7 @@ class NativeConnectionPlugin : Plugin() {
     private var networkStateManager: NetworkStateManager? = null
     private var bridgeRouter: BridgeRouter? = null
     private var fileTransferManager: FileTransferManager? = null
+    private val grantCredentialStore: AndroidGrantCredentialStore by lazy { AndroidGrantCredentialStore(context) }
 
     override fun load() {
         TermxDebugLog.init(context)
@@ -46,58 +53,72 @@ class NativeConnectionPlugin : Plugin() {
 
     @PluginMethod
     fun connect(call: PluginCall) {
-        val machineId = call.getString("machineId") ?: run {
-            call.reject("machineId required"); return
+        val endpointId = call.getString("endpointId") ?: run {
+            call.reject("endpointId required"); return
         }
-        val sessionToken = call.getString("sessionToken") ?: run {
-            call.reject("sessionToken required"); return
+        val targetDeviceId = call.getString("targetDeviceId") ?: run {
+            call.reject("targetDeviceId required"); return
         }
-        val localAddresses = call.getArray("localAddresses")?.let { arr ->
-            (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }
-        } ?: emptyList()
-
-        val hubUrls = call.getArray("hubUrls")?.let { arr ->
-            (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }
-        } ?: emptyList()
-
-        val answerProofSecret = call.getString("answerProofSecret")
-        val forceRelay = if (call.data.has("forceRelay")) {
-            call.getBoolean("forceRelay", false) ?: false
-        } else {
-            null
+        val deviceFingerprint = call.getString("deviceFingerprint") ?: run {
+            call.reject("deviceFingerprint required"); return
+        }
+        val grantRef = call.getString("grantRef") ?: run {
+            call.reject("grantRef required"); return
+        }
+        val relayMode = try {
+            RelayMode.fromWire(call.getString("relayMode") ?: "auto")
+        } catch (failure: ManagedEndpointFailure) {
+            call.reject(failure.message ?: "invalid relayMode"); return
         }
 
         storeManager?.connect(
-            machineId = machineId,
-            localAddresses = localAddresses,
-            hubUrls = hubUrls,
-            sessionToken = sessionToken,
-            answerProofSecret = answerProofSecret,
-            forceRelay = forceRelay,
+            endpointId = endpointId,
+            targetDeviceId = targetDeviceId,
+            deviceFingerprint = deviceFingerprint,
+            grantRef = grantRef,
+            relayMode = relayMode,
         )
         call.resolve()
     }
 
     @PluginMethod
+    fun storeManagedGrant(call: PluginCall) {
+        val grantRef = call.getString("grantRef") ?: run { call.reject("grantRef required"); return }
+        val grant = call.getString("grant") ?: run { call.reject("grant required"); return }
+        try {
+            grantCredentialStore.put(grantRef, grant)
+            call.resolve()
+        } catch (failure: Exception) {
+            call.reject(failure.message ?: "failed to store managed grant")
+        }
+    }
+
+    @PluginMethod
+    fun deleteManagedGrant(call: PluginCall) {
+        val grantRef = call.getString("grantRef") ?: run { call.reject("grantRef required"); return }
+        try {
+            grantCredentialStore.delete(grantRef)
+            call.resolve()
+        } catch (failure: Exception) {
+            call.reject(failure.message ?: "failed to delete managed grant")
+        }
+    }
+
+    @PluginMethod
     fun retry(call: PluginCall) {
-        val machineId = call.getString("machineId") ?: run {
-            call.reject("machineId required"); return
+        val endpointId = call.getString("endpointId") ?: run {
+            call.reject("endpointId required"); return
         }
-        val forceRelay = if (call.data.has("forceRelay")) {
-            call.getBoolean("forceRelay", false) ?: false
-        } else {
-            null
-        }
-        storeManager?.retry(machineId, forceRelay)
+        storeManager?.retry(endpointId)
         call.resolve()
     }
 
     @PluginMethod
     fun release(call: PluginCall) {
-        val machineId = call.getString("machineId") ?: run {
-            call.reject("machineId required"); return
+        val endpointId = call.getString("endpointId") ?: run {
+            call.reject("endpointId required"); return
         }
-        storeManager?.release(machineId)
+        storeManager?.release(endpointId)
         call.resolve()
     }
 
@@ -130,12 +151,12 @@ class NativeConnectionPlugin : Plugin() {
 
     @PluginMethod
     fun getSnapshot(call: PluginCall) {
-        val machineId = call.getString("machineId") ?: run {
-            call.reject("machineId required"); return
+        val endpointId = call.getString("endpointId") ?: run {
+            call.reject("endpointId required"); return
         }
-        val snapshot = storeManager?.getSnapshot(machineId)
+        val snapshot = storeManager?.getSnapshot(endpointId)
         if (snapshot == null) {
-            call.reject("no snapshot for $machineId"); return
+            call.reject("no snapshot for $endpointId"); return
         }
         val ret = snapshotToJSObject(snapshot)
         call.resolve(ret)
@@ -143,8 +164,8 @@ class NativeConnectionPlugin : Plugin() {
 
     @PluginMethod
     fun getConnectionInfo(call: PluginCall) {
-        val machineId = call.getString("machineId")
-        val info = storeManager?.getConnectionInfo(machineId) ?: JSONObject()
+        val endpointId = call.getString("endpointId")
+        val info = storeManager?.getConnectionInfo(endpointId) ?: JSONObject()
         val ret = JSObject()
         ret.put("type", info.optString("type", "unknown"))
         ret.put("relayInUse", info.optBoolean("relayInUse", false))
@@ -235,7 +256,10 @@ class NativeConnectionPlugin : Plugin() {
         val bridge = BridgeServer(0, bridgeToken)
         bridgeServer = bridge
 
-        val manager = ConnectionStoreManager(context, bridge)
+        val managedConnector = ManagedWebRTCConnector(
+            CommunityCloudAdapter(), grantCredentialStore, CommunityEndpointAuthorizer(),
+        )
+        val manager = ConnectionStoreManager(context, bridge, managedConnector)
         storeManager = manager
 
         val ftm = FileTransferManager(context)
@@ -281,13 +305,16 @@ class NativeConnectionPlugin : Plugin() {
 
     private fun snapshotToJSObject(snapshot: JSONObject): JSObject {
         val ret = JSObject()
-        ret.put("machineId", snapshot.optString("machineId"))
+        ret.put("endpointId", snapshot.optString("endpointId"))
+        ret.put("targetDeviceId", snapshot.optString("targetDeviceId"))
         ret.put("phase", snapshot.optString("phase"))
         ret.put("statusText", snapshot.optString("statusText"))
         val path = snapshot.opt("path")
         if (path != null && path != JSONObject.NULL) ret.put("path", path.toString())
+        val observedPath = snapshot.opt("observedPath")
+        if (observedPath != null && observedPath != JSONObject.NULL) ret.put("observedPath", observedPath.toString())
         ret.put("relayInUse", snapshot.optBoolean("relayInUse", false))
-        ret.put("forceRelay", snapshot.optBoolean("forceRelay", false))
+        ret.put("relayMode", snapshot.optString("relayMode", "auto"))
         ret.put("version", snapshot.optLong("version", 0L))
         val failReason = snapshot.opt("failReason")
         if (failReason != null && failReason != JSONObject.NULL) ret.put("failReason", failReason.toString())

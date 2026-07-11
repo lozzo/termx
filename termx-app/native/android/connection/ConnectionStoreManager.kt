@@ -2,8 +2,10 @@ package com.termx.app.connection
 
 import android.content.Context
 import android.util.Log
+import com.termx.app.connectors.ManagedWebRTCConnector
 import com.termx.app.network.BridgeServer
 import com.termx.app.network.NetworkStateManager
+import com.termx.app.managed.RelayMode
 import com.termx.app.transfer.FileTransferManager
 import com.termx.app.transport.WebRTCTransport
 import org.json.JSONObject
@@ -12,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap
 class ConnectionStoreManager(
     private val context: Context,
     val bridge: BridgeServer?,
+    private val managedConnector: ManagedWebRTCConnector = ManagedWebRTCConnector.community(),
 ) : NetworkStateManager.Listener {
 
     companion object {
@@ -25,30 +28,29 @@ class ConnectionStoreManager(
     var fileTransferManager: FileTransferManager? = null
 
     fun connect(
-        machineId: String,
-        localAddresses: List<String>,
-        hubUrls: List<String>,
-        sessionToken: String,
-        answerProofSecret: String?,
-        forceRelay: Boolean?,
+        endpointId: String,
+        targetDeviceId: String,
+        deviceFingerprint: String,
+        grantRef: String,
+        relayMode: RelayMode,
     ) {
-        Log.i(TAG, "connect: $machineId addresses=${localAddresses.size} hubs=${hubUrls.size} forceRelay=$forceRelay")
-        var store = stores[machineId]
-        if (store != null && !store.matchesConnectionInput(localAddresses, hubUrls, sessionToken, answerProofSecret)) {
-            Log.i(TAG, "recreating store after connection input changed: $machineId")
-            stores.remove(machineId)?.release()
+        Log.i(TAG, "connect managed endpoint: $endpointId target=$targetDeviceId relayMode=${relayMode.wireName}")
+        var store = stores[endpointId]
+        if (store != null && !store.matchesConnectionInput(targetDeviceId, deviceFingerprint, grantRef, relayMode)) {
+            Log.i(TAG, "recreating store after connection input changed: $endpointId")
+            stores.remove(endpointId)?.release()
             store = null
         }
         if (store == null) {
             store = ConnectionStore(
                 context = context,
-                machineId = machineId,
-                localAddresses = localAddresses,
-                hubUrls = hubUrls,
-                sessionToken = sessionToken,
-                answerProofSecret = answerProofSecret,
-                forceRelay = forceRelay == true,
+                endpointId = endpointId,
+                targetDeviceId = targetDeviceId,
+                deviceFingerprint = deviceFingerprint,
+                grantRef = grantRef,
+                relayMode = relayMode,
                 bridge = bridge,
+                connector = managedConnector,
             ).apply {
                 this.fileTransferManager = this@ConnectionStoreManager.fileTransferManager
                 stateChangeListener = { mid, snapshot ->
@@ -57,21 +59,13 @@ class ConnectionStoreManager(
                     if (phase.isNotEmpty()) onPhaseChanged?.invoke(mid, phase)
                 }
             }
-            stores[machineId] = store
-        } else {
-            val forceRelayChanged = forceRelay?.let { store.updateForceRelay(it) } == true
-            if (forceRelayChanged &&
-                (store.phase is ConnectionStore.Phase.Connected || store.phase is ConnectionStore.Phase.Verifying)) {
-                store.retry()
-                return
-            }
+            stores[endpointId] = store
         }
         store.connect()
     }
 
-    fun retry(machineId: String, forceRelay: Boolean? = null) {
+    fun retry(machineId: String) {
         val store = stores[machineId] ?: return
-        if (forceRelay != null) store.setForceRelay(forceRelay)
         store.retry()
     }
 

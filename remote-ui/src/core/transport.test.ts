@@ -45,6 +45,7 @@ describe('RtcSession public interfaces', () => {
     }>()
     expectTypeOf<keyof ConnectionInfo>().toEqualTypeOf<
       | 'path'
+      | 'observedPath'
       | 'connectionId'
       | 'machineId'
       | 'terminalId'

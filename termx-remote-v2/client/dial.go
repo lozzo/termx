@@ -28,8 +28,30 @@ type DialOptions struct {
 	DeviceFingerprint string
 	CapabilityGrant   string
 	RoutePreference   cloudpb.RoutePreference
+	RelayOnly         bool
 	AuthRandom        io.Reader
 	Now               time.Time
+}
+
+// Session 是已完成设备证明和 capability handshake 的 managed WebRTC 连接结果。
+// Transport 承载标准 termx protocol；ObservedPath 只描述本次 ICE candidate path，不改变 endpoint identity 或授权 scope。
+type Session struct {
+	Transport    transport.Transport
+	ObservedPath cloudcompanion.Path
+}
+
+// DialSession 建立 managed WebRTC session，并返回公开客户端可展示的实际网络路径。
+// relay candidate 只能投影为 single_relay；relay_mesh 必须由受信 Companion route metadata 明确报告，不能从本地 stats 猜测。
+func DialSession(ctx context.Context, options DialOptions) (Session, error) {
+	protocolTransport, err := Dial(ctx, options)
+	if err != nil {
+		return Session{}, err
+	}
+	path := cloudcompanion.PathUnknown
+	if peer, ok := protocolTransport.(*peerTransport); ok {
+		path = observedPath(peer.peer)
+	}
+	return Session{Transport: protocolTransport, ObservedPath: path}, nil
 }
 
 // Dial 先本地验证 capability 绑定，再通过 Companion 协商 WebRTC，并在 DataChannel 内完成端到端授权。
@@ -66,7 +88,7 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 	if resolved.GetTargetDeviceId() != "" && strings.TrimSpace(resolved.GetTargetDeviceId()) != targetDeviceID {
 		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Cloud Companion resolved a different target device")
 	}
-	configuration, err := peerConfiguration(resolved.GetIceServers(), options.RoutePreference)
+	configuration, err := peerConfiguration(resolved.GetIceServers(), options.RoutePreference, options.RelayOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +217,7 @@ func receiveAnswer(stream cloudcompanion.SignalingStream) (*cloudpb.SignalingAns
 	}
 }
 
-func peerConfiguration(servers []*cloudpb.IceServer, preference cloudpb.RoutePreference) (pion.Configuration, error) {
+func peerConfiguration(servers []*cloudpb.IceServer, preference cloudpb.RoutePreference, relayOnly bool) (pion.Configuration, error) {
 	switch preference {
 	case cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY,
 		cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY,
@@ -205,6 +227,12 @@ func peerConfiguration(servers []*cloudpb.IceServer, preference cloudpb.RoutePre
 		return pion.Configuration{}, fmt.Errorf("unsupported managed WebRTC route preference %s", preference)
 	}
 	configuration := pion.Configuration{}
+	if relayOnly {
+		if preference == cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY {
+			return pion.Configuration{}, fmt.Errorf("managed WebRTC direct-only route cannot require relay candidates")
+		}
+		configuration.ICETransportPolicy = pion.ICETransportPolicyRelay
+	}
 	for _, server := range servers {
 		if server == nil {
 			continue
@@ -228,6 +256,36 @@ func peerConfiguration(servers []*cloudpb.IceServer, preference cloudpb.RoutePre
 		})
 	}
 	return configuration, nil
+}
+
+func observedPath(peer *pion.PeerConnection) cloudcompanion.Path {
+	if peer == nil {
+		return cloudcompanion.PathUnknown
+	}
+	if sctp := peer.SCTP(); sctp != nil && sctp.Transport() != nil && sctp.Transport().ICETransport() != nil {
+		pair, err := sctp.Transport().ICETransport().GetSelectedCandidatePair()
+		if err == nil && pair != nil && pair.Local != nil && pair.Remote != nil {
+			if pair.Local.Typ == pion.ICECandidateTypeRelay || pair.Remote.Typ == pion.ICECandidateTypeRelay {
+				return cloudcompanion.PathSingleRelay
+			}
+			return cloudcompanion.PathDirect
+		}
+	}
+	report := peer.GetStats()
+	for _, stat := range report {
+		pair, ok := stat.(pion.ICECandidatePairStats)
+		if !ok || !pair.Nominated || pair.State != pion.StatsICECandidatePairStateSucceeded {
+			continue
+		}
+		local, localOK := report[pair.LocalCandidateID].(pion.ICECandidateStats)
+		remote, remoteOK := report[pair.RemoteCandidateID].(pion.ICECandidateStats)
+		if (localOK && local.CandidateType == pion.ICECandidateTypeRelay) ||
+			(remoteOK && remote.CandidateType == pion.ICECandidateTypeRelay) {
+			return cloudcompanion.PathSingleRelay
+		}
+		return cloudcompanion.PathDirect
+	}
+	return cloudcompanion.PathUnknown
 }
 
 func toPionCandidate(candidate *cloudpb.IceCandidate) pion.ICECandidateInit {

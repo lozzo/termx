@@ -566,7 +566,7 @@ class NativeBridgeClient {
         const snapshot = JSON.parse(new TextDecoder().decode(payload)) as NativeConnectionSnapshot | NativeStateChangeEvent
         cacheNativeState(snapshot)
         nativeBridgeLog('state_update', {
-          machineId: snapshot.machineId,
+          endpointId: snapshot.endpointId,
           phase: snapshot.phase,
           path: snapshot.path,
           relayInUse: snapshot.relayInUse === true,
@@ -1115,7 +1115,7 @@ export class NativeRtcSession implements ManagedRtcSession {
 
   subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription {
     this.connectionStateHandlers.add(handler)
-    void NativeConnection.getSnapshot({ machineId: this.machineId }).then((snapshot) => {
+    void NativeConnection.getSnapshot({ endpointId: this.machineId }).then((snapshot) => {
       if (this.closed) return
       handler(normalizeNativeConnectionState(snapshot))
     }).catch(() => {})
@@ -1205,16 +1205,18 @@ export class NativeRtcSession implements ManagedRtcSession {
   async getConnectionInfo(): Promise<ConnectionInfo> {
     let nativeInfo: NativeConnectionInfo | null = null
     try {
-      nativeInfo = await NativeConnection.getConnectionInfo({ machineId: this.machineId })
+      nativeInfo = await NativeConnection.getConnectionInfo({ endpointId: this.machineId })
     } catch {
       nativeInfo = null
     }
     const type = nativeInfo?.type ?? (this.relayInUse ? 'relay' : 'unknown')
+    const relayInUse = this.relayInUse || nativeInfo?.relayInUse === true || type === 'relay'
     return {
       path: this.path,
+      observedPath: relayInUse ? 'single_relay' : 'direct',
       connectionId: this.connectionId,
       machineId: this.machineId,
-      relayInUse: this.relayInUse || nativeInfo?.relayInUse === true || type === 'relay',
+      relayInUse,
       type,
       ...(nativeInfo?.localAddr ? { localAddr: nativeInfo.localAddr } : {}),
       ...(nativeInfo?.remoteAddr ? { remoteAddr: nativeInfo.remoteAddr } : {}),
@@ -1237,7 +1239,7 @@ export class NativeRtcSession implements ManagedRtcSession {
 
   async disconnect(): Promise<void> {
     this.closeBridgeOnly()
-    await NativeConnection.release({ machineId: this.machineId })
+    await NativeConnection.release({ endpointId: this.machineId })
   }
 
   closeBridgeOnly(): void {
@@ -1260,7 +1262,7 @@ export class NativeRtcSession implements ManagedRtcSession {
       // Native may still publish state through the reconnect path below.
     }
 
-    const initial = await NativeConnection.getSnapshot({ machineId: this.machineId })
+    const initial = await NativeConnection.getSnapshot({ endpointId: this.machineId })
       .then(cacheNativeState)
       .catch(() => null)
     if (!initial) return false
@@ -1331,13 +1333,13 @@ export class NativeRtcSession implements ManagedRtcSession {
 
 export interface NativeRtcConnectInput {
   machineId: string
-  connectOpts: Omit<NativeConnectOpts, 'machineId'>
+  connectOpts: Omit<NativeConnectOpts, 'endpointId'>
 }
 
 export class NativeRtcConnector implements ManagedRtcConnector<{ machineId: string }> {
-  private readonly connectOpts: Omit<NativeConnectOpts, 'machineId'>
+  private readonly connectOpts: Omit<NativeConnectOpts, 'endpointId'>
 
-  constructor(connectOpts: Omit<NativeConnectOpts, 'machineId'>) {
+  constructor(connectOpts: Omit<NativeConnectOpts, 'endpointId'>) {
     this.connectOpts = connectOpts
   }
 
@@ -1346,12 +1348,12 @@ export class NativeRtcConnector implements ManagedRtcConnector<{ machineId: stri
     const signal = options?.signal
 
     try {
-      const existing = await readReusableNativeConnection(machineId, options?.forceRelay)
+      const existing = await readReusableNativeConnection(machineId)
       if (existing) {
         options?.onConnectionState?.(existing)
         await sharedNativeBridgeClient.ensureConnected(signal)
         sharedNativeBridgeClient.sendControl(FRAME_SYNC_REQUEST, new Uint8Array(0))
-        return new NativeRtcSession(sharedNativeBridgeClient, machineId, existing.path ?? 'local', existing.relayInUse)
+        return new NativeRtcSession(sharedNativeBridgeClient, machineId, existing.path ?? 'hub', existing.relayInUse)
       }
     } catch {
       // Missing snapshots are expected before native has created a store.
@@ -1369,9 +1371,8 @@ export class NativeRtcConnector implements ManagedRtcConnector<{ machineId: stri
       // Register the JS side waiter before starting native connect. Native can
       // reuse an already-connected store and emit no fresh state event.
       await NativeConnection.connect({
-        machineId,
+        endpointId: machineId,
         ...this.connectOpts,
-        ...(options?.forceRelay !== undefined ? { forceRelay: options.forceRelay } : {}),
       })
       const { path, relayInUse } = await connected.promise
 
@@ -1444,15 +1445,11 @@ function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
 
 async function readReusableNativeConnection(
   machineId: string,
-  forceRelay: boolean | undefined,
 ): Promise<RtcConnectionStateSnapshot | null> {
-  const snapshot = await NativeConnection.getSnapshot({ machineId })
+  const snapshot = await NativeConnection.getSnapshot({ endpointId: machineId })
   cacheNativeState(snapshot)
   if (snapshot.phase !== 'connected') return null
-  if (forceRelay !== undefined && snapshot.forceRelay !== undefined && snapshot.forceRelay !== forceRelay) return null
-  const normalized = normalizeNativeConnectionState(snapshot)
-  if (forceRelay === true && !normalized.relayInUse) return null
-  return normalized
+  return normalizeNativeConnectionState(snapshot)
 }
 
 interface ConnectedWait {
@@ -1498,7 +1495,7 @@ function waitForConnected(
       reject(error)
     }
     const inspect = (data: NativeConnectionSnapshot | NativeStateChangeEvent) => {
-      if (data.machineId !== machineId) return
+      if (data.endpointId !== machineId) return
       lastSnapshot = data
       const snapshot = cacheNativeState(data)
       options?.onConnectionState?.(snapshot)
@@ -1514,7 +1511,7 @@ function waitForConnected(
     }
     const readSnapshot = async () => {
       try {
-        inspect(await NativeConnection.getSnapshot({ machineId }))
+        inspect(await NativeConnection.getSnapshot({ endpointId: machineId }))
       } catch {
         // The native store may not exist until connect() has been called.
       }
@@ -1565,15 +1562,15 @@ function waitForConnected(
 }
 
 function normalizeNativePath(path: string | null | undefined): NativeRuntimePath {
-  if (path === 'hub') return 'hub'
-  return 'local'
+  return path === 'local' ? 'local' : 'hub'
 }
 
 function normalizeNativeConnectionState(data: NativeConnectionSnapshot | NativeStateChangeEvent): RtcConnectionStateSnapshot {
   return {
-    machineId: data.machineId,
+    machineId: data.endpointId,
     phase: normalizeNativePhase(data.phase),
     ...(data.path ? { path: normalizeNativePath(data.path) } : {}),
+    ...(data.observedPath ? { observedPath: data.observedPath } : {}),
     statusText: data.statusText || normalizeNativePhaseText(data.phase),
     relayInUse: data.relayInUse === true,
     ...(data.failReason ? { failReason: data.failReason } : {}),
@@ -1583,8 +1580,10 @@ function normalizeNativeConnectionState(data: NativeConnectionSnapshot | NativeS
 function normalizeNativePhase(phase: string): RtcConnectionStateSnapshot['phase'] {
   if (
     phase === 'idle' ||
-    phase === 'probing' ||
+    phase === 'resolving' ||
+    phase === 'signaling' ||
     phase === 'connecting' ||
+    phase === 'authorizing' ||
     phase === 'connected' ||
     phase === 'verifying' ||
     phase === 'reconnecting' ||

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/termx-shared/cloudcompanion"
 	"github.com/lozzow/termx/termx-shared/connection"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
@@ -247,9 +249,13 @@ func TestEndpointManagerLazilyDialsHubP2PTransport(t *testing.T) {
 			if cfg.ID != "studio" || cfg.HubURL != "https://hub.example.com" || cfg.HubDeviceID != "device_ed25519:studio" || cfg.DeviceFingerprint != "SHA256:studio" || cfg.GrantRef != "grant:studio" || cfg.RelayMode != connection.RelayAuto {
 				t.Fatalf("unexpected hub config %#v", cfg)
 			}
-			return EndpointServiceBundle{EndpointID: "studio", Terminal: hubTerminal}, nil
+			return EndpointServiceBundle{EndpointID: "studio", Terminal: hubTerminal, ObservedPath: "single_relay"}, nil
 		},
 	})
+	events, err := manager.WatchEndpointEvents(context.Background())
+	if err != nil {
+		t.Fatalf("watch endpoint events: %v", err)
+	}
 
 	result, err := manager.List(context.Background(), TerminalListRequest{EndpointID: "studio"})
 	if err != nil {
@@ -263,6 +269,31 @@ func TestEndpointManagerLazilyDialsHubP2PTransport(t *testing.T) {
 	}
 	if len(result.Items) != 1 || result.Items[0].EndpointID != "studio" || result.Items[0].TerminalID != "term-1" {
 		t.Fatalf("endpoint must be restored on hub list rows, got %#v", result.Items)
+	}
+	select {
+	case event := <-events:
+		if event.EndpointID != "studio" || event.Status != state.EndpointStatusConnected || event.ObservedPath != "single_relay" {
+			t.Fatalf("unexpected managed endpoint connected event %#v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("managed endpoint dial did not publish connected path")
+	}
+}
+
+func TestClassifyEndpointErrorUsesStableCloudCodes(t *testing.T) {
+	for _, testCase := range []struct {
+		code cloudpb.CloudErrorCode
+		want state.EndpointErrorKind
+	}{
+		{cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_LOGIN_REQUIRED, state.EndpointErrorAuth},
+		{cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ENTITLEMENT_DENIED, state.EndpointErrorUnavailable},
+		{cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE, state.EndpointErrorUnavailable},
+		{cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_INCOMPATIBLE, state.EndpointErrorProtocol},
+	} {
+		err := cloudcompanion.NewError(testCase.code, "redacted")
+		if got := ClassifyEndpointError(err); got != testCase.want {
+			t.Fatalf("ClassifyEndpointError(%s) = %s, want %s", testCase.code, got, testCase.want)
+		}
 	}
 }
 

@@ -2,21 +2,22 @@ import { registerPlugin } from '@capacitor/core'
 import type { Plugin, PluginListenerHandle } from '@capacitor/core'
 
 export interface NativeConnectOpts {
-  machineId: string
-  localAddresses: string[]
-  hubUrls: string[]
-  sessionToken: string
-  answerProofSecret?: string
-  forceRelay?: boolean
+  endpointId: string
+  targetDeviceId: string
+  deviceFingerprint: string
+  grantRef: string
+  relayMode: 'auto' | 'direct' | 'relay_only'
 }
 
 export interface NativeConnectionSnapshot {
-  machineId: string
-  phase: 'idle' | 'probing' | 'connecting' | 'connected' | 'verifying' | 'reconnecting' | 'waiting_network' | 'failed'
-  path: 'local' | 'hub' | null
+  endpointId: string
+  targetDeviceId: string
+  phase: 'idle' | 'resolving' | 'signaling' | 'connecting' | 'authorizing' | 'connected' | 'verifying' | 'reconnecting' | 'waiting_network' | 'failed'
+  path: 'hub' | null
+  observedPath: 'direct' | 'single_relay' | 'relay_mesh' | null
   statusText: string
   relayInUse: boolean
-  forceRelay?: boolean
+  relayMode: 'auto' | 'direct' | 'relay_only'
   version?: number
   failReason?: string
 }
@@ -67,25 +68,29 @@ export interface NativeBridgeEndpoint {
 }
 
 export interface NativeStateChangeEvent {
-  machineId: string
+  endpointId: string
+  targetDeviceId: string
   phase: string
   path: string | null
+  observedPath: 'direct' | 'single_relay' | 'relay_mesh' | null
   statusText: string
   relayInUse: boolean
-  forceRelay?: boolean
+  relayMode: 'auto' | 'direct' | 'relay_only'
   version?: number
   failReason?: string
 }
 
 export interface NativeConnectionPlugin extends Plugin {
   connect(opts: NativeConnectOpts): Promise<void>
-  retry(opts: { machineId: string; forceRelay?: boolean }): Promise<void>
-  release(opts: { machineId: string }): Promise<void>
+  storeManagedGrant(opts: { grantRef: string; grant: string }): Promise<void>
+  deleteManagedGrant(opts: { grantRef: string }): Promise<void>
+  retry(opts: { endpointId: string }): Promise<void>
+  release(opts: { endpointId: string }): Promise<void>
   releaseAll(): Promise<void>
   handleForegroundResume(opts?: { backgroundDurationMs?: number }): Promise<void>
   getBridgeEndpoint(): Promise<NativeBridgeEndpoint>
-  getSnapshot(opts: { machineId: string }): Promise<NativeConnectionSnapshot>
-  getConnectionInfo(opts?: { machineId?: string }): Promise<NativeConnectionInfo>
+  getSnapshot(opts: { endpointId: string }): Promise<NativeConnectionSnapshot>
+  getConnectionInfo(opts?: { endpointId?: string }): Promise<NativeConnectionInfo>
   getDownloadResumeOffset(opts: { machineId: string; filePath: string; fileSize: number }): Promise<{ offset: number }>
   getTransferSnapshot(): Promise<NativeTransferSnapshot>
   clearTransfer(opts: { transferId: string }): Promise<void>

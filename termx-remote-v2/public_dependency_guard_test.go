@@ -47,3 +47,39 @@ func TestPublicRemoteRuntimeDoesNotDependOnPrivateServices(t *testing.T) {
 		}
 	}
 }
+
+func TestAndroidManagedRuntimeDoesNotRestoreLegacyHubProtocol(t *testing.T) {
+	root := filepath.Join("..", "termx-app", "native", "android")
+	forbidden := []string{"sessionToken", "session_token", "/api/v1/sessions", "Authorization\" to \"Bearer", "connectHub("}
+	legacyFiles := []string{
+		filepath.Join(root, "connectors", "HubConnector.kt"),
+		filepath.Join(root, "connectors", "LocalConnector.kt"),
+		filepath.Join(root, "connectors", "RaceConnector.kt"),
+	}
+	for _, path := range legacyFiles {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("legacy Android connector must stay deleted: %s", path)
+		}
+	}
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || (filepath.Ext(path) != ".kt" && filepath.Ext(path) != ".java") {
+			return nil
+		}
+		payload, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, fragment := range forbidden {
+			if strings.Contains(string(payload), fragment) {
+				t.Fatalf("Android managed runtime %s restored legacy protocol fragment %q", path, fragment)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan Android managed runtime: %v", err)
+	}
+}

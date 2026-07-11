@@ -1024,6 +1024,9 @@ func terminalPickerEndpointHeaderLine(group state.EndpointPickerGroup) Line {
 		NewCell(" "),
 		styledCell(countLabel, StyleMuted),
 	}
+	if group.ObservedPath != "" {
+		cells = append(cells, NewCell(" "), tokenCell(group.ObservedPath, StyleAccent))
+	}
 	if group.LastError != "" {
 		cells = append(cells, NewCell(" "), styledCell(endpointErrorLabel(group.ErrorKind, group.LastError), StyleWarning))
 	}

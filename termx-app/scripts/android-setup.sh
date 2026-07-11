@@ -63,7 +63,7 @@ if [ -d "$NATIVE_JAVA_DIR" ]; then
       echo "[✓] 复制 $(basename "$jfile")"
     done
   done
-  for subdir in connectors util connection transport network transfer; do
+  for subdir in connectors managed util connection transport network transfer; do
     if [ -d "$NATIVE_JAVA_DIR/$subdir" ]; then
       mkdir -p "$TARGET_JAVA_DIR/$subdir"
       for ext in java kt; do

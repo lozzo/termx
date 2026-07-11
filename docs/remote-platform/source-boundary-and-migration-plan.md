@@ -1,6 +1,6 @@
 # TermX Remote Platform 源码边界与迁移计划
 
-状态：RP005 Hub/Relay 迁移基线
+状态：RP006 公开客户端迁移基线
 
 版本：v1 draft
 
@@ -14,7 +14,7 @@
 2. 当前仓库中的旧 remote、Hub、Web Controller 和 App 代码如何保留为可追溯资产。
 3. 新实现按什么顺序建立 contract、迁移服务并删除旧路径，避免公开/私有双真值。
 
-本切片只写文档，不移动目录、不改 module、不重写 git 历史。
+本计划记录当前实施状态；目录迁移和 runtime 改造必须按 `workflow.md` 对应切片执行，不重写 git 历史。
 
 ## 2. 源码分发原则
 
@@ -234,6 +234,8 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 - 凭据分别使用 file credential store 与平台 Keychain/Keystore，但共享 `grant_ref` 语义。
 
 完成条件：同一 endpoint 配置和 grant 可以在 TUI/App 中得到一致授权结果；平台差异只停留在 WebRTC primitive 和安全存储。
+
+实现结果：`termx-shared/cloudcompanion/testdata/managed_endpoint_contract.json` 固化两端共同的 phase、relay policy、observed path、cloud error 和 endpoint authorization case。TUI `hub-p2p` dialer 已从 `grant_ref` 文件 store 解析 capability，调用公开 `termx-remote-v2/client` 完成 managed signaling、WebRTC、DTLS 和端到端授权，再建立标准 protocol bundle；`relay_only` 约束真实 ICE policy，direct/single-relay path 回投 EndpointManager。Android 删除 `HubConnector`、`LocalConnector`、`RaceConnector` 及其 Bearer/session-token/旧 Hub HTTP 路径，Cloud adapter 只接触 resolve/signaling，公开 WebRTC primitive 和 authorizer 边界不交给私有模块；raw grant 由 Android Keystore AES-GCM store 按 `grant_ref` 保存。Community build 对 cloud/authorizer 明确 fail closed，官方移动 cloud module 与桌面 Companion 的安装和装配进入 RP006A。
 
 ### RP006A：Companion 安装与官方构建
 

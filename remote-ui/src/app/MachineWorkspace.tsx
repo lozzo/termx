@@ -2698,7 +2698,8 @@ function ConnectionInfoDialog({
           ) : null}
           <div className="grid grid-cols-1 gap-2">
             <ConnectionInfoRow label="Mode" value={loading ? 'Reading stats...' : connectionTypeLabel(type)} strong />
-            <ConnectionInfoRow label="Path" value={info?.path ?? '-'} />
+            <ConnectionInfoRow label="Transport" value={info?.path ?? '-'} />
+            <ConnectionInfoRow label="Path" value={info?.observedPath ?? '-'} />
             <ConnectionInfoRow label="Local" value={info?.localAddr ?? '-'} />
             <ConnectionInfoRow label="Remote" value={info?.remoteAddr ?? '-'} />
             <ConnectionInfoRow label="Candidates" value={candidateTypeText(info)} />
