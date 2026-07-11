@@ -216,4 +216,3 @@ make clean           只删除已知 .artifacts 与标准构建输出
 - archive 不进入 go.work、npm workspace、构建脚本或 runtime fallback。
 
 任何切片若只能通过旧路径 adapter、双 module、双源码、临时 replace 或发布时删除 import 才能通过，必须回到目标结构修正，不能把迁移债务留给后续功能开发。
-
