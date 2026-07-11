@@ -72,13 +72,17 @@ func (t *Transport) Send(frame []byte) error {
 }
 
 // Recv 接收对端发送的完整 frame。
-// 本端或对端关闭都会返回 io.EOF；返回的 buffer 所有权交给接收方。
+// 本端关闭立即返回 io.EOF；对端关闭时先排空其成功 Send 的 frame，再返回 EOF。
+// 返回的 buffer 所有权交给接收方，peerDone 不能越过已经入队的数据成为第二份顺序真值。
 func (t *Transport) Recv() ([]byte, error) {
 	select {
 	case <-t.done:
 		return nil, io.EOF
-	case <-t.peerDone:
-		return nil, io.EOF
+	default:
+	}
+
+	// 先取已经入队的 frame，避免 peerDone 与 incoming 同时就绪时随机丢弃 write-before-close 数据。
+	select {
 	case frame, ok := <-t.incoming:
 		if !ok {
 			return nil, io.EOF
@@ -86,6 +90,28 @@ func (t *Transport) Recv() ([]byte, error) {
 		// Send already clones before enqueuing, so the receiver owns this buffer
 		// and can consume it directly without another copy.
 		return frame, nil
+	default:
+	}
+
+	select {
+	case <-t.done:
+		return nil, io.EOF
+	case frame, ok := <-t.incoming:
+		if !ok {
+			return nil, io.EOF
+		}
+		return frame, nil
+	case <-t.peerDone:
+		// Close 只发布“不会再有新 frame”；已经成功 Send 的 frame 仍必须先交付。
+		select {
+		case frame, ok := <-t.incoming:
+			if !ok {
+				return nil, io.EOF
+			}
+			return frame, nil
+		default:
+			return nil, io.EOF
+		}
 	}
 }
 

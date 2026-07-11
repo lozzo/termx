@@ -471,6 +471,9 @@ func (c *Client) WorkbenchApply(ctx context.Context, params WorkbenchMutateParam
 	return &out, nil
 }
 
+// Events 注册当前 protocol client 内的 endpoint-local 事件订阅。
+// daemon 只接收一条宽事件流，TerminalID/type/storage/workbench 过滤由本 client fan-out；
+// 已确认订阅在 transport 关闭时仍可排空缓冲事件，关闭后的新订阅则稳定返回 io.EOF。
 func (c *Client) Events(ctx context.Context, params EventsParams) (<-chan Event, error) {
 	ch := make(chan Event, 64)
 	c.mu.Lock()
@@ -484,8 +487,16 @@ func (c *Client) Events(ctx context.Context, params EventsParams) (<-chan Event,
 		return nil, err
 	}
 	if c.doneClosed() {
-		c.removeEventSubscriber(id)
-		return nil, io.EOF
+		c.mu.Lock()
+		_, stillRegistered := c.eventSubscribers[id]
+		c.mu.Unlock()
+		if stillRegistered {
+			// failAll 已经结束；这是连接关闭后才注册、无人再负责关闭的新 subscriber。
+			c.removeEventSubscriber(id)
+			return nil, io.EOF
+		}
+		// failAll 已关闭并移除已确认 subscriber；channel 中已发布的事件仍按顺序可读。
+		return ch, nil
 	}
 	go func() {
 		<-ctx.Done()

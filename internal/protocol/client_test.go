@@ -438,6 +438,58 @@ func TestClientEvents(t *testing.T) {
 	}
 }
 
+func TestClientEventsAfterClosedStreamReturnsEOF(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	client := NewClient(clientTransport)
+	defer client.Close()
+
+	helloDone := make(chan error, 1)
+	go func() {
+		helloDone <- client.Hello(ctx, Hello{Version: wire.Version, Client: "test"})
+	}()
+	if err := expectHello(serverTransport); err != nil {
+		t.Fatalf("expect hello: %v", err)
+	}
+	if err := respondHello(serverTransport); err != nil {
+		t.Fatalf("respond hello: %v", err)
+	}
+	if err := <-helloDone; err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	eventsDone := make(chan eventsResult, 1)
+	go func() {
+		events, err := client.Events(ctx, EventsParams{})
+		eventsDone <- eventsResult{events: events, err: err}
+	}()
+	req, err := expectRequest(serverTransport, "events")
+	if err != nil {
+		t.Fatalf("expect events request: %v", err)
+	}
+	if err := sendMethodResponse(serverTransport, req, nil); err != nil {
+		t.Fatalf("respond events request: %v", err)
+	}
+	if result := <-eventsDone; result.err != nil {
+		t.Fatalf("initial events subscribe failed: %v", result.err)
+	}
+	if err := serverTransport.Close(); err != nil {
+		t.Fatalf("close server transport: %v", err)
+	}
+	select {
+	case <-client.Done():
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+
+	if _, err := client.Events(ctx, EventsParams{}); !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF from subscription after stream close, got %v", err)
+	}
+}
+
 type eventsResult struct {
 	events <-chan Event
 	err    error

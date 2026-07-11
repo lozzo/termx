@@ -1,6 +1,6 @@
 # TermX Remote Platform 源码边界与迁移计划
 
-状态：RP006 公开客户端迁移基线
+状态：RP007 开源快照准备基线
 
 版本：v1 draft
 
@@ -62,12 +62,19 @@ termx-vterm/                terminal semantic interpreter
 termx-tui-v3/               TUI and EndpointManager
 termx-cli/                  daemon/CLI assembly
 termx-app/                  mobile client UI and platform adapters
+remote-ui/                  shared public App/browser UI and runtime interfaces
 termx-shared/               endpoint/transport/remote auth/cloud companion contracts
 internal/protocol/          termx protocol implementation
 termx-proto/                versioned public wire messages
 termx-remote-v2/            public WebRTC client/daemon orchestration only
+termx-testkit/              public fixtures and test support
+fixtures/                   terminal semantic fixtures
 docs/remote-platform/       public product/security/client architecture docs
+docs/legal/                 reviewed public templates and third-party texts only
+scripts/                    allowlisted build/license/snapshot guards only
 ```
+
+根目录只发布公开 `README.md`、`Makefile`、`.gitignore`、public `go.work` 及从 `docs/legal/public-snapshot/` 覆盖生成的 Apache-2.0、NOTICE、DCO、CONTRIBUTING 和 third-party notice。精确白名单与人工复制命令以 `public-snapshot-manifest.md` 为准。
 
 `termx-remote-v2/` 最终只允许包含：
 
@@ -104,10 +111,9 @@ Control Plane、Hub 和 Relay 即使同仓库也保持独立 package/module 和�
 private/archive/termx-platform-legacy/termx-hub/
 private/archive/termx-platform-legacy/web-control/
 private/archive/termx-platform-legacy/termx-remote/
-private/archive/termx-platform-legacy/remote-ui/
-private/archive/termx-platform-legacy/app-legacy-remote/
-private/archive/termx-platform-legacy/remote-v2-pre-rp-contract/
 ```
+
+remote-ui 的历史 localweb 入口、旧 WebRTC 设计文档和对应测试保存在 `termx-remote/` archive 子目录；活动 `remote-ui/` 本身仍是公开 App/shared UI package。
 
 archive 不是 module dependency、git submodule 或 runtime fallback。需要借鉴代码时，开发者必须把概念按新 contract 重新实现，而不是从 archive 建立 import/replace。
 
@@ -116,16 +122,16 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 | 当前资产 | 现状问题 | 可保留资产 | 目标去向 |
 | --- | --- | --- | --- |
 | `termx-core-v2/` | 无远程领域所有权问题 | scoped transport、terminal/history truth | public namespace 保留 |
-| `termx-tui-v3/` | Hub dialer 仍绑定旧信令语义 | EndpointID、TerminalRef、EndpointManager、局部失败状态 | public namespace 保留并接新 contract |
+| `termx-tui-v3/` | 已接公开 managed endpoint contract | EndpointID、TerminalRef、EndpointManager、局部失败状态 | public namespace 保留 |
 | `termx-shared/remoteauth/` | grant 概念可用，交付链路需重做 | DeviceIdentity、fingerprint、scope、revoke | public namespace 演进为 E2E auth owner |
 | `termx-shared/transport/datachannel/` | primitive 基本可用 | reliable ordered packet transport | public namespace 保留 |
-| `termx-remote-v2/` | grant 经 Hub signaling；pending answer 不完整 | Pion adapter、dial/answer harness、core scoped session 接线 | public namespace 重写 orchestration；旧版本进 private archive |
+| `termx-remote-v2/` | 已完成公开 WebRTC/E2E runtime 收口 | Pion adapter、dial/answer harness、core scoped session 接线 | public namespace 保留；不得承载服务端业务 |
 | `private/archive/termx-platform-legacy/termx-hub/client/` | client 与 server module/内部 wire 耦合 | stream/signaling API 经验 | contract 已抽到 public namespace；旧 client 只留 archive |
 | `private/archive/termx-platform-legacy/termx-hub/internal/hub/` | 非空 Bearer 即通过、长期 agent token、terminal inventory | TTL presence、offer/answer correlation、ICE/traffic 思路 | `private/termx-cloud/hub/` 与 `relay/` 已按新模型重建；旧代码只留 archive |
-| `web-control/` | agent/server 限额、heartbeat kick、订阅直接控制在线状态 | 用户、订单、支付、管理 UI 和运维经验 | `private/` Control Plane 重建；旧 schema 进 archive |
-| `termx-app/` | Android `HubConnector` 维护独立 session token/WebRTC 流程 | 原生 WebRTC、Keystore、前后台生命周期 | public App 保留，业务流改接共同 contract |
-| `remote-ui/` | machine/session-token contract 已归档 | 产品交互、配对和 Relay 策略历史 | 设计资产进 private archive；不作为 runtime fallback |
-| `termx-remote/` | 旧 remote/localweb 模型 | 历史行为和 UI 参考 | private archive，不恢复依赖 |
+| `private/archive/termx-platform-legacy/web-control/` | agent/server 限额、heartbeat kick、订阅直接控制在线状态 | 用户、订单、支付、管理 UI 和运维经验 | 只留 archive；活动服务已在 `private/termx-cloud/` 重建 |
+| `termx-app/` | 旧独立 session-token/WebRTC 流程已删除 | 原生 WebRTC、Keystore、前后台生命周期 | public App 保留并消费共同 contract |
+| `remote-ui/` | 旧 machine/session-token/localweb 入口已归档 | 当前共享 UI、平台中立 runtime interface、产品交互 | public namespace 保留；历史 docs/localweb 只留 archive |
+| `private/archive/termx-platform-legacy/termx-remote/` | 旧 remote/localweb 模型 | 历史行为和 UI 参考 | 只留 archive，不恢复依赖 |
 
 ## 5. Git 历史和许可证处理
 
@@ -148,10 +154,10 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 3. 按最终公开目录清单复制 public namespace 文件。
 4. 删除内部配置、secret、private docs、私有 module reference 和不可分发资产。
 5. 从 `docs/legal/public-snapshot/` 复制 Apache-2.0、NOTICE、DCO、CONTRIBUTING 和 public third-party notice，并添加公开 README。
-6. 在新目录独立运行构建、测试、`scripts/license-audit.sh`、SBOM、secret 和 private dependency scan。
+6. 在新目录独立运行构建、测试、`scripts/license-audit.sh --public-snapshot`、SBOM、secret 和 private dependency scan。
 7. 通过后创建 public repo 的第一个 commit 并推送公开远端。
 
-当前不实现复制脚本；RP007 只要求人工可重复的目录清单和发布检查。若未来重复发布频率使手工复制容易出错，再单独评估自动化。
+当前不实现复制脚本；RP007 的精确白名单、模板覆盖、全新 Git 初始化和发布检查记录在 `public-snapshot-manifest.md`。`scripts/public-snapshot-guard.sh` 只验证复制结果，不负责导出或同步。若未来重复发布频率使手工复制容易出错，再单独评估自动化。
 
 ## 6. 实施顺序
 
@@ -261,8 +267,11 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 - 在临时空目录按清单复制公开文件，验证独立构建、测试、license 和 secret scan。
 - 记录创建全新 public Git 仓库的发布步骤，不复制 private `.git/` 历史。
 - 使用 `docs/legal/public-snapshot/` 法律模板，不把 private root license、Companion notice 或企业交付条款误复制为 public project license。
+- 公开 runtime schema 的源码真值迁入 `termx-proto/runtimepb/`；`remote-ui` 不再从 legacy `termx-remote/` 生成代码。
 
 完成条件：从选定 private commit 手工复制出的 public snapshot 可独立构建测试且不含 `private/`；当前 private monorepo 继续作为完整开发真值；运行时不存在旧 fallback。
+
+实现结果：旧顶层 `termx-remote/` 与 `web-control/` 已原样迁入 `private/archive/termx-platform-legacy/`，remote-ui 历史 localweb/docs 一并归档；活动 `remote-ui/` 保持公开共享 UI，runtime proto 源码真值迁入 `termx-proto/runtimepb/`。`public-snapshot-manifest.md` 冻结一次性人工 `git archive` 白名单、Apache/DCO 模板覆盖、public `go.work` 和全新 Git 初始化顺序；`public-snapshot-guard.sh` 与 harness 拒绝私有目录、内部 Agent/workflow 文件、未审核顶层文件、secret-like 文件、credential/PEM、越界 symlink、private build metadata 和 legacy localweb 配置，不承担 exporter/sync 职责。最终 staged-tree 快照还暴露并修复 memory transport 的 write-before-close 丢帧：peer close 必须先排空成功 Send 的 frame，protocol `Events` 已确认的 subscriber 也必须保留缓冲事件，而连接关闭后的新订阅仍返回 EOF。临时空目录快照通过九个 public Go module dependency scan、八个非 CLI module 全量、干净 CLI 排除三个既有视觉基线后的全量、CLI/Linux build、remote-ui proto 幂等/全量测试/typecheck/build、App `cap:build`、Community Android unit/assemble、APK 私有 factory/7 个 notice asset 边界、public/private license audit 与 production npm audit；memory drain 与 protocol events 定向 harness/race 重复通过。Vite/Babel 开发工具 advisories 和 CLI 三个既有视觉基线仍是正式公开发布前待处理项，不构成 public/private namespace 或独立构建阻塞。
 
 ## 7. 迁移期间的禁止项
 

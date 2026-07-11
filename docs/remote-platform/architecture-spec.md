@@ -252,7 +252,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 
 Web Controller 是私有 Control Plane 的管理 UI/API surface，不是独立安全域。它可以提供账号、设备、套餐、Relay 使用量、组织、审批和审计管理，但不能成为 client 与 daemon 之间的 protocol gateway。
 
-现有 `web-control/` 以 agent 数、server 数和 heartbeat kick 为中心的 schema 不是目标模型。新模型应围绕 Account、Organization、Device、Entitlement、ManagedSession、Admission、RelayLease 和 UsageEvent 重建。
+私有 archive 中旧 `web-control/` 以 agent 数、server 数和 heartbeat kick 为中心的 schema 不是目标模型。新模型应围绕 Account、Organization、Device、Entitlement、ManagedSession、Admission、RelayLease 和 UsageEvent 重建。
 
 ## 6. 公开接口边界
 

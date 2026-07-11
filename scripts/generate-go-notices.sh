@@ -4,12 +4,22 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 mode="update"
-if [[ "${1:-}" == "--check" ]]; then
-  mode="check"
-elif [[ $# -ne 0 ]]; then
-  echo "usage: $0 [--check]" >&2
-  exit 2
-fi
+public_only=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --check)
+      mode="check"
+      ;;
+    --public-only)
+      public_only=true
+      ;;
+    *)
+      echo "usage: $0 [--check] [--public-only]" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/termx-go-notices.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -152,10 +162,12 @@ generate_artifact \
   "./cmd/termx" \
   "termx-cli/cmd/termx/THIRD_PARTY_NOTICES.txt"
 
-generate_artifact \
-  "Cloud Companion" \
-  "$repo_root/private/termx-cloud/companion" \
-  "./cmd/termx-cloud" \
-  "private/termx-cloud/companion/cmd/termx-cloud/THIRD_PARTY_NOTICES.txt"
+if [[ "$public_only" == false ]]; then
+  generate_artifact \
+    "Cloud Companion" \
+    "$repo_root/private/termx-cloud/companion" \
+    "./cmd/termx-cloud" \
+    "private/termx-cloud/companion/cmd/termx-cloud/THIRD_PARTY_NOTICES.txt"
+fi
 
 echo "Go notices are $mode"

@@ -17,7 +17,7 @@
 - **TUI 只是观察入口**：TUI 不拥有 terminal lifecycle、committed history 或 history truth；这些都属于 core daemon。
 - **程序退出不等于 terminal 消失**：进程异常退出后，panel 和 terminal 可以保留，用户能看到退出态、历史输出和重启入口。
 - **历史记录由 core 管理**：copy/history 走 authoritative history window，不让 TUI 从本地 scrollback、snapshot 或 wrapped rows 拼出第二份 truth。
-- **多 endpoint 是一等能力**：本地 daemon、SSH 远端 daemon 和未来 hub/P2P 设备都通过 `EndpointID + TerminalID` 的 `TerminalRef` 隔离路由。
+- **多 endpoint 是一等能力**：本地 daemon、SSH 远端 daemon 和 managed WebRTC 设备都通过 `EndpointID + TerminalID` 的 `TerminalRef` 隔离路由。
 - **远程失败局部化**：某个 endpoint 离线、认证失败或 transport 断开，不会清空其他 endpoint 的 terminal pool、layout、copy/history 状态。
 
 ## 当前能力
@@ -33,7 +33,7 @@
 - managed WebRTC endpoint 已通过公开 Cloud Companion contract 接入 TUI；Companion 缺失时只让对应 endpoint unavailable，不影响 local/SSH。
 - Android App 已删除旧 Hub/session-token Connector，使用同一 endpoint/relay/error fixture；Community build 对官方 cloud 明确 fail closed，Official build 已通过固定私有 source set 装配同一公开 contract。
 - `termx cloud` 已提供 signed install/update、login/enroll、status/doctor、logout 和 uninstall；源码构建不含官方 release root 时 managed cloud 明确不可用，不影响 local/SSH。
-- TUI 本地同步输入组正在实现，用于向一组 terminal 多播普通键盘输入和 paste。
+- TUI 与 Android App 共用 endpoint、配对、credential reference 和稳定错误语义；平台层只实现各自的 WebRTC primitive。
 
 ## 快捷键配置与 Ctrl+数字
 
@@ -129,7 +129,7 @@ termx
 - 经常在本机和多台远端机器之间切换。
 - 使用 Claude Code、Codex、Gemini CLI、OpenCode 等 agent terminal，且需要长期保留输出现场。
 - 需要在程序异常退出后保留 panel、历史输出和重启上下文。
-- 希望未来能从 TUI、GUI 或 mobile app 接回同一个 terminal pool。
+- 希望从 TUI 或 mobile app 接回同一个 terminal pool。
 
 如果你的工作流只有一两个短生命周期 shell，传统 terminal emulator 或 tmux 已经足够。`termx` 的优势主要在 terminal 数量变多、生命周期变长、入口变多之后显现。
 
@@ -156,10 +156,10 @@ internal protocol + transport
 EndpointManager
   - local unix socket
   - SSH daemon endpoint
-  - future hub/P2P endpoint
+  - managed WebRTC endpoint
         |
         v
-termx-tui-v3 / future GUI / future mobile entry
+termx-tui-v3 / termx-app / other public clients
 ```
 
 几个硬边界：
@@ -177,25 +177,19 @@ termx-tui-v3 / future GUI / future mobile entry
 - `termx-core-v2/`：core daemon 主线，负责 terminal lifecycle、history、live surface、storage 和 protocol 服务端能力。
 - `termx-tui-v3/`：当前 TUI 主线，负责 AppRuntime、TerminalHost、EndpointManager、state、render、copy/history 投影和交互。
 - `termx-vterm/`：终端语义解释来源，把 PTY bytes 解释成 terminal 语义事件或 transaction。
-- `termx-shared/`：共享 connection registry、transport 等基础包。
+- `termx-shared/`：共享 connection registry、transport、remote auth 和 Cloud Companion contract。
 - `internal/protocol/`、`termx-proto/`：daemon/client wire contract 与协议类型。
-- `private/termx-cloud/companion/`：闭源桌面/headless Cloud Companion artifact、系统 credential adapter 与签名 release tool。
-- `private/termx-cloud/mobile/android/`：只由 Official APK init script 装入的私有 cloud source set。
-- `private/termx-cloud/hub/`、`private/termx-cloud/relay/`：闭源 managed presence/signaling 与短租约 TURN 数据面；旧实现位于私有 archive。
-- `termx-remote/`：远程管理 runtime、agent/bridge/session 等远程产品能力。
-- `remote-ui/`：远程管理与移动端共享的 Web UI 组件和浏览器端运行时。
-- `termx-app/`：移动端 App 壳与原生桥接。
-- `web-control/`：Web 管理与商业化控制台。
+- `termx-remote-v2/`：公开 WebRTC client/daemon orchestration、DataChannel 授权与 fake harness。
+- `remote-ui/`：App 与浏览器客户端共享的公开 UI、状态编排和平台中立 runtime interface。
+- `termx-app/`：Android App 壳、native bridge 和 Community managed-cloud fail-closed 实现。
 - `termx-testkit/`：测试辅助能力。
-- `scripts/`、`Makefile`、`go.work`：开发、测试和 workspace 支撑。
+- `fixtures/`、`scripts/`、`Makefile`、`go.work`：测试、发布审计和 workspace 支撑。
 
-当前分支保留 `termx-remote/`、`termx-app/`、`remote-ui/`、`web-control/` 这些远程产品资产；它们不属于当前 TUI/core 整理切片的主动修改范围。需要判断是否能触碰这些目录时，以 `workflow.md` 为准。
+托管 Control Plane、Hub、Relay、计费和官方 Cloud Companion 是独立交付能力，不属于公开源码构建依赖。Community CLI、TUI、daemon、App 以及 local/SSH runtime 在没有这些服务时仍可独立构建和使用。
 
-## 开发状态
+## 实现状态
 
-当前主线是 **多 endpoint / 多 transport 管理**。活动驱动文件是仓库根目录的 [`workflow.md`](workflow.md)。
-
-已完成的关键切片包括：
+当前公开客户端基线包括：
 
 - `EndpointID` / `TerminalRef` 状态模型。
 - connection registry 基础结构。
@@ -205,15 +199,9 @@ termx-tui-v3 / future GUI / future mobile entry
 - local unix socket 标准 transport。
 - SSH transport 连接远端 `termx` daemon。
 - terminal name identity 第一阶段。
-- hub/P2P identity、security、relay 和 grant contract。
-
-正在进行：
-
-- TUI 同步输入组交互与 input 多播。
-
-后续：
-
-- hub/P2P transport dialer 与跨设备发现。
+- managed WebRTC identity、capability、signaling 和 Relay contract。
+- TUI/CLI hub endpoint dialer 与 Android App managed endpoint adapter。
+- signed Cloud Companion 安装和 versioned local IPC public contract。
 
 ## 构建与测试
 
@@ -234,21 +222,19 @@ cd termx-shared && go test ./... -count=1
 go test ./internal/protocol/... -count=1
 ```
 
-文档-only 改动至少运行：
+共享 UI 与 App：
 
 ```bash
-git diff --check
+cd remote-ui && npm ci && npm test && npm run typecheck && npm run build
+cd termx-app && npm ci && npm run cap:build
+export ANDROID_HOME=/absolute/path/to/android-sdk
+cd termx-app/android && ./gradlew testDebugUnitTest assembleDebug
 ```
 
-## 开发规则
+完整公开快照和许可证准入见 [`docs/remote-platform/public-snapshot-manifest.md`](docs/remote-platform/public-snapshot-manifest.md)。
 
-本仓库的有效工作范围、任务顺序、测试准入和提交规则都以 [`workflow.md`](workflow.md) 为准。
+## 许可证与贡献
 
-简要规则：
+适用许可证以仓库根 `LICENSE` 为准。正式 public snapshot 使用 Apache License 2.0，并携带 `NOTICE`、`THIRD_PARTY_NOTICES.md` 和 artifact-specific notice；托管服务与官方闭源 cloud 交付物不因公开客户端许可证而自动获得相同授权。
 
-- 每轮先读 `workflow.md`。
-- 不跨当前切片扩展范围。
-- 不把 TUI 写成 terminal lifecycle 或 history truth owner。
-- 不引入旧 `termx-core`、旧 `tuiv2`、旧 remote fallback。
-- 有效改动需要运行对应测试准入并提交。
-- 中文注释用于说明关键 domain owner、truth source、消息链路或失败条件。
+公开贡献流程见 `CONTRIBUTING.md` 和 `DCO`。提交不得把 TUI/App 变成 terminal lifecycle 或 history truth owner，也不得引入旧 core、旧 TUI、legacy remote fallback 或私有服务构建依赖。

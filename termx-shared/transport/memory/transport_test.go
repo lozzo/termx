@@ -54,3 +54,30 @@ func TestSendAfterPeerCloseReturnsEOF(t *testing.T) {
 		t.Fatalf("expected EOF from recv after peer close, got %v", err)
 	}
 }
+
+func TestRecvDrainsQueuedFramesBeforePeerEOF(t *testing.T) {
+	client, server := NewPair()
+	defer client.Close()
+
+	for _, payload := range [][]byte{[]byte("response"), []byte("event")} {
+		if err := server.Send(payload); err != nil {
+			t.Fatalf("server send failed: %v", err)
+		}
+	}
+	if err := server.Close(); err != nil {
+		t.Fatalf("server close failed: %v", err)
+	}
+
+	for _, want := range [][]byte{[]byte("response"), []byte("event")} {
+		got, err := client.Recv()
+		if err != nil {
+			t.Fatalf("recv queued frame failed: %v", err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("unexpected queued frame: got %q want %q", got, want)
+		}
+	}
+	if _, err := client.Recv(); !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF after queued frames, got %v", err)
+	}
+}

@@ -41,8 +41,9 @@
 - 当前默认本地 CLI 入口必须走 `termx-core-v2/` 与 `termx-tui-v3/`；不得重新引入 `termx legacy ...`、旧 daemon、旧 TUI 或 remote legacy/fallback。
 - `termx-cli/cmd/termx/legacy_*.go` 不得重新出现；旧本地入口已经删除。
 - `termx-cli/cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
-- `termx-remote/`、`termx-remote-v2/`、`termx-app/`、`remote-ui/`、`web-control/` 是保留的远程产品资产；runtime 只能按 `workflow.md` 中 RP002-RP007 对应切片解冻，不得作为 fallback 或按“无效包”删除。
-- Hub/Relay 服务端实现位于 `private/termx-cloud/hub/` 与 `private/termx-cloud/relay/`；旧 `termx-hub/` 已迁入 `private/archive/termx-platform-legacy/termx-hub/`，只能作为只读历史资产。未来复制出的 public repo 只保留 wire contract、client interface 和 fake harness，不得让 public package 反向依赖私有实现。
+- `termx-remote-v2/`、`termx-app/` 与 `remote-ui/` 是 future public snapshot 的有效远程客户端资产；只能按 `workflow.md` 对应切片演进，不得依赖私有实现或恢复旧 fallback。
+- 旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已迁入 `private/archive/termx-platform-legacy/`，只能作为只读历史资产；archive 不进入 workspace、构建脚本或 runtime。
+- Hub/Relay 服务端实现位于 `private/termx-cloud/hub/` 与 `private/termx-cloud/relay/`。未来复制出的 public repo 只保留 wire contract、client interface 和 fake harness，不得让 public package 反向依赖私有实现。
 - `termx-vterm/` 是受限联动目录，只能在 terminal semantic transaction 接口、事件或 harness 需要时最小化触及。
 - `internal/protocol/` 与 `termx-proto/` 是受限联动目录，只能在 endpoint routing、history window/copy 或 semantic history contract 需要跨进程时最小化触及。
 - 如果确实必须恢复旧目录或解冻目录，先修改 `workflow.md` 的范围表并说明原因；默认不允许恢复。
@@ -59,6 +60,9 @@
 - `termx-core/`：已删除旧 core 目录；不得作为 fallback 恢复。
 - `tuiv2/`：已删除旧 TUI 目录；不得作为 fallback 恢复。
 - `internal/protocol/` 与 `termx-proto/`：受限联动目录，只在 endpoint-aware routing、history window/copy 或 semantic history contract 需要时最小化触及。
+- `termx-remote-v2/`：公开 managed WebRTC client/daemon orchestration、DataChannel E2E auth、平台 primitive interface 与 fake harness；不承载 Hub/Relay server 或账号业务。
+- `remote-ui/` 与 `termx-app/`：公开共享 UI 和移动客户端；消费公开 endpoint/history/cloud contract，不拥有 daemon terminal truth 或私有云服务状态。
+- `private/termx-cloud/`：闭源 Control Plane、Companion、Hub、Relay、Web Controller 与官方移动装配；可以依赖 public contract，public namespace 不得反向依赖。
 - `termx-cli/`、`termx-shared/`、`termx-testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前切片需要时最小化触及。
 
 ## 硬语义规则
@@ -68,7 +72,7 @@
 - 多 endpoint / 多 transport 主线必须保持 endpoint 边界清晰：跨 endpoint 状态使用 `EndpointID + TerminalID` 的 `TerminalRef`，不得把裸 `TerminalID` 当成全局唯一真值。
 - Endpoint 表达“当前客户端要连接的 daemon 目标”，Transport 表达“到达该 endpoint 的方式”；daemon 侧客户端连接管理与 TUI/client 侧 endpoint 管理不得混成一个模型。
 - TUI 不拥有 terminal lifecycle、committed history 或 history truth；history/live/input/resize 必须路由到 owning endpoint 的 daemon。
-- 远程产品目录只能按 `workflow.md` 明确切片重新设计；不得通过 fallback、桥接或旧入口把 remote app/web-control 路径重新引回当前 TUI/core 主线。
+- 远程产品目录只能按 `workflow.md` 明确切片重新设计；不得通过 fallback、桥接或旧入口把 archive 中的 remote/localweb/Web Controller 路径重新引回当前 TUI/core 主线。
 - Hub/Relay 可以验证云服务准入和 Relay 租约，但不能看到或判断 terminal capability；capability grant 只能在端到端加密 DataChannel 内由 owning daemon 验证。
 - 免费 local、SSH、多 endpoint 和 terminal protocol 不得依赖私有服务、账号订阅或 Relay；收费边界只建立在托管云服务能力上。
 - 桌面 closed cloud client 使用专用 out-of-process Cloud Companion 和 versioned local IPC，不得恢复通用插件系统或把私有模块链接进公开 `termx`；移动端使用同一 contract 的官方私有构建模块。

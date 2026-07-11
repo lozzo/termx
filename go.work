@@ -10,7 +10,6 @@ use (
 	./termx-cli
 	./termx-core-v2
 	./termx-proto
-	./termx-remote
 	./termx-remote-v2
 	./termx-shared
 	./termx-testkit

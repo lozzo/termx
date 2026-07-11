@@ -4,13 +4,13 @@
 
 生效日期：2026-07-11
 
-基线切片：RP001-RP006A（含 RP001A-C、RP004A，完成）
+基线切片：RP001-RP007（含 RP001A-C、RP004A，完成）
 
 ## 1. 文档目的
 
 本目录定义 TermX 远程平台重构后的产品、架构、安全和源码分发边界。任何新的 Hub、Relay、Web Controller、TUI 远程连接或 App 远程连接实现，都必须先满足本目录约束。
 
-当前仓库中的 `web-control/`、`termx-remote/` 和 `remote-ui/` 仍含有待迁移资产，但它们不是新设计的真值来源。`termx-remote-v2/` 已成为公开 managed WebRTC/E2E auth runtime，`termx-app/` 的 Android native managed path 已切到同一 endpoint contract；旧 `termx-hub/` 已迁入 `private/archive/termx-platform-legacy/termx-hub/`。旧代码不得以兼容、fallback 或“先继续沿用”的方式反向约束新模型。
+`termx-remote-v2/` 是公开 managed WebRTC/E2E auth runtime，`remote-ui/` 与 `termx-app/` 消费同一公开 endpoint contract。旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已收口到 `private/archive/termx-platform-legacy/`；archive 不得以兼容、fallback 或“先继续沿用”的方式反向约束新模型。
 
 ## 2. 文档顺序
 
@@ -21,14 +21,15 @@
 5. `distribution-and-cloud-companion-spec.md`：回答公开主程序与闭源 cloud 能力如何拆包、安装、通信、升级和跨平台发布。
 6. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
 7. `source-boundary-and-migration-plan.md`：回答哪些代码公开、哪些代码私有、旧资产如何保留并按什么顺序迁移。
-8. `../legal/`：回答 private monorepo、future Apache-2.0 snapshot、第三方 notice、DCO 和私有 artifact 发布门禁。
+8. `public-snapshot-manifest.md`：给出从已提交 private revision 手工复制到全新公开仓库的精确白名单和准入命令。
+9. `../legal/`：回答 private monorepo、future Apache-2.0 snapshot、第三方 notice、DCO 和私有 artifact 发布门禁。
 
 若这些文档发生冲突，按以下顺序处理：
 
 1. 安全不变量优先于实现便利。
 2. domain owner 与 truth source 优先于历史代码行为。
 3. 免费/付费产品边界优先于旧订阅字段和旧套餐逻辑。
-4. `workflow.md` 决定当前允许执行的切片和目录范围。
+4. private monorepo 内由 `workflow.md` 决定当前允许执行的切片和目录范围；复制出的 public snapshot 以公开文档和贡献规则为准。
 
 ## 3. 已冻结决策
 
@@ -64,9 +65,9 @@
 
 下列资料只作为历史背景，不再是活动 spec：
 
-- `remote-ui/docs/webrtc-rewrite-architecture.md`
-- `remote-ui/docs/app-core-v2-contract.md`
-- `remote-ui/docs/relay-plan-product-policy.md`
+- `webrtc-rewrite-architecture.md`（私有 archive）
+- `app-core-v2-contract.md`（私有 archive）
+- `relay-plan-product-policy.md`（私有 archive）
 - ME010-ME012 的实现说明和现有 Hub/Web Controller schema
 
 可复用思想必须先映射到本目录定义的 domain owner、安全边界和源码边界，再进入新实现。

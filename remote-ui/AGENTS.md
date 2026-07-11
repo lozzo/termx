@@ -2,140 +2,43 @@
 
 ## Boundary
 
-- `remote-ui` 是 Web / embedded Web UI，不是 `termx-core` 或 `termx-remote`。
-- `remote-ui` 负责：连接建立、运行时 WebRTC session、terminal/file/events 消费、UI 状态编排。
-- `remote-ui` 不反向定义或污染 `termx-core` / `termx-remote` 的产品边界。
-- 当前 remote + App 迁移阶段允许在根 `workflow.md` 明确切片内维护 `termx-app` 注入的 native runtime adapter contract；`remote-ui` 组件层仍不得直接依赖 Capacitor、Kotlin bridge、WebSocket bridge、`RTCPeerConnection`、`RTCDataChannel`、`fetch` 或 `localStorage`。
-- 当前仍是开发阶段。重构时不要保留兼容别名、旧导出、wrapper 文件或旧模块名；直接改成新的命名和边界，并同步更新所有调用方。
+- `remote-ui/` 是未来公开快照的一部分，负责 App 与浏览器客户端共享的 UI、状态编排和平台中立 runtime interface。
+- `remote-ui/` 不拥有 terminal lifecycle、committed history、capability authorization、云账号、Hub presence 或 Relay entitlement 真值。
+- `termx-app/` 只能通过明确的 TypeScript interface 注入 native WebRTC、credential、file transfer 和 lifecycle primitive；组件层不得直接依赖 Capacitor、Kotlin bridge 或浏览器全局对象。
+- public source 不得 import、读取或通过 build script 引用 `private/` 和私有 archive。
+- 当前处于开发周期，不保留旧 session-token、localweb、Web Controller 或 legacy remote fallback；破坏性调整直接按当前 contract 更新全部调用方。
 
-## Current Build Direction
+## Runtime Schema
 
-**主线 WF-203 已完成**。当前 P0 任务：**local + hub 远程连接模型收敛**。
+- `termx-proto/runtimepb/runtime.proto` 是 App/remote-ui runtime schema 的公开源码真值。
+- `remote-ui/src/generated/runtimepb/` 只保存由该 schema 生成的 TypeScript projection，不得从 archive 或旧 `termx-remote/` 生成。
+- wire terminal protocol 继续由 `termx-proto/wirepb/` 拥有；UI 不得用本地 DTO 建立第二套 terminal protocol。
 
-### WF-501 实现说明
+## Transport And Security
 
-**目标**：`VITE_CONTROL_URL=http://my-ctrl.example.com npm run dev` 启动后，打开 `/` 时 Control URL 已预填，无需手动改 Settings。
+- WebRTC 是 endpoint transport；direct、single relay 和 relay mesh 只是 observed path，不是不同 endpoint 或 terminal protocol。
+- 原始 `CapabilityGrant` 只在 DTLS DataChannel 建立后的端到端握手中交给 owning daemon，不能进入 Hub/Control Plane HTTP、SDP、日志或 Web storage。
+- AccountAccessToken、HubAdmissionTicket 和 RelayLease 只属于 managed cloud adapter；Community/adapter 缺失时必须 fail closed，并且只影响对应 managed endpoint。
+- 组件层不得直接创建 `RTCPeerConnection`、`RTCDataChannel`，也不得直接调用 `fetch`、`localStorage` 或 native bridge；这些能力必须通过可替换 interface 注入。
 
-**修改文件**：`remote-ui/src/entries/mountRemoteControlApp.tsx`
+## History Boundary
 
-当前入口应保留 `defaultControlUrl` 注入：
-```tsx
-<RemoteControlApp
-  hubRtcSessionFactory={...}
-  networkRuntime={networkRuntime}
-  pairCrypto={pairCrypto}
-/>
-```
+- live terminal 可以使用 xterm、snapshot、短 scrollback 和 render cache。
+- copy、search、selection text 和无限历史窗口必须消费 core-v2 authoritative history/window contract。
+- 不得从 xterm buffer、DOM/canvas rows、snapshot rows、native backlog 或本地 append log 拼出第二份 history truth。
 
-**新增文件**：`remote-ui/.env.example`
-```
-# Web Controller URL — 设置后 npm run dev 首页自动预填控制地址
-# VITE_CONTROL_URL=http://localhost:3000
-
-# 本地 hub 代理目标（localweb 模式，访问 /localweb.html 时生效）
-# TERMX_LOCAL_WEB_ORIGIN=http://127.0.0.1:18888
-```
-
-**验证命令**：
-```
-cd remote-ui && npm run typecheck && npm run test
-```
-
-**不需要改**：`RemoteControlApp.tsx` 中的 `defaultWebControlUrl` 常量（作为最终 fallback 保留，不删除）。
-
-### npm run dev 使用说明（给运行者）
+## Verification
 
 ```bash
-# Hub 模式（访问 /）
-VITE_CONTROL_URL=http://localhost:3000 npm run dev
-# 打开 http://localhost:5173/ → 登录 web-control → 看到机器列表 → 点连接
-
-# Local 模式（访问 /localweb.html）
-TERMX_LOCAL_WEB_ORIGIN=http://192.168.x.x:18888 npm run dev
-# 打开 http://localhost:5173/localweb.html → 扫描或输入本地 hub URL → 连接
+cd remote-ui
+npm run proto
+npm test
+npm run typecheck
+npm run build
 ```
 
-## 连接架构（当前）
+涉及公开快照边界时，还必须从仓库根运行：
 
-所有连接路径都通过 Hub 协议，只是 hub URL 不同：
-
+```bash
+scripts/public-snapshot-guard.test.sh
 ```
-local:  hubRtcConnector → http://LAN_IP:18888  (remote 二进制内嵌本地 hub)
-hub:    hubRtcConnector → 公网 Hub URL（可 P2P，也可 relay）
-both:   先 local，再 race hub URLs
-```
-
-termx:// URI payload（schema_version: 4）：
-```json
-{
-  "type": "termx_pair",
-  "schema_version": 4,
-  "preferred_path": "local",
-  "machine": { "id": "machine-id", "name": "Machine" },
-  "local": { "hub_urls": ["http://192.168.1.10:18888"] },
-  "hub": { "hub_urls": ["https://hub.example.com"], "web_control": "https://control.example.com" },
-  "pairing": { "session_id": "pair-session", "secret": "pair-secret" },
-  "bootstrap": {}
-}
-```
-
-**已删除的旧路径**：
-- `localRtcConnector.ts` → 调用 `/api/local/rtc/offer`（localweb 端点，已删除）
-- `localAgentApi.ts` 中的 offer/pair/terminal 调用（localweb 端点，已删除）
-
-**保留的当前代码**：
-- `hubRtcConnector.ts` — 主连接路径，local 和 hub 共用
-- `hubApi.ts` — Hub 标准 API（sessions、pairing/claims、answer）
-- `browserRtcSession.ts` — WebRTC core（offer、answer、DataChannel）
-- `connectionOrchestrator.ts` — local + hub 连接路径编排
-
-## 连接流程（本地 hub）
-
-```
-1. 用户提供本地 hub URL（QR 扫描 / 手动输入）
-2. LocalHubUrlProvider.getLocalHubUrl() → "http://192.168.x.x:18888"
-3. 检查是否已配对 → hubApi.createPairingClaim(localHubUrl)
-4. 连接 → hubRtcConnector.connect(localHubUrl, session_token)
-5. WebRTC DataChannel 建立
-6. terminal/file/events（与 hub mode 完全一致）
-```
-
-## App 认证（已简化）
-
-- `remote-ui` 持有 **session_token**（pairing 时从 hub 获取，HMAC-SHA256，由 agent 签发）。
-- session_token 按 machineId 存储：`termx.session.{machineId}.token`
-- 每次发送 offer 时，session_token 作为 offer payload 的 `session_token` 字段随 offer 发出。
-- **不再有**：app ed25519 key pair 生成、AppCertificate 存储、per-offer ed25519 签名。
-- `remote-ui` 不调 Web Controller 做 offer 前验证——验证由 agent 在收到 offer 时 HMAC 验证。
-- DTLS（WebRTC 内置）提供传输层防重放，无需额外签名。
-
-## Transport Architecture
-
-- 运行时 transport 统一基于 WebRTC DataChannel。
-- 所有网络能力必须先定义 TypeScript `interface`，再提供 browser implementation。
-- 组件层不得直接依赖：`RTCPeerConnection`、`RTCDataChannel`、`fetch`、`localStorage`。
-- App/native 实现只能作为这些 TypeScript interface 的实现注入，不能把 native bridge 状态升级成 terminal、history、copy 或 storage truth。
-- 客户端 path 只允许：`local`、`hub`。
-- relay 只能表现为 capability/policy/connection info，不能变成第四种 transport。
-- Hub 是 dumb relay，`remote-ui` 不假设 Hub 会做任何 cert 验证或 policy 决策。
-
-## App History Boundary
-
-- `remote-ui` 的 live terminal 可以使用 xterm、snapshot、replay、短 scrollback 和本地 render/cache window。
-- App copy mode、search、selection text 和无限历史窗口必须通过 core-v2 logical-line history/window contract 取数。
-- 不得从 xterm buffer、snapshot rows、DOM/canvas rows、native bridge backlog、App 本地 append log 或 `loadScrollback` visual rows 拼接最终 copy/history 文本。
-- `termx-app-history-ref/` 只可只读参考窗口化渲染、overscan 和 cache 结构；其中 mock source、visual-row truth 和 demo 数据不得成为协议或运行时真值。
-
-## Workflow
-
-- 遵守根 `AGENTS.md` 与根 `workflow.md`。
-- 每个切片 TDD 推进，切片完成后独立 subagent review。
-- 新发现问题同步写入根 `workflow.md`。
-
-## Review Focus
-
-- 是否还有任何对 `/api/local/rtc/offer`、`/api/local/pair`、`/api/local/terminals`、`/api/local/status` 的调用（不得有）
-- local 连接路径是否已改为 `hubRtcConnector`（不得保留旧 localRtcConnector）
-- 组件层是否泄漏了浏览器网络对象（RTCPeerConnection、fetch 等）
-- local 和 hub 连接代码路径是否真正统一（不得有双轨）
-- 测试是否覆盖了 local path 使用 hubRtcConnector 的行为

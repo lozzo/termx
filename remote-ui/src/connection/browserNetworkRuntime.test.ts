@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import browserRuntimeSource from './browserNetworkRuntime.ts?raw'
-import localEntrySource from '../entries/localMachineEntry.tsx?raw'
 import remoteMountSource from '../entries/mountRemoteControlApp.tsx?raw'
 import webControlAppSource from '../app/RemoteControlApp.tsx?raw'
 
@@ -10,7 +9,6 @@ describe('browser network runtime boundary', () => {
     expect(browserRuntimeSource).toMatch(/globalThis\.localStorage/)
     expect(browserRuntimeSource).toMatch(/globalThis\.location/)
     expect(webControlAppSource).not.toMatch(/globalThis\.(fetch|localStorage|location)/)
-    expect(localEntrySource).not.toMatch(/globalThis\.(fetch|localStorage|location)/)
     expect(remoteMountSource).not.toMatch(/globalThis\.(fetch|localStorage|location)/)
   })
 
