@@ -1,9 +1,10 @@
-# 工作流：单区域 Cloud 纵向闭环
+# 工作流：统一文件能力纵向闭环
 
 ## 当前目标
 
 - REC001 已完成仓库可控状态恢复：尚未提交的 RM004 目录与维护改动已经审计收口，误触发的发布期验证扩展已经清理。
 - CLOUD001-CLOUD005 已完成单区域 Cloud 纵向闭环：开发云、桌面 managed direct、single Relay 与 Official Android 均已跨真实用户链路验收。
+- 当前主线转为 FILE001-FILE004：把仍依赖旧 runtime API 的共享文件 UI 迁移到公开 termx protocol，并在 local、SSH、WebRTC direct/single Relay 与 Official Android 上保持同一文件语义。
 - 当前仓库是唯一 private monorepo；当前不是正式开源或生产发布阶段。public snapshot、开源许可证模板替换、secret audit、第二仓和发布自动化全部延后。
 - GA003 Relay Mesh、GA004 transit、多区域高可用、复杂计费、SSO 和 live reroute 继续保持延后；CLOUD005 完成不会自动启动这些事项，必须由用户基于真实数据重新排序。
 - 插件系统位于独立分支，本分支不新增插件系统代码、协议或文档。
@@ -19,12 +20,14 @@
 - `tui/docs/multi-endpoint-transport-plan.md`、`tui/docs/architecture.md`：TUI endpoint/transport 与 runtime 基准。
 - `core/docs/architecture.md`：core terminal lifecycle、live/history 与 storage 边界。
 - `docs/remote-platform/cloud-staging-roadmap.md`：唯一活动实现真值，收敛当前代码缺口、四类 session 身份、真实消息链路和 CLOUD002-CLOUD005 用户 DoD。
+- `docs/remote-platform/file-transfer-spec.md`：FILE001-FILE004 的产品边界、daemon ownership、授权、协议、流控和迁移真值。
 
 ## 当前产品真值
 
 - `core/` 拥有 terminal lifecycle、screen-backed history 和 daemon-local terminal identity。
 - `tui/` 与 `clients/` 拥有客户端 endpoint manager、交互和展示，不拥有 terminal/history truth。
 - `remote/` 与公开进程拥有 WebRTC、DTLS、DeviceIdentity、CapabilityGrant、DataChannel 和 termx protocol。
+- daemon 所在机器的文件系统是文件 metadata 与内容真值；公开 termx protocol 只在已授权 session 内暴露文件操作，客户端只持有列表、预览和 transfer projection。
 - `private/cloud/companion` 与 Official mobile adapter 只拥有账号 session、云 API、signaling、RelayLease、质量 summary 和 route plan。
 - `private/cloud/devcloud` 已用两个独立 loopback HTTP listener 和一个 UDP TURN listener 装配真实序列化、认证、admission、短期 Relay lease、quota 与 signed usage 边界；它仍是显式内存 dev-local profile，不是生产部署模板。
 - Companion 默认继续使用 `UnconfiguredAdapter`；development build 只有显式传入 dev manifest 才启用 HTTP adapter。Android 默认 Official 构建继续 `login_required`，只有显式 `termxOfficialDevCloud=true` APK 启用固定 loopback dev gateway；Community 仍 fail closed。
@@ -46,6 +49,7 @@
 - TUI/App 不拥有 terminal lifecycle、committed history 或 history truth；live/input/resize/history/copy 路由到 owning endpoint。
 - CapabilityGrant 只由 owning daemon 签发和验证，只能在 DTLS DataChannel 端到端握手中提交。
 - Control Plane、Companion、Hub、Relay、Route Planner 不得接收 CapabilityGrant、DeviceIdentity private key、terminal payload、history 或输入。
+- Control Plane、Companion、Hub、Relay、Route Planner 同样不得接收文件路径、目录列表、文件 metadata、文件内容、摘要或 transfer resume offset；Relay 只能转发并计量 DTLS 内的密文 bytes。
 - Account token、DeviceIdentity、CapabilityGrant、HubAdmissionTicket 和 RelayLease 是不同凭据，不得复用字段、签名输入或验证责任。
 - local、SSH 和 direct P2P 不依赖账号、订阅、Hub 或 Relay；云服务失败只影响 owning managed endpoint。
 - 禁止 legacy remote、旧 Hub/session-token、grant-in-signaling、原始 shell fallback、通用插件恢复和按应用名特殊适配。
@@ -59,6 +63,10 @@
 - CLOUD003：`private/cloud/companion`、`remote/`、`shared/`、`proto/`、`tui/`、`cmd/termx/` 与必要 CLI/dev harness；只完成 desktop managed direct。
 - CLOUD004：`private/cloud/{control-plane,hub,relay,route-planner,companion}`、`remote/`、`proto/cloudpb/`、`shared/cloudcompanion/`、`cmd/termx/`、`docs/remote-platform/cloud-staging-roadmap.md`、必要 `Makefile`/dev launcher 与 harness；只完成单区域 single Relay。`proto/cloudpb`/Hub 只允许传递 ManagedSession-bound route preference，使 daemon 能领取自己的 principal-specific TURN credential；不得扩展 terminal protocol 或 Mesh 字段。
 - CLOUD005：`private/cloud/mobile`、`clients/mobile`、`docs/remote-platform/`、Android 构建文件，以及 `clients/ui` 中最小 shared terminal-protocol/pairing contract 与 harness；只完成 Official Android 接线与手测材料。允许联动 `clients/ui` 的原因是现有移动壳复用其 terminal client，而当前 daemon 只接受单一 `protocol` DataChannel；真机纵向验收若证明 Hub presence TTL 到期后 owning daemon 不再上线，允许最小联动 `remote/daemon` 与 `cmd/termx`，只补 fresh presence 续约生命周期和 harness。不得借此恢复旧 Web Controller/Hub runtime、扩展浏览器远程链路或重做 UI 架构。
+- FILE001：`workflow.md`、`docs/remote-platform/`；只建立文件产品、权限、协议、流控、失败语义和迁移基线，不新增 runtime。
+- FILE002：`proto/wirepb/`、`internal/protocol/`、`core/` 与必要 protocol/client harness；实现 daemon-owned 文件 metadata/read-preview 操作和显式 capability scope，不触及 Cloud 服务。
+- FILE003：`proto/wirepb/`、`internal/protocol/`、`core/`、`remote/` 与必要 transport harness；实现同一 protocol session 内的流式上传下载、背压、取消、续传和完整性校验，不新增旧独立 DataChannel。
+- FILE004：`clients/ui/`、`clients/mobile/`、必要公开 protocol adapter、Android 构建文件和手测文档；删除旧 `/files/*` 与 legacy file channel 依赖，完成 Official Android 真机和 direct/single Relay 验收。只有真实产品链路证明 contract 缺失时才最小联动 FILE002/FILE003 owner。
 - `core/` 只有 terminal lifecycle、history 或 scoped protocol contract 确实需要时才最小联动；`private/archive/` 始终禁止主动修改。
 
 ## 任务队列
@@ -71,6 +79,10 @@
 | CLOUD003 | 完成 | Desktop managed direct 闭环 | TUI 经 Companion/Hub/WebRTC direct 列出、attach 并操作真实 daemon terminal |
 | CLOUD004 | 完成 | 单区域 single Relay 闭环 | 显式 Relay 策略通过 lease-bound TURN 连接；quota、到期、usage 和局部失败可验证 |
 | CLOUD005 | 完成 | Official Android 闭环 | Official APK 可扫码/导入、连接、列出/attach terminal、输入并完成后台恢复手测 |
+| FILE001 | 完成 | 统一文件能力设计门禁 | 文件 owner、权限、方法、流控、失败语义和旧 API 迁移边界清晰 |
+| FILE002 | 待开始 | daemon 文件 metadata 与预览 | local protocol 可安全 list/stat/preview/mkdir/rename/delete/copy/move |
+| FILE003 | 待开始 | 文件上传下载数据流 | local 与 WebRTC 使用同一流协议完成背压、取消、续传和摘要校验 |
+| FILE004 | 待开始 | 共享 UI 与 Official Android 闭环 | App 可浏览、预览、上传、下载并经 direct/single Relay 手测 |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
 | GA004 | 延后 | 单 transit 受控加速 | 仅在 GA003 数据证明需要时恢复 |
 | KS012 | 暂停 | 快捷键跨切片总契约守卫 | Cloud 单区域主线完成后重新排序 |
@@ -96,6 +108,10 @@
 - CLOUD003：Companion、remote、TUI 定向测试和 managed direct E2E harness、`git diff --check`。
 - CLOUD004：Control Plane、Relay、Route Planner、remote 定向测试和真实 TURN E2E harness、`git diff --check`。
 - CLOUD005：client workspace 测试、Community/Official Android 单测与 APK 构建边界、ADB 手测步骤审查、`git diff --check`。
+- FILE001 文档-only：`git diff --check`。
+- FILE002：protocol/core 定向测试、文件系统 sandbox harness、`git diff --check`。
+- FILE003：protocol/core/remote 定向测试、慢消费者/取消/续传/损坏数据 harness、`git diff --check`。
+- FILE004：client workspace 测试、Community/Official Android 单测与 APK 构建边界、direct/single Relay 文件 E2E、ADB 手测、`git diff --check`。
 - 只有切片真实跨越全仓 contract 时才运行 `make test-all`；当前开发阶段不运行 public snapshot 或 public-only release gate。
 
 ## 当前状态
@@ -108,4 +124,5 @@
 - CLOUD003 已完成：`termx daemon --cloud` 使用 fresh proof 建立 presence；public pairing create/import 分离 raw grant 与 endpoint registry；TUI 经真实 Companion IPC、Control Plane/Hub listener、Pion DTLS DataChannel、capability handshake 和 core-v2 protocol 完成 List/Attach/Input/Resize/Live/History，并投影连接 phase 与实际 `direct` path。race E2E 证明云边界看不到 grant、设备私钥或 terminal payload，远端 daemon 关闭不影响 local endpoint。
 - CLOUD004 已完成：`make cloud-dev` 装配一个 lease-bound Pion UDP TURN；client/daemon 通过同一 ManagedSession 获取不同短期凭据，TUI 在真实 `single_relay` path 完成 List/Attach/Input/Live/History；Authority/Control Plane 验证并发、quota、到期与 signed idempotent usage，race E2E 证明 Relay 停止后不回退 direct 且 local endpoint 仍可用。
 - CLOUD005 已完成：Official dev gateway、真实 DTLS/capability auth、Keystore pairing、单一 `protocol` DataChannel、core-v2 live screen 和 fresh-proof presence 续约已接通；真机 List/Attach/Input/Output、2 秒/10 秒恢复、Hub 局部失败和 Community `companion_missing` 均已通过，准入全绿。Community 验收后设备物理断开，重连后只需恢复安装 Official dev APK，不影响切片完成度。
+- FILE001 已完成：统一规范明确 daemon 文件系统 truth、显式四类文件权限、metadata 方法、单 protocol DataChannel 流、背压/续传/摘要失败语义和旧 `/files/*`/独立 file channel 删除路线；UI/schema 存量不再冒充可用能力。
 - 正式开源隔离、生产 OAuth/TLS、持久化数据库、计费、团队治理、Relay Mesh 和多区域运维全部延后。
