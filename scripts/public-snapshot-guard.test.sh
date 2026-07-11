@@ -16,18 +16,23 @@ mkdir -p \
   "$snapshot/remote-ui" \
   "$snapshot/scripts" \
   "$snapshot/termx-app" \
-  "$snapshot/termx-cli" \
-  "$snapshot/termx-core-v2" \
-  "$snapshot/termx-proto" \
-  "$snapshot/termx-remote-v2" \
-  "$snapshot/termx-shared" \
-  "$snapshot/termx-testkit" \
-  "$snapshot/termx-tui-v3" \
-  "$snapshot/termx-vterm"
+  "$snapshot/cmd/termx" \
+  "$snapshot/core" \
+  "$snapshot/proto" \
+  "$snapshot/remote" \
+  "$snapshot/shared" \
+  "$snapshot/testkit" \
+  "$snapshot/tui" \
+  "$snapshot/vterm"
 
-for file in .gitignore CONTRIBUTING.md DCO LICENSE Makefile NOTICE README.md THIRD_PARTY_NOTICES.md go.work.sum; do
+for file in .gitignore CONTRIBUTING.md DCO LICENSE Makefile NOTICE README.md THIRD_PARTY_NOTICES.md go.sum go.work.sum; do
   printf '%s\n' "fixture" >"$snapshot/$file"
 done
+cat >"$snapshot/go.mod" <<'EOF'
+module github.com/lozzow/termx
+
+go 1.26.0
+EOF
 for file in LICENSE NOTICE DCO CONTRIBUTING.md THIRD_PARTY_NOTICES.md THIRD_PARTY_INVENTORY.md; do
   printf '%s\n' "fixture" >"$snapshot/docs/legal/public-snapshot/$file"
 done
@@ -53,17 +58,7 @@ chmod +x "$snapshot/scripts/public-snapshot-guard.sh"
 cat >"$snapshot/go.work" <<'EOF'
 go 1.26.0
 
-use (
-	./internal
-	./termx-cli
-	./termx-core-v2
-	./termx-proto
-	./termx-remote-v2
-	./termx-shared
-	./termx-testkit
-	./termx-tui-v3
-	./termx-vterm
-)
+use .
 EOF
 
 guard="$snapshot/scripts/public-snapshot-guard.sh"
@@ -86,9 +81,9 @@ mkdir "$snapshot/private"
 expect_rejected "unexpected top-level entry: private"
 rmdir "$snapshot/private"
 
-printf '%s\n' "fixture" >"$snapshot/termx-cli/AGENTS.md"
+printf '%s\n' "fixture" >"$snapshot/cmd/termx/AGENTS.md"
 expect_rejected "agent instructions are present"
-rm "$snapshot/termx-cli/AGENTS.md"
+rm "$snapshot/cmd/termx/AGENTS.md"
 
 printf '%s\n' "TOKEN=secret" >"$snapshot/remote-ui/.env"
 expect_rejected "secret-like file"
@@ -112,7 +107,7 @@ expect_rejected "unexpected top-level entry: internal-only.txt"
 rm "$snapshot/internal-only.txt"
 
 cp "$snapshot/go.work" "$tmp_root/go.work"
-sed '/termx-vterm/d' "$tmp_root/go.work" >"$snapshot/go.work"
+printf '%s\n' 'go 1.26.0' >"$snapshot/go.work"
 expect_rejected "public go.work modules differ"
 cp "$tmp_root/go.work" "$snapshot/go.work"
 

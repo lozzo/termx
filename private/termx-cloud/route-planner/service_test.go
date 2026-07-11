@@ -8,7 +8,7 @@ import (
 	"github.com/lozzow/termx/private/termx-cloud/route-planner"
 	"github.com/lozzow/termx/private/termx-cloud/route-planner/quality"
 	"github.com/lozzow/termx/private/termx-cloud/route-planner/smartroute"
-	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/proto/cloudpb"
 )
 
 type requestSource struct {

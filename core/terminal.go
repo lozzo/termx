@@ -1,0 +1,936 @@
+package core
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/lozzow/termx/core/history"
+	"github.com/lozzow/termx/core/history/linehist"
+	"github.com/lozzow/termx/core/live"
+	"github.com/lozzow/termx/shared/perftrace"
+	vterm "github.com/lozzow/termx/vterm/vterm"
+)
+
+type Terminal struct {
+	mu      sync.Mutex
+	info    TerminalInfo
+	options TerminalCreateOptions
+	process TerminalProcess
+	live    *live.SurfaceTrack
+	// 中文说明：liveOpMu 串行化 live SurfaceTrack 的 PTY 输出与 resize/restart 操作。
+	// live 是唯一 response owner；resize 期间产生的新输出必须等 live 调整到新尺寸后再写入。
+	liveOpMu     sync.Mutex
+	liveRevision LiveRevision
+	tap          *SemanticTap
+	// 中文说明：tapOpMu 串行化 history semantic consumer 的 PTY 输出与 resize/restart 操作。
+	// 它同时是 linehist 的查询 gate：ingest 与查询共享同一把锁，滚出行在
+	// 冷段（文件）与热段（emulator 当前屏）之间不重不漏。
+	tapOpMu      sync.Mutex
+	historyMu    sync.Mutex
+	historyStore history.HistoryStore
+	// 中文说明：lineHistory 是 R436 后唯一的 history 引擎（logical-line 文件历史）。
+	// 它在 tapOpMu 临界区内直接消费 tap 事务的 EvictedRows，查询用同一把 gate
+	// 采集当前屏热段；vterm emulator 是唯一屏幕真值，没有第二份屏幕模型。
+	lineHistory         *linehist.Store
+	historyEnabled      bool
+	historyBackpressure HistoryBackpressureConfig
+	logger              *slog.Logger
+	historyStatus       HistoryBacklogStatus
+	queueMu             sync.Mutex
+	liveQ               *terminalLiveIngestQueue
+	historyTapQ         *terminalLiveIngestQueue
+	events              *eventBroker
+	update              func(TerminalInfo)
+}
+
+func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyStore history.HistoryStore, historyEnabled bool, historyBackpressure HistoryBackpressureConfig, logger *slog.Logger) *Terminal {
+	terminal := &Terminal{
+		info:                info.Clone(),
+		options:             cloneTerminalCreateOptions(options),
+		process:             process,
+		events:              events,
+		update:              update,
+		historyEnabled:      historyEnabled,
+		historyBackpressure: historyBackpressure.Normalize(),
+		logger:              logger,
+	}
+	terminal.live = live.NewSurfaceTrackWithOptions(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)}, live.SurfaceTrackOptions{
+		OnResponse: terminal.handleLiveSurfaceResponse,
+	})
+	if historyEnabled {
+		terminal.historyStatus = HistoryBacklogStatus{
+			TerminalID:       info.ID,
+			HistoryEnabled:   true,
+			BackpressureMode: terminal.historyBackpressure.Mode,
+			BufferLimitBytes: terminal.historyBackpressure.BufferBytes,
+		}
+		// 中文说明：history semantic tap 不持有 response owner；OSC/DA/DSR 只能由
+		// live SurfaceTrack 回写一次，避免 live/history 双 vterm 双回写。
+		terminal.tap = NewLineHistorySemanticTap(info.ID, info.Size, nil)
+		if lineStore, ok := historyStore.(*linehist.Store); ok {
+			terminal.lineHistory = lineStore
+			// 中文说明：闭包动态读 terminal.tap（Restart 会在 tapOpMu 内换 tap）；
+			// gate 就是 tapOpMu，store 查询在 gate 内采集 coldCount+当前屏，
+			// 保证滚出行在冷段与热段之间不重不漏。
+			lineStore.Bind(func() linehist.ScreenSnapshot {
+				return terminal.tap.LineHistoryScreenSnapshot()
+			}, &terminal.tapOpMu)
+		}
+		terminal.historyStore = historyStore
+	}
+	terminal.appendStartMarker(info.CreatedAt)
+	terminal.watchProcess(process)
+	return terminal
+}
+
+func (terminal *Terminal) Info() TerminalInfo {
+	terminal.mu.Lock()
+	defer terminal.mu.Unlock()
+	return terminal.info.Clone()
+}
+
+// ResourceUsage 返回当前 terminal 进程的资源诊断采样。domain owner 是
+// TerminalProcess/OS 进程；Terminal 只负责在 running 状态下转发采样结果，
+// 采样失败不能改变 lifecycle，也不能被用作 running/exited 的判断依据。
+func (terminal *Terminal) ResourceUsage() (TerminalResourceUsage, bool) {
+	terminal.mu.Lock()
+	process := terminal.process
+	state := terminal.info.State
+	terminal.mu.Unlock()
+	if process == nil || state != TerminalStateRunning {
+		return TerminalResourceUsage{}, false
+	}
+	sampler, ok := process.(terminalProcessResourceSampler)
+	if !ok {
+		return TerminalResourceUsage{}, false
+	}
+	return sampler.ResourceUsage()
+}
+
+func (terminal *Terminal) SetMetadata(name string, tags map[string]string) TerminalInfo {
+	terminal.mu.Lock()
+	terminal.info.Name = name
+	terminal.info.Tags = cloneStringMap(tags)
+	info := terminal.info.Clone()
+	terminal.mu.Unlock()
+	terminal.syncInfo(info)
+	terminal.publish(EventTerminalMetadataChanged, info)
+	return info
+}
+
+func (terminal *Terminal) Input(data []byte) error {
+	terminal.mu.Lock()
+	process := terminal.process
+	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return ErrTerminalExited
+	}
+	terminal.mu.Unlock()
+	return process.Input(data)
+}
+
+func (terminal *Terminal) handleLiveSurfaceResponse(data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	terminal.mu.Lock()
+	process := terminal.process
+	state := terminal.info.State
+	terminal.mu.Unlock()
+	if process == nil || state == TerminalStateExited || state == TerminalStateRemoved {
+		return
+	}
+	// 中文说明：OSC/DSR/DA 等终端查询的响应必须回写到当前 PTY，
+	// 否则 Codex 这类 TUI 会误判颜色/能力并降级渲染。
+	_ = process.Input(data)
+}
+
+// IngestOutput 是测试和诊断入口，用一段 PTY 输出同步推进 terminal。
+// 它先走 live SurfaceTrack latest 快路径，再把同一 PTY bytes 交给 history semantic
+// consumer；history truth 仍只能来自 HistoryStore，不能从 live rows 反推。
+func (terminal *Terminal) IngestOutput(output string) error {
+	terminal.mu.Lock()
+	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return ErrTerminalExited
+	}
+	info := terminal.info.Clone()
+	terminal.mu.Unlock()
+
+	revision, err := terminal.applyLiveOutput(output)
+	if err != nil {
+		return err
+	}
+
+	terminal.publishLiveInvalidated(info.ID, uint64(revision))
+	if terminal.historyEnabled {
+		if err := terminal.ingestHistorySemanticOutput(output, info.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Resize 调整 terminal PTY 和 core native live screen 的尺寸。
+// resize 和 PTY bytes 按同一顺序进入 live SurfaceTrack 与 history semantic consumer；
+// history 只消费 resize transaction 作为 non-history boundary，不能由 resized live snapshot 生成 sealed history。
+func (terminal *Terminal) Resize(size Size) error {
+	if !size.Valid() {
+		return ErrInvalidServerSize
+	}
+	terminal.mu.Lock()
+	process := terminal.process
+	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return ErrTerminalExited
+	}
+	terminal.mu.Unlock()
+	if err := terminal.flushLiveQueue(context.Background()); err != nil {
+		return err
+	}
+	if err := terminal.flushHistoryTapQueue(context.Background()); err != nil {
+		return err
+	}
+
+	terminal.liveOpMu.Lock()
+	terminal.tapOpMu.Lock()
+	defer terminal.tapOpMu.Unlock()
+	defer terminal.liveOpMu.Unlock()
+
+	terminal.mu.Lock()
+	if terminal.process != process || terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return ErrTerminalExited
+	}
+	terminal.mu.Unlock()
+	if err := process.Resize(size); err != nil {
+		return err
+	}
+	terminal.mu.Lock()
+	if terminal.process != process || terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return ErrTerminalExited
+	}
+	oldSize := terminal.info.Size
+	terminal.info.Size = size
+	info := terminal.info.Clone()
+	terminal.mu.Unlock()
+
+	terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
+	terminal.liveRevision++
+	revision := terminal.liveRevision
+	if terminal.historyEnabled && terminal.tap != nil {
+		result, err := terminal.tap.Resize(size)
+		if err != nil {
+			return err
+		}
+		if terminal.lineHistory != nil {
+			// 中文说明：linehist 在 tapOpMu 内直接消费 resize 事务的 EvictedRows
+			//（变窄 reflow 可能挤出行）。锁序固定 historyMu→tapOpMu，这里已持有
+			// tapOpMu，不能再绕道 historyMu。
+			_ = terminal.lineHistory.ApplyTransaction(result.tx)
+		}
+	}
+
+	terminal.syncInfo(info)
+	terminal.publishResize(info, oldSize, size)
+	terminal.publishLiveInvalidated(info.ID, uint64(revision))
+	return nil
+}
+
+func (terminal *Terminal) Kill() error {
+	terminal.mu.Lock()
+	process := terminal.process
+	terminal.mu.Unlock()
+	return process.Kill()
+}
+
+func (terminal *Terminal) Close() error {
+	return terminal.closeWithReason()
+}
+
+func (terminal *Terminal) closeWithReason() error {
+	_ = terminal.FlushHistory(context.Background())
+	terminal.mu.Lock()
+	process := terminal.process
+	shouldCloseHistory := terminal.info.State == TerminalStateRunning
+	terminal.info.State = TerminalStateRemoved
+	info := terminal.info.Clone()
+	terminal.mu.Unlock()
+	if shouldCloseHistory && terminal.historyEnabled {
+		// 中文说明：remove/shutdown 不一定会经过 process-exit watcher；running terminal
+		// 的最后 open line 必须交给 linehist 强制闭合。
+		terminal.forceCloseHistory()
+	}
+	if terminal.lineHistory != nil {
+		// 中文说明：terminal remove/shutdown 后不再有查询与续写；linehist 把
+		// 未闭合尾部按硬结束落盘并关闭文件，重启进程不丢已滚出内容。
+		_ = terminal.lineHistory.Close()
+	}
+	terminal.syncInfo(info)
+	if process == nil {
+		return nil
+	}
+	return process.Close()
+}
+
+func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) error {
+	terminal.mu.Lock()
+	info := terminal.info.Clone()
+	options := terminal.options
+	terminal.mu.Unlock()
+	if err := terminal.flushLiveQueue(ctx); err != nil {
+		return err
+	}
+	if err := terminal.FlushHistory(ctx); err != nil {
+		return err
+	}
+	// 中文说明：restart 生成的是 core 持有的新 terminal process，不能绑定到本次
+	// protocol request/session 的 ctx；否则 TUI 退出关闭 socket 会把刚重启的 PTY 杀掉。
+	process, err := factory.Spawn(context.Background(), processSpecFromTerminal(info, options))
+	if err != nil {
+		return err
+	}
+	terminal.mu.Lock()
+	old := terminal.process
+	oldInfo := terminal.info.Clone()
+	terminal.process = process
+	terminal.info.State = TerminalStateRunning
+	terminal.info.ExitCode = nil
+	terminal.info.ExitedAt = time.Time{}
+	info = terminal.info.Clone()
+	terminal.mu.Unlock()
+	_ = oldInfo
+	terminal.queueMu.Lock()
+	terminal.liveQ = nil
+	terminal.historyTapQ = nil
+	terminal.queueMu.Unlock()
+	terminal.liveOpMu.Lock()
+	terminal.live.ResetForRestartPreservingScreen()
+	terminal.liveRevision++
+	revision := terminal.liveRevision
+	terminal.liveOpMu.Unlock()
+	if terminal.historyEnabled {
+		terminal.tapOpMu.Lock()
+		terminal.tap = NewLineHistorySemanticTap(info.ID, info.Size, nil)
+		terminal.tapOpMu.Unlock()
+	}
+	if startRevision, ok := terminal.appendStartMarker(time.Now().UTC()); ok {
+		revision = startRevision
+	}
+	terminal.syncInfo(info)
+	terminal.watchProcess(process)
+	_ = old.Close()
+	terminal.publishLifecycle(EventTerminalChanged, info)
+	terminal.publishLiveInvalidated(info.ID, uint64(revision))
+	return nil
+}
+
+func (terminal *Terminal) Wait() <-chan ProcessExit {
+	terminal.mu.Lock()
+	defer terminal.mu.Unlock()
+	return terminal.process.Wait()
+}
+
+func (terminal *Terminal) LiveRows() []string {
+	terminal.liveOpMu.Lock()
+	defer terminal.liveOpMu.Unlock()
+	return terminal.live.Rows()
+}
+
+func (terminal *Terminal) LiveSnapshot() live.SurfaceSnapshot {
+	terminal.liveOpMu.Lock()
+	defer terminal.liveOpMu.Unlock()
+	return terminal.live.Snapshot()
+}
+
+func (terminal *Terminal) VisitLiveTrimmedScreenRows(visit func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell)) vterm.TrimmedScreenRowsInfo {
+	terminal.liveOpMu.Lock()
+	defer terminal.liveOpMu.Unlock()
+	return terminal.live.VisitTrimmedScreenRows(visit)
+}
+
+// VisitLiveTrimmedScreenRowsWithRevision 在同一 live 锁内读取当前 native screen
+// 与 live projection revision。revision 只表示当前屏投影版本，不是 history truth
+// generation；protocol/TUI 用它拒绝旧 snapshot，不能把它解释成 logical history 版本。
+func (terminal *Terminal) VisitLiveTrimmedScreenRowsWithRevision(visit func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell)) (vterm.TrimmedScreenRowsInfo, uint64) {
+	terminal.liveOpMu.Lock()
+	defer terminal.liveOpMu.Unlock()
+	info := terminal.live.VisitTrimmedScreenRows(visit)
+	return info, uint64(terminal.liveRevision)
+}
+
+// NativeScreenSnapshot 返回 core 当前 latest native screen。
+// 调用方只能把它用于实时显示 projection；history/window/copy truth 必须继续走 HistoryWindow/Copy。
+func (terminal *Terminal) NativeScreenSnapshot(terminalID string) NativeScreenSnapshot {
+	terminal.liveOpMu.Lock()
+	snapshot := terminalNativeScreenSnapshotFromLiveSurface(terminalID, terminal.liveRevision, terminal.live.Snapshot())
+	terminal.liveOpMu.Unlock()
+	snapshot.TerminalID = terminalID
+	return snapshot
+}
+
+// LiveRevision 返回当前 terminal native screen 的 latest-only revision。
+// 它只服务 live invalidation one-shot arm 的“是否已经有新屏幕”判断；
+// history/window/copy 不能把它当成 logical history generation。
+func (terminal *Terminal) LiveRevision() LiveRevision {
+	terminal.liveOpMu.Lock()
+	defer terminal.liveOpMu.Unlock()
+	return terminal.liveRevision
+}
+
+// HistoryBacklogStatus 返回 terminal history semantic backlog 的追平诊断。
+// R436 后 linehist 在 tap 队列 worker 的 tapOpMu 临界区内同步落盘，
+// 没有独立的 compact journal worker；诊断只反映 history 是否启用。
+func (terminal *Terminal) HistoryBacklogStatus() HistoryBacklogStatus {
+	terminal.mu.Lock()
+	terminalID := terminal.info.ID
+	terminal.mu.Unlock()
+	terminal.queueMu.Lock()
+	status := terminal.historyStatus
+	if terminal.historyTapQ != nil {
+		queueStatus := terminal.historyTapQ.Status()
+		status.PendingTransactions = queueStatus.PendingItems
+		status.PendingBytes = queueStatus.PendingBytes
+		status.BackpressureMode = queueStatus.BackpressureMode
+		status.BufferLimitBytes = queueStatus.BufferLimitBytes
+		status.BackpressureEvents = queueStatus.BackpressureEvents
+		status.BackpressureWaitNanos = queueStatus.BackpressureWaitNanos
+		status.Closed = queueStatus.Closed
+	} else {
+		status.BackpressureMode = terminal.historyBackpressure.Mode
+		status.BufferLimitBytes = terminal.historyBackpressure.BufferBytes
+	}
+	terminal.queueMu.Unlock()
+	status.TerminalID = terminalID
+	status.HistoryEnabled = terminal.historyEnabled
+	if terminal.historyEnabled {
+		terminal.historyMu.Lock()
+		status.HistoryEnabled = terminal.historyStore != nil
+		terminal.historyMu.Unlock()
+	}
+	return status
+}
+
+// FlushHistory 等待当前 terminal 的 history semantic tap 队列追平。
+// linehist 的落盘发生在 tap worker 的同一临界区内，tap 队列追平即 history
+// truth 追平；它不等待客户端 render，调用边界是 history.window/freeze/copy
+// 和 lifecycle close。
+func (terminal *Terminal) FlushHistory(ctx context.Context) error {
+	return terminal.flushHistoryTapQueue(ctx)
+}
+
+func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {
+	terminal.publishEvent(typ, info, false)
+}
+
+func (terminal *Terminal) publishLifecycle(typ EventType, info TerminalInfo) {
+	terminal.publishEvent(typ, info, true)
+}
+
+func (terminal *Terminal) publishEvent(typ EventType, info TerminalInfo, lifecycleKnown bool) {
+	if terminal.events == nil {
+		return
+	}
+	terminalCopy := info.Clone()
+	terminal.events.publish(Event{
+		Type:           typ,
+		TerminalID:     info.ID,
+		Terminal:       &terminalCopy,
+		LifecycleKnown: lifecycleKnown,
+	})
+}
+
+func (terminal *Terminal) publishLiveInvalidated(terminalID string, revision uint64) {
+	if terminal.events == nil {
+		return
+	}
+	terminal.events.publish(Event{
+		Type:       EventTerminalLiveInvalidated,
+		TerminalID: terminalID,
+		Live: &LiveScreenInvalidated{
+			TerminalID: terminalID,
+			Revision:   LiveRevision(revision),
+		},
+	})
+}
+
+func (terminal *Terminal) publishResize(info TerminalInfo, oldSize Size, newSize Size) {
+	if terminal.events == nil {
+		return
+	}
+	terminalCopy := info.Clone()
+	terminal.events.publish(Event{
+		Type:       EventTerminalResized,
+		TerminalID: info.ID,
+		Terminal:   &terminalCopy,
+		OldSize:    oldSize,
+		NewSize:    newSize,
+	})
+}
+
+func (terminal *Terminal) watchProcess(process TerminalProcess) {
+	outputDone := terminal.watchOutput(process)
+	terminal.watchExit(process, outputDone)
+}
+
+func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
+	done := make(chan struct{})
+	output := process.Output()
+	if output == nil {
+		close(done)
+		return done
+	}
+	liveQueue := newTerminalLiveIngestQueue()
+	terminal.setLiveQueue(process, liveQueue)
+	var historyTapQueue *terminalLiveIngestQueue
+	if terminal.historyEnabled {
+		historyTapQueue = newTerminalHistoryTapIngestQueue(terminal.historyBackpressure)
+		terminal.setHistoryTapQueue(process, historyTapQueue)
+		go historyTapQueue.Run(func(output string) error {
+			return terminal.ingestProcessHistoryTapOutput(process, output)
+		})
+	}
+	go liveQueue.Run(func(output string) error {
+		return terminal.ingestProcessLiveOutput(process, output)
+	})
+	go func() {
+		defer close(done)
+		defer func() {
+			liveQueue.Close()
+			liveQueue.Wait()
+			terminal.clearLiveQueue(process, liveQueue)
+			if historyTapQueue != nil {
+				historyTapQueue.Close()
+				historyTapQueue.Wait()
+				terminal.clearHistoryTapQueue(process, historyTapQueue)
+			}
+		}()
+		for chunk := range output {
+			if len(chunk) == 0 {
+				continue
+			}
+			text := string(chunk)
+			liveQueue.Enqueue(text)
+			if historyTapQueue != nil {
+				historyTapQueue.Enqueue(text)
+			}
+		}
+	}()
+	return done
+}
+
+func (terminal *Terminal) setLiveQueue(process TerminalProcess, queue *terminalLiveIngestQueue) {
+	terminal.mu.Lock()
+	current := terminal.process == process
+	terminal.mu.Unlock()
+	if !current {
+		return
+	}
+	terminal.queueMu.Lock()
+	terminal.liveQ = queue
+	terminal.queueMu.Unlock()
+}
+
+func (terminal *Terminal) clearLiveQueue(process TerminalProcess, queue *terminalLiveIngestQueue) {
+	terminal.mu.Lock()
+	current := terminal.process == process
+	terminal.mu.Unlock()
+	if !current {
+		return
+	}
+	terminal.queueMu.Lock()
+	if terminal.liveQ == queue {
+		terminal.liveQ = nil
+	}
+	terminal.queueMu.Unlock()
+}
+
+func (terminal *Terminal) flushLiveQueue(ctx context.Context) error {
+	terminal.queueMu.Lock()
+	queue := terminal.liveQ
+	terminal.queueMu.Unlock()
+	if queue == nil {
+		return nil
+	}
+	return queue.Flush(ctx)
+}
+
+func (terminal *Terminal) setHistoryTapQueue(process TerminalProcess, queue *terminalLiveIngestQueue) {
+	terminal.mu.Lock()
+	current := terminal.process == process
+	terminal.mu.Unlock()
+	if !current {
+		return
+	}
+	terminal.queueMu.Lock()
+	terminal.historyTapQ = queue
+	terminal.queueMu.Unlock()
+}
+
+func (terminal *Terminal) clearHistoryTapQueue(process TerminalProcess, queue *terminalLiveIngestQueue) {
+	terminal.mu.Lock()
+	current := terminal.process == process
+	terminal.mu.Unlock()
+	if !current {
+		return
+	}
+	terminal.queueMu.Lock()
+	if terminal.historyTapQ == queue {
+		terminal.historyTapQ = nil
+	}
+	terminal.queueMu.Unlock()
+}
+
+func (terminal *Terminal) flushHistoryTapQueue(ctx context.Context) error {
+	terminal.queueMu.Lock()
+	queue := terminal.historyTapQ
+	terminal.queueMu.Unlock()
+	if queue == nil {
+		return nil
+	}
+	finish := perftrace.Measure("core.terminal.history_tap_queue.flush")
+	err := queue.Flush(ctx)
+	finish(0)
+	return err
+}
+
+func (terminal *Terminal) watchExit(process TerminalProcess, outputDone <-chan struct{}) {
+	go func() {
+		exit, ok := <-process.Wait()
+		if !ok {
+			return
+		}
+		if outputDone != nil {
+			<-outputDone
+		}
+		terminal.markExited(process, exit)
+	}()
+}
+
+func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, output string) error {
+	terminal.mu.Lock()
+	if terminal.process != process {
+		terminal.mu.Unlock()
+		return nil
+	}
+	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return ErrTerminalExited
+	}
+	info := terminal.info.Clone()
+	terminal.mu.Unlock()
+
+	finishLiveWrite := perftrace.Measure("core.live.write_screen")
+	revision, err := terminal.applyLiveOutput(output)
+	finishLiveWrite(len(output))
+	if err != nil {
+		return err
+	}
+
+	terminal.mu.Lock()
+	stillCurrent := terminal.process == process && terminal.info.State != TerminalStateExited && terminal.info.State != TerminalStateRemoved
+	terminal.mu.Unlock()
+	if !stillCurrent {
+		return nil
+	}
+	// 中文说明：live latest screen 已经由 SurfaceTrack 快路径更新；wake 必须先发出，
+	// history semantic write / journal queue / store 写入不能反压用户可见的实时屏幕。
+	perftrace.Count("core.terminal.changed", len(output))
+	perftrace.Count("core.live.invalidation_publish", len(output))
+	terminal.publishLiveInvalidated(info.ID, uint64(revision))
+	return nil
+}
+
+func (terminal *Terminal) ingestProcessHistoryTapOutput(process TerminalProcess, output string) error {
+	terminal.mu.Lock()
+	if terminal.process != process {
+		terminal.mu.Unlock()
+		return nil
+	}
+	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return ErrTerminalExited
+	}
+	info := terminal.info.Clone()
+	terminal.mu.Unlock()
+	return terminal.ingestHistorySemanticOutput(output, info.ID)
+}
+
+func (terminal *Terminal) applyLiveOutput(output string) (LiveRevision, error) {
+	terminal.liveOpMu.Lock()
+	defer terminal.liveOpMu.Unlock()
+	if terminal.live == nil {
+		return terminal.liveRevision, nil
+	}
+	terminal.live.Write(output)
+	terminal.liveRevision++
+	return terminal.liveRevision, nil
+}
+
+func (terminal *Terminal) ingestHistorySemanticOutput(output string, terminalID string) error {
+	if !terminal.historyEnabled || terminal.tap == nil {
+		return nil
+	}
+	terminal.tapOpMu.Lock()
+	finishHistoryWrite := perftrace.Measure("core.history.semantic_write")
+	result, err := terminal.tap.ApplyPTYWrite([]byte(output))
+	finishHistoryWrite(len(output))
+	if err == nil && terminal.lineHistory != nil {
+		// 中文说明：EvictedRows 必须在同一 tapOpMu 临界区内落盘——查询用同一把
+		// gate 采集冷段计数与当前屏，任一滚出行要么已在文件、要么还在屏上，
+		// 不存在两边都看不到的窗口。
+		err = terminal.lineHistory.ApplyTransaction(result.tx)
+	}
+	terminal.tapOpMu.Unlock()
+	if err != nil {
+		return err
+	}
+	// 中文说明：linehist 是 R436 后唯一 history 真值路径；落盘已在上面的
+	// tapOpMu 临界区内完成，没有 journal/classifier fanout。
+	terminal.cacheHistorySeq(result.tx.Seq, terminalID)
+	return nil
+}
+
+// cacheHistorySeq 把最新 history semantic seq 记入 terminal 级诊断缓存。
+// linehist 同步落盘，applied 与 target 始终相等；诊断只反映 seq 推进，不代表
+// 客户端 render 进度。
+func (terminal *Terminal) cacheHistorySeq(seq uint64, terminalID string) {
+	if seq == 0 {
+		return
+	}
+	terminal.queueMu.Lock()
+	defer terminal.queueMu.Unlock()
+	if seq > terminal.historyStatus.TargetSeq {
+		terminal.historyStatus.TargetSeq = seq
+	}
+	if seq > terminal.historyStatus.AppliedSeq {
+		terminal.historyStatus.AppliedSeq = seq
+	}
+	terminal.historyStatus.TerminalID = terminalID
+	terminal.historyStatus.HistoryEnabled = terminal.historyEnabled
+}
+
+func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) {
+	terminal.mu.Lock()
+	if terminal.process != process || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return
+	}
+	terminal.info.State = TerminalStateExited
+	code := exit.Code
+	terminal.info.ExitCode = &code
+	// 退出时间以 core-v2 完成输出收口并标记生命周期的 UTC 时刻为准。
+	terminal.info.ExitedAt = time.Now().UTC()
+	info := terminal.info.Clone()
+	terminal.mu.Unlock()
+	if terminal.historyEnabled {
+		terminal.forceCloseHistory()
+	}
+	terminal.appendExitMarker(info)
+	terminal.syncInfo(info)
+	terminal.publish(EventTerminalExited, info)
+}
+
+func (terminal *Terminal) appendExitMarker(info TerminalInfo) {
+	lines := terminalExitMarkerLines(info)
+	if len(lines) == 0 {
+		return
+	}
+	terminal.appendLifecycleHistoryMarker(lines, true)
+	revision, ok := terminal.appendLifecycleLiveMarker(lines, true)
+	if !ok {
+		return
+	}
+	terminal.publishLiveInvalidated(info.ID, uint64(revision))
+}
+
+func (terminal *Terminal) appendStartMarker(startedAt time.Time) (LiveRevision, bool) {
+	terminal.mu.Lock()
+	info := terminal.info.Clone()
+	terminal.mu.Unlock()
+	lines := terminalStartMarkerLines(info, startedAt)
+	terminal.appendLifecycleHistoryMarker(lines, false)
+	return terminal.appendLifecycleLiveMarker(lines, false)
+}
+
+func (terminal *Terminal) appendLifecycleLiveMarker(lines []string, leadingBlankLine bool) (LiveRevision, bool) {
+	if len(lines) == 0 {
+		return 0, false
+	}
+	text := strings.Join(lines, "\r\n") + "\r\n"
+	if leadingBlankLine {
+		text = "\r\n" + text
+	}
+	// 中文说明：live marker 与 history marker 同源于 core terminal lifecycle，
+	// 只是写入 live native screen；它不能反向作为 history truth。
+	revision, err := terminal.applyLiveOutput(text)
+	if err != nil {
+		return 0, false
+	}
+	return revision, true
+}
+
+func (terminal *Terminal) appendLifecycleHistoryMarker(lines []string, leadingBlankLine bool) {
+	if terminal.lineHistory == nil || len(lines) == 0 {
+		return
+	}
+	if leadingBlankLine {
+		lines = append([]string{""}, lines...)
+	}
+	// 中文说明：lifecycle marker 是 core terminal owner 明确写入的历史事件，
+	// 不经过 PTY/raw parser，也不从 live screen 反推程序正文。
+	if err := terminal.lineHistory.AppendLifecycleLines(lines); err != nil {
+		terminal.mu.Lock()
+		id := terminal.info.ID
+		terminal.mu.Unlock()
+		terminal.logger.Warn("append terminal lifecycle marker to history failed", "terminal_id", id, "error", err)
+	}
+}
+
+func terminalStartMarkerLines(info TerminalInfo, startedAt time.Time) []string {
+	if info.ID == "" {
+		return nil
+	}
+	if startedAt.IsZero() {
+		startedAt = time.Now().UTC()
+	}
+	lines := []string{"terminal started: " + info.ID}
+	lines = append(lines, "started at: "+startedAt.UTC().Format(time.RFC3339))
+	if len(info.Command) > 0 {
+		lines = append(lines, "command: "+strings.Join(info.Command, " "))
+	}
+	return lines
+}
+
+func terminalExitMarkerLines(info TerminalInfo) []string {
+	if info.ID == "" {
+		return nil
+	}
+	head := "terminal exited: " + info.ID
+	if info.ExitCode != nil {
+		head += fmt.Sprintf(" code:%d", *info.ExitCode)
+	}
+	head += " exited"
+	lines := []string{head}
+	if !info.ExitedAt.IsZero() {
+		lines = append(lines, "exited at: "+info.ExitedAt.UTC().Format(time.RFC3339))
+	}
+	if len(info.Command) > 0 {
+		lines = append(lines, "command: "+strings.Join(info.Command, " "))
+	}
+	return lines
+}
+
+func terminalNativeScreenSnapshotFromLiveSurface(terminalID string, revision LiveRevision, snapshot live.SurfaceSnapshot) NativeScreenSnapshot {
+	rows := make([]NativeScreenRow, len(snapshot.Screen.Cells))
+	for index, row := range snapshot.Screen.Cells {
+		rows[index] = NativeScreenRow{
+			Index: index,
+			Cells: cloneSemanticTapCells(row),
+		}
+	}
+	return NativeScreenSnapshot{
+		TerminalID: terminalID,
+		Revision:   revision,
+		Size:       NativeScreenSize{Cols: snapshot.Size.Cols, Rows: snapshot.Size.Rows},
+		Rows:       rows,
+		Cursor:     snapshot.Cursor,
+		Modes:      snapshot.Modes,
+		AltScreen:  snapshot.Screen.IsAlternateScreen,
+		Timestamp:  time.Now().UTC(),
+	}
+}
+
+func (terminal *Terminal) HistoryWindow(req history.HistoryWindowRequest) (history.HistoryWindow, error) {
+	mode := historyWindowPerfMode(req.Mode)
+	finish := perftrace.Measure("core.terminal.history_window." + mode + ".total")
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled {
+		finish(0)
+		return history.HistoryWindow{}, ErrHistoryDisabled
+	}
+	if terminal.historyStore == nil {
+		finish(0)
+		return history.HistoryWindow{}, ErrHistoryNotRebuilt
+	}
+	var window history.HistoryWindow
+	var err error
+	switch req.Mode {
+	case "", history.HistoryWindowModeLatest:
+		window, err = terminal.historyStore.LatestWindow(req)
+	case history.HistoryWindowModeOlder:
+		window, err = terminal.historyStore.OlderWindow(req)
+	case history.HistoryWindowModeOldest:
+		window, err = terminal.historyStore.OldestWindow(req)
+	case history.HistoryWindowModeNewer:
+		window, err = terminal.historyStore.NewerWindow(req)
+	default:
+		finish(0)
+		return history.HistoryWindow{}, history.ErrHistoryUnsupportedWindowMode
+	}
+	finish(len(window.Rows))
+	return window, err
+}
+
+func (terminal *Terminal) HistoryCopy(req history.HistoryCopyRequest) (string, error) {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled {
+		return "", ErrHistoryDisabled
+	}
+	if terminal.historyStore == nil {
+		return "", ErrHistoryNotRebuilt
+	}
+	return terminal.historyStore.Copy(req)
+}
+
+func (terminal *Terminal) HistoryFreeze(req history.FreezeHistoryRequest) (history.FrozenHistorySnapshot, error) {
+	finish := perftrace.Measure("core.terminal.history_freeze.total")
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled {
+		finish(0)
+		return history.FrozenHistorySnapshot{}, ErrHistoryDisabled
+	}
+	if terminal.historyStore == nil {
+		finish(0)
+		return history.FrozenHistorySnapshot{}, ErrHistoryNotRebuilt
+	}
+	snapshot, err := terminal.historyStore.Freeze(req)
+	finish(int(snapshot.CommittedUpperBound))
+	return snapshot, err
+}
+
+// HistoryRelease 释放 terminal history store 中的 core-owned token。
+func (terminal *Terminal) HistoryRelease(token history.HistoryToken) error {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	if !terminal.historyEnabled {
+		return ErrHistoryDisabled
+	}
+	if terminal.historyStore == nil {
+		return ErrHistoryNotRebuilt
+	}
+	return terminal.historyStore.Release(token)
+}
+
+func (terminal *Terminal) forceCloseHistory() {
+	if terminal.lineHistory != nil {
+		// 中文说明：process exit/remove/restart 会重置旧 process 的 history tap；
+		// 尚未滚出屏幕的最后一屏必须在同一 gate 下封存，否则 live 保留屏幕但
+		// copy/history 只能看到冷段尾部，出现旧进程最后几行缺失。
+		_ = terminal.lineHistory.SealLifecycleTail()
+	}
+}
+
+func (terminal *Terminal) syncInfo(info TerminalInfo) {
+	if terminal.update != nil {
+		terminal.update(info)
+	}
+}

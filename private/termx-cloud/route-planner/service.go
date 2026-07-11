@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/private/termx-cloud/route-planner/smartroute"
-	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
 )
 

@@ -18,6 +18,8 @@ Copy these root files from the selected commit:
 .gitignore
 Makefile
 README.md
+go.mod
+go.sum
 ```
 
 Copy these complete public source directories:
@@ -27,14 +29,14 @@ fixtures/
 internal/
 remote-ui/
 termx-app/
-termx-cli/
-termx-core-v2/
-termx-proto/
-termx-remote-v2/
-termx-shared/
-termx-testkit/
-termx-tui-v3/
-termx-vterm/
+cmd/
+core/
+proto/
+remote/
+shared/
+testkit/
+tui/
+vterm/
 ```
 
 Copy only these documentation and release-support paths:
@@ -53,7 +55,7 @@ scripts/public-snapshot-guard.sh
 scripts/public-snapshot-guard.test.sh
 ```
 
-Do not copy root `LICENSE`, root `THIRD_PARTY_NOTICES.md`, `go.work`, `go.work.sum`, `workflow.md`, any `AGENTS.md`, `private/`, legacy top-level remote directories, ignored build outputs, local configuration, or the source repository history. The reviewed public templates replace the root legal and workspace files. `go work sync` may create a new public-only `go.work.sum`; its absence is valid when module-level sums already close the workspace graph.
+Do not copy root `LICENSE`, root `THIRD_PARTY_NOTICES.md`, `go.work`, `go.work.sum`, `workflow.md`, any `AGENTS.md`, `private/`, legacy top-level remote directories, ignored build outputs, local configuration, or the source repository history. The reviewed public templates replace the root legal and workspace files. `go work sync` may create a new public-only `go.work.sum`; its absence is valid when the root module sum already closes the public dependency graph.
 
 ## 3. Manual Copy Procedure
 
@@ -75,18 +77,20 @@ PUBLIC_PATHS=(
   .gitignore
   Makefile
   README.md
+  go.mod
+  go.sum
   fixtures
   internal
   remote-ui
   termx-app
-  termx-cli
-  termx-core-v2
-  termx-proto
-  termx-remote-v2
-  termx-shared
-  termx-testkit
-  termx-tui-v3
-  termx-vterm
+  cmd
+  core
+  proto
+  remote
+  shared
+  testkit
+  tui
+  vterm
   docs/legal/public-snapshot
   docs/legal/third-party
   docs/remote-platform
@@ -139,13 +143,7 @@ Install exact npm dependencies before license generation:
 Run all public Go module tests, the CLI build, shared UI tests/build, Community App build, Android Community tests, and release audit:
 
 ```bash
-for module in \
-  internal termx-core-v2 termx-proto termx-remote-v2 termx-shared \
-  termx-testkit termx-tui-v3 termx-vterm; do
-  (cd "$DEST/$module" && go test ./... -count=1)
-done
-
-(cd "$DEST/termx-cli" && go test ./... -count=1 && go build ./cmd/termx)
+(cd "$DEST" && GOWORK=off go test ./... -count=1 && GOWORK=off go build ./cmd/termx)
 (cd "$DEST/remote-ui" && npm run proto && npm test && npm run typecheck && npm run build)
 (cd "$DEST/termx-app" && npm run cap:build)
 (cd "$DEST/termx-app/android" && ./gradlew testDebugUnitTest assembleDebug)

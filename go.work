@@ -1,19 +1,11 @@
 go 1.26.0
 
 use (
-	./internal
+	.
 	./private/termx-cloud/companion
 	./private/termx-cloud/control-plane
 	./private/termx-cloud/hub
 	./private/termx-cloud/relay
 	./private/termx-cloud/route-planner
 	./private/termx-cloud/web-controller
-	./termx-cli
-	./termx-core-v2
-	./termx-proto
-	./termx-remote-v2
-	./termx-shared
-	./termx-testkit
-	./termx-tui-v3
-	./termx-vterm
 )

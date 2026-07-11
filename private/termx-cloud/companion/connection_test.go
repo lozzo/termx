@@ -13,8 +13,8 @@ import (
 	"github.com/lozzow/termx/private/termx-cloud/companion"
 	"github.com/lozzow/termx/private/termx-cloud/companion/cloudservice"
 	"github.com/lozzow/termx/private/termx-cloud/companion/session"
-	"github.com/lozzow/termx/termx-proto/cloudpb"
-	"github.com/lozzow/termx/termx-shared/cloudcompanion"
+	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/lozzow/termx/shared/cloudcompanion"
 )
 
 type testCredentialStore struct {

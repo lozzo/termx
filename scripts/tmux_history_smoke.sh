@@ -1272,7 +1272,7 @@ PY
 }
 
 write_grid_viewport_dump_tool() {
-  GRID_DUMP_TOOL_DIR="$REPO_ROOT/termx-cli/termx-smoke-grid-dump-$$"
+  GRID_DUMP_TOOL_DIR="$REPO_ROOT/cmd/termx/termx-smoke-grid-dump-$$"
   mkdir -p "$GRID_DUMP_TOOL_DIR"
   cat >"$GRID_DUMP_TOOL_DIR/main.go" <<'GO'
 package main
@@ -1286,8 +1286,8 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/termx-proto/wire"
-	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
+	"github.com/lozzow/termx/proto/wire"
+	unixtransport "github.com/lozzow/termx/shared/transport/unix"
 )
 
 func main() {
@@ -1374,7 +1374,7 @@ dump_grid_viewport_artifact() {
   local limit="$2"
   local cols="$3"
   write_grid_viewport_dump_tool
-  (cd "$REPO_ROOT/termx-cli" && go run "./$(basename "$GRID_DUMP_TOOL_DIR")" \
+  (cd "$REPO_ROOT/cmd/termx" && go run "./$(basename "$GRID_DUMP_TOOL_DIR")" \
     --socket "$SOCK" \
     --terminal "$TERM_ID" \
     --offset 0 \
@@ -1913,7 +1913,7 @@ start_daemon() {
 build_bin_if_needed() {
   if [[ "$BUILD_BIN" == "1" ]]; then
     log "building termx binary at $BIN"
-    go build -o "$BIN" ./termx-cli/cmd/termx
+    go build -o "$BIN" ./cmd/termx
   fi
 }
 

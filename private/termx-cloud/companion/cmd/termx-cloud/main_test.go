@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-proto/cloudpb"
-	"github.com/lozzow/termx/termx-shared/cloudcompanion"
-	"github.com/lozzow/termx/termx-shared/cloudcompanion/activation"
-	"github.com/lozzow/termx/termx-shared/cloudcompanion/installer"
-	"github.com/lozzow/termx/termx-shared/cloudcompanion/ipc"
+	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/lozzow/termx/shared/cloudcompanion/activation"
+	"github.com/lozzow/termx/shared/cloudcompanion/installer"
+	"github.com/lozzow/termx/shared/cloudcompanion/ipc"
 )
 
 func TestSmokeServerCompletesPublicHelloStatusAndShutdown(t *testing.T) {

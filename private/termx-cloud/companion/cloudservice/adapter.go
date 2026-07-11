@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/private/termx-cloud/companion/session"
-	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/proto/cloudpb"
 )
 
 // HubAdmission 是 companion 内部持有的短期 Hub 服务凭据。

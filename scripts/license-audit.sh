@@ -76,24 +76,11 @@ GO_LICENSES_BIN="${GO_LICENSES_BIN:-}" scripts/generate-go-notices.sh "${go_noti
 node scripts/generate-npm-notices.mjs --check
 scripts/generate-android-notices.sh --check
 
-public_go_modules=(
-  internal
-  termx-cli
-  termx-core-v2
-  termx-proto
-  termx-remote-v2
-  termx-shared
-  termx-testkit
-  termx-tui-v3
-  termx-vterm
-)
-for module in "${public_go_modules[@]}"; do
-  private_dependencies="$(cd "$repo_root/$module" && go list -deps -test ./... | grep '^github.com/lozzow/termx/private/' || true)"
-  if [[ -n "$private_dependencies" ]]; then
-    echo "public Go module $module imports private code:" >&2
-    echo "$private_dependencies" >&2
-    exit 1
-  fi
-done
+private_dependencies="$(GOWORK=off go list -deps -test ./... | grep '^github.com/lozzow/termx/private/' || true)"
+if [[ -n "$private_dependencies" ]]; then
+  echo "public root Go module imports private code:" >&2
+  echo "$private_dependencies" >&2
+  exit 1
+fi
 
 echo "TermX $audit_scope license audit passed"

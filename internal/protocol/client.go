@@ -8,10 +8,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/lozzow/termx/termx-proto/wire"
+	"github.com/lozzow/termx/proto/wire"
 
-	"github.com/lozzow/termx/termx-shared/perftrace"
-	"github.com/lozzow/termx/termx-shared/transport"
+	"github.com/lozzow/termx/shared/perftrace"
+	"github.com/lozzow/termx/shared/transport"
 )
 
 type Client struct {

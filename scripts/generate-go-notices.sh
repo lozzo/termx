@@ -122,7 +122,7 @@ generate_artifact() {
   done
 
   cat "$reports_dir"/*.csv \
-    | awk -F, '$1 !~ /^github.com\/lozzow\/termx\// || $1 == "github.com/lozzow/termx/termx-vterm/internal/vt"' \
+    | awk -F, '$1 !~ /^github.com\/lozzow\/termx\// || $1 == "github.com/lozzow/termx/vterm/internal/vt"' \
     | LC_ALL=C sort -u >"$artifact_dir/report.csv"
 
   local raw_output="$artifact_dir/THIRD_PARTY_NOTICES.raw.txt"
@@ -158,9 +158,9 @@ generate_artifact() {
 
 generate_artifact \
   "CLI" \
-  "$repo_root/termx-cli" \
+  "$repo_root" \
   "./cmd/termx" \
-  "termx-cli/cmd/termx/THIRD_PARTY_NOTICES.txt"
+  "cmd/termx/THIRD_PARTY_NOTICES.txt"
 
 if [[ "$public_only" == false ]]; then
   generate_artifact \

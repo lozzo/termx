@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lozzow/termx/termx-proto/wirepb"
+	"github.com/lozzow/termx/proto/wirepb"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"

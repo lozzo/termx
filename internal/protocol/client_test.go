@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-proto/wire"
+	"github.com/lozzow/termx/proto/wire"
 
-	"github.com/lozzow/termx/termx-shared/transport/memory"
+	"github.com/lozzow/termx/shared/transport/memory"
 )
 
 var errConcurrentSend = errors.New("concurrent send")
@@ -608,7 +608,7 @@ func TestClientEventsFanOutRespectsStorageFilters(t *testing.T) {
 	go func() {
 		events, err := client.Events(ctx, EventsParams{
 			Types:            []EventType{EventStorageChanged},
-			StorageAppID:     "termx-tui-v3",
+			StorageAppID:     "tui",
 			StorageScope:     StorageScopePublic,
 			StorageOwnerID:   "workspace-main",
 			StorageKeyPrefix: "workbench/",
@@ -641,7 +641,7 @@ func TestClientEventsFanOutRespectsStorageFilters(t *testing.T) {
 	assertNoProtocolEvent(t, storageResult.events)
 
 	sendProtocolEvent(Event{Type: EventStorageChanged, Storage: &StorageChangedData{
-		AppID:   "termx-tui-v3",
+		AppID:   "tui",
 		Scope:   StorageScopePublic,
 		OwnerID: "workspace-main",
 		Key:     "workbench/root",

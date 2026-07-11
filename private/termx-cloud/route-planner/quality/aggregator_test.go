@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/proto/cloudpb"
 )
 
 func TestAggregatorKeepsQualityAndTrustedCostSourcesSeparate(t *testing.T) {

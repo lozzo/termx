@@ -1739,7 +1739,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const renderClipboardHistorySheet = () => {
     if (mobileSheet !== 'clipboard-history') return null
     return (
-      <MobileSheetPanel title="Clipboard" testId="termx-clipboard-history-sheet" onClose={() => setMobileSheet(null)}>
+      <MobileSheetPanel title="Clipboard" testId="cmd/termxpboard-history-sheet" onClose={() => setMobileSheet(null)}>
         <div className="flex flex-col gap-3">
           <div className="rounded-xl border border-zinc-200 bg-white p-3">
             <textarea

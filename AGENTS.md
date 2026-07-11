@@ -7,9 +7,9 @@
 - 当前主线是远程平台产品与架构重构；先完成 PRD、架构、安全协议和源码分拆文档门禁，再进入 runtime 实现。已完成的 TUI/client 多 endpoint / 多 transport 模型继续作为公开客户端基座。
 - 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
 - `docs/remote-platform/` 是当前远程平台产品、架构、安全和迁移基准。
-- `termx-tui-v3/docs/multi-endpoint-transport-plan.md` 是当前多 endpoint / 多 transport 技术规划。
-- `termx-core-v2/docs/architecture.md` 是 core-v2 技术设计基准。
-- `termx-tui-v3/docs/architecture.md` 是 tui-v3 技术设计基准。
+- `tui/docs/multi-endpoint-transport-plan.md` 是当前多 endpoint / 多 transport 技术规划。
+- `core/docs/architecture.md` 是 core-v2 技术设计基准。
+- `tui/docs/architecture.md` 是 tui-v3 技术设计基准。
 - `AGENTS.md` 只规定代理执行方式和目录职责，不替代 `workflow.md` 的范围判断。
 - 若 `workflow.md` 与旧说明、聊天记录、旧代码行为或局部假设冲突，默认以 `workflow.md` 为准。
 
@@ -38,32 +38,32 @@
 - 允许主动工作目录只能来自 `workflow.md` 的“当前主线允许主动修改”和“受限联动范围”。
 - 不允许因为“看起来有关”自行扩散到其他目录。
 - 旧 `termx-core/` 与 `tuiv2/` 已退出本分支，不再作为只读参考、legacy fallback 或默认依赖存在。
-- 当前默认本地 CLI 入口必须走 `termx-core-v2/` 与 `termx-tui-v3/`；不得重新引入 `termx legacy ...`、旧 daemon、旧 TUI 或 remote legacy/fallback。
-- `termx-cli/cmd/termx/legacy_*.go` 不得重新出现；旧本地入口已经删除。
-- `termx-cli/cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
-- `termx-remote-v2/`、`termx-app/` 与 `remote-ui/` 是 future public snapshot 的有效远程客户端资产；只能按 `workflow.md` 对应切片演进，不得依赖私有实现或恢复旧 fallback。
+- 当前默认本地 CLI 入口必须走 `core/` 与 `tui/`；不得重新引入 `termx legacy ...`、旧 daemon、旧 TUI 或 remote legacy/fallback。
+- `cmd/termx/legacy_*.go` 不得重新出现；旧本地入口已经删除。
+- `cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
+- `remote/`、`termx-app/` 与 `remote-ui/` 是 future public snapshot 的有效远程客户端资产；只能按 `workflow.md` 对应切片演进，不得依赖私有实现或恢复旧 fallback。
 - 旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已迁入 `private/archive/termx-platform-legacy/`，只能作为只读历史资产；archive 不进入 workspace、构建脚本或 runtime。
 - Hub/Relay 服务端实现位于 `private/termx-cloud/hub/` 与 `private/termx-cloud/relay/`。未来复制出的 public repo 只保留 wire contract、client interface 和 fake harness，不得让 public package 反向依赖私有实现。
-- `termx-vterm/` 是受限联动目录，只能在 terminal semantic transaction 接口、事件或 harness 需要时最小化触及。
-- `internal/protocol/` 与 `termx-proto/` 是受限联动目录，只能在 endpoint routing、history window/copy 或 semantic history contract 需要跨进程时最小化触及。
+- `vterm/` 是受限联动目录，只能在 terminal semantic transaction 接口、事件或 harness 需要时最小化触及。
+- `internal/protocol/` 与 `proto/` 是受限联动目录，只能在 endpoint routing、history window/copy 或 semantic history contract 需要跨进程时最小化触及。
 - 如果确实必须恢复旧目录或解冻目录，先修改 `workflow.md` 的范围表并说明原因；默认不允许恢复。
 - 关键代码需要写简短中文注释，说明 domain owner、truth source、消息链路或失败条件。
 
 ## 目录职责
 
-- `termx-core-v2/`：新 core 主线目录，负责 terminal lifecycle、daemon-local terminal identity、screen-backed history 模型、terminal semantic transaction 消费、`HistoryWindow`、storage/backend 与相关 harness。
-- `termx-core-v2/docs/screen-app-infinite-history-final-plan.md`：旧无限历史定案，当前只在触及 history truth 时作为背景基准读取。
-- `termx-core-v2/docs/architecture.md`：core-v2 技术设计基准。
-- `termx-vterm/`：终端语义解释来源；负责把 PTY bytes 解释成 terminal 语义事件或 transaction，不负责持有无限历史 truth。
-- `termx-tui-v3/`：新 TUI 主线目录，负责自有 `AppRuntime`、`TerminalHost`、`EffectRunner`、`FrameSink`、endpoint manager、workbench/layout 投影、authoritative history source、copy mode、同步输入、滚动、selection、render 与相关 harness；不拥有 committed history truth 或 daemon terminal lifecycle。
-- `termx-tui-v3/docs/architecture.md`：tui-v3 技术设计基准。
+- `core/`：新 core 主线目录，负责 terminal lifecycle、daemon-local terminal identity、screen-backed history 模型、terminal semantic transaction 消费、`HistoryWindow`、storage/backend 与相关 harness。
+- `core/docs/screen-app-infinite-history-final-plan.md`：旧无限历史定案，当前只在触及 history truth 时作为背景基准读取。
+- `core/docs/architecture.md`：core-v2 技术设计基准。
+- `vterm/`：终端语义解释来源；负责把 PTY bytes 解释成 terminal 语义事件或 transaction，不负责持有无限历史 truth。
+- `tui/`：新 TUI 主线目录，负责自有 `AppRuntime`、`TerminalHost`、`EffectRunner`、`FrameSink`、endpoint manager、workbench/layout 投影、authoritative history source、copy mode、同步输入、滚动、selection、render 与相关 harness；不拥有 committed history truth 或 daemon terminal lifecycle。
+- `tui/docs/architecture.md`：tui-v3 技术设计基准。
 - `termx-core/`：已删除旧 core 目录；不得作为 fallback 恢复。
 - `tuiv2/`：已删除旧 TUI 目录；不得作为 fallback 恢复。
-- `internal/protocol/` 与 `termx-proto/`：受限联动目录，只在 endpoint-aware routing、history window/copy 或 semantic history contract 需要时最小化触及。
-- `termx-remote-v2/`：公开 managed WebRTC client/daemon orchestration、DataChannel E2E auth、平台 primitive interface 与 fake harness；不承载 Hub/Relay server 或账号业务。
+- `internal/protocol/` 与 `proto/`：受限联动目录，只在 endpoint-aware routing、history window/copy 或 semantic history contract 需要时最小化触及。
+- `remote/`：公开 managed WebRTC client/daemon orchestration、DataChannel E2E auth、平台 primitive interface 与 fake harness；不承载 Hub/Relay server 或账号业务。
 - `remote-ui/` 与 `termx-app/`：公开共享 UI 和移动客户端；消费公开 endpoint/history/cloud contract，不拥有 daemon terminal truth 或私有云服务状态。
 - `private/termx-cloud/`：闭源 Control Plane、Companion、Hub、Relay、Web Controller 与官方移动装配；可以依赖 public contract，public namespace 不得反向依赖。
-- `termx-cli/`、`termx-shared/`、`termx-testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前切片需要时最小化触及。
+- `cmd/termx/`、`shared/`、`testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前切片需要时最小化触及。
 
 ## 硬语义规则
 
@@ -83,7 +83,7 @@
 - physical row store、sealed row index、logical projection、segment cursor、storage backend、cache、adapter、TUI/App projection 不能演变成第二份历史 truth。
 - `persisted` 或落盘不表示不可修改；是否可修改由 terminal/session/row lifecycle 语义决定。
 - raw PTY bytes parser 不能作为 terminal 语义 owner，也不能 fallback 出第二套历史。
-- core-v2 应消费 termx-vterm 解释过程中的 semantic transaction，而不是消费最终屏幕快照。
+- core-v2 应消费 vterm 解释过程中的 semantic transaction，而不是消费最终屏幕快照。
 - vterm 当前屏幕不是无限历史来源；它只能提供终端语义解释后的可记录事件和 side proof，history truth 必须由 core-v2 screen buffer 消费语义后维护。
 - tmux 等价目标只覆盖真实经过 PTY 的内容；程序没有输出到 PTY 的内部状态不在目标内。
 - attach、reattach、bootstrap、recovery、full replace、clear screen、resize 不得凭空创建 committed history。

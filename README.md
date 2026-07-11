@@ -98,7 +98,7 @@ Ctrl+T，再按 1-9   -> 进入 Tab 场景后切换到对应 Tab
 
 ### 增强键盘协议
 
-传统 TTY 输入无法可靠区分 `Ctrl+1` 和普通数字。`termx-tui-v3` 启动时会启用 Kitty keyboard protocol 的 disambiguate 模式，并查询宿主 terminal emulator 是否确认支持。只有 capability 确认后，`Ctrl+数字` 才会进入 footer/Help 的可用快捷键提示；实际执行以 TerminalHost 是否收到可解析的 CSI-u 输入为准。
+传统 TTY 输入无法可靠区分 `Ctrl+1` 和普通数字。`tui` 启动时会启用 Kitty keyboard protocol 的 disambiguate 模式，并查询宿主 terminal emulator 是否确认支持。只有 capability 确认后，`Ctrl+数字` 才会进入 footer/Help 的可用快捷键提示；实际执行以 TerminalHost 是否收到可解析的 CSI-u 输入为准。
 
 在 iTerm2 中，对应 Profile 必须允许应用改变按键报告方式。若 iTerm2 禁止应用切换 keyboard reporting mode，或者当前 terminal emulator 不支持 Kitty keyboard protocol，`Ctrl+1...9` 不会产生可区分的输入事件。
 
@@ -119,7 +119,7 @@ TERMX_LOG_FILE=/tmp/termx.log \
 termx
 ```
 
-更完整的 action、scene、范围表达式和展示规则见 [`termx-tui-v3/docs/shortcut-system-plan.md`](termx-tui-v3/docs/shortcut-system-plan.md)。
+更完整的 action、scene、范围表达式和展示规则见 [`tui/docs/shortcut-system-plan.md`](tui/docs/shortcut-system-plan.md)。
 
 ## 适合的使用场景
 
@@ -139,10 +139,10 @@ termx
 PTY bytes / resize
         |
         v
-termx-vterm semantic interpretation
+vterm semantic interpretation
         |
         v
-termx-core-v2 daemon
+core daemon
   - terminal lifecycle
   - live surface
   - authoritative history/copy
@@ -159,13 +159,13 @@ EndpointManager
   - managed WebRTC endpoint
         |
         v
-termx-tui-v3 / termx-app / other public clients
+tui / termx-app / other public clients
 ```
 
 几个硬边界：
 
-- `termx-core-v2` 拥有 terminal lifecycle 和 history truth。
-- `termx-tui-v3` 只消费 core 的 live surface、terminal metadata 和 authoritative history window。
+- `core` 拥有 terminal lifecycle 和 history truth。
+- `tui` 只消费 core 的 live surface、terminal metadata 和 authoritative history window。
 - workbench storage 只保存布局和连接意图，不保存 terminal running/exited truth。
 - `TerminalID` 只在单个 daemon/endpoint 内唯一；跨 endpoint 必须使用 `TerminalRef`。
 - endpoint label、transport address、SSH host key、hub device fingerprint 和 grant ref 不能互相替代。
@@ -173,16 +173,16 @@ termx-tui-v3 / termx-app / other public clients
 
 ## 仓库结构
 
-- `termx-cli/`：`termx` 命令行入口，组装 core-v2 与 tui-v3。
-- `termx-core-v2/`：core daemon 主线，负责 terminal lifecycle、history、live surface、storage 和 protocol 服务端能力。
-- `termx-tui-v3/`：当前 TUI 主线，负责 AppRuntime、TerminalHost、EndpointManager、state、render、copy/history 投影和交互。
-- `termx-vterm/`：终端语义解释来源，把 PTY bytes 解释成 terminal 语义事件或 transaction。
-- `termx-shared/`：共享 connection registry、transport、remote auth 和 Cloud Companion contract。
-- `internal/protocol/`、`termx-proto/`：daemon/client wire contract 与协议类型。
-- `termx-remote-v2/`：公开 WebRTC client/daemon orchestration、DataChannel 授权与 fake harness。
+- `cmd/termx/`：`termx` 命令行入口，组装 core-v2 与 tui-v3。
+- `core/`：core daemon 主线，负责 terminal lifecycle、history、live surface、storage 和 protocol 服务端能力。
+- `tui/`：当前 TUI 主线，负责 AppRuntime、TerminalHost、EndpointManager、state、render、copy/history 投影和交互。
+- `vterm/`：终端语义解释来源，把 PTY bytes 解释成 terminal 语义事件或 transaction。
+- `shared/`：共享 connection registry、transport、remote auth 和 Cloud Companion contract。
+- `internal/protocol/`、`proto/`：daemon/client wire contract 与协议类型。
+- `remote/`：公开 WebRTC client/daemon orchestration、DataChannel 授权与 fake harness。
 - `remote-ui/`：App 与浏览器客户端共享的公开 UI、状态编排和平台中立 runtime interface。
 - `termx-app/`：Android App 壳、native bridge 和 Community managed-cloud fail-closed 实现。
-- `termx-testkit/`：测试辅助能力。
+- `testkit/`：测试辅助能力。
 - `fixtures/`、`scripts/`、`Makefile`、`go.work`：测试、发布审计和 workspace 支撑。
 
 托管 Control Plane、Hub、Relay、计费和官方 Cloud Companion 是独立交付能力，不属于公开源码构建依赖。Community CLI、TUI、daemon、App 以及 local/SSH runtime 在没有这些服务时仍可独立构建和使用。
@@ -208,7 +208,6 @@ termx-tui-v3 / termx-app / other public clients
 常用命令：
 
 ```bash
-cd termx-cli
 go test ./cmd/termx -count=1
 go build ./cmd/termx
 ```
@@ -216,9 +215,9 @@ go build ./cmd/termx
 按模块运行测试：
 
 ```bash
-cd termx-tui-v3 && go test ./... -count=1
-cd termx-core-v2 && go test ./... -count=1
-cd termx-shared && go test ./... -count=1
+go test ./tui/... -count=1
+go test ./core/... -count=1
+go test ./shared/... -count=1
 go test ./internal/protocol/... -count=1
 ```
 

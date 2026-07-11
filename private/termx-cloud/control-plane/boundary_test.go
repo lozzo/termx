@@ -14,9 +14,9 @@ import (
 
 func TestControlPlaneDoesNotImportTerminalAuthorizationOwners(t *testing.T) {
 	forbidden := []string{
-		"/termx-core-v2",
-		"/termx-remote-v2",
-		"/termx-shared/remoteauth",
+		"/core",
+		"/remote",
+		"/shared/remoteauth",
 		"/internal/protocol",
 	}
 	walkGoImports(t, ".", func(path, imported string) {

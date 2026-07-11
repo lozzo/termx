@@ -92,7 +92,7 @@ func exchangeDataChannel(t *testing.T, leftConfig, rightConfig webrtc.Configurat
 			received <- string(message.Data)
 		})
 	})
-	leftChannel, err := left.CreateDataChannel("termx-protocol", nil)
+	leftChannel, err := left.CreateDataChannel("protocol", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

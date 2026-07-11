@@ -17,7 +17,7 @@ android {
         }
     }
     sourceSets {
-        test.resources.srcDir '../../../termx-shared/cloudcompanion/testdata'
+        test.resources.srcDir '../../../shared/cloudcompanion/testdata'
     }
     if (project.hasProperty("termxArmOnly")) {
         splits {

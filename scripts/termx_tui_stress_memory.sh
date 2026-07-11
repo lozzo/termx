@@ -1029,7 +1029,7 @@ else
 fi
 ROOT="$(cd "$ROOT" && pwd)"
 
-SOCK="$ROOT/termx-core-v2.sock"
+SOCK="$ROOT/core.sock"
 LOG="$ROOT/termx.log"
 REPORT="$ROOT/memory.tsv"
 HISTORY_REPORT="$ROOT/history-files.tsv"
@@ -1099,7 +1099,7 @@ log "artifact root: $ROOT"
 if [[ -z "$BIN" ]]; then
   BIN="$ROOT/termx"
   log "building termx binary"
-  (cd "$REPO_ROOT" && go build -o "$BIN" ./termx-cli/cmd/termx)
+  (cd "$REPO_ROOT" && go build -o "$BIN" ./cmd/termx)
 else
   BIN="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")"
 fi

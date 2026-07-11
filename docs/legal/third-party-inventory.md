@@ -12,10 +12,10 @@
 
 | Artifact | 入口 | 审计结果 | Bundle |
 | --- | --- | --- | --- |
-| public `termx` | `termx-cli/cmd/termx` | 54 条外部或 vendored license mapping；仅 MIT、BSD-3-Clause、Apache-2.0 | `termx-cli/cmd/termx/THIRD_PARTY_NOTICES.txt` |
+| public `termx` | `cmd/termx` | 54 条外部或 vendored license mapping；仅 MIT、BSD-3-Clause、Apache-2.0 | `cmd/termx/THIRD_PARTY_NOTICES.txt` |
 | private `termx-cloud` | `private/termx-cloud/companion/cmd/termx-cloud` | 8 条外部 mapping；MIT、BSD-2-Clause、BSD-3-Clause | `private/termx-cloud/companion/cmd/termx-cloud/THIRD_PARTY_NOTICES.txt` |
 
-Windows graph 额外包含 `go-winio`/`wincred`，Linux Companion graph 额外包含 `godbus/dbus`。`termx-vterm/internal/vt` 是仓库内 vendored MIT material，生成器保留其原始 license。当前 monorepo 的 first-party package 因根许可证不是公开 Apache-2.0 而被 `go-licenses` 标为 unknown；生成器只允许这个已知 first-party 状态，任何外部 unknown 或未批准 license 均失败。
+Windows graph 额外包含 `go-winio`/`wincred`，Linux Companion graph 额外包含 `godbus/dbus`。`vterm/internal/vt` 是仓库内 vendored MIT material，生成器保留其原始 license。当前 monorepo 的 first-party package 因根许可证不是公开 Apache-2.0 而被 `go-licenses` 标为 unknown；生成器只允许这个已知 first-party 状态，任何外部 unknown 或未批准 license 均失败。
 
 `go-licenses` 明确不能继续分析部分 assembly/non-Go 文件；当前警告来自 `x/sys`、`x/net` 与 `klauspost/compress`。它们已有 module license，但 release review 仍必须把 assembly/native/wasm 作为人工 provenance 项。
 

@@ -7,10 +7,10 @@ bad=$(
 		AGENTS.md Makefile README.md go.work go.work.sum workflow.md \
 		internal/protocol \
 		scripts \
-		termx-cli \
-		termx-core-v2 \
-		termx-proto \
-		termx-tui-v3 |
+		cmd/termx \
+		core \
+		proto \
+		tui |
 	awk '
 		$1 == "100755" {
 			path = $4

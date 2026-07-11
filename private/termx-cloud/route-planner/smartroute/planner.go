@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/proto/cloudpb"
 )
 
 type scoredCandidate struct {

@@ -21,19 +21,21 @@ required_top_level=(
   THIRD_PARTY_NOTICES.md
   docs
   fixtures
+  go.mod
+  go.sum
   go.work
   internal
   remote-ui
   scripts
   termx-app
-  termx-cli
-  termx-core-v2
-  termx-proto
-  termx-remote-v2
-  termx-shared
-  termx-testkit
-  termx-tui-v3
-  termx-vterm
+  cmd
+  core
+  proto
+  remote
+  shared
+  testkit
+  tui
+  vterm
 )
 for path in "${required_top_level[@]}"; do
   [[ -e "$path" ]] || fail "required top-level entry is missing: $path"
@@ -42,7 +44,7 @@ done
 while IFS= read -r path; do
   name="${path#./}"
   case "$name" in
-    .gitignore|CONTRIBUTING.md|DCO|LICENSE|Makefile|NOTICE|README.md|THIRD_PARTY_NOTICES.md|docs|fixtures|go.work|go.work.sum|internal|remote-ui|scripts|termx-app|termx-cli|termx-core-v2|termx-proto|termx-remote-v2|termx-shared|termx-testkit|termx-tui-v3|termx-vterm)
+    .gitignore|CONTRIBUTING.md|DCO|LICENSE|Makefile|NOTICE|README.md|THIRD_PARTY_NOTICES.md|cmd|core|docs|fixtures|go.mod|go.sum|go.work|go.work.sum|internal|proto|remote|remote-ui|scripts|shared|termx-app|testkit|tui|vterm)
       ;;
     *)
       fail "unexpected top-level entry: $name"
@@ -150,17 +152,7 @@ done < <(find . \
 
 WORKSPACE_JSON="$(go work edit -json)" node <<'NODE'
 const workspace = JSON.parse(process.env.WORKSPACE_JSON)
-const expected = [
-  './internal',
-  './termx-cli',
-  './termx-core-v2',
-  './termx-proto',
-  './termx-remote-v2',
-  './termx-shared',
-  './termx-testkit',
-  './termx-tui-v3',
-  './termx-vterm',
-].sort()
+const expected = ['.']
 const actual = (workspace.Use ?? []).map((entry) => entry.DiskPath).sort()
 if (JSON.stringify(actual) !== JSON.stringify(expected)) {
   console.error(`public go.work modules differ: ${JSON.stringify(actual)}`)

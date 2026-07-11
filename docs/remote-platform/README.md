@@ -10,7 +10,7 @@
 
 本目录定义 TermX 远程平台重构后的产品、架构、安全和源码分发边界。任何新的 Hub、Relay、Web Controller、TUI 远程连接或 App 远程连接实现，都必须先满足本目录约束。
 
-`termx-remote-v2/` 是公开 managed WebRTC/E2E auth runtime，`remote-ui/` 与 `termx-app/` 消费同一公开 endpoint contract。旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已收口到 `private/archive/termx-platform-legacy/`；archive 不得以兼容、fallback 或“先继续沿用”的方式反向约束新模型。
+`remote/` 是公开 managed WebRTC/E2E auth runtime，`remote-ui/` 与 `termx-app/` 消费同一公开 endpoint contract。旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已收口到 `private/archive/termx-platform-legacy/`；archive 不得以兼容、fallback 或“先继续沿用”的方式反向约束新模型。
 
 ## 2. 文档顺序
 
@@ -33,7 +33,7 @@
 
 ## 3. 已冻结决策
 
-- `termx-core-v2`、`termx-tui-v3`、CLI、terminal protocol、本地连接、SSH transport 和客户端多 endpoint 管理保持开源、免费。
+- `core`、`tui`、CLI、terminal protocol、本地连接、SSH transport 和客户端多 endpoint 管理保持开源、免费。
 - App 客户端和公开 remote client/daemon contract 默认开源；平台特定 WebRTC primitive 可以分别实现，但业务协议必须共用。
 - Web Controller、托管 Hub、托管 Relay、计费、entitlement、风控和云运维服务不进入公开源码发布。
 - WebRTC 是一种 endpoint transport；direct P2P 与 Relay 是同一次连接的候选路径结果，不是两套 terminal protocol。

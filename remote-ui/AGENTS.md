@@ -10,9 +10,9 @@
 
 ## Runtime Schema
 
-- `termx-proto/runtimepb/runtime.proto` 是 App/remote-ui runtime schema 的公开源码真值。
+- `proto/runtimepb/runtime.proto` 是 App/remote-ui runtime schema 的公开源码真值。
 - `remote-ui/src/generated/runtimepb/` 只保存由该 schema 生成的 TypeScript projection，不得从 archive 或旧 `termx-remote/` 生成。
-- wire terminal protocol 继续由 `termx-proto/wirepb/` 拥有；UI 不得用本地 DTO 建立第二套 terminal protocol。
+- wire terminal protocol 继续由 `proto/wirepb/` 拥有；UI 不得用本地 DTO 建立第二套 terminal protocol。
 
 ## Transport And Security
 

@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/termx-proto/cloudpb"
-	"github.com/lozzow/termx/termx-shared/cloudcompanion/pathquality"
+	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/lozzow/termx/shared/cloudcompanion/pathquality"
 )
 
 var (

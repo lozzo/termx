@@ -12,9 +12,9 @@ import (
 
 func TestRoutePlannerMeasurementBaselineDoesNotImportAuthorizationOrRuntimeOwners(t *testing.T) {
 	forbidden := []string{
-		"/termx-core-v2",
-		"/termx-remote-v2",
-		"/termx-shared/remoteauth",
+		"/core",
+		"/remote",
+		"/shared/remoteauth",
 		"/internal/protocol",
 		"/private/termx-cloud/hub",
 		"/private/termx-cloud/relay",

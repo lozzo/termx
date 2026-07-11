@@ -13,7 +13,7 @@ import (
 
 	"github.com/lozzow/termx/private/termx-cloud/companion/cloudservice"
 	"github.com/lozzow/termx/private/termx-cloud/companion/session"
-	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/proto/cloudpb"
 )
 
 // Config 固定 companion build identity、可协商能力和有界 stream 容量。

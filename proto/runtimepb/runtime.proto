@@ -1,0 +1,280 @@
+syntax = "proto3";
+
+package termx.remote.runtimepb;
+
+// runtimepb 是 App/remote-ui 当前使用的公开客户端 runtime schema，源码真值属于 proto。
+option go_package = "github.com/lozzow/termx/proto/runtimepb";
+
+message Empty {}
+
+message APIRequest {
+  string id = 1;
+  string method = 2;
+  string path = 3;
+  bytes body = 4;
+}
+
+message APIResponse {
+  string id = 1;
+  int32 status = 2;
+  bytes body = 3;
+  string error = 4;
+}
+
+message StatusResponse {
+  bool ok = 1;
+}
+
+message EventSubscribeRequest {
+  string type = 1;
+  string terminal_id = 2;
+  repeated int32 types = 4;
+}
+
+message EventEnvelope {
+  string type = 1;
+  int32 protocol_type = 2;
+  string terminal_id = 3;
+  int64 timestamp_unix_nano = 4;
+  TerminalInventoryItem terminal = 5;
+  string error = 6;
+}
+
+message TerminalInventoryItem {
+  string terminal_id = 1;
+  string name = 2;
+  string state = 3;
+  repeated string command = 4;
+  int32 cols = 5;
+  int32 rows = 6;
+  string cwd = 7;
+  string environment = 8;
+  bool size_locked = 9;
+  string size_lock_mode = 10;
+  ResizeOwnership resize_ownership = 11;
+  int32 resize_owner_attachment_count = 12;
+}
+
+message Size {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+message ResizeOwnership {
+  string owner_attachment_id = 1;
+  string owner_surface_id = 2;
+  string owner_view_id = 3;
+  string owner_remote_addr = 4;
+  Size size = 5;
+  bool size_locked = 6;
+  uint64 epoch = 7;
+}
+
+message TerminalListResponse {
+  repeated TerminalInventoryItem terminals = 1;
+}
+
+message TerminalDirectoryRequest {
+  string terminal_id = 1;
+}
+
+message TerminalDirectoryResponse {
+  string terminal_id = 1;
+  string path = 2;
+  string source = 3;
+}
+
+message TerminalCreateRequest {
+  string name = 1;
+  repeated string command = 2;
+  string dir = 3;
+  repeated string env = 4;
+  map<string, string> tags = 5;
+  int32 scrollback_size = 6;
+  int64 scrollback_max_bytes = 7;
+  int64 scrollback_max_age_seconds = 8;
+}
+
+message TerminalSetMetadataRequest {
+  string terminal_id = 1;
+  string name = 2;
+  map<string, string> tags = 3;
+}
+
+message TerminalIDRequest {
+  string terminal_id = 1;
+}
+
+message StorageEntry {
+  string app_id = 1;
+  string scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bytes value = 5;
+  uint64 version = 6;
+  string updated_at = 7;
+}
+
+message StorageGetRequest {
+  string app_id = 1;
+  string scope = 2;
+  string owner_id = 3;
+  string key = 4;
+}
+
+message StoragePutRequest {
+  string app_id = 1;
+  string scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bytes value = 5;
+  bool check_version = 6;
+  uint64 expected_version = 7;
+}
+
+message StorageDeleteRequest {
+  string app_id = 1;
+  string scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bool check_version = 5;
+  uint64 expected_version = 6;
+}
+
+message StorageDeleteResponse {
+  string app_id = 1;
+  string scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bool deleted = 5;
+  uint64 version = 6;
+}
+
+message StorageListRequest {
+  string app_id = 1;
+  string scope = 2;
+  string owner_id = 3;
+  string prefix = 4;
+}
+
+message StorageListResponse {
+  repeated StorageEntry entries = 1;
+}
+
+message FilePathRequest {
+  string path = 1;
+}
+
+message FileListRequest {
+  string path = 1;
+  int32 offset = 2;
+  int32 limit = 3;
+}
+
+message FileEntry {
+  string name = 1;
+  string type = 2;
+  int64 size = 3;
+  string mode = 4;
+  string mod_time = 5;
+  string link_target = 6;
+  optional int32 child_count = 7;
+  bool hard_link = 8;
+  uint64 link_count = 9;
+  uint64 inode = 10;
+}
+
+message FileListResponse {
+  string path = 1;
+  repeated FileEntry entries = 2;
+  string parent = 3;
+  int32 total = 4;
+}
+
+message FilePathResponse {
+  string path = 1;
+}
+
+message FileRenameRequest {
+  string path = 1;
+  string new_path = 2;
+}
+
+message FileMultiPathRequest {
+  repeated string paths = 1;
+}
+
+message FileCopyMoveRequest {
+  repeated string paths = 1;
+  string dest = 2;
+}
+
+message FileOperationResult {
+  string source = 1;
+  string dest = 2;
+  string error = 3;
+}
+
+message FileCopyMoveResponse {
+  int32 affected = 1;
+  repeated FileOperationResult results = 2;
+}
+
+message FileDeleteError {
+  string path = 1;
+  string error = 2;
+}
+
+message FileBatchDeleteResponse {
+  int32 deleted = 1;
+  repeated FileDeleteError errors = 2;
+}
+
+message FilePreviewRequest {
+  string path = 1;
+  int64 max_size = 2;
+}
+
+message FilePreviewResponse {
+  string path = 1;
+  string name = 2;
+  int64 size = 3;
+  string mime_type = 4;
+  string category = 5;
+  bool is_text = 6;
+  int64 preview_limit = 7;
+  string content = 8;
+  string content_base64 = 9;
+}
+
+message FileDownloadInitRequest {
+  string path = 1;
+  int64 offset = 2;
+  int64 length = 3;
+  string transfer_id = 4;
+}
+
+message FileDownloadInitResponse {
+  string transfer_id = 1;
+  string name = 2;
+  int64 size = 3;
+  int32 chunk_size = 4;
+  int64 offset = 5;
+  int64 length = 6;
+}
+
+message FileUploadInitRequest {
+  string path = 1;
+  int64 size = 2;
+  string resume_id = 3;
+}
+
+message FileUploadInitResponse {
+  string transfer_id = 1;
+  int32 chunk_size = 2;
+  int64 uploaded_offset = 3;
+}
+
+message FileUploadCompleteRequest {
+  string transfer_id = 1;
+}

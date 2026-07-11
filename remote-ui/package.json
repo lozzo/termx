@@ -7,8 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "proto": "npm run proto:runtime && npm run proto:wire",
-    "proto:runtime": "protoc --plugin=protoc-gen-es=./node_modules/.bin/protoc-gen-es --es_out=src/generated/runtimepb --es_opt=target=ts,import_extension=none -I ../termx-proto/runtimepb ../termx-proto/runtimepb/runtime.proto && perl -0pi -e 's/\\s*\\z/\\n/' src/generated/runtimepb/runtime_pb.ts",
-    "proto:wire": "protoc --plugin=protoc-gen-es=./node_modules/.bin/protoc-gen-es --es_out=src/generated/wirepb --es_opt=target=ts,import_extension=none -I ../termx-proto/wirepb ../termx-proto/wirepb/terminal.proto && perl -0pi -e 's/\\s*\\z/\\n/' src/generated/wirepb/terminal_pb.ts",
+    "proto:runtime": "protoc --plugin=protoc-gen-es=./node_modules/.bin/protoc-gen-es --es_out=src/generated/runtimepb --es_opt=target=ts,import_extension=none -I ../proto/runtimepb ../proto/runtimepb/runtime.proto && perl -0pi -e 's/\\s*\\z/\\n/' src/generated/runtimepb/runtime_pb.ts",
+    "proto:wire": "protoc --plugin=protoc-gen-es=./node_modules/.bin/protoc-gen-es --es_out=src/generated/wirepb --es_opt=target=ts,import_extension=none -I ../proto/wirepb ../proto/wirepb/terminal.proto && perl -0pi -e 's/\\s*\\z/\\n/' src/generated/wirepb/terminal_pb.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

@@ -334,10 +334,10 @@ CloudCompanionRelease {
 
 ### 8.5 RP006A 实现基线
 
-- `termx-shared/cloudcompanion/installer` 严格验证 Ed25519 manifest、固定 HTTPS origin、平台、channel、protocol window、archive size/hash 和单 executable tar；staging binary 完成版本/渠道绑定 Hello smoke 后才切换 `active.json`。
+- `shared/cloudcompanion/installer` 严格验证 Ed25519 manifest、固定 HTTPS origin、平台、channel、protocol window、archive size/hash 和单 executable tar；staging binary 完成版本/渠道绑定 Hello smoke 后才切换 `active.json`。
 - active installation 每次使用前重新验证固定路径、owner/权限或 Windows owner SID、symlink、binary hash；stable 默认拒绝 downgrade，签名 manifest 可显式授权回滚。
-- `termx-shared/cloudcompanion/ipc` 使用 4 MiB 上限的 deterministic framed protobuf；Unix 双向校验 peer UID，Windows Named Pipe 使用 current-user ACL 并双向校验 peer process SID。
-- `termx-shared/cloudcompanion/activation` 只启动 active record 指向的固定 binary 和固定 `serve --socket` 参数；发现旧版本进程时先请求 Shutdown、等待 endpoint 释放，再进行一次受限启动。
+- `shared/cloudcompanion/ipc` 使用 4 MiB 上限的 deterministic framed protobuf；Unix 双向校验 peer UID，Windows Named Pipe 使用 current-user ACL 并双向校验 peer process SID。
+- `shared/cloudcompanion/activation` 只启动 active record 指向的固定 binary 和固定 `serve --socket` 参数；发现旧版本进程时先请求 Shutdown、等待 endpoint 释放，再进行一次受限启动。
 - `termx cloud install|update|login|enroll|status|doctor|logout|uninstall` 已接入公开 lifecycle contract。enroll 默认从 TTY 隐式输入 one-time code，并由公开 daemon DeviceIdentity 在本地签名 challenge。
 - 私有 `termx-cloud` artifact 只通过 OS credential manager 保存 account/device cloud session；release tool 只从仓库外读取 Ed25519 PKCS#8 PEM，仓库和 artifact metadata 不保存 release private key。
 
@@ -369,7 +369,7 @@ cd termx-app/android
 
 Official init script 只把固定 `com.termx.cloud.OfficialManagedCloudFactory` 私有 source set 装入官方 APK；Community classpath 不引用 `private/`。未来建立 iOS target 时必须先补同一 contract 的 Swift vector 和私有装配，不把 Android 完成状态外推为 iOS 已实现。
 
-GA001A 后，Android 公开层还拥有 selected candidate pair stats 采样、质量窗口聚合和 `ManagedPathQualitySummary` 隐私校验；Official 私有模块只实现 `reportPathQuality` 转发，不能接收原始 stats、候选地址、grant、terminal 数据或成本输入。Go 与 Android 从 `termx-shared/cloudcompanion/testdata/path_quality_contract.json` 读取同一 v2 fixture；Community/Official 都必须通过相同窗口测试和 APK class 边界检查。质量上报错误只丢 telemetry，不参与连接成功、transport close、重连或 route selection。
+GA001A 后，Android 公开层还拥有 selected candidate pair stats 采样、质量窗口聚合和 `ManagedPathQualitySummary` 隐私校验；Official 私有模块只实现 `reportPathQuality` 转发，不能接收原始 stats、候选地址、grant、terminal 数据或成本输入。Go 与 Android 从 `shared/cloudcompanion/testdata/path_quality_contract.json` 读取同一 v2 fixture；Community/Official 都必须通过相同窗口测试和 APK class 边界检查。质量上报错误只丢 telemetry，不参与连接成功、transport close、重连或 route selection。
 
 GA002 后，Android 在显式 `smart_route` 下通过 Official 私有模块请求与桌面 v3 contract 同语义的 `ManagedRoutePlan`，公开 `ManagedWebRTCConnector` 负责 plan 绑定/TTL/ICE policy 校验、PeerConnection 执行和实际路径核对。选择原因进入 native snapshot 与共享 connection info；Community module、损坏 official module 和未配置 development gateway 继续 fail closed。App 默认仍是 `auto`，只有 pairing/config storage 明确写入 `smart_route` 才启用付费计划。
 

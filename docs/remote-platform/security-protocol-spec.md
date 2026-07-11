@@ -203,7 +203,7 @@ CapabilityGrant       -> Client secure store and daemon E2E only
 ### 5.1 前置条件
 
 - WebRTC PeerConnection 已完成 ICE 和 DTLS。
-- DataChannel 必须 reliable、ordered，并使用约定 label `termx-protocol`。
+- DataChannel 必须 reliable、ordered，并使用约定 label `protocol`。
 - 客户端已从 endpoint 配置获得 expected DeviceID、pinned DeviceFingerprint 和 `grant_ref`。
 - daemon 未因为 Hub 声明或 admission ticket 预先创建 core-v2 protocol session。
 
@@ -227,7 +227,7 @@ DataChannel 中每条授权消息编码为：
 ASCII "TXRA" || deterministic protobuf(AuthEnvelope)
 ```
 
-- protobuf schema 固定在 `termx-proto/remoteauthpb/remote_auth.proto`。
+- protobuf schema 固定在 `proto/remoteauthpb/remote_auth.proto`。
 - 单帧最大 64 KiB；错误 magic、错误版本、空/多义 payload 和任意层级 unknown field 一律拒绝。
 - canonical input 不使用 JSON、map 或本地结构体字段拼接；Go/Kotlin/Swift 必须使用 schema 中独立的 canonical message 和 deterministic protobuf bytes。
 - `CapabilityAccepted` 后立即切换为原有 termx protocol frame；不得继续解析 `AuthEnvelope`，也不得为旧 auth 格式保留 fallback。
@@ -343,7 +343,7 @@ remote auth frames -> CapabilityAccepted -> termx protocol frames
 - 切换后出现 remote auth frame：拒绝并关闭。
 - 每个 DataChannel 只对应一个 capability scope；scope 变化必须建立新 channel/session。
 - reconnect 必须重新执行完整设备证明和 challenge，不复用上次 accepted 状态。
-- `termx-shared/remoteauth/handshake_test.go` 固化 v1 grant、DeviceHello signing bytes 和 CapabilityOpen proof 的跨平台十六进制向量；其他语言实现必须逐字节匹配。
+- `shared/remoteauth/handshake_test.go` 固化 v1 grant、DeviceHello signing bytes 和 CapabilityOpen proof 的跨平台十六进制向量；其他语言实现必须逐字节匹配。
 
 ## 6. 配对与 grant 交付
 

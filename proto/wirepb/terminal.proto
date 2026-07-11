@@ -1,0 +1,553 @@
+syntax = "proto3";
+
+package termx.protocol.wirepb;
+
+option go_package = "github.com/lozzow/termx/proto/wirepb";
+
+message Empty {}
+
+message Hello {
+  uint32 version = 1;
+  string client = 2;
+  string server = 3;
+}
+
+message RequestEnvelope {
+  uint64 id = 1;
+  string method = 2;
+  bytes params = 3;
+}
+
+message ResponseEnvelope {
+  uint64 id = 1;
+  bytes result = 2;
+}
+
+message ProtocolError {
+  int32 code = 1;
+  string message = 2;
+}
+
+message ErrorEnvelope {
+  uint64 id = 1;
+  ProtocolError error = 2;
+}
+
+message Size {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+message TerminalInfo {
+  string id = 1;
+  string name = 2;
+  repeated string command = 3;
+  map<string, string> tags = 4;
+  Size size = 5;
+  string state = 6;
+  string cwd = 7;
+  string live_cwd = 8;
+  int64 created_at_unix_nano = 9;
+  optional int32 exit_code = 10;
+  ResizeOwnership resize_ownership = 11;
+  int32 resize_owner_attachment_count = 12;
+  int64 exited_at_unix_nano = 13;
+}
+
+message CreateParams {
+  repeated string command = 1;
+  string id = 2;
+  string name = 3;
+  map<string, string> tags = 4;
+  Size size = 5;
+  string dir = 6;
+  repeated string env = 7;
+  int32 scrollback_size = 8;
+  int64 scrollback_max_bytes = 9;
+  int64 scrollback_max_age_seconds = 10;
+}
+
+message CreateResult {
+  string terminal_id = 1;
+  string state = 2;
+}
+
+message GetParams {
+  string terminal_id = 1;
+}
+
+message ResizeParams {
+  string terminal_id = 1;
+  uint32 cols = 2;
+  uint32 rows = 3;
+}
+
+message EnsureResizeParams {
+  string terminal_id = 1;
+  uint32 channel = 2;
+  uint32 cols = 3;
+  uint32 rows = 4;
+  string resize_policy = 5;
+  string surface_id = 6;
+  string view_id = 7;
+}
+
+message EnsureResizeResult {
+  ResizeControl resize_control = 1;
+  Size size = 2;
+  bool resized = 3;
+}
+
+message SetTagsParams {
+  string terminal_id = 1;
+  map<string, string> tags = 2;
+}
+
+message SetMetadataParams {
+  string terminal_id = 1;
+  string name = 2;
+  map<string, string> tags = 3;
+}
+
+message AttachParams {
+  string terminal_id = 1;
+  string mode = 2;
+  string resize_policy = 3;
+  string surface_id = 4;
+  string view_id = 5;
+}
+
+message AttachResult {
+  string mode = 1;
+  uint32 channel = 2;
+  ResizeControl resize_control = 3;
+}
+
+message ResizeOwnership {
+  string owner_attachment_id = 1;
+  string owner_surface_id = 2;
+  string owner_view_id = 3;
+  string owner_remote_addr = 4;
+  Size size = 5;
+  bool size_locked = 6;
+  uint64 epoch = 7;
+}
+
+message ResizeControl {
+  bool can_resize = 1;
+  string reason = 2;
+  bool size_locked = 3;
+  string surface_id = 4;
+  string owner_surface_id = 5;
+  string owner_view_id = 6;
+  ResizeOwnership resize_ownership = 7;
+}
+
+message TerminalCreatedData {
+  string name = 1;
+  repeated string command = 2;
+  Size size = 3;
+}
+
+message TerminalStateChangedData {
+  string old_state = 1;
+  string new_state = 2;
+  optional int32 exit_code = 3;
+  int64 exited_at_unix_nano = 4;
+}
+
+message TerminalResizedData {
+  Size old_size = 1;
+  Size new_size = 2;
+}
+
+message TerminalRemovedData {
+  string reason = 1;
+}
+
+message CollaboratorsRevokedData {}
+
+message TerminalReadErrorData {
+  string error = 1;
+}
+
+enum StorageScope {
+  STORAGE_SCOPE_UNSPECIFIED = 0;
+  STORAGE_SCOPE_PUBLIC = 1;
+  STORAGE_SCOPE_PRIVATE = 2;
+}
+
+message StorageChangedData {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  uint64 version = 5;
+  string op = 6;
+}
+
+message WorkbenchChangedData {
+  string workspace_id = 1;
+  uint64 version = 2;
+  string action = 3;
+  string resource_id = 4;
+}
+
+message Event {
+  uint32 type = 1;
+  string terminal_id = 2;
+  int64 timestamp_unix_nano = 4;
+  TerminalCreatedData created = 5;
+  TerminalStateChangedData state_changed = 6;
+  TerminalResizedData resized = 7;
+  TerminalRemovedData removed = 8;
+  CollaboratorsRevokedData collaborators_revoked = 9;
+  TerminalReadErrorData read_error = 10;
+  StorageChangedData storage = 12;
+  WorkbenchChangedData workbench = 13;
+}
+
+message EventsParams {
+  string terminal_id = 1;
+  repeated uint32 types = 3;
+  string storage_app_id = 4;
+  StorageScope storage_scope = 5;
+  string storage_owner_id = 6;
+  string storage_key_prefix = 7;
+  string workbench_id = 8;
+}
+
+message SnapshotParams {
+  string terminal_id = 1;
+  int32 scrollback_offset = 2;
+  int32 scrollback_limit = 3;
+}
+
+message GridViewportParams {
+  string terminal_id = 1;
+  int32 scrollback_offset = 2;
+  int32 scrollback_limit = 3;
+  int32 cols = 4;
+}
+
+message HistoryWindowParams {
+  string terminal_id = 1;
+  int32 before_offset = 2;
+  int32 limit = 3;
+  int32 cols = 4;
+  string token = 5;
+  uint64 history_generation = 6;
+  bool cursor_valid = 7;
+  uint64 before_line_id = 8;
+  int32 before_row_in_line = 9;
+  uint64 boundary_first_line_id = 10;
+  uint64 boundary_last_line_id = 11;
+  string mode = 12;
+  bool after_cursor_valid = 13;
+  uint64 after_line_id = 14;
+  int32 after_row_in_line = 15;
+  bool range_valid = 16;
+  uint64 range_start_line_id = 17;
+  int32 range_start_col = 18;
+  uint64 range_end_line_id = 19;
+  int32 range_end_col = 20;
+}
+
+message ListResult {
+  repeated TerminalInfo terminals = 1;
+}
+
+message PathListDirsParams {
+  string prefix = 1;
+  int32 limit = 2;
+}
+
+message PathDirEntry {
+  string name = 1;
+  string path = 2;
+}
+
+message PathListDirsResult {
+  string base_path = 1;
+  repeated PathDirEntry entries = 2;
+  bool missing = 3;
+  bool truncated = 4;
+}
+
+message PathDefaultsResult {
+  repeated string default_command = 1;
+  string default_cwd = 2;
+}
+
+message CursorState {
+  int32 row = 1;
+  int32 col = 2;
+  bool visible = 3;
+  uint32 shape = 4;
+  bool blink = 5;
+}
+
+message TerminalModes {
+  uint32 mask = 1;
+}
+
+message RowSet {
+  bytes rows_blob = 1;
+  repeated int64 timestamps_unix_nano = 2;
+  repeated string row_kinds = 3;
+  repeated bool wrapped = 4;
+  repeated string ownership = 5;
+}
+
+message Snapshot {
+  string terminal_id = 1;
+  Size size = 2;
+  bool screen_is_alternate = 3;
+  RowSet screen = 4;
+  RowSet scrollback = 5;
+  int64 scrollback_offset = 6;
+  int64 scrollback_total = 7;
+  bool scrollback_has_more = 8;
+  CursorState cursor = 9;
+  TerminalModes modes = 10;
+  int64 timestamp_unix_nano = 11;
+  uint64 history_generation = 12;
+  int64 scrollback_loaded_rows = 13;
+  uint64 scrollback_first_row_id = 14;
+  uint64 scrollback_last_row_id = 15;
+  int64 scrollback_logical_total = 16;
+}
+
+message GridViewport {
+  string terminal_id = 1;
+  Size size = 2;
+  RowSet rows = 3;
+  int64 scrollback_offset = 4;
+  int64 scrollback_limit = 5;
+  int64 scrollback_total = 6;
+  bool scrollback_has_more = 7;
+  int64 timestamp_unix_nano = 8;
+  int64 loaded_rows = 9;
+  uint64 history_generation = 10;
+  uint64 first_row_id = 11;
+  uint64 last_row_id = 12;
+  int64 scrollback_logical_total = 13;
+}
+
+message HistoryWindow {
+  string terminal_id = 1;
+  string token = 2;
+  string op = 3;
+  Size size = 4;
+  RowSet rows = 5;
+  repeated int32 line_start_rows = 6;
+  repeated int32 line_end_rows = 7;
+  repeated string line_row_kinds = 8;
+  int64 before_offset = 9;
+  int64 loaded_rows = 10;
+  int64 total_rows = 11;
+  int64 logical_total = 12;
+  bool has_more = 13;
+  uint64 history_generation = 14;
+  uint64 first_row_id = 15;
+  uint64 last_row_id = 16;
+  int64 timestamp_unix_nano = 17;
+  repeated bool line_clipped_before = 18;
+  repeated bool line_clipped_after = 19;
+  repeated uint64 line_logical_line_ids = 20;
+  int64 loaded_lines = 21;
+  uint64 first_line_id = 22;
+  uint64 last_line_id = 23;
+  repeated int64 line_timestamp_start_unix_nano = 24;
+  repeated int64 line_timestamp_end_unix_nano = 25;
+  bool cursor_valid = 26;
+  uint64 cursor_before_line_id = 27;
+  int32 cursor_before_row_in_line = 28;
+  repeated uint64 row_logical_line_ids = 29;
+  repeated int32 row_in_line = 30;
+}
+
+message StorageEntry {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bytes value = 5;
+  uint64 version = 6;
+  int64 updated_at_unix_nano = 7;
+}
+
+message StorageGetParams {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string key = 4;
+}
+
+message StoragePutParams {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bytes value = 5;
+  bool check_version = 6;
+  uint64 expected_version = 7;
+}
+
+message StorageDeleteParams {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bool check_version = 5;
+  uint64 expected_version = 6;
+}
+
+message StorageDeleteResult {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bool deleted = 5;
+  uint64 version = 6;
+}
+
+message StorageListParams {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string prefix = 4;
+}
+
+message StorageListResult {
+  repeated StorageEntry entries = 1;
+}
+
+message WorkbenchSnapshot {
+  uint64 version = 1;
+  string active_workspace_id = 2;
+  repeated WorkbenchWorkspace workspaces = 3;
+}
+
+message WorkbenchWorkspace {
+  string id = 1;
+  string name = 2;
+  string active_tab_id = 3;
+  repeated WorkbenchTab tabs = 4;
+}
+
+message WorkbenchTab {
+  string id = 1;
+  string title = 2;
+  string active_pane_id = 3;
+  repeated WorkbenchPane panes = 4;
+  WorkbenchSplitNode root_split = 5;
+}
+
+message WorkbenchPane {
+  string id = 1;
+  string title = 2;
+  string kind = 3;
+  string terminal_id = 4;
+}
+
+message WorkbenchSplitNode {
+  string pane_id = 1;
+  string direction = 2;
+  repeated WorkbenchSplitNode children = 3;
+  double ratio = 4;
+  int32 bias_cells = 5;
+  string fixed_pane_id = 6;
+  int32 fixed_cols = 7;
+  int32 fixed_rows = 8;
+}
+
+message WorkbenchGetParams {
+  string workspace_id = 1;
+}
+
+message WorkbenchMutateParams {
+  string action = 1;
+  string workspace_id = 2;
+  string tab_id = 3;
+  string pane_id = 4;
+  string target_id = 5;
+  string name = 6;
+  string kind = 7;
+  string terminal_id = 8;
+  string split_direction = 9;
+  bool check_version = 10;
+  uint64 expected_version = 11;
+}
+
+message WorkbenchMutateResult {
+  WorkbenchSnapshot snapshot = 1;
+  string action = 2;
+  string resource_id = 3;
+}
+
+message RemoteStatus {
+  string state = 1;
+  string detail = 2;
+  string device_id = 3;
+  string device_name = 4;
+  string control_url = 5;
+  string hub_url = 6;
+  repeated string hub_urls = 7;
+  string data_dir = 8;
+  string mode = 9;
+  bool allow_lan = 10;
+  int32 terminal_count = 11;
+  int64 updated_at_unix_nano = 12;
+}
+
+message RemotePairStartParams {
+  string local_pair_url = 1;
+  int32 ttl_seconds = 2;
+  int32 auth_ttl_seconds = 3;
+}
+
+message RemotePairStartResult {
+  string type = 1;
+  string machine_id = 2;
+  string machine_name = 3;
+  string local_pair_url = 4;
+  string pair_session_id = 5;
+  string pair_secret = 6;
+  string answer_proof_secret = 7;
+  int64 expires_at_unix_nano = 8;
+}
+
+message RemoteLocalEnableParams {
+  string local_web_addr = 1;
+  string ice_tcp_addr = 2;
+  repeated string hub_urls = 3;
+  string control_url = 4;
+  string access_token = 5;
+  string region = 6;
+}
+
+message RemoteLocalStatus {
+  bool enabled = 1;
+  string http_url = 2;
+  string local_web_addr = 3;
+  string local_pair_url = 4;
+  bool ice_tcp_enabled = 5;
+  string ice_tcp_addr = 6;
+  int32 ice_tcp_port = 7;
+  int64 updated_at_unix_nano = 8;
+}
+
+message TerminalGridMetadata {
+  int32 store_version = 1;
+  string terminal_id = 2;
+  string row_codec = 3;
+  string index_codec = 4;
+  int64 page_max_bytes = 5;
+  int64 row_count = 6;
+  int64 page_count = 7;
+  int64 created_at_unix = 8;
+  int64 updated_at_unix = 9;
+  uint64 base_row_id = 10;
+  uint64 history_generation = 11;
+}

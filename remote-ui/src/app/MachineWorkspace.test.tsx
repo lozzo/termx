@@ -846,7 +846,7 @@ describe('MachineWorkspace', () => {
     await userEvent.click(screen.getByRole('button', { name: /terminal tools/i }))
     await userEvent.click(screen.getByRole('button', { name: '剪贴板' }))
 
-    const sheet = await screen.findByTestId('termx-clipboard-history-sheet')
+    const sheet = await screen.findByTestId('cmd/termxpboard-history-sheet')
     await waitFor(() => expect(within(sheet).getByText('history text')).toBeTruthy())
     await userEvent.click(within(sheet).getByRole('button', { name: /delete/i }))
 

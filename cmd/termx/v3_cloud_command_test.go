@@ -1,0 +1,195 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/ed25519"
+	"io"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/lozzow/termx/shared/cloudcompanion/installer"
+)
+
+func TestCloudInstallUsesSignedInstallerRequest(t *testing.T) {
+	cloudInstaller := &fakeCloudInstaller{}
+	previousFactory := newV3CloudInstallerForCommand
+	newV3CloudInstallerForCommand = func() (v3CloudInstaller, error) { return cloudInstaller, nil }
+	defer func() { newV3CloudInstallerForCommand = previousFactory }()
+
+	var output bytes.Buffer
+	command := newRootCmd()
+	command.SetOut(&output)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"cloud", "install", "--channel", "beta", "--version", "v1.2.3"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if cloudInstaller.installRequest.Channel != "beta" || cloudInstaller.installRequest.Version != "v1.2.3" {
+		t.Fatalf("install request = %#v", cloudInstaller.installRequest)
+	}
+	if !strings.Contains(output.String(), "v1.2.3") {
+		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestCloudLoginUsesLifecycleIPCWithoutReturningToken(t *testing.T) {
+	fake := &closableCloudFake{FakeClient: &cloudcompanion.FakeClient{
+		BeginLoginFunc: func(_ context.Context, request *cloudpb.BeginLoginRequest) (*cloudpb.LoginFlow, error) {
+			if request.GetMethod() != cloudpb.LoginMethod_LOGIN_METHOD_DEVICE_CODE {
+				t.Fatalf("login method = %s", request.GetMethod())
+			}
+			return &cloudpb.LoginFlow{FlowId: "flow-1", VerificationUri: "https://login.example.test", UserCode: "ABCD-EFGH"}, nil
+		},
+		CompleteLoginFunc: func(_ context.Context, request *cloudpb.CompleteLoginRequest) (*cloudpb.CompleteLoginResponse, error) {
+			if request.GetFlowId() != "flow-1" {
+				t.Fatalf("flow id = %q", request.GetFlowId())
+			}
+			return &cloudpb.CompleteLoginResponse{Session: &cloudpb.CloudSessionSummary{AccountId: "account-1", AccountLabel: "Alice"}}, nil
+		},
+	}}
+	previousOpen := openV3CloudLifecycleClient
+	openV3CloudLifecycleClient = func(_ context.Context, role cloudpb.CallerRole, capabilities ...cloudpb.CompanionCapability) (v3CloudClient, error) {
+		if role != cloudpb.CallerRole_CALLER_ROLE_CLI || len(capabilities) != 1 || capabilities[0] != cloudpb.CompanionCapability_COMPANION_CAPABILITY_ACCOUNT_SESSION {
+			t.Fatalf("open role/capabilities = (%s, %v)", role, capabilities)
+		}
+		return fake, nil
+	}
+	defer func() { openV3CloudLifecycleClient = previousOpen }()
+
+	var output bytes.Buffer
+	command := newRootCmd()
+	command.SetOut(&output)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"cloud", "login", "--device-code"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !fake.closed || strings.Contains(strings.ToLower(output.String()), "token") || !strings.Contains(output.String(), "Alice") {
+		t.Fatalf("login output/close = (%q, %v)", output.String(), fake.closed)
+	}
+}
+
+func TestCloudEnrollSignsChallengeWithDaemonIdentity(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	now := time.Date(2026, 7, 11, 13, 0, 0, 0, time.UTC)
+	previousNow := v3CloudNow
+	v3CloudNow = func() time.Time { return now }
+	defer func() { v3CloudNow = previousNow }()
+	challengeBytes := bytes.Repeat([]byte{0x44}, 32)
+	var beginRequest *cloudpb.BeginDeviceEnrollmentRequest
+	fake := &closableCloudFake{FakeClient: &cloudcompanion.FakeClient{
+		BeginDeviceEnrollmentFunc: func(_ context.Context, request *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error) {
+			beginRequest = request
+			return &cloudpb.DeviceEnrollmentChallenge{FlowId: "enroll-1", ChallengeId: "challenge-1", Challenge: challengeBytes, ExpiresAtUnix: uint64(now.Add(time.Minute).Unix())}, nil
+		},
+		CompleteDeviceEnrollmentFunc: func(_ context.Context, request *cloudpb.CompleteDeviceEnrollmentRequest) (*cloudpb.CompleteDeviceEnrollmentResponse, error) {
+			proof := request.GetProof()
+			if beginRequest == nil || beginRequest.GetOneTimeCode() != "ONE-TIME-CODE" || !bytes.Equal(beginRequest.GetDevicePublicKey(), proof.GetDevicePublicKey()) {
+				t.Fatalf("enrollment request/proof mismatch: begin=%v proof=%v", beginRequest, proof)
+			}
+			signingBytes, err := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{
+				FlowId: request.GetFlowId(), ChallengeId: proof.GetChallengeId(), Challenge: challengeBytes,
+				DeviceId: proof.GetDeviceId(), DevicePublicKey: proof.GetDevicePublicKey(), SignedAtUnixNano: proof.GetSignedAtUnixNano(),
+			})
+			if err != nil || !ed25519.Verify(ed25519.PublicKey(proof.GetDevicePublicKey()), signingBytes, proof.GetSignature()) {
+				t.Fatalf("enrollment signature verification failed: %v", err)
+			}
+			return &cloudpb.CompleteDeviceEnrollmentResponse{Session: &cloudpb.CloudSessionSummary{DeviceId: proof.GetDeviceId()}}, nil
+		},
+	}}
+	previousOpen := openV3CloudLifecycleClient
+	openV3CloudLifecycleClient = func(context.Context, cloudpb.CallerRole, ...cloudpb.CompanionCapability) (v3CloudClient, error) {
+		return fake, nil
+	}
+	defer func() { openV3CloudLifecycleClient = previousOpen }()
+
+	var output bytes.Buffer
+	command := newRootCmd()
+	command.SetOut(&output)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"cloud", "enroll", "ONE-TIME-CODE"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "ONE-TIME-CODE") || !strings.Contains(output.String(), "device-") {
+		t.Fatalf("enroll output = %q", output.String())
+	}
+}
+
+func TestCloudUninstallPurgeDeletesCloudSessionsBeforeArtifact(t *testing.T) {
+	cloudInstaller := &fakeCloudInstaller{status: installer.Installation{Version: "v1.0.0"}}
+	previousFactory := newV3CloudInstallerForCommand
+	newV3CloudInstallerForCommand = func() (v3CloudInstaller, error) { return cloudInstaller, nil }
+	defer func() { newV3CloudInstallerForCommand = previousFactory }()
+	order := make([]string, 0, 3)
+	fake := &closableCloudFake{FakeClient: &cloudcompanion.FakeClient{
+		LogoutFunc: func(_ context.Context, request *cloudpb.LogoutRequest) (*cloudpb.LogoutResponse, error) {
+			if !request.GetAccountSession() || !request.GetDeviceSession() {
+				t.Fatalf("purge request = %#v", request)
+			}
+			order = append(order, "logout")
+			return &cloudpb.LogoutResponse{}, nil
+		},
+		ShutdownFunc: func(context.Context, *cloudpb.ShutdownRequest) (*cloudpb.ShutdownResponse, error) {
+			order = append(order, "shutdown")
+			return &cloudpb.ShutdownResponse{}, nil
+		},
+	}}
+	previousOpen := openV3CloudLifecycleClient
+	openV3CloudLifecycleClient = func(context.Context, cloudpb.CallerRole, ...cloudpb.CompanionCapability) (v3CloudClient, error) {
+		return fake, nil
+	}
+	defer func() { openV3CloudLifecycleClient = previousOpen }()
+	cloudInstaller.uninstallFunc = func() error {
+		order = append(order, "uninstall")
+		return nil
+	}
+
+	command := newRootCmd()
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"cloud", "uninstall", "--purge"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(order, ",") != "logout,shutdown,uninstall" {
+		t.Fatalf("operation order = %v", order)
+	}
+}
+
+type fakeCloudInstaller struct {
+	installRequest installer.Request
+	status         installer.Installation
+	statusErr      error
+	uninstallFunc  func() error
+}
+
+func (fake *fakeCloudInstaller) InstallRelease(_ context.Context, request installer.Request) (installer.Installation, error) {
+	fake.installRequest = request
+	return installer.Installation{Version: request.Version, Channel: request.Channel}, nil
+}
+
+func (fake *fakeCloudInstaller) Status() (installer.Installation, error) {
+	return fake.status, fake.statusErr
+}
+
+func (fake *fakeCloudInstaller) Uninstall() error {
+	if fake.uninstallFunc != nil {
+		return fake.uninstallFunc()
+	}
+	return nil
+}
+
+type closableCloudFake struct {
+	*cloudcompanion.FakeClient
+	closed bool
+}
+
+func (fake *closableCloudFake) Close() error {
+	fake.closed = true
+	return nil
+}

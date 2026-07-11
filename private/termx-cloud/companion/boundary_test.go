@@ -13,10 +13,10 @@ import (
 
 func TestCompanionDoesNotImportPublicRuntimeSecurityOrTerminalOwners(t *testing.T) {
 	forbiddenImports := []string{
-		"/termx-core-v2",
-		"/termx-remote-v2",
-		"/termx-shared/remoteauth",
-		"/termx-shared/transport/datachannel",
+		"/core",
+		"/remote",
+		"/shared/remoteauth",
+		"/shared/transport/datachannel",
 		"/internal/protocol",
 		"github.com/pion/",
 	}

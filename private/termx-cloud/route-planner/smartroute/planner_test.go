@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/private/termx-cloud/route-planner/quality"
-	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/proto/cloudpb"
 )
 
 func TestPlannerSwitchesFromUnstableDirectAfterConsecutiveImprovement(t *testing.T) {

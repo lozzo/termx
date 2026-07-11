@@ -16,10 +16,9 @@ go build \
 正式 `termx` CLI 只嵌入 release public key，不嵌入 private key：
 
 ```bash
-cd termx-cli
-go build \
+(cd ../../.. && go build \
   -ldflags '-X main.termxBuildVersion=v1.2.3 -X main.cloudReleaseRootKeyID=release-2026 -X main.cloudReleaseRootPublicKey=BASE64_ED25519_PUBLIC_KEY' \
-  -o ./dist/termx ./cmd/termx
+  -o ./dist/termx ./cmd/termx)
 ```
 
 ## Release Artifact

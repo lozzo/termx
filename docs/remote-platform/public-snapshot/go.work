@@ -1,13 +1,3 @@
 go 1.26.0
 
-use (
-	./internal
-	./termx-cli
-	./termx-core-v2
-	./termx-proto
-	./termx-remote-v2
-	./termx-shared
-	./termx-testkit
-	./termx-tui-v3
-	./termx-vterm
-)
+use .

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-shared/cloudcompanion"
-	"github.com/lozzow/termx/termx-shared/cloudcompanion/installer"
+	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/lozzow/termx/shared/cloudcompanion/installer"
 )
 
 func TestReleaseToolProducesInstallerVerifiableArtifactWithoutKeyLeak(t *testing.T) {

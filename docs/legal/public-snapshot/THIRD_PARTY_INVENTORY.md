@@ -8,11 +8,11 @@ This inventory describes the public source snapshot and its Community artifacts.
 
 ## Go CLI
 
-`scripts/generate-go-notices.sh --public-only` uses pinned `google/go-licenses v2.0.1` against the real `termx-cli/cmd/termx` binary graph for `darwin/arm64`, `linux/amd64`, and `windows/amd64`.
+`scripts/generate-go-notices.sh --public-only` uses pinned `google/go-licenses v2.0.1` against the real `cmd/termx` binary graph for `darwin/arm64`, `linux/amd64`, and `windows/amd64`.
 
-The reviewed LIC001 graph contains 54 external or vendored license mappings under MIT, BSD-3-Clause, or Apache-2.0. The generated notice is committed at `termx-cli/cmd/termx/THIRD_PARTY_NOTICES.txt` and is printed by `termx licenses`.
+The reviewed LIC001 graph contains 54 external or vendored license mappings under MIT, BSD-3-Clause, or Apache-2.0. The generated notice is committed at `cmd/termx/THIRD_PARTY_NOTICES.txt` and is printed by `termx licenses`.
 
-`termx-vterm/internal/vt` is vendored MIT material whose upstream license remains adjacent to the source. Assembly, native, and WebAssembly files still require provenance review even when their Go module has an approved license.
+`vterm/internal/vt` is vendored MIT material whose upstream license remains adjacent to the source. Assembly, native, and WebAssembly files still require provenance review even when their Go module has an approved license.
 
 ## npm And Web Bundles
 
