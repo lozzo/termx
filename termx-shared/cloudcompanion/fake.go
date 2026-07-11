@@ -26,6 +26,7 @@ type FakeClient struct {
 	CreateSignalingSessionFunc   func(context.Context, *cloudpb.CreateSignalingSessionRequest) (SignalingStream, error)
 	CompleteSignalingOfferFunc   func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
 	AcquireRelayLeaseFunc        func(context.Context, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
+	PlanManagedRouteFunc         func(context.Context, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error)
 	ReportPathQualityFunc        func(context.Context, *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error)
 	ReportConnectionOutcomeFunc  func(context.Context, *cloudpb.ReportConnectionOutcomeRequest) (*cloudpb.ReportConnectionOutcomeResponse, error)
 
@@ -50,6 +51,7 @@ type RecordedRequests struct {
 	CreateSignalingSession   []*cloudpb.CreateSignalingSessionRequest
 	CompleteSignalingOffer   []*cloudpb.CompleteSignalingOfferRequest
 	AcquireRelayLease        []*cloudpb.AcquireRelayLeaseRequest
+	PlanManagedRoute         []*cloudpb.PlanManagedRouteRequest
 	ReportPathQuality        []*cloudpb.ReportPathQualityRequest
 	ReportConnectionOutcome  []*cloudpb.ReportConnectionOutcomeRequest
 }
@@ -207,6 +209,17 @@ func (fake *FakeClient) AcquireRelayLease(ctx context.Context, request *cloudpb.
 		return nil, missingFakeHandler("AcquireRelayLease")
 	}
 	return fake.AcquireRelayLeaseFunc(ctx, request)
+}
+
+// PlanManagedRoute 记录并转发 SmartRoute 计划请求；缺少 handler 时返回稳定 PROTOCOL 错误。
+func (fake *FakeClient) PlanManagedRoute(ctx context.Context, request *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
+	fake.record(func(requests *RecordedRequests) {
+		requests.PlanManagedRoute = append(requests.PlanManagedRoute, cloneMessage(request))
+	})
+	if fake == nil || fake.PlanManagedRouteFunc == nil {
+		return nil, missingFakeHandler("PlanManagedRoute")
+	}
+	return fake.PlanManagedRouteFunc(ctx, request)
 }
 
 // ReportPathQuality 记录并转发脱敏网络质量摘要；缺少 handler 时返回稳定 PROTOCOL 错误。
@@ -379,6 +392,7 @@ func cloneRecordedRequests(source RecordedRequests) RecordedRequests {
 		CreateSignalingSession:   cloneMessages(source.CreateSignalingSession),
 		CompleteSignalingOffer:   cloneMessages(source.CompleteSignalingOffer),
 		AcquireRelayLease:        cloneMessages(source.AcquireRelayLease),
+		PlanManagedRoute:         cloneMessages(source.PlanManagedRoute),
 		ReportPathQuality:        cloneMessages(source.ReportPathQuality),
 		ReportConnectionOutcome:  cloneMessages(source.ReportConnectionOutcome),
 	}

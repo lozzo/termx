@@ -13,10 +13,10 @@ import (
 const (
 	// ProtocolVersionMin 是当前公开进程能够发起的最小 Companion IPC 协议版本。
 	// Hello 协商不到该版本时，调用方必须把 managed cloud endpoint 标记为不兼容，不能回退到旧 Hub API。
-	ProtocolVersionMin uint32 = 2
+	ProtocolVersionMin uint32 = 3
 	// ProtocolVersionMax 是当前公开进程能够接受的最大 Companion IPC 协议版本。
 	// 新增能力必须通过 Hello 的能力交集启用，不能仅根据 companion 二进制版本猜测。
-	ProtocolVersionMax uint32 = 2
+	ProtocolVersionMax uint32 = 3
 )
 
 // Client 是公开进程访问本机 Cloud Companion 的最小领域接口。
@@ -38,6 +38,8 @@ type Client interface {
 	CompleteSignalingOffer(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
 	// AcquireRelayLease 获取服务准入租约；租约不表达 terminal 权限，也不能替代 CapabilityGrant。
 	AcquireRelayLease(context.Context, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
+	// PlanManagedRoute 获取只含 direct/single-relay ICE 约束和稳定原因的短期 SmartRoute 计划。
+	PlanManagedRoute(context.Context, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error)
 	// ReportPathQuality 上报不含 payload、grant 或 terminal identity 的聚合网络质量摘要。
 	ReportPathQuality(context.Context, *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error)
 	// ReportConnectionOutcome 上报一次 managed connection 的路径结果和稳定错误分类。

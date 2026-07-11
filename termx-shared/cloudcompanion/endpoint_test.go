@@ -11,13 +11,16 @@ import (
 )
 
 type endpointContractFixture struct {
-	SchemaVersion      int                        `json:"schema_version"`
-	Transport          string                     `json:"transport"`
-	Phases             []string                   `json:"phases"`
-	ObservedPaths      []string                   `json:"observed_paths"`
-	RelayPolicies      []relayPolicyFixture       `json:"relay_policies"`
-	CloudErrors        []string                   `json:"cloud_errors"`
-	AuthorizationCases []authorizationCaseFixture `json:"authorization_cases"`
+	SchemaVersion               int                        `json:"schema_version"`
+	Transport                   string                     `json:"transport"`
+	Phases                      []string                   `json:"phases"`
+	ObservedPaths               []string                   `json:"observed_paths"`
+	RelayPolicies               []relayPolicyFixture       `json:"relay_policies"`
+	RouteSelectionReasons       []string                   `json:"route_selection_reasons"`
+	RoutePlanFields             []string                   `json:"route_plan_fields"`
+	ForbiddenRoutePlanFragments []string                   `json:"forbidden_route_plan_fragments"`
+	CloudErrors                 []string                   `json:"cloud_errors"`
+	AuthorizationCases          []authorizationCaseFixture `json:"authorization_cases"`
 }
 
 type relayPolicyFixture struct {
@@ -45,7 +48,7 @@ func TestManagedEndpointContractFixtureMatchesGoDomain(t *testing.T) {
 	if err := json.Unmarshal(payload, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.SchemaVersion != 1 || fixture.Transport != string(connection.TransportHubP2P) {
+	if fixture.SchemaVersion != 2 || fixture.Transport != string(connection.TransportHubP2P) {
 		t.Fatalf("unexpected fixture header: %#v", fixture)
 	}
 	wantPhases := []string{"idle", "resolving", "signaling", "connecting", "authorizing", "connected", "failed"}
@@ -63,6 +66,40 @@ func TestManagedEndpointContractFixtureMatchesGoDomain(t *testing.T) {
 		}
 		if got := routePreferenceName(policy.RoutePreference); got != policyFixture.RoutePreference || policy.RelayOnly != policyFixture.RelayOnly {
 			t.Fatalf("relay policy %q = %q relayOnly=%v", policyFixture.RelayMode, got, policy.RelayOnly)
+		}
+	}
+	wantReasons := []string{
+		string(RouteReasonInitialBest), string(RouteReasonOnlyViable), string(RouteReasonLowerLoss),
+		string(RouteReasonDirectUnstable), string(RouteReasonLowerLatency), string(RouteReasonLowerScore),
+		string(RouteReasonCostGuard), string(RouteReasonMinimumHold), string(RouteReasonCooldown),
+		string(RouteReasonHysteresisHold), string(RouteReasonInsufficientImprovement),
+		string(RouteReasonCurrentUnavailable), string(RouteReasonCurrentBest),
+	}
+	if !equalStrings(fixture.RouteSelectionReasons, wantReasons) {
+		t.Fatalf("route selection reasons = %#v, want %#v", fixture.RouteSelectionReasons, wantReasons)
+	}
+	for index, want := range fixture.RouteSelectionReasons {
+		got := RouteSelectionReasonFromWire(cloudpb.RouteSelectionReason(index + 1))
+		if string(got) != want || !IsKnownRouteSelectionReason(got) {
+			t.Fatalf("route reason wire %d = %q, want %q", index+1, got, want)
+		}
+	}
+	if RouteSelectionReasonFromWire(cloudpb.RouteSelectionReason(99)) != "" || IsKnownRouteSelectionReason("") {
+		t.Fatal("unknown route reason must remain invalid")
+	}
+	descriptor := (&cloudpb.ManagedRoutePlan{}).ProtoReflect().Descriptor()
+	fields := make([]string, 0, descriptor.Fields().Len())
+	for index := 0; index < descriptor.Fields().Len(); index++ {
+		fields = append(fields, string(descriptor.Fields().Get(index).Name()))
+	}
+	if !equalStrings(fixture.RoutePlanFields, fields) {
+		t.Fatalf("route plan fields = %#v, want %#v", fields, fixture.RoutePlanFields)
+	}
+	for _, field := range fields {
+		for _, fragment := range fixture.ForbiddenRoutePlanFragments {
+			if strings.Contains(field, fragment) {
+				t.Fatalf("route plan field %q contains forbidden fragment %q", field, fragment)
+			}
 		}
 	}
 	for _, testCase := range fixture.AuthorizationCases {

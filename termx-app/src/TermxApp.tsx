@@ -28,7 +28,7 @@ import type {
   WebControlMachine,
   RemoteControlAppProps,
 } from '@termx/remote-ui'
-import { NativeConnection, type NativeConnectOpts, type NativeConnectionSnapshot, type NativeStateChangeEvent } from './plugins/nativeConnection'
+import { NativeConnection, type NativeConnectOpts, type NativeConnectionSnapshot, type NativeRelayMode, type NativeStateChangeEvent } from './plugins/nativeConnection'
 import { NativeRtcConnector, recoverNativeBridgeAfterResume, type NativeRtcSession } from './NativeConnectionProxy'
 import { NativeFileTransferStore } from './NativeFileTransferStore'
 import NativeFilePicker from './plugins/nativeFilePicker'
@@ -528,17 +528,30 @@ function createNativeConnector(
     }
   }
 
+  const relayModeValue = storage.getItem(`termx.endpoint.${machine.id}.relayMode`)?.trim() ?? ''
+  if (relayModeValue && !isNativeRelayMode(relayModeValue)) {
+    return {
+      async connect() {
+        throw new Error('Managed endpoint has an invalid relay mode')
+      },
+    }
+  }
+
   const connectOpts: Omit<NativeConnectOpts, 'endpointId'> = {
     targetDeviceId: machine.id,
     deviceFingerprint,
     grantRef,
-    relayMode: 'auto',
+    relayMode: isNativeRelayMode(relayModeValue) ? relayModeValue : 'auto',
   }
   const connector = new NativeRtcConnector(connectOpts)
   return {
     connect: (target, options) => connector.connect(target, options),
     release: (endpointId) => NativeConnection.release({ endpointId }),
   }
+}
+
+function isNativeRelayMode(value: string): value is NativeRelayMode {
+  return value === 'auto' || value === 'direct' || value === 'relay_only' || value === 'smart_route'
 }
 
 function createNativeSessionManager(machineId: string, connector: NativeConnector) {
@@ -716,6 +729,7 @@ function nativeConnectionStateSnapshot(data: NativeConnectionSnapshot | NativeSt
     phase: nativeConnectionPhase(data.phase),
     ...(data.path ? { path: nativeConnectionPath(data.path) } : {}),
     ...(data.observedPath ? { observedPath: data.observedPath } : {}),
+    ...(data.routeSelectionReason ? { routeSelectionReason: data.routeSelectionReason } : {}),
     statusText: data.statusText || 'Connecting...',
     relayInUse: data.relayInUse === true,
     ...(data.failReason ? { failReason: data.failReason } : {}),

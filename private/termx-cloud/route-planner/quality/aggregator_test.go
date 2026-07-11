@@ -55,7 +55,8 @@ func TestAggregatorKeepsQualityAndTrustedCostSourcesSeparate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Baseline: %v", err)
 	}
-	if baseline.WindowCount != 1 || baseline.SampleCount != 4 || baseline.MeanWindowRTTP50Millis != 40 || baseline.MeanWindowRTTP95Millis != 80 {
+	if baseline.WindowCount != 1 || baseline.SampleCount != 4 || !baseline.LatestWindowEndedAt.Equal(now.Add(-30*time.Second)) ||
+		baseline.MeanWindowRTTP50Millis != 40 || baseline.MeanWindowRTTP95Millis != 80 {
 		t.Fatalf("quality baseline = %+v", baseline)
 	}
 	if baseline.DisconnectCount != 2 || baseline.EstimatedCostMicrounits != 26 || baseline.BillableBytes != 12_000 || baseline.CostActiveMillis != 30_000 || baseline.CostWindowCount != 1 || baseline.UnpricedWindowCount != 0 {

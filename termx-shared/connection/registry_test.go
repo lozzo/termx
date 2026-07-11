@@ -161,6 +161,25 @@ connections:
 	}
 }
 
+func TestParseHubP2PSmartRouteMode(t *testing.T) {
+	registry, err := Parse([]byte(`
+connections:
+  studio:
+    transport: hub-p2p
+    hub_url: "https://hub.example.com"
+    hub_device_id: "device_ed25519:studio"
+    device_fingerprint: "SHA256:studio"
+    grant_ref: "grant:studio"
+    relay_mode: smart_route
+`))
+	if err != nil {
+		t.Fatalf("parse smart route registry: %v", err)
+	}
+	if got := registry.Connections["studio"].RelayMode; got != RelaySmart {
+		t.Fatalf("smart route relay mode = %q", got)
+	}
+}
+
 func TestRegistryDefaultsAndValidation(t *testing.T) {
 	registry, err := Parse([]byte(`
 version: 1

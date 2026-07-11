@@ -18,7 +18,11 @@ class ManagedWebRTCConnector(
 ) {
     /** Result 保留实际网络路径或稳定错误码，不暴露 token、SDP credential 或服务端内部套餐细节。 */
     sealed class Result {
-        data class Success(val transport: WebRTCTransport, val observedPath: ObservedPath) : Result()
+        data class Success(
+            val transport: WebRTCTransport,
+            val observedPath: ObservedPath,
+            val routeSelectionReason: ManagedRouteSelectionReason?,
+        ) : Result()
         data class Failure(val code: String) : Result()
     }
 
@@ -38,26 +42,45 @@ class ManagedWebRTCConnector(
                 (resolution.targetDeviceId.isNotBlank() && resolution.targetDeviceId != spec.targetDeviceId)) {
                 throw ManagedEndpointFailure("protocol", "cloud resolved a different or invalid target")
             }
+            // smart_route 的候选、评分和成本只属于私有 Planner；公开 App 只执行已选中的短期 ICE 计划。
+            val routePlan = if (policy.routePreference == "smart_route") {
+                cloud.planManagedRoute(spec, resolution, policy).also { plan ->
+                    plan.validate(spec, resolution, System.currentTimeMillis() / 1000L)
+                }
+            } else {
+                null
+            }
             val grant = credentials.resolve(spec.grantRef)
             if (grant.isBlank()) throw ManagedEndpointFailure("unauthenticated", "grant credential is empty")
             val current = WebRTCTransport(bridge, spec.endpointId)
             transport = current
             onProgress?.invoke(ManagedEndpointPhase.SIGNALING)
             val offer = runInterruptible(Dispatchers.IO) {
-                current.startManaged(resolution.iceServers, policy.relayOnly)
+                current.startManaged(routePlan?.iceServers ?: resolution.iceServers, routePlan?.relayOnly ?: policy.relayOnly)
             } ?: throw ManagedEndpointFailure("protocol", current.lastFailureReason ?: "offer failed")
             val answer = cloud.createSignalingSession(spec, resolution, offer, policy)
             onProgress?.invoke(ManagedEndpointPhase.CONNECTING)
             val connected = runInterruptible(Dispatchers.IO) { current.finishManaged(answer) }
             if (!connected) throw ManagedEndpointFailure("route_unavailable", current.lastFailureReason ?: "WebRTC failed")
+            val observedPath = current.currentObservedPath()
+                ?: if (routePlan == null) {
+                    if (current.currentRelayInUse()) ObservedPath.SINGLE_RELAY else ObservedPath.DIRECT
+                } else {
+                    throw ManagedEndpointFailure("protocol", "managed route plan ICE path is unavailable")
+                }
+            if (routePlan != null && routePlan.selectedPath != observedPath) {
+                throw ManagedEndpointFailure(
+                    "protocol",
+                    "managed route plan selected ${routePlan.selectedPath.wireName} but ICE established ${observedPath.wireName}",
+                )
+            }
             onProgress?.invoke(ManagedEndpointPhase.AUTHORIZING)
             authorizer.authorize(current, spec, grant)
-            val observedPath = if (current.currentRelayInUse()) ObservedPath.SINGLE_RELAY else ObservedPath.DIRECT
             val qualityReporter = ManagedPathQualityReporter(cloud, resolution.managedSessionId, current)
             current.addBeforeCloseListener(qualityReporter::stop)
             qualityReporter.start()
             transport = null
-            Result.Success(current, observedPath)
+            Result.Success(current, observedPath, routePlan?.selectionReason)
         } catch (cancelled: CancellationException) {
             transport?.disconnect()
             throw cancelled

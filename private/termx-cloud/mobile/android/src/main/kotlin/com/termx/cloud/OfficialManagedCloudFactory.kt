@@ -8,6 +8,7 @@ import com.termx.app.managed.ManagedEndpointFailure
 import com.termx.app.managed.ManagedEndpointResolution
 import com.termx.app.managed.ManagedEndpointSpec
 import com.termx.app.managed.ManagedPathQualitySummary
+import com.termx.app.managed.ManagedRoutePlan
 import com.termx.app.managed.ManagedSignalAnswer
 import com.termx.app.managed.ManagedSignalOffer
 
@@ -34,6 +35,12 @@ internal class OfficialManagedCloudAdapter(private val gateway: OfficialCloudGat
         summary.validate()
         gateway.reportPathQuality(summary)
     }
+
+    override suspend fun planManagedRoute(
+        spec: ManagedEndpointSpec,
+        resolution: ManagedEndpointResolution,
+        policy: ManagedDialPolicy,
+    ): ManagedRoutePlan = gateway.planManagedRoute(spec, resolution, policy)
 }
 
 /**
@@ -55,6 +62,14 @@ internal class OfficialCloudGateway(@Suppress("UNUSED_PARAMETER") context: Conte
     }
 
     suspend fun reportPathQuality(@Suppress("UNUSED_PARAMETER") summary: ManagedPathQualitySummary) {
+        throw ManagedEndpointFailure("login_required", "Official mobile cloud account session is not configured")
+    }
+
+    suspend fun planManagedRoute(
+        @Suppress("UNUSED_PARAMETER") spec: ManagedEndpointSpec,
+        @Suppress("UNUSED_PARAMETER") resolution: ManagedEndpointResolution,
+        @Suppress("UNUSED_PARAMETER") policy: ManagedDialPolicy,
+    ): ManagedRoutePlan {
         throw ManagedEndpointFailure("login_required", "Official mobile cloud account session is not configured")
     }
 }

@@ -57,6 +57,8 @@ type fakeControlPlane struct {
 	clientAdmission   cloudservice.HubAdmission
 	daemonAdmission   cloudservice.HubAdmission
 	leaseResponse     *cloudpb.RelayLease
+	planResponse      *cloudpb.ManagedRoutePlan
+	planCount         int
 	qualityCount      int
 	outcomeCount      int
 }
@@ -106,6 +108,14 @@ func (controlPlane *fakeControlPlane) AcquireDaemonAnswerAdmission(_ context.Con
 func (controlPlane *fakeControlPlane) AcquireRelayLease(_ context.Context, authorization session.Authorization, _ *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
 	controlPlane.capture(authorization)
 	return controlPlane.leaseResponse, nil
+}
+
+func (controlPlane *fakeControlPlane) PlanManagedRoute(_ context.Context, authorization session.Authorization, _ *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
+	controlPlane.capture(authorization)
+	controlPlane.mu.Lock()
+	controlPlane.planCount++
+	controlPlane.mu.Unlock()
+	return controlPlane.planResponse, nil
 }
 
 func (controlPlane *fakeControlPlane) ReportPathQuality(_ context.Context, authorization session.Authorization, _ *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error) {
@@ -238,6 +248,7 @@ func TestManagedOperationsDrivePrivateAdapters(t *testing.T) {
 	if _, err := connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_TUI,
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING,
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SMART_ROUTE,
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_PATH_QUALITY,
 	)); err != nil {
 		t.Fatal(err)
@@ -268,6 +279,13 @@ func TestManagedOperationsDrivePrivateAdapters(t *testing.T) {
 	if err != nil || lease.GetLeaseId() != "lease-1" {
 		t.Fatalf("AcquireRelayLease = (%v, %v)", lease, err)
 	}
+	plan, err := connection.PlanManagedRoute(context.Background(), &cloudpb.PlanManagedRouteRequest{
+		EndpointId: "cloud-prod", ManagedSessionId: "managed-1", TargetDeviceId: "daemon-1",
+		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE,
+	})
+	if err != nil || plan.GetPlanId() != "plan-1" || plan.GetSelectionReason() != cloudpb.RouteSelectionReason_ROUTE_SELECTION_REASON_DIRECT_UNSTABLE {
+		t.Fatalf("PlanManagedRoute = (%v, %v)", plan, err)
+	}
 	_, err = connection.ReportPathQuality(context.Background(), &cloudpb.ReportPathQualityRequest{Summary: &cloudpb.PathQualitySummary{
 		ManagedSessionId: "managed-1", ObservedPath: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
 		RttP50Millis: 40, RttP95Millis: 80, JitterMillis: 5,
@@ -286,11 +304,35 @@ func TestManagedOperationsDrivePrivateAdapters(t *testing.T) {
 	}
 	controlPlane.mu.Lock()
 	defer controlPlane.mu.Unlock()
-	if controlPlane.lastAuthorization != "account-access-token" || controlPlane.qualityCount != 1 || controlPlane.outcomeCount != 1 {
-		t.Fatalf("Control Plane calls auth=%q quality=%d outcome=%d", controlPlane.lastAuthorization, controlPlane.qualityCount, controlPlane.outcomeCount)
+	if controlPlane.lastAuthorization != "account-access-token" || controlPlane.planCount != 1 || controlPlane.qualityCount != 1 || controlPlane.outcomeCount != 1 {
+		t.Fatalf("Control Plane calls auth=%q plan=%d quality=%d outcome=%d", controlPlane.lastAuthorization, controlPlane.planCount, controlPlane.qualityCount, controlPlane.outcomeCount)
 	}
 	if lease.GetExpiresAtUnix() != uint64(now.Add(5*time.Minute).Unix()) {
 		t.Fatalf("lease expiry = %d", lease.GetExpiresAtUnix())
+	}
+}
+
+func TestPlanManagedRouteRequiresNegotiatedSmartRouteCapability(t *testing.T) {
+	_, service, controlPlane, _ := testService(t)
+	connection := service.NewConnection()
+	if _, err := connection.Hello(context.Background(), helloRequest(
+		cloudpb.CallerRole_CALLER_ROLE_TUI,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING,
+	)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := connection.PlanManagedRoute(context.Background(), &cloudpb.PlanManagedRouteRequest{
+		EndpointId: "cloud-prod", ManagedSessionId: "managed-1", TargetDeviceId: "daemon-1",
+		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE,
+	})
+	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_INCOMPATIBLE) {
+		t.Fatalf("PlanManagedRoute without capability error = %v", err)
+	}
+	controlPlane.mu.Lock()
+	planCount := controlPlane.planCount
+	controlPlane.mu.Unlock()
+	if planCount != 0 {
+		t.Fatalf("unnegotiated SmartRoute reached Control Plane %d times", planCount)
 	}
 }
 
@@ -523,6 +565,13 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 		daemonAdmission:   daemonAdmission,
 		leaseResponse: &cloudpb.RelayLease{LeaseId: "lease-1", SignedLease: []byte("signed-lease"), ExpiresAtUnix: uint64(now.Add(5 * time.Minute).Unix()), PathKind: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
 			IceServers: []*cloudpb.IceServer{{Urls: []string{"turn:relay.example.test"}, Username: "user", Credential: "credential"}}},
+		planResponse: &cloudpb.ManagedRoutePlan{
+			PlanId: "plan-1", ManagedSessionId: "managed-1", TargetDeviceId: "daemon-1",
+			SelectedPath:    cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
+			SelectionReason: cloudpb.RouteSelectionReason_ROUTE_SELECTION_REASON_DIRECT_UNSTABLE,
+			ValidUntilUnix:  uint64(now.Add(time.Minute).Unix()), RelayOnly: true, RelayRegion: "eu-west",
+			IceServers: []*cloudpb.IceServer{{Urls: []string{"turns:relay.example.test"}, Username: "user", Credential: "credential"}},
+		},
 	}
 	hub := &fakeHub{presence: newPresenceSource(8), signaling: newSignalingSource(8)}
 	service, err := companion.NewService(companion.Config{

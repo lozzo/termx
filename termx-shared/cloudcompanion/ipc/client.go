@@ -256,6 +256,19 @@ func (client *Client) AcquireRelayLease(ctx context.Context, request *cloudpb.Ac
 	return value, nil
 }
 
+// PlanManagedRoute 获取 capability-gated 的短期 direct/single-relay ICE 计划。
+func (client *Client) PlanManagedRoute(ctx context.Context, request *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
+	response, err := client.call(ctx, &cloudpb.IPCRequest{Operation: &cloudpb.IPCRequest_PlanManagedRoute{PlanManagedRoute: request}})
+	if err != nil {
+		return nil, err
+	}
+	value := response.GetManagedRoutePlan()
+	if value == nil {
+		return nil, protocolResponseError("PlanManagedRoute")
+	}
+	return value, nil
+}
+
 // ReportPathQuality 转发不含 payload 的聚合网络质量摘要。
 func (client *Client) ReportPathQuality(ctx context.Context, request *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error) {
 	response, err := client.call(ctx, &cloudpb.IPCRequest{Operation: &cloudpb.IPCRequest_ReportPathQuality{ReportPathQuality: request}})

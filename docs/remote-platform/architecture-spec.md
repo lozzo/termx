@@ -172,6 +172,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - 在 DataChannel 内完成 capability handshake。
 - 建立标准 termx protocol client bundle。
 - 向 UI 投影 connecting/probing/direct/single-relay/relay-mesh/offline/auth-expired 等状态。
+- 在显式 SmartRoute 下只执行 Companion 返回的短期 ICE plan，并在授权前核对实际 candidate path。
 
 不负责：
 
@@ -313,7 +314,18 @@ RefreshRelayLease(existing lease id) -> RelayLease
 
 基础策略下，客户端在 relay policy 不允许或 direct 已达到质量门槛时不请求 lease；SmartRoute 可以在 direct 可达但质量较差时请求允许的 route class。Hub 不得把长期共享 TURN 密钥下发给客户端。
 
-### 6.5 RemoteSessionAcceptor
+### 6.5 SmartRoutePlanProvider
+
+SmartRoute 决策与 WebRTC 执行分离：
+
+```text
+PlanManagedRoute(endpoint, managed session, target, SMART_ROUTE)
+    -> plan id + direct|single-relay + selection reason + short ICE material
+```
+
+候选质量、成本、entitlement、评分权重和 hysteresis state 只属于私有 Route Planner。公开客户端必须二次校验计划绑定、有效期和 ICE policy，禁止接受 Relay Mesh、未选中 TURN 或隐式 fallback。GA002 只在初次连接/重连时取计划；会话内 ICE restart 仍未实现。
+
+### 6.6 RemoteSessionAcceptor
 
 公开 daemon interface 接收已经建立的可靠有序 DataChannel，先运行端到端授权状态机，再将成功 session 交给 core-v2。它不接受来自 Hub 的预验证 grant 标记。
 
@@ -347,6 +359,8 @@ Client <--------------------------> Daemon: termx protocol
 ```
 
 Control Plane 不转发 SDP，Hub 不看到 capability。基础策略下 direct 达到质量门槛后不申请 Relay lease；启用 SmartRoute 时，direct 即使可达也必须与允许的 Relay candidate 比较稳定性和成本，不能把“打洞成功”直接当成最佳路径。
+
+GA002 的客户端先经 Companion v3 获取 direct 或 single-relay 短期计划，再用原始 `SMART_ROUTE` intent 进行 signaling。实际 ICE path 与计划不一致时，在 DeviceIdentity/capability handshake 前关闭当前连接；公开客户端不能自行改取其他 RelayLease。
 
 ### 7.4 Managed WebRTC Relay
 

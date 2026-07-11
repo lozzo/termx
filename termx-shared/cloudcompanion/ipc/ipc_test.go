@@ -22,6 +22,9 @@ func TestIPCConnectionPreservesHelloUnaryAndStreamOwnership(t *testing.T) {
 		StatusFunc: func(context.Context, *cloudpb.StatusRequest) (*cloudpb.StatusResponse, error) {
 			return &cloudpb.StatusResponse{State: cloudpb.CompanionState_COMPANION_STATE_READY, AccountId: "account-1"}, nil
 		},
+		PlanManagedRouteFunc: func(context.Context, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
+			return &cloudpb.ManagedRoutePlan{PlanId: "plan-1", ManagedSessionId: "managed-1", TargetDeviceId: "daemon-1"}, nil
+		},
 		OpenPresenceFunc: func(context.Context, *cloudpb.OpenPresenceRequest) (cloudcompanion.PresenceStream, error) {
 			return presence, nil
 		},
@@ -36,6 +39,10 @@ func TestIPCConnectionPreservesHelloUnaryAndStreamOwnership(t *testing.T) {
 	status, err := client.Status(context.Background(), &cloudpb.StatusRequest{})
 	if err != nil || status.GetAccountId() != "account-1" {
 		t.Fatalf("Status = (%v, %v)", status, err)
+	}
+	plan, err := client.PlanManagedRoute(context.Background(), &cloudpb.PlanManagedRouteRequest{ManagedSessionId: "managed-1"})
+	if err != nil || plan.GetPlanId() != "plan-1" {
+		t.Fatalf("PlanManagedRoute = (%v, %v)", plan, err)
 	}
 
 	stream, err := client.OpenPresence(context.Background(), &cloudpb.OpenPresenceRequest{})

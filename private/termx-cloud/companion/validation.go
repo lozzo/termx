@@ -205,6 +205,49 @@ func validateRelayLeaseResponse(request *cloudpb.AcquireRelayLeaseRequest, respo
 	return validateIceServers(response.GetIceServers())
 }
 
+func validateManagedRoutePlanRequest(request *cloudpb.PlanManagedRouteRequest) error {
+	if request == nil || !canonicalRouteIdentifier(request.GetEndpointId()) ||
+		!canonicalRouteIdentifier(request.GetManagedSessionId()) || !canonicalRouteIdentifier(request.GetTargetDeviceId()) ||
+		request.GetRoutePreference() != cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE {
+		return protocolError("invalid managed route plan request")
+	}
+	return nil
+}
+
+func validateManagedRoutePlanResponse(request *cloudpb.PlanManagedRouteRequest, response *cloudpb.ManagedRoutePlan, now time.Time) error {
+	if response == nil || !canonicalRouteIdentifier(response.GetPlanId()) ||
+		response.GetManagedSessionId() != request.GetManagedSessionId() || response.GetTargetDeviceId() != request.GetTargetDeviceId() ||
+		!validRouteSelectionReason(response.GetSelectionReason()) || response.GetValidUntilUnix() <= uint64(now.Unix()) ||
+		response.GetValidUntilUnix() > uint64(now.Add(10*time.Minute).Unix()) {
+		return protocolError("Control Plane returned an invalid managed route plan")
+	}
+	if err := validateIceServers(response.GetIceServers()); err != nil {
+		return err
+	}
+	hasTURN := false
+	for _, server := range response.GetIceServers() {
+		for _, rawURL := range server.GetUrls() {
+			lowerURL := strings.ToLower(strings.TrimSpace(rawURL))
+			if strings.HasPrefix(lowerURL, "turn:") || strings.HasPrefix(lowerURL, "turns:") {
+				hasTURN = true
+			}
+		}
+	}
+	switch response.GetSelectedPath() {
+	case cloudpb.ObservedPath_OBSERVED_PATH_DIRECT:
+		if response.GetRelayOnly() || response.GetRelayRegion() != "" || hasTURN {
+			return protocolError("direct managed route plan contains Relay material")
+		}
+	case cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY:
+		if !response.GetRelayOnly() || !hasTURN || !validRouteTag(response.GetRelayRegion()) {
+			return protocolError("single-relay managed route plan is incomplete")
+		}
+	default:
+		return protocolError("managed route plan path is unavailable in GA002")
+	}
+	return nil
+}
+
 func validatePathQualityRequest(request *cloudpb.ReportPathQualityRequest) error {
 	if request == nil {
 		return protocolError("invalid path quality summary")
@@ -266,6 +309,29 @@ func validObservedPath(path cloudpb.ObservedPath) bool {
 
 func validRoutePreference(preference cloudpb.RoutePreference) bool {
 	return preference == cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY || preference == cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY || preference == cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE || preference == cloudpb.RoutePreference_ROUTE_PREFERENCE_GLOBAL_ACCELERATOR
+}
+
+func validRouteSelectionReason(reason cloudpb.RouteSelectionReason) bool {
+	return reason >= cloudpb.RouteSelectionReason_ROUTE_SELECTION_REASON_INITIAL_BEST &&
+		reason <= cloudpb.RouteSelectionReason_ROUTE_SELECTION_REASON_CURRENT_BEST
+}
+
+func canonicalRouteIdentifier(value string) bool {
+	return value != "" && len(value) <= 128 && value == strings.TrimSpace(value) && !strings.ContainsAny(value, "\r\n\t ")
+}
+
+func validRouteTag(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" || len(value) > 64 {
+		return false
+	}
+	for _, character := range value {
+		if character >= 'a' && character <= 'z' || character >= '0' && character <= '9' || character == '-' || character == '_' || character == '.' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func validCloudErrorCode(code cloudpb.CloudErrorCode, allowUnspecified bool) bool {

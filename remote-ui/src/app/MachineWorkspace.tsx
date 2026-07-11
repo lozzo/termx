@@ -2700,6 +2700,7 @@ function ConnectionInfoDialog({
             <ConnectionInfoRow label="Mode" value={loading ? 'Reading stats...' : connectionTypeLabel(type)} strong />
             <ConnectionInfoRow label="Transport" value={info?.path ?? '-'} />
             <ConnectionInfoRow label="Path" value={info?.observedPath ?? '-'} />
+            <ConnectionInfoRow label="SmartRoute" value={info?.routeSelectionReason ?? '-'} />
             <ConnectionInfoRow label="Local" value={info?.localAddr ?? '-'} />
             <ConnectionInfoRow label="Remote" value={info?.remoteAddr ?? '-'} />
             <ConnectionInfoRow label="Candidates" value={candidateTypeText(info)} />

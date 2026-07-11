@@ -61,6 +61,11 @@ func (*UnconfiguredAdapter) AcquireRelayLease(context.Context, session.Authoriza
 	return nil, unavailableAdapterError()
 }
 
+// PlanManagedRoute 拒绝未装配的 SmartRoute 计划请求。
+func (*UnconfiguredAdapter) PlanManagedRoute(context.Context, session.Authorization, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
+	return nil, unavailableAdapterError()
+}
+
 // ReportPathQuality 拒绝未装配的质量上报。
 func (*UnconfiguredAdapter) ReportPathQuality(context.Context, session.Authorization, *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error) {
 	return nil, unavailableAdapterError()

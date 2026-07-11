@@ -61,6 +61,7 @@ class WebRTCTransport(
     @Volatile private var disconnectedAt = 0L
     var lastRtt = 0L
     @Volatile private var relayInUse = false
+    @Volatile private var observedPath: ObservedPath? = null
     private val generation = AtomicLong(0)
     private val beforeCloseLock = Any()
     private val beforeCloseListeners = mutableListOf<() -> Unit>()
@@ -87,6 +88,7 @@ class WebRTCTransport(
     fun startManaged(iceServers: List<ManagedIceServer>, relayOnly: Boolean): ManagedSignalOffer? {
         lastFailureReason = null
         relayInUse = false
+        observedPath = null
         return try {
             val f = factory ?: run { markFailure("init"); return null }
             val servers = parseIceServers(iceServers)
@@ -362,6 +364,9 @@ class WebRTCTransport(
 
     fun currentRelayInUse(): Boolean = relayInUse
 
+    /** currentObservedPath 返回 selected candidate pair 已确认的路径；stats 尚未形成时保持 null。 */
+    fun currentObservedPath(): ObservedPath? = observedPath
+
     /**
      * readPathQualitySample 读取 selected candidate pair 的脱敏累计 stats。
      * 返回值不包含 local/remote address、SDP、DataChannel payload、terminal 或 credential；stats 未就绪时返回 null。
@@ -422,6 +427,7 @@ class WebRTCTransport(
                     networkClass = networkClass,
                 )
                 latestQualitySample = sample
+                this.observedPath = observedPath
                 relayInUse = observedPath == ObservedPath.SINGLE_RELAY
             } catch (e: Exception) {
                 Log.w(TAG, "quality stats unavailable [$machineId]", e)
@@ -491,6 +497,7 @@ class WebRTCTransport(
                     val remoteType = result.optString("remoteCandidateType", "")
                     val type = if (localType == "relay" || remoteType == "relay") "relay" else "p2p"
                     result.put("type", type)
+                    observedPath = if (type == "relay") ObservedPath.SINGLE_RELAY else ObservedPath.DIRECT
                     relayInUse = type == "relay"
                 } else {
                     result.put("type", "unknown")
@@ -542,6 +549,7 @@ class WebRTCTransport(
         try { pc?.close() } catch (_: Exception) {}
         pc = null
         latestQualitySample = null
+        observedPath = null
         isConnected = false
         disconnectedAt = 0L
         relayInUse = false

@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/lozzow/termx/termx-shared/cloudcompanion"
 	"github.com/lozzow/termx/termx-shared/connection"
 )
 
@@ -120,17 +121,19 @@ type EndpointItem struct {
 	RelayMode         string
 	// ObservedPath 是当前 managed WebRTC session 的 direct/single_relay/relay_mesh 投影。
 	// registry reload 不提供该值；断线或新 session 会由 endpoint runtime event 更新。
-	ObservedPath      string
-	Status            EndpointStatusKind
-	LastError         string
-	LastErrorKind     EndpointErrorKind
-	TerminalCount     int
-	ReconnectRequired bool
-	Unregistered      bool
-	DefaultCommand    []string
-	DefaultCWD        string
-	DefaultsLoaded    bool
-	DefaultsError     string
+	ObservedPath string
+	// RouteSelectionReason 是当前 SmartRoute session 的稳定公开原因；非 SmartRoute endpoint 保持为空。
+	RouteSelectionReason string
+	Status               EndpointStatusKind
+	LastError            string
+	LastErrorKind        EndpointErrorKind
+	TerminalCount        int
+	ReconnectRequired    bool
+	Unregistered         bool
+	DefaultCommand       []string
+	DefaultCWD           string
+	DefaultsLoaded       bool
+	DefaultsError        string
 }
 
 // EndpointStore 是 TUI/client 侧 endpoint registry 与运行时连接状态的 reducer-owned 投影。
@@ -178,6 +181,7 @@ func (store EndpointStore) ApplyConnectionRegistry(registry connection.Registry)
 			item.TerminalCount = previous.TerminalCount
 			item.ReconnectRequired = previous.ReconnectRequired || previous.RequiresReconnect(item)
 			item.ObservedPath = previous.ObservedPath
+			item.RouteSelectionReason = previous.RouteSelectionReason
 			item.DefaultCommand = append([]string(nil), previous.DefaultCommand...)
 			item.DefaultCWD = previous.DefaultCWD
 			item.DefaultsLoaded = previous.DefaultsLoaded
@@ -313,9 +317,9 @@ func (store EndpointStore) MarkRuntimeStatus(endpointID EndpointID, status Endpo
 	return store.Upsert(item)
 }
 
-// MarkObservedPath 更新单个 managed endpoint 的实际 WebRTC 路径。
-// 空值会清除旧 session 路径；该方法不改变连接状态、terminal count 或授权结果。
-func (store EndpointStore) MarkObservedPath(endpointID EndpointID, observedPath string) EndpointStore {
+// MarkManagedRoute 原子更新单个 managed endpoint 的实际 WebRTC 路径和 SmartRoute 原因。
+// 空路径会同时清除旧原因；非法组合保持原状态，避免 renderer 看到新路径和旧诊断混合。
+func (store EndpointStore) MarkManagedRoute(endpointID EndpointID, observedPath, selectionReason string) EndpointStore {
 	endpointID = NormalizeEndpointID(endpointID)
 	item, ok := store.DisplayEndpoint(endpointID)
 	if !ok {
@@ -323,10 +327,17 @@ func (store EndpointStore) MarkObservedPath(endpointID EndpointID, observedPath 
 	}
 	switch observedPath = strings.TrimSpace(observedPath); observedPath {
 	case "", "direct", "single_relay", "relay_mesh":
-		item.ObservedPath = observedPath
 	default:
 		return store
 	}
+	selectionReason = strings.TrimSpace(selectionReason)
+	if observedPath == "" {
+		selectionReason = ""
+	} else if selectionReason != "" && !cloudcompanion.IsKnownRouteSelectionReason(cloudcompanion.RouteSelectionReason(selectionReason)) {
+		return store
+	}
+	item.ObservedPath = observedPath
+	item.RouteSelectionReason = selectionReason
 	return store.Upsert(item)
 }
 

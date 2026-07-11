@@ -221,4 +221,12 @@ private class RecordingCloudAdapter : ManagedCloudAdapter {
     override suspend fun reportPathQuality(summary: ManagedPathQualitySummary) {
         synchronized(qualityReports) { qualityReports += summary }
     }
+
+    override suspend fun planManagedRoute(
+        spec: ManagedEndpointSpec,
+        resolution: ManagedEndpointResolution,
+        policy: ManagedDialPolicy,
+    ): ManagedRoutePlan {
+        throw ManagedEndpointFailure("protocol", "unexpected route planning")
+    }
 }

@@ -78,24 +78,25 @@ func TestEndpointRuntimeStatusMarksPanesWithoutGlobalToast(t *testing.T) {
 	}
 }
 
-func TestEndpointRuntimeStatusStoresAndClearsManagedObservedPath(t *testing.T) {
+func TestEndpointRuntimeStatusStoresAndClearsManagedRouteProjection(t *testing.T) {
 	root := state.Root{Endpoints: (state.EndpointStore{}).Upsert(state.EndpointItem{
 		ID: "studio", Label: "Studio", Transport: state.EndpointTransportHubP2P,
 		ConnectMode: state.EndpointConnectOnDemand, Enabled: true,
 	})}
 	reducer := NewEndpointStatusReducer(LiveDeps{})
 	connected, _ := reducer(root, EndpointRuntimeStatusMsg{Event: services.EndpointRuntimeEvent{
-		EndpointID: "studio", Status: state.EndpointStatusConnected, ObservedPath: "relay_mesh",
+		EndpointID: "studio", Status: state.EndpointStatusConnected, ObservedPath: "single_relay",
+		RouteSelectionReason: "lower_loss",
 	}})
 	studio, ok := connected.Endpoints.Endpoint("studio")
-	if !ok || studio.ObservedPath != "relay_mesh" || studio.DisplayStatus() != state.EndpointStatusConnected {
+	if !ok || studio.ObservedPath != "single_relay" || studio.RouteSelectionReason != "lower_loss" || studio.DisplayStatus() != state.EndpointStatusConnected {
 		t.Fatalf("connected managed path not stored: %#v ok=%v", studio, ok)
 	}
 	offline, _ := reducer(connected, EndpointRuntimeStatusMsg{Event: services.EndpointRuntimeEvent{
 		EndpointID: "studio", Status: state.EndpointStatusOffline, Err: errors.New("route closed"),
 	}})
 	studio, ok = offline.Endpoints.Endpoint("studio")
-	if !ok || studio.ObservedPath != "" || studio.DisplayStatus() != state.EndpointStatusOffline {
+	if !ok || studio.ObservedPath != "" || studio.RouteSelectionReason != "" || studio.DisplayStatus() != state.EndpointStatusOffline {
 		t.Fatalf("offline managed path not cleared: %#v ok=%v", studio, ok)
 	}
 }

@@ -1,6 +1,6 @@
 // Package cloudservice 定义 desktop companion 到私有 Control Plane 与 Hub 的网络 adapter 边界。
 //
-// Adapter 只传递账号 authorization、设备公开 proof、SDP/ICE、Relay lease 和质量摘要；
+// Adapter 只传递账号 authorization、设备公开 proof、SDP/ICE、Relay lease、route plan 和质量摘要；
 // 不允许出现 DeviceIdentity 私钥、CapabilityGrant、DataChannel 或 terminal protocol payload。
 package cloudservice
 
@@ -74,6 +74,8 @@ type ControlPlaneAdapter interface {
 	AcquireDaemonAnswerAdmission(context.Context, session.Authorization, string, *cloudpb.CompleteSignalingOfferRequest) (HubAdmission, error)
 	// AcquireRelayLease 根据当前 entitlement 获取 caller-specific 短期 Relay lease 和 route plan。
 	AcquireRelayLease(context.Context, session.Authorization, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
+	// PlanManagedRoute 获取不含私有 score/cost 的 direct/single-relay SmartRoute 计划。
+	PlanManagedRoute(context.Context, session.Authorization, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error)
 	// ReportPathQuality 转发不含 payload 和 terminal identity 的聚合质量摘要。
 	ReportPathQuality(context.Context, session.Authorization, *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error)
 	// ReportConnectionOutcome 转发 managed connection 的稳定路径结果。

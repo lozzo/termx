@@ -96,9 +96,11 @@ class ConnectionStoreManager(
     fun allMachineIds(): Set<String> = stores.keys.toSet()
 
     fun getConnectionInfo(machineId: String?): JSONObject {
-        val transport = if (machineId != null) findTransportForMachine(machineId)
-        else findConnectedTransport()
-        return transport?.getConnectionInfo() ?: JSONObject().put("type", "unknown")
+        val store = if (machineId != null) stores[machineId]
+        else stores.values.firstOrNull { it.phase is ConnectionStore.Phase.Connected }
+        val info = store?.transport?.getConnectionInfo() ?: JSONObject().put("type", "unknown")
+        store?.currentRouteSelectionReason()?.let { info.put("routeSelectionReason", it) }
+        return info
     }
 
     // ─── NetworkStateManager.Listener ────────────────────────────────────────

@@ -29,6 +29,13 @@ interface ManagedCloudAdapter {
         policy: ManagedDialPolicy,
     ): ManagedSignalAnswer
 
+    /** planManagedRoute 返回显式 smart_route 的短期 direct/single-relay ICE 计划。 */
+    suspend fun planManagedRoute(
+        spec: ManagedEndpointSpec,
+        resolution: ManagedEndpointResolution,
+        policy: ManagedDialPolicy,
+    ): ManagedRoutePlan
+
     /** reportPathQuality 转发 GA001A v2 脱敏窗口；实现不得据此自动改路或请求新 lease。 */
     suspend fun reportPathQuality(summary: ManagedPathQualitySummary)
 }
@@ -62,6 +69,14 @@ class CommunityCloudAdapter : ManagedCloudAdapter {
     }
 
     override suspend fun reportPathQuality(summary: ManagedPathQualitySummary) {
+        throw ManagedEndpointFailure("companion_missing", "Official managed cloud module is not installed")
+    }
+
+    override suspend fun planManagedRoute(
+        spec: ManagedEndpointSpec,
+        resolution: ManagedEndpointResolution,
+        policy: ManagedDialPolicy,
+    ): ManagedRoutePlan {
         throw ManagedEndpointFailure("companion_missing", "Official managed cloud module is not installed")
     }
 }

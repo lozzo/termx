@@ -57,31 +57,33 @@ type TerminalPoolPageItem struct {
 // EndpointPickerGroup 是 terminal picker 的 endpoint 分组 view-model。
 // Header 字段来自 EndpointStore；TerminalRows 只包含该 endpoint 下通过当前搜索过滤的 terminal 行。
 type EndpointPickerGroup struct {
-	EndpointID          EndpointID
-	Label               string
-	Transport           EndpointTransportKind
-	ObservedPath        string
-	ConnectMode         EndpointConnectMode
-	Status              EndpointStatusKind
-	LastError           string
-	ErrorKind           EndpointErrorKind
-	Configured          bool
-	TerminalCount       int
-	VisibleTerminalRows []TerminalPickerItem
+	EndpointID           EndpointID
+	Label                string
+	Transport            EndpointTransportKind
+	ObservedPath         string
+	RouteSelectionReason string
+	ConnectMode          EndpointConnectMode
+	Status               EndpointStatusKind
+	LastError            string
+	ErrorKind            EndpointErrorKind
+	Configured           bool
+	TerminalCount        int
+	VisibleTerminalRows  []TerminalPickerItem
 }
 
 // TerminalPoolPageGroup 是 Terminal Manager 列表的 endpoint 分组 view-model。
 // 它让 renderer 能展示 endpoint header，同时 action/selection 仍以 TerminalPoolPageItem 的 flat index 回到 app 层。
 type TerminalPoolPageGroup struct {
-	EndpointID          EndpointID
-	Label               string
-	Transport           EndpointTransportKind
-	ObservedPath        string
-	ConnectMode         EndpointConnectMode
-	Status              EndpointStatusKind
-	LastError           string
-	ErrorKind           EndpointErrorKind
-	Configured          bool
-	TerminalCount       int
-	VisibleTerminalRows []TerminalPoolPageItem
+	EndpointID           EndpointID
+	Label                string
+	Transport            EndpointTransportKind
+	ObservedPath         string
+	RouteSelectionReason string
+	ConnectMode          EndpointConnectMode
+	Status               EndpointStatusKind
+	LastError            string
+	ErrorKind            EndpointErrorKind
+	Configured           bool
+	TerminalCount        int
+	VisibleTerminalRows  []TerminalPoolPageItem
 }

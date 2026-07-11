@@ -8,6 +8,24 @@ export type ObservedPath = 'direct' | 'single_relay' | 'relay_mesh'
 
 export const OBSERVED_PATHS = ['direct', 'single_relay', 'relay_mesh'] as const satisfies readonly ObservedPath[]
 
+export const ROUTE_SELECTION_REASONS = [
+  'initial_best',
+  'only_viable',
+  'lower_loss',
+  'direct_unstable',
+  'lower_latency',
+  'lower_score',
+  'cost_guard',
+  'minimum_hold',
+  'cooldown',
+  'hysteresis_hold',
+  'insufficient_improvement',
+  'current_unavailable',
+  'current_best',
+] as const
+
+export type RouteSelectionReason = (typeof ROUTE_SELECTION_REASONS)[number]
+
 export type RemoteRuntimeFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 export interface RemoteRuntimeStorage {
@@ -67,6 +85,7 @@ export interface RtcConnectionStateSnapshot {
   phase: RtcConnectionPhase
   path?: ConnectionPath | undefined
   observedPath?: ObservedPath | undefined
+  routeSelectionReason?: RouteSelectionReason | undefined
   statusText: string
   relayInUse: boolean
   failReason?: string | undefined
@@ -80,6 +99,7 @@ export interface RtcEvent {
 export interface ConnectionInfo {
   path: ConnectionPath
   observedPath?: ObservedPath | undefined
+  routeSelectionReason?: RouteSelectionReason | undefined
   connectionId: string
   machineId: string
   terminalId?: string

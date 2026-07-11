@@ -79,6 +79,24 @@ enum RoutePreference {
   ROUTE_PREFERENCE_GLOBAL_ACCELERATOR = 4;
 }
 
+// RouteSelectionReason 是公开诊断可见的稳定选路原因，不暴露私有评分权重或商业成本。
+enum RouteSelectionReason {
+  ROUTE_SELECTION_REASON_UNSPECIFIED = 0;
+  ROUTE_SELECTION_REASON_INITIAL_BEST = 1;
+  ROUTE_SELECTION_REASON_ONLY_VIABLE = 2;
+  ROUTE_SELECTION_REASON_LOWER_LOSS = 3;
+  ROUTE_SELECTION_REASON_DIRECT_UNSTABLE = 4;
+  ROUTE_SELECTION_REASON_LOWER_LATENCY = 5;
+  ROUTE_SELECTION_REASON_LOWER_SCORE = 6;
+  ROUTE_SELECTION_REASON_COST_GUARD = 7;
+  ROUTE_SELECTION_REASON_MINIMUM_HOLD = 8;
+  ROUTE_SELECTION_REASON_COOLDOWN = 9;
+  ROUTE_SELECTION_REASON_HYSTERESIS_HOLD = 10;
+  ROUTE_SELECTION_REASON_INSUFFICIENT_IMPROVEMENT = 11;
+  ROUTE_SELECTION_REASON_CURRENT_UNAVAILABLE = 12;
+  ROUTE_SELECTION_REASON_CURRENT_BEST = 13;
+}
+
 // LoginMethod 是 Companion 支持的官方账号登录交互方式。
 enum LoginMethod {
   LOGIN_METHOD_UNSPECIFIED = 0;
@@ -395,6 +413,29 @@ message RelayLease {
   repeated IceServer ice_servers = 10;
 }
 
+// PlanManagedRouteRequest 请求同一 managed endpoint 的 direct/single-relay SmartRoute 计划。
+// 候选质量、成本预算、entitlement 和内部权重属于私有服务，不由公开 caller 提交。
+message PlanManagedRouteRequest {
+  string endpoint_id = 1;
+  string managed_session_id = 2;
+  string target_device_id = 3;
+  RoutePreference route_preference = 4;
+}
+
+// ManagedRoutePlan 是公开 WebRTC primitive 可以执行的最小 ICE 计划。
+// 它只返回选中路径、稳定原因和短期 ICE 配置，不返回候选分数、成本或内部权重。
+message ManagedRoutePlan {
+  string plan_id = 1;
+  string managed_session_id = 2;
+  string target_device_id = 3;
+  ObservedPath selected_path = 4;
+  RouteSelectionReason selection_reason = 5;
+  uint64 valid_until_unix = 6;
+  repeated IceServer ice_servers = 7;
+  bool relay_only = 8;
+  string relay_region = 9;
+}
+
 // PathQualitySummary 是公开进程基于 WebRTC transport stats 形成的脱敏质量窗口。
 // 成本由私有服务关联可信 usage 计算，不能由公开 caller 填写。
 message PathQualitySummary {
@@ -486,6 +527,7 @@ message IPCRequest {
     ReportConnectionOutcomeRequest report_connection_outcome = 25;
     IPCCloseStreamRequest close_stream = 26;
     IPCCancelRequest cancel = 27;
+    PlanManagedRouteRequest plan_managed_route = 28;
   }
 }
 
@@ -515,5 +557,6 @@ message IPCResponse {
     IPCAcknowledgement acknowledgement = 27;
     IPCStreamClosed stream_closed = 28;
     CloudError error = 29;
+    ManagedRoutePlan managed_route_plan = 30;
   }
 }

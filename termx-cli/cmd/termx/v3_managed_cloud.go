@@ -79,8 +79,9 @@ func v3ManagedCloudEndpointDialer() services.EndpointDialer {
 		return services.EndpointServiceBundle{
 			EndpointID: state.EndpointID(cfg.ID), Terminal: terminal, Core: core,
 			Surface: terminal, LiveEvents: terminal, Path: path,
-			ObservedPath: string(session.ObservedPath),
-			Lifecycle:    services.EndpointLifecycle{Done: client.Done(), Err: client.Err},
+			ObservedPath:         string(session.ObservedPath),
+			RouteSelectionReason: string(session.RouteSelectionReason),
+			Lifecycle:            services.EndpointLifecycle{Done: client.Done(), Err: client.Err},
 		}, nil
 	}
 }

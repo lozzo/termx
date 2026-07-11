@@ -424,6 +424,27 @@ func (connection *Connection) AcquireRelayLease(ctx context.Context, request *cl
 	return cloneMessage(response), nil
 }
 
+// PlanManagedRoute 获取受 SmartRoute capability 保护的短期 direct/single-relay ICE 计划。
+// Companion 只转发稳定原因和执行 material；私有 score、成本预算和候选明细不能进入 public IPC。
+func (connection *Connection) PlanManagedRoute(ctx context.Context, request *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
+	authorization, err := connection.authorize(ctx, cloudpb.CompanionCapability_COMPANION_CAPABILITY_SMART_ROUTE, managedRoles...)
+	if err != nil {
+		return nil, err
+	}
+	defer authorization.Destroy()
+	if err := validateManagedRoutePlanRequest(request); err != nil {
+		return nil, err
+	}
+	response, err := connection.service.controlPlane.PlanManagedRoute(ctx, authorization, cloneMessage(request))
+	if err != nil {
+		return nil, sanitizeAdapterError(err)
+	}
+	if err := validateManagedRoutePlanResponse(request, response, connection.service.now()); err != nil {
+		return nil, err
+	}
+	return cloneMessage(response), nil
+}
+
 // ReportPathQuality 转发聚合网络质量窗口。
 // 校验只允许 managed session、路径和统计值，不接受 packet payload、IP 明细或 terminal identity。
 func (connection *Connection) ReportPathQuality(ctx context.Context, request *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error) {

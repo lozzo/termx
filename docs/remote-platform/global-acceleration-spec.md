@@ -186,6 +186,21 @@ Android managed WebRTC 复用 GA001 的同一字段、算法和默认周期，�
 
 移动端公开 DTO 同样没有 cost、terminal、grant、payload、address 或 credential 字段。Official 私有 cloud adapter 只能校验并转发脱敏窗口，Community adapter 稳定 fail closed；可信成本仍由服务端在质量入库后通过 observation reference 异步关联。GA001A 不新增 RelayLease、route score、重连、ICE restart、自动切路或 endpoint state mutation。
 
+### 6.6 GA002 Smart Single Relay 实现基线
+
+GA002 只在显式 `relay_mode: smart_route` 下启用。`auto` 继续表示基础 standard Relay 策略，不能因为安装了 Companion 就自动产生付费选路。私有 Route Planner 是候选、质量、成本和 hysteresis state 的唯一 owner：
+
+- 候选只允许 direct 与 single-relay；`relay_mesh`、多 hop 和任意 transit 在 GA002 一律拒绝。
+- 评分前硬校验质量时效/样本量、可达性、健康、容量、policy、entitlement 和可信成本。未定价 Relay 不等于零成本，必须拒绝；direct 的 `none` 与 Relay 的显式零估价保持不同语义。
+- 整数评分覆盖 latency、loss、jitter、instability、congestion、hop 和 monetary cost；同分确定性优先 direct。
+- session state 有容量和 TTL 上限，并使用 minimum hold、switch cooldown、连续胜出窗口和最小改善幅度防止 route flap；重复提交同一质量窗口不能累计胜出次数。单个候选失败只形成局部诊断，不污染其他候选。
+
+Cloud Companion IPC v3 新增 `PlanManagedRoute`。公开 request 只包含 endpoint、managed session、target device 和 `SMART_ROUTE` preference；公开 response 只包含 plan ID、选中路径、稳定 `selection_reason`、不超过 10 分钟的有效期、选中路径 ICE material、relay-only 标记和 region。score、权重、候选列表、成本预算、terminal、grant 和 payload 都不能进入 IPC。
+
+Go 与 Android 公开客户端都会再次校验 plan/session/target 绑定、有效期、ICE URL/TURN 短凭据和 direct/relay policy；只把 plan 中选中的 ICE material 交给 PeerConnection，并在端到端授权前验证实际 selected candidate path 与计划一致。失败时终止当前 endpoint，不使用 resolution 中未选中的 TURN，也不由公开进程另行申请 RelayLease。TUI 和 App 只投影 `ObservedPath` 与稳定原因。
+
+当前 GA002 的自动选择发生在初次连接或显式重连请求；Planner 的 hysteresis 跨重复计划请求生效。会话内主动 probe、受控 ICE restart、失败后保留当前路径和无中断切换仍属于后续切片，不能把当前实现描述为 live reroute 已完成。Official development adapter 仍因未注入生产 OAuth/TLS、候选源和 lease material issuer 而 fail closed。
+
 ## 7. 选路模型
 
 Route Planner 对候选路径计算可解释评分：
@@ -210,7 +225,7 @@ route_score =
 - 数据驻留、组织策略和区域 deny policy。
 - 预计会话成本是否超过套餐或 session budget。
 
-不在公开协议中固定权重。Route Planner 必须在日志和诊断中返回稳定的 `selection_reason`，例如 `lower_loss`、`direct_unstable`、`region_capacity` 或 `cost_guard`，但不暴露内部商业权重。
+不在公开协议中固定权重。Route Planner 必须在日志和诊断中返回稳定的 `selection_reason`，例如 `lower_loss`、`direct_unstable`、`lower_latency` 或 `cost_guard`，但不暴露内部商业权重。
 
 ## 8. 建连与切换
 
@@ -336,7 +351,7 @@ accelerated_seconds
 - direct 与 Relay 质量竞争。
 - 有 hysteresis 的自动选择和可解释诊断。
 
-这是当前推荐建设目标。
+GA002 已完成初次连接/重连计划、跨请求 hysteresis 和公开诊断基线。主动候选 probe 与会话内 ICE restart 仍需在进入 Phase C 前单独完成，不得用重连伪装无中断切换。
 
 ### Phase C：Dual Edge Pilot
 

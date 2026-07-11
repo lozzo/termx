@@ -27,7 +27,7 @@ func TestV3ManagedEndpointFailsClosedWhenCompanionIsUnavailable(t *testing.T) {
 	}
 }
 
-func TestV3ManagedEndpointPassesSharedIdentityCredentialAndRelayPolicyToRemoteV2(t *testing.T) {
+func TestV3ManagedEndpointPassesSharedIdentityCredentialAndSmartRoutePolicyToRemoteV2(t *testing.T) {
 	previousOpen := openV3CloudCompanion
 	previousDial := dialV3ManagedSession
 	defer func() {
@@ -49,7 +49,7 @@ func TestV3ManagedEndpointPassesSharedIdentityCredentialAndRelayPolicyToRemoteV2
 	cfg := connection.Config{
 		ID: "lab", Label: "Lab", Transport: connection.TransportHubP2P, ConnectMode: connection.ConnectOnDemand, Enabled: true,
 		HubURL: "https://hub.example.com", HubDeviceID: "device-1", DeviceFingerprint: "ed25519-sha256:device-1",
-		GrantRef: "grant-lab", RelayMode: connection.RelayOnly,
+		GrantRef: "grant-lab", RelayMode: connection.RelaySmart,
 	}
 	_, err := v3ManagedCloudEndpointDialer()(context.Background(), cfg)
 	if !errors.Is(err, wantErr) {
@@ -57,7 +57,7 @@ func TestV3ManagedEndpointPassesSharedIdentityCredentialAndRelayPolicyToRemoteV2
 	}
 	if received.Companion != companion || received.EndpointID != "lab" || received.TargetDeviceID != "device-1" ||
 		received.DeviceFingerprint != cfg.DeviceFingerprint || received.CapabilityGrant != "opaque-capability-grant" ||
-		received.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY || !received.RelayOnly ||
+		received.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE || received.RelayOnly ||
 		!received.QualityObservation.Enabled || received.QualityObservation.NetworkClass != "unknown" {
 		t.Fatalf("managed remote-v2 options lost endpoint contract: %#v", received)
 	}

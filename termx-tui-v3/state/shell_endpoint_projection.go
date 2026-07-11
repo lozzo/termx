@@ -120,32 +120,34 @@ func makeEndpointPoolGroups(endpoints EndpointStore, counts map[EndpointID]int) 
 func endpointPickerGroupFromEndpoint(endpoint EndpointItem, terminalCount int, configured bool) EndpointPickerGroup {
 	endpoint = endpoint.withDefaults()
 	return EndpointPickerGroup{
-		EndpointID:    endpoint.ID,
-		Label:         endpoint.DisplayLabel(),
-		Transport:     endpoint.Transport,
-		ObservedPath:  endpoint.ObservedPath,
-		ConnectMode:   endpoint.ConnectMode,
-		Status:        endpoint.DisplayStatus(),
-		LastError:     endpoint.LastError,
-		ErrorKind:     endpoint.LastErrorKind,
-		Configured:    configured && !endpoint.Unregistered,
-		TerminalCount: terminalCount,
+		EndpointID:           endpoint.ID,
+		Label:                endpoint.DisplayLabel(),
+		Transport:            endpoint.Transport,
+		ObservedPath:         endpoint.ObservedPath,
+		RouteSelectionReason: endpoint.RouteSelectionReason,
+		ConnectMode:          endpoint.ConnectMode,
+		Status:               endpoint.DisplayStatus(),
+		LastError:            endpoint.LastError,
+		ErrorKind:            endpoint.LastErrorKind,
+		Configured:           configured && !endpoint.Unregistered,
+		TerminalCount:        terminalCount,
 	}
 }
 
 func endpointPoolGroupFromEndpoint(endpoint EndpointItem, terminalCount int, configured bool) TerminalPoolPageGroup {
 	endpoint = endpoint.withDefaults()
 	return TerminalPoolPageGroup{
-		EndpointID:    endpoint.ID,
-		Label:         endpoint.DisplayLabel(),
-		Transport:     endpoint.Transport,
-		ObservedPath:  endpoint.ObservedPath,
-		ConnectMode:   endpoint.ConnectMode,
-		Status:        endpoint.DisplayStatus(),
-		LastError:     endpoint.LastError,
-		ErrorKind:     endpoint.LastErrorKind,
-		Configured:    configured && !endpoint.Unregistered,
-		TerminalCount: terminalCount,
+		EndpointID:           endpoint.ID,
+		Label:                endpoint.DisplayLabel(),
+		Transport:            endpoint.Transport,
+		ObservedPath:         endpoint.ObservedPath,
+		RouteSelectionReason: endpoint.RouteSelectionReason,
+		ConnectMode:          endpoint.ConnectMode,
+		Status:               endpoint.DisplayStatus(),
+		LastError:            endpoint.LastError,
+		ErrorKind:            endpoint.LastErrorKind,
+		Configured:           configured && !endpoint.Unregistered,
+		TerminalCount:        terminalCount,
 	}
 }
 

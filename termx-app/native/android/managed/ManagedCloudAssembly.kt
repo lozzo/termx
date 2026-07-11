@@ -47,4 +47,12 @@ private class BrokenOfficialCloudAdapter(private val detail: String) : ManagedCl
     override suspend fun reportPathQuality(summary: ManagedPathQualitySummary) {
         throw ManagedEndpointFailure("companion_untrusted", detail)
     }
+
+    override suspend fun planManagedRoute(
+        spec: ManagedEndpointSpec,
+        resolution: ManagedEndpointResolution,
+        policy: ManagedDialPolicy,
+    ): ManagedRoutePlan {
+        throw ManagedEndpointFailure("companion_untrusted", detail)
+    }
 }

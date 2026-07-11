@@ -249,7 +249,10 @@ func TestEndpointManagerLazilyDialsHubP2PTransport(t *testing.T) {
 			if cfg.ID != "studio" || cfg.HubURL != "https://hub.example.com" || cfg.HubDeviceID != "device_ed25519:studio" || cfg.DeviceFingerprint != "SHA256:studio" || cfg.GrantRef != "grant:studio" || cfg.RelayMode != connection.RelayAuto {
 				t.Fatalf("unexpected hub config %#v", cfg)
 			}
-			return EndpointServiceBundle{EndpointID: "studio", Terminal: hubTerminal, ObservedPath: "single_relay"}, nil
+			return EndpointServiceBundle{
+				EndpointID: "studio", Terminal: hubTerminal, ObservedPath: "single_relay",
+				RouteSelectionReason: "direct_unstable",
+			}, nil
 		},
 	})
 	events, err := manager.WatchEndpointEvents(context.Background())
@@ -272,7 +275,7 @@ func TestEndpointManagerLazilyDialsHubP2PTransport(t *testing.T) {
 	}
 	select {
 	case event := <-events:
-		if event.EndpointID != "studio" || event.Status != state.EndpointStatusConnected || event.ObservedPath != "single_relay" {
+		if event.EndpointID != "studio" || event.Status != state.EndpointStatusConnected || event.ObservedPath != "single_relay" || event.RouteSelectionReason != "direct_unstable" {
 			t.Fatalf("unexpected managed endpoint connected event %#v", event)
 		}
 	case <-time.After(time.Second):

@@ -36,11 +36,12 @@ type DialOptions struct {
 }
 
 // Session 是已完成设备证明和 capability handshake 的 managed WebRTC 连接结果。
-// Transport 承载标准 termx protocol；ObservedPath 只描述本次 ICE candidate path，不改变 endpoint identity 或授权 scope。
+// Transport 承载标准 termx protocol；ObservedPath 与 RouteSelectionReason 只投影当前 ICE 路径，不改变 endpoint identity 或授权 scope。
 type Session struct {
-	Transport       transport.Transport
-	ObservedPath    cloudcompanion.Path
-	ObservationDone <-chan struct{}
+	Transport            transport.Transport
+	ObservedPath         cloudcompanion.Path
+	RouteSelectionReason cloudcompanion.RouteSelectionReason
+	ObservationDone      <-chan struct{}
 }
 
 // DialSession 建立 managed WebRTC session，并返回公开客户端可展示的实际网络路径。
@@ -51,12 +52,14 @@ func DialSession(ctx context.Context, options DialOptions) (Session, error) {
 		return Session{}, err
 	}
 	path := cloudcompanion.PathUnknown
+	reason := cloudcompanion.RouteSelectionReason("")
 	var observationDone <-chan struct{}
 	if peer, ok := protocolTransport.(*peerTransport); ok {
 		path = observedPath(peer.peer)
+		reason = peer.selectionReason
 		observationDone = peer.observationDone
 	}
-	return Session{Transport: protocolTransport, ObservedPath: path, ObservationDone: observationDone}, nil
+	return Session{Transport: protocolTransport, ObservedPath: path, RouteSelectionReason: reason, ObservationDone: observationDone}, nil
 }
 
 // Dial 先本地验证 capability 绑定，再通过 Companion 协商 WebRTC，并在 DataChannel 内完成端到端授权。
@@ -97,7 +100,11 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 	if resolved.GetTargetDeviceId() != "" && strings.TrimSpace(resolved.GetTargetDeviceId()) != targetDeviceID {
 		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Cloud Companion resolved a different target device")
 	}
-	configuration, err := peerConfiguration(resolved.GetIceServers(), options.RoutePreference, options.RelayOnly)
+	route, err := resolveDialRoute(ctx, options, endpointID, targetDeviceID, resolved)
+	if err != nil {
+		return nil, err
+	}
+	configuration, err := peerConfiguration(route.iceServers, route.preference, route.relayOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +118,7 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 		return nil, fmt.Errorf("create managed endpoint protocol data channel: %w", err)
 	}
 	// DataChannel 一创建就注册 message/close handler，避免 daemon 在 OnOpen 立即发送的 DeviceHello 早于 client Recv 注册而丢失。
-	secured := newPeerTransport(datachannel.New(remotev2webrtc.NewChannel(channel)), peer)
+	secured := newPeerTransport(datachannel.New(remotev2webrtc.NewChannel(channel)), peer, route.selectionReason)
 	opened := make(chan struct{})
 	channel.OnOpen(func() { close(opened) })
 	offer, err := peer.CreateOffer(nil)
@@ -171,6 +178,13 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 		_ = secured.Close()
 		return nil, ctx.Err()
 	case <-opened:
+	}
+	if route.expectedPath != cloudcompanion.PathUnknown {
+		actualPath := observedPath(peer)
+		if actualPath != route.expectedPath {
+			_ = secured.Close()
+			return nil, routePlanProtocolError(fmt.Sprintf("managed route plan selected %q but ICE established %q", route.expectedPath, actualPath))
+		}
 	}
 	dtlsFingerprint, err := remotev2webrtc.RemoteCertificateFingerprint(peer)
 	if err != nil {
@@ -327,6 +341,7 @@ func toPionCandidate(candidate *cloudpb.IceCandidate) pion.ICECandidateInit {
 type peerTransport struct {
 	transport.Transport
 	peer             *pion.PeerConnection
+	selectionReason  cloudcompanion.RouteSelectionReason
 	observationDone  chan struct{}
 	closeRequested   chan struct{}
 	lifecycleMu      sync.Mutex
@@ -335,8 +350,11 @@ type peerTransport struct {
 	finishOnce       sync.Once
 }
 
-func newPeerTransport(protocolTransport transport.Transport, peer *pion.PeerConnection) *peerTransport {
-	return &peerTransport{Transport: protocolTransport, peer: peer, observationDone: make(chan struct{}), closeRequested: make(chan struct{})}
+func newPeerTransport(protocolTransport transport.Transport, peer *pion.PeerConnection, selectionReason cloudcompanion.RouteSelectionReason) *peerTransport {
+	return &peerTransport{
+		Transport: protocolTransport, peer: peer, selectionReason: selectionReason,
+		observationDone: make(chan struct{}), closeRequested: make(chan struct{}),
+	}
 }
 
 func (connection *peerTransport) startLifecycle(reporter *qualityReporter) {

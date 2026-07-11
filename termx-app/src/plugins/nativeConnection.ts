@@ -1,12 +1,15 @@
 import { registerPlugin } from '@capacitor/core'
 import type { Plugin, PluginListenerHandle } from '@capacitor/core'
+import type { RouteSelectionReason } from '@termx/remote-ui'
+
+export type NativeRelayMode = 'auto' | 'direct' | 'relay_only' | 'smart_route'
 
 export interface NativeConnectOpts {
   endpointId: string
   targetDeviceId: string
   deviceFingerprint: string
   grantRef: string
-  relayMode: 'auto' | 'direct' | 'relay_only'
+  relayMode: NativeRelayMode
 }
 
 export interface NativeConnectionSnapshot {
@@ -15,9 +18,10 @@ export interface NativeConnectionSnapshot {
   phase: 'idle' | 'resolving' | 'signaling' | 'connecting' | 'authorizing' | 'connected' | 'verifying' | 'reconnecting' | 'waiting_network' | 'failed'
   path: 'hub' | null
   observedPath: 'direct' | 'single_relay' | 'relay_mesh' | null
+  routeSelectionReason?: RouteSelectionReason
   statusText: string
   relayInUse: boolean
-  relayMode: 'auto' | 'direct' | 'relay_only'
+  relayMode: NativeRelayMode
   version?: number
   failReason?: string
 }
@@ -30,6 +34,7 @@ export interface NativeConnectionInfo {
   remoteCandidateType?: string
   rtt?: number
   relayInUse?: boolean
+  routeSelectionReason?: RouteSelectionReason
 }
 
 export interface NativeTransferSnapshotItem {
@@ -73,9 +78,10 @@ export interface NativeStateChangeEvent {
   phase: string
   path: string | null
   observedPath: 'direct' | 'single_relay' | 'relay_mesh' | null
+  routeSelectionReason?: RouteSelectionReason
   statusText: string
   relayInUse: boolean
-  relayMode: 'auto' | 'direct' | 'relay_only'
+  relayMode: NativeRelayMode
   version?: number
   failReason?: string
 }

@@ -34,7 +34,8 @@ enum class ObservedPath(val wireName: String) {
 enum class RelayMode(val wireName: String) {
     AUTO("auto"),
     DIRECT("direct"),
-    RELAY_ONLY("relay_only");
+    RELAY_ONLY("relay_only"),
+    SMART_ROUTE("smart_route");
 
     companion object {
         /** fromWire 严格解析 registry 值；未知值不能回退为 auto。 */
@@ -66,5 +67,6 @@ object ManagedEndpointContract {
         RelayMode.AUTO -> ManagedDialPolicy("standard_relay", false)
         RelayMode.DIRECT -> ManagedDialPolicy("direct_only", false)
         RelayMode.RELAY_ONLY -> ManagedDialPolicy("standard_relay", true)
+        RelayMode.SMART_ROUTE -> ManagedDialPolicy("smart_route", false)
     }
 }

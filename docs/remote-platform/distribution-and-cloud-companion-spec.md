@@ -196,13 +196,14 @@ ReceiveSignalingEvents(signaling session) -> answer/candidate/error stream
 CloseSignalingSession(session, reason) -> ack
 AcquireRelayLease(session, route preference) -> lease + caller-specific credential
 RefreshRelayLease(lease id) -> lease + caller-specific credential
+PlanManagedRoute(endpoint, managed session, target, smart preference) -> selected ICE plan + stable reason
 ReportPathQuality(session, redacted summary) -> ack
 ReportConnectionOutcome(session, path, stable error class) -> ack
 ```
 
 Companion 可以在内部持有 admission ticket，但公开 adapter 仍必须得到足够的稳定 metadata 和错误语义完成 endpoint 状态机。
 
-GA001 起质量窗口使用 Companion IPC v2：公开进程只提交 RTT P50/P95、jitter、loss estimate、throughput、connected/disconnect summary 和匿名网络 taxonomy。Companion 只校验并转发；质量窗口先进入私有 Probe Aggregator，稍后结算的可信 Relay usage 与 provider cost rate 再按 observation reference 异步关联，未定价不能伪装成零成本，也不能由公开 IPC caller 提交。质量上报失败不得请求新 RelayLease、重建 endpoint 或触发 transport fallback。
+GA001 引入的质量窗口使用 Companion IPC v2：公开进程只提交 RTT P50/P95、jitter、loss estimate、throughput、connected/disconnect summary 和匿名网络 taxonomy。GA002 因新增 `PlanManagedRoute` operation 将当前 min/max protocol 提升到 v3，v2 companion 必须在 Hello 阶段明确不兼容。计划 response 只允许选中路径、稳定原因、短期 ICE material 和 region；候选 score、成本、权重、terminal/grant/payload 禁止进入 IPC。质量上报失败不得请求新 RelayLease、重建 endpoint 或触发 transport fallback。
 
 ### 5.5 Streaming、cancel 与背压
 
@@ -370,6 +371,8 @@ Official init script 只把固定 `com.termx.cloud.OfficialManagedCloudFactory` 
 
 GA001A 后，Android 公开层还拥有 selected candidate pair stats 采样、质量窗口聚合和 `ManagedPathQualitySummary` 隐私校验；Official 私有模块只实现 `reportPathQuality` 转发，不能接收原始 stats、候选地址、grant、terminal 数据或成本输入。Go 与 Android 从 `termx-shared/cloudcompanion/testdata/path_quality_contract.json` 读取同一 v2 fixture；Community/Official 都必须通过相同窗口测试和 APK class 边界检查。质量上报错误只丢 telemetry，不参与连接成功、transport close、重连或 route selection。
 
+GA002 后，Android 在显式 `smart_route` 下通过 Official 私有模块请求与桌面 v3 contract 同语义的 `ManagedRoutePlan`，公开 `ManagedWebRTCConnector` 负责 plan 绑定/TTL/ICE policy 校验、PeerConnection 执行和实际路径核对。选择原因进入 native snapshot 与共享 connection info；Community module、损坏 official module 和未配置 development gateway 继续 fail closed。App 默认仍是 `auto`，只有 pairing/config storage 明确写入 `smart_route` 才启用付费计划。
+
 ### 9.3 托管服务端
 
 Control Plane、Web Controller、Hub、Relay 和 Route Planner 不随 `termx cloud install` 下发。它们由 TermX 运维部署。
@@ -497,6 +500,13 @@ out-of-process IPC 是清晰的工程边界，但不自动构成法律结论。�
 - reporter 只在端到端授权成功后启动，并在 PeerConnection 关闭前使用非阻塞缓存样本收尾。
 - `ManagedCloudAdapter.reportPathQuality` 是唯一移动 cloud 上报入口；Community 缺失与 Official 未登录都保持 endpoint 局部 fail closed。
 - Community/Official 构建继续共用公开 App 源码，只有 Official APK 包含固定私有 factory；两者都不因 telemetry 获得自动改路能力。
+
+### GA002：SmartRoute single-relay 计划
+
+- Companion IPC v3 增加 capability-gated `PlanManagedRoute`，旧 v2 binary 在激活握手阶段 fail closed。
+- 私有 Route Planner 在 direct 与受限 single-relay 候选中执行质量/成本硬约束、评分和有界 hysteresis，只为最终候选签发 ICE material。
+- Go、Android 和 TUI 共用稳定 route preference、plan 字段、observed path 与 selection reason contract；公开客户端拒绝 mesh、过期计划和路径/ICE 混淆。
+- 当前只覆盖初次连接和重连计划，不包含会话内 ICE restart、Relay Mesh 或生产 OAuth/TLS/真实节点装配。
 
 ### LIC001：发布许可证门禁
 

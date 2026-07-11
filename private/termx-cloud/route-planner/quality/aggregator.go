@@ -115,6 +115,7 @@ type Baseline struct {
 	Series                  SeriesKey
 	WindowCount             uint64
 	SampleCount             uint64
+	LatestWindowEndedAt     time.Time
 	MeanWindowRTTP50Millis  uint64
 	MeanWindowRTTP95Millis  uint64
 	MeanWindowJitterMillis  uint64
@@ -333,6 +334,9 @@ func (aggregator *Aggregator) Baseline(key SeriesKey, observedAt time.Time) (Bas
 	var packets uint64
 	for _, record := range records {
 		window := record.Window
+		if window.EndedAt.After(baseline.LatestWindowEndedAt) {
+			baseline.LatestWindowEndedAt = window.EndedAt
+		}
 		weight := uint64(window.SampleCount)
 		baseline.SampleCount = saturatingAdd(baseline.SampleCount, weight)
 		weightedP50 = saturatingAdd(weightedP50, saturatingMultiply(uint64(window.RTTP50.Milliseconds()), weight))

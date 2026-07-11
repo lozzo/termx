@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "transport": "hub-p2p",
   "phases": [
     "idle",
@@ -18,8 +18,36 @@
   "relay_policies": [
     {"relay_mode": "auto", "route_preference": "standard_relay", "relay_only": false},
     {"relay_mode": "direct", "route_preference": "direct_only", "relay_only": false},
-    {"relay_mode": "relay_only", "route_preference": "standard_relay", "relay_only": true}
+    {"relay_mode": "relay_only", "route_preference": "standard_relay", "relay_only": true},
+    {"relay_mode": "smart_route", "route_preference": "smart_route", "relay_only": false}
   ],
+  "route_selection_reasons": [
+    "initial_best",
+    "only_viable",
+    "lower_loss",
+    "direct_unstable",
+    "lower_latency",
+    "lower_score",
+    "cost_guard",
+    "minimum_hold",
+    "cooldown",
+    "hysteresis_hold",
+    "insufficient_improvement",
+    "current_unavailable",
+    "current_best"
+  ],
+  "route_plan_fields": [
+    "plan_id",
+    "managed_session_id",
+    "target_device_id",
+    "selected_path",
+    "selection_reason",
+    "valid_until_unix",
+    "ice_servers",
+    "relay_only",
+    "relay_region"
+  ],
+  "forbidden_route_plan_fragments": ["cost", "score", "weight", "terminal", "grant", "payload"],
   "cloud_errors": [
     "companion_missing",
     "companion_not_running",

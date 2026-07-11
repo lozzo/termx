@@ -1214,6 +1214,7 @@ export class NativeRtcSession implements ManagedRtcSession {
     return {
       path: this.path,
       observedPath: relayInUse ? 'single_relay' : 'direct',
+      ...(nativeInfo?.routeSelectionReason ? { routeSelectionReason: nativeInfo.routeSelectionReason } : {}),
       connectionId: this.connectionId,
       machineId: this.machineId,
       relayInUse,
@@ -1571,6 +1572,7 @@ function normalizeNativeConnectionState(data: NativeConnectionSnapshot | NativeS
     phase: normalizeNativePhase(data.phase),
     ...(data.path ? { path: normalizeNativePath(data.path) } : {}),
     ...(data.observedPath ? { observedPath: data.observedPath } : {}),
+    ...(data.routeSelectionReason ? { routeSelectionReason: data.routeSelectionReason } : {}),
     statusText: data.statusText || normalizeNativePhaseText(data.phase),
     relayInUse: data.relayInUse === true,
     ...(data.failReason ? { failReason: data.failReason } : {}),

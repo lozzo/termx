@@ -169,6 +169,7 @@ class NativeConnectionPlugin : Plugin() {
         val ret = JSObject()
         ret.put("type", info.optString("type", "unknown"))
         ret.put("relayInUse", info.optBoolean("relayInUse", false))
+        info.optString("routeSelectionReason").takeIf { it.isNotBlank() }?.let { ret.put("routeSelectionReason", it) }
         info.optString("localAddr").takeIf { it.isNotBlank() }?.let { ret.put("localAddr", it) }
         info.optString("remoteAddr").takeIf { it.isNotBlank() }?.let { ret.put("remoteAddr", it) }
         info.optString("candidateType").takeIf { it.isNotBlank() }?.let { ret.put("candidateType", it) }
@@ -313,6 +314,8 @@ class NativeConnectionPlugin : Plugin() {
         if (path != null && path != JSONObject.NULL) ret.put("path", path.toString())
         val observedPath = snapshot.opt("observedPath")
         if (observedPath != null && observedPath != JSONObject.NULL) ret.put("observedPath", observedPath.toString())
+        val routeSelectionReason = snapshot.opt("routeSelectionReason")
+        if (routeSelectionReason != null && routeSelectionReason != JSONObject.NULL) ret.put("routeSelectionReason", routeSelectionReason.toString())
         ret.put("relayInUse", snapshot.optBoolean("relayInUse", false))
         ret.put("relayMode", snapshot.optString("relayMode", "auto"))
         ret.put("version", snapshot.optLong("version", 0L))

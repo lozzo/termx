@@ -419,8 +419,10 @@ type EndpointRuntimeEvent struct {
 	// ObservedPath 是 managed WebRTC 已建立连接的 direct/single_relay/relay_mesh 运行时投影。
 	// 它不参与 endpoint 路由或授权，空值表示 local/SSH 或尚未观测到 candidate path。
 	ObservedPath string
-	Message      string
-	Err          error
+	// RouteSelectionReason 是 SmartRoute 的稳定公开诊断，不包含候选分数、成本或内部权重。
+	RouteSelectionReason string
+	Message              string
+	Err                  error
 }
 
 // EndpointEventSource 提供 endpoint-scoped 生命周期事件订阅。

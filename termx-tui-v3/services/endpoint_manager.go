@@ -23,7 +23,9 @@ type EndpointServiceBundle struct {
 	// ObservedPath 是 managed WebRTC 实际使用的 direct/single_relay/relay_mesh 路径。
 	// 它只是 endpoint 运行时投影；local/SSH bundle 保持为空，不能据此改变 endpoint identity 或授权。
 	ObservedPath string
-	Lifecycle    EndpointLifecycle
+	// RouteSelectionReason 是 SmartRoute 返回的稳定公开原因；它不包含私有分数、权重或成本。
+	RouteSelectionReason string
+	Lifecycle            EndpointLifecycle
 }
 
 // EndpointDialer 是 endpoint manager 的 lazy transport 连接入口。
@@ -477,6 +479,7 @@ func (manager *EndpointManager) bundle(ctx context.Context, endpointID state.End
 	manager.mu.Unlock()
 	publishEndpointRuntimeEvent(subscribers, EndpointRuntimeEvent{
 		EndpointID: endpointID, Status: state.EndpointStatusConnected, ObservedPath: bundle.ObservedPath,
+		RouteSelectionReason: bundle.RouteSelectionReason,
 	})
 	return endpointID, bundle, nil
 }

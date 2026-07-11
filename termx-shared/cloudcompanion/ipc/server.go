@@ -250,6 +250,9 @@ func (connection *serverConnection) dispatch(ctx context.Context, request *cloud
 	case *cloudpb.IPCRequest_AcquireRelayLease:
 		response, err := connection.client.AcquireRelayLease(ctx, operation.AcquireRelayLease)
 		return &cloudpb.IPCResponse{Result: &cloudpb.IPCResponse_RelayLease{RelayLease: response}}, nil, err
+	case *cloudpb.IPCRequest_PlanManagedRoute:
+		response, err := connection.client.PlanManagedRoute(ctx, operation.PlanManagedRoute)
+		return &cloudpb.IPCResponse{Result: &cloudpb.IPCResponse_ManagedRoutePlan{ManagedRoutePlan: response}}, nil, err
 	case *cloudpb.IPCRequest_ReportPathQuality:
 		response, err := connection.client.ReportPathQuality(ctx, operation.ReportPathQuality)
 		return &cloudpb.IPCResponse{Result: &cloudpb.IPCResponse_ReportPathQuality{ReportPathQuality: response}}, nil, err

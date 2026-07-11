@@ -677,6 +677,7 @@ func TestEndpointStoreHubIdentityReloadRequiresReconnect(t *testing.T) {
 		t.Fatalf("normalize hub registry: %v", err)
 	}
 	store := (EndpointStore{}).ApplyConnectionRegistry(registry)
+	store = store.MarkManagedRoute("studio", "single_relay", "lower_loss")
 	studio, ok := store.Endpoint("studio")
 	if !ok || studio.Transport != EndpointTransportHubP2P || studio.HubURL != "https://hub.example.com" || studio.HubDeviceID != "device_ed25519:studio" || studio.DeviceFingerprint != "SHA256:studio" || studio.GrantRef != "grant:studio" || studio.RelayMode != string(connection.RelayAuto) {
 		t.Fatalf("hub endpoint should project identity fields, got %#v ok=%v", studio, ok)
@@ -695,7 +696,7 @@ func TestEndpointStoreHubIdentityReloadRequiresReconnect(t *testing.T) {
 	cfg.Label = "Desk"
 	renamed.Connections["studio"] = cfg
 	store = store.ApplyConnectionRegistry(renamed)
-	if studio, _ := store.Endpoint("studio"); studio.DisplayLabel() != "Desk" || studio.ReconnectRequired {
+	if studio, _ := store.Endpoint("studio"); studio.DisplayLabel() != "Desk" || studio.ReconnectRequired || studio.ObservedPath != "single_relay" || studio.RouteSelectionReason != "lower_loss" {
 		t.Fatalf("hub label change should update display only, got %#v", studio)
 	}
 
@@ -755,7 +756,7 @@ func TestTerminalPickerGroupsExposeEndpointMetadataAndSearch(t *testing.T) {
 			Upsert(EndpointItem{ID: "disabled", Label: "Disabled Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectAuto, Enabled: false}).
 			Upsert(EndpointItem{ID: "manual", Label: "Manual Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectManual, Enabled: true}).
 			Upsert(EndpointItem{ID: "reconnect", Label: "Moved Box", Transport: EndpointTransportSSH, ConnectMode: EndpointConnectOnDemand, Enabled: true, ReconnectRequired: true}).
-			Upsert(EndpointItem{ID: "west", Label: "US West", Transport: EndpointTransportHubP2P, ConnectMode: EndpointConnectOnDemand, Enabled: true, Status: EndpointStatusOffline, LastError: "route unavailable", LastErrorKind: EndpointErrorTransportClosed, ObservedPath: "single_relay"}),
+			Upsert(EndpointItem{ID: "west", Label: "US West", Transport: EndpointTransportHubP2P, ConnectMode: EndpointConnectOnDemand, Enabled: true, Status: EndpointStatusOffline, LastError: "route unavailable", LastErrorKind: EndpointErrorTransportClosed, ObservedPath: "single_relay", RouteSelectionReason: "lower_loss"}),
 		TerminalPool: TerminalPoolStore{
 			Status: TerminalPoolReady,
 			Items: []TerminalPoolItem{
@@ -790,6 +791,9 @@ func TestTerminalPickerGroupsExposeEndpointMetadataAndSearch(t *testing.T) {
 		}
 		if group.EndpointID == "west" && group.ObservedPath != "single_relay" {
 			t.Fatalf("west group should carry managed observed path, got %#v", group)
+		}
+		if group.EndpointID == "west" && group.RouteSelectionReason != "lower_loss" {
+			t.Fatalf("west group should carry managed route reason, got %#v", group)
 		}
 	}
 	if rowCountByID[DefaultEndpointID] != 1 || rowCountByID["west"] != 1 || rowCountByID["orphan"] != 1 || rowCountByID["manual"] != 0 {

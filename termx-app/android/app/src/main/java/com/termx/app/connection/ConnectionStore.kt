@@ -85,6 +85,7 @@ class ConnectionStore(
     private var verifyWatchdogDelayMs = 0L
     private var verifyWatchdogAttempt = 0
     private var appActive = true
+    private var routeSelectionReason: String? = null
 
     var transport: WebRTCTransport? = null
         private set
@@ -211,6 +212,10 @@ class ConnectionStore(
                 is Phase.Verifying -> p.relayInUse
                 else -> false
             })
+            put("routeSelectionReason", when (p) {
+                is Phase.Connected, is Phase.Verifying -> routeSelectionReason
+                else -> null
+            })
             put("failReason", if (p is Phase.Failed) p.reason else null)
             put("relayMode", relayMode.wireName)
             put("version", version)
@@ -262,6 +267,7 @@ class ConnectionStore(
                         resetVerificationWatchdogBackoff()
                         clearConnectStartedAt(generation)
                         val path = result.observedPath.wireName
+                        routeSelectionReason = result.routeSelectionReason?.wireName
                         setPhase(Phase.Connected(path, result.observedPath != com.termx.app.managed.ObservedPath.DIRECT), "Connected via $path")
                         fileTransferManager?.resumeInterruptedTransfers(transport)
                     }
@@ -286,6 +292,11 @@ class ConnectionStore(
                 scheduleReconnect()
             }
         }
+    }
+
+    /** currentRouteSelectionReason 只返回当前已授权 transport 的稳定 SmartRoute 原因。 */
+    fun currentRouteSelectionReason(): String? {
+        return if (phase is Phase.Connected || phase is Phase.Verifying) routeSelectionReason else null
     }
 
     private fun onTransportDisconnected() {

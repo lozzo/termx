@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { CONNECTION_PATHS } from './transport'
+import { CONNECTION_PATHS, ROUTE_SELECTION_REASONS } from './transport'
 import type {
   ConnectionCapabilities,
   ConnectionInfo,
@@ -24,6 +24,15 @@ describe('RtcSession public interfaces', () => {
     expect(transportSource).not.toMatch(/anonymous_p2p|managed_p2p|paid_relay/)
   })
 
+  it('keeps SmartRoute diagnostics stable without exposing private scores', () => {
+    expect(ROUTE_SELECTION_REASONS).toEqual([
+      'initial_best', 'only_viable', 'lower_loss', 'direct_unstable', 'lower_latency', 'lower_score',
+      'cost_guard', 'minimum_hold', 'cooldown', 'hysteresis_hold', 'insufficient_improvement',
+      'current_unavailable', 'current_best',
+    ])
+    expect(transportSource).not.toMatch(/routeScore|scoreWeight|costBudget/)
+  })
+
   it('exposes one platform-neutral runtime session surface', () => {
     expectTypeOf<keyof RtcSession>().toEqualTypeOf<
       | 'openTerminal'
@@ -46,6 +55,7 @@ describe('RtcSession public interfaces', () => {
     expectTypeOf<keyof ConnectionInfo>().toEqualTypeOf<
       | 'path'
       | 'observedPath'
+      | 'routeSelectionReason'
       | 'connectionId'
       | 'machineId'
       | 'terminalId'

@@ -43,6 +43,8 @@ const (
 	RelayDirect RelayMode = "direct"
 	// RelayOnly 表示 hub transport 必须走 hub relay，用于受限网络或诊断场景。
 	RelayOnly RelayMode = "relay_only"
+	// RelaySmart 表示显式启用付费 SmartRoute，由私有 Route Planner 在 direct 与受限 single-relay 中选择。
+	RelaySmart RelayMode = "smart_route"
 )
 
 // EndpointID 是客户端本地 connection registry 中 endpoint 的稳定主键。
@@ -451,7 +453,7 @@ func validateGrantRef(endpointID EndpointID, value string) error {
 
 func validateRelayMode(endpointID EndpointID, mode RelayMode) error {
 	switch mode {
-	case RelayAuto, RelayDirect, RelayOnly:
+	case RelayAuto, RelayDirect, RelayOnly, RelaySmart:
 		return nil
 	default:
 		return fmt.Errorf("hub-p2p connection %q has unknown relay_mode %q", endpointID, mode)
