@@ -4,7 +4,8 @@ set -eu
 bad=$(
 	# 只检查当前维护范围内的普通文件；真正脚本允许保留可执行位。
 	git ls-files -s \
-		AGENTS.md Makefile README.md go.work go.work.sum workflow.md \
+		AGENTS.md Makefile README.md go.work go.work.sum package.json package-lock.json workflow.md \
+		clients \
 		internal/protocol \
 		scripts \
 		cmd/termx \

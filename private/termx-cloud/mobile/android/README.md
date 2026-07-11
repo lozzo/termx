@@ -3,8 +3,8 @@
 This private source set is added only by the official APK build:
 
 ```bash
-cd termx-app/android
-./gradlew -I ../../private/termx-cloud/mobile/android/official-cloud.init.gradle testDebugUnitTest assembleDebug
+cd clients/mobile/android
+./gradlew -I ../../../private/termx-cloud/mobile/android/official-cloud.init.gradle testDebugUnitTest assembleDebug
 ```
 
 Community builds do not reference this directory and resolve the fixed factory class to the disabled public adapter. The private module implements only `ManagedCloudAdapter`; WebRTC, grant storage, DeviceIdentity/capability authorization, DataChannel, and terminal protocol remain in the public App layer.

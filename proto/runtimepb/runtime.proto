@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package termx.remote.runtimepb;
 
-// runtimepb 是 App/remote-ui 当前使用的公开客户端 runtime schema，源码真值属于 proto。
+// runtimepb 是 App/shared UI 当前使用的公开客户端 runtime schema，源码真值属于 proto。
 option go_package = "github.com/lozzow/termx/proto/runtimepb";
 
 message Empty {}

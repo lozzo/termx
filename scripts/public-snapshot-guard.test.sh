@@ -13,9 +13,9 @@ mkdir -p \
   "$snapshot/docs/remote-platform" \
   "$snapshot/fixtures" \
   "$snapshot/internal" \
-  "$snapshot/remote-ui" \
+  "$snapshot/clients/ui" \
+  "$snapshot/clients/mobile" \
   "$snapshot/scripts" \
-  "$snapshot/termx-app" \
   "$snapshot/cmd/termx" \
   "$snapshot/core" \
   "$snapshot/proto" \
@@ -25,7 +25,7 @@ mkdir -p \
   "$snapshot/tui" \
   "$snapshot/vterm"
 
-for file in .gitignore CONTRIBUTING.md DCO LICENSE Makefile NOTICE README.md THIRD_PARTY_NOTICES.md go.sum go.work.sum; do
+for file in .gitignore CONTRIBUTING.md DCO LICENSE Makefile NOTICE README.md THIRD_PARTY_NOTICES.md go.sum go.work.sum package-lock.json package.json; do
   printf '%s\n' "fixture" >"$snapshot/$file"
 done
 cat >"$snapshot/go.mod" <<'EOF'
@@ -40,17 +40,19 @@ printf '%s\n' "fixture" >"$snapshot/docs/legal/third-party-inventory.md"
 printf '%s\n' "fixture" >"$snapshot/docs/legal/third-party/LICENSE.txt"
 printf '%s\n' "fixture" >"$snapshot/docs/remote-platform/README.md"
 printf '%s\n' 'VITE_CONTROL_URL=https://control.example.test' \
-  >"$snapshot/remote-ui/.env.example"
+  >"$snapshot/clients/ui/.env.example"
 
 cp "$source_root/scripts/public-snapshot-guard.sh" "$snapshot/scripts/public-snapshot-guard.sh"
 for script in \
   android-resolved-dependencies.init.gradle \
+  client-workspace-guard.mjs \
   fetch-pinned-third-party-notices.sh \
   generate-android-notices.sh \
   generate-go-notices.sh \
   generate-npm-notices.mjs \
   license-audit.sh \
-  public-snapshot-guard.test.sh; do
+  public-snapshot-guard.test.sh \
+  verify-android-apk-boundary.sh; do
   printf '%s\n' "fixture" >"$snapshot/scripts/$script"
 done
 chmod +x "$snapshot/scripts/public-snapshot-guard.sh"
@@ -85,9 +87,9 @@ printf '%s\n' "fixture" >"$snapshot/cmd/termx/AGENTS.md"
 expect_rejected "agent instructions are present"
 rm "$snapshot/cmd/termx/AGENTS.md"
 
-printf '%s\n' "TOKEN=secret" >"$snapshot/remote-ui/.env"
+printf '%s\n' "TOKEN=secret" >"$snapshot/clients/ui/.env"
 expect_rejected "secret-like file"
-rm "$snapshot/remote-ui/.env"
+rm "$snapshot/clients/ui/.env"
 
 printf '%s\n%s\n%s\n' \
   '-----BEGIN PRIVATE KEY-----' \
@@ -111,15 +113,15 @@ printf '%s\n' 'go 1.26.0' >"$snapshot/go.work"
 expect_rejected "public go.work modules differ"
 cp "$tmp_root/go.work" "$snapshot/go.work"
 
-mkdir -p "$snapshot/remote-ui/node_modules/example"
+mkdir -p "$snapshot/clients/ui/node_modules/example"
 printf '%s%s\n' 'g' 'hp_abcdefghijklmnopqrstuvwxyz1234567890' \
-  >"$snapshot/remote-ui/node_modules/example/generated.js"
+  >"$snapshot/clients/ui/node_modules/example/generated.js"
 "$guard" >/dev/null
 
 printf '%s\n' 'TERMX_LOCAL_WEB_ORIGIN=http://127.0.0.1:18888' \
-  >"$snapshot/remote-ui/.env.example"
+  >"$snapshot/clients/ui/.env.example"
 expect_rejected "archived localweb path"
 printf '%s\n' 'VITE_CONTROL_URL=https://control.example.test' \
-  >"$snapshot/remote-ui/.env.example"
+  >"$snapshot/clients/ui/.env.example"
 
 echo "public snapshot guard harness passed"

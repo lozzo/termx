@@ -109,16 +109,16 @@ fetch_checked \
   "https://raw.githubusercontent.com/webrtc-sdk/android/878c5b093f8bbbd4955d1037316484aabe962d18/LICENSE" \
   "e6b282fe6c0fb353928923470457f31b44cbab203effd60c0cde4a5bb96c8aec" \
   "$tmp_dir/WEBRTC_SDK_WRAPPER_LICENSE.txt"
-publish "$tmp_dir/WEBRTC_SDK_WRAPPER_LICENSE.txt" "termx-app/public/third-party/WEBRTC_SDK_WRAPPER_LICENSE.txt"
+publish "$tmp_dir/WEBRTC_SDK_WRAPPER_LICENSE.txt" "clients/mobile/public/third-party/WEBRTC_SDK_WRAPPER_LICENSE.txt"
 
 fetch_checked \
   "https://raw.githubusercontent.com/webrtc-sdk/android/878c5b093f8bbbd4955d1037316484aabe962d18/Licenses/WEBRTC.md" \
   "d1f9382c6878ac024155fd6d44a5977329108bb8b0a01cea40e4a2f1d7de252e" \
   "$tmp_dir/WEBRTC.md"
-publish "$tmp_dir/WEBRTC.md" "termx-app/public/third-party/WEBRTC.md"
+publish "$tmp_dir/WEBRTC.md" "clients/mobile/public/third-party/WEBRTC.md"
 
-verify_derived "$repo_root/remote-ui/src/assets/fonts/LICENSE" "4ff4cfa7c2b208356fe1d7a658c2d751d25f9409d4895d11c203022106939908"
-publish "$repo_root/remote-ui/src/assets/fonts/LICENSE" "termx-app/public/third-party/FONTS.txt"
-publish "$repo_root/docs/legal/public-snapshot/LICENSE" "termx-app/public/APACHE-2.0.txt"
+verify_derived "$repo_root/clients/ui/src/assets/fonts/LICENSE" "4ff4cfa7c2b208356fe1d7a658c2d751d25f9409d4895d11c203022106939908"
+publish "$repo_root/clients/ui/src/assets/fonts/LICENSE" "clients/mobile/public/third-party/FONTS.txt"
+publish "$repo_root/docs/legal/public-snapshot/LICENSE" "clients/mobile/public/APACHE-2.0.txt"
 
 echo "pinned third-party notices are $mode"

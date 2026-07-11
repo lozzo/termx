@@ -21,11 +21,11 @@ Windows graph 额外包含 `go-winio`/`wincred`，Linux Companion graph 额外�
 
 ## 2. npm/Web Bundle
 
-`scripts/generate-npm-notices.mjs` 扫描 `termx-app/package-lock.json` 与 `remote-ui/package-lock.json` 的非 dev 条目，排除 first-party `@termx/*`，当前得到 117 个精确 package/version 和 72 份去重后的完整文本。
+`scripts/generate-npm-notices.mjs` 扫描根 npm workspace `package-lock.json` 的非 dev 条目，排除 first-party `@termx/*`，当前得到 116 个精确 package/version 和 72 份去重后的完整文本。
 
 | License expression | Package count |
 | --- | ---: |
-| MIT | 88 |
+| MIT | 87 |
 | ISC | 12 |
 | BlueOak-1.0.0 | 10 |
 | Apache-2.0 | 3 |
@@ -65,7 +65,7 @@ App 必须同时分发 `WEBRTC_SDK_WRAPPER_LICENSE.txt` 与 `WEBRTC.md`。版本
 
 ## 5. Fonts And Other Assets
 
-当前 App bundle 含 10 个 WOFF2 文件：Fira Code、JetBrains Mono、Iosevka、Cascadia/Caskaydia Cove 和 Hack 的 Nerd Font Mono regular/bold variants。`remote-ui/src/assets/fonts/LICENSE` 记录 attribution 与 OFL-1.1 文本，生成时按固定文件 hash 复制为 `termx-app/public/third-party/FONTS.txt`。
+当前 App bundle 含 10 个 WOFF2 文件：Fira Code、JetBrains Mono、Iosevka、Cascadia/Caskaydia Cove 和 Hack 的 Nerd Font Mono regular/bold variants。`clients/ui/src/assets/fonts/LICENSE` 记录 attribution 与 OFL-1.1 文本，生成时按固定文件 hash 复制为 `clients/mobile/public/third-party/FONTS.txt`。
 
 字体文件、Nerd Fonts patch set 或 attribution 发生变化时必须重新核对上游版本、reserved font names 和 Hack/Nerd Fonts 的组合条款；仅凭字体文件名不能推断许可证。
 

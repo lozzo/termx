@@ -16,11 +16,11 @@ The reviewed LIC001 graph contains 54 external or vendored license mappings unde
 
 ## npm And Web Bundles
 
-`scripts/generate-npm-notices.mjs` scans production entries in `termx-app/package-lock.json` and `remote-ui/package-lock.json`, excluding first-party `@termx/*` packages. The LIC001 baseline contains 117 exact package/version entries and 72 deduplicated license texts.
+`scripts/generate-npm-notices.mjs` scans production entries in the root npm workspace `package-lock.json`, excluding first-party `@termx/*` packages. The LIC001 baseline contains 116 exact package/version entries and 72 deduplicated license texts.
 
 Reviewed expressions are MIT, ISC, BlueOak-1.0.0, Apache-2.0, 0BSD, BSD-3-Clause, Unlicense, and the combined Apache-2.0/BSD-3-Clause expression used by `@bufbuild/protobuf`. Pinned upstream overrides are stored under `docs/legal/third-party/npm/`.
 
-The generated bundle is committed at `termx-app/public/third-party/NPM_NOTICES.txt`.
+The generated bundle is committed at `clients/mobile/public/third-party/NPM_NOTICES.txt`.
 
 ## Android Community Runtime
 
@@ -28,17 +28,17 @@ The generated bundle is committed at `termx-app/public/third-party/NPM_NOTICES.t
 
 AndroidX, Kotlin/Kotlinx, JetBrains annotations, Cordova, Gson, Guava listenablefuture, and JSpecify are Apache-2.0. `Java-WebSocket:1.5.6` and `slf4j-api:2.0.6` are MIT. Their pinned texts are stored under `docs/legal/third-party/android/`.
 
-The generated bundle is committed at `termx-app/public/third-party/ANDROID_NOTICES.txt`.
+The generated bundle is committed at `clients/mobile/public/third-party/ANDROID_NOTICES.txt`.
 
 ## WebRTC And Fonts
 
 The Android WebRTC bundle is pinned to `io.github.webrtc-sdk:android:125.6422.07`, repository tag `v125.6422.07`, and commit `878c5b093f8bbbd4955d1037316484aabe962d18`. The App distributes both `WEBRTC_SDK_WRAPPER_LICENSE.txt` and the complete upstream `WEBRTC.md` notice bundle.
 
-The App includes ten Nerd Font Mono WOFF2 assets. `remote-ui/src/assets/fonts/LICENSE` is the reviewed attribution truth and is copied to `termx-app/public/third-party/FONTS.txt` by the pinned notice script.
+The App includes ten Nerd Font Mono WOFF2 assets. `clients/ui/src/assets/fonts/LICENSE` is the reviewed attribution truth and is copied to `clients/mobile/public/third-party/FONTS.txt` by the pinned notice script.
 
 ## Audit
 
-Run these commands from the copied public snapshot after `npm ci` in both npm projects:
+Run these commands from the copied public snapshot after root `npm ci`:
 
 ```bash
 scripts/public-snapshot-guard.test.sh

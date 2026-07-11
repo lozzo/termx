@@ -41,7 +41,7 @@
 - 当前默认本地 CLI 入口必须走 `core/` 与 `tui/`；不得重新引入 `termx legacy ...`、旧 daemon、旧 TUI 或 remote legacy/fallback。
 - `cmd/termx/legacy_*.go` 不得重新出现；旧本地入口已经删除。
 - `cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
-- `remote/`、`termx-app/` 与 `remote-ui/` 是 future public snapshot 的有效远程客户端资产；只能按 `workflow.md` 对应切片演进，不得依赖私有实现或恢复旧 fallback。
+- `remote/`、`clients/mobile/` 与 `clients/ui/` 是 future public snapshot 的有效远程客户端资产；只能按 `workflow.md` 对应切片演进，不得依赖私有实现或恢复旧 fallback。
 - 旧 `termx-hub/`、`termx-remote/`、`web-control/` 及 remote-ui 的历史 localweb/docs 已迁入 `private/archive/termx-platform-legacy/`，只能作为只读历史资产；archive 不进入 workspace、构建脚本或 runtime。
 - Hub/Relay 服务端实现位于 `private/termx-cloud/hub/` 与 `private/termx-cloud/relay/`。未来复制出的 public repo 只保留 wire contract、client interface 和 fake harness，不得让 public package 反向依赖私有实现。
 - `vterm/` 是受限联动目录，只能在 terminal semantic transaction 接口、事件或 harness 需要时最小化触及。
@@ -61,7 +61,7 @@
 - `tuiv2/`：已删除旧 TUI 目录；不得作为 fallback 恢复。
 - `internal/protocol/` 与 `proto/`：受限联动目录，只在 endpoint-aware routing、history window/copy 或 semantic history contract 需要时最小化触及。
 - `remote/`：公开 managed WebRTC client/daemon orchestration、DataChannel E2E auth、平台 primitive interface 与 fake harness；不承载 Hub/Relay server 或账号业务。
-- `remote-ui/` 与 `termx-app/`：公开共享 UI 和移动客户端；消费公开 endpoint/history/cloud contract，不拥有 daemon terminal truth 或私有云服务状态。
+- `clients/ui/` 与 `clients/mobile/`：公开共享 UI 和移动客户端；消费公开 endpoint/history/cloud contract，不拥有 daemon terminal truth 或私有云服务状态。
 - `private/termx-cloud/`：闭源 Control Plane、Companion、Hub、Relay、Web Controller 与官方移动装配；可以依赖 public contract，public namespace 不得反向依赖。
 - `cmd/termx/`、`shared/`、`testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前切片需要时最小化触及。
 

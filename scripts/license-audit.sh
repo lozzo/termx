@@ -25,8 +25,8 @@ required_files=(
   docs/legal/public-snapshot/THIRD_PARTY_NOTICES.md
   docs/legal/public-snapshot/THIRD_PARTY_INVENTORY.md
   docs/legal/third-party-inventory.md
-  termx-app/public/APACHE-2.0.txt
-  termx-app/public/THIRD_PARTY_NOTICES.txt
+  clients/mobile/public/APACHE-2.0.txt
+  clients/mobile/public/THIRD_PARTY_NOTICES.txt
 )
 if [[ "$audit_scope" == "private-monorepo" ]]; then
   required_files+=(
@@ -68,6 +68,7 @@ if [[ "$audit_scope" == "public-snapshot" ]]; then
 fi
 
 scripts/fetch-pinned-third-party-notices.sh --check
+scripts/client-workspace-guard.mjs
 go_notice_args=(--check)
 if [[ "$audit_scope" == "public-snapshot" ]]; then
   go_notice_args+=(--public-only)

@@ -15,7 +15,7 @@ tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/termx-android-notices.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 (
-  cd "$repo_root/termx-app/android"
+  cd "$repo_root/clients/mobile/android"
   ./gradlew -q \
     -I "$repo_root/scripts/android-resolved-dependencies.init.gradle" \
     :app:termxResolvedRuntimeDependencies
@@ -70,7 +70,7 @@ output="$tmp_dir/ANDROID_NOTICES.txt"
   cat "$repo_root/docs/legal/public-snapshot/LICENSE"
 } >"$output"
 
-target="$repo_root/termx-app/public/third-party/ANDROID_NOTICES.txt"
+target="$repo_root/clients/mobile/public/third-party/ANDROID_NOTICES.txt"
 if [[ "$mode" == "check" ]]; then
   if [[ ! -f "$target" ]] || ! cmp -s "$output" "$target"; then
     echo "stale or missing Android notices: ${target#$repo_root/}" >&2

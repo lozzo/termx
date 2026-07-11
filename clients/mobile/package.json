@@ -1,0 +1,37 @@
+{
+  "name": "@termx/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "cap:sync": "npx cap sync && bash scripts/verify-android-source.sh",
+    "cap:build": "npm run build && npm run cap:sync"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.3.2",
+    "@capacitor/app": "8.1.0",
+    "@capacitor/cli": "8.3.2",
+    "@capacitor/core": "8.3.2",
+    "@capacitor/keyboard": "8.0.3",
+    "@capacitor/network": "8.0.1",
+    "@capacitor/preferences": "8.0.1",
+    "@capacitor/status-bar": "8.0.2",
+    "@termx/ui": "0.0.0",
+    "html5-qrcode": "2.3.8",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "4.7.0",
+    "autoprefixer": "10.5.0",
+    "postcss": "8.5.14",
+    "tailwindcss": "3.4.19",
+    "typescript": "5.9.3",
+    "vite": "5.4.21"
+  }
+}

@@ -159,7 +159,7 @@ EndpointManager
   - managed WebRTC endpoint
         |
         v
-tui / termx-app / other public clients
+tui / clients/mobile / other public clients
 ```
 
 几个硬边界：
@@ -180,8 +180,8 @@ tui / termx-app / other public clients
 - `shared/`：共享 connection registry、transport、remote auth 和 Cloud Companion contract。
 - `internal/protocol/`、`proto/`：daemon/client wire contract 与协议类型。
 - `remote/`：公开 WebRTC client/daemon orchestration、DataChannel 授权与 fake harness。
-- `remote-ui/`：App 与浏览器客户端共享的公开 UI、状态编排和平台中立 runtime interface。
-- `termx-app/`：Android App 壳、native bridge 和 Community managed-cloud fail-closed 实现。
+- `clients/ui/`：App 与浏览器客户端共享的公开 UI、状态编排和平台中立 runtime interface。
+- `clients/mobile/`：Android App 壳、native bridge 和 Community managed-cloud fail-closed 实现。
 - `testkit/`：测试辅助能力。
 - `fixtures/`、`scripts/`、`Makefile`、`go.work`：测试、发布审计和 workspace 支撑。
 
@@ -224,10 +224,11 @@ go test ./internal/protocol/... -count=1
 共享 UI 与 App：
 
 ```bash
-cd remote-ui && npm ci && npm test && npm run typecheck && npm run build
-cd termx-app && npm ci && npm run cap:build
+npm ci
+npm run proto && npm test && npm run typecheck && npm run build
+npm run cap:sync
 export ANDROID_HOME=/absolute/path/to/android-sdk
-cd termx-app/android && ./gradlew testDebugUnitTest assembleDebug
+cd clients/mobile/android && ./gradlew testDebugUnitTest assembleDebug
 ```
 
 完整公开快照和许可证准入见 [`docs/remote-platform/public-snapshot-manifest.md`](docs/remote-platform/public-snapshot-manifest.md)。

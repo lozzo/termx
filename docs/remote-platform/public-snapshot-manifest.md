@@ -20,6 +20,8 @@ Makefile
 README.md
 go.mod
 go.sum
+package.json
+package-lock.json
 ```
 
 Copy these complete public source directories:
@@ -27,8 +29,8 @@ Copy these complete public source directories:
 ```text
 fixtures/
 internal/
-remote-ui/
-termx-app/
+clients/ui/
+clients/mobile/
 cmd/
 core/
 proto/
@@ -46,6 +48,7 @@ docs/legal/public-snapshot/
 docs/legal/third-party/
 docs/remote-platform/
 scripts/android-resolved-dependencies.init.gradle
+scripts/client-workspace-guard.mjs
 scripts/fetch-pinned-third-party-notices.sh
 scripts/generate-android-notices.sh
 scripts/generate-go-notices.sh
@@ -53,6 +56,7 @@ scripts/generate-npm-notices.mjs
 scripts/license-audit.sh
 scripts/public-snapshot-guard.sh
 scripts/public-snapshot-guard.test.sh
+scripts/verify-android-apk-boundary.sh
 ```
 
 Do not copy root `LICENSE`, root `THIRD_PARTY_NOTICES.md`, `go.work`, `go.work.sum`, `workflow.md`, any `AGENTS.md`, `private/`, legacy top-level remote directories, ignored build outputs, local configuration, or the source repository history. The reviewed public templates replace the root legal and workspace files. `go work sync` may create a new public-only `go.work.sum`; its absence is valid when the root module sum already closes the public dependency graph.
@@ -79,10 +83,11 @@ PUBLIC_PATHS=(
   README.md
   go.mod
   go.sum
+  package.json
+  package-lock.json
   fixtures
   internal
-  remote-ui
-  termx-app
+  clients
   cmd
   core
   proto
@@ -95,6 +100,7 @@ PUBLIC_PATHS=(
   docs/legal/third-party
   docs/remote-platform
   scripts/android-resolved-dependencies.init.gradle
+  scripts/client-workspace-guard.mjs
   scripts/fetch-pinned-third-party-notices.sh
   scripts/generate-android-notices.sh
   scripts/generate-go-notices.sh
@@ -102,6 +108,7 @@ PUBLIC_PATHS=(
   scripts/license-audit.sh
   scripts/public-snapshot-guard.sh
   scripts/public-snapshot-guard.test.sh
+  scripts/verify-android-apk-boundary.sh
 )
 
 git -C "$SOURCE_REPO" archive "$SOURCE_COMMIT" -- "${PUBLIC_PATHS[@]}" \
@@ -131,26 +138,24 @@ The destination remains outside Git until every gate below passes. This makes ac
 
 ## 4. Independent Build And Test Gates
 
-Install exact npm dependencies before license generation:
+Install the exact root npm workspace before license generation:
 
 ```bash
-(cd "$DEST/remote-ui" && npm ci)
-(cd "$DEST/termx-app" && npm ci)
-(cd "$DEST/remote-ui" && npm audit --omit=dev)
-(cd "$DEST/termx-app" && npm audit --omit=dev)
+(cd "$DEST" && npm ci)
+(cd "$DEST" && npm audit --omit=dev)
 ```
 
 Run all public Go module tests, the CLI build, shared UI tests/build, Community App build, Android Community tests, and release audit:
 
 ```bash
 (cd "$DEST" && GOWORK=off go test ./... -count=1 && GOWORK=off go build ./cmd/termx)
-(cd "$DEST/remote-ui" && npm run proto && npm test && npm run typecheck && npm run build)
-(cd "$DEST/termx-app" && npm run cap:build)
-(cd "$DEST/termx-app/android" && ./gradlew testDebugUnitTest assembleDebug)
+(cd "$DEST" && npm run proto && npm test && npm run typecheck && npm run build && npm run cap:sync)
+(cd "$DEST/clients/mobile/android" && ./gradlew testDebugUnitTest assembleDebug)
+(cd "$DEST" && scripts/verify-android-apk-boundary.sh clients/mobile/android/app/build/outputs/apk/debug/app-debug.apk)
 (cd "$DEST" && scripts/license-audit.sh --public-snapshot)
 ```
 
-Before a production release, also run `npm audit` in both npm projects, resolve or formally review every remaining development-tool advisory, generate an SBOM from final binaries/APKs with the release team's pinned SBOM tool, and run the organization-approved secret scanner. RP007 production dependency audits are clean after updating `tar` to `7.5.19`; current Vite/Babel development-tool advisories remain a release blocker outside this repository-boundary slice. `public-snapshot-guard.sh` is the repository-local fail-closed baseline; it does not claim to replace an independently maintained scanner.
+Before a production release, also run root workspace `npm audit`, resolve or formally review every remaining development-tool advisory, generate an SBOM from final binaries/APKs with the release team's pinned SBOM tool, and run the organization-approved secret scanner. RP007 production dependency audits are clean after updating `tar` to `7.5.19`; current Vite/Babel development-tool advisories remain a release blocker outside this repository-boundary slice. `public-snapshot-guard.sh` is the repository-local fail-closed baseline; it does not claim to replace an independently maintained scanner.
 
 ## 5. New Public History
 

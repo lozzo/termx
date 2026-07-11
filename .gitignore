@@ -9,5 +9,6 @@ cover.out
 .worktrees/
 *.tsbuildinfo
 .build/
+/node_modules/
 Screenshot_*.jpg
 termx-debug-*.zip

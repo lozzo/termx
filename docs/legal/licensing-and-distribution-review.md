@@ -53,7 +53,7 @@ Cloud Companion 使用独立 executable、独立签名和 versioned local protob
 当前实际入口扫描结果见 `third-party-inventory.md`：
 
 - public CLI 与 private Companion 的 Go 三平台 graph 只发现 MIT、BSD-2-Clause、BSD-3-Clause 和 Apache-2.0；完整文本已分别嵌入两个 binary package。
-- 两个 production npm lockfile 当前覆盖 117 个精确 package/version，只发现 MIT、ISC、0BSD、Unlicense、BlueOak-1.0.0、BSD-3-Clause、Apache-2.0 及一个 Apache-2.0 AND BSD-3-Clause 组合项。
+- 根 production npm lockfile 当前覆盖 116 个精确 package/version，只发现 MIT、ISC、0BSD、Unlicense、BlueOak-1.0.0、BSD-3-Clause、Apache-2.0 及一个 Apache-2.0 AND BSD-3-Clause 组合项。
 - Android `releaseRuntimeClasspath` 当前解析出 55 个 Maven component，分类为 Apache-2.0、MIT 和单独固定的 WebRTC composite bundle。
 - `vterm/internal/vt` 保留 Charmbracelet MIT 文件；App 字体保留 OFL-1.1 attribution。
 - `io.github.webrtc-sdk:android:125.6422.07` 的 Maven AAR 没有内置 notice，且 POM 的 BSD-3-Clause 与 wrapper repository 根 MIT 文本不同。对应 tag `v125.6422.07` 提供完整 `Licenses/WEBRTC.md`，发布必须按固定 commit 和 SHA-256 获取并随 App 分发。

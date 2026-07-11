@@ -19,15 +19,16 @@ required_top_level=(
   NOTICE
   README.md
   THIRD_PARTY_NOTICES.md
+  clients
   docs
   fixtures
   go.mod
   go.sum
   go.work
   internal
-  remote-ui
+  package-lock.json
+  package.json
   scripts
-  termx-app
   cmd
   core
   proto
@@ -44,13 +45,24 @@ done
 while IFS= read -r path; do
   name="${path#./}"
   case "$name" in
-    .gitignore|CONTRIBUTING.md|DCO|LICENSE|Makefile|NOTICE|README.md|THIRD_PARTY_NOTICES.md|cmd|core|docs|fixtures|go.mod|go.sum|go.work|go.work.sum|internal|proto|remote|remote-ui|scripts|shared|termx-app|testkit|tui|vterm)
+    .gitignore|CONTRIBUTING.md|DCO|LICENSE|Makefile|NOTICE|README.md|THIRD_PARTY_NOTICES.md|clients|cmd|core|docs|fixtures|go.mod|go.sum|go.work|go.work.sum|internal|package-lock.json|package.json|proto|remote|scripts|shared|testkit|tui|vterm)
       ;;
     *)
       fail "unexpected top-level entry: $name"
       ;;
   esac
 done < <(find . -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort)
+
+while IFS= read -r path; do
+  name="${path#clients/}"
+  case "$name" in
+    mobile|ui)
+      ;;
+    *)
+      fail "unexpected public client entry: clients/$name"
+      ;;
+  esac
+done < <(find clients -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort)
 
 while IFS= read -r path; do
   name="${path#docs/}"
@@ -76,6 +88,7 @@ done < <(find docs/legal -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort)
 
 required_scripts=(
   android-resolved-dependencies.init.gradle
+  client-workspace-guard.mjs
   fetch-pinned-third-party-notices.sh
   generate-android-notices.sh
   generate-go-notices.sh
@@ -83,6 +96,7 @@ required_scripts=(
   license-audit.sh
   public-snapshot-guard.sh
   public-snapshot-guard.test.sh
+  verify-android-apk-boundary.sh
 )
 for script in "${required_scripts[@]}"; do
   [[ -s "scripts/$script" ]] || fail "required public release script is missing: scripts/$script"
@@ -90,7 +104,7 @@ done
 while IFS= read -r path; do
   name="${path#scripts/}"
   case "$name" in
-    android-resolved-dependencies.init.gradle|fetch-pinned-third-party-notices.sh|generate-android-notices.sh|generate-go-notices.sh|generate-npm-notices.mjs|license-audit.sh|public-snapshot-guard.sh|public-snapshot-guard.test.sh)
+    android-resolved-dependencies.init.gradle|client-workspace-guard.mjs|fetch-pinned-third-party-notices.sh|generate-android-notices.sh|generate-go-notices.sh|generate-npm-notices.mjs|license-audit.sh|public-snapshot-guard.sh|public-snapshot-guard.test.sh|verify-android-apk-boundary.sh)
       ;;
     *)
       fail "unexpected public release script: scripts/$name"
@@ -165,12 +179,12 @@ if ((workspace.Replace ?? []).length !== 0) {
 NODE
 
 if rg -n --hidden "${rg_excludes[@]}" --glob 'package.json' --glob 'package-lock.json' --glob '*.gradle' --glob '*.gradle.kts' \
-  '(file:[^"[:space:]]*private/|\.\./private/)' termx-app remote-ui >/dev/null; then
+  '(file:[^"[:space:]]*private/|\.\./private/)' package.json package-lock.json clients >/dev/null; then
   fail "App or shared UI build metadata references private source"
 fi
-[[ -s remote-ui/.env.example ]] || fail "remote-ui public environment template is missing"
-if rg -n '(TERMX_LOCAL_WEB_ORIGIN|localweb)' remote-ui/.env.example >/dev/null; then
-  fail "remote-ui environment template references the archived localweb path"
+[[ -s clients/ui/.env.example ]] || fail "shared UI public environment template is missing"
+if rg -n '(TERMX_LOCAL_WEB_ORIGIN|localweb)' clients/ui/.env.example >/dev/null; then
+  fail "shared UI environment template references the archived localweb path"
 fi
 
 echo "TermX public snapshot structure passed"

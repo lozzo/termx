@@ -49,7 +49,11 @@ func TestPublicRemoteRuntimeDoesNotDependOnPrivateServices(t *testing.T) {
 }
 
 func TestAndroidManagedRuntimeDoesNotRestoreLegacyHubProtocol(t *testing.T) {
-	root := filepath.Join("..", "termx-app", "native", "android")
+	mirrorRoot := filepath.Join("..", "clients", "mobile", "native", "android")
+	if _, err := os.Stat(mirrorRoot); !os.IsNotExist(err) {
+		t.Fatalf("Android source mirror must stay deleted: %s", mirrorRoot)
+	}
+	root := filepath.Join("..", "clients", "mobile", "android", "app", "src", "main", "java", "com", "termx", "app")
 	forbidden := []string{"sessionToken", "session_token", "/api/v1/sessions", "Authorization\" to \"Bearer", "connectHub("}
 	legacyFiles := []string{
 		filepath.Join(root, "connectors", "HubConnector.kt"),
