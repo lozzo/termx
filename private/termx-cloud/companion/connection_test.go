@@ -47,7 +47,8 @@ func (store *testCredentialStore) DeleteSecret(_ context.Context, key string) er
 }
 
 type fakeControlPlane struct {
-	mu sync.Mutex
+	mu  sync.Mutex
+	now time.Time
 
 	lastAuthorization string
 	resolveResponse   *cloudpb.ResolvedEndpoint
@@ -58,6 +59,22 @@ type fakeControlPlane struct {
 	leaseResponse     *cloudpb.RelayLease
 	qualityCount      int
 	outcomeCount      int
+}
+
+func (controlPlane *fakeControlPlane) BeginLogin(_ context.Context, _ *cloudpb.BeginLoginRequest) (*cloudpb.LoginFlow, error) {
+	return &cloudpb.LoginFlow{FlowId: "login-1", VerificationUri: "https://login.example.test/device", UserCode: "ABCD-EFGH", ExpiresAtUnix: uint64(controlPlane.now.Add(5 * time.Minute).Unix()), PollIntervalMillis: 1000}, nil
+}
+
+func (controlPlane *fakeControlPlane) CompleteLogin(_ context.Context, _ *cloudpb.CompleteLoginRequest) (session.Session, error) {
+	return session.New(session.Metadata{Kind: session.KindAccount, AccountID: "account-login", AccountLabel: "Login User", DeviceID: "client-login", ExpiresAt: controlPlane.now.Add(time.Hour)}, []byte("new-account-token"), controlPlane.now)
+}
+
+func (controlPlane *fakeControlPlane) BeginDeviceEnrollment(_ context.Context, _ *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error) {
+	return &cloudpb.DeviceEnrollmentChallenge{FlowId: "enroll-1", ChallengeId: "challenge-1", Challenge: bytes.Repeat([]byte{0x33}, 32), ExpiresAtUnix: uint64(controlPlane.now.Add(5 * time.Minute).Unix())}, nil
+}
+
+func (controlPlane *fakeControlPlane) CompleteDeviceEnrollment(_ context.Context, _ *cloudpb.CompleteDeviceEnrollmentRequest) (session.Session, error) {
+	return session.New(session.Metadata{Kind: session.KindDevice, AccountID: "account-1", DeviceID: "daemon-enrolled", ExpiresAt: controlPlane.now.Add(time.Hour)}, []byte("new-device-token"), controlPlane.now)
 }
 
 func (controlPlane *fakeControlPlane) capture(authorization session.Authorization) {
@@ -269,6 +286,44 @@ func TestManagedOperationsDrivePrivateAdapters(t *testing.T) {
 	}
 }
 
+func TestLifecycleStoresOnlyPrivateSessionAndReturnsSummary(t *testing.T) {
+	now, service, _, _ := testService(t)
+	connection := service.NewConnection()
+	if _, err := connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_CLI,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_ACCOUNT_SESSION,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT,
+	)); err != nil {
+		t.Fatal(err)
+	}
+	flow, err := connection.BeginLogin(context.Background(), &cloudpb.BeginLoginRequest{Method: cloudpb.LoginMethod_LOGIN_METHOD_DEVICE_CODE})
+	if err != nil || flow.GetFlowId() != "login-1" {
+		t.Fatalf("BeginLogin = (%v, %v)", flow, err)
+	}
+	login, err := connection.CompleteLogin(context.Background(), &cloudpb.CompleteLoginRequest{FlowId: flow.GetFlowId()})
+	if err != nil || login.GetSession().GetAccountId() != "account-login" || login.GetSession().GetExpiresAtUnix() != uint64(now.Add(time.Hour).Unix()) {
+		t.Fatalf("CompleteLogin = (%v, %v)", login, err)
+	}
+	if strings.Contains(login.String(), "new-account-token") {
+		t.Fatal("login response leaked account token")
+	}
+
+	challenge, err := connection.BeginDeviceEnrollment(context.Background(), &cloudpb.BeginDeviceEnrollmentRequest{
+		OneTimeCode: "one-time-code", DevicePublicKey: bytes.Repeat([]byte{1}, 32), Metadata: &cloudpb.DeviceMetadata{Platform: "darwin", TermxVersion: "test"},
+	})
+	if err != nil || challenge.GetChallengeId() != "challenge-1" {
+		t.Fatalf("BeginDeviceEnrollment = (%v, %v)", challenge, err)
+	}
+	enrolled, err := connection.CompleteDeviceEnrollment(context.Background(), &cloudpb.CompleteDeviceEnrollmentRequest{
+		FlowId: challenge.GetFlowId(), Proof: &cloudpb.DeviceProof{DeviceId: "daemon-enrolled", DevicePublicKey: bytes.Repeat([]byte{1}, 32), ChallengeId: challenge.GetChallengeId(), Signature: bytes.Repeat([]byte{2}, 64), SignedAtUnixNano: now.UnixNano()},
+	})
+	if err != nil || enrolled.GetSession().GetDeviceId() != "daemon-enrolled" || strings.Contains(enrolled.String(), "new-device-token") {
+		t.Fatalf("CompleteDeviceEnrollment = (%v, %v)", enrolled, err)
+	}
+	if _, err := connection.Logout(context.Background(), &cloudpb.LogoutRequest{AccountSession: true, DeviceSession: true}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClosingClientConnectionDoesNotStopDaemonPresence(t *testing.T) {
 	_, service, _, hub := testService(t)
 	client := service.NewConnection()
@@ -453,6 +508,7 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 	daemonAdmission, _ := cloudservice.NewHubAdmission("admission-answer", "hub-1", "managed-1", now.Add(time.Minute), []byte("answer-ticket"), now)
 	presenceAdmission, _ := cloudservice.NewHubAdmission("admission-daemon", "hub-1", "presence-1", now.Add(time.Minute), []byte("daemon-ticket"), now)
 	controlPlane := &fakeControlPlane{
+		now:               now,
 		resolveResponse:   &cloudpb.ResolvedEndpoint{EndpointId: "cloud-prod", TargetDeviceId: "daemon-1", Presence: cloudpb.PresenceState_PRESENCE_STATE_ONLINE, HubId: "hub-1", HubUrl: "https://hub.example.test", ManagedSessionId: "managed-1"},
 		presenceAdmission: presenceAdmission,
 		clientAdmission:   clientAdmission,
@@ -470,6 +526,7 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE,
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_PATH_QUALITY,
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_SMART_ROUTE,
+			cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT,
 		},
 		Now: func() time.Time { return now }, NonceReader: bytes.NewReader(bytes.Repeat([]byte{0x5a}, 1024)),
 	}, manager, controlPlane, hub)

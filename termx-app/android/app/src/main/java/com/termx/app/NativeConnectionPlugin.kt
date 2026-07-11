@@ -11,8 +11,8 @@ import com.termx.app.connection.BridgeRouter
 import com.termx.app.connection.ConnectionStoreManager
 import com.termx.app.connectors.ManagedWebRTCConnector
 import com.termx.app.managed.AndroidGrantCredentialStore
-import com.termx.app.managed.CommunityCloudAdapter
 import com.termx.app.managed.CommunityEndpointAuthorizer
+import com.termx.app.managed.ManagedCloudAssembly
 import com.termx.app.managed.ManagedEndpointFailure
 import com.termx.app.managed.RelayMode
 import com.termx.app.network.BridgeServer
@@ -257,7 +257,7 @@ class NativeConnectionPlugin : Plugin() {
         bridgeServer = bridge
 
         val managedConnector = ManagedWebRTCConnector(
-            CommunityCloudAdapter(), grantCredentialStore, CommunityEndpointAuthorizer(),
+            ManagedCloudAssembly.create(context), grantCredentialStore, CommunityEndpointAuthorizer(),
         )
         val manager = ConnectionStoreManager(context, bridge, managedConnector)
         storeManager = manager

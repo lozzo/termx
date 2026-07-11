@@ -89,7 +89,8 @@ func knownCapability(capability cloudpb.CompanionCapability) bool {
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING,
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE,
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_PATH_QUALITY,
-		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SMART_ROUTE:
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SMART_ROUTE,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT:
 		return true
 	default:
 		return false
@@ -101,12 +102,13 @@ func capabilityAllowedForRole(capability cloudpb.CompanionCapability, role cloud
 	case cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CallerRole_CALLER_ROLE_MOBILE_APP:
 		return capability != cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE
 	case cloudpb.CallerRole_CALLER_ROLE_CLI:
-		return capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_ACCOUNT_SESSION
+		return capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_ACCOUNT_SESSION || capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT
 	case cloudpb.CallerRole_CALLER_ROLE_DAEMON:
 		return capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE ||
 			capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING ||
 			capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE ||
-			capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_PATH_QUALITY
+			capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_PATH_QUALITY ||
+			capability == cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT
 	default:
 		return false
 	}

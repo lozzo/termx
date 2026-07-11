@@ -37,3 +37,18 @@ func TestLoadOrCreateIdentityRejectsDifferentDeviceID(t *testing.T) {
 		t.Fatal("identity store must not silently replace device identity")
 	}
 }
+
+func TestLoadOrCreateLocalIdentityKeepsGeneratedDeviceID(t *testing.T) {
+	dir := t.TempDir()
+	first, err := LoadOrCreateLocalIdentity(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := LoadOrCreateLocalIdentity(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.DeviceID == "" || first.DeviceID != second.DeviceID || first.Fingerprint != second.Fingerprint {
+		t.Fatalf("identity changed: first=%#v second=%#v", first, second)
+	}
+}

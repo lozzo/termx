@@ -94,6 +94,30 @@ func LoadOrCreateIdentity(dir string, deviceID string) (Identity, error) {
 	return identityFromPrivateKey(deviceID, privateKey), nil
 }
 
+// LoadOrCreateLocalIdentity 加载已有 daemon DeviceIdentity，首次调用时生成随机稳定 DeviceID 与 Ed25519 key。
+// hostname、endpoint label 和 Hub lookup 都不能替代该 daemon-local identity；私钥仍只写入 0600 identity store。
+func LoadOrCreateLocalIdentity(dir string) (Identity, error) {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return Identity{}, fmt.Errorf("remote identity requires storage directory")
+	}
+	path := filepath.Join(dir, identityPrivateKeyFile)
+	if payload, err := os.ReadFile(path); err == nil {
+		var stored storedIdentity
+		if err := json.Unmarshal(payload, &stored); err != nil || strings.TrimSpace(stored.DeviceID) == "" {
+			return Identity{}, fmt.Errorf("decode remote identity")
+		}
+		return LoadOrCreateIdentity(dir, stored.DeviceID)
+	} else if !os.IsNotExist(err) {
+		return Identity{}, fmt.Errorf("read remote identity: %w", err)
+	}
+	randomID := make([]byte, 16)
+	if _, err := rand.Read(randomID); err != nil {
+		return Identity{}, fmt.Errorf("generate remote device id: %w", err)
+	}
+	return LoadOrCreateIdentity(dir, "device-"+base64.RawURLEncoding.EncodeToString(randomID))
+}
+
 func identityFromPrivateKey(deviceID string, privateKey ed25519.PrivateKey) Identity {
 	publicKey := append(ed25519.PublicKey(nil), privateKey.Public().(ed25519.PublicKey)...)
 	return Identity{

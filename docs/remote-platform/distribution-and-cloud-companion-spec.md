@@ -1,6 +1,6 @@
 # TermX 发布、安装与 Cloud Companion 规范
 
-状态：RP006 公开客户端接入基线；RP006A 安装、进程激活与官方移动构建待实现
+状态：RP006A 安装、进程激活与 Android 官方私有模块构建基线完成；生产发布根与 OAuth/TLS adapter 仍由正式发布环境注入
 
 日期：2026-07-11
 
@@ -329,6 +329,15 @@ CloudCompanionRelease {
 - `uninstall --purge` 和 `logout` 明确删除本地 cloud credentials，但不删除 daemon CapabilityGrant store。
 - companion 卸载后 managed endpoint 保留 unresolved 配置，不自动改成 SSH/local。
 
+### 8.5 RP006A 实现基线
+
+- `termx-shared/cloudcompanion/installer` 严格验证 Ed25519 manifest、固定 HTTPS origin、平台、channel、protocol window、archive size/hash 和单 executable tar；staging binary 完成版本/渠道绑定 Hello smoke 后才切换 `active.json`。
+- active installation 每次使用前重新验证固定路径、owner/权限或 Windows owner SID、symlink、binary hash；stable 默认拒绝 downgrade，签名 manifest 可显式授权回滚。
+- `termx-shared/cloudcompanion/ipc` 使用 4 MiB 上限的 deterministic framed protobuf；Unix 双向校验 peer UID，Windows Named Pipe 使用 current-user ACL 并双向校验 peer process SID。
+- `termx-shared/cloudcompanion/activation` 只启动 active record 指向的固定 binary 和固定 `serve --socket` 参数；发现旧版本进程时先请求 Shutdown、等待 endpoint 释放，再进行一次受限启动。
+- `termx cloud install|update|login|enroll|status|doctor|logout|uninstall` 已接入公开 lifecycle contract。enroll 默认从 TTY 隐式输入 one-time code，并由公开 daemon DeviceIdentity 在本地签名 challenge。
+- 私有 `termx-cloud` artifact 只通过 OS credential manager 保存 account/device cloud session；release tool 只从仓库外读取 Ed25519 PKCS#8 PEM，仓库和 artifact metadata 不保存 release private key。
+
 ## 9. 桌面、移动端和服务端交付
 
 ### 9.1 Desktop/headless
@@ -346,6 +355,16 @@ CloudCompanionRelease {
 - Official build 由私有 CI 将闭源 cloud module 与公开 App 组合签名。
 - 私有模块只能实现公开 domain contract，WebRTC、DTLS peer verification、grant 和 DataChannel 仍由公开 App 层或可审计的公开 platform adapter 拥有。
 - Official build 与 Community build 使用相同 endpoint、error、capability 和 protocol fixtures。
+
+当前仓库只有活动 Android target。Community 与 Official Debug 构建分别使用：
+
+```bash
+cd termx-app/android
+./gradlew testDebugUnitTest assembleDebug
+./gradlew -I ../../private/termx-cloud/mobile/android/official-cloud.init.gradle testDebugUnitTest assembleDebug
+```
+
+Official init script 只把固定 `com.termx.cloud.OfficialManagedCloudFactory` 私有 source set 装入官方 APK；Community classpath 不引用 `private/`。未来建立 iOS target 时必须先补同一 contract 的 Swift vector 和私有装配，不把 Android 完成状态外推为 iOS 已实现。
 
 ### 9.3 托管服务端
 
@@ -459,6 +478,10 @@ out-of-process IPC 是清晰的工程边界，但不自动构成法律结论。�
 - Official App 接同一 contract 的 private mobile cloud module；DeviceIdentity/capability authorizer 继续属于公开 App 层。
 - CLI 完成 install/login/enroll/status/doctor/update/uninstall。
 - 完成 signed manifest、atomic update 和 package integration。
+
+实现结果：桌面公开 installer、owner-scoped IPC、activation manager 和完整 CLI lifecycle 已落地；私有 `termx-cloud` binary、系统 keyring adapter 与外部签名 release artifact tool 已落地。Android 通过固定 factory class 形成 Community disabled adapter 与 Official private source set 两种构建，两者共用公开 `ManagedCloudAdapter` contract；Community/Official unit test 与 `assembleDebug` 均通过。正式 CLI build 必须通过 linker 注入 release key ID/public key，正式 Companion build 必须注入与 manifest 一致的 version/channel；源码构建缺少 release root 时 managed cloud 稳定 fail closed。
+
+不伪装为已完成的生产外部项：桌面 `NewUnconfiguredAdapter` 与 Android development gateway 在未注入正式 OAuth/TLS SDK 时返回稳定 cloud unavailable/login required；正式 release origin、key custody 和发布审批进入 LIC001/发布流水线。daemon `OpenPresence` 仍缺独立 presence-proof challenge contract，当前不得复用 enrollment challenge 或猜测 daemon online，后续协议切片补齐后才能接真实 presence。
 
 ### LIC001：发布许可证门禁
 

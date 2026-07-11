@@ -1,6 +1,7 @@
 package companion
 
 import (
+	"crypto/ed25519"
 	"net/url"
 	"strings"
 	"time"
@@ -8,6 +9,47 @@ import (
 	"github.com/lozzow/termx/private/termx-cloud/companion/cloudservice"
 	"github.com/lozzow/termx/termx-proto/cloudpb"
 )
+
+func validateBeginLoginRequest(request *cloudpb.BeginLoginRequest) error {
+	if request == nil || request.GetMethod() != cloudpb.LoginMethod_LOGIN_METHOD_BROWSER && request.GetMethod() != cloudpb.LoginMethod_LOGIN_METHOD_DEVICE_CODE {
+		return protocolError("invalid login method")
+	}
+	return nil
+}
+
+func validateLoginFlow(flow *cloudpb.LoginFlow, now time.Time) error {
+	if flow == nil || flow.GetFlowId() == "" || flow.GetVerificationUri() == "" || flow.GetExpiresAtUnix() <= uint64(now.Unix()) || flow.GetPollIntervalMillis() == 0 || flow.GetPollIntervalMillis() > 60_000 {
+		return protocolError("Control Plane returned an invalid login flow")
+	}
+	verificationURL, err := url.Parse(flow.GetVerificationUri())
+	if err != nil || verificationURL.Scheme != "https" || verificationURL.Host == "" || verificationURL.User != nil {
+		return protocolError("Control Plane returned an untrusted login URL")
+	}
+	return nil
+}
+
+func validateBeginEnrollmentRequest(request *cloudpb.BeginDeviceEnrollmentRequest) error {
+	metadata := request.GetMetadata()
+	if request == nil || strings.TrimSpace(request.GetOneTimeCode()) == "" || len(request.GetDevicePublicKey()) != ed25519.PublicKeySize || metadata == nil || metadata.GetPlatform() == "" || metadata.GetTermxVersion() == "" {
+		return protocolError("invalid device enrollment request")
+	}
+	return nil
+}
+
+func validateEnrollmentChallenge(challenge *cloudpb.DeviceEnrollmentChallenge, now time.Time) error {
+	if challenge == nil || challenge.GetFlowId() == "" || challenge.GetChallengeId() == "" || len(challenge.GetChallenge()) < 32 || len(challenge.GetChallenge()) > 256 || challenge.GetExpiresAtUnix() <= uint64(now.Unix()) {
+		return protocolError("Control Plane returned an invalid enrollment challenge")
+	}
+	return nil
+}
+
+func validateCompleteEnrollmentRequest(request *cloudpb.CompleteDeviceEnrollmentRequest) error {
+	proof := request.GetProof()
+	if request == nil || request.GetFlowId() == "" || proof == nil || proof.GetDeviceId() == "" || len(proof.GetDevicePublicKey()) != ed25519.PublicKeySize || proof.GetChallengeId() == "" || len(proof.GetSignature()) != ed25519.SignatureSize || proof.GetSignedAtUnixNano() == 0 {
+		return protocolError("invalid device enrollment proof")
+	}
+	return nil
+}
 
 func sanitizePresenceEvent(event *cloudpb.PresenceEvent, managedSessionID, targetDeviceID string) (*cloudpb.PresenceEvent, error) {
 	if event == nil {

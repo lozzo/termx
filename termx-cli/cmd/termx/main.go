@@ -34,5 +34,6 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(v3RemoveCommand(&socket, &logFile))
 	cmd.AddCommand(v3AttachCommand(&socket, &logFile))
 	cmd.AddCommand(v3Command(&socket, &logFile, &configPath))
+	cmd.AddCommand(v3CloudCommand())
 	return cmd
 }

@@ -4,7 +4,7 @@
 
 生效日期：2026-07-11
 
-基线切片：RP001-RP006（含 RP001A-C、RP004A，完成）
+基线切片：RP001-RP006A（含 RP001A-C、RP004A，完成）
 
 ## 1. 文档目的
 
@@ -36,7 +36,7 @@
 - Web Controller、托管 Hub、托管 Relay、计费、entitlement、风控和云运维服务不进入公开源码发布。
 - WebRTC 是一种 endpoint transport；direct P2P 与 Relay 是同一次连接的候选路径结果，不是两套 terminal protocol。
 - 全球加速属于 WebRTC Relay path 的内部实现；`single_relay` 与 `relay_mesh` 不创建新的 endpoint、terminal protocol 或 capability 类型。
-- 桌面官方 cloud 能力通过可选闭源 `termx-cloud` companion 提供，普通开源 `termx` 不静态或动态链接私有代码；移动端官方构建使用同一 contract 的私有模块。
+- 桌面官方 cloud 能力通过可选闭源 `termx-cloud` companion 提供，普通开源 `termx` 不静态或动态链接私有代码；当前 Android 官方构建通过固定私有 source set 使用同一 contract，Community 构建不引用私有路径。
 - Control Plane、Hub、Relay 和 Web Controller 服务端不进入普通用户安装包；企业私有部署使用单独商业交付物。
 - terminal capability 由 owning daemon 签发和验证。Hub、Relay、Web Controller 永远看不到 capability grant，也不拥有 terminal authorization。
 - Control Plane 可以签发短期 Hub 服务准入票据；Relay entitlement 通过独立短期 `RelayLease` 表达。

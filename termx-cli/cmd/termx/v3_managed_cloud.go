@@ -18,9 +18,6 @@ import (
 )
 
 var (
-	openV3CloudCompanion = func(context.Context) (cloudcompanion.Client, error) {
-		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING, "Cloud Companion is not installed or connected")
-	}
 	dialV3ManagedSession = remotev2client.DialSession
 )
 
@@ -38,6 +35,9 @@ func v3ManagedCloudEndpointDialer() services.EndpointDialer {
 		if companion == nil {
 			return services.EndpointServiceBundle{}, fmt.Errorf("managed cloud endpoint %q: %w", cfg.ID,
 				cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING, "Cloud Companion returned no client"))
+		}
+		if closer, ok := companion.(interface{ Close() error }); ok {
+			defer closer.Close()
 		}
 		policy, err := cloudcompanion.DialPolicyForRelayMode(cfg.RelayMode)
 		if err != nil {

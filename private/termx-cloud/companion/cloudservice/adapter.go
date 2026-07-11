@@ -56,6 +56,14 @@ func (admission HubAdmission) String() string {
 // ControlPlaneAdapter 是 companion 调用官方 Control Plane 的私有 TLS contract。
 // 实现负责把 Authorization 变成账号或设备 request credential，并返回稳定 cloudcompanion.Error。
 type ControlPlaneAdapter interface {
+	// BeginLogin 启动官方 browser/device-code flow，只返回 public flow metadata。
+	BeginLogin(context.Context, *cloudpb.BeginLoginRequest) (*cloudpb.LoginFlow, error)
+	// CompleteLogin 兑换指定 flow 并返回只在 companion 内可读取 secret 的 account session。
+	CompleteLogin(context.Context, *cloudpb.CompleteLoginRequest) (session.Session, error)
+	// BeginDeviceEnrollment 用一次性 code、public key 和设备 metadata 获取短期 challenge。
+	BeginDeviceEnrollment(context.Context, *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error)
+	// CompleteDeviceEnrollment 验证公开 daemon 的 DeviceProof 并返回 private device cloud session。
+	CompleteDeviceEnrollment(context.Context, *cloudpb.CompleteDeviceEnrollmentRequest) (session.Session, error)
 	// ResolveEndpoint 创建或定位 managed session，并返回 Hub/ICE 最小 metadata。
 	ResolveEndpoint(context.Context, session.Authorization, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
 	// AcquirePresenceAdmission 为 daemon proof 获取短期 Hub presence admission。

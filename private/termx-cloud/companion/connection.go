@@ -121,6 +121,154 @@ func (connection *Connection) Status(ctx context.Context, _ *cloudpb.StatusReque
 	}, nil
 }
 
+// BeginLogin 启动 account browser/device-code flow。
+// 返回值只包含短期 flow reference 和用户交互 metadata，账号 token 始终留在 private Control Plane adapter。
+func (connection *Connection) BeginLogin(ctx context.Context, request *cloudpb.BeginLoginRequest) (*cloudpb.LoginFlow, error) {
+	if err := connection.requireLifecycleCapability(ctx, cloudpb.CompanionCapability_COMPANION_CAPABILITY_ACCOUNT_SESSION, cloudpb.CallerRole_CALLER_ROLE_CLI, cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CallerRole_CALLER_ROLE_MOBILE_APP); err != nil {
+		return nil, err
+	}
+	if err := validateBeginLoginRequest(request); err != nil {
+		return nil, err
+	}
+	flow, err := connection.service.controlPlane.BeginLogin(ctx, cloneMessage(request))
+	if err != nil {
+		return nil, sanitizeAdapterError(err)
+	}
+	if err := validateLoginFlow(flow, connection.service.now()); err != nil {
+		return nil, err
+	}
+	return cloneMessage(flow), nil
+}
+
+// CompleteLogin 兑换短期 flow，并把 account session 写入 OS credential store。
+// public response 只返回 metadata；adapter 返回的 token bytes 在 Save 后立即销毁。
+func (connection *Connection) CompleteLogin(ctx context.Context, request *cloudpb.CompleteLoginRequest) (*cloudpb.CompleteLoginResponse, error) {
+	if err := connection.requireLifecycleCapability(ctx, cloudpb.CompanionCapability_COMPANION_CAPABILITY_ACCOUNT_SESSION, cloudpb.CallerRole_CALLER_ROLE_CLI, cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CallerRole_CALLER_ROLE_MOBILE_APP); err != nil {
+		return nil, err
+	}
+	if request == nil || request.GetFlowId() == "" {
+		return nil, protocolError("invalid login completion request")
+	}
+	stored, err := connection.service.controlPlane.CompleteLogin(ctx, cloneMessage(request))
+	if err != nil {
+		return nil, sanitizeAdapterError(err)
+	}
+	defer stored.Destroy()
+	if stored.Metadata().Kind != session.KindAccount {
+		return nil, protocolError("Control Plane returned a non-account login session")
+	}
+	if err := connection.service.sessions.Save(ctx, stored, connection.service.now()); err != nil {
+		return nil, temporaryError("OS credential store rejected the account session")
+	}
+	return &cloudpb.CompleteLoginResponse{Session: sessionSummary(stored.Metadata())}, nil
+}
+
+// BeginDeviceEnrollment 用一次性 code、public key 与设备 metadata 获取短期 challenge。
+// DeviceIdentity private key 不进入 Companion；challenge 必须回到公开 daemon/CLI 签名。
+func (connection *Connection) BeginDeviceEnrollment(ctx context.Context, request *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error) {
+	if err := connection.requireLifecycleCapability(ctx, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT, cloudpb.CallerRole_CALLER_ROLE_CLI, cloudpb.CallerRole_CALLER_ROLE_DAEMON); err != nil {
+		return nil, err
+	}
+	if err := validateBeginEnrollmentRequest(request); err != nil {
+		return nil, err
+	}
+	challenge, err := connection.service.controlPlane.BeginDeviceEnrollment(ctx, cloneMessage(request))
+	if err != nil {
+		return nil, sanitizeAdapterError(err)
+	}
+	if err := validateEnrollmentChallenge(challenge, connection.service.now()); err != nil {
+		return nil, err
+	}
+	return cloneMessage(challenge), nil
+}
+
+// CompleteDeviceEnrollment 转发公开 daemon 生成的 DeviceProof，并保存 private device 云会话。
+// 成功不会生成、读取或撤销 CapabilityGrant，也不会扩大 terminal scope。
+func (connection *Connection) CompleteDeviceEnrollment(ctx context.Context, request *cloudpb.CompleteDeviceEnrollmentRequest) (*cloudpb.CompleteDeviceEnrollmentResponse, error) {
+	if err := connection.requireLifecycleCapability(ctx, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT, cloudpb.CallerRole_CALLER_ROLE_CLI, cloudpb.CallerRole_CALLER_ROLE_DAEMON); err != nil {
+		return nil, err
+	}
+	if err := validateCompleteEnrollmentRequest(request); err != nil {
+		return nil, err
+	}
+	stored, err := connection.service.controlPlane.CompleteDeviceEnrollment(ctx, cloneMessage(request))
+	if err != nil {
+		return nil, sanitizeAdapterError(err)
+	}
+	defer stored.Destroy()
+	if stored.Metadata().Kind != session.KindDevice {
+		return nil, protocolError("Control Plane returned a non-device enrollment session")
+	}
+	if err := connection.service.sessions.Save(ctx, stored, connection.service.now()); err != nil {
+		return nil, temporaryError("OS credential store rejected the device session")
+	}
+	return &cloudpb.CompleteDeviceEnrollmentResponse{Session: sessionSummary(stored.Metadata())}, nil
+}
+
+// Logout 删除请求中明确选择的 account/device 云会话。
+// 该操作不读取或删除公开 DeviceIdentity、CapabilityGrant store、connections.yaml 或 SSH 配置。
+func (connection *Connection) Logout(ctx context.Context, request *cloudpb.LogoutRequest) (*cloudpb.LogoutResponse, error) {
+	if request == nil || !request.GetAccountSession() && !request.GetDeviceSession() {
+		return nil, protocolError("logout must select at least one cloud session")
+	}
+	role, _, err := connection.snapshotHello()
+	if err != nil {
+		return nil, err
+	}
+	if role != cloudpb.CallerRole_CALLER_ROLE_CLI && role != cloudpb.CallerRole_CALLER_ROLE_TUI && role != cloudpb.CallerRole_CALLER_ROLE_MOBILE_APP && role != cloudpb.CallerRole_CALLER_ROLE_DAEMON {
+		return nil, protocolError("logout is not allowed for caller role")
+	}
+	if request.GetAccountSession() {
+		if err := connection.requireNegotiatedCapability(cloudpb.CompanionCapability_COMPANION_CAPABILITY_ACCOUNT_SESSION); err != nil {
+			return nil, err
+		}
+		if err := connection.service.sessions.Delete(ctx, session.KindAccount); err != nil {
+			return nil, temporaryError("OS credential store could not delete the account session")
+		}
+	}
+	if request.GetDeviceSession() {
+		if err := connection.requireNegotiatedCapability(cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT); err != nil {
+			return nil, err
+		}
+		if err := connection.service.sessions.Delete(ctx, session.KindDevice); err != nil {
+			return nil, temporaryError("OS credential store could not delete the device session")
+		}
+	}
+	return &cloudpb.LogoutResponse{}, nil
+}
+
+// Doctor 返回当前 caller 可见状态和固定 code 的脱敏诊断。
+// diagnostic 不含 token body、SDP credential、TURN password、grant 或 terminal identity。
+func (connection *Connection) Doctor(ctx context.Context, _ *cloudpb.DoctorRequest) (*cloudpb.DoctorResponse, error) {
+	status, err := connection.Status(ctx, &cloudpb.StatusRequest{})
+	if err != nil {
+		return nil, err
+	}
+	severity := cloudpb.DiagnosticSeverity_DIAGNOSTIC_SEVERITY_INFO
+	message := "Cloud Companion protocol and local credential store are ready"
+	if status.GetState() != cloudpb.CompanionState_COMPANION_STATE_READY {
+		severity = cloudpb.DiagnosticSeverity_DIAGNOSTIC_SEVERITY_WARNING
+		message = "Cloud Companion requires account login or device enrollment"
+	}
+	return &cloudpb.DoctorResponse{Status: status, Items: []*cloudpb.DiagnosticItem{{Code: "companion_state", Severity: severity, Message: message, Reference: connection.service.version}}}, nil
+}
+
+// Shutdown 验证 CLI caller 后确认本地进程退出请求。
+// 真正关闭 listener 由 public IPC Server 在 ack 写入成功后执行，避免先停进程再丢响应。
+func (connection *Connection) Shutdown(ctx context.Context, request *cloudpb.ShutdownRequest) (*cloudpb.ShutdownResponse, error) {
+	if err := ensureContext(ctx); err != nil {
+		return nil, temporaryError("companion shutdown request was canceled")
+	}
+	role, _, err := connection.snapshotHello()
+	if err != nil {
+		return nil, err
+	}
+	if role != cloudpb.CallerRole_CALLER_ROLE_CLI || request == nil || request.GetReason() == "" {
+		return nil, protocolError("invalid companion shutdown request")
+	}
+	return &cloudpb.ShutdownResponse{}, nil
+}
+
 // ResolveEndpoint 通过 Control Plane 创建或定位 managed session。
 // 返回的 target、endpoint、Hub 和 ICE metadata 会在进入 public WebRTC 前严格校验。
 func (connection *Connection) ResolveEndpoint(ctx context.Context, request *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
@@ -386,6 +534,39 @@ func (connection *Connection) authorize(ctx context.Context, capability cloudpb.
 	authorization := stored.Authorization()
 	stored.Destroy()
 	return authorization, nil
+}
+
+func (connection *Connection) requireLifecycleCapability(ctx context.Context, capability cloudpb.CompanionCapability, roles ...cloudpb.CallerRole) error {
+	if err := ensureContext(ctx); err != nil {
+		return temporaryError("companion lifecycle request was canceled")
+	}
+	role, _, err := connection.snapshotHello()
+	if err != nil {
+		return err
+	}
+	if !containsRole(roles, role) {
+		return protocolError("lifecycle operation is not allowed for caller role")
+	}
+	return connection.requireNegotiatedCapability(capability)
+}
+
+func (connection *Connection) requireNegotiatedCapability(capability cloudpb.CompanionCapability) error {
+	connection.mu.Lock()
+	_, negotiated := connection.capabilities[capability]
+	connection.mu.Unlock()
+	if !negotiated {
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_INCOMPATIBLE, "required companion capability was not negotiated")
+	}
+	return nil
+}
+
+func sessionSummary(metadata session.Metadata) *cloudpb.CloudSessionSummary {
+	return &cloudpb.CloudSessionSummary{
+		AccountLabel:  metadata.AccountLabel,
+		AccountId:     metadata.AccountID,
+		DeviceId:      metadata.DeviceID,
+		ExpiresAtUnix: uint64(metadata.ExpiresAt.Unix()),
+	}
 }
 
 func (connection *Connection) snapshotHello() (cloudpb.CallerRole, []cloudpb.CompanionCapability, error) {

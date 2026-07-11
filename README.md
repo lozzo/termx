@@ -31,7 +31,8 @@
 - live/input/resize/owner/copy/history 按 `TerminalRef` 路由隔离。
 - first-party create 优先使用用户可见 terminal name 作为 daemon-local key，并在单 endpoint 内拒绝重名。
 - managed WebRTC endpoint 已通过公开 Cloud Companion contract 接入 TUI；Companion 缺失时只让对应 endpoint unavailable，不影响 local/SSH。
-- Android App 已删除旧 Hub/session-token Connector，使用同一 endpoint/relay/error fixture；Community build 对官方 cloud 明确 fail closed，官方私有模块装配属于 RP006A。
+- Android App 已删除旧 Hub/session-token Connector，使用同一 endpoint/relay/error fixture；Community build 对官方 cloud 明确 fail closed，Official build 已通过固定私有 source set 装配同一公开 contract。
+- `termx cloud` 已提供 signed install/update、login/enroll、status/doctor、logout 和 uninstall；源码构建不含官方 release root 时 managed cloud 明确不可用，不影响 local/SSH。
 - TUI 本地同步输入组正在实现，用于向一组 terminal 多播普通键盘输入和 paste。
 
 ## 快捷键配置与 Ctrl+数字
@@ -178,6 +179,8 @@ termx-tui-v3 / future GUI / future mobile entry
 - `termx-vterm/`：终端语义解释来源，把 PTY bytes 解释成 terminal 语义事件或 transaction。
 - `termx-shared/`：共享 connection registry、transport 等基础包。
 - `internal/protocol/`、`termx-proto/`：daemon/client wire contract 与协议类型。
+- `private/termx-cloud/companion/`：闭源桌面/headless Cloud Companion artifact、系统 credential adapter 与签名 release tool。
+- `private/termx-cloud/mobile/android/`：只由 Official APK init script 装入的私有 cloud source set。
 - `private/termx-cloud/hub/`、`private/termx-cloud/relay/`：闭源 managed presence/signaling 与短租约 TURN 数据面；旧实现位于私有 archive。
 - `termx-remote/`：远程管理 runtime、agent/bridge/session 等远程产品能力。
 - `remote-ui/`：远程管理与移动端共享的 Web UI 组件和浏览器端运行时。

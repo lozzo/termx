@@ -44,6 +44,32 @@ type Client interface {
 	ReportConnectionOutcome(context.Context, *cloudpb.ReportConnectionOutcomeRequest) (*cloudpb.ReportConnectionOutcomeResponse, error)
 }
 
+// LifecycleClient 是公开 CLI 管理本机 Companion 账号与 daemon enrollment 的领域接口。
+// 登录 token 只能由 Companion 写入 OS credential store；公开调用方只接收 flow、challenge 和脱敏 session summary。
+type LifecycleClient interface {
+	// BeginLogin 启动 browser 或 device-code 登录流程，不自动打开 URL 或执行下载脚本。
+	BeginLogin(context.Context, *cloudpb.BeginLoginRequest) (*cloudpb.LoginFlow, error)
+	// CompleteLogin 等待并完成指定登录 flow；成功后 secret 只保存在 Companion 的 OS credential store。
+	CompleteLogin(context.Context, *cloudpb.CompleteLoginRequest) (*cloudpb.CompleteLoginResponse, error)
+	// BeginDeviceEnrollment 用一次性 code 和公开 DeviceIdentity key 获取短期 challenge。
+	BeginDeviceEnrollment(context.Context, *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error)
+	// CompleteDeviceEnrollment 提交公开 daemon 对 challenge 的签名 proof，并保存 device 云会话。
+	CompleteDeviceEnrollment(context.Context, *cloudpb.CompleteDeviceEnrollmentRequest) (*cloudpb.CompleteDeviceEnrollmentResponse, error)
+	// Logout 删除明确选择的 account/device 云会话，不删除 DeviceIdentity、grant store 或 endpoint 配置。
+	Logout(context.Context, *cloudpb.LogoutRequest) (*cloudpb.LogoutResponse, error)
+	// Doctor 返回本机安装、协议、账号和设备状态的脱敏诊断。
+	Doctor(context.Context, *cloudpb.DoctorRequest) (*cloudpb.DoctorResponse, error)
+	// Shutdown 请求固定本地 Companion 有序退出；它不改变云会话或公开 daemon lifecycle。
+	Shutdown(context.Context, *cloudpb.ShutdownRequest) (*cloudpb.ShutdownResponse, error)
+}
+
+// FullClient 组合 managed connectivity 与本地 lifecycle contract。
+// 桌面 IPC client 和官方移动私有模块必须实现同一组合；公开 managed dialer 仍只依赖较小的 Client。
+type FullClient interface {
+	Client
+	LifecycleClient
+}
+
 // PresenceStream 是 daemon 从 companion 接收 presence 状态和 WebRTC offer 的下行流。
 // 流中只能出现 cloudpb.PresenceEvent；关闭或失败不允许停止 daemon 本地 listener，也不允许重建第二份 terminal inventory。
 type PresenceStream interface {

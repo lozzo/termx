@@ -1,0 +1,13 @@
+gradle.projectsEvaluated {
+    def appProject = gradle.rootProject.findProject(':app')
+    if (appProject == null) {
+        throw new GradleException('TermX Android :app project was not found')
+    }
+    def configuredRoot = gradle.startParameter.projectProperties['termxOfficialCloudModuleDir']
+    def privateModuleRoot = configuredRoot != null
+        ? new File(configuredRoot).canonicalFile
+        : new File(gradle.rootProject.rootDir, '../../private/termx-cloud/mobile/android').canonicalFile
+    appProject.android.sourceSets.main.java.srcDir(new File(privateModuleRoot, 'src/main/kotlin'))
+    appProject.android.sourceSets.test.java.srcDir(new File(privateModuleRoot, 'src/test/kotlin'))
+    appProject.android.buildTypes.release.proguardFiles(new File(privateModuleRoot, 'official-proguard-rules.pro'))
+}

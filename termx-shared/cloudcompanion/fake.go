@@ -12,15 +12,22 @@ import (
 // FakeClient 是 public client、daemon 与 UI harness 共用的可控 Companion 实现。
 // 每个 handler 代表一次明确的 IPC operation；fake 记录克隆后的请求，测试无需启动 Hub、Web Controller 或闭源进程。
 type FakeClient struct {
-	HelloFunc                   func(context.Context, *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error)
-	StatusFunc                  func(context.Context, *cloudpb.StatusRequest) (*cloudpb.StatusResponse, error)
-	ResolveEndpointFunc         func(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
-	OpenPresenceFunc            func(context.Context, *cloudpb.OpenPresenceRequest) (PresenceStream, error)
-	CreateSignalingSessionFunc  func(context.Context, *cloudpb.CreateSignalingSessionRequest) (SignalingStream, error)
-	CompleteSignalingOfferFunc  func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
-	AcquireRelayLeaseFunc       func(context.Context, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
-	ReportPathQualityFunc       func(context.Context, *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error)
-	ReportConnectionOutcomeFunc func(context.Context, *cloudpb.ReportConnectionOutcomeRequest) (*cloudpb.ReportConnectionOutcomeResponse, error)
+	HelloFunc                    func(context.Context, *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error)
+	StatusFunc                   func(context.Context, *cloudpb.StatusRequest) (*cloudpb.StatusResponse, error)
+	BeginLoginFunc               func(context.Context, *cloudpb.BeginLoginRequest) (*cloudpb.LoginFlow, error)
+	CompleteLoginFunc            func(context.Context, *cloudpb.CompleteLoginRequest) (*cloudpb.CompleteLoginResponse, error)
+	BeginDeviceEnrollmentFunc    func(context.Context, *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error)
+	CompleteDeviceEnrollmentFunc func(context.Context, *cloudpb.CompleteDeviceEnrollmentRequest) (*cloudpb.CompleteDeviceEnrollmentResponse, error)
+	LogoutFunc                   func(context.Context, *cloudpb.LogoutRequest) (*cloudpb.LogoutResponse, error)
+	DoctorFunc                   func(context.Context, *cloudpb.DoctorRequest) (*cloudpb.DoctorResponse, error)
+	ShutdownFunc                 func(context.Context, *cloudpb.ShutdownRequest) (*cloudpb.ShutdownResponse, error)
+	ResolveEndpointFunc          func(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
+	OpenPresenceFunc             func(context.Context, *cloudpb.OpenPresenceRequest) (PresenceStream, error)
+	CreateSignalingSessionFunc   func(context.Context, *cloudpb.CreateSignalingSessionRequest) (SignalingStream, error)
+	CompleteSignalingOfferFunc   func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
+	AcquireRelayLeaseFunc        func(context.Context, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
+	ReportPathQualityFunc        func(context.Context, *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error)
+	ReportConnectionOutcomeFunc  func(context.Context, *cloudpb.ReportConnectionOutcomeRequest) (*cloudpb.ReportConnectionOutcomeResponse, error)
 
 	mu       sync.Mutex
 	requests RecordedRequests
@@ -29,15 +36,22 @@ type FakeClient struct {
 // RecordedRequests 是 FakeClient 已接收 operation 的不可变快照。
 // 所有 protobuf 值都在写入和读取时克隆，测试修改快照不会改变 fake 内部真值。
 type RecordedRequests struct {
-	Hello                   []*cloudpb.CompanionHelloRequest
-	Status                  []*cloudpb.StatusRequest
-	ResolveEndpoint         []*cloudpb.ResolveEndpointRequest
-	OpenPresence            []*cloudpb.OpenPresenceRequest
-	CreateSignalingSession  []*cloudpb.CreateSignalingSessionRequest
-	CompleteSignalingOffer  []*cloudpb.CompleteSignalingOfferRequest
-	AcquireRelayLease       []*cloudpb.AcquireRelayLeaseRequest
-	ReportPathQuality       []*cloudpb.ReportPathQualityRequest
-	ReportConnectionOutcome []*cloudpb.ReportConnectionOutcomeRequest
+	Hello                    []*cloudpb.CompanionHelloRequest
+	Status                   []*cloudpb.StatusRequest
+	BeginLogin               []*cloudpb.BeginLoginRequest
+	CompleteLogin            []*cloudpb.CompleteLoginRequest
+	BeginDeviceEnrollment    []*cloudpb.BeginDeviceEnrollmentRequest
+	CompleteDeviceEnrollment []*cloudpb.CompleteDeviceEnrollmentRequest
+	Logout                   []*cloudpb.LogoutRequest
+	Doctor                   []*cloudpb.DoctorRequest
+	Shutdown                 []*cloudpb.ShutdownRequest
+	ResolveEndpoint          []*cloudpb.ResolveEndpointRequest
+	OpenPresence             []*cloudpb.OpenPresenceRequest
+	CreateSignalingSession   []*cloudpb.CreateSignalingSessionRequest
+	CompleteSignalingOffer   []*cloudpb.CompleteSignalingOfferRequest
+	AcquireRelayLease        []*cloudpb.AcquireRelayLeaseRequest
+	ReportPathQuality        []*cloudpb.ReportPathQualityRequest
+	ReportConnectionOutcome  []*cloudpb.ReportConnectionOutcomeRequest
 }
 
 // Requests 返回 fake 当前记录的请求快照。
@@ -67,6 +81,77 @@ func (fake *FakeClient) Status(ctx context.Context, request *cloudpb.StatusReque
 		return nil, missingFakeHandler("Status")
 	}
 	return fake.StatusFunc(ctx, request)
+}
+
+// BeginLogin 记录并转发账号登录启动请求；缺少 handler 时返回稳定 PROTOCOL 错误。
+func (fake *FakeClient) BeginLogin(ctx context.Context, request *cloudpb.BeginLoginRequest) (*cloudpb.LoginFlow, error) {
+	fake.record(func(requests *RecordedRequests) {
+		requests.BeginLogin = append(requests.BeginLogin, cloneMessage(request))
+	})
+	if fake == nil || fake.BeginLoginFunc == nil {
+		return nil, missingFakeHandler("BeginLogin")
+	}
+	return fake.BeginLoginFunc(ctx, request)
+}
+
+// CompleteLogin 记录并转发账号登录完成请求；缺少 handler 时返回稳定 PROTOCOL 错误。
+func (fake *FakeClient) CompleteLogin(ctx context.Context, request *cloudpb.CompleteLoginRequest) (*cloudpb.CompleteLoginResponse, error) {
+	fake.record(func(requests *RecordedRequests) {
+		requests.CompleteLogin = append(requests.CompleteLogin, cloneMessage(request))
+	})
+	if fake == nil || fake.CompleteLoginFunc == nil {
+		return nil, missingFakeHandler("CompleteLogin")
+	}
+	return fake.CompleteLoginFunc(ctx, request)
+}
+
+// BeginDeviceEnrollment 记录并转发 daemon enrollment 启动请求；缺少 handler 时返回稳定 PROTOCOL 错误。
+func (fake *FakeClient) BeginDeviceEnrollment(ctx context.Context, request *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error) {
+	fake.record(func(requests *RecordedRequests) {
+		requests.BeginDeviceEnrollment = append(requests.BeginDeviceEnrollment, cloneMessage(request))
+	})
+	if fake == nil || fake.BeginDeviceEnrollmentFunc == nil {
+		return nil, missingFakeHandler("BeginDeviceEnrollment")
+	}
+	return fake.BeginDeviceEnrollmentFunc(ctx, request)
+}
+
+// CompleteDeviceEnrollment 记录并转发 daemon enrollment proof；缺少 handler 时返回稳定 PROTOCOL 错误。
+func (fake *FakeClient) CompleteDeviceEnrollment(ctx context.Context, request *cloudpb.CompleteDeviceEnrollmentRequest) (*cloudpb.CompleteDeviceEnrollmentResponse, error) {
+	fake.record(func(requests *RecordedRequests) {
+		requests.CompleteDeviceEnrollment = append(requests.CompleteDeviceEnrollment, cloneMessage(request))
+	})
+	if fake == nil || fake.CompleteDeviceEnrollmentFunc == nil {
+		return nil, missingFakeHandler("CompleteDeviceEnrollment")
+	}
+	return fake.CompleteDeviceEnrollmentFunc(ctx, request)
+}
+
+// Logout 记录并转发云会话删除请求；缺少 handler 时返回稳定 PROTOCOL 错误。
+func (fake *FakeClient) Logout(ctx context.Context, request *cloudpb.LogoutRequest) (*cloudpb.LogoutResponse, error) {
+	fake.record(func(requests *RecordedRequests) { requests.Logout = append(requests.Logout, cloneMessage(request)) })
+	if fake == nil || fake.LogoutFunc == nil {
+		return nil, missingFakeHandler("Logout")
+	}
+	return fake.LogoutFunc(ctx, request)
+}
+
+// Doctor 记录并转发脱敏诊断请求；缺少 handler 时返回稳定 PROTOCOL 错误。
+func (fake *FakeClient) Doctor(ctx context.Context, request *cloudpb.DoctorRequest) (*cloudpb.DoctorResponse, error) {
+	fake.record(func(requests *RecordedRequests) { requests.Doctor = append(requests.Doctor, cloneMessage(request)) })
+	if fake == nil || fake.DoctorFunc == nil {
+		return nil, missingFakeHandler("Doctor")
+	}
+	return fake.DoctorFunc(ctx, request)
+}
+
+// Shutdown 记录并转发本地 Companion 退出请求；缺少 handler 时返回稳定 PROTOCOL 错误。
+func (fake *FakeClient) Shutdown(ctx context.Context, request *cloudpb.ShutdownRequest) (*cloudpb.ShutdownResponse, error) {
+	fake.record(func(requests *RecordedRequests) { requests.Shutdown = append(requests.Shutdown, cloneMessage(request)) })
+	if fake == nil || fake.ShutdownFunc == nil {
+		return nil, missingFakeHandler("Shutdown")
+	}
+	return fake.ShutdownFunc(ctx, request)
 }
 
 // ResolveEndpoint 记录并转发 managed endpoint 定位请求；缺少 handler 时返回稳定 PROTOCOL 错误。
@@ -280,15 +365,22 @@ func (stream *FakeSignalingStream) Close() error {
 
 func cloneRecordedRequests(source RecordedRequests) RecordedRequests {
 	return RecordedRequests{
-		Hello:                   cloneMessages(source.Hello),
-		Status:                  cloneMessages(source.Status),
-		ResolveEndpoint:         cloneMessages(source.ResolveEndpoint),
-		OpenPresence:            cloneMessages(source.OpenPresence),
-		CreateSignalingSession:  cloneMessages(source.CreateSignalingSession),
-		CompleteSignalingOffer:  cloneMessages(source.CompleteSignalingOffer),
-		AcquireRelayLease:       cloneMessages(source.AcquireRelayLease),
-		ReportPathQuality:       cloneMessages(source.ReportPathQuality),
-		ReportConnectionOutcome: cloneMessages(source.ReportConnectionOutcome),
+		Hello:                    cloneMessages(source.Hello),
+		Status:                   cloneMessages(source.Status),
+		BeginLogin:               cloneMessages(source.BeginLogin),
+		CompleteLogin:            cloneMessages(source.CompleteLogin),
+		BeginDeviceEnrollment:    cloneMessages(source.BeginDeviceEnrollment),
+		CompleteDeviceEnrollment: cloneMessages(source.CompleteDeviceEnrollment),
+		Logout:                   cloneMessages(source.Logout),
+		Doctor:                   cloneMessages(source.Doctor),
+		Shutdown:                 cloneMessages(source.Shutdown),
+		ResolveEndpoint:          cloneMessages(source.ResolveEndpoint),
+		OpenPresence:             cloneMessages(source.OpenPresence),
+		CreateSignalingSession:   cloneMessages(source.CreateSignalingSession),
+		CompleteSignalingOffer:   cloneMessages(source.CompleteSignalingOffer),
+		AcquireRelayLease:        cloneMessages(source.AcquireRelayLease),
+		ReportPathQuality:        cloneMessages(source.ReportPathQuality),
+		ReportConnectionOutcome:  cloneMessages(source.ReportConnectionOutcome),
 	}
 }
 
