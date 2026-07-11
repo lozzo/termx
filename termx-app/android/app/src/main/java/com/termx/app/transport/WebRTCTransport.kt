@@ -4,8 +4,11 @@ import android.content.Context
 import android.util.Log
 import com.termx.app.network.BridgeServer
 import com.termx.app.managed.ManagedIceServer
+import com.termx.app.managed.ManagedPathQualitySample
+import com.termx.app.managed.ManagedPathQualitySampleSource
 import com.termx.app.managed.ManagedSignalAnswer
 import com.termx.app.managed.ManagedSignalOffer
+import com.termx.app.managed.ObservedPath
 import org.json.JSONObject
 import org.webrtc.*
 import java.nio.ByteBuffer
@@ -24,7 +27,7 @@ import java.util.concurrent.atomic.AtomicLong
 class WebRTCTransport(
     private val bridge: BridgeServer?,
     val machineId: String,
-) {
+) : ManagedPathQualitySampleSource {
     companion object {
         private const val TAG = "TermxWebRTC"
 
@@ -33,6 +36,7 @@ class WebRTCTransport(
         private const val CONNECT_TIMEOUT = 15000
         private const val DATA_CHANNEL_OPEN_TIMEOUT = 10000
         private const val RESUME_STALE_THRESHOLD_MS = 7000L
+        private const val QUALITY_STATS_TIMEOUT_MS = 500L
 
         private var factory: PeerConnectionFactory? = null
         private var factoryInitialized = false
@@ -58,6 +62,9 @@ class WebRTCTransport(
     var lastRtt = 0L
     @Volatile private var relayInUse = false
     private val generation = AtomicLong(0)
+    private val beforeCloseLock = Any()
+    private val beforeCloseListeners = mutableListOf<() -> Unit>()
+    @Volatile private var latestQualitySample: ManagedPathQualitySample? = null
 
     val channelManager = ChannelManager(bridge, machineId)
     private val heartbeat = Heartbeat(this) { triggerDisconnect() }
@@ -355,6 +362,95 @@ class WebRTCTransport(
 
     fun currentRelayInUse(): Boolean = relayInUse
 
+    /**
+     * readPathQualitySample 读取 selected candidate pair 的脱敏累计 stats。
+     * 返回值不包含 local/remote address、SDP、DataChannel payload、terminal 或 credential；stats 未就绪时返回 null。
+     */
+    override fun readPathQualitySample(): ManagedPathQualitySample? {
+        val peer = pc ?: return null
+        val latch = CountDownLatch(1)
+        var sample: ManagedPathQualitySample? = null
+        peer.getStats { reports ->
+            try {
+                val statsMap = reports.statsMap
+                val activePairId = statsMap.values.firstNotNullOfOrNull { report ->
+                    if (report.type == "transport") report.members["selectedCandidatePairId"]?.toString() else null
+                }
+                val pairEntry = activePairId?.let { pairId -> statsMap[pairId]?.let { pairId to it } }
+                    ?: statsMap.entries.asSequence()
+                        .filter { (_, report) ->
+                            report.type == "candidate-pair" && report.members["nominated"] == true &&
+                                report.members["state"]?.toString() == "succeeded"
+                        }
+                        .minByOrNull { it.key }
+                        ?.let { it.key to it.value }
+                val pairId = pairEntry?.first ?: return@getStats
+                val pair = pairEntry.second
+                val localId = pair.members["localCandidateId"]?.toString().orEmpty()
+                val remoteId = pair.members["remoteCandidateId"]?.toString().orEmpty()
+                val local = statsMap[localId]
+                val remote = statsMap[remoteId]
+                if (local == null || remote == null) return@getStats
+                val localType = local.members["candidateType"]?.toString().orEmpty()
+                val remoteType = remote.members["candidateType"]?.toString().orEmpty()
+                val observedPath = if (localType == "relay" || remoteType == "relay") {
+                    ObservedPath.SINGLE_RELAY
+                } else {
+                    ObservedPath.DIRECT
+                }
+                var rttMillis = statsSecondsMillis(pair.members["currentRoundTripTime"])
+                if (rttMillis == 0L) {
+                    val sctp = statsMap.values.firstOrNull { it.type == "sctp-transport" || it.type == "sctpTransport" }
+                    rttMillis = statsSecondsMillis(sctp?.members?.get("smoothedRoundTripTime"))
+                }
+                val retransmissions = statsNonNegativeLong(pair.members["retransmissionsSent"])
+                val discarded = statsNonNegativeLong(pair.members["packetsDiscardedOnSend"])
+                val networkClass = local.members["networkType"]?.toString()?.trim()?.lowercase()
+                    ?.takeIf { it.matches(Regex("[a-z0-9._-]{1,64}")) } ?: "unknown"
+                val state = peer.connectionState()
+                val connected = state == PeerConnection.PeerConnectionState.CONNECTED
+                sample = ManagedPathQualitySample(
+                    pairId = pairId,
+                    observedPath = observedPath,
+                    sampledAtUnixMillis = System.currentTimeMillis(),
+                    roundTripTimeMillis = rttMillis,
+                    bytesSent = statsNonNegativeLong(pair.members["bytesSent"]),
+                    bytesReceived = statsNonNegativeLong(pair.members["bytesReceived"]),
+                    packetsSent = statsNonNegativeLong(pair.members["packetsSent"]),
+                    lossEvents = saturatingStatsAdd(retransmissions, discarded),
+                    connected = connected,
+                    networkClass = networkClass,
+                )
+                latestQualitySample = sample
+                relayInUse = observedPath == ObservedPath.SINGLE_RELAY
+            } catch (e: Exception) {
+                Log.w(TAG, "quality stats unavailable [$machineId]", e)
+            } finally {
+                latch.countDown()
+            }
+        }
+        if (!latch.await(QUALITY_STATS_TIMEOUT_MS, TimeUnit.MILLISECONDS)) return null
+        return sample
+    }
+
+    /** readFinalPathQualitySample 非阻塞投影最近累计计数和关闭前连接状态，保证 telemetry 不延迟 transport close。 */
+    override fun readFinalPathQualitySample(): ManagedPathQualitySample? {
+        val latest = latestQualitySample ?: return null
+        val state = pc?.connectionState()
+        val connected = state != PeerConnection.PeerConnectionState.DISCONNECTED &&
+            state != PeerConnection.PeerConnectionState.FAILED &&
+            state != PeerConnection.PeerConnectionState.CLOSED
+        return latest.copy(
+            sampledAtUnixMillis = System.currentTimeMillis().coerceAtLeast(latest.sampledAtUnixMillis + 1),
+            connected = connected,
+        )
+    }
+
+    /** addBeforeCloseListener 注册一次性 PeerConnection 关闭前 callback；仅用于抓取最终 stats，不允许阻止 transport 关闭。 */
+    fun addBeforeCloseListener(listener: () -> Unit) {
+        synchronized(beforeCloseLock) { beforeCloseListeners += listener }
+    }
+
     fun getConnectionInfo(): JSONObject {
         val peer = pc
         if (peer == null || !isConnected) return JSONObject().put("type", "unknown").put("relayInUse", relayInUse)
@@ -436,11 +532,16 @@ class WebRTCTransport(
 
     fun disconnect() {
         generation.incrementAndGet()
+        val qualityListeners = synchronized(beforeCloseLock) {
+            beforeCloseListeners.toList().also { beforeCloseListeners.clear() }
+        }
+        qualityListeners.forEach { listener -> runCatching(listener) }
         onChannelResetListener?.invoke()
         heartbeat.destroy()
         channelManager.closeAll()
         try { pc?.close() } catch (_: Exception) {}
         pc = null
+        latestQualitySample = null
         isConnected = false
         disconnectedAt = 0L
         relayInUse = false
@@ -455,4 +556,21 @@ class WebRTCTransport(
         lastFailureReason = reason
         Log.w(TAG, "failure: $reason [$machineId]")
     }
+
+    private fun statsNonNegativeLong(value: Any?): Long {
+        val number = value as? Number ?: return 0L
+        val raw = number.toDouble()
+        if (!raw.isFinite() || raw <= 0.0) return 0L
+        return if (raw >= Long.MAX_VALUE.toDouble()) Long.MAX_VALUE else raw.toLong()
+    }
+
+    private fun statsSecondsMillis(value: Any?): Long {
+        val number = value as? Number ?: return 0L
+        val millis = number.toDouble() * 1000.0
+        if (!millis.isFinite() || millis <= 0.0) return 0L
+        return if (millis >= Long.MAX_VALUE.toDouble()) Long.MAX_VALUE else millis.toLong()
+    }
+
+    private fun saturatingStatsAdd(left: Long, right: Long): Long =
+        if (Long.MAX_VALUE - left < right) Long.MAX_VALUE else left + right
 }

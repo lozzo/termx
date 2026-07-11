@@ -7,6 +7,7 @@ import com.termx.app.managed.ManagedDialPolicy
 import com.termx.app.managed.ManagedEndpointFailure
 import com.termx.app.managed.ManagedEndpointResolution
 import com.termx.app.managed.ManagedEndpointSpec
+import com.termx.app.managed.ManagedPathQualitySummary
 import com.termx.app.managed.ManagedSignalAnswer
 import com.termx.app.managed.ManagedSignalOffer
 
@@ -16,7 +17,7 @@ class OfficialManagedCloudFactory : ManagedCloudModuleFactory {
 }
 
 /**
- * OfficialManagedCloudAdapter 只把 endpoint resolution 和 SDP/ICE signaling 交给私有 gateway。
+ * OfficialManagedCloudAdapter 只把 endpoint resolution、SDP/ICE signaling 和已校验质量窗口交给私有 gateway。
  * 它不接收 grant、DeviceIdentity private key、DataChannel 或 terminal payload。
  */
 internal class OfficialManagedCloudAdapter(private val gateway: OfficialCloudGateway) : ManagedCloudAdapter {
@@ -28,6 +29,11 @@ internal class OfficialManagedCloudAdapter(private val gateway: OfficialCloudGat
         offer: ManagedSignalOffer,
         policy: ManagedDialPolicy,
     ): ManagedSignalAnswer = gateway.createSignalingSession(spec, resolution, offer, policy)
+
+    override suspend fun reportPathQuality(summary: ManagedPathQualitySummary) {
+        summary.validate()
+        gateway.reportPathQuality(summary)
+    }
 }
 
 /**
@@ -45,6 +51,10 @@ internal class OfficialCloudGateway(@Suppress("UNUSED_PARAMETER") context: Conte
         @Suppress("UNUSED_PARAMETER") offer: ManagedSignalOffer,
         @Suppress("UNUSED_PARAMETER") policy: ManagedDialPolicy,
     ): ManagedSignalAnswer {
+        throw ManagedEndpointFailure("login_required", "Official mobile cloud account session is not configured")
+    }
+
+    suspend fun reportPathQuality(@Suppress("UNUSED_PARAMETER") summary: ManagedPathQualitySummary) {
         throw ManagedEndpointFailure("login_required", "Official mobile cloud account session is not configured")
     }
 }

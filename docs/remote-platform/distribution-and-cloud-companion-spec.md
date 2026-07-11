@@ -368,6 +368,8 @@ cd termx-app/android
 
 Official init script 只把固定 `com.termx.cloud.OfficialManagedCloudFactory` 私有 source set 装入官方 APK；Community classpath 不引用 `private/`。未来建立 iOS target 时必须先补同一 contract 的 Swift vector 和私有装配，不把 Android 完成状态外推为 iOS 已实现。
 
+GA001A 后，Android 公开层还拥有 selected candidate pair stats 采样、质量窗口聚合和 `ManagedPathQualitySummary` 隐私校验；Official 私有模块只实现 `reportPathQuality` 转发，不能接收原始 stats、候选地址、grant、terminal 数据或成本输入。Go 与 Android 从 `termx-shared/cloudcompanion/testdata/path_quality_contract.json` 读取同一 v2 fixture；Community/Official 都必须通过相同窗口测试和 APK class 边界检查。质量上报错误只丢 telemetry，不参与连接成功、transport close、重连或 route selection。
+
 ### 9.3 托管服务端
 
 Control Plane、Web Controller、Hub、Relay 和 Route Planner 不随 `termx cloud install` 下发。它们由 TermX 运维部署。
@@ -488,6 +490,13 @@ out-of-process IPC 是清晰的工程边界，但不自动构成法律结论。�
 实现结果：桌面公开 installer、owner-scoped IPC、activation manager 和完整 CLI lifecycle 已落地；私有 `termx-cloud` binary、系统 keyring adapter 与外部签名 release artifact tool 已落地。Android 通过固定 factory class 形成 Community disabled adapter 与 Official private source set 两种构建，两者共用公开 `ManagedCloudAdapter` contract；Community/Official unit test 与 `assembleDebug` 均通过。正式 CLI build 必须通过 linker 注入 release key ID/public key，正式 Companion build 必须注入与 manifest 一致的 version/channel；源码构建缺少 release root 时 managed cloud 稳定 fail closed。
 
 不伪装为已完成的生产外部项：桌面 `NewUnconfiguredAdapter` 与 Android development gateway 在未注入正式 OAuth/TLS SDK 时返回稳定 cloud unavailable/login required；正式 release origin、key custody 和发布审批进入 LIC001/发布流水线。daemon `OpenPresence` 仍缺独立 presence-proof challenge contract，当前不得复用 enrollment challenge 或猜测 daemon online，后续协议切片补齐后才能接真实 presence。
+
+### GA001A：Android 质量观测对齐
+
+- Android WebRTC primitive 从 selected candidate pair 读取脱敏累计 stats，公开 collector 与 Go v2 summary fixture 对齐。
+- reporter 只在端到端授权成功后启动，并在 PeerConnection 关闭前使用非阻塞缓存样本收尾。
+- `ManagedCloudAdapter.reportPathQuality` 是唯一移动 cloud 上报入口；Community 缺失与 Official 未登录都保持 endpoint 局部 fail closed。
+- Community/Official 构建继续共用公开 App 源码，只有 Official APK 包含固定私有 factory；两者都不因 telemetry 获得自动改路能力。
 
 ### LIC001：发布许可证门禁
 

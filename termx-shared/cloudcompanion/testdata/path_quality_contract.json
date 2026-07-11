@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "summary_fields": [
+    "managed_session_id",
+    "observed_path",
+    "rtt_p50_millis",
+    "jitter_millis",
+    "loss_basis_points",
+    "throughput_bps",
+    "connected_millis",
+    "network_class",
+    "region",
+    "rtt_p95_millis",
+    "sample_count",
+    "disconnect_count",
+    "window_started_at_unix_millis",
+    "window_ended_at_unix_millis",
+    "packet_count",
+    "loss_event_count",
+    "carrier_tag",
+    "provider_tag"
+  ],
+  "forbidden_fragments": [
+    "cost",
+    "terminal",
+    "grant",
+    "capability",
+    "payload",
+    "address",
+    "credential"
+  ],
+  "sample": {
+    "managed_session_id": "managed-fixture",
+    "observed_path": "single_relay",
+    "rtt_p50_millis": 42,
+    "jitter_millis": 7,
+    "loss_basis_points": 99,
+    "throughput_bps": 64000,
+    "connected_millis": 55000,
+    "network_class": "wifi",
+    "region": "eu-west",
+    "rtt_p95_millis": 88,
+    "sample_count": 13,
+    "disconnect_count": 1,
+    "window_started_at_unix_millis": 1700000000000,
+    "window_ended_at_unix_millis": 1700000060000,
+    "packet_count": 1010,
+    "loss_event_count": 10,
+    "carrier_tag": "carrier-a",
+    "provider_tag": "provider-a"
+  }
+}

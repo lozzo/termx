@@ -18,7 +18,7 @@ data class ManagedSignalAnswer(val sdp: String, val candidates: List<String> = e
 
 /**
  * ManagedCloudAdapter 是移动端私有 cloud module 必须实现的公开边界。
- * 它只能处理 endpoint resolution 和 signaling，禁止接收 grant、设备私钥、DataChannel 或 terminal payload。
+ * 它只能处理 endpoint resolution、signaling 和脱敏质量窗口，禁止接收 grant、设备私钥、DataChannel 或 terminal payload。
  */
 interface ManagedCloudAdapter {
     suspend fun resolve(spec: ManagedEndpointSpec): ManagedEndpointResolution
@@ -28,6 +28,9 @@ interface ManagedCloudAdapter {
         offer: ManagedSignalOffer,
         policy: ManagedDialPolicy,
     ): ManagedSignalAnswer
+
+    /** reportPathQuality 转发 GA001A v2 脱敏窗口；实现不得据此自动改路或请求新 lease。 */
+    suspend fun reportPathQuality(summary: ManagedPathQualitySummary)
 }
 
 /** GrantCredentialStore 只按 grant_ref 从 Android Keystore/Credential Manager 域解析原始 capability。 */
@@ -55,6 +58,10 @@ class CommunityCloudAdapter : ManagedCloudAdapter {
         offer: ManagedSignalOffer,
         policy: ManagedDialPolicy,
     ): ManagedSignalAnswer {
+        throw ManagedEndpointFailure("companion_missing", "Official managed cloud module is not installed")
+    }
+
+    override suspend fun reportPathQuality(summary: ManagedPathQualitySummary) {
         throw ManagedEndpointFailure("companion_missing", "Official managed cloud module is not installed")
     }
 }

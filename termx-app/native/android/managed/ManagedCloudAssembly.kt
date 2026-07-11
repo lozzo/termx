@@ -43,4 +43,8 @@ private class BrokenOfficialCloudAdapter(private val detail: String) : ManagedCl
     ): ManagedSignalAnswer {
         throw ManagedEndpointFailure("companion_untrusted", detail)
     }
+
+    override suspend fun reportPathQuality(summary: ManagedPathQualitySummary) {
+        throw ManagedEndpointFailure("companion_untrusted", detail)
+    }
 }

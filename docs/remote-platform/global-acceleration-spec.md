@@ -178,6 +178,14 @@ GA001 已冻结为 measurement-only 链路：公开 `termx` 从当前 selected I
 
 GA001 不实现候选 Relay active probe、Relay-to-Relay link probe、route score、hysteresis、RelayLease 获取、ICE restart 或任何自动切换。质量上报失败只丢弃当前 telemetry 窗口，不改变当前 transport 和 endpoint 状态；主动 probe 与实际选路从 GA002 开始按独立 harness 建设。
 
+### 6.5 GA001A Android 对齐基线
+
+Android managed WebRTC 复用 GA001 的同一字段、算法和默认周期，不建立移动端专用业务协议：公开 `ManagedPathQualitySummary` 与 Go `PathQualitySummary` 由同一 JSON fixture 守卫，均使用 5 秒采样、60 秒窗口、nearest-rank P50/P95、相邻 RTT 绝对差平均值、累计密文字节吞吐、ICE 重传/send-discard loss estimate、connected duration 和异常断线次数。Android 只接受 WebRTC transport 指定的 selected candidate pair；缺失该索引时，只能确定性选择同时满足 `nominated + succeeded` 的 pair。
+
+观测器必须在 DTLS DataChannel 的 DeviceIdentity/capability 授权成功后启动，resolve、signaling、ICE 或授权失败不产生质量窗口。PeerConnection 关闭前只读取最近缓存的累计计数并投影最终连接状态，不能等待异步 `getStats` 阻塞 transport close；至少两个有效样本才允许上报。candidate pair、observed path 或累计计数回退会结束旧窗口并从当前样本建立新基线。
+
+移动端公开 DTO 同样没有 cost、terminal、grant、payload、address 或 credential 字段。Official 私有 cloud adapter 只能校验并转发脱敏窗口，Community adapter 稳定 fail closed；可信成本仍由服务端在质量入库后通过 observation reference 异步关联。GA001A 不新增 RelayLease、route score、重连、ICE restart、自动切路或 endpoint state mutation。
+
 ## 7. 选路模型
 
 Route Planner 对候选路径计算可解释评分：

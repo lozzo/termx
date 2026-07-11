@@ -34,7 +34,7 @@ class ManagedWebRTCConnector(
             val policy = ManagedEndpointContract.dialPolicy(spec.relayMode)
             onProgress?.invoke(ManagedEndpointPhase.RESOLVING)
             val resolution = cloud.resolve(spec)
-            if (resolution.managedSessionId.isBlank() ||
+            if (resolution.managedSessionId.isBlank() || resolution.managedSessionId != resolution.managedSessionId.trim() ||
                 (resolution.targetDeviceId.isNotBlank() && resolution.targetDeviceId != spec.targetDeviceId)) {
                 throw ManagedEndpointFailure("protocol", "cloud resolved a different or invalid target")
             }
@@ -53,6 +53,9 @@ class ManagedWebRTCConnector(
             onProgress?.invoke(ManagedEndpointPhase.AUTHORIZING)
             authorizer.authorize(current, spec, grant)
             val observedPath = if (current.currentRelayInUse()) ObservedPath.SINGLE_RELAY else ObservedPath.DIRECT
+            val qualityReporter = ManagedPathQualityReporter(cloud, resolution.managedSessionId, current)
+            current.addBeforeCloseListener(qualityReporter::stop)
+            qualityReporter.start()
             transport = null
             Result.Success(current, observedPath)
         } catch (cancelled: CancellationException) {
