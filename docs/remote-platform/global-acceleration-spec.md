@@ -164,6 +164,20 @@ terminal 是交互型工作负载，默认排序优先级是稳定性、丢包�
 
 Probe 和 route telemetry 只能包含网络质量、匿名化 endpoint network class、region、carrier/provider tag 和 session correlation ID。禁止包含 terminal ID、命令、history、CapabilityGrant 或 DataChannel 明文。
 
+### 6.4 GA001 被动观测基线
+
+GA001 已冻结为 measurement-only 链路：公开 `termx` 从当前 selected ICE candidate pair 与 SCTP stats 读取累计计数，默认每 5 秒采样、每 60 秒形成一个窗口；session 结束时尝试提交最后一个至少包含两个样本的窗口。窗口只包含：
+
+- RTT P50/P95，以及相邻 RTT 样本绝对变化的平均值作为 transport jitter。
+- candidate pair 密文字节增量计算的双向有效吞吐。
+- ICE connectivity-check retransmission 与本地 send discard 形成的 loss estimate；该值不是 RTP packet loss，也不能伪装成 payload 丢包精确值。
+- connected duration 与 `connected -> disconnected/failed` 状态转移次数；正常 local close 不计为异常断线。
+- 匿名 `network_class`、region、carrier/provider taxonomy tag 和短期 managed-session correlation ID。
+
+公开 `PathQualitySummary` 不包含成本字段。`private/termx-cloud/route-planner/quality` 先幂等接收质量窗口，再让稍后结算的已验签 Relay usage 或受控 provider rate card 通过 `ObservationRef` 异步附加 cost summary；“尚未定价”和显式 `none` 零成本是两种状态，公开 caller 不能填写或覆盖成本。Baseline 查询必须按保留期过滤陈旧窗口。该破坏性窗口 contract 使用 Cloud Companion IPC v2，旧 companion 必须在 Hello 阶段明确不兼容。
+
+GA001 不实现候选 Relay active probe、Relay-to-Relay link probe、route score、hysteresis、RelayLease 获取、ICE restart 或任何自动切换。质量上报失败只丢弃当前 telemetry 窗口，不改变当前 transport 和 endpoint 状态；主动 probe 与实际选路从 GA002 开始按独立 harness 建设。
+
 ## 7. 选路模型
 
 Route Planner 对候选路径计算可解释评分：

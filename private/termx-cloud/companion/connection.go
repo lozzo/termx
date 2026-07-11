@@ -31,7 +31,7 @@ type Connection struct {
 	offers       map[string]string
 }
 
-// Hello 协商 protocol v1、caller role 和 capability 交集。
+// Hello 协商当前 versioned IPC protocol、caller role 和 capability 交集。
 // 它必须是连接首个操作且只能成功一次；无共同版本、弱 nonce 或非法 role 均 fail closed。
 func (connection *Connection) Hello(ctx context.Context, request *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error) {
 	if err := ensureContext(ctx); err != nil {

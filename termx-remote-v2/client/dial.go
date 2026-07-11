@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lozzow/termx/termx-proto/cloudpb"
@@ -22,22 +23,24 @@ const protocolChannelLabel = "termx-protocol"
 // DialOptions 是一个 managed cloud endpoint 的公开连接输入。
 // Companion 只接收 endpoint、device、signaling 和 route preference；fingerprint 与 grant 始终留在当前公开进程。
 type DialOptions struct {
-	Companion         cloudcompanion.Client
-	EndpointID        string
-	TargetDeviceID    string
-	DeviceFingerprint string
-	CapabilityGrant   string
-	RoutePreference   cloudpb.RoutePreference
-	RelayOnly         bool
-	AuthRandom        io.Reader
-	Now               time.Time
+	Companion          cloudcompanion.Client
+	EndpointID         string
+	TargetDeviceID     string
+	DeviceFingerprint  string
+	CapabilityGrant    string
+	RoutePreference    cloudpb.RoutePreference
+	RelayOnly          bool
+	AuthRandom         io.Reader
+	Now                time.Time
+	QualityObservation QualityObservationOptions
 }
 
 // Session 是已完成设备证明和 capability handshake 的 managed WebRTC 连接结果。
 // Transport 承载标准 termx protocol；ObservedPath 只描述本次 ICE candidate path，不改变 endpoint identity 或授权 scope。
 type Session struct {
-	Transport    transport.Transport
-	ObservedPath cloudcompanion.Path
+	Transport       transport.Transport
+	ObservedPath    cloudcompanion.Path
+	ObservationDone <-chan struct{}
 }
 
 // DialSession 建立 managed WebRTC session，并返回公开客户端可展示的实际网络路径。
@@ -48,15 +51,21 @@ func DialSession(ctx context.Context, options DialOptions) (Session, error) {
 		return Session{}, err
 	}
 	path := cloudcompanion.PathUnknown
+	var observationDone <-chan struct{}
 	if peer, ok := protocolTransport.(*peerTransport); ok {
 		path = observedPath(peer.peer)
+		observationDone = peer.observationDone
 	}
-	return Session{Transport: protocolTransport, ObservedPath: path}, nil
+	return Session{Transport: protocolTransport, ObservedPath: path, ObservationDone: observationDone}, nil
 }
 
 // Dial 先本地验证 capability 绑定，再通过 Companion 协商 WebRTC，并在 DataChannel 内完成端到端授权。
 // Companion、WebRTC 或授权失败只返回当前 endpoint 错误，不 fallback 到 local、SSH、旧 Hub API、remote UI 或原始 shell。
 func Dial(ctx context.Context, options DialOptions) (transport.Transport, error) {
+	qualityOptions, err := normalizeQualityObservationOptions(options.QualityObservation)
+	if err != nil {
+		return nil, err
+	}
 	endpointID := strings.TrimSpace(options.EndpointID)
 	targetDeviceID := strings.TrimSpace(options.TargetDeviceID)
 	if endpointID == "" || targetDeviceID == "" {
@@ -82,7 +91,7 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 	if err != nil {
 		return nil, err
 	}
-	if resolved == nil || strings.TrimSpace(resolved.GetManagedSessionId()) == "" {
+	if resolved == nil || strings.TrimSpace(resolved.GetManagedSessionId()) == "" || strings.TrimSpace(resolved.GetManagedSessionId()) != resolved.GetManagedSessionId() {
 		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Cloud Companion returned an invalid endpoint resolution")
 	}
 	if resolved.GetTargetDeviceId() != "" && strings.TrimSpace(resolved.GetTargetDeviceId()) != targetDeviceID {
@@ -180,6 +189,16 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 		_ = secured.Close()
 		return nil, fmt.Errorf("authenticate managed endpoint DataChannel: %w", err)
 	}
+	var reporter *qualityReporter
+	if qualityOptions.Enabled {
+		reporter = &qualityReporter{
+			companion:        options.Companion,
+			managedSessionID: resolved.GetManagedSessionId(),
+			options:          qualityOptions,
+			startedAt:        time.Now().UTC(),
+		}
+	}
+	secured.startLifecycle(reporter)
 	return secured, nil
 }
 
@@ -307,23 +326,59 @@ func toPionCandidate(candidate *cloudpb.IceCandidate) pion.ICECandidateInit {
 
 type peerTransport struct {
 	transport.Transport
-	peer *pion.PeerConnection
+	peer             *pion.PeerConnection
+	observationDone  chan struct{}
+	closeRequested   chan struct{}
+	lifecycleMu      sync.Mutex
+	lifecycleStarted bool
+	closeRequestOnce sync.Once
+	finishOnce       sync.Once
 }
 
 func newPeerTransport(protocolTransport transport.Transport, peer *pion.PeerConnection) *peerTransport {
-	connection := &peerTransport{Transport: protocolTransport, peer: peer}
+	return &peerTransport{Transport: protocolTransport, peer: peer, observationDone: make(chan struct{}), closeRequested: make(chan struct{})}
+}
+
+func (connection *peerTransport) startLifecycle(reporter *qualityReporter) {
+	connection.lifecycleMu.Lock()
+	if connection.lifecycleStarted {
+		connection.lifecycleMu.Unlock()
+		return
+	}
+	connection.lifecycleStarted = true
+	connection.lifecycleMu.Unlock()
 	go func() {
-		<-protocolTransport.Done()
-		_ = peer.Close()
+		if reporter == nil {
+			select {
+			case <-connection.Transport.Done():
+			case <-connection.closeRequested:
+			}
+		} else {
+			reporter.run(connection.peer, connection.Transport.Done(), connection.closeRequested)
+		}
+		connection.finish()
 	}()
-	return connection
+}
+
+func (connection *peerTransport) requestClose() {
+	connection.closeRequestOnce.Do(func() { close(connection.closeRequested) })
+}
+
+func (connection *peerTransport) finish() {
+	connection.finishOnce.Do(func() {
+		_ = connection.peer.Close()
+		close(connection.observationDone)
+	})
 }
 
 func (connection *peerTransport) Close() error {
 	err := connection.Transport.Close()
-	peerErr := connection.peer.Close()
-	if err != nil {
-		return err
+	connection.requestClose()
+	connection.lifecycleMu.Lock()
+	started := connection.lifecycleStarted
+	connection.lifecycleMu.Unlock()
+	if !started {
+		connection.finish()
 	}
-	return peerErr
+	return err
 }

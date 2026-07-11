@@ -395,17 +395,27 @@ message RelayLease {
   repeated IceServer ice_servers = 10;
 }
 
-// PathQualitySummary 是不含 payload 与 terminal identity 的网络质量摘要。
+// PathQualitySummary 是公开进程基于 WebRTC transport stats 形成的脱敏质量窗口。
+// 成本由私有服务关联可信 usage 计算，不能由公开 caller 填写。
 message PathQualitySummary {
   string managed_session_id = 1;
   ObservedPath observed_path = 2;
-  uint32 rtt_millis = 3;
+  uint32 rtt_p50_millis = 3;
   uint32 jitter_millis = 4;
   uint32 loss_basis_points = 5;
-  uint64 available_bitrate_bps = 6;
+  uint64 throughput_bps = 6;
   uint64 connected_millis = 7;
   string network_class = 8;
   string region = 9;
+  uint32 rtt_p95_millis = 10;
+  uint32 sample_count = 11;
+  uint32 disconnect_count = 12;
+  uint64 window_started_at_unix_millis = 13;
+  uint64 window_ended_at_unix_millis = 14;
+  uint64 packet_count = 15;
+  uint64 loss_event_count = 16;
+  string carrier_tag = 17;
+  string provider_tag = 18;
 }
 
 // ReportPathQualityRequest 上报一次经过脱敏和聚合的网络质量窗口。

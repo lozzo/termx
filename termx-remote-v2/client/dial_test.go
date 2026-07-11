@@ -16,6 +16,7 @@ import (
 	remotev2daemon "github.com/lozzow/termx/termx-remote-v2/daemon"
 	remotev2webrtc "github.com/lozzow/termx/termx-remote-v2/webrtc"
 	"github.com/lozzow/termx/termx-shared/cloudcompanion"
+	"github.com/lozzow/termx/termx-shared/cloudcompanion/pathquality"
 	"github.com/lozzow/termx/termx-shared/remoteauth"
 	"github.com/lozzow/termx/termx-shared/transport"
 	pion "github.com/pion/webrtc/v4"
@@ -93,6 +94,24 @@ func TestDialRejectsCompanionRoutedImpostorByDeviceHelloPin(t *testing.T) {
 	}
 }
 
+func TestDialRejectsNonCanonicalManagedSessionCorrelationID(t *testing.T) {
+	identity, grant, now := dialIdentityFixture(t, "device-1")
+	companion := &cloudcompanion.FakeClient{ResolveEndpointFunc: func(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
+		return &cloudpb.ResolvedEndpoint{EndpointId: "lab", TargetDeviceId: "device-1", ManagedSessionId: " managed-1 "}, nil
+	}}
+	_, err := Dial(context.Background(), DialOptions{
+		Companion: companion, EndpointID: "lab", TargetDeviceID: "device-1",
+		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant,
+		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, Now: now,
+	})
+	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {
+		t.Fatalf("non-canonical managed session error = %v", err)
+	}
+	if requests := companion.Requests(); len(requests.CreateSignalingSession) != 0 {
+		t.Fatalf("invalid managed session reached signaling: %+v", requests.CreateSignalingSession)
+	}
+}
+
 func TestDialSingleTerminalGrantCannotEscapeCoreScope(t *testing.T) {
 	identity, grant, now := dialIdentityFixtureWithScope(t, "device-1", remoteauth.Scope{TerminalID: "allowed"})
 	core := termxcorev2.NewServer()
@@ -136,6 +155,64 @@ func TestPeerConfigurationEnforcesRelayOnlyPolicy(t *testing.T) {
 	}
 }
 
+func TestDialSessionReportsQualityWithoutChangingRoute(t *testing.T) {
+	identity, grant, now := dialIdentityFixture(t, "device-1")
+	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
+		Core: termxcorev2.NewServer(), Identity: identity, Revocations: remoteauth.NewRevocations(), Now: fixedDialNow(now),
+	}}
+	companion := signalingCompanion(answerer, "device-1")
+	session, err := DialSession(context.Background(), DialOptions{
+		Companion: companion, EndpointID: "lab", TargetDeviceID: "device-1",
+		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant,
+		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY,
+		QualityObservation: QualityObservationOptions{
+			Enabled: true, SampleInterval: 5 * time.Millisecond, Window: 20 * time.Millisecond, NetworkClass: "test-network",
+		},
+		Now: now,
+	})
+	if err != nil {
+		t.Fatalf("DialSession: %v", err)
+	}
+	client := protocol.NewClient(session.Transport)
+	if err := client.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "remote-v2-quality-test"}); err != nil {
+		_ = client.Close()
+		t.Fatalf("protocol Hello: %v", err)
+	}
+	if _, err := client.List(context.Background()); err != nil {
+		_ = client.Close()
+		t.Fatalf("protocol List: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for len(companion.Requests().ReportPathQuality) == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	select {
+	case <-session.ObservationDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("quality reporter did not finish after transport close")
+	}
+	recorded := companion.Requests()
+	if len(recorded.ReportPathQuality) == 0 {
+		t.Fatal("managed WebRTC session produced no quality window")
+	}
+	window, err := pathquality.Decode(recorded.ReportPathQuality[0].GetSummary())
+	if err != nil {
+		t.Fatalf("reported quality window: %v", err)
+	}
+	if window.ManagedSessionID != "managed-1" || window.ObservedPath != cloudpb.ObservedPath_OBSERVED_PATH_DIRECT || window.NetworkClass != "test-network" {
+		t.Fatalf("quality window identity = %+v", window.Metadata)
+	}
+	if len(recorded.AcquireRelayLease) != 0 {
+		t.Fatalf("quality observation acquired a new route: %+v", recorded.AcquireRelayLease)
+	}
+	if len(recorded.ReportConnectionOutcome) != 1 || recorded.ReportConnectionOutcome[0].GetOutcome().GetObservedPath() != cloudpb.ObservedPath_OBSERVED_PATH_DIRECT {
+		t.Fatalf("connection outcomes = %+v", recorded.ReportConnectionOutcome)
+	}
+}
+
 func signalingCompanion(answerer remotev2webrtc.Answerer, targetDeviceID string) *cloudcompanion.FakeClient {
 	return &cloudcompanion.FakeClient{
 		ResolveEndpointFunc: func(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
@@ -153,6 +230,12 @@ func signalingCompanion(answerer remotev2webrtc.Answerer, targetDeviceID string)
 				return nil, err
 			}
 			return stream, nil
+		},
+		ReportPathQualityFunc: func(context.Context, *cloudpb.ReportPathQualityRequest) (*cloudpb.ReportPathQualityResponse, error) {
+			return &cloudpb.ReportPathQualityResponse{}, nil
+		},
+		ReportConnectionOutcomeFunc: func(context.Context, *cloudpb.ReportConnectionOutcomeRequest) (*cloudpb.ReportConnectionOutcomeResponse, error) {
+			return &cloudpb.ReportConnectionOutcomeResponse{}, nil
 		},
 	}
 }

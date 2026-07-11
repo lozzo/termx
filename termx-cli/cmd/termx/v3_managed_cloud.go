@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -36,8 +37,14 @@ func v3ManagedCloudEndpointDialer() services.EndpointDialer {
 			return services.EndpointServiceBundle{}, fmt.Errorf("managed cloud endpoint %q: %w", cfg.ID,
 				cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING, "Cloud Companion returned no client"))
 		}
-		if closer, ok := companion.(interface{ Close() error }); ok {
-			defer closer.Close()
+		var companionCloser io.Closer
+		if closer, ok := companion.(io.Closer); ok {
+			companionCloser = closer
+			defer func() {
+				if companionCloser != nil {
+					_ = companionCloser.Close()
+				}
+			}()
 		}
 		policy, err := cloudcompanion.DialPolicyForRelayMode(cfg.RelayMode)
 		if err != nil {
@@ -51,6 +58,7 @@ func v3ManagedCloudEndpointDialer() services.EndpointDialer {
 			Companion: companion, EndpointID: string(cfg.ID), TargetDeviceID: cfg.HubDeviceID,
 			DeviceFingerprint: cfg.DeviceFingerprint, CapabilityGrant: grant,
 			RoutePreference: policy.RoutePreference, RelayOnly: policy.RelayOnly,
+			QualityObservation: remotev2client.QualityObservationOptions{Enabled: true, NetworkClass: "unknown"},
 		})
 		if err != nil {
 			return services.EndpointServiceBundle{}, fmt.Errorf("managed cloud endpoint %q dial: %w", cfg.ID, err)
@@ -59,6 +67,11 @@ func v3ManagedCloudEndpointDialer() services.EndpointDialer {
 		if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "termx-cli-v3:managed:" + string(cfg.ID)}); err != nil {
 			_ = client.Close()
 			return services.EndpointServiceBundle{}, fmt.Errorf("managed cloud endpoint %q hello: %w", cfg.ID, err)
+		}
+		if companionCloser != nil {
+			// Companion 必须活到最终质量窗口完成；释放顺序不能让 terminal transport 等待 telemetry。
+			closeManagedCompanionAfterSession(session, companionCloser)
+			companionCloser = nil
 		}
 		terminal := services.ProtocolTerminalServiceAdapter{Client: client}
 		core := services.ProtocolCoreClientAdapter{Client: client}
@@ -70,6 +83,18 @@ func v3ManagedCloudEndpointDialer() services.EndpointDialer {
 			Lifecycle:    services.EndpointLifecycle{Done: client.Done(), Err: client.Err},
 		}, nil
 	}
+}
+
+func closeManagedCompanionAfterSession(session remotev2client.Session, closer io.Closer) {
+	go func() {
+		if session.Transport != nil {
+			<-session.Transport.Done()
+		}
+		if session.ObservationDone != nil {
+			<-session.ObservationDone
+		}
+		_ = closer.Close()
+	}()
 }
 
 func v3RemoteCredentialDir() string {

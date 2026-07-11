@@ -268,7 +268,15 @@ func TestManagedOperationsDrivePrivateAdapters(t *testing.T) {
 	if err != nil || lease.GetLeaseId() != "lease-1" {
 		t.Fatalf("AcquireRelayLease = (%v, %v)", lease, err)
 	}
-	_, err = connection.ReportPathQuality(context.Background(), &cloudpb.ReportPathQualityRequest{Summary: &cloudpb.PathQualitySummary{ManagedSessionId: "managed-1", ObservedPath: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY, LossBasisPoints: 10, NetworkClass: "wifi"}})
+	_, err = connection.ReportPathQuality(context.Background(), &cloudpb.ReportPathQualityRequest{Summary: &cloudpb.PathQualitySummary{
+		ManagedSessionId: "managed-1", ObservedPath: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
+		RttP50Millis: 40, RttP95Millis: 80, JitterMillis: 5,
+		LossBasisPoints: 10, ThroughputBps: 8_000, ConnectedMillis: 30_000,
+		NetworkClass: "wifi", Region: "eu-west", SampleCount: 4,
+		WindowStartedAtUnixMillis: uint64(now.Add(-time.Minute).UnixMilli()),
+		WindowEndedAtUnixMillis:   uint64(now.Add(-30 * time.Second).UnixMilli()),
+		PacketCount:               1_000, LossEventCount: 1,
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -537,7 +545,7 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 }
 
 func helloRequest(role cloudpb.CallerRole, capabilities ...cloudpb.CompanionCapability) *cloudpb.CompanionHelloRequest {
-	return &cloudpb.CompanionHelloRequest{ProtocolMin: 1, ProtocolMax: 1, TermxVersion: "test", CallerRole: role, RequestedCapabilities: capabilities, RequestNonce: bytes.Repeat([]byte{0x11}, 32)}
+	return &cloudpb.CompanionHelloRequest{ProtocolMin: cloudcompanion.ProtocolVersionMin, ProtocolMax: cloudcompanion.ProtocolVersionMax, TermxVersion: "test", CallerRole: role, RequestedCapabilities: capabilities, RequestNonce: bytes.Repeat([]byte{0x11}, 32)}
 }
 
 func validPresenceRequest() *cloudpb.OpenPresenceRequest {

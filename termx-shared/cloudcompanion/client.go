@@ -13,10 +13,10 @@ import (
 const (
 	// ProtocolVersionMin 是当前公开进程能够发起的最小 Companion IPC 协议版本。
 	// Hello 协商不到该版本时，调用方必须把 managed cloud endpoint 标记为不兼容，不能回退到旧 Hub API。
-	ProtocolVersionMin uint32 = 1
+	ProtocolVersionMin uint32 = 2
 	// ProtocolVersionMax 是当前公开进程能够接受的最大 Companion IPC 协议版本。
 	// 新增能力必须通过 Hello 的能力交集启用，不能仅根据 companion 二进制版本猜测。
-	ProtocolVersionMax uint32 = 1
+	ProtocolVersionMax uint32 = 2
 )
 
 // Client 是公开进程访问本机 Cloud Companion 的最小领域接口。

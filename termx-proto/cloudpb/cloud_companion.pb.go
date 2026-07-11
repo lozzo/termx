@@ -3266,20 +3266,30 @@ func (x *RelayLease) GetIceServers() []*IceServer {
 	return nil
 }
 
-// PathQualitySummary 是不含 payload 与 terminal identity 的网络质量摘要。
+// PathQualitySummary 是公开进程基于 WebRTC transport stats 形成的脱敏质量窗口。
+// 成本由私有服务关联可信 usage 计算，不能由公开 caller 填写。
 type PathQualitySummary struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	ManagedSessionId    string                 `protobuf:"bytes,1,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
-	ObservedPath        ObservedPath           `protobuf:"varint,2,opt,name=observed_path,json=observedPath,proto3,enum=termx.cloud.v1.ObservedPath" json:"observed_path,omitempty"`
-	RttMillis           uint32                 `protobuf:"varint,3,opt,name=rtt_millis,json=rttMillis,proto3" json:"rtt_millis,omitempty"`
-	JitterMillis        uint32                 `protobuf:"varint,4,opt,name=jitter_millis,json=jitterMillis,proto3" json:"jitter_millis,omitempty"`
-	LossBasisPoints     uint32                 `protobuf:"varint,5,opt,name=loss_basis_points,json=lossBasisPoints,proto3" json:"loss_basis_points,omitempty"`
-	AvailableBitrateBps uint64                 `protobuf:"varint,6,opt,name=available_bitrate_bps,json=availableBitrateBps,proto3" json:"available_bitrate_bps,omitempty"`
-	ConnectedMillis     uint64                 `protobuf:"varint,7,opt,name=connected_millis,json=connectedMillis,proto3" json:"connected_millis,omitempty"`
-	NetworkClass        string                 `protobuf:"bytes,8,opt,name=network_class,json=networkClass,proto3" json:"network_class,omitempty"`
-	Region              string                 `protobuf:"bytes,9,opt,name=region,proto3" json:"region,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	ManagedSessionId          string                 `protobuf:"bytes,1,opt,name=managed_session_id,json=managedSessionId,proto3" json:"managed_session_id,omitempty"`
+	ObservedPath              ObservedPath           `protobuf:"varint,2,opt,name=observed_path,json=observedPath,proto3,enum=termx.cloud.v1.ObservedPath" json:"observed_path,omitempty"`
+	RttP50Millis              uint32                 `protobuf:"varint,3,opt,name=rtt_p50_millis,json=rttP50Millis,proto3" json:"rtt_p50_millis,omitempty"`
+	JitterMillis              uint32                 `protobuf:"varint,4,opt,name=jitter_millis,json=jitterMillis,proto3" json:"jitter_millis,omitempty"`
+	LossBasisPoints           uint32                 `protobuf:"varint,5,opt,name=loss_basis_points,json=lossBasisPoints,proto3" json:"loss_basis_points,omitempty"`
+	ThroughputBps             uint64                 `protobuf:"varint,6,opt,name=throughput_bps,json=throughputBps,proto3" json:"throughput_bps,omitempty"`
+	ConnectedMillis           uint64                 `protobuf:"varint,7,opt,name=connected_millis,json=connectedMillis,proto3" json:"connected_millis,omitempty"`
+	NetworkClass              string                 `protobuf:"bytes,8,opt,name=network_class,json=networkClass,proto3" json:"network_class,omitempty"`
+	Region                    string                 `protobuf:"bytes,9,opt,name=region,proto3" json:"region,omitempty"`
+	RttP95Millis              uint32                 `protobuf:"varint,10,opt,name=rtt_p95_millis,json=rttP95Millis,proto3" json:"rtt_p95_millis,omitempty"`
+	SampleCount               uint32                 `protobuf:"varint,11,opt,name=sample_count,json=sampleCount,proto3" json:"sample_count,omitempty"`
+	DisconnectCount           uint32                 `protobuf:"varint,12,opt,name=disconnect_count,json=disconnectCount,proto3" json:"disconnect_count,omitempty"`
+	WindowStartedAtUnixMillis uint64                 `protobuf:"varint,13,opt,name=window_started_at_unix_millis,json=windowStartedAtUnixMillis,proto3" json:"window_started_at_unix_millis,omitempty"`
+	WindowEndedAtUnixMillis   uint64                 `protobuf:"varint,14,opt,name=window_ended_at_unix_millis,json=windowEndedAtUnixMillis,proto3" json:"window_ended_at_unix_millis,omitempty"`
+	PacketCount               uint64                 `protobuf:"varint,15,opt,name=packet_count,json=packetCount,proto3" json:"packet_count,omitempty"`
+	LossEventCount            uint64                 `protobuf:"varint,16,opt,name=loss_event_count,json=lossEventCount,proto3" json:"loss_event_count,omitempty"`
+	CarrierTag                string                 `protobuf:"bytes,17,opt,name=carrier_tag,json=carrierTag,proto3" json:"carrier_tag,omitempty"`
+	ProviderTag               string                 `protobuf:"bytes,18,opt,name=provider_tag,json=providerTag,proto3" json:"provider_tag,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *PathQualitySummary) Reset() {
@@ -3326,9 +3336,9 @@ func (x *PathQualitySummary) GetObservedPath() ObservedPath {
 	return ObservedPath_OBSERVED_PATH_UNSPECIFIED
 }
 
-func (x *PathQualitySummary) GetRttMillis() uint32 {
+func (x *PathQualitySummary) GetRttP50Millis() uint32 {
 	if x != nil {
-		return x.RttMillis
+		return x.RttP50Millis
 	}
 	return 0
 }
@@ -3347,9 +3357,9 @@ func (x *PathQualitySummary) GetLossBasisPoints() uint32 {
 	return 0
 }
 
-func (x *PathQualitySummary) GetAvailableBitrateBps() uint64 {
+func (x *PathQualitySummary) GetThroughputBps() uint64 {
 	if x != nil {
-		return x.AvailableBitrateBps
+		return x.ThroughputBps
 	}
 	return 0
 }
@@ -3371,6 +3381,69 @@ func (x *PathQualitySummary) GetNetworkClass() string {
 func (x *PathQualitySummary) GetRegion() string {
 	if x != nil {
 		return x.Region
+	}
+	return ""
+}
+
+func (x *PathQualitySummary) GetRttP95Millis() uint32 {
+	if x != nil {
+		return x.RttP95Millis
+	}
+	return 0
+}
+
+func (x *PathQualitySummary) GetSampleCount() uint32 {
+	if x != nil {
+		return x.SampleCount
+	}
+	return 0
+}
+
+func (x *PathQualitySummary) GetDisconnectCount() uint32 {
+	if x != nil {
+		return x.DisconnectCount
+	}
+	return 0
+}
+
+func (x *PathQualitySummary) GetWindowStartedAtUnixMillis() uint64 {
+	if x != nil {
+		return x.WindowStartedAtUnixMillis
+	}
+	return 0
+}
+
+func (x *PathQualitySummary) GetWindowEndedAtUnixMillis() uint64 {
+	if x != nil {
+		return x.WindowEndedAtUnixMillis
+	}
+	return 0
+}
+
+func (x *PathQualitySummary) GetPacketCount() uint64 {
+	if x != nil {
+		return x.PacketCount
+	}
+	return 0
+}
+
+func (x *PathQualitySummary) GetLossEventCount() uint64 {
+	if x != nil {
+		return x.LossEventCount
+	}
+	return 0
+}
+
+func (x *PathQualitySummary) GetCarrierTag() string {
+	if x != nil {
+		return x.CarrierTag
+	}
+	return ""
+}
+
+func (x *PathQualitySummary) GetProviderTag() string {
+	if x != nil {
+		return x.ProviderTag
 	}
 	return ""
 }
@@ -4754,18 +4827,28 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\x14max_internal_transit\x18\t \x01(\rR\x12maxInternalTransit\x12:\n" +
 	"\vice_servers\x18\n" +
 	" \x03(\v2\x19.termx.cloud.v1.IceServerR\n" +
-	"iceServers\"\x91\x03\n" +
+	"iceServers\"\x90\x06\n" +
 	"\x12PathQualitySummary\x12,\n" +
 	"\x12managed_session_id\x18\x01 \x01(\tR\x10managedSessionId\x12A\n" +
-	"\robserved_path\x18\x02 \x01(\x0e2\x1c.termx.cloud.v1.ObservedPathR\fobservedPath\x12\x1d\n" +
-	"\n" +
-	"rtt_millis\x18\x03 \x01(\rR\trttMillis\x12#\n" +
+	"\robserved_path\x18\x02 \x01(\x0e2\x1c.termx.cloud.v1.ObservedPathR\fobservedPath\x12$\n" +
+	"\x0ertt_p50_millis\x18\x03 \x01(\rR\frttP50Millis\x12#\n" +
 	"\rjitter_millis\x18\x04 \x01(\rR\fjitterMillis\x12*\n" +
-	"\x11loss_basis_points\x18\x05 \x01(\rR\x0flossBasisPoints\x122\n" +
-	"\x15available_bitrate_bps\x18\x06 \x01(\x04R\x13availableBitrateBps\x12)\n" +
+	"\x11loss_basis_points\x18\x05 \x01(\rR\x0flossBasisPoints\x12%\n" +
+	"\x0ethroughput_bps\x18\x06 \x01(\x04R\rthroughputBps\x12)\n" +
 	"\x10connected_millis\x18\a \x01(\x04R\x0fconnectedMillis\x12#\n" +
 	"\rnetwork_class\x18\b \x01(\tR\fnetworkClass\x12\x16\n" +
-	"\x06region\x18\t \x01(\tR\x06region\"X\n" +
+	"\x06region\x18\t \x01(\tR\x06region\x12$\n" +
+	"\x0ertt_p95_millis\x18\n" +
+	" \x01(\rR\frttP95Millis\x12!\n" +
+	"\fsample_count\x18\v \x01(\rR\vsampleCount\x12)\n" +
+	"\x10disconnect_count\x18\f \x01(\rR\x0fdisconnectCount\x12@\n" +
+	"\x1dwindow_started_at_unix_millis\x18\r \x01(\x04R\x19windowStartedAtUnixMillis\x12<\n" +
+	"\x1bwindow_ended_at_unix_millis\x18\x0e \x01(\x04R\x17windowEndedAtUnixMillis\x12!\n" +
+	"\fpacket_count\x18\x0f \x01(\x04R\vpacketCount\x12(\n" +
+	"\x10loss_event_count\x18\x10 \x01(\x04R\x0elossEventCount\x12\x1f\n" +
+	"\vcarrier_tag\x18\x11 \x01(\tR\n" +
+	"carrierTag\x12!\n" +
+	"\fprovider_tag\x18\x12 \x01(\tR\vproviderTag\"X\n" +
 	"\x18ReportPathQualityRequest\x12<\n" +
 	"\asummary\x18\x01 \x01(\v2\".termx.cloud.v1.PathQualitySummaryR\asummary\"\x1b\n" +
 	"\x19ReportPathQualityResponse\"\xee\x01\n" +

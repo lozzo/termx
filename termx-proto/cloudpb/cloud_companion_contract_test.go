@@ -45,6 +45,39 @@ func TestSignalingOfferHasOnlyRoutingAndWebRTCFields(t *testing.T) {
 	}
 }
 
+func TestPathQualitySummaryContainsOnlyRedactedWindowMetrics(t *testing.T) {
+	descriptor := (&PathQualitySummary{}).ProtoReflect().Descriptor()
+	want := map[string]bool{
+		"managed_session_id":            true,
+		"observed_path":                 true,
+		"rtt_p50_millis":                true,
+		"jitter_millis":                 true,
+		"loss_basis_points":             true,
+		"throughput_bps":                true,
+		"connected_millis":              true,
+		"network_class":                 true,
+		"region":                        true,
+		"rtt_p95_millis":                true,
+		"sample_count":                  true,
+		"disconnect_count":              true,
+		"window_started_at_unix_millis": true,
+		"window_ended_at_unix_millis":   true,
+		"packet_count":                  true,
+		"loss_event_count":              true,
+		"carrier_tag":                   true,
+		"provider_tag":                  true,
+	}
+	if descriptor.Fields().Len() != len(want) {
+		t.Fatalf("PathQualitySummary field count = %d, want %d", descriptor.Fields().Len(), len(want))
+	}
+	for index := 0; index < descriptor.Fields().Len(); index++ {
+		name := string(descriptor.Fields().Get(index).Name())
+		if !want[name] {
+			t.Fatalf("PathQualitySummary contains unexpected field %q", name)
+		}
+	}
+}
+
 func assertMessageFieldsAllowed(t *testing.T, message protoreflect.MessageDescriptor, forbidden []string) {
 	t.Helper()
 	messageName := strings.ToLower(string(message.Name()))

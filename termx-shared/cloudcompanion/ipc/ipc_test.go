@@ -17,7 +17,7 @@ func TestIPCConnectionPreservesHelloUnaryAndStreamOwnership(t *testing.T) {
 	presence := cloudcompanion.NewFakePresenceStream(1)
 	fake := &cloudcompanion.FakeClient{
 		HelloFunc: func(_ context.Context, request *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error) {
-			return &cloudpb.CompanionHelloResponse{SelectedProtocol: 1, CompanionVersion: "1.2.3", BuildChannel: "test", ResponseNonce: append([]byte(nil), request.GetRequestNonce()...)}, nil
+			return &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "1.2.3", BuildChannel: "test", ResponseNonce: append([]byte(nil), request.GetRequestNonce()...)}, nil
 		},
 		StatusFunc: func(context.Context, *cloudpb.StatusRequest) (*cloudpb.StatusResponse, error) {
 			return &cloudpb.StatusResponse{State: cloudpb.CompanionState_COMPANION_STATE_READY, AccountId: "account-1"}, nil
@@ -69,7 +69,7 @@ func TestIPCCancelPropagatesOnlyToOwningRequest(t *testing.T) {
 	requestCanceled := make(chan struct{})
 	fake := &cloudcompanion.FakeClient{
 		HelloFunc: func(context.Context, *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error) {
-			return &cloudpb.CompanionHelloResponse{SelectedProtocol: 1, CompanionVersion: "test", BuildChannel: "test", ResponseNonce: bytes.Repeat([]byte{2}, 32)}, nil
+			return &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "test", BuildChannel: "test", ResponseNonce: bytes.Repeat([]byte{2}, 32)}, nil
 		},
 		StatusFunc: func(ctx context.Context, _ *cloudpb.StatusRequest) (*cloudpb.StatusResponse, error) {
 			<-ctx.Done()
@@ -106,7 +106,7 @@ func TestIPCCanceledStreamOpenClosesLateOwnedStream(t *testing.T) {
 	stream := newCloseTrackingPresenceStream()
 	fake := &cloudcompanion.FakeClient{
 		HelloFunc: func(context.Context, *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error) {
-			return &cloudpb.CompanionHelloResponse{SelectedProtocol: 1, CompanionVersion: "test", BuildChannel: "test", ResponseNonce: bytes.Repeat([]byte{2}, 32)}, nil
+			return &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "test", BuildChannel: "test", ResponseNonce: bytes.Repeat([]byte{2}, 32)}, nil
 		},
 		OpenPresenceFunc: func(ctx context.Context, _ *cloudpb.OpenPresenceRequest) (cloudcompanion.PresenceStream, error) {
 			close(openStarted)
@@ -175,8 +175,8 @@ func newPipeHarness(t *testing.T, fake cloudcompanion.FullClient) (*Client, func
 
 func testHello() *cloudpb.CompanionHelloRequest {
 	return &cloudpb.CompanionHelloRequest{
-		ProtocolMin:  1,
-		ProtocolMax:  1,
+		ProtocolMin:  cloudcompanion.ProtocolVersionMin,
+		ProtocolMax:  cloudcompanion.ProtocolVersionMax,
 		TermxVersion: "test",
 		CallerRole:   cloudpb.CallerRole_CALLER_ROLE_CLI,
 		RequestNonce: bytes.Repeat([]byte{1}, 32),

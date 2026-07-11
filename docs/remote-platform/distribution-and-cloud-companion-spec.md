@@ -202,6 +202,8 @@ ReportConnectionOutcome(session, path, stable error class) -> ack
 
 Companion 可以在内部持有 admission ticket，但公开 adapter 仍必须得到足够的稳定 metadata 和错误语义完成 endpoint 状态机。
 
+GA001 起质量窗口使用 Companion IPC v2：公开进程只提交 RTT P50/P95、jitter、loss estimate、throughput、connected/disconnect summary 和匿名网络 taxonomy。Companion 只校验并转发；质量窗口先进入私有 Probe Aggregator，稍后结算的可信 Relay usage 与 provider cost rate 再按 observation reference 异步关联，未定价不能伪装成零成本，也不能由公开 IPC caller 提交。质量上报失败不得请求新 RelayLease、重建 endpoint 或触发 transport fallback。
+
 ### 5.5 Streaming、cancel 与背压
 
 - 每个 streaming request 有 caller-generated request ID 和 cancel token。

@@ -6,6 +6,7 @@ use (
 	./private/termx-cloud/control-plane
 	./private/termx-cloud/hub
 	./private/termx-cloud/relay
+	./private/termx-cloud/route-planner
 	./private/termx-cloud/web-controller
 	./termx-cli
 	./termx-core-v2

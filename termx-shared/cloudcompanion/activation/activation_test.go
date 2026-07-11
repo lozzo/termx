@@ -23,7 +23,7 @@ func TestManagerStartsVerifiedInstallationOnceAndNegotiatesRequestedCapabilities
 		HelloFunc: func(_ context.Context, request *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error) {
 			helloRequests <- request
 			return &cloudpb.CompanionHelloResponse{
-				SelectedProtocol: 1, CompanionVersion: "v1.2.3", BuildChannel: "stable",
+				SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "v1.2.3", BuildChannel: "stable",
 				SupportedCapabilities: append([]cloudpb.CompanionCapability(nil), request.GetRequestedCapabilities()...),
 				ResponseNonce:         bytes.Repeat([]byte{0x77}, 32),
 			}, nil
@@ -80,7 +80,7 @@ func TestManagerStopsMismatchedProcessBeforeStartingActiveInstallation(t *testin
 			mu.Lock()
 			version := runningVersion
 			mu.Unlock()
-			return &cloudpb.CompanionHelloResponse{SelectedProtocol: 1, CompanionVersion: version, BuildChannel: "stable", ResponseNonce: bytes.Repeat([]byte{4}, 32)}, nil
+			return &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: version, BuildChannel: "stable", ResponseNonce: bytes.Repeat([]byte{4}, 32)}, nil
 		},
 		ShutdownFunc: func(context.Context, *cloudpb.ShutdownRequest) (*cloudpb.ShutdownResponse, error) {
 			mu.Lock()
@@ -143,7 +143,7 @@ func TestManagerDoesNotStartUntrustedOrCapabilityExpandingCompanion(t *testing.T
 	}
 
 	fake := &cloudcompanion.FakeClient{HelloFunc: func(context.Context, *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error) {
-		return &cloudpb.CompanionHelloResponse{SelectedProtocol: 1, CompanionVersion: "test", BuildChannel: "test", ResponseNonce: bytes.Repeat([]byte{3}, 32), SupportedCapabilities: []cloudpb.CompanionCapability{cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE}}, nil
+		return &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "test", BuildChannel: "test", ResponseNonce: bytes.Repeat([]byte{3}, 32), SupportedCapabilities: []cloudpb.CompanionCapability{cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE}}, nil
 	}}
 	manager, err = New(Config{
 		Installations: staticInstallationSource{installation: installer.Installation{Version: "test", Channel: "test", BinaryPath: "/verified/termx-cloud"}}, TermxVersion: "test",
@@ -158,12 +158,12 @@ func TestManagerDoesNotStartUntrustedOrCapabilityExpandingCompanion(t *testing.T
 }
 
 func TestReleaseHelloMustMatchSignedManifest(t *testing.T) {
-	manifest := installer.Manifest{Version: "v1.2.3", Channel: "stable", MinCompanionProtocol: 1, MaxCompanionProtocol: 1}
-	valid := &cloudpb.CompanionHelloResponse{SelectedProtocol: 1, CompanionVersion: "v1.2.3", BuildChannel: "stable"}
+	manifest := installer.Manifest{Version: "v1.2.3", Channel: "stable", MinCompanionProtocol: cloudcompanion.ProtocolVersionMin, MaxCompanionProtocol: cloudcompanion.ProtocolVersionMax}
+	valid := &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "v1.2.3", BuildChannel: "stable"}
 	if err := validateReleaseHello(valid, manifest); err != nil {
 		t.Fatal(err)
 	}
-	mislabeled := &cloudpb.CompanionHelloResponse{SelectedProtocol: 1, CompanionVersion: "v1.2.2", BuildChannel: "stable"}
+	mislabeled := &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "v1.2.2", BuildChannel: "stable"}
 	if err := validateReleaseHello(mislabeled, manifest); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED) {
 		t.Fatalf("mislabeled release error = %v", err)
 	}

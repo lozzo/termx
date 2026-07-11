@@ -53,7 +53,7 @@ func TestSmokeServerCompletesPublicHelloStatusAndShutdown(t *testing.T) {
 	}
 	defer client.Close()
 	hello, err := client.Hello(deadline, &cloudpb.CompanionHelloRequest{
-		ProtocolMin: 1, ProtocolMax: 1, TermxVersion: "test", CallerRole: cloudpb.CallerRole_CALLER_ROLE_CLI,
+		ProtocolMin: cloudcompanion.ProtocolVersionMin, ProtocolMax: cloudcompanion.ProtocolVersionMax, TermxVersion: "test", CallerRole: cloudpb.CallerRole_CALLER_ROLE_CLI,
 		RequestedCapabilities: []cloudpb.CompanionCapability{cloudpb.CompanionCapability_COMPANION_CAPABILITY_ACCOUNT_SESSION},
 		RequestNonce:          bytes.Repeat([]byte{1}, 32),
 	})

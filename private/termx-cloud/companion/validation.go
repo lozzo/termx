@@ -8,6 +8,7 @@ import (
 
 	"github.com/lozzow/termx/private/termx-cloud/companion/cloudservice"
 	"github.com/lozzow/termx/termx-proto/cloudpb"
+	"github.com/lozzow/termx/termx-shared/cloudcompanion/pathquality"
 )
 
 func validateBeginLoginRequest(request *cloudpb.BeginLoginRequest) error {
@@ -205,8 +206,10 @@ func validateRelayLeaseResponse(request *cloudpb.AcquireRelayLeaseRequest, respo
 }
 
 func validatePathQualityRequest(request *cloudpb.ReportPathQualityRequest) error {
-	summary := request.GetSummary()
-	if request == nil || summary == nil || summary.GetManagedSessionId() == "" || !validObservedPath(summary.GetObservedPath()) || summary.GetLossBasisPoints() > 10_000 || summary.GetNetworkClass() == "" {
+	if request == nil {
+		return protocolError("invalid path quality summary")
+	}
+	if _, err := pathquality.Decode(request.GetSummary()); err != nil {
 		return protocolError("invalid path quality summary")
 	}
 	return nil

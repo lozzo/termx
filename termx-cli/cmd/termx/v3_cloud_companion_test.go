@@ -3,13 +3,16 @@ package main
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/termx-proto/cloudpb"
 	remotev2client "github.com/lozzow/termx/termx-remote-v2/client"
 	"github.com/lozzow/termx/termx-shared/cloudcompanion"
 	"github.com/lozzow/termx/termx-shared/connection"
 	"github.com/lozzow/termx/termx-shared/remoteauth"
+	"github.com/lozzow/termx/termx-shared/transport/memory"
 )
 
 func TestV3ManagedEndpointFailsClosedWhenCompanionIsUnavailable(t *testing.T) {
@@ -54,7 +57,44 @@ func TestV3ManagedEndpointPassesSharedIdentityCredentialAndRelayPolicyToRemoteV2
 	}
 	if received.Companion != companion || received.EndpointID != "lab" || received.TargetDeviceID != "device-1" ||
 		received.DeviceFingerprint != cfg.DeviceFingerprint || received.CapabilityGrant != "opaque-capability-grant" ||
-		received.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY || !received.RelayOnly {
+		received.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY || !received.RelayOnly ||
+		!received.QualityObservation.Enabled || received.QualityObservation.NetworkClass != "unknown" {
 		t.Fatalf("managed remote-v2 options lost endpoint contract: %#v", received)
 	}
+}
+
+func TestManagedCompanionClosesAfterTransportAndObservation(t *testing.T) {
+	clientTransport, _ := memory.NewPair()
+	observationDone := make(chan struct{})
+	closer := &recordingCloser{closed: make(chan struct{})}
+	closeManagedCompanionAfterSession(remotev2client.Session{Transport: clientTransport, ObservationDone: observationDone}, closer)
+	select {
+	case <-closer.closed:
+		t.Fatal("Companion closed before transport")
+	default:
+	}
+	if err := clientTransport.Close(); err != nil {
+		t.Fatalf("close transport: %v", err)
+	}
+	select {
+	case <-closer.closed:
+		t.Fatal("Companion closed before final observation")
+	case <-time.After(10 * time.Millisecond):
+	}
+	close(observationDone)
+	select {
+	case <-closer.closed:
+	case <-time.After(time.Second):
+		t.Fatal("Companion remained open after observation completion")
+	}
+}
+
+type recordingCloser struct {
+	once   sync.Once
+	closed chan struct{}
+}
+
+func (closer *recordingCloser) Close() error {
+	closer.once.Do(func() { close(closer.closed) })
+	return nil
 }
