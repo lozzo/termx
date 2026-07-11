@@ -1,8 +1,10 @@
-# 工作流：远程平台产品与架构重构主线
+# 工作流：仓库可维护性收口与远程平台主线
 
 ## 当前目标
 
-- 当前分支转入远程平台文档先行重构：先冻结产品版本、商业边界、公开/私有源码边界、领域归属、安全协议和迁移顺序，再开始任何 runtime 改造。
+- GA002 完成后暂停新增全球加速功能，先执行 RM001-RM004 仓库可维护性收口；RM004 完成前不得开始 GA003。
+- `docs/repository-maintenance-plan.md` 是当前目录、Go module、client workspace、Android truth source、文档和维护命令的迁移基准。
+- 仓库整理只改变物理路径、module/workspace 和维护入口，不改变 terminal、endpoint、remote auth、WebRTC、SmartRoute 或云服务业务语义。
 - `docs/remote-platform/` 是当前远程平台产品与技术设计的唯一活动基线；ME012 已实现代码只作为原型和迁移输入，不再反向定义新架构。
 - TUI/client 侧已经完成的多 endpoint / 多 transport 模型继续有效，详细技术背景以 `termx-tui-v3/docs/multi-endpoint-transport-plan.md` 为准。
 - 插件系统已经拆到独立分支，本分支不继续新增插件系统代码、协议或文档。
@@ -10,6 +12,7 @@
 
 ## 基准文档
 
+- `docs/repository-maintenance-plan.md`：当前仓库目标布局、module 决策、迁移切片和准入基准。
 - `docs/remote-platform/README.md`：当前远程平台文档索引、有效性和冻结决策。
 - `docs/remote-platform/product-prd.md`：产品、版本、商业模式和收费边界基准。
 - `docs/remote-platform/architecture-spec.md`：公开客户端/daemon 与私有 control plane/Hub/Relay 架构基准。
@@ -27,6 +30,8 @@
 
 - `workflow.md`
 - `AGENTS.md`
+- `docs/repository-maintenance-plan.md`
+- RM002-RM004 可按该计划移动和更新当前活动 public/private 源码、workspace、构建、发布和文档路径；不得借目录整理改变业务 contract。
 - `docs/remote-platform/`
 - `termx-tui-v3/`
 - `termx-cli/`
@@ -144,6 +149,10 @@
 | GA001 | 完成 | Go desktop/headless direct/Relay 网络质量观测基线 | 只采集 RTT、丢包、抖动、吞吐、断线和成本 summary；不含 terminal/grant 数据，不自动改路 |
 | GA001A | 完成 | Android managed WebRTC 质量观测对齐 | Android stats 使用同一窗口、隐私和异步成本语义；Community/official 构建边界不变，不自动改路 |
 | GA002 | 完成 | SmartRoute single-relay 智能选区 | direct 与受限 single-relay 候选按质量和成本竞争；具备 hysteresis、cost guard、选择原因和局部失败 |
+| RM001 | 完成 | 冻结目标目录与迁移门禁 | 明确单一公开 Go module、领域目录、client workspace、Android truth source、私有部署边界和四阶段准入 |
+| RM002 | 待开始 | 公开 Go module 与领域目录收口 | 根 module 全量通过；公开子 module、旧 `termx-*-vN` 路径和本地 replace 删除，不保留 import adapter |
+| RM003 | 待开始 | Client workspace 与 Android 单一源码 | `clients/ui`、`clients/mobile` 使用根 npm workspace；Android 自定义源码无镜像复制；Community/Official 边界不变 |
+| RM004 | 待开始 | 私有目录、维护入口与文档收尾 | `private/cloud`、统一 Make 入口、精简 workflow、public snapshot/license/path guard 和 `.artifacts` 全部通过 |
 | GA003 | 待开始 | 双 Edge Relay Mesh corridor pilot | 两端就近 TURN、单逻辑 backbone、route-bound RelayLease、内部服务身份和 session-level usage reconciliation 完整通过 |
 | GA004 | 待开始 | 单 transit 受控加速试点 | 仅当 GA003 数据证明特定 corridor 需要时启用，`max_internal_transit=1`；任意 N 跳保持禁止 |
 | KS012 | 待开始 | 快捷键跨切片总契约守卫 | 汇总默认 catalog 完备性、键盘/点击等价、空 catalog、overlay、组合 action 和 capability 回归守卫，不在本切片首次补关键 harness |
@@ -174,6 +183,7 @@
 
 ## 当前状态
 
+- RM001 已完成：`docs/repository-maintenance-plan.md` 冻结一个根公开 Go module、无版本后缀的领域目录、`clients/ui` + `clients/mobile` npm workspace、Gradle source tree 单一 Android 源码、`private/cloud` 独立部署 module、`.artifacts` 构建产物和精简活动工作流目标；RM002-RM004 只允许改变物理路径、module/workspace 和维护入口，不得改变 terminal、endpoint、remote auth、WebRTC、SmartRoute 或云服务业务语义。GA003 在 RM004 完成前暂停。
 - GA002 已完成：Cloud Companion IPC 提升到 v3，公开 contract 只暴露 managed session/target、受控 direct 或 single-relay route plan、稳定选择原因、短 TTL 和执行所需 ICE material，不泄漏私有分数、权重、阈值、成本、容量或供应商信息。私有 Route Planner 以质量时效/样本、可达性、健康、容量、策略、entitlement 和可信成本为硬约束，使用容量有界的确定性评分、minimum hold、cooldown、最小改善和基于新质量窗口的连续胜出；候选失败保持局部，成本未知与显式零成本分离，relay mesh 在本阶段拒绝。只有显式 `smart_route` 才在 endpoint resolution 后请求计划；Go 与 Android 公开 WebRTC runtime 二次校验 plan、只执行选中 ICE，并在端到端授权前核对实际 selected candidate path，`auto` 仍保持基础 direct/relay 行为，公开进程不申请 RelayLease，也不做 live ICE restart。TUI、App 与共享 UI 投影同一稳定选择原因。proto/shared/remote-v2/tui-v3/CLI、私有 Companion/Planner 全量，相关 race/vet、remote-ui 433 项、App `cap:build`、Community/Official clean Android unit/APK、DEX 私有类边界、public snapshot guard 和私有许可审计均通过；同一暂存树的无 `.git`/`private` public snapshot 也通过八个 Go module、干净 CLI、UI/App/Community Android 独立构建与 production npm audit。public snapshot 的固定第三方 notice 重抓取因外部 GitHub/Go proxy 超时未重复联网完成，但这些文件已在根仓库本轮联网校验并与快照逐文件一致，其余 public license gate 使用缓存的固定 `go-licenses v2.0.1` 离线通过。生产 OAuth/TLS、真实候选目录、route material 和官方云 adapter 仍未注入，保持 fail closed；GA003 mesh 不在本切片。
 - GA001A 已完成：Go protobuf 描述符与 Android `ManagedPathQualitySummary` 由同一个 v2 JSON fixture 守卫 18 个公开字段及 cost/terminal/grant/payload/address/credential 禁止边界；Android collector 与 GA001 使用相同 nearest-rank RTT P50/P95、相邻 RTT jitter、累计密文字节吞吐、ICE retransmission/send-discard loss estimate、connected duration、断线计数和大计数舍入语义。公开 `WebRTCTransport` 优先读取 selected candidate pair，缺失索引时只确定性接受 `nominated + succeeded` pair；5 秒采样、60 秒窗口的 reporter 仅在 DeviceIdentity/capability authorizer 成功后启动，关闭前使用非阻塞缓存最终样本，2 秒上报超时或 cloud 错误只丢 telemetry，不请求 lease、不重连、不修改 endpoint 或自动切路。移动端公开 `ManagedCloudAdapter.reportPathQuality` 只接脱敏 summary，Official 私有 adapter 校验后转发，Community 与损坏 official module 均 fail closed；可信成本继续由服务端异步关联。`termx-shared` 全量与 pathquality 重复 10 次、App Web build、Community/Official clean unit test 与 APK assemble、APK 质量类/私有 factory 边界、public snapshot guard、private license audit均通过；同一暂存树复制出的无 `.git`/`private` public snapshot 也通过 shared 全量、App `cap:build`、Community Android unit/assemble、DEX class 边界和 public license audit。当前 Official development gateway 与 App authorizer 仍因未注入生产 OAuth/TLS/E2E 实现而 fail closed，本切片不把 contract/runtime 对齐伪装成生产云连接已上线。
 - GA001 已完成：Cloud Companion IPC 提升到 v2，公开 `termx-shared/cloudcompanion/pathquality` 以单个 selected candidate pair 的累计 stats 形成严格时间窗口，计算 RTT P50/P95、相邻 RTT jitter、ICE retransmission/send-discard loss estimate、双向密文字节吞吐、connected duration 和异常断线次数；proto 描述符只允许 managed-session correlation、observed path 和匿名 network/region/carrier/provider taxonomy，不存在 cost、terminal、grant、payload 或地址字段。`termx-remote-v2/client` 默认仅在 CLI 显式开启后按 5 秒采样、60 秒窗口上报，candidate/path/counter 变化会切分窗口，report 失败只丢 telemetry，不请求 RelayLease、不重连、不改变 endpoint；CLI 保持 Companion 到 transport 结束且最终 observation 完成后再关闭。私有 `private/termx-cloud/route-planner/quality` 是容量有界、带时效过滤的 Probe Aggregator：质量先幂等入库，Relay usage/provider rate card 后续通过 `ObservationRef` 异步附加成本，未定价与显式零成本严格分离；当前没有 score、hysteresis、route selection 或自动切路 API。proto/shared/remote-v2/Companion/route-planner 全量、真实 Pion 重复 10 次、相关 race、vet、CLI 干净环境排除三个既有视觉基线后的全包、public snapshot guard 与 private license audit 均通过。当前 Android official cloud 仍是未配置 OAuth/TLS/authorizer 的 contract scaffold，且不在 GA001 允许范围内，本切片不宣称移动端 telemetry 已接通；后续移动端实现必须复用相同数据最小化和 cost 分离语义，不能另建业务协议。
