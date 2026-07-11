@@ -76,6 +76,24 @@ export interface ScanPairingCodeOptions {
   onCancel?: (() => void) | undefined
   onManualEntry?: (() => void) | undefined
 }
+
+/** ExternalPairingImportResult 是平台 secure-store 导入成功后可进入共享 UI 的非秘密机器投影。 */
+export interface ExternalPairingImportResult {
+  machine: { id: string; name: string; hostname?: string | undefined }
+  expiresAt?: string | undefined
+}
+
+/**
+ * ExternalPairingAdapter 允许 Android/iOS 把 bearer capability 留在 native secure-store。
+ * 共享 UI 只查询 grant_ref 是否存在，不接收、持久化或转发原始 grant。
+ */
+export interface ExternalPairingAdapter {
+  /** import 必须在写平台凭据前校验 expectedMachineId；未指定时表示全局新增设备。 */
+  import(rawValue: string, expectedMachineId?: string): Promise<ExternalPairingImportResult | null>
+  isAuthorized(machineId: string): boolean
+  authorizationExpiresAt?(machineId: string): string | undefined
+  forget(machineId: string): void | Promise<void>
+}
 type MachineRuntimeFactory = (input: {
   machine: WebControlMachine
   storage: RemoteRuntimeStorage
@@ -103,6 +121,7 @@ export interface RemoteControlAppProps {
   machineRuntimeFactory?: MachineRuntimeFactory | undefined
   globalFileTransfer?: FileTransferContext | undefined
   scanPairingCode?: ((options?: ScanPairingCodeOptions) => Promise<string | null>) | undefined
+  externalPairingAdapter?: ExternalPairingAdapter | undefined
   exportDebugLogs?: (() => Promise<void>) | undefined
 }
 
@@ -115,6 +134,7 @@ export function RemoteControlApp({
   machineRuntimeFactory = createHubMachineRuntime,
   globalFileTransfer,
   scanPairingCode,
+  externalPairingAdapter,
   exportDebugLogs,
 }: RemoteControlAppProps) {
   const networkRuntime = networkRuntimeProp ?? unavailableNetworkRuntime
@@ -143,8 +163,8 @@ export function RemoteControlApp({
   const [manualScanValue, setManualScanValue] = useState('')
   const [manualEntryOpen, setManualEntryOpen] = useState(false)
   const [lastImported, setLastImported] = useState<PairingPayload | null>(null)
-  const [authorizedMachineIds, setAuthorizedMachineIds] = useState(() => readAuthorizedMachineIds(storage, undefined))
-  const [authorizationExpiries, setAuthorizationExpiries] = useState(() => readAuthorizationExpiries(storage))
+  const [authorizedMachineIds, setAuthorizedMachineIds] = useState(() => readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
+  const [authorizationExpiries, setAuthorizationExpiries] = useState(() => readAuthorizationExpiries(storage, externalPairingAdapter))
   const [pairVersion, setPairVersion] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -332,8 +352,8 @@ export function RemoteControlApp({
         localMachineList = createMachineStore({ storage }).listMachines()
       }
       setLocalMachines(localMachineList)
-      setAuthorizedMachineIds(readAuthorizedMachineIds(storage, profile.id))
-      setAuthorizationExpiries(readAuthorizationExpiries(storage))
+      setAuthorizedMachineIds(readAuthorizedMachineIds(storage, profile.id, externalPairingAdapter))
+      setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
       setSelectedMachineId((current) => {
         if (
           current &&
@@ -350,7 +370,7 @@ export function RemoteControlApp({
     } finally {
       setLoading(false)
     }
-  }, [accessToken, api, storage])
+  }, [accessToken, api, externalPairingAdapter, storage])
 
   const prepareTransferMachineRuntime = useCallback((transferId?: string) => {
     if (!globalFileTransfer || !transferId) return
@@ -387,9 +407,9 @@ export function RemoteControlApp({
   }, [refreshMachines])
 
   useEffect(() => {
-    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id))
-    setAuthorizationExpiries(readAuthorizationExpiries(storage))
-  }, [pairVersion, storage, user?.id])
+    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
+    setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
+  }, [externalPairingAdapter, pairVersion, storage, user?.id])
 
   const submitLogin = useCallback(async () => {
     setLoading(true)
@@ -415,13 +435,13 @@ export function RemoteControlApp({
     setUser(null)
     setMachines([])
     setLocalMachines(signedOutMachines)
-    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, undefined))
-    setAuthorizationExpiries(readAuthorizationExpiries(storage))
+    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, undefined, externalPairingAdapter))
+    setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
     setPairVersion((current) => current + 1)
     setSelectedMachineId(null)
     setError(null)
     setView('settings')
-  }, [storage])
+  }, [externalPairingAdapter, storage])
 
   const updateTerminalSettings = useCallback((patch: Partial<TerminalSettings>) => {
     setTerminalSettings((current) => writeTerminalSettings({ ...current, ...patch }, storage))
@@ -475,6 +495,38 @@ export function RemoteControlApp({
     setScanFlowState('pairing')
     setError(null)
     try {
+      const external = await externalPairingAdapter?.import(rawValue, selectedMachine?.id)
+      if (external) {
+        if (selectedMachine && selectedMachine.id !== external.machine.id) {
+          throw new Error(`This pairing code belongs to ${external.machine.name}, not ${selectedMachine.name}`)
+        }
+        const store = createMachineStore({ storage })
+        const timestamp = new Date().toISOString()
+        store.saveMachine({
+          machineId: external.machine.id,
+          name: external.machine.name,
+          ...(external.machine.hostname ? { hostname: external.machine.hostname } : {}),
+          state: 'online',
+          terminalCount: 0,
+          source: 'manual',
+          addresses: { local: [], lan: [], public: [] },
+          endpoints: {},
+          addedAt: store.getMachine(external.machine.id)?.addedAt ?? timestamp,
+          updatedAt: timestamp,
+        })
+        dropMachineRuntime(external.machine.id)
+        setLocalMachines(store.listMachines())
+        setSelectedMachineId(external.machine.id)
+        setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
+        setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
+        setPairVersion((current) => current + 1)
+        setLastImported(null)
+        setManualScanValue('')
+        setScanOpen(false)
+        setView('machine')
+        hapticSuccess()
+        return
+      }
       const payload = parsePairingPayload(rawValue)
       console.info('[termx:pairing] QR parsed', {
         machineId: payload.machine.id,
@@ -549,8 +601,8 @@ export function RemoteControlApp({
         store.saveMachine(mergeHubMachine(saved, targetMachine))
       }
       setSelectedMachineId(targetMachine.id)
-      setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id))
-      setAuthorizationExpiries(readAuthorizationExpiries(storage))
+      setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
+      setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
       setPairVersion((current) => current + 1)
       setLastImported(payload)
       setError(null)
@@ -567,7 +619,7 @@ export function RemoteControlApp({
       setPairing(false)
       setScanFlowState('idle')
     }
-  }, [dropMachineRuntime, machines, networkRuntime, pairApiFactory, pairIntent, selectedMachine, storage, user?.id])
+  }, [dropMachineRuntime, externalPairingAdapter, machines, networkRuntime, pairApiFactory, pairIntent, selectedMachine, storage, user?.id])
 
   const importManualScan = useCallback(async () => {
     hapticImpact()
@@ -611,9 +663,10 @@ export function RemoteControlApp({
   const handleMachineNeedsReauthorization = useCallback((machineId: string) => {
     if (!storage) return
     createMachineSessionStore(storage).clearSessionToken(machineId)
+    void externalPairingAdapter?.forget(machineId)
     dropMachineRuntime(machineId)
-    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id))
-    setAuthorizationExpiries(readAuthorizationExpiries(storage))
+    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
+    setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
     setPairVersion((current) => current + 1)
     setSelectedMachineId(machineId)
     setPairIntent('authorize-machine')
@@ -623,26 +676,27 @@ export function RemoteControlApp({
     setError('This phone needs a fresh machine authorization. Scan the machine QR again.')
     setScanOpen(true)
     setScanAutoStartToken((current) => current + 1)
-  }, [dropMachineRuntime, storage, user?.id])
+  }, [dropMachineRuntime, externalPairingAdapter, storage, user?.id])
 
   const forgetMachineAuthorization = useCallback((machine: WebControlMachine) => {
     if (!storage) return
     const store = createMachineStore({ storage })
     const sessionStore = createMachineSessionStore(storage)
     sessionStore.clearSessionToken(machine.id)
+    void externalPairingAdapter?.forget(machine.id)
     dropMachineRuntime(machine.id)
     const stillVisibleFromHub = machines.some((hubMachine) => hubMachine.id === machine.id)
     if (!stillVisibleFromHub) {
       store.forgetMachine(machine.id)
     }
     setLocalMachines(store.listMachines())
-    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id))
-    setAuthorizationExpiries(readAuthorizationExpiries(storage))
+    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
+    setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
     setPairVersion((current) => current + 1)
     setSelectedMachineId((current) => current === machine.id ? null : current)
     setView((current) => current === 'machine' && selectedMachineId === machine.id ? 'home' : current)
     setError(null)
-  }, [dropMachineRuntime, machines, selectedMachineId, storage, user?.id])
+  }, [dropMachineRuntime, externalPairingAdapter, machines, selectedMachineId, storage, user?.id])
 
   useEffect(() => addNativeBackHandler(() => {
     if (scanOpen) {
@@ -1887,26 +1941,40 @@ function createBrowserAppDeviceId(): string {
   return `appweb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
 }
 
-function readAuthorizedMachineIds(storage: RemoteRuntimeStorage | undefined, userId: string | undefined): Set<string> {
+function readAuthorizedMachineIds(
+  storage: RemoteRuntimeStorage | undefined,
+  userId: string | undefined,
+  externalPairingAdapter?: ExternalPairingAdapter,
+): Set<string> {
+  void userId
   if (!storage) return new Set()
   try {
     const sessionStore = createMachineSessionStore(storage)
     return new Set(createMachineStore({ storage }).listMachines()
-      .filter((machine) => sessionStore.getSessionToken(machine.machineId))
+      .filter((machine) => {
+        if (sessionStore.getSessionToken(machine.machineId)) return true
+        if (!externalPairingAdapter?.isAuthorized(machine.machineId)) return false
+        const expiresAt = externalPairingAdapter.authorizationExpiresAt?.(machine.machineId)
+        return !expiresAt || !isExpiredAuthorization(expiresAt)
+      })
       .map((machine) => machine.machineId))
   } catch {
     return new Set()
   }
 }
 
-function readAuthorizationExpiries(storage: RemoteRuntimeStorage | undefined): Map<string, string> {
+function readAuthorizationExpiries(
+  storage: RemoteRuntimeStorage | undefined,
+  externalPairingAdapter?: ExternalPairingAdapter,
+): Map<string, string> {
   if (!storage) return new Map()
   try {
     const sessionStore = createMachineSessionStore(storage)
     const expiries = new Map<string, string>()
     for (const machine of createMachineStore({ storage }).listMachines()) {
       const expiresAt = sessionStore.getSessionExpiry(machine.machineId)
-      if (expiresAt) expiries.set(machine.machineId, expiresAt)
+      const externalExpiry = externalPairingAdapter?.authorizationExpiresAt?.(machine.machineId)
+      if (externalExpiry || expiresAt) expiries.set(machine.machineId, externalExpiry ?? expiresAt!)
     }
     return expiries
   } catch {

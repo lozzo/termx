@@ -2,20 +2,16 @@ package com.termx.app.connection
 
 import android.util.Log
 import com.termx.app.network.BridgeServer
+import com.termx.app.network.protocolBridgeEndpoint
 import com.termx.app.transfer.FileTransferManager
 import org.json.JSONArray
 import org.json.JSONObject
-import org.webrtc.DataChannel
 import java.nio.charset.StandardCharsets
 
 /**
  * BridgeRouter — 将 JS→Native Bridge 帧路由到对应的 DataChannel
  *
- * Label 格式：
- *   api:{machineId}
- *   events:{machineId}
- *   terminal:{machineId}:{terminalId}
- *   file:{machineId}:{transferId}
+ * 当前数据面只开放 `protocol:{endpointId}`；terminal stream 由 JS connection-level multiplexer 在该通道内路由。
  */
 class BridgeRouter(
     private val bridge: BridgeServer,
@@ -72,8 +68,8 @@ class BridgeRouter(
                     bridge.sendChanError(channelId, "invalid channel label")
                     return
                 }
-                if (label.startsWith("api:") || label.startsWith("events:")) {
-                    bridge.sendChanOpened(channelId, label)
+                if (!label.startsWith("protocol:")) {
+                    bridge.sendChanError(channelId, "unsupported channel label")
                     return
                 }
                 val transport = storeManager.findTransportForMachine(machineId)
@@ -89,21 +85,7 @@ class BridgeRouter(
 
             override fun onCloseChannel(channelId: Int, label: String?) {
                 if (label == null) return
-                val machineId = extractMachineId(label) ?: return
-                val transport = storeManager.findTransportForMachine(machineId) ?: return
-                when {
-                    label.startsWith("terminal:") -> {
-                        val terminalId = parseSubId(label) ?: return
-                        transport.channelManager.closeTerminal(terminalId)
-                    }
-                    label.startsWith("file:") -> {
-                        val transferId = parseSubId(label) ?: return
-                        // Only close channel if native transfer manager isn't handling it
-                        if (!fileTransferManager.isHandling(transferId)) {
-                            transport.channelManager.closeFile(transferId)
-                        }
-                    }
-                }
+                extractMachineId(label) ?: return
             }
 
             override fun onTransferRequest(payload: ByteArray) {
@@ -230,18 +212,7 @@ class BridgeRouter(
             Log.w(TAG, "No transport for machine $machineId")
             return
         }
-        when {
-            label.startsWith("api:") -> transport.sendToApi(payload)
-            label.startsWith("events:") -> transport.sendToEvents(payload)
-            label.startsWith("terminal:") -> {
-                val terminalId = parseSubId(label) ?: return
-                transport.sendToTerminal(terminalId, payload)
-            }
-            label.startsWith("file:") -> {
-                val transferId = parseSubId(label) ?: return
-                transport.sendToFile(transferId, payload)
-            }
-        }
+        if (label.startsWith("protocol:")) transport.sendToProtocol(payload)
     }
 
     private fun openTransportChannel(
@@ -254,27 +225,10 @@ class BridgeRouter(
             bridge.sendChanError(channelId, "machine mismatch")
             return
         }
-        when {
-            label.startsWith("api:") -> bridge.sendChanOpened(channelId, label)
-            label.startsWith("events:") -> bridge.sendChanOpened(channelId, label)
-            label.startsWith("terminal:") -> {
-                val terminalId = parseSubId(label) ?: return
-                val dc = transport.openTerminalChannel(terminalId)
-                when (dc?.state()) {
-                    DataChannel.State.OPEN -> bridge.sendChanOpened(channelId, label)
-                    null -> bridge.sendChanError(channelId, "terminal channel unavailable")
-                    else -> {}
-                }
-            }
-            label.startsWith("file:") -> {
-                val transferId = parseSubId(label) ?: return
-                val dc = transport.openFileChannel(transferId)
-                when (dc?.state()) {
-                    DataChannel.State.OPEN -> bridge.sendChanOpened(channelId, label)
-                    null -> bridge.sendChanError(channelId, "file channel unavailable")
-                    else -> {}
-                }
-            }
+        if (label.startsWith("protocol:") && transport.channelManager.isProtocolOpen()) {
+            bridge.sendChanOpened(channelId, label)
+        } else {
+            bridge.sendChanError(channelId, "termx protocol channel unavailable")
         }
     }
 
@@ -306,20 +260,7 @@ class BridgeRouter(
     // ─── Label parsing ────────────────────────────────────────────────────────
 
     private fun extractMachineId(label: String): String? {
-        return when {
-            label.startsWith("api:") -> label.removePrefix("api:")
-            label.startsWith("events:") -> label.removePrefix("events:")
-            label.startsWith("terminal:") || label.startsWith("file:") -> {
-                val parts = label.split(":", limit = 3)
-                if (parts.size >= 3) parts[1].takeIf { it.isNotBlank() } else null
-            }
-            else -> null
-        }
-    }
-
-    private fun parseSubId(label: String): String? {
-        val parts = label.split(":", limit = 3)
-        return if (parts.size >= 3) parts[2] else null
+        return protocolBridgeEndpoint(label)
     }
 
     fun closeAll() {

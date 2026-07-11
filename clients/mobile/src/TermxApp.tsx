@@ -27,6 +27,7 @@ import type {
   TerminalInventoryEvents,
   WebControlMachine,
   RemoteControlAppProps,
+  ExternalPairingAdapter,
 } from '@termx/ui'
 import { NativeConnection, type NativeConnectOpts, type NativeConnectionSnapshot, type NativeRelayMode, type NativeStateChangeEvent } from './plugins/nativeConnection'
 import { NativeRtcConnector, recoverNativeBridgeAfterResume, type NativeRtcSession } from './NativeConnectionProxy'
@@ -67,6 +68,10 @@ export function TermxApp() {
 
   const networkRuntime = useMemo(() => createNativeNetworkRuntime(), [])
   const nativeAppRuntime = useMemo(() => createNativeAppRuntime(), [])
+  const externalPairingAdapter = useMemo(
+    () => networkRuntime.storage ? createNativeExternalPairingAdapter(networkRuntime.storage) : undefined,
+    [networkRuntime],
+  )
   const machineRuntimeFactory = useMemo<MachineRuntimeFactory>(
     () => nativeAppRuntime.createMachineRuntime,
     [nativeAppRuntime],
@@ -81,6 +86,7 @@ export function TermxApp() {
       <RemoteControlApp
         defaultControlUrl={defaultControlUrl}
         exportDebugLogs={exportNativeDebugLogs}
+        externalPairingAdapter={externalPairingAdapter}
         globalFileTransfer={globalFileTransfer}
         machineRuntimeFactory={machineRuntimeFactory}
         networkRuntime={networkRuntime}
@@ -88,6 +94,55 @@ export function TermxApp() {
       />
     </section>
   )
+}
+
+function createNativeExternalPairingAdapter(storage: RemoteRuntimeStorage): ExternalPairingAdapter {
+  const key = (machineId: string, field: string) => `termx.endpoint.${machineId}.${field}`
+  return {
+    async import(rawValue, expectedMachineId) {
+      let candidate: unknown
+      try {
+        candidate = JSON.parse(rawValue.trim())
+      } catch {
+        return null
+      }
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null
+      const record = candidate as Record<string, unknown>
+      if (record.version !== 1 || typeof record.capability_grant !== 'string') return null
+      const imported = await NativeConnection.importManagedPairing({
+        payload: rawValue,
+        ...(expectedMachineId ? { expectedEndpointId: expectedMachineId } : {}),
+      })
+      storage.setItem(key(imported.endpointId, 'targetDeviceId'), imported.targetDeviceId)
+      storage.setItem(key(imported.endpointId, 'deviceFingerprint'), imported.deviceFingerprint)
+      storage.setItem(key(imported.endpointId, 'grantRef'), imported.grantRef)
+      storage.setItem(key(imported.endpointId, 'grantExpiresAt'), imported.expiresAt)
+      storage.setItem(key(imported.endpointId, 'relayMode'), 'direct')
+      return {
+        machine: { id: imported.endpointId, name: imported.label },
+        expiresAt: imported.expiresAt,
+      }
+    },
+    isAuthorized(machineId) {
+      return Boolean(
+        storage.getItem(key(machineId, 'targetDeviceId'))?.trim() &&
+        storage.getItem(key(machineId, 'deviceFingerprint'))?.trim() &&
+        storage.getItem(key(machineId, 'grantRef'))?.trim(),
+      )
+    },
+    authorizationExpiresAt(machineId) {
+      return storage.getItem(key(machineId, 'grantExpiresAt'))?.trim() || undefined
+    },
+    async forget(machineId) {
+      const grantRef = storage.getItem(key(machineId, 'grantRef'))?.trim()
+      storage.removeItem(key(machineId, 'targetDeviceId'))
+      storage.removeItem(key(machineId, 'deviceFingerprint'))
+      storage.removeItem(key(machineId, 'grantRef'))
+      storage.removeItem(key(machineId, 'grantExpiresAt'))
+      storage.removeItem(key(machineId, 'relayMode'))
+      if (grantRef) await NativeConnection.deleteManagedGrant({ grantRef })
+    },
+  }
 }
 
 async function exportNativeDebugLogs(): Promise<void> {
@@ -518,6 +573,7 @@ function createNativeConnector(
   _storedMachine: StoredMachineRecord | null,
   storage: RemoteRuntimeStorage,
 ): NativeConnector {
+  const targetDeviceId = storage.getItem(`termx.endpoint.${machine.id}.targetDeviceId`)?.trim() ?? machine.id
   const deviceFingerprint = storage.getItem(`termx.endpoint.${machine.id}.deviceFingerprint`)?.trim() ?? ''
   const grantRef = storage.getItem(`termx.endpoint.${machine.id}.grantRef`)?.trim() ?? ''
   if (!deviceFingerprint || !grantRef) {
@@ -538,7 +594,7 @@ function createNativeConnector(
   }
 
   const connectOpts: Omit<NativeConnectOpts, 'endpointId'> = {
-    targetDeviceId: machine.id,
+    targetDeviceId,
     deviceFingerprint,
     grantRef,
     relayMode: isNativeRelayMode(relayModeValue) ? relayModeValue : 'auto',

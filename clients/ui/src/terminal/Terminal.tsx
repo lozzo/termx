@@ -279,7 +279,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         writeId,
         reason,
         chars: text.length,
-        preview: text.replace(/\x1b/g, '\\u001b').replace(/\r/g, '\\r').replace(/\n/g, '\\n').slice(0, 180),
         pendingCallbacks: stats.pendingCallbacks,
       },
     })
@@ -2055,11 +2054,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
     const snapshotText = snapshot ? (snapshot.replay ?? snapshot.text) : ''
     const recoveryRevision = snapshot?.recovery?.revision ?? 0
+    const replacesLiveOutput = snapshot?.refreshReason === 'live_invalidated'
     const shouldReplaySnapshot = Boolean(
       snapshot &&
       snapshotText &&
       (snapshotText !== lastSnapshotTextRef.current || recoveryRevision > recoveryRevisionAppliedRef.current) &&
-      (lastWrittenTextRef.current === '' || recoveryRevision > recoveryRevisionAppliedRef.current),
+      (lastWrittenTextRef.current === '' || recoveryRevision > recoveryRevisionAppliedRef.current || replacesLiveOutput),
     )
 
     if (shouldReplaySnapshot) {

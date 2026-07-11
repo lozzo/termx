@@ -10,4 +10,8 @@ gradle.projectsEvaluated {
     appProject.android.sourceSets.main.java.srcDir(new File(privateModuleRoot, 'src/main/kotlin'))
     appProject.android.sourceSets.test.java.srcDir(new File(privateModuleRoot, 'src/test/kotlin'))
     appProject.android.buildTypes.release.proguardFiles(new File(privateModuleRoot, 'official-proguard-rules.pro'))
+    def devCloudEnabled = gradle.startParameter.projectProperties['termxOfficialDevCloud'] == 'true'
+    appProject.android.defaultConfig.buildConfigField('boolean', 'TERMX_OFFICIAL_DEV_CLOUD_ENABLED', devCloudEnabled.toString())
+    appProject.android.defaultConfig.buildConfigField('String', 'TERMX_OFFICIAL_DEV_CONTROL_URL', '"http://127.0.0.1:41001"')
+    appProject.android.defaultConfig.buildConfigField('String', 'TERMX_OFFICIAL_DEV_HUB_URL', '"http://127.0.0.1:41002"')
 }

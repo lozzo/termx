@@ -17,13 +17,14 @@
 ## 2. 文档顺序
 
 1. `cloud-staging-roadmap.md`：回答当前真实完成度、单区域纵向消息链路和 CLOUD002-CLOUD005 的用户 DoD。
-2. `product-prd.md`：回答为谁解决什么问题、哪些能力免费、哪些持续服务收费。
-3. `architecture-spec.md`：回答公开客户端、daemon、私有 Control Plane、Hub 和 Relay 各自拥有什么状态。
-4. `network-topology.md`：用目标网络拓扑解释 local、SSH、direct WebRTC、Relay 与端到端授权链路。
-5. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
-6. `distribution-and-cloud-companion-spec.md`：回答公开主程序与闭源 cloud 能力如何拆包、安装、通信、升级和跨平台发布。
-7. `global-acceleration-spec.md`：保留 single-relay 算法背景和延后的 Relay Mesh 输入；不是当前实施队列。
-8. `source-boundary-and-migration-plan.md`、`public-snapshot-manifest.md` 与 `../legal/`：正式开源/发布阶段资产；当前 private monorepo 开发不主动扩展或执行。
+2. `android-devcloud-manual-test.md`：CLOUD005 Official dev APK 的 ADB 安装、配对、terminal、恢复与局部失败手测清单。
+3. `product-prd.md`：回答为谁解决什么问题、哪些能力免费、哪些持续服务收费。
+4. `architecture-spec.md`：回答公开客户端、daemon、私有 Control Plane、Hub 和 Relay 各自拥有什么状态。
+5. `network-topology.md`：用目标网络拓扑解释 local、SSH、direct WebRTC、Relay 与端到端授权链路。
+6. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
+7. `distribution-and-cloud-companion-spec.md`：回答公开主程序与闭源 cloud 能力如何拆包、安装、通信、升级和跨平台发布。
+8. `global-acceleration-spec.md`：保留 single-relay 算法背景和延后的 Relay Mesh 输入；不是当前实施队列。
+9. `source-boundary-and-migration-plan.md`、`public-snapshot-manifest.md` 与 `../legal/`：正式开源/发布阶段资产；当前 private monorepo 开发不主动扩展或执行。
 
 若这些文档发生冲突，按以下顺序处理：
 

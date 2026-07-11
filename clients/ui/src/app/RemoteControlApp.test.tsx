@@ -541,6 +541,93 @@ describe('RemoteControlApp', () => {
     expect(storage.getItem('termx.session.copied-json-1.token')).toBe('session-token-copied-json')
   })
 
+  it('imports native managed pairing without calling the legacy Hub claim path', async () => {
+    const storage = new MemoryStorage()
+    const authorized = new Set<string>()
+    const rawBundle = JSON.stringify({
+      version: 1,
+      label: 'Managed Lab',
+      device_id: 'managed-device-1',
+      device_fingerprint: 'ed25519-sha256:fixture',
+      capability_grant: 'termx-grant-v1.secret',
+    })
+    const importPairing = vi.fn(async (rawValue: string) => {
+      expect(rawValue).toBe(rawBundle)
+      authorized.add('managed-device-1')
+      return {
+        machine: { id: 'managed-device-1', name: 'Managed Lab' },
+        expiresAt: '2099-05-05T10:30:00Z',
+      }
+    })
+
+    render(
+      <RemoteControlApp
+        externalPairingAdapter={{
+          import: importPairing,
+          isAuthorized: (machineId) => authorized.has(machineId),
+          authorizationExpiresAt: () => '2099-05-05T10:30:00Z',
+          forget: (machineId) => { authorized.delete(machineId) },
+        }}
+        machineRuntimeFactory={({ machine }) => ({
+          api: {
+            async getStatus() {
+              return {
+                machine: { machineId: machine.id, name: machine.name, state: 'online' },
+                localWeb: { httpUrl: '', rtcOfferUrl: '' },
+              }
+            },
+            async listTerminals() { return [] },
+          },
+          connector: { connect: vi.fn(async () => fakeRtcSession()) },
+        })}
+        networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
+        storage={storage}
+      />,
+    )
+
+    await userEvent.click(headerAddLocalDeviceButton())
+    fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: rawBundle } })
+    await userEvent.click(screen.getByRole('button', { name: /^add device$/i }))
+
+    await waitFor(() => expect(screen.getByTestId('termx-machine-terminal-list')).toBeTruthy())
+    expect(importPairing).toHaveBeenCalledTimes(1)
+    expect(createMachineStore({ storage }).getMachine('managed-device-1')?.name).toBe('Managed Lab')
+    expect(storage.getItem('termx.session.managed-device-1.token')).toBeNull()
+  })
+
+  it('requires a fresh native pairing when secure-store metadata points to an expired grant', async () => {
+    const storage = new MemoryStorage()
+    createMachineStore({ storage }).saveMachine({
+      machineId: 'managed-device-1',
+      name: 'Managed Lab',
+      state: 'online',
+      terminalCount: 0,
+      source: 'manual',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: {},
+      addedAt: '2026-07-11T00:00:00Z',
+      updatedAt: '2026-07-11T00:00:00Z',
+    })
+
+    render(
+      <RemoteControlApp
+        externalPairingAdapter={{
+          import: async () => null,
+          isAuthorized: () => true,
+          authorizationExpiresAt: () => '2020-01-01T00:00:00Z',
+          forget: () => {},
+        }}
+        networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
+        storage={storage}
+      />,
+    )
+
+    expect(screen.getAllByText('Expired').length).toBeGreaterThan(0)
+    await userEvent.click(screen.getByRole('button', { name: /^pair managed lab$/i }))
+    expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy()
+    expect(screen.getByText(/Authorize Device/i)).toBeTruthy()
+  })
+
   it('keeps the pairing sheet on the app light surface when the terminal theme is dark', async () => {
     const storage = new MemoryStorage()
 
@@ -827,10 +914,25 @@ describe('RemoteControlApp', () => {
         }],
       }),
     ])
+    const rawManagedBundle = JSON.stringify({
+      version: 1,
+      label: 'Other daemon',
+      device_id: 'device-2',
+      device_fingerprint: 'ed25519-sha256:fixture',
+      capability_grant: 'termx-grant-v1.secret',
+    })
+    const importPairing = vi.fn(async (_rawValue: string, _expectedMachineId?: string) => {
+      throw new Error('managed pairing endpoint mismatch')
+    })
 
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
+        externalPairingAdapter={{
+          import: importPairing,
+          isAuthorized: () => false,
+          forget: () => {},
+        }}
         hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
@@ -848,6 +950,10 @@ describe('RemoteControlApp', () => {
     expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy()
     expect(screen.getByText(/Authorize Device/i)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /open redmibook/i })).toBeNull()
+
+    fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: rawManagedBundle } })
+    await userEvent.click(screen.getByRole('button', { name: /^pair device$/i }))
+    await waitFor(() => expect(importPairing).toHaveBeenCalledWith(rawManagedBundle, 'device-1'))
   })
 
   it('removes local authorization for a Hub machine without deleting the Hub list record', async () => {

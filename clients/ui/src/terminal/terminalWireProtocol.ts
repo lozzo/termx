@@ -5,7 +5,9 @@ import {
   type DescMessage,
   type MessageInitShape,
   type MessageShape,
+  type UnknownField,
 } from '@bufbuild/protobuf'
+import { WireType } from '@bufbuild/protobuf/wire'
 import {
   AttachParamsSchema,
   AttachResultSchema,
@@ -13,18 +15,23 @@ import {
   EnsureResizeParamsSchema,
   EnsureResizeResultSchema,
   ErrorEnvelopeSchema,
+  EventSchema,
+  GetParamsSchema,
   GridViewportSchema,
   HelloSchema,
+  ListResultSchema,
   RequestEnvelopeSchema,
   ResponseEnvelopeSchema,
-  SnapshotParamsSchema,
   SnapshotSchema,
+  TerminalInfoSchema,
   type CursorState,
+  type Event,
   type GridViewport,
   type ResizeControl,
   type ResizeOwnership,
   type RowSet,
   type Snapshot,
+  type TerminalInfo,
   type TerminalModes,
 } from '../generated/wirepb/terminal_pb'
 
@@ -85,6 +92,9 @@ const compactRowFlagRuns = 1 << 0
 const compactRowFlagCells = 1 << 1
 const compactRowStyleFlag = 1 << 0
 const compactRowLinkFlag = 1 << 1
+const eventLiveRevisionFieldNumber = 14
+const liveObservedRevisionFieldNumber = 17
+const nativeScreenRevisionFieldNumber = 17
 
 export function encodeTerminalHelloPayload(init: { version: number; client?: string; server?: string }): Uint8Array {
   return encodeMessage(HelloSchema, {
@@ -111,6 +121,18 @@ export function encodeTerminalRequestPayload(id: number, method: string, params:
   })
 }
 
+/**
+ * encodeTerminalRequestEnvelope 只重写 connection-level request id，并保留已经按 method 编码的 params。
+ * 它供单一物理 termx protocol transport 的客户端 multiplexer 使用，不能改变 daemon method 或 terminal scope。
+ */
+export function encodeTerminalRequestEnvelope(request: TerminalRequestEnvelope): Uint8Array {
+  return encodeMessage(RequestEnvelopeSchema, {
+    id: BigInt(request.id),
+    method: request.method,
+    params: request.params,
+  })
+}
+
 export function decodeTerminalRequestPayload(payload: Uint8Array): TerminalRequestEnvelope {
   const request = decodeMessage(RequestEnvelopeSchema, payload)
   return {
@@ -126,6 +148,14 @@ export function decodeTerminalResponsePayload(payload: Uint8Array): TerminalResp
     id: Number(response.id),
     result: response.result,
   }
+}
+
+/** encodeTerminalResponseEnvelope 把物理 response id 恢复成调用方虚拟会话的 request id。 */
+export function encodeTerminalResponseEnvelope(response: TerminalResponseEnvelope): Uint8Array {
+  return encodeMessage(ResponseEnvelopeSchema, {
+    id: BigInt(response.id),
+    result: response.result,
+  })
 }
 
 export function encodeTerminalResponsePayload(id: number, method: string, result: unknown): Uint8Array {
@@ -154,9 +184,16 @@ export function encodeTerminalErrorPayload(id: number, code: number, message: st
   })
 }
 
+/** encodeTerminalErrorEnvelope 保留 daemon 错误分类，只重写虚拟会话 request id。 */
+export function encodeTerminalErrorEnvelope(error: TerminalErrorEnvelope): Uint8Array {
+  return encodeTerminalErrorPayload(error.id, error.code, error.message)
+}
+
 export function encodeTerminalMethodParams(method: string, params: unknown): Uint8Array {
   const record = asRecord(params)
   switch (method) {
+    case 'list':
+      return encodeMessage(EmptySchema, {})
     case 'attach':
       return encodeMessage(AttachParamsSchema, {
         terminalId: stringField(record, 'terminal_id', 'terminalId'),
@@ -175,12 +212,21 @@ export function encodeTerminalMethodParams(method: string, params: unknown): Uin
         surfaceId: stringField(record, 'surface_id', 'surfaceId'),
         viewId: stringField(record, 'view_id', 'viewId'),
       })
-    case 'snapshot':
-      return encodeMessage(SnapshotParamsSchema, {
+    case 'detach':
+      return encodeMessage(EnsureResizeParamsSchema, {
         terminalId: stringField(record, 'terminal_id', 'terminalId'),
-        scrollbackOffset: int32Value(field(record, 'scrollback_offset', 'scrollbackOffset')),
-        scrollbackLimit: int32Value(field(record, 'scrollback_limit', 'scrollbackLimit')),
+        channel: uint32Value(field(record, 'channel')),
+        surfaceId: stringField(record, 'surface_id', 'surfaceId'),
+        viewId: stringField(record, 'view_id', 'viewId'),
       })
+    case 'live.screen.get':
+      return encodeMessage(GetParamsSchema, {
+        terminalId: stringField(record, 'terminal_id', 'terminalId'),
+      })
+    case 'live.invalidation.next':
+      return encodeMessageWithUint64Unknown(GetParamsSchema, {
+        terminalId: stringField(record, 'terminal_id', 'terminalId'),
+      }, liveObservedRevisionFieldNumber, bigintValue(field(record, 'observed_revision', 'observedRevision')))
     default:
       return encodeMessage(EmptySchema, {})
   }
@@ -188,6 +234,9 @@ export function encodeTerminalMethodParams(method: string, params: unknown): Uin
 
 export function decodeTerminalMethodParams(method: string, payload: Uint8Array): unknown {
   switch (method) {
+    case 'list':
+      decodeMessage(EmptySchema, payload)
+      return {}
     case 'attach': {
       const params = decodeMessage(AttachParamsSchema, payload)
       return cleanRecord({
@@ -210,12 +259,26 @@ export function decodeTerminalMethodParams(method: string, payload: Uint8Array):
         view_id: params.viewId,
       })
     }
-    case 'snapshot': {
-      const params = decodeMessage(SnapshotParamsSchema, payload)
+    case 'detach': {
+      const params = decodeMessage(EnsureResizeParamsSchema, payload)
       return cleanRecord({
         terminal_id: params.terminalId,
-        scrollback_offset: params.scrollbackOffset,
-        scrollback_limit: params.scrollbackLimit,
+        channel: params.channel,
+        surface_id: params.surfaceId,
+        view_id: params.viewId,
+      })
+    }
+    case 'live.screen.get': {
+      const params = decodeMessage(GetParamsSchema, payload)
+      return cleanRecord({
+        terminal_id: params.terminalId,
+      })
+    }
+    case 'live.invalidation.next': {
+      const params = decodeMessage(GetParamsSchema, payload)
+      return cleanRecord({
+        terminal_id: params.terminalId,
+        observed_revision: uint64UnknownField(params, liveObservedRevisionFieldNumber),
       })
     }
     default:
@@ -227,6 +290,10 @@ export function decodeTerminalMethodParams(method: string, payload: Uint8Array):
 export function encodeTerminalMethodResult(method: string, result: unknown): Uint8Array {
   const record = asRecord(result)
   switch (method) {
+    case 'list':
+      return encodeMessage(ListResultSchema, {
+        terminals: arrayField(record, 'terminals').map((terminal) => terminalInfoInit(asRecord(terminal))),
+      })
     case 'attach':
       return encodeMessage(AttachResultSchema, {
         mode: stringField(record, 'mode'),
@@ -239,8 +306,19 @@ export function encodeTerminalMethodResult(method: string, result: unknown): Uin
         size: sizeInit(field(record, 'size')),
         resized: booleanValue(field(record, 'resized')),
       })
-    case 'snapshot':
-      return encodeMessage(SnapshotSchema, snapshotInit(record))
+    case 'live.screen.get':
+      return encodeMessageWithUint64Unknown(
+        SnapshotSchema,
+        snapshotInit(record),
+        nativeScreenRevisionFieldNumber,
+        bigintValue(field(record, 'live_revision', 'liveRevision')),
+      )
+    case 'live.invalidation.next':
+      return encodeMessageWithUint64Unknown(EventSchema, {
+        type: uint32Value(field(record, 'type')),
+        terminalId: stringField(record, 'terminal_id', 'terminalId'),
+        timestampUnixNano: bigintValue(field(record, 'timestamp_unix_nano', 'timestampUnixNano')),
+      }, eventLiveRevisionFieldNumber, bigintValue(field(record, 'live_revision', 'liveRevision')))
     default:
       return encodeMessage(EmptySchema, {})
   }
@@ -248,16 +326,59 @@ export function encodeTerminalMethodResult(method: string, result: unknown): Uin
 
 export function decodeTerminalMethodResult(method: string, payload: Uint8Array): unknown {
   switch (method) {
+    case 'list':
+      return { terminals: decodeMessage(ListResultSchema, payload).terminals.map(terminalInfoToAPI) }
     case 'attach':
       return attachResultToAPI(decodeMessage(AttachResultSchema, payload))
     case 'ensure_resize':
       return ensureResizeResultToAPI(decodeMessage(EnsureResizeResultSchema, payload))
-    case 'snapshot':
+    case 'live.screen.get':
       return snapshotToAPI(decodeMessage(SnapshotSchema, payload))
+    case 'live.invalidation.next':
+      return liveInvalidationToAPI(decodeMessage(EventSchema, payload))
     default:
       if (payload.byteLength > 0) decodeMessage(EmptySchema, payload)
       return {}
   }
+}
+
+function terminalInfoInit(record: Record<string, unknown>): MessageInitShape<typeof TerminalInfoSchema> {
+  return {
+    id: stringField(record, 'terminal_id', 'terminalId', 'id'),
+    name: stringField(record, 'name'),
+    command: stringArray(field(record, 'command')),
+    tags: stringMap(field(record, 'tags')),
+    size: sizeInit(field(record, 'size')),
+    state: stringField(record, 'state'),
+    cwd: stringField(record, 'cwd'),
+    liveCwd: stringField(record, 'live_cwd', 'liveCwd'),
+    createdAtUnixNano: bigintValue(field(record, 'created_at_unix_nano', 'createdAtUnixNano')),
+    ...(field(record, 'exit_code', 'exitCode') !== undefined
+      ? { exitCode: int32Value(field(record, 'exit_code', 'exitCode')) }
+      : {}),
+    resizeOwnership: resizeOwnershipInit(field(record, 'resize_ownership', 'resizeOwnership')),
+    resizeOwnerAttachmentCount: int32Value(field(record, 'resize_owner_attachment_count', 'resizeOwnerAttachmentCount')),
+    exitedAtUnixNano: bigintValue(field(record, 'exited_at_unix_nano', 'exitedAtUnixNano')),
+  }
+}
+
+function terminalInfoToAPI(info: TerminalInfo): unknown {
+  return cleanRecord({
+    terminal_id: info.id,
+    id: info.id,
+    name: info.name,
+    command: [...info.command],
+    tags: { ...info.tags },
+    size: sizeToAPI(info.size),
+    state: info.state,
+    cwd: info.cwd,
+    live_cwd: info.liveCwd,
+    created_at_unix_nano: Number(info.createdAtUnixNano),
+    ...(info.exitCode !== undefined ? { exit_code: info.exitCode } : {}),
+    resize_ownership: resizeOwnershipToAPI(info.resizeOwnership),
+    resize_owner_attachment_count: info.resizeOwnerAttachmentCount,
+    exited_at_unix_nano: Number(info.exitedAtUnixNano),
+  })
 }
 
 export function encodeGridViewportPayload(viewport: unknown): Uint8Array {
@@ -303,6 +424,16 @@ function snapshotToAPI(snapshot: Snapshot): unknown {
     cursor: cursorToAPI(snapshot.cursor),
     modes: modesToAPI(snapshot.modes, snapshot.screenIsAlternate),
     timestamp_unix_nano: Number(snapshot.timestampUnixNano),
+    live_revision: uint64UnknownField(snapshot, nativeScreenRevisionFieldNumber),
+  })
+}
+
+function liveInvalidationToAPI(event: Event): unknown {
+  return cleanRecord({
+    type: event.type,
+    terminal_id: event.terminalId,
+    timestamp_unix_nano: Number(event.timestampUnixNano),
+    live_revision: uint64UnknownField(event, eventLiveRevisionFieldNumber),
   })
 }
 
@@ -644,12 +775,98 @@ function sizeInit(value: unknown): { cols: number; rows: number } | undefined {
   }
 }
 
+function resizeOwnershipInit(value: unknown): MessageInitShape<typeof TerminalInfoSchema>['resizeOwnership'] {
+  const record = asRecord(value)
+  if (Object.keys(record).length === 0) return undefined
+  return {
+    ownerAttachmentId: stringField(record, 'owner_attachment_id', 'ownerAttachmentId'),
+    ownerSurfaceId: stringField(record, 'owner_surface_id', 'ownerSurfaceId'),
+    ownerViewId: stringField(record, 'owner_view_id', 'ownerViewId'),
+    ownerRemoteAddr: stringField(record, 'owner_remote_addr', 'ownerRemoteAddr'),
+    size: sizeInit(field(record, 'size')),
+    sizeLocked: booleanValue(field(record, 'size_locked', 'sizeLocked')),
+    epoch: bigintValue(field(record, 'epoch')),
+  }
+}
+
+function arrayField(record: Record<string, unknown>, ...names: string[]): unknown[] {
+  const value = field(record, ...names)
+  return Array.isArray(value) ? value : []
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function stringMap(value: unknown): Record<string, string> {
+  const record = asRecord(value)
+  return Object.fromEntries(Object.entries(record).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+}
+
+function bigintValue(value: unknown): bigint {
+  if (typeof value === 'bigint') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return BigInt(Math.trunc(value))
+  if (typeof value === 'string' && /^-?[0-9]+$/.test(value)) return BigInt(value)
+  return BigInt(0)
+}
+
 function encodeMessage<T extends DescMessage>(schema: T, init: MessageInitShape<T>): Uint8Array {
   return toBinary(schema, create(schema, init))
 }
 
+function encodeMessageWithUint64Unknown<T extends DescMessage>(
+  schema: T,
+  init: MessageInitShape<T>,
+  fieldNumber: number,
+  value: bigint,
+): Uint8Array {
+  const message = create(schema, init)
+  if (value > BigInt(0)) {
+    message.$unknown = [
+      ...(message.$unknown ?? []),
+      { no: fieldNumber, wireType: WireType.Varint, data: encodeUvarint(value) },
+    ]
+  }
+  return toBinary(schema, message)
+}
+
 function decodeMessage<T extends DescMessage>(schema: T, payload: Uint8Array): MessageShape<T> {
   return fromBinary(schema, payload)
+}
+
+function uint64UnknownField(message: { $unknown?: UnknownField[] | undefined }, fieldNumber: number): number {
+  const field = message.$unknown?.find((candidate) => candidate.no === fieldNumber && candidate.wireType === WireType.Varint)
+  if (!field) return 0
+  const value = decodeUvarint(field.data)
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`terminal uint64 field ${fieldNumber} exceeds JavaScript safe range`)
+  return Number(value)
+}
+
+function encodeUvarint(value: bigint): Uint8Array {
+  if (value < BigInt(0)) throw new Error('terminal uint64 field cannot be negative')
+  const bytes: number[] = []
+  let remaining = value
+  while (remaining >= BigInt(0x80)) {
+    bytes.push(Number((remaining & BigInt(0x7f)) | BigInt(0x80)))
+    remaining >>= BigInt(7)
+  }
+  bytes.push(Number(remaining))
+  return new Uint8Array(bytes)
+}
+
+function decodeUvarint(data: Uint8Array): bigint {
+  let value = BigInt(0)
+  let shift = BigInt(0)
+  for (let index = 0; index < data.byteLength && index < 10; index += 1) {
+    const byte = data[index] ?? 0
+    value |= BigInt(byte & 0x7f) << shift
+    if ((byte & 0x80) === 0) {
+      if (index !== data.byteLength - 1) throw new Error('terminal uint64 field has trailing bytes')
+      return value
+    }
+    shift += BigInt(7)
+  }
+  throw new Error('terminal uint64 field is malformed')
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

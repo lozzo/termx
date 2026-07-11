@@ -1,4 +1,4 @@
-export const TERMX_PROTOCOL_VERSION = 1
+export const TERMX_PROTOCOL_VERSION = 3
 export const TERMX_MAX_FRAME_SIZE = 4 << 20
 
 export const TERMX_FRAME_TYPES = {

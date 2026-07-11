@@ -158,9 +158,9 @@ class WebRTCTransport(
             return false
         }
 
-        // Wait for api channel to open
-        val apiOpen = channelManager.waitApiOpen(DATA_CHANNEL_OPEN_TIMEOUT)
-        if (!apiOpen) {
+        // 这里只等待唯一 protocol DataChannel；capability 与 wire Hello 由公开 authorizer 随后完成。
+        val protocolOpen = channelManager.waitChannelOpen(DATA_CHANNEL_OPEN_TIMEOUT)
+        if (!protocolOpen) {
             markFailure("timeout")
             disconnect()
             return false
@@ -169,7 +169,6 @@ class WebRTCTransport(
         isConnected = true
         connectedAt = System.currentTimeMillis()
         relayInUse = getConnectionInfo().optString("type") == "relay"
-        heartbeat.start()
         Log.i(TAG, "Connected to $machineId")
         return true
     }
@@ -294,21 +293,11 @@ class WebRTCTransport(
 
     // ─── Public API ──────────────────────────────────────────────────────────
 
-    fun sendToApi(data: ByteArray) = channelManager.sendRawApi(data)
+    /** sendToProtocol 把 JS connection-level multiplexer 的 frame 送入唯一 termx protocol DataChannel。 */
+    fun sendToProtocol(data: ByteArray) = channelManager.sendRawProtocol(data)
 
-    fun sendToEvents(data: ByteArray) = channelManager.sendRawEvents(data)
-
-    fun sendToTerminal(terminalId: String, data: ByteArray) =
-        channelManager.sendTerminalData(terminalId, data)
-
-    fun sendToFile(transferId: String, data: ByteArray) =
-        channelManager.sendFileData(transferId, data)
-
-    fun openTerminalChannel(terminalId: String) =
-        channelManager.getOrCreateTerminal(pc, terminalId, isConnected)
-
-    fun openFileChannel(transferId: String) =
-        channelManager.getOrCreateFile(pc, transferId, isConnected)
+    /** 当前 core-v2 wire 不提供旧 file DataChannel；调用方必须按 capability 隐藏该能力。 */
+    fun openFileChannel(@Suppress("UNUSED_PARAMETER") transferId: String): DataChannel? = null
 
     /** Blocking runtime API request for heartbeat/verification. Throws on timeout or closed channel. */
     fun sendApiRequest(method: String, path: String, body: String?, timeoutMs: Long): String {
@@ -320,7 +309,40 @@ class WebRTCTransport(
 
     fun hasPeerConnection(): Boolean = pc != null
 
-    fun isApiChannelOpen(): Boolean = channelManager.isApiOpen()
+    /** 旧方法名只保留 native lifecycle 调用兼容；返回值代表已授权的 termx protocol，不代表旧 api DataChannel。 */
+    fun isApiChannelOpen(): Boolean = channelManager.isProtocolOpen()
+
+    /** receiveAuthorizationMessage 读取 auth 阶段完整 DataChannel envelope。 */
+    fun receiveAuthorizationMessage(timeoutMs: Long): ByteArray? = channelManager.receiveAuthorizationMessage(timeoutMs)
+
+    /** sendAuthorizationMessage 发送 auth 阶段完整 DataChannel envelope。 */
+    fun sendAuthorizationMessage(frame: ByteArray): Boolean = channelManager.sendAuthorizationMessage(frame)
+
+    /** activateTermxProtocol 完成 auth 后唯一一次 wire v3 Hello，并在成功时启动 liveness。 */
+    fun activateTermxProtocol(timeoutMs: Long): Boolean {
+        val activated = channelManager.activateTermxProtocol(timeoutMs)
+        if (activated) heartbeat.start()
+        return activated
+    }
+
+    /**
+     * remoteCertificateFingerprint 从实际 selected DTLS transport 的 `remoteCertificateId` stats 读取 SHA-256 fingerprint。
+     * SDP fingerprint 或 cloud signaling 字段不能作为 fallback。
+     */
+    fun remoteCertificateFingerprint(timeoutMs: Long): String? {
+        val peer = pc ?: return null
+        val latch = CountDownLatch(1)
+        var fingerprint: String? = null
+        peer.getStats { reports ->
+            try {
+                fingerprint = remoteCertificateFingerprintFromStats(reports.statsMap)
+            } finally {
+                latch.countDown()
+            }
+        }
+        if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) return null
+        return fingerprint
+    }
 
     fun handleAppResume(): Boolean {
         return heartbeat.handleAppResume()
@@ -581,4 +603,20 @@ class WebRTCTransport(
 
     private fun saturatingStatsAdd(left: Long, right: Long): Long =
         if (Long.MAX_VALUE - left < right) Long.MAX_VALUE else left + right
+}
+
+/** remoteCertificateFingerprintFromStats 只接受 transport 明确引用的 remote certificate。 */
+internal fun remoteCertificateFingerprintFromStats(stats: Map<String, RTCStats>): String? {
+    val remoteCertificateId = stats.values.asSequence()
+        .filter { it.type == "transport" }
+        .mapNotNull { it.members["remoteCertificateId"]?.toString()?.takeIf(String::isNotBlank) }
+        .firstOrNull() ?: return null
+    val certificate = stats[remoteCertificateId] ?: return null
+    if (certificate.type != "certificate") return null
+    val algorithm = certificate.members["fingerprintAlgorithm"]?.toString()?.trim()?.lowercase() ?: return null
+    if (algorithm != "sha-256") return null
+    val raw = certificate.members["fingerprint"]?.toString()?.trim()?.lowercase() ?: return null
+    val compact = raw.removePrefix("sha-256:").replace(":", "")
+    if (!compact.matches(Regex("[0-9a-f]{64}"))) return null
+    return "sha-256:" + compact.chunked(2).joinToString(":")
 }

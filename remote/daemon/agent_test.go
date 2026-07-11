@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -105,6 +106,68 @@ func TestAgentSignsFreshPresenceChallengeInsideDaemon(t *testing.T) {
 	})
 	if err != nil || !ed25519.Verify(identity.PublicKey, signingBytes, proof.GetSignature()) {
 		t.Fatalf("presence proof signature invalid: %v", err)
+	}
+}
+
+func TestAgentRunContinuouslyRenewsFreshPresenceAfterStreamEOF(t *testing.T) {
+	first := cloudcompanion.NewFakePresenceStream(1)
+	if err := first.Fail(io.EOF); err != nil {
+		t.Fatal(err)
+	}
+	second := cloudcompanion.NewFakePresenceStream(1)
+	if err := second.Fail(cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "stop renewal harness")); err != nil {
+		t.Fatal(err)
+	}
+
+	identity := testAgentIdentity(t, "device-renew")
+	now := time.Date(2026, 7, 12, 7, 0, 0, 0, time.UTC)
+	presenceAttempt := 0
+	companion := &cloudcompanion.FakeClient{
+		BeginPresenceFunc: func(_ context.Context, request *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
+			if request.GetDeviceId() != identity.DeviceID {
+				t.Fatalf("BeginPresence device = %q", request.GetDeviceId())
+			}
+			presenceAttempt++
+			return &cloudpb.PresenceChallenge{
+				PresenceSessionId: fmt.Sprintf("presence-%d", presenceAttempt),
+				ChallengeId:       fmt.Sprintf("challenge-%d", presenceAttempt),
+				Challenge:         bytes.Repeat([]byte{byte(presenceAttempt)}, 32),
+				ExpiresAtUnix:     uint64(now.Add(time.Minute).Unix()),
+			}, nil
+		},
+		OpenPresenceFunc: func(context.Context, *cloudpb.OpenPresenceRequest) (cloudcompanion.PresenceStream, error) {
+			if presenceAttempt == 1 {
+				return first, nil
+			}
+			return second, nil
+		},
+	}
+	agent := Agent{Companion: companion, Identity: identity, Answerer: &fakeOfferAnswerer{}, Now: func() time.Time { return now }}
+	err := agent.RunContinuously(context.Background(), time.Millisecond)
+	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {
+		t.Fatalf("RunContinuously error = %v, want terminal PROTOCOL error", err)
+	}
+	recorded := companion.Requests()
+	if len(recorded.BeginPresence) != 2 || len(recorded.OpenPresence) != 2 {
+		t.Fatalf("renewed presence requests = %#v", recorded)
+	}
+	if recorded.OpenPresence[0].GetPresenceSessionId() == recorded.OpenPresence[1].GetPresenceSessionId() ||
+		recorded.OpenPresence[0].GetProof().GetChallengeId() == recorded.OpenPresence[1].GetProof().GetChallengeId() {
+		t.Fatalf("presence renewal reused challenge: %#v", recorded.OpenPresence)
+	}
+}
+
+func TestAgentRunContinuouslyDoesNotRenewExplicitPresenceClose(t *testing.T) {
+	stream := cloudcompanion.NewFakePresenceStream(1)
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "device revoked"}}})
+	identity := testAgentIdentity(t, "device-revoked")
+	companion := agentCompanion(t, identity, time.Now().UTC(), stream)
+	err := (Agent{Companion: companion, Identity: identity, Answerer: &fakeOfferAnswerer{}}).RunContinuously(context.Background(), time.Millisecond)
+	if !errors.Is(err, ErrPresenceClosed) {
+		t.Fatalf("RunContinuously error = %v, want explicit close", err)
+	}
+	if requests := companion.Requests(); len(requests.BeginPresence) != 1 || len(requests.OpenPresence) != 1 {
+		t.Fatalf("explicit close renewed presence = %#v", requests)
 	}
 }
 

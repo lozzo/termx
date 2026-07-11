@@ -50,6 +50,21 @@ data class ManagedDialPolicy(val routePreference: String, val relayOnly: Boolean
 /** ManagedEndpointFailure 是 App 可以稳定投影的 endpoint 局部错误。 */
 class ManagedEndpointFailure(val code: String, message: String) : Exception(message)
 
+/**
+ * isNonRetryableManagedAuthenticationFailure 标识仅凭网络恢复无法修复的账号或 endpoint 授权失败。
+ * ConnectionStore 必须停在当前 endpoint；用户更新账号状态或重新导入 capability 后由显式 connect 重建。
+ */
+internal fun isNonRetryableManagedAuthenticationFailure(code: String): Boolean = code in setOf(
+    "login_required",
+    "device_enrollment_required",
+    "unauthenticated",
+    "capability_invalid",
+    "capability_expired",
+    "device_identity_mismatch",
+    "scope_invalid",
+    "replayed",
+)
+
 /** ManagedEndpointContract 是 Android 对共享 JSON fixture 的纯领域实现。 */
 object ManagedEndpointContract {
     /** validate 在访问 Companion 或凭据存储前校验 endpoint identity 的必要字段。 */

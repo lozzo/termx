@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -110,6 +111,50 @@ func (agent Agent) Run(ctx context.Context) error {
 			return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an unknown presence event")
 		}
 	}
+}
+
+// RunContinuously 维护 owning daemon 的长期 managed presence。
+// 每个 Hub TTL 周期仍由 Run 重新执行 BeginPresence -> fresh DeviceIdentity proof -> OpenPresence；旧 admission、
+// PresenceSession 和 challenge 绝不复用。只有流 EOF 或明确 retryable 的云错误会续约，显式关闭、鉴权和协议失败直接返回。
+func (agent Agent) RunContinuously(ctx context.Context, retryDelay time.Duration) error {
+	if ctx == nil {
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon presence context is required")
+	}
+	if retryDelay <= 0 {
+		retryDelay = time.Second
+	}
+	for {
+		err := agent.Run(ctx)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !presenceRenewable(err) {
+			return err
+		}
+
+		delay := retryDelay
+		var cloudErr *cloudcompanion.Error
+		if errors.As(err, &cloudErr) && cloudErr.RetryAfter > delay {
+			delay = cloudErr.RetryAfter
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func presenceRenewable(err error) bool {
+	if errors.Is(err, io.EOF) {
+		return true
+	}
+	var cloudErr *cloudcompanion.Error
+	return errors.As(err, &cloudErr) && cloudErr.Retryable
 }
 
 // createPresenceRequest 获取一次性 challenge 并由当前公开 daemon 的 DeviceIdentity 签名。

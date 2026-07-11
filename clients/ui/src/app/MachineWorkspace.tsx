@@ -2798,6 +2798,11 @@ function isAuthConnectionError(error: unknown): boolean {
   const normalized = message.trim().toLowerCase()
   return normalized === 'auth' ||
     normalized === 'authentication failed' ||
+    normalized === 'unauthenticated' ||
+    normalized === 'capability_invalid' ||
+    normalized === 'capability_expired' ||
+    normalized === 'device_identity_mismatch' ||
+    normalized === 'scope_invalid' ||
     // 本地缓存的 runtime token 失效时，恢复路径必须回到重新配对。
     normalized.includes('stored session token is invalid') ||
     normalized.includes('pair this machine again') ||

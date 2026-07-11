@@ -11,9 +11,10 @@ import com.termx.app.connection.BridgeRouter
 import com.termx.app.connection.ConnectionStoreManager
 import com.termx.app.connectors.ManagedWebRTCConnector
 import com.termx.app.managed.AndroidGrantCredentialStore
-import com.termx.app.managed.CommunityEndpointAuthorizer
+import com.termx.app.managed.AndroidManagedEndpointAuthorizer
 import com.termx.app.managed.ManagedCloudAssembly
 import com.termx.app.managed.ManagedEndpointFailure
+import com.termx.app.managed.ManagedPairingImporter
 import com.termx.app.managed.RelayMode
 import com.termx.app.network.BridgeServer
 import com.termx.app.network.NetworkStateManager
@@ -81,15 +82,28 @@ class NativeConnectionPlugin : Plugin() {
         call.resolve()
     }
 
+    /** importManagedPairing 把含 bearer grant 的 v1 bundle 直接送入 native secure-store，JS 只收到非秘密 endpoint metadata。 */
     @PluginMethod
-    fun storeManagedGrant(call: PluginCall) {
-        val grantRef = call.getString("grantRef") ?: run { call.reject("grantRef required"); return }
-        val grant = call.getString("grant") ?: run { call.reject("grant required"); return }
+    fun importManagedPairing(call: PluginCall) {
+        val payload = call.getString("payload") ?: run { call.reject("payload required"); return }
+        val expectedEndpointId = call.getString("expectedEndpointId")?.trim()?.takeIf { it.isNotEmpty() }
         try {
-            grantCredentialStore.put(grantRef, grant)
-            call.resolve()
+            val imported = ManagedPairingImporter(grantCredentialStore).import(
+                payload = payload,
+                expectedEndpointId = expectedEndpointId,
+            )
+            call.resolve(JSObject().apply {
+                put("endpointId", imported.endpointId)
+                put("label", imported.label)
+                put("targetDeviceId", imported.targetDeviceId)
+                put("deviceFingerprint", imported.deviceFingerprint)
+                put("grantRef", imported.grantRef)
+                put("expiresAt", imported.expiresAt.toString())
+            })
+        } catch (failure: ManagedEndpointFailure) {
+            call.reject(failure.message ?: failure.code)
         } catch (failure: Exception) {
-            call.reject(failure.message ?: "failed to store managed grant")
+            call.reject("managed pairing import failed")
         }
     }
 
@@ -258,7 +272,7 @@ class NativeConnectionPlugin : Plugin() {
         bridgeServer = bridge
 
         val managedConnector = ManagedWebRTCConnector(
-            ManagedCloudAssembly.create(context), grantCredentialStore, CommunityEndpointAuthorizer(),
+            ManagedCloudAssembly.create(context), grantCredentialStore, AndroidManagedEndpointAuthorizer(),
         )
         val manager = ConnectionStoreManager(context, bridge, managedConnector)
         storeManager = manager

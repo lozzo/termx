@@ -8,6 +8,7 @@ import com.termx.app.connectors.ManagedWebRTCConnector
 import com.termx.app.managed.ManagedEndpointPhase
 import com.termx.app.managed.ManagedEndpointSpec
 import com.termx.app.managed.RelayMode
+import com.termx.app.managed.isNonRetryableManagedAuthenticationFailure
 import com.termx.app.network.BridgeServer
 import com.termx.app.network.NetworkStateManager
 import com.termx.app.transfer.FileTransferManager
@@ -274,7 +275,7 @@ class ConnectionStore(
                     is ManagedWebRTCConnector.Result.Failure -> {
                         if (!isCurrentConnect(generation)) return@launch
                         clearConnectStartedAt(generation)
-                        if (result.code in setOf("login_required", "device_enrollment_required", "unauthenticated")) {
+                        if (isNonRetryableManagedAuthenticationFailure(result.code)) {
                             setPhase(Phase.Failed(result.code), "Authentication failed")
                         } else {
                             setPhase(Phase.Failed(result.code), "Managed endpoint unavailable")
@@ -425,7 +426,7 @@ class ConnectionStore(
     }
 
     private fun isAuthFailed(p: Phase): Boolean = p is Phase.Failed &&
-        p.reason in setOf("login_required", "device_enrollment_required", "unauthenticated")
+        p.reason?.let(::isNonRetryableManagedAuthenticationFailure) == true
 
     private fun verifyExistingTransport(status: String) {
         val p = phase

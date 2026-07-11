@@ -64,7 +64,6 @@ interface PendingHistoryReplay {
 
 const defaultResizePolicy: TerminalResizePolicy = 'follower'
 const inputEnsureResizeFallbackMs = 100
-const initialSnapshotScrollbackLimit = 1
 const streamSnapshotRefreshDelayMs = 100
 const streamSnapshotRefreshMinIntervalMs = 500
 const streamSnapshotRefreshMaxIntervalMs = 4000
@@ -73,7 +72,7 @@ const snapshotRefreshTimeoutMs = 8000
 const streamStatsIntervalMs = 1000
 const largeFrameBytes = 64 * 1024
 
-type SnapshotRefreshReason = 'open' | 'sync_lost' | 'manual_sync_lost'
+type SnapshotRefreshReason = 'open' | 'live_invalidated' | 'sync_lost' | 'manual_sync_lost'
 
 interface SnapshotRefreshRecovery {
   reason: string
@@ -107,6 +106,8 @@ class TerminalProtocolClient implements TerminalProtocolSession {
   private recoveryRevision = 0
   private lastSnapshotRefreshAt = 0
   private consecutiveRecoveryRefreshes = 0
+  private observedLiveRevision = 0
+  private liveInvalidationWatchActive = false
   private receivedFrames = 0
   private receivedBytes = 0
   private screenUpdateFrames = 0
@@ -461,7 +462,6 @@ class TerminalProtocolClient implements TerminalProtocolSession {
         this.log('screen_update_replay', {
           details: {
             replayChars: replay.length,
-            preview: previewText(replay),
           },
         })
         if (replay.length > 0) {
@@ -557,7 +557,6 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       this.log('send_terminal_input_message', {
         details: {
           chars: message.data.length,
-          preview: previewText(message.data),
           cols: message.cols,
           rows: message.rows,
           streamChannel: this.streamChannel,
@@ -592,7 +591,6 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     this.log('send_input_frame', {
       details: {
         chars: data.length,
-        preview: previewText(data),
         streamChannel: this.streamChannel,
       },
     })
@@ -690,14 +688,20 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     this.clearSnapshotRefreshTimer()
     this.snapshotRefreshInFlight = true
     try {
-      const snapshot = await this.request('snapshot', {
+      const snapshot = await this.request('live.screen.get', {
         terminal_id: this.options.terminalId,
-        scrollback_offset: 0,
-        scrollback_limit: initialSnapshotScrollbackLimit,
       }, snapshotRefreshTimeoutMs)
+      const liveRevision = snapshotLiveRevision(snapshot)
+      if (liveRevision <= 0 || liveRevision < this.observedLiveRevision) {
+        throw new Error(`invalid live screen revision ${liveRevision}`)
+      }
+      this.observedLiveRevision = liveRevision
       this.lastSnapshotRefreshAt = Date.now()
       if (recovery) this.recoveryRevision += 1
-      const normalized = normalizeSnapshot(snapshot)
+      const normalized: TerminalSnapshotPayload = {
+        ...normalizeSnapshot(snapshot),
+        refreshReason: reason,
+      }
       this.log('snapshot_normalized', {
         details: {
           reason,
@@ -708,9 +712,6 @@ class TerminalProtocolClient implements TerminalProtocolSession {
           rows: normalized.rows,
           cols: normalized.cols,
           alternateScreen: normalized.alternateScreen === true,
-          textPreview: previewText(normalized.text),
-          replayPreview: previewText(normalized.replay ?? ''),
-          screenPreview: previewText(normalized.screenText ?? ''),
         },
       })
       if (recovery) {
@@ -739,6 +740,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
           consecutiveRecoveryRefreshes: this.consecutiveRecoveryRefreshes,
         },
       })
+      this.startLiveInvalidationWatch()
     } catch (err) {
       const message = errorMessage(err)
       this.log('snapshot_refresh_failed', {
@@ -758,6 +760,39 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       this.snapshotRefreshInFlight = false
       if (this.snapshotRefreshQueued && !this.closed) {
         this.armSnapshotRefreshTimer(this.snapshotRefreshReason ?? 'sync_lost')
+      }
+    }
+  }
+
+  private startLiveInvalidationWatch(): void {
+    if (this.closed || this.liveInvalidationWatchActive) return
+    this.liveInvalidationWatchActive = true
+    void this.watchLiveInvalidations().catch((error: unknown) => {
+      if (!this.closed) this.handleChannelClosed(errorMessage(error))
+    }).finally(() => {
+      this.liveInvalidationWatchActive = false
+    })
+  }
+
+  private async watchLiveInvalidations(): Promise<void> {
+    while (!this.closed) {
+      const event = await this.request('live.invalidation.next', {
+        terminal_id: this.options.terminalId,
+        observed_revision: this.observedLiveRevision,
+      })
+      const revision = liveInvalidationRevision(event, this.options.terminalId)
+      if (revision <= this.observedLiveRevision) {
+        throw new Error(`invalid live invalidation revision ${revision}`)
+      }
+      this.log('live_invalidated', {
+        details: {
+          observedRevision: this.observedLiveRevision,
+          revision,
+        },
+      })
+      await this.refreshSnapshot('live_invalidated')
+      if (this.observedLiveRevision < revision) {
+        throw new Error(`live screen revision ${this.observedLiveRevision} precedes invalidation ${revision}`)
       }
     }
   }
@@ -1050,6 +1085,29 @@ function normalizeSnapshot(value: unknown): TerminalSnapshotPayload {
   }
 }
 
+function snapshotLiveRevision(value: unknown): number {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return 0
+  const revision = (value as Record<string, unknown>).live_revision
+  return safePositiveInteger(revision)
+}
+
+function liveInvalidationRevision(value: unknown, terminalId: string): number {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('live invalidation response is invalid')
+  }
+  const record = value as Record<string, unknown>
+  if (record.type !== 7 || record.terminal_id !== terminalId) {
+    throw new Error('live invalidation response identity is invalid')
+  }
+  const revision = safePositiveInteger(record.live_revision)
+  if (revision <= 0) throw new Error('live invalidation response revision is invalid')
+  return revision
+}
+
+function safePositiveInteger(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : 0
+}
+
 function historyViewportRows(value: unknown): unknown[] {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return []
@@ -1139,8 +1197,4 @@ function streamErrorMessage(payload: Uint8Array): string {
   } catch {
     return 'terminal stream error'
   }
-}
-
-function previewText(text: string): string {
-  return text.replace(/\x1b/g, '\\u001b').replace(/\r/g, '\\r').replace(/\n/g, '\\n').slice(0, 180)
 }

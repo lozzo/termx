@@ -283,6 +283,7 @@ describe('Terminal', () => {
 
   afterEach(() => {
     cleanup()
+    vi.unstubAllGlobals()
     canvasContextSpy?.mockRestore()
     canvasContextSpy = undefined
     globalThis.ResizeObserver = originalResizeObserver
@@ -617,6 +618,47 @@ describe('Terminal', () => {
     expect(xtermMocks.FakeXTerm.instances[0]?.scrollToBottom).toHaveBeenCalled()
   })
 
+  it('replaces the rendered screen when core-v2 publishes a changed authoritative live snapshot', async () => {
+    const nativeLogs: string[] = []
+    vi.stubGlobal('__termxWriteNativeDebugLog', (_level: string, _tag: string, message: string) => nativeLogs.push(message))
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'initial-live-screen',
+      cols: 80,
+      rows: 24,
+    })
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    const term = await waitFor(() => {
+      const current = xtermMocks.FakeXTerm.instances[0]
+      expect(current).toBeTruthy()
+      return current!
+    })
+    await waitFor(() => expect(term.writes.join('')).toMatch(/i[\s\S]*n[\s\S]*i[\s\S]*t[\s\S]*i[\s\S]*a[\s\S]*l/))
+    term.reset.mockClear()
+    term.writes.splice(0)
+
+    act(() => {
+      session.emitTerminalSnapshot('terminal-1', {
+        text: 'updated-live-screen',
+        cols: 80,
+        rows: 24,
+      })
+    })
+
+    await waitFor(() => expect(term.reset).toHaveBeenCalled())
+    await waitFor(() => expect(term.writes.join('')).toMatch(/u[\s\S]*p[\s\S]*d[\s\S]*a[\s\S]*t[\s\S]*e[\s\S]*d/))
+    expect(nativeLogs.join('\n')).not.toContain('initial-live-screen')
+    expect(nativeLogs.join('\n')).not.toContain('updated-live-screen')
+  })
+
   it('keeps a reopened terminal anchored to the cursor after snapshot rendering and refit settle', async () => {
     const session = createMockRtcTerminalSession()
     session.emitTerminalSnapshot('terminal-1', {
@@ -646,6 +688,8 @@ describe('Terminal', () => {
   })
 
   it('forwards xterm input through the terminal protocol interface', async () => {
+    const nativeLogs: string[] = []
+    vi.stubGlobal('__termxWriteNativeDebugLog', (_level: string, _tag: string, message: string) => nativeLogs.push(message))
     const session = createMockRtcTerminalSession()
 
     render(
@@ -657,9 +701,10 @@ describe('Terminal', () => {
     )
 
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
-    act(() => xtermMocks.FakeXTerm.instances[0]?.emitData('ls\n'))
+    act(() => xtermMocks.FakeXTerm.instances[0]?.emitData('sensitive-terminal-input\n'))
 
-    await waitFor(() => expect(session.sentText('terminal-1')).toContain('ls\n'))
+    await waitFor(() => expect(session.sentText('terminal-1')).toContain('sensitive-terminal-input\n'))
+    expect(nativeLogs.join('\n')).not.toContain('sensitive-terminal-input')
   })
 
   it('delegates user keyboard input when the app shell provides an input router', async () => {

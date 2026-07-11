@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTerminalProtocolClient } from './terminalProtocolClient'
-import { TERMX_FRAME_TYPES, decodeTermxFrame, encodeTermxFrame } from './termxProtocol'
+import { TERMX_FRAME_TYPES, TERMX_PROTOCOL_VERSION, decodeTermxFrame, encodeTermxFrame } from './termxProtocol'
 import {
   decodeTerminalHelloPayload,
   decodeTerminalMethodParams,
@@ -20,6 +20,10 @@ type DecodedRequestEnvelope = Omit<TerminalRequestEnvelope, 'params'> & { params
 const pendingRequestMethods = new Map<number, string>()
 
 describe('TerminalProtocolClient', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('performs hello and attach over the Go binary protocol before exposing terminal screen updates', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
     const client = createTerminalProtocolClient({
@@ -35,8 +39,8 @@ describe('TerminalProtocolClient', () => {
     const hello = decodeSentFrame(channel, 0)
     expect(hello.channel).toBe(0)
     expect(hello.type).toBe(TERMX_FRAME_TYPES.hello)
-    expect(decodeTerminalHelloPayload(hello.payload)).toMatchObject({ version: 1, client: 'termx-local-web' })
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    expect(decodeTerminalHelloPayload(hello.payload)).toMatchObject({ version: TERMX_PROTOCOL_VERSION, client: 'termx-local-web' })
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
 
     const attach = decodeSentFrame(channel, 1)
@@ -62,6 +66,8 @@ describe('TerminalProtocolClient', () => {
   })
 
   it('maps BinaryChannel JSON input and resize messages to Go TypeInput and TypeResize frames', async () => {
+    const nativeLogs: string[] = []
+    vi.stubGlobal('__termxWriteNativeDebugLog', (_level: string, _tag: string, message: string) => nativeLogs.push(message))
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
     const client = createTerminalProtocolClient({
       channel,
@@ -71,7 +77,7 @@ describe('TerminalProtocolClient', () => {
       resizePolicy: 'owner',
     })
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), {
@@ -90,6 +96,7 @@ describe('TerminalProtocolClient', () => {
     const input = decodeSentFrame(channel, 3)
     expect(input).toMatchObject({ channel: 7, type: TERMX_FRAME_TYPES.input })
     expect(new TextDecoder().decode(input.payload)).toBe('echo hi\n')
+    expect(nativeLogs.join('\n')).not.toContain('echo hi')
 
     const resize = decodeSentFrame(channel, 4)
     expect(resize.channel).toBe(7)
@@ -109,7 +116,7 @@ describe('TerminalProtocolClient', () => {
     const events: unknown[] = []
     client.subscribeTerminal('terminal-1', (event: TerminalProtocolEvent) => events.push(event))
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), {
@@ -160,7 +167,7 @@ describe('TerminalProtocolClient', () => {
       resizePolicy: 'follower',
     })
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), {
@@ -189,7 +196,7 @@ describe('TerminalProtocolClient', () => {
       resizePolicy: 'owner',
     })
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), {
@@ -225,7 +232,7 @@ describe('TerminalProtocolClient', () => {
     const events: unknown[] = []
     client.subscribeTerminal('terminal-1', (event: TerminalProtocolEvent) => events.push(event))
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), {
@@ -256,7 +263,7 @@ describe('TerminalProtocolClient', () => {
     const events: unknown[] = []
     client.subscribeTerminal('terminal-1', (event: TerminalProtocolEvent) => events.push(event))
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     expect(attachRequest.params).toMatchObject({ resize_policy: 'owner' })
@@ -289,7 +296,7 @@ describe('TerminalProtocolClient', () => {
       autoRequestResizeOwner: true,
     })
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), {
@@ -311,7 +318,7 @@ describe('TerminalProtocolClient', () => {
     await terminalPromise
     const snapshotRequest = decodeSentFrame(channel, 3)
     const snapshot = decodeRequestPayload(snapshotRequest.payload)
-    expect(snapshot.method).toBe('snapshot')
+    expect(snapshot.method).toBe('live.screen.get')
   })
 
   it('skips automatic resize ownership when attach already reports a size lock', async () => {
@@ -324,7 +331,7 @@ describe('TerminalProtocolClient', () => {
       autoRequestResizeOwner: true,
     })
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), {
@@ -336,7 +343,7 @@ describe('TerminalProtocolClient', () => {
     await terminalPromise
     const snapshotRequest = decodeSentFrame(channel, 2)
     const snapshot = decodeRequestPayload(snapshotRequest.payload)
-    expect(snapshot.method).toBe('snapshot')
+    expect(snapshot.method).toBe('live.screen.get')
   })
 
   it('buffers stream frames that arrive before the attach response names the stream channel', async () => {
@@ -350,7 +357,7 @@ describe('TerminalProtocolClient', () => {
     const events: unknown[] = []
     client.subscribeTerminal('terminal-1', (event: TerminalProtocolEvent) => events.push(event))
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
 
@@ -364,7 +371,7 @@ describe('TerminalProtocolClient', () => {
     expect(new TextDecoder().decode((events[1] as { data: Uint8Array }).data)).toContain('early-output')
   })
 
-  it('requests a snapshot and emits replayable snapshot content through the terminal protocol interface', async () => {
+  it('requests the authoritative live screen without mixing in scrollback history', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
     const client = createTerminalProtocolClient({
       channel,
@@ -375,7 +382,7 @@ describe('TerminalProtocolClient', () => {
     const events: unknown[] = []
     client.subscribeTerminal('terminal-1', (event: TerminalProtocolEvent) => events.push(event))
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), { mode: 'collaborator', channel: 7 })))
@@ -383,17 +390,15 @@ describe('TerminalProtocolClient', () => {
 
     const snapshot = decodeSentFrame(channel, 2)
     const snapshotRequest = decodeRequestPayload(snapshot.payload)
-    expect(snapshotRequest.method).toBe('snapshot')
+    expect(snapshotRequest.method).toBe('live.screen.get')
     expect(snapshotRequest.params).toEqual({
       terminal_id: 'terminal-1',
-      scrollback_offset: 0,
-      scrollback_limit: 1,
     })
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(snapshotRequest.id, pendingMethod(snapshotRequest.id), {
         terminal_id: 'terminal-1',
+        live_revision: 1,
         size: { cols: 80, rows: 24 },
         screen: { rows: [{ cells: [{ r: 'h' }, { r: 'i' }] }] },
-        scrollback: [{ cells: [{ r: 'o' }, { r: 'k' }] }],
       })))
     await Promise.resolve()
 
@@ -401,10 +406,68 @@ describe('TerminalProtocolClient', () => {
     expect(events[0]).toMatchObject({ type: 'resizeControl' })
     expect(events[1]).toMatchObject({
       type: 'snapshot',
-      snapshot: { text: 'ok\nhi', cols: 80, rows: 24 },
+      snapshot: { text: 'hi', cols: 80, rows: 24 },
     })
     expect((events[1] as { snapshot: { replay?: string } }).snapshot.replay).toContain('\x1b[H\x1b[2J\x1b[H')
     expect((events[1] as { snapshot: { replay?: string } }).snapshot.replay).toContain('\x1b[1;1H')
+  })
+
+  it('pulls the latest live screen after invalidation and rearms from the observed revision', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const client = createTerminalProtocolClient({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+    })
+    const events: TerminalProtocolEvent[] = []
+    client.subscribeTerminal('terminal-1', (event) => events.push(event))
+    const terminalPromise = client.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
+    await Promise.resolve()
+    const attachRequest = decodeRequestFrame(channel, 1)
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), { mode: 'collaborator', channel: 7 })))
+    const terminal = await terminalPromise
+
+    const initialScreen = decodeRequestFrame(channel, 2)
+    expect(initialScreen.method).toBe('live.screen.get')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.responseBinary, encodeTerminalResponsePayload(initialScreen.id, pendingMethod(initialScreen.id), {
+      terminal_id: 'terminal-1',
+      live_revision: 4,
+      size: { cols: 80, rows: 24 },
+      screen: { rows: [{ cells: Array.from('old').map((char) => ({ r: char })) }] },
+    })))
+
+    await vi.waitFor(() => expect(channel.sent).toHaveLength(4))
+    const invalidation = decodeRequestFrame(channel, 3)
+    expect(invalidation).toMatchObject({
+      method: 'live.invalidation.next',
+      params: { terminal_id: 'terminal-1', observed_revision: 4 },
+    })
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.responseBinary, encodeTerminalResponsePayload(invalidation.id, pendingMethod(invalidation.id), {
+      type: 7,
+      terminal_id: 'terminal-1',
+      live_revision: 5,
+    })))
+
+    await vi.waitFor(() => expect(channel.sent).toHaveLength(5))
+    const refreshedScreen = decodeRequestFrame(channel, 4)
+    expect(refreshedScreen.method).toBe('live.screen.get')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.responseBinary, encodeTerminalResponsePayload(refreshedScreen.id, pendingMethod(refreshedScreen.id), {
+      terminal_id: 'terminal-1',
+      live_revision: 5,
+      size: { cols: 80, rows: 24 },
+      screen: { rows: [{ cells: Array.from('new').map((char) => ({ r: char })) }] },
+    })))
+
+    await vi.waitFor(() => expect(events.filter((event) => event.type === 'snapshot')).toHaveLength(2))
+    expect(events.filter((event): event is Extract<TerminalProtocolEvent, { type: 'snapshot' }> => event.type === 'snapshot').map((event) => event.snapshot.text)).toEqual(['old', 'new'])
+    await vi.waitFor(() => expect(channel.sent).toHaveLength(6))
+    expect(decodeRequestFrame(channel, 5)).toMatchObject({
+      method: 'live.invalidation.next',
+      params: { terminal_id: 'terminal-1', observed_revision: 5 },
+    })
+    terminal.close()
   })
 
   it('emits replayable output for routine screen update frames', async () => {
@@ -418,7 +481,7 @@ describe('TerminalProtocolClient', () => {
     const events: TerminalProtocolEvent[] = []
     client.subscribeTerminal('terminal-1', (event) => events.push(event))
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), { mode: 'collaborator', channel: 7 })))
@@ -427,6 +490,7 @@ describe('TerminalProtocolClient', () => {
     const initialSnapshot = decodeRequestFrame(channel, 2)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(initialSnapshot.id, pendingMethod(initialSnapshot.id), {
         terminal_id: 'terminal-1',
+        live_revision: 1,
         size: { cols: 80, rows: 24 },
         screen: { rows: [{ cells: [{ r: 'o' }, { r: 'l' }, { r: 'd' }] }] },
       })))
@@ -462,7 +526,7 @@ describe('TerminalProtocolClient', () => {
     const events: TerminalProtocolEvent[] = []
     client.subscribeTerminal('terminal-1', (event) => events.push(event))
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), { mode: 'collaborator', channel: 7 })))
@@ -471,6 +535,7 @@ describe('TerminalProtocolClient', () => {
     const initialSnapshot = decodeRequestFrame(channel, 2)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(initialSnapshot.id, pendingMethod(initialSnapshot.id), {
         terminal_id: 'terminal-1',
+        live_revision: 1,
         size: { cols: 80, rows: 24 },
         screen: { rows: [{ cells: [{ r: 'o' }, { r: 'l' }, { r: 'd' }] }] },
       })))
@@ -480,11 +545,12 @@ describe('TerminalProtocolClient', () => {
     })))
 
     channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.syncLost, new Uint8Array([1, 2, 3])))
-    await vi.waitFor(() => expect(channel.sent).toHaveLength(4))
-    const refreshSnapshot = decodeRequestFrame(channel, 3)
-    expect(refreshSnapshot.method).toBe('snapshot')
+    await vi.waitFor(() => expect(channel.sent).toHaveLength(5))
+    const refreshSnapshot = decodeRequestFrame(channel, 4)
+    expect(refreshSnapshot.method).toBe('live.screen.get')
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(refreshSnapshot.id, pendingMethod(refreshSnapshot.id), {
         terminal_id: 'terminal-1',
+        live_revision: 2,
         size: { cols: 80, rows: 24 },
         screen: { rows: [{ cells: [{ r: 'n' }, { r: 'e' }, { r: 'w' }] }] },
       })))
@@ -516,7 +582,7 @@ describe('TerminalProtocolClient', () => {
       const events: TerminalProtocolEvent[] = []
       client.subscribeTerminal('terminal-1', (event) => events.push(event))
       const terminalPromise = client.openTerminal('terminal-1')
-      channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+      channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
       await Promise.resolve()
       const attachRequest = decodeRequestFrame(channel, 1)
       channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), { mode: 'collaborator', channel: 7 })))
@@ -525,6 +591,7 @@ describe('TerminalProtocolClient', () => {
       const initialSnapshot = decodeRequestFrame(channel, 2)
       channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(initialSnapshot.id, pendingMethod(initialSnapshot.id), {
           terminal_id: 'terminal-1',
+          live_revision: 1,
           size: { cols: 80, rows: 24 },
           screen: { rows: [{ cells: [{ r: 'o' }, { r: 'l' }, { r: 'd' }] }] },
         })))
@@ -536,11 +603,12 @@ describe('TerminalProtocolClient', () => {
       channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.syncLost, droppedPayload))
       await vi.advanceTimersByTimeAsync(500)
 
-      expect(channel.sent).toHaveLength(4)
-      const refreshSnapshot = decodeRequestFrame(channel, 3)
-      expect(refreshSnapshot.method).toBe('snapshot')
+      expect(channel.sent).toHaveLength(5)
+      const refreshSnapshot = decodeRequestFrame(channel, 4)
+      expect(refreshSnapshot.method).toBe('live.screen.get')
       channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(refreshSnapshot.id, pendingMethod(refreshSnapshot.id), {
           terminal_id: 'terminal-1',
+          live_revision: 2,
           size: { cols: 80, rows: 24 },
           screen: { rows: [{ cells: [{ r: 'n' }, { r: 'e' }, { r: 'w' }] }] },
         })))
@@ -568,7 +636,7 @@ describe('TerminalProtocolClient', () => {
       connectionInfo: connectionInfo(),
     })
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), { mode: 'collaborator', channel: 7 })))
@@ -643,7 +711,7 @@ describe('TerminalProtocolClient', () => {
     })
 
     const opened = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     expect(decodeSentFrame(channel, 1).type).toBe(TERMX_FRAME_TYPES.request)
     channel.close()
@@ -665,7 +733,7 @@ describe('TerminalProtocolClient', () => {
       client.subscribeTerminal('terminal-1', (event) => events.push(event))
 
       const terminalPromise = client.openTerminal('terminal-1')
-      channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+      channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
       await Promise.resolve()
       const attachRequest = decodeRequestFrame(channel, 1)
       channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), { mode: 'collaborator', channel: 7 })))
@@ -676,7 +744,7 @@ describe('TerminalProtocolClient', () => {
       await vi.advanceTimersByTimeAsync(8000)
       await vi.waitFor(() => expect(events).toContainEqual({
         type: 'closed',
-        reason: 'terminal protocol snapshot timed out for terminal-1',
+        reason: 'terminal protocol live.screen.get timed out for terminal-1',
       }))
     } finally {
       vi.useRealTimers()
@@ -692,7 +760,7 @@ describe('TerminalProtocolClient', () => {
       connectionInfo: connectionInfo(),
     })
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), { mode: 'collaborator', channel: 7 })))
@@ -714,7 +782,7 @@ describe('TerminalProtocolClient', () => {
     const events: TerminalProtocolEvent[] = []
     client.subscribeTerminal('terminal-1', (event) => events.push(event))
     const terminalPromise = client.openTerminal('terminal-1')
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: 1, server: 'termx' })))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({ version: TERMX_PROTOCOL_VERSION, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = decodeRequestFrame(channel, 1)
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(attachRequest.id, pendingMethod(attachRequest.id), { mode: 'collaborator', channel: 7 })))

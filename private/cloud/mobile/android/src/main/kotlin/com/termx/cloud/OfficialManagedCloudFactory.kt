@@ -1,6 +1,7 @@
 package com.termx.cloud
 
 import android.content.Context
+import com.termx.app.BuildConfig
 import com.termx.app.managed.ManagedCloudAdapter
 import com.termx.app.managed.ManagedCloudModuleFactory
 import com.termx.app.managed.ManagedDialPolicy
@@ -45,31 +46,32 @@ internal class OfficialManagedCloudAdapter(private val gateway: OfficialCloudGat
 
 /**
  * OfficialCloudGateway 是移动端账号 session、Control Plane 与 Hub SDK 的私有装配点。
- * 当前开发构建未注入生产 OAuth/TLS SDK 时稳定返回 login_required，不访问旧 Hub/session-token API。
+ * 只有显式 `termxOfficialDevCloud=true` development 构建启用 loopback dev contract；其他 Official 构建继续 fail closed。
  */
 internal class OfficialCloudGateway(@Suppress("UNUSED_PARAMETER") context: Context) {
-    suspend fun resolve(@Suppress("UNUSED_PARAMETER") spec: ManagedEndpointSpec): ManagedEndpointResolution {
-        throw ManagedEndpointFailure("login_required", "Official mobile cloud account session is not configured")
+    private val development = if (BuildConfig.TERMX_OFFICIAL_DEV_CLOUD_ENABLED) {
+        DevCloudMobileGateway(BuildConfig.TERMX_OFFICIAL_DEV_CONTROL_URL, BuildConfig.TERMX_OFFICIAL_DEV_HUB_URL)
+    } else {
+        null
     }
+
+    suspend fun resolve(spec: ManagedEndpointSpec): ManagedEndpointResolution = configured().resolve(spec)
 
     suspend fun createSignalingSession(
-        @Suppress("UNUSED_PARAMETER") spec: ManagedEndpointSpec,
-        @Suppress("UNUSED_PARAMETER") resolution: ManagedEndpointResolution,
-        @Suppress("UNUSED_PARAMETER") offer: ManagedSignalOffer,
-        @Suppress("UNUSED_PARAMETER") policy: ManagedDialPolicy,
-    ): ManagedSignalAnswer {
-        throw ManagedEndpointFailure("login_required", "Official mobile cloud account session is not configured")
-    }
+        spec: ManagedEndpointSpec,
+        resolution: ManagedEndpointResolution,
+        offer: ManagedSignalOffer,
+        policy: ManagedDialPolicy,
+    ): ManagedSignalAnswer = configured().createSignalingSession(spec, resolution, offer, policy)
 
-    suspend fun reportPathQuality(@Suppress("UNUSED_PARAMETER") summary: ManagedPathQualitySummary) {
-        throw ManagedEndpointFailure("login_required", "Official mobile cloud account session is not configured")
-    }
+    suspend fun reportPathQuality(summary: ManagedPathQualitySummary) = configured().reportPathQuality(summary)
 
     suspend fun planManagedRoute(
-        @Suppress("UNUSED_PARAMETER") spec: ManagedEndpointSpec,
-        @Suppress("UNUSED_PARAMETER") resolution: ManagedEndpointResolution,
-        @Suppress("UNUSED_PARAMETER") policy: ManagedDialPolicy,
-    ): ManagedRoutePlan {
-        throw ManagedEndpointFailure("login_required", "Official mobile cloud account session is not configured")
-    }
+        spec: ManagedEndpointSpec,
+        resolution: ManagedEndpointResolution,
+        policy: ManagedDialPolicy,
+    ): ManagedRoutePlan = configured().planManagedRoute(spec, resolution, policy)
+
+    private fun configured(): DevCloudMobileGateway = development
+        ?: throw ManagedEndpointFailure("login_required", "Official mobile cloud account session is not configured")
 }

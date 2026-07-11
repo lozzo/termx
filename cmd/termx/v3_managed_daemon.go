@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/proto/cloudpb"
@@ -18,6 +19,9 @@ import (
 )
 
 var openV3CloudDaemonCompanion = defaultOpenV3CloudDaemonCompanion
+
+// Hub presence 是短期租约；间隔只用于避免旧 stream 异常结束时形成续约风暴，不改变 fresh proof 语义。
+var v3ManagedPresenceRetryDelay = time.Second
 
 // v3ManagedDaemonCore 是 cloud DataChannel 可以进入 core-v2 的最小边界。
 // 只有 remote daemon 完成 DeviceIdentity 与 CapabilityGrant 握手后才能调用 ServeScopedTransport。
@@ -55,7 +59,7 @@ func startV3ManagedDaemon(ctx context.Context, core v3ManagedDaemonCore, logger 
 	}
 	go func() {
 		defer companion.Close()
-		if runErr := agent.Run(ctx); runErr != nil && ctx.Err() == nil {
+		if runErr := agent.RunContinuously(ctx, v3ManagedPresenceRetryDelay); runErr != nil && ctx.Err() == nil {
 			// managed presence 是 endpoint transport；失败不能停止本地 listener 或 core terminal lifecycle。
 			logger.Warn("managed cloud presence stopped", "error", runErr)
 		}

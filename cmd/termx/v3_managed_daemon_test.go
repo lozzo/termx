@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync"
@@ -17,24 +18,36 @@ import (
 
 func TestStartV3ManagedDaemonBuildsPresenceWithoutStoppingCore(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	stream := cloudcompanion.NewFakePresenceStream(1)
-	if err := stream.Fail(io.EOF); err != nil {
+	first := cloudcompanion.NewFakePresenceStream(1)
+	if err := first.Fail(io.EOF); err != nil {
 		t.Fatal(err)
 	}
+	second := cloudcompanion.NewFakePresenceStream(1)
+	if err := second.Push(&cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "test complete"}}}); err != nil {
+		t.Fatal(err)
+	}
+	presenceAttempt := 0
 	fake := &managedDaemonCloudFake{FakeClient: &cloudcompanion.FakeClient{
 		BeginPresenceFunc: func(context.Context, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
+			presenceAttempt++
 			return &cloudpb.PresenceChallenge{
-				PresenceSessionId: "presence-cli", ChallengeId: "challenge-cli",
+				PresenceSessionId: fmt.Sprintf("presence-cli-%d", presenceAttempt), ChallengeId: fmt.Sprintf("challenge-cli-%d", presenceAttempt),
 				Challenge: bytes.Repeat([]byte{0x61}, 32), ExpiresAtUnix: uint64(time.Now().Add(time.Minute).Unix()),
 			}, nil
 		},
 		OpenPresenceFunc: func(context.Context, *cloudpb.OpenPresenceRequest) (cloudcompanion.PresenceStream, error) {
-			return stream, nil
+			if presenceAttempt == 1 {
+				return first, nil
+			}
+			return second, nil
 		},
 	}, closed: make(chan struct{})}
 	previousOpen := openV3CloudDaemonCompanion
 	openV3CloudDaemonCompanion = func(context.Context) (v3CloudClient, error) { return fake, nil }
 	defer func() { openV3CloudDaemonCompanion = previousOpen }()
+	previousDelay := v3ManagedPresenceRetryDelay
+	v3ManagedPresenceRetryDelay = time.Millisecond
+	defer func() { v3ManagedPresenceRetryDelay = previousDelay }()
 	core := &managedDaemonCoreFake{}
 	if err := startV3ManagedDaemon(context.Background(), core, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatal(err)
@@ -45,7 +58,7 @@ func TestStartV3ManagedDaemonBuildsPresenceWithoutStoppingCore(t *testing.T) {
 		t.Fatal("managed daemon did not close its Companion connection after presence ended")
 	}
 	requests := fake.Requests()
-	if len(requests.BeginPresence) != 1 || len(requests.OpenPresence) != 1 || requests.OpenPresence[0].GetProof().GetDeviceId() == "" {
+	if len(requests.BeginPresence) != 2 || len(requests.OpenPresence) != 2 || requests.OpenPresence[0].GetProof().GetDeviceId() == "" {
 		t.Fatalf("managed daemon presence requests = %#v", requests)
 	}
 	if core.calls != 0 {

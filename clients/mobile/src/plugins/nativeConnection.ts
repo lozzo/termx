@@ -72,6 +72,16 @@ export interface NativeBridgeEndpoint {
   token: string
 }
 
+/** NativeManagedPairingImport 只含可写入 WebView endpoint registry 的非秘密 metadata。 */
+export interface NativeManagedPairingImport {
+  endpointId: string
+  label: string
+  targetDeviceId: string
+  deviceFingerprint: string
+  grantRef: string
+  expiresAt: string
+}
+
 export interface NativeStateChangeEvent {
   endpointId: string
   targetDeviceId: string
@@ -88,7 +98,7 @@ export interface NativeStateChangeEvent {
 
 export interface NativeConnectionPlugin extends Plugin {
   connect(opts: NativeConnectOpts): Promise<void>
-  storeManagedGrant(opts: { grantRef: string; grant: string }): Promise<void>
+  importManagedPairing(opts: { payload: string; expectedEndpointId?: string }): Promise<NativeManagedPairingImport>
   deleteManagedGrant(opts: { grantRef: string }): Promise<void>
   retry(opts: { endpointId: string }): Promise<void>
   release(opts: { endpointId: string }): Promise<void>

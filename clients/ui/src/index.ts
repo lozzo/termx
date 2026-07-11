@@ -78,6 +78,7 @@ export { MachineBrowserShell } from './app/MachineBrowserShell'
 export type { MachineBrowserShellProps } from './app/MachineBrowserShell'
 export { RemoteControlApp } from './app/RemoteControlApp'
 export type { RemoteControlAppProps } from './app/RemoteControlApp'
+export type { ExternalPairingAdapter, ExternalPairingImportResult } from './app/RemoteControlApp'
 export { mountRemoteControlApp } from './entries/mountRemoteControlApp'
 export type { RemoteControlEntryOptions } from './entries/mountRemoteControlApp'
 export type {
@@ -137,6 +138,8 @@ export type {
 } from './state/localAppIdentity'
 export { createTerminalProtocolClient } from './terminal/terminalProtocolClient'
 export type { TerminalProtocolClientOptions } from './terminal/terminalProtocolClient'
+export { createTermxProtocolMultiplexer } from './terminal/termxProtocolMultiplexer'
+export type { TermxProtocolMultiplexer } from './terminal/termxProtocolMultiplexer'
 export {
   TERMX_FRAME_TYPES,
   TERMX_MAX_FRAME_SIZE,

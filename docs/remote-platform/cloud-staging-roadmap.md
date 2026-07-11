@@ -32,10 +32,10 @@
 
 | 组件 | 已存在的真实能力 | 当前阻塞 |
 | --- | --- | --- |
-| `core/` | terminal lifecycle、scoped transport、live/history 真值；desktop direct 与 single Relay 共用授权后的 DataChannel | Official Android 尚未复用该真实链路 |
+| `core/` | terminal lifecycle、scoped transport、live/history 真值；desktop 与 Android 共用授权后的 termx protocol | 当前单区域纵向链路无 core 阻塞 |
 | `tui/` | 多 endpoint manager、managed dial、局部失败、连接 phase、实际 direct/single_relay path 与远程 terminal 投影 | desktop 纵向链路已闭环；不承担 Android 装配 |
 | `remote/client` | Pion offer、relay-only ICE、caller-specific RelayLease、DTLS fingerprint、capability handshake 和 protocol transport | 自动 SmartRoute 继续延后，不影响显式 single Relay |
-| `remote/daemon` 与 `remote/webrtc` | fresh-proof presence、principal-specific TURN material、relay-only answerer、DataChannel auth 和 core scoped transport | desktop direct/single Relay 已闭环 |
+| `remote/daemon` 与 `remote/webrtc` | fresh-proof presence 续约、principal-specific TURN material、relay-only answerer、DataChannel auth 和 core scoped transport | 自动 SmartRoute 继续延后 |
 | `shared/cloudcompanion` | versioned local IPC、single Relay material 校验、错误语义、stream、fake 和 installer contract | contract 本身不提供云服务 |
 | `private/cloud/companion` | sidecar、本地 IPC、账号/device session、显式 dev HTTP adapter、direct signaling 和 Relay lease orchestration | 默认路径继续 fail closed；Official Android 使用独立私有装配 |
 | `private/cloud/control-plane` | PresenceSession/ManagedSession、admission、entitlement、session-bound Relay lease、principal credential 与 usage ledger | 生产 entitlement/billing 与持久化继续延后 |
@@ -43,9 +43,9 @@
 | `private/cloud/relay` | dev service 中的真实 Pion UDP TURN、lease authority、到期/并发/quota、meter 和 signed usage | 多区域与 Relay Mesh 继续延后 |
 | `private/cloud/route-planner` | direct/single-relay 决策和短期 route plan contract | 自动 SmartRoute 未进入当前用户链路，继续延后 |
 | Desktop endpoint registry | `hub-p2p`、device pin、`grant_ref`、relay mode、pairing create/import 和原子 registry writer | direct 与显式 relay-only 均可配置 |
-| Official Android | Official factory、公开 WebRTC primitive、Keystore grant store、managed connector | gateway 固定返回 `login_required`，公开 authorizer 仍 fail closed |
+| Official Android | 显式 dev gateway、Keystore pairing import、真实 DTLS certificate binding、capability authorizer、单一 protocol DataChannel、core-v2 live screen 与共享 terminal multiplexer | 单区域纵向 DoD 已完成；生产账号/TLS 继续延后 |
 
-结论：Desktop managed direct 与显式 single Relay 都已跨真实 Companion IPC、Control Plane/Hub listener、Pion TURN/DTLS DataChannel、capability handshake 和 core-v2 protocol 闭环；当前剩余主线是 Official Android，不能把 desktop 完成度外推到 APK。
+结论：Desktop managed direct、显式 single Relay 与 Official Android 真实用户链路均已闭环；CLOUD001-CLOUD005 单区域目标完成，生产和多区域事项继续延后。
 
 ## 4. 单区域纵向拓扑
 
@@ -302,6 +302,8 @@ CLOUD002 建立名为 `dev-local` 的显式 staging 剖面：
 
 ### 8.4 CLOUD005：Official Android
 
+状态：完成。代码接线、client workspace、Community/Official 单测、三个 APK、class boundary、真实 daemon List/Attach/Input/Output、2 秒/10 秒恢复、Hub 局部失败和 Community fail closed 均已通过。Community 验收后设备物理断开，重连后只需恢复安装 Official dev APK，不影响切片完成度。
+
 实现范围：
 
 - 用真实 dev cloud gateway 替换 Official development gateway 的固定 `login_required`。
@@ -336,7 +338,7 @@ CLOUD002 建立名为 `dev-local` 的显式 staging 剖面：
 
 ## 10. 总体验收与停止条件
 
-CLOUD005 完成后，本轮单区域 Cloud 纵向目标才算完成。最终审计必须同时证明：
+CLOUD005 已完成，本轮单区域 Cloud 纵向目标随之完成。最终审计已经证明：
 
 - Desktop direct、Desktop single Relay、Official Android 三条链路都到达同一个真实 daemon/core-v2 terminal protocol。
 - 三条链路只改变 transport/path，不改变 Endpoint/TerminalRef、history owner 或 capability 语义。

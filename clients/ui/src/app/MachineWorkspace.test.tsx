@@ -1715,6 +1715,32 @@ describe('MachineWorkspace', () => {
     expect(sessionStore.getSessionToken('machine-local')).toBeNull()
   })
 
+  it.each([
+    'unauthenticated',
+    'capability_invalid',
+    'capability_expired',
+    'device_identity_mismatch',
+    'scope_invalid',
+  ])('returns managed endpoint failure %s to the external reauthorization flow', async (failureCode) => {
+    const onNeedsReauthorization = vi.fn()
+    const connect = vi.fn(() => Promise.reject(new Error(failureCode)))
+
+    render(
+      <MachineWorkspace
+        api={createMockLocalAgentApi()}
+        connector={{ connect }}
+        initialMachine={{ machineId: 'machine-local', name: 'Managed daemon', state: 'online' }}
+        onNeedsReauthorization={onNeedsReauthorization}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+
+    await waitFor(() => expect(onNeedsReauthorization).toHaveBeenCalledWith('machine-local'))
+    expect(screen.getByTestId('termx-machine-network-overlay').textContent).toContain('re-authorize')
+  })
+
   it('reopens pairing when a cached runtime session token cannot be parsed', async () => {
     const sessionStore = createMachineSessionStore(new MemoryStorage())
     sessionStore.saveSessionToken('machine-local', 'stale-token', '2099-05-01T07:00:00Z')

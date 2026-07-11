@@ -185,9 +185,13 @@ export class MockRtcTerminalSession implements RtcSession {
     this.channels.get(terminalId)?.emitFrame(TERMX_FRAME_TYPES.syncLost, new Uint8Array([1]))
   }
 
+  /**
+   * 发布一份新的 daemon 权威 live screen，并通过当前挂起的 invalidation long-poll 通知客户端重新读取。
+   * 该 harness 只模拟 core-v2 的消息链路，不把 snapshot 或 revision 变成客户端生命周期真值。
+   */
   emitTerminalSnapshot(terminalId: string, snapshot: TerminalSnapshotPayload): void {
     this.snapshots.set(terminalId, snapshot)
-    this.channels.get(terminalId)?.respondToNextSnapshot(snapshot)
+    this.channels.get(terminalId)?.publishLiveInvalidation()
   }
 
   setTerminalSnapshot(terminalId: string, snapshot: TerminalSnapshotPayload & { pages?: MockSnapshotPage[] }): void {
@@ -274,6 +278,8 @@ class MockBinaryChannel implements RtcBinaryChannel {
   private ensureResizeControl: TerminalResizeControl | undefined
   private failSendOnce = false
   private failEnsureResizeOnce: string | undefined
+  private liveRevision = 1
+  private pendingInvalidationRequestID: number | null = null
 
   constructor(
     readonly label: string,
@@ -346,13 +352,32 @@ class MockBinaryChannel implements RtcBinaryChannel {
     this.failEnsureResizeOnce = message
   }
 
-  respondToNextSnapshot(snapshot: TerminalSnapshotPayload, requestId = 2): void {
+  publishLiveInvalidation(): void {
+    this.liveRevision += 1
+    const requestID = this.pendingInvalidationRequestID
+    if (requestID === null) return
+    this.pendingInvalidationRequestID = null
+    this.emitFrame(TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(requestID, 'live.invalidation.next', {
+      type: 7,
+      terminal_id: this.terminalId,
+      timestamp_unix_nano: this.liveRevision,
+      live_revision: this.liveRevision,
+    }), 0)
+  }
+
+  private respondToLiveScreen(snapshot: TerminalSnapshotPayload, requestId: number): void {
     const raw = snapshot.raw
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-      this.emitFrame(TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(requestId, 'snapshot', raw), 0)
+      this.emitFrame(TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(requestId, 'live.screen.get', {
+        ...raw,
+        terminal_id: this.terminalId,
+        live_revision: this.liveRevision,
+      }), 0)
       return
     }
-    this.emitFrame(TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(requestId, 'snapshot', {
+    this.emitFrame(TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(requestId, 'live.screen.get', {
+        terminal_id: this.terminalId,
+        live_revision: this.liveRevision,
         size: { cols: snapshot.cols, rows: snapshot.rows },
         screen: {
           rows: snapshot.text.split('\n').map((row) => ({
@@ -379,7 +404,11 @@ class MockBinaryChannel implements RtcBinaryChannel {
     const request = {
       id: requestEnvelope.id,
       method: requestEnvelope.method,
-      params: decodeTerminalMethodParams(requestEnvelope.method, requestEnvelope.params) as { scrollback_offset?: number; scrollback_limit?: number },
+      params: decodeTerminalMethodParams(requestEnvelope.method, requestEnvelope.params) as {
+        observed_revision?: number
+        scrollback_offset?: number
+        scrollback_limit?: number
+      },
     }
     if (request.method === 'attach') {
       this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(request.id, request.method, {
@@ -393,28 +422,26 @@ class MockBinaryChannel implements RtcBinaryChannel {
         })))
       return
     }
-    if (request.method === 'snapshot') {
-      const offset = request.params?.scrollback_offset ?? 0
-      const limit = request.params?.scrollback_limit ?? 0
-      this.snapshotRequests.push({ offset, limit })
-      const page = limit > 1 ? this.owner.snapshotPageFor(this.terminalId, offset) : undefined
-      if (page) {
-        this.respondToNextSnapshot({
-          text: '',
-          cols: 80,
-          rows: 24,
-          raw: {
-            size: { cols: 80, rows: 24 },
-            screen: { rows: [] },
-            scrollback: page.rows.map(mockHistoryRowToProtocolRow),
-          },
-        }, request.id)
-        return
-      }
-      this.respondToNextSnapshot(
+    if (request.method === 'live.screen.get') {
+      this.snapshotRequests.push({ offset: 0, limit: 1 })
+      this.respondToLiveScreen(
         this.terminalSnapshot() ?? { text: '', cols: 80, rows: 24 },
         request.id,
       )
+      return
+    }
+    if (request.method === 'live.invalidation.next') {
+      const observedRevision = request.params?.observed_revision ?? 0
+      if (observedRevision < this.liveRevision) {
+        this.emitFrame(TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(request.id, request.method, {
+          type: 7,
+          terminal_id: this.terminalId,
+          timestamp_unix_nano: this.liveRevision,
+          live_revision: this.liveRevision,
+        }), 0)
+        return
+      }
+      this.pendingInvalidationRequestID = request.id
       return
     }
     if (request.method === 'ensure_resize') {

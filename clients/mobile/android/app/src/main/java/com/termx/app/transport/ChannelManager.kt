@@ -3,25 +3,19 @@ package com.termx.app.transport
 import android.util.Log
 import com.termx.app.network.BridgeServer
 import com.termx.app.transfer.FileTransferManager
-import org.json.JSONObject
 import org.webrtc.DataChannel
 import org.webrtc.PeerConnection
+import termx.protocol.wirepb.Terminal
 import java.nio.ByteBuffer
-import java.nio.charset.StandardCharsets
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /**
- * ChannelManager — api/events/terminal/file DataChannel 管理
- *
- * 通道 label 格式（machineId 作为 storeKey）：
- *   api:{machineId}
- *   events:{machineId}
- *   terminal:{machineId}:{terminalId}
- *   file:{machineId}:{transferId}
+ * ChannelManager 是 Android 单一 `protocol` DataChannel 的 owner。
+ * E2E auth 消息先进入授权队列；CapabilityAccepted 后由本类完成一次 wire v3 Hello，随后才把 protocol frame 投影到 JS bridge。
  */
 class ChannelManager(
     private val bridge: BridgeServer?,
@@ -29,656 +23,297 @@ class ChannelManager(
 ) {
     companion object {
         private const val TAG = "TermxChannelMgr"
-
-        // termx API 分块协议（与 JS 侧 rtcApiChannel.ts 对齐）
-        private const val API_CHUNK_MAGIC: Byte = 0xC0.toByte()
-        private const val FLAG_LAST = 0x02
-        private const val STATS_INTERVAL_MS = 1000L
-        private const val LARGE_PAYLOAD_BYTES = 64 * 1024
+        private const val PROTOCOL_VERSION = 3
+        private const val MAX_FRAME_SIZE = 4 shl 20
+        private const val FRAME_HELLO = 0x00
+        private const val FRAME_REQUEST = 0x01
+        private const val FRAME_RESPONSE = 0x02
+        private const val FRAME_ERROR = 0x04
+        private const val FRAME_RESPONSE_BINARY = 0x05
     }
 
     var fileTransferManager: FileTransferManager? = null
 
-    var apiChannel: DataChannel? = null
-        private set
-    private var eventsChannel: DataChannel? = null
+    @Volatile private var protocolChannel: DataChannel? = null
+    @Volatile private var protocolState = ProtocolState.AUTHORIZING
+    @Volatile private var protocolFailure: Exception? = null
+    @Volatile private var helloLatch = CountDownLatch(1)
+    private val authorizationMessages = LinkedBlockingQueue<ByteArray>(8)
+    private val nativeRequestSequence = AtomicLong(0)
+    private val pendingNativeRequests = ConcurrentHashMap<Long, PendingNativeRequest>()
 
-    private val terminalChannels = ConcurrentHashMap<String, DataChannel>()
-    private val fileChannels = ConcurrentHashMap<String, DataChannel>()
-    private val pendingEventsData = ConcurrentLinkedQueue<ByteArray>()
+    private val protocolLabel get() = "protocol:$machineId"
 
-    // 等待 API 响应
-    private val pendingApiRequests = ConcurrentHashMap<String, PendingApiRequest>()
-    private val pendingApiChunks = ConcurrentHashMap<String, MutableList<ByteArray>>()
-    private val channelStats = ConcurrentHashMap<String, ChannelStats>()
-
-    private val apiLabel get() = "api:$machineId"
-    private val eventsLabel get() = "events:$machineId"
-    private fun terminalLabel(id: String) = "terminal:$machineId:$id"
-    private fun fileLabel(id: String) = "file:$machineId:$id"
-
-    private fun getApiChannelId(): Int = bridge?.getChannelId(apiLabel) ?: -1
-    private fun getEventsChannelId(): Int = bridge?.getChannelId(eventsLabel) ?: -1
-
-    inner class PendingApiRequest {
+    private class PendingNativeRequest {
         val latch = CountDownLatch(1)
-        var result: String? = null
-        var error: Exception? = null
-        var path: String = ""
+        @Volatile var error: Exception? = null
     }
 
-    private data class ApiResponse(
-        val id: String,
-        val status: Int,
-        val body: ByteArray,
-        val error: String,
-    )
-
-    private data class ChannelStats(
-        var rxFrames: Long = 0,
-        var rxBytes: Long = 0,
-        var txFrames: Long = 0,
-        var txBytes: Long = 0,
-        var lastLogAt: Long = System.currentTimeMillis(),
-        var lastRxBytes: Long = 0,
-        var lastTxBytes: Long = 0,
-    )
-
-    fun createInitialChannels(pc: PeerConnection) {
-        val apiInit = DataChannel.Init().apply { ordered = true }
-        apiChannel = pc.createDataChannel("api", apiInit)?.also { setupApiChannel(it) }
-
-        val eventsInit = DataChannel.Init().apply { ordered = true }
-        eventsChannel = pc.createDataChannel("events", eventsInit)?.also { setupEventsChannel(it) }
+    /** createInitialChannels 创建 daemon answerer 接受的唯一 ordered/reliable `protocol` DataChannel。 */
+    fun createInitialChannels(peer: PeerConnection) {
+        val channel = peer.createDataChannel("protocol", DataChannel.Init().apply { ordered = true })
+            ?: throw IllegalStateException("protocol DataChannel could not be created")
+        protocolChannel = channel
+        setupProtocolChannel(channel)
     }
 
-    fun getOrCreateTerminal(pc: PeerConnection?, terminalId: String, connected: Boolean): DataChannel? {
-        if (pc == null || !connected) {
-            Log.w(TAG, "getOrCreateTerminal[$terminalId]: pc=${pc != null} connected=$connected [$machineId]")
-            return null
-        }
-        terminalChannels[terminalId]?.let {
-            Log.i(TAG, "replace terminal[$terminalId] state=${it.state()} [$machineId]")
-            terminalChannels.remove(terminalId, it)
-            try { it.close() } catch (_: Exception) {}
-        }
-        val dc = pc.createDataChannel("terminal:$terminalId", DataChannel.Init().apply { ordered = true }) ?: return null
-        terminalChannels[terminalId] = dc
-        Log.i(TAG, "created terminal[$terminalId] state=${dc.state()} [$machineId]")
-        setupTerminalChannel(dc, terminalId)
-        return dc
-    }
-
-    fun getOrCreateFile(pc: PeerConnection?, transferId: String, connected: Boolean): DataChannel? {
-        if (pc == null || !connected) {
-            Log.w(TAG, "getOrCreateFile[$transferId]: pc=${pc != null} connected=$connected [$machineId]")
-            return null
-        }
-        val existing = fileChannels[transferId]
-        if (existing?.state() == DataChannel.State.OPEN) {
-            Log.i(TAG, "reuse open file[$transferId] [$machineId]")
-            return existing
-        }
-        existing?.let {
-            Log.i(TAG, "replace file[$transferId] state=${it.state()} [$machineId]")
-            fileChannels.remove(transferId)
-        }
-        val dc = pc.createDataChannel("file:$transferId", DataChannel.Init().apply { ordered = true }) ?: return null
-        fileChannels[transferId] = dc
-        Log.i(TAG, "created file[$transferId] state=${dc.state()} [$machineId]")
-        setupFileChannel(dc, transferId)
-        return dc
-    }
-
-    fun closeTerminal(terminalId: String) {
-        terminalChannels.remove(terminalId)?.let { try { it.close() } catch (_: Exception) {} }
-    }
-
-    fun closeFile(transferId: String) {
-        fileChannels.remove(transferId)?.let { try { it.close() } catch (_: Exception) {} }
-    }
-
-    fun getFileChannel(transferId: String): DataChannel? = fileChannels[transferId]
-
-    fun sendRawApi(data: ByteArray) {
-        val dc = apiChannel
-        if (dc?.state() == DataChannel.State.OPEN) {
-            noteChannelFrame("api", "tx", data.size, dc.bufferedAmount())
-            val sent = dc.send(DataChannel.Buffer(ByteBuffer.wrap(data), false))
-            if (!sent) Log.w(TAG, "sendRawApi: send returned false buffered=${dc.bufferedAmount()} [$machineId]")
-        } else {
-            Log.w(TAG, "sendRawApi: apiChannel not open")
-        }
-    }
-
-    fun sendRawEvents(data: ByteArray) {
-        val dc = eventsChannel
-        if (dc?.state() == DataChannel.State.OPEN) {
-            noteChannelFrame("events", "tx", data.size, dc.bufferedAmount())
-            val sent = dc.send(DataChannel.Buffer(ByteBuffer.wrap(data), false))
-            if (!sent) Log.w(TAG, "sendRawEvents: send returned false buffered=${dc.bufferedAmount()} [$machineId]")
-        } else {
-            pendingEventsData.add(data)
-            Log.w(TAG, "sendRawEvents: eventsChannel not open")
-        }
-    }
-
-    fun sendTerminalData(terminalId: String, data: ByteArray) {
-        val dc = terminalChannels[terminalId]
-        if (dc?.state() == DataChannel.State.OPEN) {
-            noteChannelFrame("terminal:$terminalId", "tx", data.size, dc.bufferedAmount())
-            val sent = dc.send(DataChannel.Buffer(ByteBuffer.wrap(data), true))
-            if (sent) return
-            Log.w(TAG, "sendTerminalData[$terminalId]: send returned false [$machineId]")
-            notifyTerminalChannelError(terminalId, "terminal channel send failed")
-            return
-        }
-        Log.w(TAG, "sendTerminalData[$terminalId]: channel not open state=${dc?.state()} [$machineId]")
-        notifyTerminalChannelError(terminalId, "terminal channel not open")
-    }
-
-    fun sendFileData(transferId: String, data: ByteArray) {
-        fileChannels[transferId]?.takeIf { it.state() == DataChannel.State.OPEN }
-            ?.let {
-                noteChannelFrame("file:$transferId", "tx", data.size, it.bufferedAmount())
-                it.send(DataChannel.Buffer(ByteBuffer.wrap(data), true))
-            }
-    }
-
-    /** Blocking API request (for heartbeat). Returns response body or throws on error/timeout. */
-    fun sendApiRequest(method: String, path: String, body: String?, timeoutMs: Long): String {
-        val dc = apiChannel
-        if (dc?.state() != DataChannel.State.OPEN) {
-            throw IllegalStateException("api channel not open")
-        }
-        val id = UUID.randomUUID().toString()
-        val pending = PendingApiRequest()
-        pending.path = path
-        pendingApiRequests[id] = pending
-        val startedAt = System.currentTimeMillis()
-
-        val bytes = encodeApiRequest(id, method, path, encodeApiRequestBody(path, body))
-        Log.i(TAG, "native api request send id=$id method=$method path=$path bytes=${bytes.size} [$machineId]")
-        noteChannelFrame("api", "tx", bytes.size, dc.bufferedAmount())
-        dc.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), false))
-
-        if (!pending.latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
-            pendingApiRequests.remove(id)
-            Log.w(TAG, "native api request timeout id=$id method=$method path=$path elapsed=${System.currentTimeMillis() - startedAt}ms [$machineId]")
-            throw RuntimeException("api request timed out: $method $path")
-        }
-        pending.error?.let { throw it }
-        Log.i(TAG, "native api request done id=$id method=$method path=$path elapsed=${System.currentTimeMillis() - startedAt}ms bytes=${pending.result?.length ?: 0} [$machineId]")
-        return pending.result ?: ""
-    }
-
-    fun waitApiOpen(timeoutMs: Int): Boolean {
+    /** waitChannelOpen 只等待 SCTP DataChannel open；它不代表 capability 或 termx protocol 已授权。 */
+    fun waitChannelOpen(timeoutMs: Int): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            if (apiChannel?.state() == DataChannel.State.OPEN) return true
-            Thread.sleep(100)
+            when (protocolChannel?.state()) {
+                DataChannel.State.OPEN -> return true
+                DataChannel.State.CLOSED, DataChannel.State.CLOSING -> return false
+                else -> Thread.sleep(50)
+            }
         }
         return false
     }
 
-    fun isApiOpen(): Boolean = apiChannel?.state() == DataChannel.State.OPEN
+    /** receiveAuthorizationMessage 只在 protocol 激活前读取 daemon auth envelope。 */
+    fun receiveAuthorizationMessage(timeoutMs: Long): ByteArray? {
+        if (protocolState != ProtocolState.AUTHORIZING) return null
+        return authorizationMessages.poll(timeoutMs, TimeUnit.MILLISECONDS)
+    }
 
+    /** sendAuthorizationMessage 把 CapabilityOpen 作为完整 binary DataChannel message 发送。 */
+    fun sendAuthorizationMessage(frame: ByteArray): Boolean {
+        if (protocolState != ProtocolState.AUTHORIZING || frame.isEmpty()) return false
+        return sendDataChannelMessage(frame)
+    }
+
+    /**
+     * activateTermxProtocol 是 auth 到 terminal protocol 的单向切换点。
+     * 它发送唯一一次 wire v3 Hello；失败后当前 channel 不允许回到 auth 或旧 api/events 通道。
+     */
+    fun activateTermxProtocol(timeoutMs: Long): Boolean {
+        if (protocolState == ProtocolState.READY) return true
+        if (protocolState != ProtocolState.AUTHORIZING) return false
+        protocolState = ProtocolState.WAITING_HELLO
+        helloLatch = CountDownLatch(1)
+        val hello = Terminal.Hello.newBuilder().setVersion(PROTOCOL_VERSION).setClient("termx-android").build()
+        if (!sendProtocolFrame(0, FRAME_HELLO, hello.toByteArray())) {
+            failProtocol(IllegalStateException("termx protocol Hello send failed"))
+            return false
+        }
+        if (!helloLatch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+            failProtocol(IllegalStateException("termx protocol Hello timed out"))
+            return false
+        }
+        return protocolState == ProtocolState.READY && protocolFailure == null
+    }
+
+    /** sendRawProtocol 转发 JS multiplexer 已校验归属的 wire frame。 */
+    fun sendRawProtocol(frame: ByteArray) {
+        if (!isProtocolOpen()) throw IllegalStateException("termx protocol channel is not open")
+        val decoded = decodeTermxProtocolFrame(frame)
+        if (decoded.channel < 0) throw IllegalArgumentException("termx protocol channel is invalid")
+        if (!sendDataChannelMessage(frame)) throw IllegalStateException("termx protocol send failed")
+    }
+
+    /** isProtocolOpen 表示 DTLS auth 与 wire Hello 均完成，不以 PeerConnection connected 状态代替。 */
+    fun isProtocolOpen(): Boolean = protocolState == ProtocolState.READY && protocolChannel?.state() == DataChannel.State.OPEN
+
+    /**
+     * sendApiRequest 保留 native lifecycle 调用边界，但只允许 `/status` 映射为真实 wire `list` round trip。
+     * 文件旧 API 不属于当前 daemon contract，必须失败而不能恢复 legacy DataChannel。
+     */
+    fun sendApiRequest(method: String, path: String, body: String?, timeoutMs: Long): String {
+        if (method != "GET" || path != "/status" || !body.isNullOrBlank()) {
+            throw UnsupportedOperationException("legacy runtime API is unavailable on termx protocol")
+        }
+        requestList(timeoutMs)
+        return "{\"ok\":true}"
+    }
+
+    /** sendFileData 明确拒绝旧独立 file DataChannel，防止文件路径偷偷恢复 legacy runtime。 */
+    fun sendFileData(@Suppress("UNUSED_PARAMETER") transferId: String, @Suppress("UNUSED_PARAMETER") data: ByteArray) {
+        throw UnsupportedOperationException("file transfer is unavailable on current termx protocol")
+    }
+
+    /** getFileChannel 在当前 capability surface 上稳定返回 unavailable。 */
+    fun getFileChannel(@Suppress("UNUSED_PARAMETER") transferId: String): DataChannel? = null
+
+    /** closeFile 保持旧 transfer cleanup 幂等，但不创建或持有第二条 DataChannel。 */
+    fun closeFile(@Suppress("UNUSED_PARAMETER") transferId: String) = Unit
+
+    /** closeAll 关闭当前 transport，并解除 auth、Hello 与 liveness wait。 */
     fun closeAll() {
-        apiChannel?.let { try { it.close() } catch (_: Exception) {} }
-        apiChannel = null
-        eventsChannel?.let { try { it.close() } catch (_: Exception) {} }
-        eventsChannel = null
-        for (dc in terminalChannels.values) try { dc.close() } catch (_: Exception) {}
-        terminalChannels.clear()
-        for (dc in fileChannels.values) try { dc.close() } catch (_: Exception) {}
-        fileChannels.clear()
-        pendingEventsData.clear()
-
-        val err = RuntimeException("disconnected")
-        for (pending in pendingApiRequests.values) {
-            pending.error = err; pending.latch.countDown()
-        }
-        pendingApiRequests.clear()
-        pendingApiChunks.clear()
+        failProtocol(IllegalStateException("protocol disconnected"))
+        protocolChannel = null
     }
 
-    // ─── Channel Observers ───────────────────────────────────────────────────
+    private fun requestList(timeoutMs: Long) {
+        if (!isProtocolOpen()) throw IllegalStateException("termx protocol channel is not open")
+        val id = Long.MAX_VALUE - nativeRequestSequence.incrementAndGet()
+        val pending = PendingNativeRequest()
+        pendingNativeRequests[id] = pending
+        val request = Terminal.RequestEnvelope.newBuilder()
+            .setId(id)
+            .setMethod("list")
+            .setParams(Terminal.Empty.getDefaultInstance().toByteString())
+            .build()
+        if (!sendProtocolFrame(0, FRAME_REQUEST, request.toByteArray())) {
+            pendingNativeRequests.remove(id)
+            throw IllegalStateException("termx protocol list send failed")
+        }
+        if (!pending.latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+            pendingNativeRequests.remove(id)
+            throw IllegalStateException("termx protocol list timed out")
+        }
+        pending.error?.let { throw it }
+    }
 
-    private fun setupApiChannel(dc: DataChannel) {
-        dc.registerObserver(object : DataChannel.Observer {
-            override fun onBufferedAmountChange(l: Long) {}
+    private fun setupProtocolChannel(channel: DataChannel) {
+        channel.registerObserver(object : DataChannel.Observer {
+            override fun onBufferedAmountChange(previousAmount: Long) = Unit
+
             override fun onStateChange() {
-                Log.i(TAG, "api state: ${dc.state()} [$machineId]")
+                Log.i(TAG, "protocol state: ${channel.state()} [$machineId]")
+                if ((channel.state() == DataChannel.State.CLOSED || channel.state() == DataChannel.State.CLOSING) &&
+                    protocolState != ProtocolState.FAILED) {
+                    failProtocol(IllegalStateException("protocol DataChannel closed"), closeChannel = false)
+                }
             }
+
             override fun onMessage(buffer: DataChannel.Buffer) {
-                val data = ByteArray(buffer.data.remaining())
-                buffer.data.get(data)
-                noteChannelFrame("api", "rx", data.size, dc.bufferedAmount())
-
-                // Forward raw bytes to Bridge (JS handles JSON-RPC)
-                val chId = getApiChannelId()
-                if (chId >= 0) bridge?.sendDataFrame(chId, data)
-
-                // Parse chunked response for native API requests (heartbeat)
-                handleApiResponseChunk(data)
-            }
-        })
-    }
-
-    private fun handleApiResponseChunk(data: ByteArray) {
-        if (data.isEmpty() || data[0] != API_CHUNK_MAGIC) return
-        try {
-            val flags = data[1].toInt() and 0xFF
-            val idLen = data[2].toInt() and 0xFF
-            if (data.size < 3 + idLen) return
-            val id = String(data, 3, idLen, StandardCharsets.UTF_8)
-            val chunk = data.copyOfRange(3 + idLen, data.size)
-            val isLast = (flags and FLAG_LAST) != 0
-
-            val chunks = pendingApiChunks.getOrPut(id) { mutableListOf() }
-            chunks.add(chunk)
-
-            if (isLast) {
-                pendingApiChunks.remove(id)
-                val pending = pendingApiRequests.remove(id) ?: return
-                val response = decodeApiResponse(concatByteArrays(chunks))
-                if (response.status >= 400 && pending.path == "/status") {
-                    pending.error = RuntimeException(response.error.ifBlank { "api request failed: ${response.status}" })
-                } else {
-                    pending.result = apiResponseJson(response, pending.path).toString()
-                }
-                pending.latch.countDown()
-            }
-        } catch (_: Exception) {}
-    }
-
-    private fun encodeApiRequest(id: String, method: String, path: String, body: ByteArray): ByteArray {
-        return buildProto {
-            writeString(1, id)
-            writeString(2, method)
-            writeString(3, path)
-            if (body.isNotEmpty()) writeBytes(4, body)
-        }
-    }
-
-    private fun decodeApiResponse(data: ByteArray): ApiResponse {
-        val reader = ProtoReader(data)
-        var id = ""
-        var status = 0
-        var body = ByteArray(0)
-        var error = ""
-        while (!reader.done()) {
-            val tag = reader.readTag()
-            when (tag.field) {
-                1 -> id = reader.readString(tag.wire)
-                2 -> status = reader.readInt32(tag.wire)
-                3 -> body = reader.readBytes(tag.wire)
-                4 -> error = reader.readString(tag.wire)
-                else -> reader.skip(tag.wire)
-            }
-        }
-        return ApiResponse(id, status, body, error)
-    }
-
-    private fun encodeApiRequestBody(path: String, body: String?): ByteArray {
-        if (body.isNullOrBlank()) return ByteArray(0)
-        val json = JSONObject(body)
-        return when (path) {
-            "/files/upload/init" -> buildProto {
-                writeString(1, json.optString("path"))
-                writeInt64(2, json.optLong("size", 0L))
-                writeString(3, json.optString("resume_id"))
-            }
-            "/files/upload/complete" -> buildProto {
-                writeString(1, json.optString("transfer_id"))
-            }
-            "/files/download/init" -> buildProto {
-                writeString(1, json.optString("path"))
-                writeInt64(2, json.optLong("offset", 0L))
-                writeInt64(3, json.optLong("length", 0L))
-                writeString(4, json.optString("transfer_id"))
-            }
-            else -> body.toByteArray(StandardCharsets.UTF_8)
-        }
-    }
-
-    private fun apiResponseJson(response: ApiResponse, path: String): JSONObject {
-        val body = if (response.status >= 400) {
-            JSONObject().put("error", response.error.ifBlank { "api request failed: ${response.status}" })
-        } else {
-            decodeApiResponseBody(path, response.body)
-        }
-        return JSONObject()
-            .put("id", response.id)
-            .put("status", response.status)
-            .put("body", body)
-    }
-
-    private fun decodeApiResponseBody(path: String, data: ByteArray): JSONObject {
-        if (data.isEmpty()) return JSONObject()
-        val reader = ProtoReader(data)
-        return when (path) {
-            "/status" -> decodeStatusResponse(reader)
-            "/files/upload/init" -> decodeFileUploadInitResponse(reader)
-            "/files/upload/complete" -> decodeFilePathResponse(reader)
-            "/files/download/init" -> decodeFileDownloadInitResponse(reader)
-            else -> JSONObject()
-        }
-    }
-
-    private fun decodeStatusResponse(reader: ProtoReader): JSONObject {
-        val out = JSONObject()
-        while (!reader.done()) {
-            val tag = reader.readTag()
-            when (tag.field) {
-                1 -> out.put("ok", reader.readBool(tag.wire))
-                else -> reader.skip(tag.wire)
-            }
-        }
-        return out
-    }
-
-    private fun decodeFileUploadInitResponse(reader: ProtoReader): JSONObject {
-        val out = JSONObject()
-        while (!reader.done()) {
-            val tag = reader.readTag()
-            when (tag.field) {
-                1 -> out.put("transfer_id", reader.readString(tag.wire))
-                2 -> out.put("chunk_size", reader.readInt32(tag.wire))
-                3 -> out.put("uploaded_offset", reader.readInt64(tag.wire))
-                else -> reader.skip(tag.wire)
-            }
-        }
-        return out
-    }
-
-    private fun decodeFilePathResponse(reader: ProtoReader): JSONObject {
-        val out = JSONObject()
-        while (!reader.done()) {
-            val tag = reader.readTag()
-            when (tag.field) {
-                1 -> out.put("path", reader.readString(tag.wire))
-                else -> reader.skip(tag.wire)
-            }
-        }
-        return out
-    }
-
-    private fun decodeFileDownloadInitResponse(reader: ProtoReader): JSONObject {
-        val out = JSONObject()
-        while (!reader.done()) {
-            val tag = reader.readTag()
-            when (tag.field) {
-                1 -> out.put("transfer_id", reader.readString(tag.wire))
-                2 -> out.put("name", reader.readString(tag.wire))
-                3 -> out.put("size", reader.readInt64(tag.wire))
-                4 -> out.put("chunk_size", reader.readInt32(tag.wire))
-                5 -> out.put("offset", reader.readInt64(tag.wire))
-                6 -> out.put("length", reader.readInt64(tag.wire))
-                else -> reader.skip(tag.wire)
-            }
-        }
-        return out
-    }
-
-    private fun concatByteArrays(chunks: List<ByteArray>): ByteArray {
-        val total = chunks.sumOf { it.size }
-        val out = ByteArray(total)
-        var offset = 0
-        for (chunk in chunks) {
-            System.arraycopy(chunk, 0, out, offset, chunk.size)
-            offset += chunk.size
-        }
-        return out
-    }
-
-    private fun buildProto(block: ProtoWriter.() -> Unit): ByteArray {
-        val writer = ProtoWriter()
-        writer.block()
-        return writer.toByteArray()
-    }
-
-    private class ProtoWriter {
-        private val out = ArrayList<Byte>()
-
-        fun writeString(field: Int, value: String) {
-            if (value.isEmpty()) return
-            writeBytes(field, value.toByteArray(StandardCharsets.UTF_8))
-        }
-
-        fun writeBytes(field: Int, value: ByteArray) {
-            writeTag(field, 2)
-            writeVarint(value.size.toLong())
-            for (byte in value) out.add(byte)
-        }
-
-        fun writeInt64(field: Int, value: Long) {
-            if (value == 0L) return
-            writeTag(field, 0)
-            writeVarint(value)
-        }
-
-        fun toByteArray(): ByteArray {
-            return ByteArray(out.size) { index -> out[index] }
-        }
-
-        private fun writeTag(field: Int, wire: Int) {
-            writeVarint(((field shl 3) or wire).toLong())
-        }
-
-        private fun writeVarint(input: Long) {
-            var value = input
-            while ((value and 0x7FL.inv()) != 0L) {
-                out.add((((value and 0x7F) or 0x80).toInt()).toByte())
-                value = value ushr 7
-            }
-            out.add(value.toByte())
-        }
-    }
-
-    private class ProtoReader(private val data: ByteArray) {
-        private var offset = 0
-
-        data class Tag(val field: Int, val wire: Int)
-
-        fun done(): Boolean = offset >= data.size
-
-        fun readTag(): Tag {
-            val tag = readVarint().toInt()
-            return Tag(tag ushr 3, tag and 0x07)
-        }
-
-        fun readString(wire: Int): String = String(readBytes(wire), StandardCharsets.UTF_8)
-
-        fun readBytes(wire: Int): ByteArray {
-            requireWire(wire, 2)
-            val length = readVarint().toInt()
-            if (length < 0 || offset + length > data.size) throw IllegalArgumentException("protobuf length out of bounds")
-            val out = data.copyOfRange(offset, offset + length)
-            offset += length
-            return out
-        }
-
-        fun readInt32(wire: Int): Int {
-            requireWire(wire, 0)
-            return readVarint().toInt()
-        }
-
-        fun readInt64(wire: Int): Long {
-            requireWire(wire, 0)
-            return readVarint()
-        }
-
-        fun readBool(wire: Int): Boolean {
-            requireWire(wire, 0)
-            return readVarint() != 0L
-        }
-
-        fun skip(wire: Int) {
-            when (wire) {
-                0 -> readVarint()
-                1 -> {
-                    offset += 8
-                    checkBounds()
-                }
-                2 -> {
-                    val length = readVarint().toInt()
-                    offset += length
-                    checkBounds()
-                }
-                5 -> {
-                    offset += 4
-                    checkBounds()
-                }
-                else -> throw IllegalArgumentException("unsupported protobuf wire type $wire")
-            }
-        }
-
-        private fun readVarint(): Long {
-            var shift = 0
-            var result = 0L
-            while (true) {
-                if (offset >= data.size) throw IllegalArgumentException("unexpected EOF in protobuf varint")
-                val byte = data[offset++].toInt() and 0xFF
-                result = result or ((byte and 0x7F).toLong() shl shift)
-                if ((byte and 0x80) == 0) return result
-                shift += 7
-                if (shift > 70) throw IllegalArgumentException("protobuf varint too long")
-            }
-        }
-
-        private fun requireWire(actual: Int, expected: Int) {
-            if (actual != expected) throw IllegalArgumentException("protobuf wire type $actual != $expected")
-        }
-
-        private fun checkBounds() {
-            if (offset < 0 || offset > data.size) throw IllegalArgumentException("protobuf skip out of bounds")
-        }
-    }
-
-    private fun setupEventsChannel(dc: DataChannel) {
-        dc.registerObserver(object : DataChannel.Observer {
-            override fun onBufferedAmountChange(l: Long) {}
-            override fun onStateChange() {
-                Log.i(TAG, "events state: ${dc.state()} [$machineId]")
-                if (dc.state() == DataChannel.State.OPEN) {
-                    while (true) {
-                        val data = pendingEventsData.poll() ?: break
-                        dc.send(DataChannel.Buffer(ByteBuffer.wrap(data), false))
-                    }
-                }
-            }
-            override fun onMessage(buffer: DataChannel.Buffer) {
-                val data = ByteArray(buffer.data.remaining())
-                buffer.data.get(data)
-                noteChannelFrame("events", "rx", data.size, dc.bufferedAmount())
-                val chId = getEventsChannelId()
-                if (chId >= 0) bridge?.sendDataFrame(chId, data)
-            }
-        })
-    }
-
-    private fun setupTerminalChannel(dc: DataChannel, terminalId: String) {
-        dc.registerObserver(object : DataChannel.Observer {
-            override fun onBufferedAmountChange(l: Long) {}
-            override fun onStateChange() {
-                Log.i(TAG, "terminal[$terminalId] state: ${dc.state()} [$machineId]")
-                when (dc.state()) {
-                    DataChannel.State.OPEN -> {
-                        val label = terminalLabel(terminalId)
-                        val chId = bridge?.getChannelId(label) ?: -1
-                        if (chId >= 0) bridge?.sendChanOpened(chId, label)
-                    }
-                    DataChannel.State.CLOSED -> {
-                        if (terminalChannels.remove(terminalId, dc)) {
-                            val label = terminalLabel(terminalId)
-                            val chId = bridge?.getChannelId(label) ?: -1
-                            if (chId >= 0) bridge?.sendCloseChannel(chId)
-                        }
-                    }
-                    else -> {}
-                }
-            }
-            override fun onMessage(buffer: DataChannel.Buffer) {
-                val data = ByteArray(buffer.data.remaining())
-                buffer.data.get(data)
-                noteChannelFrame("terminal:$terminalId", "rx", data.size, dc.bufferedAmount())
-                if (bridge?.hasClients() == true) {
-                    val chId = bridge.getChannelId(terminalLabel(terminalId))
-                    if (chId >= 0) bridge.sendDataFrame(chId, data)
-                }
-            }
-        })
-    }
-
-    private fun notifyTerminalChannelError(terminalId: String, message: String) {
-        val label = terminalLabel(terminalId)
-        val chId = bridge?.getChannelId(label) ?: -1
-        if (chId >= 0) bridge?.sendChanError(chId, message)
-    }
-
-    private fun setupFileChannel(dc: DataChannel, transferId: String) {
-        dc.registerObserver(object : DataChannel.Observer {
-            override fun onBufferedAmountChange(previousAmount: Long) {
-                fileTransferManager?.onBufferedAmountChange(transferId, dc.bufferedAmount())
-            }
-            override fun onStateChange() {
-                Log.i(TAG, "file[$transferId] state: ${dc.state()} [$machineId]")
-                when (dc.state()) {
-                    DataChannel.State.OPEN -> {
-                        fileTransferManager?.onChannelOpen(transferId)
-                        val label = fileLabel(transferId)
-                        val chId = bridge?.getChannelId(label) ?: -1
-                        if (chId >= 0) bridge?.sendChanOpened(chId, label)
-                    }
-                    DataChannel.State.CLOSED -> {
-                        fileChannels.remove(transferId)
-                        val label = fileLabel(transferId)
-                        val chId = bridge?.getChannelId(label) ?: -1
-                        if (chId >= 0) bridge?.sendCloseChannel(chId)
-                    }
-                    else -> {}
-                }
-            }
-            override fun onMessage(buffer: DataChannel.Buffer) {
-                val data = ByteArray(buffer.data.remaining())
-                buffer.data.get(data)
-                noteChannelFrame("file:$transferId", "rx", data.size, dc.bufferedAmount())
-                // Native transfer manager takes priority for downloads it owns
-                if (fileTransferManager?.isHandling(transferId) == true) {
-                    fileTransferManager?.onFileData(transferId, data)
+                if (!buffer.binary) {
+                    failProtocol(IllegalStateException("termx protocol requires binary DataChannel messages"))
                     return
                 }
-                if (bridge?.hasClients() == true) {
-                    val chId = bridge.getChannelId(fileLabel(transferId))
-                    if (chId >= 0) bridge.sendDataFrame(chId, data)
+                val data = ByteArray(buffer.data.remaining())
+                buffer.data.get(data)
+                if (protocolState == ProtocolState.AUTHORIZING) {
+                    if (!authorizationMessages.offer(data)) {
+                        failProtocol(IllegalStateException("authorization message queue overflow"))
+                    }
+                    return
                 }
+                if (protocolState == ProtocolState.FAILED) return
+                handleProtocolMessage(data)
             }
         })
     }
 
-    private fun noteChannelFrame(label: String, direction: String, bytes: Int, bufferedAmount: Long) {
-        val stats = channelStats.getOrPut(label) { ChannelStats() }
-        val now = System.currentTimeMillis()
-        synchronized(stats) {
-            if (direction == "rx") {
-                stats.rxFrames += 1
-                stats.rxBytes += bytes.toLong()
-            } else {
-                stats.txFrames += 1
-                stats.txBytes += bytes.toLong()
+    private fun handleProtocolMessage(frameBytes: ByteArray) {
+        if (protocolState == ProtocolState.WAITING_HELLO) {
+            try {
+                validateTermxProtocolHelloFrame(frameBytes, PROTOCOL_VERSION)
+                protocolState = ProtocolState.READY
+            } catch (failure: Exception) {
+                failProtocol(failure)
+            } finally {
+                helloLatch.countDown()
             }
-            if (bytes >= LARGE_PAYLOAD_BYTES) {
-                Log.w(TAG, "large datachannel payload direction=$direction label=$label bytes=$bytes buffered=$bufferedAmount [$machineId]")
-            }
-            if (now - stats.lastLogAt < STATS_INTERVAL_MS) return
-            val elapsed = ((now - stats.lastLogAt).coerceAtLeast(1)).toDouble() / 1000.0
-            val intervalRx = stats.rxBytes - stats.lastRxBytes
-            val intervalTx = stats.txBytes - stats.lastTxBytes
-            Log.i(TAG, "datachannel stats label=$label rxFrames=${stats.rxFrames} rxBytes=${stats.rxBytes} txFrames=${stats.txFrames} txBytes=${stats.txBytes} rxBps=${(intervalRx / elapsed).toLong()} txBps=${(intervalTx / elapsed).toLong()} buffered=$bufferedAmount [$machineId]")
-            stats.lastLogAt = now
-            stats.lastRxBytes = stats.rxBytes
-            stats.lastTxBytes = stats.txBytes
+            return
         }
+        if (protocolState != ProtocolState.READY) return
+        val frame = try {
+            decodeTermxProtocolFrame(frameBytes)
+        } catch (failure: Exception) {
+            failProtocol(failure)
+            return
+        }
+        if (frame.channel == 0 && frame.type == FRAME_HELLO) {
+            failProtocol(IllegalStateException("daemon sent a duplicate termx protocol Hello"))
+            return
+        }
+        if (frame.channel == 0 && (frame.type == FRAME_RESPONSE || frame.type == FRAME_RESPONSE_BINARY)) {
+            runCatching {
+                val response = Terminal.ResponseEnvelope.parseFrom(frame.payload)
+                pendingNativeRequests.remove(response.id)?.let { pending ->
+                    try {
+                        val result = Terminal.ListResult.parseFrom(response.result)
+                        if (response.unknownFields.asMap().isNotEmpty() || result.unknownFields.asMap().isNotEmpty()) {
+                            throw IllegalStateException("termx protocol list response contains unknown fields")
+                        }
+                    } catch (failure: Exception) {
+                        pending.error = failure
+                        throw failure
+                    } finally {
+                        pending.latch.countDown()
+                    }
+                }
+            }.onFailure { failProtocol(it as? Exception ?: IllegalStateException(it.message)) }
+        } else if (frame.channel == 0 && frame.type == FRAME_ERROR) {
+            runCatching {
+                val response = Terminal.ErrorEnvelope.parseFrom(frame.payload)
+                if (response.unknownFields.asMap().isNotEmpty() || response.error.unknownFields.asMap().isNotEmpty()) {
+                    throw IllegalStateException("termx protocol error response contains unknown fields")
+                }
+                pendingNativeRequests.remove(response.id)?.let { pending ->
+                    pending.error = IllegalStateException(response.error.message.ifBlank { "termx protocol request failed" })
+                    pending.latch.countDown()
+                }
+            }.onFailure { failProtocol(it as? Exception ?: IllegalStateException(it.message)) }
+        }
+        if (protocolState == ProtocolState.READY) {
+            val channelId = bridge?.getChannelId(protocolLabel) ?: -1
+            if (channelId >= 0) bridge?.sendDataFrame(channelId, frameBytes)
+        }
+    }
+
+    private fun sendProtocolFrame(channel: Int, type: Int, payload: ByteArray): Boolean {
+        if (channel !in 0..0xffff || payload.size > MAX_FRAME_SIZE) return false
+        val frame = ByteBuffer.allocate(7 + payload.size)
+            .putShort(channel.toShort())
+            .put(type.toByte())
+            .putInt(payload.size)
+            .put(payload)
+            .array()
+        return sendDataChannelMessage(frame)
+    }
+
+    private fun sendDataChannelMessage(data: ByteArray): Boolean {
+        val channel = protocolChannel ?: return false
+        if (channel.state() != DataChannel.State.OPEN) return false
+        return channel.send(DataChannel.Buffer(ByteBuffer.wrap(data), true))
+    }
+
+    private fun failProtocol(failure: Exception, closeChannel: Boolean = true) {
+        protocolFailure = failure
+        protocolState = ProtocolState.FAILED
+        helloLatch.countDown()
+        authorizationMessages.clear()
+        for (pending in pendingNativeRequests.values) {
+            pending.error = failure
+            pending.latch.countDown()
+        }
+        pendingNativeRequests.clear()
+        if (closeChannel) protocolChannel?.let { runCatching { it.close() } }
+    }
+
+    private enum class ProtocolState { AUTHORIZING, WAITING_HELLO, READY, FAILED }
+}
+
+private const val TERMX_PROTOCOL_FRAME_HEADER_SIZE = 7
+private const val TERMX_PROTOCOL_MAX_FRAME_SIZE = 4 shl 20
+private const val TERMX_PROTOCOL_HELLO_FRAME = 0x00
+
+/** DecodedTermxProtocolFrame 是 Android transport 对公开 wire frame header 的严格投影。 */
+internal data class DecodedTermxProtocolFrame(val channel: Int, val type: Int, val payload: ByteArray)
+
+/** decodeTermxProtocolFrame 严格校验完整 DataChannel message；尾随或截断 bytes 都是当前 endpoint 的协议失败。 */
+internal fun decodeTermxProtocolFrame(frame: ByteArray): DecodedTermxProtocolFrame {
+    if (frame.size < TERMX_PROTOCOL_FRAME_HEADER_SIZE) throw IllegalArgumentException("termx protocol frame is too short")
+    val buffer = ByteBuffer.wrap(frame)
+    val channel = buffer.short.toInt() and 0xffff
+    val type = buffer.get().toInt() and 0xff
+    val length = buffer.int
+    if (length < 0 || length > TERMX_PROTOCOL_MAX_FRAME_SIZE || length != buffer.remaining()) {
+        throw IllegalArgumentException("termx protocol frame length is invalid")
+    }
+    return DecodedTermxProtocolFrame(channel, type, ByteArray(length).also(buffer::get))
+}
+
+/** validateTermxProtocolHelloFrame 固定 auth 后只接受 control channel 上无未知字段的目标版本 Hello。 */
+internal fun validateTermxProtocolHelloFrame(frameBytes: ByteArray, expectedVersion: Int) {
+    val frame = decodeTermxProtocolFrame(frameBytes)
+    if (frame.channel != 0 || frame.type != TERMX_PROTOCOL_HELLO_FRAME) {
+        throw IllegalStateException("daemon did not answer with termx protocol Hello")
+    }
+    val hello = Terminal.Hello.parseFrom(frame.payload)
+    if (hello.version != expectedVersion || hello.unknownFields.asMap().isNotEmpty()) {
+        throw IllegalStateException("unsupported termx protocol Hello")
     }
 }

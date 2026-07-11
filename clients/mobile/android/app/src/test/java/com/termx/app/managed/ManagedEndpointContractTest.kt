@@ -8,6 +8,24 @@ import org.junit.Test
 import java.lang.reflect.Modifier
 
 class ManagedEndpointContractTest {
+    @Test
+    fun classifiesOnlyNonRetryableAuthenticationFailures() {
+        listOf(
+            "login_required",
+            "device_enrollment_required",
+            "unauthenticated",
+            "capability_invalid",
+            "capability_expired",
+            "device_identity_mismatch",
+            "scope_invalid",
+            "replayed",
+        ).forEach { code ->
+            assertTrue("expected $code to stop automatic reconnect", isNonRetryableManagedAuthenticationFailure(code))
+        }
+        assertFalse(isNonRetryableManagedAuthenticationFailure("route_unavailable"))
+        assertFalse(isNonRetryableManagedAuthenticationFailure("temporary"))
+    }
+
     private data class Fixture(
         val schema_version: Int,
         val transport: String,

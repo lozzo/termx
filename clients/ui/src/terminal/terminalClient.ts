@@ -3,6 +3,11 @@ import type { ConnectionInfo } from '../core/transport'
 import type { ConnectionMessage } from '../connection/connectionMessageReducer'
 import { logTerminalDiagnostic } from './terminalDiagnostics'
 
+/**
+ * TerminalSnapshotPayload 是客户端消费 owning daemon 权威屏幕的只读投影。
+ * `refreshReason` 只描述本次客户端拉取链路，不能作为 terminal lifecycle、history 或屏幕内容真值；
+ * `live_invalidated` 表示 daemon 已先发布更高 revision，渲染层必须用该快照替换旧画面。
+ */
 export interface TerminalSnapshotPayload {
   text: string
   cols: number
@@ -13,6 +18,7 @@ export interface TerminalSnapshotPayload {
   raw?: unknown
   scrollbackRows?: unknown[]
   alternateScreen?: boolean
+  refreshReason?: 'open' | 'live_invalidated' | 'sync_lost' | 'manual_sync_lost'
   recovery?: {
     revision: number
     reason: string
@@ -171,7 +177,6 @@ export class TerminalClient {
       details: {
         sent,
         chars: data.length,
-        preview: previewText(data),
         size,
       },
     })
@@ -422,7 +427,7 @@ function errorMessage(err: unknown): string {
 function protocolEventDetails(event: TerminalProtocolEvent): Record<string, unknown> {
   switch (event.type) {
     case 'output':
-      return { type: event.type, bytes: event.data.byteLength, preview: previewBytes(event.data) }
+      return { type: event.type, bytes: event.data.byteLength }
     case 'snapshot':
       return {
         type: event.type,
@@ -441,12 +446,4 @@ function protocolEventDetails(event: TerminalProtocolEvent): Record<string, unkn
     case 'closed':
       return { type: event.type, reason: event.reason }
   }
-}
-
-function previewBytes(data: Uint8Array): string {
-  return previewText(new TextDecoder().decode(data.slice(0, 160)))
-}
-
-function previewText(text: string): string {
-  return text.replace(/\x1b/g, '\\u001b').slice(0, 160)
 }

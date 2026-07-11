@@ -46,11 +46,6 @@ class BridgeServer(port: Int, authToken: String) : WebSocketServer(InetSocketAdd
         const val FRAME_SYNC_RESPONSE: Byte = 0x23
 
         const val CHAN_CONTROL = 0x0000
-        const val CHAN_API = 0x0001
-        const val CHAN_EVENTS = 0x0002
-        const val CHAN_TERMINAL_BASE = 0x0100
-        const val CHAN_FILE_BASE = 0x0200
-
         const val HEADER_SIZE = 7
         private const val STATS_INTERVAL_MS = 1000L
         private const val LARGE_PAYLOAD_BYTES = 64 * 1024
@@ -59,7 +54,7 @@ class BridgeServer(port: Int, authToken: String) : WebSocketServer(InetSocketAdd
         private const val TERMINAL_DROP_LOG_BYTES = 1024 * 1024
         private const val TERMINAL_DROP_FLUSH_DELAY_MS = 250L
         private const val TERMX_HEADER_SIZE = 7
-        private const val TERMX_TYPE_OUTPUT = 0x10
+        private const val TERMX_TYPE_SCREEN_UPDATE = 0x14
         private const val TERMX_TYPE_SYNC_LOST = 0x16
     }
 
@@ -88,9 +83,7 @@ class BridgeServer(port: Int, authToken: String) : WebSocketServer(InetSocketAdd
     private val terminalDropLastLoggedBytes = ConcurrentHashMap<Int, Long>()
     private val terminalStreamChannels = ConcurrentHashMap<Int, Int>()
     private val terminalDropFlushScheduled = ConcurrentHashMap.newKeySet<Int>()
-    private var nextDynamicChannelId = 0x0010
-    private var nextTerminalChannelId = CHAN_TERMINAL_BASE
-    private var nextFileChannelId = CHAN_FILE_BASE
+    private var nextProtocolChannelId = 0x0010
 
     var frameListener: FrameListener? = null
     var onClientConnectedCallback: Runnable? = null
@@ -224,20 +217,19 @@ class BridgeServer(port: Int, authToken: String) : WebSocketServer(InetSocketAdd
     }
 
     private fun handleOpenChannel(requestedChannelId: Int, label: String) {
-        val channelId = when {
-            label.startsWith("api:") || label.startsWith("events:") ->
-                labelToChannel[label] ?: nextDynamicChannelId++
-            label.startsWith("terminal:") -> labelToChannel[label] ?: nextTerminalChannelId++
-            label.startsWith("file:") -> labelToChannel[label] ?: nextFileChannelId++
-            label == "api" -> CHAN_API
-            label == "events" -> CHAN_EVENTS
-            else -> {
-                Log.w(TAG, "Unknown channel label: $label")
-                sendToClient(buildFrame(FRAME_CHAN_ERROR, requestedChannelId,
-                    "unknown label".toByteArray(StandardCharsets.UTF_8)))
-                return
-            }
+        if (protocolBridgeEndpoint(label) == null) {
+            Log.w(TAG, "Unknown channel label: $label")
+            sendToClient(buildFrame(FRAME_CHAN_ERROR, requestedChannelId,
+                "unknown label".toByteArray(StandardCharsets.UTF_8)))
+            return
         }
+        val existing = labelToChannel[label]
+        val channelId = existing ?: nextProtocolChannelId.takeIf { it <= 0xffff } ?: run {
+            sendToClient(buildFrame(FRAME_CHAN_ERROR, requestedChannelId,
+                "channel id exhausted".toByteArray(StandardCharsets.UTF_8)))
+            return
+        }
+        if (existing == null) nextProtocolChannelId += 1
         channelLabels[channelId] = label
         labelToChannel[label] = channelId
         Log.i(TAG, "open channel requested label=$label assigned=$channelId requested=$requestedChannelId")
@@ -257,16 +249,16 @@ class BridgeServer(port: Int, authToken: String) : WebSocketServer(InetSocketAdd
         val label = channelLabels[channelId] ?: "chan:$channelId"
         observeTerminalStreamChannel(channelId, label, payload)
         val client = activeClient
-        val pending = if (client != null && client.isOpen && isTerminalLabel(label)) {
+        val pending = if (client != null && client.isOpen && isProtocolLabel(label)) {
             pendingBridgeOutput(client)
         } else {
             null
         }
-        if (client != null && client.isOpen && isTerminalLabel(label) && isTermxOutputFrame(payload) && pending != null && isBridgeBackpressured(pending)) {
+        if (client != null && client.isOpen && isProtocolLabel(label) && isTermxScreenUpdateFrame(payload) && pending != null && isBridgeBackpressured(pending)) {
             recordTerminalDrop(channelId, label, payload, pending)
             return
         }
-        if (isTerminalLabel(label) && (pending == null || !isBridgeBackpressured(pending))) {
+        if (isProtocolLabel(label) && (pending == null || !isBridgeBackpressured(pending))) {
             flushTerminalSyncLost(channelId, label)
         }
         noteFrame("tx", label, channelId, payload.size)
@@ -348,7 +340,7 @@ class BridgeServer(port: Int, authToken: String) : WebSocketServer(InetSocketAdd
     }
 
     private fun observeTerminalStreamChannel(channelId: Int, label: String, payload: ByteArray) {
-        if (!isTerminalLabel(label)) return
+        if (!isProtocolLabel(label)) return
         val streamChannel = termxStreamChannel(payload)
         if (streamChannel > 0) {
             terminalStreamChannels[channelId] = streamChannel
@@ -390,7 +382,7 @@ class BridgeServer(port: Int, authToken: String) : WebSocketServer(InetSocketAdd
             terminalDropFlushScheduled.remove(channelId)
             if (!terminalDroppedBytes.containsKey(channelId)) return@postDelayed
             val currentLabel = channelLabels[channelId] ?: label
-            if (!isTerminalLabel(currentLabel)) {
+            if (!isProtocolLabel(currentLabel)) {
                 removeTerminalDropState(channelId)
                 return@postDelayed
             }
@@ -436,11 +428,11 @@ class BridgeServer(port: Int, authToken: String) : WebSocketServer(InetSocketAdd
         terminalDropFlushScheduled.clear()
     }
 
-    private fun isTerminalLabel(label: String): Boolean =
-        label.startsWith("terminal:")
+    private fun isProtocolLabel(label: String): Boolean =
+        protocolBridgeEndpoint(label) != null
 
-    private fun isTermxOutputFrame(payload: ByteArray): Boolean =
-        payload.size >= TERMX_HEADER_SIZE && (payload[2].toInt() and 0xff) == TERMX_TYPE_OUTPUT
+    private fun isTermxScreenUpdateFrame(payload: ByteArray): Boolean =
+        payload.size >= TERMX_HEADER_SIZE && (payload[2].toInt() and 0xff) == TERMX_TYPE_SCREEN_UPDATE
 
     private fun termxStreamChannel(payload: ByteArray): Int {
         if (payload.size < TERMX_HEADER_SIZE) return 0
@@ -500,17 +492,12 @@ class BridgeServer(port: Int, authToken: String) : WebSocketServer(InetSocketAdd
         channelLabels.clear()
         labelToChannel.clear()
         clearTerminalDropState()
-        nextDynamicChannelId = 0x0010
-        nextTerminalChannelId = CHAN_TERMINAL_BASE
-        nextFileChannelId = CHAN_FILE_BASE
+        nextProtocolChannelId = 0x0010
     }
 
     fun resetChannelsForMachine(machineId: String) {
         val toRemove = channelLabels.entries.filter { (_, label) ->
-            label == "api:$machineId" ||
-                label == "events:$machineId" ||
-                label.startsWith("terminal:$machineId:") ||
-                label.startsWith("file:$machineId:")
+            protocolBridgeEndpoint(label) == machineId
         }
         for ((id, label) in toRemove) {
             sendCloseChannel(id)
@@ -521,4 +508,12 @@ class BridgeServer(port: Int, authToken: String) : WebSocketServer(InetSocketAdd
     }
 
     fun hasClients(): Boolean = activeClient?.isOpen == true
+}
+
+/** protocolBridgeEndpoint 严格解析 WebView 到 native 的唯一业务 bridge label，不接受旧 api/events/terminal/file 路径。 */
+internal fun protocolBridgeEndpoint(label: String): String? {
+    if (!label.startsWith("protocol:") || label != label.trim()) return null
+    val endpointId = label.removePrefix("protocol:")
+    if (endpointId.isEmpty() || endpointId.length > 256 || endpointId.any(Char::isWhitespace)) return null
+    return endpointId
 }

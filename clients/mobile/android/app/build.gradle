@@ -1,5 +1,6 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
+apply plugin: 'com.google.protobuf'
 android {
     namespace = "com.termx.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,8 +17,12 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    buildFeatures {
+        buildConfig true
+    }
     sourceSets {
         test.resources.srcDir '../../../../shared/cloudcompanion/testdata'
+        main.proto.srcDirs '../../../../proto/cloudpb', '../../../../proto/remoteauthpb', '../../../../proto/wirepb'
     }
     if (project.hasProperty("termxArmOnly")) {
         splits {
@@ -50,6 +55,8 @@ dependencies {
     implementation 'io.github.webrtc-sdk:android:125.6422.07'
     implementation 'org.java-websocket:Java-WebSocket:1.5.6'
     implementation 'com.google.code.gson:gson:2.10'
+    implementation 'com.google.protobuf:protobuf-java:3.25.5'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.79'
     implementation 'androidx.lifecycle:lifecycle-process:2.7.0'
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
     implementation fileTree(include: ['*.jar'], dir: 'libs')
@@ -58,9 +65,23 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
+    testImplementation 'org.json:json:20240303'
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+}
+
+protobuf {
+    protoc {
+        artifact = 'com.google.protobuf:protoc:3.25.5'
+    }
+    generateProtoTasks {
+        all().configureEach { task ->
+            task.builtins {
+                java {}
+            }
+        }
+    }
 }
 
 apply from: 'capacitor.build.gradle'

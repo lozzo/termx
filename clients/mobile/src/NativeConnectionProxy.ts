@@ -20,8 +20,10 @@ import type {
   RtcEvent,
   RtcJsonRpcChannel,
   RtcSubscription,
+  TermxProtocolMultiplexer,
 } from '@termx/ui'
 import {
+  createTermxProtocolMultiplexer,
   decodeRuntimeAPIResponse,
   decodeRuntimeEventEnvelope,
   decodeRuntimeResponseBody,
@@ -742,6 +744,8 @@ export class NativeRtcSession implements ManagedRtcSession {
   private eventsCloseCleanup: (() => void) | null = null
   private apiChannelPromise: Promise<SharedApiChannel> | null = null
   private apiChannel: SharedApiChannel | null = null
+  private protocolMuxPromise: Promise<TermxProtocolMultiplexer> | null = null
+  private protocolMux: TermxProtocolMultiplexer | null = null
 
   // transfer sync subscribers
   private connectionStateHandlers = new Set<(snapshot: RtcConnectionStateSnapshot) => void>()
@@ -788,6 +792,7 @@ export class NativeRtcSession implements ManagedRtcSession {
         this.ensureEventsChannel()
       } else if (snapshot.phase === 'reconnecting' || snapshot.phase === 'waiting_network' || snapshot.phase === 'failed') {
         this.resetEventsChannel()
+        this.resetProtocolMux(snapshot.failReason ?? snapshot.statusText ?? 'managed transport reconnecting')
       }
       if (snapshot.phase === 'connected') {
         this.resolveConnectedWaiters()
@@ -811,6 +816,7 @@ export class NativeRtcSession implements ManagedRtcSession {
     this.apiChannel?.forceClose(new Error('native bridge disconnected'))
     this.apiChannel = null
     this.apiChannelPromise = null
+    this.resetProtocolMux('native bridge disconnected')
     this.emitSyntheticConnectionState('reconnecting', 'Reconnecting native bridge...')
   }
 
@@ -838,6 +844,7 @@ export class NativeRtcSession implements ManagedRtcSession {
     this.apiChannel?.forceClose(error)
     this.apiChannel = null
     this.apiChannelPromise = null
+    this.resetProtocolMux(error.message)
     this.connectionStateHandlers.clear()
     this.transferSyncHandlers.clear()
     this.syncResponseHandlers.clear()
@@ -929,13 +936,11 @@ export class NativeRtcSession implements ManagedRtcSession {
   }
 
   async openTerminal(terminalId: string): Promise<RtcBinaryChannel> {
-    const label = `terminal:${this.machineId}:${terminalId}`
-    await this.openChannel(label)
-    return this.makeBinaryChannel(label)
+    return (await this.getProtocolMux()).openTerminalChannel(terminalId)
   }
 
   closeTerminalDataChannel(terminalId: string): void {
-    this.bridge.closeChannel(`terminal:${this.machineId}:${terminalId}`)
+    void terminalId
   }
 
   async openApi(): Promise<RtcJsonRpcChannel> {
@@ -952,149 +957,31 @@ export class NativeRtcSession implements ManagedRtcSession {
   }
 
   private async createApiChannel(): Promise<SharedApiChannel> {
-    const label = `api:${this.machineId}`
-    await this.openChannel(label)
-    const binaryChannel = this.makeBinaryChannel(label)
-
-    const session = this
+    const mux = await this.getProtocolMux()
     let closed = false
-    let nextId = 1
-    const pending = new Map<string, PendingApiRequest>()
     let apiChannel!: SharedApiChannel
-    let dataSubscription: RtcSubscription | null = null
-    let closeSubscription: RtcSubscription | null = null
 
     const forceClose = (error: Error) => {
       if (closed) return
       closed = true
-      for (const request of pending.values()) {
-        clearTimeout(request.timer)
-        request.reject(error)
-      }
-      pending.clear()
-      dataSubscription?.close()
-      closeSubscription?.close()
+      void error
       if (this.apiChannel === apiChannel) this.apiChannel = null
       if (this.apiChannelPromise) this.apiChannelPromise = null
     }
 
-    const rejectRequest = (id: string, error: Error) => {
-      const request = pending.get(id)
-      if (!request) return
-      pending.delete(id)
-      clearTimeout(request.timer)
-      nativeBridgeLog('api_request_reject', {
-        level: 'warn',
-        id,
-        method: request.method,
-        path: request.path,
-        elapsedMs: Math.round(bridgeNow() - request.startedAt),
-        bytes: request.bytes,
-        chunks: request.chunksSeen,
-        reason: error.message,
-      })
-      request.reject(error)
-    }
-
-    const resolveRequest = (id: string, value: unknown) => {
-      const request = pending.get(id)
-      if (!request) return
-      pending.delete(id)
-      clearTimeout(request.timer)
-      nativeBridgeLog('api_request_resolve', {
-        id,
-        method: request.method,
-        path: request.path,
-        elapsedMs: Math.round(bridgeNow() - request.startedAt),
-        bytes: request.bytes,
-        chunks: request.chunksSeen,
-        responseBytes: estimateJSONBytes(value),
-      })
-      request.resolve(value)
-    }
-
-    const handleApiChunk = (data: Uint8Array) => {
-      let chunk: { id: string; payload: Uint8Array; last: boolean }
-      try {
-        chunk = parseApiChunk(data)
-      } catch (error) {
-        rejectOldestApiRequest(pending, error instanceof Error ? error : new Error(String(error)))
-        return
-      }
-      const request = pending.get(chunk.id)
-      if (!request) return
-      request.chunks.push(chunk.payload)
-      request.bytes += chunk.payload.byteLength
-      request.chunksSeen += 1
-      if (!chunk.last) return
-      let response: ReturnType<typeof decodeRuntimeAPIResponse>
-      let body: unknown
-      try {
-        response = decodeRuntimeAPIResponse(concatChunks(request.chunks))
-        body = decodeRuntimeResponseBody(request.path, request.method, response.body)
-      } catch (error) {
-        rejectRequest(chunk.id, error instanceof Error ? error : new Error(String(error)))
-        return
-      }
-      if (response.status >= 400) {
-        rejectRequest(chunk.id, new Error(response.error || apiResponseErrorMessage(body, response.status)))
-        return
-      }
-      resolveRequest(chunk.id, body)
-    }
-
-    dataSubscription = binaryChannel.onMessage((data) => {
-      handleApiChunk(data)
-    })
-    closeSubscription = binaryChannel.onClose(() => {
-      forceClose(new Error('native api channel closed'))
-    })
-
     apiChannel = {
       request<TResponse>(method: string, params?: unknown): Promise<TResponse> {
-        if (closed || binaryChannel.readyState !== 'open') {
+        if (closed) {
           return Promise.reject(new Error('native api channel is not open'))
         }
-        const payload = normalizeApiRequest(method, params)
-        const id = `req_${nextId++}`
-        return new Promise<TResponse>((resolve, reject) => {
-          const timer = setTimeout(() => {
-            rejectRequest(id, new Error(`native api request timed out: ${payload.method} ${payload.path}`))
-          }, API_REQUEST_TIMEOUT_MS)
-          pending.set(id, {
-            chunks: [],
-            timer,
-            method: payload.method,
-            path: payload.path,
-            startedAt: bridgeNow(),
-            bytes: 0,
-            chunksSeen: 0,
-            resolve: resolve as (value: unknown) => void,
-            reject,
-          })
-          const requestBytes = encodeRuntimeAPIRequest({
-            id,
-            method: payload.method,
-            path: payload.path,
-            body: encodeRuntimeRequestBody(payload.path, payload.method, payload.body),
-          })
-          nativeBridgeLog('api_request_send', {
-            id,
-            method: payload.method,
-            path: payload.path,
-            requestBytes: requestBytes.byteLength,
-          })
-          if (!session.bridge.sendData(label, requestBytes)) {
-            rejectRequest(id, new Error('native bridge WebSocket is not open'))
-          }
-        })
+        return mux.request<TResponse>(method, params ?? {})
       },
       close() {
         // API is shared for the lifetime of the native session. Lease-level
         // close calls must not tear down the underlying runtime API channel.
       },
       isOpen() {
-        return !closed && binaryChannel.readyState === 'open'
+        return !closed
       },
       forceClose,
     }
@@ -1102,9 +989,7 @@ export class NativeRtcSession implements ManagedRtcSession {
   }
 
   async openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
-    const label = `file:${this.machineId}:${transferId}`
-    await this.openChannel(label)
-    return this.makeBinaryChannel(label)
+    throw new Error(`file transfer is unavailable on current termx protocol: ${transferId}`)
   }
 
   /** Subscribe to native file transfer progress updates. */
@@ -1142,9 +1027,8 @@ export class NativeRtcSession implements ManagedRtcSession {
   }
 
   subscribeEvents(handler: (event: RtcEvent) => void): RtcSubscription {
-    this.eventHandlers.add(handler)
-    this.ensureEventsChannel()
-    return { close: () => this.eventHandlers.delete(handler) }
+    void handler
+    return { close() {} }
   }
 
   private ensureEventsChannel(): void {
@@ -1231,9 +1115,9 @@ export class NativeRtcSession implements ManagedRtcSession {
     return {
       terminalAllowed: true,
       apiAllowed: true,
-      eventsAllowed: true,
-      fileTransferAllowed: true,
-      terminalManagementAllowed: true,
+      eventsAllowed: false,
+      fileTransferAllowed: false,
+      terminalManagementAllowed: false,
       relayInUse: this.relayInUse,
     }
   }
@@ -1241,6 +1125,30 @@ export class NativeRtcSession implements ManagedRtcSession {
   async disconnect(): Promise<void> {
     this.closeBridgeOnly()
     await NativeConnection.release({ endpointId: this.machineId })
+  }
+
+  private async getProtocolMux(): Promise<TermxProtocolMultiplexer> {
+    if (this.protocolMux) return this.protocolMux
+    if (this.protocolMuxPromise) return this.protocolMuxPromise
+    const label = `protocol:${this.machineId}`
+    this.protocolMuxPromise = this.openChannel(label).then(() => {
+      const mux = createTermxProtocolMultiplexer(this.makeBinaryChannel(label))
+      this.protocolMux = mux
+      return mux
+    }).catch((error) => {
+      this.protocolMuxPromise = null
+      throw error
+    })
+    return this.protocolMuxPromise
+  }
+
+  private resetProtocolMux(reason: string): void {
+    this.protocolMux?.close(reason)
+    this.protocolMux = null
+    this.protocolMuxPromise = null
+    this.apiChannel?.forceClose(new Error(reason))
+    this.apiChannel = null
+    this.apiChannelPromise = null
   }
 
   closeBridgeOnly(): void {
