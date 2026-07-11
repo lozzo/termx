@@ -15,8 +15,8 @@ const (
 	// EndpointTransportSSH 表示通过 SSH 访问远端 daemon。
 	// SSH host key 与认证结果不由 label 或 endpoint id 表达，必须在 transport 连接阶段处理。
 	EndpointTransportSSH EndpointTransportKind = "ssh"
-	// EndpointTransportHubP2P 是未来 hub/P2P transport 的 UI 占位。
-	// 展示层只能显示 hub 连接配置与运行时状态，真实身份校验仍由 hub transport 完成。
+	// EndpointTransportHubP2P 表示 managed WebRTC transport 的 UI 投影。
+	// 展示层只消费连接阶段和实际路径，DeviceIdentity 与 CapabilityGrant 仍由公开 remote transport 验证。
 	EndpointTransportHubP2P EndpointTransportKind = "hub-p2p"
 )
 
@@ -114,11 +114,13 @@ type EndpointItem struct {
 	Enabled           bool
 	Socket            string
 	RemoteSocket      string
-	HubURL            string
 	HubDeviceID       string
 	DeviceFingerprint string
 	GrantRef          string
 	RelayMode         string
+	// ConnectionPhase 是 managed WebRTC 当前连接阶段；local/SSH 保持空值。
+	// 它来自 endpoint runtime event，只服务 picker/manager 展示，不参与 endpoint identity 或 capability 判断。
+	ConnectionPhase cloudcompanion.EndpointPhase
 	// ObservedPath 是当前 managed WebRTC session 的 direct/single_relay/relay_mesh 投影。
 	// registry reload 不提供该值；断线或新 session 会由 endpoint runtime event 更新。
 	ObservedPath string
@@ -159,7 +161,6 @@ func EndpointItemFromConnectionConfig(cfg connection.Config) EndpointItem {
 		Enabled:           cfg.Enabled,
 		Socket:            strings.TrimSpace(cfg.Socket),
 		RemoteSocket:      strings.TrimSpace(cfg.RemoteSocket),
-		HubURL:            strings.TrimSpace(cfg.HubURL),
 		HubDeviceID:       strings.TrimSpace(cfg.HubDeviceID),
 		DeviceFingerprint: strings.TrimSpace(cfg.DeviceFingerprint),
 		GrantRef:          strings.TrimSpace(cfg.GrantRef),
@@ -182,6 +183,7 @@ func (store EndpointStore) ApplyConnectionRegistry(registry connection.Registry)
 			item.ReconnectRequired = previous.ReconnectRequired || previous.RequiresReconnect(item)
 			item.ObservedPath = previous.ObservedPath
 			item.RouteSelectionReason = previous.RouteSelectionReason
+			item.ConnectionPhase = previous.ConnectionPhase
 			item.DefaultCommand = append([]string(nil), previous.DefaultCommand...)
 			item.DefaultCWD = previous.DefaultCWD
 			item.DefaultsLoaded = previous.DefaultsLoaded
@@ -338,6 +340,24 @@ func (store EndpointStore) MarkManagedRoute(endpointID EndpointID, observedPath,
 	}
 	item.ObservedPath = observedPath
 	item.RouteSelectionReason = selectionReason
+	return store.Upsert(item)
+}
+
+// MarkConnectionPhase 更新单个 managed endpoint 的公开连接阶段。
+// 未知阶段被忽略；connected/failed 只描述最近一次 dial 结果，Status 仍由 endpoint runtime 消息独立维护。
+func (store EndpointStore) MarkConnectionPhase(endpointID EndpointID, phase cloudcompanion.EndpointPhase) EndpointStore {
+	switch phase {
+	case cloudcompanion.EndpointPhaseIdle, cloudcompanion.EndpointPhaseResolving, cloudcompanion.EndpointPhaseSignaling,
+		cloudcompanion.EndpointPhaseConnecting, cloudcompanion.EndpointPhaseAuthorizing,
+		cloudcompanion.EndpointPhaseConnected, cloudcompanion.EndpointPhaseFailed:
+	default:
+		return store
+	}
+	item, ok := store.DisplayEndpoint(endpointID)
+	if !ok || item.Transport != EndpointTransportHubP2P {
+		return store
+	}
+	item.ConnectionPhase = phase
 	return store.Upsert(item)
 }
 
@@ -510,7 +530,6 @@ func (item EndpointItem) RequiresReconnect(next EndpointItem) bool {
 		strings.TrimSpace(item.AuthRef) != strings.TrimSpace(next.AuthRef) ||
 		strings.TrimSpace(item.Socket) != strings.TrimSpace(next.Socket) ||
 		strings.TrimSpace(item.RemoteSocket) != strings.TrimSpace(next.RemoteSocket) ||
-		strings.TrimSpace(item.HubURL) != strings.TrimSpace(next.HubURL) ||
 		strings.TrimSpace(item.HubDeviceID) != strings.TrimSpace(next.HubDeviceID) ||
 		strings.TrimSpace(item.DeviceFingerprint) != strings.TrimSpace(next.DeviceFingerprint) ||
 		strings.TrimSpace(item.GrantRef) != strings.TrimSpace(next.GrantRef) ||

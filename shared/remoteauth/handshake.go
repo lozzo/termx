@@ -8,7 +8,6 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -125,7 +124,7 @@ func (handshake ServerHandshake) Accept(ctx context.Context, connection transpor
 	if connection == nil {
 		return Claims{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_PROTOCOL, "remote auth transport is nil", nil)
 	}
-	if err := validateIdentity(handshake.Identity); err != nil {
+	if err := handshake.Identity.Validate(); err != nil {
 		return Claims{}, newHandshakeError(remoteauthpb.AuthErrorCode_AUTH_ERROR_CODE_INTERNAL, "daemon DeviceIdentity is invalid", err)
 	}
 	dtlsFingerprint, err := NormalizeDTLSCertificateFingerprint(daemonDTLSFingerprint)
@@ -280,16 +279,6 @@ func receiveAuthEnvelope(ctx context.Context, connection transport.Transport) (*
 		}
 		return UnmarshalAuthEnvelope(received.frame)
 	}
-}
-
-func validateIdentity(identity Identity) error {
-	if strings.TrimSpace(identity.DeviceID) == "" || len(identity.PublicKey) != ed25519.PublicKeySize || len(identity.PrivateKey) != ed25519.PrivateKeySize {
-		return fmt.Errorf("incomplete DeviceIdentity")
-	}
-	if Fingerprint(identity.PublicKey) != identity.Fingerprint || !identity.PublicKey.Equal(identity.PrivateKey.Public()) {
-		return fmt.Errorf("DeviceIdentity key and fingerprint mismatch")
-	}
-	return nil
 }
 
 func scopeSummary(scope Scope) (*remoteauthpb.ScopeSummary, error) {

@@ -265,6 +265,7 @@ func buildTerminalPickerContent(root state.Root, shell state.ShellStore) Content
 	if poolLine, ok := terminalPoolStateLine(root.TerminalPool); ok {
 		lines = append(lines, poolLine)
 	}
+	lines = append(lines, terminalPickerManagedEndpointLines(root)...)
 	rowOffset := len(lines)
 	rows := state.TerminalPickerItems(root)
 	for _, row := range rows {
@@ -277,6 +278,18 @@ func buildTerminalPickerContent(root state.Root, shell state.ShellStore) Content
 		Cursor:     Cursor{Visible: true, Row: 0, Col: terminalPickerSearchCursorCol(query), Shape: CursorShapeBar},
 		HitRegions: terminalPickerHitRegions(rows, rowOffset),
 	}
+}
+
+func terminalPickerManagedEndpointLines(root state.Root) []Line {
+	groups := state.TerminalPickerGroups(root)
+	lines := make([]Line, 0, len(groups))
+	for _, group := range groups {
+		if group.Transport != state.EndpointTransportHubP2P {
+			continue
+		}
+		lines = append(lines, terminalPickerEndpointHeaderLine(group))
+	}
+	return lines
 }
 
 // Terminal Manager Page 是独立管理页面；renderer 只消费 reducer-owned page/list state。
@@ -1005,6 +1018,9 @@ func terminalPickerGroupedLinesAndRegions(root state.Root, rows []state.Terminal
 
 func terminalPickerEndpointHeaderLine(group state.EndpointPickerGroup) Line {
 	status := string(group.Status)
+	if group.Status == state.EndpointStatusConnecting && group.ConnectionPhase != "" {
+		status = string(group.ConnectionPhase)
+	}
 	if status == "" {
 		status = "unknown"
 	}
@@ -1266,6 +1282,9 @@ func terminalManagerDisplayRowLine(row terminalManagerDisplayRow) Line {
 
 func terminalManagerEndpointHeaderLine(group state.TerminalPoolPageGroup) Line {
 	status := string(group.Status)
+	if group.Status == state.EndpointStatusConnecting && group.ConnectionPhase != "" {
+		status = string(group.ConnectionPhase)
+	}
 	if status == "" {
 		status = "unknown"
 	}
@@ -1280,6 +1299,12 @@ func terminalManagerEndpointHeaderLine(group state.TerminalPoolPageGroup) Line {
 	}
 	if group.LastError != "" {
 		cells = append(cells, NewCell(" "), styledCell(endpointErrorLabel(group.ErrorKind, group.LastError), StyleWarning))
+	}
+	if group.ObservedPath != "" {
+		cells = append(cells, NewCell(" "), tokenCell(group.ObservedPath, StyleAccent))
+	}
+	if group.RouteSelectionReason != "" {
+		cells = append(cells, NewCell(" "), styledCell("("+group.RouteSelectionReason+")", StyleMuted))
 	}
 	return Line{Cells: cells}
 }

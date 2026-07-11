@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +54,32 @@ func TestDialRunsE2EHandshakeBeforeTermxProtocolWithoutSendingGrantToCompanion(t
 	signaling := recorded.CreateSignalingSession[0]
 	if signaling.GetEndpointId() != "lab" || signaling.GetTargetDeviceId() != "device-1" || signaling.GetOfferSdp() == "" {
 		t.Fatalf("signaling request = %+v", signaling)
+	}
+}
+
+func TestDialReportsStableManagedConnectionPhases(t *testing.T) {
+	identity, grant, now := dialIdentityFixture(t, "device-1")
+	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
+		Core: core.NewServer(), Identity: identity, Revocations: remoteauth.NewRevocations(), Now: fixedDialNow(now),
+	}}
+	phases := make([]cloudcompanion.EndpointPhase, 0, 5)
+	connection, err := Dial(context.Background(), DialOptions{
+		Companion: signalingCompanion(answerer, "device-1"), EndpointID: "lab", TargetDeviceID: "device-1",
+		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant,
+		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, Now: now,
+		Phase: func(phase cloudcompanion.EndpointPhase) { phases = append(phases, phase) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	want := []cloudcompanion.EndpointPhase{
+		cloudcompanion.EndpointPhaseResolving, cloudcompanion.EndpointPhaseSignaling,
+		cloudcompanion.EndpointPhaseConnecting, cloudcompanion.EndpointPhaseAuthorizing,
+		cloudcompanion.EndpointPhaseConnected,
+	}
+	if !slices.Equal(phases, want) {
+		t.Fatalf("managed phases = %v, want %v", phases, want)
 	}
 }
 

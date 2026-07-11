@@ -32,20 +32,20 @@
 
 | 组件 | 已存在的真实能力 | 当前阻塞 |
 | --- | --- | --- |
-| `core/` | terminal lifecycle、scoped transport、live/history 真值 | 无 cloud ownership；等待 daemon DataChannel 接入 |
-| `tui/` | 多 endpoint manager、局部失败、远程 terminal 投影 | managed dialer 没有可用的云服务和 daemon presence |
-| `remote/client` | Pion offer、ICE、DTLS fingerprint 校验、DataChannel capability handshake、protocol transport | 只在 fake/in-process harness 中闭环 |
-| `remote/daemon` 与 `remote/webrtc` | presence agent、answerer、DataChannel auth、core scoped transport adapter | 默认 `termx daemon` 没有启动这些组件 |
+| `core/` | terminal lifecycle、scoped transport、live/history 真值；desktop direct 已经由授权后的 DataChannel 接入 | single Relay 与 Android 尚未复用该真实链路 |
+| `tui/` | 多 endpoint manager、managed dial、局部失败、连接 phase、observed path 与远程 terminal 投影 | single Relay 尚未接线 |
+| `remote/client` | Pion offer、ICE、DTLS fingerprint 校验、DataChannel capability handshake、protocol transport | desktop direct 已有真实网络 E2E；Relay material 尚未进入 ICE 配置 |
+| `remote/daemon` 与 `remote/webrtc` | fresh-proof presence agent、answerer、DataChannel auth、core scoped transport adapter | `termx daemon --cloud` 已显式装配 desktop direct；Relay 路径待接入 |
 | `shared/cloudcompanion` | versioned local IPC、错误语义、stream、fake 和 installer contract | contract 本身不提供云服务 |
-| `private/cloud/companion` | 可运行 sidecar、本地 IPC、账号/device session manager、adapter orchestration | binary 固定装配 `UnconfiguredAdapter`；presence validation 仍把 device presence session 与 client managed session 混为同一 ID |
-| `private/cloud/control-plane` | 设备目录、managed session、admission、entitlement、Relay lease、usage 的进程内领域服务 | 只有 managed-session admission，没有独立 presence admission/challenge，也没有网络 service 或启动入口 |
-| `private/cloud/hub` | admission-bound device presence、offer/answer/candidate 路由和过期清理 | 进程内模型已区分 presence/managed session，但没有网络 listener，且上游 contract 尚未对齐 |
+| `private/cloud/companion` | 可运行 sidecar、本地 IPC、账号/device session manager、显式 dev HTTP adapter 与 desktop direct orchestration | 默认路径继续 fail closed；single Relay material 尚未接入 |
+| `private/cloud/control-plane` | 独立 PresenceSession/ManagedSession、fresh challenge、设备目录、admission、entitlement、Relay lease、usage 与 loopback API | Relay lease/usage 尚未进入用户链路 |
+| `private/cloud/hub` | admission-bound presence、offer/answer/candidate 路由、过期清理与真实 loopback listener | desktop direct 已闭环；Relay route 尚未联动 |
 | `private/cloud/relay` | 真实 Pion UDP TURN、lease authority、quota、meter 和 opaque DataChannel harness | 没有 dev service 装配，也未进入 managed route |
 | `private/cloud/route-planner` | direct/single-relay 决策和短期 route plan contract | 候选、lease material 和运行服务均未装配 |
-| Desktop endpoint registry | `hub-p2p`、device pin、`grant_ref`、relay mode 和 TUI dialer | `hub_url` 是当前被要求但实际忽略的旧输入；没有 pairing 导入用户流程 |
+| Desktop endpoint registry | `hub-p2p`、device pin、`grant_ref`、relay mode、pairing create/import 和原子 registry writer | desktop direct 已可配置；single Relay 策略尚未闭环 |
 | Official Android | Official factory、公开 WebRTC primitive、Keystore grant store、managed connector | gateway 固定返回 `login_required`，公开 authorizer 仍 fail closed |
 
-结论：当前不是“云服务基本完成，只差部署”，而是“安全 primitive 和领域组件较完整，但尚无一条跨真实服务边界的用户链路”。
+结论：Desktop managed direct 已经跨真实 Companion IPC、Control Plane/Hub listener、Pion DataChannel、capability handshake 和 core-v2 protocol 闭环；当前剩余主线是 single Relay 与 Official Android，不能把 direct 完成度外推到这两条链路。
 
 ## 4. 单区域纵向拓扑
 
@@ -107,7 +107,7 @@ flowchart LR
 | ManagedSession | Control Plane | 一次 client DeviceID 到 target DeviceID 的托管连接意图；绑定 signaling、route、Relay lease 和质量摘要 |
 | ProtocolSession | public client/daemon + core-v2 | DTLS DataChannel 内 capability 通过后形成的 termx protocol session |
 
-当前 `OpenPresenceRequest` 有 `DeviceProof`，但没有获取新鲜 presence challenge 的 RPC；当前 Companion 还要求 presence admission 的 `ManagedSessionID` 等于每个下行 offer 的 `ManagedSessionID`。CLOUD002 必须直接修正这一 contract：presence 使用独立 `PresenceSessionID`，offer 保留自己的 `ManagedSessionID`，且 enrollment challenge 不得复用为 presence proof。
+CLOUD002 已修正旧 session 混用：presence 使用独立 `PresenceSessionID` 和 fresh one-time challenge，offer 保留自己的 `ManagedSessionID`，enrollment challenge 不会复用为 presence proof。
 
 ### 5.2 控制面链路
 
@@ -257,6 +257,8 @@ CLOUD002 建立名为 `dev-local` 的显式 staging 剖面：
 不算完成：只增加更多 interface/fake、Companion 直接调用 Hub Service、只有 health endpoint、或依赖生产 OAuth/数据库才能运行。
 
 ### 8.2 CLOUD003：Desktop managed direct
+
+状态：完成。
 
 实现范围：
 

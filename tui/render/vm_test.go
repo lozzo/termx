@@ -3131,6 +3131,34 @@ func TestRenderVMBuilderProjectsTerminalPickerEndpointLabels(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsManagedEndpointPhaseAndPath(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell().OpenTerminalPicker(),
+		Endpoints: (state.EndpointStore{}).Upsert(state.EndpointItem{
+			ID: "studio", Label: "Studio", Transport: state.EndpointTransportHubP2P,
+			ConnectMode: state.EndpointConnectOnDemand, Enabled: true, Status: state.EndpointStatusConnecting,
+			ConnectionPhase: "authorizing",
+		}),
+		TerminalPool: state.TerminalPoolStore{Status: state.TerminalPoolReady},
+	}
+
+	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	plain := plainLines(content.Lines)
+	if !strings.Contains(plain, "Studio") || !strings.Contains(plain, "authorizing") || strings.Contains(plain, "connecting") {
+		t.Fatalf("managed picker status should expose the exact connection phase, got:\n%s", plain)
+	}
+
+	root.Endpoints = root.Endpoints.
+		MarkRuntimeStatus("studio", state.EndpointStatusConnected, state.EndpointErrorUnknown, 0, "").
+		MarkConnectionPhase("studio", "connected").
+		MarkManagedRoute("studio", "direct", "")
+	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	plain = plainLines(content.Lines)
+	if !strings.Contains(plain, "Studio") || !strings.Contains(plain, "connected") || !strings.Contains(plain, "direct") {
+		t.Fatalf("managed picker status should expose the observed direct path, got:\n%s", plain)
+	}
+}
+
 func TestRenderVMBuilderAlignsTerminalPickerEndpointColumns(t *testing.T) {
 	root := state.Root{
 		Shell: state.DefaultShell().OpenTerminalPicker(),
@@ -3423,6 +3451,25 @@ func TestRenderVMBuilderProjectsTerminalPoolEndpointGroups(t *testing.T) {
 		if region.ActionID == ActionPoolSelect.String() && region.Row != 0 && region.Row != 1 {
 			t.Fatalf("pool select hit regions must point to terminal flat rows, got %#v", content.HitRegions)
 		}
+	}
+}
+
+func TestRenderVMBuilderTerminalManagerProjectsManagedEndpointPhaseAndPath(t *testing.T) {
+	root := state.Root{
+		Shell:    state.DefaultShell().OpenTerminalPool(),
+		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 32},
+		Endpoints: (state.EndpointStore{}).Upsert(state.EndpointItem{
+			ID: "studio", Label: "Studio", Transport: state.EndpointTransportHubP2P,
+			ConnectMode: state.EndpointConnectOnDemand, Enabled: true, Status: state.EndpointStatusConnecting,
+			ConnectionPhase: "authorizing", ObservedPath: "direct",
+		}),
+		TerminalPool: state.TerminalPoolStore{Status: state.TerminalPoolReady},
+	}
+
+	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	plain := plainLines(content.Lines)
+	if !strings.Contains(plain, "Studio") || !strings.Contains(plain, "authorizing") || !strings.Contains(plain, "direct") {
+		t.Fatalf("terminal manager should expose managed phase and observed path, got:\n%s", plain)
 	}
 }
 

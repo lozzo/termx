@@ -3,7 +3,6 @@ package connection
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -72,7 +71,7 @@ type Registry struct {
 }
 
 // Config 描述一个 endpoint 的连接配置。
-// ID 是持久化和路由主键；Label 只用于 UI 展示；Transport、地址、凭据引用和 hub grant/fingerprint 字段共同组成 dial identity。
+// ID 是持久化和路由主键；Label 只用于 UI 展示；Transport、目标设备、凭据引用和 grant/fingerprint 字段共同组成 dial identity。
 type Config struct {
 	ID           EndpointID
 	Label        string
@@ -83,14 +82,12 @@ type Config struct {
 	Enabled      bool
 	Socket       string
 	RemoteSocket string
-	// HubURL 是 hub control/discovery 入口，只用于 hub-p2p transport 的连接发现。
-	// 它不是远端设备身份；同一个 hub 下的不同 HubDeviceID 仍要继续校验 DeviceFingerprint。
-	HubURL string
 	// HubDeviceID 是 hub 发现和路由使用的远端设备 ID。
-	// 它不是安全信任锚点；远端 daemon 必须继续用 DeviceFingerprint 证明自己。
+	// Hub assignment 与 service URL 由 Companion/Control Plane resolve，不能由 connections.yaml 指定。
+	// 本字段不是安全信任锚点；远端 daemon 必须继续用 DeviceFingerprint 证明自己。
 	HubDeviceID string
 	// DeviceFingerprint 是远端 daemon/device public key 的信任锚点。
-	// TUI 展示 Label、hub id 和 hub URL 都不能替代该字段，变化时必须显式 reconnect。
+	// TUI 展示 Label、Hub device id 和 Companion 返回的 Hub assignment 都不能替代该字段，变化时必须显式 reconnect。
 	DeviceFingerprint string
 	// GrantRef 指向本地凭据存储中的 remote-issued capability grant。
 	// grant token 本身不得写入 connections.yaml；remote 通过 grant scope/expiry/revoke 决定客户端权限。
@@ -108,7 +105,6 @@ type DialIdentity struct {
 	AuthRef           string
 	Socket            string
 	RemoteSocket      string
-	HubURL            string
 	HubDeviceID       string
 	DeviceFingerprint string
 	GrantRef          string
@@ -266,13 +262,10 @@ func (cfg Config) Validate() error {
 		}
 	case TransportHubP2P:
 		if strings.TrimSpace(cfg.Address) != "" {
-			return fmt.Errorf("hub-p2p connection %q must not set address; use hub_url and hub_device_id", cfg.ID)
+			return fmt.Errorf("hub-p2p connection %q must not set address; target routing comes from Companion", cfg.ID)
 		}
 		if strings.TrimSpace(cfg.Socket) != "" || strings.TrimSpace(cfg.RemoteSocket) != "" {
 			return fmt.Errorf("hub-p2p connection %q must not set socket fields", cfg.ID)
-		}
-		if err := validateHubURL(cfg.ID, cfg.HubURL); err != nil {
-			return err
 		}
 		if err := validateHubDeviceID(cfg.ID, cfg.HubDeviceID); err != nil {
 			return err
@@ -307,7 +300,6 @@ func (cfg Config) DialIdentity() DialIdentity {
 		AuthRef:           strings.TrimSpace(cfg.AuthRef),
 		Socket:            strings.TrimSpace(cfg.Socket),
 		RemoteSocket:      strings.TrimSpace(cfg.RemoteSocket),
-		HubURL:            strings.TrimSpace(cfg.HubURL),
 		HubDeviceID:       strings.TrimSpace(cfg.HubDeviceID),
 		DeviceFingerprint: strings.TrimSpace(cfg.DeviceFingerprint),
 		GrantRef:          strings.TrimSpace(cfg.GrantRef),
@@ -328,8 +320,7 @@ func (cfg Config) DisplayChanged(next Config) bool {
 }
 
 func (cfg Config) hasHubFields() bool {
-	return strings.TrimSpace(cfg.HubURL) != "" ||
-		strings.TrimSpace(cfg.HubDeviceID) != "" ||
+	return strings.TrimSpace(cfg.HubDeviceID) != "" ||
 		strings.TrimSpace(cfg.DeviceFingerprint) != "" ||
 		strings.TrimSpace(cfg.GrantRef) != "" ||
 		strings.TrimSpace(string(cfg.RelayMode)) != ""
@@ -397,23 +388,6 @@ func validateEndpointID(id EndpointID) error {
 		default:
 			return fmt.Errorf("connection id %q contains invalid character %q", value, r)
 		}
-	}
-	return nil
-}
-
-func validateHubURL(endpointID EndpointID, value string) error {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return fmt.Errorf("hub-p2p connection %q requires hub_url", endpointID)
-	}
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return fmt.Errorf("hub-p2p connection %q has invalid hub_url", endpointID)
-	}
-	switch parsed.Scheme {
-	case "https", "http":
-	default:
-		return fmt.Errorf("hub-p2p connection %q hub_url must use http or https", endpointID)
 	}
 	return nil
 }

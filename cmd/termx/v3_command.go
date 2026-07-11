@@ -65,7 +65,8 @@ func v3Command(socket *string, logFile *string, configPath *string) *cobra.Comma
 }
 
 func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra.Command {
-	return &cobra.Command{
+	cloudEnabled := false
+	command := &cobra.Command{
 		Use:   "daemon",
 		Short: "Run the core-v2 daemon in the foreground",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -94,6 +95,14 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 				logger.Info("core-v2 daemon perftrace enabled", "path", perfTracePath)
 			}
 			writeHeapProfile := startDaemonHeapProfiler(ctx, logger)
+			if cloudEnabled {
+				managedCore, ok := srv.(v3ManagedDaemonCore)
+				if !ok {
+					logger.Warn("managed cloud presence unavailable", "error", "core-v2 scoped transport is not configured")
+				} else if err := startV3ManagedDaemon(ctx, managedCore, logger); err != nil {
+					logger.Warn("managed cloud presence unavailable", "error", err)
+				}
+			}
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
@@ -108,6 +117,8 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 			return err
 		},
 	}
+	command.Flags().BoolVar(&cloudEnabled, "cloud", false, "enable managed cloud presence for this daemon")
+	return command
 }
 
 func v3StdioProxyCommand(socket *string, logFile *string, configPath *string) *cobra.Command {

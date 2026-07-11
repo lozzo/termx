@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/lozzow/termx/shared/cloudcompanion"
 	"github.com/lozzow/termx/shared/connection"
 	"github.com/lozzow/termx/tui/state"
 )
@@ -463,7 +464,10 @@ func (manager *EndpointManager) bundle(ctx context.Context, endpointID state.End
 	if dialer == nil {
 		return endpointID, EndpointServiceBundle{}, fmt.Errorf("endpoint %q transport %q is not connected", endpointID, cfg.Transport)
 	}
-	bundle, err := dialer(ctx, cfg)
+	dialContext := context.WithValue(ctx, endpointDialProgressContextKey{}, func(phase cloudcompanion.EndpointPhase) {
+		manager.publishDialPhase(endpointID, phase)
+	})
+	bundle, err := dialer(dialContext, cfg)
 	if err != nil {
 		return endpointID, EndpointServiceBundle{}, err
 	}
@@ -478,10 +482,27 @@ func (manager *EndpointManager) bundle(ctx context.Context, endpointID state.End
 	subscribers := cloneEndpointEventSubscribers(manager.subscribers)
 	manager.mu.Unlock()
 	publishEndpointRuntimeEvent(subscribers, EndpointRuntimeEvent{
-		EndpointID: endpointID, Status: state.EndpointStatusConnected, ObservedPath: bundle.ObservedPath,
+		EndpointID: endpointID, Status: state.EndpointStatusConnected, Phase: cloudcompanion.EndpointPhaseConnected, ObservedPath: bundle.ObservedPath,
 		RouteSelectionReason: bundle.RouteSelectionReason,
 	})
 	return endpointID, bundle, nil
+}
+
+func (manager *EndpointManager) publishDialPhase(endpointID state.EndpointID, phase cloudcompanion.EndpointPhase) {
+	status := state.EndpointStatusConnecting
+	switch phase {
+	case cloudcompanion.EndpointPhaseResolving, cloudcompanion.EndpointPhaseSignaling,
+		cloudcompanion.EndpointPhaseConnecting, cloudcompanion.EndpointPhaseAuthorizing,
+		cloudcompanion.EndpointPhaseConnected:
+	case cloudcompanion.EndpointPhaseFailed:
+		status = state.EndpointStatusOffline
+	default:
+		return
+	}
+	manager.mu.Lock()
+	subscribers := cloneEndpointEventSubscribers(manager.subscribers)
+	manager.mu.Unlock()
+	publishEndpointRuntimeEvent(subscribers, EndpointRuntimeEvent{EndpointID: endpointID, Status: status, Phase: phase})
 }
 
 func (manager *EndpointManager) startBundleWatcherLocked(endpointID state.EndpointID, bundle EndpointServiceBundle) {

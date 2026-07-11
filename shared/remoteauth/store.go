@@ -73,6 +73,25 @@ func (store *CredentialStore) Resolve(ref string) (string, error) {
 	return grant, nil
 }
 
+// Delete 删除指定 grant_ref 的本地 bearer capability。
+// 该操作只用于显式撤销本地引用或跨 credential/registry 写入失败时回滚；文件不存在保持幂等，且不得因此删除 daemon 侧 grant/revocation truth。
+func (store *CredentialStore) Delete(ref string) error {
+	if store == nil || strings.TrimSpace(store.dir) == "" {
+		return fmt.Errorf("remote credential store directory is not configured")
+	}
+	if err := validateGrantRef(ref); err != nil {
+		return err
+	}
+	err := os.Remove(filepath.Join(store.dir, credentialFileName(ref)))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("delete remote credential %q: %w", ref, err)
+	}
+	return nil
+}
+
 func validateGrantRef(ref string) error {
 	ref = strings.TrimSpace(ref)
 	if !grantRefPattern.MatchString(ref) {

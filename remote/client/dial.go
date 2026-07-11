@@ -33,6 +33,9 @@ type DialOptions struct {
 	AuthRandom         io.Reader
 	Now                time.Time
 	QualityObservation QualityObservationOptions
+	// Phase 把不含 credential 或网络地址的稳定连接阶段回投给 client/TUI。
+	// 回调只用于展示，不能修改 route、授权或 fallback 行为。
+	Phase func(cloudcompanion.EndpointPhase)
 }
 
 // Session 是已完成设备证明和 capability handshake 的 managed WebRTC 连接结果。
@@ -87,6 +90,13 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 	if options.RoutePreference == cloudpb.RoutePreference_ROUTE_PREFERENCE_UNSPECIFIED {
 		return nil, fmt.Errorf("managed WebRTC route preference is required")
 	}
+	connected := false
+	reportDialPhase(options.Phase, cloudcompanion.EndpointPhaseResolving)
+	defer func() {
+		if !connected {
+			reportDialPhase(options.Phase, cloudcompanion.EndpointPhaseFailed)
+		}
+	}()
 
 	resolved, err := options.Companion.ResolveEndpoint(ctx, &cloudpb.ResolveEndpointRequest{
 		EndpointId: endpointID, TargetDeviceId: targetDeviceID,
@@ -142,6 +152,7 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 		_ = secured.Close()
 		return nil, fmt.Errorf("managed endpoint offer has no local description")
 	}
+	reportDialPhase(options.Phase, cloudcompanion.EndpointPhaseSignaling)
 	signaling, err := options.Companion.CreateSignalingSession(ctx, &cloudpb.CreateSignalingSessionRequest{
 		EndpointId:       endpointID,
 		ManagedSessionId: resolved.GetManagedSessionId(),
@@ -173,6 +184,7 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 			return nil, fmt.Errorf("add managed endpoint ICE candidate: %w", err)
 		}
 	}
+	reportDialPhase(options.Phase, cloudcompanion.EndpointPhaseConnecting)
 	select {
 	case <-ctx.Done():
 		_ = secured.Close()
@@ -196,6 +208,7 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 		now := options.Now.UTC()
 		authenticator.Now = func() time.Time { return now }
 	}
+	reportDialPhase(options.Phase, cloudcompanion.EndpointPhaseAuthorizing)
 	if _, err := authenticator.Authenticate(ctx, secured, remoteauth.ClientHandshakeRequest{
 		ExpectedDeviceID: targetDeviceID, ExpectedDeviceFingerprint: options.DeviceFingerprint,
 		CapabilityGrant: options.CapabilityGrant, DaemonDTLSCertificateFingerprint: dtlsFingerprint,
@@ -203,6 +216,8 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 		_ = secured.Close()
 		return nil, fmt.Errorf("authenticate managed endpoint DataChannel: %w", err)
 	}
+	connected = true
+	reportDialPhase(options.Phase, cloudcompanion.EndpointPhaseConnected)
 	var reporter *qualityReporter
 	if qualityOptions.Enabled {
 		reporter = &qualityReporter{
@@ -214,6 +229,12 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 	}
 	secured.startLifecycle(reporter)
 	return secured, nil
+}
+
+func reportDialPhase(callback func(cloudcompanion.EndpointPhase), phase cloudcompanion.EndpointPhase) {
+	if callback != nil {
+		callback(phase)
+	}
 }
 
 func receiveAnswer(stream cloudcompanion.SignalingStream) (*cloudpb.SignalingAnswer, []*cloudpb.IceCandidate, error) {

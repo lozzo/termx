@@ -106,7 +106,7 @@ func TestManagedEndpointContractFixtureMatchesGoDomain(t *testing.T) {
 		cfg := connection.Config{
 			ID: connection.EndpointID(testCase.EndpointID), Label: testCase.EndpointID,
 			Transport: connection.TransportHubP2P, ConnectMode: connection.ConnectOnDemand, Enabled: true,
-			HubURL: "https://hub.example.com", HubDeviceID: testCase.TargetDeviceID,
+			HubDeviceID:       testCase.TargetDeviceID,
 			DeviceFingerprint: testCase.DeviceFingerprint, GrantRef: testCase.GrantRef,
 			RelayMode: connection.RelayMode(testCase.RelayMode),
 		}

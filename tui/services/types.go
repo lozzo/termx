@@ -416,6 +416,9 @@ type EndpointRuntimeEvent struct {
 	EndpointID state.EndpointID
 	Status     state.EndpointStatusKind
 	ErrorKind  state.EndpointErrorKind
+	// Phase 是 managed WebRTC 当前 resolving/signaling/connecting/authorizing/connected/failed 阶段。
+	// local/SSH 保持空值；它只用于 reducer 展示，不能替代 Status、授权结果或实际 ObservedPath。
+	Phase cloudcompanion.EndpointPhase
 	// ObservedPath 是 managed WebRTC 已建立连接的 direct/single_relay/relay_mesh 运行时投影。
 	// 它不参与 endpoint 路由或授权，空值表示 local/SSH 或尚未观测到 candidate path。
 	ObservedPath string
@@ -424,6 +427,19 @@ type EndpointRuntimeEvent struct {
 	Message              string
 	Err                  error
 }
+
+// ReportEndpointDialPhase 把 managed dialer 的公开阶段写回当前 EndpointManager dial context。
+// 缺少 manager sink 时保持 no-op；调用方不得通过该函数修改 reducer state、选择其他 transport 或携带 credential。
+func ReportEndpointDialPhase(ctx context.Context, phase cloudcompanion.EndpointPhase) {
+	if ctx == nil {
+		return
+	}
+	if sink, ok := ctx.Value(endpointDialProgressContextKey{}).(func(cloudcompanion.EndpointPhase)); ok && sink != nil {
+		sink(phase)
+	}
+}
+
+type endpointDialProgressContextKey struct{}
 
 // EndpointEventSource 提供 endpoint-scoped 生命周期事件订阅。
 // 该接口用于主动侦测 transport 关闭；订阅者只能通过 message path 回写 reducer state。

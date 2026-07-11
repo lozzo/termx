@@ -89,14 +89,14 @@ func TestEndpointRuntimeStatusStoresAndClearsManagedRouteProjection(t *testing.T
 		RouteSelectionReason: "lower_loss",
 	}})
 	studio, ok := connected.Endpoints.Endpoint("studio")
-	if !ok || studio.ObservedPath != "single_relay" || studio.RouteSelectionReason != "lower_loss" || studio.DisplayStatus() != state.EndpointStatusConnected {
+	if !ok || studio.ObservedPath != "single_relay" || studio.RouteSelectionReason != "lower_loss" || studio.ConnectionPhase != "connected" || studio.DisplayStatus() != state.EndpointStatusConnected {
 		t.Fatalf("connected managed path not stored: %#v ok=%v", studio, ok)
 	}
 	offline, _ := reducer(connected, EndpointRuntimeStatusMsg{Event: services.EndpointRuntimeEvent{
 		EndpointID: "studio", Status: state.EndpointStatusOffline, Err: errors.New("route closed"),
 	}})
 	studio, ok = offline.Endpoints.Endpoint("studio")
-	if !ok || studio.ObservedPath != "" || studio.RouteSelectionReason != "" || studio.DisplayStatus() != state.EndpointStatusOffline {
+	if !ok || studio.ObservedPath != "" || studio.RouteSelectionReason != "" || studio.ConnectionPhase != "failed" || studio.DisplayStatus() != state.EndpointStatusOffline {
 		t.Fatalf("offline managed path not cleared: %#v ok=%v", studio, ok)
 	}
 }

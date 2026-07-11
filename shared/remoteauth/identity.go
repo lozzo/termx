@@ -23,6 +23,18 @@ type Identity struct {
 	PrivateKey  ed25519.PrivateKey
 }
 
+// Validate 校验 daemon-local DeviceIdentity 的字段、key pair 与 fingerprint 是否一致。
+// 该校验只在公开进程内运行；失败表示本地身份存储或装配已损坏，调用方必须停止 presence、grant 签发或 DataChannel 授权，不能让 Companion 代签或重建身份。
+func (identity Identity) Validate() error {
+	if strings.TrimSpace(identity.DeviceID) == "" || len(identity.PublicKey) != ed25519.PublicKeySize || len(identity.PrivateKey) != ed25519.PrivateKeySize {
+		return fmt.Errorf("incomplete DeviceIdentity")
+	}
+	if Fingerprint(identity.PublicKey) != identity.Fingerprint || !identity.PublicKey.Equal(identity.PrivateKey.Public()) {
+		return fmt.Errorf("DeviceIdentity key and fingerprint mismatch")
+	}
+	return nil
+}
+
 type storedIdentity struct {
 	Version    int       `json:"version"`
 	DeviceID   string    `json:"device_id"`

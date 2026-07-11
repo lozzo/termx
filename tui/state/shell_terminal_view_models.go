@@ -1,6 +1,10 @@
 package state
 
-import "time"
+import (
+	"time"
+
+	"github.com/lozzow/termx/shared/cloudcompanion"
+)
 
 // TerminalPickerItem 是 terminal picker 的只读行投影。
 // EndpointID + TerminalID 是后续 attach/create/reconnect action 的目标身份；Endpoint* 字段来自 reducer-owned EndpointStore，renderer 不读取 registry 或 protocol client。
@@ -62,6 +66,7 @@ type EndpointPickerGroup struct {
 	Transport            EndpointTransportKind
 	ObservedPath         string
 	RouteSelectionReason string
+	ConnectionPhase      cloudcompanion.EndpointPhase
 	ConnectMode          EndpointConnectMode
 	Status               EndpointStatusKind
 	LastError            string
@@ -79,6 +84,7 @@ type TerminalPoolPageGroup struct {
 	Transport            EndpointTransportKind
 	ObservedPath         string
 	RouteSelectionReason string
+	ConnectionPhase      cloudcompanion.EndpointPhase
 	ConnectMode          EndpointConnectMode
 	Status               EndpointStatusKind
 	LastError            string

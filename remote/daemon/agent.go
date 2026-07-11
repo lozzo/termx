@@ -2,12 +2,15 @@ package daemon
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/lozzow/termx/shared/remoteauth"
 )
 
 // ErrPresenceClosed 表示 Cloud Companion 已结束当前 daemon presence。
@@ -25,8 +28,14 @@ type OfferAnswerer interface {
 // Companion 只拥有账号会话、设备目录和 signaling；Agent 不发布 terminal inventory，也不把 terminal capability 交给云侧。
 type Agent struct {
 	Companion cloudcompanion.Client
-	Presence  *cloudpb.OpenPresenceRequest
-	Answerer  OfferAnswerer
+	// Identity 是 presence proof 与 DataChannel DeviceHello 共用的 daemon-local 身份真值。
+	// 私钥只能留在当前公开 daemon 进程，不能传给 Companion、Control Plane 或 Hub。
+	Identity remoteauth.Identity
+	// Metadata 是允许云设备目录看到的非秘密展示信息；不能包含 terminal inventory、capability 或本机凭据。
+	Metadata *cloudpb.DeviceMetadata
+	Answerer OfferAnswerer
+	// Now 只用于 deterministic harness；零值使用 UTC 当前时间。
+	Now func() time.Time
 }
 
 // Run 持续消费当前 daemon presence，直到 context、stream 或 companion 明确结束。
@@ -38,10 +47,14 @@ func (agent Agent) Run(ctx context.Context) error {
 	if agent.Answerer == nil {
 		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon offer answerer is not configured")
 	}
-	if agent.Presence == nil {
-		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon presence request is not configured")
+	if err := agent.Identity.Validate(); err != nil {
+		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "remote daemon DeviceIdentity is invalid")
 	}
-	stream, err := agent.Companion.OpenPresence(ctx, agent.Presence)
+	presence, err := agent.createPresenceRequest(ctx)
+	if err != nil {
+		return err
+	}
+	stream, err := agent.Companion.OpenPresence(ctx, presence)
 	if err != nil {
 		return err
 	}
@@ -99,6 +112,40 @@ func (agent Agent) Run(ctx context.Context) error {
 	}
 }
 
+// createPresenceRequest 获取一次性 challenge 并由当前公开 daemon 的 DeviceIdentity 签名。
+// challenge、proof 与 metadata 可以经过 Companion；PrivateKey、CapabilityGrant 和 terminal 数据不得离开本进程。
+func (agent Agent) createPresenceRequest(ctx context.Context) (*cloudpb.OpenPresenceRequest, error) {
+	challenge, err := agent.Companion.BeginPresence(ctx, &cloudpb.BeginPresenceRequest{DeviceId: agent.Identity.DeviceID})
+	if err != nil {
+		return nil, err
+	}
+	if challenge == nil || strings.TrimSpace(challenge.GetPresenceSessionId()) == "" || strings.TrimSpace(challenge.GetChallengeId()) == "" || len(challenge.GetChallenge()) == 0 {
+		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an invalid presence challenge")
+	}
+	now := time.Now().UTC()
+	if agent.Now != nil {
+		now = agent.Now().UTC()
+	}
+	input := &cloudpb.PresenceProofInput{
+		PresenceSessionId: challenge.GetPresenceSessionId(), ChallengeId: challenge.GetChallengeId(),
+		Challenge: append([]byte(nil), challenge.GetChallenge()...), DeviceId: agent.Identity.DeviceID,
+		DevicePublicKey: append([]byte(nil), agent.Identity.PublicKey...), SignedAtUnixNano: now.UnixNano(),
+	}
+	signingBytes, err := cloudcompanion.PresenceProofSigningBytes(input)
+	if err != nil {
+		return nil, err
+	}
+	signature := ed25519.Sign(agent.Identity.PrivateKey, signingBytes)
+	return &cloudpb.OpenPresenceRequest{
+		PresenceSessionId: challenge.GetPresenceSessionId(),
+		Proof: &cloudpb.DeviceProof{
+			DeviceId: agent.Identity.DeviceID, DevicePublicKey: append([]byte(nil), agent.Identity.PublicKey...),
+			ChallengeId: challenge.GetChallengeId(), Signature: signature, SignedAtUnixNano: now.UnixNano(),
+		},
+		Metadata: cloneDeviceMetadata(agent.Metadata),
+	}, nil
+}
+
 func (agent Agent) completeOffer(ctx context.Context, offer *cloudpb.SignalingOffer, iceServers []*cloudpb.IceServer) error {
 	answer, answerErr := agent.Answerer.Answer(ctx, offer, iceServers)
 	request := &cloudpb.CompleteSignalingOfferRequest{SignalingSessionId: offer.GetSignalingSessionId()}
@@ -127,4 +174,14 @@ func cloneIceServers(servers []*cloudpb.IceServer) []*cloudpb.IceServer {
 		})
 	}
 	return cloned
+}
+
+func cloneDeviceMetadata(metadata *cloudpb.DeviceMetadata) *cloudpb.DeviceMetadata {
+	if metadata == nil {
+		return nil
+	}
+	return &cloudpb.DeviceMetadata{
+		DisplayName: metadata.GetDisplayName(), Hostname: metadata.GetHostname(), Platform: metadata.GetPlatform(),
+		TermxVersion: metadata.GetTermxVersion(), SignalingVersions: append([]uint32(nil), metadata.GetSignalingVersions()...),
+	}
 }

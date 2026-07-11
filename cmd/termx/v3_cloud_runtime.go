@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 
@@ -13,7 +14,11 @@ import (
 	"github.com/lozzow/termx/shared/cloudcompanion"
 	"github.com/lozzow/termx/shared/cloudcompanion/activation"
 	"github.com/lozzow/termx/shared/cloudcompanion/installer"
+	"github.com/lozzow/termx/shared/cloudcompanion/ipc"
 )
+
+const v3CloudCompanionSocketEnv = "TERMX_CLOUD_COMPANION_SOCKET"
+const v3DevelopmentBuildVersion = "v0.0.0-dev"
 
 var (
 	termxBuildVersion             = "v0.0.0-dev"
@@ -63,6 +68,15 @@ func defaultV3CloudManager() (*activation.Manager, error) {
 }
 
 func defaultOpenV3CloudLifecycleClient(ctx context.Context, role cloudpb.CallerRole, capabilities ...cloudpb.CompanionCapability) (v3CloudClient, error) {
+	if endpoint := strings.TrimSpace(os.Getenv(v3CloudCompanionSocketEnv)); endpoint != "" {
+		if termxBuildVersion != v3DevelopmentBuildVersion {
+			return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED, "explicit Cloud Companion socket is disabled outside development builds")
+		}
+		client, _, err := ipc.DialAndHello(ctx, endpoint, ipc.HelloOptions{
+			TermxVersion: termxBuildVersion, CallerRole: role, Capabilities: capabilities,
+		})
+		return client, err
+	}
 	if strings.TrimSpace(cloudReleaseRootKeyID) == "" || strings.TrimSpace(cloudReleaseRootPublicKey) == "" {
 		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING, "this termx build does not include the official Cloud Companion release root")
 	}
@@ -71,6 +85,13 @@ func defaultOpenV3CloudLifecycleClient(ctx context.Context, role cloudpb.CallerR
 		return nil, err
 	}
 	return manager.Open(ctx, role, capabilities...)
+}
+
+func defaultOpenV3CloudDaemonCompanion(ctx context.Context) (v3CloudClient, error) {
+	return openV3CloudLifecycleClient(ctx, cloudpb.CallerRole_CALLER_ROLE_DAEMON,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING,
+	)
 }
 
 func defaultOpenV3CloudCompanion(ctx context.Context) (cloudcompanion.Client, error) {

@@ -59,6 +59,7 @@ func v3ManagedCloudEndpointDialer() services.EndpointDialer {
 			DeviceFingerprint: cfg.DeviceFingerprint, CapabilityGrant: grant,
 			RoutePreference: policy.RoutePreference, RelayOnly: policy.RelayOnly,
 			QualityObservation: remotev2client.QualityObservationOptions{Enabled: true, NetworkClass: "unknown"},
+			Phase:              func(phase cloudcompanion.EndpointPhase) { services.ReportEndpointDialPhase(ctx, phase) },
 		})
 		if err != nil {
 			return services.EndpointServiceBundle{}, fmt.Errorf("managed cloud endpoint %q dial: %w", cfg.ID, err)

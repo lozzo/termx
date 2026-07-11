@@ -3,7 +3,7 @@
 ## 当前目标
 
 - REC001 已完成仓库可控状态恢复：尚未提交的 RM004 目录与维护改动已经审计收口，误触发的发布期验证扩展已经清理。
-- CLOUD001 已建立唯一 Cloud staging roadmap；CLOUD002 已完成最小单区域开发云服务，下一切片 CLOUD003 让桌面 TUI 通过同一套单区域 managed cloud direct 链路连接真实 daemon。
+- CLOUD001 已建立唯一 Cloud staging roadmap；CLOUD002 已完成最小单区域开发云服务；CLOUD003 已完成桌面 managed direct 纵向闭环，下一切片是 CLOUD004 单区域 single Relay。
 - 当前仓库是唯一 private monorepo；当前不是正式开源或生产发布阶段。public snapshot、开源许可证模板替换、secret audit、第二仓和发布自动化全部延后。
 - GA003 Relay Mesh、GA004 transit、多区域高可用、复杂计费、SSO 和 live reroute 在单区域 direct/single-relay 闭环完成前不得启动。
 - 插件系统位于独立分支，本分支不新增插件系统代码、协议或文档。
@@ -68,7 +68,7 @@
 | REC001 | 完成 | 恢复仓库可控状态并收口未提交 RM004 | Git 工作树干净；维护入口有效；开源发布工作已明确延后 |
 | CLOUD001 | 完成 | 建立唯一 Cloud staging roadmap | direct、single Relay、Android 的消息链路和完成条件清晰且不互相冒充 |
 | CLOUD002 | 完成 | 最小单区域开发云服务 | 一个命令启动显式 dev cloud；账号、设备、resolve、admission、signaling 跨真实服务边界通过 |
-| CLOUD003 | 待开始 | Desktop managed direct 闭环 | TUI 经 Companion/Hub/WebRTC direct 列出、attach 并操作真实 daemon terminal |
+| CLOUD003 | 完成 | Desktop managed direct 闭环 | TUI 经 Companion/Hub/WebRTC direct 列出、attach 并操作真实 daemon terminal |
 | CLOUD004 | 待开始 | 单区域 single Relay 闭环 | 显式 Relay 策略通过 lease-bound TURN 连接；quota、到期、usage 和局部失败可验证 |
 | CLOUD005 | 待开始 | Official Android 闭环 | Official APK 可扫码/导入、连接、列出/attach terminal、输入并完成后台恢复手测 |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
@@ -105,5 +105,6 @@
 - RP002-RP007、GA001/GA001A/GA002 已建立 contract、领域组件和 harness；这些成果是 CLOUD002-CLOUD005 的输入，不代表 managed cloud 已可用。
 - CLOUD001 已完成：活动 roadmap 明确 direct、single Relay 与 Android 的顺序和用户 DoD。
 - CLOUD002 已完成：PresenceSession/ManagedSession 已分离；fresh proof、账号/设备 session、resolve、Hub admission、answer/failure signaling、局部失败和 backpressure 已通过真实 Control Plane/Hub listener 纵向 harness；`make cloud-dev` 可生成显式 dev-local manifest。
-- CLOUD003 是下一切片：接入 public daemon、Pion、DTLS capability handshake、termx protocol 与 TUI managed endpoint，不能用 CLOUD002 的 synthetic SDP harness 冒充 desktop direct 完成。
+- CLOUD003 已完成：`termx daemon --cloud` 使用 fresh proof 建立 presence；public pairing create/import 分离 raw grant 与 endpoint registry；TUI 经真实 Companion IPC、Control Plane/Hub listener、Pion DTLS DataChannel、capability handshake 和 core-v2 protocol 完成 List/Attach/Input/Resize/Live/History，并投影连接 phase 与实际 `direct` path。race E2E 证明云边界看不到 grant、设备私钥或 terminal payload，远端 daemon 关闭不影响 local endpoint。
+- CLOUD004 是下一切片：只把同一条 desktop 链路接到一个 lease-bound TURN Relay，显式验证 `relay_only`、quota、到期、usage 与局部失败，不启动 Relay Mesh 或多区域工作。
 - 正式开源隔离、生产 OAuth/TLS、持久化数据库、计费、团队治理、Relay Mesh 和多区域运维全部延后。

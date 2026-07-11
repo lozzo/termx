@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -10,16 +14,82 @@ import (
 	"github.com/lozzow/termx/proto/cloudpb"
 	remotev2client "github.com/lozzow/termx/remote/client"
 	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/lozzow/termx/shared/cloudcompanion/ipc"
 	"github.com/lozzow/termx/shared/connection"
 	"github.com/lozzow/termx/shared/remoteauth"
 	"github.com/lozzow/termx/shared/transport/memory"
 )
 
+func TestDevelopmentCompanionSocketUsesRealIPCWithoutReleaseActivation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses a unique Unix socket path")
+	}
+	runtimeDir, err := os.MkdirTemp("", "termx-cloud-ipc-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(runtimeDir)
+	if err := os.Chmod(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	endpoint := filepath.Join(runtimeDir, "companion.sock")
+	listener, err := ipc.Listen(endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serveContext, stop := context.WithCancel(context.Background())
+	defer stop()
+	fake := &cloudcompanion.FakeClient{HelloFunc: func(_ context.Context, request *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error) {
+		return &cloudpb.CompanionHelloResponse{
+			SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "dev-companion", BuildChannel: "development",
+			SupportedCapabilities: append([]cloudpb.CompanionCapability(nil), request.GetRequestedCapabilities()...),
+			ResponseNonce:         bytes.Repeat([]byte{0x52}, 32),
+		}, nil
+	}}
+	done := make(chan error, 1)
+	go func() {
+		done <- (&ipc.Server{NewClient: func() (cloudcompanion.FullClient, error) { return fake, nil }}).Serve(serveContext, listener)
+	}()
+	t.Setenv(v3CloudCompanionSocketEnv, endpoint)
+	previousVersion := termxBuildVersion
+	termxBuildVersion = v3DevelopmentBuildVersion
+	defer func() { termxBuildVersion = previousVersion }()
+	client, err := defaultOpenV3CloudLifecycleClient(context.Background(), cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	requests := fake.Requests().Hello
+	if len(requests) != 1 || requests[0].GetCallerRole() != cloudpb.CallerRole_CALLER_ROLE_TUI || len(requests[0].GetRequestedCapabilities()) != 1 {
+		t.Fatalf("development IPC Hello = %#v", requests)
+	}
+	stop()
+	_ = listener.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("development Companion IPC server did not stop")
+	}
+}
+
+func TestStableBuildRejectsExplicitDevelopmentCompanionSocket(t *testing.T) {
+	t.Setenv(v3CloudCompanionSocketEnv, filepath.Join(t.TempDir(), "untrusted.sock"))
+	previousVersion := termxBuildVersion
+	termxBuildVersion = "v1.0.0"
+	defer func() { termxBuildVersion = previousVersion }()
+	_, err := defaultOpenV3CloudLifecycleClient(context.Background(), cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING)
+	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED) {
+		t.Fatalf("stable explicit socket error = %v", err)
+	}
+}
+
 func TestV3ManagedEndpointFailsClosedWhenCompanionIsUnavailable(t *testing.T) {
 	dialer := v3ManagedCloudEndpointDialer()
 	_, err := dialer(context.Background(), connection.Config{
 		ID: "lab", Label: "Lab", Transport: connection.TransportHubP2P, ConnectMode: connection.ConnectOnDemand, Enabled: true,
-		HubURL: "https://hub.example.com", HubDeviceID: "device-1", DeviceFingerprint: "SHA256:device-1",
+		HubDeviceID: "device-1", DeviceFingerprint: "SHA256:device-1",
 		GrantRef: "grant-lab", RelayMode: connection.RelayAuto,
 	})
 	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING) {
@@ -48,7 +118,7 @@ func TestV3ManagedEndpointPassesSharedIdentityCredentialAndSmartRoutePolicyToRem
 	}
 	cfg := connection.Config{
 		ID: "lab", Label: "Lab", Transport: connection.TransportHubP2P, ConnectMode: connection.ConnectOnDemand, Enabled: true,
-		HubURL: "https://hub.example.com", HubDeviceID: "device-1", DeviceFingerprint: "ed25519-sha256:device-1",
+		HubDeviceID: "device-1", DeviceFingerprint: "ed25519-sha256:device-1",
 		GrantRef: "grant-lab", RelayMode: connection.RelaySmart,
 	}
 	_, err := v3ManagedCloudEndpointDialer()(context.Background(), cfg)

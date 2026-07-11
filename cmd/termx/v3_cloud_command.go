@@ -372,8 +372,12 @@ func statusToSession(status *cloudpb.StatusResponse) *cloudpb.CloudSessionSummar
 func waitV3CloudCompanionStopped(ctx context.Context) {
 	deadline, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
+	endpoint := strings.TrimSpace(os.Getenv(v3CloudCompanionSocketEnv))
+	if endpoint == "" {
+		endpoint = ipc.DefaultEndpoint()
+	}
 	for {
-		client, err := ipc.Dial(deadline, ipc.DefaultEndpoint())
+		client, err := ipc.Dial(deadline, endpoint)
 		if err != nil {
 			return
 		}

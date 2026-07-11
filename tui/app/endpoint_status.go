@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/lozzow/termx/shared/cloudcompanion"
 	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
@@ -105,6 +106,13 @@ func reduceEndpointRuntimeStatus(root state.Root, msg EndpointRuntimeStatusMsg) 
 	}
 	count := endpointTerminalCount(root, event.EndpointID)
 	root.Endpoints = root.Endpoints.MarkRuntimeStatus(event.EndpointID, status, errorKind, count, message)
+	if event.Phase != "" {
+		root.Endpoints = root.Endpoints.MarkConnectionPhase(event.EndpointID, event.Phase)
+	} else if status == state.EndpointStatusConnected {
+		root.Endpoints = root.Endpoints.MarkConnectionPhase(event.EndpointID, cloudcompanion.EndpointPhaseConnected)
+	} else if status == state.EndpointStatusOffline {
+		root.Endpoints = root.Endpoints.MarkConnectionPhase(event.EndpointID, cloudcompanion.EndpointPhaseFailed)
+	}
 	if status == state.EndpointStatusConnected {
 		root.Endpoints = root.Endpoints.MarkManagedRoute(event.EndpointID, event.ObservedPath, event.RouteSelectionReason)
 	} else if status == state.EndpointStatusOffline {
