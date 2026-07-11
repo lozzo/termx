@@ -9,17 +9,19 @@ ANDROID_ARTIFACT_DIR := $(ARTIFACT_DIR)/android
 PRIVATE_MODULES := \
 	private/cloud/companion \
 	private/cloud/control-plane \
+	private/cloud/devcloud \
 	private/cloud/hub \
 	private/cloud/relay \
 	private/cloud/route-planner \
 	private/cloud/web-controller
 
-.PHONY: help build test test-private test-clients test-android test-all doctor clean
+.PHONY: help build cloud-dev test test-private test-clients test-android test-all doctor clean
 
 help:
 	@printf '%s\n' \
 		'Targets:' \
 		'  make build         Build termx into .artifacts/bin/' \
+		'  make cloud-dev     Start the explicit single-region dev cloud' \
 		'  make test          Test the public Go module' \
 		'  make test-private  Test each private cloud Go module when present' \
 		'  make test-clients  Generate, test, typecheck, and build both clients' \
@@ -31,6 +33,10 @@ help:
 build:
 	mkdir -p "$(dir $(TERMX_BIN))"
 	GOWORK=off go build -o "$(TERMX_BIN)" ./cmd/termx
+
+cloud-dev:
+	mkdir -p "$(ARTIFACT_DIR)/cloud-dev"
+	go run ./private/cloud/devcloud/cmd/termx-cloud-dev --manifest "$(ARTIFACT_DIR)/cloud-dev/runtime.json"
 
 test:
 	scripts/with-clean-termx-env.sh env GOWORK=off go test ./... -count=1

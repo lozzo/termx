@@ -50,7 +50,7 @@ func (agent Agent) Run(ctx context.Context) error {
 	}
 	defer stream.Close()
 
-	var managedSessionID string
+	var presenceSessionID string
 	var iceServers []*cloudpb.IceServer
 	for {
 		event, receiveErr := stream.Receive()
@@ -65,17 +65,17 @@ func (agent Agent) Run(ctx context.Context) error {
 			if payload.Ready == nil {
 				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an empty presence ready event")
 			}
-			managedSessionID = strings.TrimSpace(payload.Ready.GetManagedSessionId())
-			if managedSessionID == "" {
-				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an empty managed session")
+			presenceSessionID = strings.TrimSpace(payload.Ready.GetPresenceSessionId())
+			if presenceSessionID == "" {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an empty presence session")
 			}
 			iceServers = cloneIceServers(payload.Ready.GetIceServers())
 		case *cloudpb.PresenceEvent_Offer:
 			if payload.Offer == nil || strings.TrimSpace(payload.Offer.GetSignalingSessionId()) == "" {
 				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion returned an invalid signaling offer")
 			}
-			if managedSessionID == "" || strings.TrimSpace(payload.Offer.GetManagedSessionId()) != managedSessionID {
-				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion routed an offer outside the active managed session")
+			if presenceSessionID == "" || strings.TrimSpace(payload.Offer.GetManagedSessionId()) == "" {
+				return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "cloud companion routed an offer without an active presence or managed session")
 			}
 			if err := agent.completeOffer(ctx, payload.Offer, iceServers); err != nil {
 				return err

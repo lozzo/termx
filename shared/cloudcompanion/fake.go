@@ -22,6 +22,7 @@ type FakeClient struct {
 	DoctorFunc                   func(context.Context, *cloudpb.DoctorRequest) (*cloudpb.DoctorResponse, error)
 	ShutdownFunc                 func(context.Context, *cloudpb.ShutdownRequest) (*cloudpb.ShutdownResponse, error)
 	ResolveEndpointFunc          func(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
+	BeginPresenceFunc            func(context.Context, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error)
 	OpenPresenceFunc             func(context.Context, *cloudpb.OpenPresenceRequest) (PresenceStream, error)
 	CreateSignalingSessionFunc   func(context.Context, *cloudpb.CreateSignalingSessionRequest) (SignalingStream, error)
 	CompleteSignalingOfferFunc   func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
@@ -47,6 +48,7 @@ type RecordedRequests struct {
 	Doctor                   []*cloudpb.DoctorRequest
 	Shutdown                 []*cloudpb.ShutdownRequest
 	ResolveEndpoint          []*cloudpb.ResolveEndpointRequest
+	BeginPresence            []*cloudpb.BeginPresenceRequest
 	OpenPresence             []*cloudpb.OpenPresenceRequest
 	CreateSignalingSession   []*cloudpb.CreateSignalingSessionRequest
 	CompleteSignalingOffer   []*cloudpb.CompleteSignalingOfferRequest
@@ -165,6 +167,17 @@ func (fake *FakeClient) ResolveEndpoint(ctx context.Context, request *cloudpb.Re
 		return nil, missingFakeHandler("ResolveEndpoint")
 	}
 	return fake.ResolveEndpointFunc(ctx, request)
+}
+
+// BeginPresence 记录并转发 daemon fresh presence challenge 请求；缺少 handler 时返回稳定 PROTOCOL 错误。
+func (fake *FakeClient) BeginPresence(ctx context.Context, request *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
+	fake.record(func(requests *RecordedRequests) {
+		requests.BeginPresence = append(requests.BeginPresence, cloneMessage(request))
+	})
+	if fake == nil || fake.BeginPresenceFunc == nil {
+		return nil, missingFakeHandler("BeginPresence")
+	}
+	return fake.BeginPresenceFunc(ctx, request)
 }
 
 // OpenPresence 记录并转发 daemon presence 请求；缺少 handler 时返回稳定 PROTOCOL 错误。
@@ -388,6 +401,7 @@ func cloneRecordedRequests(source RecordedRequests) RecordedRequests {
 		Doctor:                   cloneMessages(source.Doctor),
 		Shutdown:                 cloneMessages(source.Shutdown),
 		ResolveEndpoint:          cloneMessages(source.ResolveEndpoint),
+		BeginPresence:            cloneMessages(source.BeginPresence),
 		OpenPresence:             cloneMessages(source.OpenPresence),
 		CreateSignalingSession:   cloneMessages(source.CreateSignalingSession),
 		CompleteSignalingOffer:   cloneMessages(source.CompleteSignalingOffer),

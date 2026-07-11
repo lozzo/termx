@@ -267,6 +267,32 @@ message DeviceProof {
   int64 signed_at_unix_nano = 5;
 }
 
+// BeginPresenceRequest 让已 enrollment 的公开 daemon 为一次新的 Hub presence 请求挑战。
+// DeviceIdentity 私钥不进入该消息；device_id 必须与 Companion device cloud session 一致。
+message BeginPresenceRequest {
+  string device_id = 1;
+}
+
+// PresenceChallenge 是 Control Plane 为一个 device-scoped PresenceSession 签发的一次性挑战。
+// PresenceSession 先于任何 client ManagedSession 存在，两者不得复用 ID。
+message PresenceChallenge {
+  string presence_session_id = 1;
+  string challenge_id = 2;
+  bytes challenge = 3;
+  uint64 expires_at_unix = 4;
+}
+
+// PresenceProofInput 是公开 daemon 生成 fresh presence proof signature 的 deterministic 输入。
+// 该消息不包含 capability、terminal metadata、账号 token 或 DeviceIdentity private key。
+message PresenceProofInput {
+  string presence_session_id = 1;
+  string challenge_id = 2;
+  bytes challenge = 3;
+  string device_id = 4;
+  bytes device_public_key = 5;
+  int64 signed_at_unix_nano = 6;
+}
+
 // DeviceMetadata 是设备目录允许保存的最小公开信息。
 message DeviceMetadata {
   string display_name = 1;
@@ -302,13 +328,15 @@ message ResolvedEndpoint {
 
 // OpenPresenceRequest 让 companion 为一个已证明身份的 daemon 打开 presence stream。
 message OpenPresenceRequest {
-  DeviceProof proof = 1;
-  DeviceMetadata metadata = 2;
+  string presence_session_id = 1;
+  DeviceProof proof = 2;
+  DeviceMetadata metadata = 3;
 }
 
-// PresenceReady 表示 daemon presence 已在指定 managed session 生效。
+// PresenceReady 表示 daemon device-scoped presence 已生效。
+// 下行 offer 继续携带各自 ManagedSessionID，不能要求它等于 PresenceSessionID。
 message PresenceReady {
-  string managed_session_id = 1;
+  string presence_session_id = 1;
   uint32 heartbeat_seconds = 2;
   repeated IceServer ice_servers = 3;
 }
@@ -528,6 +556,7 @@ message IPCRequest {
     IPCCloseStreamRequest close_stream = 26;
     IPCCancelRequest cancel = 27;
     PlanManagedRouteRequest plan_managed_route = 28;
+    BeginPresenceRequest begin_presence = 29;
   }
 }
 
@@ -558,5 +587,6 @@ message IPCResponse {
     IPCStreamClosed stream_closed = 28;
     CloudError error = 29;
     ManagedRoutePlan managed_route_plan = 30;
+    PresenceChallenge presence_challenge = 31;
   }
 }

@@ -4,6 +4,7 @@ use (
 	.
 	./private/cloud/companion
 	./private/cloud/control-plane
+	./private/cloud/devcloud
 	./private/cloud/hub
 	./private/cloud/relay
 	./private/cloud/route-planner

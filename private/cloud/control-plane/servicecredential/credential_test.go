@@ -24,7 +24,8 @@ func TestHubAdmissionBindsPrincipalSessionAndOperation(t *testing.T) {
 		PrincipalKind:     PrincipalClient,
 		AccountID:         "account-1",
 		DeviceID:          "client-1",
-		ManagedSessionID:  "managed-1",
+		SessionKind:       HubSessionManaged,
+		SessionID:         "managed-1",
 		TargetDeviceID:    "daemon-1",
 		AllowedOperations: []HubOperation{HubOperationCandidate, HubOperationOffer},
 		TTL:               2 * time.Minute,
@@ -33,14 +34,15 @@ func TestHubAdmissionBindsPrincipalSessionAndOperation(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := HubAdmissionExpectation{
-		Issuer:           "control-plane.test",
-		AudienceHubID:    "hub-eu-1",
-		PrincipalKind:    PrincipalClient,
-		AccountID:        "account-1",
-		DeviceID:         "client-1",
-		ManagedSessionID: "managed-1",
-		TargetDeviceID:   "daemon-1",
-		Operation:        HubOperationOffer,
+		Issuer:         "control-plane.test",
+		AudienceHubID:  "hub-eu-1",
+		PrincipalKind:  PrincipalClient,
+		AccountID:      "account-1",
+		DeviceID:       "client-1",
+		SessionKind:    HubSessionManaged,
+		SessionID:      "managed-1",
+		TargetDeviceID: "daemon-1",
+		Operation:      HubOperationOffer,
 	}
 	claims, err := VerifyHubAdmission(ring, ticket.Bytes(), expected, now.Add(time.Minute))
 	if err != nil {
@@ -64,8 +66,8 @@ func TestAdmissionAndRelayLeaseCannotBeConfused(t *testing.T) {
 	admissionIssuer, _ := NewHubAdmissionIssuer("control-plane.test", signer)
 	ticket, err := admissionIssuer.Issue(HubAdmissionRequest{
 		TicketID: "ticket", AudienceHubID: "hub", PrincipalKind: PrincipalDaemon,
-		AccountID: "account", DeviceID: "daemon", ManagedSessionID: "managed",
-		AllowedOperations: []HubOperation{HubOperationPresence, HubOperationAnswer}, TTL: time.Minute,
+		AccountID: "account", DeviceID: "daemon", SessionKind: HubSessionPresence, SessionID: "presence",
+		AllowedOperations: []HubOperation{HubOperationPresence}, TTL: time.Minute,
 	}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -127,13 +129,13 @@ func TestKeyRotationOverlapAndEmergencyRevoke(t *testing.T) {
 	issuer, _ := NewHubAdmissionIssuer("control-plane.test", oldSigner)
 	ticket, err := issuer.Issue(HubAdmissionRequest{
 		TicketID: "ticket", AudienceHubID: "hub", PrincipalKind: PrincipalDaemon,
-		AccountID: "account", DeviceID: "daemon", ManagedSessionID: "managed",
+		AccountID: "account", DeviceID: "daemon", SessionKind: HubSessionPresence, SessionID: "presence",
 		AllowedOperations: []HubOperation{HubOperationPresence}, TTL: time.Minute,
 	}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := HubAdmissionExpectation{Issuer: "control-plane.test", AudienceHubID: "hub", PrincipalKind: PrincipalDaemon, AccountID: "account", DeviceID: "daemon", ManagedSessionID: "managed", Operation: HubOperationPresence}
+	expected := HubAdmissionExpectation{Issuer: "control-plane.test", AudienceHubID: "hub", PrincipalKind: PrincipalDaemon, AccountID: "account", DeviceID: "daemon", SessionKind: HubSessionPresence, SessionID: "presence", Operation: HubOperationPresence}
 	if _, err := VerifyHubAdmission(ring, ticket.Bytes(), expected, now.Add(30*time.Second)); err != nil {
 		t.Fatalf("overlap verification failed: %v", err)
 	}
@@ -150,13 +152,13 @@ func TestControlPlaneCredentialCanonicalVector(t *testing.T) {
 	issuer, _ := NewHubAdmissionIssuer("control-plane.test", signer)
 	ticket, err := issuer.Issue(HubAdmissionRequest{
 		TicketID: "ticket-vector", AudienceHubID: "hub-vector", PrincipalKind: PrincipalClient,
-		AccountID: "account-vector", DeviceID: "client-vector", ManagedSessionID: "managed-vector", TargetDeviceID: "daemon-vector",
+		AccountID: "account-vector", DeviceID: "client-vector", SessionKind: HubSessionManaged, SessionID: "managed-vector", TargetDeviceID: "daemon-vector",
 		AllowedOperations: []HubOperation{HubOperationOffer, HubOperationCandidate}, TTL: 90 * time.Second,
 	}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	const expected = "TXHA1.eyJ2ZXJzaW9uIjoxLCJrZXlfaWQiOiJjcC12ZWN0b3ItMSIsInRpY2tldF9pZCI6InRpY2tldC12ZWN0b3IiLCJpc3N1ZXIiOiJjb250cm9sLXBsYW5lLnRlc3QiLCJhdWRpZW5jZV9odWJfaWQiOiJodWItdmVjdG9yIiwicHJpbmNpcGFsX2tpbmQiOiJjbGllbnQiLCJhY2NvdW50X2lkIjoiYWNjb3VudC12ZWN0b3IiLCJkZXZpY2VfaWQiOiJjbGllbnQtdmVjdG9yIiwibWFuYWdlZF9zZXNzaW9uX2lkIjoibWFuYWdlZC12ZWN0b3IiLCJ0YXJnZXRfZGV2aWNlX2lkIjoiZGFlbW9uLXZlY3RvciIsImFsbG93ZWRfb3BlcmF0aW9ucyI6WyJvZmZlciIsImNhbmRpZGF0ZSJdLCJpc3N1ZWRfYXRfdW5peCI6MTc4Mzc1NjgwMCwiZXhwaXJlc19hdF91bml4IjoxNzgzNzU2ODkwfQ.S0P059zjYe3xua0J8LAE0tobmKK3QeMWqIQbYstk1iePYFIVR34tWIxVNByAHO6X6Q9PjtqljBPtGX6pCxybCg"
+	const expected = "TXHA1.eyJ2ZXJzaW9uIjoxLCJrZXlfaWQiOiJjcC12ZWN0b3ItMSIsInRpY2tldF9pZCI6InRpY2tldC12ZWN0b3IiLCJpc3N1ZXIiOiJjb250cm9sLXBsYW5lLnRlc3QiLCJhdWRpZW5jZV9odWJfaWQiOiJodWItdmVjdG9yIiwicHJpbmNpcGFsX2tpbmQiOiJjbGllbnQiLCJhY2NvdW50X2lkIjoiYWNjb3VudC12ZWN0b3IiLCJkZXZpY2VfaWQiOiJjbGllbnQtdmVjdG9yIiwic2Vzc2lvbl9raW5kIjoibWFuYWdlZCIsInNlc3Npb25faWQiOiJtYW5hZ2VkLXZlY3RvciIsInRhcmdldF9kZXZpY2VfaWQiOiJkYWVtb24tdmVjdG9yIiwiYWxsb3dlZF9vcGVyYXRpb25zIjpbIm9mZmVyIiwiY2FuZGlkYXRlIl0sImlzc3VlZF9hdF91bml4IjoxNzgzNzU2ODAwLCJleHBpcmVzX2F0X3VuaXgiOjE3ODM3NTY4OTB9.ilWUwQlkNg2VymBOs20vEnCxjsSbnhZ4bZK1IUPrnwsYLxyTCYOfvGT6BSjAMvdf03-Q5S5HO0626BkGcG6_Ag"
 	if got := string(ticket.Bytes()); got != expected {
 		t.Fatalf("canonical vector changed:\n%s", got)
 	}

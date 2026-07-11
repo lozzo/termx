@@ -53,7 +53,7 @@ func TestServiceDerivesHubAndPrincipalFromManagedSession(t *testing.T) {
 	ring, _ := servicecredential.NewKeyRing(signer.PublicKey())
 	claims, err := servicecredential.VerifyHubAdmission(ring, ticket.Bytes(), servicecredential.HubAdmissionExpectation{
 		Issuer: "control-plane.test", AudienceHubID: session.Hub.HubID, PrincipalKind: servicecredential.PrincipalClient,
-		AccountID: session.AccountID, DeviceID: session.ClientDeviceID, ManagedSessionID: session.ID,
+		AccountID: session.AccountID, DeviceID: session.ClientDeviceID, SessionKind: servicecredential.HubSessionManaged, SessionID: session.ID,
 		TargetDeviceID: session.TargetDeviceID, Operation: servicecredential.HubOperationOffer,
 	}, now.Add(30*time.Second))
 	if err != nil {

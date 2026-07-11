@@ -52,14 +52,14 @@ func validateCompleteEnrollmentRequest(request *cloudpb.CompleteDeviceEnrollment
 	return nil
 }
 
-func sanitizePresenceEvent(event *cloudpb.PresenceEvent, managedSessionID, targetDeviceID string) (*cloudpb.PresenceEvent, error) {
+func sanitizePresenceEvent(event *cloudpb.PresenceEvent, presenceSessionID, targetDeviceID string) (*cloudpb.PresenceEvent, error) {
 	if event == nil {
 		return nil, protocolError("Hub returned an empty presence event")
 	}
 	cloned := cloneMessage(event)
 	switch payload := cloned.GetPayload().(type) {
 	case *cloudpb.PresenceEvent_Ready:
-		if payload.Ready == nil || payload.Ready.GetManagedSessionId() != managedSessionID || payload.Ready.GetHeartbeatSeconds() == 0 {
+		if payload.Ready == nil || payload.Ready.GetPresenceSessionId() != presenceSessionID || payload.Ready.GetHeartbeatSeconds() == 0 {
 			return nil, protocolError("Hub returned an invalid presence ready event")
 		}
 		if err := validateIceServers(payload.Ready.GetIceServers()); err != nil {
@@ -147,8 +147,22 @@ func validateResolvedEndpoint(request *cloudpb.ResolveEndpointRequest, response 
 func validatePresenceRequest(request *cloudpb.OpenPresenceRequest) error {
 	proof := request.GetProof()
 	metadata := request.GetMetadata()
-	if request == nil || proof == nil || metadata == nil || proof.GetDeviceId() == "" || len(proof.GetDevicePublicKey()) == 0 || proof.GetChallengeId() == "" || len(proof.GetSignature()) == 0 || proof.GetSignedAtUnixNano() == 0 || metadata.GetPlatform() == "" || metadata.GetTermxVersion() == "" {
+	if request == nil || request.GetPresenceSessionId() == "" || proof == nil || metadata == nil || proof.GetDeviceId() == "" || len(proof.GetDevicePublicKey()) != ed25519.PublicKeySize || proof.GetChallengeId() == "" || len(proof.GetSignature()) != ed25519.SignatureSize || proof.GetSignedAtUnixNano() == 0 || metadata.GetPlatform() == "" || metadata.GetTermxVersion() == "" {
 		return protocolError("invalid daemon presence request")
+	}
+	return nil
+}
+
+func validateBeginPresenceRequest(request *cloudpb.BeginPresenceRequest) error {
+	if request == nil || request.GetDeviceId() == "" {
+		return protocolError("invalid daemon presence challenge request")
+	}
+	return nil
+}
+
+func validatePresenceChallenge(challenge *cloudpb.PresenceChallenge, now time.Time) error {
+	if challenge == nil || challenge.GetPresenceSessionId() == "" || challenge.GetChallengeId() == "" || len(challenge.GetChallenge()) < 32 || len(challenge.GetChallenge()) > 256 || challenge.GetExpiresAtUnix() <= uint64(now.Unix()) {
+		return protocolError("Control Plane returned an invalid presence challenge")
 	}
 	return nil
 }
@@ -266,12 +280,12 @@ func validateConnectionOutcomeRequest(request *cloudpb.ReportConnectionOutcomeRe
 	return nil
 }
 
-func validateAdmission(admission cloudservice.HubAdmission, managedSessionID string, now time.Time) error {
-	if admission.Reference == "" || admission.HubID == "" || admission.ManagedSessionID == "" || len(admission.TicketBytes()) == 0 || !now.Before(admission.ExpiresAt) {
+func validateAdmission(admission cloudservice.HubAdmission, sessionKind cloudservice.HubSessionKind, sessionID string, now time.Time) error {
+	if admission.Reference == "" || admission.HubID == "" || admission.AccountID == "" || admission.DeviceID == "" || admission.SessionKind != sessionKind || admission.SessionID == "" || len(admission.TicketBytes()) == 0 || !now.Before(admission.ExpiresAt) {
 		return protocolError("Control Plane returned an invalid Hub admission")
 	}
-	if managedSessionID != "" && admission.ManagedSessionID != managedSessionID {
-		return protocolError("Hub admission managed session mismatch")
+	if sessionID == "" || admission.SessionID != sessionID {
+		return protocolError("Hub admission session mismatch")
 	}
 	return nil
 }

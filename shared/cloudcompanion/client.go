@@ -13,10 +13,10 @@ import (
 const (
 	// ProtocolVersionMin 是当前公开进程能够发起的最小 Companion IPC 协议版本。
 	// Hello 协商不到该版本时，调用方必须把 managed cloud endpoint 标记为不兼容，不能回退到旧 Hub API。
-	ProtocolVersionMin uint32 = 3
+	ProtocolVersionMin uint32 = 4
 	// ProtocolVersionMax 是当前公开进程能够接受的最大 Companion IPC 协议版本。
 	// 新增能力必须通过 Hello 的能力交集启用，不能仅根据 companion 二进制版本猜测。
-	ProtocolVersionMax uint32 = 3
+	ProtocolVersionMax uint32 = 4
 )
 
 // Client 是公开进程访问本机 Cloud Companion 的最小领域接口。
@@ -30,6 +30,9 @@ type Client interface {
 	Status(context.Context, *cloudpb.StatusRequest) (*cloudpb.StatusResponse, error)
 	// ResolveEndpoint 定位 managed daemon 并返回公开 WebRTC 所需的 managed session 与 ICE 配置。
 	ResolveEndpoint(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
+	// BeginPresence 为已 enrollment 的 daemon 获取一次性 device-scoped presence challenge。
+	// challenge 必须由公开进程内的 DeviceIdentity 签名，Companion 不能代签或复用 enrollment proof。
+	BeginPresence(context.Context, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error)
 	// OpenPresence 为已完成 DeviceIdentity proof 的 daemon 打开下行 presence/signaling 流。
 	OpenPresence(context.Context, *cloudpb.OpenPresenceRequest) (PresenceStream, error)
 	// CreateSignalingSession 提交不含 capability 的 client WebRTC offer 并返回下行 answer 流。

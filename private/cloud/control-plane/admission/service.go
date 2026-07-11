@@ -57,7 +57,8 @@ func (service *Service) Issue(command Command, now time.Time) (servicecredential
 		AudienceHubID:     session.Hub.HubID,
 		PrincipalKind:     command.PrincipalKind,
 		AccountID:         command.AccountID,
-		ManagedSessionID:  command.ManagedSessionID,
+		SessionKind:       servicecredential.HubSessionManaged,
+		SessionID:         command.ManagedSessionID,
 		AllowedOperations: append([]servicecredential.HubOperation(nil), command.Operations...),
 		TTL:               command.TTL,
 	}

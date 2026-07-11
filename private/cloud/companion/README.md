@@ -41,4 +41,16 @@ go run ./cmd/termx-cloud-release \
 
 发布服务需要把签名 manifest 暴露到 installer 的固定 channel/platform/version 路径，并维护 `latest.json`。正式 key custody、artifact origin、notice/license 审查进入 LIC001 与发布流水线。
 
-当前 `cloudservice.NewUnconfiguredAdapter` 只用于开发和 installer smoke；未注入生产 OAuth/TLS Control Plane/Hub adapter 时稳定 fail closed，不访问归档 Hub 或 session-token API。
+当前 `cloudservice.NewUnconfiguredAdapter` 是无显式 dev/production adapter 时的默认 fail-closed 边界，也用于 installer smoke；它不访问归档 Hub 或 session-token API。
+
+## Dev Local
+
+仓库根目录执行 `make cloud-dev` 会启动两个独立 loopback listener，并写入 `.artifacts/cloud-dev/runtime.json`。development build 只有收到显式 manifest 才启用该 adapter：
+
+```bash
+go run ./private/cloud/companion/cmd/termx-cloud serve \
+  --profile client-dev \
+  --dev-manifest .artifacts/cloud-dev/runtime.json
+```
+
+client 与 daemon 必须使用不同 `--profile` 和 IPC socket。无 `--dev-manifest`、stable build 或 installer smoke 始终装配 `UnconfiguredAdapter`；dev-local 明文 HTTP、固定账号和一次性 enrollment code 不是生产配置。

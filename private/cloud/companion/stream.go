@@ -119,14 +119,14 @@ type presenceStream struct {
 	trackOffer func(string, string)
 }
 
-func newPresenceStream(ctx context.Context, source cloudservice.PresenceSource, managedSessionID, targetDeviceID string, capacity int, register func(ownedStream) func(), trackOffer func(string, string), onFinish func()) *presenceStream {
+func newPresenceStream(ctx context.Context, source cloudservice.PresenceSource, presenceSessionID, targetDeviceID string, capacity int, register func(ownedStream) func(), trackOffer func(string, string), onFinish func()) *presenceStream {
 	owner := &presenceStream{trackOffer: trackOffer}
 	receive := func(ctx context.Context) (*cloudpb.PresenceEvent, error) {
 		event, err := source.Receive(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return sanitizePresenceEvent(event, managedSessionID, targetDeviceID)
+		return sanitizePresenceEvent(event, presenceSessionID, targetDeviceID)
 	}
 	owner.stream = newBoundedStream(ctx, capacity, receive, source.Close, register, onFinish, func(stream *boundedStream[*cloudpb.PresenceEvent]) ownedStream {
 		owner.stream = stream

@@ -49,11 +49,11 @@ func TestIPCConnectionPreservesHelloUnaryAndStreamOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := presence.Push(&cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{ManagedSessionId: "managed-1"}}}); err != nil {
+	if err := presence.Push(&cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{PresenceSessionId: "presence-1"}}}); err != nil {
 		t.Fatal(err)
 	}
 	event, err := stream.Receive()
-	if err != nil || event.GetReady().GetManagedSessionId() != "managed-1" {
+	if err != nil || event.GetReady().GetPresenceSessionId() != "presence-1" {
 		t.Fatalf("presence Receive = (%v, %v)", event, err)
 	}
 	if err := stream.Close(); err != nil {

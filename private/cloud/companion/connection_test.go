@@ -53,6 +53,7 @@ type fakeControlPlane struct {
 	lastAuthorization string
 	resolveResponse   *cloudpb.ResolvedEndpoint
 	resolveErr        error
+	presenceChallenge *cloudpb.PresenceChallenge
 	presenceAdmission cloudservice.HubAdmission
 	clientAdmission   cloudservice.HubAdmission
 	daemonAdmission   cloudservice.HubAdmission
@@ -88,6 +89,11 @@ func (controlPlane *fakeControlPlane) capture(authorization session.Authorizatio
 func (controlPlane *fakeControlPlane) ResolveEndpoint(_ context.Context, authorization session.Authorization, _ *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
 	controlPlane.capture(authorization)
 	return controlPlane.resolveResponse, controlPlane.resolveErr
+}
+
+func (controlPlane *fakeControlPlane) BeginPresence(_ context.Context, authorization session.Authorization, _ *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
+	controlPlane.capture(authorization)
+	return controlPlane.presenceChallenge, nil
 }
 
 func (controlPlane *fakeControlPlane) AcquirePresenceAdmission(_ context.Context, authorization session.Authorization, _ *cloudpb.OpenPresenceRequest) (cloudservice.HubAdmission, error) {
@@ -312,6 +318,29 @@ func TestManagedOperationsDrivePrivateAdapters(t *testing.T) {
 	}
 }
 
+func TestBeginPresenceUsesDeviceSessionAndReturnsIndependentSession(t *testing.T) {
+	_, service, controlPlane, _ := testService(t)
+	connection := service.NewConnection()
+	if _, err := connection.Hello(context.Background(), helloRequest(
+		cloudpb.CallerRole_CALLER_ROLE_DAEMON,
+		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE,
+	)); err != nil {
+		t.Fatal(err)
+	}
+	challenge, err := connection.BeginPresence(context.Background(), &cloudpb.BeginPresenceRequest{DeviceId: "daemon-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if challenge.GetPresenceSessionId() != "presence-1" || challenge.GetPresenceSessionId() == "managed-1" {
+		t.Fatalf("presence challenge = %#v", challenge)
+	}
+	controlPlane.mu.Lock()
+	defer controlPlane.mu.Unlock()
+	if controlPlane.lastAuthorization != "device-cloud-token" {
+		t.Fatalf("presence authorization = %q", controlPlane.lastAuthorization)
+	}
+}
+
 func TestPlanManagedRouteRequiresNegotiatedSmartRouteCapability(t *testing.T) {
 	_, service, controlPlane, _ := testService(t)
 	connection := service.NewConnection()
@@ -406,9 +435,9 @@ func TestClosingClientConnectionDoesNotStopDaemonPresence(t *testing.T) {
 		t.Fatal("closing client connection stopped daemon presence")
 	default:
 	}
-	hub.presence.items <- &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{ManagedSessionId: "presence-1", HeartbeatSeconds: 30}}}
+	hub.presence.items <- &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{PresenceSessionId: "presence-1", HeartbeatSeconds: 30}}}
 	event, err := presenceStream.Receive()
-	if err != nil || event.GetReady().GetManagedSessionId() != "presence-1" {
+	if err != nil || event.GetReady().GetPresenceSessionId() != "presence-1" {
 		t.Fatalf("daemon presence Receive = (%v, %v)", event, err)
 	}
 	_ = clientStream.Close()
@@ -438,7 +467,7 @@ func TestSignalingStreamFailsWithBackpressureWithoutPretendingSuccess(t *testing
 	}
 }
 
-func TestPresenceStreamRejectsCrossSessionOrWrongTargetOffer(t *testing.T) {
+func TestPresenceStreamRejectsWrongTargetOffer(t *testing.T) {
 	_, service, _, hub := testService(t)
 	connection := service.NewConnection()
 	_, _ = connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_DAEMON, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE))
@@ -554,12 +583,22 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 	if err := manager.Save(context.Background(), device, now); err != nil {
 		t.Fatal(err)
 	}
-	clientAdmission, _ := cloudservice.NewHubAdmission("admission-client", "hub-1", "managed-1", now.Add(time.Minute), []byte("client-ticket"), now)
-	daemonAdmission, _ := cloudservice.NewHubAdmission("admission-answer", "hub-1", "managed-1", now.Add(time.Minute), []byte("answer-ticket"), now)
-	presenceAdmission, _ := cloudservice.NewHubAdmission("admission-daemon", "hub-1", "presence-1", now.Add(time.Minute), []byte("daemon-ticket"), now)
+	clientAdmission, _ := cloudservice.NewHubAdmission(cloudservice.HubAdmissionMetadata{
+		Reference: "admission-client", HubID: "hub-1", AccountID: "account-1", DeviceID: "client-1", TargetDeviceID: "daemon-1",
+		SessionKind: cloudservice.HubSessionManaged, SessionID: "managed-1", ExpiresAt: now.Add(time.Minute),
+	}, []byte("client-ticket"), now)
+	daemonAdmission, _ := cloudservice.NewHubAdmission(cloudservice.HubAdmissionMetadata{
+		Reference: "admission-answer", HubID: "hub-1", AccountID: "account-1", DeviceID: "daemon-1",
+		SessionKind: cloudservice.HubSessionManaged, SessionID: "managed-1", ExpiresAt: now.Add(time.Minute),
+	}, []byte("answer-ticket"), now)
+	presenceAdmission, _ := cloudservice.NewHubAdmission(cloudservice.HubAdmissionMetadata{
+		Reference: "admission-daemon", HubID: "hub-1", AccountID: "account-1", DeviceID: "daemon-1",
+		SessionKind: cloudservice.HubSessionPresence, SessionID: "presence-1", ExpiresAt: now.Add(time.Minute),
+	}, []byte("daemon-ticket"), now)
 	controlPlane := &fakeControlPlane{
 		now:               now,
 		resolveResponse:   &cloudpb.ResolvedEndpoint{EndpointId: "cloud-prod", TargetDeviceId: "daemon-1", Presence: cloudpb.PresenceState_PRESENCE_STATE_ONLINE, HubId: "hub-1", HubUrl: "https://hub.example.test", ManagedSessionId: "managed-1"},
+		presenceChallenge: &cloudpb.PresenceChallenge{PresenceSessionId: "presence-1", ChallengeId: "presence-challenge-1", Challenge: bytes.Repeat([]byte{0x44}, 32), ExpiresAtUnix: uint64(now.Add(time.Minute).Unix())},
 		presenceAdmission: presenceAdmission,
 		clientAdmission:   clientAdmission,
 		daemonAdmission:   daemonAdmission,
@@ -598,7 +637,7 @@ func helloRequest(role cloudpb.CallerRole, capabilities ...cloudpb.CompanionCapa
 }
 
 func validPresenceRequest() *cloudpb.OpenPresenceRequest {
-	return &cloudpb.OpenPresenceRequest{Proof: &cloudpb.DeviceProof{DeviceId: "daemon-1", DevicePublicKey: []byte("public-key"), ChallengeId: "challenge", Signature: []byte("signature"), SignedAtUnixNano: 1}, Metadata: &cloudpb.DeviceMetadata{Platform: "darwin", TermxVersion: "test"}}
+	return &cloudpb.OpenPresenceRequest{PresenceSessionId: "presence-1", Proof: &cloudpb.DeviceProof{DeviceId: "daemon-1", DevicePublicKey: bytes.Repeat([]byte{0x21}, 32), ChallengeId: "challenge", Signature: bytes.Repeat([]byte{0x22}, 64), SignedAtUnixNano: 1}, Metadata: &cloudpb.DeviceMetadata{Platform: "darwin", TermxVersion: "test"}}
 }
 
 func validAnswerEvent(sessionID string) *cloudpb.SignalingEvent {

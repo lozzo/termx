@@ -13,8 +13,8 @@ import (
 func TestAgentAnswersOfferWithoutPublishingTerminalInventory(t *testing.T) {
 	stream := cloudcompanion.NewFakePresenceStream(3)
 	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{
-		ManagedSessionId: "managed-1",
-		IceServers:       []*cloudpb.IceServer{{Urls: []string{"stun:example.test"}}},
+		PresenceSessionId: "presence-1",
+		IceServers:        []*cloudpb.IceServer{{Urls: []string{"stun:example.test"}}},
 	}}})
 	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
 		SignalingSessionId: "signal-1", ManagedSessionId: "managed-1", Sdp: "offer-sdp",
@@ -50,7 +50,7 @@ func TestAgentAnswersOfferWithoutPublishingTerminalInventory(t *testing.T) {
 func TestAgentReturnsOfferFailureWithoutEndingPresence(t *testing.T) {
 	stream := cloudcompanion.NewFakePresenceStream(3)
 	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{
-		ManagedSessionId: "managed-1",
+		PresenceSessionId: "presence-1",
 	}}})
 	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
 		SignalingSessionId: "signal-1", ManagedSessionId: "managed-1", Sdp: "offer-sdp",
@@ -92,26 +92,33 @@ func TestAgentRequiresCompanionAndAnswerer(t *testing.T) {
 	}
 }
 
-func TestAgentRejectsOfferFromDifferentManagedSession(t *testing.T) {
-	stream := cloudcompanion.NewFakePresenceStream(2)
+func TestAgentAcceptsIndependentManagedSessionsOnOnePresence(t *testing.T) {
+	stream := cloudcompanion.NewFakePresenceStream(4)
 	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{
-		ManagedSessionId: "managed-1",
+		PresenceSessionId: "presence-1",
 	}}})
 	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
-		SignalingSessionId: "signal-1", ManagedSessionId: "managed-2", Sdp: "offer-sdp",
+		SignalingSessionId: "signal-1", ManagedSessionId: "managed-1", Sdp: "offer-sdp",
 	}}})
-	answerer := &fakeOfferAnswerer{}
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Offer{Offer: &cloudpb.SignalingOffer{
+		SignalingSessionId: "signal-2", ManagedSessionId: "managed-2", Sdp: "offer-sdp",
+	}}})
+	mustPushPresence(t, stream, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Closed{Closed: &cloudpb.PresenceClosed{Reason: "done"}}})
+	answerer := &fakeOfferAnswerer{answer: &cloudpb.SignalingAnswer{Sdp: "answer-sdp"}}
 	companion := &cloudcompanion.FakeClient{
 		OpenPresenceFunc: func(context.Context, *cloudpb.OpenPresenceRequest) (cloudcompanion.PresenceStream, error) {
 			return stream, nil
 		},
+		CompleteSignalingOfferFunc: func(context.Context, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
+			return &cloudpb.CompleteSignalingOfferResponse{}, nil
+		},
 	}
 	err := (Agent{Companion: companion, Presence: &cloudpb.OpenPresenceRequest{}, Answerer: answerer}).Run(context.Background())
-	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {
-		t.Fatalf("Run error = %v, want PROTOCOL", err)
+	if !errors.Is(err, ErrPresenceClosed) {
+		t.Fatalf("Run error = %v, want presence close", err)
 	}
-	if answerer.calls != 0 || len(companion.Requests().CompleteSignalingOffer) != 0 {
-		t.Fatalf("cross-session offer reached answer path: calls=%d requests=%+v", answerer.calls, companion.Requests())
+	if answerer.calls != 2 || len(companion.Requests().CompleteSignalingOffer) != 2 {
+		t.Fatalf("managed sessions did not share presence: calls=%d requests=%+v", answerer.calls, companion.Requests())
 	}
 }
 

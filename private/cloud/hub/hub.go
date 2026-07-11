@@ -137,7 +137,7 @@ func (service *Service) OpenPresence(ctx context.Context, request OpenPresenceRe
 	now := service.clock.Now().UTC()
 	claims, err := servicecredential.VerifyHubAdmission(service.keyRing, request.Admission, servicecredential.HubAdmissionExpectation{
 		Issuer: service.issuer, AudienceHubID: service.hubID, PrincipalKind: servicecredential.PrincipalDaemon,
-		AccountID: request.AccountID, DeviceID: request.DeviceID, ManagedSessionID: request.PresenceSession,
+		AccountID: request.AccountID, DeviceID: request.DeviceID, SessionKind: servicecredential.HubSessionPresence, SessionID: request.PresenceSession,
 		Operation: servicecredential.HubOperationPresence,
 	}, now)
 	if err != nil {
@@ -200,7 +200,7 @@ func (service *Service) CreateSession(_ context.Context, request CreateSessionRe
 	now := service.clock.Now().UTC()
 	claims, err := servicecredential.VerifyHubAdmission(service.keyRing, request.Admission, servicecredential.HubAdmissionExpectation{
 		Issuer: service.issuer, AudienceHubID: service.hubID, PrincipalKind: servicecredential.PrincipalClient,
-		AccountID: request.AccountID, DeviceID: request.ClientDeviceID, ManagedSessionID: request.ManagedSessionID,
+		AccountID: request.AccountID, DeviceID: request.ClientDeviceID, SessionKind: servicecredential.HubSessionManaged, SessionID: request.ManagedSessionID,
 		TargetDeviceID: request.TargetDeviceID, Operation: servicecredential.HubOperationOffer,
 	}, now)
 	if err != nil {
@@ -257,16 +257,56 @@ type CompleteAnswerRequest struct {
 	Candidates         []Candidate
 }
 
+// CompleteFailureRequest 绑定 daemon 的稳定 signaling 失败与目标 session。
+// Code/Retryable 是唯一可转发诊断；原始错误文本不属于 Hub contract。
+type CompleteFailureRequest struct {
+	Admission          []byte
+	AccountID          string
+	DaemonDeviceID     string
+	ManagedSessionID   string
+	SignalingSessionID string
+	Code               int32
+	Retryable          bool
+}
+
 // CompleteAnswer 离线验证 daemon answer admission，并异步投递给 owning client session。
 // 重复 answer、错误 target 或 queue backpressure 都 fail closed，不覆盖首个结果。
 func (service *Service) CompleteAnswer(_ context.Context, request CompleteAnswerRequest) (*DaemonSession, error) {
 	if request.AccountID == "" || request.DaemonDeviceID == "" || request.ManagedSessionID == "" || request.SignalingSessionID == "" || request.SDP == "" || len(request.SDP) > service.maxSDPBytes || len(request.Candidates) > service.maxCandidates || !validCandidates(request.Candidates) {
 		return nil, ErrInvalidSignal
 	}
+	return service.completeDaemon(daemonCompletionBinding{
+		admission: request.Admission, accountID: request.AccountID, daemonDeviceID: request.DaemonDeviceID,
+		managedSessionID: request.ManagedSessionID, signalingSessionID: request.SignalingSessionID,
+	}, ClientEvent{Answer: &Answer{SignalingSessionID: request.SignalingSessionID, SDP: request.SDP, Candidates: cloneCandidates(request.Candidates)}}, false)
+}
+
+// CompleteFailure 离线验证 daemon answer admission，并把无原始文本的稳定失败投递给 owning client。
+// failure 是当前 signaling session 的终态；它不影响同一 presence 上的其他 ManagedSession。
+func (service *Service) CompleteFailure(_ context.Context, request CompleteFailureRequest) error {
+	if request.AccountID == "" || request.DaemonDeviceID == "" || request.ManagedSessionID == "" || request.SignalingSessionID == "" || request.Code <= 0 {
+		return ErrInvalidSignal
+	}
+	_, err := service.completeDaemon(daemonCompletionBinding{
+		admission: request.Admission, accountID: request.AccountID, daemonDeviceID: request.DaemonDeviceID,
+		managedSessionID: request.ManagedSessionID, signalingSessionID: request.SignalingSessionID,
+	}, ClientEvent{Failure: &Failure{Code: request.Code, Retryable: request.Retryable}}, true)
+	return err
+}
+
+type daemonCompletionBinding struct {
+	admission          []byte
+	accountID          string
+	daemonDeviceID     string
+	managedSessionID   string
+	signalingSessionID string
+}
+
+func (service *Service) completeDaemon(binding daemonCompletionBinding, event ClientEvent, terminal bool) (*DaemonSession, error) {
 	now := service.clock.Now().UTC()
-	claims, err := servicecredential.VerifyHubAdmission(service.keyRing, request.Admission, servicecredential.HubAdmissionExpectation{
+	claims, err := servicecredential.VerifyHubAdmission(service.keyRing, binding.admission, servicecredential.HubAdmissionExpectation{
 		Issuer: service.issuer, AudienceHubID: service.hubID, PrincipalKind: servicecredential.PrincipalDaemon,
-		AccountID: request.AccountID, DeviceID: request.DaemonDeviceID, ManagedSessionID: request.ManagedSessionID,
+		AccountID: binding.accountID, DeviceID: binding.daemonDeviceID, SessionKind: servicecredential.HubSessionManaged, SessionID: binding.managedSessionID,
 		Operation: servicecredential.HubOperationAnswer,
 	}, now)
 	if err != nil {
@@ -278,22 +318,27 @@ func (service *Service) CompleteAnswer(_ context.Context, request CompleteAnswer
 	if err := service.consumeTicketLocked(claims.TicketID, time.Unix(claims.ExpiresAtUnix, 0).UTC(), now); err != nil {
 		return nil, err
 	}
-	state := service.sessions[request.SignalingSessionID]
+	state := service.sessions[binding.signalingSessionID]
 	if state == nil || state.closed || !now.Before(state.expiresAt) {
 		return nil, ErrSessionNotFound
 	}
-	if state.accountID != request.AccountID || state.targetDeviceID != request.DaemonDeviceID || state.managedSessionID != request.ManagedSessionID {
+	if state.accountID != binding.accountID || state.targetDeviceID != binding.daemonDeviceID || state.managedSessionID != binding.managedSessionID {
 		return nil, ErrAdmission
 	}
 	if state.answered {
 		return nil, ErrSessionConflict
 	}
-	answer := Answer{SignalingSessionID: state.id, SDP: request.SDP, Candidates: cloneCandidates(request.Candidates)}
 	select {
-	case state.clientEvents <- ClientEvent{Answer: &answer}:
+	case state.clientEvents <- event:
 		state.answered = true
+		if terminal {
+			state.closed = true
+			close(state.done)
+			delete(service.sessions, state.id)
+			return nil, nil
+		}
 		state.daemonOperations = append([]servicecredential.HubOperation(nil), claims.AllowedOperations...)
-		return &DaemonSession{service: service, state: state, deviceID: request.DaemonDeviceID}, nil
+		return &DaemonSession{service: service, state: state, deviceID: binding.daemonDeviceID}, nil
 	default:
 		return nil, ErrBackpressure
 	}
@@ -305,6 +350,20 @@ func (service *Service) Cleanup() {
 	service.mu.Lock()
 	service.cleanupLocked(service.clock.Now().UTC())
 	service.mu.Unlock()
+}
+
+// HasPresence 返回指定 daemon DeviceID 是否拥有尚未过期的 device-scoped presence。
+// 该投影只供 Control Plane resolve/dev readiness 判断 online/offline；它不返回 terminal inventory、ManagedSession 或 capability 信息。
+func (service *Service) HasPresence(deviceID string) bool {
+	if service == nil || deviceID == "" {
+		return false
+	}
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	now := service.clock.Now().UTC()
+	service.cleanupLocked(now)
+	presence := service.presences[deviceID]
+	return presence != nil && !presence.closed && now.Before(presence.expiresAt)
 }
 
 func (service *Service) validateOffer(request CreateSessionRequest) error {

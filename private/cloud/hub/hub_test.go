@@ -114,6 +114,42 @@ func TestHubRejectsTicketReplayWrongTargetAndBackpressure(t *testing.T) {
 	}
 }
 
+func TestHubRoutesStableFailureWithoutRawMessage(t *testing.T) {
+	fixture := newFixture(t, 2, 2)
+	presenceTicket := fixture.issue(t, "presence-failure", servicecredential.PrincipalDaemon, "daemon-1", "presence-failure", "", []servicecredential.HubOperation{servicecredential.HubOperationPresence}, time.Minute)
+	presence, err := fixture.service.OpenPresence(context.Background(), hub.OpenPresenceRequest{Admission: presenceTicket, AccountID: "account-1", DeviceID: "daemon-1", PresenceSession: "presence-failure"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer presence.Close()
+	clientTicket := fixture.issue(t, "client-failure", servicecredential.PrincipalClient, "client-1", "managed-failure", "daemon-1", []servicecredential.HubOperation{servicecredential.HubOperationOffer}, time.Minute)
+	client, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{
+		Admission: clientTicket, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1",
+		ManagedSessionID: "managed-failure", SignalingSessionID: "signal-failure", SDP: "offer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if _, err := presence.Receive(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	failureTicket := fixture.issue(t, "answer-failure", servicecredential.PrincipalDaemon, "daemon-1", "managed-failure", "", []servicecredential.HubOperation{servicecredential.HubOperationAnswer}, time.Minute)
+	if err := fixture.service.CompleteFailure(context.Background(), hub.CompleteFailureRequest{
+		Admission: failureTicket, AccountID: "account-1", DaemonDeviceID: "daemon-1",
+		ManagedSessionID: "managed-failure", SignalingSessionID: "signal-failure", Code: 12, Retryable: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	event, err := client.Receive(context.Background())
+	if err != nil || event.Failure == nil || event.Failure.Code != 12 || !event.Failure.Retryable {
+		t.Fatalf("client failure = (%#v, %v)", event, err)
+	}
+	if _, err := client.Receive(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("terminal failure did not close session: %v", err)
+	}
+}
+
 func TestHubCleanupExpiresPresenceAndAssociatedSession(t *testing.T) {
 	fixture := newFixture(t, 2, 2)
 	presenceTicket := fixture.issue(t, "presence", servicecredential.PrincipalDaemon, "daemon-1", "presence-1", "", []servicecredential.HubOperation{servicecredential.HubOperationPresence}, 30*time.Second)
@@ -170,7 +206,11 @@ func (fixture fixture) issue(t *testing.T, ticketID string, principal servicecre
 	if err != nil {
 		t.Fatal(err)
 	}
-	ticket, err := issuer.Issue(servicecredential.HubAdmissionRequest{TicketID: ticketID, AudienceHubID: "hub-eu", PrincipalKind: principal, AccountID: "account-1", DeviceID: deviceID, ManagedSessionID: managedSessionID, TargetDeviceID: targetDeviceID, AllowedOperations: operations, TTL: ttl}, fixture.clock.Now())
+	sessionKind := servicecredential.HubSessionManaged
+	if len(operations) == 1 && operations[0] == servicecredential.HubOperationPresence {
+		sessionKind = servicecredential.HubSessionPresence
+	}
+	ticket, err := issuer.Issue(servicecredential.HubAdmissionRequest{TicketID: ticketID, AudienceHubID: "hub-eu", PrincipalKind: principal, AccountID: "account-1", DeviceID: deviceID, SessionKind: sessionKind, SessionID: managedSessionID, TargetDeviceID: targetDeviceID, AllowedOperations: operations, TTL: ttl}, fixture.clock.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

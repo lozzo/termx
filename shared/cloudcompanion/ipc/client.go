@@ -212,6 +212,19 @@ func (client *Client) ResolveEndpoint(ctx context.Context, request *cloudpb.Reso
 	return value, nil
 }
 
+// BeginPresence 获取一个必须由公开 daemon DeviceIdentity 签名的一次性 presence challenge。
+func (client *Client) BeginPresence(ctx context.Context, request *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
+	response, err := client.call(ctx, &cloudpb.IPCRequest{Operation: &cloudpb.IPCRequest_BeginPresence{BeginPresence: request}})
+	if err != nil {
+		return nil, err
+	}
+	value := response.GetPresenceChallenge()
+	if value == nil {
+		return nil, protocolResponseError("BeginPresence")
+	}
+	return value, nil
+}
+
 // OpenPresence 打开当前 daemon connection 拥有的 presence stream。
 func (client *Client) OpenPresence(ctx context.Context, request *cloudpb.OpenPresenceRequest) (cloudcompanion.PresenceStream, error) {
 	stream, err := client.openStream(ctx, &cloudpb.IPCRequest{Operation: &cloudpb.IPCRequest_OpenPresence{OpenPresence: request}}, streamKindPresence)

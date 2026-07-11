@@ -7,6 +7,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/lozzow/termx/private/cloud/companion/cloudservice"
 	"github.com/lozzow/termx/private/cloud/companion/session"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
@@ -290,6 +291,27 @@ func (connection *Connection) ResolveEndpoint(ctx context.Context, request *clou
 	return cloneMessage(response), nil
 }
 
+// BeginPresence 使用 daemon device cloud session 获取一次性 presence challenge。
+// challenge 只回到公开 daemon 签名；Companion 不持有 DeviceIdentity private key，也不能复用 enrollment challenge。
+func (connection *Connection) BeginPresence(ctx context.Context, request *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
+	authorization, err := connection.authorize(ctx, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE, cloudpb.CallerRole_CALLER_ROLE_DAEMON)
+	if err != nil {
+		return nil, err
+	}
+	defer authorization.Destroy()
+	if err := validateBeginPresenceRequest(request); err != nil {
+		return nil, err
+	}
+	challenge, err := connection.service.controlPlane.BeginPresence(ctx, authorization, cloneMessage(request))
+	if err != nil {
+		return nil, sanitizeAdapterError(err)
+	}
+	if err := validatePresenceChallenge(challenge, connection.service.now()); err != nil {
+		return nil, err
+	}
+	return cloneMessage(challenge), nil
+}
+
 // OpenPresence 为 daemon public proof 获取内部 admission 并打开当前连接拥有的有界 stream。
 // proof 只含 public key 和签名；companion 不接收或推导 DeviceIdentity 私钥。
 func (connection *Connection) OpenPresence(ctx context.Context, request *cloudpb.OpenPresenceRequest) (cloudcompanion.PresenceStream, error) {
@@ -316,7 +338,7 @@ func (connection *Connection) OpenPresence(ctx context.Context, request *cloudpb
 		return nil, sanitizeAdapterError(err)
 	}
 	defer admission.Destroy()
-	if err := validateAdmission(admission, "", connection.service.now()); err != nil {
+	if err := validateAdmission(admission, cloudservice.HubSessionPresence, request.GetPresenceSessionId(), connection.service.now()); err != nil {
 		return nil, err
 	}
 	source, err := connection.service.hub.OpenPresence(ctx, authorization, admission, request)
@@ -326,7 +348,7 @@ func (connection *Connection) OpenPresence(ctx context.Context, request *cloudpb
 	if source == nil {
 		return nil, protocolError("Hub returned an empty presence source")
 	}
-	stream := newPresenceStream(ctx, source, admission.ManagedSessionID, request.GetProof().GetDeviceId(), connection.service.streamCapacity, connection.registerStream, connection.trackOffer, connection.endPresence)
+	stream := newPresenceStream(ctx, source, admission.SessionID, request.GetProof().GetDeviceId(), connection.service.streamCapacity, connection.registerStream, connection.trackOffer, connection.endPresence)
 	presenceEstablished = true
 	return stream, nil
 }
@@ -351,7 +373,7 @@ func (connection *Connection) CreateSignalingSession(ctx context.Context, reques
 		return nil, sanitizeAdapterError(err)
 	}
 	defer admission.Destroy()
-	if err := validateAdmission(admission, request.GetManagedSessionId(), connection.service.now()); err != nil {
+	if err := validateAdmission(admission, cloudservice.HubSessionManaged, request.GetManagedSessionId(), connection.service.now()); err != nil {
 		return nil, err
 	}
 	source, err := connection.service.hub.CreateSignalingSession(ctx, authorization, admission, request)
@@ -381,12 +403,18 @@ func (connection *Connection) CompleteSignalingOffer(ctx context.Context, reques
 		return nil, protocolError("signaling offer does not belong to this daemon connection")
 	}
 	request = cloneMessage(request)
+	if failure := request.GetError(); failure != nil {
+		// daemon 原始错误文本可能含平台或凭据信息；云链路只保留稳定 code/retryable。
+		failure.Message = ""
+		failure.RetryAfterMillis = 0
+		failure.CorrelationId = ""
+	}
 	admission, err := connection.service.controlPlane.AcquireDaemonAnswerAdmission(ctx, authorization, managedSessionID, request)
 	if err != nil {
 		return nil, sanitizeAdapterError(err)
 	}
 	defer admission.Destroy()
-	if err := validateAdmission(admission, managedSessionID, connection.service.now()); err != nil {
+	if err := validateAdmission(admission, cloudservice.HubSessionManaged, managedSessionID, connection.service.now()); err != nil {
 		return nil, err
 	}
 	response, err := connection.service.hub.CompleteSignalingOffer(ctx, authorization, admission, request)

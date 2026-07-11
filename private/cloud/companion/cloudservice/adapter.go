@@ -13,23 +13,54 @@ import (
 	"github.com/lozzow/termx/proto/cloudpb"
 )
 
+// HubSessionKind 是 Companion 对 presence/managed Hub admission 的私有语义标签。
+// 它只用于校验 Control Plane 返回的短票据绑定，不进入 public endpoint 或 terminal protocol。
+type HubSessionKind string
+
+const (
+	// HubSessionPresence 表示一个 daemon device-scoped PresenceSession。
+	HubSessionPresence HubSessionKind = "presence"
+	// HubSessionManaged 表示一个 client-target ManagedSession。
+	HubSessionManaged HubSessionKind = "managed"
+)
+
+// HubAdmissionMetadata 是 Companion 转发 Hub 请求所需的非秘密 ticket binding。
+// Account/Device/Session 字段来自 Control Plane 响应，Hub 仍必须以 signed ticket 为最终准入真值。
+type HubAdmissionMetadata struct {
+	Reference      string
+	HubID          string
+	AccountID      string
+	DeviceID       string
+	TargetDeviceID string
+	SessionKind    HubSessionKind
+	SessionID      string
+	ExpiresAt      time.Time
+}
+
 // HubAdmission 是 companion 内部持有的短期 Hub 服务凭据。
-// Ticket 不进入 public IPC response；Reference、HubID 和 expiry 可用于脱敏诊断。
+// Ticket 不进入 public IPC response；Metadata 只能用于请求绑定和脱敏诊断。
 type HubAdmission struct {
-	Reference        string
-	HubID            string
-	ManagedSessionID string
-	ExpiresAt        time.Time
-	ticket           []byte
+	HubAdmissionMetadata
+	ticket []byte
 }
 
 // NewHubAdmission 创建 Control Plane 返回的短期 Hub admission。
-// 空 ticket、identity binding 或已过期 admission 会被拒绝。
-func NewHubAdmission(reference, hubID, managedSessionID string, expiresAt time.Time, ticket []byte, now time.Time) (HubAdmission, error) {
-	if reference == "" || hubID == "" || managedSessionID == "" || len(ticket) == 0 || !now.Before(expiresAt) {
+// 空 ticket、identity binding、错误 session kind 或已过期 admission 会被拒绝。
+func NewHubAdmission(metadata HubAdmissionMetadata, ticket []byte, now time.Time) (HubAdmission, error) {
+	if metadata.Reference == "" || metadata.HubID == "" || metadata.AccountID == "" || metadata.DeviceID == "" || metadata.SessionID == "" || len(ticket) == 0 || !now.Before(metadata.ExpiresAt) {
 		return HubAdmission{}, fmt.Errorf("invalid Hub admission")
 	}
-	return HubAdmission{Reference: reference, HubID: hubID, ManagedSessionID: managedSessionID, ExpiresAt: expiresAt.UTC(), ticket: append([]byte(nil), ticket...)}, nil
+	switch metadata.SessionKind {
+	case HubSessionPresence:
+		if metadata.TargetDeviceID != "" {
+			return HubAdmission{}, fmt.Errorf("invalid Hub presence admission target")
+		}
+	case HubSessionManaged:
+	default:
+		return HubAdmission{}, fmt.Errorf("invalid Hub admission session kind")
+	}
+	metadata.ExpiresAt = metadata.ExpiresAt.UTC()
+	return HubAdmission{HubAdmissionMetadata: metadata, ticket: append([]byte(nil), ticket...)}, nil
 }
 
 // TicketBytes 返回 Hub TLS adapter 使用的短期 ticket 副本。
@@ -50,7 +81,7 @@ func (admission *HubAdmission) Destroy() {
 
 // String 返回脱敏 admission reference，不泄漏签名 ticket body。
 func (admission HubAdmission) String() string {
-	return fmt.Sprintf("HubAdmission{reference=%s hub_id=%s managed_session_id=%s expires_at=%s ticket=[REDACTED]}", admission.Reference, admission.HubID, admission.ManagedSessionID, admission.ExpiresAt.Format(time.RFC3339))
+	return fmt.Sprintf("HubAdmission{reference=%s hub_id=%s session_kind=%s session_id=%s expires_at=%s ticket=[REDACTED]}", admission.Reference, admission.HubID, admission.SessionKind, admission.SessionID, admission.ExpiresAt.Format(time.RFC3339))
 }
 
 // ControlPlaneAdapter 是 companion 调用官方 Control Plane 的私有 TLS contract。
@@ -66,6 +97,8 @@ type ControlPlaneAdapter interface {
 	CompleteDeviceEnrollment(context.Context, *cloudpb.CompleteDeviceEnrollmentRequest) (session.Session, error)
 	// ResolveEndpoint 创建或定位 managed session，并返回 Hub/ICE 最小 metadata。
 	ResolveEndpoint(context.Context, session.Authorization, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
+	// BeginPresence 为 device cloud session 获取独立的一次性 presence challenge。
+	BeginPresence(context.Context, session.Authorization, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error)
 	// AcquirePresenceAdmission 为 daemon proof 获取短期 Hub presence admission。
 	AcquirePresenceAdmission(context.Context, session.Authorization, *cloudpb.OpenPresenceRequest) (HubAdmission, error)
 	// AcquireClientAdmission 为固定 managed session 与 target 获取 client signaling admission。

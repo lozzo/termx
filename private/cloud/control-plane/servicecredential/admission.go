@@ -21,6 +21,17 @@ const (
 	PrincipalClient PrincipalKind = "client"
 )
 
+// HubSessionKind 区分 device-scoped presence 与 client-scoped managed signaling 身份。
+// 两类 session 的 ID、生命周期和 admission operation 不得互换。
+type HubSessionKind string
+
+const (
+	// HubSessionPresence 表示 daemon 在 Hub 注册的短期 device presence。
+	HubSessionPresence HubSessionKind = "presence"
+	// HubSessionManaged 表示 client 到 target daemon 的一次 managed signaling session。
+	HubSessionManaged HubSessionKind = "managed"
+)
+
 // HubOperation 是 Hub admission 允许的最小 signaling 操作。
 // 该枚举不包含 terminal、protocol 或 capability 操作。
 type HubOperation string
@@ -37,7 +48,7 @@ const (
 )
 
 // HubAdmissionClaims 是 Control Plane 签名的 Hub 服务准入声明。
-// Claims 只绑定账号、设备、Hub、managed session 和 signaling operation，不包含 terminal ID、scope 或 grant。
+// Claims 只绑定账号、设备、Hub、显式 session kind/id 和 signaling operation，不包含 terminal ID、scope 或 grant。
 type HubAdmissionClaims struct {
 	Version           uint32         `json:"version"`
 	KeyID             string         `json:"key_id"`
@@ -47,7 +58,8 @@ type HubAdmissionClaims struct {
 	PrincipalKind     PrincipalKind  `json:"principal_kind"`
 	AccountID         string         `json:"account_id"`
 	DeviceID          string         `json:"device_id"`
-	ManagedSessionID  string         `json:"managed_session_id"`
+	SessionKind       HubSessionKind `json:"session_kind"`
+	SessionID         string         `json:"session_id"`
 	TargetDeviceID    string         `json:"target_device_id,omitempty"`
 	AllowedOperations []HubOperation `json:"allowed_operations"`
 	IssuedAtUnix      int64          `json:"issued_at_unix"`
@@ -62,7 +74,8 @@ type HubAdmissionRequest struct {
 	PrincipalKind     PrincipalKind
 	AccountID         string
 	DeviceID          string
-	ManagedSessionID  string
+	SessionKind       HubSessionKind
+	SessionID         string
 	TargetDeviceID    string
 	AllowedOperations []HubOperation
 	TTL               time.Duration
@@ -108,8 +121,11 @@ func (issuer HubAdmissionIssuer) Issue(request HubAdmissionRequest, now time.Tim
 	if err != nil {
 		return HubAdmissionTicket{}, err
 	}
-	if request.TicketID == "" || request.AudienceHubID == "" || request.AccountID == "" || request.DeviceID == "" || request.ManagedSessionID == "" {
+	if request.TicketID == "" || request.AudienceHubID == "" || request.AccountID == "" || request.DeviceID == "" || request.SessionID == "" {
 		return HubAdmissionTicket{}, ErrMalformedCredential
+	}
+	if err := validateHubSessionBinding(request.SessionKind, request.PrincipalKind, operations); err != nil {
+		return HubAdmissionTicket{}, err
 	}
 	if request.PrincipalKind == PrincipalClient && request.TargetDeviceID == "" {
 		return HubAdmissionTicket{}, ErrMalformedCredential
@@ -130,7 +146,8 @@ func (issuer HubAdmissionIssuer) Issue(request HubAdmissionRequest, now time.Tim
 		PrincipalKind:     request.PrincipalKind,
 		AccountID:         request.AccountID,
 		DeviceID:          request.DeviceID,
-		ManagedSessionID:  request.ManagedSessionID,
+		SessionKind:       request.SessionKind,
+		SessionID:         request.SessionID,
 		TargetDeviceID:    request.TargetDeviceID,
 		AllowedOperations: operations,
 		IssuedAtUnix:      now.Unix(),
@@ -146,14 +163,15 @@ func (issuer HubAdmissionIssuer) Issue(request HubAdmissionRequest, now time.Tim
 // HubAdmissionExpectation 是 Hub 在接纳单个 signaling 操作前必须匹配的上下文。
 // Hub 必须从认证连接和路由状态构造这些值，不能信任 ticket 外的 caller 声明覆盖它们。
 type HubAdmissionExpectation struct {
-	Issuer           string
-	AudienceHubID    string
-	PrincipalKind    PrincipalKind
-	AccountID        string
-	DeviceID         string
-	ManagedSessionID string
-	TargetDeviceID   string
-	Operation        HubOperation
+	Issuer         string
+	AudienceHubID  string
+	PrincipalKind  PrincipalKind
+	AccountID      string
+	DeviceID       string
+	SessionKind    HubSessionKind
+	SessionID      string
+	TargetDeviceID string
+	Operation      HubOperation
 }
 
 // VerifyHubAdmission 离线验签并验证 Hub、principal、session、target 和 operation 绑定。
@@ -170,7 +188,7 @@ func VerifyHubAdmission(ring *KeyRing, encoded []byte, expected HubAdmissionExpe
 }
 
 func validateHubAdmissionClaims(claims HubAdmissionClaims, expected HubAdmissionExpectation, now time.Time) error {
-	if claims.Version != admissionVersion || claims.KeyID == "" || claims.TicketID == "" || claims.Issuer == "" || claims.AudienceHubID == "" || claims.AccountID == "" || claims.DeviceID == "" || claims.ManagedSessionID == "" {
+	if claims.Version != admissionVersion || claims.KeyID == "" || claims.TicketID == "" || claims.Issuer == "" || claims.AudienceHubID == "" || claims.AccountID == "" || claims.DeviceID == "" || claims.SessionID == "" {
 		return ErrMalformedCredential
 	}
 	issuedAt := time.Unix(claims.IssuedAtUnix, 0).UTC()
@@ -190,8 +208,27 @@ func validateHubAdmissionClaims(claims HubAdmissionClaims, expected HubAdmission
 	if claims.PrincipalKind == PrincipalClient && claims.TargetDeviceID == "" || claims.PrincipalKind == PrincipalDaemon && claims.TargetDeviceID != "" {
 		return ErrMalformedCredential
 	}
-	if claims.Issuer != expected.Issuer || claims.AudienceHubID != expected.AudienceHubID || claims.PrincipalKind != expected.PrincipalKind || claims.AccountID != expected.AccountID || claims.DeviceID != expected.DeviceID || claims.ManagedSessionID != expected.ManagedSessionID || claims.TargetDeviceID != expected.TargetDeviceID || !containsString(claims.AllowedOperations, expected.Operation) {
+	if err := validateHubSessionBinding(claims.SessionKind, claims.PrincipalKind, claims.AllowedOperations); err != nil {
+		return err
+	}
+	if claims.Issuer != expected.Issuer || claims.AudienceHubID != expected.AudienceHubID || claims.PrincipalKind != expected.PrincipalKind || claims.AccountID != expected.AccountID || claims.DeviceID != expected.DeviceID || claims.SessionKind != expected.SessionKind || claims.SessionID != expected.SessionID || claims.TargetDeviceID != expected.TargetDeviceID || !containsString(claims.AllowedOperations, expected.Operation) {
 		return ErrCredentialBinding
+	}
+	return nil
+}
+
+func validateHubSessionBinding(kind HubSessionKind, principal PrincipalKind, operations []HubOperation) error {
+	switch kind {
+	case HubSessionPresence:
+		if principal != PrincipalDaemon || len(operations) != 1 || operations[0] != HubOperationPresence {
+			return ErrCredentialBinding
+		}
+	case HubSessionManaged:
+		if containsString(operations, HubOperationPresence) {
+			return ErrCredentialBinding
+		}
+	default:
+		return ErrMalformedCredential
 	}
 	return nil
 }

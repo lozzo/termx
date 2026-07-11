@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -10,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/private/cloud/companion/cloudservice"
+	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
 	"github.com/lozzow/termx/shared/cloudcompanion/activation"
@@ -87,6 +90,47 @@ func TestVersionCommandIsMachineReadable(t *testing.T) {
 	}
 }
 
+func TestCloudAdapterDefaultsToFailClosed(t *testing.T) {
+	controlPlane, hub, err := cloudAdapters("", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := controlPlane.(*cloudservice.UnconfiguredAdapter); !ok {
+		t.Fatalf("default Control Plane adapter = %T", controlPlane)
+	}
+	if _, ok := hub.(*cloudservice.UnconfiguredAdapter); !ok {
+		t.Fatalf("default Hub adapter = %T", hub)
+	}
+}
+
+func TestExplicitDevelopmentManifestSelectsNetworkAdapter(t *testing.T) {
+	manifestPath := writeDevManifest(t)
+	controlPlane, hub, err := cloudAdapters(manifestPath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := controlPlane.(*httpapi.Adapter); !ok {
+		t.Fatalf("dev Control Plane adapter = %T", controlPlane)
+	}
+	if _, ok := hub.(*httpapi.Adapter); !ok {
+		t.Fatalf("dev Hub adapter = %T", hub)
+	}
+}
+
+func TestProductionAndSmokeRejectDevelopmentManifest(t *testing.T) {
+	manifestPath := writeDevManifest(t)
+	originalChannel := buildChannel
+	buildChannel = "stable"
+	t.Cleanup(func() { buildChannel = originalChannel })
+	if _, _, err := cloudAdapters(manifestPath, false); err == nil {
+		t.Fatal("stable build accepted dev cloud manifest")
+	}
+	buildChannel = "development"
+	if _, _, err := cloudAdapters(manifestPath, true); err == nil {
+		t.Fatal("installer smoke accepted dev cloud manifest")
+	}
+}
+
 func TestLicensesCommandPrintsEmbeddedThirdPartyNotices(t *testing.T) {
 	var stdout bytes.Buffer
 	if err := run(context.Background(), []string{"licenses"}, &stdout, &bytes.Buffer{}); err != nil {
@@ -114,4 +158,27 @@ func TestBuiltArtifactPassesPublicActivationSmoke(t *testing.T) {
 	if err := activation.SmokeFunc("artifact-test")(ctx, binaryPath, manifest); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeDevManifest(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "runtime.json")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := httpapi.Manifest{
+		Version: httpapi.ManifestVersion, Profile: httpapi.ProfileDevLocal,
+		ControlPlaneURL: "http://127.0.0.1:41001", HubURL: "http://127.0.0.1:41002",
+		HubID: "hub-dev", Region: "local-1", AccountLabel: "Dev Account",
+		EnrollmentCode: "enroll-dev", StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := json.NewEncoder(file).Encode(manifest); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

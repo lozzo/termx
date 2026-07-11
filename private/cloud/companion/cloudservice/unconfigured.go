@@ -41,6 +41,11 @@ func (*UnconfiguredAdapter) ResolveEndpoint(context.Context, session.Authorizati
 	return nil, unavailableAdapterError()
 }
 
+// BeginPresence 拒绝未装配的 fresh daemon presence challenge 请求。
+func (*UnconfiguredAdapter) BeginPresence(context.Context, session.Authorization, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
+	return nil, unavailableAdapterError()
+}
+
 // AcquirePresenceAdmission 拒绝未装配的 daemon presence admission。
 func (*UnconfiguredAdapter) AcquirePresenceAdmission(context.Context, session.Authorization, *cloudpb.OpenPresenceRequest) (HubAdmission, error) {
 	return HubAdmission{}, unavailableAdapterError()

@@ -47,6 +47,13 @@ type Closed struct {
 	Reason string
 }
 
+// Failure 是 daemon 对单个 signaling session 返回的稳定失败分类。
+// Hub 只路由数值错误码与 retryable，不接收原始错误文本、credential、terminal 或 capability 数据。
+type Failure struct {
+	Code      int32
+	Retryable bool
+}
+
 // PresenceEvent 是 daemon presence stream 的有界下行事件。
 // v1 private contract 始终为 candidate 携带 SignalingSessionID；public DTO 未升级前 companion 对缺失绑定 fail closed。
 type PresenceEvent struct {
@@ -59,6 +66,7 @@ type PresenceEvent struct {
 type ClientEvent struct {
 	Answer    *Answer
 	Candidate *CandidateEvent
+	Failure   *Failure
 	Closed    *Closed
 }
 
@@ -289,6 +297,10 @@ func cloneClientEvent(event ClientEvent) ClientEvent {
 	if event.Candidate != nil {
 		candidate := *event.Candidate
 		event.Candidate = &candidate
+	}
+	if event.Failure != nil {
+		failure := *event.Failure
+		event.Failure = &failure
 	}
 	if event.Closed != nil {
 		closed := *event.Closed
