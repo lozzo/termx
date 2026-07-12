@@ -32,9 +32,18 @@ class AndroidRemoteAuthTest {
 
     @Test
     fun verifiesGrantAndCompletesCanonicalCapabilityHandshake() {
-        val grant = issueGrant(JSONObject().put("allow_daemon", true))
+        val grant = issueGrant(JSONObject()
+            .put("allow_daemon", true)
+            .put("file_read_metadata", true)
+            .put("file_read_content", true)
+            .put("file_write_content", true)
+            .put("file_mutate", true))
         val claims = AndroidRemoteAuth.verifyGrant(grant, fingerprint, now)
         assertTrue(claims.scope.allowDaemon)
+        assertTrue(claims.scope.fileReadMetadata)
+        assertTrue(claims.scope.fileReadContent)
+        assertTrue(claims.scope.fileWriteContent)
+        assertTrue(claims.scope.fileMutate)
         assertEquals("device-1", claims.issuerDeviceId)
 
         val hello = deviceHelloFrame()
@@ -128,6 +137,16 @@ class AndroidRemoteAuthTest {
         assertEquals("Lab daemon", imported.label)
         assertEquals(1, writes.size)
         assertEquals(daemonGrant, writes.single().second)
+
+        val terminalFileGrant = issueGrant(JSONObject()
+            .put("terminal_id", "terminal-1")
+            .put("file_read_content", true))
+        assertEquals(
+            "protocol",
+            assertThrows(ManagedEndpointFailure::class.java) {
+                AndroidRemoteAuth.verifyGrant(terminalFileGrant, fingerprint, now)
+            }.code,
+        )
 
         val terminalGrant = issueGrant(JSONObject().put("terminal_id", "terminal-1"))
         assertEquals(

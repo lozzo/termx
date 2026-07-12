@@ -72,11 +72,15 @@ data class AndroidRemoteAuthClaims(
     val expiresAt: Instant,
 )
 
-/** AndroidRemoteAuthScope 是 daemon/terminal/machine-events 三种互斥 capability scope。 */
+/** AndroidRemoteAuthScope 是 daemon/terminal/machine-events 三种互斥 scope 及 daemon 附属文件权限。 */
 data class AndroidRemoteAuthScope(
     val allowDaemon: Boolean,
     val terminalId: String,
     val machineEventsOnly: Boolean,
+    val fileReadMetadata: Boolean,
+    val fileReadContent: Boolean,
+    val fileWriteContent: Boolean,
+    val fileMutate: Boolean,
 )
 
 /** AndroidCapabilityOpen 是完成 DeviceHello 校验后待发送的 auth frame 与 session binding。 */
@@ -115,13 +119,21 @@ object AndroidRemoteAuth {
             "issued_at", "not_before", "expires_at", "revocation_id", "nonce",
         ), "capability grant")
         val scopeObject = claims.requiredObject("scope")
-        requireKeys(scopeObject, setOf("allow_daemon", "terminal_id", "machine_events_only"), "capability scope")
+        requireKeys(scopeObject, setOf(
+            "allow_daemon", "terminal_id", "machine_events_only", "file_read_metadata",
+            "file_read_content", "file_write_content", "file_mutate",
+        ), "capability scope")
         val scope = AndroidRemoteAuthScope(
             allowDaemon = scopeObject.optionalBoolean("allow_daemon"),
             terminalId = scopeObject.optionalString("terminal_id"),
             machineEventsOnly = scopeObject.optionalBoolean("machine_events_only"),
+            fileReadMetadata = scopeObject.optionalBoolean("file_read_metadata"),
+            fileReadContent = scopeObject.optionalBoolean("file_read_content"),
+            fileWriteContent = scopeObject.optionalBoolean("file_write_content"),
+            fileMutate = scopeObject.optionalBoolean("file_mutate"),
         )
         val scopeCount = listOf(scope.allowDaemon, scope.terminalId.isNotEmpty(), scope.machineEventsOnly).count { it }
+        val hasFilePermission = scope.fileReadMetadata || scope.fileReadContent || scope.fileWriteContent || scope.fileMutate
         val issuedAt = claims.requiredInstant("issued_at")
         val notBefore = claims.requiredInstant("not_before")
         val expiresAt = claims.requiredInstant("expires_at")
@@ -130,7 +142,7 @@ object AndroidRemoteAuth {
         val issuerFingerprint = claims.requiredString("issuer_device_fingerprint")
         if (claims.requiredInteger("version") != 1 || grantId.isEmpty() || issuerDeviceId.isEmpty() ||
             !constantTimeEquals(issuerFingerprint, fingerprint) || claims.requiredString("revocation_id").isEmpty() ||
-            claims.requiredString("nonce").isEmpty() || scopeCount != 1 || notBefore.isBefore(issuedAt) ||
+            claims.requiredString("nonce").isEmpty() || scopeCount != 1 || (hasFilePermission && !scope.allowDaemon) || notBefore.isBefore(issuedAt) ||
             !expiresAt.isAfter(notBefore)) {
             fail("capability grant claims are invalid")
         }
