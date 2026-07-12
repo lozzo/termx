@@ -9,8 +9,8 @@ import (
 
 const (
 	// Version 是 control protobuf method 合同的代际边界。
-	// R365 增加 observed revision 补 one-shot invalidation 边沿后，新客户端不能继续连旧 daemon。
-	Version      = 3
+	// FILE003 增加文件 transfer channel frame 后，新客户端不能继续连缺少流控语义的旧 daemon。
+	Version      = 4
 	MaxFrameSize = 4 << 20
 
 	TypeHello          uint8 = 0x00
@@ -29,6 +29,10 @@ const (
 	TypeClosed         uint8 = 0x17
 	TypeHistoryRequest uint8 = 0x18
 	TypeHistoryReplay  uint8 = 0x19
+	TypeFileData       uint8 = 0x21
+	TypeFileAck        uint8 = 0x22
+	TypeFileFinish     uint8 = 0x23
+	TypeFileResult     uint8 = 0x24
 )
 
 var (
