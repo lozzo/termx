@@ -20,6 +20,8 @@ owning Control Plane、Hub、Web Controller BFF 与 Next.js 用户站仍只监�
 
 二进制位于 `/opt/termx-staging/bin`，非秘密运行状态位于 `/var/lib/termx-staging`。systemd 使用无登录权限的 `termx-staging` 用户。Companion session 写入 GNOME Keyring；keyring 解锁材料由 systemd `LoadCredential` 从服务器 root-only 文件加载，不进入仓库、进程参数或日志。
 
+Next.js 16 使用 TermX 私有的 Node 24 LTS runtime `/opt/termx-staging/node/bin/node`，不替换服务器 `/usr/bin/node`，避免影响其他系统服务。
+
 Next.js 不直连 Control Plane；它只访问 loopback Go BFF。套餐价格来自部署的 `plans.json`，未发布价格不会由页面推导：
 
 ```bash

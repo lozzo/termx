@@ -11,7 +11,7 @@ WorkingDirectory=/opt/termx-staging/web-controller/private/cloud/web-controller/
 Environment=HOSTNAME=127.0.0.1
 Environment=PORT=41000
 Environment=WEB_CONTROLLER_BFF_URL=http://127.0.0.1:41004
-ExecStart=/usr/bin/node server.js
+ExecStart=/opt/termx-staging/node/bin/node server.js
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true
