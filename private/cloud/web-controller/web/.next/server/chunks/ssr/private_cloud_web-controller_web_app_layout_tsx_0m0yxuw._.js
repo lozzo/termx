@@ -1,3 +1,0 @@
-module.exports=[75394,a=>{"use strict";var b=a.i(7997);a.s(["default",0,function({children:a}){return(0,b.jsx)("html",{lang:"en",children:(0,b.jsx)("body",{children:a})})},"metadata",0,{title:"TermX - Your terminals, reachable anywhere",description:"Direct P2P when possible. Managed Relay when networks disagree. Terminal authorization stays end to end."}])},1652,a=>{a.n(a.i(75394))}];
-
-//# sourceMappingURL=private_cloud_web-controller_web_app_layout_tsx_0m0yxuw._.js.map
