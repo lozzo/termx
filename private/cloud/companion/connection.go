@@ -426,7 +426,7 @@ func (connection *Connection) AcquireRelayLease(ctx context.Context, request *cl
 	if err := connection.requireRouteCapability(request.GetRoutePreference()); err != nil {
 		return nil, err
 	}
-	response, err := connection.service.controlPlane.AcquireRelayLease(ctx, authorization, cloneMessage(request))
+	response, err := connection.service.hub.AcquireRelayLease(ctx, authorization, cloneMessage(request))
 	if err != nil {
 		return nil, sanitizeAdapterError(err)
 	}

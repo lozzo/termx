@@ -32,6 +32,11 @@ type AccountAuthorization struct {
 	AuthEpoch            uint64
 	ManagedDirectEnabled bool
 	Revoked              bool
+	StandardRelayEnabled bool
+	RelayMaxLeaseSeconds uint32
+	RelayMaxBytes        uint64
+	RelayMaxBitrateKbps  uint32
+	RelayMaxConcurrency  uint32
 }
 
 // AuthorizationSnapshot 是 Hub 原子应用的、带严格单调 revision 的授权快照。
@@ -133,13 +138,35 @@ func (authorizer *EdgeAuthorizer) validateNextSnapshot(snapshot AuthorizationSna
 func snapshotFromPolicyClaims(claims servicecredential.EdgePolicyClaims) AuthorizationSnapshot {
 	accounts := make([]AccountAuthorization, 0, len(claims.Accounts))
 	for _, account := range claims.Accounts {
-		accounts = append(accounts, AccountAuthorization{AccountID: account.AccountID, AuthEpoch: account.AuthEpoch, ManagedDirectEnabled: account.ManagedDirectEnabled, Revoked: account.Revoked})
+		accounts = append(accounts, AccountAuthorization{AccountID: account.AccountID, AuthEpoch: account.AuthEpoch, ManagedDirectEnabled: account.ManagedDirectEnabled, Revoked: account.Revoked, StandardRelayEnabled: account.StandardRelayEnabled, RelayMaxLeaseSeconds: account.RelayMaxLeaseSeconds, RelayMaxBytes: account.RelayMaxBytes, RelayMaxBitrateKbps: account.RelayMaxBitrateKbps, RelayMaxConcurrency: account.RelayMaxConcurrency})
 	}
 	devices := make([]DeviceAuthorization, 0, len(claims.Devices))
 	for _, device := range claims.Devices {
 		devices = append(devices, DeviceAuthorization{DeviceID: device.DeviceID, AccountID: device.AccountID, PublicKey: append([]byte(nil), device.PublicKey...), Revoked: device.Revoked})
 	}
 	return AuthorizationSnapshot{Revision: claims.Revision, GeneratedAt: time.Unix(claims.GeneratedUnix, 0).UTC(), Accounts: accounts, Devices: devices}
+}
+
+// RelayBudget 是 Hub 从签名账号投影读取的 single Relay 区域预算。
+// 它只限制付费 Relay 服务，不扩大 daemon terminal capability。
+type RelayBudget struct {
+	MaxLeaseDuration time.Duration
+	MaxBytes         uint64
+	MaxBitrateKbps   uint32
+	MaxConcurrency   uint32
+}
+
+// RelayBudget 返回账号当前签名投影中的 single Relay 预算。
+// 快照陈旧、账号撤销、未订阅或字段不完整时 fail closed。
+func (authorizer *EdgeAuthorizer) RelayBudget(accountID string) (RelayBudget, error) {
+	now := authorizer.clock.Now().UTC()
+	authorizer.mu.RLock()
+	defer authorizer.mu.RUnlock()
+	account, ok := authorizer.accounts[accountID]
+	if authorizer.revision == 0 || now.Sub(authorizer.generatedAt) > authorizer.maxStaleness || !ok || account.Revoked || !account.StandardRelayEnabled || account.RelayMaxLeaseSeconds == 0 || account.RelayMaxBytes == 0 || account.RelayMaxBitrateKbps == 0 || account.RelayMaxConcurrency == 0 {
+		return RelayBudget{}, ErrEdgeAuthorization
+	}
+	return RelayBudget{MaxLeaseDuration: time.Duration(account.RelayMaxLeaseSeconds) * time.Second, MaxBytes: account.RelayMaxBytes, MaxBitrateKbps: account.RelayMaxBitrateKbps, MaxConcurrency: account.RelayMaxConcurrency}, nil
 }
 
 // ApplySnapshot 原子替换完整授权投影。

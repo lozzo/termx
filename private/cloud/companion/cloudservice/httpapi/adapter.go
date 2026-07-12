@@ -120,16 +120,6 @@ func (adapter *Adapter) AcquirePresenceAdmission(ctx context.Context, authorizat
 	return adapter.postAdmission(ctx, ControlPresenceAdmissionPath, authorization, request)
 }
 
-// AcquireRelayLease 通过真实 Control Plane listener 获取 caller-specific 短期 TURN material。
-// signed lease 与 credential 只返回公开 WebRTC primitive；adapter 不缓存、不记录，也不把它们写进 endpoint registry。
-func (adapter *Adapter) AcquireRelayLease(ctx context.Context, authorization session.Authorization, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
-	response := &cloudpb.RelayLease{}
-	if err := adapter.postProto(ctx, adapter.controlURL+ControlAcquireRelayLeasePath, authorization, request, response); err != nil {
-		return nil, err
-	}
-	return response, nil
-}
-
 // PlanManagedRoute 在 single Relay 闭环后仍稳定 fail closed；自动 SmartRoute 不属于 CLOUD004。
 func (*Adapter) PlanManagedRoute(context.Context, session.Authorization, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
 	return nil, deferredServiceError("managed route planning")
@@ -167,6 +157,15 @@ func (adapter *Adapter) CreateSignalingSession(ctx context.Context, authorizatio
 func (adapter *Adapter) CompleteSignalingOffer(ctx context.Context, authorization session.Authorization, request *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
 	response := &cloudpb.CompleteSignalingOfferResponse{}
 	if err := adapter.postEdgeHubProto(ctx, HubCompleteSignalingPath, authorization, request, response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+// AcquireRelayLease 通过 Hub 区域委派预算获取 caller-specific TURN material。
+func (adapter *Adapter) AcquireRelayLease(ctx context.Context, authorization session.Authorization, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
+	response := &cloudpb.RelayLease{}
+	if err := adapter.postEdgeHubProto(ctx, HubAcquireRelayLeasePath, authorization, request, response); err != nil {
 		return nil, err
 	}
 	return response, nil

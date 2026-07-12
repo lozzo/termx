@@ -51,11 +51,6 @@ func (*UnconfiguredAdapter) AcquirePresenceAdmission(context.Context, session.Au
 	return HubAdmission{}, unavailableAdapterError()
 }
 
-// AcquireRelayLease 拒绝未装配的 Relay lease 请求。
-func (*UnconfiguredAdapter) AcquireRelayLease(context.Context, session.Authorization, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
-	return nil, unavailableAdapterError()
-}
-
 // PlanManagedRoute 拒绝未装配的 SmartRoute 计划请求。
 func (*UnconfiguredAdapter) PlanManagedRoute(context.Context, session.Authorization, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
 	return nil, unavailableAdapterError()
@@ -83,6 +78,11 @@ func (*UnconfiguredAdapter) CreateSignalingSession(context.Context, session.Auth
 
 // CompleteSignalingOffer 拒绝未装配的 Hub answer 请求。
 func (*UnconfiguredAdapter) CompleteSignalingOffer(context.Context, session.Authorization, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
+	return nil, unavailableAdapterError()
+}
+
+// AcquireRelayLease 拒绝未装配的 Hub Relay lease 请求。
+func (*UnconfiguredAdapter) AcquireRelayLease(context.Context, session.Authorization, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
 	return nil, unavailableAdapterError()
 }
 

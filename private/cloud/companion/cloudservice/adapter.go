@@ -101,8 +101,6 @@ type ControlPlaneAdapter interface {
 	BeginPresence(context.Context, session.Authorization, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error)
 	// AcquirePresenceAdmission 为 daemon proof 获取短期 Hub presence admission。
 	AcquirePresenceAdmission(context.Context, session.Authorization, *cloudpb.OpenPresenceRequest) (HubAdmission, error)
-	// AcquireRelayLease 根据当前 entitlement 获取 caller-specific 短期 Relay lease 和 route plan。
-	AcquireRelayLease(context.Context, session.Authorization, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
 	// PlanManagedRoute 获取不含私有 score/cost 的 direct/single-relay SmartRoute 计划。
 	PlanManagedRoute(context.Context, session.Authorization, *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error)
 	// ReportPathQuality 转发不含 payload 和 terminal identity 的聚合质量摘要。
@@ -134,4 +132,6 @@ type HubAdapter interface {
 	CreateSignalingSession(context.Context, session.Authorization, *cloudpb.CreateSignalingSessionRequest) (SignalingSource, error)
 	// CompleteSignalingOffer 使用 daemon edge credential 和 active presence ownership 返回 answer。
 	CompleteSignalingOffer(context.Context, session.Authorization, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
+	// AcquireRelayLease 使用 edge credential 和 Hub 本地区域预算取得 caller-specific TURN material。
+	AcquireRelayLease(context.Context, session.Authorization, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
 }

@@ -226,7 +226,7 @@ func (state *serviceState) publishEdgeSnapshot(now time.Time) error {
 	for _, device := range state.edgeDevices {
 		devices = append(devices, servicecredential.EdgePolicyDevice{DeviceID: device.DeviceID, AccountID: device.AccountID, PublicKey: append([]byte(nil), device.PublicKey...), Revoked: device.Revoked})
 	}
-	encoded, err := state.edgePolicyIssuer.Issue(devHubID, state.edgeRevision, []servicecredential.EdgePolicyAccount{{AccountID: devAccountID, AuthEpoch: 1, ManagedDirectEnabled: true}}, devices, 30*time.Minute, now.UTC())
+	encoded, err := state.edgePolicyIssuer.Issue(devHubID, state.edgeRevision, []servicecredential.EdgePolicyAccount{{AccountID: devAccountID, AuthEpoch: 1, ManagedDirectEnabled: true, StandardRelayEnabled: true, RelayMaxLeaseSeconds: uint32(relayLeaseTTL / time.Second), RelayMaxBytes: 64 << 20, RelayMaxBitrateKbps: 100_000, RelayMaxConcurrency: 2}}, devices, 30*time.Minute, now.UTC())
 	if err != nil {
 		return err
 	}

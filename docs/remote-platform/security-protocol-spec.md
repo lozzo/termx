@@ -139,7 +139,7 @@ Hub 本地创建的 `EdgeManagedSession` 绑定 authenticated client connection 
 
 用途：允许一个指定 WebRTC session 在有限时间和配额内使用 Managed Relay。
 
-由 Control Plane entitlement service 签名，至少包含：
+由 Control Plane 授权的受限 regional issuer 在签名 RelayBudget 内签名；Control Plane root key 不复制到 Hub。至少包含：
 
 ```text
 version

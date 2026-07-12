@@ -19,6 +19,7 @@ func (state *serviceState) hubHandler() http.Handler {
 	mux.HandleFunc(httpapi.HubOpenPresencePath, state.handleHubOpenPresence)
 	mux.HandleFunc(httpapi.HubCreateSignalingPath, state.handleHubCreateSignaling)
 	mux.HandleFunc(httpapi.HubCompleteSignalingPath, state.handleHubCompleteSignaling)
+	mux.HandleFunc(httpapi.HubAcquireRelayLeasePath, state.handleHubAcquireRelayLease)
 	return mux
 }
 
@@ -194,6 +195,58 @@ func (state *serviceState) handleHubCompleteSignaling(writer http.ResponseWriter
 	writeProto(writer, http.StatusOK, &cloudpb.CompleteSignalingOfferResponse{})
 }
 
+func (state *serviceState) handleHubAcquireRelayLease(writer http.ResponseWriter, request *http.Request) {
+	if !requireMethod(writer, request, http.MethodPost) {
+		return
+	}
+	token, ok := readBearerToken(writer, request)
+	if !ok {
+		return
+	}
+	defer clear(token)
+	envelope, payload, ok := state.readEdgeHubRequest(writer, request, &cloudpb.AcquireRelayLeaseRequest{})
+	if !ok {
+		return
+	}
+	defer clear(envelope.Payload)
+	relayRequest := payload.(*cloudpb.AcquireRelayLeaseRequest)
+	if relayRequest.GetManagedSessionId() == "" || relayRequest.GetTargetDeviceId() == "" || relayRequest.GetRoutePreference() != cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY || relayRequest.GetPreferredRegion() != "" && relayRequest.GetPreferredRegion() != devRegion {
+		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "single Relay request is invalid", false)
+		return
+	}
+	accountID, clientDeviceID, targetDeviceID := envelope.AccountID, envelope.DeviceID, relayRequest.GetTargetDeviceId()
+	daemonPrincipal := false
+	if _, err := state.edgeAuth.AuthorizeDirect(token, accountID, clientDeviceID, targetDeviceID); err != nil {
+		if _, daemonErr := state.edgeAuth.AuthorizeDaemon(token, accountID, envelope.DeviceID); daemonErr != nil || envelope.DeviceID != targetDeviceID {
+			writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay edge identity was rejected", false)
+			return
+		}
+		daemonPrincipal = true
+		state.relayControl.mu.Lock()
+		current, exists := state.relayControl.sessions[relayRequest.GetManagedSessionId()]
+		state.relayControl.mu.Unlock()
+		if !exists || current.claims.AccountID != accountID || current.claims.TargetDeviceID != targetDeviceID {
+			writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Relay session binding was rejected", false)
+			return
+		}
+		clientDeviceID = current.claims.ClientDeviceID
+	}
+	lease, activation, err := state.acquireSingleRelay(accountID, relayRequest.GetManagedSessionId(), clientDeviceID, targetDeviceID)
+	if err != nil {
+		writeCloudError(writer, http.StatusTooManyRequests, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_QUOTA_EXHAUSTED, "regional Relay budget rejected the request", false)
+		return
+	}
+	credential := activation.ClientCredential
+	if daemonPrincipal {
+		credential = activation.DaemonCredential
+	}
+	if credential.Username == "" || credential.Password == "" {
+		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE, "single Relay credential is unavailable", true)
+		return
+	}
+	writeProto(writer, http.StatusOK, &cloudpb.RelayLease{LeaseId: lease.claims.LeaseID, SignedLease: lease.signedLease, ExpiresAtUnix: uint64(lease.claims.ExpiresAtUnix), PathKind: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY, IceServers: []*cloudpb.IceServer{{Urls: []string{state.relayControl.url}, Username: credential.Username, Credential: credential.Password}}})
+}
+
 func (state *serviceState) readEdgeHubRequest(writer http.ResponseWriter, request *http.Request, payload any) (httpapi.EdgeHubRequest, any, bool) {
 	envelope := httpapi.EdgeHubRequest{}
 	if !readJSON(writer, request, &envelope) || envelope.AccountID == "" || envelope.DeviceID == "" || len(envelope.Payload) == 0 || request.Context().Err() != nil {
@@ -208,6 +261,11 @@ func (state *serviceState) readEdgeHubRequest(writer http.ResponseWriter, reques
 	case *cloudpb.CompleteSignalingOfferRequest:
 		if err := readProtoBytes(envelope.Payload, target); err != nil {
 			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub answer payload is invalid", false)
+			return httpapi.EdgeHubRequest{}, nil, false
+		}
+	case *cloudpb.AcquireRelayLeaseRequest:
+		if err := readProtoBytes(envelope.Payload, target); err != nil {
+			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub Relay payload is invalid", false)
 			return httpapi.EdgeHubRequest{}, nil, false
 		}
 	default:

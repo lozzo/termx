@@ -1,6 +1,6 @@
 # Hub 边缘授权与 Control Plane 降载计划
 
-状态：CLOUD009 已完成，CLOUD010 进行中；2026-07-12
+状态：CLOUD009-CLOUD010 已完成，CLOUD011 进行中；2026-07-12
 
 ## 1. 目标
 
@@ -486,7 +486,7 @@ sequenceDiagram
 
 ## 7. Relay 与用量边界
 
-CLOUD009 只迁移 direct。CLOUD010 为每个区域提供受限委派 issuer 与签名 RelayBudget/PolicySnapshot；不得把 Control Plane root signing key 复制到 Hub。Hub 在预算内签发 session-specific lease/credential，Relay 验证区域 issuer。用量采用带 `event_id` 和单调 sequence 的 at-least-once durable outbox，Control Plane 幂等结算。
+CLOUD009 只迁移 direct。CLOUD010 已为单区域提供受限 regional issuer 与签名 RelayBudget/PolicySnapshot；Control Plane root signing key 不进入 Hub。Hub 在预算内签发 session-specific lease/credential，Relay 验证区域 issuer。用量以 signed lease + 带 `event_id`/单调 sequence 的 signed event 写入 durable outbox，Control Plane 恢复后重新验 lease 并幂等结算。
 
 ## 8. 迁移切片
 

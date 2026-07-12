@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
+	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
+	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/proto/wire"
 	remotev2client "github.com/lozzow/termx/remote/client"
@@ -21,7 +24,19 @@ import (
 	"github.com/lozzow/termx/shared/remoteauth"
 	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
+	"google.golang.org/protobuf/proto"
 )
+
+type cachedResolveClient struct {
+	cloudcompanion.Client
+	resolved *cloudpb.ResolvedEndpoint
+}
+
+func (client cachedResolveClient) ResolveEndpoint(_ context.Context, request *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
+	resolved := proto.Clone(client.resolved).(*cloudpb.ResolvedEndpoint)
+	resolved.EndpointId = request.GetEndpointId()
+	return resolved, nil
+}
 
 // TestManagedSingleRelayE2EAcrossRealBoundaries 是 CLOUD004 的用户链路 harness。
 // client 与 daemon 必须为同一 ManagedSession 取得不同 TURN credential，实际 ICE path 必须是 single_relay；DataChannel 内授权和 core-v2 protocol 与 direct 完全相同。
@@ -32,7 +47,8 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	clock := &testClock{now: time.Now().UTC()}
-	cloudRuntime, err := Start(Config{Now: clock.Now, EnrollmentCode: "managed-relay-enroll"})
+	usageOutboxPath := t.TempDir() + "/relay-usage.outbox"
+	cloudRuntime, err := Start(Config{Now: clock.Now, EnrollmentCode: "managed-relay-enroll", UsageOutboxPath: usageOutboxPath})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,6 +119,33 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitManagedDirectPresence(t, ctx, clientCompanion, identity.DeviceID)
+	presenceOpenObserved := false
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
+		for _, request := range capture.snapshot() {
+			if request.path == httpapi.HubOpenPresencePath {
+				presenceOpenObserved = true
+				break
+			}
+		}
+		if presenceOpenObserved {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !presenceOpenObserved {
+		t.Fatal("daemon Hub presence stream was not established before Control Plane shutdown")
+	}
+	cachedResolved, err := clientCompanion.ResolveEndpoint(ctx, &cloudpb.ResolveEndpointRequest{EndpointId: "managed-relay", TargetDeviceId: identity.DeviceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	controlShutdownContext, controlShutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	if err := cloudRuntime.controlServer.Shutdown(controlShutdownContext); err != nil {
+		controlShutdownCancel()
+		t.Fatal(err)
+	}
+	controlShutdownCancel()
+	relayCompanion := cachedResolveClient{Client: clientCompanion, resolved: cachedResolved}
 	bundle, err := remoteauth.IssuePairingBundle(identity, remoteauth.PairingIssueOptions{
 		Label: "Managed Relay daemon", Scope: remoteauth.Scope{AllowDaemon: true}, Lifetime: time.Hour, Now: clock.Now(),
 	})
@@ -125,7 +168,7 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	manager := services.NewEndpointManagerWithDialers(registry, map[connection.TransportKind]services.EndpointDialer{
 		connection.TransportHubP2P: func(dialContext context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
 			session, dialErr := remotev2client.DialSession(dialContext, remotev2client.DialOptions{
-				Companion: clientCompanion, EndpointID: string(cfg.ID), TargetDeviceID: cfg.HubDeviceID,
+				Companion: relayCompanion, EndpointID: string(cfg.ID), TargetDeviceID: cfg.HubDeviceID,
 				DeviceFingerprint: cfg.DeviceFingerprint, CapabilityGrant: bundle.CapabilityGrant,
 				RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true, Now: clock.Now(),
 				Phase: func(phase cloudcompanion.EndpointPhase) { services.ReportEndpointDialPhase(dialContext, phase) },
@@ -158,6 +201,14 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	managedEndpointID := state.EndpointID("managed-relay")
 	listed, err := manager.List(ctx, services.TerminalListRequest{EndpointID: managedEndpointID})
 	if err != nil || !managedDirectListContains(listed.Items, managedEndpointID, "relay-remote-terminal") {
+		select {
+		case agentErr := <-agentErrors:
+			t.Logf("daemon agent error before Relay connection: %v", agentErr)
+		default:
+		}
+		for _, captured := range capture.snapshot() {
+			t.Logf("cloud request host=%s path=%s", captured.host, captured.path)
+		}
 		t.Fatalf("managed Relay list = (%#v, %v)", listed, err)
 	}
 	connected, phases := waitManagedDirectConnected(t, ctx, events, managedEndpointID)
@@ -189,8 +240,8 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	waitManagedDirectLiveText(t, ctx, manager, managedEndpointID, "relay-remote-terminal", "RELAY-ECHO:managed-relay-payload")
 	waitManagedDirectHistoryText(t, ctx, manager, managedEndpointID, "relay-remote-terminal", "managed-relay-payload")
 	clock.Advance(2 * time.Second)
-	if err := cloudRuntime.flushRelayUsage(ctx, ""); err != nil {
-		t.Fatal(err)
+	if err := cloudRuntime.flushRelayUsage(ctx, ""); err == nil {
+		t.Fatal("Relay usage unexpectedly reached the stopped Control Plane")
 	}
 	cloudRuntime.state.relayControl.mu.Lock()
 	managedSessionID := ""
@@ -199,6 +250,26 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 		break
 	}
 	cloudRuntime.state.relayControl.mu.Unlock()
+	restartedOutbox, err := cloudrelay.NewUsageOutbox(usageOutboxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := restartedOutbox.Pending()
+	if err != nil || len(pending) == 0 {
+		t.Fatalf("Control Plane down usage outbox = (%#v, %v)", pending, err)
+	}
+	for _, record := range pending {
+		claims, err := servicecredential.VerifyRelayLeaseForService(cloudRuntime.state.relayControl.leaseKeyRing, record.SignedLease, devRelayLeaseIssuer, devRelayPool, time.Minute, clock.Now())
+		if err != nil {
+			t.Fatalf("restored usage signed lease = %v", err)
+		}
+		if _, err := cloudRuntime.state.relayControl.usageLedger.Apply(claims, record.Event, clock.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if err := restartedOutbox.Ack(record.Event.EventID, record.Event.Sequence); err != nil {
+			t.Fatal(err)
+		}
+	}
 	settled := cloudRuntime.state.relayControl.usageLedger.Aggregate(managedSessionID, "")
 	if settled.BytesUp+settled.BytesDown == 0 || settled.ActiveSeconds == 0 {
 		t.Fatalf("managed Relay settled usage = %#v", settled)
@@ -227,7 +298,7 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	failureContext, cancelFailure := context.WithTimeout(ctx, 3*time.Second)
 	defer cancelFailure()
 	failedSession, relayFailure := remotev2client.DialSession(failureContext, remotev2client.DialOptions{
-		Companion: failureCompanion, EndpointID: "managed-relay-after-stop", TargetDeviceID: identity.DeviceID,
+		Companion: cachedResolveClient{Client: failureCompanion, resolved: cachedResolved}, EndpointID: "managed-relay-after-stop", TargetDeviceID: identity.DeviceID,
 		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: bundle.CapabilityGrant,
 		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true, Now: clock.Now(),
 	})

@@ -61,8 +61,6 @@ const (
 	ControlResolveEndpointPath = "/v1/endpoints/resolve"
 	// ControlPresenceAdmissionPath 是 device-scoped presence ticket endpoint。
 	ControlPresenceAdmissionPath = "/v1/admissions/presence"
-	// ControlAcquireRelayLeasePath 是 account/device caller 获取同一 ManagedSession principal-specific TURN material 的 endpoint。
-	ControlAcquireRelayLeasePath = "/v1/relay/leases/acquire"
 
 	// HubHealthPath 是 dev Hub readiness endpoint。
 	HubHealthPath = "/healthz"
@@ -72,6 +70,8 @@ const (
 	HubCreateSignalingPath = "/v1/signaling/create"
 	// HubCompleteSignalingPath 返回 daemon answer 或稳定错误。
 	HubCompleteSignalingPath = "/v1/signaling/complete"
+	// HubAcquireRelayLeasePath 使用区域委派预算签发 caller-specific TURN material。
+	HubAcquireRelayLeasePath = "/v1/relay/leases/acquire"
 )
 
 // Manifest 是 `make cloud-dev` 写入 `.artifacts` 的非生产运行描述。

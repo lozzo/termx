@@ -11,9 +11,6 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
-	"github.com/lozzow/termx/private/cloud/control-plane/domain"
-	"github.com/lozzow/termx/private/cloud/control-plane/entitlement"
-	"github.com/lozzow/termx/private/cloud/control-plane/relaylease"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	"github.com/lozzow/termx/private/cloud/control-plane/usage"
 	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
@@ -30,11 +27,12 @@ type relayControlState struct {
 	mu      sync.Mutex
 	usageMu sync.Mutex
 
-	leaseService *relaylease.Service
+	leaseIssuer  servicecredential.RelayLeaseIssuer
+	leaseKeyRing *servicecredential.KeyRing
 	authority    *cloudrelay.Authority
 	usageLedger  *usage.Ledger
 	sessions     map[string]relaySessionState
-	pendingUsage []usage.Event
+	usageOutbox  *cloudrelay.UsageOutbox
 	url          string
 }
 
@@ -74,23 +72,11 @@ func (state *serviceState) initializeRelay(now time.Time) error {
 	if err != nil {
 		return err
 	}
-
-	entitlements := entitlement.NewStore()
-	if err := entitlements.Put(entitlement.Entitlement{
-		AccountID: devAccountID, Status: entitlement.StatusActive, ValidUntil: now.Add(24 * time.Hour),
-		SourcePlanRef: "dev-local-standard-relay",
-		Policy: entitlement.QuotaPolicy{
-			AllowedRegions: []string{devRegion}, AllowRelayMesh: false, MaxLeaseDuration: relayLeaseTTL,
-			MaxBytesPerLease: 64 << 20, MaxBitrateKbps: 100_000, MaxConcurrency: 2,
-		},
-		UpdatedAt: now,
-	}); err != nil {
-		return err
-	}
-	leaseService, err := relaylease.NewService(state.directory, entitlements, leaseIssuer)
+	usageOutbox, err := cloudrelay.NewUsageOutbox(state.usageOutboxPath)
 	if err != nil {
 		return err
 	}
+
 	credentialSecret, err := state.randomBytes(32)
 	if err != nil {
 		return err
@@ -107,49 +93,57 @@ func (state *serviceState) initializeRelay(now time.Time) error {
 		return err
 	}
 	state.relayControl = &relayControlState{
-		leaseService: leaseService,
-		authority:    authority,
-		usageLedger:  usageLedger,
-		sessions:     make(map[string]relaySessionState),
+		leaseIssuer: leaseIssuer, leaseKeyRing: leaseKeyRing,
+		authority: authority, usageLedger: usageLedger, usageOutbox: usageOutbox,
+		sessions: make(map[string]relaySessionState),
 	}
 	return nil
 }
 
-func (state *serviceState) acquireSingleRelay(session domain.ManagedSession) (relaySessionState, cloudrelay.Activation, error) {
+func (state *serviceState) acquireSingleRelay(accountID, managedSessionID, clientDeviceID, targetDeviceID string) (relaySessionState, cloudrelay.Activation, error) {
 	control := state.relayControl
 	if control == nil {
 		return relaySessionState{}, cloudrelay.Activation{}, fmt.Errorf("dev Relay is not configured")
 	}
 	now := state.now().UTC()
+	budget, err := state.edgeAuth.RelayBudget(accountID)
+	if err != nil {
+		return relaySessionState{}, cloudrelay.Activation{}, err
+	}
 	control.mu.Lock()
 	defer control.mu.Unlock()
+	for sessionID, existing := range control.sessions {
+		if !now.Before(time.Unix(existing.claims.ExpiresAtUnix, 0)) {
+			clear(existing.signedLease)
+			delete(control.sessions, sessionID)
+		}
+	}
 
 	// ManagedSession 是两端领取同一签名 lease 的复用真值；client/daemon credential 由 Relay Authority 分别派生。
-	current, ok := control.sessions[session.ID]
+	current, ok := control.sessions[managedSessionID]
 	if ok && !now.Before(time.Unix(current.claims.ExpiresAtUnix, 0)) {
 		clear(current.signedLease)
-		delete(control.sessions, session.ID)
+		delete(control.sessions, managedSessionID)
 		ok = false
 	}
 	if !ok {
+		if uint32(len(control.sessions)) >= budget.MaxConcurrency {
+			return relaySessionState{}, cloudrelay.Activation{}, fmt.Errorf("regional Relay budget exhausted")
+		}
 		leaseID, err := state.randomID("relay-lease")
 		if err != nil {
 			return relaySessionState{}, cloudrelay.Activation{}, err
 		}
-		lease, claims, err := control.leaseService.Issue(relaylease.Command{
-			LeaseID: leaseID, AccountID: session.AccountID, ManagedSessionID: session.ID,
-			AudienceRelayPool: devRelayPool, Region: devRegion, PathKind: servicecredential.RelayPathSingle,
-			RequestedTTL: relayLeaseTTL, CredentialBindingID: devRelayBindingID,
-		}, now)
+		lease, claims, err := control.leaseIssuer.Issue(servicecredential.RelayLeaseRequest{LeaseID: leaseID, AudienceRelayPool: devRelayPool, AccountID: accountID, ManagedSessionID: managedSessionID, ClientDeviceID: clientDeviceID, TargetDeviceID: targetDeviceID, Region: devRegion, PathKind: servicecredential.RelayPathSingle, TTL: min(budget.MaxLeaseDuration, relayLeaseTTL), MaxBytes: budget.MaxBytes, MaxBitrateKbps: budget.MaxBitrateKbps, MaxConcurrency: budget.MaxConcurrency, CredentialBindingID: devRelayBindingID}, now)
 		if err != nil {
 			return relaySessionState{}, cloudrelay.Activation{}, err
 		}
 		current = relaySessionState{signedLease: lease.Bytes(), claims: claims}
-		control.sessions[session.ID] = current
+		control.sessions[managedSessionID] = current
 	}
 	activation, err := control.authority.ActivateLease(cloudrelay.ActivationRequest{
-		SignedLease: current.signedLease, AccountID: session.AccountID, ManagedSessionID: session.ID,
-		ClientDeviceID: session.ClientDeviceID, TargetDeviceID: session.TargetDeviceID,
+		SignedLease: current.signedLease, AccountID: accountID, ManagedSessionID: managedSessionID,
+		ClientDeviceID: clientDeviceID, TargetDeviceID: targetDeviceID,
 		PathKind: servicecredential.RelayPathSingle,
 	})
 	if err != nil {
@@ -172,6 +166,21 @@ func (state *serviceState) relayLeaseClaims(leaseID string) (servicecredential.R
 		}
 	}
 	return servicecredential.RelayLeaseClaims{}, false
+}
+
+func (state *serviceState) relayUsageRecord(event usage.Event) (cloudrelay.UsageRecord, bool) {
+	control := state.relayControl
+	if control == nil {
+		return cloudrelay.UsageRecord{}, false
+	}
+	control.mu.Lock()
+	defer control.mu.Unlock()
+	for _, current := range control.sessions {
+		if current.claims.LeaseID == event.LeaseID {
+			return cloudrelay.UsageRecord{SignedLease: append([]byte(nil), current.signedLease...), Event: event}, true
+		}
+	}
+	return cloudrelay.UsageRecord{}, false
 }
 
 func (runtime *Runtime) reportRelayUsage() {
@@ -204,19 +213,37 @@ func (runtime *Runtime) flushRelayUsage(ctx context.Context, terminationReason s
 	if err != nil {
 		return err
 	}
-	control.pendingUsage = append(control.pendingUsage, events...)
-	// 只有 Control Plane 明确确认后才移除事件；响应丢失时重发同一签名 event，由 ledger 幂等收敛。
-	for len(control.pendingUsage) > 0 {
-		if err := runtime.postRelayUsage(ctx, control.pendingUsage[0]); err != nil {
+	if len(events) > 0 {
+		records := make([]cloudrelay.UsageRecord, 0, len(events))
+		for _, event := range events {
+			record, ok := runtime.state.relayUsageRecord(event)
+			if !ok {
+				return fmt.Errorf("Relay usage lease is unavailable")
+			}
+			records = append(records, record)
+		}
+		if err := control.usageOutbox.Enqueue(records...); err != nil {
 			return err
 		}
-		control.pendingUsage = control.pendingUsage[1:]
+	}
+	// 只有 Control Plane 明确确认后才移除事件；响应丢失时重发同一签名 event，由 ledger 幂等收敛。
+	pending, err := control.usageOutbox.Pending()
+	if err != nil {
+		return err
+	}
+	for _, record := range pending {
+		if err := runtime.postRelayUsage(ctx, record); err != nil {
+			return err
+		}
+		if err := control.usageOutbox.Ack(record.Event.EventID, record.Event.Sequence); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func (runtime *Runtime) postRelayUsage(ctx context.Context, event usage.Event) error {
-	payload, err := json.Marshal(event)
+func (runtime *Runtime) postRelayUsage(ctx context.Context, record cloudrelay.UsageRecord) error {
+	payload, err := json.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("encode dev Relay usage: %w", err)
 	}

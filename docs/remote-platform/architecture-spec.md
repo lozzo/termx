@@ -206,7 +206,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - device registration、ownership、最小目录和 presence projection。
 - 套餐、entitlement、quota、账单和风控。
 - 签名 edge token、HubDirectory，以及带单调 revision 的设备/订阅/撤销投影。
-- 基于 entitlement 签发短期 RelayLease。
+- 向区域 Hub 同步签名 RelayPolicy/RelayBudget 和受限 regional issuer 授权；不参与每次 RelayLease 请求。
 - 接收、去重和结算 Relay usage event。
 - 配对审批和审计 metadata，但不保存原始 capability grant。
 
@@ -226,6 +226,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - 转发 offer、answer 和 ICE candidate。
 - 分配 signaling correlation ID、超时和错误。
 - 在需要时返回允许使用的 Relay endpoints metadata。
+- 在签名区域预算内使用独立 regional key 签发短期、session-specific RelayLease；不得持有 Control Plane root key。
 
 不负责：
 
@@ -243,6 +244,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - 限制 region、session、并发、速率、字节数和 expiry。
 - 转发 DTLS/SRTP/WebRTC 数据。
 - 生成幂等、可补报的 usage event。
+- 先把 signed lease + signed usage event 写入 durable outbox，再异步向 Control Plane at-least-once 补报。
 
 不负责：
 

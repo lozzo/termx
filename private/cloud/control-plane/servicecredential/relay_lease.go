@@ -168,6 +168,23 @@ func VerifyRelayLease(ring *KeyRing, encoded []byte, expected RelayLeaseExpectat
 	return claims, nil
 }
 
+// VerifyRelayLeaseForService 验证 regional issuer、Relay pool、签名、时效和完整 quota claims。
+// 它供 Control Plane usage ingest 在 Hub/Relay 重启后从 durable outbox 的 signed lease 重建结算绑定；不能用于 TURN allocation，因为不校验请求侧 session/device context。
+func VerifyRelayLeaseForService(ring *KeyRing, encoded []byte, issuer, audienceRelayPool string, maxReportDelay time.Duration, now time.Time) (RelayLeaseClaims, error) {
+	var claims RelayLeaseClaims
+	if err := verifyToken(relayLeasePrefix, string(encoded), tokenKeyID, &claims, ring, now); err != nil {
+		return RelayLeaseClaims{}, err
+	}
+	request := RelayLeaseRequest{LeaseID: claims.LeaseID, AudienceRelayPool: claims.AudienceRelayPool, AccountID: claims.AccountID, ManagedSessionID: claims.ManagedSessionID, ClientDeviceID: claims.ClientDeviceID, TargetDeviceID: claims.TargetDeviceID, Region: claims.Region, PathKind: claims.PathKind, RouteID: claims.RouteID, RouteVersion: claims.RouteVersion, ClientEdgeRelayID: claims.ClientEdgeRelayID, DaemonEdgeRelayID: claims.DaemonEdgeRelayID, MaxInternalTransit: claims.MaxInternalTransit, TTL: time.Unix(claims.ExpiresAtUnix, 0).Sub(time.Unix(claims.NotBeforeUnix, 0)), MaxBytes: claims.MaxBytes, MaxBitrateKbps: claims.MaxBitrateKbps, MaxConcurrency: claims.MaxConcurrency, CredentialBindingID: claims.CredentialBindingID}
+	if claims.Version != relayLeaseVersion || claims.KeyID == "" || claims.Issuer != issuer || claims.AudienceRelayPool != audienceRelayPool || validateRelayLeaseRequest(request) != nil {
+		return RelayLeaseClaims{}, ErrCredentialBinding
+	}
+	if maxReportDelay < 0 || maxReportDelay > 24*time.Hour || now.Before(time.Unix(claims.NotBeforeUnix, 0)) || now.After(time.Unix(claims.ExpiresAtUnix, 0).Add(maxReportDelay)) {
+		return RelayLeaseClaims{}, ErrCredentialExpired
+	}
+	return claims, nil
+}
+
 func validateRelayLeaseRequest(request RelayLeaseRequest) error {
 	if request.LeaseID == "" || request.AudienceRelayPool == "" || request.AccountID == "" || request.ManagedSessionID == "" || request.ClientDeviceID == "" || request.TargetDeviceID == "" || request.Region == "" || request.CredentialBindingID == "" {
 		return ErrMalformedCredential

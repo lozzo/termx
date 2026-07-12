@@ -18,6 +18,11 @@ type EdgePolicyAccount struct {
 	AuthEpoch            uint64 `json:"auth_epoch"`
 	ManagedDirectEnabled bool   `json:"managed_direct_enabled"`
 	Revoked              bool   `json:"revoked"`
+	StandardRelayEnabled bool   `json:"standard_relay_enabled"`
+	RelayMaxLeaseSeconds uint32 `json:"relay_max_lease_seconds"`
+	RelayMaxBytes        uint64 `json:"relay_max_bytes"`
+	RelayMaxBitrateKbps  uint32 `json:"relay_max_bitrate_kbps"`
+	RelayMaxConcurrency  uint32 `json:"relay_max_concurrency"`
 }
 
 // EdgePolicyDevice 是签名 Hub 授权快照中的最小设备 ownership/public-key 投影。
@@ -97,6 +102,9 @@ func validateEdgePolicyClaims(claims EdgePolicyClaims, issuer, hubID string, now
 	accounts := make(map[string]struct{}, len(claims.Accounts))
 	for _, account := range claims.Accounts {
 		if account.AccountID == "" || account.AuthEpoch == 0 {
+			return ErrMalformedCredential
+		}
+		if account.StandardRelayEnabled && (account.RelayMaxLeaseSeconds == 0 || account.RelayMaxBytes == 0 || account.RelayMaxBitrateKbps == 0 || account.RelayMaxConcurrency == 0) {
 			return ErrMalformedCredential
 		}
 		if _, exists := accounts[account.AccountID]; exists {

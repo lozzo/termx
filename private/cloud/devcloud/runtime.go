@@ -67,6 +67,8 @@ type Config struct {
 	Now                  func() time.Time
 	Random               io.Reader
 	EnrollmentCode       string
+	// UsageOutboxPath 是 Relay signed usage durable queue；为空时 dev runtime 使用独立临时路径。
+	UsageOutboxPath string
 }
 
 // Runtime 是一组已启动的 dev-local Control Plane/Hub listener 与单个 UDP TURN Relay。
@@ -150,6 +152,7 @@ type serviceState struct {
 	edgeAuth         *cloudhub.EdgeAuthorizer
 	edgeRevision     uint64
 	edgeDevices      map[string]cloudhub.DeviceAuthorization
+	usageOutboxPath  string
 	relayControl     *relayControlState
 
 	presenceQueueSize int
@@ -200,6 +203,14 @@ func start(config Config, options runtimeOptions) (*Runtime, error) {
 		loginFlows: make(map[string]loginFlow), enrollmentFlows: make(map[string]enrollmentFlow), sessions: make(map[[sha256.Size]byte]cloudSession),
 		presenceQueueSize: options.presenceQueueSize, clientQueueSize: options.clientQueueSize,
 	}
+	if config.UsageOutboxPath == "" {
+		outboxID, randomErr := state.randomID("usage-outbox")
+		if randomErr != nil {
+			return nil, randomErr
+		}
+		config.UsageOutboxPath = filepath.Join(os.TempDir(), outboxID+".json")
+	}
+	state.usageOutboxPath = config.UsageOutboxPath
 	if state.presenceQueueSize < 1 || state.clientQueueSize < 1 {
 		return nil, fmt.Errorf("dev Hub queue capacity must be positive")
 	}

@@ -57,7 +57,6 @@ type fakeControlPlane struct {
 	presenceAdmission cloudservice.HubAdmission
 	clientAdmission   cloudservice.HubAdmission
 	daemonAdmission   cloudservice.HubAdmission
-	leaseResponse     *cloudpb.RelayLease
 	planResponse      *cloudpb.ManagedRoutePlan
 	planCount         int
 	qualityCount      int
@@ -101,11 +100,6 @@ func (controlPlane *fakeControlPlane) AcquirePresenceAdmission(_ context.Context
 	return controlPlane.presenceAdmission, nil
 }
 
-func (controlPlane *fakeControlPlane) AcquireRelayLease(_ context.Context, authorization session.Authorization, _ *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
-	controlPlane.capture(authorization)
-	return controlPlane.leaseResponse, nil
-}
-
 func (controlPlane *fakeControlPlane) PlanManagedRoute(_ context.Context, authorization session.Authorization, _ *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
 	controlPlane.capture(authorization)
 	controlPlane.mu.Lock()
@@ -131,10 +125,15 @@ func (controlPlane *fakeControlPlane) ReportConnectionOutcome(_ context.Context,
 }
 
 type fakeHub struct {
-	mu        sync.Mutex
-	presence  *presenceSource
-	signaling *signalingSource
-	completed int
+	mu            sync.Mutex
+	presence      *presenceSource
+	signaling     *signalingSource
+	completed     int
+	leaseResponse *cloudpb.RelayLease
+}
+
+func (hub *fakeHub) AcquireRelayLease(_ context.Context, _ session.Authorization, _ *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
+	return hub.leaseResponse, nil
 }
 
 func (hub *fakeHub) OpenPresence(_ context.Context, _ session.Authorization, _ cloudservice.HubAdmission, _ *cloudpb.OpenPresenceRequest) (cloudservice.PresenceSource, error) {
@@ -592,8 +591,6 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 		presenceAdmission: presenceAdmission,
 		clientAdmission:   clientAdmission,
 		daemonAdmission:   daemonAdmission,
-		leaseResponse: &cloudpb.RelayLease{LeaseId: "lease-1", SignedLease: []byte("signed-lease"), ExpiresAtUnix: uint64(now.Add(5 * time.Minute).Unix()), PathKind: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
-			IceServers: []*cloudpb.IceServer{{Urls: []string{"turn:relay.example.test"}, Username: "user", Credential: "credential"}}},
 		planResponse: &cloudpb.ManagedRoutePlan{
 			PlanId: "plan-1", ManagedSessionId: "managed-1", TargetDeviceId: "daemon-1",
 			SelectedPath:    cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
@@ -602,7 +599,7 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 			IceServers: []*cloudpb.IceServer{{Urls: []string{"turns:relay.example.test"}, Username: "user", Credential: "credential"}},
 		},
 	}
-	hub := &fakeHub{presence: newPresenceSource(8), signaling: newSignalingSource(8)}
+	hub := &fakeHub{presence: newPresenceSource(8), signaling: newSignalingSource(8), leaseResponse: &cloudpb.RelayLease{LeaseId: "lease-1", SignedLease: []byte("signed-lease"), ExpiresAtUnix: uint64(now.Add(5 * time.Minute).Unix()), PathKind: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY, IceServers: []*cloudpb.IceServer{{Urls: []string{"turn:relay.example.test"}, Username: "user", Credential: "credential"}}}}
 	service, err := companion.NewService(companion.Config{
 		CompanionVersion: "1.0.0", BuildChannel: "test", StreamCapacity: 1,
 		Capabilities: []cloudpb.CompanionCapability{

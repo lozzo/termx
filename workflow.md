@@ -4,7 +4,7 @@
 
 - REC001 已完成仓库可控状态恢复：尚未提交的 RM004 目录与维护改动已经审计收口，误触发的发布期验证扩展已经清理。
 - CLOUD001-CLOUD005 已完成单区域 Cloud 纵向闭环：开发云、桌面 managed direct、single Relay 与 Official Android 均已跨真实用户链路验收。
-- CLOUD009 已完成 managed direct 的 Hub 本地授权热路径；客户端启动阶段取得签名 edge token，连接阶段不再领取 client/answer admission，也不访问 Control Plane 或其数据库。当前开始 CLOUD010 单 Relay 委派授权与用量补报。
+- CLOUD009-CLOUD010 已完成 managed direct 与 single Relay 的 Hub 本地授权热路径；连接阶段不再领取 managed admission 或从 Control Plane 获取 RelayLease。当前开始 CLOUD011 客户端启动凭据、HubDirectory 刷新与真实客户端中断验收。
 - FILE001-FILE004 与 CLOUD006-CLOUD008 已完成；Official Android 显式 development build 已通过公网 HTTP staging 在 5G 真机完成 direct、single Relay、terminal 与恢复链路。生产上线前必须另行切换 HTTPS/TLS，不得复用本切片的明文 profile。
 - 当前仓库是唯一 private monorepo；当前不是正式开源或生产发布阶段。public snapshot、开源许可证模板替换、secret audit、第二仓和发布自动化全部延后。
 - GA003 Relay Mesh、GA004 transit、多区域高可用、复杂计费、SSO 和 live reroute 继续保持延后；CLOUD005 完成不会自动启动这些事项，必须由用户基于真实数据重新排序。
@@ -92,8 +92,8 @@
 | CLOUD007 | 完成 | 无隧道公网 HTTP staging | 外部开发客户端无需 SSH tunnel 可访问 Web Controller、登录、resolve 与 Hub signaling；默认和 production 路径仍 fail closed |
 | CLOUD008 | 完成 | Official Android 公网 staging | ADB 真机无需 reverse 可经 Wi-Fi/移动网络连接、列出/attach terminal、输入输出并完成后台恢复；Community/default Official 仍 fail closed |
 | CLOUD009 | 完成 | Hub managed direct 本地授权热路径 | Hub 从版本化授权投影离线验证 client，并本地创建 EdgeManagedSession；关闭 Control Plane 后有效快照内的新 direct 连接仍成功，撤销/过期/cache miss fail closed |
-| CLOUD010 | 进行中 | 单 Relay 委派授权与用量补报 | Hub/Relay 使用区域委派预算签发短期凭据；Control Plane 中断时有效预算内可连接，用量经幂等 durable outbox 补报 |
-| CLOUD011 | 待开始 | 客户端启动凭据与 Hub 目录刷新 | desktop/Official Android 启动时可访问 Control Plane 获取/刷新签名 edge token 与 HubDirectory，后续 direct/Relay 连接只访问 Hub |
+| CLOUD010 | 完成 | 单 Relay 委派授权与用量补报 | Hub/Relay 使用区域委派预算签发短期凭据；Control Plane 中断时有效预算内可连接，用量经幂等 durable outbox 补报 |
+| CLOUD011 | 进行中 | 客户端启动凭据与 Hub 目录刷新 | desktop/Official Android 启动时可访问 Control Plane 获取/刷新签名 edge token 与 HubDirectory，后续 direct/Relay 连接只访问 Hub |
 | FILE001 | 完成 | 统一文件能力设计门禁 | 文件 owner、权限、方法、流控、失败语义和旧 API 迁移边界清晰 |
 | FILE002 | 完成 | daemon 文件 metadata 与预览 | local protocol 可安全 list/stat/preview/mkdir/rename/delete/copy/move |
 | FILE003 | 完成 | 文件上传下载数据流 | local 与 WebRTC 使用同一流协议完成背压、取消、续传和摘要校验 |
@@ -156,4 +156,5 @@
 - CLOUD007 已完成：按用户明确授权，Nginx 在 `41100/41101/41102` 将 Web Controller、Control Plane 与 Hub loopback owner 暴露为无隧道公网 HTTP staging；`41100/runtime.json` 公开显式 `staging-public-http` development manifest，但不公开有效 enrollment code 或 pairing grant。本机 development Companion 直接经公网完成 login、resolve、Hub signaling 和真实 TUI resolving/signaling/connecting/authorizing/connected，SSH 未参与运行链路。该 profile 只允许固定测试账号、短期 session 和内存 store；默认 `dev-local`/`staging-ssh`、stable build 仍拒绝公网明文。上线前 HTTPS/TLS 仍是独立强制门禁。
 - CLOUD008 已完成：Official Android 增加互斥、显式的 `termxOfficialPublicHTTPStaging` debug build，默认 Official、Community 和原 loopback profile 边界不变。`24129PN74C` 真机在无 ADB reverse、5G 网络下完成公网 pairing、managed direct、List/Attach/Input/Output 和 8 秒后台恢复；direct 为 `prflx / host`，RTT 约 51-64 ms。真机同时暴露并修复 `Use relay` 未把 `forceRelay` 下沉 native，以及 daemon/同机 TURN 双端 relay-only 导致 answer 无 candidate 的问题；Answerer 验证 offer 只能含 relay candidate 后显式发布 daemon host candidate，最终观测 `Mode=Relay`、`Path=single_relay`、`Candidates=relay / host`、RTT 49 ms。服务器 `41003/udp` 双向正常，先前安全组阻断判断已撤销。
 - CLOUD009 已完成：Control Plane 登录/enrollment 签发带 client/daemon principal、Hub audience、auth epoch 和 expiry 的 edge credential；Hub 以签名完整 policy snapshot、严格 revision、内存 projection 和原子文件 store 为授权真值，重启恢复时重新验签。Companion managed offer/answer contract 已删除逐连接 `AcquireClientAdmission`/`AcquireDaemonAnswerAdmission` 和对应 HTTP 路由；Hub 本地创建 direct EdgeManagedSession，daemon answer 绑定 active target presence。真实 HTTP harness 关闭 Control Plane listener 后仍新建并完成 direct，Hub/Companion/devcloud 全量测试、Hub race、direct/vertical race 与文档准入全绿。`relay_only` 在 CLOUD010 完成前仍显式携带原 Control Plane lease correlation ID，不影响 direct 热路径，也不得成为最终 Relay ownership。
+- CLOUD010 已完成：`AcquireRelayLease` 从 ControlPlaneAdapter/Control Plane HTTP 路由迁到 HubAdapter/Hub edge endpoint；client/daemon edge principal 与本地 target policy 决定准入。签名 policy snapshot 携带 single Relay enable、TTL、bytes、bitrate 和 concurrency 预算，Hub 使用独立 regional key 在预算内签 lease，Relay 只信任该 key。真实 TURN E2E 在 Control Plane server 关闭后完成 List/Attach/Input/History 和 `single_relay`，预算耗尽/过期释放有 harness。signed usage event 连同原始 signed lease 先写入原子 durable outbox，重启后无需内存 session map 即可重新验 lease、幂等结算并 ack；devcloud/Relay 全量 race、Control Plane/Companion 全量测试与文档准入全绿。
 - 正式开源隔离、生产 OAuth/TLS、持久化数据库、计费、团队治理、Relay Mesh 和多区域运维全部延后。
