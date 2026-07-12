@@ -205,7 +205,7 @@ func (state *serviceState) issueSession(kind session.Kind, deviceID string) (clo
 	if kind == session.KindDevice {
 		principal = servicecredential.EdgePrincipalDaemon
 	}
-	token, err := state.edgeIssuer.IssueEdgeAccessForPrincipal(tokenID, devHubID, devAccountID, deviceID, principal, 1, cloudSessionTTL, now)
+	token, err := state.edgeIssuer.IssueEdgeAccessWithDirectory(tokenID, devHubID, devPublicHubURL, devRegion, 1, devAccountID, deviceID, principal, 1, cloudSessionTTL, now)
 	if err != nil {
 		return cloudSession{}, nil, err
 	}

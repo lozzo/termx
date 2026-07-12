@@ -54,7 +54,7 @@ func TestManagerSeparatesAccountAndDeviceCredentialSlots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	account, err := session.New(session.Metadata{Kind: session.KindAccount, AccountID: "account-1", AccountLabel: "Alice", DeviceID: "client-1", ExpiresAt: now.Add(time.Hour)}, []byte("account-access-token"), now)
+	account, err := session.New(session.Metadata{Kind: session.KindAccount, AccountID: "account-1", AccountLabel: "Alice", DeviceID: "client-1", ExpiresAt: now.Add(time.Hour), HubID: "hub-1", HubURL: "https://hub.example.test", HubRegion: "eu-1", HubDirectoryVersion: 2}, []byte("account-access-token"), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +82,16 @@ func TestManagerSeparatesAccountAndDeviceCredentialSlots(t *testing.T) {
 	if string(loadedAccount.Authorization().Bytes()) != "account-access-token" || string(loadedDevice.Authorization().Bytes()) != "device-cloud-token" {
 		t.Fatal("credential slots crossed authorization values")
 	}
+	if loadedAccount.Metadata().HubDirectoryVersion != 2 || loadedAccount.Metadata().HubID != "hub-1" {
+		t.Fatalf("cached HubDirectory metadata = %#v", loadedAccount.Metadata())
+	}
+	rollback, err := session.New(session.Metadata{Kind: session.KindAccount, AccountID: "account-1", DeviceID: "client-1", ExpiresAt: now.Add(2 * time.Hour), HubID: "hub-1", HubURL: "https://hub.example.test", HubRegion: "eu-1", HubDirectoryVersion: 1}, []byte("rollback-token"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Save(context.Background(), rollback, now); !errors.Is(err, session.ErrInvalid) {
+		t.Fatalf("HubDirectory rollback save error = %v", err)
+	}
 	if strings.Contains(loadedAccount.String(), "account-access-token") || strings.Contains(loadedAccount.Authorization().String(), "account-access-token") {
 		t.Fatal("session String leaked account token")
 	}
@@ -108,7 +118,7 @@ func TestManagerRejectsExpiredAndMalformedCredentialStoreValues(t *testing.T) {
 		t.Fatalf("expired load error = %v", err)
 	}
 	store.mu.Lock()
-	store.secrets["default/account/v1"] = []byte(`{"version":1,"kind":"account","account_id":"account","expires_at_unix":9999999999,"access_token":"dG9rZW4=","unknown":true}`)
+	store.secrets["default/account/v2"] = []byte(`{"version":2,"kind":"account","account_id":"account","expires_at_unix":9999999999,"access_token":"dG9rZW4=","unknown":true}`)
 	store.mu.Unlock()
 	if _, err := manager.Load(context.Background(), session.KindAccount, now); !errors.Is(err, session.ErrInvalid) {
 		t.Fatalf("unknown field error = %v", err)

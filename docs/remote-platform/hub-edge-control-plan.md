@@ -494,4 +494,11 @@ CLOUD009 只迁移 direct。CLOUD010 已为单区域提供受限 regional issuer
 2. CLOUD010：迁移 single Relay lease/预算和 durable usage outbox，并验证中断与补报。
 3. CLOUD011：desktop/Official Android 启动与刷新拿 edge token/HubDirectory，完成真实公网和 ADB 中断验收。
 
+### 8.1 CLOUD011 当前落地
+
+- Control Plane 登录/enrollment 签发的 edge credential 已把 Hub ID、URL、region 和 directory version 纳入同一签名声明；Companion v2 secret session 与 Official Android 安全会话持久化目录，并拒绝 Hub ID 变化和 directory version 回滚。
+- endpoint resolve 已迁到 Hub；desktop 和 Official Android 的 resolve、Relay lease、signaling 热路径只向 Hub 提交 bearer edge credential。contract harness 在首次登录后关闭 Control Plane，仍可新建 resolve、Relay lease 和 signaling。
+- 2026-07-12 公网 staging desktop 实测 direct 到达 `connected/direct`，显式 `relay_only` 到达 `connected/single`。服务器重启导致内存 cloud 身份轮换后按 runbook 重新 enrollment，Hub presence 恢复，未使用旧 session fallback。
+- ADB 当前没有连接设备，Official Android 真机 Control Plane 中断 direct/single Relay 尚未执行；完成前 CLOUD011 保持进行中。
+
 多区域一致性、Relay Mesh、Kubernetes、生产数据库选型和复杂计费不属于本计划当前切片。

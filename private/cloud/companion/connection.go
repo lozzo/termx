@@ -281,7 +281,7 @@ func (connection *Connection) ResolveEndpoint(ctx context.Context, request *clou
 	if err := validateResolveRequest(request); err != nil {
 		return nil, err
 	}
-	response, err := connection.service.controlPlane.ResolveEndpoint(ctx, authorization, cloneMessage(request))
+	response, err := connection.service.hub.ResolveEndpoint(ctx, authorization, cloneMessage(request))
 	if err != nil {
 		return nil, sanitizeAdapterError(err)
 	}

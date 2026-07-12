@@ -25,18 +25,21 @@ const (
 // EdgeAccessClaims 是客户端启动阶段取得、由 Hub 离线验证的账号边缘会话声明。
 // 它只证明固定账号与 client device；target ownership 和订阅能力必须由 Hub 本地授权投影另行判断。
 type EdgeAccessClaims struct {
-	Version        uint32            `json:"version"`
-	KeyID          string            `json:"key_id"`
-	TokenID        string            `json:"token_id"`
-	Issuer         string            `json:"issuer"`
-	AudienceHubID  string            `json:"audience_hub_id"`
-	AccountID      string            `json:"account_id"`
-	ClientDeviceID string            `json:"client_device_id"`
-	PrincipalKind  EdgePrincipalKind `json:"principal_kind"`
-	AuthEpoch      uint64            `json:"auth_epoch"`
-	IssuedAtUnix   int64             `json:"issued_at_unix"`
-	NotBeforeUnix  int64             `json:"not_before_unix"`
-	ExpiresAtUnix  int64             `json:"expires_at_unix"`
+	Version          uint32            `json:"version"`
+	KeyID            string            `json:"key_id"`
+	TokenID          string            `json:"token_id"`
+	Issuer           string            `json:"issuer"`
+	AudienceHubID    string            `json:"audience_hub_id"`
+	AccountID        string            `json:"account_id"`
+	ClientDeviceID   string            `json:"client_device_id"`
+	PrincipalKind    EdgePrincipalKind `json:"principal_kind"`
+	AuthEpoch        uint64            `json:"auth_epoch"`
+	IssuedAtUnix     int64             `json:"issued_at_unix"`
+	NotBeforeUnix    int64             `json:"not_before_unix"`
+	ExpiresAtUnix    int64             `json:"expires_at_unix"`
+	HubURL           string            `json:"hub_url,omitempty"`
+	Region           string            `json:"region,omitempty"`
+	DirectoryVersion uint64            `json:"directory_version,omitempty"`
 }
 
 // EdgeAccessIssuer 持有 Control Plane 的 edge access 专用签名器。
@@ -63,6 +66,11 @@ func (issuer EdgeAccessIssuer) IssueEdgeAccess(tokenID, hubID, accountID, client
 // IssueEdgeAccessForPrincipal 为固定 client/daemon 角色签发 edge credential。
 // 调用方必须从已认证的登录或设备 enrollment owner 构造 principal，不能接受 caller 自选角色。
 func (issuer EdgeAccessIssuer) IssueEdgeAccessForPrincipal(tokenID, hubID, accountID, deviceID string, principal EdgePrincipalKind, authEpoch uint64, ttl time.Duration, now time.Time) ([]byte, error) {
+	return issuer.IssueEdgeAccessWithDirectory(tokenID, hubID, "", "", 0, accountID, deviceID, principal, authEpoch, ttl, now)
+}
+
+// IssueEdgeAccessWithDirectory 把启动阶段选择的 Hub URL、region 和防回滚 version 绑定进签名 edge credential。
+func (issuer EdgeAccessIssuer) IssueEdgeAccessWithDirectory(tokenID, hubID, hubURL, region string, directoryVersion uint64, accountID, deviceID string, principal EdgePrincipalKind, authEpoch uint64, ttl time.Duration, now time.Time) ([]byte, error) {
 	if tokenID == "" || hubID == "" || accountID == "" || deviceID == "" || authEpoch == 0 || principal != EdgePrincipalClient && principal != EdgePrincipalDaemon {
 		return nil, ErrMalformedCredential
 	}
@@ -74,6 +82,7 @@ func (issuer EdgeAccessIssuer) IssueEdgeAccessForPrincipal(tokenID, hubID, accou
 		Version: edgeAccessVersion, KeyID: issuer.signer.KeyID(), TokenID: tokenID, Issuer: issuer.issuer,
 		AudienceHubID: hubID, AccountID: accountID, ClientDeviceID: deviceID, PrincipalKind: principal, AuthEpoch: authEpoch,
 		IssuedAtUnix: now.Unix(), NotBeforeUnix: now.Unix(), ExpiresAtUnix: now.Add(ttl).Unix(),
+		HubURL: hubURL, Region: region, DirectoryVersion: directoryVersion,
 	}
 	raw, err := signToken(edgeAccessPrefix, claims, issuer.signer, now)
 	return []byte(raw), err

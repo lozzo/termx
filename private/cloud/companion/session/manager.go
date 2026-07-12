@@ -11,10 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"time"
 )
 
-const sessionSchemaVersion = 1
+const sessionSchemaVersion = 2
 
 var (
 	// ErrNotFound 表示当前 companion profile 尚未登录或完成 daemon enrollment。
@@ -50,11 +51,15 @@ const (
 // Metadata 是可以投影到 Status 的非秘密会话信息。
 // 它不包含 token body、Hub ticket、Relay credential 或 terminal 数据。
 type Metadata struct {
-	Kind         Kind
-	AccountID    string
-	AccountLabel string
-	DeviceID     string
-	ExpiresAt    time.Time
+	Kind                Kind
+	AccountID           string
+	AccountLabel        string
+	DeviceID            string
+	ExpiresAt           time.Time
+	HubID               string
+	HubURL              string
+	HubRegion           string
+	HubDirectoryVersion uint64
 }
 
 // Authorization 是 companion 调用私有 Control Plane/Hub 时使用的短期账号或设备凭据。
@@ -108,6 +113,12 @@ func New(metadata Metadata, accessToken []byte, now time.Time) (Session, error) 
 	if metadata.Kind == KindDevice && metadata.DeviceID == "" {
 		return Session{}, ErrInvalid
 	}
+	if metadata.HubID != "" || metadata.HubURL != "" || metadata.HubRegion != "" || metadata.HubDirectoryVersion != 0 {
+		parsed, err := url.Parse(metadata.HubURL)
+		if metadata.HubID == "" || metadata.HubRegion == "" || metadata.HubDirectoryVersion == 0 || err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "" || parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return Session{}, ErrInvalid
+		}
+	}
 	return Session{metadata: metadata, accessToken: append([]byte(nil), accessToken...)}, nil
 }
 
@@ -154,19 +165,32 @@ func NewManager(store OSCredentialStore, profile string) (*Manager, error) {
 }
 
 type wireSession struct {
-	Version      uint32 `json:"version"`
-	Kind         Kind   `json:"kind"`
-	AccountID    string `json:"account_id"`
-	AccountLabel string `json:"account_label,omitempty"`
-	DeviceID     string `json:"device_id,omitempty"`
-	ExpiresAt    int64  `json:"expires_at_unix"`
-	AccessToken  []byte `json:"access_token"`
+	Version             uint32 `json:"version"`
+	Kind                Kind   `json:"kind"`
+	AccountID           string `json:"account_id"`
+	AccountLabel        string `json:"account_label,omitempty"`
+	DeviceID            string `json:"device_id,omitempty"`
+	ExpiresAt           int64  `json:"expires_at_unix"`
+	AccessToken         []byte `json:"access_token"`
+	HubID               string `json:"hub_id,omitempty"`
+	HubURL              string `json:"hub_url,omitempty"`
+	HubRegion           string `json:"hub_region,omitempty"`
+	HubDirectoryVersion uint64 `json:"hub_directory_version,omitempty"`
 }
 
 // Save 原子写入账号或 device 云会话。
 // JSON bytes 只作为 OS secret value，写入返回后立即清理本地编码缓冲区。
 func (manager *Manager) Save(ctx context.Context, session Session, now time.Time) error {
 	metadata := session.Metadata()
+	if current, err := manager.Load(ctx, metadata.Kind, now); err == nil {
+		currentMetadata := current.Metadata()
+		current.Destroy()
+		if currentMetadata.HubID != "" && (metadata.HubID != currentMetadata.HubID || metadata.HubDirectoryVersion < currentMetadata.HubDirectoryVersion) {
+			return ErrInvalid
+		}
+	} else if !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrExpired) {
+		return err
+	}
 	validated, err := New(metadata, session.accessToken, now)
 	if err != nil {
 		return err
@@ -179,6 +203,7 @@ func (manager *Manager) Save(ctx context.Context, session Session, now time.Time
 		DeviceID:     metadata.DeviceID,
 		ExpiresAt:    metadata.ExpiresAt.Unix(),
 		AccessToken:  append([]byte(nil), validated.accessToken...),
+		HubID:        metadata.HubID, HubURL: metadata.HubURL, HubRegion: metadata.HubRegion, HubDirectoryVersion: metadata.HubDirectoryVersion,
 	}
 	encoded, err := json.Marshal(wire)
 	clear(wire.AccessToken)
@@ -233,6 +258,7 @@ func (manager *Manager) Load(ctx context.Context, kind Kind, now time.Time) (Ses
 		AccountLabel: wire.AccountLabel,
 		DeviceID:     wire.DeviceID,
 		ExpiresAt:    expiresAt,
+		HubID:        wire.HubID, HubURL: wire.HubURL, HubRegion: wire.HubRegion, HubDirectoryVersion: wire.HubDirectoryVersion,
 	}, wire.AccessToken, now)
 }
 
@@ -249,5 +275,5 @@ func (manager *Manager) Delete(ctx context.Context, kind Kind) error {
 }
 
 func (manager *Manager) key(kind Kind) string {
-	return manager.profile + "/" + string(kind) + "/v1"
+	return manager.profile + "/" + string(kind) + "/v2"
 }

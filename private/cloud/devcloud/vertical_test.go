@@ -342,8 +342,8 @@ func TestDevCloudVerticalLoopAcrossRealServiceBoundaries(t *testing.T) {
 		t.Fatalf("Control Plane down client answer = (%v, %v)", controlDownAnswer, err)
 	}
 	_ = controlDownStream.Close()
-	if _, err := clientAdapter.ResolveEndpoint(ctx, clientAuthorization, &cloudpb.ResolveEndpointRequest{EndpointId: "control-is-down", TargetDeviceId: daemonDeviceID}); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE) {
-		t.Fatalf("closed Control Plane resolve error = %v", err)
+	if resolved, err := clientAdapter.ResolveEndpoint(ctx, clientAuthorization, &cloudpb.ResolveEndpointRequest{EndpointId: "control-is-down", TargetDeviceId: daemonDeviceID}); err != nil || resolved.GetManagedSessionId() == "" {
+		t.Fatalf("Hub resolve with Control Plane closed = (%v, %v)", resolved, err)
 	}
 
 	hubDownRequest := &cloudpb.CreateSignalingSessionRequest{

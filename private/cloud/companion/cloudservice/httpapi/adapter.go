@@ -97,10 +97,10 @@ func (adapter *Adapter) CompleteDeviceEnrollment(ctx context.Context, request *c
 	return sessionFromWire(wire, adapter.now())
 }
 
-// ResolveEndpoint 通过 account session 创建独立 ManagedSession。
+// ResolveEndpoint 使用启动阶段 edge credential 和缓存 HubDirectory 向 Hub 解析 target。
 func (adapter *Adapter) ResolveEndpoint(ctx context.Context, authorization session.Authorization, request *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
 	response := &cloudpb.ResolvedEndpoint{}
-	if err := adapter.postProto(ctx, adapter.controlURL+ControlResolveEndpointPath, authorization, request, response); err != nil {
+	if err := adapter.postEdgeHubProto(ctx, HubResolveEndpointPath, authorization, request, response); err != nil {
 		return nil, err
 	}
 	return response, nil
@@ -336,6 +336,7 @@ func sessionFromWire(wire SessionWire, now time.Time) (session.Session, error) {
 	return session.New(session.Metadata{
 		Kind: wire.Kind, AccountID: wire.AccountID, AccountLabel: wire.AccountLabel,
 		DeviceID: wire.DeviceID, ExpiresAt: time.Unix(wire.ExpiresAt, 0).UTC(),
+		HubID: wire.HubID, HubURL: wire.HubURL, HubRegion: wire.HubRegion, HubDirectoryVersion: wire.HubDirectoryVersion,
 	}, wire.AccessToken, now)
 }
 

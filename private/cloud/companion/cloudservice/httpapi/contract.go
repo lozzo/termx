@@ -57,8 +57,6 @@ const (
 	ControlCompleteEnrollmentPath = "/v1/enrollment/complete"
 	// ControlBeginPresencePath 是 fresh daemon presence challenge endpoint。
 	ControlBeginPresencePath = "/v1/presence/begin"
-	// ControlResolveEndpointPath 是 account-scoped managed session resolve endpoint。
-	ControlResolveEndpointPath = "/v1/endpoints/resolve"
 	// ControlPresenceAdmissionPath 是 device-scoped presence ticket endpoint。
 	ControlPresenceAdmissionPath = "/v1/admissions/presence"
 
@@ -72,6 +70,8 @@ const (
 	HubCompleteSignalingPath = "/v1/signaling/complete"
 	// HubAcquireRelayLeasePath 使用区域委派预算签发 caller-specific TURN material。
 	HubAcquireRelayLeasePath = "/v1/relay/leases/acquire"
+	// HubResolveEndpointPath 使用本地 policy/presence 解析 managed target。
+	HubResolveEndpointPath = "/v1/endpoints/resolve"
 )
 
 // Manifest 是 `make cloud-dev` 写入 `.artifacts` 的非生产运行描述。
@@ -147,12 +147,16 @@ func validateTURNURL(raw string, allowPublicIP bool) error {
 // SessionWire 是 Control Plane 返回给 Companion 的 private cloud session。
 // AccessToken 只能传给 session.New 并写入 OS credential store，不得进入 public IPC response 或日志。
 type SessionWire struct {
-	Kind         session.Kind `json:"kind"`
-	AccountID    string       `json:"account_id"`
-	AccountLabel string       `json:"account_label"`
-	DeviceID     string       `json:"device_id"`
-	ExpiresAt    int64        `json:"expires_at_unix"`
-	AccessToken  []byte       `json:"access_token"`
+	Kind                session.Kind `json:"kind"`
+	AccountID           string       `json:"account_id"`
+	AccountLabel        string       `json:"account_label"`
+	DeviceID            string       `json:"device_id"`
+	ExpiresAt           int64        `json:"expires_at_unix"`
+	AccessToken         []byte       `json:"access_token"`
+	HubID               string       `json:"hub_id"`
+	HubURL              string       `json:"hub_url"`
+	HubRegion           string       `json:"hub_region"`
+	HubDirectoryVersion uint64       `json:"hub_directory_version"`
 }
 
 // AdmissionWire 是 Control Plane 返回给 Companion 的 private Hub admission envelope。

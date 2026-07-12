@@ -29,7 +29,6 @@ func (state *serviceState) controlHandler() http.Handler {
 	mux.HandleFunc(httpapi.ControlBeginEnrollmentPath, state.handleBeginEnrollment)
 	mux.HandleFunc(httpapi.ControlCompleteEnrollmentPath, state.handleCompleteEnrollment)
 	mux.HandleFunc(httpapi.ControlBeginPresencePath, state.handleBeginPresence)
-	mux.HandleFunc(httpapi.ControlResolveEndpointPath, state.handleResolveEndpoint)
 	mux.HandleFunc(httpapi.ControlPresenceAdmissionPath, state.handlePresenceAdmission)
 	mux.HandleFunc(controlRelayUsagePath, state.handleRelayUsage)
 	return mux
@@ -257,51 +256,6 @@ func (state *serviceState) handleBeginPresence(writer http.ResponseWriter, reque
 	})
 }
 
-func (state *serviceState) handleResolveEndpoint(writer http.ResponseWriter, request *http.Request) {
-	if !requireMethod(writer, request, http.MethodPost) {
-		return
-	}
-	cloudSession, ok := state.authenticate(writer, request, session.KindAccount)
-	if !ok {
-		return
-	}
-	payload := &cloudpb.ResolveEndpointRequest{}
-	if !readProto(writer, request, payload) {
-		return
-	}
-	if payload.GetEndpointId() == "" || payload.GetTargetDeviceId() == "" {
-		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "managed endpoint request is invalid", false)
-		return
-	}
-	target, err := state.directory.Device(cloudSession.accountID, payload.GetTargetDeviceId())
-	if err != nil || target.Kind != domain.DeviceKindDaemon || target.RevokedAt != nil {
-		writeCloudError(writer, http.StatusNotFound, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_NOT_FOUND, "managed target device was not found", false)
-		return
-	}
-	managedSessionID, err := state.randomID("managed")
-	if err != nil {
-		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "managed session could not be created", true)
-		return
-	}
-	now := state.now().UTC()
-	if err := state.directory.CreateManagedSession(domain.ManagedSession{
-		ID: managedSessionID, AccountID: cloudSession.accountID, ClientDeviceID: cloudSession.deviceID,
-		TargetDeviceID: target.ID, Hub: domain.HubAssignment{HubID: devHubID, Region: devRegion},
-		CreatedAt: now, ExpiresAt: now.Add(managedTTL),
-	}, now); err != nil {
-		writeCloudError(writer, http.StatusConflict, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "managed session ownership was rejected", false)
-		return
-	}
-	presenceState := cloudpb.PresenceState_PRESENCE_STATE_OFFLINE
-	if state.hub.HasPresence(target.ID) {
-		presenceState = cloudpb.PresenceState_PRESENCE_STATE_ONLINE
-	}
-	writeProto(writer, http.StatusOK, &cloudpb.ResolvedEndpoint{
-		EndpointId: payload.GetEndpointId(), TargetDeviceId: target.ID, Presence: presenceState,
-		HubId: devHubID, HubUrl: devPublicHubURL, ManagedSessionId: managedSessionID,
-	})
-}
-
 func (state *serviceState) handleRelayUsage(writer http.ResponseWriter, request *http.Request) {
 	if !requireMethod(writer, request, http.MethodPost) || !requireNoAuthorization(writer, request) {
 		return
@@ -367,6 +321,7 @@ func sessionWire(cloudSession cloudSession, token []byte) httpapi.SessionWire {
 	return httpapi.SessionWire{
 		Kind: cloudSession.kind, AccountID: cloudSession.accountID, AccountLabel: cloudSession.accountLabel,
 		DeviceID: cloudSession.deviceID, ExpiresAt: cloudSession.expiresAt.Unix(), AccessToken: token,
+		HubID: devHubID, HubURL: devPublicHubURL, HubRegion: devRegion, HubDirectoryVersion: 1,
 	}
 }
 

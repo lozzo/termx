@@ -24,19 +24,7 @@ import (
 	"github.com/lozzow/termx/shared/remoteauth"
 	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
-	"google.golang.org/protobuf/proto"
 )
-
-type cachedResolveClient struct {
-	cloudcompanion.Client
-	resolved *cloudpb.ResolvedEndpoint
-}
-
-func (client cachedResolveClient) ResolveEndpoint(_ context.Context, request *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
-	resolved := proto.Clone(client.resolved).(*cloudpb.ResolvedEndpoint)
-	resolved.EndpointId = request.GetEndpointId()
-	return resolved, nil
-}
 
 // TestManagedSingleRelayE2EAcrossRealBoundaries 是 CLOUD004 的用户链路 harness。
 // client 与 daemon 必须为同一 ManagedSession 取得不同 TURN credential，实际 ICE path 必须是 single_relay；DataChannel 内授权和 core-v2 protocol 与 direct 完全相同。
@@ -135,17 +123,12 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	if !presenceOpenObserved {
 		t.Fatal("daemon Hub presence stream was not established before Control Plane shutdown")
 	}
-	cachedResolved, err := clientCompanion.ResolveEndpoint(ctx, &cloudpb.ResolveEndpointRequest{EndpointId: "managed-relay", TargetDeviceId: identity.DeviceID})
-	if err != nil {
-		t.Fatal(err)
-	}
 	controlShutdownContext, controlShutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	if err := cloudRuntime.controlServer.Shutdown(controlShutdownContext); err != nil {
 		controlShutdownCancel()
 		t.Fatal(err)
 	}
 	controlShutdownCancel()
-	relayCompanion := cachedResolveClient{Client: clientCompanion, resolved: cachedResolved}
 	bundle, err := remoteauth.IssuePairingBundle(identity, remoteauth.PairingIssueOptions{
 		Label: "Managed Relay daemon", Scope: remoteauth.Scope{AllowDaemon: true}, Lifetime: time.Hour, Now: clock.Now(),
 	})
@@ -168,7 +151,7 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	manager := services.NewEndpointManagerWithDialers(registry, map[connection.TransportKind]services.EndpointDialer{
 		connection.TransportHubP2P: func(dialContext context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
 			session, dialErr := remotev2client.DialSession(dialContext, remotev2client.DialOptions{
-				Companion: relayCompanion, EndpointID: string(cfg.ID), TargetDeviceID: cfg.HubDeviceID,
+				Companion: clientCompanion, EndpointID: string(cfg.ID), TargetDeviceID: cfg.HubDeviceID,
 				DeviceFingerprint: cfg.DeviceFingerprint, CapabilityGrant: bundle.CapabilityGrant,
 				RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true, Now: clock.Now(),
 				Phase: func(phase cloudcompanion.EndpointPhase) { services.ReportEndpointDialPhase(dialContext, phase) },
@@ -298,7 +281,7 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	failureContext, cancelFailure := context.WithTimeout(ctx, 3*time.Second)
 	defer cancelFailure()
 	failedSession, relayFailure := remotev2client.DialSession(failureContext, remotev2client.DialOptions{
-		Companion: cachedResolveClient{Client: failureCompanion, resolved: cachedResolved}, EndpointID: "managed-relay-after-stop", TargetDeviceID: identity.DeviceID,
+		Companion: failureCompanion, EndpointID: "managed-relay-after-stop", TargetDeviceID: identity.DeviceID,
 		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: bundle.CapabilityGrant,
 		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true, Now: clock.Now(),
 	})

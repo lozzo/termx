@@ -85,11 +85,6 @@ func (controlPlane *fakeControlPlane) capture(authorization session.Authorizatio
 	controlPlane.mu.Unlock()
 }
 
-func (controlPlane *fakeControlPlane) ResolveEndpoint(_ context.Context, authorization session.Authorization, _ *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
-	controlPlane.capture(authorization)
-	return controlPlane.resolveResponse, controlPlane.resolveErr
-}
-
 func (controlPlane *fakeControlPlane) BeginPresence(_ context.Context, authorization session.Authorization, _ *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
 	controlPlane.capture(authorization)
 	return controlPlane.presenceChallenge, nil
@@ -125,11 +120,17 @@ func (controlPlane *fakeControlPlane) ReportConnectionOutcome(_ context.Context,
 }
 
 type fakeHub struct {
-	mu            sync.Mutex
-	presence      *presenceSource
-	signaling     *signalingSource
-	completed     int
-	leaseResponse *cloudpb.RelayLease
+	mu              sync.Mutex
+	presence        *presenceSource
+	signaling       *signalingSource
+	completed       int
+	leaseResponse   *cloudpb.RelayLease
+	resolveResponse *cloudpb.ResolvedEndpoint
+	resolveErr      error
+}
+
+func (hub *fakeHub) ResolveEndpoint(_ context.Context, _ session.Authorization, _ *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
+	return hub.resolveResponse, hub.resolveErr
 }
 
 func (hub *fakeHub) AcquireRelayLease(_ context.Context, _ session.Authorization, _ *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
@@ -535,8 +536,8 @@ func TestHubErrorAndCloseTextAreRedacted(t *testing.T) {
 }
 
 func TestResolveEndpointRejectsNonTLSHubURL(t *testing.T) {
-	_, service, controlPlane, _ := testService(t)
-	controlPlane.resolveResponse.HubUrl = "http://hub.example.test"
+	_, service, _, hub := testService(t)
+	hub.resolveResponse.HubUrl = "http://hub.example.test"
 	connection := service.NewConnection()
 	_, _ = connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING))
 	_, err := connection.ResolveEndpoint(context.Background(), &cloudpb.ResolveEndpointRequest{EndpointId: "cloud-prod", TargetDeviceId: "daemon-1"})
@@ -546,8 +547,8 @@ func TestResolveEndpointRejectsNonTLSHubURL(t *testing.T) {
 }
 
 func TestAdapterErrorMessageIsRedacted(t *testing.T) {
-	_, service, controlPlane, _ := testService(t)
-	controlPlane.resolveErr = errors.New("network failed with account-access-token")
+	_, service, _, hub := testService(t)
+	hub.resolveErr = errors.New("network failed with account-access-token")
 	connection := service.NewConnection()
 	_, _ = connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING))
 	_, err := connection.ResolveEndpoint(context.Background(), &cloudpb.ResolveEndpointRequest{EndpointId: "cloud", TargetDeviceId: "daemon-1"})
@@ -599,7 +600,7 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 			IceServers: []*cloudpb.IceServer{{Urls: []string{"turns:relay.example.test"}, Username: "user", Credential: "credential"}},
 		},
 	}
-	hub := &fakeHub{presence: newPresenceSource(8), signaling: newSignalingSource(8), leaseResponse: &cloudpb.RelayLease{LeaseId: "lease-1", SignedLease: []byte("signed-lease"), ExpiresAtUnix: uint64(now.Add(5 * time.Minute).Unix()), PathKind: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY, IceServers: []*cloudpb.IceServer{{Urls: []string{"turn:relay.example.test"}, Username: "user", Credential: "credential"}}}}
+	hub := &fakeHub{presence: newPresenceSource(8), signaling: newSignalingSource(8), resolveResponse: controlPlane.resolveResponse, leaseResponse: &cloudpb.RelayLease{LeaseId: "lease-1", SignedLease: []byte("signed-lease"), ExpiresAtUnix: uint64(now.Add(5 * time.Minute).Unix()), PathKind: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY, IceServers: []*cloudpb.IceServer{{Urls: []string{"turn:relay.example.test"}, Username: "user", Credential: "credential"}}}}
 	service, err := companion.NewService(companion.Config{
 		CompanionVersion: "1.0.0", BuildChannel: "test", StreamCapacity: 1,
 		Capabilities: []cloudpb.CompanionCapability{

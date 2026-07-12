@@ -20,6 +20,7 @@ func (state *serviceState) hubHandler() http.Handler {
 	mux.HandleFunc(httpapi.HubCreateSignalingPath, state.handleHubCreateSignaling)
 	mux.HandleFunc(httpapi.HubCompleteSignalingPath, state.handleHubCompleteSignaling)
 	mux.HandleFunc(httpapi.HubAcquireRelayLeasePath, state.handleHubAcquireRelayLease)
+	mux.HandleFunc(httpapi.HubResolveEndpointPath, state.handleHubResolveEndpoint)
 	return mux
 }
 
@@ -247,6 +248,41 @@ func (state *serviceState) handleHubAcquireRelayLease(writer http.ResponseWriter
 	writeProto(writer, http.StatusOK, &cloudpb.RelayLease{LeaseId: lease.claims.LeaseID, SignedLease: lease.signedLease, ExpiresAtUnix: uint64(lease.claims.ExpiresAtUnix), PathKind: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY, IceServers: []*cloudpb.IceServer{{Urls: []string{state.relayControl.url}, Username: credential.Username, Credential: credential.Password}}})
 }
 
+func (state *serviceState) handleHubResolveEndpoint(writer http.ResponseWriter, request *http.Request) {
+	if !requireMethod(writer, request, http.MethodPost) {
+		return
+	}
+	token, ok := readBearerToken(writer, request)
+	if !ok {
+		return
+	}
+	defer clear(token)
+	envelope, payload, ok := state.readEdgeHubRequest(writer, request, &cloudpb.ResolveEndpointRequest{})
+	if !ok {
+		return
+	}
+	defer clear(envelope.Payload)
+	resolveRequest := payload.(*cloudpb.ResolveEndpointRequest)
+	if resolveRequest.GetEndpointId() == "" || resolveRequest.GetTargetDeviceId() == "" {
+		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "managed endpoint request is invalid", false)
+		return
+	}
+	if _, err := state.edgeAuth.AuthorizeDirect(token, envelope.AccountID, envelope.DeviceID, resolveRequest.GetTargetDeviceId()); err != nil {
+		mapHubError(writer, err)
+		return
+	}
+	if !state.hub.HasPresence(resolveRequest.GetTargetDeviceId()) {
+		writeCloudError(writer, http.StatusNotFound, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_NOT_FOUND, "target device is offline", true)
+		return
+	}
+	correlationID, err := state.randomID("edge-session")
+	if err != nil {
+		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub session correlation could not be created", true)
+		return
+	}
+	writeProto(writer, http.StatusOK, &cloudpb.ResolvedEndpoint{EndpointId: resolveRequest.GetEndpointId(), TargetDeviceId: resolveRequest.GetTargetDeviceId(), Presence: cloudpb.PresenceState_PRESENCE_STATE_ONLINE, HubId: devHubID, HubUrl: devPublicHubURL, ManagedSessionId: correlationID})
+}
+
 func (state *serviceState) readEdgeHubRequest(writer http.ResponseWriter, request *http.Request, payload any) (httpapi.EdgeHubRequest, any, bool) {
 	envelope := httpapi.EdgeHubRequest{}
 	if !readJSON(writer, request, &envelope) || envelope.AccountID == "" || envelope.DeviceID == "" || len(envelope.Payload) == 0 || request.Context().Err() != nil {
@@ -266,6 +302,11 @@ func (state *serviceState) readEdgeHubRequest(writer http.ResponseWriter, reques
 	case *cloudpb.AcquireRelayLeaseRequest:
 		if err := readProtoBytes(envelope.Payload, target); err != nil {
 			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub Relay payload is invalid", false)
+			return httpapi.EdgeHubRequest{}, nil, false
+		}
+	case *cloudpb.ResolveEndpointRequest:
+		if err := readProtoBytes(envelope.Payload, target); err != nil {
+			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub resolve payload is invalid", false)
 			return httpapi.EdgeHubRequest{}, nil, false
 		}
 	default:

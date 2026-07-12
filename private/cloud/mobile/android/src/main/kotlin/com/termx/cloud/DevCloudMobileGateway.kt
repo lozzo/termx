@@ -49,14 +49,14 @@ internal class DevCloudMobileGateway(
             .setEndpointId(spec.endpointId)
             .setTargetDeviceId(spec.targetDeviceId)
             .build()
-        val response = postProto(
-            "$controlOrigin/v1/endpoints/resolve",
+        val response = postEdgeProto(
+            "$hubOrigin/v1/endpoints/resolve",
             request,
             CloudCompanion.ResolvedEndpoint.parser(),
-            session.token,
+            session,
         )
         if (response.endpointId != spec.endpointId || response.targetDeviceId != spec.targetDeviceId || response.managedSessionId.isBlank()) {
-            fail("protocol", "Control Plane resolved a different managed endpoint")
+            fail("protocol", "Hub resolved a different managed endpoint")
         }
         if (response.presence != CloudCompanion.PresenceState.PRESENCE_STATE_ONLINE) {
             fail("route_unavailable", "managed daemon is offline")
@@ -69,7 +69,7 @@ internal class DevCloudMobileGateway(
         ManagedEndpointResolution(response.managedSessionId, response.targetDeviceId, iceServers)
     }
 
-    /** createSignalingSession 先取得 ManagedSession-bound client admission，再读取 Hub answer stream。 */
+    /** createSignalingSession 使用启动阶段 edge credential 直接读取 Hub answer stream。 */
     suspend fun createSignalingSession(
         spec: ManagedEndpointSpec,
         resolution: ManagedEndpointResolution,
@@ -85,11 +85,7 @@ internal class DevCloudMobileGateway(
             .setRoutePreference(routePreference(policy.routePreference))
             .setRelayOnly(policy.relayOnly)
             .build()
-        val admission = postAdmission("$controlOrigin/v1/admissions/client", request, session.token)
-        if (admission.sessionId != resolution.managedSessionId || admission.targetDeviceId != spec.targetDeviceId || admission.sessionKind != "managed") {
-            fail("protocol", "Control Plane returned an invalid client admission")
-        }
-        val signaling = postHubStream("$hubOrigin/v1/signaling/create", admission, request)
+        val signaling = postHubStream("$hubOrigin/v1/signaling/create", session, request)
         val event = signaling.finalEvent
         when (event.payloadCase) {
             CloudCompanion.SignalingEvent.PayloadCase.ANSWER -> {
@@ -136,18 +132,18 @@ internal class DevCloudMobileGateway(
     }
 
     private fun acquireRelayLease(session: AccountSession, managedSessionId: String, targetDeviceId: String): List<ManagedIceServer> {
-        val lease = postProto(
-            "$controlOrigin/v1/relay/leases/acquire",
+        val lease = postEdgeProto(
+            "$hubOrigin/v1/relay/leases/acquire",
             CloudCompanion.AcquireRelayLeaseRequest.newBuilder()
                 .setManagedSessionId(managedSessionId)
                 .setTargetDeviceId(targetDeviceId)
                 .setRoutePreference(CloudCompanion.RoutePreference.ROUTE_PREFERENCE_STANDARD_RELAY)
                 .build(),
             CloudCompanion.RelayLease.parser(),
-            session.token,
+            session,
         )
         if (lease.pathKind != CloudCompanion.ObservedPath.OBSERVED_PATH_SINGLE_RELAY || lease.expiresAtUnix <= now().epochSecond || lease.iceServersCount != 1) {
-            fail("protocol", "Control Plane returned invalid Relay material")
+            fail("protocol", "Hub returned invalid Relay material")
         }
         return lease.iceServersList.map(::iceServer)
     }
@@ -158,54 +154,27 @@ internal class DevCloudMobileGateway(
             writeRequest(connection, request.toByteArray())
             val payload = readSuccess(connection, "application/json")
             val json = JSONObject(String(payload, Charsets.UTF_8))
-            requireKeys(json, setOf("kind", "account_id", "account_label", "device_id", "expires_at_unix", "access_token"), "cloud session")
+            requireKeys(json, setOf("kind", "account_id", "account_label", "device_id", "expires_at_unix", "access_token", "hub_id", "hub_url", "hub_region", "hub_directory_version"), "cloud session")
             if (json.requiredString("kind") != "account") fail("protocol", "Control Plane returned a non-account session")
             if (json.requiredString("account_id").isBlank() || json.requiredString("account_label").isBlank() || json.requiredString("device_id").isBlank()) {
                 fail("protocol", "Control Plane returned incomplete account identity")
             }
             val token = decodeBase64(json.requiredString("access_token"))
             val expiresAt = Instant.ofEpochSecond(json.requiredLong("expires_at_unix"))
-            if (token.size < 16 || !now().isBefore(expiresAt)) fail("login_required", "Control Plane account session is expired")
-            AccountSession(token, expiresAt)
+            val hubId = json.requiredString("hub_id")
+            val signedHubURL = json.requiredString("hub_url")
+            val region = json.requiredString("hub_region")
+            val directoryVersion = json.requiredLong("hub_directory_version")
+            if (token.size < 16 || !now().isBefore(expiresAt) || hubId.isBlank() || signedHubURL.isBlank() || region.isBlank() || directoryVersion <= 0) fail("login_required", "Control Plane account session is expired")
+            AccountSession(token, expiresAt, json.requiredString("account_id"), json.requiredString("device_id"), hubId, signedHubURL, region, directoryVersion)
         } finally {
             connection.disconnect()
         }
     }
 
-    private fun postAdmission(endpoint: String, request: Message, token: ByteArray): Admission {
-        val connection = open(endpoint, "application/x-protobuf", token)
-        return try {
-            writeRequest(connection, request.toByteArray())
-            val payload = readSuccess(connection, "application/json")
-            val json = JSONObject(String(payload, Charsets.UTF_8))
-            requireKeys(json, setOf(
-                "reference", "hub_id", "account_id", "device_id", "target_device_id", "session_kind",
-                "session_id", "expires_at_unix", "ticket",
-            ), "Hub admission")
-            val admission = Admission(
-                reference = json.requiredString("reference"),
-                hubId = json.requiredString("hub_id"),
-                accountId = json.requiredString("account_id"),
-                deviceId = json.requiredString("device_id"),
-                targetDeviceId = json.optionalString("target_device_id"),
-                sessionKind = json.requiredString("session_kind"),
-                sessionId = json.requiredString("session_id"),
-                expiresAtUnix = json.requiredLong("expires_at_unix"),
-                ticket = decodeBase64(json.requiredString("ticket")),
-            )
-            if (admission.reference.isBlank() || admission.hubId.isBlank() || admission.accountId.isBlank() || admission.deviceId.isBlank() ||
-                admission.sessionId.isBlank() || admission.ticket.size < 16 || admission.expiresAtUnix <= now().epochSecond) {
-                fail("protocol", "Control Plane returned an invalid Hub admission")
-            }
-            admission
-        } finally {
-            connection.disconnect()
-        }
-    }
-
-    private fun postHubStream(endpoint: String, admission: Admission, request: Message): HubSignalingResult {
-        val envelope = JSONObject().put("admission", admission.toJson()).put("payload", encodeBase64(request.toByteArray()))
-        val connection = open(endpoint, "application/json", null)
+    private fun postHubStream(endpoint: String, session: AccountSession, request: Message): HubSignalingResult {
+        val envelope = edgeEnvelope(session, request)
+        val connection = open(endpoint, "application/json", session.token)
         return try {
             writeRequest(connection, envelope.toString().toByteArray(Charsets.UTF_8))
             val status = connection.responseCode
@@ -238,6 +207,24 @@ internal class DevCloudMobileGateway(
             connection.disconnect()
         }
     }
+
+    private fun <T : Message> postEdgeProto(endpoint: String, request: Message, parser: Parser<T>, session: AccountSession): T {
+        val connection = open(endpoint, "application/json", session.token)
+        return try {
+            writeRequest(connection, edgeEnvelope(session, request).toString().toByteArray(Charsets.UTF_8))
+            val payload = readSuccess(connection, "application/x-protobuf")
+            val response = parser.parseFrom(payload)
+            if (messageHasUnknown(response)) fail("protocol", "Hub response contains unknown fields")
+            response
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun edgeEnvelope(session: AccountSession, request: Message): JSONObject = JSONObject()
+        .put("account_id", session.accountId)
+        .put("device_id", session.deviceId)
+        .put("payload", encodeBase64(request.toByteArray()))
 
     private fun <T : Message> postProto(endpoint: String, request: Message, parser: Parser<T>, token: ByteArray?): T {
         val connection = open(endpoint, "application/x-protobuf", token)
@@ -329,35 +316,12 @@ internal class DevCloudMobileGateway(
         return ManagedIceServer(server.urlsList, server.username, server.credential)
     }
 
-    private data class AccountSession(val token: ByteArray, val expiresAt: Instant)
+    private data class AccountSession(val token: ByteArray, val expiresAt: Instant, val accountId: String, val deviceId: String, val hubId: String, val hubURL: String, val region: String, val directoryVersion: Long)
 
     private data class HubSignalingResult(
         val finalEvent: CloudCompanion.SignalingEvent,
         val candidates: List<String>,
     )
-
-    private data class Admission(
-        val reference: String,
-        val hubId: String,
-        val accountId: String,
-        val deviceId: String,
-        val targetDeviceId: String,
-        val sessionKind: String,
-        val sessionId: String,
-        val expiresAtUnix: Long,
-        val ticket: ByteArray,
-    ) {
-        fun toJson(): JSONObject = JSONObject()
-            .put("reference", reference)
-            .put("hub_id", hubId)
-            .put("account_id", accountId)
-            .put("device_id", deviceId)
-            .apply { if (targetDeviceId.isNotEmpty()) put("target_device_id", targetDeviceId) }
-            .put("session_kind", sessionKind)
-            .put("session_id", sessionId)
-            .put("expires_at_unix", expiresAtUnix)
-            .put("ticket", encodeBase64(ticket))
-    }
 
     private companion object {
         const val MAX_BODY_BYTES = 4 shl 20

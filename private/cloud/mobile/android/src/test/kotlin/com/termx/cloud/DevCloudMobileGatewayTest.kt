@@ -40,26 +40,24 @@ class DevCloudMobileGatewayTest {
 
         val hub = TestHttpServer { request ->
             records += request
-            assertEquals("/v1/signaling/create", request.path)
             val envelope = JSONObject(String(request.body, Charsets.UTF_8))
-            val signalingRequest = CloudCompanion.CreateSignalingSessionRequest.parseFrom(
-                Base64.getDecoder().decode(envelope.getString("payload")),
-            )
-            assertEquals("offer-sdp", signalingRequest.offerSdp)
-            assertFalse(envelope.toString().contains("capability", ignoreCase = true))
-            streamResponse(
-                CloudCompanion.SignalingEvent.newBuilder()
-                    .setCandidate(CloudCompanion.IceCandidate.newBuilder().setCandidate("candidate:streamed"))
-                    .build(),
-                CloudCompanion.SignalingEvent.newBuilder()
-                    .setAnswer(
-                        CloudCompanion.SignalingAnswer.newBuilder()
-                            .setSignalingSessionId("signal-1")
-                            .setSdp("answer-sdp")
-                            .addCandidates(CloudCompanion.IceCandidate.newBuilder().setCandidate("candidate:answer")),
-                    )
-                    .build(),
-            )
+            assertEquals("account-1", envelope.getString("account_id"))
+            assertEquals("android-client-1", envelope.getString("device_id"))
+            assertEquals(bearer, request.authorization)
+            when (request.path) {
+                "/v1/endpoints/resolve" -> {
+                    val parsed = CloudCompanion.ResolveEndpointRequest.parseFrom(Base64.getDecoder().decode(envelope.getString("payload")))
+                    protoResponse(CloudCompanion.ResolvedEndpoint.newBuilder().setEndpointId(parsed.endpointId).setTargetDeviceId(parsed.targetDeviceId).setPresence(CloudCompanion.PresenceState.PRESENCE_STATE_ONLINE).setHubId("hub-dev-1").setHubUrl("https://hub.example.test").setManagedSessionId("managed-session-1").build().toByteArray())
+                }
+                "/v1/signaling/create" -> {
+                    val signalingRequest = CloudCompanion.CreateSignalingSessionRequest.parseFrom(Base64.getDecoder().decode(envelope.getString("payload")))
+                    assertEquals("offer-sdp", signalingRequest.offerSdp)
+                    assertFalse(envelope.toString().contains("capability", ignoreCase = true))
+                    streamResponse(CloudCompanion.SignalingEvent.newBuilder().setCandidate(CloudCompanion.IceCandidate.newBuilder().setCandidate("candidate:streamed")).build(), CloudCompanion.SignalingEvent.newBuilder().setAnswer(CloudCompanion.SignalingAnswer.newBuilder().setSignalingSessionId("signal-1").setSdp("answer-sdp").addCandidates(CloudCompanion.IceCandidate.newBuilder().setCandidate("candidate:answer"))).build())
+                }
+                "/v1/relay/leases/acquire" -> protoResponse(CloudCompanion.RelayLease.newBuilder().setLeaseId("lease-1").setSignedLease(com.google.protobuf.ByteString.copyFromUtf8("signed-lease")).setExpiresAtUnix(now.plusSeconds(300).epochSecond).setPathKind(CloudCompanion.ObservedPath.OBSERVED_PATH_SINGLE_RELAY).addIceServers(CloudCompanion.IceServer.newBuilder().addUrls("turn:127.0.0.1:41003?transport=udp").setUsername("relay-user").setCredential("relay-password")).build().toByteArray())
+                else -> throw AssertionError("unexpected Hub path ${request.path}")
+            }
         }
         val control = TestHttpServer { request ->
             records += request
@@ -85,34 +83,11 @@ class DevCloudMobileGatewayTest {
                         .put("account_label", "TermX development")
                         .put("device_id", "android-client-1")
                         .put("expires_at_unix", now.plusSeconds(3600).epochSecond)
-                        .put("access_token", Base64.getEncoder().encodeToString(accessToken)))
-                }
-                "/v1/endpoints/resolve" -> {
-                    val parsed = CloudCompanion.ResolveEndpointRequest.parseFrom(request.body)
-                    protoResponse(
-                        CloudCompanion.ResolvedEndpoint.newBuilder()
-                            .setEndpointId(parsed.endpointId)
-                            .setTargetDeviceId(parsed.targetDeviceId)
-                            .setPresence(CloudCompanion.PresenceState.PRESENCE_STATE_ONLINE)
-                            .setHubId("hub-dev-1")
-                            .setHubUrl(hub.origin)
-                            .setManagedSessionId("managed-session-1")
-                            .build()
-                            .toByteArray(),
-                    )
-                }
-                "/v1/admissions/client" -> {
-                    val parsed = CloudCompanion.CreateSignalingSessionRequest.parseFrom(request.body)
-                    jsonResponse(JSONObject()
-                        .put("reference", "admission-1")
                         .put("hub_id", "hub-dev-1")
-                        .put("account_id", "account-1")
-                        .put("device_id", "android-client-1")
-                        .put("target_device_id", parsed.targetDeviceId)
-                        .put("session_kind", "managed")
-                        .put("session_id", parsed.managedSessionId)
-                        .put("expires_at_unix", now.plusSeconds(60).epochSecond)
-                        .put("ticket", Base64.getEncoder().encodeToString(ByteArray(32) { 0x42 })))
+                        .put("hub_url", hub.origin)
+                        .put("hub_region", "local-1")
+                        .put("hub_directory_version", 1)
+                        .put("access_token", Base64.getEncoder().encodeToString(accessToken)))
                 }
                 else -> throw AssertionError("unexpected Control Plane path ${request.path}")
             }
@@ -129,9 +104,13 @@ class DevCloudMobileGatewayTest {
             )
             val resolution = gateway.resolve(spec)
             assertEquals("managed-session-1", resolution.managedSessionId)
+            control.close()
+            val offlineResolution = gateway.resolve(spec.copy(endpointId = "endpoint-control-down"))
+            val relayResolution = gateway.resolve(spec.copy(endpointId = "endpoint-relay", relayMode = RelayMode.RELAY_ONLY))
+            assertEquals("turn:127.0.0.1:41003?transport=udp", relayResolution.iceServers.single().urls.single())
             val answer = gateway.createSignalingSession(
                 spec,
-                resolution,
+                offlineResolution,
                 ManagedSignalOffer("offer-sdp"),
                 ManagedEndpointContract.dialPolicy(RelayMode.DIRECT),
             )
@@ -140,10 +119,10 @@ class DevCloudMobileGatewayTest {
 
             assertEquals(1, records.count { it.path == "/v1/login/begin" })
             assertEquals(1, records.count { it.path == "/v1/login/complete" })
-            assertEquals(bearer, records.single { it.path == "/v1/endpoints/resolve" }.authorization)
-            assertEquals(bearer, records.single { it.path == "/v1/admissions/client" }.authorization)
-            assertTrue(records.single { it.path == "/v1/signaling/create" }.authorization.isEmpty())
-            control.assertHealthy()
+            assertTrue(records.filter { it.path == "/v1/endpoints/resolve" }.all { it.authorization == bearer })
+            assertEquals(bearer, records.single { it.path == "/v1/signaling/create" }.authorization)
+            assertEquals(bearer, records.single { it.path == "/v1/relay/leases/acquire" }.authorization)
+            assertEquals(2, records.count { it.path.startsWith("/v1/login/") })
             hub.assertHealthy()
         } finally {
             control.close()

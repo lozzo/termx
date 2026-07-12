@@ -95,8 +95,6 @@ type ControlPlaneAdapter interface {
 	BeginDeviceEnrollment(context.Context, *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error)
 	// CompleteDeviceEnrollment 验证公开 daemon 的 DeviceProof 并返回 private device cloud session。
 	CompleteDeviceEnrollment(context.Context, *cloudpb.CompleteDeviceEnrollmentRequest) (session.Session, error)
-	// ResolveEndpoint 创建或定位 managed session，并返回 Hub/ICE 最小 metadata。
-	ResolveEndpoint(context.Context, session.Authorization, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
 	// BeginPresence 为 device cloud session 获取独立的一次性 presence challenge。
 	BeginPresence(context.Context, session.Authorization, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error)
 	// AcquirePresenceAdmission 为 daemon proof 获取短期 Hub presence admission。
@@ -134,4 +132,6 @@ type HubAdapter interface {
 	CompleteSignalingOffer(context.Context, session.Authorization, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
 	// AcquireRelayLease 使用 edge credential 和 Hub 本地区域预算取得 caller-specific TURN material。
 	AcquireRelayLease(context.Context, session.Authorization, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
+	// ResolveEndpoint 使用缓存 HubDirectory 和 edge credential 从 Hub 本地解析 target presence。
+	ResolveEndpoint(context.Context, session.Authorization, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
 }

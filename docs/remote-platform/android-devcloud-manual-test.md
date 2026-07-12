@@ -1,6 +1,6 @@
 # Official Android Dev Cloud 手测
 
-状态：CLOUD005 ADB 验收完成；2026-07-12
+状态：CLOUD005/CLOUD008 ADB 验收完成；CLOUD011 Control Plane 中断验收待设备连接；2026-07-12
 
 本清单只验证显式 `dev-local`、单区域 direct WebRTC。默认 Official 和 Community 继续 fail closed；生产 OAuth/TLS、Android Relay 和公网环境不在本切片内。
 
@@ -203,6 +203,14 @@ Community 对 managed endpoint 必须返回 `companion_missing`/官方 cloud mod
 - 准入：`remote` 全量测试、clean-env `cmd/termx` 测试、`make test-clients`（62 files / 449 tests）和 `make test-android` 均通过，APK class boundary 通过。
 - 产物：Community `sha256:839148503661e2f07bae215d9372086d16b76aea7e2984b288724a9d0585d8bf`；默认 Official `sha256:0600696cd68a3ab789ae9e9a5ed21cf4031a34d6cd2b9c368a038a42c19cf8a0`；Official dev `sha256:b6aa1bab3a652c0ad3ded7ef00a4ceb286718befabf21d8dfca682dffe326466`。
 - 设备清理：Community 负向验收后设备从 `adb devices` 消失，当前手机仍安装 Community APK；这不改变已经观察到的产品 DoD，设备重连后应重新执行 Official dev APK 安装命令恢复日常测试环境。
+
+## 9. CLOUD011 Control Plane 中断验收
+
+使用公网 HTTP staging Official development APK 登录一次并缓存 edge credential/HubDirectory，确认 direct 与显式 `Use relay` 各成功一次。随后只阻断手机到 Control Plane `41101/tcp`，保持 Hub `41102/tcp` 和 TURN `41003/udp` 可达，强制停止并重新启动 App。
+
+成功标准：不重新登录、不领取 managed admission；新 direct 必须回到 `connected/direct`，新 Relay 必须回到 `connected/single_relay`。Nginx access log 在中断窗口只能看到 Hub 的 `/v1/endpoints/resolve`、`/v1/relay/leases/acquire` 和 `/v1/signaling/create`，不能出现连接阶段 Control Plane 请求；token/directory 过期时必须 fail closed 并提示刷新，不能接受旧 Hub、local 或 SSH fallback。
+
+当前 `adb devices -l` 为空，本节尚未真机执行，不得据 desktop 或 JVM contract 测试把 CLOUD011 标为完成。
 
 ### 2026-07-12 公网 HTTP staging 真机实测
 
