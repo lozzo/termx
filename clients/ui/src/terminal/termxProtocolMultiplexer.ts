@@ -30,6 +30,8 @@ export interface TermxProtocolMultiplexer {
   request<TResponse>(method: string, params?: unknown): Promise<TResponse>
   /** openTerminalChannel 返回只属于一个 terminal protocol client 的虚拟通道。 */
   openTerminalChannel(terminalId: string): Promise<RtcBinaryChannel>
+  /** openFileChannel 注册 daemon control response 分配的 session-local 文件流 channel。 */
+  openFileChannel(channel: number, transferId: string): RtcBinaryChannel
   /** close 只关闭当前物理连接及其虚拟投影，不修改 daemon terminal。 */
   close(reason?: string): void
 }
@@ -62,7 +64,7 @@ class ProtocolMultiplexer implements TermxProtocolMultiplexer {
   private closed = false
   private readonly pending = new Map<number, PendingRequest>()
   private readonly virtualChannels = new Set<VirtualProtocolChannel>()
-  private readonly streamOwners = new Map<number, VirtualProtocolChannel>()
+  private readonly streamOwners = new Map<number, ProtocolStreamOwner>()
   private readonly earlyStreamFrames = new Map<number, TermxFrame[]>()
   private readonly messageSubscription: { close(): void }
   private readonly closeSubscription: { close(): void }
@@ -110,6 +112,17 @@ class ProtocolMultiplexer implements TermxProtocolMultiplexer {
     return channel
   }
 
+  openFileChannel(channel: number, transferId: string): RtcBinaryChannel {
+    this.assertOpen()
+    if (!Number.isInteger(channel) || channel <= 0 || channel > 0xffff) throw new Error('invalid file stream channel')
+    if (!transferId.trim()) throw new Error('file transfer id is required')
+    if (this.streamOwners.has(channel)) throw new Error(`termx protocol stream ${channel} already has an owner`)
+    const owner = new FileProtocolChannel(this, channel, transferId.trim())
+    this.streamOwners.set(channel, owner)
+    this.flushEarlyFrames(channel, owner)
+    return owner
+  }
+
   close(reason = 'termx protocol multiplexer closed'): void {
     if (this.closed) return
     this.closed = true
@@ -127,6 +140,7 @@ class ProtocolMultiplexer implements TermxProtocolMultiplexer {
     this.pending.clear()
     for (const channel of Array.from(this.virtualChannels)) channel.closeFromOwner(error)
     this.virtualChannels.clear()
+    for (const owner of new Set(this.streamOwners.values())) owner.closeFromOwner(error)
     this.streamOwners.clear()
     this.earlyStreamFrames.clear()
     this.physical.close()
@@ -209,6 +223,20 @@ class ProtocolMultiplexer implements TermxProtocolMultiplexer {
     }
   }
 
+  sendFileStream(owner: FileProtocolChannel, data: Uint8Array): void {
+    this.assertOpen()
+    const frame = decodeTermxFrame(data)
+    if (frame.channel !== owner.channel || this.streamOwners.get(frame.channel) !== owner) {
+      throw new Error(`termx protocol stream ${frame.channel} does not belong to ${owner.label}`)
+    }
+    this.physical.send(data)
+  }
+
+  closeFileStream(owner: FileProtocolChannel): void {
+    if (this.streamOwners.get(owner.channel) === owner) this.streamOwners.delete(owner.channel)
+    this.earlyStreamFrames.delete(owner.channel)
+  }
+
   private handlePhysicalFrame(data: Uint8Array): void {
     if (this.closed) return
     let frame: TermxFrame
@@ -286,7 +314,7 @@ class ProtocolMultiplexer implements TermxProtocolMultiplexer {
     }
   }
 
-  private flushEarlyFrames(streamChannel: number, owner: VirtualProtocolChannel): void {
+  private flushEarlyFrames(streamChannel: number, owner: ProtocolStreamOwner): void {
     const frames = this.earlyStreamFrames.get(streamChannel) ?? []
     this.earlyStreamFrames.delete(streamChannel)
     for (const frame of frames) owner.emit(encodeTermxFrame(frame.channel, frame.type, frame.payload))
@@ -304,6 +332,11 @@ class ProtocolMultiplexer implements TermxProtocolMultiplexer {
       throw new Error('termx protocol multiplexer is closed')
     }
   }
+}
+
+interface ProtocolStreamOwner {
+  emit(data: Uint8Array): void
+  closeFromOwner(error: Error): void
 }
 
 class VirtualProtocolChannel implements RtcBinaryChannel {
@@ -375,6 +408,24 @@ class VirtualProtocolChannel implements RtcBinaryChannel {
     this.messageHandlers.clear()
     this.closeHandlers.clear()
   }
+}
+
+class FileProtocolChannel implements RtcBinaryChannel, ProtocolStreamOwner {
+  private closed = false
+  private readonly messageHandlers = new Set<(data: Uint8Array) => void>()
+  private readonly closeHandlers = new Set<() => void>()
+
+  constructor(private readonly owner: ProtocolMultiplexer, readonly channel: number, readonly transferId: string) {}
+
+  get label(): string { return `file:${this.transferId}` }
+  get readyState(): RtcBinaryChannel['readyState'] { return this.closed ? 'closed' : 'open' }
+  send(data: Uint8Array): void { if (this.closed) throw new Error(`file protocol channel ${this.label} is closed`); this.owner.sendFileStream(this, data) }
+  close(): void { if (this.closed) return; this.closed = true; this.owner.closeFileStream(this); for (const handler of this.closeHandlers) handler(); this.messageHandlers.clear(); this.closeHandlers.clear() }
+  onMessage(handler: (data: Uint8Array) => void): { close(): void } { this.messageHandlers.add(handler); return { close: () => this.messageHandlers.delete(handler) } }
+  onClose(handler: () => void): { close(): void } { this.closeHandlers.add(handler); return { close: () => this.closeHandlers.delete(handler) } }
+  async waitOpen(): Promise<void> { if (this.closed) throw new Error(`file protocol channel ${this.label} is closed`) }
+  emit(data: Uint8Array): void { if (this.closed) return; queueMicrotask(() => { if (!this.closed) for (const handler of this.messageHandlers) handler(data) }) }
+  closeFromOwner(error: Error): void { if (this.closed) return; this.closed = true; void error; for (const handler of this.closeHandlers) handler(); this.messageHandlers.clear(); this.closeHandlers.clear() }
 }
 
 function attachedStreamChannel(value: unknown): number {

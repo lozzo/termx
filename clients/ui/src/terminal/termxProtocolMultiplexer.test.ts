@@ -85,6 +85,23 @@ describe('TermxProtocolMultiplexer', () => {
     expect(decodeTermxFrame(secondFrames[1]!).channel).toBe(22)
   })
 
+  it('routes daemon-assigned file stream frames without creating another physical channel', async () => {
+    const physical = new FakeBinaryChannel('protocol')
+    const mux = createTermxProtocolMultiplexer(physical)
+    const early = encodeTermxFrame(41, TERMX_FRAME_TYPES.fileData, new Uint8Array([1, 2, 3]))
+    physical.receive(early)
+    const file = mux.openFileChannel(41, 'transfer-1')
+    const received: Uint8Array[] = []
+    file.onMessage((frame) => received.push(frame))
+    await Promise.resolve()
+    expect(received).toEqual([early])
+
+    const ack = encodeTermxFrame(41, TERMX_FRAME_TYPES.fileAck, new Uint8Array([4]))
+    file.send(ack)
+    expect(physical.sent).toEqual([ack])
+    expect(() => file.send(encodeTermxFrame(42, TERMX_FRAME_TYPES.fileAck))).toThrow('does not belong')
+  })
+
   it('removes a virtual request when the physical send fails', async () => {
     const physical = new FakeBinaryChannel('protocol')
     const mux = createTermxProtocolMultiplexer(physical)

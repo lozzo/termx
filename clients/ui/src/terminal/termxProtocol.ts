@@ -1,4 +1,4 @@
-export const TERMX_PROTOCOL_VERSION = 3
+export const TERMX_PROTOCOL_VERSION = 4
 export const TERMX_MAX_FRAME_SIZE = 4 << 20
 
 export const TERMX_FRAME_TYPES = {
@@ -17,6 +17,10 @@ export const TERMX_FRAME_TYPES = {
   closed: 0x17,
   historyRequest: 0x18,
   historyReplay: 0x19,
+  fileData: 0x21,
+  fileAck: 0x22,
+  fileFinish: 0x23,
+  fileResult: 0x24,
 } as const
 
 export type TermxFrameType = typeof TERMX_FRAME_TYPES[keyof typeof TERMX_FRAME_TYPES]
