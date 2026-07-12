@@ -203,3 +203,12 @@ Community 对 managed endpoint 必须返回 `companion_missing`/官方 cloud mod
 - 准入：`remote` 全量测试、clean-env `cmd/termx` 测试、`make test-clients`（62 files / 449 tests）和 `make test-android` 均通过，APK class boundary 通过。
 - 产物：Community `sha256:839148503661e2f07bae215d9372086d16b76aea7e2984b288724a9d0585d8bf`；默认 Official `sha256:0600696cd68a3ab789ae9e9a5ed21cf4031a34d6cd2b9c368a038a42c19cf8a0`；Official dev `sha256:b6aa1bab3a652c0ad3ded7ef00a4ceb286718befabf21d8dfca682dffe326466`。
 - 设备清理：Community 负向验收后设备从 `adb devices` 消失，当前手机仍安装 Community APK；这不改变已经观察到的产品 DoD，设备重连后应重新执行 Official dev APK 安装命令恢复日常测试环境。
+
+### 2026-07-12 公网 HTTP staging 真机实测
+
+- 使用 `-PtermxOfficialPublicHTTPStaging=true` 构建并覆盖安装 Official debug APK；手机全程走 5G，`adb reverse --list` 为空。
+- 从安全渠道导入短期 pairing 后，`Public staging daemon` 完成 List/Attach/Input/Output；`echo android-mobile-input-ok` 在同一远端 shell 得到回显。
+- Connection Info 显示 `P2P direct`、`prflx / host`、手机公网映射到 daemon 公网 UDP 候选，实测 RTT 约 51-64 ms。
+- 后台 8 秒再启动 App 后恢复到同一 terminal，core-v2 屏幕和输入回显仍在，没有创建第二份 terminal lifecycle truth。
+- 修复 Android `Use relay` 只更新 UI 偏好但复用旧 native P2P store 的问题：`forceRelay=true` 现在进入 native 时收敛为 `relay_only`，模式不一致的旧 store 会被释放重建。
+- 修复后 Relay lease、Hub signaling 与 `relay_only` ICE 策略均已实际触发，但 `114.66.58.243:41003/udp` 在云厂商入站边界被丢弃，15 秒后按 `route_unavailable` fail closed；没有回退 direct。云安全组放行该 UDP 端口后必须补真机 `single_relay` 复验。

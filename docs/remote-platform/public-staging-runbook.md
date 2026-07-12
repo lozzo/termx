@@ -51,6 +51,15 @@ ssh root@114.66.58.243 'ss -lnup | grep 41003'
 
 预期四个 unit 都是 `active`，两个 health response 是 `204`，TURN listener 为 `0.0.0.0:41003/udp`。
 
+`ss` 看到 listener 只证明进程已绑定端口，不证明云厂商入站允许 UDP。上线或真机 Relay 验收前，必须在云安全组放行 `41003/udp`，并从服务器外发送探测，同时在实际公网网卡观察入站包：
+
+```bash
+ssh root@114.66.58.243 'tcpdump -nn -U -i ens18 udp port 41003'
+printf test | nc -u -w1 114.66.58.243 41003
+```
+
+若 `ens18` 没有任何包，阻断位于云安全组或上游网络；不得把本机 `iptables` 放行、TURN listener 或已签发 Relay lease 冒充 `single_relay` 可用。2026-07-12 真机 5G 验收即命中该阻断，Android 正确以 `route_unavailable` fail closed。
+
 ## 无隧道客户端验证
 
 ```bash

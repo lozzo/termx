@@ -34,10 +34,11 @@ import java.time.Instant
 internal class DevCloudMobileGateway(
     controlPlaneURL: String,
     hubURL: String,
+    allowPublicHTTP: Boolean = false,
     private val now: () -> Instant = { Instant.now() },
 ) {
-    private val controlOrigin = validateLoopbackOrigin(controlPlaneURL)
-    private val hubOrigin = validateLoopbackOrigin(hubURL)
+    private val controlOrigin = validateOrigin(controlPlaneURL, allowPublicHTTP)
+    private val hubOrigin = validateOrigin(hubURL, allowPublicHTTP)
     private val sessionLock = Mutex()
     @Volatile private var accountSession: AccountSession? = null
 
@@ -362,11 +363,12 @@ internal class DevCloudMobileGateway(
         const val MAX_BODY_BYTES = 4 shl 20
         const val MAX_SIGNAL_CANDIDATES = 256
 
-        fun validateLoopbackOrigin(value: String): String {
+        fun validateOrigin(value: String, allowPublicHTTP: Boolean): String {
             val uri = try { URI(value.trim()) } catch (_: Exception) { fail("protocol", "dev cloud origin is invalid") }
+            val loopback = uri.host in setOf("127.0.0.1", "localhost", "::1")
             if (uri.scheme != "http" || uri.userInfo != null || uri.path !in listOf("", null) || uri.query != null || uri.fragment != null ||
-                uri.host !in setOf("127.0.0.1", "localhost", "::1") || uri.port !in 1..65535) {
-                fail("protocol", "dev cloud origin must be loopback HTTP")
+                (!loopback && !allowPublicHTTP) || uri.host.isNullOrBlank() || uri.port !in 1..65535) {
+                fail("protocol", "dev cloud origin is not allowed by the selected staging profile")
             }
             return value.trim().trimEnd('/')
         }

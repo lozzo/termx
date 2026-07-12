@@ -159,6 +159,20 @@ class DevCloudMobileGatewayTest {
         assertEquals("protocol", failure.code)
     }
 
+    @Test
+    fun acceptsPublicHTTPOnlyWhenExplicitlyEnabled() {
+        DevCloudMobileGateway(
+            "http://114.66.58.243:41101",
+            "http://114.66.58.243:41102",
+            allowPublicHTTP = true,
+            now = { now },
+        )
+        val failure = assertThrows(ManagedEndpointFailure::class.java) {
+            DevCloudMobileGateway("http://114.66.58.243:41101", "http://114.66.58.243:41102", now = { now })
+        }
+        assertEquals("protocol", failure.code)
+    }
+
     private data class RecordedRequest(
         val path: String,
         val authorization: String,

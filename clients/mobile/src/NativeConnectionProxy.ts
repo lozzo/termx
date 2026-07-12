@@ -32,7 +32,7 @@ import {
   encodeRuntimeRequestBody,
   runtimeEventEnvelopeToRtcEvent,
 } from '@termx/ui'
-import { NativeConnection, type NativeConnectOpts, type NativeConnectionInfo, type NativeConnectionSnapshot, type NativeStateChangeEvent } from './plugins/nativeConnection'
+import { NativeConnection, type NativeConnectOpts, type NativeConnectionInfo, type NativeConnectionSnapshot, type NativeRelayMode, type NativeStateChangeEvent } from './plugins/nativeConnection'
 import { writeNativeDebugLog } from './nativeDebugLog'
 
 // ─── Frame constants ──────────────────────────────────────────────────────────
@@ -1255,14 +1255,20 @@ export class NativeRtcConnector implements ManagedRtcConnector<{ machineId: stri
   async connect(input: { machineId: string }, options?: RtcConnectOptions): Promise<NativeRtcSession> {
     const { machineId } = input
     const signal = options?.signal
+    // native store 才是 Android ICE 模式真值；UI 的强制 Relay 意图必须在进入 native 前收敛为 relay_only。
+    const requestedRelayMode = options?.forceRelay === true ? 'relay_only' : this.connectOpts.relayMode
 
     try {
       const existing = await readReusableNativeConnection(machineId)
-      if (existing) {
-        options?.onConnectionState?.(existing)
+      if (existing && existing.relayMode === requestedRelayMode) {
+        options?.onConnectionState?.(existing.connection)
         await sharedNativeBridgeClient.ensureConnected(signal)
         sharedNativeBridgeClient.sendControl(FRAME_SYNC_REQUEST, new Uint8Array(0))
-        return new NativeRtcSession(sharedNativeBridgeClient, machineId, existing.path ?? 'hub', existing.relayInUse)
+        return new NativeRtcSession(sharedNativeBridgeClient, machineId, existing.connection.path ?? 'hub', existing.connection.relayInUse)
+      }
+      if (existing) {
+        // 模式切换必须销毁旧 PeerConnection；否则 native 会继续返回旧 P2P/Relay store。
+        await NativeConnection.release({ endpointId: machineId })
       }
     } catch {
       // Missing snapshots are expected before native has created a store.
@@ -1282,6 +1288,7 @@ export class NativeRtcConnector implements ManagedRtcConnector<{ machineId: stri
       await NativeConnection.connect({
         endpointId: machineId,
         ...this.connectOpts,
+        relayMode: requestedRelayMode,
       })
       const { path, relayInUse } = await connected.promise
 
@@ -1354,11 +1361,14 @@ function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
 
 async function readReusableNativeConnection(
   machineId: string,
-): Promise<RtcConnectionStateSnapshot | null> {
+): Promise<{ connection: RtcConnectionStateSnapshot; relayMode: NativeRelayMode } | null> {
   const snapshot = await NativeConnection.getSnapshot({ endpointId: machineId })
   cacheNativeState(snapshot)
   if (snapshot.phase !== 'connected') return null
-  return normalizeNativeConnectionState(snapshot)
+  return {
+    connection: normalizeNativeConnectionState(snapshot),
+    relayMode: snapshot.relayMode,
+  }
 }
 
 interface ConnectedWait {

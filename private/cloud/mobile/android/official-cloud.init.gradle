@@ -11,7 +11,12 @@ gradle.projectsEvaluated {
     appProject.android.sourceSets.test.java.srcDir(new File(privateModuleRoot, 'src/test/kotlin'))
     appProject.android.buildTypes.release.proguardFiles(new File(privateModuleRoot, 'official-proguard-rules.pro'))
     def devCloudEnabled = gradle.startParameter.projectProperties['termxOfficialDevCloud'] == 'true'
-    appProject.android.defaultConfig.buildConfigField('boolean', 'TERMX_OFFICIAL_DEV_CLOUD_ENABLED', devCloudEnabled.toString())
-    appProject.android.defaultConfig.buildConfigField('String', 'TERMX_OFFICIAL_DEV_CONTROL_URL', '"http://127.0.0.1:41001"')
-    appProject.android.defaultConfig.buildConfigField('String', 'TERMX_OFFICIAL_DEV_HUB_URL', '"http://127.0.0.1:41002"')
+    def publicHTTPStagingEnabled = gradle.startParameter.projectProperties['termxOfficialPublicHTTPStaging'] == 'true'
+    if (devCloudEnabled && publicHTTPStagingEnabled) {
+        throw new GradleException('Loopback and public HTTP Official staging profiles are mutually exclusive')
+    }
+    appProject.android.defaultConfig.buildConfigField('boolean', 'TERMX_OFFICIAL_DEV_CLOUD_ENABLED', (devCloudEnabled || publicHTTPStagingEnabled).toString())
+    appProject.android.defaultConfig.buildConfigField('boolean', 'TERMX_OFFICIAL_PUBLIC_HTTP_STAGING_ENABLED', publicHTTPStagingEnabled.toString())
+    appProject.android.defaultConfig.buildConfigField('String', 'TERMX_OFFICIAL_DEV_CONTROL_URL', publicHTTPStagingEnabled ? '"http://114.66.58.243:41101"' : '"http://127.0.0.1:41001"')
+    appProject.android.defaultConfig.buildConfigField('String', 'TERMX_OFFICIAL_DEV_HUB_URL', publicHTTPStagingEnabled ? '"http://114.66.58.243:41102"' : '"http://127.0.0.1:41002"')
 }
