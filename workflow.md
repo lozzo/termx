@@ -82,7 +82,7 @@
 | FILE001 | 完成 | 统一文件能力设计门禁 | 文件 owner、权限、方法、流控、失败语义和旧 API 迁移边界清晰 |
 | FILE002 | 完成 | daemon 文件 metadata 与预览 | local protocol 可安全 list/stat/preview/mkdir/rename/delete/copy/move |
 | FILE003 | 完成 | 文件上传下载数据流 | local 与 WebRTC 使用同一流协议完成背压、取消、续传和摘要校验 |
-| FILE004 | 进行中 | 共享 UI 与 Official Android 闭环 | App 可浏览、预览、上传、下载并经 direct/single Relay 手测 |
+| FILE004 | 已完成 | 共享 UI 与 Official Android 闭环 | App 可浏览、预览、上传、下载并经 direct/single Relay 手测 |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
 | GA004 | 延后 | 单 transit 受控加速 | 仅在 GA003 数据证明需要时恢复 |
 | KS012 | 暂停 | 快捷键跨切片总契约守卫 | Cloud 单区域主线完成后重新排序 |
@@ -127,5 +127,5 @@
 - FILE001 已完成：统一规范明确 daemon 文件系统 truth、显式四类文件权限、metadata 方法、单 protocol DataChannel 流、背压/续传/摘要失败语义和旧 `/files/*`/独立 file channel 删除路线；UI/schema 存量不再冒充可用能力。
 - FILE002 已完成：公开 wire/typed client 已提供 `file.list/stat/preview/mkdir/rename/delete/copy/move`；core 以 daemon OS 文件系统为 truth，使用绝对路径、lstat symlink 语义、有界预览、opaque stale cursor、显式 overwrite 和逐项 mutation 结果。local listener 显式拥有文件权限，terminal-scoped/缺权限 session fail closed；protocol/core harness 与 generated-code gate 全绿，未接旧 `/files/*` UI。
 - FILE003 已完成：protocol v4 在单一 transport 内由 control method 分配 session-local transfer channel，64 KiB chunk 与 256 KiB ACK window 提供显式背压；下载固定 size/mtime identity 并返回全文件 SHA-256，上传使用 daemon-owned temp、连续 offset、finish digest 和原子 rename。上传可跨 protocol session 续传 15 分钟并绑定 local principal 或 signed GrantID，其他 grant 不能 resume/cancel；cancel 幂等清理。local 慢消费者/control 隔离、断线续传、损坏摘要、stale source、principal isolation 和 Pion direct 文件下载 harness 全绿；文件专属 core/remote race 全绿。全量 core race 仍被既有 vterm restart/drain race 阻断，栈不经过 FILE003。
-- FILE004 已启动：共享 UI 仍调用旧 `/files/*` 和 `openFileTransfer`，Android native `FileTransferManager` 仍按旧独立 DataChannel frame 工作；迁移将以共享 `TermxProtocolMultiplexer` 为唯一 channel owner，保留 Android OS picker、落盘和后台任务，只替换网络 contract。
+- FILE004 已完成：共享 UI 与 Official Android 已统一到 typed `file.*` 和 protocol v4 stream；旧 `/files/*`、`openFileTransfer`、独立 file DataChannel 与旧 task id 已删除。Android native 保留 picker、MediaStore、SQLite 与后台线程，在单一 authenticated protocol DataChannel 内完成上传、下载、取消、后台与进程中断恢复；core 允许同 principal 的新 session 串行接管旧上传 channel，仍拒绝不同 principal。公网真机 direct 完成浏览、预览、2 MiB 下载、3 MiB 上传、双向取消、64 MiB 双向续传和两端 SHA-256；single Relay 真实 TURN/DataChannel harness 通过，Android dev Relay 因远端 loopback/ADB 无 UDP 转发未冒充真机 Relay。`make test-clients`、`make test-android`、generated guard、文件协议 Go tests、FILE004 race 与 `git diff --check` 全绿；全量 core race 仍存在既有 vterm restart 竞态，记录为非 FILE004 剩余风险。
 - 正式开源隔离、生产 OAuth/TLS、持久化数据库、计费、团队治理、Relay Mesh 和多区域运维全部延后。
