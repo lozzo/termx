@@ -1,0 +1,140 @@
+package hub
+
+import (
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
+)
+
+var (
+	// ErrPolicySnapshot 表示授权投影缺失、回滚、断档或超过最大陈旧窗口。
+	ErrPolicySnapshot = errors.New("Hub authorization snapshot unavailable")
+	// ErrEdgeAuthorization 表示 edge token、账号 epoch、target ownership 或 revoke 状态拒绝连接。
+	ErrEdgeAuthorization = errors.New("Hub edge authorization rejected")
+)
+
+// DeviceAuthorization 是 Control Plane 同步给 Hub 的最小 daemon 授权投影。
+// PublicKey 供后续 fresh presence proof 使用；Revoked 优先于账号 ownership 和订阅 allow。
+type DeviceAuthorization struct {
+	DeviceID  string
+	AccountID string
+	PublicKey []byte
+	Revoked   bool
+}
+
+// AccountAuthorization 是 Hub 判断账号 edge token epoch 和 managed direct 能力的本地投影。
+// AuthEpoch 变化会使旧 token 立即失效；ManagedDirectEnabled 只控制托管 direct，不扩大 daemon capability。
+type AccountAuthorization struct {
+	AccountID            string
+	AuthEpoch            uint64
+	ManagedDirectEnabled bool
+	Revoked              bool
+}
+
+// AuthorizationSnapshot 是 Hub 原子应用的、带严格单调 revision 的授权快照。
+// GeneratedAt 用于 max staleness；Devices/Accounts 在应用时深拷贝，caller 后续修改不影响运行时真值。
+type AuthorizationSnapshot struct {
+	Revision    uint64
+	GeneratedAt time.Time
+	Accounts    []AccountAuthorization
+	Devices     []DeviceAuthorization
+}
+
+// EdgeAuthorizerConfig 固定 Hub identity、edge token issuer、公钥和授权快照最大陈旧窗口。
+// 请求路径没有 Control Plane callback；任何 cache miss 都直接 fail closed。
+type EdgeAuthorizerConfig struct {
+	HubID        string
+	Issuer       string
+	KeyRing      *servicecredential.KeyRing
+	Clock        Clock
+	MaxStaleness time.Duration
+}
+
+// EdgeAuthorizer 是 Hub managed direct 授权决策的内存 owner。
+// 它只接受完整 snapshot 的原子替换；生产持久快照/WAL 由外层同步组件负责验证后恢复。
+type EdgeAuthorizer struct {
+	mu           sync.RWMutex
+	hubID        string
+	issuer       string
+	keyRing      *servicecredential.KeyRing
+	clock        Clock
+	maxStaleness time.Duration
+	revision     uint64
+	generatedAt  time.Time
+	accounts     map[string]AccountAuthorization
+	devices      map[string]DeviceAuthorization
+}
+
+// NewEdgeAuthorizer 创建没有授权快照的 Hub authorizer。
+// 在首次成功 ApplySnapshot 前所有连接均 fail closed。
+func NewEdgeAuthorizer(config EdgeAuthorizerConfig) (*EdgeAuthorizer, error) {
+	if config.HubID == "" || config.Issuer == "" || config.KeyRing == nil || config.MaxStaleness <= 0 {
+		return nil, fmt.Errorf("invalid Hub edge authorizer configuration")
+	}
+	if config.Clock == nil {
+		config.Clock = realClock{}
+	}
+	return &EdgeAuthorizer{hubID: config.HubID, issuer: config.Issuer, keyRing: config.KeyRing, clock: config.Clock, maxStaleness: config.MaxStaleness}, nil
+}
+
+// ApplySnapshot 原子替换完整授权投影。
+// revision 必须严格递增；rollback、重复 revision、未来时间和重复主体都会拒绝且保留旧快照。
+func (authorizer *EdgeAuthorizer) ApplySnapshot(snapshot AuthorizationSnapshot) error {
+	now := authorizer.clock.Now().UTC()
+	if snapshot.Revision == 0 || snapshot.GeneratedAt.IsZero() || snapshot.GeneratedAt.After(now) {
+		return ErrPolicySnapshot
+	}
+	accounts := make(map[string]AccountAuthorization, len(snapshot.Accounts))
+	for _, account := range snapshot.Accounts {
+		if account.AccountID == "" || account.AuthEpoch == 0 {
+			return ErrPolicySnapshot
+		}
+		if _, exists := accounts[account.AccountID]; exists {
+			return ErrPolicySnapshot
+		}
+		accounts[account.AccountID] = account
+	}
+	devices := make(map[string]DeviceAuthorization, len(snapshot.Devices))
+	for _, device := range snapshot.Devices {
+		if device.DeviceID == "" || device.AccountID == "" {
+			return ErrPolicySnapshot
+		}
+		if _, exists := devices[device.DeviceID]; exists {
+			return ErrPolicySnapshot
+		}
+		device.PublicKey = append([]byte(nil), device.PublicKey...)
+		devices[device.DeviceID] = device
+	}
+	authorizer.mu.Lock()
+	defer authorizer.mu.Unlock()
+	if snapshot.Revision <= authorizer.revision {
+		return ErrPolicySnapshot
+	}
+	authorizer.revision, authorizer.generatedAt = snapshot.Revision, snapshot.GeneratedAt.UTC()
+	authorizer.accounts, authorizer.devices = accounts, devices
+	return nil
+}
+
+// AuthorizeDirect 离线验证 client edge token，并与本地账号和 target device 投影取交集。
+// 返回 claims 只供 Hub 创建短期 EdgeManagedSession；任何缺失、撤销、epoch 不匹配或陈旧快照都 fail closed。
+func (authorizer *EdgeAuthorizer) AuthorizeDirect(token []byte, accountID, clientDeviceID, targetDeviceID string) (servicecredential.EdgeAccessClaims, error) {
+	now := authorizer.clock.Now().UTC()
+	claims, err := servicecredential.VerifyEdgeAccess(authorizer.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: authorizer.issuer, AudienceHubID: authorizer.hubID, AccountID: accountID, ClientDeviceID: clientDeviceID}, now)
+	if err != nil {
+		return servicecredential.EdgeAccessClaims{}, fmt.Errorf("%w: %v", ErrEdgeAuthorization, err)
+	}
+	authorizer.mu.RLock()
+	defer authorizer.mu.RUnlock()
+	if authorizer.revision == 0 || now.Sub(authorizer.generatedAt) > authorizer.maxStaleness {
+		return servicecredential.EdgeAccessClaims{}, ErrPolicySnapshot
+	}
+	account, accountOK := authorizer.accounts[accountID]
+	device, deviceOK := authorizer.devices[targetDeviceID]
+	if !accountOK || !deviceOK || account.Revoked || !account.ManagedDirectEnabled || account.AuthEpoch != claims.AuthEpoch || device.Revoked || device.AccountID != accountID {
+		return servicecredential.EdgeAccessClaims{}, ErrEdgeAuthorization
+	}
+	return claims, nil
+}

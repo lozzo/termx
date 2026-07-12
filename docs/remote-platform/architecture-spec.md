@@ -110,12 +110,12 @@ Device 是运行 daemon 的长期安全主体：
 
 Hub presence 只能声明某个 `DeviceID` 当前在哪个 Hub session 上线；客户端必须通过 DataChannel 内设备证明确认其公钥和已 pin fingerprint。
 
-### 4.3 ManagedSession
+### 4.3 EdgeManagedSession
 
-Control Plane 了解的是托管连接 session metadata，而不是 terminal session：
+连接热路径中的托管 session 由 Hub 创建和持有，而不是由 Control Plane 逐连接创建：
 
 ```text
-ManagedSession {
+EdgeManagedSession {
     session_id
     account_id
     client_device_id
@@ -127,7 +127,7 @@ ManagedSession {
 }
 ```
 
-它用于签发 admission、分配 Hub/region、请求 Relay lease 和聚合 usage。它不能包含 terminal ID、grant 内容、terminal scope 或 protocol payload。
+它绑定已离线验证的 client edge token、Hub 本地授权投影和 active target presence，用于 signaling、route intent 与异步 usage correlation。Control Plane 可接收脱敏 audit/usage projection，但不参与创建。它不能包含 terminal ID、grant 内容、terminal scope 或 protocol payload。
 
 ### 4.4 ProtocolSession
 
@@ -205,7 +205,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - 用户、organization、登录 session 和 account token。
 - device registration、ownership、最小目录和 presence projection。
 - 套餐、entitlement、quota、账单和风控。
-- Hub/region 选择和短期 HubAdmissionTicket。
+- 签名 edge token、HubDirectory，以及带单调 revision 的设备/订阅/撤销投影。
 - 基于 entitlement 签发短期 RelayLease。
 - 接收、去重和结算 Relay usage event。
 - 配对审批和审计 metadata，但不保存原始 capability grant。
@@ -220,7 +220,8 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 
 负责：
 
-- 用签名票据接纳 daemon/client session。
+- 离线验证签名 edge token，并将其与本地 DeviceOwnership/Pairing/Revocation/Subscription 投影取交集。
+- 在 direct 热路径本地创建短期 EdgeManagedSession；cache miss、过期或 revision 不完整时 fail closed，不同步查询 Control Plane。
 - 维护短 TTL device presence 与 session routing。
 - 转发 offer、answer 和 ICE candidate。
 - 分配 signaling correlation ID、超时和错误。
@@ -231,7 +232,7 @@ Hub session、WebRTC PeerConnection 和 ProtocolSession 生命周期相关但不
 - 接收 CapabilityGrant 或把它当 `session_token`。
 - 验证 terminal scope、terminal ID、grant expiry 或 revoke。
 - 持久化 terminal inventory。
-- 直接查询套餐数据库；只离线验证短期票据或调用明确的私有 control interface。
+- 直接查询套餐数据库；Control Plane 同步只允许后台 snapshot/delta 流，不能成为连接请求 fallback。
 - 代理 termx protocol frame。
 
 ### 5.6 Private Relay/TURN

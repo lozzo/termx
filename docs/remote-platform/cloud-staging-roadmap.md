@@ -338,7 +338,7 @@ CLOUD002 建立名为 `dev-local` 的显式 staging 剖面：
 
 ## 10. 总体验收与停止条件
 
-CLOUD005 已完成，本轮单区域 Cloud 纵向目标随之完成。最终审计已经证明：
+CLOUD005 已完成，原单区域 Cloud 纵向目标随之完成。CLOUD009-CLOUD011 按 `hub-edge-control-plan.md` 继续把逐连接 Control Plane admission 下沉到 Hub；本文件以下原链路记录保留为迁移前基线，不再作为新授权 ownership 真值。最终审计已经证明：
 
 - Desktop direct、Desktop single Relay、Official Android 三条链路都到达同一个真实 daemon/core-v2 terminal protocol。
 - 三条链路只改变 transport/path，不改变 Endpoint/TerminalRef、history owner 或 capability 语义。

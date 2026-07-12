@@ -142,18 +142,19 @@ func (presence *Presence) Close() error {
 }
 
 type sessionState struct {
-	id                string
-	accountID         string
-	managedSessionID  string
-	clientDeviceID    string
-	targetDeviceID    string
-	allowedOperations []servicecredential.HubOperation
-	expiresAt         time.Time
-	clientEvents      chan ClientEvent
-	done              chan struct{}
-	answered          bool
-	daemonOperations  []servicecredential.HubOperation
-	closed            bool
+	id                 string
+	accountID          string
+	managedSessionID   string
+	clientDeviceID     string
+	clientConnectionID string
+	targetDeviceID     string
+	allowedOperations  []servicecredential.HubOperation
+	expiresAt          time.Time
+	clientEvents       chan ClientEvent
+	done               chan struct{}
+	answered           bool
+	daemonOperations   []servicecredential.HubOperation
+	closed             bool
 }
 
 // DaemonSession 是 answer admission 验证后绑定到一个 signaling session 的 daemon handle。

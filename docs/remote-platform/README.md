@@ -20,6 +20,7 @@
 2. `cloud-staging-roadmap.md`：回答当前真实完成度、单区域纵向消息链路和 CLOUD002-CLOUD005 的用户 DoD。
 3. `android-devcloud-manual-test.md`：CLOUD005 Official dev APK 的 ADB 安装、配对、terminal、恢复与局部失败手测清单。
 4. `public-staging-runbook.md`：CLOUD006 指定公网服务器的 SSH-only Control Plane/Hub/Web Controller、UDP TURN、systemd 与客户端验收手册。
+5. `hub-edge-control-plan.md`：CLOUD009-CLOUD011 的 Control Plane 降载、Hub 本地授权投影、故障语义和迁移顺序。
 5. `product-prd.md`：回答为谁解决什么问题、哪些能力免费、哪些持续服务收费。
 6. `architecture-spec.md`：回答公开客户端、daemon、私有 Control Plane、Hub 和 Relay 各自拥有什么状态。
 7. `network-topology.md`：用目标网络拓扑解释 local、SSH、direct WebRTC、Relay 与端到端授权链路。

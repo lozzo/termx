@@ -61,6 +61,8 @@ type Config struct {
 	MaxSessions          int
 	MaxSessionsPerClient int
 	MaxReplayEntries     int
+	// EdgeAuthorizer 是 managed direct 新热路径的本地授权 owner；为空时只开放旧 ticket 迁移路径。
+	EdgeAuthorizer *EdgeAuthorizer
 }
 
 // Service 是 Hub 的内存 TTL 状态 owner。
@@ -82,6 +84,7 @@ type Service struct {
 	maxSessions          int
 	maxSessionsPerClient int
 	maxReplayEntries     int
+	edgeAuthorizer       *EdgeAuthorizer
 
 	presences  map[string]*presenceState
 	sessions   map[string]*sessionState
@@ -112,7 +115,7 @@ func New(config Config) (*Service, error) {
 		maxSDPBytes:     config.MaxSDPBytes,
 		maxCandidates:   config.MaxCandidates,
 		maxPresences:    config.MaxPresences, maxSessions: config.MaxSessions,
-		maxSessionsPerClient: config.MaxSessionsPerClient, maxReplayEntries: config.MaxReplayEntries,
+		maxSessionsPerClient: config.MaxSessionsPerClient, maxReplayEntries: config.MaxReplayEntries, edgeAuthorizer: config.EdgeAuthorizer,
 		presences:  make(map[string]*presenceState),
 		sessions:   make(map[string]*sessionState),
 		usedTicket: make(map[string]time.Time),

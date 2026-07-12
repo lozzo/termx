@@ -88,6 +88,43 @@ func TestHubRoutesOfferCandidateAndAsyncAnswerWithSeparateAdmissions(t *testing.
 	}
 }
 
+func TestHubCreatesEdgeSessionAndAcceptsAnswerFromOwningPresence(t *testing.T) {
+	fixture := newFixture(t, 4, 4)
+	presenceTicket := fixture.issue(t, "edge-presence", servicecredential.PrincipalDaemon, "daemon-1", "presence-edge", "", []servicecredential.HubOperation{servicecredential.HubOperationPresence}, 4*time.Minute)
+	presence, err := fixture.service.OpenPresence(context.Background(), hub.OpenPresenceRequest{Admission: presenceTicket, AccountID: "account-1", DeviceID: "daemon-1", PresenceSession: "presence-edge"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer presence.Close()
+	edgeIssuer, err := servicecredential.NewEdgeAccessIssuer("control-plane.test", fixture.signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := edgeIssuer.IssueEdgeAccess("edge-token", "hub-eu", "account-1", "client-1", 1, time.Hour, fixture.clock.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := fixture.service.CreateEdgeSession(context.Background(), hub.CreateEdgeSessionRequest{EdgeToken: token, AccountID: "account-1", ClientDeviceID: "client-1", ClientConnectionID: "connection-1", TargetDeviceID: "daemon-1", SignalingSessionID: "signal-edge", SDP: "offer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	event, err := presence.Receive(context.Background())
+	if err != nil || event.Offer == nil || event.Offer.ManagedSessionID != "edge-signal-edge" {
+		t.Fatalf("edge offer = (%#v, %v)", event, err)
+	}
+	if _, err := fixture.service.CompleteEdgeAnswer(context.Background(), hub.CompleteEdgeAnswerRequest{AccountID: "account-1", DaemonDeviceID: "daemon-1", PresenceSessionID: "wrong-presence", SignalingSessionID: "signal-edge", SDP: "answer"}); !errors.Is(err, hub.ErrAdmission) {
+		t.Fatalf("wrong presence answer error = %v", err)
+	}
+	if _, err := fixture.service.CompleteEdgeAnswer(context.Background(), hub.CompleteEdgeAnswerRequest{AccountID: "account-1", DaemonDeviceID: "daemon-1", PresenceSessionID: "presence-edge", SignalingSessionID: "signal-edge", SDP: "answer"}); err != nil {
+		t.Fatal(err)
+	}
+	answer, err := client.Receive(context.Background())
+	if err != nil || answer.Answer == nil || answer.Answer.SDP != "answer" {
+		t.Fatalf("edge answer = (%#v, %v)", answer, err)
+	}
+}
+
 func TestHubRejectsTicketReplayWrongTargetAndBackpressure(t *testing.T) {
 	fixture := newFixture(t, 1, 1)
 	presenceTicket := fixture.issue(t, "presence", servicecredential.PrincipalDaemon, "daemon-1", "presence-1", "", []servicecredential.HubOperation{servicecredential.HubOperationPresence}, time.Minute)
@@ -194,7 +231,14 @@ func newFixture(t *testing.T, presenceQueue, clientQueue int) fixture {
 		t.Fatal(err)
 	}
 	clock := &fakeClock{now: now}
-	service, err := hub.New(hub.Config{HubID: "hub-eu", AdmissionIssuer: "control-plane.test", KeyRing: ring, Clock: clock, MaxPresenceTTL: 5 * time.Minute, MaxSignalingTTL: 5 * time.Minute, PresenceQueueSize: presenceQueue, ClientQueueSize: clientQueue, MaxSDPBytes: 1024, MaxCandidates: 8, MaxPresences: 16, MaxSessions: 32, MaxSessionsPerClient: 4, MaxReplayEntries: 64})
+	edgeAuthorizer, err := hub.NewEdgeAuthorizer(hub.EdgeAuthorizerConfig{HubID: "hub-eu", Issuer: "control-plane.test", KeyRing: ring, Clock: clock, MaxStaleness: 10 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 1, ManagedDirectEnabled: true}}, Devices: []hub.DeviceAuthorization{{DeviceID: "daemon-1", AccountID: "account-1"}}}); err != nil {
+		t.Fatal(err)
+	}
+	service, err := hub.New(hub.Config{HubID: "hub-eu", AdmissionIssuer: "control-plane.test", KeyRing: ring, Clock: clock, MaxPresenceTTL: 5 * time.Minute, MaxSignalingTTL: 5 * time.Minute, PresenceQueueSize: presenceQueue, ClientQueueSize: clientQueue, MaxSDPBytes: 1024, MaxCandidates: 8, MaxPresences: 16, MaxSessions: 32, MaxSessionsPerClient: 4, MaxReplayEntries: 64, EdgeAuthorizer: edgeAuthorizer})
 	if err != nil {
 		t.Fatal(err)
 	}

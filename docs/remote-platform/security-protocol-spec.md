@@ -131,6 +131,10 @@ signature
 - ticket 不包含 terminal ID、scope 或 CapabilityGrant。
 - daemon 与 client ticket 权限不同；client 不能注册任意 device presence。
 
+CLOUD009 起，`HubAdmissionTicket` 只保留为 presence bootstrap/迁移凭据。managed direct client 不再为每次连接向 Control Plane 领取 ticket，而是提交启动阶段取得的短期签名 edge token。Hub 离线验签后必须再与本地 target ownership/pairing/revocation/subscription 投影取交集；token 不能单独授权任意 target。
+
+Hub 本地创建的 `EdgeManagedSession` 绑定 authenticated client connection 与 active daemon presence。daemon answer 必须从接收该 offer 的已认证 presence stream 返回，不再领取单独的 Control Plane answer ticket。cache miss、token/auth epoch 过期、投影断档或超过最大陈旧窗口均 fail closed，且禁止同步回源。
+
 ### 3.5 RelayLease
 
 用途：允许一个指定 WebRTC session 在有限时间和配额内使用 Managed Relay。

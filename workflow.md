@@ -4,6 +4,7 @@
 
 - REC001 已完成仓库可控状态恢复：尚未提交的 RM004 目录与维护改动已经审计收口，误触发的发布期验证扩展已经清理。
 - CLOUD001-CLOUD005 已完成单区域 Cloud 纵向闭环：开发云、桌面 managed direct、single Relay 与 Official Android 均已跨真实用户链路验收。
+- CLOUD009 正在把 managed direct 的逐连接 Control Plane admission 下沉为 Hub 本地授权热路径；客户端启动阶段仍从 Control Plane 获取签名 edge token 与 Hub 目录，连接阶段不得同步查询 Control Plane 或其数据库。
 - FILE001-FILE004 与 CLOUD006-CLOUD008 已完成；Official Android 显式 development build 已通过公网 HTTP staging 在 5G 真机完成 direct、single Relay、terminal 与恢复链路。生产上线前必须另行切换 HTTPS/TLS，不得复用本切片的明文 profile。
 - 当前仓库是唯一 private monorepo；当前不是正式开源或生产发布阶段。public snapshot、开源许可证模板替换、secret audit、第二仓和发布自动化全部延后。
 - GA003 Relay Mesh、GA004 transit、多区域高可用、复杂计费、SSO 和 live reroute 继续保持延后；CLOUD005 完成不会自动启动这些事项，必须由用户基于真实数据重新排序。
@@ -21,6 +22,7 @@
 - `core/docs/architecture.md`：core terminal lifecycle、live/history 与 storage 边界。
 - `docs/remote-platform/cloud-staging-roadmap.md`：唯一活动实现真值，收敛当前代码缺口、四类 session 身份、真实消息链路和 CLOUD002-CLOUD005 用户 DoD。
 - `docs/remote-platform/file-transfer-spec.md`：FILE001-FILE004 的产品边界、daemon ownership、授权、协议、流控和迁移真值。
+- `docs/remote-platform/hub-edge-control-plan.md`：CLOUD009-CLOUD011 的 Control Plane 降载、Hub 授权投影、故障语义与迁移真值。
 
 ## 当前产品真值
 
@@ -66,6 +68,9 @@
 - CLOUD006：`private/cloud/{devcloud,web-controller,infra}`、`private/cloud/companion` 的必要 staging contract、`docs/remote-platform/`、`workflow.md`、必要 `Makefile` 与部署/验证脚本；只完成 `114.66.58.243` 单机 staging 装配和从本机或 `ssh al` 发起的真实链路。不得复用服务器现存 legacy `termx-hub`/`termx-web-control`，不得把 loopback 明文 dev profile、固定账号或内存 store 描述为生产部署；公网凭据、端口、服务状态和回滚步骤必须落档，secret 不得提交。
 - CLOUD007：`private/cloud/{companion,infra,web-controller}`、`docs/remote-platform/`、`workflow.md` 与必要 staging harness；只增加显式 `staging-public-http` development profile和 `114.66.58.243:41100-41102` 反向代理。固定测试账号、内存 store 和 account session 会经过明文网络，禁止真实用户凭据、生产数据、stable build、默认配置或隐式 fallback 使用；不得借此放宽 `dev-local`/`staging-ssh`，HTTPS/TLS 必须作为上线前独立门禁。
 - CLOUD008：`private/cloud/mobile/android`、`clients/mobile/android` 的必要 development build 配置、`docs/remote-platform/` 与 `workflow.md`；只增加显式 Official 公网 HTTP staging 开关并在当前 ADB 真机验证。默认 Official、Community 与原 loopback dev build 必须保持原 fail-closed/loopback 边界；禁止真实账号/数据，不新增 Web Controller 授权旁路或 legacy fallback。
+- CLOUD009：`private/cloud/{hub,devcloud,companion,control-plane}`、`shared/cloudcompanion/`、`proto/cloudpb/`、`docs/remote-platform/` 与 `workflow.md`；只把 managed direct 的 client admission、短期 EdgeManagedSession 和 daemon answer 绑定下沉到 Hub。允许显式 dev cloud 使用内存授权投影，但 cache miss 禁止同步回源；不得联动 Relay、生产数据库或多区域调度。
+- CLOUD010：`private/cloud/{hub,relay,devcloud,control-plane}`、必要 private cloud contract、`docs/remote-platform/` 与 `workflow.md`；只实现单区域委派 Relay authority、预算快照和 durable usage outbox，Relay 租约热路径不得查询 Control Plane。
+- CLOUD011：`private/cloud/{companion,mobile,devcloud}`、`clients/mobile/`、必要 `shared/cloudcompanion/`/`proto/cloudpb/` contract、`docs/remote-platform/` 与 `workflow.md`；只实现 desktop/Official Android 启动/刷新 edge token 与签名 HubDirectory，并完成 Control Plane 中断验收。
 - FILE001：`workflow.md`、`docs/remote-platform/`；只建立文件产品、权限、协议、流控、失败语义和迁移基线，不新增 runtime。
 - FILE002：`proto/wirepb/`、`internal/protocol/`、`core/` 与必要 protocol/client harness；实现 daemon-owned 文件 metadata/read-preview 操作和显式 capability scope，不触及 Cloud 服务。
 - FILE003：`proto/wirepb/`、`internal/protocol/`、`core/`、`remote/`、`shared/remoteauth/`、`cmd/termx/` 与必要 transport harness；实现同一 protocol session 内的流式上传下载、背压、取消、续传和完整性校验，并最小联动 pairing grant 的显式文件权限；不新增旧独立 DataChannel。
@@ -86,6 +91,9 @@
 | CLOUD006 | 完成 | 单区域公网 Cloud staging | 新主线 Web Controller 与 Hub/Relay 在指定服务器独立运行；本机经真实网络完成 managed endpoint 验收，失败边界和运维步骤可复现 |
 | CLOUD007 | 完成 | 无隧道公网 HTTP staging | 外部开发客户端无需 SSH tunnel 可访问 Web Controller、登录、resolve 与 Hub signaling；默认和 production 路径仍 fail closed |
 | CLOUD008 | 完成 | Official Android 公网 staging | ADB 真机无需 reverse 可经 Wi-Fi/移动网络连接、列出/attach terminal、输入输出并完成后台恢复；Community/default Official 仍 fail closed |
+| CLOUD009 | 进行中 | Hub managed direct 本地授权热路径 | Hub 从版本化授权投影离线验证 client，并本地创建 EdgeManagedSession；关闭 Control Plane 后有效快照内的新 direct 连接仍成功，撤销/过期/cache miss fail closed |
+| CLOUD010 | 待开始 | 单 Relay 委派授权与用量补报 | Hub/Relay 使用区域委派预算签发短期凭据；Control Plane 中断时有效预算内可连接，用量经幂等 durable outbox 补报 |
+| CLOUD011 | 待开始 | 客户端启动凭据与 Hub 目录刷新 | desktop/Official Android 启动时可访问 Control Plane 获取/刷新签名 edge token 与 HubDirectory，后续 direct/Relay 连接只访问 Hub |
 | FILE001 | 完成 | 统一文件能力设计门禁 | 文件 owner、权限、方法、流控、失败语义和旧 API 迁移边界清晰 |
 | FILE002 | 完成 | daemon 文件 metadata 与预览 | local protocol 可安全 list/stat/preview/mkdir/rename/delete/copy/move |
 | FILE003 | 完成 | 文件上传下载数据流 | local 与 WebRTC 使用同一流协议完成背压、取消、续传和摘要校验 |
@@ -119,6 +127,9 @@
 - CLOUD006：受影响私有 module 测试、部署配置静态检查、远端 health/readiness、从本机或 `al` 发起的 managed direct/single Relay 定向 E2E、`git diff --check`。无法满足公网 TLS/UDP 前置条件时不得以 loopback 或 fake 冒充通过。
 - CLOUD007：Companion manifest contract 测试、反向代理配置检查、从本机或 `al` 对公网地址执行 health/login/resolve/managed direct 定向验收、stable/default profile 拒绝测试、`git diff --check`。
 - CLOUD008：Official public/loopback/default build contract 单测、Community/Official APK 构建边界、ADB 安装与 logcat、Wi-Fi/移动网络 direct、terminal List/Attach/Input/Output、后台恢复、`git diff --check`。
+- CLOUD009：Hub/Companion/devcloud 定向测试、授权 revision/过期/cache miss harness、真实 HTTP direct E2E（Control Plane listener 关闭后新连接仍成功）、`git diff --check`。
+- CLOUD010：Hub/Relay/Control Plane 定向测试、预算过期/并发/撤销、durable outbox 重启与幂等补报、真实 TURN E2E、`git diff --check`。
+- CLOUD011：Companion/Official Android contract 测试、desktop direct/single Relay E2E、ADB 真机 Control Plane 中断验收、`git diff --check`。
 - FILE001 文档-only：`git diff --check`。
 - FILE002：protocol/core 定向测试、文件系统 sandbox harness、`git diff --check`。
 - FILE003：protocol/core/remote 定向测试、慢消费者/取消/续传/损坏数据 harness、`git diff --check`。
