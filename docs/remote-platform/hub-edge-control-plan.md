@@ -1,6 +1,6 @@
 # Hub 边缘授权与 Control Plane 降载计划
 
-状态：CLOUD009-CLOUD010 已完成，CLOUD011 进行中；2026-07-12
+状态：CLOUD009-CLOUD011 已完成；2026-07-12
 
 ## 1. 目标
 
@@ -499,6 +499,7 @@ CLOUD009 只迁移 direct。CLOUD010 已为单区域提供受限 regional issuer
 - Control Plane 登录/enrollment 签发的 edge credential 已把 Hub ID、URL、region 和 directory version 纳入同一签名声明；Companion v2 secret session 与 Official Android 安全会话持久化目录，并拒绝 Hub ID 变化和 directory version 回滚。
 - endpoint resolve 已迁到 Hub；desktop 和 Official Android 的 resolve、Relay lease、signaling 热路径只向 Hub 提交 bearer edge credential。contract harness 在首次登录后关闭 Control Plane，仍可新建 resolve、Relay lease 和 signaling。
 - 2026-07-12 公网 staging desktop 实测 direct 到达 `connected/direct`，显式 `relay_only` 到达 `connected/single`。服务器重启导致内存 cloud 身份轮换后按 runbook 重新 enrollment，Hub presence 恢复，未使用旧 session fallback。
-- ADB 当前没有连接设备，Official Android 真机 Control Plane 中断 direct/single Relay 尚未执行；完成前 CLOUD011 保持进行中。
+- Official Android 使用独立 Android Keystore AES-GCM store 保存短期 edge token 与 HubDirectory，SharedPreferences 只持有密文；进程重建先验 expiry、Hub ID、URL、region 和 directory version，缺失或过期才访问 Control Plane。
+- ADB 真机 `24129PN74C` 在仅阻断自身到 Control Plane `41101/tcp`、保持 Hub/TURN 开放后，强停并重建 App 进程仍完成 `connected/direct`；同一中断窗口切换 Relay 后完成 `connected/single_relay`。Nginx 只观察到 Hub resolve、lease 和 signaling，没有新 login/admission。临时拒绝规则已删除。
 
 多区域一致性、Relay Mesh、Kubernetes、生产数据库选型和复杂计费不属于本计划当前切片。

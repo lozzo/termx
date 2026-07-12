@@ -94,7 +94,8 @@ class DevCloudMobileGatewayTest {
         }
 
         try {
-            val gateway = DevCloudMobileGateway(control.origin, hub.origin, now = { now })
+            val sessionStore = MemoryCloudSessionStore()
+            val gateway = DevCloudMobileGateway(control.origin, hub.origin, now = { now }, sessionStore = sessionStore)
             val spec = ManagedEndpointSpec(
                 endpointId = "endpoint-1",
                 targetDeviceId = "daemon-1",
@@ -105,10 +106,11 @@ class DevCloudMobileGatewayTest {
             val resolution = gateway.resolve(spec)
             assertEquals("managed-session-1", resolution.managedSessionId)
             control.close()
-            val offlineResolution = gateway.resolve(spec.copy(endpointId = "endpoint-control-down"))
-            val relayResolution = gateway.resolve(spec.copy(endpointId = "endpoint-relay", relayMode = RelayMode.RELAY_ONLY))
+            val restartedGateway = DevCloudMobileGateway(control.origin, hub.origin, now = { now }, sessionStore = sessionStore)
+            val offlineResolution = restartedGateway.resolve(spec.copy(endpointId = "endpoint-control-down"))
+            val relayResolution = restartedGateway.resolve(spec.copy(endpointId = "endpoint-relay", relayMode = RelayMode.RELAY_ONLY))
             assertEquals("turn:127.0.0.1:41003?transport=udp", relayResolution.iceServers.single().urls.single())
-            val answer = gateway.createSignalingSession(
+            val answer = restartedGateway.createSignalingSession(
                 spec,
                 offlineResolution,
                 ManagedSignalOffer("offer-sdp"),
@@ -150,6 +152,22 @@ class DevCloudMobileGatewayTest {
             DevCloudMobileGateway("http://114.66.58.243:41101", "http://114.66.58.243:41102", now = { now })
         }
         assertEquals("protocol", failure.code)
+    }
+
+    @Test
+    fun cachedSessionRejectsHubChangeAndDirectoryRollback() {
+        val store = MemoryCloudSessionStore()
+        val current = AccountSession(ByteArray(32) { 1 }, now.plusSeconds(300), "account-1", "client-1", "hub-1", "https://hub.example.test", "region-1", 2)
+        store.save(current)
+
+        val rollback = assertThrows(ManagedEndpointFailure::class.java) {
+            store.save(current.copy(directoryVersion = 1))
+        }
+        assertEquals("unauthenticated", rollback.code)
+        val hubChange = assertThrows(ManagedEndpointFailure::class.java) {
+            store.save(current.copy(hubId = "hub-2", directoryVersion = 3))
+        }
+        assertEquals("unauthenticated", hubChange.code)
     }
 
     private data class RecordedRequest(

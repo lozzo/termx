@@ -1,6 +1,6 @@
 # Official Android Dev Cloud 手测
 
-状态：CLOUD005/CLOUD008 ADB 验收完成；CLOUD011 Control Plane 中断验收待设备连接；2026-07-12
+状态：CLOUD005/CLOUD008/CLOUD011 ADB 验收完成；2026-07-12
 
 本清单只验证显式 `dev-local`、单区域 direct WebRTC。默认 Official 和 Community 继续 fail closed；生产 OAuth/TLS、Android Relay 和公网环境不在本切片内。
 
@@ -210,7 +210,14 @@ Community 对 managed endpoint 必须返回 `companion_missing`/官方 cloud mod
 
 成功标准：不重新登录、不领取 managed admission；新 direct 必须回到 `connected/direct`，新 Relay 必须回到 `connected/single_relay`。Nginx access log 在中断窗口只能看到 Hub 的 `/v1/endpoints/resolve`、`/v1/relay/leases/acquire` 和 `/v1/signaling/create`，不能出现连接阶段 Control Plane 请求；token/directory 过期时必须 fail closed 并提示刷新，不能接受旧 Hub、local 或 SSH fallback。
 
-当前 `adb devices -l` 为空，本节尚未真机执行，不得据 desktop 或 JVM contract 测试把 CLOUD011 标为完成。
+### 2026-07-12 CLOUD011 实测
+
+- 设备 `24129PN74C`（Android 16）无 ADB reverse，安装当前 Official public HTTP staging APK；使用 WebView CDP 完成干净 pairing 导入和 DOM 状态检查。
+- 首次启动只执行一次 `/v1/login/begin`、`/v1/login/complete`，随后 direct 为 `connected/direct`、`prflx / host`。
+- 真机测试暴露原 gateway 只在进程内保存 `AccountSession`；已改为独立 Android Keystore AES-GCM session store，并补进程重建、Hub 变更和 directory version 回滚 harness。SharedPreferences 不保存 token 明文。
+- 服务器仅拒绝该手机公网 IP 到 `41101/tcp`，保持 Hub `41102/tcp` 与 TURN `41003/udp` 开放；强停并重建 App 进程后新 direct 仍为 `connected/direct`。
+- 同一中断窗口切换 `Use relay` 后为 `connected/single_relay`、`relay / host`，RTT 62 ms。Nginx 只出现 `/v1/endpoints/resolve`、`/v1/relay/leases/acquire`、`/v1/signaling/create`，没有 login 或 admission。
+- 测试结束已删除临时 iptables 拒绝规则；三个 staging 服务保持 active。`make test-android` 与 APK class boundary 通过。
 
 ### 2026-07-12 公网 HTTP staging 真机实测
 

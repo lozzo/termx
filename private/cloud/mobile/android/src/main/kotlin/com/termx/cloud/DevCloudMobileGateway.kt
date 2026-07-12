@@ -36,6 +36,7 @@ internal class DevCloudMobileGateway(
     hubURL: String,
     allowPublicHTTP: Boolean = false,
     private val now: () -> Instant = { Instant.now() },
+    private val sessionStore: CloudSessionStore = MemoryCloudSessionStore(),
 ) {
     private val controlOrigin = validateOrigin(controlPlaneURL, allowPublicHTTP)
     private val hubOrigin = validateOrigin(hubURL, allowPublicHTTP)
@@ -116,6 +117,10 @@ internal class DevCloudMobileGateway(
 
     private suspend fun accountSession(): AccountSession = sessionLock.withLock {
         accountSession?.takeIf { now().isBefore(it.expiresAt) }?.let { return@withLock it }
+        sessionStore.load(now())?.let {
+            accountSession = it
+            return@withLock it
+        }
         val flow = postProto(
             "$controlOrigin/v1/login/begin",
             CloudCompanion.BeginLoginRequest.newBuilder().setMethod(CloudCompanion.LoginMethod.LOGIN_METHOD_DEVICE_CODE).build(),
@@ -127,6 +132,7 @@ internal class DevCloudMobileGateway(
             "$controlOrigin/v1/login/complete",
             CloudCompanion.CompleteLoginRequest.newBuilder().setFlowId(flow.flowId).build(),
         )
+        sessionStore.save(session)
         accountSession = session
         session
     }
@@ -315,8 +321,6 @@ internal class DevCloudMobileGateway(
         if (server.urlsCount == 0) fail("protocol", "cloud ICE server is empty")
         return ManagedIceServer(server.urlsList, server.username, server.credential)
     }
-
-    private data class AccountSession(val token: ByteArray, val expiresAt: Instant, val accountId: String, val deviceId: String, val hubId: String, val hubURL: String, val region: String, val directoryVersion: Long)
 
     private data class HubSignalingResult(
         val finalEvent: CloudCompanion.SignalingEvent,
