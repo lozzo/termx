@@ -97,6 +97,9 @@ type protocolSession struct {
 	eventCancels map[uint64]context.CancelFunc
 	nextEventSub uint64
 	requests     sync.WaitGroup
+	fileMu       sync.Mutex
+	fileChannels map[uint16]*sessionFileTransfer
+	fileIDs      map[string]uint16
 }
 
 // protocolAttachment 是 daemon-side channel/view registry；它不保存 TUI workspace/pane truth。
@@ -123,6 +126,8 @@ func newProtocolSession(server *Server, conn transport.Transport, scope Transpor
 		scope:        scope.normalized(),
 		sessionID:    server.nextProtocolSessionID.Add(1),
 		attachments:  make(map[uint16]protocolAttachment),
+		fileChannels: make(map[uint16]*sessionFileTransfer),
+		fileIDs:      make(map[string]uint16),
 		eventCancels: make(map[uint64]context.CancelFunc),
 	}
 	session.nextCh.Store(6)
@@ -135,6 +140,7 @@ func (session *protocolSession) run(ctx context.Context) error {
 	defer func() {
 		cancel()
 		session.requests.Wait()
+		session.releaseAllFileTransfers()
 		session.stopEvents()
 		session.releaseProtocolAttachments()
 	}()
@@ -154,7 +160,7 @@ func (session *protocolSession) run(ctx context.Context) error {
 			continue
 		}
 		if err := session.handleStreamFrame(sessionCtx, channel, typ, payload); err != nil {
-			if sendErr := session.sendError(0, protocolErrorBadRequest, err.Error()); sendErr != nil {
+			if sendErr := session.sendStreamError(channel, protocolErrorBadRequest, err.Error()); sendErr != nil {
 				return sendErr
 			}
 		}
@@ -310,6 +316,20 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		return encodeMethodResult(req.Method, fileCopyMove(params.(protocol.FileCopyMoveParams), false))
 	case "file.move":
 		return encodeMethodResult(req.Method, fileCopyMove(params.(protocol.FileCopyMoveParams), true))
+	case "file.download.open":
+		out, err := session.openFileDownload(ctx, params.(protocol.FileDownloadOpenParams))
+		if err != nil {
+			return nil, false, fileProtocolErrorCode(err), err
+		}
+		return encodeMethodResult(req.Method, out)
+	case "file.upload.open":
+		out, err := session.openFileUpload(params.(protocol.FileUploadOpenParams))
+		if err != nil {
+			return nil, false, fileProtocolErrorCode(err), err
+		}
+		return encodeMethodResult(req.Method, out)
+	case "file.transfer.cancel":
+		return encodeMethodResult(req.Method, session.cancelFileTransfer(params.(protocol.FileTransferCancelParams)))
 	case "get":
 		in := params.(protocol.GetParams)
 		info, err := session.server.GetTerminal(in.TerminalID)
@@ -800,6 +820,9 @@ func encodeMethodResult(method string, result any) ([]byte, bool, int, error) {
 }
 
 func (session *protocolSession) handleStreamFrame(ctx context.Context, channel uint16, typ uint8, payload []byte) error {
+	if transfer := session.fileTransferForChannel(channel); transfer != nil {
+		return session.handleFileTransferFrame(ctx, transfer, typ, payload)
+	}
 	attachment, err := session.attachmentForChannel(channel)
 	if err != nil {
 		return err
@@ -832,6 +855,14 @@ func (session *protocolSession) handleStreamFrame(ctx context.Context, channel u
 	default:
 		return fmt.Errorf("unsupported stream frame type %d", typ)
 	}
+}
+
+func (session *protocolSession) sendStreamError(channel uint16, code int, message string) error {
+	payload, err := protocol.EncodeErrorPayload(protocol.ErrorMessage{Error: protocol.ProtocolError{Code: code, Message: message}})
+	if err != nil {
+		return err
+	}
+	return session.sendFrame(channel, wire.TypeError, payload)
 }
 
 func (session *protocolSession) historyWindow(ctx context.Context, params protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {

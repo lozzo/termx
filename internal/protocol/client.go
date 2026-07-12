@@ -352,6 +352,48 @@ func (c *Client) FileMove(ctx context.Context, params FileCopyMoveParams) (*File
 	return &out, nil
 }
 
+// FileDownloadOpen 打开当前 endpoint 的下载 transfer，并返回 session-local channel。
+func (c *Client) FileDownloadOpen(ctx context.Context, params FileDownloadOpenParams) (*FileTransferOpenResult, error) {
+	var out FileTransferOpenResult
+	if err := c.doRequest(ctx, "file.download.open", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// FileUploadOpen 打开当前 endpoint 的上传临时文件或恢复同 session transfer。
+func (c *Client) FileUploadOpen(ctx context.Context, params FileUploadOpenParams) (*FileTransferOpenResult, error) {
+	var out FileTransferOpenResult
+	if err := c.doRequest(ctx, "file.upload.open", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// FileTransferCancel 幂等取消当前 session 的文件 transfer。
+func (c *Client) FileTransferCancel(ctx context.Context, transferID string) (*FileTransferCancelResult, error) {
+	var out FileTransferCancelResult
+	if err := c.doRequest(ctx, "file.transfer.cancel", FileTransferCancelParams{TransferID: transferID}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// SendFileFrame 在已由 daemon 分配的 transfer channel 上发送流控 frame。
+// typ 只允许 file data/ack/finish，避免调用方借该入口写 terminal channel。
+func (c *Client) SendFileFrame(channel uint16, typ uint8, payload []byte) error {
+	switch typ {
+	case wire.TypeFileData, wire.TypeFileAck, wire.TypeFileFinish:
+	default:
+		return fmt.Errorf("unsupported client file frame type %d", typ)
+	}
+	frame, err := wire.EncodeFrame(channel, typ, payload)
+	if err != nil {
+		return err
+	}
+	return c.send(frame)
+}
+
 func (c *Client) Kill(ctx context.Context, terminalID string) error {
 	return c.doRequest(ctx, "kill", GetParams{TerminalID: terminalID}, nil)
 }

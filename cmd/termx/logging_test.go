@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lozzow/termx/proto/wire"
 )
 
 func TestResolveLogFilePathPrefersExplicitValue(t *testing.T) {
@@ -73,7 +76,7 @@ func TestV3PathPolicy(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 
-	if got := resolveV3Socket(""); got != filepath.Join(runtimeDir, "termx-v2-wire3.sock") {
+	if got := resolveV3Socket(""); got != filepath.Join(runtimeDir, fmt.Sprintf("termx-v2-wire%d.sock", wire.Version)) {
 		t.Fatalf("expected v3 socket in runtime dir, got %q", got)
 	}
 	explicitSocket := filepath.Join(t.TempDir(), "explicit.sock")

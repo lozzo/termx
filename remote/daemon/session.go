@@ -46,9 +46,14 @@ func (acceptor SessionAcceptor) ServeDataChannel(ctx context.Context, connection
 		return fmt.Errorf("authorize remote data channel: %w", err)
 	}
 	scope := core.TransportScope{
+		PrincipalID:       claims.GrantID,
 		AllowDaemon:       claims.Scope.AllowDaemon,
 		TerminalID:        claims.Scope.TerminalID,
 		MachineEventsOnly: claims.Scope.MachineEventsOnly,
+		FileReadMetadata:  claims.Scope.FileReadMetadata,
+		FileReadContent:   claims.Scope.FileReadContent,
+		FileWriteContent:  claims.Scope.FileWriteContent,
+		FileMutate:        claims.Scope.FileMutate,
 	}
 	return acceptor.Core.ServeScopedTransport(ctx, connection, scope)
 }

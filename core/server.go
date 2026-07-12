@@ -60,6 +60,8 @@ type Server struct {
 	protocolOwnerEpoch    uint64
 	remoteServiceMu       sync.RWMutex
 	remoteService         RemoteService
+	fileTransferMu        sync.Mutex
+	fileUploads           map[string]*uploadTransferRecord
 	historyFallbackDirMu  sync.Mutex
 	historyFallbackDir    string
 	mu                    sync.Mutex
@@ -109,6 +111,7 @@ func NewServer(opts ...ServerOption) *Server {
 		protocolResizeOwners: make(map[string]string),
 		protocolSizeLocks:    make(map[string]bool),
 		remoteService:        cfg.remoteService,
+		fileUploads:          make(map[string]*uploadTransferRecord),
 		transports:           make(map[transport.Transport]struct{}),
 	}
 }

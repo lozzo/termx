@@ -9,6 +9,9 @@ import (
 
 // TransportScope 只约束一条 protocol session 的可见能力，不保存 terminal truth。
 type TransportScope struct {
+	// PrincipalID 标识当前已验证授权主体，仅用于绑定可恢复资源；不得作为 terminal 或账号 truth。
+	// local listener 使用固定 local principal，remote DataChannel 使用已签名 CapabilityGrant ID。
+	PrincipalID string
 	// AllowDaemon 表示该 session 拥有当前 daemon 的完整 protocol 能力。
 	// 该字段必须由本地 listener 或已验证的 daemon-level capability 显式设置；零值不能代表无限权限。
 	AllowDaemon bool
@@ -25,10 +28,12 @@ type TransportScope struct {
 	FileReadContent bool
 	// FileMutate 允许 mkdir、rename、delete、copy 和 move。
 	FileMutate bool
+	// FileWriteContent 允许创建、恢复并完成上传 transfer；它不隐含 mutation 权限。
+	FileWriteContent bool
 }
 
 func fullDaemonTransportScope() TransportScope {
-	return TransportScope{AllowDaemon: true, FileReadMetadata: true, FileReadContent: true, FileMutate: true}
+	return TransportScope{PrincipalID: "local", AllowDaemon: true, FileReadMetadata: true, FileReadContent: true, FileWriteContent: true, FileMutate: true}
 }
 
 func (scope TransportScope) normalized() TransportScope {
@@ -53,8 +58,11 @@ func (scope TransportScope) validate() error {
 	if capabilities != 1 {
 		return fmt.Errorf("transport scope capabilities are mutually exclusive")
 	}
-	if (scope.FileReadMetadata || scope.FileReadContent || scope.FileMutate) && !scope.AllowDaemon {
+	if (scope.FileReadMetadata || scope.FileReadContent || scope.FileWriteContent || scope.FileMutate) && !scope.AllowDaemon {
 		return fmt.Errorf("file permissions require daemon scope")
+	}
+	if (scope.FileReadMetadata || scope.FileReadContent || scope.FileWriteContent || scope.FileMutate) && scope.PrincipalID == "" {
+		return fmt.Errorf("file permissions require verified principal")
 	}
 	return nil
 }
@@ -87,6 +95,12 @@ func (scope TransportScope) constrainFileMethod(method string, params any) (any,
 		required = scope.FileReadMetadata
 	case "file.preview":
 		required = scope.FileReadContent
+	case "file.download.open":
+		required = scope.FileReadContent
+	case "file.upload.open":
+		required = scope.FileWriteContent
+	case "file.transfer.cancel":
+		required = scope.FileReadContent || scope.FileWriteContent
 	case "file.mkdir", "file.rename", "file.delete", "file.move":
 		required = scope.FileMutate
 	case "file.copy":

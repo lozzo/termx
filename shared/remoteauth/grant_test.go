@@ -72,6 +72,15 @@ func TestGrantRequiresExactlyOneExplicitScope(t *testing.T) {
 	}
 }
 
+func TestGrantRejectsFilePermissionsOutsideDaemonScope(t *testing.T) {
+	_, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	_, err := Issue(privateKey, Claims{GrantID: "grant-file", IssuerDeviceID: "device-1", Scope: Scope{TerminalID: "term-1", FileReadContent: true}, IssuedAt: now, ExpiresAt: now.Add(time.Hour)})
+	if !errors.Is(err, ErrGrantScopeInvalid) {
+		t.Fatalf("file permission scope error = %v", err)
+	}
+}
+
 func TestVerifyRejectsSignedLegacyClaimsWithoutCurrentRequiredFields(t *testing.T) {
 	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)

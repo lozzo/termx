@@ -1,9 +1,12 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -54,6 +57,56 @@ func TestDialRunsE2EHandshakeBeforeTermxProtocolWithoutSendingGrantToCompanion(t
 	signaling := recorded.CreateSignalingSession[0]
 	if signaling.GetEndpointId() != "lab" || signaling.GetTargetDeviceId() != "device-1" || signaling.GetOfferSdp() == "" {
 		t.Fatalf("signaling request = %+v", signaling)
+	}
+}
+
+func TestDialCarriesFileDownloadOverAuthenticatedProtocolChannel(t *testing.T) {
+	identity, grant, now := dialIdentityFixtureWithScope(t, "device-file", remoteauth.FullDaemonScope())
+	path := filepath.Join(t.TempDir(), "remote-file.txt")
+	content := []byte("file payload stays inside authenticated data channel")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{Core: core.NewServer(), Identity: identity, Revocations: remoteauth.NewRevocations(), Now: fixedDialNow(now)}}
+	connection, err := Dial(context.Background(), DialOptions{Companion: signalingCompanion(answerer, "device-file"), EndpointID: "lab-file", TargetDeviceID: "device-file", DeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant, RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := protocol.NewClient(connection)
+	defer client.Close()
+	if err := client.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "remote-file-test"}); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := client.FileStat(context.Background(), path)
+	if err != nil || entry.Size != int64(len(content)) {
+		t.Fatalf("stat %#v %v", entry, err)
+	}
+	opened, err := client.FileDownloadOpen(context.Background(), protocol.FileDownloadOpenParams{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, stop := client.Stream(opened.Channel)
+	defer stop()
+	var received []byte
+	for {
+		select {
+		case frame := <-stream:
+			switch frame.Type {
+			case wire.TypeFileData:
+				data, err := protocol.DecodeFileTransferData(frame.Payload)
+				if err != nil {
+					t.Fatal(err)
+				}
+				received = append(received, data.Data...)
+			case wire.TypeFileFinish:
+				if !bytes.Equal(received, content) {
+					t.Fatalf("remote file mismatch %q", received)
+				}
+				return
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for remote file")
+		}
 	}
 }
 

@@ -90,6 +90,43 @@ type FileBatchResult struct {
 	Results []FileOperationResult
 }
 
+// FileDownloadOpenParams 打开可续传下载并固定源文件 identity。
+// 非零 ExpectedSize/ExpectedModifiedAt 用于拒绝源文件变化后的错误拼接。
+type FileDownloadOpenParams struct {
+	Path               string
+	Offset             int64
+	ExpectedSize       int64
+	ExpectedModifiedAt time.Time
+}
+
+// FileUploadOpenParams 打开 daemon-owned 临时上传。
+// ResumeTransferID 只能恢复同一 protocol session 内尚未取消的 transfer。
+type FileUploadOpenParams struct {
+	Path             string
+	Size             int64
+	Overwrite        bool
+	ResumeTransferID string
+}
+
+// FileTransferOpenResult 返回 session-local transfer channel 与流控边界。
+// Channel 只在当前 protocol session 有效，不能持久化为 endpoint identity。
+type FileTransferOpenResult struct {
+	TransferID  string
+	Channel     uint16
+	Path        string
+	Offset      int64
+	Size        int64
+	ModifiedAt  time.Time
+	WindowBytes int64
+	ChunkBytes  int
+}
+
+// FileTransferCancelParams 按 session-local transfer id 幂等取消传输。
+type FileTransferCancelParams struct{ TransferID string }
+
+// FileTransferCancelResult 表示本次调用是否找到并取消了活动 transfer。
+type FileTransferCancelResult struct{ Cancelled bool }
+
 func fileEntryToWirePB(entry FileEntry) *wirepb.FileEntry {
 	return &wirepb.FileEntry{Path: entry.Path, Name: entry.Name, Type: entry.Type, Size: entry.Size, Mode: entry.Mode, ModifiedAtUnixNano: entry.ModifiedAt.UnixNano(), LinkTarget: entry.LinkTarget}
 }
@@ -182,6 +219,24 @@ func fileParamsToWirePB(method string, params any) (proto.Message, bool, error) 
 			return nil, true, methodParamsTypeError(method, "protocol.FileCopyMoveParams", params)
 		}
 		return &wirepb.FileCopyMoveParams{Paths: append([]string(nil), value.Paths...), TargetDir: value.TargetDir, Overwrite: value.Overwrite}, true, nil
+	case "file.download.open":
+		value, ok := params.(FileDownloadOpenParams)
+		if !ok {
+			return nil, true, methodParamsTypeError(method, "protocol.FileDownloadOpenParams", params)
+		}
+		return &wirepb.FileDownloadOpenParams{Path: value.Path, Offset: value.Offset, ExpectedSize: value.ExpectedSize, ExpectedModifiedAtUnixNano: fileTimeUnixNano(value.ExpectedModifiedAt)}, true, nil
+	case "file.upload.open":
+		value, ok := params.(FileUploadOpenParams)
+		if !ok {
+			return nil, true, methodParamsTypeError(method, "protocol.FileUploadOpenParams", params)
+		}
+		return &wirepb.FileUploadOpenParams{Path: value.Path, Size: value.Size, Overwrite: value.Overwrite, ResumeTransferId: value.ResumeTransferID}, true, nil
+	case "file.transfer.cancel":
+		value, ok := params.(FileTransferCancelParams)
+		if !ok {
+			return nil, true, methodParamsTypeError(method, "protocol.FileTransferCancelParams", params)
+		}
+		return &wirepb.FileTransferCancelParams{TransferId: value.TransferID}, true, nil
 	default:
 		return nil, false, nil
 	}
@@ -219,6 +274,24 @@ func decodeFileMethodParams(method string, payload []byte) (any, bool, error) {
 			return nil, true, err
 		}
 		return FileCopyMoveParams{Paths: append([]string(nil), msg.GetPaths()...), TargetDir: msg.GetTargetDir(), Overwrite: msg.GetOverwrite()}, true, nil
+	case "file.download.open":
+		var msg wirepb.FileDownloadOpenParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, true, err
+		}
+		return FileDownloadOpenParams{Path: msg.GetPath(), Offset: msg.GetOffset(), ExpectedSize: msg.GetExpectedSize(), ExpectedModifiedAt: fileTimeFromUnixNano(msg.GetExpectedModifiedAtUnixNano())}, true, nil
+	case "file.upload.open":
+		var msg wirepb.FileUploadOpenParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, true, err
+		}
+		return FileUploadOpenParams{Path: msg.GetPath(), Size: msg.GetSize(), Overwrite: msg.GetOverwrite(), ResumeTransferID: msg.GetResumeTransferId()}, true, nil
+	case "file.transfer.cancel":
+		var msg wirepb.FileTransferCancelParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, true, err
+		}
+		return FileTransferCancelParams{TransferID: msg.GetTransferId()}, true, nil
 	default:
 		return nil, false, nil
 	}
@@ -257,6 +330,18 @@ func encodeFileMethodResult(method string, result any) ([]byte, bool, error) {
 			return nil, true, methodResultTypeError(method, "protocol.FileBatchResult", result)
 		}
 		message = fileBatchResultToWirePB(value)
+	case "file.download.open", "file.upload.open":
+		value, ok := result.(FileTransferOpenResult)
+		if !ok {
+			return nil, true, methodResultTypeError(method, "protocol.FileTransferOpenResult", result)
+		}
+		message = &wirepb.FileTransferOpenResult{TransferId: value.TransferID, Channel: uint32(value.Channel), Path: value.Path, Offset: value.Offset, Size: value.Size, ModifiedAtUnixNano: fileTimeUnixNano(value.ModifiedAt), WindowBytes: value.WindowBytes, ChunkBytes: int32(value.ChunkBytes)}
+	case "file.transfer.cancel":
+		value, ok := result.(FileTransferCancelResult)
+		if !ok {
+			return nil, true, methodResultTypeError(method, "protocol.FileTransferCancelResult", result)
+		}
+		message = &wirepb.FileTransferCancelResult{Cancelled: value.Cancelled}
 	default:
 		return nil, false, nil
 	}
@@ -316,8 +401,41 @@ func decodeFileMethodResult(method string, payload []byte, out any) (bool, error
 			return true, methodOutTypeError(method, "*protocol.FileBatchResult", out)
 		}
 		*ptr = fileBatchResultFromWirePB(&msg)
+	case "file.download.open", "file.upload.open":
+		var msg wirepb.FileTransferOpenResult
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return true, err
+		}
+		ptr, ok := out.(*FileTransferOpenResult)
+		if !ok || ptr == nil {
+			return true, methodOutTypeError(method, "*protocol.FileTransferOpenResult", out)
+		}
+		*ptr = FileTransferOpenResult{TransferID: msg.GetTransferId(), Channel: uint16(msg.GetChannel()), Path: msg.GetPath(), Offset: msg.GetOffset(), Size: msg.GetSize(), ModifiedAt: fileTimeFromUnixNano(msg.GetModifiedAtUnixNano()), WindowBytes: msg.GetWindowBytes(), ChunkBytes: int(msg.GetChunkBytes())}
+	case "file.transfer.cancel":
+		var msg wirepb.FileTransferCancelResult
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return true, err
+		}
+		ptr, ok := out.(*FileTransferCancelResult)
+		if !ok || ptr == nil {
+			return true, methodOutTypeError(method, "*protocol.FileTransferCancelResult", out)
+		}
+		*ptr = FileTransferCancelResult{Cancelled: msg.GetCancelled()}
 	default:
 		return false, nil
 	}
 	return true, nil
+}
+
+func fileTimeUnixNano(value time.Time) int64 {
+	if value.IsZero() {
+		return 0
+	}
+	return value.UnixNano()
+}
+func fileTimeFromUnixNano(value int64) time.Time {
+	if value == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, value).UTC()
 }

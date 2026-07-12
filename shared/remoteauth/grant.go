@@ -37,11 +37,28 @@ var (
 )
 
 // Scope 描述一条获授权 protocol session 可见的 core-v2 能力边界。
-// 当前只允许单 terminal session 或 machine-events-only session；空 scope 不得生成无限制远程 daemon 会话。
+// daemon、单 terminal 和 machine-events-only 三种基础 scope 互斥；文件权限只能附着在 daemon scope。
 type Scope struct {
-	AllowDaemon       bool   `json:"allow_daemon,omitempty"`
-	TerminalID        string `json:"terminal_id,omitempty"`
-	MachineEventsOnly bool   `json:"machine_events_only,omitempty"`
+	// AllowDaemon 允许 daemon terminal 管理，但不隐式授予文件或未来新增能力。
+	AllowDaemon bool `json:"allow_daemon,omitempty"`
+	// TerminalID 把 session 限制到单个 daemon-local terminal。
+	TerminalID string `json:"terminal_id,omitempty"`
+	// MachineEventsOnly 只允许读取受限 terminal lifecycle 事件。
+	MachineEventsOnly bool `json:"machine_events_only,omitempty"`
+	// FileReadMetadata 允许目录枚举和 lstat metadata。
+	FileReadMetadata bool `json:"file_read_metadata,omitempty"`
+	// FileReadContent 允许预览和下载文件内容。
+	FileReadContent bool `json:"file_read_content,omitempty"`
+	// FileWriteContent 允许创建、恢复和完成上传 transfer。
+	FileWriteContent bool `json:"file_write_content,omitempty"`
+	// FileMutate 允许 mkdir、rename、delete、copy 和 move。
+	FileMutate bool `json:"file_mutate,omitempty"`
+}
+
+// FullDaemonScope 返回官方 daemon 配对默认使用的显式能力集合。
+// 文件权限逐项写入 signed claims，后续新增能力不会因 AllowDaemon 自动扩张。
+func FullDaemonScope() Scope {
+	return Scope{AllowDaemon: true, FileReadMetadata: true, FileReadContent: true, FileWriteContent: true, FileMutate: true}
 }
 
 // Claims 是 remote daemon 签发并验证的 capability grant 内容。
@@ -252,6 +269,9 @@ func validateClaims(claims Claims) error {
 	}
 	if capabilities != 1 {
 		return fmt.Errorf("%w: scopes are mutually exclusive", ErrGrantScopeInvalid)
+	}
+	if (claims.Scope.FileReadMetadata || claims.Scope.FileReadContent || claims.Scope.FileWriteContent || claims.Scope.FileMutate) && !claims.Scope.AllowDaemon {
+		return fmt.Errorf("%w: file permissions require daemon scope", ErrGrantScopeInvalid)
 	}
 	if claims.IssuedAt.IsZero() || claims.NotBefore.IsZero() || claims.ExpiresAt.IsZero() ||
 		claims.NotBefore.Before(claims.IssuedAt) || !claims.ExpiresAt.After(claims.NotBefore) {

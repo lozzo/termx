@@ -42,7 +42,7 @@ func v3PairCreateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			scope := remoteauth.Scope{AllowDaemon: true}
+			scope := remoteauth.FullDaemonScope()
 			if terminalID = strings.TrimSpace(terminalID); terminalID != "" {
 				scope = remoteauth.Scope{TerminalID: terminalID}
 			}

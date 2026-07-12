@@ -64,6 +64,25 @@ func TestSessionAcceptorRejectsRevokedGrantBeforeCore(t *testing.T) {
 	}
 }
 
+func TestSessionAcceptorMapsExplicitFilePermissions(t *testing.T) {
+	identity, grant, now := sessionFixture(t, remoteauth.FullDaemonScope())
+	recorded := &recordingCore{}
+	clientConn, serverConn := memory.NewPair()
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- (SessionAcceptor{Core: recorded, Identity: identity, Revocations: remoteauth.NewRevocations(), Now: fixedSessionNow(now)}).ServeDataChannel(context.Background(), serverConn, sessionDTLSFingerprint())
+	}()
+	if _, err := (remoteauth.ClientHandshake{Now: fixedSessionNow(now)}).Authenticate(context.Background(), clientConn, remoteauth.ClientHandshakeRequest{ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant, DaemonDTLSCertificateFingerprint: sessionDTLSFingerprint()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+	if !recorded.scope.FileReadMetadata || !recorded.scope.FileReadContent || !recorded.scope.FileWriteContent || !recorded.scope.FileMutate {
+		t.Fatalf("file permissions lost: %#v", recorded.scope)
+	}
+}
+
 type recordingCore struct {
 	calls int
 	scope core.TransportScope
