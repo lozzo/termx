@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -26,13 +27,30 @@ func main() {
 func run(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("termx-cloud-dev", flag.ContinueOnError)
 	manifestPath := flags.String("manifest", ".artifacts/cloud-dev/runtime.json", "dev-local runtime manifest path")
+	profile := flags.String("profile", "dev-local", "runtime profile: dev-local or staging-ssh")
+	controlListen := flags.String("control-listen", "127.0.0.1:0", "loopback Control Plane listen address")
+	hubListen := flags.String("hub-listen", "127.0.0.1:0", "loopback Hub listen address")
+	relayListen := flags.String("relay-listen", "127.0.0.1:0", "UDP TURN listen address")
+	relayPublicIP := flags.String("relay-public-ip", "", "public TURN address for staging-ssh")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected termx-cloud-dev arguments")
 	}
-	runtime, err := devcloud.Start(devcloud.Config{})
+	controlListener, err := net.Listen("tcp", *controlListen)
+	if err != nil {
+		return fmt.Errorf("listen Control Plane: %w", err)
+	}
+	hubListener, err := net.Listen("tcp", *hubListen)
+	if err != nil {
+		_ = controlListener.Close()
+		return fmt.Errorf("listen Hub: %w", err)
+	}
+	runtime, err := devcloud.Start(devcloud.Config{
+		ControlPlaneListener: controlListener, HubListener: hubListener,
+		RelayListenAddr: *relayListen, RelayPublicIP: *relayPublicIP, Profile: *profile,
+	})
 	if err != nil {
 		return err
 	}

@@ -19,13 +19,14 @@
 1. `file-transfer-spec.md`：回答 FILE001-FILE004 的文件 owner、授权、协议、流控、失败语义和迁移门禁。
 2. `cloud-staging-roadmap.md`：回答当前真实完成度、单区域纵向消息链路和 CLOUD002-CLOUD005 的用户 DoD。
 3. `android-devcloud-manual-test.md`：CLOUD005 Official dev APK 的 ADB 安装、配对、terminal、恢复与局部失败手测清单。
-4. `product-prd.md`：回答为谁解决什么问题、哪些能力免费、哪些持续服务收费。
-5. `architecture-spec.md`：回答公开客户端、daemon、私有 Control Plane、Hub 和 Relay 各自拥有什么状态。
-6. `network-topology.md`：用目标网络拓扑解释 local、SSH、direct WebRTC、Relay 与端到端授权链路。
-7. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
-8. `distribution-and-cloud-companion-spec.md`：回答公开主程序与闭源 cloud 能力如何拆包、安装、通信、升级和跨平台发布。
-9. `global-acceleration-spec.md`：保留 single-relay 算法背景和延后的 Relay Mesh 输入；不是当前实施队列。
-10. `source-boundary-and-migration-plan.md`、`public-snapshot-manifest.md` 与 `../legal/`：正式开源/发布阶段资产；当前 private monorepo 开发不主动扩展或执行。
+4. `public-staging-runbook.md`：CLOUD006 指定公网服务器的 SSH-only Control Plane/Hub/Web Controller、UDP TURN、systemd 与客户端验收手册。
+5. `product-prd.md`：回答为谁解决什么问题、哪些能力免费、哪些持续服务收费。
+6. `architecture-spec.md`：回答公开客户端、daemon、私有 Control Plane、Hub 和 Relay 各自拥有什么状态。
+7. `network-topology.md`：用目标网络拓扑解释 local、SSH、direct WebRTC、Relay 与端到端授权链路。
+8. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
+9. `distribution-and-cloud-companion-spec.md`：回答公开主程序与闭源 cloud 能力如何拆包、安装、通信、升级和跨平台发布。
+10. `global-acceleration-spec.md`：保留 single-relay 算法背景和延后的 Relay Mesh 输入；不是当前实施队列。
+11. `source-boundary-and-migration-plan.md`、`public-snapshot-manifest.md` 与 `../legal/`：正式开源/发布阶段资产；当前 private monorepo 开发不主动扩展或执行。
 
 若这些文档发生冲突，按以下顺序处理：
 

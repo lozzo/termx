@@ -56,12 +56,14 @@ const (
 	relayLeaseTTL   = 5 * time.Minute
 )
 
-// Config 控制 dev-local runtime 的 listener、时间、随机源和一次性 enrollment code。
-// Listener 为空时只在 127.0.0.1 随机端口创建；传入 listener 也必须是 loopback TCP。
+// Config 控制开发 runtime 的 listener、时间、随机源和一次性 enrollment code。
+// HTTP Listener 始终必须是 loopback；只有显式 staging-ssh profile 可将 UDP Relay 绑定公网。
 type Config struct {
 	ControlPlaneListener net.Listener
 	HubListener          net.Listener
 	RelayListenAddr      string
+	RelayPublicIP        string
+	Profile              string
 	Now                  func() time.Time
 	Random               io.Reader
 	EnrollmentCode       string
@@ -156,6 +158,15 @@ func Start(config Config) (*Runtime, error) {
 }
 
 func start(config Config, options runtimeOptions) (*Runtime, error) {
+	if config.Profile == "" {
+		config.Profile = httpapi.ProfileDevLocal
+	}
+	if config.Profile != httpapi.ProfileDevLocal && config.Profile != httpapi.ProfileStagingSSH {
+		return nil, fmt.Errorf("unsupported dev cloud profile %q", config.Profile)
+	}
+	if config.Profile == httpapi.ProfileDevLocal && config.RelayPublicIP != "" {
+		return nil, fmt.Errorf("dev-local profile cannot advertise a public Relay")
+	}
 	if config.Now == nil {
 		config.Now = func() time.Time { return time.Now().UTC() }
 	}
@@ -197,11 +208,11 @@ func start(config Config, options runtimeOptions) (*Runtime, error) {
 	if err := state.initializeDomain(now); err != nil {
 		return nil, err
 	}
-	relayListenAddr, err := prepareRelayListenAddr(config.RelayListenAddr)
+	relayListenAddr, err := prepareRelayListenAddr(config.RelayListenAddr, config.RelayPublicIP, config.Profile)
 	if err != nil {
 		return nil, err
 	}
-	relayServer, err := cloudrelay.NewServer(cloudrelay.ServerConfig{Authority: state.relayControl.authority, ListenAddr: relayListenAddr})
+	relayServer, err := cloudrelay.NewServer(cloudrelay.ServerConfig{Authority: state.relayControl.authority, ListenAddr: relayListenAddr, PublicIP: config.RelayPublicIP})
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +221,7 @@ func start(config Config, options runtimeOptions) (*Runtime, error) {
 	startedAt := now.Truncate(time.Second)
 	runtime := &Runtime{
 		manifest: httpapi.Manifest{
-			Version: httpapi.ManifestVersion, Profile: httpapi.ProfileDevLocal,
+			Version: httpapi.ManifestVersion, Profile: config.Profile,
 			ControlPlaneURL: listenerOrigin(controlListener), HubURL: listenerOrigin(hubListener), RelayURL: state.relayControl.url,
 			HubID: devHubID, Region: devRegion, AccountLabel: devAccountLabel,
 			EnrollmentCode: config.EnrollmentCode, StartedAtRFC3339: startedAt.Format(time.RFC3339),
@@ -384,14 +395,20 @@ func (runtime *Runtime) Close(ctx context.Context) error {
 	return runtime.closeErr
 }
 
-func prepareRelayListenAddr(address string) (string, error) {
+func prepareRelayListenAddr(address, publicIP, profile string) (string, error) {
 	if address == "" {
 		return "127.0.0.1:0", nil
 	}
 	host, _, err := net.SplitHostPort(address)
 	ip := net.ParseIP(host)
-	if err != nil || ip == nil || !ip.IsLoopback() {
-		return "", fmt.Errorf("Relay listen address must be loopback UDP")
+	if err != nil || ip == nil {
+		return "", fmt.Errorf("Relay listen address must be an IP UDP address")
+	}
+	if ip.IsLoopback() {
+		return address, nil
+	}
+	if profile != httpapi.ProfileStagingSSH || !ip.IsUnspecified() || net.ParseIP(publicIP) == nil || net.ParseIP(publicIP).IsUnspecified() {
+		return "", fmt.Errorf("public Relay requires staging-ssh profile, unspecified bind, and public IP")
 	}
 	return address, nil
 }

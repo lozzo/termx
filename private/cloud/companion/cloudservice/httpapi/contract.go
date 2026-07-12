@@ -30,6 +30,9 @@ const (
 	// ProfileDevLocal 是允许 loopback 明文 HTTP 与固定开发账号的唯一 profile 名称。
 	// production channel 必须拒绝该 profile，不能把它当作默认或 fallback 配置。
 	ProfileDevLocal = "dev-local"
+	// ProfileStagingSSH 只允许 development Companion 通过 SSH 转发访问 loopback Control Plane/Hub，
+	// 同时使用公网 UDP TURN。它不放宽 HTTP listener，也不是 production profile。
+	ProfileStagingSSH = "staging-ssh"
 	// ProtobufMediaType 是 dev-local unary protobuf 与 CloudError response 的固定媒体类型。
 	ProtobufMediaType = "application/x-protobuf"
 	// JSONMediaType 是只承载 private session/admission envelope 的固定媒体类型。
@@ -103,7 +106,7 @@ func LoadManifest(path string) (Manifest, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return Manifest{}, fmt.Errorf("dev cloud manifest has trailing data")
 	}
-	if manifest.Version != ManifestVersion || manifest.Profile != ProfileDevLocal || manifest.HubID == "" || manifest.Region == "" || manifest.AccountLabel == "" || manifest.EnrollmentCode == "" {
+	if manifest.Version != ManifestVersion || manifest.Profile != ProfileDevLocal && manifest.Profile != ProfileStagingSSH || manifest.HubID == "" || manifest.Region == "" || manifest.AccountLabel == "" || manifest.EnrollmentCode == "" {
 		return Manifest{}, fmt.Errorf("invalid dev cloud manifest metadata")
 	}
 	if _, err := validateLoopbackURL(manifest.ControlPlaneURL); err != nil {
@@ -112,7 +115,7 @@ func LoadManifest(path string) (Manifest, error) {
 	if _, err := validateLoopbackURL(manifest.HubURL); err != nil {
 		return Manifest{}, fmt.Errorf("invalid dev Hub URL: %w", err)
 	}
-	if err := validateLoopbackTURNURL(manifest.RelayURL); err != nil {
+	if err := validateTURNURL(manifest.RelayURL, manifest.Profile == ProfileStagingSSH); err != nil {
 		return Manifest{}, fmt.Errorf("invalid dev Relay URL: %w", err)
 	}
 	if _, err := time.Parse(time.RFC3339, manifest.StartedAtRFC3339); err != nil {
@@ -121,7 +124,7 @@ func LoadManifest(path string) (Manifest, error) {
 	return manifest, nil
 }
 
-func validateLoopbackTURNURL(raw string) error {
+func validateTURNURL(raw string, allowPublicIP bool) error {
 	if raw == "" || raw != strings.TrimSpace(raw) || !strings.HasPrefix(strings.ToLower(raw), "turn:") {
 		return fmt.Errorf("URL must be a canonical TURN UDP URL")
 	}
@@ -135,8 +138,8 @@ func validateLoopbackTURNURL(raw string) error {
 		return fmt.Errorf("URL must include a Relay host and port")
 	}
 	ip := net.ParseIP(host)
-	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-		return fmt.Errorf("URL host must be loopback")
+	if host != "localhost" && (ip == nil || !ip.IsLoopback()) && !(allowPublicIP && ip != nil && !ip.IsUnspecified()) {
+		return fmt.Errorf("URL host must match the staging profile")
 	}
 	return nil
 }

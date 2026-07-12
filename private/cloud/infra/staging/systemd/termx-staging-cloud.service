@@ -1,0 +1,24 @@
+[Unit]
+Description=TermX single-region SSH staging cloud
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=termx-staging
+Group=termx-staging
+StateDirectory=termx-staging
+RuntimeDirectory=termx-staging
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=restart
+ExecStart=/opt/termx-staging/bin/termx-cloud-staging --profile staging-ssh --control-listen 127.0.0.1:41001 --hub-listen 127.0.0.1:41002 --relay-listen 0.0.0.0:41003 --relay-public-ip 114.66.58.243 --manifest /var/lib/termx-staging/runtime.json
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/termx-staging
+
+[Install]
+WantedBy=multi-user.target

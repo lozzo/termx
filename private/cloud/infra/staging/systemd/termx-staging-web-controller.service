@@ -1,0 +1,19 @@
+[Unit]
+Description=TermX SSH-only staging Web Controller
+After=termx-staging-cloud.service
+Requires=termx-staging-cloud.service
+
+[Service]
+Type=simple
+User=termx-staging
+Group=termx-staging
+ExecStart=/opt/termx-staging/bin/termx-web-controller --listen 127.0.0.1:41000 --control-plane http://127.0.0.1:41001 --hub http://127.0.0.1:41002 --relay turn:114.66.58.243:41003?transport=udp
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

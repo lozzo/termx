@@ -1,0 +1,29 @@
+[Unit]
+Description=TermX staging daemon Cloud Companion
+After=termx-staging-cloud.service
+Requires=termx-staging-cloud.service
+
+[Service]
+Type=simple
+User=termx-staging
+Group=termx-staging
+StateDirectory=termx-staging
+RuntimeDirectory=termx-staging
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=restart
+Environment=XDG_STATE_HOME=/var/lib/termx-staging/daemon-state
+Environment=HOME=/var/lib/termx-staging
+Environment=XDG_DATA_HOME=/var/lib/termx-staging/data
+LoadCredential=keyring-password:/etc/termx-staging/keyring-password
+ExecStartPre=/bin/sh -c 'while [ ! -s /var/lib/termx-staging/runtime.json ]; do sleep 1; done'
+ExecStart=/usr/bin/dbus-run-session -- /bin/sh -c '/bin/cat "$CREDENTIALS_DIRECTORY/keyring-password" | /usr/bin/gnome-keyring-daemon --unlock --components=secrets >/dev/null & sleep 1; exec /opt/termx-staging/bin/termx-cloud serve --socket /run/termx-staging/daemon-companion.sock --profile daemon-staging --dev-manifest /var/lib/termx-staging/runtime.json'
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/termx-staging /run/termx-staging
+
+[Install]
+WantedBy=multi-user.target
