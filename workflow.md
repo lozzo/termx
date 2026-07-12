@@ -6,6 +6,7 @@
 - CLOUD001-CLOUD005 已完成单区域 Cloud 纵向闭环：开发云、桌面 managed direct、single Relay 与 Official Android 均已跨真实用户链路验收。
 - CLOUD009-CLOUD011 已完成 Control Plane 降载闭环：客户端启动/刷新取得 edge token 与 HubDirectory，后续 direct、single Relay 与跨进程恢复只访问 Hub。
 - UI001 已完成：共享首页机器卡片明确 Local、Cloud、Local + Cloud 能力，并投影列表级可达性、连接阶段和实际路径。
+- UI002 已完成：桌面首页已重构为紧凑产品栏和表格式机器清单，同时保持移动端卡片交互。
 - FILE001-FILE004 与 CLOUD006-CLOUD008 已完成；Official Android 显式 development build 已通过公网 HTTP staging 在 5G 真机完成 direct、single Relay、terminal 与恢复链路。生产上线前必须另行切换 HTTPS/TLS，不得复用本切片的明文 profile。
 - 当前仓库是唯一 private monorepo；当前不是正式开源或生产发布阶段。public snapshot、开源许可证模板替换、secret audit、第二仓和发布自动化全部延后。
 - GA003 Relay Mesh、GA004 transit、多区域高可用、复杂计费、SSO 和 live reroute 继续保持延后；CLOUD005 完成不会自动启动这些事项，必须由用户基于真实数据重新排序。
@@ -73,6 +74,7 @@
 - CLOUD010：`private/cloud/{hub,relay,devcloud,control-plane}`、必要 private cloud contract、`docs/remote-platform/` 与 `workflow.md`；只实现单区域委派 Relay authority、预算快照和 durable usage outbox，Relay 租约热路径不得查询 Control Plane。
 - CLOUD011：`private/cloud/{companion,mobile,devcloud}`、`clients/mobile/`、必要 `shared/cloudcompanion/`/`proto/cloudpb/` contract、`docs/remote-platform/` 与 `workflow.md`；只实现 desktop/Official Android 启动/刷新 edge token 与签名 HubDirectory，并完成 Control Plane 中断验收。
 - UI001：`clients/ui/`、`clients/mobile/` 中 Official pairing 非秘密类别投影、`workflow.md` 与对应测试；只重做机器列表 view-model、卡片和实时状态订阅，不修改 terminal truth、云授权或 transport 选择算法。
+- UI002：`clients/ui/`、`clients/mobile/` 的共享首页响应式布局、`workflow.md` 与对应测试；只调整桌面信息架构和机器行投影，保持移动端交互、连接状态 owner 与 transport 语义不变。
 - FILE001：`workflow.md`、`docs/remote-platform/`；只建立文件产品、权限、协议、流控、失败语义和迁移基线，不新增 runtime。
 - FILE002：`proto/wirepb/`、`internal/protocol/`、`core/` 与必要 protocol/client harness；实现 daemon-owned 文件 metadata/read-preview 操作和显式 capability scope，不触及 Cloud 服务。
 - FILE003：`proto/wirepb/`、`internal/protocol/`、`core/`、`remote/`、`shared/remoteauth/`、`cmd/termx/` 与必要 transport harness；实现同一 protocol session 内的流式上传下载、背压、取消、续传和完整性校验，并最小联动 pairing grant 的显式文件权限；不新增旧独立 DataChannel。
@@ -97,6 +99,7 @@
 | CLOUD010 | 完成 | 单 Relay 委派授权与用量补报 | Hub/Relay 使用区域委派预算签发短期凭据；Control Plane 中断时有效预算内可连接，用量经幂等 durable outbox 补报 |
 | CLOUD011 | 完成 | 客户端启动凭据与 Hub 目录刷新 | desktop/Official Android 启动时可访问 Control Plane 获取/刷新签名 edge token 与 HubDirectory，后续 direct/Relay 连接只访问 Hub |
 | UI001 | 完成 | 首页机器类别与实时连接卡片 | 列表明确 Local、Cloud、Local + Cloud，并实时显示可达、连接阶段、实际 direct/Relay/local 路径与失败状态 |
+| UI002 | 完成 | 桌面机器工作台 | 宽屏使用桌面导航、工具栏和稳定列机器清单，不再呈现放大的移动卡片；移动端布局不回归 |
 | FILE001 | 完成 | 统一文件能力设计门禁 | 文件 owner、权限、方法、流控、失败语义和旧 API 迁移边界清晰 |
 | FILE002 | 完成 | daemon 文件 metadata 与预览 | local protocol 可安全 list/stat/preview/mkdir/rename/delete/copy/move |
 | FILE003 | 完成 | 文件上传下载数据流 | local 与 WebRTC 使用同一流协议完成背压、取消、续传和摘要校验 |
@@ -134,6 +137,7 @@
 - CLOUD010：Hub/Relay/Control Plane 定向测试、预算过期/并发/撤销、durable outbox 重启与幂等补报、真实 TURN E2E、`git diff --check`。
 - CLOUD011：Companion/Official Android contract 测试、desktop direct/single Relay E2E、ADB 真机 Control Plane 中断验收、`git diff --check`。
 - UI001：共享 UI machine/card 定向测试、client workspace 测试、Android source sync、移动 viewport 截图检查、`git diff --check`。
+- UI002：共享 UI 首页定向测试、client workspace 测试、Android source sync、桌面与移动双 viewport 截图检查、`git diff --check`。
 - FILE001 文档-only：`git diff --check`。
 - FILE002：protocol/core 定向测试、文件系统 sandbox harness、`git diff --check`。
 - FILE003：protocol/core/remote 定向测试、慢消费者/取消/续传/损坏数据 harness、`git diff --check`。
@@ -143,6 +147,7 @@
 
 ## 当前状态
 
+- UI002 已完成：共享首页在 `lg` 宽屏下使用 64px 产品栏、带文字的 Add machine 主操作和 Machine/Access/Connection 稳定列表格，机器行收敛为 72px、去除移动卡片阴影和大圆角；移动端继续使用三行卡片和 40px 触控操作。1440x900 桌面截图验证长名称、Local/Cloud/Local + Cloud、可达性与操作列无重叠，Pixel 7 截图验证移动布局未回归；`make test-clients`（63 个文件、452 条测试）、Android source sync 与 `git diff --check` 全绿。
 - UI001 已完成：机器 store 持久化 Local、Cloud、Local + Cloud 接入类别，账号同步/退出按能力正确合并和降级；首页卡片显示真实 health 可达性、授权状态、终端数，以及已存在会话的连接阶段和 local/P2P direct/single Relay 路径，列表不会为了取状态主动建连。共享 UI 定向测试、`make test-clients`（63 个文件、451 条测试）、Android source sync、Pixel 7 viewport 截图与 `git diff --check` 通过。设备重连后已覆盖安装 Official public HTTP staging APK，并用 WebView CDP 验证 410x913 viewport 无横向溢出；真机暴露旧 Official `source=manual` 记录缺少新类别字段会误标 Local，已按 pairing ownership 迁移为 Cloud 并补回归测试，CDP 最终显示 `Cloud` 与 `Cloud available`。
 - RM001-RM003 已提交：公开 Go module、npm workspace 和 Android 单一源码已经收口。
 - RM004 原未提交改动已由 REC001 审计接管：`private/cloud` 路径迁移、canonical Make 入口、`.artifacts`、doctor/layout/generated guard、文档归档和原有 tmux 冷启动诊断已经收口并通过 REC001 全部准入。

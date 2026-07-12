@@ -1006,33 +1006,39 @@ function HomeView({
   onSignIn: () => void
 }) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col" data-testid="termx-app-home">
-      <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
-        <div className="min-w-0">
-          <h1 className="text-lg font-semibold leading-6">Machines</h1>
-          <p className="truncate text-xs font-medium text-zinc-500">
+    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50" data-testid="termx-app-home">
+      <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:h-16 lg:px-6 lg:py-0">
+        <div className="flex min-w-0 items-center gap-5">
+          <span aria-hidden="true" className="hidden text-base font-bold text-zinc-950 lg:inline">TermX</span>
+          <div className="hidden h-5 w-px bg-zinc-200 lg:block" />
+          <div className="min-w-0 lg:flex lg:items-center lg:gap-3">
+            <h1 className="text-lg font-semibold leading-6 lg:text-sm">Machines</h1>
+            <p className="truncate text-xs font-medium text-zinc-500 lg:border-l lg:border-zinc-200 lg:pl-3">
             {signedIn ? `${machines.length} available${user?.email ? ` / ${user.email}` : ''}` : 'Sign in to sync devices'}
-          </p>
+            </p>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {signedIn ? (
             <button
               aria-label="Refresh machines"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="inline-flex h-10 min-w-10 items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-2.5 text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               type="button"
               onClick={onRefresh}
               disabled={loading}
             >
               <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden text-xs font-semibold xl:inline">Refresh</span>
             </button>
           ) : null}
           <button
             aria-label="Scan new machine"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="inline-flex h-10 min-w-10 items-center justify-center gap-2 rounded-md bg-zinc-900 px-2.5 text-white hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 lg:px-3"
             type="button"
             onClick={onAddLocalDevice}
           >
             <QrCode className="h-5 w-5" />
+            <span className="hidden text-xs font-semibold lg:inline">Add machine</span>
           </button>
           {fileTransfer ? (
             <button
@@ -1065,9 +1071,18 @@ function HomeView({
           title="No machines yet"
         />
       ) : (
-        <ul aria-label="Machines" className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 lg:px-8 lg:py-7">
+          <div className="mx-auto w-full max-w-7xl lg:overflow-visible lg:rounded-lg lg:border lg:border-zinc-200 lg:bg-white">
+            <div className="hidden grid-cols-[40px_minmax(180px,1.3fr)_minmax(160px,.8fr)_minmax(180px,1fr)_32px] items-center gap-4 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 text-[11px] font-semibold uppercase text-zinc-500 lg:grid">
+              <span aria-hidden="true" />
+              <span>Machine</span>
+              <span>Access</span>
+              <span>Connection</span>
+              <span aria-hidden="true" />
+            </div>
+            <ul aria-label="Machines" className="divide-y-0 divide-zinc-100 lg:divide-y">
           {machines.map((machine) => (
-            <li key={machine.id} className="mb-2 last:mb-0">
+            <li key={machine.id} className="mb-2 last:mb-0 lg:mb-0">
               <MachineRow
                 authorizationExpiresAt={authorizationExpiries.get(machine.id)}
                 authorizationState={machineAuthorizationState(machine, authorizedMachineIds, authorizationExpiries)}
@@ -1079,7 +1094,9 @@ function HomeView({
               />
             </li>
           ))}
-        </ul>
+            </ul>
+          </div>
+        </div>
       )}
     </section>
   )
@@ -1795,37 +1812,37 @@ function MachineRow({
   const DeviceIcon = machine.accessClass === 'cloud' ? Cloud : LaptopMinimal
   const canForget = Boolean(authorizationExpiresAt || authorizationState === 'ready')
   return (
-    <div className="relative rounded-lg border border-zinc-200 bg-white shadow-sm">
+    <div className="relative rounded-lg border border-zinc-200 bg-white shadow-sm lg:rounded-none lg:border-0 lg:shadow-none">
       <button
         aria-label={`${actionLabel} ${machine.name}`}
-        className="grid min-h-[104px] min-w-0 w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-3 px-3.5 py-3 text-left hover:bg-zinc-50 active:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        className="relative grid min-h-[104px] min-w-0 w-full grid-cols-[40px_minmax(0,1fr)_16px] grid-rows-[auto_auto_auto] gap-x-3 gap-y-1 px-3.5 py-3 text-left hover:bg-zinc-50 active:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 lg:min-h-[72px] lg:grid-cols-[40px_minmax(180px,1.3fr)_minmax(160px,.8fr)_minmax(180px,1fr)_32px] lg:grid-rows-1 lg:items-center lg:gap-4 lg:px-4 lg:py-2.5"
         type="button"
         onClick={() => onSelectMachine(machine)}
       >
-        <div className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-100 text-zinc-700">
+        <div className="relative col-start-1 row-start-1 flex h-10 w-10 items-center justify-center rounded-md bg-zinc-100 text-zinc-700 lg:col-start-1">
           <DeviceIcon className="h-5 w-5" />
           <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
             card.tone === 'online' ? 'bg-emerald-500' : card.tone === 'active' ? 'bg-blue-500' : card.tone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400'
           }`} />
         </div>
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2 pr-8">
-            <span className="truncate text-[15px] font-semibold leading-5 text-zinc-950">{machine.name}</span>
-            <span className={`ml-auto shrink-0 text-[11px] font-semibold ${card.statusClass}`}>{card.status}</span>
-          </div>
+        <div className="col-start-2 row-start-1 min-w-0 self-start pr-24 lg:col-start-2 lg:self-center lg:pr-0">
+          <div className="truncate text-[15px] font-semibold leading-5 text-zinc-950">{machine.name}</div>
           <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{subtitle} · {shortenMachineId(machine.id)}</div>
-          <div className="mt-1.5 flex items-center gap-2 text-[11px] font-semibold text-zinc-600">
+        </div>
+          <div className="col-start-2 row-start-2 flex min-w-0 items-center gap-2 text-[11px] font-semibold text-zinc-600 lg:col-start-3 lg:row-start-1">
             <AccessClassLabel accessClass={machine.accessClass} />
             {machine.accessClass === 'local_cloud' ? <ReachabilityLabel reachability={machine.reachability} /> : null}
           </div>
-          <div className="mt-1.5 truncate text-[12px] font-medium text-zinc-600">
+          <div className="contents lg:col-start-4 lg:row-start-1 lg:block lg:min-w-0">
+            <span className={`absolute right-12 top-3 shrink-0 text-[11px] font-semibold lg:static lg:block ${card.statusClass}`}>{card.status}</span>
+            <div className="col-start-2 row-start-3 truncate text-[12px] font-medium text-zinc-600 lg:mt-1">
             {card.detail}
+            </div>
           </div>
-        </div>
-        <ChevronRight className="mt-9 h-4 w-4 shrink-0 text-zinc-400" />
+        <ChevronRight className="col-start-3 row-span-3 row-start-1 h-4 w-4 shrink-0 self-center text-zinc-400 lg:hidden" />
       </button>
       {canForget ? (
-        <div className="absolute right-9 top-2.5 z-10">
+        <div className="absolute right-9 top-2.5 z-10 lg:right-3 lg:top-1/2 lg:-translate-y-1/2">
           <button
             aria-label={`More actions for ${machine.name}`}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"

@@ -1607,6 +1607,8 @@ describe('RemoteControlApp', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /back to machines/i }))
     expect(screen.getByTestId('termx-app-home')).toBeTruthy()
+    expect(screen.getByText('Access')).toBeTruthy()
+    expect(screen.getByText('Connection')).toBeTruthy()
     expect(screen.getByText('Connected')).toBeTruthy()
     expect(screen.getByText('Cloud')).toBeTruthy()
     expect(screen.getByText('0 terminals · Single relay · 62 ms')).toBeTruthy()
