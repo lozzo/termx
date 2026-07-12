@@ -127,12 +127,12 @@ export class NativeFileTransferStore {
 
   startDownload(
     machineId: string,
-    transferId: string,
     fileName: string,
     fileSize: number,
     filePath: string,
     offset = 0,
   ): void {
+    const transferId = downloadTaskId(machineId, filePath, fileSize)
     const info: TransferInfo = {
       id: transferId,
       machineId,
@@ -535,6 +535,16 @@ export class NativeFileTransferStore {
 
 function canResumeStatus(status: TransferStatus): boolean {
   return status === 'paused' || status === 'failed' || status === 'missing' || status === 'pending'
+}
+
+function downloadTaskId(machineId: string, filePath: string, fileSize: number): string {
+  const value = `${machineId}\u0000${filePath}\u0000${fileSize}`
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `download-${(hash >>> 0).toString(16).padStart(8, '0')}-${Date.now().toString(36)}`
 }
 
 function uniqueMachineIds(transfers: TransferInfo[]): string[] {

@@ -83,7 +83,7 @@ export interface FileTransferContext {
   /** Get current snapshot (useSyncExternalStore API). */
   getSnapshot(): { transfers: TransferInfo[]; hasActiveTransfers: boolean }
   getDownloadResumeOffset?(machineId: string, filePath: string, fileSize: number): Promise<number> | number
-  startDownload(machineId: string, transferId: string, fileName: string, fileSize: number, filePath: string, offset?: number): void
+  startDownload(machineId: string, fileName: string, fileSize: number, filePath: string, offset?: number): void
   startUpload(machineId: string, files: Array<{ uri: string; name: string; size: number }>, targetDir: string): void
   /** Native mode only: opens system file picker then starts upload. */
   pickAndUpload?(machineId: string, targetDir: string): void

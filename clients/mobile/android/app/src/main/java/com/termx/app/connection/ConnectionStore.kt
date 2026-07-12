@@ -149,7 +149,7 @@ class ConnectionStore(
         clearReconnectTimer()
         clearVerificationWatchdog()
         verifyGeneration += 1
-        transport?.let { fileTransferManager?.onTransportLost() }
+        transport?.let { fileTransferManager?.onTransportLost(machineId) }
         transport?.let { it.onDisconnectListener = null; it.disconnect() }
         transport = null
         reconnectAttempt = 0
@@ -163,7 +163,7 @@ class ConnectionStore(
         clearReconnectTimer()
         clearVerificationWatchdog()
         verifyGeneration += 1
-        transport?.let { fileTransferManager?.onTransportLost() }
+        transport?.let { fileTransferManager?.onTransportLost(machineId) }
         transport?.let { it.onDisconnectListener = null; it.disconnect() }
         transport = null
         setPhase(Phase.WaitingNetwork, "Waiting for network...")
@@ -175,7 +175,7 @@ class ConnectionStore(
         clearReconnectTimer()
         clearVerificationWatchdog()
         verifyGeneration += 1
-        transport?.let { fileTransferManager?.onTransportLost() }
+        transport?.let { fileTransferManager?.onTransportLost(machineId) }
         transport?.let { it.onDisconnectListener = null; it.disconnect() }
         transport = null
         scope.cancel()
@@ -303,7 +303,7 @@ class ConnectionStore(
     private fun onTransportDisconnected() {
         if (released) return
         Log.i(TAG, "transport disconnected [$machineId]")
-        fileTransferManager?.onTransportLost()
+        fileTransferManager?.onTransportLost(machineId)
         transport = null
         verifyGeneration += 1
         if (!appActive || phase is Phase.Verifying) resumeReconnect = true
@@ -596,7 +596,7 @@ class ConnectionStore(
         cancelConnect()
         clearReconnectTimer()
         clearVerificationWatchdog()
-        transport?.let { fileTransferManager?.onTransportLost() }
+        transport?.let { fileTransferManager?.onTransportLost(machineId) }
         transport?.let { it.onDisconnectListener = null; it.disconnect() }
         transport = null
         reconnectAttempt = 0

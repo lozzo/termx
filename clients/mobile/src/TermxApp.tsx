@@ -545,8 +545,8 @@ function createFileTransferContext(machineId: string | undefined, store: NativeF
     getDownloadResumeOffset(mid, filePath, fileSize) {
       return store.getDownloadResumeOffset(mid, filePath, fileSize)
     },
-    startDownload(mid, transferId, fileName, fileSize, filePath, offset) {
-      store.startDownload(mid, transferId, fileName, fileSize, filePath, offset)
+    startDownload(mid, fileName, fileSize, filePath, offset) {
+      store.startDownload(mid, fileName, fileSize, filePath, offset)
     },
     startUpload(mid, files, targetDir) {
       for (const f of files) {

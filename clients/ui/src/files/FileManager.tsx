@@ -83,12 +83,10 @@ export function FileManager({
                 await Promise.resolve(fileTransfer.getDownloadResumeOffset?.(machineId, entryMenuPath, menuEntry.size) ?? 0),
               ),
             )
-            const init = await manager.fileApi.downloadOpen(entryMenuPath, resumeOffset)
             fileTransfer.startDownload(
               machineId,
-              init.transfer_id,
-              init.name || menuEntry.name,
-              init.size,
+              menuEntry.name,
+              menuEntry.size,
               entryMenuPath,
               resumeOffset,
             )

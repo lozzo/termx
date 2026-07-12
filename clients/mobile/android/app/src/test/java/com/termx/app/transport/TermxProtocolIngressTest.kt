@@ -10,9 +10,9 @@ import java.nio.ByteBuffer
 /** TermxProtocolIngressTest 固定 Android auth 完成后的 wire Hello 门和完整帧边界。 */
 class TermxProtocolIngressTest {
     @Test
-    fun acceptsOnlyCompleteWireV3Hello() {
-        val hello = Terminal.Hello.newBuilder().setVersion(3).setServer("termx-daemon").build()
-        validateTermxProtocolHelloFrame(frame(0, 0x00, hello.toByteArray()), 3)
+    fun acceptsOnlyCompleteWireV4Hello() {
+        val hello = Terminal.Hello.newBuilder().setVersion(4).setServer("termx-daemon").build()
+        validateTermxProtocolHelloFrame(frame(0, 0x00, hello.toByteArray()), 4)
 
         val decoded = decodeTermxProtocolFrame(frame(7, 0x14, byteArrayOf(1, 2, 3)))
         assertEquals(7, decoded.channel)
@@ -28,7 +28,7 @@ class TermxProtocolIngressTest {
         assertThrows(IllegalStateException::class.java) {
             validateTermxProtocolHelloFrame(
                 frame(0, 0x00, Terminal.Hello.newBuilder().setVersion(2).build().toByteArray()),
-                3,
+                4,
             )
         }
         val unknown = UnknownFieldSet.newBuilder()
@@ -36,8 +36,8 @@ class TermxProtocolIngressTest {
             .build()
         assertThrows(IllegalStateException::class.java) {
             validateTermxProtocolHelloFrame(
-                frame(0, 0x00, Terminal.Hello.newBuilder().setVersion(3).setUnknownFields(unknown).build().toByteArray()),
-                3,
+                frame(0, 0x00, Terminal.Hello.newBuilder().setVersion(4).setUnknownFields(unknown).build().toByteArray()),
+                4,
             )
         }
         assertThrows(IllegalArgumentException::class.java) {

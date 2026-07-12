@@ -296,9 +296,6 @@ class WebRTCTransport(
     /** sendToProtocol 把 JS connection-level multiplexer 的 frame 送入唯一 termx protocol DataChannel。 */
     fun sendToProtocol(data: ByteArray) = channelManager.sendRawProtocol(data)
 
-    /** 当前 core-v2 wire 不提供旧 file DataChannel；调用方必须按 capability 隐藏该能力。 */
-    fun openFileChannel(@Suppress("UNUSED_PARAMETER") transferId: String): DataChannel? = null
-
     /** Blocking runtime API request for heartbeat/verification. Throws on timeout or closed channel. */
     fun sendApiRequest(method: String, path: String, body: String?, timeoutMs: Long): String {
         return channelManager.sendApiRequest(method, path, body, timeoutMs)

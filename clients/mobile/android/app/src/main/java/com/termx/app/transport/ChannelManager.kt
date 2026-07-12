@@ -10,12 +10,14 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
  * ChannelManager 是 Android 单一 `protocol` DataChannel 的 owner。
- * E2E auth 消息先进入授权队列；CapabilityAccepted 后由本类完成一次 wire v3 Hello，随后才把 protocol frame 投影到 JS bridge。
+ * E2E auth 消息先进入授权队列；CapabilityAccepted 后由本类完成一次 wire v4 Hello。
+ * terminal/control 帧投影到 JS bridge，native 文件任务拥有的 transfer channel 则直接路由到 FileTransferManager。
  */
 class ChannelManager(
     private val bridge: BridgeServer?,
@@ -23,13 +25,17 @@ class ChannelManager(
 ) {
     companion object {
         private const val TAG = "TermxChannelMgr"
-        private const val PROTOCOL_VERSION = 3
+        private const val PROTOCOL_VERSION = 4
         private const val MAX_FRAME_SIZE = 4 shl 20
         private const val FRAME_HELLO = 0x00
         private const val FRAME_REQUEST = 0x01
         private const val FRAME_RESPONSE = 0x02
         private const val FRAME_ERROR = 0x04
         private const val FRAME_RESPONSE_BINARY = 0x05
+        private const val FRAME_FILE_DATA = 0x21
+        private const val FRAME_FILE_ACK = 0x22
+        private const val FRAME_FILE_FINISH = 0x23
+        private const val FRAME_FILE_RESULT = 0x24
     }
 
     var fileTransferManager: FileTransferManager? = null
@@ -41,12 +47,16 @@ class ChannelManager(
     private val authorizationMessages = LinkedBlockingQueue<ByteArray>(8)
     private val nativeRequestSequence = AtomicLong(0)
     private val pendingNativeRequests = ConcurrentHashMap<Long, PendingNativeRequest>()
+    private val nativeFileChannels = ConcurrentHashMap.newKeySet<Int>()
+    private val earlyNativeFileFrames = ConcurrentHashMap<Int, ConcurrentLinkedQueue<DecodedTermxProtocolFrame>>()
 
     private val protocolLabel get() = "protocol:$machineId"
 
     private class PendingNativeRequest {
         val latch = CountDownLatch(1)
         @Volatile var error: Exception? = null
+        @Volatile var result: ByteArray? = null
+        @Volatile var claimsFileChannel = false
     }
 
     /** createInitialChannels 创建 daemon answerer 接受的唯一 ordered/reliable `protocol` DataChannel。 */
@@ -126,16 +136,61 @@ class ChannelManager(
         return "{\"ok\":true}"
     }
 
-    /** sendFileData 明确拒绝旧独立 file DataChannel，防止文件路径偷偷恢复 legacy runtime。 */
-    fun sendFileData(@Suppress("UNUSED_PARAMETER") transferId: String, @Suppress("UNUSED_PARAMETER") data: ByteArray) {
-        throw UnsupportedOperationException("file transfer is unavailable on current termx protocol")
+    /** openFileDownload 在 native 注册 channel 前完成 control round trip，避免首个 data frame 早于 owner 建立。 */
+    internal fun openFileDownload(path: String, offset: Long, expectedSize: Long, expectedModifiedAtUnixNano: Long): NativeFileTransferOpen {
+        val params = Terminal.FileDownloadOpenParams.newBuilder()
+            .setPath(path)
+            .setOffset(offset)
+            .setExpectedSize(expectedSize)
+            .setExpectedModifiedAtUnixNano(expectedModifiedAtUnixNano)
+            .build()
+        return parseFileTransferOpen(requestProtocol("file.download.open", params.toByteArray(), 60_000, claimsFileChannel = true))
     }
 
-    /** getFileChannel 在当前 capability surface 上稳定返回 unavailable。 */
-    fun getFileChannel(@Suppress("UNUSED_PARAMETER") transferId: String): DataChannel? = null
+    /** openFileUpload 由 native I/O owner 建立上传 transfer，并可提交 daemon 绑定的 resume id。 */
+    internal fun openFileUpload(path: String, size: Long, overwrite: Boolean, resumeTransferId: String): NativeFileTransferOpen {
+        val params = Terminal.FileUploadOpenParams.newBuilder()
+            .setPath(path)
+            .setSize(size)
+            .setOverwrite(overwrite)
+            .setResumeTransferId(resumeTransferId)
+            .build()
+        return parseFileTransferOpen(requestProtocol("file.upload.open", params.toByteArray(), 60_000, claimsFileChannel = true))
+    }
 
-    /** closeFile 保持旧 transfer cleanup 幂等，但不创建或持有第二条 DataChannel。 */
-    fun closeFile(@Suppress("UNUSED_PARAMETER") transferId: String) = Unit
+    /** cancelFileTransfer 请求 owning daemon 幂等取消 transfer；本地状态仍由 FileTransferManager 收口。 */
+    fun cancelFileTransfer(transferId: String): Boolean {
+        val params = Terminal.FileTransferCancelParams.newBuilder().setTransferId(transferId).build()
+        return Terminal.FileTransferCancelResult.parseFrom(
+            requestProtocol("file.transfer.cancel", params.toByteArray(), 30_000),
+        ).cancelled
+    }
+
+    /** sendFileFrame 把 native 状态机生成的 v4 stream payload 发送到 daemon 分配的 channel。 */
+    fun sendFileFrame(channel: Int, type: Int, payload: ByteArray) {
+        if (type != FRAME_FILE_DATA && type != FRAME_FILE_ACK && type != FRAME_FILE_FINISH) {
+            throw IllegalArgumentException("unsupported outbound file frame")
+        }
+        if (!sendProtocolFrame(channel, type, payload)) throw IllegalStateException("termx file frame send failed")
+    }
+
+    /** bindNativeFileChannel 在 FileTransferManager 建立 session 后重放 open 响应之后抢先到达的有界帧。 */
+    internal fun bindNativeFileChannel(channel: Int) {
+        if (!nativeFileChannels.contains(channel)) throw IllegalStateException("native file channel was not claimed")
+        val queued = earlyNativeFileFrames.remove(channel) ?: return
+        while (true) {
+            val frame = queued.poll() ?: break
+            if (fileTransferManager?.onProtocolFrame(frame.channel, frame.type, frame.payload) != true) {
+                throw IllegalStateException("native file channel has no transfer owner")
+            }
+        }
+    }
+
+    /** releaseNativeFileChannel 释放 session-local channel，后续同号 frame 不得再进入已结束任务。 */
+    internal fun releaseNativeFileChannel(channel: Int) {
+        nativeFileChannels.remove(channel)
+        earlyNativeFileFrames.remove(channel)
+    }
 
     /** closeAll 关闭当前 transport，并解除 auth、Hello 与 liveness wait。 */
     fun closeAll() {
@@ -144,24 +199,49 @@ class ChannelManager(
     }
 
     private fun requestList(timeoutMs: Long) {
+        val resultBytes = requestProtocol("list", Terminal.Empty.getDefaultInstance().toByteArray(), timeoutMs)
+        val result = Terminal.ListResult.parseFrom(resultBytes)
+        if (result.unknownFields.asMap().isNotEmpty()) throw IllegalStateException("termx protocol list response contains unknown fields")
+    }
+
+    private fun requestProtocol(method: String, params: ByteArray, timeoutMs: Long, claimsFileChannel: Boolean = false): ByteArray {
         if (!isProtocolOpen()) throw IllegalStateException("termx protocol channel is not open")
         val id = Long.MAX_VALUE - nativeRequestSequence.incrementAndGet()
         val pending = PendingNativeRequest()
+        pending.claimsFileChannel = claimsFileChannel
         pendingNativeRequests[id] = pending
         val request = Terminal.RequestEnvelope.newBuilder()
             .setId(id)
-            .setMethod("list")
-            .setParams(Terminal.Empty.getDefaultInstance().toByteString())
+            .setMethod(method)
+            .setParams(com.google.protobuf.ByteString.copyFrom(params))
             .build()
         if (!sendProtocolFrame(0, FRAME_REQUEST, request.toByteArray())) {
             pendingNativeRequests.remove(id)
-            throw IllegalStateException("termx protocol list send failed")
+            throw IllegalStateException("termx protocol $method send failed")
         }
         if (!pending.latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
             pendingNativeRequests.remove(id)
-            throw IllegalStateException("termx protocol list timed out")
+            throw IllegalStateException("termx protocol $method timed out")
         }
         pending.error?.let { throw it }
+        return pending.result ?: throw IllegalStateException("termx protocol $method returned no result")
+    }
+
+    private fun parseFileTransferOpen(bytes: ByteArray): NativeFileTransferOpen {
+        val result = Terminal.FileTransferOpenResult.parseFrom(bytes)
+        if (result.unknownFields.asMap().isNotEmpty() || result.transferId.isBlank() || result.channel == 0 || result.chunkBytes <= 0 || result.windowBytes <= 0) {
+            throw IllegalStateException("termx file transfer open result is invalid")
+        }
+        return NativeFileTransferOpen(
+            result.transferId,
+            result.channel,
+            result.path,
+            result.offset,
+            result.size,
+            result.modifiedAtUnixNano,
+            result.windowBytes,
+            result.chunkBytes,
+        )
     }
 
     private fun setupProtocolChannel(channel: DataChannel) {
@@ -218,21 +298,20 @@ class ChannelManager(
             failProtocol(IllegalStateException("daemon sent a duplicate termx protocol Hello"))
             return
         }
+        var handledNativeControl = false
         if (frame.channel == 0 && (frame.type == FRAME_RESPONSE || frame.type == FRAME_RESPONSE_BINARY)) {
             runCatching {
                 val response = Terminal.ResponseEnvelope.parseFrom(frame.payload)
+                if (response.unknownFields.asMap().isNotEmpty()) throw IllegalStateException("termx protocol response contains unknown fields")
                 pendingNativeRequests.remove(response.id)?.let { pending ->
-                    try {
-                        val result = Terminal.ListResult.parseFrom(response.result)
-                        if (response.unknownFields.asMap().isNotEmpty() || result.unknownFields.asMap().isNotEmpty()) {
-                            throw IllegalStateException("termx protocol list response contains unknown fields")
-                        }
-                    } catch (failure: Exception) {
-                        pending.error = failure
-                        throw failure
-                    } finally {
-                        pending.latch.countDown()
+                    handledNativeControl = true
+                    val resultBytes = response.result.toByteArray()
+                    if (pending.claimsFileChannel) {
+                        val opened = parseFileTransferOpen(resultBytes)
+                        nativeFileChannels.add(opened.channel)
                     }
+                    pending.result = resultBytes
+                    pending.latch.countDown()
                 }
             }.onFailure { failProtocol(it as? Exception ?: IllegalStateException(it.message)) }
         } else if (frame.channel == 0 && frame.type == FRAME_ERROR) {
@@ -242,10 +321,23 @@ class ChannelManager(
                     throw IllegalStateException("termx protocol error response contains unknown fields")
                 }
                 pendingNativeRequests.remove(response.id)?.let { pending ->
+                    handledNativeControl = true
                     pending.error = IllegalStateException(response.error.message.ifBlank { "termx protocol request failed" })
                     pending.latch.countDown()
                 }
             }.onFailure { failProtocol(it as? Exception ?: IllegalStateException(it.message)) }
+        }
+        if (handledNativeControl) return
+        if (frame.channel != 0 && nativeFileChannels.contains(frame.channel)) {
+            if (fileTransferManager?.onProtocolFrame(frame.channel, frame.type, frame.payload) != true) {
+                val queue = earlyNativeFileFrames.getOrPut(frame.channel) { ConcurrentLinkedQueue() }
+                if (queue.size >= 8) {
+                    failProtocol(IllegalStateException("native file early frame queue overflow"))
+                    return
+                }
+                queue.add(frame)
+            }
+            return
         }
         if (protocolState == ProtocolState.READY) {
             val channelId = bridge?.getChannelId(protocolLabel) ?: -1
@@ -289,6 +381,18 @@ class ChannelManager(
 private const val TERMX_PROTOCOL_FRAME_HEADER_SIZE = 7
 private const val TERMX_PROTOCOL_MAX_FRAME_SIZE = 4 shl 20
 private const val TERMX_PROTOCOL_HELLO_FRAME = 0x00
+
+/** NativeFileTransferOpen 是 daemon 文件 transfer 分配结果；channel 只在当前 protocol session 内有效。 */
+internal data class NativeFileTransferOpen(
+    val transferId: String,
+    val channel: Int,
+    val path: String,
+    val offset: Long,
+    val size: Long,
+    val modifiedAtUnixNano: Long,
+    val windowBytes: Long,
+    val chunkBytes: Int,
+)
 
 /** DecodedTermxProtocolFrame 是 Android transport 对公开 wire frame header 的严格投影。 */
 internal data class DecodedTermxProtocolFrame(val channel: Int, val type: Int, val payload: ByteArray)
