@@ -1,6 +1,7 @@
 package webcontroller_test
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -28,6 +29,29 @@ func TestStatusHandlerReportsOwningServiceReadiness(t *testing.T) {
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
 	if response.Code != http.StatusOK {
 		t.Fatalf("status code = %d", response.Code)
+	}
+}
+
+func TestStatusHandlerPublishesConfiguredCatalog(t *testing.T) {
+	catalog, err := webcontroller.LoadCatalog("config/plans.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := webcontroller.StatusHandler(webcontroller.StatusConfig{
+		ControlPlaneURL: "http://127.0.0.1:41001", HubURL: "http://127.0.0.1:41002",
+		RelayURL: "turn:114.66.58.243:41003?transport=udp", Catalog: &catalog,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/catalog", nil))
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") == "" {
+		t.Fatalf("catalog response = %d headers=%v", response.Code, response.Header())
+	}
+	var got webcontroller.Catalog
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil || len(got.Plans) != 3 {
+		t.Fatalf("catalog = (%#v, %v)", got, err)
 	}
 }
 

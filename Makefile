@@ -15,12 +15,13 @@ PRIVATE_MODULES := \
 	private/cloud/route-planner \
 	private/cloud/web-controller
 
-.PHONY: help build cloud-dev test test-private test-clients test-android test-all doctor clean
+.PHONY: help build build-web-controller cloud-dev test test-private test-clients test-android test-all doctor clean
 
 help:
 	@printf '%s\n' \
 		'Targets:' \
 		'  make build         Build termx into .artifacts/bin/' \
+		'  make build-web-controller  Build Go BFF and Next.js standalone Web Controller' \
 		'  make cloud-dev     Start the explicit single-region dev cloud' \
 		'  make test          Test the public Go module' \
 		'  make test-private  Test each private cloud Go module when present' \
@@ -33,6 +34,18 @@ help:
 build:
 	mkdir -p "$(dir $(TERMX_BIN))"
 	GOWORK=off go build -o "$(TERMX_BIN)" ./cmd/termx
+
+build-web-controller:
+	rm -rf "$(ARTIFACT_DIR)/web-controller" "$(ARTIFACT_DIR)/web-controller-config"
+	mkdir -p "$(ARTIFACT_DIR)/bin" "$(ARTIFACT_DIR)/web-controller"
+	cd private/cloud/web-controller && GOWORK=off go build -o "$(ARTIFACT_DIR)/bin/termx-web-controller" ./cmd/termx-web-controller
+	npm run build --workspace @termx/web-controller
+	cp -R private/cloud/web-controller/web/.next/standalone/. "$(ARTIFACT_DIR)/web-controller/"
+	mkdir -p "$(ARTIFACT_DIR)/web-controller/private/cloud/web-controller/web/.next"
+	cp -R private/cloud/web-controller/web/.next/static "$(ARTIFACT_DIR)/web-controller/private/cloud/web-controller/web/.next/static"
+	cp -R private/cloud/web-controller/web/public "$(ARTIFACT_DIR)/web-controller/private/cloud/web-controller/web/public"
+	mkdir -p "$(ARTIFACT_DIR)/web-controller-config"
+	cp private/cloud/web-controller/config/plans.json "$(ARTIFACT_DIR)/web-controller-config/plans.json"
 
 cloud-dev:
 	mkdir -p "$(ARTIFACT_DIR)/cloud-dev"
@@ -86,6 +99,7 @@ doctor:
 clean:
 	rm -rf "$(ARTIFACT_DIR)" "$(CURDIR)/bin" "$(CURDIR)/.build"
 	rm -rf "$(CURDIR)/clients/ui/dist" "$(CURDIR)/clients/mobile/dist"
+	rm -rf "$(CURDIR)/private/cloud/web-controller/web/.next"
 	find "$(CURDIR)" -maxdepth 1 -type f \( -name '*.test' -o -name '*.cover' -o -name 'cover.out' \) -delete
 	find "$(CURDIR)/core" "$(CURDIR)/tui" -type f -name '*.test' -delete
 	find "$(ANDROID_DIR)" -type d \( -name build -o -name .gradle \) -prune -exec rm -rf {} +

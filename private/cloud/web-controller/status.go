@@ -17,6 +17,7 @@ type StatusConfig struct {
 	HubURL          string
 	RelayURL        string
 	HTTPClient      *http.Client
+	Catalog         *Catalog
 }
 
 // StatusHandler 返回独立 Web Controller 运维 handler。
@@ -65,6 +66,19 @@ func StatusHandler(config StatusConfig) (http.Handler, error) {
 			"hub_ready":           hubReady,
 			"relay":               config.RelayURL,
 		})
+	})
+	mux.HandleFunc("/v1/catalog", func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet {
+			writer.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if config.Catalog == nil {
+			http.Error(writer, "catalog is not configured", http.StatusServiceUnavailable)
+			return
+		}
+		writer.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(config.Catalog)
 	})
 	return mux, nil
 }

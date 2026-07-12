@@ -19,8 +19,14 @@ func main() {
 	control := flag.String("control-plane", "http://127.0.0.1:41001", "loopback Control Plane origin")
 	hub := flag.String("hub", "http://127.0.0.1:41002", "loopback Hub origin")
 	relay := flag.String("relay", "", "operator-visible Relay URL")
+	catalogPath := flag.String("catalog", "config/plans.json", "user-visible plan catalog configuration")
 	flag.Parse()
-	handler, err := webcontroller.StatusHandler(webcontroller.StatusConfig{ControlPlaneURL: *control, HubURL: *hub, RelayURL: *relay})
+	catalog, err := webcontroller.LoadCatalog(*catalogPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	handler, err := webcontroller.StatusHandler(webcontroller.StatusConfig{ControlPlaneURL: *control, HubURL: *hub, RelayURL: *relay, Catalog: &catalog})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

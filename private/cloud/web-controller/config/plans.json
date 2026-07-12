@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "currency": "USD",
+  "plans": [
+    {
+      "id": "managed-free",
+      "name": "Managed Free",
+      "eyebrow": "Start with direct",
+      "description": "Official device discovery and managed signaling for personal endpoints.",
+      "price": { "mode": "included", "label": "Free" },
+      "cta": { "label": "Start free", "href": "#access" },
+      "featured": false,
+      "features": [
+        "Managed device directory",
+        "Direct P2P signaling",
+        "Connection path diagnostics",
+        "Small Relay trial allowance"
+      ]
+    },
+    {
+      "id": "pro",
+      "name": "Pro",
+      "eyebrow": "Reliable from anywhere",
+      "description": "Managed Relay capacity and route intelligence for people who work across networks.",
+      "price": { "mode": "contact", "label": "Preview" },
+      "cta": { "label": "Join Pro preview", "href": "mailto:hello@termx.dev?subject=TermX%20Pro%20preview" },
+      "featured": true,
+      "features": [
+        "Production Managed Relay quota",
+        "SmartRoute path selection",
+        "More devices and concurrency",
+        "Usage visibility and priority support"
+      ]
+    },
+    {
+      "id": "team",
+      "name": "Team",
+      "eyebrow": "Govern shared access",
+      "description": "Organization controls and auditable endpoint access without moving terminal truth to the cloud.",
+      "price": { "mode": "contact", "label": "Contact" },
+      "cta": { "label": "Talk to us", "href": "mailto:hello@termx.dev?subject=TermX%20Team" },
+      "featured": false,
+      "features": [
+        "Members, roles and endpoint ownership",
+        "Explicit sharing approvals",
+        "Audit and Relay usage reporting",
+        "Organization policy templates"
+      ]
+    }
+  ]
+}

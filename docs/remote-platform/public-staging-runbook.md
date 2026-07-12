@@ -4,7 +4,7 @@
 
 本手册记录 CLOUD006/CLOUD007 在 `114.66.58.243` 的 staging 装配。它用于从开发机验证真实 Hub signaling、WebRTC direct 和公网 UDP TURN，不是生产部署模板。
 
-owning Control Plane、Hub 与 Web Controller 进程仍只监听服务器 loopback。CLOUD007 按用户明确授权由 Nginx 在 `41100-41102/tcp` 提供无隧道公网 HTTP staging；Relay 使用 `41003/udp`。terminal protocol、CapabilityGrant 和文件内容仍位于端到端 DTLS DataChannel，Web Controller/Hub/Relay 不接收这些内容。
+owning Control Plane、Hub、Web Controller BFF 与 Next.js 用户站仍只监听服务器 loopback。Nginx 在 `41100-41102/tcp` 提供无隧道公网 HTTP staging；Relay 使用 `41003/udp`。terminal protocol、CapabilityGrant 和文件内容仍位于端到端 DTLS DataChannel，Web Controller/Hub/Relay 不接收这些内容。
 
 公网 HTTP 只允许固定测试账号、短期 session 和内存 store。账号 session 会经过明文网络，禁止真实用户凭据、真实 terminal 数据或生产使用；上线前必须切换域名 HTTPS/TLS profile。
 
@@ -13,16 +13,18 @@ owning Control Plane、Hub 与 Web Controller 进程仍只监听服务器 loopba
 | systemd unit | listener | 责任 |
 | --- | --- | --- |
 | `termx-staging-cloud.service` | `127.0.0.1:41001/tcp`、`127.0.0.1:41002/tcp`、`0.0.0.0:41003/udp` | 内存 Control Plane、Hub 与 lease-bound TURN |
-| `termx-staging-web-controller.service` | `127.0.0.1:41000/tcp` | 运维 health/status API owner |
+| `termx-staging-web-controller.service` | `127.0.0.1:41000/tcp` | Next.js Landing 与浏览器 BFF surface |
+| `termx-staging-web-controller-bff.service` | `127.0.0.1:41004/tcp` | Control Plane/Hub status 与套餐目录 BFF |
 | `termx-staging-daemon-companion.service` | `/run/termx-staging/daemon-companion.sock` | daemon device session、presence 与 signaling |
 | `termx-staging-daemon.service` | `/run/termx-staging/daemon.sock` | 公开 core-v2/termx protocol daemon |
 
 二进制位于 `/opt/termx-staging/bin`，非秘密运行状态位于 `/var/lib/termx-staging`。systemd 使用无登录权限的 `termx-staging` 用户。Companion session 写入 GNOME Keyring；keyring 解锁材料由 systemd `LoadCredential` 从服务器 root-only 文件加载，不进入仓库、进程参数或日志。
 
-Web Controller 当前只提供运维 surface：
+Next.js 不直连 Control Plane；它只访问 loopback Go BFF。套餐价格来自部署的 `plans.json`，未发布价格不会由页面推导：
 
 ```bash
-ssh root@114.66.58.243 'curl -fsS http://127.0.0.1:41000/v1/status'
+ssh root@114.66.58.243 'curl -fsS http://127.0.0.1:41000/api/status'
+ssh root@114.66.58.243 'curl -fsS http://127.0.0.1:41004/v1/catalog'
 ```
 
 它不代理登录、signaling 或 terminal protocol，也不解释 terminal capability。
@@ -31,7 +33,9 @@ ssh root@114.66.58.243 'curl -fsS http://127.0.0.1:41000/v1/status'
 
 | URL | 用途 |
 | --- | --- |
-| `http://114.66.58.243:41100/v1/status` | Web Controller readiness/status |
+| `http://114.66.58.243:41100/` | Next.js 用户订阅 Landing Page |
+| `http://114.66.58.243:41100/api/status` | Web Controller readiness/status |
+| `http://114.66.58.243:41100/api/catalog` | 公开套餐目录投影 |
 | `http://114.66.58.243:41100/runtime.json` | 不含有效 enrollment code 的 development client manifest |
 | `http://114.66.58.243:41101` | Control Plane contract origin |
 | `http://114.66.58.243:41102` | Hub signaling contract origin |
@@ -40,7 +44,7 @@ ssh root@114.66.58.243 'curl -fsS http://127.0.0.1:41000/v1/status'
 
 ```bash
 ssh root@114.66.58.243 \
-  'systemctl is-active termx-staging-cloud termx-staging-web-controller termx-staging-daemon-companion termx-staging-daemon'
+  'systemctl is-active termx-staging-cloud termx-staging-web-controller-bff termx-staging-web-controller termx-staging-daemon-companion termx-staging-daemon'
 
 ssh root@114.66.58.243 \
   'curl -fsS -o /dev/null -w "control=%{http_code} hub=%{http_code}\n" \
@@ -49,7 +53,7 @@ ssh root@114.66.58.243 \
 ssh root@114.66.58.243 'ss -lnup | grep 41003'
 ```
 
-预期四个 unit 都是 `active`，两个 health response 是 `204`，TURN listener 为 `0.0.0.0:41003/udp`。
+预期五个 unit 都是 `active`，两个 health response 是 `204`，TURN listener 为 `0.0.0.0:41003/udp`。
 
 `ss` 看到 listener 只证明进程已绑定端口，不证明云厂商入站允许 UDP。上线或真机 Relay 验收前，必须在云安全组放行 `41003/udp`，并从服务器外发送探测，同时在实际公网网卡观察入站包：
 
@@ -141,7 +145,7 @@ daemon 与 daemon Companion 共享 `/run/termx-staging`。替换 daemon 二进�
 
 ```bash
 ssh root@114.66.58.243 \
-  'systemctl disable --now termx-staging-daemon termx-staging-daemon-companion termx-staging-web-controller termx-staging-cloud'
+  'systemctl disable --now termx-staging-daemon termx-staging-daemon-companion termx-staging-web-controller termx-staging-web-controller-bff termx-staging-cloud'
 
 ssh root@114.66.58.243 \
   'rm -f /etc/nginx/conf.d/termx-public-http.conf && nginx -t && systemctl reload nginx'

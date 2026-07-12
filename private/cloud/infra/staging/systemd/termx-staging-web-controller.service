@@ -1,13 +1,17 @@
 [Unit]
-Description=TermX SSH-only staging Web Controller
-After=termx-staging-cloud.service
-Requires=termx-staging-cloud.service
+Description=TermX staging Next.js Web Controller
+After=termx-staging-web-controller-bff.service
+Requires=termx-staging-web-controller-bff.service
 
 [Service]
 Type=simple
 User=termx-staging
 Group=termx-staging
-ExecStart=/opt/termx-staging/bin/termx-web-controller --listen 127.0.0.1:41000 --control-plane http://127.0.0.1:41001 --hub http://127.0.0.1:41002 --relay turn:114.66.58.243:41003?transport=udp
+WorkingDirectory=/opt/termx-staging/web-controller/private/cloud/web-controller/web
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=41000
+Environment=WEB_CONTROLLER_BFF_URL=http://127.0.0.1:41004
+ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true

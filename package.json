@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "clients/ui",
-    "clients/mobile"
+    "clients/mobile",
+    "private/cloud/web-controller/web"
   ],
   "devDependencies": {
     "esbuild": "0.27.7",
