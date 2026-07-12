@@ -10,7 +10,7 @@ describe('useFileManager', () => {
 
   it('loads the current directory and navigates through file session interfaces', async () => {
     const session = createMockFileSession({
-      '/files/list': ({ path }: { path?: string }) => ({
+      'file.list': ({ path }: { path?: string }) => ({
         path,
         parent: path === '/' ? '' : '/',
         total: 1,
@@ -40,7 +40,7 @@ describe('useFileManager', () => {
 
   it('keeps file errors as visible state without throwing through the component tree', async () => {
     const session = createMockFileSession({}, {
-      '/files/list': { status: 500, body: { error: 'disk unavailable' } },
+      'file.list': { status: 500, body: { error: 'disk unavailable' } },
     }, { terminalId: 'terminal-1' })
 
     const { result } = renderHook(() => useFileManager({
@@ -60,7 +60,7 @@ describe('useFileManager', () => {
 
   it('falls back to the nearest readable parent when the requested directory cannot be opened', async () => {
     const session = createMockFileSession({
-      '/files/list': ({ path }: { path?: string }) => {
+      'file.list': ({ path }: { path?: string }) => {
         if (path === '/srv') {
           return {
             path: '/srv',
@@ -93,7 +93,7 @@ describe('useFileManager', () => {
 
   it('sorts visible entries by user-selected fields while keeping directories first', async () => {
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/',
         parent: '',
         total: 4,
@@ -129,7 +129,7 @@ describe('useFileManager', () => {
 
   it('rejects a session connected to a different machine before issuing file requests', async () => {
     const session = createMockFileSession({
-      '/files/list': { path: '/', parent: '', total: 0, entries: [] },
+      'file.list': { path: '/', parent: '', total: 0, entries: [] },
     }, {}, { machineId: 'machine-b', terminalId: 'terminal-1' })
 
     const { result } = renderHook(() => useFileManager({
@@ -148,7 +148,7 @@ describe('useFileManager', () => {
   it('ignores stale directory responses when navigation races with initial load', async () => {
     const rootLoad = createDeferredFileResponder()
     const session = createMockFileSession({
-      '/files/list': ({ path }: { path?: string }) => {
+      'file.list': ({ path }: { path?: string }) => {
         if (path === '/') return rootLoad.promise
         return {
           path,
@@ -188,7 +188,7 @@ describe('useFileManager', () => {
 
   it('allows machine-scoped file sessions that do not report a terminal id', async () => {
     const session = createMockFileSession({
-      '/files/list': { path: '/', parent: '', total: 1, entries: [{ name: 'machine.log', type: 'file', size: 12 }] },
+      'file.list': { path: '/', parent: '', total: 1, entries: [{ name: 'machine.log', type: 'file', size: 12 }] },
     })
 
     const { result } = renderHook(() => useFileManager({
@@ -206,7 +206,7 @@ describe('useFileManager', () => {
 
   it('does not reject machine-scoped file access when no terminal id is requested', async () => {
     const session = createMockFileSession({
-      '/files/list': { path: '/', parent: '', total: 1, entries: [{ name: 'machine.txt', type: 'file', size: 1 }] },
+      'file.list': { path: '/', parent: '', total: 1, entries: [{ name: 'machine.txt', type: 'file', size: 1 }] },
     }, {}, { terminalId: 'terminal-2' })
 
     const { result } = renderHook(() => useFileManager({
@@ -222,8 +222,8 @@ describe('useFileManager', () => {
 
   it('opens file previews after validating the connected target', async () => {
     const session = createMockFileSession({
-      '/files/list': { path: '/', parent: '', total: 1, entries: [{ name: 'README.md', type: 'file', size: 8 }] },
-      '/files/preview': {
+      'file.list': { path: '/', parent: '', total: 1, entries: [{ name: 'README.md', type: 'file', size: 8 }] },
+      'file.preview': {
         path: '/README.md',
         name: 'README.md',
         size: 8,
@@ -250,8 +250,8 @@ describe('useFileManager', () => {
     expect(result.current.previewLoading).toBe(false)
     expect(result.current.previewError).toBeNull()
     expect(session.requests).toContainEqual({
-      method: 'POST',
-      path: '/files/preview',
+      method: 'file.preview',
+      path: 'file.preview',
       params: { path: '/README.md' },
     })
   })
@@ -263,7 +263,7 @@ describe('useFileManager', () => {
       value: { writeText },
     })
     const session = createMockFileSession({
-      '/files/list': { path: '/', parent: '', total: 0, entries: [] },
+      'file.list': { path: '/', parent: '', total: 0, entries: [] },
     }, {}, { terminalId: 'terminal-1' })
 
     const { result } = renderHook(() => useFileManager({
@@ -286,7 +286,7 @@ describe('useFileManager', () => {
 
   it('rejects transports connected to another terminal before issuing file requests', async () => {
     const session = createMockFileSession({
-      '/files/list': { path: '/', parent: '', total: 0, entries: [] },
+      'file.list': { path: '/', parent: '', total: 0, entries: [] },
     }, {}, { terminalId: 'terminal-2' })
 
     const { result } = renderHook(() => useFileManager({
@@ -307,7 +307,7 @@ describe('useFileManager', () => {
     const refreshLoad = createDeferredFileResponder()
     let requestCount = 0
     const session = createMockFileSession({
-      '/files/list': ({ path }: { path?: string }) => {
+      'file.list': ({ path }: { path?: string }) => {
         requestCount += 1
         if (requestCount === 1) return initialLoad.promise
         if (requestCount === 2) return refreshLoad.promise

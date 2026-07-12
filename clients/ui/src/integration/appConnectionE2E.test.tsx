@@ -238,12 +238,11 @@ class HubE2ESession extends MockRtcTerminalSession {
     this.openApiCount += 1
     return {
       async request<TResponse>(method: string, params?: unknown): Promise<TResponse> {
-        if (method === 'POST' && isFileListParams(params)) {
+        if (method === 'file.list' && isFileListParams(params)) {
           return {
-            path: params.params.path,
-            parent: '',
-            total: 1,
-            entries: [{ name: 'remote.log', type: 'file', size: 32 }],
+            path: params.path,
+            next_cursor: '',
+            entries: [{ path: `${params.path.replace(/\/$/, '')}/remote.log`, name: 'remote.log', type: 'file', size: 32 }],
           } as TResponse
         }
         return { ok: true } as TResponse
@@ -276,8 +275,8 @@ class HubE2ESession extends MockRtcTerminalSession {
   }
 }
 
-function isFileListParams(params: unknown): params is { path: '/files/list'; params: { path: string } } {
+function isFileListParams(params: unknown): params is { path: string } {
   if (!params || typeof params !== 'object') return false
   const record = params as Record<string, unknown>
-  return record.path === '/files/list' && typeof record.params === 'object' && record.params !== null
+  return typeof record.path === 'string'
 }

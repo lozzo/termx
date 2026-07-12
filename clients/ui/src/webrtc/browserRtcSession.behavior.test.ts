@@ -49,18 +49,18 @@ describe('BrowserRtcSession', () => {
     })
 
     const apiChannel = factory.channel('api')
-    const apiPromise = api.request('POST', { path: '/files/list', params: { path: '/' } })
+    const apiPromise = api.request('status')
     apiChannel.emitMessage(apiResponseChunk('req_1', {
       status: 200,
-      body: { path: '/', parent: '', total: 0, entries: [] },
+      body: { ok: true },
     }))
 
-    await expect(apiPromise).resolves.toEqual({ path: '/', parent: '', total: 0, entries: [] })
+    await expect(apiPromise).resolves.toEqual({ ok: true })
     expect(decodeAPIRequest(apiChannel.sentBytes()[0])).toEqual({
       id: 'req_1',
-      method: 'POST',
-      path: '/files/list',
-      body: { path: '/' },
+      method: 'status',
+      path: 'status',
+      body: {},
     })
   })
 
@@ -288,7 +288,7 @@ describe('BrowserRtcSession', () => {
     })
   })
 
-  it('keeps one machine-scoped browser session alive for api, multiple terminals, and files', async () => {
+  it('keeps one machine-scoped browser session alive without creating legacy file channels', async () => {
     const factory = createMockPeerConnectionFactory()
     const session = createBrowserRtcSession({
       machineId: 'machine-local',
@@ -302,14 +302,13 @@ describe('BrowserRtcSession', () => {
     await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
     const terminalOne = await session.openTerminal('terminal-1')
     const terminalTwo = await session.openTerminal('terminal-2')
-    const file = await session.openFileTransfer('transfer-1')
+    await expect(session.openFileChannel(41, 'transfer-1')).rejects.toThrow('unified termx protocol transport')
     const api = await session.openApi()
 
     expect(factory.labelsAtCreateOffer()).toEqual(['api'])
-    expect(factory.createdLabels()).toEqual(['api', 'terminal:terminal-1', 'terminal:terminal-2', 'file:transfer-1'])
+    expect(factory.createdLabels()).toEqual(['api', 'terminal:terminal-1', 'terminal:terminal-2'])
     expect(terminalOne.label).toBe('terminal:terminal-1')
     expect(terminalTwo.label).toBe('terminal:terminal-2')
-    expect(file.label).toBe('file:transfer-1')
     await expect(session.getConnectionInfo()).resolves.toEqual({
       path: 'hub',
       connectionId: 'rtc-machine-1',
@@ -887,7 +886,7 @@ describe('BrowserRtcSession', () => {
     const api = await session.openApi()
     const apiChannel = factory.channel('api')
 
-    const request = api.request('POST', { path: '/files/list', params: { path: '/' } })
+    const request = api.request('status')
     apiChannel.close()
 
     await expect(request).rejects.toThrow(/api.*closed|closed.*api/i)
@@ -932,13 +931,13 @@ describe('BrowserRtcSession', () => {
     const api = await session.openApi()
     const apiChannel = factory.channel('api')
 
-    const request = api.request('POST', { path: '/files/list', params: { path: '/' } })
+    const request = api.request('status')
     apiChannel.emitMessage(new Uint8Array([0x01, 0x02, 0x03]))
 
     await expect(request).rejects.toThrow(/invalid api response chunk/i)
   })
 
-  it('waits for file transfer data channels to open before resolving them', async () => {
+  it('does not restore a legacy physical file data channel', async () => {
     const factory = createMockPeerConnectionFactory({ initialReadyState: 'connecting' })
     const session = createBrowserRtcSession({
       machineId: 'machine-local',
@@ -952,21 +951,8 @@ describe('BrowserRtcSession', () => {
     factory.channel('api').open()
     await offer
     await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
-    let resolved = false
-    const fileChannelPromise = session.openFileTransfer('upload-1').then((channel) => {
-      resolved = true
-      return channel
-    })
-    const rtcChannel = factory.channel('file:upload-1')
-    await Promise.resolve()
-
-    expect(resolved).toBe(false)
-    rtcChannel.open()
-    const fileChannel = await fileChannelPromise
-    fileChannel.send(new Uint8Array([1, 2, 3]))
-
-    expect(fileChannel.label).toBe('file:upload-1')
-    expect(rtcChannel.sent[0]).toEqual(new Uint8Array([1, 2, 3]))
+    await expect(session.openFileChannel(42, 'upload-1')).rejects.toThrow('unified termx protocol transport')
+    expect(factory.createdLabels()).not.toContain('file:upload-1')
   })
 
   it('subscribes to runtime events over a dedicated events data channel', async () => {
@@ -1083,7 +1069,7 @@ function inferAPIRequestForResponse(id: string, body: unknown): { path: string; 
   if (id === 'req_1' && Object.hasOwn(record, 'terminals')) return { method: 'list', path: 'list' }
   if (id === 'req_1' && Object.hasOwn(record, 'ok')) return { method: 'GET', path: '/status' }
   if (id === 'req_1' && Object.hasOwn(record, 'terminal_id')) return { method: 'create', path: 'create' }
-  return { method: 'POST', path: '/files/list' }
+  return { method: 'set_metadata', path: 'set_metadata' }
 }
 
 async function flushMicrotasks(): Promise<void> {

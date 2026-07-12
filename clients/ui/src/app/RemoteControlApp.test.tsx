@@ -1707,7 +1707,7 @@ function fakeRtcSession(): RtcSession {
     async openApi() {
       throw new Error('api channel is not used by Web Control app tests')
     },
-    async openFileTransfer() {
+    async openFileChannel() {
       throw new Error('file transfer is not used by Web Control app tests')
     },
     subscribeEvents() {
@@ -1767,7 +1767,7 @@ const fakeHubRtcSessionFactory = (target?: { machineId?: string | undefined }) =
       close() {},
     }
   },
-  async openFileTransfer() {
+  async openFileChannel() {
     throw new Error('file transfer is not used by Web Control app tests')
   },
   subscribeEvents() {
@@ -1864,7 +1864,7 @@ function hubTestRtcSession(machineId: string) {
         close() {},
       }
     },
-    async openFileTransfer() {
+    async openFileChannel() {
       throw new Error('file transfer is not used by this test')
     },
     subscribeEvents() {

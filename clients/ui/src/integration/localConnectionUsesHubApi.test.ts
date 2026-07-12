@@ -111,7 +111,7 @@ class MockManagedLocalSession implements RtcSession {
     throw new Error('not used')
   }
 
-  async openFileTransfer(): Promise<RtcBinaryChannel> {
+  async openFileChannel(): Promise<RtcBinaryChannel> {
     throw new Error('not used')
   }
 

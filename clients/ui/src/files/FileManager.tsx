@@ -15,7 +15,7 @@ import { AlertCircle, ArrowDownAZ, ArrowDownToLine, ArrowUpAZ, ArrowUpFromLine, 
 export interface FileManagerProps {
   machineId: string
   terminalId?: string | undefined
-  session: Pick<RtcSession, 'openApi' | 'openFileTransfer' | 'getConnectionInfo'>
+  session: Pick<RtcSession, 'openApi' | 'openFileChannel' | 'getConnectionInfo'>
   initialPath?: string | undefined
   className?: string | undefined
   active?: boolean | undefined
@@ -83,7 +83,7 @@ export function FileManager({
                 await Promise.resolve(fileTransfer.getDownloadResumeOffset?.(machineId, entryMenuPath, menuEntry.size) ?? 0),
               ),
             )
-            const init = await manager.fileApi.downloadInit(entryMenuPath, resumeOffset)
+            const init = await manager.fileApi.downloadOpen(entryMenuPath, resumeOffset)
             fileTransfer.startDownload(
               machineId,
               init.transfer_id,

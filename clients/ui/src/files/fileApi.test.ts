@@ -1,280 +1,114 @@
 import { describe, expect, it } from 'vitest'
-import { createFileApi, createFilePreviewSource, type FileEntry } from './fileApi'
+import { createFileApi, createFilePreviewSource } from './fileApi'
 import { createMockFileSession } from '../test/mockFileSession'
+import { TERMX_FRAME_TYPES, encodeTermxFrame } from '../terminal/termxProtocol'
+import { encodeFileTransferDataPayload, encodeFileTransferFinishPayload } from '../terminal/terminalWireProtocol'
 
 describe('createFileApi', () => {
-  it('routes file list and stat calls through the injected api channel', async () => {
+  it('routes list and stat through typed file methods', async () => {
     const session = createMockFileSession({
-      '/files/list': {
-        path: '/',
-        parent: '',
-        total: 1,
-        entries: [entry({ name: 'src', type: 'dir' })],
-      },
-      '/files/stat': entry({ name: 'README.md', type: 'file', size: 128 }),
+      'file.list': { path: '/', entries: [entry('/src', 'dir')], next_cursor: '' },
+      'file.stat': entry('/README.md', 'file', 128),
     })
     const api = createFileApi(session)
 
-    await expect(api.listDir('/')).resolves.toEqual(
-      expect.objectContaining({
-        path: '/',
-        entries: [expect.objectContaining({ name: 'src', type: 'dir' })],
-      }),
-    )
-    await expect(api.stat('/README.md')).resolves.toEqual(
-      expect.objectContaining({ name: 'README.md', size: 128 }),
-    )
+    await expect(api.listDir('/')).resolves.toMatchObject({ path: '/', total: 1, entries: [{ name: 'src', type: 'dir' }] })
+    await expect(api.stat('/README.md')).resolves.toMatchObject({ name: 'README.md', size: 128 })
     expect(session.requests).toEqual([
-      { method: 'POST', path: '/files/list', params: { path: '/', offset: 0, limit: 500 } },
-      { method: 'POST', path: '/files/stat', params: { path: '/README.md' } },
+      { method: 'file.list', path: 'file.list', params: { path: '/', cursor: '', limit: 500 } },
+      { method: 'file.stat', path: 'file.stat', params: { path: '/README.md' } },
     ])
   })
 
-  it('normalizes preview responses from snake case file api fields', async () => {
+  it('decodes text preview bytes without JSON base64', async () => {
     const session = createMockFileSession({
-      '/files/preview': {
-        path: '/README.md',
-        name: 'README.md',
-        size: 18,
+      'file.preview': {
+        entry: entry('/README.md', 'file', 8),
         mime_type: 'text/markdown',
-        category: 'text',
-        is_text: true,
-        content: '# Hello\n',
+        content: new TextEncoder().encode('# Hello\n'),
+        truncated: false,
       },
     })
-    const api = createFileApi(session)
 
-    await expect(api.preview('/README.md', 1024)).resolves.toEqual({
-      path: '/README.md',
-      name: 'README.md',
-      size: 18,
-      mimeType: 'text/markdown',
-      category: 'text',
-      isText: true,
-      content: '# Hello\n',
-      contentBase64: undefined,
-      previewLimit: undefined,
+    await expect(createFileApi(session).preview('/README.md', 1024)).resolves.toMatchObject({
+      path: '/README.md', name: 'README.md', mimeType: 'text/markdown', category: 'text', isText: true, content: '# Hello\n',
     })
     expect(session.requests).toContainEqual({
-      method: 'POST',
-      path: '/files/preview',
-      params: { path: '/README.md', max_size: 1024 },
+      method: 'file.preview', path: 'file.preview', params: { path: '/README.md', max_bytes: 1024 },
     })
   })
 
-  it('accepts base64 binary preview content from either content field', async () => {
+  it('projects binary preview bytes for image rendering', async () => {
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
     const session = createMockFileSession({
-      '/files/preview': {
-        path: '/shot.png',
-        name: 'shot.png',
-        size: 68,
-        mime_type: 'IMAGE/PNG',
-        category: 'IMAGE',
-        is_text: false,
-        content: 'iVBORw0KGgo=',
-      },
+      'file.preview': { entry: entry('/shot.png', 'file', bytes.byteLength), mime_type: 'image/png', content: bytes, truncated: false },
     })
-    const api = createFileApi(session)
 
-    await expect(api.preview('/shot.png')).resolves.toMatchObject({
-      path: '/shot.png',
-      name: 'shot.png',
-      mimeType: 'IMAGE/PNG',
-      category: 'image',
-      isText: false,
-      content: undefined,
-      contentBase64: 'iVBORw0KGgo=',
+    await expect(createFileApi(session).preview('/shot.png')).resolves.toMatchObject({
+      path: '/shot.png', category: 'image', isText: false, contentBase64: 'iVBORw==',
     })
   })
 
-  it('normalizes 3D model previews from model metadata and legacy unsupported responses', async () => {
+  it('streams download frames on the daemon-assigned channel and verifies SHA-256', async () => {
+    const channel = 41
+    const content = new TextEncoder().encode('hello')
     const session = createMockFileSession({
-      '/files/preview': ({ path }: { path?: string } = {}) => {
-        if (path === '/legacy.stl') {
-          return {
-            path: '/legacy.stl',
-            name: 'legacy.stl',
-            size: 84,
-            mime_type: 'application/octet-stream',
-            category: 'unsupported',
-            is_text: false,
-          }
-        }
-        if (path === '/legacy.obj') {
-          return {
-            path: '/legacy.obj',
-            name: 'legacy.obj',
-            size: 84,
-            mime_type: 'application/octet-stream',
-            category: 'unsupported',
-            is_text: false,
-          }
-        }
-        return {
-          path: '/part.stl',
-          name: 'part.stl',
-          size: 84,
-          mime_type: 'model/stl',
-          category: 'model',
-          is_text: false,
-        }
-      },
-    })
-    const api = createFileApi(session)
-
-    await expect(api.preview('/part.stl')).resolves.toMatchObject({
-      path: '/part.stl',
-      mimeType: 'model/stl',
-      category: 'model',
-      isText: false,
-      content: undefined,
-      contentBase64: undefined,
-    })
-    await expect(api.preview('/legacy.stl')).resolves.toMatchObject({
-      path: '/legacy.stl',
-      category: 'model',
-      content: undefined,
-      contentBase64: undefined,
-    })
-    await expect(api.preview('/legacy.obj')).resolves.toMatchObject({
-      path: '/legacy.obj',
-      category: 'model',
-      content: undefined,
-      contentBase64: undefined,
-    })
-  })
-
-  it('streams preview files through the download channel without embedding binary JSON', async () => {
-    const session = createMockFileSession({
-      '/files/download/init': {
-        transfer_id: 'preview-video-1',
-        name: 'clip.mp4',
-        size: 5,
-        chunk_size: 65536,
-      },
+      'file.download.open': transferOpen('/clip.mp4', content.byteLength, channel),
     }, {}, {
       transfers: {
         'preview-video-1': [
-          fileDataFrame(0, new TextEncoder().encode('hello')),
-          fileCompleteFrame(1),
+          encodeTermxFrame(channel, TERMX_FRAME_TYPES.fileData, encodeFileTransferDataPayload({ offset: 0, data: content })),
+          encodeTermxFrame(channel, TERMX_FRAME_TYPES.fileFinish, encodeFileTransferFinishPayload({ size: content.byteLength, sha256: hex('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824') })),
         ],
       },
     })
-    const source = createFilePreviewSource(session)
-    const progress: number[] = []
-    const chunks: number[] = []
 
-    const result = await source.stream('/clip.mp4', 'video/mp4', {
-      onChunk: ({ chunk, receivedSize }) => {
-        chunks.push(chunk.byteLength, receivedSize)
-      },
-      onProgress: ({ receivedSize }) => progress.push(receivedSize),
-    })
+    const result = await createFilePreviewSource(session).stream('/clip.mp4', 'video/mp4')
 
     expect(session.requests).toContainEqual({
-      method: 'POST',
-      path: '/files/download/init',
-      params: expect.objectContaining({ path: '/clip.mp4', transfer_id: expect.stringMatching(/^preview-/) }),
+      method: 'file.download.open', path: 'file.download.open',
+      params: { path: '/clip.mp4', offset: 0, expected_size: 0, expected_modified_at_unix_nano: 0 },
     })
     expect(session.openedTransfers).toEqual(['preview-video-1'])
-    expect(result.receivedSize).toBe(5)
-    expect(result.blob.size).toBe(5)
+    expect(result.receivedSize).toBe(content.byteLength)
+    expect(result.blob.size).toBe(content.byteLength)
     expect(result.blob.type).toBe('video/mp4')
-    expect(chunks).toEqual([5, 5])
-    expect(progress).toContain(5)
   })
 
-  it('streams preview byte ranges through bounded download transfers', async () => {
+  it('rejects a download with a mismatched digest', async () => {
+    const channel = 42
+    const content = new TextEncoder().encode('bad')
     const session = createMockFileSession({
-      '/files/download/init': ({ offset, length }: { offset?: number; length?: number } = {}) => ({
-        transfer_id: 'preview-range-1',
-        name: 'clip.mp4',
-        size: 10,
-        chunk_size: 65536,
-        offset,
-        length,
-      }),
-    }, {}, {
-      transfers: {
-        'preview-range-1': [
-          fileDataFrame(0, new TextEncoder().encode('456')),
-          fileCompleteFrame(1),
-        ],
-      },
-    })
-    const source = createFilePreviewSource(session)
-    const chunks: string[] = []
+      'file.download.open': transferOpen('/bad.bin', content.byteLength, channel),
+    }, {}, { transfers: { 'preview-video-1': [
+      encodeTermxFrame(channel, TERMX_FRAME_TYPES.fileData, encodeFileTransferDataPayload({ offset: 0, data: content })),
+      encodeTermxFrame(channel, TERMX_FRAME_TYPES.fileFinish, encodeFileTransferFinishPayload({ size: content.byteLength, sha256: new Uint8Array(32) })),
+    ] } })
 
-    const result = await source.stream('/clip.mp4', 'video/mp4', {
-      offset: 4,
-      length: 3,
-      onChunk: ({ chunk }) => chunks.push(new TextDecoder().decode(chunk)),
-    })
-
-    expect(session.requests).toContainEqual({
-      method: 'POST',
-      path: '/files/download/init',
-      params: expect.objectContaining({
-        path: '/clip.mp4',
-        offset: 4,
-        length: 3,
-        transfer_id: expect.stringMatching(/^preview-/),
-      }),
-    })
-    expect(result.offset).toBe(4)
-    expect(result.totalSize).toBe(10)
-    expect(result.receivedSize).toBe(3)
-    expect(chunks).toEqual(['456'])
+    await expect(createFilePreviewSource(session).stream('/bad.bin', 'application/octet-stream')).rejects.toThrow(/SHA-256 mismatch/)
   })
 
-  it('normalizes channel failures into user-visible file api errors', async () => {
-    const session = createMockFileSession({}, {
-      '/files/list': { status: 403, body: { error: 'file manager denied' } },
-    })
-    const api = createFileApi(session)
-
-    await expect(api.listDir('/private')).rejects.toThrow(/file manager denied/)
-  })
-
-  it('does not expose relay credentials or browser/native implementation details', async () => {
+  it('surfaces per-item mutation failure', async () => {
     const session = createMockFileSession({
-      '/files/list': { path: '/', parent: '', total: 0, entries: [] },
+      'file.copy': { results: [{ path: '/a', target_path: '/target/a', success: false, error_code: 'exists', error_message: 'target exists' }] },
     })
-    const api = createFileApi(session)
-    await api.listDir('/')
+    await expect(createFileApi(session).copy(['/a'], '/target')).rejects.toThrow(/target exists/)
+  })
 
-    expect(JSON.stringify(session.requests)).not.toMatch(/turn|credential|RTCPeerConnection|fetch|nativePlugin/i)
+  it('normalizes protocol authorization failures', async () => {
+    const session = createMockFileSession({}, { 'file.list': { status: 403, body: { error: 'file manager denied' } } })
+    await expect(createFileApi(session).listDir('/private')).rejects.toThrow(/file manager denied/)
   })
 })
 
-function entry(overrides: Partial<FileEntry>): FileEntry {
-  return {
-    name: overrides.name ?? 'file.txt',
-    type: overrides.type ?? 'file',
-    size: overrides.size ?? 0,
-    mode: overrides.mode ?? '-rw-r--r--',
-    modTime: overrides.modTime ?? '2026-05-01T10:00:00Z',
-    linkTarget: overrides.linkTarget,
-    childCount: overrides.childCount,
-    hardLink: overrides.hardLink,
-    linkCount: overrides.linkCount,
-    inode: overrides.inode,
-  }
+function entry(path: string, type: string, size = 0) {
+  return { path, name: path.slice(path.lastIndexOf('/') + 1), type, size, mode: 0o644, modified_at_unix_nano: 0, link_target: '' }
 }
 
-function fileDataFrame(chunk: number, payload: Uint8Array): Uint8Array {
-  const frame = new Uint8Array(5 + payload.byteLength)
-  frame[0] = 0x01
-  const view = new DataView(frame.buffer)
-  view.setUint32(1, chunk)
-  frame.set(payload, 5)
-  return frame
+function transferOpen(path: string, size: number, channel: number) {
+  return { transfer_id: 'preview-video-1', channel, path, offset: 0, size, modified_at_unix_nano: 1, window_bytes: 262144, chunk_bytes: 65536 }
 }
 
-function fileCompleteFrame(chunk: number): Uint8Array {
-  const frame = new Uint8Array(5)
-  frame[0] = 0x02
-  const view = new DataView(frame.buffer)
-  view.setUint32(1, chunk)
-  return frame
+function hex(value: string): Uint8Array {
+  return Uint8Array.from(value.match(/../g) ?? [], (byte) => Number.parseInt(byte, 16))
 }

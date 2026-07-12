@@ -135,7 +135,7 @@ describe('MachineWorkspace', () => {
     const sessions: ReturnType<typeof createMockMachineWorkspaceSession>[] = []
     const connect = vi.fn(({ machineId }: { machineId: string }) =>
       Promise.resolve(trackSession(sessions, createMockMachineWorkspaceSession({
-          '/files/list': { path: '/', parent: '', total: 0, entries: [] },
+          'file.list': { path: '/', entries: [], next_cursor: '' },
         }, machineId))),
     )
     const connector = { connect } satisfies MachineWorkspaceConnector
@@ -189,7 +189,7 @@ describe('MachineWorkspace', () => {
     const sessions: ReturnType<typeof createMockMachineWorkspaceSession>[] = []
     const connect = vi.fn(({ machineId }: { machineId: string }) =>
       Promise.resolve(trackSession(sessions, createMockMachineWorkspaceSession({
-        '/files/list': { path: '/', parent: '', total: 0, entries: [] },
+        'file.list': { path: '/', entries: [], next_cursor: '' },
       }, machineId))),
     )
     const connector = { connect } satisfies MachineWorkspaceConnector
@@ -228,7 +228,7 @@ describe('MachineWorkspace', () => {
     const sessions: ReturnType<typeof createMockMachineWorkspaceSession>[] = []
     const connect = vi.fn(({ machineId }: { machineId: string }) =>
       Promise.resolve(trackSession(sessions, createMockMachineWorkspaceSession({
-        '/files/list': { path: '/', parent: '', total: 0, entries: [] },
+        'file.list': { path: '/', entries: [], next_cursor: '' },
       }, machineId))),
     )
 
@@ -263,7 +263,7 @@ describe('MachineWorkspace', () => {
     const sessions: ReturnType<typeof createMockMachineWorkspaceSession>[] = []
     const connect = vi.fn(({ machineId }: { machineId: string }) =>
       Promise.resolve(trackSession(sessions, createMockMachineWorkspaceSession({
-        '/files/list': { path: '/', parent: '', total: 0, entries: [] },
+        'file.list': { path: '/', entries: [], next_cursor: '' },
       }, machineId))),
     )
     const connector = { connect } satisfies MachineWorkspaceConnector
@@ -1373,7 +1373,7 @@ describe('MachineWorkspace', () => {
   it('chooses a new terminal working directory from the visual picker', async () => {
     const api = createMockLocalAgentApi()
     const managementSession = createMockMachineWorkspaceSession({
-      '/files/list': ({ path }: { path?: string } = {}) => {
+      'file.list': ({ path }: { path?: string } = {}) => {
         if (path === '/Users/lozzow/project/app') {
           return {
             path: '/Users/lozzow/project/app',

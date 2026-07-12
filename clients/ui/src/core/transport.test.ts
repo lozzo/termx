@@ -37,7 +37,7 @@ describe('RtcSession public interfaces', () => {
     expectTypeOf<keyof RtcSession>().toEqualTypeOf<
       | 'openTerminal'
       | 'openApi'
-      | 'openFileTransfer'
+      | 'openFileChannel'
       | 'subscribeEvents'
       | 'getConnectionInfo'
       | 'getCapabilities'
@@ -46,7 +46,7 @@ describe('RtcSession public interfaces', () => {
     expectTypeOf<RtcSession>().toMatchTypeOf<{
       openTerminal(terminalId: string): Promise<RtcBinaryChannel>
       openApi(): Promise<RtcJsonRpcChannel>
-      openFileTransfer(transferId: string): Promise<RtcBinaryChannel>
+      openFileChannel(channel: number, transferId: string): Promise<RtcBinaryChannel>
       subscribeEvents(handler: (event: unknown) => void): { close(): void }
       getConnectionInfo(): Promise<ConnectionInfo>
       getCapabilities(): Promise<ConnectionCapabilities>

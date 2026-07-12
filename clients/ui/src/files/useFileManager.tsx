@@ -31,7 +31,7 @@ export interface FileManagerVisibleError {
 export interface UseFileManagerOptions {
   machineId: string
   terminalId?: string | undefined
-  session: Pick<RtcSession, 'openApi' | 'openFileTransfer' | 'getConnectionInfo'>
+  session: Pick<RtcSession, 'openApi' | 'openFileChannel' | 'getConnectionInfo'>
   initialPath?: string | undefined
 }
 

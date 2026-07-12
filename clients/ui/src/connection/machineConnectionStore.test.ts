@@ -277,7 +277,7 @@ function createLease(session: ManagedRtcSession): ManagedRtcSession {
   return {
     openTerminal: (terminalId) => session.openTerminal(terminalId),
     openApi: () => session.openApi(),
-    openFileTransfer: (transferId) => session.openFileTransfer(transferId),
+    openFileChannel: (channel, transferId) => session.openFileChannel(channel, transferId),
     subscribeEvents: (handler) => session.subscribeEvents(handler),
     subscribeConnectionState: (handler) => session.subscribeConnectionState(handler),
     onDisconnect: (handler) => session.onDisconnect(handler),
@@ -338,7 +338,7 @@ class StoreTestSession implements ManagedRtcSession {
     }
   }
 
-  async openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
+  async openFileChannel(_channel: number, transferId: string): Promise<RtcBinaryChannel> {
     return new StoreTestBinaryChannel(`file:${transferId}`)
   }
 

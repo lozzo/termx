@@ -170,7 +170,7 @@ describe('WebControlApi', () => {
 
   it('keeps Web Control API as account and node management only', () => {
     expect(source).not.toMatch(/RTCPeerConnection|RTCDataChannel|WebSocket/)
-    expect(source).not.toMatch(/openTerminal\(|openApi\(|openFileTransfer\(|subscribeEvents\(/)
+    expect(source).not.toMatch(/openTerminal\(|openApi\(|openFileChannel\(|subscribeEvents\(/)
     expect(source).not.toMatch(/public-p2p/)
     expect(source).not.toMatch(/paid_relay|anonymous_p2p|managed_p2p|relayTransport|path:\s*['"]relay['"]/)
   })

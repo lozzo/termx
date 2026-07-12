@@ -133,15 +133,10 @@ function normalizeAPIRequest(method: string, params: unknown): { method: string;
   }
   const body = normalizeAPIBody(record.params)
   return {
-    method: normalizeAPIMethod(method, record.path),
+    method,
     path: record.path,
     ...(body !== undefined ? { body } : {}),
   }
-}
-
-function normalizeAPIMethod(method: string, path: string): string {
-  if ((path === '/files/list' || path === '/files/stat') && method === 'GET') return 'POST'
-  return method
 }
 
 function normalizeAPIBody(params: unknown): unknown {

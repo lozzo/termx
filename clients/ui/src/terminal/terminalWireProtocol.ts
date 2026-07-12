@@ -16,6 +16,25 @@ import {
   EnsureResizeResultSchema,
   ErrorEnvelopeSchema,
   EventSchema,
+  FileBatchResultSchema,
+  FileCopyMoveParamsSchema,
+  FileDownloadOpenParamsSchema,
+  FileEntrySchema,
+  FileListParamsSchema,
+  FileListResultSchema,
+  FileOperationResultSchema,
+  FilePathParamsSchema,
+  FilePreviewParamsSchema,
+  FilePreviewResultSchema,
+  FileRenameParamsSchema,
+  FileTransferAckSchema,
+  FileTransferCancelParamsSchema,
+  FileTransferCancelResultSchema,
+  FileTransferDataSchema,
+  FileTransferFinishSchema,
+  FileTransferOpenResultSchema,
+  FileTransferResultSchema,
+  FileUploadOpenParamsSchema,
   GetParamsSchema,
   GridViewportSchema,
   HelloSchema,
@@ -26,6 +45,7 @@ import {
   TerminalInfoSchema,
   type CursorState,
   type Event,
+  type FileEntry,
   type GridViewport,
   type ResizeControl,
   type ResizeOwnership,
@@ -51,6 +71,11 @@ export interface TerminalErrorEnvelope {
   code: number
   message: string
 }
+
+export interface TerminalFileTransferData { offset: number; data: Uint8Array }
+export interface TerminalFileTransferAck { offset: number; windowBytes: number }
+export interface TerminalFileTransferFinish { size: number; sha256: Uint8Array }
+export interface TerminalFileTransferResult { path: string; size: number; sha256: Uint8Array }
 
 interface CompactCell {
   content: string
@@ -227,6 +252,25 @@ export function encodeTerminalMethodParams(method: string, params: unknown): Uin
       return encodeMessageWithUint64Unknown(GetParamsSchema, {
         terminalId: stringField(record, 'terminal_id', 'terminalId'),
       }, liveObservedRevisionFieldNumber, bigintValue(field(record, 'observed_revision', 'observedRevision')))
+    case 'file.list':
+      return encodeMessage(FileListParamsSchema, { path: stringField(record, 'path'), cursor: stringField(record, 'cursor'), limit: int32Value(field(record, 'limit')) })
+    case 'file.stat':
+    case 'file.mkdir':
+    case 'file.delete':
+      return encodeMessage(FilePathParamsSchema, { path: stringField(record, 'path'), recursive: booleanValue(field(record, 'recursive')) })
+    case 'file.preview':
+      return encodeMessage(FilePreviewParamsSchema, { path: stringField(record, 'path'), maxBytes: bigintValue(field(record, 'max_bytes', 'maxBytes')) })
+    case 'file.rename':
+      return encodeMessage(FileRenameParamsSchema, { path: stringField(record, 'path'), newPath: stringField(record, 'new_path', 'newPath'), overwrite: booleanValue(field(record, 'overwrite')) })
+    case 'file.copy':
+    case 'file.move':
+      return encodeMessage(FileCopyMoveParamsSchema, { paths: stringArray(field(record, 'paths')), targetDir: stringField(record, 'target_dir', 'targetDir'), overwrite: booleanValue(field(record, 'overwrite')) })
+    case 'file.download.open':
+      return encodeMessage(FileDownloadOpenParamsSchema, { path: stringField(record, 'path'), offset: bigintValue(field(record, 'offset')), expectedSize: bigintValue(field(record, 'expected_size', 'expectedSize')), expectedModifiedAtUnixNano: bigintValue(field(record, 'expected_modified_at_unix_nano', 'expectedModifiedAtUnixNano')) })
+    case 'file.upload.open':
+      return encodeMessage(FileUploadOpenParamsSchema, { path: stringField(record, 'path'), size: bigintValue(field(record, 'size')), overwrite: booleanValue(field(record, 'overwrite')), resumeTransferId: stringField(record, 'resume_transfer_id', 'resumeTransferId') })
+    case 'file.transfer.cancel':
+      return encodeMessage(FileTransferCancelParamsSchema, { transferId: stringField(record, 'transfer_id', 'transferId') })
     default:
       return encodeMessage(EmptySchema, {})
   }
@@ -281,6 +325,14 @@ export function decodeTerminalMethodParams(method: string, payload: Uint8Array):
         observed_revision: uint64UnknownField(params, liveObservedRevisionFieldNumber),
       })
     }
+    case 'file.list': { const value = decodeMessage(FileListParamsSchema, payload); return { path: value.path, cursor: value.cursor, limit: value.limit } }
+    case 'file.stat': case 'file.mkdir': case 'file.delete': { const value = decodeMessage(FilePathParamsSchema, payload); return { path: value.path, recursive: value.recursive } }
+    case 'file.preview': { const value = decodeMessage(FilePreviewParamsSchema, payload); return { path: value.path, max_bytes: Number(value.maxBytes) } }
+    case 'file.rename': { const value = decodeMessage(FileRenameParamsSchema, payload); return { path: value.path, new_path: value.newPath, overwrite: value.overwrite } }
+    case 'file.copy': case 'file.move': { const value = decodeMessage(FileCopyMoveParamsSchema, payload); return { paths: [...value.paths], target_dir: value.targetDir, overwrite: value.overwrite } }
+    case 'file.download.open': { const value = decodeMessage(FileDownloadOpenParamsSchema, payload); return { path: value.path, offset: Number(value.offset), expected_size: Number(value.expectedSize), expected_modified_at_unix_nano: Number(value.expectedModifiedAtUnixNano) } }
+    case 'file.upload.open': { const value = decodeMessage(FileUploadOpenParamsSchema, payload); return { path: value.path, size: Number(value.size), overwrite: value.overwrite, resume_transfer_id: value.resumeTransferId } }
+    case 'file.transfer.cancel': { const value = decodeMessage(FileTransferCancelParamsSchema, payload); return { transfer_id: value.transferId } }
     default:
       decodeMessage(EmptySchema, payload)
       return {}
@@ -319,6 +371,20 @@ export function encodeTerminalMethodResult(method: string, result: unknown): Uin
         terminalId: stringField(record, 'terminal_id', 'terminalId'),
         timestampUnixNano: bigintValue(field(record, 'timestamp_unix_nano', 'timestampUnixNano')),
       }, eventLiveRevisionFieldNumber, bigintValue(field(record, 'live_revision', 'liveRevision')))
+    case 'file.list':
+      return encodeMessage(FileListResultSchema, { path: stringField(record, 'path'), entries: arrayField(record, 'entries').map((entry) => fileEntryInit(asRecord(entry))), nextCursor: stringField(record, 'next_cursor', 'nextCursor') })
+    case 'file.stat':
+      return encodeMessage(FileEntrySchema, fileEntryInit(record))
+    case 'file.preview':
+      return encodeMessage(FilePreviewResultSchema, { entry: fileEntryInit(asRecord(field(record, 'entry'))), mimeType: stringField(record, 'mime_type', 'mimeType'), content: bytesValue(field(record, 'content')), truncated: booleanValue(field(record, 'truncated')) })
+    case 'file.mkdir': case 'file.rename': case 'file.delete':
+      return encodeMessage(FileOperationResultSchema, fileOperationInit(record))
+    case 'file.copy': case 'file.move':
+      return encodeMessage(FileBatchResultSchema, { results: arrayField(record, 'results').map((item) => fileOperationInit(asRecord(item))) })
+    case 'file.download.open': case 'file.upload.open':
+      return encodeMessage(FileTransferOpenResultSchema, { transferId: stringField(record, 'transfer_id', 'transferId'), channel: uint32Value(field(record, 'channel')), path: stringField(record, 'path'), offset: bigintValue(field(record, 'offset')), size: bigintValue(field(record, 'size')), modifiedAtUnixNano: bigintValue(field(record, 'modified_at_unix_nano', 'modifiedAtUnixNano')), windowBytes: bigintValue(field(record, 'window_bytes', 'windowBytes')), chunkBytes: int32Value(field(record, 'chunk_bytes', 'chunkBytes')) })
+    case 'file.transfer.cancel':
+      return encodeMessage(FileTransferCancelResultSchema, { cancelled: booleanValue(field(record, 'cancelled')) })
     default:
       return encodeMessage(EmptySchema, {})
   }
@@ -336,11 +402,32 @@ export function decodeTerminalMethodResult(method: string, payload: Uint8Array):
       return snapshotToAPI(decodeMessage(SnapshotSchema, payload))
     case 'live.invalidation.next':
       return liveInvalidationToAPI(decodeMessage(EventSchema, payload))
+    case 'file.list': { const value = decodeMessage(FileListResultSchema, payload); return { path: value.path, entries: value.entries.map(fileEntryToAPI), next_cursor: value.nextCursor } }
+    case 'file.stat': return fileEntryToAPI(decodeMessage(FileEntrySchema, payload))
+    case 'file.preview': { const value = decodeMessage(FilePreviewResultSchema, payload); return { entry: fileEntryToAPI(value.entry), mime_type: value.mimeType, content: value.content, truncated: value.truncated } }
+    case 'file.mkdir': case 'file.rename': case 'file.delete': return fileOperationToAPI(decodeMessage(FileOperationResultSchema, payload))
+    case 'file.copy': case 'file.move': return { results: decodeMessage(FileBatchResultSchema, payload).results.map(fileOperationToAPI) }
+    case 'file.download.open': case 'file.upload.open': { const value = decodeMessage(FileTransferOpenResultSchema, payload); return { transfer_id: value.transferId, channel: value.channel, path: value.path, offset: Number(value.offset), size: Number(value.size), modified_at_unix_nano: Number(value.modifiedAtUnixNano), window_bytes: Number(value.windowBytes), chunk_bytes: value.chunkBytes } }
+    case 'file.transfer.cancel': return { cancelled: decodeMessage(FileTransferCancelResultSchema, payload).cancelled }
     default:
       if (payload.byteLength > 0) decodeMessage(EmptySchema, payload)
       return {}
   }
 }
+
+export function encodeFileTransferDataPayload(value: TerminalFileTransferData): Uint8Array { return encodeMessage(FileTransferDataSchema, { offset: BigInt(value.offset), data: value.data }) }
+export function decodeFileTransferDataPayload(payload: Uint8Array): TerminalFileTransferData { const value = decodeMessage(FileTransferDataSchema, payload); return { offset: Number(value.offset), data: value.data } }
+export function encodeFileTransferAckPayload(value: TerminalFileTransferAck): Uint8Array { return encodeMessage(FileTransferAckSchema, { offset: BigInt(value.offset), windowBytes: BigInt(value.windowBytes) }) }
+export function decodeFileTransferAckPayload(payload: Uint8Array): TerminalFileTransferAck { const value = decodeMessage(FileTransferAckSchema, payload); return { offset: Number(value.offset), windowBytes: Number(value.windowBytes) } }
+export function encodeFileTransferFinishPayload(value: TerminalFileTransferFinish): Uint8Array { return encodeMessage(FileTransferFinishSchema, { size: BigInt(value.size), sha256: value.sha256 }) }
+export function decodeFileTransferFinishPayload(payload: Uint8Array): TerminalFileTransferFinish { const value = decodeMessage(FileTransferFinishSchema, payload); return { size: Number(value.size), sha256: value.sha256 } }
+export function encodeFileTransferResultPayload(value: TerminalFileTransferResult): Uint8Array { return encodeMessage(FileTransferResultSchema, { path: value.path, size: BigInt(value.size), sha256: value.sha256 }) }
+export function decodeFileTransferResultPayload(payload: Uint8Array): TerminalFileTransferResult { const value = decodeMessage(FileTransferResultSchema, payload); return { path: value.path, size: Number(value.size), sha256: value.sha256 } }
+
+function fileEntryInit(record: Record<string, unknown>): MessageInitShape<typeof FileEntrySchema> { return { path: stringField(record, 'path'), name: stringField(record, 'name'), type: stringField(record, 'type'), size: bigintValue(field(record, 'size')), mode: uint32Value(field(record, 'mode')), modifiedAtUnixNano: bigintValue(field(record, 'modified_at_unix_nano', 'modifiedAtUnixNano')), linkTarget: stringField(record, 'link_target', 'linkTarget') } }
+function fileEntryToAPI(value: FileEntry | undefined): unknown { if (!value) return {}; return { path: value.path, name: value.name, type: value.type, size: Number(value.size), mode: value.mode, modified_at_unix_nano: Number(value.modifiedAtUnixNano), link_target: value.linkTarget } }
+function fileOperationInit(record: Record<string, unknown>): MessageInitShape<typeof FileOperationResultSchema> { return { path: stringField(record, 'path'), targetPath: stringField(record, 'target_path', 'targetPath'), success: booleanValue(field(record, 'success')), errorCode: stringField(record, 'error_code', 'errorCode'), errorMessage: stringField(record, 'error_message', 'errorMessage') } }
+function fileOperationToAPI(value: MessageShape<typeof FileOperationResultSchema>): unknown { return { path: value.path, target_path: value.targetPath, success: value.success, error_code: value.errorCode, error_message: value.errorMessage } }
 
 function terminalInfoInit(record: Record<string, unknown>): MessageInitShape<typeof TerminalInfoSchema> {
   return {
@@ -801,6 +888,12 @@ function stringArray(value: unknown): string[] {
 function stringMap(value: unknown): Record<string, string> {
   const record = asRecord(value)
   return Object.fromEntries(Object.entries(record).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+}
+
+function bytesValue(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) return value
+  if (value instanceof ArrayBuffer) return new Uint8Array(value)
+  return new Uint8Array()
 }
 
 function bigintValue(value: unknown): bigint {

@@ -539,7 +539,7 @@ describe('HubApi', () => {
 
   it('keeps hub Hub API as signaling/control, not runtime transport', () => {
     expect(source).not.toMatch(/RTCPeerConnection|RTCDataChannel|WebSocket/)
-    expect(source).not.toMatch(/openTerminal\(|openApi\(|openFileTransfer\(|subscribeEvents\(/)
+    expect(source).not.toMatch(/openTerminal\(|openApi\(|openFileChannel\(|subscribeEvents\(/)
     expect(source).not.toMatch(/paid_relay|anonymous_p2p|managed_p2p|relayTransport|path:\s*['"]relay['"]/)
   })
 })

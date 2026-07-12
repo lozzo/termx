@@ -5,7 +5,7 @@
  * 实现 useSyncExternalStore 接口（subscribe/getSnapshot），供 React 消费。
  *
  * 下载流程：
- *   JS 调用 fileApi.downloadInit(path) → 获得 transfer_id, name, size
+ *   JS 调用 file.download.open → 获得 daemon 分配的 transfer_id、channel、offset 与流控参数
  *   → sendTransferRequest({ action: 'start_download', ... }) → Native 接管
  *   → Native 发送 FRAME_TRANSFER_SYNC 进度更新 → UI 显示进度
  *

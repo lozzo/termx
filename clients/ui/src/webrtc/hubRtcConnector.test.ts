@@ -427,7 +427,7 @@ class MockOffererSession implements RtcSession {
     throw new Error('api is not used by connector tests')
   }
 
-  async openFileTransfer(): Promise<RtcBinaryChannel> {
+  async openFileChannel(): Promise<RtcBinaryChannel> {
     throw new Error('file transfer is not used by connector tests')
   }
 

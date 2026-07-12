@@ -872,7 +872,7 @@ function createSessionLease(session: NativeRtcSession): NativeSessionLease {
       return channel
     },
     openApi: () => session.openApi(),
-    openFileTransfer: (transferId) => session.openFileTransfer(transferId),
+    openFileChannel: (channel, transferId) => session.openFileChannel(channel, transferId),
     subscribeEvents(handler) {
       const subscription = session.subscribeEvents(handler)
       subscriptions.add(subscription)

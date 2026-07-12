@@ -1725,8 +1725,8 @@ class DeferredOpenSession implements RtcSession {
     return this.backing.openApi()
   }
 
-  openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
-    return this.backing.openFileTransfer(transferId)
+  openFileChannel(channel: number, transferId: string): Promise<RtcBinaryChannel> {
+    return this.backing.openFileChannel(channel, transferId)
   }
 
   subscribeEvents(handler: (event: RtcEvent) => void): RtcSubscription {

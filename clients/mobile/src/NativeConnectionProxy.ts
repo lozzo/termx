@@ -988,8 +988,8 @@ export class NativeRtcSession implements ManagedRtcSession {
     return apiChannel
   }
 
-  async openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
-    throw new Error(`file transfer is unavailable on current termx protocol: ${transferId}`)
+  async openFileChannel(channel: number, transferId: string): Promise<RtcBinaryChannel> {
+    return (await this.getProtocolMux()).openFileChannel(channel, transferId)
   }
 
   /** Subscribe to native file transfer progress updates. */
@@ -1596,15 +1596,10 @@ function normalizeApiRequest(method: string, params: unknown): { method: string;
   }
   const body = normalizeApiBody(record.params)
   return {
-    method: normalizeApiMethod(method, record.path),
+    method,
     path: record.path,
     ...(body !== undefined ? { body } : {}),
   }
-}
-
-function normalizeApiMethod(method: string, path: string): string {
-  if ((path === '/files/list' || path === '/files/stat') && method === 'GET') return 'POST'
-  return method
 }
 
 function normalizeApiBody(params: unknown): unknown {

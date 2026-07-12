@@ -106,7 +106,7 @@ describe('MachineWorkspace real file manager flow', () => {
     await waitFor(() => expect(screen.getByText('live.txt')).toBeTruthy())
     expect(sessions[0]?.requests).toEqual(expect.arrayContaining([
       { method: 'get_directory', path: 'get_directory', params: { terminal_id: 'terminal-1' } },
-      { method: 'POST', path: '/files/list', params: { path: '/Users/lozzow/project', offset: 0, limit: 500 } },
+      { method: 'file.list', path: 'file.list', params: { path: '/Users/lozzow/project', cursor: '', limit: 500 } },
     ]))
   })
 })
@@ -121,7 +121,7 @@ function createMockMachineWorkspaceSession(
       path: terminal_id === 'terminal-1' ? '/Users/lozzow/project' : '',
       source: 'live',
     }),
-    '/files/list': ({ path }: { path?: string }) => {
+    'file.list': ({ path }: { path?: string }) => {
       if (path === '/srv/worker/tmp') {
         return {
           path: '/srv/worker/tmp',

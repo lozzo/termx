@@ -10,29 +10,9 @@ describe('LocalApiChannel', () => {
 
     channel.close()
 
-    await expect(api.request('GET', { path: '/files/list', params: { path: '/' } }))
+    await expect(api.request('GET', { path: '/storage/list', params: { app_id: 'termx.test' } }))
       .rejects.toThrow(/data channel api is closed/)
     expect(channel.sendCalls).toBe(0)
-  })
-
-  it('preserves file api body fields beyond path, offset, and limit', async () => {
-    const channel = new MockRTCDataChannel('api')
-    const api = new LocalApiChannel(channel)
-
-    const pending = api.request('POST', { path: '/files/preview', params: { path: '/README.md', max_size: 1024 } })
-      .catch(() => undefined)
-
-    const request = decodeRuntimeAPIRequest(channel.sentBytes[0] ?? new Uint8Array())
-    expect(request).toEqual(expect.objectContaining({
-      method: 'POST',
-      path: '/files/preview',
-    }))
-    expect(decodeRuntimeRequestBody(request.path, request.method, request.body)).toEqual({
-      path: '/README.md',
-      max_size: 1024,
-    })
-    api.close()
-    await pending
   })
 
   it('encodes storage api request bodies over the runtime api channel', async () => {

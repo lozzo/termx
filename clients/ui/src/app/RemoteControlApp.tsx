@@ -2487,9 +2487,9 @@ function createHubMachineSessionLease(session: ManagedRtcSession): ManagedRtcSes
       if (closed) throw new Error('machine session lease is closed')
       return createSharedApiLeaseChannel(await session.openApi())
     },
-    async openFileTransfer(transferId: string) {
+    async openFileChannel(streamChannel: number, transferId: string) {
       if (closed) throw new Error('machine session lease is closed')
-      const channel = await session.openFileTransfer(transferId)
+      const channel = await session.openFileChannel(streamChannel, transferId)
       openedFiles.set(transferId, channel)
       return channel
     },

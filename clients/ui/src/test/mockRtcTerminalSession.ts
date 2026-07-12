@@ -143,7 +143,7 @@ export class MockRtcTerminalSession implements RtcSession {
     }
   }
 
-  async openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
+  async openFileChannel(_channel: number, transferId: string): Promise<RtcBinaryChannel> {
     return new MockBinaryChannel(`file:${transferId}`, transferId, this)
   }
 

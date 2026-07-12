@@ -60,28 +60,29 @@ export class MockFileSession implements RtcSession {
       request: async <TResponse>(method: string, params?: unknown): Promise<TResponse> => {
         const request = normalizeRequest(method, params)
         this.requests.push(request)
-        const error = this.errors[request.path]
+        const responderKey = method.startsWith('file.') ? request.method : request.path
+        const error = this.errors[responderKey]
         if (error) {
           throw fileSessionError(error)
         }
-        const responder = this.responders[request.path]
+        const responder = this.responders[responderKey]
         if (typeof responder === 'function') {
-          return await responder(request.params) as TResponse
+          return protocolFixture(request.method, await responder(request.params)) as TResponse
         }
         if (responder !== undefined) {
-          return await responder as TResponse
+          return protocolFixture(request.method, await responder) as TResponse
         }
-        throw new Error(`unhandled file api route ${request.path}`)
+        throw new Error(`unhandled file api method ${request.method}`)
       },
       close() {},
     }
   }
 
-  async openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
+  async openFileChannel(channel: number, transferId: string): Promise<RtcBinaryChannel> {
     this.openedTransfers.push(transferId)
     const responder = this.transfers[transferId]
     const frames = typeof responder === 'function' ? responder(transferId) : responder
-    return new MockFileTransferChannel(transferId, frames ?? [])
+    return new MockFileTransferChannel(channel, transferId, frames ?? [])
   }
 
   subscribeEvents(_handler: (event: RtcEvent) => void): RtcSubscription {
@@ -117,8 +118,8 @@ class MockFileTransferChannel implements RtcBinaryChannel {
   private readonly messageHandlers = new Set<(data: Uint8Array) => void>()
   private readonly closeHandlers = new Set<() => void>()
 
-  constructor(transferId: string, private readonly frames: Uint8Array[]) {
-    this.label = `file:${transferId}`
+  constructor(channel: number, transferId: string, private readonly frames: Uint8Array[]) {
+    this.label = `protocol:${channel}:${transferId}`
   }
 
   send() {}
@@ -153,17 +154,15 @@ function normalizeRequest(method: string, params: unknown): { method: string; pa
     return { method, path: method }
   }
   const record = params as Record<string, unknown>
-  if (typeof record.path !== 'string') {
-    return { method, path: method, params: record }
+  if (!method.startsWith('file.') && typeof record.path === 'string') {
+    const request: { method: string; path: string; params?: Record<string, unknown> } = {
+      method,
+      path: record.path,
+    }
+    if (typeof record.params === 'object' && record.params !== null) request.params = record.params as Record<string, unknown>
+    return request
   }
-  const request: { method: string; path: string; params?: Record<string, unknown> } = {
-    method,
-    path: record.path,
-  }
-  if (record.params !== undefined) {
-    request.params = record.params as Record<string, unknown>
-  }
-  return request
+  return { method, path: method, params: record }
 }
 
 function fileSessionError(error: MockFileError): Error {
@@ -171,4 +170,67 @@ function fileSessionError(error: MockFileError): Error {
   const err = new Error(message)
   Object.assign(err, { status: error.status, body: error.body })
   return err
+}
+
+function protocolFixture(method: string, value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) return value
+  const record = value as Record<string, unknown>
+  if (method === 'file.list') {
+    const directory = typeof record.path === 'string' ? record.path : '/'
+    const entries = Array.isArray(record.entries) ? record.entries.map((item) => protocolEntry(directory, item)) : []
+    return { path: directory, entries, next_cursor: typeof record.next_cursor === 'string' ? record.next_cursor : '' }
+  }
+  if (method === 'file.stat') return protocolEntry('', record)
+  if (method === 'file.preview' && record.entry === undefined) {
+    const path = typeof record.path === 'string' ? record.path : '/preview'
+    const rawContent = record.content ?? record.content_base64
+    const isText = record.is_text === true
+    return {
+      entry: protocolEntry('', { path, name: record.name, type: 'file', size: record.size }),
+      mime_type: record.mime_type ?? 'application/octet-stream',
+      content: previewBytes(rawContent, isText),
+      truncated: record.truncated === true,
+    }
+  }
+  if (method === 'file.download.open' && record.channel === undefined) {
+    return {
+      transfer_id: record.transfer_id,
+      channel: 41,
+      path: record.path ?? `/${String(record.name ?? 'download')}`,
+      offset: record.offset ?? 0,
+      size: record.size ?? 0,
+      modified_at_unix_nano: 1,
+      window_bytes: 262144,
+      chunk_bytes: record.chunk_size ?? 65536,
+    }
+  }
+  if (method === 'file.mkdir' || method === 'file.rename' || method === 'file.delete') {
+    return { path: record.path ?? '', target_path: record.target_path ?? '', success: record.success ?? true, error_code: '', error_message: '' }
+  }
+  return value
+}
+
+function protocolEntry(directory: string, value: unknown): Record<string, unknown> {
+  const entry = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
+  const name = typeof entry.name === 'string' ? entry.name : ''
+  const path = typeof entry.path === 'string' ? entry.path : `${directory.replace(/\/$/, '')}/${name}` || '/'
+  const modified = entry.modified_at_unix_nano ?? entry.mod_time ?? entry.modTime
+  return {
+    ...entry,
+    path,
+    name,
+    type: entry.type ?? 'file',
+    size: entry.size ?? 0,
+    mode: typeof entry.mode === 'number' ? entry.mode : 0,
+    modified_at_unix_nano: typeof modified === 'string' ? Date.parse(modified) * 1_000_000 : modified ?? 0,
+    link_target: entry.link_target ?? entry.linkTarget ?? '',
+  }
+}
+
+function previewBytes(value: unknown, isText: boolean): Uint8Array {
+  if (value instanceof Uint8Array) return value
+  if (typeof value !== 'string') return new Uint8Array()
+  if (isText) return new TextEncoder().encode(value)
+  const encoded = value.startsWith('data:') ? value.slice(value.indexOf(',') + 1) : value
+  return Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0))
 }

@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FileManager, type FileManagerProps } from './FileManager'
 import { createMockFileSession } from '../test/mockFileSession'
+import { TERMX_FRAME_TYPES, encodeTermxFrame } from '../terminal/termxProtocol'
+import { encodeFileTransferDataPayload, encodeFileTransferFinishPayload } from '../terminal/terminalWireProtocol'
 
 describe('FileManager', () => {
   beforeEach(() => {
@@ -29,7 +31,7 @@ describe('FileManager', () => {
 
   it('renders directory entries and navigates directories through the injected session', async () => {
     const session = createMockFileSession({
-      '/files/list': ({ path }: { path?: string }) => ({
+      'file.list': ({ path }: { path?: string }) => ({
         path,
         parent: path === '/' ? '' : '/',
         total: 1,
@@ -53,7 +55,6 @@ describe('FileManager', () => {
     )
 
     await waitFor(() => expect(screen.getByText('tmp')).toBeTruthy())
-    expect(screen.getByText(/3 items/)).toBeTruthy()
     expect(screen.getByTestId('termx-file-manager').className).toMatch(/\brelative\b/)
     expect(screen.getByTestId('termx-file-manager').className).toMatch(/\bmin-h-0\b/)
     await userEvent.click(screen.getByRole('button', { name: /open tmp/i }))
@@ -61,9 +62,9 @@ describe('FileManager', () => {
     expect(screen.getByTestId('termx-file-manager').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
   })
 
-  it('shows file metadata, symlink target, and directory item counts in the list', async () => {
+  it('shows file size and symlink metadata from the protocol', async () => {
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/srv/app',
         parent: '/srv',
         total: 3,
@@ -85,7 +86,6 @@ describe('FileManager', () => {
     )
 
     await waitFor(() => expect(screen.getByText('logs')).toBeTruthy())
-    expect(screen.getByText(/12 items/)).toBeTruthy()
     expect(screen.getByText(/2 KB/)).toBeTruthy()
     expect(screen.getByText(/-> \/etc\/app\/config\.yml/)).toBeTruthy()
   })
@@ -97,15 +97,15 @@ describe('FileManager', () => {
       { name: 'old.txt', type: 'file', size: 42 },
     ]
     const session = createMockFileSession({
-      '/files/list': ({ path }: { path?: string }) => ({
+      'file.list': ({ path }: { path?: string }) => ({
         path: path || '/',
         parent: '',
         total: entries.length,
         entries,
       }),
-      '/files/mkdir': {},
-      '/files/rename': {},
-      '/files/delete': {},
+      'file.mkdir': {},
+      'file.rename': {},
+      'file.delete': {},
     }, {}, { terminalId: 'terminal-1' })
 
     render(
@@ -126,8 +126,8 @@ describe('FileManager', () => {
     await userEvent.type(screen.getByLabelText('Directory name'), 'logs')
     await userEvent.click(screen.getByRole('button', { name: /create directory/i }))
     await waitFor(() => expect(session.requests).toContainEqual({
-      method: 'POST',
-      path: '/files/mkdir',
+      method: 'file.mkdir',
+      path: 'file.mkdir',
       params: { path: '/logs' },
     }))
 
@@ -136,8 +136,8 @@ describe('FileManager', () => {
     await userEvent.clear(screen.getByLabelText('Rename entry'))
     await userEvent.type(screen.getByLabelText('Rename entry'), 'new.txt{Enter}')
     await waitFor(() => expect(session.requests).toContainEqual({
-      method: 'POST',
-      path: '/files/rename',
+      method: 'file.rename',
+      path: 'file.rename',
       params: { path: '/old.txt', new_path: '/new.txt' },
     }))
 
@@ -146,9 +146,9 @@ describe('FileManager', () => {
     expect(screen.getByTestId('termx-file-delete-confirm')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: /^delete$/i }))
     await waitFor(() => expect(session.requests).toContainEqual({
-      method: 'POST',
-      path: '/files/delete',
-      params: { path: '/old.txt' },
+      method: 'file.delete',
+      path: 'file.delete',
+      params: { path: '/old.txt', recursive: true },
     }))
   })
 
@@ -178,7 +178,7 @@ describe('FileManager', () => {
 
   it('shows absolute breadcrumbs without labeling the root slash as root', async () => {
     const session = createMockFileSession({
-      '/files/list': ({ path }: { path?: string }) => ({
+      'file.list': ({ path }: { path?: string }) => ({
         path,
         parent: '/',
         total: 0,
@@ -201,7 +201,7 @@ describe('FileManager', () => {
 
   it('keeps the path bar separate from file actions and right-aligns row menus', async () => {
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/Users/lozzow/project/deep/path',
         parent: '/Users/lozzow/project/deep',
         total: 2,
@@ -239,7 +239,7 @@ describe('FileManager', () => {
       value: { writeText },
     })
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/Users/lozzow/project/deep/path',
         parent: '/Users/lozzow/project/deep',
         total: 0,
@@ -265,7 +265,7 @@ describe('FileManager', () => {
 
   it('shows path bookmarks as single rows with inline edit actions', async () => {
     const session = createMockFileSession({
-      '/files/list': ({ path }: { path?: string } = {}) => ({
+      'file.list': ({ path }: { path?: string } = {}) => ({
         path: path || '/srv/app',
         parent: '/srv',
         total: 0,
@@ -363,7 +363,7 @@ describe('FileManager', () => {
       value: { writeText },
     })
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/srv/app',
         parent: '/srv',
         total: 1,
@@ -395,7 +395,7 @@ describe('FileManager', () => {
       value: { writeText },
     })
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/srv/app',
         parent: '/srv',
         total: 2,
@@ -427,7 +427,7 @@ describe('FileManager', () => {
 
   it('lets users change file list sorting from the toolbar', async () => {
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/',
         parent: '',
         total: 4,
@@ -455,13 +455,13 @@ describe('FileManager', () => {
 
   it('renders markdown previews from selected files', async () => {
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/',
         parent: '',
         total: 1,
         entries: [{ name: 'README.md', type: 'file', size: 42 }],
       },
-      '/files/preview': {
+      'file.preview': {
         path: '/README.md',
         name: 'README.md',
         size: 42,
@@ -481,21 +481,21 @@ describe('FileManager', () => {
     expect(screen.getByRole('heading', { name: 'Title' })).toBeTruthy()
     expect(screen.getByText('code')).toBeTruthy()
     expect(session.requests).toContainEqual({
-      method: 'POST',
-      path: '/files/preview',
+      method: 'file.preview',
+      path: 'file.preview',
       params: { path: '/README.md' },
     })
   })
 
   it('previews wrapped plain text without horizontal-only code layout', async () => {
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/',
         parent: '',
         total: 1,
         entries: [{ name: 'app.log', type: 'file', size: 140 }],
       },
-      '/files/preview': {
+      'file.preview': {
         path: '/app.log',
         name: 'app.log',
         size: 140,
@@ -518,13 +518,13 @@ describe('FileManager', () => {
 
   it('opens previews as fullscreen dialogs outside the file manager container', async () => {
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/',
         parent: '',
         total: 1,
         entries: [{ name: 'app.log', type: 'file', size: 20 }],
       },
-      '/files/preview': {
+      'file.preview': {
         path: '/app.log',
         name: 'app.log',
         size: 20,
@@ -548,13 +548,13 @@ describe('FileManager', () => {
 
   it('renders code previews with highlight.js markup, line numbers, and wrap toggle', async () => {
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/',
         parent: '',
         total: 1,
         entries: [{ name: 'app.ts', type: 'file', size: 42 }],
       },
-      '/files/preview': {
+      'file.preview': {
         path: '/app.ts',
         name: 'app.ts',
         size: 42,
@@ -583,13 +583,13 @@ describe('FileManager', () => {
 
   it('renders image previews from base64 preview content', async () => {
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/',
         parent: '',
         total: 1,
         entries: [{ name: 'shot.png', type: 'file', size: 68 }],
       },
-      '/files/preview': {
+      'file.preview': {
         path: '/shot.png',
         name: 'shot.png',
         size: 68,
@@ -614,13 +614,13 @@ describe('FileManager', () => {
 
   it('supports image preview zoom, rotation, and wheel zooming', async () => {
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/',
         parent: '',
         total: 1,
         entries: [{ name: 'shot.png', type: 'file', size: 68 }],
       },
-      '/files/preview': {
+      'file.preview': {
         path: '/shot.png',
         name: 'shot.png',
         size: 68,
@@ -670,13 +670,13 @@ describe('FileManager', () => {
       value: true,
     })
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/',
         parent: '',
         total: 1,
         entries: [{ name: 'clip.mp4', type: 'file', size: 5 }],
       },
-      '/files/preview': {
+      'file.preview': {
         path: '/clip.mp4',
         name: 'clip.mp4',
         size: 5,
@@ -693,7 +693,7 @@ describe('FileManager', () => {
 
     expect(await screen.findByText(/Preview Unavailable/i)).toBeTruthy()
     expect(screen.queryByText(/Streaming preview/i)).toBeNull()
-    expect(session.requests.some((request) => request.path === '/files/download/init')).toBe(false)
+    expect(session.requests.some((request) => request.path === 'file.download.open')).toBe(false)
     expect(session.openedTransfers).toEqual([])
   })
 
@@ -710,13 +710,13 @@ describe('FileManager', () => {
       'endsolid part',
     ].join('\n'))
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/',
         parent: '',
         total: 1,
         entries: [{ name: 'part.stl', type: 'file', size: stl.byteLength }],
       },
-      '/files/preview': {
+      'file.preview': {
         path: '/part.stl',
         name: 'part.stl',
         size: stl.byteLength,
@@ -724,7 +724,7 @@ describe('FileManager', () => {
         category: 'model',
         is_text: false,
       },
-      '/files/download/init': {
+      'file.download.open': {
         transfer_id: 'preview-stl-1',
         name: 'part.stl',
         size: stl.byteLength,
@@ -733,10 +733,7 @@ describe('FileManager', () => {
     }, {}, {
       terminalId: 'terminal-1',
       transfers: {
-        'preview-stl-1': [
-          fileDataFrame(0, stl),
-          fileCompleteFrame(1),
-        ],
+        'preview-stl-1': await fileFrames(stl),
       },
     })
 
@@ -748,11 +745,13 @@ describe('FileManager', () => {
     expect(await screen.findByText('STL Model')).toBeTruthy()
     expect(await screen.findByTestId('termx-stl-preview')).toBeTruthy()
     expect(session.requests).toContainEqual({
-      method: 'POST',
-      path: '/files/download/init',
+      method: 'file.download.open',
+      path: 'file.download.open',
       params: expect.objectContaining({
         path: '/part.stl',
-        transfer_id: expect.stringMatching(/^preview-/),
+        offset: 0,
+        expected_size: 0,
+        expected_modified_at_unix_nano: 0,
       }),
     })
     expect(session.openedTransfers).toEqual(['preview-stl-1'])
@@ -771,13 +770,13 @@ describe('FileManager', () => {
       'endsolid legacy',
     ].join('\n'))
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/',
         parent: '',
         total: 1,
         entries: [{ name: 'legacy.stl', type: 'file', size: stl.byteLength }],
       },
-      '/files/preview': {
+      'file.preview': {
         path: '/legacy.stl',
         name: 'legacy.stl',
         size: stl.byteLength,
@@ -785,7 +784,7 @@ describe('FileManager', () => {
         category: 'unsupported',
         is_text: false,
       },
-      '/files/download/init': {
+      'file.download.open': {
         transfer_id: 'preview-stl-legacy',
         name: 'legacy.stl',
         size: stl.byteLength,
@@ -794,10 +793,7 @@ describe('FileManager', () => {
     }, {}, {
       terminalId: 'terminal-1',
       transfers: {
-        'preview-stl-legacy': [
-          fileDataFrame(0, stl),
-          fileCompleteFrame(1),
-        ],
+        'preview-stl-legacy': await fileFrames(stl),
       },
     })
 
@@ -820,13 +816,13 @@ describe('FileManager', () => {
       'f 1 2 3',
     ].join('\n'))
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/',
         parent: '',
         total: 1,
         entries: [{ name: 'legacy.obj', type: 'file', size: obj.byteLength }],
       },
-      '/files/preview': {
+      'file.preview': {
         path: '/legacy.obj',
         name: 'legacy.obj',
         size: obj.byteLength,
@@ -834,7 +830,7 @@ describe('FileManager', () => {
         category: 'unsupported',
         is_text: false,
       },
-      '/files/download/init': {
+      'file.download.open': {
         transfer_id: 'preview-obj-legacy',
         name: 'legacy.obj',
         size: obj.byteLength,
@@ -843,10 +839,7 @@ describe('FileManager', () => {
     }, {}, {
       terminalId: 'terminal-1',
       transfers: {
-        'preview-obj-legacy': [
-          fileDataFrame(0, obj),
-          fileCompleteFrame(1),
-        ],
+        'preview-obj-legacy': await fileFrames(obj),
       },
     })
 
@@ -863,13 +856,13 @@ describe('FileManager', () => {
   it('renders image previews from data URL preview content', async () => {
     const dataUrl = 'data:image/png;base64,iVBORw0KGgo='
     const session = createMockFileSession({
-      '/files/list': {
+      'file.list': {
         path: '/',
         parent: '',
         total: 1,
         entries: [{ name: 'shot.png', type: 'file', size: 68 }],
       },
-      '/files/preview': {
+      'file.preview': {
         path: '/shot.png',
         name: 'shot.png',
         size: 68,
@@ -907,19 +900,11 @@ function fileNames(): string[] {
     .map((button) => button.getAttribute('aria-label')?.replace(/^(Open|Preview) /, '') ?? '')
 }
 
-function fileDataFrame(chunk: number, payload: Uint8Array): Uint8Array {
-  const frame = new Uint8Array(5 + payload.byteLength)
-  frame[0] = 0x01
-  const view = new DataView(frame.buffer)
-  view.setUint32(1, chunk)
-  frame.set(payload, 5)
-  return frame
-}
-
-function fileCompleteFrame(chunk: number): Uint8Array {
-  const frame = new Uint8Array(5)
-  frame[0] = 0x02
-  const view = new DataView(frame.buffer)
-  view.setUint32(1, chunk)
-  return frame
+async function fileFrames(payload: Uint8Array): Promise<Uint8Array[]> {
+  const content = payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength) as ArrayBuffer
+  const sha256 = new Uint8Array(await crypto.subtle.digest('SHA-256', content))
+  return [
+    encodeTermxFrame(41, TERMX_FRAME_TYPES.fileData, encodeFileTransferDataPayload({ offset: 0, data: payload })),
+    encodeTermxFrame(41, TERMX_FRAME_TYPES.fileFinish, encodeFileTransferFinishPayload({ size: payload.byteLength, sha256 })),
+  ]
 }

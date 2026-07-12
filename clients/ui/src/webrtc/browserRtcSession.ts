@@ -300,14 +300,8 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     return sharedApiLeaseChannel(this.apiJsonChannel)
   }
 
-  async openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
-    const channel = this.openRTCChannel(`file:${transferId}`)
-    this.fileChannels.set(transferId, channel)
-    channel.addEventListener('close', () => {
-      if (this.fileChannels.get(transferId) === channel) this.fileChannels.delete(transferId)
-    })
-    await waitChannelOpen(channel)
-    return toBinaryChannel(channel)
+  async openFileChannel(_channel: number, _transferId: string): Promise<RtcBinaryChannel> {
+    throw new Error('browser file transfer requires the unified termx protocol transport')
   }
 
   subscribeEvents(handler: (event: RtcEvent) => void): RtcSubscription {

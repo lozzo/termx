@@ -251,7 +251,7 @@ describe('ConnectionOrchestrator', () => {
     expect(source).not.toMatch(/RTCPeerConnection|RTCDataChannel|WebSocket|fetch\(|XMLHttpRequest/)
     expect(source).not.toMatch(/appCertificate|app_certificate|signOffer|ed25519|offer_signature/)
     expect(source).not.toMatch(/paid_relay|managed_p2p|anonymous_p2p|"relay"|'relay'/)
-    expect(source).not.toMatch(/openTerminal\(|openApi\(|openFileTransfer\(|subscribeEvents\(/)
+    expect(source).not.toMatch(/openTerminal\(|openApi\(|openFileChannel\(|subscribeEvents\(/)
   })
 })
 
@@ -301,7 +301,7 @@ class MockRtcSession implements RtcSession {
     throw new Error('api is not used by orchestrator tests')
   }
 
-  async openFileTransfer(): Promise<RtcBinaryChannel> {
+  async openFileChannel(): Promise<RtcBinaryChannel> {
     throw new Error('file transfer is not used by orchestrator tests')
   }
 
