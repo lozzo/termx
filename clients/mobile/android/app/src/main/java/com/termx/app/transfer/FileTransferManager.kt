@@ -623,25 +623,20 @@ class FileTransferManager(context: Context) {
 
     private fun restorePersistedTransfers() {
         taskStore.loadAll().forEach { record ->
+            val restored = restoredTransferState(record.status, record.pausedByUser)
             if (record.direction == "download") {
                 val part = downloadPartFile(record.machineId, record.remotePath, record.totalSize)
                 downloadSessions[record.id] = DownloadSession(record.id, fileName = record.name, filePath = record.remotePath,
-                    totalSize = record.totalSize, receivedSize = part.length().coerceIn(0, record.totalSize), status = startupStatus(record),
+                    totalSize = record.totalSize, receivedSize = part.length().coerceIn(0, record.totalSize), status = restored.status,
                     error = record.error, startedAt = record.startedAt, machineId = record.machineId, partFile = part,
-                    mediaStoreUri = record.savedUri?.let { Uri.parse(it) }, savedPath = record.savedPath, pausedByUser = true)
+                    mediaStoreUri = record.savedUri?.let { Uri.parse(it) }, savedPath = record.savedPath, pausedByUser = restored.pausedByUser)
             } else if (record.direction == "upload") {
                 uploadSessions[record.id] = UploadSession(record.id, transferId = record.resumeId, contentUri = record.localUri,
                     fileName = record.name, fileSize = record.totalSize, sentSize = record.transferredSize.coerceIn(0, record.totalSize),
-                    targetDir = record.targetDir, targetPath = record.remotePath, status = startupStatus(record), error = record.error,
-                    startedAt = record.startedAt, machineId = record.machineId, pausedByUser = true, cancelled = true)
+                    targetDir = record.targetDir, targetPath = record.remotePath, status = restored.status, error = record.error,
+                    startedAt = record.startedAt, machineId = record.machineId, pausedByUser = restored.pausedByUser, cancelled = restored.cancelled)
             }
         }
-    }
-
-    private fun startupStatus(record: PersistedTransfer): String = when {
-        record.status == "completed" -> "completed"
-        record.status == "cancelled" -> "cancelled"
-        else -> "paused"
     }
     private fun resumable(status: String): Boolean = status == "paused" || status == "failed" || status == "pending"
     private fun markActivity() { lastTransferActivityAt = System.currentTimeMillis() }

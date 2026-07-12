@@ -10,6 +10,12 @@ import java.nio.file.Files
 
 /** FileTransferProtocolTest 固定 Android 与 daemon 共用的 v4 文件流失败边界。 */
 class FileTransferProtocolTest {
+    @Test fun restoresInterruptedTransfersWithoutInventingUserPause() {
+        assertEquals(RestoredTransferState("paused", false, false), restoredTransferState("transferring", false))
+        assertEquals(RestoredTransferState("paused", true, false), restoredTransferState("paused", true))
+        assertEquals(RestoredTransferState("cancelled", true, true), restoredTransferState("cancelled", false))
+    }
+
     @Test fun createsAndReusesPrivateTransferPartDirectory() {
         val filesDir = Files.createTempDirectory("termx-transfer-test").toFile()
         try {

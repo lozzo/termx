@@ -10,6 +10,16 @@ internal fun ensureTransferPartDirectory(filesDir: File): File {
     return directory
 }
 
+/** RestoredTransferState 保留暂停归属；只有用户主动暂停的任务才阻止连接恢复自动续传。 */
+internal data class RestoredTransferState(val status: String, val pausedByUser: Boolean, val cancelled: Boolean)
+
+/** restoredTransferState 把持久化任务投影为启动状态，不把进程中断伪装成用户暂停。 */
+internal fun restoredTransferState(status: String, pausedByUser: Boolean): RestoredTransferState = when (status) {
+    "completed" -> RestoredTransferState("completed", pausedByUser, false)
+    "cancelled" -> RestoredTransferState("cancelled", true, true)
+    else -> RestoredTransferState("paused", pausedByUser, false)
+}
+
 /** DownloadChunk 是完成 protobuf 与连续 offset 校验后的下载数据。 */
 internal data class DownloadChunk(val offset: Long, val data: ByteArray)
 
