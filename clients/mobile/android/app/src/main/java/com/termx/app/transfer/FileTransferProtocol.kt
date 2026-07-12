@@ -1,6 +1,14 @@
 package com.termx.app.transfer
 
 import termx.protocol.wirepb.Terminal
+import java.io.File
+
+/** ensureTransferPartDirectory 建立 native 下载唯一使用的私有分片目录；失败时禁止启动或恢复任务。 */
+internal fun ensureTransferPartDirectory(filesDir: File): File {
+    val directory = File(filesDir, "transfer-parts")
+    check((directory.isDirectory || directory.mkdirs()) && directory.isDirectory) { "download part directory is unavailable" }
+    return directory
+}
 
 /** DownloadChunk 是完成 protobuf 与连续 offset 校验后的下载数据。 */
 internal data class DownloadChunk(val offset: Long, val data: ByteArray)

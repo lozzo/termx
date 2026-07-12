@@ -6,9 +6,21 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import termx.protocol.wirepb.Terminal
+import java.nio.file.Files
 
 /** FileTransferProtocolTest 固定 Android 与 daemon 共用的 v4 文件流失败边界。 */
 class FileTransferProtocolTest {
+    @Test fun createsAndReusesPrivateTransferPartDirectory() {
+        val filesDir = Files.createTempDirectory("termx-transfer-test").toFile()
+        try {
+            val created = ensureTransferPartDirectory(filesDir)
+            assertEquals(created.canonicalFile, ensureTransferPartDirectory(filesDir).canonicalFile)
+            assertEquals(true, created.isDirectory)
+        } finally {
+            filesDir.deleteRecursively()
+        }
+    }
+
     @Test fun validatesContiguousDataAndUploadAck() {
         val data = Terminal.FileTransferData.newBuilder().setOffset(12).setData(ByteString.copyFromUtf8("chunk")).build()
         val decoded = decodeDownloadChunk(data.toByteArray(), 12, 64 * 1024)

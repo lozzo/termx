@@ -97,6 +97,7 @@ class FileTransferManager(context: Context) {
     )
 
     private val context = context.applicationContext
+    private val transferPartDirectory = ensureTransferPartDirectory(this.context.filesDir)
     private val taskStore = TransferTaskStore(this.context)
     private val downloadSessions = ConcurrentHashMap<String, DownloadSession>()
     private val uploadSessions = ConcurrentHashMap<String, UploadSession>()
@@ -653,13 +654,12 @@ class FileTransferManager(context: Context) {
     private fun downloadPartFile(machineId: String, filePath: String, fileSize: Long): File {
         val key = MessageDigest.getInstance("SHA-256").digest("$machineId\u0000$filePath\u0000$fileSize".toByteArray())
             .joinToString("") { "%02x".format(it) }
-        return File(File(context.filesDir, "transfer-parts"), "$key.part")
+        return File(transferPartDirectory, "$key.part")
     }
 
     private fun cleanupOldResumeFiles() {
-        val dir = File(context.filesDir, "transfer-parts")
         val cutoff = System.currentTimeMillis() - RESUME_CLEANUP_AGE_MS
-        dir.listFiles()?.filter { it.lastModified() < cutoff }?.forEach { it.delete() }
+        transferPartDirectory.listFiles()?.filter { it.lastModified() < cutoff }?.forEach { it.delete() }
     }
 
     private fun uploadTaskId(machineId: String, uri: String, name: String, size: Long, targetDir: String): String {
