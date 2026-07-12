@@ -794,7 +794,7 @@ func (server *Server) ListenAndServe(ctx context.Context) error {
 }
 
 func (server *Server) ServeTransport(ctx context.Context, conn transport.Transport) error {
-	return server.ServeScopedTransport(ctx, conn, TransportScope{AllowDaemon: true})
+	return server.ServeScopedTransport(ctx, conn, fullDaemonTransportScope())
 }
 
 func (server *Server) ServeScopedTransport(ctx context.Context, conn transport.Transport, scope TransportScope) error {
@@ -865,7 +865,7 @@ func (server *Server) removeTerminalHandle(id string) *Terminal {
 
 func (server *Server) handleTransport(ctx context.Context, conn transport.Transport) {
 	defer server.wg.Done()
-	if err := server.serveTrackedTransport(ctx, conn, TransportScope{AllowDaemon: true}); err != nil && !errors.Is(err, transport.ErrListenerClosed) {
+	if err := server.serveTrackedTransport(ctx, conn, fullDaemonTransportScope()); err != nil && !errors.Is(err, transport.ErrListenerClosed) {
 		server.cfg.logger.Debug("core-v2 protocol session stopped", "error", err)
 	}
 }

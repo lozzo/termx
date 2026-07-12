@@ -279,6 +279,69 @@ message PathDefaultsResult {
   string default_cwd = 2;
 }
 
+message FilePathParams {
+  string path = 1;
+  bool recursive = 2;
+}
+
+message FileListParams {
+  string path = 1;
+  string cursor = 2;
+  int32 limit = 3;
+}
+
+message FileEntry {
+  string path = 1;
+  string name = 2;
+  string type = 3;
+  int64 size = 4;
+  uint32 mode = 5;
+  int64 modified_at_unix_nano = 6;
+  string link_target = 7;
+}
+
+message FileListResult {
+  string path = 1;
+  repeated FileEntry entries = 2;
+  string next_cursor = 3;
+}
+
+message FilePreviewParams {
+  string path = 1;
+  int64 max_bytes = 2;
+}
+
+message FilePreviewResult {
+  FileEntry entry = 1;
+  string mime_type = 2;
+  bytes content = 3;
+  bool truncated = 4;
+}
+
+message FileRenameParams {
+  string path = 1;
+  string new_path = 2;
+  bool overwrite = 3;
+}
+
+message FileCopyMoveParams {
+  repeated string paths = 1;
+  string target_dir = 2;
+  bool overwrite = 3;
+}
+
+message FileOperationResult {
+  string path = 1;
+  string target_path = 2;
+  bool success = 3;
+  string error_code = 4;
+  string error_message = 5;
+}
+
+message FileBatchResult {
+  repeated FileOperationResult results = 1;
+}
+
 message CursorState {
   int32 row = 1;
   int32 col = 2;

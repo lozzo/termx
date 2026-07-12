@@ -282,6 +282,34 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		return encodeMethodResult(req.Method, out)
 	case "path.defaults":
 		return encodeMethodResult(req.Method, pathDefaults())
+	case "file.list":
+		out, err := fileList(params.(protocol.FileListParams))
+		if err != nil {
+			return nil, false, fileProtocolErrorCode(err), err
+		}
+		return encodeMethodResult(req.Method, out)
+	case "file.stat":
+		out, err := fileStat(params.(protocol.FilePathParams))
+		if err != nil {
+			return nil, false, fileProtocolErrorCode(err), err
+		}
+		return encodeMethodResult(req.Method, out)
+	case "file.preview":
+		out, err := filePreview(params.(protocol.FilePreviewParams))
+		if err != nil {
+			return nil, false, fileProtocolErrorCode(err), err
+		}
+		return encodeMethodResult(req.Method, out)
+	case "file.mkdir":
+		return encodeMethodResult(req.Method, fileMkdir(params.(protocol.FilePathParams)))
+	case "file.rename":
+		return encodeMethodResult(req.Method, fileRename(params.(protocol.FileRenameParams)))
+	case "file.delete":
+		return encodeMethodResult(req.Method, fileDelete(params.(protocol.FilePathParams)))
+	case "file.copy":
+		return encodeMethodResult(req.Method, fileCopyMove(params.(protocol.FileCopyMoveParams), false))
+	case "file.move":
+		return encodeMethodResult(req.Method, fileCopyMove(params.(protocol.FileCopyMoveParams), true))
 	case "get":
 		in := params.(protocol.GetParams)
 		info, err := session.server.GetTerminal(in.TerminalID)
@@ -1950,6 +1978,19 @@ func errorCode(err error) int {
 		return protocolErrorNotFound
 	case errors.Is(err, ErrRemoteServiceUnavailable), errors.Is(err, ErrHistoryNotRebuilt), errors.Is(err, ErrHistoryDisabled):
 		return protocolErrorUnavailable
+	default:
+		return protocolErrorInternal
+	}
+}
+
+func fileProtocolErrorCode(err error) int {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return protocolErrorNotFound
+	case errors.Is(err, os.ErrPermission):
+		return protocolErrorForbidden
+	case strings.Contains(err.Error(), "must be absolute"), strings.Contains(err.Error(), "cursor"), strings.Contains(err.Error(), "regular file"):
+		return protocolErrorBadRequest
 	default:
 		return protocolErrorInternal
 	}

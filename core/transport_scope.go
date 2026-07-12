@@ -18,6 +18,17 @@ type TransportScope struct {
 	// MachineEventsOnly 只允许订阅 daemon 的受限 terminal lifecycle 事件。
 	// 它不能与 AllowDaemon 或 TerminalID 组合，也不能访问 storage、history、input 或 terminal management method。
 	MachineEventsOnly bool
+	// FileReadMetadata 允许读取 daemon 文件系统的目录项和 lstat metadata。
+	// 权限必须由 local listener 或已验证 grant 显式赋予，不能从 AllowDaemon 推导。
+	FileReadMetadata bool
+	// FileReadContent 允许有界预览文件内容；它不包含上传或 mutation 权限。
+	FileReadContent bool
+	// FileMutate 允许 mkdir、rename、delete、copy 和 move。
+	FileMutate bool
+}
+
+func fullDaemonTransportScope() TransportScope {
+	return TransportScope{AllowDaemon: true, FileReadMetadata: true, FileReadContent: true, FileMutate: true}
 }
 
 func (scope TransportScope) normalized() TransportScope {
@@ -42,6 +53,9 @@ func (scope TransportScope) validate() error {
 	if capabilities != 1 {
 		return fmt.Errorf("transport scope capabilities are mutually exclusive")
 	}
+	if (scope.FileReadMetadata || scope.FileReadContent || scope.FileMutate) && !scope.AllowDaemon {
+		return fmt.Errorf("file permissions require daemon scope")
+	}
 	return nil
 }
 
@@ -51,6 +65,9 @@ func (scope TransportScope) unrestricted() bool {
 
 func (scope TransportScope) constrainMethod(method string, params any) (any, error) {
 	scope = scope.normalized()
+	if strings.HasPrefix(method, "file.") {
+		return scope.constrainFileMethod(method, params)
+	}
 	if scope.unrestricted() {
 		return params, nil
 	}
@@ -58,6 +75,27 @@ func (scope TransportScope) constrainMethod(method string, params any) (any, err
 		return scope.constrainMachineEventsOnly(method, params)
 	}
 	return scope.constrainTerminalMethod(method, params)
+}
+
+func (scope TransportScope) constrainFileMethod(method string, params any) (any, error) {
+	if !scope.AllowDaemon {
+		return nil, fmt.Errorf("transport scope denies daemon file method %q", method)
+	}
+	required := false
+	switch method {
+	case "file.list", "file.stat":
+		required = scope.FileReadMetadata
+	case "file.preview":
+		required = scope.FileReadContent
+	case "file.mkdir", "file.rename", "file.delete", "file.move":
+		required = scope.FileMutate
+	case "file.copy":
+		required = scope.FileMutate && scope.FileReadContent
+	}
+	if !required {
+		return nil, fmt.Errorf("transport scope denies file permission for method %q", method)
+	}
+	return params, nil
 }
 
 func (scope TransportScope) constrainMachineEventsOnly(method string, params any) (any, error) {

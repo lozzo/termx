@@ -279,6 +279,79 @@ func (c *Client) PathDefaults(ctx context.Context) (*PathDefaultsResult, error) 
 	return &out, nil
 }
 
+// FileList 从当前 endpoint 的 daemon 文件系统读取一个目录窗口。
+// 路径与 cursor 都只由 owning daemon 解释，客户端不读取本机目录补全结果。
+func (c *Client) FileList(ctx context.Context, params FileListParams) (*FileListResult, error) {
+	var out FileListResult
+	if err := c.doRequest(ctx, "file.list", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// FileStat 对当前 endpoint 的路径执行 lstat 语义查询，不跟随 symlink 获取目标 metadata。
+func (c *Client) FileStat(ctx context.Context, path string) (*FileEntry, error) {
+	var out FileEntry
+	if err := c.doRequest(ctx, "file.stat", FilePathParams{Path: path}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// FilePreview 有界读取当前 endpoint 的普通文件前缀；它不创建下载 transfer。
+func (c *Client) FilePreview(ctx context.Context, params FilePreviewParams) (*FilePreviewResult, error) {
+	var out FilePreviewResult
+	if err := c.doRequest(ctx, "file.preview", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// FileMkdir 在当前 endpoint 创建目录，结果中的业务错误不会被伪装成 transport 错误。
+func (c *Client) FileMkdir(ctx context.Context, params FilePathParams) (*FileOperationResult, error) {
+	var out FileOperationResult
+	if err := c.doRequest(ctx, "file.mkdir", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// FileRename 在当前 endpoint 内重命名单一路径，覆盖策略由请求显式决定。
+func (c *Client) FileRename(ctx context.Context, params FileRenameParams) (*FileOperationResult, error) {
+	var out FileOperationResult
+	if err := c.doRequest(ctx, "file.rename", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// FileDelete 删除当前 endpoint 的单一路径；递归行为必须由 params 显式开启。
+func (c *Client) FileDelete(ctx context.Context, params FilePathParams) (*FileOperationResult, error) {
+	var out FileOperationResult
+	if err := c.doRequest(ctx, "file.delete", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// FileCopy 在当前 endpoint 内复制多项，并按请求顺序返回逐项结果。
+func (c *Client) FileCopy(ctx context.Context, params FileCopyMoveParams) (*FileBatchResult, error) {
+	var out FileBatchResult
+	if err := c.doRequest(ctx, "file.copy", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// FileMove 在当前 endpoint 内移动多项，并按请求顺序返回逐项结果。
+func (c *Client) FileMove(ctx context.Context, params FileCopyMoveParams) (*FileBatchResult, error) {
+	var out FileBatchResult
+	if err := c.doRequest(ctx, "file.move", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) Kill(ctx context.Context, terminalID string) error {
 	return c.doRequest(ctx, "kill", GetParams{TerminalID: terminalID}, nil)
 }

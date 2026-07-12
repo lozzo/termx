@@ -7,6 +7,12 @@ import (
 )
 
 func TestCoreV2RemoteWireContractFields(t *testing.T) {
+	assertFields(t, (&FileEntry{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"path": 1, "name": 2, "type": 3, "size": 4, "mode": 5, "modified_at_unix_nano": 6, "link_target": 7,
+	})
+	assertFields(t, (&FileOperationResult{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
+		"path": 1, "target_path": 2, "success": 3, "error_code": 4, "error_message": 5,
+	})
 	assertFields(t, (&CreateParams{}).ProtoReflect().Descriptor(), map[protoreflect.Name]protoreflect.FieldNumber{
 		"command":                    1,
 		"id":                         2,
