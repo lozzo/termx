@@ -1,6 +1,8 @@
 package vt
 
 import (
+	"errors"
+	"io"
 	"testing"
 
 	uv "github.com/charmbracelet/ultraviolet"
@@ -1821,6 +1823,25 @@ func TestTerminal(t *testing.T) {
 				t.Errorf("cursor position doesn't match: want %v, got %v", tt.pos, pos)
 			}
 		})
+	}
+}
+
+func TestEmulatorCloseWakesConcurrentResponseRead(t *testing.T) {
+	emulator := NewEmulator(80, 24)
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := emulator.Read(make([]byte, 1))
+		readDone <- err
+	}()
+
+	if err := emulator.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := <-readDone; !errors.Is(err, io.EOF) {
+		t.Fatalf("Read after Close = %v, want EOF", err)
+	}
+	if err := emulator.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
 	}
 }
 

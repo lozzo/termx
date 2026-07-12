@@ -3,6 +3,7 @@ package vt
 import (
 	"image/color"
 	"io"
+	"sync/atomic"
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/ultraviolet/screen"
@@ -69,8 +70,8 @@ type Emulator struct {
 	gl, gr  int
 	gsingle int // temporarily select GL or GR
 
-	// Indicates if the terminal is closed.
-	closed bool
+	// closed 是 response pipe 生命周期真值；Read drain 与 restart Close 会并发访问。
+	closed atomic.Bool
 
 	// atPhantom indicates if the cursor is out of bounds.
 	// When true, and a character is written, the cursor is moved to the next line.
@@ -270,7 +271,7 @@ func (e *Emulator) Resize(width int, height int) {
 
 // Read reads data from the terminal input buffer.
 func (e *Emulator) Read(p []byte) (n int, err error) {
-	if e.closed {
+	if e.closed.Load() {
 		return 0, io.EOF
 	}
 
@@ -279,17 +280,15 @@ func (e *Emulator) Read(p []byte) (n int, err error) {
 
 // Close closes the terminal.
 func (e *Emulator) Close() error {
-	if e.closed {
+	if !e.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-
-	e.closed = true
 	return e.pw.CloseWithError(io.EOF) //nolint:wrapcheck
 }
 
 // Write writes data to the terminal output buffer.
 func (e *Emulator) Write(p []byte) (n int, err error) {
-	if e.closed {
+	if e.closed.Load() {
 		return 0, io.ErrClosedPipe
 	}
 
@@ -338,7 +337,7 @@ func isPrintableASCII(b byte) bool {
 // WriteWithDamage writes data to the terminal output buffer and returns the
 // structured damages observed while processing that batch.
 func (e *Emulator) WriteWithDamage(p []byte) (n int, err error, damages []Damage) {
-	if e.closed {
+	if e.closed.Load() {
 		return 0, io.ErrClosedPipe, nil
 	}
 	recorder := &screenDamageRecorder{}
@@ -355,7 +354,7 @@ func (e *Emulator) WriteWithDamage(p []byte) (n int, err error, damages []Damage
 // WriteWithScrollbackDamage writes data to the terminal output buffer and only
 // records rows that leave the visible screen and enter scrollback.
 func (e *Emulator) WriteWithScrollbackDamage(p []byte) (n int, err error, damages []Damage) {
-	if e.closed {
+	if e.closed.Load() {
 		return 0, io.ErrClosedPipe, nil
 	}
 	recorder := &screenDamageRecorder{scrollbackOnly: true}
@@ -373,7 +372,7 @@ func (e *Emulator) WriteWithScrollbackDamage(p []byte) (n int, err error, damage
 // ordered text/control/mode、滚动几何，以及真实离开可见屏的 scrollback rows。
 // 调用边界：它仍更新同一个 emulator live screen，但不记录 screen diff cell payload。
 func (e *Emulator) WriteWithSemanticDamage(p []byte) (n int, err error, damages []Damage) {
-	if e.closed {
+	if e.closed.Load() {
 		return 0, io.ErrClosedPipe, nil
 	}
 	recorder := &screenDamageRecorder{semanticOnly: true}
@@ -391,7 +390,7 @@ func (e *Emulator) WriteWithSemanticDamage(p []byte) (n int, err error, damages 
 // 与边界 proof。它不记录普通 text/control payload，避免 history ingest 热路径
 // 在 100K/1M stdout 下生成第二份 ordered op backlog。
 func (e *Emulator) WriteForLineHistoryDamage(p []byte) (n int, err error, damages []Damage) {
-	if e.closed {
+	if e.closed.Load() {
 		return 0, io.ErrClosedPipe, nil
 	}
 	recorder := &screenDamageRecorder{lineHistoryOnly: true}

@@ -67,6 +67,7 @@
 - FILE002：`proto/wirepb/`、`internal/protocol/`、`core/` 与必要 protocol/client harness；实现 daemon-owned 文件 metadata/read-preview 操作和显式 capability scope，不触及 Cloud 服务。
 - FILE003：`proto/wirepb/`、`internal/protocol/`、`core/`、`remote/`、`shared/remoteauth/`、`cmd/termx/` 与必要 transport harness；实现同一 protocol session 内的流式上传下载、背压、取消、续传和完整性校验，并最小联动 pairing grant 的显式文件权限；不新增旧独立 DataChannel。
 - FILE004：`clients/ui/`、`clients/mobile/`、必要公开 protocol adapter、Android 构建文件和手测文档；删除旧 `/files/*` 与 legacy file channel 依赖，完成 Official Android 真机和 direct/single Relay 验收。只有真实产品链路证明 contract 缺失时才最小联动 FILE002/FILE003 owner。
+- VT001：`vterm/internal/vt/`、`vterm/vterm/`、`core/` restart harness 与 `workflow.md`；只修 Emulator close/read 生命周期竞态，不改变 terminal semantic transaction、screen/history truth 或 restart 产品语义。
 - `core/` 只有 terminal lifecycle、history 或 scoped protocol contract 确实需要时才最小联动；`private/archive/` 始终禁止主动修改。
 
 ## 任务队列
@@ -83,6 +84,7 @@
 | FILE002 | 完成 | daemon 文件 metadata 与预览 | local protocol 可安全 list/stat/preview/mkdir/rename/delete/copy/move |
 | FILE003 | 完成 | 文件上传下载数据流 | local 与 WebRTC 使用同一流协议完成背压、取消、续传和摘要校验 |
 | FILE004 | 已完成 | 共享 UI 与 Official Android 闭环 | App 可浏览、预览、上传、下载并经 direct/single Relay 手测 |
+| VT001 | 完成 | 收口 vterm restart 生命周期竞态 | 全量 core race 不再报告 Emulator close/read 竞态 |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
 | GA004 | 延后 | 单 transit 受控加速 | 仅在 GA003 数据证明需要时恢复 |
 | KS012 | 暂停 | 快捷键跨切片总契约守卫 | Cloud 单区域主线完成后重新排序 |
@@ -112,6 +114,7 @@
 - FILE002：protocol/core 定向测试、文件系统 sandbox harness、`git diff --check`。
 - FILE003：protocol/core/remote 定向测试、慢消费者/取消/续传/损坏数据 harness、`git diff --check`。
 - FILE004：client workspace 测试、Community/Official Android 单测与 APK 构建边界、direct/single Relay 文件 E2E、ADB 手测、`git diff --check`。
+- VT001：vterm 定向并发 harness、core restart 定向 race、全量 `go test -race ./core`、`git diff --check`。
 - 只有切片真实跨越全仓 contract 时才运行 `make test-all`；当前开发阶段不运行 public snapshot 或 public-only release gate。
 
 ## 当前状态
@@ -128,4 +131,5 @@
 - FILE002 已完成：公开 wire/typed client 已提供 `file.list/stat/preview/mkdir/rename/delete/copy/move`；core 以 daemon OS 文件系统为 truth，使用绝对路径、lstat symlink 语义、有界预览、opaque stale cursor、显式 overwrite 和逐项 mutation 结果。local listener 显式拥有文件权限，terminal-scoped/缺权限 session fail closed；protocol/core harness 与 generated-code gate 全绿，未接旧 `/files/*` UI。
 - FILE003 已完成：protocol v4 在单一 transport 内由 control method 分配 session-local transfer channel，64 KiB chunk 与 256 KiB ACK window 提供显式背压；下载固定 size/mtime identity 并返回全文件 SHA-256，上传使用 daemon-owned temp、连续 offset、finish digest 和原子 rename。上传可跨 protocol session 续传 15 分钟并绑定 local principal 或 signed GrantID，其他 grant 不能 resume/cancel；cancel 幂等清理。local 慢消费者/control 隔离、断线续传、损坏摘要、stale source、principal isolation 和 Pion direct 文件下载 harness 全绿；文件专属 core/remote race 全绿。全量 core race 仍被既有 vterm restart/drain race 阻断，栈不经过 FILE003。
 - FILE004 已完成：共享 UI 与 Official Android 已统一到 typed `file.*` 和 protocol v4 stream；旧 `/files/*`、`openFileTransfer`、独立 file DataChannel 与旧 task id 已删除。Android native 保留 picker、MediaStore、SQLite 与后台线程，在单一 authenticated protocol DataChannel 内完成上传、下载、取消、后台与进程中断恢复；core 允许同 principal 的新 session 串行接管旧上传 channel，仍拒绝不同 principal。公网真机 direct 完成浏览、预览、2 MiB 下载、3 MiB 上传、双向取消、64 MiB 双向续传和两端 SHA-256；single Relay 真实 TURN/DataChannel harness 通过，Android dev Relay 因远端 loopback/ADB 无 UDP 转发未冒充真机 Relay。`make test-clients`、`make test-android`、generated guard、文件协议 Go tests、FILE004 race 与 `git diff --check` 全绿；全量 core race 仍存在既有 vterm restart 竞态，记录为非 FILE004 剩余风险。
+- VT001 已完成：`Emulator.closed` 改为原子生命周期真值，response drain 可与 restart `Close` 并发且由 pipe close 正常唤醒；并发 Close/Read harness 连续 race、vterm 全量 race、core restart 定向 race 与全量 `go test -race ./core` 均通过，未改变 screen/history 或 restart 产品语义。
 - 正式开源隔离、生产 OAuth/TLS、持久化数据库、计费、团队治理、Relay Mesh 和多区域运维全部延后。
