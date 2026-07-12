@@ -119,7 +119,7 @@ function createNativeExternalPairingAdapter(storage: RemoteRuntimeStorage): Exte
       storage.setItem(key(imported.endpointId, 'grantExpiresAt'), imported.expiresAt)
       storage.setItem(key(imported.endpointId, 'relayMode'), 'direct')
       return {
-        machine: { id: imported.endpointId, name: imported.label },
+        machine: { id: imported.endpointId, name: imported.label, accessClass: 'cloud' },
         expiresAt: imported.expiresAt,
       }
     },

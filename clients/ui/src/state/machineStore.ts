@@ -1,4 +1,4 @@
-import type { AppMachineRecord, AppMachineState, AppMachineSource } from './appMachine'
+import type { AppMachineRecord, AppMachineState, AppMachineSource, MachineAccessClass } from './appMachine'
 import type { PairingPayload } from './pairingPayload'
 import type { ConnectionPath } from '../core/transport'
 import { normalizeHubBaseUrlCandidate } from '../api/hubUrl'
@@ -76,6 +76,7 @@ export function createMachineStore(options: MachineStoreOptions): MachineStore {
         ...(existing?.preferredPath ? { preferredPath: existing.preferredPath } : {}),
         ...(existing?.relayInUse !== undefined ? { relayInUse: existing.relayInUse } : {}),
         source: existing?.source ?? 'local',
+        accessClass: existing?.accessClass ?? 'local',
         addresses,
         endpoints: existing?.endpoints ?? {},
         pairing: payload.pairing,
@@ -146,6 +147,7 @@ function normalizeStoredMachine(value: Record<string, unknown> | StoredMachineRe
       : {}),
     ...(typeof record.relayInUse === 'boolean' ? { relayInUse: record.relayInUse } : {}),
     source,
+    accessClass: machineAccessClassOrUndefined(record.accessClass) ?? (source === 'hub' ? 'cloud' : 'local'),
     addresses,
     endpoints,
     ...(record.pairing !== undefined ? { pairing: pairingField(record.pairing) } : {}),
@@ -231,6 +233,12 @@ function machineState(value: unknown): AppMachineState {
 function machineSource(value: unknown): AppMachineSource {
   if (value === 'local' || value === 'hub' || value === 'manual') return value
   throw new Error(`invalid machine source ${String(value)}`)
+}
+
+function machineAccessClassOrUndefined(value: unknown): MachineAccessClass | undefined {
+  if (value === undefined || value === null) return undefined
+  if (value === 'local' || value === 'cloud' || value === 'local_cloud') return value
+  throw new Error(`invalid machine access class ${String(value)}`)
 }
 
 function connectionPathOrUndefined(value: unknown): ConnectionPath | undefined {

@@ -6,6 +6,7 @@ import { createMachineStore } from '../state/machineStore'
 import { parsePairingPayload } from '../state/pairingPayload'
 import type { RemoteNetworkRuntime, RemoteRuntimeStorage, RtcConnectionStateSnapshot, RtcSession, RtcSessionNegotiationTarget, RtcSubscription } from '../core/transport'
 import type { WebControlFetch } from '../api/webControlApi'
+import type { MachineConnectionSnapshot } from '../connection/machineConnectionStore'
 
 describe('RemoteControlApp', () => {
   afterEach(() => cleanup())
@@ -177,8 +178,8 @@ describe('RemoteControlApp', () => {
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
 
     await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
-    expect(screen.getAllByText('Scan QR').length).toBeGreaterThan(0)
-    expect(screen.getByText('Hub')).toBeTruthy()
+    expect(screen.getAllByText('Pair again').length).toBeGreaterThan(0)
+    expect(screen.getByText('Cloud')).toBeTruthy()
     expect(screen.queryByText('Ready')).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: /scan to pair redmibook/i }))
@@ -193,7 +194,7 @@ describe('RemoteControlApp', () => {
     await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
     expect(screen.queryByText('Terminal runtime is not connected yet.')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: /back to machines/i }))
-    expect(screen.getAllByText('Ready').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Available').length).toBeGreaterThan(0)
     await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
     expect(screen.getByTestId('termx-machine-terminal-list')).toBeTruthy()
     await waitFor(() => expect(listTerminals.mock.calls.length).toBeGreaterThanOrEqual(2))
@@ -622,7 +623,7 @@ describe('RemoteControlApp', () => {
       />,
     )
 
-    expect(screen.getAllByText('Expired').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Authorization expired').length).toBeGreaterThan(0)
     await userEvent.click(screen.getByRole('button', { name: /^pair managed lab$/i }))
     expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy()
     expect(screen.getByText(/Authorize Device/i)).toBeTruthy()
@@ -940,8 +941,8 @@ describe('RemoteControlApp', () => {
     )
 
     await waitFor(() => expect(screen.getByRole('button', { name: /^pair redmibook$/i })).toBeTruthy())
-    expect(screen.getAllByText('Expired').length).toBeGreaterThan(0)
-    expect(screen.getByText(/authorization expired/i)).toBeTruthy()
+    expect(screen.getAllByText('Authorization expired').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/authorization expired/i).length).toBeGreaterThan(0)
     expect(storage.getItem('termx.session.device-1.token')).toBeNull()
     expect(storage.getItem('termx.session.device-1.exp')).toBe('2020-01-01T00:00:00Z')
 
@@ -1006,15 +1007,14 @@ describe('RemoteControlApp', () => {
     )
 
     await waitFor(() => expect(screen.getByRole('button', { name: /open redmibook/i })).toBeTruthy())
-    expect(screen.getByText(/authorized until/i)).toBeTruthy()
-
+    await userEvent.click(screen.getByRole('button', { name: /more actions for redmibook/i }))
     await userEvent.click(screen.getByRole('button', { name: /remove authorization for redmibook/i }))
 
     expect(storage.getItem('termx.session.device-1.token')).toBeNull()
     expect(storage.getItem('termx.session.device-1.exp')).toBeNull()
     expect(storage.getItem('termx.session.device-1.answerProofSecret')).toBeNull()
     expect(screen.getByRole('button', { name: /^pair redmibook$/i })).toBeTruthy()
-    expect(screen.getAllByText('Scan QR').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Pair again').length).toBeGreaterThan(0)
     expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0)
   })
 
@@ -1192,7 +1192,7 @@ describe('RemoteControlApp', () => {
     await userEvent.type(screen.getByLabelText(/email or username/i), 'lozzow@example.test')
     await userEvent.type(screen.getByLabelText(/password/i), 'secret')
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
-    await waitFor(() => expect(screen.getAllByText('Hub').length).toBeGreaterThan(0))
+    await waitFor(() => expect(screen.getAllByText('Local + Cloud').length).toBeGreaterThan(0))
 
     stored = JSON.parse(storage.getItem('termx.app.machines.v2') ?? '[]') as Array<Record<string, unknown>>
     expect(stored[0]).toMatchObject({
@@ -1239,7 +1239,8 @@ describe('RemoteControlApp', () => {
     )
 
     await waitFor(() => expect(fetch.requests.some((request) => request.url === 'http://192.168.0.103:18888/api/health')).toBe(true))
-    await waitFor(() => expect(screen.getByText('Online')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Action required')).toBeTruthy())
+    expect(screen.getByText('Local')).toBeTruthy()
     expect(screen.getByRole('button', { name: /^pair local box$/i })).toBeTruthy()
   })
 
@@ -1296,8 +1297,9 @@ describe('RemoteControlApp', () => {
 
     await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
     await waitFor(() => expect(fetch.requests.some((request) => request.url === 'http://192.168.0.103:18888/api/health')).toBe(true))
-    await waitFor(() => expect(screen.getByText('Online')).toBeTruthy())
-    expect(screen.getByText('Hub')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Action required')).toBeTruthy())
+    expect(screen.getByText('Local + Cloud')).toBeTruthy()
+    expect(screen.getByText(/Local online · Cloud offline/)).toBeTruthy()
   })
 
   it('opens authorized Web Control machines by racing the registered hubs from Web Control', async () => {
@@ -1537,6 +1539,24 @@ describe('RemoteControlApp', () => {
     }]))
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
     const dispose = vi.fn()
+    const connectionSnapshot: MachineConnectionSnapshot = {
+      machineId: 'device-1',
+      phase: 'connected',
+      statusText: 'Connected through relay',
+      session: null,
+      connectionInfo: {
+        path: 'hub',
+        observedPath: 'single_relay',
+        connectionId: 'connection-1',
+        machineId: 'device-1',
+        relayInUse: true,
+        rtt: 62,
+      },
+      forceRelay: true,
+      relayInUse: true,
+      reconnectAttempt: 0,
+      error: null,
+    }
     const listTerminals = vi.fn(async () => [{
       terminalId: 'terminal-1',
       machineId: 'device-1',
@@ -1564,6 +1584,10 @@ describe('RemoteControlApp', () => {
         listTerminals,
       },
       connector: { connect: vi.fn(async () => fakeRtcSession()) },
+      listConnectionState: {
+        getSnapshot: () => connectionSnapshot,
+        subscribe: () => () => {},
+      },
       dispose,
     }))
 
@@ -1583,6 +1607,9 @@ describe('RemoteControlApp', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /back to machines/i }))
     expect(screen.getByTestId('termx-app-home')).toBeTruthy()
+    expect(screen.getByText('Connected')).toBeTruthy()
+    expect(screen.getByText('Cloud')).toBeTruthy()
+    expect(screen.getByText('0 terminals · Single relay · 62 ms')).toBeTruthy()
     expect(dispose).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))

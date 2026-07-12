@@ -33,6 +33,7 @@ describe('machine store', () => {
       state: 'unknown',
       terminalCount: 0,
       source: 'local',
+      accessClass: 'local',
       addresses: {
         local: ['http://127.0.0.1:7788'],
         lan: ['http://192.168.1.40:7788'],

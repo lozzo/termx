@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
-import { ArrowLeft, Camera, Download, Keyboard, LaptopMinimal, Loader2, LogIn, Monitor, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Camera, ChevronRight, Cloud, Download, Keyboard, LaptopMinimal, Loader2, LogIn, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
 import { createMachineSessionStore, type MachineSessionStore } from '../state/localAppIdentity'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
@@ -8,7 +8,7 @@ import { connectionStateFromAttempt, createConnectionStatePublisher } from '../c
 import { createHubRtcConnector } from '../webrtc/hubRtcConnector'
 import { consoleConnectionLogger } from '../connection/connectionLogger'
 import { createHubApi, type HubPairInput, type HubPairResult } from '../api/hubApi'
-import { MachineConnectionStore } from '../connection/machineConnectionStore'
+import { MachineConnectionStore, type MachineConnectionSnapshot } from '../connection/machineConnectionStore'
 import { RemoteNetworkStateManager } from '../connection/remoteNetworkState'
 import { FileTransferPanel } from '../files/FileTransferPanel'
 import { hapticError, hapticImpact, hapticSelection, hapticSuccess } from '../platform/haptics'
@@ -31,6 +31,7 @@ import {
   type TerminalThemeOption,
 } from '../terminal/terminalSettings'
 import type { TerminalRenderer } from '../terminal/Terminal'
+import type { MachineAccessClass } from '../state/appMachine'
 
 const storageKeys = {
   accessToken: 'termx.remote.accessToken',
@@ -53,6 +54,8 @@ type HubRtcSessionFactory = (input: { machineId: string }) => RtcSession & RtcSe
 type MachineAuthorizationState = 'ready' | 'expired' | 'unauthorized'
 type DisplayMachine = WebControlMachine & {
   reachability?: MachineReachabilityView | undefined
+  accessClass: MachineAccessClass
+  terminalCount?: number | undefined
 }
 interface MachineReachabilityView {
   hubOnline: boolean
@@ -70,6 +73,18 @@ interface LocalHubReachabilitySnapshot {
   onlineUrls: string[]
   checkedAt: number
 }
+const emptyMachineConnectionSnapshot: MachineConnectionSnapshot = {
+  machineId: '',
+  phase: 'idle',
+  statusText: 'Ready',
+  session: null,
+  connectionInfo: null,
+  forceRelay: false,
+  relayInUse: false,
+  reconnectAttempt: 0,
+  error: null,
+}
+const getEmptyMachineConnectionSnapshot = () => emptyMachineConnectionSnapshot
 const pairingClaimTimeoutMs = 15_000
 const localHubReachabilityProbeTimeoutMs = 2_500
 export interface ScanPairingCodeOptions {
@@ -79,7 +94,7 @@ export interface ScanPairingCodeOptions {
 
 /** ExternalPairingImportResult 是平台 secure-store 导入成功后可进入共享 UI 的非秘密机器投影。 */
 export interface ExternalPairingImportResult {
-  machine: { id: string; name: string; hostname?: string | undefined }
+  machine: { id: string; name: string; hostname?: string | undefined; accessClass?: MachineAccessClass | undefined }
   expiresAt?: string | undefined
 }
 
@@ -108,6 +123,10 @@ interface MachineRuntime {
   connector: MachineWorkspaceConnector
   inventoryEvents?: TerminalInventoryEvents | undefined
   connectionStateEvents?: MachineConnectionStateEvents | undefined
+  listConnectionState?: {
+    getSnapshot(): MachineConnectionSnapshot
+    subscribe(listener: () => void): () => void
+  } | undefined
   fileTransfer?: FileTransferContext | undefined
   dispose?(): void | Promise<void>
 }
@@ -243,6 +262,10 @@ export function RemoteControlApp({
     return created
   }, [api, machineRuntimeFactory, hubRtcSessionFactory, networkRuntime, networkStateManager, storage])
 
+  const getExistingMachineRuntime = useCallback((machine: DisplayMachine): MachineRuntime | null => {
+    return runtimeCacheRef.current?.runtimes.get(machine.id) ?? null
+  }, [])
+
   useEffect(() => {
     networkStateManager.init()
     return () => networkStateManager.destroy()
@@ -306,6 +329,8 @@ export function RemoteControlApp({
           localOnline,
           snapshot: reachability,
         }),
+        accessClass: local.accessClass ?? 'local',
+        terminalCount: local.terminalCount,
       })
     }
     for (const hub of machines) {
@@ -324,6 +349,12 @@ export function RemoteControlApp({
           localOnline,
           snapshot: reachability,
         }),
+        accessClass: local?.accessClass === 'cloud'
+          ? 'cloud'
+          : local
+            ? 'local_cloud'
+            : 'cloud',
+        terminalCount: local?.terminalCount,
       })
     }
     return Array.from(map.values())
@@ -509,6 +540,7 @@ export function RemoteControlApp({
           state: 'online',
           terminalCount: 0,
           source: 'manual',
+          accessClass: external.machine.accessClass ?? 'cloud',
           addresses: { local: [], lan: [], public: [] },
           endpoints: {},
           addedAt: store.getMachine(external.machine.id)?.addedAt ?? timestamp,
@@ -760,6 +792,7 @@ export function RemoteControlApp({
           transferState={globalTransferState as { transfers: TransferInfo[]; hasActiveTransfers: boolean }}
           loading={loading}
           machines={displayMachines}
+          getConnectionStateSource={(machine) => authorizedMachineIds.has(machine.id) ? getExistingMachineRuntime(machine)?.listConnectionState : undefined}
           authorizedMachineIds={authorizedMachineIds}
           authorizationExpiries={authorizationExpiries}
           signedIn={signedIn}
@@ -940,6 +973,7 @@ function HomeView({
   transferState,
   loading,
   machines,
+  getConnectionStateSource,
   authorizedMachineIds,
   authorizationExpiries,
   signedIn,
@@ -957,6 +991,7 @@ function HomeView({
   transferState: { transfers: TransferInfo[]; hasActiveTransfers: boolean }
   loading: boolean
   machines: DisplayMachine[]
+  getConnectionStateSource: (machine: DisplayMachine) => MachineRuntime['listConnectionState']
   authorizedMachineIds: Set<string>
   authorizationExpiries: Map<string, string>
   signedIn: boolean
@@ -1037,6 +1072,7 @@ function HomeView({
                 authorizationExpiresAt={authorizationExpiries.get(machine.id)}
                 authorizationState={machineAuthorizationState(machine, authorizedMachineIds, authorizationExpiries)}
                 machine={machine}
+                connectionStateSource={getConnectionStateSource(machine)}
                 onForgetMachineAuthorization={onForgetMachineAuthorization}
                 onPairMachine={onPairMachine}
                 onSelectMachine={onSelectMachine}
@@ -1734,6 +1770,7 @@ function MachineRow({
   authorizationExpiresAt,
   authorizationState,
   machine,
+  connectionStateSource,
   onForgetMachineAuthorization,
   onPairMachine,
   onSelectMachine,
@@ -1741,81 +1778,88 @@ function MachineRow({
   authorizationExpiresAt?: string | undefined
   authorizationState: MachineAuthorizationState
   machine: DisplayMachine
+  connectionStateSource?: MachineRuntime['listConnectionState']
   onForgetMachineAuthorization: (machine: DisplayMachine) => void
   onPairMachine: (machine: DisplayMachine) => void
   onSelectMachine: (machine: DisplayMachine) => void
 }) {
-  const actionLabel = authorizationState === 'ready'
-    ? 'Open'
-    : 'Pair'
-  const authPill = authorizationState === 'ready'
-    ? 'Ready'
-    : authorizationState === 'expired'
-      ? 'Expired'
-    : 'Scan QR'
+  const [menuOpen, setMenuOpen] = useState(false)
+  const connection = useSyncExternalStore(
+    connectionStateSource?.subscribe ?? noopSubscribe,
+    connectionStateSource?.getSnapshot ?? getEmptyMachineConnectionSnapshot,
+    connectionStateSource?.getSnapshot ?? getEmptyMachineConnectionSnapshot,
+  )
+  const actionLabel = authorizationState === 'ready' ? 'Open' : 'Pair'
   const subtitle = machine.hostname || shortenMachineId(machine.id)
-  const availability = authorizationAvailabilityText(machine, authorizationState, authorizationExpiresAt)
-  const sourcePill = machine.source === 'hub' ? 'Hub' : 'Local'
-  const DeviceIcon = machine.source === 'hub' ? Server : LaptopMinimal
+  const card = machineCardProjection(machine, authorizationState, authorizationExpiresAt, connection)
+  const DeviceIcon = machine.accessClass === 'cloud' ? Cloud : LaptopMinimal
   const canForget = Boolean(authorizationExpiresAt || authorizationState === 'ready')
   return (
-    <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+    <div className="relative rounded-lg border border-zinc-200 bg-white shadow-sm">
       <button
         aria-label={`${actionLabel} ${machine.name}`}
-        className="grid min-w-0 w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left hover:bg-zinc-50 active:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        className="grid min-h-[104px] min-w-0 w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-3 px-3.5 py-3 text-left hover:bg-zinc-50 active:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
         type="button"
         onClick={() => onSelectMachine(machine)}
       >
-        <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-700">
+        <div className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-100 text-zinc-700">
           <DeviceIcon className="h-5 w-5" />
-          <span className={`absolute bottom-0.5 right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
-            machine.online ? 'bg-emerald-500' : 'bg-zinc-400'
+          <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
+            card.tone === 'online' ? 'bg-emerald-500' : card.tone === 'active' ? 'bg-blue-500' : card.tone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400'
           }`} />
         </div>
         <div className="min-w-0">
-          <div className="flex min-w-0 items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2 pr-8">
             <span className="truncate text-[15px] font-semibold leading-5 text-zinc-950">{machine.name}</span>
-            <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold leading-4 ring-1 ${machine.online ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-zinc-100 text-zinc-600 ring-zinc-200'}`}>
-              {machine.online ? 'Online' : 'Offline'}
-            </span>
+            <span className={`ml-auto shrink-0 text-[11px] font-semibold ${card.statusClass}`}>{card.status}</span>
           </div>
-          <div className="mt-1 truncate text-xs font-medium text-zinc-500">{subtitle}</div>
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <span className={`truncate text-[12px] font-medium ${machine.online && authorizationState === 'ready' ? 'text-zinc-900' : 'text-zinc-500'}`}>
-              {availability}
-            </span>
-            <div className="flex shrink-0 flex-wrap gap-1.5">
-              <InfoPill>{sourcePill}</InfoPill>
-              <InfoPill>{authPill}</InfoPill>
-            </div>
+          <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{subtitle} · {shortenMachineId(machine.id)}</div>
+          <div className="mt-1.5 flex items-center gap-2 text-[11px] font-semibold text-zinc-600">
+            <AccessClassLabel accessClass={machine.accessClass} />
+            {machine.accessClass === 'local_cloud' ? <ReachabilityLabel reachability={machine.reachability} /> : null}
+          </div>
+          <div className="mt-1.5 truncate text-[12px] font-medium text-zinc-600">
+            {card.detail}
           </div>
         </div>
+        <ChevronRight className="mt-9 h-4 w-4 shrink-0 text-zinc-400" />
       </button>
-      <div className="flex items-center gap-2 border-t border-zinc-100 px-4 py-2.5">
-        {authorizationState !== 'ready' ? (
+      {canForget ? (
+        <div className="absolute right-9 top-2.5 z-10">
           <button
-            aria-label={`Scan to pair ${machine.name}`}
-            className="inline-flex h-9 items-center gap-2 rounded-full bg-zinc-100 px-3 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            aria-label={`More actions for ${machine.name}`}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             type="button"
-            onClick={() => onPairMachine(machine)}
+            onClick={() => setMenuOpen((open) => !open)}
           >
-            <QrCode className="h-4 w-4" />
-            Scan to pair
+            <MoreHorizontal className="h-4 w-4" />
           </button>
-        ) : null}
-        {canForget ? (
-          <button
-            aria-label={`Remove authorization for ${machine.name}`}
-            className="ml-auto inline-flex h-9 items-center gap-2 rounded-full border border-red-200 bg-white px-3 text-[12px] font-semibold text-red-600 hover:bg-red-50 active:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-            type="button"
-            onClick={() => onForgetMachineAuthorization(machine)}
-          >
-            <Trash2 className="h-4 w-4" />
-            Remove
-          </button>
-        ) : null}
-        {authorizationState === 'ready' ? <span className="min-h-9 flex-1" aria-hidden="true" /> : null}
-      </div>
+          {menuOpen ? (
+            <div className="absolute right-0 top-9 min-w-44 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg">
+              <button
+                aria-label={`Remove authorization for ${machine.name}`}
+                className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50"
+                type="button"
+                onClick={() => onForgetMachineAuthorization(machine)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Remove authorization
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {authorizationState !== 'ready' ? (
+        <button
+          aria-label={`Scan to pair ${machine.name}`}
+          className="absolute bottom-2.5 right-3.5 inline-flex h-8 items-center gap-1.5 rounded-md bg-zinc-900 px-2.5 text-[11px] font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          type="button"
+          onClick={() => onPairMachine(machine)}
+        >
+          <QrCode className="h-3.5 w-3.5" />
+          Pair again
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -1832,6 +1876,123 @@ function authorizationAvailabilityText(
     return expiresAt ? `Authorization expired ${formatAuthorizationExpiry(expiresAt)}` : 'Authorization expired'
   }
   return 'Pair this phone to open it'
+}
+
+interface MachineCardProjection {
+  status: string
+  statusClass: string
+  tone: 'online' | 'active' | 'warning' | 'offline'
+  detail: string
+}
+
+function machineCardProjection(
+  machine: DisplayMachine,
+  authorizationState: MachineAuthorizationState,
+  expiresAt: string | undefined,
+  connection: MachineConnectionSnapshot,
+): MachineCardProjection {
+  if (authorizationState !== 'ready') {
+    return {
+      status: authorizationState === 'expired' ? 'Authorization expired' : 'Action required',
+      statusClass: 'text-amber-700',
+      tone: 'warning',
+      detail: authorizationAvailabilityText(machine, authorizationState, expiresAt),
+    }
+  }
+  if (connection.phase === 'connected') {
+    const path = connectionPathDetail(connection)
+    return {
+      status: 'Connected',
+      statusClass: 'text-emerald-700',
+      tone: 'online',
+      detail: joinCardDetail(terminalCountLabel(machine.terminalCount), path),
+    }
+  }
+  if (connection.phase === 'failed') {
+    return {
+      status: 'Failed',
+      statusClass: 'text-red-600',
+      tone: 'warning',
+      detail: connection.error || connection.statusText || 'Connection failed',
+    }
+  }
+  if (connection.phase !== 'idle') {
+    return {
+      status: connectionPhaseShortLabel(connection.phase),
+      statusClass: 'text-blue-700',
+      tone: 'active',
+      detail: connection.statusText,
+    }
+  }
+  if (machine.online) {
+    return {
+      status: 'Available',
+      statusClass: 'text-emerald-700',
+      tone: 'online',
+      detail: joinCardDetail(terminalCountLabel(machine.terminalCount), availablePathLabel(machine)),
+    }
+  }
+  return {
+    status: 'Offline',
+    statusClass: 'text-zinc-500',
+    tone: 'offline',
+    detail: machine.lastSeen ? `Last online ${formatAuthorizationExpiry(machine.lastSeen)}` : 'Not currently reachable',
+  }
+}
+
+function AccessClassLabel({ accessClass }: { accessClass: MachineAccessClass }) {
+  if (accessClass === 'local_cloud') {
+    return <span className="inline-flex items-center gap-1.5"><Wifi className="h-3.5 w-3.5" />Local + Cloud</span>
+  }
+  if (accessClass === 'cloud') {
+    return <span className="inline-flex items-center gap-1.5"><Cloud className="h-3.5 w-3.5" />Cloud</span>
+  }
+  return <span className="inline-flex items-center gap-1.5"><Wifi className="h-3.5 w-3.5" />Local</span>
+}
+
+function ReachabilityLabel({ reachability }: { reachability?: MachineReachabilityView | undefined }) {
+  const local = reachability?.localChecked ? (reachability.localOnline ? 'Local online' : 'Local offline') : 'Local checking'
+  const cloud = reachability?.hubOnline ? 'Cloud online' : 'Cloud offline'
+  return <span className="truncate font-medium text-zinc-400">{local} · {cloud}</span>
+}
+
+function connectionPathDetail(connection: MachineConnectionSnapshot): string {
+  const info = connection.connectionInfo
+  const rtt = info?.rtt !== undefined ? `${Math.round(info.rtt)} ms` : ''
+  let path = 'Connected'
+  if (info?.path === 'local') path = 'Local'
+  else if (info?.observedPath === 'single_relay' || info?.relayInUse) path = 'Single relay'
+  else if (info?.observedPath === 'direct') path = 'P2P direct'
+  else if (info?.path === 'hub') path = 'Cloud'
+  return joinCardDetail(path, rtt)
+}
+
+function availablePathLabel(machine: DisplayMachine): string {
+  if (machine.accessClass === 'local_cloud') {
+    if (machine.reachability?.localOnline) return 'Local available'
+    if (machine.reachability?.hubOnline) return 'Cloud available'
+  }
+  if (machine.accessClass === 'cloud') return 'Cloud available'
+  return 'Local available'
+}
+
+function terminalCountLabel(count: number | undefined): string {
+  if (count === undefined) return ''
+  return `${count} ${count === 1 ? 'terminal' : 'terminals'}`
+}
+
+function joinCardDetail(...parts: string[]): string {
+  return parts.filter(Boolean).join(' · ')
+}
+
+function connectionPhaseShortLabel(phase: MachineConnectionSnapshot['phase']): string {
+  if (phase === 'resolving') return 'Resolving'
+  if (phase === 'signaling') return 'Signaling'
+  if (phase === 'authorizing') return 'Authorizing'
+  if (phase === 'verifying') return 'Verifying'
+  if (phase === 'reconnecting') return 'Reconnecting'
+  if (phase === 'waiting_network') return 'Waiting'
+  return 'Connecting'
 }
 
 function formatAuthorizationExpiry(value: string): string {
@@ -1895,14 +2056,6 @@ function EmptyState({
         </button>
       </div>
     </div>
-  )
-}
-
-function InfoPill({ children }: { children: string }) {
-  return (
-    <span className="inline-flex h-6 items-center rounded-md bg-zinc-100 px-2 text-[11px] font-semibold text-zinc-600">
-      {children}
-    </span>
   )
 }
 
@@ -2156,6 +2309,7 @@ function hasLocalAddresses(machine: StoredMachineRecord): boolean {
 function downgradeHubMachineToLocal(machine: StoredMachineRecord): StoredMachineRecord {
   return {
     ...machine,
+    accessClass: 'local',
     state: machine.state === 'online' ? 'unknown' : machine.state,
     source: 'local',
     preferredPath: 'local',
@@ -2345,6 +2499,10 @@ function createHubMachineRuntime(input: {
         return machineSession.subscribeConnectionState(handler)
       },
     },
+    listConnectionState: {
+      getSnapshot: machineSession.getConnectionSnapshot,
+      subscribe: machineSession.subscribeConnectionSnapshot,
+    },
     inventoryEvents: {
       subscribe(machineId, handler) {
         if (machineId !== input.machine.id) {
@@ -2435,6 +2593,8 @@ function createHubMachineSessionManager(input: {
         },
       }
     },
+    getConnectionSnapshot: () => connectionStore.getSnapshot(),
+    subscribeConnectionSnapshot: (listener: () => void) => connectionStore.subscribe(listener),
     reset: () => connectionStore.release(),
   }
 }
@@ -2613,6 +2773,9 @@ function mergeHubMachine(saved: StoredMachineRecord, machine: WebControlMachine)
     preferredPath: 'hub',
     ...(saved.relayInUse !== undefined ? { relayInUse: saved.relayInUse } : {}),
     source: 'hub',
+    accessClass: saved.accessClass === 'local' || saved.accessClass === 'local_cloud' || hasLocalAddresses(saved)
+      ? 'local_cloud'
+      : 'cloud',
     addresses: saved.addresses,
     endpoints: {
       ...saved.endpoints,
