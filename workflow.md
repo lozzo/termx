@@ -4,7 +4,7 @@
 
 - REC001 已完成仓库可控状态恢复：尚未提交的 RM004 目录与维护改动已经审计收口，误触发的发布期验证扩展已经清理。
 - CLOUD001-CLOUD005 已完成单区域 Cloud 纵向闭环：开发云、桌面 managed direct、single Relay 与 Official Android 均已跨真实用户链路验收。
-- FILE001-FILE004 已完成统一文件能力闭环；当前主线转为 CLOUD006：在用户指定的公网开发服务器部署新主线 Web Controller 与 Hub/Relay staging，并从本机或 `ssh al` 验证真实 managed endpoint 链路。
+- FILE001-FILE004 与 CLOUD006 已完成；当前主线转为 CLOUD007：按用户明确授权把固定测试账号的 Web Controller、Control Plane 与 Hub 通过独立高位端口开放为公网 HTTP staging，供无需 SSH 隧道的开发客户端验证。生产上线前必须另行切换 HTTPS/TLS，不得复用本切片的明文 profile。
 - 当前仓库是唯一 private monorepo；当前不是正式开源或生产发布阶段。public snapshot、开源许可证模板替换、secret audit、第二仓和发布自动化全部延后。
 - GA003 Relay Mesh、GA004 transit、多区域高可用、复杂计费、SSO 和 live reroute 继续保持延后；CLOUD005 完成不会自动启动这些事项，必须由用户基于真实数据重新排序。
 - 插件系统位于独立分支，本分支不新增插件系统代码、协议或文档。
@@ -64,6 +64,7 @@
 - CLOUD004：`private/cloud/{control-plane,hub,relay,route-planner,companion}`、`remote/`、`proto/cloudpb/`、`shared/cloudcompanion/`、`cmd/termx/`、`docs/remote-platform/cloud-staging-roadmap.md`、必要 `Makefile`/dev launcher 与 harness；只完成单区域 single Relay。`proto/cloudpb`/Hub 只允许传递 ManagedSession-bound route preference，使 daemon 能领取自己的 principal-specific TURN credential；不得扩展 terminal protocol 或 Mesh 字段。
 - CLOUD005：`private/cloud/mobile`、`clients/mobile`、`docs/remote-platform/`、Android 构建文件，以及 `clients/ui` 中最小 shared terminal-protocol/pairing contract 与 harness；只完成 Official Android 接线与手测材料。允许联动 `clients/ui` 的原因是现有移动壳复用其 terminal client，而当前 daemon 只接受单一 `protocol` DataChannel；真机纵向验收若证明 Hub presence TTL 到期后 owning daemon 不再上线，允许最小联动 `remote/daemon` 与 `cmd/termx`，只补 fresh presence 续约生命周期和 harness。不得借此恢复旧 Web Controller/Hub runtime、扩展浏览器远程链路或重做 UI 架构。
 - CLOUD006：`private/cloud/{devcloud,web-controller,infra}`、`private/cloud/companion` 的必要 staging contract、`docs/remote-platform/`、`workflow.md`、必要 `Makefile` 与部署/验证脚本；只完成 `114.66.58.243` 单机 staging 装配和从本机或 `ssh al` 发起的真实链路。不得复用服务器现存 legacy `termx-hub`/`termx-web-control`，不得把 loopback 明文 dev profile、固定账号或内存 store 描述为生产部署；公网凭据、端口、服务状态和回滚步骤必须落档，secret 不得提交。
+- CLOUD007：`private/cloud/{companion,infra,web-controller}`、`docs/remote-platform/`、`workflow.md` 与必要 staging harness；只增加显式 `staging-public-http` development profile和 `114.66.58.243:41100-41102` 反向代理。固定测试账号、内存 store 和 account session 会经过明文网络，禁止真实用户凭据、生产数据、stable build、默认配置或隐式 fallback 使用；不得借此放宽 `dev-local`/`staging-ssh`，HTTPS/TLS 必须作为上线前独立门禁。
 - FILE001：`workflow.md`、`docs/remote-platform/`；只建立文件产品、权限、协议、流控、失败语义和迁移基线，不新增 runtime。
 - FILE002：`proto/wirepb/`、`internal/protocol/`、`core/` 与必要 protocol/client harness；实现 daemon-owned 文件 metadata/read-preview 操作和显式 capability scope，不触及 Cloud 服务。
 - FILE003：`proto/wirepb/`、`internal/protocol/`、`core/`、`remote/`、`shared/remoteauth/`、`cmd/termx/` 与必要 transport harness；实现同一 protocol session 内的流式上传下载、背压、取消、续传和完整性校验，并最小联动 pairing grant 的显式文件权限；不新增旧独立 DataChannel。
@@ -82,6 +83,7 @@
 | CLOUD004 | 完成 | 单区域 single Relay 闭环 | 显式 Relay 策略通过 lease-bound TURN 连接；quota、到期、usage 和局部失败可验证 |
 | CLOUD005 | 完成 | Official Android 闭环 | Official APK 可扫码/导入、连接、列出/attach terminal、输入并完成后台恢复手测 |
 | CLOUD006 | 完成 | 单区域公网 Cloud staging | 新主线 Web Controller 与 Hub/Relay 在指定服务器独立运行；本机经真实网络完成 managed endpoint 验收，失败边界和运维步骤可复现 |
+| CLOUD007 | 完成 | 无隧道公网 HTTP staging | 外部开发客户端无需 SSH tunnel 可访问 Web Controller、登录、resolve 与 Hub signaling；默认和 production 路径仍 fail closed |
 | FILE001 | 完成 | 统一文件能力设计门禁 | 文件 owner、权限、方法、流控、失败语义和旧 API 迁移边界清晰 |
 | FILE002 | 完成 | daemon 文件 metadata 与预览 | local protocol 可安全 list/stat/preview/mkdir/rename/delete/copy/move |
 | FILE003 | 完成 | 文件上传下载数据流 | local 与 WebRTC 使用同一流协议完成背压、取消、续传和摘要校验 |
@@ -113,6 +115,7 @@
 - CLOUD004：Control Plane、Relay、Route Planner、remote 定向测试和真实 TURN E2E harness、`git diff --check`。
 - CLOUD005：client workspace 测试、Community/Official Android 单测与 APK 构建边界、ADB 手测步骤审查、`git diff --check`。
 - CLOUD006：受影响私有 module 测试、部署配置静态检查、远端 health/readiness、从本机或 `al` 发起的 managed direct/single Relay 定向 E2E、`git diff --check`。无法满足公网 TLS/UDP 前置条件时不得以 loopback 或 fake 冒充通过。
+- CLOUD007：Companion manifest contract 测试、反向代理配置检查、从本机或 `al` 对公网地址执行 health/login/resolve/managed direct 定向验收、stable/default profile 拒绝测试、`git diff --check`。
 - FILE001 文档-only：`git diff --check`。
 - FILE002：protocol/core 定向测试、文件系统 sandbox harness、`git diff --check`。
 - FILE003：protocol/core/remote 定向测试、慢消费者/取消/续传/损坏数据 harness、`git diff --check`。
@@ -136,4 +139,5 @@
 - FILE004 已完成：共享 UI 与 Official Android 已统一到 typed `file.*` 和 protocol v4 stream；旧 `/files/*`、`openFileTransfer`、独立 file DataChannel 与旧 task id 已删除。Android native 保留 picker、MediaStore、SQLite 与后台线程，在单一 authenticated protocol DataChannel 内完成上传、下载、取消、后台与进程中断恢复；core 允许同 principal 的新 session 串行接管旧上传 channel，仍拒绝不同 principal。公网真机 direct 完成浏览、预览、2 MiB 下载、3 MiB 上传、双向取消、64 MiB 双向续传和两端 SHA-256；single Relay 真实 TURN/DataChannel harness 通过，Android dev Relay 因远端 loopback/ADB 无 UDP 转发未冒充真机 Relay。`make test-clients`、`make test-android`、generated guard、文件协议 Go tests、FILE004 race 与 `git diff --check` 全绿；全量 core race 仍存在既有 vterm restart 竞态，记录为非 FILE004 剩余风险。
 - VT001 已完成：`Emulator.closed` 改为原子生命周期真值，response drain 可与 restart `Close` 并发且由 pipe close 正常唤醒；并发 Close/Read harness 连续 race、vterm 全量 race、core restart 定向 race 与全量 `go test -race ./core` 均通过，未改变 screen/history 或 restart 产品语义。
 - CLOUD006 已完成：用户授权清除服务器原有 legacy TermX 与 FILE004 devstack；新 `termx-staging-cloud`、`termx-staging-web-controller`、`termx-staging-daemon-companion`、`termx-staging-daemon` 四个 unit 已在 `114.66.58.243` 独立运行。Control Plane/Hub/Web Controller 仅绑定 loopback 并经 SSH tunnel 访问，lease-bound TURN 独占 `41003/udp`；Companion 使用 headless GNOME Keyring 与 systemd credential。本机真实 TUI 的 direct 与显式 `relay_only` 均完成 resolving/signaling/connecting/authorizing/connected，运维、bootstrap 与清理步骤已落档。当前 picker 未投影 observed `single_relay` 文本，packet/usage/path 自动化证据留作后续观测切片，不能据此启动 GA003。
+- CLOUD007 已完成：按用户明确授权，Nginx 在 `41100/41101/41102` 将 Web Controller、Control Plane 与 Hub loopback owner 暴露为无隧道公网 HTTP staging；`41100/runtime.json` 公开显式 `staging-public-http` development manifest，但不公开有效 enrollment code 或 pairing grant。本机 development Companion 直接经公网完成 login、resolve、Hub signaling 和真实 TUI resolving/signaling/connecting/authorizing/connected，SSH 未参与运行链路。该 profile 只允许固定测试账号、短期 session 和内存 store；默认 `dev-local`/`staging-ssh`、stable build 仍拒绝公网明文。上线前 HTTPS/TLS 仍是独立强制门禁。
 - 正式开源隔离、生产 OAuth/TLS、持久化数据库、计费、团队治理、Relay Mesh 和多区域运维全部延后。

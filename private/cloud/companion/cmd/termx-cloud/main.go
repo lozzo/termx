@@ -142,7 +142,10 @@ func cloudAdapters(devManifest string, smoke bool) (cloudservice.ControlPlaneAda
 	if err != nil {
 		return nil, nil, err
 	}
-	adapter, err := httpapi.New(httpapi.Config{ControlPlaneURL: manifest.ControlPlaneURL, HubURL: manifest.HubURL})
+	adapter, err := httpapi.New(httpapi.Config{
+		ControlPlaneURL: manifest.ControlPlaneURL, HubURL: manifest.HubURL,
+		AllowPublicHTTP: manifest.Profile == httpapi.ProfileStagingPublicHTTP,
+	})
 	if err != nil {
 		return nil, nil, err
 	}

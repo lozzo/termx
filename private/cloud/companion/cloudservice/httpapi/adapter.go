@@ -19,11 +19,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Config 固定显式 dev-local Control Plane/Hub origin 与 HTTP transport。
-// 两个 origin 必须是 loopback http；redirect 始终被拒绝，避免 bearer 或 admission 被转发。
+// Config 固定显式 development staging Control Plane/Hub origin 与 HTTP transport。
+// 默认必须是 loopback；AllowPublicHTTP 只能来自已验证的 staging-public-http manifest。
 type Config struct {
 	ControlPlaneURL string
 	HubURL          string
+	AllowPublicHTTP bool
 	HTTPClient      *http.Client
 	Now             func() time.Time
 }
@@ -37,14 +38,14 @@ type Adapter struct {
 	now        func() time.Time
 }
 
-// New 创建只允许 loopback 的 dev-local adapter。
-// 非 http、带 userinfo/query/path、非 loopback 或缺失 origin 均 fail closed。
+// New 创建默认只允许 loopback 的 development adapter。
+// 非 http、带 userinfo/query/path或缺失 origin 均 fail closed；公网明文必须由调用方显式授权。
 func New(config Config) (*Adapter, error) {
-	control, err := validateLoopbackURL(config.ControlPlaneURL)
+	control, err := validateServiceURL(config.ControlPlaneURL, config.AllowPublicHTTP)
 	if err != nil {
 		return nil, fmt.Errorf("invalid dev Control Plane adapter: %w", err)
 	}
-	hub, err := validateLoopbackURL(config.HubURL)
+	hub, err := validateServiceURL(config.HubURL, config.AllowPublicHTTP)
 	if err != nil {
 		return nil, fmt.Errorf("invalid dev Hub adapter: %w", err)
 	}

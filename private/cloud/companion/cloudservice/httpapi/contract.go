@@ -33,6 +33,9 @@ const (
 	// ProfileStagingSSH 只允许 development Companion 通过 SSH 转发访问 loopback Control Plane/Hub，
 	// 同时使用公网 UDP TURN。它不放宽 HTTP listener，也不是 production profile。
 	ProfileStagingSSH = "staging-ssh"
+	// ProfileStagingPublicHTTP 是用户明确授权的无隧道公网明文 development staging。
+	// 它只能承载固定测试账号和短期内存 session；stable/production build 仍必须拒绝该 manifest。
+	ProfileStagingPublicHTTP = "staging-public-http"
 	// ProtobufMediaType 是 dev-local unary protobuf 与 CloudError response 的固定媒体类型。
 	ProtobufMediaType = "application/x-protobuf"
 	// JSONMediaType 是只承载 private session/admission envelope 的固定媒体类型。
@@ -106,16 +109,17 @@ func LoadManifest(path string) (Manifest, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return Manifest{}, fmt.Errorf("dev cloud manifest has trailing data")
 	}
-	if manifest.Version != ManifestVersion || manifest.Profile != ProfileDevLocal && manifest.Profile != ProfileStagingSSH || manifest.HubID == "" || manifest.Region == "" || manifest.AccountLabel == "" || manifest.EnrollmentCode == "" {
+	if manifest.Version != ManifestVersion || manifest.Profile != ProfileDevLocal && manifest.Profile != ProfileStagingSSH && manifest.Profile != ProfileStagingPublicHTTP || manifest.HubID == "" || manifest.Region == "" || manifest.AccountLabel == "" || manifest.EnrollmentCode == "" {
 		return Manifest{}, fmt.Errorf("invalid dev cloud manifest metadata")
 	}
-	if _, err := validateLoopbackURL(manifest.ControlPlaneURL); err != nil {
+	allowPublicHTTP := manifest.Profile == ProfileStagingPublicHTTP
+	if _, err := validateServiceURL(manifest.ControlPlaneURL, allowPublicHTTP); err != nil {
 		return Manifest{}, fmt.Errorf("invalid dev Control Plane URL: %w", err)
 	}
-	if _, err := validateLoopbackURL(manifest.HubURL); err != nil {
+	if _, err := validateServiceURL(manifest.HubURL, allowPublicHTTP); err != nil {
 		return Manifest{}, fmt.Errorf("invalid dev Hub URL: %w", err)
 	}
-	if err := validateTURNURL(manifest.RelayURL, manifest.Profile == ProfileStagingSSH); err != nil {
+	if err := validateTURNURL(manifest.RelayURL, manifest.Profile == ProfileStagingSSH || allowPublicHTTP); err != nil {
 		return Manifest{}, fmt.Errorf("invalid dev Relay URL: %w", err)
 	}
 	if _, err := time.Parse(time.RFC3339, manifest.StartedAtRFC3339); err != nil {
@@ -183,18 +187,21 @@ type HubRequest struct {
 	Payload   []byte        `json:"payload"`
 }
 
-func validateLoopbackURL(raw string) (*url.URL, error) {
+func validateServiceURL(raw string, allowPublicHTTP bool) (*url.URL, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Scheme != "http" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "" {
-		return nil, fmt.Errorf("URL must be a plain loopback http origin")
+		return nil, fmt.Errorf("URL must be a canonical http origin")
 	}
 	host := parsed.Hostname()
 	if host == "localhost" {
 		return parsed, nil
 	}
 	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return nil, fmt.Errorf("URL host must be loopback")
+	if ip != nil && ip.IsLoopback() {
+		return parsed, nil
+	}
+	if !allowPublicHTTP || host == "" || ip != nil && (ip.IsUnspecified() || ip.IsMulticast()) {
+		return nil, fmt.Errorf("URL host is not allowed by the staging profile")
 	}
 	return parsed, nil
 }

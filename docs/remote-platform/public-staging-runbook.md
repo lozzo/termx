@@ -2,16 +2,18 @@
 
 ## 定位
 
-本手册记录 CLOUD006 在 `114.66.58.243` 的 SSH-only staging 装配。它用于从开发机验证真实 Hub signaling、WebRTC direct 和公网 UDP TURN，不是生产部署模板。
+本手册记录 CLOUD006/CLOUD007 在 `114.66.58.243` 的 staging 装配。它用于从开发机验证真实 Hub signaling、WebRTC direct 和公网 UDP TURN，不是生产部署模板。
 
-Control Plane、Hub 与 Web Controller 只监听服务器 loopback，通过 SSH port forwarding 访问。Relay 是唯一公网 cloud listener；terminal protocol、CapabilityGrant 和文件内容仍位于端到端 DTLS DataChannel，Web Controller/Hub/Relay 不接收这些内容。
+owning Control Plane、Hub 与 Web Controller 进程仍只监听服务器 loopback。CLOUD007 按用户明确授权由 Nginx 在 `41100-41102/tcp` 提供无隧道公网 HTTP staging；Relay 使用 `41003/udp`。terminal protocol、CapabilityGrant 和文件内容仍位于端到端 DTLS DataChannel，Web Controller/Hub/Relay 不接收这些内容。
+
+公网 HTTP 只允许固定测试账号、短期 session 和内存 store。账号 session 会经过明文网络，禁止真实用户凭据、真实 terminal 数据或生产使用；上线前必须切换域名 HTTPS/TLS profile。
 
 ## 已部署服务
 
 | systemd unit | listener | 责任 |
 | --- | --- | --- |
 | `termx-staging-cloud.service` | `127.0.0.1:41001/tcp`、`127.0.0.1:41002/tcp`、`0.0.0.0:41003/udp` | 内存 Control Plane、Hub 与 lease-bound TURN |
-| `termx-staging-web-controller.service` | `127.0.0.1:41000/tcp` | SSH-only 运维 health/status API |
+| `termx-staging-web-controller.service` | `127.0.0.1:41000/tcp` | 运维 health/status API owner |
 | `termx-staging-daemon-companion.service` | `/run/termx-staging/daemon-companion.sock` | daemon device session、presence 与 signaling |
 | `termx-staging-daemon.service` | `/run/termx-staging/daemon.sock` | 公开 core-v2/termx protocol daemon |
 
@@ -24,6 +26,15 @@ ssh root@114.66.58.243 'curl -fsS http://127.0.0.1:41000/v1/status'
 ```
 
 它不代理登录、signaling 或 terminal protocol，也不解释 terminal capability。
+
+公网入口：
+
+| URL | 用途 |
+| --- | --- |
+| `http://114.66.58.243:41100/v1/status` | Web Controller readiness/status |
+| `http://114.66.58.243:41100/runtime.json` | 不含有效 enrollment code 的 development client manifest |
+| `http://114.66.58.243:41101` | Control Plane contract origin |
+| `http://114.66.58.243:41102` | Hub signaling contract origin |
 
 ## 状态检查
 
@@ -40,7 +51,24 @@ ssh root@114.66.58.243 'ss -lnup | grep 41003'
 
 预期四个 unit 都是 `active`，两个 health response 是 `204`，TURN listener 为 `0.0.0.0:41003/udp`。
 
-## 客户端验证
+## 无隧道客户端验证
+
+```bash
+curl -fsS http://114.66.58.243:41100/runtime.json -o runtime.json
+```
+
+pairing bundle 是 bearer terminal capability，仍须从 daemon owner 的安全渠道取得，不能从 Web Controller 公开下载。然后直接启动 development Companion，无需 SSH tunnel：
+
+```bash
+termx-cloud serve \
+  --socket /absolute/owner-only-dir/companion.sock \
+  --profile client-cloud007 \
+  --dev-manifest /absolute/path/runtime.json
+```
+
+完成 `termx cloud login --device-code`、`termx pair import` 后启动 `termx`。2026-07-12 本机实测无需 tunnel 完成 `resolving`、`signaling`、`connecting`、`authorizing`、`connected`。
+
+## SSH-only 客户端验证
 
 先在本机或 `ssh al` 建立 Control Plane/Hub 隧道。示例使用本地 `42001/42002`，避免与本机 devcloud 冲突：
 
@@ -93,15 +121,19 @@ direct 验收必须经过 `resolving`、`signaling`、`connecting`、`authorizin
 2. 从 owner-only runtime manifest 读取新的一次性 enrollment code。
 3. 以 `termx-staging` 用户执行 `termx cloud enroll`。
 4. 重新生成 `/var/lib/termx-staging/pairing.json`。
-5. 启动 daemon，并在客户端重新登录和导入新 bundle。
+5. 执行 `/opt/termx-staging/bin/render-public-http-manifest`，更新 `/var/www/termx-staging/runtime.json`。
+6. 启动 daemon，并在客户端重新登录和导入新 bundle。
 
-不要把 enrollment code、pairing bundle、keyring password 或 cloud session 写入本文、unit、shell history和日志。生产 OAuth/TLS、持久数据库、域名证书、Web Controller 完整账号管理 UI 与多区域部署仍是后续切片。
+不要把有效 enrollment code、pairing bundle、keyring password 或 cloud session 写入本文、unit、shell history 和日志。生产 OAuth/TLS、持久数据库、Web Controller 完整账号管理 UI 与多区域部署仍是后续切片。
 
 ## 停止与清理
 
 ```bash
 ssh root@114.66.58.243 \
   'systemctl disable --now termx-staging-daemon termx-staging-daemon-companion termx-staging-web-controller termx-staging-cloud'
+
+ssh root@114.66.58.243 \
+  'rm -f /etc/nginx/conf.d/termx-public-http.conf && nginx -t && systemctl reload nginx'
 ```
 
 删除 `/opt/termx-staging`、`/var/lib/termx-staging`、`/etc/termx-staging` 和对应 unit 会永久删除 pairing、daemon identity 与 keyring；只有明确废弃该 staging 环境时执行。
