@@ -233,7 +233,7 @@ func TestDevCloudVerticalLoopAcrossRealServiceBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstDaemonEvent, err := presenceStream.Receive()
-	if err != nil || firstDaemonEvent.GetOffer().GetManagedSessionId() != firstResolved.GetManagedSessionId() {
+	if err != nil || firstDaemonEvent.GetOffer().GetManagedSessionId() == "" || firstDaemonEvent.GetOffer().GetManagedSessionId() == firstResolved.GetManagedSessionId() {
 		t.Fatalf("first daemon offer = (%v, %v)", firstDaemonEvent, err)
 	}
 	firstCompletion := answerFor(firstDaemonEvent.GetOffer(), "answer-first")
@@ -259,18 +259,16 @@ func TestDevCloudVerticalLoopAcrossRealServiceBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	secondDaemonEvent, err := presenceStream.Receive()
-	if err != nil || secondDaemonEvent.GetOffer().GetManagedSessionId() != secondResolved.GetManagedSessionId() {
+	if err != nil || secondDaemonEvent.GetOffer().GetManagedSessionId() == "" || secondDaemonEvent.GetOffer().GetManagedSessionId() == secondResolved.GetManagedSessionId() {
 		t.Fatalf("second daemon offer = (%v, %v)", secondDaemonEvent, err)
 	}
 	secondCompletion := answerFor(secondDaemonEvent.GetOffer(), "answer-second")
-	wrongAdmission, err := daemonAdapter.AcquireDaemonAnswerAdmission(ctx, daemonAuthorization, firstResolved.GetManagedSessionId(), secondCompletion)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := daemonAdapter.CompleteSignalingOffer(ctx, daemonAuthorization, wrongAdmission, secondCompletion); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED) {
+	wrongCompletion := answerFor(secondDaemonEvent.GetOffer(), "wrong-answer")
+	wrongCompletion.SignalingSessionId = "signal-not-owned"
+	wrongCompletion.GetAnswer().SignalingSessionId = "signal-not-owned"
+	if _, err := daemonAdapter.CompleteSignalingOffer(ctx, daemonAuthorization, wrongCompletion); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED) {
 		t.Fatalf("cross-session answer error = %v", err)
 	}
-	wrongAdmission.Destroy()
 	if _, err := daemonConnection.CompleteSignalingOffer(ctx, secondCompletion); err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +286,7 @@ func TestDevCloudVerticalLoopAcrossRealServiceBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	failedDaemonEvent, err := presenceStream.Receive()
-	if err != nil || failedDaemonEvent.GetOffer().GetManagedSessionId() != failedResolved.GetManagedSessionId() {
+	if err != nil || failedDaemonEvent.GetOffer().GetManagedSessionId() == "" || failedDaemonEvent.GetOffer().GetManagedSessionId() == failedResolved.GetManagedSessionId() {
 		t.Fatalf("failed daemon offer = (%v, %v)", failedDaemonEvent, err)
 	}
 	if _, err := daemonConnection.CompleteSignalingOffer(ctx, &cloudpb.CompleteSignalingOfferRequest{
@@ -317,59 +315,52 @@ func TestDevCloudVerticalLoopAcrossRealServiceBoundaries(t *testing.T) {
 		t.Fatalf("account credential used as device credential error = %v", err)
 	}
 
-	expiringResolved, err := clientAdapter.ResolveEndpoint(ctx, clientAuthorization, &cloudpb.ResolveEndpointRequest{EndpointId: "endpoint-expired", TargetDeviceId: daemonDeviceID})
+	controlDownResolved, err := clientAdapter.ResolveEndpoint(ctx, clientAuthorization, &cloudpb.ResolveEndpointRequest{EndpointId: "control-down-direct", TargetDeviceId: daemonDeviceID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	expiringRequest := &cloudpb.CreateSignalingSessionRequest{
-		EndpointId: expiringResolved.GetEndpointId(), ManagedSessionId: expiringResolved.GetManagedSessionId(),
-		TargetDeviceId: daemonDeviceID, OfferSdp: "offer-expired", RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY,
-	}
-	expiringAdmission, err := clientAdapter.AcquireClientAdmission(ctx, clientAuthorization, expiringRequest)
-	if err != nil {
+	controlShutdownContext, controlShutdownCancel := context.WithTimeout(context.Background(), time.Second)
+	if err := runtime.controlServer.Shutdown(controlShutdownContext); err != nil {
+		controlShutdownCancel()
 		t.Fatal(err)
 	}
-	expiredChallenge, err := daemonAdapter.BeginPresence(ctx, daemonAuthorization, &cloudpb.BeginPresenceRequest{DeviceId: daemonDeviceID})
+	controlShutdownCancel()
+	controlDownRequest := &cloudpb.CreateSignalingSessionRequest{EndpointId: controlDownResolved.GetEndpointId(), ManagedSessionId: controlDownResolved.GetManagedSessionId(), TargetDeviceId: daemonDeviceID, OfferSdp: "offer-control-down", RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY}
+	controlDownStream, err := clientAdapter.CreateSignalingSession(ctx, clientAuthorization, controlDownRequest)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("new direct signaling with Control Plane down = %v", err)
 	}
-	clock.Advance(3 * time.Minute)
-	if _, err := clientAdapter.CreateSignalingSession(ctx, clientAuthorization, expiringAdmission, expiringRequest); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED) {
-		t.Fatalf("expired Hub admission error = %v", err)
+	controlDownOffer, err := presenceStream.Receive()
+	if err != nil || controlDownOffer.GetOffer() == nil || controlDownOffer.GetOffer().GetManagedSessionId() == controlDownResolved.GetManagedSessionId() {
+		t.Fatalf("Control Plane down Hub-owned offer = (%v, %v)", controlDownOffer, err)
 	}
-	expiringAdmission.Destroy()
-	expiredProof := signPresenceRequest(t, privateKey, publicKey, daemonDeviceID, expiredChallenge, clock.Now())
-	if _, err := daemonAdapter.AcquirePresenceAdmission(ctx, daemonAuthorization, expiredProof); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED) {
-		t.Fatalf("expired presence challenge error = %v", err)
+	if _, err := daemonAdapter.CompleteSignalingOffer(ctx, daemonAuthorization, answerFor(controlDownOffer.GetOffer(), "answer-control-down")); err != nil {
+		t.Fatalf("daemon answer with Control Plane down = %v", err)
+	}
+	controlDownAnswer, err := controlDownStream.Receive(ctx)
+	if err != nil || controlDownAnswer.GetAnswer().GetSdp() != "answer-control-down" {
+		t.Fatalf("Control Plane down client answer = (%v, %v)", controlDownAnswer, err)
+	}
+	_ = controlDownStream.Close()
+	if _, err := clientAdapter.ResolveEndpoint(ctx, clientAuthorization, &cloudpb.ResolveEndpointRequest{EndpointId: "control-is-down", TargetDeviceId: daemonDeviceID}); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE) {
+		t.Fatalf("closed Control Plane resolve error = %v", err)
 	}
 
+	hubDownRequest := &cloudpb.CreateSignalingSessionRequest{
+		EndpointId: controlDownResolved.GetEndpointId(), ManagedSessionId: controlDownResolved.GetManagedSessionId(),
+		TargetDeviceId: daemonDeviceID, OfferSdp: "offer-hub-down", RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY,
+	}
 	_ = presenceStream.Close()
 	_ = clientConnection.Close()
 	_ = daemonConnection.Close()
-	hubDownResolved, err := clientAdapter.ResolveEndpoint(ctx, clientAuthorization, &cloudpb.ResolveEndpointRequest{EndpointId: "hub-down", TargetDeviceId: daemonDeviceID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	hubDownRequest := &cloudpb.CreateSignalingSessionRequest{
-		EndpointId: hubDownResolved.GetEndpointId(), ManagedSessionId: hubDownResolved.GetManagedSessionId(),
-		TargetDeviceId: daemonDeviceID, OfferSdp: "offer-hub-down", RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY,
-	}
-	hubDownAdmission, err := clientAdapter.AcquireClientAdmission(ctx, clientAuthorization, hubDownRequest)
-	if err != nil {
-		t.Fatal(err)
-	}
 	hubShutdownContext, hubShutdownCancel := context.WithTimeout(context.Background(), time.Second)
 	if err := runtime.hubServer.Shutdown(hubShutdownContext); err != nil {
 		hubShutdownCancel()
 		t.Fatal(err)
 	}
 	hubShutdownCancel()
-	if _, err := clientAdapter.CreateSignalingSession(ctx, clientAuthorization, hubDownAdmission, hubDownRequest); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE) {
+	if _, err := clientAdapter.CreateSignalingSession(ctx, clientAuthorization, hubDownRequest); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE) {
 		t.Fatalf("closed Hub error = %v", err)
-	}
-	hubDownAdmission.Destroy()
-	if _, err := clientAdapter.ResolveEndpoint(ctx, clientAuthorization, &cloudpb.ResolveEndpointRequest{EndpointId: "control-still-ready", TargetDeviceId: daemonDeviceID}); err != nil {
-		t.Fatalf("Hub shutdown stopped Control Plane: %v", err)
 	}
 	shutdownContext, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
 	if err := runtime.Close(shutdownContext); err != nil {
@@ -378,9 +369,6 @@ func TestDevCloudVerticalLoopAcrossRealServiceBoundaries(t *testing.T) {
 	}
 	shutdownCancel()
 	runtimeClosed = true
-	if _, err := clientAdapter.ResolveEndpoint(ctx, clientAuthorization, &cloudpb.ResolveEndpointRequest{EndpointId: "after-close", TargetDeviceId: daemonDeviceID}); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_ROUTE_UNAVAILABLE) {
-		t.Fatalf("closed Control Plane error = %v", err)
-	}
 
 	assertCredentialVisibility(t, capture.snapshot(), manifest.HubURL, privateKey, clientAuthorization.Bytes(), daemonAuthorization.Bytes())
 }
@@ -492,12 +480,7 @@ func TestDevCloudHubReturnsBackpressureAcrossHTTPStream(t *testing.T) {
 			EndpointId: resolved.GetEndpointId(), ManagedSessionId: resolved.GetManagedSessionId(),
 			TargetDeviceId: deviceID, OfferSdp: largeOffer, RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY,
 		}
-		clientAdmission, err := adapter.AcquireClientAdmission(ctx, clientAuthorization, request)
-		if err != nil {
-			t.Fatal(err)
-		}
-		source, err := adapter.CreateSignalingSession(ctx, clientAuthorization, clientAdmission, request)
-		clientAdmission.Destroy()
+		source, err := adapter.CreateSignalingSession(ctx, clientAuthorization, request)
 		if err != nil {
 			if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_BACKPRESSURE) {
 				t.Fatalf("Hub pressure error = %v", err)
@@ -624,8 +607,11 @@ func assertCredentialVisibility(t *testing.T, requests []capturedRequest, hubOri
 	t.Helper()
 	hubHost := hubOrigin[len("http://"):]
 	for _, request := range requests {
-		if request.host == hubHost && request.authorization != "" {
-			t.Fatalf("Hub request %s received cloud bearer authorization", request.path)
+		if request.host == hubHost && request.path == httpapi.HubOpenPresencePath && request.authorization != "" {
+			t.Fatalf("Hub presence request %s received cloud bearer authorization", request.path)
+		}
+		if request.host == hubHost && (request.path == httpapi.HubCreateSignalingPath || request.path == httpapi.HubCompleteSignalingPath) && request.authorization == "" {
+			t.Fatalf("Hub managed request %s did not receive edge authorization", request.path)
 		}
 		for _, forbidden := range [][]byte{
 			privateKey,

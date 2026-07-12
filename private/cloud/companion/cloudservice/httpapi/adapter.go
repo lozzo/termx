@@ -120,22 +120,6 @@ func (adapter *Adapter) AcquirePresenceAdmission(ctx context.Context, authorizat
 	return adapter.postAdmission(ctx, ControlPresenceAdmissionPath, authorization, request)
 }
 
-// AcquireClientAdmission 为固定 ManagedSession 和 target 取得 client offer ticket。
-func (adapter *Adapter) AcquireClientAdmission(ctx context.Context, authorization session.Authorization, request *cloudpb.CreateSignalingSessionRequest) (cloudservice.HubAdmission, error) {
-	return adapter.postAdmission(ctx, ControlClientAdmissionPath, authorization, request)
-}
-
-// AcquireDaemonAnswerAdmission 为 daemon 已消费的单个 offer 取得 managed answer ticket。
-func (adapter *Adapter) AcquireDaemonAnswerAdmission(ctx context.Context, authorization session.Authorization, managedSessionID string, request *cloudpb.CompleteSignalingOfferRequest) (cloudservice.HubAdmission, error) {
-	payload, err := proto.Marshal(request)
-	if err != nil {
-		return cloudservice.HubAdmission{}, fmt.Errorf("encode answer admission request: %w", err)
-	}
-	defer clear(payload)
-	wire := AnswerAdmissionRequest{ManagedSessionID: managedSessionID, Payload: payload}
-	return adapter.postAdmissionJSON(ctx, ControlAnswerAdmissionPath, authorization, wire)
-}
-
 // AcquireRelayLease 通过真实 Control Plane listener 获取 caller-specific 短期 TURN material。
 // signed lease 与 credential 只返回公开 WebRTC primitive；adapter 不缓存、不记录，也不把它们写进 endpoint registry。
 func (adapter *Adapter) AcquireRelayLease(ctx context.Context, authorization session.Authorization, request *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
@@ -170,22 +154,66 @@ func (adapter *Adapter) OpenPresence(ctx context.Context, _ session.Authorizatio
 	return &presenceSource{streamSource: newStreamSource(response.Body)}, nil
 }
 
-// CreateSignalingSession 使用 managed client admission 打开 Hub answer frame stream。
-func (adapter *Adapter) CreateSignalingSession(ctx context.Context, _ session.Authorization, admission cloudservice.HubAdmission, request *cloudpb.CreateSignalingSessionRequest) (cloudservice.SignalingSource, error) {
-	response, err := adapter.openHubStream(ctx, HubCreateSignalingPath, admission, request)
+// CreateSignalingSession 使用启动阶段 client edge credential 打开 Hub answer frame stream。
+func (adapter *Adapter) CreateSignalingSession(ctx context.Context, authorization session.Authorization, request *cloudpb.CreateSignalingSessionRequest) (cloudservice.SignalingSource, error) {
+	response, err := adapter.openEdgeHubStream(ctx, HubCreateSignalingPath, authorization, request)
 	if err != nil {
 		return nil, err
 	}
 	return &signalingSource{streamSource: newStreamSource(response.Body)}, nil
 }
 
-// CompleteSignalingOffer 使用 managed daemon admission 把 answer/error 返回 Hub。
-func (adapter *Adapter) CompleteSignalingOffer(ctx context.Context, _ session.Authorization, admission cloudservice.HubAdmission, request *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
+// CompleteSignalingOffer 使用 daemon edge credential 把 owning presence 的 answer/error 返回 Hub。
+func (adapter *Adapter) CompleteSignalingOffer(ctx context.Context, authorization session.Authorization, request *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
 	response := &cloudpb.CompleteSignalingOfferResponse{}
-	if err := adapter.postHubProto(ctx, HubCompleteSignalingPath, admission, request, response); err != nil {
+	if err := adapter.postEdgeHubProto(ctx, HubCompleteSignalingPath, authorization, request, response); err != nil {
 		return nil, err
 	}
 	return response, nil
+}
+
+func (adapter *Adapter) postEdgeHubProto(ctx context.Context, path string, authorization session.Authorization, request, response proto.Message) error {
+	httpResponse, err := adapter.doEdgeHub(ctx, path, authorization, request)
+	if err != nil {
+		return err
+	}
+	defer httpResponse.Body.Close()
+	if !responseContentTypeIs(httpResponse, ProtobufMediaType) {
+		return protocolNetworkError("Hub returned an invalid protobuf media type")
+	}
+	data, err := io.ReadAll(io.LimitReader(httpResponse.Body, maxBodyBytes+1))
+	defer clear(data)
+	if err != nil || len(data) > maxBodyBytes || proto.Unmarshal(data, response) != nil || len(response.ProtoReflect().GetUnknown()) != 0 {
+		return protocolNetworkError("Hub returned an invalid protobuf response")
+	}
+	return nil
+}
+
+func (adapter *Adapter) openEdgeHubStream(ctx context.Context, path string, authorization session.Authorization, request proto.Message) (*http.Response, error) {
+	response, err := adapter.doEdgeHub(ctx, path, authorization, request)
+	if err != nil {
+		return nil, err
+	}
+	if !responseContentTypeIs(response, StreamMediaType) {
+		_ = response.Body.Close()
+		return nil, protocolNetworkError("Hub returned an invalid stream media type")
+	}
+	return response, nil
+}
+
+func (adapter *Adapter) doEdgeHub(ctx context.Context, path string, authorization session.Authorization, request proto.Message) (*http.Response, error) {
+	payload, err := proto.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(payload)
+	metadata := authorization.Metadata()
+	envelope, err := json.Marshal(EdgeHubRequest{AccountID: metadata.AccountID, DeviceID: metadata.DeviceID, Payload: payload})
+	if err != nil {
+		return nil, err
+	}
+	defer clear(envelope)
+	return adapter.do(ctx, adapter.hubURL+path, authorization, JSONMediaType, envelope)
 }
 
 func (adapter *Adapter) postSession(ctx context.Context, path string, request proto.Message) (SessionWire, error) {
@@ -216,15 +244,6 @@ func (adapter *Adapter) postAdmission(ctx context.Context, path string, authoriz
 	}
 	defer clear(payload)
 	return adapter.postAdmissionBytes(ctx, path, authorization, ProtobufMediaType, payload)
-}
-
-func (adapter *Adapter) postAdmissionJSON(ctx context.Context, path string, authorization session.Authorization, request any) (cloudservice.HubAdmission, error) {
-	payload, err := json.Marshal(request)
-	if err != nil {
-		return cloudservice.HubAdmission{}, err
-	}
-	defer clear(payload)
-	return adapter.postAdmissionBytes(ctx, path, authorization, JSONMediaType, payload)
 }
 
 func (adapter *Adapter) postAdmissionBytes(ctx context.Context, path string, authorization session.Authorization, contentType string, payload []byte) (cloudservice.HubAdmission, error) {
@@ -261,35 +280,6 @@ func (adapter *Adapter) postProto(ctx context.Context, endpoint string, authoriz
 	defer clear(data)
 	if err != nil || len(data) > maxBodyBytes || proto.Unmarshal(data, response) != nil || len(response.ProtoReflect().GetUnknown()) != 0 {
 		return protocolNetworkError("cloud service returned an invalid protobuf response")
-	}
-	return nil
-}
-
-func (adapter *Adapter) postHubProto(ctx context.Context, path string, admission cloudservice.HubAdmission, request, response proto.Message) error {
-	payload, err := proto.Marshal(request)
-	if err != nil {
-		return err
-	}
-	defer clear(payload)
-	wire := admissionToWire(admission)
-	defer clear(wire.Ticket)
-	envelope, err := json.Marshal(HubRequest{Admission: wire, Payload: payload})
-	if err != nil {
-		return err
-	}
-	defer clear(envelope)
-	httpResponse, err := adapter.do(ctx, adapter.hubURL+path, session.Authorization{}, JSONMediaType, envelope)
-	if err != nil {
-		return err
-	}
-	defer httpResponse.Body.Close()
-	if !responseContentTypeIs(httpResponse, ProtobufMediaType) {
-		return protocolNetworkError("Hub returned an invalid protobuf media type")
-	}
-	data, err := io.ReadAll(io.LimitReader(httpResponse.Body, maxBodyBytes+1))
-	defer clear(data)
-	if err != nil || len(data) > maxBodyBytes || proto.Unmarshal(data, response) != nil || len(response.ProtoReflect().GetUnknown()) != 0 {
-		return protocolNetworkError("Hub returned an invalid protobuf response")
 	}
 	return nil
 }

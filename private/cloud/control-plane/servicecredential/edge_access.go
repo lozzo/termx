@@ -11,20 +11,32 @@ const (
 	maxEdgeAccessTTL  = 24 * time.Hour
 )
 
+// EdgePrincipalKind 区分使用 Hub 边缘热路径的 client 与 daemon 身份。
+// 角色写入签名 claims，防止同一账号下的 daemon token 被拿来发起 client offer。
+type EdgePrincipalKind string
+
+const (
+	// EdgePrincipalClient 表示发起 managed signaling 的客户端。
+	EdgePrincipalClient EdgePrincipalKind = "client"
+	// EdgePrincipalDaemon 表示已注册 presence 并完成 answer 的 daemon。
+	EdgePrincipalDaemon EdgePrincipalKind = "daemon"
+)
+
 // EdgeAccessClaims 是客户端启动阶段取得、由 Hub 离线验证的账号边缘会话声明。
 // 它只证明固定账号与 client device；target ownership 和订阅能力必须由 Hub 本地授权投影另行判断。
 type EdgeAccessClaims struct {
-	Version        uint32 `json:"version"`
-	KeyID          string `json:"key_id"`
-	TokenID        string `json:"token_id"`
-	Issuer         string `json:"issuer"`
-	AudienceHubID  string `json:"audience_hub_id"`
-	AccountID      string `json:"account_id"`
-	ClientDeviceID string `json:"client_device_id"`
-	AuthEpoch      uint64 `json:"auth_epoch"`
-	IssuedAtUnix   int64  `json:"issued_at_unix"`
-	NotBeforeUnix  int64  `json:"not_before_unix"`
-	ExpiresAtUnix  int64  `json:"expires_at_unix"`
+	Version        uint32            `json:"version"`
+	KeyID          string            `json:"key_id"`
+	TokenID        string            `json:"token_id"`
+	Issuer         string            `json:"issuer"`
+	AudienceHubID  string            `json:"audience_hub_id"`
+	AccountID      string            `json:"account_id"`
+	ClientDeviceID string            `json:"client_device_id"`
+	PrincipalKind  EdgePrincipalKind `json:"principal_kind"`
+	AuthEpoch      uint64            `json:"auth_epoch"`
+	IssuedAtUnix   int64             `json:"issued_at_unix"`
+	NotBeforeUnix  int64             `json:"not_before_unix"`
+	ExpiresAtUnix  int64             `json:"expires_at_unix"`
 }
 
 // EdgeAccessIssuer 持有 Control Plane 的 edge access 专用签名器。
@@ -45,7 +57,13 @@ func NewEdgeAccessIssuer(issuer string, signer Signer) (EdgeAccessIssuer, error)
 // IssueEdgeAccess 为固定 Hub、账号和 client device 签发最长 24 小时的离线凭据。
 // AuthEpoch 来自 Control Plane 持久账号状态，Hub 必须与本地投影中的 epoch 精确匹配。
 func (issuer EdgeAccessIssuer) IssueEdgeAccess(tokenID, hubID, accountID, clientDeviceID string, authEpoch uint64, ttl time.Duration, now time.Time) ([]byte, error) {
-	if tokenID == "" || hubID == "" || accountID == "" || clientDeviceID == "" || authEpoch == 0 {
+	return issuer.IssueEdgeAccessForPrincipal(tokenID, hubID, accountID, clientDeviceID, EdgePrincipalClient, authEpoch, ttl, now)
+}
+
+// IssueEdgeAccessForPrincipal 为固定 client/daemon 角色签发 edge credential。
+// 调用方必须从已认证的登录或设备 enrollment owner 构造 principal，不能接受 caller 自选角色。
+func (issuer EdgeAccessIssuer) IssueEdgeAccessForPrincipal(tokenID, hubID, accountID, deviceID string, principal EdgePrincipalKind, authEpoch uint64, ttl time.Duration, now time.Time) ([]byte, error) {
+	if tokenID == "" || hubID == "" || accountID == "" || deviceID == "" || authEpoch == 0 || principal != EdgePrincipalClient && principal != EdgePrincipalDaemon {
 		return nil, ErrMalformedCredential
 	}
 	if ttl <= 0 || ttl > maxEdgeAccessTTL {
@@ -54,7 +72,7 @@ func (issuer EdgeAccessIssuer) IssueEdgeAccess(tokenID, hubID, accountID, client
 	now = now.UTC().Truncate(time.Second)
 	claims := EdgeAccessClaims{
 		Version: edgeAccessVersion, KeyID: issuer.signer.KeyID(), TokenID: tokenID, Issuer: issuer.issuer,
-		AudienceHubID: hubID, AccountID: accountID, ClientDeviceID: clientDeviceID, AuthEpoch: authEpoch,
+		AudienceHubID: hubID, AccountID: accountID, ClientDeviceID: deviceID, PrincipalKind: principal, AuthEpoch: authEpoch,
 		IssuedAtUnix: now.Unix(), NotBeforeUnix: now.Unix(), ExpiresAtUnix: now.Add(ttl).Unix(),
 	}
 	raw, err := signToken(edgeAccessPrefix, claims, issuer.signer, now)
@@ -68,6 +86,7 @@ type EdgeAccessExpectation struct {
 	AudienceHubID  string
 	AccountID      string
 	ClientDeviceID string
+	PrincipalKind  EdgePrincipalKind
 }
 
 // VerifyEdgeAccess 离线验证签名、时效、Hub audience、账号和 client device 绑定。
@@ -80,11 +99,11 @@ func VerifyEdgeAccess(ring *KeyRing, encoded []byte, expected EdgeAccessExpectat
 	issuedAt := time.Unix(claims.IssuedAtUnix, 0).UTC()
 	notBefore := time.Unix(claims.NotBeforeUnix, 0).UTC()
 	expiresAt := time.Unix(claims.ExpiresAtUnix, 0).UTC()
-	if claims.Version != edgeAccessVersion || claims.KeyID == "" || claims.TokenID == "" || claims.AuthEpoch == 0 ||
+	if claims.Version != edgeAccessVersion || claims.KeyID == "" || claims.TokenID == "" || claims.AuthEpoch == 0 || claims.PrincipalKind != EdgePrincipalClient && claims.PrincipalKind != EdgePrincipalDaemon ||
 		!expiresAt.After(issuedAt) || expiresAt.Sub(issuedAt) > maxEdgeAccessTTL || notBefore.Before(issuedAt) || notBefore.After(expiresAt) || now.Before(notBefore) || !now.Before(expiresAt) {
 		return EdgeAccessClaims{}, ErrCredentialExpired
 	}
-	if claims.Issuer != expected.Issuer || claims.AudienceHubID != expected.AudienceHubID || claims.AccountID != expected.AccountID || claims.ClientDeviceID != expected.ClientDeviceID {
+	if claims.Issuer != expected.Issuer || claims.AudienceHubID != expected.AudienceHubID || claims.AccountID != expected.AccountID || claims.ClientDeviceID != expected.ClientDeviceID || claims.PrincipalKind != expected.PrincipalKind {
 		return EdgeAccessClaims{}, ErrCredentialBinding
 	}
 	return claims, nil

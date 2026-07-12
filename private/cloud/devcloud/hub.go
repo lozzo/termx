@@ -86,18 +86,23 @@ func (state *serviceState) handleHubOpenPresence(writer http.ResponseWriter, req
 }
 
 func (state *serviceState) handleHubCreateSignaling(writer http.ResponseWriter, request *http.Request) {
-	if !requireMethod(writer, request, http.MethodPost) || !requireNoAuthorization(writer, request) {
+	if !requireMethod(writer, request, http.MethodPost) {
 		return
 	}
-	envelope, payload, ok := state.readHubRequest(writer, request, &cloudpb.CreateSignalingSessionRequest{})
+	token, ok := readBearerToken(writer, request)
 	if !ok {
 		return
 	}
-	defer clear(envelope.Admission.Ticket)
+	defer clear(token)
+	envelope, payload, ok := state.readEdgeHubRequest(writer, request, &cloudpb.CreateSignalingSessionRequest{})
+	if !ok {
+		return
+	}
 	defer clear(envelope.Payload)
 	createRequest := payload.(*cloudpb.CreateSignalingSessionRequest)
-	if envelope.Admission.SessionKind != cloudservice.HubSessionManaged || envelope.Admission.SessionID != createRequest.GetManagedSessionId() || envelope.Admission.TargetDeviceID != createRequest.GetTargetDeviceId() {
-		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub client admission binding was rejected", false)
+	claims, err := state.edgeAuth.AuthorizeDirect(token, envelope.AccountID, envelope.DeviceID, createRequest.GetTargetDeviceId())
+	if err != nil {
+		mapHubError(writer, err)
 		return
 	}
 	signalingSessionID, err := state.randomID("signal")
@@ -105,11 +110,11 @@ func (state *serviceState) handleHubCreateSignaling(writer http.ResponseWriter, 
 		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub signaling session could not be created", true)
 		return
 	}
-	clientSession, err := state.hub.CreateSession(request.Context(), cloudhub.CreateSessionRequest{
-		Admission: envelope.Admission.Ticket, AccountID: envelope.Admission.AccountID,
-		ClientDeviceID: envelope.Admission.DeviceID, TargetDeviceID: createRequest.GetTargetDeviceId(),
-		ManagedSessionID: createRequest.GetManagedSessionId(), SignalingSessionID: signalingSessionID,
-		SDP: createRequest.GetOfferSdp(), Candidates: candidatesFromWire(createRequest.GetCandidates()),
+	clientSession, err := state.hub.CreateEdgeSession(request.Context(), cloudhub.CreateEdgeSessionRequest{
+		EdgeToken: token, AccountID: claims.AccountID,
+		ClientDeviceID: claims.ClientDeviceID, ClientConnectionID: claims.TokenID, TargetDeviceID: createRequest.GetTargetDeviceId(), SignalingSessionID: signalingSessionID,
+		RelayCorrelationID: createRequest.GetManagedSessionId(),
+		SDP:                createRequest.GetOfferSdp(), Candidates: candidatesFromWire(createRequest.GetCandidates()),
 		RoutePreference: cloudhub.RoutePreference(createRequest.GetRoutePreference()), RelayOnly: createRequest.GetRelayOnly(),
 	})
 	if err != nil {
@@ -140,18 +145,23 @@ func (state *serviceState) handleHubCreateSignaling(writer http.ResponseWriter, 
 }
 
 func (state *serviceState) handleHubCompleteSignaling(writer http.ResponseWriter, request *http.Request) {
-	if !requireMethod(writer, request, http.MethodPost) || !requireNoAuthorization(writer, request) {
+	if !requireMethod(writer, request, http.MethodPost) {
 		return
 	}
-	envelope, payload, ok := state.readHubRequest(writer, request, &cloudpb.CompleteSignalingOfferRequest{})
+	token, ok := readBearerToken(writer, request)
 	if !ok {
 		return
 	}
-	defer clear(envelope.Admission.Ticket)
+	defer clear(token)
+	envelope, payload, ok := state.readEdgeHubRequest(writer, request, &cloudpb.CompleteSignalingOfferRequest{})
+	if !ok {
+		return
+	}
 	defer clear(envelope.Payload)
 	completeRequest := payload.(*cloudpb.CompleteSignalingOfferRequest)
-	if envelope.Admission.SessionKind != cloudservice.HubSessionManaged || envelope.Admission.TargetDeviceID != "" || completeRequest.GetSignalingSessionId() == "" {
-		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub daemon admission binding was rejected", false)
+	claims, err := state.edgeAuth.AuthorizeDaemon(token, envelope.AccountID, envelope.DeviceID)
+	if err != nil || completeRequest.GetSignalingSessionId() == "" {
+		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub daemon edge binding was rejected", false)
 		return
 	}
 	if answer := completeRequest.GetAnswer(); answer != nil && completeRequest.GetError() == nil {
@@ -159,9 +169,9 @@ func (state *serviceState) handleHubCompleteSignaling(writer http.ResponseWriter
 			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub signaling answer is invalid", false)
 			return
 		}
-		if _, err := state.hub.CompleteAnswer(request.Context(), cloudhub.CompleteAnswerRequest{
-			Admission: envelope.Admission.Ticket, AccountID: envelope.Admission.AccountID,
-			DaemonDeviceID: envelope.Admission.DeviceID, ManagedSessionID: envelope.Admission.SessionID,
+		if _, err := state.hub.CompleteEdgeAnswer(request.Context(), cloudhub.CompleteEdgeAnswerRequest{
+			EdgeToken: token, AccountID: claims.AccountID,
+			DaemonDeviceID:     claims.ClientDeviceID,
 			SignalingSessionID: completeRequest.GetSignalingSessionId(), SDP: answer.GetSdp(),
 			Candidates: candidatesFromWire(answer.GetCandidates()),
 		}); err != nil {
@@ -169,9 +179,9 @@ func (state *serviceState) handleHubCompleteSignaling(writer http.ResponseWriter
 			return
 		}
 	} else if failure := completeRequest.GetError(); failure != nil && completeRequest.GetAnswer() == nil && validSignalingFailureCode(failure.GetCode()) {
-		if err := state.hub.CompleteFailure(request.Context(), cloudhub.CompleteFailureRequest{
-			Admission: envelope.Admission.Ticket, AccountID: envelope.Admission.AccountID,
-			DaemonDeviceID: envelope.Admission.DeviceID, ManagedSessionID: envelope.Admission.SessionID,
+		if err := state.hub.CompleteEdgeFailure(request.Context(), cloudhub.CompleteEdgeFailureRequest{
+			EdgeToken: token, AccountID: claims.AccountID,
+			DaemonDeviceID:     claims.ClientDeviceID,
 			SignalingSessionID: completeRequest.GetSignalingSessionId(), Code: int32(failure.GetCode()), Retryable: failure.GetRetryable(),
 		}); err != nil {
 			mapHubError(writer, err)
@@ -182,6 +192,29 @@ func (state *serviceState) handleHubCompleteSignaling(writer http.ResponseWriter
 		return
 	}
 	writeProto(writer, http.StatusOK, &cloudpb.CompleteSignalingOfferResponse{})
+}
+
+func (state *serviceState) readEdgeHubRequest(writer http.ResponseWriter, request *http.Request, payload any) (httpapi.EdgeHubRequest, any, bool) {
+	envelope := httpapi.EdgeHubRequest{}
+	if !readJSON(writer, request, &envelope) || envelope.AccountID == "" || envelope.DeviceID == "" || len(envelope.Payload) == 0 || request.Context().Err() != nil {
+		return httpapi.EdgeHubRequest{}, nil, false
+	}
+	switch target := payload.(type) {
+	case *cloudpb.CreateSignalingSessionRequest:
+		if err := readProtoBytes(envelope.Payload, target); err != nil {
+			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub signaling payload is invalid", false)
+			return httpapi.EdgeHubRequest{}, nil, false
+		}
+	case *cloudpb.CompleteSignalingOfferRequest:
+		if err := readProtoBytes(envelope.Payload, target); err != nil {
+			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub answer payload is invalid", false)
+			return httpapi.EdgeHubRequest{}, nil, false
+		}
+	default:
+		writeCloudError(writer, http.StatusInternalServerError, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub edge payload type is invalid", false)
+		return httpapi.EdgeHubRequest{}, nil, false
+	}
+	return envelope, payload, true
 }
 
 func (state *serviceState) readHubRequest(writer http.ResponseWriter, request *http.Request, payload any) (httpapi.HubRequest, any, bool) {

@@ -101,10 +101,6 @@ type ControlPlaneAdapter interface {
 	BeginPresence(context.Context, session.Authorization, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error)
 	// AcquirePresenceAdmission 为 daemon proof 获取短期 Hub presence admission。
 	AcquirePresenceAdmission(context.Context, session.Authorization, *cloudpb.OpenPresenceRequest) (HubAdmission, error)
-	// AcquireClientAdmission 为固定 managed session 与 target 获取 client signaling admission。
-	AcquireClientAdmission(context.Context, session.Authorization, *cloudpb.CreateSignalingSessionRequest) (HubAdmission, error)
-	// AcquireDaemonAnswerAdmission 为 presence 收到的固定 managed session 获取 daemon answer admission。
-	AcquireDaemonAnswerAdmission(context.Context, session.Authorization, string, *cloudpb.CompleteSignalingOfferRequest) (HubAdmission, error)
 	// AcquireRelayLease 根据当前 entitlement 获取 caller-specific 短期 Relay lease 和 route plan。
 	AcquireRelayLease(context.Context, session.Authorization, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
 	// PlanManagedRoute 获取不含私有 score/cost 的 direct/single-relay SmartRoute 计划。
@@ -130,12 +126,12 @@ type SignalingSource interface {
 }
 
 // HubAdapter 是 companion 调用官方 Hub 的私有 TLS contract。
-// HubAdmission 只决定 signaling 服务准入，HubAdapter 不验证 terminal scope 或 grant。
+// account/device edge credential 由 Hub 离线验证；HubAdapter 不验证 terminal scope 或 grant。
 type HubAdapter interface {
 	// OpenPresence 使用 daemon-specific admission 打开有界 presence event source。
 	OpenPresence(context.Context, session.Authorization, HubAdmission, *cloudpb.OpenPresenceRequest) (PresenceSource, error)
-	// CreateSignalingSession 使用 client-specific admission 转发 offer/ICE 并返回 answer source。
-	CreateSignalingSession(context.Context, session.Authorization, HubAdmission, *cloudpb.CreateSignalingSessionRequest) (SignalingSource, error)
-	// CompleteSignalingOffer 把 daemon 对当前 presence 中 offer 的 answer 或稳定错误返回 Hub。
-	CompleteSignalingOffer(context.Context, session.Authorization, HubAdmission, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
+	// CreateSignalingSession 使用启动阶段 client edge credential 转发 offer；请求热路径不得访问 Control Plane。
+	CreateSignalingSession(context.Context, session.Authorization, *cloudpb.CreateSignalingSessionRequest) (SignalingSource, error)
+	// CompleteSignalingOffer 使用 daemon edge credential 和 active presence ownership 返回 answer。
+	CompleteSignalingOffer(context.Context, session.Authorization, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error)
 }

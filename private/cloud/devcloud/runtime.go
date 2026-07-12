@@ -141,11 +141,16 @@ type serviceState struct {
 	enrollmentFlows   map[string]enrollmentFlow
 	sessions          map[[sha256.Size]byte]cloudSession
 
-	directory    *directory.Store
-	presence     *presence.Service
-	admission    *admission.Service
-	hub          *cloudhub.Service
-	relayControl *relayControlState
+	directory        *directory.Store
+	presence         *presence.Service
+	admission        *admission.Service
+	hub              *cloudhub.Service
+	edgeIssuer       servicecredential.EdgeAccessIssuer
+	edgePolicyIssuer servicecredential.EdgePolicyIssuer
+	edgeAuth         *cloudhub.EdgeAuthorizer
+	edgeRevision     uint64
+	edgeDevices      map[string]cloudhub.DeviceAuthorization
+	relayControl     *relayControlState
 
 	presenceQueueSize int
 	clientQueueSize   int
@@ -264,6 +269,18 @@ func (state *serviceState) initializeDomain(now time.Time) error {
 	if err != nil {
 		return err
 	}
+	edgeIssuer, err := servicecredential.NewEdgeAccessIssuer(devAdmissionIssuer, signer)
+	if err != nil {
+		return err
+	}
+	edgePolicyIssuer, err := servicecredential.NewEdgePolicyIssuer(devAdmissionIssuer, signer)
+	if err != nil {
+		return err
+	}
+	edgeAuth, err := cloudhub.NewEdgeAuthorizer(cloudhub.EdgeAuthorizerConfig{HubID: devHubID, Issuer: devAdmissionIssuer, KeyRing: keyRing, Clock: runtimeClock{now: state.now}, MaxStaleness: 30 * time.Minute})
+	if err != nil {
+		return err
+	}
 	store := directory.NewStore()
 	if err := store.PutAccount(domain.Account{ID: devAccountID, DisplayName: devAccountLabel, CreatedAt: now}); err != nil {
 		return err
@@ -282,6 +299,14 @@ func (state *serviceState) initializeDomain(now time.Time) error {
 	}); err != nil {
 		return err
 	}
+	state.edgeIssuer = edgeIssuer
+	state.edgePolicyIssuer = edgePolicyIssuer
+	state.edgeAuth = edgeAuth
+	state.edgeRevision = 1
+	state.edgeDevices = map[string]cloudhub.DeviceAuthorization{devClientDeviceID: {DeviceID: devClientDeviceID, AccountID: devAccountID, PublicKey: clientPublicKey}}
+	if err := state.publishEdgeSnapshot(now); err != nil {
+		return err
+	}
 	presenceService, err := presence.NewService(presence.Config{
 		Devices: store, Issuer: issuer, HubID: devHubID, ChallengeTTL: enrollmentTTL,
 		AdmissionTTL: admissionTTL, MaxChallenges: 256, Now: state.now, Random: state.random,
@@ -298,6 +323,7 @@ func (state *serviceState) initializeDomain(now time.Time) error {
 		MaxPresenceTTL: 5 * time.Minute, MaxSignalingTTL: 5 * time.Minute,
 		PresenceQueueSize: state.presenceQueueSize, ClientQueueSize: state.clientQueueSize, MaxSDPBytes: 1 << 20, MaxCandidates: 256,
 		MaxPresences: 128, MaxSessions: 1024, MaxSessionsPerClient: 64, MaxReplayEntries: 2048,
+		EdgeAuthorizer: edgeAuth,
 	})
 	if err != nil {
 		return err

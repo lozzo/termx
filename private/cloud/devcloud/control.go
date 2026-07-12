@@ -1,7 +1,6 @@
 package devcloud
 
 import (
-	"context"
 	"crypto/ed25519"
 	"crypto/subtle"
 	"errors"
@@ -13,13 +12,13 @@ import (
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice"
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	"github.com/lozzow/termx/private/cloud/companion/session"
-	"github.com/lozzow/termx/private/cloud/control-plane/admission"
 	"github.com/lozzow/termx/private/cloud/control-plane/directory"
 	"github.com/lozzow/termx/private/cloud/control-plane/domain"
 	"github.com/lozzow/termx/private/cloud/control-plane/entitlement"
 	"github.com/lozzow/termx/private/cloud/control-plane/presence"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	"github.com/lozzow/termx/private/cloud/control-plane/usage"
+	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
@@ -36,8 +35,6 @@ func (state *serviceState) controlHandler() http.Handler {
 	mux.HandleFunc(httpapi.ControlBeginPresencePath, state.handleBeginPresence)
 	mux.HandleFunc(httpapi.ControlResolveEndpointPath, state.handleResolveEndpoint)
 	mux.HandleFunc(httpapi.ControlPresenceAdmissionPath, state.handlePresenceAdmission)
-	mux.HandleFunc(httpapi.ControlClientAdmissionPath, state.handleClientAdmission)
-	mux.HandleFunc(httpapi.ControlAnswerAdmissionPath, state.handleAnswerAdmission)
 	mux.HandleFunc(httpapi.ControlAcquireRelayLeasePath, state.handleAcquireRelayLease)
 	mux.HandleFunc(controlRelayUsagePath, state.handleRelayUsage)
 	return mux
@@ -218,6 +215,15 @@ func (state *serviceState) handleCompleteEnrollment(writer http.ResponseWriter, 
 		Fingerprint: fingerprint(flow.publicKey), RegisteredAt: now,
 	}); err != nil {
 		writeCloudError(writer, http.StatusConflict, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "dev daemon registration conflicted", false)
+		return
+	}
+	state.mu.Lock()
+	state.edgeRevision++
+	state.edgeDevices[proof.GetDeviceId()] = cloudhub.DeviceAuthorization{DeviceID: proof.GetDeviceId(), AccountID: devAccountID, PublicKey: append([]byte(nil), flow.publicKey...)}
+	edgeErr := state.publishEdgeSnapshot(now)
+	state.mu.Unlock()
+	if edgeErr != nil {
+		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "dev Hub authorization projection could not be published", true)
 		return
 	}
 	cloudSession, token, err := state.issueSession(session.KindDevice, proof.GetDeviceId())
@@ -419,97 +425,6 @@ func (state *serviceState) handlePresenceAdmission(writer http.ResponseWriter, r
 		Reference: reference, HubID: devHubID, AccountID: cloudSession.accountID, DeviceID: cloudSession.deviceID,
 		SessionKind: cloudservice.HubSessionPresence, SessionID: issued.PresenceSessionID,
 		ExpiresAt: issued.ExpiresAt.Unix(), Ticket: issued.Ticket.Bytes(),
-	}
-	defer clear(wire.Ticket)
-	writeJSON(writer, http.StatusOK, wire)
-}
-
-func (state *serviceState) handleClientAdmission(writer http.ResponseWriter, request *http.Request) {
-	if !requireMethod(writer, request, http.MethodPost) {
-		return
-	}
-	cloudSession, ok := state.authenticate(writer, request, session.KindAccount)
-	if !ok {
-		return
-	}
-	payload := &cloudpb.CreateSignalingSessionRequest{}
-	if !readProto(writer, request, payload) {
-		return
-	}
-	if payload.GetManagedSessionId() == "" || payload.GetTargetDeviceId() == "" || payload.GetOfferSdp() == "" {
-		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "managed client admission request is invalid", false)
-		return
-	}
-	managedSession, err := state.directory.ManagedSession(cloudSession.accountID, payload.GetManagedSessionId(), state.now().UTC())
-	if err != nil || managedSession.ClientDeviceID != cloudSession.deviceID || managedSession.TargetDeviceID != payload.GetTargetDeviceId() {
-		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "managed client admission binding was rejected", false)
-		return
-	}
-	state.issueManagedAdmission(writer, request.Context(), managedSession, servicecredential.PrincipalClient, []servicecredential.HubOperation{
-		servicecredential.HubOperationOffer, servicecredential.HubOperationCandidate,
-	})
-}
-
-func (state *serviceState) handleAnswerAdmission(writer http.ResponseWriter, request *http.Request) {
-	if !requireMethod(writer, request, http.MethodPost) {
-		return
-	}
-	cloudSession, ok := state.authenticate(writer, request, session.KindDevice)
-	if !ok {
-		return
-	}
-	envelope := httpapi.AnswerAdmissionRequest{}
-	if !readJSON(writer, request, &envelope) {
-		return
-	}
-	if envelope.ManagedSessionID == "" {
-		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "daemon answer admission request is invalid", false)
-		return
-	}
-	payload := &cloudpb.CompleteSignalingOfferRequest{}
-	if err := readProtoBytes(envelope.Payload, payload); err != nil || payload.GetSignalingSessionId() == "" || payload.GetAnswer() == nil && payload.GetError() == nil || payload.GetAnswer() != nil && payload.GetError() != nil {
-		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "daemon answer admission request is invalid", false)
-		return
-	}
-	managedSession, err := state.directory.ManagedSession(cloudSession.accountID, envelope.ManagedSessionID, state.now().UTC())
-	if err != nil || managedSession.TargetDeviceID != cloudSession.deviceID {
-		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "managed daemon admission binding was rejected", false)
-		return
-	}
-	state.issueManagedAdmission(writer, request.Context(), managedSession, servicecredential.PrincipalDaemon, []servicecredential.HubOperation{
-		servicecredential.HubOperationAnswer, servicecredential.HubOperationCandidate,
-	})
-}
-
-func (state *serviceState) issueManagedAdmission(writer http.ResponseWriter, ctx context.Context, managedSession domain.ManagedSession, principal servicecredential.PrincipalKind, operations []servicecredential.HubOperation) {
-	if err := ctx.Err(); err != nil {
-		writeCloudError(writer, http.StatusRequestTimeout, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "managed admission request was canceled", true)
-		return
-	}
-	ticketID, err := state.randomID("ticket")
-	if err != nil {
-		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "managed admission could not be issued", true)
-		return
-	}
-	ticket, err := state.admission.Issue(admission.Command{
-		TicketID: ticketID, AccountID: managedSession.AccountID, ManagedSessionID: managedSession.ID,
-		PrincipalKind: principal, Operations: operations, TTL: admissionTTL,
-	}, state.now().UTC())
-	if err != nil {
-		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "managed admission ownership was rejected", false)
-		return
-	}
-	deviceID := managedSession.ClientDeviceID
-	targetDeviceID := managedSession.TargetDeviceID
-	if principal == servicecredential.PrincipalDaemon {
-		deviceID = managedSession.TargetDeviceID
-		targetDeviceID = ""
-	}
-	wire := httpapi.AdmissionWire{
-		Reference: ticketID, HubID: managedSession.Hub.HubID, AccountID: managedSession.AccountID,
-		DeviceID: deviceID, TargetDeviceID: targetDeviceID,
-		SessionKind: cloudservice.HubSessionManaged, SessionID: managedSession.ID,
-		ExpiresAt: state.now().UTC().Add(admissionTTL).Unix(), Ticket: ticket.Bytes(),
 	}
 	defer clear(wire.Ticket)
 	writeJSON(writer, http.StatusOK, wire)

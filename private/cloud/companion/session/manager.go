@@ -60,7 +60,8 @@ type Metadata struct {
 // Authorization 是 companion 调用私有 Control Plane/Hub 时使用的短期账号或设备凭据。
 // String 永远脱敏；只有私有 service adapter 可以显式调用 Bytes 生成 TLS request authorization。
 type Authorization struct {
-	raw []byte
+	raw      []byte
+	metadata Metadata
 }
 
 // Bytes 返回 token 副本供私有网络 adapter 使用。
@@ -82,6 +83,12 @@ func (authorization *Authorization) Destroy() {
 // String 返回固定脱敏文本，避免 fmt 或结构化 logger 泄漏账号 token。
 func (authorization Authorization) String() string {
 	return "CloudAuthorization{[REDACTED]}"
+}
+
+// Metadata 返回与 token 同源的非秘密账号、设备和会话类型绑定。
+// 私有 adapter 可将其作为请求上下文发送，服务端仍必须以签名 token 验证，不能信任该值覆盖 claims。
+func (authorization Authorization) Metadata() Metadata {
+	return authorization.metadata
 }
 
 // Session 是从 OS credential store 解出的 companion 私有会话。
@@ -112,7 +119,7 @@ func (session Session) Metadata() Metadata {
 // Authorization 返回私有网络 adapter 使用的 token 副本。
 // 该方法不能被公开 IPC response、Status 或 diagnostics 调用。
 func (session Session) Authorization() Authorization {
-	return Authorization{raw: append([]byte(nil), session.accessToken...)}
+	return Authorization{raw: append([]byte(nil), session.accessToken...), metadata: session.metadata}
 }
 
 // Destroy 清理当前 Session 实例持有的 token bytes。

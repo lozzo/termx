@@ -14,9 +14,13 @@ type CreateEdgeSessionRequest struct {
 	ClientDeviceID     string
 	ClientConnectionID string
 	TargetDeviceID     string
+	// RelayCorrelationID 只供 CLOUD010 前尚未迁移的 relay_only lease 关联；direct 路径忽略该值。
+	RelayCorrelationID string
 	SignalingSessionID string
 	SDP                string
 	Candidates         []Candidate
+	RoutePreference    RoutePreference
+	RelayOnly          bool
 }
 
 // CreateEdgeSession 只读取 Hub 本地授权投影并创建 Hub-owned EdgeManagedSession。
@@ -29,13 +33,19 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 		return nil, err
 	}
 	managedSessionID := "edge-" + request.SignalingSessionID
-	legacy := CreateSessionRequest{AccountID: request.AccountID, ClientDeviceID: request.ClientDeviceID, TargetDeviceID: request.TargetDeviceID, ManagedSessionID: managedSessionID, SignalingSessionID: request.SignalingSessionID, SDP: request.SDP, Candidates: request.Candidates, RoutePreference: RoutePreferenceDirectOnly}
+	if request.RelayOnly {
+		if request.RelayCorrelationID == "" {
+			return nil, ErrInvalidSignal
+		}
+		managedSessionID = request.RelayCorrelationID
+	}
+	legacy := CreateSessionRequest{AccountID: request.AccountID, ClientDeviceID: request.ClientDeviceID, TargetDeviceID: request.TargetDeviceID, ManagedSessionID: managedSessionID, SignalingSessionID: request.SignalingSessionID, SDP: request.SDP, Candidates: request.Candidates, RoutePreference: request.RoutePreference, RelayOnly: request.RelayOnly}
 	if err := service.validateOffer(legacy); err != nil {
 		return nil, err
 	}
 	now := service.clock.Now().UTC()
 	state := &sessionState{id: request.SignalingSessionID, accountID: request.AccountID, managedSessionID: managedSessionID, clientDeviceID: request.ClientDeviceID, clientConnectionID: request.ClientConnectionID, targetDeviceID: request.TargetDeviceID, allowedOperations: []servicecredential.HubOperation{servicecredential.HubOperationOffer, servicecredential.HubOperationCandidate}, expiresAt: now.Add(service.maxSignalingTTL), clientEvents: make(chan ClientEvent, service.clientQueue), done: make(chan struct{})}
-	offer := Offer{SignalingSessionID: state.id, ManagedSessionID: state.managedSessionID, SourceDeviceID: state.clientDeviceID, TargetDeviceID: state.targetDeviceID, SDP: request.SDP, Candidates: cloneCandidates(request.Candidates), RoutePreference: RoutePreferenceDirectOnly}
+	offer := Offer{SignalingSessionID: state.id, ManagedSessionID: state.managedSessionID, SourceDeviceID: state.clientDeviceID, TargetDeviceID: state.targetDeviceID, SDP: request.SDP, Candidates: cloneCandidates(request.Candidates), RoutePreference: request.RoutePreference, RelayOnly: request.RelayOnly}
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	service.cleanupLocked(now)
@@ -61,6 +71,7 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 // CompleteEdgeAnswerRequest 绑定 daemon answer 与承接 offer 的 active presence。
 // PresenceSessionID 必须来自服务端已认证 stream，不能由 daemon 任意声明其他 presence。
 type CompleteEdgeAnswerRequest struct {
+	EdgeToken          []byte
 	AccountID          string
 	DaemonDeviceID     string
 	PresenceSessionID  string
@@ -69,10 +80,24 @@ type CompleteEdgeAnswerRequest struct {
 	Candidates         []Candidate
 }
 
+// CompleteEdgeFailureRequest 绑定 daemon 通过 owning presence 返回的稳定 signaling 失败。
+// 原始错误文本不进入 Hub；EdgeToken 必须是 daemon principal 并匹配 target device。
+type CompleteEdgeFailureRequest struct {
+	EdgeToken          []byte
+	AccountID          string
+	DaemonDeviceID     string
+	SignalingSessionID string
+	Code               int32
+	Retryable          bool
+}
+
 // CompleteEdgeAnswer 以 active presence ownership 完成 Hub-owned session，不领取 Control Plane answer ticket。
 func (service *Service) CompleteEdgeAnswer(_ context.Context, request CompleteEdgeAnswerRequest) (*DaemonSession, error) {
-	if request.AccountID == "" || request.DaemonDeviceID == "" || request.PresenceSessionID == "" || request.SignalingSessionID == "" || request.SDP == "" || len(request.SDP) > service.maxSDPBytes || len(request.Candidates) > service.maxCandidates || !validCandidates(request.Candidates) {
+	if service.edgeAuthorizer == nil || request.AccountID == "" || request.DaemonDeviceID == "" || request.SignalingSessionID == "" || request.SDP == "" || len(request.SDP) > service.maxSDPBytes || len(request.Candidates) > service.maxCandidates || !validCandidates(request.Candidates) {
 		return nil, ErrInvalidSignal
+	}
+	if _, err := service.edgeAuthorizer.AuthorizeDaemon(request.EdgeToken, request.AccountID, request.DaemonDeviceID); err != nil {
+		return nil, err
 	}
 	now := service.clock.Now().UTC()
 	service.mu.Lock()
@@ -80,7 +105,7 @@ func (service *Service) CompleteEdgeAnswer(_ context.Context, request CompleteEd
 	service.cleanupLocked(now)
 	presence := service.presences[request.DaemonDeviceID]
 	state := service.sessions[request.SignalingSessionID]
-	if presence == nil || presence.closed || presence.accountID != request.AccountID || presence.sessionID != request.PresenceSessionID || state == nil || state.closed || state.accountID != request.AccountID || state.targetDeviceID != request.DaemonDeviceID {
+	if presence == nil || presence.closed || presence.accountID != request.AccountID || request.PresenceSessionID != "" && presence.sessionID != request.PresenceSessionID || state == nil || state.closed || state.accountID != request.AccountID || state.targetDeviceID != request.DaemonDeviceID {
 		return nil, ErrAdmission
 	}
 	if state.answered {
@@ -94,5 +119,37 @@ func (service *Service) CompleteEdgeAnswer(_ context.Context, request CompleteEd
 		return &DaemonSession{service: service, state: state, deviceID: request.DaemonDeviceID}, nil
 	default:
 		return nil, ErrBackpressure
+	}
+}
+
+// CompleteEdgeFailure 验证 daemon edge identity 和 active presence 后终止对应 signaling session。
+func (service *Service) CompleteEdgeFailure(_ context.Context, request CompleteEdgeFailureRequest) error {
+	if service.edgeAuthorizer == nil || request.AccountID == "" || request.DaemonDeviceID == "" || request.SignalingSessionID == "" || request.Code <= 0 {
+		return ErrInvalidSignal
+	}
+	if _, err := service.edgeAuthorizer.AuthorizeDaemon(request.EdgeToken, request.AccountID, request.DaemonDeviceID); err != nil {
+		return err
+	}
+	now := service.clock.Now().UTC()
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	service.cleanupLocked(now)
+	presence := service.presences[request.DaemonDeviceID]
+	state := service.sessions[request.SignalingSessionID]
+	if presence == nil || presence.closed || presence.accountID != request.AccountID || state == nil || state.closed || state.accountID != request.AccountID || state.targetDeviceID != request.DaemonDeviceID {
+		return ErrAdmission
+	}
+	if state.answered {
+		return ErrSessionConflict
+	}
+	select {
+	case state.clientEvents <- ClientEvent{Failure: &Failure{Code: request.Code, Retryable: request.Retryable}}:
+		state.answered = true
+		state.closed = true
+		close(state.done)
+		delete(service.sessions, state.id)
+		return nil
+	default:
+		return ErrBackpressure
 	}
 }

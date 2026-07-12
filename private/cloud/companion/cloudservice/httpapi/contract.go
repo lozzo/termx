@@ -61,10 +61,6 @@ const (
 	ControlResolveEndpointPath = "/v1/endpoints/resolve"
 	// ControlPresenceAdmissionPath 是 device-scoped presence ticket endpoint。
 	ControlPresenceAdmissionPath = "/v1/admissions/presence"
-	// ControlClientAdmissionPath 是 client managed signaling ticket endpoint。
-	ControlClientAdmissionPath = "/v1/admissions/client"
-	// ControlAnswerAdmissionPath 是 daemon managed answer ticket endpoint。
-	ControlAnswerAdmissionPath = "/v1/admissions/answer"
 	// ControlAcquireRelayLeasePath 是 account/device caller 获取同一 ManagedSession principal-specific TURN material 的 endpoint。
 	ControlAcquireRelayLeasePath = "/v1/relay/leases/acquire"
 
@@ -173,18 +169,19 @@ type AdmissionWire struct {
 	Ticket         []byte                      `json:"ticket"`
 }
 
-// AnswerAdmissionRequest 把 daemon 已消费 offer 的 ManagedSession 与 public completion DTO 绑定。
-// SignalingSessionID 仍在 protobuf request 中；该 envelope 不允许出现 capability 或 terminal 字段。
-type AnswerAdmissionRequest struct {
-	ManagedSessionID string `json:"managed_session_id"`
-	Payload          []byte `json:"payload"`
-}
-
 // HubRequest 把 private Hub admission 与一个 public cloud protobuf payload 绑定。
 // Hub 不接收 account/device cloud authorization，唯一服务准入凭据是 Admission.Ticket。
 type HubRequest struct {
 	Admission AdmissionWire `json:"admission"`
 	Payload   []byte        `json:"payload"`
+}
+
+// EdgeHubRequest 只包装 managed signaling protobuf payload。
+// client/daemon edge credential 必须位于 Authorization header；请求体不复制 credential、grant 或 terminal 数据。
+type EdgeHubRequest struct {
+	AccountID string `json:"account_id"`
+	DeviceID  string `json:"device_id"`
+	Payload   []byte `json:"payload"`
 }
 
 func validateServiceURL(raw string, allowPublicHTTP bool) (*url.URL, error) {

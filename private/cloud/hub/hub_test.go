@@ -104,7 +104,11 @@ func TestHubCreatesEdgeSessionAndAcceptsAnswerFromOwningPresence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := fixture.service.CreateEdgeSession(context.Background(), hub.CreateEdgeSessionRequest{EdgeToken: token, AccountID: "account-1", ClientDeviceID: "client-1", ClientConnectionID: "connection-1", TargetDeviceID: "daemon-1", SignalingSessionID: "signal-edge", SDP: "offer"})
+	daemonToken, err := edgeIssuer.IssueEdgeAccessForPrincipal("daemon-edge-token", "hub-eu", "account-1", "daemon-1", servicecredential.EdgePrincipalDaemon, 1, time.Hour, fixture.clock.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := fixture.service.CreateEdgeSession(context.Background(), hub.CreateEdgeSessionRequest{EdgeToken: token, AccountID: "account-1", ClientDeviceID: "client-1", ClientConnectionID: "connection-1", TargetDeviceID: "daemon-1", SignalingSessionID: "signal-edge", SDP: "offer", RoutePreference: hub.RoutePreferenceDirectOnly})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,10 +117,10 @@ func TestHubCreatesEdgeSessionAndAcceptsAnswerFromOwningPresence(t *testing.T) {
 	if err != nil || event.Offer == nil || event.Offer.ManagedSessionID != "edge-signal-edge" {
 		t.Fatalf("edge offer = (%#v, %v)", event, err)
 	}
-	if _, err := fixture.service.CompleteEdgeAnswer(context.Background(), hub.CompleteEdgeAnswerRequest{AccountID: "account-1", DaemonDeviceID: "daemon-1", PresenceSessionID: "wrong-presence", SignalingSessionID: "signal-edge", SDP: "answer"}); !errors.Is(err, hub.ErrAdmission) {
+	if _, err := fixture.service.CompleteEdgeAnswer(context.Background(), hub.CompleteEdgeAnswerRequest{EdgeToken: daemonToken, AccountID: "account-1", DaemonDeviceID: "daemon-1", PresenceSessionID: "wrong-presence", SignalingSessionID: "signal-edge", SDP: "answer"}); !errors.Is(err, hub.ErrAdmission) {
 		t.Fatalf("wrong presence answer error = %v", err)
 	}
-	if _, err := fixture.service.CompleteEdgeAnswer(context.Background(), hub.CompleteEdgeAnswerRequest{AccountID: "account-1", DaemonDeviceID: "daemon-1", PresenceSessionID: "presence-edge", SignalingSessionID: "signal-edge", SDP: "answer"}); err != nil {
+	if _, err := fixture.service.CompleteEdgeAnswer(context.Background(), hub.CompleteEdgeAnswerRequest{EdgeToken: daemonToken, AccountID: "account-1", DaemonDeviceID: "daemon-1", PresenceSessionID: "presence-edge", SignalingSessionID: "signal-edge", SDP: "answer"}); err != nil {
 		t.Fatal(err)
 	}
 	answer, err := client.Receive(context.Background())

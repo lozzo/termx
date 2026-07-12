@@ -51,21 +51,24 @@ type EdgeAuthorizerConfig struct {
 	KeyRing      *servicecredential.KeyRing
 	Clock        Clock
 	MaxStaleness time.Duration
+	// SnapshotStore 可选持久化已验签快照；恢复时仍会重新验签。
+	SnapshotStore EdgeSnapshotStore
 }
 
 // EdgeAuthorizer 是 Hub managed direct 授权决策的内存 owner。
 // 它只接受完整 snapshot 的原子替换；生产持久快照/WAL 由外层同步组件负责验证后恢复。
 type EdgeAuthorizer struct {
-	mu           sync.RWMutex
-	hubID        string
-	issuer       string
-	keyRing      *servicecredential.KeyRing
-	clock        Clock
-	maxStaleness time.Duration
-	revision     uint64
-	generatedAt  time.Time
-	accounts     map[string]AccountAuthorization
-	devices      map[string]DeviceAuthorization
+	mu            sync.RWMutex
+	hubID         string
+	issuer        string
+	keyRing       *servicecredential.KeyRing
+	clock         Clock
+	maxStaleness  time.Duration
+	snapshotStore EdgeSnapshotStore
+	revision      uint64
+	generatedAt   time.Time
+	accounts      map[string]AccountAuthorization
+	devices       map[string]DeviceAuthorization
 }
 
 // NewEdgeAuthorizer 创建没有授权快照的 Hub authorizer。
@@ -77,7 +80,66 @@ func NewEdgeAuthorizer(config EdgeAuthorizerConfig) (*EdgeAuthorizer, error) {
 	if config.Clock == nil {
 		config.Clock = realClock{}
 	}
-	return &EdgeAuthorizer{hubID: config.HubID, issuer: config.Issuer, keyRing: config.KeyRing, clock: config.Clock, maxStaleness: config.MaxStaleness}, nil
+	return &EdgeAuthorizer{hubID: config.HubID, issuer: config.Issuer, keyRing: config.KeyRing, clock: config.Clock, maxStaleness: config.MaxStaleness, snapshotStore: config.SnapshotStore}, nil
+}
+
+// ApplySignedSnapshot 验证 Control Plane 签名快照、持久化原始 token，再原子发布内存投影。
+// 持久化失败时不发布新 revision，避免重启后恢复到已经落后的授权状态。
+func (authorizer *EdgeAuthorizer) ApplySignedSnapshot(encoded []byte) error {
+	now := authorizer.clock.Now().UTC()
+	claims, err := servicecredential.VerifyEdgePolicy(authorizer.keyRing, encoded, authorizer.issuer, authorizer.hubID, now)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrPolicySnapshot, err)
+	}
+	snapshot := snapshotFromPolicyClaims(claims)
+	if err := authorizer.validateNextSnapshot(snapshot); err != nil {
+		return err
+	}
+	if authorizer.snapshotStore != nil {
+		if err := authorizer.snapshotStore.Save(append([]byte(nil), encoded...)); err != nil {
+			return fmt.Errorf("%w: persist snapshot: %v", ErrPolicySnapshot, err)
+		}
+	}
+	return authorizer.ApplySnapshot(snapshot)
+}
+
+// RestoreSignedSnapshot 从 store 读取原始快照并重新验证签名、audience、expiry 和 schema 后发布。
+// 缺少 store、磁盘损坏或快照过期均 fail closed，不恢复 presence 或 signaling 状态。
+func (authorizer *EdgeAuthorizer) RestoreSignedSnapshot() error {
+	if authorizer.snapshotStore == nil {
+		return ErrPolicySnapshot
+	}
+	encoded, err := authorizer.snapshotStore.Load()
+	if err != nil {
+		return fmt.Errorf("%w: load snapshot: %v", ErrPolicySnapshot, err)
+	}
+	claims, err := servicecredential.VerifyEdgePolicy(authorizer.keyRing, encoded, authorizer.issuer, authorizer.hubID, authorizer.clock.Now().UTC())
+	clear(encoded)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrPolicySnapshot, err)
+	}
+	return authorizer.ApplySnapshot(snapshotFromPolicyClaims(claims))
+}
+
+func (authorizer *EdgeAuthorizer) validateNextSnapshot(snapshot AuthorizationSnapshot) error {
+	authorizer.mu.RLock()
+	defer authorizer.mu.RUnlock()
+	if snapshot.Revision == 0 || snapshot.Revision <= authorizer.revision {
+		return ErrPolicySnapshot
+	}
+	return nil
+}
+
+func snapshotFromPolicyClaims(claims servicecredential.EdgePolicyClaims) AuthorizationSnapshot {
+	accounts := make([]AccountAuthorization, 0, len(claims.Accounts))
+	for _, account := range claims.Accounts {
+		accounts = append(accounts, AccountAuthorization{AccountID: account.AccountID, AuthEpoch: account.AuthEpoch, ManagedDirectEnabled: account.ManagedDirectEnabled, Revoked: account.Revoked})
+	}
+	devices := make([]DeviceAuthorization, 0, len(claims.Devices))
+	for _, device := range claims.Devices {
+		devices = append(devices, DeviceAuthorization{DeviceID: device.DeviceID, AccountID: device.AccountID, PublicKey: append([]byte(nil), device.PublicKey...), Revoked: device.Revoked})
+	}
+	return AuthorizationSnapshot{Revision: claims.Revision, GeneratedAt: time.Unix(claims.GeneratedUnix, 0).UTC(), Accounts: accounts, Devices: devices}
 }
 
 // ApplySnapshot 原子替换完整授权投影。
@@ -122,7 +184,7 @@ func (authorizer *EdgeAuthorizer) ApplySnapshot(snapshot AuthorizationSnapshot) 
 // 返回 claims 只供 Hub 创建短期 EdgeManagedSession；任何缺失、撤销、epoch 不匹配或陈旧快照都 fail closed。
 func (authorizer *EdgeAuthorizer) AuthorizeDirect(token []byte, accountID, clientDeviceID, targetDeviceID string) (servicecredential.EdgeAccessClaims, error) {
 	now := authorizer.clock.Now().UTC()
-	claims, err := servicecredential.VerifyEdgeAccess(authorizer.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: authorizer.issuer, AudienceHubID: authorizer.hubID, AccountID: accountID, ClientDeviceID: clientDeviceID}, now)
+	claims, err := servicecredential.VerifyEdgeAccess(authorizer.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: authorizer.issuer, AudienceHubID: authorizer.hubID, AccountID: accountID, ClientDeviceID: clientDeviceID, PrincipalKind: servicecredential.EdgePrincipalClient}, now)
 	if err != nil {
 		return servicecredential.EdgeAccessClaims{}, fmt.Errorf("%w: %v", ErrEdgeAuthorization, err)
 	}
@@ -134,6 +196,27 @@ func (authorizer *EdgeAuthorizer) AuthorizeDirect(token []byte, accountID, clien
 	account, accountOK := authorizer.accounts[accountID]
 	device, deviceOK := authorizer.devices[targetDeviceID]
 	if !accountOK || !deviceOK || account.Revoked || !account.ManagedDirectEnabled || account.AuthEpoch != claims.AuthEpoch || device.Revoked || device.AccountID != accountID {
+		return servicecredential.EdgeAccessClaims{}, ErrEdgeAuthorization
+	}
+	return claims, nil
+}
+
+// AuthorizeDaemon 离线验证 daemon edge token、账号 epoch 与本地 device ownership/revoke 投影。
+// 它只允许完成已由该 device active presence 接收的 signaling，不授予 client offer 或 terminal capability。
+func (authorizer *EdgeAuthorizer) AuthorizeDaemon(token []byte, accountID, deviceID string) (servicecredential.EdgeAccessClaims, error) {
+	now := authorizer.clock.Now().UTC()
+	claims, err := servicecredential.VerifyEdgeAccess(authorizer.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: authorizer.issuer, AudienceHubID: authorizer.hubID, AccountID: accountID, ClientDeviceID: deviceID, PrincipalKind: servicecredential.EdgePrincipalDaemon}, now)
+	if err != nil {
+		return servicecredential.EdgeAccessClaims{}, fmt.Errorf("%w: %v", ErrEdgeAuthorization, err)
+	}
+	authorizer.mu.RLock()
+	defer authorizer.mu.RUnlock()
+	if authorizer.revision == 0 || now.Sub(authorizer.generatedAt) > authorizer.maxStaleness {
+		return servicecredential.EdgeAccessClaims{}, ErrPolicySnapshot
+	}
+	account, accountOK := authorizer.accounts[accountID]
+	device, deviceOK := authorizer.devices[deviceID]
+	if !accountOK || !deviceOK || account.Revoked || account.AuthEpoch != claims.AuthEpoch || device.Revoked || device.AccountID != accountID {
 		return servicecredential.EdgeAccessClaims{}, ErrEdgeAuthorization
 	}
 	return claims, nil

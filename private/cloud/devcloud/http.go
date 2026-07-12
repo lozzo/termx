@@ -15,6 +15,7 @@ import (
 
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	"github.com/lozzow/termx/private/cloud/companion/session"
+	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"google.golang.org/protobuf/proto"
@@ -150,7 +151,7 @@ func (state *serviceState) authenticateKinds(writer http.ResponseWriter, request
 		return cloudSession{}, false
 	}
 	token, err := base64.RawURLEncoding.DecodeString(encoded)
-	if err != nil || len(token) != 32 {
+	if err != nil || len(token) == 0 || len(token) > 4096 {
 		clear(token)
 		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "cloud authorization is invalid", false)
 		return cloudSession{}, false
@@ -169,6 +170,22 @@ func (state *serviceState) authenticateKinds(writer http.ResponseWriter, request
 	return storedSession, true
 }
 
+func readBearerToken(writer http.ResponseWriter, request *http.Request) ([]byte, bool) {
+	header := request.Header.Get("Authorization")
+	if header == "" || strings.Count(header, " ") != 1 {
+		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub edge authorization is required", false)
+		return nil, false
+	}
+	scheme, encoded, _ := strings.Cut(header, " ")
+	token, err := base64.RawURLEncoding.DecodeString(encoded)
+	if scheme != "Bearer" || err != nil || len(token) == 0 || len(token) > 4096 {
+		clear(token)
+		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub edge authorization is invalid", false)
+		return nil, false
+	}
+	return token, true
+}
+
 func containsSessionKind(allowed []session.Kind, current session.Kind) bool {
 	for _, candidate := range allowed {
 		if candidate == current {
@@ -179,12 +196,20 @@ func containsSessionKind(allowed []session.Kind, current session.Kind) bool {
 }
 
 func (state *serviceState) issueSession(kind session.Kind, deviceID string) (cloudSession, []byte, error) {
-	token, err := state.randomBytes(32)
+	tokenID, err := state.randomID("edge-token")
+	if err != nil {
+		return cloudSession{}, nil, err
+	}
+	now := state.now().UTC()
+	principal := servicecredential.EdgePrincipalClient
+	if kind == session.KindDevice {
+		principal = servicecredential.EdgePrincipalDaemon
+	}
+	token, err := state.edgeIssuer.IssueEdgeAccessForPrincipal(tokenID, devHubID, devAccountID, deviceID, principal, 1, cloudSessionTTL, now)
 	if err != nil {
 		return cloudSession{}, nil, err
 	}
 	defer clear(token)
-	now := state.now().UTC()
 	cloudSession := cloudSession{
 		kind: kind, accountID: devAccountID, accountLabel: devAccountLabel,
 		deviceID: deviceID, expiresAt: now.Add(cloudSessionTTL),
@@ -194,6 +219,19 @@ func (state *serviceState) issueSession(kind session.Kind, deviceID string) (clo
 	state.sessions[sha256.Sum256(token)] = cloudSession
 	state.mu.Unlock()
 	return cloudSession, append([]byte(nil), token...), nil
+}
+
+func (state *serviceState) publishEdgeSnapshot(now time.Time) error {
+	devices := make([]servicecredential.EdgePolicyDevice, 0, len(state.edgeDevices))
+	for _, device := range state.edgeDevices {
+		devices = append(devices, servicecredential.EdgePolicyDevice{DeviceID: device.DeviceID, AccountID: device.AccountID, PublicKey: append([]byte(nil), device.PublicKey...), Revoked: device.Revoked})
+	}
+	encoded, err := state.edgePolicyIssuer.Issue(devHubID, state.edgeRevision, []servicecredential.EdgePolicyAccount{{AccountID: devAccountID, AuthEpoch: 1, ManagedDirectEnabled: true}}, devices, 30*time.Minute, now.UTC())
+	if err != nil {
+		return err
+	}
+	defer clear(encoded)
+	return state.edgeAuth.ApplySignedSnapshot(encoded)
 }
 
 func (state *serviceState) cleanupLocked(now time.Time) {

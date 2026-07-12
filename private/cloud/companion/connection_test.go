@@ -101,16 +101,6 @@ func (controlPlane *fakeControlPlane) AcquirePresenceAdmission(_ context.Context
 	return controlPlane.presenceAdmission, nil
 }
 
-func (controlPlane *fakeControlPlane) AcquireClientAdmission(_ context.Context, authorization session.Authorization, _ *cloudpb.CreateSignalingSessionRequest) (cloudservice.HubAdmission, error) {
-	controlPlane.capture(authorization)
-	return controlPlane.clientAdmission, nil
-}
-
-func (controlPlane *fakeControlPlane) AcquireDaemonAnswerAdmission(_ context.Context, authorization session.Authorization, _ string, _ *cloudpb.CompleteSignalingOfferRequest) (cloudservice.HubAdmission, error) {
-	controlPlane.capture(authorization)
-	return controlPlane.daemonAdmission, nil
-}
-
 func (controlPlane *fakeControlPlane) AcquireRelayLease(_ context.Context, authorization session.Authorization, _ *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
 	controlPlane.capture(authorization)
 	return controlPlane.leaseResponse, nil
@@ -151,11 +141,11 @@ func (hub *fakeHub) OpenPresence(_ context.Context, _ session.Authorization, _ c
 	return hub.presence, nil
 }
 
-func (hub *fakeHub) CreateSignalingSession(_ context.Context, _ session.Authorization, _ cloudservice.HubAdmission, _ *cloudpb.CreateSignalingSessionRequest) (cloudservice.SignalingSource, error) {
+func (hub *fakeHub) CreateSignalingSession(_ context.Context, _ session.Authorization, _ *cloudpb.CreateSignalingSessionRequest) (cloudservice.SignalingSource, error) {
 	return hub.signaling, nil
 }
 
-func (hub *fakeHub) CompleteSignalingOffer(_ context.Context, _ session.Authorization, _ cloudservice.HubAdmission, _ *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
+func (hub *fakeHub) CompleteSignalingOffer(_ context.Context, _ session.Authorization, _ *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
 	hub.mu.Lock()
 	hub.completed++
 	hub.mu.Unlock()

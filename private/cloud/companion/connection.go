@@ -353,7 +353,7 @@ func (connection *Connection) OpenPresence(ctx context.Context, request *cloudpb
 	return stream, nil
 }
 
-// CreateSignalingSession 获取 client-specific admission 并转发不含 capability 的 WebRTC offer。
+// CreateSignalingSession 使用启动阶段账号 edge credential 直接向 Hub 转发 WebRTC offer。
 // 返回 stream 只属于当前连接和 managed session，关闭其他连接不会影响它。
 func (connection *Connection) CreateSignalingSession(ctx context.Context, request *cloudpb.CreateSignalingSessionRequest) (cloudcompanion.SignalingStream, error) {
 	authorization, err := connection.authorize(ctx, cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING, accountRoles...)
@@ -368,15 +368,7 @@ func (connection *Connection) CreateSignalingSession(ctx context.Context, reques
 		return nil, err
 	}
 	request = cloneMessage(request)
-	admission, err := connection.service.controlPlane.AcquireClientAdmission(ctx, authorization, request)
-	if err != nil {
-		return nil, sanitizeAdapterError(err)
-	}
-	defer admission.Destroy()
-	if err := validateAdmission(admission, cloudservice.HubSessionManaged, request.GetManagedSessionId(), connection.service.now()); err != nil {
-		return nil, err
-	}
-	source, err := connection.service.hub.CreateSignalingSession(ctx, authorization, admission, request)
+	source, err := connection.service.hub.CreateSignalingSession(ctx, authorization, request)
 	if err != nil {
 		return nil, sanitizeAdapterError(err)
 	}
@@ -398,7 +390,7 @@ func (connection *Connection) CompleteSignalingOffer(ctx context.Context, reques
 	if err := validateCompleteOfferRequest(request); err != nil {
 		return nil, err
 	}
-	managedSessionID, ownsOffer := connection.ownedOffer(request.GetSignalingSessionId())
+	_, ownsOffer := connection.ownedOffer(request.GetSignalingSessionId())
 	if !ownsOffer {
 		return nil, protocolError("signaling offer does not belong to this daemon connection")
 	}
@@ -409,15 +401,7 @@ func (connection *Connection) CompleteSignalingOffer(ctx context.Context, reques
 		failure.RetryAfterMillis = 0
 		failure.CorrelationId = ""
 	}
-	admission, err := connection.service.controlPlane.AcquireDaemonAnswerAdmission(ctx, authorization, managedSessionID, request)
-	if err != nil {
-		return nil, sanitizeAdapterError(err)
-	}
-	defer admission.Destroy()
-	if err := validateAdmission(admission, cloudservice.HubSessionManaged, managedSessionID, connection.service.now()); err != nil {
-		return nil, err
-	}
-	response, err := connection.service.hub.CompleteSignalingOffer(ctx, authorization, admission, request)
+	response, err := connection.service.hub.CompleteSignalingOffer(ctx, authorization, request)
 	if err != nil {
 		return nil, sanitizeAdapterError(err)
 	}

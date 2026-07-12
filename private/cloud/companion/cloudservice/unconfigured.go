@@ -51,16 +51,6 @@ func (*UnconfiguredAdapter) AcquirePresenceAdmission(context.Context, session.Au
 	return HubAdmission{}, unavailableAdapterError()
 }
 
-// AcquireClientAdmission 拒绝未装配的 client signaling admission。
-func (*UnconfiguredAdapter) AcquireClientAdmission(context.Context, session.Authorization, *cloudpb.CreateSignalingSessionRequest) (HubAdmission, error) {
-	return HubAdmission{}, unavailableAdapterError()
-}
-
-// AcquireDaemonAnswerAdmission 拒绝未装配的 daemon answer admission。
-func (*UnconfiguredAdapter) AcquireDaemonAnswerAdmission(context.Context, session.Authorization, string, *cloudpb.CompleteSignalingOfferRequest) (HubAdmission, error) {
-	return HubAdmission{}, unavailableAdapterError()
-}
-
 // AcquireRelayLease 拒绝未装配的 Relay lease 请求。
 func (*UnconfiguredAdapter) AcquireRelayLease(context.Context, session.Authorization, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
 	return nil, unavailableAdapterError()
@@ -87,12 +77,12 @@ func (*UnconfiguredAdapter) OpenPresence(context.Context, session.Authorization,
 }
 
 // CreateSignalingSession 拒绝未装配的 Hub signaling stream。
-func (*UnconfiguredAdapter) CreateSignalingSession(context.Context, session.Authorization, HubAdmission, *cloudpb.CreateSignalingSessionRequest) (SignalingSource, error) {
+func (*UnconfiguredAdapter) CreateSignalingSession(context.Context, session.Authorization, *cloudpb.CreateSignalingSessionRequest) (SignalingSource, error) {
 	return nil, unavailableAdapterError()
 }
 
 // CompleteSignalingOffer 拒绝未装配的 Hub answer 请求。
-func (*UnconfiguredAdapter) CompleteSignalingOffer(context.Context, session.Authorization, HubAdmission, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
+func (*UnconfiguredAdapter) CompleteSignalingOffer(context.Context, session.Authorization, *cloudpb.CompleteSignalingOfferRequest) (*cloudpb.CompleteSignalingOfferResponse, error) {
 	return nil, unavailableAdapterError()
 }
 
