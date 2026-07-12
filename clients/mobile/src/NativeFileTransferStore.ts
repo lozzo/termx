@@ -197,16 +197,8 @@ export class NativeFileTransferStore {
     }
     this._addOrUpdate(info)
 
-    if (!this._session) {
-      this._update(pendingId, {
-        status: 'failed',
-        error: 'Native transfer bridge is not connected',
-      })
-      return
-    }
-
-    try {
-      this._session.sendTransferRequest({
+    void this._ensureSession(machineId).then((session) => {
+      session.sendTransferRequest({
         action: 'start_upload',
         content_uri: contentUri,
         file_name: fileName,
@@ -214,12 +206,13 @@ export class NativeFileTransferStore {
         target_dir: targetDir,
         machine_id: machineId,
       })
-    } catch (err) {
+      void this.refreshFromNative()
+    }).catch((err) => {
       this._update(pendingId, {
         status: 'failed',
         error: err instanceof Error ? err.message : String(err),
       })
-    }
+    })
   }
 
   cancelTransfer(id: string): void {
