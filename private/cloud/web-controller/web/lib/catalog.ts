@@ -28,7 +28,7 @@ export interface Catalog {
 export async function loadCatalog(): Promise<Catalog> {
   const upstream = process.env.WEB_CONTROLLER_BFF_URL?.replace(/\/$/, '')
   if (!upstream) throw new Error('WEB_CONTROLLER_BFF_URL is required')
-  const response = await fetch(`${upstream}/v1/catalog`, { next: { revalidate: 60 }, signal: AbortSignal.timeout(2500) })
+  const response = await fetch(`${upstream}/v1/catalog`, { cache: 'no-store', signal: AbortSignal.timeout(2500) })
   if (!response.ok) throw new Error(`Web Controller BFF catalog returned ${response.status}`)
   return response.json() as Promise<Catalog>
 }

@@ -15,13 +15,14 @@ PRIVATE_MODULES := \
 	private/cloud/route-planner \
 	private/cloud/web-controller
 
-.PHONY: help build build-web-controller cloud-dev test test-private test-clients test-android test-all doctor clean
+.PHONY: help build build-web-controller build-web-controller-linux cloud-dev test test-private test-clients test-android test-all doctor clean
 
 help:
 	@printf '%s\n' \
 		'Targets:' \
 		'  make build         Build termx into .artifacts/bin/' \
 		'  make build-web-controller  Build Go BFF and Next.js standalone Web Controller' \
+		'  make build-web-controller-linux  Build the Linux/amd64 staging Web Controller artifact' \
 		'  make cloud-dev     Start the explicit single-region dev cloud' \
 		'  make test          Test the public Go module' \
 		'  make test-private  Test each private cloud Go module when present' \
@@ -46,6 +47,9 @@ build-web-controller:
 	cp -R private/cloud/web-controller/web/public "$(ARTIFACT_DIR)/web-controller/private/cloud/web-controller/web/public"
 	mkdir -p "$(ARTIFACT_DIR)/web-controller-config"
 	cp private/cloud/web-controller/config/plans.json "$(ARTIFACT_DIR)/web-controller-config/plans.json"
+
+build-web-controller-linux:
+	$(MAKE) build-web-controller GOOS=linux GOARCH=amd64 CGO_ENABLED=0
 
 cloud-dev:
 	mkdir -p "$(ARTIFACT_DIR)/cloud-dev"
