@@ -245,6 +245,25 @@ func TestProtocolFileUploadResumeIsBoundToVerifiedPrincipal(t *testing.T) {
 	}
 }
 
+func TestProtocolFileUploadResumeTakesOverStaleSamePrincipalSession(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	target := filepath.Join(t.TempDir(), "takeover.bin")
+	scope := fullDaemonTransportScope()
+	scope.PrincipalID = "grant-owner"
+	first, closeFirst := newClientForServedTransport(t, server, scope, true)
+	defer closeFirst()
+	opened, err := first.FileUploadOpen(context.Background(), protocol.FileUploadOpenParams{Path: target, Size: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, closeSecond := newClientForServedTransport(t, server, scope, true)
+	defer closeSecond()
+	resumed, err := second.FileUploadOpen(context.Background(), protocol.FileUploadOpenParams{Path: target, Size: 3, ResumeTransferID: opened.TransferID})
+	if err != nil || resumed.Offset != 0 {
+		t.Fatalf("same-principal takeover %#v %v", resumed, err)
+	}
+}
+
 func sendUploadData(t *testing.T, client *protocol.Client, channel uint16, offset int64, data []byte) {
 	t.Helper()
 	payload, err := protocol.EncodeFileTransferData(protocol.FileTransferData{Offset: offset, Data: data})

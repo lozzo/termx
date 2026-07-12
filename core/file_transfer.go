@@ -30,15 +30,16 @@ const (
 )
 
 type uploadTransferRecord struct {
-	ID          string
-	PrincipalID string
-	TargetPath  string
-	TempPath    string
-	Size        int64
-	Offset      int64
-	Overwrite   bool
-	ExpiresAt   time.Time
-	Attached    bool
+	ID                string
+	PrincipalID       string
+	TargetPath        string
+	TempPath          string
+	Size              int64
+	Offset            int64
+	Overwrite         bool
+	ExpiresAt         time.Time
+	AttachedSessionID uint64
+	attachedSession   *protocolSession
 }
 
 type sessionFileTransfer struct {
@@ -158,9 +159,20 @@ func (session *protocolSession) openFileUpload(params protocol.FileUploadOpenPar
 	session.server.removeExpiredUploadsLocked(now)
 	if params.ResumeTransferID != "" {
 		record = session.server.fileUploads[params.ResumeTransferID]
-		if record == nil || record.PrincipalID != session.scope.PrincipalID || record.TargetPath != target || record.Size != params.Size || record.Attached {
+		if record == nil || record.PrincipalID != session.scope.PrincipalID || record.TargetPath != target || record.Size != params.Size || record.AttachedSessionID == session.sessionID {
 			session.server.fileTransferMu.Unlock()
 			return protocol.FileTransferOpenResult{}, fmt.Errorf("upload transfer is unavailable")
+		}
+		previousSession := record.attachedSession
+		if previousSession != nil {
+			session.server.fileTransferMu.Unlock()
+			previousSession.releaseUploadForTakeover(record.ID)
+			session.server.fileTransferMu.Lock()
+			record = session.server.fileUploads[params.ResumeTransferID]
+			if record == nil || record.PrincipalID != session.scope.PrincipalID || record.TargetPath != target || record.Size != params.Size || record.AttachedSessionID != 0 {
+				session.server.fileTransferMu.Unlock()
+				return protocol.FileTransferOpenResult{}, fmt.Errorf("upload transfer is unavailable")
+			}
 		}
 	} else {
 		if !params.Overwrite {
@@ -184,7 +196,8 @@ func (session *protocolSession) openFileUpload(params protocol.FileUploadOpenPar
 		record = &uploadTransferRecord{ID: id, PrincipalID: session.scope.PrincipalID, TargetPath: target, TempPath: tempPath, Size: params.Size, Overwrite: params.Overwrite, ExpiresAt: now.Add(fileUploadResumeTTL)}
 		session.server.fileUploads[id] = record
 	}
-	record.Attached = true
+	record.AttachedSessionID = session.sessionID
+	record.attachedSession = session
 	session.server.fileTransferMu.Unlock()
 	file, err := os.OpenFile(record.TempPath, os.O_RDWR, 0o600)
 	if err != nil {
@@ -369,10 +382,35 @@ func (session *protocolSession) releaseAllFileTransfers() {
 		session.releaseFileTransfer(id, false)
 	}
 }
+
+// releaseUploadForTakeover 串行关闭同 principal 旧 session 的上传 channel，使新 session 可从 daemon offset 接管。
+func (session *protocolSession) releaseUploadForTakeover(id string) {
+	session.fileMu.Lock()
+	channel, ok := session.fileIDs[id]
+	transfer := session.fileChannels[channel]
+	if ok {
+		delete(session.fileIDs, id)
+		delete(session.fileChannels, channel)
+	}
+	session.fileMu.Unlock()
+	if transfer != nil {
+		transfer.mu.Lock()
+		if transfer.file != nil {
+			_ = transfer.file.Close()
+			transfer.file = nil
+		}
+		transfer.mu.Unlock()
+	}
+	session.detachUploadRecord(id)
+}
+
 func (session *protocolSession) detachUploadRecord(id string) {
 	session.server.fileTransferMu.Lock()
 	if record := session.server.fileUploads[id]; record != nil {
-		record.Attached = false
+		if record.AttachedSessionID == session.sessionID {
+			record.AttachedSessionID = 0
+			record.attachedSession = nil
+		}
 		record.ExpiresAt = time.Now().UTC().Add(fileUploadResumeTTL)
 	}
 	session.server.fileTransferMu.Unlock()
@@ -419,7 +457,7 @@ func (session *protocolSession) removeUpload(id string) {
 }
 func (server *Server) removeExpiredUploadsLocked(now time.Time) {
 	for id, record := range server.fileUploads {
-		if !record.Attached && !now.Before(record.ExpiresAt) {
+		if record.AttachedSessionID == 0 && !now.Before(record.ExpiresAt) {
 			_ = os.Remove(record.TempPath)
 			delete(server.fileUploads, id)
 		}
