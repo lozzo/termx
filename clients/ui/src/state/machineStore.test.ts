@@ -142,6 +142,23 @@ describe('machine store', () => {
     expect(store.listMachines()).toEqual([])
   })
 
+  it('migrates old Official managed pairing records to cloud access', () => {
+    const storage = new MemoryStorage()
+    storage.setItem('termx.app.machines.v2', JSON.stringify([{
+      machineId: 'managed-machine-1',
+      name: 'Public staging',
+      state: 'online',
+      terminalCount: 0,
+      source: 'manual',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: {},
+      addedAt: '2026-07-12T16:00:00.000Z',
+      updatedAt: '2026-07-12T16:00:00.000Z',
+    }]))
+
+    expect(createMachineStore({ storage }).listMachines()[0]?.accessClass).toBe('cloud')
+  })
+
   it('rejects removed connection path names in the current store version', () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.app.machines.v2', JSON.stringify([{

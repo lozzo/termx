@@ -143,7 +143,7 @@
 
 ## 当前状态
 
-- UI001 已完成：机器 store 持久化 Local、Cloud、Local + Cloud 接入类别，账号同步/退出按能力正确合并和降级；首页卡片显示真实 health 可达性、授权状态、终端数，以及已存在会话的连接阶段和 local/P2P direct/single Relay 路径，列表不会为了取状态主动建连。共享 UI 定向测试、`make test-clients`（63 个文件、451 条测试）、Android source sync、Pixel 7 viewport 截图与 `git diff --check` 通过；提交前 ADB 两次未枚举到设备，因此未冒充完成本轮 APK 安装和 WebView CDP 实机截图。
+- UI001 已完成：机器 store 持久化 Local、Cloud、Local + Cloud 接入类别，账号同步/退出按能力正确合并和降级；首页卡片显示真实 health 可达性、授权状态、终端数，以及已存在会话的连接阶段和 local/P2P direct/single Relay 路径，列表不会为了取状态主动建连。共享 UI 定向测试、`make test-clients`（63 个文件、451 条测试）、Android source sync、Pixel 7 viewport 截图与 `git diff --check` 通过。设备重连后已覆盖安装 Official public HTTP staging APK，并用 WebView CDP 验证 410x913 viewport 无横向溢出；真机暴露旧 Official `source=manual` 记录缺少新类别字段会误标 Local，已按 pairing ownership 迁移为 Cloud 并补回归测试，CDP 最终显示 `Cloud` 与 `Cloud available`。
 - RM001-RM003 已提交：公开 Go module、npm workspace 和 Android 单一源码已经收口。
 - RM004 原未提交改动已由 REC001 审计接管：`private/cloud` 路径迁移、canonical Make 入口、`.artifacts`、doctor/layout/generated guard、文档归档和原有 tmux 冷启动诊断已经收口并通过 REC001 全部准入。
 - RP002-RP007、GA001/GA001A/GA002 已建立 contract、领域组件和 harness；这些成果是 CLOUD002-CLOUD005 的输入，不代表 managed cloud 已可用。

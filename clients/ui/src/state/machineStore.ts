@@ -147,7 +147,8 @@ function normalizeStoredMachine(value: Record<string, unknown> | StoredMachineRe
       : {}),
     ...(typeof record.relayInUse === 'boolean' ? { relayInUse: record.relayInUse } : {}),
     source,
-    accessClass: machineAccessClassOrUndefined(record.accessClass) ?? (source === 'hub' ? 'cloud' : 'local'),
+    // 旧 Official managed pairing 以 manual source 落盘且没有地址；缺少新字段时只能 local source 推导为本地能力。
+    accessClass: machineAccessClassOrUndefined(record.accessClass) ?? (source === 'local' ? 'local' : 'cloud'),
     addresses,
     endpoints,
     ...(record.pairing !== undefined ? { pairing: pairingField(record.pairing) } : {}),
