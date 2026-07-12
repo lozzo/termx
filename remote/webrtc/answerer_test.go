@@ -2,6 +2,7 @@ package webrtc
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,8 +35,20 @@ func TestAnswererHandsReliableChannelToAuthorizedHandler(t *testing.T) {
 	if answer.GetSignalingSessionId() != "signal-1" || answer.GetSdp() == "" {
 		t.Fatalf("answer = %+v", answer)
 	}
+	if len(answer.GetCandidates()) == 0 {
+		t.Fatal("answer must explicitly publish gathered daemon candidates")
+	}
 	if err := clientPeer.SetRemoteDescription(pion.SessionDescription{Type: pion.SDPTypeAnswer, SDP: answer.GetSdp()}); err != nil {
 		t.Fatalf("set remote answer: %v", err)
+	}
+	for _, candidate := range answer.GetCandidates() {
+		if err := clientPeer.AddICECandidate(pion.ICECandidateInit{
+			Candidate: candidate.GetCandidate(), SDPMid: stringPointer(candidate.GetSdpMid()),
+			SDPMLineIndex:    uint16Pointer(uint16(candidate.GetSdpMlineIndex())),
+			UsernameFragment: stringPointer(candidate.GetUsernameFragment()),
+		}); err != nil {
+			t.Fatalf("add remote candidate: %v", err)
+		}
 	}
 	select {
 	case <-opened:
@@ -56,9 +69,24 @@ func TestAnswererHandsReliableChannelToAuthorizedHandler(t *testing.T) {
 	}
 }
 
+func stringPointer(value string) *string { return &value }
+
+func uint16Pointer(value uint16) *uint16 { return &value }
+
 func TestAnswererFailsClosedWithoutAuthorizedHandler(t *testing.T) {
 	if _, err := (Answerer{}).Answer(context.Background(), &cloudpb.SignalingOffer{Sdp: "not-used"}, nil); err == nil {
 		t.Fatal("missing authorized handler must fail before WebRTC session creation")
+	}
+}
+
+func TestRelayOnlyOfferRejectsNonRelayCandidate(t *testing.T) {
+	answerer := Answerer{Handler: &recordingAuthorizedHandler{called: make(chan struct{})}}
+	_, err := answerer.Answer(context.Background(), &cloudpb.SignalingOffer{
+		Sdp:       "v=0\r\na=candidate:1 1 udp 1 192.0.2.1 1234 typ host\r\n",
+		RelayOnly: true, RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY,
+	}, []*cloudpb.IceServer{{Urls: []string{"turn:127.0.0.1:3478"}}})
+	if err == nil || !strings.Contains(err.Error(), "non-relay") {
+		t.Fatalf("relay-only host candidate error = %v", err)
 	}
 }
 

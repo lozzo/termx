@@ -211,4 +211,5 @@ Community 对 managed endpoint 必须返回 `companion_missing`/官方 cloud mod
 - Connection Info 显示 `P2P direct`、`prflx / host`、手机公网映射到 daemon 公网 UDP 候选，实测 RTT 约 51-64 ms。
 - 后台 8 秒再启动 App 后恢复到同一 terminal，core-v2 屏幕和输入回显仍在，没有创建第二份 terminal lifecycle truth。
 - 修复 Android `Use relay` 只更新 UI 偏好但复用旧 native P2P store 的问题：`forceRelay=true` 现在进入 native 时收敛为 `relay_only`，模式不一致的旧 store 会被释放重建。
-- 修复后 Relay lease、Hub signaling 与 `relay_only` ICE 策略均已实际触发，但 `114.66.58.243:41003/udp` 在云厂商入站边界被丢弃，15 秒后按 `route_unavailable` fail closed；没有回退 direct。云安全组放行该 UDP 端口后必须补真机 `single_relay` 复验。
+- 真机诊断证明 `114.66.58.243:41003/udp` 双向可达，手机与 daemon 均成功完成 TURN allocation；此前“云安全组阻断”判断不成立。实际失败是 daemon 与 TURN 同机时也强制 `ICETransportPolicyRelay`，Pion allocation 成功却无法发布可用 daemon relay candidate，answer 因此没有 remote ICE candidate。
+- Answerer 现在先验证 relay-only offer 只含 `typ relay` candidate，再显式发布 daemon gathering candidate，并允许同机 daemon 使用 host candidate。5G 真机最终显示 `Mode=Relay`、`Path=single_relay`、`Candidates=relay / host`，RTT 49 ms；protocol channel 和 terminal inventory 均成功，未回退 direct。

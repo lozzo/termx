@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/transport"
@@ -42,10 +43,11 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 	if offer.GetRelayOnly() && len(iceServers) == 0 {
 		return nil, fmt.Errorf("remote daemon relay-only offer has no TURN material")
 	}
-	configuration := pion.Configuration{ICEServers: make([]pion.ICEServer, 0, len(iceServers))}
-	if offer.GetRelayOnly() {
-		configuration.ICETransportPolicy = pion.ICETransportPolicyRelay
+	if offer.GetRelayOnly() && !containsOnlyRelayCandidates(offer.GetSdp(), offer.GetCandidates()) {
+		return nil, fmt.Errorf("remote daemon relay-only offer contains a non-relay ICE candidate")
 	}
+	configuration := pion.Configuration{ICEServers: make([]pion.ICEServer, 0, len(iceServers))}
+	// single Relay 由 offer 侧 relay-only candidate 保证；daemon 与 TURN 同机时必须发布 host candidate 供 Relay 转发。
 	for _, server := range iceServers {
 		if server == nil || len(server.GetUrls()) == 0 {
 			continue
@@ -59,6 +61,28 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 		return nil, fmt.Errorf("create remote daemon peer connection: %w", err)
 	}
 	sessionCtx, cancel := context.WithCancel(ctx)
+	var candidateMu sync.Mutex
+	candidates := make([]*cloudpb.IceCandidate, 0, 4)
+	// daemon gathering truth 必须显式进入 signaling answer，不能依赖 candidate 是否被内联进 SDP。
+	peer.OnICECandidate(func(candidate *pion.ICECandidate) {
+		if candidate == nil {
+			return
+		}
+		json := candidate.ToJSON()
+		wire := &cloudpb.IceCandidate{Candidate: json.Candidate}
+		if json.SDPMid != nil {
+			wire.SdpMid = *json.SDPMid
+		}
+		if json.SDPMLineIndex != nil {
+			wire.SdpMlineIndex = uint32(*json.SDPMLineIndex)
+		}
+		if json.UsernameFragment != nil {
+			wire.UsernameFragment = *json.UsernameFragment
+		}
+		candidateMu.Lock()
+		candidates = append(candidates, wire)
+		candidateMu.Unlock()
+	})
 	peer.OnConnectionStateChange(func(state pion.PeerConnectionState) {
 		if state == pion.PeerConnectionStateFailed || state == pion.PeerConnectionStateClosed {
 			cancel()
@@ -114,5 +138,34 @@ func (answerer Answerer) Answer(ctx context.Context, offer *cloudpb.SignalingOff
 		_ = peer.Close()
 		return nil, fmt.Errorf("remote daemon answer has no local description")
 	}
-	return &cloudpb.SignalingAnswer{SignalingSessionId: offer.GetSignalingSessionId(), Sdp: description.SDP}, nil
+	candidateMu.Lock()
+	wireCandidates := append([]*cloudpb.IceCandidate(nil), candidates...)
+	candidateMu.Unlock()
+	return &cloudpb.SignalingAnswer{
+		SignalingSessionId: offer.GetSignalingSessionId(), Sdp: description.SDP, Candidates: wireCandidates,
+	}, nil
+}
+
+func containsOnlyRelayCandidates(sdp string, extra []*cloudpb.IceCandidate) bool {
+	found := false
+	for _, line := range strings.Split(sdp, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "a=candidate:") {
+			continue
+		}
+		found = true
+		if !strings.Contains(" "+strings.ToLower(line)+" ", " typ relay ") {
+			return false
+		}
+	}
+	for _, candidate := range extra {
+		if candidate == nil || strings.TrimSpace(candidate.GetCandidate()) == "" {
+			continue
+		}
+		found = true
+		if !strings.Contains(" "+strings.ToLower(candidate.GetCandidate())+" ", " typ relay ") {
+			return false
+		}
+	}
+	return found
 }

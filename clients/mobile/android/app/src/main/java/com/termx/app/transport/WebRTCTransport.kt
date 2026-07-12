@@ -91,6 +91,8 @@ class WebRTCTransport(
         observedPath = null
         return try {
             val f = factory ?: run { markFailure("init"); return null }
+            // ICE URL 与候选类型不含短期凭据，用于区分 TURN 配置、网络可达和 DTLS 失败边界。
+            Log.i(TAG, "ICE config relayOnly=$relayOnly urls=${iceServers.flatMap { it.urls }}")
             val servers = parseIceServers(iceServers)
             val config = PeerConnection.RTCConfiguration(servers).apply {
                 sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
@@ -124,6 +126,11 @@ class WebRTCTransport(
             disconnect()
             return false
         }
+        val answerCandidateTypes = answer.sdp.lineSequence()
+            .filter { it.startsWith("a=candidate:") }
+            .map { candidateType(it.lowercase()) }
+            .toList()
+        Log.i(TAG, "Remote ICE candidates=$answerCandidateTypes extra=${answer.candidates.size} [$machineId]")
         val remoteSDP = SessionDescription(SessionDescription.Type.ANSWER, answer.sdp)
 
         val latch = CountDownLatch(1)
@@ -234,6 +241,7 @@ class WebRTCTransport(
     private fun createObserver() = object : PeerConnection.Observer {
         override fun onIceCandidate(candidate: IceCandidate) {
             val type = candidate.sdp.lowercase()
+            Log.i(TAG, "ICE candidate type=${candidateType(type)} [$machineId]")
             synchronized(iceGatherLock) {
                 when {
                     type.contains("typ relay") -> { hasRelay = true; iceGatherLock.notifyAll() }
@@ -244,6 +252,7 @@ class WebRTCTransport(
             }
         }
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
+            Log.i(TAG, "ICE gathering state=$state relay=$hasRelay [$machineId]")
             if (state == PeerConnection.IceGatheringState.COMPLETE) {
                 synchronized(iceGatherLock) { iceGatheringComplete = true; iceGatherLock.notifyAll() }
             }
@@ -281,6 +290,14 @@ class WebRTCTransport(
         override fun onRenegotiationNeeded() {}
         override fun onAddTrack(p0: RtpReceiver?, p1: Array<out MediaStream>?) {}
         override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent?) {}
+    }
+
+    private fun candidateType(candidate: String): String = when {
+        candidate.contains("typ relay") -> "relay"
+        candidate.contains("typ srflx") -> "srflx"
+        candidate.contains("typ prflx") -> "prflx"
+        candidate.contains("typ host") -> "host"
+        else -> "unknown"
     }
 
     private fun parseIceServers(servers: List<ManagedIceServer>): List<PeerConnection.IceServer> = servers.mapNotNull { server ->

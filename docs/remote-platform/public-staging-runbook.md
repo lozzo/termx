@@ -58,7 +58,7 @@ ssh root@114.66.58.243 'tcpdump -nn -U -i ens18 udp port 41003'
 printf test | nc -u -w1 114.66.58.243 41003
 ```
 
-若 `ens18` 没有任何包，阻断位于云安全组或上游网络；不得把本机 `iptables` 放行、TURN listener 或已签发 Relay lease 冒充 `single_relay` 可用。2026-07-12 真机 5G 验收即命中该阻断，Android 正确以 `route_unavailable` fail closed。
+若 `ens18` 没有任何包，需继续区分探测源出口、云安全组与上游网络；不得把本机 `iptables` 放行、TURN listener 或已签发 Relay lease 冒充 `single_relay` 可用。2026-07-12 真机 5G 验收确认手机与 daemon 的 TURN allocation 均双向成功，最终 selected pair 为 `relay / host`，因此该服务器不存在 `41003/udp` 入站阻断。
 
 ## 无隧道客户端验证
 
@@ -123,6 +123,8 @@ direct 验收必须经过 `resolving`、`signaling`、`connecting`、`authorizin
 2026-07-12 本机验收结果：direct 与显式 `relay_only` 均到达 `connected`；Control Plane/Hub 请求经 SSH tunnel，TURN 发布地址为 `114.66.58.243:41003/udp`。当前 terminal picker 只显示 `hub-p2p` transport，没有单独展示观测 path 文本，因此本次没有把 UI 文本当作 `single_relay` 路径证据；后续应补 packet/usage 或 path projection 自动化证据。
 
 ## 重启与 bootstrap
+
+daemon 与 daemon Companion 共享 `/run/termx-staging`。替换 daemon 二进制时不要在 Companion 运行期间单独执行 daemon 的完整 `stop`/`start`，否则 systemd 可能删除仍在监听的 Companion socket 路径。需要完整停止时使用以下顺序：停止 daemon，重启 Companion并等待 `test -S /run/termx-staging/daemon-companion.sock` 成功，再启动 daemon；daemon 日志必须出现 `managed cloud presence starting`。
 
 当前 staging cloud 使用内存 store，每次重启 `termx-staging-cloud.service` 都会轮换签名 key、enrollment code 并清除 account/device/presence。它不会自动复用旧 session。重启后按以下顺序操作：
 
