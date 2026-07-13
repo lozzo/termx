@@ -78,7 +78,7 @@ type shortcutAuditSource struct {
 func TestShortcutContractDebtManifestLocksKnownDebt(t *testing.T) {
 	repoRoot := shortcutAuditRepoRoot(t)
 	manifest := readShortcutDebtManifest(t, repoRoot)
-	if manifest.SchemaVersion != 1 || manifest.Stage != "KS014" {
+	if manifest.SchemaVersion != 1 || manifest.Stage != "KS015" {
 		t.Fatalf("unexpected shortcut debt manifest header: %#v", manifest)
 	}
 
@@ -86,7 +86,6 @@ func TestShortcutContractDebtManifestLocksKnownDebt(t *testing.T) {
 		"hardcoded-content-key-hints",
 		"hardcoded-footer-key-pruning",
 		"hit-region-producers-pending-action-classification",
-		"prompt-submit-placeholder",
 		"render-projection-legacy-shortcut-metadata",
 		"render-shortcut-id-bridge",
 	}

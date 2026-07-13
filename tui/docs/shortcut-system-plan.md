@@ -355,6 +355,14 @@ Kitty 编码、modifier/event-type 与 PUA functional key 范围以官方 [keybo
 - endpoint-aware terminal action 必须保留完整 `TerminalRef`；kill/restart/remove/resize/owner 等失败不能靠关闭 pane、刷新列表或 local fallback 掩盖。
 - 组合 action 必须声明事务顺序和部分失败结果，禁止为单 case 叠加判断。
 
+KS015 实际执行契约：
+
+- 203 条默认 binding canonicalize 为 146 个唯一 invocation；测试从 `shortcut.DefaultBindings()` 动态生成闭集，在具备 terminal、9 个 tab、多个 workspace、floating、pool metadata、clipboard 与 frozen history 的可用 fixture 上，经正式 reducer 组合执行同步 effect/message 链直到静止。每个 invocation 必须产生排除 `Generation` 和新增 toast 后的真实状态变化，或抵达明确的 terminal/core/clipboard/workbench storage service owner；endpoint mutation 以 attach/detach/restart/reconnect/kill/remove/edit/tag/input/resize 的完整期望向量和精确 `TerminalRef` 列表验收，重复调用、同 endpoint 错 terminal、额外 mutation 或 fallback 均失败，不能把未执行 effect 或提示当作成功。
+- `system.open_prompt` 打开 `action.command` prompt；提交值必须经 `tui/action.ParseInvocation` 校验并回到统一 `ShellShortcutActionMsg` dispatcher。未知 action 或没有 executable handler 的 surface identity 保持 prompt 打开并明确失败，不再以 toast 回显输入冒充执行。
+- terminal picker edit 只按选中项的 `TerminalRef` 查找 pool metadata，打开与 terminal manager 共用的 rename prompt，并在提交时保留原 tags；metadata 缺失时 fail closed，禁止用原标题或人工标签伪造 edit。
+- `panel.reconnect` 直接为 active pane 的 owning `TerminalRef` 生成 `TerminalPoolReconnectRequestMsg{LocalError:true}`，失败回投目标 view；`panel.restart` 无条件生成 endpoint-aware restart request。只有 exited CTA 保留 restart-if-exited 语义。
+- split/attach-tab/attach-float 先创建明确 target slot，再向该 target 发送 endpoint-aware attach request；attach 失败保留该 slot 的局部失败/空连接投影，不关闭其他 pane、不切 local endpoint、不伪造成功。
+
 ### KS016：提示、点击与可用性同源
 
 - 逐 surface 把 footer、Help、overlay、header/pane/floating chrome 和内容 CTA 迁移到中立 action domain 的 canonical invocation；这是 render surface 迁移的唯一 owning 切片。

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "stage": "KS014",
+  "stage": "KS015",
   "inventory": {
     "default_entries": 203,
     "routed_bindings": 166,
@@ -302,24 +302,6 @@
             "footerActionsMatchKeys(actions, []string{\"^P\", \"^R\", \"^T\", \"^W\", \"^O\", \"^V\", \"^F\", \"^G\"})",
             "keys := []string{\"^P\", \"^R\", \"^T\", \"^G\"}"
           ]
-        }
-      ]
-    },
-    {
-      "id": "prompt-submit-placeholder",
-      "kind": "handler",
-      "classification": "debt",
-      "owner": "tui/app",
-      "target_slice": "KS015",
-      "reason": "默认 system.open_prompt 能打开 UI，但提交链路仍明确标记为 placeholder，不构成真实功能闭环。",
-      "sources": [
-        {
-          "path": "tui/app/shell.go",
-          "anchors": ["Execution is intentionally a reducer-owned placeholder in this phase."]
-        },
-        {
-          "path": "tui/app/ui_input.go",
-          "anchors": ["Execution is intentionally a reducer-owned placeholder in this phase."]
         }
       ]
     }

@@ -561,21 +561,22 @@ func TestUIInputReducerPaneModeTuiv2OwnerPickerAndRestart(t *testing.T) {
 		t.Fatalf("ctrl-p should re-enter pane mode, mode=%#v effects=%#v", root.Shell.InteractionMode, effects)
 	}
 	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "r"}})
-	if !root.Shell.Overlay.Open || root.Shell.Overlay.Kind != state.OverlayTerminalPicker || root.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
-		t.Fatalf("pane reconnect should open picker and refresh pool, overlay=%#v effects=%#v", root.Shell.Overlay, effects)
+	if root.Shell.Overlay.Open || root.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
+		t.Fatalf("pane reconnect should target the current terminal directly, overlay=%#v effects=%#v", root.Shell.Overlay, effects)
 	}
-	if _, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalPoolListRequestMsg); !ok {
-		t.Fatalf("pane reconnect should emit pool list effect, got %#v", effects)
+	reconnect, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalPoolReconnectRequestMsg)
+	if !ok || reconnect.TerminalID != "term-1" || reconnect.TargetPaneID != state.DefaultPaneID || !reconnect.LocalError {
+		t.Fatalf("pane reconnect should emit endpoint-aware reconnect request, got %#v", effects)
 	}
 
-	root.Shell = root.Shell.CloseOverlay().SetInteractionMode(state.InteractionModePane)
+	root.Shell = root.Shell.SetInteractionMode(state.InteractionModePane)
 	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "R"}})
 	if root.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("pane restart should emit handled and restart effects, got %#v", effects)
 	}
-	restartMsg, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalPoolRestartIfExitedRequestMsg)
+	restartMsg, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalPoolRestartRequestMsg)
 	if !ok || restartMsg.TerminalID != "term-1" {
-		t.Fatalf("pane restart should query active pane terminal lifecycle, got %#v", restartMsg)
+		t.Fatalf("pane restart should restart the active terminal directly, got %#v", restartMsg)
 	}
 	if root.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("pane restart shortcut should exit prefix mode, shell=%#v effects=%#v", root.Shell, effects)
@@ -2836,9 +2837,6 @@ func TestInteractiveRuntimePromptAndHelpOverlayFlow(t *testing.T) {
 	for _, event := range []input.InputEvent{
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: ":"},
-		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "重"},
-		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "命"},
-		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "名"},
 	} {
 		if err := host.SendInput(event); err != nil {
 			t.Fatalf("send prompt input %#v: %v", event, err)
@@ -2847,11 +2845,19 @@ func TestInteractiveRuntimePromptAndHelpOverlayFlow(t *testing.T) {
 			t.Fatalf("drain prompt input %#v: %v", event, err)
 		}
 	}
-	if runtime.State().Shell.Overlay.Kind != state.OverlayPrompt || runtime.State().Shell.Overlay.Prompt.Value != "重命名" {
+	for _, char := range "system.clear_toasts" {
+		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: string(char)}); err != nil {
+			t.Fatalf("send prompt command char %q: %v", char, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain prompt command char %q: %v", char, err)
+		}
+	}
+	if runtime.State().Shell.Overlay.Kind != state.OverlayPrompt || runtime.State().Shell.Overlay.Prompt.Value != "system.clear_toasts" {
 		t.Fatalf("expected prompt input captured, shell=%#v", runtime.State().Shell)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "Command Prompt") || !frameContains(frame, "NAME 重命名") || frame.Cursor.Shape != render.CursorShapeBar {
+	if !frameContains(frame, "Command Prompt") || !frameContains(frame, "NAME system.clear_toasts") || frame.Cursor.Shape != render.CursorShapeBar {
 		t.Fatalf("expected prompt frame and cursor, got %#v", frame)
 	}
 	if len(terminal.Inputs) != 0 {
@@ -2860,14 +2866,17 @@ func TestInteractiveRuntimePromptAndHelpOverlayFlow(t *testing.T) {
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x7f"}); err != nil {
 		t.Fatalf("send prompt backspace: %v", err)
 	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}); err != nil {
+		t.Fatalf("restore prompt command suffix: %v", err)
+	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
 		t.Fatalf("send prompt enter: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain prompt submit: %v", err)
 	}
-	if runtime.State().Shell.Overlay.Open || len(runtime.State().Shell.Toasts) == 0 || runtime.State().Shell.Toasts[len(runtime.State().Shell.Toasts)-1].Body != "重命" {
-		t.Fatalf("expected prompt submit close overlay and toast, shell=%#v", runtime.State().Shell)
+	if runtime.State().Shell.Overlay.Open || len(runtime.State().Shell.Toasts) != 0 {
+		t.Fatalf("expected prompt submit to execute clear-toasts action, shell=%#v", runtime.State().Shell)
 	}
 
 	for _, event := range []input.InputEvent{
@@ -3685,11 +3694,12 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 
 	sendCtrl("\x07")
 	sendChar(":")
-	sendChar("重")
-	sendChar("命")
+	for _, char := range "system.clear_toasts" {
+		sendChar(string(char))
+	}
 	sendKey(input.KeyEnter)
 	if runtime.State().Shell.Overlay.Open {
-		t.Fatalf("Prompt submit should close overlay, got %#v", runtime.State().Shell.Overlay)
+		t.Fatalf("Prompt submit should execute canonical action, shell=%#v", runtime.State().Shell)
 	}
 	sendCtrl("\x07")
 	sendChar("?")
@@ -4138,9 +4148,21 @@ func TestPaneRestartShortcutPreservesEndpoint(t *testing.T) {
 	if root.Shell.InteractionMode != state.InteractionModeNormal {
 		t.Fatalf("pane restart shortcut should exit prefix mode, shell=%#v", root.Shell)
 	}
-	restartMsg, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalPoolRestartIfExitedRequestMsg)
+	restartMsg, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalPoolRestartRequestMsg)
 	if !ok || restartMsg.EndpointID != "west" || restartMsg.TerminalID != "term-1" {
 		t.Fatalf("pane restart should preserve endpoint ref, got %#v", restartMsg)
+	}
+}
+
+func TestPaneReconnectShortcutPreservesEndpointAndLocalFailureOwner(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModePane)}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("west", state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-west", state.TerminalPaneViewID(state.DefaultPaneID), true))
+
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "r"}})
+	request, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalPoolReconnectRequestMsg)
+	if !ok || request.EndpointID != "west" || request.TerminalID != "term-1" || request.TargetPaneID != state.DefaultPaneID || !request.LocalError {
+		t.Fatalf("pane reconnect must preserve owning TerminalRef and local error boundary, got %#v", request)
 	}
 }
 
@@ -4386,6 +4408,39 @@ func TestOverlayKeyboardCommandsUseCanonicalAppHandlers(t *testing.T) {
 	next, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x04", Ctrl: true}})
 	if len(effects) == 0 || len(next.Shell.Toasts) == 0 {
 		t.Fatalf("workbench detach shortcut should execute canonical handler, root=%#v effects=%#v", next, effects)
+	}
+}
+
+func TestTerminalPickerEditUsesUnfilteredEndpointMetadataAndPreservesTags(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell().OpenTerminalPicker().SetTerminalPickerQuery("mn")}
+	root.TerminalPool, _ = root.TerminalPool.ApplyList(0, []state.TerminalPoolItem{{
+		EndpointID: "west", TerminalID: "term-main", Title: "main", State: "running", Tags: map[string]string{"role": "build"},
+	}}, "")
+	items := state.TerminalPickerItems(root)
+	for index, item := range items {
+		if item.EndpointID == "west" && item.TerminalID == "term-main" {
+			root.Shell = root.Shell.SetTerminalPickerSelectedIndex(index, len(items))
+			break
+		}
+	}
+	next, effects := NewUIInputReducer()(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x05", Ctrl: true}})
+	prompt := next.Shell.EnsureDefaults().Overlay.Prompt
+	if next.Shell.EnsureDefaults().Overlay.Kind != state.OverlayPrompt || prompt.Purpose != "terminal.rename" ||
+		prompt.TargetEndpointID != "west" || prompt.TargetID != "term-main" || prompt.Value != "main" || prompt.Tags["role"] != "build" {
+		t.Fatalf("picker edit must open metadata-preserving endpoint prompt, prompt=%#v", prompt)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("picker edit must only be handled locally until submit, effects=%#v", effects)
+	}
+
+	next.Shell = next.Shell.SetPromptValue("build logs")
+	next, effects = NewShellReducer()(next, ShellPromptSubmitMsg{})
+	if len(effects) != 1 {
+		t.Fatalf("rename submit must emit one service request message, effects=%#v", effects)
+	}
+	request, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolEditRequestMsg)
+	if !ok || request.EndpointID != "west" || request.TerminalID != "term-main" || request.Title != "build logs" || request.Tags["role"] != "build" {
+		t.Fatalf("rename request must preserve TerminalRef and tags, got %#v", request)
 	}
 }
 

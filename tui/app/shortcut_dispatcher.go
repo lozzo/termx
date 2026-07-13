@@ -33,6 +33,25 @@ func shortcutIntentForInvocation(invocation actiondomain.Invocation, event input
 	return handler(invocation, event)
 }
 
+func shortcutInvocationHasHandler(invocation actiondomain.Invocation) bool {
+	_, ok := actionHandlerRegistry[invocation.ID]
+	return ok
+}
+
+func shortcutInvocationAvailableFromCommand(invocation actiondomain.Invocation) bool {
+	policy, ok := shortcut.Policies()[invocation.ID]
+	if !ok {
+		return false
+	}
+	for _, sceneID := range policy.AllowedScenes {
+		scene, declared := shortcut.SceneByName(string(sceneID))
+		if declared && scene.Routable && scene.ID != shortcut.SceneCopy {
+			return true
+		}
+	}
+	return false
+}
+
 func buildActionHandlerRegistry() map[actiondomain.ID]actionHandler {
 	registry := map[actiondomain.ID]actionHandler{}
 	register := func(canonical actiondomain.ID, handler actionHandler) {

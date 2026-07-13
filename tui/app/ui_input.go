@@ -1147,8 +1147,14 @@ func reduceViewWorkbenchShortcut(root state.Root, command string) (state.Root, [
 		next, effects := requestFloatingResizeOwner(root, activeFloatingID)
 		return next, append([]Effect{handledEffect{}}, effects...), true
 	case "pane reconnect":
-		root.Shell = shell.OpenTerminalPicker()
-		return root.Advance(), []Effect{handledEffect{}, terminalPickerListRequestEffect()}, true
+		ref := terminalRefForContentAction(root, shell.ActivePaneID)
+		if ref.Empty() {
+			root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pane.reconnect", Body: "terminal unavailable"})
+			return root.Advance(), []Effect{handledEffect{}}, true
+		}
+		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolReconnectRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, TargetPaneID: shell.ActivePaneID, LocalError: true}
+		}}}, true
 	case "pane restart":
 		ref := terminalRefForContentAction(root, shell.ActivePaneID)
 		if ref.Empty() {
@@ -1156,7 +1162,7 @@ func reduceViewWorkbenchShortcut(root state.Root, command string) (state.Root, [
 			return root.Advance(), []Effect{handledEffect{}}, true
 		}
 		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolRestartIfExitedRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID}
+			return TerminalPoolRestartRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID}
 		}}}, true
 	default:
 		return root, nil, false
@@ -1268,11 +1274,7 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 	case input.ShellActionOpenPicker:
 		msg = ShellOpenTerminalPickerMsg{}
 	case input.ShellActionOpenPrompt:
-		msg = ShellOpenPromptMsg{Prompt: state.PromptState{
-			Title:       "Command Prompt",
-			Context:     "Type a command. Execution is intentionally a reducer-owned placeholder in this phase.",
-			Placeholder: "command",
-		}}
+		msg = ShellOpenPromptMsg{Prompt: actionCommandPrompt()}
 	case input.ShellActionOpenHelp:
 		msg = ShellOpenHelpMsg{Section: "most-used"}
 	case input.ShellActionQuit:
@@ -1286,6 +1288,10 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 			return msg
 		}},
 	}
+}
+
+func actionCommandPrompt() state.PromptState {
+	return state.PromptState{Title: "Command Prompt", Context: "Run a canonical TermX action.", Purpose: "action.command", Placeholder: "command"}
 }
 
 func floatingSummonIndex(value string) (int, bool) {

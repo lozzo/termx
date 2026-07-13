@@ -951,7 +951,7 @@ func reduceTerminalPoolKillResult(root state.Root, msg TerminalPoolKillResultMsg
 	}
 	// 中文说明：kill 只改变 core terminal lifecycle，不代表用户断开 pane/floating view。
 	// 绑定清理只能发生在 remove/disconnect 路径，否则已有浮窗会被误删。
-	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: msg.TerminalID})
+	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "pool.kill", Body: msg.TerminalID})
 	effects := []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{EndpointID: ref.EndpointID} }}}
 	if msg.CloseOnSuccess && paneStillOwnsTerminalRef(root, msg.PaneID, ref) {
 		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {

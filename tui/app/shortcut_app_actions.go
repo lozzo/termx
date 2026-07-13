@@ -23,21 +23,16 @@ func reduceAppShortcutAction(root state.Root, invocation actiondomain.Invocation
 		if !ok || selected.TerminalID == "" {
 			return shortcutUnavailable(root, "picker.split", "no terminal")
 		}
-		shell := root.Shell.EnsureDefaults()
-		next, effects := reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandSplit, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, SplitDirection: state.SplitDirectionVertical, NewPane: state.PaneState{ID: nextKeyboardPaneID(shell), Title: "pane", Kind: state.PaneEmpty}, Source: state.PaneCommandSourceKeyboard})
-		targetPaneID := next.Shell.EnsureDefaults().ActivePaneID
-		return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetPaneID: targetPaneID}
-		}})
-	case "terminal_picker.edit", "terminal_picker.kill", "terminal_picker.delete":
+		return reduceTerminalPickerSplitAttach(root, selected.EndpointID, selected.TerminalID)
+	case "terminal_picker.edit":
+		return reduceTerminalPickerEdit(root, row)
+	case "terminal_picker.kill", "terminal_picker.delete":
 		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), row)
 		if !ok || selected.TerminalID == "" {
 			return shortcutUnavailable(root, invocation.ID.String(), "no terminal")
 		}
 		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
 			switch invocation.ID {
-			case "terminal_picker.edit":
-				return TerminalPoolEditRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, Title: selected.Title, Tags: map[string]string{"edited-by": "tui"}}
 			case "terminal_picker.kill":
 				return TerminalPoolKillRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID}
 			default:
@@ -61,17 +56,9 @@ func reduceAppShortcutAction(root state.Root, invocation actiondomain.Invocation
 		}
 		switch invocation.ID {
 		case "terminal_pool.attach_tab":
-			next, effects := reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(root.Shell.EnsureDefaults()), Source: state.PaneCommandSourcePalette})
-			targetPaneID := next.Shell.EnsureDefaults().ActivePaneID
-			return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetPaneID: targetPaneID}
-			}})
+			return reduceTerminalPoolAttachTab(root, selected.EndpointID, selected.TerminalID)
 		case "terminal_pool.attach_float":
-			floatingID := nextFloatingID(root.Shell)
-			next, effects := reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandCreate, TargetID: floatingID, Pane: state.PaneState{ID: nextFloatingPaneID(root.Shell), Title: "floating", Kind: state.PaneEmpty}, Title: "floating", Source: state.PaneCommandSourceKeyboard})
-			return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetFloatingID: floatingID}
-			}})
+			return reduceTerminalPoolAttachFloating(root, selected.EndpointID, selected.TerminalID)
 		case "terminal_pool.edit":
 			root.Shell = root.Shell.OpenPrompt(terminalEditPrompt(selected))
 			return root.Advance(), []Effect{handledEffect{}}
@@ -133,6 +120,69 @@ func reduceAppShortcutAction(root state.Root, invocation actiondomain.Invocation
 	default:
 		return shortcutUnavailable(root, invocation.ID.String(), "handler missing")
 	}
+}
+
+func reduceTerminalPickerEdit(root state.Root, row int) (state.Root, []Effect) {
+	selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), row)
+	if !ok || selected.TerminalID == "" {
+		return shortcutUnavailable(root, "terminal_picker.edit", "no terminal")
+	}
+	item, ok := terminalPoolItemRef(root.TerminalPool, state.NewTerminalRef(selected.EndpointID, selected.TerminalID))
+	if !ok {
+		return shortcutUnavailable(root, "terminal_picker.edit", "terminal metadata unavailable")
+	}
+	root.Shell = root.Shell.OpenPrompt(terminalEditPrompt(state.TerminalPoolPageItem{
+		EndpointID: item.EndpointID, TerminalID: item.TerminalID, Title: item.Title, Tags: item.Tags,
+	}))
+	return root.Advance(), []Effect{handledEffect{}}
+}
+
+func reduceTerminalPickerSplitAttach(root state.Root, endpointID state.EndpointID, terminalID string) (state.Root, []Effect) {
+	shell := root.Shell.EnsureDefaults()
+	targetPaneID := nextKeyboardPaneID(shell)
+	next, effects := reducePaneCommand(root, state.PaneCommand{
+		Action: state.PaneCommandSplit, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, SplitDirection: state.SplitDirectionVertical,
+		NewPane: state.PaneState{ID: targetPaneID, Title: "pane", Kind: state.PaneEmpty}, Source: state.PaneCommandSourceKeyboard,
+	})
+	if pane, ok := next.Shell.Pane(state.PaneCommandTarget{PaneID: targetPaneID}); !ok || pane.ID != targetPaneID {
+		return next, effects
+	}
+	return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
+		return TerminalPoolAttachRequestMsg{EndpointID: endpointID, TerminalID: terminalID, TargetPaneID: targetPaneID}
+	}})
+}
+
+func reduceTerminalPoolAttachTab(root state.Root, endpointID state.EndpointID, terminalID string) (state.Root, []Effect) {
+	beforeTabID := root.Shell.EnsureDefaults().Workspace.ActiveTabID
+	next, effects := reduceWorkbenchCommand(root, state.WorkbenchCommand{
+		Action: state.WorkbenchCommandTabCreate, Name: nextTabName(root.Shell.EnsureDefaults()), Source: state.PaneCommandSourcePalette,
+	})
+	after := next.Shell.EnsureDefaults()
+	if after.Workspace.ActiveTabID == beforeTabID || after.ActivePaneID == "" {
+		return next, effects
+	}
+	if _, ok := after.Pane(state.PaneCommandTarget{PaneID: after.ActivePaneID}); !ok {
+		return next, effects
+	}
+	targetPaneID := after.ActivePaneID
+	return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
+		return TerminalPoolAttachRequestMsg{EndpointID: endpointID, TerminalID: terminalID, TargetPaneID: targetPaneID}
+	}})
+}
+
+func reduceTerminalPoolAttachFloating(root state.Root, endpointID state.EndpointID, terminalID string) (state.Root, []Effect) {
+	floatingID := nextFloatingID(root.Shell)
+	next, effects := reduceFloatingCommand(root, state.FloatingCommand{
+		Action: state.FloatingCommandCreate, TargetID: floatingID,
+		Pane:  state.PaneState{ID: nextFloatingPaneID(root.Shell), Title: "floating", Kind: state.PaneEmpty},
+		Title: "floating", Source: state.PaneCommandSourceKeyboard,
+	})
+	if _, ok := next.Shell.FloatingByID(floatingID); !ok {
+		return next, effects
+	}
+	return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
+		return TerminalPoolAttachRequestMsg{EndpointID: endpointID, TerminalID: terminalID, TargetFloatingID: floatingID}
+	}})
 }
 
 func shortcutUnavailable(root state.Root, title, body string) (state.Root, []Effect) {

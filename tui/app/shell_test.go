@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/lozzow/termx/tui/render"
@@ -218,6 +219,97 @@ func TestShellReducerWorkbenchCommandAndPromptRename(t *testing.T) {
 	root, _ = reducer(root, ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "remote"}})
 	if len(root.Shell.Workspaces) != 2 || root.Shell.Workspace.Name != "remote" {
 		t.Fatalf("expected created workspace, got %#v", root.Shell)
+	}
+}
+
+func TestShellReducerActionCommandExecutesCanonicalInvocationAndRejectsUnknown(t *testing.T) {
+	reducer := NewShellReducer()
+	root := state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{Purpose: "action.command", Value: "system.toggle_header"})}
+
+	next, effects := reducer(root, ShellPromptSubmitMsg{})
+	if next.Shell.EnsureDefaults().Overlay.Open || len(effects) != 1 {
+		t.Fatalf("valid action command must close prompt and emit invocation, root=%#v effects=%#v", next, effects)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(ShellShortcutActionMsg)
+	if !ok || msg.Invocation.ID != "system.toggle_header" {
+		t.Fatalf("action command lost canonical invocation: %#v", msg)
+	}
+	next, effects = reducer(next, msg)
+	for _, effect := range effects {
+		if fn, ok := effect.(FuncEffect); ok {
+			next, _ = reducer(next, fn.Run(context.Background()))
+		}
+	}
+	if next.Shell.HeaderVisible {
+		t.Fatalf("action command must execute the real reducer action, shell=%#v", next.Shell)
+	}
+
+	invalid := state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{Purpose: "action.command", Value: "missing.action"})}
+	invalid, effects = reducer(invalid, ShellPromptSubmitMsg{})
+	prompt := invalid.Shell.EnsureDefaults().Overlay.Prompt
+	if !invalid.Shell.EnsureDefaults().Overlay.Open || prompt.Submitted || !strings.Contains(prompt.LastResult, "unknown action") || len(effects) != 0 {
+		t.Fatalf("unknown action must stay in prompt with explicit failure, root=%#v effects=%#v", invalid, effects)
+	}
+
+	contextual := state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{Purpose: "action.command", Value: "prompt.submit"})}
+	contextual, effects = reducer(contextual, ShellPromptSubmitMsg{})
+	prompt = contextual.Shell.EnsureDefaults().Overlay.Prompt
+	if !contextual.Shell.EnsureDefaults().Overlay.Open || prompt.Submitted || !strings.Contains(prompt.LastResult, "not available from command prompt") || len(effects) != 0 {
+		t.Fatalf("overlay-only action must not close command prompt as fake success, root=%#v effects=%#v", contextual, effects)
+	}
+}
+
+func TestShellReducerActionCommandCanonicalizesAliasesAndParameters(t *testing.T) {
+	reducer := NewShellReducer()
+	aliasRoot := state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{Purpose: "action.command", Value: "system.open_prompt"})}
+	aliasRoot, effects := reducer(aliasRoot, ShellPromptSubmitMsg{})
+	if len(effects) != 1 {
+		t.Fatalf("alias command must emit one canonical invocation: effects=%#v", effects)
+	}
+	aliasMsg, ok := effects[0].(FuncEffect).Run(context.Background()).(ShellShortcutActionMsg)
+	if !ok || aliasMsg.Invocation.ID != "menu.prompt" {
+		t.Fatalf("action alias was not canonicalized: %#v", aliasMsg)
+	}
+	aliasRoot, effects = reducer(aliasRoot, aliasMsg)
+	for _, effect := range effects {
+		if fn, ok := effect.(FuncEffect); ok {
+			aliasRoot, _ = reducer(aliasRoot, fn.Run(context.Background()))
+		}
+	}
+	prompt := aliasRoot.Shell.EnsureDefaults().Overlay.Prompt
+	if !aliasRoot.Shell.EnsureDefaults().Overlay.Open || prompt.Purpose != "action.command" || prompt.Submitted {
+		t.Fatalf("canonical prompt action must open a fresh command surface without recursive submit: %#v", aliasRoot.Shell.Overlay)
+	}
+
+	shell := state.DefaultShell()
+	var result state.WorkbenchCommandResult
+	shell, result = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "second"})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("create parameter fixture: %#v", result)
+	}
+	secondTabID := shell.Workspace.ActiveTabID
+	shell, result = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabSwitch, TargetID: state.DefaultTabID})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("reset parameter fixture: %#v", result)
+	}
+	paramRoot := state.Root{Shell: shell.OpenPrompt(state.PromptState{Purpose: "action.command", Value: "tab.jump.2"})}
+	paramRoot, effects = reducer(paramRoot, ShellPromptSubmitMsg{})
+	if len(effects) != 1 {
+		t.Fatalf("parameterized command must emit one invocation: effects=%#v", effects)
+	}
+	paramMsg, ok := effects[0].(FuncEffect).Run(context.Background()).(ShellShortcutActionMsg)
+	if !ok || paramMsg.Invocation.ID != "tab.jump" || paramMsg.Invocation.Params["index"] != 2 {
+		t.Fatalf("parameterized command lost canonical parameter: %#v", paramMsg)
+	}
+	paramMsg.Row = -1
+	paramRoot, effects = reducer(paramRoot, paramMsg)
+	for _, effect := range effects {
+		if fn, ok := effect.(FuncEffect); ok {
+			paramRoot, _ = reducer(paramRoot, fn.Run(context.Background()))
+		}
+	}
+	if paramRoot.Shell.EnsureDefaults().Workspace.ActiveTabID != secondTabID {
+		t.Fatalf("parameterized command did not execute tab jump: active=%q want=%q", paramRoot.Shell.Workspace.ActiveTabID, secondTabID)
 	}
 }
 

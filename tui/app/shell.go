@@ -637,21 +637,9 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.split", Body: "no terminal"})
 			return root.Advance(), nil
 		}
-		shell := root.Shell.EnsureDefaults()
-		next, effects := reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandSplit, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, SplitDirection: state.SplitDirectionVertical, NewPane: state.PaneState{ID: nextKeyboardPaneID(shell), Title: "pane", Kind: state.PaneEmpty}, Source: state.PaneCommandSourceKeyboard})
-		targetPaneID := next.Shell.EnsureDefaults().ActivePaneID
-		return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetPaneID: targetPaneID}
-		}})
+		return reduceTerminalPickerSplitAttach(root, selected.EndpointID, selected.TerminalID)
 	case render.ActionPickerEdit:
-		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
-		if !ok || selected.TerminalID == "" {
-			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.edit", Body: "no terminal"})
-			return root.Advance(), nil
-		}
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolEditRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, Title: selected.Title, Tags: map[string]string{"edited-by": "tui"}}
-		}}}
+		return reduceTerminalPickerEdit(root, msg.Row)
 	case render.ActionPickerKill:
 		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
 		if !ok || selected.TerminalID == "" {
@@ -683,19 +671,11 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		}
 	case render.ActionPoolAttachTab:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
-			next, effects := reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(root.Shell.EnsureDefaults()), Source: state.PaneCommandSourcePalette})
-			targetPaneID := next.Shell.EnsureDefaults().ActivePaneID
-			return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetPaneID: targetPaneID}
-			}})
+			return reduceTerminalPoolAttachTab(root, selected.EndpointID, selected.TerminalID)
 		}
 	case render.ActionPoolAttachFloat:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
-			floatingID := nextFloatingID(root.Shell)
-			next, effects := reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandCreate, TargetID: floatingID, Pane: state.PaneState{ID: nextFloatingPaneID(root.Shell), Title: "floating", Kind: state.PaneEmpty}, Title: "floating", Source: state.PaneCommandSourceKeyboard})
-			return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetFloatingID: floatingID}
-			}})
+			return reduceTerminalPoolAttachFloating(root, selected.EndpointID, selected.TerminalID)
 		}
 	case render.ActionPoolRestart:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
@@ -753,11 +733,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
 		return root.Advance(), nil
 	case render.ActionPromptOpen:
-		root.Shell = root.Shell.OpenPrompt(state.PromptState{
-			Title:       "Command Prompt",
-			Context:     "Type a command. Execution is intentionally a reducer-owned placeholder in this phase.",
-			Placeholder: "command",
-		})
+		root.Shell = root.Shell.OpenPrompt(actionCommandPrompt())
 		return root.Advance(), nil
 	case render.ActionHelpOpen:
 		root.Shell = root.Shell.OpenHelp("most-used")
@@ -1012,6 +988,29 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 			}
 			root.Shell = root.Shell.OpenTerminalPool()
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return request }}}
+		}
+		if after.Purpose == "action.command" {
+			invocation, _, err := actiondomain.ParseInvocation(after.LastResult)
+			if err == nil {
+				if !shortcutInvocationHasHandler(invocation) {
+					err = fmt.Errorf("action %q has no executable handler", after.LastResult)
+				} else if !shortcutInvocationAvailableFromCommand(invocation) {
+					err = fmt.Errorf("action %q is not available from command prompt", after.LastResult)
+				}
+			}
+			if err != nil {
+				shell = root.Shell.EnsureDefaults()
+				prompt := shell.Overlay.Prompt
+				prompt.Submitted = false
+				prompt.LastResult = err.Error()
+				shell.Overlay.Prompt = prompt
+				root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "action.command", Body: err.Error()})
+				return root.Advance(), nil
+			}
+			root.Shell = root.Shell.CloseOverlay()
+			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return ShellShortcutActionMsg{Invocation: invocation}
+			}}}
 		}
 		if after.Purpose == "clipboard.edit" {
 			root.Clipboard = root.Clipboard.ReplaceEntryText(after.TargetID, after.LastResult)
