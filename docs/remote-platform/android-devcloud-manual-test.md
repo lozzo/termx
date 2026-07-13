@@ -228,3 +228,21 @@ Community 对 managed endpoint 必须返回 `companion_missing`/官方 cloud mod
 - 修复 Android `Use relay` 只更新 UI 偏好但复用旧 native P2P store 的问题：`forceRelay=true` 现在进入 native 时收敛为 `relay_only`，模式不一致的旧 store 会被释放重建。
 - 真机诊断证明 `114.66.58.243:41003/udp` 双向可达，手机与 daemon 均成功完成 TURN allocation；此前“云安全组阻断”判断不成立。实际失败是 daemon 与 TURN 同机时也强制 `ICETransportPolicyRelay`，Pion allocation 成功却无法发布可用 daemon relay candidate，answer 因此没有 remote ICE candidate。
 - Answerer 现在先验证 relay-only offer 只含 `typ relay` candidate，再显式发布 daemon gathering candidate，并允许同机 daemon 使用 host candidate。5G 真机最终显示 `Mode=Relay`、`Path=single_relay`、`Candidates=relay / host`，RTT 49 ms；protocol channel 和 terminal inventory 均成功，未回退 direct。
+
+## 10. CLOUD012 统一账号与节点归属验收
+
+使用公网 HTTP staging Official APK，从 App 设置页发起设备码登录。系统浏览器必须显示与 App 相同的 user code；注册或登录 Web 账号并批准后，App 只能取得该账号的 edge session，不得接收密码或浏览器 Cookie。随后使用同一账号签发的一次性 daemon enrollment code 注册 daemon，并从 App 导入该账号名下 pairing。
+
+成功标准：App 显示 Web 账号身份和该账号名下节点；terminal inventory 请求通过端到端 DataChannel 到达 daemon；direct 与显式 single Relay 分别显示真实 ICE candidate pair。只阻断手机到 Control Plane `41101/tcp` 后，两种模式的新连接仍由 Hub 完成；强停 App 后 Keystore Session 和 pairing 可恢复。有效缓存或委派预算耗尽时必须 fail closed，不得伪造成功或回退 local、SSH、旧 Hub。
+
+### 2026-07-13 CLOUD012 实测
+
+- 设备 `24129PN74C`（Android 16）安装当前 Official public HTTP staging APK；App 打开系统浏览器，浏览器展示的 user code 与 App 一致，新注册 Web 账号批准后 App 显示同一账号身份。
+- 使用该账号的一次性 enrollment code 注册已有 DeviceIdentity；Web 用户中心、Hub device projection 和 daemon 的 DeviceID 一致，节点在线且未撤销。enrollment code 使用后立即失效。
+- 导入账号名下 pairing 后打开节点，terminal inventory 返回 `No active terminals`。该结果来自真实 daemon List 响应，证明 Hub admission、DTLS、CapabilityGrant 验证和 DataChannel protocol 链路成立；文件管理同时成功读取 daemon 根目录。
+- direct 显示 `Mode=P2P direct`、`Path=direct`、`Candidates=prflx / host`，手机公网候选连接 daemon 公网 UDP 候选，实测 RTT 约 109-157 ms。
+- 显式 `Use relay` 显示 `Mode=Relay`、`Path=single_relay`、`Candidates=relay / host`，实测 RTT 约 92-114 ms，没有复用旧 direct store 或伪装 Relay。
+- 服务器只拒绝该手机公网 IP 到 Control Plane `41101/tcp`，保持 Hub `41102/tcp` 和 TURN 可达；中断窗口内 direct 与 single Relay 均重新建连成功。Nginx 只记录 Hub `/v1/endpoints/resolve`、`/v1/signaling/create`、`/v1/relay/leases/acquire`，没有 login 或 admission 请求。
+- 在 Control Plane 仍被阻断时强停并重建 App 进程，Keystore 账号 Session 和 native pairing store 均恢复，节点列表显示一个可用账号节点；切换 P2P 后再次以 `prflx / host` 建连成功。
+- 多次强停留下的短期 Relay allocation 最终使再次 Relay 请求返回 Managed Free `quota_exhausted`。此前全新进程和 Control Plane 中断窗口内的 Relay 已分别成功；该错误证明并发预算在 Hub/Relay 本地 fail closed，没有回退 direct 或其他 transport。
+- 测试结束删除临时 Control Plane 拒绝规则；Cloud、Companion、daemon 三个 staging unit 保持 active。App 保留登录、pairing 和 direct 连接状态，便于继续人工检查。

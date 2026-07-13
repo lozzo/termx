@@ -10,7 +10,7 @@
 - UI003 已完成：Official Android 与共享移动 UI 已对齐到 Web Controller 的直角、细线、冷灰和低装饰视觉语言，同时保留移动端安全区、触控、返回、震动和全屏终端交互。
 - WEB001 已完成并在 WEB003 收敛运行架构：React/Vite 公开订阅 Landing Page 由 Nginx 静态托管，Control Plane 直接提供同源浏览器 API 和套餐投影，不再运行 Next.js 或独立 Go BFF。
 - WEB002 已完成：Web 登录、浏览器 Session、订阅账户、staging Checkout、签名 webhook、幂等订单和 Entitlement/Hub 投影已形成公网纵向链路。
-- CLOUD012 进行中：统一 Web 账号、TUI 与 Official Android 的设备码登录，并让账号名下 daemon 注册到 Hub；登录后 direct 与 single Relay 热路径继续只访问 Hub。
+- CLOUD012 已完成：Web、TUI 与 Official Android 使用统一账号设备码登录，账号名下 daemon 注册到 Hub；登录后的 direct 与 single Relay 热路径只访问 Hub，Control Plane 中断不影响有效缓存期内的新连接。
 - WEB003 已由用户重排为暂停：邮箱密码、用户中心、订阅和 AFF 已完成，GitHub/Google OIDC 留待统一账号客户端链路验收后恢复。
 - FILE001-FILE004 与 CLOUD006-CLOUD008 已完成；Official Android 显式 development build 已通过公网 HTTP staging 在 5G 真机完成 direct、single Relay、terminal 与恢复链路。生产上线前必须另行切换 HTTPS/TLS，不得复用本切片的明文 profile。
 - 当前仓库是唯一 private monorepo；当前不是正式开源或生产发布阶段。public snapshot、开源许可证模板替换、secret audit、第二仓和发布自动化全部延后。
@@ -108,7 +108,7 @@
 | CLOUD009 | 完成 | Hub managed direct 本地授权热路径 | Hub 从版本化授权投影离线验证 client，并本地创建 EdgeManagedSession；关闭 Control Plane 后有效快照内的新 direct 连接仍成功，撤销/过期/cache miss fail closed |
 | CLOUD010 | 完成 | 单 Relay 委派授权与用量补报 | Hub/Relay 使用区域委派预算签发短期凭据；Control Plane 中断时有效预算内可连接，用量经幂等 durable outbox 补报 |
 | CLOUD011 | 完成 | 客户端启动凭据与 Hub 目录刷新 | desktop/Official Android 启动时可访问 Control Plane 获取/刷新签名 edge token 与 HubDirectory，后续 direct/Relay 连接只访问 Hub |
-| CLOUD012 | 进行中 | 统一账号登录与账号节点归属 | 用户在 Web 注册后可审批 TUI/App 设备码；账号名下 daemon 可注册到 Hub；TUI/App 使用同一账号完成 direct 与显式 single Relay，连接热路径不访问 Control Plane |
+| CLOUD012 | 完成 | 统一账号登录与账号节点归属 | 用户在 Web 注册后可审批 TUI/App 设备码；账号名下 daemon 可注册到 Hub；TUI/App 使用同一账号完成 direct 与显式 single Relay，连接热路径不访问 Control Plane |
 | UI001 | 完成 | 首页机器类别与实时连接卡片 | 列表明确 Local、Cloud、Local + Cloud，并实时显示可达、连接阶段、实际 direct/Relay/local 路径与失败状态 |
 | UI002 | 完成 | 桌面机器工作台 | 宽屏使用桌面导航、工具栏和稳定列机器清单，不再呈现放大的移动卡片；移动端布局不回归 |
 | UI003 | 完成 | 移动端视觉系统与 Web Controller 对齐 | 375px、410px 与平板视口使用直角平面层级、清晰设备状态和移动触控交互；首页、设置、Sheet、文件与终端 chrome 风格一致且不改变连接语义 |
@@ -169,7 +169,7 @@
 
 - CLOUD012 启动审计确认：此前 Web 邮箱账号虽持久化在 SQLite，但 Control Plane `/v1/login/*`、daemon enrollment 与 Official Android gateway 固定签发 `account-dev-local`，共享 App 设置页仍使用 archive 前的 `/api/v1/auth/*` bearer 假设，因此“Web 注册”和“TUI/App 云连接”并非同一账号真值。本切片据此选择浏览器审批设备码、账号绑定 enrollment 和 Hub 本地授权投影，不把密码、Cookie 或 terminal capability 下放到客户端。
 
-- CLOUD012 当前进展：Control Plane 已提供浏览器 Session 保护的设备码检查/审批和账号专属一次性 daemon enrollment code；TUI 会按服务端 interval 轮询审批，Official Android 通过 native 私有 gateway 用系统浏览器登录，edge token 只进入 Keystore，旧 WebView `/api/v1/auth/*` 登录在 Official 装配中不再使用。`114.66.58.243` 已替换 Cloud、Companion、termx 与 React 静态产物，三个 systemd unit 均为 active；公网现场验证新邮箱注册后审批 TUI 登录返回同一 AccountID，固定 staging owner 账号完成 `connected/direct` 与显式 `connected/single`。跨组件 harness 同时证明注册账号签发的 enrollment code 会把 daemon 和 Hub device projection 绑定到该账号，重放被拒绝。当前 Android 设备不在线，因此 APK 真机登录、账号名下 pairing、direct 与 single Relay 尚未验收，CLOUD012 保持进行中。
+- CLOUD012 已完成：Control Plane 提供浏览器 Session 保护的设备码检查/审批和账号专属一次性 daemon enrollment code；TUI 按服务端 interval 轮询审批，Official Android 通过 native 私有 gateway 打开系统浏览器登录，edge token 只进入 Keystore，旧 WebView `/api/v1/auth/*` 登录在 Official 装配中不再使用。`114.66.58.243` 已替换 Cloud、Companion、termx 与 React 静态产物，三个 systemd unit 均为 active；公网现场验证新邮箱注册后审批 TUI 登录返回同一 AccountID，注册账号签发的一次性 enrollment code 把 daemon、Hub device projection 和 Web 节点投影绑定到同一账号，重放被拒绝。Official Android 真机 `24129PN74C` 已通过系统浏览器审批设备码、Keystore Session 恢复、账号名下 pairing、`connected/direct` 和显式 `connected/single_relay`；只阻断手机到 Control Plane `41101/tcp` 后，direct 与 single Relay 均能重新建连，窗口内只访问 Hub resolve/signaling/lease 路径。强停并重建 App 进程后账号 Session 与 pairing 仍恢复，在 Control Plane 继续中断时 direct 再次成功；重复强停造成的短时 Relay allocation 最终触发 Managed Free `quota_exhausted`，按委派预算 fail closed，没有伪造 Relay 成功或回退其他路径。
 
 - WEB003 运行架构已收敛：React/Vite 只生成静态文件，Nginx 在 `41100` 直接托管并将 `/api/*` 同源代理到 Control Plane `41001`；Control Plane 直接拥有 HttpOnly Session Cookie、Origin/CSRF、账号数据库、订阅和 AFF API。Next App Router、Route Handler、Node runtime unit、独立 Go Web Controller BFF binary/unit 与 `41000/41004` listener 已删除，不保留 fallback。
 
