@@ -5,7 +5,7 @@
 #   或 ~/.config/termx/tui-v3.yaml
 #
 # 说明：
-# - 这份文件是完整模板，不是当前运行时已经接入的实现文件。
+# - 这份文件是当前运行时可直接加载的完整模板。
 # - 空字符串 "" 表示使用 v3 内置默认值、host theme 推导值或派生值。
 # - 颜色第一阶段只使用 "#RRGGBB"。示例："#d65cff"。
 # - terminal 内容自己的 ANSI 颜色不会被这里的 TUI theme 重映射。
@@ -404,8 +404,9 @@ tui:
 
   # shortcuts 是快捷键配置的唯一入口。
   # 输入路由、footer/help/overlay 提示都从这里生成。
-  # 默认行为：不写 tui.shortcuts 时使用内置默认快捷键。
-  # 注意：一旦写出 tui.shortcuts，包括空块，就表示用户配置成为唯一真值，不再启用默认快捷键。
+  # 省略 tui.shortcuts 或写 shortcuts: {} 时使用内置默认 catalog。
+  # 只写 shortcuts.actions 时继承默认 bindings，只覆盖 action 展示文案。
+  # 一旦显式声明任一 scene（包括 global: {}），用户 scene catalog 就完整替换默认 bindings。
   # 短写：key: action。
   # 长写：key.action / key.label，用于覆盖单个场景里的展示文案。
   # 未修饰 Esc 是全局返回保留键，不需要也不允许写入任何 scene。

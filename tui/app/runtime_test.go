@@ -1250,8 +1250,9 @@ func TestAppRuntimeVisibleLocalInputContinuesAfterHiddenRemoteSurface(t *testing
 	if err := waitForLiveInvalidationRequest(context.Background(), runtime, terminal, "term-local"); err != nil {
 		t.Fatalf("local frame should arm live invalidation: %v", err)
 	}
-	if len(terminal.LiveInvalidationRequests) != 1 || terminal.LiveInvalidationRequests[0].EndpointID != state.DefaultEndpointID {
-		t.Fatalf("hidden remote cache must not create an arm request, got %#v", terminal.LiveInvalidationRequests)
+	requests := terminal.LiveInvalidationRequestsSnapshot()
+	if len(requests) != 1 || requests[0].EndpointID != state.DefaultEndpointID {
+		t.Fatalf("hidden remote cache must not create an arm request, got %#v", requests)
 	}
 
 	terminal.SurfaceResult = services.TerminalSurfaceResult{

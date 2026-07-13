@@ -19,6 +19,7 @@ import (
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/shared/connection"
 	tuiv3 "github.com/lozzow/termx/tui"
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/app"
 	tuiinput "github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/render"
@@ -2617,7 +2618,10 @@ func attachV3PaneOwnerForCLITest(t *testing.T, runtime *app.AppRuntime, terminal
 	if !ok || binding.TerminalID != terminalID {
 		t.Fatalf("missing pane binding for owner transfer pane=%s terminal=%s root=%#v", paneID, terminalID, root)
 	}
-	if err := runtime.Post(app.ShellContentActionMsg{ActionID: render.ActionTerminalTakeResizeOwner.String(), PaneID: paneID}); err != nil {
+	if err := runtime.Post(app.ShellShortcutActionMsg{
+		Invocation: actiondomain.Invocation{ID: "panel.take_owner", SourceActionID: "panel.take_owner"},
+		Surface:    &app.ShortcutSurfaceContext{ExplicitTarget: true, PaneID: paneID, Row: -1},
+	}); err != nil {
 		t.Fatalf("post pane owner action: %v", err)
 	}
 	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {

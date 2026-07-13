@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/lozzow/termx/proto/cloudpb"
@@ -713,6 +714,8 @@ func (client *FakeCoreClient) ReleaseHistory(_ context.Context, req HistoryRelea
 }
 
 type FakeTerminalService struct {
+	liveInvalidationMu       sync.Mutex
+	liveInvalidationRequests []TerminalLiveEventRequest
 	AttachResult             TerminalAttachResult
 	ListResult               TerminalListResult
 	CreateResult             TerminalCreateResult
@@ -749,7 +752,6 @@ type FakeTerminalService struct {
 	Inputs                   []TerminalInputRequest
 	Resizes                  []TerminalResizeRequest
 	Surfaces                 []TerminalSurfaceRequest
-	LiveInvalidationRequests []TerminalLiveEventRequest
 	PathRequests             []PathListDirectoriesRequest
 	PathDefaultsRequests     []PathDefaultsRequest
 }
@@ -1079,7 +1081,9 @@ func (service *FakeTerminalService) LiveSurface(_ context.Context, req TerminalS
 }
 
 func (service *FakeTerminalService) ArmLiveInvalidation(ctx context.Context, req TerminalLiveEventRequest) (TerminalLiveEvent, error) {
-	service.LiveInvalidationRequests = append(service.LiveInvalidationRequests, req)
+	service.liveInvalidationMu.Lock()
+	service.liveInvalidationRequests = append(service.liveInvalidationRequests, req)
+	service.liveInvalidationMu.Unlock()
 	if service.LiveInvalidationsErr != nil {
 		return TerminalLiveEvent{}, service.LiveInvalidationsErr
 	}
@@ -1102,6 +1106,14 @@ func (service *FakeTerminalService) ArmLiveInvalidation(ctx context.Context, req
 	}
 	<-ctx.Done()
 	return TerminalLiveEvent{}, ctx.Err()
+}
+
+// LiveInvalidationRequestsSnapshot 返回 fake 已观测到的 one-shot live wake 请求快照。
+// ArmLiveInvalidation 可由异步 effect 调用；测试只能读取本方法返回的副本，禁止直接共享可变 slice。
+func (service *FakeTerminalService) LiveInvalidationRequestsSnapshot() []TerminalLiveEventRequest {
+	service.liveInvalidationMu.Lock()
+	defer service.liveInvalidationMu.Unlock()
+	return append([]TerminalLiveEventRequest(nil), service.liveInvalidationRequests...)
 }
 
 func clonePathDirectoryEntries(entries []PathDirectoryEntry) []PathDirectoryEntry {

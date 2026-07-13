@@ -2,7 +2,9 @@
 
 ## KS012 最终审计基线
 
-KS012 重新盘点后的机器可读基线位于 `shortcut-contract-debt.json`。默认 catalog 有 203 个 scene+key 条目，其中 166 个进入 root/sticky 输入路由。KS013 后中立 `tui/action` registry 有 159 个 canonical spec，覆盖 keyboard、mouse-only、drag 与内容 CTA；旧 footer/chrome/content 名称不再冒充 action identity。render 有 123 个本地 `ProjectionID`，可执行投影通过 `CanonicalActionID` 引用 action domain，聚合提示则只携带具体 invocation。
+机器可读契约基线位于 `shortcut-contract-debt.json`。默认 scene+key catalog 经统一输入路由进入 `tui/action` canonical registry，覆盖 keyboard、mouse-only、drag 与内容 CTA；旧 footer/chrome/content 名称不再冒充 action identity。render 只保留有真实视觉或几何消费者的本地 `ProjectionID`，每个投影都单向引用 canonical action。具体数量只由下面受自动测试约束的运行基线投影，不再手工维护第二份统计。
+
+当前运行基线：`default_entries=203; routed_bindings=166; action_specs=159; render_projections=34; scenes=15`。
 
 审计把每个输入、binding、spec、handler、projection 和提示来源归为 `conforming` 或 `debt`。债务项必须同时声明目标 owner、源码锚点和 KS013/KS015/KS016 目标切片；测试独立锁定债务 ID、inventory 数量和源码锚点，因此不能只修改 JSON 来接受新增债务。KS013-KS016 消除债务时必须同步删除对应清单项和门禁基线，不保留兼容 registry 或字符串桥接。
 

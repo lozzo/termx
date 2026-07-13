@@ -174,6 +174,18 @@ $XDG_CONFIG_HOME/termx/tui-v3.yaml
 
 `tui.shortcuts` 是按键执行、footer 提示和 Help 展示的共同来源。同一个 action 可以绑定多个按键；每个 binding 可以通过 `show` 单独控制是否进入 footer。
 
+完整且可直接加载的默认配置模板见 [`tui/docs/tui-v3.example.yaml`](tui/docs/tui-v3.example.yaml)；包含显式 `tui.shortcuts` 替换语义的定制示例见 [`tui/docs/config.example.yaml`](tui/docs/config.example.yaml)。默认快捷键本身只由运行时 catalog 维护，文档不复制第二份手写全表。
+
+省略 `shortcuts` 或写 `shortcuts: {}` 会使用内置默认 catalog；只写 `shortcuts.actions` 会继承默认 bindings，只覆盖 action 展示文案。一旦显式声明任一 scene（包括空的 `global: {}`），用户声明的整个 scene catalog 就完整替换默认 bindings，未列出的默认 scene 不会继承。
+
+键位 token 支持可组合、顺序无关的 `ctrl-`、`alt-`、`shift-` 修饰键，以及以下基础键：
+
+- 任意单字符和 `space`。
+- `page-up`（别名 `pgup`）、`page-down`（别名 `pgdn`）、`up`、`down`、`left`、`right`、`home`、`end`。
+- `delete`、`insert`、`backspace`、`tab`、`esc`（别名 `escape`）、`enter`（别名 `return`）、`f1` 至 `f12`。
+
+命名键和修饰词不区分大小写，普通单字符则大小写敏感，`R` 与 `r` 是不同 binding。`ctrl-A` 与 `ctrl-a` 是兼容别名；需要显式 Shift 时写 `ctrl-shift-a`。同一 scene 中，等价拼写 canonicalize 到同一运行时键位时会导致配置加载失败，例如 `ctrl-A` 与 `ctrl-a`、`enter` 与 `return`、`ctrl-alt-x` 与 `alt-ctrl-x`；未知键、未知 action、scene 不允许的 action 和参数越界也会直接报错，不会静默跳过。未修饰 `Esc` 是例外的保留键，规则如下。
+
 未修饰的 `Esc` 是 TUI 保留的全局返回键，不写入 `tui.shortcuts`，也不能被配置覆盖。它固定按交互层级返回一层：先退出 prompt suggestion，再关闭当前 dialog/overlay，然后退出 copy/history，最后退出 Panel/Resize/System/Floating/Tab/Workspace 快捷模式；普通 live terminal 没有可返回层时，`Esc` 会继续发送给前台程序。
 
 下面只是 `workspace` scene 片段，必须合并到已有的完整 shortcut catalog，不能把它作为唯一的 `tui.shortcuts` 配置：

@@ -760,13 +760,11 @@ pane、tab、workspace、floating 等结构操作必须先定义为稳定动作�
 - `Ctrl-v`：Display / Copy authoritative history 路径。
 - `Esc`：退出 mode 或关闭 overlay，不得漏发给 terminal。
 
-当前尚未产品化的入口：
-
-- 更完整的 command palette、可配置 shortcuts 和跨 workspace terminal attach 尚未产品化。
+当前尚未产品化的入口只包括更完整的 command palette 和跨 workspace terminal attach；可配置 shortcuts 已由 `tui/action`、`tui/shortcut`、配置 loader、footer/Help 与 app dispatcher 形成闭环。
 
 ### 13.2.1 当前快捷键实现核查
 
-当前快捷键实现核查表维护在 `tui/docs/shortcut-inventory.md`。该文件以 `tui/input/bindings.go`、overlay/copy 输入处理和 render footer/help 为来源，记录“实际可触发快捷键”“已展示快捷键”和“提示不一致或未展示的入口”。
+当前快捷键实现核查表维护在 `tui/docs/shortcut-inventory.md`。canonical identity 来自 `tui/action`，scene+key 真值来自 `tui/shortcut`，配置后的输入路由与 footer/Help 都消费同一编译 catalog；inventory 只记录审计结论和历史迁移背景，不作为第二份运行时键表。
 
 本 spec 不重复维护完整快捷键表；新增、删除或改名快捷键时必须同步更新 `tui/docs/shortcut-inventory.md`，并补充对应 input/render/app harness。
 
@@ -1700,7 +1698,7 @@ Prompt / Help overlay 一期的目标是补齐全局短输入和帮助入口，�
 - 命令面板和命令执行器。
 - 多字段表单。
 - Prompt input click 精确移动光标。
-- Help 搜索、分页、分类折叠或可配置 shortcuts 生成。
+- Help 搜索、分页或分类折叠；可配置 shortcuts 的输入与展示同源已在后续快捷键切片完成。
 - metadata edit、kill confirm 等更多业务动作全部接入 Prompt；这些由后续 Terminal Pool 深化切片接入。
 
 本阶段完成后的基本手工测试入口：

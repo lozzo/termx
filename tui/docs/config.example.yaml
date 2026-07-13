@@ -235,7 +235,8 @@ tui:
 
   footer:
     # templates 控制 footer 的轻量文本模板。
-    # 这里不是完整可编程布局；它只做占位符替换，真实 action/hit region 仍由 render ActionSpec 和 app reducer 管。
+    # 这里不是完整可编程布局；它只做占位符替换。canonical action identity 由 tui/action 持有，
+    # render 只持有 ProjectionSpec 视觉/几何 metadata，app reducer 消费 canonical invocation。
     templates:
       # mode_badge 是 footer 左侧 mode 标识模板。
       # 可用占位符：
@@ -369,7 +370,9 @@ tui:
       # 默认值：true。
       highlight_matches: true
 
-  # shortcuts 一旦写出就成为唯一快捷键真值；下面没有列出的默认快捷键不会自动继承。
+  # 省略 shortcuts 或写 shortcuts: {} 时使用内置默认 catalog。
+  # 只写 shortcuts.actions 时继承默认 bindings，只覆盖 action 展示文案。
+  # 下面显式声明了 scene，因此整个用户 scene catalog 完整替换默认 bindings；未列出的默认 scene 不继承。
   # 未修饰 Esc 是全局返回保留键，不需要也不允许写入任何 scene。
   shortcuts:
     actions:

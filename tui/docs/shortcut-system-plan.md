@@ -192,7 +192,7 @@ action id 只允许字母、数字、`_`、`-`、`.`。默认内置 action 使�
 - 同一份配置不因启动环境不同而解析失败；当前宿主不支持的增强键位不能触发，footer/help 必须隐藏或明确标记 unavailable。只有同一 invocation 另有 available binding 时才展示替代键，不自动生成用户未配置的 fallback；默认 catalog 自身保留 `Ctrl-T` 后按数字的路径。
 - label 必须是单行字符串。
 - `menu.xxx` action 必须存在于 `tui/action`，并指向 `tui/shortcut` 声明为可进入的内置场景。
-- 默认 catalog 必须能覆盖当前实际可按行为；用户提供 `tui.shortcuts` 后，以用户配置为唯一真值。
+- 默认 catalog 必须能覆盖当前实际可按行为；用户显式声明任一 shortcut scene 后，以用户 scene catalog 为完整 binding 真值。空 map 和 action-only 配置继续遵循前述默认继承语义。
 
 ## 旧系统删除策略
 

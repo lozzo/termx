@@ -1433,10 +1433,9 @@ func TestLiveInvalidationArmEffectIsOneShot(t *testing.T) {
 	if !ok || live.Event.Snapshot.Revision != 8 {
 		t.Fatalf("expected one live invalidation message, got %#v", msg)
 	}
-	if len(terminal.LiveInvalidationRequests) != 1 ||
-		terminal.LiveInvalidationRequests[0].TerminalID != "term-1" ||
-		terminal.LiveInvalidationRequests[0].ObservedRevision != 7 {
-		t.Fatalf("expected one-shot arm with observed revision, got %#v", terminal.LiveInvalidationRequests)
+	requests := terminal.LiveInvalidationRequestsSnapshot()
+	if len(requests) != 1 || requests[0].TerminalID != "term-1" || requests[0].ObservedRevision != 7 {
+		t.Fatalf("expected one-shot arm with observed revision, got %#v", requests)
 	}
 }
 
@@ -1454,8 +1453,8 @@ func TestR394LiveInvalidationArmEffectDoesNotUseFixedDelay(t *testing.T) {
 	} else if _, ok := msg.(LiveInvalidationArmCanceledMsg); !ok {
 		t.Fatalf("canceled arm should return release message, got %#v", msg)
 	}
-	if len(terminal.LiveInvalidationRequests) != 0 {
-		t.Fatalf("canceled arm must not call service, got %#v", terminal.LiveInvalidationRequests)
+	if requests := terminal.LiveInvalidationRequestsSnapshot(); len(requests) != 0 {
+		t.Fatalf("canceled arm must not call service, got %#v", requests)
 	}
 
 	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
@@ -1464,8 +1463,8 @@ func TestR394LiveInvalidationArmEffectDoesNotUseFixedDelay(t *testing.T) {
 	if !ok || live.Event.Snapshot.Revision != 8 {
 		t.Fatalf("expected live event without artificial arm delay, got %#v", msg)
 	}
-	if len(terminal.LiveInvalidationRequests) != 1 {
-		t.Fatalf("expected one immediate arm request, got %#v", terminal.LiveInvalidationRequests)
+	if requests := terminal.LiveInvalidationRequestsSnapshot(); len(requests) != 1 {
+		t.Fatalf("expected one immediate arm request, got %#v", requests)
 	}
 }
 
@@ -1491,11 +1490,9 @@ func TestLiveFrameReadyArmsNextInvalidation(t *testing.T) {
 	if msg := arm.Run(context.Background()); msg == nil {
 		t.Fatal("expected one-shot arm to return wake message")
 	}
-	if len(terminal.LiveInvalidationRequests) != 1 ||
-		terminal.LiveInvalidationRequests[0].ObservedRevision != 8 ||
-		terminal.LiveInvalidationRequests[0].Cols != 96 ||
-		terminal.LiveInvalidationRequests[0].Rows != 30 {
-		t.Fatalf("frame completion should arm next wake at rendered surface size, got %#v", terminal.LiveInvalidationRequests)
+	requests := terminal.LiveInvalidationRequestsSnapshot()
+	if len(requests) != 1 || requests[0].ObservedRevision != 8 || requests[0].Cols != 96 || requests[0].Rows != 30 {
+		t.Fatalf("frame completion should arm next wake at rendered surface size, got %#v", requests)
 	}
 }
 
@@ -1520,11 +1517,9 @@ func TestLiveFrameReadyArmsEndpointInvalidation(t *testing.T) {
 	if msg := arm.Run(context.Background()); msg == nil {
 		t.Fatal("expected one-shot arm to return wake message")
 	}
-	if len(terminal.LiveInvalidationRequests) != 1 ||
-		terminal.LiveInvalidationRequests[0].EndpointID != "west" ||
-		terminal.LiveInvalidationRequests[0].TerminalID != "term-1" ||
-		terminal.LiveInvalidationRequests[0].ObservedRevision != 8 {
-		t.Fatalf("frame completion should arm owning endpoint wake, got %#v", terminal.LiveInvalidationRequests)
+	requests := terminal.LiveInvalidationRequestsSnapshot()
+	if len(requests) != 1 || requests[0].EndpointID != "west" || requests[0].TerminalID != "term-1" || requests[0].ObservedRevision != 8 {
+		t.Fatalf("frame completion should arm owning endpoint wake, got %#v", requests)
 	}
 }
 
@@ -4505,7 +4500,7 @@ func waitForLiveInvalidationRequest(ctx context.Context, runtime *AppRuntime, te
 		if err := runtime.Drain(deadlineCtx); err != nil {
 			return err
 		}
-		for _, request := range terminal.LiveInvalidationRequests {
+		for _, request := range terminal.LiveInvalidationRequestsSnapshot() {
 			if request.TerminalID == terminalID {
 				return nil
 			}

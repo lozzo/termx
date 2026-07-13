@@ -149,7 +149,7 @@
 | KS014 | 完成 | 输入协议与 scene 状态 | 传统 TTY/CSI-u/mouse 规范化、catalog 替换、sticky/copy/overlay/lock/Esc 优先级和 PTY 透传完整可验证 |
 | KS015 | 完成 | 全部默认 action 真实闭环 | 每个默认 binding 都产生真实 reducer/effect/service 结果；placeholder 被实现或删除，失败不伪装成功 |
 | KS016 | 完成 | 提示点击与键盘同源 | 所有 render surface 不含硬编码操作键位，keyboard/mouse/drag/click 使用 tui/action canonical invocation |
-| KS017 | 待开始 | 配置文档与真实终端验收 | 完整示例可加载，文档与 catalog 自动一致，全量 TUI/CLI/tmux/CSI-u 门禁通过且旧代码清理完成 |
+| KS017 | 完成 | 配置文档与真实终端验收 | 完整示例可加载，文档与 catalog 自动一致，全量 TUI/CLI/tmux/CSI-u 门禁通过且旧代码清理完成 |
 | SI001 | 暂停 | TUI 同步输入组 | 恢复前重新确认范围 |
 | OPEN001 | 延后 | 正式开源与发布隔离 | 用户明确进入发布阶段后再执行 public snapshot、许可证、secret audit 和新仓初始化 |
 
@@ -215,6 +215,8 @@
 - KS015 已完成：203 条默认 binding canonicalize 为 146 个 invocation，并经正式 reducer 组合执行同步 effect/message 链直到静止；排除 `Generation` 和普通 toast 后，每项必须产生真实状态变化或抵达 terminal/core/clipboard/workbench storage owner。terminal mutation 以完整 operation vector 和精确 `TerminalRef` 列表验收，能够拒绝同 endpoint 错 terminal、重复/额外 mutation 与 fallback；owner/resize/size-lock、history latest/older/newer/oldest、clipboard/storage、split/tab/floating attach 的局部失败均有 harness。`action.command` 使用 canonical parser/dispatcher，overlay-only action fail closed；picker edit 使用 unfiltered reducer-owned pool metadata。定向 KS015 测试 `-count=20`、clean-env `go test ./tui/... -count=1` 和 `git diff --check` 通过；架构 reviewer `ks015_arch_review` 与代码 reviewer `ks015_code_review` 最终均明确 PASS。额外的 `go test -race ./tui/app -count=1` 暴露既有 live invalidation 测试夹具对 `FakeTerminalService.LiveInvalidationRequests` 的并发读写，未经过 KS015 变更链路，保留给已强制要求全量 race 的 KS017 收口。
 
 - KS016 已完成：footer/help/overlay/header/chrome/content CTA 与 drag 全部携带 `tui/action` canonical Invocation，app 不再解析 render `ProjectionID`/`ActionID` 执行业务；旧 `ShellContentActionMsg` dispatcher、固定 footer/help 元数据和 87 个无生产消费者 projection 已删除，render 只保留 34 个真实视觉/几何投影。每个 actionable HitRegion producer 显式声明 active/explicit `HitTargetMode`，row target 另用 `HasRow` 表达存在性并按当前 reducer-owned projection 验证范围和 picker row kind；缺失、越界、错类 target 在 specialized/generic 分流前 fail closed，footer active-target 与 empty-tab no-pane 入口保持合法。硬编码 `Ctrl-F`/`Ctrl-T`/`R restart` 文案和隐式 `r/R` 已删除；clean-env `go test ./tui/... -count=1` 与 `git diff --check` 通过，架构 reviewer `ks016_arch_review` 和代码 reviewer `ks016_code_review` 最终均明确 PASS。
+
+- KS017 已完成：两个可直接加载的配置示例明确 empty map、action-only 与显式 scene 完整替换语义，README 补齐支持键位、组合修饰键、canonical 冲突、增强键盘前置条件与诊断；运行 catalog 统计、关键文档 contract 和旧执行符号均有自动守卫。真实 smoke 使用隔离 daemon/config/state/log 和独立 tmux socket，完整验证默认 root/sticky/overlay/copy/quit 以及 CSI-u capability、`Ctrl-1` 和正常退出链路；异步 live invalidation fake 改为 mutex-owned snapshot 后全量 race 通过。clean-env 全量 TUI、race、shortcut/CSI-u 定向 `-count=20`、CLI、`scripts/termx_shortcut_smoke.sh` 与 `git diff --check` 全部通过，架构 reviewer `ks017_arch_review` 和代码 reviewer `ks017_code_review` 最终均明确 PASS。
 
 - 快捷键最终收口已规划为 KS012-KS017，目标不是补齐零散按键，而是删除第二真值并证明完整消息链路。当前审计已确认 `tui/shortcut` 之外仍有 `render.ActionSpecCatalog` 等 action 描述面、内容区硬编码 `Ctrl-F`/`Ctrl-T`/`R restart` 操作提示，以及 `system.open_prompt` 落到 placeholder 的风险。中立 `tui/action` 将拥有 keyboard/mouse/drag/CTA 共用 action identity 与 invocation，`tui/shortcut` 只拥有 scene+key 编译和快捷键展示覆盖；每个默认 shortcut 后续必须真实工作或从 catalog 删除。KS012 先用 debt manifest 保证无未分类/无新增 gap，KS013-KS016 再按 owner 消除。允许在切片范围内大规模删除被替代旧代码，不以改动行数为约束。所有阶段执行架构 reviewer + 代码 reviewer 双门禁，规划用 `/goal` prompt 位于 `tui/docs/shortcut-completion-goal-prompt.md`。
 
