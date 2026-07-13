@@ -58,7 +58,7 @@ export default function AccountPage() {
           {tab === "referrals" && <Referrals value={center.referrals} />}
         </div>
       </main>
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid h-20 grid-cols-5 border-t border-line bg-background md:hidden">{tabs.map(([id, Icon]) => <button className={cn("grid min-w-0 place-items-center content-center gap-1 px-1 text-[9px] text-muted-foreground", tab === id && "bg-soft text-primary")} key={id} onClick={() => setTab(id)}><Icon className="size-4" /><span className="max-w-full overflow-hidden text-ellipsis">{t(`account.tabs.${id}`)}</span></button>)}</nav>
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid h-[88px] grid-cols-5 border-t border-line bg-background md:hidden">{tabs.map(([id, Icon]) => <button className={cn("grid min-w-0 grid-rows-[16px_24px] place-items-center content-center gap-1 px-0.5 text-[8px] text-muted-foreground", tab === id && "bg-soft text-primary")} key={id} onClick={() => setTab(id)}><Icon className="size-4" /><span className="flex max-w-full items-center justify-center text-center leading-[11px] [overflow-wrap:anywhere]">{t(`account.tabs.${id}`)}</span></button>)}</nav>
     </div>
   );
 }
@@ -109,5 +109,5 @@ function Referrals({ value }: { value: ReferralProgram }) {
 
 function localizeAudit(action: string, t: TFunction): string { return action === "account.created" ? t("account.activity.accountCreated") : action.replace(".", " "); }
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) { return <label className="grid gap-2 font-mono text-[9px] text-muted-foreground">{label}{children}{hint && <small className="font-sans text-[10px]">{hint}</small>}</label>; }
-function Event({ title, detail, time }: { title: string; detail: string; time: string }) { return <div className="grid min-h-16 grid-cols-[1fr_auto] items-center gap-4 border-b border-line px-5 last:border-0"><span className="min-w-0"><b className="block text-xs font-medium capitalize">{title}</b><small className="block truncate text-[9px] text-muted-foreground">{detail}</small></span><time className="text-right text-[9px] text-muted-foreground">{time}</time></div>; }
+function Event({ title, detail, time }: { title: string; detail: string; time: string }) { return <div className="grid min-h-16 grid-cols-[1fr_auto] items-center gap-4 border-b border-line px-5 last:border-0"><span className="min-w-0"><b className="block text-xs font-medium">{title}</b><small className="block truncate text-[9px] text-muted-foreground">{detail}</small></span><time className="text-right text-[9px] text-muted-foreground">{time}</time></div>; }
 function Empty({ text }: { text: string }) { return <p className="m-0 p-10 text-center text-xs text-muted-foreground">{text}</p>; }
