@@ -21,6 +21,9 @@ func main() {
 	relay := flag.String("relay", "", "operator-visible Relay URL")
 	catalogPath := flag.String("catalog", "config/plans.json", "user-visible plan catalog configuration")
 	stagingPayments := flag.Bool("staging-payments", false, "enable explicit non-production browser login and payment provider")
+	githubClientID := flag.String("github-client-id", "", "GitHub OAuth client ID")
+	googleClientID := flag.String("google-client-id", "", "Google OIDC client ID")
+	accountDB := flag.String("account-db", "termx-web-controller.db", "SQLite account database path")
 	flag.Parse()
 	catalog, err := webcontroller.LoadCatalog(*catalogPath)
 	if err != nil {
@@ -28,14 +31,23 @@ func main() {
 		os.Exit(1)
 	}
 	var commerce *webcontroller.CommerceService
+	var center *webcontroller.UserCenterStore
 	if *stagingPayments {
+		center, err = webcontroller.OpenUserCenterStore(*accountDB, time.Now)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		defer center.Close()
 		commerce, err = webcontroller.NewCommerceService([]byte("termx-staging-payment-secret-v1-32-bytes"), webcontroller.HTTPEntitlementPublisher{Origin: *control}, time.Now)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+		commerce.AttachUserCenter(center)
 	}
-	handler, err := webcontroller.StatusHandler(webcontroller.StatusConfig{ControlPlaneURL: *control, HubURL: *hub, RelayURL: *relay, Catalog: &catalog, Commerce: commerce})
+	providers := []webcontroller.IdentityProvider{{ID: "github", Name: "GitHub", Configured: *githubClientID != ""}, {ID: "google", Name: "Google", Configured: *googleClientID != ""}}
+	handler, err := webcontroller.StatusHandler(webcontroller.StatusConfig{ControlPlaneURL: *control, HubURL: *hub, RelayURL: *relay, Catalog: &catalog, Commerce: commerce, UserCenter: center, IdentityProviders: providers})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

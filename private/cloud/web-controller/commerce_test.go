@@ -2,6 +2,8 @@ package webcontroller_test
 
 import (
 	"encoding/json"
+	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,6 +14,55 @@ type entitlementPublisher struct{ calls int }
 
 func (publisher *entitlementPublisher) Activate(accountID, planID, orderID string, validUntil time.Time) error {
 	publisher.calls++
+	return nil
+}
+
+func TestCommerceSessionAndOrderSurviveDatabaseRestart(t *testing.T) {
+	now := time.Date(2026, 7, 13, 1, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "accounts.db")
+	center, err := webcontroller.OpenUserCenterStore(path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, _ := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), &entitlementPublisher{}, func() time.Time { return now })
+	service.AttachUserCenter(center)
+	session, _ := service.BeginStagingSession("account-dev-local", "user-dev-local", "dev-local@termx.invalid")
+	order, err := service.CreateCheckout(session, "pro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = center.Close()
+	reopened, err := webcontroller.OpenUserCenterStore(path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	restarted, _ := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), &entitlementPublisher{}, func() time.Time { return now })
+	restarted.AttachUserCenter(reopened)
+	authenticated, err := restarted.Authenticate(session.Token)
+	if err != nil {
+		t.Fatalf("Authenticate after restart = %v", err)
+	}
+	view := restarted.AccountView(authenticated)
+	if len(view.Orders) != 1 || view.Orders[0].ID != order.ID {
+		t.Fatalf("orders after restart = %#v", view.Orders)
+	}
+}
+
+type recordedEntitlement struct {
+	accountID  string
+	validUntil time.Time
+}
+type recordingPublisher struct{ values []recordedEntitlement }
+
+type failingPublisher struct{}
+
+func (failingPublisher) Activate(string, string, string, time.Time) error {
+	return errors.New("control plane unavailable")
+}
+
+func (publisher *recordingPublisher) Activate(accountID, planID, orderID string, validUntil time.Time) error {
+	publisher.values = append(publisher.values, recordedEntitlement{accountID: accountID, validUntil: validUntil})
 	return nil
 }
 
@@ -42,5 +93,55 @@ func TestCommerceWebhookIsSignedAndIdempotent(t *testing.T) {
 	}
 	if _, err := service.ApplyWebhook(body, service.SignStagingEvent(body)); err != nil || publisher.calls != 1 {
 		t.Fatalf("duplicate webhook = %v, publisher=%d", err, publisher.calls)
+	}
+}
+
+func TestFirstPaidReferralExtendsInviteeSubscription(t *testing.T) {
+	now := time.Date(2026, 7, 13, 1, 0, 0, 0, time.UTC)
+	center := webcontroller.NewUserCenterStore(func() time.Time { return now })
+	defer center.Close()
+	_, _, program, _, _ := center.Snapshot("account-dev-local")
+	invitee, err := center.RegisterPasswordAccount("invitee@example.com", "secure-password", program.Code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publisher := &recordingPublisher{}
+	service, err := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), publisher, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.AttachUserCenter(center)
+	session, _ := service.BeginStagingSession(invitee.AccountID, invitee.UserID, invitee.Email)
+	order, _ := service.CreateCheckout(session, "pro")
+	paid, err := service.ConfirmStagingPayment(session, order.ID)
+	if err != nil || paid.Status != "paid" {
+		t.Fatalf("payment = %#v, %v", paid, err)
+	}
+	view := service.AccountView(session)
+	want := now.Add(37 * 24 * time.Hour)
+	if view.ValidUntil == nil || !view.ValidUntil.Equal(want) {
+		t.Fatalf("valid until = %v, want %v", view.ValidUntil, want)
+	}
+	if len(publisher.values) != 1 || !publisher.values[0].validUntil.Equal(want) {
+		t.Fatalf("published = %#v", publisher.values)
+	}
+}
+
+func TestReferralRewardIsNotCommittedBeforeEntitlement(t *testing.T) {
+	now := time.Date(2026, 7, 13, 1, 0, 0, 0, time.UTC)
+	center := webcontroller.NewUserCenterStore(func() time.Time { return now })
+	defer center.Close()
+	_, _, program, _, _ := center.Snapshot("account-dev-local")
+	invitee, _ := center.RegisterPasswordAccount("failed@example.com", "secure-password", program.Code)
+	service, _ := webcontroller.NewCommerceService([]byte("0123456789abcdef0123456789abcdef"), failingPublisher{}, func() time.Time { return now })
+	service.AttachUserCenter(center)
+	session, _ := service.BeginStagingSession(invitee.AccountID, invitee.UserID, invitee.Email)
+	order, _ := service.CreateCheckout(session, "pro")
+	if _, err := service.ConfirmStagingPayment(session, order.ID); err == nil {
+		t.Fatal("payment unexpectedly succeeded")
+	}
+	_, _, inviteeProgram, _, _ := center.Snapshot(invitee.AccountID)
+	if inviteeProgram.RewardDays != 0 {
+		t.Fatalf("reward committed before entitlement: %#v", inviteeProgram)
 	}
 }

@@ -13,12 +13,14 @@ import (
 // StatusConfig 配置 Web Controller 的只读运维 surface。
 // 上游只能是同机 loopback Control Plane/Hub；该 surface 不接收 cloud credential、signaling 或 terminal payload。
 type StatusConfig struct {
-	ControlPlaneURL string
-	HubURL          string
-	RelayURL        string
-	HTTPClient      *http.Client
-	Catalog         *Catalog
-	Commerce        *CommerceService
+	ControlPlaneURL   string
+	HubURL            string
+	RelayURL          string
+	HTTPClient        *http.Client
+	Catalog           *Catalog
+	Commerce          *CommerceService
+	UserCenter        *UserCenterStore
+	IdentityProviders []IdentityProvider
 }
 
 // StatusHandler 返回独立 Web Controller 运维 handler。
@@ -81,8 +83,8 @@ func StatusHandler(config StatusConfig) (http.Handler, error) {
 		writer.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(writer).Encode(config.Catalog)
 	})
-	if config.Commerce != nil {
-		mux.Handle("/v1/web/", CommerceHandler(config.Commerce))
+	if config.Commerce != nil && config.UserCenter != nil {
+		mux.Handle("/v1/web/", CommerceHandler(config.Commerce, config.UserCenter, config.IdentityProviders))
 	}
 	return mux, nil
 }

@@ -62,7 +62,11 @@ type CommerceService struct {
 	sessions  map[[sha256.Size]byte]CommerceSession
 	orders    map[string]Order
 	events    map[string]struct{}
+	center    *UserCenterStore
 }
+
+// AttachUserCenter 接入支付成功后的 AFF 奖励账本；奖励仍由签名 webhook 唯一触发。
+func (service *CommerceService) AttachUserCenter(center *UserCenterStore) { service.center = center }
 
 // AccountCommerceView 是登录用户可见的最小订阅投影，不包含 provider secret 或 terminal metadata。
 type AccountCommerceView struct {
@@ -99,8 +103,16 @@ func (service *CommerceService) BeginStagingSession(accountID, userID, email str
 	stored := session
 	stored.Token = ""
 	service.mu.Lock()
-	service.sessions[sha256.Sum256([]byte(token))] = stored
+	hash := sha256.Sum256([]byte(token))
+	if service.center != nil {
+		err = service.center.saveSession(hash, stored)
+	} else {
+		service.sessions[hash] = stored
+	}
 	service.mu.Unlock()
+	if err != nil {
+		return CommerceSession{}, err
+	}
 	return session, nil
 }
 
@@ -109,9 +121,21 @@ func (service *CommerceService) Authenticate(token string) (CommerceSession, err
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	key := sha256.Sum256([]byte(token))
-	session, ok := service.sessions[key]
+	var session CommerceSession
+	var ok bool
+	if service.center != nil {
+		var err error
+		session, err = service.center.loadSession(key)
+		ok = err == nil
+	} else {
+		session, ok = service.sessions[key]
+	}
 	if !ok || !service.now().UTC().Before(session.ExpiresAt) {
-		delete(service.sessions, key)
+		if service.center != nil {
+			service.center.deleteSession(key)
+		} else {
+			delete(service.sessions, key)
+		}
 		return CommerceSession{}, ErrCommerceUnauthorized
 	}
 	return session, nil
@@ -128,8 +152,15 @@ func (service *CommerceService) CreateCheckout(session CommerceSession, planID s
 	}
 	order := Order{ID: "order-" + id, AccountID: session.AccountID, PlanID: planID, Status: "pending", CreatedAt: service.now().UTC()}
 	service.mu.Lock()
-	service.orders[order.ID] = order
+	if service.center != nil {
+		err = service.center.saveOrder(order)
+	} else {
+		service.orders[order.ID] = order
+	}
 	service.mu.Unlock()
+	if err != nil {
+		return Order{}, err
+	}
 	return order, nil
 }
 
@@ -138,14 +169,25 @@ func (service *CommerceService) AccountView(session CommerceSession) AccountComm
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	view := AccountCommerceView{AccountID: session.AccountID, UserID: session.UserID, Email: session.Email, PlanID: "managed-free", Orders: []Order{}}
-	for _, order := range service.orders {
+	orders := service.orders
+	if service.center != nil {
+		orders = map[string]Order{}
+		for _, order := range service.center.accountOrders(session.AccountID) {
+			orders[order.ID] = order
+		}
+	}
+	for _, order := range orders {
 		if order.AccountID != session.AccountID {
 			continue
 		}
 		view.Orders = append(view.Orders, order)
 		if order.Status == "paid" {
 			view.PlanID = order.PlanID
-			validUntil := order.PaidAt.Add(30 * 24 * time.Hour)
+			bonusDays := 0
+			if service.center != nil {
+				bonusDays = service.center.ReferralRewardDays(session.AccountID)
+			}
+			validUntil := order.PaidAt.Add(time.Duration(30+bonusDays) * 24 * time.Hour)
 			view.ValidUntil = &validUntil
 		}
 	}
@@ -156,6 +198,11 @@ func (service *CommerceService) AccountView(session CommerceSession) AccountComm
 func (service *CommerceService) ConfirmStagingPayment(session CommerceSession, orderID string) (Order, error) {
 	service.mu.Lock()
 	order, ok := service.orders[orderID]
+	if service.center != nil {
+		var err error
+		order, err = service.center.order(orderID)
+		ok = err == nil
+	}
 	service.mu.Unlock()
 	if !ok || order.AccountID != session.AccountID || order.Status != "pending" {
 		return Order{}, ErrCommerceConflict
@@ -188,22 +235,68 @@ func (service *CommerceService) ApplyWebhook(body []byte, signature string) (Ord
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	order, ok := service.orders[event.OrderID]
+	if service.center != nil {
+		var loadErr error
+		order, loadErr = service.center.order(event.OrderID)
+		ok = loadErr == nil
+	}
 	if !ok || order.AccountID != event.AccountID || order.PlanID != event.PlanID {
 		return Order{}, ErrCommerceConflict
 	}
-	if _, duplicate := service.events[event.EventID]; duplicate {
+	duplicate := false
+	if service.center != nil {
+		duplicate = service.center.paymentApplied(event.EventID)
+	} else {
+		_, duplicate = service.events[event.EventID]
+	}
+	if duplicate {
 		return order, nil
 	}
 	if order.Status != "pending" {
 		return Order{}, ErrCommerceConflict
 	}
 	paidAt := service.now().UTC()
-	if err := service.publisher.Activate(order.AccountID, order.PlanID, order.ID, paidAt.Add(30*24*time.Hour)); err != nil {
+	referrer := ""
+	if service.center != nil {
+		referrer = service.center.referralReferrer(order.AccountID)
+	}
+	paidBonus := 0
+	if service.center != nil {
+		paidBonus = service.center.ReferralRewardDays(order.AccountID)
+		if referrer != "" {
+			paidBonus += 7
+		}
+	}
+	if err := service.publisher.Activate(order.AccountID, order.PlanID, order.ID, paidAt.Add(time.Duration(30+paidBonus)*24*time.Hour)); err != nil {
 		return Order{}, err
 	}
+	if referrer != "" {
+		candidates := service.orders
+		if service.center != nil {
+			candidates = map[string]Order{}
+			for _, candidate := range service.center.accountOrders(referrer) {
+				candidates[candidate.ID] = candidate
+			}
+		}
+		for _, candidate := range candidates {
+			if candidate.AccountID == referrer && candidate.Status == "paid" {
+				bonus := service.center.ReferralRewardDays(referrer) + 15
+				if err := service.publisher.Activate(referrer, candidate.PlanID, "reward-"+order.ID, candidate.PaidAt.Add(time.Duration(30+bonus)*24*time.Hour)); err != nil {
+					return Order{}, err
+				}
+				break
+			}
+		}
+	}
 	order.Status, order.PaidAt = "paid", paidAt
-	service.orders[order.ID] = order
-	service.events[event.EventID] = struct{}{}
+	if service.center != nil {
+		if err := service.center.commitPayment(event.EventID, order, referrer); err != nil {
+			return Order{}, err
+		}
+	} else {
+		service.orders[order.ID] = order
+		service.events[event.EventID] = struct{}{}
+	}
 	return order, nil
 }
 

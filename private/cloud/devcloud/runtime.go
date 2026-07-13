@@ -143,19 +143,18 @@ type serviceState struct {
 	enrollmentFlows   map[string]enrollmentFlow
 	sessions          map[[sha256.Size]byte]cloudSession
 
-	directory         *directory.Store
-	presence          *presence.Service
-	admission         *admission.Service
-	hub               *cloudhub.Service
-	edgeIssuer        servicecredential.EdgeAccessIssuer
-	edgePolicyIssuer  servicecredential.EdgePolicyIssuer
-	edgeAuth          *cloudhub.EdgeAuthorizer
-	edgeRevision      uint64
-	edgeDevices       map[string]cloudhub.DeviceAuthorization
-	webPlanID         string
-	webPlanValidUntil time.Time
-	usageOutboxPath   string
-	relayControl      *relayControlState
+	directory        *directory.Store
+	presence         *presence.Service
+	admission        *admission.Service
+	hub              *cloudhub.Service
+	edgeIssuer       servicecredential.EdgeAccessIssuer
+	edgePolicyIssuer servicecredential.EdgePolicyIssuer
+	edgeAuth         *cloudhub.EdgeAuthorizer
+	edgeRevision     uint64
+	edgeDevices      map[string]cloudhub.DeviceAuthorization
+	webEntitlements  map[string]time.Time
+	usageOutboxPath  string
+	relayControl     *relayControlState
 
 	presenceQueueSize int
 	clientQueueSize   int
@@ -202,7 +201,7 @@ func start(config Config, options runtimeOptions) (*Runtime, error) {
 	}()
 	state := &serviceState{
 		now: config.Now, random: &synchronizedReader{source: config.Random},
-		loginFlows: make(map[string]loginFlow), enrollmentFlows: make(map[string]enrollmentFlow), sessions: make(map[[sha256.Size]byte]cloudSession),
+		loginFlows: make(map[string]loginFlow), enrollmentFlows: make(map[string]enrollmentFlow), sessions: make(map[[sha256.Size]byte]cloudSession), webEntitlements: make(map[string]time.Time),
 		presenceQueueSize: options.presenceQueueSize, clientQueueSize: options.clientQueueSize,
 	}
 	if config.UsageOutboxPath == "" {
@@ -316,7 +315,6 @@ func (state *serviceState) initializeDomain(now time.Time) error {
 	state.edgePolicyIssuer = edgePolicyIssuer
 	state.edgeAuth = edgeAuth
 	state.edgeRevision = 1
-	state.webPlanID = "managed-free"
 	state.edgeDevices = map[string]cloudhub.DeviceAuthorization{devClientDeviceID: {DeviceID: devClientDeviceID, AccountID: devAccountID, PublicKey: clientPublicKey}}
 	if err := state.publishEdgeSnapshot(now); err != nil {
 		return err

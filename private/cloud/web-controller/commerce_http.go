@@ -43,11 +43,47 @@ func (publisher HTTPEntitlementPublisher) Activate(accountID, planID, orderID st
 
 // CommerceHandler 返回浏览器 BFF JSON surface；它只接受 bearer session，不设置 Cookie。
 // Cookie、SameSite 与 CSRF 由同源 Next BFF 层负责。
-func CommerceHandler(service *CommerceService) http.Handler {
+func CommerceHandler(service *CommerceService, center *UserCenterStore, providers []IdentityProvider) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/web/auth/providers", func(writer http.ResponseWriter, request *http.Request) {
+		writeCommerceJSON(writer, http.StatusOK, providers, nil)
+	})
 	mux.HandleFunc("POST /v1/web/login", func(writer http.ResponseWriter, request *http.Request) {
 		session, err := service.BeginStagingSession("account-dev-local", "user-dev-local", "dev-local@termx.invalid")
 		writeCommerceJSON(writer, http.StatusOK, session, err)
+	})
+	mux.HandleFunc("POST /v1/web/auth/password/login", func(writer http.ResponseWriter, request *http.Request) {
+		var input struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+		err := decodeCommerceJSON(request, &input)
+		var session CommerceSession
+		if err == nil {
+			var profile UserProfile
+			profile, err = center.AuthenticatePassword(input.Email, input.Password)
+			if err == nil {
+				session, err = service.BeginStagingSession(profile.AccountID, profile.UserID, profile.Email)
+			}
+		}
+		writeCommerceJSON(writer, http.StatusOK, session, err)
+	})
+	mux.HandleFunc("POST /v1/web/auth/password/register", func(writer http.ResponseWriter, request *http.Request) {
+		var input struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+			Aff      string `json:"aff"`
+		}
+		err := decodeCommerceJSON(request, &input)
+		var session CommerceSession
+		if err == nil {
+			var profile UserProfile
+			profile, err = center.RegisterPasswordAccount(input.Email, input.Password, input.Aff)
+			if err == nil {
+				session, err = service.BeginStagingSession(profile.AccountID, profile.UserID, profile.Email)
+			}
+		}
+		writeCommerceJSON(writer, http.StatusCreated, session, err)
 	})
 	mux.HandleFunc("GET /v1/web/account", func(writer http.ResponseWriter, request *http.Request) {
 		session, err := commerceSession(request, service)
@@ -87,7 +123,66 @@ func CommerceHandler(service *CommerceService) http.Handler {
 		}
 		writeCommerceJSON(writer, http.StatusBadRequest, nil, err)
 	})
+	mux.HandleFunc("GET /v1/web/center", func(writer http.ResponseWriter, request *http.Request) {
+		session, err := commerceSession(request, service)
+		if err != nil {
+			writeCommerceJSON(writer, http.StatusUnauthorized, nil, err)
+			return
+		}
+		profile, nodes, referrals, audit, err := center.Snapshot(session.AccountID)
+		writeCommerceJSON(writer, http.StatusOK, map[string]any{"profile": profile, "nodes": nodes, "referrals": referrals, "audit": audit, "billing": service.AccountView(session)}, err)
+	})
+	mux.HandleFunc("PATCH /v1/web/profile", func(writer http.ResponseWriter, request *http.Request) {
+		session, err := commerceSession(request, service)
+		var input struct {
+			DisplayName string `json:"display_name"`
+		}
+		if err == nil {
+			err = decodeCommerceJSON(request, &input)
+		}
+		var value UserProfile
+		if err == nil {
+			value, err = center.UpdateProfile(session.AccountID, input.DisplayName)
+		}
+		writeCommerceJSON(writer, http.StatusOK, value, err)
+	})
+	mux.HandleFunc("POST /v1/web/nodes/revoke", func(writer http.ResponseWriter, request *http.Request) {
+		session, err := commerceSession(request, service)
+		var input struct {
+			NodeID string `json:"node_id"`
+		}
+		if err == nil {
+			err = decodeCommerceJSON(request, &input)
+		}
+		var value ManagedNode
+		if err == nil {
+			value, err = center.RevokeNode(session.AccountID, input.NodeID)
+		}
+		writeCommerceJSON(writer, http.StatusOK, value, err)
+	})
+	mux.HandleFunc("POST /v1/web/password", func(writer http.ResponseWriter, request *http.Request) {
+		session, err := commerceSession(request, service)
+		var input struct {
+			Current string `json:"current_password"`
+			Next    string `json:"new_password"`
+		}
+		if err == nil {
+			err = decodeCommerceJSON(request, &input)
+		}
+		if err == nil {
+			err = center.ChangePassword(session.AccountID, input.Current, input.Next)
+		}
+		writeCommerceJSON(writer, http.StatusNoContent, nil, err)
+	})
 	return mux
+}
+
+// IdentityProvider 描述登录页可用的外部身份提供商；Configured=false 时必须禁用跳转。
+type IdentityProvider struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Configured       bool   `json:"configured"`
+	AuthorizationURL string `json:"authorization_url,omitempty"`
 }
 
 func commerceSession(request *http.Request, service *CommerceService) (CommerceSession, error) {

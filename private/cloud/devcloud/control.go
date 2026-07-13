@@ -52,17 +52,23 @@ func (state *serviceState) handleWebEntitlement(writer http.ResponseWriter, requ
 		return
 	}
 	now := state.now().UTC()
-	if input.AccountID != devAccountID || input.PlanID != "pro" || input.OrderID == "" || !input.ValidUntil.After(now) {
+	if input.AccountID == "" || input.PlanID != "pro" || input.OrderID == "" || !input.ValidUntil.After(now) {
 		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "web entitlement update is invalid", false)
 		return
 	}
 	state.mu.Lock()
-	oldPlan, oldValid, oldRevision := state.webPlanID, state.webPlanValidUntil, state.edgeRevision
-	state.webPlanID, state.webPlanValidUntil = input.PlanID, input.ValidUntil.UTC()
+	oldValid, existed, oldRevision := state.webEntitlements[input.AccountID], false, state.edgeRevision
+	_, existed = state.webEntitlements[input.AccountID]
+	state.webEntitlements[input.AccountID] = input.ValidUntil.UTC()
 	state.edgeRevision++
 	err := state.publishEdgeSnapshot(now)
 	if err != nil {
-		state.webPlanID, state.webPlanValidUntil, state.edgeRevision = oldPlan, oldValid, oldRevision
+		if existed {
+			state.webEntitlements[input.AccountID] = oldValid
+		} else {
+			delete(state.webEntitlements, input.AccountID)
+		}
+		state.edgeRevision = oldRevision
 	}
 	state.mu.Unlock()
 	if err != nil {

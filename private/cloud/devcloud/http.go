@@ -227,10 +227,17 @@ func (state *serviceState) publishEdgeSnapshot(now time.Time) error {
 		devices = append(devices, servicecredential.EdgePolicyDevice{DeviceID: device.DeviceID, AccountID: device.AccountID, PublicKey: append([]byte(nil), device.PublicKey...), Revoked: device.Revoked})
 	}
 	maxBytes, maxConcurrency := uint64(64<<20), uint32(2)
-	if state.webPlanID == "pro" && now.Before(state.webPlanValidUntil) {
+	if validUntil, ok := state.webEntitlements[devAccountID]; ok && now.Before(validUntil) {
 		maxBytes, maxConcurrency = 256<<20, 4
 	}
-	encoded, err := state.edgePolicyIssuer.Issue(devHubID, state.edgeRevision, []servicecredential.EdgePolicyAccount{{AccountID: devAccountID, AuthEpoch: 1, ManagedDirectEnabled: true, StandardRelayEnabled: true, RelayMaxLeaseSeconds: uint32(relayLeaseTTL / time.Second), RelayMaxBytes: maxBytes, RelayMaxBitrateKbps: 100_000, RelayMaxConcurrency: maxConcurrency}}, devices, 30*time.Minute, now.UTC())
+	accounts := []servicecredential.EdgePolicyAccount{{AccountID: devAccountID, AuthEpoch: 1, ManagedDirectEnabled: true, StandardRelayEnabled: true, RelayMaxLeaseSeconds: uint32(relayLeaseTTL / time.Second), RelayMaxBytes: maxBytes, RelayMaxBitrateKbps: 100_000, RelayMaxConcurrency: maxConcurrency}}
+	for accountID, validUntil := range state.webEntitlements {
+		if accountID == devAccountID || !now.Before(validUntil) {
+			continue
+		}
+		accounts = append(accounts, servicecredential.EdgePolicyAccount{AccountID: accountID, AuthEpoch: 1, ManagedDirectEnabled: true, StandardRelayEnabled: true, RelayMaxLeaseSeconds: uint32(relayLeaseTTL / time.Second), RelayMaxBytes: 256 << 20, RelayMaxBitrateKbps: 100_000, RelayMaxConcurrency: 4})
+	}
+	encoded, err := state.edgePolicyIssuer.Issue(devHubID, state.edgeRevision, accounts, devices, 30*time.Minute, now.UTC())
 	if err != nil {
 		return err
 	}

@@ -26,6 +26,13 @@ export async function requireCSRF(request: Request): Promise<boolean> {
   return Boolean(host && origin === expectedOrigin && expectedToken && request.headers.get('x-termx-csrf') === expectedToken)
 }
 
+export async function requireSameOrigin(request: Request): Promise<boolean> {
+  const requestHeaders = await headers()
+  const host = requestHeaders.get('host')
+  const expectedOrigin = `${requestHeaders.get('x-forwarded-proto') ?? 'http'}://${host}`
+  return Boolean(host && request.headers.get('origin') === expectedOrigin)
+}
+
 export function setSessionCookies(response: NextResponse, token: string): string {
   const csrf = randomBytes(24).toString('hex')
   const base = { sameSite: 'strict' as const, secure: process.env.NODE_ENV === 'production' && process.env.TERMX_ALLOW_HTTP_COOKIE !== 'true', path: '/', maxAge: 8 * 60 * 60 }

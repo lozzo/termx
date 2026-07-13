@@ -37,3 +37,28 @@ func TestWebEntitlementPublishesUpdatedHubRelayBudget(t *testing.T) {
 		t.Fatalf("after = (%#v, %v)", after, err)
 	}
 }
+
+func TestWebEntitlementAcceptsNewRegisteredAccount(t *testing.T) {
+	clock := &testClock{now: time.Date(2026, 7, 13, 1, 0, 0, 0, time.UTC)}
+	runtime, err := Start(Config{Now: clock.Now, EnrollmentCode: "web-new-account"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(context.Background())
+	payload, _ := json.Marshal(map[string]any{"account_id": "account-from-web", "plan_id": "pro", "order_id": "order-new", "valid_until": clock.Now().Add(37 * 24 * time.Hour)})
+	request, _ := http.NewRequest(http.MethodPost, runtime.manifest.ControlPlaneURL+"/v1/internal/web/entitlements", bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-TermX-Internal-Service", "web-controller-staging-v1")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	budget, err := runtime.state.edgeAuth.RelayBudget("account-from-web")
+	if err != nil || budget.MaxConcurrency != 4 || budget.MaxBytes != 256<<20 {
+		t.Fatalf("budget = %#v, %v", budget, err)
+	}
+}

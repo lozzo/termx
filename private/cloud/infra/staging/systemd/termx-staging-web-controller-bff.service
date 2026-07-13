@@ -7,7 +7,8 @@ Requires=termx-staging-cloud.service
 Type=simple
 User=termx-staging
 Group=termx-staging
-ExecStart=/opt/termx-staging/bin/termx-web-controller --listen 127.0.0.1:41004 --control-plane http://127.0.0.1:41001 --hub http://127.0.0.1:41002 --relay turn:114.66.58.243:41003?transport=udp --catalog /opt/termx-staging/web-controller-config/plans.json --staging-payments
+StateDirectory=termx-web-controller
+ExecStart=/opt/termx-staging/bin/termx-web-controller --listen 127.0.0.1:41004 --control-plane http://127.0.0.1:41001 --hub http://127.0.0.1:41002 --relay turn:114.66.58.243:41003?transport=udp --catalog /opt/termx-staging/web-controller-config/plans.json --account-db /var/lib/termx-web-controller/accounts.db --staging-payments
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true

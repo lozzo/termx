@@ -6,7 +6,7 @@
 
 owning Control Plane、Hub、Web Controller BFF 与 Next.js 用户站仍只监听服务器 loopback。Nginx 在 `41100-41102/tcp` 提供无隧道公网 HTTP staging；Relay 使用 `41003/udp`。terminal protocol、CapabilityGrant 和文件内容仍位于端到端 DTLS DataChannel，Web Controller/Hub/Relay 不接收这些内容。
 
-公网 HTTP 只允许固定测试账号、短期 session 和内存 store。账号 session 会经过明文网络，禁止真实用户凭据、真实 terminal 数据或生产使用；上线前必须切换域名 HTTPS/TLS profile。
+公网 HTTP 只允许 staging 测试账号和数据。Web 账号、bcrypt 密码摘要、浏览器 session、订单、AFF 归因、奖励与审计保存在 SQLite；这些内容仍会经过明文 HTTP，禁止真实用户凭据、真实 terminal 数据或生产使用。上线前必须切换域名 HTTPS/TLS profile。
 
 ## 已部署服务
 
@@ -18,7 +18,7 @@ owning Control Plane、Hub、Web Controller BFF 与 Next.js 用户站仍只监�
 | `termx-staging-daemon-companion.service` | `/run/termx-staging/daemon-companion.sock` | daemon device session、presence 与 signaling |
 | `termx-staging-daemon.service` | `/run/termx-staging/daemon.sock` | 公开 core-v2/termx protocol daemon |
 
-二进制位于 `/opt/termx-staging/bin`，非秘密运行状态位于 `/var/lib/termx-staging`。systemd 使用无登录权限的 `termx-staging` 用户。Companion session 写入 GNOME Keyring；keyring 解锁材料由 systemd `LoadCredential` 从服务器 root-only 文件加载，不进入仓库、进程参数或日志。
+二进制位于 `/opt/termx-staging/bin`，Cloud 非秘密运行状态位于 `/var/lib/termx-staging`，Web 账号库位于 `/var/lib/termx-web-controller/accounts.db`。systemd 使用无登录权限的 `termx-staging` 用户。Companion session 写入 GNOME Keyring；keyring 解锁材料由 systemd `LoadCredential` 从服务器 root-only 文件加载，不进入仓库、进程参数或日志。
 
 Next.js 16 使用 TermX 私有的 Node 24 LTS runtime `/opt/termx-staging/node/bin/node`，不替换服务器 `/usr/bin/node`，避免影响其他系统服务。
 
@@ -31,7 +31,7 @@ ssh root@114.66.58.243 'curl -fsS http://127.0.0.1:41004/v1/catalog'
 
 它只代理 Web 账号/订阅 BFF，不代理 signaling 或 terminal protocol，也不解释 terminal capability。
 
-WEB002 staging profile 在 `/login` 提供固定开发账号登录，在 `/account` 提供 Managed Free/Pro 订阅和测试 Checkout。该 provider 不扣款；confirm 仍经 HMAC webhook transaction，只有首次有效事件才调用 Control Plane internal entitlement endpoint。Control Plane 更新 edge revision 并重新发布 Hub snapshot 后订单才变为 paid。浏览器 session 使用 HttpOnly、SameSite=Strict Cookie，所有写请求同时校验精确 Origin 与 CSRF token。生产 OAuth、价格和支付 provider 未配置时保持禁用。
+WEB002/WEB003 staging profile 在 `/login` 提供固定开发账号以及邮箱密码注册登录，在 `/account` 提供 Managed Free/Pro、测试 Checkout、密码修改和 AFF 推荐奖励。该 provider 不扣款；confirm 仍经 HMAC webhook transaction，只有首次有效事件才调用 Control Plane internal entitlement endpoint。Control Plane 更新 edge revision 并重新发布 Hub snapshot 后，订单、payment event 与邀请人 +15 天/被邀请人 +7 天奖励才在同一 SQLite 事务提交。浏览器 session 使用 HttpOnly、SameSite=Strict Cookie，登录/注册校验精确 Origin，所有已登录写请求同时校验 Origin 与 CSRF token。生产 OAuth、价格和支付 provider 未配置时保持禁用。
 
 公网入口：
 
@@ -143,7 +143,7 @@ daemon 与 daemon Companion 共享 `/run/termx-staging`。替换 daemon 二进�
 5. 执行 `/opt/termx-staging/bin/render-public-http-manifest`，更新 `/var/www/termx-staging/runtime.json`。
 6. 启动 daemon，并在客户端重新登录和导入新 bundle。
 
-不要把有效 enrollment code、pairing bundle、keyring password 或 cloud session 写入本文、unit、shell history 和日志。生产 OAuth/TLS、持久数据库、Web Controller 完整账号管理 UI 与多区域部署仍是后续切片。
+Web Controller BFF 重启不会清除 `/var/lib/termx-web-controller/accounts.db` 中的账号、session、订单或奖励；清库必须先停止 Next/BFF 并同时删除 SQLite 主文件、`-wal` 和 `-shm`。不要把有效 enrollment code、pairing bundle、keyring password 或 cloud session 写入本文、unit、shell history 和日志。生产 OAuth/TLS、托管数据库、高可用备份、真实支付 provider 与多区域部署仍是后续切片。
 
 ## 停止与清理
 
