@@ -11,6 +11,7 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/shared/perftrace"
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/render"
 	"github.com/lozzow/termx/tui/state"
@@ -224,12 +225,12 @@ type mouseDragState struct {
 }
 
 type mouseActionClickState struct {
-	Kind     render.HitRegionKind
-	ActionID string
-	PaneID   string
-	Floating bool
-	Row      int
-	Col      int
+	Kind                render.HitRegionKind
+	InvocationSignature string
+	PaneID              string
+	Floating            bool
+	Row                 int
+	Col                 int
 }
 
 type mouseHitResolution struct {
@@ -1308,21 +1309,17 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		runtime.mouseDrag = drag
 		return NoopMsg{}
 	}
-	if region.Kind == render.HitRegionPaneAction && region.ActionID == render.ActionPaneClose.String() {
-		return ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{
-			Action: state.WorkbenchCommandPaneClose,
-			Target: state.PaneCommandTarget{PaneID: region.PaneID},
-			Source: state.PaneCommandSourceMouse,
-		}}
-	}
-	if region.Kind == render.HitRegionPaneAction && region.ActionID == render.ActionTerminalTakeResizeOwner.String() {
+	if region.Kind == render.HitRegionPaneAction && region.Invocation.ID == "panel.take_owner" {
 		if !runtime.consumeTakeResizeOwnerDoubleClick(region, inputMsg.Event) {
 			return ShellArmOwnerConfirmMsg{ViewID: terminalViewIDForOwnerRegion(runtime.state, region)}
 		}
-		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Floating: region.Floating, Row: region.Row}
+		return shortcutSurfaceActionMessage(region)
 	}
-	if region.Kind == render.HitRegionPaneAction && region.ActionID == render.ActionResizeLayoutLock.String() {
-		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Floating: region.Floating, Row: region.Row}
+	if region.Kind == render.HitRegionPaneAction && region.Invocation.ID == "panel.size_lock" {
+		return shortcutSurfaceActionMessage(region)
+	}
+	if (region.Kind == render.HitRegionPaneAction || region.Kind == render.HitRegionPaneChrome) && region.Invocation.ID != "" {
+		return shortcutSurfaceActionMessage(region)
 	}
 	switch region.Kind {
 	case render.HitRegionToastClose:
@@ -1368,16 +1365,24 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	switch region.Kind {
 	case render.HitRegionContentAction:
 		if region.Invocation.ID != "" {
-			return ShellShortcutActionMsg{
-				Invocation: region.Invocation,
-				PaneID:     region.PaneID,
-				Floating:   region.Floating,
-				Row:        region.Row,
-			}
+			return shortcutSurfaceActionMessage(region)
 		}
-		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Floating: region.Floating, Row: region.Row}
+		return NoopMsg{}
 	default:
 		return msg
+	}
+}
+
+func shortcutSurfaceActionMessage(region render.HitRegion) ShellShortcutActionMsg {
+	return ShellShortcutActionMsg{
+		Invocation: region.Invocation,
+		Surface: &ShortcutSurfaceContext{
+			ExplicitTarget: region.TargetMode == render.HitTargetExplicit,
+			PaneID:         region.PaneID,
+			Floating:       region.Floating,
+			Row:            region.Row,
+			HasRow:         region.HasRow,
+		},
 	}
 }
 
@@ -1393,7 +1398,7 @@ func (runtime *AppRuntime) terminalInputActivationMsg(region render.HitRegion) (
 		}
 		return ShellActivateTerminalInputMsg{PaneID: region.PaneID}, true
 	case render.HitRegionContentAction:
-		if region.ActionID != render.ActionFloatingRaise.String() || !region.Floating {
+		if region.Invocation.ID != actiondomain.ActionFloatingRaise || !region.Floating {
 			return nil, false
 		}
 		floatingID, ok := runtime.floatingIDForPaneID(region.PaneID)
@@ -1482,7 +1487,7 @@ func terminalViewIDForOwnerRegion(root state.Root, region render.HitRegion) stri
 }
 
 func (runtime *AppRuntime) consumeTakeResizeOwnerDoubleClick(region render.HitRegion, event input.InputEvent) bool {
-	current := mouseActionClickState{Kind: region.Kind, ActionID: region.ActionID, PaneID: region.PaneID, Floating: region.Floating, Row: event.Row, Col: event.Col}
+	current := mouseActionClickState{Kind: region.Kind, InvocationSignature: region.Invocation.Signature(), PaneID: region.PaneID, Floating: region.Floating, Row: event.Row, Col: event.Col}
 	if runtime.lastMouseAction == current {
 		runtime.lastMouseAction = mouseActionClickState{}
 		return true
@@ -1838,7 +1843,7 @@ func (runtime *AppRuntime) mouseEventHitsUI(event input.InputEvent, resolution m
 	case render.HitRegionPaneContent, render.HitRegionHistoryRow:
 		return false
 	case render.HitRegionContentAction:
-		return region.ActionID != render.ActionFloatingRaise.String()
+		return region.Invocation.ID != actiondomain.ActionFloatingRaise
 	default:
 		return true
 	}
@@ -1853,7 +1858,7 @@ func mouseForegroundAllowsTerminalPassthrough(region render.HitRegion) bool {
 	case render.HitRegionPaneContent:
 		return true
 	case render.HitRegionContentAction:
-		return region.ActionID == render.ActionFloatingRaise.String()
+		return region.Invocation.ID == actiondomain.ActionFloatingRaise
 	default:
 		return false
 	}
@@ -1953,7 +1958,7 @@ func (runtime *AppRuntime) dispatchMouseDrag(event input.InputEvent) (Msg, bool)
 }
 
 func clipboardHistoryDividerDragState(region render.HitRegion, event input.InputEvent) (mouseDragState, bool) {
-	if region.Kind != render.HitRegionContentAction || region.ActionID != render.ActionClipboardHistoryDividerDrag.String() {
+	if region.Kind != render.HitRegionContentAction || region.Invocation.ID != actiondomain.ActionClipboardHistoryDividerDrag {
 		return mouseDragState{}, false
 	}
 	return mouseDragState{
@@ -1965,6 +1970,9 @@ func clipboardHistoryDividerDragState(region render.HitRegion, event input.Input
 }
 
 func paneResizeDragState(region render.HitRegion, event input.InputEvent) (mouseDragState, bool) {
+	if region.Kind != render.HitRegionPaneResize || region.Invocation.ID != actiondomain.ActionPanelResizeDrag {
+		return mouseDragState{}, false
+	}
 	direction, ok := paneResizeDirectionFromHitRegion(region)
 	if !ok || region.PaneID == "" {
 		return mouseDragState{}, false
@@ -2032,10 +2040,10 @@ func (runtime *AppRuntime) floatingDragState(region render.HitRegion, event inpu
 		return mouseDragState{}, false
 	}
 	var kind mouseDragKind
-	switch region.ActionID {
-	case render.ActionFloatingMoveDrag.String():
+	switch region.Invocation.ID {
+	case actiondomain.ActionFloatingMoveDrag:
 		kind = mouseDragFloatingMove
-	case render.ActionFloatingResizeDrag.String():
+	case actiondomain.ActionFloatingResizeDrag:
 		kind = mouseDragFloatingResize
 	default:
 		return mouseDragState{}, false
@@ -2115,7 +2123,7 @@ func mouseFocusOwnerRegion(region render.HitRegion) bool {
 	case render.HitRegionPaneContent:
 		return region.PaneID != ""
 	case render.HitRegionContentAction:
-		return region.PaneID != "" && region.ActionID == render.ActionFloatingRaise.String()
+		return region.PaneID != "" && region.Invocation.ID == actiondomain.ActionFloatingRaise
 	default:
 		return false
 	}

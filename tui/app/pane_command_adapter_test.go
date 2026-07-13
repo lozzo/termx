@@ -56,19 +56,10 @@ func TestPaneCommandAdaptersFromHitRegionAndIntent(t *testing.T) {
 		t.Fatalf("pane.close must route through workbench command, got command=%#v", command)
 	}
 
-	command, ok = PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneAction, PaneID: "pane-1", ActionID: "pane.split-down"})
-	if !ok || command.Action != state.PaneCommandSplit || command.SplitDirection != state.SplitDirectionHorizontal || command.Target.PaneID != "pane-1" {
-		t.Fatalf("unexpected split-down hit command command=%#v ok=%v", command, ok)
-	}
-
-	command, ok = PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneAction, PaneID: "pane-1", ActionID: "pane.split-right"})
-	if !ok || command.Action != state.PaneCommandSplit || command.SplitDirection != state.SplitDirectionVertical || command.Target.PaneID != "pane-1" {
-		t.Fatalf("unexpected split-right hit command command=%#v ok=%v", command, ok)
-	}
-
-	command, ok = PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneAction, PaneID: "pane-1", ActionID: render.ActionPaneZoom.String()})
-	if !ok || command.Action != state.PaneCommandToggleZoom || command.Target.PaneID != "pane-1" {
-		t.Fatalf("unexpected zoom hit command command=%#v ok=%v", command, ok)
+	for _, actionID := range []string{"pane.split-down", "pane.split-right", render.ActionPaneZoom.String()} {
+		if command, ok = PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneAction, PaneID: "pane-1", ActionID: actionID}); ok {
+			t.Fatalf("pane action %q must route through canonical dispatcher, got %#v", actionID, command)
+		}
 	}
 
 	command, ok = PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneResize, PaneID: "pane-1", SplitPath: "root/1"})

@@ -31,105 +31,20 @@ func TestProjectionCatalogIsSingleSourceForRenderedActions(t *testing.T) {
 		seen[spec.ID] = struct{}{}
 	}
 	for _, id := range []ProjectionID{
-		ActionPaneFocus,
-		ActionPaneResize,
-		ActionPaneSplitDown,
-		ActionPaneSplitRight,
-		ActionPaneZoom,
-		ActionPaneClose,
-		ActionPaneFooterClose,
-		ActionPaneFooterFocus,
-		ActionPaneFooterZoom,
-		ActionPaneFooterBalance,
-		ActionPaneFooterCard,
-		ActionPaneFooterSplitLine,
-		ActionResizeLeft,
-		ActionResizeRight,
-		ActionResizeUp,
-		ActionResizeDown,
-		ActionResizeBalance,
-		ActionResizeLayoutLock,
-		ActionResizeLayoutToggle,
-		ActionResizeLayoutPan,
-		ActionResizeLayoutAlign,
-		ActionResizeLayoutCenter,
-		ActionResizeLayoutReset,
-		ActionCopyOlder,
-		ActionTabCreate,
-		ActionTabSwitch,
-		ActionTabClose,
-		ActionTabRename,
-		ActionTabPrevious,
-		ActionTabNext,
-		ActionFooterPaneMode,
-		ActionFooterResizeMode,
-		ActionFooterTabMode,
-		ActionFooterWorkspaceMode,
-		ActionFooterFloatingMode,
-		ActionFooterCopyMode,
-		ActionFooterGlobalMode,
-		ActionFooterPicker,
-		ActionFooterToggleHeader,
-		ActionFooterToggleFooter,
-		ActionFooterOpenPool,
-		ActionFooterOpenTree,
-		ActionFooterCloseToast,
-		ActionFooterClearToasts,
-		ActionFooterNewWorkspace,
-		ActionFooterRenameWorkspace,
-		ActionFooterPreviousWorkspace,
-		ActionFooterNextWorkspace,
-		ActionFooterDeleteWorkspace,
-		ActionFloatingRaise,
-		ActionFloatingNew,
-		ActionFloatingClose,
-		ActionFloatingPick,
-		ActionFloatingTakeOwner,
-		ActionFloatingCenter,
-		ActionFloatingCollapse,
-		ActionFloatingMoveDrag,
-		ActionFloatingResizeDrag,
-		ActionEmptyAttach,
-		ActionEmptyCreate,
-		ActionEmptyManager,
-		ActionEmptyClose,
-		ActionExitedRestart,
-		ActionExitedReconnect,
-		ActionExitedClose,
-		ActionDisconnectedReconnect,
-		ActionDisconnectedDisconnect,
-		ActionPickerAttach,
-		ActionPickerNew,
-		ActionPoolSelect,
-		ActionPoolAttach,
-		ActionPoolAttachTab,
-		ActionPoolAttachFloat,
-		ActionPoolRestart,
-		ActionPoolEdit,
-		ActionPoolKill,
-		ActionPoolDelete,
-		ActionWorkbenchSelect,
-		ActionWorkbenchOpen,
-		ActionWorkbenchRename,
-		ActionWorkbenchNew,
-		ActionWorkbenchDelete,
-		ActionClipboardHistoryOpen,
-		ActionClipboardHistorySelect,
-		ActionClipboardHistoryPaste,
-		ActionClipboardHistoryNew,
-		ActionClipboardHistoryEdit,
-		ActionClipboardHistoryDelete,
-		ActionClipboardHistoryDividerDrag,
-		ActionPromptSubmit,
-		ActionPromptCancel,
-		ActionHelpClose,
+		ActionPaneFocus, ActionPaneResize, ActionPaneSplitDown, ActionPaneSplitRight, ActionPaneZoom, ActionPaneClose,
+		ActionResizeLayoutLock, ActionTerminalTakeResizeOwner,
+		ActionTabCreate, ActionTabSwitch, ActionTabClose,
+		ActionFloatingRaise, ActionFloatingSummon, ActionFloatingClose, ActionFloatingCenter, ActionFloatingCollapse,
+		ActionFloatingMoveDrag, ActionFloatingResizeDrag,
+		ActionEmptyAttach, ActionEmptyCreate, ActionEmptyManager, ActionEmptyClose,
+		ActionExitedRestart, ActionExitedReconnect, ActionExitedClose,
+		ActionDisconnectedReconnect, ActionDisconnectedDisconnect,
+		ActionPickerAttach, ActionPickerNew, ActionPoolSelect, ActionWorkbenchOpen,
+		ActionClipboardHistorySelect, ActionClipboardHistoryDividerDrag, ActionHelpClose,
 	} {
 		if _, ok := seen[id]; !ok {
 			t.Fatalf("action id %q must be registered in catalog", id)
 		}
-	}
-	if got := ProjectionActionIDs(); len(got) != len(specs) {
-		t.Fatalf("action id catalog must be derived from specs got=%d want=%d", len(got), len(specs))
 	}
 }
 
@@ -146,11 +61,6 @@ func TestProjectionCatalogClassifiesVisibleActions(t *testing.T) {
 		return spec
 	}
 
-	footer := assertSpec(ActionFooterPaneMode, ActionSurfaceFooter)
-	if footer.FooterKey != "^P" || footer.FooterLabel != "PANE" || footer.FooterStyle != StyleFooterKeyPane {
-		t.Fatalf("footer action should carry default token metadata, got %#v", footer)
-	}
-
 	pane := assertSpec(ActionPaneClose, ActionSurfacePaneChrome)
 	if pane.ChromeGlyph == "" || !pane.Danger {
 		t.Fatalf("pane close action should carry chrome glyph and danger metadata, got %#v", pane)
@@ -161,38 +71,9 @@ func TestProjectionCatalogClassifiesVisibleActions(t *testing.T) {
 		t.Fatalf("floating close action should carry chrome glyph and danger metadata, got %#v", floating)
 	}
 
-	copyOlder := assertSpec(ActionCopyOlder, ActionSurfaceFooter)
-	if copyOlder.FooterKey != "PgUp" || copyOlder.HelpLabel == "" {
-		t.Fatalf("copy older action should carry footer and help metadata, got %#v", copyOlder)
-	}
-
-	helpOpen := assertSpec(ActionHelpOpen, ActionSurfaceFooter)
-	if helpOpen.FooterKey != "?" || helpOpen.FooterLabel != "HELP" {
-		t.Fatalf("help open action should carry global footer metadata, got %#v", helpOpen)
-	}
-	assertSpec(ActionHelpClose, ActionSurfaceHelp)
-	assertSpec(ActionPoolAttach, ActionSurfaceContent)
-	assertSpec(ActionPoolAttachTab, ActionSurfaceContent)
-	assertSpec(ActionPoolAttachFloat, ActionSurfaceContent)
-	assertSpec(ActionPoolRestart, ActionSurfaceInput)
-	assertSpec(ActionPoolEdit, ActionSurfaceHelp)
-	assertSpec(ActionPoolDelete, ActionSurfaceContent)
-	assertSpec(ActionClipboardHistoryOpen, ActionSurfaceFooter)
-	assertSpec(ActionClipboardHistoryPaste, ActionSurfaceContent)
-	assertSpec(ActionClipboardHistoryNew, ActionSurfaceContent)
+	assertSpec(ActionHelpClose, ActionSurfaceContent)
+	assertSpec(ActionPoolSelect, ActionSurfaceContent)
 	assertSpec(ActionClipboardHistoryDividerDrag, ActionSurfaceContent)
-	assertSpec(ActionPromptSubmit, ActionSurfaceContent)
-}
-
-func TestLegacyProjectionIDsDoNotBecomeCanonicalActionIdentities(t *testing.T) {
-	chrome, _ := ProjectionByID(ActionPaneClose)
-	footer, _ := ProjectionByID(ActionPaneFooterClose)
-	if chrome.CanonicalActionID != "panel.close" || footer.CanonicalActionID != "panel.close" {
-		t.Fatalf("pane close projections must share one canonical action: chrome=%#v footer=%#v", chrome, footer)
-	}
-	if _, ok := actiondomain.SpecByID(actiondomain.ID(ActionPaneFooterClose)); ok {
-		t.Fatalf("visual projection %q must not be registered as canonical action", ActionPaneFooterClose)
-	}
 }
 
 func TestProjectionByIDKeepsDynamicChromeGlyphsCurrent(t *testing.T) {
@@ -220,39 +101,15 @@ func TestProjectionByIDKeepsDynamicChromeGlyphsCurrent(t *testing.T) {
 	}
 }
 
-func TestProjectionCatalogKeepsInputOnlyActionsSeparate(t *testing.T) {
-	for _, id := range []ProjectionID{
-		ActionFloatingMoveLeft,
-		ActionFloatingMoveRight,
-		ActionFloatingMoveUp,
-		ActionFloatingMoveDown,
-		ActionFloatingNarrow,
-		ActionFloatingWide,
-		ActionFloatingShort,
-		ActionFloatingTall,
-	} {
-		spec, ok := ProjectionByID(id)
-		if !ok {
-			t.Fatalf("missing input-only action spec %q", id)
-		}
-		if !spec.HasSurface(ActionSurfaceInput) {
-			t.Fatalf("input-only action %q must declare input surface, got %#v", id, spec.Surfaces)
-		}
-		for _, surface := range []ActionSurface{ActionSurfaceFooter, ActionSurfacePaneChrome, ActionSurfaceFloatingChrome, ActionSurfaceContent} {
-			if spec.HasSurface(surface) {
-				t.Fatalf("input-only action %q must not declare visible surface %q", id, surface)
-			}
-		}
-	}
-}
-
 func TestProjectionCatalogCoversVisibleVMAndHitRegionActions(t *testing.T) {
 	root := actionCatalogRoot()
 	vm := NewRenderVMBuilder().Build(root)
 	plan := MeasureLayout(vm.Shell, Rect{W: 80, H: 24})
 
 	for _, action := range vm.Shell.Footer.ActionTokens {
-		assertRegisteredAction(t, action.ActionID, ActionSurfaceFooter)
+		if _, ok := actiondomain.SpecByID(actiondomain.ID(action.ActionID)); !ok {
+			t.Fatalf("footer action %q must use canonical action identity", action.ActionID)
+		}
 	}
 	for _, panel := range vm.Shell.Layout.Panels {
 		for _, action := range panel.Chrome.Actions {
@@ -266,6 +123,12 @@ func TestProjectionCatalogCoversVisibleVMAndHitRegionActions(t *testing.T) {
 	}
 	for _, region := range plan.HitRegions {
 		if region.ActionID == "" {
+			continue
+		}
+		if region.Invocation.ID != "" {
+			if _, ok := actiondomain.SpecByID(region.Invocation.ID); !ok {
+				t.Fatalf("hit region invocation %q must be canonical", region.Invocation.ID)
+			}
 			continue
 		}
 		assertRegisteredAction(t, region.ActionID, "")
@@ -294,7 +157,7 @@ func assertRegisteredAction(t *testing.T, id string, surface ActionSurface) Proj
 	if id == "" {
 		return ProjectionSpec{}
 	}
-	spec, ok := ProjectionByIDString(id)
+	spec, ok := ProjectionByID(ProjectionID(id))
 	if !ok {
 		t.Fatalf("action %q must be registered in ProjectionCatalog", id)
 	}

@@ -355,7 +355,7 @@ func TestMeasureLayoutAddsHeaderTabActionHitRegions(t *testing.T) {
 	closeRegion := hitRegionByAction(t, plan.HitRegions, ActionTabClose.String())
 	switchRegion := hitRegionByAction(t, plan.HitRegions, ActionTabSwitch.String())
 	createRegion := hitRegionByAction(t, plan.HitRegions, ActionTabCreate.String())
-	workspaceRegion := hitRegionByAction(t, plan.HitRegions, ActionFooterOpenTree.String())
+	workspaceRegion := hitRegionByAction(t, plan.HitRegions, "menu.workbench_tree")
 	if workspaceRegion.Kind != HitRegionContentAction || workspaceRegion.Rect.Y != plan.Header.Y || workspaceRegion.Rect.W != DisplayWidth("  main") {
 		t.Fatalf("unexpected workspace navigator region %#v", workspaceRegion)
 	}
@@ -382,16 +382,16 @@ func TestMeasureLayoutAddsVisibleFooterActionHitRegions(t *testing.T) {
 			Visible: true,
 			Mode:    "live",
 			ActionTokens: []FooterActionVM{
-				{Key: "^P", Label: "PANE", ActionID: "footer.pane", Invocation: actiondomain.Invocation{ID: "menu.panel"}, Click: ClickClickable},
+				{Key: "^P", Label: "PANE", ActionID: "menu.panel", Invocation: actiondomain.Invocation{ID: "menu.panel"}, Click: ClickClickable},
 				{Key: "w", Label: "CLOSE"},
-				{Key: "^F", Label: "PICKER", ActionID: "footer.picker", Invocation: actiondomain.Invocation{ID: "terminal_picker.open"}, Click: ClickClickable},
+				{Key: "^F", Label: "PICKER", ActionID: "menu.terminal_picker", Invocation: actiondomain.Invocation{ID: "menu.terminal_picker"}, Click: ClickClickable},
 			},
 		},
 		Layout: LayoutVM{Panels: []PanelVM{{ID: "pane-main", Presentation: PanelPresentationCard, Active: true}}},
 	}
-	plan := MeasureLayout(shell, Rect{W: 80, H: 20})
-	paneRegion := hitRegionByAction(t, plan.HitRegions, "footer.pane")
-	pickerRegion := hitRegionByAction(t, plan.HitRegions, "footer.picker")
+	plan := MeasureLayout(shell, Rect{W: 160, H: 20})
+	paneRegion := hitRegionByAction(t, plan.HitRegions, "menu.panel")
+	pickerRegion := hitRegionByAction(t, plan.HitRegions, "menu.terminal_picker")
 	if paneRegion.Kind != HitRegionContentAction || paneRegion.Rect.Y != plan.Footer.Y+plan.Footer.H-1 || paneRegion.Rect.W != DisplayWidth("[Ctrl] • [P] PANE") {
 		t.Fatalf("unexpected footer pane action region %#v footer=%#v", paneRegion, plan.Footer)
 	}
@@ -438,7 +438,7 @@ func TestMeasureLayoutAddsFloatingSummaryHitRegion(t *testing.T) {
 		Layout: LayoutVM{Panels: []PanelVM{{ID: "pane-main", Presentation: PanelPresentationCard, Active: true}}},
 	}
 	plan := MeasureLayout(shell, Rect{W: 100, H: 20})
-	region := hitRegionByAction(t, plan.HitRegions, ActionFloatingOverview.String())
+	region := hitRegionByAction(t, plan.HitRegions, "menu.floating_overview")
 	if region.Kind != HitRegionContentAction || region.Rect.Y != plan.Footer.Y || region.Rect.W != DisplayWidth(" float:1 collapsed:1") {
 		t.Fatalf("floating summary should open overview, got %#v footer=%#v", region, plan.Footer)
 	}
@@ -538,14 +538,14 @@ func TestMeasureLayoutPaneActionRegionsFollowStructuredVisibleSlots(t *testing.T
 		Presentation: PanelPresentationCard,
 		Active:       true,
 		Chrome: PanelChromeVM{Actions: []ChromeActionVM{
-			{Text: "A", ActionID: "pane.alpha"},
-			{Text: "B", ActionID: "pane.beta"},
+			{Text: "A", ActionID: ActionPaneZoom.String()},
+			{Text: "B", ActionID: ActionPaneSplitRight.String()},
 			{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String()},
 		}, State: ChromeSlotVM{Text: "● active"}, Meta: []ChromeSlotVM{{Text: "80x24"}}},
 	}
 	wide := MeasureLayout(ShellVM{Layout: LayoutVM{Panels: []PanelVM{panel}}}, Rect{W: 20, H: 8})
-	if wide.HitRegions[0].Kind != HitRegionPaneAction || wide.HitRegions[0].ActionID != "pane.alpha" ||
-		wide.HitRegions[1].ActionID != "pane.beta" || wide.HitRegions[2].ActionID != ActionPaneClose.String() {
+	if wide.HitRegions[0].Kind != HitRegionPaneAction || wide.HitRegions[0].ActionID != ActionPaneZoom.String() ||
+		wide.HitRegions[1].ActionID != ActionPaneSplitRight.String() || wide.HitRegions[2].ActionID != ActionPaneClose.String() {
 		t.Fatalf("wide pane should expose structured visible action regions, got %#v", wide.HitRegions[:3])
 	}
 	if got, want := wide.HitRegions[0].Rect.W+wide.HitRegions[1].Rect.W+wide.HitRegions[2].Rect.W+2, paneChromeActionItemsWidth(visiblePaneChromeActionItems(panel, 20)); got != want {
@@ -583,8 +583,8 @@ func TestMeasureLayoutPaneActionRegionsSkipConfiguredGroupCaps(t *testing.T) {
 		Presentation: PanelPresentationCard,
 		Active:       true,
 		Chrome: PanelChromeVM{Actions: []ChromeActionVM{
-			{Text: "A", ActionID: "pane.alpha"},
-			{Text: "B", ActionID: "pane.beta"},
+			{Text: "A", ActionID: ActionPaneZoom.String()},
+			{Text: "B", ActionID: ActionPaneSplitRight.String()},
 			{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String()},
 		}},
 	}
@@ -850,7 +850,10 @@ func TestMeasureLayoutTerminalPickerOwnsCursorAndActionHits(t *testing.T) {
 					Kind:     HitRegionContentAction,
 					Rect:     Rect{Y: 1, W: 20, H: 1},
 					ActionID: "picker.attach",
-					PaneID:   "pane-1",
+					Invocation: actiondomain.Invocation{ID: "terminal_picker.attach",
+						SourceActionID: "terminal_picker.attach"},
+					TargetMode: HitTargetExplicit,
+					PaneID:     "pane-1",
 				}},
 			},
 		},
@@ -948,7 +951,7 @@ func TestMeasureLayoutTerminalPoolUsesPageSizedOverlay(t *testing.T) {
 				Kind:   ContentTerminalPool,
 				Cursor: Cursor{Visible: true, Row: 0, Col: 9, Shape: CursorShapeBar},
 				HitRegions: []HitRegion{
-					{Kind: HitRegionContentAction, Rect: Rect{Y: 3, W: 40, H: 1}, ActionID: "pool.select"},
+					{Kind: HitRegionContentAction, Rect: Rect{Y: 3, W: 40, H: 1}, ActionID: "pool.select", Invocation: actiondomain.Invocation{ID: actiondomain.ActionTerminalPoolSelect, SourceActionID: actiondomain.ActionTerminalPoolSelect.String()}, TargetMode: HitTargetExplicit},
 				},
 			},
 		},
@@ -991,8 +994,8 @@ func TestMeasureLayoutWorkbenchTreeUsesPageSizedOverlay(t *testing.T) {
 				Kind:   ContentWorkbenchTree,
 				Cursor: Cursor{Visible: true, Row: 0, Col: 10, Shape: CursorShapeBar},
 				HitRegions: []HitRegion{
-					{Kind: HitRegionContentAction, Rect: Rect{Y: 2, W: 72, H: 1}, ActionID: "workbench.open"},
-					{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: 12, H: 1}, ActionID: "workbench.open"},
+					{Kind: HitRegionContentAction, Rect: Rect{Y: 2, W: 72, H: 1}, ActionID: "workbench.open", Invocation: actiondomain.Invocation{ID: "workbench_tree.open", SourceActionID: "workbench_tree.open"}, TargetMode: HitTargetExplicit},
+					{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: 12, H: 1}, ActionID: "workbench.open", Invocation: actiondomain.Invocation{ID: "workbench_tree.open", SourceActionID: "workbench_tree.open"}, TargetMode: HitTargetExplicit},
 				},
 			},
 		},
@@ -1027,7 +1030,7 @@ func TestMeasureLayoutHelpUsesPageSizedOverlay(t *testing.T) {
 			Content: ContentVM{
 				Kind: ContentHelp,
 				HitRegions: []HitRegion{
-					{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: 12, H: 1}, ActionID: "help.close"},
+					{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: 12, H: 1}, ActionID: "help.close", Invocation: actiondomain.Invocation{ID: "help.close", SourceActionID: "help.close"}, TargetMode: HitTargetExplicit},
 				},
 			},
 		},
@@ -1054,7 +1057,7 @@ func TestMeasureLayoutKeepsPaneChromeActionsForEmptyPane(t *testing.T) {
 		Content: ContentVM{
 			Kind:       ContentEmptyPane,
 			Empty:      true,
-			HitRegions: []HitRegion{{Kind: HitRegionContentAction, Rect: Rect{X: 1, Y: 2, W: 12, H: 1}, PaneID: "pane-empty", ActionID: ActionEmptyAttach.String()}},
+			HitRegions: []HitRegion{{Kind: HitRegionContentAction, Rect: Rect{X: 1, Y: 2, W: 12, H: 1}, PaneID: "pane-empty", ActionID: ActionEmptyAttach.String(), Invocation: actiondomain.Invocation{ID: actiondomain.ActionEmptyAttach, SourceActionID: actiondomain.ActionEmptyAttach.String()}, TargetMode: HitTargetExplicit}},
 		},
 		Chrome: PanelChromeVM{Title: ChromeSlotVM{Text: "unconnected"}, Actions: defaultPaneChromeActionVMs(StyleAccent)},
 	}
@@ -1212,12 +1215,12 @@ func TestMeasureLayoutBottomAlignsExitedPaneActionHitRegions(t *testing.T) {
 		NewLine("terminal exited: term-1 code:23"),
 		NewLine("exited at: 2026-06-17T12:30:00Z"),
 		NewLine("command: bash -lc exit 23"),
-		centeredStyledLine("► R restart current terminal ◄", StyleWarning),
-		centeredStyledLine("[ Ctrl-F choose another terminal ]", StyleMuted),
+		centeredStyledLine("► restart ◄", StyleWarning),
+		centeredStyledLine("[ reconnect ]", StyleMuted),
 	}
 	regions := []HitRegion{
-		{Kind: HitRegionContentAction, Rect: Rect{Y: 8, W: DisplayWidth("► R restart current terminal ◄"), H: 1}, ActionID: ActionExitedRestart.String()},
-		{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: DisplayWidth("[ Ctrl-F choose another terminal ]"), H: 1}, ActionID: ActionExitedReconnect.String()},
+		{Kind: HitRegionContentAction, Rect: Rect{Y: 8, W: DisplayWidth("► restart ◄"), H: 1}, ActionID: ActionExitedRestart.String(), Invocation: actiondomain.Invocation{ID: actiondomain.ActionExitedRestart, SourceActionID: actiondomain.ActionExitedRestart.String()}, TargetMode: HitTargetExplicit},
+		{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: DisplayWidth("[ reconnect ]"), H: 1}, ActionID: ActionExitedReconnect.String(), Invocation: actiondomain.Invocation{ID: actiondomain.ActionExitedReconnect, SourceActionID: actiondomain.ActionExitedReconnect.String()}, TargetMode: HitTargetExplicit},
 	}
 	shell := ShellVM{
 		Header: HeaderVM{Visible: false},
@@ -1237,8 +1240,8 @@ func TestMeasureLayoutBottomAlignsExitedPaneActionHitRegions(t *testing.T) {
 	contentRect := plan.Panels[0].ContentRect
 	restart := hitRegionByAction(t, plan.HitRegions, ActionExitedRestart.String())
 	picker := hitRegionByAction(t, plan.HitRegions, ActionExitedReconnect.String())
-	restartWidth := DisplayWidth("► R restart current terminal ◄")
-	pickerWidth := DisplayWidth("[ Ctrl-F choose another terminal ]")
+	restartWidth := DisplayWidth("► restart ◄")
+	pickerWidth := DisplayWidth("[ reconnect ]")
 	if restart.Rect != (Rect{X: contentRect.X + (contentRect.W-restartWidth)/2, Y: contentRect.Y + 6, W: restartWidth, H: 1}) {
 		t.Fatalf("restart hit region should match bottom-aligned visible action content=%#v got=%#v", contentRect, restart)
 	}

@@ -13,7 +13,11 @@ func appendHeaderHitRegions(out []HitRegion, header HeaderVM, rect Rect, viewpor
 			continue
 		}
 		if segment.actionID != "" {
-			out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: Rect{X: x, Y: rect.Y, W: width, H: rect.H}, ActionID: segment.actionID, PaneID: segment.targetID}, viewport)
+			mode := HitTargetActive
+			if segment.targetID != "" {
+				mode = HitTargetExplicit
+			}
+			out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: Rect{X: x, Y: rect.Y, W: width, H: rect.H}, ActionID: segment.actionID, PaneID: segment.targetID, Invocation: invocationForHeaderActionID(segment.actionID), TargetMode: mode}, viewport)
 		}
 		x += width
 		if x >= rect.X+rect.W {
@@ -38,7 +42,7 @@ func appendFooterHitRegions(out []HitRegion, footer FooterVM, rect Rect, frame R
 	currentInvocation := actiondomain.Invocation{}
 	flush := func(action *string, region *Rect) {
 		if *action != "" && region.W > 0 {
-			out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: *region, ActionID: *action, Invocation: currentInvocation}, viewport)
+			out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: *region, ActionID: *action, Invocation: currentInvocation, TargetMode: HitTargetActive}, viewport)
 		}
 		*action = ""
 		*region = Rect{}

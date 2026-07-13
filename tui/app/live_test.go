@@ -2402,7 +2402,7 @@ func TestPaneTakeOwnerCommandCarriesViewScopedResizeSeq(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
 
-	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionTerminalTakeResizeOwner.String(), PaneID: "pane-2"})
+	next, effects := reducer(root, shortcutTestMessage("panel.take_owner", "pane-2", false, 0))
 	msg, ok := liveResizeMsgFromEffects(effects)
 	if !ok || msg.ViewID != "view-2" || msg.Seq == 0 {
 		t.Fatalf("take owner command should emit view-scoped resize with binding seq, msg=%#v effects=%#v", msg, effects)
@@ -3628,8 +3628,8 @@ func TestLiveSurfaceProtocolTerminalExitedIsNotErrorUI(t *testing.T) {
 	}
 	frame := lastFrame(t, host.Frames())
 	if !frameContains(frame, "last output") ||
-		!frameContains(frame, "► R restart current terminal ◄") ||
-		!frameContains(frame, "[ Ctrl-F choose another terminal ]") ||
+		!frameContains(frame, "► restart ◄") ||
+		!frameContains(frame, "[ reconnect ]") ||
 		frameContains(frame, "protocol error 400") {
 		t.Fatalf("expected exited content with restart hints and no protocol error, got %#v", frame.Lines)
 	}
@@ -3684,7 +3684,7 @@ func TestLiveSurfaceAuthoritativeRunningClearsExitedSessionAndSurface(t *testing
 		t.Fatalf("authoritative running surface should clear stale exited session/surface, session=%#v surface=%#v", final.Session, final.Surface)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "% ") || frameContains(frame, "restart current terminal") {
+	if !frameContains(frame, "% ") || frameContains(frame, "restart") {
 		t.Fatalf("running terminal with old exit marker should render live prompt without restart CTA, got %#v", frame.Lines)
 	}
 	if !frame.Cursor.Visible || frame.Cursor.Shape != render.CursorShapeBar {
@@ -3752,7 +3752,7 @@ func TestLiveQueueKeepsAuthoritativeRunningLifecycleWhenOrdinaryFrameFollows(t *
 		t.Fatalf("authoritative running lifecycle must survive live queue coalescing, session=%#v surface=%#v", final.Session, final.Surface)
 	}
 	frame := lastFrame(t, host.Frames())
-	if frameContains(frame, "restart current terminal") || !frameContains(frame, "% ") || !frame.Cursor.Visible {
+	if frameContains(frame, "restart") || !frameContains(frame, "% ") || !frame.Cursor.Visible {
 		t.Fatalf("running lifecycle should remove restart CTA after queued ordinary frame, lines=%#v cursor=%#v", frame.Lines, frame.Cursor)
 	}
 }

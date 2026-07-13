@@ -197,7 +197,7 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 		}, state.DefaultPaneID, "term-done")
 		frame := renderPanelContentAcceptanceFrame(root)
 		assertPanelFrameContains(t, frame, "terminal exited: term-done code:0 exited")
-		assertPanelFrameContains(t, frame, "restart current terminal")
+		assertPanelFrameContains(t, frame, "restart")
 	})
 
 	t.Run("error pane", func(t *testing.T) {

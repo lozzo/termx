@@ -111,21 +111,24 @@ type ShellPromptCancelMsg struct{}
 
 func (ShellPromptCancelMsg) isMsg() {}
 
-type ShellContentActionMsg struct {
-	ActionID string
-	PaneID   string
-	Floating bool
-	Row      int
+// ShortcutSurfaceContext 描述鼠标、drag 或内容 CTA 提供的显式 surface 目标。
+// 非 nil 指针同时标记消息来源为 surface；PaneID/Floating/Row 只携带命中上下文，
+// 缺失或无效目标必须 fail closed，不能回退到 keyboard 的 active target。
+type ShortcutSurfaceContext struct {
+	// ExplicitTarget 区分 pane chrome/CTA 的强目标语义与 footer 的 active-target 语义。
+	// 为 true 时目标无效必须终止；为 false 时 action 可按 keyboard 规则使用 active target。
+	ExplicitTarget bool
+	PaneID         string
+	Floating       bool
+	Row            int
+	HasRow         bool
 }
 
-func (ShellContentActionMsg) isMsg() {}
-
-// ShellShortcutActionMsg 让键盘和点击共享同一个 app action dispatcher。
+// ShellShortcutActionMsg 让键盘和 surface 共享同一个 canonical app action dispatcher。
+// Invocation 是执行身份；Surface 为 nil 表示 keyboard/command 来源，非 nil 表示必须遵守显式目标失败语义。
 type ShellShortcutActionMsg struct {
 	Invocation actiondomain.Invocation
-	PaneID     string
-	Floating   bool
-	Row        int
+	Surface    *ShortcutSurfaceContext
 }
 
 func (ShellShortcutActionMsg) isMsg() {}
@@ -289,10 +292,18 @@ func NewShellReducer() Reducer {
 		case ShellPromptCancelMsg:
 			root.Shell = root.Shell.CancelPrompt().CloseOverlay()
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
-		case ShellContentActionMsg:
-			next, effects := reduceShellContentAction(root, msg)
-			return rearmInteractionModeTimeout(next, effects)
 		case ShellShortcutActionMsg:
+			row := -1
+			if msg.Surface != nil {
+				if msg.Surface.HasRow {
+					row = msg.Surface.Row
+				}
+				if msg.Surface.ExplicitTarget {
+					if next, effects, handled := reduceCanonicalSurfaceAction(root, msg); handled {
+						return rearmInteractionModeTimeout(next, effects)
+					}
+				}
+			}
 			intent, ok := shortcutIntentForInvocation(msg.Invocation, input.InputEvent{})
 			if !ok {
 				return root, nil
@@ -300,7 +311,7 @@ func NewShellReducer() Reducer {
 			if shortcutIntentOwnedByCopy(intent) {
 				return root, nil
 			}
-			next, effects := reduceShortcutIntentWithContext(root, intent, msg.Row)
+			next, effects := reduceShortcutIntentWithContext(root, intent, row)
 			if intent.Kind == input.IntentOpenTerminalPicker || intent.Kind == input.IntentSetInteractionMode {
 				return next, effects
 			}
@@ -426,419 +437,6 @@ func reduceShellActivateTerminalInput(root state.Root, msg ShellActivateTerminal
 	return root.Advance(), []Effect{PaneCommandFeedbackEffect{Result: result, Command: command}}
 }
 
-func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state.Root, []Effect) {
-	if msg.Floating {
-		if floatingID, ok := floatingIDForContentAction(root, msg); ok && floatingID != "" {
-			root.Shell, _ = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
-				Action:   state.FloatingCommandFocusRaise,
-				TargetID: floatingID,
-				Source:   state.PaneCommandSourceMouse,
-			})
-		}
-	} else if msg.PaneID != "" {
-		root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: msg.PaneID})
-	}
-	spec, ok := render.ProjectionByIDString(msg.ActionID)
-	if !ok || spec.ID == render.ActionShortcutExit {
-		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})
-		return root.Advance(), nil
-	}
-	switch spec.ID {
-	case render.ActionTabSwitch:
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabSwitch, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
-	case render.ActionTabClose:
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabClose, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
-	case render.ActionTabCreate:
-		shell := root.Shell.EnsureDefaults()
-		return reduceWorkbenchCommandWithOptions(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(shell), Source: state.PaneCommandSourceMouse}, workbenchCommandOptions{OpenPickerAfterOK: true})
-	case render.ActionTabRename:
-		root.Shell = root.Shell.OpenPrompt(tabRenamePrompt(root.Shell.EnsureDefaults()))
-		return root.Advance(), nil
-	case render.ActionTabPrevious:
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabPrevious, Source: state.PaneCommandSourceMouse})
-	case render.ActionTabNext:
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabNext, Source: state.PaneCommandSourceMouse})
-	case render.ActionFooterPaneMode:
-		root.Shell = root.Shell.SetInteractionMode(state.InteractionModePane)
-		return root.Advance(), nil
-	case render.ActionFooterResizeMode:
-		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeResize)
-		return root.Advance(), nil
-	case render.ActionFooterTabMode:
-		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeTab)
-		return root.Advance(), nil
-	case render.ActionFooterWorkspaceMode:
-		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeWorkspace)
-		return root.Advance(), nil
-	case render.ActionFooterFloatingMode:
-		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeFloating)
-		return root.Advance(), nil
-	case render.ActionFooterCopyMode:
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return ShellShortcutActionMsg{Invocation: actiondomain.Invocation{ID: "menu.copy"}}
-		}}}
-	case render.ActionFooterGlobalMode:
-		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeGlobal)
-		return root.Advance(), nil
-	case render.ActionFooterPicker:
-		root.Shell = root.Shell.OpenTerminalPicker()
-		return root.Advance(), []Effect{terminalPickerListRequestEffect()}
-	case render.ActionFooterToggleHeader:
-		root.Shell = root.Shell.ToggleHeaderVisible()
-		return root.Advance(), nil
-	case render.ActionFooterToggleFooter:
-		root.Shell = root.Shell.ToggleFooterVisible()
-		return root.Advance(), nil
-	case render.ActionFooterShortcutLock:
-		root.Shell = root.Shell.ToggleShortcutPassthroughLock()
-		status := "off"
-		if root.Shell.ShortcutPassthroughLocked {
-			status = "on"
-		}
-		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "shortcut lock", Body: status})
-		return root.Advance(), nil
-	case render.ActionFooterOpenPool:
-		root.Shell = root.Shell.OpenTerminalPool()
-		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
-	case render.ActionFooterOpenTree:
-		root.Shell = root.Shell.OpenWorkbenchTree()
-		return root.Advance(), nil
-	case render.ActionClipboardHistorySelect:
-		items := state.ClipboardHistoryItems(root)
-		root.Shell = root.Shell.SetClipboardHistorySelectedIndex(msg.Row, len(items))
-		return root.Advance(), nil
-	case render.ActionClipboardHistoryPaste:
-		return reduceClipboardHistoryPaste(root)
-	case render.ActionClipboardHistoryNew:
-		return reduceClipboardHistoryNew(root)
-	case render.ActionClipboardHistoryEdit:
-		return reduceClipboardHistoryEdit(root)
-	case render.ActionClipboardHistoryDelete:
-		return reduceClipboardHistoryDelete(root)
-	case render.ActionFooterCloseToast:
-		root.Shell = root.Shell.CloseCurrentToast()
-		return root.Advance(), nil
-	case render.ActionFooterClearToasts:
-		root.Shell = root.Shell.ClearToasts()
-		return root.Advance(), nil
-	case render.ActionFooterQuit:
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg { return QuitMsg{} }}}
-	case render.ActionFooterNewWorkspace:
-		shell := root.Shell.EnsureDefaults()
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: nextWorkspaceName(shell), Source: state.PaneCommandSourceMouse})
-	case render.ActionFooterRenameWorkspace:
-		root.Shell = root.Shell.OpenPrompt(workspaceRenamePrompt(root.Shell.EnsureDefaults()))
-		return root.Advance(), nil
-	case render.ActionFooterPreviousWorkspace:
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspacePrevious, Source: state.PaneCommandSourceMouse})
-	case render.ActionFooterNextWorkspace:
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceNext, Source: state.PaneCommandSourceMouse})
-	case render.ActionFooterDeleteWorkspace:
-		shell := root.Shell.EnsureDefaults()
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceDelete, TargetID: shell.Workspace.ID, Confirm: state.PaneConfirmAccepted, Source: state.PaneCommandSourceMouse})
-	case render.ActionPaneFooterClose:
-		shell := root.Shell.EnsureDefaults()
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneClose, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, Source: state.PaneCommandSourceMouse})
-	case render.ActionPaneFooterDetach:
-		shell := root.Shell.EnsureDefaults()
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneDetach, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, Source: state.PaneCommandSourceMouse})
-	case render.ActionPaneFooterFocus:
-		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandFocusNext, Source: state.PaneCommandSourceMouse})
-	case render.ActionPaneFooterSplitRight:
-		shell := root.Shell.EnsureDefaults()
-		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandSplit, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, SplitDirection: state.SplitDirectionVertical, Source: state.PaneCommandSourceMouse})
-	case render.ActionPaneFooterSplitDown:
-		shell := root.Shell.EnsureDefaults()
-		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandSplit, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, SplitDirection: state.SplitDirectionHorizontal, Source: state.PaneCommandSourceMouse})
-	case render.ActionPaneFooterZoom:
-		shell := root.Shell.EnsureDefaults()
-		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandToggleZoom, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, Source: state.PaneCommandSourceMouse})
-	case render.ActionPaneFooterBalance:
-		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandBalance, Source: state.PaneCommandSourceMouse})
-	case render.ActionPaneFooterCard:
-		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandSetPresentation, Presentation: state.PanelPresentationCard, Source: state.PaneCommandSourceMouse})
-	case render.ActionPaneFooterSplitLine:
-		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandSetPresentation, Presentation: state.PanelPresentationSplitLine, Source: state.PaneCommandSourceMouse})
-	case render.ActionResizeLeft, render.ActionResizeRight, render.ActionResizeUp, render.ActionResizeDown:
-		command, ok := resizeFooterPaneCommand(spec.ID)
-		if !ok {
-			break
-		}
-		return reducePaneCommand(root, command)
-	case render.ActionResizeBalance:
-		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandBalance, Source: state.PaneCommandSourceMouse})
-	case render.ActionResizeLayoutLock:
-		return root, []Effect{terminalSizeLockToggleEffect()}
-	case render.ActionResizeLayoutToggle:
-		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "toggle-layout"})
-	case render.ActionResizeLayoutPan:
-		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "pan", DeltaX: 2})
-	case render.ActionResizeLayoutAlign:
-		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "align", AlignX: state.TerminalViewAlignCenter, AlignY: state.TerminalViewAlignCenter})
-	case render.ActionResizeLayoutCenter:
-		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "center"})
-	case render.ActionResizeLayoutReset:
-		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "reset"})
-	case render.ActionCopyOlder:
-		// projection 直接投递 canonical invocation；authoritative history 请求仍只由 copy reducer 处理。
-		actionID := actiondomain.ID("menu.copy")
-		if copyModeOwnsActiveInput(root) {
-			actionID = "copy.request_older"
-		}
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return ShellShortcutActionMsg{Invocation: actiondomain.Invocation{ID: actionID}}
-		}}}
-	case render.ActionTerminalTakeResizeOwner:
-		if msg.Floating {
-			return requestFloatingResizeOwnerWithConfirm(root, floatingTargetIDForContentAction(root, msg))
-		}
-		root.Shell = root.Shell.ClearOwnerConfirm(0)
-		return requestPaneResizeOwner(root, msg.PaneID)
-	case render.ActionEmptyClose, render.ActionExitedClose:
-		if msg.Floating {
-			return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
-		}
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{
-			Action: state.WorkbenchCommandPaneClose,
-			Target: state.PaneCommandTarget{PaneID: msg.PaneID},
-			Source: state.PaneCommandSourceMouse,
-		})
-	case render.ActionPickerAttach:
-		items := state.TerminalPickerItems(root)
-		if msg.Row >= 0 {
-			root.Shell = root.Shell.SetTerminalPickerSelectedIndex(msg.Row, len(items))
-		}
-		selected, ok := terminalPickerItemAt(items, msg.Row)
-		if !ok && msg.PaneID != "" {
-			selected = state.TerminalPickerItem{PaneID: msg.PaneID}
-			ok = true
-		}
-		if ok && selected.CreateNew {
-			target := terminalPoolTargetForOverlay(root)
-			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return ShellOpenPromptMsg{Prompt: createTerminalPromptForTargetEndpoint(root, target, selected.EndpointID)}
-			}}}
-		}
-		if ok && selected.TerminalID != "" {
-			target := terminalPoolTargetForOverlay(root)
-			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
-			}}}
-		}
-	case render.ActionPickerNew:
-		target := terminalPoolTargetForOverlay(root)
-		endpointID := terminalCreateEndpointIDFromPickerSelection(root, msg.Row)
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return ShellOpenPromptMsg{Prompt: createTerminalPromptForTargetEndpoint(root, target, endpointID)}
-		}}}
-	case render.ActionPickerSplit:
-		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
-		if !ok || selected.TerminalID == "" {
-			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.split", Body: "no terminal"})
-			return root.Advance(), nil
-		}
-		return reduceTerminalPickerSplitAttach(root, selected.EndpointID, selected.TerminalID)
-	case render.ActionPickerEdit:
-		return reduceTerminalPickerEdit(root, msg.Row)
-	case render.ActionPickerKill:
-		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
-		if !ok || selected.TerminalID == "" {
-			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.kill", Body: "no terminal"})
-			return root.Advance(), nil
-		}
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolKillRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID}
-		}}}
-	case render.ActionPickerDelete:
-		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
-		if !ok || selected.TerminalID == "" {
-			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.delete", Body: "no terminal"})
-			return root.Advance(), nil
-		}
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolRemoveRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID}
-		}}}
-	case render.ActionPoolSelect:
-		items := state.TerminalPoolPageItems(root)
-		root.Shell = root.Shell.SetTerminalPoolSelectedIndex(msg.Row, len(items))
-		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolPreviewRefreshMsg{} }}}
-	case render.ActionPoolAttach:
-		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
-			target := terminalPoolTargetForOverlay(root)
-			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
-			}}}
-		}
-	case render.ActionPoolAttachTab:
-		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
-			return reduceTerminalPoolAttachTab(root, selected.EndpointID, selected.TerminalID)
-		}
-	case render.ActionPoolAttachFloat:
-		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
-			return reduceTerminalPoolAttachFloating(root, selected.EndpointID, selected.TerminalID)
-		}
-	case render.ActionPoolRestart:
-		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
-			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolRestartRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID}
-			}}}
-		}
-	case render.ActionPoolKill:
-		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
-			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolKillRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID}
-			}}}
-		}
-	case render.ActionPoolEdit:
-		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
-			root.Shell = root.Shell.OpenPrompt(terminalEditPrompt(selected))
-			return root.Advance(), nil
-		}
-	case render.ActionPoolDelete:
-		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
-			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolRemoveRequestMsg{EndpointID: selected.EndpointID, TerminalID: selected.TerminalID}
-			}}}
-		}
-	case render.ActionWorkbenchSelect:
-		items := state.WorkbenchTreeItems(root)
-		root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(msg.Row, len(items))
-		return root.Advance(), nil
-	case render.ActionWorkbenchOpen:
-		items := state.WorkbenchTreeItems(root)
-		if msg.Row >= 0 {
-			root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(msg.Row, len(items))
-			items = state.WorkbenchTreeItems(root)
-		}
-		return reduceWorkbenchTreeOpen(root, items)
-	case render.ActionWorkbenchRename:
-		return reduceWorkbenchTreeRename(root, state.WorkbenchTreeItems(root))
-	case render.ActionWorkbenchNew:
-		return reduceWorkbenchTreeNew(root, state.WorkbenchTreeItems(root))
-	case render.ActionWorkbenchDelete:
-		return reduceWorkbenchTreeDelete(root, state.WorkbenchTreeItems(root))
-	case render.ActionWorkbenchDetach:
-		return reduceWorkbenchTreeDetach(root, state.WorkbenchTreeItems(root))
-	case render.ActionWorkbenchZoom:
-		return reduceWorkbenchTreeZoom(root, state.WorkbenchTreeItems(root))
-	case render.ActionClipboardHistoryOpen:
-		root.Shell = root.Shell.OpenClipboardHistory()
-		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return ClipboardStorageLoadRequestMsg{Reason: "open"}
-		}}}
-	case render.ActionPromptSubmit:
-		return reducePromptSubmit(root)
-	case render.ActionPromptCancel:
-		root.Shell = root.Shell.CloseOverlay()
-		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
-		return root.Advance(), nil
-	case render.ActionPromptOpen:
-		root.Shell = root.Shell.OpenPrompt(actionCommandPrompt())
-		return root.Advance(), nil
-	case render.ActionHelpOpen:
-		root.Shell = root.Shell.OpenHelp("most-used")
-		return root.Advance(), nil
-	case render.ActionHelpClose:
-		root.Shell = root.Shell.CloseOverlay()
-		return root.Advance(), nil
-	case render.ActionFloatingNew:
-		return reduceFloatingCommand(root, state.FloatingCommand{
-			Action:   state.FloatingCommandCreate,
-			TargetID: nextFloatingID(root.Shell),
-			Pane:     state.PaneState{ID: nextFloatingPaneID(root.Shell), Title: "floating", Kind: state.PaneEmpty},
-			Title:    "floating",
-			Source:   state.PaneCommandSourceMouse,
-		})
-	case render.ActionFloatingRaise:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
-	case render.ActionFloatingOverview:
-		root.Shell = root.Shell.OpenFloatingOverview()
-		return root.Advance(), nil
-	case render.ActionFloatingSummon:
-		items := state.FloatingOverviewItems(root)
-		if msg.Row >= 0 {
-			root.Shell = root.Shell.SetFloatingOverviewSelectedIndex(msg.Row, len(items))
-			items = state.FloatingOverviewItems(root)
-		}
-		selected, ok := selectedFloatingOverviewItem(items)
-		if !ok {
-			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "floating.summon", Body: "no floating"})
-			return root.Advance(), nil
-		}
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandSummon, TargetID: selected.FloatingID, Source: state.PaneCommandSourceMouse})
-	case render.ActionFloatingClose:
-		// footer close 没有 pane id 时，FloatingCommand 会按 active floating 作为目标。
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
-	case render.ActionFloatingToggleAll:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleAll, Source: state.PaneCommandSourceMouse})
-	case render.ActionFloatingShowAll:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandShowAll, Source: state.PaneCommandSourceMouse})
-	case render.ActionFloatingCollapseAll:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandCollapseAll, Source: state.PaneCommandSourceMouse})
-	case render.ActionFloatingFit:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandFit, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
-	case render.ActionFloatingAutoFit:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleAutoFit, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
-	case render.ActionFloatingPick:
-		root.Shell = root.Shell.OpenTerminalPicker()
-		return root.Advance(), []Effect{terminalPickerListRequestEffect()}
-	case render.ActionFloatingTakeOwner:
-		shell := root.Shell.EnsureDefaults()
-		activeFloatingID := shell.ActiveFloatingID()
-		if activeFloatingID == "" {
-			root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.owner", Body: "no active floating"})
-			return root.Advance(), nil
-		}
-		return requestFloatingResizeOwnerWithConfirm(root, activeFloatingID)
-	case render.ActionFloatingResize:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandResize, TargetID: floatingTargetIDForContentAction(root, msg), DeltaW: 2, DeltaH: 1, Source: state.PaneCommandSourceMouse})
-	case render.ActionFloatingCenter:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandCenter, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
-	case render.ActionFloatingCollapse:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleCollapse, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
-	case render.ActionExitedRestart:
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			ref := terminalRefForShellContentAction(root, msg)
-			return TerminalPoolRestartIfExitedRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID}
-		}}}
-	case render.ActionExitedReconnect:
-		root.Shell = root.Shell.OpenTerminalPicker()
-		return root.Advance(), []Effect{terminalPickerListRequestEffect()}
-	case render.ActionDisconnectedReconnect:
-		ref := terminalRefForShellContentAction(root, msg)
-		if ref.Empty() {
-			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pane.reconnect", Body: "terminal unavailable"})
-			return root.Advance(), nil
-		}
-		target := terminalPoolTargetForContentAction(root, msg)
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolReconnectRequestMsg{EndpointID: ref.EndpointID, TerminalID: ref.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, LocalError: true}
-		}}}
-	case render.ActionDisconnectedDisconnect:
-		if msg.Floating {
-			return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
-		}
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{
-			Action: state.WorkbenchCommandPaneDetach,
-			Target: state.PaneCommandTarget{PaneID: msg.PaneID},
-			Source: state.PaneCommandSourceMouse,
-		})
-	case render.ActionEmptyManager:
-		root.Shell = root.Shell.OpenTerminalPool()
-		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
-	case render.ActionEmptyCreate:
-		target := terminalPoolTargetForContentAction(root, msg)
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return ShellOpenPromptMsg{Prompt: createTerminalPromptForTarget(root, target)}
-		}}}
-	case render.ActionEmptyAttach:
-		root.Shell = root.Shell.OpenTerminalPicker()
-		return root.Advance(), []Effect{terminalPickerListRequestEffect()}
-	}
-	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})
-	return root.Advance(), nil
-}
-
 func requestPaneResizeOwner(root state.Root, paneID string) (state.Root, []Effect) {
 	if paneID == "" {
 		return root, nil
@@ -922,28 +520,6 @@ func liveAttachMsgForResizeOwner(root state.Root, binding state.TerminalViewBind
 		SurfaceID:    runtimeSurfaceID(root),
 		ViewID:       binding.ViewID,
 	}}
-}
-
-func resizeFooterPaneCommand(actionID render.ProjectionID) (state.PaneCommand, bool) {
-	// footer resize token 与键盘 resize mode 使用同一方向和步长语义。
-	command := state.PaneCommand{
-		Action: state.PaneCommandResize,
-		Delta:  2,
-		Source: state.PaneCommandSourceMouse,
-	}
-	switch actionID {
-	case render.ActionResizeLeft:
-		command.ResizeDirection = state.PaneResizeLeft
-	case render.ActionResizeRight:
-		command.ResizeDirection = state.PaneResizeRight
-	case render.ActionResizeUp:
-		command.ResizeDirection = state.PaneResizeUp
-	case render.ActionResizeDown:
-		command.ResizeDirection = state.PaneResizeDown
-	default:
-		return state.PaneCommand{}, false
-	}
-	return command, true
 }
 
 func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
@@ -1773,42 +1349,12 @@ func terminalRefForContentAction(root state.Root, paneID string) state.TerminalR
 	return state.TerminalRef{}
 }
 
-func terminalIDForShellContentAction(root state.Root, msg ShellContentActionMsg) string {
-	return terminalRefForShellContentAction(root, msg).TerminalID
-}
-
-func terminalRefForShellContentAction(root state.Root, msg ShellContentActionMsg) state.TerminalRef {
-	if msg.Floating {
-		floatingID := floatingTargetIDForContentAction(root, msg)
-		if binding, ok := root.TerminalViews.FloatingBinding(floatingID); ok && binding.TerminalID != "" {
-			return binding.TerminalRef()
-		}
-		return state.TerminalRef{}
-	}
-	return terminalRefForContentAction(root, msg.PaneID)
-}
-
 func terminalPoolTargetForOverlay(root state.Root) terminalPoolTarget {
 	shell := root.Shell.EnsureDefaults()
 	if targetID := shell.Overlay.TargetID; targetID != "" {
 		if target, ok := terminalPoolTargetForID(shell, targetID); ok {
 			return target
 		}
-	}
-	return terminalPoolTargetForActive(root)
-}
-
-func terminalPoolTargetForContentAction(root state.Root, msg ShellContentActionMsg) terminalPoolTarget {
-	if msg.Floating {
-		if floatingID := floatingTargetIDForContentAction(root, msg); floatingID != "" {
-			if target, ok := terminalPoolTargetForID(root.Shell.EnsureDefaults(), floatingID); ok {
-				target.ViewID = root.TerminalViews.FloatingViewID(floatingID)
-				return target
-			}
-		}
-	}
-	if msg.PaneID != "" {
-		return terminalPoolTarget{PaneID: msg.PaneID, ViewID: root.TerminalViews.PaneViewID(msg.PaneID)}
 	}
 	return terminalPoolTargetForActive(root)
 }
@@ -1835,30 +1381,6 @@ func terminalPoolTargetForID(shell state.ShellStore, id string) (terminalPoolTar
 		return terminalPoolTarget{PaneID: id, ViewID: state.TerminalPaneViewID(id)}, true
 	}
 	return terminalPoolTarget{}, false
-}
-
-func floatingTargetIDForContentAction(root state.Root, msg ShellContentActionMsg) string {
-	id, _ := floatingIDForContentAction(root, msg)
-	return id
-}
-
-func floatingIDForContentAction(root state.Root, msg ShellContentActionMsg) (string, bool) {
-	shell := root.Shell.EnsureDefaults()
-	if msg.PaneID == "" {
-		activeFloatingID := shell.ActiveFloatingID()
-		return activeFloatingID, activeFloatingID != ""
-	}
-	if msg.Floating {
-		if floatingID, ok := shell.FloatingIDForPaneID(msg.PaneID); ok {
-			return floatingID, true
-		}
-	}
-	for _, floating := range shell.ActiveFloatings() {
-		if floating.ID == msg.PaneID {
-			return floating.ID, true
-		}
-	}
-	return "", false
 }
 
 func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, []Effect) {

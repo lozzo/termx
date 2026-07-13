@@ -89,15 +89,15 @@ func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, view
 		panelID = floating.Floating.ID
 	}
 	out = appendFloatingActionRegions(out, floating.Floating, floating.Rect, panelID, viewport)
-	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingResizeRect(floating.Rect), PaneID: panelID, Floating: true, ActionID: ActionFloatingResizeDrag.String()}, viewport)
-	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneChromeRect(floating.Rect), PaneID: panelID, Floating: true, ActionID: ActionFloatingMoveDrag.String()}, viewport)
+	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingResizeRect(floating.Rect), PaneID: panelID, Floating: true, ActionID: ActionFloatingResizeDrag.String(), Invocation: invocationForProjection(ActionFloatingResizeDrag), TargetMode: HitTargetExplicit}, viewport)
+	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneChromeRect(floating.Rect), PaneID: panelID, Floating: true, ActionID: ActionFloatingMoveDrag.String(), Invocation: invocationForProjection(ActionFloatingMoveDrag), TargetMode: HitTargetExplicit}, viewport)
 	if floating.ContentRect.W > 0 && floating.ContentRect.H > 0 {
 		contentRegions := floating.Floating.Content.HitRegions
 		if floating.Floating.Content.Kind == ContentExitedPane {
 			contentRegions = exitedContentHitRegions(floating.Floating.Content, floating.ContentRect.W, floating.ContentRect.H)
 		}
 		out = appendTranslatedRegionsWithOwnerKind(out, contentRegions, floating.ContentRect, panelID, true, viewport)
-		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floating.ContentRect, PaneID: panelID, Floating: true, ActionID: ActionFloatingRaise.String()}, viewport)
+		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floating.ContentRect, PaneID: panelID, Floating: true, ActionID: ActionFloatingRaise.String(), Invocation: invocationForProjection(ActionFloatingRaise), TargetMode: HitTargetExplicit}, viewport)
 	}
 	return out
 }
@@ -114,7 +114,7 @@ func appendFloatingActionRegions(out []HitRegion, floating FloatingVM, rect Rect
 		if slot.Rect.W <= 0 || slot.ActionID == "" {
 			continue
 		}
-		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: slot.Rect, PaneID: panelID, Floating: true, ActionID: slot.ActionID}, viewport)
+		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: slot.Rect, PaneID: panelID, Floating: true, ActionID: slot.ActionID, Invocation: invocationForProjection(ProjectionID(slot.ActionID)), TargetMode: HitTargetExplicit}, viewport)
 	}
 	return out
 }
@@ -127,7 +127,7 @@ func appendPanelChromeHitRegions(out []HitRegion, panel PanelLayoutPlan, include
 	if includeActions {
 		out = appendPaneActionRegions(out, panel.Panel, panel.Rect, paneID, viewport)
 	}
-	out = appendRegion(out, HitRegion{Kind: HitRegionPaneChrome, Rect: paneChromeRect(panel.Rect), PaneID: paneID, ActionID: ActionPaneFocus.String()}, viewport)
+	out = appendRegion(out, HitRegion{Kind: HitRegionPaneChrome, Rect: paneChromeRect(panel.Rect), PaneID: paneID, ActionID: ActionPaneFocus.String(), Invocation: invocationForProjection(ActionPaneFocus), TargetMode: HitTargetExplicit}, viewport)
 	return out
 }
 
@@ -137,7 +137,7 @@ func appendPaneActionRegions(out []HitRegion, panel PanelVM, rect Rect, paneID s
 		if slot.Rect.W <= 0 || slot.ActionID == "" {
 			continue
 		}
-		out = appendRegion(out, HitRegion{Kind: HitRegionPaneAction, Rect: slot.Rect, PaneID: paneID, ActionID: slot.ActionID}, viewport)
+		out = appendRegion(out, HitRegion{Kind: HitRegionPaneAction, Rect: slot.Rect, PaneID: paneID, ActionID: slot.ActionID, Invocation: invocationForProjection(ProjectionID(slot.ActionID)), TargetMode: HitTargetExplicit}, viewport)
 	}
 	return out
 }
@@ -163,6 +163,8 @@ func appendSplitResizeHitRegions(out []HitRegion, split SplitVM, rect Rect, view
 				Rect:               Rect{X: dividerX, Y: rect.Y, W: 1, H: rect.H},
 				PaneID:             targetPaneID,
 				ActionID:           ActionPaneResize.String(),
+				Invocation:         invocationForProjection(ActionPaneResize),
+				TargetMode:         HitTargetExplicit,
 				Direction:          "right",
 				SplitPath:          splitPath,
 				ResizeBeforePaneID: beforePaneID,
@@ -183,6 +185,8 @@ func appendSplitResizeHitRegions(out []HitRegion, split SplitVM, rect Rect, view
 				Rect:               Rect{X: rect.X, Y: dividerY, W: rect.W, H: 1},
 				PaneID:             targetPaneID,
 				ActionID:           ActionPaneResize.String(),
+				Invocation:         invocationForProjection(ActionPaneResize),
+				TargetMode:         HitTargetExplicit,
 				Direction:          "down",
 				SplitPath:          splitPath,
 				ResizeBeforePaneID: beforePaneID,
@@ -295,10 +299,10 @@ func appendPanelEdgeResizeRegions(out []HitRegion, panel PanelLayoutPlan, viewpo
 		rightX = panel.Body.X + panel.Body.W - 1
 	}
 	if rect.W > 1 {
-		out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: Rect{X: rightX, Y: rect.Y, W: 1, H: rect.H}, PaneID: paneID, ActionID: ActionPaneResize.String(), Direction: "right"}, viewport)
+		out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: Rect{X: rightX, Y: rect.Y, W: 1, H: rect.H}, PaneID: paneID, ActionID: ActionPaneResize.String(), Invocation: invocationForProjection(ActionPaneResize), TargetMode: HitTargetExplicit, Direction: "right"}, viewport)
 	}
 	if rect.H > 1 {
-		out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: Rect{X: rect.X, Y: rect.Y + rect.H - 1, W: rect.W, H: 1}, PaneID: paneID, ActionID: ActionPaneResize.String(), Direction: "down"}, viewport)
+		out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: Rect{X: rect.X, Y: rect.Y + rect.H - 1, W: rect.W, H: 1}, PaneID: paneID, ActionID: ActionPaneResize.String(), Invocation: invocationForProjection(ActionPaneResize), TargetMode: HitTargetExplicit, Direction: "down"}, viewport)
 	}
 	return out
 }
@@ -308,7 +312,7 @@ func appendPanelContentHitRegion(out []HitRegion, panel PanelLayoutPlan, viewpor
 		return out
 	}
 	paneID := panel.Panel.ID
-	out = appendRegion(out, HitRegion{Kind: HitRegionPaneContent, Rect: panel.ContentRect, PaneID: paneID, ActionID: ActionPaneFocus.String()}, viewport)
+	out = appendRegion(out, HitRegion{Kind: HitRegionPaneContent, Rect: panel.ContentRect, PaneID: paneID, ActionID: ActionPaneFocus.String(), Invocation: invocationForProjection(ActionPaneFocus), TargetMode: HitTargetExplicit}, viewport)
 	return out
 }
 
@@ -363,6 +367,10 @@ func appendTranslatedRegions(out []HitRegion, regions []HitRegion, origin Rect, 
 func appendRegion(out []HitRegion, region HitRegion, viewport Rect) []HitRegion {
 	region.Rect = intersectRect(region.Rect, viewport)
 	if region.Rect.W <= 0 || region.Rect.H <= 0 {
+		return out
+	}
+	if region.ActionID != "" && (region.Invocation.ID == "" || region.TargetMode == "") {
+		// 可执行 producer 漏掉 canonical invocation 或 target policy 时必须 fail closed，禁止公共层猜测补救。
 		return out
 	}
 	return append(out, region)

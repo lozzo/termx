@@ -25,9 +25,9 @@ import (
 	"github.com/lozzow/termx/tui/state"
 )
 
-const shortcutArtifactBaselineSHA256 = "c2d92ed9bdbd4c29df6a45d414ef82cef20d4a3c94c04203b554772c423f93fa"
-const shortcutCompositeSemanticBaselineSHA256 = "1591668e24ec4badd14833bbc96ea1d53dd98dad8eac8693fd6571dc001947d8"
-const shortcutRenderStringBaselineSHA256 = "54e9d0f874d8a489af4d92e276794d0d56060ac37ea557c515a0e5a4f904ff36"
+const shortcutArtifactBaselineSHA256 = "dc3355c5d876522d2a3a505005787e14e73d56d4358888cd968eaf054c6b1494"
+const shortcutCompositeSemanticBaselineSHA256 = "553d3ddff7f48b615488146e870a27be9d6198ca9e63d7dfce669d25e7e53dc8"
+const shortcutRenderStringBaselineSHA256 = "dfa1958b63c32815f84071493be5e8e5166e965317a85a9239f2248a8f3c4d71"
 
 type shortcutDebtManifest struct {
 	SchemaVersion int                    `json:"schema_version"`
@@ -78,17 +78,11 @@ type shortcutAuditSource struct {
 func TestShortcutContractDebtManifestLocksKnownDebt(t *testing.T) {
 	repoRoot := shortcutAuditRepoRoot(t)
 	manifest := readShortcutDebtManifest(t, repoRoot)
-	if manifest.SchemaVersion != 1 || manifest.Stage != "KS015" {
+	if manifest.SchemaVersion != 1 || manifest.Stage != "KS016" {
 		t.Fatalf("unexpected shortcut debt manifest header: %#v", manifest)
 	}
 
-	wantDebtIDs := []string{
-		"hardcoded-content-key-hints",
-		"hardcoded-footer-key-pruning",
-		"hit-region-producers-pending-action-classification",
-		"render-projection-legacy-shortcut-metadata",
-		"render-shortcut-id-bridge",
-	}
+	wantDebtIDs := []string{}
 	seenIDs := map[string]bool{}
 	kinds := map[string]bool{}
 	debtIDs := []string{}
@@ -132,7 +126,7 @@ func TestShortcutContractDebtManifestLocksKnownDebt(t *testing.T) {
 // scene 合法且能进入 app handler；任一新增 binding 若落在未注册或未处理路径都会失败。
 func TestShortcutContractAuditClassifiesDefaultBindings(t *testing.T) {
 	manifest := readShortcutDebtManifest(t, shortcutAuditRepoRoot(t))
-	wantInventory := shortcutAuditInventory{DefaultEntries: 203, RoutedBindings: 166, ShortcutSpecs: 159, RenderProjections: 123}
+	wantInventory := shortcutAuditInventory{DefaultEntries: 203, RoutedBindings: 166, ShortcutSpecs: 159, RenderProjections: 34}
 	if manifest.Inventory != wantInventory {
 		t.Fatalf("shortcut manifest inventory changed without updating the independent guard: got=%#v want=%#v", manifest.Inventory, wantInventory)
 	}
@@ -197,8 +191,56 @@ func TestShortcutContractAuditClassifiesDefaultBindings(t *testing.T) {
 	}
 }
 
-// TestShortcutContractAuditClassifiesRenderProjections 保留 KS012 时点的 render 完备性证明：
-// 当前第二 action catalog 虽被列为债务，但它内部仍不得出现重复、空 ID 或未声明 dispatch 的可见项。
+// TestHitRegionProducersDeclareCanonicalInvocation 在 producer 层阻止 ActionID-only 命中区。
+// append/layout 之后的测试无法区分 producer 正确与公共层 fallback，因此这里直接检查生产 AST。
+func TestHitRegionProducersDeclareCanonicalInvocation(t *testing.T) {
+	repoRoot := shortcutAuditRepoRoot(t)
+	shortcutWalkProductionGo(t, repoRoot, func(path string, file *ast.File) {
+		ast.Inspect(file, func(node ast.Node) bool {
+			literal, ok := node.(*ast.CompositeLit)
+			if !ok || shortcutASTTypeName(literal.Type) != "HitRegion" {
+				return true
+			}
+			hasActionID := false
+			hasInvocation := false
+			hasTargetMode := false
+			hasRow := false
+			hasRowPresence := false
+			for _, element := range literal.Elts {
+				field, ok := element.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				name, _ := field.Key.(*ast.Ident)
+				if name == nil {
+					continue
+				}
+				switch name.Name {
+				case "ActionID":
+					hasActionID = true
+				case "Invocation":
+					hasInvocation = true
+				case "TargetMode":
+					hasTargetMode = true
+				case "Row":
+					hasRow = true
+				case "HasRow":
+					hasRowPresence = true
+				}
+			}
+			if hasActionID && (!hasInvocation || !hasTargetMode) {
+				t.Fatalf("%s#%s creates actionable HitRegion without producer-owned Invocation and TargetMode", path, shortcutEnclosingFunction(file, literal.Pos()))
+			}
+			if hasActionID && hasRow && !hasRowPresence {
+				t.Fatalf("%s#%s creates row-target HitRegion without explicit HasRow", path, shortcutEnclosingFunction(file, literal.Pos()))
+			}
+			return true
+		})
+	})
+}
+
+// TestShortcutContractAuditClassifiesRenderProjections 证明 render 只保留有真实 surface 消费者的投影，
+// 且每个投影都单向引用已注册 canonical action，不能重新拥有 dispatch 身份。
 func TestShortcutContractAuditClassifiesRenderProjections(t *testing.T) {
 	seen := map[render.ProjectionID]bool{}
 	for _, spec := range render.ProjectionCatalog() {
@@ -311,7 +353,7 @@ func shortcutCompositeProducers(t *testing.T, repoRoot string, typeName string) 
 	})
 	classification := "input-event-contract"
 	if typeName == "HitRegion" {
-		classification = "hit-region-producers-pending-action-classification"
+		classification = "canonical-hit-region-contract"
 	}
 	return shortcutArtifactsFromCounts(counts, classification)
 }

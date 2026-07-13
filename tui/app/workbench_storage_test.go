@@ -1107,7 +1107,7 @@ func TestInteractiveRuntimeWorkbenchRestoreLegacyExitedPaneUsesCoreRunningLifecy
 		t.Fatalf("core running lifecycle should win, session=%#v surface=%#v", root.Session, root.Surface)
 	}
 	frame := lastFrame(t, host.Frames())
-	if frameContains(frame, "restart current terminal") || !frameContains(frame, "% ") || !frame.Cursor.Visible {
+	if frameContains(frame, "restart") || !frameContains(frame, "% ") || !frame.Cursor.Visible {
 		t.Fatalf("running restored terminal should render prompt without restart CTA, frame=%#v cursor=%#v", frame.Lines, frame.Cursor)
 	}
 }
@@ -1190,7 +1190,7 @@ func TestInteractiveRuntimeWorkbenchRestoreLegacyPaneWithoutTerminalViewsUsesCor
 		t.Fatalf("core running lifecycle should clear old exited session/surface, session=%#v surface=%#v", root.Session, root.Surface)
 	}
 	frame := lastFrame(t, host.Frames())
-	if frameContains(frame, "restart current terminal") || !frameContains(frame, "% ") || !frame.Cursor.Visible || frame.Cursor.Shape != render.CursorShapeBar {
+	if frameContains(frame, "restart") || !frameContains(frame, "% ") || !frame.Cursor.Visible || frame.Cursor.Shape != render.CursorShapeBar {
 		t.Fatalf("running restored terminal should render live prompt without restart CTA, frame=%#v cursor=%#v", frame.Lines, frame.Cursor)
 	}
 }
@@ -1258,7 +1258,7 @@ func TestInteractiveRuntimeWorkbenchRestoreAlreadyLiveBindingQueriesCoreLifecycl
 		t.Fatalf("core running lifecycle should clear stale exited projection, session=%#v surface=%#v", root.Session, root.Surface)
 	}
 	frame := lastFrame(t, host.Frames())
-	if frameContains(frame, "restart current terminal") || !frameContains(frame, "% ") || !frame.Cursor.Visible {
+	if frameContains(frame, "restart") || !frameContains(frame, "% ") || !frame.Cursor.Visible {
 		t.Fatalf("running queried terminal should render prompt without restart CTA, frame=%#v cursor=%#v", frame.Lines, frame.Cursor)
 	}
 }

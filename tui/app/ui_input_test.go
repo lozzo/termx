@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/shared/connection"
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/render"
 	"github.com/lozzow/termx/tui/services"
@@ -642,8 +643,8 @@ func TestUIInputReducerEmptyPaneCTAKeyboardSelectionAndEnter(t *testing.T) {
 	if !ok || effect.Run == nil {
 		t.Fatalf("enter should emit content action effect, got %#v", effects)
 	}
-	msg, ok := effect.Run(context.Background()).(ShellContentActionMsg)
-	if !ok || msg.ActionID != render.ActionEmptyManager.String() || msg.PaneID != state.DefaultPaneID {
+	msg, ok := effect.Run(context.Background()).(ShellShortcutActionMsg)
+	if !ok || msg.Invocation.ID != actiondomain.ActionEmptyManager || msg.Surface == nil || msg.Surface.PaneID != state.DefaultPaneID {
 		t.Fatalf("enter should execute selected manager CTA, got %#v", msg)
 	}
 }
@@ -671,8 +672,8 @@ func TestUIInputReducerFloatingEmptyPaneCTAKeyboardTargetsFloatingPanel(t *testi
 	if !ok || effect.Run == nil {
 		t.Fatalf("enter should emit content action effect, got %#v", effects)
 	}
-	msg, ok := effect.Run(context.Background()).(ShellContentActionMsg)
-	if !ok || msg.ActionID != render.ActionEmptyCreate.String() || msg.PaneID != "floating-pane-1" || !msg.Floating {
+	msg, ok := effect.Run(context.Background()).(ShellShortcutActionMsg)
+	if !ok || msg.Invocation.ID != actiondomain.ActionEmptyCreate || msg.Surface == nil || msg.Surface.PaneID != "floating-pane-1" || !msg.Surface.Floating {
 		t.Fatalf("enter should execute selected floating CTA, got %#v", msg)
 	}
 }
@@ -693,8 +694,8 @@ func TestUIInputReducerDisconnectedPaneCTAKeyboardSelectionAndEnter(t *testing.T
 	if root.Shell.ExitedPaneCTA.SelectedIndex != 0 || len(effects) != 2 {
 		t.Fatalf("enter should execute default disconnected reconnect action, shell=%#v effects=%#v", root.Shell.ExitedPaneCTA, effects)
 	}
-	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellContentActionMsg)
-	if !ok || msg.ActionID != render.ActionDisconnectedReconnect.String() || msg.PaneID != state.DefaultPaneID {
+	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellShortcutActionMsg)
+	if !ok || msg.Invocation.ID != actiondomain.ActionDisconnectedReconnect || msg.Surface == nil || msg.Surface.PaneID != state.DefaultPaneID {
 		t.Fatalf("enter should execute disconnected reconnect CTA, got %#v", msg)
 	}
 
@@ -703,8 +704,8 @@ func TestUIInputReducerDisconnectedPaneCTAKeyboardSelectionAndEnter(t *testing.T
 		t.Fatalf("down should select disconnected disconnect CTA, shell=%#v effects=%#v", root.Shell.ExitedPaneCTA, effects)
 	}
 	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
-	msg, ok = effects[1].(FuncEffect).Run(context.Background()).(ShellContentActionMsg)
-	if !ok || msg.ActionID != render.ActionDisconnectedDisconnect.String() || msg.PaneID != state.DefaultPaneID {
+	msg, ok = effects[1].(FuncEffect).Run(context.Background()).(ShellShortcutActionMsg)
+	if !ok || msg.Invocation.ID != actiondomain.ActionDisconnectedDisconnect || msg.Surface == nil || msg.Surface.PaneID != state.DefaultPaneID {
 		t.Fatalf("enter should execute disconnected disconnect CTA, got %#v", msg)
 	}
 }
@@ -731,8 +732,8 @@ func TestUIInputReducerExitedPaneCTAKeyboardSelectionAndEnter(t *testing.T) {
 	if !ok || effect.Run == nil {
 		t.Fatalf("enter should emit content action effect, got %#v", effects)
 	}
-	msg, ok := effect.Run(context.Background()).(ShellContentActionMsg)
-	if !ok || msg.ActionID != render.ActionExitedReconnect.String() || msg.PaneID != state.DefaultPaneID {
+	msg, ok := effect.Run(context.Background()).(ShellShortcutActionMsg)
+	if !ok || msg.Invocation.ID != actiondomain.ActionExitedReconnect || msg.Surface == nil || msg.Surface.PaneID != state.DefaultPaneID {
 		t.Fatalf("enter should execute selected exited picker CTA, got %#v", msg)
 	}
 }
@@ -751,13 +752,13 @@ func TestUIInputReducerExitedPaneCTAKeyboardRestartDefault(t *testing.T) {
 	if len(effects) != 2 {
 		t.Fatalf("enter should emit handled restart action effects, got %#v", effects)
 	}
-	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellContentActionMsg)
-	if !ok || msg.ActionID != render.ActionExitedRestart.String() || msg.PaneID != state.DefaultPaneID {
+	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellShortcutActionMsg)
+	if !ok || msg.Invocation.ID != actiondomain.ActionExitedRestart || msg.Surface == nil || msg.Surface.PaneID != state.DefaultPaneID {
 		t.Fatalf("enter should execute default restart CTA, got %#v", msg)
 	}
 }
 
-func TestUIInputReducerExitedPaneCTARKeyRestarts(t *testing.T) {
+func TestUIInputReducerExitedPaneDoesNotInventRShortcut(t *testing.T) {
 	reducer := NewUIInputReducer()
 	root := state.Root{
 		Shell:   state.DefaultShell(),
@@ -769,12 +770,8 @@ func TestUIInputReducerExitedPaneCTARKeyRestarts(t *testing.T) {
 
 	for _, char := range []string{"R", "r"} {
 		_, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: char}})
-		if len(effects) != 2 {
-			t.Fatalf("%q should emit handled restart action effects, got %#v", char, effects)
-		}
-		msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellContentActionMsg)
-		if !ok || msg.ActionID != render.ActionExitedRestart.String() || msg.PaneID != state.DefaultPaneID {
-			t.Fatalf("%q should execute restart CTA, got %#v", char, msg)
+		if len(effects) != 0 {
+			t.Fatalf("%q must not bypass the configurable shortcut catalog, got %#v", char, effects)
 		}
 	}
 }
@@ -792,16 +789,13 @@ func TestUIInputReducerExitedPaneSessionLifecycleRestarts(t *testing.T) {
 		)),
 	}
 
-	for _, event := range []input.InputEvent{
-		{Kind: input.EventKindKey, Key: input.KeyEnter},
-		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "R"},
-	} {
+	for _, event := range []input.InputEvent{{Kind: input.EventKindKey, Key: input.KeyEnter}} {
 		_, effects := reducer(root, InputMsg{Event: event})
 		if len(effects) != 2 {
 			t.Fatalf("session exited CTA input should emit restart action effects event=%#v effects=%#v", event, effects)
 		}
-		msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellContentActionMsg)
-		if !ok || msg.ActionID != render.ActionExitedRestart.String() || msg.PaneID != state.DefaultPaneID {
+		msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellShortcutActionMsg)
+		if !ok || msg.Invocation.ID != actiondomain.ActionExitedRestart || msg.Surface == nil || msg.Surface.PaneID != state.DefaultPaneID {
 			t.Fatalf("session exited CTA input should execute restart action event=%#v msg=%#v", event, msg)
 		}
 	}
@@ -821,15 +815,15 @@ func TestUIInputReducerExitedCacheRestartQueriesCoreLifecycle(t *testing.T) {
 	if len(effects) != 2 {
 		t.Fatalf("exited CTA enter should be handled and schedule core lifecycle query, got %#v", effects)
 	}
-	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellContentActionMsg)
-	if !ok || msg.ActionID != render.ActionExitedRestart.String() || msg.PaneID != state.DefaultPaneID {
+	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellShortcutActionMsg)
+	if !ok || msg.Invocation.ID != actiondomain.ActionExitedRestart || msg.Surface == nil || msg.Surface.PaneID != state.DefaultPaneID {
 		t.Fatalf("enter should still route through exited restart action, got %#v", msg)
 	}
 	next, effects := NewShellReducer()(root, msg)
-	if len(effects) != 1 {
+	if len(effects) != 2 {
 		t.Fatalf("restart action should schedule a restart-if-exited core query, root=%#v effects=%#v", next, effects)
 	}
-	query, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolRestartIfExitedRequestMsg)
+	query, ok := effects[1].(FuncEffect).Run(context.Background()).(TerminalPoolRestartIfExitedRequestMsg)
 	if !ok || query.TerminalID != "term-live" {
 		t.Fatalf("restart action must query core lifecycle before restart, got %#v", query)
 	}
@@ -1280,8 +1274,8 @@ func TestInteractiveRuntimeTerminalPickerShowsExitedTerminalImmediatelyAfterAtta
 	if !frameContains(frame, "terminal exited: term-dead code:23 exited") ||
 		!frameContains(frame, "exited at: 2026-06-17T12:45:00Z") ||
 		!frameContains(frame, "command: bash -lc exit 23") ||
-		!frameContains(frame, "R restart current terminal") ||
-		!frameContains(frame, "Ctrl-F choose another terminal") {
+		!frameContains(frame, "restart") ||
+		!frameContains(frame, "reconnect") {
 		t.Fatalf("exited terminal selected from picker should render lifecycle CTA without extra input, frame=%#v", frame.Lines)
 	}
 	if len(terminal.Inputs) != 0 {
@@ -1632,32 +1626,6 @@ func TestCreateTerminalPromptSubmitUsesEditedFields(t *testing.T) {
 	request = effect.Run(context.Background()).(TerminalPoolCreateRequestMsg)
 	if request.Title != "cx" || strings.Join(request.Command, " ") != "codex" {
 		t.Fatalf("custom command should override default shell fallback, got %#v", request)
-	}
-}
-
-func TestTerminalPickerNewActionIgnoresTerminalRowEndpoint(t *testing.T) {
-	root := state.Root{
-		Shell: state.DefaultShell().OpenTerminalPicker(),
-		Endpoints: (state.EndpointStore{}).
-			Upsert(state.EndpointItem{ID: state.DefaultEndpointID, Label: "This Mac", Transport: state.EndpointTransportLocal, ConnectMode: state.EndpointConnectAuto, Enabled: true}).
-			Upsert(state.EndpointItem{ID: "west", Label: "US West", Transport: state.EndpointTransportSSH, ConnectMode: state.EndpointConnectOnDemand, Enabled: true}),
-		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{EndpointID: "west", TerminalID: "term-west", Title: "west shell", State: "running"}}},
-	}
-
-	_, effects := reduceShellContentAction(root, ShellContentActionMsg{ActionID: render.ActionPickerNew.String(), Row: 1})
-	if len(effects) != 1 {
-		t.Fatalf("expected prompt effect, got %#v", effects)
-	}
-	effect, ok := effects[0].(FuncEffect)
-	if !ok || effect.Run == nil {
-		t.Fatalf("expected prompt effect, got %#v", effects[0])
-	}
-	msg, ok := effect.Run(context.Background()).(ShellOpenPromptMsg)
-	if !ok {
-		t.Fatalf("expected open prompt msg, got %#v", msg)
-	}
-	if msg.Prompt.TargetEndpointID != state.DefaultEndpointID || msg.Prompt.FieldRawValue("server") != "This Mac (local)" {
-		t.Fatalf("new action should use global create default instead of terminal row endpoint, prompt=%#v", msg.Prompt)
 	}
 }
 
@@ -2457,7 +2425,7 @@ func TestTerminalPoolRestartResultPreventsStaleExitedPoolFromPoisoningReattach(t
 		t.Fatalf("restart should keep pool item running until refreshed list arrives, pool=%#v", final.TerminalPool)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "% ") || frameContains(frame, "R restart current terminal") || !frame.Cursor.Visible || frame.Cursor.Shape != render.CursorShapeBar {
+	if !frameContains(frame, "% ") || frameContains(frame, "restart") || !frame.Cursor.Visible || frame.Cursor.Shape != render.CursorShapeBar {
 		t.Fatalf("frame should show restarted live prompt with visible cursor, lines=%#v cursor=%#v", frame.Lines, frame.Cursor)
 	}
 }
@@ -2540,7 +2508,7 @@ func TestTerminalPoolRunningListDoesNotCacheLifecycleBeforeSurface(t *testing.T)
 		t.Fatalf("running live surface should clear exited lifecycle after list-only cache, surface=%#v session=%#v", final.Surface, final.Session)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "% ") || frameContains(frame, "R restart current terminal") || !frame.Cursor.Visible {
+	if !frameContains(frame, "% ") || frameContains(frame, "restart") || !frame.Cursor.Visible {
 		t.Fatalf("running live surface should unblock fresh live prompt and cursor, lines=%#v cursor=%#v", frame.Lines, frame.Cursor)
 	}
 }
@@ -3246,8 +3214,8 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	}
 	assertPaneVisualState(t, keyboardFrame, "pane", render.StyleAccent)
 	assertPaneVisualState(t, keyboardFrame, "shell", render.StyleMuted)
-	if !frameContains(keyboardFrame, "PANE") || !frameContains(keyboardFrame, "VSPLIT") || !frameContains(keyboardFrame, "HSPLIT") {
-		t.Fatalf("footer should reflect tuiv2 pane split hints, got %#v", keyboardFrame.Lines)
+	if !frameContains(keyboardFrame, "PANE") || !frameContains(keyboardFrame, "CLOSE") || !frameContains(keyboardFrame, "OWNER") {
+		t.Fatalf("footer should reflect the canonical pane action catalog within available width, got %#v", keyboardFrame.Lines)
 	}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"}); err != nil {
@@ -4113,27 +4081,27 @@ func TestShellReducerHandlesFloatingContentActions(t *testing.T) {
 	root, _ := reducer(state.Root{
 		Shell:    shell,
 		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
-	}, ShellContentActionMsg{ActionID: "floating.resize", PaneID: "floating-1"})
+	}, shortcutTestMessage("floating.resize", "floating-1", false, 0))
 	if got := root.Shell.ActiveFloatings()[0].Rect; got.W != 32 || got.H != 9 {
 		t.Fatalf("floating resize action should update rect, got %#v", got)
 	}
-	root, _ = reducer(root, ShellContentActionMsg{ActionID: render.ActionFloatingCenter.String(), PaneID: "floating-1"})
+	root, _ = reducer(root, shortcutTestMessage("floating.center", "floating-1", false, 0))
 	if got := root.Shell.ActiveFloatings()[0].Rect; got.X != 24 || got.Y != 7 {
 		t.Fatalf("floating center action should center rect, got %#v", got)
 	}
-	root, _ = reducer(root, ShellContentActionMsg{ActionID: render.ActionFloatingCollapse.String(), PaneID: "floating-1"})
+	root, _ = reducer(root, shortcutTestMessage("floating.collapse", "floating-1", false, 0))
 	if !root.Shell.ActiveFloatings()[0].Collapsed {
 		t.Fatalf("floating collapse action should toggle collapsed state, got %#v", root.Shell.ActiveFloatings()[0])
 	}
-	root, _ = reducer(root, ShellContentActionMsg{ActionID: render.ActionFloatingShowAll.String()})
+	root, _ = reducer(root, shortcutTestMessage("floating_overview.show_all", "", false, 0))
 	if root.Shell.ActiveFloatings()[0].Collapsed {
 		t.Fatalf("floating show-all action should expand collapsed panes, got %#v", root.Shell.ActiveFloatings()[0])
 	}
-	root, _ = reducer(root, ShellContentActionMsg{ActionID: render.ActionFloatingCollapseAll.String()})
+	root, _ = reducer(root, shortcutTestMessage("floating_overview.collapse_all", "", false, 0))
 	if !root.Shell.ActiveFloatings()[0].Collapsed {
 		t.Fatalf("floating collapse-all action should collapse all panes, got %#v", root.Shell.ActiveFloatings()[0])
 	}
-	root, _ = reducer(root, ShellContentActionMsg{ActionID: "floating.close", PaneID: "floating-1"})
+	root, _ = reducer(root, shortcutTestMessage("floating.close", "floating-1", false, 0))
 	if len(root.Shell.ActiveFloatings()) != 0 {
 		t.Fatalf("floating close action should remove floating, got %#v", root.Shell.ActiveFloatings())
 	}
@@ -4207,7 +4175,7 @@ func TestShellReducerHandlesResizeOwnerContentAction(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("west", "pane-1", "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView("west", "pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
 
-	next, effects := NewShellReducer()(root, ShellContentActionMsg{ActionID: render.ActionTerminalTakeResizeOwner.String(), PaneID: "pane-2"})
+	next, effects := NewShellReducer()(root, shortcutTestMessage("panel.take_owner", "pane-2", false, 0))
 	if len(effects) != 1 {
 		t.Fatalf("owner transfer should request authoritative resize control, got %#v", effects)
 	}
@@ -4239,7 +4207,7 @@ func TestShellReducerFloatingTakeOwnerContentActionRequiresConfirm(t *testing.T)
 	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-1", 8, 42, 10, state.TerminalResizeRoleFollower, "surface", state.TerminalFloatingViewID("floating-1"), false))
 
 	reducer := NewShellReducer()
-	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionTerminalTakeResizeOwner.String(), PaneID: "floating-pane-1", Floating: true})
+	next, effects := reducer(root, shortcutTestMessage("panel.take_owner", "floating-pane-1", true, 0))
 	if len(effects) != 1 {
 		t.Fatalf("first floating owner click should only arm confirmation timeout, got %#v", effects)
 	}
@@ -4258,7 +4226,7 @@ func TestShellReducerFloatingTakeOwnerContentActionRequiresConfirm(t *testing.T)
 		t.Fatalf("floating owner confirmation should project owner? chrome, got %#v", vm.Shell.Layout.Floating)
 	}
 
-	next, effects = reducer(next, ShellContentActionMsg{ActionID: render.ActionTerminalTakeResizeOwner.String(), PaneID: "floating-pane-1", Floating: true})
+	next, effects = reducer(next, shortcutTestMessage("panel.take_owner", "floating-pane-1", true, 0))
 	msg, ok := liveResizeMsgFromEffects(effects)
 	if !ok || msg.TerminalID != "term-1" || msg.ViewID != state.TerminalFloatingViewID("floating-1") || msg.Cols != 42 || msg.Rows != 10 {
 		t.Fatalf("second floating owner click should request authoritative resize owner, msg=%#v effects=%#v", msg, effects)
@@ -4293,7 +4261,7 @@ func TestResizeModeTerminalSizeLockKeyAndFooterEmitTerminalLockRequest(t *testin
 	}
 
 	shellReducer := NewShellReducer()
-	_, effects = shellReducer(next, ShellContentActionMsg{ActionID: render.ActionResizeLayoutLock.String()})
+	_, effects = shellReducer(next, shortcutActiveTargetTestMessage("panel.size_lock"))
 	if hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("footer lock should emit request effect, got %#v", effects)
 	}
@@ -4321,7 +4289,7 @@ func TestResizeModeTerminalLayoutKeysAndActionsShareViewLocalState(t *testing.T)
 	}
 
 	shellReducer := NewShellReducer()
-	next, _ = shellReducer(next, ShellContentActionMsg{ActionID: render.ActionResizeLayoutCenter.String()})
+	next, _ = shellReducer(next, shortcutTestMessage("resize.center", "", false, 0))
 	binding, _ = next.TerminalViews.PaneBinding(state.DefaultPaneID)
 	if binding.Layout.Mode != state.TerminalViewLayoutCenter || binding.Layout.AlignX != state.TerminalViewAlignCenter || binding.Layout.AlignY != state.TerminalViewAlignCenter {
 		t.Fatalf("footer center should use same layout command path, got %#v", binding.Layout)
@@ -4475,7 +4443,7 @@ func TestOverlayContentActionsUseSelectedItemsAndReducers(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell().OpenTerminalPool(), Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30}}
 	root.TerminalPool, _ = root.TerminalPool.ApplyList(0, []state.TerminalPoolItem{{TerminalID: "term-logs", Title: "logs", State: "running", Cols: 100, Rows: 30}}, "")
 
-	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionPoolAttachFloat.String(), Row: -1})
+	next, effects := reducer(root, shortcutTestMessage("terminal_pool.attach_float", "", false, -1))
 	if len(next.Shell.ActiveFloatings()) != 1 || next.Shell.ActiveFloatingID() != "floating-1" {
 		t.Fatalf("pool ctrl-o should create floating before attach, shell=%#v", next.Shell)
 	}
@@ -4524,7 +4492,7 @@ func TestOverlayContentActionsUseSelectedItemsAndReducers(t *testing.T) {
 	if !selectedPane {
 		t.Fatalf("expected workbench tree to contain pane-2, items=%#v", items)
 	}
-	next, _ = NewShellReducer()(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchDetach.String(), Row: -1})
+	next, _ = NewShellReducer()(root, shortcutTestMessage("workbench_tree.detach", "", false, -1))
 	if pane, ok := next.Shell.Pane(state.PaneCommandTarget{PaneID: "pane-2"}); !ok || pane.Kind != state.PaneEmpty || pane.TerminalID != "" {
 		t.Fatalf("workbench ctrl-d should detach selected pane, pane=%#v ok=%v", pane, ok)
 	}
@@ -4538,11 +4506,11 @@ func TestOverlayDeleteContentActionsDispatchTerminalRemove(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell().OpenTerminalPool()}
 	root.TerminalPool, _ = root.TerminalPool.ApplyList(0, []state.TerminalPoolItem{{TerminalID: "term-logs", Title: "logs"}}, "")
 
-	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionPoolDelete.String(), Row: -1})
-	if len(effects) != 1 || len(next.Shell.Toasts) != 0 {
+	next, effects := reducer(root, shortcutTestMessage("terminal_pool.delete", "", false, -1))
+	if len(effects) != 2 || len(next.Shell.Toasts) != 0 {
 		t.Fatalf("pool ctrl-x should dispatch terminal remove without local toast, effects=%#v toasts=%#v", effects, next.Shell.Toasts)
 	}
-	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolRemoveRequestMsg)
+	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(TerminalPoolRemoveRequestMsg)
 	if !ok || msg.TerminalID != "term-logs" {
 		t.Fatalf("pool ctrl-x should request terminal inventory remove, got %#v", msg)
 	}
@@ -4553,11 +4521,11 @@ func TestOverlayRestartContentActionsDispatchTerminalRestart(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell().OpenTerminalPool()}
 	root.TerminalPool, _ = root.TerminalPool.ApplyList(0, []state.TerminalPoolItem{{TerminalID: "term-logs", Title: "logs", State: "exited"}}, "")
 
-	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionPoolRestart.String(), Row: -1})
-	if len(effects) != 1 || len(next.Shell.Toasts) != 0 {
+	next, effects := reducer(root, shortcutTestMessage("terminal_pool.restart", "", false, -1))
+	if len(effects) != 2 || len(next.Shell.Toasts) != 0 {
 		t.Fatalf("pool ctrl-r should dispatch terminal restart without local toast, effects=%#v toasts=%#v", effects, next.Shell.Toasts)
 	}
-	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolRestartRequestMsg)
+	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(TerminalPoolRestartRequestMsg)
 	if !ok || msg.TerminalID != "term-logs" {
 		t.Fatalf("pool ctrl-r should request terminal restart, got %#v", msg)
 	}

@@ -60,7 +60,7 @@ func headerWorkspaceSegments(header HeaderVM, workspace string) []barSegment {
 		return segments
 	}
 	return []barSegment{
-		barText("  "+workspace, StyleHeaderWorkspace, 1).withAction(ActionFooterOpenTree.String()),
+		barText("  "+workspace, StyleHeaderWorkspace, 1).withAction("menu.workbench_tree"),
 	}
 }
 
@@ -203,20 +203,23 @@ func footerSummarySegmentsForFooter(footer FooterVM) []barSegment {
 		style := StyleFooterMuted
 		priority := 2
 		actionID := ""
+		invocation := actiondomain.Invocation{}
 		displayToken := token
 		if strings.HasPrefix(token, "float:") {
 			style = StyleFooterAccent
 			priority = 1
 			displayToken = footerSummaryTemplateText(footer.FloatingSummaryTemplate, defaultFooterFloatingSummaryTemplate, "count", strings.TrimSpace(strings.TrimPrefix(token, "float:")))
 			if footer.FloatingSummaryOpen {
-				actionID = ActionFloatingOverview.String()
+				actionID = "menu.floating_overview"
+				invocation = actiondomain.Invocation{ID: "menu.floating_overview", SourceActionID: "menu.floating_overview"}
 			}
 		} else if strings.HasPrefix(token, "collapsed:") {
 			style = StyleFooterAccent
 			priority = 1
 			displayToken = footerSummaryTemplateText(footer.FloatingCollapsedSummaryTemplate, defaultFooterFloatingCollapsedSummaryTemplate, "count", strings.TrimSpace(strings.TrimPrefix(token, "collapsed:")))
 			if footer.FloatingSummaryOpen {
-				actionID = ActionFloatingOverview.String()
+				actionID = "menu.floating_overview"
+				invocation = actiondomain.Invocation{ID: "menu.floating_overview", SourceActionID: "menu.floating_overview"}
 			}
 		} else if strings.HasPrefix(token, "terminals:") {
 			priority = 4
@@ -236,7 +239,7 @@ func footerSummarySegmentsForFooter(footer FooterVM) []barSegment {
 		if displayToken == "" {
 			continue
 		}
-		segments = append(segments, barText(" "+displayToken, style, priority).withAction(actionID))
+		segments = append(segments, barText(" "+displayToken, style, priority).withAction(actionID).withInvocation(invocation))
 	}
 	segments = append(segments, barText(" ", StyleFooterMuted, 4))
 	return segments
@@ -591,7 +594,7 @@ func formatFooterKeyTokenForSelection(key string, ctrlPrefixShown bool) string {
 
 func footerTailActionToken(actions []FooterActionVM) FooterActionVM {
 	for _, action := range actions {
-		if action.ActionID == ActionPoolRestart.String() {
+		if action.Invocation.ID == "terminal_pool.restart" {
 			// Terminal Pool 中 Ctrl+R 是高频恢复入口；footer 宽度不足时必须优先展示，
 			// 避免键盘入口可触发但底栏只留下 remove 这类尾部危险动作。
 			return action

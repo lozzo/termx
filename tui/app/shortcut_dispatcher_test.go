@@ -129,7 +129,7 @@ func TestOverlayShortcutMessagePreservesRowContext(t *testing.T) {
 		t.Fatalf("missing pane-2 workbench item: %#v", items)
 	}
 
-	next, _ := NewShellReducer()(root, ShellShortcutActionMsg{Invocation: invocation, Row: row})
+	next, _ := NewShellReducer()(root, ShellShortcutActionMsg{Invocation: invocation, Surface: &ShortcutSurfaceContext{ExplicitTarget: true, Row: row, HasRow: true}})
 	if next.Shell.ActivePaneID != "pane-2" || next.Shell.Overlay.Open {
 		t.Fatalf("overlay invocation lost row target context: %#v", next.Shell)
 	}
@@ -153,7 +153,7 @@ func TestFloatingSummonShortcutUsesInvocationIndexWithoutRowFallback(t *testing.
 		}
 	}
 
-	next, _ := NewShellReducer()(root, ShellShortcutActionMsg{Invocation: invocation, Row: 0})
+	next, _ := NewShellReducer()(root, ShellShortcutActionMsg{Invocation: invocation, Surface: &ShortcutSurfaceContext{ExplicitTarget: true, Row: 0, HasRow: true}})
 	if next.Shell.ActiveFloatingID() != "floating-3" {
 		t.Fatalf("parameterized summon must use invocation index, got %q", next.Shell.ActiveFloatingID())
 	}

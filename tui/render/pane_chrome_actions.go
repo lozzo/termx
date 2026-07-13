@@ -49,8 +49,8 @@ func paneChromeActionItemsFromVM(actions []ChromeActionVM) []paneChromeActionIte
 		label := action.ActionID
 		if action.Label != "" {
 			label = action.Label
-		} else if spec, ok := ProjectionByID(ProjectionID(action.ActionID)); ok && spec.HelpLabel != "" {
-			label = spec.HelpLabel
+		} else if spec, ok := ProjectionByID(ProjectionID(action.ActionID)); ok {
+			label = projectionActionLabel(spec)
 		}
 		out = append(out, paneChromeActionItemFromGlyph(action.Text, action.ActionID, label, action.Style, action.IsZoomMode, index, len(pending)))
 	}
@@ -188,7 +188,7 @@ func paneChromeActionItemsFromSpecs(ids ...ProjectionID) []paneChromeActionItem 
 	}
 	out := make([]paneChromeActionItem, 0, len(specs))
 	for index, item := range specs {
-		out = append(out, paneChromeActionItemFromGlyph(item.spec.ChromeGlyph, item.spec.ID.String(), item.spec.HelpLabel, "", false, index, len(specs)))
+		out = append(out, paneChromeActionItemFromGlyph(item.spec.ChromeGlyph, item.spec.ID.String(), projectionActionLabel(item.spec), "", false, index, len(specs)))
 	}
 	return out
 }

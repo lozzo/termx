@@ -277,20 +277,20 @@ func TestContentViewportKeepsExitedTextLeftAndCentersActions(t *testing.T) {
 	if got, want := result.Lines[1].PlainString(), "terminal exited: term-1 code:23"; !strings.HasPrefix(got, want) {
 		t.Fatalf("exited pane headline should remain left-aligned got=%q want prefix=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
 	}
-	if got, want := strings.TrimSpace(result.Lines[3].PlainString()), "► R restart current terminal ◄"; got != want {
+	if got, want := strings.TrimSpace(result.Lines[3].PlainString()), "► restart ◄"; got != want {
 		t.Fatalf("selected exited restart should be centered got=%q want=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
 	}
-	if !styledLinesContainText(result.Lines, "► R restart current terminal ◄", StyleWarning) ||
-		!styledLinesContainText(result.Lines, "[ Ctrl-F choose another terminal ]", StyleMuted) {
+	if !styledLinesContainText(result.Lines, "► restart ◄", StyleWarning) ||
+		!styledLinesContainText(result.Lines, "[ reconnect ]", StyleMuted) {
 		t.Fatalf("exited actions should keep action-specific styles, got %#v", result.Lines)
 	}
 	restart := hitRegionByAction(t, result.HitRegions, ActionExitedRestart.String())
-	restartWidth := DisplayWidth("► R restart current terminal ◄")
+	restartWidth := DisplayWidth("► restart ◄")
 	if restart.Rect != (Rect{X: (80 - restartWidth) / 2, Y: 3, W: restartWidth, H: 1}) {
 		t.Fatalf("exited restart hit region should follow centered text, got %#v", restart)
 	}
 	picker := hitRegionByAction(t, result.HitRegions, ActionExitedReconnect.String())
-	pickerWidth := DisplayWidth("[ Ctrl-F choose another terminal ]")
+	pickerWidth := DisplayWidth("[ reconnect ]")
 	if picker.Rect != (Rect{X: (80 - pickerWidth) / 2, Y: 4, W: pickerWidth, H: 1}) {
 		t.Fatalf("exited picker hit region should follow centered text, got %#v", picker)
 	}
@@ -306,12 +306,12 @@ func TestContentViewportBottomAlignsExitedPaneTailAndActions(t *testing.T) {
 		NewLine("terminal exited: term-1 code:23"),
 		NewLine("exited at: 2026-06-17T12:30:00Z"),
 		NewLine("command: bash -lc exit 23"),
-		centeredStyledLine("► R restart current terminal ◄", StyleWarning),
-		centeredStyledLine("[ Ctrl-F choose another terminal ]", StyleMuted),
+		centeredStyledLine("► restart ◄", StyleWarning),
+		centeredStyledLine("[ reconnect ]", StyleMuted),
 	}
 	regions := []HitRegion{
-		{Kind: HitRegionContentAction, Rect: Rect{Y: 8, W: DisplayWidth("► R restart current terminal ◄"), H: 1}, ActionID: ActionExitedRestart.String()},
-		{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: DisplayWidth("[ Ctrl-F choose another terminal ]"), H: 1}, ActionID: ActionExitedReconnect.String()},
+		{Kind: HitRegionContentAction, Rect: Rect{Y: 8, W: DisplayWidth("► restart ◄"), H: 1}, ActionID: ActionExitedRestart.String()},
+		{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: DisplayWidth("[ reconnect ]"), H: 1}, ActionID: ActionExitedReconnect.String()},
 	}
 
 	result := RenderContentViewport(ContentRenderRequest{
@@ -327,8 +327,8 @@ func TestContentViewportBottomAlignsExitedPaneTailAndActions(t *testing.T) {
 		"terminal exited: term-1 code:23",
 		"exited at: 2026-06-17T12:30:00Z",
 		"command: bash -lc exit 23",
-		"► R restart current terminal ◄",
-		"[ Ctrl-F choose another terminal ]",
+		"► restart ◄",
+		"[ reconnect ]",
 	}
 	for index, wantLine := range want {
 		if strings.TrimSpace(got[index]) != wantLine {
@@ -339,12 +339,12 @@ func TestContentViewportBottomAlignsExitedPaneTailAndActions(t *testing.T) {
 		t.Fatalf("exited terminal text should stay left-aligned while actions are centered, got %#v", got)
 	}
 	restart := hitRegionByAction(t, result.HitRegions, ActionExitedRestart.String())
-	restartWidth := DisplayWidth("► R restart current terminal ◄")
+	restartWidth := DisplayWidth("► restart ◄")
 	if restart.Rect != (Rect{X: (80 - restartWidth) / 2, Y: 6, W: restartWidth, H: 1}) {
 		t.Fatalf("restart hit region should follow tail-aligned action, got %#v", restart)
 	}
 	picker := hitRegionByAction(t, result.HitRegions, ActionExitedReconnect.String())
-	pickerWidth := DisplayWidth("[ Ctrl-F choose another terminal ]")
+	pickerWidth := DisplayWidth("[ reconnect ]")
 	if picker.Rect != (Rect{X: (80 - pickerWidth) / 2, Y: 7, W: pickerWidth, H: 1}) {
 		t.Fatalf("picker hit region should follow tail-aligned action, got %#v", picker)
 	}

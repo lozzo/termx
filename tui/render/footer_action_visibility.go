@@ -1,22 +1,26 @@
 package render
 
-import "strings"
+import actiondomain "github.com/lozzow/termx/tui/action"
 
 func footerActionTokensVisibleByModeAndWidth(actions []FooterActionVM, mode string, width int) []FooterActionVM {
 	if mode == "resize" {
 		return footerResizeActionTokensVisibleForWidth(actions, width)
 	}
-	if width >= 100 || (mode != "live" && mode != "normal") || !footerActionsMatchKeys(actions, []string{"^P", "^R", "^T", "^W", "^O", "^V", "^F", "^G"}) {
+	if width >= 100 || mode != "live" && mode != "normal" {
 		return actions
 	}
-	keys := []string{"^P", "^R", "^T", "^G"}
+	ids := []actiondomain.ID{"menu.panel", "menu.resize", "menu.tab", "menu.system"}
 	if width < 72 {
-		keys = []string{"^P", "^R", "^G"}
+		ids = []actiondomain.ID{"menu.panel", "menu.resize", "menu.system"}
 	}
 	if width < 56 {
-		keys = []string{"^P", "^G"}
+		ids = []actiondomain.ID{"menu.panel", "menu.system"}
 	}
-	return footerActionsByKeys(actions, keys)
+	out := footerActionsByCanonicalIDs(actions, ids)
+	if len(out) == 0 {
+		return actions
+	}
+	return out
 }
 
 func footerResizeActionTokensVisibleForWidth(actions []FooterActionVM, width int) []FooterActionVM {
@@ -24,58 +28,34 @@ func footerResizeActionTokensVisibleForWidth(actions []FooterActionVM, width int
 		return actions
 	}
 	// 中文说明：resize 窄宽 footer 不能只保留 global；center/reset 是当前 mode 仍可执行的 view-layout 入口。
-	ids := []ProjectionID{
-		ActionResizeLayoutCenter,
-		ActionResizeLeft,
-		ActionResizeRight,
-		ActionResizeLayoutReset,
-		ActionFooterGlobalMode,
+	ids := []actiondomain.ID{
+		"resize.center",
+		"resize.left",
+		"resize.right",
+		"resize.layout_reset",
+		"menu.system",
 	}
 	if width < 72 {
-		ids = []ProjectionID{
-			ActionResizeLayoutCenter,
-			ActionResizeLayoutReset,
-			ActionFooterGlobalMode,
+		ids = []actiondomain.ID{
+			"resize.center",
+			"resize.layout_reset",
+			"menu.system",
 		}
 	}
-	out := footerActionsByActionIDs(actions, ids)
+	out := footerActionsByCanonicalIDs(actions, ids)
 	if len(out) == 0 {
 		return actions
 	}
 	return out
 }
 
-func footerActionsMatchKeys(actions []FooterActionVM, keys []string) bool {
-	if len(actions) != len(keys) {
-		return false
-	}
-	for index, key := range keys {
-		if strings.TrimSpace(actions[index].Key) != key {
-			return false
-		}
-	}
-	return true
-}
-
-func footerActionsByKeys(actions []FooterActionVM, keys []string) []FooterActionVM {
-	out := make([]FooterActionVM, 0, len(keys))
-	for _, key := range keys {
-		for _, action := range actions {
-			if strings.TrimSpace(action.Key) == key {
-				out = append(out, action)
-				break
-			}
-		}
-	}
-	return out
-}
-
-func footerActionsByActionIDs(actions []FooterActionVM, ids []ProjectionID) []FooterActionVM {
+func footerActionsByCanonicalIDs(actions []FooterActionVM, ids []actiondomain.ID) []FooterActionVM {
 	out := make([]FooterActionVM, 0, len(ids))
 	for _, id := range ids {
-		actionID := id.String()
 		for _, action := range actions {
-			if strings.TrimSpace(action.ActionID) == actionID {
+			// 合并后的多动作提示没有唯一 Invocation；ActionID 在这里仅用于选择视觉 token，
+			// ClickHintOnly 保证它不会重新成为执行身份或点击 fallback。
+			if action.Invocation.ID == id || action.Click == ClickHintOnly && action.ActionID == id.String() {
 				out = append(out, action)
 				break
 			}

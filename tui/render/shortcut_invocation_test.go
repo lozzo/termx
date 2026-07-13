@@ -11,7 +11,7 @@ import (
 )
 
 func TestShortcutActionLabelPriorityUsesCanonicalDomainSpec(t *testing.T) {
-	action := FooterActionVM{Label: "render fallback", ActionID: ActionFooterPaneMode.String()}
+	action := FooterActionVM{Label: "render fallback", ActionID: "menu.panel"}
 	cases := []struct {
 		name  string
 		entry input.ShortcutEntry
@@ -40,16 +40,16 @@ func TestActionOnlyShortcutConfigKeepsDefaultFooterBindings(t *testing.T) {
 		},
 	}}}
 	actions := footerActionCatalogFromShortcuts("live", root)
-	if !containsFooterAction(actions, "^P", "custom panel", ActionFooterPaneMode.String()) {
+	if !containsFooterAction(actions, "^P", "custom panel", "menu.panel") {
 		t.Fatalf("action-only config must retain default ctrl-p with overridden label, got %#v", actions)
 	}
-	if !containsFooterActionID(actions, ActionFooterResizeMode.String()) {
+	if !containsFooterActionID(actions, "menu.resize") {
 		t.Fatalf("action-only config must retain other default bindings, got %#v", actions)
 	}
 
 	root.Config.Shortcuts.Actions["panel.close"] = state.TUIShortcutActionConfig{Label: "dismiss pane"}
 	panelActions := footerActionCatalogFromShortcuts("panel", root)
-	if !containsFooterAction(panelActions, "x/w", "dismiss pane", ActionPaneFooterClose.String()) {
+	if !containsFooterAction(panelActions, "x/w", "dismiss pane", "panel.close") {
 		t.Fatalf("aggregated default bindings must preserve action-only label override, got %#v", panelActions)
 	}
 }
@@ -70,7 +70,7 @@ func TestShortcutShowPolicyOnlyFiltersFooter(t *testing.T) {
 		},
 	}}}
 	footerActions := footerActionCatalogFromShortcuts("floating", root)
-	if containsFooterActionID(footerActions, ActionFloatingNew.String()) || !containsFooterActionID(footerActions, ActionFloatingOverview.String()) {
+	if containsFooterActionID(footerActions, "floating.new") || !containsFooterActionID(footerActions, "menu.floating_overview") {
 		t.Fatalf("show false must only remove the selected footer action: %#v", footerActions)
 	}
 	copyFooter := footerActionCatalogFromShortcuts("copy", root)
@@ -78,7 +78,7 @@ func TestShortcutShowPolicyOnlyFiltersFooter(t *testing.T) {
 		t.Fatalf("show true must expose a domain-default hidden action without a render ActionID mapping: %#v", copyFooter)
 	}
 	helpActions := helpActionCatalogFromShortcuts("floating", root)
-	if !containsFooterActionID(helpActions, ActionFloatingNew.String()) || !containsFooterActionID(helpActions, ActionFloatingOverview.String()) {
+	if !containsFooterActionID(helpActions, "floating.new") || !containsFooterActionID(helpActions, "menu.floating_overview") {
 		t.Fatalf("help must retain all effective bindings regardless of footer show: %#v", helpActions)
 	}
 	copyHelp := helpActionCatalogFromShortcuts("copy", root)
@@ -99,12 +99,12 @@ func TestEnhancedShortcutVisibilityUsesHostCapability(t *testing.T) {
 		},
 	}}}
 	withoutCapability := footerActionCatalogFromShortcuts("live", root)
-	if containsFooterActionID(withoutCapability, ActionTabSwitch.String()) || !containsFooterActionID(withoutCapability, ActionFooterTabMode.String()) {
+	if containsFooterActionID(withoutCapability, "tab.jump") || !containsFooterActionID(withoutCapability, "menu.tab") {
 		t.Fatalf("unavailable enhanced binding must be hidden while stable fallback remains: %#v", withoutCapability)
 	}
 	root.HostCapabilities = state.HostCapabilityStore{KeyboardProbed: true, KeyboardDisambiguation: true}
 	withCapability := footerActionCatalogFromShortcuts("live", root)
-	if !containsFooterActionID(withCapability, ActionTabSwitch.String()) {
+	if !containsFooterActionID(withCapability, "tab.jump") {
 		t.Fatalf("confirmed enhanced binding should enter footer catalog: %#v", withCapability)
 	}
 }
@@ -114,10 +114,44 @@ func TestFooterHitRegionCarriesExactShortcutInvocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	footer := FooterVM{Visible: true, Mode: "pane", ActionTokens: []FooterActionVM{{Key: "q/w", Label: "CLOSE", ActionID: ActionPaneFooterClose.String(), Invocation: invocation, Click: ClickClickable}}}
+	footer := FooterVM{Visible: true, Mode: "pane", ActionTokens: []FooterActionVM{{Key: "q/w", Label: "CLOSE", ActionID: "panel.close", Invocation: invocation, Click: ClickClickable}}}
 	regions := appendFooterHitRegions(nil, footer, Rect{W: 80, H: 1}, Rect{}, Rect{W: 80, H: 1})
 	if len(regions) != 1 || regions[0].Invocation.Signature() != invocation.Signature() {
 		t.Fatalf("footer hit region lost invocation: %#v", regions)
+	}
+}
+
+func TestEveryExecutableHitRegionCarriesCanonicalInvocation(t *testing.T) {
+	roots := []state.Root{
+		{Shell: state.DefaultShell()},
+		{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal)},
+		{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModePane)},
+		{Shell: state.DefaultShell().OpenTerminalPicker()},
+		{Shell: state.DefaultShell().OpenTerminalPool(), TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", State: "running"}}}},
+	}
+	for rootIndex, root := range roots {
+		for _, width := range []int{32, 120} {
+			vm := NewRenderVMBuilder().Build(root)
+			plan := MeasureLayout(vm.Shell, Rect{W: width, H: 24})
+			for _, region := range plan.HitRegions {
+				if region.ActionID == "" {
+					continue
+				}
+				if region.Invocation.ID == "" {
+					t.Fatalf("root=%d width=%d action=%q has no canonical invocation: %#v", rootIndex, width, region.ActionID, region)
+				}
+				if _, ok := actiondomain.SpecByID(region.Invocation.ID); !ok {
+					t.Fatalf("root=%d width=%d action=%q references unknown invocation %q", rootIndex, width, region.ActionID, region.Invocation.ID)
+				}
+			}
+		}
+	}
+}
+
+func TestAppendRegionRejectsActionWithoutProducerInvocation(t *testing.T) {
+	region := HitRegion{Kind: HitRegionContentAction, Rect: Rect{W: 10, H: 1}, ActionID: "empty.attach"}
+	if got := appendRegion(nil, region, Rect{W: 80, H: 24}); len(got) != 0 {
+		t.Fatalf("append layer must fail closed instead of deriving invocation: %#v", got)
 	}
 }
 
@@ -183,6 +217,9 @@ func TestOverlayShortcutBindingPreservesTargetContextAndHonorsCatalog(t *testing
 		PaneID:   "pane-2",
 		Row:      3,
 		ActionID: ActionWorkbenchOpen.String(),
+		Invocation: actiondomain.Invocation{ID: "workbench_tree.open",
+			SourceActionID: "workbench_tree.open"},
+		TargetMode: HitTargetExplicit,
 	}}
 	bound := bindOverlayShortcutInvocations(OverlayWorkbenchTree, regions, state.TUIShortcutConfig{})
 	if len(bound) != 1 || bound[0].Invocation.ID != "workbench_tree.open" || bound[0].PaneID != "pane-2" || bound[0].Row != 3 {
@@ -206,6 +243,9 @@ func TestFloatingOverviewRowsUseOpenInvocationBeyondNumericSummonRange(t *testin
 			PaneID:   "floating-" + strconv.Itoa(index+1),
 			Row:      index,
 			ActionID: ActionFloatingSummon.String(),
+			Invocation: actiondomain.Invocation{ID: "floating_overview.open",
+				SourceActionID: "floating_overview.open"},
+			TargetMode: HitTargetExplicit,
 		}
 	}
 	shortcuts := state.TUIShortcutConfig{Configured: true, Scenes: map[string]state.TUIShortcutSceneConfig{

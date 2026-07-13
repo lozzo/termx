@@ -327,7 +327,7 @@ KS013 实际收口边界：
 - `tui/action` 的 `ID`、`Spec`、`Invocation`、`ParamSpec`、默认语义 label 和 mouse/drag/CTA canonical ID 是唯一 identity 真值；该包只能依赖标准库，视觉 projection 名称不得注册为 action。
 - `tui/shortcut` 持有 `DefaultBinding`、`BindingPolicy`、唯一内置 scene registry、footer/help binding visibility；`tui/input`、`tui/config` 和 `tui/render` 只能通过 scene API 编译或投影 catalog。
 - app 的 `actionHandlerRegistry` 覆盖全部 203 个默认 keyboard binding，只按 canonical `action.ID` 选择 handler；overlay 同样直接进入该 registry，alias、scene、source string 和 render projection 均不参与执行。
-- render 使用本地 `ProjectionID`，`ProjectionSpec.CanonicalActionID` 显式引用 canonical action，并已删除 dispatch。`FooterKey`、`FooterLabel`、`HelpLabel` 以及只用于 surface 投影的 `ShortcutActionRenderID` 是 KS016 迁移清单；它们不能进入 keyboard 执行路径。
+- render 使用本地 `ProjectionID`，`ProjectionSpec.CanonicalActionID` 单向引用 canonical action，并已删除 dispatch、固定 footer/help 元数据和 `ShortcutActionRenderID`。所有可执行 footer 与 HitRegion 直接携带 canonical invocation。
 - pane/header/content/drag 中仍未携带 invocation 的 producer 继续由 debt manifest 锁定到 KS016；不得在 KS013 用 legacy projection ID fallback 冒充 canonical invocation。
 
 ### KS014：输入协议、按键规范化与 scene 状态
@@ -369,6 +369,7 @@ KS015 实际执行契约：
 - 所有快捷键 token 和快捷键提示 label 从同一编译 shortcut catalog 投影；header/pane/floating chrome、内容 CTA 等通用 action label 使用 `tui/action` 默认语义 label 或显式 view-model 内容，只有 surface 展示快捷键提示时才应用 shortcut label override。
 - 删除 `Ctrl-F`、`Ctrl-T then c`、`R restart` 等会与用户配置漂移的硬编码键位文案；说明文字可以静态存在，但操作提示必须查询 invocation projection。
 - keyboard 与 click 对同一 action 生成相同 invocation 和 reducer/effect 链；聚合或条件性 hint 无法确定唯一 invocation 时必须 hint-only。
+- 可执行 HitRegion producer 同时声明 canonical Invocation 与 active/explicit TargetMode；row target 另以 HasRow 表达存在性，并在 app 进入 specialized/generic handler 前按当前列表验证边界，禁止缺失、过期或越界目标回退到 active/首末项。
 - 窄屏裁剪、增强键盘 capability、显式隐藏、空 catalog、禁用 action 和不可用业务状态都不能留下孤立键位或无效 hit region。
 
 ### KS017：配置、文档与真实终端验收

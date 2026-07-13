@@ -104,7 +104,7 @@ func runDefaultActionToOwnerBoundary(t *testing.T, root state.Root, invocation a
 		NewCopyModeReducer(copyDeps), NewCopyModeResizeRebindReducer(copyDeps),
 		NewTerminalInputRouterReducer(liveDeps), NewLiveReducer(liveDeps), NewTerminalLayoutResizeReducer(),
 	)
-	queue := []Msg{ShellShortcutActionMsg{Invocation: invocation, Row: -1}}
+	queue := []Msg{ShellShortcutActionMsg{Invocation: invocation}}
 	execution := defaultActionExecution{
 		root: root, terminal: terminal, core: core, clipboard: clipboard,
 		workbenchStorage: workbenchStorage, clipboardStorage: clipboardStorage,
@@ -658,11 +658,11 @@ func TestTabWorkspaceFooterHintsMatchInputBindings(t *testing.T) {
 			mode:  state.InteractionModeTab,
 			input: input.InteractionModeTab,
 			expect: map[string]string{
-				render.ActionTabCreate.String():   "tab create",
-				render.ActionTabPrevious.String(): "tab previous",
-				render.ActionTabNext.String():     "tab next",
-				render.ActionTabRename.String():   "tab rename",
-				render.ActionTabClose.String():    "tab close",
+				render.ActionTabCreate.String(): "tab create",
+				"tab.previous":                  "tab previous",
+				"tab.next":                      "tab next",
+				"tab.rename":                    "tab rename",
+				render.ActionTabClose.String():  "tab close",
 			},
 		},
 		{
@@ -670,11 +670,11 @@ func TestTabWorkspaceFooterHintsMatchInputBindings(t *testing.T) {
 			mode:  state.InteractionModeWorkspace,
 			input: input.InteractionModeWorkspace,
 			expect: map[string]string{
-				render.ActionFooterNewWorkspace.String():      "workspace create",
-				render.ActionFooterPreviousWorkspace.String(): "workspace previous",
-				render.ActionFooterNextWorkspace.String():     "workspace next",
-				render.ActionFooterRenameWorkspace.String():   "workspace rename",
-				render.ActionFooterDeleteWorkspace.String():   "workspace delete confirm=accepted",
+				"workspace.create":   "workspace create",
+				"workspace.previous": "workspace previous",
+				"workspace.next":     "workspace next",
+				"workspace.rename":   "workspace rename",
+				"workspace.delete":   "workspace delete confirm=accepted",
 			},
 		},
 	}
@@ -720,83 +720,4 @@ func firstFooterShortcutKey(key string) string {
 		return key
 	}
 	return strings.TrimSpace(parts[0])
-}
-
-func actionCatalogDispatchRoot() state.Root {
-	shell := state.DefaultShell().
-		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
-		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}).
-		OpenTerminalPool()
-	pool := state.TerminalPoolStore{}
-	pool = pool.RequestList()
-	pool, _ = pool.ApplyList(pool.RequestSeq, []state.TerminalPoolItem{{TerminalID: "term-1", Title: "main", State: "running"}}, "")
-	return state.Root{
-		Shell:        shell,
-		Viewport:     state.ViewportStore{Cols: 80, Rows: 24, Valid: true},
-		TerminalPool: pool,
-		Session:      state.TerminalSessionStore{TerminalID: "term-1"},
-	}
-}
-
-func hasUnknownActionToast(root state.Root, actionID string) bool {
-	for _, toast := range root.Shell.Toasts {
-		if toast.Title == "content action" && strings.Contains(toast.Body, "unknown "+actionID) {
-			return true
-		}
-	}
-	return false
-}
-
-func TestActionCatalogCopyAndModeAdapterEffectsRemainMessages(t *testing.T) {
-	reducer := NewShellReducer()
-	root := actionCatalogDispatchRoot()
-	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionFooterCopyMode.String()})
-	if next.Generation != root.Generation || len(effects) != 1 {
-		t.Fatalf("copy footer action should remain a message adapter effect, root=%#v effects=%#v", next, effects)
-	}
-	msg := effects[0].(FuncEffect).Run(context.Background())
-	actionMsg, ok := msg.(ShellShortcutActionMsg)
-	if !ok || actionMsg.Invocation.ID != "menu.copy" {
-		t.Fatalf("copy footer action should emit canonical copy invocation, got %#v", msg)
-	}
-}
-
-func TestActionCatalogPaneDetachAndQuitAdapterEffectsRemainMessages(t *testing.T) {
-	reducer := NewShellReducer()
-	root := actionCatalogDispatchRoot()
-
-	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionPaneFooterDetach.String()})
-	if len(effects) != 1 {
-		t.Fatalf("pane detach footer action should persist through workbench command, root=%#v effects=%#v", next, effects)
-	}
-	msg := effects[0].(FuncEffect).Run(context.Background())
-	persist, ok := msg.(WorkbenchStoragePersistRequestMsg)
-	if !ok || persist.Reason != string(state.WorkbenchCommandPaneDetach) {
-		t.Fatalf("pane detach footer action should emit detach persist request, got %#v", msg)
-	}
-	if next.Shell.EnsureDefaults().Workspace.Tabs[0].Panes[0].Kind != state.PaneEmpty {
-		t.Fatalf("pane detach footer action should leave active pane unconnected, got %#v", next.Shell.Workspace.Tabs[0].Panes[0])
-	}
-
-	next, effects = reducer(root, ShellContentActionMsg{ActionID: render.ActionFooterQuit.String()})
-	if next.Generation != root.Generation || len(effects) != 1 {
-		t.Fatalf("quit footer action should stay as runtime message effect, root=%#v effects=%#v", next, effects)
-	}
-	if _, ok := effects[0].(FuncEffect).Run(context.Background()).(QuitMsg); !ok {
-		t.Fatalf("quit footer action should emit QuitMsg, got %#v", effects[0])
-	}
-}
-
-func TestActionCatalogPanePresentationFooterActionsUsePaneCommands(t *testing.T) {
-	reducer := NewShellReducer()
-	root := actionCatalogDispatchRoot()
-
-	next, _ := reducer(root, ShellContentActionMsg{ActionID: render.ActionPaneFooterSplitLine.String()})
-	if next.Shell.EnsureDefaults().PanelPresentation != state.PanelPresentationSplitLine {
-		t.Fatalf("split-line footer action should update panel presentation, got %q", next.Shell.PanelPresentation)
-	}
-	next, _ = reducer(next, ShellContentActionMsg{ActionID: render.ActionPaneFooterCard.String()})
-	if next.Shell.EnsureDefaults().PanelPresentation != state.PanelPresentationCard {
-		t.Fatalf("card footer action should update panel presentation, got %q", next.Shell.PanelPresentation)
-	}
 }

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/tui/render"
 	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
@@ -301,7 +300,6 @@ func TestShellReducerActionCommandCanonicalizesAliasesAndParameters(t *testing.T
 	if !ok || paramMsg.Invocation.ID != "tab.jump" || paramMsg.Invocation.Params["index"] != 2 {
 		t.Fatalf("parameterized command lost canonical parameter: %#v", paramMsg)
 	}
-	paramMsg.Row = -1
 	paramRoot, effects = reducer(paramRoot, paramMsg)
 	for _, effect := range effects {
 		if fn, ok := effect.(FuncEffect); ok {
@@ -488,7 +486,7 @@ func TestShellReducerWorkbenchTreeCRUDContentActionsUseWorkbenchCommands(t *test
 	root := state.Root{Shell: shell}
 
 	root = selectWorkbenchTreeKind(t, root, state.WorkbenchTreeKindPane, "pane-logs")
-	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchRename.String()})
+	next, effects := reducer(root, shortcutTestMessage("workbench_tree.rename", "", false, 0))
 	if !next.Shell.Overlay.Open || next.Shell.Overlay.Prompt.Purpose != "pane.rename" || next.Shell.Overlay.Prompt.TargetID != "pane-logs" {
 		t.Fatalf("tree rename pane should open targeted prompt, root=%#v effects=%#v", next, effects)
 	}
@@ -508,20 +506,20 @@ func TestShellReducerWorkbenchTreeCRUDContentActionsUseWorkbenchCommands(t *test
 
 	next.Shell = next.Shell.OpenWorkbenchTree()
 	root = selectWorkbenchTreeKind(t, next, state.WorkbenchTreeKindPane, "pane-logs")
-	next, effects = reducer(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchDelete.String()})
-	if next.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-logs"}) || len(effects) != 1 {
+	next, effects = reducer(root, shortcutTestMessage("workbench_tree.delete", "", false, 0))
+	if next.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-logs"}) || len(effects) != 2 {
 		t.Fatalf("tree delete pane should close through workbench command and persist, root=%#v effects=%#v", next, effects)
 	}
-	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandPaneClose) {
+	if msg := effects[1].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandPaneClose) {
 		t.Fatalf("expected tree pane delete persist, got %#v", msg)
 	}
 
 	root = state.Root{Shell: state.DefaultShell().OpenWorkbenchTree()}
-	next, effects = reducer(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchNew.String()})
-	if len(next.Shell.Workspaces) != 2 || next.Shell.Workspace.ID == state.DefaultWorkspaceID || len(effects) != 1 {
+	next, effects = reducer(root, shortcutTestMessage("workbench_tree.new", "", false, 0))
+	if len(next.Shell.Workspaces) != 2 || next.Shell.Workspace.ID == state.DefaultWorkspaceID || len(effects) != 2 {
 		t.Fatalf("tree new on workspace should create workspace through workbench command, root=%#v effects=%#v", next, effects)
 	}
-	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandWorkspaceCreate) {
+	if msg := effects[1].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandWorkspaceCreate) {
 		t.Fatalf("expected tree new persist, got %#v", msg)
 	}
 }
@@ -542,8 +540,8 @@ func TestShellReducerWorkbenchTreeCRUDTargetsSelectedWorkspace(t *testing.T) {
 
 	root := state.Root{Shell: shell.OpenWorkbenchTree()}
 	root = selectWorkbenchTreeItemInWorkspace(t, root, state.WorkbenchTreeKindTab, remoteID, state.DefaultTabID)
-	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchRename.String()})
-	if len(effects) != 0 || !next.Shell.Overlay.Open || next.Shell.Overlay.Prompt.TargetWorkspaceID != remoteID || next.Shell.Overlay.Prompt.TargetID != state.DefaultTabID {
+	next, effects := reducer(root, shortcutTestMessage("workbench_tree.rename", "", false, 0))
+	if len(effects) != 1 || !next.Shell.Overlay.Open || next.Shell.Overlay.Prompt.TargetWorkspaceID != remoteID || next.Shell.Overlay.Prompt.TargetID != state.DefaultTabID {
 		t.Fatalf("tree tab rename should keep selected workspace target, root=%#v effects=%#v", next, effects)
 	}
 	next.Shell = next.Shell.SetPromptValue("remote-main")
@@ -570,8 +568,8 @@ func TestShellReducerWorkbenchTreeCRUDTargetsSelectedWorkspace(t *testing.T) {
 	}
 	root = state.Root{Shell: next.Shell.OpenWorkbenchTree()}
 	root = selectWorkbenchTreeItemInWorkspace(t, root, state.WorkbenchTreeKindTab, remoteID, state.DefaultTabID)
-	next, effects = reducer(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchNew.String()})
-	if len(effects) != 1 {
+	next, effects = reducer(root, shortcutTestMessage("workbench_tree.new", "", false, 0))
+	if len(effects) != 2 {
 		t.Fatalf("tree tab new should persist, root=%#v effects=%#v", next, effects)
 	}
 	remoteWorkspace, ok = findWorkspaceForTest(next.Shell.Workspaces, remoteID)
@@ -589,8 +587,8 @@ func TestShellReducerWorkbenchTreeCRUDTargetsSelectedWorkspace(t *testing.T) {
 	}
 	root = state.Root{Shell: next.Shell.OpenWorkbenchTree()}
 	root = selectWorkbenchTreeItemInWorkspace(t, root, state.WorkbenchTreeKindTab, remoteID, "tab-2")
-	next, effects = reducer(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchDelete.String()})
-	if len(effects) != 1 {
+	next, effects = reducer(root, shortcutTestMessage("workbench_tree.delete", "", false, 0))
+	if len(effects) != 2 {
 		t.Fatalf("tree tab delete should persist, root=%#v effects=%#v", next, effects)
 	}
 	remoteWorkspace, ok = findWorkspaceForTest(next.Shell.Workspaces, remoteID)

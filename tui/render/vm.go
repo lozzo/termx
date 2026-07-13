@@ -16,6 +16,16 @@ type RenderVM struct {
 
 type HitRegionKind string
 
+// HitTargetMode 声明可执行命中区如何解析业务目标。
+// Active 复用 keyboard 的当前目标语义；Explicit 要求 producer 提供 pane/row 等 surface context，
+// 目标缺失时 app 必须 fail closed，不能回退到 active target。
+type HitTargetMode string
+
+const (
+	HitTargetActive   HitTargetMode = "active"
+	HitTargetExplicit HitTargetMode = "explicit"
+)
+
 const (
 	HitRegionHistoryRow    HitRegionKind = "history-row"
 	HitRegionStatus        HitRegionKind = "status"
@@ -47,10 +57,12 @@ type HitRegion struct {
 	Rect               Rect
 	LineID             uint64
 	Row                int
+	HasRow             bool
 	PaneID             string
 	Floating           bool
 	ActionID           string
 	Invocation         actiondomain.Invocation
+	TargetMode         HitTargetMode
 	Direction          string
 	SplitPath          string
 	ResizeBeforePaneID string
@@ -235,13 +247,12 @@ func footerMode(root state.Root, shell state.ShellStore) string {
 func footerActionCatalogForRoot(mode string, root state.Root, shell state.ShellStore) []FooterActionVM {
 	tokens := footerActionCatalogFromShortcuts(mode, root)
 	if root.CurrentBackNavigationLayer() != state.BackNavigationNone {
-		back := footerActionFor(ActionShortcutExit)
-		back.Key = "Esc"
+		back := FooterActionVM{Key: "Esc", Label: "BACK", ActionID: "shortcut.exit", Style: StyleStatusWarning, Click: ClickHintOnly}
 		tokens = append(tokens, back)
 	}
 	out := make([]FooterActionVM, 0, len(tokens))
 	for _, token := range tokens {
-		if footerActionAvailable(token.ActionID, mode, root, shell) {
+		if footerActionAvailable(token, mode, root, shell) {
 			out = append(out, token)
 		}
 	}
@@ -249,36 +260,40 @@ func footerActionCatalogForRoot(mode string, root state.Root, shell state.ShellS
 }
 
 // 中文说明：这里仅过滤可见 footer token；reducer 仍负责最终语义校验和错误反馈。
-func footerActionAvailable(actionID string, mode string, root state.Root, shell state.ShellStore) bool {
+func footerActionAvailable(action FooterActionVM, mode string, root state.Root, shell state.ShellStore) bool {
+	actionID := action.Invocation.ID
+	if actionID == "" {
+		actionID = actiondomain.ID(action.ActionID)
+	}
 	if actionID == "" {
 		return true
 	}
-	switch ProjectionID(actionID) {
-	case ActionPaneFooterClose:
+	switch actionID {
+	case "panel.close":
 		return activeTabPaneCount(shell) > 1
-	case ActionPaneFooterDetach:
+	case "panel.detach":
 		binding, ok := root.TerminalViews.PaneBinding(shell.ActivePaneID)
 		return ok && binding.TerminalID != ""
-	case ActionPaneFooterFocus:
+	case "panel.focus_next", "panel.focus_prev":
 		return activeTabPaneCount(shell) > 1
-	case ActionPaneFooterBalance, ActionResizeBalance, ActionResizeLeft, ActionResizeRight, ActionResizeUp, ActionResizeDown:
+	case "panel.balance", "resize.left", "resize.left_large", "resize.right", "resize.right_large", "resize.up", "resize.up_large", "resize.down", "resize.down_large":
 		return activeTabPaneCount(shell) > 1
-	case ActionTabPrevious, ActionTabNext, ActionTabClose:
+	case "tab.previous", "tab.next", "tab.close", "tab.kill":
 		return activeWorkspaceTabCount(shell) > 1
-	case ActionFooterPreviousWorkspace, ActionFooterNextWorkspace, ActionFooterDeleteWorkspace:
+	case "workspace.previous", "workspace.next", "workspace.delete":
 		return len(shell.ReadonlyDefaults().Workspaces) > 1
-	case ActionFooterCloseToast, ActionFooterClearToasts:
+	case "system.close_toast", "system.clear_toasts":
 		return len(shell.ReadonlyDefaults().Toasts) > 0
-	case ActionFloatingSummon, ActionFloatingToggleAll, ActionFloatingShowAll, ActionFloatingCollapseAll:
+	case "floating.summon", "floating.toggle_all", "floating_overview.show_all", "floating_overview.collapse_all":
 		return len(shell.ActiveFloatings()) > 0
-	case ActionFloatingTakeOwner, ActionFloatingFit, ActionFloatingAutoFit, ActionFloatingCenter, ActionFloatingCollapse, ActionFloatingClose:
+	case "floating.take_owner", "floating.fit", "floating.auto_fit", "floating.center", "floating.collapse", "floating.close":
 		return shell.ActiveFloatingID() != "" || mode == string(state.OverlayFloatingOverview) && len(shell.ActiveFloatings()) > 0
-	case ActionPoolAttach, ActionPoolAttachTab, ActionPoolAttachFloat, ActionPoolRestart, ActionPoolEdit, ActionPoolKill, ActionPoolDelete:
+	case "terminal_pool.attach", "terminal_pool.attach_tab", "terminal_pool.attach_float", "terminal_pool.restart", "terminal_pool.edit", "terminal_pool.kill", "terminal_pool.delete":
 		if mode == string(state.OverlayTerminalPool) {
 			return len(state.TerminalPoolPageItems(root)) > 0
 		}
 		return len(root.TerminalPool.Items) > 0
-	case ActionClipboardHistoryPaste, ActionClipboardHistoryEdit, ActionClipboardHistoryDelete:
+	case "clipboard_history.paste", "clipboard_history.edit", "clipboard_history.delete":
 		return len(state.ClipboardHistoryItems(root)) > 0
 	default:
 		return true
@@ -299,18 +314,6 @@ func activeTabPaneCount(shell state.ShellStore) int {
 		}
 	}
 	return 0
-}
-
-func footerActionFor(id ProjectionID) FooterActionVM {
-	spec, ok := ProjectionByID(id)
-	if !ok {
-		return FooterActionVM{ActionID: id.String()}
-	}
-	return footerActionFromSpec(spec)
-}
-
-func footerActionFromSpec(spec ProjectionSpec) FooterActionVM {
-	return FooterActionVM{Key: spec.FooterKey, Label: spec.FooterLabel, ActionID: spec.ID.String(), Style: spec.FooterStyle}
 }
 
 func activeTargetSummary(shell state.ShellStore, root state.Root) string {
@@ -772,7 +775,7 @@ func paneChromeActionVMWithZoomMode(id ProjectionID, style StyleToken, zoomMode 
 	if !ok {
 		return ChromeActionVM{ActionID: id.String(), Style: style, IsZoomMode: zoomMode}
 	}
-	return ChromeActionVM{Text: spec.ChromeGlyph, ActionID: spec.ID.String(), Label: spec.HelpLabel, Style: style, IsZoomMode: zoomMode}
+	return ChromeActionVM{Text: spec.ChromeGlyph, ActionID: spec.ID.String(), Label: projectionActionLabel(spec), Style: style, IsZoomMode: zoomMode}
 }
 
 func paneChromeZoomActionVM(style StyleToken, zoomMode bool) ChromeActionVM {
@@ -1438,7 +1441,7 @@ func liveExitedContentLines(surface state.TerminalSurfaceStore, session state.Te
 		text := emptyPaneActionLabel(action.Label, selected)
 		line := centeredStyledLine(text, action.Style)
 		lines = append(lines, line)
-		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: len(lines) - 1, W: DisplayWidth(text), H: 1}, ActionID: action.ID.String()})
+		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: len(lines) - 1, W: DisplayWidth(text), H: 1}, ActionID: action.ID.String(), Invocation: invocationForProjection(action.ID), TargetMode: HitTargetExplicit})
 	}
 	return lines, regions
 }
@@ -1455,7 +1458,7 @@ func liveExitedActionLines(selectedIndex int) ([]Line, []HitRegion) {
 		text := emptyPaneActionLabel(action.Label, selected)
 		line := centeredStyledLine(text, action.Style)
 		lines = append(lines, line)
-		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: len(lines) - 1, W: DisplayWidth(text), H: 1}, ActionID: action.ID.String()})
+		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: len(lines) - 1, W: DisplayWidth(text), H: 1}, ActionID: action.ID.String(), Invocation: invocationForProjection(action.ID), TargetMode: HitTargetExplicit})
 	}
 	return lines, regions
 }
@@ -1472,7 +1475,7 @@ func liveDisconnectedActionLines(selectedIndex int) ([]Line, []HitRegion) {
 		text := emptyPaneActionLabel(action.Label, selected)
 		line := centeredStyledLine(text, action.Style)
 		lines = append(lines, line)
-		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: len(lines) - 1, W: DisplayWidth(text), H: 1}, ActionID: action.ID.String()})
+		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: len(lines) - 1, W: DisplayWidth(text), H: 1}, ActionID: action.ID.String(), Invocation: invocationForProjection(action.ID), TargetMode: HitTargetExplicit})
 	}
 	return lines, regions
 }

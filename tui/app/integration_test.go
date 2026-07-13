@@ -4458,7 +4458,7 @@ func TestCopyModeFooterOlderActionUsesAuthoritativeHistoryPath(t *testing.T) {
 	)
 	host.SetSize(80, 24)
 
-	if err := runtime.Post(ShellContentActionMsg{ActionID: render.ActionCopyOlder.String()}); err != nil {
+	if err := runtime.Post(shortcutTestMessage("menu.copy", "", false, 0)); err != nil {
 		t.Fatalf("post copy footer latest action: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -4468,7 +4468,7 @@ func TestCopyModeFooterOlderActionUsesAuthoritativeHistoryPath(t *testing.T) {
 		t.Fatalf("copy footer action should enter latest through copy reducer, got %#v", core.LatestRequests)
 	}
 
-	action := frameActionHitRegion(t, lastFrame(t, host.Frames()), render.ActionCopyOlder.String(), "")
+	action := frameActionHitRegion(t, lastFrame(t, host.Frames()), "copy.request_older", "")
 	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
 		t.Fatalf("send copy footer older click: %v", err)
 	}

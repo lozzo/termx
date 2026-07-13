@@ -41,7 +41,7 @@ KS012 重新盘点后的机器可读基线位于 `shortcut-contract-debt.json`�
 | `Ctrl-O` | 进入 floating 场景 | footer `^O FLOAT` | help 只列 floating 分组，不列入口详情 |
 | `Ctrl-T` | 进入 tab 场景 | footer `^T TAB` | 后续可加 `Ctrl-1..9` 直跳 tab |
 | `Ctrl-W` | 进入 workspace 场景 | footer `^W WORKSPACE` | 与部分 shell/readline 常用键冲突，需可配置 |
-| `Ctrl-F` | 打开 Terminal Picker | footer `^F PICKER`，help `Ctrl-f picker` | empty/exited 内容也写死 `Ctrl-F` 文案 |
+| `Ctrl-F` | 打开 Terminal Picker | footer/help 均从当前 shortcut catalog 投影 | empty/exited CTA 不再写死键位 |
 | `Ctrl-V` | 进入 copy/history | footer `^V COPY` | root 下抢占 terminal 的 literal Ctrl-V |
 | `PageUp` | 进入 copy/history，copy active 时请求 older | copy footer `PgUp SCROLL` | 鼠标滚轮也有类似入口 |
 | `Esc` | normal 下透传 ESC；按 suggestion、overlay、copy、sticky 层级返回一层 | 可返回时 footer 自动显示 `Esc BACK` | 全局保留键，不来自 shortcut 配置 |
@@ -212,7 +212,7 @@ KS012 重新盘点后的机器可读基线位于 `shortcut-contract-debt.json`�
 | Prompt | `Enter` / `Esc` | 提交 / 先退出 suggestion focus，再次 Esc 取消 prompt | footer `enter submit` + 自动 `Esc BACK` | Esc 每次只返回一层 |
 | Help | `Enter` / `Esc` | close help | footer `enter close` + 自动 `Esc BACK` | Enter 可配置，Esc 固定全局返回 |
 
-## 内容区 CTA 与写死提示
+## 内容区 CTA 与提示
 
 | 位置 | 实际按键 | 触发 | 页面展示 | 问题 |
 | --- | --- | --- | --- | --- |
@@ -220,13 +220,13 @@ KS012 重新盘点后的机器可读基线位于 `shortcut-contract-debt.json`�
 | empty pane CTA | `Enter` | 执行当前选中 CTA | 内容按钮 | 不在 footer/help catalog 中 |
 | disconnected pane CTA | `Up` / `Down` | 在 reconnect / disconnect 间移动选择 | 内容按钮高亮 | 不在 footer/help catalog 中 |
 | disconnected pane CTA | `Enter` | 执行当前选中 CTA | 内容按钮 | 不在 footer/help catalog 中 |
-| disconnected pane CTA | `r` / `R` | 直接 reconnect | 内容按钮只显示 Reconnect this pane | 大写/小写都有效，但没有明确提示 |
 | exited pane CTA | `Up` / `Down` | 在 restart / choose another terminal 间移动选择 | 内容按钮高亮 | 不在 footer/help catalog 中 |
 | exited pane CTA | `Enter` | 执行当前选中 CTA | 内容按钮 | 不在 footer/help catalog 中 |
-| exited pane CTA | `r` / `R` | 直接 restart | 内容按钮显示 `R restart current terminal` | `r` 也有效但文案只写大写 `R` |
-| exited pane 内容 | 文案 `Ctrl-F choose another terminal` | 打开 picker | 内容按钮/提示 | 文案不从 key catalog 生成 |
-| empty workspace 内容 | 文案 `Ctrl-F open terminal picker`、`Ctrl-T then c create a new tab` | 打开 picker / tab create | 内容提示 | 文案不从 key catalog 生成 |
-| Help Most used | 文案 `Ctrl-p pane`、`Ctrl-r resize`、`Ctrl-f picker`、`Ctrl-g global` | 只读帮助 | help 内容 | 只列部分 root 入口，且格式和 footer 不一致 |
+| exited pane 内容 | canonical reconnect CTA | 打开 picker | canonical HitRegion invocation | 不写死键位文案 |
+| empty workspace 内容 | canonical picker / tab create CTA | 打开 picker / tab create | canonical HitRegion invocation | 不写死组合键步骤 |
+| Help | 当前 scene 的编译 shortcut catalog | 只读帮助与 close action | label/key 与 footer 同源，close 携带 canonical invocation | 不维护第二份默认键表 |
+
+退出态和断线态不再隐式识别 `r/R`；内容 CTA 只接受方向键选择和 `Enter`，具体动作身份来自 `tui/action` 的有序 CTA action 组。用户自定义快捷键只由 scene catalog 接管，内容区不会发明未展示的按键。
 
 ## 旧配置入口
 

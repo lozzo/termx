@@ -77,30 +77,13 @@ func PaneCommandFromHitRegion(region render.HitRegion) (state.PaneCommand, bool)
 		Source: state.PaneCommandSourceMouse,
 	}
 	switch region.Kind {
-	case render.HitRegionPaneAction:
-		spec, ok := render.ProjectionByIDString(region.ActionID)
-		if !ok {
-			return state.PaneCommand{}, false
-		}
-		switch spec.ID {
-		case render.ActionPaneSplitDown:
-			command.Action = state.PaneCommandSplit
-			command.SplitDirection = state.SplitDirectionHorizontal
-		case render.ActionPaneSplitRight:
-			command.Action = state.PaneCommandSplit
-			command.SplitDirection = state.SplitDirectionVertical
-		case render.ActionPaneZoom:
-			command.Action = state.PaneCommandToggleZoom
-		default:
-			return state.PaneCommand{}, false
-		}
 	case render.HitRegionPaneResize:
 		command.Action = state.PaneCommandResize
 		command.ResizeDirection = state.PaneResizeRight
 		command.Delta = 1
 		command.ResizeSplitPath = region.SplitPath
 		command.ResizeGroupCells = paneResizeGroupFromHitRegion(region)
-	case render.HitRegionPaneChrome, render.HitRegionPaneContent:
+	case render.HitRegionPaneContent:
 		command.Action = state.PaneCommandFocus
 	default:
 		return state.PaneCommand{}, false

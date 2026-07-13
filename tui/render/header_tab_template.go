@@ -137,7 +137,7 @@ func headerWorkspaceTemplateSegments(format string, workspace string) []barSegme
 		Workspace:    workspace,
 		WorkspaceID:  workspace,
 		Active:       true,
-		SwitchAction: ActionFooterOpenTree.String(),
+		SwitchAction: "menu.workbench_tree",
 	})
 }
 

@@ -531,8 +531,8 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Header: HeaderVM{Visible: true, Workspace: "main", Tab: "1", ActivePane: "pane-1", TerminalSummary: "term:1", FloatingSummary: "float:0", Notice: "ok"},
 		Footer: FooterVM{Visible: true, Mode: "live", Hint: "term-1", ActionTokens: []FooterActionVM{
-			{Key: "^P", Label: "PANE", ActionID: ActionFooterPaneMode.String()},
-			{Key: "^R", Label: "RESIZE", ActionID: ActionFooterResizeMode.String()},
+			{Key: "^P", Label: "PANE", ActionID: "menu.panel"},
+			{Key: "^R", Label: "RESIZE", ActionID: "menu.resize"},
 		}, ActiveTarget: "pane:shell term:term-1", GlobalSummary: "ws:main float:0 terminals:1"},
 		Layout: LayoutVM{Viewport: Rect{W: 120, H: 10}, Panels: []PanelVM{{
 			ID:           "pane-1",
@@ -1042,7 +1042,7 @@ func TestFrameworkRendersModeSpecificFooterHints(t *testing.T) {
 		mode string
 		want string
 	}{
-		{name: "pane", mode: "pane", want: "[%/^D] VSPLIT"},
+		{name: "pane", mode: "pane", want: "[x/w] CLOSE"},
 		{name: "resize", mode: "resize", want: "[←/h/H]"},
 		{name: "global", mode: "global", want: "[h] HEADER"},
 		{name: "tab", mode: "tab", want: "[c] NEW"},

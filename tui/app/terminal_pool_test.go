@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/render"
 	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
@@ -536,13 +535,13 @@ func TestTerminalPickerGlobalCreateRowOpensPromptWithDraftEndpoint(t *testing.T)
 		t.Fatalf("expected one global create row, picker=%#v", items)
 	}
 
-	_, effects := reduceShellContentAction(root, ShellContentActionMsg{ActionID: render.ActionPickerNew.String(), Row: 0})
-	if len(effects) != 1 {
+	_, effects := NewShellReducer()(root, shortcutTestMessage("terminal_picker.new", "", false, 0))
+	if len(effects) != 2 {
 		t.Fatalf("expected prompt effect, got %#v", effects)
 	}
-	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(ShellOpenPromptMsg)
+	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellOpenPromptMsg)
 	if !ok {
-		t.Fatalf("expected prompt message, got %#v", effects[0])
+		t.Fatalf("expected prompt message, got %#v", effects[1])
 	}
 	if msg.Prompt.TargetEndpointID != "us-west" || msg.Prompt.FieldRawValue("server") != "US West (us-west)" {
 		t.Fatalf("global create row should default prompt server to remembered endpoint, prompt=%#v", msg.Prompt)
@@ -603,7 +602,7 @@ func TestTerminalPoolSelectionInputRefreshesPreview(t *testing.T) {
 		t.Fatalf("mouse selection should refresh preview, shell=%#v effects=%#v", next.Shell, effects)
 	}
 
-	shellNext, shellEffects := NewShellReducer()(next, ShellContentActionMsg{ActionID: render.ActionPoolSelect.String(), Row: 1})
+	shellNext, shellEffects := NewShellReducer()(next, shortcutTestMessage("terminal_pool.select", "", false, 1))
 	if shellNext.Shell.EnsureDefaults().Overlay.SelectedIndex != 1 || !terminalPoolPreviewRefreshScheduled(t, shellEffects) {
 		t.Fatalf("row select action should refresh preview, shell=%#v effects=%#v", shellNext.Shell, shellEffects)
 	}

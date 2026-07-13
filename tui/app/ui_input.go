@@ -9,7 +9,6 @@ import (
 
 	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/render"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -422,20 +421,20 @@ func reduceEmptyPaneCTAInput(root state.Root, event input.InputEvent) (bool, sta
 	}
 	switch event.Key {
 	case input.KeyUp:
-		root.Shell = shell.MoveEmptyPaneCTASelection(-1, render.EmptyPaneActionCount())
+		root.Shell = shell.MoveEmptyPaneCTASelection(-1, len(actiondomain.EmptyPaneCTAActions()))
 		return true, root.Advance(), []Effect{handledEffect{}}
 	case input.KeyDown:
-		root.Shell = shell.MoveEmptyPaneCTASelection(1, render.EmptyPaneActionCount())
+		root.Shell = shell.MoveEmptyPaneCTASelection(1, len(actiondomain.EmptyPaneCTAActions()))
 		return true, root.Advance(), []Effect{handledEffect{}}
 	case input.KeyEnter:
-		actionID := render.EmptyPaneActionID(shell.EmptyPaneCTA.SelectedIndex)
-		if actionID == "" {
+		actionID, ok := selectedSurfaceAction(actiondomain.EmptyPaneCTAActions(), shell.EmptyPaneCTA.SelectedIndex)
+		if !ok {
 			return true, root, []Effect{handledEffect{}}
 		}
 		return true, root, []Effect{
 			handledEffect{},
 			FuncEffect{Run: func(context.Context) Msg {
-				return ShellContentActionMsg{ActionID: actionID.String(), PaneID: pane.ID, Floating: floating}
+				return shellShortcutMessageForSurfaceAction(actionID, pane.ID, floating)
 			}},
 		}
 	default:
@@ -474,32 +473,22 @@ func reduceDisconnectedPaneCTAInput(root state.Root, event input.InputEvent) (bo
 	}
 	switch event.Key {
 	case input.KeyUp:
-		root.Shell = shell.MoveExitedPaneCTASelection(-1, render.DisconnectedPaneActionCount())
+		root.Shell = shell.MoveExitedPaneCTASelection(-1, len(actiondomain.DisconnectedPaneCTAActions()))
 		return true, root.Advance(), []Effect{handledEffect{}}
 	case input.KeyDown:
-		root.Shell = shell.MoveExitedPaneCTASelection(1, render.DisconnectedPaneActionCount())
+		root.Shell = shell.MoveExitedPaneCTASelection(1, len(actiondomain.DisconnectedPaneCTAActions()))
 		return true, root.Advance(), []Effect{handledEffect{}}
 	case input.KeyEnter:
-		actionID := render.DisconnectedPaneActionID(shell.ExitedPaneCTA.SelectedIndex)
-		if actionID == "" {
+		actionID, ok := selectedSurfaceAction(actiondomain.DisconnectedPaneCTAActions(), shell.ExitedPaneCTA.SelectedIndex)
+		if !ok {
 			return true, root, []Effect{handledEffect{}}
 		}
 		return true, root, []Effect{
 			handledEffect{},
 			FuncEffect{Run: func(context.Context) Msg {
-				return ShellContentActionMsg{ActionID: actionID.String(), PaneID: pane.ID, Floating: floating}
+				return shellShortcutMessageForSurfaceAction(actionID, pane.ID, floating)
 			}},
 		}
-	case input.KeyChar:
-		if !event.Ctrl && !event.Alt && strings.EqualFold(event.Char, "r") {
-			return true, root, []Effect{
-				handledEffect{},
-				FuncEffect{Run: func(context.Context) Msg {
-					return ShellContentActionMsg{ActionID: render.ActionDisconnectedReconnect.String(), PaneID: pane.ID, Floating: floating}
-				}},
-			}
-		}
-		return false, root, nil
 	default:
 		return false, root, nil
 	}
@@ -536,35 +525,39 @@ func reduceExitedPaneCTAInput(root state.Root, event input.InputEvent) (bool, st
 	}
 	switch event.Key {
 	case input.KeyUp:
-		root.Shell = shell.MoveExitedPaneCTASelection(-1, render.ExitedPaneActionCount())
+		root.Shell = shell.MoveExitedPaneCTASelection(-1, len(actiondomain.ExitedPaneCTAActions()))
 		return true, root.Advance(), []Effect{handledEffect{}}
 	case input.KeyDown:
-		root.Shell = shell.MoveExitedPaneCTASelection(1, render.ExitedPaneActionCount())
+		root.Shell = shell.MoveExitedPaneCTASelection(1, len(actiondomain.ExitedPaneCTAActions()))
 		return true, root.Advance(), []Effect{handledEffect{}}
 	case input.KeyEnter:
-		actionID := render.ExitedPaneActionID(shell.ExitedPaneCTA.SelectedIndex)
-		if actionID == "" {
+		actionID, ok := selectedSurfaceAction(actiondomain.ExitedPaneCTAActions(), shell.ExitedPaneCTA.SelectedIndex)
+		if !ok {
 			return true, root, []Effect{handledEffect{}}
 		}
 		return true, root, []Effect{
 			handledEffect{},
 			FuncEffect{Run: func(context.Context) Msg {
-				return ShellContentActionMsg{ActionID: actionID.String(), PaneID: pane.ID, Floating: floating}
+				return shellShortcutMessageForSurfaceAction(actionID, pane.ID, floating)
 			}},
 		}
-	case input.KeyChar:
-		if !event.Ctrl && !event.Alt && strings.EqualFold(event.Char, "r") {
-			return true, root, []Effect{
-				handledEffect{},
-				FuncEffect{Run: func(context.Context) Msg {
-					return ShellContentActionMsg{ActionID: render.ActionExitedRestart.String(), PaneID: pane.ID, Floating: floating}
-				}},
-			}
-		}
-		return false, root, nil
 	default:
 		return false, root, nil
 	}
+}
+
+func shellShortcutMessageForSurfaceAction(id actiondomain.ID, paneID string, floating bool) Msg {
+	return ShellShortcutActionMsg{
+		Invocation: actiondomain.Invocation{ID: id, SourceActionID: id.String()},
+		Surface:    &ShortcutSurfaceContext{ExplicitTarget: true, PaneID: paneID, Floating: floating, Row: -1},
+	}
+}
+
+func selectedSurfaceAction(actions []actiondomain.ID, index int) (actiondomain.ID, bool) {
+	if index < 0 || index >= len(actions) {
+		return "", false
+	}
+	return actions[index], true
 }
 
 func activeExitedPaneCTATarget(root state.Root, shell state.ShellStore) (state.PaneState, bool, bool) {

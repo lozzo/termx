@@ -65,7 +65,7 @@ func TestHeaderWorkspaceTemplateUsesNavigatorActionAndEdgeStyle(t *testing.T) {
 	}
 	foundEdge := false
 	for _, segment := range segments {
-		if segment.actionID != ActionFooterOpenTree.String() || segment.targetID != "build-prod" {
+		if segment.actionID != "menu.workbench_tree" || segment.targetID != "build-prod" {
 			t.Fatalf("workspace template must keep navigator action target, segments=%#v", segments)
 		}
 		if segment.style == StyleHeaderWorkspaceEdge {

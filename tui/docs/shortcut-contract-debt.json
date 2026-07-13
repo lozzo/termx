@@ -1,75 +1,291 @@
 {
   "schema_version": 1,
-  "stage": "KS015",
+  "stage": "KS016",
   "inventory": {
     "default_entries": 203,
     "routed_bindings": 166,
     "shortcut_specs": 159,
-    "render_projections": 123
+    "render_projections": 34
   },
   "artifacts": {
     "input_event_producers": [
-      {"signature": "tui/app/copymode.go#NewCopyModeReducer", "count": 1, "classification": "input-event-contract"},
-      {"signature": "tui/app/runtime.go#SendResize", "count": 1, "classification": "input-event-contract"},
-      {"signature": "tui/app/runtime.go#ingestHostInput", "count": 1, "classification": "input-event-contract"},
-      {"signature": "tui/app/shell.go#NewShellReducer", "count": 1, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/host.go#readResizeSignals", "count": 1, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#csiKeyEvent", "count": 7, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#csiKeyboardCapabilityEvent", "count": 2, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#csiUnicodeKeyEvent", "count": 7, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#hostControl", "count": 1, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#oscThemeEvent", "count": 10, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#parseAltChar", "count": 3, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#parseBracketedPaste", "count": 2, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#parseEscape", "count": 4, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#parseOSC", "count": 3, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#parseOneInput", "count": 7, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#parseSGRMouse", "count": 2, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#parseSS3", "count": 2, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#unknownKey", "count": 1, "classification": "input-event-contract"}
+      {
+        "signature": "tui/app/copymode.go#NewCopyModeReducer",
+        "count": 1,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/app/runtime.go#SendResize",
+        "count": 1,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/app/runtime.go#ingestHostInput",
+        "count": 1,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/app/shell.go#NewShellReducer",
+        "count": 1,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/host.go#readResizeSignals",
+        "count": 1,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/input_parser.go#csiKeyEvent",
+        "count": 7,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/input_parser.go#csiKeyboardCapabilityEvent",
+        "count": 2,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/input_parser.go#csiUnicodeKeyEvent",
+        "count": 7,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/input_parser.go#hostControl",
+        "count": 1,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/input_parser.go#oscThemeEvent",
+        "count": 10,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/input_parser.go#parseAltChar",
+        "count": 3,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/input_parser.go#parseBracketedPaste",
+        "count": 2,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/input_parser.go#parseEscape",
+        "count": 4,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/input_parser.go#parseOSC",
+        "count": 3,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/input_parser.go#parseOneInput",
+        "count": 7,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/input_parser.go#parseSGRMouse",
+        "count": 2,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/input_parser.go#parseSS3",
+        "count": 2,
+        "classification": "input-event-contract"
+      },
+      {
+        "signature": "tui/terminalhost/input_parser.go#unknownKey",
+        "count": 1,
+        "classification": "input-event-contract"
+      }
     ],
     "hit_region_producers": [
-      {"signature": "tui/app/copy_history_patch.go#makeCopyHistoryPatchHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/app/runtime.go#copyModeWheelTargetRegion", "count": 2, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/copy_history.go#copyHistoryHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/layout_hit_regions.go#appendFloatingActionRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/layout_hit_regions.go#appendFloatingHitRegions", "count": 3, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/layout_hit_regions.go#appendPaneActionRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/layout_hit_regions.go#appendPanelChromeHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/layout_hit_regions.go#appendPanelContentHitRegion", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/layout_hit_regions.go#appendPanelEdgeResizeRegions", "count": 2, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/layout_hit_regions.go#appendSplitResizeHitRegions", "count": 2, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/layout_hit_regions.go#measureHitRegions", "count": 2, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/layout_hit_regions_shell.go#appendFooterHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/layout_hit_regions_shell.go#appendHeaderHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/product_content.go#clipboardHistoryDividerHitRegion", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/product_content.go#clipboardHistoryHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/product_content.go#contentActionRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/product_content.go#emptyPaneContentLayout", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/product_content.go#floatingOverviewHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/product_content.go#terminalManagerGroupedHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/product_content.go#terminalManagerHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/product_content.go#terminalPickerHitRegionForRow", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/product_content.go#terminalPickerHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/product_content.go#workbenchNavigatorDetailHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/product_content.go#workbenchTreeHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/vm.go#liveDisconnectedActionLines", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/vm.go#liveExitedActionLines", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
-      {"signature": "tui/render/vm.go#liveExitedContentLines", "count": 1, "classification": "hit-region-producers-pending-action-classification"}
+      {
+        "signature": "tui/app/copy_history_patch.go#makeCopyHistoryPatchHitRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/app/runtime.go#copyModeWheelTargetRegion",
+        "count": 2,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/copy_history.go#copyHistoryHitRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/layout_hit_regions.go#appendFloatingActionRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/layout_hit_regions.go#appendFloatingHitRegions",
+        "count": 3,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/layout_hit_regions.go#appendPaneActionRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/layout_hit_regions.go#appendPanelChromeHitRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/layout_hit_regions.go#appendPanelContentHitRegion",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/layout_hit_regions.go#appendPanelEdgeResizeRegions",
+        "count": 2,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/layout_hit_regions.go#appendSplitResizeHitRegions",
+        "count": 2,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/layout_hit_regions.go#measureHitRegions",
+        "count": 2,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/layout_hit_regions_shell.go#appendFooterHitRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/layout_hit_regions_shell.go#appendHeaderHitRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/product_content.go#clipboardHistoryDividerHitRegion",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/product_content.go#clipboardHistoryHitRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/product_content.go#contentActionRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/product_content.go#emptyPaneContentLayout",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/product_content.go#floatingOverviewHitRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/product_content.go#terminalManagerGroupedHitRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/product_content.go#terminalManagerHitRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/product_content.go#terminalPickerHitRegionForRow",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/product_content.go#terminalPickerHitRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/product_content.go#workbenchNavigatorDetailHitRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/product_content.go#workbenchTreeHitRegions",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/vm.go#liveDisconnectedActionLines",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/vm.go#liveExitedActionLines",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      },
+      {
+        "signature": "tui/render/vm.go#liveExitedContentLines",
+        "count": 1,
+        "classification": "canonical-hit-region-contract"
+      }
     ],
     "display_key_literals": [
-      {"signature": "tui/render/action_ids.go#ProjectionCatalog", "count": 80, "classification": "render-projection-legacy-shortcut-metadata", "digest": "5140e608e2739378130bfbdbf567acd445487400cf567c8ea3c2d244760613ba"},
-      {"signature": "tui/render/footer_action_visibility.go#footerActionTokensVisibleByModeAndWidth", "count": 17, "classification": "hardcoded-footer-key-pruning", "digest": "2baf16169d6638caabb1c7730ef3e4d749a1c32cacc396dddf636cbc9fdbff24"},
-      {"signature": "tui/render/glyphs.go#<package>", "count": 1, "classification": "shortcut-key-token-formatting", "digest": "d52f137cba8acd7b7167a3b35b8850d2a86001349482bc2b820ee283a039be70"},
-      {"signature": "tui/render/overlay_chrome.go#renderOverlay", "count": 1, "classification": "global-back-navigation", "digest": "a3366a795f892c1cdee5171adb916fa6b0e5fc95f664962392caaf14f44fcd00"},
-      {"signature": "tui/render/product_content.go#buildEmptyWorkspaceContent", "count": 3, "classification": "hardcoded-content-key-hints", "digest": "5860e41ecd215e0cc8edc5bd44f2969ced748eb3078a0a5313f0e54b4465f4bf"},
-      {"signature": "tui/render/product_content.go#liveExitedActions", "count": 2, "classification": "hardcoded-content-key-hints", "digest": "715a007f2c9ddab6cf0e4d11f500af40566e3ea686ebb7e2e7fa2b561387da96"},
-      {"signature": "tui/render/shell_bar.go#appendFooterActionSegments", "count": 1, "classification": "shortcut-key-token-formatting", "digest": "3754d502706f1d1496de8bf83135adda1cfb484b247eddd578af5ac31b1e35f3"},
-      {"signature": "tui/render/shell_bar.go#footerCtrlLetter", "count": 2, "classification": "shortcut-key-token-formatting", "digest": "e28a2ca9448356fb76e953c996ce94193f54f2df4bf3cac06b75dc95aa993da6"},
-      {"signature": "tui/render/shell_bar.go#footerTailActionToken", "count": 1, "classification": "global-back-navigation", "digest": "a3366a795f892c1cdee5171adb916fa6b0e5fc95f664962392caaf14f44fcd00"},
-      {"signature": "tui/render/shell_bar.go#formatFooterKeySegments", "count": 3, "classification": "shortcut-key-token-formatting", "digest": "354463bff3d3866090f1b9afbd383ec3fa52797e585e1afb0c4d40fd53976a31"},
-      {"signature": "tui/render/shell_bar.go#formatFooterKeyTokenForSelection", "count": 1, "classification": "shortcut-key-token-formatting", "digest": "1fdc2d47678b12131b213162b4dcca6c89821b2c4a14b7553fe8849231e47358"},
-      {"signature": "tui/render/vm.go#footerActionCatalogForRoot", "count": 1, "classification": "global-back-navigation", "digest": "d9c19ad5600f65822f2cf0cd7108a31a3254ede15eed40647de351eaf37032ed"}
+      {
+        "signature": "tui/render/glyphs.go#<package>",
+        "count": 1,
+        "classification": "shortcut-key-token-formatting",
+        "digest": "d52f137cba8acd7b7167a3b35b8850d2a86001349482bc2b820ee283a039be70"
+      },
+      {
+        "signature": "tui/render/overlay_chrome.go#renderOverlay",
+        "count": 1,
+        "classification": "global-back-navigation",
+        "digest": "a3366a795f892c1cdee5171adb916fa6b0e5fc95f664962392caaf14f44fcd00"
+      },
+      {
+        "signature": "tui/render/shell_bar.go#appendFooterActionSegments",
+        "count": 1,
+        "classification": "shortcut-key-token-formatting",
+        "digest": "3754d502706f1d1496de8bf83135adda1cfb484b247eddd578af5ac31b1e35f3"
+      },
+      {
+        "signature": "tui/render/shell_bar.go#footerCtrlLetter",
+        "count": 2,
+        "classification": "shortcut-key-token-formatting",
+        "digest": "e28a2ca9448356fb76e953c996ce94193f54f2df4bf3cac06b75dc95aa993da6"
+      },
+      {
+        "signature": "tui/render/shell_bar.go#footerTailActionToken",
+        "count": 1,
+        "classification": "global-back-navigation",
+        "digest": "a3366a795f892c1cdee5171adb916fa6b0e5fc95f664962392caaf14f44fcd00"
+      },
+      {
+        "signature": "tui/render/shell_bar.go#formatFooterKeySegments",
+        "count": 3,
+        "classification": "shortcut-key-token-formatting",
+        "digest": "354463bff3d3866090f1b9afbd383ec3fa52797e585e1afb0c4d40fd53976a31"
+      },
+      {
+        "signature": "tui/render/shell_bar.go#formatFooterKeyTokenForSelection",
+        "count": 1,
+        "classification": "shortcut-key-token-formatting",
+        "digest": "1fdc2d47678b12131b213162b4dcca6c89821b2c4a14b7553fe8849231e47358"
+      },
+      {
+        "signature": "tui/render/vm.go#footerActionCatalogForRoot",
+        "count": 1,
+        "classification": "global-back-navigation",
+        "digest": "d9c19ad5600f65822f2cf0cd7108a31a3254ede15eed40647de351eaf37032ed"
+      }
     ]
   },
   "surfaces": [
@@ -82,7 +298,9 @@
       "sources": [
         {
           "path": "tui/input/types.go",
-          "anchors": ["type InputEvent struct"]
+          "anchors": [
+            "type InputEvent struct"
+          ]
         }
       ]
     },
@@ -95,7 +313,9 @@
       "sources": [
         {
           "path": "tui/shortcut/defaults.go",
-          "anchors": ["var defaultBindings = []DefaultBinding"]
+          "anchors": [
+            "var defaultBindings = []DefaultBinding"
+          ]
         }
       ]
     },
@@ -117,7 +337,10 @@
         },
         {
           "path": "tui/action/ids.go",
-          "anchors": ["ActionPanelFocus                  ID = \"panel.focus\"", "var surfaceOnlyActionIDs = []ID"]
+          "anchors": [
+            "ActionPanelFocus                  ID = \"panel.focus\"",
+            "var surfaceOnlyActionIDs = []ID"
+          ]
         }
       ]
     },
@@ -130,11 +353,15 @@
       "sources": [
         {
           "path": "tui/shortcut/registry.go",
-          "anchors": ["type BindingPolicy struct"]
+          "anchors": [
+            "type BindingPolicy struct"
+          ]
         },
         {
           "path": "tui/render/result.go",
-          "anchors": ["type ClickPolicy string"]
+          "anchors": [
+            "type ClickPolicy string"
+          ]
         }
       ]
     },
@@ -173,63 +400,43 @@
       ]
     },
     {
-      "id": "render-projection-legacy-shortcut-metadata",
-      "kind": "hint",
-      "classification": "debt",
-      "owner": "tui/render",
-      "target_slice": "KS016",
-      "reason": "ProjectionSpec 仍带有迁移前 footer/help key 与 label 字段；KS016 按编译 shortcut catalog 迁移 surface 后删除。",
-      "sources": [
-        {
-          "path": "tui/render/action_ids.go",
-          "anchors": ["FooterKey         string", "FooterLabel       string", "HelpLabel         string"]
-        }
-      ]
-    },
-    {
-      "id": "render-shortcut-id-bridge",
+      "id": "canonical-hit-region-contract",
       "kind": "projection",
-      "classification": "debt",
-      "owner": "tui/render",
-      "target_slice": "KS016",
-      "reason": "现有 surface 尚靠 projection 选择 switch 把 canonical action 映射到旧 projection；KS016 直接携带 invocation 后删除。",
+      "classification": "conforming",
+      "owner": "tui/action + tui/render",
+      "reason": "可执行 HitRegion producer 必须同时携带 canonical Invocation 与 active/explicit TargetMode；row action 另用 HasRow 区分缺失值和合法第 0 行。ProjectionID 只保留视觉或几何来源，纯 history/status/遮挡区域明确无 action。",
       "sources": [
-        {
-          "path": "tui/render/shortcut_actions.go",
-          "anchors": ["func ShortcutActionRenderID(actionID string) (ProjectionID, bool)"]
-        }
-      ]
-    },
-    {
-      "id": "hit-region-producers-pending-action-classification",
-      "kind": "projection",
-      "classification": "debt",
-      "owner": "tui/render",
-      "target_slice": "KS016",
-      "reason": "FooterActionVM 和 HitRegion 已有 invocation 字段，但生产 emitter 尚未逐项区分纯几何、drag 与 clickable action，且 clickable emitter 并未全部填充 invocation；所有 producer 先逐项列入 artifact 基线，KS016 完成分类和迁移。",
-      "sources": [
-        {
-          "path": "tui/render/result.go",
-          "anchors": ["Invocation actiondomain.Invocation"]
-        },
         {
           "path": "tui/render/vm.go",
-          "anchors": ["Invocation         actiondomain.Invocation"]
+          "anchors": [
+            "Invocation         actiondomain.Invocation"
+          ]
+        },
+        {
+          "path": "tui/render/layout_hit_regions.go",
+          "anchors": [
+            "func appendRegion(out []HitRegion, region HitRegion, viewport Rect) []HitRegion"
+          ]
         }
       ]
     },
     {
-      "id": "canonical-invocation-message-bridge",
+      "id": "canonical-action-message-contract",
       "kind": "handler",
       "classification": "conforming",
       "owner": "tui/app",
-      "reason": "content projection 需要重入 reducer 时投递 ShellShortcutActionMsg canonical invocation，不再伪造按键 InputEvent。",
+      "reason": "键盘、mouse 和 CTA 统一投递 ShellShortcutActionMsg canonical invocation；带目标的 surface action 只读取 PaneID/Floating/Row 上下文，不解析 render projection。",
       "sources": [
         {
           "path": "tui/app/shell.go",
           "anchors": [
-            "return ShellShortcutActionMsg{Invocation: actiondomain.Invocation{ID: \"menu.copy\"}}",
-            "return ShellShortcutActionMsg{Invocation: actiondomain.Invocation{ID: actionID}}"
+            "type ShellShortcutActionMsg struct"
+          ]
+        },
+        {
+          "path": "tui/app/surface_actions.go",
+          "anchors": [
+            "func reduceCanonicalSurfaceAction(root state.Root, msg ShellShortcutActionMsg) (state.Root, []Effect, bool)"
           ]
         }
       ]
@@ -243,7 +450,9 @@
       "sources": [
         {
           "path": "tui/render/shell_bar.go",
-          "anchors": ["func footerActionHasCtrlPrefix(key string) bool"]
+          "anchors": [
+            "func footerActionHasCtrlPrefix(key string) bool"
+          ]
         }
       ]
     },
@@ -256,51 +465,20 @@
       "sources": [
         {
           "path": "tui/state/back_navigation.go",
-          "anchors": ["func (r Root) CurrentBackNavigationLayer() BackNavigationLayer"]
+          "anchors": [
+            "func (r Root) CurrentBackNavigationLayer() BackNavigationLayer"
+          ]
         },
         {
           "path": "tui/app/back_navigation.go",
-          "anchors": ["func NewBackNavigationReducer(copyMode CopyModeDeps) Reducer"]
+          "anchors": [
+            "func NewBackNavigationReducer(copyMode CopyModeDeps) Reducer"
+          ]
         },
         {
-          "path": "tui/render/action_ids.go",
-          "anchors": ["projectionSpec(ActionShortcutExit, ActionSurfaceFooter, ActionSurfaceHelp)"]
-        }
-      ]
-    },
-    {
-      "id": "hardcoded-content-key-hints",
-      "kind": "hint",
-      "classification": "debt",
-      "owner": "tui/render",
-      "target_slice": "KS016",
-      "reason": "内容区 projection 仍把具体键位写进 action label/status，没有消费 tui/shortcut 当前编译 catalog。",
-      "sources": [
-        {
-          "path": "tui/render/product_content.go",
+          "path": "tui/render/vm.go",
           "anchors": [
-            "R restart current terminal",
-            "Ctrl-F choose another terminal",
-            "Ctrl-F open terminal picker",
-            "Ctrl-T then c create a new tab",
-            "empty workspace: Ctrl-F picker / Ctrl-T c tab"
-          ]
-        }
-      ]
-    },
-    {
-      "id": "hardcoded-footer-key-pruning",
-      "kind": "hint",
-      "classification": "debt",
-      "owner": "tui/render",
-      "target_slice": "KS016",
-      "reason": "窄宽 footer 仍用固定键位识别和筛选 action，用户改键后可能失去同源性。",
-      "sources": [
-        {
-          "path": "tui/render/footer_action_visibility.go",
-          "anchors": [
-            "footerActionsMatchKeys(actions, []string{\"^P\", \"^R\", \"^T\", \"^W\", \"^O\", \"^V\", \"^F\", \"^G\"})",
-            "keys := []string{\"^P\", \"^R\", \"^T\", \"^G\"}"
+            "ActionID: \"shortcut.exit\""
           ]
         }
       ]

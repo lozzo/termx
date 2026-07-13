@@ -265,8 +265,8 @@ runtime 会合并普通 live 帧，避免高频输出把队列撑爆。这个合
 
 鼠标入口：
 
-- hit region -> `ShellContentActionMsg`
-- `reduceShellContentAction`
+- hit region -> `ShellShortcutActionMsg` canonical invocation
+- `reduceCanonicalSurfaceAction`（仅消费 pane/floating/row 命中上下文，不解析 render projection）
 
 关键文件：
 

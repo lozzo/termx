@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/state"
 )
@@ -13,12 +14,6 @@ const contentActionWidth = 12
 const clipboardHistoryPreviewWidth = 200
 const clipboardHistoryBodyRows = 10
 const clipboardHistoryMaxBodyRows = 20
-
-const emptyPaneActionCount = 4
-
-const exitedPaneActionCount = 2
-
-const disconnectedPaneActionCount = 2
 
 const floatingOverviewTitleWidth = 24
 const floatingOverviewStateWidth = 12
@@ -51,46 +46,6 @@ type terminalManagerLayout struct {
 	SnapshotY      int
 	SnapshotWidth  int
 	SnapshotHeight int
-}
-
-func EmptyPaneActionCount() int {
-	return emptyPaneActionCount
-}
-
-func ExitedPaneActionCount() int {
-	return exitedPaneActionCount
-}
-
-// DisconnectedPaneActionCount 返回断线 pane 可选择动作数。
-// 断线态保留 TerminalRef 连接意图，用户只能重连原目标或显式断开当前 pane。
-func DisconnectedPaneActionCount() int {
-	return disconnectedPaneActionCount
-}
-
-func EmptyPaneActionID(index int) ProjectionID {
-	actions := emptyPaneActions()
-	if index < 0 || index >= len(actions) {
-		return ""
-	}
-	return actions[index].ID
-}
-
-func ExitedPaneActionID(index int) ProjectionID {
-	actions := liveExitedActions()
-	if index < 0 || index >= len(actions) {
-		return ""
-	}
-	return actions[index].ID
-}
-
-// DisconnectedPaneActionID 按当前 CTA 选择序号返回断线 pane 的稳定 action id。
-// app reducer 通过该 id 区分重连 endpoint terminal 和用户显式断开 pane。
-func DisconnectedPaneActionID(index int) ProjectionID {
-	actions := liveDisconnectedActions()
-	if index < 0 || index >= len(actions) {
-		return ""
-	}
-	return actions[index].ID
 }
 
 // empty pane 内容只描述当前 pane 可执行的产品动作，不创建 terminal。
@@ -139,7 +94,7 @@ func emptyPaneContentLayout(paneID string, selectedIndex int) ([]Line, []HitRegi
 		}
 		line := centeredStyledLine(text, style)
 		lines = append(lines, line)
-		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: len(lines) - 1, W: DisplayWidth(text), H: 1}, PaneID: paneID, ActionID: action.ID.String()})
+		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: len(lines) - 1, W: DisplayWidth(text), H: 1}, PaneID: paneID, ActionID: action.ID.String(), Invocation: invocationForProjection(action.ID), TargetMode: HitTargetExplicit})
 	}
 	return lines, regions, Cursor{}
 }
@@ -151,12 +106,21 @@ type emptyPaneProjectionSpec struct {
 }
 
 func emptyPaneActions() []emptyPaneProjectionSpec {
-	return []emptyPaneProjectionSpec{
-		{ID: ActionEmptyAttach, Label: "Attach existing terminal", Style: StyleAccent},
-		{ID: ActionEmptyCreate, Label: "Create new terminal", Style: StyleSuccess},
-		{ID: ActionEmptyManager, Label: "Open terminal manager", Style: StyleForeground},
-		{ID: ActionEmptyClose, Label: "Close pane", Style: StyleDangerStrong},
+	labels := map[actiondomain.ID]string{
+		actiondomain.ActionEmptyAttach:  "Attach existing terminal",
+		actiondomain.ActionEmptyCreate:  "Create new terminal",
+		actiondomain.ActionEmptyManager: "Open terminal manager",
+		actiondomain.ActionEmptyClose:   "Close pane",
 	}
+	styles := map[actiondomain.ID]StyleToken{
+		actiondomain.ActionEmptyAttach: StyleAccent, actiondomain.ActionEmptyCreate: StyleSuccess,
+		actiondomain.ActionEmptyManager: StyleForeground, actiondomain.ActionEmptyClose: StyleDangerStrong,
+	}
+	out := make([]emptyPaneProjectionSpec, 0, len(labels))
+	for _, id := range actiondomain.EmptyPaneCTAActions() {
+		out = append(out, emptyPaneProjectionSpec{ID: ProjectionID(id), Label: labels[id], Style: styles[id]})
+	}
+	return out
 }
 
 func emptyPaneActionLabel(label string, selected bool) string {
@@ -200,17 +164,31 @@ const (
 )
 
 func liveExitedActions() []liveExitedProjectionSpec {
-	return []liveExitedProjectionSpec{
-		{ID: ActionExitedRestart, Label: "R restart current terminal", Style: StyleWarning},
-		{ID: ActionExitedReconnect, Label: "Ctrl-F choose another terminal", Style: StyleMuted},
+	styles := map[actiondomain.ID]StyleToken{
+		actiondomain.ActionExitedRestart: StyleWarning, actiondomain.ActionExitedReconnect: StyleMuted,
 	}
+	out := make([]liveExitedProjectionSpec, 0, len(styles))
+	for _, id := range actiondomain.ExitedPaneCTAActions() {
+		spec, _ := ProjectionByID(ProjectionID(id))
+		out = append(out, liveExitedProjectionSpec{ID: ProjectionID(id), Label: projectionActionLabel(spec), Style: styles[id]})
+	}
+	return out
 }
 
 func liveDisconnectedActions() []liveDisconnectedProjectionSpec {
-	return []liveDisconnectedProjectionSpec{
-		{ID: ActionDisconnectedReconnect, Label: "Reconnect this pane", Style: StyleAccent},
-		{ID: ActionDisconnectedDisconnect, Label: "Disconnect pane", Style: StyleDangerStrong},
+	labels := map[actiondomain.ID]string{
+		actiondomain.ActionDisconnectedReconnect:  "Reconnect this pane",
+		actiondomain.ActionDisconnectedDisconnect: "Disconnect pane",
 	}
+	styles := map[actiondomain.ID]StyleToken{
+		actiondomain.ActionDisconnectedReconnect:  StyleAccent,
+		actiondomain.ActionDisconnectedDisconnect: StyleDangerStrong,
+	}
+	out := make([]liveDisconnectedProjectionSpec, 0, len(labels))
+	for _, id := range actiondomain.DisconnectedPaneCTAActions() {
+		out = append(out, liveDisconnectedProjectionSpec{ID: ProjectionID(id), Label: labels[id], Style: styles[id]})
+	}
+	return out
 }
 
 func centeredStyledLine(text string, style StyleToken) Line {
@@ -246,14 +224,18 @@ func buildEmptyTabContent(tab state.TabState) ContentVM {
 func buildEmptyWorkspaceContent(workspace state.WorkspaceState) ContentVM {
 	lines := []Line{
 		centeredStyledLine("No tabs in this workspace", StyleForeground),
-		centeredStyledLine("Ctrl-F open terminal picker", StyleMuted),
-		centeredStyledLine("Ctrl-T then c create a new tab", StyleMuted),
+		contentActionLine("picker", "Choose terminal"),
+		contentActionLine("tab", "New tab"),
 	}
 	return ContentVM{
 		Kind:   ContentEmptyPane,
 		Lines:  lines,
-		Status: "empty workspace: Ctrl-F picker / Ctrl-T c tab",
+		Status: "empty workspace: Choose terminal / New tab",
 		Empty:  true,
+		HitRegions: []HitRegion{
+			{Kind: HitRegionContentAction, Rect: Rect{Y: 1, W: lines[1].Width(), H: 1}, ActionID: "menu.terminal_picker", Invocation: actiondomain.Invocation{ID: "menu.terminal_picker", SourceActionID: "menu.terminal_picker"}, TargetMode: HitTargetActive},
+			{Kind: HitRegionContentAction, Rect: Rect{Y: 2, W: lines[2].Width(), H: 1}, ActionID: "tab.create", Invocation: actiondomain.Invocation{ID: "tab.create", SourceActionID: "tab.create"}, TargetMode: HitTargetActive},
+		},
 	}
 }
 
@@ -673,10 +655,13 @@ func clipboardHistoryHitRegions(rows []state.ClipboardHistoryItem, rowOffset int
 	regions := make([]HitRegion, 0, maxInt(0, end-listStart))
 	for index := listStart; index < end; index++ {
 		regions = append(regions, HitRegion{
-			Kind:     HitRegionContentAction,
-			Rect:     Rect{Y: rowOffset + index - listStart, W: nameWidth, H: 1},
-			Row:      index,
-			ActionID: ActionClipboardHistorySelect.String(),
+			Kind:       HitRegionContentAction,
+			Rect:       Rect{Y: rowOffset + index - listStart, W: nameWidth, H: 1},
+			Row:        index,
+			HasRow:     true,
+			ActionID:   ActionClipboardHistorySelect.String(),
+			Invocation: invocationForProjection(ActionClipboardHistorySelect),
+			TargetMode: HitTargetExplicit,
 		})
 	}
 	return regions
@@ -684,9 +669,11 @@ func clipboardHistoryHitRegions(rows []state.ClipboardHistoryItem, rowOffset int
 
 func clipboardHistoryDividerHitRegion(rowOffset int, visibleRows int, nameWidth int) HitRegion {
 	return HitRegion{
-		Kind:     HitRegionContentAction,
-		Rect:     Rect{X: nameWidth, Y: rowOffset - 1, W: 1, H: visibleRows + 1},
-		ActionID: ActionClipboardHistoryDividerDrag.String(),
+		Kind:       HitRegionContentAction,
+		Rect:       Rect{X: nameWidth, Y: rowOffset - 1, W: 1, H: visibleRows + 1},
+		ActionID:   ActionClipboardHistoryDividerDrag.String(),
+		Invocation: invocationForProjection(ActionClipboardHistoryDividerDrag),
+		TargetMode: HitTargetExplicit,
 	}
 }
 
@@ -850,9 +837,11 @@ func buildHelpContent(root state.Root) ContentVM {
 	if shortcutSceneHasAction(root.Config.Shortcuts, "help", "help.close") {
 		content.Lines = append(content.Lines, contentActionLine("close", "Close Help"))
 		content.HitRegions = []HitRegion{{
-			Kind:     HitRegionContentAction,
-			Rect:     Rect{Y: len(content.Lines) - 1, W: contentActionWidth, H: 1},
-			ActionID: ActionHelpClose.String(),
+			Kind:       HitRegionContentAction,
+			Rect:       Rect{Y: len(content.Lines) - 1, W: contentActionWidth, H: 1},
+			ActionID:   ActionHelpClose.String(),
+			Invocation: invocationForProjection(ActionHelpClose),
+			TargetMode: HitTargetExplicit,
 		}}
 	}
 	return content
@@ -909,9 +898,8 @@ func helpActionLabel(action FooterActionVM) (string, bool) {
 	key := strings.TrimSpace(action.Key)
 	label := strings.TrimSpace(action.Label)
 	if label == "" {
-		spec, ok := ProjectionByIDString(action.ActionID)
-		if ok {
-			label = strings.TrimSpace(spec.HelpLabel)
+		if spec, ok := actiondomain.SpecByID(actiondomain.ID(action.ActionID)); ok {
+			label = strings.TrimSpace(spec.DefaultLabel)
 		}
 	}
 	if key == "" && label == "" {
@@ -1075,16 +1063,19 @@ func terminalPickerEndpointEmptyLine(group state.EndpointPickerGroup) Line {
 }
 
 func terminalPickerHitRegionForRow(row state.TerminalPickerItem, rowIndex int, lineIndex int) HitRegion {
-	actionID := ActionPickerAttach.String()
+	action := ActionPickerAttach
 	if row.CreateNew {
-		actionID = ActionPickerNew.String()
+		action = ActionPickerNew
 	}
 	return HitRegion{
-		Kind:     HitRegionContentAction,
-		Rect:     Rect{Y: lineIndex, W: terminalPickerHitRegionWidth, H: 1},
-		PaneID:   row.PaneID,
-		Row:      rowIndex,
-		ActionID: actionID,
+		Kind:       HitRegionContentAction,
+		Rect:       Rect{Y: lineIndex, W: terminalPickerHitRegionWidth, H: 1},
+		PaneID:     row.PaneID,
+		Row:        rowIndex,
+		HasRow:     true,
+		ActionID:   action.String(),
+		Invocation: invocationForProjection(action),
+		TargetMode: HitTargetExplicit,
 	}
 }
 
@@ -2623,10 +2614,13 @@ func terminalManagerHitRegions(rows []state.TerminalPoolPageItem, rowOffset int,
 	regions := make([]HitRegion, 0, len(rows))
 	for index := range rows {
 		regions = append(regions, HitRegion{
-			Kind:     HitRegionContentAction,
-			Rect:     Rect{Y: rowOffset + index, W: layout.ListWidth, H: 1},
-			Row:      listStart + index,
-			ActionID: ActionPoolSelect.String(),
+			Kind:       HitRegionContentAction,
+			Rect:       Rect{Y: rowOffset + index, W: layout.ListWidth, H: 1},
+			Row:        listStart + index,
+			HasRow:     true,
+			ActionID:   ActionPoolSelect.String(),
+			Invocation: invocationForProjection(ActionPoolSelect),
+			TargetMode: HitTargetExplicit,
 		})
 	}
 	return regions
@@ -2639,10 +2633,13 @@ func terminalManagerGroupedHitRegions(rows []terminalManagerDisplayRow, rowOffse
 			continue
 		}
 		regions = append(regions, HitRegion{
-			Kind:     HitRegionContentAction,
-			Rect:     Rect{Y: rowOffset + index, W: layout.ListWidth, H: 1},
-			Row:      row.ItemIndex,
-			ActionID: ActionPoolSelect.String(),
+			Kind:       HitRegionContentAction,
+			Rect:       Rect{Y: rowOffset + index, W: layout.ListWidth, H: 1},
+			Row:        row.ItemIndex,
+			HasRow:     true,
+			ActionID:   ActionPoolSelect.String(),
+			Invocation: invocationForProjection(ActionPoolSelect),
+			TargetMode: HitTargetExplicit,
 		})
 	}
 	return regions
@@ -2669,11 +2666,14 @@ func workbenchTreeHitRegions(rows []state.WorkbenchTreeItem, rowOffset int, tree
 	regions := make([]HitRegion, 0, len(rows)+1)
 	for index := range rows {
 		regions = append(regions, HitRegion{
-			Kind: HitRegionContentAction,
-			Rect: Rect{Y: rowOffset + index, W: treeWidth, H: 1},
-			Row:  index,
+			Kind:   HitRegionContentAction,
+			Rect:   Rect{Y: rowOffset + index, W: treeWidth, H: 1},
+			Row:    index,
+			HasRow: true,
 			// 中文说明：Workbench Navigator 的鼠标行点击只带 row，由 reducer 用 WorkbenchTreeItem 决定 workspace/tab/pane/floating 真实目标。
-			ActionID: ActionWorkbenchOpen.String(),
+			ActionID:   ActionWorkbenchOpen.String(),
+			Invocation: invocationForProjection(ActionWorkbenchOpen),
+			TargetMode: HitTargetExplicit,
 		})
 	}
 	return regions
@@ -2687,10 +2687,13 @@ func workbenchNavigatorDetailHitRegions(root state.Root, rows []state.WorkbenchT
 	rightX := layout.TreeWidth + 1
 	// 中文说明：右侧类型/header/detail 只声明打开当前 selected node，真实 workspace/tab/pane/floating 跳转仍由 reducer 读取 WorkbenchTreeItem。
 	regions := []HitRegion{{
-		Kind:     HitRegionContentAction,
-		Rect:     Rect{X: rightX, Y: 2, W: layout.RightWidth, H: minInt(4, layout.BodyRows+1)},
-		Row:      -1,
-		ActionID: ActionWorkbenchOpen.String(),
+		Kind:       HitRegionContentAction,
+		Rect:       Rect{X: rightX, Y: 2, W: layout.RightWidth, H: minInt(4, layout.BodyRows+1)},
+		Row:        -1,
+		HasRow:     true,
+		ActionID:   ActionWorkbenchOpen.String(),
+		Invocation: invocationForProjection(ActionWorkbenchOpen),
+		TargetMode: HitTargetExplicit,
 	}}
 	previewPanes := workbenchNavigatorPreviewPanes(root, selected)
 	if len(previewPanes) == 0 {
@@ -2698,10 +2701,13 @@ func workbenchNavigatorDetailHitRegions(root state.Root, rows []state.WorkbenchT
 	}
 	for _, rect := range workbenchNavigatorSnapshotRects(layout, len(previewPanes)) {
 		regions = append(regions, HitRegion{
-			Kind:     HitRegionContentAction,
-			Rect:     rect,
-			Row:      -1,
-			ActionID: ActionWorkbenchOpen.String(),
+			Kind:       HitRegionContentAction,
+			Rect:       rect,
+			Row:        -1,
+			HasRow:     true,
+			ActionID:   ActionWorkbenchOpen.String(),
+			Invocation: invocationForProjection(ActionWorkbenchOpen),
+			TargetMode: HitTargetExplicit,
 		})
 	}
 	return regions
@@ -2711,11 +2717,14 @@ func floatingOverviewHitRegions(rows []state.FloatingOverviewItem, rowOffset int
 	regions := make([]HitRegion, 0, len(rows)+1)
 	for index, row := range rows {
 		regions = append(regions, HitRegion{
-			Kind:     HitRegionContentAction,
-			Rect:     Rect{Y: rowOffset + index, W: 72, H: 1},
-			Row:      index,
-			PaneID:   row.FloatingID,
-			ActionID: ActionFloatingSummon.String(),
+			Kind:       HitRegionContentAction,
+			Rect:       Rect{Y: rowOffset + index, W: 72, H: 1},
+			Row:        index,
+			HasRow:     true,
+			PaneID:     row.FloatingID,
+			ActionID:   ActionFloatingSummon.String(),
+			Invocation: actiondomain.Invocation{ID: "floating_overview.open", SourceActionID: "floating_overview.open"},
+			TargetMode: HitTargetExplicit,
 		})
 	}
 	return regions
@@ -2724,16 +2733,19 @@ func floatingOverviewHitRegions(rows []state.FloatingOverviewItem, rowOffset int
 func terminalPickerHitRegions(rows []state.TerminalPickerItem, rowOffset int) []HitRegion {
 	regions := make([]HitRegion, 0, len(rows)+1)
 	for index, row := range rows {
-		actionID := ActionPickerAttach.String()
+		action := ActionPickerAttach
 		if row.CreateNew {
-			actionID = ActionPickerNew.String()
+			action = ActionPickerNew
 		}
 		regions = append(regions, HitRegion{
-			Kind:     HitRegionContentAction,
-			Rect:     Rect{Y: rowOffset + index, W: 72, H: 1},
-			PaneID:   row.PaneID,
-			Row:      index,
-			ActionID: actionID,
+			Kind:       HitRegionContentAction,
+			Rect:       Rect{Y: rowOffset + index, W: 72, H: 1},
+			PaneID:     row.PaneID,
+			Row:        index,
+			HasRow:     true,
+			ActionID:   action.String(),
+			Invocation: invocationForProjection(action),
+			TargetMode: HitTargetExplicit,
 		})
 	}
 	return regions
@@ -3393,10 +3405,12 @@ func contentActionRegions(actions []ProjectionID, paneID string, rowOffset int) 
 	regions := make([]HitRegion, len(actions))
 	for index, action := range actions {
 		regions[index] = HitRegion{
-			Kind:     HitRegionContentAction,
-			Rect:     Rect{Y: index + rowOffset, W: contentActionWidth, H: 1},
-			PaneID:   paneID,
-			ActionID: action.String(),
+			Kind:       HitRegionContentAction,
+			Rect:       Rect{Y: index + rowOffset, W: contentActionWidth, H: 1},
+			PaneID:     paneID,
+			ActionID:   action.String(),
+			Invocation: invocationForProjection(action),
+			TargetMode: HitTargetExplicit,
 		}
 	}
 	return regions
