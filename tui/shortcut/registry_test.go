@@ -31,6 +31,26 @@ func TestBindingPoliciesOwnSceneAndVisibility(t *testing.T) {
 	}
 }
 
+func TestSceneRegistryOwnsMenuActionReverseLookup(t *testing.T) {
+	seen := map[actiondomain.ID]SceneID{}
+	for _, scene := range Scenes() {
+		if scene.MenuAction == "" {
+			continue
+		}
+		resolved, ok := SceneByMenuAction(scene.MenuAction)
+		if !ok || resolved.ID != scene.ID {
+			t.Fatalf("menu action %q must resolve to scene %q, got %#v ok=%v", scene.MenuAction, scene.ID, resolved, ok)
+		}
+		if previous, exists := seen[scene.MenuAction]; exists {
+			t.Fatalf("menu action %q is shared by scenes %q and %q", scene.MenuAction, previous, scene.ID)
+		}
+		seen[scene.MenuAction] = scene.ID
+	}
+	if _, ok := SceneByMenuAction("panel.close"); ok {
+		t.Fatal("non-menu action must not resolve to a scene")
+	}
+}
+
 func TestShortcutPackageDoesNotRedeclareActionDomainOrClickPolicy(t *testing.T) {
 	forbidden := map[string]bool{"Spec": true, "Invocation": true, "ParamSpec": true, "ClickPolicy": true}
 	files, err := filepath.Glob("*.go")

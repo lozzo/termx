@@ -212,14 +212,18 @@ func TestInputParserBuffersAndValidatesKittyCSIU(t *testing.T) {
 	}
 
 	invalid := NewInputParser().Feed([]byte("\x1b[49;0u"))
-	if len(invalid) != 1 || invalid[0].Key != input.KeyUnknown {
-		t.Fatalf("invalid CSI-u must remain unknown, got %#v", invalid)
+	if len(invalid) != 1 || invalid[0].Kind != input.EventKindHostControl || invalid[0].KeyboardProtocol != input.KeyboardProtocolKittyCSIU {
+		t.Fatalf("invalid CSI-u must remain protocol-owned host control, got %#v", invalid)
 	}
-	for _, raw := range []string{"\x1b[49:97;5u", "\x1b[49;9u", "\x1b[49;5:4u"} {
+	for _, raw := range []string{"\x1b[49:97;5u", "\x1b[49;5:4u"} {
 		invalid := NewInputParser().Feed([]byte(raw))
-		if len(invalid) != 1 || invalid[0].Key != input.KeyUnknown {
-			t.Fatalf("unsupported CSI-u structure %q must remain unknown, got %#v", raw, invalid)
+		if len(invalid) != 1 || invalid[0].Kind != input.EventKindHostControl || invalid[0].KeyboardProtocol != input.KeyboardProtocolKittyCSIU {
+			t.Fatalf("unsupported CSI-u structure %q must remain protocol-owned, got %#v", raw, invalid)
 		}
+	}
+	unsupportedModifier := NewInputParser().Feed([]byte("\x1b[49;9u"))
+	if len(unsupportedModifier) != 1 || unsupportedModifier[0].Key != input.KeyUnknown || unsupportedModifier[0].KeyboardProtocol != input.KeyboardProtocolKittyCSIU {
+		t.Fatalf("valid unsupported CSI-u modifier must be consumed without matching, got %#v", unsupportedModifier)
 	}
 }
 
@@ -517,6 +521,33 @@ func TestHostReadsInputEventsAndStopsOnClose(t *testing.T) {
 	}
 }
 
+func TestHostReassemblesSplitEscapeAndFlushesLoneEscape(t *testing.T) {
+	ops := &fakeTerminalOps{terminal: true}
+	reader := newBlockingCancelReader()
+	host := New(
+		WithInput(strings.NewReader(""), 7),
+		WithOutput(io.Discard),
+		WithTerminalOps(ops),
+		WithThemeProbe(false),
+		WithCancelReaderFactory(func(io.Reader) (CancelReader, error) { return reader, nil }),
+	)
+	if err := host.Enter(context.Background()); err != nil {
+		t.Fatalf("enter: %v", err)
+	}
+	reader.events <- []byte("\x1b")
+	reader.events <- []byte("[5~")
+	if got := readEvent(t, host); got.Key != input.KeyPageUp || got.RawSeq != "\x1b[5~" {
+		t.Fatalf("split CSI must remain one input event, got %#v", got)
+	}
+	reader.events <- []byte("\x1b")
+	if got := readEvent(t, host); got.Key != input.KeyEsc || got.RawSeq != "\x1b" {
+		t.Fatalf("lone escape must flush after the ambiguity window, got %#v", got)
+	}
+	if err := host.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+}
+
 func TestHostRestoresTerminalWhenContextIsCanceled(t *testing.T) {
 	ops := &fakeTerminalOps{terminal: true}
 	reader := newBlockingCancelReader()
@@ -586,6 +617,16 @@ func TestInputParserConsumesOSCThemeResponses(t *testing.T) {
 	}
 }
 
+func TestInputParserSuppressesUnknownOSCResponses(t *testing.T) {
+	got := NewInputParser().Feed([]byte("\x1b]52;ignored\x07"))
+	if len(got) != 1 || got[0].Kind != input.EventKindHostControl || got[0].RawSeq != "\x1b]52;ignored\x07" {
+		t.Fatalf("unknown OSC must remain a host control event, got %#v", got)
+	}
+	if intent := input.RouteWithOptions(got[0], input.RouteOptions{}); intent.Kind != input.IntentNone {
+		t.Fatalf("unknown OSC response must not leak to PTY, got %#v", intent)
+	}
+}
+
 func TestInputParserConvertsExtendedKeysAndModifiers(t *testing.T) {
 	parser := NewInputParser()
 	got := parser.Feed([]byte("\x1b[Z\x1b[H\x1b[F\x1b[2~\x1b[3~\x1bOP\x1b[15~\x1b[1;5D\x1b[1;3C"))
@@ -643,6 +684,107 @@ func TestInputParserKeepsPartialEscapeUntilComplete(t *testing.T) {
 	want := []input.InputEvent{{Kind: input.EventKindKey, Key: input.KeyPageUp, RawSeq: "\x1b[5~"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected completion %#v", got)
+	}
+}
+
+func TestInputParserKeepsSplitEscapePrefixUntilSequenceOrFlush(t *testing.T) {
+	parser := NewInputParser()
+	if got := parser.Feed([]byte("\x1b")); len(got) != 0 {
+		t.Fatalf("ambiguous escape prefix must wait for the next raw chunk, got %#v", got)
+	}
+	got := parser.Feed([]byte("[5~"))
+	want := []input.InputEvent{{Kind: input.EventKindKey, Key: input.KeyPageUp, RawSeq: "\x1b[5~"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("split escape sequence mismatch: got=%#v want=%#v", got, want)
+	}
+
+	parser = NewInputParser()
+	_ = parser.Feed([]byte("\x1b"))
+	got = parser.FlushEscape()
+	want = []input.InputEvent{{Kind: input.EventKindKey, Key: input.KeyEsc, RawSeq: "\x1b"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("lone escape flush mismatch: got=%#v want=%#v", got, want)
+	}
+
+	parser = NewInputParser()
+	if got := parser.Feed([]byte("\x1b[")); len(got) != 0 {
+		t.Fatalf("ambiguous CSI prefix must wait for sequence completion or timeout, got %#v", got)
+	}
+	got = parser.FlushEscape()
+	want = []input.InputEvent{{Kind: input.EventKindKey, Key: input.KeyChar, Char: "[", Alt: true, RawSeq: "\x1b["}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("timed out CSI prefix must preserve Alt-[ semantics: got=%#v want=%#v", got, want)
+	}
+}
+
+func TestInputParserNormalizesTraditionalAltControlKeys(t *testing.T) {
+	got := NewInputParser().Feed([]byte("\x1b\r\x1b\t\x1b\x7f\x1b\x03\x1b\x1b"))
+	want := []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyEnter, Alt: true, RawSeq: "\x1b\r"},
+		{Kind: input.EventKindKey, Key: input.KeyTab, Alt: true, RawSeq: "\x1b\t"},
+		{Kind: input.EventKindKey, Key: input.KeyBackspace, Alt: true, RawSeq: "\x1b\x7f"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x03", Alt: true, Ctrl: true, RawSeq: "\x1b\x03"},
+		{Kind: input.EventKindKey, Key: input.KeyEsc, Alt: true, RawSeq: "\x1b\x1b"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("traditional alt/control normalization mismatch:\n got=%#v\nwant=%#v", got, want)
+	}
+}
+
+func TestInputParserSuppressesUnsupportedKittyFunctionalKeys(t *testing.T) {
+	got := NewInputParser().Feed([]byte("\x1b[57376;5u"))
+	if len(got) != 1 || got[0].Key != input.KeyUnknown || got[0].Char != "" || got[0].KeyboardProtocol != input.KeyboardProtocolKittyCSIU {
+		t.Fatalf("unsupported Kitty PUA key must remain protocol-owned unknown input, got %#v", got)
+	}
+	if intent := input.RouteWithOptions(got[0], input.RouteOptions{}); intent.Kind != input.IntentNone {
+		t.Fatalf("unsupported Kitty PUA key must not leak to PTY, got %#v", intent)
+	}
+}
+
+func TestInputParserNormalizesKittyModifierLocksAndConsumesUnsupportedModifiers(t *testing.T) {
+	got := NewInputParser().Feed([]byte("\x1b[99;69u\x1b[99;133u\x1b[99;13u\x1b[1;9D"))
+	want := []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c", Ctrl: true, RawSeq: "\x1b[99;69u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c", Ctrl: true, RawSeq: "\x1b[99;133u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+		{Kind: input.EventKindKey, Key: input.KeyUnknown, Ctrl: true, RawSeq: "\x1b[99;13u", KeyboardProtocol: input.KeyboardProtocolKittyCSIU},
+		{Kind: input.EventKindHostControl, RawSeq: "\x1b[1;9D"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Kitty modifier normalization mismatch:\n got=%#v\nwant=%#v", got, want)
+	}
+}
+
+func TestInputParserFramesBracketedPasteAcrossChunks(t *testing.T) {
+	parser := NewInputParser()
+	if got := parser.Feed([]byte("\x1b[20")); len(got) != 0 {
+		t.Fatalf("partial paste start marker must stay buffered, got %#v", got)
+	}
+	if got := parser.Feed([]byte("0~\x07\ntail\x1b[20")); len(got) != 0 {
+		t.Fatalf("partial paste must remain atomic, got %#v", got)
+	}
+	got := parser.Feed([]byte("1~x"))
+	want := []input.InputEvent{
+		{Kind: input.EventKindPaste, Paste: "\x07\ntail"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x", RawSeq: "x"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("bracketed paste framing mismatch:\n got=%#v\nwant=%#v", got, want)
+	}
+	intent := input.RouteWithOptions(got[0], input.RouteOptions{})
+	if intent.Kind != input.IntentTerminalInput || string(intent.Bytes) != "\x07\ntail" {
+		t.Fatalf("paste semantic must bypass shortcuts while retaining only its body, got %#v", intent)
+	}
+}
+
+func TestInputParserRejectsInvalidSGRMouseCoordinates(t *testing.T) {
+	for _, raw := range []string{"\x1b[<0;0;1M", "\x1b[<0;1;0M", "\x1b[<64;1;1m", "\x1b[<66;1;1M", "\x1b[<128;1;1M", "\x1b[<3;1;1M"} {
+		got := NewInputParser().Feed([]byte(raw))
+		if len(got) != 1 || got[0].Kind != input.EventKindHostControl {
+			t.Fatalf("invalid SGR mouse %q must be consumed as host control, got %#v", raw, got)
+		}
+		if intent := input.RouteWithOptions(got[0], input.RouteOptions{}); intent.Kind != input.IntentNone {
+			t.Fatalf("invalid SGR mouse %q must not leak to PTY, got %#v", raw, intent)
+		}
 	}
 }
 

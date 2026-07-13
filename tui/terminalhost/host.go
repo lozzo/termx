@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/lozzow/termx/tui/input"
@@ -37,6 +38,7 @@ const (
 	disableMouseSGR              = "\x1b[?1006l"
 	requestHostFG                = "\x1b]10;?\x07"
 	requestHostBG                = "\x1b]11;?\x07"
+	escapeSequenceDelay          = 25 * time.Millisecond
 )
 
 var (
@@ -273,8 +275,10 @@ func (host *Host) Enter(ctx context.Context) error {
 	host.latestSink.SetLogger(host.logger)
 	host.sink = host.latestSink
 	done := host.done
-	host.wg.Add(1)
-	go host.readInput(ctx, cancelReader)
+	inputReads := make(chan inputReadResult, 1)
+	host.wg.Add(2)
+	go host.readInputChunks(ctx, done, cancelReader, inputReads)
+	go host.parseInput(ctx, done, inputReads)
 	if host.resizeSignalFactory != nil {
 		resizeSignals, stop := host.resizeSignalFactory()
 		host.resizeSignalStop = stop
@@ -380,27 +384,102 @@ func (host *Host) FrameSink() render.FrameSink {
 	return host.sink
 }
 
-func (host *Host) readInput(ctx context.Context, reader io.Reader) {
+type inputReadResult struct {
+	chunk []byte
+	err   error
+}
+
+func (host *Host) readInputChunks(ctx context.Context, done <-chan struct{}, reader io.Reader, reads chan<- inputReadResult) {
 	defer host.wg.Done()
-	parser := NewInputParser()
+	defer close(reads)
 	buffer := make([]byte, 256)
 	for {
 		if err := ctx.Err(); err != nil {
 			return
 		}
 		n, err := reader.Read(buffer)
+		result := inputReadResult{err: err}
 		if n > 0 {
-			for _, event := range parser.Feed(buffer[:n]) {
-				select {
-				case host.events <- event:
-					host.signalReady()
-				case <-ctx.Done():
-					return
-				}
+			result.chunk = append([]byte(nil), buffer[:n]...)
+		}
+		if n > 0 || err != nil {
+			select {
+			case reads <- result:
+			case <-ctx.Done():
+				return
+			case <-done:
+				return
 			}
 		}
 		if err != nil {
 			return
+		}
+	}
+}
+
+func (host *Host) parseInput(ctx context.Context, done <-chan struct{}, reads <-chan inputReadResult) {
+	defer host.wg.Done()
+	parser := NewInputParser()
+	var escapeTimer *time.Timer
+	var escapeTimeout <-chan time.Time
+	stopEscapeTimer := func() {
+		if escapeTimer == nil {
+			return
+		}
+		if !escapeTimer.Stop() {
+			select {
+			case <-escapeTimer.C:
+			default:
+			}
+		}
+		escapeTimeout = nil
+	}
+	defer stopEscapeTimer()
+	emit := func(events []input.InputEvent) bool {
+		for _, event := range events {
+			select {
+			case host.events <- event:
+				host.signalReady()
+			case <-ctx.Done():
+				return false
+			case <-done:
+				return false
+			}
+		}
+		return true
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case <-escapeTimeout:
+			escapeTimeout = nil
+			if !emit(parser.FlushEscape()) {
+				return
+			}
+		case result, ok := <-reads:
+			if !ok {
+				emit(parser.FlushEscape())
+				return
+			}
+			stopEscapeTimer()
+			if !emit(parser.Feed(result.chunk)) {
+				return
+			}
+			if parser.hasPendingEscape() {
+				if escapeTimer == nil {
+					escapeTimer = time.NewTimer(escapeSequenceDelay)
+				} else {
+					escapeTimer.Reset(escapeSequenceDelay)
+				}
+				escapeTimeout = escapeTimer.C
+			}
+			if result.err != nil {
+				emit(parser.FlushEscape())
+				return
+			}
 		}
 	}
 }

@@ -1510,6 +1510,32 @@ func TestAppRuntimeIngestsHostKeyboardCapabilityWithoutInputLeak(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeSuppressesUnknownHostControlWithoutInputLeak(t *testing.T) {
+	host := NewFakeTerminalHost(1)
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindHostControl, RawSeq: "\x1b]52;ignored\x07"}); err != nil {
+		t.Fatalf("send host control: %v", err)
+	}
+	var leaked bool
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			if _, ok := msg.(InputMsg); ok {
+				leaked = true
+			}
+			return root, nil
+		},
+		func(state.Root) render.Frame { return render.Frame{} },
+		host,
+		NewSyncEffectRunner(),
+	)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if leaked {
+		t.Fatal("unknown host control must not become InputMsg")
+	}
+}
+
 func TestAppRuntimeInitializesViewportFromHostSizeAndRenders(t *testing.T) {
 	host := NewFakeTerminalHost(4)
 	host.SetSize(132, 43)

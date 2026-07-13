@@ -280,6 +280,45 @@ func TestTerminalInputRouterLogsActiveViewRoute(t *testing.T) {
 	}
 }
 
+func TestBracketedPasteBypassesShortcutDispatchAsOneTerminalSemanticEvent(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		bracketed bool
+		want      string
+	}{
+		{name: "plain downstream", want: "\x07danger\n"},
+		{name: "bracketed downstream", bracketed: true, want: "\x1b[200~\x07danger\n\x1b[201~"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			terminal := &services.FakeTerminalService{}
+			root := state.Root{Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")}
+			root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView(
+				"west", state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true,
+			))
+			root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
+				EndpointID: "west", TerminalID: "term-1", State: state.TerminalLiveAttached,
+				Modes: state.LiveTerminalModes{BracketedPaste: tc.bracketed},
+			})
+			reducer := ComposeReducers(NewUIInputReducer(), NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal}))
+
+			next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindPaste, Paste: "\x07danger\n"}})
+			if next.Shell.EnsureDefaults().InteractionMode != state.InteractionModeNormal || next.Shell.EnsureDefaults().Overlay.Open {
+				t.Fatalf("paste body control bytes must not enter shortcut scenes: %#v", next.Shell)
+			}
+			if len(effects) != 1 {
+				t.Fatalf("paste must produce one terminal send effect, got %#v", effects)
+			}
+			msg, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveInputResultMsg)
+			if !ok || msg.Err != nil {
+				t.Fatalf("expected paste input result, got %#v ok=%v", msg, ok)
+			}
+			if len(terminal.Inputs) != 1 || terminal.Inputs[0].EndpointID != "west" || string(terminal.Inputs[0].Bytes) != tc.want {
+				t.Fatalf("paste must use endpoint surface mode in one send, got %#v want=%q", terminal.Inputs, tc.want)
+			}
+		})
+	}
+}
+
 func TestTerminalInputRouterRoutesEndpointBinding(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	root := state.Root{

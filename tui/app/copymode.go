@@ -1597,16 +1597,6 @@ func clampColumn(value int, min int, max int) int {
 	return value
 }
 
-func encodeTerminalPaste(text string, modes state.LiveTerminalModes) []byte {
-	if text == "" {
-		return nil
-	}
-	if !modes.BracketedPaste {
-		return []byte(text)
-	}
-	return []byte("\x1b[200~" + text + "\x1b[201~")
-}
-
 func nextHistoryRequestID(root state.Root) state.RequestID {
 	next := state.RequestID(root.Generation + 1)
 	if root.History.Pending != nil && root.History.Pending.ID >= next {

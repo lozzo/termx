@@ -1,6 +1,7 @@
 package input
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,8 @@ type Binding struct {
 	Alt        bool
 	Shift      bool
 	Invocation actiondomain.Invocation
+	// RequiresKeyboardDisambiguation 表示传统 TTY 无法区分该组合；只有规范化后的 CSI-u 事件可命中。
+	RequiresKeyboardDisambiguation bool
 }
 
 // ShortcutEntry 是 shortcut catalog 面向提示层和 overlay 输入层的只读条目。
@@ -90,7 +93,7 @@ func ShortcutEntryForEvent(shortcuts state.TUIShortcutConfig, sceneName string, 
 		if !ok {
 			continue
 		}
-		binding := Binding{Key: key.Key, Char: key.Char, Ctrl: key.Ctrl, Alt: key.Alt, Shift: key.Shift}
+		binding := Binding{Key: key.Key, Char: key.Char, Ctrl: key.Ctrl, Alt: key.Alt, Shift: key.Shift, RequiresKeyboardDisambiguation: ShortcutKeyRequiresEnhancedKeyboard(entry.Key)}
 		if bindingMatches(binding, event) {
 			return entry, true
 		}
@@ -183,6 +186,7 @@ func (catalog *shortcutCatalog) add(sceneName string, keyToken string, actionID 
 	definition.Ctrl = key.Ctrl
 	definition.Alt = key.Alt
 	definition.Shift = key.Shift
+	definition.RequiresKeyboardDisambiguation = ShortcutKeyRequiresEnhancedKeyboard(keyToken)
 	definition.Label = label
 	catalog.bindings = append(catalog.bindings, definition)
 }
@@ -324,17 +328,48 @@ func ShortcutKeyDisplay(token string) string {
 	return base
 }
 
-// ShortcutKeyRequiresEnhancedKeyboard 判断某个 binding 是否依赖传统 TTY 无法区分的修饰键编码。
+// ShortcutKeyRequiresEnhancedKeyboard 判断 binding 是否依赖传统 TTY 无法区分的 modifier 编码。
+// catalog 用该结果阻止歧义事件误命中；renderer 同时用它按已确认的 host capability 隐藏不可用提示。
 // capability availability 由宿主 TerminalHost 探测；该函数只复用 canonical key parser 判定键位语义。
 func ShortcutKeyRequiresEnhancedKeyboard(token string) bool {
 	key, ok := parseShortcutKeyToken(token)
-	if !ok || key.Key != KeyChar || !key.Ctrl {
+	if !ok {
 		return false
 	}
-	if _, ok := ctrlCharBytes(key.Char); ok {
+	if key.Key == KeyChar {
+		if key.Shift {
+			return true
+		}
+		if key.Ctrl {
+			data, representable := ctrlCharBytes(key.Char)
+			if !representable {
+				return true
+			}
+			// 传统 TTY 会先把这些 control bytes 规范化为 named key，无法命中 KeyChar+Ctrl binding。
+			switch data[0] {
+			case '\t', '\n', '\r', '\x1b', '\x7f':
+				return true
+			default:
+				return false
+			}
+		}
 		return false
 	}
-	return true
+	if key.Key == KeyShiftTab {
+		return false
+	}
+	if !key.Ctrl && !key.Shift {
+		// Alt+named key 可由传统 ESC prefix 表达；无 modifier 的 named key 走传统 CSI/SS3。
+		return false
+	}
+	switch key.Key {
+	case KeyUp, KeyDown, KeyLeft, KeyRight, KeyHome, KeyEnd, KeyDelete, KeyInsert,
+		KeyPageUp, KeyPageDn, KeyF1, KeyF2, KeyF3, KeyF4, KeyF5, KeyF6,
+		KeyF7, KeyF8, KeyF9, KeyF10, KeyF11, KeyF12:
+		return false
+	default:
+		return true
+	}
 }
 
 func shortcutKeyBaseDisplay(key shortcutKey) string {
@@ -379,8 +414,10 @@ func shortcutKeyBaseDisplay(key shortcutKey) string {
 	}
 }
 
-func shortcutSceneMode(sceneName string) (InteractionMode, bool) {
-	scene, ok := shortcut.SceneByName(sceneName)
+// InteractionModeForShortcutScene 是 shortcut scene 到 input sticky mode 的唯一投影。
+// shortcut 拥有 scene identity；input 拥有键盘路由 mode。app 只能组合这两个 owner，不能另建 menu action 映射。
+func InteractionModeForShortcutScene(sceneID shortcut.SceneID) (InteractionMode, bool) {
+	scene, ok := shortcut.SceneByName(string(sceneID))
 	if !ok || !scene.Routable {
 		return InteractionModeNormal, false
 	}
@@ -404,6 +441,10 @@ func shortcutSceneMode(sceneName string) (InteractionMode, bool) {
 	default:
 		return InteractionModeNormal, false
 	}
+}
+
+func shortcutSceneMode(sceneName string) (InteractionMode, bool) {
+	return InteractionModeForShortcutScene(shortcut.NormalizeScene(sceneName))
 }
 
 // ShortcutBindingSignature 返回 scene/key 在配置层输入模型里的唯一签名。
@@ -523,6 +564,9 @@ func lookupBinding(mode InteractionMode, event InputEvent, catalog shortcutCatal
 }
 
 func bindingMatches(binding Binding, event InputEvent) bool {
+	if binding.RequiresKeyboardDisambiguation && event.KeyboardProtocol != KeyboardProtocolKittyCSIU {
+		return false
+	}
 	if binding.Key != event.Key {
 		return false
 	}
@@ -632,22 +676,15 @@ func rootShortcutIntent(event InputEvent, shortcuts state.TUIShortcutConfig) (In
 }
 
 func shortcutInvocationMode(invocation actiondomain.Invocation) InteractionMode {
-	switch invocation.ID {
-	case "menu.panel":
-		return InteractionModePane
-	case "menu.resize":
-		return InteractionModeResize
-	case "menu.system":
-		return InteractionModeGlobal
-	case "menu.floating":
-		return InteractionModeFloating
-	case "menu.tab":
-		return InteractionModeTab
-	case "menu.workspace":
-		return InteractionModeWorkspace
-	default:
+	scene, ok := shortcut.SceneByMenuAction(invocation.ID)
+	if !ok {
 		return InteractionModeNormal
 	}
+	mode, ok := InteractionModeForShortcutScene(scene.ID)
+	if !ok || mode == InteractionModeCopy {
+		return InteractionModeNormal
+	}
+	return mode
 }
 
 func terminalBytes(event InputEvent) []byte {
@@ -664,6 +701,42 @@ func terminalBytes(event InputEvent) []byte {
 		data = []byte{0x7f}
 	case KeyTab:
 		data = []byte{'\t'}
+	case KeyShiftTab:
+		if event.Ctrl || event.Alt {
+			return modifiedCSI("Z", event)
+		}
+		return []byte("\x1b[Z")
+	case KeyUp:
+		return modifiedCSI("A", event)
+	case KeyDown:
+		return modifiedCSI("B", event)
+	case KeyRight:
+		return modifiedCSI("C", event)
+	case KeyLeft:
+		return modifiedCSI("D", event)
+	case KeyHome:
+		return modifiedCSI("H", event)
+	case KeyEnd:
+		return modifiedCSI("F", event)
+	case KeyInsert:
+		return modifiedTildeCSI(2, event)
+	case KeyDelete:
+		return modifiedTildeCSI(3, event)
+	case KeyPageUp:
+		return modifiedTildeCSI(5, event)
+	case KeyPageDn:
+		return modifiedTildeCSI(6, event)
+	case KeyF1, KeyF2, KeyF4:
+		final := map[Key]string{KeyF1: "P", KeyF2: "Q", KeyF4: "S"}[event.Key]
+		if !event.Ctrl && !event.Alt && !event.Shift {
+			return []byte("\x1bO" + final)
+		}
+		return modifiedCSI(final, event)
+	case KeyF3:
+		return modifiedTildeCSI(13, event)
+	case KeyF5, KeyF6, KeyF7, KeyF8, KeyF9, KeyF10, KeyF11, KeyF12:
+		code := map[Key]int{KeyF5: 15, KeyF6: 17, KeyF7: 18, KeyF8: 19, KeyF9: 20, KeyF10: 21, KeyF11: 23, KeyF12: 24}[event.Key]
+		return modifiedTildeCSI(code, event)
 	case KeyChar:
 		if event.Char != "" {
 			if event.Ctrl {
@@ -682,12 +755,50 @@ func terminalBytes(event InputEvent) []byte {
 		}
 	}
 	if len(data) > 0 {
+		if event.Ctrl || event.Shift {
+			// Enter/Tab/Backspace/Esc 没有传统 Ctrl/Shift 编码；禁止降级成有副作用的普通 named key。
+			return nil
+		}
 		if event.Alt {
 			return append([]byte{'\x1b'}, data...)
 		}
 		return data
 	}
 	return nil
+}
+
+func modifiedCSI(final string, event InputEvent) []byte {
+	modifier := 1
+	if event.Shift {
+		modifier++
+	}
+	if event.Alt {
+		modifier += 2
+	}
+	if event.Ctrl {
+		modifier += 4
+	}
+	if modifier == 1 {
+		return []byte("\x1b[" + final)
+	}
+	return []byte(fmt.Sprintf("\x1b[1;%d%s", modifier, final))
+}
+
+func modifiedTildeCSI(code int, event InputEvent) []byte {
+	modifier := 1
+	if event.Shift {
+		modifier++
+	}
+	if event.Alt {
+		modifier += 2
+	}
+	if event.Ctrl {
+		modifier += 4
+	}
+	if modifier == 1 {
+		return []byte(fmt.Sprintf("\x1b[%d~", code))
+	}
+	return []byte(fmt.Sprintf("\x1b[%d;%d~", code, modifier))
 }
 
 func ctrlCharBytes(char string) ([]byte, bool) {
@@ -708,7 +819,7 @@ func ctrlCharBytes(char string) ([]byte, bool) {
 		return []byte{c - 'A' + 1}, true
 	}
 	switch c {
-	case ' ':
+	case ' ', '@':
 		return []byte{0x00}, true
 	case '[':
 		return []byte{0x1b}, true

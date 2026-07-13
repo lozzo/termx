@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "stage": "KS013",
+  "stage": "KS014",
   "inventory": {
     "default_entries": 203,
     "routed_bindings": 166,
@@ -14,11 +14,13 @@
       {"signature": "tui/app/runtime.go#ingestHostInput", "count": 1, "classification": "input-event-contract"},
       {"signature": "tui/app/shell.go#NewShellReducer", "count": 1, "classification": "input-event-contract"},
       {"signature": "tui/terminalhost/host.go#readResizeSignals", "count": 1, "classification": "input-event-contract"},
-      {"signature": "tui/terminalhost/input_parser.go#csiKeyEvent", "count": 5, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#csiKeyEvent", "count": 7, "classification": "input-event-contract"},
       {"signature": "tui/terminalhost/input_parser.go#csiKeyboardCapabilityEvent", "count": 2, "classification": "input-event-contract"},
       {"signature": "tui/terminalhost/input_parser.go#csiUnicodeKeyEvent", "count": 7, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#hostControl", "count": 1, "classification": "input-event-contract"},
       {"signature": "tui/terminalhost/input_parser.go#oscThemeEvent", "count": 10, "classification": "input-event-contract"},
       {"signature": "tui/terminalhost/input_parser.go#parseAltChar", "count": 3, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#parseBracketedPaste", "count": 2, "classification": "input-event-contract"},
       {"signature": "tui/terminalhost/input_parser.go#parseEscape", "count": 4, "classification": "input-event-contract"},
       {"signature": "tui/terminalhost/input_parser.go#parseOSC", "count": 3, "classification": "input-event-contract"},
       {"signature": "tui/terminalhost/input_parser.go#parseOneInput", "count": 7, "classification": "input-event-contract"},
@@ -76,7 +78,7 @@
       "kind": "input",
       "classification": "conforming",
       "owner": "tui/input",
-      "reason": "TerminalHost 只通过结构化 InputEvent 交付宿主输入，不把 raw bytes 直接解释成 action。",
+      "reason": "TerminalHost 负责 raw TTY/CSI-u/SGR/OSC 分帧与规范化，只交付结构化 InputEvent；未知 host control 和不可表达 Kitty key 不能进入 shortcut 或 PTY。",
       "sources": [
         {
           "path": "tui/input/types.go",

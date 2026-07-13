@@ -78,7 +78,7 @@ func TestUIInputReducerUsesConfiguredShortcutsAsRouteTruth(t *testing.T) {
 		t.Fatalf("removed ctrl-p must not enter pane mode, shell=%#v effects=%#v", next.Shell, effects)
 	}
 
-	next, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "1", Ctrl: true}})
+	next, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "1", Ctrl: true, KeyboardProtocol: input.KeyboardProtocolKittyCSIU}})
 	if len(effects) != 2 {
 		t.Fatalf("custom ctrl-1 should emit handled workbench command effect, effects=%#v", effects)
 	}
@@ -1455,6 +1455,19 @@ func TestUIInputReducerCreateTerminalFormEditsAndCancels(t *testing.T) {
 	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}})
 	if root.Shell.EnsureDefaults().Overlay.Open || len(effects) != 0 {
 		t.Fatalf("esc should close create form and consume input, root=%#v effects=%#v", root, effects)
+	}
+}
+
+func TestUIInputReducerPromptConsumesPasteAsText(t *testing.T) {
+	reducer := ComposeReducers(NewBackNavigationReducer(CopyModeDeps{}), NewUIInputReducer())
+	root := state.Root{Shell: state.DefaultShell().OpenPrompt(createTerminalPrompt(state.DefaultPaneID))}
+	next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindPaste, Paste: "name-\x07-tail"}})
+	prompt := next.Shell.EnsureDefaults().Overlay.Prompt
+	if prompt.FieldRawValue("name") != "name-\x07-tail" || !next.Shell.EnsureDefaults().Overlay.Open {
+		t.Fatalf("prompt must consume paste body as one text edit, prompt=%#v", prompt)
+	}
+	if len(effects) == 0 {
+		t.Fatal("prompt paste must be marked handled and refresh completion state")
 	}
 }
 

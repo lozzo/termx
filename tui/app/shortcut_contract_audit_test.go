@@ -25,8 +25,8 @@ import (
 	"github.com/lozzow/termx/tui/state"
 )
 
-const shortcutArtifactBaselineSHA256 = "9f57949028332d435bc8c8c31af8ac46baafaa211c49244c38c8446ec534a427"
-const shortcutCompositeSemanticBaselineSHA256 = "de46d98c1ed8a80060b9bb776fd1b7abc60355aecc8e0ed74c1fd870b0803178"
+const shortcutArtifactBaselineSHA256 = "c2d92ed9bdbd4c29df6a45d414ef82cef20d4a3c94c04203b554772c423f93fa"
+const shortcutCompositeSemanticBaselineSHA256 = "1591668e24ec4badd14833bbc96ea1d53dd98dad8eac8693fd6571dc001947d8"
 const shortcutRenderStringBaselineSHA256 = "54e9d0f874d8a489af4d92e276794d0d56060ac37ea557c515a0e5a4f904ff36"
 
 type shortcutDebtManifest struct {
@@ -78,7 +78,7 @@ type shortcutAuditSource struct {
 func TestShortcutContractDebtManifestLocksKnownDebt(t *testing.T) {
 	repoRoot := shortcutAuditRepoRoot(t)
 	manifest := readShortcutDebtManifest(t, repoRoot)
-	if manifest.SchemaVersion != 1 || manifest.Stage != "KS013" {
+	if manifest.SchemaVersion != 1 || manifest.Stage != "KS014" {
 		t.Fatalf("unexpected shortcut debt manifest header: %#v", manifest)
 	}
 

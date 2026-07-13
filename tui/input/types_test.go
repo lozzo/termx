@@ -179,7 +179,7 @@ func TestRouteUsesCustomShortcutsAsOnlyTruth(t *testing.T) {
 		},
 	}
 
-	jump := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "1", Ctrl: true}, RouteOptions{Shortcuts: shortcuts})
+	jump := RouteWithOptions(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "1", Ctrl: true, KeyboardProtocol: KeyboardProtocolKittyCSIU}, RouteOptions{Shortcuts: shortcuts})
 	if jump.Kind != IntentShortcutAction || jump.Invocation.ID != "tab.jump" {
 		t.Fatalf("custom ctrl-1 should jump tab, got %#v", jump)
 	}
@@ -205,13 +205,47 @@ func TestKittyCSIUCtrlDigitRoutesToConfiguredTabJump(t *testing.T) {
 			"ctrl-1": {Action: "tab.jump.1"},
 		}},
 	}}
-	event := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "1", Ctrl: true, RawSeq: "\x1b[49;5u"}
+	event := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "1", Ctrl: true, RawSeq: "\x1b[49;5u", KeyboardProtocol: KeyboardProtocolKittyCSIU}
 	intent := RouteWithOptions(event, RouteOptions{Shortcuts: shortcuts})
 	if intent.Kind != IntentShortcutAction || intent.Invocation.ID != "tab.jump" {
 		t.Fatalf("CSI-u ctrl-1 should route to tab jump, got %#v", intent)
 	}
 	if index, ok := intent.Invocation.Param("index"); !ok || index != 1 {
 		t.Fatalf("CSI-u ctrl-1 lost tab index: %#v", intent.Invocation)
+	}
+}
+
+func TestEnhancedOnlyBindingRejectsAmbiguousTraditionalTTYEvent(t *testing.T) {
+	shortcuts := state.TUIShortcutConfig{Scenes: map[string]state.TUIShortcutSceneConfig{
+		"global": {Bindings: map[string]state.TUIShortcutBindingConfig{
+			"ctrl-1":      {Action: "tab.jump.1"},
+			"shift-enter": {Action: "menu.help"},
+		}},
+	}}
+	for _, event := range []InputEvent{
+		{Kind: EventKindKey, Key: KeyChar, Char: "1", Ctrl: true},
+		{Kind: EventKindKey, Key: KeyEnter, Shift: true},
+	} {
+		if intent := RouteWithOptions(event, RouteOptions{Shortcuts: shortcuts}); intent.Kind == IntentShortcutAction {
+			t.Fatalf("ambiguous traditional event must not hit enhanced-only binding: event=%#v intent=%#v", event, intent)
+		}
+		event.KeyboardProtocol = KeyboardProtocolKittyCSIU
+		if intent := RouteWithOptions(event, RouteOptions{Shortcuts: shortcuts}); intent.Kind != IntentShortcutAction {
+			t.Fatalf("normalized CSI-u event must hit enhanced-only binding: event=%#v intent=%#v", event, intent)
+		}
+	}
+}
+
+func TestShortcutEnhancedRequirementUsesTraditionalCanonicalEvent(t *testing.T) {
+	for _, token := range []string{"ctrl-i", "ctrl-j", "ctrl-m", "ctrl-[", "ctrl-?", "ctrl-alt-i"} {
+		if !ShortcutKeyRequiresEnhancedKeyboard(token) {
+			t.Fatalf("%q is normalized to a different traditional named key and must require CSI-u", token)
+		}
+	}
+	for _, token := range []string{"ctrl-a", "ctrl-@", "ctrl-alt-a", "shift-tab", "ctrl-left"} {
+		if ShortcutKeyRequiresEnhancedKeyboard(token) {
+			t.Fatalf("%q has an equivalent traditional TTY representation", token)
+		}
 	}
 }
 
@@ -388,7 +422,15 @@ func TestEnhancedKeyboardInputDoesNotLeakHostProtocolToPTY(t *testing.T) {
 		{name: "alt esc", event: InputEvent{Kind: EventKindKey, Key: KeyEsc, Alt: true, RawSeq: "\x1b[27;3u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x1b\x1b"},
 		{name: "alt tab", event: InputEvent{Kind: EventKindKey, Key: KeyTab, Alt: true, RawSeq: "\x1b[9;3u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x1b\t"},
 		{name: "alt backspace", event: InputEvent{Kind: EventKindKey, Key: KeyBackspace, Alt: true, RawSeq: "\x1b[127;3u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x1b\x7f"},
+		{name: "shift tab", event: InputEvent{Kind: EventKindKey, Key: KeyShiftTab, Shift: true, RawSeq: "\x1b[9;2u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x1b[Z"},
+		{name: "ctrl left", event: InputEvent{Kind: EventKindKey, Key: KeyLeft, Ctrl: true, RawSeq: "synthetic-host-key", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x1b[1;5D"},
+		{name: "f3", event: InputEvent{Kind: EventKindKey, Key: KeyF3, Ctrl: true, RawSeq: "synthetic-host-key", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x1b[13;5~"},
+		{name: "f5", event: InputEvent{Kind: EventKindKey, Key: KeyF5, RawSeq: "synthetic-host-key", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: "\x1b[15~"},
+		{name: "unrepresentable ctrl enter", event: InputEvent{Kind: EventKindKey, Key: KeyEnter, Ctrl: true, RawSeq: "\x1b[13;5u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: ""},
+		{name: "unrepresentable shift enter", event: InputEvent{Kind: EventKindKey, Key: KeyEnter, Shift: true, RawSeq: "\x1b[13;2u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: ""},
+		{name: "unrepresentable ctrl tab", event: InputEvent{Kind: EventKindKey, Key: KeyTab, Ctrl: true, RawSeq: "\x1b[9;5u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: ""},
 		{name: "unrepresentable ctrl digit", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "1", Ctrl: true, RawSeq: "\x1b[49;5u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: ""},
+		{name: "unsupported functional key", event: InputEvent{Kind: EventKindKey, Key: KeyUnknown, RawSeq: "\x1b[57376u", KeyboardProtocol: KeyboardProtocolKittyCSIU}, want: ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

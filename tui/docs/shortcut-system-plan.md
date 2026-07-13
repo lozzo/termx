@@ -337,6 +337,17 @@ KS013 实际收口边界：
 - 用户 catalog 的无配置、action-only、显式空 scene、完整替换、范围展开和 capability 条件必须共享同一编译结果。
 - 未命中按键的 PTY 透传必须保留语义；宿主协议控制序列不得泄漏给 terminal。
 
+KS014 实际输入契约：
+
+Kitty 编码、modifier/event-type 与 PUA functional key 范围以官方 [keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) 为准；本阶段只启用 disambiguation flag，不启用 alternate/text/release 扩展。
+
+- `tui/terminalhost.InputParser` 是 raw bytes 分帧 owner。普通 UTF-8、传统 control/Alt、CSI/SS3、Kitty CSI-u、SGR mouse、bracketed paste、OSC theme/capability/control 必须先形成完整 `InputEvent`；任意 read chunk 边界不能改变事件。单独 `Esc` 与 `Esc [`/`Esc O`/`Esc ]` 的歧义由 host 25ms 窗口收口，超时后分别提交 Esc 或传统 Alt+char。`CSI 200~...CSI 201~` 必须原子形成 paste semantic event，正文不得逐键经过 shortcut。
+- Kitty press/repeat 归一为同一 key 语义；Escape/Enter/Tab/Backspace 使用 C0 codepoint，方向/导航/F1-F12 使用官方 CSI/SS3/tilde 编码，当前 input domain 不建模的 PUA functional key 统一归为 protocol-owned unknown。Super/Hyper/Meta 同样被消费，Caps Lock/Num Lock 位只描述锁定状态，不改变 Ctrl/Alt/Shift 语义。任何分支都不得把原 CSI-u bytes 或 PUA UTF-8 送入 PTY；未知/非法 CSI、SS3、OSC 统一归为 `EventKindHostControl` 并在 runtime ingestion 截断。
+- SGR mouse 的 `Row`/`Col` 保留宿主 1-based 坐标，runtime 命中测试时统一转换；零/负坐标、水平滚轮、扩展按钮、wheel release 等当前模型不支持的序列作为 host control 消费，不进入 mouse route 或 PTY。
+- shortcut catalog 编译时为传统 TTY 无法产生同一 canonical `InputEvent` 的组合标记 `RequiresKeyboardDisambiguation`。这类 binding 只有来源为 Kitty CSI-u 的规范化事件才能命中；传统 Ctrl 字母/NUL、Alt char、Shift-Tab 和 CSI modified named key 继续按可表达语义工作，`Ctrl-I/J/M/[/?` 等会被传统 parser 规范化成 named key 的组合必须使用增强协议。
+- app 输入优先级只读取 reducer-owned state：prompt suggestion > overlay > active-view copy/history > sticky interaction > normal/root > PTY。Prompt scene 把 paste 正文作为一次文本编辑消费，其他 scene 不会把 paste 正文拆成按键。shortcut lock 与双击前缀通过一次性 passthrough token 把同一个 `InputMsg` 交给 terminal router，不异步伪造第二个按键。
+- PTY passthrough 不直接转发 Kitty/OSC host protocol。可表达的输入语义重编码为传统 terminal bytes（包括 Ctrl/Alt/control、Shift-Tab、方向/导航键和 F1-F12，F3 固定使用无 CPR 冲突的 `13~`）；paste event 携带纯正文并绕过 shortcut，唯一 terminal router 解析 owning `TerminalRef` 后按该 surface 的 `BracketedPaste` mode 决定发送正文或重新包裹 marker。不可表达的 Ctrl-digit、Ctrl/Shift+Enter/Tab、未建模 PUA functional key 明确返回 `IntentNone`，不能降级成有副作用的普通按键或泄漏宿主协议。
+
 ### KS015：全部默认 action 真实功能闭环
 
 - 按 global/system、panel/resize、tab/workspace、floating、copy、terminal picker/pool、workbench tree、clipboard history、prompt/help 场景逐项执行默认 binding。

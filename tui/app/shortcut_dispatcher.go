@@ -141,8 +141,11 @@ func shortcutMenuIntent(id actiondomain.ID, intent input.Intent) (input.Intent, 
 	case "menu.help":
 		intent.Kind, intent.Action = input.IntentShellAction, input.ShellActionOpenHelp
 	default:
-		modes := map[actiondomain.ID]input.InteractionMode{"menu.panel": input.InteractionModePane, "menu.resize": input.InteractionModeResize, "menu.system": input.InteractionModeGlobal, "menu.floating": input.InteractionModeFloating, "menu.tab": input.InteractionModeTab, "menu.workspace": input.InteractionModeWorkspace}
-		mode, ok := modes[id]
+		scene, ok := shortcut.SceneByMenuAction(id)
+		if !ok {
+			return input.Intent{}, false
+		}
+		mode, ok := input.InteractionModeForShortcutScene(scene.ID)
 		if !ok {
 			return input.Intent{}, false
 		}

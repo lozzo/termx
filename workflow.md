@@ -146,7 +146,7 @@
 | GA004 | 延后 | 单 transit 受控加速 | 仅在 GA003 数据证明需要时恢复 |
 | KS012 | 完成 | 快捷键最终审计与总契约 | 所有 binding/spec/handler/projection 被机器归类为符合或有 owner 的 debt，无未分类项且不能新增 debt |
 | KS013 | 完成 | 中立 action domain 与分发 | tui/action 成为通用 action/invocation owner，shortcut 只拥有键位编译，keyboard 到 handler 无重复 identity/alias 表 |
-| KS014 | 待开始 | 输入协议与 scene 状态 | 传统 TTY/CSI-u/mouse 规范化、catalog 替换、sticky/copy/overlay/lock/Esc 优先级和 PTY 透传完整可验证 |
+| KS014 | 完成 | 输入协议与 scene 状态 | 传统 TTY/CSI-u/mouse 规范化、catalog 替换、sticky/copy/overlay/lock/Esc 优先级和 PTY 透传完整可验证 |
 | KS015 | 待开始 | 全部默认 action 真实闭环 | 每个默认 binding 都产生真实 reducer/effect/service 结果；placeholder 被实现或删除，失败不伪装成功 |
 | KS016 | 待开始 | 提示点击与键盘同源 | 所有 render surface 不含硬编码操作键位，keyboard/mouse/drag/click 使用 tui/action canonical invocation |
 | KS017 | 待开始 | 配置文档与真实终端验收 | 完整示例可加载，文档与 catalog 自动一致，全量 TUI/CLI/tmux/CSI-u 门禁通过且旧代码清理完成 |
@@ -209,6 +209,8 @@
 - KS012 已完成：机器清单固定 203 个默认 shortcut entry、166 个 routed binding、146 个 canonical spec 和 123 个 render projection；203 个 entry 均按真实 routed/overlay 路径验证 handler。生产 `InputEvent`/`HitRegion` producer、全部 80 个 `withFooter` 键和显式 `Key`、非结构化 render 字符串均由 manifest、源码锚点、逐组 digest 与独立 SHA 闭集守卫覆盖。定向 `go test ./tui/{shortcut,input,app,render,config,state,terminalhost} -count=1` 和 clean-env `go test ./tui/... -count=1` 通过；架构 reviewer `ks012_arch_review` 与代码 reviewer `ks012_code_review` 最终均明确 PASS，`git diff --check` 通过。
 
 - KS013 已完成：`tui/action` 以 159 个 canonical spec 统一 keyboard、mouse、drag 与 CTA identity/invocation，`tui/shortcut` 独占 15 个内置 scene 和 203 个默认 binding；全部默认 keyboard invocation 进入 app handler registry，overlay 不再经过 render fallback。render 的 123 个 `ProjectionID` 与 action identity 分离，并通过 `CanonicalActionID` 显式引用 canonical spec；遗留 footer/help metadata 与 surface bridge 继续由 debt manifest 锁定到 KS016。clean-env `go test ./tui/... -count=1` 通过；架构 reviewer `ks013_arch_review` 与代码 reviewer `ks013_code_review` 最终均明确 PASS，`git diff --check` 通过。
+
+- KS014 已完成：`TerminalHost` 成为传统 TTY、Kitty CSI-u、SGR mouse、OSC 与 bracketed paste 的唯一 raw 分帧 owner；Esc 歧义由 25ms host 窗口收口，非法 host protocol、未建模 PUA 和不支持的 modifier 不进入 shortcut 或 PTY。catalog 按传统 canonical event 标记增强键盘依赖，scene/menu 只经 shortcut registry 和唯一 input mode 投影；overlay、copy、sticky、lock、双前缀与 back navigation 按 reducer-owned state 决定优先级。Paste 跨 chunk 原子化，Prompt 作为一次文本编辑消费；普通 terminal router 按 endpoint-aware owning surface 的 `BracketedPaste` mode 使用唯一 encoder。clean-env `go test ./tui/... -count=1`、`go test -race ./tui/terminalhost ./tui/input -count=1` 与 parser/Kitty/SGR/paste/prompt/shortcut/back-navigation 定向测试 `-count=20` 通过；架构 reviewer `ks014_arch_review` 与代码 reviewer `ks014_code_review` 最终均明确 PASS，`git diff --check` 通过。
 
 - 快捷键最终收口已规划为 KS012-KS017，目标不是补齐零散按键，而是删除第二真值并证明完整消息链路。当前审计已确认 `tui/shortcut` 之外仍有 `render.ActionSpecCatalog` 等 action 描述面、内容区硬编码 `Ctrl-F`/`Ctrl-T`/`R restart` 操作提示，以及 `system.open_prompt` 落到 placeholder 的风险。中立 `tui/action` 将拥有 keyboard/mouse/drag/CTA 共用 action identity 与 invocation，`tui/shortcut` 只拥有 scene+key 编译和快捷键展示覆盖；每个默认 shortcut 后续必须真实工作或从 catalog 删除。KS012 先用 debt manifest 保证无未分类/无新增 gap，KS013-KS016 再按 owner 消除。允许在切片范围内大规模删除被替代旧代码，不以改动行数为约束。所有阶段执行架构 reviewer + 代码 reviewer 双门禁，规划用 `/goal` prompt 位于 `tui/docs/shortcut-completion-goal-prompt.md`。
 

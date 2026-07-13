@@ -551,6 +551,9 @@ func (runtime *AppRuntime) ingestHostInput() {
 				runtime.enqueue(HostCapabilityMsg{Update: state.HostCapabilityUpdate{
 					KeyboardDisambiguation: event.Capability.KeyboardDisambiguation,
 				}})
+			case input.EventKindHostControl:
+				// 未识别 host 控制响应在 TerminalHost 已完成分帧；这里只隔断 terminal batch，不生成用户输入消息。
+				flushTerminalBatch()
 			default:
 				if !blockTerminalBatch {
 					if bytes, ok := runtime.coalescableTerminalInputBytes(event); ok {

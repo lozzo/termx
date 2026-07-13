@@ -1,6 +1,7 @@
 package terminalhost
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,16 +10,21 @@ import (
 	"github.com/lozzow/termx/tui/input"
 )
 
-// InputParser 把 raw TTY bytes 转成 v3 自有 InputEvent。
+// InputParser 是 raw TTY 输入分帧与规范化的 owner。
+// 它跨 read chunk 保存未完成 UTF-8/CSI/OSC，并只产出完整 InputEvent；业务 scene、快捷键和 PTY 目标不属于本类型。
 type InputParser struct {
 	pending []byte
 }
 
+var bracketedPasteEnd = []byte("\x1b[201~")
+
+// NewInputParser 建立一个会话级 parser；同一个 TerminalHost 生命周期必须复用实例，不能逐 read 重建并丢失 pending bytes。
 func NewInputParser() *InputParser {
 	return &InputParser{}
 }
 
-// Feed 接收一批 raw bytes，返回能完整解析的输入事件。
+// Feed 接收任意 raw chunk 并返回当前已完整分帧的事件。
+// 尾部不完整序列留在 parser 内；单独 Esc 也先等待 Host 的歧义窗口，再由 FlushEscape 提交。
 func (parser *InputParser) Feed(chunk []byte) []input.InputEvent {
 	if len(chunk) == 0 {
 		return nil
@@ -34,6 +40,30 @@ func (parser *InputParser) Feed(chunk []byte) []input.InputEvent {
 		parser.pending = parser.pending[consumed:]
 	}
 	return events
+}
+
+// FlushEscape 在宿主输入等待窗口到期后提交一个独立 Esc。
+// parser 只提交单字节 Esc，或恰好两个字节且同时可解释为传统 Alt+char 的歧义前缀；
+// 已包含参数/正文的不完整 CSI/OSC 仍等待后续 raw bytes，避免把宿主控制序列拆成普通字符。
+func (parser *InputParser) FlushEscape() []input.InputEvent {
+	if len(parser.pending) == 0 || parser.pending[0] != '\x1b' {
+		return nil
+	}
+	if len(parser.pending) == 1 {
+		parser.pending = parser.pending[:0]
+		return []input.InputEvent{{Kind: input.EventKindKey, Key: input.KeyEsc, RawSeq: "\x1b"}}
+	}
+	if len(parser.pending) == 2 {
+		if event, consumed, ok := parseAltChar(parser.pending); ok && consumed == 2 {
+			parser.pending = parser.pending[:0]
+			return []input.InputEvent{event}
+		}
+	}
+	return nil
+}
+
+func (parser *InputParser) hasPendingEscape() bool {
+	return len(parser.pending) >= 1 && len(parser.pending) <= 2 && parser.pending[0] == '\x1b'
 }
 
 func parseOneInput(buffer []byte) (input.InputEvent, int, bool) {
@@ -89,7 +119,7 @@ func parseOneInput(buffer []byte) (input.InputEvent, int, bool) {
 
 func parseEscape(buffer []byte) (input.InputEvent, int, bool) {
 	if len(buffer) == 1 {
-		return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc, RawSeq: "\x1b"}, 1, true
+		return input.InputEvent{}, 0, false
 	}
 	if buffer[1] == ']' {
 		return parseOSC(buffer)
@@ -107,6 +137,9 @@ func parseEscape(buffer []byte) (input.InputEvent, int, bool) {
 	if len(buffer) == 2 {
 		return input.InputEvent{}, 0, false
 	}
+	if bytes.HasPrefix(buffer, []byte("\x1b[200~")) {
+		return parseBracketedPaste(buffer)
+	}
 	if buffer[2] == '<' {
 		return parseSGRMouse(buffer)
 	}
@@ -115,7 +148,7 @@ func parseEscape(buffer []byte) (input.InputEvent, int, bool) {
 			if event, ok := csiKeyEvent(buffer[:i+1]); ok {
 				return event, i + 1, true
 			}
-			event := unknownKey(buffer[:i+1])
+			event := hostControl(buffer[:i+1])
 			if buffer[i] == 'u' {
 				event.KeyboardProtocol = input.KeyboardProtocolKittyCSIU
 			}
@@ -123,6 +156,17 @@ func parseEscape(buffer []byte) (input.InputEvent, int, bool) {
 		}
 	}
 	return input.InputEvent{}, 0, false
+}
+
+func parseBracketedPaste(buffer []byte) (input.InputEvent, int, bool) {
+	const startLength = len("\x1b[200~")
+	endOffset := bytes.Index(buffer[startLength:], bracketedPasteEnd)
+	if endOffset < 0 {
+		return input.InputEvent{}, 0, false
+	}
+	contentEnd := startLength + endOffset
+	consumed := contentEnd + len(bracketedPasteEnd)
+	return input.InputEvent{Kind: input.EventKindPaste, Paste: string(buffer[startLength:contentEnd])}, consumed, true
 }
 
 func parseOSC(buffer []byte) (input.InputEvent, int, bool) {
@@ -155,7 +199,8 @@ func parseOSC(buffer []byte) (input.InputEvent, int, bool) {
 	if event, ok := oscThemeEvent(body, string(seq)); ok {
 		return event, consumed, true
 	}
-	return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyUnknown, RawSeq: string(seq)}, consumed, true
+	// OSC 是 host terminal 的控制响应，不是用户键盘输入；未知响应也必须结构化吞掉，不能进入 PTY。
+	return input.InputEvent{Kind: input.EventKindHostControl, RawSeq: string(seq)}, consumed, true
 }
 
 func oscThemeEvent(body string, raw string) (input.InputEvent, bool) {
@@ -261,7 +306,7 @@ func parseSS3(buffer []byte) (input.InputEvent, int, bool) {
 	case 'S':
 		event.Key = input.KeyF4
 	default:
-		return unknownKey(seq), 3, true
+		return hostControl(seq), 3, true
 	}
 	return event, 3, true
 }
@@ -281,7 +326,6 @@ func csiKeyEvent(seq []byte) (input.InputEvent, bool) {
 		return csiUnicodeKeyEvent(body, string(seq))
 	case 'A', 'B', 'C', 'D', 'F', 'H', 'Z':
 		parts := splitCSIParams(body)
-		applyKeyModifier(&event, modifierParam(parts, 1))
 		switch final {
 		case 'A':
 			event.Key = input.KeyUp
@@ -299,6 +343,13 @@ func csiKeyEvent(seq []byte) (input.InputEvent, bool) {
 			event.Key = input.KeyShiftTab
 			event.Shift = true
 		}
+		modifier, valid := keyModifierParam(parts, 1)
+		if !valid {
+			return input.InputEvent{}, false
+		}
+		if !applyKeyModifier(&event, modifier) {
+			return hostControl(seq), true
+		}
 		return event, true
 	case '~':
 		parts := splitCSIParams(body)
@@ -311,7 +362,13 @@ func csiKeyEvent(seq []byte) (input.InputEvent, bool) {
 			return input.InputEvent{}, false
 		}
 		event.Key = key
-		applyKeyModifier(&event, modifierParam(parts, 1))
+		modifier, valid := keyModifierParam(parts, 1)
+		if !valid {
+			return input.InputEvent{}, false
+		}
+		if !applyKeyModifier(&event, modifier) {
+			return hostControl(seq), true
+		}
 		return event, true
 	default:
 		return input.InputEvent{}, false
@@ -355,7 +412,7 @@ func csiUnicodeKeyEvent(body string, raw string) (input.InputEvent, bool) {
 			return input.InputEvent{}, false
 		}
 		modifier, err = strconv.Atoi(modifierParts[0])
-		if err != nil || modifier < 1 || modifier > 8 {
+		if err != nil || modifier < 1 || modifier > 256 {
 			return input.InputEvent{}, false
 		}
 		if len(modifierParts) == 2 {
@@ -372,8 +429,17 @@ func csiUnicodeKeyEvent(body string, raw string) (input.InputEvent, bool) {
 		RawSeq:           raw,
 		KeyboardProtocol: input.KeyboardProtocolKittyCSIU,
 	}
-	applyCSIUControlKey(&event, codepoint)
-	applyKeyModifier(&event, modifier)
+	// 当前 input domain 不建模 PUA functional key；不得把这些宿主协议 codepoint 当作文本。
+	if codepoint >= 57344 && codepoint <= 63743 {
+		event.Key = input.KeyUnknown
+		event.Char = ""
+	} else {
+		applyCSIUControlKey(&event, codepoint)
+	}
+	if !applyKeyModifier(&event, modifier) {
+		event.Key = input.KeyUnknown
+		event.Char = ""
+	}
 	if event.Key == input.KeyTab && event.Shift {
 		event.Key = input.KeyShiftTab
 	}
@@ -410,25 +476,27 @@ func splitCSIParams(body string) []string {
 	return strings.Split(body, ";")
 }
 
-func modifierParam(parts []string, index int) int {
+func keyModifierParam(parts []string, index int) (int, bool) {
 	if index >= len(parts) {
-		return 0
+		return 1, true
 	}
 	value, err := strconv.Atoi(parts[index])
-	if err != nil {
-		return 0
+	if err != nil || value < 1 || value > 256 {
+		return 0, false
 	}
-	return value
+	return value, true
 }
 
-func applyKeyModifier(event *input.InputEvent, encoded int) {
+func applyKeyModifier(event *input.InputEvent, encoded int) bool {
 	if encoded <= 1 {
-		return
+		return true
 	}
 	mask := encoded - 1
 	event.Shift = mask&1 != 0
 	event.Alt = mask&2 != 0
 	event.Ctrl = mask&4 != 0
+	const superHyperMeta = 8 | 16 | 32
+	return mask&superHyperMeta == 0
 }
 
 func tildeKey(code int) (input.Key, bool) {
@@ -482,13 +550,18 @@ func parseAltChar(buffer []byte) (input.InputEvent, int, bool) {
 	if r == utf8.RuneError && size == 1 {
 		return input.InputEvent{}, 0, false
 	}
-	return input.InputEvent{
+	event := input.InputEvent{
 		Kind:   input.EventKindKey,
 		Key:    input.KeyChar,
 		Char:   string(r),
 		Alt:    true,
 		RawSeq: string(buffer[:1+size]),
-	}, 1 + size, true
+	}
+	applyCSIUControlKey(&event, int(r))
+	if event.Key == input.KeyChar && r < 0x20 {
+		event.Ctrl = true
+	}
+	return event, 1 + size, true
 }
 
 func parseSGRMouse(buffer []byte) (input.InputEvent, int, bool) {
@@ -505,17 +578,17 @@ func parseSGRMouse(buffer []byte) (input.InputEvent, int, bool) {
 	seq := buffer[:end+1]
 	parts := strings.Split(string(buffer[3:end]), ";")
 	if len(parts) != 3 {
-		return unknownKey(seq), len(seq), true
+		return hostControl(seq), len(seq), true
 	}
 	code, errCode := strconv.Atoi(parts[0])
 	col, errCol := strconv.Atoi(parts[1])
 	row, errRow := strconv.Atoi(parts[2])
-	if errCode != nil || errCol != nil || errRow != nil {
-		return unknownKey(seq), len(seq), true
+	if errCode != nil || errCol != nil || errRow != nil || code < 0 || col <= 0 || row <= 0 {
+		return hostControl(seq), len(seq), true
 	}
 	button, ok := mouseButton(code, buffer[end])
 	if !ok {
-		return unknownKey(seq), len(seq), true
+		return hostControl(seq), len(seq), true
 	}
 	return input.InputEvent{
 		Kind:   input.EventKindMouse,
@@ -530,7 +603,14 @@ func parseSGRMouse(buffer []byte) (input.InputEvent, int, bool) {
 }
 
 func mouseButton(code int, final byte) (input.MouseButton, bool) {
+	const supportedBits = 3 | 4 | 8 | 16 | 32 | 64
+	if code & ^supportedBits != 0 {
+		return "", false
+	}
 	if code&64 != 0 {
+		if final != 'M' || code&32 != 0 || code&3 > 1 {
+			return "", false
+		}
 		if code&1 != 0 {
 			return input.MouseWheelDown, true
 		}
@@ -564,6 +644,9 @@ func mouseButton(code int, final byte) (input.MouseButton, bool) {
 			return input.MouseMove, true
 		}
 	}
+	if button == 3 {
+		return "", false
+	}
 	switch button {
 	case 0:
 		return input.MouseLeft, true
@@ -582,4 +665,8 @@ func unknownKey(seq []byte) input.InputEvent {
 		Key:    input.KeyUnknown,
 		RawSeq: string(seq),
 	}
+}
+
+func hostControl(seq []byte) input.InputEvent {
+	return input.InputEvent{Kind: input.EventKindHostControl, RawSeq: string(seq)}
 }

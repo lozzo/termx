@@ -919,6 +919,10 @@ func reduceOverlayShortcutAction(root state.Root, entry input.ShortcutEntry, eve
 }
 
 func reducePromptInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
+	if event.Kind == input.EventKindPaste {
+		root.Shell = refreshPromptCompletions(root, root.Shell.SetPromptSuggestionFocused(false).InsertPromptText(event.Paste))
+		return root.Advance(), promptCompletionHandledEffects(root, false)
+	}
 	if event.Kind != input.EventKindKey {
 		return root, nil
 	}

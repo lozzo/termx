@@ -10,10 +10,12 @@ type EventKind string
 
 const (
 	EventKindKey            EventKind = "key"
+	EventKindPaste          EventKind = "paste"
 	EventKindMouse          EventKind = "mouse"
 	EventKindResize         EventKind = "resize"
 	EventKindHostTheme      EventKind = "host-theme"
 	EventKindHostCapability EventKind = "host-capability"
+	EventKindHostControl    EventKind = "host-control"
 )
 
 // KeyboardProtocol 标记 InputEvent 来自哪一种宿主键盘协议。
@@ -79,6 +81,7 @@ type InputEvent struct {
 	Kind             EventKind
 	Key              Key
 	Char             string
+	Paste            string
 	Mouse            MouseButton
 	Row              int
 	Col              int
@@ -201,10 +204,12 @@ func RouteWithOptions(event InputEvent, options RouteOptions) Intent {
 	switch event.Kind {
 	case EventKindKey:
 		return routeKey(event, options)
+	case EventKindPaste:
+		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: []byte(event.Paste), Reason: "structured paste body"}
 	case EventKindMouse:
 		return routeMouse(event, options)
-	case EventKindHostTheme:
-		return Intent{Kind: IntentNone, Event: event, Reason: "host theme capability event"}
+	case EventKindHostTheme, EventKindHostCapability, EventKindHostControl:
+		return Intent{Kind: IntentNone, Event: event, Reason: "host control event"}
 	default:
 		return Intent{Kind: IntentNone, Event: event, Reason: "unknown input kind"}
 	}

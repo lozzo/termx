@@ -94,6 +94,17 @@ func SceneByName(source string) (SceneSpec, bool) {
 	return SceneSpec{}, false
 }
 
+// SceneByMenuAction 返回 canonical menu action 要进入的内置 scene。
+// input 的双击前缀和 app handler 通过该反向查询复用同一声明，不能再维护 menu action -> scene 字符串表。
+func SceneByMenuAction(id actiondomain.ID) (SceneSpec, bool) {
+	for _, scene := range sceneSpecs {
+		if scene.MenuAction == id && id != "" {
+			return scene, true
+		}
+	}
+	return SceneSpec{}, false
+}
+
 // Scenes 返回内置 scene 的只读副本，供 catalog、配置和 handler 完备性门禁消费。
 func Scenes() []SceneSpec { return append([]SceneSpec(nil), sceneSpecs...) }
 

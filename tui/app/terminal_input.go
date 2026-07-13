@@ -122,11 +122,17 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		})
 		return root, nil
 	}
+	terminalBytes := intent.Bytes
+	if msg.Event.Kind == input.EventKindPaste {
+		// paste marker 是否发给 PTY 只由 owning TerminalRef 的 live mode 决定；Host/input 不拥有该真值。
+		modes := root.Surface.SurfaceForTerminalRef(state.NewTerminalRef(target.EndpointID, target.TerminalID)).Modes
+		terminalBytes = encodeTerminalPaste(msg.Event.Paste, modes)
+	}
 	logTerminalInputRoute(deps, root, terminalInputRouteLog{
 		Event:       msg.Event,
 		Target:      target,
 		Result:      "terminal",
-		Bytes:       len(intent.Bytes),
+		Bytes:       len(terminalBytes),
 		RawMouse:    intent.RawMouse,
 		NeedsAttach: target.Channel == 0,
 	})
@@ -135,9 +141,19 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		return root.Advance(), []Effect{handledEffect{}}
 	}
 	if target.Channel == 0 {
-		return root, []Effect{liveAttachForInputEffect(root, target, msg.Event, intent.Bytes, deps)}
+		return root, []Effect{liveAttachForInputEffect(root, target, msg.Event, terminalBytes, deps)}
 	}
-	return root, []Effect{terminalSendInputEffect(target, msg.Event, intent.Bytes, true, deps)}
+	return root, []Effect{terminalSendInputEffect(target, msg.Event, terminalBytes, true, deps)}
+}
+
+func encodeTerminalPaste(text string, modes state.LiveTerminalModes) []byte {
+	if text == "" {
+		return nil
+	}
+	if !modes.BracketedPaste {
+		return []byte(text)
+	}
+	return []byte("\x1b[200~" + text + "\x1b[201~")
 }
 
 func focusTerminalInputTarget(root state.Root, target liveInputTargetInfo) state.Root {

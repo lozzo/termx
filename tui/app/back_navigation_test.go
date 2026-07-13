@@ -25,6 +25,32 @@ func TestBackNavigationEscExitsOneLayerAtATime(t *testing.T) {
 	}
 }
 
+func TestBackNavigationPriorityPreservesUnderlyingCopyAndStickyState(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell().SetInteractionMode(state.InteractionModePane).OpenHelp("most-used"),
+		CopyMode: state.CopyModeStore{
+			Active: true, PaneID: state.DefaultPaneID, ViewID: state.TerminalPaneViewID(state.DefaultPaneID), TerminalID: "term-1", BoundToken: "copy-token",
+		},
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-1", 4, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
+	}
+	runtime := NewInteractiveRuntime(root, NewFakeTerminalHost(4), NewSyncEffectRunner(), LiveDeps{}, CopyModeDeps{})
+
+	postBackNavigationEsc(t, runtime)
+	if runtime.State().Shell.EnsureDefaults().Overlay.Open || !runtime.State().CopyMode.Active || runtime.State().Shell.InteractionMode != state.InteractionModePane {
+		t.Fatalf("first esc must close only overlay: root=%#v", runtime.State())
+	}
+	postBackNavigationEsc(t, runtime)
+	if runtime.State().CopyMode.InputActive() || runtime.State().Shell.InteractionMode != state.InteractionModePane {
+		t.Fatalf("second esc must exit only copy mode: root=%#v", runtime.State())
+	}
+	postBackNavigationEsc(t, runtime)
+	if runtime.State().Shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("third esc must exit sticky interaction: root=%#v", runtime.State())
+	}
+}
+
 func TestBackNavigationLeavesPlainLiveEscForTerminal(t *testing.T) {
 	host := NewFakeTerminalHost(1)
 	terminal := &services.FakeTerminalService{}
