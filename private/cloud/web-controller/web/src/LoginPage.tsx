@@ -45,17 +45,17 @@ export default function LoginPage() {
   return (
     <main id="wx-root" className="wx-login">
       <section className="wx-login-product">
-        <img
-          src="/product-workspace.png"
-          alt="TermX machine workspace"
-        />
-        <div />
         <a className="wx-login-logo" href="/">
           <b>TX</b>
           <span>
             TERMX<small>MANAGED EDGE</small>
           </span>
         </a>
+        <div className="wx-login-route" aria-label="Managed connection path">
+          <span>CLIENT<small>IDENTITY VERIFIED</small></span>
+          <i><b>DIRECT P2P</b><em>SINGLE RELAY / STANDBY</em></i>
+          <span>DAEMON<small>TERMINAL OWNER</small></span>
+        </div>
         <article>
           <p>CLOUD AVAILABLE / DIRECT / RELAY / E2E</p>
           <h1>

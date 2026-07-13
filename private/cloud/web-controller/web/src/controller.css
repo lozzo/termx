@@ -622,16 +622,16 @@ html[data-wx-theme="light-gray"] .wx-skip:focus {
   min-height: 100dvh;
   overflow: hidden;
   border-right: 1px solid var(--wx-line);
+  background: var(--wx-bg);
 }
-.wx-login-product > img {
-  object-fit: cover;
-  opacity: 0.36;
-}
-.wx-login-product > div {
+.wx-login-product::before,
+.wx-login-product::after {
+  content: "";
   position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.62);
+  background: var(--wx-line);
 }
+.wx-login-product::before { top: 0; bottom: 0; left: 32%; width: 1px; }
+.wx-login-product::after { top: 44%; right: 0; left: 0; height: 1px; }
 .wx-login-logo {
   position: absolute;
   z-index: 2;
@@ -646,6 +646,28 @@ html[data-wx-theme="light-gray"] .wx-skip:focus {
 .wx-login-logo small {
   display: block;
 }
+.wx-login-route {
+  position: absolute;
+  z-index: 2;
+  top: 30%;
+  right: 40px;
+  left: 40px;
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--wx-line);
+  background: var(--wx-panel);
+  font: 500 10px ui-monospace, monospace;
+}
+.wx-login-route span,
+.wx-login-route small { display: block; }
+.wx-login-route small { margin-top: 6px; color: var(--wx-green); font-size: 8px; }
+.wx-login-route > i { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; color: var(--wx-green); font-style: normal; }
+.wx-login-route > i::after { content: ""; height: 1px; background: var(--wx-green); }
+.wx-login-route b { font-size: 8px; font-weight: 500; }
+.wx-login-route em { grid-column: 1 / -1; color: var(--wx-muted); font-size: 7px; font-style: normal; }
 .wx-login-logo small {
   margin-top: 3px;
   color: var(--wx-muted);
@@ -673,24 +695,24 @@ html[data-wx-theme="light-gray"] .wx-skip:focus {
 .wx-login-product article > span {
   display: block;
   max-width: 560px;
-  color: #a3a9b2;
+  color: var(--wx-muted);
   line-height: 1.7;
 }
 .wx-login-product dl {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   margin-top: 30px;
-  border: 1px solid #444;
+  border: 1px solid var(--wx-line);
 }
 .wx-login-product dl > div {
   padding: 16px;
-  border-right: 1px solid #444;
+  border-right: 1px solid var(--wx-line);
 }
 .wx-login-product dl > div:last-child {
   border: 0;
 }
 .wx-login-product dt {
-  color: #888;
+  color: var(--wx-muted);
   font:
     400 9px ui-monospace,
     monospace;

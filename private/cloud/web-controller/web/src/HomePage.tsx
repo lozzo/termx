@@ -1,109 +1,186 @@
-import { useEffect, useState } from 'react'
-import { ArrowRight, Check, Cloud, LockKeyhole, Network, RadioTower, ShieldCheck, Users } from 'lucide-react'
-import { Catalog, formatPlanPrice, planPriceNote } from './catalog'
+import { useEffect, useState } from "react";
+import {
+  ArrowRight,
+  Check,
+  Cloud,
+  Laptop,
+  LockKeyhole,
+  Moon,
+  RadioTower,
+  Server,
+  ShieldCheck,
+  Sun,
+  Zap,
+} from "lucide-react";
+import { Catalog, formatPlanPrice, planPriceNote } from "./catalog";
+
+type Theme = "light-gray" | "neutral-dark";
 
 const productFacts = [
-  ['Direct first', 'P2P remains the fastest path when the network allows it.'],
-  ['Relay by intent', 'Single Relay is explicit, observable and quota-bound.'],
-  ['Terminal truth stays home', 'History, input and capability checks remain on your daemon.'],
-]
+  ["01", "Direct first", "P2P remains the preferred data path whenever the network allows it."],
+  ["02", "Relay when required", "A single managed Relay handles difficult networks with explicit path reporting."],
+  ["03", "Truth stays home", "Terminal lifecycle, history and capability checks remain on the owning daemon."],
+];
 
 export default function HomePage() {
-  const [catalog,setCatalog]=useState<Catalog|null>(null)
-  useEffect(()=>{fetch('/api/catalog',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('catalog unavailable');return r.json()}).then(setCatalog).catch(()=>setCatalog(null))},[])
-  return (
-    <main>
-      <header className="site-header">
-        <a className="brand" href="#top" aria-label="TermX home">TermX</a>
-        <nav aria-label="Primary navigation">
-          <a href="#product">Product</a>
-          <a href="#plans">Plans</a>
-          <a href="#security">Security</a>
-        </nav>
-        <a className="header-action" href="#access">Get access <ArrowRight size={16} /></a>
-      </header>
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [theme, setTheme] = useState<Theme>(() =>
+    localStorage.getItem("termx-wx-theme") === "neutral-dark" ? "neutral-dark" : "light-gray",
+  );
 
-      <section className="hero" id="top">
-        <img alt="TermX machine workspace showing managed endpoints and connection paths" src="/product-workspace.png" />
-        <div className="hero-shade" />
-        <div className="hero-content">
-          <p className="kicker"><span /> Managed terminal connectivity</p>
-          <h1>TermX</h1>
-          <p className="hero-copy">Your terminals, reachable anywhere. Direct P2P when possible, managed Relay when networks disagree, and end-to-end authorization on every path.</p>
-          <div className="hero-actions">
-            <a className="button primary" href="#plans">Explore plans <ArrowRight size={18} /></a>
-            <a className="button quiet" href="#product">See how it works</a>
+  useEffect(() => {
+    fetch("/api/catalog", { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error("catalog unavailable");
+        return response.json();
+      })
+      .then(setCatalog)
+      .catch(() => setCatalog(null));
+  }, []);
+
+  function selectTheme(next: Theme) {
+    setTheme(next);
+    document.documentElement.dataset.wxTheme = next;
+    localStorage.setItem("termx-wx-theme", next);
+  }
+
+  return (
+    <main id="lx-root">
+      <header className="lx-header">
+        <div className="lx-header-inner">
+          <a className="lx-logo" href="#top" aria-label="TermX home">
+            <b>TX</b>
+            <span>TERMX<small>MANAGED EDGE</small></span>
+          </a>
+          <nav aria-label="Primary navigation">
+            <a href="#network">NETWORK</a>
+            <a href="#security">SECURITY</a>
+            <a href="#plans">PLANS</a>
+          </nav>
+          <div className="lx-header-tools">
+            <div className="lx-theme" aria-label="Color theme">
+              <button className={theme === "light-gray" ? "selected" : ""} onClick={() => selectTheme("light-gray")} aria-label="Use light theme" title="Light theme"><Sun /></button>
+              <button className={theme === "neutral-dark" ? "selected" : ""} onClick={() => selectTheme("neutral-dark")} aria-label="Use dark theme" title="Dark theme"><Moon /></button>
+            </div>
+            <a className="lx-sign-in" href="/login">SIGN IN <ArrowRight /></a>
           </div>
         </div>
-        <div className="path-proof" aria-label="Connection path example">
-          <span><RadioTower size={16} /> Public staging</span>
-          <strong>Connected</strong>
-          <span>Single Relay</span>
-          <span>62 ms</span>
+      </header>
+
+      <section className="lx-hero" id="top">
+        <div className="lx-wrap">
+          <div className="lx-hero-copy">
+            <p className="lx-overline"><i /> MANAGED TERMINAL CONNECTIVITY</p>
+            <h1>TermX</h1>
+            <p className="lx-lead">One terminal network for every machine.</p>
+            <p className="lx-summary">Connect locally, establish direct P2P remotely, or use a managed Relay when the network gets in the way. The terminal itself remains owned by your daemon.</p>
+            <div className="lx-actions">
+              <a className="lx-action primary" href="/login">GET STARTED <ArrowRight /></a>
+              <a className="lx-action" href="#network">VIEW CONNECTION MODEL</a>
+            </div>
+          </div>
+
+          <figure className="lx-network" id="network" aria-label="TermX managed connection topology">
+            <figcaption><span>CONNECTION / TMX-7A2F</span><strong><i /> ESTABLISHED</strong><time>14:22:08 UTC</time></figcaption>
+            <div className="lx-topology">
+              <div className="lx-endpoint">
+                <span className="lx-node-icon"><Laptop /></span>
+                <small>CLIENT</small>
+                <strong>MACBOOK-PRO</strong>
+                <p>IDENTITY VERIFIED</p>
+              </div>
+              <div className="lx-routes">
+                <div className="lx-coordination"><Cloud /><span>HUB COORDINATION</span><small>AUTH + SIGNALING</small></div>
+                <div className="lx-route active"><span>DIRECT P2P</span><i /><strong>42 MS</strong></div>
+                <div className="lx-route"><span>SINGLE RELAY</span><i /><strong>STANDBY</strong></div>
+              </div>
+              <div className="lx-endpoint target">
+                <span className="lx-node-icon"><Server /></span>
+                <small>DAEMON</small>
+                <strong>BUILD-SERVER-01</strong>
+                <p>3 TERMINALS ONLINE</p>
+              </div>
+            </div>
+            <dl className="lx-telemetry">
+              <div><dt>ACTUAL PATH</dt><dd>DIRECT / P2P</dd></div>
+              <div><dt>ENCRYPTION</dt><dd>DTLS / E2E</dd></div>
+              <div><dt>TRANSPORT</dt><dd>WEBRTC</dd></div>
+              <div><dt>CLOUD PAYLOAD</dt><dd>ENCRYPTED BYTES</dd></div>
+            </dl>
+          </figure>
         </div>
       </section>
 
-      <section className="facts" id="product">
-        {productFacts.map(([title, copy], index) => (
-          <article key={title}>
-            <span className="fact-number">0{index + 1}</span>
-            <h2>{title}</h2>
-            <p>{copy}</p>
+      <section className="lx-facts" aria-label="Product principles">
+        {productFacts.map(([number, title, copy]) => (
+          <article key={number}>
+            <span>{number}</span>
+            <div><h2>{title}</h2><p>{copy}</p></div>
           </article>
         ))}
       </section>
 
-      <section className="product-section" id="security">
-        <div className="section-heading">
-          <p className="kicker dark"><span /> One connection model</p>
-          <h2>Cloud reachability without cloud-owned terminals.</h2>
-          <p>Hub and Relay coordinate encrypted connectivity. Your daemon remains the owner of terminal lifecycle, history and capability authorization.</p>
-        </div>
-        <div className="system-map" aria-label="TermX security boundaries">
-          <div className="system-node"><Cloud /><span>Managed cloud</span><small>Directory · Signaling · Relay</small></div>
-          <div className="system-link"><span>DTLS encrypted</span></div>
-          <div className="system-node accent"><LockKeyhole /><span>Your daemon</span><small>Capability · Terminal · History</small></div>
-        </div>
-        <div className="security-notes">
-          <span><ShieldCheck size={18} /> Capability grants stay inside the encrypted DataChannel</span>
-          <span><Network size={18} /> Every connection reports its actual direct or Relay path</span>
-        </div>
-      </section>
-
-      <section className="plans-section" id="plans">
-        <div className="section-heading plans-heading">
-          <p className="kicker dark"><span /> Plans</p>
-          <h2>Pay for managed infrastructure, not your terminals.</h2>
-          <p>Local connections, SSH and terminal capabilities remain yours. Plans add official discovery, Relay capacity and organization controls.</p>
-        </div>
-        <div className="plan-grid">
-          {catalog?.plans.map((plan) => (
-            <article className={`plan ${plan.featured ? 'featured' : ''}`} key={plan.id}>
-              <div>
-                <p className="plan-eyebrow">{plan.eyebrow}</p>
-                <h3>{plan.name}</h3>
-                <p className="plan-description">{plan.description}</p>
-              </div>
-              <div className="price">
-                <strong>{formatPlanPrice(plan, catalog.currency)}</strong>
-                <span>{planPriceNote(plan)}</span>
-              </div>
-              <ul>
-                {plan.features.map((feature) => <li key={feature}><Check size={16} /> {feature}</li>)}
-              </ul>
-              <a className={`button ${plan.featured ? 'primary' : 'outline'}`} href={plan.cta.href}>{plan.cta.label} <ArrowRight size={17} /></a>
+      <section className="lx-section lx-security" id="security">
+        <div className="lx-wrap">
+          <header className="lx-section-heading">
+            <p className="lx-overline"><i /> SECURITY BOUNDARY</p>
+            <h2>Cloud reachability.<br />Daemon-owned terminals.</h2>
+            <p>The managed plane coordinates who can reach a machine. It does not become the owner of terminal capability, history, input or output.</p>
+          </header>
+          <div className="lx-boundary">
+            <article>
+              <span><Cloud /> MANAGED CLOUD</span>
+              <h3>Coordinates the path</h3>
+              <ul><li>Device directory and presence</li><li>Identity admission and signaling</li><li>Relay lease and usage accounting</li></ul>
             </article>
-          ))}
+            <div className="lx-channel"><LockKeyhole /><span>DTLS DATA CHANNEL</span><small>END-TO-END ENCRYPTED</small></div>
+            <article>
+              <span><ShieldCheck /> OWNING DAEMON</span>
+              <h3>Authorizes the terminal</h3>
+              <ul><li>Capability grant verification</li><li>Terminal lifecycle and input</li><li>Authoritative history truth</li></ul>
+            </article>
+          </div>
+          <div className="lx-proof">
+            <p><Zap /> The route is selected before terminal capability is evaluated.</p>
+            <p><RadioTower /> Every session reports its actual local, direct or Relay path.</p>
+          </div>
         </div>
       </section>
 
-      <section className="access-section" id="access">
-        <div><Users size={24} /><span>Private preview</span></div>
-        <h2>Bring the terminal. We will handle the difficult networks.</h2>
-        <a className="button primary light" href="mailto:hello@termx.dev?subject=TermX%20access">Request access <ArrowRight size={18} /></a>
+      <section className="lx-section lx-plans" id="plans">
+        <div className="lx-wrap">
+          <header className="lx-section-heading">
+            <p className="lx-overline"><i /> MANAGED PLANS</p>
+            <h2>Pay for the managed edge,<br />not your terminals.</h2>
+            <p>Local connections, SSH and terminal capabilities remain yours. Plans add official discovery, managed Relay capacity and account controls.</p>
+          </header>
+          <div className="lx-plan-grid" aria-live="polite">
+            {catalog?.plans.map((plan) => (
+              <article className={plan.featured ? "featured" : ""} key={plan.id}>
+                <header><p>{plan.eyebrow}</p>{plan.featured && <span>RECOMMENDED</span>}</header>
+                <h3>{plan.name}</h3>
+                <p className="lx-plan-description">{plan.description}</p>
+                <div className="lx-price"><strong>{formatPlanPrice(plan, catalog.currency)}</strong><span>{planPriceNote(plan)}</span></div>
+                <ul>{plan.features.map((feature) => <li key={feature}><Check /> {feature}</li>)}</ul>
+                <a className={`lx-action ${plan.featured ? "primary" : ""}`} href={plan.cta.href}>{plan.cta.label.toUpperCase()} <ArrowRight /></a>
+              </article>
+            ))}
+            {!catalog && <p className="lx-catalog-status">LOADING PLAN CATALOG</p>}
+          </div>
+        </div>
       </section>
 
-      <footer><a className="brand" href="#top">TermX</a><p>Terminal truth stays with the machine that owns it.</p><span>Private preview</span></footer>
+      <section className="lx-access">
+        <div className="lx-wrap">
+          <p>PRIVATE PREVIEW / SINGLE REGION</p>
+          <h2>Bring the terminal.<br />We handle the difficult networks.</h2>
+          <a className="lx-action primary" href="mailto:hello@termx.dev?subject=TermX%20access">REQUEST ACCESS <ArrowRight /></a>
+        </div>
+      </section>
+
+      <footer className="lx-footer">
+        <div className="lx-wrap"><a className="lx-logo" href="#top"><b>TX</b><span>TERMX</span></a><p>Terminal truth stays with the machine that owns it.</p><span>PRIVATE PREVIEW / 2026</span></div>
+      </footer>
     </main>
-  )
+  );
 }
