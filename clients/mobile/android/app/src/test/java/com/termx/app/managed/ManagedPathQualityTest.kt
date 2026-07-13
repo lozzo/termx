@@ -195,6 +195,10 @@ private class SequenceSource(vararg samples: ManagedPathQualitySample) : Managed
 }
 
 private class RecordingCloudAdapter : ManagedCloudAdapter {
+    override suspend fun beginLogin(): ManagedCloudLoginFlow = error("not used")
+    override suspend fun completeLogin(flowId: String): ManagedCloudAccount = error("not used")
+    override suspend fun currentAccount(): ManagedCloudAccount? = null
+    override suspend fun logout() = Unit
     var resolveCalls = 0
     var signalingCalls = 0
     private val qualityReports = mutableListOf<ManagedPathQualitySummary>()

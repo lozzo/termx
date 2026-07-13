@@ -195,7 +195,7 @@ func containsSessionKind(allowed []session.Kind, current session.Kind) bool {
 	return false
 }
 
-func (state *serviceState) issueSession(kind session.Kind, deviceID string) (cloudSession, []byte, error) {
+func (state *serviceState) issueSession(kind session.Kind, accountID, accountLabel, deviceID string) (cloudSession, []byte, error) {
 	tokenID, err := state.randomID("edge-token")
 	if err != nil {
 		return cloudSession{}, nil, err
@@ -205,13 +205,13 @@ func (state *serviceState) issueSession(kind session.Kind, deviceID string) (clo
 	if kind == session.KindDevice {
 		principal = servicecredential.EdgePrincipalDaemon
 	}
-	token, err := state.edgeIssuer.IssueEdgeAccessWithDirectory(tokenID, devHubID, devPublicHubURL, devRegion, 1, devAccountID, deviceID, principal, 1, cloudSessionTTL, now)
+	token, err := state.edgeIssuer.IssueEdgeAccessWithDirectory(tokenID, devHubID, devPublicHubURL, devRegion, 1, accountID, deviceID, principal, 1, cloudSessionTTL, now)
 	if err != nil {
 		return cloudSession{}, nil, err
 	}
 	defer clear(token)
 	cloudSession := cloudSession{
-		kind: kind, accountID: devAccountID, accountLabel: devAccountLabel,
+		kind: kind, accountID: accountID, accountLabel: accountLabel,
 		deviceID: deviceID, expiresAt: now.Add(cloudSessionTTL),
 	}
 	state.mu.Lock()
@@ -226,16 +226,17 @@ func (state *serviceState) publishEdgeSnapshot(now time.Time) error {
 	for _, device := range state.edgeDevices {
 		devices = append(devices, servicecredential.EdgePolicyDevice{DeviceID: device.DeviceID, AccountID: device.AccountID, PublicKey: append([]byte(nil), device.PublicKey...), Revoked: device.Revoked})
 	}
-	maxBytes, maxConcurrency := uint64(64<<20), uint32(2)
-	if validUntil, ok := state.webEntitlements[devAccountID]; ok && now.Before(validUntil) {
-		maxBytes, maxConcurrency = 256<<20, 4
+	accounts := make([]servicecredential.EdgePolicyAccount, 0, len(state.webAccounts)+1)
+	accountIDs := map[string]struct{}{devAccountID: {}}
+	for accountID := range state.webAccounts {
+		accountIDs[accountID] = struct{}{}
 	}
-	accounts := []servicecredential.EdgePolicyAccount{{AccountID: devAccountID, AuthEpoch: 1, ManagedDirectEnabled: true, StandardRelayEnabled: true, RelayMaxLeaseSeconds: uint32(relayLeaseTTL / time.Second), RelayMaxBytes: maxBytes, RelayMaxBitrateKbps: 100_000, RelayMaxConcurrency: maxConcurrency}}
-	for accountID, validUntil := range state.webEntitlements {
-		if accountID == devAccountID || !now.Before(validUntil) {
-			continue
+	for accountID := range accountIDs {
+		maxBytes, maxConcurrency := uint64(64<<20), uint32(2)
+		if validUntil, ok := state.webEntitlements[accountID]; ok && now.Before(validUntil) {
+			maxBytes, maxConcurrency = 256<<20, 4
 		}
-		accounts = append(accounts, servicecredential.EdgePolicyAccount{AccountID: accountID, AuthEpoch: 1, ManagedDirectEnabled: true, StandardRelayEnabled: true, RelayMaxLeaseSeconds: uint32(relayLeaseTTL / time.Second), RelayMaxBytes: 256 << 20, RelayMaxBitrateKbps: 100_000, RelayMaxConcurrency: 4})
+		accounts = append(accounts, servicecredential.EdgePolicyAccount{AccountID: accountID, AuthEpoch: 1, ManagedDirectEnabled: true, StandardRelayEnabled: true, RelayMaxLeaseSeconds: uint32(relayLeaseTTL / time.Second), RelayMaxBytes: maxBytes, RelayMaxBitrateKbps: 100_000, RelayMaxConcurrency: maxConcurrency})
 	}
 	encoded, err := state.edgePolicyIssuer.Issue(devHubID, state.edgeRevision, accounts, devices, 30*time.Minute, now.UTC())
 	if err != nil {
@@ -248,7 +249,13 @@ func (state *serviceState) publishEdgeSnapshot(now time.Time) error {
 func (state *serviceState) cleanupLocked(now time.Time) {
 	for id, flow := range state.loginFlows {
 		if !now.Before(flow.expiresAt) {
+			delete(state.loginCodes, flow.userCode)
 			delete(state.loginFlows, id)
+		}
+	}
+	for code, claim := range state.enrollmentClaims {
+		if !now.Before(claim.expiresAt) {
+			delete(state.enrollmentClaims, code)
 		}
 	}
 	for id, flow := range state.enrollmentFlows {

@@ -2,7 +2,7 @@
 set -eu
 
 input=${1:-/var/lib/termx-staging/runtime.json}
-output=${2:-/var/lib/termx-staging/runtime.public-http.json}
+output=${2:-/var/www/termx-staging/runtime.json}
 temporary="${output}.tmp"
 
 jq '

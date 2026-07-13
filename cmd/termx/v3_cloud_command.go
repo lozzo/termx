@@ -98,7 +98,7 @@ func v3CloudLoginCommand() *cobra.Command {
 			if flow.GetUserCode() != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "Code: %s\n", flow.GetUserCode())
 			}
-			response, err := client.CompleteLogin(cmd.Context(), &cloudpb.CompleteLoginRequest{FlowId: flow.GetFlowId()})
+			response, err := completeV3CloudLogin(cmd.Context(), client, flow)
 			if err != nil {
 				return err
 			}
@@ -108,6 +108,37 @@ func v3CloudLoginCommand() *cobra.Command {
 	}
 	command.Flags().BoolVar(&deviceCode, "device-code", false, "use the device-code login flow")
 	return command
+}
+
+func completeV3CloudLogin(ctx context.Context, client v3CloudClient, flow *cloudpb.LoginFlow) (*cloudpb.CompleteLoginResponse, error) {
+	interval := time.Duration(flow.GetPollIntervalMillis()) * time.Millisecond
+	if interval <= 0 {
+		interval = time.Second
+	}
+	expiresAt := time.Unix(int64(flow.GetExpiresAtUnix()), 0)
+	if flow.GetExpiresAtUnix() == 0 {
+		expiresAt = v3CloudNow().Add(5 * time.Minute)
+	}
+	for {
+		response, err := client.CompleteLogin(ctx, &cloudpb.CompleteLoginRequest{FlowId: flow.GetFlowId()})
+		if err == nil {
+			return response, nil
+		}
+		var cloudErr *cloudcompanion.Error
+		if !errors.As(err, &cloudErr) || !cloudErr.Retryable || cloudErr.Code != cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY {
+			return nil, err
+		}
+		if !v3CloudNow().Add(interval).Before(expiresAt) {
+			return nil, fmt.Errorf("cloud login approval expired")
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func v3CloudEnrollCommand() *cobra.Command {

@@ -3,6 +3,8 @@ package com.termx.cloud
 import android.content.Context
 import com.termx.app.BuildConfig
 import com.termx.app.managed.ManagedCloudAdapter
+import com.termx.app.managed.ManagedCloudAccount
+import com.termx.app.managed.ManagedCloudLoginFlow
 import com.termx.app.managed.ManagedCloudModuleFactory
 import com.termx.app.managed.ManagedDialPolicy
 import com.termx.app.managed.ManagedEndpointFailure
@@ -23,6 +25,11 @@ class OfficialManagedCloudFactory : ManagedCloudModuleFactory {
  * 它不接收 grant、DeviceIdentity private key、DataChannel 或 terminal payload。
  */
 internal class OfficialManagedCloudAdapter(private val gateway: OfficialCloudGateway) : ManagedCloudAdapter {
+    override suspend fun beginLogin(): ManagedCloudLoginFlow = gateway.beginLogin()
+    override suspend fun completeLogin(flowId: String): ManagedCloudAccount = gateway.completeLogin(flowId)
+    override suspend fun currentAccount(): ManagedCloudAccount? = gateway.currentAccount()
+    override suspend fun logout() = gateway.logout()
+
     override suspend fun resolve(spec: ManagedEndpointSpec): ManagedEndpointResolution = gateway.resolve(spec)
 
     override suspend fun createSignalingSession(
@@ -61,6 +68,11 @@ internal class OfficialCloudGateway(context: Context) {
     }
 
     suspend fun resolve(spec: ManagedEndpointSpec): ManagedEndpointResolution = configured().resolve(spec)
+
+    suspend fun beginLogin(): ManagedCloudLoginFlow = configured().beginLogin()
+    suspend fun completeLogin(flowId: String): ManagedCloudAccount = configured().completeLogin(flowId)
+    suspend fun currentAccount(): ManagedCloudAccount? = configured().currentAccount()
+    suspend fun logout() = configured().logout()
 
     suspend fun createSignalingSession(
         spec: ManagedEndpointSpec,

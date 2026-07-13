@@ -72,6 +72,13 @@ export interface NativeBridgeEndpoint {
   token: string
 }
 
+/** NativeCloudAccount 是 Android Keystore Session 的非秘密账号摘要。 */
+export interface NativeCloudAccount {
+  accountId?: string
+  accountLabel?: string
+  expiresAtUnix?: number
+}
+
 /** NativeManagedPairingImport 只含可写入 WebView endpoint registry 的非秘密 metadata。 */
 export interface NativeManagedPairingImport {
   endpointId: string
@@ -97,6 +104,9 @@ export interface NativeStateChangeEvent {
 }
 
 export interface NativeConnectionPlugin extends Plugin {
+  cloudLogin(): Promise<NativeCloudAccount>
+  getCloudAccount(): Promise<NativeCloudAccount>
+  cloudLogout(): Promise<void>
   connect(opts: NativeConnectOpts): Promise<void>
   importManagedPairing(opts: { payload: string; expectedEndpointId?: string }): Promise<NativeManagedPairingImport>
   deleteManagedGrant(opts: { grantRef: string }): Promise<void>

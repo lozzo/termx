@@ -1,5 +1,7 @@
 package com.termx.app
 
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import android.util.Base64
 import com.getcapacitor.JSObject
@@ -13,6 +15,7 @@ import com.termx.app.connectors.ManagedWebRTCConnector
 import com.termx.app.managed.AndroidGrantCredentialStore
 import com.termx.app.managed.AndroidManagedEndpointAuthorizer
 import com.termx.app.managed.ManagedCloudAssembly
+import com.termx.app.managed.ManagedCloudAccount
 import com.termx.app.managed.ManagedEndpointFailure
 import com.termx.app.managed.ManagedPairingImporter
 import com.termx.app.managed.RelayMode
@@ -24,6 +27,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.SecureRandom
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @CapacitorPlugin(name = "NativeConnection")
 class NativeConnectionPlugin : Plugin() {
@@ -41,6 +49,8 @@ class NativeConnectionPlugin : Plugin() {
     private var bridgeRouter: BridgeRouter? = null
     private var fileTransferManager: FileTransferManager? = null
     private val grantCredentialStore: AndroidGrantCredentialStore by lazy { AndroidGrantCredentialStore(context) }
+    private val cloudAdapter by lazy { ManagedCloudAssembly.create(context) }
+    private val cloudScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun load() {
         TermxDebugLog.init(context)
@@ -51,6 +61,57 @@ class NativeConnectionPlugin : Plugin() {
     }
 
     // ─── Connection Management ────────────────────────────────────────────────
+
+    /** cloudLogin 用系统浏览器完成设备码审批；WebView 只接收账号摘要。 */
+    @PluginMethod
+    fun cloudLogin(call: PluginCall) {
+        cloudScope.launch {
+            try {
+                val flow = cloudAdapter.beginLogin()
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(flow.verificationUri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                while (System.currentTimeMillis() / 1000 < flow.expiresAtUnix) {
+                    try {
+                        call.resolve(accountToJSObject(cloudAdapter.completeLogin(flow.flowId)))
+                        return@launch
+                    } catch (failure: ManagedEndpointFailure) {
+                        if (failure.code != "temporary") throw failure
+                    }
+                    delay(flow.pollIntervalMillis.coerceIn(250, 60_000))
+                }
+                call.reject("cloud login approval expired")
+            } catch (failure: ManagedEndpointFailure) {
+                call.reject(failure.message ?: failure.code)
+            } catch (_: Exception) {
+                call.reject("cloud login failed")
+            }
+        }
+    }
+
+    /** getCloudAccount 返回 Keystore 中仍有效的账号摘要。 */
+    @PluginMethod
+    fun getCloudAccount(call: PluginCall) {
+        cloudScope.launch {
+            try {
+                val account = cloudAdapter.currentAccount()
+                call.resolve(account?.let(::accountToJSObject) ?: JSObject())
+            } catch (failure: Exception) {
+                call.reject(failure.message ?: "cloud account is unavailable")
+            }
+        }
+    }
+
+    /** cloudLogout 只清理账号 edge session，保留独立 pairing grant。 */
+    @PluginMethod
+    fun cloudLogout(call: PluginCall) {
+        cloudScope.launch {
+            try {
+                cloudAdapter.logout()
+                call.resolve()
+            } catch (failure: Exception) {
+                call.reject(failure.message ?: "cloud logout failed")
+            }
+        }
+    }
 
     @PluginMethod
     fun connect(call: PluginCall) {
@@ -272,7 +333,7 @@ class NativeConnectionPlugin : Plugin() {
         bridgeServer = bridge
 
         val managedConnector = ManagedWebRTCConnector(
-            ManagedCloudAssembly.create(context), grantCredentialStore, AndroidManagedEndpointAuthorizer(),
+            cloudAdapter, grantCredentialStore, AndroidManagedEndpointAuthorizer(),
         )
         val manager = ConnectionStoreManager(context, bridge, managedConnector)
         storeManager = manager
@@ -304,6 +365,12 @@ class NativeConnectionPlugin : Plugin() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start BridgeServer", e)
         }
+    }
+
+    private fun accountToJSObject(account: ManagedCloudAccount): JSObject = JSObject().apply {
+        put("accountId", account.accountId)
+        put("accountLabel", account.accountLabel)
+        put("expiresAtUnix", account.expiresAtUnix)
     }
 
     private fun generateBridgeToken(): String {

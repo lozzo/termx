@@ -71,6 +71,7 @@ class DevCloudMobileGatewayTest {
                             .setVerificationUri("http://127.0.0.1/dev-login")
                             .setUserCode("TERM-X")
                             .setExpiresAtUnix(now.plusSeconds(60).epochSecond)
+                            .setPollIntervalMillis(1000)
                             .build()
                             .toByteArray(),
                     )
@@ -96,6 +97,9 @@ class DevCloudMobileGatewayTest {
         try {
             val sessionStore = MemoryCloudSessionStore()
             val gateway = DevCloudMobileGateway(control.origin, hub.origin, now = { now }, sessionStore = sessionStore)
+            val loginFlow = gateway.beginLogin()
+            assertEquals("TERM-X", loginFlow.userCode)
+            assertEquals("account-1", gateway.completeLogin(loginFlow.flowId).accountId)
             val spec = ManagedEndpointSpec(
                 endpointId = "endpoint-1",
                 targetDeviceId = "daemon-1",
@@ -157,7 +161,7 @@ class DevCloudMobileGatewayTest {
     @Test
     fun cachedSessionRejectsHubChangeAndDirectoryRollback() {
         val store = MemoryCloudSessionStore()
-        val current = AccountSession(ByteArray(32) { 1 }, now.plusSeconds(300), "account-1", "client-1", "hub-1", "https://hub.example.test", "region-1", 2)
+        val current = AccountSession(ByteArray(32) { 1 }, now.plusSeconds(300), "account-1", "Account One", "client-1", "hub-1", "https://hub.example.test", "region-1", 2)
         store.save(current)
 
         val rollback = assertThrows(ManagedEndpointFailure::class.java) {

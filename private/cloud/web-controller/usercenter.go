@@ -292,6 +292,47 @@ func (store *UserCenterStore) ActiveEntitlements(now time.Time) []AccountEntitle
 	return result
 }
 
+// AccountIDs 返回 Control Plane 持久账号全集，供启动时重建 Hub 授权投影。
+// 返回值不包含密码摘要、浏览器 Session 或 terminal capability。
+func (store *UserCenterStore) AccountIDs() []string {
+	rows, err := store.db.Query(`SELECT account_id FROM accounts ORDER BY account_id`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var result []string
+	for rows.Next() {
+		var accountID string
+		if rows.Scan(&accountID) == nil {
+			result = append(result, accountID)
+		}
+	}
+	return result
+}
+
+// Profile 返回已认证账号的公开身份投影，供 Control Plane 签发客户端账号 Session。
+// 调用方必须已经完成浏览器 Session 校验，不能用本方法验证密码或 Cookie。
+func (store *UserCenterStore) Profile(accountID string) (UserProfile, error) {
+	return store.profile(accountID)
+}
+
+// UpsertManagedNode 写入账号名下 daemon 的目录投影；节点状态不包含 terminal inventory 或 capability。
+func (store *UserCenterStore) UpsertManagedNode(accountID, nodeID, name string, online bool) error {
+	if strings.TrimSpace(accountID) == "" || strings.TrimSpace(nodeID) == "" || strings.TrimSpace(name) == "" {
+		return ErrUserCenterNotFound
+	}
+	now := store.now().UTC().Format(time.RFC3339Nano)
+	onlineValue := 0
+	if online {
+		onlineValue = 1
+	}
+	_, err := store.db.Exec(`INSERT INTO nodes(id,account_id,name,kind,online,revoked,updated_at) VALUES(?,?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,name=excluded.name,kind=excluded.kind,online=excluded.online,revoked=0,updated_at=excluded.updated_at`, nodeID, accountID, name, "daemon", onlineValue, now)
+	if err == nil {
+		store.appendAudit(accountID, "node.enrolled", nodeID)
+	}
+	return err
+}
+
 func (store *UserCenterStore) referralReferrer(accountID string) string {
 	var referrer string
 	_ = store.db.QueryRow(`SELECT referrer_account_id FROM referral_attributions WHERE referred_account_id=?`, accountID).Scan(&referrer)

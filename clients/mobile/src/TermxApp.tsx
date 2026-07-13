@@ -28,6 +28,7 @@ import type {
   WebControlMachine,
   RemoteControlAppProps,
   ExternalPairingAdapter,
+  CloudAccountAdapter,
 } from '@termx/ui'
 import { NativeConnection, type NativeConnectOpts, type NativeConnectionSnapshot, type NativeRelayMode, type NativeStateChangeEvent } from './plugins/nativeConnection'
 import { NativeRtcConnector, recoverNativeBridgeAfterResume, type NativeRtcSession } from './NativeConnectionProxy'
@@ -72,6 +73,18 @@ export function TermxApp() {
     () => networkRuntime.storage ? createNativeExternalPairingAdapter(networkRuntime.storage) : undefined,
     [networkRuntime],
   )
+  const cloudAccountAdapter = useMemo<CloudAccountAdapter>(() => ({
+    async current() {
+      const account = await NativeConnection.getCloudAccount()
+      return account.accountId && account.accountLabel ? { accountId: account.accountId, accountLabel: account.accountLabel } : null
+    },
+    async login() {
+      const account = await NativeConnection.cloudLogin()
+      if (!account.accountId || !account.accountLabel) throw new Error('TermX Cloud returned an invalid account')
+      return { accountId: account.accountId, accountLabel: account.accountLabel }
+    },
+    logout: () => NativeConnection.cloudLogout(),
+  }), [])
   const machineRuntimeFactory = useMemo<MachineRuntimeFactory>(
     () => nativeAppRuntime.createMachineRuntime,
     [nativeAppRuntime],
@@ -85,6 +98,7 @@ export function TermxApp() {
     <section className="termx-app-page flex h-[100dvh] w-screen flex-col overflow-hidden antialiased">
       <RemoteControlApp
         defaultControlUrl={defaultControlUrl}
+        cloudAccountAdapter={cloudAccountAdapter}
         exportDebugLogs={exportNativeDebugLogs}
         externalPairingAdapter={externalPairingAdapter}
         globalFileTransfer={globalFileTransfer}

@@ -19,10 +19,15 @@ export default function LoginPage() {
     fetch("/api/providers").then((response) => response.json()).then(setProviders).catch(() => setProviders([]));
   }, []);
 
+  function destination() {
+    const next = new URLSearchParams(location.search).get("next") ?? "";
+    return next.startsWith("/device?") ? next : "/account";
+  }
+
   async function login() {
     setLoading(true); setError("");
     const response = await fetch("/api/auth/login", { method: "POST" });
-    if (response.ok) location.href = "/account";
+    if (response.ok) location.href = destination();
     else { setError(t("login.providerError")); setLoading(false); }
   }
 
@@ -30,7 +35,7 @@ export default function LoginPage() {
     event.preventDefault(); setLoading(true); setError("");
     const path = mode === "register" ? "/api/auth/password/register" : "/api/auth/password/login";
     const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, aff }) });
-    if (response.ok) location.href = "/account";
+    if (response.ok) location.href = destination();
     else { const body = await response.json().catch(() => ({ error: t("login.authError") })); setError(body.error); setLoading(false); }
   }
 

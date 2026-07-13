@@ -4,9 +4,10 @@ import './i18n'
 import HomePage from './HomePage'
 import LoginPage from './LoginPage'
 import AccountPage from './AccountPage'
+import DeviceLoginPage from './DeviceLoginPage'
 import './styles.css'
 
 document.documentElement.dataset.wxTheme = localStorage.getItem('termx-wx-theme') === 'neutral-dark' ? 'neutral-dark' : 'light-gray'
 const path=window.location.pathname.replace(/\/$/,'')||'/'
-const Page=path==='/login'?LoginPage:path==='/account'?AccountPage:HomePage
+const Page=path==='/login'?LoginPage:path==='/account'?AccountPage:path==='/device'?DeviceLoginPage:HomePage
 createRoot(document.getElementById('root')!).render(<StrictMode><Page/></StrictMode>)

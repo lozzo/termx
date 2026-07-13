@@ -135,7 +135,7 @@ func (connection *Connection) BeginLogin(ctx context.Context, request *cloudpb.B
 	if err != nil {
 		return nil, sanitizeAdapterError(err)
 	}
-	if err := validateLoginFlow(flow, connection.service.now()); err != nil {
+	if err := validateLoginFlow(flow, connection.service.now(), connection.service.allowPublicHTTPLoginURL); err != nil {
 		return nil, err
 	}
 	return cloneMessage(flow), nil

@@ -37,16 +37,23 @@ func TestCloudInstallUsesSignedInstallerRequest(t *testing.T) {
 }
 
 func TestCloudLoginUsesLifecycleIPCWithoutReturningToken(t *testing.T) {
+	completeAttempts := 0
 	fake := &closableCloudFake{FakeClient: &cloudcompanion.FakeClient{
 		BeginLoginFunc: func(_ context.Context, request *cloudpb.BeginLoginRequest) (*cloudpb.LoginFlow, error) {
 			if request.GetMethod() != cloudpb.LoginMethod_LOGIN_METHOD_DEVICE_CODE {
 				t.Fatalf("login method = %s", request.GetMethod())
 			}
-			return &cloudpb.LoginFlow{FlowId: "flow-1", VerificationUri: "https://login.example.test", UserCode: "ABCD-EFGH"}, nil
+			return &cloudpb.LoginFlow{FlowId: "flow-1", VerificationUri: "https://login.example.test", UserCode: "ABCD-EFGH", ExpiresAtUnix: uint64(time.Now().Add(time.Minute).Unix()), PollIntervalMillis: 1}, nil
 		},
 		CompleteLoginFunc: func(_ context.Context, request *cloudpb.CompleteLoginRequest) (*cloudpb.CompleteLoginResponse, error) {
 			if request.GetFlowId() != "flow-1" {
 				t.Fatalf("flow id = %q", request.GetFlowId())
+			}
+			completeAttempts++
+			if completeAttempts == 1 {
+				err := cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "waiting for browser approval")
+				err.Retryable = true
+				return nil, err
 			}
 			return &cloudpb.CompleteLoginResponse{Session: &cloudpb.CloudSessionSummary{AccountId: "account-1", AccountLabel: "Alice"}}, nil
 		},
@@ -68,7 +75,7 @@ func TestCloudLoginUsesLifecycleIPCWithoutReturningToken(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !fake.closed || strings.Contains(strings.ToLower(output.String()), "token") || !strings.Contains(output.String(), "Alice") {
+	if !fake.closed || completeAttempts != 2 || strings.Contains(strings.ToLower(output.String()), "token") || !strings.Contains(output.String(), "Alice") {
 		t.Fatalf("login output/close = (%q, %v)", output.String(), fake.closed)
 	}
 }

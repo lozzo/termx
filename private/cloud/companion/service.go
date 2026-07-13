@@ -25,20 +25,24 @@ type Config struct {
 	StreamCapacity   int
 	Now              func() time.Time
 	NonceReader      io.Reader
+	// AllowPublicHTTPLoginURL 只允许显式 staging-public-http development profile 打开明文浏览器验证地址。
+	// 默认和 production 必须为 false；它不放宽 Control Plane/Hub adapter 的独立 URL 校验。
+	AllowPublicHTTPLoginURL bool
 }
 
 // Service 是 companion 进程内共享的依赖容器。
 // 每个本地 IPC peer 必须通过 NewConnection 获得独立 Hello、caller role 和 stream ownership 状态。
 type Service struct {
-	version        string
-	buildChannel   string
-	capabilities   map[cloudpb.CompanionCapability]struct{}
-	streamCapacity int
-	now            func() time.Time
-	nonceReader    io.Reader
-	sessions       *session.Manager
-	controlPlane   cloudservice.ControlPlaneAdapter
-	hub            cloudservice.HubAdapter
+	version                 string
+	buildChannel            string
+	capabilities            map[cloudpb.CompanionCapability]struct{}
+	streamCapacity          int
+	now                     func() time.Time
+	nonceReader             io.Reader
+	allowPublicHTTPLoginURL bool
+	sessions                *session.Manager
+	controlPlane            cloudservice.ControlPlaneAdapter
+	hub                     cloudservice.HubAdapter
 }
 
 // NewService 创建 desktop/headless companion service。
@@ -64,15 +68,16 @@ func NewService(config Config, sessions *session.Manager, controlPlane cloudserv
 		config.NonceReader = rand.Reader
 	}
 	return &Service{
-		version:        config.CompanionVersion,
-		buildChannel:   config.BuildChannel,
-		capabilities:   capabilities,
-		streamCapacity: config.StreamCapacity,
-		now:            config.Now,
-		nonceReader:    config.NonceReader,
-		sessions:       sessions,
-		controlPlane:   controlPlane,
-		hub:            hub,
+		version:                 config.CompanionVersion,
+		buildChannel:            config.BuildChannel,
+		capabilities:            capabilities,
+		streamCapacity:          config.StreamCapacity,
+		now:                     config.Now,
+		nonceReader:             config.NonceReader,
+		allowPublicHTTPLoginURL: config.AllowPublicHTTPLoginURL,
+		sessions:                sessions,
+		controlPlane:            controlPlane,
+		hub:                     hub,
 	}, nil
 }
 

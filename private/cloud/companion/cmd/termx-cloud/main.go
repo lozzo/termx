@@ -95,10 +95,19 @@ func serve(ctx context.Context, endpoint string, smoke bool, devManifest, profil
 	if err != nil {
 		return err
 	}
+	allowPublicHTTPLoginURL := false
+	if devManifest != "" {
+		manifest, manifestErr := httpapi.LoadManifest(devManifest)
+		if manifestErr != nil {
+			return manifestErr
+		}
+		allowPublicHTTPLoginURL = manifest.Profile == httpapi.ProfileStagingPublicHTTP
+	}
 	service, err := companion.NewService(companion.Config{
-		CompanionVersion: companionVersion,
-		BuildChannel:     buildChannel,
-		StreamCapacity:   64,
+		CompanionVersion:        companionVersion,
+		BuildChannel:            buildChannel,
+		StreamCapacity:          64,
+		AllowPublicHTTPLoginURL: allowPublicHTTPLoginURL,
 		Capabilities: []cloudpb.CompanionCapability{
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_ACCOUNT_SESSION,
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT,

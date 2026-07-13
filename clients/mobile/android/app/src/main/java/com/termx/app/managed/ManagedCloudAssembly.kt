@@ -31,6 +31,15 @@ object ManagedCloudAssembly {
 }
 
 private class BrokenOfficialCloudAdapter(private val detail: String) : ManagedCloudAdapter {
+    override suspend fun beginLogin(): ManagedCloudLoginFlow = unavailable()
+    override suspend fun completeLogin(flowId: String): ManagedCloudAccount = unavailable()
+    override suspend fun currentAccount(): ManagedCloudAccount? = unavailable()
+    override suspend fun logout() = unavailable()
+
+    private fun unavailable(): Nothing {
+        throw ManagedEndpointFailure("companion_untrusted", detail)
+    }
+
     override suspend fun resolve(spec: ManagedEndpointSpec): ManagedEndpointResolution {
         throw ManagedEndpointFailure("companion_untrusted", detail)
     }

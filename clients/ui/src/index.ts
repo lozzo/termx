@@ -78,7 +78,7 @@ export { MachineBrowserShell } from './app/MachineBrowserShell'
 export type { MachineBrowserShellProps } from './app/MachineBrowserShell'
 export { RemoteControlApp } from './app/RemoteControlApp'
 export type { RemoteControlAppProps } from './app/RemoteControlApp'
-export type { ExternalPairingAdapter, ExternalPairingImportResult } from './app/RemoteControlApp'
+export type { CloudAccountAdapter, ExternalPairingAdapter, ExternalPairingImportResult } from './app/RemoteControlApp'
 export { mountRemoteControlApp } from './entries/mountRemoteControlApp'
 export type { RemoteControlEntryOptions } from './entries/mountRemoteControlApp'
 export type {

@@ -36,6 +36,7 @@ func run(ctx context.Context, args []string) error {
 	webCatalog := flags.String("web-catalog", "", "web plan catalog path")
 	webStaging := flags.Bool("web-staging", false, "enable explicit staging browser login and checkout")
 	webSecureCookie := flags.Bool("web-secure-cookie", false, "require HTTPS for browser session cookies")
+	webPublicURL := flags.String("web-public-url", "", "public Web Controller origin used by device login")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -54,7 +55,7 @@ func run(ctx context.Context, args []string) error {
 	runtime, err := devcloud.Start(devcloud.Config{
 		ControlPlaneListener: controlListener, HubListener: hubListener,
 		RelayListenAddr: *relayListen, RelayPublicIP: *relayPublicIP, Profile: *profile,
-		WebAccountDBPath: *webAccountDB, WebCatalogPath: *webCatalog, WebStaging: *webStaging, WebSecureCookie: *webSecureCookie,
+		WebAccountDBPath: *webAccountDB, WebCatalogPath: *webCatalog, WebStaging: *webStaging, WebSecureCookie: *webSecureCookie, WebPublicURL: *webPublicURL,
 	})
 	if err != nil {
 		return err

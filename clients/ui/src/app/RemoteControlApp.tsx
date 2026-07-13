@@ -109,6 +109,13 @@ export interface ExternalPairingAdapter {
   authorizationExpiresAt?(machineId: string): string | undefined
   forget(machineId: string): void | Promise<void>
 }
+
+/** CloudAccountAdapter 让 Official App 通过 native 私有模块登录；共享 UI 不接收 edge token。 */
+export interface CloudAccountAdapter {
+  current(): Promise<{ accountId: string; accountLabel: string } | null>
+  login(): Promise<{ accountId: string; accountLabel: string }>
+  logout(): Promise<void>
+}
 type MachineRuntimeFactory = (input: {
   machine: WebControlMachine
   storage: RemoteRuntimeStorage
@@ -142,6 +149,7 @@ export interface RemoteControlAppProps {
   scanPairingCode?: ((options?: ScanPairingCodeOptions) => Promise<string | null>) | undefined
   externalPairingAdapter?: ExternalPairingAdapter | undefined
   exportDebugLogs?: (() => Promise<void>) | undefined
+  cloudAccountAdapter?: CloudAccountAdapter | undefined
 }
 
 export function RemoteControlApp({
@@ -155,6 +163,7 @@ export function RemoteControlApp({
   scanPairingCode,
   externalPairingAdapter,
   exportDebugLogs,
+  cloudAccountAdapter,
 }: RemoteControlAppProps) {
   const networkRuntime = networkRuntimeProp ?? unavailableNetworkRuntime
   const storage = storageProp ?? networkRuntime.storage
@@ -168,6 +177,7 @@ export function RemoteControlApp({
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [accessToken, setAccessToken] = useState(() => storage?.getItem(storageKeys.accessToken) ?? '')
+  const [cloudAccount, setCloudAccount] = useState<{ accountId: string; accountLabel: string } | null>(null)
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => readTerminalSettings(storage))
   const [user, setUser] = useState<WebControlUser | null>(null)
   const [localMachines, setLocalMachines] = useState<StoredMachineRecord[]>(() => {
@@ -191,7 +201,7 @@ export function RemoteControlApp({
   const [cameraScanning, setCameraScanning] = useState(false)
   const [scanFlowState, setScanFlowState] = useState<ScanFlowState>('idle')
   const [scanAutoStartToken, setScanAutoStartToken] = useState(0)
-  const signedIn = accessToken.trim() !== ''
+  const signedIn = cloudAccountAdapter ? cloudAccount !== null : accessToken.trim() !== ''
   const appThemeStyle = useMemo(() => terminalThemeCssVariables(terminalSettings.themeId) as CSSProperties, [terminalSettings.themeId])
   const autoStartedScanTokenRef = useRef(0)
   const cameraScanInFlightRef = useRef(false)
@@ -368,6 +378,14 @@ export function RemoteControlApp({
   )
 
   const refreshMachines = useCallback(async () => {
+    if (cloudAccountAdapter) {
+      const localMachineList = storage ? createMachineStore({ storage }).listMachines() : []
+      setLocalMachines(localMachineList)
+      setMachines([])
+      setAuthorizedMachineIds(readAuthorizedMachineIds(storage, cloudAccount?.accountId, externalPairingAdapter))
+      setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
+      return
+    }
     if (!accessToken) return
     setLoading(true)
     try {
@@ -401,7 +419,7 @@ export function RemoteControlApp({
     } finally {
       setLoading(false)
     }
-  }, [accessToken, api, externalPairingAdapter, storage])
+  }, [accessToken, api, cloudAccount?.accountId, cloudAccountAdapter, externalPairingAdapter, storage])
 
   const prepareTransferMachineRuntime = useCallback((transferId?: string) => {
     if (!globalFileTransfer || !transferId) return
@@ -438,6 +456,14 @@ export function RemoteControlApp({
   }, [refreshMachines])
 
   useEffect(() => {
+    if (!cloudAccountAdapter) return
+    void cloudAccountAdapter.current().then((account) => {
+      setCloudAccount(account)
+      setUser(account ? { id: account.accountId, username: account.accountLabel, email: account.accountLabel } : null)
+    }).catch((failure) => setError(failure instanceof Error ? failure.message : String(failure)))
+  }, [cloudAccountAdapter])
+
+  useEffect(() => {
     setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id, externalPairingAdapter))
     setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
   }, [externalPairingAdapter, pairVersion, storage, user?.id])
@@ -446,6 +472,13 @@ export function RemoteControlApp({
     setLoading(true)
     setError(null)
     try {
+      if (cloudAccountAdapter) {
+        const account = await cloudAccountAdapter.login()
+        setCloudAccount(account)
+        setUser({ id: account.accountId, username: account.accountLabel, email: account.accountLabel })
+        setView('home')
+        return
+      }
       const auth = await api.login({ login, password })
       storage?.setItem(storageKeys.accessToken, auth.accessToken)
       setAccessToken(auth.accessToken)
@@ -457,12 +490,14 @@ export function RemoteControlApp({
     } finally {
       setLoading(false)
     }
-  }, [api, controlUrl, login, password, storage])
+  }, [api, cloudAccountAdapter, controlUrl, login, password, storage])
 
-  const signOut = useCallback(() => {
+  const signOut = useCallback(async () => {
+    if (cloudAccountAdapter) await cloudAccountAdapter.logout()
     storage?.removeItem(storageKeys.accessToken)
     const signedOutMachines = pruneMachinesForSignOut(storage)
     setAccessToken('')
+    setCloudAccount(null)
     setUser(null)
     setMachines([])
     setLocalMachines(signedOutMachines)
@@ -472,7 +507,7 @@ export function RemoteControlApp({
     setSelectedMachineId(null)
     setError(null)
     setView('settings')
-  }, [externalPairingAdapter, storage])
+  }, [cloudAccountAdapter, externalPairingAdapter, storage])
 
   const updateTerminalSettings = useCallback((patch: Partial<TerminalSettings>) => {
     setTerminalSettings((current) => writeTerminalSettings({ ...current, ...patch }, storage))
@@ -768,7 +803,8 @@ export function RemoteControlApp({
           onPasswordChange={setPassword}
           onRefresh={() => { hapticImpact(); void refreshMachines() }}
           onSignIn={() => { hapticImpact(); void submitLogin() }}
-          onSignOut={() => { hapticImpact(); signOut() }}
+          onSignOut={() => { hapticImpact(); void signOut() }}
+          nativeCloudLogin={Boolean(cloudAccountAdapter)}
           onTerminalSettingsChange={updateTerminalSettings}
           onExportDebugLogs={exportDebugLogs}
         />
@@ -1120,6 +1156,7 @@ function SettingsView({
   onSignOut,
   onTerminalSettingsChange,
   onExportDebugLogs,
+  nativeCloudLogin,
 }: {
   controlUrl: string
   error: string | null
@@ -1137,6 +1174,7 @@ function SettingsView({
   onSignOut: () => void
   onTerminalSettingsChange: (patch: Partial<TerminalSettings>) => void
   onExportDebugLogs?: (() => Promise<void>) | undefined
+  nativeCloudLogin: boolean
 }) {
   const handleNumberSetting = (key: 'fontSize' | 'scrollback' | 'scrollbackPrefetchThresholdRows', min: number, max: number) =>
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -1162,7 +1200,7 @@ function SettingsView({
         </button>
         <div className="min-w-0">
           <h1 className="text-lg font-semibold leading-6 text-zinc-900">Settings</h1>
-          <p className="truncate text-xs font-medium text-zinc-500">{signedIn ? user?.email ?? 'Signed in' : 'Web Control sign in'}</p>
+          <p className="truncate text-xs font-medium text-zinc-500">{signedIn ? user?.email ?? 'Signed in' : nativeCloudLogin ? 'TermX Cloud sign in' : 'Web Control sign in'}</p>
         </div>
       </header>
 
@@ -1324,7 +1362,7 @@ function SettingsView({
               </>
             ) : (
               <>
-                <div className="px-4 py-3">
+                {!nativeCloudLogin && <div className="px-4 py-3">
                   <label className="block text-sm font-medium text-zinc-500">
                     Email or username
                     <input
@@ -1334,8 +1372,8 @@ function SettingsView({
                       autoComplete="username"
                     />
                   </label>
-                </div>
-                <div className="border-t border-zinc-200 px-4 py-3">
+                </div>}
+                {!nativeCloudLogin && <div className="border-t border-zinc-200 px-4 py-3">
                   <label className="block text-sm font-medium text-zinc-500">
                     Password
                     <input
@@ -1346,7 +1384,7 @@ function SettingsView({
                       autoComplete="current-password"
                     />
                   </label>
-                </div>
+                </div>}
                 <div className="border-t border-zinc-200 px-4 py-3">
                   <button
                     className="termx-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
@@ -1355,7 +1393,7 @@ function SettingsView({
                     disabled={loading}
                   >
                     <LogIn className="h-4 w-4" />
-                    Sign in
+                    {nativeCloudLogin ? 'Continue in browser' : 'Sign in'}
                   </button>
                 </div>
               </>

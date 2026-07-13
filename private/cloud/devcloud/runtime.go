@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -78,6 +79,8 @@ type Config struct {
 	WebStaging bool
 	// WebSecureCookie 强制浏览器 Session 只经 HTTPS 发送；公网生产必须开启。
 	WebSecureCookie bool
+	// WebPublicURL 是用户浏览器打开的静态 Web Controller origin；设备码验证 URI 只从这里生成。
+	WebPublicURL string
 }
 
 // Runtime 是一组已启动的 dev-local Control Plane/Hub listener 与单个 UDP TURN Relay。
@@ -129,7 +132,18 @@ type cloudSession struct {
 }
 
 type loginFlow struct {
+	userCode       string
+	clientDeviceID string
+	accountID      string
+	accountLabel   string
+	expiresAt      time.Time
+}
+
+type enrollmentClaim struct {
+	accountID string
+	userID    string
 	expiresAt time.Time
+	claimed   bool
 }
 
 type enrollmentFlow struct {
@@ -137,6 +151,8 @@ type enrollmentFlow struct {
 	challenge   []byte
 	publicKey   []byte
 	metadata    *cloudpb.DeviceMetadata
+	accountID   string
+	userID      string
 	expiresAt   time.Time
 }
 
@@ -146,27 +162,30 @@ type serviceState struct {
 
 	mu sync.Mutex
 
-	enrollmentCode    string
-	enrollmentClaimed bool
-	loginFlows        map[string]loginFlow
-	enrollmentFlows   map[string]enrollmentFlow
-	sessions          map[[sha256.Size]byte]cloudSession
+	loginFlows       map[string]loginFlow
+	loginCodes       map[string]string
+	enrollmentClaims map[string]enrollmentClaim
+	enrollmentFlows  map[string]enrollmentFlow
+	sessions         map[[sha256.Size]byte]cloudSession
+	webPublicURL     string
 
-	directory        *directory.Store
-	presence         *presence.Service
-	admission        *admission.Service
-	hub              *cloudhub.Service
-	edgeIssuer       servicecredential.EdgeAccessIssuer
-	edgePolicyIssuer servicecredential.EdgePolicyIssuer
-	edgeAuth         *cloudhub.EdgeAuthorizer
-	edgeRevision     uint64
-	edgeDevices      map[string]cloudhub.DeviceAuthorization
-	webEntitlements  map[string]time.Time
-	usageOutboxPath  string
-	relayControl     *relayControlState
-	webCenter        *webcontroller.UserCenterStore
-	webCommerce      *webcontroller.CommerceService
-	webHandler       http.Handler
+	directory         *directory.Store
+	presence          *presence.Service
+	admission         *admission.Service
+	hub               *cloudhub.Service
+	edgeIssuer        servicecredential.EdgeAccessIssuer
+	edgePolicyIssuer  servicecredential.EdgePolicyIssuer
+	edgeAuth          *cloudhub.EdgeAuthorizer
+	edgeRevision      uint64
+	edgeDevices       map[string]cloudhub.DeviceAuthorization
+	directoryAccounts map[string]struct{}
+	webEntitlements   map[string]time.Time
+	webAccounts       map[string]struct{}
+	usageOutboxPath   string
+	relayControl      *relayControlState
+	webCenter         *webcontroller.UserCenterStore
+	webCommerce       *webcontroller.CommerceService
+	webHandler        http.Handler
 
 	presenceQueueSize int
 	clientQueueSize   int
@@ -213,8 +232,12 @@ func start(config Config, options runtimeOptions) (*Runtime, error) {
 	}()
 	state := &serviceState{
 		now: config.Now, random: &synchronizedReader{source: config.Random},
-		loginFlows: make(map[string]loginFlow), enrollmentFlows: make(map[string]enrollmentFlow), sessions: make(map[[sha256.Size]byte]cloudSession), webEntitlements: make(map[string]time.Time),
+		loginFlows: make(map[string]loginFlow), loginCodes: make(map[string]string), enrollmentClaims: make(map[string]enrollmentClaim), enrollmentFlows: make(map[string]enrollmentFlow), sessions: make(map[[sha256.Size]byte]cloudSession), webEntitlements: make(map[string]time.Time), webAccounts: make(map[string]struct{}), directoryAccounts: make(map[string]struct{}),
 		presenceQueueSize: options.presenceQueueSize, clientQueueSize: options.clientQueueSize,
+	}
+	state.webPublicURL = strings.TrimRight(strings.TrimSpace(config.WebPublicURL), "/")
+	if state.webPublicURL == "" {
+		state.webPublicURL = "https://login.dev.invalid"
 	}
 	if config.UsageOutboxPath == "" {
 		outboxID, randomErr := state.randomID("usage-outbox")
@@ -233,7 +256,7 @@ func start(config Config, options runtimeOptions) (*Runtime, error) {
 			return nil, err
 		}
 	}
-	state.enrollmentCode = config.EnrollmentCode
+	state.enrollmentClaims[config.EnrollmentCode] = enrollmentClaim{accountID: devAccountID, userID: devUserID, expiresAt: now.Add(24 * time.Hour)}
 	if err := state.initializeDomain(now); err != nil {
 		return nil, err
 	}
@@ -332,6 +355,7 @@ func (state *serviceState) initializeDomain(now time.Time) error {
 	state.edgeAuth = edgeAuth
 	state.edgeRevision = 1
 	state.edgeDevices = map[string]cloudhub.DeviceAuthorization{devClientDeviceID: {DeviceID: devClientDeviceID, AccountID: devAccountID, PublicKey: clientPublicKey}}
+	state.directoryAccounts[devAccountID] = struct{}{}
 	if err := state.publishEdgeSnapshot(now); err != nil {
 		return err
 	}

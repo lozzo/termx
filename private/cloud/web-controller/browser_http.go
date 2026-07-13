@@ -31,6 +31,29 @@ type BrowserConfig struct {
 	StagingLogin bool
 	// SecureCookie 控制 Session Cookie 是否只允许 HTTPS；生产必须为 true。
 	SecureCookie bool
+	// DeviceAccess 把浏览器审批和账号节点 enrollment 写回 Control Plane owner。
+	// 浏览器层只传递已认证账号身份，不签发 edge credential，也不接触 daemon capability。
+	DeviceAccess DeviceAccessService
+}
+
+// DeviceLoginRequest 是浏览器可见的设备码投影；它不包含 flow ID、edge token 或客户端私钥。
+type DeviceLoginRequest struct {
+	UserCode  string    `json:"user_code"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// EnrollmentCode 是账号创建的短期 daemon 注册凭据；Code 只在创建响应中返回一次。
+type EnrollmentCode struct {
+	Code      string    `json:"code"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// DeviceAccessService 是 Web 账号 Session 与 Control Plane 设备授权状态机之间的唯一写边界。
+// 实现负责过期、重放和账号归属校验；Hub 只消费其后发布的签名授权投影。
+type DeviceAccessService interface {
+	InspectDeviceLogin(userCode string) (DeviceLoginRequest, error)
+	ApproveDeviceLogin(userCode, accountID string) error
+	CreateEnrollmentCode(accountID, userID string) (EnrollmentCode, error)
 }
 
 // BrowserHandler 返回 `/api/*` 浏览器 surface；它直接拥有 Cookie、Origin 和 CSRF 校验，
@@ -132,6 +155,45 @@ func BrowserHandler(config BrowserConfig) (http.Handler, error) {
 		}
 		profile, nodes, referrals, audit, err := config.UserCenter.Snapshot(session.AccountID)
 		writeCommerceJSON(w, http.StatusOK, map[string]any{"profile": profile, "nodes": nodes, "referrals": referrals, "audit": audit, "billing": config.Commerce.AccountView(session)}, err)
+	})
+	mux.HandleFunc("GET /api/device-login", func(w http.ResponseWriter, r *http.Request) {
+		if config.DeviceAccess == nil {
+			writeCommerceJSON(w, http.StatusNotFound, nil, ErrUserCenterNotFound)
+			return
+		}
+		if _, err := browserSession(r, config.Commerce); err != nil {
+			writeCommerceJSON(w, http.StatusUnauthorized, nil, err)
+			return
+		}
+		flow, err := config.DeviceAccess.InspectDeviceLogin(r.URL.Query().Get("code"))
+		writeCommerceJSON(w, http.StatusOK, flow, err)
+	})
+	mux.HandleFunc("POST /api/device-login/approve", func(w http.ResponseWriter, r *http.Request) {
+		session, err := authorizedMutation(r, config.Commerce)
+		var input struct {
+			UserCode string `json:"user_code"`
+		}
+		if err == nil {
+			err = decodeCommerceJSON(r, &input)
+		}
+		if err == nil && config.DeviceAccess == nil {
+			err = ErrUserCenterNotFound
+		}
+		if err == nil {
+			err = config.DeviceAccess.ApproveDeviceLogin(input.UserCode, session.AccountID)
+		}
+		writeCommerceJSON(w, http.StatusOK, map[string]bool{"approved": err == nil}, err)
+	})
+	mux.HandleFunc("POST /api/nodes/enrollment", func(w http.ResponseWriter, r *http.Request) {
+		session, err := authorizedMutation(r, config.Commerce)
+		if err == nil && config.DeviceAccess == nil {
+			err = ErrUserCenterNotFound
+		}
+		var code EnrollmentCode
+		if err == nil {
+			code, err = config.DeviceAccess.CreateEnrollmentCode(session.AccountID, session.UserID)
+		}
+		writeCommerceJSON(w, http.StatusCreated, code, err)
 	})
 	mux.HandleFunc("POST /api/checkout", func(w http.ResponseWriter, r *http.Request) {
 		session, err := authorizedMutation(r, config.Commerce)

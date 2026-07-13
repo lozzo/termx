@@ -18,12 +18,12 @@ func validateBeginLoginRequest(request *cloudpb.BeginLoginRequest) error {
 	return nil
 }
 
-func validateLoginFlow(flow *cloudpb.LoginFlow, now time.Time) error {
+func validateLoginFlow(flow *cloudpb.LoginFlow, now time.Time, allowPublicHTTP bool) error {
 	if flow == nil || flow.GetFlowId() == "" || flow.GetVerificationUri() == "" || flow.GetExpiresAtUnix() <= uint64(now.Unix()) || flow.GetPollIntervalMillis() == 0 || flow.GetPollIntervalMillis() > 60_000 {
 		return protocolError("Control Plane returned an invalid login flow")
 	}
 	verificationURL, err := url.Parse(flow.GetVerificationUri())
-	if err != nil || verificationURL.Scheme != "https" || verificationURL.Host == "" || verificationURL.User != nil {
+	if err != nil || verificationURL.Scheme != "https" && !(allowPublicHTTP && verificationURL.Scheme == "http") || verificationURL.Host == "" || verificationURL.User != nil {
 		return protocolError("Control Plane returned an untrusted login URL")
 	}
 	return nil

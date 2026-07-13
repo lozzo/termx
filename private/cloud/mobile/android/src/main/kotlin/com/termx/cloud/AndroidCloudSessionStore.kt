@@ -19,6 +19,7 @@ internal data class AccountSession(
     val token: ByteArray,
     val expiresAt: Instant,
     val accountId: String,
+    val accountLabel: String,
     val deviceId: String,
     val hubId: String,
     val hubURL: String,
@@ -30,6 +31,7 @@ internal data class AccountSession(
 internal interface CloudSessionStore {
     fun load(now: Instant): AccountSession?
     fun save(session: AccountSession)
+    fun clear()
 }
 
 /** MemoryCloudSessionStore 是 JVM contract harness 的进程重建夹具；产品装配必须使用 AndroidCloudSessionStore。 */
@@ -42,6 +44,8 @@ internal class MemoryCloudSessionStore : CloudSessionStore {
         validateReplacement(this.session, session)
         this.session = session.copy(token = session.token.copyOf())
     }
+
+    override fun clear() { session = null }
 }
 
 /**
@@ -73,6 +77,10 @@ internal class AndroidCloudSessionStore(context: Context) : CloudSessionStore {
         if (!preferences.edit().putString(SESSION_KEY, encrypt(encode(session))).commit()) {
             throw ManagedEndpointFailure("temporary", "failed to persist cloud session")
         }
+    }
+
+    override fun clear() {
+        preferences.edit().remove(SESSION_KEY).commit()
     }
 
     private fun encrypt(value: ByteArray): String {
@@ -113,10 +121,11 @@ internal class AndroidCloudSessionStore(context: Context) : CloudSessionStore {
 }
 
 private fun encode(session: AccountSession): ByteArray = JSONObject()
-    .put("version", 1)
+    .put("version", 2)
     .put("token", Base64.encodeToString(session.token, Base64.NO_WRAP))
     .put("expires_at_unix", session.expiresAt.epochSecond)
     .put("account_id", session.accountId)
+    .put("account_label", session.accountLabel)
     .put("device_id", session.deviceId)
     .put("hub_id", session.hubId)
     .put("hub_url", session.hubURL)
@@ -127,11 +136,11 @@ private fun encode(session: AccountSession): ByteArray = JSONObject()
 private fun decode(value: ByteArray): AccountSession = try {
     val json = JSONObject(String(value, Charsets.UTF_8))
     value.fill(0)
-    require(json.getInt("version") == 1)
+    require(json.getInt("version") == 2)
     AccountSession(
         Base64.decode(json.getString("token"), Base64.NO_WRAP),
         Instant.ofEpochSecond(json.getLong("expires_at_unix")),
-        json.getString("account_id"), json.getString("device_id"), json.getString("hub_id"),
+        json.getString("account_id"), json.getString("account_label"), json.getString("device_id"), json.getString("hub_id"),
         json.getString("hub_url"), json.getString("region"), json.getLong("directory_version"),
     ).also(::validateSession)
 } catch (failure: Exception) {
@@ -141,7 +150,7 @@ private fun decode(value: ByteArray): AccountSession = try {
 
 private fun validateSession(session: AccountSession) {
     val uri = URI(session.hubURL)
-    require(session.token.size >= 16 && session.accountId.isNotBlank() && session.deviceId.isNotBlank())
+    require(session.token.size >= 16 && session.accountId.isNotBlank() && session.accountLabel.isNotBlank() && session.deviceId.isNotBlank())
     require(session.hubId.isNotBlank() && session.region.isNotBlank() && session.directoryVersion > 0)
     require(uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.query == null && uri.fragment == null)
 }

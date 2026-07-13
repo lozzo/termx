@@ -4,6 +4,8 @@ import com.google.protobuf.Message
 import com.google.protobuf.Parser
 import com.google.protobuf.Descriptors
 import com.termx.app.managed.ManagedDialPolicy
+import com.termx.app.managed.ManagedCloudAccount
+import com.termx.app.managed.ManagedCloudLoginFlow
 import com.termx.app.managed.ManagedEndpointFailure
 import com.termx.app.managed.ManagedEndpointResolution
 import com.termx.app.managed.ManagedEndpointSpec
@@ -34,7 +36,7 @@ import java.time.Instant
 internal class DevCloudMobileGateway(
     controlPlaneURL: String,
     hubURL: String,
-    allowPublicHTTP: Boolean = false,
+    private val allowPublicHTTP: Boolean = false,
     private val now: () -> Instant = { Instant.now() },
     private val sessionStore: CloudSessionStore = MemoryCloudSessionStore(),
 ) {
@@ -42,6 +44,48 @@ internal class DevCloudMobileGateway(
     private val hubOrigin = validateOrigin(hubURL, allowPublicHTTP)
     private val sessionLock = Mutex()
     @Volatile private var accountSession: AccountSession? = null
+
+    /** beginLogin 只返回短期设备码；账号密码和浏览器 Cookie 不进入 Official App。 */
+    suspend fun beginLogin(): ManagedCloudLoginFlow = withContext(Dispatchers.IO) {
+        val flow = postProto(
+            "$controlOrigin/v1/login/begin",
+            CloudCompanion.BeginLoginRequest.newBuilder().setMethod(CloudCompanion.LoginMethod.LOGIN_METHOD_DEVICE_CODE).build(),
+            CloudCompanion.LoginFlow.parser(),
+            null,
+        )
+        val verification = URI(flow.verificationUri)
+        val loopbackHTTP = verification.scheme == "http" && verification.host in setOf("127.0.0.1", "localhost", "::1")
+        val trustedScheme = verification.scheme == "https" || loopbackHTTP || allowPublicHTTP && verification.scheme == "http"
+        if (flow.flowId.isBlank() || flow.userCode.isBlank() || flow.expiresAtUnix <= now().epochSecond || flow.pollIntervalMillis !in 1..60_000 || !trustedScheme || verification.host.isNullOrBlank() || verification.userInfo != null) {
+            fail("protocol", "Control Plane returned an invalid login flow")
+        }
+        ManagedCloudLoginFlow(flow.flowId, flow.verificationUri, flow.userCode, flow.expiresAtUnix, flow.pollIntervalMillis)
+    }
+
+    /** completeLogin 兑换浏览器已批准的 flow，并把 edge token 直接写入 Keystore store。 */
+    suspend fun completeLogin(flowId: String): ManagedCloudAccount = withContext(Dispatchers.IO) {
+        if (flowId.isBlank()) fail("protocol", "cloud login flow is required")
+        val session = postSession(
+            "$controlOrigin/v1/login/complete",
+            CloudCompanion.CompleteLoginRequest.newBuilder().setFlowId(flowId).build(),
+        )
+        sessionStore.save(session)
+        accountSession = session
+        session.accountSummary()
+    }
+
+    /** currentAccount 只返回仍有效的账号摘要。 */
+    suspend fun currentAccount(): ManagedCloudAccount? = sessionLock.withLock {
+        accountSession?.takeIf { now().isBefore(it.expiresAt) }?.accountSummary()
+            ?: sessionStore.load(now())?.also { accountSession = it }?.accountSummary()
+    }
+
+    /** logout 删除账号 edge session；pairing grant 属于独立 secure store，不在此处清理。 */
+    suspend fun logout() = sessionLock.withLock {
+        accountSession?.token?.fill(0)
+        accountSession = null
+        sessionStore.clear()
+    }
 
     /** resolve 创建独立 ManagedSession；relay-only 时额外领取 caller-specific 短期 TURN material。 */
     suspend fun resolve(spec: ManagedEndpointSpec): ManagedEndpointResolution = withContext(Dispatchers.IO) {
@@ -121,20 +165,7 @@ internal class DevCloudMobileGateway(
             accountSession = it
             return@withLock it
         }
-        val flow = postProto(
-            "$controlOrigin/v1/login/begin",
-            CloudCompanion.BeginLoginRequest.newBuilder().setMethod(CloudCompanion.LoginMethod.LOGIN_METHOD_DEVICE_CODE).build(),
-            CloudCompanion.LoginFlow.parser(),
-            null,
-        )
-        if (flow.flowId.isBlank() || flow.expiresAtUnix <= now().epochSecond) fail("login_required", "dev cloud login flow is unavailable")
-        val session = postSession(
-            "$controlOrigin/v1/login/complete",
-            CloudCompanion.CompleteLoginRequest.newBuilder().setFlowId(flow.flowId).build(),
-        )
-        sessionStore.save(session)
-        accountSession = session
-        session
+        fail("login_required", "Official mobile cloud account login is required")
     }
 
     private fun acquireRelayLease(session: AccountSession, managedSessionId: String, targetDeviceId: String): List<ManagedIceServer> {
@@ -172,7 +203,7 @@ internal class DevCloudMobileGateway(
             val region = json.requiredString("hub_region")
             val directoryVersion = json.requiredLong("hub_directory_version")
             if (token.size < 16 || !now().isBefore(expiresAt) || hubId.isBlank() || signedHubURL.isBlank() || region.isBlank() || directoryVersion <= 0) fail("login_required", "Control Plane account session is expired")
-            AccountSession(token, expiresAt, json.requiredString("account_id"), json.requiredString("device_id"), hubId, signedHubURL, region, directoryVersion)
+            AccountSession(token, expiresAt, json.requiredString("account_id"), json.requiredString("account_label"), json.requiredString("device_id"), hubId, signedHubURL, region, directoryVersion)
         } finally {
             connection.disconnect()
         }
@@ -387,3 +418,6 @@ internal class DevCloudMobileGateway(
         fun fail(code: String, message: String): Nothing = throw ManagedEndpointFailure(code, message)
     }
 }
+
+private fun AccountSession.accountSummary(): ManagedCloudAccount =
+    ManagedCloudAccount(accountId, accountLabel, expiresAt.epochSecond)
