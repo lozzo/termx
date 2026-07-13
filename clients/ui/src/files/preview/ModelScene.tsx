@@ -162,7 +162,7 @@ export function ModelScene({ object, name, label, three }: { object: ModelObject
             <Box className="h-4 w-4 shrink-0 text-sky-300" />
             <span className="truncate text-[12px] font-semibold uppercase tracking-wide text-zinc-300">{label}</span>
           </div>
-          <div className="flex items-center overflow-hidden rounded-lg border border-white/10 bg-white/5">
+          <div className="flex items-center overflow-hidden border border-white/10 bg-white/5">
             <button
               type="button"
               aria-label={`Zoom out ${name}`}

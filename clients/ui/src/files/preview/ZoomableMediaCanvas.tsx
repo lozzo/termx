@@ -189,7 +189,7 @@ export function ZoomableMediaCanvas({
         onPointerUp={onPointerEnd}
         onWheel={onWheel}
       >
-        <div className="absolute right-3 top-3 z-20 flex items-center overflow-hidden rounded-lg border border-white/10 bg-black/70 text-white shadow-lg backdrop-blur">
+        <div className="absolute right-3 top-3 z-20 flex items-center overflow-hidden border border-white/10 bg-black/70 text-white backdrop-blur">
           <button
             type="button"
             aria-label={`Zoom out ${zoomLabel}`}

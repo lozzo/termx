@@ -32,10 +32,10 @@ export function MachineList({
 
   return (
     <section
-      className={`flex min-h-0 flex-1 flex-col bg-zinc-50 text-zinc-950 ${className ?? ''}`}
+      className={`termx-app-page flex min-h-0 flex-1 flex-col ${className ?? ''}`}
       data-testid="termx-machine-list"
     >
-      <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
+      <header className="termx-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold leading-6 text-zinc-950">Machines</h1>
           <p className="truncate text-xs font-medium text-zinc-500">
@@ -45,7 +45,7 @@ export function MachineList({
         <div className="flex shrink-0 items-center gap-2">
           <button
             aria-label="Scan pairing QR"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="termx-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
             type="button"
             onClick={() => { hapticImpact(); onScanMachine() }}
           >
@@ -53,7 +53,7 @@ export function MachineList({
           </button>
           <button
             aria-label="Add machine"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-900 text-white shadow-sm transition-colors hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="termx-app-primary-button min-w-11 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
             type="button"
             onClick={() => { hapticImpact(); onAddMachine() }}
           >
@@ -63,21 +63,21 @@ export function MachineList({
       </header>
 
       {machines.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center px-4 py-8">
+        <div className="flex flex-1 items-start justify-center pt-16 md:items-center md:py-8 md:pt-8">
           <div
-            className="flex w-full max-w-sm flex-col items-center gap-4 rounded-lg border border-dashed border-zinc-300 bg-white px-5 py-7 text-center"
+            className="termx-app-panel flex w-full max-w-md flex-col items-start gap-5 border-x-0 px-6 py-8 text-left sm:border-x"
             data-testid="termx-machine-empty-state"
           >
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500">
+            <div className="flex h-12 w-12 items-center justify-center border border-[var(--termx-app-line)] bg-[var(--termx-app-soft)] text-[var(--termx-app-accent)]">
               <Server className="h-6 w-6" />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <h2 className="text-base font-semibold text-zinc-950">No machines yet</h2>
               <p className="text-sm leading-5 text-zinc-500">Add or scan a TermX QR to keep a machine here.</p>
             </div>
             <div className="grid w-full grid-cols-2 gap-2">
               <button
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="termx-app-secondary-button gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
                 type="button"
                 onClick={() => { hapticImpact(); onScanMachine() }}
               >
@@ -85,7 +85,7 @@ export function MachineList({
                 Scan
               </button>
               <button
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="termx-app-primary-button gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
                 type="button"
                 onClick={() => { hapticImpact(); onAddMachine() }}
               >
@@ -95,7 +95,7 @@ export function MachineList({
             </div>
             {authState === 'anonymous' ? (
               <button
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="inline-flex min-h-11 items-center justify-center gap-2 border-b border-blue-700 px-3 text-sm font-semibold text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
                 type="button"
                 onClick={() => { hapticSelection(); onSignIn?.() }}
               >
@@ -106,7 +106,7 @@ export function MachineList({
           </div>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        <div className="min-h-0 flex-1 overflow-y-auto py-4">
           {onlineMachines.length > 0 ? (
             <MachineSection
               title="Available"
@@ -143,10 +143,10 @@ function MachineSection({
 }) {
   return (
     <section className="mb-5 last:mb-0">
-      <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">{title}</div>
-      <ul aria-label={title} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+      <div className="mb-2 px-4 text-[10px] font-semibold uppercase text-[var(--termx-app-muted)]">{title}</div>
+      <ul aria-label={title} className="termx-app-panel overflow-hidden border-x-0 sm:border-x">
         {machines.map((machine, index) => (
-          <li key={machine.machineId} className={index > 0 ? 'border-t border-zinc-100' : ''}>
+          <li key={machine.machineId} className={index > 0 ? 'border-t border-[var(--termx-app-line)]' : ''}>
             <MachineRow
               machine={machine}
               onSelectMachine={onSelectMachine}
@@ -193,7 +193,7 @@ function MachineRow({
   return (
     <button
       aria-label={`Connect to ${machine.name}`}
-      className="grid w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left transition-colors hover:bg-zinc-50 active:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+      className="grid min-h-[108px] w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left transition-colors duration-200 hover:bg-zinc-50 active:bg-[var(--termx-app-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--termx-app-accent)]"
       type="button"
       onClick={() => {
         if (longPressTriggeredRef.current) {
@@ -223,9 +223,9 @@ function MachineRow({
       onPointerLeave={clearLongPress}
       onPointerCancel={clearLongPress}
     >
-      <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-700">
+      <div className="relative flex h-11 w-11 items-center justify-center border border-[var(--termx-app-line)] bg-[var(--termx-app-soft)] text-zinc-700">
         <DeviceIcon className="h-5 w-5" />
-        <span className={`absolute bottom-0.5 right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
+        <span className={`absolute bottom-0.5 right-0.5 h-2.5 w-2.5 border-2 border-white ${
           machine.state === 'online'
             ? 'bg-emerald-500'
             : machine.state === 'connecting'
@@ -250,7 +250,7 @@ function MachineRow({
           </div>
         </div>
       </div>
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center self-center rounded-full bg-zinc-100 text-zinc-400">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center self-center text-zinc-400">
         <ChevronRight className="h-4 w-4" />
       </div>
     </button>
@@ -273,7 +273,7 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
   return (
     <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-machine-detail-sheet" onClick={() => { hapticSelection(); onClose() }}>
       <section
-        className="w-full max-h-[85vh] overflow-hidden rounded-t-2xl bg-white shadow-2xl md:max-w-md md:rounded-2xl"
+        className="w-full max-h-[85vh] overflow-hidden border-t border-[var(--termx-app-line)] bg-white md:max-w-md md:border"
         onClick={(event) => event.stopPropagation()}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
@@ -285,16 +285,16 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
           <button
             type="button"
             aria-label="Close machine details"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 hover:bg-zinc-100 active:bg-zinc-200"
+            className="termx-app-icon-button border-transparent bg-transparent"
             onClick={() => { hapticSelection(); onClose() }}
           >
             <X className="h-5 w-5" />
           </button>
         </header>
         <div className="max-h-[calc(85vh-4rem)] overflow-y-auto p-4">
-          <dl className="space-y-2">
+          <dl className="border border-[var(--termx-app-line)]">
             {fields.map(([label, value]) => (
-              <div key={label} className="rounded-xl bg-zinc-50 px-3 py-2.5">
+              <div key={label} className="border-b border-[var(--termx-app-line)] bg-zinc-50 px-3 py-2.5 last:border-b-0">
                 <dt className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{label}</dt>
                 <dd className="mt-1 break-all font-mono text-[13px] font-medium text-zinc-900">{value}</dd>
               </div>
@@ -308,14 +308,14 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
 
 function StateBadge({ state }: { state: AppMachineRecord['state'] }) {
   const tone = state === 'online'
-    ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
     : state === 'offline'
-      ? 'bg-zinc-100 text-zinc-600 ring-zinc-200'
+      ? 'border-zinc-200 bg-zinc-100 text-zinc-600'
       : state === 'stale'
-        ? 'bg-amber-50 text-amber-700 ring-amber-200'
-        : 'bg-blue-50 text-blue-700 ring-blue-200'
+        ? 'border-amber-200 bg-amber-50 text-amber-700'
+        : 'border-blue-200 bg-blue-50 text-blue-700'
   return (
-    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold leading-4 ring-1 ${tone}`}>
+    <span className={`shrink-0 border px-2 py-0.5 text-[11px] font-semibold leading-4 ${tone}`}>
       {formatMachineState(state)}
     </span>
   )
@@ -323,7 +323,7 @@ function StateBadge({ state }: { state: AppMachineRecord['state'] }) {
 
 function InfoPill({ children }: { children: string }) {
   return (
-    <span className="inline-flex h-6 items-center rounded-md bg-zinc-100 px-2 text-[11px] font-semibold leading-none text-zinc-600">
+    <span className="inline-flex h-6 items-center border border-[var(--termx-app-line)] bg-zinc-100 px-2 text-[11px] font-semibold leading-none text-zinc-600">
       {children}
     </span>
   )

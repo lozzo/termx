@@ -97,7 +97,7 @@ export function TerminalActionToolbar({
   const ownsResize = resizeControl?.canResize === true
 
   return (
-    <div ref={panelRef} className="absolute inset-x-0 top-0 z-40 border-b border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] px-3 py-3 text-[var(--termx-text)] shadow-xl md:hidden animate-in slide-in-from-top-2">
+    <div ref={panelRef} className="absolute inset-x-0 top-0 z-40 border-b border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] px-3 py-3 text-[var(--termx-text)] md:hidden animate-in slide-in-from-top-2">
       <div className="flex flex-col gap-3">
         {/* Settings Row: Font Size */}
         <div className="flex items-center justify-between">
@@ -105,14 +105,14 @@ export function TerminalActionToolbar({
           <div className="flex items-center gap-2">
             <button
               onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onFontSizeChange?.(Math.max(6, fontSize - 1)) }}
-              className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-75"
+              className="flex h-7 w-7 items-center justify-center border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-75"
             >
               <Minus className="h-3.5 w-3.5" />
             </button>
             <span className="w-10 text-center font-mono text-xs font-semibold tabular-nums text-[var(--termx-text)]">{fontSize}px</span>
             <button
               onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onFontSizeChange?.(Math.min(32, fontSize + 1)) }}
-              className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-75"
+              className="flex h-7 w-7 items-center justify-center border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-75"
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
@@ -124,7 +124,7 @@ export function TerminalActionToolbar({
           <span className="text-xs font-medium text-[var(--termx-muted)]">渲染模式</span>
           <button
             onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onRendererChange?.(nextRenderer) }}
-            className="flex h-7 items-center justify-center gap-1.5 rounded-md bg-[var(--termx-surface-raised)] px-3 text-xs font-semibold text-[var(--termx-text)] active:opacity-75"
+            className="flex h-7 items-center justify-center gap-1.5 border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-3 text-xs font-semibold text-[var(--termx-text)] active:opacity-75"
           >
             <Cpu className="h-3.5 w-3.5" />
             {RENDERER_LABELS[renderer]}
@@ -148,7 +148,7 @@ export function TerminalActionToolbar({
               e.preventDefault()
               e.stopPropagation()
             }}
-            className="flex h-7 items-center justify-center gap-1.5 rounded-md bg-[var(--termx-surface-raised)] px-3 text-xs font-semibold text-[var(--termx-text)] active:opacity-75"
+            className="flex h-7 items-center justify-center gap-1.5 border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-3 text-xs font-semibold text-[var(--termx-text)] active:opacity-75"
           >
             <span className="font-mono text-[11px] font-extrabold leading-none tracking-[-0.04em]">{ownsResize ? 'OW' : 'FL'}</span>
             {ownsResize ? 'Owner' : 'Follower'}
@@ -190,7 +190,7 @@ function ToolbarButton({
     <button
       type="button"
       title={title}
-      className={`flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-semibold transition-colors active:scale-[0.98] disabled:opacity-40 ${
+      className={`flex h-8 min-w-0 items-center justify-center gap-1.5 border border-[var(--termx-border-subtle)] px-2 text-xs font-semibold transition-colors disabled:opacity-40 ${
         primary ? 'bg-[var(--termx-accent)]/20 text-[var(--termx-accent)]' : 'bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-75'
       }`}
       disabled={disabled}
@@ -216,7 +216,7 @@ function ToolbarIconButton({
     <button
       type="button"
       aria-label={label}
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-500/15 text-red-300 transition-colors active:scale-[0.98] hover:bg-red-50/80 active:bg-red-500/25"
+      className="flex h-8 w-8 shrink-0 items-center justify-center border border-red-500/20 bg-red-500/15 text-red-300 transition-colors hover:bg-red-50/80 active:bg-red-500/25"
       onPointerDown={(event) => event.preventDefault()}
       onClick={() => { hapticSelection(); onClick() }}
     >

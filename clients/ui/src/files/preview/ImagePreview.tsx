@@ -11,7 +11,7 @@ export function ImagePreview({ preview }: { preview: FilePreviewResponse }) {
     <ZoomableMediaCanvas zoomLabel={preview.name}>
       <img
         alt={preview.name}
-        className="block max-h-[calc(100dvh-8rem)] max-w-[calc(100vw-1rem)] select-none rounded-md shadow-sm"
+        className="block max-h-[calc(100dvh-8rem)] max-w-[calc(100vw-1rem)] select-none"
         draggable={false}
         src={src}
       />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { MachineList } from '../machines/MachineList'
 import { hapticSelection } from '../platform/haptics'
 import type { AppMachineRecord, ConnectionFlowSnapshot } from '../state/appMachine'
@@ -78,7 +78,7 @@ export function MachineBrowserShell({
 
   return (
     <main
-      className={`flex h-full min-h-0 flex-col bg-zinc-50 text-zinc-950 ${className ?? ''}`}
+      className={`termx-app-page flex h-full min-h-0 flex-col ${className ?? ''}`}
       data-testid="termx-remote-app-shell"
     >
       {selectedMachine && connection ? (
@@ -117,11 +117,11 @@ function ConnectionFlowView({
 }) {
   const active = connection.stage.startsWith('trying_')
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50 animate-in fade-in slide-in-from-right-4 duration-200" data-testid="termx-connection-flow">
-      <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+    <section className="termx-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-right-4 duration-200" data-testid="termx-connection-flow">
+      <header className="termx-app-header flex min-h-14 shrink-0 items-center gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <button
           aria-label="Back to machines"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 shadow-sm hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="termx-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
           type="button"
           onClick={() => { hapticSelection(); onBack() }}
         >
@@ -133,10 +133,10 @@ function ConnectionFlowView({
         </div>
       </header>
       <div className="flex flex-1 items-center justify-center px-4 py-8">
-        <div className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="termx-app-panel w-full max-w-sm p-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
-              {active ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
+            <div className="flex h-11 w-11 items-center justify-center border border-blue-200 bg-blue-50 text-blue-700">
+              {active ? <span className="termx-square-spinner h-5 w-5" aria-hidden="true" /> : null}
             </div>
             <div className="min-w-0">
               <h2 className="text-base font-semibold text-zinc-950">{formatConnectionStage(connection.stage)}</h2>
@@ -145,12 +145,12 @@ function ConnectionFlowView({
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             {connection.path ? (
-              <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600">
+              <span className="border border-[var(--termx-app-line)] bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600">
                 {connection.path === 'hub' ? 'Hub' : 'Local'}
               </span>
             ) : null}
             {connection.relayInUse ? (
-              <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">Relay active</span>
+              <span className="border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">Relay active</span>
             ) : null}
           </div>
         </div>

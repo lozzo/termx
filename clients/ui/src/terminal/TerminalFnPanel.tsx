@@ -15,13 +15,13 @@ export function TerminalFnPanel({ command, onSend }: TerminalFnPanelProps) {
   const groups = selectedTab === 'program' ? programPreset?.groups ?? SYSTEM_FN_GROUPS : SYSTEM_FN_GROUPS
 
   return (
-    <div className="absolute inset-x-0 top-0 z-30 border-b border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] text-[var(--termx-text)] shadow-2xl md:hidden" data-testid="termx-fn-panel">
+    <div className="absolute inset-x-0 top-0 z-30 border-b border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] text-[var(--termx-text)] md:hidden" data-testid="termx-fn-panel">
       <div className="max-h-[42vh] overflow-y-auto px-2 py-2">
         <div className="mb-2 flex items-center gap-1.5">
           {programPreset ? (
             <button
               type="button"
-              className={`h-7 rounded-md px-2 text-[10px] font-semibold ${selectedTab === 'program' ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'bg-[var(--termx-surface-raised)] text-[var(--termx-text)]'}`}
+              className={`h-7 px-2 text-[10px] font-semibold ${selectedTab === 'program' ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'bg-[var(--termx-surface-raised)] text-[var(--termx-text)]'}`}
               onClick={() => { hapticSelection(); setActiveTab('program') }}
             >
               {programPreset.name}
@@ -29,7 +29,7 @@ export function TerminalFnPanel({ command, onSend }: TerminalFnPanelProps) {
           ) : null}
           <button
             type="button"
-            className={`h-7 rounded-md px-2 text-[10px] font-semibold ${selectedTab === 'system' ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'bg-[var(--termx-surface-raised)] text-[var(--termx-text)]'}`}
+            className={`h-7 px-2 text-[10px] font-semibold ${selectedTab === 'system' ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'bg-[var(--termx-surface-raised)] text-[var(--termx-text)]'}`}
             onClick={() => { hapticSelection(); setActiveTab('system') }}
           >
             System
@@ -56,7 +56,7 @@ function FnGroupView({ group, onSend }: { group: TerminalFnGroup; onSend: (data:
           <button
             key={`${group.name}:${item.label}:${item.data}`}
             type="button"
-            className="min-h-10 rounded-lg bg-[var(--termx-surface-raised)] px-2 py-1.5 text-left active:scale-[0.98] active:opacity-80"
+            className="min-h-10 border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-2 py-1.5 text-left active:opacity-80"
             onPointerDown={(event) => event.preventDefault()}
             onClick={() => { hapticImpact(); onSend(item.data) }}
           >

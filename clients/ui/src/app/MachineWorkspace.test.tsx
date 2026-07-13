@@ -34,6 +34,13 @@ const terminalHandleMocks = vi.hoisted(() => ({
   }>,
 }))
 
+async function clickTerminalMenuAction(name: RegExp): Promise<void> {
+  if (!screen.queryByTestId('termx-terminal-menu-sheet')) {
+    await userEvent.click(screen.getByRole('button', { name: /open terminal menu/i }))
+  }
+  await userEvent.click(within(screen.getByTestId('termx-terminal-menu-sheet')).getByRole('button', { name }))
+}
+
 vi.mock('../terminal/Terminal', () => ({
   Terminal: forwardRef<TerminalHandle, {
     machineId: string
@@ -168,7 +175,7 @@ describe('MachineWorkspace', () => {
     expect(screen.queryByTestId('termx-terminal-list-page')).toBeNull()
     expect(screen.getByTestId('termx-terminal-list').getAttribute('data-machine-id')).toBe('machine-local')
     expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1')
-    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+    await clickTerminalMenuAction(/files/i)
     await waitFor(() => expect(screen.getByTestId('termx-file-manager')).toBeTruthy())
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-terminal-id')).toBe('terminal-1')
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-initial-path')).toBe('/Users/lozzow/project')
@@ -211,13 +218,13 @@ describe('MachineWorkspace', () => {
     await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
-    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+    await clickTerminalMenuAction(/files/i)
     await waitFor(() => expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/Users/lozzow/project'))
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
     await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))
     await userEvent.click(screen.getByRole('button', { name: /open worker/i }))
-    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+    await clickTerminalMenuAction(/files/i)
     await waitFor(() => expect(screen.getByTestId('termx-file-manager').getAttribute('data-terminal-id')).toBe('terminal-2'))
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-initial-path')).toBe('/srv/worker')
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/srv/worker')
@@ -314,7 +321,7 @@ describe('MachineWorkspace', () => {
     expect(screen.queryByRole('navigation', { name: /mobile terminal navigation/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /^console$/i })).toBeNull()
 
-    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+    await clickTerminalMenuAction(/files/i)
     await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay')).toBeTruthy())
     expect(screen.getByTestId('termx-file-manager')).toBeTruthy()
     expect(screen.getByTestId('termx-terminal')).toBeTruthy()
@@ -392,6 +399,27 @@ describe('MachineWorkspace', () => {
     expect(keybar.className).toContain('max-w-full')
   })
 
+  it('keeps terminal actions reachable from the touch-sized mobile tools sheet', async () => {
+    const api = createMockLocalAgentApi()
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
+      Promise.resolve(createMockMachineWorkspaceSession({}, machineId)),
+    )
+
+    render(<MachineWorkspace api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await userEvent.click(screen.getByRole('button', { name: /open terminal menu/i }))
+
+    const sheet = screen.getByTestId('termx-terminal-menu-sheet')
+    expect(sheet).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: /split terminal/i })).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: /control resize/i })).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: /^terminal tools$/i })).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: /connection/i })).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: /files/i })).toBeTruthy()
+  })
+
   it('keeps the terminal RTC session when returning to the list and reuses it for the same terminal', async () => {
     const api = createMockLocalAgentApi()
     const sessions: ReturnType<typeof createMockMachineWorkspaceSession>[] = []
@@ -458,7 +486,7 @@ describe('MachineWorkspace', () => {
       relayInUse: false,
       type: 'p2p' as const,
     }))
-    await userEvent.click(screen.getByRole('button', { name: /connection info/i }))
+    await clickTerminalMenuAction(/connection/i)
     await waitFor(() => expect(screen.getByRole('button', { name: /use relay/i })).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /use relay/i }))
 
@@ -475,7 +503,7 @@ describe('MachineWorkspace', () => {
       type: 'relay' as const,
     }))
 
-    await userEvent.click(screen.getByRole('button', { name: /connection info/i }))
+    await clickTerminalMenuAction(/connection/i)
     await waitFor(() => expect(screen.getByRole('button', { name: /try p2p/i })).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /try p2p/i }))
 
@@ -764,7 +792,7 @@ describe('MachineWorkspace', () => {
     }
     const keyboardButton = screen.getByRole('button', { name: /toggle system keyboard/i })
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /acquire resize control/i }))
+    await clickTerminalMenuAction(/control resize/i)
 
     await waitFor(() => expect(totalTerminalHandleCalls('fit')).toBeGreaterThan(0))
     expect(totalTerminalHandleCalls('focus')).toBe(0)
@@ -798,7 +826,7 @@ describe('MachineWorkspace', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
-    await userEvent.click(screen.getByRole('button', { name: /terminal tools/i }))
+    await clickTerminalMenuAction(/^terminal tools$/i)
     await userEvent.click(screen.getByRole('button', { name: '粘贴' }))
 
     await waitFor(() => expect(
@@ -843,10 +871,10 @@ describe('MachineWorkspace', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
-    await userEvent.click(screen.getByRole('button', { name: /terminal tools/i }))
+    await clickTerminalMenuAction(/^terminal tools$/i)
     await userEvent.click(screen.getByRole('button', { name: '剪贴板' }))
 
-    const sheet = await screen.findByTestId('cmd/termxpboard-history-sheet')
+    const sheet = await screen.findByTestId('termx-clipboard-history-sheet')
     await waitFor(() => expect(within(sheet).getByText('history text')).toBeTruthy())
     await userEvent.click(within(sheet).getByRole('button', { name: /delete/i }))
 
@@ -874,7 +902,7 @@ describe('MachineWorkspace', () => {
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
 
-    await userEvent.click(screen.getByRole('button', { name: /connection info/i }))
+    await clickTerminalMenuAction(/connection/i)
     await waitFor(() => expect(screen.getByRole('button', { name: /^reconnect$/i })).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /^reconnect$/i }))
 
@@ -896,7 +924,7 @@ describe('MachineWorkspace', () => {
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1'))
 
-    await userEvent.click(screen.getByRole('button', { name: /split terminal/i }))
+    await clickTerminalMenuAction(/split terminal/i)
     await waitFor(() => expect(screen.getByTestId('termx-split-terminal-sheet')).toBeTruthy())
     await userEvent.click(within(screen.getByTestId('termx-split-terminal-sheet')).getByRole('button', { name: /open worker/i }))
 
@@ -910,14 +938,13 @@ describe('MachineWorkspace', () => {
     expect(connect).toHaveBeenCalledTimes(1)
     expect(sessions[0]?.disconnectCalls).toBe(0)
 
-    await userEvent.click(screen.getByRole('button', { name: /enable synchronized input/i }))
-    expect(screen.getByRole('button', { name: /disable synchronized input/i })).toBeTruthy()
+    await clickTerminalMenuAction(/sync input/i)
 
     await userEvent.click(within(screen.getAllByTestId('termx-terminal')[1]!).getByRole('button', { name: /type through xterm/i }))
     expect(terminalHandleMocks.handles.get('terminal-1')?.sendInput).toHaveBeenCalledWith('typed\n')
     expect(terminalHandleMocks.handles.get('terminal-2')?.sendInput).toHaveBeenCalledWith('typed\n')
 
-    await userEvent.click(screen.getByRole('button', { name: /close split terminal/i }))
+    await clickTerminalMenuAction(/close split/i)
     await waitFor(() => expect(screen.queryByTestId('termx-split-terminal-panel')).toBeNull())
     expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1')
     expect(connect).toHaveBeenCalledTimes(1)
@@ -1101,7 +1128,8 @@ describe('MachineWorkspace', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(runtimeHandler).toBeTruthy())
-    expect(screen.getByRole('button', { name: /acquire resize control/i })).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /open terminal menu/i }))
+    expect(within(screen.getByTestId('termx-terminal-menu-sheet')).getByRole('button', { name: /control resize/i })).toBeTruthy()
 
     runtimeHandler!({
       type: 'terminal_metadata_changed',
@@ -1124,7 +1152,7 @@ describe('MachineWorkspace', () => {
       },
     })
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /release resize control/i })).toBeTruthy())
+    await waitFor(() => expect(within(screen.getByTestId('termx-terminal-menu-sheet')).getByRole('button', { name: /release resize/i })).toBeTruthy())
     expect(listTerminals.mock.calls.length).toBeGreaterThanOrEqual(1)
   })
 

@@ -43,12 +43,11 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
       data-testid="action-sheet-backdrop"
     >
       <div
-        className="w-full max-w-xl animate-slide-up rounded-t-[20px] bg-white pb-[env(safe-area-inset-bottom,20px)] shadow-2xl md:rounded-2xl md:pb-4"
+        className="w-full max-w-xl animate-slide-up border-t border-[var(--termx-app-line)] bg-[var(--termx-app-surface)] pb-[env(safe-area-inset-bottom,20px)] md:border md:pb-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex flex-col">
-          {/* Handle for dragging feel */}
-          <div className="mx-auto mt-3 h-1.5 w-12 rounded-full bg-zinc-200 md:hidden" />
+          <div className="mx-auto mt-3 h-1 w-12 bg-[var(--termx-app-line-strong)] md:hidden" />
 
           <div className="flex items-center justify-between px-5 pt-4 pb-2">
             <div className="flex flex-col">
@@ -57,7 +56,8 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
             </div>
             <button
               type="button"
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 active:bg-zinc-200"
+              aria-label="Close"
+              className="termx-app-icon-button border-transparent bg-transparent"
               onClick={closeWithHaptic}
             >
               <X className="h-4 w-4" />
@@ -76,7 +76,7 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
                     <button
                       type="button"
                       aria-label={action.ariaLabel ?? action.label}
-                      className={`flex min-w-0 flex-1 items-center gap-4 rounded-xl py-2 text-left ${
+                    className={`flex min-h-11 min-w-0 flex-1 items-center gap-4 py-2 text-left ${
                         action.danger ? 'text-red-600' : 'text-zinc-700'
                       }`}
                       onClick={() => runSheetAction(action, onClose)}
@@ -88,10 +88,10 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
                       type="button"
                       aria-label={action.secondaryAction.label}
                       title={action.secondaryAction.label}
-                      className={`my-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                      className={`my-auto flex h-11 w-11 shrink-0 items-center justify-center border transition-colors ${
                         action.secondaryAction.danger
-                          ? 'bg-red-50 text-red-600 hover:bg-red-100 active:bg-red-100'
-                          : 'bg-zinc-50 text-zinc-500 hover:bg-zinc-100 active:bg-zinc-100'
+                          ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 active:bg-red-100'
+                          : 'border-[var(--termx-app-line)] bg-zinc-50 text-zinc-500 hover:bg-zinc-100 active:bg-zinc-100'
                       }`}
                       onClick={(event) => {
                         event.stopPropagation()
@@ -109,7 +109,7 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
                   type="button"
                   aria-label={action.ariaLabel ?? action.label}
                   data-testid="action-sheet-item"
-                  className={`flex w-full items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-zinc-50 active:bg-zinc-50 ${
+                  className={`flex min-h-14 w-full items-center gap-4 px-5 py-3 text-left transition-colors hover:bg-zinc-50 active:bg-[var(--termx-app-soft)] ${
                     action.danger ? 'text-red-600' : 'text-zinc-700'
                   }`}
                   onClick={() => runSheetAction(action, onClose)}
@@ -142,8 +142,8 @@ function runSheetAction(
 
 function ActionIcon({ children, danger }: { children: ReactNode; danger?: boolean | undefined }) {
   return (
-    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-      danger ? 'bg-red-50' : 'bg-zinc-50'
+    <div className={`flex h-10 w-10 shrink-0 items-center justify-center border ${
+      danger ? 'border-red-200 bg-red-50' : 'border-[var(--termx-app-line)] bg-zinc-50'
     }`}>
       <span className={danger ? 'text-red-600' : 'text-zinc-500'}>
         {children}

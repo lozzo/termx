@@ -14,6 +14,7 @@ describe('MachineNetworkStatusOverlay', () => {
     expect(card.className).toContain('border-[var(--termx-border)]')
     expect(card.className).toContain('bg-[var(--termx-surface)]')
     expect(card.className).toContain('text-[var(--termx-text)]')
+    expect(card.className).not.toMatch(/rounded|shadow/)
     expect(card.textContent).toContain('Network status')
     expect(card.textContent).toContain('Waiting for network...')
   })

@@ -82,7 +82,7 @@ export function TermxApp() {
   )
 
   return (
-    <section className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-[var(--termx-bg,#0c0c0c)] text-[var(--termx-text,#f4f4f5)] antialiased">
+    <section className="termx-app-page flex h-[100dvh] w-screen flex-col overflow-hidden antialiased">
       <RemoteControlApp
         defaultControlUrl={defaultControlUrl}
         exportDebugLogs={exportNativeDebugLogs}
@@ -230,7 +230,7 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
 
   const root = document.createElement('div')
   root.id = qrScannerRootId
-  root.className = 'fixed inset-0 z-[2147483647] flex flex-col items-stretch bg-zinc-50 text-zinc-900 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-[calc(env(safe-area-inset-top)+12px)]'
+  root.className = 'termx-app-page fixed inset-0 z-[2147483647] flex flex-col items-stretch px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-[calc(env(safe-area-inset-top)+12px)]'
 
   const scannerStyle = document.createElement('style')
   scannerStyle.textContent = `
@@ -268,19 +268,19 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
   const cancelButton = document.createElement('button')
   cancelButton.type = 'button'
   cancelButton.textContent = 'Cancel'
-  cancelButton.className = 'flex h-10 items-center justify-center rounded-xl bg-zinc-200/50 px-4 text-[14px] font-semibold text-zinc-700 active:bg-zinc-200'
+  cancelButton.className = 'termx-app-secondary-button px-4 text-[14px] font-semibold'
 
   const manualContainer = document.createElement('div')
   manualContainer.className = 'mt-auto flex flex-col gap-3'
 
   const manualInput = document.createElement('textarea')
   manualInput.placeholder = 'Or enter TermX QR content manually...'
-  manualInput.className = 'h-[90px] w-full resize-none rounded-xl border border-zinc-200 bg-white p-3 font-mono text-[13px] text-zinc-900 shadow-sm outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400'
+  manualInput.className = 'h-[90px] w-full resize-none border border-[var(--termx-app-line)] bg-white p-3 font-mono text-[13px] text-zinc-900 outline-none focus:border-[var(--termx-app-accent)] focus:ring-1 focus:ring-[var(--termx-app-accent)]'
 
   const manualSubmit = document.createElement('button')
   manualSubmit.type = 'button'
   manualSubmit.textContent = 'Add Device'
-  manualSubmit.className = 'flex min-h-12 w-full items-center justify-center rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] active:bg-zinc-800 disabled:opacity-50 disabled:active:scale-100'
+  manualSubmit.className = 'termx-app-primary-button min-h-12 w-full px-4 text-[15px] font-semibold disabled:opacity-50'
   manualSubmit.disabled = true
 
   manualInput.oninput = () => {
@@ -292,7 +292,7 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
 
   const reader = document.createElement('div')
   reader.id = qrScannerReaderId
-  reader.className = 'mt-4 self-center overflow-hidden rounded-2xl bg-black shadow-sm ring-1 ring-zinc-200/60'
+  reader.className = 'mt-4 self-center overflow-hidden border border-[var(--termx-app-line)] bg-black'
   reader.style.width = `${scannerSize}px`
   reader.style.height = `${scannerSize}px`
   reader.style.minWidth = `${scannerSize}px`

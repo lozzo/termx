@@ -1,4 +1,3 @@
-import { Loader2 } from 'lucide-react'
 import { connectionPhaseLabel } from '../connection/connectionState'
 import type { RtcConnectionPhase } from '../core/transport'
 
@@ -20,9 +19,9 @@ export function MachineNetworkStatusOverlay({
       aria-live="polite"
       aria-busy="true"
     >
-      <div className="w-full max-w-sm rounded-lg border border-[var(--termx-border)] bg-[var(--termx-surface)] px-4 py-3 text-[var(--termx-text)] shadow-2xl backdrop-blur-xl">
+      <div className="w-full max-w-sm border border-[var(--termx-border)] bg-[var(--termx-surface)] px-4 py-3 text-[var(--termx-text)] backdrop-blur-xl">
         <div className="flex items-center gap-3">
-          <Loader2 className="h-5 w-5 shrink-0 animate-spin text-[var(--termx-accent)]" />
+          <span className="termx-square-spinner h-5 w-5 text-[var(--termx-accent)]" aria-hidden="true" />
           <div className="min-w-0">
             <p className="text-[13px] font-semibold leading-5">Network status</p>
             <p className="mt-0.5 break-words text-[12px] font-medium leading-5 text-[var(--termx-muted)]">{label}</p>

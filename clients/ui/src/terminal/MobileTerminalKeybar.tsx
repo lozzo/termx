@@ -89,7 +89,7 @@ function KeyPopup({ label }: { label: string }) {
       className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-0.5 -translate-x-1/2"
       style={{ overflow: 'visible' }}
     >
-      <div className="min-w-[2.5rem] rounded-lg border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-4 py-2 text-center font-mono text-base font-bold text-[var(--termx-text)] shadow-xl whitespace-nowrap">
+      <div className="min-w-[2.5rem] border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-4 py-2 text-center font-mono text-base font-bold text-[var(--termx-text)] whitespace-nowrap">
         {label}
       </div>
       <div
@@ -182,11 +182,11 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
   const ctrlToggle = useModifierToggle(activeModifierState.ctrl, (v) => setModifierState({ ...activeModifierState, ctrl: v }))
   const altToggle = useModifierToggle(activeModifierState.alt, (v) => setModifierState({ ...activeModifierState, alt: v }))
 
-  const cls = 'flex h-8 min-w-0 flex-[1_1_0] items-center justify-center rounded-md text-center font-mono text-[10px] font-medium select-none touch-manipulation relative overflow-visible'
+  const cls = 'relative flex h-8 min-w-0 flex-[1_1_0] touch-manipulation select-none items-center justify-center overflow-visible border-x border-transparent text-center font-mono text-[10px] font-medium'
   const keyboardButtonClass = keyboardLocked
-    ? 'bg-red-600 text-white shadow-sm shadow-red-500/20'
+    ? 'bg-red-600 text-white'
     : keyboardVisible
-      ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)] shadow-sm'
+      ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]'
       : 'bg-transparent text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'
 
   const btn = (label: string, data: string, ariaLabel?: string) => {
@@ -209,9 +209,9 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
 
   const modBtn = (label: string, state: ModifierState, toggle: ReturnType<typeof useModifierToggle>) => {
     const stateClass = state === 'locked'
-      ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/20'
+      ? 'bg-amber-500 text-white'
       : state === 'once'
-        ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)] shadow-sm'
+        ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]'
         : 'bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-70'
     return (
       <button
@@ -314,7 +314,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
           type="button"
           aria-label="Toggle Fn shortcuts"
           aria-pressed={fnOpen}
-          className={`${cls} ${fnOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)] shadow-sm' : 'bg-transparent text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
+          className={`${cls} ${fnOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'bg-transparent text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
           onPointerDown={(e) => { e.preventDefault(); showPress('Fn') }}
           onClick={() => onToggleFn?.()}
         >

@@ -2,6 +2,120 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --termx-app-bg: #f1f3f6;
+  --termx-app-surface: #ffffff;
+  --termx-app-soft: #e8edf3;
+  --termx-app-line: #cfd6df;
+  --termx-app-line-strong: #aeb8c5;
+  --termx-app-text: #111418;
+  --termx-app-muted: #626d7a;
+  --termx-app-accent: #246bed;
+  --termx-app-accent-text: #ffffff;
+  --termx-app-success: #087a45;
+  --termx-app-danger: #c52b32;
+  --termx-app-inverse: #12161b;
+}
+
+.termx-app-page {
+  background: var(--termx-app-bg);
+  color: var(--termx-app-text);
+}
+
+.termx-app-header {
+  background: var(--termx-app-bg);
+  border-color: var(--termx-app-line);
+}
+
+.termx-app-panel {
+  background: var(--termx-app-surface);
+  border: 1px solid var(--termx-app-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.termx-app-icon-button {
+  align-items: center;
+  background: var(--termx-app-surface);
+  border: 1px solid var(--termx-app-line);
+  border-radius: 0;
+  color: var(--termx-app-muted);
+  display: inline-flex;
+  height: 44px;
+  justify-content: center;
+  min-width: 44px;
+  touch-action: manipulation;
+  transition: background-color 180ms ease-out, border-color 180ms ease-out, color 180ms ease-out;
+}
+
+.termx-app-icon-button:active {
+  background: var(--termx-app-soft);
+  color: var(--termx-app-text);
+}
+
+.termx-app-primary-button {
+  align-items: center;
+  background: var(--termx-app-accent);
+  border: 1px solid var(--termx-app-accent);
+  border-radius: 0;
+  color: var(--termx-app-accent-text);
+  display: inline-flex;
+  justify-content: center;
+  min-height: 44px;
+  touch-action: manipulation;
+  transition: background-color 180ms ease-out, opacity 180ms ease-out;
+}
+
+.termx-app-primary-button:active {
+  opacity: 0.82;
+}
+
+.termx-app-secondary-button {
+  align-items: center;
+  background: var(--termx-app-surface);
+  border: 1px solid var(--termx-app-line);
+  border-radius: 0;
+  color: var(--termx-app-text);
+  display: inline-flex;
+  justify-content: center;
+  min-height: 44px;
+  touch-action: manipulation;
+  transition: background-color 180ms ease-out, border-color 180ms ease-out;
+}
+
+.termx-app-secondary-button:active {
+  background: var(--termx-app-soft);
+}
+
+.termx-square-spinner {
+  animation: termx-square-spin 850ms linear infinite;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  display: inline-block;
+  flex: none;
+  height: 16px;
+  width: 16px;
+}
+
+@keyframes termx-square-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .animate-slide-up,
+  .termx-app-icon-button,
+  .termx-app-primary-button,
+  .termx-app-secondary-button,
+  .termx-square-spinner {
+    animation: none !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @font-face {
   font-family: 'FiraCode NF';
   font-display: swap;

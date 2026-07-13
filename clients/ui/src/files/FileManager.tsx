@@ -274,7 +274,7 @@ export function FileManager({
             <div
               ref={pathBarRef}
               data-testid="termx-file-pathbar"
-              className="flex h-9 min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-lg bg-zinc-50 px-2 text-[14px] font-medium text-zinc-600 no-scrollbar"
+              className="flex h-11 min-w-0 flex-1 items-center gap-1 overflow-x-auto border border-[var(--termx-app-line)] bg-zinc-50 px-2 text-[14px] font-medium text-zinc-600 no-scrollbar"
             >
               <HardDrive className="h-4 w-4 shrink-0 text-zinc-400" />
               {pathSegments.length === 0 ? (
@@ -283,7 +283,7 @@ export function FileManager({
                 <>
                   <button
                     onClick={() => { hapticSelection(); void manager.navigate('/') }}
-                    className="shrink-0 rounded-md px-1.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 active:bg-zinc-200"
+                    className="shrink-0 px-1.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 active:bg-zinc-200"
                   >
                     /
                   </button>
@@ -298,7 +298,7 @@ export function FileManager({
                         ) : (
                           <button
                             onClick={() => { hapticSelection(); void manager.navigate(path) }}
-                            className="rounded-md px-1.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 active:bg-zinc-200"
+                            className="px-1.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 active:bg-zinc-200"
                           >
                             {segment}
                           </button>
@@ -313,7 +313,7 @@ export function FileManager({
               type="button"
               aria-label="Path bookmarks"
               title="Path bookmarks"
-              className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-50 active:bg-zinc-100"
+              className="ml-2 flex h-11 w-11 shrink-0 items-center justify-center text-zinc-500 transition-colors hover:bg-zinc-50 active:bg-zinc-100"
               onClick={() => {
                 hapticSelection()
                 setBookmarksOpen(true)
@@ -326,7 +326,7 @@ export function FileManager({
               type="button"
               aria-label="Copy current directory path"
               title="Copy current directory path"
-              className="ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-50 active:bg-zinc-100"
+              className="ml-1 flex h-11 w-11 shrink-0 items-center justify-center text-zinc-500 transition-colors hover:bg-zinc-50 active:bg-zinc-100"
               onClick={() => { hapticImpact(); void manager.copyFilePaths([manager.currentPath || '/']) }}
             >
               <ClipboardCopy className="h-4 w-4" />
@@ -337,7 +337,7 @@ export function FileManager({
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-white">
         {newDirOpen ? (
-          <div className="mx-3 my-2 flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-2">
+          <div className="mx-3 my-2 flex items-center gap-2 border border-[var(--termx-app-line)] bg-zinc-50 p-2">
             <Folder className="h-5 w-5 shrink-0 text-blue-500" />
             <input
               aria-label="Directory name"
@@ -357,7 +357,7 @@ export function FileManager({
             <button
               type="button"
               aria-label="Create directory"
-              className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white disabled:bg-zinc-200 disabled:text-zinc-400"
+              className="termx-app-primary-button disabled:bg-zinc-200 disabled:text-zinc-400"
               disabled={!manager.newDirName.trim() || manager.creatingDirectory}
               onClick={() => { hapticImpact(); void manager.createDirectory().then(() => setNewDirOpen(false)) }}
             >
@@ -366,7 +366,7 @@ export function FileManager({
             <button
               type="button"
               aria-label="Cancel new directory"
-              className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-200 text-zinc-600"
+              className="termx-app-secondary-button bg-zinc-200 text-zinc-600"
               onClick={() => {
                 manager.setNewDirName('')
                 setNewDirOpen(false)
@@ -378,13 +378,13 @@ export function FileManager({
         ) : null}
 
         {manager.pathBookmarkError ? (
-          <div className="m-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-[13px] font-medium text-amber-800" role="alert">
+          <div className="m-2 border border-amber-200 bg-amber-50 px-4 py-2 text-[13px] font-medium text-amber-800" role="alert">
             {manager.pathBookmarkError}
           </div>
         ) : null}
 
         {manager.error ? (
-          <div className="m-2 flex items-start gap-3 rounded-xl border border-red-200/60 bg-red-50 p-4 text-[14px] text-red-800 shadow-sm" role="alert">
+          <div className="m-2 flex items-start gap-3 border border-red-200 bg-red-50 p-4 text-[14px] text-red-800" role="alert">
             <AlertCircle className="h-6 w-6 shrink-0 text-red-500" />
             <div>
                <h3 className="font-bold text-red-900">Directory Error</h3>
@@ -394,26 +394,26 @@ export function FileManager({
         ) : null}
 
         {manager.actionMessage ? (
-          <div className="m-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-[13px] font-medium text-emerald-800" role="status">
+          <div className="m-2 border border-emerald-200 bg-emerald-50 px-4 py-2 text-[13px] font-medium text-emerald-800" role="status">
             {manager.actionMessage}
           </div>
         ) : null}
 
         {transferError ? (
-          <div className="m-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-[13px] font-medium text-red-800" role="alert">
+          <div className="m-2 border border-red-200 bg-red-50 px-4 py-2 text-[13px] font-medium text-red-800" role="alert">
             {transferError}
           </div>
         ) : null}
 
         {manager.loading && manager.entries.length === 0 && !manager.error ? (
           <div className="flex h-40 flex-col items-center justify-center gap-3 text-[14px] font-medium text-zinc-500">
-            <RefreshCw className="h-6 w-6 animate-spin text-zinc-400" />
+            <span className="termx-square-spinner h-6 w-6 text-zinc-500" aria-hidden="true" />
             Loading directory...
           </div>
         ) : (
           <ul aria-label="Files" className="divide-y divide-zinc-100 pb-[120px]">
             {manager.entries.length === 0 && !manager.loading && !manager.error ? (
-              <li className="flex h-32 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-zinc-200 bg-zinc-50/50 text-[14px] font-medium text-zinc-500">
+              <li className="flex h-32 flex-col items-center justify-center gap-3 border-y border-dashed border-zinc-300 bg-zinc-50/50 text-[14px] font-medium text-zinc-500">
                 <Folder className="h-8 w-8 text-zinc-300" />
                 Directory is empty
               </li>
@@ -451,7 +451,7 @@ export function FileManager({
                         </div>
                       </div>
                     ) : null}
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors ${isDirectory ? 'bg-blue-50 group-hover:bg-blue-50/80 group-active:bg-blue-100' : 'bg-zinc-50'}`}>
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center border border-[var(--termx-app-line)] transition-colors ${isDirectory ? 'bg-blue-50 group-hover:bg-blue-50/80 group-active:bg-blue-100' : 'bg-zinc-50'}`}>
                       <Icon className={`h-5 w-5 ${isDirectory ? 'fill-blue-50 text-blue-500' : 'text-zinc-400'}`} />
                     </div>
                     <button
@@ -463,7 +463,7 @@ export function FileManager({
                       {isRenaming ? (
                         <input
                           aria-label="Rename entry"
-                          className="min-h-9 rounded-lg border border-blue-200 bg-white px-2 text-[15px] font-medium text-zinc-900 outline-none"
+                          className="min-h-11 border border-blue-200 bg-white px-2 text-[15px] font-medium text-zinc-900 outline-none"
                           value={renameName}
                           onClick={(event) => event.stopPropagation()}
                           onChange={(event) => setRenameName(event.currentTarget.value)}
@@ -502,7 +502,7 @@ export function FileManager({
                           <button
                             type="button"
                             aria-label={`More actions for ${entry.name}`}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-50 active:bg-zinc-100"
+                            className="flex h-11 w-11 items-center justify-center text-zinc-400 hover:bg-zinc-50 active:bg-zinc-100"
                             onClick={(event) => {
                               event.stopPropagation()
                               hapticSelection()
@@ -524,16 +524,16 @@ export function FileManager({
       </div>
       {deletePath ? (
         <div className="absolute inset-0 z-50 flex items-end bg-black/40 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-file-delete-confirm" onClick={() => { hapticSelection(); setDeletePath(null) }}>
-          <section className="w-full rounded-2xl bg-white p-4 shadow-2xl md:max-w-sm" onClick={(event) => event.stopPropagation()}>
+          <section className="termx-app-panel w-full p-4 md:max-w-sm" onClick={(event) => event.stopPropagation()}>
             <h2 className="text-[17px] font-bold text-zinc-950">Delete entry?</h2>
             <p className="mt-2 break-all text-sm text-zinc-500">{deletePath}</p>
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <button type="button" className="h-11 rounded-xl bg-zinc-100 text-sm font-semibold text-zinc-700" onClick={() => { hapticSelection(); setDeletePath(null) }}>
+              <button type="button" className="termx-app-secondary-button h-11 text-sm font-semibold" onClick={() => { hapticSelection(); setDeletePath(null) }}>
                 Cancel
               </button>
               <button
                 type="button"
-                className="h-11 rounded-xl bg-red-600 text-sm font-semibold text-white"
+                className="h-11 border border-red-600 bg-red-600 text-sm font-semibold text-white"
                 onClick={() => {
                   hapticImpact()
                   const target = deletePath
@@ -566,7 +566,7 @@ export function FileManager({
         >
           <div className="flex h-[60px] items-center justify-around px-2">
             <button
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
+              className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
               type="button"
               onClick={() => { hapticImpact(); manager.setSelectionMode(true) }}
               aria-label="Select files"
@@ -575,7 +575,7 @@ export function FileManager({
               <span className="text-[11px] font-medium">Select</span>
             </button>
             <button
-              className={`flex flex-col items-center justify-center gap-1 px-3 rounded-lg ${manager.showHidden ? 'text-blue-600 bg-blue-50' : 'text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100'}`}
+              className={`flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 ${manager.showHidden ? 'bg-blue-50 text-blue-600' : 'text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100'}`}
               type="button"
               onClick={() => { hapticSelection(); manager.toggleShowHidden() }}
               aria-label={manager.showHidden ? 'Hide hidden files' : 'Show hidden files'}
@@ -584,7 +584,7 @@ export function FileManager({
               <span className="text-[11px] font-medium">Hidden</span>
             </button>
             <button
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
+              className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
               type="button"
               onClick={() => { hapticSelection(); setSortMenuOpen(true) }}
               aria-label={`Sort files: ${sortLabel}`}
@@ -594,7 +594,7 @@ export function FileManager({
               <span className="text-[11px] font-medium">Sort</span>
             </button>
             <button
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
+              className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
               type="button"
               onClick={() => { hapticSelection(); setNewDirOpen((current) => !current) }}
               aria-label="New directory"
@@ -605,7 +605,7 @@ export function FileManager({
             {fileTransfer ? (
               <>
                 <button
-                  className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
+                  className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
                   type="button"
                   aria-label="Upload files"
                   onClick={() => {
@@ -644,7 +644,7 @@ export function FileManager({
               </>
             ) : null}
             <button
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg disabled:opacity-50"
+              className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100 disabled:opacity-50"
               type="button"
               onClick={() => { hapticImpact(); void manager.refresh() }}
               disabled={manager.loading}
@@ -667,7 +667,7 @@ export function FileManager({
                 manager.copy(Array.from(manager.selectedPaths))
                 manager.setSelectionMode(false)
               }}
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
+              className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
             >
               <File className="h-5 w-5" />
               <span className="text-[11px] font-medium">Copy</span>
@@ -677,7 +677,7 @@ export function FileManager({
                 hapticImpact()
                 void manager.copyFilePaths(Array.from(manager.selectedPaths)).then(() => manager.setSelectionMode(false))
               }}
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
+              className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
             >
               <ClipboardCopy className="h-5 w-5" />
               <span className="text-[11px] font-medium">Path</span>
@@ -688,14 +688,14 @@ export function FileManager({
                 manager.cut(Array.from(manager.selectedPaths))
                 manager.setSelectionMode(false)
               }}
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
+              className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
             >
               <Folder className="h-5 w-5" />
               <span className="text-[11px] font-medium">Cut</span>
             </button>
             <button
               onClick={() => { hapticImpact(); void manager.batchDelete(Array.from(manager.selectedPaths)) }}
-              className="flex flex-col items-center justify-center gap-1 px-3 text-red-500 hover:text-red-700 hover:bg-red-50/80 active:bg-red-50 rounded-lg"
+              className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-1 px-2 text-red-500 hover:bg-red-50/80 hover:text-red-700 active:bg-red-50"
             >
               <Trash2 className="h-5 w-5" />
               <span className="text-[11px] font-medium">Delete</span>
@@ -714,13 +714,13 @@ export function FileManager({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => { hapticSelection(); manager.setClipboard(null) }}
-                className="rounded-lg px-3 py-1.5 text-sm font-semibold text-zinc-400 hover:bg-zinc-800"
+                className="min-h-11 border border-zinc-700 px-3 py-1.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-800"
               >
                 Cancel
               </button>
               <button
                 onClick={() => { hapticImpact(); void manager.paste() }}
-                className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+                className="min-h-11 bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
               >
                 Paste
               </button>
@@ -761,10 +761,10 @@ export function FileManager({
       {bookmarksOpen && editingBookmark ? (
         <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 backdrop-blur-[2px] md:items-center" onClick={closeBookmarkEditor}>
           <section
-            className="w-full max-w-xl animate-slide-up rounded-t-[20px] bg-white pb-[calc(env(safe-area-inset-bottom)+1rem)] shadow-2xl md:rounded-2xl"
+            className="w-full max-w-xl animate-slide-up border-t border-[var(--termx-app-line)] bg-white pb-[calc(env(safe-area-inset-bottom)+1rem)] md:border"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="mx-auto mt-3 h-1.5 w-12 rounded-full bg-zinc-200 md:hidden" />
+            <div className="mx-auto mt-3 h-1 w-12 bg-[var(--termx-app-line-strong)] md:hidden" />
             <div className="px-5 pb-2 pt-4">
               <h3 className="text-[17px] font-bold text-zinc-900">Edit bookmark</h3>
               <p className="mt-1 break-all text-[13px] font-medium text-zinc-500">{editingBookmark.path}</p>
@@ -774,7 +774,7 @@ export function FileManager({
                 Alias
                 <input
                   aria-label="Bookmark alias"
-                  className="h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-[16px] font-semibold text-zinc-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  className="h-12 border border-[var(--termx-app-line)] bg-zinc-50 px-3 text-[16px] font-semibold text-zinc-900 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/20"
                   value={bookmarkAlias}
                   onChange={(event) => setBookmarkAlias(event.currentTarget.value)}
                   onKeyDown={(event) => {
@@ -787,14 +787,14 @@ export function FileManager({
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  className="h-11 rounded-xl bg-zinc-100 text-sm font-semibold text-zinc-700 active:bg-zinc-200"
+                  className="termx-app-secondary-button h-11 text-sm font-semibold"
                   onClick={() => { hapticSelection(); closeBookmarkEditor() }}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  className="h-11 rounded-xl bg-zinc-900 text-sm font-semibold text-white active:bg-zinc-800"
+                  className="termx-app-primary-button h-11 text-sm font-semibold"
                   onClick={saveBookmarkAlias}
                 >
                   Save
@@ -802,7 +802,7 @@ export function FileManager({
               </div>
               <button
                 type="button"
-                className="mt-3 h-11 w-full rounded-xl bg-red-50 text-sm font-semibold text-red-600 active:bg-red-100"
+                className="mt-3 h-11 w-full border border-red-200 bg-red-50 text-sm font-semibold text-red-600 active:bg-red-100"
                 onClick={() => {
                   hapticImpact()
                   const id = editingBookmark.id

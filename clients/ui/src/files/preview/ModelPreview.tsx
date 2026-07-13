@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
 import type { FilePreviewResponse, FilePreviewStreamOptions, FilePreviewStreamResult } from '../fileApi'
 import { clamp } from '../fileUtils'
 import { isModelPreviewFile, modelPreviewMimeType } from '../modelFileTypes'
@@ -83,13 +82,13 @@ export function ModelPreview({
     return (
       <MediaPreviewShell>
         <div className="flex h-full min-h-[calc(100dvh-7.5rem)] flex-col items-center justify-center gap-3 bg-zinc-950 px-6 text-center text-zinc-200">
-          <RefreshCw className="h-7 w-7 animate-spin text-zinc-500" />
+          <span className="termx-square-spinner h-7 w-7 text-zinc-500" aria-hidden="true" />
           <div className="text-[13px] font-semibold tabular-nums text-zinc-300" data-testid="termx-model-loading">
             {progress > 0 ? `${progress}%` : 'Loading model'}
           </div>
-          <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/10">
+          <div className="h-1.5 w-full max-w-xs overflow-hidden bg-white/10">
             <div
-              className="h-full rounded-full bg-sky-400 transition-[width]"
+              className="h-full bg-sky-400 transition-[width]"
               style={{ width: `${clamp(progress, 0, 100)}%` }}
             />
           </div>

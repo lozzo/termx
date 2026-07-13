@@ -97,7 +97,7 @@ export function TextPreview({ text, name, mimeType }: { text: string; name: stri
           type="button"
           aria-label={wrapLabel}
           title={wrapLabel}
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors active:scale-95 ${softWrap ? 'bg-blue-50 text-blue-600' : 'text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100'}`}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center border border-zinc-200 transition-colors ${softWrap ? 'bg-blue-50 text-blue-600' : 'text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100'}`}
           onClick={() => { hapticSelection(); setSoftWrap((current) => !current) }}
         >
           <WrapText className="h-4 w-4" />
@@ -184,7 +184,7 @@ function renderMarkdownBlocks(text: string) {
       }
       if (index < lines.length) index += 1
       blocks.push(
-        <pre key={`code-${key++}`} className="my-4 overflow-x-auto rounded-lg bg-zinc-950 p-3 font-mono text-[12px] leading-5 text-zinc-100">
+        <pre key={`code-${key++}`} className="my-4 overflow-x-auto bg-zinc-950 p-3 font-mono text-[12px] leading-5 text-zinc-100">
           <code>{code.join('\n')}</code>
         </pre>,
       )

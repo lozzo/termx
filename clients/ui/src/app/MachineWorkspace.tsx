@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
-import { Bookmark, BookmarkMinus, BookmarkPlus, ChevronLeft, ClipboardList, Folder, FolderOpen, Info, KeyRound, Link2, Link2Off, Loader2, Monitor, PanelBottomClose, Plus, RefreshCw, Rows2, SlidersHorizontal, SquarePen, Trash2, Unlock, X } from 'lucide-react'
+import { Bookmark, BookmarkMinus, BookmarkPlus, ChevronLeft, ClipboardList, Folder, FolderOpen, Info, KeyRound, Link2, Link2Off, Monitor, MoreHorizontal, PanelBottomClose, Plus, RefreshCw, Rows2, SlidersHorizontal, SquarePen, Trash2, Unlock, X } from 'lucide-react'
 import { connectionPhaseLabel, connectionSnapshotFromStatus } from '../connection/connectionState'
 import { FileTransferPanel } from '../files/FileTransferPanel'
 import { FileManager } from '../files/FileManager'
@@ -60,7 +60,7 @@ export interface MachineWorkspaceProps {
 }
 
 type TerminalEditorSheet = 'create-terminal' | 'edit-terminal'
-type MobileSheet = 'terminals' | 'split-terminal' | 'pair' | 'manage-terminal' | TerminalEditorSheet | 'terminal-path-picker' | 'terminal-path-bookmarks' | 'clipboard-history' | null
+type MobileSheet = 'terminals' | 'terminal-menu' | 'split-terminal' | 'pair' | 'manage-terminal' | TerminalEditorSheet | 'terminal-path-picker' | 'terminal-path-bookmarks' | 'clipboard-history' | null
 type AppPage = 'terminal-list' | 'terminal'
 type TerminalSlot = 0 | 1
 const TERMINAL_CONNECTION_PROGRESS_DELAY_MS = 450
@@ -1602,12 +1602,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return (
       <MobileSheetPanel title="Choose directory" testId="termx-terminal-path-picker-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
         <div className="flex flex-col gap-3">
-          <div className="rounded-xl border border-zinc-200 bg-white p-3">
+          <div className="termx-app-panel p-3">
             <div className="break-all font-mono text-[12px] font-semibold text-zinc-800">{normalizedPath}</div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 disabled:text-zinc-300"
+                className="termx-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold disabled:text-zinc-300"
                 disabled={normalizedPath === '/'}
                 onClick={() => { hapticImpact(); void loadTerminalPathPicker(parentPath(normalizedPath)) }}
               >
@@ -1616,7 +1616,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </button>
               <button
                 type="button"
-                className="flex min-h-10 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-3 text-[13px] font-semibold text-white"
+                className="termx-app-primary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
                 onClick={() => { hapticImpact(); selectTerminalWorkingDirectory(normalizedPath) }}
               >
                 <FolderOpen className="h-4 w-4" />
@@ -1626,18 +1626,18 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           </div>
 
           {terminalPathPickerError ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800" role="alert">
+            <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800" role="alert">
               {terminalPathPickerError}
             </div>
           ) : null}
 
           <div
-            className="flex h-80 max-h-[45vh] min-h-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white"
+            className="termx-app-panel flex h-80 max-h-[45vh] min-h-0 flex-col overflow-hidden"
             data-testid="termx-terminal-path-picker-list"
           >
             {terminalPathPickerLoading ? (
               <div className="flex h-full items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="termx-square-spinner" aria-hidden="true" />
                 Loading...
               </div>
             ) : directories.length === 0 ? (
@@ -1676,7 +1676,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
+              className="termx-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
               onClick={() => { hapticImpact(); void addTerminalPathBookmark() }}
             >
               <BookmarkPlus className="h-4 w-4" />
@@ -1684,7 +1684,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </button>
             <button
               type="button"
-              className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
+              className="termx-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
               onClick={() => { hapticImpact(); void loadTerminalPathBookmarks() }}
             >
               <RefreshCw className="h-4 w-4" />
@@ -1693,15 +1693,15 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           </div>
 
           {terminalPathBookmarksError ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800" role="alert">
+            <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800" role="alert">
               {terminalPathBookmarksError}
             </div>
           ) : null}
 
-          <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+          <div className="termx-app-panel overflow-hidden">
             {terminalPathBookmarksLoading ? (
               <div className="flex min-h-20 items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="termx-square-spinner" aria-hidden="true" />
                 Loading...
               </div>
             ) : terminalPathBookmarks.length === 0 ? (
@@ -1722,7 +1722,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   <button
                     type="button"
                     aria-label={`Remove ${bookmark.label}`}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50/80 active:bg-red-50"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center text-red-500 hover:bg-red-50/80 active:bg-red-50"
                     onClick={() => { hapticImpact(); void removeTerminalPathBookmark(bookmark.id) }}
                   >
                     <BookmarkMinus className="h-4 w-4" />
@@ -1739,19 +1739,19 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const renderClipboardHistorySheet = () => {
     if (mobileSheet !== 'clipboard-history') return null
     return (
-      <MobileSheetPanel title="Clipboard" testId="cmd/termxpboard-history-sheet" onClose={() => setMobileSheet(null)}>
+      <MobileSheetPanel title="Clipboard" testId="termx-clipboard-history-sheet" onClose={() => setMobileSheet(null)}>
         <div className="flex flex-col gap-3">
-          <div className="rounded-xl border border-zinc-200 bg-white p-3">
+          <div className="termx-app-panel p-3">
             <textarea
               aria-label="Clipboard text"
-              className="min-h-24 w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-[13px] font-medium text-zinc-900 outline-none"
+              className="min-h-24 w-full resize-none border border-[var(--termx-app-line)] bg-zinc-50 px-3 py-2 text-[13px] font-medium text-zinc-900 outline-none"
               value={clipboardDraft}
               onChange={(event) => setClipboardDraft(event.currentTarget.value)}
             />
             <div className="mt-2 grid grid-cols-3 gap-2">
               <button
                 type="button"
-                className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
+                className="termx-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
                 onClick={() => { hapticImpact(); void loadBrowserClipboardDraft() }}
               >
                 <ClipboardList className="h-4 w-4" />
@@ -1759,7 +1759,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </button>
               <button
                 type="button"
-                className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
+                className="termx-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
                 onClick={() => { hapticImpact(); void refreshClipboardEntries() }}
               >
                 <RefreshCw className="h-4 w-4" />
@@ -1767,7 +1767,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </button>
               <button
                 type="button"
-                className="flex min-h-10 items-center justify-center rounded-lg bg-zinc-900 px-2 text-[12px] font-semibold text-white disabled:bg-zinc-300 disabled:text-zinc-500"
+                className="termx-app-primary-button min-h-11 px-2 text-[12px] font-semibold disabled:bg-zinc-300 disabled:text-zinc-500"
                 disabled={!clipboardDraft || clipboardLoading}
                 onClick={() => { hapticImpact(); void saveClipboardDraft() }}
               >
@@ -1777,15 +1777,15 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           </div>
 
           {clipboardError ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800" role="alert">
+            <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800" role="alert">
               {clipboardError}
             </div>
           ) : null}
 
-          <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+          <div className="termx-app-panel overflow-hidden">
             {clipboardLoading && clipboardEntries.length === 0 ? (
               <div className="flex min-h-20 items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="termx-square-spinner" aria-hidden="true" />
                 Loading...
               </div>
             ) : clipboardEntries.length === 0 ? (
@@ -1806,7 +1806,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   <div className="mt-2 flex items-center justify-end gap-2">
                     <button
                       type="button"
-                      className="flex min-h-8 items-center gap-1.5 rounded-lg border border-zinc-200 px-2 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
+                      className="termx-app-secondary-button min-h-11 gap-1.5 px-2 text-[12px] font-semibold"
                       onClick={() => { hapticImpact(); setEditingClipboardId(entry.id); setClipboardDraft(entry.text) }}
                     >
                       <SquarePen className="h-3.5 w-3.5" />
@@ -1814,7 +1814,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                     </button>
                     <button
                       type="button"
-                      className="flex min-h-8 items-center gap-1.5 rounded-lg border border-zinc-200 px-2 text-[12px] font-semibold text-red-600 hover:bg-red-50/80 active:bg-red-50"
+                      className="flex min-h-11 items-center gap-1.5 border border-red-200 px-2 text-[12px] font-semibold text-red-600 hover:bg-red-50/80 active:bg-red-50"
                       onClick={() => { hapticImpact(); void deleteClipboardEntry(entry.id) }}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -1886,16 +1886,16 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
     return (
       <aside
-        className={`relative min-h-0 flex-1 flex-col bg-zinc-50 md:flex md:w-72 md:flex-none md:border-r md:border-zinc-200 md:bg-zinc-100 ${page === 'terminal' ? 'hidden' : 'flex'}`}
+        className={`termx-app-page relative min-h-0 flex-1 flex-col md:flex md:w-72 md:flex-none md:border-r md:border-[var(--termx-app-line)] ${page === 'terminal' ? 'hidden' : 'flex'}`}
         data-testid={page === 'terminal' ? undefined : 'termx-terminal-list-page'}
       >
-        <header className="flex min-h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white md:bg-transparent px-4 pt-[env(safe-area-inset-top)] md:pt-0">
+        <header className="termx-app-header flex min-h-14 shrink-0 items-center justify-between border-b px-3 pt-[env(safe-area-inset-top)] md:pt-0">
           <div className="flex min-w-0 items-center gap-2">
             {onBack ? (
               <button
                 type="button"
                 aria-label="Back to machines"
-                className="mr-1 flex h-8 w-8 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100"
+                className="termx-app-icon-button mr-1 border-transparent bg-transparent"
                 onClick={() => { hapticSelection(); onBack() }}
               >
                 <ChevronLeft className="h-5 w-5" />
@@ -1912,7 +1912,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               type="button"
               aria-hidden={page === 'terminal' ? 'true' : undefined}
               aria-label="Connection info"
-              className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100"
+              className="termx-app-icon-button border-transparent bg-transparent"
               tabIndex={page === 'terminal' ? -1 : undefined}
               onClick={() => { hapticSelection(); openConnectionInfo() }}
             >
@@ -1922,7 +1922,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               type="button"
               aria-hidden={page === 'terminal' ? 'true' : undefined}
               aria-label="Open files"
-              className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100"
+              className="termx-app-icon-button border-transparent bg-transparent"
               tabIndex={page === 'terminal' ? -1 : undefined}
               onClick={() => { hapticSelection(); openFiles() }}
             >
@@ -1932,7 +1932,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <button
                 type="button"
                 aria-label="Create terminal"
-                className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100"
+                className="termx-app-icon-button border-transparent bg-transparent"
                 onClick={() => { hapticImpact(); openCreateTerminal() }}
               >
                 <Plus className="h-5 w-5" />
@@ -1942,21 +1942,21 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         </header>
         {showDelayedMachineNetworkOverlay ? (
           <div className="flex animate-in fade-in slide-in-from-top-1 duration-200 items-center justify-center gap-2 border-b border-zinc-200 bg-blue-50/50 px-3 py-1.5">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+            <span className="termx-square-spinner h-3.5 w-3.5 text-blue-600" aria-hidden="true" />
             <span className="text-[11px] font-medium text-blue-700">
               {connectionStatus || 'Connecting...'}
             </span>
           </div>
         ) : null}
         {error ? (
-          <div className="m-3 shrink-0 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 shadow-sm" role="alert">
+          <div className="m-3 shrink-0 border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">
             {error}
           </div>
         ) : null}
         {requireVerification ? (
-          <section className="mx-3 mt-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm ring-1 ring-zinc-200/60" data-testid="termx-verification-gate">
+          <section className="termx-app-panel mx-3 mt-3 p-5" data-testid="termx-verification-gate">
             <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-100 text-zinc-600">
+              <div className="flex h-11 w-11 items-center justify-center border border-[var(--termx-app-line)] bg-[var(--termx-app-soft)] text-zinc-600">
                 <KeyRound className="h-5 w-5" />
               </div>
               <div>
@@ -1966,7 +1966,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </div>
             <button
               type="button"
-              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] hover:bg-zinc-800 active:bg-zinc-800"
+              className="termx-app-primary-button min-h-12 w-full gap-2 px-4 text-[15px] font-semibold"
               onClick={() => { hapticImpact(); setMobileSheet('pair') }}
             >
               <KeyRound className="h-4 w-4" />
@@ -1995,7 +1995,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               {selectedTerminal.state === 'exited' ? (
                 <button
                   type="button"
-                  className="flex min-h-12 w-full items-center justify-between rounded-xl border border-zinc-200 bg-white px-4 text-left text-[15px] font-medium text-zinc-900 shadow-sm"
+                  className="termx-app-secondary-button min-h-12 w-full justify-between px-4 text-left text-[15px] font-medium"
                   onClick={() => { hapticImpact(); void restartManagedTerminal() }}
                 >
                   <span>Restart terminal</span>
@@ -2004,7 +2004,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               ) : null}
               <button
                 type="button"
-                className="flex min-h-12 w-full items-center justify-between rounded-xl border border-zinc-200 bg-white px-4 text-left text-[15px] font-medium text-zinc-900 shadow-sm"
+                className="termx-app-secondary-button min-h-12 w-full justify-between px-4 text-left text-[15px] font-medium"
                 onClick={() => { hapticImpact(); openEditTerminal() }}
               >
                 <span>Edit terminal</span>
@@ -2012,7 +2012,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </button>
               <button
                 type="button"
-                className="flex min-h-12 w-full items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 text-left text-[15px] font-medium text-red-700 shadow-sm"
+                className="flex min-h-12 w-full items-center justify-between border border-red-200 bg-red-50 px-4 text-left text-[15px] font-medium text-red-700"
                 onClick={() => { hapticImpact(); void deleteManagedTerminal() }}
               >
                 <span>Delete terminal</span>
@@ -2032,7 +2032,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 Name
                 <input
-                  className="min-h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  className="min-h-12 border border-[var(--termx-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.name}
                   onChange={(event) => {
                     const value = event.currentTarget.value
@@ -2044,7 +2044,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                   Command
                   <input
-                    className="min-h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                    className="min-h-12 border border-[var(--termx-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                     value={terminalForm.command}
                     onChange={(event) => {
                       const value = event.currentTarget.value
@@ -2056,7 +2056,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 Working directory
                 <input
-                  className="min-h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  className="min-h-12 border border-[var(--termx-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.cwd}
                   onChange={(event) => {
                     const value = event.currentTarget.value
@@ -2066,7 +2066,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
+                    className="termx-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
                     onClick={() => {
                       hapticImpact()
                       openTerminalPathPicker()
@@ -2077,7 +2077,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   </button>
                   <button
                     type="button"
-                    className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
+                    className="termx-app-secondary-button min-h-11 gap-2 px-3 text-[13px] font-semibold"
                     onClick={() => {
                       hapticImpact()
                       openTerminalPathBookmarks()
@@ -2091,7 +2091,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 Environment
                 <input
-                  className="min-h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  className="min-h-12 border border-[var(--termx-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.environment}
                   onChange={(event) => {
                     const value = event.currentTarget.value
@@ -2102,7 +2102,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 Size lock
                 <select
-                  className="min-h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  className="min-h-12 border border-[var(--termx-app-line)] bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
                   value={terminalForm.sizeLockMode}
                   onChange={(event) => {
                     const value = event.currentTarget.value as 'off' | 'warn' | 'lock'
@@ -2116,7 +2116,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </label>
               <button
                 type="button"
-                className="mt-2 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] hover:bg-zinc-800 active:bg-zinc-800"
+                className="termx-app-primary-button mt-2 min-h-12 w-full gap-2 px-4 text-[15px] font-semibold"
                 onClick={() => {
                   hapticImpact()
                   if (mobileSheet === 'create-terminal') {
@@ -2160,7 +2160,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   if (error && !machine) {
     return (
       <div className={`flex h-full min-h-0 items-center justify-center bg-zinc-50 p-4 ${className || ''}`}>
-        <div className="w-full max-w-md rounded-lg border border-red-200 bg-white p-4 text-sm text-red-700 shadow-sm" role="alert">
+        <div className="termx-app-panel w-full max-w-md border-red-200 p-4 text-sm text-red-700" role="alert">
           <h2 className="mb-2 font-semibold text-red-900">Connection Error</h2>
           <p>{error}</p>
         </div>
@@ -2172,7 +2172,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return (
       <div className={`flex h-full min-h-0 items-center justify-center bg-zinc-50 ${className || ''}`}>
         <div className="flex items-center gap-2 text-sm text-zinc-500">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600"></div>
+          <span className="termx-square-spinner text-zinc-600" aria-hidden="true" />
           Connecting to TermX...
         </div>
       </div>
@@ -2200,14 +2200,14 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : (
           <>
         <header
-          className="relative z-30 row-start-1 flex min-h-10 min-w-0 max-w-full shrink-0 items-center justify-between gap-1 overflow-hidden border-b border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] px-1.5 pt-[env(safe-area-inset-top)] md:hidden"
+          className="relative z-30 row-start-1 flex min-h-12 min-w-0 max-w-full shrink-0 items-center justify-between gap-1 overflow-hidden border-b border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] px-1.5 pt-[env(safe-area-inset-top)] md:hidden"
           data-testid="termx-terminal-header"
         >
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <button
               type="button"
               aria-label="Back to terminal list / Show terminal list"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--termx-muted)] transition-colors active:bg-[var(--termx-surface-raised)]"
+              className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--termx-muted)] transition-colors active:bg-[var(--termx-surface-raised)]"
               onClick={() => { hapticSelection(); showTerminalListPage() }}
             >
               <ChevronLeft className="h-5 w-5" />
@@ -2215,7 +2215,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <button
               type="button"
               aria-label="Switch terminal"
-              className="flex min-w-0 flex-1 flex-col items-start justify-center rounded-md px-1.5 py-0.5 text-left transition-colors active:bg-[var(--termx-surface-raised)]"
+              className="flex min-h-11 min-w-0 flex-1 flex-col items-start justify-center px-1.5 py-0.5 text-left transition-colors active:bg-[var(--termx-surface-raised)]"
               onClick={() => { hapticSelection(); setMobileSheet('terminals') }}
             >
               <span className="max-w-full truncate text-[9px] font-bold uppercase tracking-wider text-[var(--termx-muted)]">{machine.name}</span>
@@ -2226,88 +2226,14 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </button>
           </div>
 
-          <div className="flex shrink-0 items-center gap-0.5">
-            <button
-              type="button"
-              aria-label="Split terminal"
-              aria-pressed={Boolean(splitTerminalId)}
-              onClick={() => { hapticImpact(); openSplitTerminalSheet() }}
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-95 ${splitTerminalId ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
-            >
-              <Rows2 className="h-4 w-4" />
-            </button>
-            {splitTerminalId ? (
-              <>
-                <button
-                  type="button"
-                  aria-label={syncSplitInput ? 'Disable synchronized input' : 'Enable synchronized input'}
-                  aria-pressed={syncSplitInput}
-                  onClick={() => { hapticImpact(); setSyncSplitInput((current) => !current) }}
-                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-95 ${syncSplitInput ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
-                >
-                  {syncSplitInput ? <Link2 className="h-4 w-4" /> : <Link2Off className="h-4 w-4" />}
-                </button>
-                <button
-                  type="button"
-                  aria-label="Close split terminal"
-                  onClick={() => { hapticImpact(); closeSplitTerminal() }}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--termx-muted)] transition-colors active:scale-95 active:bg-[var(--termx-surface-raised)]"
-                >
-                  <PanelBottomClose className="h-4 w-4" />
-                </button>
-              </>
-            ) : null}
-            <button
-              type="button"
-              aria-label={activeTerminalOwnsResize ? 'Release resize control' : 'Acquire resize control'}
-              aria-pressed={activeTerminalOwnsResize}
-              onPointerDown={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                hapticImpact()
-                void (activeTerminalOwnsResize ? releaseActiveResizeOwner() : acquireActiveResizeOwner())
-              }}
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-              }}
-              className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-md px-1 text-[var(--termx-muted)] transition-colors active:scale-95 active:bg-[var(--termx-surface-raised)]"
-            >
-              <span className="font-mono text-[11px] font-extrabold leading-none tracking-[-0.04em]">{resizeControlBadgeText(terminalResizeControl)}</span>
-            </button>
-            <button
-              type="button"
-              aria-label="Terminal tools"
-              onClick={() => {
-                hapticSelection()
-                setTerminalToolbarOpen((current) => {
-                  const next = !current
-                  if (next) setTerminalFnOpen(false)
-                  if (!next) setTerminalToolbarModeAndReset('default')
-                  return next
-                })
-              }}
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-95 ${terminalToolbarOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              aria-label="Connection info"
-              onClick={() => { hapticSelection(); openConnectionInfo() }}
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-95 ${connectionInfoOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
-            >
-              <Info className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              aria-label="Open files"
-              onClick={() => { hapticSelection(); openFiles() }}
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-95 ${filesOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
-            >
-              <Folder className="h-4 w-4" />
-            </button>
-          </div>
+          <button
+            type="button"
+            aria-label="Open terminal menu"
+            className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--termx-muted)] transition-colors active:bg-[var(--termx-surface-raised)]"
+            onClick={() => { hapticSelection(); setMobileSheet('terminal-menu') }}
+          >
+            <MoreHorizontal className="h-5 w-5" />
+          </button>
         </header>
 
         <div
@@ -2367,14 +2293,14 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           ) : null}
 
           {error && !showMachineNetworkOverlay ? (
-            <div className="absolute inset-x-0 top-0 z-40 border-y border-red-500/30 bg-red-950/90 px-3 py-2 text-[12px] font-medium text-red-100 shadow-lg backdrop-blur md:top-3" role="alert">
+            <div className="absolute inset-x-0 top-0 z-40 border-y border-red-500/30 bg-red-950/90 px-3 py-2 text-[12px] font-medium text-red-100 backdrop-blur" role="alert">
               {error}
             </div>
           ) : null}
 
-          <div ref={terminalWrapperRef} className={`absolute inset-0 flex flex-col bg-[var(--termx-terminal-bg)] md:bg-[var(--termx-bg)] ${splitTerminalId ? 'gap-px md:gap-3 md:p-3' : ''}`}>
+          <div ref={terminalWrapperRef} className={`absolute inset-0 flex flex-col bg-[var(--termx-terminal-bg)] ${splitTerminalId ? 'gap-px' : ''}`}>
             <div
-              className={`relative min-h-0 flex-1 bg-[var(--termx-terminal-bg)] ${splitTerminalId ? `border-b border-[var(--termx-border-subtle)] md:rounded-xl md:border md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 0 ? 'ring-1 ring-inset ring-[var(--termx-accent)]' : ''}` : 'md:m-3 md:rounded-2xl md:border md:border-[var(--termx-border-subtle)] md:shadow-2xl md:overflow-hidden'}`}
+              className={`relative min-h-0 flex-1 overflow-hidden bg-[var(--termx-terminal-bg)] ${splitTerminalId ? `border-b border-[var(--termx-border-subtle)] ${activeTerminalSlot === 0 ? 'ring-1 ring-inset ring-[var(--termx-accent)]' : ''}` : ''}`}
               data-active-slot={activeTerminalSlot === 0 ? 'true' : 'false'}
               data-testid="termx-terminal-panel"
               onPointerDown={() => {
@@ -2410,7 +2336,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 <button
                   type="button"
                   aria-label="Unlock terminal resize"
-                  className={`absolute right-2 z-20 flex min-h-7 items-center gap-1.5 rounded-md border border-[var(--termx-border-subtle)] bg-[var(--termx-overlay)] px-2 text-[11px] font-semibold text-[var(--termx-text)] shadow-lg backdrop-blur active:opacity-85 disabled:opacity-60 ${splitTerminalId ? 'top-16' : 'top-2'}`}
+                  className={`absolute right-2 z-20 flex min-h-8 items-center gap-1.5 border border-[var(--termx-border-subtle)] bg-[var(--termx-overlay)] px-2 text-[11px] font-semibold text-[var(--termx-text)] backdrop-blur active:opacity-85 disabled:opacity-60 ${splitTerminalId ? 'top-16' : 'top-2'}`}
                   disabled={unlockingResize}
                   onClick={() => { hapticImpact(); void unlockTerminalResize() }}
                 >
@@ -2422,7 +2348,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
             {splitTerminalId ? (
               <div
-                className={`relative min-h-0 flex-1 bg-[var(--termx-terminal-bg)] md:rounded-xl md:border md:border-[var(--termx-border-subtle)] md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 1 ? 'ring-1 ring-inset ring-[var(--termx-accent)]' : ''}`}
+                className={`relative min-h-0 flex-1 overflow-hidden bg-[var(--termx-terminal-bg)] ${activeTerminalSlot === 1 ? 'ring-1 ring-inset ring-[var(--termx-accent)]' : ''}`}
                 data-active-slot={activeTerminalSlot === 1 ? 'true' : 'false'}
                 data-testid="termx-split-terminal-panel"
                 onPointerDown={() => {
@@ -2500,6 +2426,45 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           </MobileSheetPanel>
         ) : null}
 
+        {mobileSheet === 'terminal-menu' ? (
+          <MobileSheetPanel title="Terminal tools" testId="termx-terminal-menu-sheet" onClose={() => setMobileSheet(null)}>
+            <div className="grid grid-cols-2 border-l border-t border-[var(--termx-app-line)]">
+              <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); openSplitTerminalSheet() }}>
+                <Rows2 className="h-4 w-4 text-[var(--termx-app-accent)]" />
+                {splitTerminalId ? 'Change split' : 'Split terminal'}
+              </button>
+              <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); setMobileSheet(null); void (activeTerminalOwnsResize ? releaseActiveResizeOwner() : acquireActiveResizeOwner()) }}>
+                <span className="w-4 font-mono text-[11px] font-extrabold text-[var(--termx-app-accent)]">{resizeControlBadgeText(terminalResizeControl)}</span>
+                {activeTerminalOwnsResize ? 'Release resize' : 'Control resize'}
+              </button>
+              {splitTerminalId ? (
+                <>
+                  <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); setSyncSplitInput((current) => !current); setMobileSheet(null) }}>
+                    {syncSplitInput ? <Link2 className="h-4 w-4 text-[var(--termx-app-accent)]" /> : <Link2Off className="h-4 w-4 text-[var(--termx-app-muted)]" />}
+                    Sync input
+                  </button>
+                  <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticImpact(); closeSplitTerminal(); setMobileSheet(null) }}>
+                    <PanelBottomClose className="h-4 w-4 text-[var(--termx-app-danger)]" />
+                    Close split
+                  </button>
+                </>
+              ) : null}
+              <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); setTerminalToolbarOpen((current) => { const next = !current; if (next) setTerminalFnOpen(false); if (!next) setTerminalToolbarModeAndReset('default'); return next }) }}>
+                <SlidersHorizontal className="h-4 w-4 text-[var(--termx-app-accent)]" />
+                Terminal tools
+              </button>
+              <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); openConnectionInfo() }}>
+                <Info className="h-4 w-4 text-[var(--termx-app-accent)]" />
+                Connection
+              </button>
+              <button type="button" className="termx-app-secondary-button min-h-14 justify-start gap-3 border-l-0 border-t-0 px-4 text-left text-sm font-semibold" onClick={() => { hapticSelection(); setMobileSheet(null); openFiles() }}>
+                <Folder className="h-4 w-4 text-[var(--termx-app-accent)]" />
+                Files
+              </button>
+            </div>
+          </MobileSheetPanel>
+        ) : null}
+
         {mobileSheet === 'split-terminal' ? (
           <MobileSheetPanel title="Split Terminal" testId="termx-split-terminal-sheet" onClose={() => setMobileSheet(null)}>
             {terminals.filter((terminal) => terminal.terminalId !== activeTerminalId).length > 0 ? (
@@ -2510,7 +2475,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 activeTerminalId={splitTerminalId ?? undefined}
               />
             ) : (
-              <div className="flex min-h-24 items-center justify-center rounded-xl border border-dashed border-zinc-200 bg-white text-sm font-medium text-zinc-500">
+              <div className="flex min-h-24 items-center justify-center border border-dashed border-zinc-300 bg-white text-sm font-medium text-zinc-500">
                 No other terminal available
               </div>
             )}
@@ -2534,10 +2499,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       </main>
 
       <div
-        className={`absolute inset-0 z-30 flex flex-col bg-white shadow-[0_-20px_40px_rgba(0,0,0,0.15)] transition-all duration-300 md:left-auto md:right-0 md:w-[450px] md:border-l md:border-zinc-200/60 ${filesOpen ? 'translate-y-0 md:translate-x-0 visible' : 'translate-y-full md:translate-y-0 md:translate-x-full invisible'}`}
+        className={`absolute inset-0 z-30 flex flex-col bg-white transition-transform duration-200 md:left-auto md:right-0 md:w-[450px] md:border-l md:border-[var(--termx-app-line)] ${filesOpen ? 'translate-y-0 md:translate-x-0 visible' : 'translate-y-full md:translate-y-0 md:translate-x-full invisible'}`}
         data-testid="termx-machine-files-overlay"
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200/70 bg-white px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
+        <div className="termx-app-header flex shrink-0 items-center justify-between border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
           <div className="flex items-center gap-2">
             <Folder className="h-5 w-5 text-zinc-500" />
             <span className="text-[17px] font-bold tracking-tight text-zinc-900">Files</span>
@@ -2545,7 +2510,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <button
             type="button"
             aria-label="Close files"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition-colors active:scale-95 hover:bg-zinc-50 active:bg-zinc-100"
+            className="termx-app-icon-button border-transparent bg-transparent"
             onClick={() => { hapticSelection(); openTerminalPanel() }}
           >
             <X className="h-5 w-5" />
@@ -2567,7 +2532,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <div className="flex h-full items-center justify-center text-sm text-zinc-500">
             {showMachineNetworkOverlay ? null : filesOpen ? (
               <div className="flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="termx-square-spinner" aria-hidden="true" />
                 <span>Connecting...</span>
               </div>
             ) : 'File access is not ready'}
@@ -2576,7 +2541,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       </div>
 
       <div className={`pointer-events-none absolute bottom-8 left-1/2 z-50 flex -translate-x-1/2 transform flex-col items-center gap-2 transition-all duration-300 ${pairStatus ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
-        <div className="flex items-center gap-2 rounded-full bg-zinc-900/95 px-4 py-2.5 text-sm font-medium text-white shadow-[0_8px_30px_rgb(0,0,0,0.12)] backdrop-blur-md ring-1 ring-white/10" role="status" aria-live="polite">
+        <div className="flex items-center gap-2 border border-white/10 bg-zinc-900/95 px-4 py-2.5 text-sm font-medium text-white backdrop-blur-md" role="status" aria-live="polite">
           {pairStatus}
         </div>
       </div>
@@ -2632,17 +2597,17 @@ function MobileSheetPanel({
   return (
     <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm transition-opacity md:items-center md:justify-center" data-testid={testId} onClick={() => { hapticSelection(); onClose() }}>
       <section
-        className="relative max-h-[85vh] w-full overflow-hidden rounded-t-[2rem] bg-zinc-50/95 backdrop-blur-xl shadow-[0_-8px_30px_rgba(0,0,0,0.12)] md:max-w-md md:rounded-2xl"
+        className="termx-app-page relative max-h-[85vh] w-full overflow-hidden border-t border-[var(--termx-app-line)] md:max-w-md md:border"
         onClick={(e) => e.stopPropagation()}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="absolute left-1/2 top-3 h-1.5 w-12 -translate-x-1/2 rounded-full bg-zinc-300/80 md:hidden" />
-        <header className="flex h-16 items-center justify-between border-b border-zinc-200/50 px-5 pt-3">
+        <div className="absolute left-1/2 top-3 h-1 w-12 -translate-x-1/2 bg-[var(--termx-app-line-strong)] md:hidden" />
+        <header className="flex h-16 items-center justify-between border-b border-[var(--termx-app-line)] px-5 pt-3">
           <h2 className="text-[17px] font-bold tracking-tight text-zinc-900">{title}</h2>
           <button
             type="button"
             aria-label={`Close ${title}`}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-200/50 text-zinc-500 transition-colors active:scale-95 active:bg-zinc-300"
+            className="termx-app-icon-button border-transparent bg-transparent"
             onClick={() => { hapticSelection(); onClose() }}
           >
             <X className="h-5 w-5" />
@@ -2681,20 +2646,20 @@ function ConnectionInfoDialog({
   const modeActionLabel = forceRelayActive ? 'Try P2P' : 'Use relay'
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" onClick={() => { hapticSelection(); onClose() }}>
-      <section className="w-full max-w-md overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+      <section className="termx-app-panel w-full max-w-md overflow-hidden" onClick={(event) => event.stopPropagation()}>
         <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
           <div className="min-w-0">
             <h2 className="text-[15px] font-semibold text-zinc-950">Connection Info</h2>
             <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{connectionTypeLabel(type)}</p>
           </div>
-          <button type="button" aria-label="Close connection info" className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100" onClick={() => { hapticSelection(); onClose() }}>
+          <button type="button" aria-label="Close connection info" className="termx-app-icon-button border-transparent bg-transparent" onClick={() => { hapticSelection(); onClose() }}>
             <X className="h-5 w-5" />
           </button>
         </header>
 
         <div className="space-y-3 px-4 py-4">
           {error ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-800">{error}</div>
+            <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-800">{error}</div>
           ) : null}
           <div className="grid grid-cols-1 gap-2">
             <ConnectionInfoRow label="Mode" value={loading ? 'Reading stats...' : connectionTypeLabel(type)} strong />
@@ -2710,15 +2675,15 @@ function ConnectionInfoDialog({
         </div>
 
         <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3">
-          <button type="button" className="flex min-h-9 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100" onClick={() => { hapticImpact(); onRefresh() }}>
+          <button type="button" className="termx-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onRefresh() }}>
             Refresh
           </button>
-          <button type="button" className="flex min-h-9 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100" onClick={() => { hapticImpact(); onReconnect() }}>
+          <button type="button" className="termx-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onReconnect() }}>
             Reconnect
           </button>
           <button
             type="button"
-            className="flex min-h-9 items-center justify-center rounded-md bg-zinc-900 px-3 text-[13px] font-semibold text-white disabled:bg-zinc-300 disabled:text-zinc-500"
+            className="termx-app-primary-button px-3 text-[13px] font-semibold disabled:bg-zinc-300 disabled:text-zinc-500"
             disabled={loading || !canToggleMode}
             onClick={() => { hapticImpact(); onToggleMode() }}
           >
@@ -2732,7 +2697,7 @@ function ConnectionInfoDialog({
 
 function ConnectionInfoRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean | undefined }) {
   return (
-    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3 rounded-md bg-zinc-50 px-3 py-2">
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3 border-b border-[var(--termx-app-line)] bg-zinc-50 px-3 py-2 last:border-b-0">
       <dt className="text-[12px] font-semibold text-zinc-500">{label}</dt>
       <dd className={`min-w-0 break-words text-[12px] ${strong ? 'font-semibold text-zinc-950' : 'font-medium text-zinc-700'}`}>{value}</dd>
     </div>

@@ -13,7 +13,7 @@ export function PasteConfirmDialog({ text, onCancel, onConfirm }: PasteConfirmDi
   return (
     <div className="absolute inset-0 z-50 flex items-end bg-black/60 backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-paste-confirm" onClick={() => { hapticSelection(); onCancel() }}>
       <section
-        className="w-full overflow-hidden border-y border-zinc-700 bg-zinc-950 text-zinc-100 shadow-2xl md:max-w-md md:rounded-2xl md:border"
+        className="w-full overflow-hidden border-y border-zinc-700 bg-zinc-950 text-zinc-100 md:max-w-md md:border"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="border-b border-zinc-800 px-4 py-3">
@@ -28,14 +28,14 @@ export function PasteConfirmDialog({ text, onCancel, onConfirm }: PasteConfirmDi
         <div className="grid grid-cols-2 gap-3 border-t border-zinc-800 p-3">
           <button
             type="button"
-            className="h-11 rounded-xl bg-zinc-800 text-[14px] font-semibold text-zinc-200 hover:bg-zinc-700/80 active:bg-zinc-700"
+            className="h-11 border border-zinc-700 bg-zinc-800 text-[14px] font-semibold text-zinc-200 hover:bg-zinc-700/80 active:bg-zinc-700"
             onClick={() => { hapticSelection(); onCancel() }}
           >
             Cancel
           </button>
           <button
             type="button"
-            className="h-11 rounded-xl bg-blue-600 text-[14px] font-semibold text-white hover:bg-blue-600/90 active:bg-blue-500"
+            className="h-11 bg-blue-600 text-[14px] font-semibold text-white hover:bg-blue-600/90 active:bg-blue-500"
             onClick={() => { hapticImpact(); onConfirm() }}
           >
             Paste

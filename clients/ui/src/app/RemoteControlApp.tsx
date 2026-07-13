@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
-import { ArrowLeft, Camera, ChevronRight, Cloud, Download, Keyboard, LaptopMinimal, Loader2, LogIn, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
+import { ArrowLeft, Camera, ChevronRight, Cloud, Download, Keyboard, LaptopMinimal, LogIn, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
 import { createMachineSessionStore, type MachineSessionStore } from '../state/localAppIdentity'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
@@ -749,7 +749,7 @@ export function RemoteControlApp({
 
   return (
     <main
-      className="flex h-full min-h-0 flex-col bg-zinc-50 text-zinc-950"
+      className="termx-app-page flex h-full min-h-0 flex-col"
       data-testid="termx-web-control-remote"
       style={appThemeStyle}
     >
@@ -906,7 +906,7 @@ function MachineTerminalListView({
     )
   }
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50 animate-in fade-in slide-in-from-right-4 duration-200" data-testid="termx-machine-terminal-list">
+    <section className="termx-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-right-4 duration-200" data-testid="termx-machine-terminal-list">
       <MachineWorkspace
         api={runtime.api}
         connector={runtime.connector}
@@ -931,10 +931,10 @@ function MachineTerminalListView({
 
 function MachineRuntimeHeader({ machine, onBack }: { machine: DisplayMachine; onBack: () => void }) {
   return (
-    <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+    <header className="termx-app-header flex min-h-14 shrink-0 items-center gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
       <button
         aria-label="Back to machines"
-        className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        className="termx-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
         type="button"
         onClick={() => { hapticSelection(); onBack() }}
       >
@@ -947,7 +947,7 @@ function MachineRuntimeHeader({ machine, onBack }: { machine: DisplayMachine; on
           <p className="truncate text-xs font-medium text-zinc-500">{machine.hostname || machine.id}</p>
         </div>
       </div>
-      <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold leading-4 ring-1 ${machine.online ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-zinc-100 text-zinc-600 ring-zinc-200'}`}>
+      <span className={`shrink-0 border px-2 py-1 text-[10px] font-semibold leading-4 ${machine.online ? 'border-emerald-200 text-emerald-700' : 'border-zinc-300 text-zinc-600'}`}>
         {machine.online ? 'Online' : 'Offline'}
       </span>
     </header>
@@ -962,7 +962,7 @@ function MachineRuntimeErrorShell({
   onBack: () => void
 }) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50 animate-in fade-in slide-in-from-right-4 duration-200" data-testid="termx-machine-terminal-list">
+    <section className="termx-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-right-4 duration-200" data-testid="termx-machine-terminal-list">
       <MachineRuntimeHeader machine={machine} onBack={onBack} />
     </section>
   )
@@ -1006,9 +1006,10 @@ function HomeView({
   onSignIn: () => void
 }) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50" data-testid="termx-app-home">
-      <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:h-16 lg:px-6 lg:py-0">
-        <div className="flex min-w-0 items-center gap-5">
+    <section className="termx-app-page flex min-h-0 flex-1 flex-col" data-testid="termx-app-home">
+      <header className="termx-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:h-16 lg:px-6 lg:py-0">
+        <div className="flex min-w-0 items-center gap-3 lg:gap-5">
+          <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center bg-[var(--termx-app-text)] font-mono text-[10px] font-semibold text-white lg:hidden">TX</span>
           <span aria-hidden="true" className="hidden text-base font-bold text-zinc-950 lg:inline">TermX</span>
           <div className="hidden h-5 w-px bg-zinc-200 lg:block" />
           <div className="min-w-0 lg:flex lg:items-center lg:gap-3">
@@ -1022,7 +1023,7 @@ function HomeView({
           {signedIn ? (
             <button
               aria-label="Refresh machines"
-              className="inline-flex h-10 min-w-10 items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-2.5 text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="termx-app-icon-button gap-2 px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
               type="button"
               onClick={onRefresh}
               disabled={loading}
@@ -1033,7 +1034,7 @@ function HomeView({
           ) : null}
           <button
             aria-label="Scan new machine"
-            className="inline-flex h-10 min-w-10 items-center justify-center gap-2 rounded-md bg-zinc-900 px-2.5 text-white hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 lg:px-3"
+            className="termx-app-primary-button min-w-11 gap-2 px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)] lg:px-3"
             type="button"
             onClick={onAddLocalDevice}
           >
@@ -1043,7 +1044,7 @@ function HomeView({
           {fileTransfer ? (
             <button
               aria-label="Open data transfer center"
-              className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="termx-app-icon-button relative focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
               type="button"
               onClick={onOpenTransferCenter}
             >
@@ -1053,7 +1054,7 @@ function HomeView({
           ) : null}
           <button
             aria-label="Open settings"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="termx-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
             type="button"
             onClick={onOpenSettings}
           >
@@ -1071,8 +1072,8 @@ function HomeView({
           title="No machines yet"
         />
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 lg:px-8 lg:py-7">
-          <div className="mx-auto w-full max-w-7xl lg:overflow-visible lg:rounded-lg lg:border lg:border-zinc-200 lg:bg-white">
+        <div className="min-h-0 flex-1 overflow-y-auto py-4 lg:px-8 lg:py-7">
+          <div className="termx-app-panel mx-auto w-full max-w-7xl border-x-0 lg:overflow-visible lg:border-x">
             <div className="hidden grid-cols-[40px_minmax(180px,1.3fr)_minmax(160px,.8fr)_minmax(180px,1fr)_32px] items-center gap-4 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 text-[11px] font-semibold uppercase text-zinc-500 lg:grid">
               <span aria-hidden="true" />
               <span>Machine</span>
@@ -1080,9 +1081,9 @@ function HomeView({
               <span>Connection</span>
               <span aria-hidden="true" />
             </div>
-            <ul aria-label="Machines" className="divide-y-0 divide-zinc-100 lg:divide-y">
+            <ul aria-label="Machines" className="divide-y divide-[var(--termx-app-line)]">
           {machines.map((machine) => (
-            <li key={machine.id} className="mb-2 last:mb-0 lg:mb-0">
+            <li key={machine.id}>
               <MachineRow
                 authorizationExpiresAt={authorizationExpiries.get(machine.id)}
                 authorizationState={machineAuthorizationState(machine, authorizedMachineIds, authorizationExpiries)}
@@ -1149,11 +1150,11 @@ function SettingsView({
   }), [])
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50 text-zinc-950 animate-in fade-in slide-in-from-bottom-4 duration-200" data-testid="termx-app-settings">
-      <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-zinc-200/70 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+    <section className="termx-app-page flex min-h-0 flex-1 flex-col animate-in fade-in slide-in-from-bottom-4 duration-200" data-testid="termx-app-settings">
+      <header className="termx-app-header flex min-h-14 shrink-0 items-center gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <button
           aria-label="Back to machines"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 active:opacity-75 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="termx-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
           type="button"
           onClick={onBack}
         >
@@ -1168,7 +1169,7 @@ function SettingsView({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
         <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
           {error ? (
-            <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
+            <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
           ) : null}
 
           <SettingsSection title="Connection">
@@ -1182,7 +1183,7 @@ function SettingsView({
             <SettingsSection title="Diagnostics">
               <div className="px-4 py-3">
                 <button
-                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 active:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="termx-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                   type="button"
                   onClick={() => {
                     hapticImpact()
@@ -1198,10 +1199,10 @@ function SettingsView({
 
           <SettingsSection title="Terminal">
             <SettingsRow label="Font size">
-              <div className="inline-flex h-9 items-center overflow-hidden rounded-lg border border-zinc-200 bg-white">
+              <div className="inline-flex h-11 items-center overflow-hidden border border-[var(--termx-app-line)] bg-white">
                 <button
                   aria-label="Decrease terminal font size"
-                  className="h-9 w-9 text-lg font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
+                  className="h-11 w-11 text-lg font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                   type="button"
                   onClick={() => { hapticSelection(); onTerminalSettingsChange({ fontSize: Math.max(8, terminalSettings.fontSize - 1) }) }}
                 >
@@ -1209,7 +1210,7 @@ function SettingsView({
                 </button>
                 <input
                   aria-label="Terminal font size"
-                  className="h-9 w-12 border-x border-zinc-200 bg-zinc-50 px-1 text-center text-sm font-semibold text-zinc-900 outline-none focus:ring-2 focus:ring-blue-500/25"
+                  className="h-11 w-12 border-x border-[var(--termx-app-line)] bg-zinc-50 px-1 text-center text-sm font-semibold text-zinc-900 outline-none focus:ring-2 focus:ring-blue-500/25"
                   inputMode="numeric"
                   max={32}
                   min={8}
@@ -1219,7 +1220,7 @@ function SettingsView({
                 />
                 <button
                   aria-label="Increase terminal font size"
-                  className="h-9 w-9 text-lg font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
+                  className="h-11 w-11 text-lg font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                   type="button"
                   onClick={() => { hapticSelection(); onTerminalSettingsChange({ fontSize: Math.min(32, terminalSettings.fontSize + 1) }) }}
                 >
@@ -1266,7 +1267,7 @@ function SettingsView({
             <SettingsRow label="Scrollback">
               <input
                 aria-label="Terminal scrollback"
-                className="h-9 w-28 rounded-lg border border-zinc-200 bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25"
+                className="h-11 w-28 border border-[var(--termx-app-line)] bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                 inputMode="numeric"
                 max={50000}
                 min={500}
@@ -1279,7 +1280,7 @@ function SettingsView({
             <SettingsRow label="Prefetch threshold">
               <input
                 aria-label="Terminal scrollback prefetch threshold"
-                className="h-9 w-28 rounded-lg border border-zinc-200 bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25"
+                className="h-11 w-28 border border-[var(--termx-app-line)] bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                 inputMode="numeric"
                 max={1000}
                 min={0}
@@ -1304,7 +1305,7 @@ function SettingsView({
                 <SettingsRow label="Signed in" value={user?.email ?? 'Account'} />
                 <div className="grid grid-cols-2 gap-2 px-4 py-3">
                   <button
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="termx-app-secondary-button gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                     type="button"
                     onClick={onRefresh}
                     disabled={loading}
@@ -1313,7 +1314,7 @@ function SettingsView({
                     Refresh
                   </button>
                   <button
-                    className="inline-flex h-10 items-center justify-center rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white active:bg-blue-700"
+                    className="termx-app-primary-button px-3 text-sm font-semibold"
                     type="button"
                     onClick={onSignOut}
                   >
@@ -1327,7 +1328,7 @@ function SettingsView({
                   <label className="block text-sm font-medium text-zinc-500">
                     Email or username
                     <input
-                      className="mt-2 h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25"
+                      className="mt-2 h-11 w-full border border-[var(--termx-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                       value={login}
                       onChange={(event) => onLoginChange(event.target.value)}
                       autoComplete="username"
@@ -1338,7 +1339,7 @@ function SettingsView({
                   <label className="block text-sm font-medium text-zinc-500">
                     Password
                     <input
-                      className="mt-2 h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25"
+                      className="mt-2 h-11 w-full border border-[var(--termx-app-line)] bg-white px-3 text-sm text-zinc-900 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                       value={password}
                       onChange={(event) => onPasswordChange(event.target.value)}
                       type="password"
@@ -1348,7 +1349,7 @@ function SettingsView({
                 </div>
                 <div className="border-t border-zinc-200 px-4 py-3">
                   <button
-                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-600/90 active:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="termx-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                     type="button"
                     onClick={onSignIn}
                     disabled={loading}
@@ -1369,8 +1370,8 @@ function SettingsView({
 function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h2 className="mb-2 px-4 text-xs font-semibold uppercase text-zinc-500">{title}</h2>
-      <div className="overflow-hidden rounded-xl border border-zinc-200/70 bg-white shadow-sm">
+      <h2 className="mb-2 px-1 text-[10px] font-semibold uppercase text-[var(--termx-app-muted)]">{title}</h2>
+      <div className="termx-app-panel overflow-hidden">
         {children}
       </div>
     </section>
@@ -1390,7 +1391,7 @@ function SettingsRow({
 }) {
   if (stacked) {
     return (
-      <div className="flex min-h-12 flex-col items-stretch gap-3 border-b border-zinc-200 px-4 py-3 last:border-b-0">
+      <div className="flex min-h-12 flex-col items-stretch gap-3 border-b border-[var(--termx-app-line)] px-4 py-3 last:border-b-0">
         <div className="min-w-0 text-sm font-medium text-zinc-900">{label}</div>
         {children ? (
           <div className="min-w-0 w-full">{children}</div>
@@ -1402,7 +1403,7 @@ function SettingsRow({
   }
 
   return (
-    <div className="flex min-h-12 items-center justify-between gap-4 border-b border-zinc-200 px-4 py-2 last:border-b-0">
+    <div className="flex min-h-12 items-center justify-between gap-4 border-b border-[var(--termx-app-line)] px-4 py-2 last:border-b-0">
       <div className="min-w-0 text-sm font-medium text-zinc-900">{label}</div>
       {children ? (
         <div className="shrink-0">{children}</div>
@@ -1427,7 +1428,7 @@ function SettingsSelect({
   return (
     <select
       aria-label={ariaLabel}
-      className="h-9 max-w-[54vw] rounded-lg border border-zinc-200 bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 sm:max-w-xs"
+      className="h-11 max-w-[54vw] border border-[var(--termx-app-line)] bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/25 sm:max-w-xs"
       value={value}
       onChange={(event) => {
         hapticSelection()
@@ -1492,9 +1493,9 @@ function FontPreviewButton({
   return (
     <button
       aria-checked={selected}
-      className={`min-w-0 rounded-lg border p-3 text-left transition active:scale-[0.99] ${
+      className={`min-w-0 border p-3 text-left transition-colors duration-200 ${
         selected
-          ? 'border-blue-500 bg-blue-50 shadow-[0_0_0_1px_rgba(59,130,246,0.65)]'
+          ? 'border-[var(--termx-app-accent)] bg-blue-50'
           : 'border-zinc-200 bg-white hover:bg-zinc-50 active:bg-zinc-50'
       }`}
       role="radio"
@@ -1507,9 +1508,9 @@ function FontPreviewButton({
     >
       <div className="flex min-w-0 items-center gap-2">
         <span className="truncate text-sm font-semibold leading-5 text-zinc-950">{option.label}</span>
-        <span className={`ml-auto h-2 w-2 shrink-0 rounded-full ${selected ? 'bg-blue-500' : 'bg-zinc-200'}`} />
+        <span className={`ml-auto h-2 w-2 shrink-0 ${selected ? 'bg-[var(--termx-app-accent)]' : 'bg-zinc-200'}`} />
       </div>
-      <div className="mt-2 rounded-md bg-zinc-950 px-2 py-2 text-[12px] leading-5 text-zinc-100">
+      <div className="mt-2 bg-zinc-950 px-2 py-2 text-[12px] leading-5 text-zinc-100">
         <div className="truncate">$ termx --font</div>
         <div className="truncate text-zinc-300">AaBb 012345 &lt;&gt; ~/</div>
       </div>
@@ -1584,7 +1585,7 @@ function ThemePreviewButton({
   return (
     <button
       aria-checked={selected}
-      className="min-w-0 rounded-lg border p-2 text-left transition-transform active:scale-[0.99]"
+      className="min-w-0 border p-2 text-left transition-colors duration-200"
       role="radio"
       style={{
         backgroundColor: ui.surface,
@@ -1597,23 +1598,23 @@ function ThemePreviewButton({
         onSelect()
       }}
     >
-      <div className="rounded-md p-2" style={{ backgroundColor: ui.terminalBackground }}>
+      <div className="p-2" style={{ backgroundColor: ui.terminalBackground }}>
         <div className="mb-2 flex gap-1">
           {colors.map((color) => (
-            <span key={color} className="h-2.5 flex-1 rounded-sm" style={{ backgroundColor: color }} />
+            <span key={color} className="h-2.5 flex-1" style={{ backgroundColor: color }} />
           ))}
         </div>
         <div className="space-y-1">
-          <div className="h-1.5 w-4/5 rounded-full" style={{ backgroundColor: ui.terminalForeground, opacity: 0.72 }} />
+          <div className="h-1.5 w-4/5" style={{ backgroundColor: ui.terminalForeground, opacity: 0.72 }} />
           <div className="flex items-center gap-1">
-            <div className="h-1.5 w-1/2 rounded-full" style={{ backgroundColor: ui.terminalForeground, opacity: 0.42 }} />
-            <div className="h-2.5 w-1 rounded-sm" style={{ backgroundColor: ui.terminalCursor }} />
+            <div className="h-1.5 w-1/2" style={{ backgroundColor: ui.terminalForeground, opacity: 0.42 }} />
+            <div className="h-2.5 w-1" style={{ backgroundColor: ui.terminalCursor }} />
           </div>
         </div>
       </div>
       <div className="mt-2 flex min-w-0 items-center gap-1.5">
         <span className="truncate text-xs font-semibold" style={{ color: ui.text }}>{option.label}</span>
-        <span className="ml-auto h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: selected ? ui.accent : ui.borderSubtle }} />
+        <span className="ml-auto h-2 w-2 shrink-0" style={{ backgroundColor: selected ? ui.accent : ui.borderSubtle }} />
       </div>
     </button>
   )
@@ -1688,16 +1689,16 @@ function PairSheet({
       ? 'Camera is scanning for a TermX QR code...'
       : null
   return (
-    <div className="fixed inset-0 z-50 bg-white text-zinc-950" role="dialog" aria-modal="true">
+    <div className="termx-app-page fixed inset-0 z-50" role="dialog" aria-modal="true">
       <section className="flex h-full min-h-0 flex-col bg-white" data-testid="termx-pair-sheet">
-        <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-zinc-200 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+        <header className="termx-app-header flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
           <div className="flex min-w-0 items-center gap-2">
             <QrCode className="h-5 w-5 shrink-0 text-[var(--termx-accent)]" />
             <h2 className="truncate text-base font-semibold">{title}</h2>
           </div>
           <button
             aria-label="Close pairing"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-accent)]"
+            className="termx-app-icon-button border-transparent bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
             type="button"
             onClick={onClose}
           >
@@ -1708,7 +1709,7 @@ function PairSheet({
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
           <div className="mx-auto w-full max-w-md">
             {selectedMachine ? (
-              <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
+              <div className="termx-app-panel bg-[var(--termx-app-soft)] px-3 py-2">
                 <div className="truncate text-sm font-semibold text-zinc-950">{selectedMachine.name}</div>
                 <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{selectedMachine.hostname || selectedMachine.id}</div>
               </div>
@@ -1716,19 +1717,19 @@ function PairSheet({
 
             {canScanWithCamera && !showManualEntry ? (
               <button
-                className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--termx-accent)] px-3 text-sm font-semibold text-[var(--termx-accent-text)] active:opacity-85 disabled:cursor-not-allowed disabled:opacity-60"
+                className="termx-app-primary-button mt-4 h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                 type="button"
                 onClick={onScanWithCamera}
                 disabled={pairing || cameraScanning}
               >
-                {cameraScanning || pairing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                {cameraScanning || pairing ? <span className="termx-square-spinner" aria-hidden="true" /> : <Camera className="h-4 w-4" />}
                 {pairing ? 'Pairing device...' : cameraScanning ? 'Scanning QR...' : 'Scan QR with camera'}
               </button>
             ) : null}
 
             {!showManualEntry ? (
               <button
-                className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-950 hover:bg-zinc-50 active:bg-zinc-50"
+                className="termx-app-secondary-button mt-3 w-full gap-2 px-3 text-sm font-semibold"
                 type="button"
                 onClick={onManualEntryOpen}
               >
@@ -1736,11 +1737,11 @@ function PairSheet({
                 Enter content manually
               </button>
             ) : (
-              <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
+              <div className="termx-app-panel mt-4 bg-[var(--termx-app-soft)] px-3 py-2">
                 <label className="block text-xs font-semibold text-zinc-500">
                   TermX QR content
                   <textarea
-                    className="mt-1 h-44 w-full resize-none rounded-md border border-zinc-200 bg-white p-2 font-mono text-xs leading-5 text-zinc-950 placeholder:text-zinc-400 outline-none focus:border-[var(--termx-accent)] focus:ring-2 focus:ring-[var(--termx-accent)]/25"
+                    className="mt-1 h-44 w-full resize-none border border-[var(--termx-app-line)] bg-white p-2 font-mono text-xs leading-5 text-zinc-950 placeholder:text-zinc-400 outline-none focus:border-[var(--termx-app-accent)] focus:ring-2 focus:ring-blue-500/25"
                     value={manualScanValue}
                     onChange={(event) => onManualScanValueChange(event.target.value)}
                     placeholder="termx://pair?payload=..."
@@ -1752,26 +1753,26 @@ function PairSheet({
 
             {showManualEntry ? (
               <button
-                className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-950 hover:bg-zinc-50 active:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="termx-app-secondary-button mt-3 h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                 type="button"
                 onClick={onImport}
                 disabled={pairing || cameraScanning || manualScanValue.trim() === ''}
               >
-                {pairing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                {pairing ? <span className="termx-square-spinner" aria-hidden="true" /> : <ShieldCheck className="h-4 w-4" />}
                 {primaryLabel}
               </button>
             ) : null}
 
             {statusMessage ? (
-              <p className="mt-3 rounded-md bg-blue-500/10 px-3 py-2 text-sm font-medium text-blue-700">{statusMessage}</p>
+              <p className="mt-3 border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-sm font-medium text-blue-700">{statusMessage}</p>
             ) : null}
 
             {pairError ? (
-              <p className="mt-3 rounded-md bg-red-500/10 px-3 py-2 text-sm font-medium text-red-500">{pairError}</p>
+              <p className="mt-3 border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-500">{pairError}</p>
             ) : null}
 
             {lastImported ? (
-              <div className="mt-3 rounded-md bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500">
+              <div className="mt-3 border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500">
                 <div className="truncate font-semibold">{lastImported.machine.name}</div>
                 <div className="truncate">{lastImported.machine.id}</div>
               </div>
@@ -1812,16 +1813,16 @@ function MachineRow({
   const DeviceIcon = machine.accessClass === 'cloud' ? Cloud : LaptopMinimal
   const canForget = Boolean(authorizationExpiresAt || authorizationState === 'ready')
   return (
-    <div className="relative rounded-lg border border-zinc-200 bg-white shadow-sm lg:rounded-none lg:border-0 lg:shadow-none">
+    <div className="relative bg-white">
       <button
         aria-label={`${actionLabel} ${machine.name}`}
-        className="relative grid min-h-[104px] min-w-0 w-full grid-cols-[40px_minmax(0,1fr)_16px] grid-rows-[auto_auto_auto] gap-x-3 gap-y-1 px-3.5 py-3 text-left hover:bg-zinc-50 active:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 lg:min-h-[72px] lg:grid-cols-[40px_minmax(180px,1.3fr)_minmax(160px,.8fr)_minmax(180px,1fr)_32px] lg:grid-rows-1 lg:items-center lg:gap-4 lg:px-4 lg:py-2.5"
+        className="relative grid min-h-[108px] min-w-0 w-full grid-cols-[40px_minmax(0,1fr)_20px] grid-rows-[auto_auto_auto] gap-x-3 gap-y-1 px-4 py-3 text-left transition-colors duration-200 hover:bg-zinc-50 active:bg-[var(--termx-app-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--termx-app-accent)] lg:min-h-[72px] lg:grid-cols-[40px_minmax(180px,1.3fr)_minmax(160px,.8fr)_minmax(180px,1fr)_32px] lg:grid-rows-1 lg:items-center lg:gap-4 lg:px-4 lg:py-2.5"
         type="button"
         onClick={() => onSelectMachine(machine)}
       >
-        <div className="relative col-start-1 row-start-1 flex h-10 w-10 items-center justify-center rounded-md bg-zinc-100 text-zinc-700 lg:col-start-1">
+        <div className="relative col-start-1 row-start-1 flex h-10 w-10 items-center justify-center border border-[var(--termx-app-line)] bg-[var(--termx-app-soft)] text-zinc-700 lg:col-start-1">
           <DeviceIcon className="h-5 w-5" />
-          <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
+          <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 border-2 border-white ${
             card.tone === 'online' ? 'bg-emerald-500' : card.tone === 'active' ? 'bg-blue-500' : card.tone === 'warning' ? 'bg-amber-500' : 'bg-zinc-400'
           }`} />
         </div>
@@ -1845,17 +1846,17 @@ function MachineRow({
         <div className="absolute right-9 top-2.5 z-10 lg:right-3 lg:top-1/2 lg:-translate-y-1/2">
           <button
             aria-label={`More actions for ${machine.name}`}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="inline-flex h-11 w-11 items-center justify-center text-zinc-500 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)] lg:h-10 lg:w-10"
             type="button"
             onClick={() => setMenuOpen((open) => !open)}
           >
             <MoreHorizontal className="h-4 w-4" />
           </button>
           {menuOpen ? (
-            <div className="absolute right-0 top-9 min-w-44 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg">
+            <div className="absolute right-0 top-11 min-w-44 border border-[var(--termx-app-line)] bg-white p-1 shadow-lg">
               <button
                 aria-label={`Remove authorization for ${machine.name}`}
-                className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50"
+                className="flex h-11 w-full items-center gap-2 px-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50"
                 type="button"
                 onClick={() => onForgetMachineAuthorization(machine)}
               >
@@ -1869,7 +1870,7 @@ function MachineRow({
       {authorizationState !== 'ready' ? (
         <button
           aria-label={`Scan to pair ${machine.name}`}
-          className="absolute bottom-2.5 right-3.5 inline-flex h-8 items-center gap-1.5 rounded-md bg-zinc-900 px-2.5 text-[11px] font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="termx-app-primary-button absolute bottom-2.5 right-3.5 h-11 gap-1.5 px-2.5 text-[11px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
           type="button"
           onClick={() => onPairMachine(machine)}
         >
@@ -2054,17 +2055,17 @@ function EmptyState({
   title: string
 }) {
   return (
-    <div className="flex flex-1 items-center justify-center px-4 py-8">
-      <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-lg border border-dashed border-zinc-300 bg-white px-5 py-7 text-center" data-testid="termx-machine-empty-state">
-        <div className="flex h-12 w-12 items-center justify-center rounded-md bg-zinc-100 text-zinc-500">
+    <div className="flex flex-1 items-start justify-center pt-16 lg:items-center lg:py-8 lg:pt-8">
+      <div className="termx-app-panel flex w-full max-w-md flex-col items-start gap-5 border-x-0 px-6 py-8 text-left sm:border-x" data-testid="termx-machine-empty-state">
+        <div className="flex h-12 w-12 items-center justify-center border border-[var(--termx-app-line)] bg-[var(--termx-app-soft)] text-[var(--termx-app-accent)]">
           {icon === 'login' ? <Server className="h-6 w-6" /> : <QrCode className="h-6 w-6" />}
         </div>
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <h2 className="text-base font-semibold text-zinc-950">{title}</h2>
           <p className="text-sm leading-5 text-zinc-500">{message}</p>
         </div>
         <button
-          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="termx-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
           type="button"
           onClick={() => { hapticImpact(); onAction() }}
         >

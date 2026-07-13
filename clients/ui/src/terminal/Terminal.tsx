@@ -2146,7 +2146,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       {showConnectingOverlay ? (
         <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-[var(--termx-bg)]/80 backdrop-blur-sm text-sm font-medium text-[var(--termx-muted)]">
           <div className="flex items-center gap-2">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--termx-muted)] border-t-[var(--termx-text)]" />
+            <span className="termx-square-spinner text-[var(--termx-text)]" aria-hidden="true" />
             Connecting terminal...
           </div>
         </div>
@@ -2155,7 +2155,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         <div
           aria-label="Loading terminal history"
           aria-live="polite"
-          className="pointer-events-none absolute left-1/2 top-3 z-[60] -translate-x-1/2 rounded-full bg-[var(--termx-surface)]/40 px-3 py-1.5 shadow-[0_4px_12px_rgba(0,0,0,0.15)] backdrop-blur-md"
+          className="pointer-events-none absolute left-1/2 top-3 z-[60] -translate-x-1/2 border border-[var(--termx-border-subtle)] bg-[var(--termx-surface)]/60 px-3 py-1.5 backdrop-blur-md"
           data-testid="termx-history-loading"
           role="status"
         >

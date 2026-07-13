@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { forwardRef, useImperativeHandle } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -73,14 +73,14 @@ describe('MachineWorkspace real file manager flow', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
-    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+    await openFilesFromTerminalMenu()
     await waitFor(() => expect(screen.getByText('live.txt')).toBeTruthy())
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
     await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))
 
     await userEvent.click(screen.getByRole('button', { name: /open worker/i }))
-    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+    await openFilesFromTerminalMenu()
     await waitFor(() => expect(screen.getByText('cache')).toBeTruthy())
     expect(screen.queryByText('log.txt')).toBeNull()
     expect(connect).toHaveBeenCalledWith(expect.objectContaining({
@@ -101,7 +101,7 @@ describe('MachineWorkspace real file manager flow', () => {
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
-    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+    await openFilesFromTerminalMenu()
 
     await waitFor(() => expect(screen.getByText('live.txt')).toBeTruthy())
     expect(sessions[0]?.requests).toEqual(expect.arrayContaining([
@@ -110,6 +110,12 @@ describe('MachineWorkspace real file manager flow', () => {
     ]))
   })
 })
+
+async function openFilesFromTerminalMenu(): Promise<void> {
+  await userEvent.click(screen.getByRole('button', { name: /open terminal menu/i }))
+  const menu = await screen.findByTestId('termx-terminal-menu-sheet')
+  await userEvent.click(within(menu).getByRole('button', { name: /^files$/i }))
+}
 
 function createMockMachineWorkspaceSession(
   machineId: string,

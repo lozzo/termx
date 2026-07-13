@@ -37,10 +37,10 @@ export function TerminalList({
     >
       {terminals.length === 0 ? (
         loading ? (
-          <ul className="flex flex-col gap-3 animate-pulse" aria-hidden="true">
+          <ul className="border-x border-t border-[var(--termx-app-line)] bg-[var(--termx-app-surface)] animate-pulse" aria-hidden="true">
             {[1, 2, 3].map((i) => (
-              <li key={i} className="flex w-full items-center gap-3 rounded-xl p-3 bg-white border border-zinc-200/60 shadow-sm">
-                <div className="flex h-10 w-10 shrink-0 rounded-lg bg-zinc-100" />
+              <li key={i} className="flex w-full items-center gap-3 border-b border-[var(--termx-app-line)] p-3">
+                <div className="flex h-10 w-10 shrink-0 bg-zinc-100" />
                 <div className="flex min-w-0 flex-1 flex-col gap-2 py-1">
                   <div className="h-3.5 w-1/3 rounded bg-zinc-200" />
                   <div className="flex gap-2">
@@ -53,23 +53,23 @@ export function TerminalList({
             ))}
           </ul>
         ) : (
-          <div className="flex h-32 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-zinc-200 bg-zinc-50/50 text-sm text-zinc-500 animate-in fade-in duration-300">
+          <div className="flex h-32 flex-col items-center justify-center gap-3 border border-dashed border-[var(--termx-app-line-strong)] bg-[var(--termx-app-surface-soft)] text-sm text-[var(--termx-app-muted)] animate-in fade-in duration-300">
             <TerminalIcon className="h-8 w-8 text-zinc-300" />
             <p>No active terminals</p>
           </div>
         )
       ) : (
-        <ul aria-label="Terminals" className="flex flex-col gap-3">
+        <ul aria-label="Terminals" className="border-x border-t border-[var(--termx-app-line)] bg-[var(--termx-app-surface)]">
           {terminals.map((terminal) => {
             const isActive = activeTerminalId === terminal.terminalId
             const itemKey = uniqueTerminalListKey(terminalKeyCounts, machineId, terminal)
             return (
               <li key={itemKey} data-terminal-id={terminal.terminalId}>
                 <div
-                  className={`group relative flex w-full items-center gap-3 rounded-xl p-3 text-left transition-all duration-200 focus-within:ring-2 focus-within:ring-blue-500 ${
+                  className={`group relative flex w-full items-center gap-3 border-b border-[var(--termx-app-line)] p-3 text-left transition-colors duration-200 focus-within:ring-2 focus-within:ring-inset focus-within:ring-[var(--termx-app-accent)] ${
                     isActive
-                      ? 'bg-zinc-900 text-white shadow-lg shadow-zinc-900/10'
-                      : 'bg-white text-zinc-700 shadow-sm border border-zinc-200/60 hover:border-zinc-300 hover:bg-zinc-50'
+                      ? 'bg-[var(--termx-app-inverse)] text-white'
+                      : 'bg-[var(--termx-app-surface)] text-zinc-700 hover:bg-[var(--termx-app-surface-soft)]'
                   }`}
                   onContextMenu={(event) => {
                     if (!onManageTerminal) return
@@ -104,7 +104,7 @@ export function TerminalList({
                       onOpenTerminal({ machineId, terminalId: terminal.terminalId })
                     }}
                   >
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors ${isActive ? 'bg-zinc-800' : 'bg-zinc-100 group-hover:bg-zinc-200'}`}>
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center transition-colors ${isActive ? 'bg-zinc-800' : 'border border-[var(--termx-app-line)] bg-[var(--termx-app-surface-soft)] group-hover:bg-zinc-200'}`}>
                       <TerminalIcon className={`h-5 w-5 ${isActive ? 'text-zinc-200' : 'text-zinc-500'}`} />
                     </div>
 
@@ -114,7 +114,7 @@ export function TerminalList({
                           {terminal.title || terminal.command || 'Terminal'}
                         </span>
                         {terminal.environment ? (
-                          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold tracking-wider uppercase leading-none ${isActive ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'}`}>
+                          <span className={`shrink-0 px-1.5 py-0.5 text-[9px] font-bold tracking-wider uppercase leading-none ${isActive ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'}`}>
                             {terminal.environment}
                           </span>
                         ) : null}
@@ -148,7 +148,7 @@ export function TerminalList({
                   {onManageTerminal ? (
                     <button
                       type="button"
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isActive ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700'}`}
+                      className={`flex h-11 w-11 shrink-0 items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)] ${isActive ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700'}`}
                       aria-label={`Manage ${terminal.title}`}
                       onClick={() => {
                         hapticImpact()
@@ -183,7 +183,7 @@ function MetadataPill({
   children: ReactNode
 }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[10px] font-semibold leading-none transition-colors ${active ? 'bg-zinc-800/80 text-zinc-300' : 'bg-zinc-100 text-zinc-500'}`}>
+    <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 text-[10px] font-semibold leading-none transition-colors ${active ? 'bg-zinc-800/80 text-zinc-300' : 'bg-zinc-100 text-zinc-500'}`}>
       {children}
     </span>
   )

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { RefreshCw, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { hapticSelection } from '../../platform/haptics'
 import type { FilePreviewResponse, FilePreviewStreamOptions, FilePreviewStreamResult } from '../fileApi'
 import { basename, formatBytes, isMarkdownFile } from '../fileUtils'
@@ -41,14 +41,14 @@ export function FilePreviewSheet({ path, preview, loading, error, streamPreview,
       aria-modal="true"
       aria-labelledby="termx-file-preview-title"
     >
-      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-200/70 bg-white px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
+      <header className="termx-app-header flex shrink-0 items-center gap-3 border-b px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
         <div className="min-w-0 flex-1">
           <h2 id="termx-file-preview-title" className="truncate text-[17px] font-bold tracking-tight text-zinc-950">{title}</h2>
           <p className="mt-0.5 truncate text-[12px] font-medium text-zinc-500">{subtitle}</p>
         </div>
         <button
           type="button"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:scale-95 hover:bg-zinc-50 active:bg-zinc-100"
+          className="termx-app-icon-button shrink-0 border-transparent bg-transparent"
           aria-label="Close preview"
           onClick={() => { hapticSelection(); onClose() }}
         >
@@ -58,7 +58,7 @@ export function FilePreviewSheet({ path, preview, loading, error, streamPreview,
       <div className={`min-h-0 flex-1 pb-[env(safe-area-inset-bottom)] ${isMediaPreview ? 'overflow-hidden bg-black' : 'overflow-auto bg-zinc-50'}`}>
         {loading ? (
           <div className="flex h-56 flex-col items-center justify-center gap-3 text-[14px] font-medium text-zinc-500">
-            <RefreshCw className="h-6 w-6 animate-spin text-zinc-400" />
+            <span className="termx-square-spinner h-6 w-6 text-zinc-500" aria-hidden="true" />
             Loading preview...
           </div>
         ) : error ? (
