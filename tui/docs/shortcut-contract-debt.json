@@ -1,0 +1,323 @@
+{
+  "schema_version": 1,
+  "stage": "KS012",
+  "inventory": {
+    "default_entries": 203,
+    "routed_bindings": 166,
+    "shortcut_specs": 146,
+    "render_projections": 123
+  },
+  "artifacts": {
+    "input_event_producers": [
+      {"signature": "tui/app/copymode.go#NewCopyModeReducer", "count": 1, "classification": "synthetic-input-action-bridge"},
+      {"signature": "tui/app/runtime.go#SendResize", "count": 1, "classification": "input-event-contract"},
+      {"signature": "tui/app/runtime.go#ingestHostInput", "count": 1, "classification": "input-event-contract"},
+      {"signature": "tui/app/shell.go#NewShellReducer", "count": 1, "classification": "synthetic-input-action-bridge"},
+      {"signature": "tui/app/shell.go#reduceShellContentAction", "count": 2, "classification": "synthetic-input-action-bridge"},
+      {"signature": "tui/terminalhost/host.go#readResizeSignals", "count": 1, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#csiKeyEvent", "count": 5, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#csiKeyboardCapabilityEvent", "count": 2, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#csiUnicodeKeyEvent", "count": 7, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#oscThemeEvent", "count": 10, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#parseAltChar", "count": 3, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#parseEscape", "count": 4, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#parseOSC", "count": 3, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#parseOneInput", "count": 7, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#parseSGRMouse", "count": 2, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#parseSS3", "count": 2, "classification": "input-event-contract"},
+      {"signature": "tui/terminalhost/input_parser.go#unknownKey", "count": 1, "classification": "input-event-contract"}
+    ],
+    "hit_region_producers": [
+      {"signature": "tui/app/copy_history_patch.go#makeCopyHistoryPatchHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/app/runtime.go#copyModeWheelTargetRegion", "count": 2, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/copy_history.go#copyHistoryHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/layout_hit_regions.go#appendFloatingActionRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/layout_hit_regions.go#appendFloatingHitRegions", "count": 3, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/layout_hit_regions.go#appendPaneActionRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/layout_hit_regions.go#appendPanelChromeHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/layout_hit_regions.go#appendPanelContentHitRegion", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/layout_hit_regions.go#appendPanelEdgeResizeRegions", "count": 2, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/layout_hit_regions.go#appendSplitResizeHitRegions", "count": 2, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/layout_hit_regions.go#measureHitRegions", "count": 2, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/layout_hit_regions_shell.go#appendFooterHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/layout_hit_regions_shell.go#appendHeaderHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/product_content.go#clipboardHistoryDividerHitRegion", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/product_content.go#clipboardHistoryHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/product_content.go#contentActionRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/product_content.go#emptyPaneContentLayout", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/product_content.go#floatingOverviewHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/product_content.go#terminalManagerGroupedHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/product_content.go#terminalManagerHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/product_content.go#terminalPickerHitRegionForRow", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/product_content.go#terminalPickerHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/product_content.go#workbenchNavigatorDetailHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/product_content.go#workbenchTreeHitRegions", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/vm.go#liveDisconnectedActionLines", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/vm.go#liveExitedActionLines", "count": 1, "classification": "hit-region-producers-pending-action-classification"},
+      {"signature": "tui/render/vm.go#liveExitedContentLines", "count": 1, "classification": "hit-region-producers-pending-action-classification"}
+    ],
+    "display_key_literals": [
+      {"signature": "tui/render/action_ids.go#ActionSpecCatalog", "count": 80, "classification": "render-action-second-truth", "digest": "5140e608e2739378130bfbdbf567acd445487400cf567c8ea3c2d244760613ba"},
+      {"signature": "tui/render/footer_action_visibility.go#footerActionTokensVisibleByModeAndWidth", "count": 17, "classification": "hardcoded-footer-key-pruning", "digest": "2baf16169d6638caabb1c7730ef3e4d749a1c32cacc396dddf636cbc9fdbff24"},
+      {"signature": "tui/render/glyphs.go#<package>", "count": 1, "classification": "shortcut-key-token-formatting", "digest": "d52f137cba8acd7b7167a3b35b8850d2a86001349482bc2b820ee283a039be70"},
+      {"signature": "tui/render/overlay_chrome.go#renderOverlay", "count": 1, "classification": "global-back-navigation", "digest": "a3366a795f892c1cdee5171adb916fa6b0e5fc95f664962392caaf14f44fcd00"},
+      {"signature": "tui/render/product_content.go#buildEmptyWorkspaceContent", "count": 3, "classification": "hardcoded-content-key-hints", "digest": "5860e41ecd215e0cc8edc5bd44f2969ced748eb3078a0a5313f0e54b4465f4bf"},
+      {"signature": "tui/render/product_content.go#liveExitedActions", "count": 2, "classification": "hardcoded-content-key-hints", "digest": "715a007f2c9ddab6cf0e4d11f500af40566e3ea686ebb7e2e7fa2b561387da96"},
+      {"signature": "tui/render/shell_bar.go#appendFooterActionSegments", "count": 1, "classification": "shortcut-key-token-formatting", "digest": "3754d502706f1d1496de8bf83135adda1cfb484b247eddd578af5ac31b1e35f3"},
+      {"signature": "tui/render/shell_bar.go#footerCtrlLetter", "count": 2, "classification": "shortcut-key-token-formatting", "digest": "e28a2ca9448356fb76e953c996ce94193f54f2df4bf3cac06b75dc95aa993da6"},
+      {"signature": "tui/render/shell_bar.go#footerTailActionToken", "count": 1, "classification": "global-back-navigation", "digest": "a3366a795f892c1cdee5171adb916fa6b0e5fc95f664962392caaf14f44fcd00"},
+      {"signature": "tui/render/shell_bar.go#formatFooterKeySegments", "count": 3, "classification": "shortcut-key-token-formatting", "digest": "354463bff3d3866090f1b9afbd383ec3fa52797e585e1afb0c4d40fd53976a31"},
+      {"signature": "tui/render/shell_bar.go#formatFooterKeyTokenForSelection", "count": 1, "classification": "shortcut-key-token-formatting", "digest": "1fdc2d47678b12131b213162b4dcca6c89821b2c4a14b7553fe8849231e47358"},
+      {"signature": "tui/render/vm.go#footerActionCatalogForRoot", "count": 1, "classification": "global-back-navigation", "digest": "d9c19ad5600f65822f2cf0cd7108a31a3254ede15eed40647de351eaf37032ed"}
+    ]
+  },
+  "surfaces": [
+    {
+      "id": "input-event-contract",
+      "kind": "input",
+      "classification": "conforming",
+      "owner": "tui/input",
+      "reason": "TerminalHost 只通过结构化 InputEvent 交付宿主输入，不把 raw bytes 直接解释成 action。",
+      "sources": [
+        {
+          "path": "tui/input/types.go",
+          "anchors": ["type InputEvent struct"]
+        }
+      ]
+    },
+    {
+      "id": "binding-catalog-wrong-owner",
+      "kind": "binding",
+      "classification": "debt",
+      "owner": "tui/shortcut",
+      "target_slice": "KS013",
+      "reason": "默认 scene+key binding 仍声明在 tui/input；目标 owner 是只负责快捷键编译的 tui/shortcut。",
+      "sources": [
+        {
+          "path": "tui/input/bindings.go",
+          "anchors": ["var builtinShortcutDefaults = []shortcutDefault"]
+        }
+      ]
+    },
+    {
+      "id": "action-domain-owned-by-shortcut",
+      "kind": "spec",
+      "classification": "debt",
+      "owner": "tui/action",
+      "target_slice": "KS013",
+      "reason": "通用 action identity、invocation、参数 schema 和默认语义 label 仍由快捷键包持有。",
+      "sources": [
+        {
+          "path": "tui/shortcut/registry.go",
+          "anchors": [
+            "type ParamSpec struct",
+            "type ActionSpec struct",
+            "type ActionInvocation struct",
+            "var defaultLabels = map[string]string"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shortcut-owns-global-display-policy",
+      "kind": "spec",
+      "classification": "debt",
+      "owner": "tui/render",
+      "target_slice": "KS016",
+      "reason": "shortcut action spec 仍声明通用 footer/help/click policy；shortcut 只能拥有 binding 的 label/show/capability，具体 projection 的 click/hint policy 属于 render。",
+      "sources": [
+        {
+          "path": "tui/shortcut/registry.go",
+          "anchors": [
+            "type Visibility string",
+            "type ClickPolicy string",
+            "type DisplayPolicy struct"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "app-string-dispatcher",
+      "kind": "handler",
+      "classification": "debt",
+      "owner": "tui/app",
+      "target_slice": "KS013",
+      "reason": "app owner 正确，但 handler contract 仍分散为字符串 switch/map，尚未形成以 canonical action ID 注册的单一 handler registry。",
+      "sources": [
+        {
+          "path": "tui/app/shortcut_dispatcher.go",
+          "anchors": [
+            "func shortcutContentActionID(",
+            "func shortcutIntentForInvocation("
+          ]
+        },
+        {
+          "path": "tui/app/ui_input.go",
+          "anchors": [
+            "func reduceTerminalPickerShortcut(",
+            "func reduceTerminalPoolShortcut(",
+            "func reduceWorkbenchTreeShortcut(",
+            "func reduceFloatingOverviewShortcut(",
+            "func reducePromptShortcut("
+          ]
+        }
+      ]
+    },
+    {
+      "id": "render-action-second-truth",
+      "kind": "projection",
+      "classification": "debt",
+      "owner": "tui/action",
+      "target_slice": "KS013",
+      "reason": "render 仍重新声明 ActionID、ActionSpec、默认 label、按键、surface 和 dispatch，形成第二份 action 语义真值。",
+      "sources": [
+        {
+          "path": "tui/render/action_ids.go",
+          "anchors": [
+            "type ActionID string",
+            "type ActionSpec struct",
+            "func ActionSpecCatalog() []ActionSpec"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "render-shortcut-id-bridge",
+      "kind": "projection",
+      "classification": "debt",
+      "owner": "tui/action",
+      "target_slice": "KS013",
+      "reason": "shortcut action 与 render action 仍靠字符串 switch 桥接，别名、聚合和参数语义可漂移。",
+      "sources": [
+        {
+          "path": "tui/render/shortcut_actions.go",
+          "anchors": ["func ShortcutActionRenderID(actionID string) (ActionID, bool)"]
+        }
+      ]
+    },
+    {
+      "id": "hit-region-producers-pending-action-classification",
+      "kind": "projection",
+      "classification": "debt",
+      "owner": "tui/render",
+      "target_slice": "KS016",
+      "reason": "FooterActionVM 和 HitRegion 已有 invocation 字段，但生产 emitter 尚未逐项区分纯几何、drag 与 clickable action，且 clickable emitter 并未全部填充 invocation；所有 producer 先逐项列入 artifact 基线，KS016 完成分类和迁移。",
+      "sources": [
+        {
+          "path": "tui/render/result.go",
+          "anchors": ["Invocation shortcut.ActionInvocation"]
+        },
+        {
+          "path": "tui/render/vm.go",
+          "anchors": ["Invocation         shortcut.ActionInvocation"]
+        }
+      ]
+    },
+    {
+      "id": "synthetic-input-action-bridge",
+      "kind": "handler",
+      "classification": "debt",
+      "owner": "tui/app",
+      "target_slice": "KS013",
+      "reason": "部分 app action 仍构造假的 InputEvent 重新进入输入路由；中立 action handler 建立后必须直接分发 invocation，不能用按键事件桥接。",
+      "sources": [
+        {
+          "path": "tui/app/shell.go",
+          "anchors": [
+            "return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: \"v\", Ctrl: true}}",
+            "return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}}"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shortcut-key-token-formatting",
+      "kind": "hint",
+      "classification": "conforming",
+      "owner": "tui/render",
+      "reason": "renderer 可以把 catalog 已提供的 canonical key token 格式化为可见片段，但不能自行决定 action 键位。",
+      "sources": [
+        {
+          "path": "tui/render/shell_bar.go",
+          "anchors": ["func footerActionHasCtrlPrefix(key string) bool"]
+        }
+      ]
+    },
+    {
+      "id": "global-back-navigation",
+      "kind": "handler",
+      "classification": "conforming",
+      "owner": "tui/state + tui/app",
+      "reason": "未修饰 Esc 由 reducer-owned 返回层级决定；shortcut.exit 只是不可点击的展示投影，不进入普通 action dispatch。",
+      "sources": [
+        {
+          "path": "tui/state/back_navigation.go",
+          "anchors": ["func (r Root) CurrentBackNavigationLayer() BackNavigationLayer"]
+        },
+        {
+          "path": "tui/app/back_navigation.go",
+          "anchors": ["func NewBackNavigationReducer(copyMode CopyModeDeps) Reducer"]
+        },
+        {
+          "path": "tui/render/action_ids.go",
+          "anchors": ["actionSpec(ActionShortcutExit, ActionDispatchNone"]
+        }
+      ]
+    },
+    {
+      "id": "hardcoded-content-key-hints",
+      "kind": "hint",
+      "classification": "debt",
+      "owner": "tui/render",
+      "target_slice": "KS016",
+      "reason": "内容区 projection 仍把具体键位写进 action label/status，没有消费 tui/shortcut 当前编译 catalog。",
+      "sources": [
+        {
+          "path": "tui/render/product_content.go",
+          "anchors": [
+            "R restart current terminal",
+            "Ctrl-F choose another terminal",
+            "Ctrl-F open terminal picker",
+            "Ctrl-T then c create a new tab",
+            "empty workspace: Ctrl-F picker / Ctrl-T c tab"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hardcoded-footer-key-pruning",
+      "kind": "hint",
+      "classification": "debt",
+      "owner": "tui/render",
+      "target_slice": "KS016",
+      "reason": "窄宽 footer 仍用固定键位识别和筛选 action，用户改键后可能失去同源性。",
+      "sources": [
+        {
+          "path": "tui/render/footer_action_visibility.go",
+          "anchors": [
+            "footerActionsMatchKeys(actions, []string{\"^P\", \"^R\", \"^T\", \"^W\", \"^O\", \"^V\", \"^F\", \"^G\"})",
+            "keys := []string{\"^P\", \"^R\", \"^T\", \"^G\"}"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "prompt-submit-placeholder",
+      "kind": "handler",
+      "classification": "debt",
+      "owner": "tui/app",
+      "target_slice": "KS015",
+      "reason": "默认 system.open_prompt 能打开 UI，但提交链路仍明确标记为 placeholder，不构成真实功能闭环。",
+      "sources": [
+        {
+          "path": "tui/app/shell.go",
+          "anchors": ["Execution is intentionally a reducer-owned placeholder in this phase."]
+        },
+        {
+          "path": "tui/app/ui_input.go",
+          "anchors": ["Execution is intentionally a reducer-owned placeholder in this phase."]
+        }
+      ]
+    }
+  ]
+}

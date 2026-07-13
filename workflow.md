@@ -100,7 +100,7 @@
 - CLI004：`cmd/termx/`、`shared/connection/`、TUI endpoint dialer 可复用边界、必要 `remote/`/Companion public contract、对应文档与 `workflow.md`；只完成 endpoint-aware CLI 和 local/SSH/Hub 真实路由，不新增 transport fallback。
 - CLI005：`cmd/termx/`、必要 `internal/protocol/`/`core/`/`remote/` contract、对应文档与 `workflow.md`；只完成 send/capture/resize/wait/events 和稳定自动化输出，不读取 TUI renderer 或建立第二份 history truth。
 - CLI006：`cmd/termx/`、`shared/connection/`、必要 file/workbench/pair public contract、`private/cloud/companion` 的安装装配、对应文档与 `workflow.md`；只收口 file/workspace/pair 和 Cloud login/enroll 用户体验，不把私有 Cloud 逻辑链接进公开 CLI。
-- KS012：`tui/{shortcut,input,app,render,config,state,terminalhost}`、`tui/docs/{shortcut-system-plan.md,shortcut-inventory.md}`、`workflow.md` 与必要测试；只做最终现状审计、机器可读 debt manifest 和“无未分类/无新增 debt”守卫，可删除已被新模型替代的测试 helper，不要求提前修完 KS013-KS016 gap。
+- KS012：`tui/{shortcut,input,app,render,config,state,terminalhost}`、`tui/docs/{shortcut-system-plan.md,shortcut-inventory.md,shortcut-contract-debt.json}`、`workflow.md` 与必要测试；只做最终现状审计、机器可读 debt manifest 和“无未分类/无新增 debt”守卫，可删除已被新模型替代的测试 helper，不要求提前修完 KS013-KS016 gap。
 - KS013：新增 `tui/action/`，并允许修改 `tui/{shortcut,input,app,render,config,state}`、对应测试/文档与 `workflow.md`；只建立中立 action domain、shortcut 引用和 keyboard invocation -> handler contract，删除重复 identity/alias/scene 语义，不迁移 render surface 提示/点击。
 - KS014：`tui/{terminalhost,input,shortcut,config,app,state}`、对应测试/文档与 `workflow.md`；只收口 raw key/mouse 到 InputEvent、catalog 编译、scene/lock/back navigation 和 PTY passthrough，不触及 renderer 视觉重做。
 - KS015：`tui/{action,shortcut,input,app,state,services}`、对应测试/文档与 `workflow.md`；逐场景完成默认 action 的真实 reducer/effect/service 闭环；无真实功能的 placeholder 必须实现或从默认 catalog 删除，不得用 toast/刷新冒充成功。
@@ -144,7 +144,7 @@
 | CLI006 | 暂停 | file/workspace/pair/Cloud UX | 快捷键完整收口后重新排序 |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
 | GA004 | 延后 | 单 transit 受控加速 | 仅在 GA003 数据证明需要时恢复 |
-| KS012 | 待开始 | 快捷键最终审计与总契约 | 所有 binding/spec/handler/projection 被机器归类为符合或有 owner 的 debt，无未分类项且不能新增 debt |
+| KS012 | 完成 | 快捷键最终审计与总契约 | 所有 binding/spec/handler/projection 被机器归类为符合或有 owner 的 debt，无未分类项且不能新增 debt |
 | KS013 | 待开始 | 中立 action domain 与分发 | tui/action 成为通用 action/invocation owner，shortcut 只拥有键位编译，keyboard 到 handler 无重复 identity/alias 表 |
 | KS014 | 待开始 | 输入协议与 scene 状态 | 传统 TTY/CSI-u/mouse 规范化、catalog 替换、sticky/copy/overlay/lock/Esc 优先级和 PTY 透传完整可验证 |
 | KS015 | 待开始 | 全部默认 action 真实闭环 | 每个默认 binding 都产生真实 reducer/effect/service 结果；placeholder 被实现或删除，失败不伪装成功 |
@@ -205,6 +205,8 @@
 - 只有切片真实跨越全仓 contract 时才运行 `make test-all`；当前开发阶段不运行 public snapshot 或 public-only release gate。
 
 ## 当前状态
+
+- KS012 已完成：机器清单固定 203 个默认 shortcut entry、166 个 routed binding、146 个 canonical spec 和 123 个 render projection；203 个 entry 均按真实 routed/overlay 路径验证 handler。生产 `InputEvent`/`HitRegion` producer、全部 80 个 `withFooter` 键和显式 `Key`、非结构化 render 字符串均由 manifest、源码锚点、逐组 digest 与独立 SHA 闭集守卫覆盖。定向 `go test ./tui/{shortcut,input,app,render,config,state,terminalhost} -count=1` 和 clean-env `go test ./tui/... -count=1` 通过；架构 reviewer `ks012_arch_review` 与代码 reviewer `ks012_code_review` 最终均明确 PASS，`git diff --check` 通过。
 
 - 快捷键最终收口已规划为 KS012-KS017，目标不是补齐零散按键，而是删除第二真值并证明完整消息链路。当前审计已确认 `tui/shortcut` 之外仍有 `render.ActionSpecCatalog` 等 action 描述面、内容区硬编码 `Ctrl-F`/`Ctrl-T`/`R restart` 操作提示，以及 `system.open_prompt` 落到 placeholder 的风险。中立 `tui/action` 将拥有 keyboard/mouse/drag/CTA 共用 action identity 与 invocation，`tui/shortcut` 只拥有 scene+key 编译和快捷键展示覆盖；每个默认 shortcut 后续必须真实工作或从 catalog 删除。KS012 先用 debt manifest 保证无未分类/无新增 gap，KS013-KS016 再按 owner 消除。允许在切片范围内大规模删除被替代旧代码，不以改动行数为约束。所有阶段执行架构 reviewer + 代码 reviewer 双门禁，规划用 `/goal` prompt 位于 `tui/docs/shortcut-completion-goal-prompt.md`。
 
