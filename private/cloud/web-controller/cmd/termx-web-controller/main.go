@@ -20,13 +20,22 @@ func main() {
 	hub := flag.String("hub", "http://127.0.0.1:41002", "loopback Hub origin")
 	relay := flag.String("relay", "", "operator-visible Relay URL")
 	catalogPath := flag.String("catalog", "config/plans.json", "user-visible plan catalog configuration")
+	stagingPayments := flag.Bool("staging-payments", false, "enable explicit non-production browser login and payment provider")
 	flag.Parse()
 	catalog, err := webcontroller.LoadCatalog(*catalogPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	handler, err := webcontroller.StatusHandler(webcontroller.StatusConfig{ControlPlaneURL: *control, HubURL: *hub, RelayURL: *relay, Catalog: &catalog})
+	var commerce *webcontroller.CommerceService
+	if *stagingPayments {
+		commerce, err = webcontroller.NewCommerceService([]byte("termx-staging-payment-secret-v1-32-bytes"), webcontroller.HTTPEntitlementPublisher{Origin: *control}, time.Now)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
+	handler, err := webcontroller.StatusHandler(webcontroller.StatusConfig{ControlPlaneURL: *control, HubURL: *hub, RelayURL: *relay, Catalog: &catalog, Commerce: commerce})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

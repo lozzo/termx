@@ -18,6 +18,7 @@ type StatusConfig struct {
 	RelayURL        string
 	HTTPClient      *http.Client
 	Catalog         *Catalog
+	Commerce        *CommerceService
 }
 
 // StatusHandler 返回独立 Web Controller 运维 handler。
@@ -80,6 +81,9 @@ func StatusHandler(config StatusConfig) (http.Handler, error) {
 		writer.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(writer).Encode(config.Catalog)
 	})
+	if config.Commerce != nil {
+		mux.Handle("/v1/web/", CommerceHandler(config.Commerce))
+	}
 	return mux, nil
 }
 

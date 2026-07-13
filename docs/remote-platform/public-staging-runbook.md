@@ -29,7 +29,9 @@ ssh root@114.66.58.243 'curl -fsS http://127.0.0.1:41000/api/status'
 ssh root@114.66.58.243 'curl -fsS http://127.0.0.1:41004/v1/catalog'
 ```
 
-它不代理登录、signaling 或 terminal protocol，也不解释 terminal capability。
+它只代理 Web 账号/订阅 BFF，不代理 signaling 或 terminal protocol，也不解释 terminal capability。
+
+WEB002 staging profile 在 `/login` 提供固定开发账号登录，在 `/account` 提供 Managed Free/Pro 订阅和测试 Checkout。该 provider 不扣款；confirm 仍经 HMAC webhook transaction，只有首次有效事件才调用 Control Plane internal entitlement endpoint。Control Plane 更新 edge revision 并重新发布 Hub snapshot 后订单才变为 paid。浏览器 session 使用 HttpOnly、SameSite=Strict Cookie，所有写请求同时校验精确 Origin 与 CSRF token。生产 OAuth、价格和支付 provider 未配置时保持禁用。
 
 公网入口：
 

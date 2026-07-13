@@ -143,17 +143,19 @@ type serviceState struct {
 	enrollmentFlows   map[string]enrollmentFlow
 	sessions          map[[sha256.Size]byte]cloudSession
 
-	directory        *directory.Store
-	presence         *presence.Service
-	admission        *admission.Service
-	hub              *cloudhub.Service
-	edgeIssuer       servicecredential.EdgeAccessIssuer
-	edgePolicyIssuer servicecredential.EdgePolicyIssuer
-	edgeAuth         *cloudhub.EdgeAuthorizer
-	edgeRevision     uint64
-	edgeDevices      map[string]cloudhub.DeviceAuthorization
-	usageOutboxPath  string
-	relayControl     *relayControlState
+	directory         *directory.Store
+	presence          *presence.Service
+	admission         *admission.Service
+	hub               *cloudhub.Service
+	edgeIssuer        servicecredential.EdgeAccessIssuer
+	edgePolicyIssuer  servicecredential.EdgePolicyIssuer
+	edgeAuth          *cloudhub.EdgeAuthorizer
+	edgeRevision      uint64
+	edgeDevices       map[string]cloudhub.DeviceAuthorization
+	webPlanID         string
+	webPlanValidUntil time.Time
+	usageOutboxPath   string
+	relayControl      *relayControlState
 
 	presenceQueueSize int
 	clientQueueSize   int
@@ -314,6 +316,7 @@ func (state *serviceState) initializeDomain(now time.Time) error {
 	state.edgePolicyIssuer = edgePolicyIssuer
 	state.edgeAuth = edgeAuth
 	state.edgeRevision = 1
+	state.webPlanID = "managed-free"
 	state.edgeDevices = map[string]cloudhub.DeviceAuthorization{devClientDeviceID: {DeviceID: devClientDeviceID, AccountID: devAccountID, PublicKey: clientPublicKey}}
 	if err := state.publishEdgeSnapshot(now); err != nil {
 		return err

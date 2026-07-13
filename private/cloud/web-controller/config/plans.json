@@ -8,7 +8,7 @@
       "eyebrow": "Start with direct",
       "description": "Official device discovery and managed signaling for personal endpoints.",
       "price": { "mode": "included", "label": "Free" },
-      "cta": { "label": "Start free", "href": "#access" },
+      "cta": { "label": "Start free", "href": "/login" },
       "featured": false,
       "features": [
         "Managed device directory",
@@ -23,7 +23,7 @@
       "eyebrow": "Reliable from anywhere",
       "description": "Managed Relay capacity and route intelligence for people who work across networks.",
       "price": { "mode": "contact", "label": "Preview" },
-      "cta": { "label": "Join Pro preview", "href": "mailto:hello@termx.dev?subject=TermX%20Pro%20preview" },
+      "cta": { "label": "Join Pro preview", "href": "/login?plan=pro" },
       "featured": true,
       "features": [
         "Production Managed Relay quota",

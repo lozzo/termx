@@ -31,7 +31,46 @@ func (state *serviceState) controlHandler() http.Handler {
 	mux.HandleFunc(httpapi.ControlBeginPresencePath, state.handleBeginPresence)
 	mux.HandleFunc(httpapi.ControlPresenceAdmissionPath, state.handlePresenceAdmission)
 	mux.HandleFunc(controlRelayUsagePath, state.handleRelayUsage)
+	mux.HandleFunc("/v1/internal/web/entitlements", state.handleWebEntitlement)
 	return mux
+}
+
+func (state *serviceState) handleWebEntitlement(writer http.ResponseWriter, request *http.Request) {
+	if !requireMethod(writer, request, http.MethodPost) || request.Header.Get("X-TermX-Internal-Service") != "web-controller-staging-v1" {
+		if request.Header.Get("X-TermX-Internal-Service") != "web-controller-staging-v1" {
+			writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "internal Web Controller identity is invalid", false)
+		}
+		return
+	}
+	var input struct {
+		AccountID  string    `json:"account_id"`
+		PlanID     string    `json:"plan_id"`
+		OrderID    string    `json:"order_id"`
+		ValidUntil time.Time `json:"valid_until"`
+	}
+	if !readJSON(writer, request, &input) {
+		return
+	}
+	now := state.now().UTC()
+	if input.AccountID != devAccountID || input.PlanID != "pro" || input.OrderID == "" || !input.ValidUntil.After(now) {
+		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "web entitlement update is invalid", false)
+		return
+	}
+	state.mu.Lock()
+	oldPlan, oldValid, oldRevision := state.webPlanID, state.webPlanValidUntil, state.edgeRevision
+	state.webPlanID, state.webPlanValidUntil = input.PlanID, input.ValidUntil.UTC()
+	state.edgeRevision++
+	err := state.publishEdgeSnapshot(now)
+	if err != nil {
+		state.webPlanID, state.webPlanValidUntil, state.edgeRevision = oldPlan, oldValid, oldRevision
+	}
+	state.mu.Unlock()
+	if err != nil {
+		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub entitlement projection failed", true)
+		return
+	}
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 func (state *serviceState) handleControlHealth(writer http.ResponseWriter, request *http.Request) {
