@@ -3,6 +3,8 @@ import {
   ArrowRight,
   Check,
   Cloud,
+  ExternalLink,
+  GitFork,
   Laptop,
   LockKeyhole,
   Moon,
@@ -56,6 +58,7 @@ export default function HomePage() {
             <a href="#network">NETWORK</a>
             <a href="#security">SECURITY</a>
             <a href="#plans">PLANS</a>
+            <a className="lx-source-nav" href="https://github.com/lozzo/termx" target="_blank" rel="noreferrer">SOURCE <ExternalLink /></a>
           </nav>
           <div className="lx-header-tools">
             <div className="lx-theme" aria-label="Color theme">
@@ -120,6 +123,24 @@ export default function HomePage() {
         ))}
       </section>
 
+      <section className="lx-ownership" id="source" aria-label="TermX open-source and cloud service boundary">
+        <div className="lx-wrap">
+          <header>
+            <p className="lx-overline"><i /> PRODUCT BOUNDARY</p>
+            <h2>Open core.<br />Official cloud.</h2>
+          </header>
+          <a className="lx-product-line" href="https://github.com/lozzo/termx" target="_blank" rel="noreferrer">
+            <GitFork />
+            <span><small>OPEN SOURCE / GOLANG</small><strong>TermX</strong><p>The terminal multiplexer and its Go core are available on GitHub.</p></span>
+            <ExternalLink />
+          </a>
+          <div className="lx-product-line">
+            <Cloud />
+            <span><small>OFFICIAL MANAGED SERVICE</small><strong>TermX Cloud</strong><p>TermX Cloud is the official cloud service for TermX. The cloud services and official mobile app are proprietary and are not part of the open-source repository.</p></span>
+          </div>
+        </div>
+      </section>
+
       <section className="lx-section lx-security" id="security">
         <div className="lx-wrap">
           <header className="lx-section-heading">
@@ -179,7 +200,7 @@ export default function HomePage() {
       </section>
 
       <footer className="lx-footer">
-        <div className="lx-wrap"><a className="lx-logo" href="#top"><b>TX</b><span>TERMX</span></a><p>Terminal truth stays with the machine that owns it.</p><span>PRIVATE PREVIEW / 2026</span></div>
+        <div className="lx-wrap"><a className="lx-logo" href="#top"><b>TX</b><span>TERMX</span></a><a className="lx-footer-source" href="https://github.com/lozzo/termx" target="_blank" rel="noreferrer"><GitFork /> OPEN-SOURCE GO CORE</a><span>TERMX CLOUD / OFFICIAL SERVICE</span></div>
       </footer>
     </main>
   );
