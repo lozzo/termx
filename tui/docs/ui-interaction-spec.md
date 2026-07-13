@@ -766,7 +766,7 @@ pane、tab、workspace、floating 等结构操作必须先定义为稳定动作�
 
 当前快捷键实现核查表维护在 `tui/docs/shortcut-inventory.md`。canonical identity 来自 `tui/action`，scene+key 真值来自 `tui/shortcut`，配置后的输入路由与 footer/Help 都消费同一编译 catalog；inventory 只记录审计结论和历史迁移背景，不作为第二份运行时键表。
 
-本 spec 不重复维护完整快捷键表；新增、删除或改名快捷键时必须同步更新 `tui/docs/shortcut-inventory.md`，并补充对应 input/render/app harness。
+本 spec 和 inventory 都不维护完整快捷键表；新增、删除或改名快捷键时只修改 owning runtime catalog，并补充对应 input/render/app harness。inventory 的数量由测试从运行 catalog 自动投影，不随按键手工更新。
 
 ### 13.3 Mode 职责
 

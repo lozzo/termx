@@ -29,6 +29,14 @@ func TestShortcutDocumentationSummaryMatchesRuntimeCatalog(t *testing.T) {
 	if !strings.Contains(string(inventory), want) {
 		t.Fatalf("shortcut inventory summary drifted from runtime catalog; want line:\n%s", want)
 	}
+	for lineNumber, line := range strings.Split(string(inventory), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "|") {
+			t.Fatalf("shortcut inventory must not restore a hand-maintained Markdown key table: line %d: %s", lineNumber+1, line)
+		}
+	}
+	if !strings.Contains(string(inventory), "本文不保存逐键默认表") {
+		t.Fatal("shortcut inventory must state that runtime Help/catalog owns the default key list")
+	}
 }
 
 func TestREADMEReferencesBothLoadableShortcutExamples(t *testing.T) {
