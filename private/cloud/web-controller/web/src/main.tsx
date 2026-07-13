@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import './i18n'
 import HomePage from './HomePage'
 import LoginPage from './LoginPage'
 import AccountPage from './AccountPage'

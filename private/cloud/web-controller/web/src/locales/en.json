@@ -1,0 +1,119 @@
+{
+  "common": {
+    "language": "Language",
+    "signIn": "Sign in",
+    "source": "Source",
+    "loading": "Loading",
+    "light": "Light",
+    "dark": "Dark",
+    "staging": "Staging",
+    "unavailable": "Unavailable",
+    "termxCloudOfficial": "TermX Cloud / Official service",
+    "openSourceCore": "Open-source Go core",
+    "primaryNavigation": "Primary navigation", "colorTheme": "Color theme", "useLight": "Use light theme", "useDark": "Use dark theme", "home": "TermX home", "terminalPoolModel": "TermX terminal pool model", "cloudConnectionModel": "TermX Cloud connection model"
+  },
+  "home": {
+    "nav": { "product": "Product", "app": "App", "cloud": "Cloud", "plans": "Plans" },
+    "brandSubtitle": "Terminal workspace",
+    "hero": {
+      "kicker": "Open-source terminal multiplexer",
+      "thesis1": "Your terminals",
+      "thesis2": "outlive the window.",
+      "intro": "A daemon-first terminal workspace for people whose work spans machines, networks and screens. Keep terminals alive in one pool, then observe and operate them from the TUI or official App.",
+      "cloudCta": "Start with TermX Cloud",
+      "coreCta": "Open-source core"
+    },
+    "pool": {
+      "title": "Terminal pool / Build machine",
+      "online": "Daemon online",
+      "running": "Running",
+      "exited": "Exited / History kept",
+      "live": "Live",
+      "work": "The terminal is the work.",
+      "views": "Windows, panes and devices are only views.",
+      "detail": "Detach the TUI. Close the App. Change the layout. The daemon keeps lifecycle and history where the terminal actually runs.",
+      "available": "Available from",
+      "desktop": "Desktop TUI",
+      "desktopPaths": "Local / SSH / Cloud",
+      "officialApp": "Official App",
+      "appPaths": "Direct / Relay",
+      "local": "Local Unix socket",
+      "ssh": "SSH daemon",
+      "webrtc": "Managed WebRTC",
+      "model": "One endpoint model"
+    },
+    "products": {
+      "kicker": "One product / Three layers",
+      "title1": "Use the open core alone.",
+      "title2": "Add the App and Cloud when you need reachability.",
+      "core": {
+        "eyebrow": "Open source / Golang", "title": "TermX Core",
+        "copy": "The daemon, CLI and TUI form a terminal workspace built around long-lived terminals rather than disposable panes.",
+        "points": ["No cloud account required", "Local and SSH stay free", "Multi-endpoint workbench"],
+        "action": "View source"
+      },
+      "app": {
+        "eyebrow": "Official client", "title": "TermX App",
+        "copy": "Carry the same endpoint list in your pocket. Pair with a daemon, reconnect to running work and move files without exposing a web terminal.",
+        "points": ["Direct or Relay path shown", "Terminal and file workflows", "Background recovery"]
+      },
+      "cloud": {
+        "eyebrow": "Official managed service", "title": "TermX Cloud",
+        "copy": "The official cloud service for TermX handles device discovery, signaling and managed Relay when changing networks cannot connect directly.",
+        "points": ["Managed device directory", "Direct P2P coordination", "Single Relay and account controls"],
+        "action": "Explore plans"
+      },
+      "boundary": "TermX Cloud and the official mobile App are proprietary TermX products. The open-source Go core remains fully usable with local and SSH endpoints without a cloud account."
+    },
+    "features": {
+      "kicker": "Built for long-running work",
+      "title1": "Not another arrangement",
+      "title2": "of disposable terminal panes.",
+      "items": [
+        { "title": "Persistent terminal pool", "copy": "Terminals live in the daemon, independent of the pane or window currently showing them." },
+        { "title": "Authoritative history", "copy": "Reconnect to the same lifecycle, live surface and history instead of rebuilding context from a local scrollback." },
+        { "title": "Local, SSH and WebRTC", "copy": "One endpoint model reaches local machines, SSH daemons and managed cloud devices without changing terminal identity." },
+        { "title": "Files beside the terminal", "copy": "Browse, preview, upload and download files through the same authorized protocol session." }
+      ]
+    },
+    "connectivity": {
+      "kicker": "Official cloud connectivity",
+      "title1": "Direct when possible.", "title2": "Relay when necessary.",
+      "copy": "TermX Cloud gets the client and daemon to the same encrypted session. It does not receive terminal capability grants, commands, history, file metadata or terminal payload.",
+      "client": "Client", "app": "TermX App", "identity": "Identity verified",
+      "cloud": "TermX Cloud", "cloudRole": "Directory / Auth / Signaling",
+      "direct": "Direct P2P", "relay": "Single Relay", "available": "Available",
+      "owner": "Owner", "daemon": "TermX daemon", "capability": "Capability verified",
+      "encrypted": "DTLS end-to-end encrypted", "pathShown": "Actual direct or Relay path shown", "truth": "Terminal truth remains on the daemon"
+    },
+    "plans": {
+      "kicker": "TermX Cloud plans", "title1": "Pay for managed infrastructure,", "title2": "not terminal features.",
+      "copy": "Local, SSH, multi-endpoint workspaces and terminal capability remain part of the open core. Plans fund official discovery, Relay capacity and account services.",
+      "loading": "Loading cloud plans", "recommended": "Recommended",
+      "noCard": "No card required", "previewAccess": "Preview access", "custom": "Custom agreement", "perMonth": "/ month",
+      "items": {
+        "managed-free": { "name": "Managed Free", "eyebrow": "Start with direct", "description": "Official device discovery and managed signaling for personal endpoints.", "features": ["Managed device directory", "Direct P2P signaling", "Connection path diagnostics", "Small Relay trial allowance"], "cta": "Start free", "price": "Free" },
+        "pro": { "name": "Pro", "eyebrow": "Reliable from anywhere", "description": "Managed Relay capacity and route intelligence for people who work across networks.", "features": ["Production Managed Relay quota", "SmartRoute path selection", "More devices and concurrency", "Usage visibility and priority support"], "cta": "Join Pro preview", "price": "Preview" },
+        "team": { "name": "Team", "eyebrow": "Govern shared access", "description": "Organization controls and auditable endpoint access without moving terminal truth to the cloud.", "features": ["Members, roles and endpoint ownership", "Explicit sharing approvals", "Audit and Relay usage reporting", "Organization policy templates"], "cta": "Talk to us", "price": "Contact" }
+      }
+    },
+    "final": { "kicker": "Open core / Official cloud", "title1": "Keep the terminal.", "title2": "Change where you see it.", "account": "Create account", "github": "View GitHub" }
+  },
+  "login": {
+    "managedEdge": "Managed edge", "client": "Client", "verified": "Identity verified", "direct": "Direct P2P", "relayStandby": "Single Relay / Standby", "daemon": "Daemon", "owner": "Terminal owner",
+    "paths": "Cloud available / Direct / Relay / E2E", "title1": "Your terminal network,", "title2": "under your control.", "copy": "Reach registered machines and manage cloud services without exposing terminal authorization.",
+    "transport": "Transport", "fallback": "Fallback", "security": "Security", "controller": "Web Controller", "welcome": "Welcome back", "intro": "Sign in to manage nodes, subscriptions, account settings, and referral rewards.",
+    "continueWith": "Continue with {{provider}}", "signInTab": "Sign in", "createTab": "Create account", "email": "Email", "password": "Password", "affCode": "AFF code", "wait": "Please wait", "signInEmail": "Sign in with email", "createAccount": "Create account", "stagingIdentity": "Staging identity", "signingIn": "Signing in", "continueStaging": "Continue with staging account", "providerError": "Development identity provider is unavailable.", "authError": "Authentication failed", "session": "HttpOnly session / SameSite Strict / CSRF protected"
+  },
+  "account": {
+    "brandSubtitle": "Web Controller", "skip": "Skip to content", "signOut": "Sign out", "loading": "Loading workspace", "controller": "TermX / Web Controller", "cloudControl": "Cloud control",
+    "tabs": { "overview": "Overview", "nodes": "Nodes", "billing": "Billing", "account": "Account", "referrals": "Referrals" },
+    "overview": { "system": "System status", "operational": "Operational", "nodes": "Nodes", "nodesValue": "{{active}} online / {{total}} registered", "plan": "Plan", "route": "Route", "routeValue": "Direct + Relay available", "rewards": "Referral rewards", "rewardsValue": "{{days}} bonus days", "proof": "Terminal authorization stays end to end. Cloud services only manage connectivity.", "account": "Account", "accountId": "Account ID", "orders": "Orders", "activity": "Recent activity", "noActivity": "No activity yet" },
+    "nodes": { "title": "Managed nodes", "online": "{{count}} online", "note": "Revoking removes cloud directory access. Terminal grants remain daemon-owned.", "node": "Node", "updated": "Updated", "status": "Status", "onlineStatus": "Online", "offlineStatus": "Offline", "revoked": "Revoked", "revoke": "Revoke" },
+    "billing": { "subscription": "Subscription", "current": "Current plan", "pro": "TermX Pro", "free": "Managed Free", "activeUntil": "Active until {{date}}", "included": "Direct connectivity and managed signaling included.", "processing": "Processing", "checkout": "Test Pro checkout", "history": "Order history", "noOrders": "No orders yet", "status": { "paid": "Paid", "pending": "Pending", "failed": "Failed", "cancelled": "Cancelled" } },
+    "profile": { "title": "Profile", "displayName": "Display name", "email": "Email", "emailHint": "Managed by your identity provider.", "identity": "Account identity", "saving": "Saving", "save": "Save changes", "changePassword": "Change password", "setPassword": "Set password", "currentPassword": "Current password", "newPassword": "New password", "passwordHint": "Use at least 10 characters." },
+    "referrals": { "title": "Invite and earn", "bonus": "{{days}} bonus days", "link": "Your AFF link", "copy": "Copy link", "successful": "Successful referrals", "yourReward": "Your reward", "yourRewardValue": "15 days after first payment", "friendReward": "Friend reward", "friendRewardValue": "7 days after first payment", "history": "Reward history", "paid": "Referral paid", "welcome": "Welcome reward", "noRewards": "No rewards yet", "days": "+{{days}} days" },
+    "activity": { "accountCreated": "Account created" },
+    "requestFailed": "Request failed"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "common": { "language": "语言", "signIn": "登录", "source": "源码", "loading": "加载中", "light": "浅色", "dark": "深色", "staging": "测试环境", "unavailable": "不可用", "termxCloudOfficial": "TermX Cloud / 官方服务", "openSourceCore": "开源 Go 核心", "primaryNavigation": "主导航", "colorTheme": "颜色主题", "useLight": "使用浅色主题", "useDark": "使用深色主题", "home": "TermX 首页", "terminalPoolModel": "TermX 终端池模型", "cloudConnectionModel": "TermX Cloud 连接模型" },
+  "home": {
+    "nav": { "product": "产品", "app": "App", "cloud": "云服务", "plans": "套餐" }, "brandSubtitle": "终端工作台",
+    "hero": { "kicker": "开源终端复用器", "thesis1": "终端持续运行，", "thesis2": "不受窗口限制。", "intro": "面向跨机器、跨网络和跨屏工作的 daemon-first 终端工作台。让终端持续存在于统一池中，再通过 TUI 或官方 App 随时观察和操作。", "cloudCta": "开始使用 TermX Cloud", "coreCta": "查看开源核心" },
+    "pool": { "title": "终端池 / 构建机器", "online": "Daemon 在线", "running": "运行中", "exited": "已退出 / 历史保留", "live": "实时", "work": "终端本身才是工作。", "views": "窗口、面板和设备都只是视图。", "detail": "退出 TUI、关闭 App 或改变布局，都不会丢失现场。Daemon 在终端实际运行的机器上保存生命周期和历史。", "available": "可通过以下入口访问", "desktop": "桌面 TUI", "desktopPaths": "本地 / SSH / 云", "officialApp": "官方 App", "appPaths": "直连 / 中转", "local": "本地 Unix Socket", "ssh": "SSH Daemon", "webrtc": "托管 WebRTC", "model": "统一 Endpoint 模型" },
+    "products": {
+      "kicker": "一个产品 / 三个层次", "title1": "开源核心可以独立使用。", "title2": "需要公网连接时，再加入 App 和 Cloud。",
+      "core": { "eyebrow": "开源 / Golang", "title": "TermX Core", "copy": "Daemon、CLI 和 TUI 共同组成围绕长期运行终端设计的工作台，而不是把工作绑定在临时面板中。", "points": ["无需云账号", "本地与 SSH 永久免费", "多 Endpoint 工作台"], "action": "查看源码" },
+      "app": { "eyebrow": "官方客户端", "title": "TermX App", "copy": "把同一份 Endpoint 列表装进口袋。与 Daemon 配对、接回运行中的工作并传输文件，无需暴露 Web Terminal。", "points": ["显示 Direct 或 Relay 实际路径", "终端和文件工作流", "后台恢复"] },
+      "cloud": { "eyebrow": "官方托管服务", "title": "TermX Cloud", "copy": "TermX 官方云服务负责设备发现、信令和托管 Relay，在网络变化导致无法直连时帮助建立连接。", "points": ["托管设备目录", "Direct P2P 协调", "Single Relay 与账号控制"], "action": "查看套餐" },
+      "boundary": "TermX Cloud 和官方移动 App 是 TermX 的闭源产品。开源 Go 核心无需云账号即可完整使用本地和 SSH Endpoint。"
+    },
+    "features": { "kicker": "为长期运行的工作而生", "title1": "不是又一种", "title2": "临时终端面板排列方式。", "items": [
+      { "title": "持久终端池", "copy": "终端存在于 Daemon 中，不依赖当前展示它的面板或窗口。" },
+      { "title": "权威历史记录", "copy": "重新连接同一份生命周期、实时画面与历史，而不是从客户端滚动缓冲区重新拼接上下文。" },
+      { "title": "Local、SSH 与 WebRTC", "copy": "统一 Endpoint 模型连接本机、SSH Daemon 和托管云设备，不改变终端身份。" },
+      { "title": "终端旁的文件管理", "copy": "通过同一个已授权协议会话浏览、预览、上传和下载文件。" }
+    ] },
+    "connectivity": { "kicker": "官方云连接", "title1": "能直连，就直连。", "title2": "无法直连，才走 Relay。", "copy": "TermX Cloud 帮助客户端与 Daemon 建立同一个加密会话，但不会接收终端 Capability Grant、命令、历史、文件元数据或终端内容。", "client": "客户端", "app": "TermX App", "identity": "身份已验证", "cloud": "TermX Cloud", "cloudRole": "目录 / 鉴权 / 信令", "direct": "Direct P2P", "relay": "Single Relay", "available": "可用", "owner": "所有者", "daemon": "TermX Daemon", "capability": "Capability 已验证", "encrypted": "DTLS 端到端加密", "pathShown": "显示实际 Direct 或 Relay 路径", "truth": "终端真值始终留在 Daemon" },
+    "plans": { "kicker": "TermX Cloud 套餐", "title1": "为托管基础设施付费，", "title2": "而不是为终端功能付费。", "copy": "Local、SSH、多 Endpoint 工作台和终端能力始终属于开源核心。套餐费用用于官方设备发现、Relay 容量和账号服务。", "loading": "正在加载云套餐", "recommended": "推荐", "noCard": "无需银行卡", "previewAccess": "预览资格", "custom": "定制协议", "perMonth": "/ 月", "items": {
+      "managed-free": { "name": "Managed Free", "eyebrow": "从直连开始", "description": "为个人 Endpoint 提供官方设备发现和托管信令。", "features": ["托管设备目录", "Direct P2P 信令", "连接路径诊断", "少量 Relay 试用额度"], "cta": "免费开始", "price": "免费" },
+      "pro": { "name": "Pro", "eyebrow": "随时随地稳定连接", "description": "为跨网络工作的个人用户提供托管 Relay 容量和路径智能。", "features": ["正式 Managed Relay 配额", "SmartRoute 路径选择", "更多设备和并发", "用量可视化与优先支持"], "cta": "加入 Pro 预览", "price": "预览" },
+      "team": { "name": "Team", "eyebrow": "治理共享访问", "description": "在不把终端真值迁到云端的前提下，提供组织控制和可审计的 Endpoint 访问。", "features": ["成员、角色与 Endpoint 归属", "显式共享审批", "审计与 Relay 用量报告", "组织策略模板"], "cta": "联系我们", "price": "联系咨询" }
+    } },
+    "final": { "kicker": "开源核心 / 官方云", "title1": "保留终端现场，", "title2": "随时切换观察入口。", "account": "创建账号", "github": "查看 GitHub" }
+  },
+  "login": { "managedEdge": "托管边缘连接", "client": "客户端", "verified": "身份已验证", "direct": "Direct P2P", "relayStandby": "Single Relay / 待命", "daemon": "Daemon", "owner": "终端所有者", "paths": "云可用 / Direct / Relay / E2E", "title1": "你的终端网络，", "title2": "始终由你掌控。", "copy": "访问已注册机器并管理云服务，同时不向云端暴露终端授权。", "transport": "传输", "fallback": "备用路径", "security": "安全", "controller": "Web 控制台", "welcome": "欢迎回来", "intro": "登录后管理节点、订阅、账户设置和推荐奖励。", "continueWith": "使用 {{provider}} 继续", "signInTab": "登录", "createTab": "创建账号", "email": "邮箱", "password": "密码", "affCode": "AFF 推荐码", "wait": "请稍候", "signInEmail": "使用邮箱登录", "createAccount": "创建账号", "stagingIdentity": "测试身份", "signingIn": "正在登录", "continueStaging": "使用测试账号继续", "providerError": "开发身份提供方当前不可用。", "authError": "认证失败", "session": "HttpOnly Session / SameSite Strict / CSRF 保护" },
+  "account": {
+    "brandSubtitle": "Web 控制台", "skip": "跳到正文", "signOut": "退出登录", "loading": "正在加载工作区", "controller": "TermX / Web 控制台", "cloudControl": "云服务控制",
+    "tabs": { "overview": "概览", "nodes": "节点", "billing": "账单", "account": "账户", "referrals": "推荐" },
+    "overview": { "system": "系统状态", "operational": "运行正常", "nodes": "节点", "nodesValue": "{{active}} 在线 / {{total}} 已注册", "plan": "套餐", "route": "路径", "routeValue": "Direct 与 Relay 可用", "rewards": "推荐奖励", "rewardsValue": "奖励 {{days}} 天", "proof": "终端授权始终保持端到端。云服务只管理连接。", "account": "账户", "accountId": "账户 ID", "orders": "订单", "activity": "最近活动", "noActivity": "暂无活动" },
+    "nodes": { "title": "托管节点", "online": "{{count}} 在线", "note": "撤销只会移除云目录访问。终端 Grant 仍由 Daemon 管理。", "node": "节点", "updated": "更新时间", "status": "状态", "onlineStatus": "在线", "offlineStatus": "离线", "revoked": "已撤销", "revoke": "撤销" },
+    "billing": { "subscription": "订阅", "current": "当前套餐", "pro": "TermX Pro", "free": "Managed Free", "activeUntil": "有效期至 {{date}}", "included": "包含 Direct 连接与托管信令。", "processing": "处理中", "checkout": "测试 Pro 结账", "history": "订单历史", "noOrders": "暂无订单", "status": { "paid": "已支付", "pending": "待支付", "failed": "支付失败", "cancelled": "已取消" } },
+    "profile": { "title": "个人资料", "displayName": "显示名称", "email": "邮箱", "emailHint": "由身份提供方管理。", "identity": "账户身份", "saving": "保存中", "save": "保存更改", "changePassword": "修改密码", "setPassword": "设置密码", "currentPassword": "当前密码", "newPassword": "新密码", "passwordHint": "至少使用 10 个字符。" },
+    "referrals": { "title": "邀请并获得奖励", "bonus": "奖励 {{days}} 天", "link": "你的 AFF 链接", "copy": "复制链接", "successful": "成功推荐", "yourReward": "你的奖励", "yourRewardValue": "好友首次付款后增加 15 天", "friendReward": "好友奖励", "friendRewardValue": "首次付款后增加 7 天", "history": "奖励历史", "paid": "推荐已付款", "welcome": "欢迎奖励", "noRewards": "暂无奖励", "days": "+{{days}} 天" },
+    "activity": { "accountCreated": "账户已创建" },
+    "requestFailed": "请求失败"
+  }
+}
