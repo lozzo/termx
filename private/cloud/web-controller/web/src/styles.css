@@ -1,0 +1,56 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is([data-wx-theme="neutral-dark"] *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-panel: var(--panel);
+  --color-soft: var(--soft);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-destructive: var(--destructive);
+  --color-inverse: var(--inverse);
+  --color-inverse-foreground: var(--inverse-foreground);
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+}
+
+:root, html[data-wx-theme="light-gray"] {
+  --background: #f3f5f7; --panel: #ffffff; --soft: #e9edf2; --foreground: #121417;
+  --muted-foreground: #626a75; --line: #d2d8df; --line-strong: #aeb7c2;
+  --primary: #2368e8; --primary-foreground: #ffffff; --success: #16834c;
+  --warning: #a16207; --destructive: #c2413b; --inverse: #14171b; --inverse-foreground: #f7f8fa;
+}
+html[data-wx-theme="neutral-dark"] {
+  --background: #101216; --panel: #171a1f; --soft: #1e2228; --foreground: #f1f3f5;
+  --muted-foreground: #9ba3ad; --line: #30353d; --line-strong: #4a515d;
+  --primary: #6d9cff; --primary-foreground: #08101e; --success: #58c98a;
+  --warning: #d5a84b; --destructive: #ef6670; --inverse: #090b0e; --inverse-foreground: #f7f8fa;
+}
+
+* { box-sizing: border-box; border-radius: 0; letter-spacing: 0; }
+html { scroll-behavior: smooth; background: var(--background); }
+body { margin: 0; min-width: 320px; background: var(--background); color: var(--foreground); font-family: var(--font-sans); }
+a { color: inherit; text-decoration: none; }
+button, input, select { font: inherit; }
+::selection { background: color-mix(in srgb, var(--primary) 25%, transparent); }
+
+html, body, #root, [data-theme-surface] {
+  transition: background-color 240ms ease, color 240ms ease, border-color 240ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+}
