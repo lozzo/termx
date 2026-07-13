@@ -11,6 +11,7 @@
 - WEB001 已完成并在 WEB003 收敛运行架构：React/Vite 公开订阅 Landing Page 由 Nginx 静态托管，Control Plane 直接提供同源浏览器 API 和套餐投影，不再运行 Next.js 或独立 Go BFF。
 - WEB002 已完成：Web 登录、浏览器 Session、订阅账户、staging Checkout、签名 webhook、幂等订单和 Entitlement/Hub 投影已形成公网纵向链路。
 - CLOUD012 已完成：Web、TUI 与 Official Android 使用统一账号设备码登录，账号名下 daemon 注册到 Hub；登录后的 direct 与 single Relay 热路径只访问 Hub，Control Plane 中断不影响有效缓存期内的新连接。
+- CLI001 已完成：已审计当前扁平 CLI 与公开 `v3` 测试命令，建立以 endpoint/terminal 为真值的对象化命令树、稳定 target、JSON/format、退出码、tmux 能力映射和分期实现门禁；当前尚未改动 CLI 运行行为。
 - WEB003 已由用户重排为暂停：邮箱密码、用户中心、订阅和 AFF 已完成，GitHub/Google OIDC 留待统一账号客户端链路验收后恢复。
 - FILE001-FILE004 与 CLOUD006-CLOUD008 已完成；Official Android 显式 development build 已通过公网 HTTP staging 在 5G 真机完成 direct、single Relay、terminal 与恢复链路。生产上线前必须另行切换 HTTPS/TLS，不得复用本切片的明文 profile。
 - 当前仓库是唯一 private monorepo；当前不是正式开源或生产发布阶段。public snapshot、开源许可证模板替换、secret audit、第二仓和发布自动化全部延后。
@@ -90,6 +91,12 @@
 - FILE003：`proto/wirepb/`、`internal/protocol/`、`core/`、`remote/`、`shared/remoteauth/`、`cmd/termx/` 与必要 transport harness；实现同一 protocol session 内的流式上传下载、背压、取消、续传和完整性校验，并最小联动 pairing grant 的显式文件权限；不新增旧独立 DataChannel。
 - FILE004：`clients/ui/`、`clients/mobile/`、必要公开 protocol adapter、Android 构建文件和手测文档；删除旧 `/files/*` 与 legacy file channel 依赖，完成 Official Android 真机和 direct/single Relay 验收。只有真实产品链路证明 contract 缺失时才最小联动 FILE002/FILE003 owner。
 - VT001：`vterm/internal/vt/`、`vterm/vterm/`、`core/` restart harness 与 `workflow.md`；只修 Emulator close/read 生命周期竞态，不改变 terminal semantic transaction、screen/history truth 或 restart 产品语义。
+- CLI001：`docs/development/cli-command-design.md`、`docs/development/README.md` 与 `workflow.md`；只做 CLI 现状审计、目标命令树、寻址/输出/退出码 contract 和实施切片，不修改 runtime。
+- CLI002：`cmd/termx/`、必要 `internal/protocol/`/`shared/` 查询 contract、CLI 黑盒 harness、`docs/development/cli-command-design.md` 与 `workflow.md`；只完成命令骨架、local terminal 生命周期、输出与错误 contract，并移除产品 `v3`/smoke 暴露，不扩展 endpoint transport。
+- CLI003：`cmd/termx/`、必要 service/config helper、`shared/connection/`、对应文档与 `workflow.md`；只完成 daemon 当前用户生命周期和配置管理，不使用宽泛进程查杀，不触及 Cloud 服务端。
+- CLI004：`cmd/termx/`、`shared/connection/`、TUI endpoint dialer 可复用边界、必要 `remote/`/Companion public contract、对应文档与 `workflow.md`；只完成 endpoint-aware CLI 和 local/SSH/Hub 真实路由，不新增 transport fallback。
+- CLI005：`cmd/termx/`、必要 `internal/protocol/`/`core/`/`remote/` contract、对应文档与 `workflow.md`；只完成 send/capture/resize/wait/events 和稳定自动化输出，不读取 TUI renderer 或建立第二份 history truth。
+- CLI006：`cmd/termx/`、`shared/connection/`、必要 file/workbench/pair public contract、`private/cloud/companion` 的安装装配、对应文档与 `workflow.md`；只收口 file/workspace/pair 和 Cloud login/enroll 用户体验，不把私有 Cloud 逻辑链接进公开 CLI。
 - `core/` 只有 terminal lifecycle、history 或 scoped protocol contract 确实需要时才最小联动；`private/archive/` 始终禁止主动修改。
 
 ## 任务队列
@@ -120,6 +127,12 @@
 | FILE003 | 完成 | 文件上传下载数据流 | local 与 WebRTC 使用同一流协议完成背压、取消、续传和摘要校验 |
 | FILE004 | 已完成 | 共享 UI 与 Official Android 闭环 | App 可浏览、预览、上传、下载并经 direct/single Relay 手测 |
 | VT001 | 完成 | 收口 vterm restart 生命周期竞态 | 全量 core race 不再报告 Emulator close/read 竞态 |
+| CLI001 | 完成 | CLI 命令体系设计门禁 | 当前命令缺口、对象化命令树、TerminalRef、输出/退出码与 tmux 能力映射形成唯一实现基线 |
+| CLI002 | 待开始 | CLI 骨架与 local terminal 闭环 | 用户可通过有完整 help 的 canonical 命令和短别名管理 local terminal，脚本获得稳定 JSON 与退出码，产品 help 不再暴露 v3/smoke |
+| CLI003 | 待开始 | daemon 与配置生命周期 | 用户无需 pkill 即可 start/stop/status/logs daemon，并可查询、校验和原子修改配置 |
+| CLI004 | 待开始 | endpoint-aware CLI | 同一 terminal 命令可按 TerminalRef 操作 local、SSH、Hub endpoint，失败不 fallback |
+| CLI005 | 待开始 | CLI 自动化数据面 | send/capture/resize/wait/events 使用 owning daemon truth，并提供稳定 format/NDJSON |
+| CLI006 | 待开始 | file/workspace/pair/Cloud UX | 文件与视图命令结构化可用；Cloud login/enroll 不暴露 DBus、runuser、IPC socket 或手工 Companion |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
 | GA004 | 延后 | 单 transit 受控加速 | 仅在 GA003 数据证明需要时恢复 |
 | KS012 | 暂停 | 快捷键跨切片总契约守卫 | Cloud 单区域主线完成后重新排序 |
@@ -163,13 +176,23 @@
 - FILE003：protocol/core/remote 定向测试、慢消费者/取消/续传/损坏数据 harness、`git diff --check`。
 - FILE004：client workspace 测试、Community/Official Android 单测与 APK 构建边界、direct/single Relay 文件 E2E、ADB 手测、`git diff --check`。
 - VT001：vterm 定向并发 harness、core restart 定向 race、全量 `go test -race ./core`、`git diff --check`。
+- CLI001 文档-only：`git diff --check`。
+- CLI002：CLI command/help/golden/exit-code 黑盒测试、真实 local daemon terminal lifecycle harness、默认依赖守卫、`git diff --check`。
+- CLI003：daemon service ownership/start-stop-status 黑盒测试、config parser/writer 定向测试、macOS/Linux 可用平台 harness、`git diff --check`。
+- CLI004：TerminalRef/registry/dialer 定向测试、local/SSH/managed direct/single Relay CLI E2E、失败不 fallback harness、`git diff --check`。
+- CLI005：input/live/history/events 定向测试、stdout/stderr/NDJSON/timeout 黑盒测试、local 与 WebRTC 自动化 E2E、`git diff --check`。
+- CLI006：file/workbench/pair 定向测试、Companion 自动发现与 daemon enrollment IPC 测试、Cloud staging login/enroll E2E、secret scan、`git diff --check`。
 - 只有切片真实跨越全仓 contract 时才运行 `make test-all`；当前开发阶段不运行 public snapshot 或 public-only release gate。
 
 ## 当前状态
 
+- CLI001 已完成：当前顶层 `new/ls/attach/kill/rm` 缺少对象层级与 help，`--socket` 只覆盖 local，裸 TerminalID 无法表达跨 endpoint 真值，公开 `v3` 同时泄漏重复命令和 smoke harness，查询输出也没有 JSON/format/退出码 contract。新基线以 `terminal`、`endpoint`、`daemon`、`workspace`、`file`、`pair`、`cloud`、`config` 为 canonical namespace，保留五个高频短别名但共享 handler；target 使用 `EndpointID:TerminalID`，自动化分 CLI002-CLI006 纵向实现。tmux 只映射 send/capture/wait/format 等成熟控制能力，不把 session/window/pane 模型覆盖到 TermX terminal/workspace ownership。
+
+- `114.66.58.243` 当前按用户要求只承担服务端 Cloud 角色：`termx-staging-cloud` 与 Nginx active，Control Plane/Hub/Relay 和 Web Controller 公网健康；`termx-staging-daemon`、`termx-staging-daemon-companion` 已停止并 disabled，root 自动启动的 local daemon 也已停止。账号数据库和既有服务文件保留，本地或其他机器作为 daemon/client 继续测试。
+
 - CLOUD012 启动审计确认：此前 Web 邮箱账号虽持久化在 SQLite，但 Control Plane `/v1/login/*`、daemon enrollment 与 Official Android gateway 固定签发 `account-dev-local`，共享 App 设置页仍使用 archive 前的 `/api/v1/auth/*` bearer 假设，因此“Web 注册”和“TUI/App 云连接”并非同一账号真值。本切片据此选择浏览器审批设备码、账号绑定 enrollment 和 Hub 本地授权投影，不把密码、Cookie 或 terminal capability 下放到客户端。
 
-- CLOUD012 已完成：Control Plane 提供浏览器 Session 保护的设备码检查/审批和账号专属一次性 daemon enrollment code；TUI 按服务端 interval 轮询审批，Official Android 通过 native 私有 gateway 打开系统浏览器登录，edge token 只进入 Keystore，旧 WebView `/api/v1/auth/*` 登录在 Official 装配中不再使用。`114.66.58.243` 已替换 Cloud、Companion、termx 与 React 静态产物，三个 systemd unit 均为 active；公网现场验证新邮箱注册后审批 TUI 登录返回同一 AccountID，注册账号签发的一次性 enrollment code 把 daemon、Hub device projection 和 Web 节点投影绑定到同一账号，重放被拒绝。Official Android 真机 `24129PN74C` 已通过系统浏览器审批设备码、Keystore Session 恢复、账号名下 pairing、`connected/direct` 和显式 `connected/single_relay`；只阻断手机到 Control Plane `41101/tcp` 后，direct 与 single Relay 均能重新建连，窗口内只访问 Hub resolve/signaling/lease 路径。强停并重建 App 进程后账号 Session 与 pairing 仍恢复，在 Control Plane 继续中断时 direct 再次成功；重复强停造成的短时 Relay allocation 最终触发 Managed Free `quota_exhausted`，按委派预算 fail closed，没有伪造 Relay 成功或回退其他路径。
+- CLOUD012 已完成：Control Plane 提供浏览器 Session 保护的设备码检查/审批和账号专属一次性 daemon enrollment code；TUI 按服务端 interval 轮询审批，Official Android 通过 native 私有 gateway 打开系统浏览器登录，edge token 只进入 Keystore，旧 WebView `/api/v1/auth/*` 登录在 Official 装配中不再使用。`114.66.58.243` 已替换 Cloud、Companion、termx 与 React 静态产物，验收时三个 systemd unit 均为 active；公网现场验证新邮箱注册后审批 TUI 登录返回同一 AccountID，注册账号签发的一次性 enrollment code 把 daemon、Hub device projection 和 Web 节点投影绑定到同一账号，重放被拒绝。Official Android 真机 `24129PN74C` 已通过系统浏览器审批设备码、Keystore Session 恢复、账号名下 pairing、`connected/direct` 和显式 `connected/single_relay`；只阻断手机到 Control Plane `41101/tcp` 后，direct 与 single Relay 均能重新建连，窗口内只访问 Hub resolve/signaling/lease 路径。强停并重建 App 进程后账号 Session 与 pairing 仍恢复，在 Control Plane 继续中断时 direct 再次成功；重复强停造成的短时 Relay allocation 最终触发 Managed Free `quota_exhausted`，按委派预算 fail closed，没有伪造 Relay 成功或回退其他路径。
 
 - WEB003 运行架构已收敛：React/Vite 只生成静态文件，Nginx 在 `41100` 直接托管并将 `/api/*` 同源代理到 Control Plane `41001`；Control Plane 直接拥有 HttpOnly Session Cookie、Origin/CSRF、账号数据库、订阅和 AFF API。Next App Router、Route Handler、Node runtime unit、独立 Go Web Controller BFF binary/unit 与 `41000/41004` listener 已删除，不保留 fallback。
 
