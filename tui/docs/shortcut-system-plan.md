@@ -322,6 +322,14 @@ KS005-KS010 每个切片都运行 `go test ./tui/... -count=1`、`git diff --che
 - app handler registry 拥有 handler contract、组合步骤和失败语义，不维护可漂移的 alias/scene/display 表；KS013 完成 keyboard invocation -> app handler contract，surface invocation 迁移留给 KS016。
 - 禁止为保留旧测试而建立双 registry、桥接 fallback 或字符串互转链。
 
+KS013 实际收口边界：
+
+- `tui/action` 的 `ID`、`Spec`、`Invocation`、`ParamSpec`、默认语义 label 和 mouse/drag/CTA canonical ID 是唯一 identity 真值；该包只能依赖标准库，视觉 projection 名称不得注册为 action。
+- `tui/shortcut` 持有 `DefaultBinding`、`BindingPolicy`、唯一内置 scene registry、footer/help binding visibility；`tui/input`、`tui/config` 和 `tui/render` 只能通过 scene API 编译或投影 catalog。
+- app 的 `actionHandlerRegistry` 覆盖全部 203 个默认 keyboard binding，只按 canonical `action.ID` 选择 handler；overlay 同样直接进入该 registry，alias、scene、source string 和 render projection 均不参与执行。
+- render 使用本地 `ProjectionID`，`ProjectionSpec.CanonicalActionID` 显式引用 canonical action，并已删除 dispatch。`FooterKey`、`FooterLabel`、`HelpLabel` 以及只用于 surface 投影的 `ShortcutActionRenderID` 是 KS016 迁移清单；它们不能进入 keyboard 执行路径。
+- pane/header/content/drag 中仍未携带 invocation 的 producer 继续由 debt manifest 锁定到 KS016；不得在 KS013 用 legacy projection ID fallback 冒充 canonical invocation。
+
 ### KS014：输入协议、按键规范化与 scene 状态
 
 - 汇总传统 TTY、Kitty CSI-u、Alt/Ctrl/Shift、命名键、UTF-8、mouse 和不可表达组合的 raw bytes -> `InputEvent` contract。

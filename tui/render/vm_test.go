@@ -1942,7 +1942,7 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
 	if vm.Shell.Footer.Mode != "floating" ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "NEW FLOAT", ActionFloatingNew.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "f", "PICK", ActionFloatingPick.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "f", "PICKER", ActionFloatingPick.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "a", "OWNER", ActionFloatingTakeOwner.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "c", "CENTER", ActionFloatingCenter.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "z/m", "HIDE", ActionFloatingCollapse.String()) ||

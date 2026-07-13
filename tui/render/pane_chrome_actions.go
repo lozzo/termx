@@ -49,7 +49,7 @@ func paneChromeActionItemsFromVM(actions []ChromeActionVM) []paneChromeActionIte
 		label := action.ActionID
 		if action.Label != "" {
 			label = action.Label
-		} else if spec, ok := ActionSpecByID(ActionID(action.ActionID)); ok && spec.HelpLabel != "" {
+		} else if spec, ok := ProjectionByID(ProjectionID(action.ActionID)); ok && spec.HelpLabel != "" {
 			label = spec.HelpLabel
 		}
 		out = append(out, paneChromeActionItemFromGlyph(action.Text, action.ActionID, label, action.Style, action.IsZoomMode, index, len(pending)))
@@ -174,17 +174,17 @@ func paneChromeActionGroupPart(format string, items []paneChromeActionItem, inde
 	return paneChromeExecuteTemplateString(format, ctx)
 }
 
-func paneChromeActionItemsFromSpecs(ids ...ActionID) []paneChromeActionItem {
-	type actionSpecItem struct {
-		spec ActionSpec
+func paneChromeActionItemsFromSpecs(ids ...ProjectionID) []paneChromeActionItem {
+	type projectionSpecItem struct {
+		spec ProjectionSpec
 	}
-	specs := make([]actionSpecItem, 0, len(ids))
+	specs := make([]projectionSpecItem, 0, len(ids))
 	for _, id := range ids {
-		spec, ok := ActionSpecByID(id)
+		spec, ok := ProjectionByID(id)
 		if !ok || spec.ChromeGlyph == "" {
 			continue
 		}
-		specs = append(specs, actionSpecItem{spec: spec})
+		specs = append(specs, projectionSpecItem{spec: spec})
 	}
 	out := make([]paneChromeActionItem, 0, len(specs))
 	for index, item := range specs {

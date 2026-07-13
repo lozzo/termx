@@ -1,19 +1,18 @@
 {
   "schema_version": 1,
-  "stage": "KS012",
+  "stage": "KS013",
   "inventory": {
     "default_entries": 203,
     "routed_bindings": 166,
-    "shortcut_specs": 146,
+    "shortcut_specs": 159,
     "render_projections": 123
   },
   "artifacts": {
     "input_event_producers": [
-      {"signature": "tui/app/copymode.go#NewCopyModeReducer", "count": 1, "classification": "synthetic-input-action-bridge"},
+      {"signature": "tui/app/copymode.go#NewCopyModeReducer", "count": 1, "classification": "input-event-contract"},
       {"signature": "tui/app/runtime.go#SendResize", "count": 1, "classification": "input-event-contract"},
       {"signature": "tui/app/runtime.go#ingestHostInput", "count": 1, "classification": "input-event-contract"},
-      {"signature": "tui/app/shell.go#NewShellReducer", "count": 1, "classification": "synthetic-input-action-bridge"},
-      {"signature": "tui/app/shell.go#reduceShellContentAction", "count": 2, "classification": "synthetic-input-action-bridge"},
+      {"signature": "tui/app/shell.go#NewShellReducer", "count": 1, "classification": "input-event-contract"},
       {"signature": "tui/terminalhost/host.go#readResizeSignals", "count": 1, "classification": "input-event-contract"},
       {"signature": "tui/terminalhost/input_parser.go#csiKeyEvent", "count": 5, "classification": "input-event-contract"},
       {"signature": "tui/terminalhost/input_parser.go#csiKeyboardCapabilityEvent", "count": 2, "classification": "input-event-contract"},
@@ -57,7 +56,7 @@
       {"signature": "tui/render/vm.go#liveExitedContentLines", "count": 1, "classification": "hit-region-producers-pending-action-classification"}
     ],
     "display_key_literals": [
-      {"signature": "tui/render/action_ids.go#ActionSpecCatalog", "count": 80, "classification": "render-action-second-truth", "digest": "5140e608e2739378130bfbdbf567acd445487400cf567c8ea3c2d244760613ba"},
+      {"signature": "tui/render/action_ids.go#ProjectionCatalog", "count": 80, "classification": "render-projection-legacy-shortcut-metadata", "digest": "5140e608e2739378130bfbdbf567acd445487400cf567c8ea3c2d244760613ba"},
       {"signature": "tui/render/footer_action_visibility.go#footerActionTokensVisibleByModeAndWidth", "count": 17, "classification": "hardcoded-footer-key-pruning", "digest": "2baf16169d6638caabb1c7730ef3e4d749a1c32cacc396dddf636cbc9fdbff24"},
       {"signature": "tui/render/glyphs.go#<package>", "count": 1, "classification": "shortcut-key-token-formatting", "digest": "d52f137cba8acd7b7167a3b35b8850d2a86001349482bc2b820ee283a039be70"},
       {"signature": "tui/render/overlay_chrome.go#renderOverlay", "count": 1, "classification": "global-back-navigation", "digest": "a3366a795f892c1cdee5171adb916fa6b0e5fc95f664962392caaf14f44fcd00"},
@@ -86,98 +85,102 @@
       ]
     },
     {
-      "id": "binding-catalog-wrong-owner",
+      "id": "binding-catalog-owned-by-shortcut",
       "kind": "binding",
-      "classification": "debt",
+      "classification": "conforming",
       "owner": "tui/shortcut",
-      "target_slice": "KS013",
-      "reason": "默认 scene+key binding 仍声明在 tui/input；目标 owner 是只负责快捷键编译的 tui/shortcut。",
+      "reason": "默认 scene+key binding 由 tui/shortcut 唯一持有，input 只读取副本并编译运行时 matcher。",
       "sources": [
         {
-          "path": "tui/input/bindings.go",
-          "anchors": ["var builtinShortcutDefaults = []shortcutDefault"]
+          "path": "tui/shortcut/defaults.go",
+          "anchors": ["var defaultBindings = []DefaultBinding"]
         }
       ]
     },
     {
-      "id": "action-domain-owned-by-shortcut",
+      "id": "canonical-action-domain",
       "kind": "spec",
-      "classification": "debt",
+      "classification": "conforming",
       "owner": "tui/action",
-      "target_slice": "KS013",
-      "reason": "通用 action identity、invocation、参数 schema 和默认语义 label 仍由快捷键包持有。",
+      "reason": "中立 action domain 唯一持有 identity、invocation、参数 schema、alias 和默认语义 label。",
       "sources": [
         {
-          "path": "tui/shortcut/registry.go",
+          "path": "tui/action/registry.go",
           "anchors": [
             "type ParamSpec struct",
-            "type ActionSpec struct",
-            "type ActionInvocation struct",
+            "type Spec struct",
+            "type Invocation struct",
             "var defaultLabels = map[string]string"
           ]
+        },
+        {
+          "path": "tui/action/ids.go",
+          "anchors": ["ActionPanelFocus                  ID = \"panel.focus\"", "var surfaceOnlyActionIDs = []ID"]
         }
       ]
     },
     {
-      "id": "shortcut-owns-global-display-policy",
+      "id": "surface-policy-owned-by-projection",
       "kind": "spec",
-      "classification": "debt",
-      "owner": "tui/render",
-      "target_slice": "KS016",
-      "reason": "shortcut action spec 仍声明通用 footer/help/click policy；shortcut 只能拥有 binding 的 label/show/capability，具体 projection 的 click/hint policy 属于 render。",
+      "classification": "conforming",
+      "owner": "tui/shortcut + tui/render",
+      "reason": "shortcut 只持有 binding footer/help 可见性；具体 projection 的 clickable/hint-only 属性由 render view-model 持有。",
       "sources": [
         {
           "path": "tui/shortcut/registry.go",
-          "anchors": [
-            "type Visibility string",
-            "type ClickPolicy string",
-            "type DisplayPolicy struct"
-          ]
+          "anchors": ["type BindingPolicy struct"]
+        },
+        {
+          "path": "tui/render/result.go",
+          "anchors": ["type ClickPolicy string"]
         }
       ]
     },
     {
-      "id": "app-string-dispatcher",
+      "id": "canonical-app-handler-registry",
       "kind": "handler",
-      "classification": "debt",
+      "classification": "conforming",
       "owner": "tui/app",
-      "target_slice": "KS013",
-      "reason": "app owner 正确，但 handler contract 仍分散为字符串 switch/map，尚未形成以 canonical action ID 注册的单一 handler registry。",
+      "reason": "keyboard invocation 只按 canonical action.ID 查询 app handler registry；alias、scene 和 display 不能参与执行选择。",
       "sources": [
         {
           "path": "tui/app/shortcut_dispatcher.go",
           "anchors": [
-            "func shortcutContentActionID(",
+            "var actionHandlerRegistry = buildActionHandlerRegistry()",
             "func shortcutIntentForInvocation("
-          ]
-        },
-        {
-          "path": "tui/app/ui_input.go",
-          "anchors": [
-            "func reduceTerminalPickerShortcut(",
-            "func reduceTerminalPoolShortcut(",
-            "func reduceWorkbenchTreeShortcut(",
-            "func reduceFloatingOverviewShortcut(",
-            "func reducePromptShortcut("
           ]
         }
       ]
     },
     {
-      "id": "render-action-second-truth",
+      "id": "render-projection-references-action-domain",
       "kind": "projection",
-      "classification": "debt",
+      "classification": "conforming",
       "owner": "tui/action",
-      "target_slice": "KS013",
-      "reason": "render 仍重新声明 ActionID、ActionSpec、默认 label、按键、surface 和 dispatch，形成第二份 action 语义真值。",
+      "reason": "render ProjectionID 只定位视觉元数据；ProjectionSpec 通过 CanonicalActionID 显式引用中立 action domain，不再把旧 projection 名称注册为 action identity。",
       "sources": [
         {
           "path": "tui/render/action_ids.go",
           "anchors": [
-            "type ActionID string",
-            "type ActionSpec struct",
-            "func ActionSpecCatalog() []ActionSpec"
+            "type ProjectionID string",
+            "CanonicalActionID actiondomain.ID",
+            "type ProjectionSpec struct",
+            "func ProjectionCatalog() []ProjectionSpec"
           ]
+        }
+      ]
+    },
+    {
+      "id": "render-projection-legacy-shortcut-metadata",
+      "kind": "hint",
+      "classification": "debt",
+      "owner": "tui/render",
+      "target_slice": "KS016",
+      "reason": "ProjectionSpec 仍带有迁移前 footer/help key 与 label 字段；KS016 按编译 shortcut catalog 迁移 surface 后删除。",
+      "sources": [
+        {
+          "path": "tui/render/action_ids.go",
+          "anchors": ["FooterKey         string", "FooterLabel       string", "HelpLabel         string"]
         }
       ]
     },
@@ -185,13 +188,13 @@
       "id": "render-shortcut-id-bridge",
       "kind": "projection",
       "classification": "debt",
-      "owner": "tui/action",
-      "target_slice": "KS013",
-      "reason": "shortcut action 与 render action 仍靠字符串 switch 桥接，别名、聚合和参数语义可漂移。",
+      "owner": "tui/render",
+      "target_slice": "KS016",
+      "reason": "现有 surface 尚靠 projection 选择 switch 把 canonical action 映射到旧 projection；KS016 直接携带 invocation 后删除。",
       "sources": [
         {
           "path": "tui/render/shortcut_actions.go",
-          "anchors": ["func ShortcutActionRenderID(actionID string) (ActionID, bool)"]
+          "anchors": ["func ShortcutActionRenderID(actionID string) (ProjectionID, bool)"]
         }
       ]
     },
@@ -205,27 +208,26 @@
       "sources": [
         {
           "path": "tui/render/result.go",
-          "anchors": ["Invocation shortcut.ActionInvocation"]
+          "anchors": ["Invocation actiondomain.Invocation"]
         },
         {
           "path": "tui/render/vm.go",
-          "anchors": ["Invocation         shortcut.ActionInvocation"]
+          "anchors": ["Invocation         actiondomain.Invocation"]
         }
       ]
     },
     {
-      "id": "synthetic-input-action-bridge",
+      "id": "canonical-invocation-message-bridge",
       "kind": "handler",
-      "classification": "debt",
+      "classification": "conforming",
       "owner": "tui/app",
-      "target_slice": "KS013",
-      "reason": "部分 app action 仍构造假的 InputEvent 重新进入输入路由；中立 action handler 建立后必须直接分发 invocation，不能用按键事件桥接。",
+      "reason": "content projection 需要重入 reducer 时投递 ShellShortcutActionMsg canonical invocation，不再伪造按键 InputEvent。",
       "sources": [
         {
           "path": "tui/app/shell.go",
           "anchors": [
-            "return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: \"v\", Ctrl: true}}",
-            "return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}}"
+            "return ShellShortcutActionMsg{Invocation: actiondomain.Invocation{ID: \"menu.copy\"}}",
+            "return ShellShortcutActionMsg{Invocation: actiondomain.Invocation{ID: actionID}}"
           ]
         }
       ]
@@ -260,7 +262,7 @@
         },
         {
           "path": "tui/render/action_ids.go",
-          "anchors": ["actionSpec(ActionShortcutExit, ActionDispatchNone"]
+          "anchors": ["projectionSpec(ActionShortcutExit, ActionSurfaceFooter, ActionSurfaceHelp)"]
         }
       ]
     },

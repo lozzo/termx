@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/shortcut"
 	"github.com/lozzow/termx/tui/state"
@@ -577,11 +578,11 @@ func setShortcutsDynamicScalar(cfg *state.TUIConfigStore, path string, value str
 		if !ok || !validShortcutActionID(actionID) {
 			return false, nil
 		}
-		_, spec, err := shortcut.ParseInvocation(actionID)
-		if err != nil {
+		_, invocation, _, ok := shortcut.PolicyForSource(actionID)
+		if !ok {
 			return false, nil
 		}
-		canonicalID := spec.ID
+		canonicalID := string(invocation.ID)
 		if cfg.Shortcuts.Actions == nil {
 			cfg.Shortcuts.Actions = map[string]state.TUIShortcutActionConfig{}
 		}
@@ -1046,14 +1047,14 @@ func validateShortcutsConfig(shortcuts state.TUIShortcutConfig) error {
 		if !validShortcutActionID(actionID) {
 			return fmt.Errorf("tui.shortcuts.actions has invalid action id %q", actionID)
 		}
-		_, spec, err := shortcut.ParseInvocation(actionID)
-		if err != nil {
+		_, invocation, _, ok := shortcut.PolicyForSource(actionID)
+		if !ok {
 			return fmt.Errorf("tui.shortcuts.actions.%s references unknown shortcut action %q", actionID, actionID)
 		}
-		if previous, ok := canonicalActions[spec.ID]; ok {
+		if previous, ok := canonicalActions[string(invocation.ID)]; ok {
 			return fmt.Errorf("tui.shortcuts.actions.%s duplicates canonical shortcut action configured by %s", actionID, previous)
 		}
-		canonicalActions[spec.ID] = actionID
+		canonicalActions[string(invocation.ID)] = actionID
 		if err := validateSingleLine("tui.shortcuts.actions."+actionID+".label", action.Label); err != nil {
 			return err
 		}
@@ -1094,14 +1095,18 @@ func validateShortcutsConfig(shortcuts state.TUIShortcutConfig) error {
 					return fmt.Errorf("%s.action references unknown shortcut scene %q", path, target)
 				}
 			}
-			_, spec, err := shortcut.ParseInvocation(binding.Action)
+			invocation, _, err := actiondomain.ParseInvocation(binding.Action)
 			if err != nil {
-				return fmt.Errorf("%s.action %w", path, err)
+				return fmt.Errorf("%s.action references unknown shortcut action %q: %w", path, binding.Action, err)
 			}
-			if !spec.AllowsScene(sceneName) {
+			policy, _, _, ok := shortcut.PolicyForSource(binding.Action)
+			if !ok {
+				return fmt.Errorf("%s.action %q is not bindable", path, binding.Action)
+			}
+			if !shortcut.AllowsScene(invocation.ID, sceneName) {
 				return fmt.Errorf("%s.action %q is not allowed in scene %q", path, binding.Action, sceneName)
 			}
-			if routedShortcutScene(sceneName) && !spec.Routable {
+			if routedShortcutScene(sceneName) && !policy.Routable {
 				return fmt.Errorf("%s.action references non-routable shortcut action %q", path, binding.Action)
 			}
 		}
@@ -1145,36 +1150,11 @@ func validShortcutKey(value string) bool {
 }
 
 func routedShortcutScene(value string) bool {
-	return oneOf(value,
-		"global",
-		"system",
-		"panel",
-		"pane",
-		"floating",
-		"tab",
-		"workspace",
-		"resize",
-		"copy",
-	)
+	scene, ok := shortcut.SceneByName(value)
+	return ok && scene.Routable
 }
 
 func builtinShortcutScene(value string) bool {
-	return oneOf(value,
-		"global",
-		"system",
-		"panel",
-		"pane",
-		"floating",
-		"tab",
-		"workspace",
-		"resize",
-		"copy",
-		"terminal_picker",
-		"terminal_pool",
-		"workbench_tree",
-		"clipboard_history",
-		"floating_overview",
-		"prompt",
-		"help",
-	)
+	_, ok := shortcut.SceneByName(value)
+	return ok
 }

@@ -1,6 +1,6 @@
 package render
 
-import "github.com/lozzow/termx/tui/shortcut"
+import actiondomain "github.com/lozzow/termx/tui/action"
 
 func appendHeaderHitRegions(out []HitRegion, header HeaderVM, rect Rect, viewport Rect) []HitRegion {
 	if rect.W <= 0 || rect.H <= 0 || !header.Visible {
@@ -35,14 +35,14 @@ func appendFooterHitRegions(out []HitRegion, footer FooterVM, rect Rect, frame R
 	} else {
 		right = nil
 	}
-	currentInvocation := shortcut.ActionInvocation{}
+	currentInvocation := actiondomain.Invocation{}
 	flush := func(action *string, region *Rect) {
 		if *action != "" && region.W > 0 {
 			out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: *region, ActionID: *action, Invocation: currentInvocation}, viewport)
 		}
 		*action = ""
 		*region = Rect{}
-		currentInvocation = shortcut.ActionInvocation{}
+		currentInvocation = actiondomain.Invocation{}
 	}
 	appendSegments := func(segments []barSegment, startX int) {
 		x := startX

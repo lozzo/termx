@@ -67,7 +67,7 @@ func DisconnectedPaneActionCount() int {
 	return disconnectedPaneActionCount
 }
 
-func EmptyPaneActionID(index int) ActionID {
+func EmptyPaneActionID(index int) ProjectionID {
 	actions := emptyPaneActions()
 	if index < 0 || index >= len(actions) {
 		return ""
@@ -75,7 +75,7 @@ func EmptyPaneActionID(index int) ActionID {
 	return actions[index].ID
 }
 
-func ExitedPaneActionID(index int) ActionID {
+func ExitedPaneActionID(index int) ProjectionID {
 	actions := liveExitedActions()
 	if index < 0 || index >= len(actions) {
 		return ""
@@ -85,7 +85,7 @@ func ExitedPaneActionID(index int) ActionID {
 
 // DisconnectedPaneActionID 按当前 CTA 选择序号返回断线 pane 的稳定 action id。
 // app reducer 通过该 id 区分重连 endpoint terminal 和用户显式断开 pane。
-func DisconnectedPaneActionID(index int) ActionID {
+func DisconnectedPaneActionID(index int) ProjectionID {
 	actions := liveDisconnectedActions()
 	if index < 0 || index >= len(actions) {
 		return ""
@@ -144,14 +144,14 @@ func emptyPaneContentLayout(paneID string, selectedIndex int) ([]Line, []HitRegi
 	return lines, regions, Cursor{}
 }
 
-type emptyPaneActionSpec struct {
-	ID    ActionID
+type emptyPaneProjectionSpec struct {
+	ID    ProjectionID
 	Label string
 	Style StyleToken
 }
 
-func emptyPaneActions() []emptyPaneActionSpec {
-	return []emptyPaneActionSpec{
+func emptyPaneActions() []emptyPaneProjectionSpec {
+	return []emptyPaneProjectionSpec{
 		{ID: ActionEmptyAttach, Label: "Attach existing terminal", Style: StyleAccent},
 		{ID: ActionEmptyCreate, Label: "Create new terminal", Style: StyleSuccess},
 		{ID: ActionEmptyManager, Label: "Open terminal manager", Style: StyleForeground},
@@ -167,14 +167,14 @@ func emptyPaneActionLabel(label string, selected bool) string {
 	return "[ " + label + " ]"
 }
 
-type liveExitedActionSpec struct {
-	ID    ActionID
+type liveExitedProjectionSpec struct {
+	ID    ProjectionID
 	Label string
 	Style StyleToken
 }
 
-type liveDisconnectedActionSpec struct {
-	ID    ActionID
+type liveDisconnectedProjectionSpec struct {
+	ID    ProjectionID
 	Label string
 	Style StyleToken
 }
@@ -199,15 +199,15 @@ const (
 		terminalPickerActionColumnWidth
 )
 
-func liveExitedActions() []liveExitedActionSpec {
-	return []liveExitedActionSpec{
+func liveExitedActions() []liveExitedProjectionSpec {
+	return []liveExitedProjectionSpec{
 		{ID: ActionExitedRestart, Label: "R restart current terminal", Style: StyleWarning},
 		{ID: ActionExitedReconnect, Label: "Ctrl-F choose another terminal", Style: StyleMuted},
 	}
 }
 
-func liveDisconnectedActions() []liveDisconnectedActionSpec {
-	return []liveDisconnectedActionSpec{
+func liveDisconnectedActions() []liveDisconnectedProjectionSpec {
+	return []liveDisconnectedProjectionSpec{
 		{ID: ActionDisconnectedReconnect, Label: "Reconnect this pane", Style: StyleAccent},
 		{ID: ActionDisconnectedDisconnect, Label: "Disconnect pane", Style: StyleDangerStrong},
 	}
@@ -238,7 +238,7 @@ func buildEmptyTabContent(tab state.TabState) ContentVM {
 		Lines:      lines,
 		Status:     "empty tab: Choose terminal / New terminal / Terminal Manager",
 		Empty:      true,
-		HitRegions: contentActionRegions([]ActionID{ActionEmptyAttach, ActionEmptyCreate, ActionEmptyManager}, "", 2),
+		HitRegions: contentActionRegions([]ProjectionID{ActionEmptyAttach, ActionEmptyCreate, ActionEmptyManager}, "", 2),
 	}
 }
 
@@ -909,7 +909,7 @@ func helpActionLabel(action FooterActionVM) (string, bool) {
 	key := strings.TrimSpace(action.Key)
 	label := strings.TrimSpace(action.Label)
 	if label == "" {
-		spec, ok := ActionSpecByIDString(action.ActionID)
+		spec, ok := ProjectionByIDString(action.ActionID)
 		if ok {
 			label = strings.TrimSpace(spec.HelpLabel)
 		}
@@ -3389,7 +3389,7 @@ func endpointStatusStyle(status state.EndpointStatusKind) StyleToken {
 	}
 }
 
-func contentActionRegions(actions []ActionID, paneID string, rowOffset int) []HitRegion {
+func contentActionRegions(actions []ProjectionID, paneID string, rowOffset int) []HitRegion {
 	regions := make([]HitRegion, len(actions))
 	for index, action := range actions {
 		regions[index] = HitRegion{

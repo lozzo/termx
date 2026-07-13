@@ -8,10 +8,10 @@ import (
 	"time"
 	"unicode"
 
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/render"
 	"github.com/lozzow/termx/tui/services"
-	"github.com/lozzow/termx/tui/shortcut"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -122,7 +122,7 @@ func (ShellContentActionMsg) isMsg() {}
 
 // ShellShortcutActionMsg 让键盘和点击共享同一个 app action dispatcher。
 type ShellShortcutActionMsg struct {
-	Invocation shortcut.ActionInvocation
+	Invocation actiondomain.Invocation
 	PaneID     string
 	Floating   bool
 	Row        int
@@ -293,14 +293,6 @@ func NewShellReducer() Reducer {
 			next, effects := reduceShellContentAction(root, msg)
 			return rearmInteractionModeTimeout(next, effects)
 		case ShellShortcutActionMsg:
-			if actionID, ok := shortcutContentActionID(msg.Invocation); ok {
-				return reduceShellContentAction(root, ShellContentActionMsg{
-					ActionID: actionID.String(),
-					PaneID:   msg.PaneID,
-					Floating: msg.Floating,
-					Row:      msg.Row,
-				})
-			}
 			intent, ok := shortcutIntentForInvocation(msg.Invocation, input.InputEvent{})
 			if !ok {
 				return root, nil
@@ -308,7 +300,7 @@ func NewShellReducer() Reducer {
 			if shortcutIntentOwnedByCopy(intent) {
 				return root, nil
 			}
-			next, effects := reduceShortcutIntent(root, intent)
+			next, effects := reduceShortcutIntentWithContext(root, intent, msg.Row)
 			if intent.Kind == input.IntentOpenTerminalPicker || intent.Kind == input.IntentSetInteractionMode {
 				return next, effects
 			}
@@ -446,13 +438,9 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	} else if msg.PaneID != "" {
 		root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: msg.PaneID})
 	}
-	spec, ok := render.ActionSpecByIDString(msg.ActionID)
-	if !ok || spec.Dispatch == render.ActionDispatchNone {
+	spec, ok := render.ProjectionByIDString(msg.ActionID)
+	if !ok || spec.ID == render.ActionShortcutExit {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})
-		return root.Advance(), nil
-	}
-	if spec.Dispatch != render.ActionDispatchApp {
-		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unsupported " + msg.ActionID})
 		return root.Advance(), nil
 	}
 	switch spec.ID {
@@ -487,7 +475,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return root.Advance(), nil
 	case render.ActionFooterCopyMode:
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "v", Ctrl: true}}
+			return ShellShortcutActionMsg{Invocation: actiondomain.Invocation{ID: "menu.copy"}}
 		}}}
 	case render.ActionFooterGlobalMode:
 		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeGlobal)
@@ -592,9 +580,13 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionResizeLayoutReset:
 		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "reset"})
 	case render.ActionCopyOlder:
-		// copy footer 只生成等价 PageUp 输入，authoritative history 请求仍由 copy reducer 统一处理。
+		// projection 直接投递 canonical invocation；authoritative history 请求仍只由 copy reducer 处理。
+		actionID := actiondomain.ID("menu.copy")
+		if copyModeOwnsActiveInput(root) {
+			actionID = "copy.request_older"
+		}
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}}
+			return ShellShortcutActionMsg{Invocation: actiondomain.Invocation{ID: actionID}}
 		}}}
 	case render.ActionTerminalTakeResizeOwner:
 		if msg.Floating {
@@ -956,7 +948,7 @@ func liveAttachMsgForResizeOwner(root state.Root, binding state.TerminalViewBind
 	}}
 }
 
-func resizeFooterPaneCommand(actionID render.ActionID) (state.PaneCommand, bool) {
+func resizeFooterPaneCommand(actionID render.ProjectionID) (state.PaneCommand, bool) {
 	// footer resize token 与键盘 resize mode 使用同一方向和步长语义。
 	command := state.PaneCommand{
 		Action: state.PaneCommandResize,

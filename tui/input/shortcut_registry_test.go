@@ -3,18 +3,19 @@ package input
 import (
 	"testing"
 
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/shortcut"
 	"github.com/lozzow/termx/tui/state"
 )
 
 func TestDefaultShortcutCatalogIsAllowedByDomainRegistry(t *testing.T) {
 	for _, entry := range ShortcutEntriesForConfig(state.TUIShortcutConfig{}) {
-		invocation, spec, err := shortcut.ParseInvocation(entry.ActionID)
+		invocation, _, err := actiondomain.ParseInvocation(entry.ActionID)
 		if err != nil {
 			t.Fatalf("default shortcut %s.%s action=%q: %v", entry.Scene, entry.Key, entry.ActionID, err)
 		}
-		if !spec.AllowsScene(entry.Scene) {
-			t.Fatalf("default shortcut %s.%s invocation=%#v is not allowed by spec %#v", entry.Scene, entry.Key, invocation, spec)
+		if !shortcut.AllowsScene(invocation.ID, entry.Scene) {
+			t.Fatalf("default shortcut %s.%s invocation=%#v is not allowed by shortcut policy", entry.Scene, entry.Key, invocation)
 		}
 	}
 }

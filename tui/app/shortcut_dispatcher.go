@@ -2,54 +2,11 @@ package app
 
 import (
 	"strconv"
-	"strings"
 
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/render"
 	"github.com/lozzow/termx/tui/shortcut"
 )
-
-// shortcutContentActionID 把配置 action 投影到仍由 shell overlay reducer 持有的内容动作。
-// 这是开发期收敛边界：点击与键盘共享 invocation，但 overlay 状态变更仍只有 shell reducer 能执行。
-func shortcutContentActionID(invocation shortcut.ActionInvocation) (render.ActionID, bool) {
-	actions := map[string]render.ActionID{
-		"terminal_picker.attach":         render.ActionPickerAttach,
-		"terminal_picker.split":          render.ActionPickerSplit,
-		"terminal_picker.edit":           render.ActionPickerEdit,
-		"terminal_picker.kill":           render.ActionPickerKill,
-		"terminal_picker.delete":         render.ActionPickerDelete,
-		"terminal_picker.close":          render.ActionHelpClose,
-		"terminal_pool.attach":           render.ActionPoolAttach,
-		"terminal_pool.attach_tab":       render.ActionPoolAttachTab,
-		"terminal_pool.attach_float":     render.ActionPoolAttachFloat,
-		"terminal_pool.restart":          render.ActionPoolRestart,
-		"terminal_pool.edit":             render.ActionPoolEdit,
-		"terminal_pool.kill":             render.ActionPoolKill,
-		"terminal_pool.delete":           render.ActionPoolDelete,
-		"terminal_pool.close":            render.ActionHelpClose,
-		"workbench_tree.open":            render.ActionWorkbenchOpen,
-		"workbench_tree.new":             render.ActionWorkbenchNew,
-		"workbench_tree.rename":          render.ActionWorkbenchRename,
-		"workbench_tree.delete":          render.ActionWorkbenchDelete,
-		"workbench_tree.detach":          render.ActionWorkbenchDetach,
-		"workbench_tree.zoom":            render.ActionWorkbenchZoom,
-		"workbench_tree.close":           render.ActionHelpClose,
-		"clipboard_history.paste":        render.ActionClipboardHistoryPaste,
-		"clipboard_history.new":          render.ActionClipboardHistoryNew,
-		"clipboard_history.edit":         render.ActionClipboardHistoryEdit,
-		"clipboard_history.delete":       render.ActionClipboardHistoryDelete,
-		"clipboard_history.close":        render.ActionHelpClose,
-		"floating_overview.open":         render.ActionFloatingSummon,
-		"floating_overview.show_all":     render.ActionFloatingShowAll,
-		"floating_overview.collapse_all": render.ActionFloatingCollapseAll,
-		"floating_overview.close":        render.ActionHelpClose,
-		"prompt.submit":                  render.ActionPromptSubmit,
-		"prompt.cancel":                  render.ActionPromptCancel,
-		"help.close":                     render.ActionHelpClose,
-	}
-	action, ok := actions[invocation.ID]
-	return action, ok
-}
 
 func shortcutIntentOwnedByCopy(intent input.Intent) bool {
 	switch intent.Kind {
@@ -62,71 +19,130 @@ func shortcutIntentOwnedByCopy(intent input.Intent) bool {
 	}
 }
 
-// shortcutIntentForInvocation 是 app action dispatcher 的兼容执行边界。
-// shortcut domain 保留 action 身份和参数；这里把 invocation 投影为现有 reducer intent，
-// 后续 reducer 可以逐步直接消费 invocation，但 input 不再拥有 command/effect 语义。
-func shortcutIntentForInvocation(invocation shortcut.ActionInvocation, event input.InputEvent) (input.Intent, bool) {
-	intent := input.Intent{Event: event, Invocation: invocation}
-	id := invocation.ID
-	if strings.HasPrefix(id, "menu.") {
-		return shortcutMenuIntent(strings.TrimPrefix(id, "menu."), intent)
-	}
-	switch id {
-	case "terminal_picker.open":
-		intent.Kind = input.IntentOpenTerminalPicker
-	case "copy.enter":
-		intent.Kind = input.IntentEnterCopyMode
-	case "copy.request_older":
-		intent.Kind = input.IntentRequestOlder
-	case "copy.request_newer":
-		intent.Kind = input.IntentRequestNewer
-	case "copy.open_clipboard_history":
-		intent.Kind = input.IntentOpenClipboardHistory
-	case "copy.paste_latest":
-		intent.Kind = input.IntentPasteLastCopy
-	case "copy.paste_system":
-		intent.Kind = input.IntentPasteClipboard
-	case "copy.line_start", "copy.line_end", "copy.cursor_left", "copy.cursor_right", "copy.cursor_down", "copy.cursor_up", "copy.accept", "copy.oldest", "copy.newest", "copy.half_page_older", "copy.half_page_newer", "copy.mark", "copy.copy_selection", "copy.search_start":
-		intent.Kind, intent.Command = input.IntentCopyCommand, id
-	default:
-		if command, ok := shortcutPaneCommand(id); ok {
-			intent.Kind, intent.Command = input.IntentPaneCommand, command
-			return intent, true
-		}
-		if command, ok := shortcutWorkbenchCommand(invocation); ok {
-			intent.Kind, intent.Command = input.IntentWorkbenchCommand, command
-			return intent, true
-		}
-		if action, reason, ok := shortcutShellAction(invocation); ok {
-			intent.Kind, intent.Action, intent.Reason = input.IntentShellAction, action, reason
-			return intent, true
-		}
+type actionHandler func(actiondomain.Invocation, input.InputEvent) (input.Intent, bool)
+
+var actionHandlerRegistry = buildActionHandlerRegistry()
+
+// shortcutIntentForInvocation 通过 canonical action handler registry 生成 reducer intent。
+// registry 只以 tui/action ID 为键；alias、scene、展示和 source string 均不能参与执行选择。
+func shortcutIntentForInvocation(invocation actiondomain.Invocation, event input.InputEvent) (input.Intent, bool) {
+	handler, ok := actionHandlerRegistry[invocation.ID]
+	if !ok {
 		return input.Intent{}, false
 	}
-	return intent, true
+	return handler(invocation, event)
 }
 
-func shortcutMenuIntent(scene string, intent input.Intent) (input.Intent, bool) {
-	switch scene {
-	case "copy":
+func buildActionHandlerRegistry() map[actiondomain.ID]actionHandler {
+	registry := map[actiondomain.ID]actionHandler{}
+	register := func(canonical actiondomain.ID, handler actionHandler) {
+		if _, exists := registry[canonical]; exists {
+			panic("duplicate app action handler " + canonical.String())
+		}
+		registry[canonical] = handler
+	}
+	for _, scene := range shortcut.Scenes() {
+		if scene.MenuAction == "" {
+			continue
+		}
+		register(scene.MenuAction, func(invocation actiondomain.Invocation, event input.InputEvent) (input.Intent, bool) {
+			return shortcutMenuIntent(invocation.ID, input.Intent{Event: event, Invocation: invocation})
+		})
+	}
+	direct := map[string]input.IntentKind{
+		"copy.open_clipboard_history": input.IntentOpenClipboardHistory,
+		"copy.request_older":          input.IntentRequestOlder,
+		"copy.request_newer":          input.IntentRequestNewer,
+		"copy.paste_latest":           input.IntentPasteLastCopy,
+		"copy.paste_system":           input.IntentPasteClipboard,
+	}
+	for id, kind := range direct {
+		kind := kind
+		register(actiondomain.ID(id), func(invocation actiondomain.Invocation, event input.InputEvent) (input.Intent, bool) {
+			return input.Intent{Kind: kind, Event: event, Invocation: invocation}, true
+		})
+	}
+	for _, id := range []string{"copy.line_start", "copy.line_end", "copy.cursor_left", "copy.cursor_right", "copy.cursor_down", "copy.cursor_up", "copy.accept", "copy.oldest", "copy.newest", "copy.half_page_older", "copy.half_page_newer", "copy.mark", "copy.copy_selection", "copy.search_start"} {
+		id := id
+		register(actiondomain.ID(id), func(invocation actiondomain.Invocation, event input.InputEvent) (input.Intent, bool) {
+			return input.Intent{Kind: input.IntentCopyCommand, Command: id, Event: event, Invocation: invocation}, true
+		})
+	}
+	for _, spec := range actiondomain.Specs() {
+		id := string(spec.ID)
+		if _, exists := registry[spec.ID]; exists {
+			continue
+		}
+		if _, ok := shortcutPaneCommand(id); ok {
+			register(spec.ID, paneCommandActionHandler)
+			continue
+		}
+		if _, ok := shortcutWorkbenchCommand(actiondomain.Invocation{ID: spec.ID, Params: defaultActionParams(spec)}); ok {
+			register(spec.ID, workbenchCommandActionHandler)
+			continue
+		}
+		if _, _, ok := shortcutShellAction(actiondomain.Invocation{ID: spec.ID, Params: defaultActionParams(spec)}); ok {
+			register(spec.ID, shellActionHandler)
+		}
+	}
+	for _, id := range []actiondomain.ID{
+		"terminal_picker.attach", "terminal_picker.split", "terminal_picker.edit", "terminal_picker.kill", "terminal_picker.delete", "terminal_picker.close",
+		"terminal_pool.attach", "terminal_pool.attach_tab", "terminal_pool.attach_float", "terminal_pool.restart", "terminal_pool.edit", "terminal_pool.kill", "terminal_pool.delete", "terminal_pool.close",
+		"workbench_tree.open", "workbench_tree.new", "workbench_tree.rename", "workbench_tree.delete", "workbench_tree.detach", "workbench_tree.zoom", "workbench_tree.close",
+		"clipboard_history.paste", "clipboard_history.new", "clipboard_history.edit", "clipboard_history.delete", "clipboard_history.close",
+		"floating_overview.open", "floating_overview.show_all", "floating_overview.collapse_all", "floating_overview.close",
+		"prompt.submit", "prompt.cancel", "help.close",
+	} {
+		register(id, func(invocation actiondomain.Invocation, event input.InputEvent) (input.Intent, bool) {
+			return input.Intent{Kind: input.IntentAppAction, Event: event, Invocation: invocation}, true
+		})
+	}
+	return registry
+}
+
+func defaultActionParams(spec actiondomain.Spec) map[string]int {
+	if spec.Param == nil {
+		return nil
+	}
+	return map[string]int{spec.Param.Name: spec.Param.Min}
+}
+
+func paneCommandActionHandler(invocation actiondomain.Invocation, event input.InputEvent) (input.Intent, bool) {
+	command, ok := shortcutPaneCommand(string(invocation.ID))
+	return input.Intent{Kind: input.IntentPaneCommand, Command: command, Event: event, Invocation: invocation}, ok
+}
+
+func workbenchCommandActionHandler(invocation actiondomain.Invocation, event input.InputEvent) (input.Intent, bool) {
+	command, ok := shortcutWorkbenchCommand(invocation)
+	return input.Intent{Kind: input.IntentWorkbenchCommand, Command: command, Event: event, Invocation: invocation}, ok
+}
+
+func shellActionHandler(invocation actiondomain.Invocation, event input.InputEvent) (input.Intent, bool) {
+	action, reason, ok := shortcutShellAction(invocation)
+	return input.Intent{Kind: input.IntentShellAction, Action: action, Reason: reason, Event: event, Invocation: invocation}, ok
+}
+
+func shortcutMenuIntent(id actiondomain.ID, intent input.Intent) (input.Intent, bool) {
+	switch id {
+	case "menu.copy":
 		intent.Kind = input.IntentEnterCopyMode
-	case "terminal_picker":
+	case "menu.terminal_picker":
 		intent.Kind = input.IntentOpenTerminalPicker
-	case "terminal_pool":
+	case "menu.terminal_pool":
 		intent.Kind, intent.Action = input.IntentShellAction, input.ShellActionOpenPool
-	case "workbench_tree":
+	case "menu.workbench_tree":
 		intent.Kind, intent.Action = input.IntentShellAction, input.ShellActionOpenTree
-	case "clipboard_history":
+	case "menu.clipboard_history":
 		intent.Kind, intent.Action = input.IntentShellAction, input.ShellActionOpenClipboardHistory
-	case "floating_overview":
+	case "menu.floating_overview":
 		intent.Kind, intent.Action = input.IntentShellAction, input.ShellActionFloatingOverview
-	case "prompt":
+	case "menu.prompt":
 		intent.Kind, intent.Action = input.IntentShellAction, input.ShellActionOpenPrompt
-	case "help":
+	case "menu.help":
 		intent.Kind, intent.Action = input.IntentShellAction, input.ShellActionOpenHelp
 	default:
-		modes := map[string]input.InteractionMode{"panel": input.InteractionModePane, "resize": input.InteractionModeResize, "system": input.InteractionModeGlobal, "floating": input.InteractionModeFloating, "tab": input.InteractionModeTab, "workspace": input.InteractionModeWorkspace}
-		mode, ok := modes[scene]
+		modes := map[actiondomain.ID]input.InteractionMode{"menu.panel": input.InteractionModePane, "menu.resize": input.InteractionModeResize, "menu.system": input.InteractionModeGlobal, "menu.floating": input.InteractionModeFloating, "menu.tab": input.InteractionModeTab, "menu.workspace": input.InteractionModeWorkspace}
+		mode, ok := modes[id]
 		if !ok {
 			return input.Intent{}, false
 		}
@@ -145,8 +161,8 @@ func shortcutPaneCommand(id string) (string, bool) {
 	return command, ok
 }
 
-func shortcutWorkbenchCommand(invocation shortcut.ActionInvocation) (string, bool) {
-	id := invocation.ID
+func shortcutWorkbenchCommand(invocation actiondomain.Invocation) (string, bool) {
+	id := string(invocation.ID)
 	commands := map[string]string{
 		"panel.close": "pane close", "panel.detach": "pane detach", "panel.reconnect": "pane reconnect", "panel.restart": "pane restart", "panel.take_owner": "pane take-owner", "panel.size_lock": "terminal size lock",
 		"resize.layout_toggle": "terminal layout toggle", "resize.pan_left": "terminal layout pan-left", "resize.pan_right": "terminal layout pan-right", "resize.pan_up": "terminal layout pan-up", "resize.pan_down": "terminal layout pan-down", "resize.align_left": "terminal layout align-left", "resize.align_right": "terminal layout align-right", "resize.align_top": "terminal layout align-top", "resize.align_bottom": "terminal layout align-bottom", "resize.center": "terminal layout center", "resize.center_x": "terminal layout center-x", "resize.center_y": "terminal layout center-y", "resize.layout_reset": "terminal layout reset",
@@ -160,11 +176,11 @@ func shortcutWorkbenchCommand(invocation shortcut.ActionInvocation) (string, boo
 	return command, ok
 }
 
-func shortcutShellAction(invocation shortcut.ActionInvocation) (input.ShellAction, string, bool) {
-	id := invocation.ID
+func shortcutShellAction(invocation actiondomain.Invocation) (input.ShellAction, string, bool) {
+	id := string(invocation.ID)
 	plain := map[string]input.ShellAction{
-		"system.toggle_header": input.ShellActionToggleHeader, "system.toggle_footer": input.ShellActionToggleFooter, "system.clear_toasts": input.ShellActionClearToasts, "system.close_toast": input.ShellActionCloseToast, "system.open_terminal_pool": input.ShellActionOpenPool, "system.open_terminal_picker": input.ShellActionOpenPicker, "system.open_workbench_tree": input.ShellActionOpenTree, "system.toggle_shortcut_lock": input.ShellActionToggleShortcutLock, "system.open_prompt": input.ShellActionOpenPrompt, "system.open_help": input.ShellActionOpenHelp, "system.quit": input.ShellActionQuit,
-		"floating.new": input.ShellActionFloatingNew, "floating.overview": input.ShellActionFloatingOverview,
+		"system.toggle_header": input.ShellActionToggleHeader, "system.toggle_footer": input.ShellActionToggleFooter, "system.clear_toasts": input.ShellActionClearToasts, "system.close_toast": input.ShellActionCloseToast, "system.toggle_shortcut_lock": input.ShellActionToggleShortcutLock, "system.quit": input.ShellActionQuit,
+		"floating.new": input.ShellActionFloatingNew,
 	}
 	if action, ok := plain[id]; ok {
 		return action, "", true

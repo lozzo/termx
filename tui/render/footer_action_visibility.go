@@ -24,7 +24,7 @@ func footerResizeActionTokensVisibleForWidth(actions []FooterActionVM, width int
 		return actions
 	}
 	// 中文说明：resize 窄宽 footer 不能只保留 global；center/reset 是当前 mode 仍可执行的 view-layout 入口。
-	ids := []ActionID{
+	ids := []ProjectionID{
 		ActionResizeLayoutCenter,
 		ActionResizeLeft,
 		ActionResizeRight,
@@ -32,7 +32,7 @@ func footerResizeActionTokensVisibleForWidth(actions []FooterActionVM, width int
 		ActionFooterGlobalMode,
 	}
 	if width < 72 {
-		ids = []ActionID{
+		ids = []ProjectionID{
 			ActionResizeLayoutCenter,
 			ActionResizeLayoutReset,
 			ActionFooterGlobalMode,
@@ -70,7 +70,7 @@ func footerActionsByKeys(actions []FooterActionVM, keys []string) []FooterAction
 	return out
 }
 
-func footerActionsByActionIDs(actions []FooterActionVM, ids []ActionID) []FooterActionVM {
+func footerActionsByActionIDs(actions []FooterActionVM, ids []ProjectionID) []FooterActionVM {
 	out := make([]FooterActionVM, 0, len(ids))
 	for _, id := range ids {
 		actionID := id.String()

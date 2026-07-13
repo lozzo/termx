@@ -78,8 +78,8 @@ func PaneCommandFromHitRegion(region render.HitRegion) (state.PaneCommand, bool)
 	}
 	switch region.Kind {
 	case render.HitRegionPaneAction:
-		spec, ok := render.ActionSpecByIDString(region.ActionID)
-		if !ok || spec.Dispatch != render.ActionDispatchPaneCommand {
+		spec, ok := render.ProjectionByIDString(region.ActionID)
+		if !ok {
 			return state.PaneCommand{}, false
 		}
 		switch spec.ID {

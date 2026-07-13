@@ -468,6 +468,10 @@ func TestParseShortcutCatalogDeclarationMatrix(t *testing.T) {
 }
 
 func TestValidateRejectsInvalidShortcutConfig(t *testing.T) {
+	if _, err := Parse([]byte("tui:\n  shortcuts:\n    actions:\n      empty.attach:\n        label: attach\n")); err == nil {
+		t.Fatal("surface-only action label must be rejected during parsing")
+	}
+
 	cfg := Default()
 	cfg.Shortcuts.Actions = map[string]state.TUIShortcutActionConfig{
 		"menu.panel": {Label: "panel"},
@@ -475,6 +479,14 @@ func TestValidateRejectsInvalidShortcutConfig(t *testing.T) {
 	}
 	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "duplicates canonical shortcut action") {
 		t.Fatalf("expected canonical action label duplicate error, got %v", err)
+	}
+
+	cfg = Default()
+	cfg.Shortcuts.Actions = map[string]state.TUIShortcutActionConfig{
+		"empty.attach": {Label: "attach"},
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "unknown shortcut action") {
+		t.Fatalf("surface-only action must not be accepted as a shortcut label, got %v", err)
 	}
 
 	cfg = Default()

@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lozzow/termx/tui/shortcut"
+	actiondomain "github.com/lozzow/termx/tui/action"
 )
 
 const HeaderTabCreateText = "  󰐕 "
@@ -381,9 +381,9 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 		style = footerActionDisplayStyle(key, decor, style)
 		actionID := action.ActionID
 		invocation := action.Invocation
-		if action.Click != shortcut.ClickClickable || invocation.ID == "" {
+		if action.Click != ClickClickable || invocation.ID == "" {
 			actionID = ""
-			invocation = shortcut.ActionInvocation{}
+			invocation = actiondomain.Invocation{}
 		}
 		withAction := func(segment barSegment) barSegment {
 			if actionID == "" {
@@ -418,7 +418,7 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 	return segments
 }
 
-func appendFooterKeySegmentsWithInvocation(segments []barSegment, key string, style StyleToken, actionID string, invocation shortcut.ActionInvocation) []barSegment {
+func appendFooterKeySegmentsWithInvocation(segments []barSegment, key string, style StyleToken, actionID string, invocation actiondomain.Invocation) []barSegment {
 	start := len(segments)
 	segments = appendFooterKeySegments(segments, key, style, actionID)
 	for index := start; index < len(segments); index++ {
@@ -429,7 +429,7 @@ func appendFooterKeySegmentsWithInvocation(segments []barSegment, key string, st
 	return segments
 }
 
-func appendFooterBracketTokenSegmentsWithInvocation(segments []barSegment, token string, style StyleToken, actionID string, invocation shortcut.ActionInvocation) []barSegment {
+func appendFooterBracketTokenSegmentsWithInvocation(segments []barSegment, token string, style StyleToken, actionID string, invocation actiondomain.Invocation) []barSegment {
 	start := len(segments)
 	segments = appendFooterBracketTokenSegments(segments, token, style, actionID)
 	for index := start; index < len(segments); index++ {
@@ -738,7 +738,7 @@ type barSegment struct {
 	ansi       ANSICellStyle
 	priority   int
 	actionID   string
-	invocation shortcut.ActionInvocation
+	invocation actiondomain.Invocation
 	targetID   string
 	joint      bool
 }
@@ -752,7 +752,7 @@ func (segment barSegment) withAction(actionID string) barSegment {
 	return segment
 }
 
-func (segment barSegment) withInvocation(invocation shortcut.ActionInvocation) barSegment {
+func (segment barSegment) withInvocation(invocation actiondomain.Invocation) barSegment {
 	segment.invocation = invocation
 	return segment
 }

@@ -598,8 +598,11 @@ func TestUIInputReducerFloatingModeTuiv2PickerAndOwner(t *testing.T) {
 	if root.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("floating picker shortcut should emit handled and picker effects, got %#v", effects)
 	}
-	if msg, ok := runFirstNonStickyTimeoutEffect(t, effects).(ShellOpenTerminalPickerMsg); !ok {
-		t.Fatalf("floating picker shortcut should request picker open, got %#v", msg)
+	if !root.Shell.Overlay.Open || root.Shell.Overlay.Kind != state.OverlayTerminalPicker {
+		t.Fatalf("floating picker shortcut should open picker through canonical handler, got %#v", root.Shell.Overlay)
+	}
+	if msg, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalPoolListRequestMsg); !ok || !msg.Refresh {
+		t.Fatalf("floating picker shortcut should refresh picker inventory, got %#v", msg)
 	}
 
 	root.Shell = root.Shell.CloseOverlay().SetInteractionMode(state.InteractionModeFloating)
@@ -929,7 +932,7 @@ func TestUIInputReducerOpensClipboardHistoryWhileCopyModeEntering(t *testing.T) 
 	}
 }
 
-func TestOverlayKeyboardCommandsRouteClipboardHistoryContentActions(t *testing.T) {
+func TestOverlayKeyboardCommandsUseCanonicalClipboardHandlers(t *testing.T) {
 	inputReducer := NewUIInputReducer()
 	root := state.Root{
 		Shell: state.DefaultShell().OpenClipboardHistory(),
@@ -938,14 +941,20 @@ func TestOverlayKeyboardCommandsRouteClipboardHistoryContentActions(t *testing.T
 		},
 	}
 
-	_, effects := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x05", Ctrl: true}})
-	assertContentActionEffect(t, effects, render.ActionClipboardHistoryEdit)
+	next, effects := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x05", Ctrl: true}})
+	if next.Shell.Overlay.Kind != state.OverlayPrompt || next.Shell.Overlay.Prompt.Purpose != "clipboard.edit" || len(effects) != 1 {
+		t.Fatalf("clipboard edit shortcut should enter its app handler directly, root=%#v effects=%#v", next, effects)
+	}
 
-	_, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x0e", Ctrl: true}})
-	assertContentActionEffect(t, effects, render.ActionClipboardHistoryNew)
+	next, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x0e", Ctrl: true}})
+	if next.Shell.Overlay.Kind != state.OverlayPrompt || next.Shell.Overlay.Prompt.Purpose != "clipboard.new" || len(effects) != 1 {
+		t.Fatalf("clipboard new shortcut should enter its app handler directly, root=%#v effects=%#v", next, effects)
+	}
 
-	_, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x18", Ctrl: true}})
-	assertContentActionEffect(t, effects, render.ActionClipboardHistoryDelete)
+	next, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x18", Ctrl: true}})
+	if len(next.Clipboard.Entries) != 0 || len(effects) != 2 {
+		t.Fatalf("clipboard delete shortcut should execute canonical reducer and persist, root=%#v effects=%#v", next, effects)
+	}
 }
 
 func TestOverlayMouseWheelMovesCurrentSelection(t *testing.T) {
@@ -4340,23 +4349,31 @@ func TestPaneModeLockUsesTerminalSizeLockPath(t *testing.T) {
 	}
 }
 
-func TestOverlayKeyboardCommandsRouteThroughContentActions(t *testing.T) {
+func TestOverlayKeyboardCommandsUseCanonicalAppHandlers(t *testing.T) {
 	inputReducer := NewUIInputReducer()
 	root := state.Root{Shell: state.DefaultShell().OpenTerminalPicker()}
 
-	_, effects := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
-	assertContentActionEffect(t, effects, render.ActionPickerSplit)
+	next, effects := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
+	if len(effects) != 1 || len(next.Shell.Toasts) == 0 || next.Shell.Toasts[len(next.Shell.Toasts)-1].Title != "picker.split" {
+		t.Fatalf("picker split shortcut should execute canonical handler, root=%#v effects=%#v", next, effects)
+	}
 
-	_, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x05", Ctrl: true}})
-	assertContentActionEffect(t, effects, render.ActionPickerEdit)
+	next, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x05", Ctrl: true}})
+	if len(effects) != 1 || len(next.Shell.Toasts) == 0 || next.Shell.Toasts[len(next.Shell.Toasts)-1].Title != "terminal_picker.edit" {
+		t.Fatalf("picker edit shortcut should execute canonical handler, root=%#v effects=%#v", next, effects)
+	}
 
 	root.Shell = state.DefaultShell().OpenTerminalPool()
-	_, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x0f", Ctrl: true}})
-	assertContentActionEffect(t, effects, render.ActionPoolAttachFloat)
+	next, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x0f", Ctrl: true}})
+	if len(effects) != 1 || len(next.Shell.Toasts) == 0 || next.Shell.Toasts[len(next.Shell.Toasts)-1].Title != "terminal_pool.attach_float" {
+		t.Fatalf("pool attach-float shortcut should execute canonical handler, root=%#v effects=%#v", next, effects)
+	}
 
 	root.Shell = state.DefaultShell().OpenWorkbenchTree()
-	_, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x04", Ctrl: true}})
-	assertContentActionEffect(t, effects, render.ActionWorkbenchDetach)
+	next, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x04", Ctrl: true}})
+	if len(effects) == 0 || len(next.Shell.Toasts) == 0 {
+		t.Fatalf("workbench detach shortcut should execute canonical handler, root=%#v effects=%#v", next, effects)
+	}
 }
 
 func TestWorkbenchTreeOverlayKeyboardTogglesCollapse(t *testing.T) {
@@ -4497,24 +4514,6 @@ func TestTerminalPoolEditResultUpdatesVisibleManagerTitle(t *testing.T) {
 	items := state.TerminalPoolPageItems(next)
 	if len(items) != 1 || items[0].Title != "renamed" || items[0].Tags["role"] != "new" {
 		t.Fatalf("edit result should update visible terminal metadata immediately, items=%#v", items)
-	}
-}
-
-func assertContentActionEffect(t *testing.T, effects []Effect, actionID render.ActionID) {
-	t.Helper()
-	if len(effects) != 2 {
-		t.Fatalf("expected handled and content action effects, got %#v", effects)
-	}
-	if _, ok := effects[0].(handledEffect); !ok {
-		t.Fatalf("expected handled effect, got %#v", effects[0])
-	}
-	effect, ok := effects[1].(FuncEffect)
-	if !ok || effect.Run == nil {
-		t.Fatalf("expected content action func effect, got %#v", effects[1])
-	}
-	msg, ok := effect.Run(context.Background()).(ShellContentActionMsg)
-	if !ok || msg.ActionID != actionID.String() || msg.Row != -1 {
-		t.Fatalf("expected content action %s row -1, got %#v", actionID, msg)
 	}
 }
 

@@ -18,15 +18,16 @@ import (
 	"strings"
 	"testing"
 
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/render"
 	"github.com/lozzow/termx/tui/shortcut"
 	"github.com/lozzow/termx/tui/state"
 )
 
-const shortcutArtifactBaselineSHA256 = "6a619c49a2369665ea25bc04c701224027353facfd0c1ddcadc0f6d46b28131b"
-const shortcutCompositeSemanticBaselineSHA256 = "fe54ff9f5a49098d377131ea93d8f0b534a7cbd94918d7a790e97dbb6667bdfd"
-const shortcutRenderStringBaselineSHA256 = "0dc8824ec076ab1ea7d3e289ddb6707de9735175c5ddebf4d7a915aed73afb69"
+const shortcutArtifactBaselineSHA256 = "9f57949028332d435bc8c8c31af8ac46baafaa211c49244c38c8446ec534a427"
+const shortcutCompositeSemanticBaselineSHA256 = "de46d98c1ed8a80060b9bb776fd1b7abc60355aecc8e0ed74c1fd870b0803178"
+const shortcutRenderStringBaselineSHA256 = "54e9d0f874d8a489af4d92e276794d0d56060ac37ea557c515a0e5a4f904ff36"
 
 type shortcutDebtManifest struct {
 	SchemaVersion int                    `json:"schema_version"`
@@ -71,28 +72,23 @@ type shortcutAuditSource struct {
 	Anchors []string `json:"anchors"`
 }
 
-// TestShortcutContractDebtManifestLocksKnownDebt 验证 KS012 的债务基线不能静默扩张。
+// TestShortcutContractDebtManifestLocksKnownDebt 验证当前快捷键债务基线不能静默扩张。
 // manifest 记录 owner/source/目标切片；测试内的 debt ID 集合是独立门禁，新增债务不能只修改
 // JSON 自我批准，必须显式修改审计代码并重新经过阶段双审查。
 func TestShortcutContractDebtManifestLocksKnownDebt(t *testing.T) {
 	repoRoot := shortcutAuditRepoRoot(t)
 	manifest := readShortcutDebtManifest(t, repoRoot)
-	if manifest.SchemaVersion != 1 || manifest.Stage != "KS012" {
+	if manifest.SchemaVersion != 1 || manifest.Stage != "KS013" {
 		t.Fatalf("unexpected shortcut debt manifest header: %#v", manifest)
 	}
 
 	wantDebtIDs := []string{
-		"action-domain-owned-by-shortcut",
-		"app-string-dispatcher",
-		"binding-catalog-wrong-owner",
 		"hardcoded-content-key-hints",
 		"hardcoded-footer-key-pruning",
 		"hit-region-producers-pending-action-classification",
 		"prompt-submit-placeholder",
-		"render-action-second-truth",
+		"render-projection-legacy-shortcut-metadata",
 		"render-shortcut-id-bridge",
-		"shortcut-owns-global-display-policy",
-		"synthetic-input-action-bridge",
 	}
 	seenIDs := map[string]bool{}
 	kinds := map[string]bool{}
@@ -137,7 +133,7 @@ func TestShortcutContractDebtManifestLocksKnownDebt(t *testing.T) {
 // scene 合法且能进入 app handler；任一新增 binding 若落在未注册或未处理路径都会失败。
 func TestShortcutContractAuditClassifiesDefaultBindings(t *testing.T) {
 	manifest := readShortcutDebtManifest(t, shortcutAuditRepoRoot(t))
-	wantInventory := shortcutAuditInventory{DefaultEntries: 203, RoutedBindings: 166, ShortcutSpecs: 146, RenderProjections: 123}
+	wantInventory := shortcutAuditInventory{DefaultEntries: 203, RoutedBindings: 166, ShortcutSpecs: 159, RenderProjections: 123}
 	if manifest.Inventory != wantInventory {
 		t.Fatalf("shortcut manifest inventory changed without updating the independent guard: got=%#v want=%#v", manifest.Inventory, wantInventory)
 	}
@@ -151,11 +147,11 @@ func TestShortcutContractAuditClassifiesDefaultBindings(t *testing.T) {
 	boundSpecs := map[string]bool{}
 	entryInvocations := map[string]bool{}
 	for _, entry := range entries {
-		invocation, spec, err := shortcut.ParseInvocation(entry.ActionID)
+		invocation, spec, err := actiondomain.ParseInvocation(entry.ActionID)
 		if err != nil {
 			t.Fatalf("default binding %s.%s action=%q has no canonical spec: %v", entry.Scene, entry.Key, entry.ActionID, err)
 		}
-		if !spec.AllowsScene(entry.Scene) {
+		if !shortcut.AllowsScene(invocation.ID, entry.Scene) {
 			t.Fatalf("default binding %s.%s action=%q is forbidden by spec %#v", entry.Scene, entry.Key, entry.ActionID, spec)
 		}
 		key := entry.Scene + "\x00" + entry.Key
@@ -163,26 +159,15 @@ func TestShortcutContractAuditClassifiesDefaultBindings(t *testing.T) {
 			t.Fatalf("default binding key %s.%s is duplicated by %q and %q", entry.Scene, entry.Key, previous, entry.ActionID)
 		}
 		seenKeys[key] = entry.ActionID
-		boundSpecs[spec.ID] = true
+		boundSpecs[string(spec.ID)] = true
 		entryInvocations[invocation.Signature()] = true
 
-		if shortcutAuditRoutedScene(entry.Scene) {
-			intent, ok := shortcutIntentForInvocation(invocation, input.InputEvent{})
-			if !ok {
-				t.Fatalf("routed default binding %s.%s invocation=%#v has no keyboard handler", entry.Scene, entry.Key, invocation)
-			}
-			if intent.Kind == input.IntentNone || intent.Kind == input.IntentShortcutAction {
-				t.Fatalf("default binding %s.%s invocation=%#v returned a non-concrete app intent %#v", entry.Scene, entry.Key, invocation, intent)
-			}
-			continue
-		}
-		actionID, ok := render.ShortcutActionRenderID(entry.ActionID)
+		intent, ok := shortcutIntentForInvocation(invocation, input.InputEvent{})
 		if !ok {
-			t.Fatalf("overlay default binding %s.%s invocation=%#v is missing from the runtime render bridge", entry.Scene, entry.Key, invocation)
+			t.Fatalf("default binding %s.%s invocation=%#v has no canonical app handler", entry.Scene, entry.Key, invocation)
 		}
-		projection, ok := render.ActionSpecByID(actionID)
-		if !ok || projection.Dispatch != render.ActionDispatchApp {
-			t.Fatalf("default overlay binding %s.%s invocation=%#v maps to invalid app projection %#v", entry.Scene, entry.Key, invocation, projection)
+		if intent.Kind == input.IntentNone || intent.Kind == input.IntentShortcutAction {
+			t.Fatalf("default binding %s.%s invocation=%#v returned a non-concrete app intent %#v", entry.Scene, entry.Key, invocation, intent)
 		}
 	}
 
@@ -196,19 +181,19 @@ func TestShortcutContractAuditClassifiesDefaultBindings(t *testing.T) {
 		}
 	}
 
-	seenSpecs := map[string]bool{}
-	for _, spec := range shortcut.Specs() {
+	seenSpecs := map[actiondomain.ID]bool{}
+	for _, spec := range actiondomain.Specs() {
 		if spec.ID == "" || seenSpecs[spec.ID] {
 			t.Fatalf("canonical shortcut specs must be named and unique: %#v", spec)
 		}
 		seenSpecs[spec.ID] = true
 	}
 	for specID := range boundSpecs {
-		if !seenSpecs[specID] {
+		if !seenSpecs[actiondomain.ID(specID)] {
 			t.Fatalf("bound shortcut spec %q is not present in canonical spec inventory", specID)
 		}
 	}
-	if got := (shortcutAuditInventory{DefaultEntries: len(entries), RoutedBindings: len(bindings), ShortcutSpecs: len(seenSpecs), RenderProjections: len(render.ActionSpecCatalog())}); got != wantInventory {
+	if got := (shortcutAuditInventory{DefaultEntries: len(entries), RoutedBindings: len(bindings), ShortcutSpecs: len(seenSpecs), RenderProjections: len(render.ProjectionCatalog())}); got != wantInventory {
 		t.Fatalf("shortcut inventory changed without reclassification: got=%#v want=%#v", got, wantInventory)
 	}
 }
@@ -216,17 +201,14 @@ func TestShortcutContractAuditClassifiesDefaultBindings(t *testing.T) {
 // TestShortcutContractAuditClassifiesRenderProjections 保留 KS012 时点的 render 完备性证明：
 // 当前第二 action catalog 虽被列为债务，但它内部仍不得出现重复、空 ID 或未声明 dispatch 的可见项。
 func TestShortcutContractAuditClassifiesRenderProjections(t *testing.T) {
-	seen := map[render.ActionID]bool{}
-	for _, spec := range render.ActionSpecCatalog() {
+	seen := map[render.ProjectionID]bool{}
+	for _, spec := range render.ProjectionCatalog() {
 		if spec.ID == "" || seen[spec.ID] {
 			t.Fatalf("render action projections must be named and unique: %#v", spec)
 		}
 		seen[spec.ID] = true
 		if len(spec.Surfaces) == 0 {
 			t.Fatalf("render action projection %q has no classified surface", spec.ID)
-		}
-		if spec.Dispatch == render.ActionDispatchNone && spec.ID != render.ActionShortcutExit {
-			t.Fatalf("render action projection %q has no dispatch classification", spec.ID)
 		}
 	}
 	if len(seen) == 0 {
@@ -332,15 +314,7 @@ func shortcutCompositeProducers(t *testing.T, repoRoot string, typeName string) 
 	if typeName == "HitRegion" {
 		classification = "hit-region-producers-pending-action-classification"
 	}
-	out := shortcutArtifactsFromCounts(counts, classification)
-	if typeName == "InputEvent" {
-		for index := range out {
-			if strings.HasPrefix(out[index].Signature, "tui/app/shell.go#") || strings.HasPrefix(out[index].Signature, "tui/app/copymode.go#") {
-				out[index].Classification = "synthetic-input-action-bridge"
-			}
-		}
-	}
-	return out
+	return shortcutArtifactsFromCounts(counts, classification)
 }
 
 func shortcutDisplayKeyLiterals(t *testing.T, repoRoot string) []shortcutAuditArtifact {
@@ -482,7 +456,7 @@ func shortcutLooksLikeDisplayKey(value string) bool {
 func shortcutDisplayLiteralClassification(path string, function string, value string) string {
 	switch path {
 	case "tui/render/action_ids.go":
-		return "render-action-second-truth"
+		return "render-projection-legacy-shortcut-metadata"
 	case "tui/render/product_content.go":
 		return "hardcoded-content-key-hints"
 	case "tui/render/footer_action_visibility.go":
@@ -512,15 +486,6 @@ func shortcutArtifactsFromCounts(counts map[string]int, classification string) [
 
 func shortcutArtifactDiff(got shortcutAuditArtifacts, want shortcutAuditArtifacts) string {
 	return fmt.Sprintf("observed=%#v\nmanifest=%#v", got, want)
-}
-
-func shortcutAuditRoutedScene(scene string) bool {
-	switch scene {
-	case "global", "panel", "resize", "system", "floating", "tab", "workspace", "copy":
-		return true
-	default:
-		return false
-	}
 }
 
 func shortcutCompositeSemanticDigest(t *testing.T, repoRoot string) string {

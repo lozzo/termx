@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/tui/shortcut"
+	actiondomain "github.com/lozzow/termx/tui/action"
 )
 
 // ANSIReset 是 FrameSink 写完 styled frame 后必须输出的 SGR reset。
@@ -1035,9 +1035,19 @@ type FooterActionVM struct {
 	Icon       string
 	ActionID   string
 	Style      StyleToken
-	Invocation shortcut.ActionInvocation
-	Click      shortcut.ClickPolicy
+	Invocation actiondomain.Invocation
+	Click      ClickPolicy
 }
+
+// ClickPolicy 描述具体 render projection 的点击属性。
+// 只有携带唯一 canonical invocation 的 projection 才能是 clickable；该属性不属于 action 或 shortcut 全局 spec。
+type ClickPolicy string
+
+const (
+	ClickHidden    ClickPolicy = "hidden"
+	ClickHintOnly  ClickPolicy = "hint-only"
+	ClickClickable ClickPolicy = "clickable"
+)
 
 type FooterVM struct {
 	Visible                          bool

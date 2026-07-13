@@ -1,7 +1,7 @@
 package input
 
 import (
-	"github.com/lozzow/termx/tui/shortcut"
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -125,6 +125,7 @@ const (
 	IntentWorkbenchCommand     IntentKind = "workbench-command"
 	IntentCopyCommand          IntentKind = "copy-command"
 	IntentShortcutAction       IntentKind = "shortcut-action"
+	IntentAppAction            IntentKind = "app-action"
 )
 
 type InteractionMode string
@@ -175,7 +176,7 @@ type Intent struct {
 	Action   ShellAction
 	RawMouse bool
 	// Invocation 只由 shortcut catalog 命中产生；app dispatcher 是其执行语义 owner。
-	Invocation shortcut.ActionInvocation
+	Invocation actiondomain.Invocation
 }
 
 // RouteOptions 是 input router 的只读上下文。

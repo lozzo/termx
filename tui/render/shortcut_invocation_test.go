@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/shortcut"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -110,11 +110,11 @@ func TestEnhancedShortcutVisibilityUsesHostCapability(t *testing.T) {
 }
 
 func TestFooterHitRegionCarriesExactShortcutInvocation(t *testing.T) {
-	invocation, _, err := shortcut.ParseInvocation("panel.close")
+	invocation, _, err := actiondomain.ParseInvocation("panel.close")
 	if err != nil {
 		t.Fatal(err)
 	}
-	footer := FooterVM{Visible: true, Mode: "pane", ActionTokens: []FooterActionVM{{Key: "q/w", Label: "CLOSE", ActionID: ActionPaneFooterClose.String(), Invocation: invocation, Click: shortcut.ClickClickable}}}
+	footer := FooterVM{Visible: true, Mode: "pane", ActionTokens: []FooterActionVM{{Key: "q/w", Label: "CLOSE", ActionID: ActionPaneFooterClose.String(), Invocation: invocation, Click: ClickClickable}}}
 	regions := appendFooterHitRegions(nil, footer, Rect{W: 80, H: 1}, Rect{}, Rect{W: 80, H: 1})
 	if len(regions) != 1 || regions[0].Invocation.Signature() != invocation.Signature() {
 		t.Fatalf("footer hit region lost invocation: %#v", regions)
@@ -125,7 +125,7 @@ func TestAggregatedDifferentInvocationsAreHintOnly(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeTab)}
 	actions := footerActionCatalogFromShortcuts("tab", root)
 	for _, action := range actions {
-		if action.ActionID == ActionTabSwitch.String() && (action.Click == shortcut.ClickClickable || action.Invocation.ID != "") {
+		if action.ActionID == ActionTabSwitch.String() && (action.Click == ClickClickable || action.Invocation.ID != "") {
 			t.Fatalf("tab jump aggregation must be hint-only: %#v", action)
 		}
 	}
@@ -143,7 +143,7 @@ func TestFooterZeroClickPolicyDoesNotCreateHitRegion(t *testing.T) {
 		Key:        "x",
 		Label:      "ACTION",
 		ActionID:   "legacy.action",
-		Invocation: shortcut.ActionInvocation{ID: "panel.close"},
+		Invocation: actiondomain.Invocation{ID: "panel.close"},
 	}}}
 	regions := appendFooterHitRegions(nil, footer, Rect{W: 80, H: 1}, Rect{}, Rect{W: 80, H: 1})
 	if len(regions) != 0 {

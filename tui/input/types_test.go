@@ -8,12 +8,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lozzow/termx/tui/shortcut"
 	"github.com/lozzow/termx/tui/state"
 )
 
 func assertShortcutAction(t *testing.T, intent Intent, actionID string) {
 	t.Helper()
-	if intent.Kind != IntentShortcutAction || intent.Invocation.ID != actionID {
+	if intent.Kind != IntentShortcutAction || string(intent.Invocation.ID) != actionID {
 		t.Fatalf("expected shortcut action %q, got %#v", actionID, intent)
 	}
 }
@@ -27,7 +28,7 @@ func TestInputEventKind(t *testing.T) {
 
 func TestRoutePageUpEntersOrRequestsCopyMode(t *testing.T) {
 	event := InputEvent{Kind: EventKindKey, Key: KeyPageUp}
-	assertShortcutAction(t, Route(event, false), "copy.enter")
+	assertShortcutAction(t, Route(event, false), "menu.copy")
 	assertShortcutAction(t, Route(event, true), "copy.request_older")
 	down := InputEvent{Kind: EventKindKey, Key: KeyPageDn}
 	assertShortcutAction(t, Route(down, true), "copy.request_newer")
@@ -79,11 +80,11 @@ func TestRouteHostThemeEventDoesNotBecomeTerminalInput(t *testing.T) {
 
 func TestRouteCtrlFAndCtrlVToUIIntents(t *testing.T) {
 	ctrlF := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x06", Ctrl: true}, false)
-	assertShortcutAction(t, ctrlF, "terminal_picker.open")
+	assertShortcutAction(t, ctrlF, "menu.terminal_picker")
 	ctrlV := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x16", Ctrl: true}, false)
-	assertShortcutAction(t, ctrlV, "copy.enter")
+	assertShortcutAction(t, ctrlV, "menu.copy")
 	namedCtrlF := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f", Ctrl: true}, false)
-	assertShortcutAction(t, namedCtrlF, "terminal_picker.open")
+	assertShortcutAction(t, namedCtrlF, "menu.terminal_picker")
 }
 
 func TestRouteCopyModePasteShortcuts(t *testing.T) {
@@ -114,9 +115,9 @@ func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "l"}, false, InteractionModeWorkspace), "workspace.next")
 	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyRight}, false, InteractionModeResize), "resize.right")
 	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f"}, false, InteractionModeGlobal), "system.toggle_footer")
-	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "t"}, false, InteractionModeGlobal), "system.open_terminal_pool")
-	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: ":"}, false, InteractionModeGlobal), "system.open_prompt")
-	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "?"}, false, InteractionModeGlobal), "system.open_help")
+	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "t"}, false, InteractionModeGlobal), "menu.terminal_pool")
+	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: ":"}, false, InteractionModeGlobal), "menu.prompt")
+	assertShortcutAction(t, RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "?"}, false, InteractionModeGlobal), "menu.help")
 	esc := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyEsc}, false, InteractionModePane)
 	if esc.Kind != IntentNone {
 		t.Fatalf("global back key must not be owned by shortcut routing, got %#v", esc)
@@ -143,7 +144,7 @@ func TestShortcutPassthroughHelpers(t *testing.T) {
 	}
 	ctrlV := InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x16", Ctrl: true}
 	intent, ok = CopyModeEntryShortcutIntent(ctrlV)
-	if !ok || intent.Invocation.ID != "copy.enter" {
+	if !ok || intent.Invocation.ID != "menu.copy" {
 		t.Fatalf("ctrl-v should match copy mode entry, intent=%#v ok=%v", intent, ok)
 	}
 }
@@ -289,7 +290,7 @@ func TestBindingCatalogIsUniqueAndContainsDocumentedAliases(t *testing.T) {
 		{name: "resize shift left pan", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyLeft, Shift: true}, action: "resize.pan_left"},
 		{name: "floating 3 summon", mode: InteractionModeFloating, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "3"}, action: "floating.summon"},
 		{name: "tab c create", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c"}, action: "tab.create"},
-		{name: "workspace f tree", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f"}, action: "system.open_workbench_tree"},
+		{name: "workspace f tree", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f"}, action: "menu.workbench_tree"},
 	}
 	for _, tc := range cases {
 		assertShortcutAction(t, RouteWithMode(tc.event, false, tc.mode), tc.action)
@@ -318,7 +319,7 @@ func TestPaneModeUsesTuiv2KeyboardSplitAliases(t *testing.T) {
 	}
 }
 
-func TestInputBindingCatalogHasSingleProductionOwner(t *testing.T) {
+func TestInputDoesNotOwnDefaultShortcutBindings(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatalf("glob input files: %v", err)
@@ -345,8 +346,11 @@ func TestInputBindingCatalogHasSingleProductionOwner(t *testing.T) {
 			return true
 		})
 	}
-	if len(owners) != 1 || owners[0] != "bindings.go" {
-		t.Fatalf("input shortcut defaults must have a single production owner bindings.go, got %#v", owners)
+	if len(owners) != 0 {
+		t.Fatalf("input must not own default shortcut bindings, got %#v", owners)
+	}
+	if got := len(shortcut.DefaultBindings()); got != 203 {
+		t.Fatalf("shortcut owner returned %d default bindings, want 203", got)
 	}
 }
 

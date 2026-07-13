@@ -1,55 +1,61 @@
 package shortcut
 
-import "testing"
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
+	"strings"
+	"testing"
 
-func TestRegistrySpecsAreCompleteAndCanonical(t *testing.T) {
-	seen := map[string]bool{}
-	for _, spec := range Specs() {
-		if spec.ID == "" || spec.DefaultLabel == "" || len(spec.AllowedScenes) == 0 || spec.Display.Footer == "" || spec.Display.Help == "" || spec.Display.Click == "" {
-			t.Fatalf("incomplete shortcut spec: %#v", spec)
-		}
-		if seen[spec.ID] {
-			t.Fatalf("duplicate canonical shortcut spec %q", spec.ID)
-		}
-		seen[spec.ID] = true
-	}
-	for _, source := range []string{"panel.close", "pane.close", "tab.jump.3", "floating.summon.9", "help.close"} {
-		if _, _, err := ParseInvocation(source); err != nil {
-			t.Fatalf("parse %q: %v", source, err)
-		}
-	}
-}
+	actiondomain "github.com/lozzow/termx/tui/action"
+)
 
-func TestRegistryAllowsKnownCrossSceneAndPaneAliases(t *testing.T) {
+func TestBindingPoliciesOwnSceneAndVisibility(t *testing.T) {
 	cases := []struct {
 		source string
 		scene  string
-		id     string
 	}{
-		{source: "system.open_terminal_picker", scene: "floating", id: "system.open_terminal_picker"},
-		{source: "system.open_workbench_tree", scene: "workspace", id: "system.open_workbench_tree"},
-		{source: "menu.pane", scene: "global", id: "menu.panel"},
+		{source: "system.open_terminal_picker", scene: "floating"},
+		{source: "system.open_workbench_tree", scene: "workspace"},
+		{source: "menu.pane", scene: "global"},
 	}
 	for _, tc := range cases {
-		invocation, spec, err := ParseInvocation(tc.source)
-		if err != nil || invocation.ID != tc.id || !spec.AllowsScene(tc.scene) {
-			t.Fatalf("source=%q scene=%q invocation=%#v spec=%#v err=%v", tc.source, tc.scene, invocation, spec, err)
+		policy, invocation, _, ok := PolicyForSource(tc.source)
+		if !ok || !AllowsScene(invocation.ID, tc.scene) || policy.Footer == "" || policy.Help == "" {
+			t.Fatalf("source=%q scene=%q invocation=%#v policy=%#v", tc.source, tc.scene, invocation, policy)
 		}
+	}
+	if AllowsScene(actiondomain.ID("panel.close"), "workspace") {
+		t.Fatal("panel.close must not bind outside the panel scene")
 	}
 }
 
-func TestParameterizedInvocationUsesBaseIDAndTypedParam(t *testing.T) {
-	invocation, spec, err := ParseInvocation("tab.jump.3")
+func TestShortcutPackageDoesNotRedeclareActionDomainOrClickPolicy(t *testing.T) {
+	forbidden := map[string]bool{"Spec": true, "Invocation": true, "ParamSpec": true, "ClickPolicy": true}
+	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	index, ok := invocation.Param("index")
-	if invocation.ID != "tab.jump" || invocation.SourceActionID != "tab.jump.3" || !ok || index != 3 || spec.ID != "tab.jump" {
-		t.Fatalf("unexpected invocation=%#v spec=%#v", invocation, spec)
-	}
-	for _, source := range []string{"tab.jump.0", "tab.jump.10", "tab.jump.x", "floating.summon.-1"} {
-		if _, _, err := ParseInvocation(source); err == nil {
-			t.Fatalf("expected invalid parameter for %q", source)
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+		for _, declaration := range parsed.Decls {
+			generic, ok := declaration.(*ast.GenDecl)
+			if !ok || generic.Tok != token.TYPE {
+				continue
+			}
+			for _, item := range generic.Specs {
+				typeSpec := item.(*ast.TypeSpec)
+				if forbidden[typeSpec.Name.Name] {
+					t.Fatalf("shortcut must not redeclare action/render owner type %s in %s", typeSpec.Name.Name, file)
+				}
+			}
 		}
 	}
 }

@@ -1,14 +1,29 @@
 package app
 
 import (
+	"os"
 	"strconv"
+	"strings"
 	"testing"
 
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/shortcut"
 	"github.com/lozzow/termx/tui/state"
 )
+
+func TestKeyboardDispatcherDoesNotDependOnRenderProjectionFallback(t *testing.T) {
+	for _, path := range []string{"shell.go", "ui_input.go", "shortcut_dispatcher.go", "shortcut_app_actions.go"} {
+		source, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(source), "ShortcutActionRenderID") || strings.Contains(string(source), "reduceOverlayKeyboardAction") {
+			t.Fatalf("keyboard execution source %s must not depend on render projection fallback", path)
+		}
+	}
+}
 
 func TestShortcutDispatcherPreservesParameterizedAndDirectionalSemantics(t *testing.T) {
 	cases := []struct {
@@ -24,7 +39,7 @@ func TestShortcutDispatcherPreservesParameterizedAndDirectionalSemantics(t *test
 		{source: "floating.summon.3", kind: input.IntentShellAction, action: input.ShellActionFloatingSummon, reason: "3"},
 	}
 	for _, tc := range cases {
-		invocation, _, err := shortcut.ParseInvocation(tc.source)
+		invocation, _, err := actiondomain.ParseInvocation(tc.source)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -35,8 +50,25 @@ func TestShortcutDispatcherPreservesParameterizedAndDirectionalSemantics(t *test
 	}
 }
 
+func TestActionHandlerRegistryCoversEveryShortcutAction(t *testing.T) {
+	for id := range shortcut.Policies() {
+		spec, ok := actiondomain.SpecByID(id)
+		if !ok {
+			t.Fatalf("shortcut action %q has no canonical action spec", id)
+		}
+		invocation := actiondomain.Invocation{ID: id}
+		if spec.Param != nil {
+			invocation.Params = map[string]int{spec.Param.Name: spec.Param.Min}
+		}
+		intent, ok := shortcutIntentForInvocation(invocation, input.InputEvent{})
+		if !ok || intent.Kind == input.IntentNone || intent.Kind == input.IntentShortcutAction {
+			t.Fatalf("shortcut action %q has no concrete app handler: %#v", id, intent)
+		}
+	}
+}
+
 func TestShellShortcutActionMessageUsesSameDispatcherAsKeyboard(t *testing.T) {
-	invocation, _, err := shortcut.ParseInvocation("menu.tab")
+	invocation, _, err := actiondomain.ParseInvocation("menu.tab")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +79,7 @@ func TestShellShortcutActionMessageUsesSameDispatcherAsKeyboard(t *testing.T) {
 }
 
 func TestCopyShortcutInvocationIsOwnedByCopyReducer(t *testing.T) {
-	invocation, _, err := shortcut.ParseInvocation("copy.enter")
+	invocation, _, err := actiondomain.ParseInvocation("copy.enter")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +109,7 @@ func TestCopyShortcutInvocationIsOwnedByCopyReducer(t *testing.T) {
 }
 
 func TestOverlayShortcutMessagePreservesRowContext(t *testing.T) {
-	invocation, _, err := shortcut.ParseInvocation("workbench_tree.open")
+	invocation, _, err := actiondomain.ParseInvocation("workbench_tree.open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +136,7 @@ func TestOverlayShortcutMessagePreservesRowContext(t *testing.T) {
 }
 
 func TestFloatingSummonShortcutUsesInvocationIndexWithoutRowFallback(t *testing.T) {
-	invocation, _, err := shortcut.ParseInvocation("floating.summon.3")
+	invocation, _, err := actiondomain.ParseInvocation("floating.summon.3")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,12 +164,12 @@ func TestShortcutDispatcherKeepsKillActionsDistinct(t *testing.T) {
 		"panel.kill":           "pane kill confirm=accepted",
 		"panel.kill_and_close": "pane close-kill confirm=accepted",
 	} {
-		invocation, _, err := shortcut.ParseInvocation(source)
+		invocation, _, err := actiondomain.ParseInvocation(source)
 		if err != nil {
 			t.Fatal(err)
 		}
 		intent, ok := shortcutIntentForInvocation(invocation, input.InputEvent{})
-		if !ok || intent.Kind != input.IntentPaneCommand || intent.Invocation.ID != source || intent.Command != wantCommand {
+		if !ok || intent.Kind != input.IntentPaneCommand || string(intent.Invocation.ID) != source || intent.Command != wantCommand {
 			t.Fatalf("dispatch %q lost action identity: %#v", source, intent)
 		}
 	}

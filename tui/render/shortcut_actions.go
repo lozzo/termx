@@ -4,14 +4,15 @@ import (
 	"strconv"
 	"strings"
 
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/shortcut"
 	"github.com/lozzow/termx/tui/state"
 )
 
-// ShortcutActionRenderID 把 shortcut action id 映射为 render/app 共享的可点击 action id。
-// 快捷键真值来自 input catalog；这里只提供展示和点击分发所需的 render 元数据桥接。
-func ShortcutActionRenderID(actionID string) (ActionID, bool) {
+// ShortcutActionRenderID 把 canonical shortcut action 映射为遗留的 render-local projection。
+// 它只服务 KS016 前的 surface 展示/命中区绑定，app keyboard handler 不得调用。
+func ShortcutActionRenderID(actionID string) (ProjectionID, bool) {
 	switch actionID {
 	case "menu.panel":
 		return ActionFooterPaneMode, true
@@ -221,26 +222,65 @@ func ShortcutActionRenderID(actionID string) (ActionID, bool) {
 	return "", false
 }
 
+// canonicalActionForProjection 把遗留视觉投影关联到唯一 canonical action。
+// 多个不同 action 共用的聚合提示（例如 resize pan）故意返回空；具体 footer/hit region
+// 必须携带自己的 Invocation，不能把聚合 projection 当成执行身份。
+func canonicalActionForProjection(id ProjectionID) actiondomain.ID {
+	explicit := map[ProjectionID]actiondomain.ID{
+		ActionPaneFocus: actiondomain.ActionPanelFocus, ActionPaneResize: actiondomain.ActionPanelResizeDrag,
+		ActionPaneSplitDown: "panel.split_down", ActionPaneSplitRight: "panel.split_right",
+		ActionPaneZoom: "panel.toggle_zoom", ActionPaneClose: "panel.close",
+		ActionTerminalTakeResizeOwner: "panel.take_owner", ActionTabSwitch: actiondomain.ActionTabSelect,
+		ActionFloatingRaise: actiondomain.ActionFloatingRaise, ActionFloatingResize: actiondomain.ActionFloatingResize,
+		ActionFloatingMoveDrag: actiondomain.ActionFloatingMoveDrag, ActionFloatingResizeDrag: actiondomain.ActionFloatingResizeDrag,
+		ActionFloatingPick: "menu.terminal_picker", ActionFloatingShowAll: "floating_overview.show_all",
+		ActionFloatingCollapseAll: "floating_overview.collapse_all",
+		ActionEmptyAttach:         actiondomain.ActionEmptyAttach, ActionEmptyCreate: actiondomain.ActionEmptyCreate,
+		ActionEmptyManager: actiondomain.ActionEmptyManager, ActionEmptyClose: actiondomain.ActionEmptyClose,
+		ActionExitedRestart: actiondomain.ActionExitedRestart, ActionExitedReconnect: actiondomain.ActionExitedReconnect,
+		ActionExitedClose: actiondomain.ActionExitedClose, ActionDisconnectedReconnect: actiondomain.ActionDisconnectedReconnect,
+		ActionDisconnectedDisconnect: actiondomain.ActionDisconnectedDisconnect,
+		ActionPickerNew:              actiondomain.ActionTerminalPickerNew, ActionPoolSelect: actiondomain.ActionTerminalPoolSelect,
+		ActionWorkbenchSelect:             actiondomain.ActionWorkbenchTreeSelect,
+		ActionClipboardHistorySelect:      actiondomain.ActionClipboardHistorySelect,
+		ActionClipboardHistoryDividerDrag: actiondomain.ActionClipboardHistoryDividerDrag,
+	}
+	if canonical := explicit[id]; canonical != "" {
+		return canonical
+	}
+	candidates := map[actiondomain.ID]struct{}{}
+	for _, spec := range actiondomain.Specs() {
+		source := spec.ID.String()
+		if spec.Param != nil {
+			source += "." + strconv.Itoa(spec.Param.Min)
+		}
+		projection, ok := ShortcutActionRenderID(source)
+		if ok && projection == id {
+			candidates[spec.ID] = struct{}{}
+		}
+	}
+	if len(candidates) != 1 {
+		return ""
+	}
+	for candidate := range candidates {
+		return candidate
+	}
+	return ""
+}
+
 func shortcutSceneForFooterMode(mode string) string {
 	switch mode {
 	case "live", "normal", "":
-		return "global"
+		return string(shortcut.SceneGlobal)
 	case "global":
-		return "system"
+		return string(shortcut.SceneSystem)
 	case "pane":
-		return "panel"
-	case string(state.OverlayTerminalPicker):
-		return "terminal_picker"
-	case string(state.OverlayTerminalPool):
-		return "terminal_pool"
-	case string(state.OverlayWorkbenchTree):
-		return "workbench_tree"
-	case string(state.OverlayClipboardHistory):
-		return "clipboard_history"
-	case string(state.OverlayFloatingOverview):
-		return "floating_overview"
+		return string(shortcut.ScenePanel)
 	default:
-		return mode
+		if scene, ok := shortcut.SceneByName(mode); ok {
+			return string(scene.ID)
+		}
+		return string(shortcut.SceneGlobal)
 	}
 }
 
@@ -250,9 +290,9 @@ func shortcutSceneForFooterMode(mode string) string {
 func bindOverlayShortcutInvocations(kind OverlayKind, regions []HitRegion, shortcuts state.TUIShortcutConfig) []HitRegion {
 	scene := shortcutSceneForFooterMode(string(kind))
 	entries := input.ShortcutEntriesForScene(shortcuts, scene)
-	invocations := map[ActionID][]shortcut.ActionInvocation{}
+	invocations := map[ProjectionID][]actiondomain.Invocation{}
 	for _, entry := range entries {
-		invocation, _, err := shortcut.ParseInvocation(entry.ActionID)
+		invocation, _, err := actiondomain.ParseInvocation(entry.ActionID)
 		if err != nil {
 			continue
 		}
@@ -267,7 +307,7 @@ func bindOverlayShortcutInvocations(kind OverlayKind, regions []HitRegion, short
 	}
 	out := make([]HitRegion, 0, len(regions))
 	for _, region := range regions {
-		renderID := ActionID(region.ActionID)
+		renderID := ProjectionID(region.ActionID)
 		if !overlayShortcutRenderAction(renderID) {
 			out = append(out, region)
 			continue
@@ -282,7 +322,7 @@ func bindOverlayShortcutInvocations(kind OverlayKind, regions []HitRegion, short
 	return out
 }
 
-func appendUniqueInvocation(items []shortcut.ActionInvocation, invocation shortcut.ActionInvocation) []shortcut.ActionInvocation {
+func appendUniqueInvocation(items []actiondomain.Invocation, invocation actiondomain.Invocation) []actiondomain.Invocation {
 	signature := invocation.Signature()
 	for _, item := range items {
 		if item.Signature() == signature {
@@ -292,7 +332,7 @@ func appendUniqueInvocation(items []shortcut.ActionInvocation, invocation shortc
 	return append(items, invocation)
 }
 
-func overlayShortcutRenderAction(id ActionID) bool {
+func overlayShortcutRenderAction(id ProjectionID) bool {
 	switch id {
 	case ActionPickerAttach, ActionPickerSplit, ActionPickerEdit, ActionPickerKill, ActionPickerDelete,
 		ActionPoolAttach, ActionPoolAttachTab, ActionPoolAttachFloat, ActionPoolRestart, ActionPoolEdit, ActionPoolKill, ActionPoolDelete,
@@ -332,21 +372,21 @@ func shortcutActionCatalogFromShortcuts(mode string, root state.Root, includeHid
 }
 
 func shortcutActionFromShortcutEntry(entry input.ShortcutEntry, cfg state.TUIConfigStore, forHelp bool) (FooterActionVM, bool) {
-	invocation, spec, err := shortcut.ParseInvocation(entry.ActionID)
-	if err != nil {
+	policy, invocation, _, ok := shortcut.PolicyForSource(entry.ActionID)
+	if !ok {
 		return FooterActionVM{}, false
 	}
-	visible := spec.Display.Footer == shortcut.VisibilityVisible
+	visible := policy.Footer == shortcut.VisibilityVisible
 	if entry.Show != nil {
 		visible = *entry.Show
 	}
 	if forHelp {
-		visible = spec.Display.Help == shortcut.VisibilityVisible
+		visible = policy.Help == shortcut.VisibilityVisible
 	}
 	if !visible {
 		return FooterActionVM{}, false
 	}
-	action := FooterActionVM{ActionID: invocation.ID}
+	action := FooterActionVM{ActionID: string(invocation.ID)}
 	if renderID, ok := shortcutActionRenderIDForEntry(entry); ok {
 		action = footerActionFor(renderID)
 	} else if !forHelp && (entry.Show == nil || !*entry.Show) {
@@ -361,11 +401,11 @@ func shortcutActionFromShortcutEntry(entry input.ShortcutEntry, cfg state.TUICon
 		action.Label = label
 	}
 	action.Invocation = invocation
-	action.Click = spec.Display.Click
+	action.Click = ClickClickable
 	return action, true
 }
 
-func shortcutActionRenderIDForEntry(entry input.ShortcutEntry) (ActionID, bool) {
+func shortcutActionRenderIDForEntry(entry input.ShortcutEntry) (ProjectionID, bool) {
 	scene := shortcutCatalogScene(entry.Scene)
 	if scene == "floating" && entry.ActionID == "system.open_terminal_picker" {
 		return ActionFloatingPick, true
@@ -383,11 +423,7 @@ func shortcutActionRenderIDForEntry(entry input.ShortcutEntry) (ActionID, bool) 
 }
 
 func shortcutCatalogScene(scene string) string {
-	scene = strings.ReplaceAll(strings.TrimSpace(scene), "-", "_")
-	if scene == "pane" {
-		return "panel"
-	}
-	return scene
+	return string(shortcut.NormalizeScene(scene))
 }
 
 func shortcutActionLabel(entry input.ShortcutEntry, cfg state.TUIConfigStore, action FooterActionVM) string {
@@ -397,7 +433,7 @@ func shortcutActionLabel(entry input.ShortcutEntry, cfg state.TUIConfigStore, ac
 	if label := configuredShortcutActionLabel(cfg.Shortcuts.Actions, entry.ActionID); label != "" {
 		return label
 	}
-	_, spec, err := shortcut.ParseInvocation(entry.ActionID)
+	_, spec, err := actiondomain.ParseInvocation(entry.ActionID)
 	if err == nil {
 		return strings.TrimSpace(spec.DefaultLabel)
 	}
@@ -405,12 +441,12 @@ func shortcutActionLabel(entry input.ShortcutEntry, cfg state.TUIConfigStore, ac
 }
 
 func configuredShortcutActionLabel(actions map[string]state.TUIShortcutActionConfig, actionID string) string {
-	_, target, err := shortcut.ParseInvocation(actionID)
+	_, target, err := actiondomain.ParseInvocation(actionID)
 	if err != nil {
 		return ""
 	}
 	for configuredID, action := range actions {
-		_, configured, err := shortcut.ParseInvocation(configuredID)
+		_, configured, err := actiondomain.ParseInvocation(configuredID)
 		if err == nil && configured.ID == target.ID {
 			return strings.TrimSpace(action.Label)
 		}
@@ -422,7 +458,7 @@ func compactShortcutFooterActions(scene string, actions []FooterActionVM) []Foot
 	scene = shortcutCatalogScene(scene)
 	if scene == "global" || scene == "system" {
 		actions = compactFooterActionGroup(actions, ActionFooterOpenPool)
-		actions = orderShortcutFooterActions(actions, []ActionID{
+		actions = orderShortcutFooterActions(actions, []ProjectionID{
 			ActionFooterToggleHeader,
 			ActionFooterToggleFooter,
 			ActionHelpOpen,
@@ -498,12 +534,12 @@ func compactFloatingSummonActions(actions []FooterActionVM) []FooterActionVM {
 	} else {
 		base.Key = strings.Join(keys, "/")
 	}
-	base.Click = shortcut.ClickHintOnly
-	base.Invocation = shortcut.ActionInvocation{}
+	base.Click = ClickHintOnly
+	base.Invocation = actiondomain.Invocation{}
 	return replaceFooterActionIndexes(actions, indexes, base)
 }
 
-func orderShortcutFooterActions(actions []FooterActionVM, order []ActionID) []FooterActionVM {
+func orderShortcutFooterActions(actions []FooterActionVM, order []ProjectionID) []FooterActionVM {
 	if len(actions) <= 1 {
 		return actions
 	}
@@ -524,7 +560,7 @@ func orderShortcutFooterActions(actions []FooterActionVM, order []ActionID) []Fo
 	return out
 }
 
-func compactFooterActionGroup(actions []FooterActionVM, id ActionID) []FooterActionVM {
+func compactFooterActionGroup(actions []FooterActionVM, id ProjectionID) []FooterActionVM {
 	actionID := id.String()
 	indexes := []int{}
 	keys := []string{}
@@ -549,8 +585,8 @@ func compactFooterActionGroup(actions []FooterActionVM, id ActionID) []FooterAct
 	}
 	for _, index := range indexes[1:] {
 		if actions[index].Invocation.Signature() != base.Invocation.Signature() {
-			base.Click = shortcut.ClickHintOnly
-			base.Invocation = shortcut.ActionInvocation{}
+			base.Click = ClickHintOnly
+			base.Invocation = actiondomain.Invocation{}
 			break
 		}
 	}

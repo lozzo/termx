@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/tui/shortcut"
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -50,7 +50,7 @@ type HitRegion struct {
 	PaneID             string
 	Floating           bool
 	ActionID           string
-	Invocation         shortcut.ActionInvocation
+	Invocation         actiondomain.Invocation
 	Direction          string
 	SplitPath          string
 	ResizeBeforePaneID string
@@ -253,7 +253,7 @@ func footerActionAvailable(actionID string, mode string, root state.Root, shell 
 	if actionID == "" {
 		return true
 	}
-	switch ActionID(actionID) {
+	switch ProjectionID(actionID) {
 	case ActionPaneFooterClose:
 		return activeTabPaneCount(shell) > 1
 	case ActionPaneFooterDetach:
@@ -301,15 +301,15 @@ func activeTabPaneCount(shell state.ShellStore) int {
 	return 0
 }
 
-func footerActionFor(id ActionID) FooterActionVM {
-	spec, ok := ActionSpecByID(id)
+func footerActionFor(id ProjectionID) FooterActionVM {
+	spec, ok := ProjectionByID(id)
 	if !ok {
 		return FooterActionVM{ActionID: id.String()}
 	}
 	return footerActionFromSpec(spec)
 }
 
-func footerActionFromSpec(spec ActionSpec) FooterActionVM {
+func footerActionFromSpec(spec ProjectionSpec) FooterActionVM {
 	return FooterActionVM{Key: spec.FooterKey, Label: spec.FooterLabel, ActionID: spec.ID.String(), Style: spec.FooterStyle}
 }
 
@@ -763,12 +763,12 @@ func defaultPaneChromeActionVMsForZoom(style StyleToken, zoomMode bool) []Chrome
 	}
 }
 
-func paneChromeActionVM(id ActionID, style StyleToken) ChromeActionVM {
+func paneChromeActionVM(id ProjectionID, style StyleToken) ChromeActionVM {
 	return paneChromeActionVMWithZoomMode(id, style, false)
 }
 
-func paneChromeActionVMWithZoomMode(id ActionID, style StyleToken, zoomMode bool) ChromeActionVM {
-	spec, ok := ActionSpecByID(id)
+func paneChromeActionVMWithZoomMode(id ProjectionID, style StyleToken, zoomMode bool) ChromeActionVM {
+	spec, ok := ProjectionByID(id)
 	if !ok {
 		return ChromeActionVM{ActionID: id.String(), Style: style, IsZoomMode: zoomMode}
 	}

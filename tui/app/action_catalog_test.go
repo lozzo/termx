@@ -10,20 +10,6 @@ import (
 	"github.com/lozzow/termx/tui/state"
 )
 
-func TestActionCatalogDispatchAppActionsReachReducerAdapter(t *testing.T) {
-	reducer := NewShellReducer()
-	for _, spec := range render.ActionSpecCatalog() {
-		if spec.Dispatch != render.ActionDispatchApp || spec.HasSurface(render.ActionSurfaceInput) {
-			continue
-		}
-		root := actionCatalogDispatchRoot()
-		next, _ := reducer(root, ShellContentActionMsg{ActionID: spec.ID.String(), PaneID: state.DefaultPaneID, Row: 0})
-		if hasUnknownActionToast(next, spec.ID.String()) {
-			t.Fatalf("catalog action %q declares app dispatch but reducer falls through to unknown action toast", spec.ID)
-		}
-	}
-}
-
 func TestShortcutBindingsHaveCanonicalInvocationsAndDispatcherHandlers(t *testing.T) {
 	for _, binding := range input.BindingCatalog() {
 		intent, ok := shortcutIntentForInvocation(binding.Invocation, input.InputEvent{})
@@ -156,9 +142,9 @@ func TestActionCatalogCopyAndModeAdapterEffectsRemainMessages(t *testing.T) {
 		t.Fatalf("copy footer action should remain a message adapter effect, root=%#v effects=%#v", next, effects)
 	}
 	msg := effects[0].(FuncEffect).Run(context.Background())
-	inputMsg, ok := msg.(InputMsg)
-	if !ok || inputMsg.Event.Kind != input.EventKindKey || inputMsg.Event.Char != "v" || !inputMsg.Event.Ctrl {
-		t.Fatalf("copy footer action should emit ctrl-v input msg, got %#v", msg)
+	actionMsg, ok := msg.(ShellShortcutActionMsg)
+	if !ok || actionMsg.Invocation.ID != "menu.copy" {
+		t.Fatalf("copy footer action should emit canonical copy invocation, got %#v", msg)
 	}
 }
 

@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
+	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/render"
 	"github.com/lozzow/termx/tui/services"
-	"github.com/lozzow/termx/tui/shortcut"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -3180,7 +3180,7 @@ func TestInteractiveRuntimeWorkspaceNewRenameFooterActions(t *testing.T) {
 		t.Fatalf("workspace new footer action should show create feedback, got %#v", shell.Toasts)
 	}
 
-	if err := runtime.Post(ShellShortcutActionMsg{Invocation: shortcut.ActionInvocation{ID: "menu.workspace", SourceActionID: "menu.workspace"}}); err != nil {
+	if err := runtime.Post(ShellShortcutActionMsg{Invocation: actiondomain.Invocation{ID: "menu.workspace", SourceActionID: "menu.workspace"}}); err != nil {
 		t.Fatalf("reenter workspace mode before rename: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {

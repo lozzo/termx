@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/tui/shortcut"
+	actiondomain "github.com/lozzow/termx/tui/action"
 )
 
 func TestMeasureLayoutPlansBodyPanelOverlayAndToastRects(t *testing.T) {
@@ -382,9 +382,9 @@ func TestMeasureLayoutAddsVisibleFooterActionHitRegions(t *testing.T) {
 			Visible: true,
 			Mode:    "live",
 			ActionTokens: []FooterActionVM{
-				{Key: "^P", Label: "PANE", ActionID: "footer.pane", Invocation: shortcut.ActionInvocation{ID: "menu.panel"}, Click: shortcut.ClickClickable},
+				{Key: "^P", Label: "PANE", ActionID: "footer.pane", Invocation: actiondomain.Invocation{ID: "menu.panel"}, Click: ClickClickable},
 				{Key: "w", Label: "CLOSE"},
-				{Key: "^F", Label: "PICKER", ActionID: "footer.picker", Invocation: shortcut.ActionInvocation{ID: "terminal_picker.open"}, Click: shortcut.ClickClickable},
+				{Key: "^F", Label: "PICKER", ActionID: "footer.picker", Invocation: actiondomain.Invocation{ID: "terminal_picker.open"}, Click: ClickClickable},
 			},
 		},
 		Layout: LayoutVM{Panels: []PanelVM{{ID: "pane-main", Presentation: PanelPresentationCard, Active: true}}},
@@ -409,10 +409,10 @@ func TestMeasureLayoutFooterActionHitRegionsFollowNarrowSelection(t *testing.T) 
 			Visible: true,
 			Mode:    "live",
 			ActionTokens: []FooterActionVM{
-				{Key: "^P", Label: "PANE", ActionID: "footer.pane", Invocation: shortcut.ActionInvocation{ID: "menu.panel"}, Click: shortcut.ClickClickable},
-				{Key: "^R", Label: "RESIZE", ActionID: "footer.resize", Invocation: shortcut.ActionInvocation{ID: "menu.resize"}, Click: shortcut.ClickClickable},
-				{Key: "^F", Label: "PICKER", ActionID: "footer.picker", Invocation: shortcut.ActionInvocation{ID: "terminal_picker.open"}, Click: shortcut.ClickClickable},
-				{Key: "^G", Label: "GLOBAL", ActionID: "footer.global", Invocation: shortcut.ActionInvocation{ID: "menu.system"}, Click: shortcut.ClickClickable},
+				{Key: "^P", Label: "PANE", ActionID: "footer.pane", Invocation: actiondomain.Invocation{ID: "menu.panel"}, Click: ClickClickable},
+				{Key: "^R", Label: "RESIZE", ActionID: "footer.resize", Invocation: actiondomain.Invocation{ID: "menu.resize"}, Click: ClickClickable},
+				{Key: "^F", Label: "PICKER", ActionID: "footer.picker", Invocation: actiondomain.Invocation{ID: "terminal_picker.open"}, Click: ClickClickable},
+				{Key: "^G", Label: "GLOBAL", ActionID: "footer.global", Invocation: actiondomain.Invocation{ID: "menu.system"}, Click: ClickClickable},
 			},
 		},
 		Layout: LayoutVM{Panels: []PanelVM{{ID: "pane-main", Presentation: PanelPresentationCard, Active: true}}},
