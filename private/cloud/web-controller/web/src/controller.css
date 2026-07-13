@@ -928,9 +928,33 @@ html[data-wx-theme="light-gray"] .wx-skip:focus {
   }
   .wx-login-form {
     padding: 28px 20px;
+    min-width: 0;
+    overflow: hidden;
   }
   .wx-login-form > div {
+    min-width: 0;
     max-width: none;
+  }
+  .wx-login-form > div > span {
+    overflow-wrap: anywhere;
+  }
+  .wx-providers,
+  .wx-auth-modes,
+  .wx-auth-form {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .wx-providers button {
+    width: 100%;
+    min-width: 0;
+  }
+  .wx-providers button small {
+    display: none;
+  }
+  .wx-auth-modes button {
+    min-width: 0;
+    padding: 0 4px;
+    white-space: normal;
   }
   .wx-login-mobile-logo {
     display: flex;

@@ -16,6 +16,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
+	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
 	"google.golang.org/protobuf/proto"
@@ -23,6 +24,9 @@ import (
 
 func (state *serviceState) controlHandler() http.Handler {
 	mux := http.NewServeMux()
+	if state.webHandler != nil {
+		mux.Handle("/api/", state.webHandler)
+	}
 	mux.HandleFunc(httpapi.ControlHealthPath, state.handleControlHealth)
 	mux.HandleFunc(httpapi.ControlBeginLoginPath, state.handleBeginLogin)
 	mux.HandleFunc(httpapi.ControlCompleteLoginPath, state.handleCompleteLogin)
@@ -33,6 +37,49 @@ func (state *serviceState) controlHandler() http.Handler {
 	mux.HandleFunc(controlRelayUsagePath, state.handleRelayUsage)
 	mux.HandleFunc("/v1/internal/web/entitlements", state.handleWebEntitlement)
 	return mux
+}
+
+type webEntitlementPublisher struct{ state *serviceState }
+
+func (publisher webEntitlementPublisher) Activate(accountID, planID, orderID string, validUntil time.Time) error {
+	return publisher.state.activateWebEntitlement(accountID, planID, orderID, validUntil)
+}
+
+func (state *serviceState) initializeWeb(config Config) error {
+	if config.WebAccountDBPath == "" && config.WebCatalogPath == "" {
+		return nil
+	}
+	if config.WebAccountDBPath == "" || config.WebCatalogPath == "" {
+		return fmt.Errorf("web account database and catalog must be configured together")
+	}
+	catalog, err := webcontroller.LoadCatalog(config.WebCatalogPath)
+	if err != nil {
+		return err
+	}
+	center, err := webcontroller.OpenUserCenterStore(config.WebAccountDBPath, state.now)
+	if err != nil {
+		return err
+	}
+	commerce, err := webcontroller.NewCommerceService([]byte("termx-staging-payment-secret-v1-32-bytes"), webEntitlementPublisher{state}, state.now)
+	if err != nil {
+		_ = center.Close()
+		return err
+	}
+	commerce.AttachUserCenter(center)
+	for _, entitlement := range center.ActiveEntitlements(state.now().UTC()) {
+		if err := state.activateWebEntitlement(entitlement.AccountID, entitlement.PlanID, entitlement.OrderID, entitlement.ValidUntil); err != nil {
+			_ = center.Close()
+			return err
+		}
+	}
+	providers := []webcontroller.IdentityProvider{{ID: "github", Name: "GitHub", Configured: false}, {ID: "google", Name: "Google", Configured: false}}
+	handler, err := webcontroller.BrowserHandler(webcontroller.BrowserConfig{Catalog: &catalog, Commerce: commerce, UserCenter: center, IdentityProviders: providers, RelayURL: state.relayControl.url, StagingLogin: config.WebStaging, SecureCookie: config.WebSecureCookie})
+	if err != nil {
+		_ = center.Close()
+		return err
+	}
+	state.webCenter, state.webCommerce, state.webHandler = center, commerce, handler
+	return nil
 }
 
 func (state *serviceState) handleWebEntitlement(writer http.ResponseWriter, request *http.Request) {
@@ -51,32 +98,35 @@ func (state *serviceState) handleWebEntitlement(writer http.ResponseWriter, requ
 	if !readJSON(writer, request, &input) {
 		return
 	}
-	now := state.now().UTC()
-	if input.AccountID == "" || input.PlanID != "pro" || input.OrderID == "" || !input.ValidUntil.After(now) {
+	if err := state.activateWebEntitlement(input.AccountID, input.PlanID, input.OrderID, input.ValidUntil); err != nil {
 		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "web entitlement update is invalid", false)
-		return
-	}
-	state.mu.Lock()
-	oldValid, existed, oldRevision := state.webEntitlements[input.AccountID], false, state.edgeRevision
-	_, existed = state.webEntitlements[input.AccountID]
-	state.webEntitlements[input.AccountID] = input.ValidUntil.UTC()
-	state.edgeRevision++
-	err := state.publishEdgeSnapshot(now)
-	if err != nil {
-		if existed {
-			state.webEntitlements[input.AccountID] = oldValid
-		} else {
-			delete(state.webEntitlements, input.AccountID)
-		}
-		state.edgeRevision = oldRevision
-	}
-	state.mu.Unlock()
-	if err != nil {
-		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub entitlement projection failed", true)
 		return
 	}
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (state *serviceState) activateWebEntitlement(accountID, planID, orderID string, validUntil time.Time) error {
+	now := state.now().UTC()
+	if accountID == "" || planID != "pro" || orderID == "" || !validUntil.After(now) {
+		return fmt.Errorf("invalid web entitlement")
+	}
+	state.mu.Lock()
+	oldValid, existed, oldRevision := state.webEntitlements[accountID], false, state.edgeRevision
+	_, existed = state.webEntitlements[accountID]
+	state.webEntitlements[accountID] = validUntil.UTC()
+	state.edgeRevision++
+	err := state.publishEdgeSnapshot(now)
+	if err != nil {
+		if existed {
+			state.webEntitlements[accountID] = oldValid
+		} else {
+			delete(state.webEntitlements, accountID)
+		}
+		state.edgeRevision = oldRevision
+	}
+	state.mu.Unlock()
+	return err
 }
 
 func (state *serviceState) handleControlHealth(writer http.ResponseWriter, request *http.Request) {

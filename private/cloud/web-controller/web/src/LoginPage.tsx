@@ -1,7 +1,4 @@
-"use client";
-
 import { ArrowRight, Code2, ShieldCheck, UserRound } from "lucide-react";
-import Image from "next/image";
 import { FormEvent, useEffect, useState } from "react";
 
 interface Provider {
@@ -48,12 +45,9 @@ export default function LoginPage() {
   return (
     <main id="wx-root" className="wx-login">
       <section className="wx-login-product">
-        <Image
+        <img
           src="/product-workspace.png"
           alt="TermX machine workspace"
-          fill
-          priority
-          sizes="calc(100vw - 520px)"
         />
         <div />
         <a className="wx-login-logo" href="/">

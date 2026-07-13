@@ -7,7 +7,7 @@
 - CLOUD009-CLOUD011 已完成 Control Plane 降载闭环：客户端启动/刷新取得 edge token 与 HubDirectory，后续 direct、single Relay 与跨进程恢复只访问 Hub。
 - UI001 已完成：共享首页机器卡片明确 Local、Cloud、Local + Cloud 能力，并投影列表级可达性、连接阶段和实际路径。
 - UI002 已完成：桌面首页已重构为紧凑产品栏和表格式机器清单，同时保持移动端卡片交互。
-- WEB001 已完成：Next.js 公开订阅 Landing Page、Go Control Plane BFF、可配置套餐目录和 staging 双进程装配已形成可运行闭环。
+- WEB001 已完成并在 WEB003 收敛运行架构：React/Vite 公开订阅 Landing Page 由 Nginx 静态托管，Control Plane 直接提供同源浏览器 API 和套餐投影，不再运行 Next.js 或独立 Go BFF。
 - WEB002 已完成：Web 登录、浏览器 Session、订阅账户、staging Checkout、签名 webhook、幂等订单和 Entitlement/Hub 投影已形成公网纵向链路。
 - WEB003 进行中：完成 GitHub/Google OIDC 注册登录与 Overview、Nodes、Billing、Account、Referrals 用户中心；原团队邀请假设已按产品确认改为 AFF 首次付费双边奖励。
 - FILE001-FILE004 与 CLOUD006-CLOUD008 已完成；Official Android 显式 development build 已通过公网 HTTP staging 在 5G 真机完成 direct、single Relay、terminal 与恢复链路。生产上线前必须另行切换 HTTPS/TLS，不得复用本切片的明文 profile。
@@ -78,9 +78,9 @@
 - CLOUD011：`private/cloud/{companion,mobile,devcloud}`、`clients/mobile/`、必要 `shared/cloudcompanion/`/`proto/cloudpb/` contract、`docs/remote-platform/` 与 `workflow.md`；只实现 desktop/Official Android 启动/刷新 edge token 与签名 HubDirectory，并完成 Control Plane 中断验收。
 - UI001：`clients/ui/`、`clients/mobile/` 中 Official pairing 非秘密类别投影、`workflow.md` 与对应测试；只重做机器列表 view-model、卡片和实时状态订阅，不修改 terminal truth、云授权或 transport 选择算法。
 - UI002：`clients/ui/`、`clients/mobile/` 的共享首页响应式布局、`workflow.md` 与对应测试；只调整桌面信息架构和机器行投影，保持移动端交互、连接状态 owner 与 transport 语义不变。
-- WEB001：`private/cloud/web-controller/`、必要顶层 npm workspace/lockfile、`private/cloud/infra/staging/`、`workflow.md` 与对应测试；只实现 Next.js 用户订阅 Landing、可配置套餐目录 BFF 和部署装配，不实现支付、生产价格或把订阅变成 terminal capability truth。
-- WEB002：`private/cloud/{web-controller,devcloud,control-plane,hub}`、`private/cloud/infra/staging/`、必要 Web Controller Next workspace、`workflow.md` 与对应测试；只实现浏览器账号 Session、订阅/订单、显式 staging payment provider、webhook 幂等和 entitlement snapshot 发布。生产 provider/价格未配置必须 fail closed，不修改 terminal capability。
-- WEB003：`private/cloud/{web-controller,control-plane,devcloud,hub}`、Web Controller Next workspace、staging 装配、`workflow.md` 与对应测试；实现 OIDC identity/account、邮箱密码身份、节点目录管理、账单订阅、账户设置、AFF 归因/奖励与审计投影。OAuth secret 和密码摘要只在 BFF/Control Plane；未配置 provider fail closed；节点、推荐奖励和订阅不得扩大 daemon terminal capability。
+- WEB001：`private/cloud/web-controller/`、必要顶层 npm workspace/lockfile、`private/cloud/infra/staging/`、`workflow.md` 与对应测试；实现 React/Vite 用户订阅 Landing、可配置套餐目录和静态部署装配，不实现支付、生产价格或把订阅变成 terminal capability truth。
+- WEB002：`private/cloud/{web-controller,devcloud,control-plane,hub}`、`private/cloud/infra/staging/`、必要 Web Controller React workspace、`workflow.md` 与对应测试；只实现浏览器账号 Session、订阅/订单、显式 staging payment provider、webhook 幂等和 entitlement snapshot 发布。生产 provider/价格未配置必须 fail closed，不修改 terminal capability。
+- WEB003：`private/cloud/{web-controller,control-plane,devcloud,hub}`、Web Controller React workspace、staging 装配、`workflow.md` 与对应测试；实现 OIDC identity/account、邮箱密码身份、节点目录管理、账单订阅、账户设置、AFF 归因/奖励与审计投影。OAuth secret、Session bearer 和密码摘要只在 Control Plane；未配置 provider fail closed；节点、推荐奖励和订阅不得扩大 daemon terminal capability。
 - FILE001：`workflow.md`、`docs/remote-platform/`；只建立文件产品、权限、协议、流控、失败语义和迁移基线，不新增 runtime。
 - FILE002：`proto/wirepb/`、`internal/protocol/`、`core/` 与必要 protocol/client harness；实现 daemon-owned 文件 metadata/read-preview 操作和显式 capability scope，不触及 Cloud 服务。
 - FILE003：`proto/wirepb/`、`internal/protocol/`、`core/`、`remote/`、`shared/remoteauth/`、`cmd/termx/` 与必要 transport harness；实现同一 protocol session 内的流式上传下载、背压、取消、续传和完整性校验，并最小联动 pairing grant 的显式文件权限；不新增旧独立 DataChannel。
@@ -106,7 +106,7 @@
 | CLOUD011 | 完成 | 客户端启动凭据与 Hub 目录刷新 | desktop/Official Android 启动时可访问 Control Plane 获取/刷新签名 edge token 与 HubDirectory，后续 direct/Relay 连接只访问 Hub |
 | UI001 | 完成 | 首页机器类别与实时连接卡片 | 列表明确 Local、Cloud、Local + Cloud，并实时显示可达、连接阶段、实际 direct/Relay/local 路径与失败状态 |
 | UI002 | 完成 | 桌面机器工作台 | 宽屏使用桌面导航、工具栏和稳定列机器清单，不再呈现放大的移动卡片；移动端布局不回归 |
-| WEB001 | 完成 | Next.js 订阅 Landing 与 Control Plane BFF | 公开页面展示 Managed Free/Pro/Team 真实能力；价格未配置时不伪造金额；Next 服务只经 Web Controller BFF 读取 Control Plane 产品投影 |
+| WEB001 | 完成 | React 静态订阅 Landing 与 Control Plane Web API | 公开页面展示 Managed Free/Pro/Team 真实能力；价格未配置时不伪造金额；服务器不运行 Node Web 服务 |
 | WEB002 | 完成 | 登录订阅付款纵向闭环 | 用户可登录、查看订阅、创建测试 Checkout，签名 webhook 幂等更新订单与 entitlement，Hub 收到新投影；生产支付未配置时拒绝 |
 | WEB003 | 进行中 | 完整用户中心与联合登录 | GitHub/Google OIDC 或邮箱密码首次登录创建个人账号；用户可管理节点、账单订阅、账户设置和 AFF 奖励，首次有效付款幂等发放邀请人 +15 天、被邀请人 +7 天 |
 | FILE001 | 完成 | 统一文件能力设计门禁 | 文件 owner、权限、方法、流控、失败语义和旧 API 迁移边界清晰 |
@@ -147,9 +147,9 @@
 - CLOUD011：Companion/Official Android contract 测试、desktop direct/single Relay E2E、ADB 真机 Control Plane 中断验收、`git diff --check`。
 - UI001：共享 UI machine/card 定向测试、client workspace 测试、Android source sync、移动 viewport 截图检查、`git diff --check`。
 - UI002：共享 UI 首页定向测试、client workspace 测试、Android source sync、桌面与移动双 viewport 截图检查、`git diff --check`。
-- WEB001：Web Controller Go module 测试、Next.js typecheck/build、BFF 跨进程 HTTP harness、桌面与移动截图检查、staging 配置静态检查、`git diff --check`。
-- WEB002：Web Controller/devcloud/Control Plane/Hub 定向测试、Session/CSRF/webhook 签名与幂等 harness、Next typecheck/build、跨进程 login/checkout/account E2E、桌面与移动截图、`git diff --check`。
-- WEB003：OIDC state/nonce/PKCE/callback、identity collision、密码摘要/修改、Session/CSRF、节点 ownership/revoke、AFF 单次归因、首次付款奖励幂等和订阅延期、账单/审计/SQLite 重启恢复定向测试；Next typecheck/build、跨进程用户中心 E2E、桌面与移动截图、`git diff --check`。
+- WEB001：Web Controller Go module 测试、React/Vite typecheck/build、Control Plane HTTP harness、桌面与移动截图检查、staging 配置静态检查、`git diff --check`。
+- WEB002：Web Controller/devcloud/Control Plane/Hub 定向测试、Session/CSRF/webhook 签名与幂等 harness、React/Vite typecheck/build、跨进程 login/checkout/account E2E、桌面与移动截图、`git diff --check`。
+- WEB003：OIDC state/nonce/PKCE/callback、identity collision、密码摘要/修改、Session/CSRF、节点 ownership/revoke、AFF 单次归因、首次付款奖励幂等和订阅延期、账单/审计/SQLite 重启恢复定向测试；React/Vite typecheck/build、跨进程用户中心 E2E、桌面与移动截图、`git diff --check`。
 - FILE001 文档-only：`git diff --check`。
 - FILE002：protocol/core 定向测试、文件系统 sandbox harness、`git diff --check`。
 - FILE003：protocol/core/remote 定向测试、慢消费者/取消/续传/损坏数据 harness、`git diff --check`。
@@ -159,10 +159,12 @@
 
 ## 当前状态
 
+- WEB003 运行架构已收敛：React/Vite 只生成静态文件，Nginx 在 `41100` 直接托管并将 `/api/*` 同源代理到 Control Plane `41001`；Control Plane 直接拥有 HttpOnly Session Cookie、Origin/CSRF、账号数据库、订阅和 AFF API。Next App Router、Route Handler、Node runtime unit、独立 Go Web Controller BFF binary/unit 与 `41000/41004` listener 已删除，不保留 fallback。
+
 - WEB003 当前进展：Web Controller 已以 SQLite 持久化账号、bcrypt 密码身份、浏览器 Session、订单、payment event 幂等、节点、AFF 单次归因、双边奖励和审计；邮箱注册可消费 `?aff=`，首次有效 Pro 付款由签名 webhook 唯一触发邀请人 +15 天、被邀请人 +7 天，并把奖励计入订阅有效期与 Control Plane entitlement 发布。Account 可按凭据状态设置或修改密码，原团队成员 Invitations UI/API 已删除并替换为 Referrals。数据库关闭重开后的登录、Session、订单和奖励恢复已有 harness；GitHub/Google OIDC callback 仍未实现，因此 WEB003 保持进行中。
 
-- WEB002 已完成：Go BFF 使用随机 bearer 摘要保存 8 小时浏览器 session，Next 只在 HttpOnly/SameSite=Strict Cookie 中持有 bearer，写请求同时要求精确 Origin 与 CSRF double submit token。Checkout 只创建 pending order；显式 staging provider 生成 HMAC `payment.succeeded`，EventID 幂等且 account/plan/order 必须绑定，只有 Control Plane internal entitlement update 成功并递增 edge revision、重新签发并应用 Hub snapshot 后订单才提交 paid。Pro snapshot 把 staging Relay budget 从 64 MiB/2 concurrency 更新到 256 MiB/4，terminal grant 不参与。`/login`、`/account`、订单列表和测试付款 UI 已完成桌面/Pixel 7 验收。Go Web Controller/devcloud/Hub test、vet、Next typecheck/build、本地跨进程和 `114.66.58.243:41100` 公网 E2E 均通过；公网从 Managed Free 完成 Pro paid，缺 Origin checkout 为 403，Control Plane/Hub ready 且五个 unit active。生产 OAuth、价格、持久订单数据库和真实 payment provider 仍 fail closed，不以 staging provider 冒充生产付款。
-- WEB001 已完成：`private/cloud/web-controller/web` 使用 Next.js 16 App Router 提供公开订阅 Landing，真实 TermX 机器工作台截图作为首屏产品信号，Managed Free/Pro/Team 只展示 PRD 已确认能力。价格目录由独立 `plans.json` 配置，Go BFF 严格拒绝 contact/included 套餐携带金额；Next `/` 与 `/api/catalog` 运行时只经 loopback BFF 读取同一真值，未配置价格显示用户态 Preview/Contact 文案。standalone 构建装配已修复重复构建静态目录污染，并以真实 Go `42104` + Next `42100` 双进程验证 Landing、catalog 和上游失败 503；1440x900 与 Pixel 7 截图无重叠。`114.66.58.243` 已安装校验过的私有 Node 24 LTS、Linux/amd64 BFF 与 Next standalone，staging unit 将 Next `41000` 与 BFF `41004` 分离，Nginx 仍只公开 `41100`；公网 Landing、catalog、status 均为 200，Control Plane/Hub ready 且五个 unit active。Go test/vet、Next typecheck/build、artifact 检查与 `git diff --check` 通过；生产 npm audit 无 high/critical，Next 16.2.10 内嵌 PostCSS 保留 2 个暂无同代升级修复的 moderate。仓库既有 `repository-layout-guard.sh` expected module 列表遗漏已存在的 `private/cloud/devcloud/go.mod`，因此该非 WEB001 guard 仍失败，未在本切片扩散修复。
+- WEB002 迁移前验收记录：Go BFF 使用随机 bearer 摘要保存 8 小时浏览器 session，Next 只在 HttpOnly/SameSite=Strict Cookie 中持有 bearer，写请求同时要求精确 Origin 与 CSRF double submit token。Checkout 只创建 pending order；显式 staging provider 生成 HMAC `payment.succeeded`，EventID 幂等且 account/plan/order 必须绑定，只有 Control Plane internal entitlement update 成功并递增 edge revision、重新签发并应用 Hub snapshot 后订单才提交 paid。Pro snapshot 把 staging Relay budget 从 64 MiB/2 concurrency 更新到 256 MiB/4，terminal grant 不参与。`/login`、`/account`、订单列表和测试付款 UI 已完成桌面/Pixel 7 验收。Go Web Controller/devcloud/Hub test、vet、Next typecheck/build、本地跨进程和 `114.66.58.243:41100` 公网 E2E 均通过；公网从 Managed Free 完成 Pro paid，缺 Origin checkout 为 403，Control Plane/Hub ready 且五个 unit active。生产 OAuth、价格、持久订单数据库和真实 payment provider 仍 fail closed，不以 staging provider 冒充生产付款。
+- WEB001 迁移前验收记录：`private/cloud/web-controller/web` 使用 Next.js 16 App Router 提供公开订阅 Landing，真实 TermX 机器工作台截图作为首屏产品信号，Managed Free/Pro/Team 只展示 PRD 已确认能力。价格目录由独立 `plans.json` 配置，Go BFF 严格拒绝 contact/included 套餐携带金额；Next `/` 与 `/api/catalog` 运行时只经 loopback BFF 读取同一真值，未配置价格显示用户态 Preview/Contact 文案。standalone 构建装配已修复重复构建静态目录污染，并以真实 Go `42104` + Next `42100` 双进程验证 Landing、catalog 和上游失败 503；1440x900 与 Pixel 7 截图无重叠。`114.66.58.243` 已安装校验过的私有 Node 24 LTS、Linux/amd64 BFF 与 Next standalone，staging unit 将 Next `41000` 与 BFF `41004` 分离，Nginx 仍只公开 `41100`；公网 Landing、catalog、status 均为 200，Control Plane/Hub ready 且五个 unit active。Go test/vet、Next typecheck/build、artifact 检查与 `git diff --check` 通过；生产 npm audit 无 high/critical，Next 16.2.10 内嵌 PostCSS 保留 2 个暂无同代升级修复的 moderate。仓库既有 `repository-layout-guard.sh` expected module 列表遗漏已存在的 `private/cloud/devcloud/go.mod`，因此该非 WEB001 guard 仍失败，未在本切片扩散修复。
 - UI002 已完成：共享首页在 `lg` 宽屏下使用 64px 产品栏、带文字的 Add machine 主操作和 Machine/Access/Connection 稳定列表格，机器行收敛为 72px、去除移动卡片阴影和大圆角；移动端继续使用三行卡片和 40px 触控操作。1440x900 桌面截图验证长名称、Local/Cloud/Local + Cloud、可达性与操作列无重叠，Pixel 7 截图验证移动布局未回归；`make test-clients`（63 个文件、452 条测试）、Android source sync 与 `git diff --check` 全绿。
 - UI001 已完成：机器 store 持久化 Local、Cloud、Local + Cloud 接入类别，账号同步/退出按能力正确合并和降级；首页卡片显示真实 health 可达性、授权状态、终端数，以及已存在会话的连接阶段和 local/P2P direct/single Relay 路径，列表不会为了取状态主动建连。共享 UI 定向测试、`make test-clients`（63 个文件、451 条测试）、Android source sync、Pixel 7 viewport 截图与 `git diff --check` 通过。设备重连后已覆盖安装 Official public HTTP staging APK，并用 WebView CDP 验证 410x913 viewport 无横向溢出；真机暴露旧 Official `source=manual` 记录缺少新类别字段会误标 Local，已按 pairing ownership 迁移为 Cloud 并补回归测试，CDP 最终显示 `Cloud` 与 `Cloud available`。
 - RM001-RM003 已提交：公开 Go module、npm workspace 和 Android 单一源码已经收口。

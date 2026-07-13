@@ -21,8 +21,8 @@ help:
 	@printf '%s\n' \
 		'Targets:' \
 		'  make build         Build termx into .artifacts/bin/' \
-		'  make build-web-controller  Build Go BFF and Next.js standalone Web Controller' \
-		'  make build-web-controller-linux  Build the Linux/amd64 staging Web Controller artifact' \
+		'  make build-web-controller  Build the React static Web Controller' \
+		'  make build-web-controller-linux  Alias for the platform-independent static Web Controller build' \
 		'  make cloud-dev     Start the explicit single-region dev cloud' \
 		'  make test          Test the public Go module' \
 		'  make test-private  Test each private cloud Go module when present' \
@@ -37,16 +37,11 @@ build:
 	GOWORK=off go build -o "$(TERMX_BIN)" ./cmd/termx
 
 build-web-controller:
-	rm -rf "$(ARTIFACT_DIR)/web-controller" "$(ARTIFACT_DIR)/web-controller-config"
-	mkdir -p "$(ARTIFACT_DIR)/bin" "$(ARTIFACT_DIR)/web-controller"
-	cd private/cloud/web-controller && GOWORK=off go build -o "$(ARTIFACT_DIR)/bin/termx-web-controller" ./cmd/termx-web-controller
+	rm -rf "$(ARTIFACT_DIR)/web-controller"
+	mkdir -p "$(ARTIFACT_DIR)/web-controller/dist" "$(ARTIFACT_DIR)/web-controller/config"
 	npm run build --workspace @termx/web-controller
-	cp -R private/cloud/web-controller/web/.next/standalone/. "$(ARTIFACT_DIR)/web-controller/"
-	mkdir -p "$(ARTIFACT_DIR)/web-controller/private/cloud/web-controller/web/.next"
-	cp -R private/cloud/web-controller/web/.next/static "$(ARTIFACT_DIR)/web-controller/private/cloud/web-controller/web/.next/static"
-	cp -R private/cloud/web-controller/web/public "$(ARTIFACT_DIR)/web-controller/private/cloud/web-controller/web/public"
-	mkdir -p "$(ARTIFACT_DIR)/web-controller-config"
-	cp private/cloud/web-controller/config/plans.json "$(ARTIFACT_DIR)/web-controller-config/plans.json"
+	cp -R private/cloud/web-controller/web/dist/. "$(ARTIFACT_DIR)/web-controller/dist/"
+	cp private/cloud/web-controller/config/plans.json "$(ARTIFACT_DIR)/web-controller/config/plans.json"
 
 build-web-controller-linux:
 	$(MAKE) build-web-controller GOOS=linux GOARCH=amd64 CGO_ENABLED=0
@@ -103,7 +98,7 @@ doctor:
 clean:
 	rm -rf "$(ARTIFACT_DIR)" "$(CURDIR)/bin" "$(CURDIR)/.build"
 	rm -rf "$(CURDIR)/clients/ui/dist" "$(CURDIR)/clients/mobile/dist"
-	rm -rf "$(CURDIR)/private/cloud/web-controller/web/.next"
+	rm -rf "$(CURDIR)/private/cloud/web-controller/web/dist"
 	find "$(CURDIR)" -maxdepth 1 -type f \( -name '*.test' -o -name '*.cover' -o -name 'cover.out' \) -delete
 	find "$(CURDIR)/core" "$(CURDIR)/tui" -type f -name '*.test' -delete
 	find "$(ANDROID_DIR)" -type d \( -name build -o -name .gradle \) -prune -exec rm -rf {} +

@@ -1,8 +1,6 @@
-import Image from 'next/image'
+import { useEffect, useState } from 'react'
 import { ArrowRight, Check, Cloud, LockKeyhole, Network, RadioTower, ShieldCheck, Users } from 'lucide-react'
-import { formatPlanPrice, loadCatalog, planPriceNote } from '../lib/catalog'
-
-export const dynamic = 'force-dynamic'
+import { Catalog, formatPlanPrice, planPriceNote } from './catalog'
 
 const productFacts = [
   ['Direct first', 'P2P remains the fastest path when the network allows it.'],
@@ -10,8 +8,9 @@ const productFacts = [
   ['Terminal truth stays home', 'History, input and capability checks remain on your daemon.'],
 ]
 
-export default async function HomePage() {
-  const catalog = await loadCatalog()
+export default function HomePage() {
+  const [catalog,setCatalog]=useState<Catalog|null>(null)
+  useEffect(()=>{fetch('/api/catalog',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('catalog unavailable');return r.json()}).then(setCatalog).catch(()=>setCatalog(null))},[])
   return (
     <main>
       <header className="site-header">
@@ -25,7 +24,7 @@ export default async function HomePage() {
       </header>
 
       <section className="hero" id="top">
-        <Image alt="TermX machine workspace showing managed endpoints and connection paths" fill priority sizes="100vw" src="/product-workspace.png" />
+        <img alt="TermX machine workspace showing managed endpoints and connection paths" src="/product-workspace.png" />
         <div className="hero-shade" />
         <div className="hero-content">
           <p className="kicker"><span /> Managed terminal connectivity</p>
@@ -78,7 +77,7 @@ export default async function HomePage() {
           <p>Local connections, SSH and terminal capabilities remain yours. Plans add official discovery, Relay capacity and organization controls.</p>
         </div>
         <div className="plan-grid">
-          {catalog.plans.map((plan) => (
+          {catalog?.plans.map((plan) => (
             <article className={`plan ${plan.featured ? 'featured' : ''}`} key={plan.id}>
               <div>
                 <p className="plan-eyebrow">{plan.eyebrow}</p>

@@ -141,6 +141,18 @@ func (service *CommerceService) Authenticate(token string) (CommerceSession, err
 	return session, nil
 }
 
+// EndSession 立即撤销浏览器 bearer 摘要；退出后即使 Cookie 被复制也不能再次认证。
+func (service *CommerceService) EndSession(token string) {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	key := sha256.Sum256([]byte(token))
+	if service.center != nil {
+		service.center.deleteSession(key)
+	} else {
+		delete(service.sessions, key)
+	}
+}
+
 // CreateCheckout 创建 pending order；当前仅允许 catalog 已声明的 Pro plan，绝不在此时更新 entitlement。
 func (service *CommerceService) CreateCheckout(session CommerceSession, planID string) (Order, error) {
 	if session.AccountID == "" || planID != "pro" {

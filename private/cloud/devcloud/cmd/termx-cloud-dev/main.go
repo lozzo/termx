@@ -32,6 +32,10 @@ func run(ctx context.Context, args []string) error {
 	hubListen := flags.String("hub-listen", "127.0.0.1:0", "loopback Hub listen address")
 	relayListen := flags.String("relay-listen", "127.0.0.1:0", "UDP TURN listen address")
 	relayPublicIP := flags.String("relay-public-ip", "", "public TURN address for staging-ssh")
+	webAccountDB := flags.String("web-account-db", "", "SQLite web account database path")
+	webCatalog := flags.String("web-catalog", "", "web plan catalog path")
+	webStaging := flags.Bool("web-staging", false, "enable explicit staging browser login and checkout")
+	webSecureCookie := flags.Bool("web-secure-cookie", false, "require HTTPS for browser session cookies")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -50,6 +54,7 @@ func run(ctx context.Context, args []string) error {
 	runtime, err := devcloud.Start(devcloud.Config{
 		ControlPlaneListener: controlListener, HubListener: hubListener,
 		RelayListenAddr: *relayListen, RelayPublicIP: *relayPublicIP, Profile: *profile,
+		WebAccountDBPath: *webAccountDB, WebCatalogPath: *webCatalog, WebStaging: *webStaging, WebSecureCookie: *webSecureCookie,
 	})
 	if err != nil {
 		return err

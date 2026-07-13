@@ -30,6 +30,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
+	webcontroller "github.com/lozzow/termx/private/cloud/web-controller"
 	"github.com/lozzow/termx/proto/cloudpb"
 )
 
@@ -69,6 +70,14 @@ type Config struct {
 	EnrollmentCode       string
 	// UsageOutboxPath 是 Relay signed usage durable queue；为空时 dev runtime 使用独立临时路径。
 	UsageOutboxPath string
+	// WebAccountDBPath 是 Control Plane 拥有的浏览器账号 SQLite 路径；必须与 WebCatalogPath 同时配置。
+	WebAccountDBPath string
+	// WebCatalogPath 是 Control Plane 读取的套餐配置路径；浏览器只消费其公开投影。
+	WebCatalogPath string
+	// WebStaging 显式启用固定账号和测试付款，默认生产路径保持关闭。
+	WebStaging bool
+	// WebSecureCookie 强制浏览器 Session 只经 HTTPS 发送；公网生产必须开启。
+	WebSecureCookie bool
 }
 
 // Runtime 是一组已启动的 dev-local Control Plane/Hub listener 与单个 UDP TURN Relay。
@@ -155,6 +164,9 @@ type serviceState struct {
 	webEntitlements  map[string]time.Time
 	usageOutboxPath  string
 	relayControl     *relayControlState
+	webCenter        *webcontroller.UserCenterStore
+	webCommerce      *webcontroller.CommerceService
+	webHandler       http.Handler
 
 	presenceQueueSize int
 	clientQueueSize   int
@@ -234,6 +246,10 @@ func start(config Config, options runtimeOptions) (*Runtime, error) {
 		return nil, err
 	}
 	state.relayControl.url = relayServer.URL()
+	if err := state.initializeWeb(config); err != nil {
+		_ = relayServer.Close()
+		return nil, err
+	}
 
 	startedAt := now.Truncate(time.Second)
 	runtime := &Runtime{
@@ -427,7 +443,11 @@ func (runtime *Runtime) Close(ctx context.Context) error {
 		_ = runtime.controlListener.Close()
 		_ = runtime.hubListener.Close()
 		runtime.waitGroup.Wait()
-		runtime.closeErr = errors.Join(usageErr, relayErr, controlErr, hubErr)
+		var webErr error
+		if runtime.state.webCenter != nil {
+			webErr = runtime.state.webCenter.Close()
+		}
+		runtime.closeErr = errors.Join(usageErr, relayErr, controlErr, hubErr, webErr)
 		close(runtime.done)
 	})
 	return runtime.closeErr

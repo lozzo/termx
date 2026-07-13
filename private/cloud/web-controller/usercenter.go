@@ -55,6 +55,15 @@ type ReferralProgram struct {
 	Rewards       []ReferralReward `json:"rewards"`
 }
 
+// AccountEntitlement 是 Control Plane 启动时从 paid order 与奖励账本重建的订阅投影。
+// 它只包含托管服务能力期限，不包含 terminal capability。
+type AccountEntitlement struct {
+	AccountID  string
+	PlanID     string
+	OrderID    string
+	ValidUntil time.Time
+}
+
 // UserAuditEvent 是账号中心可展示的持久审计投影。
 type UserAuditEvent struct {
 	ID         string    `json:"id"`
@@ -246,6 +255,41 @@ func (store *UserCenterStore) ReferralRewardDays(accountID string) int {
 	var days int
 	_ = store.db.QueryRow(`SELECT COALESCE(SUM(days),0) FROM referral_rewards WHERE beneficiary_account_id=?`, accountID).Scan(&days)
 	return days
+}
+
+// ActiveEntitlements 从持久订单和奖励账本重建当前有效订阅，供 Control Plane 启动时恢复 Hub 投影。
+func (store *UserCenterStore) ActiveEntitlements(now time.Time) []AccountEntitlement {
+	rows, err := store.db.Query(`SELECT id,account_id,plan_id,paid_at FROM orders WHERE status='paid' AND paid_at IS NOT NULL ORDER BY paid_at`)
+	if err != nil {
+		return nil
+	}
+	type paidOrder struct {
+		orderID, accountID, planID string
+		paidAt                     time.Time
+	}
+	orders := []paidOrder{}
+	for rows.Next() {
+		var value paidOrder
+		var paidAtText string
+		if rows.Scan(&value.orderID, &value.accountID, &value.planID, &paidAtText) != nil {
+			continue
+		}
+		value.paidAt, _ = time.Parse(time.RFC3339Nano, paidAtText)
+		orders = append(orders, value)
+	}
+	rows.Close()
+	latest := map[string]AccountEntitlement{}
+	for _, order := range orders {
+		validUntil := order.paidAt.Add(time.Duration(30+store.ReferralRewardDays(order.accountID)) * 24 * time.Hour)
+		if now.Before(validUntil) {
+			latest[order.accountID] = AccountEntitlement{AccountID: order.accountID, PlanID: order.planID, OrderID: order.orderID, ValidUntil: validUntil}
+		}
+	}
+	result := make([]AccountEntitlement, 0, len(latest))
+	for _, value := range latest {
+		result = append(result, value)
+	}
+	return result
 }
 
 func (store *UserCenterStore) referralReferrer(accountID string) string {
