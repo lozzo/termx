@@ -4,7 +4,7 @@
 
 - 仓库根目录 `workflow.md` 是当前分支唯一有效的活动驱动文件。
 - 本仓库内所有工作必须先读取 `workflow.md`，并以它作为范围、任务顺序、测试准入和提交规则的唯一基准。
-- 当前主线是单区域 Cloud 纵向闭环；已有 PRD、架构、安全协议和领域组件只作为实现输入，当前必须优先完成可运行的 dev cloud、desktop direct、single Relay 和 Official Android 用户链路。
+- 当前活动主线只由 `workflow.md` 最早未完成切片决定；单区域 Cloud 纵向闭环已完成，用户当前已把 KS012-KS017 TUI 快捷键完整收口排到 CLI 后续实现之前。
 - 插件系统已经拆到独立分支，本分支不新增插件系统代码、协议或文档。
 - `docs/remote-platform/` 是当前远程平台产品、架构、安全和迁移基准。
 - `tui/docs/multi-endpoint-transport-plan.md` 是当前多 endpoint / 多 transport 技术规划。
@@ -41,9 +41,10 @@
 8. 需要技术细节时读取 `workflow.md` 指定的当前规划文档和对应 architecture 文档。
 9. 实现最小可验证改动，先补齐该切片要求的 harness，再接真实实现。
 10. 运行该切片的测试准入命令。
-11. 更新 `workflow.md` 中该切片状态和必要的当前状态说明。
-12. 使用中文提交信息提交本切片。
-13. 若 `/goal` 仍在继续，再进入下一切片。
+11. 若 `workflow.md` 把该切片标记为双 Agent 审查切片，按“阶段双审查门禁”完成架构审查与代码审查；两个 reviewer 都明确 PASS 前不得提交或进入下一切片。
+12. 更新 `workflow.md` 中该切片状态和必要的当前状态说明。
+13. 使用中文提交信息提交本切片。
+14. 若 `/goal` 仍在继续，再进入下一切片。
 
 如果没有明确阻塞，不要停下来要求用户确认普通实现细节。若范围、语义或目录权限不清，必须先更新 `workflow.md` 或向用户说明阻塞。
 
@@ -146,3 +147,13 @@
 - 只有当用户明确要求子 Agent、审核或并行代理工作时才使用子代理。
 - 子代理适合做只读审核、独立探索或互不重叠的实现切片。
 - 子代理审核后的 findings 必须先本地判断并处理，再提交最终结果。
+
+### 阶段双审查门禁
+
+- 用户或 `workflow.md` 明确要求阶段双审查时，每个切片在实现和测试准入完成后、提交前，必须同时启动两个相互独立的只读 reviewer：一个负责架构审查，一个负责代码审查。
+- 架构 reviewer 必须检查 domain owner、truth source、消息链路、失败条件、模块边界、重复真值、fallback、旧代码删除是否彻底，以及实现是否为了局部 case 引入补丁分支。
+- 代码 reviewer 必须检查行为 bug、状态竞态、输入边界、错误处理、安全/隐私、性能退化、测试有效性和用户可观察回归；不得只做格式或命名检查。
+- reviewer 必须基于当前阶段实现 diff、相关实现和测试给出 `PASS` 或 `FAIL`。审查范围不包含 reviewer PASS 后机械写入的 `workflow.md` 状态/审查证据；没有明确结论、只给摘要或仍有未解决 finding，都视为 `FAIL`。
+- 主 Agent 必须独立判断并处理 findings，不能机械接受或忽略。修复任何实质 finding 后必须重新运行受影响测试，并把更新后的阶段实现 diff 交给原 reviewer 复审；架构与代码 reviewer 都明确 `PASS` 才满足门禁。
+- reviewer 只读，不得直接改文件、提交或替主 Agent扩大切片。若双审查所需子 Agent 不可用，该切片标记阻塞，不得降低为单 Agent、自审或跳过。
+- 两个 reviewer PASS 后只允许机械更新 `workflow.md` 的切片状态、reviewer 结论和已处理 finding 摘要，再运行 `git diff --check` 后提交；若同时修改任何实现、测试、其他文档或非审查元数据，必须重新交原 reviewer 复审。该终止规则避免“记录 PASS 本身又制造待审 diff”的无限循环。

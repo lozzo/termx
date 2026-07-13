@@ -12,6 +12,7 @@
 - WEB002 已完成：Web 登录、浏览器 Session、订阅账户、staging Checkout、签名 webhook、幂等订单和 Entitlement/Hub 投影已形成公网纵向链路。
 - CLOUD012 已完成：Web、TUI 与 Official Android 使用统一账号设备码登录，账号名下 daemon 注册到 Hub；登录后的 direct 与 single Relay 热路径只访问 Hub，Control Plane 中断不影响有效缓存期内的新连接。
 - CLI001 已完成：已审计当前扁平 CLI 与公开 `v3` 测试命令，建立以 endpoint/terminal 为真值的对象化命令树、稳定 target、JSON/format、退出码、tmux 能力映射和分期实现门禁；当前尚未改动 CLI 运行行为。
+- 用户已把 TUI 快捷键完整收口提升为当前主线：KS012-KS017 将依次完成跨层契约、单一 action domain、输入/scene、全部默认 action、提示/点击同源和真实终端验收；CLI002-CLI006 暂停，待快捷键项目完成后重新排序。
 - WEB003 已由用户重排为暂停：邮箱密码、用户中心、订阅和 AFF 已完成，GitHub/Google OIDC 留待统一账号客户端链路验收后恢复。
 - FILE001-FILE004 与 CLOUD006-CLOUD008 已完成；Official Android 显式 development build 已通过公网 HTTP staging 在 5G 真机完成 direct、single Relay、terminal 与恢复链路。生产上线前必须另行切换 HTTPS/TLS，不得复用本切片的明文 profile。
 - 当前仓库是唯一 private monorepo；当前不是正式开源或生产发布阶段。public snapshot、开源许可证模板替换、secret audit、第二仓和发布自动化全部延后。
@@ -27,6 +28,8 @@
 - `docs/remote-platform/security-protocol-spec.md`：设备身份、CapabilityGrant、Hub admission 和 Relay lease 安全边界。
 - `docs/remote-platform/global-acceleration-spec.md`：GA001/GA002 已有质量与 single-relay 算法背景；Relay Mesh 仅作延后设计输入。
 - `tui/docs/multi-endpoint-transport-plan.md`、`tui/docs/architecture.md`：TUI endpoint/transport 与 runtime 基准。
+- `tui/docs/shortcut-system-plan.md`：KS012-KS017 快捷键单一 action 真值、输入/展示闭环与删除边界基准。
+- `tui/docs/shortcut-completion-goal-prompt.md`：快捷键项目自动推进和逐阶段双 Agent 审查 prompt。
 - `core/docs/architecture.md`：core terminal lifecycle、live/history 与 storage 边界。
 - `docs/remote-platform/cloud-staging-roadmap.md`：唯一活动实现真值，收敛当前代码缺口、四类 session 身份、真实消息链路和 CLOUD002-CLOUD005 用户 DoD。
 - `docs/remote-platform/file-transfer-spec.md`：FILE001-FILE004 的产品边界、daemon ownership、授权、协议、流控和迁移真值。
@@ -97,6 +100,12 @@
 - CLI004：`cmd/termx/`、`shared/connection/`、TUI endpoint dialer 可复用边界、必要 `remote/`/Companion public contract、对应文档与 `workflow.md`；只完成 endpoint-aware CLI 和 local/SSH/Hub 真实路由，不新增 transport fallback。
 - CLI005：`cmd/termx/`、必要 `internal/protocol/`/`core/`/`remote/` contract、对应文档与 `workflow.md`；只完成 send/capture/resize/wait/events 和稳定自动化输出，不读取 TUI renderer 或建立第二份 history truth。
 - CLI006：`cmd/termx/`、`shared/connection/`、必要 file/workbench/pair public contract、`private/cloud/companion` 的安装装配、对应文档与 `workflow.md`；只收口 file/workspace/pair 和 Cloud login/enroll 用户体验，不把私有 Cloud 逻辑链接进公开 CLI。
+- KS012：`tui/{shortcut,input,app,render,config,state,terminalhost}`、`tui/docs/{shortcut-system-plan.md,shortcut-inventory.md}`、`workflow.md` 与必要测试；只做最终现状审计、机器可读 debt manifest 和“无未分类/无新增 debt”守卫，可删除已被新模型替代的测试 helper，不要求提前修完 KS013-KS016 gap。
+- KS013：新增 `tui/action/`，并允许修改 `tui/{shortcut,input,app,render,config,state}`、对应测试/文档与 `workflow.md`；只建立中立 action domain、shortcut 引用和 keyboard invocation -> handler contract，删除重复 identity/alias/scene 语义，不迁移 render surface 提示/点击。
+- KS014：`tui/{terminalhost,input,shortcut,config,app,state}`、对应测试/文档与 `workflow.md`；只收口 raw key/mouse 到 InputEvent、catalog 编译、scene/lock/back navigation 和 PTY passthrough，不触及 renderer 视觉重做。
+- KS015：`tui/{action,shortcut,input,app,state,services}`、对应测试/文档与 `workflow.md`；逐场景完成默认 action 的真实 reducer/effect/service 闭环；无真实功能的 placeholder 必须实现或从默认 catalog 删除，不得用 toast/刷新冒充成功。
+- KS016：`tui/{action,shortcut,input,app,render,state}`、对应测试/文档与 `workflow.md`；逐 surface 收口 footer/help/overlay/chrome/content CTA 与 keyboard/click invocation 同源，可删除所有硬编码操作键位提示和重复 render action 声明。
+- KS017：`tui/`、`cmd/termx/` 的必要黑盒 harness、`scripts/termx_shortcut_smoke.sh`、`README.md`、`tui/docs/`、`workflow.md` 与配置示例；只做完整配置/文档、全量守卫和真实 tmux/CSI-u 验收，删除本项目已替代旧代码，不扩展其他 TUI 产品功能。
 - `core/` 只有 terminal lifecycle、history 或 scoped protocol contract 确实需要时才最小联动；`private/archive/` 始终禁止主动修改。
 
 ## 任务队列
@@ -128,15 +137,19 @@
 | FILE004 | 已完成 | 共享 UI 与 Official Android 闭环 | App 可浏览、预览、上传、下载并经 direct/single Relay 手测 |
 | VT001 | 完成 | 收口 vterm restart 生命周期竞态 | 全量 core race 不再报告 Emulator close/read 竞态 |
 | CLI001 | 完成 | CLI 命令体系设计门禁 | 当前命令缺口、对象化命令树、TerminalRef、输出/退出码与 tmux 能力映射形成唯一实现基线 |
-| CLI002 | 待开始 | CLI 骨架与 local terminal 闭环 | 用户可通过有完整 help 的 canonical 命令和短别名管理 local terminal，脚本获得稳定 JSON 与退出码，产品 help 不再暴露 v3/smoke |
-| CLI003 | 待开始 | daemon 与配置生命周期 | 用户无需 pkill 即可 start/stop/status/logs daemon，并可查询、校验和原子修改配置 |
-| CLI004 | 待开始 | endpoint-aware CLI | 同一 terminal 命令可按 TerminalRef 操作 local、SSH、Hub endpoint，失败不 fallback |
-| CLI005 | 待开始 | CLI 自动化数据面 | send/capture/resize/wait/events 使用 owning daemon truth，并提供稳定 format/NDJSON |
-| CLI006 | 待开始 | file/workspace/pair/Cloud UX | 文件与视图命令结构化可用；Cloud login/enroll 不暴露 DBus、runuser、IPC socket 或手工 Companion |
+| CLI002 | 暂停 | CLI 骨架与 local terminal 闭环 | 快捷键完整收口后重新排序 |
+| CLI003 | 暂停 | daemon 与配置生命周期 | 快捷键完整收口后重新排序 |
+| CLI004 | 暂停 | endpoint-aware CLI | 快捷键完整收口后重新排序 |
+| CLI005 | 暂停 | CLI 自动化数据面 | 快捷键完整收口后重新排序 |
+| CLI006 | 暂停 | file/workspace/pair/Cloud UX | 快捷键完整收口后重新排序 |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
 | GA004 | 延后 | 单 transit 受控加速 | 仅在 GA003 数据证明需要时恢复 |
-| KS012 | 暂停 | 快捷键跨切片总契约守卫 | Cloud 单区域主线完成后重新排序 |
-| KS013 | 暂停 | 快捷键文档与示例 | Cloud 单区域主线完成后重新排序 |
+| KS012 | 待开始 | 快捷键最终审计与总契约 | 所有 binding/spec/handler/projection 被机器归类为符合或有 owner 的 debt，无未分类项且不能新增 debt |
+| KS013 | 待开始 | 中立 action domain 与分发 | tui/action 成为通用 action/invocation owner，shortcut 只拥有键位编译，keyboard 到 handler 无重复 identity/alias 表 |
+| KS014 | 待开始 | 输入协议与 scene 状态 | 传统 TTY/CSI-u/mouse 规范化、catalog 替换、sticky/copy/overlay/lock/Esc 优先级和 PTY 透传完整可验证 |
+| KS015 | 待开始 | 全部默认 action 真实闭环 | 每个默认 binding 都产生真实 reducer/effect/service 结果；placeholder 被实现或删除，失败不伪装成功 |
+| KS016 | 待开始 | 提示点击与键盘同源 | 所有 render surface 不含硬编码操作键位，keyboard/mouse/drag/click 使用 tui/action canonical invocation |
+| KS017 | 待开始 | 配置文档与真实终端验收 | 完整示例可加载，文档与 catalog 自动一致，全量 TUI/CLI/tmux/CSI-u 门禁通过且旧代码清理完成 |
 | SI001 | 暂停 | TUI 同步输入组 | 恢复前重新确认范围 |
 | OPEN001 | 延后 | 正式开源与发布隔离 | 用户明确进入发布阶段后再执行 public snapshot、许可证、secret audit 和新仓初始化 |
 
@@ -149,6 +162,7 @@
 5. 切片完成后运行对应准入、更新本文件、使用中文提交信息提交，再进入下一切片。
 6. 若发现 release-only、multi-region 或假设性优化工作，记录为 deferred，不得偏离当前纵向目标。
 7. 外部 OAuth、生产 TLS、数据库和云资源缺失时，使用显式 dev/staging harness 推进；不得恢复旧 fallback。
+8. KS012-KS017 是用户明确要求的双 Agent 审查切片；每个切片提交前必须按 `AGENTS.md` 同时完成架构 review 与代码 review，两个 reviewer 对阶段实现 diff 都明确 PASS 后，只允许机械回填 workflow 状态/审查证据并提交，才能进入下一切片。
 
 ## 测试准入
 
@@ -182,9 +196,19 @@
 - CLI004：TerminalRef/registry/dialer 定向测试、local/SSH/managed direct/single Relay CLI E2E、失败不 fallback harness、`git diff --check`。
 - CLI005：input/live/history/events 定向测试、stdout/stderr/NDJSON/timeout 黑盒测试、local 与 WebRTC 自动化 E2E、`git diff --check`。
 - CLI006：file/workbench/pair 定向测试、Companion 自动发现与 daemon enrollment IPC 测试、Cloud staging login/enroll E2E、secret scan、`git diff --check`。
+- KS012：debt manifest 分类完整性/不新增守卫、shortcut/domain/input/app/render/config 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
+- KS013：`tui/action` canonical identity/invocation、shortcut 引用、keyboard handler 与 render metadata contract 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
+- KS014：TerminalHost raw/CSI-u/mouse parser、key canonicalization、catalog replacement、scene/lock/back/PTY passthrough 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
+- KS015：所有默认 scene/binding 的 reducer/effect/service 矩阵、endpoint-aware 失败 harness、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
+- KS016：footer/help/overlay/chrome/content projection、keyboard/click 等价、空 catalog/窄屏/capability 条件测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
+- KS017：配置示例加载与文档一致性守卫；`scripts/with-clean-termx-env.sh env GOWORK=off go test ./tui/... -count=1`；`scripts/with-clean-termx-env.sh env GOWORK=off go test -race ./tui/... -count=1`；`scripts/with-clean-termx-env.sh env GOWORK=off go test ./tui/terminalhost ./tui/input ./tui/app -run 'Test.*(CSIU|Kitty|Shortcut|BackNavigation|Footer|Overlay)' -count=20`；`scripts/with-clean-termx-env.sh env GOWORK=off go test ./cmd/termx -count=1`；`scripts/termx_shortcut_smoke.sh`；双 Agent PASS；`git diff --check`。
 - 只有切片真实跨越全仓 contract 时才运行 `make test-all`；当前开发阶段不运行 public snapshot 或 public-only release gate。
 
 ## 当前状态
+
+- 快捷键最终收口已规划为 KS012-KS017，目标不是补齐零散按键，而是删除第二真值并证明完整消息链路。当前审计已确认 `tui/shortcut` 之外仍有 `render.ActionSpecCatalog` 等 action 描述面、内容区硬编码 `Ctrl-F`/`Ctrl-T`/`R restart` 操作提示，以及 `system.open_prompt` 落到 placeholder 的风险。中立 `tui/action` 将拥有 keyboard/mouse/drag/CTA 共用 action identity 与 invocation，`tui/shortcut` 只拥有 scene+key 编译和快捷键展示覆盖；每个默认 shortcut 后续必须真实工作或从 catalog 删除。KS012 先用 debt manifest 保证无未分类/无新增 gap，KS013-KS016 再按 owner 消除。允许在切片范围内大规模删除被替代旧代码，不以改动行数为约束。所有阶段执行架构 reviewer + 代码 reviewer 双门禁，规划用 `/goal` prompt 位于 `tui/docs/shortcut-completion-goal-prompt.md`。
+
+- 快捷键规划阶段审查证据：架构 reviewer `shortcut_plan_arch_review` 与代码 reviewer `shortcut_plan_code_review` 已对最终规划明确 PASS。已处理 findings 包括 KS012 审计/全绿矛盾、中立 action owner、KS013/KS016 surface 边界、KS015 scope、CTA/shortcut label ownership、双审查元数据终止规则和 KS017 可复现命令。clean-env `go test ./tui/... -count=1` 当前九个 package 全绿，`git diff --check` 通过。
 
 - CLI001 已完成：当前顶层 `new/ls/attach/kill/rm` 缺少对象层级与 help，`--socket` 只覆盖 local，裸 TerminalID 无法表达跨 endpoint 真值，公开 `v3` 同时泄漏重复命令和 smoke harness，查询输出也没有 JSON/format/退出码 contract。新基线以 `terminal`、`endpoint`、`daemon`、`workspace`、`file`、`pair`、`cloud`、`config` 为 canonical namespace，保留五个高频短别名但共享 handler；target 使用 `EndpointID:TerminalID`，自动化分 CLI002-CLI006 纵向实现。tmux 只映射 send/capture/wait/format 等成熟控制能力，不把 session/window/pane 模型覆盖到 TermX terminal/workspace ownership。
 
