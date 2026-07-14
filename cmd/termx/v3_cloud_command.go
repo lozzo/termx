@@ -40,8 +40,49 @@ func v3CloudCommand() *cobra.Command {
 		v3CloudLogoutCommand(),
 		v3CloudUninstallCommand(),
 	} {
+		switch child.Name() {
+		case "install", "update", "enroll", "uninstall":
+			// 旧入口仅用于已有脚本过渡；产品发现面只展示 node/companion 分组。
+			child.Hidden = true
+		}
 		command.AddCommand(withV3CloudUserErrors(child))
 	}
+	node := &cobra.Command{Use: "node", Short: "Manage this daemon's cloud node enrollment"}
+	node.AddCommand(withV3CloudUserErrors(v3CloudEnrollCommand()))
+	companion := &cobra.Command{Use: "companion", Short: "Manage the verified out-of-process Cloud Companion"}
+	for _, child := range []*cobra.Command{
+		v3CloudInstallCommand(false), v3CloudInstallCommand(true), v3CloudCompanionStatusCommand(), v3CloudUninstallCommand(),
+	} {
+		companion.AddCommand(withV3CloudUserErrors(child))
+	}
+	command.AddCommand(node, companion)
+	return command
+}
+
+func v3CloudCompanionStatusCommand() *cobra.Command {
+	var jsonOutput bool
+	command := &cobra.Command{
+		Use: "status", Short: "Show verified Cloud Companion installation status", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			installed, err := defaultV3CloudInstallationStatus()
+			if err != nil {
+				return err
+			}
+			view := struct {
+				SchemaVersion int    `json:"schema_version"`
+				Kind          string `json:"kind"`
+				Installed     bool   `json:"installed"`
+				Version       string `json:"version"`
+				Channel       string `json:"channel"`
+			}{1, "cloud_companion_status", true, installed.Version, installed.Channel}
+			if jsonOutput {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Cloud Companion %s (%s) is installed and verified\n", view.Version, view.Channel)
+			return nil
+		},
+	}
+	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
 	return command
 }
 

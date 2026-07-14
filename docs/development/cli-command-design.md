@@ -183,10 +183,9 @@ termx workspace create --name NAME
 termx workspace rename ID NAME
 termx workspace remove ID
 termx workspace export ID
-termx workspace import FILE
 ```
 
-该 namespace 只管理 workbench/layout 投影。tab/pane/floating 的细粒度脚本控制延后到稳定 view target contract；不得照搬 tmux 的 window/pane lifecycle 并把 terminal 状态写回 workspace storage。
+该 namespace 只管理 workbench/layout 投影。当前 daemon contract 支持 versioned mutation 和 snapshot export，但没有原子 snapshot replace，因此 `workspace import` 延后，禁止用多次 create/split 重放制造半导入状态。tab/pane/floating 的细粒度脚本控制延后到稳定 view target contract；不得照搬 tmux 的 window/pane lifecycle 并把 terminal 状态写回 workspace storage。
 
 ### 6.5 file
 
@@ -211,11 +210,9 @@ ENDPOINT 用于选择 owning daemon，当前 protocol session 仍必须持有显
 termx pair create [--terminal TARGET] [--ttl DURATION] [--out FILE]
 termx pair import FILE [--id ENDPOINT] [--relay MODE]
 termx pair inspect FILE
-termx pair list
-termx pair revoke GRANT-ID
 ```
 
-create/import 立即整理；inspect 只能显示非秘密 metadata；list/revoke 必须先建立 daemon-owned grant registry/revocation contract。raw grant 永不进入普通 JSON、日志、connections.yaml 或 shell completion。
+create/import/inspect 已实现；inspect 只能显示非秘密 metadata。list/revoke 必须先建立 daemon-owned grant registry/revocation contract，当前不进入产品树。raw grant 永不进入普通 JSON、日志、connections.yaml 或 shell completion。
 
 ### 6.7 cloud
 
@@ -224,11 +221,11 @@ termx cloud login
 termx cloud logout
 termx cloud status
 termx cloud doctor
-termx cloud node list
 termx cloud node enroll
-termx cloud node revoke ID
 termx cloud companion install|update|status|uninstall
 ```
+
+`cloud node list/revoke` 需要 Control Plane/Companion 增加账号节点目录与撤销 contract，当前不以 Web Controller 页面抓取或本地缓存伪造。旧的 `cloud enroll/install/update/uninstall` 作为兼容入口暂时保留，canonical help 使用 `cloud node` 与 `cloud companion` 分组。
 
 用户命令不能要求 `dbus-run-session`、`runuser`、IPC socket 环境变量或手工启动 Companion：
 

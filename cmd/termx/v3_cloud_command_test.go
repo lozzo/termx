@@ -14,6 +14,31 @@ import (
 	"github.com/lozzow/termx/shared/cloudcompanion/installer"
 )
 
+func TestCloudHelpExposesCanonicalNodeAndCompanionNamespaces(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		want []string
+	}{
+		{args: []string{"cloud", "--help"}, want: []string{"node", "companion"}},
+		{args: []string{"cloud", "node", "--help"}, want: []string{"enroll"}},
+		{args: []string{"cloud", "companion", "--help"}, want: []string{"install", "update", "status", "uninstall"}},
+	} {
+		command := newRootCmd()
+		var output bytes.Buffer
+		command.SetOut(&output)
+		command.SetErr(io.Discard)
+		command.SetArgs(test.args)
+		if err := command.Execute(); err != nil {
+			t.Fatal(err)
+		}
+		for _, expected := range test.want {
+			if !strings.Contains(output.String(), expected) {
+				t.Fatalf("termx %s help missing %q: %s", strings.Join(test.args, " "), expected, output.String())
+			}
+		}
+	}
+}
+
 func TestCloudInstallUsesSignedInstallerRequest(t *testing.T) {
 	cloudInstaller := &fakeCloudInstaller{}
 	previousFactory := newV3CloudInstallerForCommand

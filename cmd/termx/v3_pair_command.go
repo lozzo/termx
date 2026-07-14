@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +26,53 @@ func v3PairCommand() *cobra.Command {
 	command := &cobra.Command{Use: "pair", Short: "Create or import a direct daemon capability"}
 	command.AddCommand(v3PairCreateCommand())
 	command.AddCommand(v3PairImportCommand())
+	command.AddCommand(v3PairInspectCommand())
+	return command
+}
+
+type pairInspectView struct {
+	SchemaVersion     int              `json:"schema_version"`
+	Kind              string           `json:"kind"`
+	Version           uint32           `json:"version"`
+	Label             string           `json:"label,omitempty"`
+	DeviceID          string           `json:"device_id"`
+	DeviceFingerprint string           `json:"device_fingerprint"`
+	GrantID           string           `json:"grant_id"`
+	RevocationID      string           `json:"revocation_id"`
+	Scope             remoteauth.Scope `json:"scope"`
+	IssuedAt          string           `json:"issued_at"`
+	NotBefore         string           `json:"not_before"`
+	ExpiresAt         string           `json:"expires_at"`
+}
+
+func v3PairInspectCommand() *cobra.Command {
+	var jsonOutput bool
+	command := &cobra.Command{
+		Use: "inspect <BUNDLE_FILE|->", Short: "Verify pairing metadata without printing its bearer grant", Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload, err := readV3PairingBundle(cmd.Context(), cmd.InOrStdin(), args[0])
+			if err != nil {
+				return err
+			}
+			bundle, claims, err := remoteauth.ParsePairingBundle(payload, time.Time{})
+			clear(payload)
+			if err != nil {
+				return err
+			}
+			view := pairInspectView{
+				SchemaVersion: 1, Kind: "pairing_bundle", Version: bundle.Version, Label: bundle.Label,
+				DeviceID: bundle.DeviceID, DeviceFingerprint: bundle.DeviceFingerprint,
+				GrantID: claims.GrantID, RevocationID: claims.RevocationID, Scope: claims.Scope,
+				IssuedAt: formatTerminalTime(claims.IssuedAt), NotBefore: formatTerminalTime(claims.NotBefore), ExpiresAt: formatTerminalTime(claims.ExpiresAt),
+			}
+			if jsonOutput {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Device: %s\nFingerprint: %s\nGrant ID: %s\nExpires: %s\n", view.DeviceID, view.DeviceFingerprint, view.GrantID, view.ExpiresAt)
+			return nil
+		},
+	}
+	command.Flags().BoolVar(&jsonOutput, "json", false, "print redacted machine-readable JSON")
 	return command
 }
 
@@ -44,6 +92,10 @@ func v3PairCreateCommand() *cobra.Command {
 			}
 			scope := remoteauth.FullDaemonScope()
 			if terminalID = strings.TrimSpace(terminalID); terminalID != "" {
+				terminalID, err = localPairTerminalID(terminalID)
+				if err != nil {
+					return err
+				}
 				scope = remoteauth.Scope{TerminalID: terminalID}
 			}
 			bundle, err := remoteauth.IssuePairingBundle(identity, remoteauth.PairingIssueOptions{
@@ -72,6 +124,20 @@ func v3PairCreateCommand() *cobra.Command {
 	command.Flags().StringVar(&terminalID, "terminal", "", "limit the capability to one terminal instead of daemon-wide access")
 	command.Flags().DurationVar(&lifetime, "ttl", 24*time.Hour, "capability lifetime")
 	return command
+}
+
+func localPairTerminalID(target string) (string, error) {
+	target = strings.TrimSpace(target)
+	if endpointID, terminalID, found := strings.Cut(target, ":"); found {
+		if endpointID != string(connection.DefaultEndpointID) || terminalID == "" || strings.Contains(terminalID, ":") {
+			return "", usageCLIError("pair create can only scope the local daemon target local:TERMINAL_ID")
+		}
+		return terminalID, nil
+	}
+	if target == "" {
+		return "", usageCLIError("terminal target cannot be empty")
+	}
+	return target, nil
 }
 
 func v3PairImportCommand() *cobra.Command {

@@ -83,6 +83,46 @@ func TestPairCreateWritesOwnerOnlyBundle(t *testing.T) {
 	}
 }
 
+func TestPairInspectRedactsBearerGrant(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	var created bytes.Buffer
+	create := newRootCmd()
+	create.SetOut(&created)
+	create.SetErr(io.Discard)
+	create.SetArgs([]string{"pair", "create", "--label", "Inspect daemon", "--ttl", "1h"})
+	if err := create.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	bundle, _, err := remoteauth.ParsePairingBundle(created.Bytes(), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspect := newRootCmd()
+	var output bytes.Buffer
+	inspect.SetIn(bytes.NewReader(created.Bytes()))
+	inspect.SetOut(&output)
+	inspect.SetErr(io.Discard)
+	inspect.SetArgs([]string{"pair", "inspect", "--json", "-"})
+	if err := inspect.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"kind":"pairing_bundle"`) || !strings.Contains(output.String(), `"device_id"`) || !strings.Contains(output.String(), `"scope"`) {
+		t.Fatalf("inspect lost public metadata: %s", output.String())
+	}
+	if strings.Contains(output.String(), bundle.CapabilityGrant) || strings.Contains(output.String(), "capability_grant") {
+		t.Fatalf("inspect leaked bearer grant: %s", output.String())
+	}
+}
+
+func TestPairCreateTerminalScopeAcceptsOnlyLocalTerminalRef(t *testing.T) {
+	if id, err := localPairTerminalID("local:term-1"); err != nil || id != "term-1" {
+		t.Fatalf("local terminal scope = (%q, %v)", id, err)
+	}
+	if _, err := localPairTerminalID("west:term-1"); cliExitCode(err) != 2 {
+		t.Fatalf("remote terminal scope error = %v", err)
+	}
+}
+
 func TestPairImportRestoresExistingCredentialWhenRegistryWriteFails(t *testing.T) {
 	stateHome := t.TempDir()
 	configHome := t.TempDir()
