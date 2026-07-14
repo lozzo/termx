@@ -144,6 +144,23 @@ func validateResolvedEndpoint(request *cloudpb.ResolveEndpointRequest, response 
 	return validateIceServers(response.GetIceServers())
 }
 
+func validateManagedDevices(response *cloudpb.ListManagedDevicesResponse) error {
+	if response == nil || response.GetDevices() == nil || len(response.GetDevices()) > 1024 {
+		return protocolError("Hub returned an invalid managed device directory")
+	}
+	seen := make(map[string]struct{}, len(response.GetDevices()))
+	for _, device := range response.GetDevices() {
+		if device == nil || device.GetDeviceId() == "" || device.GetDisplayName() == "" || device.GetKind() != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT && device.GetKind() != cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON || device.GetPresence() != cloudpb.PresenceState_PRESENCE_STATE_OFFLINE && device.GetPresence() != cloudpb.PresenceState_PRESENCE_STATE_ONLINE || device.GetKind() == cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT && device.GetPresence() != cloudpb.PresenceState_PRESENCE_STATE_OFFLINE || device.GetRevoked() && device.GetPresence() == cloudpb.PresenceState_PRESENCE_STATE_ONLINE {
+			return protocolError("Hub returned an invalid managed device directory")
+		}
+		if _, exists := seen[device.GetDeviceId()]; exists {
+			return protocolError("Hub returned a duplicate managed device")
+		}
+		seen[device.GetDeviceId()] = struct{}{}
+	}
+	return nil
+}
+
 func validatePresenceRequest(request *cloudpb.OpenPresenceRequest) error {
 	proof := request.GetProof()
 	metadata := request.GetMetadata()

@@ -1,5 +1,6 @@
-import { Activity, CreditCard, Gauge, Gift, KeyRound, Laptop, LogOut, Moon, Settings, ShieldCheck, Sun } from "lucide-react";
+import { Activity, CreditCard, Gauge, Gift, KeyRound, Laptop, LogOut, MonitorSmartphone, Moon, QrCode, Server, Settings, ShieldCheck, Smartphone, Sun } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import QRCode from "qrcode";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ interface ReferralReward { id: string; order_id: string; kind: string; days: num
 interface ReferralProgram { code: string; referred_count: number; reward_days: number; rewards: ReferralReward[]; }
 interface AuditEvent { id: string; action: string; resource_id: string; occurred_at: string; }
 interface Center { profile: Profile; nodes: Node[]; referrals: ReferralProgram; audit: AuditEvent[]; billing: Billing; }
+interface MobileActivation { user_code: string; qr_payload: string; expires_at: string; state: "waiting_for_device" | "waiting_for_approval"; client_label?: string; client_platform?: string; }
 
 const tabs = [["overview", Gauge], ["nodes", Laptop], ["billing", CreditCard], ["account", Settings], ["referrals", Gift]] as const;
 const csrf = () => document.cookie.split("; ").find((value) => value.startsWith("termx_csrf="))?.split("=")[1] ?? "";
@@ -76,9 +78,10 @@ function Panel({ children, className }: { children: ReactNode; className?: strin
 
 function Overview({ value }: { value: Center }) {
   const { t, i18n } = useTranslation();
-  const active = value.nodes.filter((node) => node.online && !node.revoked).length;
+  const daemonNodes = value.nodes.filter((node) => node.kind === "daemon");
+  const active = daemonNodes.filter((node) => node.online && !node.revoked).length;
   return <div className="grid gap-4 lg:grid-cols-[1.7fr_1fr]">
-    <Panel><PanelTitle title={t("account.overview.system")} end={t("account.overview.operational")} /><dl className="m-0"><LedgerRow label={t("account.overview.nodes")} value={t("account.overview.nodesValue", { active, total: value.nodes.length })} live /><LedgerRow label={t("account.overview.plan")} value={value.billing.plan_id === "pro" ? t("account.billing.pro") : t("account.billing.free")} /><LedgerRow label={t("account.overview.route")} value={t("account.overview.routeValue")} /><LedgerRow label={t("account.overview.rewards")} value={t("account.overview.rewardsValue", { days: value.referrals.reward_days })} /></dl><p className="m-0 flex items-center gap-2 border-t border-line p-5 text-[10px] leading-5 text-muted-foreground"><ShieldCheck className="shrink-0 text-primary" />{t("account.overview.proof")}</p></Panel>
+    <Panel><PanelTitle title={t("account.overview.system")} end={t("account.overview.operational")} /><dl className="m-0"><LedgerRow label={t("account.overview.nodes")} value={t("account.overview.nodesValue", { active, total: daemonNodes.length })} live /><LedgerRow label={t("account.overview.plan")} value={value.billing.plan_id === "pro" ? t("account.billing.pro") : t("account.billing.free")} /><LedgerRow label={t("account.overview.route")} value={t("account.overview.routeValue")} /><LedgerRow label={t("account.overview.rewards")} value={t("account.overview.rewardsValue", { days: value.referrals.reward_days })} /></dl><p className="m-0 flex items-center gap-2 border-t border-line p-5 text-[10px] leading-5 text-muted-foreground"><ShieldCheck className="shrink-0 text-primary" />{t("account.overview.proof")}</p></Panel>
     <Panel><PanelTitle title={t("account.overview.account")} /><div className="p-5"><b className="block text-lg font-normal">{value.profile.display_name}</b><span className="mt-1 block text-xs text-muted-foreground">{value.profile.email}</span></div><dl className="grid grid-cols-2 border-t border-line"><div className="p-5"><dt className="text-[8px] text-muted-foreground">{t("account.overview.accountId")}</dt><dd className="mt-2 break-all text-[10px]">{value.profile.account_id}</dd></div><div className="border-l border-line p-5"><dt className="text-[8px] text-muted-foreground">{t("account.overview.orders")}</dt><dd className="mt-2 text-lg">{value.billing.orders.length}</dd></div></dl></Panel>
     <Panel className="lg:col-span-2"><PanelTitle title={t("account.overview.activity")} icon={<Activity className="size-4 text-primary" />} />{value.audit.length ? value.audit.map((event) => <Event key={event.id} title={localizeAudit(event.action, t)} detail={event.resource_id} time={when(event.occurred_at, i18n.language)} />) : <Empty text={t("account.overview.noActivity")} />}</Panel>
   </div>;
@@ -86,9 +89,79 @@ function Overview({ value }: { value: Center }) {
 
 function Nodes({ value, busy, action }: { value: Node[]; busy: string; action: (key: string, fn: () => Promise<Response>) => Promise<void>; }) {
   const { t, i18n } = useTranslation();
+  const daemonNodes = value.filter((node) => node.kind === "daemon");
+  const clientNodes = value.filter((node) => node.kind === "client");
   const [enrollment, setEnrollment] = useState<{ code: string; expires_at: string } | null>(null), [creating, setCreating] = useState(false);
+  const [activation, setActivation] = useState<MobileActivation | null>(null), [activationBusy, setActivationBusy] = useState(false), [activationError, setActivationError] = useState(""), [activationApproved, setActivationApproved] = useState(false), [qrDataURL, setQRDataURL] = useState("");
   async function createEnrollment() { setCreating(true); const response = await request("/api/nodes/enrollment", {}); if (response.ok) setEnrollment(await response.json()); setCreating(false); }
-  return <Panel><PanelTitle title={t("account.nodes.title")} end={t("account.nodes.online", { count: value.filter((node) => node.online && !node.revoked).length })} /><div className="grid gap-4 border-b border-line px-5 py-4 sm:grid-cols-[1fr_auto] sm:items-center"><p className="m-0 text-[10px] leading-5 text-muted-foreground">{t("account.nodes.note")}</p><Button variant="outline" size="sm" disabled={creating} onClick={createEnrollment}><KeyRound />{creating ? t("account.nodes.creating") : t("account.nodes.enroll")}</Button>{enrollment && <div className="border border-primary bg-background p-4 sm:col-span-2"><span className="font-mono text-[9px] text-muted-foreground">{t("account.nodes.enrollmentCode")}</span><strong className="mt-2 block break-all font-mono text-sm font-normal">{enrollment.code}</strong><small className="mt-2 block text-[9px] text-muted-foreground">{t("account.nodes.enrollmentCommand", { code: enrollment.code })}</small></div>}</div><Table><TableHeader><TableRow><TableHead>{t("account.nodes.node")}</TableHead><TableHead>{t("account.nodes.updated")}</TableHead><TableHead>{t("account.nodes.status")}</TableHead><TableHead /></TableRow></TableHeader><TableBody>{value.map((node) => { const status = node.revoked ? "revoked" : node.online ? "onlineStatus" : "offlineStatus"; return <TableRow key={node.id}><TableCell><span className="flex min-w-40 items-center gap-3"><Laptop className="size-4 text-primary" /><span><b className="block text-xs font-medium">{node.name}</b><small className="text-[9px] text-muted-foreground">{node.kind}</small></span></span></TableCell><TableCell className="whitespace-nowrap text-[10px] text-muted-foreground">{when(node.updated_at, i18n.language)}</TableCell><TableCell><span className={cn("text-[9px] font-medium", status === "onlineStatus" ? "text-success" : status === "revoked" ? "text-destructive" : "text-muted-foreground")}>{t(`account.nodes.${status}`)}</span></TableCell><TableCell className="text-right">{!node.revoked && <Button variant="destructive" size="sm" disabled={busy === node.id} onClick={() => action(node.id, () => request("/api/nodes/revoke", { node_id: node.id }))}>{t("account.nodes.revoke")}</Button>}</TableCell></TableRow>; })}</TableBody></Table></Panel>;
+  async function createActivation() {
+    setActivationBusy(true); setActivationError(""); setActivationApproved(false);
+    const response = await request("/api/mobile-activations", {});
+    if (!response.ok) setActivationError(t("account.nodes.activationError"));
+    else setActivation(await response.json());
+    setActivationBusy(false);
+  }
+  async function approveActivation() {
+    if (!activation) return;
+    setActivationBusy(true); setActivationError("");
+    const response = await request("/api/device-login/approve", { user_code: activation.user_code });
+    if (!response.ok) setActivationError(t("account.nodes.activationError"));
+    else setActivationApproved(true);
+    setActivationBusy(false);
+  }
+  useEffect(() => {
+    if (!activation?.qr_payload) { setQRDataURL(""); return; }
+    void QRCode.toDataURL(activation.qr_payload, { width: 240, margin: 2, errorCorrectionLevel: "M", color: { dark: "#111111", light: "#ffffff" } }).then(setQRDataURL).catch(() => setActivationError(t("account.nodes.activationError")));
+  }, [activation?.qr_payload]);
+  useEffect(() => {
+    if (!activation || activationApproved || activation.state === "waiting_for_approval") return;
+    let stopped = false;
+    async function inspect() {
+      if (Date.now() >= Date.parse(activation!.expires_at)) {
+        if (!stopped) {
+          setActivation(null);
+          setActivationError(t("account.nodes.activationExpired"));
+        }
+        return;
+      }
+      try {
+        const response = await fetch(`/api/device-login?code=${encodeURIComponent(activation!.user_code)}`, { cache: "no-store" });
+        if (!stopped && response.ok) {
+          const inspected = await response.json() as MobileActivation;
+          setActivation((current) => current ? { ...current, ...inspected, qr_payload: current.qr_payload } : current);
+        }
+      } catch {
+        if (!stopped) setActivationError(t("account.nodes.activationError"));
+      }
+    }
+    void inspect();
+    const timer = window.setInterval(() => { void inspect(); }, 1500);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [activation, activationApproved]);
+  return <div className="grid gap-4">
+    <Panel><PanelTitle title={t("account.nodes.mobileTitle")} icon={<Smartphone className="size-4 text-primary" />} />
+      {!activation && <div className="grid gap-4 p-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="m-0 text-sm font-medium">{t("account.nodes.mobileAction")}</p><p className="mb-0 mt-2 max-w-2xl text-[10px] leading-5 text-muted-foreground">{t("account.nodes.mobileCopy")}</p></div><Button disabled={activationBusy} onClick={createActivation}><QrCode />{activationBusy ? t("account.nodes.creating") : t("account.nodes.createQR")}</Button></div>}
+      {activation && <div className="grid md:grid-cols-[272px_1fr]">
+        <div className="grid min-h-[272px] place-items-center border-b border-line bg-white p-4 md:border-b-0 md:border-r">{qrDataURL ? <img alt={t("account.nodes.qrAlt")} className="aspect-square h-auto w-full max-w-60 object-contain" height="240" src={qrDataURL} width="240" /> : <i className="size-3 animate-pulse bg-primary" />}</div>
+        <div className="flex flex-col justify-center p-5 md:p-7"><span className="font-mono text-[9px] text-primary">{activationApproved ? t("account.nodes.approved") : activation.state === "waiting_for_device" ? t("account.nodes.waitingScan") : t("account.nodes.waitingApproval")}</span><strong className="mt-3 font-mono text-2xl font-normal">{activation.user_code}</strong>
+          {activation.client_label ? <p className="mt-5 flex items-center gap-3 border-y border-line py-4 text-xs"><Smartphone className="size-4 text-primary" /><span><b className="block font-medium">{activation.client_label}</b><small className="text-muted-foreground">{activation.client_platform}</small></span></p> : <p className="mt-4 text-xs leading-6 text-muted-foreground">{t("account.nodes.scanCopy")}</p>}
+          {activation.state === "waiting_for_approval" && !activationApproved && <Button className="mt-5 self-start" disabled={activationBusy} onClick={approveActivation}><ShieldCheck />{activationBusy ? t("device.loading") : t("device.approve")}</Button>}
+          {activationApproved && <p className="mt-5 text-xs text-success">{t("account.nodes.approvedCopy")}</p>}
+          <Button className="mt-3 self-start" variant="ghost" onClick={() => { setActivation(null); setActivationApproved(false); setActivationError(""); }}>{activationApproved ? t("account.nodes.done") : t("account.nodes.cancel")}</Button>
+        </div>
+      </div>}
+      {activationError && <p className="m-5 border border-destructive p-3 text-xs text-destructive" role="alert">{activationError}</p>}
+    </Panel>
+    <Panel><PanelTitle title={t("account.nodes.daemonTitle")} end={t("account.nodes.online", { count: daemonNodes.filter((node) => node.online && !node.revoked).length })} /><div className="grid gap-4 border-b border-line px-5 py-4 sm:grid-cols-[1fr_auto] sm:items-center"><p className="m-0 text-[10px] leading-5 text-muted-foreground">{t("account.nodes.daemonNote")}</p><Button variant="outline" size="sm" disabled={creating} onClick={createEnrollment}><KeyRound />{creating ? t("account.nodes.creating") : t("account.nodes.enroll")}</Button>{enrollment && <div className="border border-primary bg-background p-4 sm:col-span-2"><span className="font-mono text-[9px] text-muted-foreground">{t("account.nodes.enrollmentCode")}</span><strong className="mt-2 block break-all font-mono text-sm font-normal">{enrollment.code}</strong><small className="mt-2 block text-[9px] text-muted-foreground">{t("account.nodes.enrollmentCommand", { code: enrollment.code })}</small></div>}</div><NodeTable nodes={daemonNodes} kind="daemon" busy={busy} language={i18n.language} action={action} /></Panel>
+    <Panel><PanelTitle title={t("account.nodes.clientTitle")} end={t("account.nodes.clientCount", { count: clientNodes.filter((node) => !node.revoked).length })} /><p className="m-0 border-b border-line px-5 py-4 text-[10px] leading-5 text-muted-foreground">{t("account.nodes.clientNote")}</p><NodeTable nodes={clientNodes} kind="client" busy={busy} language={i18n.language} action={action} /></Panel>
+  </div>;
+}
+
+function NodeTable({ nodes, kind, busy, language, action }: { nodes: Node[]; kind: "daemon" | "client"; busy: string; language: string; action: (key: string, fn: () => Promise<Response>) => Promise<void>; }) {
+  const { t } = useTranslation();
+  const Icon = kind === "daemon" ? Server : MonitorSmartphone;
+  if (!nodes.length) return <Empty text={t(kind === "daemon" ? "account.nodes.noDaemons" : "account.nodes.noClients")} />;
+  return <Table><TableHeader><TableRow><TableHead>{t(kind === "daemon" ? "account.nodes.daemon" : "account.nodes.client")}</TableHead><TableHead>{t("account.nodes.updated")}</TableHead><TableHead>{t("account.nodes.status")}</TableHead><TableHead /></TableRow></TableHeader><TableBody>{nodes.map((node) => { const status = node.revoked ? "revoked" : kind === "client" ? "accessEnabled" : node.online ? "onlineStatus" : "offlineStatus"; return <TableRow key={node.id}><TableCell><span className="flex min-w-40 items-center gap-3"><Icon className="size-4 text-primary" /><span><b className="block text-xs font-medium">{node.name}</b><small className="text-[9px] text-muted-foreground">{t(`account.nodes.kind.${kind}`)}</small></span></span></TableCell><TableCell className="whitespace-nowrap text-[10px] text-muted-foreground">{when(node.updated_at, language)}</TableCell><TableCell><span className={cn("text-[9px] font-medium", status === "onlineStatus" || status === "accessEnabled" ? "text-success" : status === "revoked" ? "text-destructive" : "text-muted-foreground")}>{t(`account.nodes.${status}`)}</span></TableCell><TableCell className="text-right">{!node.revoked && <Button variant="destructive" size="sm" disabled={busy === node.id} onClick={() => action(node.id, () => request("/api/nodes/revoke", { node_id: node.id }))}>{t(kind === "client" ? "account.nodes.removeAccess" : "account.nodes.revoke")}</Button>}</TableCell></TableRow>; })}</TableBody></Table>;
 }
 
 function BillingView({ value, busy, action }: { value: Billing; busy: string; action: (key: string, fn: () => Promise<Response>) => Promise<void>; }) {

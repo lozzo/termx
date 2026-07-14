@@ -316,9 +316,9 @@ func (store *UserCenterStore) Profile(accountID string) (UserProfile, error) {
 	return store.profile(accountID)
 }
 
-// UpsertManagedNode 写入账号名下 daemon 的目录投影；节点状态不包含 terminal inventory 或 capability。
-func (store *UserCenterStore) UpsertManagedNode(accountID, nodeID, name string, online bool) error {
-	if strings.TrimSpace(accountID) == "" || strings.TrimSpace(nodeID) == "" || strings.TrimSpace(name) == "" {
+// UpsertCloudDevice 写入账号名下 client/daemon 管理投影；节点状态不包含 terminal inventory 或 capability。
+func (store *UserCenterStore) UpsertCloudDevice(accountID, nodeID, name, kind string, online bool) error {
+	if strings.TrimSpace(accountID) == "" || strings.TrimSpace(nodeID) == "" || strings.TrimSpace(name) == "" || kind != "client" && kind != "daemon" {
 		return ErrUserCenterNotFound
 	}
 	now := store.now().UTC().Format(time.RFC3339Nano)
@@ -326,11 +326,45 @@ func (store *UserCenterStore) UpsertManagedNode(accountID, nodeID, name string, 
 	if online {
 		onlineValue = 1
 	}
-	_, err := store.db.Exec(`INSERT INTO nodes(id,account_id,name,kind,online,revoked,updated_at) VALUES(?,?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,name=excluded.name,kind=excluded.kind,online=excluded.online,revoked=0,updated_at=excluded.updated_at`, nodeID, accountID, name, "daemon", onlineValue, now)
+	_, err := store.db.Exec(`INSERT INTO nodes(id,account_id,name,kind,online,revoked,updated_at) VALUES(?,?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,name=excluded.name,kind=excluded.kind,online=excluded.online,revoked=0,updated_at=excluded.updated_at`, nodeID, accountID, name, kind, onlineValue, now)
 	if err == nil {
 		store.appendAudit(accountID, "node.enrolled", nodeID)
 	}
 	return err
+}
+
+// MarkDaemonNodesOffline 清除进程重启前遗留的 daemon 在线投影。
+// Hub Presence 才是在线真值；SQLite 只保存供 Web 展示的最新投影，启动时不得把旧值当作仍在线。
+func (store *UserCenterStore) MarkDaemonNodesOffline() error {
+	if store == nil || store.db == nil {
+		return ErrUserCenterNotFound
+	}
+	_, err := store.db.Exec(`UPDATE nodes SET online=0 WHERE kind='daemon'`)
+	return err
+}
+
+// SetCloudDaemonOnline 投影 Hub Presence 的当前状态，不改变 daemon ownership、名称或撤销状态。
+// 只有同账号、未撤销的 daemon 会被更新；找不到目标时返回 ErrUserCenterNotFound。
+func (store *UserCenterStore) SetCloudDaemonOnline(accountID, nodeID string, online bool) error {
+	if store == nil || store.db == nil || strings.TrimSpace(accountID) == "" || strings.TrimSpace(nodeID) == "" {
+		return ErrUserCenterNotFound
+	}
+	onlineValue := 0
+	if online {
+		onlineValue = 1
+	}
+	result, err := store.db.Exec(`UPDATE nodes SET online=?,updated_at=? WHERE id=? AND account_id=? AND kind='daemon' AND revoked=0`, onlineValue, store.now().UTC().Format(time.RFC3339Nano), nodeID, accountID)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return ErrUserCenterNotFound
+	}
+	return nil
 }
 
 func (store *UserCenterStore) referralReferrer(accountID string) string {

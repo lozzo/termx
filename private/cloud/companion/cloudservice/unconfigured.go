@@ -41,6 +41,11 @@ func (*UnconfiguredAdapter) ResolveEndpoint(context.Context, session.Authorizati
 	return nil, unavailableAdapterError()
 }
 
+// ListManagedDevices 拒绝未装配的账号设备目录读取。
+func (*UnconfiguredAdapter) ListManagedDevices(context.Context, session.Authorization, *cloudpb.ListManagedDevicesRequest) (*cloudpb.ListManagedDevicesResponse, error) {
+	return nil, unavailableAdapterError()
+}
+
 // BeginPresence 拒绝未装配的 fresh daemon presence challenge 请求。
 func (*UnconfiguredAdapter) BeginPresence(context.Context, session.Authorization, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
 	return nil, unavailableAdapterError()

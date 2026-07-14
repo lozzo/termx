@@ -23,6 +23,7 @@ enum CompanionCapability {
   COMPANION_CAPABILITY_PATH_QUALITY = 5;
   COMPANION_CAPABILITY_SMART_ROUTE = 6;
   COMPANION_CAPABILITY_DEVICE_ENROLLMENT = 7;
+  COMPANION_CAPABILITY_DEVICE_DIRECTORY = 8;
 }
 
 // CompanionState 描述 companion 本地安装与账号会话状态。
@@ -60,6 +61,13 @@ enum PresenceState {
   PRESENCE_STATE_UNSPECIFIED = 0;
   PRESENCE_STATE_OFFLINE = 1;
   PRESENCE_STATE_ONLINE = 2;
+}
+
+// ManagedDeviceKind 区分账号目录中的连接发起端与 daemon 目标；类型不表达 terminal capability。
+enum ManagedDeviceKind {
+  MANAGED_DEVICE_KIND_UNSPECIFIED = 0;
+  MANAGED_DEVICE_KIND_CLIENT = 1;
+  MANAGED_DEVICE_KIND_DAEMON = 2;
 }
 
 // ObservedPath 是一次 WebRTC transport 实际采用的网络路径。
@@ -156,6 +164,8 @@ message StatusResponse {
 // BeginLoginRequest 启动 browser 或 device-code 登录，不携带账号 token。
 message BeginLoginRequest {
   LoginMethod method = 1;
+  // client_metadata 只用于浏览器批准页展示申请客户端，不进入 Hub 或 terminal capability。
+  DeviceMetadata client_metadata = 2;
 }
 
 // LoginFlow 返回用户可见的官方登录入口和短期 flow reference。
@@ -170,6 +180,13 @@ message LoginFlow {
 // CompleteLoginRequest 请求 Companion 完成指定登录 flow。
 message CompleteLoginRequest {
   string flow_id = 1;
+}
+
+// ClaimMobileActivationRequest 让 Official App 认领已登录 Web 创建的短期激活码。
+// user_code 只是活动 Flow locator；Control Plane 在响应中才把高熵 flow_id 交给原生层。
+message ClaimMobileActivationRequest {
+  string user_code = 1;
+  DeviceMetadata client_metadata = 2;
 }
 
 // CloudSessionSummary 是可以进入 CLI/App 状态展示的非秘密会话摘要。
@@ -306,6 +323,26 @@ message DeviceMetadata {
 message ResolveEndpointRequest {
   string endpoint_id = 1;
   string target_device_id = 2;
+}
+
+// ListManagedDevicesRequest 请求当前 edge credential 所属账号的最小设备目录。
+message ListManagedDevicesRequest {
+  uint32 schema_version = 1;
+}
+
+// ManagedDevice 是 Hub 已签名内存投影与 active Presence 的交集，不含 terminal 或 capability。
+message ManagedDevice {
+  string device_id = 1;
+  string display_name = 2;
+  string platform = 3;
+  ManagedDeviceKind kind = 4;
+  PresenceState presence = 5;
+  bool revoked = 6;
+}
+
+// ListManagedDevicesResponse 只返回同账号设备；client 用于管理，daemon 用于连接发现。
+message ListManagedDevicesResponse {
+  repeated ManagedDevice devices = 1;
 }
 
 // IceServer 是公开 WebRTC adapter 可以使用的短期 STUN/TURN 配置。
@@ -562,6 +599,7 @@ message IPCRequest {
     IPCCancelRequest cancel = 27;
     PlanManagedRouteRequest plan_managed_route = 28;
     BeginPresenceRequest begin_presence = 29;
+    ListManagedDevicesRequest list_managed_devices = 30;
   }
 }
 
@@ -593,5 +631,6 @@ message IPCResponse {
     CloudError error = 29;
     ManagedRoutePlan managed_route_plan = 30;
     PresenceChallenge presence_challenge = 31;
+    ListManagedDevicesResponse managed_devices = 32;
   }
 }

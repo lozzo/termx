@@ -14,15 +14,21 @@ var (
 	ErrPolicySnapshot = errors.New("Hub authorization snapshot unavailable")
 	// ErrEdgeAuthorization 表示 edge token、账号 epoch、target ownership 或 revoke 状态拒绝连接。
 	ErrEdgeAuthorization = errors.New("Hub edge authorization rejected")
+	// ErrTargetUnavailable 表示已认证 client 请求的 daemon 已移除、类型错误或不属于当前账号。
+	// 所有 target 失败统一使用该错误，避免跨账号探测设备是否存在。
+	ErrTargetUnavailable = errors.New("Hub target device unavailable")
 )
 
 // DeviceAuthorization 是 Control Plane 同步给 Hub 的最小 daemon 授权投影。
 // PublicKey 供后续 fresh presence proof 使用；Revoked 优先于账号 ownership 和订阅 allow。
 type DeviceAuthorization struct {
-	DeviceID  string
-	AccountID string
-	PublicKey []byte
-	Revoked   bool
+	DeviceID    string
+	AccountID   string
+	Kind        string
+	DisplayName string
+	Platform    string
+	PublicKey   []byte
+	Revoked     bool
 }
 
 // AccountAuthorization 是 Hub 判断账号 edge token epoch 和 managed direct 能力的本地投影。
@@ -142,7 +148,7 @@ func snapshotFromPolicyClaims(claims servicecredential.EdgePolicyClaims) Authori
 	}
 	devices := make([]DeviceAuthorization, 0, len(claims.Devices))
 	for _, device := range claims.Devices {
-		devices = append(devices, DeviceAuthorization{DeviceID: device.DeviceID, AccountID: device.AccountID, PublicKey: append([]byte(nil), device.PublicKey...), Revoked: device.Revoked})
+		devices = append(devices, DeviceAuthorization{DeviceID: device.DeviceID, AccountID: device.AccountID, Kind: device.Kind, DisplayName: device.DisplayName, Platform: device.Platform, PublicKey: append([]byte(nil), device.PublicKey...), Revoked: device.Revoked})
 	}
 	return AuthorizationSnapshot{Revision: claims.Revision, GeneratedAt: time.Unix(claims.GeneratedUnix, 0).UTC(), Accounts: accounts, Devices: devices}
 }
@@ -188,7 +194,7 @@ func (authorizer *EdgeAuthorizer) ApplySnapshot(snapshot AuthorizationSnapshot) 
 	}
 	devices := make(map[string]DeviceAuthorization, len(snapshot.Devices))
 	for _, device := range snapshot.Devices {
-		if device.DeviceID == "" || device.AccountID == "" {
+		if device.DeviceID == "" || device.AccountID == "" || device.DisplayName == "" || device.Kind != "client" && device.Kind != "daemon" {
 			return ErrPolicySnapshot
 		}
 		if _, exists := devices[device.DeviceID]; exists {
@@ -221,11 +227,49 @@ func (authorizer *EdgeAuthorizer) AuthorizeDirect(token []byte, accountID, clien
 		return servicecredential.EdgeAccessClaims{}, ErrPolicySnapshot
 	}
 	account, accountOK := authorizer.accounts[accountID]
+	client, clientOK := authorizer.devices[clientDeviceID]
 	device, deviceOK := authorizer.devices[targetDeviceID]
-	if !accountOK || !deviceOK || account.Revoked || !account.ManagedDirectEnabled || account.AuthEpoch != claims.AuthEpoch || device.Revoked || device.AccountID != accountID {
+	if !accountOK || !clientOK || account.Revoked || !account.ManagedDirectEnabled || account.AuthEpoch != claims.AuthEpoch || client.Revoked || client.AccountID != accountID || client.Kind != "client" {
+		return servicecredential.EdgeAccessClaims{}, ErrEdgeAuthorization
+	}
+	if !deviceOK || device.Revoked || device.AccountID != accountID || device.Kind != "daemon" {
+		return servicecredential.EdgeAccessClaims{}, ErrTargetUnavailable
+	}
+	return claims, nil
+}
+
+// AuthorizeClient 验证当前连接发起端自身仍存在于 Hub 签名内存投影且未撤销。
+// 目录、resolve、signaling 和 Relay 都应先经过该边界，不能只验证账号或目标 daemon。
+func (authorizer *EdgeAuthorizer) AuthorizeClient(token []byte, accountID, clientDeviceID string) (servicecredential.EdgeAccessClaims, error) {
+	now := authorizer.clock.Now().UTC()
+	claims, err := servicecredential.VerifyEdgeAccess(authorizer.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: authorizer.issuer, AudienceHubID: authorizer.hubID, AccountID: accountID, ClientDeviceID: clientDeviceID, PrincipalKind: servicecredential.EdgePrincipalClient}, now)
+	if err != nil {
+		return servicecredential.EdgeAccessClaims{}, fmt.Errorf("%w: %v", ErrEdgeAuthorization, err)
+	}
+	authorizer.mu.RLock()
+	defer authorizer.mu.RUnlock()
+	account, accountOK := authorizer.accounts[accountID]
+	client, clientOK := authorizer.devices[clientDeviceID]
+	if authorizer.revision == 0 || now.Sub(authorizer.generatedAt) > authorizer.maxStaleness || !accountOK || !clientOK || account.Revoked || account.AuthEpoch != claims.AuthEpoch || client.Revoked || client.AccountID != accountID || client.Kind != "client" {
 		return servicecredential.EdgeAccessClaims{}, ErrEdgeAuthorization
 	}
 	return claims, nil
+}
+
+// AccountDevices 返回账号设备投影的深拷贝；调用前必须已经通过 AuthorizeClient。
+// 返回值不含 session、terminal inventory 或 CapabilityGrant，Presence 由 Hub Service 另行叠加。
+func (authorizer *EdgeAuthorizer) AccountDevices(accountID string) []DeviceAuthorization {
+	authorizer.mu.RLock()
+	defer authorizer.mu.RUnlock()
+	devices := make([]DeviceAuthorization, 0)
+	for _, device := range authorizer.devices {
+		if device.AccountID != accountID {
+			continue
+		}
+		device.PublicKey = append([]byte(nil), device.PublicKey...)
+		devices = append(devices, device)
+	}
+	return devices
 }
 
 // AuthorizeDaemon 离线验证 daemon edge token、账号 epoch 与本地 device ownership/revoke 投影。

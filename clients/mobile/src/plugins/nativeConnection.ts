@@ -79,6 +79,22 @@ export interface NativeCloudAccount {
   expiresAtUnix?: number
 }
 
+/** NativeCloudActivation 只包含 WebView 可展示的短码与期限；高熵 flow ID 留在 Android 原生层。 */
+export interface NativeCloudActivation {
+  userCode: string
+  expiresAtUnix: number
+}
+
+/** NativeCloudDevice 只含同账号目录 metadata；authorization 仍由 pairing secure store 决定。 */
+export interface NativeCloudDevice {
+  deviceId: string
+  displayName: string
+  platform: string
+  kind: 'client' | 'daemon'
+  online: boolean
+  revoked: boolean
+}
+
 /** NativeManagedPairingImport 只含可写入 WebView endpoint registry 的非秘密 metadata。 */
 export interface NativeManagedPairingImport {
   endpointId: string
@@ -104,8 +120,12 @@ export interface NativeStateChangeEvent {
 }
 
 export interface NativeConnectionPlugin extends Plugin {
-  cloudLogin(): Promise<NativeCloudAccount>
+  cloudBeginActivation(): Promise<NativeCloudActivation>
+  cloudClaimActivation(opts: { payload: string }): Promise<NativeCloudActivation>
+  cloudAwaitActivation(): Promise<NativeCloudAccount>
+  cloudCancelActivation(): Promise<void>
   getCloudAccount(): Promise<NativeCloudAccount>
+  cloudListDevices(): Promise<{ devices: NativeCloudDevice[] }>
   cloudLogout(): Promise<void>
   connect(opts: NativeConnectOpts): Promise<void>
   importManagedPairing(opts: { payload: string; expectedEndpointId?: string }): Promise<NativeManagedPairingImport>

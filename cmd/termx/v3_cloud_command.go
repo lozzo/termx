@@ -48,7 +48,7 @@ func v3CloudCommand() *cobra.Command {
 		command.AddCommand(withV3CloudUserErrors(child))
 	}
 	node := &cobra.Command{Use: "node", Short: "Manage this daemon's cloud node enrollment"}
-	node.AddCommand(withV3CloudUserErrors(v3CloudEnrollCommand()))
+	node.AddCommand(withV3CloudUserErrors(v3CloudEnrollCommand()), withV3CloudUserErrors(v3CloudNodeListCommand()))
 	companion := &cobra.Command{Use: "companion", Short: "Manage the verified out-of-process Cloud Companion"}
 	for _, child := range []*cobra.Command{
 		v3CloudInstallCommand(false), v3CloudInstallCommand(true), v3CloudCompanionStatusCommand(), v3CloudUninstallCommand(),
@@ -56,6 +56,59 @@ func v3CloudCommand() *cobra.Command {
 		companion.AddCommand(withV3CloudUserErrors(child))
 	}
 	command.AddCommand(node, companion)
+	return command
+}
+
+type cloudNodeView struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Platform string `json:"platform,omitempty"`
+	Kind     string `json:"kind"`
+	Status   string `json:"status"`
+}
+
+func v3CloudNodeListCommand() *cobra.Command {
+	var jsonOutput bool
+	command := &cobra.Command{
+		Use: "list", Short: "List this account's managed clients and daemons", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client, err := openV3CloudLifecycleClient(cmd.Context(), cloudpb.CallerRole_CALLER_ROLE_CLI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_DIRECTORY)
+			if err != nil {
+				return err
+			}
+			defer client.Close()
+			response, err := client.ListManagedDevices(cmd.Context(), &cloudpb.ListManagedDevicesRequest{SchemaVersion: 1})
+			if err != nil {
+				return err
+			}
+			views := make([]cloudNodeView, 0, len(response.GetDevices()))
+			for _, device := range response.GetDevices() {
+				kind := "client"
+				if device.GetKind() == cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON {
+					kind = "daemon"
+				}
+				status := "offline"
+				if device.GetRevoked() {
+					status = "revoked"
+				} else if device.GetPresence() == cloudpb.PresenceState_PRESENCE_STATE_ONLINE {
+					status = "online"
+				}
+				views = append(views, cloudNodeView{ID: device.GetDeviceId(), Name: device.GetDisplayName(), Platform: device.GetPlatform(), Kind: kind, Status: status})
+			}
+			if jsonOutput {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(views)
+			}
+			if len(views) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "No managed devices")
+				return nil
+			}
+			for _, view := range views {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", view.Kind, view.Status, view.ID, view.Name)
+			}
+			return nil
+		},
+	}
+	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
 	return command
 }
 
@@ -156,7 +209,16 @@ func v3CloudLoginCommand() *cobra.Command {
 			if deviceCode {
 				method = cloudpb.LoginMethod_LOGIN_METHOD_DEVICE_CODE
 			}
-			flow, err := client.BeginLogin(cmd.Context(), &cloudpb.BeginLoginRequest{Method: method})
+			hostname, _ := os.Hostname()
+			flow, err := client.BeginLogin(cmd.Context(), &cloudpb.BeginLoginRequest{
+				Method: method,
+				ClientMetadata: &cloudpb.DeviceMetadata{
+					DisplayName:  hostname,
+					Hostname:     hostname,
+					Platform:     runtime.GOOS + "/" + runtime.GOARCH,
+					TermxVersion: termxBuildVersion,
+				},
+			})
 			if err != nil {
 				return err
 			}
@@ -242,7 +304,7 @@ func v3CloudEnrollCommand() *cobra.Command {
 				Metadata: &cloudpb.DeviceMetadata{DisplayName: hostname, Hostname: hostname, Platform: runtime.GOOS + "/" + runtime.GOARCH, TermxVersion: termxBuildVersion, SignalingVersions: []uint32{cloudcompanion.ProtocolVersionMax}},
 			})
 			if err != nil {
-				return err
+				return actionableCloudEnrollmentError(err)
 			}
 			signedAt := v3CloudNow()
 			signingBytes, err := cloudcompanion.EnrollmentProofSigningBytes(&cloudpb.DeviceEnrollmentProofInput{
@@ -260,12 +322,24 @@ func v3CloudEnrollCommand() *cobra.Command {
 			})
 			clear(signature)
 			if err != nil {
-				return err
+				return actionableCloudEnrollmentError(err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Enrolled device %s\n", response.GetSession().GetDeviceId())
 			return nil
 		},
 	}
+}
+
+// actionableCloudEnrollmentError 保留 enrollment 拒绝的统一错误码，但给出不泄漏注册码存在性的恢复动作。
+// Control Plane 故意不区分输错、过期和已使用；用户必须从已登录 Web 重新生成一次性码。
+func actionableCloudEnrollmentError(err error) error {
+	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED) {
+		return err
+	}
+	return cloudcompanion.NewError(
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED,
+		"daemon enrollment code is invalid, expired, or already used; generate a new code in Web Controller and run this command within two minutes",
+	)
 }
 
 func v3CloudStatusCommand() *cobra.Command {

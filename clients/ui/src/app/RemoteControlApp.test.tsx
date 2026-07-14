@@ -53,6 +53,192 @@ describe('RemoteControlApp', () => {
     expect(screen.getByLabelText(/terminal cursor blink/i).getAttribute('aria-pressed')).toBe('true')
   })
 
+  it('shows a web activation code for Official App login without opening a browser', async () => {
+    const storage = new MemoryStorage()
+    const beginActivation = vi.fn(async () => ({ userCode: 'ABCDE-FGHJK', expiresAtUnix: Date.now() / 1000 + 300 }))
+    const cancelActivation = vi.fn(async () => {})
+    const awaitActivation = vi.fn(() => new Promise<{ accountId: string; accountLabel: string }>(() => {}))
+
+    render(
+      <RemoteControlApp
+        cloudAccountAdapter={{
+          current: async () => null,
+          beginActivation,
+          claimActivation: async () => ({ userCode: 'ABCDE-FGHJK', expiresAtUnix: Date.now() / 1000 + 300 }),
+          awaitActivation,
+          cancelActivation,
+          listMachines: async () => [],
+          logout: async () => {},
+        }}
+        defaultControlUrl="http://114.66.58.243:12306"
+        networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
+        storage={storage}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /open settings/i }))
+    expect(screen.queryByText(/continue in browser/i)).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /activate with web/i }))
+    await waitFor(() => expect(screen.getByText('ABCDE-FGHJK')).toBeTruthy())
+    expect(beginActivation).toHaveBeenCalledTimes(1)
+    expect(awaitActivation).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole('button', { name: /cancel activation/i }))
+    await waitFor(() => expect(cancelActivation).toHaveBeenCalledTimes(1))
+  })
+
+  it('routes a Cloud activation QR from the home scanner to native account activation', async () => {
+    const storage = new MemoryStorage()
+    const qrPayload = 'termx-cloud-activate:v1:ABCDE-FGHJK'
+    const claimActivation = vi.fn(async () => ({ userCode: 'ABCDE-FGHJK', expiresAtUnix: Date.now() / 1000 + 300 }))
+    const awaitActivation = vi.fn(() => new Promise<{ accountId: string; accountLabel: string }>(() => {}))
+
+    render(
+      <RemoteControlApp
+        cloudAccountAdapter={{
+          current: async () => null,
+          beginActivation: async () => ({ userCode: 'OTHER-CODE2', expiresAtUnix: Date.now() / 1000 + 300 }),
+          claimActivation,
+          awaitActivation,
+          cancelActivation: async () => {},
+          listMachines: async () => [],
+          logout: async () => {},
+        }}
+        defaultControlUrl="http://114.66.58.243:12306"
+        networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
+        scanPairingCode={vi.fn(async () => qrPayload)}
+        storage={storage}
+      />,
+    )
+
+    await userEvent.click(headerAddLocalDeviceButton())
+    await waitFor(() => expect(screen.getByText('ABCDE-FGHJK')).toBeTruthy())
+    expect(screen.getByTestId('termx-app-settings')).toBeTruthy()
+    expect(claimActivation).toHaveBeenCalledWith(qrPayload)
+    expect(awaitActivation).toHaveBeenCalledTimes(1)
+  })
+
+  it('discovers same-account native cloud daemons while keeping pairing authorization separate', async () => {
+    const storage = new MemoryStorage()
+    const listMachines = vi.fn(async () => [{
+      id: 'daemon-cloud-1',
+      name: 'Build workstation',
+      osInfo: 'darwin/arm64',
+      online: true,
+      source: 'hub' as const,
+      hubUrls: [],
+      hubStatus: 'online',
+    }])
+
+    render(
+      <RemoteControlApp
+        cloudAccountAdapter={{
+          current: async () => ({ accountId: 'account-1', accountLabel: 'TermX Dev' }),
+          beginActivation: async () => ({ userCode: 'OTHER-CODE2', expiresAtUnix: Date.now() / 1000 + 300 }),
+          claimActivation: async () => ({ userCode: 'OTHER-CODE2', expiresAtUnix: Date.now() / 1000 + 300 }),
+          awaitActivation: async () => ({ accountId: 'account-1', accountLabel: 'TermX Dev' }),
+          cancelActivation: async () => {},
+          listMachines,
+          logout: async () => {},
+        }}
+        externalPairingAdapter={{
+          import: async () => null,
+          isAuthorized: () => false,
+          forget: () => {},
+        }}
+        defaultControlUrl="http://114.66.58.243:12306"
+        networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
+        storage={storage}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^pair build workstation$/i })).toBeTruthy())
+    expect(listMachines).toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /open build workstation/i })).toBeNull()
+  })
+
+  it('keeps the Hub daemon name when a pairing bundle carries a client-like label', async () => {
+    const storage = new MemoryStorage()
+    const authorized = new Set<string>()
+    const rawBundle = '{"fixture":"pairing"}'
+
+    render(
+      <RemoteControlApp
+        cloudAccountAdapter={{
+          current: async () => ({ accountId: 'account-1', accountLabel: 'TermX Dev' }),
+          beginActivation: async () => ({ userCode: 'OTHER-CODE2', expiresAtUnix: Date.now() / 1000 + 300 }),
+          claimActivation: async () => ({ userCode: 'OTHER-CODE2', expiresAtUnix: Date.now() / 1000 + 300 }),
+          awaitActivation: async () => ({ accountId: 'account-1', accountLabel: 'TermX Dev' }),
+          cancelActivation: async () => {},
+          listMachines: async () => [{
+            id: 'daemon-cloud-1',
+            name: 'Build workstation',
+            hostname: 'build-host',
+            online: true,
+            source: 'hub' as const,
+            hubUrls: [],
+            hubStatus: 'online',
+          }],
+          logout: async () => {},
+        }}
+        externalPairingAdapter={{
+          import: async () => {
+            authorized.add('daemon-cloud-1')
+            return { machine: { id: 'daemon-cloud-1', name: 'HUAWEI JAD-AL00' }, expiresAt: '2099-05-05T10:30:00Z' }
+          },
+          isAuthorized: (machineId) => authorized.has(machineId),
+          authorizationExpiresAt: () => '2099-05-05T10:30:00Z',
+          forget: (machineId) => { authorized.delete(machineId) },
+        }}
+        machineRuntimeFactory={({ machine }) => ({
+          api: {
+            async getStatus() { return { machine: { machineId: machine.id, name: machine.name, state: 'online' }, localWeb: { httpUrl: '', rtcOfferUrl: '' } } },
+            async listTerminals() { return [] },
+          },
+          connector: { connect: vi.fn(async () => fakeRtcSession()) },
+        })}
+        defaultControlUrl="http://114.66.58.243:12306"
+        networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
+        storage={storage}
+      />,
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: /^pair build workstation$/i }))
+    fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: rawBundle } })
+    await userEvent.click(screen.getByRole('button', { name: /^pair device$/i }))
+
+    await waitFor(() => expect(createMachineStore({ storage }).getMachine('daemon-cloud-1')?.name).toBe('Build workstation'))
+    expect(createMachineStore({ storage }).getMachine('daemon-cloud-1')?.hostname).toBe('build-host')
+    expect(screen.queryByText('HUAWEI JAD-AL00')).toBeNull()
+  })
+
+  it('returns to signed-out state when web management removes this client access', async () => {
+    const storage = new MemoryStorage()
+    const current = vi.fn()
+      .mockResolvedValueOnce({ accountId: 'account-1', accountLabel: 'TermX Dev' })
+      .mockResolvedValue(null)
+
+    render(
+      <RemoteControlApp
+        cloudAccountAdapter={{
+          current,
+          beginActivation: async () => ({ userCode: 'OTHER-CODE2', expiresAtUnix: Date.now() / 1000 + 300 }),
+          claimActivation: async () => ({ userCode: 'OTHER-CODE2', expiresAtUnix: Date.now() / 1000 + 300 }),
+          awaitActivation: async () => ({ accountId: 'account-1', accountLabel: 'TermX Dev' }),
+          cancelActivation: async () => {},
+          listMachines: async () => { throw new Error('This device was removed from TermX Cloud') },
+          logout: async () => {},
+        }}
+        defaultControlUrl="http://114.66.58.243:12306"
+        networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
+        storage={storage}
+      />,
+    )
+
+    await waitFor(() => expect(current).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText('TermX Dev')).toBeNull()
+    expect(screen.getByText('Sign in to sync devices')).toBeTruthy()
+  })
+
   it('persists terminal settings from the settings page', async () => {
     const storage = new MemoryStorage()
 

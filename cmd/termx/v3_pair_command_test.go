@@ -24,7 +24,7 @@ func TestPairCreateAndImportKeepsGrantOutOfRegistry(t *testing.T) {
 	create := newRootCmd()
 	create.SetOut(&created)
 	create.SetErr(io.Discard)
-	create.SetArgs([]string{"pair", "create", "--label", "Lab daemon", "--ttl", "1h"})
+	create.SetArgs([]string{"pair", "create", "--raw", "--label", "Lab daemon", "--ttl", "1h"})
 	if err := create.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -83,13 +83,36 @@ func TestPairCreateWritesOwnerOnlyBundle(t *testing.T) {
 	}
 }
 
+func TestPairCreateDefaultsLabelToDaemonHostname(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	previousHostname := v3PairHostname
+	v3PairHostname = func() (string, error) { return "build-daemon", nil }
+	defer func() { v3PairHostname = previousHostname }()
+
+	var output bytes.Buffer
+	command := newRootCmd()
+	command.SetOut(&output)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"pair", "create", "--raw"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	bundle, _, err := remoteauth.ParsePairingBundle(output.Bytes(), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.Label != "build-daemon" {
+		t.Fatalf("pairing label = %q, want daemon hostname", bundle.Label)
+	}
+}
+
 func TestPairInspectRedactsBearerGrant(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	var created bytes.Buffer
 	create := newRootCmd()
 	create.SetOut(&created)
 	create.SetErr(io.Discard)
-	create.SetArgs([]string{"pair", "create", "--label", "Inspect daemon", "--ttl", "1h"})
+	create.SetArgs([]string{"pair", "create", "--raw", "--label", "Inspect daemon", "--ttl", "1h"})
 	if err := create.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -114,6 +137,46 @@ func TestPairInspectRedactsBearerGrant(t *testing.T) {
 	}
 }
 
+func TestPairCreateDefaultsToTerminalQRAndRequiresExplicitRawForPipes(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	previousTerminal := v3PairOutputIsTerminal
+	defer func() { v3PairOutputIsTerminal = previousTerminal }()
+
+	var qrOutput bytes.Buffer
+	v3PairOutputIsTerminal = func(io.Writer) bool { return true }
+	qrCommand := newRootCmd()
+	qrCommand.SetOut(&qrOutput)
+	qrCommand.SetErr(io.Discard)
+	qrCommand.SetArgs([]string{"pair", "create", "--ttl", "5m"})
+	if err := qrCommand.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if output := qrOutput.String(); !strings.Contains(output, "Scan with the TermX App") || !strings.Contains(output, "\x1b[40m") || strings.Contains(output, `"capability_grant"`) {
+		t.Fatalf("terminal QR output = %q", output)
+	}
+
+	v3PairOutputIsTerminal = func(io.Writer) bool { return false }
+	pipeCommand := newRootCmd()
+	pipeCommand.SetOut(io.Discard)
+	pipeCommand.SetErr(io.Discard)
+	pipeCommand.SetArgs([]string{"pair", "create"})
+	err := pipeCommand.Execute()
+	if cliExitCode(err) != 2 || !strings.Contains(err.Error(), "use --raw") {
+		t.Fatalf("non-terminal create error = %v", err)
+	}
+}
+
+func TestPairCreateRejectsRawAndFileOutputTogether(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	command := newRootCmd()
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"pair", "create", "--raw", "--out", filepath.Join(t.TempDir(), "bundle.json")})
+	if err := command.Execute(); cliExitCode(err) != 2 {
+		t.Fatalf("raw/out conflict = %v", err)
+	}
+}
+
 func TestPairCreateTerminalScopeAcceptsOnlyLocalTerminalRef(t *testing.T) {
 	if id, err := localPairTerminalID("local:term-1"); err != nil || id != "term-1" {
 		t.Fatalf("local terminal scope = (%q, %v)", id, err)
@@ -135,7 +198,7 @@ func TestPairImportRestoresExistingCredentialWhenRegistryWriteFails(t *testing.T
 		command := newRootCmd()
 		command.SetOut(&output)
 		command.SetErr(io.Discard)
-		command.SetArgs([]string{"pair", "create", "--ttl", "1h"})
+		command.SetArgs([]string{"pair", "create", "--raw", "--ttl", "1h"})
 		if err := command.Execute(); err != nil {
 			t.Fatal(err)
 		}

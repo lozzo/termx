@@ -134,4 +134,6 @@ type HubAdapter interface {
 	AcquireRelayLease(context.Context, session.Authorization, *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error)
 	// ResolveEndpoint 使用缓存 HubDirectory 和 edge credential 从 Hub 本地解析 target presence。
 	ResolveEndpoint(context.Context, session.Authorization, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
+	// ListManagedDevices 从 Hub 签名内存投影读取同账号 client/daemon 目录。
+	ListManagedDevices(context.Context, session.Authorization, *cloudpb.ListManagedDevicesRequest) (*cloudpb.ListManagedDevicesResponse, error)
 }

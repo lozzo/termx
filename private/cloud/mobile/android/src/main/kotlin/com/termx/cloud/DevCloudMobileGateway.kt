@@ -5,7 +5,9 @@ import com.google.protobuf.Parser
 import com.google.protobuf.Descriptors
 import com.termx.app.managed.ManagedDialPolicy
 import com.termx.app.managed.ManagedCloudAccount
+import com.termx.app.managed.ManagedCloudClientMetadata
 import com.termx.app.managed.ManagedCloudLoginFlow
+import com.termx.app.managed.ManagedCloudDevice
 import com.termx.app.managed.ManagedEndpointFailure
 import com.termx.app.managed.ManagedEndpointResolution
 import com.termx.app.managed.ManagedEndpointSpec
@@ -24,7 +26,9 @@ import org.json.JSONObject
 import termx.cloud.v1.CloudCompanion
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
+import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URI
 import java.net.URL
 import java.time.Instant
@@ -46,20 +50,31 @@ internal class DevCloudMobileGateway(
     @Volatile private var accountSession: AccountSession? = null
 
     /** beginLogin 只返回短期设备码；账号密码和浏览器 Cookie 不进入 Official App。 */
-    suspend fun beginLogin(): ManagedCloudLoginFlow = withContext(Dispatchers.IO) {
+    suspend fun beginLogin(metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = withContext(Dispatchers.IO) {
         val flow = postProto(
             "$controlOrigin/v1/login/begin",
-            CloudCompanion.BeginLoginRequest.newBuilder().setMethod(CloudCompanion.LoginMethod.LOGIN_METHOD_DEVICE_CODE).build(),
+            CloudCompanion.BeginLoginRequest.newBuilder()
+                .setMethod(CloudCompanion.LoginMethod.LOGIN_METHOD_DEVICE_CODE)
+                .setClientMetadata(metadata.toProto())
+                .build(),
             CloudCompanion.LoginFlow.parser(),
             null,
         )
-        val verification = URI(flow.verificationUri)
-        val loopbackHTTP = verification.scheme == "http" && verification.host in setOf("127.0.0.1", "localhost", "::1")
-        val trustedScheme = verification.scheme == "https" || loopbackHTTP || allowPublicHTTP && verification.scheme == "http"
-        if (flow.flowId.isBlank() || flow.userCode.isBlank() || flow.expiresAtUnix <= now().epochSecond || flow.pollIntervalMillis !in 1..60_000 || !trustedScheme || verification.host.isNullOrBlank() || verification.userInfo != null) {
-            fail("protocol", "Control Plane returned an invalid login flow")
-        }
-        ManagedCloudLoginFlow(flow.flowId, flow.verificationUri, flow.userCode, flow.expiresAtUnix, flow.pollIntervalMillis)
+		flow.toManaged()
+    }
+
+    /** claimLogin 用 Web 二维码短码认领 Flow；二维码本身不含 flow ID 或账号 Session。 */
+    suspend fun claimLogin(userCode: String, metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = withContext(Dispatchers.IO) {
+        if (userCode.isBlank()) fail("protocol", "mobile activation code is required")
+        postProto(
+            "$controlOrigin/v1/login/mobile/claim",
+            CloudCompanion.ClaimMobileActivationRequest.newBuilder()
+                .setUserCode(userCode.trim().uppercase())
+                .setClientMetadata(metadata.toProto())
+                .build(),
+            CloudCompanion.LoginFlow.parser(),
+            null,
+        ).toManaged()
     }
 
     /** completeLogin 兑换浏览器已批准的 flow，并把 edge token 直接写入 Keystore store。 */
@@ -74,10 +89,49 @@ internal class DevCloudMobileGateway(
         session.accountSummary()
     }
 
+    private fun CloudCompanion.LoginFlow.toManaged(): ManagedCloudLoginFlow {
+        val verification = URI(verificationUri)
+        val loopbackHTTP = verification.scheme == "http" && verification.host in setOf("127.0.0.1", "localhost", "::1")
+        val trustedScheme = verification.scheme == "https" || loopbackHTTP || allowPublicHTTP && verification.scheme == "http"
+        if (flowId.isBlank() || userCode.isBlank() || expiresAtUnix <= now().epochSecond || pollIntervalMillis !in 1..60_000 || !trustedScheme || verification.host.isNullOrBlank() || verification.userInfo != null) {
+            fail("protocol", "Control Plane returned an invalid login flow")
+        }
+        return ManagedCloudLoginFlow(flowId, verificationUri, userCode, expiresAtUnix, pollIntervalMillis)
+    }
+
+    private fun ManagedCloudClientMetadata.toProto(): CloudCompanion.DeviceMetadata =
+        CloudCompanion.DeviceMetadata.newBuilder()
+            .setDisplayName(displayName)
+            .setPlatform(platform)
+            .setTermxVersion(termxVersion)
+            .build()
+
     /** currentAccount 只返回仍有效的账号摘要。 */
     suspend fun currentAccount(): ManagedCloudAccount? = sessionLock.withLock {
         accountSession?.takeIf { now().isBefore(it.expiresAt) }?.accountSummary()
             ?: sessionStore.load(now())?.also { accountSession = it }?.accountSummary()
+    }
+
+    /** listDevices 从 Hub edge snapshot 读取同账号设备，不访问 Control Plane 或 terminal 数据。 */
+    suspend fun listDevices(): List<ManagedCloudDevice> = withContext(Dispatchers.IO) {
+        val session = accountSession()
+        val response = postEdgeProto(
+            "$hubOrigin/v1/devices/list",
+            CloudCompanion.ListManagedDevicesRequest.newBuilder().setSchemaVersion(1).build(),
+            CloudCompanion.ListManagedDevicesResponse.parser(),
+            session,
+        )
+        response.devicesList.map { device ->
+            val kind = when (device.kind) {
+                CloudCompanion.ManagedDeviceKind.MANAGED_DEVICE_KIND_CLIENT -> "client"
+                CloudCompanion.ManagedDeviceKind.MANAGED_DEVICE_KIND_DAEMON -> "daemon"
+                else -> fail("protocol", "Hub returned an invalid managed device kind")
+            }
+            if (device.deviceId.isBlank() || device.displayName.isBlank() || device.presence == CloudCompanion.PresenceState.PRESENCE_STATE_UNSPECIFIED) {
+                fail("protocol", "Hub returned an invalid managed device directory")
+            }
+            ManagedCloudDevice(device.deviceId, device.displayName, device.platform, kind, device.presence == CloudCompanion.PresenceState.PRESENCE_STATE_ONLINE, device.revoked)
+        }
     }
 
     /** logout 删除账号 edge session；pairing grant 属于独立 secure store，不在此处清理。 */
@@ -186,8 +240,7 @@ internal class DevCloudMobileGateway(
     }
 
     private fun postSession(endpoint: String, request: Message): AccountSession {
-        val connection = open(endpoint, "application/x-protobuf", null)
-        return try {
+        return withConnection(endpoint, "application/x-protobuf", null) { connection ->
             writeRequest(connection, request.toByteArray())
             val payload = readSuccess(connection, "application/json")
             val json = JSONObject(String(payload, Charsets.UTF_8))
@@ -204,15 +257,12 @@ internal class DevCloudMobileGateway(
             val directoryVersion = json.requiredLong("hub_directory_version")
             if (token.size < 16 || !now().isBefore(expiresAt) || hubId.isBlank() || signedHubURL.isBlank() || region.isBlank() || directoryVersion <= 0) fail("login_required", "Control Plane account session is expired")
             AccountSession(token, expiresAt, json.requiredString("account_id"), json.requiredString("account_label"), json.requiredString("device_id"), hubId, signedHubURL, region, directoryVersion)
-        } finally {
-            connection.disconnect()
         }
     }
 
     private fun postHubStream(endpoint: String, session: AccountSession, request: Message): HubSignalingResult {
         val envelope = edgeEnvelope(session, request)
-        val connection = open(endpoint, "application/json", session.token)
-        return try {
+        return withConnection(endpoint, "application/json", session.token) { connection ->
             writeRequest(connection, envelope.toString().toByteArray(Charsets.UTF_8))
             val status = connection.responseCode
             if (status !in 200..299) throw readCloudFailure(connection)
@@ -240,21 +290,16 @@ internal class DevCloudMobileGateway(
                 }
             }
             HubSignalingResult(result, candidates)
-        } finally {
-            connection.disconnect()
         }
     }
 
     private fun <T : Message> postEdgeProto(endpoint: String, request: Message, parser: Parser<T>, session: AccountSession): T {
-        val connection = open(endpoint, "application/json", session.token)
-        return try {
+        return withConnection(endpoint, "application/json", session.token) { connection ->
             writeRequest(connection, edgeEnvelope(session, request).toString().toByteArray(Charsets.UTF_8))
             val payload = readSuccess(connection, "application/x-protobuf")
             val response = parser.parseFrom(payload)
             if (messageHasUnknown(response)) fail("protocol", "Hub response contains unknown fields")
             response
-        } finally {
-            connection.disconnect()
         }
     }
 
@@ -264,15 +309,37 @@ internal class DevCloudMobileGateway(
         .put("payload", encodeBase64(request.toByteArray()))
 
     private fun <T : Message> postProto(endpoint: String, request: Message, parser: Parser<T>, token: ByteArray?): T {
-        val connection = open(endpoint, "application/x-protobuf", token)
-        return try {
+        return withConnection(endpoint, "application/x-protobuf", token) { connection ->
             writeRequest(connection, request.toByteArray())
             val payload = readSuccess(connection, "application/x-protobuf")
             val response = parser.parseFrom(payload)
             if (messageHasUnknown(response)) fail("protocol", "cloud response contains unknown fields")
             response
+        }
+    }
+
+    /**
+     * withConnection 是移动 Cloud HTTP 的统一失败边界：服务端结构化错误保持原码，设备网络失败不得泄漏成无语义异常。
+     * 它不做重试或 fallback；调用方决定用户是否重新发起激活、解析或信令动作。
+     */
+    private inline fun <T> withConnection(
+        endpoint: String,
+        contentType: String,
+        token: ByteArray?,
+        request: (HttpURLConnection) -> T,
+    ): T {
+        var connection: HttpURLConnection? = null
+        try {
+            connection = open(endpoint, contentType, token)
+            return request(connection)
+        } catch (failure: ManagedEndpointFailure) {
+            throw failure
+        } catch (_: SocketTimeoutException) {
+            fail("temporary", "TermX Cloud request timed out. Check the phone network and try again.")
+        } catch (_: IOException) {
+            fail("route_unavailable", "TermX Cloud is unreachable from this phone. Check Wi-Fi or mobile data and try again.")
         } finally {
-            connection.disconnect()
+            connection?.disconnect()
         }
     }
 

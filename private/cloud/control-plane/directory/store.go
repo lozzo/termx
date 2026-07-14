@@ -99,7 +99,8 @@ func (store *Store) PutUser(user domain.User) error {
 // RegisterDevice 建立账号与设备的所有权记录。
 // PublicKey 会被复制，调用方后续修改输入切片不会改变目录真值。
 func (store *Store) RegisterDevice(device domain.DeviceRegistration) error {
-	if device.ID == "" || device.AccountID == "" || device.OwnerUserID == "" || device.RegisteredAt.IsZero() || len(device.PublicKey) != ed25519.PublicKeySize || device.Fingerprint == "" {
+	clientKeyInvalid := device.Kind == domain.DeviceKindClient && !((len(device.PublicKey) == 0 && device.Fingerprint == "") || (len(device.PublicKey) == ed25519.PublicKeySize && device.Fingerprint != ""))
+	if device.ID == "" || device.AccountID == "" || device.OwnerUserID == "" || device.RegisteredAt.IsZero() || device.Kind == domain.DeviceKindDaemon && (len(device.PublicKey) != ed25519.PublicKeySize || device.Fingerprint == "") || clientKeyInvalid {
 		return fmt.Errorf("invalid device registration: %w", ErrConflict)
 	}
 	if device.RevokedAt != nil && device.RevokedAt.Before(device.RegisteredAt) {

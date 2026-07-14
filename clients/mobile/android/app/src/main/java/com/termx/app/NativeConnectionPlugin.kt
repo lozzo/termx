@@ -1,7 +1,6 @@
 package com.termx.app
 
-import android.content.Intent
-import android.net.Uri
+import android.os.Build
 import android.util.Log
 import android.util.Base64
 import com.getcapacitor.JSObject
@@ -16,6 +15,8 @@ import com.termx.app.managed.AndroidGrantCredentialStore
 import com.termx.app.managed.AndroidManagedEndpointAuthorizer
 import com.termx.app.managed.ManagedCloudAssembly
 import com.termx.app.managed.ManagedCloudAccount
+import com.termx.app.managed.ManagedCloudClientMetadata
+import com.termx.app.managed.ManagedCloudLoginFlow
 import com.termx.app.managed.ManagedEndpointFailure
 import com.termx.app.managed.ManagedPairingImporter
 import com.termx.app.managed.RelayMode
@@ -51,6 +52,8 @@ class NativeConnectionPlugin : Plugin() {
     private val grantCredentialStore: AndroidGrantCredentialStore by lazy { AndroidGrantCredentialStore(context) }
     private val cloudAdapter by lazy { ManagedCloudAssembly.create(context) }
     private val cloudScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val cloudLoginLock = Any()
+    private var activeCloudLoginFlow: ManagedCloudLoginFlow? = null
 
     override fun load() {
         TermxDebugLog.init(context)
@@ -62,29 +65,93 @@ class NativeConnectionPlugin : Plugin() {
 
     // ─── Connection Management ────────────────────────────────────────────────
 
-    /** cloudLogin 用系统浏览器完成设备码审批；WebView 只接收账号摘要。 */
+    /** cloudBeginActivation 创建 App 可展示的短码；高熵 flow ID 只保存在原生内存。 */
     @PluginMethod
-    fun cloudLogin(call: PluginCall) {
+    fun cloudBeginActivation(call: PluginCall) {
         cloudScope.launch {
             try {
-                val flow = cloudAdapter.beginLogin()
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(flow.verificationUri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                while (System.currentTimeMillis() / 1000 < flow.expiresAtUnix) {
-                    try {
-                        call.resolve(accountToJSObject(cloudAdapter.completeLogin(flow.flowId)))
-                        return@launch
-                    } catch (failure: ManagedEndpointFailure) {
-                        if (failure.code != "temporary") throw failure
-                    }
-                    delay(flow.pollIntervalMillis.coerceIn(250, 60_000))
-                }
-                call.reject("cloud login approval expired")
+                val flow = cloudAdapter.beginLogin(cloudClientMetadata())
+                synchronized(cloudLoginLock) { activeCloudLoginFlow = flow }
+                call.resolve(flowToJSObject(flow))
             } catch (failure: ManagedEndpointFailure) {
-                call.reject(failure.message ?: failure.code)
+                call.reject(failure.message ?: failure.code, failure.code)
             } catch (_: Exception) {
-                call.reject("cloud login failed")
+                call.reject("cloud activation could not start", "temporary")
             }
         }
+    }
+
+    /** cloudClaimActivation 认领 Web 二维码 locator；二维码不包含 flow ID 或账号 Session。 */
+    @PluginMethod
+    fun cloudClaimActivation(call: PluginCall) {
+        val rawPayload = call.getString("payload")?.trim().orEmpty()
+        val userCode = rawPayload.removePrefix("termx-cloud-activate:v1:").trim().uppercase()
+        if (userCode.isBlank() || !userCode.matches(Regex("[23456789ABCDEFGHJKMNPQRSTVWXYZ]{5}-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{5}"))) {
+            call.reject("This is not a TermX Cloud activation code", "protocol")
+            return
+        }
+        cloudScope.launch {
+            try {
+                val flow = cloudAdapter.claimLogin(userCode, cloudClientMetadata())
+                synchronized(cloudLoginLock) { activeCloudLoginFlow = flow }
+                call.resolve(flowToJSObject(flow))
+            } catch (failure: ManagedEndpointFailure) {
+                call.reject(failure.message ?: failure.code, failure.code)
+            } catch (failure: Exception) {
+                Log.e(TAG, "Cloud activation claim failed unexpectedly", failure)
+                TermxDebugLog.e(TAG, "Cloud activation claim failed unexpectedly", failure)
+                call.reject("TermX Cloud activation failed unexpectedly. Export debug logs and try again.", "temporary")
+            }
+        }
+    }
+
+    /** cloudAwaitActivation 轮询当前原生 Flow，批准后把 edge session 直接写入 Keystore。 */
+    @PluginMethod
+    fun cloudAwaitActivation(call: PluginCall) {
+        val flow = synchronized(cloudLoginLock) { activeCloudLoginFlow }
+        if (flow == null) {
+            call.reject("No cloud activation is active", "login_required")
+            return
+        }
+        cloudScope.launch {
+            while (System.currentTimeMillis() / 1000 < flow.expiresAtUnix) {
+                if (synchronized(cloudLoginLock) { activeCloudLoginFlow?.flowId } != flow.flowId) {
+                    call.reject("cloud activation was cancelled", "cancelled")
+                    return@launch
+                }
+                try {
+                    val account = cloudAdapter.completeLogin(flow.flowId)
+                    synchronized(cloudLoginLock) {
+                        if (activeCloudLoginFlow?.flowId == flow.flowId) activeCloudLoginFlow = null
+                    }
+                    call.resolve(accountToJSObject(account))
+                    return@launch
+                } catch (failure: ManagedEndpointFailure) {
+                    if (failure.code != "temporary") {
+                        synchronized(cloudLoginLock) {
+                            if (activeCloudLoginFlow?.flowId == flow.flowId) activeCloudLoginFlow = null
+                        }
+                        call.reject(failure.message ?: failure.code, failure.code)
+                        return@launch
+                    }
+                } catch (_: Exception) {
+                    call.reject("cloud activation failed", "temporary")
+                    return@launch
+                }
+                delay(flow.pollIntervalMillis.coerceIn(250, 60_000))
+            }
+            synchronized(cloudLoginLock) {
+                if (activeCloudLoginFlow?.flowId == flow.flowId) activeCloudLoginFlow = null
+            }
+            call.reject("cloud activation expired", "login_required")
+        }
+    }
+
+    /** cloudCancelActivation 只丢弃当前短期 Flow，不影响既有账号 Session。 */
+    @PluginMethod
+    fun cloudCancelActivation(call: PluginCall) {
+        synchronized(cloudLoginLock) { activeCloudLoginFlow = null }
+        call.resolve()
     }
 
     /** getCloudAccount 返回 Keystore 中仍有效的账号摘要。 */
@@ -96,6 +163,35 @@ class NativeConnectionPlugin : Plugin() {
                 call.resolve(account?.let(::accountToJSObject) ?: JSObject())
             } catch (failure: Exception) {
                 call.reject(failure.message ?: "cloud account is unavailable")
+            }
+        }
+    }
+
+    /** cloudListDevices 返回账号目录 metadata；是否已配对仍由独立 native grant store 决定。 */
+    @PluginMethod
+    fun cloudListDevices(call: PluginCall) {
+        cloudScope.launch {
+            try {
+                val devices = JSONArray()
+                cloudAdapter.listDevices().forEach { device ->
+                    devices.put(JSONObject()
+                        .put("deviceId", device.deviceId)
+                        .put("displayName", device.displayName)
+                        .put("platform", device.platform)
+                        .put("kind", device.kind)
+                        .put("online", device.online)
+                        .put("revoked", device.revoked))
+                }
+                call.resolve(JSObject().put("devices", devices))
+            } catch (failure: ManagedEndpointFailure) {
+                if (failure.code == "unauthenticated") {
+                    // Hub 的设备投影是客户端 Cloud 准入真值；被 Web 移除后必须清除本机账号会话。
+                    runCatching { cloudAdapter.logout() }
+                }
+                call.reject(failure.message ?: failure.code, failure.code)
+            } catch (failure: Exception) {
+                TermxDebugLog.e(TAG, "Cloud device directory failed", failure)
+                call.reject("TermX Cloud device directory is unavailable", "temporary")
             }
         }
     }
@@ -371,6 +467,18 @@ class NativeConnectionPlugin : Plugin() {
         put("accountId", account.accountId)
         put("accountLabel", account.accountLabel)
         put("expiresAtUnix", account.expiresAtUnix)
+    }
+
+    private fun flowToJSObject(flow: ManagedCloudLoginFlow): JSObject = JSObject().apply {
+        put("userCode", flow.userCode)
+        put("expiresAtUnix", flow.expiresAtUnix)
+    }
+
+    private fun cloudClientMetadata(): ManagedCloudClientMetadata {
+        val manufacturer = Build.MANUFACTURER.trim()
+        val model = Build.MODEL.trim()
+        val displayName = listOf(manufacturer, model).filter(String::isNotBlank).joinToString(" ").ifBlank { "Android device" }
+        return ManagedCloudClientMetadata(displayName, "android", BuildConfig.VERSION_NAME)
     }
 
     private fun generateBridgeToken(): String {

@@ -22,6 +22,7 @@ type FakeClient struct {
 	DoctorFunc                   func(context.Context, *cloudpb.DoctorRequest) (*cloudpb.DoctorResponse, error)
 	ShutdownFunc                 func(context.Context, *cloudpb.ShutdownRequest) (*cloudpb.ShutdownResponse, error)
 	ResolveEndpointFunc          func(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
+	ListManagedDevicesFunc       func(context.Context, *cloudpb.ListManagedDevicesRequest) (*cloudpb.ListManagedDevicesResponse, error)
 	BeginPresenceFunc            func(context.Context, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error)
 	OpenPresenceFunc             func(context.Context, *cloudpb.OpenPresenceRequest) (PresenceStream, error)
 	CreateSignalingSessionFunc   func(context.Context, *cloudpb.CreateSignalingSessionRequest) (SignalingStream, error)
@@ -48,6 +49,7 @@ type RecordedRequests struct {
 	Doctor                   []*cloudpb.DoctorRequest
 	Shutdown                 []*cloudpb.ShutdownRequest
 	ResolveEndpoint          []*cloudpb.ResolveEndpointRequest
+	ListManagedDevices       []*cloudpb.ListManagedDevicesRequest
 	BeginPresence            []*cloudpb.BeginPresenceRequest
 	OpenPresence             []*cloudpb.OpenPresenceRequest
 	CreateSignalingSession   []*cloudpb.CreateSignalingSessionRequest
@@ -167,6 +169,17 @@ func (fake *FakeClient) ResolveEndpoint(ctx context.Context, request *cloudpb.Re
 		return nil, missingFakeHandler("ResolveEndpoint")
 	}
 	return fake.ResolveEndpointFunc(ctx, request)
+}
+
+// ListManagedDevices 记录并转发同账号设备目录请求；缺少 handler 时返回稳定 PROTOCOL 错误。
+func (fake *FakeClient) ListManagedDevices(ctx context.Context, request *cloudpb.ListManagedDevicesRequest) (*cloudpb.ListManagedDevicesResponse, error) {
+	fake.record(func(requests *RecordedRequests) {
+		requests.ListManagedDevices = append(requests.ListManagedDevices, cloneMessage(request))
+	})
+	if fake == nil || fake.ListManagedDevicesFunc == nil {
+		return nil, missingFakeHandler("ListManagedDevices")
+	}
+	return fake.ListManagedDevicesFunc(ctx, request)
 }
 
 // BeginPresence 记录并转发 daemon fresh presence challenge 请求；缺少 handler 时返回稳定 PROTOCOL 错误。
@@ -401,6 +414,7 @@ func cloneRecordedRequests(source RecordedRequests) RecordedRequests {
 		Doctor:                   cloneMessages(source.Doctor),
 		Shutdown:                 cloneMessages(source.Shutdown),
 		ResolveEndpoint:          cloneMessages(source.ResolveEndpoint),
+		ListManagedDevices:       cloneMessages(source.ListManagedDevices),
 		BeginPresence:            cloneMessages(source.BeginPresence),
 		OpenPresence:             cloneMessages(source.OpenPresence),
 		CreateSignalingSession:   cloneMessages(source.CreateSignalingSession),

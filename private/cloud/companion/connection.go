@@ -291,6 +291,27 @@ func (connection *Connection) ResolveEndpoint(ctx context.Context, request *clou
 	return cloneMessage(response), nil
 }
 
+// ListManagedDevices 从 Hub 本地授权投影读取同账号设备；该请求不访问 Control Plane 数据库。
+// 返回目录不授予 terminal capability，公开客户端仍须持有 daemon 签发的 CapabilityGrant。
+func (connection *Connection) ListManagedDevices(ctx context.Context, request *cloudpb.ListManagedDevicesRequest) (*cloudpb.ListManagedDevicesResponse, error) {
+	authorization, err := connection.authorize(ctx, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_DIRECTORY, directoryRoles...)
+	if err != nil {
+		return nil, err
+	}
+	defer authorization.Destroy()
+	if request == nil || request.GetSchemaVersion() != 1 {
+		return nil, protocolError("invalid managed device directory request")
+	}
+	response, err := connection.service.hub.ListManagedDevices(ctx, authorization, cloneMessage(request))
+	if err != nil {
+		return nil, sanitizeAdapterError(err)
+	}
+	if err := validateManagedDevices(response); err != nil {
+		return nil, err
+	}
+	return cloneMessage(response), nil
+}
+
 // BeginPresence 使用 daemon device cloud session 获取一次性 presence challenge。
 // challenge 只回到公开 daemon 签名；Companion 不持有 DeviceIdentity private key，也不能复用 enrollment challenge。
 func (connection *Connection) BeginPresence(ctx context.Context, request *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
@@ -521,8 +542,9 @@ func (connection *Connection) Close() error {
 }
 
 var (
-	accountRoles = []cloudpb.CallerRole{cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CallerRole_CALLER_ROLE_MOBILE_APP}
-	managedRoles = []cloudpb.CallerRole{cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CallerRole_CALLER_ROLE_MOBILE_APP, cloudpb.CallerRole_CALLER_ROLE_DAEMON}
+	accountRoles   = []cloudpb.CallerRole{cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CallerRole_CALLER_ROLE_MOBILE_APP}
+	directoryRoles = []cloudpb.CallerRole{cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CallerRole_CALLER_ROLE_CLI, cloudpb.CallerRole_CALLER_ROLE_MOBILE_APP}
+	managedRoles   = []cloudpb.CallerRole{cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CallerRole_CALLER_ROLE_MOBILE_APP, cloudpb.CallerRole_CALLER_ROLE_DAEMON}
 )
 
 func (connection *Connection) authorize(ctx context.Context, capability cloudpb.CompanionCapability, roles ...cloudpb.CallerRole) (session.Authorization, error) {

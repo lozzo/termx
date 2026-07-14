@@ -45,15 +45,24 @@ ssh root@114.66.58.243 '/usr/local/bin/termx --timeout 5s daemon status --json'
 
 WEB002/WEB003 staging profile 在 `/login` 提供固定开发账号以及邮箱密码注册登录，在 `/account` 提供 Managed Free/Pro、测试 Checkout、密码修改和 AFF 推荐奖励。该 provider 不扣款；confirm 仍经 HMAC webhook transaction，只有首次有效事件才调用 Control Plane internal entitlement endpoint。Control Plane 更新 edge revision 并重新发布 Hub snapshot 后，订单、payment event 与邀请人 +15 天/被邀请人 +7 天奖励才在同一 SQLite 事务提交。浏览器 session 使用 HttpOnly、SameSite=Strict Cookie，登录/注册校验精确 Origin，所有已登录写请求同时校验 Origin 与 CSRF token。生产 OAuth、价格和支付 provider 未配置时保持禁用。
 
-CLOUD012 起，TUI 与 Official Android 不再自动兑换固定账号。客户端请求短期设备码，用户在 `/device?code=...` 通过已有 Web Session 审批，Control Plane 才签发绑定该账号和客户端设备 ID 的 edge session。密码、浏览器 Cookie 与 edge token 不进入 TUI/App UI；成功登录后的 resolve、signaling、direct 和 Relay lease 仍只访问 Hub。
+CLOUD012 起，TUI 不再自动兑换固定账号，而是请求短期设备码，由用户在 `/device?code=...` 使用已有 Web Session 审批。CLOUD015 起，Official Android 不打开系统浏览器：App 可以显示短码供用户在 Web 输入，也可以扫描账号中心生成的一次性二维码；扫码后 Web 必须展示手机 metadata 并再次批准。短码和二维码都只是活动 Flow locator，App 原生层还必须持有未进入 WebView 的高熵 flow credential 才能领取 edge session。密码、浏览器 Cookie 与 edge token 不进入 TUI/App UI；成功登录后的目录、resolve、signaling、direct 和 Relay lease 只访问 Hub。
 
 ## 注册、登录与添加节点
 
 1. 打开 `http://114.66.58.243:41100/login`，使用测试邮箱注册并进入账号中心。公网 HTTP staging 禁止使用真实密码。
-2. TUI 执行 `termx cloud login --device-code`；Official Android 在 Settings / Account 选择 `Continue in browser`。系统浏览器打开验证页后，核对设备码并批准。
+2. TUI/CLI 执行 `termx cloud login`，打开命令输出的 Web 地址并批准设备码。Official Android 在 Settings / Account 选择 Web 激活：可以把 App 短码输入 Web，也可以扫描账号中心生成的二维码；Web 显示手机名称和平台后仍需再次批准。
 3. 在 Web 账号中心的 Nodes 页面选择 `Enroll daemon`，取得两分钟有效、仅使用一次的 enrollment code。
-4. 在 daemon owner 机器执行 `termx cloud enroll CODE`，随后以 `termx daemon --cloud` 启动或重启 daemon。daemon 与客户端必须属于同一账号，Hub 不允许跨账号枚举或连接节点。
-5. daemon owner 仍需通过 `termx pair create` 安全交付 pairing bundle。账号登录只授予云连接能力，不替代 DataChannel 内由 daemon 验证的 CapabilityGrant。
+4. 在 daemon owner 机器执行 `termx cloud enroll CODE`，随后执行 `termx daemon restart --cloud`。daemon 与客户端必须属于同一账号，Hub 不允许跨账号枚举或连接节点。
+5. 登录后的 App/TUI 执行节点刷新，从 Hub 内存目录取得同账号 daemon 与 active Presence。目录可见不表示具备 terminal 权限；未配对节点必须显示“需要配对”。
+6. daemon owner 在交互式终端执行 `termx pair create`，默认显示可由 App 扫描的二维码。脚本环境必须显式使用 `--raw`，写文件必须显式使用 `--out OWNER_ONLY_PATH`。CapabilityGrant 仍只在 DTLS DataChannel 内由 owning daemon 验证。
+
+## 设备移除
+
+账号中心的 Cloud 设备列表同时管理 client access 与 daemon node，两者不能混成同一种在线状态：
+
+- 移除手机、TUI 或未来 GUI client 后，Hub 内存投影立即拒绝该 device ID 的目录、resolve 和 signaling；App 下一次刷新清除本机 edge session并回到未登录状态。该操作不删除 App 本地保存的 daemon CapabilityGrant。
+- 移除 daemon 后，Hub 关闭它的 Presence 和尚未完成的 signaling session，并拒绝新的 managed connection；账号目录不再返回该 daemon。已经完成 DTLS/DataChannel 建连的 peer session 不经过 Hub，当前切片不伪造“服务端已强制切断”的状态。
+- daemon-owned CapabilityGrant 与账号目录是两类真值。移除 daemon 不把 Cloud 服务变成 terminal capability owner；如果该设备仍可通过免费 local/SSH 路径到达，授权仍由 daemon 自己判断。
 
 Control Plane 可以在 edge session 与 Hub 授权快照有效期内中断；已有客户端后续建立 direct 或 single Relay 不同步回源。新登录、订阅/能力变化、节点 enrollment 和下一次快照刷新仍由 Control Plane 负责。
 

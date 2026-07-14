@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice"
@@ -21,7 +22,47 @@ func (state *serviceState) hubHandler() http.Handler {
 	mux.HandleFunc(httpapi.HubCompleteSignalingPath, state.handleHubCompleteSignaling)
 	mux.HandleFunc(httpapi.HubAcquireRelayLeasePath, state.handleHubAcquireRelayLease)
 	mux.HandleFunc(httpapi.HubResolveEndpointPath, state.handleHubResolveEndpoint)
+	mux.HandleFunc(httpapi.HubListManagedDevicesPath, state.handleHubListManagedDevices)
 	return mux
+}
+
+func (state *serviceState) handleHubListManagedDevices(writer http.ResponseWriter, request *http.Request) {
+	if !requireMethod(writer, request, http.MethodPost) {
+		return
+	}
+	token, ok := readBearerToken(writer, request)
+	if !ok {
+		return
+	}
+	defer clear(token)
+	envelope, payload, ok := state.readEdgeHubRequest(writer, request, &cloudpb.ListManagedDevicesRequest{})
+	if !ok {
+		return
+	}
+	defer clear(envelope.Payload)
+	if payload.(*cloudpb.ListManagedDevicesRequest).GetSchemaVersion() != 1 {
+		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "managed device directory version is invalid", false)
+		return
+	}
+	if _, err := state.edgeAuth.AuthorizeClient(token, envelope.AccountID, envelope.DeviceID); err != nil {
+		mapHubError(writer, err)
+		return
+	}
+	devices := state.edgeAuth.AccountDevices(envelope.AccountID)
+	sort.Slice(devices, func(left, right int) bool { return devices[left].DeviceID < devices[right].DeviceID })
+	response := &cloudpb.ListManagedDevicesResponse{}
+	for _, device := range devices {
+		kind := cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT
+		presence := cloudpb.PresenceState_PRESENCE_STATE_OFFLINE
+		if device.Kind == "daemon" {
+			kind = cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON
+			if !device.Revoked && state.hub.HasPresence(device.DeviceID) {
+				presence = cloudpb.PresenceState_PRESENCE_STATE_ONLINE
+			}
+		}
+		response.Devices = append(response.Devices, &cloudpb.ManagedDevice{DeviceId: device.DeviceID, DisplayName: device.DisplayName, Platform: device.Platform, Kind: kind, Presence: presence, Revoked: device.Revoked})
+	}
+	writeProto(writer, http.StatusOK, response)
 }
 
 func (state *serviceState) handleHubHealth(writer http.ResponseWriter, request *http.Request) {
@@ -55,7 +96,15 @@ func (state *serviceState) handleHubOpenPresence(writer http.ResponseWriter, req
 		mapHubError(writer, err)
 		return
 	}
-	defer presence.Close()
+	if state.webCenter != nil {
+		_ = state.webCenter.SetCloudDaemonOnline(envelope.Admission.AccountID, envelope.Admission.DeviceID, true)
+	}
+	defer func() {
+		presence.Close()
+		if state.webCenter != nil {
+			_ = state.webCenter.SetCloudDaemonOnline(envelope.Admission.AccountID, envelope.Admission.DeviceID, state.hub.HasPresence(envelope.Admission.DeviceID))
+		}
+	}()
 	writer.Header().Set("Content-Type", httpapi.StreamMediaType)
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.WriteHeader(http.StatusOK)
@@ -307,6 +356,11 @@ func (state *serviceState) readEdgeHubRequest(writer http.ResponseWriter, reques
 	case *cloudpb.ResolveEndpointRequest:
 		if err := readProtoBytes(envelope.Payload, target); err != nil {
 			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub resolve payload is invalid", false)
+			return httpapi.EdgeHubRequest{}, nil, false
+		}
+	case *cloudpb.ListManagedDevicesRequest:
+		if err := readProtoBytes(envelope.Payload, target); err != nil {
+			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub device directory payload is invalid", false)
 			return httpapi.EdgeHubRequest{}, nil, false
 		}
 	default:

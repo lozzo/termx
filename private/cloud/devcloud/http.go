@@ -224,7 +224,7 @@ func (state *serviceState) issueSession(kind session.Kind, accountID, accountLab
 func (state *serviceState) publishEdgeSnapshot(now time.Time) error {
 	devices := make([]servicecredential.EdgePolicyDevice, 0, len(state.edgeDevices))
 	for _, device := range state.edgeDevices {
-		devices = append(devices, servicecredential.EdgePolicyDevice{DeviceID: device.DeviceID, AccountID: device.AccountID, PublicKey: append([]byte(nil), device.PublicKey...), Revoked: device.Revoked})
+		devices = append(devices, servicecredential.EdgePolicyDevice{DeviceID: device.DeviceID, AccountID: device.AccountID, Kind: device.Kind, DisplayName: device.DisplayName, Platform: device.Platform, PublicKey: append([]byte(nil), device.PublicKey...), Revoked: device.Revoked})
 	}
 	accounts := make([]servicecredential.EdgePolicyAccount, 0, len(state.webAccounts)+1)
 	accountIDs := map[string]struct{}{devAccountID: {}}
@@ -244,6 +244,20 @@ func (state *serviceState) publishEdgeSnapshot(now time.Time) error {
 	}
 	defer clear(encoded)
 	return state.edgeAuth.ApplySignedSnapshot(encoded)
+}
+
+// refreshEdgeSnapshot 在不改变账号或设备业务真值时发布新 revision，刷新 Hub 的离线授权窗口。
+// 调用方不持有 state.mu；签发或应用失败会恢复 revision，旧快照随后按原 max staleness fail closed。
+func (state *serviceState) refreshEdgeSnapshot(now time.Time) error {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	previousRevision := state.edgeRevision
+	state.edgeRevision++
+	if err := state.publishEdgeSnapshot(now.UTC()); err != nil {
+		state.edgeRevision = previousRevision
+		return err
+	}
+	return nil
 }
 
 func (state *serviceState) cleanupLocked(now time.Time) {
@@ -274,8 +288,12 @@ func (state *serviceState) cleanupLocked(now time.Time) {
 
 func mapHubError(writer http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, cloudhub.ErrAdmission):
+	case errors.Is(err, cloudhub.ErrAdmission), errors.Is(err, cloudhub.ErrEdgeAuthorization):
 		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub admission was rejected", false)
+	case errors.Is(err, cloudhub.ErrPolicySnapshot):
+		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub authorization snapshot is unavailable", true)
+	case errors.Is(err, cloudhub.ErrTargetUnavailable):
+		writeCloudError(writer, http.StatusNotFound, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_NOT_FOUND, "target managed device was removed or is unavailable", false)
 	case errors.Is(err, cloudhub.ErrPresenceNotFound):
 		writeCloudError(writer, http.StatusNotFound, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_NOT_FOUND, "target device is offline", true)
 	case errors.Is(err, cloudhub.ErrBackpressure), errors.Is(err, cloudhub.ErrCapacity):

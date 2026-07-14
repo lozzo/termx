@@ -212,6 +212,19 @@ func (client *Client) ResolveEndpoint(ctx context.Context, request *cloudpb.Reso
 	return value, nil
 }
 
+// ListManagedDevices 转发当前账号的最小设备目录请求。
+func (client *Client) ListManagedDevices(ctx context.Context, request *cloudpb.ListManagedDevicesRequest) (*cloudpb.ListManagedDevicesResponse, error) {
+	response, err := client.call(ctx, &cloudpb.IPCRequest{Operation: &cloudpb.IPCRequest_ListManagedDevices{ListManagedDevices: request}})
+	if err != nil {
+		return nil, err
+	}
+	value := response.GetManagedDevices()
+	if value == nil {
+		return nil, protocolResponseError("ListManagedDevices")
+	}
+	return value, nil
+}
+
 // BeginPresence 获取一个必须由公开 daemon DeviceIdentity 签名的一次性 presence challenge。
 func (client *Client) BeginPresence(ctx context.Context, request *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
 	response, err := client.call(ctx, &cloudpb.IPCRequest{Operation: &cloudpb.IPCRequest_BeginPresence{BeginPresence: request}})

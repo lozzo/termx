@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
-import { ArrowLeft, Camera, ChevronRight, Cloud, Download, Keyboard, LaptopMinimal, LogIn, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
+import { ArrowLeft, Camera, ChevronRight, Cloud, Download, Keyboard, LaptopMinimal, LogIn, LogOut, Monitor, MoreHorizontal, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, Wifi, X } from 'lucide-react'
 import { createMachineSessionStore, type MachineSessionStore } from '../state/localAppIdentity'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
@@ -113,7 +113,12 @@ export interface ExternalPairingAdapter {
 /** CloudAccountAdapter 让 Official App 通过 native 私有模块登录；共享 UI 不接收 edge token。 */
 export interface CloudAccountAdapter {
   current(): Promise<{ accountId: string; accountLabel: string } | null>
-  login(): Promise<{ accountId: string; accountLabel: string }>
+  beginActivation(): Promise<{ userCode: string; expiresAtUnix: number }>
+  claimActivation(payload: string): Promise<{ userCode: string; expiresAtUnix: number }>
+  awaitActivation(): Promise<{ accountId: string; accountLabel: string }>
+  cancelActivation(): Promise<void>
+  /** listMachines 只返回同账号 daemon 发现投影；授权状态由 ExternalPairingAdapter 决定。 */
+  listMachines(): Promise<WebControlMachine[]>
   logout(): Promise<void>
 }
 type MachineRuntimeFactory = (input: {
@@ -178,6 +183,7 @@ export function RemoteControlApp({
   const [password, setPassword] = useState('')
   const [accessToken, setAccessToken] = useState(() => storage?.getItem(storageKeys.accessToken) ?? '')
   const [cloudAccount, setCloudAccount] = useState<{ accountId: string; accountLabel: string } | null>(null)
+  const [cloudActivation, setCloudActivation] = useState<{ userCode: string; expiresAtUnix: number } | null>(null)
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => readTerminalSettings(storage))
   const [user, setUser] = useState<WebControlUser | null>(null)
   const [localMachines, setLocalMachines] = useState<StoredMachineRecord[]>(() => {
@@ -381,7 +387,21 @@ export function RemoteControlApp({
     if (cloudAccountAdapter) {
       const localMachineList = storage ? createMachineStore({ storage }).listMachines() : []
       setLocalMachines(localMachineList)
-      setMachines([])
+      setLoading(true)
+      try {
+        setMachines(await cloudAccountAdapter.listMachines())
+        setError(null)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+        const account = await cloudAccountAdapter.current().catch(() => null)
+        if (!account) {
+          setCloudAccount(null)
+          setUser(null)
+          setMachines([])
+        }
+      } finally {
+        setLoading(false)
+      }
       setAuthorizedMachineIds(readAuthorizedMachineIds(storage, cloudAccount?.accountId, externalPairingAdapter))
       setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
       return
@@ -468,17 +488,64 @@ export function RemoteControlApp({
     setAuthorizationExpiries(readAuthorizationExpiries(storage, externalPairingAdapter))
   }, [externalPairingAdapter, pairVersion, storage, user?.id])
 
+  const completeCloudActivation = useCallback(async (expectedUserCode: string) => {
+    if (!cloudAccountAdapter) return
+    try {
+      const account = await cloudAccountAdapter.awaitActivation()
+      setCloudAccount(account)
+      setCloudActivation((current) => current?.userCode === expectedUserCode ? null : current)
+      setUser({ id: account.accountId, username: account.accountLabel, email: account.accountLabel })
+      setView('home')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (!message.toLowerCase().includes('cancel')) setError(message)
+      setCloudActivation((current) => current?.userCode === expectedUserCode ? null : current)
+    }
+  }, [cloudAccountAdapter])
+
+  const beginCloudActivation = useCallback(async () => {
+    if (!cloudAccountAdapter) return
+    setLoading(true)
+    setError(null)
+    try {
+      const activation = await cloudAccountAdapter.beginActivation()
+      setCloudActivation(activation)
+      void completeCloudActivation(activation.userCode)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [cloudAccountAdapter, completeCloudActivation])
+
+  const scanCloudActivation = useCallback(async () => {
+    if (!cloudAccountAdapter || !scanPairingCode) return
+    setLoading(true)
+    setError(null)
+    try {
+      const payload = await scanPairingCode()
+      if (!payload) return
+      const activation = await cloudAccountAdapter.claimActivation(payload)
+      setCloudActivation(activation)
+      void completeCloudActivation(activation.userCode)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [cloudAccountAdapter, completeCloudActivation, scanPairingCode])
+
+  const cancelCloudActivation = useCallback(async () => {
+    if (!cloudAccountAdapter) return
+    await cloudAccountAdapter.cancelActivation()
+    setCloudActivation(null)
+    setError(null)
+  }, [cloudAccountAdapter])
+
   const submitLogin = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      if (cloudAccountAdapter) {
-        const account = await cloudAccountAdapter.login()
-        setCloudAccount(account)
-        setUser({ id: account.accountId, username: account.accountLabel, email: account.accountLabel })
-        setView('home')
-        return
-      }
       const auth = await api.login({ login, password })
       storage?.setItem(storageKeys.accessToken, auth.accessToken)
       setAccessToken(auth.accessToken)
@@ -490,7 +557,7 @@ export function RemoteControlApp({
     } finally {
       setLoading(false)
     }
-  }, [api, cloudAccountAdapter, controlUrl, login, password, storage])
+  }, [api, login, password, storage])
 
   const signOut = useCallback(async () => {
     if (cloudAccountAdapter) await cloudAccountAdapter.logout()
@@ -553,6 +620,29 @@ export function RemoteControlApp({
   }, [openMachinePairSheet, authorizedMachineIds])
 
   const pairScannedValue = useCallback(async (rawValue: string) => {
+    if (rawValue.trim().startsWith('termx-cloud-activate:v1:') && cloudAccountAdapter) {
+      setPairing(true)
+      setScanFlowState('pairing')
+      setError(null)
+      try {
+        const activation = await cloudAccountAdapter.claimActivation(rawValue.trim())
+        setCloudActivation(activation)
+        setManualScanValue('')
+        setScanOpen(false)
+        setView('settings')
+        hapticSuccess()
+        void completeCloudActivation(activation.userCode)
+      } catch (err) {
+        hapticError()
+        setError(err instanceof Error ? err.message : String(err))
+        setScanOpen(false)
+        setView('settings')
+      } finally {
+        setPairing(false)
+        setScanFlowState('idle')
+      }
+      return
+    }
     if (!storage) {
       setError('Local storage is required before importing a TermX QR')
       return
@@ -568,10 +658,13 @@ export function RemoteControlApp({
         }
         const store = createMachineStore({ storage })
         const timestamp = new Date().toISOString()
+        // Hub 目录拥有 daemon 展示身份；配对 bundle 只授予能力，不能用扫描端标签改名。
+        const daemonName = selectedMachine?.name ?? external.machine.name
+        const daemonHostname = selectedMachine?.hostname ?? external.machine.hostname
         store.saveMachine({
           machineId: external.machine.id,
-          name: external.machine.name,
-          ...(external.machine.hostname ? { hostname: external.machine.hostname } : {}),
+          name: daemonName,
+          ...(daemonHostname ? { hostname: daemonHostname } : {}),
           state: 'online',
           terminalCount: 0,
           source: 'manual',
@@ -686,7 +779,7 @@ export function RemoteControlApp({
       setPairing(false)
       setScanFlowState('idle')
     }
-  }, [dropMachineRuntime, externalPairingAdapter, machines, networkRuntime, pairApiFactory, pairIntent, selectedMachine, storage, user?.id])
+  }, [cloudAccountAdapter, completeCloudActivation, dropMachineRuntime, externalPairingAdapter, machines, networkRuntime, pairApiFactory, pairIntent, selectedMachine, storage, user?.id])
 
   const importManualScan = useCallback(async () => {
     hapticImpact()
@@ -793,6 +886,7 @@ export function RemoteControlApp({
           error={error}
           controlUrl={controlUrl}
           loading={loading}
+          cloudActivation={cloudActivation}
           login={login}
           password={password}
           signedIn={signedIn}
@@ -802,9 +896,12 @@ export function RemoteControlApp({
           onLoginChange={setLogin}
           onPasswordChange={setPassword}
           onRefresh={() => { hapticImpact(); void refreshMachines() }}
-          onSignIn={() => { hapticImpact(); void submitLogin() }}
+          onSignIn={() => { hapticImpact(); void (cloudAccountAdapter ? beginCloudActivation() : submitLogin()) }}
+          onScanCloudActivation={() => { hapticImpact(); void scanCloudActivation() }}
+          onCancelCloudActivation={() => { hapticSelection(); void cancelCloudActivation() }}
           onSignOut={() => { hapticImpact(); void signOut() }}
           nativeCloudLogin={Boolean(cloudAccountAdapter)}
+          canScanCloudActivation={Boolean(cloudAccountAdapter && scanPairingCode)}
           onTerminalSettingsChange={updateTerminalSettings}
           onExportDebugLogs={exportDebugLogs}
         />
@@ -1140,6 +1237,8 @@ function HomeView({
 }
 
 function SettingsView({
+  canScanCloudActivation,
+  cloudActivation,
   controlUrl,
   error,
   loading,
@@ -1149,15 +1248,19 @@ function SettingsView({
   terminalSettings,
   user,
   onBack,
+  onCancelCloudActivation,
   onLoginChange,
   onPasswordChange,
   onRefresh,
+  onScanCloudActivation,
   onSignIn,
   onSignOut,
   onTerminalSettingsChange,
   onExportDebugLogs,
   nativeCloudLogin,
 }: {
+  canScanCloudActivation: boolean
+  cloudActivation: { userCode: string; expiresAtUnix: number } | null
   controlUrl: string
   error: string | null
   loading: boolean
@@ -1167,9 +1270,11 @@ function SettingsView({
   terminalSettings: TerminalSettings
   user: WebControlUser | null
   onBack: () => void
+  onCancelCloudActivation: () => void
   onLoginChange: (value: string) => void
   onPasswordChange: (value: string) => void
   onRefresh: () => void
+  onScanCloudActivation: () => void
   onSignIn: () => void
   onSignOut: () => void
   onTerminalSettingsChange: (patch: Partial<TerminalSettings>) => void
@@ -1198,10 +1303,21 @@ function SettingsView({
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h1 className="text-lg font-semibold leading-6 text-zinc-900">Settings</h1>
           <p className="truncate text-xs font-medium text-zinc-500">{signedIn ? user?.email ?? 'Signed in' : nativeCloudLogin ? 'TermX Cloud sign in' : 'Web Control sign in'}</p>
         </div>
+        {signedIn ? (
+          <button
+            aria-label="Sign out of TermX Cloud"
+            className="termx-app-icon-button focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-app-accent)]"
+            title="Sign out"
+            type="button"
+            onClick={onSignOut}
+          >
+            <LogOut className="h-5 w-5" />
+          </button>
+        ) : null}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
@@ -1341,22 +1457,15 @@ function SettingsView({
             {signedIn ? (
               <>
                 <SettingsRow label="Signed in" value={user?.email ?? 'Account'} />
-                <div className="grid grid-cols-2 gap-2 px-4 py-3">
+                <div className="px-4 py-3">
                   <button
-                    className="termx-app-secondary-button gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                    className="termx-app-secondary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                     type="button"
                     onClick={onRefresh}
                     disabled={loading}
                   >
                     <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                     Refresh
-                  </button>
-                  <button
-                    className="termx-app-primary-button px-3 text-sm font-semibold"
-                    type="button"
-                    onClick={onSignOut}
-                  >
-                    Sign out
                   </button>
                 </div>
               </>
@@ -1385,23 +1494,105 @@ function SettingsView({
                     />
                   </label>
                 </div>}
-                <div className="border-t border-zinc-200 px-4 py-3">
-                  <button
-                    className="termx-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                    type="button"
-                    onClick={onSignIn}
-                    disabled={loading}
-                  >
-                    <LogIn className="h-4 w-4" />
-                    {nativeCloudLogin ? 'Continue in browser' : 'Sign in'}
-                  </button>
-                </div>
+                {nativeCloudLogin ? (
+                  <CloudActivationPanel
+                    activation={cloudActivation}
+                    canScan={canScanCloudActivation}
+                    loading={loading}
+                    onBegin={onSignIn}
+                    onCancel={onCancelCloudActivation}
+                    onScan={onScanCloudActivation}
+                  />
+                ) : (
+                  <div className="border-t border-zinc-200 px-4 py-3">
+                    <button
+                      className="termx-app-primary-button h-11 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                      type="button"
+                      onClick={onSignIn}
+                      disabled={loading}
+                    >
+                      <LogIn className="h-4 w-4" />
+                      Sign in
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </SettingsSection>
         </div>
       </div>
     </section>
+  )
+}
+
+function CloudActivationPanel({
+  activation,
+  canScan,
+  loading,
+  onBegin,
+  onCancel,
+  onScan,
+}: {
+  activation: { userCode: string; expiresAtUnix: number } | null
+  canScan: boolean
+  loading: boolean
+  onBegin: () => void
+  onCancel: () => void
+  onScan: () => void
+}) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!activation) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [activation])
+  const remainingSeconds = activation ? Math.max(0, Math.ceil(activation.expiresAtUnix - now / 1000)) : 0
+  const remaining = `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`
+
+  if (activation) {
+    return (
+      <div className="border-t border-zinc-200 px-4 py-4">
+        <div aria-live="polite" className="border border-[var(--termx-app-line)] bg-white px-4 py-5 text-center">
+          <p className="text-xs font-medium text-zinc-500">Enter this code in TermX Cloud on your computer</p>
+          <strong className="mt-3 block font-mono text-2xl font-medium text-zinc-950">{activation.userCode}</strong>
+          <p className="mt-3 font-mono text-xs text-zinc-500">Waiting for approval · {remaining}</p>
+        </div>
+        <button
+          className="termx-app-secondary-button mt-3 h-12 w-full gap-2 px-3 text-sm font-semibold"
+          type="button"
+          onClick={onCancel}
+        >
+          <X className="h-4 w-4" />
+          Cancel activation
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="border-t border-zinc-200 px-4 py-4">
+      <p className="mb-4 text-sm leading-6 text-zinc-500">Sign in on the TermX Cloud website, then authorize this phone with a short code or QR code.</p>
+      <button
+        className="termx-app-primary-button h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+        type="button"
+        onClick={onBegin}
+        disabled={loading}
+      >
+        <ShieldCheck className="h-4 w-4" />
+        {loading ? 'Creating code...' : 'Activate with web'}
+      </button>
+      {canScan ? (
+        <button
+          className="termx-app-secondary-button mt-3 h-12 w-full gap-2 px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+          type="button"
+          onClick={onScan}
+          disabled={loading}
+        >
+          <QrCode className="h-4 w-4" />
+          Scan QR from web
+        </button>
+      ) : null}
+    </div>
   )
 }
 

@@ -128,6 +128,9 @@ func TestCloudLoginUsesLifecycleIPCWithoutReturningToken(t *testing.T) {
 			if request.GetMethod() != cloudpb.LoginMethod_LOGIN_METHOD_DEVICE_CODE {
 				t.Fatalf("login method = %s", request.GetMethod())
 			}
+			if request.GetClientMetadata().GetDisplayName() == "" || request.GetClientMetadata().GetPlatform() == "" {
+				t.Fatalf("client metadata = %#v", request.GetClientMetadata())
+			}
 			return &cloudpb.LoginFlow{FlowId: "flow-1", VerificationUri: "https://login.example.test", UserCode: "ABCD-EFGH", ExpiresAtUnix: uint64(time.Now().Add(time.Minute).Unix()), PollIntervalMillis: 1}, nil
 		},
 		CompleteLoginFunc: func(_ context.Context, request *cloudpb.CompleteLoginRequest) (*cloudpb.CompleteLoginResponse, error) {
@@ -209,6 +212,63 @@ func TestCloudEnrollSignsChallengeWithDaemonIdentity(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "ONE-TIME-CODE") || !strings.Contains(output.String(), "device-") {
 		t.Fatalf("enroll output = %q", output.String())
+	}
+}
+
+func TestCloudEnrollExplainsRejectedOneTimeCode(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	fake := &closableCloudFake{FakeClient: &cloudcompanion.FakeClient{
+		BeginDeviceEnrollmentFunc: func(context.Context, *cloudpb.BeginDeviceEnrollmentRequest) (*cloudpb.DeviceEnrollmentChallenge, error) {
+			return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED, "sanitized upstream rejection")
+		},
+	}}
+	previousOpen := openV3CloudLifecycleClient
+	openV3CloudLifecycleClient = func(context.Context, cloudpb.CallerRole, ...cloudpb.CompanionCapability) (v3CloudClient, error) {
+		return fake, nil
+	}
+	defer func() { openV3CloudLifecycleClient = previousOpen }()
+
+	command := newRootCmd()
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"cloud", "enroll", "EXPIRED-CODE"})
+	err := command.Execute()
+	if err == nil || !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED) {
+		t.Fatalf("enroll rejection = %v", err)
+	}
+	if message := err.Error(); !strings.Contains(message, "invalid, expired, or already used") || !strings.Contains(message, "within two minutes") || strings.Contains(message, "sanitized upstream rejection") {
+		t.Fatalf("enroll rejection message = %q", message)
+	}
+}
+
+func TestCloudNodeListUsesAccountDirectoryWithoutGrantData(t *testing.T) {
+	fake := &closableCloudFake{FakeClient: &cloudcompanion.FakeClient{
+		ListManagedDevicesFunc: func(context.Context, *cloudpb.ListManagedDevicesRequest) (*cloudpb.ListManagedDevicesResponse, error) {
+			return &cloudpb.ListManagedDevicesResponse{Devices: []*cloudpb.ManagedDevice{
+				{DeviceId: "client-1", DisplayName: "Phone", Kind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT, Presence: cloudpb.PresenceState_PRESENCE_STATE_OFFLINE},
+				{DeviceId: "daemon-1", DisplayName: "Workstation", Platform: "darwin/arm64", Kind: cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON, Presence: cloudpb.PresenceState_PRESENCE_STATE_ONLINE},
+			}}, nil
+		},
+	}}
+	previousOpen := openV3CloudLifecycleClient
+	openV3CloudLifecycleClient = func(_ context.Context, role cloudpb.CallerRole, capabilities ...cloudpb.CompanionCapability) (v3CloudClient, error) {
+		if role != cloudpb.CallerRole_CALLER_ROLE_CLI || len(capabilities) != 1 || capabilities[0] != cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_DIRECTORY {
+			t.Fatalf("directory open = (%v, %v)", role, capabilities)
+		}
+		return fake, nil
+	}
+	defer func() { openV3CloudLifecycleClient = previousOpen }()
+
+	var output bytes.Buffer
+	command := newRootCmd()
+	command.SetOut(&output)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"cloud", "node", "list", "--json"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if value := output.String(); !strings.Contains(value, `"id":"daemon-1"`) || !strings.Contains(value, `"status":"online"`) || strings.Contains(strings.ToLower(value), "grant") {
+		t.Fatalf("node list output = %q", value)
 	}
 }
 

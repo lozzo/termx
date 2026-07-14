@@ -195,9 +195,11 @@ private class SequenceSource(vararg samples: ManagedPathQualitySample) : Managed
 }
 
 private class RecordingCloudAdapter : ManagedCloudAdapter {
-    override suspend fun beginLogin(): ManagedCloudLoginFlow = error("not used")
+    override suspend fun beginLogin(metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = error("not used")
+    override suspend fun claimLogin(userCode: String, metadata: ManagedCloudClientMetadata): ManagedCloudLoginFlow = error("not used")
     override suspend fun completeLogin(flowId: String): ManagedCloudAccount = error("not used")
     override suspend fun currentAccount(): ManagedCloudAccount? = null
+    override suspend fun listDevices(): List<ManagedCloudDevice> = emptyList()
     override suspend fun logout() = Unit
     var resolveCalls = 0
     var signalingCalls = 0

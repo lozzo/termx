@@ -215,6 +215,22 @@ func TestHubCleanupExpiresPresenceAndAssociatedSession(t *testing.T) {
 	}
 }
 
+func TestHubRevokeDeviceClosesOwningPresence(t *testing.T) {
+	fixture := newFixture(t, 4, 4)
+	ticket := fixture.issue(t, "presence-revoke", servicecredential.PrincipalDaemon, "daemon-1", "presence-revoke", "", []servicecredential.HubOperation{servicecredential.HubOperationPresence}, time.Minute)
+	presence, err := fixture.service.OpenPresence(context.Background(), hub.OpenPresenceRequest{Admission: ticket, AccountID: "account-1", DeviceID: "daemon-1", PresenceSession: "presence-revoke"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.service.RevokeDevice("daemon-1")
+	if fixture.service.HasPresence("daemon-1") {
+		t.Fatal("revoked daemon retained active presence")
+	}
+	if _, err := presence.Receive(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("revoked presence receive = %v", err)
+	}
+}
+
 type fixture struct {
 	now     time.Time
 	clock   *fakeClock
@@ -239,7 +255,7 @@ func newFixture(t *testing.T, presenceQueue, clientQueue int) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 1, ManagedDirectEnabled: true}}, Devices: []hub.DeviceAuthorization{{DeviceID: "daemon-1", AccountID: "account-1"}}}); err != nil {
+	if err := edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 1, ManagedDirectEnabled: true}}, Devices: []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon"}}}); err != nil {
 		t.Fatal(err)
 	}
 	service, err := hub.New(hub.Config{HubID: "hub-eu", AdmissionIssuer: "control-plane.test", KeyRing: ring, Clock: clock, MaxPresenceTTL: 5 * time.Minute, MaxSignalingTTL: 5 * time.Minute, PresenceQueueSize: presenceQueue, ClientQueueSize: clientQueue, MaxSDPBytes: 1024, MaxCandidates: 8, MaxPresences: 16, MaxSessions: 32, MaxSessionsPerClient: 4, MaxReplayEntries: 64, EdgeAuthorizer: edgeAuthorizer})

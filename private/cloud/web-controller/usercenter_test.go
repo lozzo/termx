@@ -24,6 +24,45 @@ func TestUserCenterScopesNodeMutationToOwningAccount(t *testing.T) {
 	}
 }
 
+func TestUserCenterDaemonOnlineProjectionFollowsHubPresence(t *testing.T) {
+	store := webcontroller.NewUserCenterStore(time.Now)
+	defer store.Close()
+	if err := store.UpsertCloudDevice("account-dev-local", "daemon-online", "Build daemon", "daemon", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkDaemonNodesOffline(); err != nil {
+		t.Fatal(err)
+	}
+	_, nodes, _, _, err := store.Snapshot("account-dev-local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range nodes {
+		if node.ID == "daemon-online" && node.Online {
+			t.Fatal("daemon remained online after process-start reset")
+		}
+	}
+	if err := store.SetCloudDaemonOnline("account-dev-local", "daemon-online", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetCloudDaemonOnline("another-account", "daemon-online", false); err == nil {
+		t.Fatal("foreign account changed daemon presence projection")
+	}
+	_, nodes, _, _, err = store.Snapshot("account-dev-local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundOnline := false
+	for _, node := range nodes {
+		if node.ID == "daemon-online" {
+			foundOnline = node.Online
+		}
+	}
+	if !foundOnline {
+		t.Fatal("Hub presence did not mark daemon online")
+	}
+}
+
 func TestReferralRewardsArePaymentBoundIdempotentAndPersistent(t *testing.T) {
 	now := time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC)
 	path := filepath.Join(t.TempDir(), "accounts.db")

@@ -78,10 +78,27 @@ export function TermxApp() {
       const account = await NativeConnection.getCloudAccount()
       return account.accountId && account.accountLabel ? { accountId: account.accountId, accountLabel: account.accountLabel } : null
     },
-    async login() {
-      const account = await NativeConnection.cloudLogin()
+    beginActivation: () => NativeConnection.cloudBeginActivation(),
+    claimActivation: (payload) => NativeConnection.cloudClaimActivation({ payload }),
+    async awaitActivation() {
+      const account = await NativeConnection.cloudAwaitActivation()
       if (!account.accountId || !account.accountLabel) throw new Error('TermX Cloud returned an invalid account')
       return { accountId: account.accountId, accountLabel: account.accountLabel }
+    },
+    cancelActivation: () => NativeConnection.cloudCancelActivation(),
+    async listMachines() {
+      const result = await NativeConnection.cloudListDevices()
+      return result.devices
+        .filter((device) => device.kind === 'daemon' && !device.revoked)
+        .map((device) => ({
+          id: device.deviceId,
+          name: device.displayName,
+          osInfo: device.platform,
+          online: device.online,
+          source: 'hub' as const,
+          hubUrls: [],
+          hubStatus: device.online ? 'online' : 'offline',
+        }))
     },
     logout: () => NativeConnection.cloudLogout(),
   }), [])

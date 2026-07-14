@@ -30,6 +30,8 @@ type Client interface {
 	Status(context.Context, *cloudpb.StatusRequest) (*cloudpb.StatusResponse, error)
 	// ResolveEndpoint 定位 managed daemon 并返回公开 WebRTC 所需的 managed session 与 ICE 配置。
 	ResolveEndpoint(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error)
+	// ListManagedDevices 返回当前账号的最小 client/daemon 目录，不授予 terminal capability。
+	ListManagedDevices(context.Context, *cloudpb.ListManagedDevicesRequest) (*cloudpb.ListManagedDevicesResponse, error)
 	// BeginPresence 为已 enrollment 的 daemon 获取一次性 device-scoped presence challenge。
 	// challenge 必须由公开进程内的 DeviceIdentity 签名，Companion 不能代签或复用 enrollment proof。
 	BeginPresence(context.Context, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error)

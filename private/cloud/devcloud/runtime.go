@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,6 +41,7 @@ const (
 	devAccountLabel     = "TermX Dev Account"
 	devUserID           = "user-dev-local"
 	devClientDeviceID   = "client-dev-local"
+	loginCodeAlphabet   = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
 	devHubID            = "hub-dev-local"
 	devRegion           = "local-1"
 	devAdmissionIssuer  = "control-plane.dev-local"
@@ -50,12 +52,13 @@ const (
 	devRelayBindingID   = "relay-binding-dev-local"
 	devRelayLeaseIssuer = "control-plane.dev-local.relay"
 
-	loginTTL        = 5 * time.Minute
-	enrollmentTTL   = 2 * time.Minute
-	cloudSessionTTL = 8 * time.Hour
-	managedTTL      = 5 * time.Minute
-	admissionTTL    = 2 * time.Minute
-	relayLeaseTTL   = 5 * time.Minute
+	loginTTL                  = 5 * time.Minute
+	enrollmentTTL             = 2 * time.Minute
+	cloudSessionTTL           = 8 * time.Hour
+	managedTTL                = 5 * time.Minute
+	admissionTTL              = 2 * time.Minute
+	relayLeaseTTL             = 5 * time.Minute
+	edgePolicyRefreshInterval = 5 * time.Minute
 )
 
 // Config 控制开发 runtime 的 listener、时间、随机源和一次性 enrollment code。
@@ -99,6 +102,7 @@ type Runtime struct {
 	errors    chan error
 	done      chan struct{}
 	usageStop chan struct{}
+	edgeStop  chan struct{}
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -134,9 +138,13 @@ type cloudSession struct {
 type loginFlow struct {
 	userCode       string
 	clientDeviceID string
+	clientMetadata *cloudpb.DeviceMetadata
+	ownerAccountID string
+	ownerUserID    string
 	accountID      string
 	accountLabel   string
 	expiresAt      time.Time
+	claimed        bool
 }
 
 type enrollmentClaim struct {
@@ -287,11 +295,12 @@ func start(config Config, options runtimeOptions) (*Runtime, error) {
 		hubServer:     &http.Server{Handler: state.hubHandler(), ReadHeaderTimeout: 5 * time.Second},
 		relayServer:   relayServer,
 		state:         state,
-		errors:        make(chan error, 2), done: make(chan struct{}), usageStop: make(chan struct{}),
+		errors:        make(chan error, 2), done: make(chan struct{}), usageStop: make(chan struct{}), edgeStop: make(chan struct{}),
 	}
 	runtime.serve("Control Plane", runtime.controlServer, controlListener)
 	runtime.serve("Hub", runtime.hubServer, hubListener)
 	runtime.reportRelayUsage()
+	runtime.refreshEdgePolicy()
 	if err := waitForHealth(runtime.manifest.ControlPlaneURL, runtime.manifest.HubURL); err != nil {
 		shutdownContext, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
@@ -339,14 +348,9 @@ func (state *serviceState) initializeDomain(now time.Time) error {
 	if err := store.PutUser(domain.User{ID: devUserID, AccountID: devAccountID, Email: "dev-local@termx.invalid", CreatedAt: now}); err != nil {
 		return err
 	}
-	clientPublicKey, clientPrivateKey, err := ed25519.GenerateKey(state.random)
-	if err != nil {
-		return fmt.Errorf("generate dev client directory key: %w", err)
-	}
-	clear(clientPrivateKey)
 	if err := store.RegisterDevice(domain.DeviceRegistration{
 		ID: devClientDeviceID, AccountID: devAccountID, OwnerUserID: devUserID, Kind: domain.DeviceKindClient,
-		Label: "Dev Client", PublicKey: clientPublicKey, Fingerprint: fingerprint(clientPublicKey), RegisteredAt: now,
+		Label: "Dev Client", RegisteredAt: now,
 	}); err != nil {
 		return err
 	}
@@ -354,7 +358,7 @@ func (state *serviceState) initializeDomain(now time.Time) error {
 	state.edgePolicyIssuer = edgePolicyIssuer
 	state.edgeAuth = edgeAuth
 	state.edgeRevision = 1
-	state.edgeDevices = map[string]cloudhub.DeviceAuthorization{devClientDeviceID: {DeviceID: devClientDeviceID, AccountID: devAccountID, PublicKey: clientPublicKey}}
+	state.edgeDevices = map[string]cloudhub.DeviceAuthorization{devClientDeviceID: {DeviceID: devClientDeviceID, AccountID: devAccountID, Kind: "client", DisplayName: "Dev Client", Platform: "development"}}
 	state.directoryAccounts[devAccountID] = struct{}{}
 	if err := state.publishEdgeSnapshot(now); err != nil {
 		return err
@@ -460,6 +464,7 @@ func (runtime *Runtime) Close(ctx context.Context) error {
 	}
 	runtime.closeOnce.Do(func() {
 		close(runtime.usageStop)
+		close(runtime.edgeStop)
 		relayErr := runtime.relayServer.Close()
 		usageErr := runtime.flushRelayUsage(ctx, "runtime_closed")
 		controlErr := runtime.controlServer.Shutdown(ctx)
@@ -475,6 +480,31 @@ func (runtime *Runtime) Close(ctx context.Context) error {
 		close(runtime.done)
 	})
 	return runtime.closeErr
+}
+
+// refreshEdgePolicy 定期模拟 Control Plane 向 Hub 推送完整签名授权投影。
+// Hub 请求热路径仍只读本地内存；刷新失败会使 runtime 明确失败，不能用过期快照继续放行。
+func (runtime *Runtime) refreshEdgePolicy() {
+	runtime.waitGroup.Add(1)
+	go func() {
+		defer runtime.waitGroup.Done()
+		ticker := time.NewTicker(edgePolicyRefreshInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-runtime.edgeStop:
+				return
+			case <-ticker.C:
+				if err := runtime.state.refreshEdgeSnapshot(runtime.state.now().UTC()); err != nil {
+					select {
+					case runtime.errors <- fmt.Errorf("dev Hub authorization refresh failed"):
+					default:
+					}
+					return
+				}
+			}
+		}
+	}()
 }
 
 func prepareRelayListenAddr(address, publicIP, profile string) (string, error) {
@@ -561,6 +591,30 @@ func (state *serviceState) randomID(prefix string) (string, error) {
 	}
 	defer clear(value)
 	return prefix + "-" + base64.RawURLEncoding.EncodeToString(value), nil
+}
+
+// newLoginCodeLocked 生成活动集合内唯一的人类可输入短码；调用方必须持有 state.mu。
+// 短码只定位 Flow，最终 Session 领取仍要求独立的 128-bit flow ID。
+func (state *serviceState) newLoginCodeLocked() (string, error) {
+	for attempt := 0; attempt < 16; attempt++ {
+		value, err := state.randomBytes(8)
+		if err != nil {
+			return "", err
+		}
+		number := binary.BigEndian.Uint64(value)
+		clear(value)
+		compactBytes := make([]byte, 10)
+		for index := len(compactBytes) - 1; index >= 0; index-- {
+			compactBytes[index] = loginCodeAlphabet[number%uint64(len(loginCodeAlphabet))]
+			number /= uint64(len(loginCodeAlphabet))
+		}
+		compact := string(compactBytes)
+		code := compact[:5] + "-" + compact[5:]
+		if _, exists := state.loginCodes[code]; !exists {
+			return code, nil
+		}
+	}
+	return "", fmt.Errorf("generate unique login code: active code space is unavailable")
 }
 
 func fingerprint(publicKey []byte) string {

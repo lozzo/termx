@@ -12,6 +12,10 @@ import (
 const (
 	browserSessionCookie = "termx_web_session"
 	browserCSRFCookie    = "termx_csrf"
+	// DeviceLoginWaitingForDevice 表示 Web 已创建二维码，但 Official App 尚未认领。
+	DeviceLoginWaitingForDevice = "waiting_for_device"
+	// DeviceLoginWaitingForApproval 表示申请设备已可见，等待当前 Web 账号明确批准。
+	DeviceLoginWaitingForApproval = "waiting_for_approval"
 )
 
 // BrowserConfig 配置由 Control Plane 直接提供的同源浏览器 API。
@@ -38,8 +42,18 @@ type BrowserConfig struct {
 
 // DeviceLoginRequest 是浏览器可见的设备码投影；它不包含 flow ID、edge token 或客户端私钥。
 type DeviceLoginRequest struct {
-	UserCode  string    `json:"user_code"`
-	ExpiresAt time.Time `json:"expires_at"`
+	UserCode       string    `json:"user_code"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	State          string    `json:"state"`
+	ClientLabel    string    `json:"client_label,omitempty"`
+	ClientPlatform string    `json:"client_platform,omitempty"`
+}
+
+// MobileActivation 是已登录 Web 创建的一次性 App 激活投影。
+// QRPayload 只包含短期 locator，不包含 flow ID、edge token 或浏览器 Session。
+type MobileActivation struct {
+	DeviceLoginRequest
+	QRPayload string `json:"qr_payload"`
 }
 
 // EnrollmentCode 是账号创建的短期 daemon 注册凭据；Code 只在创建响应中返回一次。
@@ -51,9 +65,11 @@ type EnrollmentCode struct {
 // DeviceAccessService 是 Web 账号 Session 与 Control Plane 设备授权状态机之间的唯一写边界。
 // 实现负责过期、重放和账号归属校验；Hub 只消费其后发布的签名授权投影。
 type DeviceAccessService interface {
-	InspectDeviceLogin(userCode string) (DeviceLoginRequest, error)
+	InspectDeviceLogin(userCode, accountID string) (DeviceLoginRequest, error)
 	ApproveDeviceLogin(userCode, accountID string) error
+	CreateMobileActivation(accountID, userID string) (MobileActivation, error)
 	CreateEnrollmentCode(accountID, userID string) (EnrollmentCode, error)
+	RevokeCloudDevice(accountID, deviceID string) (ManagedNode, error)
 }
 
 // BrowserHandler 返回 `/api/*` 浏览器 surface；它直接拥有 Cookie、Origin 和 CSRF 校验，
@@ -161,12 +177,24 @@ func BrowserHandler(config BrowserConfig) (http.Handler, error) {
 			writeCommerceJSON(w, http.StatusNotFound, nil, ErrUserCenterNotFound)
 			return
 		}
-		if _, err := browserSession(r, config.Commerce); err != nil {
+		session, err := browserSession(r, config.Commerce)
+		if err != nil {
 			writeCommerceJSON(w, http.StatusUnauthorized, nil, err)
 			return
 		}
-		flow, err := config.DeviceAccess.InspectDeviceLogin(r.URL.Query().Get("code"))
+		flow, err := config.DeviceAccess.InspectDeviceLogin(r.URL.Query().Get("code"), session.AccountID)
 		writeCommerceJSON(w, http.StatusOK, flow, err)
+	})
+	mux.HandleFunc("POST /api/mobile-activations", func(w http.ResponseWriter, r *http.Request) {
+		session, err := authorizedMutation(r, config.Commerce)
+		if err == nil && config.DeviceAccess == nil {
+			err = ErrUserCenterNotFound
+		}
+		var activation MobileActivation
+		if err == nil {
+			activation, err = config.DeviceAccess.CreateMobileActivation(session.AccountID, session.UserID)
+		}
+		writeCommerceJSON(w, http.StatusCreated, activation, err)
 	})
 	mux.HandleFunc("POST /api/device-login/approve", func(w http.ResponseWriter, r *http.Request) {
 		session, err := authorizedMutation(r, config.Commerce)
@@ -246,8 +274,11 @@ func BrowserHandler(config BrowserConfig) (http.Handler, error) {
 			err = decodeCommerceJSON(r, &input)
 		}
 		var node ManagedNode
+		if err == nil && config.DeviceAccess == nil {
+			err = ErrUserCenterNotFound
+		}
 		if err == nil {
-			node, err = config.UserCenter.RevokeNode(session.AccountID, input.NodeID)
+			node, err = config.DeviceAccess.RevokeCloudDevice(session.AccountID, input.NodeID)
 		}
 		writeCommerceJSON(w, http.StatusOK, node, err)
 	})

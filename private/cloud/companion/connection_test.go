@@ -133,6 +133,10 @@ func (hub *fakeHub) ResolveEndpoint(_ context.Context, _ session.Authorization, 
 	return hub.resolveResponse, hub.resolveErr
 }
 
+func (hub *fakeHub) ListManagedDevices(_ context.Context, _ session.Authorization, _ *cloudpb.ListManagedDevicesRequest) (*cloudpb.ListManagedDevicesResponse, error) {
+	return &cloudpb.ListManagedDevicesResponse{}, nil
+}
+
 func (hub *fakeHub) AcquireRelayLease(_ context.Context, _ session.Authorization, _ *cloudpb.AcquireRelayLeaseRequest) (*cloudpb.RelayLease, error) {
 	return hub.leaseResponse, nil
 }

@@ -238,6 +238,9 @@ func (connection *serverConnection) dispatch(ctx context.Context, request *cloud
 	case *cloudpb.IPCRequest_ResolveEndpoint:
 		response, err := connection.client.ResolveEndpoint(ctx, operation.ResolveEndpoint)
 		return &cloudpb.IPCResponse{Result: &cloudpb.IPCResponse_ResolvedEndpoint{ResolvedEndpoint: response}}, nil, err
+	case *cloudpb.IPCRequest_ListManagedDevices:
+		response, err := connection.client.ListManagedDevices(ctx, operation.ListManagedDevices)
+		return &cloudpb.IPCResponse{Result: &cloudpb.IPCResponse_ManagedDevices{ManagedDevices: response}}, nil, err
 	case *cloudpb.IPCRequest_BeginPresence:
 		response, err := connection.client.BeginPresence(ctx, operation.BeginPresence)
 		return &cloudpb.IPCResponse{Result: &cloudpb.IPCResponse_PresenceChallenge{PresenceChallenge: response}}, nil, err

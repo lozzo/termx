@@ -106,6 +106,15 @@ func (adapter *Adapter) ResolveEndpoint(ctx context.Context, authorization sessi
 	return response, nil
 }
 
+// ListManagedDevices 使用启动阶段 edge credential 从 Hub 内存投影读取账号设备。
+func (adapter *Adapter) ListManagedDevices(ctx context.Context, authorization session.Authorization, request *cloudpb.ListManagedDevicesRequest) (*cloudpb.ListManagedDevicesResponse, error) {
+	response := &cloudpb.ListManagedDevicesResponse{}
+	if err := adapter.postEdgeHubProto(ctx, HubListManagedDevicesPath, authorization, request, response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 // BeginPresence 通过 device cloud session 获取 fresh PresenceSession challenge。
 func (adapter *Adapter) BeginPresence(ctx context.Context, authorization session.Authorization, request *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
 	response := &cloudpb.PresenceChallenge{}

@@ -3,6 +3,7 @@ package com.termx.cloud
 import com.termx.app.managed.ManagedEndpointContract
 import com.termx.app.managed.ManagedEndpointFailure
 import com.termx.app.managed.ManagedEndpointSpec
+import com.termx.app.managed.ManagedCloudClientMetadata
 import com.termx.app.managed.ManagedSignalOffer
 import com.termx.app.managed.RelayMode
 import kotlinx.coroutines.runBlocking
@@ -65,6 +66,8 @@ class DevCloudMobileGatewayTest {
                 "/v1/login/begin" -> {
                     val parsed = CloudCompanion.BeginLoginRequest.parseFrom(request.body)
                     assertEquals(CloudCompanion.LoginMethod.LOGIN_METHOD_DEVICE_CODE, parsed.method)
+                    assertEquals("Huawei test phone", parsed.clientMetadata.displayName)
+                    assertEquals("android", parsed.clientMetadata.platform)
                     protoResponse(
                         CloudCompanion.LoginFlow.newBuilder()
                             .setFlowId("flow-1")
@@ -97,7 +100,7 @@ class DevCloudMobileGatewayTest {
         try {
             val sessionStore = MemoryCloudSessionStore()
             val gateway = DevCloudMobileGateway(control.origin, hub.origin, now = { now }, sessionStore = sessionStore)
-            val loginFlow = gateway.beginLogin()
+            val loginFlow = gateway.beginLogin(ManagedCloudClientMetadata("Huawei test phone", "android", "test"))
             assertEquals("TERM-X", loginFlow.userCode)
             assertEquals("account-1", gateway.completeLogin(loginFlow.flowId).accountId)
             val spec = ManagedEndpointSpec(
@@ -137,6 +140,51 @@ class DevCloudMobileGatewayTest {
     }
 
     @Test
+    fun claimsWebActivationAndKeepsFlowCredentialInsideGateway() = runBlocking {
+        val accessToken = ByteArray(32) { 0x45 }
+        val control = TestHttpServer { request ->
+            when (request.path) {
+                "/v1/login/mobile/claim" -> {
+                    val claim = CloudCompanion.ClaimMobileActivationRequest.parseFrom(request.body)
+                    assertEquals("ABCDE-FGHJK", claim.userCode)
+                    assertEquals("Huawei JAD-AL00", claim.clientMetadata.displayName)
+                    protoResponse(CloudCompanion.LoginFlow.newBuilder()
+                        .setFlowId("private-native-flow")
+                        .setVerificationUri("http://127.0.0.1/device?code=ABCDE-FGHJK")
+                        .setUserCode("ABCDE-FGHJK")
+                        .setExpiresAtUnix(now.plusSeconds(60).epochSecond)
+                        .setPollIntervalMillis(1000)
+                        .build().toByteArray())
+                }
+                "/v1/login/complete" -> {
+                    assertEquals("private-native-flow", CloudCompanion.CompleteLoginRequest.parseFrom(request.body).flowId)
+                    jsonResponse(JSONObject()
+                        .put("kind", "account")
+                        .put("account_id", "account-mobile")
+                        .put("account_label", "Mobile owner")
+                        .put("device_id", "android-mobile")
+                        .put("expires_at_unix", now.plusSeconds(3600).epochSecond)
+                        .put("hub_id", "hub-dev-1")
+                        .put("hub_url", "http://127.0.0.1:41002")
+                        .put("hub_region", "local-1")
+                        .put("hub_directory_version", 1)
+                        .put("access_token", Base64.getEncoder().encodeToString(accessToken)))
+                }
+                else -> throw AssertionError("unexpected Control Plane path ${request.path}")
+            }
+        }
+        try {
+            val gateway = DevCloudMobileGateway(control.origin, control.origin, now = { now })
+            val flow = gateway.claimLogin("abcde-fghjk", ManagedCloudClientMetadata("Huawei JAD-AL00", "android", "test"))
+            assertEquals("ABCDE-FGHJK", flow.userCode)
+            assertEquals("account-mobile", gateway.completeLogin(flow.flowId).accountId)
+            control.assertHealthy()
+        } finally {
+            control.close()
+        }
+    }
+
+    @Test
     fun rejectsNonLoopbackOrProductionLikeDevOrigins() {
         val failure = assertThrows(ManagedEndpointFailure::class.java) {
             DevCloudMobileGateway("https://cloud.termx.example", "http://127.0.0.1:41002", now = { now })
@@ -156,6 +204,24 @@ class DevCloudMobileGatewayTest {
             DevCloudMobileGateway("http://114.66.58.243:41101", "http://114.66.58.243:41102", now = { now })
         }
         assertEquals("protocol", failure.code)
+    }
+
+    @Test
+    fun reportsDeviceNetworkFailureAsRouteUnavailable() {
+        val gateway = DevCloudMobileGateway(
+            "http://127.0.0.1:1",
+            "http://127.0.0.1:1",
+            now = { now },
+        )
+
+        val failure = assertThrows(ManagedEndpointFailure::class.java) {
+            kotlinx.coroutines.runBlocking {
+                gateway.claimLogin("ABCDE-FGHJK", ManagedCloudClientMetadata("Test phone", "android", "test"))
+            }
+        }
+
+        assertEquals("route_unavailable", failure.code)
+        assertTrue(failure.message.orEmpty().contains("unreachable"))
     }
 
     @Test

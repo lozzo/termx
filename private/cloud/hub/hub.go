@@ -376,6 +376,26 @@ func (service *Service) HasPresence(deviceID string) bool {
 	return presence != nil && !presence.closed && now.Before(presence.expiresAt)
 }
 
+// RevokeDevice 关闭指定 client/daemon 的 Hub 短期状态。
+// 调用方必须先应用 Control Plane 签名撤销投影；该方法不接收账号请求，也不修改 CapabilityGrant。
+func (service *Service) RevokeDevice(deviceID string) {
+	if service == nil || deviceID == "" {
+		return
+	}
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if presence := service.presences[deviceID]; presence != nil {
+		service.closePresenceLocked(presence)
+		delete(service.presences, deviceID)
+	}
+	for sessionID, state := range service.sessions {
+		if state.clientDeviceID == deviceID || state.targetDeviceID == deviceID {
+			service.closeSessionLocked(state, "device revoked")
+			delete(service.sessions, sessionID)
+		}
+	}
+}
+
 func (service *Service) validateOffer(request CreateSessionRequest) error {
 	if request.AccountID == "" || request.ClientDeviceID == "" || request.TargetDeviceID == "" || request.ClientDeviceID == request.TargetDeviceID || request.ManagedSessionID == "" || request.SignalingSessionID == "" || request.SDP == "" || len(request.SDP) > service.maxSDPBytes || len(request.Candidates) > service.maxCandidates || !validCandidates(request.Candidates) || !validRoutePreference(request.RoutePreference) || request.RelayOnly && request.RoutePreference == RoutePreferenceDirectOnly {
 		return ErrInvalidSignal

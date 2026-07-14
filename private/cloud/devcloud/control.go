@@ -3,6 +3,7 @@ package devcloud
 import (
 	"crypto/ed25519"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice"
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	"github.com/lozzow/termx/private/cloud/companion/session"
+	"github.com/lozzow/termx/private/cloud/control-plane/directory"
 	"github.com/lozzow/termx/private/cloud/control-plane/domain"
 	"github.com/lozzow/termx/private/cloud/control-plane/presence"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
@@ -31,6 +33,7 @@ func (state *serviceState) controlHandler() http.Handler {
 	mux.HandleFunc(httpapi.ControlHealthPath, state.handleControlHealth)
 	mux.HandleFunc(httpapi.ControlBeginLoginPath, state.handleBeginLogin)
 	mux.HandleFunc(httpapi.ControlCompleteLoginPath, state.handleCompleteLogin)
+	mux.HandleFunc(httpapi.ControlClaimMobileActivationPath, state.handleClaimMobileActivation)
 	mux.HandleFunc(httpapi.ControlBeginEnrollmentPath, state.handleBeginEnrollment)
 	mux.HandleFunc(httpapi.ControlCompleteEnrollmentPath, state.handleCompleteEnrollment)
 	mux.HandleFunc(httpapi.ControlBeginPresencePath, state.handleBeginPresence)
@@ -47,7 +50,7 @@ func (publisher webEntitlementPublisher) Activate(accountID, planID, orderID str
 }
 
 // InspectDeviceLogin 实现浏览器对设备码的只读确认；flow ID 与客户端凭据不会进入 Web surface。
-func (state *serviceState) InspectDeviceLogin(userCode string) (webcontroller.DeviceLoginRequest, error) {
+func (state *serviceState) InspectDeviceLogin(userCode, accountID string) (webcontroller.DeviceLoginRequest, error) {
 	now := state.now().UTC()
 	code := strings.ToUpper(strings.TrimSpace(userCode))
 	state.mu.Lock()
@@ -55,10 +58,18 @@ func (state *serviceState) InspectDeviceLogin(userCode string) (webcontroller.De
 	state.cleanupLocked(now)
 	flowID, ok := state.loginCodes[code]
 	flow, exists := state.loginFlows[flowID]
-	if !ok || !exists || flow.accountID != "" || !now.Before(flow.expiresAt) {
+	if !ok || !exists || flow.accountID != "" || !now.Before(flow.expiresAt) || flow.ownerAccountID != "" && flow.ownerAccountID != accountID {
 		return webcontroller.DeviceLoginRequest{}, webcontroller.ErrUserCenterNotFound
 	}
-	return webcontroller.DeviceLoginRequest{UserCode: flow.userCode, ExpiresAt: flow.expiresAt}, nil
+	request := webcontroller.DeviceLoginRequest{UserCode: flow.userCode, ExpiresAt: flow.expiresAt, State: webcontroller.DeviceLoginWaitingForDevice}
+	if flow.claimed {
+		request.State = webcontroller.DeviceLoginWaitingForApproval
+		if flow.clientMetadata != nil {
+			request.ClientLabel = flow.clientMetadata.GetDisplayName()
+			request.ClientPlatform = flow.clientMetadata.GetPlatform()
+		}
+	}
+	return request, nil
 }
 
 // ApproveDeviceLogin 把已认证浏览器账号绑定到一个待处理设备码，并发布账号授权投影。
@@ -70,6 +81,9 @@ func (state *serviceState) ApproveDeviceLogin(userCode, accountID string) error 
 	if err != nil {
 		return err
 	}
+	if err := state.ensureDirectoryAccount(profile); err != nil {
+		return err
+	}
 	now := state.now().UTC()
 	code := strings.ToUpper(strings.TrimSpace(userCode))
 	state.mu.Lock()
@@ -77,13 +91,14 @@ func (state *serviceState) ApproveDeviceLogin(userCode, accountID string) error 
 	state.cleanupLocked(now)
 	flowID, ok := state.loginCodes[code]
 	flow, exists := state.loginFlows[flowID]
-	if !ok || !exists || flow.accountID != "" || !now.Before(flow.expiresAt) {
+	if !ok || !exists || !flow.claimed || flow.accountID != "" || !now.Before(flow.expiresAt) || flow.ownerAccountID != "" && flow.ownerAccountID != profile.AccountID {
 		return webcontroller.ErrUserCenterNotFound
 	}
 	oldRevision := state.edgeRevision
 	_, accountExisted := state.webAccounts[profile.AccountID]
 	flow.accountID = profile.AccountID
 	flow.accountLabel = profile.DisplayName
+	flow.ownerUserID = profile.UserID
 	state.loginFlows[flowID] = flow
 	state.webAccounts[profile.AccountID] = struct{}{}
 	state.edgeRevision++
@@ -97,6 +112,40 @@ func (state *serviceState) ApproveDeviceLogin(userCode, accountID string) error 
 		return err
 	}
 	return nil
+}
+
+// CreateMobileActivation 为已认证 Web 账号创建等待 Official App 认领的一次性 Flow。
+// 浏览器只得到短码 locator；128-bit flow ID 保留在 Control Plane，直到原生客户端认领。
+func (state *serviceState) CreateMobileActivation(accountID, userID string) (webcontroller.MobileActivation, error) {
+	if state.webCenter == nil {
+		return webcontroller.MobileActivation{}, webcontroller.ErrUserCenterNotFound
+	}
+	profile, err := state.webCenter.Profile(accountID)
+	if err != nil || profile.UserID != userID {
+		return webcontroller.MobileActivation{}, webcontroller.ErrUserCenterNotFound
+	}
+	flowID, err := state.randomID("login")
+	if err != nil {
+		return webcontroller.MobileActivation{}, err
+	}
+	now := state.now().UTC()
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.cleanupLocked(now)
+	userCode, err := state.newLoginCodeLocked()
+	if err != nil {
+		return webcontroller.MobileActivation{}, err
+	}
+	expiresAt := now.Add(loginTTL)
+	state.loginFlows[flowID] = loginFlow{
+		userCode: userCode, ownerAccountID: profile.AccountID, ownerUserID: profile.UserID,
+		expiresAt: expiresAt,
+	}
+	state.loginCodes[userCode] = flowID
+	return webcontroller.MobileActivation{
+		DeviceLoginRequest: webcontroller.DeviceLoginRequest{UserCode: userCode, ExpiresAt: expiresAt, State: webcontroller.DeviceLoginWaitingForDevice},
+		QRPayload:          "termx-cloud-activate:v1:" + userCode,
+	}, nil
 }
 
 // CreateEnrollmentCode 为当前浏览器账号创建单次、短期 daemon enrollment claim。
@@ -122,6 +171,41 @@ func (state *serviceState) CreateEnrollmentCode(accountID, userID string) (webco
 	state.enrollmentClaims[code] = enrollmentClaim{accountID: accountID, userID: userID, expiresAt: expiresAt}
 	state.mu.Unlock()
 	return webcontroller.EnrollmentCode{Code: code, ExpiresAt: expiresAt}, nil
+}
+
+// RevokeCloudDevice 撤销 client 或 daemon 的云服务访问并原子发布 Hub 授权快照。
+// 该操作关闭 Hub presence/signaling，但不伪造删除 daemon-owned CapabilityGrant。
+func (state *serviceState) RevokeCloudDevice(accountID, deviceID string) (webcontroller.ManagedNode, error) {
+	if state.webCenter == nil {
+		return webcontroller.ManagedNode{}, webcontroller.ErrUserCenterNotFound
+	}
+	now := state.now().UTC()
+	state.mu.Lock()
+	device, ok := state.edgeDevices[deviceID]
+	if ok && device.AccountID != accountID {
+		state.mu.Unlock()
+		return webcontroller.ManagedNode{}, webcontroller.ErrUserCenterNotFound
+	}
+	if !ok || device.Revoked {
+		state.mu.Unlock()
+		// staging 重启后 edge 内存投影会丢失；SQLite ownership 仍允许用户清理已无访问权的历史记录。
+		return state.webCenter.RevokeNode(accountID, deviceID)
+	}
+	device.Revoked = true
+	state.edgeDevices[deviceID] = device
+	state.edgeRevision++
+	for digest, cloudSession := range state.sessions {
+		if cloudSession.deviceID == deviceID {
+			delete(state.sessions, digest)
+		}
+	}
+	err := state.publishEdgeSnapshot(now)
+	state.mu.Unlock()
+	if err != nil {
+		return webcontroller.ManagedNode{}, err
+	}
+	state.hub.RevokeDevice(deviceID)
+	return state.webCenter.RevokeNode(accountID, deviceID)
 }
 
 func (state *serviceState) ensureDirectoryAccount(profile webcontroller.UserProfile) error {
@@ -157,6 +241,10 @@ func (state *serviceState) initializeWeb(config Config) error {
 	}
 	center, err := webcontroller.OpenUserCenterStore(config.WebAccountDBPath, state.now)
 	if err != nil {
+		return err
+	}
+	if err := center.MarkDaemonNodesOffline(); err != nil {
+		_ = center.Close()
 		return err
 	}
 	commerce, err := webcontroller.NewCommerceService([]byte("termx-staging-payment-secret-v1-32-bytes"), webEntitlementPublisher{state}, state.now)
@@ -262,25 +350,31 @@ func (state *serviceState) handleBeginLogin(writer http.ResponseWriter, request 
 		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "dev login could not start", true)
 		return
 	}
-	userCodeID, err := state.randomID("code")
-	if err != nil {
-		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "dev login could not start", true)
-		return
-	}
 	now := state.now().UTC()
 	expiresAt := now.Add(loginTTL)
-	userCode := strings.ToUpper(userCodeID[len(userCodeID)-8:])
 	clientDeviceID, err := state.randomID("client")
 	if err != nil {
 		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "dev login could not start", true)
 		return
 	}
-	flow := loginFlow{userCode: userCode, clientDeviceID: clientDeviceID, expiresAt: expiresAt}
+	metadata := payload.GetClientMetadata()
+	if metadata != nil && !validLoginClientMetadata(metadata) {
+		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "dev login client metadata is invalid", false)
+		return
+	}
+	flow := loginFlow{clientDeviceID: clientDeviceID, clientMetadata: cloneDeviceMetadata(metadata), expiresAt: expiresAt, claimed: true}
 	if state.webCenter == nil {
-		flow.accountID, flow.accountLabel, flow.clientDeviceID = devAccountID, devAccountLabel, devClientDeviceID
+		flow.accountID, flow.accountLabel, flow.clientDeviceID, flow.ownerUserID = devAccountID, devAccountLabel, devClientDeviceID, devUserID
 	}
 	state.mu.Lock()
 	state.cleanupLocked(now)
+	userCode, err := state.newLoginCodeLocked()
+	if err != nil {
+		state.mu.Unlock()
+		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "dev login could not start", true)
+		return
+	}
+	flow.userCode = userCode
 	state.loginFlows[flowID] = flow
 	state.loginCodes[userCode] = flowID
 	state.mu.Unlock()
@@ -288,6 +382,66 @@ func (state *serviceState) handleBeginLogin(writer http.ResponseWriter, request 
 		FlowId: flowID, VerificationUri: state.webPublicURL + "/device?code=" + url.QueryEscape(userCode),
 		UserCode: userCode, ExpiresAtUnix: uint64(expiresAt.Unix()), PollIntervalMillis: 1000,
 	})
+}
+
+func (state *serviceState) handleClaimMobileActivation(writer http.ResponseWriter, request *http.Request) {
+	if !requireMethod(writer, request, http.MethodPost) || !requireNoAuthorization(writer, request) {
+		return
+	}
+	payload := &cloudpb.ClaimMobileActivationRequest{}
+	if !readProto(writer, request, payload) {
+		return
+	}
+	code := strings.ToUpper(strings.TrimSpace(payload.GetUserCode()))
+	metadata := payload.GetClientMetadata()
+	if code == "" || !validLoginClientMetadata(metadata) {
+		writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "mobile activation claim is invalid", false)
+		return
+	}
+	now := state.now().UTC()
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.cleanupLocked(now)
+	flowID, ok := state.loginCodes[code]
+	flow, exists := state.loginFlows[flowID]
+	if !ok || !exists || flow.ownerAccountID == "" || flow.claimed || flow.accountID != "" || !now.Before(flow.expiresAt) {
+		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_LOGIN_REQUIRED, "mobile activation flow is unavailable", false)
+		return
+	}
+	clientDeviceID, err := state.randomID("client")
+	if err != nil {
+		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "mobile activation could not be claimed", true)
+		return
+	}
+	flow.clientDeviceID = clientDeviceID
+	flow.clientMetadata = cloneDeviceMetadata(metadata)
+	flow.claimed = true
+	state.loginFlows[flowID] = flow
+	writeProto(writer, http.StatusOK, &cloudpb.LoginFlow{
+		FlowId: flowID, VerificationUri: state.webPublicURL + "/device?code=" + url.QueryEscape(code),
+		UserCode: code, ExpiresAtUnix: uint64(flow.expiresAt.Unix()), PollIntervalMillis: 1000,
+	})
+}
+
+func validLoginClientMetadata(metadata *cloudpb.DeviceMetadata) bool {
+	if metadata == nil {
+		return false
+	}
+	displayName := strings.TrimSpace(metadata.GetDisplayName())
+	platform := strings.TrimSpace(metadata.GetPlatform())
+	termxVersion := strings.TrimSpace(metadata.GetTermxVersion())
+	return displayName != "" && len(displayName) <= 128 && platform != "" && len(platform) <= 32 && termxVersion != "" && len(termxVersion) <= 64
+}
+
+func cloneDeviceMetadata(metadata *cloudpb.DeviceMetadata) *cloudpb.DeviceMetadata {
+	if metadata == nil {
+		return nil
+	}
+	return &cloudpb.DeviceMetadata{
+		DisplayName:  strings.TrimSpace(metadata.GetDisplayName()),
+		Platform:     strings.TrimSpace(metadata.GetPlatform()),
+		TermxVersion: strings.TrimSpace(metadata.GetTermxVersion()),
+	}
 }
 
 func (state *serviceState) handleCompleteLogin(writer http.ResponseWriter, request *http.Request) {
@@ -318,6 +472,32 @@ func (state *serviceState) handleCompleteLogin(writer http.ResponseWriter, reque
 	if flow.accountID == "" {
 		writeCloudError(writer, http.StatusConflict, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "device login is waiting for browser approval", true)
 		return
+	}
+	clientLabel := deviceLabel(flow.clientMetadata, flow.clientDeviceID)
+	clientPlatform := "client"
+	if flow.clientMetadata != nil && strings.TrimSpace(flow.clientMetadata.GetPlatform()) != "" {
+		clientPlatform = strings.TrimSpace(flow.clientMetadata.GetPlatform())
+	}
+	if _, existingErr := state.directory.Device(flow.accountID, flow.clientDeviceID); existingErr != nil {
+		if err := state.directory.RegisterDevice(domain.DeviceRegistration{
+			ID: flow.clientDeviceID, AccountID: flow.accountID, OwnerUserID: flow.ownerUserID, Kind: domain.DeviceKindClient,
+			Label: clientLabel, RegisteredAt: now,
+		}); err != nil {
+			writeCloudError(writer, http.StatusConflict, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "dev client registration conflicted", false)
+			return
+		}
+	}
+	state.mu.Lock()
+	state.edgeRevision++
+	state.edgeDevices[flow.clientDeviceID] = cloudhub.DeviceAuthorization{DeviceID: flow.clientDeviceID, AccountID: flow.accountID, Kind: "client", DisplayName: clientLabel, Platform: clientPlatform}
+	edgeErr := state.publishEdgeSnapshot(now)
+	state.mu.Unlock()
+	if edgeErr != nil {
+		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "dev client authorization projection could not be published", true)
+		return
+	}
+	if state.webCenter != nil {
+		_ = state.webCenter.UpsertCloudDevice(flow.accountID, flow.clientDeviceID, clientLabel, "client", true)
 	}
 	cloudSession, token, err := state.issueSession(session.KindAccount, flow.accountID, flow.accountLabel, flow.clientDeviceID)
 	if err != nil {
@@ -432,17 +612,31 @@ func (state *serviceState) handleCompleteEnrollment(writer http.ResponseWriter, 
 		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED, "dev enrollment proof was rejected", false)
 		return
 	}
-	if err := state.directory.RegisterDevice(domain.DeviceRegistration{
+	registration := domain.DeviceRegistration{
 		ID: proof.GetDeviceId(), AccountID: flow.accountID, OwnerUserID: flow.userID, Kind: domain.DeviceKindDaemon,
 		Label: deviceLabel(flow.metadata, proof.GetDeviceId()), PublicKey: flow.publicKey,
 		Fingerprint: fingerprint(flow.publicKey), RegisteredAt: now,
-	}); err != nil {
-		writeCloudError(writer, http.StatusConflict, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "dev daemon registration conflicted", false)
+	}
+	existing, existingErr := state.directory.Device(flow.accountID, proof.GetDeviceId())
+	switch {
+	case existingErr == nil:
+		if existing.Kind != domain.DeviceKindDaemon || existing.RevokedAt != nil || subtle.ConstantTimeCompare(existing.PublicKey, flow.publicKey) != 1 {
+			writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED, "dev daemon ownership proof was rejected", false)
+			return
+		}
+		// 同账号、同 DeviceIdentity 的重复 enrollment 只刷新 device session 和 edge projection，不创建第二份设备真值。
+	case errors.Is(existingErr, directory.ErrNotFound):
+		if err := state.directory.RegisterDevice(registration); err != nil {
+			writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED, "dev daemon ownership proof was rejected", false)
+			return
+		}
+	default:
+		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED, "dev daemon ownership proof was rejected", false)
 		return
 	}
 	state.mu.Lock()
 	state.edgeRevision++
-	state.edgeDevices[proof.GetDeviceId()] = cloudhub.DeviceAuthorization{DeviceID: proof.GetDeviceId(), AccountID: flow.accountID, PublicKey: append([]byte(nil), flow.publicKey...)}
+	state.edgeDevices[proof.GetDeviceId()] = cloudhub.DeviceAuthorization{DeviceID: proof.GetDeviceId(), AccountID: flow.accountID, Kind: "daemon", DisplayName: deviceLabel(flow.metadata, proof.GetDeviceId()), Platform: flow.metadata.GetPlatform(), PublicKey: append([]byte(nil), flow.publicKey...)}
 	edgeErr := state.publishEdgeSnapshot(now)
 	state.mu.Unlock()
 	if edgeErr != nil {
@@ -450,7 +644,7 @@ func (state *serviceState) handleCompleteEnrollment(writer http.ResponseWriter, 
 		return
 	}
 	if state.webCenter != nil {
-		_ = state.webCenter.UpsertManagedNode(flow.accountID, proof.GetDeviceId(), deviceLabel(flow.metadata, proof.GetDeviceId()), true)
+		_ = state.webCenter.UpsertCloudDevice(flow.accountID, proof.GetDeviceId(), deviceLabel(flow.metadata, proof.GetDeviceId()), "daemon", false)
 	}
 	accountLabel := devAccountLabel
 	if state.webCenter != nil {

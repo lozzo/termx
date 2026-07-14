@@ -28,10 +28,13 @@ type EdgePolicyAccount struct {
 // EdgePolicyDevice 是签名 Hub 授权快照中的最小设备 ownership/public-key 投影。
 // PublicKey 只用于 DeviceIdentity proof；私钥和 CapabilityGrant 永不进入快照。
 type EdgePolicyDevice struct {
-	DeviceID  string `json:"device_id"`
-	AccountID string `json:"account_id"`
-	PublicKey []byte `json:"public_key,omitempty"`
-	Revoked   bool   `json:"revoked"`
+	DeviceID    string `json:"device_id"`
+	AccountID   string `json:"account_id"`
+	Kind        string `json:"kind"`
+	DisplayName string `json:"display_name"`
+	Platform    string `json:"platform,omitempty"`
+	PublicKey   []byte `json:"public_key,omitempty"`
+	Revoked     bool   `json:"revoked"`
 }
 
 // EdgePolicyClaims 是 Control Plane 签发、Hub 可持久化并在重启时重新验签的完整授权快照。
@@ -114,7 +117,7 @@ func validateEdgePolicyClaims(claims EdgePolicyClaims, issuer, hubID string, now
 	}
 	devices := make(map[string]struct{}, len(claims.Devices))
 	for _, device := range claims.Devices {
-		if device.DeviceID == "" || device.AccountID == "" {
+		if device.DeviceID == "" || device.AccountID == "" || device.DisplayName == "" || device.Kind != "client" && device.Kind != "daemon" {
 			return ErrMalformedCredential
 		}
 		if _, exists := accounts[device.AccountID]; !exists {

@@ -15,12 +15,21 @@ import (
 
 	"github.com/lozzow/termx/shared/connection"
 	"github.com/lozzow/termx/shared/remoteauth"
+	qrcode "github.com/skip2/go-qrcode"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 const maxPairingBundleBytes = 1 << 20
 
-var saveV3ConnectionRegistry = connection.Save
+var (
+	saveV3ConnectionRegistry = connection.Save
+	v3PairHostname           = os.Hostname
+	v3PairOutputIsTerminal   = func(output io.Writer) bool {
+		file, ok := output.(*os.File)
+		return ok && term.IsTerminal(int(file.Fd()))
+	}
+)
 
 func v3PairCommand() *cobra.Command {
 	command := &cobra.Command{Use: "pair", Short: "Create or import a direct daemon capability"}
@@ -78,6 +87,7 @@ func v3PairInspectCommand() *cobra.Command {
 
 func v3PairCreateCommand() *cobra.Command {
 	var outputPath string
+	var rawOutput bool
 	var label string
 	var terminalID string
 	var lifetime time.Duration
@@ -86,9 +96,18 @@ func v3PairCreateCommand() *cobra.Command {
 		Short: "Issue a pairing bundle from this daemon identity",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if rawOutput && strings.TrimSpace(outputPath) != "" {
+				return usageCLIError("pair create --raw and --out cannot be used together")
+			}
 			identity, err := remoteauth.LoadOrCreateLocalIdentity(v3RemoteIdentityDir())
 			if err != nil {
 				return err
+			}
+			label = strings.TrimSpace(label)
+			if label == "" {
+				if hostname, hostnameErr := v3PairHostname(); hostnameErr == nil {
+					label = strings.TrimSpace(hostname)
+				}
 			}
 			scope := remoteauth.FullDaemonScope()
 			if terminalID = strings.TrimSpace(terminalID); terminalID != "" {
@@ -108,9 +127,19 @@ func v3PairCreateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if strings.TrimSpace(outputPath) == "" {
+			_, claims, err := remoteauth.ParsePairingBundle(payload, time.Time{})
+			if err != nil {
+				return err
+			}
+			if rawOutput {
 				_, err = cmd.OutOrStdout().Write(payload)
 				return err
+			}
+			if strings.TrimSpace(outputPath) == "" {
+				if !v3PairOutputIsTerminal(cmd.OutOrStdout()) {
+					return usageCLIError("pair create requires an interactive terminal; use --raw for stdout or --out FILE")
+				}
+				return renderV3PairingQR(cmd.OutOrStdout(), payload, claims.ExpiresAt)
 			}
 			if err := writeV3PrivateFile(outputPath, payload); err != nil {
 				return err
@@ -120,10 +149,54 @@ func v3PairCreateCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&outputPath, "out", "", "write the bearer pairing bundle to an owner-only file")
-	command.Flags().StringVar(&label, "label", "", "client display label")
+	command.Flags().BoolVar(&rawOutput, "raw", false, "write the bearer pairing bundle to stdout for explicit scripting")
+	command.Flags().StringVar(&label, "label", "", "daemon display label (defaults to this host name)")
 	command.Flags().StringVar(&terminalID, "terminal", "", "limit the capability to one terminal instead of daemon-wide access")
 	command.Flags().DurationVar(&lifetime, "ttl", 24*time.Hour, "capability lifetime")
 	return command
+}
+
+// renderV3PairingQR 把 bearer bundle 只编码进高对比度终端二维码，不回显原始 grant。
+// 二维码等价于短期凭据；调用方应在可信终端展示并在扫描后清屏。
+func renderV3PairingQR(output io.Writer, payload []byte, expiresAt time.Time) error {
+	code, err := qrcode.New(string(payload), qrcode.Medium)
+	if err != nil {
+		return fmt.Errorf("encode pairing QR: %w", err)
+	}
+	bitmap := code.Bitmap()
+	if len(bitmap) == 0 {
+		return fmt.Errorf("encode pairing QR: empty bitmap")
+	}
+	if _, err = fmt.Fprintf(output, "Scan with the TermX App\nExpires: %s\n", formatTerminalTime(expiresAt)); err != nil {
+		return err
+	}
+	for row := 0; row < len(bitmap); row += 2 {
+		for column := range bitmap[row] {
+			top := bitmap[row][column]
+			bottom := false
+			if row+1 < len(bitmap) {
+				bottom = bitmap[row+1][column]
+			}
+			switch {
+			case top && bottom:
+				_, err = io.WriteString(output, "\x1b[40m  ")
+			case !top && !bottom:
+				_, err = io.WriteString(output, "\x1b[47m  ")
+			case top:
+				_, err = io.WriteString(output, "\x1b[30;47m▀▀")
+			default:
+				_, err = io.WriteString(output, "\x1b[30;47m▄▄")
+			}
+			if err != nil {
+				return err
+			}
+		}
+		if _, err = io.WriteString(output, "\x1b[0m\n"); err != nil {
+			return err
+		}
+	}
+	_, err = io.WriteString(output, "\x1b[0mThis QR grants daemon access. Clear the terminal after scanning.\n")
+	return err
 }
 
 func localPairTerminalID(target string) (string, error) {

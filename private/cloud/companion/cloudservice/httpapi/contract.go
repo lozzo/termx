@@ -51,6 +51,8 @@ const (
 	ControlBeginLoginPath = "/v1/login/begin"
 	// ControlCompleteLoginPath 是 dev account flow 兑换 endpoint。
 	ControlCompleteLoginPath = "/v1/login/complete"
+	// ControlClaimMobileActivationPath 让 Official App 认领 Web 创建的短期设备激活 Flow。
+	ControlClaimMobileActivationPath = "/v1/login/mobile/claim"
 	// ControlBeginEnrollmentPath 是 daemon enrollment challenge endpoint。
 	ControlBeginEnrollmentPath = "/v1/enrollment/begin"
 	// ControlCompleteEnrollmentPath 是 daemon enrollment proof endpoint。
@@ -72,6 +74,8 @@ const (
 	HubAcquireRelayLeasePath = "/v1/relay/leases/acquire"
 	// HubResolveEndpointPath 使用本地 policy/presence 解析 managed target。
 	HubResolveEndpointPath = "/v1/endpoints/resolve"
+	// HubListManagedDevicesPath 从签名内存投影列出当前账号设备，不查询 Control Plane。
+	HubListManagedDevicesPath = "/v1/devices/list"
 )
 
 // Manifest 是 development Cloud 的非生产运行描述。
