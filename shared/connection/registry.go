@@ -247,8 +247,8 @@ func (cfg Config) Validate() error {
 	}
 	switch cfg.Transport {
 	case TransportLocal:
-		if strings.TrimSpace(cfg.Address) != "" {
-			return fmt.Errorf("local connection %q must not set address", cfg.ID)
+		if strings.TrimSpace(cfg.Address) != "" || strings.TrimSpace(cfg.AuthRef) != "" || strings.TrimSpace(cfg.RemoteSocket) != "" {
+			return fmt.Errorf("local connection %q must not set SSH fields", cfg.ID)
 		}
 		if cfg.hasHubFields() {
 			return fmt.Errorf("local connection %q must not set hub fields", cfg.ID)
@@ -260,9 +260,12 @@ func (cfg Config) Validate() error {
 		if cfg.hasHubFields() {
 			return fmt.Errorf("ssh connection %q must not set hub fields", cfg.ID)
 		}
+		if strings.TrimSpace(cfg.Socket) != "" {
+			return fmt.Errorf("ssh connection %q must not set local socket", cfg.ID)
+		}
 	case TransportHubP2P:
-		if strings.TrimSpace(cfg.Address) != "" {
-			return fmt.Errorf("hub-p2p connection %q must not set address; target routing comes from Companion", cfg.ID)
+		if strings.TrimSpace(cfg.Address) != "" || strings.TrimSpace(cfg.AuthRef) != "" {
+			return fmt.Errorf("hub-p2p connection %q must not set SSH fields; target routing comes from Companion", cfg.ID)
 		}
 		if strings.TrimSpace(cfg.Socket) != "" || strings.TrimSpace(cfg.RemoteSocket) != "" {
 			return fmt.Errorf("hub-p2p connection %q must not set socket fields", cfg.ID)

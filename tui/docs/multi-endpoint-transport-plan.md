@@ -350,7 +350,7 @@ workbench snapshot 保存 endpoint-aware binding。旧 snapshot 默认迁移到 
 
 第一阶段采用 OpenSSH stdio proxy：
 
-- 本地 transport 启动 `ssh -T`，远端只执行 `termx --socket <remote_socket> v3 stdio-proxy`，双方用长度前缀 frame 承载现有 termx protocol payload。
+- 本地 transport 启动 `ssh -T`，远端只执行隐藏的 `termx --socket <remote_socket> daemon stdio-proxy`，双方用长度前缀 frame 承载现有 termx protocol payload；产品树不得为此恢复 `v3` namespace。
 - `auth_ref = ssh:<alias>` 表示使用本机 OpenSSH config 中的 host alias；为空时使用 `address` 作为 SSH target。私钥、agent、ProxyJump 和用户名都交给 OpenSSH 配置，不在 `connections.yaml` 内保存密钥路径或密码。
 - Host key 必须走 OpenSSH `known_hosts` 校验，默认 `StrictHostKeyChecking=yes` 和 `BatchMode=yes`；未知 host、host key 变化或认证失败都作为该 endpoint 的 transport 错误展示，不得自动改写 known_hosts。
 - `remote_socket: auto` 表示在远端进程内使用远端 termx 默认 socket 解析策略；显式路径只作为远端 daemon socket，不参与本地 socket 解析。

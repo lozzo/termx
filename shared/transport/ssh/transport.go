@@ -117,7 +117,7 @@ func BuildCommand(opts DialOptions) (string, []string, error) {
 		"-o", fmt.Sprintf("ConnectTimeout=%d", int(timeout.Round(time.Second).Seconds())),
 	}
 	args = append(args, opts.ExtraArgs...)
-	args = append(args, target, remoteCommand, "--socket", remoteSocket, "v3", "stdio-proxy")
+	args = append(args, target, remoteCommand, "--socket", remoteSocket, "daemon", "stdio-proxy")
 	return binaryName, args, nil
 }
 

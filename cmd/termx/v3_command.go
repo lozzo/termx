@@ -127,6 +127,7 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 	command.Args = cobra.NoArgs
 	command.PersistentFlags().BoolVar(&cloudEnabled, "cloud", false, "enable managed cloud presence for this daemon")
 	addDaemonLifecycleCommands(command, socket, logFile, configPath, &cloudEnabled, runDaemon)
+	command.AddCommand(v3StdioProxyCommand(socket, logFile, configPath))
 	return command
 }
 
@@ -135,6 +136,7 @@ func v3StdioProxyCommand(socket *string, logFile *string, configPath *string) *c
 		Use:    "stdio-proxy",
 		Hidden: true,
 		Short:  "Bridge stdin/stdout to the core-v2 daemon socket for SSH transport",
+		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logger, closeLogger, logPath, err := openLogFileLogger(*logFile)
 			if err != nil {

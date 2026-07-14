@@ -198,6 +198,19 @@ connections:
 	}
 }
 
+func TestConfigRejectsFieldsOwnedByAnotherTransport(t *testing.T) {
+	cases := []Config{
+		{ID: "local", Transport: TransportLocal, ConnectMode: ConnectAuto, Enabled: true, Socket: "auto", AuthRef: "ssh:lab"},
+		{ID: "ssh", Transport: TransportSSH, ConnectMode: ConnectOnDemand, Enabled: true, Address: "lab.example", RemoteSocket: "auto", Socket: "/tmp/local.sock"},
+		{ID: "cloud", Transport: TransportHubP2P, ConnectMode: ConnectOnDemand, Enabled: true, AuthRef: "ssh:lab", HubDeviceID: "device", DeviceFingerprint: "SHA256:device", GrantRef: "grant:device", RelayMode: RelayDirect},
+	}
+	for _, cfg := range cases {
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("cross-transport fields accepted for %#v", cfg)
+		}
+	}
+}
+
 func TestConfigRuntimeChangeClassification(t *testing.T) {
 	old := Config{
 		ID:           "lab",

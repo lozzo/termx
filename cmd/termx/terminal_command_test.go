@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/shared/connection"
 )
 
 func TestProductCommandTreeExposesTerminalAndRejectsV3(t *testing.T) {
@@ -75,11 +76,26 @@ func TestCLIExitCodeUsesTypedProtocolErrors(t *testing.T) {
 	}
 }
 
-func TestLocalTerminalTargetRejectsOtherEndpointsUntilCLI004(t *testing.T) {
-	if _, err := localTerminalID("cloud-sg:demo"); cliExitCode(err) != 2 {
-		t.Fatalf("foreign endpoint error = %v, exit=%d", err, cliExitCode(err))
+func TestResolveTerminalRefUsesOwningEndpoint(t *testing.T) {
+	registry := connection.Registry{
+		Version: 1,
+		Default: "west",
+		Connections: map[connection.EndpointID]connection.Config{
+			"local": {ID: "local", Transport: connection.TransportLocal, Enabled: true},
+			"west":  {ID: "west", Transport: connection.TransportSSH, Address: "west.example", Enabled: true},
+			"off":   {ID: "off", Transport: connection.TransportLocal, Enabled: false},
+		},
 	}
-	if id, err := localTerminalID("local:demo"); err != nil || id != "demo" {
-		t.Fatalf("local target = (%q, %v)", id, err)
+	if ref, err := resolveTerminalRef("demo", "", registry); err != nil || ref.String() != "west:demo" {
+		t.Fatalf("default target = (%q, %v)", ref.String(), err)
+	}
+	if ref, err := resolveTerminalRef("local:demo", "", registry); err != nil || ref.String() != "local:demo" {
+		t.Fatalf("explicit target = (%q, %v)", ref.String(), err)
+	}
+	if _, err := resolveTerminalRef("local:demo", "west", registry); cliExitCode(err) != 2 {
+		t.Fatalf("conflicting endpoint error = %v, exit=%d", err, cliExitCode(err))
+	}
+	if _, err := resolveTerminalRef("off:demo", "", registry); cliExitCode(err) != 4 {
+		t.Fatalf("disabled endpoint error = %v, exit=%d", err, cliExitCode(err))
 	}
 }

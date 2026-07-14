@@ -6,16 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/shared/connection"
 	"github.com/spf13/cobra"
 )
-
-const localEndpointID = "local"
 
 type terminalProtocolClient interface {
 	Create(context.Context, protocol.CreateParams) (*protocol.CreateResult, error)
@@ -25,6 +23,7 @@ type terminalProtocolClient interface {
 	Remove(context.Context, string) error
 	SetTags(context.Context, string, map[string]string) error
 	SetMetadata(context.Context, string, string, map[string]string) error
+	PathDefaults(context.Context) (*protocol.PathDefaultsResult, error)
 	Close() error
 }
 
@@ -32,6 +31,7 @@ type terminalCommandRuntime struct {
 	socket     *string
 	logFile    *string
 	configPath *string
+	endpointID *string
 }
 
 type terminalView struct {
@@ -85,11 +85,14 @@ func (err *cliError) Error() string {
 func (err *cliError) Unwrap() error { return err.cause }
 
 func newTerminalCommand(runtime terminalCommandRuntime) *cobra.Command {
+	endpointID := ""
+	runtime.endpointID = &endpointID
 	command := &cobra.Command{
 		Use:   "terminal",
 		Short: "Manage terminals owned by a daemon endpoint",
-		Long:  "Manage terminal lifecycle through the owning daemon. Local is the only endpoint supported until CLI004.",
+		Long:  "Manage terminal lifecycle through its owning local, SSH, or managed Cloud daemon endpoint.",
 	}
+	command.PersistentFlags().StringVar(runtime.endpointID, "endpoint", "", "owning endpoint ID (default: registry default)")
 	command.AddCommand(
 		newTerminalCreateCommand(runtime, "create"),
 		newTerminalListCommand(runtime, "list"),
@@ -105,31 +108,42 @@ func newTerminalCommand(runtime terminalCommandRuntime) *cobra.Command {
 }
 
 func newTerminalAliasCommands(runtime terminalCommandRuntime) []*cobra.Command {
+	wrap := func(build func(terminalCommandRuntime) *cobra.Command) *cobra.Command {
+		copyRuntime := runtime
+		endpointID := ""
+		copyRuntime.endpointID = &endpointID
+		command := build(copyRuntime)
+		command.Flags().StringVar(copyRuntime.endpointID, "endpoint", "", "owning endpoint ID (default: registry default)")
+		return command
+	}
 	return []*cobra.Command{
-		newTerminalCreateCommand(runtime, "new"),
-		newTerminalListCommand(runtime, "ls"),
-		newTerminalAttachCommand(runtime, "attach"),
-		newTerminalMutationCommand(runtime, "kill", "Stop a terminal process and preserve its record and history", terminalKill),
-		newTerminalMutationCommand(runtime, "rm", "Remove an exited terminal record", terminalRemove),
+		wrap(func(value terminalCommandRuntime) *cobra.Command { return newTerminalCreateCommand(value, "new") }),
+		wrap(func(value terminalCommandRuntime) *cobra.Command { return newTerminalListCommand(value, "ls") }),
+		wrap(func(value terminalCommandRuntime) *cobra.Command { return newTerminalAttachCommand(value, "attach") }),
+		wrap(func(value terminalCommandRuntime) *cobra.Command {
+			return newTerminalMutationCommand(value, "kill", "Stop a terminal process and preserve its record and history", terminalKill)
+		}),
+		wrap(func(value terminalCommandRuntime) *cobra.Command {
+			return newTerminalMutationCommand(value, "rm", "Remove an exited terminal record", terminalRemove)
+		}),
 	}
 }
 
-func (runtime terminalCommandRuntime) open(cmd *cobra.Command) (terminalProtocolClient, func(), error) {
-	// CLI002 只解析 local target；terminal lifecycle 与 metadata truth 始终来自这个 daemon client。
-	logger, closeLogger, logPath, err := openLogFileLogger(*runtime.logFile)
-	if err != nil {
-		return nil, func() {}, err
+func (runtime terminalCommandRuntime) requestedEndpoint() string {
+	if runtime.endpointID == nil {
+		return ""
 	}
-	client, err := dialOrStartV3Client(resolveV3Socket(*runtime.socket), logPath, logger)
+	return *runtime.endpointID
+}
+
+func (runtime terminalCommandRuntime) open(cmd *cobra.Command, cfg connection.Config) (terminalProtocolClient, func(), error) {
+	// terminal lifecycle 与 metadata truth 始终来自 owning endpoint 的 daemon client。
+	client, closeClient, err := openEndpointProtocolClient(cmd.Context(), cfg, *runtime.socket, *runtime.logFile)
 	if err != nil {
-		closeLogger()
 		return nil, func() {}, classifyCLIError(err)
 	}
 	cmd.Root().SilenceUsage = true
-	return client, func() {
-		_ = client.Close()
-		closeLogger()
-	}, nil
+	return client, closeClient, nil
 }
 
 func newTerminalCreateCommand(runtime terminalCommandRuntime, use string) *cobra.Command {
@@ -140,24 +154,38 @@ func newTerminalCreateCommand(runtime terminalCommandRuntime, use string) *cobra
 	var jsonOutput, attach bool
 	command := &cobra.Command{
 		Use:   use + " [-- COMMAND...]",
-		Short: "Create a terminal on the local daemon",
+		Short: "Create a terminal on an owning daemon endpoint",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if (cols == 0) != (rows == 0) {
 				return usageCLIError("--cols and --rows must be provided together")
 			}
-			if len(args) == 0 {
-				shell := strings.TrimSpace(os.Getenv("SHELL"))
-				if shell == "" {
-					shell = "/bin/sh"
-				}
-				args = []string{shell}
+			registry, err := loadNormalizedConnectionRegistry()
+			if err != nil {
+				return err
 			}
-			client, closeClient, err := runtime.open(cmd)
+			endpoint, err := resolveEndpointConfig(runtime.requestedEndpoint(), registry)
+			if err != nil {
+				return err
+			}
+			client, closeClient, err := runtime.open(cmd, endpoint)
 			if err != nil {
 				return err
 			}
 			defer closeClient()
+			if len(args) == 0 {
+				defaults, defaultErr := client.PathDefaults(cmd.Context())
+				if defaultErr != nil {
+					return classifyCLIError(defaultErr)
+				}
+				args = append([]string(nil), defaults.DefaultCommand...)
+				if len(args) == 0 {
+					return &cliError{code: 6, message: fmt.Sprintf("endpoint %s returned no default command", endpoint.ID)}
+				}
+				if strings.TrimSpace(cwd) == "" {
+					cwd = defaults.DefaultCWD
+				}
+			}
 			size := protocol.Size{Cols: cols, Rows: rows}
 			if cols == 0 {
 				size = currentSize()
@@ -173,7 +201,7 @@ func newTerminalCreateCommand(runtime terminalCommandRuntime, use string) *cobra
 			if err != nil {
 				return classifyCLIError(err)
 			}
-			target := localTerminalTarget(created.TerminalID)
+			target := string(endpoint.ID) + ":" + created.TerminalID
 			if jsonOutput {
 				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(commandResultEnvelope{SchemaVersion: 1, Kind: "terminal_created", Target: target, State: created.State}); err != nil {
 					return err
@@ -182,7 +210,7 @@ func newTerminalCreateCommand(runtime terminalCommandRuntime, use string) *cobra
 				fmt.Fprintln(cmd.OutOrStdout(), target)
 			}
 			if attach {
-				return runLocalAttachCommand(cmd, created.TerminalID, *runtime.socket, *runtime.logFile, *runtime.configPath)
+				return runAttachCommand(cmd, string(endpoint.ID), created.TerminalID, *runtime.socket, *runtime.logFile, *runtime.configPath)
 			}
 			return nil
 		},
@@ -199,29 +227,52 @@ func newTerminalCreateCommand(runtime terminalCommandRuntime, use string) *cobra
 }
 
 func newTerminalListCommand(runtime terminalCommandRuntime, use string) *cobra.Command {
-	var jsonOutput, noHeader bool
+	var jsonOutput, noHeader, allEndpoints bool
 	var stateFilter string
 	var tagFilters []string
 	command := &cobra.Command{
 		Use:   use,
-		Short: "List terminals from the local daemon",
+		Short: "List terminals from one or all daemon endpoints",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, closeClient, err := runtime.open(cmd)
+			registry, err := loadNormalizedConnectionRegistry()
 			if err != nil {
 				return err
 			}
-			defer closeClient()
-			result, err := client.List(cmd.Context())
-			if err != nil {
-				return classifyCLIError(err)
-			}
-			views := make([]terminalView, 0, len(result.Terminals))
-			for _, item := range result.Terminals {
-				if stateFilter != "" && item.State != stateFilter || !terminalMatchesTags(item, tagFilters) {
-					continue
+			configs := make([]connection.Config, 0, len(registry.Connections))
+			if allEndpoints {
+				if runtime.requestedEndpoint() != "" {
+					return usageCLIError("--all-endpoints and --endpoint are mutually exclusive")
 				}
-				views = append(views, terminalInfoView(item))
+				for _, cfg := range registry.List() {
+					if cfg.Enabled {
+						configs = append(configs, cfg)
+					}
+				}
+			} else {
+				cfg, err := resolveEndpointConfig(runtime.requestedEndpoint(), registry)
+				if err != nil {
+					return err
+				}
+				configs = append(configs, cfg)
+			}
+			views := make([]terminalView, 0)
+			for _, cfg := range configs {
+				client, closeClient, openErr := runtime.open(cmd, cfg)
+				if openErr != nil {
+					return openErr
+				}
+				result, listErr := client.List(cmd.Context())
+				closeClient()
+				if listErr != nil {
+					return classifyCLIError(listErr)
+				}
+				for _, item := range result.Terminals {
+					if stateFilter != "" && item.State != stateFilter || !terminalMatchesTags(item, tagFilters) {
+						continue
+					}
+					views = append(views, terminalInfoView(cfg.ID, item))
+				}
 			}
 			sort.Slice(views, func(i, j int) bool { return views[i].Target < views[j].Target })
 			if jsonOutput {
@@ -234,6 +285,7 @@ func newTerminalListCommand(runtime terminalCommandRuntime, use string) *cobra.C
 	command.Flags().StringArrayVar(&tagFilters, "tag", nil, "filter by KEY or KEY=VALUE (repeatable)")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
 	command.Flags().BoolVar(&noHeader, "no-header", false, "omit the human table header")
+	command.Flags().BoolVar(&allEndpoints, "all-endpoints", false, "aggregate every enabled endpoint")
 	return command
 }
 
@@ -241,19 +293,27 @@ func newTerminalShowCommand(runtime terminalCommandRuntime) *cobra.Command {
 	var jsonOutput bool
 	command := &cobra.Command{
 		Use:   "show TARGET",
-		Short: "Show one terminal from the local daemon",
+		Short: "Show one terminal from its owning daemon endpoint",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, closeClient, err := runtime.open(cmd)
+			registry, err := loadNormalizedConnectionRegistry()
+			if err != nil {
+				return err
+			}
+			ref, err := resolveTerminalRef(args[0], runtime.requestedEndpoint(), registry)
+			if err != nil {
+				return err
+			}
+			client, closeClient, err := runtime.open(cmd, registry.Connections[ref.EndpointID])
 			if err != nil {
 				return err
 			}
 			defer closeClient()
-			item, err := findLocalTerminal(cmd.Context(), client, args[0])
+			item, err := findTerminal(cmd.Context(), client, ref)
 			if err != nil {
 				return err
 			}
-			view := terminalInfoView(item)
+			view := terminalInfoView(ref.EndpointID, item)
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(terminalItemEnvelope{SchemaVersion: 1, Kind: "terminal", Item: view})
 			}
@@ -270,12 +330,16 @@ func newTerminalAttachCommand(runtime terminalCommandRuntime, use string) *cobra
 		Short: "Attach the TUI to a terminal",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			terminalID, err := localTerminalID(args[0])
+			registry, err := loadNormalizedConnectionRegistry()
+			if err != nil {
+				return err
+			}
+			ref, err := resolveTerminalRef(args[0], runtime.requestedEndpoint(), registry)
 			if err != nil {
 				return err
 			}
 			cmd.Root().SilenceUsage = true
-			return runLocalAttachCommand(cmd, terminalID, *runtime.socket, *runtime.logFile, *runtime.configPath)
+			return runAttachCommand(cmd, string(ref.EndpointID), ref.TerminalID, *runtime.socket, *runtime.logFile, *runtime.configPath)
 		},
 	}
 }
@@ -295,12 +359,20 @@ func newTerminalMutationCommand(runtime terminalCommandRuntime, use, short strin
 		Short: short,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, closeClient, err := runtime.open(cmd)
+			registry, err := loadNormalizedConnectionRegistry()
+			if err != nil {
+				return err
+			}
+			ref, err := resolveTerminalRef(args[0], runtime.requestedEndpoint(), registry)
+			if err != nil {
+				return err
+			}
+			client, closeClient, err := runtime.open(cmd, registry.Connections[ref.EndpointID])
 			if err != nil {
 				return err
 			}
 			defer closeClient()
-			item, err := findLocalTerminal(cmd.Context(), client, args[0])
+			item, err := findTerminal(cmd.Context(), client, ref)
 			if err != nil {
 				return err
 			}
@@ -311,7 +383,7 @@ func newTerminalMutationCommand(runtime terminalCommandRuntime, use, short strin
 				err = client.Kill(cmd.Context(), item.ID)
 			case terminalRemove:
 				if item.State == "running" {
-					return &cliError{code: 4, message: fmt.Sprintf("terminal %s is running; kill it before remove", localTerminalTarget(item.ID))}
+					return &cliError{code: 4, message: fmt.Sprintf("terminal %s is running; kill it before remove", ref.String())}
 				}
 				err = client.Remove(cmd.Context(), item.ID)
 			}
@@ -328,9 +400,9 @@ func newTerminalMutationCommand(runtime terminalCommandRuntime, use, short strin
 				kind = "terminal_removed"
 			}
 			if jsonOutput {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(commandResultEnvelope{SchemaVersion: 1, Kind: kind, Target: localTerminalTarget(item.ID)})
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(commandResultEnvelope{SchemaVersion: 1, Kind: kind, Target: ref.String()})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", localTerminalTarget(item.ID), strings.TrimPrefix(kind, "terminal_"))
+			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", ref.String(), strings.TrimPrefix(kind, "terminal_"))
 			return nil
 		},
 	}
@@ -348,19 +420,27 @@ func newTerminalRenameCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if strings.TrimSpace(args[1]) == "" {
 				return usageCLIError("terminal name cannot be empty")
 			}
-			client, closeClient, err := runtime.open(cmd)
+			registry, err := loadNormalizedConnectionRegistry()
+			if err != nil {
+				return err
+			}
+			ref, err := resolveTerminalRef(args[0], runtime.requestedEndpoint(), registry)
+			if err != nil {
+				return err
+			}
+			client, closeClient, err := runtime.open(cmd, registry.Connections[ref.EndpointID])
 			if err != nil {
 				return err
 			}
 			defer closeClient()
-			item, err := findLocalTerminal(cmd.Context(), client, args[0])
+			item, err := findTerminal(cmd.Context(), client, ref)
 			if err != nil {
 				return err
 			}
 			if err := client.SetMetadata(cmd.Context(), item.ID, strings.TrimSpace(args[1]), item.Tags); err != nil {
 				return classifyCLIError(err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\trenamed\n", localTerminalTarget(item.ID))
+			fmt.Fprintf(cmd.OutOrStdout(), "%s\trenamed\n", ref.String())
 			return nil
 		},
 	}
@@ -380,12 +460,20 @@ func newTerminalTagCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			client, closeClient, err := runtime.open(cmd)
+			registry, err := loadNormalizedConnectionRegistry()
+			if err != nil {
+				return err
+			}
+			ref, err := resolveTerminalRef(args[0], runtime.requestedEndpoint(), registry)
+			if err != nil {
+				return err
+			}
+			client, closeClient, err := runtime.open(cmd, registry.Connections[ref.EndpointID])
 			if err != nil {
 				return err
 			}
 			defer closeClient()
-			item, err := findLocalTerminal(cmd.Context(), client, args[0])
+			item, err := findTerminal(cmd.Context(), client, ref)
 			if err != nil {
 				return err
 			}
@@ -406,7 +494,7 @@ func newTerminalTagCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if err := client.SetTags(cmd.Context(), item.ID, tags); err != nil {
 				return classifyCLIError(err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\ttagged\n", localTerminalTarget(item.ID))
+			fmt.Fprintf(cmd.OutOrStdout(), "%s\ttagged\n", ref.String())
 			return nil
 		},
 	}
@@ -414,48 +502,28 @@ func newTerminalTagCommand(runtime terminalCommandRuntime) *cobra.Command {
 	return command
 }
 
-func findLocalTerminal(ctx context.Context, client terminalProtocolClient, target string) (protocol.TerminalInfo, error) {
-	// show/mutation 复用 daemon list projection 查找，CLI 不建立第二份 terminal inventory。
-	id, err := localTerminalID(target)
-	if err != nil {
-		return protocol.TerminalInfo{}, err
-	}
+func findTerminal(ctx context.Context, client terminalProtocolClient, ref resolvedTerminalRef) (protocol.TerminalInfo, error) {
+	// TerminalRef 已在 registry 边界解析；查询只进入 owning daemon，CLI 不建立第二份 terminal inventory。
 	result, err := client.List(ctx)
 	if err != nil {
 		return protocol.TerminalInfo{}, classifyCLIError(err)
 	}
 	for _, item := range result.Terminals {
-		if item.ID == id {
+		if item.ID == ref.TerminalID {
 			return item, nil
 		}
 	}
-	return protocol.TerminalInfo{}, &cliError{code: 3, message: fmt.Sprintf("terminal %s was not found", localTerminalTarget(id))}
+	return protocol.TerminalInfo{}, &cliError{code: 3, message: fmt.Sprintf("terminal %s was not found", ref.String())}
 }
 
-func localTerminalID(target string) (string, error) {
-	target = strings.TrimSpace(target)
-	if target == "" {
-		return "", usageCLIError("terminal target cannot be empty")
-	}
-	if endpoint, id, found := strings.Cut(target, ":"); found {
-		if endpoint != localEndpointID || id == "" || strings.Contains(id, ":") {
-			return "", usageCLIError("CLI002 only accepts local:TERMINAL_ID targets")
-		}
-		return id, nil
-	}
-	return target, nil
-}
-
-func terminalInfoView(item protocol.TerminalInfo) terminalView {
+func terminalInfoView(endpointID connection.EndpointID, item protocol.TerminalInfo) terminalView {
 	return terminalView{
-		Target: localTerminalTarget(item.ID), EndpointID: localEndpointID, TerminalID: item.ID,
+		Target: string(endpointID) + ":" + item.ID, EndpointID: string(endpointID), TerminalID: item.ID,
 		Name: item.Name, Command: append([]string(nil), item.Command...), CWD: item.CWD,
 		Tags: cloneTerminalTags(item.Tags), State: item.State, Cols: item.Size.Cols, Rows: item.Size.Rows,
 		CreatedAt: formatTerminalTime(item.CreatedAt), ExitCode: item.ExitCode, ExitedAt: formatTerminalTime(item.ExitedAt),
 	}
 }
-
-func localTerminalTarget(id string) string { return localEndpointID + ":" + id }
 
 func formatTerminalTime(value time.Time) string {
 	if value.IsZero() {

@@ -21,7 +21,7 @@ func TestBuildCommandUsesRemoteStdioProxyAndAuthAlias(t *testing.T) {
 	if binaryName != "ssh-test" {
 		t.Fatalf("unexpected binary %q", binaryName)
 	}
-	want := []string{"-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=3", "cn-fast", "termx-dev", "--socket", "auto", "v3", "stdio-proxy"}
+	want := []string{"-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=3", "cn-fast", "termx-dev", "--socket", "auto", "daemon", "stdio-proxy"}
 	if len(args) != len(want) {
 		t.Fatalf("unexpected args len got=%v want=%v", args, want)
 	}

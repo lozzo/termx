@@ -210,6 +210,25 @@ func TestV3InteractiveRuntimeInitializesEndpointStoreFromRegistry(t *testing.T) 
 	}
 }
 
+func TestV3InteractiveRuntimePreservesInitialRemoteTerminalRef(t *testing.T) {
+	registry := connection.Registry{
+		Version: 1,
+		Default: "west",
+		Connections: map[connection.EndpointID]connection.Config{
+			"west": {ID: "west", Label: "West", Transport: connection.TransportSSH, Address: "west.example", ConnectMode: connection.ConnectOnDemand, Enabled: true},
+		},
+	}
+	runtime := newV3InteractiveRuntimeWithOptions("term-1", 80, 24, nil, nil, nil, app.NewFakeTerminalHost(8), nil, v3InteractiveRuntimeOptions{
+		SkipWorkbenchInitialLoad: true,
+		InitialEndpointID:        "west",
+		ConnectionRegistry:       registry,
+	})
+	root := runtime.State()
+	if root.Session.EndpointID != "west" || root.Session.TerminalID != "term-1" || root.Surface.EndpointID != "west" || root.Surface.TerminalID != "term-1" {
+		t.Fatalf("remote terminal ref was rewritten during initialization: session=%#v surface=%#v", root.Session.TerminalRef(), root.Surface.TerminalRef())
+	}
+}
+
 func TestRootCmdBlocksNestedTUIByDefault(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
 	oldRunRoot := runV3Root
