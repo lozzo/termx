@@ -301,6 +301,8 @@ CLI005 固定 `--format` 为 Go template 语法，字段名使用 JSON 同源的
 --quiet
 ```
 
+根命令另提供 `termx --timeout DURATION ...`，显式设置时覆盖从 endpoint 拨号、protocol Hello 到最终 RPC/流操作的完整命令生命周期；默认 `0` 表示不施加根级 deadline，避免 TUI、daemon foreground 和事件流被隐式截断。子命令自己的 `--timeout` 可以进一步缩短 deadline，不能延长根 context。
+
 危险操作在交互终端可确认；非交互调用若需要确认但未给 `--yes` 必须失败。`--no-start` 禁止查询命令隐式启动 local daemon，适用于监控和 service manager。
 
 ### 7.4 退出码

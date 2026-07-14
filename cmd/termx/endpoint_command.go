@@ -353,6 +353,7 @@ func newEndpointTestCommand(runtime *endpointCommandRuntime) *cobra.Command {
 			if !cfg.Enabled {
 				return &cliError{code: 4, message: fmt.Sprintf("endpoint %s is disabled", id)}
 			}
+			cmd.Root().SilenceUsage = true
 			observedPath, selectionReason, closeClient, err := probeEndpointProtocolClient(cmd.Context(), cfg, *runtime.socket, *runtime.logFile)
 			if err != nil {
 				return classifyCLIError(err)

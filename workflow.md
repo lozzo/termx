@@ -14,7 +14,7 @@
 - CLI001 已完成：已审计当前扁平 CLI 与公开 `v3` 测试命令，建立以 endpoint/terminal 为真值的对象化命令树、稳定 target、JSON/format、退出码、tmux 能力映射和分期实现门禁；当前尚未改动 CLI 运行行为。
 - CLI007 已完成：可选 Cloud Companion 的安装引导已区分未安装与源码构建缺少官方 release root，两种用户错误都有清晰下一步且不再重复 Usage。
 - CLOUD013 已完成：公网 HTTP staging 的非秘密 runtime 配置已固化进显式 development Companion；同一份已验证 manifest 同时装配网络 adapter 与 HTTP 登录策略，用户无需额外配置即可执行状态和登录命令。
-- TUI 快捷键 KS012-KS017 已完整收口；用户已恢复 CLI 实现主线，当前从 CLI002 开始按对象化命令树依次完成 CLI002-CLI006。
+- TUI 快捷键 KS012-KS017 与 CLI002-CLI008 已完整收口；当前 CLI 具备对象化命令树、endpoint-aware 自动化、文件/工作区/Cloud UX、SSH 实机链路和根级 deadline。
 - WEB003 已由用户重排为暂停：邮箱密码、用户中心、订阅和 AFF 已完成，GitHub/Google OIDC 留待统一账号客户端链路验收后恢复。
 - FILE001-FILE004 与 CLOUD006-CLOUD008 已完成；Official Android 显式 development build 已通过公网 HTTP staging 在 5G 真机完成 direct、single Relay、terminal 与恢复链路。生产上线前必须另行切换 HTTPS/TLS，不得复用本切片的明文 profile。
 - 当前仓库是唯一 private monorepo；当前不是正式开源或生产发布阶段。public snapshot、开源许可证模板替换、secret audit、第二仓和发布自动化全部延后。
@@ -103,6 +103,7 @@
 - CLI005：`cmd/termx/`、必要 `internal/protocol/`/`core/`/`remote/` contract、对应文档与 `workflow.md`；只完成 send/capture/resize/wait/events 和稳定自动化输出，不读取 TUI renderer 或建立第二份 history truth。
 - CLI006：`cmd/termx/`、`shared/connection/`、必要 file/workbench/pair public contract、`private/cloud/companion` 的安装装配、对应文档与 `workflow.md`；只收口 file/workspace/pair 和 Cloud login/enroll 用户体验，不把私有 Cloud 逻辑链接进公开 CLI。
 - CLI007：`cmd/termx/`、`README.md`、`workflow.md` 与对应 CLI harness；只改进可选 Cloud Companion 未安装、源码构建无官方 release root 的错误指引和 Cloud runtime error 输出，不改变签名信任、安装来源、账号或 managed transport 行为。
+- CLI008：`cmd/termx/`、`shared/transport/ssh/`、`docs/development/cli-command-design.md`、`docs/remote-platform/`、`workflow.md` 与必要部署 harness；只修复 SSH `remote_socket: auto` 旧部署兼容故障、增加显式根级 deadline，并更新 `114.66.58.243` 的公开 termx daemon 二进制。不得改变 Hub/Relay/Control Plane 服务或恢复 transport fallback。
 - CLOUD013：`cmd/termx/`、`private/cloud/companion`、`scripts/`、`Makefile`、`workflow.md` 与对应 harness；只生成显式 development 测试套件，把 `staging-public-http` 非秘密 endpoint manifest 固化进 Companion，并让 termx 复验同目录 Companion 的固定名称、权限和构建期 SHA-256 后按需启动。不得静态链接 private Companion、读取运行时 manifest、放宽 stable/official 签名安装或把 enrollment/session secret 编进产物。
 - KS012：`tui/{shortcut,input,app,render,config,state,terminalhost}`、`tui/docs/{shortcut-system-plan.md,shortcut-inventory.md,shortcut-contract-debt.json}`、`workflow.md` 与必要测试；只做最终现状审计、机器可读 debt manifest 和“无未分类/无新增 debt”守卫，可删除已被新模型替代的测试 helper，不要求提前修完 KS013-KS016 gap。
 - KS013：新增 `tui/action/`，并允许修改 `tui/{shortcut,input,app,render,config,state}`、对应测试/文档与 `workflow.md`；只建立中立 action domain、shortcut 引用和 keyboard invocation -> handler contract，删除重复 identity/alias/scene 语义，不迁移 render surface 提示/点击。
@@ -147,6 +148,7 @@
 | CLI005 | 完成 | CLI 自动化数据面 | send/capture/resize/wait/events、稳定 format/NDJSON 与 local/WebRTC owning-endpoint 自动化链路完成 |
 | CLI006 | 完成 | file/workspace/pair/Cloud UX | file/workbench contract、脱敏 pair inspect 与 canonical Cloud node/companion UX 已完成，并通过真实 daemon 与 Cloud staging 验收 |
 | CLI007 | 完成 | Cloud Companion 安装错误指引 | 未安装时明确 Cloud 为可选组件并提示安装命令；源码构建缺 release root 时提示换官方 termx；运行错误不重复 Usage |
+| CLI008 | 完成 | SSH 文件命令与全局超时 | `cn-fast` 使用远端默认 socket 完成真实文件列表；`termx --timeout` 覆盖 endpoint 建连和命令执行，超时稳定返回退出码 7 |
 | CLOUD013 | 完成 | 自包含 Cloud staging 测试套件 | `make build-cloud-test` 后无需 runtime.json、环境变量或 install，直接执行 `.artifacts/bin/termx cloud status` 和 `cloud login`；默认构建仍 fail closed |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
 | GA004 | 延后 | 单 transit 受控加速 | 仅在 GA003 数据证明需要时恢复 |
@@ -203,6 +205,7 @@
 - CLI005：input/live/history/events 定向测试、stdout/stderr/NDJSON/timeout 黑盒测试、local 与 WebRTC 自动化 E2E、`git diff --check`。
 - CLI006：file/workbench/pair 定向测试、Companion 自动发现与 daemon enrollment IPC 测试、Cloud staging login/enroll E2E、secret scan、`git diff --check`。
 - CLI007：Cloud 命令错误投影黑盒测试、release root/Companion missing 定向测试、`GOWORK=off go test ./cmd/termx -count=1`、重建二进制验证、`git diff --check`。
+- CLI008：root deadline/退出码测试、SSH transport/stdio-proxy 定向测试、CLI 全量测试、Linux/amd64 构建、服务器 daemon 状态、真实 `cn-fast` file list 与超时失败验收、`git diff --check`。
 - CLOUD013：Companion embedded manifest 解析/默认 fail-closed、同目录路径/权限/SHA 复验、activation/status 定向测试；`GOWORK=off go test ./cmd/termx -count=1`；`cd private/cloud/companion && GOWORK=off go test ./... -count=1`；`make build-cloud-test`；隔离运行目录执行真实 `.artifacts/bin/termx cloud status --json`；`git diff --check`。
 - KS012：debt manifest 分类完整性/不新增守卫、shortcut/domain/input/app/render/config 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
 - KS013：`tui/action` canonical identity/invocation、shortcut 引用、keyboard handler 与 render metadata contract 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
@@ -223,6 +226,8 @@
 - CLI005 已完成：`terminal send` 通过 owning daemon 的临时 collaborator attachment 发送 literal/named key/hex/stdin，16 MiB 上限且结束必定 detach；`resize` 通过同一 attachment 调用 `EnsureResize`，只接受 daemon 的 owner/control 结果。`capture` 的 history 路径使用 tokenized `HistoryWindow -> HistoryCopy -> ReleaseHistory`，live 路径只解码 `NativeScreenSnapshot`，不读取 TUI renderer。`wait` 先订阅 lifecycle event 再读 inventory 防止丢边沿，`events` 输出 schema v1 NDJSON；`list/show --format` 只消费 JSON 同源 view model，未知字段失败。真实 local daemon 完成 send/input echo、timeout exit 7、wait exited、history/live capture、resize 100x35、created NDJSON 和稳定 format；隔离 dev-local managed direct 完成 create、send 13 bytes、wait、capture 回读 `DIRECT-GOT:direct-input`、resize 110x40 和 format。额外 relay-only send 受到 dev-local lease quota 明确拒绝，未 fallback direct，且 runtime error 不再打印 Cobra Usage。CLI/core/protocol/connection/SSH 全量测试、CLI005 定向 race、`go vet`、`make build-cloud-test`、产品 help 和 `git diff --check` 均通过。
 
 - CLI006 已完成：`file` namespace 经 owning endpoint daemon 提供 list/stat/cat、原子 `0600` 下载、流式上传、mkdir/rename/copy/move/remove；同一 timeout 覆盖 endpoint 建连与操作，transfer metadata、连续 offset、ACK、最终 size/SHA-256 全部校验，失败显式取消，批量局部失败保留逐项结果并返回退出码 8。`workspace` namespace 只消费 daemon-owned versioned workbench snapshot，create/rename/remove 使用 expected version 单次 mutation，list/show/export 不建立第二份状态；因尚无原子 snapshot replace contract，import 明确延后。`pair inspect` 严格验签并只输出设备、grant/revocation ID、scope 与时效，bearer 不进入 JSON；local terminal scope 接受 canonical `local:TerminalID`。Cloud 产品发现面使用 `cloud node enroll` 与 `cloud companion install/update/status/uninstall`，旧直达入口仅隐藏兼容。真实 daemon 完成 400KB 上传下载、metadata、批量变更、workspace 版本 1-4 与 owner-only export；隔离 staging 完成 Companion 自动发现/status、浏览器设备码 login 和 daemon enrollment。CLI/core/protocol/remote/connection 与 Companion 全量测试、CLI006 定向 race、`go vet`、secret scan、`make build-cloud-test`、真实产品 help/status 和 `git diff --check` 均通过。
+
+- CLI008 已完成：根命令新增显式 `termx --timeout DURATION ...`，最终 command handler 用唯一 context/defer cancel 覆盖 endpoint dial、SSH 启动、protocol Hello、RPC 与流操作；默认 0 不截断 TUI、foreground daemon 或事件流，子命令 deadline 只能进一步缩短。SSH dial/Hello 在 parent deadline 到期后以 context error 为失败真值，`endpoint test` 运行错误不再重复 Usage。现场确认 `cn-fast` 的旧 `/usr/local/bin/termx` 把 `remote_socket: auto` 作为字面 socket，累计 16 个孤立 stdio-proxy；已按精确 PID 清理旧代理/wire3 daemon，部署 SHA-256 `872fa0f7500eb9cb259e4b5a54ccb2d5c5f8852dba7aff854c61d280acf9034a` 的 Linux/amd64 二进制，并以 runtime record 启动 wire4 daemon。真实 `termx --timeout 10s file list cn-fast /` 在约两秒内返回，1ms endpoint probe 单行 timeout、退出码 7，命令结束后无残留 proxy；Cloud/Nginx active，两个 managed daemon unit 保持 inactive。CLI/SSH 全量测试、定向 race、`go vet`、Linux 构建、`make build-cloud-test` 和 `git diff --check` 均通过。
 
 - CLOUD013 已完成：`make build-cloud-test` 先生成内嵌 `staging-public-http` manifest 的 development `termx-cloud`，再把其固定文件名、版本、通道与 SHA-256 固化进同目录 `termx`；运行时复验真实 executable 目录、regular file、当前用户 ownership、不可 group/world writable、可执行位与摘要，失败不 fallback。Companion 对 embedded manifest 复用严格 schema/profile/address parser，并由唯一 runtime 装配同时产生 Control Plane/Hub adapter 与 HTTP 登录 URL 策略，禁止 runtime manifest 覆盖；installer smoke 始终使用 unconfigured adapter，默认无 embedded metadata 的 source/official build 继续走原签名 release root 门禁。CLI/Companion 全量测试、`go vet`、`make build-cloud-test`、隔离和默认 `cloud status` 均通过；真实 `.artifacts/bin/termx cloud login` 无额外配置即可返回 `http://114.66.58.243:41100/device` 验证地址和用户码并进入审批轮询。
 

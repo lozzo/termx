@@ -339,11 +339,17 @@ func dialV3SSHEndpointClient(endpointCtx, helloContext context.Context, cfg conn
 		Address: cfg.Address, AuthRef: cfg.AuthRef, RemoteSocket: cfg.RemoteSocket,
 	})
 	if err != nil {
+		if endpointCtx.Err() != nil {
+			return nil, fmt.Errorf("ssh endpoint %q dial: %w", cfg.ID, endpointCtx.Err())
+		}
 		return nil, fmt.Errorf("ssh endpoint %q dial: %w", cfg.ID, err)
 	}
 	client := protocol.NewClient(transport)
 	if err := client.Hello(helloContext, protocol.Hello{Version: wire.Version, Client: "cmd/termx:ssh:" + string(cfg.ID)}); err != nil {
 		_ = client.Close()
+		if helloContext.Err() != nil {
+			return nil, fmt.Errorf("ssh endpoint %q hello: %w", cfg.ID, helloContext.Err())
+		}
 		return nil, fmt.Errorf("ssh endpoint %q hello: %w", cfg.ID, err)
 	}
 	return client, nil

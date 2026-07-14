@@ -13,8 +13,8 @@ owning Control Plane 与 Hub 仍只监听服务器 loopback。React Web Controll
 | systemd unit | listener | 责任 |
 | --- | --- | --- |
 | `termx-staging-cloud.service` | `127.0.0.1:41001/tcp`、`127.0.0.1:41002/tcp`、`0.0.0.0:41003/udp` | Control Plane 浏览器/edge API、Hub 与 lease-bound TURN |
-| `termx-staging-daemon-companion.service` | `/run/termx-staging/daemon-companion.sock` | daemon device session、presence 与 signaling |
-| `termx-staging-daemon.service` | `/run/termx-staging/daemon.sock` | 公开 core-v2/termx protocol daemon |
+| `termx-staging-daemon-companion.service`（disabled） | `/run/termx-staging/daemon-companion.sock` | 保留的 managed daemon 装配，当前不启动 |
+| `termx-staging-daemon.service`（disabled） | `/run/termx-staging/daemon.sock` | 保留的 managed daemon 装配，当前不启动 |
 
 二进制位于 `/opt/termx-staging/bin`，React 静态文件位于 `/opt/termx-staging/web/dist`，Cloud 非秘密运行状态与 Web 账号库位于 `/var/lib/termx-staging`。systemd 使用无登录权限的 `termx-staging` 用户。Companion session 写入 GNOME Keyring；keyring 解锁材料由 systemd `LoadCredential` 从服务器 root-only 文件加载，不进入仓库、进程参数或日志。
 
@@ -26,6 +26,18 @@ ssh root@114.66.58.243 'curl -fsS http://127.0.0.1:41001/api/catalog'
 ```
 
 浏览器 Session Cookie、CSRF、账号、订阅和 AFF API 由 Control Plane 直接拥有；React 不能读取 HttpOnly bearer，也不解释 terminal capability。
+
+### `cn-fast` SSH endpoint
+
+`cn-fast` 是独立的 SSH endpoint，连接 `root@114.66.58.243` 后固定执行 `/usr/local/bin/termx daemon stdio-proxy`。它使用 root 当前用户 daemon 与默认 `/run/user/0/termx-v2-wire4.sock`，不启用 Cloud presence，也不依赖上表两个 managed daemon unit。`remote_socket: auto` 必须由服务器当前版本的 `stdio-proxy` 解析为远端默认 socket，不能创建名为 `auto` 的字面 socket。
+
+2026-07-14 已把 `/usr/local/bin/termx` 更新为 CLI008 Linux/amd64 构建，清理旧 wire3 daemon 和 16 个异常 `stdio-proxy`，并通过带 runtime record 的 `termx daemon start` 启动 PID 可验证的 wire4 daemon。验证命令：
+
+```bash
+termx --timeout 10s endpoint test cn-fast --json
+termx --timeout 10s file list cn-fast / --limit 20 --json
+ssh root@114.66.58.243 '/usr/local/bin/termx --timeout 5s daemon status --json'
+```
 
 WEB002/WEB003 staging profile 在 `/login` 提供固定开发账号以及邮箱密码注册登录，在 `/account` 提供 Managed Free/Pro、测试 Checkout、密码修改和 AFF 推荐奖励。该 provider 不扣款；confirm 仍经 HMAC webhook transaction，只有首次有效事件才调用 Control Plane internal entitlement endpoint。Control Plane 更新 edge revision 并重新发布 Hub snapshot 后，订单、payment event 与邀请人 +15 天/被邀请人 +7 天奖励才在同一 SQLite 事务提交。浏览器 session 使用 HttpOnly、SameSite=Strict Cookie，登录/注册校验精确 Origin，所有已登录写请求同时校验 Origin 与 CSRF token。生产 OAuth、价格和支付 provider 未配置时保持禁用。
 
@@ -56,7 +68,10 @@ Control Plane 可以在 edge session 与 Hub 授权快照有效期内中断；�
 
 ```bash
 ssh root@114.66.58.243 \
-  'systemctl is-active termx-staging-cloud termx-staging-daemon-companion termx-staging-daemon'
+  'systemctl is-active termx-staging-cloud nginx'
+
+ssh root@114.66.58.243 \
+  '/usr/local/bin/termx --timeout 5s daemon status --json'
 
 ssh root@114.66.58.243 \
   'curl -fsS -o /dev/null -w "control=%{http_code} hub=%{http_code}\n" \
@@ -65,7 +80,7 @@ ssh root@114.66.58.243 \
 ssh root@114.66.58.243 'ss -lnup | grep 41003'
 ```
 
-预期三个 unit 都是 `active`，两个 health response 是 `204`，TURN listener 为 `0.0.0.0:41003/udp`。
+预期 Cloud 与 Nginx 为 `active`，root 当前用户 daemon 为 `running`，两个 health response 是 `204`，TURN listener 为 `0.0.0.0:41003/udp`。`termx-staging-daemon` 与 `termx-staging-daemon-companion` 按当前服务器角色保持 disabled/inactive。
 
 `ss` 看到 listener 只证明进程已绑定端口，不证明云厂商入站允许 UDP。上线或真机 Relay 验收前，必须在云安全组放行 `41003/udp`，并从服务器外发送探测，同时在实际公网网卡观察入站包：
 
