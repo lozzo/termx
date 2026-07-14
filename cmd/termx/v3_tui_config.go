@@ -7,6 +7,6 @@ import (
 	"github.com/lozzow/termx/tui/state"
 )
 
-func loadV3TUIConfig() (state.TUIConfigStore, error) {
-	return tuiconfig.Load("", os.Getenv)
+func loadV3TUIConfig(path string) (state.TUIConfigStore, error) {
+	return tuiconfig.Load(path, os.Getenv)
 }

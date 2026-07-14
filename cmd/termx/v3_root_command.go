@@ -36,7 +36,7 @@ type v3RootEmptyConfig struct {
 var runV3Root = runV3RootRuntime
 var runV3RootEmpty = runV3RootEmptyRuntime
 
-func runV3RootCommand(cmd *cobra.Command, socket string, logFile string) error {
+func runV3RootCommand(cmd *cobra.Command, socket string, logFile string, configPath string) error {
 	if !isInteractiveTerminal() {
 		return fmt.Errorf("termx TUI requires an interactive terminal; use `termx --help` or subcommands like `new`, `ls`, `attach`, `kill`, `rm`, `daemon`")
 	}
@@ -45,7 +45,7 @@ func runV3RootCommand(cmd *cobra.Command, socket string, logFile string) error {
 	}
 	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	tuiConfig, err := loadV3TUIConfig()
+	tuiConfig, err := loadV3TUIConfig(configPath)
 	if err != nil {
 		return err
 	}

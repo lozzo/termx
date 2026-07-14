@@ -54,12 +54,12 @@ func v3AttachCommand(socket *string, logFile *string) *cobra.Command {
 		Use:  "attach <id>",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runLocalAttachCommand(cmd, args[0], *socket, *logFile)
+			return runLocalAttachCommand(cmd, args[0], *socket, *logFile, "")
 		},
 	}
 }
 
-func runLocalAttachCommand(cmd *cobra.Command, terminalID, socket, logFile string) error {
+func runLocalAttachCommand(cmd *cobra.Command, terminalID, socket, logFile, configPath string) error {
 	if !isInteractiveTerminal() {
 		return usageCLIError("termx terminal attach requires an interactive terminal")
 	}
@@ -68,7 +68,7 @@ func runLocalAttachCommand(cmd *cobra.Command, terminalID, socket, logFile strin
 	}
 	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	tuiConfig, err := loadV3TUIConfig()
+	tuiConfig, err := loadV3TUIConfig(configPath)
 	if err != nil {
 		return err
 	}

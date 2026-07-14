@@ -142,7 +142,7 @@
 | VT001 | 完成 | 收口 vterm restart 生命周期竞态 | 全量 core race 不再报告 Emulator close/read 竞态 |
 | CLI001 | 完成 | CLI 命令体系设计门禁 | 当前命令缺口、对象化命令树、TerminalRef、输出/退出码与 tmux 能力映射形成唯一实现基线 |
 | CLI002 | 完成 | CLI 骨架与 local terminal 闭环 | canonical terminal 命令、共享别名、human/JSON/错误 contract 和真实 local lifecycle 完成，产品树不再暴露 v3/smoke |
-| CLI003 | 待开始 | daemon 与配置生命周期 | CLI002 完成后进入 |
+| CLI003 | 完成 | daemon 与配置生命周期 | 当前用户 daemon run/start/stop/restart/status/logs/doctor 与严格 config paths/show/get/set/unset/validate |
 | CLI004 | 待开始 | endpoint-aware CLI | CLI003 完成后进入 |
 | CLI005 | 待开始 | CLI 自动化数据面 | CLI004 完成后进入 |
 | CLI006 | 待开始 | file/workspace/pair/Cloud UX | CLI005 完成后进入 |
@@ -215,6 +215,8 @@
 ## 当前状态
 
 - CLI002 已完成：产品命令树新增 canonical `terminal create/list/show/attach/restart/kill/remove/rename/tag`，`new/ls/attach/kill/rm` 只保留共享 handler 的高频兼容入口；输出统一使用 `local:<terminal-id>` 稳定 target，list/show/create/mutation 具备 schema v1 JSON，human list 有稳定表头。daemon protocol request error 改为 typed code，CLI 映射 usage/not-found/conflict/auth/unavailable/timeout 退出码，不解析错误文案；运行中 remove 明确冲突，terminal inventory/metadata/lifecycle 仍由 core-v2 daemon 持有。产品 root 已删除 `v3` 与所有 smoke 命令，历史 harness 只在 `termx_dev_commands` 测试 build tag 下装配。真实隔离 daemon 已完成 create/list/show/rename/tag/restart/kill/remove；`GOWORK=off go test ./cmd/termx -count=1`、`go test ./internal/protocol ./core/... -count=1`、`go vet ./cmd/termx ./internal/protocol`、`make build-cloud-test`、产品 help/v3 拒绝和 `git diff --check` 均通过。
+
+- CLI003 已完成：`daemon` namespace 具备 run/start/stop/restart/status/logs/doctor；foreground、terminal auto-start 与 service start 共用同一 daemon owner。每个进程在精确 socket 旁原子持有 `0600` runtime record，绑定当前用户、PID、`ps` start identity、executable、socket、log、config 和随机 instance token；status 还必须完成 protocol Hello，stop/restart 只向复验后的 PID 发 SIGTERM，禁止 `pkill`/名称扫描。Darwin/Linux 真实子进程完成 stopped/start/running/restart PID change/logs/stop，其他平台明确 unsupported。`config` namespace 具备 paths/show/get/set/unset/validate，全局 `--config` 已真正进入 root TUI 和 attach；默认路径统一为 `tui-v3.yaml`。配置 mutation 使用 YAML AST，交给现有 strict runtime parser 验证后以 `0600` 同目录临时文件原子替换，非法修改不落盘。CLI/core/protocol/TUI config 全量测试、vet、`make build-cloud-test` 和真实产物验收通过。
 
 - CLOUD013 已完成：`make build-cloud-test` 先生成内嵌 `staging-public-http` manifest 的 development `termx-cloud`，再把其固定文件名、版本、通道与 SHA-256 固化进同目录 `termx`；运行时复验真实 executable 目录、regular file、当前用户 ownership、不可 group/world writable、可执行位与摘要，失败不 fallback。Companion 对 embedded manifest 复用严格 schema/profile/address parser，并由唯一 runtime 装配同时产生 Control Plane/Hub adapter 与 HTTP 登录 URL 策略，禁止 runtime manifest 覆盖；installer smoke 始终使用 unconfigured adapter，默认无 embedded metadata 的 source/official build 继续走原签名 release root 门禁。CLI/Companion 全量测试、`go vet`、`make build-cloud-test`、隔离和默认 `cloud status` 均通过；真实 `.artifacts/bin/termx cloud login` 无额外配置即可返回 `http://114.66.58.243:41100/device` 验证地址和用户码并进入审批轮询。
 

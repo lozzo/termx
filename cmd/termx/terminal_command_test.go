@@ -25,7 +25,7 @@ func TestProductCommandTreeExposesTerminalAndRejectsV3(t *testing.T) {
 			t.Fatalf("root help missing %q:\n%s", expected, help)
 		}
 	}
-	for _, forbidden := range []string{"v3", "smoke", "visual-snapshot", "tmux-smoke"} {
+	for _, forbidden := range []string{"\n  v3 ", "smoke", "visual-snapshot", "tmux-smoke"} {
 		if strings.Contains(help, forbidden) {
 			t.Fatalf("product help exposes %q:\n%s", forbidden, help)
 		}

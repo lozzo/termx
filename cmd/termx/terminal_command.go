@@ -29,8 +29,9 @@ type terminalProtocolClient interface {
 }
 
 type terminalCommandRuntime struct {
-	socket  *string
-	logFile *string
+	socket     *string
+	logFile    *string
+	configPath *string
 }
 
 type terminalView struct {
@@ -181,7 +182,7 @@ func newTerminalCreateCommand(runtime terminalCommandRuntime, use string) *cobra
 				fmt.Fprintln(cmd.OutOrStdout(), target)
 			}
 			if attach {
-				return runV3Attach(cmd.Context(), v3AttachConfig{TerminalID: created.TerminalID, SocketPath: resolveV3Socket(*runtime.socket), LogFile: *runtime.logFile})
+				return runLocalAttachCommand(cmd, created.TerminalID, *runtime.socket, *runtime.logFile, *runtime.configPath)
 			}
 			return nil
 		},
@@ -274,7 +275,7 @@ func newTerminalAttachCommand(runtime terminalCommandRuntime, use string) *cobra
 				return err
 			}
 			cmd.Root().SilenceUsage = true
-			return runLocalAttachCommand(cmd, terminalID, *runtime.socket, *runtime.logFile)
+			return runLocalAttachCommand(cmd, terminalID, *runtime.socket, *runtime.logFile, *runtime.configPath)
 		},
 	}
 }

@@ -49,8 +49,12 @@ func TestRootCmdRoutesToTUIv3ByDefault(t *testing.T) {
 		return nil
 	}
 
+	explicitConfig := filepath.Join(t.TempDir(), "tui-v3.yaml")
+	if err := os.WriteFile(explicitConfig, []byte("version: 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "--config", filepath.Join(t.TempDir(), "ignored.yaml")})
+	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "--config", explicitConfig})
 	cmd.SetIn(bytes.NewBuffer(nil))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)

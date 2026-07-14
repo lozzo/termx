@@ -66,58 +66,67 @@ func v3Command(socket *string, logFile *string, configPath *string) *cobra.Comma
 
 func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra.Command {
 	cloudEnabled := false
+	var runDaemon func(*cobra.Command, []string) error
 	command := &cobra.Command{
 		Use:   "daemon",
-		Short: "Run the core-v2 daemon in the foreground",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			logger, closeLogger, logPath, err := openLogFileLogger(*logFile)
-			if err != nil {
-				return err
-			}
-			defer closeLogger()
-
-			socketPath := resolveV3Socket(*socket)
-			applyDaemonRuntimeTuning(logger)
-			historyBackpressure := daemonHistoryBackpressureConfig(logger)
-			historyDir := resolveV3HistoryStorageDir()
-			opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryStorageDir(historyDir), corev2.WithHistoryBackpressureConfig(historyBackpressure)}
-			historyEnabled := !envBool("TERMX_HISTORY_DISABLE")
-			if !historyEnabled {
-				historyDir = ""
-				opts = []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryDisabled(), corev2.WithHistoryBackpressureConfig(historyBackpressure)}
-			}
-			srv := newCoreV2Server(opts...)
-			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
-			defer stop()
-			stopPerfTrace, perfTracePath, perfTraceEnabled := perftrace.EnableFromEnvWithProcess(ctx, "core-v2-daemon")
-			defer stopPerfTrace()
-			if perfTraceEnabled {
-				logger.Info("core-v2 daemon perftrace enabled", "path", perfTracePath)
-			}
-			writeHeapProfile := startDaemonHeapProfiler(ctx, logger)
-			if cloudEnabled {
-				managedCore, ok := srv.(v3ManagedDaemonCore)
-				if !ok {
-					logger.Warn("managed cloud presence unavailable", "error", "core-v2 scoped transport is not configured")
-				} else if err := startV3ManagedDaemon(ctx, managedCore, logger); err != nil {
-					logger.Warn("managed cloud presence unavailable", "error", err)
-				}
-			}
-			defer func() {
-				_ = srv.Shutdown(context.Background())
-			}()
-			logger.Info("starting core-v2 daemon", "socket", socketPath, "log_file", logPath, "history_dir", historyDir, "history_enabled", historyEnabled)
-			err = srv.ListenAndServe(ctx)
-			writeHeapProfile("exit")
-			if err != nil {
-				logger.Error("core-v2 daemon exited with error", "error", err)
-			} else {
-				logger.Info("core-v2 daemon exited")
-			}
-			return err
-		},
+		Short: "Manage the current-user core-v2 daemon",
 	}
-	command.Flags().BoolVar(&cloudEnabled, "cloud", false, "enable managed cloud presence for this daemon")
+	runDaemon = func(cmd *cobra.Command, args []string) error {
+		logger, closeLogger, logPath, err := openLogFileLogger(*logFile)
+		if err != nil {
+			return err
+		}
+		defer closeLogger()
+
+		socketPath := resolveV3Socket(*socket)
+		releaseRecord, err := acquireDaemonRuntimeRecord(socketPath, logPath, *configPath, cloudEnabled)
+		if err != nil {
+			return err
+		}
+		defer releaseRecord()
+		applyDaemonRuntimeTuning(logger)
+		historyBackpressure := daemonHistoryBackpressureConfig(logger)
+		historyDir := resolveV3HistoryStorageDir()
+		opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryStorageDir(historyDir), corev2.WithHistoryBackpressureConfig(historyBackpressure)}
+		historyEnabled := !envBool("TERMX_HISTORY_DISABLE")
+		if !historyEnabled {
+			historyDir = ""
+			opts = []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryDisabled(), corev2.WithHistoryBackpressureConfig(historyBackpressure)}
+		}
+		srv := newCoreV2Server(opts...)
+		ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
+		stopPerfTrace, perfTracePath, perfTraceEnabled := perftrace.EnableFromEnvWithProcess(ctx, "core-v2-daemon")
+		defer stopPerfTrace()
+		if perfTraceEnabled {
+			logger.Info("core-v2 daemon perftrace enabled", "path", perfTracePath)
+		}
+		writeHeapProfile := startDaemonHeapProfiler(ctx, logger)
+		if cloudEnabled {
+			managedCore, ok := srv.(v3ManagedDaemonCore)
+			if !ok {
+				logger.Warn("managed cloud presence unavailable", "error", "core-v2 scoped transport is not configured")
+			} else if err := startV3ManagedDaemon(ctx, managedCore, logger); err != nil {
+				logger.Warn("managed cloud presence unavailable", "error", err)
+			}
+		}
+		defer func() {
+			_ = srv.Shutdown(context.Background())
+		}()
+		logger.Info("starting core-v2 daemon", "socket", socketPath, "log_file", logPath, "history_dir", historyDir, "history_enabled", historyEnabled)
+		err = srv.ListenAndServe(ctx)
+		writeHeapProfile("exit")
+		if err != nil {
+			logger.Error("core-v2 daemon exited with error", "error", err)
+		} else {
+			logger.Info("core-v2 daemon exited")
+		}
+		return err
+	}
+	command.RunE = runDaemon
+	command.Args = cobra.NoArgs
+	command.PersistentFlags().BoolVar(&cloudEnabled, "cloud", false, "enable managed cloud presence for this daemon")
+	addDaemonLifecycleCommands(command, socket, logFile, configPath, &cloudEnabled, runDaemon)
 	return command
 }
 
