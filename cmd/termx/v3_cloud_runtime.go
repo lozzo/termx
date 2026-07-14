@@ -19,6 +19,7 @@ import (
 
 const v3CloudCompanionSocketEnv = "TERMX_CLOUD_COMPANION_SOCKET"
 const v3DevelopmentBuildVersion = "v0.0.0-dev"
+const v3CloudReleaseRootMissingMessage = "TermX Cloud is optional and Cloud Companion is not bundled with termx. This source build does not contain the official release verification key, so it cannot safely install or use Cloud Companion. Use an official termx release, then run `termx cloud install`; local and SSH features remain available."
 
 var (
 	termxBuildVersion             = "v0.0.0-dev"
@@ -78,7 +79,8 @@ func defaultOpenV3CloudLifecycleClient(ctx context.Context, role cloudpb.CallerR
 		return client, err
 	}
 	if strings.TrimSpace(cloudReleaseRootKeyID) == "" || strings.TrimSpace(cloudReleaseRootPublicKey) == "" {
-		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING, "this termx build does not include the official Cloud Companion release root")
+		// release root 缺失属于当前 termx build 的信任能力缺失，不能伪装成安装后即可恢复的 Companion missing。
+		return nil, v3CloudReleaseRootMissingError()
 	}
 	manager, err := defaultV3CloudManager()
 	if err != nil {
@@ -108,13 +110,17 @@ func v3CloudReleaseRoots() (map[string]ed25519.PublicKey, error) {
 	keyID := strings.TrimSpace(cloudReleaseRootKeyID)
 	encoded := strings.TrimSpace(cloudReleaseRootPublicKey)
 	if keyID == "" || encoded == "" {
-		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED, "official Cloud Companion release root is not embedded in this termx build")
+		return nil, v3CloudReleaseRootMissingError()
 	}
 	publicKey, err := decodeCloudReleasePublicKey(encoded)
 	if err != nil || len(publicKey) != ed25519.PublicKeySize {
 		return nil, fmt.Errorf("invalid embedded Cloud Companion release root")
 	}
 	return map[string]ed25519.PublicKey{keyID: ed25519.PublicKey(publicKey)}, nil
+}
+
+func v3CloudReleaseRootMissingError() error {
+	return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED, v3CloudReleaseRootMissingMessage)
 }
 
 func decodeCloudReleasePublicKey(encoded string) ([]byte, error) {

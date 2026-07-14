@@ -30,15 +30,40 @@ var (
 
 func v3CloudCommand() *cobra.Command {
 	command := &cobra.Command{Use: "cloud", Short: "Manage the optional TermX Cloud Companion"}
-	command.AddCommand(v3CloudInstallCommand(false))
-	command.AddCommand(v3CloudInstallCommand(true))
-	command.AddCommand(v3CloudLoginCommand())
-	command.AddCommand(v3CloudEnrollCommand())
-	command.AddCommand(v3CloudStatusCommand())
-	command.AddCommand(v3CloudDoctorCommand())
-	command.AddCommand(v3CloudLogoutCommand())
-	command.AddCommand(v3CloudUninstallCommand())
+	for _, child := range []*cobra.Command{
+		v3CloudInstallCommand(false),
+		v3CloudInstallCommand(true),
+		v3CloudLoginCommand(),
+		v3CloudEnrollCommand(),
+		v3CloudStatusCommand(),
+		v3CloudDoctorCommand(),
+		v3CloudLogoutCommand(),
+		v3CloudUninstallCommand(),
+	} {
+		command.AddCommand(withV3CloudUserErrors(child))
+	}
 	return command
+}
+
+func withV3CloudUserErrors(command *cobra.Command) *cobra.Command {
+	run := command.RunE
+	command.RunE = func(cmd *cobra.Command, args []string) error {
+		// Args 已通过 Cobra 校验；后续属于运行失败，只输出一次可执行错误，不重复整段 Usage。
+		cmd.Root().SilenceErrors = true
+		cmd.Root().SilenceUsage = true
+		return v3CloudUserError(run(cmd, args))
+	}
+	return command
+}
+
+func v3CloudUserError(err error) error {
+	if err == nil || !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING) {
+		return err
+	}
+	return cloudcompanion.NewError(
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING,
+		"TermX Cloud is optional and Cloud Companion is not bundled with termx by default. Run `termx cloud install` to enable cloud features; local and SSH features remain available.",
+	)
 }
 
 func v3CloudInstallCommand(update bool) *cobra.Command {

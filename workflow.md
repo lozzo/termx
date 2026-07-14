@@ -12,6 +12,7 @@
 - WEB002 已完成：Web 登录、浏览器 Session、订阅账户、staging Checkout、签名 webhook、幂等订单和 Entitlement/Hub 投影已形成公网纵向链路。
 - CLOUD012 已完成：Web、TUI 与 Official Android 使用统一账号设备码登录，账号名下 daemon 注册到 Hub；登录后的 direct 与 single Relay 热路径只访问 Hub，Control Plane 中断不影响有效缓存期内的新连接。
 - CLI001 已完成：已审计当前扁平 CLI 与公开 `v3` 测试命令，建立以 endpoint/terminal 为真值的对象化命令树、稳定 target、JSON/format、退出码、tmux 能力映射和分期实现门禁；当前尚未改动 CLI 运行行为。
+- CLI007 已完成：可选 Cloud Companion 的安装引导已区分未安装与源码构建缺少官方 release root，两种用户错误都有清晰下一步且不再重复 Usage。
 - 用户已把 TUI 快捷键完整收口提升为当前主线：KS012-KS017 将依次完成跨层契约、单一 action domain、输入/scene、全部默认 action、提示/点击同源和真实终端验收；CLI002-CLI006 暂停，待快捷键项目完成后重新排序。
 - WEB003 已由用户重排为暂停：邮箱密码、用户中心、订阅和 AFF 已完成，GitHub/Google OIDC 留待统一账号客户端链路验收后恢复。
 - FILE001-FILE004 与 CLOUD006-CLOUD008 已完成；Official Android 显式 development build 已通过公网 HTTP staging 在 5G 真机完成 direct、single Relay、terminal 与恢复链路。生产上线前必须另行切换 HTTPS/TLS，不得复用本切片的明文 profile。
@@ -100,6 +101,7 @@
 - CLI004：`cmd/termx/`、`shared/connection/`、TUI endpoint dialer 可复用边界、必要 `remote/`/Companion public contract、对应文档与 `workflow.md`；只完成 endpoint-aware CLI 和 local/SSH/Hub 真实路由，不新增 transport fallback。
 - CLI005：`cmd/termx/`、必要 `internal/protocol/`/`core/`/`remote/` contract、对应文档与 `workflow.md`；只完成 send/capture/resize/wait/events 和稳定自动化输出，不读取 TUI renderer 或建立第二份 history truth。
 - CLI006：`cmd/termx/`、`shared/connection/`、必要 file/workbench/pair public contract、`private/cloud/companion` 的安装装配、对应文档与 `workflow.md`；只收口 file/workspace/pair 和 Cloud login/enroll 用户体验，不把私有 Cloud 逻辑链接进公开 CLI。
+- CLI007：`cmd/termx/`、`README.md`、`workflow.md` 与对应 CLI harness；只改进可选 Cloud Companion 未安装、源码构建无官方 release root 的错误指引和 Cloud runtime error 输出，不改变签名信任、安装来源、账号或 managed transport 行为。
 - KS012：`tui/{shortcut,input,app,render,config,state,terminalhost}`、`tui/docs/{shortcut-system-plan.md,shortcut-inventory.md,shortcut-contract-debt.json}`、`workflow.md` 与必要测试；只做最终现状审计、机器可读 debt manifest 和“无未分类/无新增 debt”守卫，可删除已被新模型替代的测试 helper，不要求提前修完 KS013-KS016 gap。
 - KS013：新增 `tui/action/`，并允许修改 `tui/{shortcut,input,app,render,config,state}`、对应测试/文档与 `workflow.md`；只建立中立 action domain、shortcut 引用和 keyboard invocation -> handler contract，删除重复 identity/alias/scene 语义，不迁移 render surface 提示/点击。
 - KS014：`tui/{terminalhost,input,shortcut,config,app,state}`、对应测试/文档与 `workflow.md`；只收口 raw key/mouse 到 InputEvent、catalog 编译、scene/lock/back navigation 和 PTY passthrough，不触及 renderer 视觉重做。
@@ -142,6 +144,7 @@
 | CLI004 | 暂停 | endpoint-aware CLI | 快捷键完整收口后重新排序 |
 | CLI005 | 暂停 | CLI 自动化数据面 | 快捷键完整收口后重新排序 |
 | CLI006 | 暂停 | file/workspace/pair/Cloud UX | 快捷键完整收口后重新排序 |
+| CLI007 | 完成 | Cloud Companion 安装错误指引 | 未安装时明确 Cloud 为可选组件并提示安装命令；源码构建缺 release root 时提示换官方 termx；运行错误不重复 Usage |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
 | GA004 | 延后 | 单 transit 受控加速 | 仅在 GA003 数据证明需要时恢复 |
 | KS012 | 完成 | 快捷键最终审计与总契约 | 所有 binding/spec/handler/projection 被机器归类为符合或有 owner 的 debt，无未分类项且不能新增 debt |
@@ -196,6 +199,7 @@
 - CLI004：TerminalRef/registry/dialer 定向测试、local/SSH/managed direct/single Relay CLI E2E、失败不 fallback harness、`git diff --check`。
 - CLI005：input/live/history/events 定向测试、stdout/stderr/NDJSON/timeout 黑盒测试、local 与 WebRTC 自动化 E2E、`git diff --check`。
 - CLI006：file/workbench/pair 定向测试、Companion 自动发现与 daemon enrollment IPC 测试、Cloud staging login/enroll E2E、secret scan、`git diff --check`。
+- CLI007：Cloud 命令错误投影黑盒测试、release root/Companion missing 定向测试、`GOWORK=off go test ./cmd/termx -count=1`、重建二进制验证、`git diff --check`。
 - KS012：debt manifest 分类完整性/不新增守卫、shortcut/domain/input/app/render/config 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
 - KS013：`tui/action` canonical identity/invocation、shortcut 引用、keyboard handler 与 render metadata contract 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
 - KS014：TerminalHost raw/CSI-u/mouse parser、key canonicalization、catalog replacement、scene/lock/back/PTY passthrough 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
@@ -217,6 +221,8 @@
 - KS016 已完成：footer/help/overlay/header/chrome/content CTA 与 drag 全部携带 `tui/action` canonical Invocation，app 不再解析 render `ProjectionID`/`ActionID` 执行业务；旧 `ShellContentActionMsg` dispatcher、固定 footer/help 元数据和 87 个无生产消费者 projection 已删除，render 只保留 34 个真实视觉/几何投影。每个 actionable HitRegion producer 显式声明 active/explicit `HitTargetMode`，row target 另用 `HasRow` 表达存在性并按当前 reducer-owned projection 验证范围和 picker row kind；缺失、越界、错类 target 在 specialized/generic 分流前 fail closed，footer active-target 与 empty-tab no-pane 入口保持合法。硬编码 `Ctrl-F`/`Ctrl-T`/`R restart` 文案和隐式 `r/R` 已删除；clean-env `go test ./tui/... -count=1` 与 `git diff --check` 通过，架构 reviewer `ks016_arch_review` 和代码 reviewer `ks016_code_review` 最终均明确 PASS。
 
 - KS017 已完成：两个可直接加载的配置示例明确 empty map、action-only 与显式 scene 完整替换语义，README 补齐支持键位、组合修饰键、canonical 冲突、增强键盘前置条件与诊断；运行 catalog 统计、关键文档 contract 和旧执行符号均有自动守卫。真实 smoke 使用隔离 daemon/config/state/log 和独立 tmux socket，完整验证默认 root/sticky/overlay/copy/quit 以及 CSI-u capability、`Ctrl-1` 和正常退出链路；异步 live invalidation fake 改为 mutex-owned snapshot 后全量 race 通过。最终 completion audit 进一步删除 inventory 中遗留的 KS001 手写逐键表，保留机器 manifest、truth owner、消息链路和自动统计，并新增禁止 Markdown 逐键表回归的守卫。clean-env 全量 TUI、race、shortcut/CSI-u 定向 `-count=20`、CLI、`scripts/termx_shortcut_smoke.sh` 与 `git diff --check` 全部通过，架构 reviewer `ks017_arch_review` 和代码 reviewer `ks017_code_review` 对原实现及 completion audit 修正最终均明确 PASS。
+
+- CLI007 已完成：Cloud 命令运行错误统一由子命令边界投影，参数错误仍保留 Cobra Usage，运行错误只返回一次稳定错误。官方构建缺少 Companion 时返回 `COMPANION_MISSING`，明确它是默认不捆绑的可选组件并提示 `termx cloud install`；源码构建缺少官方 release root 时返回 `COMPANION_UNTRUSTED`，明确必须先换官方 `termx`，不再给出无法执行的直接安装建议。`GOWORK=off go test ./cmd/termx -count=1`、`go vet ./cmd/termx`、`make build`、真实 `.artifacts/bin/termx cloud status --json` 单行错误/退出码/无 Usage 验证和 `git diff --check` 均通过。
 
 - 快捷键最终收口已规划为 KS012-KS017，目标不是补齐零散按键，而是删除第二真值并证明完整消息链路。当前审计已确认 `tui/shortcut` 之外仍有 `render.ActionSpecCatalog` 等 action 描述面、内容区硬编码 `Ctrl-F`/`Ctrl-T`/`R restart` 操作提示，以及 `system.open_prompt` 落到 placeholder 的风险。中立 `tui/action` 将拥有 keyboard/mouse/drag/CTA 共用 action identity 与 invocation，`tui/shortcut` 只拥有 scene+key 编译和快捷键展示覆盖；每个默认 shortcut 后续必须真实工作或从 catalog 删除。KS012 先用 debt manifest 保证无未分类/无新增 gap，KS013-KS016 再按 owner 消除。允许在切片范围内大规模删除被替代旧代码，不以改动行数为约束。所有阶段执行架构 reviewer + 代码 reviewer 双门禁，规划用 `/goal` prompt 位于 `tui/docs/shortcut-completion-goal-prompt.md`。
 

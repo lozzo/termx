@@ -36,6 +36,66 @@ func TestCloudInstallUsesSignedInstallerRequest(t *testing.T) {
 	}
 }
 
+func TestCloudStatusMissingCompanionExplainsOptionalInstallWithoutUsage(t *testing.T) {
+	cloudInstaller := &fakeCloudInstaller{statusErr: cloudcompanion.NewError(
+		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING,
+		"Cloud Companion is not installed",
+	)}
+	previousFactory := newV3CloudInstallerForCommand
+	newV3CloudInstallerForCommand = func() (v3CloudInstaller, error) { return cloudInstaller, nil }
+	defer func() { newV3CloudInstallerForCommand = previousFactory }()
+
+	var stderr bytes.Buffer
+	command := newRootCmd()
+	command.SetOut(io.Discard)
+	command.SetErr(&stderr)
+	command.SetArgs([]string{"cloud", "status", "--json"})
+	err := command.Execute()
+	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING) {
+		t.Fatalf("status error = %v, want COMPANION_MISSING", err)
+	}
+	for _, want := range []string{"Cloud is optional", "not bundled", "termx cloud install", "local and SSH"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("status error must contain %q: %v", want, err)
+		}
+	}
+	if stderr.Len() != 0 || !command.SilenceErrors || !command.SilenceUsage {
+		t.Fatalf("runtime error must not duplicate Cobra error/Usage: stderr=%q silence=(%v,%v)", stderr.String(), command.SilenceErrors, command.SilenceUsage)
+	}
+}
+
+func TestCloudStatusSourceBuildExplainsOfficialReleaseRequirement(t *testing.T) {
+	previousKeyID := cloudReleaseRootKeyID
+	previousPublicKey := cloudReleaseRootPublicKey
+	previousFactory := newV3CloudInstallerForCommand
+	cloudReleaseRootKeyID = ""
+	cloudReleaseRootPublicKey = ""
+	newV3CloudInstallerForCommand = func() (v3CloudInstaller, error) { return newV3CloudInstaller() }
+	defer func() {
+		cloudReleaseRootKeyID = previousKeyID
+		cloudReleaseRootPublicKey = previousPublicKey
+		newV3CloudInstallerForCommand = previousFactory
+	}()
+
+	var stderr bytes.Buffer
+	command := newRootCmd()
+	command.SetOut(io.Discard)
+	command.SetErr(&stderr)
+	command.SetArgs([]string{"cloud", "status", "--json"})
+	err := command.Execute()
+	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED) {
+		t.Fatalf("source status error = %v, want COMPANION_UNTRUSTED", err)
+	}
+	for _, want := range []string{"Cloud is optional", "source build", "official termx release", "termx cloud install", "local and SSH"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("source status error must contain %q: %v", want, err)
+		}
+	}
+	if stderr.Len() != 0 || !command.SilenceErrors || !command.SilenceUsage {
+		t.Fatalf("runtime error must not duplicate Cobra error/Usage: stderr=%q silence=(%v,%v)", stderr.String(), command.SilenceErrors, command.SilenceUsage)
+	}
+}
+
 func TestCloudLoginUsesLifecycleIPCWithoutReturningToken(t *testing.T) {
 	completeAttempts := 0
 	fake := &closableCloudFake{FakeClient: &cloudcompanion.FakeClient{

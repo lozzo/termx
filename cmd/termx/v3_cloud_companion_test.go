@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -118,8 +119,8 @@ func TestV3ManagedEndpointFailsClosedWhenCompanionIsUnavailable(t *testing.T) {
 		HubDeviceID: "device-1", DeviceFingerprint: "SHA256:device-1",
 		GrantRef: "grant-lab", RelayMode: connection.RelayAuto,
 	})
-	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING) {
-		t.Fatalf("dial error = %v, want COMPANION_MISSING", err)
+	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED) || !strings.Contains(err.Error(), "official termx release") {
+		t.Fatalf("dial error = %v, want source-build COMPANION_UNTRUSTED guidance", err)
 	}
 }
 

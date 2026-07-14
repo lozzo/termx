@@ -126,7 +126,9 @@ termx --socket /tmp/my-termx.sock ls
 
 ### 使用 TermX Cloud
 
-Cloud 是可选能力，local 与 SSH 不依赖账号或订阅。已安装并启动官方 Cloud Companion 后，客户端登录顺序为：
+Cloud 是可选能力，local 与 SSH 不依赖账号或订阅。Cloud Companion 默认不随 `termx` 二进制一起安装；使用官方发行版时先执行 `termx cloud install`，再进行登录。直接从源码构建的 `termx` 不包含官方 release root，不能验证或安装官方 Companion，需要先换用官方 `termx` 发行版。
+
+安装完成后的客户端登录顺序为：
 
 ```bash
 # 打开设备码登录流程，在浏览器中登录并批准
