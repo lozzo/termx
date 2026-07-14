@@ -54,32 +54,32 @@ func v3AttachCommand(socket *string, logFile *string) *cobra.Command {
 		Use:  "attach <id>",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !isInteractiveTerminal() {
-				return fmt.Errorf("termx v3 attach requires an interactive terminal; use `termx v3 ping` or `termx v3 smoke` for non-interactive checks")
-			}
-			if err := rejectNestedTUI(); err != nil {
-				return err
-			}
-			logPath := resolveV3LogFilePath(*logFile)
-			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
-			defer stop()
-			tuiConfig, err := loadV3TUIConfig()
-			if err != nil {
-				return err
-			}
-			connectionRegistry, err := loadV3ConnectionRegistry()
-			if err != nil {
-				return err
-			}
-			return runV3Attach(ctx, v3AttachConfig{
-				TerminalID:         args[0],
-				SocketPath:         resolveV3SocketForConnectionRegistry(*socket, connectionRegistry),
-				LogFile:            logPath,
-				TUIConfig:          tuiConfig,
-				ConnectionRegistry: connectionRegistry,
-			})
+			return runLocalAttachCommand(cmd, args[0], *socket, *logFile)
 		},
 	}
+}
+
+func runLocalAttachCommand(cmd *cobra.Command, terminalID, socket, logFile string) error {
+	if !isInteractiveTerminal() {
+		return usageCLIError("termx terminal attach requires an interactive terminal")
+	}
+	if err := rejectNestedTUI(); err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	tuiConfig, err := loadV3TUIConfig()
+	if err != nil {
+		return err
+	}
+	connectionRegistry, err := loadV3ConnectionRegistry()
+	if err != nil {
+		return err
+	}
+	return runV3Attach(ctx, v3AttachConfig{
+		TerminalID: terminalID, SocketPath: resolveV3SocketForConnectionRegistry(socket, connectionRegistry),
+		LogFile: resolveV3LogFilePath(logFile), TUIConfig: tuiConfig, ConnectionRegistry: connectionRegistry,
+	})
 }
 
 func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {

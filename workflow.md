@@ -14,7 +14,7 @@
 - CLI001 已完成：已审计当前扁平 CLI 与公开 `v3` 测试命令，建立以 endpoint/terminal 为真值的对象化命令树、稳定 target、JSON/format、退出码、tmux 能力映射和分期实现门禁；当前尚未改动 CLI 运行行为。
 - CLI007 已完成：可选 Cloud Companion 的安装引导已区分未安装与源码构建缺少官方 release root，两种用户错误都有清晰下一步且不再重复 Usage。
 - CLOUD013 已完成：公网 HTTP staging 的非秘密 runtime 配置已固化进显式 development Companion；同一份已验证 manifest 同时装配网络 adapter 与 HTTP 登录策略，用户无需额外配置即可执行状态和登录命令。
-- 用户已把 TUI 快捷键完整收口提升为当前主线：KS012-KS017 将依次完成跨层契约、单一 action domain、输入/scene、全部默认 action、提示/点击同源和真实终端验收；CLI002-CLI006 暂停，待快捷键项目完成后重新排序。
+- TUI 快捷键 KS012-KS017 已完整收口；用户已恢复 CLI 实现主线，当前从 CLI002 开始按对象化命令树依次完成 CLI002-CLI006。
 - WEB003 已由用户重排为暂停：邮箱密码、用户中心、订阅和 AFF 已完成，GitHub/Google OIDC 留待统一账号客户端链路验收后恢复。
 - FILE001-FILE004 与 CLOUD006-CLOUD008 已完成；Official Android 显式 development build 已通过公网 HTTP staging 在 5G 真机完成 direct、single Relay、terminal 与恢复链路。生产上线前必须另行切换 HTTPS/TLS，不得复用本切片的明文 profile。
 - 当前仓库是唯一 private monorepo；当前不是正式开源或生产发布阶段。public snapshot、开源许可证模板替换、secret audit、第二仓和发布自动化全部延后。
@@ -141,11 +141,11 @@
 | FILE004 | 已完成 | 共享 UI 与 Official Android 闭环 | App 可浏览、预览、上传、下载并经 direct/single Relay 手测 |
 | VT001 | 完成 | 收口 vterm restart 生命周期竞态 | 全量 core race 不再报告 Emulator close/read 竞态 |
 | CLI001 | 完成 | CLI 命令体系设计门禁 | 当前命令缺口、对象化命令树、TerminalRef、输出/退出码与 tmux 能力映射形成唯一实现基线 |
-| CLI002 | 暂停 | CLI 骨架与 local terminal 闭环 | 快捷键完整收口后重新排序 |
-| CLI003 | 暂停 | daemon 与配置生命周期 | 快捷键完整收口后重新排序 |
-| CLI004 | 暂停 | endpoint-aware CLI | 快捷键完整收口后重新排序 |
-| CLI005 | 暂停 | CLI 自动化数据面 | 快捷键完整收口后重新排序 |
-| CLI006 | 暂停 | file/workspace/pair/Cloud UX | 快捷键完整收口后重新排序 |
+| CLI002 | 完成 | CLI 骨架与 local terminal 闭环 | canonical terminal 命令、共享别名、human/JSON/错误 contract 和真实 local lifecycle 完成，产品树不再暴露 v3/smoke |
+| CLI003 | 待开始 | daemon 与配置生命周期 | CLI002 完成后进入 |
+| CLI004 | 待开始 | endpoint-aware CLI | CLI003 完成后进入 |
+| CLI005 | 待开始 | CLI 自动化数据面 | CLI004 完成后进入 |
+| CLI006 | 待开始 | file/workspace/pair/Cloud UX | CLI005 完成后进入 |
 | CLI007 | 完成 | Cloud Companion 安装错误指引 | 未安装时明确 Cloud 为可选组件并提示安装命令；源码构建缺 release root 时提示换官方 termx；运行错误不重复 Usage |
 | CLOUD013 | 完成 | 自包含 Cloud staging 测试套件 | `make build-cloud-test` 后无需 runtime.json、环境变量或 install，直接执行 `.artifacts/bin/termx cloud status` 和 `cloud login`；默认构建仍 fail closed |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
@@ -213,6 +213,8 @@
 - 只有切片真实跨越全仓 contract 时才运行 `make test-all`；当前开发阶段不运行 public snapshot 或 public-only release gate。
 
 ## 当前状态
+
+- CLI002 已完成：产品命令树新增 canonical `terminal create/list/show/attach/restart/kill/remove/rename/tag`，`new/ls/attach/kill/rm` 只保留共享 handler 的高频兼容入口；输出统一使用 `local:<terminal-id>` 稳定 target，list/show/create/mutation 具备 schema v1 JSON，human list 有稳定表头。daemon protocol request error 改为 typed code，CLI 映射 usage/not-found/conflict/auth/unavailable/timeout 退出码，不解析错误文案；运行中 remove 明确冲突，terminal inventory/metadata/lifecycle 仍由 core-v2 daemon 持有。产品 root 已删除 `v3` 与所有 smoke 命令，历史 harness 只在 `termx_dev_commands` 测试 build tag 下装配。真实隔离 daemon 已完成 create/list/show/rename/tag/restart/kill/remove；`GOWORK=off go test ./cmd/termx -count=1`、`go test ./internal/protocol ./core/... -count=1`、`go vet ./cmd/termx ./internal/protocol`、`make build-cloud-test`、产品 help/v3 拒绝和 `git diff --check` 均通过。
 
 - CLOUD013 已完成：`make build-cloud-test` 先生成内嵌 `staging-public-http` manifest 的 development `termx-cloud`，再把其固定文件名、版本、通道与 SHA-256 固化进同目录 `termx`；运行时复验真实 executable 目录、regular file、当前用户 ownership、不可 group/world writable、可执行位与摘要，失败不 fallback。Companion 对 embedded manifest 复用严格 schema/profile/address parser，并由唯一 runtime 装配同时产生 Control Plane/Hub adapter 与 HTTP 登录 URL 策略，禁止 runtime manifest 覆盖；installer smoke 始终使用 unconfigured adapter，默认无 embedded metadata 的 source/official build 继续走原签名 release root 门禁。CLI/Companion 全量测试、`go vet`、`make build-cloud-test`、隔离和默认 `cloud status` 均通过；真实 `.artifacts/bin/termx cloud login` 无额外配置即可返回 `http://114.66.58.243:41100/device` 验证地址和用户码并进入审批轮询。
 

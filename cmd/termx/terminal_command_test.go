@@ -1,0 +1,85 @@
+package main
+
+import (
+	"bytes"
+	"errors"
+	"io"
+	"strings"
+	"testing"
+
+	"github.com/lozzow/termx/internal/protocol"
+)
+
+func TestProductCommandTreeExposesTerminalAndRejectsV3(t *testing.T) {
+	command := newRootCmd()
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"--help"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	help := output.String()
+	for _, expected := range []string{"terminal", "cloud", "daemon", "pair"} {
+		if !strings.Contains(help, expected) {
+			t.Fatalf("root help missing %q:\n%s", expected, help)
+		}
+	}
+	for _, forbidden := range []string{"v3", "smoke", "visual-snapshot", "tmux-smoke"} {
+		if strings.Contains(help, forbidden) {
+			t.Fatalf("product help exposes %q:\n%s", forbidden, help)
+		}
+	}
+
+	command = newRootCmd()
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"v3", "smoke"})
+	if err := command.Execute(); err == nil {
+		t.Fatal("product command tree accepted removed v3 namespace")
+	}
+}
+
+func TestTerminalHelpListsCompleteCLI002Lifecycle(t *testing.T) {
+	command := newRootCmd()
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"terminal", "--help"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"create", "list", "show", "attach", "restart", "kill", "remove", "rename", "tag"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("terminal help missing %q:\n%s", expected, output.String())
+		}
+	}
+}
+
+func TestCLIExitCodeUsesTypedProtocolErrors(t *testing.T) {
+	cases := []struct {
+		err  error
+		want int
+	}{
+		{err: usageCLIError("bad argument"), want: 2},
+		{err: classifyCLIError(&protocol.RequestError{Code: 404, Message: "missing"}), want: 3},
+		{err: classifyCLIError(&protocol.RequestError{Code: 400, Message: "conflict"}), want: 4},
+		{err: classifyCLIError(&protocol.RequestError{Code: 403, Message: "denied"}), want: 5},
+		{err: classifyCLIError(&protocol.RequestError{Code: 503, Message: "offline"}), want: 6},
+		{err: classifyCLIError(errors.New("dial failed")), want: 6},
+	}
+	for _, test := range cases {
+		if got := cliExitCode(test.err); got != test.want {
+			t.Fatalf("cliExitCode(%v) = %d, want %d", test.err, got, test.want)
+		}
+	}
+}
+
+func TestLocalTerminalTargetRejectsOtherEndpointsUntilCLI004(t *testing.T) {
+	if _, err := localTerminalID("cloud-sg:demo"); cliExitCode(err) != 2 {
+		t.Fatalf("foreign endpoint error = %v, exit=%d", err, cliExitCode(err))
+	}
+	if id, err := localTerminalID("local:demo"); err != nil || id != "demo" {
+		t.Fatalf("local target = (%q, %v)", id, err)
+	}
+}

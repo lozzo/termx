@@ -378,7 +378,7 @@ func TestV3SmokeRunsTUIv3Smoke(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "smoke"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -406,7 +406,7 @@ func TestV3SmokeCommandIncludesVisualReviewCases(t *testing.T) {
 	runTUIv3SmokeDetailed = tuiv3.SmokeRunDetailed
 
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "smoke"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -444,7 +444,7 @@ func TestV3SmokeCommandIncludesVisualReviewCases(t *testing.T) {
 
 func TestV3PaneCommandAdapterParsesMiniCommand(t *testing.T) {
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "pane-command", "pane", "resize", "right", "delta=4", "pane=main"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -583,7 +583,7 @@ func TestV3PingConnectsExistingCoreV2Daemon(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "ping"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -631,7 +631,7 @@ func TestV3PingAutoStartsCoreV2Daemon(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "ping"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -665,7 +665,7 @@ func TestV3PingReturnsAutoStartError(t *testing.T) {
 		return os.ErrPermission
 	}
 
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"--socket", filepath.Join(t.TempDir(), "termx-v2.sock"), "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "ping"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -705,7 +705,7 @@ func TestV3PingConnectsRealCoreV2Daemon(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "ping"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -873,10 +873,11 @@ func TestDefaultLocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 	if err := newCmd.Execute(); err != nil {
 		t.Fatalf("new returned error: %v", err)
 	}
-	terminalID := strings.TrimSpace(newOut.String())
-	if terminalID != "v3-demo" {
-		t.Fatalf("expected v3 new to print terminal id, got %q", newOut.String())
+	terminalTarget := strings.TrimSpace(newOut.String())
+	if terminalTarget != "local:v3-demo" {
+		t.Fatalf("expected terminal create to print stable target, got %q", newOut.String())
 	}
+	terminalID := strings.TrimPrefix(terminalTarget, "local:")
 
 	var lsOut bytes.Buffer
 	lsCmd := newRootCmd()
@@ -894,8 +895,68 @@ func TestDefaultLocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 		t.Fatalf("unexpected v3 ls output:\n%s", lsText)
 	}
 
+	var listJSON bytes.Buffer
+	listJSONCmd := newRootCmd()
+	listJSONCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "terminal", "list", "--json"})
+	listJSONCmd.SetOut(&listJSON)
+	listJSONCmd.SetErr(io.Discard)
+	if err := listJSONCmd.Execute(); err != nil {
+		t.Fatalf("terminal list JSON returned error: %v", err)
+	}
+	for _, expected := range []string{`"schema_version":1`, `"kind":"terminal_list"`, `"target":"local:v3-demo"`} {
+		if !strings.Contains(listJSON.String(), expected) {
+			t.Fatalf("terminal list JSON missing %s: %s", expected, listJSON.String())
+		}
+	}
+
+	runningRemoveCmd := newRootCmd()
+	runningRemoveCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "terminal", "remove", terminalTarget})
+	runningRemoveCmd.SetOut(io.Discard)
+	runningRemoveCmd.SetErr(io.Discard)
+	if err := runningRemoveCmd.Execute(); cliExitCode(err) != 4 {
+		t.Fatalf("running terminal remove error = %v, exit=%d", err, cliExitCode(err))
+	}
+
+	renameCmd := newRootCmd()
+	renameCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "terminal", "rename", terminalTarget, "renamed-demo"})
+	renameCmd.SetOut(io.Discard)
+	renameCmd.SetErr(io.Discard)
+	if err := renameCmd.Execute(); err != nil {
+		t.Fatalf("terminal rename returned error: %v", err)
+	}
+
+	tagCmd := newRootCmd()
+	tagCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "terminal", "tag", terminalTarget, "role=test"})
+	tagCmd.SetOut(io.Discard)
+	tagCmd.SetErr(io.Discard)
+	if err := tagCmd.Execute(); err != nil {
+		t.Fatalf("terminal tag returned error: %v", err)
+	}
+
+	var showOut bytes.Buffer
+	showCmd := newRootCmd()
+	showCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "terminal", "show", terminalTarget, "--json"})
+	showCmd.SetOut(&showOut)
+	showCmd.SetErr(io.Discard)
+	if err := showCmd.Execute(); err != nil {
+		t.Fatalf("terminal show returned error: %v", err)
+	}
+	for _, expected := range []string{`"schema_version":1`, `"kind":"terminal"`, `"target":"local:v3-demo"`, `"name":"renamed-demo"`, `"role":"test"`} {
+		if !strings.Contains(showOut.String(), expected) {
+			t.Fatalf("terminal show JSON missing %s: %s", expected, showOut.String())
+		}
+	}
+
+	restartCmd := newRootCmd()
+	restartCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "terminal", "restart", terminalTarget, "--quiet"})
+	restartCmd.SetOut(io.Discard)
+	restartCmd.SetErr(io.Discard)
+	if err := restartCmd.Execute(); err != nil {
+		t.Fatalf("terminal restart returned error: %v", err)
+	}
+
 	killCmd := newRootCmd()
-	killCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "kill", terminalID})
+	killCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "kill", terminalTarget})
 	killCmd.SetOut(io.Discard)
 	killCmd.SetErr(io.Discard)
 	if err := killCmd.Execute(); err != nil {
@@ -911,6 +972,14 @@ func TestDefaultLocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 	}
 	if _, err := server.GetTerminal(terminalID); err == nil || !strings.Contains(err.Error(), "terminal not found") {
 		t.Fatalf("expected removed terminal lookup to fail, got %v", err)
+	}
+
+	missingShowCmd := newRootCmd()
+	missingShowCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "terminal", "show", terminalTarget, "--json"})
+	missingShowCmd.SetOut(io.Discard)
+	missingShowCmd.SetErr(io.Discard)
+	if err := missingShowCmd.Execute(); cliExitCode(err) != 3 {
+		t.Fatalf("removed terminal show error = %v, exit=%d", err, cliExitCode(err))
 	}
 
 	var emptyLs bytes.Buffer
@@ -955,7 +1024,7 @@ func TestV3LocalControlCommandsRemainAvailable(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs(append([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "new", "--name", "v3-demo", "--"}, testShellSleepCommand()...))
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -1013,7 +1082,7 @@ func TestV3HistoryDumpWritesAuthoritativeWindows(t *testing.T) {
 
 	outPath := filepath.Join(t.TempDir(), "history.dump")
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "history-dump", "term-dump", "--out", outPath, "--cols", "24", "--limit", "1"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -1095,7 +1164,7 @@ func TestR448V3HistoryBacklogWritesDiagnostics(t *testing.T) {
 
 	var out bytes.Buffer
 	outPath := filepath.Join(t.TempDir(), "history-backlog.tsv")
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "history-backlog", "term-backlog", "--out", outPath})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -1135,13 +1204,13 @@ func TestV3AttachRejectsNonInteractiveTerminal(t *testing.T) {
 		return nil
 	}
 
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "attach", "term-1"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "termx v3 attach requires an interactive terminal") {
+	if err == nil || !strings.Contains(err.Error(), "termx terminal attach requires an interactive terminal") {
 		t.Fatalf("expected non-interactive attach error, got %v", err)
 	}
 }
@@ -1163,7 +1232,7 @@ func TestV3AttachRoutesToTUIv3Runtime(t *testing.T) {
 		return nil
 	}
 
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "attach", "term-1"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -1379,7 +1448,7 @@ func TestV3RootEmptyInteractiveRuntimeStartsPickerAndEscLeavesUnconnectedPane(t 
 }
 
 func TestRemoteCommandsAreNotMounted(t *testing.T) {
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "remote", "status"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -1770,7 +1839,7 @@ func TestV3VisualSnapshotCommandPrintsFixedVisualFrame(t *testing.T) {
 	runTUIv3SmokeDetailed = tuiv3.SmokeRunDetailed
 
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "visual-snapshot"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -1802,7 +1871,7 @@ func TestV3VisualSnapshotCommandCanWriteANSIScreen(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "visual-snapshot", "--ansi"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -1829,7 +1898,7 @@ func TestV3VisualSnapshotCommandCanSelectSmokeCase(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "visual-snapshot", "--case", "workbench-tree-page"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -1844,7 +1913,7 @@ func TestV3VisualSnapshotCommandCanSelectSmokeCase(t *testing.T) {
 
 func TestV3E2ESmokeCommandRunsLocalCoreAndTUIPath(t *testing.T) {
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "e2e-smoke"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -1898,7 +1967,7 @@ func TestV3TmuxSmokeCommandReportsArtifactPaths(t *testing.T) {
 		t.Skipf("tmux is not installed: %v", err)
 	}
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "tmux-smoke"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -1962,7 +2031,7 @@ func TestV3TmuxTerminalSmokeCommandReportsArtifacts(t *testing.T) {
 	}
 	termxBin := buildTermxBinaryForTest(t)
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "tmux-terminal-smoke", "--termx-bin", termxBin})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -2034,7 +2103,7 @@ func TestV3TmuxResizeSmokeCommandReportsArtifacts(t *testing.T) {
 	}
 	termxBin := buildTermxBinaryForTest(t)
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "tmux-resize-smoke", "--termx-bin", termxBin})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -2106,7 +2175,7 @@ func TestV3TmuxANSISmokeCommandReportsArtifacts(t *testing.T) {
 	}
 	termxBin := buildTermxBinaryForTest(t)
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "tmux-ansi-smoke", "--termx-bin", termxBin})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -2176,7 +2245,7 @@ func TestV3TmuxEmojiDotsSmokeCommandReportsArtifacts(t *testing.T) {
 	}
 	termxBin := buildTermxBinaryForTest(t)
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "tmux-emoji-dots-smoke", "--termx-bin", termxBin})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -2297,7 +2366,7 @@ func TestV3TmuxVisualCompareCommandReportsArtifacts(t *testing.T) {
 	}
 	termxBin := buildTermxBinaryForTest(t)
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "tmux-visual-compare", "--termx-bin", termxBin})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -2371,7 +2440,7 @@ func TestV3TmuxStabilitySmokeCommandReportsArtifacts(t *testing.T) {
 	}
 	termxBin := buildTermxBinaryForTest(t)
 	var out bytes.Buffer
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"v3", "tmux-stability-smoke", "--termx-bin", termxBin, "--rounds", "1"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
@@ -2416,7 +2485,7 @@ func v3TmuxSmokeOutputValue(output string, key string) string {
 func buildTermxBinaryForTest(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "termx-test-bin")
-	cmd := exec.Command("go", "build", "-o", path, ".")
+	cmd := exec.Command("go", "build", "-tags", "termx_dev_commands", "-o", path, ".")
 	cmd.Dir = "."
 	output, err := cmd.CombinedOutput()
 	if err != nil {

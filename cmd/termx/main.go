@@ -7,10 +7,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var addDevelopmentCommands = func(*cobra.Command, *string, *string, *string) {}
+
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		os.Exit(cliExitCode(err))
 	}
 }
 
@@ -19,7 +21,9 @@ func newRootCmd() *cobra.Command {
 	var logFile string
 	var configPath string
 	cmd := &cobra.Command{
-		Use: "termx",
+		Use:           "termx",
+		Short:         "A terminal multiplexer for local and remote daemon endpoints",
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runV3RootCommand(cmd, socket, logFile)
 		},
@@ -28,14 +32,12 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&logFile, "log-file", "", "log file path (default: $TERMX_LOG_FILE or XDG state dir)")
 	cmd.PersistentFlags().StringVar(&configPath, "config", "", "termx config path (default: XDG config dir termx.yaml)")
 	cmd.AddCommand(v3DaemonCommand(&socket, &logFile, &configPath))
-	cmd.AddCommand(v3NewCommand(&socket, &logFile))
-	cmd.AddCommand(v3LsCommand(&socket, &logFile))
-	cmd.AddCommand(v3KillCommand(&socket, &logFile))
-	cmd.AddCommand(v3RemoveCommand(&socket, &logFile))
-	cmd.AddCommand(v3AttachCommand(&socket, &logFile))
-	cmd.AddCommand(v3Command(&socket, &logFile, &configPath))
+	terminalRuntime := terminalCommandRuntime{socket: &socket, logFile: &logFile}
+	cmd.AddCommand(newTerminalCommand(terminalRuntime))
+	cmd.AddCommand(newTerminalAliasCommands(terminalRuntime)...)
 	cmd.AddCommand(v3CloudCommand())
 	cmd.AddCommand(v3PairCommand())
 	cmd.AddCommand(v3LicensesCommand())
+	addDevelopmentCommands(cmd, &socket, &logFile, &configPath)
 	return cmd
 }

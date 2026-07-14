@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,21 @@ type Response struct {
 type ProtocolError struct {
 	Code    int
 	Message string
+}
+
+// RequestError 是 daemon 对单次 control request 返回的稳定错误分类。
+// Code 来自 owning daemon 的 protocol contract；CLI 可以据此映射退出码，但不得解析 Message 猜测状态。
+type RequestError struct {
+	Code    int
+	Message string
+}
+
+// Error 返回适合诊断的协议错误文本；机器判断必须读取 Code。
+func (err *RequestError) Error() string {
+	if err == nil {
+		return "protocol request failed"
+	}
+	return fmt.Sprintf("protocol error %d: %s", err.Code, err.Message)
 }
 
 type ErrorMessage struct {

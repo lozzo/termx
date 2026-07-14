@@ -772,7 +772,7 @@ func (c *Client) HistoryReplay(ctx context.Context, channel uint16, beforeOffset
 				if err != nil {
 					return nil, err
 				}
-				return nil, fmt.Errorf("protocol error %d: %s", msgErr.Error.Code, msgErr.Error.Message)
+				return nil, &RequestError{Code: msgErr.Error.Code, Message: msgErr.Error.Message}
 			case wire.TypeClosed:
 				return nil, io.EOF
 			}
@@ -913,7 +913,7 @@ func (c *Client) readLoop() {
 				ch := c.waiters[msg.ID]
 				c.mu.Unlock()
 				if ch != nil {
-					ch <- result{err: fmt.Errorf("protocol error %d: %s", msg.Error.Code, msg.Error.Message)}
+					ch <- result{err: &RequestError{Code: msg.Error.Code, Message: msg.Error.Message}}
 				}
 			}
 			continue

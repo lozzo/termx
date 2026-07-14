@@ -109,7 +109,7 @@ func TestV3AttachDoesNotCreateTuiv2Config(t *testing.T) {
 		return nil
 	}
 
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "attach", "term-1"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -152,7 +152,7 @@ tui:
 		return nil
 	}
 
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "attach", "term-1"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -235,7 +235,7 @@ tui:
 		return nil
 	}
 
-	cmd := newRootCmd()
+	cmd := newDevelopmentRootCmd()
 	cmd.SetArgs([]string{"--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "attach", "term-1"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
