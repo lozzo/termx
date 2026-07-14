@@ -13,10 +13,14 @@ owning Control Plane 与 Hub 仍只监听服务器 loopback。React Web Controll
 | systemd unit | listener | 责任 |
 | --- | --- | --- |
 | `termx-staging-cloud.service` | `127.0.0.1:41001/tcp`、`127.0.0.1:41002/tcp`、`0.0.0.0:41003/udp` | Control Plane 浏览器/edge API、Hub 与 lease-bound TURN |
-| `termx-staging-daemon-companion.service`（disabled） | `/run/termx-staging/daemon-companion.sock` | 保留的 managed daemon 装配，当前不启动 |
-| `termx-staging-daemon.service`（disabled） | `/run/termx-staging/daemon.sock` | 保留的 managed daemon 装配，当前不启动 |
+| `termx-staging-daemon-companion.service` | `/run/termx-staging/daemon-companion.sock` | daemon device session、presence 与 signaling |
+| `termx-staging-daemon.service` | `/run/termx-staging/daemon.sock` | 当前账号名下的 managed core-v2/termx protocol daemon |
 
-二进制位于 `/opt/termx-staging/bin`，React 静态文件位于 `/opt/termx-staging/web/dist`，Cloud 非秘密运行状态与 Web 账号库位于 `/var/lib/termx-staging`。systemd 使用无登录权限的 `termx-staging` 用户。Companion session 写入 GNOME Keyring；keyring 解锁材料由 systemd `LoadCredential` 从服务器 root-only 文件加载，不进入仓库、进程参数或日志。
+二进制位于 `/opt/termx-staging/bin`，React 静态文件位于 `/opt/termx-staging/web/dist`，Cloud 非秘密运行状态与 Web 账号库位于 `/var/lib/termx-staging`。systemd 使用无登录权限的 `termx-staging` 用户。Companion session 写入 GNOME Keyring；keyring 解锁材料由 systemd `LoadCredential` 从服务器 root-only 文件加载，不进入仓库、进程参数或日志。CLOUD013 后，development Companion 已内嵌 `staging-public-http` 非秘密 manifest，unit 不再传入 `--dev-manifest` 或等待 `/var/lib/termx-staging/runtime.json`；该 runtime 文件只属于 Cloud supervisor 与公开投影生成，不得覆盖 Companion 构建期配置。
+
+Linux `termx` 与相邻 `termx-cloud` 必须来自同一次 `build-cloud-test`，摘要在构建期绑定，且两个文件都归运行它们的 `termx-staging` 用户所有；`/opt/termx-staging/bin` 目录和 `termx-cloud-staging` supervisor 仍由 root 拥有。不得把独立 public `termx`、旧 Companion 或 root-owned development Companion 混入这对产物，也不得放宽当前用户 ownership/SHA 校验。
+
+managed daemon 的 DeviceIdentity、history 和 runtime state 固定使用 `/var/lib/termx-staging/managed-daemon-state`。历史测试目录 `/var/lib/termx-staging/daemon-state` 保留为旧设备状态，不参与当前 enrollment；一个已经绑定其他账号的 DeviceIdentity 不能由新账号接管，也不得通过删除私钥或重启 Control Plane 绕过 ownership conflict。
 
 React 只在构建期使用 Vite，服务器没有 Web Controller Node 进程。套餐价格由 Control Plane 从部署的 `plans.json` 读取，未发布价格不会由页面推导：
 
@@ -80,7 +84,7 @@ ssh root@114.66.58.243 \
 ssh root@114.66.58.243 'ss -lnup | grep 41003'
 ```
 
-预期 Cloud 与 Nginx 为 `active`，root 当前用户 daemon 为 `running`，两个 health response 是 `204`，TURN listener 为 `0.0.0.0:41003/udp`。`termx-staging-daemon` 与 `termx-staging-daemon-companion` 按当前服务器角色保持 disabled/inactive。
+预期 Cloud、Nginx、managed Companion 与 managed daemon 均为 `active`，root 当前用户 SSH daemon 为 `running`，两个 health response 是 `204`，TURN listener 为 `0.0.0.0:41003/udp`。root SSH daemon 与 `termx-staging` managed daemon 使用独立用户、socket、state 和 DeviceIdentity，不能互相替代。
 
 `ss` 看到 listener 只证明进程已绑定端口，不证明云厂商入站允许 UDP。上线或真机 Relay 验收前，必须在云安全组放行 `41003/udp`，并从服务器外发送探测，同时在实际公网网卡观察入站包：
 

@@ -12,7 +12,7 @@ RuntimeDirectory=termx-staging
 RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=restart
 WorkingDirectory=/var/lib/termx-staging/files
-Environment=XDG_STATE_HOME=/var/lib/termx-staging/daemon-state
+Environment=XDG_STATE_HOME=/var/lib/termx-staging/managed-daemon-state
 Environment=TERMX_CLOUD_COMPANION_SOCKET=/run/termx-staging/daemon-companion.sock
 ExecStart=/opt/termx-staging/bin/termx --socket /run/termx-staging/daemon.sock daemon --cloud
 Restart=on-failure
