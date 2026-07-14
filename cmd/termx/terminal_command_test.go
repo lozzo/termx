@@ -57,6 +57,22 @@ func TestTerminalHelpListsCompleteCLI002Lifecycle(t *testing.T) {
 	}
 }
 
+func TestTerminalHelpListsCLI005AutomationCommands(t *testing.T) {
+	command := newRootCmd()
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"terminal", "--help"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"send", "capture", "resize", "wait", "events"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("terminal help missing CLI005 command %q:\n%s", expected, output.String())
+		}
+	}
+}
+
 func TestCLIExitCodeUsesTypedProtocolErrors(t *testing.T) {
 	cases := []struct {
 		err  error

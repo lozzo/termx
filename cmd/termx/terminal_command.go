@@ -24,6 +24,15 @@ type terminalProtocolClient interface {
 	SetTags(context.Context, string, map[string]string) error
 	SetMetadata(context.Context, string, string, map[string]string) error
 	PathDefaults(context.Context) (*protocol.PathDefaultsResult, error)
+	AttachWithOptions(context.Context, protocol.AttachParams) (*protocol.AttachResult, error)
+	Detach(context.Context, protocol.DetachParams) error
+	InputWithOptions(context.Context, protocol.InputParams) error
+	EnsureResize(context.Context, protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error)
+	HistoryWindow(context.Context, protocol.HistoryWindowParams) (*protocol.HistoryWindow, error)
+	HistoryCopy(context.Context, protocol.HistoryWindowParams) (string, error)
+	ReleaseHistory(context.Context, protocol.HistoryWindowParams) error
+	LiveScreen(context.Context, string) (*protocol.NativeScreenSnapshot, error)
+	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
 	Close() error
 }
 
@@ -103,6 +112,11 @@ func newTerminalCommand(runtime terminalCommandRuntime) *cobra.Command {
 		newTerminalMutationCommand(runtime, "remove", "Remove an exited terminal record", terminalRemove),
 		newTerminalRenameCommand(runtime),
 		newTerminalTagCommand(runtime),
+		newTerminalSendCommand(runtime),
+		newTerminalCaptureCommand(runtime),
+		newTerminalResizeCommand(runtime),
+		newTerminalWaitCommand(runtime),
+		newTerminalEventsCommand(runtime),
 	)
 	return command
 }
@@ -138,11 +152,12 @@ func (runtime terminalCommandRuntime) requestedEndpoint() string {
 
 func (runtime terminalCommandRuntime) open(cmd *cobra.Command, cfg connection.Config) (terminalProtocolClient, func(), error) {
 	// terminal lifecycle 与 metadata truth 始终来自 owning endpoint 的 daemon client。
+	// 参数已经在进入本函数前完成校验；transport/protocol 失败不得附带 Cobra usage。
+	cmd.Root().SilenceUsage = true
 	client, closeClient, err := openEndpointProtocolClient(cmd.Context(), cfg, *runtime.socket, *runtime.logFile)
 	if err != nil {
 		return nil, func() {}, classifyCLIError(err)
 	}
-	cmd.Root().SilenceUsage = true
 	return client, closeClient, nil
 }
 
@@ -228,13 +243,16 @@ func newTerminalCreateCommand(runtime terminalCommandRuntime, use string) *cobra
 
 func newTerminalListCommand(runtime terminalCommandRuntime, use string) *cobra.Command {
 	var jsonOutput, noHeader, allEndpoints bool
-	var stateFilter string
+	var stateFilter, format string
 	var tagFilters []string
 	command := &cobra.Command{
 		Use:   use,
 		Short: "List terminals from one or all daemon endpoints",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if jsonOutput && format != "" {
+				return usageCLIError("--json and --format are mutually exclusive")
+			}
 			registry, err := loadNormalizedConnectionRegistry()
 			if err != nil {
 				return err
@@ -278,6 +296,9 @@ func newTerminalListCommand(runtime terminalCommandRuntime, use string) *cobra.C
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(terminalListEnvelope{SchemaVersion: 1, Kind: "terminal_list", Items: views})
 			}
+			if format != "" {
+				return writeTerminalFormat(cmd.OutOrStdout(), format, views)
+			}
 			return writeTerminalTable(cmd.OutOrStdout(), views, noHeader)
 		},
 	}
@@ -286,16 +307,21 @@ func newTerminalListCommand(runtime terminalCommandRuntime, use string) *cobra.C
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
 	command.Flags().BoolVar(&noHeader, "no-header", false, "omit the human table header")
 	command.Flags().BoolVar(&allEndpoints, "all-endpoints", false, "aggregate every enabled endpoint")
+	command.Flags().StringVar(&format, "format", "", "Go template over stable lowercase terminal fields")
 	return command
 }
 
 func newTerminalShowCommand(runtime terminalCommandRuntime) *cobra.Command {
 	var jsonOutput bool
+	var format string
 	command := &cobra.Command{
 		Use:   "show TARGET",
 		Short: "Show one terminal from its owning daemon endpoint",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if jsonOutput && format != "" {
+				return usageCLIError("--json and --format are mutually exclusive")
+			}
 			registry, err := loadNormalizedConnectionRegistry()
 			if err != nil {
 				return err
@@ -317,10 +343,14 @@ func newTerminalShowCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(terminalItemEnvelope{SchemaVersion: 1, Kind: "terminal", Item: view})
 			}
+			if format != "" {
+				return writeTerminalFormat(cmd.OutOrStdout(), format, []terminalView{view})
+			}
 			return writeTerminalDetail(cmd.OutOrStdout(), view)
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
+	command.Flags().StringVar(&format, "format", "", "Go template over stable lowercase terminal fields")
 	return command
 }
 

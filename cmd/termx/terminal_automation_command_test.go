@@ -1,0 +1,202 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/shared/connection"
+)
+
+func TestTerminalAutomationLocalDataPlane(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	socketPath, client, closeServer := startCLIEndpointServer(t)
+	defer closeServer()
+	if err := connection.Save("", connection.Registry{
+		Version: 1, Default: connection.DefaultEndpointID,
+		Connections: map[connection.EndpointID]connection.Config{
+			connection.DefaultEndpointID: {
+				ID: connection.DefaultEndpointID, Label: "Local", Transport: connection.TransportLocal,
+				ConnectMode: connection.ConnectAuto, Enabled: true, Socket: socketPath,
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID: "automation", Name: "automation", Command: []string{"/bin/sh", "-c", `printf 'READY\n'; IFS= read -r line; printf 'GOT:%s\n' "$line"`},
+		Size: protocol.Size{Cols: 80, Rows: 24},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	timeoutCommand := newRootCmd()
+	timeoutCommand.SetOut(io.Discard)
+	timeoutCommand.SetErr(io.Discard)
+	timeoutCommand.SetArgs([]string{"terminal", "wait", "local:automation", "--state", "exited", "--timeout", "20ms"})
+	if err := timeoutCommand.Execute(); cliExitCode(err) != 7 {
+		t.Fatalf("wait timeout = %v, exit=%d", err, cliExitCode(err))
+	}
+
+	sent := executeTerminalCLI(t, nil, "terminal", "send", "local:automation", "hello", "--enter", "--json")
+	if !strings.Contains(sent, `"kind":"terminal_input_sent"`) || !strings.Contains(sent, `"bytes":6`) {
+		t.Fatalf("unexpected send output: %s", sent)
+	}
+	waited := executeTerminalCLI(t, nil, "terminal", "wait", "local:automation", "--state", "exited", "--timeout", "5s", "--json")
+	if !strings.Contains(waited, `"state":"exited"`) {
+		t.Fatalf("unexpected wait output: %s", waited)
+	}
+	captured := executeTerminalCLI(t, nil, "terminal", "capture", "local:automation", "--lines", "100", "--cols", "80")
+	if !strings.Contains(captured, "READY") || !strings.Contains(captured, "GOT:hello") {
+		t.Fatalf("capture did not read authoritative terminal output: %q", captured)
+	}
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID: "resize-me", Name: "resize-me", Command: []string{"/bin/sh", "-c", "sleep 10"}, Size: protocol.Size{Cols: 80, Rows: 24},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resized := executeTerminalCLI(t, nil, "terminal", "resize", "local:resize-me", "100", "35", "--json")
+	if !strings.Contains(resized, `"resized":true`) || !strings.Contains(resized, `"cols":100`) || !strings.Contains(resized, `"rows":35`) {
+		t.Fatalf("unexpected resize output: %s", resized)
+	}
+	formatted := executeTerminalCLI(t, nil, "terminal", "list", "--format", `{{.target}}|{{.state}}|{{.cols}}x{{.rows}}`)
+	if !strings.Contains(formatted, "local:resize-me|running|100x35") {
+		t.Fatalf("unexpected formatted list: %s", formatted)
+	}
+	live := executeTerminalCLI(t, nil, "terminal", "capture", "local:resize-me", "--live", "--json")
+	if !strings.Contains(live, `"source":"live"`) || !strings.Contains(live, `"target":"local:resize-me"`) {
+		t.Fatalf("unexpected live capture: %s", live)
+	}
+}
+
+func TestTerminalEventsWritesStableNDJSON(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	socketPath, client, closeServer := startCLIEndpointServer(t)
+	defer closeServer()
+	if err := connection.Save("", connection.Registry{
+		Version: 1, Default: connection.DefaultEndpointID,
+		Connections: map[connection.EndpointID]connection.Config{
+			connection.DefaultEndpointID: {ID: connection.DefaultEndpointID, Transport: connection.TransportLocal, ConnectMode: connection.ConnectAuto, Enabled: true, Socket: socketPath},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct {
+		output string
+		err    error
+	}, 1)
+	go func() {
+		command := newRootCmd()
+		var output bytes.Buffer
+		command.SetOut(&output)
+		command.SetErr(io.Discard)
+		command.SetArgs([]string{"terminal", "events", "--type", "created", "--output", "ndjson", "--count", "1", "--timeout", "5s"})
+		err := command.Execute()
+		done <- struct {
+			output string
+			err    error
+		}{output.String(), err}
+	}()
+	var result struct {
+		output string
+		err    error
+	}
+	for index := 0; index < 50; index++ {
+		terminalID := fmt.Sprintf("event-created-%d", index)
+		if _, err := client.Create(context.Background(), protocol.CreateParams{
+			ID: terminalID, Command: []string{"/bin/sh", "-c", "exit 0"}, Size: protocol.Size{Cols: 80, Rows: 24},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case result = <-done:
+			goto received
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	t.Fatal("events command did not observe a created event")
+
+received:
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	var event terminalEventEnvelope
+	if err := json.Unmarshal([]byte(strings.TrimSpace(result.output)), &event); err != nil {
+		t.Fatalf("invalid NDJSON event %q: %v", result.output, err)
+	}
+	if event.Kind != "terminal_event" || event.Type != "created" || !strings.HasPrefix(event.Target, "local:event-created-") || event.SchemaVersion != 1 {
+		t.Fatalf("unexpected event %#v", event)
+	}
+}
+
+func TestTerminalAutomationInputAndFormatValidation(t *testing.T) {
+	data, err := terminalSendPayload(strings.NewReader("ignored"), nil, nil, []string{"Ctrl-C", "Enter", "Up"}, nil, false, false)
+	if err != nil || !bytes.Equal(data, []byte{3, '\r', 0x1b, '[', 'A'}) {
+		t.Fatalf("encoded keys = %v, %v", data, err)
+	}
+	if _, err := terminalSendPayload(strings.NewReader("stdin"), []string{"text"}, nil, nil, nil, true, false); cliExitCode(err) != 2 {
+		t.Fatalf("mixed source error = %v", err)
+	}
+	var output bytes.Buffer
+	if err := writeTerminalFormat(&output, `{{.unknown}}`, []terminalView{{Target: "local:one"}}); cliExitCode(err) != 2 {
+		t.Fatalf("unknown format field error = %v", err)
+	}
+	if _, _, err := parseTerminalSize("80x", "24"); cliExitCode(err) != 2 {
+		t.Fatalf("invalid size error = %v", err)
+	}
+}
+
+func TestTerminalTransportErrorDoesNotPrintUsage(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := connection.Save("", connection.Registry{
+		Version: 1, Default: "west",
+		Connections: map[connection.EndpointID]connection.Config{
+			"west": {ID: "west", Transport: connection.TransportSSH, Address: "west.example", ConnectMode: connection.ConnectOnDemand, Enabled: true, RemoteSocket: "auto"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	oldSSH := dialCLIEndpointSSH
+	t.Cleanup(func() { dialCLIEndpointSSH = oldSSH })
+	dialCLIEndpointSSH = func(context.Context, context.Context, connection.Config) (*protocol.Client, error) {
+		return nil, errors.New("transport unavailable")
+	}
+	command := newRootCmd()
+	var stderr bytes.Buffer
+	command.SetOut(io.Discard)
+	command.SetErr(&stderr)
+	command.SetArgs([]string{"terminal", "list"})
+	err := command.Execute()
+	if cliExitCode(err) != 6 || !strings.Contains(err.Error(), "transport unavailable") {
+		t.Fatalf("transport error = %v, exit=%d", err, cliExitCode(err))
+	}
+	if strings.Contains(stderr.String(), "Usage:") {
+		t.Fatalf("runtime transport error printed command usage: %s", stderr.String())
+	}
+}
+
+func executeTerminalCLI(t *testing.T, input io.Reader, args ...string) string {
+	t.Helper()
+	command := newRootCmd()
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(io.Discard)
+	if input == nil {
+		input = strings.NewReader("")
+	}
+	command.SetIn(input)
+	command.SetArgs(args)
+	if err := command.Execute(); err != nil {
+		t.Fatalf("termx %s: %v", strings.Join(args, " "), err)
+	}
+	return output.String()
+}

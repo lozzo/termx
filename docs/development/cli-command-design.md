@@ -274,6 +274,8 @@ config 修改必须使用现有严格 parser 和原子 writer；secret 只显示
 
 `--json`、`--format` 互斥。事件流使用 `--json=stream` 或显式 `--output ndjson`，每行一个带 schema version 的对象。secret 字段从 schema 层排除，不能先序列化再字符串脱敏。
 
+CLI005 固定 `--format` 为 Go template 语法，字段名使用 JSON 同源的小写稳定名称，例如 `{{.target}}|{{.state}}|{{.cols}}x{{.rows}}`；未知字段必须失败。`terminal events --output ndjson` 每行输出独立的 `schema_version=1` `terminal_event` 对象，不能混入 human 文本或 ANSI。
+
 ### 7.2 查询通用参数
 
 ```text
