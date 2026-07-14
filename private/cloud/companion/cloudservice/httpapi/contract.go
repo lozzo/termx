@@ -74,8 +74,9 @@ const (
 	HubResolveEndpointPath = "/v1/endpoints/resolve"
 )
 
-// Manifest 是 `make cloud-dev` 写入 `.artifacts` 的非生产运行描述。
-// 它只包含 loopback service 地址和公开 profile metadata，不包含 cloud session、Hub ticket 或 daemon secret。
+// Manifest 是 development Cloud 的非生产运行描述。
+// 它可以来自 `make cloud-dev` 的 runtime 文件，也可以在显式测试构建时固化进 Companion；
+// 只允许包含 service 地址和公开 profile metadata，不得包含 cloud session、Hub ticket 或 daemon secret。
 type Manifest struct {
 	Version          uint32 `json:"version"`
 	Profile          string `json:"profile"`
@@ -96,6 +97,12 @@ func LoadManifest(path string) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, fmt.Errorf("read dev cloud manifest: %w", err)
 	}
+	return ParseManifest(data)
+}
+
+// ParseManifest 严格解析 development Cloud manifest bytes，并验证 profile 对应的网络边界。
+// 调用方负责限定数据来源；未知字段、尾随 JSON、非法公网地址或生产 profile 都会失败，且不得 fallback。
+func ParseManifest(data []byte) (Manifest, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var manifest Manifest

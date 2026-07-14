@@ -234,11 +234,7 @@ func v3CloudStatusCommand() *cobra.Command {
 		Short: "Show signed installation and cloud session status",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cloudInstaller, err := newV3CloudInstallerForCommand()
-			if err != nil {
-				return err
-			}
-			installed, err := cloudInstaller.Status()
+			installed, err := defaultV3CloudInstallationStatus()
 			if err != nil {
 				return err
 			}

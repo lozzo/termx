@@ -15,12 +15,13 @@ PRIVATE_MODULES := \
 	private/cloud/route-planner \
 	private/cloud/web-controller
 
-.PHONY: help build build-web-controller build-web-controller-linux cloud-dev test test-private test-clients test-android test-all doctor clean
+.PHONY: help build build-cloud-test build-web-controller build-web-controller-linux cloud-dev test test-private test-clients test-android test-all doctor clean
 
 help:
 	@printf '%s\n' \
 		'Targets:' \
 		'  make build         Build termx into .artifacts/bin/' \
+		'  make build-cloud-test  Build self-contained termx + staging Companion test suite' \
 		'  make build-web-controller  Build the React static Web Controller' \
 		'  make build-web-controller-linux  Alias for the platform-independent static Web Controller build' \
 		'  make cloud-dev     Start the explicit single-region dev cloud' \
@@ -35,6 +36,9 @@ help:
 build:
 	mkdir -p "$(dir $(TERMX_BIN))"
 	GOWORK=off go build -o "$(TERMX_BIN)" ./cmd/termx
+
+build-cloud-test:
+	scripts/build_cloud_test.sh
 
 build-web-controller:
 	rm -rf "$(ARTIFACT_DIR)/web-controller"

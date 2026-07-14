@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"os"
@@ -114,6 +115,40 @@ func TestExplicitDevelopmentManifestSelectsNetworkAdapter(t *testing.T) {
 	}
 	if _, ok := hub.(*httpapi.Adapter); !ok {
 		t.Fatalf("dev Hub adapter = %T", hub)
+	}
+}
+
+func TestEmbeddedDevelopmentManifestSelectsNetworkAdapterWithoutRuntimeFile(t *testing.T) {
+	manifestPath := writeDevManifest(t)
+	payload, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalEmbedded := embeddedDevelopmentManifestBase64
+	embeddedDevelopmentManifestBase64 = base64.RawStdEncoding.EncodeToString(payload)
+	t.Cleanup(func() { embeddedDevelopmentManifestBase64 = originalEmbedded })
+	controlPlane, hub, err := cloudAdapters("", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := controlPlane.(*httpapi.Adapter); !ok {
+		t.Fatalf("embedded Control Plane adapter = %T", controlPlane)
+	}
+	if _, ok := hub.(*httpapi.Adapter); !ok {
+		t.Fatalf("embedded Hub adapter = %T", hub)
+	}
+	if _, _, err := cloudAdapters(manifestPath, false); err == nil {
+		t.Fatal("runtime manifest overrode embedded development manifest")
+	}
+	controlPlane, hub, err = cloudAdapters("", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := controlPlane.(*cloudservice.UnconfiguredAdapter); !ok {
+		t.Fatalf("smoke Control Plane adapter = %T", controlPlane)
+	}
+	if _, ok := hub.(*cloudservice.UnconfiguredAdapter); !ok {
+		t.Fatalf("smoke Hub adapter = %T", hub)
 	}
 }
 

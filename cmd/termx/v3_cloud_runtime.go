@@ -22,16 +22,20 @@ const v3DevelopmentBuildVersion = "v0.0.0-dev"
 const v3CloudReleaseRootMissingMessage = "TermX Cloud is optional and Cloud Companion is not bundled with termx. This source build does not contain the official release verification key, so it cannot safely install or use Cloud Companion. Use an official termx release, then run `termx cloud install`; local and SSH features remain available."
 
 var (
-	termxBuildVersion             = "v0.0.0-dev"
-	cloudReleaseOrigin            = "https://releases.termx.dev/cloud-companion"
-	cloudReleaseRootKeyID         = ""
-	cloudReleaseRootPublicKey     = ""
-	cloudRuntimeOnce              sync.Once
-	cloudRuntimeManager           *activation.Manager
-	cloudRuntimeErr               error
-	newV3CloudInstallerForCommand func() (v3CloudInstaller, error) = func() (v3CloudInstaller, error) { return newV3CloudInstaller() }
-	openV3CloudLifecycleClient                                     = defaultOpenV3CloudLifecycleClient
-	openV3CloudCompanion                                           = defaultOpenV3CloudCompanion
+	termxBuildVersion                = "v0.0.0-dev"
+	cloudReleaseOrigin               = "https://releases.termx.dev/cloud-companion"
+	cloudReleaseRootKeyID            = ""
+	cloudReleaseRootPublicKey        = ""
+	cloudDevelopmentCompanionName    = ""
+	cloudDevelopmentCompanionSHA256  = ""
+	cloudDevelopmentCompanionVersion = ""
+	cloudDevelopmentCompanionChannel = ""
+	cloudRuntimeOnce                 sync.Once
+	cloudRuntimeManager              *activation.Manager
+	cloudRuntimeErr                  error
+	newV3CloudInstallerForCommand    func() (v3CloudInstaller, error) = func() (v3CloudInstaller, error) { return newV3CloudInstaller() }
+	openV3CloudLifecycleClient                                        = defaultOpenV3CloudLifecycleClient
+	openV3CloudCompanion                                              = defaultOpenV3CloudCompanion
 )
 
 type v3CloudClient interface {
@@ -58,12 +62,19 @@ func newV3CloudInstaller() (*installer.Installer, error) {
 
 func defaultV3CloudManager() (*activation.Manager, error) {
 	cloudRuntimeOnce.Do(func() {
-		cloudInstaller, err := newV3CloudInstaller()
+		installationSource, bundled, err := v3BundledDevelopmentCompanionSource()
 		if err != nil {
 			cloudRuntimeErr = err
 			return
 		}
-		cloudRuntimeManager, cloudRuntimeErr = activation.New(activation.Config{Installations: cloudInstaller, TermxVersion: termxBuildVersion})
+		if !bundled {
+			installationSource, err = newV3CloudInstaller()
+			if err != nil {
+				cloudRuntimeErr = err
+				return
+			}
+		}
+		cloudRuntimeManager, cloudRuntimeErr = activation.New(activation.Config{Installations: installationSource, TermxVersion: termxBuildVersion})
 	})
 	return cloudRuntimeManager, cloudRuntimeErr
 }
@@ -78,6 +89,15 @@ func defaultOpenV3CloudLifecycleClient(ctx context.Context, role cloudpb.CallerR
 		})
 		return client, err
 	}
+	if _, bundled, err := v3BundledDevelopmentCompanionSource(); err != nil {
+		return nil, err
+	} else if bundled {
+		manager, managerErr := defaultV3CloudManager()
+		if managerErr != nil {
+			return nil, managerErr
+		}
+		return manager.Open(ctx, role, capabilities...)
+	}
 	if strings.TrimSpace(cloudReleaseRootKeyID) == "" || strings.TrimSpace(cloudReleaseRootPublicKey) == "" {
 		// release root 缺失属于当前 termx build 的信任能力缺失，不能伪装成安装后即可恢复的 Companion missing。
 		return nil, v3CloudReleaseRootMissingError()
@@ -87,6 +107,21 @@ func defaultOpenV3CloudLifecycleClient(ctx context.Context, role cloudpb.CallerR
 		return nil, err
 	}
 	return manager.Open(ctx, role, capabilities...)
+}
+
+func defaultV3CloudInstallationStatus() (installer.Installation, error) {
+	source, bundled, err := v3BundledDevelopmentCompanionSource()
+	if err != nil {
+		return installer.Installation{}, err
+	}
+	if bundled {
+		return source.Status()
+	}
+	cloudInstaller, err := newV3CloudInstallerForCommand()
+	if err != nil {
+		return installer.Installation{}, err
+	}
+	return cloudInstaller.Status()
 }
 
 func defaultOpenV3CloudDaemonCompanion(ctx context.Context) (v3CloudClient, error) {

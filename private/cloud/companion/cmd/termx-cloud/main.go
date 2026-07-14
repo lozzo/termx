@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -13,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,8 +28,9 @@ import (
 )
 
 var (
-	companionVersion = "v0.0.0-dev"
-	buildChannel     = "development"
+	companionVersion                  = "v0.0.0-dev"
+	buildChannel                      = "development"
+	embeddedDevelopmentManifestBase64 = ""
 )
 
 const keyringService = "io.termx.cloud-companion"
@@ -134,20 +137,38 @@ func serve(ctx context.Context, endpoint string, smoke bool, devManifest, profil
 	return server.Serve(serveContext, listener)
 }
 
-// cloudAdapters 保持 Companion 默认 fail closed，并只在 development build 收到显式 manifest 时启用 dev-local 网络。
-// production/smoke 路径拒绝 loopback adapter；缺少配置时绝不读取环境变量或尝试旧 Hub fallback。
+// cloudAdapters 保持 Companion 默认 fail closed，并只在 development build 收到唯一 manifest 时启用网络。
+// 显式测试套件可以固化 staging manifest；production/smoke 路径不使用它，且绝不读取环境变量或旧 Hub fallback。
 func cloudAdapters(devManifest string, smoke bool) (cloudservice.ControlPlaneAdapter, cloudservice.HubAdapter, error) {
-	if devManifest == "" {
+	embedded := strings.TrimSpace(embeddedDevelopmentManifestBase64)
+	if smoke {
+		if devManifest != "" {
+			return nil, nil, fmt.Errorf("installer smoke does not accept a dev cloud manifest")
+		}
 		adapter := cloudservice.NewUnconfiguredAdapter()
 		return adapter, adapter, nil
 	}
-	if smoke {
-		return nil, nil, fmt.Errorf("installer smoke does not accept a dev cloud manifest")
+	if devManifest == "" && embedded == "" {
+		adapter := cloudservice.NewUnconfiguredAdapter()
+		return adapter, adapter, nil
 	}
 	if buildChannel != "development" {
 		return nil, nil, fmt.Errorf("dev cloud manifest is disabled for build channel %q", buildChannel)
 	}
-	manifest, err := httpapi.LoadManifest(devManifest)
+	if devManifest != "" && embedded != "" {
+		return nil, nil, fmt.Errorf("embedded development manifest cannot be overridden")
+	}
+	var manifest httpapi.Manifest
+	var err error
+	if embedded != "" {
+		payload, decodeErr := decodeEmbeddedDevelopmentManifest(embedded)
+		if decodeErr != nil || len(payload) == 0 || len(payload) > 64<<10 {
+			return nil, nil, fmt.Errorf("invalid embedded development manifest")
+		}
+		manifest, err = httpapi.ParseManifest(payload)
+	} else {
+		manifest, err = httpapi.LoadManifest(devManifest)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -159,6 +180,15 @@ func cloudAdapters(devManifest string, smoke bool) (cloudservice.ControlPlaneAda
 		return nil, nil, err
 	}
 	return adapter, adapter, nil
+}
+
+func decodeEmbeddedDevelopmentManifest(encoded string) ([]byte, error) {
+	for _, encoding := range []*base64.Encoding{base64.RawStdEncoding, base64.StdEncoding} {
+		if payload, err := encoding.DecodeString(encoded); err == nil {
+			return payload, nil
+		}
+	}
+	return nil, fmt.Errorf("invalid base64 development manifest")
 }
 
 func credentialStore(smoke bool) (session.OSCredentialStore, error) {
