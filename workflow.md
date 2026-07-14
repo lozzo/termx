@@ -13,7 +13,7 @@
 - CLOUD012 已完成：Web、TUI 与 Official Android 使用统一账号设备码登录，账号名下 daemon 注册到 Hub；登录后的 direct 与 single Relay 热路径只访问 Hub，Control Plane 中断不影响有效缓存期内的新连接。
 - CLI001 已完成：已审计当前扁平 CLI 与公开 `v3` 测试命令，建立以 endpoint/terminal 为真值的对象化命令树、稳定 target、JSON/format、退出码、tmux 能力映射和分期实现门禁；当前尚未改动 CLI 运行行为。
 - CLI007 已完成：可选 Cloud Companion 的安装引导已区分未安装与源码构建缺少官方 release root，两种用户错误都有清晰下一步且不再重复 Usage。
-- CLOUD013 已完成：公网 HTTP staging 的非秘密 runtime 配置已固化进显式 development Companion；同目录 termx 复验固定名称、owner/mode 和构建期 SHA-256 后按需启动，默认/正式构建仍走签名安装门禁。
+- CLOUD013 已完成：公网 HTTP staging 的非秘密 runtime 配置已固化进显式 development Companion；同一份已验证 manifest 同时装配网络 adapter 与 HTTP 登录策略，用户无需额外配置即可执行状态和登录命令。
 - 用户已把 TUI 快捷键完整收口提升为当前主线：KS012-KS017 将依次完成跨层契约、单一 action domain、输入/scene、全部默认 action、提示/点击同源和真实终端验收；CLI002-CLI006 暂停，待快捷键项目完成后重新排序。
 - WEB003 已由用户重排为暂停：邮箱密码、用户中心、订阅和 AFF 已完成，GitHub/Google OIDC 留待统一账号客户端链路验收后恢复。
 - FILE001-FILE004 与 CLOUD006-CLOUD008 已完成；Official Android 显式 development build 已通过公网 HTTP staging 在 5G 真机完成 direct、single Relay、terminal 与恢复链路。生产上线前必须另行切换 HTTPS/TLS，不得复用本切片的明文 profile。
@@ -147,7 +147,7 @@
 | CLI005 | 暂停 | CLI 自动化数据面 | 快捷键完整收口后重新排序 |
 | CLI006 | 暂停 | file/workspace/pair/Cloud UX | 快捷键完整收口后重新排序 |
 | CLI007 | 完成 | Cloud Companion 安装错误指引 | 未安装时明确 Cloud 为可选组件并提示安装命令；源码构建缺 release root 时提示换官方 termx；运行错误不重复 Usage |
-| CLOUD013 | 完成 | 自包含 Cloud staging 测试套件 | `make build-cloud-test` 后无需 runtime.json、环境变量或 install，直接执行 `.artifacts/bin/termx cloud status` 并按需启动同目录 Companion；默认构建仍 fail closed |
+| CLOUD013 | 完成 | 自包含 Cloud staging 测试套件 | `make build-cloud-test` 后无需 runtime.json、环境变量或 install，直接执行 `.artifacts/bin/termx cloud status` 和 `cloud login`；默认构建仍 fail closed |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
 | GA004 | 延后 | 单 transit 受控加速 | 仅在 GA003 数据证明需要时恢复 |
 | KS012 | 完成 | 快捷键最终审计与总契约 | 所有 binding/spec/handler/projection 被机器归类为符合或有 owner 的 debt，无未分类项且不能新增 debt |
@@ -214,7 +214,7 @@
 
 ## 当前状态
 
-- CLOUD013 已完成：`make build-cloud-test` 先生成内嵌 `staging-public-http` manifest 的 development `termx-cloud`，再把其固定文件名、版本、通道与 SHA-256 固化进同目录 `termx`；运行时复验真实 executable 目录、regular file、当前用户 ownership、不可 group/world writable、可执行位与摘要，失败不 fallback。Companion 对 embedded manifest 复用严格 schema/profile/address parser，禁止 runtime manifest 覆盖，installer smoke 始终使用 unconfigured adapter；默认无 embedded metadata 的 source/official build 继续走原签名 release root 门禁。`GOWORK=off go test ./cmd/termx -count=1`、Companion 全量 `go test ./... -count=1`、`go vet ./cmd/termx`、`make build-cloud-test`、隔离 `.artifacts/bin/termx cloud status --json` 和无环境变量 `.artifacts/bin/termx cloud status` 均通过，后者返回 `Cloud Companion v0.0.0-dev (development): COMPANION_STATE_LOGIN_REQUIRED`。
+- CLOUD013 已完成：`make build-cloud-test` 先生成内嵌 `staging-public-http` manifest 的 development `termx-cloud`，再把其固定文件名、版本、通道与 SHA-256 固化进同目录 `termx`；运行时复验真实 executable 目录、regular file、当前用户 ownership、不可 group/world writable、可执行位与摘要，失败不 fallback。Companion 对 embedded manifest 复用严格 schema/profile/address parser，并由唯一 runtime 装配同时产生 Control Plane/Hub adapter 与 HTTP 登录 URL 策略，禁止 runtime manifest 覆盖；installer smoke 始终使用 unconfigured adapter，默认无 embedded metadata 的 source/official build 继续走原签名 release root 门禁。CLI/Companion 全量测试、`go vet`、`make build-cloud-test`、隔离和默认 `cloud status` 均通过；真实 `.artifacts/bin/termx cloud login` 无额外配置即可返回 `http://114.66.58.243:41100/device` 验证地址和用户码并进入审批轮询。
 
 - KS012 已完成：机器清单固定 203 个默认 shortcut entry、166 个 routed binding、146 个 canonical spec 和 123 个 render projection；203 个 entry 均按真实 routed/overlay 路径验证 handler。生产 `InputEvent`/`HitRegion` producer、全部 80 个 `withFooter` 键和显式 `Key`、非结构化 render 字符串均由 manifest、源码锚点、逐组 digest 与独立 SHA 闭集守卫覆盖。定向 `go test ./tui/{shortcut,input,app,render,config,state,terminalhost} -count=1` 和 clean-env `go test ./tui/... -count=1` 通过；架构 reviewer `ks012_arch_review` 与代码 reviewer `ks012_code_review` 最终均明确 PASS，`git diff --check` 通过。
 

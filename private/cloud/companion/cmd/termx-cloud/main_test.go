@@ -92,29 +92,32 @@ func TestVersionCommandIsMachineReadable(t *testing.T) {
 }
 
 func TestCloudAdapterDefaultsToFailClosed(t *testing.T) {
-	controlPlane, hub, err := cloudAdapters("", false)
+	runtimeConfiguration, err := cloudRuntimeConfigurationFor("", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := controlPlane.(*cloudservice.UnconfiguredAdapter); !ok {
-		t.Fatalf("default Control Plane adapter = %T", controlPlane)
+	if _, ok := runtimeConfiguration.controlPlane.(*cloudservice.UnconfiguredAdapter); !ok {
+		t.Fatalf("default Control Plane adapter = %T", runtimeConfiguration.controlPlane)
 	}
-	if _, ok := hub.(*cloudservice.UnconfiguredAdapter); !ok {
-		t.Fatalf("default Hub adapter = %T", hub)
+	if _, ok := runtimeConfiguration.hub.(*cloudservice.UnconfiguredAdapter); !ok {
+		t.Fatalf("default Hub adapter = %T", runtimeConfiguration.hub)
+	}
+	if runtimeConfiguration.allowPublicHTTPLoginURL {
+		t.Fatal("default runtime allowed a public HTTP login URL")
 	}
 }
 
 func TestExplicitDevelopmentManifestSelectsNetworkAdapter(t *testing.T) {
 	manifestPath := writeDevManifest(t)
-	controlPlane, hub, err := cloudAdapters(manifestPath, false)
+	runtimeConfiguration, err := cloudRuntimeConfigurationFor(manifestPath, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := controlPlane.(*httpapi.Adapter); !ok {
-		t.Fatalf("dev Control Plane adapter = %T", controlPlane)
+	if _, ok := runtimeConfiguration.controlPlane.(*httpapi.Adapter); !ok {
+		t.Fatalf("dev Control Plane adapter = %T", runtimeConfiguration.controlPlane)
 	}
-	if _, ok := hub.(*httpapi.Adapter); !ok {
-		t.Fatalf("dev Hub adapter = %T", hub)
+	if _, ok := runtimeConfiguration.hub.(*httpapi.Adapter); !ok {
+		t.Fatalf("dev Hub adapter = %T", runtimeConfiguration.hub)
 	}
 }
 
@@ -124,31 +127,49 @@ func TestEmbeddedDevelopmentManifestSelectsNetworkAdapterWithoutRuntimeFile(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
+	var embeddedManifest httpapi.Manifest
+	if err := json.Unmarshal(payload, &embeddedManifest); err != nil {
+		t.Fatal(err)
+	}
+	embeddedManifest.Profile = httpapi.ProfileStagingPublicHTTP
+	embeddedManifest.ControlPlaneURL = "http://114.66.58.243:41101"
+	embeddedManifest.HubURL = "http://114.66.58.243:41102"
+	embeddedManifest.RelayURL = "turn:114.66.58.243:41003?transport=udp"
+	payload, err = json.Marshal(embeddedManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
 	originalEmbedded := embeddedDevelopmentManifestBase64
 	embeddedDevelopmentManifestBase64 = base64.RawStdEncoding.EncodeToString(payload)
 	t.Cleanup(func() { embeddedDevelopmentManifestBase64 = originalEmbedded })
-	controlPlane, hub, err := cloudAdapters("", false)
+	runtimeConfiguration, err := cloudRuntimeConfigurationFor("", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := controlPlane.(*httpapi.Adapter); !ok {
-		t.Fatalf("embedded Control Plane adapter = %T", controlPlane)
+	if _, ok := runtimeConfiguration.controlPlane.(*httpapi.Adapter); !ok {
+		t.Fatalf("embedded Control Plane adapter = %T", runtimeConfiguration.controlPlane)
 	}
-	if _, ok := hub.(*httpapi.Adapter); !ok {
-		t.Fatalf("embedded Hub adapter = %T", hub)
+	if _, ok := runtimeConfiguration.hub.(*httpapi.Adapter); !ok {
+		t.Fatalf("embedded Hub adapter = %T", runtimeConfiguration.hub)
 	}
-	if _, _, err := cloudAdapters(manifestPath, false); err == nil {
+	if !runtimeConfiguration.allowPublicHTTPLoginURL {
+		t.Fatal("embedded staging-public-http runtime did not allow its login URL")
+	}
+	if _, err := cloudRuntimeConfigurationFor(manifestPath, false); err == nil {
 		t.Fatal("runtime manifest overrode embedded development manifest")
 	}
-	controlPlane, hub, err = cloudAdapters("", true)
+	runtimeConfiguration, err = cloudRuntimeConfigurationFor("", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := controlPlane.(*cloudservice.UnconfiguredAdapter); !ok {
-		t.Fatalf("smoke Control Plane adapter = %T", controlPlane)
+	if _, ok := runtimeConfiguration.controlPlane.(*cloudservice.UnconfiguredAdapter); !ok {
+		t.Fatalf("smoke Control Plane adapter = %T", runtimeConfiguration.controlPlane)
 	}
-	if _, ok := hub.(*cloudservice.UnconfiguredAdapter); !ok {
-		t.Fatalf("smoke Hub adapter = %T", hub)
+	if _, ok := runtimeConfiguration.hub.(*cloudservice.UnconfiguredAdapter); !ok {
+		t.Fatalf("smoke Hub adapter = %T", runtimeConfiguration.hub)
+	}
+	if runtimeConfiguration.allowPublicHTTPLoginURL {
+		t.Fatal("installer smoke allowed a public HTTP login URL")
 	}
 }
 
@@ -157,11 +178,11 @@ func TestProductionAndSmokeRejectDevelopmentManifest(t *testing.T) {
 	originalChannel := buildChannel
 	buildChannel = "stable"
 	t.Cleanup(func() { buildChannel = originalChannel })
-	if _, _, err := cloudAdapters(manifestPath, false); err == nil {
+	if _, err := cloudRuntimeConfigurationFor(manifestPath, false); err == nil {
 		t.Fatal("stable build accepted dev cloud manifest")
 	}
 	buildChannel = "development"
-	if _, _, err := cloudAdapters(manifestPath, true); err == nil {
+	if _, err := cloudRuntimeConfigurationFor(manifestPath, true); err == nil {
 		t.Fatal("installer smoke accepted dev cloud manifest")
 	}
 }

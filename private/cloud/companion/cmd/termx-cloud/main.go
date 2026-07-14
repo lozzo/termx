@@ -94,23 +94,15 @@ func serve(ctx context.Context, endpoint string, smoke bool, devManifest, profil
 	if err != nil {
 		return err
 	}
-	controlPlane, hub, err := cloudAdapters(devManifest, smoke)
+	runtimeConfiguration, err := cloudRuntimeConfigurationFor(devManifest, smoke)
 	if err != nil {
 		return err
-	}
-	allowPublicHTTPLoginURL := false
-	if devManifest != "" {
-		manifest, manifestErr := httpapi.LoadManifest(devManifest)
-		if manifestErr != nil {
-			return manifestErr
-		}
-		allowPublicHTTPLoginURL = manifest.Profile == httpapi.ProfileStagingPublicHTTP
 	}
 	service, err := companion.NewService(companion.Config{
 		CompanionVersion:        companionVersion,
 		BuildChannel:            buildChannel,
 		StreamCapacity:          64,
-		AllowPublicHTTPLoginURL: allowPublicHTTPLoginURL,
+		AllowPublicHTTPLoginURL: runtimeConfiguration.allowPublicHTTPLoginURL,
 		Capabilities: []cloudpb.CompanionCapability{
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_ACCOUNT_SESSION,
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT,
@@ -120,7 +112,7 @@ func serve(ctx context.Context, endpoint string, smoke bool, devManifest, profil
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_PATH_QUALITY,
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_SMART_ROUTE,
 		},
-	}, sessions, controlPlane, hub)
+	}, sessions, runtimeConfiguration.controlPlane, runtimeConfiguration.hub)
 	if err != nil {
 		return err
 	}
@@ -137,49 +129,58 @@ func serve(ctx context.Context, endpoint string, smoke bool, devManifest, profil
 	return server.Serve(serveContext, listener)
 }
 
-// cloudAdapters 保持 Companion 默认 fail closed，并只在 development build 收到唯一 manifest 时启用网络。
-// 显式测试套件可以固化 staging manifest；production/smoke 路径不使用它，且绝不读取环境变量或旧 Hub fallback。
-func cloudAdapters(devManifest string, smoke bool) (cloudservice.ControlPlaneAdapter, cloudservice.HubAdapter, error) {
+type cloudRuntimeConfiguration struct {
+	controlPlane            cloudservice.ControlPlaneAdapter
+	hub                     cloudservice.HubAdapter
+	allowPublicHTTPLoginURL bool
+}
+
+// cloudRuntimeConfigurationFor 是 Companion development runtime 的唯一装配点。
+// Adapter 地址与 HTTP 登录策略必须来自同一份已验证 manifest，禁止各自重读配置形成第二真值。
+func cloudRuntimeConfigurationFor(devManifest string, smoke bool) (cloudRuntimeConfiguration, error) {
 	embedded := strings.TrimSpace(embeddedDevelopmentManifestBase64)
 	if smoke {
 		if devManifest != "" {
-			return nil, nil, fmt.Errorf("installer smoke does not accept a dev cloud manifest")
+			return cloudRuntimeConfiguration{}, fmt.Errorf("installer smoke does not accept a dev cloud manifest")
 		}
 		adapter := cloudservice.NewUnconfiguredAdapter()
-		return adapter, adapter, nil
+		return cloudRuntimeConfiguration{controlPlane: adapter, hub: adapter}, nil
 	}
 	if devManifest == "" && embedded == "" {
 		adapter := cloudservice.NewUnconfiguredAdapter()
-		return adapter, adapter, nil
+		return cloudRuntimeConfiguration{controlPlane: adapter, hub: adapter}, nil
 	}
 	if buildChannel != "development" {
-		return nil, nil, fmt.Errorf("dev cloud manifest is disabled for build channel %q", buildChannel)
+		return cloudRuntimeConfiguration{}, fmt.Errorf("dev cloud manifest is disabled for build channel %q", buildChannel)
 	}
 	if devManifest != "" && embedded != "" {
-		return nil, nil, fmt.Errorf("embedded development manifest cannot be overridden")
+		return cloudRuntimeConfiguration{}, fmt.Errorf("embedded development manifest cannot be overridden")
 	}
 	var manifest httpapi.Manifest
 	var err error
 	if embedded != "" {
 		payload, decodeErr := decodeEmbeddedDevelopmentManifest(embedded)
 		if decodeErr != nil || len(payload) == 0 || len(payload) > 64<<10 {
-			return nil, nil, fmt.Errorf("invalid embedded development manifest")
+			return cloudRuntimeConfiguration{}, fmt.Errorf("invalid embedded development manifest")
 		}
 		manifest, err = httpapi.ParseManifest(payload)
 	} else {
 		manifest, err = httpapi.LoadManifest(devManifest)
 	}
 	if err != nil {
-		return nil, nil, err
+		return cloudRuntimeConfiguration{}, err
 	}
 	adapter, err := httpapi.New(httpapi.Config{
 		ControlPlaneURL: manifest.ControlPlaneURL, HubURL: manifest.HubURL,
 		AllowPublicHTTP: manifest.Profile == httpapi.ProfileStagingPublicHTTP,
 	})
 	if err != nil {
-		return nil, nil, err
+		return cloudRuntimeConfiguration{}, err
 	}
-	return adapter, adapter, nil
+	return cloudRuntimeConfiguration{
+		controlPlane: adapter, hub: adapter,
+		allowPublicHTTPLoginURL: manifest.Profile == httpapi.ProfileStagingPublicHTTP,
+	}, nil
 }
 
 func decodeEmbeddedDevelopmentManifest(encoded string) ([]byte, error) {
