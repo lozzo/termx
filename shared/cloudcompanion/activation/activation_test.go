@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 )
 
 func TestManagerStartsVerifiedInstallationOnceAndNegotiatesRequestedCapabilities(t *testing.T) {
+	digest := strings.Repeat("11", 32)
 	var mu sync.Mutex
 	started := false
 	startCount := 0
@@ -25,12 +27,12 @@ func TestManagerStartsVerifiedInstallationOnceAndNegotiatesRequestedCapabilities
 			return &cloudpb.CompanionHelloResponse{
 				SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "v1.2.3", BuildChannel: "stable",
 				SupportedCapabilities: append([]cloudpb.CompanionCapability(nil), request.GetRequestedCapabilities()...),
-				ResponseNonce:         bytes.Repeat([]byte{0x77}, 32),
+				ResponseNonce:         bytes.Repeat([]byte{0x77}, 32), ExecutableSha256: bytes.Repeat([]byte{0x11}, 32),
 			}, nil
 		},
 	}
 	manager, err := New(Config{
-		Installations: staticInstallationSource{installation: installer.Installation{Version: "v1.2.3", Channel: "stable", BinaryPath: "/verified/termx-cloud"}},
+		Installations: staticInstallationSource{installation: installer.Installation{Version: "v1.2.3", Channel: "stable", BinaryPath: "/verified/termx-cloud", BinarySHA256: digest}},
 		Endpoint:      "test-endpoint", TermxVersion: "v3-test", RetryInterval: time.Millisecond, ReadyTimeout: time.Second,
 		Start: func(binaryPath, endpoint string, smoke bool) error {
 			if binaryPath != "/verified/termx-cloud" || endpoint != "test-endpoint" || smoke {
@@ -69,18 +71,19 @@ func TestManagerStartsVerifiedInstallationOnceAndNegotiatesRequestedCapabilities
 	}
 }
 
-func TestManagerStopsMismatchedProcessBeforeStartingActiveInstallation(t *testing.T) {
+func TestManagerStopsSameVersionDifferentArtifactBeforeStartingActiveInstallation(t *testing.T) {
+	digest := strings.Repeat("11", 32)
 	var mu sync.Mutex
 	running := true
-	runningVersion := "v1.2.2"
+	runningDigest := byte(0x22)
 	shutdownCount := 0
 	startCount := 0
 	fake := &cloudcompanion.FakeClient{
 		HelloFunc: func(context.Context, *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error) {
 			mu.Lock()
-			version := runningVersion
+			digestByte := runningDigest
 			mu.Unlock()
-			return &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: version, BuildChannel: "stable", ResponseNonce: bytes.Repeat([]byte{4}, 32)}, nil
+			return &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "v1.2.3", BuildChannel: "stable", ResponseNonce: bytes.Repeat([]byte{4}, 32), ExecutableSha256: bytes.Repeat([]byte{digestByte}, 32)}, nil
 		},
 		ShutdownFunc: func(context.Context, *cloudpb.ShutdownRequest) (*cloudpb.ShutdownResponse, error) {
 			mu.Lock()
@@ -91,7 +94,7 @@ func TestManagerStopsMismatchedProcessBeforeStartingActiveInstallation(t *testin
 		},
 	}
 	manager, err := New(Config{
-		Installations: staticInstallationSource{installation: installer.Installation{Version: "v1.2.3", Channel: "stable", BinaryPath: "/verified/termx-cloud"}},
+		Installations: staticInstallationSource{installation: installer.Installation{Version: "v1.2.3", Channel: "stable", BinaryPath: "/verified/termx-cloud", BinarySHA256: digest}},
 		Endpoint:      "test-endpoint", TermxVersion: "test", RetryInterval: time.Millisecond, ReadyTimeout: time.Second,
 		Dial: func(context.Context, string) (*ipc.Client, error) {
 			mu.Lock()
@@ -108,7 +111,7 @@ func TestManagerStopsMismatchedProcessBeforeStartingActiveInstallation(t *testin
 			}
 			mu.Lock()
 			running = true
-			runningVersion = "v1.2.3"
+			runningDigest = 0x11
 			startCount++
 			mu.Unlock()
 			return nil
@@ -124,8 +127,8 @@ func TestManagerStopsMismatchedProcessBeforeStartingActiveInstallation(t *testin
 	defer client.Close()
 	mu.Lock()
 	defer mu.Unlock()
-	if shutdownCount != 1 || startCount != 1 || runningVersion != "v1.2.3" {
-		t.Fatalf("replacement lifecycle = shutdown:%d start:%d version:%s", shutdownCount, startCount, runningVersion)
+	if shutdownCount != 1 || startCount != 1 || runningDigest != 0x11 {
+		t.Fatalf("replacement lifecycle = shutdown:%d start:%d digest:%x", shutdownCount, startCount, runningDigest)
 	}
 }
 
@@ -143,10 +146,10 @@ func TestManagerDoesNotStartUntrustedOrCapabilityExpandingCompanion(t *testing.T
 	}
 
 	fake := &cloudcompanion.FakeClient{HelloFunc: func(context.Context, *cloudpb.CompanionHelloRequest) (*cloudpb.CompanionHelloResponse, error) {
-		return &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "test", BuildChannel: "test", ResponseNonce: bytes.Repeat([]byte{3}, 32), SupportedCapabilities: []cloudpb.CompanionCapability{cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE}}, nil
+		return &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "test", BuildChannel: "test", ResponseNonce: bytes.Repeat([]byte{3}, 32), ExecutableSha256: bytes.Repeat([]byte{0x11}, 32), SupportedCapabilities: []cloudpb.CompanionCapability{cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE}}, nil
 	}}
 	manager, err = New(Config{
-		Installations: staticInstallationSource{installation: installer.Installation{Version: "test", Channel: "test", BinaryPath: "/verified/termx-cloud"}}, TermxVersion: "test",
+		Installations: staticInstallationSource{installation: installer.Installation{Version: "test", Channel: "test", BinaryPath: "/verified/termx-cloud", BinarySHA256: strings.Repeat("11", 32)}}, TermxVersion: "test",
 		Dial: func(context.Context, string) (*ipc.Client, error) { return pipeClient(t, fake), nil },
 	})
 	if err != nil {
@@ -159,12 +162,13 @@ func TestManagerDoesNotStartUntrustedOrCapabilityExpandingCompanion(t *testing.T
 
 func TestReleaseHelloMustMatchSignedManifest(t *testing.T) {
 	manifest := installer.Manifest{Version: "v1.2.3", Channel: "stable", MinCompanionProtocol: cloudcompanion.ProtocolVersionMin, MaxCompanionProtocol: cloudcompanion.ProtocolVersionMax}
-	valid := &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "v1.2.3", BuildChannel: "stable"}
-	if err := validateReleaseHello(valid, manifest); err != nil {
+	digest := strings.Repeat("11", 32)
+	valid := &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "v1.2.3", BuildChannel: "stable", ExecutableSha256: bytes.Repeat([]byte{0x11}, 32)}
+	if err := validateReleaseHello(valid, manifest, digest); err != nil {
 		t.Fatal(err)
 	}
-	mislabeled := &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "v1.2.2", BuildChannel: "stable"}
-	if err := validateReleaseHello(mislabeled, manifest); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED) {
+	mislabeled := &cloudpb.CompanionHelloResponse{SelectedProtocol: cloudcompanion.ProtocolVersionMax, CompanionVersion: "v1.2.2", BuildChannel: "stable", ExecutableSha256: bytes.Repeat([]byte{0x11}, 32)}
+	if err := validateReleaseHello(mislabeled, manifest, digest); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED) {
 		t.Fatalf("mislabeled release error = %v", err)
 	}
 }

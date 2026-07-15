@@ -18,6 +18,8 @@ import javax.crypto.spec.GCMParameterSpec
 internal data class AccountSession(
     val token: ByteArray,
     val expiresAt: Instant,
+    val refreshToken: ByteArray,
+    val refreshExpiresAt: Instant,
     val accountId: String,
     val accountLabel: String,
     val deviceId: String,
@@ -30,6 +32,7 @@ internal data class AccountSession(
 /** CloudSessionStore 只持久化 Control Plane 签发的短期 edge session，不接触 CapabilityGrant 或 terminal 数据。 */
 internal interface CloudSessionStore {
     fun load(now: Instant): AccountSession?
+    fun loadRefreshable(now: Instant): AccountSession?
     fun save(session: AccountSession)
     fun clear()
 }
@@ -40,9 +43,11 @@ internal class MemoryCloudSessionStore : CloudSessionStore {
 
     override fun load(now: Instant): AccountSession? = session?.takeIf { now.isBefore(it.expiresAt) }
 
+    override fun loadRefreshable(now: Instant): AccountSession? = session?.takeIf { now.isBefore(it.refreshExpiresAt) }
+
     override fun save(session: AccountSession) {
         validateReplacement(this.session, session)
-        this.session = session.copy(token = session.token.copyOf())
+        this.session = session.copy(token = session.token.copyOf(), refreshToken = session.refreshToken.copyOf())
     }
 
     override fun clear() { session = null }
@@ -56,16 +61,20 @@ internal class AndroidCloudSessionStore(context: Context) : CloudSessionStore {
     private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     override fun load(now: Instant): AccountSession? {
+		return loadDecoded()?.takeIf { now.isBefore(it.expiresAt) }
+    }
+
+    override fun loadRefreshable(now: Instant): AccountSession? {
+		return loadDecoded()?.takeIf { now.isBefore(it.refreshExpiresAt) }
+    }
+
+    private fun loadDecoded(): AccountSession? {
         val encoded = preferences.getString(SESSION_KEY, null) ?: return null
         val session = try {
             decode(decrypt(encoded))
         } catch (_: Exception) {
             preferences.edit().remove(SESSION_KEY).commit()
             throw ManagedEndpointFailure("login_required", "cached cloud session could not be verified")
-        }
-        if (!now.isBefore(session.expiresAt)) {
-            preferences.edit().remove(SESSION_KEY).commit()
-            return null
         }
         return session
     }
@@ -121,9 +130,11 @@ internal class AndroidCloudSessionStore(context: Context) : CloudSessionStore {
 }
 
 private fun encode(session: AccountSession): ByteArray = JSONObject()
-    .put("version", 2)
+    .put("version", 3)
     .put("token", Base64.encodeToString(session.token, Base64.NO_WRAP))
     .put("expires_at_unix", session.expiresAt.epochSecond)
+	.put("refresh_token", Base64.encodeToString(session.refreshToken, Base64.NO_WRAP))
+	.put("refresh_expires_at_unix", session.refreshExpiresAt.epochSecond)
     .put("account_id", session.accountId)
     .put("account_label", session.accountLabel)
     .put("device_id", session.deviceId)
@@ -136,10 +147,12 @@ private fun encode(session: AccountSession): ByteArray = JSONObject()
 private fun decode(value: ByteArray): AccountSession = try {
     val json = JSONObject(String(value, Charsets.UTF_8))
     value.fill(0)
-    require(json.getInt("version") == 2)
+    require(json.getInt("version") == 3)
     AccountSession(
         Base64.decode(json.getString("token"), Base64.NO_WRAP),
         Instant.ofEpochSecond(json.getLong("expires_at_unix")),
+		Base64.decode(json.getString("refresh_token"), Base64.NO_WRAP),
+		Instant.ofEpochSecond(json.getLong("refresh_expires_at_unix")),
         json.getString("account_id"), json.getString("account_label"), json.getString("device_id"), json.getString("hub_id"),
         json.getString("hub_url"), json.getString("region"), json.getLong("directory_version"),
     ).also(::validateSession)
@@ -150,7 +163,7 @@ private fun decode(value: ByteArray): AccountSession = try {
 
 private fun validateSession(session: AccountSession) {
     val uri = URI(session.hubURL)
-    require(session.token.size >= 16 && session.accountId.isNotBlank() && session.accountLabel.isNotBlank() && session.deviceId.isNotBlank())
+    require(session.token.size >= 16 && session.refreshToken.size >= 32 && session.refreshExpiresAt.isAfter(session.expiresAt) && session.accountId.isNotBlank() && session.accountLabel.isNotBlank() && session.deviceId.isNotBlank())
     require(session.hubId.isNotBlank() && session.region.isNotBlank() && session.directoryVersion > 0)
     require(uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.query == null && uri.fragment == null)
 }

@@ -51,10 +51,12 @@ CLOUD012 起，TUI 不再自动兑换固定账号，而是请求短期设备码�
 
 1. 打开 `http://114.66.58.243:41100/login`，使用测试邮箱注册并进入账号中心。公网 HTTP staging 禁止使用真实密码。
 2. TUI/CLI 执行 `termx cloud login`，打开命令输出的 Web 地址并批准设备码。Official Android 在 Settings / Account 选择 Web 激活：可以把 App 短码输入 Web，也可以扫描账号中心生成的二维码；Web 显示手机名称和平台后仍需再次批准。
-3. 在 Web 账号中心的 Nodes 页面选择 `Enroll daemon`，取得两分钟有效、仅使用一次的 enrollment code。
+3. 在 Web 账号中心的 Nodes 页面选择 `Enroll daemon`，取得十分钟有效、仅使用一次的 enrollment code。页面直接提供完整命令、倒计时和公网 HTTP staging 可用的复制 fallback；同一账号生成新码会废弃尚未使用的旧码。
 4. 在 daemon owner 机器执行 `termx cloud enroll CODE`，随后执行 `termx daemon restart --cloud`。daemon 与客户端必须属于同一账号，Hub 不允许跨账号枚举或连接节点。
 5. 登录后的 App/TUI 执行节点刷新，从 Hub 内存目录取得同账号 daemon 与 active Presence。目录可见不表示具备 terminal 权限；未配对节点必须显示“需要配对”。
 6. daemon owner 在交互式终端执行 `termx pair create`，默认显示可由 App 扫描的二维码。脚本环境必须显式使用 `--raw`，写文件必须显式使用 `--out OWNER_ONLY_PATH`。CapabilityGrant 仍只在 DTLS DataChannel 内由 owning daemon 验证。
+
+已移除的 daemon 不需要删除本地 DeviceIdentity。持有原私钥的 daemon 可以使用新 enrollment code 重新注册；Control Plane 会先撤销旧账号 access/refresh session、Hub Presence 与 Web 投影，再恢复或迁移 ownership。不同 public key 不能占用原 DeviceID。`termx cloud status` 分别展示 account session 与 daemon enrollment，`termx cloud node status` 只检查当前 daemon 身份。
 
 ### TUI 导入 daemon 访问凭据
 
@@ -195,16 +197,19 @@ direct 验收必须经过 `resolving`、`signaling`、`connecting`、`authorizin
 
 daemon 与 daemon Companion 共享 `/run/termx-staging`。替换 daemon 二进制时不要在 Companion 运行期间单独执行 daemon 的完整 `stop`/`start`，否则 systemd 可能删除仍在监听的 Companion socket 路径。需要完整停止时使用以下顺序：停止 daemon，重启 Companion并等待 `test -S /run/termx-staging/daemon-companion.sock` 成功，再启动 daemon；daemon 日志必须出现 `managed cloud presence starting`。
 
-当前 staging cloud 使用内存 store，每次重启 `termx-staging-cloud.service` 都会轮换签名 key、enrollment code 并清除 account/device/presence。它不会自动复用旧 session。重启后按以下顺序操作：
+当前 staging cloud 持久化四类安全状态：`security-directory.json` 保存账号/设备 ownership 与 daemon public key，`control-plane-authority.json` 保存稳定 Ed25519 authority，`hub-policy.snapshot` 保存 Hub 已验签 policy，`refresh-sessions.json` 只保存 account/device refresh secret 的 SHA-256 和绑定 metadata。四个文件均为 `termx-staging:termx-staging`、`0600`。
 
-1. 重启 cloud 和 daemon Companion。
-2. 从 owner-only runtime manifest 读取新的一次性 enrollment code。
-3. 以 `termx-staging` 用户执行 `termx cloud enroll`。
-4. 重新生成 `/var/lib/termx-staging/pairing.json`。
-5. 执行 `/opt/termx-staging/bin/render-public-http-manifest`，默认原子更新 Nginx 实际读取的 `/var/www/termx-staging/runtime.json`。
-6. 启动 daemon，并在客户端重新登录和导入新 bundle。
+常规重启不再重新 enrollment、登录或生成 pairing。按以下顺序操作：
 
-Control Plane 重启不会清除 `/var/lib/termx-staging/accounts.db` 中的账号、session、订单或奖励；清库必须先停止 `termx-staging-cloud` 并同时删除 SQLite 主文件、`-wal` 和 `-shm`。不要把有效 enrollment code、pairing bundle、keyring password 或 cloud session 写入本文、unit、shell history 和日志。生产 OAuth/TLS、托管数据库、高可用备份、真实支付 provider 与多区域部署仍是后续切片。
+1. 重启 `termx-staging-cloud.service`。
+2. 重启 `termx-staging-daemon-companion.service`；unit 的 `ExecStartPre` 会删除 preserved runtime directory 中的 stale socket。
+3. 同时满足 `test -S /run/termx-staging/daemon-companion.sock` 和 `termx cloud status --json` 成功后，再启动 `termx-staging-daemon.service`。
+4. daemon 日志必须出现新的 `managed cloud presence starting`，且不得出现 `UNAUTHENTICATED` 或 `COMPANION_MISSING`。
+5. 执行 `/opt/termx-staging/bin/render-public-http-manifest` 更新公开非秘密 runtime 地址；不要公开 owner-only enrollment code。
+
+从旧内存 authority 版本首次迁移到 CLOUD018 时，旧签名 edge token 无法跨 authority 更换复用，需要对服务器 daemon 执行一次 enrollment，并让现有 App/TUI 重新登录一次。四个 durable 文件建立后，后续 supervisor/Hub 重启不得再执行该迁移步骤。
+
+Control Plane 重启不会清除 `/var/lib/termx-staging/accounts.db` 中的账号、浏览器 session、订单或奖励，也不会清除上述四个安全文件。清库必须先停止 `termx-staging-cloud`，并明确决定是否同时删除 SQLite、security directory、authority、Hub snapshot 和 refresh hash；只删除其中一部分会造成 fail-closed 的身份不一致。不要把有效 enrollment code、pairing bundle、keyring password、edge token 或 refresh secret 写入本文、unit、shell history 和日志。生产 OAuth/TLS、托管数据库、高可用备份、authority 轮换、真实支付 provider 与多区域部署仍是后续切片。
 
 ## 停止与清理
 

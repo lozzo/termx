@@ -49,7 +49,7 @@ const (
 )
 
 // Metadata 是可以投影到 Status 的非秘密会话信息。
-// 它不包含 token body、Hub ticket、Relay credential 或 terminal 数据。
+// 它不包含 token body、refresh secret、Relay credential 或 terminal 数据。
 type Metadata struct {
 	Kind                Kind
 	AccountID           string
@@ -67,6 +67,36 @@ type Metadata struct {
 type Authorization struct {
 	raw      []byte
 	metadata Metadata
+}
+
+// RefreshAuthorization 是 Companion 仅向 Control Plane 提交的轮换凭据。
+// 它绝不能发送到 Hub、公开 IPC、WebView、日志或配置；String 始终脱敏。
+type RefreshAuthorization struct {
+	raw      []byte
+	metadata Metadata
+}
+
+// Bytes 返回 refresh secret 副本供私有 Control Plane adapter 发送。
+// adapter 必须在请求结束后清理副本。
+func (authorization RefreshAuthorization) Bytes() []byte {
+	return append([]byte(nil), authorization.raw...)
+}
+
+// Metadata 返回 refresh credential 绑定的账号、设备和会话类型。
+func (authorization RefreshAuthorization) Metadata() Metadata { return authorization.metadata }
+
+// Destroy 清理当前 refresh secret 副本。
+func (authorization *RefreshAuthorization) Destroy() {
+	if authorization == nil {
+		return
+	}
+	clear(authorization.raw)
+	authorization.raw = nil
+}
+
+// String 返回固定脱敏文本。
+func (authorization RefreshAuthorization) String() string {
+	return "CloudRefreshAuthorization{[REDACTED]}"
 }
 
 // Bytes 返回 token 副本供私有网络 adapter 使用。
@@ -99,18 +129,38 @@ func (authorization Authorization) Metadata() Metadata {
 // Session 是从 OS credential store 解出的 companion 私有会话。
 // accessToken 不导出；Metadata 可以进入 Status，Authorization 只能交给私有云 adapter。
 type Session struct {
-	metadata    Metadata
-	accessToken []byte
+	metadata         Metadata
+	accessToken      []byte
+	refreshToken     []byte
+	refreshExpiresAt time.Time
 }
 
 // New 创建待写入 OS credential store 的云会话。
 // token 会被复制；kind、账号、expiry 或 token 非法时 fail closed。
 func New(metadata Metadata, accessToken []byte, now time.Time) (Session, error) {
+	return newSession(metadata, accessToken, nil, time.Time{}, now)
+}
+
+// NewRefreshable 创建同时包含短期 edge token 和长期轮换 secret 的私有会话。
+// refresh secret 只会随整个 Session 写入 OS credential store，不进入 Metadata 或公开状态。
+func NewRefreshable(metadata Metadata, accessToken, refreshToken []byte, refreshExpiresAt, now time.Time) (Session, error) {
+	return newSession(metadata, accessToken, refreshToken, refreshExpiresAt, now)
+}
+
+func newSession(metadata Metadata, accessToken, refreshToken []byte, refreshExpiresAt, now time.Time) (Session, error) {
 	metadata.ExpiresAt = metadata.ExpiresAt.UTC()
 	if metadata.Kind != KindAccount && metadata.Kind != KindDevice || metadata.AccountID == "" || metadata.ExpiresAt.IsZero() || !now.Before(metadata.ExpiresAt) || len(accessToken) == 0 {
 		return Session{}, ErrInvalid
 	}
 	if metadata.Kind == KindDevice && metadata.DeviceID == "" {
+		return Session{}, ErrInvalid
+	}
+	if len(refreshToken) > 0 {
+		refreshExpiresAt = refreshExpiresAt.UTC()
+		if len(refreshToken) < 32 || !now.Before(refreshExpiresAt) || !refreshExpiresAt.After(metadata.ExpiresAt) {
+			return Session{}, ErrInvalid
+		}
+	} else if !refreshExpiresAt.IsZero() {
 		return Session{}, ErrInvalid
 	}
 	if metadata.HubID != "" || metadata.HubURL != "" || metadata.HubRegion != "" || metadata.HubDirectoryVersion != 0 {
@@ -119,7 +169,7 @@ func New(metadata Metadata, accessToken []byte, now time.Time) (Session, error) 
 			return Session{}, ErrInvalid
 		}
 	}
-	return Session{metadata: metadata, accessToken: append([]byte(nil), accessToken...)}, nil
+	return Session{metadata: metadata, accessToken: append([]byte(nil), accessToken...), refreshToken: append([]byte(nil), refreshToken...), refreshExpiresAt: refreshExpiresAt}, nil
 }
 
 // Metadata 返回非秘密会话信息副本。
@@ -133,6 +183,18 @@ func (session Session) Authorization() Authorization {
 	return Authorization{raw: append([]byte(nil), session.accessToken...), metadata: session.metadata}
 }
 
+// RefreshAuthorization 返回只供 Control Plane refresh endpoint 使用的 secret 副本。
+// 没有 refresh credential 的测试/旧会话返回 ErrNotFound。
+func (session Session) RefreshAuthorization(now time.Time) (RefreshAuthorization, error) {
+	if len(session.refreshToken) == 0 {
+		return RefreshAuthorization{}, ErrNotFound
+	}
+	if !now.Before(session.refreshExpiresAt) {
+		return RefreshAuthorization{}, ErrExpired
+	}
+	return RefreshAuthorization{raw: append([]byte(nil), session.refreshToken...), metadata: session.metadata}, nil
+}
+
 // Destroy 清理当前 Session 实例持有的 token bytes。
 // 该操作不删除 OS credential store；Logout 应调用 Manager.Delete。
 func (session *Session) Destroy() {
@@ -141,6 +203,8 @@ func (session *Session) Destroy() {
 	}
 	clear(session.accessToken)
 	session.accessToken = nil
+	clear(session.refreshToken)
+	session.refreshToken = nil
 }
 
 // String 返回脱敏会话摘要，只包含非秘密 identity reference 和 expiry。
@@ -176,6 +240,8 @@ type wireSession struct {
 	HubURL              string `json:"hub_url,omitempty"`
 	HubRegion           string `json:"hub_region,omitempty"`
 	HubDirectoryVersion uint64 `json:"hub_directory_version,omitempty"`
+	RefreshToken        []byte `json:"refresh_token,omitempty"`
+	RefreshExpiresAt    int64  `json:"refresh_expires_at_unix,omitempty"`
 }
 
 // Save 原子写入账号或 device 云会话。
@@ -191,7 +257,7 @@ func (manager *Manager) Save(ctx context.Context, session Session, now time.Time
 	} else if !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrExpired) {
 		return err
 	}
-	validated, err := New(metadata, session.accessToken, now)
+	validated, err := newSession(metadata, session.accessToken, session.refreshToken, session.refreshExpiresAt, now)
 	if err != nil {
 		return err
 	}
@@ -204,9 +270,14 @@ func (manager *Manager) Save(ctx context.Context, session Session, now time.Time
 		ExpiresAt:    metadata.ExpiresAt.Unix(),
 		AccessToken:  append([]byte(nil), validated.accessToken...),
 		HubID:        metadata.HubID, HubURL: metadata.HubURL, HubRegion: metadata.HubRegion, HubDirectoryVersion: metadata.HubDirectoryVersion,
+		RefreshToken: append([]byte(nil), validated.refreshToken...),
+	}
+	if !validated.refreshExpiresAt.IsZero() {
+		wire.RefreshExpiresAt = validated.refreshExpiresAt.Unix()
 	}
 	encoded, err := json.Marshal(wire)
 	clear(wire.AccessToken)
+	clear(wire.RefreshToken)
 	if err != nil {
 		return fmt.Errorf("encode cloud session: %w", err)
 	}
@@ -242,6 +313,7 @@ func (manager *Manager) Load(ctx context.Context, kind Kind, now time.Time) (Ses
 		return Session{}, ErrInvalid
 	}
 	defer clear(wire.AccessToken)
+	defer clear(wire.RefreshToken)
 	if wire.Version != sessionSchemaVersion {
 		return Session{}, ErrInvalid
 	}
@@ -252,14 +324,50 @@ func (manager *Manager) Load(ctx context.Context, kind Kind, now time.Time) (Ses
 	if !now.Before(expiresAt) {
 		return Session{}, ErrExpired
 	}
-	return New(Metadata{
+	metadata := Metadata{
 		Kind:         wire.Kind,
 		AccountID:    wire.AccountID,
 		AccountLabel: wire.AccountLabel,
 		DeviceID:     wire.DeviceID,
 		ExpiresAt:    expiresAt,
 		HubID:        wire.HubID, HubURL: wire.HubURL, HubRegion: wire.HubRegion, HubDirectoryVersion: wire.HubDirectoryVersion,
-	}, wire.AccessToken, now)
+	}
+	if len(wire.RefreshToken) > 0 {
+		return NewRefreshable(metadata, wire.AccessToken, wire.RefreshToken, time.Unix(wire.RefreshExpiresAt, 0).UTC(), now)
+	}
+	return New(metadata, wire.AccessToken, now)
+}
+
+// LoadRefreshAuthorization 从 OS credential store 读取 refresh secret，即使短期 edge token 已过期。
+// 该路径只验证 refresh 自身有效期；返回值只能交给 Control PlaneAdapter.RefreshSession。
+func (manager *Manager) LoadRefreshAuthorization(ctx context.Context, kind Kind, now time.Time) (RefreshAuthorization, error) {
+	if kind != KindAccount && kind != KindDevice {
+		return RefreshAuthorization{}, ErrInvalid
+	}
+	encoded, err := manager.store.LoadSecret(ctx, manager.key(kind))
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return RefreshAuthorization{}, ErrNotFound
+		}
+		return RefreshAuthorization{}, err
+	}
+	defer clear(encoded)
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	var wire wireSession
+	if decoder.Decode(&wire) != nil || decoder.Decode(&struct{}{}) != io.EOF || wire.Version != sessionSchemaVersion || wire.Kind != kind || len(wire.RefreshToken) < 32 {
+		clear(wire.AccessToken)
+		clear(wire.RefreshToken)
+		return RefreshAuthorization{}, ErrInvalid
+	}
+	defer clear(wire.AccessToken)
+	defer clear(wire.RefreshToken)
+	refreshExpiresAt := time.Unix(wire.RefreshExpiresAt, 0).UTC()
+	if !now.Before(refreshExpiresAt) {
+		return RefreshAuthorization{}, ErrExpired
+	}
+	metadata := Metadata{Kind: wire.Kind, AccountID: wire.AccountID, AccountLabel: wire.AccountLabel, DeviceID: wire.DeviceID, ExpiresAt: time.Unix(wire.ExpiresAt, 0).UTC(), HubID: wire.HubID, HubURL: wire.HubURL, HubRegion: wire.HubRegion, HubDirectoryVersion: wire.HubDirectoryVersion}
+	return RefreshAuthorization{raw: append([]byte(nil), wire.RefreshToken...), metadata: metadata}, nil
 }
 
 // Delete 删除当前 profile 下指定 kind 的账号或 device 云会话。

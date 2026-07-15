@@ -63,10 +63,10 @@ export function createTerminalManagementApi(
     },
     async getTerminalDirectory(terminalId) {
       const channel = await api()
-      const response = await channel.request<{ path?: string; source?: string }>('get_directory', { terminal_id: terminalId })
+      const response = await channel.request<{ cwd?: string; live_cwd?: string }>('get', { terminal_id: terminalId })
       return {
-        path: response.path ?? '',
-        source: response.source,
+        path: response.live_cwd || response.cwd || '',
+        source: response.live_cwd ? 'live' : response.cwd ? 'metadata' : undefined,
       }
     },
   }

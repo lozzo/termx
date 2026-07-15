@@ -1,4 +1,4 @@
-import { Activity, CreditCard, Gauge, Gift, KeyRound, Laptop, LogOut, MonitorSmartphone, Moon, QrCode, Server, Settings, ShieldCheck, Smartphone, Sun } from "lucide-react";
+import { Activity, Check, Copy, CreditCard, Gauge, Gift, KeyRound, Laptop, LogOut, MonitorSmartphone, Moon, QrCode, Server, Settings, ShieldCheck, Smartphone, Sun } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import QRCode from "qrcode";
 import { useTranslation } from "react-i18next";
@@ -28,6 +28,15 @@ const request = (path: string, body: object, method = "POST") => fetch(path, { m
 const when = (value: string, language: string) => new Date(value).toLocaleString(intlLocale(language));
 const date = (value: string, language: string) => new Date(value).toLocaleDateString(intlLocale(language));
 const savedTheme = (): Theme => localStorage.getItem("termx-wx-theme") === "neutral-dark" ? "neutral-dark" : "light-gray";
+async function copyText(value: string) {
+  if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(value); return; }
+  const input = document.createElement("textarea");
+  input.value = value; input.setAttribute("readonly", ""); input.style.position = "fixed"; input.style.opacity = "0";
+  document.body.appendChild(input); input.select();
+  const copied = document.execCommand("copy");
+  input.remove();
+  if (!copied) throw new Error("copy unavailable");
+}
 
 export default function AccountPage() {
   const { t, i18n } = useTranslation();
@@ -91,9 +100,17 @@ function Nodes({ value, busy, action }: { value: Node[]; busy: string; action: (
   const { t, i18n } = useTranslation();
   const daemonNodes = value.filter((node) => node.kind === "daemon");
   const clientNodes = value.filter((node) => node.kind === "client");
-  const [enrollment, setEnrollment] = useState<{ code: string; expires_at: string } | null>(null), [creating, setCreating] = useState(false);
+  const [enrollment, setEnrollment] = useState<{ code: string; expires_at: string } | null>(null), [creating, setCreating] = useState(false), [enrollmentError, setEnrollmentError] = useState(""), [copied, setCopied] = useState(false), [enrollmentNow, setEnrollmentNow] = useState(Date.now());
   const [activation, setActivation] = useState<MobileActivation | null>(null), [activationBusy, setActivationBusy] = useState(false), [activationError, setActivationError] = useState(""), [activationApproved, setActivationApproved] = useState(false), [qrDataURL, setQRDataURL] = useState("");
-  async function createEnrollment() { setCreating(true); const response = await request("/api/nodes/enrollment", {}); if (response.ok) setEnrollment(await response.json()); setCreating(false); }
+  async function createEnrollment() {
+    setCreating(true); setEnrollmentError(""); setCopied(false);
+    try {
+      const response = await request("/api/nodes/enrollment", {});
+      if (!response.ok) setEnrollmentError(t("account.enrollmentUx.error"));
+      else { setEnrollment(await response.json()); setEnrollmentNow(Date.now()); }
+    } catch { setEnrollmentError(t("account.enrollmentUx.error")); }
+    setCreating(false);
+  }
   async function createActivation() {
     setActivationBusy(true); setActivationError(""); setActivationApproved(false);
     const response = await request("/api/mobile-activations", {});
@@ -138,6 +155,13 @@ function Nodes({ value, busy, action }: { value: Node[]; busy: string; action: (
     const timer = window.setInterval(() => { void inspect(); }, 1500);
     return () => { stopped = true; window.clearInterval(timer); };
   }, [activation, activationApproved]);
+  useEffect(() => {
+    if (!enrollment) return;
+    const timer = window.setInterval(() => setEnrollmentNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [enrollment]);
+  const enrollmentSeconds = enrollment ? Math.max(0, Math.ceil((Date.parse(enrollment.expires_at) - enrollmentNow) / 1000)) : 0;
+  const enrollmentCommand = enrollment ? `termx cloud enroll ${enrollment.code}` : "";
   return <div className="grid gap-4">
     <Panel><PanelTitle title={t("account.nodes.clientTitle")} end={t("account.nodes.clientCount", { count: clientNodes.filter((node) => !node.revoked).length })} />
       {!activation && <div className="grid gap-4 border-b border-line p-5 sm:grid-cols-[1fr_auto] sm:items-center"><div className="flex items-start gap-3"><Smartphone className="mt-0.5 size-4 shrink-0 text-primary" /><div><p className="m-0 text-sm font-medium">{t("account.nodes.mobileTitle")}</p><p className="mb-0 mt-2 max-w-2xl text-[10px] leading-5 text-muted-foreground">{t("account.nodes.mobileCopy")}</p></div></div><Button disabled={activationBusy} onClick={createActivation}><QrCode />{activationBusy ? t("account.nodes.creating") : t("account.nodes.createQR")}</Button></div>}
@@ -154,7 +178,7 @@ function Nodes({ value, busy, action }: { value: Node[]; busy: string; action: (
       <p className="m-0 border-b border-line px-5 py-4 text-[10px] leading-5 text-muted-foreground">{t("account.nodes.clientNote")}</p>
       <NodeTable nodes={clientNodes} kind="client" busy={busy} language={i18n.language} action={action} />
     </Panel>
-    <Panel><PanelTitle title={t("account.nodes.daemonTitle")} end={t("account.nodes.online", { count: daemonNodes.filter((node) => node.online && !node.revoked).length })} /><div className="grid gap-4 border-b border-line px-5 py-4 sm:grid-cols-[1fr_auto] sm:items-center"><p className="m-0 text-[10px] leading-5 text-muted-foreground">{t("account.nodes.daemonNote")}</p><Button variant="outline" size="sm" disabled={creating} onClick={createEnrollment}><KeyRound />{creating ? t("account.nodes.creating") : t("account.nodes.enroll")}</Button>{enrollment && <div className="border border-primary bg-background p-4 sm:col-span-2"><span className="font-mono text-[9px] text-muted-foreground">{t("account.nodes.enrollmentCode")}</span><strong className="mt-2 block break-all font-mono text-sm font-normal">{enrollment.code}</strong><small className="mt-2 block text-[9px] text-muted-foreground">{t("account.nodes.enrollmentCommand", { code: enrollment.code })}</small></div>}</div><NodeTable nodes={daemonNodes} kind="daemon" busy={busy} language={i18n.language} action={action} /></Panel>
+    <Panel><PanelTitle title={t("account.nodes.daemonTitle")} end={t("account.nodes.online", { count: daemonNodes.filter((node) => node.online && !node.revoked).length })} /><div className="grid gap-4 border-b border-line px-5 py-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="m-0 text-[10px] leading-5 text-muted-foreground">{t("account.nodes.daemonNote")}</p><p className="mb-0 mt-1 text-[9px] leading-5 text-muted-foreground">{t("account.enrollmentUx.reenrollNote")}</p></div><Button variant="outline" size="sm" disabled={creating} onClick={createEnrollment}><KeyRound />{creating ? t("account.nodes.creating") : t("account.nodes.enroll")}</Button>{enrollment && <div className="grid gap-3 border border-primary bg-background p-4 sm:col-span-2 sm:grid-cols-[1fr_auto] sm:items-end"><div className="min-w-0"><span className="font-mono text-[9px] text-muted-foreground">{t("account.nodes.enrollmentCode")}</span><strong className="mt-2 block break-all font-mono text-sm font-normal">{enrollment.code}</strong><code className="mt-3 block overflow-x-auto border-t border-line pt-3 font-mono text-[10px] text-foreground">{enrollmentCommand}</code><small className={cn("mt-2 block font-mono text-[9px] tabular-nums", enrollmentSeconds > 0 ? "text-muted-foreground" : "text-destructive")}>{enrollmentSeconds > 0 ? t("account.enrollmentUx.expiresIn", { minutes: Math.floor(enrollmentSeconds / 60), seconds: String(enrollmentSeconds % 60).padStart(2, "0") }) : t("account.enrollmentUx.expired")}</small></div><Button className="min-h-11" variant="outline" disabled={enrollmentSeconds === 0} onClick={() => { void copyText(enrollmentCommand).then(() => setCopied(true)).catch(() => setEnrollmentError(t("account.enrollmentUx.copyError"))); }}>{copied ? <Check /> : <Copy />}{copied ? t("account.enrollmentUx.copied") : t("account.enrollmentUx.copyCommand")}</Button></div>}{enrollmentError && <p className="m-0 border border-destructive p-3 text-xs text-destructive sm:col-span-2" role="alert">{enrollmentError}</p>}<span className="sr-only" aria-live="polite">{copied ? t("account.enrollmentUx.copied") : ""}</span></div><NodeTable nodes={daemonNodes} kind="daemon" busy={busy} language={i18n.language} action={action} /></Panel>
   </div>;
 }
 

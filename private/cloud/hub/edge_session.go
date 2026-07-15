@@ -2,8 +2,6 @@ package hub
 
 import (
 	"context"
-
-	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 )
 
 // CreateEdgeSessionRequest 描述 client 使用启动阶段 edge token 发起的 managed direct offer。
@@ -39,12 +37,11 @@ func (service *Service) CreateEdgeSession(_ context.Context, request CreateEdgeS
 		}
 		managedSessionID = request.RelayCorrelationID
 	}
-	legacy := CreateSessionRequest{AccountID: request.AccountID, ClientDeviceID: request.ClientDeviceID, TargetDeviceID: request.TargetDeviceID, ManagedSessionID: managedSessionID, SignalingSessionID: request.SignalingSessionID, SDP: request.SDP, Candidates: request.Candidates, RoutePreference: request.RoutePreference, RelayOnly: request.RelayOnly}
-	if err := service.validateOffer(legacy); err != nil {
+	if err := service.validateOffer(request.AccountID, request.ClientDeviceID, request.TargetDeviceID, managedSessionID, request.SignalingSessionID, request.SDP, request.Candidates, request.RoutePreference, request.RelayOnly); err != nil {
 		return nil, err
 	}
 	now := service.clock.Now().UTC()
-	state := &sessionState{id: request.SignalingSessionID, accountID: request.AccountID, managedSessionID: managedSessionID, clientDeviceID: request.ClientDeviceID, clientConnectionID: request.ClientConnectionID, targetDeviceID: request.TargetDeviceID, allowedOperations: []servicecredential.HubOperation{servicecredential.HubOperationOffer, servicecredential.HubOperationCandidate}, expiresAt: now.Add(service.maxSignalingTTL), clientEvents: make(chan ClientEvent, service.clientQueue), done: make(chan struct{})}
+	state := &sessionState{id: request.SignalingSessionID, accountID: request.AccountID, managedSessionID: managedSessionID, clientDeviceID: request.ClientDeviceID, clientConnectionID: request.ClientConnectionID, targetDeviceID: request.TargetDeviceID, clientCandidateAllowed: true, expiresAt: now.Add(service.maxSignalingTTL), clientEvents: make(chan ClientEvent, service.clientQueue), done: make(chan struct{})}
 	offer := Offer{SignalingSessionID: state.id, ManagedSessionID: state.managedSessionID, SourceDeviceID: state.clientDeviceID, TargetDeviceID: state.targetDeviceID, SDP: request.SDP, Candidates: cloneCandidates(request.Candidates), RoutePreference: request.RoutePreference, RelayOnly: request.RelayOnly}
 	service.mu.Lock()
 	defer service.mu.Unlock()
@@ -115,7 +112,7 @@ func (service *Service) CompleteEdgeAnswer(_ context.Context, request CompleteEd
 	select {
 	case state.clientEvents <- event:
 		state.answered = true
-		state.daemonOperations = []servicecredential.HubOperation{servicecredential.HubOperationAnswer, servicecredential.HubOperationCandidate}
+		state.daemonCandidateAllowed = true
 		return &DaemonSession{service: service, state: state, deviceID: request.DaemonDeviceID}, nil
 	default:
 		return nil, ErrBackpressure

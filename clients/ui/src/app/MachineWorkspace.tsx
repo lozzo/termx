@@ -113,6 +113,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null)
   const [connectionInfoLoading, setConnectionInfoLoading] = useState(false)
   const [connectionInfoError, setConnectionInfoError] = useState<string | null>(null)
+  const [p2pFallbackPromptOpen, setP2PFallbackPromptOpen] = useState(false)
   const [manualReconnectNonce, setManualReconnectNonce] = useState(0)
   const [terminalResizeControl, setTerminalResizeControl] = useState<TerminalResizeControl>(defaultTerminalResizeControl)
   const [unlockingResize, setUnlockingResize] = useState(false)
@@ -135,6 +136,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     environment: '',
     sizeLockMode: 'off',
   })
+  const [terminalSubmitError, setTerminalSubmitError] = useState<string | null>(null)
+  const [terminalSubmitting, setTerminalSubmitting] = useState(false)
   const [terminalPathReturnSheet, setTerminalPathReturnSheet] = useState<TerminalEditorSheet>('create-terminal')
   const [terminalPathPickerPath, setTerminalPathPickerPath] = useState('/')
   const [terminalPathPickerEntries, setTerminalPathPickerEntries] = useState<FileEntry[]>([])
@@ -199,6 +202,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const sessionConnectionPhaseRef = useRef<RtcConnectionStateSnapshot['phase'] | null>(null)
   const latestActiveTerminalIdRef = useRef<string | null>(null)
   const latestSplitTerminalIdRef = useRef<string | null>(null)
+  const p2pProbeRef = useRef(false)
   const handledManualReconnectNonceRef = useRef(0)
   const resizeLockedHintShownRef = useRef(false)
   const hasLoadedTerminalsRef = useRef(hasLoadedTerminals)
@@ -229,7 +233,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     clearConnectionStatus,
     clearConnectionStatusSoon,
   } = useMachineNetworkStatus()
-  const machineForceRelayKey = machine?.machineId ? forceRelayStorageKey(machine.machineId) : null
   const effectiveTerminalSettings = terminalSettingsProp ?? terminalSettings
   const activeResizeSurfaceId = activeTerminalId && machine?.machineId
     ? appTerminalSurfaceId(machine.machineId, activeTerminalId)
@@ -312,9 +315,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   }, [machine?.machineId, setMachineNetworkMachineId])
 
   useEffect(() => {
-    if (!machineForceRelayKey) return
-    setForceRelayConnection(readStoredForceRelay(machineForceRelayKey))
-  }, [machineForceRelayKey])
+    // managed endpoint 的持久策略固定为 auto；forceRelay 只属于当前 workspace 的一次连接尝试。
+    setForceRelayConnection(false)
+    p2pProbeRef.current = false
+    setP2PFallbackPromptOpen(false)
+  }, [machine?.machineId])
 
   useEffect(() => {
     const keybar = mobileKeybarRef.current
@@ -390,6 +395,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     if (snapshot.phase === 'reconnecting' || snapshot.phase === 'waiting_network') setError(null)
     if (snapshot.phase === 'failed') {
       const message = connectionErrorDisplayMessage(snapshot.failReason || snapshot.statusText || 'Connection failed')
+      if (p2pProbeRef.current && isP2PRouteUnavailable(snapshot.failReason || snapshot.statusText)) {
+        p2pProbeRef.current = false
+        setP2PFallbackPromptOpen(true)
+      }
       if (isAuthConnectionError(snapshot.failReason || snapshot.statusText)) handleConnectionAuthFailure(snapshot.machineId)
       setError(message)
       updateConnectionStatus(message, 'failed')
@@ -545,9 +554,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       setMachineNetworkMachineId(status.machine.machineId)
       setMachine(status.machine)
       if (pair) setVerifiedDevice(Boolean(pair.sessionStore.getSessionToken(status.machine.machineId)))
-      const forceRelay = forceRelayPreference(status.machine.machineId)
-      setForceRelayConnection(forceRelay)
-      const terminalList = await api.listTerminals({ forceRelay })
+      const terminalList = await api.listTerminals({ forceRelay: forceRelayConnection })
       if (terminalRefreshSeqRef.current !== seq) return
       setTerminals(terminalList)
       setHasLoadedTerminals(true)
@@ -564,7 +571,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         setLoadingTerminals(false)
       }
     }
-  }, [api, handleConnectionAuthFailure, initialMachine?.machineId, pair, setMachineNetworkMachineId, updateConnectionStatus])
+  }, [api, forceRelayConnection, handleConnectionAuthFailure, initialMachine?.machineId, pair, setMachineNetworkMachineId, updateConnectionStatus])
 
   const applyRuntimeTerminalEvent = useCallback((event: RtcEvent | { payload?: unknown }): boolean => {
     const payload = event.payload
@@ -608,10 +615,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           setHasLoadedTerminals(true)
           setLoadingTerminals(false)
         }
-        const forceRelay = forceRelayPreference(status.machine.machineId)
-        setForceRelayConnection(forceRelay)
         const terminalList = await api.listTerminals({
-          forceRelay,
+          forceRelay: false,
           onStatus: (status) => {
             if (!cancelled && terminalRefreshSeqRef.current === seq) updateConnectionStatus(status)
           },
@@ -837,12 +842,17 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       window.clearTimeout(progressTimer)
       if (!cancelled && machineSessionConnectSeqRef.current === connectSeq) {
         const message = connectionErrorDisplayMessage(err)
-        if (isAuthConnectionError(err)) handleConnectionAuthFailure(machineId)
+        const authFailure = isAuthConnectionError(err)
+        if (authFailure) handleConnectionAuthFailure(machineId)
+        if (p2pProbeRef.current && isP2PRouteUnavailable(err)) {
+          p2pProbeRef.current = false
+          setP2PFallbackPromptOpen(true)
+        }
         setConnectedSession(null)
         setConnectedTerminalId(null)
         setConnectingTerminalId(null)
         updateConnectionStatus(message, 'failed')
-        if (pair) setMobileSheet('pair')
+        if (pair && authFailure) setMobileSheet('pair')
       }
     })
     return () => {
@@ -867,6 +877,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       },
     }).then((session) => {
       if (cancelled) return
+      // 只有本次 manual reconnect 真正完成，才能消费 one-shot P2P probe；旧 Relay 的迟到快照无权清理该意图。
+      if (p2pProbeRef.current && !forceRelayConnection) {
+        p2pProbeRef.current = false
+        setP2PFallbackPromptOpen(false)
+      }
       setConnectedSession(session)
       if (page === 'terminal' && activeTerminalId) {
         reattachActiveTerminals(session)
@@ -877,6 +892,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       if (cancelled) return
       const message = connectionErrorDisplayMessage(err)
       if (isAuthConnectionError(err)) handleConnectionAuthFailure(machineId)
+      if (p2pProbeRef.current && isP2PRouteUnavailable(err)) {
+        p2pProbeRef.current = false
+        setP2PFallbackPromptOpen(true)
+      }
       setConnectedSession(null)
       setConnectedTerminalId(null)
       setConnectingTerminalId(null)
@@ -1032,10 +1051,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     void refreshTerminals()
   }, [refreshTerminals])
 
-  const retryConnection = useCallback((options: { forceRelay?: boolean; closeDialog?: boolean } = {}) => {
+  const retryConnection = useCallback((options: { forceRelay?: boolean; closeDialog?: boolean; p2pProbe?: boolean } = {}) => {
     const targetForceRelay = options.forceRelay ?? forceRelayConnection
+    p2pProbeRef.current = options.p2pProbe === true
+    setP2PFallbackPromptOpen(false)
     setForceRelayConnection(targetForceRelay)
-    if (machineForceRelayKey) writeStoredForceRelay(machineForceRelayKey, targetForceRelay)
     if (options.closeDialog !== false) setConnectionInfoOpen(false)
     setConnectionInfo(null)
     setConnectionInfoError(null)
@@ -1063,7 +1083,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
     setManualReconnectNonce((value) => value + 1)
     setConnectionRetryToken((value) => value + 1)
-  }, [activeTerminalId, connector, forceRelayConnection, machineForceRelayKey, releaseMachineSession, updateConnectionStatus])
+  }, [activeTerminalId, connector, forceRelayConnection, releaseMachineSession, updateConnectionStatus])
 
   useEffect(() => {
     if (!pair) return
@@ -1170,6 +1190,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
     if (!canManageTerminals) return
     setSelectedTerminalId(null)
+    setTerminalSubmitError(null)
     setTerminalForm({
       name: '',
       command: '',
@@ -1182,6 +1203,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
   const openEditTerminal = useCallback(() => {
     if (!selectedTerminal) return
+    setTerminalSubmitError(null)
     setTerminalForm({
       name: selectedTerminal.title,
       command: selectedTerminal.command ?? '',
@@ -1268,7 +1290,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   }, [loadTerminalPathBookmarks, withMachineSession])
 
   const submitCreateTerminal = useCallback(async () => {
-    if (!canManageTerminals) return
+    if (!canManageTerminals || terminalSubmitting) return
+    setTerminalSubmitError(null)
+    setTerminalSubmitting(true)
     const command = terminalForm.command.trim().split(/\s+/).filter(Boolean)
     const input: LocalCreateTerminalInput = {
       name: terminalForm.name.trim() || undefined,
@@ -1277,15 +1301,23 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       environment: terminalForm.environment.trim() || undefined,
       sizeLockMode: terminalForm.sizeLockMode,
     }
-    const management = await withManagementApi()
-    const created = await management.api.createTerminal(input)
-    await refreshTerminals()
-    setPairStatus(`Created ${created.terminalId || input.name || 'terminal'}`)
-    setMobileSheet(null)
-  }, [canManageTerminals, refreshTerminals, terminalForm, withManagementApi])
+    try {
+      const management = await withManagementApi()
+      const created = await management.api.createTerminal(input)
+      await refreshTerminals()
+      setPairStatus(`Created ${created.terminalId || input.name || 'terminal'}`)
+      setMobileSheet(null)
+    } catch (err) {
+      setTerminalSubmitError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setTerminalSubmitting(false)
+    }
+  }, [canManageTerminals, refreshTerminals, terminalForm, terminalSubmitting, withManagementApi])
 
   const submitUpdateTerminal = useCallback(async () => {
-    if (!canManageTerminals || !selectedTerminalId) return
+    if (!canManageTerminals || !selectedTerminalId || terminalSubmitting) return
+    setTerminalSubmitError(null)
+    setTerminalSubmitting(true)
     const input: LocalUpdateTerminalInput = {
       terminalId: selectedTerminalId,
       name: terminalForm.name.trim() || undefined,
@@ -1293,12 +1325,18 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       environment: terminalForm.environment.trim() || undefined,
       sizeLockMode: terminalForm.sizeLockMode,
     }
-    const management = await withManagementApi()
-    await management.api.updateTerminal(input)
-    await refreshTerminals()
-    setPairStatus(`Updated ${input.name || selectedTerminal?.title || selectedTerminalId}`)
-    setMobileSheet(null)
-  }, [canManageTerminals, selectedTerminal, selectedTerminalId, refreshTerminals, terminalForm, withManagementApi])
+    try {
+      const management = await withManagementApi()
+      await management.api.updateTerminal(input)
+      await refreshTerminals()
+      setPairStatus(`Updated ${input.name || selectedTerminal?.title || selectedTerminalId}`)
+      setMobileSheet(null)
+    } catch (err) {
+      setTerminalSubmitError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setTerminalSubmitting(false)
+    }
+  }, [canManageTerminals, selectedTerminal, selectedTerminalId, refreshTerminals, terminalForm, terminalSubmitting, withManagementApi])
 
   const unlockTerminalResize = useCallback(async () => {
     if (!canManageTerminals || !activeTerminalId) return
@@ -1445,7 +1483,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   }, [connectedSession, ensureMachineSession, forceRelayConnection, machine])
 
   const toggleConnectionMode = useCallback(() => {
-    retryConnection({ forceRelay: !forceRelayConnection })
+    retryConnection({ forceRelay: !forceRelayConnection, p2pProbe: forceRelayConnection })
   }, [forceRelayConnection, retryConnection])
 
   const lockKeyboard = useCallback(() => {
@@ -2029,6 +2067,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             onClose={() => setMobileSheet(null)}
           >
             <div className="flex flex-col gap-4">
+              {terminalSubmitError ? (
+                <div className="border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700" role="alert">
+                  {terminalSubmitError}
+                </div>
+              ) : null}
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 Name
                 <input
@@ -2117,6 +2160,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <button
                 type="button"
                 className="termx-app-primary-button mt-2 min-h-12 w-full gap-2 px-4 text-[15px] font-semibold"
+                disabled={terminalSubmitting}
                 onClick={() => {
                   hapticImpact()
                   if (mobileSheet === 'create-terminal') {
@@ -2126,7 +2170,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   void submitUpdateTerminal()
                 }}
               >
-                {mobileSheet === 'create-terminal' ? 'Create terminal' : 'Save changes'}
+                {terminalSubmitting ? 'Saving...' : mobileSheet === 'create-terminal' ? 'Create terminal' : 'Save changes'}
               </button>
             </div>
           </MobileSheetPanel>
@@ -2557,6 +2601,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           onToggleMode={toggleConnectionMode}
         />
       ) : null}
+      {p2pFallbackPromptOpen ? (
+        <P2PFallbackDialog
+          onCancel={() => setP2PFallbackPromptOpen(false)}
+          onUseRelay={() => retryConnection({ forceRelay: true })}
+        />
+      ) : null}
       {showMachineNetworkOverlay ? (
         <MachineNetworkStatusOverlay
           phase={connectionPhase}
@@ -2621,7 +2671,8 @@ function MobileSheetPanel({
   )
 }
 
-function ConnectionInfoDialog({
+/** ConnectionInfoDialog 只投影连接状态和显式路由意图；未知或失败路径仍允许用户强制选择 Relay。 */
+export function ConnectionInfoDialog({
   info,
   loading,
   error,
@@ -2641,8 +2692,6 @@ function ConnectionInfoDialog({
   onToggleMode: () => void
 }) {
   const type = info?.type ?? (info?.relayInUse ? 'relay' : 'unknown')
-  const isP2P = type === 'p2p'
-  const canToggleMode = forceRelayActive || isP2P
   const modeActionLabel = forceRelayActive ? 'Try P2P' : 'Use relay'
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" onClick={() => { hapticSelection(); onClose() }}>
@@ -2684,7 +2733,7 @@ function ConnectionInfoDialog({
           <button
             type="button"
             className="termx-app-primary-button px-3 text-[13px] font-semibold disabled:bg-zinc-300 disabled:text-zinc-500"
-            disabled={loading || !canToggleMode}
+            disabled={loading}
             onClick={() => { hapticImpact(); onToggleMode() }}
           >
             {modeActionLabel}
@@ -2700,6 +2749,28 @@ function ConnectionInfoRow({ label, value, strong = false }: { label: string; va
     <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3 border-b border-[var(--termx-app-line)] bg-zinc-50 px-3 py-2 last:border-b-0">
       <dt className="text-[12px] font-semibold text-zinc-500">{label}</dt>
       <dd className={`min-w-0 break-words text-[12px] ${strong ? 'font-semibold text-zinc-950' : 'font-medium text-zinc-700'}`}>{value}</dd>
+    </div>
+  )
+}
+
+/** P2PFallbackDialog 只处理一次 direct probe 的失败决策，不修改 managed endpoint 的持久 auto 策略。 */
+function P2PFallbackDialog({ onCancel, onUseRelay }: { onCancel: () => void; onUseRelay: () => void }) {
+  return (
+    <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="termx-p2p-fallback-title">
+      <section className="termx-app-panel w-full max-w-sm overflow-hidden">
+        <div className="border-b border-[var(--termx-app-line)] px-4 py-4">
+          <h2 id="termx-p2p-fallback-title" className="text-[16px] font-semibold text-zinc-950">P2P unavailable</h2>
+          <p className="mt-2 text-[13px] leading-5 text-zinc-600">A direct connection could not be established on the current network. Switch this connection to Relay?</p>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-4 py-3">
+          <button type="button" className="termx-app-secondary-button px-3 text-[13px] font-semibold" onClick={() => { hapticSelection(); onCancel() }}>
+            Not now
+          </button>
+          <button type="button" className="termx-app-primary-button px-3 text-[13px] font-semibold" onClick={() => { hapticImpact(); onUseRelay() }}>
+            Use relay
+          </button>
+        </div>
+      </section>
     </div>
   )
 }
@@ -2795,32 +2866,10 @@ function normalizeTerminalDirectory(path: string | undefined): string {
   return normalizeFilePath(trimmed)
 }
 
-function forceRelayStorageKey(machineId: string): string {
-  return `termx.forceRelay.${machineId}`
-}
-
-function forceRelayPreference(machineId: string): boolean {
-  return readStoredForceRelay(forceRelayStorageKey(machineId))
-}
-
-function readStoredForceRelay(key: string): boolean {
-  try {
-    return localStorage.getItem(key) === '1'
-  } catch {
-    return false
-  }
-}
-
-function writeStoredForceRelay(key: string, value: boolean): void {
-  try {
-    if (value) {
-      localStorage.setItem(key, '1')
-    } else {
-      localStorage.removeItem(key)
-    }
-  } catch {
-    // Storage can be unavailable in restricted WebViews.
-  }
+function isP2PRouteUnavailable(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  const normalized = message.trim().toLowerCase()
+  return normalized === 'route_unavailable' || normalized.includes('route unavailable') || normalized.includes('webrtc failed')
 }
 
 function isTerminalInventoryRuntimeEvent(event: RtcEvent): boolean {

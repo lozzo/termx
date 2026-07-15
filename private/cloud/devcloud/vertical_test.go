@@ -213,7 +213,7 @@ func TestDevCloudVerticalLoopAcrossRealServiceBoundaries(t *testing.T) {
 	defer daemonStoredSession.Destroy()
 	daemonAuthorization := daemonStoredSession.Authorization()
 	defer daemonAuthorization.Destroy()
-	if _, err := daemonAdapter.AcquirePresenceAdmission(ctx, daemonAuthorization, presenceRequest); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED) {
+	if _, err := daemonAdapter.OpenPresence(ctx, daemonAuthorization, presenceRequest); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED) {
 		t.Fatalf("replayed presence proof error = %v", err)
 	}
 	assertRejectedPresenceProofs(t, ctx, clock, daemonAdapter, daemonAuthorization, daemonDeviceID, publicKey, privateKey)
@@ -325,6 +325,20 @@ func TestDevCloudVerticalLoopAcrossRealServiceBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	controlShutdownCancel()
+	if err := presenceStream.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reconnectChallenge, err := daemonConnection.BeginPresence(ctx, &cloudpb.BeginPresenceRequest{DeviceId: daemonDeviceID})
+	if err != nil {
+		t.Fatalf("Hub-local Presence challenge with Control Plane down = %v", err)
+	}
+	presenceStream, err = daemonConnection.OpenPresence(ctx, signPresenceRequest(t, privateKey, publicKey, daemonDeviceID, reconnectChallenge, clock.Now()))
+	if err != nil {
+		t.Fatalf("Hub-local Presence reconnect with Control Plane down = %v", err)
+	}
+	if ready, err := presenceStream.Receive(); err != nil || ready.GetReady().GetPresenceSessionId() != reconnectChallenge.GetPresenceSessionId() {
+		t.Fatalf("Control Plane down Presence ready = (%v, %v)", ready, err)
+	}
 	controlDownRequest := &cloudpb.CreateSignalingSessionRequest{EndpointId: controlDownResolved.GetEndpointId(), ManagedSessionId: controlDownResolved.GetManagedSessionId(), TargetDeviceId: daemonDeviceID, OfferSdp: "offer-control-down", RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY}
 	controlDownStream, err := clientAdapter.CreateSignalingSession(ctx, clientAuthorization, controlDownRequest)
 	if err != nil {
@@ -446,12 +460,7 @@ func TestDevCloudHubReturnsBackpressureAcrossHTTPStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	presenceRequest := signPresenceRequest(t, privateKey, publicKey, deviceID, presenceChallenge, clock.Now())
-	presenceAdmission, err := adapter.AcquirePresenceAdmission(ctx, daemonAuthorization, presenceRequest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	presenceSource, err := adapter.OpenPresence(ctx, daemonAuthorization, presenceAdmission, presenceRequest)
-	presenceAdmission.Destroy()
+	presenceSource, err := adapter.OpenPresence(ctx, daemonAuthorization, presenceRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +511,7 @@ func newTestCompanion(t *testing.T, store session.OSCredentialStore, profile str
 		t.Fatal(err)
 	}
 	service, err := companion.NewService(companion.Config{
-		CompanionVersion: "vertical-test", BuildChannel: "development", Capabilities: capabilities,
+		CompanionVersion: "vertical-test", BuildChannel: "development", ExecutableSHA256: bytes.Repeat([]byte{0x42}, 32), Capabilities: capabilities,
 		StreamCapacity: 8, Now: clock.Now,
 	}, manager, adapter, adapter)
 	if err != nil {
@@ -569,7 +578,7 @@ func assertRejectedPresenceProofs(t *testing.T, ctx context.Context, clock *test
 		t.Fatal(err)
 	}
 	wrongKeyProof := signPresenceRequest(t, wrongPrivateKey, wrongPublicKey, deviceID, wrongKeyChallenge, clock.Now())
-	if _, err := adapter.AcquirePresenceAdmission(ctx, authorization, wrongKeyProof); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED) {
+	if _, err := adapter.OpenPresence(ctx, authorization, wrongKeyProof); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED) {
 		t.Fatalf("wrong-key presence proof error = %v", err)
 	}
 	wrongDeviceChallenge, err := adapter.BeginPresence(ctx, authorization, &cloudpb.BeginPresenceRequest{DeviceId: deviceID})
@@ -577,7 +586,7 @@ func assertRejectedPresenceProofs(t *testing.T, ctx context.Context, clock *test
 		t.Fatal(err)
 	}
 	wrongDeviceProof := signPresenceRequest(t, privateKey, publicKey, "daemon-other", wrongDeviceChallenge, clock.Now())
-	if _, err := adapter.AcquirePresenceAdmission(ctx, authorization, wrongDeviceProof); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED) {
+	if _, err := adapter.OpenPresence(ctx, authorization, wrongDeviceProof); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED) {
 		t.Fatalf("wrong-device presence proof error = %v", err)
 	}
 }
@@ -607,10 +616,7 @@ func assertCredentialVisibility(t *testing.T, requests []capturedRequest, hubOri
 	t.Helper()
 	hubHost := hubOrigin[len("http://"):]
 	for _, request := range requests {
-		if request.host == hubHost && request.path == httpapi.HubOpenPresencePath && request.authorization != "" {
-			t.Fatalf("Hub presence request %s received cloud bearer authorization", request.path)
-		}
-		if request.host == hubHost && (request.path == httpapi.HubCreateSignalingPath || request.path == httpapi.HubCompleteSignalingPath) && request.authorization == "" {
+		if request.host == hubHost && (request.path == httpapi.HubBeginPresencePath || request.path == httpapi.HubOpenPresencePath || request.path == httpapi.HubCreateSignalingPath || request.path == httpapi.HubCompleteSignalingPath) && request.authorization == "" {
 			t.Fatalf("Hub managed request %s did not receive edge authorization", request.path)
 		}
 		for _, forbidden := range [][]byte{

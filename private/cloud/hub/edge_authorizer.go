@@ -82,6 +82,17 @@ type EdgeAuthorizer struct {
 	devices       map[string]DeviceAuthorization
 }
 
+// Revision 返回当前已验签并发布的 policy revision。
+// 该值只用于 Control Plane 重启后继续生成严格递增快照，不暴露账号或设备内容。
+func (authorizer *EdgeAuthorizer) Revision() uint64 {
+	if authorizer == nil {
+		return 0
+	}
+	authorizer.mu.RLock()
+	defer authorizer.mu.RUnlock()
+	return authorizer.revision
+}
+
 // NewEdgeAuthorizer 创建没有授权快照的 Hub authorizer。
 // 在首次成功 ApplySnapshot 前所有连接均 fail closed。
 func NewEdgeAuthorizer(config EdgeAuthorizerConfig) (*EdgeAuthorizer, error) {
@@ -275,20 +286,28 @@ func (authorizer *EdgeAuthorizer) AccountDevices(accountID string) []DeviceAutho
 // AuthorizeDaemon 离线验证 daemon edge token、账号 epoch 与本地 device ownership/revoke 投影。
 // 它只允许完成已由该 device active presence 接收的 signaling，不授予 client offer 或 terminal capability。
 func (authorizer *EdgeAuthorizer) AuthorizeDaemon(token []byte, accountID, deviceID string) (servicecredential.EdgeAccessClaims, error) {
+	claims, _, err := authorizer.AuthorizeDaemonDevice(token, accountID, deviceID)
+	return claims, err
+}
+
+// AuthorizeDaemonDevice 离线验证 daemon edge token，并返回与 token 同 revision 的设备公钥投影。
+// Hub Presence 使用该公钥验证 fresh DeviceProof；返回值不包含 private key、terminal 或 capability。
+func (authorizer *EdgeAuthorizer) AuthorizeDaemonDevice(token []byte, accountID, deviceID string) (servicecredential.EdgeAccessClaims, DeviceAuthorization, error) {
 	now := authorizer.clock.Now().UTC()
 	claims, err := servicecredential.VerifyEdgeAccess(authorizer.keyRing, token, servicecredential.EdgeAccessExpectation{Issuer: authorizer.issuer, AudienceHubID: authorizer.hubID, AccountID: accountID, ClientDeviceID: deviceID, PrincipalKind: servicecredential.EdgePrincipalDaemon}, now)
 	if err != nil {
-		return servicecredential.EdgeAccessClaims{}, fmt.Errorf("%w: %v", ErrEdgeAuthorization, err)
+		return servicecredential.EdgeAccessClaims{}, DeviceAuthorization{}, fmt.Errorf("%w: %v", ErrEdgeAuthorization, err)
 	}
 	authorizer.mu.RLock()
 	defer authorizer.mu.RUnlock()
 	if authorizer.revision == 0 || now.Sub(authorizer.generatedAt) > authorizer.maxStaleness {
-		return servicecredential.EdgeAccessClaims{}, ErrPolicySnapshot
+		return servicecredential.EdgeAccessClaims{}, DeviceAuthorization{}, ErrPolicySnapshot
 	}
 	account, accountOK := authorizer.accounts[accountID]
 	device, deviceOK := authorizer.devices[deviceID]
-	if !accountOK || !deviceOK || account.Revoked || account.AuthEpoch != claims.AuthEpoch || device.Revoked || device.AccountID != accountID {
-		return servicecredential.EdgeAccessClaims{}, ErrEdgeAuthorization
+	if !accountOK || !deviceOK || account.Revoked || account.AuthEpoch != claims.AuthEpoch || device.Revoked || device.AccountID != accountID || device.Kind != "daemon" {
+		return servicecredential.EdgeAccessClaims{}, DeviceAuthorization{}, ErrEdgeAuthorization
 	}
-	return claims, nil
+	device.PublicKey = append([]byte(nil), device.PublicKey...)
+	return claims, device, nil
 }

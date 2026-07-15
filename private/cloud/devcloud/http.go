@@ -195,7 +195,23 @@ func containsSessionKind(allowed []session.Kind, current session.Kind) bool {
 	return false
 }
 
-func (state *serviceState) issueSession(kind session.Kind, accountID, accountLabel, deviceID string) (cloudSession, []byte, error) {
+func (state *serviceState) issueSession(kind session.Kind, accountID, accountLabel, deviceID string) (cloudSession, []byte, []byte, time.Time, error) {
+	cloudSession, token, err := state.issueAccessSession(kind, accountID, accountLabel, deviceID)
+	if err != nil {
+		return cloudSession, nil, nil, time.Time{}, err
+	}
+	refreshToken, refreshExpiresAt, err := state.refreshSessions.Issue(refreshRecord{Kind: kind, AccountID: accountID, AccountLabel: accountLabel, DeviceID: deviceID}, state.now().UTC())
+	if err != nil {
+		state.mu.Lock()
+		delete(state.sessions, sha256.Sum256(token))
+		state.mu.Unlock()
+		clear(token)
+		return cloudSession, nil, nil, time.Time{}, err
+	}
+	return cloudSession, token, refreshToken, refreshExpiresAt, nil
+}
+
+func (state *serviceState) issueAccessSession(kind session.Kind, accountID, accountLabel, deviceID string) (cloudSession, []byte, error) {
 	tokenID, err := state.randomID("edge-token")
 	if err != nil {
 		return cloudSession{}, nil, err
@@ -226,8 +242,11 @@ func (state *serviceState) publishEdgeSnapshot(now time.Time) error {
 	for _, device := range state.edgeDevices {
 		devices = append(devices, servicecredential.EdgePolicyDevice{DeviceID: device.DeviceID, AccountID: device.AccountID, Kind: device.Kind, DisplayName: device.DisplayName, Platform: device.Platform, PublicKey: append([]byte(nil), device.PublicKey...), Revoked: device.Revoked})
 	}
-	accounts := make([]servicecredential.EdgePolicyAccount, 0, len(state.webAccounts)+1)
+	accounts := make([]servicecredential.EdgePolicyAccount, 0, len(state.directoryAccounts)+len(state.webAccounts)+1)
 	accountIDs := map[string]struct{}{devAccountID: {}}
+	for accountID := range state.directoryAccounts {
+		accountIDs[accountID] = struct{}{}
+	}
 	for accountID := range state.webAccounts {
 		accountIDs[accountID] = struct{}{}
 	}
@@ -289,7 +308,7 @@ func (state *serviceState) cleanupLocked(now time.Time) {
 func mapHubError(writer http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, cloudhub.ErrAdmission), errors.Is(err, cloudhub.ErrEdgeAuthorization):
-		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub admission was rejected", false)
+		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub authorization was rejected", false)
 	case errors.Is(err, cloudhub.ErrPolicySnapshot):
 		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "Hub authorization snapshot is unavailable", true)
 	case errors.Is(err, cloudhub.ErrTargetUnavailable):

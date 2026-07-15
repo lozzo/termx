@@ -4,13 +4,14 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
-	"io"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	"github.com/lozzow/termx/private/cloud/hub"
+	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/lozzow/termx/shared/cloudcompanion"
 )
 
 type fakeClock struct {
@@ -30,81 +31,15 @@ func (clock *fakeClock) Advance(duration time.Duration) {
 	clock.mu.Unlock()
 }
 
-func TestHubRoutesOfferCandidateAndAsyncAnswerWithSeparateAdmissions(t *testing.T) {
-	fixture := newFixture(t, 4, 4)
-	presenceTicket := fixture.issue(t, "presence-ticket", servicecredential.PrincipalDaemon, "daemon-1", "presence-1", "", []servicecredential.HubOperation{servicecredential.HubOperationPresence}, 4*time.Minute)
-	presence, err := fixture.service.OpenPresence(context.Background(), hub.OpenPresenceRequest{Admission: presenceTicket, AccountID: "account-1", DeviceID: "daemon-1", PresenceSession: "presence-1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer presence.Close()
-
-	clientTicket := fixture.issue(t, "client-ticket", servicecredential.PrincipalClient, "client-1", "managed-1", "daemon-1", []servicecredential.HubOperation{servicecredential.HubOperationOffer, servicecredential.HubOperationCandidate}, 3*time.Minute)
-	client, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{
-		Admission: clientTicket, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1",
-		ManagedSessionID: "managed-1", SignalingSessionID: "signal-1", SDP: "offer-sdp",
-		Candidates: []hub.Candidate{{Candidate: "candidate:offer"}}, RoutePreference: hub.RoutePreferenceStandardRelay, RelayOnly: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-	offerEvent, err := presence.Receive(context.Background())
-	if err != nil || offerEvent.Offer == nil || offerEvent.Offer.SignalingSessionID != "signal-1" || offerEvent.Offer.TargetDeviceID != "daemon-1" ||
-		offerEvent.Offer.RoutePreference != hub.RoutePreferenceStandardRelay || !offerEvent.Offer.RelayOnly {
-		t.Fatalf("presence offer = (%#v, %v)", offerEvent, err)
-	}
-	if err := client.SendCandidate(hub.Candidate{Candidate: "candidate:client-trickle"}); err != nil {
-		t.Fatal(err)
-	}
-	candidateEvent, err := presence.Receive(context.Background())
-	if err != nil || candidateEvent.Candidate == nil || candidateEvent.Candidate.SignalingSessionID != "signal-1" {
-		t.Fatalf("presence candidate = (%#v, %v)", candidateEvent, err)
-	}
-
-	answerTicket := fixture.issue(t, "answer-ticket", servicecredential.PrincipalDaemon, "daemon-1", "managed-1", "", []servicecredential.HubOperation{servicecredential.HubOperationAnswer, servicecredential.HubOperationCandidate}, 2*time.Minute)
-	daemon, err := fixture.service.CompleteAnswer(context.Background(), hub.CompleteAnswerRequest{
-		Admission: answerTicket, AccountID: "account-1", DaemonDeviceID: "daemon-1", ManagedSessionID: "managed-1",
-		SignalingSessionID: "signal-1", SDP: "answer-sdp", Candidates: []hub.Candidate{{Candidate: "candidate:answer"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	answerEvent, err := client.Receive(context.Background())
-	if err != nil || answerEvent.Answer == nil || answerEvent.Answer.SDP != "answer-sdp" {
-		t.Fatalf("client answer = (%#v, %v)", answerEvent, err)
-	}
-	if err := daemon.SendCandidate(hub.Candidate{Candidate: "candidate:daemon-trickle"}); err != nil {
-		t.Fatal(err)
-	}
-	daemonCandidate, err := client.Receive(context.Background())
-	if err != nil || daemonCandidate.Candidate == nil || daemonCandidate.Candidate.SignalingSessionID != "signal-1" {
-		t.Fatalf("daemon candidate = (%#v, %v)", daemonCandidate, err)
-	}
-	if _, err := fixture.service.CompleteAnswer(context.Background(), hub.CompleteAnswerRequest{
-		Admission: answerTicket, AccountID: "account-1", DaemonDeviceID: "daemon-1", ManagedSessionID: "managed-1", SignalingSessionID: "signal-1", SDP: "second",
-	}); !errors.Is(err, hub.ErrAdmission) {
-		t.Fatalf("replayed answer ticket error = %v", err)
-	}
-}
-
 func TestHubCreatesEdgeSessionAndAcceptsAnswerFromOwningPresence(t *testing.T) {
 	fixture := newFixture(t, 4, 4)
-	presenceTicket := fixture.issue(t, "edge-presence", servicecredential.PrincipalDaemon, "daemon-1", "presence-edge", "", []servicecredential.HubOperation{servicecredential.HubOperationPresence}, 4*time.Minute)
-	presence, err := fixture.service.OpenPresence(context.Background(), hub.OpenPresenceRequest{Admission: presenceTicket, AccountID: "account-1", DeviceID: "daemon-1", PresenceSession: "presence-edge"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	presence, daemonToken := fixture.openEdgePresence(t)
 	defer presence.Close()
 	edgeIssuer, err := servicecredential.NewEdgeAccessIssuer("control-plane.test", fixture.signer)
 	if err != nil {
 		t.Fatal(err)
 	}
 	token, err := edgeIssuer.IssueEdgeAccess("edge-token", "hub-eu", "account-1", "client-1", 1, time.Hour, fixture.clock.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	daemonToken, err := edgeIssuer.IssueEdgeAccessForPrincipal("daemon-edge-token", "hub-eu", "account-1", "daemon-1", servicecredential.EdgePrincipalDaemon, 1, time.Hour, fixture.clock.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +55,7 @@ func TestHubCreatesEdgeSessionAndAcceptsAnswerFromOwningPresence(t *testing.T) {
 	if _, err := fixture.service.CompleteEdgeAnswer(context.Background(), hub.CompleteEdgeAnswerRequest{EdgeToken: daemonToken, AccountID: "account-1", DaemonDeviceID: "daemon-1", PresenceSessionID: "wrong-presence", SignalingSessionID: "signal-edge", SDP: "answer"}); !errors.Is(err, hub.ErrAdmission) {
 		t.Fatalf("wrong presence answer error = %v", err)
 	}
-	if _, err := fixture.service.CompleteEdgeAnswer(context.Background(), hub.CompleteEdgeAnswerRequest{EdgeToken: daemonToken, AccountID: "account-1", DaemonDeviceID: "daemon-1", PresenceSessionID: "presence-edge", SignalingSessionID: "signal-edge", SDP: "answer"}); err != nil {
+	if _, err := fixture.service.CompleteEdgeAnswer(context.Background(), hub.CompleteEdgeAnswerRequest{EdgeToken: daemonToken, AccountID: "account-1", DaemonDeviceID: "daemon-1", SignalingSessionID: "signal-edge", SDP: "answer"}); err != nil {
 		t.Fatal(err)
 	}
 	answer, err := client.Receive(context.Background())
@@ -129,113 +64,74 @@ func TestHubCreatesEdgeSessionAndAcceptsAnswerFromOwningPresence(t *testing.T) {
 	}
 }
 
-func TestHubRejectsTicketReplayWrongTargetAndBackpressure(t *testing.T) {
-	fixture := newFixture(t, 1, 1)
-	presenceTicket := fixture.issue(t, "presence", servicecredential.PrincipalDaemon, "daemon-1", "presence-1", "", []servicecredential.HubOperation{servicecredential.HubOperationPresence}, time.Minute)
-	presence, err := fixture.service.OpenPresence(context.Background(), hub.OpenPresenceRequest{Admission: presenceTicket, AccountID: "account-1", DeviceID: "daemon-1", PresenceSession: "presence-1"})
+func TestHubEdgePresenceUsesFreshDeviceProofAndRejectsReplay(t *testing.T) {
+	fixture := newFixture(t, 4, 4)
+	token := fixture.issueDaemonEdgeToken(t)
+	challenge, err := fixture.service.BeginEdgePresence(context.Background(), token, "account-1", "daemon-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof := fixture.signEdgePresence(t, challenge, fixture.daemonPublicKey, fixture.daemonPrivateKey, "daemon-1")
+	presence, err := fixture.service.OpenEdgePresence(context.Background(), token, "account-1", proof)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer presence.Close()
-	if _, err := fixture.service.OpenPresence(context.Background(), hub.OpenPresenceRequest{Admission: presenceTicket, AccountID: "account-1", DeviceID: "daemon-1", PresenceSession: "presence-1"}); !errors.Is(err, hub.ErrAdmission) {
-		t.Fatalf("presence replay error = %v", err)
+	if !fixture.service.HasPresence("daemon-1") {
+		t.Fatal("fresh Hub proof did not register daemon presence")
 	}
-
-	wrongTarget := fixture.issue(t, "wrong-target", servicecredential.PrincipalClient, "client-1", "managed-wrong", "daemon-2", []servicecredential.HubOperation{servicecredential.HubOperationOffer}, time.Minute)
-	if _, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{Admission: wrongTarget, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1", ManagedSessionID: "managed-wrong", SignalingSessionID: "wrong", SDP: "offer", RoutePreference: hub.RoutePreferenceDirectOnly}); !errors.Is(err, hub.ErrAdmission) {
-		t.Fatalf("wrong target error = %v", err)
-	}
-
-	first := fixture.issue(t, "client-1", servicecredential.PrincipalClient, "client-1", "managed-1", "daemon-1", []servicecredential.HubOperation{servicecredential.HubOperationOffer}, time.Minute)
-	if _, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{Admission: first, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1", ManagedSessionID: "managed-1", SignalingSessionID: "signal-1", SDP: "offer", RoutePreference: hub.RoutePreferenceDirectOnly}); err != nil {
-		t.Fatal(err)
-	}
-	second := fixture.issue(t, "client-2", servicecredential.PrincipalClient, "client-2", "managed-2", "daemon-1", []servicecredential.HubOperation{servicecredential.HubOperationOffer}, time.Minute)
-	if _, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{Admission: second, AccountID: "account-1", ClientDeviceID: "client-2", TargetDeviceID: "daemon-1", ManagedSessionID: "managed-2", SignalingSessionID: "signal-2", SDP: "offer", RoutePreference: hub.RoutePreferenceDirectOnly}); !errors.Is(err, hub.ErrBackpressure) {
-		t.Fatalf("presence backpressure error = %v", err)
+	if _, err := fixture.service.OpenEdgePresence(context.Background(), token, "account-1", proof); !errors.Is(err, hub.ErrAdmission) {
+		t.Fatalf("replayed Hub presence proof error = %v", err)
 	}
 }
 
-func TestHubRoutesStableFailureWithoutRawMessage(t *testing.T) {
-	fixture := newFixture(t, 2, 2)
-	presenceTicket := fixture.issue(t, "presence-failure", servicecredential.PrincipalDaemon, "daemon-1", "presence-failure", "", []servicecredential.HubOperation{servicecredential.HubOperationPresence}, time.Minute)
-	presence, err := fixture.service.OpenPresence(context.Background(), hub.OpenPresenceRequest{Admission: presenceTicket, AccountID: "account-1", DeviceID: "daemon-1", PresenceSession: "presence-failure"})
+func TestHubEdgePresenceRejectsWrongKeyRevocationAndStalePolicy(t *testing.T) {
+	fixture := newFixture(t, 4, 4)
+	token := fixture.issueDaemonEdgeToken(t)
+	challenge, err := fixture.service.BeginEdgePresence(context.Background(), token, "account-1", "daemon-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer presence.Close()
-	clientTicket := fixture.issue(t, "client-failure", servicecredential.PrincipalClient, "client-1", "managed-failure", "daemon-1", []servicecredential.HubOperation{servicecredential.HubOperationOffer}, time.Minute)
-	client, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{
-		Admission: clientTicket, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1",
-		ManagedSessionID: "managed-failure", SignalingSessionID: "signal-failure", SDP: "offer", RoutePreference: hub.RoutePreferenceDirectOnly,
-	})
+	wrongPublicKey, wrongPrivateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
-	if _, err := presence.Receive(context.Background()); err != nil {
+	wrongProof := fixture.signEdgePresence(t, challenge, wrongPublicKey, wrongPrivateKey, "daemon-1")
+	if _, err := fixture.service.OpenEdgePresence(context.Background(), token, "account-1", wrongProof); !errors.Is(err, hub.ErrAdmission) {
+		t.Fatalf("wrong-key Hub presence proof error = %v", err)
+	}
+
+	revokedChallenge, err := fixture.service.BeginEdgePresence(context.Background(), token, "account-1", "daemon-1")
+	if err != nil {
 		t.Fatal(err)
 	}
-	failureTicket := fixture.issue(t, "answer-failure", servicecredential.PrincipalDaemon, "daemon-1", "managed-failure", "", []servicecredential.HubOperation{servicecredential.HubOperationAnswer}, time.Minute)
-	if err := fixture.service.CompleteFailure(context.Background(), hub.CompleteFailureRequest{
-		Admission: failureTicket, AccountID: "account-1", DaemonDeviceID: "daemon-1",
-		ManagedSessionID: "managed-failure", SignalingSessionID: "signal-failure", Code: 12, Retryable: true,
+	if err := fixture.edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{
+		Revision: 2, GeneratedAt: fixture.clock.Now(),
+		Accounts: []hub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 1, ManagedDirectEnabled: true}},
+		Devices:  []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: fixture.daemonPublicKey, Revoked: true}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	event, err := client.Receive(context.Background())
-	if err != nil || event.Failure == nil || event.Failure.Code != 12 || !event.Failure.Retryable {
-		t.Fatalf("client failure = (%#v, %v)", event, err)
+	revokedProof := fixture.signEdgePresence(t, revokedChallenge, fixture.daemonPublicKey, fixture.daemonPrivateKey, "daemon-1")
+	if _, err := fixture.service.OpenEdgePresence(context.Background(), token, "account-1", revokedProof); !errors.Is(err, hub.ErrAdmission) {
+		t.Fatalf("revoked Hub presence proof error = %v", err)
 	}
-	if _, err := client.Receive(context.Background()); !errors.Is(err, io.EOF) {
-		t.Fatalf("terminal failure did not close session: %v", err)
-	}
-}
 
-func TestHubCleanupExpiresPresenceAndAssociatedSession(t *testing.T) {
-	fixture := newFixture(t, 2, 2)
-	presenceTicket := fixture.issue(t, "presence", servicecredential.PrincipalDaemon, "daemon-1", "presence-1", "", []servicecredential.HubOperation{servicecredential.HubOperationPresence}, 30*time.Second)
-	presence, err := fixture.service.OpenPresence(context.Background(), hub.OpenPresenceRequest{Admission: presenceTicket, AccountID: "account-1", DeviceID: "daemon-1", PresenceSession: "presence-1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	clientTicket := fixture.issue(t, "client", servicecredential.PrincipalClient, "client-1", "managed-1", "daemon-1", []servicecredential.HubOperation{servicecredential.HubOperationOffer}, 30*time.Second)
-	client, err := fixture.service.CreateSession(context.Background(), hub.CreateSessionRequest{Admission: clientTicket, AccountID: "account-1", ClientDeviceID: "client-1", TargetDeviceID: "daemon-1", ManagedSessionID: "managed-1", SignalingSessionID: "signal", SDP: "offer", RoutePreference: hub.RoutePreferenceDirectOnly})
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture.clock.Advance(time.Minute)
-	fixture.service.Cleanup()
-	if _, err := presence.Receive(context.Background()); !errors.Is(err, io.EOF) {
-		t.Fatalf("expired presence Receive error = %v", err)
-	}
-	event, err := client.Receive(context.Background())
-	if err != nil || event.Closed == nil {
-		t.Fatalf("expired client event = (%#v, %v)", event, err)
-	}
-}
-
-func TestHubRevokeDeviceClosesOwningPresence(t *testing.T) {
-	fixture := newFixture(t, 4, 4)
-	ticket := fixture.issue(t, "presence-revoke", servicecredential.PrincipalDaemon, "daemon-1", "presence-revoke", "", []servicecredential.HubOperation{servicecredential.HubOperationPresence}, time.Minute)
-	presence, err := fixture.service.OpenPresence(context.Background(), hub.OpenPresenceRequest{Admission: ticket, AccountID: "account-1", DeviceID: "daemon-1", PresenceSession: "presence-revoke"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture.service.RevokeDevice("daemon-1")
-	if fixture.service.HasPresence("daemon-1") {
-		t.Fatal("revoked daemon retained active presence")
-	}
-	if _, err := presence.Receive(context.Background()); !errors.Is(err, io.EOF) {
-		t.Fatalf("revoked presence receive = %v", err)
+	fresh := newFixture(t, 4, 4)
+	fresh.clock.Advance(11 * time.Minute)
+	if _, err := fresh.service.BeginEdgePresence(context.Background(), fresh.issueDaemonEdgeToken(t), "account-1", "daemon-1"); !errors.Is(err, hub.ErrAdmission) {
+		t.Fatalf("stale-policy Hub presence begin error = %v", err)
 	}
 }
 
 type fixture struct {
-	now     time.Time
-	clock   *fakeClock
-	signer  servicecredential.Signer
-	service *hub.Service
+	now              time.Time
+	clock            *fakeClock
+	signer           servicecredential.Signer
+	edgeAuthorizer   *hub.EdgeAuthorizer
+	daemonPublicKey  ed25519.PublicKey
+	daemonPrivateKey ed25519.PrivateKey
+	service          *hub.Service
 }
 
 func newFixture(t *testing.T, presenceQueue, clientQueue int) fixture {
@@ -251,33 +147,63 @@ func newFixture(t *testing.T, presenceQueue, clientQueue int) fixture {
 		t.Fatal(err)
 	}
 	clock := &fakeClock{now: now}
+	daemonPublicKey, daemonPrivateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	edgeAuthorizer, err := hub.NewEdgeAuthorizer(hub.EdgeAuthorizerConfig{HubID: "hub-eu", Issuer: "control-plane.test", KeyRing: ring, Clock: clock, MaxStaleness: 10 * time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 1, ManagedDirectEnabled: true}}, Devices: []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon"}}}); err != nil {
+	if err := edgeAuthorizer.ApplySnapshot(hub.AuthorizationSnapshot{Revision: 1, GeneratedAt: now, Accounts: []hub.AccountAuthorization{{AccountID: "account-1", AuthEpoch: 1, ManagedDirectEnabled: true}}, Devices: []hub.DeviceAuthorization{{DeviceID: "client-1", AccountID: "account-1", Kind: "client", DisplayName: "Client"}, {DeviceID: "daemon-1", AccountID: "account-1", Kind: "daemon", DisplayName: "Daemon", PublicKey: daemonPublicKey}}}); err != nil {
 		t.Fatal(err)
 	}
-	service, err := hub.New(hub.Config{HubID: "hub-eu", AdmissionIssuer: "control-plane.test", KeyRing: ring, Clock: clock, MaxPresenceTTL: 5 * time.Minute, MaxSignalingTTL: 5 * time.Minute, PresenceQueueSize: presenceQueue, ClientQueueSize: clientQueue, MaxSDPBytes: 1024, MaxCandidates: 8, MaxPresences: 16, MaxSessions: 32, MaxSessionsPerClient: 4, MaxReplayEntries: 64, EdgeAuthorizer: edgeAuthorizer})
+	service, err := hub.New(hub.Config{HubID: "hub-eu", Clock: clock, MaxPresenceTTL: 5 * time.Minute, MaxSignalingTTL: 5 * time.Minute, PresenceChallengeTTL: time.Minute, MaxPresenceChallenges: 16, PresenceQueueSize: presenceQueue, ClientQueueSize: clientQueue, MaxSDPBytes: 1024, MaxCandidates: 8, MaxPresences: 16, MaxSessions: 32, MaxSessionsPerClient: 4, EdgeAuthorizer: edgeAuthorizer})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return fixture{now: now, clock: clock, signer: signer, service: service}
+	return fixture{now: now, clock: clock, signer: signer, edgeAuthorizer: edgeAuthorizer, daemonPublicKey: daemonPublicKey, daemonPrivateKey: daemonPrivateKey, service: service}
 }
 
-func (fixture fixture) issue(t *testing.T, ticketID string, principal servicecredential.PrincipalKind, deviceID, managedSessionID, targetDeviceID string, operations []servicecredential.HubOperation, ttl time.Duration) []byte {
+func (fixture fixture) issueDaemonEdgeToken(t *testing.T) []byte {
 	t.Helper()
-	issuer, err := servicecredential.NewHubAdmissionIssuer("control-plane.test", fixture.signer)
+	issuer, err := servicecredential.NewEdgeAccessIssuer("control-plane.test", fixture.signer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessionKind := servicecredential.HubSessionManaged
-	if len(operations) == 1 && operations[0] == servicecredential.HubOperationPresence {
-		sessionKind = servicecredential.HubSessionPresence
-	}
-	ticket, err := issuer.Issue(servicecredential.HubAdmissionRequest{TicketID: ticketID, AudienceHubID: "hub-eu", PrincipalKind: principal, AccountID: "account-1", DeviceID: deviceID, SessionKind: sessionKind, SessionID: managedSessionID, TargetDeviceID: targetDeviceID, AllowedOperations: operations, TTL: ttl}, fixture.clock.Now())
+	token, err := issuer.IssueEdgeAccessForPrincipal("daemon-presence-token", "hub-eu", "account-1", "daemon-1", servicecredential.EdgePrincipalDaemon, 1, time.Hour, fixture.clock.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ticket.Bytes()
+	return token
+}
+
+func (fixture fixture) signEdgePresence(t *testing.T, challenge hub.EdgePresenceChallenge, publicKey ed25519.PublicKey, privateKey ed25519.PrivateKey, deviceID string) hub.EdgePresenceProof {
+	t.Helper()
+	signedAt := fixture.clock.Now().UTC()
+	signingBytes, err := cloudcompanion.PresenceProofSigningBytes(&cloudpb.PresenceProofInput{
+		PresenceSessionId: challenge.PresenceSessionID, ChallengeId: challenge.ChallengeID,
+		Challenge: challenge.Value, DeviceId: deviceID, DevicePublicKey: publicKey, SignedAtUnixNano: signedAt.UnixNano(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hub.EdgePresenceProof{
+		PresenceSessionID: challenge.PresenceSessionID, ChallengeID: challenge.ChallengeID,
+		DeviceID: deviceID, PublicKey: append([]byte(nil), publicKey...), Signature: ed25519.Sign(privateKey, signingBytes), SignedAt: signedAt,
+	}
+}
+
+func (fixture fixture) openEdgePresence(t *testing.T) (*hub.Presence, []byte) {
+	t.Helper()
+	token := fixture.issueDaemonEdgeToken(t)
+	challenge, err := fixture.service.BeginEdgePresence(context.Background(), token, "account-1", "daemon-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	presence, err := fixture.service.OpenEdgePresence(context.Background(), token, "account-1", fixture.signEdgePresence(t, challenge, fixture.daemonPublicKey, fixture.daemonPrivateKey, "daemon-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return presence, token
 }

@@ -37,6 +37,10 @@ func run(ctx context.Context, args []string) error {
 	webStaging := flags.Bool("web-staging", false, "enable explicit staging browser login and checkout")
 	webSecureCookie := flags.Bool("web-secure-cookie", false, "require HTTPS for browser session cookies")
 	webPublicURL := flags.String("web-public-url", "", "public Web Controller origin used by device login")
+	securityDirectory := flags.String("security-directory", "", "persistent Control Plane account/device security directory")
+	authorityKey := flags.String("authority-key", "", "persistent Control Plane Ed25519 authority file")
+	edgeSnapshot := flags.String("edge-snapshot", "", "persistent Hub verified edge policy snapshot")
+	refreshSessions := flags.String("refresh-sessions", "", "persistent hashed account/device refresh session store")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -56,6 +60,7 @@ func run(ctx context.Context, args []string) error {
 		ControlPlaneListener: controlListener, HubListener: hubListener,
 		RelayListenAddr: *relayListen, RelayPublicIP: *relayPublicIP, Profile: *profile,
 		WebAccountDBPath: *webAccountDB, WebCatalogPath: *webCatalog, WebStaging: *webStaging, WebSecureCookie: *webSecureCookie, WebPublicURL: *webPublicURL,
+		SecurityDirectoryPath: *securityDirectory, AuthorityKeyPath: *authorityKey, EdgeSnapshotPath: *edgeSnapshot, RefreshSessionPath: *refreshSessions,
 	})
 	if err != nil {
 		return err

@@ -6,9 +6,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
-	"time"
 
-	"github.com/lozzow/termx/private/cloud/companion/cloudservice"
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	"github.com/lozzow/termx/proto/cloudpb"
@@ -17,6 +15,7 @@ import (
 func (state *serviceState) hubHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(httpapi.HubHealthPath, state.handleHubHealth)
+	mux.HandleFunc(httpapi.HubBeginPresencePath, state.handleHubBeginPresence)
 	mux.HandleFunc(httpapi.HubOpenPresencePath, state.handleHubOpenPresence)
 	mux.HandleFunc(httpapi.HubCreateSignalingPath, state.handleHubCreateSignaling)
 	mux.HandleFunc(httpapi.HubCompleteSignalingPath, state.handleHubCompleteSignaling)
@@ -24,6 +23,34 @@ func (state *serviceState) hubHandler() http.Handler {
 	mux.HandleFunc(httpapi.HubResolveEndpointPath, state.handleHubResolveEndpoint)
 	mux.HandleFunc(httpapi.HubListManagedDevicesPath, state.handleHubListManagedDevices)
 	return mux
+}
+
+func (state *serviceState) handleHubBeginPresence(writer http.ResponseWriter, request *http.Request) {
+	if !requireMethod(writer, request, http.MethodPost) {
+		return
+	}
+	token, ok := readBearerToken(writer, request)
+	if !ok {
+		return
+	}
+	defer clear(token)
+	envelope, payload, ok := state.readEdgeHubRequest(writer, request, &cloudpb.BeginPresenceRequest{})
+	if !ok {
+		return
+	}
+	defer clear(envelope.Payload)
+	begin := payload.(*cloudpb.BeginPresenceRequest)
+	if begin.GetDeviceId() == "" || begin.GetDeviceId() != envelope.DeviceID {
+		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub presence identity was rejected", false)
+		return
+	}
+	challenge, err := state.hub.BeginEdgePresence(request.Context(), token, envelope.AccountID, envelope.DeviceID)
+	if err != nil {
+		mapHubError(writer, err)
+		return
+	}
+	defer clear(challenge.Value)
+	writeProto(writer, http.StatusOK, &cloudpb.PresenceChallenge{PresenceSessionId: challenge.PresenceSessionID, ChallengeId: challenge.ChallengeID, Challenge: append([]byte(nil), challenge.Value...), ExpiresAtUnix: uint64(challenge.ExpiresAt.Unix())})
 }
 
 func (state *serviceState) handleHubListManagedDevices(writer http.ResponseWriter, request *http.Request) {
@@ -74,42 +101,47 @@ func (state *serviceState) handleHubHealth(writer http.ResponseWriter, request *
 }
 
 func (state *serviceState) handleHubOpenPresence(writer http.ResponseWriter, request *http.Request) {
-	if !requireMethod(writer, request, http.MethodPost) || !requireNoAuthorization(writer, request) {
+	if !requireMethod(writer, request, http.MethodPost) {
 		return
 	}
-	envelope, payload, ok := state.readHubRequest(writer, request, &cloudpb.OpenPresenceRequest{})
+	token, ok := readBearerToken(writer, request)
 	if !ok {
 		return
 	}
-	defer clear(envelope.Admission.Ticket)
-	defer clear(envelope.Payload)
-	openRequest := payload.(*cloudpb.OpenPresenceRequest)
-	if envelope.Admission.SessionKind != cloudservice.HubSessionPresence || envelope.Admission.SessionID != openRequest.GetPresenceSessionId() || envelope.Admission.TargetDeviceID != "" || openRequest.GetProof() == nil || envelope.Admission.DeviceID != openRequest.GetProof().GetDeviceId() {
-		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub presence admission binding was rejected", false)
+	defer clear(token)
+	envelope, payload, ok := state.readEdgeHubRequest(writer, request, &cloudpb.OpenPresenceRequest{})
+	if !ok {
 		return
 	}
-	presence, err := state.hub.OpenPresence(request.Context(), cloudhub.OpenPresenceRequest{
-		Admission: envelope.Admission.Ticket, AccountID: envelope.Admission.AccountID,
-		DeviceID: envelope.Admission.DeviceID, PresenceSession: envelope.Admission.SessionID,
+	defer clear(envelope.Payload)
+	openRequest := payload.(*cloudpb.OpenPresenceRequest)
+	if openRequest.GetProof() == nil || envelope.DeviceID != openRequest.GetProof().GetDeviceId() {
+		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub presence proof binding was rejected", false)
+		return
+	}
+	proof := openRequest.GetProof()
+	presence, err := state.hub.OpenEdgePresence(request.Context(), token, envelope.AccountID, cloudhub.EdgePresenceProof{
+		PresenceSessionID: openRequest.GetPresenceSessionId(), ChallengeID: proof.GetChallengeId(), DeviceID: proof.GetDeviceId(),
+		PublicKey: append([]byte(nil), proof.GetDevicePublicKey()...), Signature: append([]byte(nil), proof.GetSignature()...), SignedAt: signedAt(proof.GetSignedAtUnixNano()),
 	})
 	if err != nil {
 		mapHubError(writer, err)
 		return
 	}
 	if state.webCenter != nil {
-		_ = state.webCenter.SetCloudDaemonOnline(envelope.Admission.AccountID, envelope.Admission.DeviceID, true)
+		_ = state.webCenter.SetCloudDaemonOnline(envelope.AccountID, envelope.DeviceID, true)
 	}
 	defer func() {
 		presence.Close()
 		if state.webCenter != nil {
-			_ = state.webCenter.SetCloudDaemonOnline(envelope.Admission.AccountID, envelope.Admission.DeviceID, state.hub.HasPresence(envelope.Admission.DeviceID))
+			_ = state.webCenter.SetCloudDaemonOnline(envelope.AccountID, envelope.DeviceID, state.hub.HasPresence(envelope.DeviceID))
 		}
 	}()
 	writer.Header().Set("Content-Type", httpapi.StreamMediaType)
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.WriteHeader(http.StatusOK)
 	if err := httpapi.WriteFrame(writer, &cloudpb.PresenceEvent{Payload: &cloudpb.PresenceEvent_Ready{Ready: &cloudpb.PresenceReady{
-		PresenceSessionId: envelope.Admission.SessionID, HeartbeatSeconds: 30,
+		PresenceSessionId: openRequest.GetPresenceSessionId(), HeartbeatSeconds: 30,
 	}}}); err != nil {
 		return
 	}
@@ -338,6 +370,16 @@ func (state *serviceState) readEdgeHubRequest(writer http.ResponseWriter, reques
 		return httpapi.EdgeHubRequest{}, nil, false
 	}
 	switch target := payload.(type) {
+	case *cloudpb.BeginPresenceRequest:
+		if err := readProtoBytes(envelope.Payload, target); err != nil {
+			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub presence challenge payload is invalid", false)
+			return httpapi.EdgeHubRequest{}, nil, false
+		}
+	case *cloudpb.OpenPresenceRequest:
+		if err := readProtoBytes(envelope.Payload, target); err != nil {
+			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub presence payload is invalid", false)
+			return httpapi.EdgeHubRequest{}, nil, false
+		}
 	case *cloudpb.CreateSignalingSessionRequest:
 		if err := readProtoBytes(envelope.Payload, target); err != nil {
 			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub signaling payload is invalid", false)
@@ -366,38 +408,6 @@ func (state *serviceState) readEdgeHubRequest(writer http.ResponseWriter, reques
 	default:
 		writeCloudError(writer, http.StatusInternalServerError, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub edge payload type is invalid", false)
 		return httpapi.EdgeHubRequest{}, nil, false
-	}
-	return envelope, payload, true
-}
-
-func (state *serviceState) readHubRequest(writer http.ResponseWriter, request *http.Request, payload any) (httpapi.HubRequest, any, bool) {
-	envelope := httpapi.HubRequest{}
-	if !readJSON(writer, request, &envelope) {
-		return httpapi.HubRequest{}, nil, false
-	}
-	if envelope.Admission.Reference == "" || envelope.Admission.HubID != devHubID || envelope.Admission.AccountID == "" || envelope.Admission.DeviceID == "" || envelope.Admission.SessionID == "" || len(envelope.Admission.Ticket) == 0 || request.Context().Err() != nil || !state.now().UTC().Before(time.Unix(envelope.Admission.ExpiresAt, 0).UTC()) {
-		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "Hub admission envelope is invalid", false)
-		return httpapi.HubRequest{}, nil, false
-	}
-	switch target := payload.(type) {
-	case *cloudpb.OpenPresenceRequest:
-		if err := readProtoBytes(envelope.Payload, target); err != nil {
-			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub presence payload is invalid", false)
-			return httpapi.HubRequest{}, nil, false
-		}
-	case *cloudpb.CreateSignalingSessionRequest:
-		if err := readProtoBytes(envelope.Payload, target); err != nil {
-			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub signaling payload is invalid", false)
-			return httpapi.HubRequest{}, nil, false
-		}
-	case *cloudpb.CompleteSignalingOfferRequest:
-		if err := readProtoBytes(envelope.Payload, target); err != nil {
-			writeCloudError(writer, http.StatusBadRequest, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub answer payload is invalid", false)
-			return httpapi.HubRequest{}, nil, false
-		}
-	default:
-		writeCloudError(writer, http.StatusInternalServerError, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "Hub handler payload type is invalid", false)
-		return httpapi.HubRequest{}, nil, false
 	}
 	return envelope, payload, true
 }

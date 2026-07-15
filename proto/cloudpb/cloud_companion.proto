@@ -146,6 +146,8 @@ message CompanionHelloResponse {
   repeated CompanionCapability supported_capabilities = 3;
   string build_channel = 4;
   bytes response_nonce = 5;
+  // executable_sha256 绑定当前运行进程与 installer 已复验的 artifact，避免同版本构建复用旧进程。
+  bytes executable_sha256 = 6;
 }
 
 // StatusRequest 查询本地 companion 状态，不携带账号 token。
@@ -290,7 +292,7 @@ message BeginPresenceRequest {
   string device_id = 1;
 }
 
-// PresenceChallenge 是 Control Plane 为一个 device-scoped PresenceSession 签发的一次性挑战。
+// PresenceChallenge 是 Hub 为一个 device-scoped PresenceSession 创建的一次性挑战。
 // PresenceSession 先于任何 client ManagedSession 存在，两者不得复用 ID。
 message PresenceChallenge {
   string presence_session_id = 1;

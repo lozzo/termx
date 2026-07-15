@@ -41,7 +41,6 @@ class ConnectionStore(
         private const val RESUME_VERIFY_TIMEOUT_MS = 2000L
         private const val RESUME_RECOVERY_WINDOW_MS = 5000L
         private const val ACTIVE_CONNECT_STALE_MS = 90_000L
-        private const val RESUME_CONNECT_STALE_MS = 6_000L
         private const val RESUME_RESTART_CONNECT_MS = 1_000L
         private val RESUME_VERIFY_WATCHDOG_DELAYS_MS = longArrayOf(2_000L, 3_000L, 4_000L)
     }
@@ -230,7 +229,6 @@ class ConnectionStore(
         connectStartedAt = System.currentTimeMillis()
         connectStartedWhileInactive = !appActive
         setPhase(Phase.Resolving, "Resolving managed endpoint...")
-        if (resumeReconnect) scheduleResumeConnectWatchdog(generation)
 
         connectJob = scope.launch {
             var transport: WebRTCTransport? = null
@@ -382,16 +380,11 @@ class ConnectionStore(
         val p = phase
         clearReconnectTimer()
         if (p is Phase.Connecting || p is Phase.Resolving || p is Phase.Signaling || p is Phase.Authorizing) {
-            val staleThreshold = if (backgroundDurationMs > 0L) {
-                RESUME_CONNECT_STALE_MS.coerceAtMost(backgroundDurationMs)
-            } else {
-                RESUME_CONNECT_STALE_MS
-            }
             val ageMs = activeConnectAgeMs()
             if (connectStartedWhileInactive ||
                 resumeReconnect ||
                 backgroundDurationMs >= RESUME_RESTART_CONNECT_MS ||
-                ageMs >= staleThreshold) {
+                ageMs >= ACTIVE_CONNECT_STALE_MS) {
                 Log.i(TAG, "$reason, restarting resume connection attempt after ${ageMs}ms [$machineId]")
                 reconnectFromResume()
             }
@@ -680,19 +673,6 @@ class ConnectionStore(
             resumeReconnect = true
             setPhase(Phase.Reconnecting(reconnectAttempt), "Restoring connection...")
         }
-    }
-
-    private fun scheduleResumeConnectWatchdog(generation: Long) {
-        workerHandler.postDelayed({
-            if (!isCurrentConnect(generation) || released) return@postDelayed
-            val p = phase
-            if (p !is Phase.Connecting && p !is Phase.Resolving && p !is Phase.Signaling && p !is Phase.Authorizing) return@postDelayed
-            Log.i(TAG, "resume connection attempt stale after ${activeConnectAgeMs()}ms, restarting [$machineId]")
-            cancelConnect()
-            reconnectAttempt = 0
-            resumeReconnect = true
-            scheduleReconnect(immediate = true)
-        }, RESUME_CONNECT_STALE_MS)
     }
 
     private fun scheduleVerificationWatchdog(currentTransport: WebRTCTransport, generation: Long) {

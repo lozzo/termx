@@ -48,7 +48,7 @@ func v3CloudCommand() *cobra.Command {
 		command.AddCommand(withV3CloudUserErrors(child))
 	}
 	node := &cobra.Command{Use: "node", Short: "Manage this daemon's cloud node enrollment"}
-	node.AddCommand(withV3CloudUserErrors(v3CloudEnrollCommand()), withV3CloudUserErrors(v3CloudNodeListCommand()))
+	node.AddCommand(withV3CloudUserErrors(v3CloudEnrollCommand()), withV3CloudUserErrors(v3CloudNodeStatusCommand()), withV3CloudUserErrors(v3CloudNodeListCommand()))
 	companion := &cobra.Command{Use: "companion", Short: "Manage the verified out-of-process Cloud Companion"}
 	for _, child := range []*cobra.Command{
 		v3CloudInstallCommand(false), v3CloudInstallCommand(true), v3CloudCompanionStatusCommand(), v3CloudUninstallCommand(),
@@ -324,10 +324,38 @@ func v3CloudEnrollCommand() *cobra.Command {
 			if err != nil {
 				return actionableCloudEnrollmentError(err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Enrolled device %s\n", response.GetSession().GetDeviceId())
+			fmt.Fprintf(cmd.OutOrStdout(), "Enrolled daemon device %s\n", response.GetSession().GetDeviceId())
+			fmt.Fprintln(cmd.OutOrStdout(), "Verify with `termx cloud node status`.")
 			return nil
 		},
 	}
+}
+
+func v3CloudNodeStatusCommand() *cobra.Command {
+	jsonOutput := false
+	command := &cobra.Command{
+		Use: "status", Short: "Show this daemon's cloud enrollment status", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			status, err := loadV3CloudStatus(cmd.Context(), cloudpb.CallerRole_CALLER_ROLE_DAEMON, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT)
+			if err != nil {
+				return err
+			}
+			view := cloudSessionStatusView{State: status.GetState().String(), AccountLabel: status.GetAccountLabel(), AccountID: status.GetAccountId(), DeviceID: status.GetDeviceId(), ExpiresAtUnix: status.GetSessionExpiresAtUnix()}
+			if jsonOutput {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Daemon enrollment: %s\n", view.State)
+			if view.DeviceID != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Device: %s\n", view.DeviceID)
+			}
+			if view.AccountLabel != "" || view.AccountID != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Account: %s\n", cloudAccountLabel(statusToSession(status)))
+			}
+			return nil
+		},
+	}
+	command.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
+	return command
 }
 
 // actionableCloudEnrollmentError 保留 enrollment 拒绝的统一错误码，但给出不泄漏注册码存在性的恢复动作。
@@ -338,7 +366,7 @@ func actionableCloudEnrollmentError(err error) error {
 	}
 	return cloudcompanion.NewError(
 		cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED,
-		"daemon enrollment code is invalid, expired, or already used; generate a new code in Web Controller and run this command within two minutes",
+		"daemon enrollment was not accepted; generate a new code in Web Controller and retry within ten minutes. A revoked daemon can be enrolled again without deleting its local identity",
 	)
 }
 
@@ -353,25 +381,30 @@ func v3CloudStatusCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			client, err := openV3CloudLifecycleClient(cmd.Context(), cloudpb.CallerRole_CALLER_ROLE_CLI,
+			accountStatus, err := loadV3CloudStatus(cmd.Context(), cloudpb.CallerRole_CALLER_ROLE_CLI,
 				cloudpb.CompanionCapability_COMPANION_CAPABILITY_ACCOUNT_SESSION,
 				cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT,
 			)
 			if err != nil {
 				return err
 			}
-			defer client.Close()
-			status, err := client.Status(cmd.Context(), &cloudpb.StatusRequest{})
+			deviceStatus, err := loadV3CloudStatus(cmd.Context(), cloudpb.CallerRole_CALLER_ROLE_DAEMON, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT)
 			if err != nil {
 				return err
 			}
-			view := cloudStatusView{Installed: true, Version: installed.Version, Channel: installed.Channel, State: status.GetState().String(), AccountLabel: status.GetAccountLabel(), AccountID: status.GetAccountId(), DeviceID: status.GetDeviceId(), ExpiresAtUnix: status.GetSessionExpiresAtUnix()}
+			state := accountStatus.GetState()
+			if state != cloudpb.CompanionState_COMPANION_STATE_READY && deviceStatus.GetState() == cloudpb.CompanionState_COMPANION_STATE_READY {
+				state = cloudpb.CompanionState_COMPANION_STATE_READY
+			}
+			view := cloudStatusView{Installed: true, Version: installed.Version, Channel: installed.Channel, State: state.String(), Account: statusView(accountStatus), Daemon: statusView(deviceStatus)}
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Cloud Companion %s (%s): %s\n", view.Version, view.Channel, view.State)
-			if view.AccountLabel != "" || view.AccountID != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "Account: %s\n", cloudAccountLabel(statusToSession(status)))
+			fmt.Fprintf(cmd.OutOrStdout(), "Account session: %s\n", view.Account.State)
+			fmt.Fprintf(cmd.OutOrStdout(), "Daemon enrollment: %s\n", view.Daemon.State)
+			if view.Daemon.DeviceID != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Daemon device: %s\n", view.Daemon.DeviceID)
 			}
 			return nil
 		},
@@ -398,6 +431,14 @@ func v3CloudDoctorCommand() *cobra.Command {
 			response, err := client.Doctor(cmd.Context(), &cloudpb.DoctorRequest{})
 			if err != nil {
 				return err
+			}
+			deviceStatus, err := loadV3CloudStatus(cmd.Context(), cloudpb.CallerRole_CALLER_ROLE_DAEMON, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_ENROLLMENT)
+			if err != nil {
+				return err
+			}
+			if response.GetStatus().GetState() != cloudpb.CompanionState_COMPANION_STATE_READY && deviceStatus.GetState() == cloudpb.CompanionState_COMPANION_STATE_READY && len(response.Items) > 0 {
+				response.Items[0].Severity = cloudpb.DiagnosticSeverity_DIAGNOSTIC_SEVERITY_INFO
+				response.Items[0].Message = "Daemon enrollment is ready; account login is not configured for TUI or client use"
 			}
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(response)
@@ -481,14 +522,33 @@ func v3CloudUninstallCommand() *cobra.Command {
 }
 
 type cloudStatusView struct {
-	Installed     bool   `json:"installed"`
-	Version       string `json:"version"`
-	Channel       string `json:"channel"`
+	Installed bool                   `json:"installed"`
+	Version   string                 `json:"version"`
+	Channel   string                 `json:"channel"`
+	State     string                 `json:"state"`
+	Account   cloudSessionStatusView `json:"account"`
+	Daemon    cloudSessionStatusView `json:"daemon"`
+}
+
+type cloudSessionStatusView struct {
 	State         string `json:"state"`
 	AccountLabel  string `json:"account_label,omitempty"`
 	AccountID     string `json:"account_id,omitempty"`
 	DeviceID      string `json:"device_id,omitempty"`
 	ExpiresAtUnix uint64 `json:"expires_at_unix,omitempty"`
+}
+
+func loadV3CloudStatus(ctx context.Context, role cloudpb.CallerRole, capabilities ...cloudpb.CompanionCapability) (*cloudpb.StatusResponse, error) {
+	client, err := openV3CloudLifecycleClient(ctx, role, capabilities...)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	return client.Status(ctx, &cloudpb.StatusRequest{})
+}
+
+func statusView(status *cloudpb.StatusResponse) cloudSessionStatusView {
+	return cloudSessionStatusView{State: status.GetState().String(), AccountLabel: status.GetAccountLabel(), AccountID: status.GetAccountId(), DeviceID: status.GetDeviceId(), ExpiresAtUnix: status.GetSessionExpiresAtUnix()}
 }
 
 func defaultReadV3CloudEnrollmentCode(cmd *cobra.Command) ([]byte, error) {

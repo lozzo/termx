@@ -137,6 +137,7 @@ internal class DevCloudMobileGateway(
     /** logout 删除账号 edge session；pairing grant 属于独立 secure store，不在此处清理。 */
     suspend fun logout() = sessionLock.withLock {
         accountSession?.token?.fill(0)
+		accountSession?.refreshToken?.fill(0)
         accountSession = null
         sessionStore.clear()
     }
@@ -214,12 +215,29 @@ internal class DevCloudMobileGateway(
     ): ManagedRoutePlan = fail("route_unavailable", "dev cloud SmartRoute is not enabled")
 
     private suspend fun accountSession(): AccountSession = sessionLock.withLock {
-        accountSession?.takeIf { now().isBefore(it.expiresAt) }?.let { return@withLock it }
-        sessionStore.load(now())?.let {
-            accountSession = it
-            return@withLock it
-        }
-        fail("login_required", "Official mobile cloud account login is required")
+		val currentTime = now()
+		val current = accountSession ?: sessionStore.loadRefreshable(currentTime)
+		if (current != null && current.expiresAt.epochSecond - currentTime.epochSecond > REFRESH_WINDOW_SECONDS) {
+			accountSession = current
+			return@withLock current
+		}
+		if (current != null && currentTime.isBefore(current.refreshExpiresAt)) {
+			try {
+				val refreshed = refreshSession(current)
+				sessionStore.save(refreshed)
+				current.token.fill(0)
+				current.refreshToken.fill(0)
+				accountSession = refreshed
+				return@withLock refreshed
+			} catch (failure: ManagedEndpointFailure) {
+				if (currentTime.isBefore(current.expiresAt)) {
+					accountSession = current
+					return@withLock current
+				}
+				throw failure
+			}
+		}
+		fail("login_required", "Official mobile cloud account login is required")
     }
 
     private fun acquireRelayLease(session: AccountSession, managedSessionId: String, targetDeviceId: String): List<ManagedIceServer> {
@@ -244,21 +262,38 @@ internal class DevCloudMobileGateway(
             writeRequest(connection, request.toByteArray())
             val payload = readSuccess(connection, "application/json")
             val json = JSONObject(String(payload, Charsets.UTF_8))
-            requireKeys(json, setOf("kind", "account_id", "account_label", "device_id", "expires_at_unix", "access_token", "hub_id", "hub_url", "hub_region", "hub_directory_version"), "cloud session")
-            if (json.requiredString("kind") != "account") fail("protocol", "Control Plane returned a non-account session")
-            if (json.requiredString("account_id").isBlank() || json.requiredString("account_label").isBlank() || json.requiredString("device_id").isBlank()) {
-                fail("protocol", "Control Plane returned incomplete account identity")
-            }
-            val token = decodeBase64(json.requiredString("access_token"))
-            val expiresAt = Instant.ofEpochSecond(json.requiredLong("expires_at_unix"))
-            val hubId = json.requiredString("hub_id")
-            val signedHubURL = json.requiredString("hub_url")
-            val region = json.requiredString("hub_region")
-            val directoryVersion = json.requiredLong("hub_directory_version")
-            if (token.size < 16 || !now().isBefore(expiresAt) || hubId.isBlank() || signedHubURL.isBlank() || region.isBlank() || directoryVersion <= 0) fail("login_required", "Control Plane account session is expired")
-            AccountSession(token, expiresAt, json.requiredString("account_id"), json.requiredString("account_label"), json.requiredString("device_id"), hubId, signedHubURL, region, directoryVersion)
+			decodeAccountSession(json)
         }
     }
+
+	private fun refreshSession(current: AccountSession): AccountSession {
+		val payload = JSONObject()
+			.put("kind", "account")
+			.put("refresh_token", encodeBase64(current.refreshToken))
+		return withConnection("$controlOrigin/v1/sessions/refresh", "application/json", null) { connection ->
+			writeRequest(connection, payload.toString().toByteArray(Charsets.UTF_8))
+			val response = JSONObject(String(readSuccess(connection, "application/json"), Charsets.UTF_8))
+			decodeAccountSession(response)
+		}
+	}
+
+	private fun decodeAccountSession(json: JSONObject): AccountSession {
+		requireKeys(json, setOf("kind", "account_id", "account_label", "device_id", "expires_at_unix", "access_token", "refresh_token", "refresh_expires_at_unix", "hub_id", "hub_url", "hub_region", "hub_directory_version"), "cloud session")
+		if (json.requiredString("kind") != "account") fail("protocol", "Control Plane returned a non-account session")
+		if (json.requiredString("account_id").isBlank() || json.requiredString("account_label").isBlank() || json.requiredString("device_id").isBlank()) {
+			fail("protocol", "Control Plane returned incomplete account identity")
+		}
+		val token = decodeBase64(json.requiredString("access_token"))
+		val refreshToken = decodeBase64(json.requiredString("refresh_token"))
+		val expiresAt = Instant.ofEpochSecond(json.requiredLong("expires_at_unix"))
+		val refreshExpiresAt = Instant.ofEpochSecond(json.requiredLong("refresh_expires_at_unix"))
+		val hubId = json.requiredString("hub_id")
+		val signedHubURL = json.requiredString("hub_url")
+		val region = json.requiredString("hub_region")
+		val directoryVersion = json.requiredLong("hub_directory_version")
+		if (token.size < 16 || refreshToken.size < 32 || !now().isBefore(expiresAt) || !refreshExpiresAt.isAfter(expiresAt) || hubId.isBlank() || signedHubURL.isBlank() || region.isBlank() || directoryVersion <= 0) fail("login_required", "Control Plane account session is expired")
+		return AccountSession(token, expiresAt, refreshToken, refreshExpiresAt, json.requiredString("account_id"), json.requiredString("account_label"), json.requiredString("device_id"), hubId, signedHubURL, region, directoryVersion)
+	}
 
     private fun postHubStream(endpoint: String, session: AccountSession, request: Message): HubSignalingResult {
         val envelope = edgeEnvelope(session, request)
@@ -428,6 +463,7 @@ internal class DevCloudMobileGateway(
     private companion object {
         const val MAX_BODY_BYTES = 4 shl 20
         const val MAX_SIGNAL_CANDIDATES = 256
+		const val REFRESH_WINDOW_SECONDS = 15 * 60L
 
         fun validateOrigin(value: String, allowPublicHTTP: Boolean): String {
             val uri = try { URI(value.trim()) } catch (_: Exception) { fail("protocol", "dev cloud origin is invalid") }

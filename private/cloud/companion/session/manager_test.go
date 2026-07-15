@@ -1,6 +1,7 @@
 package session_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -122,5 +123,32 @@ func TestManagerRejectsExpiredAndMalformedCredentialStoreValues(t *testing.T) {
 	store.mu.Unlock()
 	if _, err := manager.Load(context.Background(), session.KindAccount, now); !errors.Is(err, session.ErrInvalid) {
 		t.Fatalf("unknown field error = %v", err)
+	}
+}
+
+func TestManagerLoadsRefreshAfterAccessExpiry(t *testing.T) {
+	now := time.Date(2026, 7, 15, 11, 0, 0, 0, time.UTC)
+	store := newCredentialStore()
+	manager, err := session.NewManager(store, "refresh-profile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloudSession, err := session.NewRefreshable(session.Metadata{Kind: session.KindAccount, AccountID: "account-1", DeviceID: "client-1", ExpiresAt: now.Add(time.Minute)}, []byte("short-edge-token"), bytes.Repeat([]byte{0x71}, 32), now.Add(time.Hour), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Save(context.Background(), cloudSession, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Load(context.Background(), session.KindAccount, now.Add(2*time.Minute)); !errors.Is(err, session.ErrExpired) {
+		t.Fatalf("expired access load error = %v", err)
+	}
+	refresh, err := manager.LoadRefreshAuthorization(context.Background(), session.KindAccount, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer refresh.Destroy()
+	if len(refresh.Bytes()) != 32 || refresh.Metadata().DeviceID != "client-1" {
+		t.Fatalf("refresh authorization metadata = %#v", refresh.Metadata())
 	}
 }

@@ -36,6 +36,11 @@ func (*UnconfiguredAdapter) CompleteDeviceEnrollment(context.Context, *cloudpb.C
 	return session.Session{}, unavailableAdapterError()
 }
 
+// RefreshSession 拒绝未装配的 session refresh 请求。
+func (*UnconfiguredAdapter) RefreshSession(context.Context, session.RefreshAuthorization) (session.Session, error) {
+	return session.Session{}, unavailableAdapterError()
+}
+
 // ResolveEndpoint 拒绝未装配的 managed endpoint 定位。
 func (*UnconfiguredAdapter) ResolveEndpoint(context.Context, session.Authorization, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
 	return nil, unavailableAdapterError()
@@ -49,11 +54,6 @@ func (*UnconfiguredAdapter) ListManagedDevices(context.Context, session.Authoriz
 // BeginPresence 拒绝未装配的 fresh daemon presence challenge 请求。
 func (*UnconfiguredAdapter) BeginPresence(context.Context, session.Authorization, *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
 	return nil, unavailableAdapterError()
-}
-
-// AcquirePresenceAdmission 拒绝未装配的 daemon presence admission。
-func (*UnconfiguredAdapter) AcquirePresenceAdmission(context.Context, session.Authorization, *cloudpb.OpenPresenceRequest) (HubAdmission, error) {
-	return HubAdmission{}, unavailableAdapterError()
 }
 
 // PlanManagedRoute 拒绝未装配的 SmartRoute 计划请求。
@@ -72,7 +72,7 @@ func (*UnconfiguredAdapter) ReportConnectionOutcome(context.Context, session.Aut
 }
 
 // OpenPresence 拒绝未装配的 Hub presence stream。
-func (*UnconfiguredAdapter) OpenPresence(context.Context, session.Authorization, HubAdmission, *cloudpb.OpenPresenceRequest) (PresenceSource, error) {
+func (*UnconfiguredAdapter) OpenPresence(context.Context, session.Authorization, *cloudpb.OpenPresenceRequest) (PresenceSource, error) {
 	return nil, unavailableAdapterError()
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -20,7 +21,7 @@ func TestCloudHelpExposesCanonicalNodeAndCompanionNamespaces(t *testing.T) {
 		want []string
 	}{
 		{args: []string{"cloud", "--help"}, want: []string{"node", "companion"}},
-		{args: []string{"cloud", "node", "--help"}, want: []string{"enroll"}},
+		{args: []string{"cloud", "node", "--help"}, want: []string{"enroll", "status"}},
 		{args: []string{"cloud", "companion", "--help"}, want: []string{"install", "update", "status", "uninstall"}},
 	} {
 		command := newRootCmd()
@@ -118,6 +119,38 @@ func TestCloudStatusSourceBuildExplainsOfficialReleaseRequirement(t *testing.T) 
 	}
 	if stderr.Len() != 0 || !command.SilenceErrors || !command.SilenceUsage {
 		t.Fatalf("runtime error must not duplicate Cobra error/Usage: stderr=%q silence=(%v,%v)", stderr.String(), command.SilenceErrors, command.SilenceUsage)
+	}
+}
+
+func TestCloudStatusSeparatesAccountAndDaemonSessions(t *testing.T) {
+	cloudInstaller := &fakeCloudInstaller{status: installer.Installation{Version: "v1.2.3", Channel: "development"}}
+	previousFactory := newV3CloudInstallerForCommand
+	newV3CloudInstallerForCommand = func() (v3CloudInstaller, error) { return cloudInstaller, nil }
+	defer func() { newV3CloudInstallerForCommand = previousFactory }()
+	previousOpen := openV3CloudLifecycleClient
+	openV3CloudLifecycleClient = func(_ context.Context, role cloudpb.CallerRole, _ ...cloudpb.CompanionCapability) (v3CloudClient, error) {
+		status := &cloudpb.StatusResponse{State: cloudpb.CompanionState_COMPANION_STATE_LOGIN_REQUIRED}
+		if role == cloudpb.CallerRole_CALLER_ROLE_DAEMON {
+			status = &cloudpb.StatusResponse{State: cloudpb.CompanionState_COMPANION_STATE_READY, AccountId: "account-1", DeviceId: "daemon-1", SessionExpiresAtUnix: 1234}
+		}
+		return &closableCloudFake{FakeClient: &cloudcompanion.FakeClient{StatusFunc: func(context.Context, *cloudpb.StatusRequest) (*cloudpb.StatusResponse, error) { return status, nil }}}, nil
+	}
+	defer func() { openV3CloudLifecycleClient = previousOpen }()
+
+	var output bytes.Buffer
+	command := newRootCmd()
+	command.SetOut(&output)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"cloud", "status", "--json"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var view cloudStatusView
+	if err := json.Unmarshal(output.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.State != cloudpb.CompanionState_COMPANION_STATE_READY.String() || view.Account.State != cloudpb.CompanionState_COMPANION_STATE_LOGIN_REQUIRED.String() || view.Daemon.State != cloudpb.CompanionState_COMPANION_STATE_READY.String() || view.Daemon.DeviceID != "daemon-1" {
+		t.Fatalf("combined status = %#v", view)
 	}
 }
 
@@ -236,7 +269,7 @@ func TestCloudEnrollExplainsRejectedOneTimeCode(t *testing.T) {
 	if err == nil || !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED) {
 		t.Fatalf("enroll rejection = %v", err)
 	}
-	if message := err.Error(); !strings.Contains(message, "invalid, expired, or already used") || !strings.Contains(message, "within two minutes") || strings.Contains(message, "sanitized upstream rejection") {
+	if message := err.Error(); !strings.Contains(message, "retry within ten minutes") || !strings.Contains(message, "revoked daemon can be enrolled again") || strings.Contains(message, "sanitized upstream rejection") {
 		t.Fatalf("enroll rejection message = %q", message)
 	}
 }

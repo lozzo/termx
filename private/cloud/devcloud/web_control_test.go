@@ -137,6 +137,26 @@ func TestWebAccountApprovesClientAndOwnsDaemonEnrollment(t *testing.T) {
 	if device := runtime.state.edgeDevices["daemon-web-owner"]; !device.Revoked {
 		t.Fatal("daemon revoke did not reach Hub authorization projection")
 	}
+	reenrollmentResponse := browserMutation(t, origin, "/api/nodes/enrollment", map[string]string{}, cookies)
+	if reenrollmentResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("create reenrollment = %d", reenrollmentResponse.StatusCode)
+	}
+	var reenrollmentCode struct {
+		Code string `json:"code"`
+	}
+	if err = json.NewDecoder(reenrollmentResponse.Body).Decode(&reenrollmentCode); err != nil {
+		t.Fatal(err)
+	}
+	reenrollmentResponse.Body.Close()
+	reenrollmentChallenge, err := daemon.BeginDeviceEnrollment(context.Background(), &cloudpb.BeginDeviceEnrollmentRequest{OneTimeCode: strings.ToLower(strings.ReplaceAll(reenrollmentCode.Code, "-", " - ")), DevicePublicKey: publicKey, Metadata: &cloudpb.DeviceMetadata{DisplayName: "Owner workstation", Platform: "test", TermxVersion: "test"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reenrollmentProof := signEnrollmentProof(t, privateKey, publicKey, "daemon-web-owner", reenrollmentChallenge, clock.Now())
+	reenrolled, err := daemon.CompleteDeviceEnrollment(context.Background(), &cloudpb.CompleteDeviceEnrollmentRequest{FlowId: reenrollmentChallenge.GetFlowId(), Proof: reenrollmentProof})
+	if err != nil || reenrolled.GetSession().GetAccountId() != accountID || runtime.state.edgeDevices["daemon-web-owner"].Revoked {
+		t.Fatalf("reenrollment = (%v, %v, %#v)", reenrolled, err, runtime.state.edgeDevices["daemon-web-owner"])
+	}
 	clientID := login.GetSession().GetDeviceId()
 	revokedClient := browserMutation(t, origin, "/api/nodes/revoke", map[string]string{"node_id": clientID}, cookies)
 	if revokedClient.StatusCode != http.StatusOK {

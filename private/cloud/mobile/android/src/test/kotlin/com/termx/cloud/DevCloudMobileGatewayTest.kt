@@ -9,6 +9,7 @@ import com.termx.app.managed.RelayMode
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -37,6 +38,7 @@ class DevCloudMobileGatewayTest {
     fun resolvesAndSignalsThroughLoopbackCloudWithOnePrivateAccountSession() = runBlocking {
         val records = Collections.synchronizedList(mutableListOf<RecordedRequest>())
         val accessToken = ByteArray(32) { 0x31 }
+		val refreshToken = ByteArray(32) { 0x32 }
         val bearer = "Bearer ${Base64.getUrlEncoder().withoutPadding().encodeToString(accessToken)}"
 
         val hub = TestHttpServer { request ->
@@ -91,6 +93,8 @@ class DevCloudMobileGatewayTest {
                         .put("hub_url", hub.origin)
                         .put("hub_region", "local-1")
                         .put("hub_directory_version", 1)
+						.put("refresh_token", Base64.getEncoder().encodeToString(refreshToken))
+						.put("refresh_expires_at_unix", now.plusSeconds(86400).epochSecond)
                         .put("access_token", Base64.getEncoder().encodeToString(accessToken)))
                 }
                 else -> throw AssertionError("unexpected Control Plane path ${request.path}")
@@ -142,6 +146,7 @@ class DevCloudMobileGatewayTest {
     @Test
     fun claimsWebActivationAndKeepsFlowCredentialInsideGateway() = runBlocking {
         val accessToken = ByteArray(32) { 0x45 }
+		val refreshToken = ByteArray(32) { 0x46 }
         val control = TestHttpServer { request ->
             when (request.path) {
                 "/v1/login/mobile/claim" -> {
@@ -168,6 +173,8 @@ class DevCloudMobileGatewayTest {
                         .put("hub_url", "http://127.0.0.1:41002")
                         .put("hub_region", "local-1")
                         .put("hub_directory_version", 1)
+						.put("refresh_token", Base64.getEncoder().encodeToString(refreshToken))
+						.put("refresh_expires_at_unix", now.plusSeconds(86400).epochSecond)
                         .put("access_token", Base64.getEncoder().encodeToString(accessToken)))
                 }
                 else -> throw AssertionError("unexpected Control Plane path ${request.path}")
@@ -183,6 +190,41 @@ class DevCloudMobileGatewayTest {
             control.close()
         }
     }
+
+	@Test
+	fun refreshesExpiringAccountSessionAndRotatesKeystoreSecret() = runBlocking {
+		val firstAccess = ByteArray(32) { 0x51 }
+		val secondAccess = ByteArray(32) { 0x52 }
+		val firstRefresh = ByteArray(32) { 0x61 }
+		val secondRefresh = ByteArray(32) { 0x62 }
+		var refreshCount = 0
+		val hub = TestHttpServer { request ->
+			assertEquals("Bearer ${Base64.getUrlEncoder().withoutPadding().encodeToString(secondAccess)}", request.authorization)
+			protoResponse(CloudCompanion.ListManagedDevicesResponse.newBuilder().build().toByteArray())
+		}
+		val control = TestHttpServer { request ->
+			when (request.path) {
+				"/v1/login/complete" -> jsonResponse(sessionJSON(firstAccess, firstRefresh, now.plusSeconds(300), now.plusSeconds(86400), hub.origin))
+				"/v1/sessions/refresh" -> {
+					refreshCount++
+					val input = JSONObject(String(request.body, Charsets.UTF_8))
+					assertEquals("account", input.getString("kind"))
+					assertArrayEquals(firstRefresh, Base64.getDecoder().decode(input.getString("refresh_token")))
+					jsonResponse(sessionJSON(secondAccess, secondRefresh, now.plusSeconds(3600), now.plusSeconds(172800), hub.origin))
+				}
+				else -> throw AssertionError("unexpected Control Plane path ${request.path}")
+			}
+		}
+		try {
+			val gateway = DevCloudMobileGateway(control.origin, hub.origin, now = { now })
+			gateway.completeLogin("flow-refresh")
+			gateway.listDevices()
+			assertEquals(1, refreshCount)
+		} finally {
+			control.close()
+			hub.close()
+		}
+	}
 
     @Test
     fun rejectsNonLoopbackOrProductionLikeDevOrigins() {
@@ -227,7 +269,7 @@ class DevCloudMobileGatewayTest {
     @Test
     fun cachedSessionRejectsHubChangeAndDirectoryRollback() {
         val store = MemoryCloudSessionStore()
-        val current = AccountSession(ByteArray(32) { 1 }, now.plusSeconds(300), "account-1", "Account One", "client-1", "hub-1", "https://hub.example.test", "region-1", 2)
+        val current = AccountSession(ByteArray(32) { 1 }, now.plusSeconds(300), ByteArray(32) { 2 }, now.plusSeconds(3600), "account-1", "Account One", "client-1", "hub-1", "https://hub.example.test", "region-1", 2)
         store.save(current)
 
         val rollback = assertThrows(ManagedEndpointFailure::class.java) {
@@ -246,6 +288,20 @@ class DevCloudMobileGatewayTest {
         val contentType: String,
         val body: ByteArray,
     )
+
+	private fun sessionJSON(access: ByteArray, refresh: ByteArray, expiresAt: Instant, refreshExpiresAt: Instant, hubURL: String): JSONObject = JSONObject()
+		.put("kind", "account")
+		.put("account_id", "account-refresh")
+		.put("account_label", "Refresh account")
+		.put("device_id", "android-refresh")
+		.put("expires_at_unix", expiresAt.epochSecond)
+		.put("refresh_expires_at_unix", refreshExpiresAt.epochSecond)
+		.put("hub_id", "hub-refresh")
+		.put("hub_url", hubURL)
+		.put("hub_region", "local-1")
+		.put("hub_directory_version", 1)
+		.put("access_token", Base64.getEncoder().encodeToString(access))
+		.put("refresh_token", Base64.getEncoder().encodeToString(refresh))
 
     private data class TestResponse(val contentType: String, val body: ByteArray)
 

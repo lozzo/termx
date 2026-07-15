@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/companion/cloudservice"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion/pathquality"
 )
@@ -179,7 +178,7 @@ func validateBeginPresenceRequest(request *cloudpb.BeginPresenceRequest) error {
 
 func validatePresenceChallenge(challenge *cloudpb.PresenceChallenge, now time.Time) error {
 	if challenge == nil || challenge.GetPresenceSessionId() == "" || challenge.GetChallengeId() == "" || len(challenge.GetChallenge()) < 32 || len(challenge.GetChallenge()) > 256 || challenge.GetExpiresAtUnix() <= uint64(now.Unix()) {
-		return protocolError("Control Plane returned an invalid presence challenge")
+		return protocolError("Hub returned an invalid presence challenge")
 	}
 	return nil
 }
@@ -294,16 +293,6 @@ func validateConnectionOutcomeRequest(request *cloudpb.ReportConnectionOutcomeRe
 	outcome := request.GetOutcome()
 	if request == nil || outcome == nil || outcome.GetManagedSessionId() == "" || !validObservedPath(outcome.GetObservedPath()) || !validCloudErrorCode(outcome.GetErrorCode(), true) {
 		return protocolError("invalid connection outcome")
-	}
-	return nil
-}
-
-func validateAdmission(admission cloudservice.HubAdmission, sessionKind cloudservice.HubSessionKind, sessionID string, now time.Time) error {
-	if admission.Reference == "" || admission.HubID == "" || admission.AccountID == "" || admission.DeviceID == "" || admission.SessionKind != sessionKind || admission.SessionID == "" || len(admission.TicketBytes()) == 0 || !now.Before(admission.ExpiresAt) {
-		return protocolError("Control Plane returned an invalid Hub admission")
-	}
-	if sessionID == "" || admission.SessionID != sessionID {
-		return protocolError("Hub admission session mismatch")
 	}
 	return nil
 }

@@ -53,14 +53,12 @@ type fakeControlPlane struct {
 	lastAuthorization string
 	resolveResponse   *cloudpb.ResolvedEndpoint
 	resolveErr        error
-	presenceChallenge *cloudpb.PresenceChallenge
-	presenceAdmission cloudservice.HubAdmission
-	clientAdmission   cloudservice.HubAdmission
-	daemonAdmission   cloudservice.HubAdmission
 	planResponse      *cloudpb.ManagedRoutePlan
 	planCount         int
 	qualityCount      int
 	outcomeCount      int
+	refreshCount      int
+	refreshErr        error
 }
 
 func (controlPlane *fakeControlPlane) BeginLogin(_ context.Context, _ *cloudpb.BeginLoginRequest) (*cloudpb.LoginFlow, error) {
@@ -79,20 +77,46 @@ func (controlPlane *fakeControlPlane) CompleteDeviceEnrollment(_ context.Context
 	return session.New(session.Metadata{Kind: session.KindDevice, AccountID: "account-1", DeviceID: "daemon-enrolled", ExpiresAt: controlPlane.now.Add(time.Hour)}, []byte("new-device-token"), controlPlane.now)
 }
 
+func (controlPlane *fakeControlPlane) RefreshSession(_ context.Context, authorization session.RefreshAuthorization) (session.Session, error) {
+	controlPlane.mu.Lock()
+	controlPlane.refreshCount++
+	err := controlPlane.refreshErr
+	controlPlane.mu.Unlock()
+	if err != nil {
+		return session.Session{}, err
+	}
+	metadata := authorization.Metadata()
+	metadata.ExpiresAt = controlPlane.now.Add(time.Hour)
+	return session.NewRefreshable(metadata, []byte("refreshed-access-token"), bytes.Repeat([]byte{0x72}, 32), controlPlane.now.Add(24*time.Hour), controlPlane.now)
+}
+
+func TestAuthorizeProactivelyRotatesRefreshableSession(t *testing.T) {
+	now, service, controlPlane, _, manager := testService(t)
+	refreshable, err := session.NewRefreshable(session.Metadata{Kind: session.KindAccount, AccountID: "account-1", AccountLabel: "Alice", DeviceID: "client-1", ExpiresAt: now.Add(5 * time.Minute)}, []byte("expiring-access-token"), bytes.Repeat([]byte{0x61}, 32), now.Add(24*time.Hour), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Save(context.Background(), refreshable, now); err != nil {
+		t.Fatal(err)
+	}
+	connection := service.NewConnection()
+	if _, err := connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connection.ResolveEndpoint(context.Background(), &cloudpb.ResolveEndpointRequest{EndpointId: "cloud-prod", TargetDeviceId: "daemon-1"}); err != nil {
+		t.Fatal(err)
+	}
+	controlPlane.mu.Lock()
+	defer controlPlane.mu.Unlock()
+	if controlPlane.refreshCount != 1 {
+		t.Fatalf("refresh count = %d", controlPlane.refreshCount)
+	}
+}
+
 func (controlPlane *fakeControlPlane) capture(authorization session.Authorization) {
 	controlPlane.mu.Lock()
 	controlPlane.lastAuthorization = string(authorization.Bytes())
 	controlPlane.mu.Unlock()
-}
-
-func (controlPlane *fakeControlPlane) BeginPresence(_ context.Context, authorization session.Authorization, _ *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
-	controlPlane.capture(authorization)
-	return controlPlane.presenceChallenge, nil
-}
-
-func (controlPlane *fakeControlPlane) AcquirePresenceAdmission(_ context.Context, authorization session.Authorization, _ *cloudpb.OpenPresenceRequest) (cloudservice.HubAdmission, error) {
-	controlPlane.capture(authorization)
-	return controlPlane.presenceAdmission, nil
 }
 
 func (controlPlane *fakeControlPlane) PlanManagedRoute(_ context.Context, authorization session.Authorization, _ *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
@@ -120,13 +144,21 @@ func (controlPlane *fakeControlPlane) ReportConnectionOutcome(_ context.Context,
 }
 
 type fakeHub struct {
-	mu              sync.Mutex
-	presence        *presenceSource
-	signaling       *signalingSource
-	completed       int
-	leaseResponse   *cloudpb.RelayLease
-	resolveResponse *cloudpb.ResolvedEndpoint
-	resolveErr      error
+	mu                sync.Mutex
+	lastAuthorization string
+	presence          *presenceSource
+	signaling         *signalingSource
+	completed         int
+	leaseResponse     *cloudpb.RelayLease
+	resolveResponse   *cloudpb.ResolvedEndpoint
+	resolveErr        error
+}
+
+func (hub *fakeHub) BeginPresence(_ context.Context, authorization session.Authorization, _ *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
+	hub.mu.Lock()
+	hub.lastAuthorization = string(authorization.Bytes())
+	hub.mu.Unlock()
+	return &cloudpb.PresenceChallenge{PresenceSessionId: "presence-1", ChallengeId: "presence-challenge-1", Challenge: bytes.Repeat([]byte{0x44}, 32), ExpiresAtUnix: uint64(time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC).Unix())}, nil
 }
 
 func (hub *fakeHub) ResolveEndpoint(_ context.Context, _ session.Authorization, _ *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
@@ -141,7 +173,7 @@ func (hub *fakeHub) AcquireRelayLease(_ context.Context, _ session.Authorization
 	return hub.leaseResponse, nil
 }
 
-func (hub *fakeHub) OpenPresence(_ context.Context, _ session.Authorization, _ cloudservice.HubAdmission, _ *cloudpb.OpenPresenceRequest) (cloudservice.PresenceSource, error) {
+func (hub *fakeHub) OpenPresence(_ context.Context, _ session.Authorization, _ *cloudpb.OpenPresenceRequest) (cloudservice.PresenceSource, error) {
 	return hub.presence, nil
 }
 
@@ -209,7 +241,7 @@ func (source *signalingSource) Close() error {
 }
 
 func TestConnectionRequiresHelloAndNegotiatesRoleCapabilities(t *testing.T) {
-	now, service, _, _ := testService(t)
+	now, service, _, _, _ := testService(t)
 	connection := service.NewConnection()
 	if _, err := connection.Status(context.Background(), &cloudpb.StatusRequest{}); !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {
 		t.Fatalf("Status before Hello error = %v", err)
@@ -243,7 +275,7 @@ func TestConnectionRequiresHelloAndNegotiatesRoleCapabilities(t *testing.T) {
 }
 
 func TestManagedOperationsDrivePrivateAdapters(t *testing.T) {
-	now, service, controlPlane, hub := testService(t)
+	now, service, controlPlane, hub, _ := testService(t)
 	connection := service.NewConnection()
 	if _, err := connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_TUI,
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING,
@@ -313,7 +345,7 @@ func TestManagedOperationsDrivePrivateAdapters(t *testing.T) {
 }
 
 func TestBeginPresenceUsesDeviceSessionAndReturnsIndependentSession(t *testing.T) {
-	_, service, controlPlane, _ := testService(t)
+	_, service, _, hub, _ := testService(t)
 	connection := service.NewConnection()
 	if _, err := connection.Hello(context.Background(), helloRequest(
 		cloudpb.CallerRole_CALLER_ROLE_DAEMON,
@@ -328,15 +360,15 @@ func TestBeginPresenceUsesDeviceSessionAndReturnsIndependentSession(t *testing.T
 	if challenge.GetPresenceSessionId() != "presence-1" || challenge.GetPresenceSessionId() == "managed-1" {
 		t.Fatalf("presence challenge = %#v", challenge)
 	}
-	controlPlane.mu.Lock()
-	defer controlPlane.mu.Unlock()
-	if controlPlane.lastAuthorization != "device-cloud-token" {
-		t.Fatalf("presence authorization = %q", controlPlane.lastAuthorization)
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+	if hub.lastAuthorization != "device-cloud-token" {
+		t.Fatalf("presence authorization = %q", hub.lastAuthorization)
 	}
 }
 
 func TestPlanManagedRouteRequiresNegotiatedSmartRouteCapability(t *testing.T) {
-	_, service, controlPlane, _ := testService(t)
+	_, service, controlPlane, _, _ := testService(t)
 	connection := service.NewConnection()
 	if _, err := connection.Hello(context.Background(), helloRequest(
 		cloudpb.CallerRole_CALLER_ROLE_TUI,
@@ -360,7 +392,7 @@ func TestPlanManagedRouteRequiresNegotiatedSmartRouteCapability(t *testing.T) {
 }
 
 func TestLifecycleStoresOnlyPrivateSessionAndReturnsSummary(t *testing.T) {
-	now, service, _, _ := testService(t)
+	now, service, _, _, _ := testService(t)
 	connection := service.NewConnection()
 	if _, err := connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_CLI,
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_ACCOUNT_SESSION,
@@ -398,7 +430,7 @@ func TestLifecycleStoresOnlyPrivateSessionAndReturnsSummary(t *testing.T) {
 }
 
 func TestClosingClientConnectionDoesNotStopDaemonPresence(t *testing.T) {
-	_, service, _, hub := testService(t)
+	_, service, _, hub, _ := testService(t)
 	client := service.NewConnection()
 	daemon := service.NewConnection()
 	_, _ = client.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING))
@@ -438,7 +470,7 @@ func TestClosingClientConnectionDoesNotStopDaemonPresence(t *testing.T) {
 }
 
 func TestSignalingStreamFailsWithBackpressureWithoutPretendingSuccess(t *testing.T) {
-	_, service, _, hub := testService(t)
+	_, service, _, hub, _ := testService(t)
 	connection := service.NewConnection()
 	_, _ = connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING))
 	hub.signaling.items <- validAnswerEvent("signal-1")
@@ -462,7 +494,7 @@ func TestSignalingStreamFailsWithBackpressureWithoutPretendingSuccess(t *testing
 }
 
 func TestPresenceStreamRejectsWrongTargetOffer(t *testing.T) {
-	_, service, _, hub := testService(t)
+	_, service, _, hub, _ := testService(t)
 	connection := service.NewConnection()
 	_, _ = connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_DAEMON, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE))
 	stream, err := connection.OpenPresence(context.Background(), validPresenceRequest())
@@ -478,7 +510,7 @@ func TestPresenceStreamRejectsWrongTargetOffer(t *testing.T) {
 }
 
 func TestDaemonCanCompleteOnlyOfferConsumedFromOwnPresence(t *testing.T) {
-	_, service, _, hub := testService(t)
+	_, service, _, hub, _ := testService(t)
 	connection := service.NewConnection()
 	_, _ = connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_DAEMON,
 		cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE,
@@ -512,7 +544,7 @@ func TestDaemonCanCompleteOnlyOfferConsumedFromOwnPresence(t *testing.T) {
 }
 
 func TestGlobalRouteRequiresNegotiatedSmartRouteCapability(t *testing.T) {
-	_, service, _, _ := testService(t)
+	_, service, _, _, _ := testService(t)
 	connection := service.NewConnection()
 	_, _ = connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_RELAY_LEASE))
 	_, err := connection.AcquireRelayLease(context.Background(), &cloudpb.AcquireRelayLeaseRequest{ManagedSessionId: "managed-1", TargetDeviceId: "daemon-1", RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_GLOBAL_ACCELERATOR})
@@ -522,7 +554,7 @@ func TestGlobalRouteRequiresNegotiatedSmartRouteCapability(t *testing.T) {
 }
 
 func TestHubErrorAndCloseTextAreRedacted(t *testing.T) {
-	_, service, _, hub := testService(t)
+	_, service, _, hub, _ := testService(t)
 	connection := service.NewConnection()
 	_, _ = connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING))
 	stream, err := connection.CreateSignalingSession(context.Background(), &cloudpb.CreateSignalingSessionRequest{EndpointId: "cloud", ManagedSessionId: "managed-1", TargetDeviceId: "daemon-1", OfferSdp: "offer", RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY})
@@ -540,7 +572,7 @@ func TestHubErrorAndCloseTextAreRedacted(t *testing.T) {
 }
 
 func TestResolveEndpointRejectsNonTLSHubURL(t *testing.T) {
-	_, service, _, hub := testService(t)
+	_, service, _, hub, _ := testService(t)
 	hub.resolveResponse.HubUrl = "http://hub.example.test"
 	connection := service.NewConnection()
 	_, _ = connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING))
@@ -551,7 +583,7 @@ func TestResolveEndpointRejectsNonTLSHubURL(t *testing.T) {
 }
 
 func TestAdapterErrorMessageIsRedacted(t *testing.T) {
-	_, service, _, hub := testService(t)
+	_, service, _, hub, _ := testService(t)
 	hub.resolveErr = errors.New("network failed with account-access-token")
 	connection := service.NewConnection()
 	_, _ = connection.Hello(context.Background(), helloRequest(cloudpb.CallerRole_CALLER_ROLE_TUI, cloudpb.CompanionCapability_COMPANION_CAPABILITY_SIGNALING))
@@ -561,7 +593,7 @@ func TestAdapterErrorMessageIsRedacted(t *testing.T) {
 	}
 }
 
-func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane, *fakeHub) {
+func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane, *fakeHub, *session.Manager) {
 	t.Helper()
 	now := time.Date(2026, 7, 11, 9, 0, 0, 0, time.UTC)
 	store := &testCredentialStore{secrets: make(map[string][]byte)}
@@ -577,25 +609,9 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 	if err := manager.Save(context.Background(), device, now); err != nil {
 		t.Fatal(err)
 	}
-	clientAdmission, _ := cloudservice.NewHubAdmission(cloudservice.HubAdmissionMetadata{
-		Reference: "admission-client", HubID: "hub-1", AccountID: "account-1", DeviceID: "client-1", TargetDeviceID: "daemon-1",
-		SessionKind: cloudservice.HubSessionManaged, SessionID: "managed-1", ExpiresAt: now.Add(time.Minute),
-	}, []byte("client-ticket"), now)
-	daemonAdmission, _ := cloudservice.NewHubAdmission(cloudservice.HubAdmissionMetadata{
-		Reference: "admission-answer", HubID: "hub-1", AccountID: "account-1", DeviceID: "daemon-1",
-		SessionKind: cloudservice.HubSessionManaged, SessionID: "managed-1", ExpiresAt: now.Add(time.Minute),
-	}, []byte("answer-ticket"), now)
-	presenceAdmission, _ := cloudservice.NewHubAdmission(cloudservice.HubAdmissionMetadata{
-		Reference: "admission-daemon", HubID: "hub-1", AccountID: "account-1", DeviceID: "daemon-1",
-		SessionKind: cloudservice.HubSessionPresence, SessionID: "presence-1", ExpiresAt: now.Add(time.Minute),
-	}, []byte("daemon-ticket"), now)
 	controlPlane := &fakeControlPlane{
-		now:               now,
-		resolveResponse:   &cloudpb.ResolvedEndpoint{EndpointId: "cloud-prod", TargetDeviceId: "daemon-1", Presence: cloudpb.PresenceState_PRESENCE_STATE_ONLINE, HubId: "hub-1", HubUrl: "https://hub.example.test", ManagedSessionId: "managed-1"},
-		presenceChallenge: &cloudpb.PresenceChallenge{PresenceSessionId: "presence-1", ChallengeId: "presence-challenge-1", Challenge: bytes.Repeat([]byte{0x44}, 32), ExpiresAtUnix: uint64(now.Add(time.Minute).Unix())},
-		presenceAdmission: presenceAdmission,
-		clientAdmission:   clientAdmission,
-		daemonAdmission:   daemonAdmission,
+		now:             now,
+		resolveResponse: &cloudpb.ResolvedEndpoint{EndpointId: "cloud-prod", TargetDeviceId: "daemon-1", Presence: cloudpb.PresenceState_PRESENCE_STATE_ONLINE, HubId: "hub-1", HubUrl: "https://hub.example.test", ManagedSessionId: "managed-1"},
 		planResponse: &cloudpb.ManagedRoutePlan{
 			PlanId: "plan-1", ManagedSessionId: "managed-1", TargetDeviceId: "daemon-1",
 			SelectedPath:    cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY,
@@ -606,7 +622,7 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 	}
 	hub := &fakeHub{presence: newPresenceSource(8), signaling: newSignalingSource(8), resolveResponse: controlPlane.resolveResponse, leaseResponse: &cloudpb.RelayLease{LeaseId: "lease-1", SignedLease: []byte("signed-lease"), ExpiresAtUnix: uint64(now.Add(5 * time.Minute).Unix()), PathKind: cloudpb.ObservedPath_OBSERVED_PATH_SINGLE_RELAY, IceServers: []*cloudpb.IceServer{{Urls: []string{"turn:relay.example.test"}, Username: "user", Credential: "credential"}}}}
 	service, err := companion.NewService(companion.Config{
-		CompanionVersion: "1.0.0", BuildChannel: "test", StreamCapacity: 1,
+		CompanionVersion: "1.0.0", BuildChannel: "test", ExecutableSHA256: bytes.Repeat([]byte{0x31}, 32), StreamCapacity: 1,
 		Capabilities: []cloudpb.CompanionCapability{
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_ACCOUNT_SESSION,
 			cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE,
@@ -621,7 +637,7 @@ func testService(t *testing.T) (time.Time, *companion.Service, *fakeControlPlane
 	if err != nil {
 		t.Fatal(err)
 	}
-	return now, service, controlPlane, hub
+	return now, service, controlPlane, hub, manager
 }
 
 func helloRequest(role cloudpb.CallerRole, capabilities ...cloudpb.CompanionCapability) *cloudpb.CompanionHelloRequest {

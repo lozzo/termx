@@ -3,6 +3,7 @@ package devcloud
 import (
 	"crypto/ed25519"
 	"crypto/subtle"
+	"encoding/base32"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,12 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/companion/cloudservice"
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	"github.com/lozzow/termx/private/cloud/companion/session"
-	"github.com/lozzow/termx/private/cloud/control-plane/directory"
 	"github.com/lozzow/termx/private/cloud/control-plane/domain"
-	"github.com/lozzow/termx/private/cloud/control-plane/presence"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
@@ -36,8 +34,7 @@ func (state *serviceState) controlHandler() http.Handler {
 	mux.HandleFunc(httpapi.ControlClaimMobileActivationPath, state.handleClaimMobileActivation)
 	mux.HandleFunc(httpapi.ControlBeginEnrollmentPath, state.handleBeginEnrollment)
 	mux.HandleFunc(httpapi.ControlCompleteEnrollmentPath, state.handleCompleteEnrollment)
-	mux.HandleFunc(httpapi.ControlBeginPresencePath, state.handleBeginPresence)
-	mux.HandleFunc(httpapi.ControlPresenceAdmissionPath, state.handlePresenceAdmission)
+	mux.HandleFunc(httpapi.ControlRefreshSessionPath, state.handleRefreshSession)
 	mux.HandleFunc(controlRelayUsagePath, state.handleRelayUsage)
 	mux.HandleFunc("/v1/internal/web/entitlements", state.handleWebEntitlement)
 	return mux
@@ -160,17 +157,46 @@ func (state *serviceState) CreateEnrollmentCode(accountID, userID string) (webco
 	if err := state.ensureDirectoryAccount(profile); err != nil {
 		return webcontroller.EnrollmentCode{}, err
 	}
-	codeID, err := state.randomID("enroll")
+	code, err := state.newEnrollmentCode()
 	if err != nil {
 		return webcontroller.EnrollmentCode{}, err
 	}
-	code := strings.ToUpper(codeID)
 	expiresAt := state.now().UTC().Add(enrollmentTTL)
 	state.mu.Lock()
 	state.cleanupLocked(state.now().UTC())
+	for existingCode, claim := range state.enrollmentClaims {
+		if claim.accountID == accountID && !claim.claimed {
+			delete(state.enrollmentClaims, existingCode)
+		}
+	}
 	state.enrollmentClaims[code] = enrollmentClaim{accountID: accountID, userID: userID, expiresAt: expiresAt}
 	state.mu.Unlock()
 	return webcontroller.EnrollmentCode{Code: code, ExpiresAt: expiresAt}, nil
+}
+
+func (state *serviceState) newEnrollmentCode() (string, error) {
+	raw, err := state.randomBytes(15)
+	if err != nil {
+		return "", err
+	}
+	defer clear(raw)
+	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw)
+	groups := make([]string, 0, len(encoded)/4)
+	for len(encoded) > 0 {
+		width := min(4, len(encoded))
+		groups = append(groups, encoded[:width])
+		encoded = encoded[width:]
+	}
+	return "ENROLL-" + strings.Join(groups, "-"), nil
+}
+
+func normalizeEnrollmentCode(value string) string {
+	return strings.Map(func(character rune) rune {
+		if character == '-' || character == ' ' || character == '\t' || character == '\r' || character == '\n' {
+			return -1
+		}
+		return character
+	}, strings.ToUpper(strings.TrimSpace(value)))
 }
 
 // RevokeCloudDevice 撤销 client 或 daemon 的云服务访问并原子发布 Hub 授权快照。
@@ -191,6 +217,11 @@ func (state *serviceState) RevokeCloudDevice(accountID, deviceID string) (webcon
 		// staging 重启后 edge 内存投影会丢失；SQLite ownership 仍允许用户清理已无访问权的历史记录。
 		return state.webCenter.RevokeNode(accountID, deviceID)
 	}
+	if err := state.directory.RevokeDevice(accountID, deviceID, now); err != nil {
+		state.mu.Unlock()
+		return webcontroller.ManagedNode{}, err
+	}
+	refreshErr := state.refreshSessions.RevokeDevice(deviceID)
 	device.Revoked = true
 	state.edgeDevices[deviceID] = device
 	state.edgeRevision++
@@ -205,7 +236,45 @@ func (state *serviceState) RevokeCloudDevice(accountID, deviceID string) (webcon
 		return webcontroller.ManagedNode{}, err
 	}
 	state.hub.RevokeDevice(deviceID)
-	return state.webCenter.RevokeNode(accountID, deviceID)
+	node, webErr := state.webCenter.RevokeNode(accountID, deviceID)
+	if refreshErr != nil || webErr != nil {
+		return webcontroller.ManagedNode{}, errors.Join(refreshErr, webErr)
+	}
+	return node, nil
+}
+
+func (state *serviceState) handleRefreshSession(writer http.ResponseWriter, request *http.Request) {
+	if !requireMethod(writer, request, http.MethodPost) || !requireNoAuthorization(writer, request) {
+		return
+	}
+	var input httpapi.RefreshSessionWire
+	if !readJSON(writer, request, &input) {
+		return
+	}
+	defer clear(input.RefreshToken)
+	now := state.now().UTC()
+	record, refreshToken, refreshExpiresAt, err := state.refreshSessions.Rotate(input.RefreshToken, input.Kind, now)
+	if err != nil {
+		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "cloud refresh session is invalid, expired, or already used", false)
+		return
+	}
+	defer clear(refreshToken)
+	state.mu.Lock()
+	device, ok := state.edgeDevices[record.DeviceID]
+	allowed := ok && !device.Revoked && device.AccountID == record.AccountID && (record.Kind == session.KindAccount && device.Kind == "client" || record.Kind == session.KindDevice && device.Kind == "daemon")
+	state.mu.Unlock()
+	if !allowed {
+		_ = state.refreshSessions.RevokeDevice(record.DeviceID)
+		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "cloud refresh session was revoked", false)
+		return
+	}
+	cloudSession, token, err := state.issueAccessSession(record.Kind, record.AccountID, record.AccountLabel, record.DeviceID)
+	if err != nil {
+		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "cloud edge session could not be refreshed", true)
+		return
+	}
+	defer clear(token)
+	writeJSON(writer, http.StatusOK, sessionWire(cloudSession, token, refreshToken, refreshExpiresAt))
 }
 
 func (state *serviceState) ensureDirectoryAccount(profile webcontroller.UserProfile) error {
@@ -499,13 +568,14 @@ func (state *serviceState) handleCompleteLogin(writer http.ResponseWriter, reque
 	if state.webCenter != nil {
 		_ = state.webCenter.UpsertCloudDevice(flow.accountID, flow.clientDeviceID, clientLabel, "client", true)
 	}
-	cloudSession, token, err := state.issueSession(session.KindAccount, flow.accountID, flow.accountLabel, flow.clientDeviceID)
+	cloudSession, token, refreshToken, refreshExpiresAt, err := state.issueSession(session.KindAccount, flow.accountID, flow.accountLabel, flow.clientDeviceID)
 	if err != nil {
 		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "dev account session could not be issued", true)
 		return
 	}
 	defer clear(token)
-	writeJSON(writer, http.StatusOK, sessionWire(cloudSession, token))
+	defer clear(refreshToken)
+	writeJSON(writer, http.StatusOK, sessionWire(cloudSession, token, refreshToken, refreshExpiresAt))
 }
 
 func (state *serviceState) handleBeginEnrollment(writer http.ResponseWriter, request *http.Request) {
@@ -525,8 +595,9 @@ func (state *serviceState) handleBeginEnrollment(writer http.ResponseWriter, req
 	state.mu.Lock()
 	state.cleanupLocked(now)
 	claimCode, claim, claimOK := "", enrollmentClaim{}, false
+	normalizedCode := normalizeEnrollmentCode(payload.GetOneTimeCode())
 	for candidate, current := range state.enrollmentClaims {
-		if subtle.ConstantTimeCompare([]byte(payload.GetOneTimeCode()), []byte(candidate)) == 1 {
+		if subtle.ConstantTimeCompare([]byte(normalizedCode), []byte(normalizeEnrollmentCode(candidate))) == 1 {
 			claimCode, claim, claimOK = candidate, current, true
 			break
 		}
@@ -617,24 +688,22 @@ func (state *serviceState) handleCompleteEnrollment(writer http.ResponseWriter, 
 		Label: deviceLabel(flow.metadata, proof.GetDeviceId()), PublicKey: flow.publicKey,
 		Fingerprint: fingerprint(flow.publicKey), RegisteredAt: now,
 	}
-	existing, existingErr := state.directory.Device(flow.accountID, proof.GetDeviceId())
-	switch {
-	case existingErr == nil:
-		if existing.Kind != domain.DeviceKindDaemon || existing.RevokedAt != nil || subtle.ConstantTimeCompare(existing.PublicKey, flow.publicKey) != 1 {
-			writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED, "dev daemon ownership proof was rejected", false)
-			return
-		}
-		// 同账号、同 DeviceIdentity 的重复 enrollment 只刷新 device session 和 edge projection，不创建第二份设备真值。
-	case errors.Is(existingErr, directory.ErrNotFound):
-		if err := state.directory.RegisterDevice(registration); err != nil {
-			writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED, "dev daemon ownership proof was rejected", false)
-			return
-		}
-	default:
+	previous, existed, err := state.directory.EnrollDaemon(registration)
+	if err != nil {
 		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED, "dev daemon ownership proof was rejected", false)
 		return
 	}
+	// 新 enrollment 以同一 DeviceIdentity 私钥证明恢复或迁移 ownership；旧账号 session 与 Hub Presence 必须先失效。
+	if err := state.refreshSessions.RevokeDevice(proof.GetDeviceId()); err != nil {
+		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "dev previous device sessions could not be revoked", true)
+		return
+	}
 	state.mu.Lock()
+	for digest, cloudSession := range state.sessions {
+		if cloudSession.deviceID == proof.GetDeviceId() {
+			delete(state.sessions, digest)
+		}
+	}
 	state.edgeRevision++
 	state.edgeDevices[proof.GetDeviceId()] = cloudhub.DeviceAuthorization{DeviceID: proof.GetDeviceId(), AccountID: flow.accountID, Kind: "daemon", DisplayName: deviceLabel(flow.metadata, proof.GetDeviceId()), Platform: flow.metadata.GetPlatform(), PublicKey: append([]byte(nil), flow.publicKey...)}
 	edgeErr := state.publishEdgeSnapshot(now)
@@ -643,7 +712,11 @@ func (state *serviceState) handleCompleteEnrollment(writer http.ResponseWriter, 
 		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "dev Hub authorization projection could not be published", true)
 		return
 	}
+	state.hub.RevokeDevice(proof.GetDeviceId())
 	if state.webCenter != nil {
+		if existed && previous.AccountID != "" && previous.AccountID != flow.accountID {
+			_, _ = state.webCenter.RevokeNode(previous.AccountID, proof.GetDeviceId())
+		}
 		_ = state.webCenter.UpsertCloudDevice(flow.accountID, proof.GetDeviceId(), deviceLabel(flow.metadata, proof.GetDeviceId()), "daemon", false)
 	}
 	accountLabel := devAccountLabel
@@ -652,40 +725,14 @@ func (state *serviceState) handleCompleteEnrollment(writer http.ResponseWriter, 
 			accountLabel = profile.DisplayName
 		}
 	}
-	cloudSession, token, err := state.issueSession(session.KindDevice, flow.accountID, accountLabel, proof.GetDeviceId())
+	cloudSession, token, refreshToken, refreshExpiresAt, err := state.issueSession(session.KindDevice, flow.accountID, accountLabel, proof.GetDeviceId())
 	if err != nil {
 		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "dev device session could not be issued", true)
 		return
 	}
 	defer clear(token)
-	writeJSON(writer, http.StatusOK, sessionWire(cloudSession, token))
-}
-
-func (state *serviceState) handleBeginPresence(writer http.ResponseWriter, request *http.Request) {
-	if !requireMethod(writer, request, http.MethodPost) {
-		return
-	}
-	cloudSession, ok := state.authenticate(writer, request, session.KindDevice)
-	if !ok {
-		return
-	}
-	payload := &cloudpb.BeginPresenceRequest{}
-	if !readProto(writer, request, payload) {
-		return
-	}
-	if payload.GetDeviceId() != cloudSession.deviceID {
-		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "presence device does not match device session", false)
-		return
-	}
-	challenge, err := state.presence.Begin(request.Context(), cloudSession.accountID, cloudSession.deviceID)
-	if err != nil {
-		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_DEVICE_ENROLLMENT_REQUIRED, "presence challenge was rejected", false)
-		return
-	}
-	writeProto(writer, http.StatusOK, &cloudpb.PresenceChallenge{
-		PresenceSessionId: challenge.PresenceSessionID, ChallengeId: challenge.ChallengeID,
-		Challenge: challenge.Value, ExpiresAtUnix: uint64(challenge.ExpiresAt.Unix()),
-	})
+	defer clear(refreshToken)
+	writeJSON(writer, http.StatusOK, sessionWire(cloudSession, token, refreshToken, refreshExpiresAt))
 }
 
 func (state *serviceState) handleRelayUsage(writer http.ResponseWriter, request *http.Request) {
@@ -709,50 +756,10 @@ func (state *serviceState) handleRelayUsage(writer http.ResponseWriter, request 
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-func (state *serviceState) handlePresenceAdmission(writer http.ResponseWriter, request *http.Request) {
-	if !requireMethod(writer, request, http.MethodPost) {
-		return
-	}
-	cloudSession, ok := state.authenticate(writer, request, session.KindDevice)
-	if !ok {
-		return
-	}
-	payload := &cloudpb.OpenPresenceRequest{}
-	if !readProto(writer, request, payload) {
-		return
-	}
-	proof := payload.GetProof()
-	if proof == nil || payload.GetPresenceSessionId() == "" || proof.GetDeviceId() != cloudSession.deviceID {
-		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "presence proof does not match device session", false)
-		return
-	}
-	issued, err := state.presence.Issue(request.Context(), cloudSession.accountID, presence.Proof{
-		PresenceSessionID: payload.GetPresenceSessionId(), ChallengeID: proof.GetChallengeId(),
-		DeviceID: proof.GetDeviceId(), PublicKey: proof.GetDevicePublicKey(), Signature: proof.GetSignature(),
-		SignedAt: signedAt(proof.GetSignedAtUnixNano()),
-	})
-	if err != nil {
-		writeCloudError(writer, http.StatusUnauthorized, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_UNAUTHENTICATED, "fresh presence proof was rejected", false)
-		return
-	}
-	reference, err := state.randomID("admission")
-	if err != nil {
-		writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_TEMPORARY, "presence admission could not be issued", true)
-		return
-	}
-	wire := httpapi.AdmissionWire{
-		Reference: reference, HubID: devHubID, AccountID: cloudSession.accountID, DeviceID: cloudSession.deviceID,
-		SessionKind: cloudservice.HubSessionPresence, SessionID: issued.PresenceSessionID,
-		ExpiresAt: issued.ExpiresAt.Unix(), Ticket: issued.Ticket.Bytes(),
-	}
-	defer clear(wire.Ticket)
-	writeJSON(writer, http.StatusOK, wire)
-}
-
-func sessionWire(cloudSession cloudSession, token []byte) httpapi.SessionWire {
+func sessionWire(cloudSession cloudSession, token, refreshToken []byte, refreshExpiresAt time.Time) httpapi.SessionWire {
 	return httpapi.SessionWire{
 		Kind: cloudSession.kind, AccountID: cloudSession.accountID, AccountLabel: cloudSession.accountLabel,
-		DeviceID: cloudSession.deviceID, ExpiresAt: cloudSession.expiresAt.Unix(), AccessToken: token,
+		DeviceID: cloudSession.deviceID, ExpiresAt: cloudSession.expiresAt.Unix(), AccessToken: token, RefreshToken: refreshToken, RefreshExpiresAt: refreshExpiresAt.Unix(),
 		HubID: devHubID, HubURL: devPublicHubURL, HubRegion: devRegion, HubDirectoryVersion: 1,
 	}
 }

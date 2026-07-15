@@ -7,7 +7,6 @@ import (
 	"io"
 	"sync"
 
-	"github.com/lozzow/termx/private/cloud/companion/cloudservice"
 	"github.com/lozzow/termx/private/cloud/companion/session"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
@@ -85,11 +84,12 @@ func (connection *Connection) Hello(ctx context.Context, request *cloudpb.Compan
 		SupportedCapabilities: ordered,
 		BuildChannel:          connection.service.buildChannel,
 		ResponseNonce:         responseNonce,
+		ExecutableSha256:      append([]byte(nil), connection.service.executableSHA256...),
 	}, nil
 }
 
 // Status 返回当前 caller role 可见的脱敏账号或 device session 状态。
-// token、Hub ticket、Relay credential 和 adapter 原始错误永不进入 response。
+// token、refresh secret、Relay credential 和 adapter 原始错误永不进入 response。
 func (connection *Connection) Status(ctx context.Context, _ *cloudpb.StatusRequest) (*cloudpb.StatusResponse, error) {
 	if err := ensureContext(ctx); err != nil {
 		return nil, temporaryError("companion status request was canceled")
@@ -323,7 +323,7 @@ func (connection *Connection) BeginPresence(ctx context.Context, request *cloudp
 	if err := validateBeginPresenceRequest(request); err != nil {
 		return nil, err
 	}
-	challenge, err := connection.service.controlPlane.BeginPresence(ctx, authorization, cloneMessage(request))
+	challenge, err := connection.service.hub.BeginPresence(ctx, authorization, cloneMessage(request))
 	if err != nil {
 		return nil, sanitizeAdapterError(err)
 	}
@@ -333,7 +333,7 @@ func (connection *Connection) BeginPresence(ctx context.Context, request *cloudp
 	return cloneMessage(challenge), nil
 }
 
-// OpenPresence 为 daemon public proof 获取内部 admission 并打开当前连接拥有的有界 stream。
+// OpenPresence 以 daemon edge credential 和 public proof 打开当前连接拥有的有界 stream。
 // proof 只含 public key 和签名；companion 不接收或推导 DeviceIdentity 私钥。
 func (connection *Connection) OpenPresence(ctx context.Context, request *cloudpb.OpenPresenceRequest) (cloudcompanion.PresenceStream, error) {
 	authorization, err := connection.authorize(ctx, cloudpb.CompanionCapability_COMPANION_CAPABILITY_DEVICE_PRESENCE, cloudpb.CallerRole_CALLER_ROLE_DAEMON)
@@ -354,22 +354,14 @@ func (connection *Connection) OpenPresence(ctx context.Context, request *cloudpb
 		}
 	}()
 	request = cloneMessage(request)
-	admission, err := connection.service.controlPlane.AcquirePresenceAdmission(ctx, authorization, request)
-	if err != nil {
-		return nil, sanitizeAdapterError(err)
-	}
-	defer admission.Destroy()
-	if err := validateAdmission(admission, cloudservice.HubSessionPresence, request.GetPresenceSessionId(), connection.service.now()); err != nil {
-		return nil, err
-	}
-	source, err := connection.service.hub.OpenPresence(ctx, authorization, admission, request)
+	source, err := connection.service.hub.OpenPresence(ctx, authorization, request)
 	if err != nil {
 		return nil, sanitizeAdapterError(err)
 	}
 	if source == nil {
 		return nil, protocolError("Hub returned an empty presence source")
 	}
-	stream := newPresenceStream(ctx, source, admission.SessionID, request.GetProof().GetDeviceId(), connection.service.streamCapacity, connection.registerStream, connection.trackOffer, connection.endPresence)
+	stream := newPresenceStream(ctx, source, request.GetPresenceSessionId(), request.GetProof().GetDeviceId(), connection.service.streamCapacity, connection.registerStream, connection.trackOffer, connection.endPresence)
 	presenceEstablished = true
 	return stream, nil
 }
@@ -566,6 +558,20 @@ func (connection *Connection) authorize(ctx context.Context, capability cloudpb.
 	}
 	expectedKind := sessionKindForRole(role)
 	stored, err := connection.service.sessions.Load(ctx, expectedKind, connection.service.now())
+	if err == nil && stored.Metadata().ExpiresAt.Sub(connection.service.now()) <= proactiveRefreshWindow {
+		original := stored
+		refreshed, refreshErr := connection.service.refreshSession(ctx, expectedKind)
+		if refreshErr == nil {
+			original.Destroy()
+			stored = refreshed
+		} else if !connection.service.now().Before(original.Metadata().ExpiresAt) {
+			original.Destroy()
+			err = refreshErr
+		}
+	}
+	if errors.Is(err, session.ErrExpired) {
+		stored, err = connection.service.refreshSession(ctx, expectedKind)
+	}
 	if err != nil {
 		if errors.Is(err, session.ErrNotFound) {
 			code := cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_LOGIN_REQUIRED

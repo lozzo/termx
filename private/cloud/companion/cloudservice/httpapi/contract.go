@@ -1,7 +1,7 @@
 // Package httpapi 实现显式 dev-local Companion 到 Control Plane/Hub 的私有 HTTP contract。
 //
 // 该包只允许 loopback staging 地址，不是生产 TLS client。Payload 只包含 cloud protobuf、
-// account/device cloud authorization 或 Hub admission；CapabilityGrant、DeviceIdentity private key、
+// account/device cloud authorization；CapabilityGrant、DeviceIdentity private key、
 // DataChannel 和 terminal payload 不属于任何 wire type。
 package httpapi
 
@@ -18,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/private/cloud/companion/cloudservice"
 	"github.com/lozzow/termx/private/cloud/companion/session"
 	"google.golang.org/protobuf/proto"
 )
@@ -38,7 +37,7 @@ const (
 	ProfileStagingPublicHTTP = "staging-public-http"
 	// ProtobufMediaType 是 dev-local unary protobuf 与 CloudError response 的固定媒体类型。
 	ProtobufMediaType = "application/x-protobuf"
-	// JSONMediaType 是只承载 private session/admission envelope 的固定媒体类型。
+	// JSONMediaType 是只承载 private session/edge envelope 的固定媒体类型。
 	JSONMediaType = "application/json"
 	// StreamMediaType 是 Hub length-prefixed protobuf response stream 的固定媒体类型。
 	StreamMediaType = "application/x-termx-cloud-stream"
@@ -57,16 +56,15 @@ const (
 	ControlBeginEnrollmentPath = "/v1/enrollment/begin"
 	// ControlCompleteEnrollmentPath 是 daemon enrollment proof endpoint。
 	ControlCompleteEnrollmentPath = "/v1/enrollment/complete"
-	// ControlBeginPresencePath 是 fresh daemon presence challenge endpoint。
-	ControlBeginPresencePath = "/v1/presence/begin"
-	// ControlPresenceAdmissionPath 是 device-scoped presence ticket endpoint。
-	ControlPresenceAdmissionPath = "/v1/admissions/presence"
-
+	// ControlRefreshSessionPath 使用单次 refresh secret 轮换 account/device edge session。
+	ControlRefreshSessionPath = "/v1/sessions/refresh"
 	// HubHealthPath 是 dev Hub readiness endpoint。
 	HubHealthPath = "/healthz"
-	// HubOpenPresencePath 打开 admission-bound daemon presence stream。
+	// HubBeginPresencePath 使用 daemon edge credential 创建 fresh DeviceProof challenge。
+	HubBeginPresencePath = "/v1/presence/begin"
+	// HubOpenPresencePath 使用 daemon edge credential 和 fresh proof 打开 presence stream。
 	HubOpenPresencePath = "/v1/presence/open"
-	// HubCreateSignalingPath 打开 admission-bound client answer stream。
+	// HubCreateSignalingPath 打开 edge-authorization-bound client answer stream。
 	HubCreateSignalingPath = "/v1/signaling/create"
 	// HubCompleteSignalingPath 返回 daemon answer 或稳定错误。
 	HubCompleteSignalingPath = "/v1/signaling/complete"
@@ -80,7 +78,7 @@ const (
 
 // Manifest 是 development Cloud 的非生产运行描述。
 // 它可以来自 `make cloud-dev` 的 runtime 文件，也可以在显式测试构建时固化进 Companion；
-// 只允许包含 service 地址和公开 profile metadata，不得包含 cloud session、Hub ticket 或 daemon secret。
+// 只允许包含 service 地址和公开 profile metadata，不得包含 cloud session、refresh secret 或 daemon secret。
 type Manifest struct {
 	Version          uint32 `json:"version"`
 	Profile          string `json:"profile"`
@@ -164,31 +162,19 @@ type SessionWire struct {
 	DeviceID            string       `json:"device_id"`
 	ExpiresAt           int64        `json:"expires_at_unix"`
 	AccessToken         []byte       `json:"access_token"`
+	RefreshToken        []byte       `json:"refresh_token"`
+	RefreshExpiresAt    int64        `json:"refresh_expires_at_unix"`
 	HubID               string       `json:"hub_id"`
 	HubURL              string       `json:"hub_url"`
 	HubRegion           string       `json:"hub_region"`
 	HubDirectoryVersion uint64       `json:"hub_directory_version"`
 }
 
-// AdmissionWire 是 Control Plane 返回给 Companion 的 private Hub admission envelope。
-// Ticket 为短期 secret；其余字段用于 Hub request binding，不能替代 Hub 离线验签。
-type AdmissionWire struct {
-	Reference      string                      `json:"reference"`
-	HubID          string                      `json:"hub_id"`
-	AccountID      string                      `json:"account_id"`
-	DeviceID       string                      `json:"device_id"`
-	TargetDeviceID string                      `json:"target_device_id,omitempty"`
-	SessionKind    cloudservice.HubSessionKind `json:"session_kind"`
-	SessionID      string                      `json:"session_id"`
-	ExpiresAt      int64                       `json:"expires_at_unix"`
-	Ticket         []byte                      `json:"ticket"`
-}
-
-// HubRequest 把 private Hub admission 与一个 public cloud protobuf payload 绑定。
-// Hub 不接收 account/device cloud authorization，唯一服务准入凭据是 Admission.Ticket。
-type HubRequest struct {
-	Admission AdmissionWire `json:"admission"`
-	Payload   []byte        `json:"payload"`
+// RefreshSessionWire 是只发往 Control Plane 的 refresh 请求。
+// RefreshToken 不得进入 Hub、WebView、日志或配置；服务端只持有其 SHA-256。
+type RefreshSessionWire struct {
+	Kind         session.Kind `json:"kind"`
+	RefreshToken []byte       `json:"refresh_token"`
 }
 
 // EdgeHubRequest 只包装 managed signaling protobuf payload。

@@ -1,23 +1,22 @@
 // Package hub 实现私有 regional presence 与 WebRTC signaling runtime。
 //
-// Hub 只离线验证 Control Plane 签发的短期 admission，并维护 TTL presence、offer、answer
+// Hub 只离线验证 Control Plane 签发的 edge credential/policy，并维护 TTL presence、offer、answer
 // 和 ICE candidate。它不保存 terminal inventory，不接收 CapabilityGrant，不代理 DataChannel，
 // 也不在 signaling 热路径查询 entitlement 或 billing 数据库。
 package hub
 
 import (
-	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"time"
-
-	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 )
 
 var (
-	// ErrAdmission 表示 Hub admission 无效、过期、重放或与请求 identity 不匹配。
-	ErrAdmission = errors.New("Hub admission rejected")
+	// ErrAdmission 表示 Hub edge authorization/proof 无效、过期、重放或与请求 identity 不匹配。
+	ErrAdmission = errors.New("Hub authorization rejected")
 	// ErrPresenceNotFound 表示 target daemon 当前没有有效 presence。
 	ErrPresenceNotFound = errors.New("Hub target presence not found")
 	// ErrPresenceConflict 表示同一 device 已由另一个 active presence 占用。
@@ -35,7 +34,7 @@ var (
 )
 
 // Clock 是 Hub TTL harness 使用的时间来源。
-// 生产配置为空时使用 UTC wall clock；测试 clock 不能改变 admission claims 的绝对时间语义。
+// 生产配置为空时使用 UTC wall clock；测试 clock 不能改变 credential 的绝对时间语义。
 type Clock interface {
 	Now() time.Time
 }
@@ -44,12 +43,9 @@ type realClock struct{}
 
 func (realClock) Now() time.Time { return time.Now().UTC() }
 
-// Config 固定 regional Hub identity、票据 issuer、TTL 上限和有界队列容量。
-// KeyRing 由 Control Plane 公钥分发/轮换流程更新；Hub 不持有签名私钥。
+// Config 固定 regional Hub identity、TTL 上限、本地 edge authorizer 和有界队列容量。
 type Config struct {
 	HubID                string
-	AdmissionIssuer      string
-	KeyRing              *servicecredential.KeyRing
 	Clock                Clock
 	MaxPresenceTTL       time.Duration
 	MaxSignalingTTL      time.Duration
@@ -60,53 +56,59 @@ type Config struct {
 	MaxPresences         int
 	MaxSessions          int
 	MaxSessionsPerClient int
-	MaxReplayEntries     int
-	// EdgeAuthorizer 是 managed direct 新热路径的本地授权 owner；为空时只开放旧 ticket 迁移路径。
+	// PresenceChallengeTTL 是 Hub fresh DeviceProof challenge 的一次性有效期。
+	PresenceChallengeTTL time.Duration
+	// MaxPresenceChallenges 限制尚未消费的 daemon Presence challenge 数量。
+	MaxPresenceChallenges int
+	// Random 只用于生成 Hub 短期 challenge/ID；为空时使用 crypto/rand.Reader。
+	Random io.Reader
+	// EdgeAuthorizer 是 managed Presence/direct/Relay 的本地授权 owner；缺失时 fail closed。
 	EdgeAuthorizer *EdgeAuthorizer
 }
 
 // Service 是 Hub 的内存 TTL 状态 owner。
-// 所有 maps 都是短期 runtime projection；进程重启后由 caller 重新 admission，不做 durable recovery。
+// Presence/signaling maps 是短期 runtime projection；edge policy 由 EdgeAuthorizer 的 verified snapshot 恢复。
 type Service struct {
 	mu sync.Mutex
 
-	hubID                string
-	issuer               string
-	keyRing              *servicecredential.KeyRing
-	clock                Clock
-	maxPresenceTTL       time.Duration
-	maxSignalingTTL      time.Duration
-	presenceQueue        int
-	clientQueue          int
-	maxSDPBytes          int
-	maxCandidates        int
-	maxPresences         int
-	maxSessions          int
-	maxSessionsPerClient int
-	maxReplayEntries     int
-	edgeAuthorizer       *EdgeAuthorizer
+	hubID                 string
+	clock                 Clock
+	maxPresenceTTL        time.Duration
+	maxSignalingTTL       time.Duration
+	presenceQueue         int
+	clientQueue           int
+	maxSDPBytes           int
+	maxCandidates         int
+	maxPresences          int
+	maxSessions           int
+	maxSessionsPerClient  int
+	edgeAuthorizer        *EdgeAuthorizer
+	presenceChallengeTTL  time.Duration
+	maxPresenceChallenges int
+	random                io.Reader
 
-	presences  map[string]*presenceState
-	sessions   map[string]*sessionState
-	usedTicket map[string]time.Time
+	presences          map[string]*presenceState
+	sessions           map[string]*sessionState
+	presenceChallenges map[string]edgePresenceChallengeState
 }
 
 // New 创建一个无持久状态的 regional Hub service。
-// 缺少 Hub identity、issuer、公钥或有限 TTL/queue 配置时 fail closed。
+// 缺少 Hub identity、本地 authorizer 或有限 TTL/queue 配置时 fail closed。
 func New(config Config) (*Service, error) {
-	if config.HubID == "" || config.AdmissionIssuer == "" || config.KeyRing == nil {
-		return nil, fmt.Errorf("Hub identity, admission issuer and key ring are required")
+	if config.HubID == "" || config.EdgeAuthorizer == nil {
+		return nil, fmt.Errorf("Hub identity and edge authorizer are required")
 	}
 	if config.Clock == nil {
 		config.Clock = realClock{}
 	}
-	if config.MaxPresenceTTL <= 0 || config.MaxPresenceTTL > 10*time.Minute || config.MaxSignalingTTL <= 0 || config.MaxSignalingTTL > 10*time.Minute || config.PresenceQueueSize < 1 || config.ClientQueueSize < 1 || config.MaxSDPBytes < 1 || config.MaxCandidates < 1 || config.MaxPresences < 1 || config.MaxSessions < 1 || config.MaxSessionsPerClient < 1 || config.MaxReplayEntries < config.MaxPresences+config.MaxSessions {
+	if config.Random == nil {
+		config.Random = rand.Reader
+	}
+	if config.MaxPresenceTTL <= 0 || config.MaxPresenceTTL > 10*time.Minute || config.MaxSignalingTTL <= 0 || config.MaxSignalingTTL > 10*time.Minute || config.PresenceChallengeTTL <= 0 || config.PresenceChallengeTTL > 2*time.Minute || config.MaxPresenceChallenges < 1 || config.PresenceQueueSize < 1 || config.ClientQueueSize < 1 || config.MaxSDPBytes < 1 || config.MaxCandidates < 1 || config.MaxPresences < 1 || config.MaxSessions < 1 || config.MaxSessionsPerClient < 1 {
 		return nil, fmt.Errorf("invalid Hub TTL or capacity configuration")
 	}
 	return &Service{
 		hubID:           config.HubID,
-		issuer:          config.AdmissionIssuer,
-		keyRing:         config.KeyRing,
 		clock:           config.Clock,
 		maxPresenceTTL:  config.MaxPresenceTTL,
 		maxSignalingTTL: config.MaxSignalingTTL,
@@ -115,243 +117,10 @@ func New(config Config) (*Service, error) {
 		maxSDPBytes:     config.MaxSDPBytes,
 		maxCandidates:   config.MaxCandidates,
 		maxPresences:    config.MaxPresences, maxSessions: config.MaxSessions,
-		maxSessionsPerClient: config.MaxSessionsPerClient, maxReplayEntries: config.MaxReplayEntries, edgeAuthorizer: config.EdgeAuthorizer,
-		presences:  make(map[string]*presenceState),
-		sessions:   make(map[string]*sessionState),
-		usedTicket: make(map[string]time.Time),
+		maxSessionsPerClient: config.MaxSessionsPerClient, edgeAuthorizer: config.EdgeAuthorizer,
+		presenceChallengeTTL: config.PresenceChallengeTTL, maxPresenceChallenges: config.MaxPresenceChallenges, random: config.Random,
+		presences: make(map[string]*presenceState), sessions: make(map[string]*sessionState), presenceChallenges: make(map[string]edgePresenceChallengeState),
 	}, nil
-}
-
-// OpenPresenceRequest 绑定 daemon cloud identity 与一次短期 presence registration。
-// Admission 不包含 terminal list、grant、长期 agent token 或 heartbeat bearer。
-type OpenPresenceRequest struct {
-	Admission       []byte
-	AccountID       string
-	DeviceID        string
-	PresenceSession string
-}
-
-// OpenPresence 离线验签并注册一个 device-scoped TTL presence stream。
-// 同一 active DeviceID 只允许一个 owner；context cancel 或 ticket expiry 会关闭 presence 和关联 sessions。
-func (service *Service) OpenPresence(ctx context.Context, request OpenPresenceRequest) (*Presence, error) {
-	if ctx == nil || request.AccountID == "" || request.DeviceID == "" || request.PresenceSession == "" {
-		return nil, ErrInvalidSignal
-	}
-	now := service.clock.Now().UTC()
-	claims, err := servicecredential.VerifyHubAdmission(service.keyRing, request.Admission, servicecredential.HubAdmissionExpectation{
-		Issuer: service.issuer, AudienceHubID: service.hubID, PrincipalKind: servicecredential.PrincipalDaemon,
-		AccountID: request.AccountID, DeviceID: request.DeviceID, SessionKind: servicecredential.HubSessionPresence, SessionID: request.PresenceSession,
-		Operation: servicecredential.HubOperationPresence,
-	}, now)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrAdmission, err)
-	}
-	expiresAt := minTime(time.Unix(claims.ExpiresAtUnix, 0).UTC(), now.Add(service.maxPresenceTTL))
-	state := &presenceState{deviceID: request.DeviceID, accountID: request.AccountID, sessionID: request.PresenceSession, expiresAt: expiresAt, events: make(chan PresenceEvent, service.presenceQueue), done: make(chan struct{})}
-	presence := &Presence{service: service, state: state}
-
-	service.mu.Lock()
-	service.cleanupLocked(now)
-	if err := service.consumeTicketLocked(claims.TicketID, expiresAt, now); err != nil {
-		service.mu.Unlock()
-		return nil, err
-	}
-	if current := service.presences[request.DeviceID]; current != nil && !current.closed {
-		service.mu.Unlock()
-		return nil, ErrPresenceConflict
-	}
-	if len(service.presences) >= service.maxPresences {
-		service.mu.Unlock()
-		return nil, ErrCapacity
-	}
-	service.presences[request.DeviceID] = state
-	service.mu.Unlock()
-
-	go func() {
-		timer := time.NewTimer(expiresAt.Sub(now))
-		defer timer.Stop()
-		select {
-		case <-ctx.Done():
-			_ = presence.Close()
-		case <-timer.C:
-			_ = presence.Close()
-		case <-state.done:
-		}
-	}()
-	return presence, nil
-}
-
-// CreateSessionRequest 描述 client 发往固定 target daemon 的单个 WebRTC offer。
-// Admission claims 与请求字段必须完全一致；Hub 只看到 SDP/ICE 和 routing metadata。
-type CreateSessionRequest struct {
-	Admission          []byte
-	AccountID          string
-	ClientDeviceID     string
-	TargetDeviceID     string
-	ManagedSessionID   string
-	SignalingSessionID string
-	SDP                string
-	Candidates         []Candidate
-	RoutePreference    RoutePreference
-	RelayOnly          bool
-}
-
-// CreateSession 离线验签、查找 target presence，并把 offer 放入有界 daemon queue。
-// 返回的 ClientSession 是 client 下行 answer/candidate stream owner；创建失败不留下半成品 session。
-func (service *Service) CreateSession(_ context.Context, request CreateSessionRequest) (*ClientSession, error) {
-	if err := service.validateOffer(request); err != nil {
-		return nil, err
-	}
-	now := service.clock.Now().UTC()
-	claims, err := servicecredential.VerifyHubAdmission(service.keyRing, request.Admission, servicecredential.HubAdmissionExpectation{
-		Issuer: service.issuer, AudienceHubID: service.hubID, PrincipalKind: servicecredential.PrincipalClient,
-		AccountID: request.AccountID, DeviceID: request.ClientDeviceID, SessionKind: servicecredential.HubSessionManaged, SessionID: request.ManagedSessionID,
-		TargetDeviceID: request.TargetDeviceID, Operation: servicecredential.HubOperationOffer,
-	}, now)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrAdmission, err)
-	}
-	expiresAt := minTime(time.Unix(claims.ExpiresAtUnix, 0).UTC(), now.Add(service.maxSignalingTTL))
-	state := &sessionState{
-		id: request.SignalingSessionID, accountID: request.AccountID, managedSessionID: request.ManagedSessionID,
-		clientDeviceID: request.ClientDeviceID, targetDeviceID: request.TargetDeviceID,
-		allowedOperations: append([]servicecredential.HubOperation(nil), claims.AllowedOperations...), expiresAt: expiresAt,
-		clientEvents: make(chan ClientEvent, service.clientQueue), done: make(chan struct{}),
-	}
-	offer := Offer{
-		SignalingSessionID: state.id, ManagedSessionID: state.managedSessionID,
-		SourceDeviceID: state.clientDeviceID, TargetDeviceID: state.targetDeviceID,
-		SDP: request.SDP, Candidates: cloneCandidates(request.Candidates),
-		RoutePreference: request.RoutePreference, RelayOnly: request.RelayOnly,
-	}
-
-	service.mu.Lock()
-	service.cleanupLocked(now)
-	if err := service.consumeTicketLocked(claims.TicketID, expiresAt, now); err != nil {
-		service.mu.Unlock()
-		return nil, err
-	}
-	presence := service.presences[request.TargetDeviceID]
-	if presence == nil || presence.closed || !now.Before(presence.expiresAt) {
-		service.mu.Unlock()
-		return nil, ErrPresenceNotFound
-	}
-	if _, exists := service.sessions[state.id]; exists {
-		service.mu.Unlock()
-		return nil, ErrSessionConflict
-	}
-	if len(service.sessions) >= service.maxSessions || service.sessionsForClientLocked(request.ClientDeviceID) >= service.maxSessionsPerClient {
-		service.mu.Unlock()
-		return nil, ErrCapacity
-	}
-	select {
-	case presence.events <- PresenceEvent{Offer: &offer}:
-		service.sessions[state.id] = state
-	default:
-		service.mu.Unlock()
-		return nil, ErrBackpressure
-	}
-	service.mu.Unlock()
-	return &ClientSession{service: service, state: state}, nil
-}
-
-// CompleteAnswerRequest 绑定 daemon answer 与目标 signaling session。
-// daemon 必须提交另一个 session-specific answer admission，presence ticket 不能替代它。
-type CompleteAnswerRequest struct {
-	Admission          []byte
-	AccountID          string
-	DaemonDeviceID     string
-	ManagedSessionID   string
-	SignalingSessionID string
-	SDP                string
-	Candidates         []Candidate
-}
-
-// CompleteFailureRequest 绑定 daemon 的稳定 signaling 失败与目标 session。
-// Code/Retryable 是唯一可转发诊断；原始错误文本不属于 Hub contract。
-type CompleteFailureRequest struct {
-	Admission          []byte
-	AccountID          string
-	DaemonDeviceID     string
-	ManagedSessionID   string
-	SignalingSessionID string
-	Code               int32
-	Retryable          bool
-}
-
-// CompleteAnswer 离线验证 daemon answer admission，并异步投递给 owning client session。
-// 重复 answer、错误 target 或 queue backpressure 都 fail closed，不覆盖首个结果。
-func (service *Service) CompleteAnswer(_ context.Context, request CompleteAnswerRequest) (*DaemonSession, error) {
-	if request.AccountID == "" || request.DaemonDeviceID == "" || request.ManagedSessionID == "" || request.SignalingSessionID == "" || request.SDP == "" || len(request.SDP) > service.maxSDPBytes || len(request.Candidates) > service.maxCandidates || !validCandidates(request.Candidates) {
-		return nil, ErrInvalidSignal
-	}
-	return service.completeDaemon(daemonCompletionBinding{
-		admission: request.Admission, accountID: request.AccountID, daemonDeviceID: request.DaemonDeviceID,
-		managedSessionID: request.ManagedSessionID, signalingSessionID: request.SignalingSessionID,
-	}, ClientEvent{Answer: &Answer{SignalingSessionID: request.SignalingSessionID, SDP: request.SDP, Candidates: cloneCandidates(request.Candidates)}}, false)
-}
-
-// CompleteFailure 离线验证 daemon answer admission，并把无原始文本的稳定失败投递给 owning client。
-// failure 是当前 signaling session 的终态；它不影响同一 presence 上的其他 ManagedSession。
-func (service *Service) CompleteFailure(_ context.Context, request CompleteFailureRequest) error {
-	if request.AccountID == "" || request.DaemonDeviceID == "" || request.ManagedSessionID == "" || request.SignalingSessionID == "" || request.Code <= 0 {
-		return ErrInvalidSignal
-	}
-	_, err := service.completeDaemon(daemonCompletionBinding{
-		admission: request.Admission, accountID: request.AccountID, daemonDeviceID: request.DaemonDeviceID,
-		managedSessionID: request.ManagedSessionID, signalingSessionID: request.SignalingSessionID,
-	}, ClientEvent{Failure: &Failure{Code: request.Code, Retryable: request.Retryable}}, true)
-	return err
-}
-
-type daemonCompletionBinding struct {
-	admission          []byte
-	accountID          string
-	daemonDeviceID     string
-	managedSessionID   string
-	signalingSessionID string
-}
-
-func (service *Service) completeDaemon(binding daemonCompletionBinding, event ClientEvent, terminal bool) (*DaemonSession, error) {
-	now := service.clock.Now().UTC()
-	claims, err := servicecredential.VerifyHubAdmission(service.keyRing, binding.admission, servicecredential.HubAdmissionExpectation{
-		Issuer: service.issuer, AudienceHubID: service.hubID, PrincipalKind: servicecredential.PrincipalDaemon,
-		AccountID: binding.accountID, DeviceID: binding.daemonDeviceID, SessionKind: servicecredential.HubSessionManaged, SessionID: binding.managedSessionID,
-		Operation: servicecredential.HubOperationAnswer,
-	}, now)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrAdmission, err)
-	}
-	service.mu.Lock()
-	defer service.mu.Unlock()
-	service.cleanupLocked(now)
-	if err := service.consumeTicketLocked(claims.TicketID, time.Unix(claims.ExpiresAtUnix, 0).UTC(), now); err != nil {
-		return nil, err
-	}
-	state := service.sessions[binding.signalingSessionID]
-	if state == nil || state.closed || !now.Before(state.expiresAt) {
-		return nil, ErrSessionNotFound
-	}
-	if state.accountID != binding.accountID || state.targetDeviceID != binding.daemonDeviceID || state.managedSessionID != binding.managedSessionID {
-		return nil, ErrAdmission
-	}
-	if state.answered {
-		return nil, ErrSessionConflict
-	}
-	select {
-	case state.clientEvents <- event:
-		state.answered = true
-		if terminal {
-			state.closed = true
-			close(state.done)
-			delete(service.sessions, state.id)
-			return nil, nil
-		}
-		state.daemonOperations = append([]servicecredential.HubOperation(nil), claims.AllowedOperations...)
-		return &DaemonSession{service: service, state: state, deviceID: binding.daemonDeviceID}, nil
-	default:
-		return nil, ErrBackpressure
-	}
 }
 
 // Cleanup 删除过期 presence、signaling session 和 replay entries。
@@ -396,8 +165,8 @@ func (service *Service) RevokeDevice(deviceID string) {
 	}
 }
 
-func (service *Service) validateOffer(request CreateSessionRequest) error {
-	if request.AccountID == "" || request.ClientDeviceID == "" || request.TargetDeviceID == "" || request.ClientDeviceID == request.TargetDeviceID || request.ManagedSessionID == "" || request.SignalingSessionID == "" || request.SDP == "" || len(request.SDP) > service.maxSDPBytes || len(request.Candidates) > service.maxCandidates || !validCandidates(request.Candidates) || !validRoutePreference(request.RoutePreference) || request.RelayOnly && request.RoutePreference == RoutePreferenceDirectOnly {
+func (service *Service) validateOffer(accountID, clientDeviceID, targetDeviceID, managedSessionID, signalingSessionID, sdp string, candidates []Candidate, routePreference RoutePreference, relayOnly bool) error {
+	if accountID == "" || clientDeviceID == "" || targetDeviceID == "" || clientDeviceID == targetDeviceID || managedSessionID == "" || signalingSessionID == "" || sdp == "" || len(sdp) > service.maxSDPBytes || len(candidates) > service.maxCandidates || !validCandidates(candidates) || !validRoutePreference(routePreference) || relayOnly && routePreference == RoutePreferenceDirectOnly {
 		return ErrInvalidSignal
 	}
 	return nil
@@ -412,25 +181,6 @@ func validRoutePreference(preference RoutePreference) bool {
 	}
 }
 
-func (service *Service) consumeTicketLocked(ticketID string, expiresAt, now time.Time) error {
-	for usedID, expiry := range service.usedTicket {
-		if !now.Before(expiry) {
-			delete(service.usedTicket, usedID)
-		}
-	}
-	if ticketID == "" {
-		return ErrAdmission
-	}
-	if _, used := service.usedTicket[ticketID]; used {
-		return ErrAdmission
-	}
-	if len(service.usedTicket) >= service.maxReplayEntries {
-		return ErrCapacity
-	}
-	service.usedTicket[ticketID] = expiresAt
-	return nil
-}
-
 func (service *Service) sessionsForClientLocked(clientDeviceID string) int {
 	count := 0
 	for _, state := range service.sessions {
@@ -442,6 +192,13 @@ func (service *Service) sessionsForClientLocked(clientDeviceID string) int {
 }
 
 func (service *Service) cleanupLocked(now time.Time) {
+	for sessionID, challenge := range service.presenceChallenges {
+		if !now.Before(challenge.challenge.ExpiresAt) {
+			clear(challenge.challenge.Value)
+			clear(challenge.publicKey)
+			delete(service.presenceChallenges, sessionID)
+		}
+	}
 	for deviceID, presence := range service.presences {
 		if presence.closed || !now.Before(presence.expiresAt) {
 			service.closePresenceLocked(presence)
@@ -480,11 +237,4 @@ func (service *Service) closeSessionLocked(state *sessionState, reason string) {
 	default:
 	}
 	close(state.done)
-}
-
-func minTime(left, right time.Time) time.Time {
-	if left.Before(right) {
-		return left
-	}
-	return right
 }

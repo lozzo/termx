@@ -11,6 +11,8 @@ import { WireType } from '@bufbuild/protobuf/wire'
 import {
   AttachParamsSchema,
   AttachResultSchema,
+  CreateParamsSchema,
+  CreateResultSchema,
   EmptySchema,
   EnsureResizeParamsSchema,
   EnsureResizeResultSchema,
@@ -41,6 +43,7 @@ import {
   ListResultSchema,
   RequestEnvelopeSchema,
   ResponseEnvelopeSchema,
+  SetMetadataParamsSchema,
   SnapshotSchema,
   TerminalInfoSchema,
   type CursorState,
@@ -219,6 +222,31 @@ export function encodeTerminalMethodParams(method: string, params: unknown): Uin
   switch (method) {
     case 'list':
       return encodeMessage(EmptySchema, {})
+    case 'create':
+      return encodeMessage(CreateParamsSchema, {
+        command: stringArray(field(record, 'command')),
+        id: stringField(record, 'id', 'terminal_id', 'terminalId'),
+        name: stringField(record, 'name'),
+        tags: stringMap(field(record, 'tags')),
+        size: sizeInit(field(record, 'size')),
+        dir: stringField(record, 'dir', 'cwd'),
+        env: stringArray(field(record, 'env')),
+        scrollbackSize: int32Value(field(record, 'scrollback_size', 'scrollbackSize')),
+        scrollbackMaxBytes: bigintValue(field(record, 'scrollback_max_bytes', 'scrollbackMaxBytes')),
+        scrollbackMaxAgeSeconds: bigintValue(field(record, 'scrollback_max_age_seconds', 'scrollbackMaxAgeSeconds')),
+      })
+    case 'get':
+    case 'restart':
+    case 'remove':
+      return encodeMessage(GetParamsSchema, {
+        terminalId: stringField(record, 'terminal_id', 'terminalId'),
+      })
+    case 'set_metadata':
+      return encodeMessage(SetMetadataParamsSchema, {
+        terminalId: stringField(record, 'terminal_id', 'terminalId'),
+        name: stringField(record, 'name'),
+        tags: stringMap(field(record, 'tags')),
+      })
     case 'attach':
       return encodeMessage(AttachParamsSchema, {
         terminalId: stringField(record, 'terminal_id', 'terminalId'),
@@ -281,6 +309,35 @@ export function decodeTerminalMethodParams(method: string, payload: Uint8Array):
     case 'list':
       decodeMessage(EmptySchema, payload)
       return {}
+    case 'create': {
+      const params = decodeMessage(CreateParamsSchema, payload)
+      return cleanRecord({
+        command: [...params.command],
+        id: params.id,
+        name: params.name,
+        tags: { ...params.tags },
+        size: sizeToAPI(params.size),
+        dir: params.dir,
+        env: [...params.env],
+        scrollback_size: params.scrollbackSize,
+        scrollback_max_bytes: Number(params.scrollbackMaxBytes),
+        scrollback_max_age_seconds: Number(params.scrollbackMaxAgeSeconds),
+      })
+    }
+    case 'get':
+    case 'restart':
+    case 'remove': {
+      const params = decodeMessage(GetParamsSchema, payload)
+      return { terminal_id: params.terminalId }
+    }
+    case 'set_metadata': {
+      const params = decodeMessage(SetMetadataParamsSchema, payload)
+      return cleanRecord({
+        terminal_id: params.terminalId,
+        name: params.name,
+        tags: { ...params.tags },
+      })
+    }
     case 'attach': {
       const params = decodeMessage(AttachParamsSchema, payload)
       return cleanRecord({
@@ -342,10 +399,21 @@ export function decodeTerminalMethodParams(method: string, payload: Uint8Array):
 export function encodeTerminalMethodResult(method: string, result: unknown): Uint8Array {
   const record = asRecord(result)
   switch (method) {
+    case 'create':
+      return encodeMessage(CreateResultSchema, {
+        terminalId: stringField(record, 'terminal_id', 'terminalId'),
+        state: stringField(record, 'state'),
+      })
     case 'list':
       return encodeMessage(ListResultSchema, {
         terminals: arrayField(record, 'terminals').map((terminal) => terminalInfoInit(asRecord(terminal))),
       })
+    case 'get':
+      return encodeMessage(TerminalInfoSchema, terminalInfoInit(record))
+    case 'set_metadata':
+    case 'restart':
+    case 'remove':
+      return encodeMessage(EmptySchema, {})
     case 'attach':
       return encodeMessage(AttachResultSchema, {
         mode: stringField(record, 'mode'),
@@ -392,8 +460,19 @@ export function encodeTerminalMethodResult(method: string, result: unknown): Uin
 
 export function decodeTerminalMethodResult(method: string, payload: Uint8Array): unknown {
   switch (method) {
+    case 'create': {
+      const result = decodeMessage(CreateResultSchema, payload)
+      return { terminal_id: result.terminalId, state: result.state }
+    }
     case 'list':
       return { terminals: decodeMessage(ListResultSchema, payload).terminals.map(terminalInfoToAPI) }
+    case 'get':
+      return terminalInfoToAPI(decodeMessage(TerminalInfoSchema, payload))
+    case 'set_metadata':
+    case 'restart':
+    case 'remove':
+      decodeMessage(EmptySchema, payload)
+      return {}
     case 'attach':
       return attachResultToAPI(decodeMessage(AttachResultSchema, payload))
     case 'ensure_resize':

@@ -46,7 +46,7 @@ describe('terminal management API over RtcSession', () => {
       }],
       ['restart', { terminal_id: 'terminal-1' }],
       ['remove', { terminal_id: 'terminal-1' }],
-      ['get_directory', { terminal_id: 'terminal-1' }],
+      ['get', { terminal_id: 'terminal-1' }],
     ])
   })
 
@@ -96,7 +96,7 @@ describe('terminal management API over RtcSession', () => {
 
   it('returns the current terminal directory from management api', async () => {
     const session = new MockManagementSession()
-    session.directoryResponse = { path: '/srv/live', source: 'live' }
+    session.directoryResponse = { cwd: '/srv/configured', live_cwd: '/srv/live' }
     const api = createTerminalManagementApi(session, 'machine-local')
 
     await expect(api.getTerminalDirectory('terminal-1')).resolves.toEqual({
@@ -121,7 +121,7 @@ class MockManagementSession implements Pick<RtcSession, 'openApi' | 'getConnecti
         if (method === 'create') {
           return this.createResponse as TResponse
         }
-        if (method === 'get_directory') {
+        if (method === 'get') {
           return this.directoryResponse as TResponse
         }
         return undefined as TResponse

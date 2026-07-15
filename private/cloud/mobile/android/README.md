@@ -17,7 +17,7 @@ cd clients/mobile/android
   testDebugUnitTest assembleDebug
 ```
 
-This flag fixes the Android-side origins to `http://127.0.0.1:41001` and `http://127.0.0.1:41002`. It is not enabled by default and accepts only loopback HTTP. The gateway uses the same serialized dev Control Plane and Hub contract as the desktop Companion, including account session, endpoint resolve, Hub admission, signaling stream, and explicit Relay lease errors.
+This flag fixes the Android-side origins to `http://127.0.0.1:41001` and `http://127.0.0.1:41002`. It is not enabled by default and accepts only loopback HTTP. The gateway uses the same serialized dev Control Plane and Hub contract as the desktop Companion, including rotating account session, Hub-local authorization, endpoint resolve, signaling stream, and explicit Relay lease errors.
 
 The explicit public HTTP staging build targets the fixed CLOUD008 test server without `adb reverse`:
 

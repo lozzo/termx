@@ -1,6 +1,6 @@
 # TermX Cloud 全链路泳道与 Control Plane 降载审计
 
-状态：CLOUD017 当前实现审计基线
+状态：CLOUD018 已实现基线
 
 日期：2026-07-15
 
@@ -8,11 +8,11 @@
 
 TermX Cloud 的连接热路径已经基本从 Web Controller 和 Control Plane 移到 Hub：客户端登录后，设备目录、endpoint resolve、direct signaling 和 single Relay lease 都只访问 Hub；WebRTC 建立后，direct 数据完全绕过云，Relay 也只转发 DTLS 密文。
 
-当前仍有三个关键缺口：
+三个 P0 缺口已经收口：
 
-1. daemon 每次建立或重建 Presence 都要同步访问 Control Plane 两次，Hub 还没有按既定目标直接使用本地 public key 投影验证 fresh DeviceProof。
-2. staging 的 account/device edge session、设备目录和 daemon public key 投影仍主要在进程内存中；Cloud supervisor 重启后需要重新登录和 enrollment，Web SQLite 中的节点展示记录不足以恢复安全真值。
-3. edge policy 每 5 分钟刷新，Hub 最大接受 30 分钟陈旧快照。Control Plane 或同步链路中断超过窗口后，新连接按设计 fail closed；这保护撤销传播边界，但可用性窗口仍需产品化配置。
+1. daemon Presence challenge/proof 完全由 Hub 基于本地签名 policy 验证，建立或重连不访问 Control Plane。
+2. Control Plane 设备安全目录、Ed25519 authority 和 Hub 已验签 policy snapshot 均使用 `0600` 原子文件恢复；supervisor 重启后 daemon 不需要重新 enrollment。
+3. account/device edge session 使用 30 天单次轮换 refresh secret；secret 只进入 OS credential store/Android Keystore，Control Plane 只持有 SHA-256，Hub 永远不接收 refresh。
 
 Web Controller 不应、目前也不会参与每次连接。它只应出现在用户主动进行身份与管理操作时。Control Plane 应是低频持久真值和后台同步 owner，不应出现在 Presence 重连、direct 或 Relay 的请求热路径。
 
@@ -34,7 +34,7 @@ Web Controller 不应、目前也不会参与每次连接。它只应出现在�
 | TUI/CLI 登录批准 | 用户主动批准一次 | 创建 Flow、签发 edge session | 登录后使用 | 不参与 | 不参与 |
 | 手机 QR 激活 | 用户主动创建和批准 | 创建/认领 Flow、签发 edge session | 激活后使用 | 不参与 | 不参与 |
 | daemon enrollment | 用户主动生成短码 | 验证 DeviceIdentity、登记 ownership、签发 device session | 接收后台投影 | 不参与 | 生成 proof |
-| daemon Presence 首次建立/重连（当前） | 不参与 | **每次两次同步调用** | 打开长连接 | 不参与 | fresh proof |
+| daemon Presence 首次建立/重连 | 不参与 | 不参与 | challenge + proof + 长连接 | 不参与 | fresh proof |
 | 设备列表刷新 | 不参与 | 不参与 | 每次刷新 | 不参与 | 不参与 |
 | direct 新连接 | 不参与 | 不参与 | resolve + signaling | 不参与 | answer + E2E auth |
 | explicit Relay 新连接 | 不参与 | 不参与 | resolve + lease + signaling | allocate/转发 | answer + E2E auth |
@@ -69,13 +69,13 @@ sequenceDiagram
     loop 客户端有界轮询
         C->>CP: CompleteLogin(private flow ID)
     end
-    CP-->>C: signed edge token + signed HubDirectory
-    C->>S: 保存 account edge session
+    CP-->>C: signed edge token + refresh secret + HubDirectory
+    C->>S: 保存 account edge session 与 refresh secret
     C->>H: 后续目录/连接请求携带 edge token
     H->>H: 离线验签并与本地 policy 取交集
 ```
 
-Web Controller 只参与用户批准。登录完成后，它不参与设备刷新或连接。当前 edge session TTL 为 8 小时；代码尚未形成独立 refresh-token 闭环，过期后的产品行为仍偏向重新登录。
+Web Controller 只参与用户批准。登录完成后，它不参与设备刷新或连接。edge token TTL 为 8 小时；Companion 在到期前 15 分钟低频访问 Control Plane，以 30 天单次 refresh secret 轮换新 token。提前刷新失败时，仍有效的 edge token 继续访问 Hub。
 
 ### 4.2 Official App Web QR 激活
 
@@ -101,8 +101,8 @@ sequenceDiagram
     W->>CP: ApproveDeviceLogin
     CP->>CP: 登记 client 并发布 policy revision
     A->>CP: AwaitActivation(private native flow credential)
-    CP-->>A: signed edge token + HubDirectory
-    A->>KS: 保存 edge session
+    CP-->>A: signed edge token + refresh secret + HubDirectory
+    A->>KS: 保存 edge session 与 refresh secret
     A->>H: 后续目录/连接请求
 ```
 
@@ -124,7 +124,7 @@ sequenceDiagram
 
     U->>W: 生成一次性 enrollment code
     W->>CP: CreateEnrollment(account)
-    CP-->>W: 两分钟单次短码
+    CP-->>W: 十分钟单次、分组 Base32 短码
     U->>DC: termx cloud enroll CODE
     DC->>CP: BeginEnrollment(code, public key, metadata)
     CP-->>DC: fresh challenge + flow ID
@@ -134,36 +134,35 @@ sequenceDiagram
     DC->>CP: CompleteEnrollment(flow ID, proof)
     CP->>DB: 保存 DeviceID/account/public key/revoke 状态
     CP->>CP: 发布新 signed policy revision
-    CP-->>DC: signed daemon edge session + HubDirectory
-    DC->>S: 保存 device session
+    CP-->>DC: signed daemon edge session + refresh secret + HubDirectory
+    DC->>S: 保存 device session 与 refresh secret
     CP-->>H: 后台设备授权投影
 ```
 
-enrollment 是低频 Control Plane 操作，保留在 Control Plane 是正确的。问题不在首次注册，而在注册后 Presence 重连仍同步回到 Control Plane。
+同一账号重新生成注册码会删除尚未使用的旧 claim。已 revoked 的 daemon 仍可用原 DeviceIdentity 私钥证明重新 enrollment；目录以 public key 连续性为真值，先撤销旧 session/Presence，再恢复或迁移账号 ownership，不要求删除本地身份文件。
 
-### 4.4 daemon Presence 建立与重连：当前实现缺口
+enrollment 是低频 Control Plane 操作，保留在 Control Plane。注册完成后，Presence 重连只访问 Hub；device session 仅在低频 refresh 时访问 Control Plane。
+
+### 4.4 daemon Presence 建立与重连
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant D as Public daemon
     participant DC as Daemon Companion
-    participant CP as Control Plane
     participant H as Hub
     participant P as Hub Policy Cache
 
-    Note over DC,CP: 当前每次 Presence 建立或重连都走这里
-    DC->>CP: BeginPresence(device edge session)
-    CP-->>DC: PresenceSessionID + fresh challenge
+    Note over DC,H: 每次 Presence 建立或重连只访问 Hub
+    DC->>H: BeginPresence(device edge token)
+    H->>P: 离线验 token、public key、revoke、auth epoch
+    H-->>DC: PresenceSessionID + fresh one-time challenge
     DC-->>D: challenge
     D->>D: DeviceIdentity 签名
     D-->>DC: DeviceProof
-    DC->>CP: AcquirePresenceAdmission(DeviceProof)
-    CP->>CP: 验证 proof 并签 presence-only Hub ticket
-    CP-->>DC: short Hub admission
-    DC->>H: OpenPresence(ticket, DeviceProof)
-    H->>P: 查 device ownership/revoke
-    H->>H: 验 ticket 并打开长连接
+    DC->>H: OpenPresence(device edge token, DeviceProof)
+    H->>P: 再验当前 policy 与 public key
+    H->>H: 单次消费 challenge，验 Ed25519 proof，打开长连接
     H-->>DC: Presence ready + heartbeat interval
     loop Presence 长连接存活
         H-->>DC: signaling offer
@@ -171,11 +170,7 @@ sequenceDiagram
     end
 ```
 
-这里与既定 `hub-edge-control-plan.md` 目标不一致。Hub 已经持有 DeviceID、AccountID 和 public key 投影，却仍依赖 Control Plane 创建 challenge 和 admission。结果是：
-
-- active Presence 存活时 Control Plane 中断不影响新连接；
-- daemon 网络切换、Companion 重启、Hub 重启或 Presence 断线后，重新上线会同步依赖 Control Plane；
-- device edge session 过期后缺少独立刷新路径，可能需要重新 enrollment。
+Hub 是 Presence 短期状态和 challenge 的 owner，Control Plane 是设备 ownership/public key 的持久 owner。cache miss、stale policy、错误 key、replay、撤销和角色不匹配全部 fail closed，且请求线程不回源。
 
 ### 4.5 CapabilityGrant 配对
 
@@ -318,10 +313,10 @@ sequenceDiagram
         H->>D: signaling offer
         D-->>H: answer
         H-->>C: 连接成功
-    else daemon Presence 断线需要重建（当前）
-        D->>CP: BeginPresence / Admission
-        CP--xD: unavailable
-        D-->>H: 无法重新上线
+    else daemon Presence 断线需要重建
+        D->>H: BeginPresence / DeviceProof
+        H->>P: 本地验 token、policy 和 public key
+        H-->>D: Presence ready
     else client edge session 到期
         C->>CP: 重新登录/刷新
         CP--xC: unavailable
@@ -336,13 +331,13 @@ sequenceDiagram
 | --- | --- | --- |
 | Web Controller 不可用，已有 edge session | 目录和连接继续 | 符合 |
 | Control Plane 不可用，已有 Presence 和有效 policy | 新 direct/Relay 继续 | 符合 |
-| Control Plane 不可用，daemon Presence 需要重建 | daemon 无法重新上线 | **不符合** |
-| Cloud supervisor/Hub 重启 | 内存目录和 session 丢失，需重新登录/enrollment | **不符合生产目标** |
+| Control Plane 不可用，daemon Presence 需要重建 | Hub 本地 challenge/proof，重新上线 | 符合 |
+| Cloud supervisor/Hub 重启 | 恢复 authority、security directory 与 verified snapshot；无需重新 enrollment | 符合当前单机 staging 目标 |
 | policy 同步中断超过 30 分钟 | 新连接 fail closed | 安全正确，窗口需产品决策 |
 | 已建立 direct DataChannel | 通常继续，不依赖云 | 符合 |
 | 已建立 Relay DataChannel | Relay lease/传输存活期内继续 | 符合 |
 
-## 6. 目标 Hub 自治泳道
+## 6. 已实现 Hub 自治泳道
 
 ```mermaid
 sequenceDiagram
@@ -392,26 +387,26 @@ sequenceDiagram
 - 接收异步批量 audit/usage；
 - 不参与 Presence challenge、Presence admission、resolve、signaling 或 Relay lease 请求。
 
-## 7. 改造优先级
+## 7. 后续优先级
 
-### P0：移除 Presence 重连对 Control Plane 的同步依赖
+### 已完成 P0：移除 Presence 重连对 Control Plane 的同步依赖
 
 - 把 fresh Presence challenge owner 从 Control Plane 移到 Hub。
 - Hub 使用已同步的 daemon public key、DeviceID、AccountID、revoke 和 auth epoch 本地验证 DeviceProof。
 - daemon edge credential 只证明云服务身份，不能替代 DeviceIdentity proof。
 - cache miss、stale policy、proof replay 和 revoked device 继续 fail closed，禁止请求线程回源。
 
-### P0：持久化 Control Plane 设备安全真值
+### 已完成 P0：持久化 Control Plane 设备安全真值
 
 - 持久保存 DeviceID、account ownership、public key、kind、revoke、auth epoch 和 policy revision。
 - Web 节点展示表不能作为设备安全真值；它缺少 public key 和完整 credential lifecycle。
 - Cloud/Hub 重启后应能恢复 verified directory/policy，不要求用户重新 enrollment。
 
-### P0：补 account/device session refresh contract
+### 已完成 P0：补 account/device session refresh contract
 
 - account 和 daemon device session 都需要明确 refresh/rotation，而不是固定 8 小时后重新登录或 enrollment。
 - refresh 访问 Control Plane 是低频允许行为；Hub 不持有 refresh token，也不能自行延长账号权限。
-- device refresh 必须重新绑定 DeviceIdentity proof 或安全的 rotation proof，不能仅凭旧 bearer 永久续期。
+- refresh secret 为 256-bit 随机单次凭据并绑定 kind/account/device；服务端只持有 SHA-256，重放失败，设备撤销会删除该设备全部 refresh 记录。
 
 ### P1：生产 Hub snapshot/delta worker
 
@@ -441,6 +436,6 @@ sequenceDiagram
 
 ## 9. 最终判断
 
-Web Controller 的参与频率已经合理：它只处理用户主动管理动作，不参与连接。Control Plane 的 direct/Relay 热路径降载也已经完成，但 daemon Presence 和重启恢复仍未达到目标架构。
+Web Controller 只处理用户主动管理动作，不参与连接。Control Plane 已退出 Presence、direct、single Relay 请求热路径；数据库压力主要来自低频身份/订阅/撤销、session refresh 和后台 policy 发布。
 
-下一阶段最有价值的改造不是继续压缩 Web 页面请求，而是完成“Hub 本地 fresh proof Presence + 持久设备目录 + account/device refresh”。完成这三项后，Control Plane 可以在较长故障窗口内不影响 daemon 重新上线和已有账号的新连接，同时数据库压力仍主要来自低频身份/策略变更和后台批量同步。
+当前剩余工作是把单机 JSON/snapshot authority 演进为生产数据库和独立 Hub snapshot/delta worker，并为 `max_staleness`、authority 轮换、备份恢复和多区域发布建立上线门禁。它们不应重新把 Control Plane 拉回逐连接路径。

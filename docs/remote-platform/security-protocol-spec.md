@@ -38,21 +38,22 @@ TermX 远程平台必须同时满足两个独立授权问题：
 
 ## 3. 五类凭据
 
-### 3.1 AccountAccessToken
+### 3.1 EdgeAccessToken 与 RefreshSecret
 
-用途：用户或客户端访问 Control Plane API。
+用途：account/client 或 daemon 以短期签名 edge token 访问指定 Hub；refresh secret 只用于向 Control Plane 低频轮换 edge token。
 
 属性：
 
-- issuer：Control Plane identity provider。
-- audience：Control Plane API。
-- subject：account/user/client session。
-- 短期 access token，使用 refresh/session 机制续期。
+- issuer：Control Plane authority。
+- audience：固定 Hub ID，并绑定 account、device、principal kind、auth epoch 和 HubDirectory。
+- edge token TTL 当前为 8 小时；Hub 离线验签后仍须与本地 signed policy 取交集。
+- refresh secret 是 256-bit 随机单次 bearer，只进入 OS credential store/Android Keystore；Control Plane 只持有 SHA-256 与 kind/account/device/expiry，轮换后旧 secret 重放失败。
 
 禁止：
 
 - 发送给 daemon 作为 terminal authorization。
-- 直接发送给 Hub/Relay 代替 admission/lease。
+- 把 refresh secret 发送给 Hub、Relay、WebView、日志或配置。
+- 用 edge token 代替 RelayLease 或 daemon CapabilityGrant。
 - 被 core-v2 或 RemoteSessionAcceptor 解析。
 
 ### 3.2 DeviceIdentity
@@ -97,43 +98,20 @@ Grant 是 bearer capability：持有原始 grant 即代表被授权。为降低�
 
 禁止：
 
-- 放入 SDP、ICE candidate、Hub admission、HTTP Authorization、gRPC metadata、URL、二维码解析服务或云端数据库。
+- 放入 SDP、ICE candidate、Hub signaling envelope、HTTP Authorization、gRPC metadata、URL、二维码解析服务或云端数据库。
 - 由 Hub/Web Controller 验签后向 daemon 声明“已授权”。
 - 用账号订阅状态扩大 grant scope。
 
-### 3.4 HubAdmissionTicket
+### 3.4 Hub 本地 Presence 与 EdgeManagedSession
 
-用途：允许一个 daemon 或 client 在短时间内使用指定 Hub 的 signaling 服务。
-
-由 Control Plane 服务签名，至少包含：
-
-```text
-version
-ticket_id
-issuer
-audience_hub_id
-principal_kind        # daemon | client
-account_id
-device_id
-managed_session_id
-target_device_id      # client ticket 必填
-allowed_operations    # presence | offer | answer | candidate
-issued_at
-expires_at
-key_id
-signature
-```
+用途：Hub 基于 EdgeAccessToken、本地 signed policy 和 active Presence ownership 创建短期 signaling 状态，不再使用 Control Plane Hub ticket。
 
 约束：
 
-- 短 TTL，目标 Hub 和 ManagedSession 绑定。
-- Hub 使用缓存的 Control Plane 公钥离线验签。
-- ticket 不包含 terminal ID、scope 或 CapabilityGrant。
-- daemon 与 client ticket 权限不同；client 不能注册任意 device presence。
-
-CLOUD009 起，`HubAdmissionTicket` 只保留为 presence bootstrap/迁移凭据。managed direct client 不再为每次连接向 Control Plane 领取 ticket，而是提交启动阶段取得的短期签名 edge token。Hub 离线验签后必须再与本地 target ownership/pairing/revocation/subscription 投影取交集；token 不能单独授权任意 target。
-
-Hub 本地创建的 `EdgeManagedSession` 绑定 authenticated client connection 与 active daemon presence。daemon answer 必须从接收该 offer 的已认证 presence stream 返回，不再领取单独的 Control Plane answer ticket。cache miss、token/auth epoch 过期、投影断档或超过最大陈旧窗口均 fail closed，且禁止同步回源。
+- Presence challenge 由 Hub 创建、单次消费并限制 TTL；daemon 必须用 policy 中登记的 DeviceIdentity public key完成 Ed25519 proof。
+- `EdgeManagedSession` 绑定 authenticated client connection、account、target daemon 与 active Presence。
+- daemon answer 必须从接收 offer 的已认证 Presence 返回。
+- cache miss、token/auth epoch 过期、错误 public key、challenge replay、撤销、投影断档或超过最大陈旧窗口均 fail closed，且禁止同步回源。
 
 ### 3.5 RelayLease
 
@@ -173,17 +151,17 @@ signature
 - `single_relay` 只授权一个 Relay；`relay_mesh` 只授权 lease 中的两个 Edge Relay、route version 和受限 internal transit 数。
 - Relay/TURN 可以从私有派生密钥和 `credential_binding_id` 验证 principal-specific 短期 credential，但不得把派生 seed 或长期 shared secret 下发给任何 endpoint。
 
-### 3.6 Control Plane 服务凭据 v1 编码
+### 3.6 Control Plane 服务凭据编码
 
-RP004 固定 Hub admission 与 Relay lease 的签名算法和 canonical encoding：
+Control Plane 固定 edge access、edge policy 与 Relay lease 的签名算法和 canonical encoding：
 
 - 签名算法固定为 Ed25519，不携带 `alg` 字段，也不接受调用方选择算法。
-- Hub admission token 为 `TXHA1.<base64url(canonical-json)>.<base64url(signature)>`。
+- Edge access 和 edge policy 使用各自独立 domain separator 与 schema。
 - Relay lease token 为 `TXRL1.<base64url(canonical-json)>.<base64url(signature)>`。
 - signature input 是前两段的原始 ASCII bytes；base64url 不带 padding。
 - canonical JSON 使用 UTF-8、无额外空白、整数 Unix 秒和 schema 定义顺序；未知字段、重复 operation、非 canonical operation 顺序和尾随 JSON 一律拒绝。
 - `key_id` 选择离线验签公钥；Control Plane 同时发布新旧公钥形成重叠验证窗口，紧急撤销会立即拒绝该 key 签发且尚未过期的凭据。
-- `TXHA1`、`TXRL1` 与 usage 的 `TXUE1` domain separator 不可互换，因此 Hub ticket、Relay lease 和 usage event 不能跨用途验签。
+- edge access、edge policy、`TXRL1` 与 usage 的 `TXUE1` domain separator 不可互换，不能跨用途验签。
 
 固定测试向量由 `private/cloud/control-plane/servicecredential/credential_test.go` 维护；向量使用公开测试 seed 和虚构身份，不包含生产密钥或真实账号数据。
 - Client 与 daemon 只获得各自 Edge Relay credential；Relay 间 tunnel 使用独立服务身份，不能把 endpoint credential 复用为内部节点身份。
@@ -193,14 +171,14 @@ RP004 固定 Hub admission 与 Relay lease 的签名算法和 canonical encoding
 ## 4. 信任边界
 
 ```text
-AccountAccessToken  -> local Cloud Companion custody, Control Plane audience only
-HubAdmissionTicket  -> Hub only
+EdgeAccessToken      -> local Cloud Companion/Android Keystore custody, Hub only
+RefreshSecret        -> local credential store custody, Control Plane refresh endpoint only
 RelayLease          -> Relay/TURN only
 DeviceIdentity proof <-> Client and daemon E2E only
 CapabilityGrant       -> Client secure store and daemon E2E only
 ```
 
-任何服务接收到不属于自己的 credential type 都必须拒绝并避免记录 credential body。公开类型应使用不同 envelope tag 和 audience，防止“看起来都是 token”导致误用。桌面 Cloud Companion 可以保管 AccountAccessToken 并短期转交 caller-specific admission/lease credential，但禁止接收 CapabilityGrant 或 DeviceIdentity private key。
+任何服务接收到不属于自己的 credential type 都必须拒绝并避免记录 credential body。公开类型应使用不同 envelope tag 和 audience，防止“看起来都是 token”导致误用。桌面 Cloud Companion 可以保管 EdgeAccessToken 与 RefreshSecret，但 refresh 只能交给 Control Plane，edge token 只能交给 Hub；Companion 禁止接收 CapabilityGrant 或 DeviceIdentity private key。
 
 ## 5. 端到端 DataChannel 授权协议
 
@@ -209,7 +187,7 @@ CapabilityGrant       -> Client secure store and daemon E2E only
 - WebRTC PeerConnection 已完成 ICE 和 DTLS。
 - DataChannel 必须 reliable、ordered，并使用约定 label `protocol`。
 - 客户端已从 endpoint 配置获得 expected DeviceID、pinned DeviceFingerprint 和 `grant_ref`。
-- daemon 未因为 Hub 声明或 admission ticket 预先创建 core-v2 protocol session。
+- daemon 未因为 Hub 声明或 EdgeManagedSession 预先创建 core-v2 protocol session。
 
 ### 5.2 协议帧
 
@@ -373,22 +351,22 @@ Team/Pro 可以提供配对审批和加密投递便利，但必须满足：
 
 不得为了“先做出来”让 Web Controller 暂存明文 grant。
 
-## 7. Hub admission 协议
+## 7. Hub 本地准入协议
 
 ### 7.1 daemon presence
 
-daemon 使用 `principal_kind=daemon` 的短期 ticket 打开 signaling stream。Hub 验证：
+daemon 使用 `principal_kind=daemon` 的短期 edge token 获取一次性 challenge，再以 DeviceIdentity proof 打开 signaling stream。Hub 验证：
 
-- issuer、signature、audience、expiry；
-- ticket DeviceID 与 presence DeviceID 一致；
-- operation 包含 presence/answer/candidate；
-- 同 ticket/session 的 replay 和并发策略。
+- edge token issuer、signature、audience、expiry、account、device、principal 和 auth epoch；
+- signed policy 中的 ownership、kind、public key、revoke 与 staleness；
+- challenge/session/device/public key/signature/signed time 的完整绑定；
+- challenge replay 和同 DeviceID active Presence 并发策略。
 
 presence 只包含 DeviceID、protocol version、candidate capability 和短 TTL heartbeat，不包含 terminal inventory。
 
 ### 7.2 client offer
 
-client 使用绑定 target DeviceID 和 ManagedSessionID 的 ticket 发 offer/candidate。Hub 只将消息路由到对应 daemon presence，并返回 opaque signaling result。
+client 使用绑定 account/device/Hub 的 edge token请求 target DeviceID。Hub 与本地 policy 取交集后创建 EdgeManagedSession，只将消息路由到对应 daemon Presence，并返回 signaling result。
 
 禁止字段：
 
@@ -400,7 +378,7 @@ client 使用绑定 target DeviceID 和 ManagedSessionID 的 ticket 发 offer/ca
 
 ### 7.3 signaling 日志
 
-允许记录：ticket ID hash、ManagedSessionID、SignalingSessionID、Hub ID、DeviceID hash、SDP size、candidate type、耗时和错误类别。
+允许记录：edge token ID hash、ManagedSessionID、SignalingSessionID、Hub ID、DeviceID hash、SDP size、candidate type、耗时和错误类别。
 
 禁止记录：Authorization body、完整 SDP 默认内容、ICE credential、grant、设备私钥或 DataChannel payload。调试采样完整 SDP 必须由受控短期开关显式启用并自动脱敏 credential。
 
@@ -461,7 +439,7 @@ UsageEvent {
 | AccountAccessToken | Control Plane | session revoke/expiry | 无法获取新云服务票据 |
 | DeviceIdentity | daemon + Control Plane directory | device reset/revoke | 旧 fingerprint 必须重新配对 |
 | CapabilityGrant | daemon | revoke ID/expiry | 新 protocol session 被拒绝 |
-| HubAdmissionTicket | Control Plane/Hub | 短 TTL/replay deny | 对应 signaling session 失败 |
+| EdgeAccessToken/Presence challenge | Control Plane/Hub | 短 TTL、auth epoch、challenge replay deny | 对应 Presence/signaling 失败 |
 | RelayLease | Control Plane/Relay | expiry/quota/revoke | Relay path 拒绝或结束 |
 
 订阅取消不等于 grant 撤销；grant 撤销也不等于账号封禁。Control Plane 可以停止签发新的 paid RelayLease，但不得写 daemon grant revoke store。
@@ -481,7 +459,7 @@ UsageEvent {
 
 - AccountAccessToken body；
 - CapabilityGrant body；
-- HubAdmissionTicket body；
+- EdgeAccessToken、RefreshSecret 或 Presence challenge body；
 - RelayLease credential material；
 - TURN password；
 - device private key。
@@ -507,6 +485,6 @@ UsageEvent {
 - Hub、Relay 和 Control Plane 的内存、日志、请求 schema 与数据库中都不存在原始 CapabilityGrant。
 - daemon 只在本次 DataChannel 的设备证明和 challenge 通过后创建 scoped protocol session。
 - client 只信任 pinned DeviceFingerprint，不信任 Hub 返回的 label、DeviceID 或 online 状态。
-- Hub admission 与 Relay lease 都是短期、受 audience 约束、不可替代 terminal capability。
+- Edge access 与 Relay lease 都是短期、受 audience 约束、不可替代 terminal capability。
 - Relay 不能解密 DataChannel，也不能改变 scope。
 - 旧 bearer grant-in-signaling、非空 Bearer 即通过、长期 agent token 和共享 TURN credential 全部删除且没有兼容 fallback。

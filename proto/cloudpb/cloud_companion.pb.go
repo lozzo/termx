@@ -858,8 +858,10 @@ type CompanionHelloResponse struct {
 	SupportedCapabilities []CompanionCapability  `protobuf:"varint,3,rep,packed,name=supported_capabilities,json=supportedCapabilities,proto3,enum=termx.cloud.v1.CompanionCapability" json:"supported_capabilities,omitempty"`
 	BuildChannel          string                 `protobuf:"bytes,4,opt,name=build_channel,json=buildChannel,proto3" json:"build_channel,omitempty"`
 	ResponseNonce         []byte                 `protobuf:"bytes,5,opt,name=response_nonce,json=responseNonce,proto3" json:"response_nonce,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// executable_sha256 绑定当前运行进程与 installer 已复验的 artifact，避免同版本构建复用旧进程。
+	ExecutableSha256 []byte `protobuf:"bytes,6,opt,name=executable_sha256,json=executableSha256,proto3" json:"executable_sha256,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *CompanionHelloResponse) Reset() {
@@ -923,6 +925,13 @@ func (x *CompanionHelloResponse) GetBuildChannel() string {
 func (x *CompanionHelloResponse) GetResponseNonce() []byte {
 	if x != nil {
 		return x.ResponseNonce
+	}
+	return nil
+}
+
+func (x *CompanionHelloResponse) GetExecutableSha256() []byte {
+	if x != nil {
+		return x.ExecutableSha256
 	}
 	return nil
 }
@@ -2163,7 +2172,7 @@ func (x *BeginPresenceRequest) GetDeviceId() string {
 	return ""
 }
 
-// PresenceChallenge 是 Control Plane 为一个 device-scoped PresenceSession 签发的一次性挑战。
+// PresenceChallenge 是 Hub 为一个 device-scoped PresenceSession 创建的一次性挑战。
 // PresenceSession 先于任何 client ManagedSession 存在，两者不得复用 ID。
 type PresenceChallenge struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
@@ -5532,13 +5541,14 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"\vcaller_role\x18\x04 \x01(\x0e2\x1a.termx.cloud.v1.CallerRoleR\n" +
 	"callerRole\x12Z\n" +
 	"\x16requested_capabilities\x18\x05 \x03(\x0e2#.termx.cloud.v1.CompanionCapabilityR\x15requestedCapabilities\x12#\n" +
-	"\rrequest_nonce\x18\x06 \x01(\fR\frequestNonce\"\x9a\x02\n" +
+	"\rrequest_nonce\x18\x06 \x01(\fR\frequestNonce\"\xc7\x02\n" +
 	"\x16CompanionHelloResponse\x12+\n" +
 	"\x11selected_protocol\x18\x01 \x01(\rR\x10selectedProtocol\x12+\n" +
 	"\x11companion_version\x18\x02 \x01(\tR\x10companionVersion\x12Z\n" +
 	"\x16supported_capabilities\x18\x03 \x03(\x0e2#.termx.cloud.v1.CompanionCapabilityR\x15supportedCapabilities\x12#\n" +
 	"\rbuild_channel\x18\x04 \x01(\tR\fbuildChannel\x12%\n" +
-	"\x0eresponse_nonce\x18\x05 \x01(\fR\rresponseNonce\"\x0f\n" +
+	"\x0eresponse_nonce\x18\x05 \x01(\fR\rresponseNonce\x12+\n" +
+	"\x11executable_sha256\x18\x06 \x01(\fR\x10executableSha256\"\x0f\n" +
 	"\rStatusRequest\"\xa7\x02\n" +
 	"\x0eStatusResponse\x124\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x1e.termx.cloud.v1.CompanionStateR\x05state\x12#\n" +

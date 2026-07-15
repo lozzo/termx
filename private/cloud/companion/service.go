@@ -6,9 +6,12 @@
 package companion
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice"
@@ -21,6 +24,9 @@ import (
 type Config struct {
 	CompanionVersion string
 	BuildChannel     string
+	// ExecutableSHA256 是当前 Companion 可执行文件的 SHA-256，由进程启动时读取自身文件计算。
+	// Hello 只投影摘要供 activation 与已验证 installation 比对，不把任意路径作为信任来源。
+	ExecutableSHA256 []byte
 	Capabilities     []cloudpb.CompanionCapability
 	StreamCapacity   int
 	Now              func() time.Time
@@ -33,8 +39,10 @@ type Config struct {
 // Service 是 companion 进程内共享的依赖容器。
 // 每个本地 IPC peer 必须通过 NewConnection 获得独立 Hello、caller role 和 stream ownership 状态。
 type Service struct {
+	refreshMu               sync.Mutex
 	version                 string
 	buildChannel            string
+	executableSHA256        []byte
 	capabilities            map[cloudpb.CompanionCapability]struct{}
 	streamCapacity          int
 	now                     func() time.Time
@@ -45,10 +53,42 @@ type Service struct {
 	hub                     cloudservice.HubAdapter
 }
 
+const proactiveRefreshWindow = 15 * time.Minute
+
+func (service *Service) refreshSession(ctx context.Context, kind session.Kind) (session.Session, error) {
+	service.refreshMu.Lock()
+	defer service.refreshMu.Unlock()
+	now := service.now().UTC()
+	if current, err := service.sessions.Load(ctx, kind, now); err == nil {
+		if current.Metadata().ExpiresAt.Sub(now) > proactiveRefreshWindow {
+			return current, nil
+		}
+		current.Destroy()
+	}
+	refreshAuthorization, err := service.sessions.LoadRefreshAuthorization(ctx, kind, now)
+	if err != nil {
+		return session.Session{}, err
+	}
+	defer refreshAuthorization.Destroy()
+	refreshed, err := service.controlPlane.RefreshSession(ctx, refreshAuthorization)
+	if err != nil {
+		return session.Session{}, err
+	}
+	if refreshed.Metadata().Kind != kind {
+		refreshed.Destroy()
+		return session.Session{}, session.ErrInvalid
+	}
+	if err := service.sessions.Save(ctx, refreshed, now); err != nil {
+		refreshed.Destroy()
+		return session.Session{}, err
+	}
+	return refreshed, nil
+}
+
 // NewService 创建 desktop/headless companion service。
 // OS credential manager、Control Plane 和 Hub adapter 均为必需依赖，不允许无云 fake 或旧 Hub fallback 混入生产 service。
 func NewService(config Config, sessions *session.Manager, controlPlane cloudservice.ControlPlaneAdapter, hub cloudservice.HubAdapter) (*Service, error) {
-	if sessions == nil || controlPlane == nil || hub == nil || config.CompanionVersion == "" || config.BuildChannel == "" || config.StreamCapacity < 1 {
+	if sessions == nil || controlPlane == nil || hub == nil || config.CompanionVersion == "" || config.BuildChannel == "" || len(config.ExecutableSHA256) != sha256.Size || config.StreamCapacity < 1 {
 		return nil, fmt.Errorf("invalid Cloud Companion service configuration")
 	}
 	capabilities := make(map[cloudpb.CompanionCapability]struct{}, len(config.Capabilities))
@@ -70,6 +110,7 @@ func NewService(config Config, sessions *session.Manager, controlPlane cloudserv
 	return &Service{
 		version:                 config.CompanionVersion,
 		buildChannel:            config.BuildChannel,
+		executableSHA256:        append([]byte(nil), config.ExecutableSHA256...),
 		capabilities:            capabilities,
 		streamCapacity:          config.StreamCapacity,
 		now:                     config.Now,

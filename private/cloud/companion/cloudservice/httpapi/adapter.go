@@ -97,6 +97,30 @@ func (adapter *Adapter) CompleteDeviceEnrollment(ctx context.Context, request *c
 	return sessionFromWire(wire, adapter.now())
 }
 
+// RefreshSession 向 Control Plane 提交一次性 refresh secret，并接收轮换后的完整私有会话。
+func (adapter *Adapter) RefreshSession(ctx context.Context, authorization session.RefreshAuthorization) (session.Session, error) {
+	token := authorization.Bytes()
+	defer clear(token)
+	payload, err := json.Marshal(RefreshSessionWire{Kind: authorization.Metadata().Kind, RefreshToken: token})
+	if err != nil {
+		return session.Session{}, err
+	}
+	defer clear(payload)
+	response, err := adapter.do(ctx, adapter.controlURL+ControlRefreshSessionPath, session.Authorization{}, JSONMediaType, payload)
+	if err != nil {
+		return session.Session{}, err
+	}
+	defer response.Body.Close()
+	if !responseContentTypeIs(response, JSONMediaType) {
+		return session.Session{}, protocolNetworkError("Control Plane returned an invalid refreshed session media type")
+	}
+	var wire SessionWire
+	if decodeJSON(response.Body, &wire) != nil {
+		return session.Session{}, protocolNetworkError("Control Plane returned an invalid refreshed session")
+	}
+	return sessionFromWire(wire, adapter.now())
+}
+
 // ResolveEndpoint 使用启动阶段 edge credential 和缓存 HubDirectory 向 Hub 解析 target。
 func (adapter *Adapter) ResolveEndpoint(ctx context.Context, authorization session.Authorization, request *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
 	response := &cloudpb.ResolvedEndpoint{}
@@ -115,18 +139,13 @@ func (adapter *Adapter) ListManagedDevices(ctx context.Context, authorization se
 	return response, nil
 }
 
-// BeginPresence 通过 device cloud session 获取 fresh PresenceSession challenge。
+// BeginPresence 通过 daemon edge session 从 Hub 获取 fresh PresenceSession challenge。
 func (adapter *Adapter) BeginPresence(ctx context.Context, authorization session.Authorization, request *cloudpb.BeginPresenceRequest) (*cloudpb.PresenceChallenge, error) {
 	response := &cloudpb.PresenceChallenge{}
-	if err := adapter.postProto(ctx, adapter.controlURL+ControlBeginPresencePath, authorization, request, response); err != nil {
+	if err := adapter.postEdgeHubProto(ctx, HubBeginPresencePath, authorization, request, response); err != nil {
 		return nil, err
 	}
 	return response, nil
-}
-
-// AcquirePresenceAdmission 验证 fresh proof 并取得 presence-only Hub ticket。
-func (adapter *Adapter) AcquirePresenceAdmission(ctx context.Context, authorization session.Authorization, request *cloudpb.OpenPresenceRequest) (cloudservice.HubAdmission, error) {
-	return adapter.postAdmission(ctx, ControlPresenceAdmissionPath, authorization, request)
 }
 
 // PlanManagedRoute 在 single Relay 闭环后仍稳定 fail closed；自动 SmartRoute 不属于 CLOUD004。
@@ -144,9 +163,9 @@ func (*Adapter) ReportConnectionOutcome(context.Context, session.Authorization, 
 	return nil, deferredServiceError("connection outcome reporting")
 }
 
-// OpenPresence 使用 presence-only admission 打开 Hub frame stream。
-func (adapter *Adapter) OpenPresence(ctx context.Context, _ session.Authorization, admission cloudservice.HubAdmission, request *cloudpb.OpenPresenceRequest) (cloudservice.PresenceSource, error) {
-	response, err := adapter.openHubStream(ctx, HubOpenPresencePath, admission, request)
+// OpenPresence 使用 daemon edge session 和 fresh proof 打开 Hub frame stream。
+func (adapter *Adapter) OpenPresence(ctx context.Context, authorization session.Authorization, request *cloudpb.OpenPresenceRequest) (cloudservice.PresenceSource, error) {
+	response, err := adapter.openEdgeHubStream(ctx, HubOpenPresencePath, authorization, request)
 	if err != nil {
 		return nil, err
 	}
@@ -245,31 +264,6 @@ func (adapter *Adapter) postSession(ctx context.Context, path string, request pr
 	return wire, nil
 }
 
-func (adapter *Adapter) postAdmission(ctx context.Context, path string, authorization session.Authorization, request proto.Message) (cloudservice.HubAdmission, error) {
-	payload, err := proto.Marshal(request)
-	if err != nil {
-		return cloudservice.HubAdmission{}, err
-	}
-	defer clear(payload)
-	return adapter.postAdmissionBytes(ctx, path, authorization, ProtobufMediaType, payload)
-}
-
-func (adapter *Adapter) postAdmissionBytes(ctx context.Context, path string, authorization session.Authorization, contentType string, payload []byte) (cloudservice.HubAdmission, error) {
-	response, err := adapter.do(ctx, adapter.controlURL+path, authorization, contentType, payload)
-	if err != nil {
-		return cloudservice.HubAdmission{}, err
-	}
-	defer response.Body.Close()
-	if !responseContentTypeIs(response, JSONMediaType) {
-		return cloudservice.HubAdmission{}, protocolNetworkError("Control Plane returned an invalid Hub admission media type")
-	}
-	var wire AdmissionWire
-	if err := decodeJSON(response.Body, &wire); err != nil {
-		return cloudservice.HubAdmission{}, protocolNetworkError("Control Plane returned an invalid Hub admission")
-	}
-	return admissionFromWire(wire, adapter.now())
-}
-
 func (adapter *Adapter) postProto(ctx context.Context, endpoint string, authorization session.Authorization, request, response proto.Message) error {
 	payload, err := proto.Marshal(request)
 	if err != nil {
@@ -290,30 +284,6 @@ func (adapter *Adapter) postProto(ctx context.Context, endpoint string, authoriz
 		return protocolNetworkError("cloud service returned an invalid protobuf response")
 	}
 	return nil
-}
-
-func (adapter *Adapter) openHubStream(ctx context.Context, path string, admission cloudservice.HubAdmission, request proto.Message) (*http.Response, error) {
-	payload, err := proto.Marshal(request)
-	if err != nil {
-		return nil, err
-	}
-	defer clear(payload)
-	wire := admissionToWire(admission)
-	defer clear(wire.Ticket)
-	envelope, err := json.Marshal(HubRequest{Admission: wire, Payload: payload})
-	if err != nil {
-		return nil, err
-	}
-	defer clear(envelope)
-	response, err := adapter.do(ctx, adapter.hubURL+path, session.Authorization{}, JSONMediaType, envelope)
-	if err != nil {
-		return nil, err
-	}
-	if !responseContentTypeIs(response, StreamMediaType) {
-		_ = response.Body.Close()
-		return nil, protocolNetworkError("Hub returned an invalid stream media type")
-	}
-	return response, nil
 }
 
 func (adapter *Adapter) do(ctx context.Context, endpoint string, authorization session.Authorization, contentType string, payload []byte) (*http.Response, error) {
@@ -342,28 +312,16 @@ func (adapter *Adapter) do(ctx context.Context, endpoint string, authorization s
 
 func sessionFromWire(wire SessionWire, now time.Time) (session.Session, error) {
 	defer clear(wire.AccessToken)
-	return session.New(session.Metadata{
+	defer clear(wire.RefreshToken)
+	metadata := session.Metadata{
 		Kind: wire.Kind, AccountID: wire.AccountID, AccountLabel: wire.AccountLabel,
 		DeviceID: wire.DeviceID, ExpiresAt: time.Unix(wire.ExpiresAt, 0).UTC(),
 		HubID: wire.HubID, HubURL: wire.HubURL, HubRegion: wire.HubRegion, HubDirectoryVersion: wire.HubDirectoryVersion,
-	}, wire.AccessToken, now)
-}
-
-func admissionFromWire(wire AdmissionWire, now time.Time) (cloudservice.HubAdmission, error) {
-	defer clear(wire.Ticket)
-	return cloudservice.NewHubAdmission(cloudservice.HubAdmissionMetadata{
-		Reference: wire.Reference, HubID: wire.HubID, AccountID: wire.AccountID, DeviceID: wire.DeviceID,
-		TargetDeviceID: wire.TargetDeviceID, SessionKind: wire.SessionKind, SessionID: wire.SessionID,
-		ExpiresAt: time.Unix(wire.ExpiresAt, 0).UTC(),
-	}, wire.Ticket, now)
-}
-
-func admissionToWire(admission cloudservice.HubAdmission) AdmissionWire {
-	return AdmissionWire{
-		Reference: admission.Reference, HubID: admission.HubID, AccountID: admission.AccountID, DeviceID: admission.DeviceID,
-		TargetDeviceID: admission.TargetDeviceID, SessionKind: admission.SessionKind, SessionID: admission.SessionID,
-		ExpiresAt: admission.ExpiresAt.Unix(), Ticket: admission.TicketBytes(),
 	}
+	if len(wire.RefreshToken) > 0 {
+		return session.NewRefreshable(metadata, wire.AccessToken, wire.RefreshToken, time.Unix(wire.RefreshExpiresAt, 0).UTC(), now)
+	}
+	return session.New(metadata, wire.AccessToken, now)
 }
 
 func decodeJSON(reader io.Reader, target any) error {

@@ -6,7 +6,6 @@ package devcloud
 
 import (
 	"context"
-	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -25,10 +24,8 @@ import (
 
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	"github.com/lozzow/termx/private/cloud/companion/session"
-	"github.com/lozzow/termx/private/cloud/control-plane/admission"
 	"github.com/lozzow/termx/private/cloud/control-plane/directory"
 	"github.com/lozzow/termx/private/cloud/control-plane/domain"
-	"github.com/lozzow/termx/private/cloud/control-plane/presence"
 	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	cloudrelay "github.com/lozzow/termx/private/cloud/relay"
@@ -53,10 +50,10 @@ const (
 	devRelayLeaseIssuer = "control-plane.dev-local.relay"
 
 	loginTTL                  = 5 * time.Minute
-	enrollmentTTL             = 2 * time.Minute
+	enrollmentTTL             = 10 * time.Minute
+	presenceChallengeTTL      = 2 * time.Minute
 	cloudSessionTTL           = 8 * time.Hour
 	managedTTL                = 5 * time.Minute
-	admissionTTL              = 2 * time.Minute
 	relayLeaseTTL             = 5 * time.Minute
 	edgePolicyRefreshInterval = 5 * time.Minute
 )
@@ -84,10 +81,18 @@ type Config struct {
 	WebSecureCookie bool
 	// WebPublicURL 是用户浏览器打开的静态 Web Controller origin；设备码验证 URI 只从这里生成。
 	WebPublicURL string
+	// SecurityDirectoryPath 是 Control Plane 账号、用户和设备公钥安全目录；为空时仅用于进程内测试。
+	SecurityDirectoryPath string
+	// AuthorityKeyPath 是 Control Plane Ed25519 authority 的 0600 持久文件。
+	AuthorityKeyPath string
+	// EdgeSnapshotPath 是 Hub 已验签 policy 的 0600 持久文件；恢复时必须重新验签。
+	EdgeSnapshotPath string
+	// RefreshSessionPath 只持久化 refresh secret 的 SHA-256 和绑定 metadata。
+	RefreshSessionPath string
 }
 
 // Runtime 是一组已启动的 dev-local Control Plane/Hub listener 与单个 UDP TURN Relay。
-// Manifest 只公开连接 metadata；账号 token、admission signing key 和 DeviceIdentity 私钥不会导出。
+// Manifest 只公开连接 metadata；edge/refresh token、authority private key 和 DeviceIdentity 私钥不会导出。
 type Runtime struct {
 	manifest httpapi.Manifest
 
@@ -176,10 +181,9 @@ type serviceState struct {
 	enrollmentFlows  map[string]enrollmentFlow
 	sessions         map[[sha256.Size]byte]cloudSession
 	webPublicURL     string
+	refreshSessions  *refreshStore
 
 	directory         *directory.Store
-	presence          *presence.Service
-	admission         *admission.Service
 	hub               *cloudhub.Service
 	edgeIssuer        servicecredential.EdgeAccessIssuer
 	edgePolicyIssuer  servicecredential.EdgePolicyIssuer
@@ -255,6 +259,10 @@ func start(config Config, options runtimeOptions) (*Runtime, error) {
 		config.UsageOutboxPath = filepath.Join(os.TempDir(), outboxID+".json")
 	}
 	state.usageOutboxPath = config.UsageOutboxPath
+	state.refreshSessions, err = openRefreshStore(config.RefreshSessionPath, state.random, now)
+	if err != nil {
+		return nil, err
+	}
 	if state.presenceQueueSize < 1 || state.clientQueueSize < 1 {
 		return nil, fmt.Errorf("dev Hub queue capacity must be positive")
 	}
@@ -265,7 +273,7 @@ func start(config Config, options runtimeOptions) (*Runtime, error) {
 		}
 	}
 	state.enrollmentClaims[config.EnrollmentCode] = enrollmentClaim{accountID: devAccountID, userID: devUserID, expiresAt: now.Add(24 * time.Hour)}
-	if err := state.initializeDomain(now); err != nil {
+	if err := state.initializeDomain(now, config); err != nil {
 		return nil, err
 	}
 	relayListenAddr, err := prepareRelayListenAddr(config.RelayListenAddr, config.RelayPublicIP, config.Profile)
@@ -311,17 +319,8 @@ func start(config Config, options runtimeOptions) (*Runtime, error) {
 	return runtime, nil
 }
 
-func (state *serviceState) initializeDomain(now time.Time) error {
-	_, signingPrivateKey, err := ed25519.GenerateKey(state.random)
-	if err != nil {
-		return fmt.Errorf("generate dev admission signing key: %w", err)
-	}
-	signer, err := servicecredential.NewSigner("dev-admission-key", signingPrivateKey, now.Add(-time.Minute), now.Add(24*time.Hour))
-	clear(signingPrivateKey)
-	if err != nil {
-		return err
-	}
-	issuer, err := servicecredential.NewHubAdmissionIssuer(devAdmissionIssuer, signer)
+func (state *serviceState) initializeDomain(now time.Time, config Config) error {
+	signer, err := loadOrCreateAuthority(config.AuthorityKeyPath, state.random, now)
 	if err != nil {
 		return err
 	}
@@ -337,56 +336,87 @@ func (state *serviceState) initializeDomain(now time.Time) error {
 	if err != nil {
 		return err
 	}
-	edgeAuth, err := cloudhub.NewEdgeAuthorizer(cloudhub.EdgeAuthorizerConfig{HubID: devHubID, Issuer: devAdmissionIssuer, KeyRing: keyRing, Clock: runtimeClock{now: state.now}, MaxStaleness: 30 * time.Minute})
+	var snapshotStore cloudhub.EdgeSnapshotStore
+	if config.EdgeSnapshotPath != "" {
+		snapshotStore, err = cloudhub.NewFileEdgeSnapshotStore(config.EdgeSnapshotPath)
+		if err != nil {
+			return err
+		}
+	}
+	edgeAuth, err := cloudhub.NewEdgeAuthorizer(cloudhub.EdgeAuthorizerConfig{HubID: devHubID, Issuer: devAdmissionIssuer, KeyRing: keyRing, Clock: runtimeClock{now: state.now}, MaxStaleness: 30 * time.Minute, SnapshotStore: snapshotStore})
 	if err != nil {
 		return err
 	}
 	store := directory.NewStore()
-	if err := store.PutAccount(domain.Account{ID: devAccountID, DisplayName: devAccountLabel, CreatedAt: now}); err != nil {
-		return err
+	if config.SecurityDirectoryPath != "" {
+		store, err = directory.OpenStore(config.SecurityDirectoryPath)
+		if err != nil {
+			return err
+		}
 	}
-	if err := store.PutUser(domain.User{ID: devUserID, AccountID: devAccountID, Email: "dev-local@termx.invalid", CreatedAt: now}); err != nil {
-		return err
+	state.edgeDevices = make(map[string]cloudhub.DeviceAuthorization)
+	if config.EdgeSnapshotPath != "" {
+		if _, statErr := os.Stat(config.EdgeSnapshotPath); statErr == nil {
+			if err := edgeAuth.RestoreSignedSnapshot(); err != nil {
+				return err
+			}
+		} else if !os.IsNotExist(statErr) {
+			return statErr
+		}
 	}
-	if err := store.RegisterDevice(domain.DeviceRegistration{
-		ID: devClientDeviceID, AccountID: devAccountID, OwnerUserID: devUserID, Kind: domain.DeviceKindClient,
-		Label: "Dev Client", RegisteredAt: now,
-	}); err != nil {
-		return err
+	security := store.Snapshot()
+	accountExists, userExists, clientExists := false, false, false
+	for _, account := range security.Accounts {
+		state.directoryAccounts[account.ID] = struct{}{}
+		accountExists = accountExists || account.ID == devAccountID
+	}
+	for _, user := range security.Users {
+		userExists = userExists || user.ID == devUserID
+	}
+	for _, device := range security.Devices {
+		platform := "unknown"
+		if device.ID == devClientDeviceID {
+			platform = "development"
+		}
+		state.edgeDevices[device.ID] = cloudhub.DeviceAuthorization{DeviceID: device.ID, AccountID: device.AccountID, Kind: string(device.Kind), DisplayName: device.Label, Platform: platform, PublicKey: append([]byte(nil), device.PublicKey...), Revoked: device.RevokedAt != nil}
+		clientExists = clientExists || device.ID == devClientDeviceID
+	}
+	if !accountExists {
+		if err := store.PutAccount(domain.Account{ID: devAccountID, DisplayName: devAccountLabel, CreatedAt: now}); err != nil {
+			return err
+		}
+		state.directoryAccounts[devAccountID] = struct{}{}
+	}
+	if !userExists {
+		if err := store.PutUser(domain.User{ID: devUserID, AccountID: devAccountID, Email: "dev-local@termx.invalid", CreatedAt: now}); err != nil {
+			return err
+		}
+	}
+	if !clientExists {
+		if err := store.RegisterDevice(domain.DeviceRegistration{ID: devClientDeviceID, AccountID: devAccountID, OwnerUserID: devUserID, Kind: domain.DeviceKindClient, Label: "Dev Client", RegisteredAt: now}); err != nil {
+			return err
+		}
+		state.edgeDevices[devClientDeviceID] = cloudhub.DeviceAuthorization{DeviceID: devClientDeviceID, AccountID: devAccountID, Kind: "client", DisplayName: "Dev Client", Platform: "development"}
 	}
 	state.edgeIssuer = edgeIssuer
 	state.edgePolicyIssuer = edgePolicyIssuer
 	state.edgeAuth = edgeAuth
-	state.edgeRevision = 1
-	state.edgeDevices = map[string]cloudhub.DeviceAuthorization{devClientDeviceID: {DeviceID: devClientDeviceID, AccountID: devAccountID, Kind: "client", DisplayName: "Dev Client", Platform: "development"}}
-	state.directoryAccounts[devAccountID] = struct{}{}
+	state.edgeRevision = edgeAuth.Revision() + 1
 	if err := state.publishEdgeSnapshot(now); err != nil {
 		return err
 	}
-	presenceService, err := presence.NewService(presence.Config{
-		Devices: store, Issuer: issuer, HubID: devHubID, ChallengeTTL: enrollmentTTL,
-		AdmissionTTL: admissionTTL, MaxChallenges: 256, Now: state.now, Random: state.random,
-	})
-	if err != nil {
-		return err
-	}
-	admissionService, err := admission.NewService(store, issuer)
-	if err != nil {
-		return err
-	}
 	hubService, err := cloudhub.New(cloudhub.Config{
-		HubID: devHubID, AdmissionIssuer: devAdmissionIssuer, KeyRing: keyRing, Clock: runtimeClock{now: state.now},
+		HubID: devHubID, Clock: runtimeClock{now: state.now},
 		MaxPresenceTTL: 5 * time.Minute, MaxSignalingTTL: 5 * time.Minute,
+		PresenceChallengeTTL: presenceChallengeTTL, MaxPresenceChallenges: 256, Random: state.random,
 		PresenceQueueSize: state.presenceQueueSize, ClientQueueSize: state.clientQueueSize, MaxSDPBytes: 1 << 20, MaxCandidates: 256,
-		MaxPresences: 128, MaxSessions: 1024, MaxSessionsPerClient: 64, MaxReplayEntries: 2048,
+		MaxPresences: 128, MaxSessions: 1024, MaxSessionsPerClient: 64,
 		EdgeAuthorizer: edgeAuth,
 	})
 	if err != nil {
 		return err
 	}
 	state.directory = store
-	state.presence = presenceService
-	state.admission = admissionService
 	state.hub = hubService
 	return state.initializeRelay(now)
 }

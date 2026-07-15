@@ -105,7 +105,7 @@ describe('MachineWorkspace real file manager flow', () => {
 
     await waitFor(() => expect(screen.getByText('live.txt')).toBeTruthy())
     expect(sessions[0]?.requests).toEqual(expect.arrayContaining([
-      { method: 'get_directory', path: 'get_directory', params: { terminal_id: 'terminal-1' } },
+      { method: 'get', path: 'get', params: { terminal_id: 'terminal-1' } },
       { method: 'file.list', path: 'file.list', params: { path: '/Users/lozzow/project', cursor: '', limit: 500 } },
     ]))
   })

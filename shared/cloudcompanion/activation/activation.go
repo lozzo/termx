@@ -8,7 +8,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -105,7 +109,7 @@ func (manager *Manager) Open(ctx context.Context, role cloudpb.CallerRole, reque
 	if err != nil {
 		return nil, err
 	}
-	if installation.Version == "" || installation.Channel == "" || installation.BinaryPath == "" {
+	if installation.Version == "" || installation.Channel == "" || installation.BinaryPath == "" || !validSHA256(installation.BinarySHA256) {
 		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED, "active Cloud Companion installation metadata is incomplete")
 	}
 	client, stale, err := manager.dialAndHello(ctx, installation, role, requested)
@@ -162,6 +166,10 @@ func (manager *Manager) Open(ctx context.Context, role cloudpb.CallerRole, reque
 // 它启动固定 `serve --smoke --socket` 模式、协商 CLI role 后请求有序 Shutdown，不激活该版本。
 func SmokeFunc(termxVersion string) installer.SmokeFunc {
 	return func(ctx context.Context, binaryPath string, manifest installer.Manifest) error {
+		executableSHA256, err := executableDigest(binaryPath)
+		if err != nil {
+			return err
+		}
 		endpoint, err := smokeEndpoint()
 		if err != nil {
 			return err
@@ -191,7 +199,7 @@ func SmokeFunc(termxVersion string) installer.SmokeFunc {
 		if err != nil {
 			return err
 		}
-		validationErr := validateReleaseHello(response, manifest)
+		validationErr := validateReleaseHello(response, manifest, executableSHA256)
 		_, shutdownErr := client.Shutdown(deadline, &cloudpb.ShutdownRequest{Reason: "installer_smoke_complete"})
 		if validationErr != nil {
 			return validationErr
@@ -210,7 +218,7 @@ func (manager *Manager) dialAndHello(ctx context.Context, installation installer
 		_ = client.Close()
 		return nil, false, err
 	}
-	if response.GetCompanionVersion() != installation.Version || response.GetBuildChannel() != installation.Channel {
+	if response.GetCompanionVersion() != installation.Version || response.GetBuildChannel() != installation.Channel || !matchesInstallationDigest(response.GetExecutableSha256(), installation.BinarySHA256) {
 		shutdownContext, cancel := context.WithTimeout(ctx, time.Second)
 		_, _ = client.Shutdown(shutdownContext, &cloudpb.ShutdownRequest{Reason: "active_version_changed"})
 		cancel()
@@ -279,11 +287,38 @@ func (manager *Manager) waitForEndpointExit(ctx context.Context) error {
 	}
 }
 
-func validateReleaseHello(response *cloudpb.CompanionHelloResponse, manifest installer.Manifest) error {
-	if response == nil || response.GetCompanionVersion() != manifest.Version || response.GetBuildChannel() != manifest.Channel || response.GetSelectedProtocol() < manifest.MinCompanionProtocol || response.GetSelectedProtocol() > manifest.MaxCompanionProtocol {
+func validateReleaseHello(response *cloudpb.CompanionHelloResponse, manifest installer.Manifest, executableSHA256 string) error {
+	if response == nil || response.GetCompanionVersion() != manifest.Version || response.GetBuildChannel() != manifest.Channel || response.GetSelectedProtocol() < manifest.MinCompanionProtocol || response.GetSelectedProtocol() > manifest.MaxCompanionProtocol || !matchesInstallationDigest(response.GetExecutableSha256(), executableSHA256) {
 		return cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED, "staged Cloud Companion identity does not match its signed release manifest")
 	}
 	return nil
+}
+
+func executableDigest(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.New()
+	_, copyErr := io.Copy(hash, file)
+	closeErr := file.Close()
+	if copyErr != nil {
+		return "", copyErr
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func validSHA256(encoded string) bool {
+	decoded, err := hex.DecodeString(encoded)
+	return err == nil && len(decoded) == 32
+}
+
+func matchesInstallationDigest(actual []byte, expected string) bool {
+	decoded, err := hex.DecodeString(expected)
+	return err == nil && len(decoded) == 32 && bytes.Equal(actual, decoded)
 }
 
 func isStartableDialError(err error) bool {

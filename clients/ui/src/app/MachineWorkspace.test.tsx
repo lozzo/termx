@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event'
 import { forwardRef, useImperativeHandle } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MachineWorkspace, type MachineWorkspaceConnector } from './MachineWorkspace'
+import { ConnectionInfoDialog, MachineWorkspace, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineSessionStore } from '../state/localAppIdentity'
 import type { TerminalModifierState } from '../terminal/mobileTerminalInput'
 import type { TerminalResizeControl } from '../terminal/terminalClient'
@@ -128,6 +128,27 @@ vi.mock('../files/FileManager', async () => {
 })
 
 describe('MachineWorkspace', () => {
+  it('allows an explicit relay attempt after direct connection info is unavailable', async () => {
+    const onToggleMode = vi.fn()
+    render(
+      <ConnectionInfoDialog
+        info={null}
+        loading={false}
+        error="route_unavailable"
+        forceRelayActive={false}
+        onClose={vi.fn()}
+        onRefresh={vi.fn()}
+        onReconnect={vi.fn()}
+        onToggleMode={onToggleMode}
+      />,
+    )
+
+    const useRelay = screen.getByRole('button', { name: /use relay/i })
+    expect(useRelay.hasAttribute('disabled')).toBe(false)
+    await userEvent.click(useRelay)
+    expect(onToggleMode).toHaveBeenCalledTimes(1)
+  })
+
   afterEach(() => {
     terminalReattachMock.mockReset()
     terminalHandleMocks.handles.clear()
@@ -251,7 +272,7 @@ describe('MachineWorkspace', () => {
     expect(connect).toHaveBeenCalledWith(expect.objectContaining({ machineId: 'machine-local' }), expect.objectContaining({ forceRelay: false }))
   })
 
-  it('passes the saved relay preference into initial terminal inventory loading', async () => {
+  it('ignores the removed force-relay preference and starts managed endpoints in auto mode', async () => {
     vi.stubGlobal('localStorage', createMemoryStorage({
       'termx.forceRelay.machine-local': '1',
     }))
@@ -262,7 +283,7 @@ describe('MachineWorkspace', () => {
     render(<MachineWorkspace api={api} connector={{ connect: vi.fn(async () => { throw new Error('unexpected connect') }) }} />)
 
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
-    expect(listTerminals).toHaveBeenCalledWith(expect.objectContaining({ forceRelay: true }))
+    expect(listTerminals).toHaveBeenCalledWith(expect.objectContaining({ forceRelay: false }))
   })
 
   it('uses a terminal-first mobile shell with sheets instead of a Config sidebar', async () => {
@@ -464,11 +485,15 @@ describe('MachineWorkspace', () => {
     expect(sessions[0]?.disconnectCalls).toBe(0)
   })
 
-  it('toggles forced relay back to an explicit P2P connection attempt', async () => {
+  it('offers a current-session relay fallback when a one-shot P2P probe fails', async () => {
+    const storage = createMemoryStorage()
+    vi.stubGlobal('localStorage', storage)
     const api = createMockLocalAgentApi()
     const sessions: ReturnType<typeof createMockMachineWorkspaceSession>[] = []
     const connect = vi.fn(({ machineId }: { machineId: string }, _options) =>
-      Promise.resolve(trackSession(sessions, createMockMachineWorkspaceSession({}, machineId))),
+      connect.mock.calls.length === 3
+        ? Promise.reject(new Error('route_unavailable'))
+        : Promise.resolve(trackSession(sessions, createMockMachineWorkspaceSession({}, machineId))),
     )
 
     render(<MachineWorkspace api={api} connector={{ connect }} />)
@@ -509,6 +534,13 @@ describe('MachineWorkspace', () => {
 
     await waitFor(() => expect(connect).toHaveBeenCalledTimes(3))
     expect(connect.mock.calls[2]?.[1]).toEqual(expect.objectContaining({ forceRelay: false }))
+    await waitFor(() => expect(screen.getByRole('dialog', { name: /p2p unavailable/i })).toBeTruthy())
+    expect(storage.getItem('termx.forceRelay.machine-local')).toBeNull()
+
+    await userEvent.click(within(screen.getByRole('dialog', { name: /p2p unavailable/i })).getByRole('button', { name: /use relay/i }))
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(4))
+    expect(connect.mock.calls[3]?.[1]).toEqual(expect.objectContaining({ forceRelay: true }))
+    expect(storage.getItem('termx.forceRelay.machine-local')).toBeNull()
   })
 
   it('shows a single non-blocking machine network overlay while connection state is active', async () => {

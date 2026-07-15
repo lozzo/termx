@@ -5,8 +5,6 @@ import (
 	"io"
 	"sync"
 	"time"
-
-	"github.com/lozzow/termx/private/cloud/control-plane/servicecredential"
 )
 
 // Candidate 是 Hub 允许转发的最小 trickle ICE metadata。
@@ -33,7 +31,7 @@ const (
 	RoutePreferenceGlobalAccelerator RoutePreference = 4
 )
 
-// Offer 是 client admission 验证后投递给固定 target presence 的 WebRTC offer。
+// Offer 是 client edge authorization 验证后投递给固定 target Presence 的 WebRTC offer。
 type Offer struct {
 	SignalingSessionID string
 	ManagedSessionID   string
@@ -45,7 +43,7 @@ type Offer struct {
 	RelayOnly          bool
 }
 
-// Answer 是 daemon answer admission 验证后投递给 owning client 的 WebRTC answer。
+// Answer 是 daemon edge identity 与 Presence ownership 验证后投递给 owning client 的 WebRTC answer。
 type Answer struct {
 	SignalingSessionID string
 	SDP                string
@@ -142,22 +140,22 @@ func (presence *Presence) Close() error {
 }
 
 type sessionState struct {
-	id                 string
-	accountID          string
-	managedSessionID   string
-	clientDeviceID     string
-	clientConnectionID string
-	targetDeviceID     string
-	allowedOperations  []servicecredential.HubOperation
-	expiresAt          time.Time
-	clientEvents       chan ClientEvent
-	done               chan struct{}
-	answered           bool
-	daemonOperations   []servicecredential.HubOperation
-	closed             bool
+	id                     string
+	accountID              string
+	managedSessionID       string
+	clientDeviceID         string
+	clientConnectionID     string
+	targetDeviceID         string
+	clientCandidateAllowed bool
+	expiresAt              time.Time
+	clientEvents           chan ClientEvent
+	done                   chan struct{}
+	answered               bool
+	daemonCandidateAllowed bool
+	closed                 bool
 }
 
-// DaemonSession 是 answer admission 验证后绑定到一个 signaling session 的 daemon handle。
+// DaemonSession 是 answer ownership 验证后绑定到一个 signaling session 的 daemon handle。
 // 它只能向该 session 的 owning client 发送 candidate，不提供其他 device 或 session lookup。
 type DaemonSession struct {
 	service  *Service
@@ -166,7 +164,7 @@ type DaemonSession struct {
 }
 
 // SendCandidate 把 daemon trickle candidate 投递给 owning client stream。
-// answer admission 未包含 candidate operation、session 已关闭或 client queue 满时 fail closed。
+// answer 尚未建立、session 已关闭或 client queue 满时 fail closed。
 func (daemon *DaemonSession) SendCandidate(candidate Candidate) error {
 	if daemon == nil || daemon.service == nil || daemon.state == nil || !validCandidate(candidate) {
 		return ErrInvalidSignal
@@ -179,7 +177,7 @@ func (daemon *DaemonSession) SendCandidate(candidate Candidate) error {
 	if state != daemon.state || state.closed || state.targetDeviceID != daemon.deviceID || !now.Before(state.expiresAt) {
 		return ErrSessionNotFound
 	}
-	if !state.answered || !containsOperation(state.daemonOperations, servicecredential.HubOperationCandidate) {
+	if !state.answered || !state.daemonCandidateAllowed {
 		return ErrAdmission
 	}
 	event := ClientEvent{Candidate: &CandidateEvent{SignalingSessionID: state.id, Candidate: candidate}}
@@ -191,8 +189,8 @@ func (daemon *DaemonSession) SendCandidate(candidate Candidate) error {
 	}
 }
 
-// ClientSession 是一个 admission-bound client signaling session owner。
-// SendCandidate 复用首次验签后的 candidate permission，不重复提交或记录 ticket body。
+// ClientSession 是一个 edge-authorization-bound client signaling session owner。
+// SendCandidate 复用创建 session 时确定的 candidate 权限，不重复提交 credential。
 type ClientSession struct {
 	service *Service
 	state   *sessionState
@@ -220,7 +218,7 @@ func (client *ClientSession) Receive(ctx context.Context) (ClientEvent, error) {
 }
 
 // SendCandidate 把 client trickle candidate 路由到 target presence。
-// session admission 未包含 candidate operation、session 已过期或 queue 满时 fail closed。
+// session 未允许 candidate、已过期或 queue 满时 fail closed。
 func (client *ClientSession) SendCandidate(candidate Candidate) error {
 	if client == nil || client.service == nil || client.state == nil || !validCandidate(candidate) {
 		return ErrInvalidSignal
@@ -233,7 +231,7 @@ func (client *ClientSession) SendCandidate(candidate Candidate) error {
 	if state != client.state || state.closed || !now.Before(state.expiresAt) {
 		return ErrSessionNotFound
 	}
-	if !containsOperation(state.allowedOperations, servicecredential.HubOperationCandidate) {
+	if !state.clientCandidateAllowed {
 		return ErrAdmission
 	}
 	presence := service.presences[state.targetDeviceID]
@@ -275,15 +273,6 @@ func validCandidates(candidates []Candidate) bool {
 }
 
 func validCandidate(candidate Candidate) bool { return candidate.Candidate != "" }
-
-func containsOperation(operations []servicecredential.HubOperation, target servicecredential.HubOperation) bool {
-	for _, operation := range operations {
-		if operation == target {
-			return true
-		}
-	}
-	return false
-}
 
 func cloneCandidates(candidates []Candidate) []Candidate {
 	return append([]Candidate(nil), candidates...)

@@ -13,6 +13,7 @@
 - CLOUD012 已完成：Web、TUI 与 Official Android 使用统一账号设备码登录，账号名下 daemon 注册到 Hub；登录后的 direct 与 single Relay 热路径只访问 Hub，Control Plane 中断不影响有效缓存期内的新连接。
 - CLOUD016 已完成：Web 节点页把手机激活归入客户端访问区域，并补齐 TUI 从 daemon 导入 capability grant 的用户流程说明；未改变账号授权、Hub 目录或 daemon capability owner。
 - CLOUD017 已完成：审计 Web Controller、Control Plane、Hub、Relay、client 与 daemon 的真实全链路，绘制当前实现和降载目标泳道图，明确非必要 Control Plane 参与点与故障窗口；本切片只修正文档真值，未修改 runtime。
+- CLOUD018 已按用户要求暂停：Hub 自主 Presence、持久安全目录与 edge session refresh/rotation 的现有实现和测试结果保留为检查点；恢复前仍须完成 staging/ADB 最终验收，不得视为已完成或生产就绪。
 - CLI001 已完成：已审计当前扁平 CLI 与公开 `v3` 测试命令，建立以 endpoint/terminal 为真值的对象化命令树、稳定 target、JSON/format、退出码、tmux 能力映射和分期实现门禁；当前尚未改动 CLI 运行行为。
 - CLI007 已完成：可选 Cloud Companion 的安装引导已区分未安装与源码构建缺少官方 release root，两种用户错误都有清晰下一步且不再重复 Usage。
 - CLOUD013 已完成：公网 HTTP staging 的非秘密 runtime 配置已固化进显式 development Companion；同一份已验证 manifest 同时装配网络 adapter 与 HTTP 登录策略，用户无需额外配置即可执行状态和登录命令。
@@ -46,7 +47,7 @@
 - `remote/` 与公开进程拥有 WebRTC、DTLS、DeviceIdentity、CapabilityGrant、DataChannel 和 termx protocol。
 - daemon 所在机器的文件系统是文件 metadata 与内容真值；公开 termx protocol 只在已授权 session 内暴露文件操作，客户端只持有列表、预览和 transfer projection。
 - `private/cloud/companion` 与 Official mobile adapter 只拥有账号 session、云 API、signaling、RelayLease、质量 summary 和 route plan。
-- `private/cloud/devcloud` 已用两个独立 loopback HTTP listener 和一个 UDP TURN listener 装配真实序列化、认证、admission、短期 Relay lease、quota 与 signed usage 边界；它仍是显式内存 dev-local profile，不是生产部署模板。
+- `private/cloud/devcloud` 已用两个独立 loopback HTTP listener 和一个 UDP TURN listener 装配真实序列化、edge authorization、短期 Relay lease、quota 与 signed usage 边界；未配置路径时仍可作为内存 dev-local harness，staging 显式持久化 security directory、authority、verified Hub snapshot 与 refresh hash，但仍不是生产部署模板。
 - Companion 默认继续使用 `UnconfiguredAdapter`；development build 只有显式传入 dev manifest 才启用 HTTP adapter。Android 默认 Official 构建继续 `login_required`，只有显式 `termxOfficialDevCloud=true` APK 启用固定 loopback dev gateway；Community 仍 fail closed。
 - 显式 `relay_only` 已经通过真实 Pion TURN 接入 desktop managed endpoint；自动 SmartRoute、Relay Mesh 和多区域仍未进入用户链路。
 
@@ -67,7 +68,7 @@
 - CapabilityGrant 只由 owning daemon 签发和验证，只能在 DTLS DataChannel 端到端握手中提交。
 - Control Plane、Companion、Hub、Relay、Route Planner 不得接收 CapabilityGrant、DeviceIdentity private key、terminal payload、history 或输入。
 - Control Plane、Companion、Hub、Relay、Route Planner 同样不得接收文件路径、目录列表、文件 metadata、文件内容、摘要或 transfer resume offset；Relay 只能转发并计量 DTLS 内的密文 bytes。
-- Account token、DeviceIdentity、CapabilityGrant、HubAdmissionTicket 和 RelayLease 是不同凭据，不得复用字段、签名输入或验证责任。
+- EdgeAccessToken、RefreshSecret、DeviceIdentity、CapabilityGrant 和 RelayLease 是不同凭据，不得复用字段、签名输入或验证责任。
 - local、SSH 和 direct P2P 不依赖账号、订阅、Hub 或 Relay；云服务失败只影响 owning managed endpoint。
 - 禁止 legacy remote、旧 Hub/session-token、grant-in-signaling、原始 shell fallback、通用插件恢复和按应用名特殊适配。
 - 文档、接口、领域模型和 fake 测试不等于产品完成；活动切片必须证明当前阶段的真实跨组件消息链路或用户可观察行为。
@@ -111,6 +112,7 @@
 - CLOUD015：`private/cloud/{devcloud,hub,web-controller,mobile}`、`clients/{ui,mobile}`、`shared/cloudcompanion/`、必要 `proto/cloudpb/` contract、Android 构建文件、`cmd/termx/` 中 cloud enrollment/节点发现/pair create、`docs/remote-platform/`、`workflow.md` 与对应 harness；完成 Web 唯一身份源下的 Official App 激活，以及 enrollment 后的同账号节点发现与 daemon-owned 配对闭环。App 展示短期配对码并轮询领取原生 Keystore edge session，已登录 Web 可检查并批准；Web 可创建一次性二维码激活 Flow，App 扫码后必须由 Web 展示申请设备并再次批准。Hub 节点目录只读已同步的账号/设备内存投影和 active Presence，不回查 Control Plane；未持有 CapabilityGrant 的节点只能显示“需要配对”，不得连接。`termx pair create` 在交互式终端默认渲染可扫码二维码，显式 `--raw`/`--out` 才输出或写入 bearer bundle。TUI/CLI 现有浏览器设备码登录协议保持不变；daemon enrollment 拒绝映射为不泄漏存在性的可操作提示。短码只作活动 Flow locator，最终领取必须同时持有高熵设备凭据；不得把密码、浏览器 Cookie、edge token 或二维码 bearer 暴露给共享 WebView/localStorage，不修改 terminal capability owner。公网 HTTP 仍仅限显式 staging。
 - CLOUD016：`private/cloud/web-controller/web/`、`docs/remote-platform/public-staging-runbook.md`、`workflow.md`；只调整 Web 节点页客户端/daemon 信息架构，并说明 TUI 的账号发现与 daemon capability 导入是两个独立步骤。不得把 capability grant 上传到 Web、Control Plane 或 Hub，不修改 CLI/runtime contract。
 - CLOUD017：`docs/remote-platform/`、`workflow.md`；只基于当前代码审计绘制身份、enrollment、Presence、目录、配对、direct、Relay、撤销、同步和故障泳道，并标出当前实现与 Hub 自治目标的差异。不得在文档切片中修改 runtime、放宽 fail-closed 或宣称未实现能力已经完成。
+- CLOUD018：`private/cloud/{hub,devcloud,companion,control-plane,mobile,web-controller}`、`proto/cloudpb/`、`shared/cloudcompanion/`、`clients/mobile/android/`、`cmd/termx/`、staging systemd/runbook、`docs/remote-platform/`、`workflow.md` 与对应 harness；Hub 使用 daemon edge token 和本地 public key projection 创建/验证 fresh Presence，Control Plane 只负责首次 enrollment、低频 session refresh 和后台 signed policy；Control Plane 设备安全目录、签名 authority 与 Hub verified snapshot 必须可重启恢复。account/device refresh credential 只进 OS credential store/Android Keystore，服务端只持有轮换 hash；refresh 不得进入 WebView、日志、配置或 Hub。旧 Control Plane Presence challenge/admission endpoint、ticket envelope 和 runtime fallback 必须删除。允许最小联动 Web Controller enrollment 控件，修复注册码复制、过期反馈和 revoked daemon 重新注册体验；允许最小联动 `clients/ui/` 的连接信息控件与 harness，使 Android 真机 direct 明确失败后仍能显式切换 single Relay，不改变自动路由算法或 endpoint/transport owner。
 - KS012：`tui/{shortcut,input,app,render,config,state,terminalhost}`、`tui/docs/{shortcut-system-plan.md,shortcut-inventory.md,shortcut-contract-debt.json}`、`workflow.md` 与必要测试；只做最终现状审计、机器可读 debt manifest 和“无未分类/无新增 debt”守卫，可删除已被新模型替代的测试 helper，不要求提前修完 KS013-KS016 gap。
 - KS013：新增 `tui/action/`，并允许修改 `tui/{shortcut,input,app,render,config,state}`、对应测试/文档与 `workflow.md`；只建立中立 action domain、shortcut 引用和 keyboard invocation -> handler contract，删除重复 identity/alias/scene 语义，不迁移 render surface 提示/点击。
 - KS014：`tui/{terminalhost,input,shortcut,config,app,state}`、对应测试/文档与 `workflow.md`；只收口 raw key/mouse 到 InputEvent、catalog 编译、scene/lock/back navigation 和 PTY passthrough，不触及 renderer 视觉重做。
@@ -160,6 +162,7 @@
 | CLOUD015 | 完成 | Web 唯一登录源、节点发现与 App 设备激活 | App 短码与 Web QR 二次批准、同账号 daemon 发现、daemon-owned 配对、客户端/服务端分区、Web 撤销、Keystore 恢复和 direct/single Relay 真机链路完成 |
 | CLOUD016 | 完成 | 客户端激活归位与 TUI 授权说明 | 手机激活位于客户端访问区域；TUI 登录只负责账号发现，访问 daemon 必须单独导入 daemon-owned capability grant |
 | CLOUD017 | 完成 | Cloud 全链路泳道与降载审计 | 当前实现和目标架构分开绘制；明确 Web/Control Plane 调用频率、Hub 热路径、故障窗口和待改造项 |
+| CLOUD018 | 暂停 | Hub 自主 Presence 与持久 session P0 | 已保存实现检查点；恢复后补齐 staging/ADB 最终验收，暂停期间不阻塞后续切片 |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
 | GA004 | 延后 | 单 transit 受控加速 | 仅在 GA003 数据证明需要时恢复 |
 | KS012 | 完成 | 快捷键最终审计与总契约 | 所有 binding/spec/handler/projection 被机器归类为符合或有 owner 的 debt，无未分类项且不能新增 debt |
@@ -221,6 +224,7 @@
 - CLOUD015：短码活动集合唯一性、过期/重放/猜码/跨 Flow 领取、二维码高熵 claim、设备 metadata 与 Web 二次批准 harness；Control Plane/Web Controller/Official Android 定向测试；React/Vite typecheck/build、Android source sync/Official public HTTP APK；staging 部署后验证 TUI 原登录不回归，并用 ADB 真机完成配对码和扫码两条 App 激活、Keystore 进程恢复、direct/single Relay terminal 数据面；`git diff --check`。ADB 不在线时不得标记完成。
 - CLOUD016：Web Controller React typecheck/build、客户端与 daemon 分区静态检查、文档命令审查、staging 静态资源部署和 `git diff --check`。
 - CLOUD017 文档-only：Mermaid 代码块闭合检查、关键场景与参与者覆盖检查、旧架构图冲突标注、`git diff --check`。
+- CLOUD018：Hub fresh challenge/proof replay/错误 key/revoke/stale policy harness；Control Plane 目录、authority、refresh hash 重启与 rotation/replay harness；Companion 和 Official Android 到期前自动 refresh、过期/撤销 fail closed；删除旧 Presence endpoint/AdmissionWire 静态守卫；Cloud supervisor/Hub 重启后 daemon 无需 enrollment 即可 Presence，Control Plane listener 关闭后 daemon Presence 重连与 client direct/single Relay 真实 E2E；全量受影响 module、Android source sync/APK、staging 部署、ADB 真机恢复和 `git diff --check`。
 - KS012：debt manifest 分类完整性/不新增守卫、shortcut/domain/input/app/render/config 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
 - KS013：`tui/action` canonical identity/invocation、shortcut 引用、keyboard handler 与 render metadata contract 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
 - KS014：TerminalHost raw/CSI-u/mouse parser、key canonicalization、catalog replacement、scene/lock/back/PTY passthrough 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
@@ -304,4 +308,6 @@
 - CLOUD015 已完成：Web 是唯一身份批准入口；Official App 可显示短码等待已登录 Web 批准，也可认领 Web 一次性 QR 并由 Web 核对手机 metadata 后二次批准，edge session 只进入 Android Keystore。Hub 账号目录明确区分 `daemon` 与 `client`：App 机器列表只消费同账号 daemon，手机/TUI/GUI 只进入 Web“客户端访问”，守护进程单列为可连接服务端；配对 bundle 只授予 daemon capability，不能用手机型号覆盖 Hub daemon 名称，`pair create --label` 默认使用 daemon 主机名。Hub 签名授权快照每五分钟由 Control Plane 主动刷新，请求热路径不回源；Web daemon 在线状态由 Hub Presence 投影，进程启动先清除 SQLite 旧在线值。`114.66.58.243` 已部署摘要 `0e6e95e3a0b4a7b40515f66cd90ce78e88c7a2258f30e62057a140a446706489` 的 Cloud supervisor 和新版静态 Web；测试账号只保留当前 Huawei App、当前本机 CLI 与 `RedmiBook.local` daemon。ADB `HUAWEI JAD-AL00` 强杀重启后仍从 Keystore 恢复账号和 grant，首页只显示 `RedmiBook.local / Available`；真实 terminal 连接分别观测 `direct` 与 `single_relay`，后者 `relayInUse=true`，结束后已恢复 direct。CLI、devcloud、Web Controller、共享 UI 63 文件/458 tests、Web typecheck/build、Android source sync、Official public HTTP 单测/APK 与 `git diff --check` 全绿。
 - CLOUD016 已完成：账号中心“客户端访问”面板现在同时拥有手机 QR 激活入口和手机/TUI/GUI 访问表，“守护进程”面板只保留 daemon enrollment、Presence 在线状态与移除操作。TUI 用户流程明确拆为账号发现和 capability 两步：`termx cloud login` 不授予 terminal 权限；daemon owner 必须用 `termx pair create` 签发 bundle，TUI 通过 `termx pair import` 导入。文档给出 SSH 管道不落盘和 owner-only 文件两种路径，并明确 Web、Control Plane、Hub 不接收 grant。Web typecheck/build、分区顺序静态检查、`git diff --check` 通过；新版静态资源已部署到 `114.66.58.243`，Nginx 与 Cloud 未重启且保持 active。
 - CLOUD017 已完成：新增 `cloud-end-to-end-swimlanes.md`，用 10 组泳道覆盖 TUI 登录、App QR 激活、daemon enrollment、当前 Presence、capability 配对、direct、single Relay、撤销/订阅同步、Control Plane 故障和目标 Hub 自治。审计确认 Web Controller 不在连接热路径，client 目录/resolve/signaling/Relay lease 已只访问 Hub；当前 P0 缺口是 Presence 重连仍同步调用 Control Plane 两次、staging 设备安全目录与 edge session 未持久恢复、account/device session 固定 8 小时且缺少 refresh。policy 当前每 5 分钟刷新、Hub `max_staleness` 30 分钟，超过窗口 fail closed。旧 Hub 计划和网络拓扑已标明目标/现状差异；10 个 Mermaid block 闭合、关键场景覆盖和 `git diff --check` 通过，未改 runtime。
+
+- CLOUD018 已于 2026-07-15 按用户要求暂停并保存实现检查点：Hub 本地 Presence challenge/proof、Control Plane 持久安全目录、Hub verified snapshot、account/device refresh rotation、旧 Presence admission 删除以及 Companion/Official Android 自动刷新均保留。暂停前已通过 Control Plane、Hub、Companion、devcloud、CLI/shared Go 测试、`make test-clients`、`make test-android` 两套单测与 APK 构建及 `git diff --check`；此前 staging 部署与 Control Plane 关闭后的 direct/single Relay 证据也保留。尚未完成本轮 staging 复验和 ADB 真机恢复终验，因此该切片不得标记完成或作为生产就绪依据；后续恢复 CLOUD018 时从本检查点补齐剩余门禁。
 - 正式开源隔离、生产 OAuth/TLS、持久化数据库、计费、团队治理、Relay Mesh 和多区域运维全部延后。

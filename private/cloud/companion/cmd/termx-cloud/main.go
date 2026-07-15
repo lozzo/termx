@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -98,9 +100,14 @@ func serve(ctx context.Context, endpoint string, smoke bool, devManifest, profil
 	if err != nil {
 		return err
 	}
+	executableSHA256, err := currentExecutableSHA256()
+	if err != nil {
+		return err
+	}
 	service, err := companion.NewService(companion.Config{
 		CompanionVersion:        companionVersion,
 		BuildChannel:            buildChannel,
+		ExecutableSHA256:        executableSHA256,
 		StreamCapacity:          64,
 		AllowPublicHTTPLoginURL: runtimeConfiguration.allowPublicHTTPLoginURL,
 		Capabilities: []cloudpb.CompanionCapability{
@@ -128,6 +135,33 @@ func serve(ctx context.Context, endpoint string, smoke bool, devManifest, profil
 		OnShutdown: cancel,
 	}
 	return server.Serve(serveContext, listener)
+}
+
+// currentExecutableSHA256 读取当前进程对应的固定可执行文件并计算摘要。
+// 摘要只用于本地 Hello 绑定运行进程与 installer 已复验 artifact；读取失败必须阻止服务启动。
+func currentExecutableSHA256() ([]byte, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("resolve Cloud Companion executable: %w", err)
+	}
+	realExecutable, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		return nil, fmt.Errorf("verify Cloud Companion executable: %w", err)
+	}
+	file, err := os.Open(realExecutable)
+	if err != nil {
+		return nil, fmt.Errorf("open Cloud Companion executable: %w", err)
+	}
+	hash := sha256.New()
+	_, copyErr := io.Copy(hash, file)
+	closeErr := file.Close()
+	if copyErr != nil {
+		return nil, fmt.Errorf("hash Cloud Companion executable: %w", copyErr)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("close Cloud Companion executable: %w", closeErr)
+	}
+	return hash.Sum(nil), nil
 }
 
 type cloudRuntimeConfiguration struct {
