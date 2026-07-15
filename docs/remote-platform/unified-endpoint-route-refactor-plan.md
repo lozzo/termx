@@ -1,6 +1,6 @@
 # 统一 Endpoint、多 Route 与 Transport 竞速重构方案
 
-状态：用户审核草案，已补充私有 TermX Cloud 专项审计，未进入实现
+状态：用户审核草案，已补充私有 TermX Cloud 专项审计、App/二维码统一与本地发现设计，未进入实现
 
 日期：2026-07-15
 
@@ -29,6 +29,9 @@
 7. transport 切换不改变 `EndpointID`、`TerminalRef`、terminal lifecycle 或 history truth。
 8. Cloud Companion 只作为 managed WebRTC route provider，不拥有 endpoint registry、跨 transport 选择或 terminal protocol session。
 9. local、SSH 和指定 IP 不依赖账号、订阅、Hub 或 Relay；Cloud 故障只降低 managed route 可用性。
+10. Official App 启动后先从本地 registry 恢复所有 endpoint；未登录 Cloud 或 Cloud 离线时，本地直连和 SSH endpoint 仍可发现、展示和连接。
+11. 扫码、Cloud directory、LAN discovery 和手工配置统一进入同一个 `EndpointAssembler`，按已验证的 daemon fingerprint 合并，而不是形成互不相认的机器列表。
+12. 同一 daemon 后续新增、删除或重新导入 route 时，只更新该 endpoint 的 route 集合，不复制 terminal、history、授权或用户展示状态。
 
 ## 3. 非目标
 
@@ -38,6 +41,8 @@
 - 不让 Cloud 服务读取 CapabilityGrant、terminal metadata、history、文件信息或 terminal payload。
 - 不使用 hostname、IP、endpoint label、SSH alias 或 Hub device id 作为 daemon 安全身份。
 - 不为指定 IP 连接新增用户名密码或长期共享 token 授权体系。
+- 不在二维码中携带 SSH 密码、SSH 私钥、Cloud access/refresh token、Hub/Relay 地址或用户配置的 route priority。
+- 不让 Cloud 登录状态决定本地 endpoint 是否存在，也不把 `local/cloud/local_cloud` 保留为持久化机器类型。
 
 ## 4. 术语与领域模型
 
@@ -127,6 +132,8 @@ EndpointSession
 
 ## 5. 建议配置 Schema
 
+### 5.1 Endpoint registry
+
 桌面 `connections.yaml` 建议升级为破坏性的 v2 schema：
 
 ```yaml
@@ -164,6 +171,233 @@ endpoints:
 ```
 
 移动端不要求使用 YAML，但 native endpoint store 必须表达同一 versioned domain schema，并通过共享 contract fixture 验证。
+
+### 5.2 扫码、Cloud 和手工配置只是 Endpoint 获取来源
+
+客户端最终只应有一份 `SavedEndpointRegistry`。扫码、Cloud 目录、手工 direct/SSH 配置和后续局域网发现只是向 registry 或临时 discovery projection 提供候选信息：
+
+```text
+SavedEndpointRegistry
+CloudDiscoveryProjection
+BootstrapImportResult
+ManualRouteDraft
+        |
+        v
+EndpointAssembler
+        |
+        v
+一个 DaemonIdentity 对应一个 Endpoint，Endpoint 下包含多条 Route
+```
+
+约束：
+
+- `source=cloud/local/manual` 只能作为 provenance，不能成为 endpoint kind。
+- `local/cloud/local_cloud` 不能作为持久连接真值；UI 应从当前 route 集合推导可用能力。
+- Cloud 目录可以展示尚未保存的 discovery candidate，但只有用户扫码、手工添加、完成配对或显式固定后才进入本地 registry。
+- Cloud logout 只让 managed route 失去账号准入，不删除已保存 Endpoint、CapabilityGrant、direct route 或 SSH route。
+- App 离线启动时先读取本地 Endpoint registry；不能因为 Cloud 目录刷新失败而隐藏非 Cloud endpoint。
+
+### 5.3 当前两套二维码协议为什么不能继续共存
+
+当前实现实际存在两条不兼容路径：
+
+- `shared/remoteauth.PairingBundle v1` 只包含 `DeviceID + DeviceFingerprint + CapabilityGrant`，不包含任何 route；CLI 和 Android importer 导入后却直接把它解释成 `hub-p2p/managed Cloud` endpoint。该 grant 还是未绑定客户端密钥的 bearer secret，二维码被复制后权限也被复制。
+- `clients/ui/src/state/pairingPayload.ts` 的 schema v4 包含本地 Hub URL 和一次性 pairing session secret，但没有新的 DeviceIdentity/CapabilityGrant 真值，并继续依赖旧 Hub claim/session-token 路径。
+- Cloud `ManagedDevice` 目录只返回 DeviceID 和展示 metadata，不返回 fingerprint；共享 UI 因此只能按裸 machine ID 把 Cloud 与本地记录拼接。
+
+这三点共同造成了用户看到的割裂：扫码不是在给同一 daemon 增加访问方式，而是在进入完全不同的连接系统。
+
+迁移时不应给两套旧 payload 再增加桥接或 fallback。当前仍处于私有开发阶段，应由一个破坏性的 bootstrap v2 contract 替换，并删除：
+
+- `PairingBundle v1` 的“导入即 Cloud endpoint”语义。
+- schema v4 local Hub URL/session secret parser。
+- `/api/v1/pairing/claims` 及旧 session token 持久化路径。
+- `MachineAccessClass` 与 `local_cloud` 合并分类。
+
+### 5.4 EndpointBootstrapBundle v2
+
+二维码、owner-only 文件和近端文本导入使用同一个 daemon-signed bundle。建议使用 deterministic protobuf，再以 base64url 放入 `termx://bootstrap?payload=...`，避免继续维护多套手写 JSON parser。
+
+```text
+EndpointBootstrapBundleV2
+  SchemaVersion
+  BundleID
+  EndpointIdentity
+    DeviceID
+    DevicePublicKey
+    DeviceFingerprint
+    SuggestedLabel
+  Routes[]
+  AuthorizationBootstrap?
+    PairingTicket?          默认；一次性、短时、仅用于换取客户端绑定授权
+    BoundGrant?             仅用于双向离线扫码的响应包
+  IssuedAt
+  ExpiresAt
+  BundleSignature          DeviceIdentity 对全部字段的签名
+```
+
+`PairingTicket` 至少包含 `TicketID + ScopeCeiling + ExpiresAt + Nonce + MaxRedemptions=1`，并由 daemon DeviceIdentity 签名。它只能打开受限的 pairing handshake，不能直接访问 terminal、history 或 file protocol。
+
+客户端为每个 Endpoint 生成独立的 `ClientAccessIdentity`，private key 只进入平台 secure store。不要直接复用 Cloud `ClientInstallationIdentity`，否则 Cloud 账号身份和多个 daemon 的端到端授权会共享可关联公钥。
+
+默认配对流程：
+
+1. App 本地验证 bundle、daemon identity、route hint 和 ticket 签名，不把 ticket 发给 Cloud。
+2. App 经任一可达 route 建立只到 daemon 的安全 channel，并证明新生成的 `ClientAccessIdentity` private key possession。
+3. daemon 原子验证 ticket 未过期、未使用且 scope 未超限，把 `TicketID` 标记为 consumed，并签发带 `SubjectKeyFingerprint` 的 `CapabilityGrant v2`。
+4. App 把 grant 与 client key ref 原子写入 secure store，registry 只保存 credential ref。
+5. 后续 direct TLS/managed WebRTC session 必须同时提交 grant 和 client-key channel-bound signature；复制 grant 文本本身不能建立 session。
+
+这里的“离线配对”指不依赖 TermX Cloud，只要手机能通过 LAN direct、SSH 或已有 managed DataChannel 到达 daemon 即可。若要求双方完全无网络，使用双向二维码：App 先展示 `ClientAccessIdentity` public key，daemon 再生成只绑定该 key 的 `BoundGrant` 响应包；禁止退回长期 bearer grant 单码导入。
+
+首期 portable route hint：
+
+```text
+DirectTLSRouteHint
+  RouteID
+  Addresses[]              IP/DNS + port
+  ServerName?              仅作 TLS routing，不是信任锚点
+
+SSHStdioRouteHint
+  RouteID
+  Host
+  Port
+  UserHint?
+  HostKeyFingerprints[]
+  RemoteSocket
+
+ManagedWebRTCRouteHint
+  RouteID
+  TargetDeviceID
+  AccountProfileHint?      只帮助选择本机账号 profile
+```
+
+bundle 规则：
+
+- DeviceIdentity 对 canonical bundle 签名；导入端验证 public key、fingerprint、DeviceID、bundle signature，以及 PairingTicket/BoundGrant issuer 全部一致。
+- direct 地址、SSH host 和 Cloud target 都不是 daemon 信任锚点；最终连接仍必须完成第 8 节 identity proof。
+- bundle 不携带 route priority。优先级是客户端本地策略，扫码不得替用户改变竞速顺序。
+- bundle 不携带 Hub URL、Relay URL、edge token、refresh secret、Cloud account session、SSH password、SSH private key 或 Android/Desktop 本地 credential ref。
+- portable bundle 不包含 `local-unix` route，因为另一台设备无法使用 daemon 主机上的 Unix socket。
+- 默认二维码只携带短时一次性 `PairingTicket`，不携带长期 bearer grant；ticket 即使进入临时 secure store，也必须在成功兑换或过期后删除。
+- 双向离线响应包可以携带已绑定指定 `ClientAccessIdentity` 的 grant；导入端必须先证明自己持有对应 private key。
+- 同一个 bundle 可以同时带 direct、SSH 和 managed route，也可以只带 identity + ticket，用于给已由 Cloud 发现的 endpoint 补授权。
+- bundle 中未出现某条 route 不表示删除；二维码是增量 bootstrap，不是客户端 registry 的全量覆盖真值。
+
+### 5.5 Endpoint 合并算法
+
+`EndpointAssembler` 使用经过验证的 daemon identity 合并，不能使用 label、hostname、IP、SSH alias、Cloud account 或 Hub URL。
+
+建议顺序：
+
+1. 完整验证 bootstrap bundle 或 Cloud signed directory projection，任何 secret 尚未写入。
+2. 以 `DeviceFingerprint` 查询本地 identity index。
+3. 已存在相同 fingerprint 时复用原 `EndpointID`，并要求 DeviceID 一致。
+4. 相同 DeviceID 但 fingerprint 不同，或相同 fingerprint 携带不同 DeviceID，进入 `identity_conflict`，禁止自动合并或覆盖 pin。
+5. 没有现存 Endpoint 时创建新的客户端本地 `EndpointID`；suggested label 只用于初始展示，之后不覆盖用户改名。
+6. 按 `RouteID + RouteKind` upsert route。相同 RouteID 改成另一种 kind 属于冲突；地址变化可以作为同 route 的已签名配置更新。
+7. 导入 ticket 时先验证 scope ceiling/expiry；兑换成功后原子写 `ClientAccessIdentity` key ref、绑定 grant 和 registry credential ref。新 grant 扩大现有 scope 时必须让用户明确确认，不能静默提权。
+8. 不修改已有 route priority、manual override、connect mode 和用户禁用状态。
+
+导入顺序必须满足交换律：
+
+```text
+先登录 Cloud，再扫二维码
+==
+先扫二维码，再登录 Cloud
+==
+先手工加 SSH，再补扫身份/授权
+```
+
+最终结果都应是同一个 Endpoint，具有相同 identity、route 集合和 credential refs。
+
+### 5.6 Route 与授权分离
+
+客户端绑定的 CapabilityGrant 是 transport-neutral daemon capability，可以由同一 Endpoint 的 `direct-tls` 和 `managed-webrtc` route 共同引用；route 地址变化不应重新签发授权。授权要求 `grant + ClientAccessIdentity proof`，不再把“拿到 bearer 文本”视为客户端身份。
+
+SSH 不同：
+
+- SSH server host key、用户名和 client credential 属于 `ssh-stdio` route。
+- SSH private key/password 只进入手机或桌面的本地 secure credential store，二维码不得携带。
+- 扫描带 SSH hint 的 bundle 后，如果本机没有可用 `SSHCredentialRef`，该 route 保存为 `credential_required`，不参与自动竞速。
+- 用户手工添加 SSH 时先创建 `ManualRouteDraft`。在 SSH host key 和 daemon DeviceIdentity 都验证完成、用户接受 pin 后，才提交或合并到正式 Endpoint。
+- 为“一次扫码即可连接”的本地体验，应优先让 daemon QR 包含 `direct-tls` 地址和一次性 `PairingTicket`；SSH 是需要已有密钥或额外凭据步骤的高级 route。
+
+### 5.7 Cloud 目录如何与本地 Endpoint 合并
+
+Hub 已持有 daemon public key 投影，因此 `ManagedDevice` 必须增加 `device_fingerprint`；同账号目录返回 fingerprint 不会扩大 terminal capability，只让客户端安全识别同一个 daemon。
+
+Cloud 同步规则：
+
+- Cloud directory 为同一 fingerprint 增加或刷新一条 `managed-webrtc` route，不创建第二个 machine。
+- Cloud directory 不提供 PairingTicket 或 CapabilityGrant。没有本地绑定 grant 时 endpoint 可以展示为 `authorization_required`，但不能开始 terminal protocol。
+- Cloud route 只保存 `TargetDeviceID + account profile ref`；Hub assignment 和 ICE/Relay 信息继续在每次 managed attempt 中短期 resolve。
+- Cloud 设备 revoke/logout 只移除或禁用 managed route。daemon-local CapabilityGrant 是否仍有效，继续由 daemon 本地 revoke truth 决定。
+- 仅由 Cloud 临时发现且用户从未保存/配对的 candidate 可以随 logout 消失；已经保存或含其他 route 的 Endpoint 必须保留。
+
+### 5.8 Official App 目标交互
+
+首页只显示 daemon Endpoint，不再显示“Cloud 机器”和“本地机器”两套列表。
+
+每个 Endpoint 可展示：
+
+- 当前是否已授权。
+- 可用 route 图标/状态：LAN direct、SSH、Cloud。
+- 当前连接实际使用的 route；managed route 再展示 direct/single-relay path。
+- route race 期间正在尝试的方式。
+
+新增入口统一为：
+
+- 扫描 daemon QR：创建 Endpoint 或向已有 Endpoint 增加 route/授权。
+- 手工添加 direct route：先验证 daemon identity，再提交。
+- 手工添加 SSH route：配置 host、host-key pin 和本地 credential ref。
+- 登录 TermX Cloud：增加账号 discovery overlay 和 managed route，不改变已有本地配置。
+
+扫描已有 Cloud endpoint 的 QR 时，交互应表达“为这个 daemon 增加 LAN/SSH route 和授权”，不能再创建第二张机器卡片。扫描到相同 DeviceID 但 fingerprint 不同必须显示安全冲突，不能让用户通过普通确认按钮覆盖。
+
+### 5.9 一个扫码入口，两个明确安全域
+
+App 可以只展示一个扫码入口，但扫码 payload 必须先按显式 scheme/version/intent 分发，禁止继续采用“先尝试 Cloud parser，失败后再尝试 local parser”的猜测式解析：
+
+```text
+termx://endpoint/bootstrap?...   daemon identity、route、pairing ticket
+termx://cloud/activate?...       Cloud account/device activation
+```
+
+两种 intent 的结果不同：
+
+- endpoint bootstrap 只写本地 Endpoint registry、secure credential store 和 pairing exchange，不创建 Cloud account session。
+- Cloud activation 只建立本机 account profile/session，再由 directory overlay 提供 managed route；activation payload 本身不创建 daemon Endpoint，也不携带 CapabilityGrant。
+- scanner 在解析后必须先显示明确动作“添加/授权 daemon”或“登录 TermX Cloud”，不能把两种授权合并成一个确认按钮。
+- 未知 scheme/version/intent 直接拒绝，不做 legacy fallback；二维码内容不得上传给 Cloud 或第三方扫码服务解析。
+
+因此统一的是入口、Endpoint 投影和后续连接体验，不是把 Cloud account credential 与 daemon capability 混成一种 token。
+
+### 5.10 本地发现与 DHCP 地址变化
+
+二维码里的 IP/DNS 只是 direct route 的 seed，不是长期网络真值。手机和 daemon 可能换 Wi-Fi、IPv4 地址、IPv6 temporary address 或端口，因此 App/TUI 需要独立的 `LocalDiscoveryProvider`：
+
+```text
+LocalDiscoveryCandidate
+  ClaimedDeviceID
+  ClaimedFingerprint
+  Address
+  Port
+  ProtocolVersion
+  AnnouncementExpiry
+  AnnouncementSignature?
+```
+
+规则：
+
+- 优先使用平台 mDNS/Bonjour primitive 发布 TermX service；announcement 可以由 DeviceIdentity 签名，但无论是否签名，地址最终都必须通过 TLS + daemon identity handshake 验证。
+- 已保存 endpoint 只接受 fingerprint 与 pin 一致的 discovery candidate；mDNS label、来源 IP 和 DeviceID 单独出现都不能触发合并或换 pin。
+- 未配对 daemon 可以显示为短期“附近设备”candidate，但在 PairingTicket、双向扫码或其他明确授权完成前不能访问 terminal。
+- discovery 地址只保存在内存 TTL cache，参与对应 `direct-tls` route 的 address race；不要为每次广播、IP 抖动或网络切换写 endpoint registry。
+- 可以低频保存最近成功地址作为下次冷启动 seed，但写入要 debounce/桶化；失败 seed 不删除 endpoint，也不阻止重新 discovery。
+- 切换 Wi-Fi、VPN 或蜂窝网络时只使旧 candidate 过期并重新规划 route，不改变 EndpointID、授权或用户 priority。
+
+这样“本地连接”不再是一张独立机器记录，而是同一 direct route 的动态地址来源；Cloud directory、二维码 seed 和 LAN discovery 最终都汇入同一个 EndpointSessionManager。
 
 ## 6. Route 选择与竞速
 
@@ -300,8 +534,8 @@ protocol/transport 需要增加可验证 daemon identity challenge，使 SSH 和
 
 - `local-unix`：当前用户本地 socket 权限。
 - `ssh-stdio`：OpenSSH host key + 用户认证 + 远端 socket 权限。
-- `direct-tls`：DeviceIdentity + CapabilityGrant。
-- `managed-webrtc`：DTLS-bound DeviceIdentity + CapabilityGrant。
+- `direct-tls`：DeviceIdentity + client-bound CapabilityGrant + ClientAccessIdentity proof。
+- `managed-webrtc`：DTLS-bound DeviceIdentity + client-bound CapabilityGrant + ClientAccessIdentity proof。
 
 Authorization scope 是 session 属性，不是 endpoint 展示属性。竞速 winner 必须满足当前 `ConnectIntent` 所要求的 capability。
 
@@ -312,8 +546,8 @@ Authorization scope 是 session 属性，不是 endpoint 展示属性。竞速 w
 1. daemon 显式启用 TLS 1.3 listener，默认关闭公网监听。
 2. TLS certificate 可以短期轮换，但 daemon 必须在认证握手中签名当前 TLS certificate fingerprint。
 3. client 先验证 pinned DeviceFingerprint 和实际 TLS peer certificate binding。
-4. identity 通过后，client 才提交 CapabilityGrant challenge proof。
-5. daemon 验证 grant、expiry、revoke 和 scope 后调用 core-v2 `ServeScopedTransport`。
+4. identity 通过后，client 才提交 client-bound CapabilityGrant 和 `ClientAccessIdentity` channel-bound signature。
+5. daemon 验证 grant issuer/subject、client key proof、expiry、revoke 和 scope 后调用 core-v2 `ServeScopedTransport`。
 
 该模型与 managed WebRTC 的 DTLS DataChannel 授权语义一致，区别只在 transport/channel binding。
 
@@ -353,7 +587,8 @@ TUI reducer 投影：
 
 Official App native 层拥有：
 
-- endpoint/route store。
+- `SavedEndpointRegistry`、daemon fingerprint 索引和 endpoint/route store。
+- `EndpointBootstrapBundle` 的本地解析、签名验证与 `EndpointAssembler` 合并事务。
 - credential reference resolution。
 - route dialer。
 - route race/session lifecycle。
@@ -361,12 +596,22 @@ Official App native 层拥有：
 
 共享 TypeScript UI 只负责：
 
-- endpoint 和 route 展示。
+- 消费脱敏后的 endpoint、route、授权状态和 runtime projection；不得接触原始 CapabilityGrant、SSH 私钥或密码。
+- endpoint 和 route 展示，不再按 `local/cloud/local_cloud` 拆机器列表。
 - 用户发起 connect/reconnect/select route。
+- 用户发起扫码、手工 direct/SSH route 新建和凭据补全；原生层完成验证与持久化后再回传结果。
 - 消费 runtime event。
 - 使用唯一活动 protocol session。
 
-需要删除共享 UI 中拥有网络竞速真值的旧 local/hub orchestrator，以及 Kotlin Cloud-only `ConnectionStore` 与 TypeScript native session manager 的重复职责。
+App 启动顺序固定为：
+
+1. 先加载本地 `SavedEndpointRegistry`，立即展示可离线使用的 local/direct/SSH endpoint。
+2. 再启动可选的 Cloud account session；Cloud directory 只向 `EndpointAssembler` 提交带 fingerprint 的 managed route overlay。
+3. 启动 LAN discovery；网络恢复、扫码导入、手工新增、discovery candidate 和 Cloud directory 更新都走同一合并/投影边界，再触发 route eligibility/race 重算。
+
+Android 首期必须补齐 direct TLS connector；SSH connector 应使用经过验证的 SSH client library，并由原生层管理 host-key pin 和 credential ref，不在 TypeScript 中实现 SSH 协议。
+
+需要删除共享 UI 中拥有网络竞速真值的旧 local/hub orchestrator、`machineStore` 的来源分类合并，以及 Kotlin Cloud-only `ConnectionStore`、`ManagedPairingImporter`“扫码即 Cloud endpoint”和 TypeScript native session manager 的重复职责。
 
 ## 11. Daemon 多 Ingress 装配
 
@@ -410,6 +655,10 @@ Cloud Companion 不应拥有：
 
 - 冻结 Endpoint/Route/Session/Path/ConnectIntent 模型。
 - 建立 connections v2 schema。
+- 定义确定性编码并由 DeviceIdentity 签名的 `EndpointBootstrapBundle v2`。
+- 定义一次性 `PairingTicket`、每 Endpoint `ClientAccessIdentity` 和带 `SubjectKeyFingerprint` 的 `CapabilityGrant v2`；删除新配对继续签发 bearer-only grant 的路径。
+- Cloud `ManagedDevice` projection 增加 `device_fingerprint`，建立 Cloud/QR/manual discovery 的统一 `EndpointAssembler`。
+- 定义带 TTL 的 `LocalDiscoveryCandidate` fixture；动态地址不进入 endpoint identity 或高频持久化真值。
 - 建立 Go/Kotlin/TypeScript fixture。
 - 更新现有 endpoint/transport 文档真值。
 
@@ -417,17 +666,21 @@ Cloud Companion 不应拥有：
 
 - daemon 启动统一加载 DeviceIdentity。
 - 增加跨 transport identity challenge/proof。
-- 证明 local、SSH、managed WebRTC 返回同一 identity。
+- 增加只允许 pairing exchange 的受限 handshake；ticket consume 与 bound grant 签发必须是 daemon-local 原子事务。
+- 证明 local、SSH、direct TLS、managed WebRTC 返回同一 identity。
+- SSH 手工草稿只有在 host key 与 daemon identity 都被验证后，才可归并到已有 endpoint。
 
 ### CONN003：Route planner 与 TUI/CLI session manager
 
 - 实现 priority/staggered/default race。
+- 先接入本地 registry、`EndpointAssembler` 和 route eligibility；Cloud 不在启动关键路径上。
 - local/SSH 先接入新 session manager。
 - service router 继续保持 endpoint-aware。
 
 ### CONN004：Managed Cloud route adapter
 
 - managed Cloud 改成普通 route dialer。
+- Cloud directory 按已验证 fingerprint 向现有 endpoint 叠加 managed route，不按裸 DeviceID 或来源类型创建第二台机器。
 - 外层 race 不进入 Companion。
 - 清理 Cloud IPC 中客户端本地 endpoint identity。
 
@@ -439,19 +692,40 @@ Cloud Companion 不应拥有：
 
 ### CONN006：Official App
 
-- Android native 建立统一 endpoint route manager。
+- Android native 建立统一 endpoint route manager、bootstrap verifier、per-endpoint `ClientAccessIdentity`、secure credential store 和 `EndpointAssembler`。
+- 接入 direct TLS 与 SSH route connector；缺少 SSH credential 时保留 route 并标记 `credential_required`，不做 Cloud fallback。
+- 使用平台 LAN discovery primitive，为 pinned endpoint 提供短期 direct address candidate；网络变化只刷新 candidate。
+- App 未登录或无法访问 Cloud 时仍从本地 registry 展示并连接扫码/手工导入的 endpoint。
 - TUI/App planner contract 对齐。
 - 共享 TypeScript UI 退出网络 owner 职责。
 
 ### CONN007：删除旧路径与真实验收
 
 - 删除 local/hub URL race、旧 session token 和重复 connection store。
+- 删除 `PairingBundle v1`“导入即 managed Cloud”、UI schema v4 `termx_pair`、旧 Hub pairing claim 和二维码来源分叉。
 - 删除 `local/cloud/local_cloud` 作为持久连接 truth 的分类。
+- 删除按裸 machine/device ID 合并的路径；所有自动合并必须基于已验证 fingerprint。
 - 完成真实 SSH、direct TLS、managed direct/single Relay 竞速与切换验收。
 
 ## 14. 必要 Harness
 
 - 一个 endpoint 配置 SSH、direct TLS、managed WebRTC，只显示一个 machine/endpoint。
+- App 未登录 Cloud 时，扫描 direct TLS + PairingTicket bundle 后可落入本地 registry、直接向 daemon 兑换绑定 grant 并完成连接。
+- App 冷启动且 Cloud 不可达时，已保存的 direct TLS/SSH endpoint 仍立即可见并可连接。
+- daemon DHCP 地址改变后，App 通过 LAN discovery 找到同一 fingerprint 并连接；registry 中 EndpointID、grant ref、priority 和用户 label 不变。
+- 伪造 mDNS label/DeviceID 或错误 fingerprint 的 announcement 不能更新 route pin，也不能进入 terminal handshake 后的 ReadySession。
+- 先导入二维码再登录 Cloud，与先登录 Cloud 再导入二维码，最终得到完全相同的 endpoint identity 和 route 集合。
+- 同一 daemon 分别扫描 direct、SSH 和 managed route bundle，始终只得到一个 endpoint；未配置 priority 时三条 eligible route 参加同一轮竞速。
+- 二维码缺少已有 route 时不得删除该 route；二维码也不得覆盖本地 priority、manual-only、disabled 或用户 label。
+- 相同 DeviceID 但不同 fingerprint、或相同 fingerprint 但不同 DeviceID，必须进入 identity conflict/quarantine，禁止静默合并。
+- Cloud logout、账号撤销或 directory 暂时不可用时，只使 managed route unavailable；direct TLS、SSH 和本地授权记录保持不变。
+- Cloud `ManagedDevice.device_fingerprint` 必须与 route handshake、CapabilityGrant issuer 和 endpoint pin 一致。
+- 同一 PairingTicket 并发兑换只能有一个成功；daemon 在响应丢失后可幂等返回同一 bound grant，不得签发第二份权限，也不得要求 Cloud 在线。
+- 截获 PairingTicket 在过期或消费后不能重放；仅截获 bound grant、但没有对应 `ClientAccessIdentity` private key 时也不能完成 capability handshake。
+- SSH bundle 不含密码/私钥；缺少本地 credential ref 时 route 显示 `credential_required` 且不参与自动竞速。
+- 手工 SSH route 在 host key 和 daemon identity 验证前只保存为 draft，不得依据 hostname、IP 或别名归并 endpoint。
+- bootstrap parser 拒绝未签名、签名错误、过期、未知字段超限和包含禁止 secret 类型的 bundle；ticket、bound grant 和 client key 只进入原生安全边界。
+- scanner 按显式 intent 分发 Cloud activation 与 endpoint bootstrap；模糊 payload 和通过 parser fallback 才能识别的 payload 必须拒绝。
 - 三条 route 注入不同延迟，TUI 与 App 选择相同 winner。
 - 未配置 priority 时所有 eligible route 同时开始。
 - 配置 priority 后按分组和 `hedge_delay` 启动。
@@ -510,7 +784,7 @@ Cloud Companion 不应拥有：
 - `EdgeAccessToken`、`RefreshSecret`、`DeviceIdentity`、`CapabilityGrant` 和 `RelayLease` 是不同 credential type，具有不同 audience 和 custody。
 - Hub 用本地已验签 policy 与 edge token 取交集，cache miss 和 revoke 直接 fail closed，请求热路径不回查 Control Plane。
 - daemon Presence 需要 fresh challenge 和 DeviceIdentity proof，仅有 daemon bearer token 不足以伪造 Presence。
-- CapabilityGrant 只在 DTLS DataChannel 内由 owning daemon 验证，Hub/Relay/Control Plane 无权判断 terminal scope。
+- CapabilityGrant 只在 direct TLS 或 DTLS DataChannel 的端到端安全 channel 内由 owning daemon 验证，Hub/Relay/Control Plane 无权判断 terminal scope。
 - RelayLease 绑定 account、managed session、client、daemon、region、route 和 quota，Relay 可离线验签。
 - 浏览器 session 使用 HttpOnly + SameSite=Strict Cookie，变更请求还要求 same-origin 和 CSRF token。
 - 已建立的 DataChannel 不经 Hub 转发 payload，Cloud 控制面故障不应主动中断已就绪 terminal session。
@@ -604,6 +878,30 @@ daemon 仍使用已有 `DeviceIdentity`；两种 identity 不应混为同一个�
 - login/register/device-code/enrollment 入口按 IP、account 和 flow family 做有界限流，但错误仍不泄漏账号、code 或设备是否存在。
 - 保留 HttpOnly、SameSite=Strict、same-origin 和 CSRF 现有边界。
 - 设备批准页必须明确展示请求设备和操作类型，不允许仅凭一个短码盲目批准。
+
+### 17.5 Daemon-local 配对与授权交换
+
+二维码配对不进入 Cloud `CredentialExchange`，也不写 Control Plane 数据库。它属于 owning daemon 的本地安全事务：
+
+```text
+PairingExchange
+  TicketID
+  TicketDigest
+  ScopeCeiling
+  SubjectKeyFingerprint?
+  State                 issued | consumed | expired | revoked
+  ResultGrantDigest?
+  DeliveryGraceUntil
+```
+
+约束：
+
+- 默认只持久化 ticket digest、状态、过期时间和 result digest，不保存二维码明文。
+- 消费 ticket、绑定 client key、签发 grant 和写 delivery receipt 必须原子完成；响应丢失后同一 ticket + 同一 client key 可在短宽限内取回同一结果。
+- 不同 client key 重放已消费 ticket 必须拒绝；配对失败不能打开 terminal protocol。
+- 这是低频安全写入，一次成功配对只允许一个事务写；普通连接、重连和 capability 验证不得写数据库。
+- 过期/已消费 ticket 使用批量 compaction 清理，不为倒计时或每次校验更新 `last_seen`。
+- daemon-local revoke truth 继续独立于 Cloud；Cloud logout 不撤销本地 grant，用户显式从 daemon 移除客户端才写 revoke。
 
 ## 18. 离线能力与故障隔离
 
@@ -737,6 +1035,8 @@ Presence 是 Hub runtime truth，`nodes.online` 不应是 SQLite 真值。
 | Refresh session | 每次 issue/rotate/revoke 重写所有 hash 记录 | 以 hash/family 为 key 的行级事务；TTL 索引批量清理 |
 | Security directory | 每次 account/user/device 变更重写全量 snapshot | 生产使用规范化表 + security revision + transaction outbox；JSON 仅留 staging harness |
 | Client login | 每次新 device + policy + node upsert + audit | 稳定 installation device；首次 insert，metadata 实际改变才 update，audit 只记语义事件 |
+| Daemon pairing | 当前二维码直接复制长期 bearer grant | ticket consume + bound grant 签发一次原子写；普通连接 0 写；过期记录批量清理 |
+| LAN discovery | 旧 machine address 可能直接持久化或反复更新 | candidate 仅内存 TTL；可选 last-success seed 低频 debounce 写 |
 | Relay usage outbox | 每秒 Enqueue 全量 fsync，每个 Ack 再全量 fsync | append-only/WAL 或 SQLite outbox；按时间/数量批量 append 和 batch ack |
 | Companion credential | 每个 Hub 请求读 OS credential store | 启动/首次使用时读，进程内缓存有效 session；refresh/logout 时原子替换或清理 |
 
@@ -793,6 +1093,7 @@ Web node table、audit 和 Hub policy 都是主安全真值的 projection。当�
 - CLI/TUI `browser` 方法：默认通过平台 opener 打开已验证 HTTPS URL，同时保留 URL 和 code 供手工备用。
 - CLI/TUI `device-code` 方法：不自动打开浏览器，只展示短码、地址、到期和等待状态。两种 method 必须有真实行为差异。
 - Official App 同时保留两条路：同机使用系统浏览器/Custom Tab 批准；跨设备使用 Web 生成 QR，App 扫码后 Web 显示设备 metadata 再批准。
+- Cloud activation QR 与 daemon endpoint bootstrap QR 共用 scanner 外壳，但使用不同显式 intent 和 parser；Cloud activation 成功后只刷新 account discovery overlay。
 - 不在 App WebView 内收集账号密码，不把 browser session Cookie 交给原生模块。
 - 当前 1 秒 polling 改为 20-30 秒可取消 long-poll，或有界退避 + jitter；pending 是稳定状态，不返回泛化 503。
 - flow 取消要有显式 server-side cancel，尽快释放内存容量，TTL 只作为最终保险。
@@ -922,6 +1223,9 @@ Cloud route 的内部 direct/single-relay 候选仍由 managed adapter 管理；
 ### CLOUDR008：统一 Endpoint Route 接入与真实验收
 
 - managed Cloud 作为普通 route dialer 接入第 6 节外层竞速。
+- Cloud directory 输出 daemon fingerprint，并通过 `EndpointAssembler` 与扫码、手工 direct/SSH、本地 discovery 合并。
+- Official App 冷启动先加载本地 registry；Cloud 登录和 directory 更新只叠加 managed route，不创建 Cloud-only machine truth。
+- 统一采用 `EndpointBootstrapBundle v2`，删除 v1 扫码即 Cloud 和 schema v4 local Hub/session-secret 路径。
 - 验收 Cloud loser 取消、Control Plane 离线、Hub/Relay 故障和 SSH/direct/local winner。
 - 删除 Cloud-only endpoint/session owner 和重复 App/TUI connection state machine。
 
@@ -932,10 +1236,12 @@ Cloud route 的内部 direct/single-relay 候选仍由 managed adapter 管理；
 1. 同一 daemon 是一个 Endpoint，local、SSH、direct TLS 和 managed Cloud 是多条 Route，默认竞速，显式 priority 时分组 hedge。
 2. Cloud 不获得外层 route 选择权，只实现一条可取消的 managed route attempt。
 3. 在扩展 route race 前，先修复 login/refresh/enrollment 的事务幂等性和 Relay usage 丢失窗口。
-4. 保留现有 credential 分层、Hub 离线验证和 CapabilityGrant 端到端边界。
+4. 保留现有 credential 分层、Hub 离线验证和 CapabilityGrant 端到端边界，但把二维码默认授权从 bearer grant 升级为一次性 PairingTicket，并把长期 grant 绑定到客户端密钥。
 5. 用 8 小时 edge token 和独立 IdentityPolicy 支持有界 Control Plane 离线，RelayBudget 保持更短窗口；撤销上限作为明确产品安全参数。
 6. Presence 稳态只是 Hub 内存 heartbeat lease，不是每 5 分钟重新 enrollment/认证，也不在每次存活变化时写数据库。
 7. 客户端使用稳定 ClientInstallationIdentity，不在每次登录创建新 cloud device。
 8. policy、refresh、security directory 和 Relay usage 的生产持久化使用行级事务/outbox/WAL，不使用高频全量 JSON fsync。
 9. TUI、CLI 和 Official App 共享同一 route planner、Cloud error、login/enrollment 和 reconnect contract fixture。
 10. 已就绪 DataChannel 的生命周期不与 Companion、Hub、Web 或 Control Plane 的后续可用性绑定。
+11. 扫码、Cloud directory、LAN discovery 和手工 SSH/direct 配置只是 endpoint 获取来源；统一由签名 bootstrap、daemon fingerprint 和 `EndpointAssembler` 合并，不能继续形成 Cloud、本地和 SSH 三套机器真值。
+12. Official App 的本地 endpoint registry 是基础能力，Cloud 是可选 route overlay；退出账号或 Cloud 故障不得隐藏或破坏本地直连、SSH route 与端到端授权。
