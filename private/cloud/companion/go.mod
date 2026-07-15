@@ -16,6 +16,7 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace github.com/lozzow/termx => ../../..

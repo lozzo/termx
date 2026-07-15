@@ -35,19 +35,27 @@ func TestEndpointRegistryCommandLifecycle(t *testing.T) {
 		return output.String()
 	}
 
-	run("endpoint", "add", "ssh", "west", "--address", "root@west.example", "--auth-ref", "ssh:west")
-	run("endpoint", "add", "cloud", "studio", "--hub-device-id", "device-studio", "--device-fingerprint", "SHA256:studio", "--grant-ref", "grant:studio", "--relay", "relay_only")
-	run("endpoint", "update", "west", "--label", "West build host", "--remote-socket", "/run/user/1000/termx.sock")
+	run("endpoint", "add", "ssh", "west", "--host", "root@west.example", "--credential-ref", "ssh:west")
+	run("endpoint", "add", "cloud", "studio", "--device-id", "device-studio", "--device-fingerprint", "SHA256:studio", "--target-device-id", "device-studio", "--credential-ref", "grant:studio", "--relay", "relay_only")
+	run("endpoint", "update", "west", "--label", "West build host")
+	identityUpdate := newRootCmd()
+	identityUpdate.SetOut(io.Discard)
+	identityUpdate.SetErr(io.Discard)
+	identityUpdate.SetArgs([]string{"endpoint", "update", "west", "--device-id", "device-west", "--device-fingerprint", "SHA256:west"})
+	if err := identityUpdate.Execute(); err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("generic endpoint update must not mutate daemon identity: %v", err)
+	}
+	run("endpoint", "route", "update", "west", "ssh", "--remote-socket", "/run/user/1000/termx.sock")
 	run("endpoint", "set-default", "west")
 
 	listing := run("endpoint", "list", "--json")
-	for _, expected := range []string{`"id":"local"`, `"id":"west"`, `"id":"studio"`, `"default":true`, `"transport":"hub-p2p"`} {
+	for _, expected := range []string{`"id":"local"`, `"id":"west"`, `"id":"studio"`, `"default":true`, `"kind":"managed-webrtc"`} {
 		if !strings.Contains(listing, expected) {
 			t.Fatalf("endpoint list missing %s: %s", expected, listing)
 		}
 	}
 	shown := run("endpoint", "show", "west", "--json")
-	if !strings.Contains(shown, `"label":"West build host"`) || !strings.Contains(shown, `"auth_ref":"ssh:west"`) {
+	if !strings.Contains(shown, `"label":"West build host"`) || !strings.Contains(shown, `"credential_ref":"ssh:west"`) {
 		t.Fatalf("unexpected endpoint show: %s", shown)
 	}
 
@@ -60,12 +68,12 @@ func TestEndpointRegistryCommandLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if registry.Default != connection.DefaultEndpointID || registry.Connections["west"].Enabled {
+	if registry.Default != connection.DefaultEndpointID || registry.Endpoints["west"].Enabled {
 		t.Fatalf("disable did not select enabled default: %#v", registry)
 	}
 	run("endpoint", "enable", "west")
 	run("endpoint", "remove", "studio")
-	if _, ok := mustLoadEndpointRegistry(t).Connections["studio"]; ok {
+	if _, ok := mustLoadEndpointRegistry(t).Endpoints["studio"]; ok {
 		t.Fatal("removed endpoint is still present")
 	}
 
@@ -75,6 +83,27 @@ func TestEndpointRegistryCommandLifecycle(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("registry mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestEndpointAddCreatesExplicitRegistryWithoutInventingLocalEndpoint(t *testing.T) {
+	registryPath := filepath.Join(t.TempDir(), "custom", "connections.yaml")
+	command := newRootCmd()
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"endpoint", "--registry", registryPath, "add", "ssh", "west", "--host", "west.example"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := connection.Load(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Endpoints) != 1 || registry.Default != "west" {
+		t.Fatalf("explicit registry should contain only the imported endpoint: %#v", registry)
+	}
+	if _, exists := registry.Endpoints[connection.DefaultEndpointID]; exists {
+		t.Fatal("explicit registry creation invented a local endpoint")
 	}
 }
 
@@ -94,19 +123,19 @@ func TestEndpointTransportFailureDoesNotFallbackToLocal(t *testing.T) {
 		return nil, errors.New("local dial must not run")
 	}
 	sshFailure := errors.New("ssh transport failed")
-	dialCLIEndpointSSH = func(context.Context, context.Context, connection.Config) (*protocol.Client, error) {
+	dialCLIEndpointSSH = func(context.Context, context.Context, connection.Endpoint, connection.AccessRoute) (*protocol.Client, error) {
 		return nil, sshFailure
 	}
 	cloudFailure := errors.New("managed transport failed")
-	dialCLIEndpointCloud = func(context.Context, connection.Config) (*protocol.Client, remotev2client.Session, error) {
+	dialCLIEndpointCloud = func(context.Context, connection.Endpoint, connection.AccessRoute) (*protocol.Client, remotev2client.Session, error) {
 		return nil, remotev2client.Session{}, cloudFailure
 	}
 
-	sshConfig := connection.Config{ID: "west", Transport: connection.TransportSSH, Address: "west.example", Enabled: true}
+	sshConfig := testSSHEndpoint("west", "West", "west.example", "", "auto", connection.ConnectOnDemand, true)
 	if _, _, err := openEndpointProtocolClient(context.Background(), sshConfig, "", ""); !errors.Is(err, sshFailure) {
 		t.Fatalf("SSH error = %v", err)
 	}
-	cloudConfig := connection.Config{ID: "studio", Transport: connection.TransportHubP2P, Enabled: true}
+	cloudConfig := testManagedEndpoint("studio", "Studio", "device-studio", "SHA256:studio", "grant:studio", connection.RelayAuto, connection.ConnectOnDemand, true)
 	if _, _, err := openEndpointProtocolClient(context.Background(), cloudConfig, "", ""); !errors.Is(err, cloudFailure) {
 		t.Fatalf("Cloud error = %v", err)
 	}
@@ -130,10 +159,10 @@ func TestTerminalCommandsRouteDuplicateIDsToOwningLocalEndpoint(t *testing.T) {
 		}
 	}
 	registry := connection.Registry{
-		Version: 1, Default: "local",
-		Connections: map[connection.EndpointID]connection.Config{
-			"local": {ID: "local", Label: "Local", Transport: connection.TransportLocal, ConnectMode: connection.ConnectAuto, Enabled: true, Socket: localSocket},
-			"west":  {ID: "west", Label: "West", Transport: connection.TransportLocal, ConnectMode: connection.ConnectOnDemand, Enabled: true, Socket: westSocket},
+		Version: connection.RegistryVersion, Default: "local",
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			"local": testLocalEndpoint("local", "Local", localSocket, connection.ConnectAuto, true),
+			"west":  testLocalEndpoint("west", "West", westSocket, connection.ConnectOnDemand, true),
 		},
 	}
 	if err := connection.Save("", registry); err != nil {

@@ -16,9 +16,9 @@ func TestFileCommandRealDaemonLifecycleAndTransfers(t *testing.T) {
 	socketPath, _, closeServer := startCLIEndpointServer(t)
 	defer closeServer()
 	if err := connection.Save("", connection.Registry{
-		Version: 1, Default: connection.DefaultEndpointID,
-		Connections: map[connection.EndpointID]connection.Config{
-			connection.DefaultEndpointID: {ID: connection.DefaultEndpointID, Transport: connection.TransportLocal, ConnectMode: connection.ConnectAuto, Enabled: true, Socket: socketPath},
+		Version: connection.RegistryVersion, Default: connection.DefaultEndpointID,
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			connection.DefaultEndpointID: testLocalEndpoint(connection.DefaultEndpointID, "Local", socketPath, connection.ConnectAuto, true),
 		},
 	}); err != nil {
 		t.Fatal(err)

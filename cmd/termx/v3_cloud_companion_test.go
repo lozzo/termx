@@ -114,11 +114,8 @@ func TestDefaultDaemonCompanionRequestsRelayLeaseCapability(t *testing.T) {
 
 func TestV3ManagedEndpointFailsClosedWhenCompanionIsUnavailable(t *testing.T) {
 	dialer := v3ManagedCloudEndpointDialer()
-	_, err := dialer(context.Background(), connection.Config{
-		ID: "lab", Label: "Lab", Transport: connection.TransportHubP2P, ConnectMode: connection.ConnectOnDemand, Enabled: true,
-		HubDeviceID: "device-1", DeviceFingerprint: "SHA256:device-1",
-		GrantRef: "grant-lab", RelayMode: connection.RelayAuto,
-	})
+	endpoint := testManagedEndpoint("lab", "Lab", "device-1", "SHA256:device-1", "grant-lab", connection.RelayAuto, connection.ConnectOnDemand, true)
+	_, err := dialer(context.Background(), endpoint, testOnlyRoute(endpoint))
 	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_UNTRUSTED) || !strings.Contains(err.Error(), "official termx release") {
 		t.Fatalf("dial error = %v, want source-build COMPANION_UNTRUSTED guidance", err)
 	}
@@ -143,17 +140,13 @@ func TestV3ManagedEndpointPassesSharedIdentityCredentialAndSmartRoutePolicyToRem
 		received = options
 		return remotev2client.Session{}, wantErr
 	}
-	cfg := connection.Config{
-		ID: "lab", Label: "Lab", Transport: connection.TransportHubP2P, ConnectMode: connection.ConnectOnDemand, Enabled: true,
-		HubDeviceID: "device-1", DeviceFingerprint: "ed25519-sha256:device-1",
-		GrantRef: "grant-lab", RelayMode: connection.RelaySmart,
-	}
-	_, err := v3ManagedCloudEndpointDialer()(context.Background(), cfg)
+	cfg := testManagedEndpoint("lab", "Lab", "device-1", "ed25519-sha256:device-1", "grant-lab", connection.RelaySmart, connection.ConnectOnDemand, true)
+	_, err := v3ManagedCloudEndpointDialer()(context.Background(), cfg, testOnlyRoute(cfg))
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("dial error = %v, want injected stop", err)
 	}
 	if received.Companion != companion || received.EndpointID != "lab" || received.TargetDeviceID != "device-1" ||
-		received.DeviceFingerprint != cfg.DeviceFingerprint || received.CapabilityGrant != "opaque-capability-grant" ||
+		received.DeviceFingerprint != cfg.DaemonIdentity.DeviceFingerprint || received.CapabilityGrant != "opaque-capability-grant" ||
 		received.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE || received.RelayOnly ||
 		!received.QualityObservation.Enabled || received.QualityObservation.NetworkClass != "unknown" {
 		t.Fatalf("managed remote-v2 options lost endpoint contract: %#v", received)

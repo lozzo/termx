@@ -16,6 +16,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	"github.com/lozzow/termx/proto/cloudpb"
 	"github.com/lozzow/termx/shared/cloudcompanion"
+	"github.com/lozzow/termx/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -97,6 +98,14 @@ func TestWebAccountApprovesClientAndOwnsDaemonEnrollment(t *testing.T) {
 	directory, err := client.ListManagedDevices(context.Background(), &cloudpb.ListManagedDevicesRequest{SchemaVersion: 1})
 	if err != nil || len(directory.GetDevices()) != 2 {
 		t.Fatalf("managed device directory = (%v, %v)", directory, err)
+	}
+	for _, device := range directory.GetDevices() {
+		if device.GetKind() == cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON && device.GetDeviceFingerprint() != remoteauth.Fingerprint(publicKey) {
+			t.Fatalf("managed daemon fingerprint = %q, want signed public-key fingerprint", device.GetDeviceFingerprint())
+		}
+		if device.GetKind() == cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_CLIENT && device.GetDeviceFingerprint() != "" {
+			t.Fatalf("managed client unexpectedly projected daemon fingerprint %q", device.GetDeviceFingerprint())
+		}
 	}
 	if err = runtime.state.webCenter.UpsertCloudDevice(accountID, "stale-client", "Old phone", "client", true); err != nil {
 		t.Fatal(err)

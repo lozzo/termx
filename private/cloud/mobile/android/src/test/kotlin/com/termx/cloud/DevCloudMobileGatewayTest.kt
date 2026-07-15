@@ -200,7 +200,15 @@ class DevCloudMobileGatewayTest {
 		var refreshCount = 0
 		val hub = TestHttpServer { request ->
 			assertEquals("Bearer ${Base64.getUrlEncoder().withoutPadding().encodeToString(secondAccess)}", request.authorization)
-			protoResponse(CloudCompanion.ListManagedDevicesResponse.newBuilder().build().toByteArray())
+			protoResponse(CloudCompanion.ListManagedDevicesResponse.newBuilder()
+				.addDevices(CloudCompanion.ManagedDevice.newBuilder()
+					.setDeviceId("daemon-studio")
+					.setDeviceFingerprint("ed25519-sha256:studio")
+					.setDisplayName("Studio")
+					.setPlatform("linux")
+					.setKind(CloudCompanion.ManagedDeviceKind.MANAGED_DEVICE_KIND_DAEMON)
+					.setPresence(CloudCompanion.PresenceState.PRESENCE_STATE_ONLINE))
+				.build().toByteArray())
 		}
 		val control = TestHttpServer { request ->
 			when (request.path) {
@@ -218,7 +226,8 @@ class DevCloudMobileGatewayTest {
 		try {
 			val gateway = DevCloudMobileGateway(control.origin, hub.origin, now = { now })
 			gateway.completeLogin("flow-refresh")
-			gateway.listDevices()
+			val devices = gateway.listDevices()
+			assertEquals("ed25519-sha256:studio", devices.single().deviceFingerprint)
 			assertEquals(1, refreshCount)
 		} finally {
 			control.close()

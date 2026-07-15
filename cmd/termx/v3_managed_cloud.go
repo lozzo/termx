@@ -25,8 +25,8 @@ var (
 // v3ManagedCloudEndpointDialer 把共享 connection registry、文件凭据、Cloud Companion 和公开 remote-v2 串成单 endpoint bundle。
 // Companion 未安装、grant 缺失、WebRTC 或端到端授权失败都只返回当前 endpoint 错误，不允许 fallback 到 local、SSH 或旧 Hub API。
 func v3ManagedCloudEndpointDialer() services.EndpointDialer {
-	return func(ctx context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
-		client, session, err := dialV3ManagedEndpointClient(ctx, cfg)
+	return func(ctx context.Context, endpoint connection.Endpoint, route connection.AccessRoute) (services.EndpointServiceBundle, error) {
+		client, session, err := dialV3ManagedEndpointClient(ctx, endpoint, route)
 		if err != nil {
 			return services.EndpointServiceBundle{}, err
 		}
@@ -34,7 +34,7 @@ func v3ManagedCloudEndpointDialer() services.EndpointDialer {
 		core := services.ProtocolCoreClientAdapter{Client: client}
 		path := services.ProtocolPathServiceAdapter{Client: client}
 		return services.EndpointServiceBundle{
-			EndpointID: state.EndpointID(cfg.ID), Terminal: terminal, Core: core,
+			EndpointID: state.EndpointID(endpoint.ID), RouteID: route.ID, Terminal: terminal, Core: core,
 			Surface: terminal, LiveEvents: terminal, Path: path,
 			ObservedPath:         string(session.ObservedPath),
 			RouteSelectionReason: string(session.RouteSelectionReason),
@@ -43,16 +43,16 @@ func v3ManagedCloudEndpointDialer() services.EndpointDialer {
 	}
 }
 
-func dialV3ManagedEndpointClient(ctx context.Context, cfg connection.Config) (*protocol.Client, remotev2client.Session, error) {
-	if err := cloudcompanion.ValidateManagedConfig(cfg); err != nil {
-		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q config: %w", cfg.ID, err)
+func dialV3ManagedEndpointClient(ctx context.Context, endpoint connection.Endpoint, route connection.AccessRoute) (*protocol.Client, remotev2client.Session, error) {
+	if err := cloudcompanion.ValidateManagedRoute(endpoint, route); err != nil {
+		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q route %q config: %w", endpoint.ID, route.ID, err)
 	}
 	companion, err := openV3CloudCompanion(ctx)
 	if err != nil {
-		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q: %w", cfg.ID, err)
+		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q: %w", endpoint.ID, err)
 	}
 	if companion == nil {
-		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q: %w", cfg.ID,
+		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q: %w", endpoint.ID,
 			cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING, "Cloud Companion returned no client"))
 	}
 	var companionCloser io.Closer
@@ -64,28 +64,28 @@ func dialV3ManagedEndpointClient(ctx context.Context, cfg connection.Config) (*p
 			}
 		}()
 	}
-	policy, err := cloudcompanion.DialPolicyForRelayMode(cfg.RelayMode)
+	policy, err := cloudcompanion.DialPolicyForRelayMode(route.RelayMode)
 	if err != nil {
-		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q policy: %w", cfg.ID, err)
+		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q route %q policy: %w", endpoint.ID, route.ID, err)
 	}
-	grant, err := remoteauth.NewCredentialStore(v3RemoteCredentialDir()).Resolve(cfg.GrantRef)
+	grant, err := remoteauth.NewCredentialStore(v3RemoteCredentialDir()).Resolve(route.CredentialRef)
 	if err != nil {
-		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q credential: %w", cfg.ID, err)
+		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q route %q credential: %w", endpoint.ID, route.ID, err)
 	}
 	session, err := dialV3ManagedSession(ctx, remotev2client.DialOptions{
-		Companion: companion, EndpointID: string(cfg.ID), TargetDeviceID: cfg.HubDeviceID,
-		DeviceFingerprint: cfg.DeviceFingerprint, CapabilityGrant: grant,
+		Companion: companion, EndpointID: string(endpoint.ID), TargetDeviceID: route.TargetDeviceID,
+		DeviceFingerprint: endpoint.DaemonIdentity.DeviceFingerprint, CapabilityGrant: grant,
 		RoutePreference: policy.RoutePreference, RelayOnly: policy.RelayOnly,
 		QualityObservation: remotev2client.QualityObservationOptions{Enabled: true, NetworkClass: "unknown"},
 		Phase:              func(phase cloudcompanion.EndpointPhase) { services.ReportEndpointDialPhase(ctx, phase) },
 	})
 	if err != nil {
-		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q dial: %w", cfg.ID, err)
+		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q route %q dial: %w", endpoint.ID, route.ID, err)
 	}
 	client := protocol.NewClient(session.Transport)
-	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "cmd/termx-v3:managed:" + string(cfg.ID)}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "cmd/termx-v3:managed:" + string(endpoint.ID)}); err != nil {
 		_ = client.Close()
-		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q hello: %w", cfg.ID, err)
+		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q route %q hello: %w", endpoint.ID, route.ID, err)
 	}
 	if companionCloser != nil {
 		// Companion 必须活到最终质量窗口完成；释放顺序不能让 terminal transport 等待 telemetry。

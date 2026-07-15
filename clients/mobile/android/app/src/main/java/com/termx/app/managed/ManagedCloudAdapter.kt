@@ -38,6 +38,7 @@ data class ManagedCloudAccount(val accountId: String, val accountLabel: String, 
 /** ManagedCloudDevice 是 Hub 同账号内存目录的非秘密投影；它不代表已持有 daemon capability。 */
 data class ManagedCloudDevice(
     val deviceId: String,
+    val deviceFingerprint: String,
     val displayName: String,
     val platform: String,
     val kind: String,

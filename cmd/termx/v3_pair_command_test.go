@@ -54,16 +54,70 @@ func TestPairCreateAndImportKeepsGrantOutOfRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := registry.Connections["lab"]
-	if cfg.HubDeviceID != bundle.DeviceID || cfg.DeviceFingerprint != bundle.DeviceFingerprint || cfg.RelayMode != connection.RelayDirect || cfg.GrantRef == "" {
+	if len(registry.Endpoints) != 1 || registry.Default != "lab" {
+		t.Fatalf("pair import into a new explicit registry invented another endpoint: %#v", registry)
+	}
+	cfg := registry.Endpoints["lab"]
+	route, ok := cfg.Route("cloud")
+	if !ok || route.TargetDeviceID != bundle.DeviceID || cfg.DaemonIdentity.DeviceFingerprint != bundle.DeviceFingerprint || route.RelayMode != connection.RelayDirect || route.CredentialRef == "" {
 		t.Fatalf("imported endpoint = %#v", cfg)
 	}
-	stored, err := remoteauth.NewCredentialStore(v3RemoteCredentialDir()).Resolve(cfg.GrantRef)
+	stored, err := remoteauth.NewCredentialStore(v3RemoteCredentialDir()).Resolve(route.CredentialRef)
 	if err != nil || stored != bundle.CapabilityGrant {
 		t.Fatalf("stored grant mismatch: err=%v", err)
 	}
 	if !strings.Contains(imported.String(), "Imported managed endpoint lab") || strings.Contains(imported.String(), bundle.CapabilityGrant) {
 		t.Fatalf("import output leaked bearer or lost result: %q", imported.String())
+	}
+}
+
+func TestPairImportMergesManagedRouteIntoExistingSSHEndpoint(t *testing.T) {
+	stateHome := t.TempDir()
+	configHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+
+	var created bytes.Buffer
+	create := newRootCmd()
+	create.SetOut(&created)
+	create.SetErr(io.Discard)
+	create.SetArgs([]string{"pair", "create", "--raw", "--label", "Daemon label", "--ttl", "1h"})
+	if err := create.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	bundle, _, err := remoteauth.ParsePairingBundle(created.Bytes(), time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	registryPath := filepath.Join(configHome, "termx", "connections.yaml")
+	ssh := connection.NewSSHEndpoint("lab", "Existing SSH label", "lab.example", "ssh:lab", "auto", connection.ConnectOnDemand)
+	if err := connection.Save(registryPath, connection.Registry{
+		Version: connection.RegistryVersion, Default: "lab", Endpoints: map[connection.EndpointID]connection.Endpoint{"lab": ssh},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	command := newRootCmd()
+	command.SetIn(bytes.NewReader(created.Bytes()))
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"pair", "import", "--id", "lab", "--registry", registryPath, "-"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := connection.Load(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := registry.Endpoints["lab"]
+	if len(registry.Endpoints) != 1 || endpoint.Label != "Existing SSH label" || endpoint.DaemonIdentity != (connection.DaemonIdentity{DeviceID: bundle.DeviceID, DeviceFingerprint: bundle.DeviceFingerprint}) {
+		t.Fatalf("pair import did not bind the existing endpoint: %#v", registry)
+	}
+	if _, ok := endpoint.Route("ssh"); !ok {
+		t.Fatal("pair import deleted the existing SSH route")
+	}
+	if route, ok := endpoint.Route("cloud"); !ok || route.CredentialRef == "" {
+		t.Fatalf("pair import did not add a managed route: %#v", endpoint)
 	}
 }
 
@@ -221,7 +275,11 @@ func TestPairImportRestoresExistingCredentialWhenRegistryWriteFails(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	grantRef := registry.Connections["lab"].GrantRef
+	route, ok := registry.Endpoints["lab"].Route("cloud")
+	if !ok {
+		t.Fatal("managed route missing after pair import")
+	}
+	grantRef := route.CredentialRef
 	credentials := remoteauth.NewCredentialStore(v3RemoteCredentialDir())
 	firstGrant, err := credentials.Resolve(grantRef)
 	if err != nil {

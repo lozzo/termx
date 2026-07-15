@@ -48,7 +48,7 @@ func TestManagedEndpointContractFixtureMatchesGoDomain(t *testing.T) {
 	if err := json.Unmarshal(payload, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.SchemaVersion != 2 || fixture.Transport != string(connection.TransportHubP2P) {
+	if fixture.SchemaVersion != 2 || fixture.Transport != string(connection.RouteManagedWebRTC) {
 		t.Fatalf("unexpected fixture header: %#v", fixture)
 	}
 	wantPhases := []string{"idle", "resolving", "signaling", "connecting", "authorizing", "connected", "failed"}
@@ -103,14 +103,13 @@ func TestManagedEndpointContractFixtureMatchesGoDomain(t *testing.T) {
 		}
 	}
 	for _, testCase := range fixture.AuthorizationCases {
-		cfg := connection.Config{
-			ID: connection.EndpointID(testCase.EndpointID), Label: testCase.EndpointID,
-			Transport: connection.TransportHubP2P, ConnectMode: connection.ConnectOnDemand, Enabled: true,
-			HubDeviceID:       testCase.TargetDeviceID,
-			DeviceFingerprint: testCase.DeviceFingerprint, GrantRef: testCase.GrantRef,
-			RelayMode: connection.RelayMode(testCase.RelayMode),
-		}
-		err := ValidateManagedConfig(cfg)
+		cfg := connection.NewManagedEndpoint(
+			connection.EndpointID(testCase.EndpointID), testCase.EndpointID,
+			connection.DaemonIdentity{DeviceID: testCase.TargetDeviceID, DeviceFingerprint: testCase.DeviceFingerprint},
+			testCase.TargetDeviceID, testCase.GrantRef, connection.RelayMode(testCase.RelayMode), connection.ConnectOnDemand,
+		)
+		route, _ := cfg.Route("cloud")
+		err := ValidateManagedRoute(cfg, route)
 		if (err == nil) != testCase.Valid {
 			t.Fatalf("case %q valid=%v err=%v", testCase.Name, testCase.Valid, err)
 		}

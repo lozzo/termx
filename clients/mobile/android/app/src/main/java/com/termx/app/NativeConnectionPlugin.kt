@@ -176,6 +176,7 @@ class NativeConnectionPlugin : Plugin() {
                 cloudAdapter.listDevices().forEach { device ->
                     devices.put(JSONObject()
                         .put("deviceId", device.deviceId)
+                        .put("deviceFingerprint", device.deviceFingerprint)
                         .put("displayName", device.displayName)
                         .put("platform", device.platform)
                         .put("kind", device.kind)

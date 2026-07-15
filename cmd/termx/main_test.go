@@ -87,15 +87,18 @@ func TestRootCmdLoadsConnectionRegistryLocalSocket(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	socketPath := filepath.Join(t.TempDir(), "configured.sock")
 	writeCLIConnectionRegistry(t, configHome, `
-version: 1
+version: 2
 default: local
-connections:
+endpoints:
   local:
     label: "Configured Local"
     enabled: true
-    transport: local
     connect_mode: auto
-    socket: "`+socketPath+`"
+    routes:
+      local:
+        kind: local-unix
+        enabled: true
+        socket: "`+socketPath+`"
 `)
 
 	var gotCfg v3RootConfig
@@ -116,11 +119,11 @@ connections:
 	if gotCfg.SocketPath != socketPath {
 		t.Fatalf("expected registry socket %q, got %q", socketPath, gotCfg.SocketPath)
 	}
-	local, ok := gotCfg.ConnectionRegistry.Connections[connection.DefaultEndpointID]
+	local, ok := gotCfg.ConnectionRegistry.Endpoints[connection.DefaultEndpointID]
 	if !ok {
 		t.Fatalf("local connection missing from registry %#v", gotCfg.ConnectionRegistry)
 	}
-	if local.Label != "Configured Local" || local.Socket != socketPath {
+	if route, ok := local.Route(connection.DefaultLocalRouteID); local.Label != "Configured Local" || !ok || route.Socket != socketPath {
 		t.Fatalf("unexpected local connection %#v", local)
 	}
 }
@@ -139,15 +142,18 @@ func TestRootCmdSocketFlagOverridesConnectionRegistrySocket(t *testing.T) {
 	registrySocket := filepath.Join(t.TempDir(), "registry.sock")
 	flagSocket := filepath.Join(t.TempDir(), "flag.sock")
 	writeCLIConnectionRegistry(t, configHome, `
-version: 1
+version: 2
 default: local
-connections:
+endpoints:
   local:
     label: "Configured Local"
     enabled: true
-    transport: local
     connect_mode: auto
-    socket: "`+registrySocket+`"
+    routes:
+      local:
+        kind: local-unix
+        enabled: true
+        socket: "`+registrySocket+`"
 `)
 
 	var gotCfg v3RootConfig
@@ -184,17 +190,10 @@ func writeCLIConnectionRegistry(t *testing.T, configHome string, content string)
 
 func TestV3InteractiveRuntimeInitializesEndpointStoreFromRegistry(t *testing.T) {
 	registry := connection.Registry{
-		Version: 1,
+		Version: connection.RegistryVersion,
 		Default: connection.DefaultEndpointID,
-		Connections: map[connection.EndpointID]connection.Config{
-			connection.DefaultEndpointID: {
-				ID:          connection.DefaultEndpointID,
-				Label:       "Runtime Local",
-				Transport:   connection.TransportLocal,
-				ConnectMode: connection.ConnectAuto,
-				Enabled:     true,
-				Socket:      "auto",
-			},
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			connection.DefaultEndpointID: testLocalEndpoint(connection.DefaultEndpointID, "Runtime Local", "auto", connection.ConnectAuto, true),
 		},
 	}
 	runtime := newV3InteractiveRuntimeWithOptions("", 80, 24, nil, nil, nil, app.NewFakeTerminalHost(8), nil, v3InteractiveRuntimeOptions{
@@ -212,10 +211,10 @@ func TestV3InteractiveRuntimeInitializesEndpointStoreFromRegistry(t *testing.T) 
 
 func TestV3InteractiveRuntimePreservesInitialRemoteTerminalRef(t *testing.T) {
 	registry := connection.Registry{
-		Version: 1,
+		Version: connection.RegistryVersion,
 		Default: "west",
-		Connections: map[connection.EndpointID]connection.Config{
-			"west": {ID: "west", Label: "West", Transport: connection.TransportSSH, Address: "west.example", ConnectMode: connection.ConnectOnDemand, Enabled: true},
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			"west": testSSHEndpoint("west", "West", "west.example", "", "auto", connection.ConnectOnDemand, true),
 		},
 	}
 	runtime := newV3InteractiveRuntimeWithOptions("term-1", 80, 24, nil, nil, nil, app.NewFakeTerminalHost(8), nil, v3InteractiveRuntimeOptions{

@@ -150,7 +150,7 @@ func (runtime terminalCommandRuntime) requestedEndpoint() string {
 	return *runtime.endpointID
 }
 
-func (runtime terminalCommandRuntime) open(cmd *cobra.Command, cfg connection.Config) (terminalProtocolClient, func(), error) {
+func (runtime terminalCommandRuntime) open(cmd *cobra.Command, cfg connection.Endpoint) (terminalProtocolClient, func(), error) {
 	// terminal lifecycle 与 metadata truth 始终来自 owning endpoint 的 daemon client。
 	// 参数已经在进入本函数前完成校验；transport/protocol 失败不得附带 Cobra usage。
 	cmd.Root().SilenceUsage = true
@@ -257,7 +257,7 @@ func newTerminalListCommand(runtime terminalCommandRuntime, use string) *cobra.C
 			if err != nil {
 				return err
 			}
-			configs := make([]connection.Config, 0, len(registry.Connections))
+			configs := make([]connection.Endpoint, 0, len(registry.Endpoints))
 			if allEndpoints {
 				if runtime.requestedEndpoint() != "" {
 					return usageCLIError("--all-endpoints and --endpoint are mutually exclusive")
@@ -330,7 +330,7 @@ func newTerminalShowCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			client, closeClient, err := runtime.open(cmd, registry.Connections[ref.EndpointID])
+			client, closeClient, err := runtime.open(cmd, registry.Endpoints[ref.EndpointID])
 			if err != nil {
 				return err
 			}
@@ -397,7 +397,7 @@ func newTerminalMutationCommand(runtime terminalCommandRuntime, use, short strin
 			if err != nil {
 				return err
 			}
-			client, closeClient, err := runtime.open(cmd, registry.Connections[ref.EndpointID])
+			client, closeClient, err := runtime.open(cmd, registry.Endpoints[ref.EndpointID])
 			if err != nil {
 				return err
 			}
@@ -458,7 +458,7 @@ func newTerminalRenameCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			client, closeClient, err := runtime.open(cmd, registry.Connections[ref.EndpointID])
+			client, closeClient, err := runtime.open(cmd, registry.Endpoints[ref.EndpointID])
 			if err != nil {
 				return err
 			}
@@ -498,7 +498,7 @@ func newTerminalTagCommand(runtime terminalCommandRuntime) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			client, closeClient, err := runtime.open(cmd, registry.Connections[ref.EndpointID])
+			client, closeClient, err := runtime.open(cmd, registry.Endpoints[ref.EndpointID])
 			if err != nil {
 				return err
 			}

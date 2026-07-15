@@ -2,6 +2,7 @@ package devcloud
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/lozzow/termx/private/cloud/companion/cloudservice/httpapi"
 	cloudhub "github.com/lozzow/termx/private/cloud/hub"
 	"github.com/lozzow/termx/proto/cloudpb"
+	"github.com/lozzow/termx/shared/remoteauth"
 )
 
 func (state *serviceState) hubHandler() http.Handler {
@@ -83,11 +85,19 @@ func (state *serviceState) handleHubListManagedDevices(writer http.ResponseWrite
 		presence := cloudpb.PresenceState_PRESENCE_STATE_OFFLINE
 		if device.Kind == "daemon" {
 			kind = cloudpb.ManagedDeviceKind_MANAGED_DEVICE_KIND_DAEMON
+			if len(device.PublicKey) != ed25519.PublicKeySize {
+				writeCloudError(writer, http.StatusServiceUnavailable, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL, "managed daemon identity projection is invalid", true)
+				return
+			}
 			if !device.Revoked && state.hub.HasPresence(device.DeviceID) {
 				presence = cloudpb.PresenceState_PRESENCE_STATE_ONLINE
 			}
 		}
-		response.Devices = append(response.Devices, &cloudpb.ManagedDevice{DeviceId: device.DeviceID, DisplayName: device.DisplayName, Platform: device.Platform, Kind: kind, Presence: presence, Revoked: device.Revoked})
+		fingerprint := ""
+		if device.Kind == "daemon" {
+			fingerprint = remoteauth.Fingerprint(ed25519.PublicKey(device.PublicKey))
+		}
+		response.Devices = append(response.Devices, &cloudpb.ManagedDevice{DeviceId: device.DeviceID, DisplayName: device.DisplayName, Platform: device.Platform, Kind: kind, Presence: presence, Revoked: device.Revoked, DeviceFingerprint: fingerprint})
 	}
 	writeProto(writer, http.StatusOK, response)
 }

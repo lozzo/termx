@@ -58,7 +58,7 @@ func resolveTerminalRef(target, requestedEndpoint string, registry connection.Re
 	if terminalID == "" || strings.Contains(terminalID, ":") {
 		return resolvedTerminalRef{}, usageCLIError("terminal target must be ENDPOINT_ID:TERMINAL_ID")
 	}
-	cfg, ok := registry.Connections[endpointID]
+	cfg, ok := registry.Endpoints[endpointID]
 	if !ok {
 		return resolvedTerminalRef{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
 	}
@@ -68,26 +68,34 @@ func resolveTerminalRef(target, requestedEndpoint string, registry connection.Re
 	return resolvedTerminalRef{EndpointID: endpointID, TerminalID: terminalID}, nil
 }
 
-func resolveEndpointConfig(requested string, registry connection.Registry) (connection.Config, error) {
+func resolveEndpointConfig(requested string, registry connection.Registry) (connection.Endpoint, error) {
 	id := connection.EndpointID(strings.TrimSpace(requested))
 	if id == "" {
 		id = registry.Default
 	}
-	cfg, ok := registry.Connections[id]
+	cfg, ok := registry.Endpoints[id]
 	if !ok {
-		return connection.Config{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
+		return connection.Endpoint{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
 	}
 	if !cfg.Enabled {
-		return connection.Config{}, &cliError{code: 4, message: fmt.Sprintf("endpoint %s is disabled", id)}
+		return connection.Endpoint{}, &cliError{code: 4, message: fmt.Sprintf("endpoint %s is disabled", id)}
 	}
 	return cfg, nil
 }
 
-func openEndpointProtocolClient(ctx context.Context, cfg connection.Config, socketOverride, logFile string) (*protocol.Client, func(), error) {
-	// Transport 只由 registry 中目标 endpoint 决定；任一路径失败都直接返回，不尝试其它 endpoint/fallback。
-	switch cfg.Transport {
-	case connection.TransportLocal:
-		socketPath := strings.TrimSpace(cfg.Socket)
+func openEndpointProtocolClient(ctx context.Context, endpoint connection.Endpoint, socketOverride, logFile string) (*protocol.Client, func(), error) {
+	route, err := endpoint.ResolveCurrentRoute("")
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return openEndpointRouteProtocolClient(ctx, endpoint, route, socketOverride, logFile)
+}
+
+func openEndpointRouteProtocolClient(ctx context.Context, endpoint connection.Endpoint, route connection.AccessRoute, socketOverride, logFile string) (*protocol.Client, func(), error) {
+	// Route 由调用方显式选择或经唯一 eligible route 解析；失败直接返回，不能尝试其它 route/endpoint。
+	switch route.Kind {
+	case connection.RouteLocalUnix:
+		socketPath := strings.TrimSpace(route.Socket)
 		if strings.TrimSpace(socketOverride) != "" {
 			socketPath = socketOverride
 		}
@@ -104,31 +112,35 @@ func openEndpointProtocolClient(ctx context.Context, cfg connection.Config, sock
 			return nil, func() {}, err
 		}
 		return client, func() { _ = client.Close(); closeLogger() }, nil
-	case connection.TransportSSH:
-		client, err := dialCLIEndpointSSH(ctx, ctx, cfg)
+	case connection.RouteSSHStdio:
+		client, err := dialCLIEndpointSSH(ctx, ctx, endpoint, route)
 		if err != nil {
 			return nil, func() {}, err
 		}
 		return client, func() { _ = client.Close() }, nil
-	case connection.TransportHubP2P:
-		client, _, err := dialCLIEndpointCloud(ctx, cfg)
+	case connection.RouteManagedWebRTC:
+		client, _, err := dialCLIEndpointCloud(ctx, endpoint, route)
 		if err != nil {
 			return nil, func() {}, err
 		}
 		return client, func() { _ = client.Close() }, nil
 	default:
-		return nil, func() {}, &cliError{code: 2, message: fmt.Sprintf("endpoint %s has unsupported transport %s", cfg.ID, cfg.Transport)}
+		return nil, func() {}, &cliError{code: 2, message: fmt.Sprintf("endpoint %s route %s has unsupported kind %s", endpoint.ID, route.ID, route.Kind)}
 	}
 }
 
-func probeEndpointProtocolClient(ctx context.Context, cfg connection.Config, socketOverride, logFile string) (string, string, func(), error) {
-	if cfg.Transport == connection.TransportHubP2P {
-		client, session, err := dialCLIEndpointCloud(ctx, cfg)
-		if err != nil {
-			return "", "", func() {}, err
-		}
-		return string(session.ObservedPath), string(session.RouteSelectionReason), func() { _ = client.Close() }, nil
+func probeEndpointProtocolClient(ctx context.Context, endpoint connection.Endpoint, requestedRoute connection.RouteID, socketOverride, logFile string) (connection.RouteID, string, string, func(), error) {
+	route, err := endpoint.ResolveCurrentRoute(requestedRoute)
+	if err != nil {
+		return "", "", "", func() {}, err
 	}
-	_, closeClient, err := openEndpointProtocolClient(ctx, cfg, socketOverride, logFile)
-	return "", "", closeClient, err
+	if route.Kind == connection.RouteManagedWebRTC {
+		client, session, err := dialCLIEndpointCloud(ctx, endpoint, route)
+		if err != nil {
+			return "", "", "", func() {}, err
+		}
+		return route.ID, string(session.ObservedPath), string(session.RouteSelectionReason), func() { _ = client.Close() }, nil
+	}
+	_, closeClient, err := openEndpointRouteProtocolClient(ctx, endpoint, route, socketOverride, logFile)
+	return route.ID, "", "", closeClient, err
 }

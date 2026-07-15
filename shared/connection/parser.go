@@ -1,223 +1,173 @@
 package connection
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
+type registryDocument struct {
+	Version   int                         `yaml:"version"`
+	Default   *string                     `yaml:"default"`
+	Endpoints map[string]endpointDocument `yaml:"endpoints"`
+}
+
+type endpointDocument struct {
+	Label             string                   `yaml:"label"`
+	LabelSource       string                   `yaml:"label_source,omitempty"`
+	DeviceID          string                   `yaml:"device_id,omitempty"`
+	DeviceFingerprint string                   `yaml:"device_fingerprint,omitempty"`
+	Enabled           *bool                    `yaml:"enabled,omitempty"`
+	ConnectMode       string                   `yaml:"connect_mode,omitempty"`
+	Selection         selectionPolicyDocument  `yaml:"selection,omitempty"`
+	Routes            map[string]routeDocument `yaml:"routes"`
+}
+
+type selectionPolicyDocument struct {
+	HedgeDelay string `yaml:"hedge_delay,omitempty"`
+}
+
+type routeDocument struct {
+	Kind          string `yaml:"kind"`
+	Enabled       *bool  `yaml:"enabled,omitempty"`
+	ManualOnly    bool   `yaml:"manual_only,omitempty"`
+	Priority      *int   `yaml:"priority,omitempty"`
+	CredentialRef string `yaml:"credential_ref,omitempty"`
+	Source        string `yaml:"source,omitempty"`
+	PolicySource  string `yaml:"policy_source,omitempty"`
+
+	Socket string `yaml:"socket,omitempty"`
+
+	Host                string   `yaml:"host,omitempty"`
+	Port                uint16   `yaml:"port,omitempty"`
+	User                string   `yaml:"user,omitempty"`
+	ProxyJump           string   `yaml:"proxy_jump,omitempty"`
+	RemoteSocket        string   `yaml:"remote_socket,omitempty"`
+	HostKeyFingerprints []string `yaml:"host_key_fingerprints,omitempty"`
+
+	Addresses  []string `yaml:"addresses,omitempty"`
+	ServerName string   `yaml:"server_name,omitempty"`
+
+	TargetDeviceID string `yaml:"target_device_id,omitempty"`
+	AccountProfile string `yaml:"account_profile,omitempty"`
+	RelayMode      string `yaml:"relay_mode,omitempty"`
+}
+
 func parseRegistry(data []byte) (Registry, error) {
+	if len(data) > MaxRegistryBytes {
+		return Registry{}, connectionError(ErrorSizeLimit, "endpoint registry exceeds %d bytes", MaxRegistryBytes)
+	}
 	if strings.TrimSpace(string(data)) == "" {
-		return DefaultRegistry(), nil
+		return Registry{}, connectionError(ErrorConfig, "endpoint registry is empty")
 	}
-	registry := Registry{Version: 1, Connections: map[EndpointID]Config{}}
-	stack := map[int]string{}
-	for lineNo, raw := range strings.Split(string(data), "\n") {
-		raw = strings.TrimRight(raw, "\r")
-		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		indent := len(raw) - len(strings.TrimLeft(raw, " "))
-		if indent%2 != 0 {
-			return Registry{}, fmt.Errorf("line %d: indentation must use two-space levels", lineNo+1)
-		}
-		level := indent / 2
-		line = stripInlineComment(line)
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "-") {
-			return Registry{}, fmt.Errorf("line %d: list values are not supported in connections.yaml", lineNo+1)
-		}
-		key, value, ok := strings.Cut(line, ":")
-		if !ok {
-			return Registry{}, fmt.Errorf("line %d: expected key: value", lineNo+1)
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if key == "" {
-			return Registry{}, fmt.Errorf("line %d: empty key", lineNo+1)
-		}
-		if value == "" {
-			if err := pushSection(stack, level, key); err != nil {
-				return Registry{}, fmt.Errorf("line %d: %w", lineNo+1, err)
-			}
-			continue
-		}
-		parsedValue, err := parseScalar(value)
-		if err != nil {
-			return Registry{}, fmt.Errorf("line %d: %w", lineNo+1, err)
-		}
-		if err := setScalar(&registry, stack, level, key, parsedValue); err != nil {
-			return Registry{}, fmt.Errorf("line %d: %w", lineNo+1, err)
-		}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	var document registryDocument
+	if err := decoder.Decode(&document); err != nil {
+		return Registry{}, connectionError(ErrorConfig, "decode endpoint registry: %v", err)
 	}
-	return registry.Normalize()
-}
-
-func pushSection(stack map[int]string, level int, key string) error {
-	switch level {
-	case 0:
-		if key != "connections" {
-			return fmt.Errorf("unknown section %q", key)
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return Registry{}, connectionError(ErrorConfig, "endpoint registry must contain exactly one YAML document")
 		}
-	case 1:
-		if stack[0] != "connections" {
-			return fmt.Errorf("unknown section %q", joinPath(stack, level, key))
-		}
-		if err := validateEndpointID(EndpointID(key)); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unknown section %q", joinPath(stack, level, key))
+		return Registry{}, connectionError(ErrorConfig, "decode trailing endpoint registry data: %v", err)
 	}
-	stack[level] = key
-	for existing := range stack {
-		if existing > level {
-			delete(stack, existing)
-		}
+	if document.Version == 0 {
+		return Registry{}, connectionError(ErrorUnsupportedVersion, "endpoint registry version is required")
 	}
-	return nil
-}
-
-func setScalar(registry *Registry, stack map[int]string, level int, key string, value string) error {
-	switch level {
-	case 0:
-		switch key {
-		case "version":
-			version, err := strconv.Atoi(value)
+	if document.Default == nil || document.Endpoints == nil {
+		return Registry{}, connectionError(ErrorConfig, "endpoint registry requires default and endpoints fields")
+	}
+	if *document.Default != strings.TrimSpace(*document.Default) {
+		return Registry{}, connectionError(ErrorConfig, "default endpoint id must be canonical")
+	}
+	registry := Registry{Version: document.Version, Default: EndpointID(*document.Default), Endpoints: make(map[EndpointID]Endpoint, len(document.Endpoints))}
+	for key, value := range document.Endpoints {
+		if err := validateIdentifier("endpoint", key); err != nil {
+			return Registry{}, err
+		}
+		id := EndpointID(key)
+		enabled := true
+		if value.Enabled != nil {
+			enabled = *value.Enabled
+		}
+		hedgeDelay := time.Duration(0)
+		hedgeDelayConfigured := false
+		if value.Selection.HedgeDelay != "" {
+			parsed, err := parseHedgeDelay(value.Selection.HedgeDelay)
 			if err != nil {
-				return fmt.Errorf("version must be an integer")
+				return Registry{}, connectionError(ErrorConfig, "endpoint %q hedge_delay: %v", id, err)
 			}
-			registry.Version = version
-			return nil
-		case "default":
-			registry.Default = EndpointID(value)
-			return nil
-		default:
-			return fmt.Errorf("unknown field %q", key)
+			hedgeDelay = parsed
+			hedgeDelayConfigured = true
 		}
-	case 2:
-		if stack[0] != "connections" || stack[1] == "" {
-			return fmt.Errorf("unknown field %q", joinPath(stack, level, key))
+		endpoint := Endpoint{
+			ID: id, Label: value.Label, LabelSource: EndpointSource(value.LabelSource),
+			DaemonIdentity: DaemonIdentity{DeviceID: value.DeviceID, DeviceFingerprint: value.DeviceFingerprint},
+			Enabled:        enabled, ConnectMode: ConnectMode(value.ConnectMode),
+			SelectionPolicy: SelectionPolicy{HedgeDelay: hedgeDelay, HedgeDelayConfigured: hedgeDelayConfigured},
+			Routes:          make(map[RouteID]AccessRoute, len(value.Routes)),
 		}
-		id := EndpointID(stack[1])
-		cfg := registry.Connections[id]
-		if cfg.ID == "" {
-			cfg = Config{ID: id, Enabled: true}
+		for routeKey, routeValue := range value.Routes {
+			if err := validateIdentifier("route", routeKey); err != nil {
+				return Registry{}, fmt.Errorf("endpoint %q: %w", id, err)
+			}
+			routeID := RouteID(routeKey)
+			routeEnabled := true
+			if routeValue.Enabled != nil {
+				routeEnabled = *routeValue.Enabled
+			}
+			endpoint.Routes[routeID] = AccessRoute{
+				ID: routeID, Kind: RouteKind(routeValue.Kind), Enabled: routeEnabled, ManualOnly: routeValue.ManualOnly,
+				Priority: clonePriority(routeValue.Priority), CredentialRef: routeValue.CredentialRef,
+				Source: EndpointSource(routeValue.Source), PolicySource: EndpointSource(routeValue.PolicySource),
+				Socket: routeValue.Socket,
+				Host:   routeValue.Host, Port: routeValue.Port, User: routeValue.User, ProxyJump: routeValue.ProxyJump,
+				RemoteSocket: routeValue.RemoteSocket, HostKeyFingerprints: append([]string(nil), routeValue.HostKeyFingerprints...),
+				Addresses: append([]string(nil), routeValue.Addresses...), ServerName: routeValue.ServerName,
+				TargetDeviceID: routeValue.TargetDeviceID, AccountProfile: routeValue.AccountProfile, RelayMode: RelayMode(routeValue.RelayMode),
+			}
 		}
-		if err := setConnectionScalar(&cfg, key, value); err != nil {
-			return err
-		}
-		registry.Connections[id] = cfg
+		registry.Endpoints[id] = endpoint
+	}
+	normalized, err := registry.Normalize()
+	if err != nil {
+		return Registry{}, fmt.Errorf("normalize endpoint registry: %w", err)
+	}
+	return normalized, nil
+}
+
+func clonePriority(priority *int) *int {
+	if priority == nil {
 		return nil
-	default:
-		return fmt.Errorf("unknown field %q", joinPath(stack, level, key))
 	}
+	value := *priority
+	return &value
 }
 
-func setConnectionScalar(cfg *Config, key string, value string) error {
-	switch key {
-	case "label":
-		cfg.Label = value
-	case "enabled":
-		enabled, err := parseBool(value)
-		if err != nil {
-			return fmt.Errorf("enabled: %w", err)
-		}
-		cfg.Enabled = enabled
-	case "transport":
-		cfg.Transport = TransportKind(value)
-	case "connect_mode":
-		cfg.ConnectMode = ConnectMode(value)
-	case "address":
-		cfg.Address = value
-	case "auth_ref":
-		cfg.AuthRef = value
-	case "socket":
-		cfg.Socket = value
-	case "remote_socket":
-		cfg.RemoteSocket = value
-	case "hub_device_id":
-		cfg.HubDeviceID = value
-	case "device_fingerprint":
-		cfg.DeviceFingerprint = value
-	case "grant_ref":
-		cfg.GrantRef = value
-	case "relay_mode":
-		cfg.RelayMode = RelayMode(value)
-	default:
-		return fmt.Errorf("unknown field %q", key)
+func parseHedgeDelay(value string) (time.Duration, error) {
+	unit := time.Millisecond
+	number := strings.TrimSuffix(value, "ms")
+	if number == value {
+		unit = time.Second
+		number = strings.TrimSuffix(value, "s")
 	}
-	return nil
-}
-
-func parseBool(value string) (bool, error) {
-	switch value {
-	case "true":
-		return true, nil
-	case "false":
-		return false, nil
-	default:
-		return false, fmt.Errorf("must be true or false")
+	if number == value || number == "" {
+		return 0, fmt.Errorf("must use an integer ms or s value")
 	}
-}
-
-func joinPath(stack map[int]string, level int, key string) string {
-	parts := make([]string, 0, level+1)
-	for i := 0; i < level; i++ {
-		if value := stack[i]; value != "" {
-			parts = append(parts, value)
-		}
+	amount, err := strconv.ParseUint(number, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("must use an integer ms or s value")
 	}
-	parts = append(parts, key)
-	return strings.Join(parts, ".")
-}
-
-func stripInlineComment(value string) string {
-	var quote rune
-	escaped := false
-	for index, r := range value {
-		if escaped {
-			escaped = false
-			continue
-		}
-		if quote == '"' && r == '\\' {
-			escaped = true
-			continue
-		}
-		if quote != 0 {
-			if r == quote {
-				quote = 0
-			}
-			continue
-		}
-		if r == '"' || r == '\'' {
-			quote = r
-			continue
-		}
-		if r == '#' {
-			return strings.TrimSpace(value[:index])
-		}
+	delay := time.Duration(amount) * unit
+	if delay > 30*time.Second {
+		return 0, fmt.Errorf("must be between 0 and 30s")
 	}
-	return strings.TrimSpace(value)
-}
-
-func parseScalar(value string) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "", nil
-	}
-	if strings.HasPrefix(value, "\"") {
-		out, err := strconv.Unquote(value)
-		if err != nil {
-			return "", fmt.Errorf("invalid quoted string %q", value)
-		}
-		return out, nil
-	}
-	if strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") && len(value) >= 2 {
-		return strings.ReplaceAll(value[1:len(value)-1], "''", "'"), nil
-	}
-	return value, nil
+	return delay, nil
 }

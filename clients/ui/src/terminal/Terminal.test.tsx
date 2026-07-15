@@ -1634,7 +1634,8 @@ describe('Terminal', () => {
       limit: 250,
     }))
     await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 4200))
+      // History apply may wait 900ms for scroll idle before its 4s lost-callback watchdog starts.
+      await new Promise((resolve) => window.setTimeout(resolve, 5200))
     })
     term.buffer.active.viewportY = 0
     act(() => {
@@ -1646,7 +1647,7 @@ describe('Terminal', () => {
       limit: 250,
     }))
     await waitFor(() => expect(term.writes.join('')).toMatch(/a[\s\S]*f[\s\S]*t[\s\S]*e[\s\S]*r[\s\S]*-[\s\S]*s[\s\S]*t[\s\S]*a[\s\S]*l[\s\S]*l/))
-  }, 10000)
+  }, 12000)
 
   it('shows a magnifier and builds a selection while selection mode is active', async () => {
     const session = createMockRtcTerminalSession()

@@ -32,26 +32,31 @@ func loadV3ConnectionRegistry() (connection.Registry, error) {
 	return connection.Load("")
 }
 
-func normalizeV3ConnectionRegistry(registry connection.Registry) connection.Registry {
+func resolveV3SocketForConnectionRegistry(path string, registry connection.Registry) (string, error) {
+	if strings.TrimSpace(path) != "" {
+		return resolveV3Socket(path), nil
+	}
 	normalized, err := registry.Normalize()
 	if err != nil {
-		return connection.DefaultRegistry()
+		return "", fmt.Errorf("normalize endpoint registry for local socket: %w", err)
 	}
-	return normalized
-}
-
-func resolveV3SocketForConnectionRegistry(path string, registry connection.Registry) string {
-	if strings.TrimSpace(path) != "" {
-		return resolveV3Socket(path)
+	registry = normalized
+	endpoint, ok := registry.Endpoints[registry.Default]
+	if !ok || !endpoint.Enabled {
+		return "", fmt.Errorf("default endpoint %q is unavailable", registry.Default)
 	}
-	registry = normalizeV3ConnectionRegistry(registry)
-	if cfg, ok := registry.Connections[connection.DefaultEndpointID]; ok && cfg.Transport == connection.TransportLocal {
-		socket := strings.TrimSpace(cfg.Socket)
-		if socket != "" && socket != "auto" {
-			return resolveV3Socket(socket)
-		}
+	route, err := endpoint.ResolveCurrentRoute("")
+	if err != nil {
+		return "", fmt.Errorf("resolve default endpoint %q route: %w", endpoint.ID, err)
 	}
-	return resolveV3Socket("")
+	if route.Kind != connection.RouteLocalUnix {
+		return "", fmt.Errorf("default endpoint %q route %q is %q, not %q", endpoint.ID, route.ID, route.Kind, connection.RouteLocalUnix)
+	}
+	socket := strings.TrimSpace(route.Socket)
+	if socket != "" && socket != "auto" {
+		return resolveV3Socket(socket), nil
+	}
+	return resolveV3Socket(""), nil
 }
 
 func resolveV3LogFilePath(path string) string {

@@ -137,22 +137,18 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	}
 
 	localTerminal := services.ProtocolTerminalServiceAdapter{Client: localCore.client}
-	registry := connection.Registry{Version: 1, Default: connection.DefaultEndpointID, Connections: map[connection.EndpointID]connection.Config{
-		connection.DefaultEndpointID: {
-			ID: connection.DefaultEndpointID, Label: "Local", Transport: connection.TransportLocal,
-			ConnectMode: connection.ConnectAuto, Enabled: true, Socket: "auto",
-		},
-		"managed-relay": {
-			ID: "managed-relay", Label: "Managed Relay daemon", Transport: connection.TransportHubP2P,
-			ConnectMode: connection.ConnectOnDemand, Enabled: true, HubDeviceID: identity.DeviceID,
-			DeviceFingerprint: identity.Fingerprint, GrantRef: "managed-relay-grant", RelayMode: connection.RelayOnly,
-		},
+	registry := connection.Registry{Version: connection.RegistryVersion, Default: connection.DefaultEndpointID, Endpoints: map[connection.EndpointID]connection.Endpoint{
+		connection.DefaultEndpointID: connection.NewLocalEndpoint(connection.DefaultEndpointID, "Local", "auto", connection.ConnectAuto),
+		"managed-relay": connection.NewManagedEndpoint(
+			"managed-relay", "Managed Relay daemon", connection.DaemonIdentity{DeviceID: identity.DeviceID, DeviceFingerprint: identity.Fingerprint},
+			identity.DeviceID, "managed-relay-grant", connection.RelayOnly, connection.ConnectOnDemand,
+		),
 	}}
-	manager := services.NewEndpointManagerWithDialers(registry, map[connection.TransportKind]services.EndpointDialer{
-		connection.TransportHubP2P: func(dialContext context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
+	manager := services.NewEndpointManagerWithDialers(registry, map[connection.RouteKind]services.EndpointDialer{
+		connection.RouteManagedWebRTC: func(dialContext context.Context, cfg connection.Endpoint, route connection.AccessRoute) (services.EndpointServiceBundle, error) {
 			session, dialErr := remotev2client.DialSession(dialContext, remotev2client.DialOptions{
-				Companion: clientCompanion, EndpointID: string(cfg.ID), TargetDeviceID: cfg.HubDeviceID,
-				DeviceFingerprint: cfg.DeviceFingerprint, CapabilityGrant: bundle.CapabilityGrant,
+				Companion: clientCompanion, EndpointID: string(cfg.ID), TargetDeviceID: route.TargetDeviceID,
+				DeviceFingerprint: cfg.DaemonIdentity.DeviceFingerprint, CapabilityGrant: bundle.CapabilityGrant,
 				RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true, Now: clock.Now(),
 				Phase: func(phase cloudcompanion.EndpointPhase) { services.ReportEndpointDialPhase(dialContext, phase) },
 			})
@@ -166,7 +162,7 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 			}
 			terminal := services.ProtocolTerminalServiceAdapter{Client: remoteProtocolClient}
 			return services.EndpointServiceBundle{
-				EndpointID: state.EndpointID(cfg.ID), Terminal: terminal, Core: services.ProtocolCoreClientAdapter{Client: remoteProtocolClient},
+				EndpointID: state.EndpointID(cfg.ID), RouteID: route.ID, Terminal: terminal, Core: services.ProtocolCoreClientAdapter{Client: remoteProtocolClient},
 				Surface: terminal, LiveEvents: terminal, Path: services.ProtocolPathServiceAdapter{Client: remoteProtocolClient},
 				ObservedPath: string(session.ObservedPath), Lifecycle: services.EndpointLifecycle{Done: remoteProtocolClient.Done(), Err: remoteProtocolClient.Err},
 			}, nil

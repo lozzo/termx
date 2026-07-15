@@ -2505,15 +2505,17 @@ func (x *ListManagedDevicesRequest) GetSchemaVersion() uint32 {
 
 // ManagedDevice 是 Hub 已签名内存投影与 active Presence 的交集，不含 terminal 或 capability。
 type ManagedDevice struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DeviceId      string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	Platform      string                 `protobuf:"bytes,3,opt,name=platform,proto3" json:"platform,omitempty"`
-	Kind          ManagedDeviceKind      `protobuf:"varint,4,opt,name=kind,proto3,enum=termx.cloud.v1.ManagedDeviceKind" json:"kind,omitempty"`
-	Presence      PresenceState          `protobuf:"varint,5,opt,name=presence,proto3,enum=termx.cloud.v1.PresenceState" json:"presence,omitempty"`
-	Revoked       bool                   `protobuf:"varint,6,opt,name=revoked,proto3" json:"revoked,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	DeviceId    string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	DisplayName string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Platform    string                 `protobuf:"bytes,3,opt,name=platform,proto3" json:"platform,omitempty"`
+	Kind        ManagedDeviceKind      `protobuf:"varint,4,opt,name=kind,proto3,enum=termx.cloud.v1.ManagedDeviceKind" json:"kind,omitempty"`
+	Presence    PresenceState          `protobuf:"varint,5,opt,name=presence,proto3,enum=termx.cloud.v1.PresenceState" json:"presence,omitempty"`
+	Revoked     bool                   `protobuf:"varint,6,opt,name=revoked,proto3" json:"revoked,omitempty"`
+	// device_fingerprint 由 Hub 的已签名 daemon public-key 投影计算；它只用于客户端安全归并 Endpoint，不授予 terminal capability。
+	DeviceFingerprint string `protobuf:"bytes,7,opt,name=device_fingerprint,json=deviceFingerprint,proto3" json:"device_fingerprint,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ManagedDevice) Reset() {
@@ -2586,6 +2588,13 @@ func (x *ManagedDevice) GetRevoked() bool {
 		return x.Revoked
 	}
 	return false
+}
+
+func (x *ManagedDevice) GetDeviceFingerprint() string {
+	if x != nil {
+		return x.DeviceFingerprint
+	}
+	return ""
 }
 
 // ListManagedDevicesResponse 只返回同账号设备；client 用于管理，daemon 用于连接发现。
@@ -5648,14 +5657,15 @@ const file_cloudpb_cloud_companion_proto_rawDesc = "" +
 	"endpointId\x12(\n" +
 	"\x10target_device_id\x18\x02 \x01(\tR\x0etargetDeviceId\"B\n" +
 	"\x19ListManagedDevicesRequest\x12%\n" +
-	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\"\xf7\x01\n" +
+	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\"\xa6\x02\n" +
 	"\rManagedDevice\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x1a\n" +
 	"\bplatform\x18\x03 \x01(\tR\bplatform\x125\n" +
 	"\x04kind\x18\x04 \x01(\x0e2!.termx.cloud.v1.ManagedDeviceKindR\x04kind\x129\n" +
 	"\bpresence\x18\x05 \x01(\x0e2\x1d.termx.cloud.v1.PresenceStateR\bpresence\x12\x18\n" +
-	"\arevoked\x18\x06 \x01(\bR\arevoked\"U\n" +
+	"\arevoked\x18\x06 \x01(\bR\arevoked\x12-\n" +
+	"\x12device_fingerprint\x18\a \x01(\tR\x11deviceFingerprint\"U\n" +
 	"\x1aListManagedDevicesResponse\x127\n" +
 	"\adevices\x18\x01 \x03(\v2\x1d.termx.cloud.v1.ManagedDeviceR\adevices\"[\n" +
 	"\tIceServer\x12\x12\n" +

@@ -83,14 +83,17 @@ type DialPolicy struct {
 	RelayOnly       bool
 }
 
-// ValidateManagedConfig 校验公开客户端准备建立的 managed WebRTC endpoint。
-// 真值来自共享 connection registry；该函数不读取 grant secret，也不访问 Companion 或 daemon。
-func ValidateManagedConfig(cfg connection.Config) error {
-	if err := cfg.Validate(); err != nil {
+// ValidateManagedRoute 校验公开客户端准备建立的 managed WebRTC route。
+// Endpoint 持有 daemon identity，route 持有 Cloud target/credential ref；该函数不读取 secret，也不访问 Companion 或 daemon。
+func ValidateManagedRoute(endpoint connection.Endpoint, route connection.AccessRoute) error {
+	if err := endpoint.Validate(); err != nil {
 		return err
 	}
-	if cfg.Transport != connection.TransportHubP2P {
-		return fmt.Errorf("endpoint %q transport %q is not managed WebRTC", cfg.ID, cfg.Transport)
+	if err := route.Validate(endpoint.DaemonIdentity); err != nil {
+		return err
+	}
+	if route.Kind != connection.RouteManagedWebRTC {
+		return fmt.Errorf("endpoint %q route %q kind %q is not managed WebRTC", endpoint.ID, route.ID, route.Kind)
 	}
 	return nil
 }

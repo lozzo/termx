@@ -53,8 +53,12 @@ func runV3RootCommand(cmd *cobra.Command, socket string, logFile string, configP
 	if err != nil {
 		return err
 	}
+	socketPath, err := resolveV3SocketForConnectionRegistry(socket, connectionRegistry)
+	if err != nil {
+		return err
+	}
 	return runV3Root(ctx, v3RootConfig{
-		SocketPath:         resolveV3SocketForConnectionRegistry(socket, connectionRegistry),
+		SocketPath:         socketPath,
 		LogFile:            resolveV3LogFilePath(logFile),
 		TUIConfig:          tuiConfig,
 		ConnectionRegistry: connectionRegistry,

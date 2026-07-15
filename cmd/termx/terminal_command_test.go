@@ -94,12 +94,12 @@ func TestCLIExitCodeUsesTypedProtocolErrors(t *testing.T) {
 
 func TestResolveTerminalRefUsesOwningEndpoint(t *testing.T) {
 	registry := connection.Registry{
-		Version: 1,
+		Version: connection.RegistryVersion,
 		Default: "west",
-		Connections: map[connection.EndpointID]connection.Config{
-			"local": {ID: "local", Transport: connection.TransportLocal, Enabled: true},
-			"west":  {ID: "west", Transport: connection.TransportSSH, Address: "west.example", Enabled: true},
-			"off":   {ID: "off", Transport: connection.TransportLocal, Enabled: false},
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			"local": testLocalEndpoint("local", "Local", "auto", connection.ConnectAuto, true),
+			"west":  testSSHEndpoint("west", "West", "west.example", "", "auto", connection.ConnectOnDemand, true),
+			"off":   testLocalEndpoint("off", "Off", "auto", connection.ConnectOnDemand, false),
 		},
 	}
 	if ref, err := resolveTerminalRef("demo", "", registry); err != nil || ref.String() != "west:demo" {

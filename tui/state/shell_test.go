@@ -601,25 +601,9 @@ func TestTerminalCreateEndpointItemsUseAvailableEndpoints(t *testing.T) {
 }
 
 func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) {
-	registry, err := (connection.Registry{Connections: map[connection.EndpointID]connection.Config{
-		connection.DefaultEndpointID: {
-			ID:          connection.DefaultEndpointID,
-			Label:       "This Mac",
-			Transport:   connection.TransportLocal,
-			ConnectMode: connection.ConnectAuto,
-			Enabled:     true,
-			Socket:      "auto",
-		},
-		"west": {
-			ID:           "west",
-			Label:        "US West",
-			Transport:    connection.TransportSSH,
-			Address:      "root@155.94.155.192",
-			AuthRef:      "ssh:west",
-			ConnectMode:  connection.ConnectOnDemand,
-			Enabled:      true,
-			RemoteSocket: "auto",
-		},
+	registry, err := (connection.Registry{Default: connection.DefaultEndpointID, Endpoints: map[connection.EndpointID]connection.Endpoint{
+		connection.DefaultEndpointID: connection.NewLocalEndpoint(connection.DefaultEndpointID, "This Mac", "auto", connection.ConnectAuto),
+		"west":                       connection.NewSSHEndpoint("west", "US West", "root@155.94.155.192", "ssh:west", "auto", connection.ConnectOnDemand),
 	}}).Normalize()
 	if err != nil {
 		t.Fatalf("normalize registry: %v", err)
@@ -632,26 +616,28 @@ func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) 
 		t.Fatalf("west endpoint should be offline only in endpoint store, got %#v ok=%v", west, ok)
 	}
 
-	renamed := registry
-	cfg := renamed.Connections["west"]
+	renamed := cloneStateTestRegistry(registry)
+	cfg := renamed.Endpoints["west"]
 	cfg.Label = "West Renamed"
-	renamed.Connections["west"] = cfg
+	renamed.Endpoints["west"] = cfg
 	store = store.ApplyConnectionRegistry(renamed)
 	if west, _ := store.Endpoint("west"); west.DisplayLabel() != "West Renamed" || west.DisplayStatus() != EndpointStatusOffline || west.ReconnectRequired || !west.DefaultsLoaded || west.DefaultCWD != "/srv/app" || strings.Join(west.DefaultCommand, " ") != "/bin/bash -l" {
 		t.Fatalf("label reload should update display only, got %#v", west)
 	}
 
-	moved := renamed
-	cfg = moved.Connections["west"]
-	cfg.Address = "root@155.94.155.193"
-	moved.Connections["west"] = cfg
+	moved := cloneStateTestRegistry(renamed)
+	cfg = moved.Endpoints["west"]
+	route := cfg.Routes["ssh"]
+	route.Host = "root@155.94.155.193"
+	cfg.Routes["ssh"] = route
+	moved.Endpoints["west"] = cfg
 	store = store.ApplyConnectionRegistry(moved)
 	if west, _ := store.Endpoint("west"); west.DisplayStatus() != EndpointStatusReconnectRequired {
 		t.Fatalf("address reload should mark reconnect required, got %#v", west)
 	}
 
 	deleted := moved
-	delete(deleted.Connections, "west")
+	delete(deleted.Endpoints, "west")
 	store = store.ApplyConnectionRegistry(deleted)
 	if west, ok := store.Endpoint("west"); !ok || west.DisplayStatus() != EndpointStatusUnregistered {
 		t.Fatalf("deleted active endpoint should remain unregistered, got %#v ok=%v", west, ok)
@@ -659,18 +645,8 @@ func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) 
 }
 
 func TestEndpointStoreHubIdentityReloadRequiresReconnect(t *testing.T) {
-	registry, err := (connection.Registry{Connections: map[connection.EndpointID]connection.Config{
-		"studio": {
-			ID:                "studio",
-			Label:             "Studio Mac",
-			Transport:         connection.TransportHubP2P,
-			ConnectMode:       connection.ConnectOnDemand,
-			Enabled:           true,
-			HubDeviceID:       "device_ed25519:studio",
-			DeviceFingerprint: "SHA256:studio",
-			GrantRef:          "grant:studio",
-			RelayMode:         connection.RelayAuto,
-		},
+	registry, err := (connection.Registry{Default: "studio", Endpoints: map[connection.EndpointID]connection.Endpoint{
+		"studio": connection.NewManagedEndpoint("studio", "Studio Mac", connection.DaemonIdentity{DeviceID: "device_ed25519:studio", DeviceFingerprint: "SHA256:studio"}, "device_ed25519:studio", "grant:studio", connection.RelayAuto, connection.ConnectOnDemand),
 	}}).Normalize()
 	if err != nil {
 		t.Fatalf("normalize hub registry: %v", err)
@@ -678,50 +654,66 @@ func TestEndpointStoreHubIdentityReloadRequiresReconnect(t *testing.T) {
 	store := (EndpointStore{}).ApplyConnectionRegistry(registry)
 	store = store.MarkManagedRoute("studio", "single_relay", "lower_loss")
 	studio, ok := store.Endpoint("studio")
-	if !ok || studio.Transport != EndpointTransportHubP2P || studio.HubDeviceID != "device_ed25519:studio" || studio.DeviceFingerprint != "SHA256:studio" || studio.GrantRef != "grant:studio" || studio.RelayMode != string(connection.RelayAuto) {
+	if !ok || studio.Transport != EndpointTransportHubP2P || studio.DeviceID != "device_ed25519:studio" || studio.DeviceFingerprint != "SHA256:studio" || len(studio.Routes) != 1 || studio.Routes[0].DialIdentity.CredentialRef != "grant:studio" || studio.Routes[0].DialIdentity.RelayMode != connection.RelayAuto {
 		t.Fatalf("hub endpoint should project identity fields, got %#v ok=%v", studio, ok)
 	}
-	cloneRegistry := func(src connection.Registry) connection.Registry {
-		out := src
-		out.Connections = map[connection.EndpointID]connection.Config{}
-		for id, cfg := range src.Connections {
-			out.Connections[id] = cfg
-		}
-		return out
-	}
 
-	renamed := cloneRegistry(registry)
-	cfg := renamed.Connections["studio"]
+	renamed := cloneStateTestRegistry(registry)
+	cfg := renamed.Endpoints["studio"]
 	cfg.Label = "Desk"
-	renamed.Connections["studio"] = cfg
+	renamed.Endpoints["studio"] = cfg
 	store = store.ApplyConnectionRegistry(renamed)
 	if studio, _ := store.Endpoint("studio"); studio.DisplayLabel() != "Desk" || studio.ReconnectRequired || studio.ObservedPath != "single_relay" || studio.RouteSelectionReason != "lower_loss" {
 		t.Fatalf("hub label change should update display only, got %#v", studio)
 	}
 
-	identityChanged := cloneRegistry(renamed)
-	cfg = identityChanged.Connections["studio"]
-	cfg.DeviceFingerprint = "SHA256:other"
-	identityChanged.Connections["studio"] = cfg
+	identityChanged := cloneStateTestRegistry(renamed)
+	cfg = identityChanged.Endpoints["studio"]
+	cfg.DaemonIdentity.DeviceFingerprint = "SHA256:other"
+	identityChanged.Endpoints["studio"] = cfg
 	store = store.ApplyConnectionRegistry(identityChanged)
 	if studio, _ := store.Endpoint("studio"); studio.DisplayStatus() != EndpointStatusReconnectRequired {
 		t.Fatalf("hub device fingerprint change should mark reconnect required, got %#v", studio)
 	}
 
-	grantChanged := cloneRegistry(renamed)
-	cfg = grantChanged.Connections["studio"]
-	cfg.GrantRef = "grant:other"
-	grantChanged.Connections["studio"] = cfg
+	grantChanged := cloneStateTestRegistry(renamed)
+	cfg = grantChanged.Endpoints["studio"]
+	managedRoute := cfg.Routes["cloud"]
+	managedRoute.CredentialRef = "grant:other"
+	cfg.Routes["cloud"] = managedRoute
+	grantChanged.Endpoints["studio"] = cfg
 	store = (EndpointStore{}).ApplyConnectionRegistry(registry).ApplyConnectionRegistry(grantChanged)
 	if studio, _ := store.Endpoint("studio"); studio.DisplayStatus() != EndpointStatusReconnectRequired {
 		t.Fatalf("hub grant ref change should mark reconnect required, got %#v", studio)
 	}
 }
 
+func cloneStateTestRegistry(src connection.Registry) connection.Registry {
+	out := src
+	out.Endpoints = map[connection.EndpointID]connection.Endpoint{}
+	for id, endpoint := range src.Endpoints {
+		cloned := endpoint
+		cloned.Routes = map[connection.RouteID]connection.AccessRoute{}
+		for routeID, route := range endpoint.Routes {
+			route.HostKeyFingerprints = append([]string(nil), route.HostKeyFingerprints...)
+			route.Addresses = append([]string(nil), route.Addresses...)
+			cloned.Routes[routeID] = route
+		}
+		out.Endpoints[id] = cloned
+	}
+	return out
+}
+
 func TestClassifyEndpointErrorTextPrefersRemoteDaemonDetail(t *testing.T) {
 	text := "ssh transport closed: exit status 255: stdio-proxy connect core-v2 daemon socket: connection refused"
 	if got := ClassifyEndpointErrorText(text); got != EndpointErrorRemoteDaemon {
 		t.Fatalf("daemon proxy detail should classify as remote-daemon, got %q", got)
+	}
+}
+
+func TestClassifyEndpointErrorTextRecognizesRouteConfigurationFailure(t *testing.T) {
+	if got := ClassifyEndpointErrorText("route kind direct-tls is not connected"); got != EndpointErrorConfig {
+		t.Fatalf("route configuration failure should classify as config, got %q", got)
 	}
 }
 

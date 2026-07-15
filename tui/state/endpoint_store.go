@@ -11,13 +11,16 @@ import (
 const (
 	// EndpointTransportLocal 表示通过本机 unix socket 访问 daemon。
 	// 该值只用于 TUI reducer/view-model 展示，真实 dial 仍由 endpoint manager 和 transport 层负责。
-	EndpointTransportLocal EndpointTransportKind = "local"
+	EndpointTransportLocal EndpointTransportKind = "local-unix"
 	// EndpointTransportSSH 表示通过 SSH 访问远端 daemon。
 	// SSH host key 与认证结果不由 label 或 endpoint id 表达，必须在 transport 连接阶段处理。
-	EndpointTransportSSH EndpointTransportKind = "ssh"
+	EndpointTransportSSH EndpointTransportKind = "ssh-stdio"
 	// EndpointTransportHubP2P 表示 managed WebRTC transport 的 UI 投影。
 	// 展示层只消费连接阶段和实际路径，DeviceIdentity 与 CapabilityGrant 仍由公开 remote transport 验证。
-	EndpointTransportHubP2P EndpointTransportKind = "hub-p2p"
+	EndpointTransportHubP2P EndpointTransportKind = "managed-webrtc"
+	// EndpointTransportMulti 是多 route Endpoint 的纯展示摘要。
+	// 它不参与 dial；真实 route 集合始终来自 EndpointItem.Routes。
+	EndpointTransportMulti EndpointTransportKind = "multi-route"
 )
 
 const (
@@ -100,6 +103,17 @@ type EndpointStatusKind string
 // renderer 不得根据它重试、fallback 或改写 terminal lifecycle truth。
 type EndpointErrorKind string
 
+// EndpointRouteItem 是 reducer-owned 的脱敏 route 配置投影。
+// DialIdentity 只用于判断 registry reload 是否要求 reconnect，不包含 credential body 或 runtime Transport。
+type EndpointRouteItem struct {
+	ID           connection.RouteID
+	Kind         EndpointTransportKind
+	Enabled      bool
+	ManualOnly   bool
+	Priority     *int
+	DialIdentity connection.DialIdentity
+}
+
 // EndpointItem 是 reducer-owned endpoint 展示投影。
 // ID 是 workbench/路由主键；Label/Transport/ConnectMode 来自 registry；
 // Status/LastError 来自 endpoint manager 的运行时消息；DefaultCommand/DefaultCWD
@@ -107,17 +121,13 @@ type EndpointErrorKind string
 type EndpointItem struct {
 	ID                EndpointID
 	Label             string
-	Transport         EndpointTransportKind
-	Address           string
-	AuthRef           string
-	ConnectMode       EndpointConnectMode
-	Enabled           bool
-	Socket            string
-	RemoteSocket      string
-	HubDeviceID       string
+	DeviceID          string
 	DeviceFingerprint string
-	GrantRef          string
-	RelayMode         string
+	Routes            []EndpointRouteItem
+	// Transport 是从 Routes 派生的单 route/multi-route 展示摘要，不是持久连接真值。
+	Transport   EndpointTransportKind
+	ConnectMode EndpointConnectMode
+	Enabled     bool
 	// ConnectionPhase 是 managed WebRTC 当前连接阶段；local/SSH 保持空值。
 	// 它来自 endpoint runtime event，只服务 picker/manager 展示，不参与 endpoint identity 或 capability 判断。
 	ConnectionPhase cloudcompanion.EndpointPhase
@@ -144,28 +154,25 @@ type EndpointStore struct {
 	Items []EndpointItem
 }
 
-// EndpointItemFromConnectionConfig 把共享 connection registry 配置转换成 TUI endpoint 投影。
+// EndpointItemFromEndpoint 把共享 Endpoint registry 配置转换成 TUI 脱敏投影。
 // 该转换不做网络 IO，也不验证凭据；失败和 host key 只能由后续 transport 连接消息回投。
-func EndpointItemFromConnectionConfig(cfg connection.Config) EndpointItem {
-	endpointID := EndpointID(strings.TrimSpace(string(cfg.ID)))
+func EndpointItemFromEndpoint(endpoint connection.Endpoint) EndpointItem {
+	endpointID := EndpointID(strings.TrimSpace(string(endpoint.ID)))
 	if endpointID == "" {
 		endpointID = DefaultEndpointID
 	}
-	return EndpointItem{
-		ID:                NormalizeEndpointID(endpointID),
-		Label:             strings.TrimSpace(cfg.Label),
-		Transport:         EndpointTransportKind(strings.TrimSpace(string(cfg.Transport))),
-		Address:           strings.TrimSpace(cfg.Address),
-		AuthRef:           strings.TrimSpace(cfg.AuthRef),
-		ConnectMode:       EndpointConnectMode(strings.TrimSpace(string(cfg.ConnectMode))),
-		Enabled:           cfg.Enabled,
-		Socket:            strings.TrimSpace(cfg.Socket),
-		RemoteSocket:      strings.TrimSpace(cfg.RemoteSocket),
-		HubDeviceID:       strings.TrimSpace(cfg.HubDeviceID),
-		DeviceFingerprint: strings.TrimSpace(cfg.DeviceFingerprint),
-		GrantRef:          strings.TrimSpace(cfg.GrantRef),
-		RelayMode:         strings.TrimSpace(string(cfg.RelayMode)),
+	item := EndpointItem{
+		ID: NormalizeEndpointID(endpointID), Label: strings.TrimSpace(endpoint.Label),
+		DeviceID: strings.TrimSpace(endpoint.DaemonIdentity.DeviceID), DeviceFingerprint: strings.TrimSpace(endpoint.DaemonIdentity.DeviceFingerprint),
+		ConnectMode: EndpointConnectMode(strings.TrimSpace(string(endpoint.ConnectMode))), Enabled: endpoint.Enabled,
 	}
+	for _, route := range endpoint.RouteList() {
+		item.Routes = append(item.Routes, EndpointRouteItem{
+			ID: route.ID, Kind: EndpointTransportKind(route.Kind), Enabled: route.Enabled, ManualOnly: route.ManualOnly,
+			Priority: cloneEndpointPriority(route.Priority), DialIdentity: route.DialIdentity(),
+		})
+	}
+	return item.withDefaults()
 }
 
 // ApplyConnectionRegistry 用新的 connections.yaml 快照更新 endpoint 展示配置。
@@ -173,8 +180,8 @@ func EndpointItemFromConnectionConfig(cfg connection.Config) EndpointItem {
 func (store EndpointStore) ApplyConnectionRegistry(registry connection.Registry) EndpointStore {
 	next := EndpointStore{}
 	seen := map[EndpointID]struct{}{}
-	for _, cfg := range registry.List() {
-		item := EndpointItemFromConnectionConfig(cfg).withDefaults()
+	for _, endpoint := range registry.List() {
+		item := EndpointItemFromEndpoint(endpoint).withDefaults()
 		if previous, ok := store.Endpoint(item.ID); ok {
 			item.Status = previous.Status
 			item.LastError = previous.LastError
@@ -354,7 +361,7 @@ func (store EndpointStore) MarkConnectionPhase(endpointID EndpointID, phase clou
 		return store
 	}
 	item, ok := store.DisplayEndpoint(endpointID)
-	if !ok || item.Transport != EndpointTransportHubP2P {
+	if !ok || !item.hasRouteKind(EndpointTransportHubP2P) {
 		return store
 	}
 	item.ConnectionPhase = phase
@@ -383,9 +390,13 @@ func (store EndpointStore) ApplyDefaults(endpointID EndpointID, command []string
 // 该默认值只用于 TUI state/view-model，不代表已经完成 local socket 连接。
 func DefaultLocalEndpoint() EndpointItem {
 	return EndpointItem{
-		ID:          DefaultEndpointID,
-		Label:       string(DefaultEndpointID),
-		Transport:   EndpointTransportLocal,
+		ID:        DefaultEndpointID,
+		Label:     string(DefaultEndpointID),
+		Transport: EndpointTransportLocal,
+		Routes: []EndpointRouteItem{{
+			ID: connection.DefaultLocalRouteID, Kind: EndpointTransportLocal, Enabled: true,
+			DialIdentity: connection.AccessRoute{ID: connection.DefaultLocalRouteID, Kind: connection.RouteLocalUnix, Enabled: true, Socket: "auto"}.DialIdentity(),
+		}},
 		ConnectMode: EndpointConnectAuto,
 		Enabled:     true,
 		Status:      EndpointStatusAuto,
@@ -513,7 +524,7 @@ func ClassifyEndpointErrorText(text string) EndpointErrorKind {
 		return EndpointErrorProtocol
 	case strings.Contains(lower, "not registered") ||
 		strings.Contains(lower, "disabled") ||
-		strings.Contains(lower, "transport") && strings.Contains(lower, "not connected"):
+		(strings.Contains(lower, "transport") || strings.Contains(lower, "route")) && strings.Contains(lower, "not connected"):
 		return EndpointErrorConfig
 	default:
 		return EndpointErrorUnavailable
@@ -521,28 +532,42 @@ func ClassifyEndpointErrorText(text string) EndpointErrorKind {
 }
 
 // RequiresReconnect 判断 registry reload 后是否改变了 endpoint dial identity。
-// 该判断只覆盖 TUI 展示字段，完整 dial identity 仍由 shared/connection.Config 负责。
+// 该判断只覆盖 TUI 展示字段，完整 dial identity 仍由 shared/connection.Endpoint 负责。
 func (item EndpointItem) RequiresReconnect(next EndpointItem) bool {
 	item = item.withDefaults()
 	next = next.withDefaults()
-	return item.Transport != next.Transport ||
-		strings.TrimSpace(item.Address) != strings.TrimSpace(next.Address) ||
-		strings.TrimSpace(item.AuthRef) != strings.TrimSpace(next.AuthRef) ||
-		strings.TrimSpace(item.Socket) != strings.TrimSpace(next.Socket) ||
-		strings.TrimSpace(item.RemoteSocket) != strings.TrimSpace(next.RemoteSocket) ||
-		strings.TrimSpace(item.HubDeviceID) != strings.TrimSpace(next.HubDeviceID) ||
-		strings.TrimSpace(item.DeviceFingerprint) != strings.TrimSpace(next.DeviceFingerprint) ||
-		strings.TrimSpace(item.GrantRef) != strings.TrimSpace(next.GrantRef) ||
-		strings.TrimSpace(item.RelayMode) != strings.TrimSpace(next.RelayMode)
+	if item.DeviceID != next.DeviceID || item.DeviceFingerprint != next.DeviceFingerprint || len(item.Routes) != len(next.Routes) {
+		return true
+	}
+	for index := range item.Routes {
+		if item.Routes[index].ID != next.Routes[index].ID || item.Routes[index].DialIdentity != next.Routes[index].DialIdentity {
+			return true
+		}
+	}
+	return false
 }
 
 func (item EndpointItem) withDefaults() EndpointItem {
 	item.ID = NormalizeEndpointID(item.ID)
 	item.DefaultCommand = append([]string(nil), item.DefaultCommand...)
+	item.Routes = cloneEndpointRoutes(item.Routes)
+	sort.SliceStable(item.Routes, func(i, j int) bool { return item.Routes[i].ID < item.Routes[j].ID })
 	if strings.TrimSpace(item.Label) == "" {
 		item.Label = string(item.ID)
 	}
-	if strings.TrimSpace(string(item.Transport)) == "" {
+	if len(item.Routes) > 0 {
+		kinds := map[EndpointTransportKind]struct{}{}
+		for _, route := range item.Routes {
+			kinds[route.Kind] = struct{}{}
+		}
+		if len(kinds) == 1 {
+			for kind := range kinds {
+				item.Transport = kind
+			}
+		} else if len(kinds) > 1 {
+			item.Transport = EndpointTransportMulti
+		}
+	} else if strings.TrimSpace(string(item.Transport)) == "" {
 		if item.ID == DefaultEndpointID {
 			item.Transport = EndpointTransportLocal
 		}
@@ -565,6 +590,36 @@ func cloneEndpointItems(items []EndpointItem) []EndpointItem {
 	copy(cloned, items)
 	for index := range cloned {
 		cloned[index].DefaultCommand = append([]string(nil), cloned[index].DefaultCommand...)
+		cloned[index].Routes = cloneEndpointRoutes(cloned[index].Routes)
 	}
 	return cloned
+}
+
+func (item EndpointItem) hasRouteKind(kind EndpointTransportKind) bool {
+	for _, route := range item.Routes {
+		if route.Kind == kind {
+			return true
+		}
+	}
+	return item.Transport == kind
+}
+
+func cloneEndpointRoutes(routes []EndpointRouteItem) []EndpointRouteItem {
+	if routes == nil {
+		return nil
+	}
+	out := make([]EndpointRouteItem, len(routes))
+	copy(out, routes)
+	for index := range out {
+		out[index].Priority = cloneEndpointPriority(out[index].Priority)
+	}
+	return out
+}
+
+func cloneEndpointPriority(priority *int) *int {
+	if priority == nil {
+		return nil
+	}
+	value := *priority
+	return &value
 }

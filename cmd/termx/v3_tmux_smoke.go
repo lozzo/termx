@@ -183,6 +183,11 @@ func runV3TmuxTerminalSmoke(ctx context.Context, termxBin string) (v3TmuxTermina
 	if err != nil {
 		return v3TmuxTerminalSmokeResult{}, err
 	}
+	configHome, stateHome, harnessEnv, err := v3TmuxHarnessEnvironment(artifactDir)
+	if err != nil {
+		_ = os.RemoveAll(artifactDir)
+		return v3TmuxTerminalSmokeResult{}, err
+	}
 	removeArtifacts := true
 	defer func() {
 		if removeArtifacts {
@@ -213,6 +218,7 @@ func runV3TmuxTerminalSmoke(ctx context.Context, termxBin string) (v3TmuxTermina
 	daemonCtx, stopDaemonCtx := context.WithCancel(ctx)
 	defer stopDaemonCtx()
 	daemonCmd := exec.CommandContext(daemonCtx, termxBin, "--socket", socketPath, "--log-file", daemonLog, "daemon")
+	daemonCmd.Env = harnessEnv
 	daemonCmd.Stdout = daemonStdout
 	daemonCmd.Stderr = daemonStderr
 	if err := daemonCmd.Start(); err != nil {
@@ -245,6 +251,8 @@ func runV3TmuxTerminalSmoke(ctx context.Context, termxBin string) (v3TmuxTermina
 		"set -eu",
 		"export TERM=xterm-256color",
 		"export TERMX=0",
+		"export XDG_CONFIG_HOME=" + shellQuote(configHome),
+		"export XDG_STATE_HOME=" + shellQuote(stateHome),
 		"termx_bin=" + shellQuote(termxBin),
 		"socket=" + shellQuote(socketPath),
 		"log_file=" + shellQuote(daemonLog),
@@ -278,7 +286,8 @@ func runV3TmuxTerminalSmoke(ctx context.Context, termxBin string) (v3TmuxTermina
 	terminalID := strings.TrimSpace(string(terminalIDBytes))
 	appendTimeline("terminal created id=%s", terminalID)
 	if err := waitForTmuxCapture(ctx, target, "termx-pty-ready", 5*time.Second); err != nil {
-		return v3TmuxTerminalSmokeResult{}, err
+		removeArtifacts = false
+		return v3TmuxTerminalSmokeResult{}, fmt.Errorf("%w; artifacts=%s", err, artifactDir)
 	}
 	appendTimeline("attach rendered initial live surface")
 
@@ -339,6 +348,11 @@ func runV3TmuxResizeSmoke(ctx context.Context, termxBin string) (v3TmuxResizeSmo
 	if err != nil {
 		return v3TmuxResizeSmokeResult{}, err
 	}
+	configHome, stateHome, harnessEnv, err := v3TmuxHarnessEnvironment(artifactDir)
+	if err != nil {
+		_ = os.RemoveAll(artifactDir)
+		return v3TmuxResizeSmokeResult{}, err
+	}
 	removeArtifacts := true
 	defer func() {
 		if removeArtifacts {
@@ -359,6 +373,7 @@ func runV3TmuxResizeSmoke(ctx context.Context, termxBin string) (v3TmuxResizeSmo
 	daemonCtx, stopDaemonCtx := context.WithCancel(ctx)
 	defer stopDaemonCtx()
 	daemonCmd := exec.CommandContext(daemonCtx, termxBin, "--socket", socketPath, "--log-file", daemonLog, "daemon")
+	daemonCmd.Env = harnessEnv
 	daemonCmd.Stdout = io.Discard
 	daemonCmd.Stderr = io.Discard
 	if err := daemonCmd.Start(); err != nil {
@@ -397,6 +412,8 @@ func runV3TmuxResizeSmoke(ctx context.Context, termxBin string) (v3TmuxResizeSmo
 		"set -eu",
 		"export TERM=xterm-256color",
 		"export TERMX=0",
+		"export XDG_CONFIG_HOME=" + shellQuote(configHome),
+		"export XDG_STATE_HOME=" + shellQuote(stateHome),
 		"termx_bin=" + shellQuote(termxBin),
 		"socket=" + shellQuote(socketPath),
 		"log_file=" + shellQuote(daemonLog),
@@ -508,6 +525,11 @@ func runV3TmuxANSISmoke(ctx context.Context, termxBin string) (v3TmuxANSISmokeRe
 	if err != nil {
 		return v3TmuxANSISmokeResult{}, err
 	}
+	configHome, stateHome, harnessEnv, err := v3TmuxHarnessEnvironment(artifactDir)
+	if err != nil {
+		_ = os.RemoveAll(artifactDir)
+		return v3TmuxANSISmokeResult{}, err
+	}
 	removeArtifacts := true
 	defer func() {
 		if removeArtifacts {
@@ -528,6 +550,7 @@ func runV3TmuxANSISmoke(ctx context.Context, termxBin string) (v3TmuxANSISmokeRe
 	daemonCtx, stopDaemonCtx := context.WithCancel(ctx)
 	defer stopDaemonCtx()
 	daemonCmd := exec.CommandContext(daemonCtx, termxBin, "--socket", socketPath, "--log-file", daemonLog, "daemon")
+	daemonCmd.Env = harnessEnv
 	daemonCmd.Stdout = io.Discard
 	daemonCmd.Stderr = io.Discard
 	if err := daemonCmd.Start(); err != nil {
@@ -566,6 +589,8 @@ func runV3TmuxANSISmoke(ctx context.Context, termxBin string) (v3TmuxANSISmokeRe
 		"set -eu",
 		"export TERM=xterm-256color",
 		"export TERMX=0",
+		"export XDG_CONFIG_HOME=" + shellQuote(configHome),
+		"export XDG_STATE_HOME=" + shellQuote(stateHome),
 		"termx_bin=" + shellQuote(termxBin),
 		"socket=" + shellQuote(socketPath),
 		"log_file=" + shellQuote(daemonLog),
@@ -650,6 +675,11 @@ func runV3TmuxEmojiDotsSmoke(ctx context.Context, termxBin string) (v3TmuxEmojiD
 	if err != nil {
 		return v3TmuxEmojiDotsSmokeResult{}, err
 	}
+	configHome, stateHome, harnessEnv, err := v3TmuxHarnessEnvironment(artifactDir)
+	if err != nil {
+		_ = os.RemoveAll(artifactDir)
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
 	removeArtifacts := true
 	defer func() {
 		if removeArtifacts {
@@ -670,6 +700,7 @@ func runV3TmuxEmojiDotsSmoke(ctx context.Context, termxBin string) (v3TmuxEmojiD
 	daemonCtx, stopDaemonCtx := context.WithCancel(ctx)
 	defer stopDaemonCtx()
 	daemonCmd := exec.CommandContext(daemonCtx, termxBin, "--socket", socketPath, "--log-file", daemonLog, "daemon")
+	daemonCmd.Env = harnessEnv
 	daemonCmd.Stdout = io.Discard
 	daemonCmd.Stderr = io.Discard
 	if err := daemonCmd.Start(); err != nil {
@@ -708,6 +739,8 @@ func runV3TmuxEmojiDotsSmoke(ctx context.Context, termxBin string) (v3TmuxEmojiD
 		"set -eu",
 		"export TERM=xterm-256color",
 		"export TERMX=0",
+		"export XDG_CONFIG_HOME=" + shellQuote(configHome),
+		"export XDG_STATE_HOME=" + shellQuote(stateHome),
 		"termx_bin=" + shellQuote(termxBin),
 		"socket=" + shellQuote(socketPath),
 		"log_file=" + shellQuote(daemonLog),
@@ -1641,6 +1674,25 @@ func visualSGRContains(values []string, expected string) bool {
 		}
 	}
 	return false
+}
+
+func v3TmuxHarnessEnvironment(artifactDir string) (string, string, []string, error) {
+	configHome := filepath.Join(artifactDir, "xdg-config")
+	stateHome := filepath.Join(artifactDir, "xdg-state")
+	for _, path := range []string{configHome, stateHome} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			return "", "", nil, fmt.Errorf("create tmux harness XDG directory %q: %w", path, err)
+		}
+	}
+	environment := make([]string, 0, len(os.Environ())+2)
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "XDG_CONFIG_HOME=") || strings.HasPrefix(entry, "XDG_STATE_HOME=") {
+			continue
+		}
+		environment = append(environment, entry)
+	}
+	environment = append(environment, "XDG_CONFIG_HOME="+configHome, "XDG_STATE_HOME="+stateHome)
+	return configHome, stateHome, environment, nil
 }
 
 func runV3TmuxStabilitySmoke(ctx context.Context, termxBin string, rounds int) (v3TmuxStabilitySmokeResult, error) {

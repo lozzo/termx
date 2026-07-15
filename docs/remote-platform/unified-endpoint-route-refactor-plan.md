@@ -1,6 +1,6 @@
 # 统一 Endpoint、多 Route 与 Transport 竞速重构方案
 
-状态：用户审核草案，已补充私有 TermX Cloud 专项审计、App/二维码统一、本地发现与客户端 `share` 设计，未进入实现
+状态：实施中；CONN001 领域模型、registry 与跨语言 contract 正在收口，后续切片顺序以 `workflow.md` 为准
 
 日期：2026-07-15
 
@@ -103,6 +103,8 @@ route 不拥有 terminal lifecycle、history、workbench 或 endpoint identity�
 
 transport 建立不等于 endpoint 已连接。只有完成 daemon identity、authorization 和 termx protocol Hello 后，才能形成 `ReadySession`。
 
+`RouteAttempt` 只冻结 `AttemptID + EndpointID + ExpectedDaemonIdentity + SelectedRoute + ConnectIntent + SessionGeneration`。它不得再携带包含完整 `Routes` 的 `SavedEndpoint` 副本，否则 planner 与 dialer 会各自拥有一份可能不一致的 route 真值。
+
 ### 4.4 Path
 
 `Path` 只描述某个 transport 内部实际经过的网络路径。
@@ -175,6 +177,8 @@ endpoints:
 
 移动端不要求使用 YAML，但 native endpoint store 必须表达同一 versioned domain schema，并通过共享 contract fixture 验证。
 
+非空 registry 必须显式保存一个 enabled `default` Endpoint；parser 不替用户猜测。`managed-webrtc.relay_mode` 缺省时三端统一规范化为 `auto`。通用 `endpoint update` 只能修改 label/connect/selection policy，不能写入或更换 daemon pin；identity 只能由已验证 candidate 的确认绑定或后续独立 security-repair 流程修改。CONN003 session owner 接入前，root TUI 若 registry 没有已注册的 local route 必须明确失败，不能隐式启动未登记的本地 daemon。
+
 ### 5.2 扫码、Cloud 和手工配置只是 Endpoint 获取来源
 
 客户端最终只应有一份 `SavedEndpointRegistry`。扫码、Cloud 目录、手工 direct/SSH 配置和后续局域网发现只是向 registry 或临时 discovery projection 提供候选信息：
@@ -184,6 +188,7 @@ SavedEndpointRegistry
 CloudDiscoveryProjection
 BootstrapImportResult
 ManualRouteDraft
+ConfirmedIdentityBinding
         |
         v
 EndpointAssembler
@@ -297,10 +302,11 @@ bundle 规则：
 2. 以 `DeviceFingerprint` 查询本地 identity index。
 3. 已存在相同 fingerprint 时复用原 `EndpointID`，并要求 DeviceID 一致。
 4. 相同 DeviceID 但 fingerprint 不同，或相同 fingerprint 携带不同 DeviceID，进入 `identity_conflict`，禁止自动合并或覆盖 pin。
-5. 没有现存 Endpoint 时创建新的客户端本地 `EndpointID`；suggested label 只用于初始展示，之后不覆盖用户改名。
-6. 按 `RouteID + RouteKind` upsert route。相同 RouteID 改成另一种 kind 属于冲突；地址变化可以作为同 route 的已签名配置更新。
-7. 导入 ticket 时先验证 scope ceiling/expiry；兑换成功后原子写 `ClientAccessIdentity` key ref、绑定 grant 和 registry credential ref。新 grant 扩大现有 scope 时必须让用户明确确认，不能静默提权。
-8. daemon bootstrap、Cloud discovery 和 LAN discovery 不修改已有 route priority、manual override、connect mode 和用户禁用状态。只有用户显式确认的客户端 `share` 导入可以更新本地 selection policy。
+5. 若用户先保存了 identity 为空的 local/SSH Endpoint，后续必须由客户端展示 diff 并产生独立的 `ConfirmedIdentityBinding{EndpointID, Identity}`；该 identity 必须同时来自本次已验证 candidate，绑定与 route merge 原子执行，禁止根据 label、hostname、IP 或 SSH alias 猜测。
+6. 没有现存 Endpoint 且没有显式确认绑定时创建新的客户端本地 `EndpointID`；suggested label 只用于初始展示，之后只有本地用户动作或确认导入 policy 的 share 可以修改。
+7. 按 `RouteID + RouteKind` upsert route。相同 RouteID 改成另一种 kind 属于冲突；地址变化可以作为同 route 的已签名配置更新。
+8. 导入 ticket 时先验证 scope ceiling/expiry；兑换成功后原子写 `ClientAccessIdentity` key ref、绑定 grant 和 registry credential ref。新 grant 扩大现有 scope 时必须让用户明确确认，不能静默提权。
+9. daemon bootstrap、Cloud discovery 和 LAN discovery 不修改已有 label、route priority、manual override、connect mode 和用户禁用状态。只有用户显式确认的客户端 `share` 导入可以更新本地 label/selection policy。
 
 导入顺序必须满足交换律：
 
@@ -741,44 +747,55 @@ Cloud Companion 不应拥有：
 - 冻结 Endpoint/Route/Session/Path/ConnectIntent 模型。
 - 建立 connections v2 schema。
 - 定义确定性编码并由 DeviceIdentity 签名的 `EndpointBootstrapBundle v2`。
-- 定义一次性 `PairingTicket`、每 Endpoint `ClientAccessIdentity` 和带 `SubjectKeyFingerprint` 的 `CapabilityGrant v2`；删除新配对继续签发 bearer-only grant 的路径。
+- 冻结一次性 `PairingTicket` 与目标 client-bound grant 的 wire 位置；CONN002 verifier 完成前 opaque grant 必须 fail closed，不能降级为 bearer grant。
 - Cloud `ManagedDevice` projection 增加 `device_fingerprint`，建立 Cloud/QR/manual discovery 的统一 `EndpointAssembler`。
 - 定义带 TTL 的 `LocalDiscoveryCandidate` fixture；动态地址不进入 endpoint identity 或高频持久化真值。
-- 定义 `ClientEndpointShareBundle v1`、`ShareSessionOffer` 和跨 Go/Kotlin 的导入差异 fixture；share 与 daemon bootstrap 使用不同 intent。
+- 定义 `ClientEndpointShareBundle v1`、`ShareSessionOffer` 和跨 Go/Kotlin/TypeScript 的导入差异 fixture；share 与 daemon bootstrap 使用不同 intent。
 - 建立 Go/Kotlin/TypeScript fixture。
 - 更新现有 endpoint/transport 文档真值。
 
-### CONN002：Daemon identity
+### CONN002：Daemon identity 与客户端绑定授权
 
 - daemon 启动统一加载 DeviceIdentity。
 - 增加跨 transport identity challenge/proof。
-- 增加只允许 pairing exchange 的受限 handshake；ticket consume 与 bound grant 签发必须是 daemon-local 原子事务。
+- 为每个 Endpoint 建立独立 `ClientAccessIdentity`，实现带 `SubjectKeyFingerprint` 的 `CapabilityGrant v2` 与 `ManageClientAccess`。
+- 增加只允许 pairing exchange 的受限 handshake；ticket consume、client key 绑定、bound grant 签发和幂等 delivery receipt 必须是 daemon-local 原子事务。
+- capability handshake 验证 channel binding、grant issuer/subject、client private-key possession、expiry、scope 和 revoke；普通连接验证不写数据库。
+- 删除新配对继续签发 bearer-only grant 的路径。
 - 证明 local、SSH、direct TLS、managed WebRTC 返回同一 identity。
-- SSH 手工草稿只有在 host key 与 daemon identity 都被验证后，才可归并到已有 endpoint。
+- SSH 手工草稿或 identity 为空的已保存 SSH Endpoint，只有在 host key 与 daemon identity 都被验证、用户确认 `ConfirmedIdentityBinding` 后，才可原子归并到既有 endpoint。
 
 ### CONN003：Route planner 与 TUI/CLI session manager
 
-- 实现 priority/staggered/default race。
-- 先接入本地 registry、`EndpointAssembler` 和 route eligibility；Cloud 不在启动关键路径上。
-- local/SSH 先接入新 session manager。
-- 实现 `termx endpoint share <endpoint>` 与 TUI endpoint share action，共用一个短期 LAN TLS share service。
-- share 请求新 App 授权时必须经过 daemon `ManageClientAccess`；源客户端已有 grant 不得直接导出。
+- 实现 `EndpointAssembler`、route eligibility、默认全量竞速、priority grouped hedge、manual override 和稳定 tie-breaker。
+- 首个 `ReadySession` 通过 generation-aware winner CAS 胜出，loser transport、SSH 子进程和订阅全部取消释放。
+- local Unix 与 OpenSSH stdio 接入唯一 EndpointSession owner；Cloud 不在启动关键路径上。
 - service router 继续保持 endpoint-aware。
 
-### CONN004：Managed Cloud route adapter
+### CONN004：Direct TLS 与 LAN discovery
+
+- 实现默认关闭的 TLS 1.3 frame ingress 和可取消 direct route transport。
+- direct TLS 使用与 managed DTLS 相同的 DeviceIdentity、client-bound capability 和 channel-binding 认证语义。
+- 使用平台 mDNS/Bonjour primitive 产生内存 TTL candidate；DHCP/网络变化不写高频 registry，也不改变 EndpointID 或 priority。
+- Cloud 完全关闭时，TUI/CLI 仍可通过真实 LAN direct 到达 daemon。
+
+### CONN005：Managed Cloud route adapter
 
 - managed Cloud 改成普通 route dialer。
 - Cloud directory 按已验证 fingerprint 向现有 endpoint 叠加 managed route，不按裸 DeviceID 或来源类型创建第二台机器。
-- 外层 race 不进入 Companion。
-- 清理 Cloud IPC 中客户端本地 endpoint identity。
+- 外层 race、EndpointID、priority、Grant、SSH/direct 配置和 protocol session 不进入 Companion。
+- managed loser/取消必须释放 signaling、PeerConnection 和 Relay reservation；Cloud 故障不影响其他 route winner。
+- Cloud IPC 收缩为短期 `AttemptID + TargetDeviceID` managed target/session contract。
 
-### CONN005：Direct TLS
+### CONN006：Endpoint share
 
-- 实现 TLS frame transport。
-- 实现 certificate-bound DeviceIdentity 和 capability handshake。
-- daemon 同时开启 local/direct/cloud ingress。
+- 实现 canonical `termx endpoint share <endpoint>` 与 TUI 同源 action，共用一个短期、单次消费的 LAN TLS listener。
+- App receiver 证明目标 `ClientAccessIdentity` possession；用户确认接收方和 route/policy diff 后才提交导入。
+- daemon 在线且发起方拥有 `ManageClientAccess` 时签发目标 key 的新 grant；源客户端 grant 永不导出。
+- daemon 离线时只允许显式 config-only，并把目标 endpoint 标记为 `authorization_required`。
+- QR、日志和 Cloud 只看到 `ShareSessionOffer`，看不到 endpoint 配置、SSH credential body、Cloud token 或 Grant。
 
-### CONN006：Official App
+### CONN007：Official App
 
 - Android native 建立统一 endpoint route manager、bootstrap verifier、per-endpoint `ClientAccessIdentity`、secure credential store 和 `EndpointAssembler`。
 - 接入 direct TLS 与 SSH route connector；缺少 SSH credential 时保留 route 并标记 `credential_required`，不做 Cloud fallback。
@@ -788,7 +805,7 @@ Cloud Companion 不应拥有：
 - TUI/App planner contract 对齐。
 - 共享 TypeScript UI 退出网络 owner 职责。
 
-### CONN007：删除旧路径与真实验收
+### CONN008：删除旧路径与真实验收
 
 - 删除 local/hub URL race、旧 session token 和重复 connection store。
 - 删除 `PairingBundle v1`“导入即 managed Cloud”、UI schema v4 `termx_pair`、旧 Hub pairing claim 和二维码来源分叉。
@@ -812,7 +829,7 @@ Cloud Companion 不应拥有：
 - 同一 PairingTicket 并发兑换只能有一个成功；daemon 在响应丢失后可幂等返回同一 bound grant，不得签发第二份权限，也不得要求 Cloud 在线。
 - 截获 PairingTicket 在过期或消费后不能重放；仅截获 bound grant、但没有对应 `ClientAccessIdentity` private key 时也不能完成 capability handshake。
 - SSH bundle 不含密码/私钥；缺少本地 credential ref 时 route 显示 `credential_required` 且不参与自动竞速。
-- 手工 SSH route 在 host key 和 daemon identity 验证前只保存为 draft，不得依据 hostname、IP 或别名归并 endpoint。
+- 手工 SSH route 在 host key 和 daemon identity 验证前只能保存为 draft 或 identity 为空的独立 Endpoint；验证后也必须经用户确认绑定，不得依据 hostname、IP 或别名归并 endpoint。
 - bootstrap parser 拒绝未签名、签名错误、过期、未知字段超限和包含禁止 secret 类型的 bundle；ticket、bound grant 和 client key 只进入原生安全边界。
 - scanner 按显式 intent 分发 Cloud activation、endpoint bootstrap 与 endpoint share；模糊 payload 和通过 parser fallback 才能识别的 payload 必须拒绝。
 - TUI 分享包含 SSH/direct/managed portable route 和 priority 后，App 只创建或更新同 fingerprint 的一个 Endpoint，导入结果与手机手工录入等价。

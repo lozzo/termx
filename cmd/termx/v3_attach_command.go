@@ -86,16 +86,23 @@ func runAttachCommand(cmd *cobra.Command, endpointID, terminalID, socket, logFil
 	if resolvedEndpointID == "" {
 		resolvedEndpointID = connectionRegistry.Default
 	}
-	endpoint, ok := connectionRegistry.Connections[resolvedEndpointID]
+	endpoint, ok := connectionRegistry.Endpoints[resolvedEndpointID]
 	if !ok {
 		return &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", resolvedEndpointID)}
 	}
 	if !endpoint.Enabled {
 		return &cliError{code: 4, message: fmt.Sprintf("endpoint %s is disabled", resolvedEndpointID)}
 	}
-	socketPath := resolveV3SocketForConnectionRegistry(socket, connectionRegistry)
-	if endpoint.Transport == connection.TransportLocal {
-		socketPath = strings.TrimSpace(endpoint.Socket)
+	route, err := endpoint.ResolveCurrentRoute("")
+	if err != nil {
+		return classifyCLIError(err)
+	}
+	socketPath, err := resolveV3SocketForConnectionRegistry(socket, connectionRegistry)
+	if err != nil {
+		return err
+	}
+	if route.Kind == connection.RouteLocalUnix {
+		socketPath = strings.TrimSpace(route.Socket)
 		if strings.TrimSpace(socket) != "" {
 			socketPath = socket
 		}
@@ -168,7 +175,10 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 }
 
 func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *protocol.Client, workbenchStorageClient *protocol.Client, clipboardStorageClient *protocol.Client, host app.TerminalHost, logger *slog.Logger) *app.AppRuntime {
-	return newV3InteractiveRuntimeWithOptions(terminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{})
+	return newV3InteractiveRuntimeWithOptions(terminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{
+		InitialEndpointID:  state.DefaultEndpointID,
+		ConnectionRegistry: connection.DefaultRegistry(),
+	})
 }
 
 type v3InteractiveRuntimeOptions struct {
@@ -212,10 +222,10 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 	if endpointCtx == nil {
 		endpointCtx = context.Background()
 	}
-	endpointManager := services.NewEndpointManagerWithDialers(normalizeV3ConnectionRegistry(opts.ConnectionRegistry), map[connection.TransportKind]services.EndpointDialer{
-		connection.TransportLocal:  v3LocalEndpointDialer(logger),
-		connection.TransportSSH:    v3SSHEndpointDialer(endpointCtx),
-		connection.TransportHubP2P: v3ManagedCloudEndpointDialer(),
+	endpointManager := services.NewEndpointManagerWithDialers(opts.ConnectionRegistry, map[connection.RouteKind]services.EndpointDialer{
+		connection.RouteLocalUnix:     v3LocalEndpointDialer(logger),
+		connection.RouteSSHStdio:      v3SSHEndpointDialer(endpointCtx),
+		connection.RouteManagedWebRTC: v3ManagedCloudEndpointDialer(),
 	}, services.EndpointServiceBundle{
 		EndpointID: initialEndpointID,
 		Terminal:   terminalAdapter,
@@ -252,25 +262,32 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 
 func openV3AttachProtocolClients(ctx context.Context, cfg v3AttachConfig, logPath string, logger *slog.Logger) (*protocol.Client, *protocol.Client, *protocol.Client, func(), error) {
 	endpointID := state.NormalizeEndpointID(cfg.EndpointID)
-	endpoint, ok := cfg.ConnectionRegistry.Connections[connection.EndpointID(endpointID)]
-	if !ok && endpointID == state.DefaultEndpointID {
-		endpoint = connection.DefaultRegistry().Connections[connection.DefaultEndpointID]
-		ok = true
-	}
+	endpoint, ok := cfg.ConnectionRegistry.Endpoints[connection.EndpointID(endpointID)]
 	if !ok {
 		return nil, nil, nil, func() {}, fmt.Errorf("attach endpoint %q is not registered", endpointID)
 	}
-	if endpoint.Transport == connection.TransportLocal {
-		client, err := dialOrStartV3Client(cfg.SocketPath, logPath, logger)
+	route, err := endpoint.ResolveCurrentRoute("")
+	if err != nil {
+		return nil, nil, nil, func() {}, err
+	}
+	if route.Kind == connection.RouteLocalUnix {
+		socketPath := strings.TrimSpace(route.Socket)
+		if strings.TrimSpace(cfg.SocketPath) != "" {
+			socketPath = cfg.SocketPath
+		}
+		if socketPath == "" || socketPath == "auto" {
+			socketPath = resolveV3Socket("")
+		}
+		client, err := dialOrStartV3Client(socketPath, logPath, logger)
 		if err != nil {
 			return nil, nil, nil, func() {}, err
 		}
-		workbench, err := v3DialClient(cfg.SocketPath)
+		workbench, err := v3DialClient(socketPath)
 		if err != nil {
 			_ = client.Close()
 			return nil, nil, nil, func() {}, fmt.Errorf("dial core-v2 workbench storage events client: %w", err)
 		}
-		clipboard, err := v3DialClient(cfg.SocketPath)
+		clipboard, err := v3DialClient(socketPath)
 		if err != nil {
 			_ = workbench.Close()
 			_ = client.Close()
@@ -292,8 +309,8 @@ func openV3AttachProtocolClients(ctx context.Context, cfg v3AttachConfig, logPat
 }
 
 func v3LocalEndpointDialer(logger *slog.Logger) services.EndpointDialer {
-	return func(_ context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
-		socketPath := strings.TrimSpace(cfg.Socket)
+	return func(_ context.Context, endpoint connection.Endpoint, route connection.AccessRoute) (services.EndpointServiceBundle, error) {
+		socketPath := strings.TrimSpace(route.Socket)
 		if socketPath == "" || socketPath == "auto" {
 			socketPath = resolveV3Socket("")
 		}
@@ -303,7 +320,7 @@ func v3LocalEndpointDialer(logger *slog.Logger) services.EndpointDialer {
 		}
 		terminal := services.ProtocolTerminalServiceAdapter{Client: client}
 		return services.EndpointServiceBundle{
-			EndpointID: state.EndpointID(cfg.ID), Terminal: terminal,
+			EndpointID: state.EndpointID(endpoint.ID), RouteID: route.ID, Terminal: terminal,
 			Core: services.ProtocolCoreClientAdapter{Client: client}, Surface: terminal, LiveEvents: terminal,
 			Path: services.ProtocolPathServiceAdapter{Client: client}, Lifecycle: services.EndpointLifecycle{Done: client.Done(), Err: client.Err},
 		}, nil
@@ -314,8 +331,8 @@ func v3SSHEndpointDialer(endpointCtx context.Context) services.EndpointDialer {
 	if endpointCtx == nil {
 		endpointCtx = context.Background()
 	}
-	return func(ctx context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
-		client, err := dialV3SSHEndpointClient(endpointCtx, ctx, cfg)
+	return func(ctx context.Context, endpoint connection.Endpoint, route connection.AccessRoute) (services.EndpointServiceBundle, error) {
+		client, err := dialV3SSHEndpointClient(endpointCtx, ctx, endpoint, route)
 		if err != nil {
 			return services.EndpointServiceBundle{}, err
 		}
@@ -323,7 +340,8 @@ func v3SSHEndpointDialer(endpointCtx context.Context) services.EndpointDialer {
 		core := services.ProtocolCoreClientAdapter{Client: client}
 		path := services.ProtocolPathServiceAdapter{Client: client}
 		return services.EndpointServiceBundle{
-			EndpointID: state.EndpointID(cfg.ID),
+			EndpointID: state.EndpointID(endpoint.ID),
+			RouteID:    route.ID,
 			Terminal:   terminal,
 			Core:       core,
 			Surface:    terminal,
@@ -334,23 +352,34 @@ func v3SSHEndpointDialer(endpointCtx context.Context) services.EndpointDialer {
 	}
 }
 
-func dialV3SSHEndpointClient(endpointCtx, helloContext context.Context, cfg connection.Config) (*protocol.Client, error) {
+func dialV3SSHEndpointClient(endpointCtx, helloContext context.Context, endpoint connection.Endpoint, route connection.AccessRoute) (*protocol.Client, error) {
+	address := strings.TrimSpace(route.Host)
+	if strings.TrimSpace(route.User) != "" {
+		address = strings.TrimSpace(route.User) + "@" + address
+	}
+	extraArgs := make([]string, 0, 4)
+	if route.Port != 0 && route.Port != 22 {
+		extraArgs = append(extraArgs, "-p", fmt.Sprintf("%d", route.Port))
+	}
+	if strings.TrimSpace(route.ProxyJump) != "" {
+		extraArgs = append(extraArgs, "-J", strings.TrimSpace(route.ProxyJump))
+	}
 	transport, err := sshtransport.Dial(endpointCtx, sshtransport.DialOptions{
-		Address: cfg.Address, AuthRef: cfg.AuthRef, RemoteSocket: cfg.RemoteSocket,
+		Address: address, AuthRef: route.CredentialRef, RemoteSocket: route.RemoteSocket, ExtraArgs: extraArgs,
 	})
 	if err != nil {
 		if endpointCtx.Err() != nil {
-			return nil, fmt.Errorf("ssh endpoint %q dial: %w", cfg.ID, endpointCtx.Err())
+			return nil, fmt.Errorf("ssh endpoint %q route %q dial: %w", endpoint.ID, route.ID, endpointCtx.Err())
 		}
-		return nil, fmt.Errorf("ssh endpoint %q dial: %w", cfg.ID, err)
+		return nil, fmt.Errorf("ssh endpoint %q route %q dial: %w", endpoint.ID, route.ID, err)
 	}
 	client := protocol.NewClient(transport)
-	if err := client.Hello(helloContext, protocol.Hello{Version: wire.Version, Client: "cmd/termx:ssh:" + string(cfg.ID)}); err != nil {
+	if err := client.Hello(helloContext, protocol.Hello{Version: wire.Version, Client: "cmd/termx:ssh:" + string(endpoint.ID)}); err != nil {
 		_ = client.Close()
 		if helloContext.Err() != nil {
-			return nil, fmt.Errorf("ssh endpoint %q hello: %w", cfg.ID, helloContext.Err())
+			return nil, fmt.Errorf("ssh endpoint %q route %q hello: %w", endpoint.ID, route.ID, helloContext.Err())
 		}
-		return nil, fmt.Errorf("ssh endpoint %q hello: %w", cfg.ID, err)
+		return nil, fmt.Errorf("ssh endpoint %q route %q hello: %w", endpoint.ID, route.ID, err)
 	}
 	return client, nil
 }

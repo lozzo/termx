@@ -14,7 +14,7 @@
 - CLOUD016 已完成：Web 节点页把手机激活归入客户端访问区域，并补齐 TUI 从 daemon 导入 capability grant 的用户流程说明；未改变账号授权、Hub 目录或 daemon capability owner。
 - CLOUD017 已完成：审计 Web Controller、Control Plane、Hub、Relay、client 与 daemon 的真实全链路，绘制当前实现和降载目标泳道图，明确非必要 Control Plane 参与点与故障窗口；本切片只修正文档真值，未修改 runtime。
 - CLOUD018 已按用户要求暂停：Hub 自主 Presence、持久安全目录与 edge session refresh/rotation 的现有实现和测试结果保留为检查点；恢复前仍须完成 staging/ADB 最终验收，不得视为已完成或生产就绪。
-- CONN001 进行中：以一个 daemon 一个 Endpoint 为目标，先完成多 Route 领域模型、versioned registry、跨语言 contract 和现有配置入口的破坏性迁移；CONN002-CONN008 按队列依次推进。
+- CONN001 已完成：一个 daemon 一个 Endpoint 的多 Route 领域模型、versioned registry、跨语言 contract 和现有配置入口已完成破坏性迁移；当前最早未完成切片为 CONN002。
 - CLI001 已完成：已审计当前扁平 CLI 与公开 `v3` 测试命令，建立以 endpoint/terminal 为真值的对象化命令树、稳定 target、JSON/format、退出码、tmux 能力映射和分期实现门禁；当前尚未改动 CLI 运行行为。
 - CLI007 已完成：可选 Cloud Companion 的安装引导已区分未安装与源码构建缺少官方 release root，两种用户错误都有清晰下一步且不再重复 Usage。
 - CLOUD013 已完成：公网 HTTP staging 的非秘密 runtime 配置已固化进显式 development Companion；同一份已验证 manifest 同时装配网络 adapter 与 HTTP 登录策略，用户无需额外配置即可执行状态和登录命令。
@@ -179,7 +179,7 @@
 | CLOUD016 | 完成 | 客户端激活归位与 TUI 授权说明 | 手机激活位于客户端访问区域；TUI 登录只负责账号发现，访问 daemon 必须单独导入 daemon-owned capability grant |
 | CLOUD017 | 完成 | Cloud 全链路泳道与降载审计 | 当前实现和目标架构分开绘制；明确 Web/Control Plane 调用频率、Hub 热路径、故障窗口和待改造项 |
 | CLOUD018 | 暂停 | Hub 自主 Presence 与持久 session P0 | 已保存实现检查点；恢复后补齐 staging/ADB 最终验收，暂停期间不阻塞后续切片 |
-| CONN001 | 进行中 | 统一领域模型、registry 与跨语言 contract | `connections.yaml` v2 与 Android registry 均能真实读写一个 Endpoint 的多条 Route；CLI/TUI 现有配置入口消费新 schema；Go/Kotlin/TypeScript 对 identity conflict、strict parse 和导入交换律结论一致 |
+| CONN001 | 完成 | 统一领域模型、registry 与跨语言 contract | `connections.yaml` v2 与 Android registry 均能真实读写一个 Endpoint 的多条 Route；CLI/TUI 现有配置入口消费新 schema；Go/Kotlin/TypeScript 对 identity conflict、strict parse 和导入交换律结论一致 |
 | CONN002 | 待开始 | 全局 daemon identity 与客户端绑定授权 | local/SSH/direct/managed 使用同一 DeviceIdentity；PairingTicket 只能原子兑换为绑定目标客户端 key 的 grant，复制 grant、重放 ticket、错误 key/fingerprint、撤销和重启均 fail closed |
 | CONN003 | 待开始 | Route planner 与 TUI/CLI session owner | TUI/CLI 对同一 Endpoint 的 local Unix 与真实 SSH route 默认竞速或按 priority hedge；首个 ReadySession 胜出并释放 loser，切换/重连不改变 TerminalRef 且旧 generation 回包被拒绝 |
 | CONN004 | 待开始 | Direct TLS 与 LAN discovery | daemon 可显式启用安全 TLS 1.3 ingress；TUI/CLI 在 Cloud 完全关闭时通过真实 LAN direct 连接，地址变化只刷新 candidate，错误公告/certificate/identity 全部 fail closed |
@@ -343,5 +343,5 @@
 - CLOUD017 已完成：新增 `cloud-end-to-end-swimlanes.md`，用 10 组泳道覆盖 TUI 登录、App QR 激活、daemon enrollment、当前 Presence、capability 配对、direct、single Relay、撤销/订阅同步、Control Plane 故障和目标 Hub 自治。审计确认 Web Controller 不在连接热路径，client 目录/resolve/signaling/Relay lease 已只访问 Hub；当前 P0 缺口是 Presence 重连仍同步调用 Control Plane 两次、staging 设备安全目录与 edge session 未持久恢复、account/device session 固定 8 小时且缺少 refresh。policy 当前每 5 分钟刷新、Hub `max_staleness` 30 分钟，超过窗口 fail closed。旧 Hub 计划和网络拓扑已标明目标/现状差异；10 个 Mermaid block 闭合、关键场景覆盖和 `git diff --check` 通过，未改 runtime。
 
 - CLOUD018 已于 2026-07-15 按用户要求暂停并保存实现检查点：Hub 本地 Presence challenge/proof、Control Plane 持久安全目录、Hub verified snapshot、account/device refresh rotation、旧 Presence admission 删除以及 Companion/Official Android 自动刷新均保留。暂停前已通过 Control Plane、Hub、Companion、devcloud、CLI/shared Go 测试、`make test-clients`、`make test-android` 两套单测与 APK 构建及 `git diff --check`；此前 staging 部署与 Control Plane 关闭后的 direct/single Relay 证据也保留。尚未完成本轮 staging 复验和 ADB 真机恢复终验，因此该切片不得标记完成或作为生产就绪依据；后续恢复 CLOUD018 时从本检查点补齐剩余门禁。
-- 统一连接迁移 Goal 已于 2026-07-15 建立基线：CONN001-CONN008 依次覆盖多 Route registry、客户端绑定授权、TUI/CLI 竞速、direct TLS/LAN、managed Cloud adapter、endpoint share、Official App 和旧路径总清理。当前最早活动切片为 CONN001；尚未开始 runtime 实现，不得把旧单 transport registry、bearer pairing 或 Cloud-only App store 视为新模型已完成。
+- CONN001 已于 2026-07-15 完成：`shared/connection` 成为 Endpoint/Route registry、strict v2 parser/writer、纯 assembler、portable bootstrap/share/discovery contract 和运行时基础类型 owner；桌面 CLI/TUI、Android native store、共享 UI projection 与 Cloud fingerprint 投影均消费同一模型。Go/Kotlin/TypeScript 同源 fixture 覆盖 strict parse、round-trip、unknown field、size limit、identity 双向冲突、route canonical/duplicate/control、priority int32 边界、managed relay 默认、显式 default、确认 identity 绑定和导入交换律。旧 `pair import` 通过 assembler 增量合并且不覆盖已有 route/policy；generic endpoint update 不能改 pin；root TUI 在 default 不是唯一 local-unix route 时 fail closed，不回退未注册 local daemon。准入 `scripts/with-clean-termx-env.sh env GOWORK=off go test ./shared/connection/... ./shared/remoteauth/... ./proto/remoteauthpb/... ./proto/cloudpb/... ./cmd/termx ./tui/services ./tui/state -count=1`、`make test-private`、`make test-clients`、`make test-android`、`scripts/check-generated-code.sh`、补充 `go test ./tui/app -count=1` 与 `git diff --check` 全部通过。双审最终结论：架构 reviewer Maxwell PASS，代码 reviewer Locke PASS；已处理 identity 唯一性、portable 字段校验、hedge/priority 闭包、SSH 后绑定、share label policy、RouteAttempt 单真值、TUI local fallback、generic pin mutation、pair import 覆盖和三语言默认值分叉。当前最早未完成切片为 CONN002。
 - 正式开源隔离、生产 OAuth/TLS、持久化数据库、计费、团队治理、Relay Mesh 和多区域运维全部延后。

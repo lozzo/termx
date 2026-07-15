@@ -240,51 +240,47 @@ func v3PairImportCommand() *cobra.Command {
 			if endpointLabel == "" {
 				endpointLabel = string(id)
 			}
-			cfg := connection.Config{
-				ID: id, Label: endpointLabel, Transport: connection.TransportHubP2P,
-				ConnectMode: connection.ConnectOnDemand, Enabled: true, HubDeviceID: bundle.DeviceID,
-				DeviceFingerprint: bundle.DeviceFingerprint, GrantRef: v3PairingGrantRef(id, bundle.DeviceID),
-				RelayMode: connection.RelayMode(strings.TrimSpace(relayMode)),
-			}
-			if err := cfg.Validate(); err != nil {
+			identity := connection.DaemonIdentity{DeviceID: bundle.DeviceID, DeviceFingerprint: bundle.DeviceFingerprint}
+			preferred := connection.NewManagedEndpoint(id, endpointLabel, identity, bundle.DeviceID, "pairing-grant-validation", connection.RelayMode(strings.TrimSpace(relayMode)), connection.ConnectOnDemand)
+			if err := preferred.Validate(); err != nil {
 				return err
 			}
 			registry, err := connection.Load(registryPath)
 			if errors.Is(err, os.ErrNotExist) {
-				registry = connection.DefaultRegistry()
+				registry = connection.Registry{Version: connection.RegistryVersion, Endpoints: map[connection.EndpointID]connection.Endpoint{}}
 				err = nil
 			}
 			if err != nil {
 				return err
 			}
-			if registry.Connections == nil {
-				registry.Connections = make(map[connection.EndpointID]connection.Config)
-			}
-			registry.Connections[id] = cfg
-			if _, err := registry.Normalize(); err != nil {
+			registry, endpoint, grantRef, err := mergePairingEndpoint(registry, id, endpointLabel, identity, connection.RelayMode(strings.TrimSpace(relayMode)))
+			if err != nil {
 				return err
 			}
 			credentials := remoteauth.NewCredentialStore(v3RemoteCredentialDir())
-			previousGrant, previousGrantErr := credentials.Resolve(cfg.GrantRef)
+			previousGrant, previousGrantErr := credentials.Resolve(grantRef)
 			if previousGrantErr != nil && !errors.Is(previousGrantErr, os.ErrNotExist) {
 				return previousGrantErr
 			}
-			if err := credentials.Put(cfg.GrantRef, bundle.CapabilityGrant); err != nil {
+			if err := credentials.Put(grantRef, bundle.CapabilityGrant); err != nil {
 				return err
 			}
 			if err := saveV3ConnectionRegistry(registryPath, registry); err != nil {
+				if connection.RegistryWritePublished(err) {
+					return err
+				}
 				var rollbackErr error
 				if previousGrantErr == nil {
-					rollbackErr = credentials.Put(cfg.GrantRef, previousGrant)
+					rollbackErr = credentials.Put(grantRef, previousGrant)
 				} else {
-					rollbackErr = credentials.Delete(cfg.GrantRef)
+					rollbackErr = credentials.Delete(grantRef)
 				}
 				if rollbackErr != nil {
 					return errors.Join(err, fmt.Errorf("restore pairing credential: %w", rollbackErr))
 				}
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Imported managed endpoint %s for device %s\n", cfg.ID, cfg.HubDeviceID)
+			fmt.Fprintf(cmd.OutOrStdout(), "Imported managed endpoint %s for device %s\n", endpoint.ID, endpoint.DaemonIdentity.DeviceID)
 			return nil
 		},
 	}
@@ -294,6 +290,89 @@ func v3PairImportCommand() *cobra.Command {
 	command.Flags().StringVar(&registryPath, "registry", "", "connections.yaml path")
 	_ = command.MarkFlagRequired("id")
 	return command
+}
+
+func mergePairingEndpoint(
+	registry connection.Registry,
+	preferredID connection.EndpointID,
+	label string,
+	identity connection.DaemonIdentity,
+	relayMode connection.RelayMode,
+) (connection.Registry, connection.Endpoint, string, error) {
+	normalized, err := registry.Normalize()
+	if err != nil {
+		return connection.Registry{}, connection.Endpoint{}, "", err
+	}
+	registry = normalized
+	actualID := preferredID
+	target, targetExists := registry.Endpoints[preferredID]
+	if targetExists && !target.DaemonIdentity.Empty() && target.DaemonIdentity != identity {
+		return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("endpoint %q is pinned to a different daemon identity", preferredID)
+	}
+	if !targetExists {
+		for _, endpoint := range registry.List() {
+			if endpoint.DaemonIdentity == identity {
+				actualID = endpoint.ID
+				target, targetExists = endpoint, true
+				break
+			}
+		}
+	}
+	grantRef := v3PairingGrantRef(actualID, identity.DeviceID)
+	if targetExists {
+		if route, ok := target.Route("cloud"); ok && strings.TrimSpace(route.CredentialRef) != "" {
+			grantRef = route.CredentialRef
+		}
+	}
+	candidate := connection.EndpointCandidate{
+		Source:         connection.SourceBootstrap,
+		Identity:       identity,
+		SuggestedLabel: label,
+		Routes: []connection.AccessRoute{{
+			ID: "cloud", Kind: connection.RouteManagedWebRTC, Enabled: true,
+			CredentialRef: grantRef, TargetDeviceID: identity.DeviceID, RelayMode: relayMode,
+		}},
+	}
+	input := connection.EndpointAssemblerInput{Registry: registry, Candidates: []connection.EndpointCandidate{candidate}}
+	if targetExists && target.DaemonIdentity.Empty() {
+		input.ConfirmedIdentityBindings = []connection.ConfirmedIdentityBinding{{EndpointID: actualID, Identity: identity}}
+	}
+	result, err := connection.AssembleEndpoints(input)
+	if err != nil {
+		return connection.Registry{}, connection.Endpoint{}, "", err
+	}
+	resolvedID := result.ResolvedEndpointIDs[0]
+	if targetExists && resolvedID != actualID {
+		return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("pairing identity resolved to endpoint %q instead of confirmed endpoint %q", resolvedID, actualID)
+	}
+	if !targetExists && resolvedID != actualID {
+		endpoint := result.Registry.Endpoints[resolvedID]
+		delete(result.Registry.Endpoints, resolvedID)
+		endpoint.ID = actualID
+		result.Registry.Endpoints[actualID] = endpoint
+		if result.Registry.Default == resolvedID {
+			result.Registry.Default = actualID
+		}
+		result.Registry, err = result.Registry.Normalize()
+		if err != nil {
+			return connection.Registry{}, connection.Endpoint{}, "", err
+		}
+		resolvedID = actualID
+	}
+	endpoint := result.Registry.Endpoints[resolvedID]
+	managedRoute, ok := endpoint.Route("cloud")
+	if !ok || managedRoute.Kind != connection.RouteManagedWebRTC {
+		return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("pairing import did not produce a managed route for endpoint %q", resolvedID)
+	}
+	managedRoute.CredentialRef = grantRef
+	endpoint.Routes[managedRoute.ID] = managedRoute
+	result.Registry.Endpoints[resolvedID] = endpoint
+	result.Registry, err = result.Registry.Normalize()
+	if err != nil {
+		return connection.Registry{}, connection.Endpoint{}, "", err
+	}
+	endpoint = result.Registry.Endpoints[resolvedID]
+	return result.Registry, endpoint, grantRef, nil
 }
 
 func readV3PairingBundle(ctx context.Context, stdin io.Reader, path string) ([]byte, error) {

@@ -1,276 +1,276 @@
 package connection
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+	"time"
 )
 
-func TestLoadMissingDefaultPathReturnsLocalConnection(t *testing.T) {
-	configHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", configHome)
-
+func TestLoadMissingDefaultPathReturnsLocalEndpoint(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	registry, err := Load("")
 	if err != nil {
-		t.Fatalf("missing default registry should not fail: %v", err)
+		t.Fatalf("missing default registry: %v", err)
 	}
-	local, ok := registry.DefaultConnection()
-	if !ok || local.ID != DefaultEndpointID || local.Transport != TransportLocal || local.ConnectMode != ConnectAuto || !local.Enabled || local.Socket != "auto" {
-		t.Fatalf("missing default registry should return local connection, registry=%#v local=%#v ok=%v", registry, local, ok)
+	endpoint, ok := registry.DefaultEndpoint()
+	if !ok || endpoint.ID != DefaultEndpointID || endpoint.ConnectMode != ConnectAuto || !endpoint.Enabled {
+		t.Fatalf("unexpected default endpoint %#v, ok=%v", endpoint, ok)
+	}
+	route, err := endpoint.ResolveCurrentRoute("")
+	if err != nil || route.Kind != RouteLocalUnix || route.Socket != "auto" {
+		t.Fatalf("unexpected default route %#v, err=%v", route, err)
 	}
 }
 
 func TestLoadExplicitMissingPathFails(t *testing.T) {
-	_, err := Load(filepath.Join(t.TempDir(), "missing.yaml"))
-	if err == nil {
-		t.Fatalf("explicit missing registry path should fail")
+	if _, err := Load(filepath.Join(t.TempDir(), "missing.yaml")); err == nil {
+		t.Fatal("explicit missing registry path should fail")
 	}
 }
 
-func TestParseConnectionsYAML(t *testing.T) {
+func TestNormalizeEmptyRegistryDoesNotInventLocalEndpoint(t *testing.T) {
+	registry, err := (Registry{}).Normalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registry.Version != RegistryVersion || registry.Default != "" || len(registry.Endpoints) != 0 {
+		t.Fatalf("empty registry changed unexpectedly: %#v", registry)
+	}
+	if _, err := (Registry{Version: RegistryVersion, Default: "local"}).Normalize(); !IsCode(err, ErrorConfig) {
+		t.Fatalf("empty registry with default error=%v", err)
+	}
+}
+
+func TestNormalizeRejectsNonSerializablePolicyState(t *testing.T) {
+	endpoint := NewSSHEndpoint("peer", "Peer", "peer", "", "auto", ConnectOnDemand)
+	endpoint.SelectionPolicy = SelectionPolicy{HedgeDelay: time.Second, HedgeDelayConfigured: false}
+	registry := Registry{Version: RegistryVersion, Default: "peer", Endpoints: map[EndpointID]Endpoint{"peer": endpoint}}
+	if _, err := registry.Normalize(); !IsCode(err, ErrorConfig) {
+		t.Fatalf("unconfigured non-zero hedge delay error=%v", err)
+	}
+	endpoint.SelectionPolicy = SelectionPolicy{}
+	priority64 := int64(1) << 31
+	priority := int(priority64)
+	route := endpoint.Routes["ssh"]
+	route.Priority = &priority
+	endpoint.Routes["ssh"] = route
+	registry.Endpoints["peer"] = endpoint
+	if _, err := registry.Normalize(); !IsCode(err, ErrorConfig) {
+		t.Fatalf("priority overflow error=%v", err)
+	}
+}
+
+func TestParseEndpointRoutesV2(t *testing.T) {
 	registry, err := Parse([]byte(`
-version: 1
-default: local
-
-connections:
-  local:
-    label: "This Mac"
+version: 2
+default: studio
+endpoints:
+  studio:
+    label: Studio
+    label_source: user
+    device_id: device-studio
+    device_fingerprint: SHA256:studio
     enabled: true
-    transport: local
-    connect_mode: auto
-    socket: auto
-
-  cn-fast:
-    label: "CN Fast"
-    enabled: true
-    transport: ssh
     connect_mode: on_demand
-    address: "root@114.66.58.243"
-    auth_ref: "ssh:cn-fast"
-    remote_socket: auto
-
-  us-west-slow:
-    label: "US West Slow"
-    enabled: false
-    transport: ssh
-    connect_mode: manual
-    address: "root@155.94.155.192"
-    remote_socket: "/run/user/1000/termx-v2-wire1.sock"
-
-  mac-studio:
-    label: "Studio"
-    enabled: true
-    transport: hub-p2p
-    connect_mode: manual
-    hub_device_id: "device_ed25519:studio"
-    device_fingerprint: "SHA256:studio"
-    grant_ref: "grant:studio"
-    relay_mode: relay_only
+    selection:
+      hedge_delay: 250ms
+    routes:
+      cloud:
+        kind: managed-webrtc
+        enabled: true
+        priority: 30
+        credential_ref: grant:studio
+        source: cloud
+        target_device_id: device-studio
+        relay_mode: relay_only
+      lan:
+        kind: direct-tls
+        enabled: true
+        priority: 10
+        credential_ref: grant:studio
+        source: bootstrap
+        addresses:
+          - 192.0.2.10:41120
+          - studio.local:41120
+        server_name: studio.local
+      ssh:
+        kind: ssh-stdio
+        enabled: true
+        priority: 20
+        credential_ref: ssh:studio
+        source: manual
+        host: studio-host
+        port: 22
+        user: build
+        proxy_jump: bastion
+        remote_socket: auto
+        host_key_fingerprints:
+          - SHA256:ssh-host
 `))
 	if err != nil {
 		t.Fatalf("parse registry: %v", err)
 	}
-	if registry.Default != DefaultEndpointID {
-		t.Fatalf("expected default local, got %#v", registry.Default)
+	studio := registry.Endpoints["studio"]
+	if studio.DaemonIdentity != (DaemonIdentity{DeviceID: "device-studio", DeviceFingerprint: "SHA256:studio"}) || !studio.SelectionPolicy.HedgeDelayConfigured || studio.SelectionPolicy.HedgeDelay != 250*time.Millisecond {
+		t.Fatalf("unexpected endpoint identity/policy %#v", studio)
 	}
-	items := registry.List()
-	if len(items) != 4 || items[0].ID != "cn-fast" || items[1].ID != DefaultEndpointID || items[2].ID != "mac-studio" || items[3].ID != "us-west-slow" {
-		t.Fatalf("registry list must be sorted by endpoint id, got %#v", items)
+	if got := studio.RouteList(); len(got) != 3 || got[0].ID != "cloud" || got[1].ID != "lan" || got[2].ID != "ssh" {
+		t.Fatalf("route list is not stable: %#v", got)
 	}
-	fast := registry.Connections["cn-fast"]
-	if fast.Label != "CN Fast" || fast.Transport != TransportSSH || fast.ConnectMode != ConnectOnDemand || fast.Address != "root@114.66.58.243" || fast.AuthRef != "ssh:cn-fast" || fast.RemoteSocket != "auto" {
-		t.Fatalf("unexpected cn-fast config %#v", fast)
+	if route := studio.Routes["ssh"]; route.Kind != RouteSSHStdio || route.Host != "studio-host" || route.User != "build" || route.ProxyJump != "bastion" || route.RemoteSocket != "auto" {
+		t.Fatalf("unexpected ssh route %#v", route)
 	}
-	slow := registry.Connections["us-west-slow"]
-	if slow.Enabled || slow.ConnectMode != ConnectManual || slow.RemoteSocket != "/run/user/1000/termx-v2-wire1.sock" {
-		t.Fatalf("unexpected us-west-slow config %#v", slow)
+	if _, err := studio.ResolveCurrentRoute(""); !IsCode(err, ErrorRouteSelectionRequired) {
+		t.Fatalf("multi-route runtime must fail until planner exists, got %v", err)
 	}
-	studio := registry.Connections["mac-studio"]
-	if studio.Label != "Studio" || studio.Transport != TransportHubP2P || studio.ConnectMode != ConnectManual || studio.HubDeviceID != "device_ed25519:studio" || studio.DeviceFingerprint != "SHA256:studio" || studio.GrantRef != "grant:studio" || studio.RelayMode != RelayOnly {
-		t.Fatalf("unexpected mac-studio hub config %#v", studio)
+	if route, err := studio.ResolveCurrentRoute("lan"); err != nil || route.Kind != RouteDirectTLS {
+		t.Fatalf("explicit route should resolve, route=%#v err=%v", route, err)
 	}
 }
 
-func TestParseRejectsUnknownFieldsAndInvalidValues(t *testing.T) {
+func TestParseRejectsOldUnknownOversizeAndInvalidRegistry(t *testing.T) {
 	cases := []struct {
 		name string
-		data string
+		data []byte
+		code ErrorCode
 	}{
-		{name: "unknown top field", data: "name: bad\n"},
-		{name: "unknown connection field", data: "connections:\n  local:\n    label: local\n    transport: local\n    enabled: true\n    surprise: nope\n"},
-		{name: "bad indentation", data: "connections:\n local:\n"},
-		{name: "list", data: "connections:\n  - local\n"},
-		{name: "bad bool", data: "connections:\n  local:\n    enabled: yes\n"},
-		{name: "ssh missing address", data: "connections:\n  lab:\n    enabled: true\n    transport: ssh\n"},
-		{name: "bad id", data: "connections:\n  bad/id:\n    transport: local\n"},
-		{name: "managed rejects caller hub url", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    hub_url: https://hub.example.com\n    hub_device_id: device_ed25519:peer\n    device_fingerprint: SHA256:peer\n    grant_ref: grant:peer\n"},
-		{name: "hub missing device", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    device_fingerprint: SHA256:peer\n    grant_ref: grant:peer\n"},
-		{name: "hub missing fingerprint", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    hub_device_id: device_ed25519:peer\n    grant_ref: grant:peer\n"},
-		{name: "hub missing grant", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    hub_device_id: device_ed25519:peer\n    device_fingerprint: SHA256:peer\n"},
-		{name: "hub must not set address", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    address: peer.example.com\n    hub_device_id: device_ed25519:peer\n    device_fingerprint: SHA256:peer\n    grant_ref: grant:peer\n"},
-		{name: "hub bad relay mode", data: "connections:\n  peer:\n    enabled: true\n    transport: hub-p2p\n    hub_device_id: device_ed25519:peer\n    device_fingerprint: SHA256:peer\n    grant_ref: grant:peer\n    relay_mode: open\n"},
-		{name: "disabled default", data: "default: lab\nconnections:\n  lab:\n    enabled: false\n    transport: ssh\n    address: lab.example.com\n"},
+		{name: "empty document", data: nil, code: ErrorConfig},
+		{name: "missing endpoints", data: []byte("version: 2\ndefault: ''\n"), code: ErrorConfig},
+		{name: "missing default", data: []byte("version: 2\nendpoints: {}\n"), code: ErrorConfig},
+		{name: "non portable hedge delay", data: []byte("version: 2\ndefault: lab\nendpoints:\n  lab:\n    selection:\n      hedge_delay: 1.5s\n    routes:\n      ssh:\n        kind: ssh-stdio\n        host: lab\n"), code: ErrorConfig},
+		{name: "old schema", data: []byte("version: 1\nconnections:\n  local:\n    transport: local\n"), code: ErrorConfig},
+		{name: "unknown field", data: []byte("version: 2\nendpoints:\n  local:\n    routes:\n      local:\n        kind: local-unix\n        socket: auto\n        surprise: true\n"), code: ErrorConfig},
+		{name: "multiple documents", data: []byte("version: 2\nendpoints: {}\n---\nversion: 2\n"), code: ErrorConfig},
+		{name: "oversize", data: bytes.Repeat([]byte("x"), MaxRegistryBytes+1), code: ErrorSizeLimit},
+		{name: "identity half", data: []byte("version: 2\nendpoints:\n  peer:\n    device_id: device\n    routes:\n      ssh:\n        kind: ssh-stdio\n        host: peer\n"), code: ErrorConfig},
+		{name: "identity whitespace", data: []byte("version: 2\ndefault: peer\nendpoints:\n  peer:\n    device_id: ' device'\n    device_fingerprint: SHA256:device\n    routes:\n      ssh:\n        kind: ssh-stdio\n        host: peer\n"), code: ErrorConfig},
+		{name: "direct missing identity", data: []byte("version: 2\nendpoints:\n  peer:\n    routes:\n      lan:\n        kind: direct-tls\n        addresses: [peer:41120]\n"), code: ErrorConfig},
+		{name: "mixed priority", data: []byte("version: 2\nendpoints:\n  peer:\n    routes:\n      one:\n        kind: ssh-stdio\n        host: one\n        priority: 10\n      two:\n        kind: ssh-stdio\n        host: two\n"), code: ErrorConfig},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := Parse([]byte(tc.data)); err == nil {
-				t.Fatalf("expected parse failure")
+			_, err := Parse(tc.data)
+			if err == nil {
+				t.Fatal("expected parse failure")
+			}
+			var connectionErr *Error
+			for current := err; current != nil; {
+				if value, ok := current.(*Error); ok {
+					connectionErr = value
+					break
+				}
+				unwrapper, ok := current.(interface{ Unwrap() error })
+				if !ok {
+					break
+				}
+				current = unwrapper.Unwrap()
+			}
+			if connectionErr == nil || connectionErr.Code != tc.code {
+				t.Fatalf("error=%v, want code=%s", err, tc.code)
 			}
 		})
 	}
 }
 
-func TestHubP2PDefaultsAndIdentityClassification(t *testing.T) {
-	registry, err := Parse([]byte(`
-connections:
-  studio:
-    label: "Studio Mac"
-    transport: hub-p2p
-    hub_device_id: "device_ed25519:studio"
-    device_fingerprint: "SHA256:studio"
-    grant_ref: "grant:studio"
-`))
+func TestEndpointRuntimeChangeClassification(t *testing.T) {
+	endpoint := NewSSHEndpoint("lab", "Lab", "lab.example", "ssh:lab", "auto", ConnectOnDemand)
+	normalized, err := (Registry{Version: RegistryVersion, Default: "lab", Endpoints: map[EndpointID]Endpoint{"lab": endpoint}}).Normalize()
 	if err != nil {
-		t.Fatalf("parse hub registry: %v", err)
+		t.Fatal(err)
 	}
-	studio := registry.Connections["studio"]
-	if studio.ConnectMode != ConnectOnDemand || studio.RelayMode != RelayAuto || studio.DeviceFingerprint != "SHA256:studio" || studio.GrantRef != "grant:studio" {
-		t.Fatalf("expected hub defaults, got %#v", studio)
+	endpoint = normalized.Endpoints["lab"]
+	renamed := cloneEndpoint(endpoint)
+	renamed.Label = "Lab Renamed"
+	if !endpoint.DisplayChanged(renamed) || endpoint.RequiresReconnect(renamed) {
+		t.Fatal("label change should be display-only")
 	}
-	renamed := studio
-	renamed.Label = "Desk"
-	if !studio.DisplayChanged(renamed) || studio.RequiresReconnect(renamed) {
-		t.Fatalf("hub label change should be display-only")
+	policyChanged := cloneEndpoint(endpoint)
+	priority := 10
+	route := policyChanged.Routes["ssh"]
+	route.Priority = &priority
+	policyChanged.Routes["ssh"] = route
+	if endpoint.RequiresReconnect(policyChanged) {
+		t.Fatal("priority change must only affect future selection")
 	}
-	movedIdentity := studio
-	movedIdentity.DeviceFingerprint = "SHA256:other"
-	if !studio.RequiresReconnect(movedIdentity) {
-		t.Fatalf("hub device fingerprint change must require reconnect")
-	}
-	grantChanged := studio
-	grantChanged.GrantRef = "grant:other"
-	if !studio.RequiresReconnect(grantChanged) {
-		t.Fatalf("hub grant ref change must require reconnect")
-	}
-	relayChanged := studio
-	relayChanged.RelayMode = RelayDirect
-	if !studio.RequiresReconnect(relayChanged) {
-		t.Fatalf("relay policy change must require reconnect")
+	moved := cloneEndpoint(endpoint)
+	route = moved.Routes["ssh"]
+	route.Host = "new.example"
+	moved.Routes["ssh"] = route
+	if !endpoint.RequiresReconnect(moved) {
+		t.Fatal("route dial identity change must require reconnect")
 	}
 }
 
-func TestParseHubP2PSmartRouteMode(t *testing.T) {
-	registry, err := Parse([]byte(`
-connections:
-  studio:
-    transport: hub-p2p
-    hub_device_id: "device_ed25519:studio"
-    device_fingerprint: "SHA256:studio"
-    grant_ref: "grant:studio"
-    relay_mode: smart_route
-`))
+func TestSaveRoundTripV2AndFileMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "termx", "connections.yaml")
+	priority := 10
+	endpoint := NewManagedEndpoint("studio", "Studio", DaemonIdentity{DeviceID: "device-studio", DeviceFingerprint: "SHA256:studio"}, "device-studio", "grant:studio", RelayDirect, ConnectOnDemand)
+	endpoint.SelectionPolicy = SelectionPolicy{HedgeDelay: 1500 * time.Millisecond, HedgeDelayConfigured: true}
+	endpoint.Routes["lan"] = AccessRoute{ID: "lan", Kind: RouteDirectTLS, Enabled: true, Priority: &priority, Source: SourceBootstrap, CredentialRef: "grant:studio", Addresses: []string{"studio.local:41120"}}
+	cloud := endpoint.Routes["cloud"]
+	cloud.Priority = intPointer(20)
+	endpoint.Routes["cloud"] = cloud
+	registry := Registry{Version: RegistryVersion, Default: "studio", Endpoints: map[EndpointID]Endpoint{"studio": endpoint}}
+	if err := Save(path, registry); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("parse smart route registry: %v", err)
+		t.Fatal(err)
 	}
-	if got := registry.Connections["studio"].RelayMode; got != RelaySmart {
-		t.Fatalf("smart route relay mode = %q", got)
-	}
-}
-
-func TestRegistryDefaultsAndValidation(t *testing.T) {
-	registry, err := Parse([]byte(`
-version: 1
-connections:
-  lab:
-    label: ""
-    transport: ssh
-    address: "lab.example.com"
-`))
-	if err != nil {
-		t.Fatalf("parse registry with defaults: %v", err)
-	}
-	if registry.Default != "lab" {
-		t.Fatalf("single enabled endpoint should become default, got %q", registry.Default)
-	}
-	lab := registry.Connections["lab"]
-	if lab.Label != "lab" || !lab.Enabled || lab.ConnectMode != ConnectOnDemand || lab.RemoteSocket != "auto" {
-		t.Fatalf("expected non-local defaults, got %#v", lab)
-	}
-}
-
-func TestConfigRejectsFieldsOwnedByAnotherTransport(t *testing.T) {
-	cases := []Config{
-		{ID: "local", Transport: TransportLocal, ConnectMode: ConnectAuto, Enabled: true, Socket: "auto", AuthRef: "ssh:lab"},
-		{ID: "ssh", Transport: TransportSSH, ConnectMode: ConnectOnDemand, Enabled: true, Address: "lab.example", RemoteSocket: "auto", Socket: "/tmp/local.sock"},
-		{ID: "cloud", Transport: TransportHubP2P, ConnectMode: ConnectOnDemand, Enabled: true, AuthRef: "ssh:lab", HubDeviceID: "device", DeviceFingerprint: "SHA256:device", GrantRef: "grant:device", RelayMode: RelayDirect},
-	}
-	for _, cfg := range cases {
-		if err := cfg.Validate(); err == nil {
-			t.Fatalf("cross-transport fields accepted for %#v", cfg)
+	for _, forbidden := range [][]byte{[]byte("connections:"), []byte("capability_grant"), []byte("cloud_token"), []byte("hub_url")} {
+		if bytes.Contains(payload, forbidden) {
+			t.Fatalf("registry contains forbidden value %q: %s", forbidden, payload)
 		}
 	}
-}
-
-func TestConfigRuntimeChangeClassification(t *testing.T) {
-	old := Config{
-		ID:           "lab",
-		Label:        "Lab",
-		Transport:    TransportSSH,
-		Address:      "lab.example.com",
-		AuthRef:      "ssh:lab",
-		ConnectMode:  ConnectOnDemand,
-		Enabled:      true,
-		RemoteSocket: "auto",
+	if !bytes.Contains(payload, []byte("hedge_delay: 1500ms")) {
+		t.Fatalf("registry did not use canonical millisecond duration: %s", payload)
 	}
-	renamed := old
-	renamed.Label = "Lab Renamed"
-	if !old.DisplayChanged(renamed) || old.RequiresReconnect(renamed) {
-		t.Fatalf("label change should be display-only")
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	disabled := old
-	disabled.Enabled = false
-	if old.RequiresReconnect(disabled) {
-		t.Fatalf("enabled change must not hot-switch an active session")
+	want, _ := registry.Normalize()
+	if !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("round trip mismatch\ngot=%#v\nwant=%#v", loaded, want)
 	}
-	manual := old
-	manual.ConnectMode = ConnectManual
-	if old.RequiresReconnect(manual) {
-		t.Fatalf("connect mode change must only affect future connects")
-	}
-	moved := old
-	moved.Address = "new.example.com"
-	if !old.RequiresReconnect(moved) {
-		t.Fatalf("address change must require reconnect")
-	}
-	authChanged := old
-	authChanged.AuthRef = "ssh:other"
-	if !old.RequiresReconnect(authChanged) {
-		t.Fatalf("auth change must require reconnect")
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("registry mode=%v err=%v", info.Mode().Perm(), err)
 	}
 }
 
-func TestLoadReadsDefaultPath(t *testing.T) {
+func TestRegistryWritePublishedClassification(t *testing.T) {
+	published := &registryWriteError{err: os.ErrInvalid, published: true}
+	if !RegistryWritePublished(fmt.Errorf("save registry: %w", published)) {
+		t.Fatal("published registry write error lost commit classification")
+	}
+	if RegistryWritePublished(os.ErrPermission) {
+		t.Fatal("pre-publish write error was classified as committed")
+	}
+}
+
+func TestLoadReadsDefaultPathV2(t *testing.T) {
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	path := filepath.Join(configHome, "termx", DefaultFileName)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir config: %v", err)
+		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`
-connections:
-  local:
-    label: "Configured Local"
-    enabled: true
-    transport: local
-`), 0o644); err != nil {
-		t.Fatalf("write registry: %v", err)
+	if err := os.WriteFile(path, []byte("version: 2\ndefault: local\nendpoints:\n  local:\n    label: Configured Local\n    enabled: true\n    connect_mode: auto\n    routes:\n      local:\n        kind: local-unix\n        enabled: true\n        socket: auto\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	registry, err := Load("")
 	if err != nil {
-		t.Fatalf("load default path: %v", err)
+		t.Fatal(err)
 	}
-	local := registry.Connections[DefaultEndpointID]
-	if local.Label != "Configured Local" || local.ConnectMode != ConnectAuto || local.Socket != "auto" {
-		t.Fatalf("unexpected loaded local config %#v", local)
+	if registry.Endpoints[DefaultEndpointID].Label != "Configured Local" {
+		t.Fatalf("unexpected registry %#v", registry)
 	}
 }
+
+func intPointer(value int) *int { return &value }

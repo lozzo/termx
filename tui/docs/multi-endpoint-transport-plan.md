@@ -1,5 +1,11 @@
 # 多 endpoint / 多 transport 管理规划
 
+## CONN001 当前边界
+
+自 CONN001 起，一个 daemon 只对应一个 `Endpoint`，`local-unix`、`ssh-stdio`、`direct-tls` 与 `managed-webrtc` 是该 Endpoint 下可并存的多条 `AccessRoute`。`Transport` 仅表示某次 route attempt 建立的运行时载体，managed WebRTC 的 `direct/single_relay` 则是 transport 内部 `Path`；三者不得再合并成一个持久 `transport` 字段。
+
+当前 schema、identity 合并、selection policy、session 和 share/bootstrap 边界以 [`docs/remote-platform/unified-endpoint-route-refactor-plan.md`](../../docs/remote-platform/unified-endpoint-route-refactor-plan.md) 与 `workflow.md` 为准。本文后续保留的单 transport `ConnectionConfig` 和 `connections:` 示例只用于解释历史迁移背景，不再是可实现或可兼容读取的 contract；endpoint-aware service routing、`TerminalRef` 和 TUI/core ownership 说明仍然有效。
+
 ## 背景
 
 当前 TUI v3 默认只连接一个本地 daemon。`TerminalID`、terminal pool、live attach、copy/history 和 workbench binding 都隐含在“唯一 daemon”下面成立。下一阶段希望一个 TUI/client 能同时管理多个 daemon endpoint，例如本机 daemon、SSH 到远端服务器上的 daemon，或未来通过 hub/P2P 找到的同账号设备。

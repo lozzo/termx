@@ -20,12 +20,9 @@ func TestTerminalAutomationLocalDataPlane(t *testing.T) {
 	socketPath, client, closeServer := startCLIEndpointServer(t)
 	defer closeServer()
 	if err := connection.Save("", connection.Registry{
-		Version: 1, Default: connection.DefaultEndpointID,
-		Connections: map[connection.EndpointID]connection.Config{
-			connection.DefaultEndpointID: {
-				ID: connection.DefaultEndpointID, Label: "Local", Transport: connection.TransportLocal,
-				ConnectMode: connection.ConnectAuto, Enabled: true, Socket: socketPath,
-			},
+		Version: connection.RegistryVersion, Default: connection.DefaultEndpointID,
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			connection.DefaultEndpointID: testLocalEndpoint(connection.DefaultEndpointID, "Local", socketPath, connection.ConnectAuto, true),
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -82,9 +79,9 @@ func TestTerminalEventsWritesStableNDJSON(t *testing.T) {
 	socketPath, client, closeServer := startCLIEndpointServer(t)
 	defer closeServer()
 	if err := connection.Save("", connection.Registry{
-		Version: 1, Default: connection.DefaultEndpointID,
-		Connections: map[connection.EndpointID]connection.Config{
-			connection.DefaultEndpointID: {ID: connection.DefaultEndpointID, Transport: connection.TransportLocal, ConnectMode: connection.ConnectAuto, Enabled: true, Socket: socketPath},
+		Version: connection.RegistryVersion, Default: connection.DefaultEndpointID,
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			connection.DefaultEndpointID: testLocalEndpoint(connection.DefaultEndpointID, "Local", socketPath, connection.ConnectAuto, true),
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -158,16 +155,16 @@ func TestTerminalAutomationInputAndFormatValidation(t *testing.T) {
 func TestTerminalTransportErrorDoesNotPrintUsage(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	if err := connection.Save("", connection.Registry{
-		Version: 1, Default: "west",
-		Connections: map[connection.EndpointID]connection.Config{
-			"west": {ID: "west", Transport: connection.TransportSSH, Address: "west.example", ConnectMode: connection.ConnectOnDemand, Enabled: true, RemoteSocket: "auto"},
+		Version: connection.RegistryVersion, Default: "west",
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			"west": testSSHEndpoint("west", "West", "west.example", "", "auto", connection.ConnectOnDemand, true),
 		},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	oldSSH := dialCLIEndpointSSH
 	t.Cleanup(func() { dialCLIEndpointSSH = oldSSH })
-	dialCLIEndpointSSH = func(context.Context, context.Context, connection.Config) (*protocol.Client, error) {
+	dialCLIEndpointSSH = func(context.Context, context.Context, connection.Endpoint, connection.AccessRoute) (*protocol.Client, error) {
 		return nil, errors.New("transport unavailable")
 	}
 	command := newRootCmd()

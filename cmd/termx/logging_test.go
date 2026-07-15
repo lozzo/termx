@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/lozzow/termx/proto/wire"
+	"github.com/lozzow/termx/shared/connection"
 )
 
 func TestResolveLogFilePathPrefersExplicitValue(t *testing.T) {
@@ -91,6 +92,27 @@ func TestV3PathPolicy(t *testing.T) {
 	}
 	if got := v3StatePathPolicy(); got != "unused" {
 		t.Fatalf("expected v3 state path policy unused, got %q", got)
+	}
+}
+
+func TestResolveV3SocketRequiresRegisteredLocalRoute(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	if socket, err := resolveV3SocketForConnectionRegistry("", connection.DefaultRegistry()); err != nil || socket == "" {
+		t.Fatalf("default local registry socket = %q, err=%v", socket, err)
+	}
+	if _, err := resolveV3SocketForConnectionRegistry("", connection.Registry{}); err == nil {
+		t.Fatal("empty registry must not start an unregistered local daemon")
+	}
+	remote := connection.NewSSHEndpoint("remote", "Remote", "remote.example", "", "auto", connection.ConnectOnDemand)
+	registry := connection.Registry{Version: connection.RegistryVersion, Default: "remote", Endpoints: map[connection.EndpointID]connection.Endpoint{"remote": remote}}
+	if _, err := resolveV3SocketForConnectionRegistry("", registry); err == nil {
+		t.Fatal("remote-only registry must not fall back to the default local socket")
+	}
+	mixed := connection.DefaultRegistry()
+	mixed.Endpoints["remote"] = remote
+	mixed.Default = "remote"
+	if _, err := resolveV3SocketForConnectionRegistry("", mixed); err == nil {
+		t.Fatal("mixed registry must honor its remote default instead of falling back to the local endpoint")
 	}
 }
 

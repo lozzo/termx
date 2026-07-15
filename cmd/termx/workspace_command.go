@@ -68,24 +68,24 @@ func newWorkspaceCommand(socket, logFile *string) *cobra.Command {
 	return command
 }
 
-func (runtime *workspaceCommandRuntime) open(cmd *cobra.Command) (context.Context, *protocol.Client, connection.Config, func(), error) {
+func (runtime *workspaceCommandRuntime) open(cmd *cobra.Command) (context.Context, *protocol.Client, connection.Endpoint, func(), error) {
 	if runtime.timeout <= 0 {
-		return nil, nil, connection.Config{}, func() {}, usageCLIError("--timeout must be positive")
+		return nil, nil, connection.Endpoint{}, func() {}, usageCLIError("--timeout must be positive")
 	}
 	registry, err := loadNormalizedConnectionRegistry()
 	if err != nil {
-		return nil, nil, connection.Config{}, func() {}, err
+		return nil, nil, connection.Endpoint{}, func() {}, err
 	}
 	endpoint, err := resolveEndpointConfig(runtime.endpointID, registry)
 	if err != nil {
-		return nil, nil, connection.Config{}, func() {}, err
+		return nil, nil, connection.Endpoint{}, func() {}, err
 	}
 	ctx, cancel := context.WithTimeout(cmd.Context(), runtime.timeout)
 	cmd.Root().SilenceUsage = true
 	client, closeClient, err := openEndpointProtocolClient(ctx, endpoint, *runtime.socket, *runtime.logFile)
 	if err != nil {
 		cancel()
-		return nil, nil, connection.Config{}, func() {}, classifyCLIError(err)
+		return nil, nil, connection.Endpoint{}, func() {}, classifyCLIError(err)
 	}
 	closeAll := func() { closeClient(); cancel() }
 	return ctx, client, endpoint, closeAll, nil

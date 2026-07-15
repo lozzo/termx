@@ -16,6 +16,8 @@ import (
 // bundle 内部仍是单 daemon 边界，不能持有跨 endpoint 路由真值。
 type EndpointServiceBundle struct {
 	EndpointID state.EndpointID
+	// RouteID 标识创建当前 bundle 的持久 route；CONN003 session owner 用它投影 winner 并拒绝旧 generation。
+	RouteID    connection.RouteID
 	Terminal   TerminalService
 	Core       CoreClient
 	Surface    TerminalSurfaceService
@@ -29,9 +31,9 @@ type EndpointServiceBundle struct {
 	Lifecycle            EndpointLifecycle
 }
 
-// EndpointDialer 是 endpoint manager 的 lazy transport 连接入口。
-// dialer 只根据单个 connection.Config 建立 per-endpoint protocol bundle；它不能修改 reducer state，也不能 fallback 到其它 endpoint。
-type EndpointDialer func(context.Context, connection.Config) (EndpointServiceBundle, error)
+// EndpointDialer 是 endpoint manager 的单 route lazy 连接入口。
+// Endpoint 提供 daemon identity，AccessRoute 提供到达配置；dialer 不能修改 reducer state、选择其它 route 或 fallback 到其它 endpoint。
+type EndpointDialer func(context.Context, connection.Endpoint, connection.AccessRoute) (EndpointServiceBundle, error)
 
 // EndpointManager 是 TUI/client 侧 endpoint service router。
 // connections.yaml 是 registry truth；每个 bundle 是已经建立的 per-endpoint protocol session。
@@ -41,25 +43,25 @@ type EndpointManager struct {
 	registry    connection.Registry
 	registryErr error
 	bundles     map[state.EndpointID]EndpointServiceBundle
-	dialers     map[connection.TransportKind]EndpointDialer
+	dialers     map[connection.RouteKind]EndpointDialer
 	watchers    map[state.EndpointID]<-chan struct{}
 	subscribers map[uint64]chan EndpointRuntimeEvent
 	nextSubID   uint64
 }
 
 // NewEndpointManager 构造一个按 registry 路由的 endpoint manager。
-// 未注册 dialer 的 transport 会留在展示层，真实 service 请求返回 endpoint-scoped 错误，
+// 未注册 dialer 的 route 会留在展示层，真实 service 请求返回 endpoint-scoped 错误，
 // 避免 SSH 或 hub/P2P endpoint 静默 fallback 成本地 daemon。
 func NewEndpointManager(registry connection.Registry, bundles ...EndpointServiceBundle) *EndpointManager {
 	return NewEndpointManagerWithDialers(registry, nil, bundles...)
 }
 
-// NewEndpointManagerWithDialers 构造支持 lazy transport 连接的 endpoint manager。
-// 已连接 bundle 优先复用；缺失 bundle 时按 connection transport 查找 dialer，失败只回到该 endpoint 的 service request。
-func NewEndpointManagerWithDialers(registry connection.Registry, dialers map[connection.TransportKind]EndpointDialer, bundles ...EndpointServiceBundle) *EndpointManager {
+// NewEndpointManagerWithDialers 构造支持 lazy route 连接的 endpoint manager。
+// 已连接 bundle 优先复用；缺失 bundle 时按 RouteKind 查找 dialer，失败只回到该 endpoint 的 service request。
+func NewEndpointManagerWithDialers(registry connection.Registry, dialers map[connection.RouteKind]EndpointDialer, bundles ...EndpointServiceBundle) *EndpointManager {
 	normalized, err := registry.Normalize()
 	if err != nil {
-		normalized = connection.DefaultRegistry()
+		normalized = connection.Registry{}
 	}
 	manager := &EndpointManager{
 		registry:    normalized,
@@ -89,7 +91,7 @@ func (manager *EndpointManager) EndpointStore() state.EndpointStore {
 	return state.EndpointStore{}.ApplyConnectionRegistry(manager.registry)
 }
 
-// WatchEndpointEvents 订阅 endpoint manager 主动侦测到的 transport/protocol 生命周期事件。
+// WatchEndpointEvents 订阅 endpoint manager 主动侦测到的 route/protocol 生命周期事件。
 // manager 只发布 endpoint-scoped 状态，不直接修改 reducer，也不会把断线升级成全局 UI 提示。
 func (manager *EndpointManager) WatchEndpointEvents(ctx context.Context) (<-chan EndpointRuntimeEvent, error) {
 	if manager == nil {
@@ -278,7 +280,7 @@ func (manager *EndpointManager) Restart(ctx context.Context, req TerminalRestart
 }
 
 // Reconnect 把 reconnect/reattach 请求路由到 owning endpoint。
-// 未连接或无 dialer 的 transport 返回局部错误，不会 fallback 成本地 attach。
+// 未连接或无 dialer 的 route 返回局部错误，不会 fallback 成本地 attach。
 func (manager *EndpointManager) Reconnect(ctx context.Context, req TerminalReconnectRequest) (TerminalAttachResult, error) {
 	endpointID, terminal, err := manager.terminal(ctx, req.EndpointID)
 	if err != nil {
@@ -447,31 +449,36 @@ func (manager *EndpointManager) bundle(ctx context.Context, endpointID state.End
 	if manager.registryErr != nil {
 		return endpointID, EndpointServiceBundle{}, fmt.Errorf("endpoint registry invalid: %w", manager.registryErr)
 	}
-	cfg, ok := manager.registry.Connections[connection.EndpointID(endpointID)]
+	endpoint, ok := manager.registry.Endpoints[connection.EndpointID(endpointID)]
 	if !ok {
 		return endpointID, EndpointServiceBundle{}, fmt.Errorf("endpoint %q is not registered", endpointID)
 	}
-	if !cfg.Enabled {
+	if !endpoint.Enabled {
 		return endpointID, EndpointServiceBundle{}, fmt.Errorf("endpoint %q is disabled", endpointID)
+	}
+	route, err := endpoint.ResolveCurrentRoute("")
+	if err != nil {
+		return endpointID, EndpointServiceBundle{}, err
 	}
 	manager.mu.Lock()
 	bundle, ok := manager.bundles[endpointID]
-	dialer := manager.dialers[cfg.Transport]
+	dialer := manager.dialers[route.Kind]
 	manager.mu.Unlock()
 	if ok {
 		return endpointID, bundle, nil
 	}
 	if dialer == nil {
-		return endpointID, EndpointServiceBundle{}, fmt.Errorf("endpoint %q transport %q is not connected", endpointID, cfg.Transport)
+		return endpointID, EndpointServiceBundle{}, fmt.Errorf("endpoint %q route %q kind %q is not connected", endpointID, route.ID, route.Kind)
 	}
 	dialContext := context.WithValue(ctx, endpointDialProgressContextKey{}, func(phase cloudcompanion.EndpointPhase) {
 		manager.publishDialPhase(endpointID, phase)
 	})
-	bundle, err := dialer(dialContext, cfg)
+	bundle, err = dialer(dialContext, endpoint, route)
 	if err != nil {
 		return endpointID, EndpointServiceBundle{}, err
 	}
 	bundle.EndpointID = endpointID
+	bundle.RouteID = route.ID
 	manager.mu.Lock()
 	if existing, ok := manager.bundles[endpointID]; ok {
 		manager.mu.Unlock()
@@ -572,11 +579,11 @@ func publishEndpointRuntimeEvent(subscribers []chan EndpointRuntimeEvent, event 
 	}
 }
 
-func cloneEndpointDialers(dialers map[connection.TransportKind]EndpointDialer) map[connection.TransportKind]EndpointDialer {
+func cloneEndpointDialers(dialers map[connection.RouteKind]EndpointDialer) map[connection.RouteKind]EndpointDialer {
 	if len(dialers) == 0 {
 		return nil
 	}
-	cloned := make(map[connection.TransportKind]EndpointDialer, len(dialers))
+	cloned := make(map[connection.RouteKind]EndpointDialer, len(dialers))
 	for transportKind, dialer := range dialers {
 		if dialer != nil {
 			cloned[transportKind] = dialer

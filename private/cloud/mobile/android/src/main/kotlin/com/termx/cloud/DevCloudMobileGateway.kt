@@ -127,10 +127,10 @@ internal class DevCloudMobileGateway(
                 CloudCompanion.ManagedDeviceKind.MANAGED_DEVICE_KIND_DAEMON -> "daemon"
                 else -> fail("protocol", "Hub returned an invalid managed device kind")
             }
-            if (device.deviceId.isBlank() || device.displayName.isBlank() || device.presence == CloudCompanion.PresenceState.PRESENCE_STATE_UNSPECIFIED) {
+            if (device.deviceId.isBlank() || device.displayName.isBlank() || device.presence == CloudCompanion.PresenceState.PRESENCE_STATE_UNSPECIFIED || kind == "daemon" && device.deviceFingerprint.isBlank()) {
                 fail("protocol", "Hub returned an invalid managed device directory")
             }
-            ManagedCloudDevice(device.deviceId, device.displayName, device.platform, kind, device.presence == CloudCompanion.PresenceState.PRESENCE_STATE_ONLINE, device.revoked)
+            ManagedCloudDevice(device.deviceId, device.deviceFingerprint, device.displayName, device.platform, kind, device.presence == CloudCompanion.PresenceState.PRESENCE_STATE_ONLINE, device.revoked)
         }
     }
 

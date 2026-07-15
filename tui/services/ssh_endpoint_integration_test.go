@@ -31,26 +31,18 @@ func TestSSHEndpointCreateAttachIntegration(t *testing.T) {
 
 			endpointID := state.EndpointID(sshEndpointTestName(target))
 			registry := connection.Registry{
-				Version: 1,
+				Version: connection.RegistryVersion,
 				Default: connection.EndpointID(endpointID),
-				Connections: map[connection.EndpointID]connection.Config{
-					connection.EndpointID(endpointID): {
-						ID:           connection.EndpointID(endpointID),
-						Label:        "SSH Harness " + target,
-						Transport:    connection.TransportSSH,
-						Address:      target,
-						ConnectMode:  connection.ConnectOnDemand,
-						Enabled:      true,
-						RemoteSocket: "auto",
-					},
+				Endpoints: map[connection.EndpointID]connection.Endpoint{
+					connection.EndpointID(endpointID): serviceTestSSHEndpoint(connection.EndpointID(endpointID), "SSH Harness "+target, target, "", "auto", connection.ConnectOnDemand, true),
 				},
 			}
-			manager := NewEndpointManagerWithDialers(registry, map[connection.TransportKind]EndpointDialer{
-				connection.TransportSSH: func(ctx context.Context, cfg connection.Config) (EndpointServiceBundle, error) {
+			manager := NewEndpointManagerWithDialers(registry, map[connection.RouteKind]EndpointDialer{
+				connection.RouteSSHStdio: func(ctx context.Context, cfg connection.Endpoint, route connection.AccessRoute) (EndpointServiceBundle, error) {
 					transport, err := sshtransport.Dial(ctx, sshtransport.DialOptions{
-						Address:      cfg.Address,
-						AuthRef:      cfg.AuthRef,
-						RemoteSocket: cfg.RemoteSocket,
+						Address:      route.Host,
+						AuthRef:      route.CredentialRef,
+						RemoteSocket: route.RemoteSocket,
 					})
 					if err != nil {
 						return EndpointServiceBundle{}, fmt.Errorf("ssh endpoint %q dial: %w", cfg.ID, err)

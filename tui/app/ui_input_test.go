@@ -1785,11 +1785,11 @@ func TestCreateTerminalPromptRemoteWorkdirSuggestionsUseEndpointPathService(t *t
 		},
 	}
 	registry := connection.Registry{
-		Version: 1,
+		Version: connection.RegistryVersion,
 		Default: connection.DefaultEndpointID,
-		Connections: map[connection.EndpointID]connection.Config{
-			connection.DefaultEndpointID: {ID: connection.DefaultEndpointID, Label: "This Mac", Transport: connection.TransportLocal, ConnectMode: connection.ConnectAuto, Enabled: true},
-			"west":                       {ID: "west", Label: "US West", Transport: connection.TransportSSH, ConnectMode: connection.ConnectOnDemand, Enabled: true, Address: "root@example.com", RemoteSocket: "auto"},
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			connection.DefaultEndpointID: connection.NewLocalEndpoint(connection.DefaultEndpointID, "This Mac", "auto", connection.ConnectAuto),
+			"west":                       connection.NewSSHEndpoint("west", "US West", "root@example.com", "", "auto", connection.ConnectOnDemand),
 		},
 	}
 	manager := services.NewEndpointManager(registry, services.EndpointServiceBundle{EndpointID: "west", Path: pathService})
@@ -1898,21 +1898,21 @@ func TestInteractiveRuntimeRemotePickerCreateRoutesThroughEndpointManager(t *tes
 		PathDefaultsResult: services.PathDefaultsResult{DefaultCommand: []string{"/bin/sh"}, DefaultCWD: "/root"},
 	}
 	registry := connection.Registry{
-		Version: 1,
+		Version: connection.RegistryVersion,
 		Default: connection.DefaultEndpointID,
-		Connections: map[connection.EndpointID]connection.Config{
-			connection.DefaultEndpointID: {ID: connection.DefaultEndpointID, Label: "This Mac", Transport: connection.TransportLocal, ConnectMode: connection.ConnectAuto, Enabled: true},
-			"us-west":                    {ID: "us-west", Label: "US West", Transport: connection.TransportSSH, ConnectMode: connection.ConnectOnDemand, Enabled: true, Address: "root@example.com", RemoteSocket: "auto"},
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			connection.DefaultEndpointID: connection.NewLocalEndpoint(connection.DefaultEndpointID, "This Mac", "auto", connection.ConnectAuto),
+			"us-west":                    connection.NewSSHEndpoint("us-west", "US West", "root@example.com", "", "auto", connection.ConnectOnDemand),
 		},
 	}
 	remoteDialCalls := 0
 	manager := services.NewEndpointManagerWithDialers(
 		registry,
-		map[connection.TransportKind]services.EndpointDialer{
-			connection.TransportSSH: func(_ context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
+		map[connection.RouteKind]services.EndpointDialer{
+			connection.RouteSSHStdio: func(_ context.Context, endpoint connection.Endpoint, route connection.AccessRoute) (services.EndpointServiceBundle, error) {
 				remoteDialCalls++
-				if cfg.ID != "us-west" || cfg.Address != "root@example.com" || cfg.RemoteSocket != "auto" {
-					t.Fatalf("unexpected remote config: %#v", cfg)
+				if endpoint.ID != "us-west" || route.Host != "root@example.com" || route.RemoteSocket != "auto" {
+					t.Fatalf("unexpected remote config: endpoint=%#v route=%#v", endpoint, route)
 				}
 				return services.EndpointServiceBundle{EndpointID: "us-west", Terminal: remoteTerminal, Surface: remoteTerminal, LiveEvents: remoteTerminal, Path: remoteTerminal}, nil
 			},
@@ -2013,18 +2013,18 @@ func TestInteractiveRuntimeCreatePromptServerDropdownRoutesThroughEndpointManage
 		PathDefaultsResult: services.PathDefaultsResult{DefaultCommand: []string{"/bin/sh"}, DefaultCWD: "/root"},
 	}
 	registry := connection.Registry{
-		Version: 1,
+		Version: connection.RegistryVersion,
 		Default: connection.DefaultEndpointID,
-		Connections: map[connection.EndpointID]connection.Config{
-			connection.DefaultEndpointID: {ID: connection.DefaultEndpointID, Label: "This Mac", Transport: connection.TransportLocal, ConnectMode: connection.ConnectAuto, Enabled: true},
-			"us-west":                    {ID: "us-west", Label: "US West", Transport: connection.TransportSSH, ConnectMode: connection.ConnectOnDemand, Enabled: true, Address: "root@example.com", RemoteSocket: "auto"},
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			connection.DefaultEndpointID: connection.NewLocalEndpoint(connection.DefaultEndpointID, "This Mac", "auto", connection.ConnectAuto),
+			"us-west":                    connection.NewSSHEndpoint("us-west", "US West", "root@example.com", "", "auto", connection.ConnectOnDemand),
 		},
 	}
 	remoteDialCalls := 0
 	manager := services.NewEndpointManagerWithDialers(
 		registry,
-		map[connection.TransportKind]services.EndpointDialer{
-			connection.TransportSSH: func(_ context.Context, cfg connection.Config) (services.EndpointServiceBundle, error) {
+		map[connection.RouteKind]services.EndpointDialer{
+			connection.RouteSSHStdio: func(_ context.Context, _ connection.Endpoint, _ connection.AccessRoute) (services.EndpointServiceBundle, error) {
 				remoteDialCalls++
 				return services.EndpointServiceBundle{EndpointID: "us-west", Terminal: remoteTerminal, Surface: remoteTerminal, LiveEvents: remoteTerminal, Path: remoteTerminal}, nil
 			},

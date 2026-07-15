@@ -71,22 +71,22 @@ func newFileCommand(socket, logFile *string) *cobra.Command {
 	return command
 }
 
-func (runtime *fileCommandRuntime) open(ctx context.Context, cmd *cobra.Command, endpointValue string) (*protocol.Client, connection.Config, func(), error) {
+func (runtime *fileCommandRuntime) open(ctx context.Context, cmd *cobra.Command, endpointValue string) (*protocol.Client, connection.Endpoint, func(), error) {
 	if runtime.timeout <= 0 {
-		return nil, connection.Config{}, func() {}, usageCLIError("--timeout must be positive")
+		return nil, connection.Endpoint{}, func() {}, usageCLIError("--timeout must be positive")
 	}
 	registry, err := loadNormalizedConnectionRegistry()
 	if err != nil {
-		return nil, connection.Config{}, func() {}, err
+		return nil, connection.Endpoint{}, func() {}, err
 	}
 	endpoint, err := resolveEndpointConfig(endpointValue, registry)
 	if err != nil {
-		return nil, connection.Config{}, func() {}, err
+		return nil, connection.Endpoint{}, func() {}, err
 	}
 	cmd.Root().SilenceUsage = true
 	client, closeClient, err := openEndpointProtocolClient(ctx, endpoint, *runtime.socket, *runtime.logFile)
 	if err != nil {
-		return nil, connection.Config{}, func() {}, classifyCLIError(err)
+		return nil, connection.Endpoint{}, func() {}, classifyCLIError(err)
 	}
 	return client, endpoint, closeClient, nil
 }

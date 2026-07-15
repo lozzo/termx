@@ -112,34 +112,12 @@ func TestEndpointManagerRoutesLocalServicesAndRestoresEndpointID(t *testing.T) {
 
 func TestEndpointManagerRejectsDisabledUnsupportedAndUnregisteredEndpoints(t *testing.T) {
 	registry := connection.Registry{
-		Version: 1,
+		Version: connection.RegistryVersion,
 		Default: connection.DefaultEndpointID,
-		Connections: map[connection.EndpointID]connection.Config{
-			connection.DefaultEndpointID: {
-				ID:          connection.DefaultEndpointID,
-				Label:       "Local",
-				Transport:   connection.TransportLocal,
-				ConnectMode: connection.ConnectAuto,
-				Enabled:     true,
-				Socket:      "auto",
-			},
-			"disabled": {
-				ID:          "disabled",
-				Label:       "Disabled Local",
-				Transport:   connection.TransportLocal,
-				ConnectMode: connection.ConnectAuto,
-				Enabled:     false,
-				Socket:      "auto",
-			},
-			"west": {
-				ID:           "west",
-				Label:        "West",
-				Transport:    connection.TransportSSH,
-				Address:      "root@example.com",
-				ConnectMode:  connection.ConnectOnDemand,
-				Enabled:      true,
-				RemoteSocket: "auto",
-			},
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			connection.DefaultEndpointID: serviceTestLocalEndpoint(connection.DefaultEndpointID, "Local", "auto", connection.ConnectAuto, true),
+			"disabled":                   serviceTestLocalEndpoint("disabled", "Disabled Local", "auto", connection.ConnectAuto, false),
+			"west":                       serviceTestSSHEndpoint("west", "West", "root@example.com", "", "auto", connection.ConnectOnDemand, true),
 		},
 	}
 	terminal := &FakeTerminalService{ListResult: TerminalListResult{}}
@@ -148,7 +126,7 @@ func TestEndpointManagerRejectsDisabledUnsupportedAndUnregisteredEndpoints(t *te
 	if _, err := manager.List(context.Background(), TerminalListRequest{EndpointID: "disabled"}); err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("expected disabled endpoint error, got %v", err)
 	}
-	if _, err := manager.List(context.Background(), TerminalListRequest{EndpointID: "west"}); err == nil || !strings.Contains(err.Error(), "transport \"ssh\"") {
+	if _, err := manager.List(context.Background(), TerminalListRequest{EndpointID: "west"}); err == nil || !strings.Contains(err.Error(), `kind "ssh-stdio" is not connected`) {
 		t.Fatalf("expected unsupported transport error, got %v", err)
 	}
 	if _, err := manager.List(context.Background(), TerminalListRequest{EndpointID: "missing"}); err == nil || !strings.Contains(err.Error(), "not registered") {
@@ -159,37 +137,39 @@ func TestEndpointManagerRejectsDisabledUnsupportedAndUnregisteredEndpoints(t *te
 	}
 }
 
+func TestEndpointManagerRejectsInvalidRegistryWithoutLocalFallback(t *testing.T) {
+	terminal := &FakeTerminalService{}
+	manager := NewEndpointManager(connection.Registry{Version: 1}, EndpointServiceBundle{
+		EndpointID: state.DefaultEndpointID,
+		Terminal:   terminal,
+	})
+	if manager.EndpointStore().HasItems() {
+		t.Fatalf("invalid registry must not project a default local endpoint: %#v", manager.EndpointStore())
+	}
+	if _, err := manager.List(context.Background(), TerminalListRequest{EndpointID: state.DefaultEndpointID}); err == nil || !strings.Contains(err.Error(), "registry invalid") {
+		t.Fatalf("invalid registry error=%v", err)
+	}
+	if len(terminal.Lists) != 0 {
+		t.Fatalf("invalid registry must not reach a default local bundle: %#v", terminal.Lists)
+	}
+}
+
 func TestEndpointManagerLazilyDialsSSHTransport(t *testing.T) {
 	registry := connection.Registry{
-		Version: 1,
+		Version: connection.RegistryVersion,
 		Default: connection.DefaultEndpointID,
-		Connections: map[connection.EndpointID]connection.Config{
-			connection.DefaultEndpointID: {
-				ID:          connection.DefaultEndpointID,
-				Label:       "Local",
-				Transport:   connection.TransportLocal,
-				ConnectMode: connection.ConnectAuto,
-				Enabled:     true,
-				Socket:      "auto",
-			},
-			"west": {
-				ID:           "west",
-				Label:        "West",
-				Transport:    connection.TransportSSH,
-				Address:      "root@example.com",
-				ConnectMode:  connection.ConnectOnDemand,
-				Enabled:      true,
-				RemoteSocket: "auto",
-			},
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			connection.DefaultEndpointID: serviceTestLocalEndpoint(connection.DefaultEndpointID, "Local", "auto", connection.ConnectAuto, true),
+			"west":                       serviceTestSSHEndpoint("west", "West", "root@example.com", "", "auto", connection.ConnectOnDemand, true),
 		},
 	}
 	sshTerminal := &FakeTerminalService{ListResult: TerminalListResult{Items: []TerminalPoolItem{{TerminalID: "term-1", Title: "remote"}}}}
 	dialCalls := 0
-	manager := NewEndpointManagerWithDialers(registry, map[connection.TransportKind]EndpointDialer{
-		connection.TransportSSH: func(_ context.Context, cfg connection.Config) (EndpointServiceBundle, error) {
+	manager := NewEndpointManagerWithDialers(registry, map[connection.RouteKind]EndpointDialer{
+		connection.RouteSSHStdio: func(_ context.Context, cfg connection.Endpoint, route connection.AccessRoute) (EndpointServiceBundle, error) {
 			dialCalls++
-			if cfg.ID != "west" || cfg.RemoteSocket != "auto" {
-				t.Fatalf("unexpected ssh config %#v", cfg)
+			if cfg.ID != "west" || route.RemoteSocket != "auto" || route.Host != "root@example.com" {
+				t.Fatalf("unexpected ssh config endpoint=%#v route=%#v", cfg, route)
 			}
 			return EndpointServiceBundle{EndpointID: "west", Terminal: sshTerminal}, nil
 		},
@@ -216,37 +196,20 @@ func TestEndpointManagerLazilyDialsSSHTransport(t *testing.T) {
 
 func TestEndpointManagerLazilyDialsHubP2PTransport(t *testing.T) {
 	registry := connection.Registry{
-		Version: 1,
+		Version: connection.RegistryVersion,
 		Default: connection.DefaultEndpointID,
-		Connections: map[connection.EndpointID]connection.Config{
-			connection.DefaultEndpointID: {
-				ID:          connection.DefaultEndpointID,
-				Label:       "Local",
-				Transport:   connection.TransportLocal,
-				ConnectMode: connection.ConnectAuto,
-				Enabled:     true,
-				Socket:      "auto",
-			},
-			"studio": {
-				ID:                "studio",
-				Label:             "Studio",
-				Transport:         connection.TransportHubP2P,
-				ConnectMode:       connection.ConnectOnDemand,
-				Enabled:           true,
-				HubDeviceID:       "device_ed25519:studio",
-				DeviceFingerprint: "SHA256:studio",
-				GrantRef:          "grant:studio",
-				RelayMode:         connection.RelayAuto,
-			},
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			connection.DefaultEndpointID: serviceTestLocalEndpoint(connection.DefaultEndpointID, "Local", "auto", connection.ConnectAuto, true),
+			"studio":                     serviceTestManagedEndpoint("studio", "Studio", "device_ed25519:studio", "SHA256:studio", "grant:studio", connection.RelayAuto, connection.ConnectOnDemand, true),
 		},
 	}
 	hubTerminal := &FakeTerminalService{ListResult: TerminalListResult{Items: []TerminalPoolItem{{TerminalID: "term-1", Title: "remote"}}}}
 	dialCalls := 0
-	manager := NewEndpointManagerWithDialers(registry, map[connection.TransportKind]EndpointDialer{
-		connection.TransportHubP2P: func(_ context.Context, cfg connection.Config) (EndpointServiceBundle, error) {
+	manager := NewEndpointManagerWithDialers(registry, map[connection.RouteKind]EndpointDialer{
+		connection.RouteManagedWebRTC: func(_ context.Context, cfg connection.Endpoint, route connection.AccessRoute) (EndpointServiceBundle, error) {
 			dialCalls++
-			if cfg.ID != "studio" || cfg.HubDeviceID != "device_ed25519:studio" || cfg.DeviceFingerprint != "SHA256:studio" || cfg.GrantRef != "grant:studio" || cfg.RelayMode != connection.RelayAuto {
-				t.Fatalf("unexpected hub config %#v", cfg)
+			if cfg.ID != "studio" || route.TargetDeviceID != "device_ed25519:studio" || cfg.DaemonIdentity.DeviceFingerprint != "SHA256:studio" || route.CredentialRef != "grant:studio" || route.RelayMode != connection.RelayAuto {
+				t.Fatalf("unexpected managed config endpoint=%#v route=%#v", cfg, route)
 			}
 			return EndpointServiceBundle{
 				EndpointID: "studio", Terminal: hubTerminal, ObservedPath: "single_relay",
@@ -301,26 +264,11 @@ func TestClassifyEndpointErrorUsesStableCloudCodes(t *testing.T) {
 
 func TestEndpointManagerPublishesTransportCloseAndRedials(t *testing.T) {
 	registry := connection.Registry{
-		Version: 1,
+		Version: connection.RegistryVersion,
 		Default: connection.DefaultEndpointID,
-		Connections: map[connection.EndpointID]connection.Config{
-			connection.DefaultEndpointID: {
-				ID:          connection.DefaultEndpointID,
-				Label:       "Local",
-				Transport:   connection.TransportLocal,
-				ConnectMode: connection.ConnectAuto,
-				Enabled:     true,
-				Socket:      "auto",
-			},
-			"west": {
-				ID:           "west",
-				Label:        "West",
-				Transport:    connection.TransportSSH,
-				Address:      "root@example.com",
-				ConnectMode:  connection.ConnectOnDemand,
-				Enabled:      true,
-				RemoteSocket: "auto",
-			},
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			connection.DefaultEndpointID: serviceTestLocalEndpoint(connection.DefaultEndpointID, "Local", "auto", connection.ConnectAuto, true),
+			"west":                       serviceTestSSHEndpoint("west", "West", "root@example.com", "", "auto", connection.ConnectOnDemand, true),
 		},
 	}
 	done := make(chan struct{})
@@ -328,8 +276,8 @@ func TestEndpointManagerPublishesTransportCloseAndRedials(t *testing.T) {
 	initialTerminal := &FakeTerminalService{ListResult: TerminalListResult{Items: []TerminalPoolItem{{TerminalID: "old"}}}}
 	redialTerminal := &FakeTerminalService{ListResult: TerminalListResult{Items: []TerminalPoolItem{{TerminalID: "new"}}}}
 	dialCalls := 0
-	manager := NewEndpointManagerWithDialers(registry, map[connection.TransportKind]EndpointDialer{
-		connection.TransportSSH: func(context.Context, connection.Config) (EndpointServiceBundle, error) {
+	manager := NewEndpointManagerWithDialers(registry, map[connection.RouteKind]EndpointDialer{
+		connection.RouteSSHStdio: func(context.Context, connection.Endpoint, connection.AccessRoute) (EndpointServiceBundle, error) {
 			dialCalls++
 			return EndpointServiceBundle{EndpointID: "west", Terminal: redialTerminal}, nil
 		},
@@ -366,25 +314,11 @@ func TestEndpointManagerPublishesTransportCloseAndRedials(t *testing.T) {
 
 func TestEndpointManagerEndpointStoreUsesRegistryProjection(t *testing.T) {
 	registry := connection.Registry{
-		Version: 1,
+		Version: connection.RegistryVersion,
 		Default: connection.DefaultEndpointID,
-		Connections: map[connection.EndpointID]connection.Config{
-			connection.DefaultEndpointID: {
-				ID:          connection.DefaultEndpointID,
-				Label:       "This Mac",
-				Transport:   connection.TransportLocal,
-				ConnectMode: connection.ConnectAuto,
-				Enabled:     true,
-				Socket:      "auto",
-			},
-			"manual": {
-				ID:          "manual",
-				Label:       "Manual Box",
-				Transport:   connection.TransportLocal,
-				ConnectMode: connection.ConnectManual,
-				Enabled:     true,
-				Socket:      "/tmp/termx.sock",
-			},
+		Endpoints: map[connection.EndpointID]connection.Endpoint{
+			connection.DefaultEndpointID: serviceTestLocalEndpoint(connection.DefaultEndpointID, "This Mac", "auto", connection.ConnectAuto, true),
+			"manual":                     serviceTestLocalEndpoint("manual", "Manual Box", "/tmp/termx.sock", connection.ConnectManual, true),
 		},
 	}
 	manager := NewEndpointManager(registry)
@@ -396,7 +330,7 @@ func TestEndpointManagerEndpointStoreUsesRegistryProjection(t *testing.T) {
 	if !ok {
 		t.Fatalf("manual endpoint missing from store %#v", store.Items)
 	}
-	if manual.DisplayLabel() != "Manual Box" || manual.DisplayStatus() != state.EndpointStatusManual || manual.Socket != "/tmp/termx.sock" {
+	if manual.DisplayLabel() != "Manual Box" || manual.DisplayStatus() != state.EndpointStatusManual || len(manual.Routes) != 1 || manual.Routes[0].DialIdentity.Socket != "/tmp/termx.sock" {
 		t.Fatalf("unexpected manual endpoint projection %#v", manual)
 	}
 }

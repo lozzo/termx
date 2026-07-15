@@ -340,6 +340,8 @@ message ManagedDevice {
   ManagedDeviceKind kind = 4;
   PresenceState presence = 5;
   bool revoked = 6;
+  // device_fingerprint 由 Hub 的已签名 daemon public-key 投影计算；它只用于客户端安全归并 Endpoint，不授予 terminal capability。
+  string device_fingerprint = 7;
 }
 
 // ListManagedDevicesResponse 只返回同账号设备；client 用于管理，daemon 用于连接发现。

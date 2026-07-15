@@ -21,7 +21,7 @@ const maxTerminalSendBytes = 16 << 20
 
 type terminalAutomationTarget struct {
 	Ref      resolvedTerminalRef
-	Endpoint connection.Config
+	Endpoint connection.Endpoint
 	Client   terminalProtocolClient
 	Close    func()
 }
@@ -520,13 +520,13 @@ func newTerminalEventsCommand(runtime terminalCommandRuntime) *cobra.Command {
 				return err
 			}
 			var ref resolvedTerminalRef
-			var endpoint connection.Config
+			var endpoint connection.Endpoint
 			if len(args) == 1 {
 				ref, err = resolveTerminalRef(args[0], runtime.requestedEndpoint(), registry)
 				if err != nil {
 					return err
 				}
-				endpoint = registry.Connections[ref.EndpointID]
+				endpoint = registry.Endpoints[ref.EndpointID]
 			} else {
 				endpoint, err = resolveEndpointConfig(runtime.requestedEndpoint(), registry)
 				if err != nil {
@@ -648,7 +648,7 @@ func openTerminalAutomationTarget(ctx context.Context, cmd *cobra.Command, runti
 	if err != nil {
 		return terminalAutomationTarget{}, err
 	}
-	endpoint := registry.Connections[ref.EndpointID]
+	endpoint := registry.Endpoints[ref.EndpointID]
 	client, closeClient, err := runtime.open(cmd, endpoint)
 	if err != nil {
 		return terminalAutomationTarget{}, err
