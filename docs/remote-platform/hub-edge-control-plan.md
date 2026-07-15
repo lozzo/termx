@@ -2,6 +2,8 @@
 
 状态：CLOUD009-CLOUD011 已完成；2026-07-12
 
+实现审计说明：本文件第 5.2 节描述的是 Hub 自治 Presence 的目标模型。2026-07-15 的代码审计确认，当前 staging 的 daemon Presence 仍通过 Control Plane `BeginPresence` 和 `AcquirePresenceAdmission` 后再打开 Hub stream；当前真实链路、故障窗口和待改造项以 `cloud-end-to-end-swimlanes.md` 为准。
+
 ## 1. 目标
 
 Control Plane 是账号、设备 ownership、订阅、计费和全局策略的持久真值，但不能成为每次 managed 连接的同步依赖。客户端启动、登录、token 刷新和 HubDirectory 刷新可以访问 Control Plane；daemon/client 注册到 Hub 后，presence、direct signaling、短期 EdgeManagedSession 和后续 Relay 准入由 Hub 的本地投影处理。

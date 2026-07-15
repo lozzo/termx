@@ -1,6 +1,6 @@
 # TermX Remote Platform 网络图解
 
-状态：RP001A 活动基线
+状态：目标架构图；当前真实实现与差异见 `cloud-end-to-end-swimlanes.md`
 
 日期：2026-07-11
 
