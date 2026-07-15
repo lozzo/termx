@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/proto/remoteauthpb"
-	"github.com/lozzow/termx/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -18,11 +17,11 @@ func TestPortableContractsUseDeterministicStrictProtobuf(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	identity := &remoteauthpb.EndpointDaemonIdentity{
-		DeviceId: "device-studio", DevicePublicKey: publicKey, DeviceFingerprint: remoteauth.Fingerprint(publicKey),
+		DeviceId: "device-studio", DevicePublicKey: publicKey, DeviceFingerprint: daemonPublicKeyFingerprint(publicKey),
 	}
 	ticket := &remoteauthpb.PairingTicketDescriptor{
 		TicketId: "ticket-1", ScopeCeiling: []string{"terminal"}, ExpiresAtUnixNano: now.Add(time.Minute).UnixNano(),
-		Nonce: bytes.Repeat([]byte{1}, 16), MaxRedemptions: 1,
+		Nonce: bytes.Repeat([]byte{1}, 16), MaxRedemptions: 1, IssuedAtUnixNano: now.UnixNano(), GrantLifetimeSeconds: 3600,
 	}
 	ticketSigningBytes, err := PairingTicketSigningBytes(identity, ticket)
 	if err != nil {
@@ -88,8 +87,27 @@ func TestPortableContractsUseDeterministicStrictProtobuf(t *testing.T) {
 		t.Fatalf("tampered ticket signature error = %v", err)
 	}
 	expired := proto.Clone(bundle).(*remoteauthpb.EndpointBootstrapBundleV2)
+	expired.IssuedAtUnixNano = now.Add(-2 * time.Minute).UnixNano()
 	expired.ExpiresAtUnixNano = now.Add(-time.Second).UnixNano()
-	if _, err := MarshalEndpointBootstrapBundle(expired); !IsCode(err, ErrorConfig) {
+	expired.Authorization.GetPairingTicket().IssuedAtUnixNano = expired.IssuedAtUnixNano
+	expired.Authorization.GetPairingTicket().ExpiresAtUnixNano = expired.ExpiresAtUnixNano
+	expired.Authorization.GetPairingTicket().Signature = nil
+	ticketBytes, err := PairingTicketSigningBytes(expired.Identity, expired.Authorization.GetPairingTicket())
+	if err != nil {
+		t.Fatal(err)
+	}
+	expired.Authorization.GetPairingTicket().Signature = ed25519.Sign(privateKey, ticketBytes)
+	expired.BundleSignature = nil
+	expiredBytes, err := EndpointBootstrapSigningBytes(expired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expired.BundleSignature = ed25519.Sign(privateKey, expiredBytes)
+	payload, err := MarshalEndpointBootstrapBundle(expired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseEndpointBootstrapBundleAt(payload, now); !IsCode(err, ErrorConfig) {
 		t.Fatalf("expired bootstrap error = %v", err)
 	}
 	opaqueBoundGrant := proto.Clone(bundle).(*remoteauthpb.EndpointBootstrapBundleV2)
@@ -144,6 +162,11 @@ func TestShareBundleAndOfferRejectNonPortableOrSecretBearingFields(t *testing.T)
 	controlProxyJump.Routes[0].ProxyJump = "bad\njump"
 	if _, err := MarshalClientEndpointShareBundle(controlProxyJump); !IsCode(err, ErrorConfig) {
 		t.Fatalf("portable proxy jump control character error = %v", err)
+	}
+	nonManagedRelay := proto.Clone(share).(*remoteauthpb.ClientEndpointShareBundleV1)
+	nonManagedRelay.Routes[0].RelayMode = remoteauthpb.EndpointRelayMode_ENDPOINT_RELAY_MODE_RELAY_ONLY
+	if _, err := MarshalClientEndpointShareBundle(nonManagedRelay); !IsCode(err, ErrorConfig) {
+		t.Fatalf("portable non-managed relay mode error = %v", err)
 	}
 	duplicateAddress := proto.Clone(share).(*remoteauthpb.ClientEndpointShareBundleV1)
 	duplicateAddress.Routes[0] = &remoteauthpb.EndpointAccessRoute{

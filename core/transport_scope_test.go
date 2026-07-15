@@ -151,6 +151,33 @@ func TestServeScopedTransportMachineEventsOnly(t *testing.T) {
 	}
 }
 
+func TestClientAccessManagementRequiresLocalOwnerOrExplicitCapability(t *testing.T) {
+	service := &scopeClientAccessService{}
+	server := NewServer(WithClientAccessService(service))
+
+	remoteDaemon, closeRemoteDaemon := newClientForServedTransport(t, server, TransportScope{PrincipalID: "remote", AllowDaemon: true}, true)
+	var identity protocol.ClientAccessIdentityResult
+	if err := remoteDaemon.Call(context.Background(), "remote.access.identity", map[string]any{}, &identity); err == nil || !strings.Contains(err.Error(), "client access management") {
+		t.Fatalf("daemon scope implicitly gained ManageClientAccess: %v", err)
+	}
+	closeRemoteDaemon()
+
+	manager, closeManager := newClientForServedTransport(t, server, TransportScope{PrincipalID: "manager-key", TerminalID: "term-1", ManageClientAccess: true}, true)
+	if err := manager.Call(context.Background(), "remote.access.identity", map[string]any{}, &identity); err != nil {
+		t.Fatalf("explicit ManageClientAccess was denied: %v", err)
+	}
+	closeManager()
+
+	owner, closeOwner := newClientForServedTransport(t, server, TransportScope{}, false)
+	if err := owner.Call(context.Background(), "remote.access.identity", map[string]any{}, &identity); err != nil {
+		t.Fatalf("local owner access identity: %v", err)
+	}
+	closeOwner()
+	if service.identityCalls != 2 {
+		t.Fatalf("client access service calls = %d, want 2", service.identityCalls)
+	}
+}
+
 func newClientForServedTransport(t *testing.T, server *Server, scope TransportScope, scoped bool) (*protocol.Client, func()) {
 	t.Helper()
 	clientTransport, serverTransport := memory.NewPair()
@@ -198,4 +225,23 @@ func assertNoProtocolEvent(t *testing.T, events <-chan protocol.Event) {
 		t.Fatalf("unexpected protocol event %#v", event)
 	case <-time.After(50 * time.Millisecond):
 	}
+}
+
+type scopeClientAccessService struct{ identityCalls int }
+
+func (service *scopeClientAccessService) Identity(context.Context) (protocol.ClientAccessIdentityResult, error) {
+	service.identityCalls++
+	return protocol.ClientAccessIdentityResult{DeviceID: "device-1", DeviceFingerprint: "ed25519-sha256:daemon", DevicePublicKey: make([]byte, 32)}, nil
+}
+
+func (*scopeClientAccessService) CreateTicket(context.Context, protocol.ClientAccessTicketCreateParams) (protocol.ClientAccessTicketCreateResult, error) {
+	return protocol.ClientAccessTicketCreateResult{}, nil
+}
+
+func (*scopeClientAccessService) List(context.Context) (protocol.ClientAccessListResult, error) {
+	return protocol.ClientAccessListResult{}, nil
+}
+
+func (*scopeClientAccessService) Revoke(context.Context, protocol.ClientAccessRevokeParams) (protocol.ClientAccessRecord, error) {
+	return protocol.ClientAccessRecord{}, nil
 }

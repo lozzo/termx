@@ -1,18 +1,40 @@
 package remoteauth
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/lozzow/termx/shared/filelock"
 )
 
-const identityPrivateKeyFile = "remote_device_identity.json"
+const (
+	identityPrivateKeyFile = "remote_device_identity.json"
+	identityLockFile       = "remote_device_identity.lock"
+)
+
+type privateFileWriteError struct {
+	err       error
+	published bool
+}
+
+func (failure *privateFileWriteError) Error() string { return failure.err.Error() }
+
+func (failure *privateFileWriteError) Unwrap() error { return failure.err }
+
+func privateFileWritePublished(err error) bool {
+	var failure *privateFileWriteError
+	return errors.As(err, &failure) && failure.published
+}
 
 // Identity 是 remote daemon 的长期 Ed25519 设备身份。
 // DeviceID 只用于 Hub 发现，Fingerprint 才是客户端配置中的安全身份，PrivateKey 只能留在签发 daemon 本地。
@@ -69,11 +91,23 @@ func LoadOrCreateIdentity(dir string, deviceID string) (Identity, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Identity{}, fmt.Errorf("create remote identity directory: %w", err)
 	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return Identity{}, fmt.Errorf("secure remote identity directory: %w", err)
+	}
+	lock, err := filelock.Acquire(filepath.Join(dir, identityLockFile), false)
+	if err != nil {
+		return Identity{}, fmt.Errorf("lock remote identity: %w", err)
+	}
+	defer lock.Close()
+	return loadOrCreateIdentityLocked(dir, deviceID)
+}
+
+func loadOrCreateIdentityLocked(dir string, deviceID string) (Identity, error) {
 	path := filepath.Join(dir, identityPrivateKeyFile)
 	data, err := os.ReadFile(path)
 	if err == nil {
-		var stored storedIdentity
-		if err := json.Unmarshal(data, &stored); err != nil {
+		stored, err := decodeStoredIdentity(data)
+		if err != nil {
 			return Identity{}, fmt.Errorf("decode remote identity: %w", err)
 		}
 		if strings.TrimSpace(stored.DeviceID) != deviceID {
@@ -113,13 +147,24 @@ func LoadOrCreateLocalIdentity(dir string) (Identity, error) {
 	if dir == "" {
 		return Identity{}, fmt.Errorf("remote identity requires storage directory")
 	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return Identity{}, fmt.Errorf("create remote identity directory: %w", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return Identity{}, fmt.Errorf("secure remote identity directory: %w", err)
+	}
+	lock, err := filelock.Acquire(filepath.Join(dir, identityLockFile), false)
+	if err != nil {
+		return Identity{}, fmt.Errorf("lock remote identity: %w", err)
+	}
+	defer lock.Close()
 	path := filepath.Join(dir, identityPrivateKeyFile)
 	if payload, err := os.ReadFile(path); err == nil {
-		var stored storedIdentity
-		if err := json.Unmarshal(payload, &stored); err != nil || strings.TrimSpace(stored.DeviceID) == "" {
-			return Identity{}, fmt.Errorf("decode remote identity")
+		stored, decodeErr := decodeStoredIdentity(payload)
+		if decodeErr != nil {
+			return Identity{}, fmt.Errorf("decode remote identity: %w", decodeErr)
 		}
-		return LoadOrCreateIdentity(dir, stored.DeviceID)
+		return loadOrCreateIdentityLocked(dir, stored.DeviceID)
 	} else if !os.IsNotExist(err) {
 		return Identity{}, fmt.Errorf("read remote identity: %w", err)
 	}
@@ -127,7 +172,26 @@ func LoadOrCreateLocalIdentity(dir string) (Identity, error) {
 	if _, err := rand.Read(randomID); err != nil {
 		return Identity{}, fmt.Errorf("generate remote device id: %w", err)
 	}
-	return LoadOrCreateIdentity(dir, "device-"+base64.RawURLEncoding.EncodeToString(randomID))
+	return loadOrCreateIdentityLocked(dir, "device-"+base64.RawURLEncoding.EncodeToString(randomID))
+}
+
+func decodeStoredIdentity(payload []byte) (storedIdentity, error) {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	var stored storedIdentity
+	if err := decoder.Decode(&stored); err != nil {
+		return storedIdentity{}, err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return storedIdentity{}, fmt.Errorf("trailing data")
+	}
+	if stored.Version != 1 || strings.TrimSpace(stored.DeviceID) == "" || strings.TrimSpace(stored.PrivateKey) == "" || stored.CreatedAt.IsZero() {
+		return storedIdentity{}, fmt.Errorf("identity store is incomplete or unsupported")
+	}
+	stored.DeviceID = strings.TrimSpace(stored.DeviceID)
+	stored.PrivateKey = strings.TrimSpace(stored.PrivateKey)
+	stored.CreatedAt = stored.CreatedAt.UTC()
+	return stored, nil
 }
 
 func identityFromPrivateKey(deviceID string, privateKey ed25519.PrivateKey) Identity {
@@ -141,6 +205,10 @@ func identityFromPrivateKey(deviceID string, privateKey ed25519.PrivateKey) Iden
 }
 
 func writePrivateFile(path string, payload []byte) error {
+	return writePrivateFileWithPostPublish(path, payload, finishPrivateFilePublish)
+}
+
+func writePrivateFileWithPostPublish(path string, payload []byte, postPublish func(string) error) error {
 	temp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return fmt.Errorf("create remote identity temp file: %w", err)
@@ -155,14 +223,37 @@ func writePrivateFile(path string, payload []byte) error {
 		_ = temp.Close()
 		return fmt.Errorf("write remote identity: %w", err)
 	}
+	if err := temp.Sync(); err != nil {
+		_ = temp.Close()
+		return fmt.Errorf("sync remote identity: %w", err)
+	}
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close remote identity: %w", err)
 	}
 	if err := os.Rename(tempPath, path); err != nil {
 		return fmt.Errorf("install remote identity: %w", err)
 	}
+	if err := postPublish(path); err != nil {
+		return &privateFileWriteError{err: err, published: true}
+	}
+	return nil
+}
+
+func finishPrivateFilePublish(path string) error {
 	if err := os.Chmod(path, 0o600); err != nil {
 		return fmt.Errorf("secure remote identity: %w", err)
+	}
+	directory, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return fmt.Errorf("open remote identity directory: %w", err)
+	}
+	syncErr := directory.Sync()
+	closeErr := directory.Close()
+	if syncErr != nil {
+		return fmt.Errorf("sync remote identity directory: %w", syncErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close remote identity directory: %w", closeErr)
 	}
 	return nil
 }

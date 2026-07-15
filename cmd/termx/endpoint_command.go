@@ -1,10 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -93,26 +93,16 @@ func (runtime *endpointCommandRuntime) load() (connection.Registry, error) {
 	return registry, nil
 }
 
-func (runtime *endpointCommandRuntime) loadForCreate() (connection.Registry, error) {
-	registry, err := connection.Load(runtime.registryPath)
-	if err != nil && strings.TrimSpace(runtime.registryPath) != "" && errors.Is(err, os.ErrNotExist) {
-		return connection.Registry{Version: connection.RegistryVersion, Endpoints: map[connection.EndpointID]connection.Endpoint{}}, nil
+func (runtime *endpointCommandRuntime) update(ctx context.Context, createIfMissing bool, mutate func(connection.Registry) (connection.Registry, error)) error {
+	_, err := connection.UpdateContext(ctx, runtime.registryPath, createIfMissing, mutate)
+	if err == nil {
+		return nil
 	}
-	if err != nil {
-		return connection.Registry{}, &cliError{code: 2, message: err.Error(), cause: err}
+	var existing *cliError
+	if errors.As(err, &existing) {
+		return err
 	}
-	registry, err = registry.Normalize()
-	if err != nil {
-		return connection.Registry{}, &cliError{code: 2, message: err.Error(), cause: err}
-	}
-	return registry, nil
-}
-
-func (runtime *endpointCommandRuntime) save(registry connection.Registry) error {
-	if err := connection.Save(runtime.registryPath, registry); err != nil {
-		return &cliError{code: 2, message: err.Error(), cause: err}
-	}
-	return nil
+	return &cliError{code: 2, message: err.Error(), cause: err}
 }
 
 func newEndpointListCommand(runtime *endpointCommandRuntime) *cobra.Command {
@@ -205,14 +195,7 @@ func newEndpointAddCommand(runtime *endpointCommandRuntime) *cobra.Command {
 		child := &cobra.Command{
 			Use: name + " ID", Short: "Add an endpoint with a " + string(kind) + " route", Args: cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				registry, err := runtime.loadForCreate()
-				if err != nil {
-					return err
-				}
 				id := connection.EndpointID(strings.TrimSpace(args[0]))
-				if _, exists := registry.Endpoints[id]; exists {
-					return &cliError{code: 4, message: fmt.Sprintf("endpoint %s already exists", id)}
-				}
 				route := routeFromFlags(kind, *routeFlags)
 				endpoint := endpointFromFlags(id, *endpointFlags, route)
 				if cmd.Flags().Changed("hedge-delay") {
@@ -221,11 +204,20 @@ func newEndpointAddCommand(runtime *endpointCommandRuntime) *cobra.Command {
 				if _, err := (connection.Registry{Version: connection.RegistryVersion, Default: id, Endpoints: map[connection.EndpointID]connection.Endpoint{id: endpoint}}).Normalize(); err != nil {
 					return usageCLIError(err.Error())
 				}
-				registry.Endpoints[id] = endpoint
-				if registry.Default == "" {
-					registry.Default = id
-				}
-				if err := runtime.save(registry); err != nil {
+				if err := runtime.update(cmd.Context(), true, func(registry connection.Registry) (connection.Registry, error) {
+					if _, exists := registry.Endpoints[id]; exists {
+						return connection.Registry{}, &cliError{code: 4, message: fmt.Sprintf("endpoint %s already exists", id)}
+					}
+					if registry.Endpoints == nil {
+						registry.Endpoints = map[connection.EndpointID]connection.Endpoint{}
+					}
+					registry.Version = connection.RegistryVersion
+					registry.Endpoints[id] = endpoint
+					if registry.Default == "" {
+						registry.Default = id
+					}
+					return registry, nil
+				}); err != nil {
 					return err
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "%s\tadded\t%s\n", id, route.ID)
@@ -245,27 +237,25 @@ func newEndpointUpdateCommand(runtime *endpointCommandRuntime) *cobra.Command {
 	command := &cobra.Command{
 		Use: "update ID", Short: "Update endpoint identity, label, or selection policy", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			registry, err := runtime.load()
-			if err != nil {
-				return err
-			}
 			id := connection.EndpointID(args[0])
-			endpoint, ok := registry.Endpoints[id]
-			if !ok {
-				return &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
-			}
-			if cmd.Flags().Changed("label") {
-				endpoint.Label, endpoint.LabelSource = strings.TrimSpace(flags.label), connection.SourceUser
-			}
-			if cmd.Flags().Changed("connect-mode") {
-				endpoint.ConnectMode = connection.ConnectMode(flags.connectMode)
-			}
-			if cmd.Flags().Changed("hedge-delay") {
-				endpoint.SelectionPolicy = connection.SelectionPolicy{HedgeDelay: flags.hedgeDelay, HedgeDelayConfigured: true}
-			}
-			registry.Endpoints[id] = endpoint
-			if err := runtime.save(registry); err != nil {
-				return usageCLIError(err.Error())
+			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+				endpoint, ok := registry.Endpoints[id]
+				if !ok {
+					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
+				}
+				if cmd.Flags().Changed("label") {
+					endpoint.Label, endpoint.LabelSource = strings.TrimSpace(flags.label), connection.SourceUser
+				}
+				if cmd.Flags().Changed("connect-mode") {
+					endpoint.ConnectMode = connection.ConnectMode(flags.connectMode)
+				}
+				if cmd.Flags().Changed("hedge-delay") {
+					endpoint.SelectionPolicy = connection.SelectionPolicy{HedgeDelay: flags.hedgeDelay, HedgeDelayConfigured: true}
+				}
+				registry.Endpoints[id] = endpoint
+				return registry, nil
+			}); err != nil {
+				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\tupdated\n", id)
 			return nil
@@ -279,24 +269,22 @@ func newEndpointRemoveCommand(runtime *endpointCommandRuntime) *cobra.Command {
 	return &cobra.Command{
 		Use: "remove ID", Short: "Remove an endpoint from the registry", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			registry, err := runtime.load()
-			if err != nil {
-				return err
-			}
 			id := connection.EndpointID(args[0])
-			if _, ok := registry.Endpoints[id]; !ok {
-				return &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
-			}
-			if len(registry.Endpoints) == 1 {
-				return &cliError{code: 4, message: "cannot remove the last endpoint"}
-			}
-			delete(registry.Endpoints, id)
-			if registry.Default == id {
-				if err := reassignEndpointDefault(&registry); err != nil {
-					return err
+			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+				if _, ok := registry.Endpoints[id]; !ok {
+					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
 				}
-			}
-			if err := runtime.save(registry); err != nil {
+				if len(registry.Endpoints) == 1 {
+					return connection.Registry{}, &cliError{code: 4, message: "cannot remove the last endpoint"}
+				}
+				delete(registry.Endpoints, id)
+				if registry.Default == id {
+					if err := reassignEndpointDefault(&registry); err != nil {
+						return connection.Registry{}, err
+					}
+				}
+				return registry, nil
+			}); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\tremoved\n", id)
@@ -313,23 +301,21 @@ func newEndpointToggleCommand(runtime *endpointCommandRuntime, enabled bool) *co
 	return &cobra.Command{
 		Use: verb + " ID", Short: endpointVerbTitle(verb) + " an endpoint", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			registry, err := runtime.load()
-			if err != nil {
-				return err
-			}
 			id := connection.EndpointID(args[0])
-			endpoint, ok := registry.Endpoints[id]
-			if !ok {
-				return &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
-			}
-			endpoint.Enabled = enabled
-			registry.Endpoints[id] = endpoint
-			if !enabled && registry.Default == id {
-				if err := reassignEndpointDefault(&registry); err != nil {
-					return err
+			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+				endpoint, ok := registry.Endpoints[id]
+				if !ok {
+					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
 				}
-			}
-			if err := runtime.save(registry); err != nil {
+				endpoint.Enabled = enabled
+				registry.Endpoints[id] = endpoint
+				if !enabled && registry.Default == id {
+					if err := reassignEndpointDefault(&registry); err != nil {
+						return connection.Registry{}, err
+					}
+				}
+				return registry, nil
+			}); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%sd\n", id, verb)
@@ -372,20 +358,18 @@ func newEndpointSetDefaultCommand(runtime *endpointCommandRuntime) *cobra.Comman
 	return &cobra.Command{
 		Use: "set-default ID", Short: "Set the default endpoint", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			registry, err := runtime.load()
-			if err != nil {
-				return err
-			}
 			id := connection.EndpointID(args[0])
-			endpoint, ok := registry.Endpoints[id]
-			if !ok {
-				return &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
-			}
-			if !endpoint.Enabled {
-				return &cliError{code: 4, message: fmt.Sprintf("endpoint %s is disabled", id)}
-			}
-			registry.Default = id
-			if err := runtime.save(registry); err != nil {
+			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+				endpoint, ok := registry.Endpoints[id]
+				if !ok {
+					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
+				}
+				if !endpoint.Enabled {
+					return connection.Registry{}, &cliError{code: 4, message: fmt.Sprintf("endpoint %s is disabled", id)}
+				}
+				registry.Default = id
+				return registry, nil
+			}); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\tdefault\n", id)
@@ -407,24 +391,22 @@ func newEndpointRouteAddCommand(runtime *endpointCommandRuntime) *cobra.Command 
 		child := &cobra.Command{
 			Use: routeCommandName(kind) + " ENDPOINT_ID ROUTE_ID", Args: cobra.ExactArgs(2),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				registry, err := runtime.load()
-				if err != nil {
-					return err
-				}
 				endpointID, routeID := connection.EndpointID(args[0]), connection.RouteID(args[1])
-				endpoint, ok := registry.Endpoints[endpointID]
-				if !ok {
-					return &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
-				}
-				if _, exists := endpoint.Routes[routeID]; exists {
-					return &cliError{code: 4, message: fmt.Sprintf("endpoint %s route %s already exists", endpointID, routeID)}
-				}
 				flags.routeID = string(routeID)
 				route := routeFromFlags(kind, *flags)
-				endpoint.Routes[routeID] = route
-				registry.Endpoints[endpointID] = endpoint
-				if err := runtime.save(registry); err != nil {
-					return usageCLIError(err.Error())
+				if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+					endpoint, ok := registry.Endpoints[endpointID]
+					if !ok {
+						return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
+					}
+					if _, exists := endpoint.Routes[routeID]; exists {
+						return connection.Registry{}, &cliError{code: 4, message: fmt.Sprintf("endpoint %s route %s already exists", endpointID, routeID)}
+					}
+					endpoint.Routes[routeID] = route
+					registry.Endpoints[endpointID] = endpoint
+					return registry, nil
+				}); err != nil {
+					return err
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\tadded\n", endpointID, routeID)
 				return nil
@@ -441,25 +423,23 @@ func newEndpointRouteUpdateCommand(runtime *endpointCommandRuntime) *cobra.Comma
 	command := &cobra.Command{
 		Use: "update ENDPOINT_ID ROUTE_ID", Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			registry, err := runtime.load()
-			if err != nil {
-				return err
-			}
 			endpointID, routeID := connection.EndpointID(args[0]), connection.RouteID(args[1])
-			endpoint, ok := registry.Endpoints[endpointID]
-			if !ok {
-				return &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
-			}
-			route, ok := endpoint.Routes[routeID]
-			if !ok {
-				return &cliError{code: 3, message: fmt.Sprintf("endpoint %s route %s was not found", endpointID, routeID)}
-			}
-			applyRouteFlagChanges(cmd, &route, *flags)
-			route.PolicySource = connection.SourceUser
-			endpoint.Routes[routeID] = route
-			registry.Endpoints[endpointID] = endpoint
-			if err := runtime.save(registry); err != nil {
-				return usageCLIError(err.Error())
+			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+				endpoint, ok := registry.Endpoints[endpointID]
+				if !ok {
+					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
+				}
+				route, ok := endpoint.Routes[routeID]
+				if !ok {
+					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s route %s was not found", endpointID, routeID)}
+				}
+				applyRouteFlagChanges(cmd, &route, *flags)
+				route.PolicySource = connection.SourceUser
+				endpoint.Routes[routeID] = route
+				registry.Endpoints[endpointID] = endpoint
+				return registry, nil
+			}); err != nil {
+				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\tupdated\n", endpointID, routeID)
 			return nil
@@ -473,24 +453,22 @@ func newEndpointRouteRemoveCommand(runtime *endpointCommandRuntime) *cobra.Comma
 	return &cobra.Command{
 		Use: "remove ENDPOINT_ID ROUTE_ID", Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			registry, err := runtime.load()
-			if err != nil {
-				return err
-			}
 			endpointID, routeID := connection.EndpointID(args[0]), connection.RouteID(args[1])
-			endpoint, ok := registry.Endpoints[endpointID]
-			if !ok {
-				return &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
-			}
-			if _, ok := endpoint.Routes[routeID]; !ok {
-				return &cliError{code: 3, message: fmt.Sprintf("endpoint %s route %s was not found", endpointID, routeID)}
-			}
-			if len(endpoint.Routes) == 1 {
-				return &cliError{code: 4, message: "cannot remove the last route from an endpoint"}
-			}
-			delete(endpoint.Routes, routeID)
-			registry.Endpoints[endpointID] = endpoint
-			if err := runtime.save(registry); err != nil {
+			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+				endpoint, ok := registry.Endpoints[endpointID]
+				if !ok {
+					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
+				}
+				if _, ok := endpoint.Routes[routeID]; !ok {
+					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s route %s was not found", endpointID, routeID)}
+				}
+				if len(endpoint.Routes) == 1 {
+					return connection.Registry{}, &cliError{code: 4, message: "cannot remove the last route from an endpoint"}
+				}
+				delete(endpoint.Routes, routeID)
+				registry.Endpoints[endpointID] = endpoint
+				return registry, nil
+			}); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\tremoved\n", endpointID, routeID)
@@ -507,24 +485,22 @@ func newEndpointRouteToggleCommand(runtime *endpointCommandRuntime, enabled bool
 	return &cobra.Command{
 		Use: verb + " ENDPOINT_ID ROUTE_ID", Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			registry, err := runtime.load()
-			if err != nil {
-				return err
-			}
 			endpointID, routeID := connection.EndpointID(args[0]), connection.RouteID(args[1])
-			endpoint, ok := registry.Endpoints[endpointID]
-			if !ok {
-				return &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
-			}
-			route, ok := endpoint.Routes[routeID]
-			if !ok {
-				return &cliError{code: 3, message: fmt.Sprintf("endpoint %s route %s was not found", endpointID, routeID)}
-			}
-			route.Enabled, route.PolicySource = enabled, connection.SourceUser
-			endpoint.Routes[routeID] = route
-			registry.Endpoints[endpointID] = endpoint
-			if err := runtime.save(registry); err != nil {
-				return usageCLIError(err.Error())
+			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+				endpoint, ok := registry.Endpoints[endpointID]
+				if !ok {
+					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
+				}
+				route, ok := endpoint.Routes[routeID]
+				if !ok {
+					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s route %s was not found", endpointID, routeID)}
+				}
+				route.Enabled, route.PolicySource = enabled, connection.SourceUser
+				endpoint.Routes[routeID] = route
+				registry.Endpoints[endpointID] = endpoint
+				return registry, nil
+			}); err != nil {
+				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%sd\n", endpointID, routeID, verb)
 			return nil

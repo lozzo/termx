@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,8 +13,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/shared/connection"
 	"github.com/lozzow/termx/shared/remoteauth"
+	unixtransport "github.com/lozzow/termx/shared/transport/unix"
 	qrcode "github.com/skip2/go-qrcode"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -22,19 +24,22 @@ import (
 
 const maxPairingBundleBytes = 1 << 20
 
+const pairingBootstrapURIPrefix = "termx://bootstrap?payload="
+
 var (
-	saveV3ConnectionRegistry = connection.Save
-	v3PairHostname           = os.Hostname
-	v3PairOutputIsTerminal   = func(output io.Writer) bool {
+	updateV3ConnectionRegistry = connection.UpdateContext
+	dialV3PairingTransport     = unixtransport.DialContext
+	v3PairHostname             = os.Hostname
+	v3PairOutputIsTerminal     = func(output io.Writer) bool {
 		file, ok := output.(*os.File)
 		return ok && term.IsTerminal(int(file.Fd()))
 	}
 )
 
-func v3PairCommand() *cobra.Command {
-	command := &cobra.Command{Use: "pair", Short: "Create or import a direct daemon capability"}
-	command.AddCommand(v3PairCreateCommand())
-	command.AddCommand(v3PairImportCommand())
+func v3PairCommand(socket *string, logFile *string) *cobra.Command {
+	command := &cobra.Command{Use: "pair", Short: "Create or redeem a client-bound daemon pairing ticket"}
+	command.AddCommand(v3PairCreateCommand(socket, logFile))
+	command.AddCommand(v3PairImportCommand(socket, logFile))
 	command.AddCommand(v3PairInspectCommand())
 	return command
 }
@@ -46,18 +51,18 @@ type pairInspectView struct {
 	Label             string           `json:"label,omitempty"`
 	DeviceID          string           `json:"device_id"`
 	DeviceFingerprint string           `json:"device_fingerprint"`
-	GrantID           string           `json:"grant_id"`
-	RevocationID      string           `json:"revocation_id"`
-	Scope             remoteauth.Scope `json:"scope"`
+	TicketID          string           `json:"ticket_id"`
+	ScopeCeiling      remoteauth.Scope `json:"scope_ceiling"`
 	IssuedAt          string           `json:"issued_at"`
 	NotBefore         string           `json:"not_before"`
 	ExpiresAt         string           `json:"expires_at"`
+	GrantLifetime     int64            `json:"grant_lifetime_seconds"`
 }
 
 func v3PairInspectCommand() *cobra.Command {
 	var jsonOutput bool
 	command := &cobra.Command{
-		Use: "inspect <BUNDLE_FILE|->", Short: "Verify pairing metadata without printing its bearer grant", Args: cobra.ExactArgs(1),
+		Use: "inspect <BUNDLE_FILE|->", Short: "Verify one-time pairing ticket metadata", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			payload, err := readV3PairingBundle(cmd.Context(), cmd.InOrStdin(), args[0])
 			if err != nil {
@@ -69,15 +74,15 @@ func v3PairInspectCommand() *cobra.Command {
 				return err
 			}
 			view := pairInspectView{
-				SchemaVersion: 1, Kind: "pairing_bundle", Version: bundle.Version, Label: bundle.Label,
-				DeviceID: bundle.DeviceID, DeviceFingerprint: bundle.DeviceFingerprint,
-				GrantID: claims.GrantID, RevocationID: claims.RevocationID, Scope: claims.Scope,
+				SchemaVersion: 1, Kind: "pairing_bundle", Version: bundle.GetSchemaVersion(), Label: bundle.GetSuggestedLabel(),
+				DeviceID: bundle.GetIdentity().GetDeviceId(), DeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
+				TicketID: claims.TicketID, ScopeCeiling: claims.ScopeCeiling, GrantLifetime: claims.GrantLifetimeSeconds,
 				IssuedAt: formatTerminalTime(claims.IssuedAt), NotBefore: formatTerminalTime(claims.NotBefore), ExpiresAt: formatTerminalTime(claims.ExpiresAt),
 			}
 			if jsonOutput {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(view)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Device: %s\nFingerprint: %s\nGrant ID: %s\nExpires: %s\n", view.DeviceID, view.DeviceFingerprint, view.GrantID, view.ExpiresAt)
+			fmt.Fprintf(cmd.OutOrStdout(), "Device: %s\nFingerprint: %s\nTicket ID: %s\nExpires: %s\n", view.DeviceID, view.DeviceFingerprint, view.TicketID, view.ExpiresAt)
 			return nil
 		},
 	}
@@ -85,24 +90,26 @@ func v3PairInspectCommand() *cobra.Command {
 	return command
 }
 
-func v3PairCreateCommand() *cobra.Command {
+func v3PairCreateCommand(socket *string, logFile *string) *cobra.Command {
 	var outputPath string
 	var rawOutput bool
 	var label string
 	var terminalID string
-	var lifetime time.Duration
+	var ticketTTL time.Duration
+	var grantLifetime time.Duration
 	command := &cobra.Command{
 		Use:   "create",
-		Short: "Issue a pairing bundle from this daemon identity",
+		Short: "Issue a short-lived one-time pairing ticket from the local daemon",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if rawOutput && strings.TrimSpace(outputPath) != "" {
 				return usageCLIError("pair create --raw and --out cannot be used together")
 			}
-			identity, err := remoteauth.LoadOrCreateLocalIdentity(v3RemoteIdentityDir())
+			client, err := dialOrStartV3ClientContext(cmd.Context(), resolveV3Socket(*socket), resolveV3LogFilePath(*logFile), nil)
 			if err != nil {
 				return err
 			}
+			defer client.Close()
 			label = strings.TrimSpace(label)
 			if label == "" {
 				if hostname, hostnameErr := v3PairHostname(); hostnameErr == nil {
@@ -117,20 +124,17 @@ func v3PairCreateCommand() *cobra.Command {
 				}
 				scope = remoteauth.Scope{TerminalID: terminalID}
 			}
-			bundle, err := remoteauth.IssuePairingBundle(identity, remoteauth.PairingIssueOptions{
-				Label: label, Scope: scope, Lifetime: lifetime,
-			})
-			if err != nil {
+			if ticketTTL <= 0 || grantLifetime <= 0 {
+				return usageCLIError("pair create ticket and grant ttl must be positive")
+			}
+			var result protocol.ClientAccessTicketCreateResult
+			if err := client.Call(cmd.Context(), "remote.access.ticket.create", protocol.ClientAccessTicketCreateParams{
+				Label: label, Scope: protocolClientAccessScope(scope),
+				TicketTTLSeconds: int64(ticketTTL / time.Second), GrantLifetimeSeconds: int64(grantLifetime / time.Second),
+			}, &result); err != nil {
 				return err
 			}
-			payload, err := remoteauth.EncodePairingBundle(bundle)
-			if err != nil {
-				return err
-			}
-			_, claims, err := remoteauth.ParsePairingBundle(payload, time.Time{})
-			if err != nil {
-				return err
-			}
+			payload := result.Bundle
 			if rawOutput {
 				_, err = cmd.OutOrStdout().Write(payload)
 				return err
@@ -139,7 +143,7 @@ func v3PairCreateCommand() *cobra.Command {
 				if !v3PairOutputIsTerminal(cmd.OutOrStdout()) {
 					return usageCLIError("pair create requires an interactive terminal; use --raw for stdout or --out FILE")
 				}
-				return renderV3PairingQR(cmd.OutOrStdout(), payload, claims.ExpiresAt)
+				return renderV3PairingQR(cmd.OutOrStdout(), payload, result.ExpiresAt)
 			}
 			if err := writeV3PrivateFile(outputPath, payload); err != nil {
 				return err
@@ -148,18 +152,20 @@ func v3PairCreateCommand() *cobra.Command {
 			return nil
 		},
 	}
-	command.Flags().StringVar(&outputPath, "out", "", "write the bearer pairing bundle to an owner-only file")
-	command.Flags().BoolVar(&rawOutput, "raw", false, "write the bearer pairing bundle to stdout for explicit scripting")
+	command.Flags().StringVar(&outputPath, "out", "", "write the one-time pairing bundle to an owner-only file")
+	command.Flags().BoolVar(&rawOutput, "raw", false, "write the one-time pairing bundle to stdout for explicit scripting")
 	command.Flags().StringVar(&label, "label", "", "daemon display label (defaults to this host name)")
 	command.Flags().StringVar(&terminalID, "terminal", "", "limit the capability to one terminal instead of daemon-wide access")
-	command.Flags().DurationVar(&lifetime, "ttl", 24*time.Hour, "capability lifetime")
+	command.Flags().DurationVar(&ticketTTL, "ttl", 10*time.Minute, "one-time ticket lifetime")
+	command.Flags().DurationVar(&grantLifetime, "grant-ttl", 90*24*time.Hour, "bound capability lifetime")
 	return command
 }
 
-// renderV3PairingQR 把 bearer bundle 只编码进高对比度终端二维码，不回显原始 grant。
-// 二维码等价于短期凭据；调用方应在可信终端展示并在扫描后清屏。
+// renderV3PairingQR 把短期一次性 PairingTicket bundle 编码进高对比度终端二维码。
+// 二维码不包含长期 grant，但仍允许在有效期内发起一次 key-bound 兑换；调用方应在扫描后清屏。
 func renderV3PairingQR(output io.Writer, payload []byte, expiresAt time.Time) error {
-	code, err := qrcode.New(string(payload), qrcode.Medium)
+	portablePayload := pairingBootstrapURIPrefix + base64.RawURLEncoding.EncodeToString(payload)
+	code, err := qrcode.New(portablePayload, qrcode.Medium)
 	if err != nil {
 		return fmt.Errorf("encode pairing QR: %w", err)
 	}
@@ -195,7 +201,7 @@ func renderV3PairingQR(output io.Writer, payload []byte, expiresAt time.Time) er
 			return err
 		}
 	}
-	_, err = io.WriteString(output, "\x1b[0mThis QR grants daemon access. Clear the terminal after scanning.\n")
+	_, err = io.WriteString(output, "\x1b[0mThis QR contains a one-time pairing ticket. Clear the terminal after scanning.\n")
 	return err
 }
 
@@ -213,81 +219,101 @@ func localPairTerminalID(target string) (string, error) {
 	return target, nil
 }
 
-func v3PairImportCommand() *cobra.Command {
+func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 	var endpointID string
 	var label string
-	var relayMode string
 	var registryPath string
+	var pairingSocket string
+	var clientLabel string
+	var allowScopeExpansion bool
 	command := &cobra.Command{
 		Use:   "import <BUNDLE_FILE|->",
-		Short: "Import a pairing bundle into credentials and endpoint registry",
+		Short: "Redeem a one-time ticket into client-bound credentials and endpoint registry",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			payload, err := readV3PairingBundle(cmd.Context(), cmd.InOrStdin(), args[0])
 			if err != nil {
 				return err
 			}
-			bundle, _, err := remoteauth.ParsePairingBundle(payload, time.Time{})
-			clear(payload)
+			defer clear(payload)
+			bundle, _, err := remoteauth.ParsePairingBundleForExchange(payload)
 			if err != nil {
 				return err
 			}
 			id := connection.EndpointID(strings.TrimSpace(endpointID))
 			endpointLabel := strings.TrimSpace(label)
 			if endpointLabel == "" {
-				endpointLabel = bundle.Label
+				endpointLabel = bundle.GetSuggestedLabel()
 			}
 			if endpointLabel == "" {
 				endpointLabel = string(id)
 			}
-			identity := connection.DaemonIdentity{DeviceID: bundle.DeviceID, DeviceFingerprint: bundle.DeviceFingerprint}
-			preferred := connection.NewManagedEndpoint(id, endpointLabel, identity, bundle.DeviceID, "pairing-grant-validation", connection.RelayMode(strings.TrimSpace(relayMode)), connection.ConnectOnDemand)
-			if err := preferred.Validate(); err != nil {
-				return err
-			}
-			registry, err := connection.Load(registryPath)
-			if errors.Is(err, os.ErrNotExist) {
-				registry = connection.Registry{Version: connection.RegistryVersion, Endpoints: map[connection.EndpointID]connection.Endpoint{}}
-				err = nil
-			}
+			identity := connection.DaemonIdentity{DeviceID: bundle.GetIdentity().GetDeviceId(), DeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint()}
+			var endpoint connection.Endpoint
+			var credential remoteauth.ClientAccessCredential
+			_, err = updateV3ConnectionRegistry(cmd.Context(), registryPath, true, func(registry connection.Registry) (connection.Registry, error) {
+				updated, mergedEndpoint, grantRef, mergeErr := mergePairingEndpoint(registry, id, endpointLabel, bundle)
+				if mergeErr != nil {
+					return connection.Registry{}, mergeErr
+				}
+				credentials := remoteauth.NewCredentialStore(v3RemoteCredentialDir())
+				bound, bindErr := credentials.PairAndBind(
+					cmd.Context(), grantRef, string(mergedEndpoint.ID), payload, nil, nil,
+					remoteauth.BindGrantOptions{AllowScopeExpansion: allowScopeExpansion},
+					func(clientIdentity remoteauth.ClientAccessIdentity) (remoteauth.PairingExchangeResult, error) {
+						resolvedPairingSocket := strings.TrimSpace(pairingSocket)
+						if resolvedPairingSocket == "" {
+							localSocket := resolveV3Socket(*socket)
+							client, startErr := dialOrStartV3ClientContext(cmd.Context(), localSocket, resolveV3LogFilePath(*logFile), nil)
+							if startErr != nil {
+								return remoteauth.PairingExchangeResult{}, startErr
+							}
+							_ = client.Close()
+							resolvedPairingSocket = v3PairingSocketPath(localSocket)
+						}
+						binding, bindingErr := remoteauth.LocalUnixChannelBinding(resolvedPairingSocket)
+						if bindingErr != nil {
+							return remoteauth.PairingExchangeResult{}, bindingErr
+						}
+						pairingTransport, dialErr := dialV3PairingTransport(cmd.Context(), resolvedPairingSocket)
+						if dialErr != nil {
+							return remoteauth.PairingExchangeResult{}, fmt.Errorf("connect PairingExchange socket: %w", dialErr)
+						}
+						defer pairingTransport.Close()
+						labelForClient := strings.TrimSpace(clientLabel)
+						if labelForClient == "" {
+							labelForClient = "termx-cli"
+							if hostname, hostnameErr := v3PairHostname(); hostnameErr == nil && strings.TrimSpace(hostname) != "" {
+								labelForClient = "termx-cli@" + strings.TrimSpace(hostname)
+							}
+						}
+						return (remoteauth.ClientPairingHandshake{}).Redeem(cmd.Context(), pairingTransport, remoteauth.ClientPairingRequest{
+							ExpectedDeviceID: identity.DeviceID, ExpectedDeviceFingerprint: identity.DeviceFingerprint,
+							PairingBundle: payload, Identity: clientIdentity,
+							ClientLabel: labelForClient, ChannelBinding: binding,
+						})
+					},
+				)
+				if bindErr != nil {
+					return connection.Registry{}, bindErr
+				}
+				endpoint = mergedEndpoint
+				credential = bound
+				return updated, nil
+			})
 			if err != nil {
 				return err
 			}
-			registry, endpoint, grantRef, err := mergePairingEndpoint(registry, id, endpointLabel, identity, connection.RelayMode(strings.TrimSpace(relayMode)))
-			if err != nil {
-				return err
-			}
-			credentials := remoteauth.NewCredentialStore(v3RemoteCredentialDir())
-			previousGrant, previousGrantErr := credentials.Resolve(grantRef)
-			if previousGrantErr != nil && !errors.Is(previousGrantErr, os.ErrNotExist) {
-				return previousGrantErr
-			}
-			if err := credentials.Put(grantRef, bundle.CapabilityGrant); err != nil {
-				return err
-			}
-			if err := saveV3ConnectionRegistry(registryPath, registry); err != nil {
-				if connection.RegistryWritePublished(err) {
-					return err
-				}
-				var rollbackErr error
-				if previousGrantErr == nil {
-					rollbackErr = credentials.Put(grantRef, previousGrant)
-				} else {
-					rollbackErr = credentials.Delete(grantRef)
-				}
-				if rollbackErr != nil {
-					return errors.Join(err, fmt.Errorf("restore pairing credential: %w", rollbackErr))
-				}
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Imported managed endpoint %s for device %s\n", endpoint.ID, endpoint.DaemonIdentity.DeviceID)
+			fmt.Fprintf(cmd.OutOrStdout(), "Paired endpoint %s with daemon %s using client key %s\n", endpoint.ID, endpoint.DaemonIdentity.DeviceID, credential.Identity.Fingerprint)
 			return nil
 		},
 	}
 	command.Flags().StringVar(&endpointID, "id", "", "client-local endpoint id")
 	command.Flags().StringVar(&label, "label", "", "override the bundle display label")
-	command.Flags().StringVar(&relayMode, "relay", string(connection.RelayAuto), "route policy: auto, direct, relay_only, or smart_route")
 	command.Flags().StringVar(&registryPath, "registry", "", "connections.yaml path")
+	command.Flags().StringVar(&pairingSocket, "pair-socket", "", "owner-only PairingExchange Unix socket (defaults to local daemon)")
+	command.Flags().StringVar(&clientLabel, "client-label", "", "label recorded for this client access key")
+	command.Flags().BoolVar(&allowScopeExpansion, "allow-scope-expansion", false, "confirm replacing an existing credential with a broader capability scope")
 	_ = command.MarkFlagRequired("id")
 	return command
 }
@@ -296,9 +322,16 @@ func mergePairingEndpoint(
 	registry connection.Registry,
 	preferredID connection.EndpointID,
 	label string,
-	identity connection.DaemonIdentity,
-	relayMode connection.RelayMode,
+	bundle *remoteauth.PairingBundle,
 ) (connection.Registry, connection.Endpoint, string, error) {
+	candidate, err := connection.EndpointCandidateFromBootstrapBundle(bundle)
+	if err != nil {
+		return connection.Registry{}, connection.Endpoint{}, "", err
+	}
+	identity := candidate.Identity
+	if strings.TrimSpace(label) != "" {
+		candidate.SuggestedLabel = strings.TrimSpace(label)
+	}
 	normalized, err := registry.Normalize()
 	if err != nil {
 		return connection.Registry{}, connection.Endpoint{}, "", err
@@ -320,18 +353,23 @@ func mergePairingEndpoint(
 	}
 	grantRef := v3PairingGrantRef(actualID, identity.DeviceID)
 	if targetExists {
-		if route, ok := target.Route("cloud"); ok && strings.TrimSpace(route.CredentialRef) != "" {
+		for _, route := range target.Routes {
+			if route.Kind != connection.RouteDirectTLS && route.Kind != connection.RouteManagedWebRTC || strings.TrimSpace(route.CredentialRef) == "" {
+				continue
+			}
+			if grantRef != v3PairingGrantRef(actualID, identity.DeviceID) && grantRef != route.CredentialRef {
+				return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("endpoint %q has conflicting capability credential refs", actualID)
+			}
 			grantRef = route.CredentialRef
 		}
 	}
-	candidate := connection.EndpointCandidate{
-		Source:         connection.SourceBootstrap,
-		Identity:       identity,
-		SuggestedLabel: label,
-		Routes: []connection.AccessRoute{{
-			ID: "cloud", Kind: connection.RouteManagedWebRTC, Enabled: true,
-			CredentialRef: grantRef, TargetDeviceID: identity.DeviceID, RelayMode: relayMode,
-		}},
+	if !targetExists && len(candidate.Routes) == 0 {
+		return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("pairing bundle contains no portable route and no existing endpoint matches daemon %q", identity.DeviceID)
+	}
+	for index := range candidate.Routes {
+		if candidate.Routes[index].Kind == connection.RouteDirectTLS || candidate.Routes[index].Kind == connection.RouteManagedWebRTC {
+			candidate.Routes[index].CredentialRef = grantRef
+		}
 	}
 	input := connection.EndpointAssemblerInput{Registry: registry, Candidates: []connection.EndpointCandidate{candidate}}
 	if targetExists && target.DaemonIdentity.Empty() {
@@ -360,12 +398,21 @@ func mergePairingEndpoint(
 		resolvedID = actualID
 	}
 	endpoint := result.Registry.Endpoints[resolvedID]
-	managedRoute, ok := endpoint.Route("cloud")
-	if !ok || managedRoute.Kind != connection.RouteManagedWebRTC {
-		return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("pairing import did not produce a managed route for endpoint %q", resolvedID)
+	authRoutes := 0
+	for routeID, route := range endpoint.Routes {
+		if route.Kind != connection.RouteDirectTLS && route.Kind != connection.RouteManagedWebRTC {
+			continue
+		}
+		if strings.TrimSpace(route.CredentialRef) != "" && route.CredentialRef != grantRef {
+			return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("endpoint %q route %q uses a different capability credential ref", resolvedID, routeID)
+		}
+		route.CredentialRef = grantRef
+		endpoint.Routes[routeID] = route
+		authRoutes++
 	}
-	managedRoute.CredentialRef = grantRef
-	endpoint.Routes[managedRoute.ID] = managedRoute
+	if authRoutes == 0 {
+		return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("endpoint %q has no direct-tls or managed-webrtc route that can use the paired capability", resolvedID)
+	}
 	result.Registry.Endpoints[resolvedID] = endpoint
 	result.Registry, err = result.Registry.Normalize()
 	if err != nil {
@@ -399,6 +446,15 @@ func readV3PairingBundle(ctx context.Context, stdin io.Reader, path string) ([]b
 	if len(payload) == 0 || len(payload) > maxPairingBundleBytes {
 		clear(payload)
 		return nil, fmt.Errorf("pairing bundle size is invalid")
+	}
+	if text := strings.TrimSpace(string(payload)); strings.HasPrefix(text, pairingBootstrapURIPrefix) {
+		decoded, decodeErr := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(text, pairingBootstrapURIPrefix))
+		clear(payload)
+		if decodeErr != nil || len(decoded) == 0 || len(decoded) > maxPairingBundleBytes {
+			clear(decoded)
+			return nil, fmt.Errorf("pairing bootstrap URI payload is invalid")
+		}
+		payload = decoded
 	}
 	return payload, nil
 }

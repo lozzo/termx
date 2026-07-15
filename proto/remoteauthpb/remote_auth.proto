@@ -17,6 +17,10 @@ enum AuthErrorCode {
   AUTH_ERROR_CODE_SCOPE_INVALID = 7;
   AUTH_ERROR_CODE_REPLAYED = 8;
   AUTH_ERROR_CODE_INTERNAL = 9;
+  AUTH_ERROR_CODE_SUBJECT_KEY_MISMATCH = 10;
+  AUTH_ERROR_CODE_PAIRING_TICKET_INVALID = 11;
+  AUTH_ERROR_CODE_PAIRING_TICKET_EXPIRED = 12;
+  AUTH_ERROR_CODE_PAIRING_TICKET_CONSUMED = 13;
 }
 
 // ScopeKind 是 capability 成功映射到 core-v2 前的规范化 scope 分类。
@@ -25,6 +29,29 @@ enum ScopeKind {
   SCOPE_KIND_DAEMON = 1;
   SCOPE_KIND_TERMINAL = 2;
   SCOPE_KIND_MACHINE_EVENTS = 3;
+}
+
+// ChannelBindingKind 区分实际 transport 提供的安全 channel 证明来源。
+// direct TLS 与 managed WebRTC 共用同一 canonical 结构，但不能互相替换 kind 后重放 proof。
+enum ChannelBindingKind {
+  CHANNEL_BINDING_KIND_UNSPECIFIED = 0;
+  CHANNEL_BINDING_KIND_DIRECT_TLS = 1;
+  CHANNEL_BINDING_KIND_DTLS = 2;
+  CHANNEL_BINDING_KIND_LOCAL_UNIX = 3;
+}
+
+// AuthOpenKind 为客户端签名输入提供明确 domain separation。
+enum AuthOpenKind {
+  AUTH_OPEN_KIND_UNSPECIFIED = 0;
+  AUTH_OPEN_KIND_CAPABILITY = 1;
+  AUTH_OPEN_KIND_PAIRING = 2;
+}
+
+// ChannelBinding 是 transport adapter 从实际 TLS/DTLS/local Unix channel 取得的 SHA-256 binding。
+// binding_hash 固定为 32 bytes；SDP、route 地址或 Cloud signaling 字段不能替代该值。
+message ChannelBinding {
+  ChannelBindingKind kind = 1;
+  bytes binding_hash = 2;
 }
 
 // AuthEnvelope 是 DataChannel protocol 切换前唯一允许出现的 versioned frame。
@@ -38,38 +65,62 @@ message AuthEnvelope {
     CapabilityOpen capability_open = 5;
     CapabilityAccepted capability_accepted = 6;
     CapabilityRejected capability_rejected = 7;
+    PairingOpen pairing_open = 8;
+    PairingAccepted pairing_accepted = 9;
   }
 }
 
-// DeviceHello 是 daemon 对长期 DeviceIdentity 和本次 DTLS channel 的联合证明。
+// DeviceHello 是 daemon 对长期 DeviceIdentity 和本次实际 transport channel 的联合证明。
 message DeviceHello {
   string device_id = 1;
   bytes device_public_key = 2;
   string device_fingerprint = 3;
   bytes server_nonce = 4;
-  string daemon_dtls_certificate_fingerprint = 5;
+  ChannelBinding channel_binding = 5;
   int64 issued_at_unix_nano = 6;
   bytes signature = 7;
 }
 
-// CapabilityOpen 证明 client 当前持有完整 grant，并把它绑定到本次 daemon challenge。
-// grant 只允许出现在端到端 DTLS DataChannel 内，不能进入 cloud signaling DTO。
+// CapabilityOpen 证明 client 持有 grant 对应 ClientAccessIdentity private key，并把 proof 绑定当前 channel。
+// grant 只允许出现在端到端 direct TLS 或 DTLS DataChannel 内，不能进入 cloud signaling DTO。
 message CapabilityOpen {
   string grant = 1;
-  bytes client_nonce = 2;
-  bytes proof = 3;
+  bytes client_public_key = 2;
+  bytes client_nonce = 3;
+  bytes proof = 4;
+}
+
+// PairingOpen 只能兑换一次性 PairingTicket，不能访问 terminal、history、file 或普通 protocol method。
+// client_public_key/proof 先证明目标 ClientAccessIdentity possession，daemon 才允许原子消费 ticket。
+message PairingOpen {
+  bytes pairing_bundle = 1;
+  bytes client_public_key = 2;
+  string client_label = 3;
+  bytes client_nonce = 4;
+  bytes proof = 5;
 }
 
 // ScopeSummary 是 daemon 已接受 capability 的最小无歧义投影。
 message ScopeSummary {
   ScopeKind kind = 1;
   string terminal_id = 2;
+  bool manage_client_access = 3;
 }
 
 // CapabilityAccepted 是 remote auth 到 termx protocol 的单向切换点。
 message CapabilityAccepted {
   string grant_id = 1;
   ScopeSummary scope = 2;
+  string subject_key_fingerprint = 3;
+}
+
+// PairingAccepted 返回本次原子事务已持久化的 client-bound grant 和稳定 delivery receipt。
+// 响应丢失后，相同 ticket 与相同 client key 可以取回完全相同的 grant/receipt；其他 key 必须 fail closed。
+message PairingAccepted {
+  string grant = 1;
+  string delivery_receipt = 2;
+  string subject_key_fingerprint = 3;
+  ScopeSummary scope = 4;
 }
 
 // CapabilityRejected 返回稳定错误类别和固定脱敏消息，随后 channel 必须关闭。
@@ -88,20 +139,22 @@ message DeviceHelloSignatureInput {
   bytes device_public_key = 5;
   string device_fingerprint = 6;
   bytes server_nonce = 7;
-  string daemon_dtls_certificate_fingerprint = 8;
+  ChannelBinding channel_binding = 8;
   int64 issued_at_unix_nano = 9;
 }
 
-// CapabilityProofInput 是 HMAC-SHA-256 proof 的跨平台 canonical protobuf。
-// HMAC key 是去除首尾空白后的原始 grant UTF-8 bytes；grant_sha256 是同一规范化 grant 的 SHA-256。
-message CapabilityProofInput {
+// ClientProofInput 是 ClientAccessIdentity Ed25519 签名的跨平台 canonical protobuf。
+// credential_sha256 对 capability 使用原始 grant UTF-8 bytes、对 pairing 使用完整 canonical bootstrap protobuf bytes；open_kind 防止跨状态机重放。
+message ClientProofInput {
   string protocol = 1;
   uint32 version = 2;
   string auth_session_id = 3;
   bytes server_nonce = 4;
   bytes client_nonce = 5;
-  string daemon_dtls_certificate_fingerprint = 6;
-  bytes grant_sha256 = 7;
+  ChannelBinding channel_binding = 6;
+  bytes credential_sha256 = 7;
+  bytes client_public_key = 8;
+  AuthOpenKind open_kind = 9;
 }
 
 // EndpointRouteKind 是跨 Go/Kotlin/TypeScript wire contract 的 route 分类。
@@ -359,6 +412,8 @@ message PairingTicketDescriptor {
   bytes nonce = 4;
   uint32 max_redemptions = 5;
   bytes signature = 6;
+  int64 issued_at_unix_nano = 7;
+  int64 grant_lifetime_seconds = 8;
 }
 
 // EndpointAuthorizationBootstrap 只允许携带短期 PairingTicket，或双向离线扫码中已绑定接收方 key 的 grant。

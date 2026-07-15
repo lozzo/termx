@@ -30,6 +30,7 @@ type serverConfig struct {
 	listenerFactory     ListenerFactory
 	processFactory      ProcessFactory
 	remoteService       RemoteService
+	clientAccessService ClientAccessService
 	eventBuffer         int
 	historyStoreFactory HistoryStoreFactory
 	historyStorageDir   string
@@ -60,6 +61,8 @@ type Server struct {
 	protocolOwnerEpoch    uint64
 	remoteServiceMu       sync.RWMutex
 	remoteService         RemoteService
+	clientAccessServiceMu sync.RWMutex
+	clientAccessService   ClientAccessService
 	fileTransferMu        sync.Mutex
 	fileUploads           map[string]*uploadTransferRecord
 	historyFallbackDirMu  sync.Mutex
@@ -111,6 +114,7 @@ func NewServer(opts ...ServerOption) *Server {
 		protocolResizeOwners: make(map[string]string),
 		protocolSizeLocks:    make(map[string]bool),
 		remoteService:        cfg.remoteService,
+		clientAccessService:  cfg.clientAccessService,
 		fileUploads:          make(map[string]*uploadTransferRecord),
 		transports:           make(map[transport.Transport]struct{}),
 	}
@@ -151,6 +155,14 @@ func WithProcessFactory(factory ProcessFactory) ServerOption {
 func WithRemoteService(service RemoteService) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.remoteService = service
+	}
+}
+
+// WithClientAccessService 注入 daemon-owned DeviceIdentity、PairingTicket 与 client grant 管理边界。
+// 该 service 只能由认证后的 scoped protocol session 调用；core 不复制 AccessStore state，也不为缺失实现提供 bearer fallback。
+func WithClientAccessService(service ClientAccessService) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.clientAccessService = service
 	}
 }
 
@@ -214,6 +226,14 @@ func (server *Server) RemoteService() RemoteService {
 	server.remoteServiceMu.RLock()
 	defer server.remoteServiceMu.RUnlock()
 	return server.remoteService
+}
+
+// ClientAccessService 返回当前 daemon 装配的 client access service。
+// 返回 nil 表示 identity/access runtime 不可用，protocol session 必须返回明确 unavailable，不能自行读写 daemon 文件。
+func (server *Server) ClientAccessService() ClientAccessService {
+	server.clientAccessServiceMu.RLock()
+	defer server.clientAccessServiceMu.RUnlock()
+	return server.clientAccessService
 }
 
 func (server *Server) SocketPath() string {

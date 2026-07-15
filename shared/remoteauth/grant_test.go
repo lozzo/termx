@@ -3,106 +3,95 @@ package remoteauth
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 )
 
-func TestGrantRoundTripBindsDeviceFingerprintAndScope(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+func TestGrantV2RoundTripBindsDaemonSubjectAndManageCapability(t *testing.T) {
+	daemonPublic, daemonPrivate, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		t.Fatalf("generate key: %v", err)
+		t.Fatal(err)
+	}
+	client, err := GenerateClientAccessIdentity("endpoint-1", rand.Reader)
+	if err != nil {
+		t.Fatal(err)
 	}
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
-	grant, err := Issue(privateKey, Claims{GrantID: "grant-1", IssuerDeviceID: "device-1", Scope: Scope{TerminalID: "term-1"}, IssuedAt: now, ExpiresAt: now.Add(time.Hour)})
+	grant, err := Issue(daemonPrivate, Claims{
+		GrantID: "grant-1", IssuerDeviceID: "device-1", SubjectKeyFingerprint: client.Fingerprint,
+		Scope: Scope{TerminalID: "term-1", ManageClientAccess: true}, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+	})
 	if err != nil {
-		t.Fatalf("issue grant: %v", err)
+		t.Fatalf("Issue: %v", err)
 	}
-	claims, err := Verify(grant, Fingerprint(publicKey), now.Add(time.Minute), nil)
+	claims, err := Verify(grant, Fingerprint(daemonPublic), now.Add(time.Minute), nil)
 	if err != nil {
-		t.Fatalf("verify grant: %v", err)
+		t.Fatalf("Verify: %v", err)
 	}
-	if claims.IssuerDeviceFingerprint != Fingerprint(publicKey) || claims.Scope.TerminalID != "term-1" || claims.RevocationID != "grant-1" || claims.Nonce == "" {
-		t.Fatalf("grant lost identity or scope: %#v", claims)
+	if claims.Version != 2 || claims.SubjectKeyFingerprint != client.Fingerprint || claims.Scope.TerminalID != "term-1" || !claims.Scope.ManageClientAccess || claims.RevocationID != "grant-1" || claims.Nonce == "" {
+		t.Fatalf("grant lost v2 bindings: %#v", claims)
 	}
 }
 
-func TestGrantRejectsFingerprintMismatchExpiryRevocationAndLegacyToken(t *testing.T) {
-	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
-	otherPublicKey, _, _ := ed25519.GenerateKey(rand.Reader)
+func TestGrantV2RejectsMissingSubjectV1ExpiryAndRevocation(t *testing.T) {
+	daemonPublic, daemonPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	client, _ := GenerateClientAccessIdentity("endpoint-1", rand.Reader)
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
-	grant, err := Issue(privateKey, Claims{GrantID: "grant-1", IssuerDeviceID: "device-1", Scope: Scope{TerminalID: "term-1"}, IssuedAt: now, ExpiresAt: now.Add(time.Minute)})
+	if _, err := Issue(daemonPrivate, Claims{
+		GrantID: "missing-subject", IssuerDeviceID: "device-1", Scope: Scope{AllowDaemon: true},
+		IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+	}); !errors.Is(err, ErrGrantMalformed) {
+		t.Fatalf("missing subject error = %v", err)
+	}
+	grant, err := Issue(daemonPrivate, Claims{
+		GrantID: "grant-1", IssuerDeviceID: "device-1", SubjectKeyFingerprint: client.Fingerprint,
+		Scope: Scope{AllowDaemon: true}, IssuedAt: now, ExpiresAt: now.Add(time.Minute),
+	})
 	if err != nil {
-		t.Fatalf("issue grant: %v", err)
+		t.Fatal(err)
 	}
-	if _, err := Verify(grant, Fingerprint(otherPublicKey), now, nil); err == nil || !strings.Contains(err.Error(), "fingerprint") {
-		t.Fatalf("expected fingerprint rejection, got %v", err)
+	if _, err := Verify("termx-grant-v1.legacy.key.signature", Fingerprint(daemonPublic), now, nil); !errors.Is(err, ErrGrantMalformed) {
+		t.Fatalf("v1 grant error = %v", err)
 	}
-	if _, err := Verify(grant, Fingerprint(publicKey), now.Add(2*time.Minute), nil); err == nil || !strings.Contains(err.Error(), "expired") {
-		t.Fatalf("expected expiry rejection, got %v", err)
+	if _, err := Verify(grant, Fingerprint(daemonPublic), now.Add(2*time.Minute), nil); !errors.Is(err, ErrGrantExpired) {
+		t.Fatalf("expiry error = %v", err)
 	}
 	revocations := NewRevocations()
 	revocations.Revoke("grant-1")
-	if _, err := Verify(grant, Fingerprint(publicKey), now, revocations); err == nil || !strings.Contains(err.Error(), "revoked") {
-		t.Fatalf("expected revocation rejection, got %v", err)
-	}
-	if _, err := Verify("legacy-session-token", Fingerprint(publicKey), now, nil); err == nil {
-		t.Fatal("legacy session token must not be accepted as capability grant")
+	if _, err := Verify(grant, Fingerprint(daemonPublic), now, revocations); !errors.Is(err, ErrGrantRevoked) {
+		t.Fatalf("revocation error = %v", err)
 	}
 }
 
-func TestGrantRequiresExactlyOneExplicitScope(t *testing.T) {
-	_, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+func TestGrantScopeKeepsManageClientAccessIndependent(t *testing.T) {
+	_, daemonPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	client, _ := GenerateClientAccessIdentity("endpoint-1", rand.Reader)
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
 	for _, scope := range []Scope{
 		{},
+		{ManageClientAccess: true},
 		{AllowDaemon: true, TerminalID: "term-1"},
-		{AllowDaemon: true, MachineEventsOnly: true},
-		{TerminalID: "term-1", MachineEventsOnly: true},
+		{TerminalID: "term-1", FileReadContent: true},
+		{TerminalID: string([]byte{0xff})},
 	} {
-		if _, err := Issue(privateKey, Claims{GrantID: "grant-1", IssuerDeviceID: "device-1", Scope: scope, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}); err == nil {
-			t.Fatalf("expected invalid scope %#v rejection", scope)
+		if _, err := Issue(daemonPrivate, Claims{
+			GrantID: "grant-invalid", IssuerDeviceID: "device-1", SubjectKeyFingerprint: client.Fingerprint,
+			Scope: scope, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+		}); !errors.Is(err, ErrGrantScopeInvalid) {
+			t.Fatalf("scope %#v error = %v", scope, err)
 		}
 	}
-	if _, err := Issue(privateKey, Claims{GrantID: "grant-daemon", IssuerDeviceID: "device-1", Scope: Scope{AllowDaemon: true}, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
-		t.Fatalf("explicit daemon scope should be valid: %v", err)
-	}
-}
-
-func TestGrantRejectsFilePermissionsOutsideDaemonScope(t *testing.T) {
-	_, privateKey, _ := ed25519.GenerateKey(rand.Reader)
-	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
-	_, err := Issue(privateKey, Claims{GrantID: "grant-file", IssuerDeviceID: "device-1", Scope: Scope{TerminalID: "term-1", FileReadContent: true}, IssuedAt: now, ExpiresAt: now.Add(time.Hour)})
-	if !errors.Is(err, ErrGrantScopeInvalid) {
-		t.Fatalf("file permission scope error = %v", err)
-	}
-}
-
-func TestVerifyRejectsSignedLegacyClaimsWithoutCurrentRequiredFields(t *testing.T) {
-	publicKey, privateKey, _ := ed25519.GenerateKey(rand.Reader)
-	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
-	legacyClaims := struct {
-		GrantID           string    `json:"grant_id"`
-		DeviceID          string    `json:"device_id"`
-		DeviceFingerprint string    `json:"device_fingerprint"`
-		Scope             Scope     `json:"scope"`
-		IssuedAt          time.Time `json:"issued_at"`
-		ExpiresAt         time.Time `json:"expires_at"`
-	}{
-		GrantID: "legacy-grant", DeviceID: "device-1", DeviceFingerprint: Fingerprint(publicKey),
-		Scope: Scope{AllowDaemon: true}, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
-	}
-	payload, err := json.Marshal(legacyClaims)
-	if err != nil {
-		t.Fatalf("marshal legacy claims: %v", err)
-	}
-	parts := []string{grantPrefix, base64.RawURLEncoding.EncodeToString(payload), base64.RawURLEncoding.EncodeToString(publicKey)}
-	signingInput := strings.Join(parts, ".")
-	legacyGrant := signingInput + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(privateKey, []byte(signingInput)))
-	if _, err := Verify(legacyGrant, Fingerprint(publicKey), now, nil); !errors.Is(err, ErrGrantMalformed) {
-		t.Fatalf("Verify legacy signed grant error = %v, want ErrGrantMalformed", err)
+	for _, scope := range []Scope{
+		{AllowDaemon: true},
+		{AllowDaemon: true, ManageClientAccess: true},
+		{TerminalID: "term-1", ManageClientAccess: true},
+	} {
+		if _, err := Issue(daemonPrivate, Claims{
+			GrantID: "grant-valid", IssuerDeviceID: "device-1", SubjectKeyFingerprint: client.Fingerprint,
+			Scope: scope, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+		}); err != nil {
+			t.Fatalf("scope %#v should be valid: %v", scope, err)
+		}
 	}
 }

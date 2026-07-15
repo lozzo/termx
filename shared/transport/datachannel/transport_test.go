@@ -91,6 +91,86 @@ func TestTransportSendWaitsForBufferedAmountLow(t *testing.T) {
 	}
 }
 
+func TestTransportCloseUnblocksInFlightChannelSend(t *testing.T) {
+	channel := newBlockingSendChannel()
+	transport := New(channel)
+	sendDone := make(chan error, 1)
+	go func() {
+		sendDone <- transport.Send([]byte("blocked-auth-frame"))
+	}()
+	select {
+	case <-channel.sendStarted:
+	case <-time.After(time.Second):
+		t.Fatal("channel Send did not start")
+	}
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- transport.Close()
+	}()
+	select {
+	case err := <-sendDone:
+		if !errors.Is(err, io.EOF) {
+			t.Fatalf("closed in-flight Send error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("transport Close did not unblock in-flight Channel.Send")
+	}
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("transport Close error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("transport Close remained blocked on sendMu")
+	}
+}
+
+type blockingSendChannel struct {
+	mu           sync.Mutex
+	closeHandler func()
+	sendOnce     sync.Once
+	closeOnce    sync.Once
+	sendStarted  chan struct{}
+	closed       chan struct{}
+}
+
+func newBlockingSendChannel() *blockingSendChannel {
+	return &blockingSendChannel{sendStarted: make(chan struct{}), closed: make(chan struct{})}
+}
+
+func (*blockingSendChannel) SetMessageHandler(func([]byte)) {}
+
+func (channel *blockingSendChannel) SetCloseHandler(handler func()) {
+	channel.mu.Lock()
+	channel.closeHandler = handler
+	channel.mu.Unlock()
+}
+
+func (*blockingSendChannel) BufferedAmount() uint64 { return 0 }
+
+func (*blockingSendChannel) SetBufferedAmountLowThreshold(uint64) {}
+
+func (*blockingSendChannel) SetBufferedAmountLowHandler(func()) {}
+
+func (channel *blockingSendChannel) Send([]byte) error {
+	channel.sendOnce.Do(func() { close(channel.sendStarted) })
+	<-channel.closed
+	return io.EOF
+}
+
+func (channel *blockingSendChannel) Close() error {
+	channel.closeOnce.Do(func() {
+		close(channel.closed)
+		channel.mu.Lock()
+		handler := channel.closeHandler
+		channel.mu.Unlock()
+		if handler != nil {
+			handler()
+		}
+	})
+	return nil
+}
+
 type fakeChannel struct {
 	mu                sync.Mutex
 	peer              *fakeChannel

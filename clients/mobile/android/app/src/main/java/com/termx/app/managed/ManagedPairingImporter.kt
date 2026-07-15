@@ -1,100 +1,98 @@
 package com.termx.app.managed
 
-import org.bouncycastle.util.encoders.Base64
-import org.json.JSONObject
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Instant
+import java.util.Base64
 
-/** ManagedPairingImport 是 native secure-store 写入成功后返回给 UI 的非秘密 endpoint metadata。 */
+/** ManagedPairingImport 是 native 验签 canonical bootstrap 并持久化 ClientAccessIdentity 后返回给 UI 的非秘密 metadata。 */
 data class ManagedPairingImport(
     val endpointId: String,
     val label: String,
     val targetDeviceId: String,
     val deviceFingerprint: String,
     val grantRef: String,
+    val ticketId: String,
+    val clientKeyFingerprint: String,
     val expiresAt: Instant,
+    val authorizationRequired: Boolean,
 )
 
 /**
- * ManagedPairingImporter 严格导入 daemon 生成的 v1 pairing bundle。
- * 原始 grant 只写入 AndroidGrantCredentialStore；返回值与 WebView storage 只能包含 grant_ref 和 endpoint identity。
+ * ManagedPairingImporter 严格导入 daemon 生成的 EndpointBootstrapBundleV2。
+ * 当前切片只准备 per-endpoint ClientAccessIdentity；ticket 必须由后续 route connector 兑换，不能把“已扫码”投影为“已授权”。
  */
-class ManagedPairingImporter internal constructor(private val writeGrant: (String, String) -> Unit) {
+class ManagedPairingImporter internal constructor(private val prepareIdentity: (String, String) -> String) {
     /** 使用 Android Keystore credential store 创建生产导入器；lambda 构造只供同 module 纯领域测试。 */
-    constructor(credentials: AndroidGrantCredentialStore) : this(credentials::put)
+    constructor(credentials: AndroidClientAccessCredentialStore) : this({ ref, endpointId ->
+        credentials.loadOrCreateIdentity(ref, endpointId).identity.fingerprint
+    })
 
-    /**
-     * import 验签完整 bundle，并在写 credential 前校验当前 UI 授权目标。
-     * expectedEndpointId 为空表示新增 endpoint；不匹配或验签失败时不得写入任何 secret。
-     */
+    /** import 接受 CLI 二维码使用的 termx bootstrap URI；二进制 protobuf 不经过 JSON 或 WebView object parser。 */
     fun import(
         payload: String,
         now: Instant = Instant.now(),
         expectedEndpointId: String? = null,
+    ): ManagedPairingImport = importBytes(decodePortablePayload(payload), now, expectedEndpointId)
+
+    /** importBytes 供 native scanner 和跨语言 fixture 直接提交 canonical protobuf bytes。 */
+    internal fun importBytes(
+        payload: ByteArray,
+        now: Instant = Instant.now(),
+        expectedEndpointId: String? = null,
     ): ManagedPairingImport {
-        val bundle = try {
-            JSONObject(payload.trim())
-        } catch (_: Exception) {
-            throw ManagedEndpointFailure("protocol", "managed pairing bundle is not valid JSON")
-        }
-        val keys = bundle.keys().asSequence().toSet()
-        if (!setOf("version", "label", "device_id", "device_fingerprint", "capability_grant").containsAll(keys) ||
-            bundle.requiredInteger("version") != 1) {
-            throw ManagedEndpointFailure("protocol", "managed pairing bundle is unsupported")
-        }
-        val deviceId = bundle.requiredString("device_id")
-        val fingerprint = bundle.requiredString("device_fingerprint")
-        val grant = bundle.requiredString("capability_grant")
-        val claims = AndroidRemoteAuth.verifyGrant(grant, fingerprint, now)
-        if (claims.issuerDeviceId != deviceId || claims.issuerDeviceFingerprint != fingerprint || !claims.scope.allowDaemon) {
-            throw ManagedEndpointFailure("scope_invalid", "managed pairing bundle does not grant daemon access")
-        }
-        if (expectedEndpointId != null && expectedEndpointId != deviceId) {
-            throw ManagedEndpointFailure("endpoint_mismatch", "managed pairing bundle belongs to a different endpoint")
-        }
-        val grantRef = grantRef(deviceId, fingerprint)
-        writeGrant(grantRef, grant)
+        val verified = AndroidRemoteAuth.verifyPairingBundle(payload, now)
+        val bundle = verified.bundle
+        val ticket = verified.ticket
+        val deviceId = bundle.identity.deviceId
+        val fingerprint = bundle.identity.deviceFingerprint
+        val endpointId = normalizeEndpointId(expectedEndpointId ?: deviceId)
+        val label = bundle.suggestedLabel.ifBlank { deviceId }
+        val grantRef = credentialRef(deviceId, fingerprint)
+        val clientFingerprint = prepareIdentity(grantRef, endpointId)
         return ManagedPairingImport(
-            endpointId = deviceId,
-            label = bundle.optionalString("label").ifBlank { deviceId },
+            endpointId = endpointId,
+            label = label,
             targetDeviceId = deviceId,
             deviceFingerprint = fingerprint,
             grantRef = grantRef,
-            expiresAt = claims.expiresAt,
+            ticketId = ticket.ticketId,
+            clientKeyFingerprint = clientFingerprint,
+            expiresAt = ticket.expiresAt,
+            authorizationRequired = true,
         )
     }
 
-    private fun grantRef(deviceId: String, fingerprint: String): String {
+    private fun decodePortablePayload(value: String): ByteArray {
+        val normalized = value.trim()
+        val encoded = when {
+            normalized.startsWith(BOOTSTRAP_URI_PREFIX) -> normalized.removePrefix(BOOTSTRAP_URI_PREFIX)
+            BASE64URL.matches(normalized) -> normalized
+            else -> throw ManagedEndpointFailure("pairing_ticket_invalid", "managed pairing payload must be a TermX bootstrap URI")
+        }
+        return try {
+            Base64.getUrlDecoder().decode(encoded)
+        } catch (_: Exception) {
+            throw ManagedEndpointFailure("pairing_ticket_invalid", "managed pairing bootstrap payload is invalid")
+        }
+    }
+
+    private fun credentialRef(deviceId: String, fingerprint: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest("$deviceId\n$fingerprint".toByteArray(StandardCharsets.UTF_8))
-        val encoded = Base64.toBase64String(digest).trimEnd('=').replace('+', '-').replace('/', '_')
-        return "android-managed-$encoded"
+        return "android-access-${Base64.getUrlEncoder().withoutPadding().encodeToString(digest)}"
     }
 
-    private fun JSONObject.requiredString(key: String): String {
-        if (!has(key) || get(key) !is String) throw ManagedEndpointFailure("protocol", "managed pairing bundle $key is invalid")
-        return getString(key).trim().ifBlank {
-            throw ManagedEndpointFailure("protocol", "managed pairing bundle $key is required")
+    private fun normalizeEndpointId(value: String): String {
+        val normalized = value.trim()
+        if (!ENDPOINT_ID.matches(normalized)) {
+            throw ManagedEndpointFailure("protocol", "managed pairing endpoint id is invalid")
         }
+        return normalized
     }
 
-    private fun JSONObject.requiredInteger(key: String): Int {
-        if (!has(key)) throw ManagedEndpointFailure("protocol", "managed pairing bundle $key is invalid")
-        val value = get(key)
-        if (value !is Int && value !is Long) {
-            throw ManagedEndpointFailure("protocol", "managed pairing bundle $key is invalid")
-        }
-        val number = (value as Number).toLong()
-        if (number !in Int.MIN_VALUE..Int.MAX_VALUE) {
-            throw ManagedEndpointFailure("protocol", "managed pairing bundle $key is invalid")
-        }
-        return number.toInt()
-    }
-
-    private fun JSONObject.optionalString(key: String): String {
-        if (!has(key)) return ""
-        val value = get(key)
-        if (value !is String) throw ManagedEndpointFailure("protocol", "managed pairing bundle $key is invalid")
-        return value.trim()
+    private companion object {
+        const val BOOTSTRAP_URI_PREFIX = "termx://bootstrap?payload="
+        val ENDPOINT_ID = Regex("^[A-Za-z0-9._-]{1,128}$")
+        val BASE64URL = Regex("^[A-Za-z0-9_-]+$")
     }
 }

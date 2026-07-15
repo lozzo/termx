@@ -27,15 +27,15 @@ import (
 )
 
 func TestDialRunsE2EHandshakeBeforeTermxProtocolWithoutSendingGrantToCompanion(t *testing.T) {
-	identity, grant, now := dialIdentityFixture(t, "device-1")
+	identity, grant, store, now := dialIdentityFixture(t, "device-1")
 	core := core.NewServer()
 	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
-		Core: core, Identity: identity, Revocations: remoteauth.NewRevocations(), Now: fixedDialNow(now),
+		Core: core, Identity: identity, AccessStore: store, Now: fixedDialNow(now),
 	}}
 	companion := signalingCompanion(answerer, "device-1")
 	connection, err := Dial(context.Background(), DialOptions{
 		Companion: companion, EndpointID: "lab", TargetDeviceID: "device-1",
-		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant,
+		DeviceFingerprint: identity.Fingerprint, Credential: grant,
 		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY,
 		Now:             now,
 	})
@@ -61,14 +61,16 @@ func TestDialRunsE2EHandshakeBeforeTermxProtocolWithoutSendingGrantToCompanion(t
 }
 
 func TestDialCarriesFileDownloadOverAuthenticatedProtocolChannel(t *testing.T) {
-	identity, grant, now := dialIdentityFixtureWithScope(t, "device-file", remoteauth.FullDaemonScope())
+	identity, grant, store, now := dialIdentityFixtureWithScope(t, "device-file", remoteauth.FullDaemonScope())
+	grant.EndpointID = "lab-file"
+	grant.Identity.EndpointID = "lab-file"
 	path := filepath.Join(t.TempDir(), "remote-file.txt")
 	content := []byte("file payload stays inside authenticated data channel")
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{Core: core.NewServer(), Identity: identity, Revocations: remoteauth.NewRevocations(), Now: fixedDialNow(now)}}
-	connection, err := Dial(context.Background(), DialOptions{Companion: signalingCompanion(answerer, "device-file"), EndpointID: "lab-file", TargetDeviceID: "device-file", DeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant, RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, Now: now})
+	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{Core: core.NewServer(), Identity: identity, AccessStore: store, Now: fixedDialNow(now)}}
+	connection, err := Dial(context.Background(), DialOptions{Companion: signalingCompanion(answerer, "device-file"), EndpointID: "lab-file", TargetDeviceID: "device-file", DeviceFingerprint: identity.Fingerprint, Credential: grant, RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,14 +113,14 @@ func TestDialCarriesFileDownloadOverAuthenticatedProtocolChannel(t *testing.T) {
 }
 
 func TestDialReportsStableManagedConnectionPhases(t *testing.T) {
-	identity, grant, now := dialIdentityFixture(t, "device-1")
+	identity, grant, store, now := dialIdentityFixture(t, "device-1")
 	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
-		Core: core.NewServer(), Identity: identity, Revocations: remoteauth.NewRevocations(), Now: fixedDialNow(now),
+		Core: core.NewServer(), Identity: identity, AccessStore: store, Now: fixedDialNow(now),
 	}}
 	phases := make([]cloudcompanion.EndpointPhase, 0, 5)
 	connection, err := Dial(context.Background(), DialOptions{
 		Companion: signalingCompanion(answerer, "device-1"), EndpointID: "lab", TargetDeviceID: "device-1",
-		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant,
+		DeviceFingerprint: identity.Fingerprint, Credential: grant,
 		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, Now: now,
 		Phase: func(phase cloudcompanion.EndpointPhase) { phases = append(phases, phase) },
 	})
@@ -137,11 +139,11 @@ func TestDialReportsStableManagedConnectionPhases(t *testing.T) {
 }
 
 func TestDialRejectsGrantDeviceMismatchBeforeCompanionRequest(t *testing.T) {
-	identity, grant, now := dialIdentityFixture(t, "device-1")
+	identity, grant, _, now := dialIdentityFixture(t, "device-1")
 	companion := &cloudcompanion.FakeClient{}
 	if _, err := Dial(context.Background(), DialOptions{
 		Companion: companion, EndpointID: "lab", TargetDeviceID: "device-2",
-		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant,
+		DeviceFingerprint: identity.Fingerprint, Credential: grant,
 		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY,
 		Now:             now,
 	}); err == nil {
@@ -152,17 +154,32 @@ func TestDialRejectsGrantDeviceMismatchBeforeCompanionRequest(t *testing.T) {
 	}
 }
 
+func TestDialRejectsCredentialFromAnotherEndpointBeforeCompanionRequest(t *testing.T) {
+	identity, grant, _, now := dialIdentityFixture(t, "device-1")
+	companion := &cloudcompanion.FakeClient{}
+	if _, err := Dial(context.Background(), DialOptions{
+		Companion: companion, EndpointID: "other-endpoint", TargetDeviceID: "device-1",
+		DeviceFingerprint: identity.Fingerprint, Credential: grant,
+		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, Now: now,
+	}); err == nil || !strings.Contains(err.Error(), "belongs to endpoint") {
+		t.Fatalf("cross-endpoint credential error = %v", err)
+	}
+	if requests := companion.Requests(); len(requests.ResolveEndpoint) != 0 {
+		t.Fatalf("Companion saw cross-endpoint credential request: %+v", requests)
+	}
+}
+
 func TestDialRejectsCompanionRoutedImpostorByDeviceHelloPin(t *testing.T) {
-	trustedIdentity, grant, now := dialIdentityFixture(t, "device-1")
-	impostorIdentity, _, _ := dialIdentityFixture(t, "device-impostor")
+	trustedIdentity, grant, _, now := dialIdentityFixture(t, "device-1")
+	impostorIdentity, _, impostorStore, _ := dialIdentityFixture(t, "device-impostor")
 	core := &recordingScopedCore{}
 	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
-		Core: core, Identity: impostorIdentity, Revocations: remoteauth.NewRevocations(), Now: fixedDialNow(now),
+		Core: core, Identity: impostorIdentity, AccessStore: impostorStore, Now: fixedDialNow(now),
 	}}
 	companion := signalingCompanion(answerer, "device-1")
 	_, err := Dial(context.Background(), DialOptions{
 		Companion: companion, EndpointID: "lab", TargetDeviceID: "device-1",
-		DeviceFingerprint: trustedIdentity.Fingerprint, CapabilityGrant: grant,
+		DeviceFingerprint: trustedIdentity.Fingerprint, Credential: grant,
 		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY,
 		Now:             now,
 	})
@@ -175,13 +192,13 @@ func TestDialRejectsCompanionRoutedImpostorByDeviceHelloPin(t *testing.T) {
 }
 
 func TestDialRejectsNonCanonicalManagedSessionCorrelationID(t *testing.T) {
-	identity, grant, now := dialIdentityFixture(t, "device-1")
+	identity, grant, _, now := dialIdentityFixture(t, "device-1")
 	companion := &cloudcompanion.FakeClient{ResolveEndpointFunc: func(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
 		return &cloudpb.ResolvedEndpoint{EndpointId: "lab", TargetDeviceId: "device-1", ManagedSessionId: " managed-1 "}, nil
 	}}
 	_, err := Dial(context.Background(), DialOptions{
 		Companion: companion, EndpointID: "lab", TargetDeviceID: "device-1",
-		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant,
+		DeviceFingerprint: identity.Fingerprint, Credential: grant,
 		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, Now: now,
 	})
 	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {
@@ -193,14 +210,14 @@ func TestDialRejectsNonCanonicalManagedSessionCorrelationID(t *testing.T) {
 }
 
 func TestDialSingleTerminalGrantCannotEscapeCoreScope(t *testing.T) {
-	identity, grant, now := dialIdentityFixtureWithScope(t, "device-1", remoteauth.Scope{TerminalID: "allowed"})
+	identity, grant, store, now := dialIdentityFixtureWithScope(t, "device-1", remoteauth.Scope{TerminalID: "allowed"})
 	core := core.NewServer()
 	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
-		Core: core, Identity: identity, Revocations: remoteauth.NewRevocations(), Now: fixedDialNow(now),
+		Core: core, Identity: identity, AccessStore: store, Now: fixedDialNow(now),
 	}}
 	connection, err := Dial(context.Background(), DialOptions{
 		Companion: signalingCompanion(answerer, "device-1"), EndpointID: "lab", TargetDeviceID: "device-1",
-		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant,
+		DeviceFingerprint: identity.Fingerprint, Credential: grant,
 		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY,
 		Now:             now,
 	})
@@ -236,14 +253,14 @@ func TestPeerConfigurationEnforcesRelayOnlyPolicy(t *testing.T) {
 }
 
 func TestDialSessionReportsQualityWithoutChangingRoute(t *testing.T) {
-	identity, grant, now := dialIdentityFixture(t, "device-1")
+	identity, grant, store, now := dialIdentityFixture(t, "device-1")
 	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
-		Core: core.NewServer(), Identity: identity, Revocations: remoteauth.NewRevocations(), Now: fixedDialNow(now),
+		Core: core.NewServer(), Identity: identity, AccessStore: store, Now: fixedDialNow(now),
 	}}
 	companion := signalingCompanion(answerer, "device-1")
 	session, err := DialSession(context.Background(), DialOptions{
 		Companion: companion, EndpointID: "lab", TargetDeviceID: "device-1",
-		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant,
+		DeviceFingerprint: identity.Fingerprint, Credential: grant,
 		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY,
 		QualityObservation: QualityObservationOptions{
 			Enabled: true, SampleInterval: 5 * time.Millisecond, Window: 20 * time.Millisecond, NetworkClass: "test-network",
@@ -320,11 +337,11 @@ func signalingCompanion(answerer remotev2webrtc.Answerer, targetDeviceID string)
 	}
 }
 
-func dialIdentityFixture(t *testing.T, deviceID string) (remoteauth.Identity, string, time.Time) {
+func dialIdentityFixture(t *testing.T, deviceID string) (remoteauth.Identity, remoteauth.ClientAccessCredential, *remoteauth.AccessStore, time.Time) {
 	return dialIdentityFixtureWithScope(t, deviceID, remoteauth.Scope{AllowDaemon: true})
 }
 
-func dialIdentityFixtureWithScope(t *testing.T, deviceID string, scope remoteauth.Scope) (remoteauth.Identity, string, time.Time) {
+func dialIdentityFixtureWithScope(t *testing.T, deviceID string, scope remoteauth.Scope) (remoteauth.Identity, remoteauth.ClientAccessCredential, *remoteauth.AccessStore, time.Time) {
 	t.Helper()
 	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -335,15 +352,31 @@ func dialIdentityFixtureWithScope(t *testing.T, deviceID string, scope remoteaut
 		t.Fatalf("NewIdentity: %v", err)
 	}
 	now := time.Now().UTC()
-	grant, err := remoteauth.Issue(privateKey, remoteauth.Claims{
-		GrantID: "grant-1", IssuerDeviceID: deviceID, Scope: scope,
-		IssuedAt: now.Add(-time.Minute), NotBefore: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
-		RevocationID: "grant-1", Nonce: "dial-test-nonce",
-	})
+	clientIdentity, err := remoteauth.GenerateClientAccessIdentity("lab", rand.Reader)
 	if err != nil {
-		t.Fatalf("Issue: %v", err)
+		t.Fatalf("GenerateClientAccessIdentity: %v", err)
 	}
-	return identity, grant, now
+	store, err := remoteauth.LoadAccessStore(t.TempDir(), identity, remoteauth.AccessStoreOptions{Now: fixedDialNow(now)})
+	if err != nil {
+		t.Fatalf("LoadAccessStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	bundle, _, err := store.IssuePairingBundle(remoteauth.PairingIssueOptions{Scope: scope, TicketTTL: time.Hour, GrantLifetime: time.Hour, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := remoteauth.EncodePairingBundle(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.RedeemPairingBundle(payload, clientIdentity.PublicKey, "dial-fixture", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identity, remoteauth.ClientAccessCredential{
+		Version: 1, EndpointID: clientIdentity.EndpointID, Identity: clientIdentity,
+		CapabilityGrant: result.Grant, UpdatedAt: now,
+	}, store, now
 }
 
 func fixedDialNow(now time.Time) func() time.Time {

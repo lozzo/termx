@@ -87,15 +87,26 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 		applyDaemonRuntimeTuning(logger)
 		historyBackpressure := daemonHistoryBackpressureConfig(logger)
 		historyDir := resolveV3HistoryStorageDir()
-		opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryStorageDir(historyDir), corev2.WithHistoryBackpressureConfig(historyBackpressure)}
+		clientAccess, err := loadV3ClientAccessRuntime(socketPath)
+		if err != nil {
+			return fmt.Errorf("load daemon identity and client access store: %w", err)
+		}
+		defer clientAccess.Close()
+		accessService := v3ClientAccessService{identity: clientAccess.Identity, store: clientAccess.Store}
+		opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryStorageDir(historyDir), corev2.WithHistoryBackpressureConfig(historyBackpressure), corev2.WithClientAccessService(accessService)}
 		historyEnabled := !envBool("TERMX_HISTORY_DISABLE")
 		if !historyEnabled {
 			historyDir = ""
-			opts = []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryDisabled(), corev2.WithHistoryBackpressureConfig(historyBackpressure)}
+			opts = []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath), corev2.WithHistoryDisabled(), corev2.WithHistoryBackpressureConfig(historyBackpressure), corev2.WithClientAccessService(accessService)}
 		}
 		srv := newCoreV2Server(opts...)
 		ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 		defer stop()
+		closePairing, err := startV3PairingListener(ctx, clientAccess, logger)
+		if err != nil {
+			return err
+		}
+		defer closePairing()
 		stopPerfTrace, perfTracePath, perfTraceEnabled := perftrace.EnableFromEnvWithProcess(ctx, "core-v2-daemon")
 		defer stopPerfTrace()
 		if perfTraceEnabled {
@@ -106,7 +117,7 @@ func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra
 			managedCore, ok := srv.(v3ManagedDaemonCore)
 			if !ok {
 				logger.Warn("managed cloud presence unavailable", "error", "core-v2 scoped transport is not configured")
-			} else if err := startV3ManagedDaemon(ctx, managedCore, logger); err != nil {
+			} else if err := startV3ManagedDaemon(ctx, managedCore, clientAccess, logger); err != nil {
 				logger.Warn("managed cloud presence unavailable", "error", err)
 			}
 		}

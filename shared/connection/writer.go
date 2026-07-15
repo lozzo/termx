@@ -1,6 +1,7 @@
 package connection
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lozzow/termx/shared/filelock"
 	"gopkg.in/yaml.v3"
 )
 
@@ -68,15 +70,99 @@ func Encode(registry Registry) ([]byte, error) {
 	return payload, nil
 }
 
-// Save 原子写入 Endpoint registry；空 path 使用 DefaultPath。
+// Save 在跨进程事务锁内原子写入 Endpoint registry；空 path 使用 DefaultPath。
 // 文件固定为 0600，rename 前失败保留旧文件；rename 后同步父目录以缩小掉电丢失窗口。
 // rename 后的同步错误由 RegistryWritePublished 标记，调用方不能把它误当成未提交并回滚 credential。
-// credential store 更新必须由调用方在独立安全事务中处理。
+// 需要 read-modify-write 的调用方必须使用 Update，不能在独立 Load/Save 之间假设 registry 未被其他进程修改。
 func Save(path string, registry Registry) error {
+	return SaveContext(context.Background(), path, registry)
+}
+
+// SaveContext 等价于 Save，但等待 registry transaction lock 时响应调用方取消。
+// CLI 等带 deadline 的入口必须使用本方法或 UpdateContext，避免 owner 进程卡住时突破根命令超时。
+func SaveContext(ctx context.Context, path string, registry Registry) error {
+	path = resolvedRegistryPath(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create endpoint registry directory: %w", err)
+	}
+	lock, err := filelock.AcquireContext(ctx, path+".lock", false)
+	if err != nil {
+		return fmt.Errorf("lock endpoint registry: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return errors.Join(err, lock.Close())
+	}
+	writeErr := saveRegistryFile(path, registry)
+	closeErr := lock.Close()
+	if writeErr == nil && closeErr != nil {
+		return &registryWriteError{err: fmt.Errorf("release endpoint registry lock: %w", closeErr), published: true}
+	}
+	return errors.Join(writeErr, closeErr)
+}
+
+// Update 在同一个跨进程锁内执行 Endpoint registry 的 load、领域 mutation 与原子 save。
+// createIfMissing 只允许显式创建入口把缺失的显式 path 解释为空 v2 registry；其他错误、identity conflict 和 mutation 失败均不写文件。
+// callback 不得泄漏 secret 或发起嵌套 registry Update；它返回的 registry 是唯一待提交客户端配置真值。
+func Update(path string, createIfMissing bool, mutate func(Registry) (Registry, error)) (Registry, error) {
+	return UpdateContext(context.Background(), path, createIfMissing, mutate)
+}
+
+// UpdateContext 等价于 Update，但 registry lock 等待受 ctx 控制。
+// callback 仍在同一锁内执行；它发起的 PairingExchange 等阻塞操作也必须复用该 ctx，确保取消后及时释放 transaction。
+func UpdateContext(ctx context.Context, path string, createIfMissing bool, mutate func(Registry) (Registry, error)) (Registry, error) {
+	if mutate == nil {
+		return Registry{}, fmt.Errorf("endpoint registry update requires mutation")
+	}
+	explicit := strings.TrimSpace(path) != ""
+	path = resolvedRegistryPath(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return Registry{}, fmt.Errorf("create endpoint registry directory: %w", err)
+	}
+	lock, err := filelock.AcquireContext(ctx, path+".lock", false)
+	if err != nil {
+		return Registry{}, fmt.Errorf("lock endpoint registry: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return Registry{}, errors.Join(err, lock.Close())
+	}
+	registry, loadErr := Load(path)
+	if loadErr != nil && !explicit && errors.Is(loadErr, os.ErrNotExist) {
+		registry = DefaultRegistry()
+		loadErr = nil
+	}
+	if loadErr != nil && explicit && createIfMissing && errors.Is(loadErr, os.ErrNotExist) {
+		registry = Registry{Version: RegistryVersion, Endpoints: map[EndpointID]Endpoint{}}
+		loadErr = nil
+	}
+	if loadErr != nil {
+		return Registry{}, errors.Join(loadErr, lock.Close())
+	}
+	updated, updateErr := mutate(registry)
+	if updateErr != nil {
+		return Registry{}, errors.Join(updateErr, lock.Close())
+	}
+	if err := ctx.Err(); err != nil {
+		return Registry{}, errors.Join(err, lock.Close())
+	}
+	writeErr := saveRegistryFile(path, updated)
+	closeErr := lock.Close()
+	if writeErr == nil && closeErr != nil {
+		writeErr = &registryWriteError{err: fmt.Errorf("release endpoint registry lock: %w", closeErr), published: true}
+	} else if closeErr != nil {
+		writeErr = errors.Join(writeErr, closeErr)
+	}
+	return updated, writeErr
+}
+
+func resolvedRegistryPath(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		path = DefaultPath()
+		return DefaultPath()
 	}
+	return path
+}
+
+func saveRegistryFile(path string, registry Registry) error {
 	payload, err := Encode(registry)
 	if err != nil {
 		return err

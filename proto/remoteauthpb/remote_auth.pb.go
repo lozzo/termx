@@ -36,21 +36,29 @@ const (
 	AuthErrorCode_AUTH_ERROR_CODE_SCOPE_INVALID            AuthErrorCode = 7
 	AuthErrorCode_AUTH_ERROR_CODE_REPLAYED                 AuthErrorCode = 8
 	AuthErrorCode_AUTH_ERROR_CODE_INTERNAL                 AuthErrorCode = 9
+	AuthErrorCode_AUTH_ERROR_CODE_SUBJECT_KEY_MISMATCH     AuthErrorCode = 10
+	AuthErrorCode_AUTH_ERROR_CODE_PAIRING_TICKET_INVALID   AuthErrorCode = 11
+	AuthErrorCode_AUTH_ERROR_CODE_PAIRING_TICKET_EXPIRED   AuthErrorCode = 12
+	AuthErrorCode_AUTH_ERROR_CODE_PAIRING_TICKET_CONSUMED  AuthErrorCode = 13
 )
 
 // Enum value maps for AuthErrorCode.
 var (
 	AuthErrorCode_name = map[int32]string{
-		0: "AUTH_ERROR_CODE_UNSPECIFIED",
-		1: "AUTH_ERROR_CODE_PROTOCOL",
-		2: "AUTH_ERROR_CODE_DEVICE_IDENTITY_MISMATCH",
-		3: "AUTH_ERROR_CODE_CAPABILITY_INVALID",
-		4: "AUTH_ERROR_CODE_CAPABILITY_EXPIRED",
-		5: "AUTH_ERROR_CODE_CAPABILITY_REVOKED",
-		6: "AUTH_ERROR_CODE_CAPABILITY_PROOF_INVALID",
-		7: "AUTH_ERROR_CODE_SCOPE_INVALID",
-		8: "AUTH_ERROR_CODE_REPLAYED",
-		9: "AUTH_ERROR_CODE_INTERNAL",
+		0:  "AUTH_ERROR_CODE_UNSPECIFIED",
+		1:  "AUTH_ERROR_CODE_PROTOCOL",
+		2:  "AUTH_ERROR_CODE_DEVICE_IDENTITY_MISMATCH",
+		3:  "AUTH_ERROR_CODE_CAPABILITY_INVALID",
+		4:  "AUTH_ERROR_CODE_CAPABILITY_EXPIRED",
+		5:  "AUTH_ERROR_CODE_CAPABILITY_REVOKED",
+		6:  "AUTH_ERROR_CODE_CAPABILITY_PROOF_INVALID",
+		7:  "AUTH_ERROR_CODE_SCOPE_INVALID",
+		8:  "AUTH_ERROR_CODE_REPLAYED",
+		9:  "AUTH_ERROR_CODE_INTERNAL",
+		10: "AUTH_ERROR_CODE_SUBJECT_KEY_MISMATCH",
+		11: "AUTH_ERROR_CODE_PAIRING_TICKET_INVALID",
+		12: "AUTH_ERROR_CODE_PAIRING_TICKET_EXPIRED",
+		13: "AUTH_ERROR_CODE_PAIRING_TICKET_CONSUMED",
 	}
 	AuthErrorCode_value = map[string]int32{
 		"AUTH_ERROR_CODE_UNSPECIFIED":              0,
@@ -63,6 +71,10 @@ var (
 		"AUTH_ERROR_CODE_SCOPE_INVALID":            7,
 		"AUTH_ERROR_CODE_REPLAYED":                 8,
 		"AUTH_ERROR_CODE_INTERNAL":                 9,
+		"AUTH_ERROR_CODE_SUBJECT_KEY_MISMATCH":     10,
+		"AUTH_ERROR_CODE_PAIRING_TICKET_INVALID":   11,
+		"AUTH_ERROR_CODE_PAIRING_TICKET_EXPIRED":   12,
+		"AUTH_ERROR_CODE_PAIRING_TICKET_CONSUMED":  13,
 	}
 )
 
@@ -146,6 +158,110 @@ func (ScopeKind) EnumDescriptor() ([]byte, []int) {
 	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{1}
 }
 
+// ChannelBindingKind 区分实际 transport 提供的安全 channel 证明来源。
+// direct TLS 与 managed WebRTC 共用同一 canonical 结构，但不能互相替换 kind 后重放 proof。
+type ChannelBindingKind int32
+
+const (
+	ChannelBindingKind_CHANNEL_BINDING_KIND_UNSPECIFIED ChannelBindingKind = 0
+	ChannelBindingKind_CHANNEL_BINDING_KIND_DIRECT_TLS  ChannelBindingKind = 1
+	ChannelBindingKind_CHANNEL_BINDING_KIND_DTLS        ChannelBindingKind = 2
+	ChannelBindingKind_CHANNEL_BINDING_KIND_LOCAL_UNIX  ChannelBindingKind = 3
+)
+
+// Enum value maps for ChannelBindingKind.
+var (
+	ChannelBindingKind_name = map[int32]string{
+		0: "CHANNEL_BINDING_KIND_UNSPECIFIED",
+		1: "CHANNEL_BINDING_KIND_DIRECT_TLS",
+		2: "CHANNEL_BINDING_KIND_DTLS",
+		3: "CHANNEL_BINDING_KIND_LOCAL_UNIX",
+	}
+	ChannelBindingKind_value = map[string]int32{
+		"CHANNEL_BINDING_KIND_UNSPECIFIED": 0,
+		"CHANNEL_BINDING_KIND_DIRECT_TLS":  1,
+		"CHANNEL_BINDING_KIND_DTLS":        2,
+		"CHANNEL_BINDING_KIND_LOCAL_UNIX":  3,
+	}
+)
+
+func (x ChannelBindingKind) Enum() *ChannelBindingKind {
+	p := new(ChannelBindingKind)
+	*p = x
+	return p
+}
+
+func (x ChannelBindingKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ChannelBindingKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_remoteauthpb_remote_auth_proto_enumTypes[2].Descriptor()
+}
+
+func (ChannelBindingKind) Type() protoreflect.EnumType {
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[2]
+}
+
+func (x ChannelBindingKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ChannelBindingKind.Descriptor instead.
+func (ChannelBindingKind) EnumDescriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{2}
+}
+
+// AuthOpenKind 为客户端签名输入提供明确 domain separation。
+type AuthOpenKind int32
+
+const (
+	AuthOpenKind_AUTH_OPEN_KIND_UNSPECIFIED AuthOpenKind = 0
+	AuthOpenKind_AUTH_OPEN_KIND_CAPABILITY  AuthOpenKind = 1
+	AuthOpenKind_AUTH_OPEN_KIND_PAIRING     AuthOpenKind = 2
+)
+
+// Enum value maps for AuthOpenKind.
+var (
+	AuthOpenKind_name = map[int32]string{
+		0: "AUTH_OPEN_KIND_UNSPECIFIED",
+		1: "AUTH_OPEN_KIND_CAPABILITY",
+		2: "AUTH_OPEN_KIND_PAIRING",
+	}
+	AuthOpenKind_value = map[string]int32{
+		"AUTH_OPEN_KIND_UNSPECIFIED": 0,
+		"AUTH_OPEN_KIND_CAPABILITY":  1,
+		"AUTH_OPEN_KIND_PAIRING":     2,
+	}
+)
+
+func (x AuthOpenKind) Enum() *AuthOpenKind {
+	p := new(AuthOpenKind)
+	*p = x
+	return p
+}
+
+func (x AuthOpenKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AuthOpenKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_remoteauthpb_remote_auth_proto_enumTypes[3].Descriptor()
+}
+
+func (AuthOpenKind) Type() protoreflect.EnumType {
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[3]
+}
+
+func (x AuthOpenKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AuthOpenKind.Descriptor instead.
+func (AuthOpenKind) EnumDescriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{3}
+}
+
 // EndpointRouteKind 是跨 Go/Kotlin/TypeScript wire contract 的 route 分类。
 // Endpoint/Route 的领域 owner 仍是客户端 connection runtime；该枚举不能被解释为一次运行时 transport 或 managed path。
 type EndpointRouteKind int32
@@ -187,11 +303,11 @@ func (x EndpointRouteKind) String() string {
 }
 
 func (EndpointRouteKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_remoteauthpb_remote_auth_proto_enumTypes[2].Descriptor()
+	return file_remoteauthpb_remote_auth_proto_enumTypes[4].Descriptor()
 }
 
 func (EndpointRouteKind) Type() protoreflect.EnumType {
-	return &file_remoteauthpb_remote_auth_proto_enumTypes[2]
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[4]
 }
 
 func (x EndpointRouteKind) Number() protoreflect.EnumNumber {
@@ -200,7 +316,7 @@ func (x EndpointRouteKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EndpointRouteKind.Descriptor instead.
 func (EndpointRouteKind) EnumDescriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{2}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{4}
 }
 
 // EndpointConnectMode 描述客户端何时可以自动建立 Endpoint session。
@@ -240,11 +356,11 @@ func (x EndpointConnectMode) String() string {
 }
 
 func (EndpointConnectMode) Descriptor() protoreflect.EnumDescriptor {
-	return file_remoteauthpb_remote_auth_proto_enumTypes[3].Descriptor()
+	return file_remoteauthpb_remote_auth_proto_enumTypes[5].Descriptor()
 }
 
 func (EndpointConnectMode) Type() protoreflect.EnumType {
-	return &file_remoteauthpb_remote_auth_proto_enumTypes[3]
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[5]
 }
 
 func (x EndpointConnectMode) Number() protoreflect.EnumNumber {
@@ -253,7 +369,7 @@ func (x EndpointConnectMode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EndpointConnectMode.Descriptor instead.
 func (EndpointConnectMode) EnumDescriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{3}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{5}
 }
 
 // EndpointRelayMode 只描述 managed-webrtc route 内部允许的 direct/single Relay 策略。
@@ -296,11 +412,11 @@ func (x EndpointRelayMode) String() string {
 }
 
 func (EndpointRelayMode) Descriptor() protoreflect.EnumDescriptor {
-	return file_remoteauthpb_remote_auth_proto_enumTypes[4].Descriptor()
+	return file_remoteauthpb_remote_auth_proto_enumTypes[6].Descriptor()
 }
 
 func (EndpointRelayMode) Type() protoreflect.EnumType {
-	return &file_remoteauthpb_remote_auth_proto_enumTypes[4]
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[6]
 }
 
 func (x EndpointRelayMode) Number() protoreflect.EnumNumber {
@@ -309,7 +425,7 @@ func (x EndpointRelayMode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EndpointRelayMode.Descriptor instead.
 func (EndpointRelayMode) EnumDescriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{4}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{6}
 }
 
 // EndpointObservedPath 只描述 managed-webrtc transport 内部实际经过的网络路径。
@@ -347,11 +463,11 @@ func (x EndpointObservedPath) String() string {
 }
 
 func (EndpointObservedPath) Descriptor() protoreflect.EnumDescriptor {
-	return file_remoteauthpb_remote_auth_proto_enumTypes[5].Descriptor()
+	return file_remoteauthpb_remote_auth_proto_enumTypes[7].Descriptor()
 }
 
 func (EndpointObservedPath) Type() protoreflect.EnumType {
-	return &file_remoteauthpb_remote_auth_proto_enumTypes[5]
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[7]
 }
 
 func (x EndpointObservedPath) Number() protoreflect.EnumNumber {
@@ -360,7 +476,7 @@ func (x EndpointObservedPath) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EndpointObservedPath.Descriptor instead.
 func (EndpointObservedPath) EnumDescriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{5}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{7}
 }
 
 // EndpointSessionLifecycle 是客户端当前唯一活动 protocol session 的生命周期投影。
@@ -400,11 +516,11 @@ func (x EndpointSessionLifecycle) String() string {
 }
 
 func (EndpointSessionLifecycle) Descriptor() protoreflect.EnumDescriptor {
-	return file_remoteauthpb_remote_auth_proto_enumTypes[6].Descriptor()
+	return file_remoteauthpb_remote_auth_proto_enumTypes[8].Descriptor()
 }
 
 func (EndpointSessionLifecycle) Type() protoreflect.EnumType {
-	return &file_remoteauthpb_remote_auth_proto_enumTypes[6]
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[8]
 }
 
 func (x EndpointSessionLifecycle) Number() protoreflect.EnumNumber {
@@ -413,7 +529,7 @@ func (x EndpointSessionLifecycle) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EndpointSessionLifecycle.Descriptor instead.
 func (EndpointSessionLifecycle) EnumDescriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{6}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{8}
 }
 
 // EndpointSource 记录 route 或用户策略的来源，供确定性 assembler 保留更高权重的已确认信息。
@@ -465,11 +581,11 @@ func (x EndpointSource) String() string {
 }
 
 func (EndpointSource) Descriptor() protoreflect.EnumDescriptor {
-	return file_remoteauthpb_remote_auth_proto_enumTypes[7].Descriptor()
+	return file_remoteauthpb_remote_auth_proto_enumTypes[9].Descriptor()
 }
 
 func (EndpointSource) Type() protoreflect.EnumType {
-	return &file_remoteauthpb_remote_auth_proto_enumTypes[7]
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[9]
 }
 
 func (x EndpointSource) Number() protoreflect.EnumNumber {
@@ -478,7 +594,7 @@ func (x EndpointSource) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EndpointSource.Descriptor instead.
 func (EndpointSource) EnumDescriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{7}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{9}
 }
 
 // EndpointCredentialKind 只描述目标平台 secure store 中凭据的类别；wire contract 永远不携带凭据 body。
@@ -524,11 +640,11 @@ func (x EndpointCredentialKind) String() string {
 }
 
 func (EndpointCredentialKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_remoteauthpb_remote_auth_proto_enumTypes[8].Descriptor()
+	return file_remoteauthpb_remote_auth_proto_enumTypes[10].Descriptor()
 }
 
 func (EndpointCredentialKind) Type() protoreflect.EnumType {
-	return &file_remoteauthpb_remote_auth_proto_enumTypes[8]
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[10]
 }
 
 func (x EndpointCredentialKind) Number() protoreflect.EnumNumber {
@@ -537,7 +653,7 @@ func (x EndpointCredentialKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EndpointCredentialKind.Descriptor instead.
 func (EndpointCredentialKind) EnumDescriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{8}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{10}
 }
 
 // EndpointContractErrorCode 是三语言 strict parser 与 assembler 必须一致返回的稳定错误分类。
@@ -595,11 +711,11 @@ func (x EndpointContractErrorCode) String() string {
 }
 
 func (EndpointContractErrorCode) Descriptor() protoreflect.EnumDescriptor {
-	return file_remoteauthpb_remote_auth_proto_enumTypes[9].Descriptor()
+	return file_remoteauthpb_remote_auth_proto_enumTypes[11].Descriptor()
 }
 
 func (EndpointContractErrorCode) Type() protoreflect.EnumType {
-	return &file_remoteauthpb_remote_auth_proto_enumTypes[9]
+	return &file_remoteauthpb_remote_auth_proto_enumTypes[11]
 }
 
 func (x EndpointContractErrorCode) Number() protoreflect.EnumNumber {
@@ -608,7 +724,61 @@ func (x EndpointContractErrorCode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EndpointContractErrorCode.Descriptor instead.
 func (EndpointContractErrorCode) EnumDescriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{9}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{11}
+}
+
+// ChannelBinding 是 transport adapter 从实际 TLS/DTLS/local Unix channel 取得的 SHA-256 binding。
+// binding_hash 固定为 32 bytes；SDP、route 地址或 Cloud signaling 字段不能替代该值。
+type ChannelBinding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          ChannelBindingKind     `protobuf:"varint,1,opt,name=kind,proto3,enum=termx.remote.auth.v1.ChannelBindingKind" json:"kind,omitempty"`
+	BindingHash   []byte                 `protobuf:"bytes,2,opt,name=binding_hash,json=bindingHash,proto3" json:"binding_hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChannelBinding) Reset() {
+	*x = ChannelBinding{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChannelBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChannelBinding) ProtoMessage() {}
+
+func (x *ChannelBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChannelBinding.ProtoReflect.Descriptor instead.
+func (*ChannelBinding) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ChannelBinding) GetKind() ChannelBindingKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ChannelBindingKind_CHANNEL_BINDING_KIND_UNSPECIFIED
+}
+
+func (x *ChannelBinding) GetBindingHash() []byte {
+	if x != nil {
+		return x.BindingHash
+	}
+	return nil
 }
 
 // AuthEnvelope 是 DataChannel protocol 切换前唯一允许出现的 versioned frame。
@@ -624,6 +794,8 @@ type AuthEnvelope struct {
 	//	*AuthEnvelope_CapabilityOpen
 	//	*AuthEnvelope_CapabilityAccepted
 	//	*AuthEnvelope_CapabilityRejected
+	//	*AuthEnvelope_PairingOpen
+	//	*AuthEnvelope_PairingAccepted
 	Payload       isAuthEnvelope_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -631,7 +803,7 @@ type AuthEnvelope struct {
 
 func (x *AuthEnvelope) Reset() {
 	*x = AuthEnvelope{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[0]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -643,7 +815,7 @@ func (x *AuthEnvelope) String() string {
 func (*AuthEnvelope) ProtoMessage() {}
 
 func (x *AuthEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[0]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -656,7 +828,7 @@ func (x *AuthEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthEnvelope.ProtoReflect.Descriptor instead.
 func (*AuthEnvelope) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{0}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *AuthEnvelope) GetProtocol() string {
@@ -723,6 +895,24 @@ func (x *AuthEnvelope) GetCapabilityRejected() *CapabilityRejected {
 	return nil
 }
 
+func (x *AuthEnvelope) GetPairingOpen() *PairingOpen {
+	if x != nil {
+		if x, ok := x.Payload.(*AuthEnvelope_PairingOpen); ok {
+			return x.PairingOpen
+		}
+	}
+	return nil
+}
+
+func (x *AuthEnvelope) GetPairingAccepted() *PairingAccepted {
+	if x != nil {
+		if x, ok := x.Payload.(*AuthEnvelope_PairingAccepted); ok {
+			return x.PairingAccepted
+		}
+	}
+	return nil
+}
+
 type isAuthEnvelope_Payload interface {
 	isAuthEnvelope_Payload()
 }
@@ -743,6 +933,14 @@ type AuthEnvelope_CapabilityRejected struct {
 	CapabilityRejected *CapabilityRejected `protobuf:"bytes,7,opt,name=capability_rejected,json=capabilityRejected,proto3,oneof"`
 }
 
+type AuthEnvelope_PairingOpen struct {
+	PairingOpen *PairingOpen `protobuf:"bytes,8,opt,name=pairing_open,json=pairingOpen,proto3,oneof"`
+}
+
+type AuthEnvelope_PairingAccepted struct {
+	PairingAccepted *PairingAccepted `protobuf:"bytes,9,opt,name=pairing_accepted,json=pairingAccepted,proto3,oneof"`
+}
+
 func (*AuthEnvelope_DeviceHello) isAuthEnvelope_Payload() {}
 
 func (*AuthEnvelope_CapabilityOpen) isAuthEnvelope_Payload() {}
@@ -751,23 +949,27 @@ func (*AuthEnvelope_CapabilityAccepted) isAuthEnvelope_Payload() {}
 
 func (*AuthEnvelope_CapabilityRejected) isAuthEnvelope_Payload() {}
 
-// DeviceHello 是 daemon 对长期 DeviceIdentity 和本次 DTLS channel 的联合证明。
+func (*AuthEnvelope_PairingOpen) isAuthEnvelope_Payload() {}
+
+func (*AuthEnvelope_PairingAccepted) isAuthEnvelope_Payload() {}
+
+// DeviceHello 是 daemon 对长期 DeviceIdentity 和本次实际 transport channel 的联合证明。
 type DeviceHello struct {
-	state                            protoimpl.MessageState `protogen:"open.v1"`
-	DeviceId                         string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	DevicePublicKey                  []byte                 `protobuf:"bytes,2,opt,name=device_public_key,json=devicePublicKey,proto3" json:"device_public_key,omitempty"`
-	DeviceFingerprint                string                 `protobuf:"bytes,3,opt,name=device_fingerprint,json=deviceFingerprint,proto3" json:"device_fingerprint,omitempty"`
-	ServerNonce                      []byte                 `protobuf:"bytes,4,opt,name=server_nonce,json=serverNonce,proto3" json:"server_nonce,omitempty"`
-	DaemonDtlsCertificateFingerprint string                 `protobuf:"bytes,5,opt,name=daemon_dtls_certificate_fingerprint,json=daemonDtlsCertificateFingerprint,proto3" json:"daemon_dtls_certificate_fingerprint,omitempty"`
-	IssuedAtUnixNano                 int64                  `protobuf:"varint,6,opt,name=issued_at_unix_nano,json=issuedAtUnixNano,proto3" json:"issued_at_unix_nano,omitempty"`
-	Signature                        []byte                 `protobuf:"bytes,7,opt,name=signature,proto3" json:"signature,omitempty"`
-	unknownFields                    protoimpl.UnknownFields
-	sizeCache                        protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	DeviceId          string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	DevicePublicKey   []byte                 `protobuf:"bytes,2,opt,name=device_public_key,json=devicePublicKey,proto3" json:"device_public_key,omitempty"`
+	DeviceFingerprint string                 `protobuf:"bytes,3,opt,name=device_fingerprint,json=deviceFingerprint,proto3" json:"device_fingerprint,omitempty"`
+	ServerNonce       []byte                 `protobuf:"bytes,4,opt,name=server_nonce,json=serverNonce,proto3" json:"server_nonce,omitempty"`
+	ChannelBinding    *ChannelBinding        `protobuf:"bytes,5,opt,name=channel_binding,json=channelBinding,proto3" json:"channel_binding,omitempty"`
+	IssuedAtUnixNano  int64                  `protobuf:"varint,6,opt,name=issued_at_unix_nano,json=issuedAtUnixNano,proto3" json:"issued_at_unix_nano,omitempty"`
+	Signature         []byte                 `protobuf:"bytes,7,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *DeviceHello) Reset() {
 	*x = DeviceHello{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[1]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -779,7 +981,7 @@ func (x *DeviceHello) String() string {
 func (*DeviceHello) ProtoMessage() {}
 
 func (x *DeviceHello) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[1]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -792,7 +994,7 @@ func (x *DeviceHello) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceHello.ProtoReflect.Descriptor instead.
 func (*DeviceHello) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{1}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *DeviceHello) GetDeviceId() string {
@@ -823,11 +1025,11 @@ func (x *DeviceHello) GetServerNonce() []byte {
 	return nil
 }
 
-func (x *DeviceHello) GetDaemonDtlsCertificateFingerprint() string {
+func (x *DeviceHello) GetChannelBinding() *ChannelBinding {
 	if x != nil {
-		return x.DaemonDtlsCertificateFingerprint
+		return x.ChannelBinding
 	}
-	return ""
+	return nil
 }
 
 func (x *DeviceHello) GetIssuedAtUnixNano() int64 {
@@ -844,20 +1046,21 @@ func (x *DeviceHello) GetSignature() []byte {
 	return nil
 }
 
-// CapabilityOpen 证明 client 当前持有完整 grant，并把它绑定到本次 daemon challenge。
-// grant 只允许出现在端到端 DTLS DataChannel 内，不能进入 cloud signaling DTO。
+// CapabilityOpen 证明 client 持有 grant 对应 ClientAccessIdentity private key，并把 proof 绑定当前 channel。
+// grant 只允许出现在端到端 direct TLS 或 DTLS DataChannel 内，不能进入 cloud signaling DTO。
 type CapabilityOpen struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Grant         string                 `protobuf:"bytes,1,opt,name=grant,proto3" json:"grant,omitempty"`
-	ClientNonce   []byte                 `protobuf:"bytes,2,opt,name=client_nonce,json=clientNonce,proto3" json:"client_nonce,omitempty"`
-	Proof         []byte                 `protobuf:"bytes,3,opt,name=proof,proto3" json:"proof,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Grant           string                 `protobuf:"bytes,1,opt,name=grant,proto3" json:"grant,omitempty"`
+	ClientPublicKey []byte                 `protobuf:"bytes,2,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
+	ClientNonce     []byte                 `protobuf:"bytes,3,opt,name=client_nonce,json=clientNonce,proto3" json:"client_nonce,omitempty"`
+	Proof           []byte                 `protobuf:"bytes,4,opt,name=proof,proto3" json:"proof,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CapabilityOpen) Reset() {
 	*x = CapabilityOpen{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[2]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -869,7 +1072,7 @@ func (x *CapabilityOpen) String() string {
 func (*CapabilityOpen) ProtoMessage() {}
 
 func (x *CapabilityOpen) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[2]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -882,7 +1085,7 @@ func (x *CapabilityOpen) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapabilityOpen.ProtoReflect.Descriptor instead.
 func (*CapabilityOpen) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{2}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CapabilityOpen) GetGrant() string {
@@ -890,6 +1093,13 @@ func (x *CapabilityOpen) GetGrant() string {
 		return x.Grant
 	}
 	return ""
+}
+
+func (x *CapabilityOpen) GetClientPublicKey() []byte {
+	if x != nil {
+		return x.ClientPublicKey
+	}
+	return nil
 }
 
 func (x *CapabilityOpen) GetClientNonce() []byte {
@@ -906,18 +1116,97 @@ func (x *CapabilityOpen) GetProof() []byte {
 	return nil
 }
 
+// PairingOpen 只能兑换一次性 PairingTicket，不能访问 terminal、history、file 或普通 protocol method。
+// client_public_key/proof 先证明目标 ClientAccessIdentity possession，daemon 才允许原子消费 ticket。
+type PairingOpen struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	PairingBundle   []byte                 `protobuf:"bytes,1,opt,name=pairing_bundle,json=pairingBundle,proto3" json:"pairing_bundle,omitempty"`
+	ClientPublicKey []byte                 `protobuf:"bytes,2,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
+	ClientLabel     string                 `protobuf:"bytes,3,opt,name=client_label,json=clientLabel,proto3" json:"client_label,omitempty"`
+	ClientNonce     []byte                 `protobuf:"bytes,4,opt,name=client_nonce,json=clientNonce,proto3" json:"client_nonce,omitempty"`
+	Proof           []byte                 `protobuf:"bytes,5,opt,name=proof,proto3" json:"proof,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *PairingOpen) Reset() {
+	*x = PairingOpen{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PairingOpen) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PairingOpen) ProtoMessage() {}
+
+func (x *PairingOpen) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PairingOpen.ProtoReflect.Descriptor instead.
+func (*PairingOpen) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *PairingOpen) GetPairingBundle() []byte {
+	if x != nil {
+		return x.PairingBundle
+	}
+	return nil
+}
+
+func (x *PairingOpen) GetClientPublicKey() []byte {
+	if x != nil {
+		return x.ClientPublicKey
+	}
+	return nil
+}
+
+func (x *PairingOpen) GetClientLabel() string {
+	if x != nil {
+		return x.ClientLabel
+	}
+	return ""
+}
+
+func (x *PairingOpen) GetClientNonce() []byte {
+	if x != nil {
+		return x.ClientNonce
+	}
+	return nil
+}
+
+func (x *PairingOpen) GetProof() []byte {
+	if x != nil {
+		return x.Proof
+	}
+	return nil
+}
+
 // ScopeSummary 是 daemon 已接受 capability 的最小无歧义投影。
 type ScopeSummary struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          ScopeKind              `protobuf:"varint,1,opt,name=kind,proto3,enum=termx.remote.auth.v1.ScopeKind" json:"kind,omitempty"`
-	TerminalId    string                 `protobuf:"bytes,2,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Kind               ScopeKind              `protobuf:"varint,1,opt,name=kind,proto3,enum=termx.remote.auth.v1.ScopeKind" json:"kind,omitempty"`
+	TerminalId         string                 `protobuf:"bytes,2,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	ManageClientAccess bool                   `protobuf:"varint,3,opt,name=manage_client_access,json=manageClientAccess,proto3" json:"manage_client_access,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ScopeSummary) Reset() {
 	*x = ScopeSummary{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[3]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -929,7 +1218,7 @@ func (x *ScopeSummary) String() string {
 func (*ScopeSummary) ProtoMessage() {}
 
 func (x *ScopeSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[3]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -942,7 +1231,7 @@ func (x *ScopeSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScopeSummary.ProtoReflect.Descriptor instead.
 func (*ScopeSummary) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{3}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ScopeSummary) GetKind() ScopeKind {
@@ -959,18 +1248,26 @@ func (x *ScopeSummary) GetTerminalId() string {
 	return ""
 }
 
+func (x *ScopeSummary) GetManageClientAccess() bool {
+	if x != nil {
+		return x.ManageClientAccess
+	}
+	return false
+}
+
 // CapabilityAccepted 是 remote auth 到 termx protocol 的单向切换点。
 type CapabilityAccepted struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	GrantId       string                 `protobuf:"bytes,1,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
-	Scope         *ScopeSummary          `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	GrantId               string                 `protobuf:"bytes,1,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
+	Scope                 *ScopeSummary          `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"`
+	SubjectKeyFingerprint string                 `protobuf:"bytes,3,opt,name=subject_key_fingerprint,json=subjectKeyFingerprint,proto3" json:"subject_key_fingerprint,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *CapabilityAccepted) Reset() {
 	*x = CapabilityAccepted{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[4]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -982,7 +1279,7 @@ func (x *CapabilityAccepted) String() string {
 func (*CapabilityAccepted) ProtoMessage() {}
 
 func (x *CapabilityAccepted) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[4]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -995,7 +1292,7 @@ func (x *CapabilityAccepted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapabilityAccepted.ProtoReflect.Descriptor instead.
 func (*CapabilityAccepted) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{4}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CapabilityAccepted) GetGrantId() string {
@@ -1006,6 +1303,83 @@ func (x *CapabilityAccepted) GetGrantId() string {
 }
 
 func (x *CapabilityAccepted) GetScope() *ScopeSummary {
+	if x != nil {
+		return x.Scope
+	}
+	return nil
+}
+
+func (x *CapabilityAccepted) GetSubjectKeyFingerprint() string {
+	if x != nil {
+		return x.SubjectKeyFingerprint
+	}
+	return ""
+}
+
+// PairingAccepted 返回本次原子事务已持久化的 client-bound grant 和稳定 delivery receipt。
+// 响应丢失后，相同 ticket 与相同 client key 可以取回完全相同的 grant/receipt；其他 key 必须 fail closed。
+type PairingAccepted struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Grant                 string                 `protobuf:"bytes,1,opt,name=grant,proto3" json:"grant,omitempty"`
+	DeliveryReceipt       string                 `protobuf:"bytes,2,opt,name=delivery_receipt,json=deliveryReceipt,proto3" json:"delivery_receipt,omitempty"`
+	SubjectKeyFingerprint string                 `protobuf:"bytes,3,opt,name=subject_key_fingerprint,json=subjectKeyFingerprint,proto3" json:"subject_key_fingerprint,omitempty"`
+	Scope                 *ScopeSummary          `protobuf:"bytes,4,opt,name=scope,proto3" json:"scope,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *PairingAccepted) Reset() {
+	*x = PairingAccepted{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PairingAccepted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PairingAccepted) ProtoMessage() {}
+
+func (x *PairingAccepted) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PairingAccepted.ProtoReflect.Descriptor instead.
+func (*PairingAccepted) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *PairingAccepted) GetGrant() string {
+	if x != nil {
+		return x.Grant
+	}
+	return ""
+}
+
+func (x *PairingAccepted) GetDeliveryReceipt() string {
+	if x != nil {
+		return x.DeliveryReceipt
+	}
+	return ""
+}
+
+func (x *PairingAccepted) GetSubjectKeyFingerprint() string {
+	if x != nil {
+		return x.SubjectKeyFingerprint
+	}
+	return ""
+}
+
+func (x *PairingAccepted) GetScope() *ScopeSummary {
 	if x != nil {
 		return x.Scope
 	}
@@ -1023,7 +1397,7 @@ type CapabilityRejected struct {
 
 func (x *CapabilityRejected) Reset() {
 	*x = CapabilityRejected{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[5]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1035,7 +1409,7 @@ func (x *CapabilityRejected) String() string {
 func (*CapabilityRejected) ProtoMessage() {}
 
 func (x *CapabilityRejected) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[5]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1048,7 +1422,7 @@ func (x *CapabilityRejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapabilityRejected.ProtoReflect.Descriptor instead.
 func (*CapabilityRejected) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{5}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CapabilityRejected) GetCode() AuthErrorCode {
@@ -1068,23 +1442,23 @@ func (x *CapabilityRejected) GetMessage() string {
 // DeviceHelloSignatureInput 是 Ed25519 签名的跨平台 canonical protobuf。
 // 所有实现必须拒绝 unknown field，并使用 deterministic protobuf bytes，不得改用 JSON 或字段拼接。
 type DeviceHelloSignatureInput struct {
-	state                            protoimpl.MessageState `protogen:"open.v1"`
-	Protocol                         string                 `protobuf:"bytes,1,opt,name=protocol,proto3" json:"protocol,omitempty"`
-	Version                          uint32                 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
-	AuthSessionId                    string                 `protobuf:"bytes,3,opt,name=auth_session_id,json=authSessionId,proto3" json:"auth_session_id,omitempty"`
-	DeviceId                         string                 `protobuf:"bytes,4,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	DevicePublicKey                  []byte                 `protobuf:"bytes,5,opt,name=device_public_key,json=devicePublicKey,proto3" json:"device_public_key,omitempty"`
-	DeviceFingerprint                string                 `protobuf:"bytes,6,opt,name=device_fingerprint,json=deviceFingerprint,proto3" json:"device_fingerprint,omitempty"`
-	ServerNonce                      []byte                 `protobuf:"bytes,7,opt,name=server_nonce,json=serverNonce,proto3" json:"server_nonce,omitempty"`
-	DaemonDtlsCertificateFingerprint string                 `protobuf:"bytes,8,opt,name=daemon_dtls_certificate_fingerprint,json=daemonDtlsCertificateFingerprint,proto3" json:"daemon_dtls_certificate_fingerprint,omitempty"`
-	IssuedAtUnixNano                 int64                  `protobuf:"varint,9,opt,name=issued_at_unix_nano,json=issuedAtUnixNano,proto3" json:"issued_at_unix_nano,omitempty"`
-	unknownFields                    protoimpl.UnknownFields
-	sizeCache                        protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Protocol          string                 `protobuf:"bytes,1,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	Version           uint32                 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	AuthSessionId     string                 `protobuf:"bytes,3,opt,name=auth_session_id,json=authSessionId,proto3" json:"auth_session_id,omitempty"`
+	DeviceId          string                 `protobuf:"bytes,4,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	DevicePublicKey   []byte                 `protobuf:"bytes,5,opt,name=device_public_key,json=devicePublicKey,proto3" json:"device_public_key,omitempty"`
+	DeviceFingerprint string                 `protobuf:"bytes,6,opt,name=device_fingerprint,json=deviceFingerprint,proto3" json:"device_fingerprint,omitempty"`
+	ServerNonce       []byte                 `protobuf:"bytes,7,opt,name=server_nonce,json=serverNonce,proto3" json:"server_nonce,omitempty"`
+	ChannelBinding    *ChannelBinding        `protobuf:"bytes,8,opt,name=channel_binding,json=channelBinding,proto3" json:"channel_binding,omitempty"`
+	IssuedAtUnixNano  int64                  `protobuf:"varint,9,opt,name=issued_at_unix_nano,json=issuedAtUnixNano,proto3" json:"issued_at_unix_nano,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *DeviceHelloSignatureInput) Reset() {
 	*x = DeviceHelloSignatureInput{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[6]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1096,7 +1470,7 @@ func (x *DeviceHelloSignatureInput) String() string {
 func (*DeviceHelloSignatureInput) ProtoMessage() {}
 
 func (x *DeviceHelloSignatureInput) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[6]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1109,7 +1483,7 @@ func (x *DeviceHelloSignatureInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceHelloSignatureInput.ProtoReflect.Descriptor instead.
 func (*DeviceHelloSignatureInput) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{6}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DeviceHelloSignatureInput) GetProtocol() string {
@@ -1161,11 +1535,11 @@ func (x *DeviceHelloSignatureInput) GetServerNonce() []byte {
 	return nil
 }
 
-func (x *DeviceHelloSignatureInput) GetDaemonDtlsCertificateFingerprint() string {
+func (x *DeviceHelloSignatureInput) GetChannelBinding() *ChannelBinding {
 	if x != nil {
-		return x.DaemonDtlsCertificateFingerprint
+		return x.ChannelBinding
 	}
-	return ""
+	return nil
 }
 
 func (x *DeviceHelloSignatureInput) GetIssuedAtUnixNano() int64 {
@@ -1175,36 +1549,38 @@ func (x *DeviceHelloSignatureInput) GetIssuedAtUnixNano() int64 {
 	return 0
 }
 
-// CapabilityProofInput 是 HMAC-SHA-256 proof 的跨平台 canonical protobuf。
-// HMAC key 是去除首尾空白后的原始 grant UTF-8 bytes；grant_sha256 是同一规范化 grant 的 SHA-256。
-type CapabilityProofInput struct {
-	state                            protoimpl.MessageState `protogen:"open.v1"`
-	Protocol                         string                 `protobuf:"bytes,1,opt,name=protocol,proto3" json:"protocol,omitempty"`
-	Version                          uint32                 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
-	AuthSessionId                    string                 `protobuf:"bytes,3,opt,name=auth_session_id,json=authSessionId,proto3" json:"auth_session_id,omitempty"`
-	ServerNonce                      []byte                 `protobuf:"bytes,4,opt,name=server_nonce,json=serverNonce,proto3" json:"server_nonce,omitempty"`
-	ClientNonce                      []byte                 `protobuf:"bytes,5,opt,name=client_nonce,json=clientNonce,proto3" json:"client_nonce,omitempty"`
-	DaemonDtlsCertificateFingerprint string                 `protobuf:"bytes,6,opt,name=daemon_dtls_certificate_fingerprint,json=daemonDtlsCertificateFingerprint,proto3" json:"daemon_dtls_certificate_fingerprint,omitempty"`
-	GrantSha256                      []byte                 `protobuf:"bytes,7,opt,name=grant_sha256,json=grantSha256,proto3" json:"grant_sha256,omitempty"`
-	unknownFields                    protoimpl.UnknownFields
-	sizeCache                        protoimpl.SizeCache
+// ClientProofInput 是 ClientAccessIdentity Ed25519 签名的跨平台 canonical protobuf。
+// credential_sha256 对 capability 使用原始 grant UTF-8 bytes、对 pairing 使用完整 canonical bootstrap protobuf bytes；open_kind 防止跨状态机重放。
+type ClientProofInput struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Protocol         string                 `protobuf:"bytes,1,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	Version          uint32                 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	AuthSessionId    string                 `protobuf:"bytes,3,opt,name=auth_session_id,json=authSessionId,proto3" json:"auth_session_id,omitempty"`
+	ServerNonce      []byte                 `protobuf:"bytes,4,opt,name=server_nonce,json=serverNonce,proto3" json:"server_nonce,omitempty"`
+	ClientNonce      []byte                 `protobuf:"bytes,5,opt,name=client_nonce,json=clientNonce,proto3" json:"client_nonce,omitempty"`
+	ChannelBinding   *ChannelBinding        `protobuf:"bytes,6,opt,name=channel_binding,json=channelBinding,proto3" json:"channel_binding,omitempty"`
+	CredentialSha256 []byte                 `protobuf:"bytes,7,opt,name=credential_sha256,json=credentialSha256,proto3" json:"credential_sha256,omitempty"`
+	ClientPublicKey  []byte                 `protobuf:"bytes,8,opt,name=client_public_key,json=clientPublicKey,proto3" json:"client_public_key,omitempty"`
+	OpenKind         AuthOpenKind           `protobuf:"varint,9,opt,name=open_kind,json=openKind,proto3,enum=termx.remote.auth.v1.AuthOpenKind" json:"open_kind,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
-func (x *CapabilityProofInput) Reset() {
-	*x = CapabilityProofInput{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[7]
+func (x *ClientProofInput) Reset() {
+	*x = ClientProofInput{}
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CapabilityProofInput) String() string {
+func (x *ClientProofInput) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CapabilityProofInput) ProtoMessage() {}
+func (*ClientProofInput) ProtoMessage() {}
 
-func (x *CapabilityProofInput) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[7]
+func (x *ClientProofInput) ProtoReflect() protoreflect.Message {
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1215,58 +1591,72 @@ func (x *CapabilityProofInput) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CapabilityProofInput.ProtoReflect.Descriptor instead.
-func (*CapabilityProofInput) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{7}
+// Deprecated: Use ClientProofInput.ProtoReflect.Descriptor instead.
+func (*ClientProofInput) Descriptor() ([]byte, []int) {
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *CapabilityProofInput) GetProtocol() string {
+func (x *ClientProofInput) GetProtocol() string {
 	if x != nil {
 		return x.Protocol
 	}
 	return ""
 }
 
-func (x *CapabilityProofInput) GetVersion() uint32 {
+func (x *ClientProofInput) GetVersion() uint32 {
 	if x != nil {
 		return x.Version
 	}
 	return 0
 }
 
-func (x *CapabilityProofInput) GetAuthSessionId() string {
+func (x *ClientProofInput) GetAuthSessionId() string {
 	if x != nil {
 		return x.AuthSessionId
 	}
 	return ""
 }
 
-func (x *CapabilityProofInput) GetServerNonce() []byte {
+func (x *ClientProofInput) GetServerNonce() []byte {
 	if x != nil {
 		return x.ServerNonce
 	}
 	return nil
 }
 
-func (x *CapabilityProofInput) GetClientNonce() []byte {
+func (x *ClientProofInput) GetClientNonce() []byte {
 	if x != nil {
 		return x.ClientNonce
 	}
 	return nil
 }
 
-func (x *CapabilityProofInput) GetDaemonDtlsCertificateFingerprint() string {
+func (x *ClientProofInput) GetChannelBinding() *ChannelBinding {
 	if x != nil {
-		return x.DaemonDtlsCertificateFingerprint
-	}
-	return ""
-}
-
-func (x *CapabilityProofInput) GetGrantSha256() []byte {
-	if x != nil {
-		return x.GrantSha256
+		return x.ChannelBinding
 	}
 	return nil
+}
+
+func (x *ClientProofInput) GetCredentialSha256() []byte {
+	if x != nil {
+		return x.CredentialSha256
+	}
+	return nil
+}
+
+func (x *ClientProofInput) GetClientPublicKey() []byte {
+	if x != nil {
+		return x.ClientPublicKey
+	}
+	return nil
+}
+
+func (x *ClientProofInput) GetOpenKind() AuthOpenKind {
+	if x != nil {
+		return x.OpenKind
+	}
+	return AuthOpenKind_AUTH_OPEN_KIND_UNSPECIFIED
 }
 
 // EndpointDaemonIdentity 是跨来源安全归并 daemon 的唯一锚点。
@@ -1282,7 +1672,7 @@ type EndpointDaemonIdentity struct {
 
 func (x *EndpointDaemonIdentity) Reset() {
 	*x = EndpointDaemonIdentity{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[8]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1294,7 +1684,7 @@ func (x *EndpointDaemonIdentity) String() string {
 func (*EndpointDaemonIdentity) ProtoMessage() {}
 
 func (x *EndpointDaemonIdentity) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[8]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1307,7 +1697,7 @@ func (x *EndpointDaemonIdentity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointDaemonIdentity.ProtoReflect.Descriptor instead.
 func (*EndpointDaemonIdentity) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{8}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *EndpointDaemonIdentity) GetDeviceId() string {
@@ -1342,7 +1732,7 @@ type EndpointSelectionPolicy struct {
 
 func (x *EndpointSelectionPolicy) Reset() {
 	*x = EndpointSelectionPolicy{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[9]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1354,7 +1744,7 @@ func (x *EndpointSelectionPolicy) String() string {
 func (*EndpointSelectionPolicy) ProtoMessage() {}
 
 func (x *EndpointSelectionPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[9]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1367,7 +1757,7 @@ func (x *EndpointSelectionPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointSelectionPolicy.ProtoReflect.Descriptor instead.
 func (*EndpointSelectionPolicy) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{9}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *EndpointSelectionPolicy) GetHedgeDelayConfigured() bool {
@@ -1414,7 +1804,7 @@ type EndpointAccessRoute struct {
 
 func (x *EndpointAccessRoute) Reset() {
 	*x = EndpointAccessRoute{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[10]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1426,7 +1816,7 @@ func (x *EndpointAccessRoute) String() string {
 func (*EndpointAccessRoute) ProtoMessage() {}
 
 func (x *EndpointAccessRoute) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[10]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1439,7 +1829,7 @@ func (x *EndpointAccessRoute) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointAccessRoute.ProtoReflect.Descriptor instead.
 func (*EndpointAccessRoute) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{10}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *EndpointAccessRoute) GetRouteId() string {
@@ -1599,7 +1989,7 @@ type SavedEndpoint struct {
 
 func (x *SavedEndpoint) Reset() {
 	*x = SavedEndpoint{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[11]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1611,7 +2001,7 @@ func (x *SavedEndpoint) String() string {
 func (*SavedEndpoint) ProtoMessage() {}
 
 func (x *SavedEndpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[11]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1624,7 +2014,7 @@ func (x *SavedEndpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SavedEndpoint.ProtoReflect.Descriptor instead.
 func (*SavedEndpoint) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{11}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SavedEndpoint) GetEndpointId() string {
@@ -1695,7 +2085,7 @@ type SavedEndpointRegistryV2 struct {
 
 func (x *SavedEndpointRegistryV2) Reset() {
 	*x = SavedEndpointRegistryV2{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[12]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1707,7 +2097,7 @@ func (x *SavedEndpointRegistryV2) String() string {
 func (*SavedEndpointRegistryV2) ProtoMessage() {}
 
 func (x *SavedEndpointRegistryV2) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[12]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1720,7 +2110,7 @@ func (x *SavedEndpointRegistryV2) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SavedEndpointRegistryV2.ProtoReflect.Descriptor instead.
 func (*SavedEndpointRegistryV2) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{12}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *SavedEndpointRegistryV2) GetSchemaVersion() uint32 {
@@ -1762,7 +2152,7 @@ type EndpointCandidate struct {
 
 func (x *EndpointCandidate) Reset() {
 	*x = EndpointCandidate{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[13]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1774,7 +2164,7 @@ func (x *EndpointCandidate) String() string {
 func (*EndpointCandidate) ProtoMessage() {}
 
 func (x *EndpointCandidate) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[13]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1787,7 +2177,7 @@ func (x *EndpointCandidate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointCandidate.ProtoReflect.Descriptor instead.
 func (*EndpointCandidate) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{13}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *EndpointCandidate) GetSource() EndpointSource {
@@ -1858,7 +2248,7 @@ type ConfirmedEndpointIdentityBinding struct {
 
 func (x *ConfirmedEndpointIdentityBinding) Reset() {
 	*x = ConfirmedEndpointIdentityBinding{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[14]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1870,7 +2260,7 @@ func (x *ConfirmedEndpointIdentityBinding) String() string {
 func (*ConfirmedEndpointIdentityBinding) ProtoMessage() {}
 
 func (x *ConfirmedEndpointIdentityBinding) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[14]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1883,7 +2273,7 @@ func (x *ConfirmedEndpointIdentityBinding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfirmedEndpointIdentityBinding.ProtoReflect.Descriptor instead.
 func (*ConfirmedEndpointIdentityBinding) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{14}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ConfirmedEndpointIdentityBinding) GetEndpointId() string {
@@ -1912,7 +2302,7 @@ type EndpointCredentialDescriptor struct {
 
 func (x *EndpointCredentialDescriptor) Reset() {
 	*x = EndpointCredentialDescriptor{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[15]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1924,7 +2314,7 @@ func (x *EndpointCredentialDescriptor) String() string {
 func (*EndpointCredentialDescriptor) ProtoMessage() {}
 
 func (x *EndpointCredentialDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[15]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1937,7 +2327,7 @@ func (x *EndpointCredentialDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointCredentialDescriptor.ProtoReflect.Descriptor instead.
 func (*EndpointCredentialDescriptor) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{15}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *EndpointCredentialDescriptor) GetDescriptorId() string {
@@ -1973,7 +2363,7 @@ type EndpointAssemblerInput struct {
 
 func (x *EndpointAssemblerInput) Reset() {
 	*x = EndpointAssemblerInput{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[16]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1985,7 +2375,7 @@ func (x *EndpointAssemblerInput) String() string {
 func (*EndpointAssemblerInput) ProtoMessage() {}
 
 func (x *EndpointAssemblerInput) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[16]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1998,7 +2388,7 @@ func (x *EndpointAssemblerInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointAssemblerInput.ProtoReflect.Descriptor instead.
 func (*EndpointAssemblerInput) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{16}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *EndpointAssemblerInput) GetRegistry() *SavedEndpointRegistryV2 {
@@ -2035,7 +2425,7 @@ type EndpointAssemblerResult struct {
 
 func (x *EndpointAssemblerResult) Reset() {
 	*x = EndpointAssemblerResult{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[17]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2047,7 +2437,7 @@ func (x *EndpointAssemblerResult) String() string {
 func (*EndpointAssemblerResult) ProtoMessage() {}
 
 func (x *EndpointAssemblerResult) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[17]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2060,7 +2450,7 @@ func (x *EndpointAssemblerResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointAssemblerResult.ProtoReflect.Descriptor instead.
 func (*EndpointAssemblerResult) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{17}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *EndpointAssemblerResult) GetRegistry() *SavedEndpointRegistryV2 {
@@ -2096,7 +2486,7 @@ type EndpointConnectIntent struct {
 
 func (x *EndpointConnectIntent) Reset() {
 	*x = EndpointConnectIntent{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[18]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2108,7 +2498,7 @@ func (x *EndpointConnectIntent) String() string {
 func (*EndpointConnectIntent) ProtoMessage() {}
 
 func (x *EndpointConnectIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[18]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2121,7 +2511,7 @@ func (x *EndpointConnectIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointConnectIntent.ProtoReflect.Descriptor instead.
 func (*EndpointConnectIntent) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{18}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *EndpointConnectIntent) GetKind() string {
@@ -2161,7 +2551,7 @@ type EndpointRouteAttempt struct {
 
 func (x *EndpointRouteAttempt) Reset() {
 	*x = EndpointRouteAttempt{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[19]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2173,7 +2563,7 @@ func (x *EndpointRouteAttempt) String() string {
 func (*EndpointRouteAttempt) ProtoMessage() {}
 
 func (x *EndpointRouteAttempt) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[19]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2186,7 +2576,7 @@ func (x *EndpointRouteAttempt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointRouteAttempt.ProtoReflect.Descriptor instead.
 func (*EndpointRouteAttempt) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{19}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *EndpointRouteAttempt) GetAttemptId() string {
@@ -2248,7 +2638,7 @@ type EndpointReadySession struct {
 
 func (x *EndpointReadySession) Reset() {
 	*x = EndpointReadySession{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[20]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2260,7 +2650,7 @@ func (x *EndpointReadySession) String() string {
 func (*EndpointReadySession) ProtoMessage() {}
 
 func (x *EndpointReadySession) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[20]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2273,7 +2663,7 @@ func (x *EndpointReadySession) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointReadySession.ProtoReflect.Descriptor instead.
 func (*EndpointReadySession) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{20}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *EndpointReadySession) GetAttemptId() string {
@@ -2349,7 +2739,7 @@ type EndpointSession struct {
 
 func (x *EndpointSession) Reset() {
 	*x = EndpointSession{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[21]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2361,7 +2751,7 @@ func (x *EndpointSession) String() string {
 func (*EndpointSession) ProtoMessage() {}
 
 func (x *EndpointSession) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[21]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2374,7 +2764,7 @@ func (x *EndpointSession) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointSession.ProtoReflect.Descriptor instead.
 func (*EndpointSession) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{21}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *EndpointSession) GetEndpointId() string {
@@ -2448,7 +2838,7 @@ type LocalDiscoveryCandidate struct {
 
 func (x *LocalDiscoveryCandidate) Reset() {
 	*x = LocalDiscoveryCandidate{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[22]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2460,7 +2850,7 @@ func (x *LocalDiscoveryCandidate) String() string {
 func (*LocalDiscoveryCandidate) ProtoMessage() {}
 
 func (x *LocalDiscoveryCandidate) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[22]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2473,7 +2863,7 @@ func (x *LocalDiscoveryCandidate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LocalDiscoveryCandidate.ProtoReflect.Descriptor instead.
 func (*LocalDiscoveryCandidate) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{22}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *LocalDiscoveryCandidate) GetClaimedIdentity() *EndpointDaemonIdentity {
@@ -2532,7 +2922,7 @@ type EndpointAssemblerCase struct {
 
 func (x *EndpointAssemblerCase) Reset() {
 	*x = EndpointAssemblerCase{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[23]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2544,7 +2934,7 @@ func (x *EndpointAssemblerCase) String() string {
 func (*EndpointAssemblerCase) ProtoMessage() {}
 
 func (x *EndpointAssemblerCase) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[23]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2557,7 +2947,7 @@ func (x *EndpointAssemblerCase) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointAssemblerCase.ProtoReflect.Descriptor instead.
 func (*EndpointAssemblerCase) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{23}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *EndpointAssemblerCase) GetName() string {
@@ -2607,7 +2997,7 @@ type EndpointContractFixture struct {
 
 func (x *EndpointContractFixture) Reset() {
 	*x = EndpointContractFixture{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[24]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2619,7 +3009,7 @@ func (x *EndpointContractFixture) String() string {
 func (*EndpointContractFixture) ProtoMessage() {}
 
 func (x *EndpointContractFixture) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[24]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2632,7 +3022,7 @@ func (x *EndpointContractFixture) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointContractFixture.ProtoReflect.Descriptor instead.
 func (*EndpointContractFixture) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{24}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *EndpointContractFixture) GetSchemaVersion() uint32 {
@@ -2658,20 +3048,22 @@ func (x *EndpointContractFixture) GetAssemblerCases() []*EndpointAssemblerCase {
 
 // PairingTicketDescriptor 是 daemon-local 一次性授权兑换票据的公开部分。
 type PairingTicketDescriptor struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	TicketId          string                 `protobuf:"bytes,1,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
-	ScopeCeiling      []string               `protobuf:"bytes,2,rep,name=scope_ceiling,json=scopeCeiling,proto3" json:"scope_ceiling,omitempty"`
-	ExpiresAtUnixNano int64                  `protobuf:"varint,3,opt,name=expires_at_unix_nano,json=expiresAtUnixNano,proto3" json:"expires_at_unix_nano,omitempty"`
-	Nonce             []byte                 `protobuf:"bytes,4,opt,name=nonce,proto3" json:"nonce,omitempty"`
-	MaxRedemptions    uint32                 `protobuf:"varint,5,opt,name=max_redemptions,json=maxRedemptions,proto3" json:"max_redemptions,omitempty"`
-	Signature         []byte                 `protobuf:"bytes,6,opt,name=signature,proto3" json:"signature,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	TicketId             string                 `protobuf:"bytes,1,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
+	ScopeCeiling         []string               `protobuf:"bytes,2,rep,name=scope_ceiling,json=scopeCeiling,proto3" json:"scope_ceiling,omitempty"`
+	ExpiresAtUnixNano    int64                  `protobuf:"varint,3,opt,name=expires_at_unix_nano,json=expiresAtUnixNano,proto3" json:"expires_at_unix_nano,omitempty"`
+	Nonce                []byte                 `protobuf:"bytes,4,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	MaxRedemptions       uint32                 `protobuf:"varint,5,opt,name=max_redemptions,json=maxRedemptions,proto3" json:"max_redemptions,omitempty"`
+	Signature            []byte                 `protobuf:"bytes,6,opt,name=signature,proto3" json:"signature,omitempty"`
+	IssuedAtUnixNano     int64                  `protobuf:"varint,7,opt,name=issued_at_unix_nano,json=issuedAtUnixNano,proto3" json:"issued_at_unix_nano,omitempty"`
+	GrantLifetimeSeconds int64                  `protobuf:"varint,8,opt,name=grant_lifetime_seconds,json=grantLifetimeSeconds,proto3" json:"grant_lifetime_seconds,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *PairingTicketDescriptor) Reset() {
 	*x = PairingTicketDescriptor{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[25]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2683,7 +3075,7 @@ func (x *PairingTicketDescriptor) String() string {
 func (*PairingTicketDescriptor) ProtoMessage() {}
 
 func (x *PairingTicketDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[25]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2696,7 +3088,7 @@ func (x *PairingTicketDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairingTicketDescriptor.ProtoReflect.Descriptor instead.
 func (*PairingTicketDescriptor) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{25}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *PairingTicketDescriptor) GetTicketId() string {
@@ -2741,6 +3133,20 @@ func (x *PairingTicketDescriptor) GetSignature() []byte {
 	return nil
 }
 
+func (x *PairingTicketDescriptor) GetIssuedAtUnixNano() int64 {
+	if x != nil {
+		return x.IssuedAtUnixNano
+	}
+	return 0
+}
+
+func (x *PairingTicketDescriptor) GetGrantLifetimeSeconds() int64 {
+	if x != nil {
+		return x.GrantLifetimeSeconds
+	}
+	return 0
+}
+
 // EndpointAuthorizationBootstrap 只允许携带短期 PairingTicket，或双向离线扫码中已绑定接收方 key 的 grant。
 type EndpointAuthorizationBootstrap struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2755,7 +3161,7 @@ type EndpointAuthorizationBootstrap struct {
 
 func (x *EndpointAuthorizationBootstrap) Reset() {
 	*x = EndpointAuthorizationBootstrap{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[26]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2767,7 +3173,7 @@ func (x *EndpointAuthorizationBootstrap) String() string {
 func (*EndpointAuthorizationBootstrap) ProtoMessage() {}
 
 func (x *EndpointAuthorizationBootstrap) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[26]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2780,7 +3186,7 @@ func (x *EndpointAuthorizationBootstrap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointAuthorizationBootstrap.ProtoReflect.Descriptor instead.
 func (*EndpointAuthorizationBootstrap) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{26}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *EndpointAuthorizationBootstrap) GetPayload() isEndpointAuthorizationBootstrap_Payload {
@@ -2843,7 +3249,7 @@ type EndpointBootstrapBundleV2 struct {
 
 func (x *EndpointBootstrapBundleV2) Reset() {
 	*x = EndpointBootstrapBundleV2{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[27]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2855,7 +3261,7 @@ func (x *EndpointBootstrapBundleV2) String() string {
 func (*EndpointBootstrapBundleV2) ProtoMessage() {}
 
 func (x *EndpointBootstrapBundleV2) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[27]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2868,7 +3274,7 @@ func (x *EndpointBootstrapBundleV2) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointBootstrapBundleV2.ProtoReflect.Descriptor instead.
 func (*EndpointBootstrapBundleV2) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{27}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *EndpointBootstrapBundleV2) GetSchemaVersion() uint32 {
@@ -2949,7 +3355,7 @@ type PairingTicketSignatureInput struct {
 
 func (x *PairingTicketSignatureInput) Reset() {
 	*x = PairingTicketSignatureInput{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[28]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2961,7 +3367,7 @@ func (x *PairingTicketSignatureInput) String() string {
 func (*PairingTicketSignatureInput) ProtoMessage() {}
 
 func (x *PairingTicketSignatureInput) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[28]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2974,7 +3380,7 @@ func (x *PairingTicketSignatureInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairingTicketSignatureInput.ProtoReflect.Descriptor instead.
 func (*PairingTicketSignatureInput) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{28}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *PairingTicketSignatureInput) GetProtocol() string {
@@ -3025,7 +3431,7 @@ type EndpointBootstrapSignatureInput struct {
 
 func (x *EndpointBootstrapSignatureInput) Reset() {
 	*x = EndpointBootstrapSignatureInput{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[29]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3037,7 +3443,7 @@ func (x *EndpointBootstrapSignatureInput) String() string {
 func (*EndpointBootstrapSignatureInput) ProtoMessage() {}
 
 func (x *EndpointBootstrapSignatureInput) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[29]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3050,7 +3456,7 @@ func (x *EndpointBootstrapSignatureInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndpointBootstrapSignatureInput.ProtoReflect.Descriptor instead.
 func (*EndpointBootstrapSignatureInput) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{29}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *EndpointBootstrapSignatureInput) GetProtocol() string {
@@ -3096,7 +3502,7 @@ type ClientEndpointShareBundleV1 struct {
 
 func (x *ClientEndpointShareBundleV1) Reset() {
 	*x = ClientEndpointShareBundleV1{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[30]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3108,7 +3514,7 @@ func (x *ClientEndpointShareBundleV1) String() string {
 func (*ClientEndpointShareBundleV1) ProtoMessage() {}
 
 func (x *ClientEndpointShareBundleV1) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[30]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3121,7 +3527,7 @@ func (x *ClientEndpointShareBundleV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientEndpointShareBundleV1.ProtoReflect.Descriptor instead.
 func (*ClientEndpointShareBundleV1) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{30}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ClientEndpointShareBundleV1) GetSchemaVersion() uint32 {
@@ -3217,7 +3623,7 @@ type ShareSessionOffer struct {
 
 func (x *ShareSessionOffer) Reset() {
 	*x = ShareSessionOffer{}
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[31]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3229,7 +3635,7 @@ func (x *ShareSessionOffer) String() string {
 func (*ShareSessionOffer) ProtoMessage() {}
 
 func (x *ShareSessionOffer) ProtoReflect() protoreflect.Message {
-	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[31]
+	mi := &file_remoteauthpb_remote_auth_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3242,7 +3648,7 @@ func (x *ShareSessionOffer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShareSessionOffer.ProtoReflect.Descriptor instead.
 func (*ShareSessionOffer) Descriptor() ([]byte, []int) {
-	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{31}
+	return file_remoteauthpb_remote_auth_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ShareSessionOffer) GetSchemaVersion() uint32 {
@@ -3291,7 +3697,10 @@ var File_remoteauthpb_remote_auth_proto protoreflect.FileDescriptor
 
 const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x1eremoteauthpb/remote_auth.proto\x12\x14termx.remote.auth.v1\"\xca\x03\n" +
+	"\x1eremoteauthpb/remote_auth.proto\x12\x14termx.remote.auth.v1\"q\n" +
+	"\x0eChannelBinding\x12<\n" +
+	"\x04kind\x18\x01 \x01(\x0e2(.termx.remote.auth.v1.ChannelBindingKindR\x04kind\x12!\n" +
+	"\fbinding_hash\x18\x02 \x01(\fR\vbindingHash\"\xe6\x04\n" +
 	"\fAuthEnvelope\x12\x1a\n" +
 	"\bprotocol\x18\x01 \x01(\tR\bprotocol\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\rR\aversion\x12&\n" +
@@ -3299,27 +3708,43 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\fdevice_hello\x18\x04 \x01(\v2!.termx.remote.auth.v1.DeviceHelloH\x00R\vdeviceHello\x12O\n" +
 	"\x0fcapability_open\x18\x05 \x01(\v2$.termx.remote.auth.v1.CapabilityOpenH\x00R\x0ecapabilityOpen\x12[\n" +
 	"\x13capability_accepted\x18\x06 \x01(\v2(.termx.remote.auth.v1.CapabilityAcceptedH\x00R\x12capabilityAccepted\x12[\n" +
-	"\x13capability_rejected\x18\a \x01(\v2(.termx.remote.auth.v1.CapabilityRejectedH\x00R\x12capabilityRejectedB\t\n" +
+	"\x13capability_rejected\x18\a \x01(\v2(.termx.remote.auth.v1.CapabilityRejectedH\x00R\x12capabilityRejected\x12F\n" +
+	"\fpairing_open\x18\b \x01(\v2!.termx.remote.auth.v1.PairingOpenH\x00R\vpairingOpen\x12R\n" +
+	"\x10pairing_accepted\x18\t \x01(\v2%.termx.remote.auth.v1.PairingAcceptedH\x00R\x0fpairingAcceptedB\t\n" +
 	"\apayload\"\xc4\x02\n" +
 	"\vDeviceHello\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12*\n" +
 	"\x11device_public_key\x18\x02 \x01(\fR\x0fdevicePublicKey\x12-\n" +
 	"\x12device_fingerprint\x18\x03 \x01(\tR\x11deviceFingerprint\x12!\n" +
 	"\fserver_nonce\x18\x04 \x01(\fR\vserverNonce\x12M\n" +
-	"#daemon_dtls_certificate_fingerprint\x18\x05 \x01(\tR daemonDtlsCertificateFingerprint\x12-\n" +
+	"\x0fchannel_binding\x18\x05 \x01(\v2$.termx.remote.auth.v1.ChannelBindingR\x0echannelBinding\x12-\n" +
 	"\x13issued_at_unix_nano\x18\x06 \x01(\x03R\x10issuedAtUnixNano\x12\x1c\n" +
-	"\tsignature\x18\a \x01(\fR\tsignature\"_\n" +
+	"\tsignature\x18\a \x01(\fR\tsignature\"\x8b\x01\n" +
 	"\x0eCapabilityOpen\x12\x14\n" +
-	"\x05grant\x18\x01 \x01(\tR\x05grant\x12!\n" +
-	"\fclient_nonce\x18\x02 \x01(\fR\vclientNonce\x12\x14\n" +
-	"\x05proof\x18\x03 \x01(\fR\x05proof\"d\n" +
+	"\x05grant\x18\x01 \x01(\tR\x05grant\x12*\n" +
+	"\x11client_public_key\x18\x02 \x01(\fR\x0fclientPublicKey\x12!\n" +
+	"\fclient_nonce\x18\x03 \x01(\fR\vclientNonce\x12\x14\n" +
+	"\x05proof\x18\x04 \x01(\fR\x05proof\"\xbc\x01\n" +
+	"\vPairingOpen\x12%\n" +
+	"\x0epairing_bundle\x18\x01 \x01(\fR\rpairingBundle\x12*\n" +
+	"\x11client_public_key\x18\x02 \x01(\fR\x0fclientPublicKey\x12!\n" +
+	"\fclient_label\x18\x03 \x01(\tR\vclientLabel\x12!\n" +
+	"\fclient_nonce\x18\x04 \x01(\fR\vclientNonce\x12\x14\n" +
+	"\x05proof\x18\x05 \x01(\fR\x05proof\"\x96\x01\n" +
 	"\fScopeSummary\x123\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1f.termx.remote.auth.v1.ScopeKindR\x04kind\x12\x1f\n" +
 	"\vterminal_id\x18\x02 \x01(\tR\n" +
-	"terminalId\"i\n" +
+	"terminalId\x120\n" +
+	"\x14manage_client_access\x18\x03 \x01(\bR\x12manageClientAccess\"\xa1\x01\n" +
 	"\x12CapabilityAccepted\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x128\n" +
-	"\x05scope\x18\x02 \x01(\v2\".termx.remote.auth.v1.ScopeSummaryR\x05scope\"g\n" +
+	"\x05scope\x18\x02 \x01(\v2\".termx.remote.auth.v1.ScopeSummaryR\x05scope\x126\n" +
+	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\"\xc4\x01\n" +
+	"\x0fPairingAccepted\x12\x14\n" +
+	"\x05grant\x18\x01 \x01(\tR\x05grant\x12)\n" +
+	"\x10delivery_receipt\x18\x02 \x01(\tR\x0fdeliveryReceipt\x126\n" +
+	"\x17subject_key_fingerprint\x18\x03 \x01(\tR\x15subjectKeyFingerprint\x128\n" +
+	"\x05scope\x18\x04 \x01(\v2\".termx.remote.auth.v1.ScopeSummaryR\x05scope\"g\n" +
 	"\x12CapabilityRejected\x127\n" +
 	"\x04code\x18\x01 \x01(\x0e2#.termx.remote.auth.v1.AuthErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"\x92\x03\n" +
@@ -3331,16 +3756,18 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x11device_public_key\x18\x05 \x01(\fR\x0fdevicePublicKey\x12-\n" +
 	"\x12device_fingerprint\x18\x06 \x01(\tR\x11deviceFingerprint\x12!\n" +
 	"\fserver_nonce\x18\a \x01(\fR\vserverNonce\x12M\n" +
-	"#daemon_dtls_certificate_fingerprint\x18\b \x01(\tR daemonDtlsCertificateFingerprint\x12-\n" +
-	"\x13issued_at_unix_nano\x18\t \x01(\x03R\x10issuedAtUnixNano\"\xac\x02\n" +
-	"\x14CapabilityProofInput\x12\x1a\n" +
+	"\x0fchannel_binding\x18\b \x01(\v2$.termx.remote.auth.v1.ChannelBindingR\x0echannelBinding\x12-\n" +
+	"\x13issued_at_unix_nano\x18\t \x01(\x03R\x10issuedAtUnixNano\"\x9f\x03\n" +
+	"\x10ClientProofInput\x12\x1a\n" +
 	"\bprotocol\x18\x01 \x01(\tR\bprotocol\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\rR\aversion\x12&\n" +
 	"\x0fauth_session_id\x18\x03 \x01(\tR\rauthSessionId\x12!\n" +
 	"\fserver_nonce\x18\x04 \x01(\fR\vserverNonce\x12!\n" +
 	"\fclient_nonce\x18\x05 \x01(\fR\vclientNonce\x12M\n" +
-	"#daemon_dtls_certificate_fingerprint\x18\x06 \x01(\tR daemonDtlsCertificateFingerprint\x12!\n" +
-	"\fgrant_sha256\x18\a \x01(\fR\vgrantSha256\"\x90\x01\n" +
+	"\x0fchannel_binding\x18\x06 \x01(\v2$.termx.remote.auth.v1.ChannelBindingR\x0echannelBinding\x12+\n" +
+	"\x11credential_sha256\x18\a \x01(\fR\x10credentialSha256\x12*\n" +
+	"\x11client_public_key\x18\b \x01(\fR\x0fclientPublicKey\x12?\n" +
+	"\topen_kind\x18\t \x01(\x0e2\".termx.remote.auth.v1.AuthOpenKindR\bopenKind\"\x90\x01\n" +
 	"\x16EndpointDaemonIdentity\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12*\n" +
 	"\x11device_public_key\x18\x02 \x01(\fR\x0fdevicePublicKey\x12-\n" +
@@ -3471,14 +3898,16 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x17EndpointContractFixture\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12T\n" +
 	"\x0evalid_registry\x18\x02 \x01(\v2-.termx.remote.auth.v1.SavedEndpointRegistryV2R\rvalidRegistry\x12T\n" +
-	"\x0fassembler_cases\x18\x03 \x03(\v2+.termx.remote.auth.v1.EndpointAssemblerCaseR\x0eassemblerCases\"\xe9\x01\n" +
+	"\x0fassembler_cases\x18\x03 \x03(\v2+.termx.remote.auth.v1.EndpointAssemblerCaseR\x0eassemblerCases\"\xce\x02\n" +
 	"\x17PairingTicketDescriptor\x12\x1b\n" +
 	"\tticket_id\x18\x01 \x01(\tR\bticketId\x12#\n" +
 	"\rscope_ceiling\x18\x02 \x03(\tR\fscopeCeiling\x12/\n" +
 	"\x14expires_at_unix_nano\x18\x03 \x01(\x03R\x11expiresAtUnixNano\x12\x14\n" +
 	"\x05nonce\x18\x04 \x01(\fR\x05nonce\x12'\n" +
 	"\x0fmax_redemptions\x18\x05 \x01(\rR\x0emaxRedemptions\x12\x1c\n" +
-	"\tsignature\x18\x06 \x01(\fR\tsignature\"\xa6\x01\n" +
+	"\tsignature\x18\x06 \x01(\fR\tsignature\x12-\n" +
+	"\x13issued_at_unix_nano\x18\a \x01(\x03R\x10issuedAtUnixNano\x124\n" +
+	"\x16grant_lifetime_seconds\x18\b \x01(\x03R\x14grantLifetimeSeconds\"\xa6\x01\n" +
 	"\x1eEndpointAuthorizationBootstrap\x12V\n" +
 	"\x0epairing_ticket\x18\x01 \x01(\v2-.termx.remote.auth.v1.PairingTicketDescriptorH\x00R\rpairingTicket\x12!\n" +
 	"\vbound_grant\x18\x02 \x01(\fH\x00R\n" +
@@ -3526,7 +3955,7 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"\x12listener_addresses\x18\x03 \x03(\tR\x11listenerAddresses\x12@\n" +
 	"\x1cephemeral_certificate_sha256\x18\x04 \x01(\tR\x1aephemeralCertificateSha256\x125\n" +
 	"\x17one_time_session_secret\x18\x05 \x01(\fR\x14oneTimeSessionSecret\x12/\n" +
-	"\x14expires_at_unix_nano\x18\x06 \x01(\x03R\x11expiresAtUnixNano*\x81\x03\n" +
+	"\x14expires_at_unix_nano\x18\x06 \x01(\x03R\x11expiresAtUnixNano*\xb0\x04\n" +
 	"\rAuthErrorCode\x12\x1f\n" +
 	"\x1bAUTH_ERROR_CODE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18AUTH_ERROR_CODE_PROTOCOL\x10\x01\x12,\n" +
@@ -3537,12 +3966,26 @@ const file_remoteauthpb_remote_auth_proto_rawDesc = "" +
 	"(AUTH_ERROR_CODE_CAPABILITY_PROOF_INVALID\x10\x06\x12!\n" +
 	"\x1dAUTH_ERROR_CODE_SCOPE_INVALID\x10\a\x12\x1c\n" +
 	"\x18AUTH_ERROR_CODE_REPLAYED\x10\b\x12\x1c\n" +
-	"\x18AUTH_ERROR_CODE_INTERNAL\x10\t*v\n" +
+	"\x18AUTH_ERROR_CODE_INTERNAL\x10\t\x12(\n" +
+	"$AUTH_ERROR_CODE_SUBJECT_KEY_MISMATCH\x10\n" +
+	"\x12*\n" +
+	"&AUTH_ERROR_CODE_PAIRING_TICKET_INVALID\x10\v\x12*\n" +
+	"&AUTH_ERROR_CODE_PAIRING_TICKET_EXPIRED\x10\f\x12+\n" +
+	"'AUTH_ERROR_CODE_PAIRING_TICKET_CONSUMED\x10\r*v\n" +
 	"\tScopeKind\x12\x1a\n" +
 	"\x16SCOPE_KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11SCOPE_KIND_DAEMON\x10\x01\x12\x17\n" +
 	"\x13SCOPE_KIND_TERMINAL\x10\x02\x12\x1d\n" +
-	"\x19SCOPE_KIND_MACHINE_EVENTS\x10\x03*\xcb\x01\n" +
+	"\x19SCOPE_KIND_MACHINE_EVENTS\x10\x03*\xa3\x01\n" +
+	"\x12ChannelBindingKind\x12$\n" +
+	" CHANNEL_BINDING_KIND_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fCHANNEL_BINDING_KIND_DIRECT_TLS\x10\x01\x12\x1d\n" +
+	"\x19CHANNEL_BINDING_KIND_DTLS\x10\x02\x12#\n" +
+	"\x1fCHANNEL_BINDING_KIND_LOCAL_UNIX\x10\x03*i\n" +
+	"\fAuthOpenKind\x12\x1e\n" +
+	"\x1aAUTH_OPEN_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19AUTH_OPEN_KIND_CAPABILITY\x10\x01\x12\x1a\n" +
+	"\x16AUTH_OPEN_KIND_PAIRING\x10\x02*\xcb\x01\n" +
 	"\x11EndpointRouteKind\x12#\n" +
 	"\x1fENDPOINT_ROUTE_KIND_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eENDPOINT_ROUTE_KIND_LOCAL_UNIX\x10\x01\x12!\n" +
@@ -3609,114 +4052,127 @@ func file_remoteauthpb_remote_auth_proto_rawDescGZIP() []byte {
 	return file_remoteauthpb_remote_auth_proto_rawDescData
 }
 
-var file_remoteauthpb_remote_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
-var file_remoteauthpb_remote_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_remoteauthpb_remote_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
+var file_remoteauthpb_remote_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_remoteauthpb_remote_auth_proto_goTypes = []any{
 	(AuthErrorCode)(0),                       // 0: termx.remote.auth.v1.AuthErrorCode
 	(ScopeKind)(0),                           // 1: termx.remote.auth.v1.ScopeKind
-	(EndpointRouteKind)(0),                   // 2: termx.remote.auth.v1.EndpointRouteKind
-	(EndpointConnectMode)(0),                 // 3: termx.remote.auth.v1.EndpointConnectMode
-	(EndpointRelayMode)(0),                   // 4: termx.remote.auth.v1.EndpointRelayMode
-	(EndpointObservedPath)(0),                // 5: termx.remote.auth.v1.EndpointObservedPath
-	(EndpointSessionLifecycle)(0),            // 6: termx.remote.auth.v1.EndpointSessionLifecycle
-	(EndpointSource)(0),                      // 7: termx.remote.auth.v1.EndpointSource
-	(EndpointCredentialKind)(0),              // 8: termx.remote.auth.v1.EndpointCredentialKind
-	(EndpointContractErrorCode)(0),           // 9: termx.remote.auth.v1.EndpointContractErrorCode
-	(*AuthEnvelope)(nil),                     // 10: termx.remote.auth.v1.AuthEnvelope
-	(*DeviceHello)(nil),                      // 11: termx.remote.auth.v1.DeviceHello
-	(*CapabilityOpen)(nil),                   // 12: termx.remote.auth.v1.CapabilityOpen
-	(*ScopeSummary)(nil),                     // 13: termx.remote.auth.v1.ScopeSummary
-	(*CapabilityAccepted)(nil),               // 14: termx.remote.auth.v1.CapabilityAccepted
-	(*CapabilityRejected)(nil),               // 15: termx.remote.auth.v1.CapabilityRejected
-	(*DeviceHelloSignatureInput)(nil),        // 16: termx.remote.auth.v1.DeviceHelloSignatureInput
-	(*CapabilityProofInput)(nil),             // 17: termx.remote.auth.v1.CapabilityProofInput
-	(*EndpointDaemonIdentity)(nil),           // 18: termx.remote.auth.v1.EndpointDaemonIdentity
-	(*EndpointSelectionPolicy)(nil),          // 19: termx.remote.auth.v1.EndpointSelectionPolicy
-	(*EndpointAccessRoute)(nil),              // 20: termx.remote.auth.v1.EndpointAccessRoute
-	(*SavedEndpoint)(nil),                    // 21: termx.remote.auth.v1.SavedEndpoint
-	(*SavedEndpointRegistryV2)(nil),          // 22: termx.remote.auth.v1.SavedEndpointRegistryV2
-	(*EndpointCandidate)(nil),                // 23: termx.remote.auth.v1.EndpointCandidate
-	(*ConfirmedEndpointIdentityBinding)(nil), // 24: termx.remote.auth.v1.ConfirmedEndpointIdentityBinding
-	(*EndpointCredentialDescriptor)(nil),     // 25: termx.remote.auth.v1.EndpointCredentialDescriptor
-	(*EndpointAssemblerInput)(nil),           // 26: termx.remote.auth.v1.EndpointAssemblerInput
-	(*EndpointAssemblerResult)(nil),          // 27: termx.remote.auth.v1.EndpointAssemblerResult
-	(*EndpointConnectIntent)(nil),            // 28: termx.remote.auth.v1.EndpointConnectIntent
-	(*EndpointRouteAttempt)(nil),             // 29: termx.remote.auth.v1.EndpointRouteAttempt
-	(*EndpointReadySession)(nil),             // 30: termx.remote.auth.v1.EndpointReadySession
-	(*EndpointSession)(nil),                  // 31: termx.remote.auth.v1.EndpointSession
-	(*LocalDiscoveryCandidate)(nil),          // 32: termx.remote.auth.v1.LocalDiscoveryCandidate
-	(*EndpointAssemblerCase)(nil),            // 33: termx.remote.auth.v1.EndpointAssemblerCase
-	(*EndpointContractFixture)(nil),          // 34: termx.remote.auth.v1.EndpointContractFixture
-	(*PairingTicketDescriptor)(nil),          // 35: termx.remote.auth.v1.PairingTicketDescriptor
-	(*EndpointAuthorizationBootstrap)(nil),   // 36: termx.remote.auth.v1.EndpointAuthorizationBootstrap
-	(*EndpointBootstrapBundleV2)(nil),        // 37: termx.remote.auth.v1.EndpointBootstrapBundleV2
-	(*PairingTicketSignatureInput)(nil),      // 38: termx.remote.auth.v1.PairingTicketSignatureInput
-	(*EndpointBootstrapSignatureInput)(nil),  // 39: termx.remote.auth.v1.EndpointBootstrapSignatureInput
-	(*ClientEndpointShareBundleV1)(nil),      // 40: termx.remote.auth.v1.ClientEndpointShareBundleV1
-	(*ShareSessionOffer)(nil),                // 41: termx.remote.auth.v1.ShareSessionOffer
+	(ChannelBindingKind)(0),                  // 2: termx.remote.auth.v1.ChannelBindingKind
+	(AuthOpenKind)(0),                        // 3: termx.remote.auth.v1.AuthOpenKind
+	(EndpointRouteKind)(0),                   // 4: termx.remote.auth.v1.EndpointRouteKind
+	(EndpointConnectMode)(0),                 // 5: termx.remote.auth.v1.EndpointConnectMode
+	(EndpointRelayMode)(0),                   // 6: termx.remote.auth.v1.EndpointRelayMode
+	(EndpointObservedPath)(0),                // 7: termx.remote.auth.v1.EndpointObservedPath
+	(EndpointSessionLifecycle)(0),            // 8: termx.remote.auth.v1.EndpointSessionLifecycle
+	(EndpointSource)(0),                      // 9: termx.remote.auth.v1.EndpointSource
+	(EndpointCredentialKind)(0),              // 10: termx.remote.auth.v1.EndpointCredentialKind
+	(EndpointContractErrorCode)(0),           // 11: termx.remote.auth.v1.EndpointContractErrorCode
+	(*ChannelBinding)(nil),                   // 12: termx.remote.auth.v1.ChannelBinding
+	(*AuthEnvelope)(nil),                     // 13: termx.remote.auth.v1.AuthEnvelope
+	(*DeviceHello)(nil),                      // 14: termx.remote.auth.v1.DeviceHello
+	(*CapabilityOpen)(nil),                   // 15: termx.remote.auth.v1.CapabilityOpen
+	(*PairingOpen)(nil),                      // 16: termx.remote.auth.v1.PairingOpen
+	(*ScopeSummary)(nil),                     // 17: termx.remote.auth.v1.ScopeSummary
+	(*CapabilityAccepted)(nil),               // 18: termx.remote.auth.v1.CapabilityAccepted
+	(*PairingAccepted)(nil),                  // 19: termx.remote.auth.v1.PairingAccepted
+	(*CapabilityRejected)(nil),               // 20: termx.remote.auth.v1.CapabilityRejected
+	(*DeviceHelloSignatureInput)(nil),        // 21: termx.remote.auth.v1.DeviceHelloSignatureInput
+	(*ClientProofInput)(nil),                 // 22: termx.remote.auth.v1.ClientProofInput
+	(*EndpointDaemonIdentity)(nil),           // 23: termx.remote.auth.v1.EndpointDaemonIdentity
+	(*EndpointSelectionPolicy)(nil),          // 24: termx.remote.auth.v1.EndpointSelectionPolicy
+	(*EndpointAccessRoute)(nil),              // 25: termx.remote.auth.v1.EndpointAccessRoute
+	(*SavedEndpoint)(nil),                    // 26: termx.remote.auth.v1.SavedEndpoint
+	(*SavedEndpointRegistryV2)(nil),          // 27: termx.remote.auth.v1.SavedEndpointRegistryV2
+	(*EndpointCandidate)(nil),                // 28: termx.remote.auth.v1.EndpointCandidate
+	(*ConfirmedEndpointIdentityBinding)(nil), // 29: termx.remote.auth.v1.ConfirmedEndpointIdentityBinding
+	(*EndpointCredentialDescriptor)(nil),     // 30: termx.remote.auth.v1.EndpointCredentialDescriptor
+	(*EndpointAssemblerInput)(nil),           // 31: termx.remote.auth.v1.EndpointAssemblerInput
+	(*EndpointAssemblerResult)(nil),          // 32: termx.remote.auth.v1.EndpointAssemblerResult
+	(*EndpointConnectIntent)(nil),            // 33: termx.remote.auth.v1.EndpointConnectIntent
+	(*EndpointRouteAttempt)(nil),             // 34: termx.remote.auth.v1.EndpointRouteAttempt
+	(*EndpointReadySession)(nil),             // 35: termx.remote.auth.v1.EndpointReadySession
+	(*EndpointSession)(nil),                  // 36: termx.remote.auth.v1.EndpointSession
+	(*LocalDiscoveryCandidate)(nil),          // 37: termx.remote.auth.v1.LocalDiscoveryCandidate
+	(*EndpointAssemblerCase)(nil),            // 38: termx.remote.auth.v1.EndpointAssemblerCase
+	(*EndpointContractFixture)(nil),          // 39: termx.remote.auth.v1.EndpointContractFixture
+	(*PairingTicketDescriptor)(nil),          // 40: termx.remote.auth.v1.PairingTicketDescriptor
+	(*EndpointAuthorizationBootstrap)(nil),   // 41: termx.remote.auth.v1.EndpointAuthorizationBootstrap
+	(*EndpointBootstrapBundleV2)(nil),        // 42: termx.remote.auth.v1.EndpointBootstrapBundleV2
+	(*PairingTicketSignatureInput)(nil),      // 43: termx.remote.auth.v1.PairingTicketSignatureInput
+	(*EndpointBootstrapSignatureInput)(nil),  // 44: termx.remote.auth.v1.EndpointBootstrapSignatureInput
+	(*ClientEndpointShareBundleV1)(nil),      // 45: termx.remote.auth.v1.ClientEndpointShareBundleV1
+	(*ShareSessionOffer)(nil),                // 46: termx.remote.auth.v1.ShareSessionOffer
 }
 var file_remoteauthpb_remote_auth_proto_depIdxs = []int32{
-	11, // 0: termx.remote.auth.v1.AuthEnvelope.device_hello:type_name -> termx.remote.auth.v1.DeviceHello
-	12, // 1: termx.remote.auth.v1.AuthEnvelope.capability_open:type_name -> termx.remote.auth.v1.CapabilityOpen
-	14, // 2: termx.remote.auth.v1.AuthEnvelope.capability_accepted:type_name -> termx.remote.auth.v1.CapabilityAccepted
-	15, // 3: termx.remote.auth.v1.AuthEnvelope.capability_rejected:type_name -> termx.remote.auth.v1.CapabilityRejected
-	1,  // 4: termx.remote.auth.v1.ScopeSummary.kind:type_name -> termx.remote.auth.v1.ScopeKind
-	13, // 5: termx.remote.auth.v1.CapabilityAccepted.scope:type_name -> termx.remote.auth.v1.ScopeSummary
-	0,  // 6: termx.remote.auth.v1.CapabilityRejected.code:type_name -> termx.remote.auth.v1.AuthErrorCode
-	2,  // 7: termx.remote.auth.v1.EndpointAccessRoute.kind:type_name -> termx.remote.auth.v1.EndpointRouteKind
-	7,  // 8: termx.remote.auth.v1.EndpointAccessRoute.source:type_name -> termx.remote.auth.v1.EndpointSource
-	7,  // 9: termx.remote.auth.v1.EndpointAccessRoute.policy_source:type_name -> termx.remote.auth.v1.EndpointSource
-	4,  // 10: termx.remote.auth.v1.EndpointAccessRoute.relay_mode:type_name -> termx.remote.auth.v1.EndpointRelayMode
-	7,  // 11: termx.remote.auth.v1.SavedEndpoint.label_source:type_name -> termx.remote.auth.v1.EndpointSource
-	18, // 12: termx.remote.auth.v1.SavedEndpoint.daemon_identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	3,  // 13: termx.remote.auth.v1.SavedEndpoint.connect_mode:type_name -> termx.remote.auth.v1.EndpointConnectMode
-	19, // 14: termx.remote.auth.v1.SavedEndpoint.selection_policy:type_name -> termx.remote.auth.v1.EndpointSelectionPolicy
-	20, // 15: termx.remote.auth.v1.SavedEndpoint.routes:type_name -> termx.remote.auth.v1.EndpointAccessRoute
-	21, // 16: termx.remote.auth.v1.SavedEndpointRegistryV2.endpoints:type_name -> termx.remote.auth.v1.SavedEndpoint
-	7,  // 17: termx.remote.auth.v1.EndpointCandidate.source:type_name -> termx.remote.auth.v1.EndpointSource
-	18, // 18: termx.remote.auth.v1.EndpointCandidate.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	20, // 19: termx.remote.auth.v1.EndpointCandidate.routes:type_name -> termx.remote.auth.v1.EndpointAccessRoute
-	3,  // 20: termx.remote.auth.v1.EndpointCandidate.connect_mode:type_name -> termx.remote.auth.v1.EndpointConnectMode
-	19, // 21: termx.remote.auth.v1.EndpointCandidate.selection_policy:type_name -> termx.remote.auth.v1.EndpointSelectionPolicy
-	25, // 22: termx.remote.auth.v1.EndpointCandidate.credential_descriptors:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
-	18, // 23: termx.remote.auth.v1.ConfirmedEndpointIdentityBinding.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	8,  // 24: termx.remote.auth.v1.EndpointCredentialDescriptor.kind:type_name -> termx.remote.auth.v1.EndpointCredentialKind
-	22, // 25: termx.remote.auth.v1.EndpointAssemblerInput.registry:type_name -> termx.remote.auth.v1.SavedEndpointRegistryV2
-	23, // 26: termx.remote.auth.v1.EndpointAssemblerInput.candidates:type_name -> termx.remote.auth.v1.EndpointCandidate
-	24, // 27: termx.remote.auth.v1.EndpointAssemblerInput.confirmed_identity_bindings:type_name -> termx.remote.auth.v1.ConfirmedEndpointIdentityBinding
-	22, // 28: termx.remote.auth.v1.EndpointAssemblerResult.registry:type_name -> termx.remote.auth.v1.SavedEndpointRegistryV2
-	25, // 29: termx.remote.auth.v1.EndpointAssemblerResult.credential_descriptors:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
-	18, // 30: termx.remote.auth.v1.EndpointRouteAttempt.expected_daemon_identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	20, // 31: termx.remote.auth.v1.EndpointRouteAttempt.route:type_name -> termx.remote.auth.v1.EndpointAccessRoute
-	28, // 32: termx.remote.auth.v1.EndpointRouteAttempt.intent:type_name -> termx.remote.auth.v1.EndpointConnectIntent
-	18, // 33: termx.remote.auth.v1.EndpointReadySession.verified_daemon_identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	5,  // 34: termx.remote.auth.v1.EndpointReadySession.observed_path:type_name -> termx.remote.auth.v1.EndpointObservedPath
-	18, // 35: termx.remote.auth.v1.EndpointSession.verified_daemon_identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	5,  // 36: termx.remote.auth.v1.EndpointSession.observed_path:type_name -> termx.remote.auth.v1.EndpointObservedPath
-	6,  // 37: termx.remote.auth.v1.EndpointSession.lifecycle:type_name -> termx.remote.auth.v1.EndpointSessionLifecycle
-	18, // 38: termx.remote.auth.v1.LocalDiscoveryCandidate.claimed_identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	22, // 39: termx.remote.auth.v1.EndpointAssemblerCase.initial_registry:type_name -> termx.remote.auth.v1.SavedEndpointRegistryV2
-	23, // 40: termx.remote.auth.v1.EndpointAssemblerCase.candidates:type_name -> termx.remote.auth.v1.EndpointCandidate
-	22, // 41: termx.remote.auth.v1.EndpointAssemblerCase.expected_registry:type_name -> termx.remote.auth.v1.SavedEndpointRegistryV2
-	9,  // 42: termx.remote.auth.v1.EndpointAssemblerCase.expected_error:type_name -> termx.remote.auth.v1.EndpointContractErrorCode
-	22, // 43: termx.remote.auth.v1.EndpointContractFixture.valid_registry:type_name -> termx.remote.auth.v1.SavedEndpointRegistryV2
-	33, // 44: termx.remote.auth.v1.EndpointContractFixture.assembler_cases:type_name -> termx.remote.auth.v1.EndpointAssemblerCase
-	35, // 45: termx.remote.auth.v1.EndpointAuthorizationBootstrap.pairing_ticket:type_name -> termx.remote.auth.v1.PairingTicketDescriptor
-	18, // 46: termx.remote.auth.v1.EndpointBootstrapBundleV2.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	20, // 47: termx.remote.auth.v1.EndpointBootstrapBundleV2.routes:type_name -> termx.remote.auth.v1.EndpointAccessRoute
-	36, // 48: termx.remote.auth.v1.EndpointBootstrapBundleV2.authorization:type_name -> termx.remote.auth.v1.EndpointAuthorizationBootstrap
-	35, // 49: termx.remote.auth.v1.PairingTicketSignatureInput.ticket:type_name -> termx.remote.auth.v1.PairingTicketDescriptor
-	37, // 50: termx.remote.auth.v1.EndpointBootstrapSignatureInput.bundle:type_name -> termx.remote.auth.v1.EndpointBootstrapBundleV2
-	18, // 51: termx.remote.auth.v1.ClientEndpointShareBundleV1.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
-	20, // 52: termx.remote.auth.v1.ClientEndpointShareBundleV1.routes:type_name -> termx.remote.auth.v1.EndpointAccessRoute
-	3,  // 53: termx.remote.auth.v1.ClientEndpointShareBundleV1.connect_mode:type_name -> termx.remote.auth.v1.EndpointConnectMode
-	19, // 54: termx.remote.auth.v1.ClientEndpointShareBundleV1.selection_policy:type_name -> termx.remote.auth.v1.EndpointSelectionPolicy
-	25, // 55: termx.remote.auth.v1.ClientEndpointShareBundleV1.credential_descriptors:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
-	56, // [56:56] is the sub-list for method output_type
-	56, // [56:56] is the sub-list for method input_type
-	56, // [56:56] is the sub-list for extension type_name
-	56, // [56:56] is the sub-list for extension extendee
-	0,  // [0:56] is the sub-list for field type_name
+	2,  // 0: termx.remote.auth.v1.ChannelBinding.kind:type_name -> termx.remote.auth.v1.ChannelBindingKind
+	14, // 1: termx.remote.auth.v1.AuthEnvelope.device_hello:type_name -> termx.remote.auth.v1.DeviceHello
+	15, // 2: termx.remote.auth.v1.AuthEnvelope.capability_open:type_name -> termx.remote.auth.v1.CapabilityOpen
+	18, // 3: termx.remote.auth.v1.AuthEnvelope.capability_accepted:type_name -> termx.remote.auth.v1.CapabilityAccepted
+	20, // 4: termx.remote.auth.v1.AuthEnvelope.capability_rejected:type_name -> termx.remote.auth.v1.CapabilityRejected
+	16, // 5: termx.remote.auth.v1.AuthEnvelope.pairing_open:type_name -> termx.remote.auth.v1.PairingOpen
+	19, // 6: termx.remote.auth.v1.AuthEnvelope.pairing_accepted:type_name -> termx.remote.auth.v1.PairingAccepted
+	12, // 7: termx.remote.auth.v1.DeviceHello.channel_binding:type_name -> termx.remote.auth.v1.ChannelBinding
+	1,  // 8: termx.remote.auth.v1.ScopeSummary.kind:type_name -> termx.remote.auth.v1.ScopeKind
+	17, // 9: termx.remote.auth.v1.CapabilityAccepted.scope:type_name -> termx.remote.auth.v1.ScopeSummary
+	17, // 10: termx.remote.auth.v1.PairingAccepted.scope:type_name -> termx.remote.auth.v1.ScopeSummary
+	0,  // 11: termx.remote.auth.v1.CapabilityRejected.code:type_name -> termx.remote.auth.v1.AuthErrorCode
+	12, // 12: termx.remote.auth.v1.DeviceHelloSignatureInput.channel_binding:type_name -> termx.remote.auth.v1.ChannelBinding
+	12, // 13: termx.remote.auth.v1.ClientProofInput.channel_binding:type_name -> termx.remote.auth.v1.ChannelBinding
+	3,  // 14: termx.remote.auth.v1.ClientProofInput.open_kind:type_name -> termx.remote.auth.v1.AuthOpenKind
+	4,  // 15: termx.remote.auth.v1.EndpointAccessRoute.kind:type_name -> termx.remote.auth.v1.EndpointRouteKind
+	9,  // 16: termx.remote.auth.v1.EndpointAccessRoute.source:type_name -> termx.remote.auth.v1.EndpointSource
+	9,  // 17: termx.remote.auth.v1.EndpointAccessRoute.policy_source:type_name -> termx.remote.auth.v1.EndpointSource
+	6,  // 18: termx.remote.auth.v1.EndpointAccessRoute.relay_mode:type_name -> termx.remote.auth.v1.EndpointRelayMode
+	9,  // 19: termx.remote.auth.v1.SavedEndpoint.label_source:type_name -> termx.remote.auth.v1.EndpointSource
+	23, // 20: termx.remote.auth.v1.SavedEndpoint.daemon_identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
+	5,  // 21: termx.remote.auth.v1.SavedEndpoint.connect_mode:type_name -> termx.remote.auth.v1.EndpointConnectMode
+	24, // 22: termx.remote.auth.v1.SavedEndpoint.selection_policy:type_name -> termx.remote.auth.v1.EndpointSelectionPolicy
+	25, // 23: termx.remote.auth.v1.SavedEndpoint.routes:type_name -> termx.remote.auth.v1.EndpointAccessRoute
+	26, // 24: termx.remote.auth.v1.SavedEndpointRegistryV2.endpoints:type_name -> termx.remote.auth.v1.SavedEndpoint
+	9,  // 25: termx.remote.auth.v1.EndpointCandidate.source:type_name -> termx.remote.auth.v1.EndpointSource
+	23, // 26: termx.remote.auth.v1.EndpointCandidate.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
+	25, // 27: termx.remote.auth.v1.EndpointCandidate.routes:type_name -> termx.remote.auth.v1.EndpointAccessRoute
+	5,  // 28: termx.remote.auth.v1.EndpointCandidate.connect_mode:type_name -> termx.remote.auth.v1.EndpointConnectMode
+	24, // 29: termx.remote.auth.v1.EndpointCandidate.selection_policy:type_name -> termx.remote.auth.v1.EndpointSelectionPolicy
+	30, // 30: termx.remote.auth.v1.EndpointCandidate.credential_descriptors:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
+	23, // 31: termx.remote.auth.v1.ConfirmedEndpointIdentityBinding.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
+	10, // 32: termx.remote.auth.v1.EndpointCredentialDescriptor.kind:type_name -> termx.remote.auth.v1.EndpointCredentialKind
+	27, // 33: termx.remote.auth.v1.EndpointAssemblerInput.registry:type_name -> termx.remote.auth.v1.SavedEndpointRegistryV2
+	28, // 34: termx.remote.auth.v1.EndpointAssemblerInput.candidates:type_name -> termx.remote.auth.v1.EndpointCandidate
+	29, // 35: termx.remote.auth.v1.EndpointAssemblerInput.confirmed_identity_bindings:type_name -> termx.remote.auth.v1.ConfirmedEndpointIdentityBinding
+	27, // 36: termx.remote.auth.v1.EndpointAssemblerResult.registry:type_name -> termx.remote.auth.v1.SavedEndpointRegistryV2
+	30, // 37: termx.remote.auth.v1.EndpointAssemblerResult.credential_descriptors:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
+	23, // 38: termx.remote.auth.v1.EndpointRouteAttempt.expected_daemon_identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
+	25, // 39: termx.remote.auth.v1.EndpointRouteAttempt.route:type_name -> termx.remote.auth.v1.EndpointAccessRoute
+	33, // 40: termx.remote.auth.v1.EndpointRouteAttempt.intent:type_name -> termx.remote.auth.v1.EndpointConnectIntent
+	23, // 41: termx.remote.auth.v1.EndpointReadySession.verified_daemon_identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
+	7,  // 42: termx.remote.auth.v1.EndpointReadySession.observed_path:type_name -> termx.remote.auth.v1.EndpointObservedPath
+	23, // 43: termx.remote.auth.v1.EndpointSession.verified_daemon_identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
+	7,  // 44: termx.remote.auth.v1.EndpointSession.observed_path:type_name -> termx.remote.auth.v1.EndpointObservedPath
+	8,  // 45: termx.remote.auth.v1.EndpointSession.lifecycle:type_name -> termx.remote.auth.v1.EndpointSessionLifecycle
+	23, // 46: termx.remote.auth.v1.LocalDiscoveryCandidate.claimed_identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
+	27, // 47: termx.remote.auth.v1.EndpointAssemblerCase.initial_registry:type_name -> termx.remote.auth.v1.SavedEndpointRegistryV2
+	28, // 48: termx.remote.auth.v1.EndpointAssemblerCase.candidates:type_name -> termx.remote.auth.v1.EndpointCandidate
+	27, // 49: termx.remote.auth.v1.EndpointAssemblerCase.expected_registry:type_name -> termx.remote.auth.v1.SavedEndpointRegistryV2
+	11, // 50: termx.remote.auth.v1.EndpointAssemblerCase.expected_error:type_name -> termx.remote.auth.v1.EndpointContractErrorCode
+	27, // 51: termx.remote.auth.v1.EndpointContractFixture.valid_registry:type_name -> termx.remote.auth.v1.SavedEndpointRegistryV2
+	38, // 52: termx.remote.auth.v1.EndpointContractFixture.assembler_cases:type_name -> termx.remote.auth.v1.EndpointAssemblerCase
+	40, // 53: termx.remote.auth.v1.EndpointAuthorizationBootstrap.pairing_ticket:type_name -> termx.remote.auth.v1.PairingTicketDescriptor
+	23, // 54: termx.remote.auth.v1.EndpointBootstrapBundleV2.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
+	25, // 55: termx.remote.auth.v1.EndpointBootstrapBundleV2.routes:type_name -> termx.remote.auth.v1.EndpointAccessRoute
+	41, // 56: termx.remote.auth.v1.EndpointBootstrapBundleV2.authorization:type_name -> termx.remote.auth.v1.EndpointAuthorizationBootstrap
+	40, // 57: termx.remote.auth.v1.PairingTicketSignatureInput.ticket:type_name -> termx.remote.auth.v1.PairingTicketDescriptor
+	42, // 58: termx.remote.auth.v1.EndpointBootstrapSignatureInput.bundle:type_name -> termx.remote.auth.v1.EndpointBootstrapBundleV2
+	23, // 59: termx.remote.auth.v1.ClientEndpointShareBundleV1.identity:type_name -> termx.remote.auth.v1.EndpointDaemonIdentity
+	25, // 60: termx.remote.auth.v1.ClientEndpointShareBundleV1.routes:type_name -> termx.remote.auth.v1.EndpointAccessRoute
+	5,  // 61: termx.remote.auth.v1.ClientEndpointShareBundleV1.connect_mode:type_name -> termx.remote.auth.v1.EndpointConnectMode
+	24, // 62: termx.remote.auth.v1.ClientEndpointShareBundleV1.selection_policy:type_name -> termx.remote.auth.v1.EndpointSelectionPolicy
+	30, // 63: termx.remote.auth.v1.ClientEndpointShareBundleV1.credential_descriptors:type_name -> termx.remote.auth.v1.EndpointCredentialDescriptor
+	64, // [64:64] is the sub-list for method output_type
+	64, // [64:64] is the sub-list for method input_type
+	64, // [64:64] is the sub-list for extension type_name
+	64, // [64:64] is the sub-list for extension extendee
+	0,  // [0:64] is the sub-list for field type_name
 }
 
 func init() { file_remoteauthpb_remote_auth_proto_init() }
@@ -3724,14 +4180,16 @@ func file_remoteauthpb_remote_auth_proto_init() {
 	if File_remoteauthpb_remote_auth_proto != nil {
 		return
 	}
-	file_remoteauthpb_remote_auth_proto_msgTypes[0].OneofWrappers = []any{
+	file_remoteauthpb_remote_auth_proto_msgTypes[1].OneofWrappers = []any{
 		(*AuthEnvelope_DeviceHello)(nil),
 		(*AuthEnvelope_CapabilityOpen)(nil),
 		(*AuthEnvelope_CapabilityAccepted)(nil),
 		(*AuthEnvelope_CapabilityRejected)(nil),
+		(*AuthEnvelope_PairingOpen)(nil),
+		(*AuthEnvelope_PairingAccepted)(nil),
 	}
-	file_remoteauthpb_remote_auth_proto_msgTypes[10].OneofWrappers = []any{}
-	file_remoteauthpb_remote_auth_proto_msgTypes[26].OneofWrappers = []any{
+	file_remoteauthpb_remote_auth_proto_msgTypes[13].OneofWrappers = []any{}
+	file_remoteauthpb_remote_auth_proto_msgTypes[29].OneofWrappers = []any{
 		(*EndpointAuthorizationBootstrap_PairingTicket)(nil),
 		(*EndpointAuthorizationBootstrap_BoundGrant)(nil),
 	}
@@ -3740,8 +4198,8 @@ func file_remoteauthpb_remote_auth_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_remoteauthpb_remote_auth_proto_rawDesc), len(file_remoteauthpb_remote_auth_proto_rawDesc)),
-			NumEnums:      10,
-			NumMessages:   32,
+			NumEnums:      12,
+			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

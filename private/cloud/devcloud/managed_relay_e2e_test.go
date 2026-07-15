@@ -66,6 +66,11 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	daemonSocket := startManagedDirectCompanionIPC(t, ctx, daemonService, "relay-daemon")
 	loginManagedDirectClient(t, ctx, clientSocket)
 	identity := enrollManagedDirectDaemon(t, ctx, daemonSocket, manifest.EnrollmentCode, clock)
+	accessStore, err := remoteauth.LoadAccessStore(t.TempDir(), identity, remoteauth.AccessStoreOptions{Now: clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = accessStore.Close() })
 
 	localCore := startManagedDirectCore(t, ctx, "relay-local")
 	remoteCore := startManagedDirectCore(t, ctx, "relay-remote")
@@ -91,7 +96,7 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 			Companion: daemonCompanion, Identity: identity, Now: clock.Now,
 			Metadata: &cloudpb.DeviceMetadata{DisplayName: "Managed Relay daemon", Platform: runtime.GOOS, TermxVersion: "managed-relay-e2e"},
 			Answerer: remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
-				Core: remoteCore.server, Identity: identity, Revocations: remoteauth.NewRevocations(), Now: clock.Now,
+				Core: remoteCore.server, Identity: identity, AccessStore: accessStore, Now: clock.Now,
 			}},
 		}).Run(agentContext)
 	}()
@@ -129,12 +134,7 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	controlShutdownCancel()
-	bundle, err := remoteauth.IssuePairingBundle(identity, remoteauth.PairingIssueOptions{
-		Label: "Managed Relay daemon", Scope: remoteauth.Scope{AllowDaemon: true}, Lifetime: time.Hour, Now: clock.Now(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	credential := issueManagedE2ECredential(t, accessStore, "managed-relay", "Managed Relay client", clock.Now())
 
 	localTerminal := services.ProtocolTerminalServiceAdapter{Client: localCore.client}
 	registry := connection.Registry{Version: connection.RegistryVersion, Default: connection.DefaultEndpointID, Endpoints: map[connection.EndpointID]connection.Endpoint{
@@ -148,7 +148,7 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 		connection.RouteManagedWebRTC: func(dialContext context.Context, cfg connection.Endpoint, route connection.AccessRoute) (services.EndpointServiceBundle, error) {
 			session, dialErr := remotev2client.DialSession(dialContext, remotev2client.DialOptions{
 				Companion: clientCompanion, EndpointID: string(cfg.ID), TargetDeviceID: route.TargetDeviceID,
-				DeviceFingerprint: cfg.DaemonIdentity.DeviceFingerprint, CapabilityGrant: bundle.CapabilityGrant,
+				DeviceFingerprint: cfg.DaemonIdentity.DeviceFingerprint, Credential: credential,
 				RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true, Now: clock.Now(),
 				Phase: func(phase cloudcompanion.EndpointPhase) { services.ReportEndpointDialPhase(dialContext, phase) },
 			})
@@ -255,7 +255,7 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	}
 
 	for _, request := range capture.snapshot() {
-		if bytes.Contains(request.body, []byte(bundle.CapabilityGrant)) || bytes.Contains(request.body, inputPayload) || bytes.Contains(request.body, identity.PrivateKey) {
+		if bytes.Contains(request.body, []byte(credential.CapabilityGrant)) || bytes.Contains(request.body, inputPayload) || bytes.Contains(request.body, identity.PrivateKey) {
 			t.Fatalf("cloud boundary observed capability, terminal payload, or daemon private key at %s", request.path)
 		}
 	}
@@ -277,8 +277,8 @@ func TestManagedSingleRelayE2EAcrossRealBoundaries(t *testing.T) {
 	failureContext, cancelFailure := context.WithTimeout(ctx, 3*time.Second)
 	defer cancelFailure()
 	failedSession, relayFailure := remotev2client.DialSession(failureContext, remotev2client.DialOptions{
-		Companion: failureCompanion, EndpointID: "managed-relay-after-stop", TargetDeviceID: identity.DeviceID,
-		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: bundle.CapabilityGrant,
+		Companion: failureCompanion, EndpointID: "managed-relay", TargetDeviceID: identity.DeviceID,
+		DeviceFingerprint: identity.Fingerprint, Credential: credential,
 		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true, Now: clock.Now(),
 	})
 	if relayFailure == nil {

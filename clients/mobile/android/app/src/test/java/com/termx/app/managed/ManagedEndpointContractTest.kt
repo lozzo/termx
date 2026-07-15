@@ -14,10 +14,18 @@ class ManagedEndpointContractTest {
             "login_required",
             "device_enrollment_required",
             "unauthenticated",
+            "identity_conflict",
             "capability_invalid",
             "capability_expired",
+            "capability_revoked",
+            "capability_proof_invalid",
+            "subject_key_mismatch",
             "device_identity_mismatch",
             "scope_invalid",
+            "scope_expansion_required",
+            "pairing_ticket_invalid",
+            "pairing_ticket_expired",
+            "pairing_ticket_consumed",
             "replayed",
         ).forEach { code ->
             assertTrue("expected $code to stop automatic reconnect", isNonRetryableManagedAuthenticationFailure(code))

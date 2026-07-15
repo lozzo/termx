@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"runtime"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	remotev2daemon "github.com/lozzow/termx/remote/daemon"
 	remotev2webrtc "github.com/lozzow/termx/remote/webrtc"
 	"github.com/lozzow/termx/shared/cloudcompanion"
-	"github.com/lozzow/termx/shared/remoteauth"
 	"github.com/lozzow/termx/shared/transport"
 )
 
@@ -29,17 +27,16 @@ type v3ManagedDaemonCore interface {
 	ServeScopedTransport(context.Context, transport.Transport, corev2.TransportScope) error
 }
 
-func startV3ManagedDaemon(ctx context.Context, core v3ManagedDaemonCore, logger *slog.Logger) error {
+func startV3ManagedDaemon(ctx context.Context, core v3ManagedDaemonCore, clientAccess v3ClientAccessRuntime, logger *slog.Logger) error {
 	if core == nil {
 		return fmt.Errorf("managed cloud daemon requires core-v2 server")
 	}
-	identity, err := remoteauth.LoadOrCreateLocalIdentity(v3RemoteIdentityDir())
-	if err != nil {
+	identity := clientAccess.Identity
+	if err := identity.Validate(); err != nil {
 		return err
 	}
-	revocations, err := remoteauth.LoadRevocationStore(filepath.Join(filepath.Dir(v3RemoteIdentityDir()), "revocations"))
-	if err != nil {
-		return err
+	if clientAccess.Store == nil {
+		return fmt.Errorf("managed cloud daemon requires client access store")
 	}
 	companion, err := openV3CloudDaemonCompanion(ctx)
 	if err != nil {
@@ -54,7 +51,7 @@ func startV3ManagedDaemon(ctx context.Context, core v3ManagedDaemonCore, logger 
 			TermxVersion: termxBuildVersion, SignalingVersions: []uint32{cloudcompanion.ProtocolVersionMax},
 		},
 		Answerer: remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
-			Core: core, Identity: identity, Revocations: revocations,
+			Core: core, Identity: identity, AccessStore: clientAccess.Store,
 		}},
 	}
 	go func() {

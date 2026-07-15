@@ -16,7 +16,32 @@ import (
 	"github.com/lozzow/termx/internal/protocol"
 	remotev2client "github.com/lozzow/termx/remote/client"
 	"github.com/lozzow/termx/shared/connection"
+	"github.com/lozzow/termx/shared/filelock"
 )
+
+func TestEndpointMutationHonorsRootTimeoutWhileRegistryLocked(t *testing.T) {
+	registryPath := filepath.Join(t.TempDir(), "connections.yaml")
+	owner, err := filelock.Acquire(registryPath+".lock", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	command := newRootCmd()
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{
+		"--timeout", "100ms", "endpoint", "--registry", registryPath,
+		"add", "ssh", "blocked", "--host", "blocked.example", "--remote-socket", "auto",
+	})
+	started := time.Now()
+	err = command.Execute()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("locked registry timeout error = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("locked registry ignored root timeout: %s", elapsed)
+	}
+}
 
 func TestEndpointRegistryCommandLifecycle(t *testing.T) {
 	configHome := t.TempDir()

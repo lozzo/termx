@@ -49,7 +49,11 @@ func TestStartV3ManagedDaemonBuildsPresenceWithoutStoppingCore(t *testing.T) {
 	v3ManagedPresenceRetryDelay = time.Millisecond
 	defer func() { v3ManagedPresenceRetryDelay = previousDelay }()
 	core := &managedDaemonCoreFake{}
-	if err := startV3ManagedDaemon(context.Background(), core, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+	clientAccess, err := loadV3ClientAccessRuntime(resolveV3Socket(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := startV3ManagedDaemon(context.Background(), core, clientAccess, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatal(err)
 	}
 	select {

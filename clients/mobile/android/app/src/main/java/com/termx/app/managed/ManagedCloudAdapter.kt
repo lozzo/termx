@@ -82,9 +82,9 @@ interface ManagedCloudAdapter {
     suspend fun reportPathQuality(summary: ManagedPathQualitySummary)
 }
 
-/** GrantCredentialStore 只按 grant_ref 从 Android Keystore/Credential Manager 域解析原始 capability。 */
-interface GrantCredentialStore {
-    suspend fun resolve(grantRef: String): String
+/** ClientAccessCredentialStore 只按 credential ref 从平台安全域解析 per-endpoint private key 与 bound grant。 */
+interface ClientAccessCredentialStore {
+    suspend fun resolve(credentialRef: String): AndroidClientAccessCredential
 }
 
 /**
@@ -92,7 +92,11 @@ interface GrantCredentialStore {
  * cloud module 不得实现或绕过该接口；失败时 transport 必须关闭且不能开始 terminal protocol。
  */
 interface ManagedEndpointAuthorizer {
-    suspend fun authorize(transport: com.termx.app.transport.WebRTCTransport, spec: ManagedEndpointSpec, grant: String)
+    suspend fun authorize(
+        transport: com.termx.app.transport.WebRTCTransport,
+        spec: ManagedEndpointSpec,
+        credential: AndroidClientAccessCredential,
+    )
 }
 
 /** CommunityCloudAdapter 明确表示公开 Community build 未包含官方 cloud module。 */
@@ -134,10 +138,10 @@ class CommunityCloudAdapter : ManagedCloudAdapter {
     }
 }
 
-/** CommunityGrantCredentialStore 不读取旧 session token，也不把 endpoint 配置误当 secret store。 */
-class CommunityGrantCredentialStore : GrantCredentialStore {
-    override suspend fun resolve(grantRef: String): String {
-        throw ManagedEndpointFailure("unauthenticated", "No platform grant credential store is configured")
+/** CommunityClientAccessCredentialStore 不读取旧 session token，也不把 endpoint 配置误当 key/grant store。 */
+class CommunityClientAccessCredentialStore : ClientAccessCredentialStore {
+    override suspend fun resolve(credentialRef: String): AndroidClientAccessCredential {
+        throw ManagedEndpointFailure("unauthenticated", "No platform client access credential store is configured")
     }
 }
 
@@ -146,7 +150,7 @@ class CommunityEndpointAuthorizer : ManagedEndpointAuthorizer {
     override suspend fun authorize(
         transport: com.termx.app.transport.WebRTCTransport,
         spec: ManagedEndpointSpec,
-        grant: String,
+        credential: AndroidClientAccessCredential,
     ) {
         throw ManagedEndpointFailure("protocol", "Managed endpoint authorizer is unavailable")
     }

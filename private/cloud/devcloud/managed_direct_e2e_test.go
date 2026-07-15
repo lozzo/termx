@@ -70,6 +70,11 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 
 	loginManagedDirectClient(t, ctx, clientSocket)
 	identity := enrollManagedDirectDaemon(t, ctx, daemonSocket, manifest.EnrollmentCode, clock)
+	accessStore, err := remoteauth.LoadAccessStore(t.TempDir(), identity, remoteauth.AccessStoreOptions{Now: clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = accessStore.Close() })
 
 	localCore := startManagedDirectCore(t, ctx, "local")
 	remoteCore := startManagedDirectCore(t, ctx, "remote")
@@ -94,7 +99,7 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 			Companion: daemonCompanion, Identity: identity, Now: clock.Now,
 			Metadata: &cloudpb.DeviceMetadata{DisplayName: "Managed direct daemon", Platform: runtime.GOOS, TermxVersion: "managed-direct-e2e"},
 			Answerer: remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
-				Core: remoteCore.server, Identity: identity, Revocations: remoteauth.NewRevocations(), Now: clock.Now,
+				Core: remoteCore.server, Identity: identity, AccessStore: accessStore, Now: clock.Now,
 			}},
 		}).Run(agentContext)
 	}()
@@ -107,12 +112,7 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitManagedDirectPresence(t, ctx, clientCompanion, identity.DeviceID)
-	bundle, err := remoteauth.IssuePairingBundle(identity, remoteauth.PairingIssueOptions{
-		Label: "Managed direct daemon", Scope: remoteauth.Scope{AllowDaemon: true}, Lifetime: time.Hour, Now: clock.Now(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	credential := issueManagedE2ECredential(t, accessStore, "managed-direct", "Managed direct client", clock.Now())
 
 	localTerminal := services.ProtocolTerminalServiceAdapter{Client: localCore.client}
 	registry := connection.Registry{Version: connection.RegistryVersion, Default: connection.DefaultEndpointID, Endpoints: map[connection.EndpointID]connection.Endpoint{
@@ -127,7 +127,7 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 		connection.RouteManagedWebRTC: func(dialContext context.Context, cfg connection.Endpoint, route connection.AccessRoute) (services.EndpointServiceBundle, error) {
 			session, dialErr := remotev2client.DialSession(dialContext, remotev2client.DialOptions{
 				Companion: clientCompanion, EndpointID: string(cfg.ID), TargetDeviceID: route.TargetDeviceID,
-				DeviceFingerprint: cfg.DaemonIdentity.DeviceFingerprint, CapabilityGrant: bundle.CapabilityGrant,
+				DeviceFingerprint: cfg.DaemonIdentity.DeviceFingerprint, Credential: credential,
 				RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY, Now: clock.Now(),
 				Phase: func(phase cloudcompanion.EndpointPhase) {
 					services.ReportEndpointDialPhase(dialContext, phase)
@@ -200,7 +200,7 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 	waitManagedDirectHistoryText(t, ctx, manager, managedEndpointID, "remote-terminal", "managed-direct-payload")
 
 	for _, request := range capture.snapshot() {
-		if bytes.Contains(request.body, []byte(bundle.CapabilityGrant)) || bytes.Contains(request.body, inputPayload) || bytes.Contains(request.body, identity.PrivateKey) {
+		if bytes.Contains(request.body, []byte(credential.CapabilityGrant)) || bytes.Contains(request.body, inputPayload) || bytes.Contains(request.body, identity.PrivateKey) {
 			t.Fatalf("cloud boundary observed capability, terminal payload, or daemon private key at %s", request.path)
 		}
 	}
@@ -224,6 +224,31 @@ func TestManagedDirectE2EAcrossRealBoundaries(t *testing.T) {
 	case <-agentErrors:
 	case <-time.After(2 * time.Second):
 		t.Fatal("managed daemon agent did not stop")
+	}
+}
+
+func issueManagedE2ECredential(t *testing.T, store *remoteauth.AccessStore, endpointID string, label string, now time.Time) remoteauth.ClientAccessCredential {
+	t.Helper()
+	bundle, _, err := store.IssuePairingBundle(remoteauth.PairingIssueOptions{
+		Label: label, Scope: remoteauth.Scope{AllowDaemon: true}, TicketTTL: time.Hour, GrantLifetime: 24 * time.Hour, Now: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := remoteauth.EncodePairingBundle(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := remoteauth.GenerateClientAccessIdentity(endpointID, rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.RedeemPairingBundle(payload, client.PublicKey, label, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return remoteauth.ClientAccessCredential{
+		Version: 1, EndpointID: endpointID, Identity: client, CapabilityGrant: result.Grant, UpdatedAt: now,
 	}
 }
 

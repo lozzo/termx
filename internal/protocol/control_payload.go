@@ -421,6 +421,9 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 		}
 		return proto.Marshal(remoteLocalEnableParamsToWirePB(value))
 	default:
+		if payload, handled, err := encodeClientAccessMethodParams(method, params); handled {
+			return payload, err
+		}
 		if payload, handled, err := encodeFileMethodParams(method, params); handled {
 			return payload, err
 		}
@@ -601,6 +604,9 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 		}
 		return remoteLocalEnableParamsFromWirePB(&msg), nil
 	default:
+		if value, handled, err := decodeClientAccessMethodParams(method, payload); handled {
+			return value, err
+		}
 		if value, handled, err := decodeFileMethodParams(method, payload); handled {
 			return value, err
 		}
@@ -815,6 +821,9 @@ func EncodeMethodResult(method string, result any) ([]byte, error) {
 		}
 		return proto.Marshal(remoteLocalStatusToWirePB(value))
 	default:
+		if payload, handled, err := encodeClientAccessMethodResult(method, result); handled {
+			return payload, err
+		}
 		if payload, handled, err := encodeFileMethodResult(method, result); handled {
 			return payload, err
 		}
@@ -1012,6 +1021,9 @@ func DecodeMethodResult(method string, payload []byte, out any) error {
 		*ptr = remoteLocalStatusFromWirePB(&msg)
 		return nil
 	default:
+		if handled, err := decodeClientAccessMethodResult(method, payload, out); handled {
+			return err
+		}
 		if handled, err := decodeFileMethodResult(method, payload, out); handled {
 			return err
 		}

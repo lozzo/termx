@@ -27,7 +27,7 @@ type DialOptions struct {
 	EndpointID         string
 	TargetDeviceID     string
 	DeviceFingerprint  string
-	CapabilityGrant    string
+	Credential         remoteauth.ClientAccessCredential
 	RoutePreference    cloudpb.RoutePreference
 	RelayOnly          bool
 	AuthRandom         io.Reader
@@ -65,7 +65,7 @@ func DialSession(ctx context.Context, options DialOptions) (Session, error) {
 	return Session{Transport: protocolTransport, ObservedPath: path, RouteSelectionReason: reason, ObservationDone: observationDone}, nil
 }
 
-// Dial 先本地验证 capability 绑定，再通过 Companion 协商 WebRTC，并在 DataChannel 内完成端到端授权。
+// Dial 先本地验证 client-bound capability，再通过 Companion 协商 WebRTC，并在 DataChannel 内完成端到端授权。
 // Companion、WebRTC 或授权失败只返回当前 endpoint 错误，不 fallback 到 local、SSH、旧 Hub API、remote UI 或原始 shell。
 func Dial(ctx context.Context, options DialOptions) (transport.Transport, error) {
 	qualityOptions, err := normalizeQualityObservationOptions(options.QualityObservation)
@@ -77,12 +77,24 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 	if endpointID == "" || targetDeviceID == "" {
 		return nil, fmt.Errorf("managed WebRTC endpoint and target device are required")
 	}
-	claims, err := remoteauth.Verify(options.CapabilityGrant, options.DeviceFingerprint, options.Now, nil)
+	if err := options.Credential.Identity.Validate(); err != nil {
+		return nil, fmt.Errorf("managed endpoint ClientAccessIdentity is invalid: %w", err)
+	}
+	if strings.TrimSpace(options.Credential.EndpointID) != endpointID || options.Credential.Identity.EndpointID != endpointID {
+		return nil, fmt.Errorf("managed endpoint credential belongs to endpoint %q, not %q", options.Credential.EndpointID, endpointID)
+	}
+	if !options.Credential.Ready() {
+		return nil, fmt.Errorf("managed endpoint capability credential is awaiting pairing")
+	}
+	claims, err := remoteauth.Verify(options.Credential.CapabilityGrant, options.DeviceFingerprint, options.Now, nil)
 	if err != nil {
 		return nil, fmt.Errorf("verify managed endpoint capability grant: %w", err)
 	}
 	if claims.IssuerDeviceID != targetDeviceID {
 		return nil, fmt.Errorf("managed endpoint device mismatch: grant %q registry %q", claims.IssuerDeviceID, targetDeviceID)
+	}
+	if claims.SubjectKeyFingerprint != options.Credential.Identity.Fingerprint {
+		return nil, fmt.Errorf("managed endpoint capability subject does not match ClientAccessIdentity")
 	}
 	if options.Companion == nil {
 		return nil, cloudcompanion.NewError(cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_COMPANION_MISSING, "Cloud Companion is not configured")
@@ -204,6 +216,11 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 		_ = secured.Close()
 		return nil, fmt.Errorf("read managed endpoint DTLS certificate: %w", err)
 	}
+	channelBinding, err := remoteauth.DTLSChannelBinding(dtlsFingerprint)
+	if err != nil {
+		_ = secured.Close()
+		return nil, fmt.Errorf("bind managed endpoint DTLS certificate: %w", err)
+	}
 	authenticator := remoteauth.ClientHandshake{Random: options.AuthRandom}
 	if !options.Now.IsZero() {
 		now := options.Now.UTC()
@@ -212,7 +229,7 @@ func Dial(ctx context.Context, options DialOptions) (transport.Transport, error)
 	reportDialPhase(options.Phase, cloudcompanion.EndpointPhaseAuthorizing)
 	if _, err := authenticator.Authenticate(ctx, secured, remoteauth.ClientHandshakeRequest{
 		ExpectedDeviceID: targetDeviceID, ExpectedDeviceFingerprint: options.DeviceFingerprint,
-		CapabilityGrant: options.CapabilityGrant, DaemonDTLSCertificateFingerprint: dtlsFingerprint,
+		Credential: options.Credential, ChannelBinding: channelBinding,
 	}); err != nil {
 		_ = secured.Close()
 		return nil, fmt.Errorf("authenticate managed endpoint DataChannel: %w", err)

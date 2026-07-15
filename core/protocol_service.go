@@ -660,9 +660,57 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 			return nil, false, errorCode(err), err
 		}
 		return encodeMethodResult(req.Method, status)
+	case "remote.access.identity":
+		service, err := session.clientAccessService()
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		result, err := service.Identity(ctx)
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, result)
+	case "remote.access.ticket.create":
+		service, err := session.clientAccessService()
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		result, err := service.CreateTicket(ctx, params.(protocol.ClientAccessTicketCreateParams))
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, result)
+	case "remote.access.list":
+		service, err := session.clientAccessService()
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		result, err := service.List(ctx)
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, result)
+	case "remote.access.revoke":
+		service, err := session.clientAccessService()
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		result, err := service.Revoke(ctx, params.(protocol.ClientAccessRevokeParams))
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, result)
 	default:
 		return nil, false, protocolErrorNotFound, fmt.Errorf("unknown method: %s", req.Method)
 	}
+}
+
+func (session *protocolSession) clientAccessService() (ClientAccessService, error) {
+	service := session.server.ClientAccessService()
+	if service == nil {
+		return nil, ErrClientAccessServiceUnavailable
+	}
+	return service, nil
 }
 
 func (session *protocolSession) remoteService() (RemoteService, error) {
@@ -2007,7 +2055,7 @@ func errorCode(err error) int {
 		return protocolErrorBadRequest
 	case errors.Is(err, ErrStorageEntryNotFound), errors.Is(err, ErrWorkbenchNotFound):
 		return protocolErrorNotFound
-	case errors.Is(err, ErrRemoteServiceUnavailable), errors.Is(err, ErrHistoryNotRebuilt), errors.Is(err, ErrHistoryDisabled):
+	case errors.Is(err, ErrRemoteServiceUnavailable), errors.Is(err, ErrClientAccessServiceUnavailable), errors.Is(err, ErrHistoryNotRebuilt), errors.Is(err, ErrHistoryDisabled):
 		return protocolErrorUnavailable
 	default:
 		return protocolErrorInternal

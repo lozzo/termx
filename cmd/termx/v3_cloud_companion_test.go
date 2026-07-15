@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"os"
 	"path/filepath"
@@ -129,8 +131,23 @@ func TestV3ManagedEndpointPassesSharedIdentityCredentialAndSmartRoutePolicyToRem
 		dialV3ManagedSession = previousDial
 	}()
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	if err := remoteauth.NewCredentialStore(v3RemoteCredentialDir()).Put("grant-lab", "opaque-capability-grant"); err != nil {
-		t.Fatalf("put grant fixture: %v", err)
+	credentialStore := remoteauth.NewCredentialStore(v3RemoteCredentialDir())
+	credential, err := credentialStore.LoadOrCreateIdentity("grant-lab", "lab", rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemonPublic, daemonPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	now := time.Now().UTC()
+	grant, err := remoteauth.Issue(daemonPrivate, remoteauth.Claims{
+		GrantID: "grant-lab", IssuerDeviceID: "device-1", SubjectKeyFingerprint: credential.Identity.Fingerprint,
+		Scope: remoteauth.Scope{AllowDaemon: true}, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err = credentialStore.BindGrant("grant-lab", grant, remoteauth.Fingerprint(daemonPublic), now, remoteauth.BindGrantOptions{})
+	if err != nil {
+		t.Fatal(err)
 	}
 	companion := &cloudcompanion.FakeClient{}
 	openV3CloudCompanion = func(context.Context) (cloudcompanion.Client, error) { return companion, nil }
@@ -140,13 +157,14 @@ func TestV3ManagedEndpointPassesSharedIdentityCredentialAndSmartRoutePolicyToRem
 		received = options
 		return remotev2client.Session{}, wantErr
 	}
-	cfg := testManagedEndpoint("lab", "Lab", "device-1", "ed25519-sha256:device-1", "grant-lab", connection.RelaySmart, connection.ConnectOnDemand, true)
-	_, err := v3ManagedCloudEndpointDialer()(context.Background(), cfg, testOnlyRoute(cfg))
+	cfg := testManagedEndpoint("lab", "Lab", "device-1", remoteauth.Fingerprint(daemonPublic), "grant-lab", connection.RelaySmart, connection.ConnectOnDemand, true)
+	_, err = v3ManagedCloudEndpointDialer()(context.Background(), cfg, testOnlyRoute(cfg))
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("dial error = %v, want injected stop", err)
 	}
 	if received.Companion != companion || received.EndpointID != "lab" || received.TargetDeviceID != "device-1" ||
-		received.DeviceFingerprint != cfg.DaemonIdentity.DeviceFingerprint || received.CapabilityGrant != "opaque-capability-grant" ||
+		received.DeviceFingerprint != cfg.DaemonIdentity.DeviceFingerprint || received.Credential.CapabilityGrant != grant ||
+		received.Credential.Identity.Fingerprint != credential.Identity.Fingerprint ||
 		received.RoutePreference != cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE || received.RelayOnly ||
 		!received.QualityObservation.Enabled || received.QualityObservation.NetworkClass != "unknown" {
 		t.Fatalf("managed remote-v2 options lost endpoint contract: %#v", received)

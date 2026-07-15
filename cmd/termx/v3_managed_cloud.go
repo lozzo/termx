@@ -68,13 +68,13 @@ func dialV3ManagedEndpointClient(ctx context.Context, endpoint connection.Endpoi
 	if err != nil {
 		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q route %q policy: %w", endpoint.ID, route.ID, err)
 	}
-	grant, err := remoteauth.NewCredentialStore(v3RemoteCredentialDir()).Resolve(route.CredentialRef)
+	credential, err := remoteauth.NewCredentialStore(v3RemoteCredentialDir()).ResolveContext(ctx, route.CredentialRef)
 	if err != nil {
 		return nil, remotev2client.Session{}, fmt.Errorf("managed cloud endpoint %q route %q credential: %w", endpoint.ID, route.ID, err)
 	}
 	session, err := dialV3ManagedSession(ctx, remotev2client.DialOptions{
 		Companion: companion, EndpointID: string(endpoint.ID), TargetDeviceID: route.TargetDeviceID,
-		DeviceFingerprint: endpoint.DaemonIdentity.DeviceFingerprint, CapabilityGrant: grant,
+		DeviceFingerprint: endpoint.DaemonIdentity.DeviceFingerprint, Credential: credential,
 		RoutePreference: policy.RoutePreference, RelayOnly: policy.RelayOnly,
 		QualityObservation: remotev2client.QualityObservationOptions{Enabled: true, NetworkClass: "unknown"},
 		Phase:              func(phase cloudcompanion.EndpointPhase) { services.ReportEndpointDialPhase(ctx, phase) },

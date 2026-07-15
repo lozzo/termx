@@ -15,9 +15,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
-const grantPrefix = "termx-grant-v1"
+const grantPrefix = "termx-grant-v2"
 
 var (
 	// ErrGrantMalformed 表示 capability envelope、claims 或必填字段不符合当前版本。
@@ -34,6 +35,8 @@ var (
 	ErrGrantRevoked = errors.New("remote capability grant revoked")
 	// ErrGrantScopeInvalid 表示 capability scope 为空、互相冲突或无法映射为 core-v2 scope。
 	ErrGrantScopeInvalid = errors.New("remote capability grant scope invalid")
+	// ErrGrantSubjectMismatch 表示 grant 绑定的 ClientAccessIdentity 与当前证明私钥持有权的客户端公钥不一致。
+	ErrGrantSubjectMismatch = errors.New("remote capability grant subject key mismatch")
 )
 
 // Scope 描述一条获授权 protocol session 可见的 core-v2 能力边界。
@@ -53,6 +56,9 @@ type Scope struct {
 	FileWriteContent bool `json:"file_write_content,omitempty"`
 	// FileMutate 允许 mkdir、rename、delete、copy 和 move。
 	FileMutate bool `json:"file_mutate,omitempty"`
+	// ManageClientAccess 允许通过已认证 protocol session 签发、列出或撤销其他客户端授权。
+	// 该能力独立于 daemon、terminal 和 file scope，不能由 AllowDaemon 或文件权限隐式推出。
+	ManageClientAccess bool `json:"manage_client_access,omitempty"`
 }
 
 // FullDaemonScope 返回官方 daemon 配对默认使用的显式能力集合。
@@ -61,13 +67,15 @@ func FullDaemonScope() Scope {
 	return Scope{AllowDaemon: true, FileReadMetadata: true, FileReadContent: true, FileWriteContent: true, FileMutate: true}
 }
 
-// Claims 是 remote daemon 签发并验证的 capability grant 内容。
-// issuer、有效期、独立 revocation ID、nonce 和 scope 都由 DeviceIdentity 签名；Hub/Companion 不读取或修改这些授权字段。
+// Claims 是 remote daemon 签发并验证的 client-bound capability grant 内容。
+// SubjectKeyFingerprint 绑定一个 Endpoint 专用 ClientAccessIdentity；issuer、subject、有效期、独立 revocation ID、nonce 和 scope
+// 都由 DeviceIdentity 签名，Hub/Companion 不读取或修改这些授权字段。
 type Claims struct {
 	Version                 uint32    `json:"version"`
 	GrantID                 string    `json:"grant_id"`
 	IssuerDeviceID          string    `json:"issuer_device_id"`
 	IssuerDeviceFingerprint string    `json:"issuer_device_fingerprint"`
+	SubjectKeyFingerprint   string    `json:"subject_key_fingerprint"`
 	Scope                   Scope     `json:"scope"`
 	IssuedAt                time.Time `json:"issued_at"`
 	NotBefore               time.Time `json:"not_before"`
@@ -127,8 +135,8 @@ func Fingerprint(publicKey ed25519.PublicKey) string {
 	return "ed25519-sha256:" + base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-// Issue 使用 remote daemon 的设备私钥签发 capability grant。
-// grant 自包含签名公钥用于 fingerprint proof，但不包含私钥、Hub token、客户端公钥或 allowlist 信息。
+// Issue 使用 remote daemon 的设备私钥签发 CapabilityGrant v2。
+// grant 自包含 daemon 签名公钥和目标 ClientAccessIdentity fingerprint，但不包含任何私钥、Hub token 或 Cloud 授权结果。
 func Issue(privateKey ed25519.PrivateKey, claims Claims) (string, error) {
 	if len(privateKey) != ed25519.PrivateKeySize {
 		return "", fmt.Errorf("%w: requires ed25519 private key", ErrGrantMalformed)
@@ -136,7 +144,7 @@ func Issue(privateKey ed25519.PrivateKey, claims Claims) (string, error) {
 	publicKey := privateKey.Public().(ed25519.PublicKey)
 	claims = normalizeClaims(claims)
 	if claims.Version == 0 {
-		claims.Version = 1
+		claims.Version = 2
 	}
 	if claims.NotBefore.IsZero() {
 		claims.NotBefore = claims.IssuedAt
@@ -169,6 +177,28 @@ func Issue(privateKey ed25519.PrivateKey, claims Claims) (string, error) {
 // Verify 校验 capability grant 的格式、签名、设备 fingerprint、有效期和撤销状态。
 // expectedFingerprint 必须来自 connection registry 的安全身份；旧 session token、label 或 hub device ID 均不能替代。
 func Verify(grant string, expectedFingerprint string, now time.Time, revocations RevocationChecker) (Claims, error) {
+	claims, err := verifyGrantEnvelope(grant, expectedFingerprint)
+	if err != nil {
+		return Claims{}, err
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	if now.Before(claims.NotBefore) {
+		return Claims{}, ErrGrantNotActive
+	}
+	if !now.Before(claims.ExpiresAt) {
+		return Claims{}, ErrGrantExpired
+	}
+	if revocations != nil && revocations.Revoked(claims.RevocationID) {
+		return Claims{}, ErrGrantRevoked
+	}
+	return claims, nil
+}
+
+func verifyGrantEnvelope(grant string, expectedFingerprint string) (Claims, error) {
 	parts := strings.Split(strings.TrimSpace(grant), ".")
 	if len(parts) != 4 || parts[0] != grantPrefix {
 		return Claims{}, fmt.Errorf("%w: unsupported envelope", ErrGrantMalformed)
@@ -206,20 +236,6 @@ func Verify(grant string, expectedFingerprint string, now time.Time, revocations
 	if err := validateClaims(claims); err != nil {
 		return Claims{}, err
 	}
-	if now.IsZero() {
-		now = time.Now().UTC()
-	} else {
-		now = now.UTC()
-	}
-	if now.Before(claims.NotBefore) {
-		return Claims{}, ErrGrantNotActive
-	}
-	if !now.Before(claims.ExpiresAt) {
-		return Claims{}, ErrGrantExpired
-	}
-	if revocations != nil && revocations.Revoked(claims.RevocationID) {
-		return Claims{}, ErrGrantRevoked
-	}
 	return claims, nil
 }
 
@@ -227,6 +243,7 @@ func normalizeClaims(claims Claims) Claims {
 	claims.GrantID = strings.TrimSpace(claims.GrantID)
 	claims.IssuerDeviceID = strings.TrimSpace(claims.IssuerDeviceID)
 	claims.IssuerDeviceFingerprint = strings.TrimSpace(claims.IssuerDeviceFingerprint)
+	claims.SubjectKeyFingerprint = strings.TrimSpace(claims.SubjectKeyFingerprint)
 	claims.Scope.TerminalID = strings.TrimSpace(claims.Scope.TerminalID)
 	claims.IssuedAt = claims.IssuedAt.UTC()
 	if !claims.NotBefore.IsZero() {
@@ -239,7 +256,7 @@ func normalizeClaims(claims Claims) Claims {
 }
 
 func validateClaims(claims Claims) error {
-	if claims.Version != 1 {
+	if claims.Version != 2 {
 		return fmt.Errorf("%w: unsupported version %d", ErrGrantMalformed, claims.Version)
 	}
 	if claims.GrantID == "" {
@@ -251,17 +268,35 @@ func validateClaims(claims Claims) error {
 	if claims.IssuerDeviceFingerprint == "" {
 		return fmt.Errorf("%w: requires issuer_device_fingerprint", ErrGrantMalformed)
 	}
+	if claims.SubjectKeyFingerprint == "" {
+		return fmt.Errorf("%w: requires subject_key_fingerprint", ErrGrantMalformed)
+	}
 	if claims.RevocationID == "" || claims.Nonce == "" {
 		return fmt.Errorf("%w: requires revocation_id and nonce", ErrGrantMalformed)
 	}
+	if err := validateScope(claims.Scope); err != nil {
+		return err
+	}
+	if claims.IssuedAt.IsZero() || claims.NotBefore.IsZero() || claims.ExpiresAt.IsZero() ||
+		!claims.ExpiresAt.After(claims.NotBefore) || !claims.ExpiresAt.After(claims.IssuedAt) {
+		return fmt.Errorf("%w: requires valid issued_at, not_before and expires_at", ErrGrantMalformed)
+	}
+	return nil
+}
+
+func validateScope(scope Scope) error {
+	if !utf8.ValidString(scope.TerminalID) {
+		return fmt.Errorf("%w: terminal ID must be valid UTF-8", ErrGrantScopeInvalid)
+	}
+	scope.TerminalID = strings.TrimSpace(scope.TerminalID)
 	capabilities := 0
-	if claims.Scope.AllowDaemon {
+	if scope.AllowDaemon {
 		capabilities++
 	}
-	if claims.Scope.TerminalID != "" {
+	if scope.TerminalID != "" {
 		capabilities++
 	}
-	if claims.Scope.MachineEventsOnly {
+	if scope.MachineEventsOnly {
 		capabilities++
 	}
 	if capabilities == 0 {
@@ -270,12 +305,8 @@ func validateClaims(claims Claims) error {
 	if capabilities != 1 {
 		return fmt.Errorf("%w: scopes are mutually exclusive", ErrGrantScopeInvalid)
 	}
-	if (claims.Scope.FileReadMetadata || claims.Scope.FileReadContent || claims.Scope.FileWriteContent || claims.Scope.FileMutate) && !claims.Scope.AllowDaemon {
+	if (scope.FileReadMetadata || scope.FileReadContent || scope.FileWriteContent || scope.FileMutate) && !scope.AllowDaemon {
 		return fmt.Errorf("%w: file permissions require daemon scope", ErrGrantScopeInvalid)
-	}
-	if claims.IssuedAt.IsZero() || claims.NotBefore.IsZero() || claims.ExpiresAt.IsZero() ||
-		claims.NotBefore.Before(claims.IssuedAt) || !claims.ExpiresAt.After(claims.NotBefore) {
-		return fmt.Errorf("%w: requires valid issued_at, not_before and expires_at", ErrGrantMalformed)
 	}
 	return nil
 }

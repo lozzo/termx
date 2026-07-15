@@ -30,12 +30,14 @@ type Channel interface {
 // Transport 把一个已经协商的可靠有序 DataChannel 投影为 message transport。
 // 同一实例可以先承载 remote auth envelope，再在 CapabilityAccepted 后承载 termx frame；调用方在授权成功前不得交给 protocol client 或 core-v2。
 type Transport struct {
-	channel Channel
-	recvCh  chan []byte
-	drainCh chan struct{}
-	done    chan struct{}
-	sendMu  sync.Mutex
-	close   sync.Once
+	channel          Channel
+	recvCh           chan []byte
+	drainCh          chan struct{}
+	done             chan struct{}
+	sendMu           sync.Mutex
+	doneOnce         sync.Once
+	channelCloseOnce sync.Once
+	closeErr         error
 }
 
 // New 创建 DataChannel message transport。
@@ -127,12 +129,16 @@ func (transport *Transport) Close() error {
 		return nil
 	}
 	transport.closeDone()
-	transport.sendMu.Lock()
-	defer transport.sendMu.Unlock()
-	if transport.channel == nil {
-		return nil
-	}
-	return transport.channel.Close()
+	transport.channelCloseOnce.Do(func() {
+		if transport.channel != nil {
+			// 底层 channel 必须先关闭，才能解除可能阻塞在 Channel.Send 内的 in-flight 发送；
+			// 随后等待 sendMu 只用于确认发送已退出，不能把锁序反过来形成 auth deadline 死锁。
+			transport.closeErr = transport.channel.Close()
+		}
+		transport.sendMu.Lock()
+		transport.sendMu.Unlock()
+	})
+	return transport.closeErr
 }
 
 // Done 返回当前 DataChannel transport 的生命周期结束信号。
@@ -146,7 +152,7 @@ func (transport *Transport) Done() <-chan struct{} {
 }
 
 func (transport *Transport) closeDone() {
-	transport.close.Do(func() {
+	transport.doneOnce.Do(func() {
 		close(transport.done)
 	})
 }

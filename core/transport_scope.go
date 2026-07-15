@@ -12,6 +12,9 @@ type TransportScope struct {
 	// PrincipalID 标识当前已验证授权主体，仅用于绑定可恢复资源；不得作为 terminal 或账号 truth。
 	// local listener 使用固定 local principal，remote DataChannel 使用已签名 CapabilityGrant ID。
 	PrincipalID string
+	// LocalOwner 表示该 session 来自当前用户拥有的 daemon-local listener。
+	// 它只由 core 本地 listener 设置，用于 DeviceIdentity、pairing ticket 和 client access 管理；远程 grant 永远不能声明该字段。
+	LocalOwner bool
 	// AllowDaemon 表示该 session 拥有当前 daemon 的完整 protocol 能力。
 	// 该字段必须由本地 listener 或已验证的 daemon-level capability 显式设置；零值不能代表无限权限。
 	AllowDaemon bool
@@ -30,10 +33,13 @@ type TransportScope struct {
 	FileMutate bool
 	// FileWriteContent 允许创建、恢复并完成上传 transfer；它不隐含 mutation 权限。
 	FileWriteContent bool
+	// ManageClientAccess 允许调用 remote.access.* 管理其他客户端的 bound grant。
+	// 它只能来自 CapabilityGrant v2 的显式 signed scope；AllowDaemon、terminal 或 file 权限均不能隐式推出该能力。
+	ManageClientAccess bool
 }
 
 func fullDaemonTransportScope() TransportScope {
-	return TransportScope{PrincipalID: "local", AllowDaemon: true, FileReadMetadata: true, FileReadContent: true, FileWriteContent: true, FileMutate: true}
+	return TransportScope{PrincipalID: "local", LocalOwner: true, AllowDaemon: true, FileReadMetadata: true, FileReadContent: true, FileWriteContent: true, FileMutate: true, ManageClientAccess: true}
 }
 
 func (scope TransportScope) normalized() TransportScope {
@@ -64,6 +70,12 @@ func (scope TransportScope) validate() error {
 	if (scope.FileReadMetadata || scope.FileReadContent || scope.FileWriteContent || scope.FileMutate) && scope.PrincipalID == "" {
 		return fmt.Errorf("file permissions require verified principal")
 	}
+	if scope.LocalOwner && (!scope.AllowDaemon || scope.PrincipalID == "") {
+		return fmt.Errorf("local owner scope requires verified daemon capability")
+	}
+	if scope.ManageClientAccess && scope.PrincipalID == "" {
+		return fmt.Errorf("client access management requires verified principal")
+	}
 	return nil
 }
 
@@ -73,6 +85,18 @@ func (scope TransportScope) unrestricted() bool {
 
 func (scope TransportScope) constrainMethod(method string, params any) (any, error) {
 	scope = scope.normalized()
+	if strings.HasPrefix(method, "remote.access.") {
+		if !scope.LocalOwner && !scope.ManageClientAccess {
+			return nil, fmt.Errorf("transport scope denies client access management method %q", method)
+		}
+		return params, nil
+	}
+	if method == "remote.pair.start" || strings.HasPrefix(method, "remote.local.") {
+		if !scope.LocalOwner {
+			return nil, fmt.Errorf("transport scope denies local owner method %q", method)
+		}
+		return params, nil
+	}
 	if strings.HasPrefix(method, "file.") {
 		return scope.constrainFileMethod(method, params)
 	}

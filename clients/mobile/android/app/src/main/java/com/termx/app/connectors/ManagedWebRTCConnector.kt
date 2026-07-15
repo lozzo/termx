@@ -13,7 +13,7 @@ import kotlinx.coroutines.runInterruptible
  */
 class ManagedWebRTCConnector(
     private val cloud: ManagedCloudAdapter,
-    private val credentials: GrantCredentialStore,
+    private val credentials: ClientAccessCredentialStore,
     private val authorizer: ManagedEndpointAuthorizer,
 ) {
     /** Result 保留实际网络路径或稳定错误码，不暴露 token、SDP credential 或服务端内部套餐细节。 */
@@ -36,6 +36,11 @@ class ManagedWebRTCConnector(
         return try {
             ManagedEndpointContract.validate(spec)
             val policy = ManagedEndpointContract.dialPolicy(spec.relayMode)
+            val credential = credentials.resolve(spec.grantRef)
+            if (!credential.ready()) throw ManagedEndpointFailure("unauthenticated", "client access credential is awaiting pairing")
+            if (credential.identity.endpointId != spec.endpointId) {
+                throw ManagedEndpointFailure("identity_conflict", "client access credential belongs to another endpoint")
+            }
             onProgress?.invoke(ManagedEndpointPhase.RESOLVING)
             val resolution = cloud.resolve(spec)
             if (resolution.managedSessionId.isBlank() || resolution.managedSessionId != resolution.managedSessionId.trim() ||
@@ -50,8 +55,6 @@ class ManagedWebRTCConnector(
             } else {
                 null
             }
-            val grant = credentials.resolve(spec.grantRef)
-            if (grant.isBlank()) throw ManagedEndpointFailure("unauthenticated", "grant credential is empty")
             val current = WebRTCTransport(bridge, spec.endpointId)
             transport = current
             onProgress?.invoke(ManagedEndpointPhase.SIGNALING)
@@ -75,7 +78,7 @@ class ManagedWebRTCConnector(
                 )
             }
             onProgress?.invoke(ManagedEndpointPhase.AUTHORIZING)
-            authorizer.authorize(current, spec, grant)
+            authorizer.authorize(current, spec, credential)
             val qualityReporter = ManagedPathQualityReporter(cloud, resolution.managedSessionId, current)
             current.addBeforeCloseListener(qualityReporter::stop)
             qualityReporter.start()
@@ -96,7 +99,7 @@ class ManagedWebRTCConnector(
     companion object {
         /** community 返回 fail-closed 官方 cloud 缺失实现，不访问旧 Hub/session-token API。 */
         fun community(): ManagedWebRTCConnector = ManagedWebRTCConnector(
-            CommunityCloudAdapter(), CommunityGrantCredentialStore(), CommunityEndpointAuthorizer(),
+            CommunityCloudAdapter(), CommunityClientAccessCredentialStore(), CommunityEndpointAuthorizer(),
         )
     }
 }

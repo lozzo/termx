@@ -10,13 +10,12 @@ import (
 	remotev2daemon "github.com/lozzow/termx/remote/daemon"
 	remotev2webrtc "github.com/lozzow/termx/remote/webrtc"
 	"github.com/lozzow/termx/shared/cloudcompanion"
-	"github.com/lozzow/termx/shared/remoteauth"
 )
 
 func TestDialSessionExecutesSmartRoutePlanWithoutAcquiringRelayLease(t *testing.T) {
-	identity, grant, now := dialIdentityFixture(t, "device-1")
+	identity, grant, store, now := dialIdentityFixture(t, "device-1")
 	answerer := remotev2webrtc.Answerer{Handler: remotev2daemon.SessionAcceptor{
-		Core: core.NewServer(), Identity: identity, Revocations: remoteauth.NewRevocations(), Now: fixedDialNow(now),
+		Core: core.NewServer(), Identity: identity, AccessStore: store, Now: fixedDialNow(now),
 	}}
 	companion := signalingCompanion(answerer, "device-1")
 	companion.PlanManagedRouteFunc = func(_ context.Context, request *cloudpb.PlanManagedRouteRequest) (*cloudpb.ManagedRoutePlan, error) {
@@ -24,7 +23,7 @@ func TestDialSessionExecutesSmartRoutePlanWithoutAcquiringRelayLease(t *testing.
 	}
 	session, err := DialSession(context.Background(), DialOptions{
 		Companion: companion, EndpointID: "lab", TargetDeviceID: "device-1",
-		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant,
+		DeviceFingerprint: identity.Fingerprint, Credential: grant,
 		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE, Now: now,
 	})
 	if err != nil {
@@ -136,7 +135,7 @@ func TestValidateManagedRoutePlanRejectsUnsafeMaterial(t *testing.T) {
 }
 
 func TestDialRejectsInvalidSmartRoutePlanBeforeSignaling(t *testing.T) {
-	identity, grant, now := dialIdentityFixture(t, "device-1")
+	identity, grant, _, now := dialIdentityFixture(t, "device-1")
 	companion := &cloudcompanion.FakeClient{
 		ResolveEndpointFunc: func(context.Context, *cloudpb.ResolveEndpointRequest) (*cloudpb.ResolvedEndpoint, error) {
 			return &cloudpb.ResolvedEndpoint{EndpointId: "lab", TargetDeviceId: "device-1", ManagedSessionId: "managed-1"}, nil
@@ -149,7 +148,7 @@ func TestDialRejectsInvalidSmartRoutePlanBeforeSignaling(t *testing.T) {
 	}
 	_, err := Dial(context.Background(), DialOptions{
 		Companion: companion, EndpointID: "lab", TargetDeviceID: "device-1",
-		DeviceFingerprint: identity.Fingerprint, CapabilityGrant: grant,
+		DeviceFingerprint: identity.Fingerprint, Credential: grant,
 		RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE, Now: now,
 	})
 	if !cloudcompanion.IsCode(err, cloudpb.CloudErrorCode_CLOUD_ERROR_CODE_PROTOCOL) {

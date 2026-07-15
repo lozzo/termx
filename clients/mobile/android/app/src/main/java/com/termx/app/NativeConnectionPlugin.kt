@@ -11,7 +11,7 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import com.termx.app.connection.BridgeRouter
 import com.termx.app.connection.ConnectionStoreManager
 import com.termx.app.connectors.ManagedWebRTCConnector
-import com.termx.app.managed.AndroidGrantCredentialStore
+import com.termx.app.managed.AndroidClientAccessCredentialStore
 import com.termx.app.managed.AndroidManagedEndpointAuthorizer
 import com.termx.app.managed.ManagedCloudAssembly
 import com.termx.app.managed.ManagedCloudAccount
@@ -49,7 +49,7 @@ class NativeConnectionPlugin : Plugin() {
     private var networkStateManager: NetworkStateManager? = null
     private var bridgeRouter: BridgeRouter? = null
     private var fileTransferManager: FileTransferManager? = null
-    private val grantCredentialStore: AndroidGrantCredentialStore by lazy { AndroidGrantCredentialStore(context) }
+    private val clientAccessCredentialStore: AndroidClientAccessCredentialStore by lazy { AndroidClientAccessCredentialStore(context) }
     private val cloudAdapter by lazy { ManagedCloudAssembly.create(context) }
     private val cloudScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val cloudLoginLock = Any()
@@ -240,13 +240,13 @@ class NativeConnectionPlugin : Plugin() {
         call.resolve()
     }
 
-    /** importManagedPairing 把含 bearer grant 的 v1 bundle 直接送入 native secure-store，JS 只收到非秘密 endpoint metadata。 */
+    /** importManagedPairing 验证 v2 one-time ticket，并按可选客户端 EndpointID 准备 key；DeviceID 不替代客户端主键。 */
     @PluginMethod
     fun importManagedPairing(call: PluginCall) {
         val payload = call.getString("payload") ?: run { call.reject("payload required"); return }
         val expectedEndpointId = call.getString("expectedEndpointId")?.trim()?.takeIf { it.isNotEmpty() }
         try {
-            val imported = ManagedPairingImporter(grantCredentialStore).import(
+            val imported = ManagedPairingImporter(clientAccessCredentialStore).import(
                 payload = payload,
                 expectedEndpointId = expectedEndpointId,
             )
@@ -256,10 +256,13 @@ class NativeConnectionPlugin : Plugin() {
                 put("targetDeviceId", imported.targetDeviceId)
                 put("deviceFingerprint", imported.deviceFingerprint)
                 put("grantRef", imported.grantRef)
+                put("ticketId", imported.ticketId)
+                put("clientKeyFingerprint", imported.clientKeyFingerprint)
                 put("expiresAt", imported.expiresAt.toString())
+                put("authorizationRequired", imported.authorizationRequired)
             })
         } catch (failure: ManagedEndpointFailure) {
-            call.reject(failure.message ?: failure.code)
+            call.reject(failure.message ?: failure.code, failure.code)
         } catch (failure: Exception) {
             call.reject("managed pairing import failed")
         }
@@ -269,7 +272,7 @@ class NativeConnectionPlugin : Plugin() {
     fun deleteManagedGrant(call: PluginCall) {
         val grantRef = call.getString("grantRef") ?: run { call.reject("grantRef required"); return }
         try {
-            grantCredentialStore.delete(grantRef)
+            clientAccessCredentialStore.delete(grantRef)
             call.resolve()
         } catch (failure: Exception) {
             call.reject(failure.message ?: "failed to delete managed grant")
@@ -430,7 +433,7 @@ class NativeConnectionPlugin : Plugin() {
         bridgeServer = bridge
 
         val managedConnector = ManagedWebRTCConnector(
-            cloudAdapter, grantCredentialStore, AndroidManagedEndpointAuthorizer(),
+            cloudAdapter, clientAccessCredentialStore, AndroidManagedEndpointAuthorizer(),
         )
         val manager = ConnectionStoreManager(context, bridge, managedConnector)
         storeManager = manager

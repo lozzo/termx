@@ -61,8 +61,17 @@ const (
 // Dial 连接本机 termx daemon unix socket，并返回 frame transport。
 // path 可以是用户可见长路径；实际 socket 路径由 resolveSocketPath 统一解析，避免调用方绕过别名规则。
 func Dial(path string) (*Transport, error) {
+	return DialContext(context.Background(), path)
+}
+
+// DialContext 连接本机 termx daemon unix socket，并让建连过程响应调用方取消或 deadline。
+// context 只控制本次 transport 建立；成功后连接生命周期仍由返回的 Transport.Close 负责。
+func DialContext(ctx context.Context, path string) (*Transport, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	actualPath, _ := resolveSocketPath(path)
-	conn, err := net.Dial("unix", actualPath)
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", actualPath)
 	if err != nil {
 		return nil, err
 	}

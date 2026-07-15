@@ -1,13 +1,15 @@
 package connection
 
 import (
+	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/lozzow/termx/proto/remoteauthpb"
-	"github.com/lozzow/termx/shared/remoteauth"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -52,7 +54,7 @@ func PairingTicketSigningBytes(identity *remoteauthpb.EndpointDaemonIdentity, ti
 	if err := validateWireIdentity(identity, true); err != nil {
 		return nil, fmt.Errorf("pairing ticket issuer identity: %w", err)
 	}
-	if err := validatePairingTicketFields(ticket, false, time.Now()); err != nil {
+	if err := validatePairingTicketFields(ticket, false, time.Time{}, false); err != nil {
 		return nil, err
 	}
 	if len(ticket.GetSignature()) != 0 {
@@ -64,7 +66,7 @@ func PairingTicketSigningBytes(identity *remoteauthpb.EndpointDaemonIdentity, ti
 // EndpointBootstrapSigningBytes 返回 DeviceIdentity 签名完整 bootstrap 的 canonical protobuf bytes。
 // bundle.BundleSignature 在输入中必须为空；内部 PairingTicket 必须已由同一 DeviceIdentity 签名。
 func EndpointBootstrapSigningBytes(bundle *EndpointBootstrapBundleV2) ([]byte, error) {
-	if err := validateEndpointBootstrapPayload(bundle, false, time.Now()); err != nil {
+	if err := validateEndpointBootstrapPayload(bundle, false, time.Time{}, false); err != nil {
 		return nil, err
 	}
 	if len(bundle.GetBundleSignature()) != 0 {
@@ -76,7 +78,7 @@ func EndpointBootstrapSigningBytes(bundle *EndpointBootstrapBundleV2) ([]byte, e
 // MarshalEndpointBootstrapBundle 校验并以 deterministic protobuf 编码 daemon bootstrap。
 // 签名方应先调用 EndpointBootstrapSigningBytes 获取 canonical bytes，签名后再调用本函数输出最终 bundle。
 func MarshalEndpointBootstrapBundle(bundle *EndpointBootstrapBundleV2) ([]byte, error) {
-	if err := validateEndpointBootstrapBundle(bundle); err != nil {
+	if err := validateEndpointBootstrapBundleAt(bundle, time.Time{}, false); err != nil {
 		return nil, err
 	}
 	return marshalPortableContract(bundle)
@@ -85,11 +87,27 @@ func MarshalEndpointBootstrapBundle(bundle *EndpointBootstrapBundleV2) ([]byte, 
 // ParseEndpointBootstrapBundle 严格解析 daemon bootstrap。
 // unknown field、超限、身份 public key/fingerprint 不一致、local route 或客户端 policy/credential 字段全部 fail closed。
 func ParseEndpointBootstrapBundle(payload []byte) (*EndpointBootstrapBundleV2, error) {
+	return ParseEndpointBootstrapBundleAt(payload, time.Now())
+}
+
+// ParseEndpointBootstrapBundleAt 在调用方提供的时刻严格解析并验证 daemon bootstrap。
+// 该入口只供跨语言 deterministic harness 和显式时间边界测试；生产调用应使用 ParseEndpointBootstrapBundle。
+func ParseEndpointBootstrapBundleAt(payload []byte, now time.Time) (*EndpointBootstrapBundleV2, error) {
+	return parseEndpointBootstrapBundle(payload, now, true)
+}
+
+// ParseEndpointBootstrapBundleForExchange 严格验证 protobuf、identity 与两层签名，但不拒绝已经过期的 bundle。
+// owning daemon 的 AccessStore 只可用它恢复已原子消费且仍在 delivery grace 内的同 key 响应；首次兑换仍必须独立检查时效。
+func ParseEndpointBootstrapBundleForExchange(payload []byte) (*EndpointBootstrapBundleV2, error) {
+	return parseEndpointBootstrapBundle(payload, time.Time{}, false)
+}
+
+func parseEndpointBootstrapBundle(payload []byte, now time.Time, requireFreshness bool) (*EndpointBootstrapBundleV2, error) {
 	bundle := &remoteauthpb.EndpointBootstrapBundleV2{}
 	if err := unmarshalPortableContract(payload, bundle); err != nil {
 		return nil, err
 	}
-	if err := validateEndpointBootstrapBundle(bundle); err != nil {
+	if err := validateEndpointBootstrapBundleAt(bundle, now, requireFreshness); err != nil {
 		return nil, err
 	}
 	return bundle, nil
@@ -165,11 +183,18 @@ func unmarshalPortableContract(payload []byte, message proto.Message) error {
 	if hasUnknownFields(message.ProtoReflect()) {
 		return connectionError(ErrorConfig, "portable endpoint contract contains unknown fields")
 	}
+	canonical, err := (proto.MarshalOptions{Deterministic: true}).Marshal(message)
+	if err != nil {
+		return connectionError(ErrorConfig, "canonicalize portable endpoint contract: %v", err)
+	}
+	if !bytes.Equal(payload, canonical) {
+		return connectionError(ErrorConfig, "portable endpoint contract is not canonical deterministic protobuf")
+	}
 	return nil
 }
 
-func validateEndpointBootstrapBundle(bundle *remoteauthpb.EndpointBootstrapBundleV2) error {
-	if err := validateEndpointBootstrapPayload(bundle, true, time.Now()); err != nil {
+func validateEndpointBootstrapBundleAt(bundle *remoteauthpb.EndpointBootstrapBundleV2, now time.Time, requireFreshness bool) error {
+	if err := validateEndpointBootstrapPayload(bundle, true, now, requireFreshness); err != nil {
 		return err
 	}
 	signingBytes, err := endpointBootstrapSigningBytesUnchecked(bundle)
@@ -182,7 +207,7 @@ func validateEndpointBootstrapBundle(bundle *remoteauthpb.EndpointBootstrapBundl
 	return nil
 }
 
-func validateEndpointBootstrapPayload(bundle *remoteauthpb.EndpointBootstrapBundleV2, requireBundleSignature bool, now time.Time) error {
+func validateEndpointBootstrapPayload(bundle *remoteauthpb.EndpointBootstrapBundleV2, requireBundleSignature bool, now time.Time, requireFreshness bool) error {
 	if bundle == nil || bundle.GetSchemaVersion() != EndpointBootstrapBundleVersion {
 		return connectionError(ErrorUnsupportedVersion, "endpoint bootstrap version or bundle_id is invalid")
 	}
@@ -192,9 +217,18 @@ func validateEndpointBootstrapPayload(bundle *remoteauthpb.EndpointBootstrapBund
 	if err := validateWireIdentity(bundle.GetIdentity(), true); err != nil {
 		return fmt.Errorf("endpoint bootstrap identity: %w", err)
 	}
-	if bundle.GetIssuedAtUnixNano() <= 0 || bundle.GetExpiresAtUnixNano() <= bundle.GetIssuedAtUnixNano() ||
-		bundle.GetExpiresAtUnixNano() <= now.UnixNano() || bundle.GetIssuedAtUnixNano() > now.Add(portableClockSkew).UnixNano() {
+	if bundle.GetIssuedAtUnixNano() <= 0 || bundle.GetExpiresAtUnixNano() <= bundle.GetIssuedAtUnixNano() {
 		return connectionError(ErrorConfig, "endpoint bootstrap timestamps or signature are invalid")
+	}
+	if requireFreshness {
+		if now.IsZero() {
+			now = time.Now().UTC()
+		} else {
+			now = now.UTC()
+		}
+		if bundle.GetExpiresAtUnixNano() <= now.UnixNano() || bundle.GetIssuedAtUnixNano() > now.Add(portableClockSkew).UnixNano() {
+			return connectionError(ErrorConfig, "endpoint bootstrap timestamps or signature are invalid")
+		}
 	}
 	if requireBundleSignature && len(bundle.GetBundleSignature()) != ed25519.SignatureSize {
 		return connectionError(ErrorConfig, "endpoint bootstrap signature is invalid")
@@ -217,7 +251,8 @@ func validateEndpointBootstrapPayload(bundle *remoteauthpb.EndpointBootstrapBund
 		return connectionError(ErrorConfig, "endpoint bootstrap requires an authorization bootstrap")
 	}
 	if ticket := authorization.GetPairingTicket(); ticket != nil {
-		if err := validatePairingTicketFields(ticket, true, now); err != nil || ticket.GetExpiresAtUnixNano() <= bundle.GetIssuedAtUnixNano() || ticket.GetExpiresAtUnixNano() > bundle.GetExpiresAtUnixNano() {
+		if err := validatePairingTicketFields(ticket, true, now, requireFreshness); err != nil ||
+			ticket.GetIssuedAtUnixNano() != bundle.GetIssuedAtUnixNano() || ticket.GetExpiresAtUnixNano() > bundle.GetExpiresAtUnixNano() {
 			return connectionError(ErrorConfig, "pairing ticket is invalid")
 		}
 		signingBytes, err := pairingTicketSigningBytesUnchecked(bundle.GetIdentity(), ticket)
@@ -339,7 +374,7 @@ func validateWireIdentity(identity *remoteauthpb.EndpointDaemonIdentity, require
 	if len(identity.GetDevicePublicKey()) == 0 && !requirePublicKey {
 		return nil
 	}
-	if len(identity.GetDevicePublicKey()) != ed25519.PublicKeySize || remoteauth.Fingerprint(ed25519.PublicKey(identity.GetDevicePublicKey())) != model.DeviceFingerprint {
+	if len(identity.GetDevicePublicKey()) != ed25519.PublicKeySize || daemonPublicKeyFingerprint(ed25519.PublicKey(identity.GetDevicePublicKey())) != model.DeviceFingerprint {
 		return connectionError(ErrorIdentityConflict, "daemon public key does not match device_fingerprint")
 	}
 	return nil
@@ -358,6 +393,10 @@ func validatePortableRoute(route *remoteauthpb.EndpointAccessRoute, identity *re
 	if route.GetSource() != remoteauthpb.EndpointSource_ENDPOINT_SOURCE_UNSPECIFIED || route.GetPolicySource() != remoteauthpb.EndpointSource_ENDPOINT_SOURCE_UNSPECIFIED {
 		return connectionError(ErrorConfig, "portable route cannot claim source provenance")
 	}
+	if route.GetKind() != remoteauthpb.EndpointRouteKind_ENDPOINT_ROUTE_KIND_MANAGED_WEBRTC &&
+		route.GetRelayMode() != remoteauthpb.EndpointRelayMode_ENDPOINT_RELAY_MODE_UNSPECIFIED {
+		return connectionError(ErrorConfig, "portable non-managed route cannot contain relay_mode")
+	}
 	if !allowPolicy && (route.GetManualOnly() || route.Priority != nil) {
 		return connectionError(ErrorConfig, "daemon bootstrap cannot contain client route policy")
 	}
@@ -368,13 +407,25 @@ func validatePortableRoute(route *remoteauthpb.EndpointAccessRoute, identity *re
 	return model.Validate(DaemonIdentity{DeviceID: identity.GetDeviceId(), DeviceFingerprint: identity.GetDeviceFingerprint()})
 }
 
-func validatePairingTicketFields(ticket *remoteauthpb.PairingTicketDescriptor, requireSignature bool, now time.Time) error {
+func validatePairingTicketFields(ticket *remoteauthpb.PairingTicketDescriptor, requireSignature bool, now time.Time, requireFreshness bool) error {
 	if ticket == nil || validateIdentifier("pairing ticket", ticket.GetTicketId()) != nil ||
-		len(ticket.GetScopeCeiling()) == 0 || ticket.GetExpiresAtUnixNano() <= now.UnixNano() || len(ticket.GetNonce()) < 16 || ticket.GetMaxRedemptions() != 1 {
+		len(ticket.GetScopeCeiling()) == 0 || ticket.GetIssuedAtUnixNano() <= 0 || ticket.GetExpiresAtUnixNano() <= ticket.GetIssuedAtUnixNano() ||
+		len(ticket.GetNonce()) < 16 || ticket.GetMaxRedemptions() != 1 || ticket.GetGrantLifetimeSeconds() <= 0 ||
+		ticket.GetGrantLifetimeSeconds() > int64((365*24*time.Hour)/time.Second) {
 		return connectionError(ErrorConfig, "pairing ticket is invalid")
 	}
+	if requireFreshness {
+		if now.IsZero() {
+			now = time.Now().UTC()
+		} else {
+			now = now.UTC()
+		}
+		if ticket.GetExpiresAtUnixNano() <= now.UnixNano() || ticket.GetIssuedAtUnixNano() > now.Add(portableClockSkew).UnixNano() {
+			return connectionError(ErrorConfig, "pairing ticket is invalid")
+		}
+	}
 	seenScopes := make(map[string]struct{}, len(ticket.GetScopeCeiling()))
-	for _, scope := range ticket.GetScopeCeiling() {
+	for index, scope := range ticket.GetScopeCeiling() {
 		if scope != strings.TrimSpace(scope) || scope == "" || strings.ContainsAny(scope, "\r\n") {
 			return connectionError(ErrorConfig, "pairing ticket scope is invalid")
 		}
@@ -382,6 +433,9 @@ func validatePairingTicketFields(ticket *remoteauthpb.PairingTicketDescriptor, r
 			return connectionError(ErrorConfig, "pairing ticket scope is repeated")
 		}
 		seenScopes[scope] = struct{}{}
+		if index > 0 && ticket.GetScopeCeiling()[index-1] >= scope {
+			return connectionError(ErrorConfig, "pairing ticket scopes are not canonical")
+		}
 	}
 	if requireSignature && len(ticket.GetSignature()) != ed25519.SignatureSize {
 		return connectionError(ErrorConfig, "pairing ticket signature is invalid")
@@ -390,6 +444,38 @@ func validatePairingTicketFields(ticket *remoteauthpb.PairingTicketDescriptor, r
 		return connectionError(ErrorConfig, "pairing ticket signature must be empty while signing")
 	}
 	return nil
+}
+
+// EndpointCandidateFromBootstrapBundle 把已验证的 daemon bootstrap 投影为 assembler candidate。
+// route hint 只增加可达方式，不携带客户端 priority、credential ref 或删除语义；授权材料仍由调用方写入 secure store。
+func EndpointCandidateFromBootstrapBundle(bundle *EndpointBootstrapBundleV2) (EndpointCandidate, error) {
+	if err := validateEndpointBootstrapBundleAt(bundle, time.Time{}, false); err != nil {
+		return EndpointCandidate{}, err
+	}
+	candidate := EndpointCandidate{
+		Source: SourceBootstrap,
+		Identity: DaemonIdentity{
+			DeviceID:          bundle.GetIdentity().GetDeviceId(),
+			DeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
+		},
+		SuggestedLabel: strings.TrimSpace(bundle.GetSuggestedLabel()),
+		Routes:         make([]AccessRoute, 0, len(bundle.GetRoutes())),
+	}
+	for _, wireRoute := range bundle.GetRoutes() {
+		route, err := accessRouteFromWire(wireRoute, true)
+		if err != nil {
+			return EndpointCandidate{}, err
+		}
+		route.Source = SourceBootstrap
+		route.PolicySource = SourceBootstrap
+		candidate.Routes = append(candidate.Routes, route)
+	}
+	return candidate, nil
+}
+
+func daemonPublicKeyFingerprint(publicKey ed25519.PublicKey) string {
+	digest := sha256.Sum256(publicKey)
+	return "ed25519-sha256:" + base64.RawURLEncoding.EncodeToString(digest[:])
 }
 
 func pairingTicketSigningBytesUnchecked(identity *remoteauthpb.EndpointDaemonIdentity, ticket *remoteauthpb.PairingTicketDescriptor) ([]byte, error) {
