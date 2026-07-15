@@ -4,6 +4,8 @@
 
 日期：2026-07-15
 
+自动执行入口：`unified-endpoint-route-migration-goal-prompt.md`。该 Prompt 只在当前更早的 `workflow.md` 活动切片和未提交改动收口后启动。
+
 ## 1. 背景
 
 当前产品原则已经明确：用户管理的是 daemon endpoint，不是“SSH 机器”“Cloud 机器”或“直连机器”三套资源；local、SSH、直连 IP 和 managed WebRTC 只是到达同一个 daemon 的不同方式。

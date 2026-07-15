@@ -22,13 +22,15 @@
 4. `public-staging-runbook.md`：CLOUD006 指定公网服务器的 SSH-only Control Plane/Hub/Web Controller、UDP TURN、systemd 与客户端验收手册。
 5. `hub-edge-control-plan.md`：CLOUD009-CLOUD011 的 Control Plane 降载、Hub 本地授权投影、故障语义和迁移顺序。
 6. `cloud-end-to-end-swimlanes.md`：按当前代码审计完整身份、Presence、direct、Relay 和故障泳道，并区分当前实现与 Hub 自治目标。
-7. `product-prd.md`：回答为谁解决什么问题、哪些能力免费、哪些持续服务收费。
-8. `architecture-spec.md`：回答公开客户端、daemon、私有 Control Plane、Hub 和 Relay 各自拥有什么状态。
-9. `network-topology.md`：用目标网络拓扑解释 local、SSH、direct WebRTC、Relay 与端到端授权链路。
-10. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
-11. `distribution-and-cloud-companion-spec.md`：回答公开主程序与闭源 cloud 能力如何拆包、安装、通信、升级和跨平台发布。
-12. `global-acceleration-spec.md`：保留 single-relay 算法背景和延后的 Relay Mesh 输入；不是当前实施队列。
-13. `source-boundary-and-migration-plan.md`、`public-snapshot-manifest.md` 与 `../legal/`：正式开源/发布阶段资产；当前 private monorepo 开发不主动扩展或执行。
+7. `unified-endpoint-route-refactor-plan.md`：统一 Endpoint、多 Route、默认竞速、App/Cloud/扫码/LAN 合并与客户端 share 的审核方案。
+8. `unified-endpoint-route-migration-goal-prompt.md`：在更早活动切片完成后，以 `/goal` 驱动 CONN001-CONN008 实现、双审查和真实验收。
+9. `product-prd.md`：回答为谁解决什么问题、哪些能力免费、哪些持续服务收费。
+10. `architecture-spec.md`：回答公开客户端、daemon、私有 Control Plane、Hub 和 Relay 各自拥有什么状态。
+11. `network-topology.md`：用目标网络拓扑解释 local、SSH、direct WebRTC、Relay 与端到端授权链路。
+12. `security-protocol-spec.md`：回答设备身份、terminal capability、云服务票据和 Relay 租约如何隔离。
+13. `distribution-and-cloud-companion-spec.md`：回答公开主程序与闭源 cloud 能力如何拆包、安装、通信、升级和跨平台发布。
+14. `global-acceleration-spec.md`：保留 single-relay 算法背景和延后的 Relay Mesh 输入；不是当前实施队列。
+15. `source-boundary-and-migration-plan.md`、`public-snapshot-manifest.md` 与 `../legal/`：正式开源/发布阶段资产；当前 private monorepo 开发不主动扩展或执行。
 
 若这些文档发生冲突，按以下顺序处理：
 
