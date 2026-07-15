@@ -88,10 +88,10 @@
 - Endpoint 表达“当前客户端要连接的 daemon 目标”，Transport 表达“到达该 endpoint 的方式”；daemon 侧客户端连接管理与 TUI/client 侧 endpoint 管理不得混成一个模型。
 - TUI 不拥有 terminal lifecycle、committed history 或 history truth；history/live/input/resize 必须路由到 owning endpoint 的 daemon。
 - 远程产品目录只能按 `workflow.md` 明确切片重新设计；不得通过 fallback、桥接或旧入口把 archive 中的 remote/localweb/Web Controller 路径重新引回当前 TUI/core 主线。
-- Hub/Relay 可以验证云服务准入和 Relay 租约，但不能看到或判断 terminal capability；capability grant 只能在端到端加密 DataChannel 内由 owning daemon 验证。
+- Hub/Relay 可以验证云服务准入和 Relay 租约，但不能看到或判断 terminal capability；CapabilityGrant 只能在完成 channel binding 的 direct TLS 或 DTLS DataChannel 端到端认证握手内由 owning daemon 验证。
 - 免费 local、SSH、多 endpoint 和 terminal protocol 不得依赖私有服务、账号订阅或 Relay；收费边界只建立在托管云服务能力上。
 - 桌面 closed cloud client 使用专用 out-of-process Cloud Companion 和 versioned local IPC，不得恢复通用插件系统或把私有模块链接进公开 `termx`；移动端使用同一 contract 的官方私有构建模块。
-- WebRTC、DTLS、CapabilityGrant 与 terminal protocol 必须留在公开进程；Cloud Companion 失败只影响 managed cloud endpoint。
+- direct TLS、WebRTC、TLS/DTLS channel binding、CapabilityGrant 与 terminal protocol 必须留在公开进程；Cloud Companion 失败只影响 managed Cloud route。
 - 当前开发阶段只维护这个 private monorepo 并正常提交；闭源代码统一进入 `private/`。正式开源时复制审核后的公开目录到全新空 Git 仓库，不复制当前私有历史，当前不建设 exporter 或双仓同步。
 - R419 后，history ingest truth 的基本单位是 core-v2 authoritative physical row/cell，不是 append-only logical line、visual row、wrapped row、snapshot scrollback、grid viewport、xterm buffer row 或 DOM/canvas row。
 - core-v2 `ScreenHistoryBuffer` 是 main/alt screen、physical rows、cells、cursor、scroll region、RowID、Version 和 seal-once 的 domain owner；logical line 只是 query/copy/history 阶段的 projection。

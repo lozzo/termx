@@ -1,4 +1,4 @@
-# 工作流：单区域公网 Cloud staging 纵向闭环
+# 工作流：统一 Endpoint 与多 Route 迁移
 
 ## 当前目标
 
@@ -14,6 +14,7 @@
 - CLOUD016 已完成：Web 节点页把手机激活归入客户端访问区域，并补齐 TUI 从 daemon 导入 capability grant 的用户流程说明；未改变账号授权、Hub 目录或 daemon capability owner。
 - CLOUD017 已完成：审计 Web Controller、Control Plane、Hub、Relay、client 与 daemon 的真实全链路，绘制当前实现和降载目标泳道图，明确非必要 Control Plane 参与点与故障窗口；本切片只修正文档真值，未修改 runtime。
 - CLOUD018 已按用户要求暂停：Hub 自主 Presence、持久安全目录与 edge session refresh/rotation 的现有实现和测试结果保留为检查点；恢复前仍须完成 staging/ADB 最终验收，不得视为已完成或生产就绪。
+- CONN001 进行中：以一个 daemon 一个 Endpoint 为目标，先完成多 Route 领域模型、versioned registry、跨语言 contract 和现有配置入口的破坏性迁移；CONN002-CONN008 按队列依次推进。
 - CLI001 已完成：已审计当前扁平 CLI 与公开 `v3` 测试命令，建立以 endpoint/terminal 为真值的对象化命令树、稳定 target、JSON/format、退出码、tmux 能力映射和分期实现门禁；当前尚未改动 CLI 运行行为。
 - CLI007 已完成：可选 Cloud Companion 的安装引导已区分未安装与源码构建缺少官方 release root，两种用户错误都有清晰下一步且不再重复 Usage。
 - CLOUD013 已完成：公网 HTTP staging 的非秘密 runtime 配置已固化进显式 development Companion；同一份已验证 manifest 同时装配网络 adapter 与 HTTP 登录策略，用户无需额外配置即可执行状态和登录命令。
@@ -27,12 +28,15 @@
 ## 活动基线
 
 - `AGENTS.md`：当前私有开发阶段、自动执行、领域边界和实现纪律。
+- `docs/remote-platform/unified-endpoint-route-refactor-plan.md`：CONN001-CONN008 唯一统一连接产品、架构、安全和迁移真值。
+- `docs/remote-platform/unified-endpoint-route-migration-goal-prompt.md`：本轮自动推进、真实链路验收和逐阶段双 Agent 审查基准。
 - `docs/remote-platform/README.md`：现有远程平台产品、架构、安全和分发文档索引；这些文档是设计背景，不代表用户链路已经完成。
 - `docs/remote-platform/product-prd.md`：免费/付费边界和商业方向。
 - `docs/remote-platform/architecture-spec.md`：公开 terminal 数据面与私有云服务的逻辑 ownership。
 - `docs/remote-platform/security-protocol-spec.md`：设备身份、CapabilityGrant、Hub admission 和 Relay lease 安全边界。
 - `docs/remote-platform/global-acceleration-spec.md`：GA001/GA002 已有质量与 single-relay 算法背景；Relay Mesh 仅作延后设计输入。
-- `tui/docs/multi-endpoint-transport-plan.md`、`tui/docs/architecture.md`：TUI endpoint/transport 与 runtime 基准。
+- `tui/docs/multi-endpoint-transport-plan.md`：旧单 transport connection schema 与既有多 endpoint 迁移背景；若与统一连接方案冲突，以统一连接方案为准。
+- `tui/docs/architecture.md`：TUI runtime、reducer/effect/service/render 与 terminal/history owner 基准。
 - `tui/docs/shortcut-system-plan.md`：KS012-KS017 快捷键单一 action 真值、输入/展示闭环与删除边界基准。
 - `tui/docs/shortcut-completion-goal-prompt.md`：快捷键项目自动推进和逐阶段双 Agent 审查 prompt。
 - `core/docs/architecture.md`：core terminal lifecycle、live/history 与 storage 边界。
@@ -42,9 +46,9 @@
 
 ## 当前产品真值
 
-- `core/` 拥有 terminal lifecycle、screen-backed history 和 daemon-local terminal identity。
+- `core/` 拥有 terminal lifecycle、authoritative history 和 daemon-local terminal identity。
 - `tui/` 与 `clients/` 拥有客户端 endpoint manager、交互和展示，不拥有 terminal/history truth。
-- `remote/` 与公开进程拥有 WebRTC、DTLS、DeviceIdentity、CapabilityGrant、DataChannel 和 termx protocol。
+- `remote/` 与公开进程拥有 direct TLS、WebRTC、TLS/DTLS channel binding、DeviceIdentity、CapabilityGrant 和 termx protocol。
 - daemon 所在机器的文件系统是文件 metadata 与内容真值；公开 termx protocol 只在已授权 session 内暴露文件操作，客户端只持有列表、预览和 transfer projection。
 - `private/cloud/companion` 与 Official mobile adapter 只拥有账号 session、云 API、signaling、RelayLease、质量 summary 和 route plan。
 - `private/cloud/devcloud` 已用两个独立 loopback HTTP listener 和一个 UDP TURN listener 装配真实序列化、edge authorization、短期 Relay lease、quota 与 signed usage 边界；未配置路径时仍可作为内存 dev-local harness，staging 显式持久化 security directory、authority、verified Hub snapshot 与 refresh hash，但仍不是生产部署模板。
@@ -63,13 +67,17 @@
 ## 硬语义规则
 
 - `TerminalID` 只在 owning daemon/endpoint 内唯一；跨 endpoint 状态使用 `TerminalRef{EndpointID, TerminalID}`。
-- Endpoint 表达 daemon 目标，Transport 表达到达方式；local、SSH、WebRTC 不改变 terminal protocol、history owner 或 endpoint identity。
+- Endpoint 表达 daemon 目标；Route 表达到达方式的持久配置；Transport 表达一次 route attempt 的运行时载体；Path 只表达 managed WebRTC 内部 `direct`/`single_relay` 结果。四者不得合并。
+- `DeviceFingerprint` 是跨来源、跨 route 合并 daemon 的唯一安全锚点；label、hostname、IP、SSH alias、Hub URL、Cloud account 和裸 DeviceID 均不得单独触发合并或换 pin。
 - TUI/App 不拥有 terminal lifecycle、committed history 或 history truth；live/input/resize/history/copy 路由到 owning endpoint。
-- CapabilityGrant 只由 owning daemon 签发和验证，只能在 DTLS DataChannel 端到端握手中提交。
+- CapabilityGrant 只由 owning daemon 签发和验证，只能在完成 channel binding 的 direct TLS 或 DTLS DataChannel 端到端认证握手内提交。
 - Control Plane、Companion、Hub、Relay、Route Planner 不得接收 CapabilityGrant、DeviceIdentity private key、terminal payload、history 或输入。
 - Control Plane、Companion、Hub、Relay、Route Planner 同样不得接收文件路径、目录列表、文件 metadata、文件内容、摘要或 transfer resume offset；Relay 只能转发并计量 DTLS 内的密文 bytes。
 - EdgeAccessToken、RefreshSecret、DeviceIdentity、CapabilityGrant 和 RelayLease 是不同凭据，不得复用字段、签名输入或验证责任。
-- local、SSH 和 direct P2P 不依赖账号、订阅、Hub 或 Relay；云服务失败只影响 owning managed endpoint。
+- 未配置 priority 时，所有 eligible route 必须在同一轮并发竞速；配置 priority 时按同优先级分组并以有界 hedge delay 启动。只有 transport、daemon identity、authorization 和 protocol Hello 全部完成的 `ReadySession` 才能胜出。
+- winner 产生后必须取消并释放 loser 的 SSH process、TLS socket、PeerConnection、signaling、Relay reservation、protocol transport 和 pending effect；旧 `SessionGeneration` 的 live/history/input/file 回包全部拒绝。
+- Cloud Companion 只实现一条可取消的 managed route attempt，不拥有 SavedEndpointRegistry、SSH/direct 配置、外层竞速、CapabilityGrant 或 termx protocol session。
+- local、SSH、direct TLS、LAN discovery、daemon bootstrap、客户端 share 和已就绪 DataChannel 不依赖账号、订阅、Hub 或 Relay；云服务失败只降低 managed route 可用性。
 - 禁止 legacy remote、旧 Hub/session-token、grant-in-signaling、原始 shell fallback、通用插件恢复和按应用名特殊适配。
 - 文档、接口、领域模型和 fake 测试不等于产品完成；活动切片必须证明当前阶段的真实跨组件消息链路或用户可观察行为。
 
@@ -87,7 +95,7 @@
 - CLOUD009：`private/cloud/{hub,devcloud,companion,control-plane}`、`shared/cloudcompanion/`、`proto/cloudpb/`、`docs/remote-platform/` 与 `workflow.md`；只把 managed direct 的 client admission、短期 EdgeManagedSession 和 daemon answer 绑定下沉到 Hub。允许显式 dev cloud 使用内存授权投影，但 cache miss 禁止同步回源；不得联动 Relay、生产数据库或多区域调度。
 - CLOUD010：`private/cloud/{hub,relay,devcloud,control-plane}`、必要 private cloud contract、`docs/remote-platform/` 与 `workflow.md`；只实现单区域委派 Relay authority、预算快照和 durable usage outbox，Relay 租约热路径不得查询 Control Plane。
 - CLOUD011：`private/cloud/{companion,mobile,devcloud}`、`clients/mobile/`、必要 `shared/cloudcompanion/`/`proto/cloudpb/` contract、`docs/remote-platform/` 与 `workflow.md`；只实现 desktop/Official Android 启动/刷新 edge token 与签名 HubDirectory，并完成 Control Plane 中断验收。
-- CLOUD012：`private/cloud/{devcloud,web-controller,companion,mobile,infra}`、`proto/cloudpb/`、`shared/cloudcompanion/`、`cmd/termx/`、`clients/mobile/`、`clients/ui/`、`docs/remote-platform/` 与 `workflow.md`；只实现浏览器账号审批设备码、TUI/Official Android 账号 Session、账号名下 daemon enrollment 和现有 direct/single Relay 数据面接线。密码、OIDC secret 与浏览器 Session 只留在 Control Plane；客户端不得接收密码或浏览器 Cookie，Hub cache miss 不得同步回源，CapabilityGrant 仍只在端到端 DataChannel 内验证。显式公网 HTTP 仅限 staging，生产默认继续 fail closed。
+- CLOUD012：`private/cloud/{devcloud,web-controller,companion,mobile,infra}`、`proto/cloudpb/`、`shared/cloudcompanion/`、`cmd/termx/`、`clients/mobile/`、`clients/ui/`、`docs/remote-platform/` 与 `workflow.md`；只实现浏览器账号审批设备码、TUI/Official Android 账号 Session、账号名下 daemon enrollment 和现有 direct/single Relay 数据面接线。密码、OIDC secret 与浏览器 Session 只留在 Control Plane；客户端不得接收密码或浏览器 Cookie，Hub cache miss 不得同步回源。该历史切片只实现 DTLS DataChannel 授权；CONN 主线按本文件硬语义扩展 direct TLS channel binding，云服务仍不得接收 CapabilityGrant。显式公网 HTTP 仅限 staging，生产默认继续 fail closed。
 - UI001：`clients/ui/`、`clients/mobile/` 中 Official pairing 非秘密类别投影、`workflow.md` 与对应测试；只重做机器列表 view-model、卡片和实时状态订阅，不修改 terminal truth、云授权或 transport 选择算法。
 - UI002：`clients/ui/`、`clients/mobile/` 的共享首页响应式布局、`workflow.md` 与对应测试；只调整桌面信息架构和机器行投影，保持移动端交互、连接状态 owner 与 transport 语义不变。
 - UI003：`clients/ui/`、`clients/mobile/`、必要 Android source sync、`scripts/client-workspace-guard.mjs` 与 `workflow.md`；只统一 App shell、首页、设备行、设置、Sheet、文件和工作区 chrome 的视觉 tokens 与移动交互，不修改 endpoint/transport 状态 owner、连接算法、terminal/history/file truth 或 native cloud contract。允许最小联动 workspace guard 的原因是 Web Controller 已进入根 workspace，而既有 client gate 未同步该事实。终端画布保持全屏内容面；所有移动主操作保持至少 44px 触控区域并尊重 safe area/reduced motion。
@@ -113,6 +121,14 @@
 - CLOUD016：`private/cloud/web-controller/web/`、`docs/remote-platform/public-staging-runbook.md`、`workflow.md`；只调整 Web 节点页客户端/daemon 信息架构，并说明 TUI 的账号发现与 daemon capability 导入是两个独立步骤。不得把 capability grant 上传到 Web、Control Plane 或 Hub，不修改 CLI/runtime contract。
 - CLOUD017：`docs/remote-platform/`、`workflow.md`；只基于当前代码审计绘制身份、enrollment、Presence、目录、配对、direct、Relay、撤销、同步和故障泳道，并标出当前实现与 Hub 自治目标的差异。不得在文档切片中修改 runtime、放宽 fail-closed 或宣称未实现能力已经完成。
 - CLOUD018：`private/cloud/{hub,devcloud,companion,control-plane,mobile,web-controller}`、`proto/cloudpb/`、`shared/cloudcompanion/`、`clients/mobile/android/`、`cmd/termx/`、staging systemd/runbook、`docs/remote-platform/`、`workflow.md` 与对应 harness；Hub 使用 daemon edge token 和本地 public key projection 创建/验证 fresh Presence，Control Plane 只负责首次 enrollment、低频 session refresh 和后台 signed policy；Control Plane 设备安全目录、签名 authority 与 Hub verified snapshot 必须可重启恢复。account/device refresh credential 只进 OS credential store/Android Keystore，服务端只持有轮换 hash；refresh 不得进入 WebView、日志、配置或 Hub。旧 Control Plane Presence challenge/admission endpoint、ticket envelope 和 runtime fallback 必须删除。允许最小联动 Web Controller enrollment 控件，修复注册码复制、过期反馈和 revoked daemon 重新注册体验；允许最小联动 `clients/ui/` 的连接信息控件与 harness，使 Android 真机 direct 明确失败后仍能显式切换 single Relay，不改变自动路由算法或 endpoint/transport owner。
+- CONN001：`shared/connection/`、`proto/{remoteauthpb,cloudpb}/`、`shared/remoteauth/` 中仅限新 contract、`cmd/termx/` 的 endpoint 配置入口、`tui/{services,state}/` 的 registry projection、`clients/{ui,mobile/android}/` 的跨语言 schema/fixture 与真实本地 registry、`private/cloud/{hub,devcloud,companion,mobile}/` 中仅限 `ManagedDevice.device_fingerprint` 投影、必要 `testkit/`/`scripts/`、统一连接文档与 `workflow.md`。只冻结 Endpoint/Route/Transport/Path/Selection/Session/Assembler/bootstrap/share/discovery/error contract，并把一 endpoint 一 transport 的 v1 registry 破坏性替换为 v2；本切片不实现 route 网络竞速、PairingTicket 兑换、direct TLS 或 App 连接器。
+- CONN002：`shared/remoteauth/`、`proto/remoteauthpb/`、`remote/{client,daemon}/`、`core/` 的 scoped transport 接入边界、`internal/protocol/` 的认证后 Hello 边界、`cmd/termx/` 的 daemon identity/pair/access 命令、`clients/mobile/android/` 的 ClientAccessIdentity 与 secure credential contract、必要 `testkit/`/`scripts/`、安全文档与 `workflow.md`。只完成全局 DeviceIdentity、每 Endpoint ClientAccessIdentity、PairingTicket/PairingExchange、SubjectKeyFingerprint CapabilityGrant v2、ManageClientAccess 和 direct-TLS/DTLS 共用 channel-binding handshake；不得接 route planner、Cloud 账号授权或旧 bearer fallback。
+- CONN003：`shared/connection/`、`shared/transport/{unix,ssh}/`、`tui/{services,state,app}/`、`cmd/termx/`、必要 `internal/protocol/`/`testkit/`/`scripts/`、TUI/CLI 架构文档与 `workflow.md`。只实现 EndpointAssembler、RouteSelectionPlanner、default full race、priority grouped hedge、manual override、loser cancel、SessionGeneration 和 TUI/CLI local Unix + OpenSSH stdio 多 route 真实链路；不得提前实现 direct TLS、LAN discovery、managed Cloud adapter 或 share。
+- CONN004：`shared/connection/`、`shared/transport/`、`remote/` 中 direct TLS 与 LAN discovery 公共实现、`cmd/termx/` daemon ingress/CLI、必要 `proto/remoteauthpb/`/`internal/protocol/`/`testkit/`/`scripts/`、安全/运维文档与 `workflow.md`。只实现默认关闭的 TLS 1.3 ingress、certificate/DeviceIdentity binding、client-bound capability handshake、可取消 frame transport、mDNS/Bonjour candidate 与内存 TTL address race；不得接 Cloud 或移动端 UI。
+- CONN005：`private/cloud/{companion,hub,relay,devcloud,mobile}/`、`shared/cloudcompanion/`、`proto/cloudpb/`、`remote/{client,daemon}/` managed adapter、`shared/connection/`、`tui/services/`、`cmd/termx/`、必要 `testkit/`/`scripts/`、Cloud 架构/安全文档与 `workflow.md`。只把 managed Cloud 收缩成 `AttemptID + TargetDeviceID` 的一条可取消 route，并按 fingerprint 向已有 Endpoint 叠加；不得让 Companion 接收本地 EndpointID、外层 priority、Grant、SSH/direct 配置或 protocol session。
+- CONN006：`shared/connection/` 的 share contract/service、`cmd/termx/`、`tui/{action,app,services,state}/`、`remote/daemon/` 的 ManageClientAccess 调用边界、`clients/mobile/android/` 的 share receiver/import transaction、`clients/ui/` 的脱敏 diff projection、必要 `testkit/`/`scripts/`、安全/用户文档与 `workflow.md`。只实现 canonical `termx endpoint share`、TUI 同源 action、一次性 LAN TLS listener、receiver proof、用户确认、config-only 和目标 key 新 grant；默认不迁移 SSH credential body，Cloud token 和源客户端 grant 在所有模式均禁止转移。
+- CONN007：`clients/mobile/android/`、`clients/ui/`、`private/cloud/mobile/android/`、必要 `shared/{connection,remoteauth,cloudcompanion}/`、`proto/{remoteauthpb,cloudpb}/`、公开 `remote/` connector、Android 构建/测试脚本、移动端文档与 `workflow.md`。Android native 是 SavedEndpointRegistry、Assembler、credential resolution、route race/session、LAN discovery 和前后台恢复唯一 owner；接入真实 direct TLS、SSH、managed WebRTC 与 share/bootstrap scanner，TypeScript 只消费脱敏 projection 和 intent。Android SSH 必须记录成熟库选型、host-key pin、取消和流式 stdio依据，不得手写协议。
+- CONN008：`shared/connection/`、`shared/remoteauth/`、`remote/`、`tui/`、`cmd/termx/`、`clients/{ui,mobile}/`、`private/cloud/{companion,hub,relay,devcloud,mobile}/`、必要 `proto/`/`internal/protocol/`/`testkit/`/`scripts/`、统一连接文档与 `workflow.md`。只做旧 pairing/session token/machine category/Cloud-only store/重复 session owner/fallback 的最终删除、静态守卫和同一真实 daemon 四 route 总验收；不得借清理切片引入新产品范围。
 - KS012：`tui/{shortcut,input,app,render,config,state,terminalhost}`、`tui/docs/{shortcut-system-plan.md,shortcut-inventory.md,shortcut-contract-debt.json}`、`workflow.md` 与必要测试；只做最终现状审计、机器可读 debt manifest 和“无未分类/无新增 debt”守卫，可删除已被新模型替代的测试 helper，不要求提前修完 KS013-KS016 gap。
 - KS013：新增 `tui/action/`，并允许修改 `tui/{shortcut,input,app,render,config,state}`、对应测试/文档与 `workflow.md`；只建立中立 action domain、shortcut 引用和 keyboard invocation -> handler contract，删除重复 identity/alias/scene 语义，不迁移 render surface 提示/点击。
 - KS014：`tui/{terminalhost,input,shortcut,config,app,state}`、对应测试/文档与 `workflow.md`；只收口 raw key/mouse 到 InputEvent、catalog 编译、scene/lock/back navigation 和 PTY passthrough，不触及 renderer 视觉重做。
@@ -163,6 +179,14 @@
 | CLOUD016 | 完成 | 客户端激活归位与 TUI 授权说明 | 手机激活位于客户端访问区域；TUI 登录只负责账号发现，访问 daemon 必须单独导入 daemon-owned capability grant |
 | CLOUD017 | 完成 | Cloud 全链路泳道与降载审计 | 当前实现和目标架构分开绘制；明确 Web/Control Plane 调用频率、Hub 热路径、故障窗口和待改造项 |
 | CLOUD018 | 暂停 | Hub 自主 Presence 与持久 session P0 | 已保存实现检查点；恢复后补齐 staging/ADB 最终验收，暂停期间不阻塞后续切片 |
+| CONN001 | 进行中 | 统一领域模型、registry 与跨语言 contract | `connections.yaml` v2 与 Android registry 均能真实读写一个 Endpoint 的多条 Route；CLI/TUI 现有配置入口消费新 schema；Go/Kotlin/TypeScript 对 identity conflict、strict parse 和导入交换律结论一致 |
+| CONN002 | 待开始 | 全局 daemon identity 与客户端绑定授权 | local/SSH/direct/managed 使用同一 DeviceIdentity；PairingTicket 只能原子兑换为绑定目标客户端 key 的 grant，复制 grant、重放 ticket、错误 key/fingerprint、撤销和重启均 fail closed |
+| CONN003 | 待开始 | Route planner 与 TUI/CLI session owner | TUI/CLI 对同一 Endpoint 的 local Unix 与真实 SSH route 默认竞速或按 priority hedge；首个 ReadySession 胜出并释放 loser，切换/重连不改变 TerminalRef 且旧 generation 回包被拒绝 |
+| CONN004 | 待开始 | Direct TLS 与 LAN discovery | daemon 可显式启用安全 TLS 1.3 ingress；TUI/CLI 在 Cloud 完全关闭时通过真实 LAN direct 连接，地址变化只刷新 candidate，错误公告/certificate/identity 全部 fail closed |
+| CONN005 | 待开始 | Managed Cloud 普通 Route adapter | Cloud directory 只向同 fingerprint Endpoint 增加 managed route；managed loser/取消立即释放 signaling、PeerConnection 与 Relay reservation，Control Plane/Hub/Relay 故障不影响 local/SSH/direct winner |
+| CONN006 | 待开始 | `termx endpoint share` 与 TUI share action | App 一次扫码可接收 TUI/CLI portable route 和确认过的 policy；QR/日志/Cloud 看不到配置、SSH credential、Cloud token 或 Grant，daemon 离线时 config-only 明确进入 authorization_required |
+| CONN007 | 待开始 | Official App 统一 endpoint runtime | App 冷启动先显示本地 Endpoint；未登录 Cloud 仍可 direct/SSH，登录仅叠加 managed route；真实 APK/ADB 覆盖 direct、SSH、managed direct、single Relay、share、手工编辑、后台恢复和 Cloud 离线 |
+| CONN008 | 待开始 | 旧路径删除与全链路总验收 | 同一 daemon 在 TUI/CLI/App 只显示一个 Endpoint 并同时持有四类 Route；不同导入顺序结果一致，Cloud 各组件故障局部化，旧 pairing/session/category/store/fallback 全部删除并有守卫 |
 | GA003 | 延后 | 双 Edge Relay Mesh corridor pilot | 仅在 CLOUD004 完成并有真实 corridor 数据后恢复 |
 | GA004 | 延后 | 单 transit 受控加速 | 仅在 GA003 数据证明需要时恢复 |
 | KS012 | 完成 | 快捷键最终审计与总契约 | 所有 binding/spec/handler/projection 被机器归类为符合或有 owner 的 debt，无未分类项且不能新增 debt |
@@ -183,7 +207,8 @@
 5. 切片完成后运行对应准入、更新本文件、使用中文提交信息提交，再进入下一切片。
 6. 若发现 release-only、multi-region 或假设性优化工作，记录为 deferred，不得偏离当前纵向目标。
 7. 外部 OAuth、生产 TLS、数据库和云资源缺失时，使用显式 dev/staging harness 推进；不得恢复旧 fallback。
-8. KS012-KS017 是用户明确要求的双 Agent 审查切片；每个切片提交前必须按 `AGENTS.md` 同时完成架构 review 与代码 review，两个 reviewer 对阶段实现 diff 都明确 PASS 后，只允许机械回填 workflow 状态/审查证据并提交，才能进入下一切片。
+8. KS012-KS017 与 CONN001-CONN008 是用户明确要求的双 Agent 审查切片；每个切片提交前必须按 `AGENTS.md` 同时完成架构 review 与代码 review，两个 reviewer 对阶段实现 diff 都明确 PASS 后，只允许机械回填 workflow 状态/审查证据并提交，才能进入下一切片。
+9. CONN 切片必须先在工作更新中明确 domain owner、truth source、消息链路、持久化边界、取消链路和失败条件；若 reviewer 工具不可用，将当前切片标为阻塞，不得降级为自审、单审或跳过。
 
 ## 测试准入
 
@@ -225,6 +250,14 @@
 - CLOUD016：Web Controller React typecheck/build、客户端与 daemon 分区静态检查、文档命令审查、staging 静态资源部署和 `git diff --check`。
 - CLOUD017 文档-only：Mermaid 代码块闭合检查、关键场景与参与者覆盖检查、旧架构图冲突标注、`git diff --check`。
 - CLOUD018：Hub fresh challenge/proof replay/错误 key/revoke/stale policy harness；Control Plane 目录、authority、refresh hash 重启与 rotation/replay harness；Companion 和 Official Android 到期前自动 refresh、过期/撤销 fail closed；删除旧 Presence endpoint/AdmissionWire 静态守卫；Cloud supervisor/Hub 重启后 daemon 无需 enrollment 即可 Presence，Control Plane listener 关闭后 daemon Presence 重连与 client direct/single Relay 真实 E2E；全量受影响 module、Android source sync/APK、staging 部署、ADB 真机恢复和 `git diff --check`。
+- CONN001：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./shared/connection/... ./shared/remoteauth/... ./proto/remoteauthpb/... ./proto/cloudpb/... ./cmd/termx ./tui/services ./tui/state -count=1`；`make test-private`；`make test-clients`；`make test-android`；fixture strict parse/round-trip/unknown field/size limit/identity conflict/导入交换律全部由三语言读取同一 testdata；双 Agent PASS；`git diff --check`。
+- CONN002：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./shared/remoteauth/... ./remote/... ./core/... ./internal/protocol/... ./cmd/termx -count=1`；`scripts/with-clean-termx-env.sh env GOWORK=off go test -race ./shared/remoteauth/... ./remote/... -count=1`；`make test-android`；`scripts/conn002_pairing_e2e.sh` 必须用真实 daemon 覆盖 ticket 并发兑换、响应丢失幂等取回、错误 key/fingerprint、revoke 和重启恢复；双 Agent PASS；`git diff --check`。
+- CONN003：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./shared/connection/... ./shared/transport/unix/... ./shared/transport/ssh/... ./tui/... ./cmd/termx -count=1`；`scripts/with-clean-termx-env.sh env GOWORK=off go test -race ./shared/connection/... ./shared/transport/ssh/... ./tui/services ./cmd/termx -count=1`；`scripts/conn003_local_ssh_race_e2e.sh` 必须使用真实 local daemon 与 OpenSSH host 注入延迟，验证 default full race、priority hedge、manual override、loser process 回收、TerminalRef 稳定和旧 generation 拒绝；双 Agent PASS；`git diff --check`。
+- CONN004：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./shared/connection/... ./shared/transport/... ./remote/... ./cmd/termx -count=1`；`scripts/with-clean-termx-env.sh env GOWORK=off go test -race ./shared/transport/... ./remote/... -count=1`；`scripts/conn004_direct_lan_e2e.sh` 必须在 Cloud 服务全部关闭时覆盖真实 TLS 1.3、mDNS/Bonjour、地址变化、错误公告、错误 certificate/identity 和取消；双 Agent PASS；`git diff --check`。
+- CONN005：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./shared/connection/... ./shared/cloudcompanion/... ./remote/... ./tui/services ./cmd/termx -count=1`；`make test-private`；`cd private/cloud/hub && GOWORK=off go test -race ./... -count=1`；`cd private/cloud/companion && GOWORK=off go test -race ./... -count=1`；`make build-cloud-test`；`scripts/conn005_managed_route_e2e.sh` 必须覆盖 Control Plane 关闭、Hub/Relay 故障、managed loser/取消即时释放和 local/SSH/direct winner；双 Agent PASS；`git diff --check`。
+- CONN006：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./shared/connection/... ./shared/remoteauth/... ./remote/daemon/... ./tui/... ./cmd/termx -count=1`；`make test-clients`；`make test-android`；`scripts/conn006_endpoint_share_e2e.sh` 必须覆盖错误 TLS pin、第二次消费、过期、错误 receiver proof、用户拒绝、daemon 离线、无 ManageClientAccess、config-only 和静态 QR/日志/Cloud secret scan；双 Agent PASS；`git diff --check`。
+- CONN007：`scripts/with-clean-termx-env.sh env GOWORK=off go test ./shared/connection/... ./shared/remoteauth/... ./shared/cloudcompanion/... ./remote/... -count=1`；`make test-clients`；`make test-android`；`adb devices`；`scripts/conn007_android_endpoint_e2e.sh` 必须在 Official APK 真机覆盖本地 registry 冷启动、LAN direct、真实 SSH、managed direct、single Relay、share、手工 direct/SSH、后台恢复和 Cloud/互联网离线；无可用 ADB 设备时保持阻塞；双 Agent PASS；`git diff --check`。
+- CONN008：`make test-all`；`scripts/conn008_legacy_connection_guard.sh`；`scripts/conn008_multi_route_e2e.sh` 必须让同一真实 daemon 同时开启 local、SSH、direct TLS、managed Cloud 并覆盖两种 selection policy、route 切换、Cloud 各组件故障、授权撤销和重启恢复；`scripts/conn008_android_e2e.sh` 必须覆盖扫码/登录/share 三种顺序与 App 手工编辑的最终交换律；secret scan 不得发现 SSH credential、Cloud token、CapabilityGrant 或 client private key；双 Agent PASS；`git diff --check`。
 - KS012：debt manifest 分类完整性/不新增守卫、shortcut/domain/input/app/render/config 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
 - KS013：`tui/action` canonical identity/invocation、shortcut 引用、keyboard handler 与 render metadata contract 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
 - KS014：TerminalHost raw/CSI-u/mouse parser、key canonicalization、catalog replacement、scene/lock/back/PTY passthrough 定向测试、`go test ./tui/... -count=1`、双 Agent PASS、`git diff --check`。
@@ -310,4 +343,5 @@
 - CLOUD017 已完成：新增 `cloud-end-to-end-swimlanes.md`，用 10 组泳道覆盖 TUI 登录、App QR 激活、daemon enrollment、当前 Presence、capability 配对、direct、single Relay、撤销/订阅同步、Control Plane 故障和目标 Hub 自治。审计确认 Web Controller 不在连接热路径，client 目录/resolve/signaling/Relay lease 已只访问 Hub；当前 P0 缺口是 Presence 重连仍同步调用 Control Plane 两次、staging 设备安全目录与 edge session 未持久恢复、account/device session 固定 8 小时且缺少 refresh。policy 当前每 5 分钟刷新、Hub `max_staleness` 30 分钟，超过窗口 fail closed。旧 Hub 计划和网络拓扑已标明目标/现状差异；10 个 Mermaid block 闭合、关键场景覆盖和 `git diff --check` 通过，未改 runtime。
 
 - CLOUD018 已于 2026-07-15 按用户要求暂停并保存实现检查点：Hub 本地 Presence challenge/proof、Control Plane 持久安全目录、Hub verified snapshot、account/device refresh rotation、旧 Presence admission 删除以及 Companion/Official Android 自动刷新均保留。暂停前已通过 Control Plane、Hub、Companion、devcloud、CLI/shared Go 测试、`make test-clients`、`make test-android` 两套单测与 APK 构建及 `git diff --check`；此前 staging 部署与 Control Plane 关闭后的 direct/single Relay 证据也保留。尚未完成本轮 staging 复验和 ADB 真机恢复终验，因此该切片不得标记完成或作为生产就绪依据；后续恢复 CLOUD018 时从本检查点补齐剩余门禁。
+- 统一连接迁移 Goal 已于 2026-07-15 建立基线：CONN001-CONN008 依次覆盖多 Route registry、客户端绑定授权、TUI/CLI 竞速、direct TLS/LAN、managed Cloud adapter、endpoint share、Official App 和旧路径总清理。当前最早活动切片为 CONN001；尚未开始 runtime 实现，不得把旧单 transport registry、bearer pairing 或 Cloud-only App store 视为新模型已完成。
 - 正式开源隔离、生产 OAuth/TLS、持久化数据库、计费、团队治理、Relay Mesh 和多区域运维全部延后。

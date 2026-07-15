@@ -94,7 +94,7 @@ scope v1 仅允许：
 - single-terminal scope；
 - machine-events scope。
 
-Grant 是 bearer capability：持有原始 grant 即代表被授权。为降低重放面，它必须仅存于客户端安全凭据存储，并只在 DTLS DataChannel 内用于 challenge proof。普通 endpoint 配置只保存 `grant_ref`。
+当前 v1 Grant 仍是 bearer capability；CONN002 必须将新签发路径升级为绑定 `ClientAccessIdentity` 的 CapabilityGrant v2，并删除 bearer-only fallback。无论迁移前后，原始 grant 都只能存在于客户端安全凭据存储，并且只能在完成 channel binding 的 direct TLS 或 DTLS DataChannel 端到端认证握手内提交给 owning daemon；普通 endpoint registry 只保存 credential reference。
 
 禁止：
 
@@ -180,7 +180,9 @@ CapabilityGrant       -> Client secure store and daemon E2E only
 
 任何服务接收到不属于自己的 credential type 都必须拒绝并避免记录 credential body。公开类型应使用不同 envelope tag 和 audience，防止“看起来都是 token”导致误用。桌面 Cloud Companion 可以保管 EdgeAccessToken 与 RefreshSecret，但 refresh 只能交给 Control Plane，edge token 只能交给 Hub；Companion 禁止接收 CapabilityGrant 或 DeviceIdentity private key。
 
-## 5. 端到端 DataChannel 授权协议
+## 5. 端到端安全 Channel 授权协议
+
+本节当前 `daemon_dtls_certificate_fingerprint` 字段和跨平台向量记录的是已实现的 v1 DTLS DataChannel wire contract。CONN001-CONN004 必须把 channel binding 抽象为明确区分 direct TLS 与 DTLS DataChannel 的稳定 contract；在该迁移完成前，不得把现有 DTLS 专用字段冒充 direct TLS 已实现。两种 transport 的共同不变量是：Grant 只提交给 owning daemon，且只能在绑定本次真实 peer certificate/channel 的端到端认证握手内提交；Control Plane、Companion、Hub、Relay 和 signaling 永远不得接收 Grant。
 
 ### 5.1 前置条件
 
@@ -483,7 +485,7 @@ UsageEvent {
 ## 13. 安全验收不变量
 
 - Hub、Relay 和 Control Plane 的内存、日志、请求 schema 与数据库中都不存在原始 CapabilityGrant。
-- daemon 只在本次 DataChannel 的设备证明和 challenge 通过后创建 scoped protocol session。
+- daemon 只在本次 direct TLS 或 DTLS DataChannel 的设备证明、channel binding 和 capability challenge 全部通过后创建 scoped protocol session；当前 direct TLS 在 CONN004 完成前仍属于待实现路径。
 - client 只信任 pinned DeviceFingerprint，不信任 Hub 返回的 label、DeviceID 或 online 状态。
 - Edge access 与 Relay lease 都是短期、受 audience 约束、不可替代 terminal capability。
 - Relay 不能解密 DataChannel，也不能改变 scope。
