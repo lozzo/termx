@@ -56,6 +56,31 @@ CLOUD012 起，TUI 不再自动兑换固定账号，而是请求短期设备码�
 5. 登录后的 App/TUI 执行节点刷新，从 Hub 内存目录取得同账号 daemon 与 active Presence。目录可见不表示具备 terminal 权限；未配对节点必须显示“需要配对”。
 6. daemon owner 在交互式终端执行 `termx pair create`，默认显示可由 App 扫描的二维码。脚本环境必须显式使用 `--raw`，写文件必须显式使用 `--out OWNER_ONLY_PATH`。CapabilityGrant 仍只在 DTLS DataChannel 内由 owning daemon 验证。
 
+### TUI 导入 daemon 访问凭据
+
+`termx cloud login` 只把当前 TUI/CLI 注册成账号客户端，使它可以从 Hub 发现同账号 daemon；它不会自动获得任何 terminal 或文件权限。访问某个 daemon 必须再导入该 daemon 自己签发的 capability bundle。
+
+daemon 与 TUI 不在同一台机器时，推荐通过已有 SSH 信任链直接传递，不让 bearer bundle 落盘：
+
+```bash
+ssh user@daemon-host 'termx pair create --raw --ttl 24h' \
+  | termx pair import - --id build-daemon --relay auto
+```
+
+也可以由 daemon owner 显式写入 owner-only 文件，再通过可信渠道交给 TUI 用户导入：
+
+```bash
+# daemon owner
+termx pair create --out pairing.json --ttl 24h
+
+# TUI client
+termx pair import pairing.json --id build-daemon --relay auto
+termx endpoint show build-daemon
+termx
+```
+
+`--id` 是当前客户端自己的 endpoint 别名，不会修改 daemon 身份；`--relay` 只选择到达该 daemon 的 transport 策略。bundle 内的 CapabilityGrant 由 daemon 在端到端 DataChannel 内验证，Web、Control Plane 和 Hub 都不能代发、存储或查看它。导入成功后应删除客户端侧临时 bundle 文件。
+
 ## 设备移除
 
 账号中心的 Cloud 设备列表同时管理 client access 与 daemon node，两者不能混成同一种在线状态：

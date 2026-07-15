@@ -139,8 +139,8 @@ function Nodes({ value, busy, action }: { value: Node[]; busy: string; action: (
     return () => { stopped = true; window.clearInterval(timer); };
   }, [activation, activationApproved]);
   return <div className="grid gap-4">
-    <Panel><PanelTitle title={t("account.nodes.mobileTitle")} icon={<Smartphone className="size-4 text-primary" />} />
-      {!activation && <div className="grid gap-4 p-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="m-0 text-sm font-medium">{t("account.nodes.mobileAction")}</p><p className="mb-0 mt-2 max-w-2xl text-[10px] leading-5 text-muted-foreground">{t("account.nodes.mobileCopy")}</p></div><Button disabled={activationBusy} onClick={createActivation}><QrCode />{activationBusy ? t("account.nodes.creating") : t("account.nodes.createQR")}</Button></div>}
+    <Panel><PanelTitle title={t("account.nodes.clientTitle")} end={t("account.nodes.clientCount", { count: clientNodes.filter((node) => !node.revoked).length })} />
+      {!activation && <div className="grid gap-4 border-b border-line p-5 sm:grid-cols-[1fr_auto] sm:items-center"><div className="flex items-start gap-3"><Smartphone className="mt-0.5 size-4 shrink-0 text-primary" /><div><p className="m-0 text-sm font-medium">{t("account.nodes.mobileTitle")}</p><p className="mb-0 mt-2 max-w-2xl text-[10px] leading-5 text-muted-foreground">{t("account.nodes.mobileCopy")}</p></div></div><Button disabled={activationBusy} onClick={createActivation}><QrCode />{activationBusy ? t("account.nodes.creating") : t("account.nodes.createQR")}</Button></div>}
       {activation && <div className="grid md:grid-cols-[272px_1fr]">
         <div className="grid min-h-[272px] place-items-center border-b border-line bg-white p-4 md:border-b-0 md:border-r">{qrDataURL ? <img alt={t("account.nodes.qrAlt")} className="aspect-square h-auto w-full max-w-60 object-contain" height="240" src={qrDataURL} width="240" /> : <i className="size-3 animate-pulse bg-primary" />}</div>
         <div className="flex flex-col justify-center p-5 md:p-7"><span className="font-mono text-[9px] text-primary">{activationApproved ? t("account.nodes.approved") : activation.state === "waiting_for_device" ? t("account.nodes.waitingScan") : t("account.nodes.waitingApproval")}</span><strong className="mt-3 font-mono text-2xl font-normal">{activation.user_code}</strong>
@@ -151,9 +151,10 @@ function Nodes({ value, busy, action }: { value: Node[]; busy: string; action: (
         </div>
       </div>}
       {activationError && <p className="m-5 border border-destructive p-3 text-xs text-destructive" role="alert">{activationError}</p>}
+      <p className="m-0 border-b border-line px-5 py-4 text-[10px] leading-5 text-muted-foreground">{t("account.nodes.clientNote")}</p>
+      <NodeTable nodes={clientNodes} kind="client" busy={busy} language={i18n.language} action={action} />
     </Panel>
     <Panel><PanelTitle title={t("account.nodes.daemonTitle")} end={t("account.nodes.online", { count: daemonNodes.filter((node) => node.online && !node.revoked).length })} /><div className="grid gap-4 border-b border-line px-5 py-4 sm:grid-cols-[1fr_auto] sm:items-center"><p className="m-0 text-[10px] leading-5 text-muted-foreground">{t("account.nodes.daemonNote")}</p><Button variant="outline" size="sm" disabled={creating} onClick={createEnrollment}><KeyRound />{creating ? t("account.nodes.creating") : t("account.nodes.enroll")}</Button>{enrollment && <div className="border border-primary bg-background p-4 sm:col-span-2"><span className="font-mono text-[9px] text-muted-foreground">{t("account.nodes.enrollmentCode")}</span><strong className="mt-2 block break-all font-mono text-sm font-normal">{enrollment.code}</strong><small className="mt-2 block text-[9px] text-muted-foreground">{t("account.nodes.enrollmentCommand", { code: enrollment.code })}</small></div>}</div><NodeTable nodes={daemonNodes} kind="daemon" busy={busy} language={i18n.language} action={action} /></Panel>
-    <Panel><PanelTitle title={t("account.nodes.clientTitle")} end={t("account.nodes.clientCount", { count: clientNodes.filter((node) => !node.revoked).length })} /><p className="m-0 border-b border-line px-5 py-4 text-[10px] leading-5 text-muted-foreground">{t("account.nodes.clientNote")}</p><NodeTable nodes={clientNodes} kind="client" busy={busy} language={i18n.language} action={action} /></Panel>
   </div>;
 }
 
