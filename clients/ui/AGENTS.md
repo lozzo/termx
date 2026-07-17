@@ -10,9 +10,11 @@
 
 ## Runtime Schema
 
-- `proto/runtimepb/runtime.proto` 是 App/shared UI runtime schema 的公开源码真值。
-- `clients/ui/src/generated/runtimepb/` 只保存由该 schema 生成的 TypeScript projection，不得从 archive 或旧 `termx-remote/` 生成。
-- wire terminal protocol 继续由 `proto/wirepb/` 拥有；UI 不得用本地 DTO 建立第二套 terminal protocol。
+- `proto/apipb/` 是插件、App/shared UI、官方客户端和第三方客户端公共 application API 的唯一源码真值。
+- `clients/ui/src/generated/apipb/` 只保存由公共 API schema 生成的 TypeScript projection；组件和 runtime 不得复制 proto 业务字段建立第二套 API DTO。
+- `proto/runtimepb/runtime.proto` 是迁移期旧 Web/mobile runtime schema；不得新增 application API，字段迁入 `apipb` 并切换 consumer 后删除。
+- `proto/wirepb/` 是迁移期 daemon wire/framing schema；UI 不得把 wire message 当作新的公共 application API。
+- 所有客户端 API 修改顺序固定为 proto -> generated code -> compatibility harness -> transformer/client consumer。
 
 ## Transport And Security
 

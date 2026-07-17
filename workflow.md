@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 当前最早未完成切片是 `PA003`。在 `PA001-PA007` 全部完成前，暂停 `C3B` 以及后续连接功能开发。
+- 当前最早未完成切片是 `PA004`。在 `PA001-PA007` 全部完成前，暂停 `C3B` 以及后续连接功能开发。
 - 用户已确立仓库级强约定：所有插件、第三方客户端、官方客户端、跨进程和跨语言 API 的唯一 schema truth 必须位于 `proto/`。
 - 完整依赖链固定为 `core <-> api_layer <-> transformer <-> 插件/客户端`。任何 transport、CLI、TUI、Cloud 或平台 binding 都不得绕过该链路消费 core domain struct。
 - `core/api` Go DTO 路线已判定错误，必须删除；此前 `AR003B1A/AR003B1B` 结论作废，不得继续迁移或补兼容层。
@@ -66,8 +66,8 @@ plugins / CLI / TUI / mobile / desktop / web / third-party clients
 | --- | --- | --- | --- |
 | PA001 | 已完成 | 固化 Proto API 强约定并清理错误基线 | 更新 AGENTS/workflow/架构文档；删除 `core/api` 和未接线的重复 application DTO；恢复 clean compile baseline；文档和守卫不再宣称 Go DTO 是 API truth |
 | PA002 | 已完成 | Proto API inventory 与缺口表 | 列出 terminal/attachment/path/history/live/file/storage/workbench/endpoint/access/cloud 的现有 proto、Go-only DTO、consumer、兼容字段和缺失 command/event/error；不写实现 |
-| PA003 | 进行中 | 公共 API schema 与 envelope | 在 `proto/` 定义 versioned command/result/event/error/capability/resource handle；区分公共 application API 与内部 wire framing；生成代码和 compatibility harness 通过 |
-| PA004 | 待开始 | API Layer 与 Transformer 骨架 | 建立 `api_layer/` 与 `transformer/`；只依赖 core domain interface 与生成 proto；静态守卫禁止 UI/transport/private/state owner；fake harness 覆盖取消、释放和错误 |
+| PA003 | 已完成 | 公共 API schema 与 envelope | 在 `proto/` 定义 versioned command/result/event/error/capability/resource handle；区分公共 application API 与内部 wire framing；生成代码和 compatibility harness 通过 |
+| PA004 | 进行中 | API Layer 与 Transformer 骨架 | 建立 `api_layer/` 与 `transformer/`；只依赖 core domain interface 与生成 proto；静态守卫禁止 UI/transport/private/state owner；fake harness 覆盖取消、释放和错误 |
 | PA005A | 待开始 | Terminal/attachment/path 迁移 | core adapter、API Layer、transformer 和 client consumer 改用 proto；删除 `internal/protocol`、client runtime、TUI port 中重复业务 DTO，不使用 alias |
 | PA005B | 待开始 | History/live 迁移 | authoritative history window/native screen API 进入 proto；保持 history/live revision 边界；删除重复 projection owner |
 | PA005C | 待开始 | File/storage/workbench 迁移 | file 隐藏 frame/channel，storage 保持 opaque，workbench 只表达 client intent；删除旧专用或重复 DTO |

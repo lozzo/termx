@@ -11,7 +11,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "proto": "npm run proto:runtime && npm run proto:wire",
+    "proto": "npm run proto:api && npm run proto:runtime && npm run proto:wire",
+    "proto:api": "protoc --es_out=src/generated/apipb --es_opt=target=ts,import_extension=none -I ../../proto/apipb ../../proto/apipb/application.proto && perl -0pi -e 's/\\s*\\z/\\n/' src/generated/apipb/application_pb.ts",
     "proto:runtime": "protoc --es_out=src/generated/runtimepb --es_opt=target=ts,import_extension=none -I ../../proto/runtimepb ../../proto/runtimepb/runtime.proto && perl -0pi -e 's/\\s*\\z/\\n/' src/generated/runtimepb/runtime_pb.ts",
     "proto:wire": "protoc --es_out=src/generated/wirepb --es_opt=target=ts,import_extension=none -I ../../proto/wirepb ../../proto/wirepb/terminal.proto && perl -0pi -e 's/\\s*\\z/\\n/' src/generated/wirepb/terminal_pb.ts",
     "test": "vitest run",

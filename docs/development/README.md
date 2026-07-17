@@ -54,7 +54,7 @@ make clean
 
 ## 生成代码
 
-Go protobuf 来自 `proto/{cloudpb,remoteauthpb,wirepb}`，客户端 TypeScript protobuf 来自 `proto/{runtimepb,wirepb}`。`scripts/check-generated-code.sh` 在临时目录重新生成并逐文件比较，不修改工作树。更新 schema 后先运行：
+Go protobuf 来自 `proto/{apipb,cloudpb,remoteauthpb,wirepb}`，客户端 TypeScript protobuf 来自 `proto/{apipb,runtimepb,wirepb}`。`scripts/check-generated-code.sh` 在临时目录重新生成并逐文件比较，不修改工作树。更新 schema 后先运行：
 
 ```bash
 npm run proto

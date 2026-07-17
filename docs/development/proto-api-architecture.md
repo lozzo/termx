@@ -57,7 +57,9 @@ plugins and clients
 - transport framing：Hello、request correlation、channel frame、payload envelope。
 - private Cloud API：Control Plane、Companion、Hub/Relay 管理面；不得混入 terminal payload 或 CapabilityGrant 判断。
 
-已有 `wirepb` 同时包含 application message 与 framing，是迁移输入，不是最终目录结论。拆分前先做 inventory 和 compatibility 设计，禁止直接移动 schema 或改 field number。
+PA003 已建立 `proto/apipb/`，package 为 `termx.api.v1`，它是新的公共 application API 唯一落点。后续 terminal/history/file 等领域 command/result/event 必须进入该 package 或其同版本子 schema。
+
+已有 `runtimepb` 是迁移期 Web/mobile API，已有 `wirepb` 同时包含 application message 与 framing。两者都是迁移输入，不再新增 application API；consumer 切到 `apipb` 后删除重复 schema。迁移期间禁止直接复用 field number 声称 wire compatibility，必须通过显式 transformer 和 compatibility harness 验证。
 
 ## API 设计要求
 
