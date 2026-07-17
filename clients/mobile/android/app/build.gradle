@@ -22,7 +22,7 @@ android {
     }
     sourceSets {
         test.resources.srcDir '../../../../shared/cloudcompanion/testdata'
-        test.resources.srcDir '../../../../shared/connection/testdata'
+        test.resources.srcDir '../../../../client/endpoint/testdata'
         main.proto.srcDirs '../../../../proto/cloudpb', '../../../../proto/remoteauthpb', '../../../../proto/wirepb'
     }
     if (project.hasProperty("termxArmOnly")) {

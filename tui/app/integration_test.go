@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	protocoladapter "github.com/lozzow/termx/tui/adapter/protocol"
+	"github.com/lozzow/termx/tui/testkit"
 	"reflect"
 	"strings"
 	"sync"
@@ -12,14 +14,14 @@ import (
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tui/input"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
 
 func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -27,7 +29,7 @@ func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
 			7,
 			[]state.HistoryRow{{Text: "new", LineID: 20}},
 		)}},
-		OlderResponses: []services.HistoryResult{{Window: historyWindowForApp(
+		OlderResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowPrepend,
 			"term-1",
 			"tok-1",
@@ -84,8 +86,8 @@ func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
 }
 
 func TestCopyModeContinuousOlderPrependsAndKeepsTailBoundary(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -93,7 +95,7 @@ func TestCopyModeContinuousOlderPrependsAndKeepsTailBoundary(t *testing.T) {
 			7,
 			[]state.HistoryRow{{Text: "line-953", LineID: 953}, {Text: "line-954", LineID: 954}},
 		)}},
-		OlderResponses: []services.HistoryResult{
+		OlderResponses: []port.HistoryResult{
 			{Window: historyWindowForApp(
 				state.HistoryWindowPrepend,
 				"term-1",
@@ -160,8 +162,8 @@ func TestCopyModeContinuousOlderPrependsAndKeepsTailBoundary(t *testing.T) {
 }
 
 func TestCopyModeGoAtLoadedTopRequestsOldest(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -169,7 +171,7 @@ func TestCopyModeGoAtLoadedTopRequestsOldest(t *testing.T) {
 			7,
 			[]state.HistoryRow{{Text: "line-964", LineID: 964}, {Text: "line-965", LineID: 965}},
 		)}},
-		OldestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+		OldestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -216,10 +218,10 @@ func TestCopyModeGoAtLoadedTopRequestsOldest(t *testing.T) {
 }
 
 func TestInteractiveRuntimeAttachCopyModeMainlineAcceptance(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 10, Rows: 12},
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 10, Rows: 12},
 	}
-	clipboard := &services.FakeClipboardService{}
+	clipboard := &testkit.FakeClipboardService{}
 	historyClient := &acceptanceProtocolHistoryClient{
 		windows: []*protocol.HistoryWindow{
 			{
@@ -278,7 +280,7 @@ func TestInteractiveRuntimeAttachCopyModeMainlineAcceptance(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: historyClient}, Clipboard: clipboard, Rows: 20},
+		CopyModeDeps{Core: protocoladapter.ProtocolCoreClientAdapter{Client: historyClient}, Clipboard: clipboard, Rows: 20},
 	)
 
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 12, Rows: 12}}); err != nil {
@@ -384,7 +386,7 @@ func TestInteractiveRuntimeCtrlVEntersCopyModeWithoutBlockingOnSlowHistoryLatest
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	core := &blockingHistoryClient{}
-	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, &services.FakeTerminalService{}, NewAsyncEffectRunner())
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, &testkit.FakeTerminalService{}, NewAsyncEffectRunner())
 	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",
 		Revision:   1,
@@ -420,7 +422,7 @@ func TestInteractiveRuntimeCtrlVEntersCopyModeWithoutBlockingOnSlowHistoryLatest
 		t.Fatalf("entering copy mode must keep live frame until authoritative history arrives, got %#v", frame.Lines)
 	}
 
-	core.finishLatest(services.HistoryResult{
+	core.finishLatest(port.HistoryResult{
 		Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
@@ -452,7 +454,7 @@ func TestCopyModeEnteringSwallowsInputAndEscCancelsPendingLatest(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	core := &blockingHistoryClient{}
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, terminal, NewAsyncEffectRunner())
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
@@ -486,7 +488,7 @@ func TestCopyModeEnteringSwallowsInputAndEscCancelsPendingLatest(t *testing.T) {
 
 func TestCopyModeExitReleasesFrozenHistoryToken(t *testing.T) {
 	host := NewFakeTerminalHost(16)
-	core := &services.FakeCoreClient{}
+	core := &testkit.FakeCoreClient{}
 	runtime := newCopyModeRuntime(host, core, nil)
 	runtime.state.History = state.HistoryStore{
 		TerminalID: "term-1",
@@ -520,7 +522,7 @@ func TestCopyModeEnteringDoesNotBindLiveSurfaceWhileLatestIsPending(t *testing.T
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	core := &blockingHistoryClient{}
-	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, &services.FakeTerminalService{}, NewAsyncEffectRunner())
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, &testkit.FakeTerminalService{}, NewAsyncEffectRunner())
 	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",
 		Revision:   1,
@@ -570,7 +572,7 @@ func TestCopyModeEnteringWheelScrollAppliesWhenLatestArrives(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	core := &blockingHistoryClient{}
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, terminal, NewAsyncEffectRunner())
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
@@ -601,7 +603,7 @@ func TestCopyModeEnteringWheelScrollAppliesWhenLatestArrives(t *testing.T) {
 		t.Fatalf("entering wheel input must not leak to terminal, got %#v", terminal.Inputs)
 	}
 
-	core.finishLatest(services.HistoryResult{
+	core.finishLatest(port.HistoryResult{
 		Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
@@ -630,7 +632,7 @@ func TestCopyModeEnteringPageUpBeyondLatestContinuesOlder(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	core := &blockingHistoryClient{allowOlder: true}
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, terminal, NewAsyncEffectRunner())
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
@@ -658,7 +660,7 @@ func TestCopyModeEnteringPageUpBeyondLatestContinuesOlder(t *testing.T) {
 		historyRowsForEnteringScrollTest("latest", 3, 100),
 	)
 	latest.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 100}
-	core.finishLatest(services.HistoryResult{Window: latest}, nil)
+	core.finishLatest(port.HistoryResult{Window: latest}, nil)
 	deadline := time.Now().Add(200 * time.Millisecond)
 	for len(core.olderRequests()) == 0 && time.Now().Before(deadline) {
 		if err := runtime.Drain(context.Background()); err != nil {
@@ -689,7 +691,7 @@ func TestCopyModeEnteringPageUpBeyondLatestContinuesOlder(t *testing.T) {
 	)
 	older.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 80}
 	older.Boundary = state.HistoryBoundary{FirstLineID: 80, LastLineID: 102}
-	core.finishOlder(services.HistoryResult{Window: older}, nil)
+	core.finishOlder(port.HistoryResult{Window: older}, nil)
 	deadline = time.Now().Add(200 * time.Millisecond)
 	for runtime.State().History.Pending != nil && time.Now().Before(deadline) {
 		if err := runtime.Drain(context.Background()); err != nil {
@@ -723,7 +725,7 @@ func TestCopyModeEnteringPageUpBeyondLatestContinuesOlder(t *testing.T) {
 func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, nil, &testkit.FakeTerminalService{}, runner)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		t.Fatalf("send first page up: %v", err)
@@ -756,8 +758,8 @@ func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
 }
 
 func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -765,7 +767,7 @@ func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 			7,
 			[]state.HistoryRow{{Text: "new-1", LineID: 19}, {Text: "new-2", LineID: 20}},
 		)}},
-		OlderResponses: []services.HistoryResult{{Window: historyWindowForApp(
+		OlderResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowPrepend,
 			"term-1",
 			"tok-1",
@@ -806,8 +808,8 @@ func TestCopyModeMouseWheelRawSeqEntersCopyMode(t *testing.T) {
 			LiveTail: true,
 		})
 	}
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -816,8 +818,8 @@ func TestCopyModeMouseWheelRawSeqEntersCopyMode(t *testing.T) {
 			latestRows,
 		)}},
 	}
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
 	}
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
@@ -858,8 +860,8 @@ func TestCopyModeMouseWheelRawSeqEntersCopyMode(t *testing.T) {
 }
 
 func TestCopyModeMouseWheelTargetsHitPaneWithoutWaitingForFocus(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -868,8 +870,8 @@ func TestCopyModeMouseWheelTargetsHitPaneWithoutWaitingForFocus(t *testing.T) {
 			[]state.HistoryRow{{Text: "hit-pane-copy", LineID: 20}},
 		)}},
 	}
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
 	}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
@@ -987,7 +989,7 @@ func TestCopyModeFloatingScrollDoesNotMutateTiledCopySession(t *testing.T) {
 	root = root.WithCopyHistorySession(floatingView, floatHistory, floatCopy)
 	root.History, root.CopyMode = root.CopyHistorySessionForView(floatingView)
 
-	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 10})
+	reducer := NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 10})
 	next, _ := reducer(root, CopyModeScrollMsg{Delta: -1})
 
 	_, nextPaneCopy := next.CopyHistorySessionForView(paneView)
@@ -1076,8 +1078,8 @@ func TestCopyModeRuntimeFloatingWheelScrollUsesHitView(t *testing.T) {
 		root,
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{}},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 10},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 10},
 	)
 	if err := runtime.Post(NoopMsg{}); err != nil {
 		t.Fatalf("initial render: %v", err)
@@ -1141,8 +1143,8 @@ func TestCopyModeRuntimeWheelHitRegionsKeepFloatingAndTiledViewsIsolated(t *test
 	runtime := NewAppRuntime(
 		root,
 		ComposeReducers(
-			NewBackNavigationReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 10}),
-			NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 10}),
+			NewBackNavigationReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 10}),
+			NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 10}),
 		),
 		func(root state.Root) render.Frame {
 			return render.NewRenderer(render.DefaultTheme()).RenderANSI(render.NewRenderVMBuilder().Build(root))
@@ -1243,7 +1245,7 @@ func TestCopyModeEnteringSecondViewKeepsFirstUntilEsc(t *testing.T) {
 	}
 	root = root.WithCopyHistorySession(paneView, paneHistory, paneCopy)
 
-	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 		state.HistoryWindowReplace,
 		"term-float",
 		"tok-float",
@@ -1327,7 +1329,7 @@ func TestCopyModeEnteringFloatingWithBoundViewIDKeepsPaneUntilEsc(t *testing.T) 
 	}
 	root = root.WithCopyHistorySession(paneView, paneHistory, paneCopy)
 
-	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 		state.HistoryWindowReplace,
 		"term-float",
 		"tok-float",
@@ -1422,7 +1424,7 @@ func TestCopyModeCtrlVEnteringSecondViewDoesNotOverwriteFirstSession(t *testing.
 	root = root.WithCopyHistorySession(paneView, paneHistory, paneCopy)
 	root.History, root.CopyMode = root.CopyHistorySessionForView(paneView)
 
-	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 		state.HistoryWindowReplace,
 		"term-float",
 		"tok-float",
@@ -1456,8 +1458,8 @@ func TestCopyModeMouseWheelRawSeqScrollsDown(t *testing.T) {
 	for i := 1; i <= 40; i++ {
 		latestRows = append(latestRows, state.HistoryRow{Text: fmt.Sprintf("raw-wheel-%02d", i), LineID: uint64(i)})
 	}
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -1466,8 +1468,8 @@ func TestCopyModeMouseWheelRawSeqScrollsDown(t *testing.T) {
 			latestRows,
 		)}},
 	}
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
 	}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 12)
@@ -1519,8 +1521,8 @@ func TestCopyModeLatestStartsAtNewestVisibleTail(t *testing.T) {
 	for i := 1; i <= 10; i++ {
 		latestRows = append(latestRows, state.HistoryRow{Text: fmt.Sprintf("latest-%02d", i), LineID: uint64(i)})
 	}
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -1555,8 +1557,8 @@ func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T)
 	for i := 1; i <= 24; i++ {
 		olderRows = append(olderRows, state.HistoryRow{Text: fmt.Sprintf("old-%02d", i), LineID: uint64(i)})
 	}
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -1575,7 +1577,7 @@ func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T)
 				{Text: "new-10", LineID: 110},
 			},
 		)}},
-		OlderResponses: []services.HistoryResult{{Window: historyWindowForApp(
+		OlderResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowPrepend,
 			"term-1",
 			"tok-1",
@@ -1645,7 +1647,7 @@ func TestCopyModeMouseWheelMovesCursorAndKeepsItVisible(t *testing.T) {
 	for i := 1; i <= 40; i++ {
 		latestRows = append(latestRows, state.HistoryRow{Text: fmt.Sprintf("row-%02d", i), LineID: uint64(i)})
 	}
-	core := &services.FakeCoreClient{}
+	core := &testkit.FakeCoreClient{}
 	host := NewFakeTerminalHost(8)
 	runtime := newCopyModeRuntime(host, core, nil)
 	runtime.state.History = state.HistoryStore{
@@ -1746,7 +1748,7 @@ func TestCopyModePageDownMovesCursorBeforeRequestingNewer(t *testing.T) {
 	}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 78, 10, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
 
-	next, effects := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}})(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageDn}})
+	next, effects := NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}})(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageDn}})
 
 	if len(effects) == 0 {
 		t.Fatalf("page down should be handled")
@@ -1765,8 +1767,8 @@ func TestCopyModeWheelAtTopRevealsOneOlderRow(t *testing.T) {
 	for i := 1; i <= 20; i++ {
 		latestRows = append(latestRows, state.HistoryRow{Text: fmt.Sprintf("new-%02d", i), LineID: uint64(20 + i)})
 	}
-	core := &services.FakeCoreClient{
-		OlderResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		OlderResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowPrepend,
 			"term-1",
 			"tok-1",
@@ -1824,8 +1826,8 @@ func TestCopyModeWheelAtTopRevealsOneOlderRow(t *testing.T) {
 }
 
 func TestCopyModeHistoryRequestsScaleWithPanelHeight(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -1862,8 +1864,8 @@ func TestCopyModeEntryUsesSingleFrozenLatestRequest(t *testing.T) {
 		8,
 		[]state.HistoryRow{{Text: "frozen-latest", LineID: 20}},
 	)
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: latest}},
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: latest}},
 	}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 12)
@@ -1890,7 +1892,7 @@ func TestCopyModeEntryUsesSingleFrozenLatestRequest(t *testing.T) {
 func TestCopyModeDuplicateOlderWhilePendingDoesNotSurfaceError(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, nil, &testkit.FakeTerminalService{}, runner)
 	runtime.state.History = state.HistoryStore{
 		PaneID:     state.DefaultPaneID,
 		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
@@ -1952,9 +1954,9 @@ func TestCopyModeOlderBoundaryTokensAndExhaustedGuard(t *testing.T) {
 	exhausted := historyWindowForApp(state.HistoryWindowPrepend, "term-1", "tok-1", 78, 7, nil)
 	exhausted.Cursor = latest.Cursor
 	exhausted.HasMore = false
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: latest}},
-		OlderResponses:  []services.HistoryResult{{Window: exhausted}},
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: latest}},
+		OlderResponses:  []port.HistoryResult{{Window: exhausted}},
 	}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 8)
@@ -2005,9 +2007,9 @@ func TestCopyModeExhaustedGuardSurvivesLocalReflowResize(t *testing.T) {
 	exhausted := historyWindowForApp(state.HistoryWindowPrepend, "term-1", "tok-1", 78, 7, nil)
 	exhausted.Cursor = latest.Cursor
 	exhausted.HasMore = false
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: latest}},
-		OlderResponses:  []services.HistoryResult{{Window: exhausted}},
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: latest}},
+		OlderResponses:  []port.HistoryResult{{Window: exhausted}},
 	}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
@@ -2069,9 +2071,9 @@ func TestCopyModeOlderResponseKeepsLocalReflowColsBinding(t *testing.T) {
 	older.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 10}
 	older.Boundary = state.HistoryBoundary{FirstLineID: 10, LastLineID: 20}
 	older.HasMore = true
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: latest}},
-		OlderResponses:  []services.HistoryResult{{Window: older}},
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: latest}},
+		OlderResponses:  []port.HistoryResult{{Window: older}},
 	}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
@@ -2106,7 +2108,7 @@ func TestCopyModeOlderResponseKeepsLocalReflowColsBinding(t *testing.T) {
 }
 
 func TestCopyModeAttachRebindInvalidatesFrozenHistoryForNewTerminal(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	reducer := NewLiveReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{
 		Shell: state.DefaultShell(),
 		Session: state.TerminalSessionStore{
@@ -2143,7 +2145,7 @@ func TestCopyModeAttachRebindInvalidatesFrozenHistoryForNewTerminal(t *testing.T
 		},
 	}
 
-	next, effects := reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{
+	next, effects := reducer(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-new",
 		Channel:      9,
 		Cols:         78,
@@ -2165,7 +2167,7 @@ func TestCopyModeAttachRebindInvalidatesFrozenHistoryForNewTerminal(t *testing.T
 }
 
 func TestCopyModeReattachSameTerminalKeepsFrozenHistory(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	reducer := NewLiveReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{
 		Shell: state.DefaultShell(),
 		Session: state.TerminalSessionStore{
@@ -2202,7 +2204,7 @@ func TestCopyModeReattachSameTerminalKeepsFrozenHistory(t *testing.T) {
 		},
 	}
 
-	next, effects := reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{
+	next, effects := reducer(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-1",
 		Channel:      9,
 		Cols:         78,
@@ -2227,7 +2229,7 @@ func TestCopyModeReattachSameTerminalKeepsFrozenHistory(t *testing.T) {
 }
 
 func TestCopyModeAttachRebindInvalidatesFrozenHistoryForNewFloatingTerminal(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	reducer := NewLiveReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{Shell: state.DefaultShell()}
 	var result state.FloatingCommandResult
 	root.Shell, result = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -2273,7 +2275,7 @@ func TestCopyModeAttachRebindInvalidatesFrozenHistoryForNewFloatingTerminal(t *t
 		ViewRows:   10,
 	}
 
-	next, effects := reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{
+	next, effects := reducer(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-new",
 		Channel:      8,
 		Cols:         40,
@@ -2295,7 +2297,7 @@ func TestCopyModeAttachRebindInvalidatesFrozenHistoryForNewFloatingTerminal(t *t
 }
 
 func TestCopyModeReattachSameFloatingTerminalKeepsFrozenHistory(t *testing.T) {
-	reducer := NewLiveReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	reducer := NewLiveReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{Shell: state.DefaultShell()}
 	var result state.FloatingCommandResult
 	root.Shell, result = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -2341,7 +2343,7 @@ func TestCopyModeReattachSameFloatingTerminalKeepsFrozenHistory(t *testing.T) {
 		ViewRows:   10,
 	}
 
-	next, effects := reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{
+	next, effects := reducer(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-1",
 		Channel:      8,
 		Cols:         40,
@@ -2366,7 +2368,7 @@ func TestCopyModeReattachSameFloatingTerminalKeepsFrozenHistory(t *testing.T) {
 }
 
 func TestCopyModeRuntimeAttachRebindDoesNotRenderOldFrozenHistory(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewInteractiveRuntime(
@@ -2409,10 +2411,10 @@ func TestCopyModeRuntimeAttachRebindDoesNotRenderOldFrozenHistory(t *testing.T) 
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{
+	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-new",
 		Channel:      9,
 		Cols:         78,
@@ -2438,7 +2440,7 @@ func TestCopyModeRuntimeAttachRebindDoesNotRenderOldFrozenHistory(t *testing.T) 
 }
 
 func TestCopyModeRuntimeReattachSameTerminalKeepsFrozenHistory(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewInteractiveRuntime(
@@ -2481,7 +2483,7 @@ func TestCopyModeRuntimeReattachSameTerminalKeepsFrozenHistory(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2491,7 +2493,7 @@ func TestCopyModeRuntimeReattachSameTerminalKeepsFrozenHistory(t *testing.T) {
 		t.Fatalf("expected initial frame to render old frozen history, frames=%#v", host.Frames())
 	}
 
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{
+	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-1",
 		Channel:      9,
 		Cols:         78,
@@ -2523,7 +2525,7 @@ func TestCopyModeRuntimeReattachSameTerminalKeepsFrozenHistory(t *testing.T) {
 }
 
 func TestCopyModeRuntimeAttachRebindDoesNotRenderOldFrozenHistoryForNewFloatingTerminal(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(120, 24)
 	runtime := NewInteractiveRuntime(
@@ -2563,7 +2565,7 @@ func TestCopyModeRuntimeAttachRebindDoesNotRenderOldFrozenHistoryForNewFloatingT
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 	runtime.state.Shell, _ = runtime.state.Shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
@@ -2574,7 +2576,7 @@ func TestCopyModeRuntimeAttachRebindDoesNotRenderOldFrozenHistoryForNewFloatingT
 	})
 	runtime.state.TerminalViews = runtime.state.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "float-pane", "term-old", 7, 40, 12, state.TerminalResizeRoleOwner, "surface-old", state.TerminalFloatingViewID("floating-1"), true))
 
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{
+	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-new",
 		Channel:      8,
 		Cols:         40,
@@ -2603,7 +2605,7 @@ func TestCopyModeRuntimeAttachRebindDoesNotRenderOldFrozenHistoryForNewFloatingT
 }
 
 func TestCopyModeRuntimeReattachSameFloatingTerminalKeepsFrozenHistory(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(120, 24)
 	runtime := NewInteractiveRuntime(
@@ -2643,7 +2645,7 @@ func TestCopyModeRuntimeReattachSameFloatingTerminalKeepsFrozenHistory(t *testin
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 	runtime.state.Shell, _ = runtime.state.Shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
@@ -2659,7 +2661,7 @@ func TestCopyModeRuntimeReattachSameFloatingTerminalKeepsFrozenHistory(t *testin
 	}
 	initialBoundCols := runtime.State().CopyMode.BoundCols
 
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{
+	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-1",
 		Channel:      8,
 		Cols:         40,
@@ -2692,7 +2694,7 @@ func TestCopyModeRuntimeReattachSameFloatingTerminalKeepsFrozenHistory(t *testin
 }
 
 func TestCopyModeRemoveClearsFrozenHistoryForDeletedTerminal(t *testing.T) {
-	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{
 		Shell: state.DefaultShell(),
 		Session: state.TerminalSessionStore{
@@ -2742,7 +2744,7 @@ func TestCopyModeRemoveClearsFrozenHistoryForDeletedTerminal(t *testing.T) {
 }
 
 func TestCopyModeRuntimeRemoveDoesNotRenderDeletedFrozenHistory(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewInteractiveRuntime(
@@ -2785,7 +2787,7 @@ func TestCopyModeRuntimeRemoveDoesNotRenderDeletedFrozenHistory(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 
 	if err := runtime.Post(TerminalPoolRemoveResultMsg{TerminalID: "term-old"}); err != nil {
@@ -2882,8 +2884,8 @@ func TestCopyModeRuntimePaneCloseDoesNotRenderClosedFrozenHistory(t *testing.T) 
 		},
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{}},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 
 	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
@@ -2970,8 +2972,8 @@ func TestCopyModeRuntimeTabSwitchKeepsButDoesNotRenderPreviousPaneFrozenHistory(
 		},
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{}},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 	runtime.state.Shell, _ = runtime.state.Shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, TargetID: "tab-2", Name: "logs"})
 	runtime.state.Shell = runtime.state.Shell.BindPaneTerminal(state.PaneCommandTarget{TabID: "tab-2"}, "term-2")
@@ -3109,8 +3111,8 @@ func TestCopyModeRuntimeFloatingCloseDoesNotRenderClosedFrozenHistory(t *testing
 		},
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{}},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 	runtime.state.Shell, _ = runtime.state.Shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
@@ -3214,8 +3216,8 @@ func TestCopyModeRuntimeFloatingDeactivateKeepsFrozenHistoryInFloating(t *testin
 		},
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{}},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 	runtime.state.Shell, _ = runtime.state.Shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
@@ -3273,7 +3275,7 @@ func TestCopyModeTerminalPoolAttachRebindInvalidatesFrozenHistoryForNewPaneTermi
 
 	next, _ := reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{
 		TerminalID: "term-new",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-new",
 			Channel:      9,
 			Cols:         78,
@@ -3283,7 +3285,7 @@ func TestCopyModeTerminalPoolAttachRebindInvalidatesFrozenHistoryForNewPaneTermi
 			ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
 			CanResize:    true,
 		},
-	}, LiveDeps{Terminal: &services.FakeTerminalService{}})
+	}, LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 
 	if next.History.TerminalID != "term-new" || next.History.Token != "" || len(next.History.Rows) != 0 {
 		t.Fatalf("terminal pool pane attach rebind must invalidate old frozen history window, got %#v", next.History)
@@ -3321,7 +3323,7 @@ func TestCopyModeTerminalPoolReattachSamePaneTerminalKeepsFrozenHistory(t *testi
 
 	next, _ := reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{
 		TerminalID: "term-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      9,
 			Cols:         78,
@@ -3331,7 +3333,7 @@ func TestCopyModeTerminalPoolReattachSamePaneTerminalKeepsFrozenHistory(t *testi
 			ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
 			CanResize:    false,
 		},
-	}, LiveDeps{Terminal: &services.FakeTerminalService{}})
+	}, LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 
 	if next.History.Token != "tok-old" || next.History.TerminalID != "term-1" || len(next.History.Rows) != 1 {
 		t.Fatalf("same-terminal terminal pool pane attach must keep frozen history window, got %#v", next.History)
@@ -3380,7 +3382,7 @@ func TestCopyModeTerminalPoolAttachRebindInvalidatesFrozenHistoryForNewFloatingT
 	next, _ := reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{
 		TerminalID:       "term-new",
 		TargetFloatingID: "floating-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-new",
 			Channel:      8,
 			Cols:         40,
@@ -3390,7 +3392,7 @@ func TestCopyModeTerminalPoolAttachRebindInvalidatesFrozenHistoryForNewFloatingT
 			ViewID:       state.TerminalFloatingViewID("floating-1"),
 			CanResize:    true,
 		},
-	}, LiveDeps{Terminal: &services.FakeTerminalService{}})
+	}, LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 
 	if next.History.TerminalID != "term-new" || next.History.Token != "" || len(next.History.Rows) != 0 {
 		t.Fatalf("terminal pool floating attach rebind must invalidate old frozen history window, got %#v", next.History)
@@ -3436,7 +3438,7 @@ func TestCopyModeTerminalPoolReattachSameFloatingTerminalKeepsFrozenHistory(t *t
 	next, _ := reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{
 		TerminalID:       "term-1",
 		TargetFloatingID: "floating-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      8,
 			Cols:         40,
@@ -3446,7 +3448,7 @@ func TestCopyModeTerminalPoolReattachSameFloatingTerminalKeepsFrozenHistory(t *t
 			ViewID:       state.TerminalFloatingViewID("floating-1"),
 			CanResize:    false,
 		},
-	}, LiveDeps{Terminal: &services.FakeTerminalService{}})
+	}, LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 
 	if next.History.Token != "tok-old" || next.History.TerminalID != "term-1" || len(next.History.Rows) != 1 {
 		t.Fatalf("same-terminal terminal pool floating attach must keep frozen history window, got %#v", next.History)
@@ -3460,7 +3462,7 @@ func TestCopyModeTerminalPoolReattachSameFloatingTerminalKeepsFrozenHistory(t *t
 }
 
 func TestCopyModeRuntimeTerminalPoolAttachRebindDoesNotRenderOldFrozenHistoryForNewPaneTerminal(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewInteractiveRuntime(
@@ -3503,12 +3505,12 @@ func TestCopyModeRuntimeTerminalPoolAttachRebindDoesNotRenderOldFrozenHistoryFor
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 
 	if err := runtime.Post(TerminalPoolAttachResultMsg{
 		TerminalID: "term-new",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-new",
 			Channel:      9,
 			Cols:         78,
@@ -3535,7 +3537,7 @@ func TestCopyModeRuntimeTerminalPoolAttachRebindDoesNotRenderOldFrozenHistoryFor
 }
 
 func TestCopyModeRuntimeTerminalPoolReattachSamePaneTerminalKeepsFrozenHistory(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewInteractiveRuntime(
@@ -3578,7 +3580,7 @@ func TestCopyModeRuntimeTerminalPoolReattachSamePaneTerminalKeepsFrozenHistory(t
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -3590,7 +3592,7 @@ func TestCopyModeRuntimeTerminalPoolReattachSamePaneTerminalKeepsFrozenHistory(t
 
 	if err := runtime.Post(TerminalPoolAttachResultMsg{
 		TerminalID: "term-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      9,
 			Cols:         78,
@@ -3624,7 +3626,7 @@ func TestCopyModeRuntimeTerminalPoolReattachSamePaneTerminalKeepsFrozenHistory(t
 }
 
 func TestCopyModeRuntimeTerminalPoolAttachRebindDoesNotRenderOldFrozenHistoryForNewFloatingTerminal(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(120, 24)
 	runtime := NewInteractiveRuntime(
@@ -3664,7 +3666,7 @@ func TestCopyModeRuntimeTerminalPoolAttachRebindDoesNotRenderOldFrozenHistoryFor
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 	runtime.state.Shell, _ = runtime.state.Shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
@@ -3678,7 +3680,7 @@ func TestCopyModeRuntimeTerminalPoolAttachRebindDoesNotRenderOldFrozenHistoryFor
 	if err := runtime.Post(TerminalPoolAttachResultMsg{
 		TerminalID:       "term-new",
 		TargetFloatingID: "floating-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-new",
 			Channel:      8,
 			Cols:         40,
@@ -3708,7 +3710,7 @@ func TestCopyModeRuntimeTerminalPoolAttachRebindDoesNotRenderOldFrozenHistoryFor
 }
 
 func TestCopyModeRuntimeTerminalPoolReattachSameFloatingTerminalKeepsFrozenHistory(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(120, 24)
 	runtime := NewInteractiveRuntime(
@@ -3748,7 +3750,7 @@ func TestCopyModeRuntimeTerminalPoolReattachSameFloatingTerminalKeepsFrozenHisto
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 	runtime.state.Shell, _ = runtime.state.Shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
@@ -3767,7 +3769,7 @@ func TestCopyModeRuntimeTerminalPoolReattachSameFloatingTerminalKeepsFrozenHisto
 	if err := runtime.Post(TerminalPoolAttachResultMsg{
 		TerminalID:       "term-1",
 		TargetFloatingID: "floating-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      8,
 			Cols:         40,
@@ -3828,7 +3830,7 @@ func TestCopyModeTerminalPoolReconnectRebindInvalidatesFrozenHistoryForNewPaneTe
 
 	next, _ := reduceTerminalPoolReconnectResult(root, TerminalPoolReconnectResultMsg{
 		TerminalID: "term-new",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-new",
 			Channel:      9,
 			Cols:         78,
@@ -3838,7 +3840,7 @@ func TestCopyModeTerminalPoolReconnectRebindInvalidatesFrozenHistoryForNewPaneTe
 			ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
 			CanResize:    true,
 		},
-	}, LiveDeps{Terminal: &services.FakeTerminalService{}})
+	}, LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 
 	if next.History.TerminalID != "term-new" || next.History.Token != "" || len(next.History.Rows) != 0 {
 		t.Fatalf("terminal pool pane reconnect rebind must invalidate old frozen history window, got %#v", next.History)
@@ -3876,7 +3878,7 @@ func TestCopyModeTerminalPoolReconnectSamePaneTerminalKeepsFrozenHistory(t *test
 
 	next, _ := reduceTerminalPoolReconnectResult(root, TerminalPoolReconnectResultMsg{
 		TerminalID: "term-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      9,
 			Cols:         78,
@@ -3886,7 +3888,7 @@ func TestCopyModeTerminalPoolReconnectSamePaneTerminalKeepsFrozenHistory(t *test
 			ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
 			CanResize:    false,
 		},
-	}, LiveDeps{Terminal: &services.FakeTerminalService{}})
+	}, LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 
 	if next.History.Token != "tok-old" || next.History.TerminalID != "term-1" || len(next.History.Rows) != 1 {
 		t.Fatalf("same-terminal terminal pool pane reconnect must keep frozen history window, got %#v", next.History)
@@ -3900,7 +3902,7 @@ func TestCopyModeTerminalPoolReconnectSamePaneTerminalKeepsFrozenHistory(t *test
 }
 
 func TestCopyModeRuntimeTerminalPoolReconnectRebindDoesNotRenderOldFrozenHistoryForNewPaneTerminal(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewInteractiveRuntime(
@@ -3943,12 +3945,12 @@ func TestCopyModeRuntimeTerminalPoolReconnectRebindDoesNotRenderOldFrozenHistory
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 
 	if err := runtime.Post(TerminalPoolReconnectResultMsg{
 		TerminalID: "term-new",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-new",
 			Channel:      9,
 			Cols:         78,
@@ -3975,7 +3977,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectRebindDoesNotRenderOldFrozenHistory
 }
 
 func TestCopyModeRuntimeTerminalPoolReconnectSamePaneTerminalKeepsFrozenHistory(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewInteractiveRuntime(
@@ -4018,7 +4020,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectSamePaneTerminalKeepsFrozenHistory(
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -4030,7 +4032,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectSamePaneTerminalKeepsFrozenHistory(
 
 	if err := runtime.Post(TerminalPoolReconnectResultMsg{
 		TerminalID: "term-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      9,
 			Cols:         78,
@@ -4099,7 +4101,7 @@ func TestCopyModeTerminalPoolReconnectRebindInvalidatesFrozenHistoryForNewFloati
 	next, _ := reduceTerminalPoolReconnectResult(root, TerminalPoolReconnectResultMsg{
 		TerminalID:       "term-new",
 		TargetFloatingID: "floating-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-new",
 			Channel:      8,
 			Cols:         40,
@@ -4109,7 +4111,7 @@ func TestCopyModeTerminalPoolReconnectRebindInvalidatesFrozenHistoryForNewFloati
 			ViewID:       state.TerminalFloatingViewID("floating-1"),
 			CanResize:    true,
 		},
-	}, LiveDeps{Terminal: &services.FakeTerminalService{}})
+	}, LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 
 	if next.History.TerminalID != "term-new" || next.History.Token != "" || len(next.History.Rows) != 0 {
 		t.Fatalf("terminal pool floating reconnect rebind must invalidate old frozen history window, got %#v", next.History)
@@ -4155,7 +4157,7 @@ func TestCopyModeTerminalPoolReconnectSameFloatingTerminalKeepsFrozenHistory(t *
 	next, _ := reduceTerminalPoolReconnectResult(root, TerminalPoolReconnectResultMsg{
 		TerminalID:       "term-1",
 		TargetFloatingID: "floating-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      8,
 			Cols:         40,
@@ -4165,7 +4167,7 @@ func TestCopyModeTerminalPoolReconnectSameFloatingTerminalKeepsFrozenHistory(t *
 			ViewID:       state.TerminalFloatingViewID("floating-1"),
 			CanResize:    false,
 		},
-	}, LiveDeps{Terminal: &services.FakeTerminalService{}})
+	}, LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 
 	if next.History.Token != "tok-old" || next.History.TerminalID != "term-1" || len(next.History.Rows) != 1 {
 		t.Fatalf("same-terminal terminal pool floating reconnect must keep frozen history window, got %#v", next.History)
@@ -4179,7 +4181,7 @@ func TestCopyModeTerminalPoolReconnectSameFloatingTerminalKeepsFrozenHistory(t *
 }
 
 func TestCopyModeRuntimeTerminalPoolReconnectRebindDoesNotRenderOldFrozenHistoryForNewFloatingTerminal(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(120, 24)
 	runtime := NewInteractiveRuntime(
@@ -4219,7 +4221,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectRebindDoesNotRenderOldFrozenHistory
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 	runtime.state.Shell, _ = runtime.state.Shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
@@ -4233,7 +4235,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectRebindDoesNotRenderOldFrozenHistory
 	if err := runtime.Post(TerminalPoolReconnectResultMsg{
 		TerminalID:       "term-new",
 		TargetFloatingID: "floating-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-new",
 			Channel:      8,
 			Cols:         40,
@@ -4263,7 +4265,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectRebindDoesNotRenderOldFrozenHistory
 }
 
 func TestCopyModeRuntimeTerminalPoolReconnectSameFloatingTerminalKeepsFrozenHistory(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(120, 24)
 	runtime := NewInteractiveRuntime(
@@ -4303,7 +4305,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectSameFloatingTerminalKeepsFrozenHist
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 	)
 	runtime.state.Shell, _ = runtime.state.Shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
@@ -4322,7 +4324,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectSameFloatingTerminalKeepsFrozenHist
 	if err := runtime.Post(TerminalPoolReconnectResultMsg{
 		TerminalID:       "term-1",
 		TargetFloatingID: "floating-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      8,
 			Cols:         40,
@@ -4356,7 +4358,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectSameFloatingTerminalKeepsFrozenHist
 }
 
 func TestCopyModeOlderGuardSilentlyBlocksAnyPendingHistoryRequest(t *testing.T) {
-	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
+	reducer := NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20})
 	root := state.Root{
 		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
 		Shell:   state.DefaultShell(),
@@ -4409,8 +4411,8 @@ func TestCopyModeOlderGuardSilentlyBlocksAnyPendingHistoryRequest(t *testing.T) 
 }
 
 func TestCopyModeFooterOlderActionUsesAuthoritativeHistoryPath(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -4418,7 +4420,7 @@ func TestCopyModeFooterOlderActionUsesAuthoritativeHistoryPath(t *testing.T) {
 			7,
 			[]state.HistoryRow{{Text: "new", LineID: 20}},
 		)}},
-		OlderResponses: []services.HistoryResult{{Window: historyWindowForApp(
+		OlderResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowPrepend,
 			"term-1",
 			"tok-1",
@@ -4431,7 +4433,7 @@ func TestCopyModeFooterOlderActionUsesAuthoritativeHistoryPath(t *testing.T) {
 	core.OlderResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 10}
 	core.OlderResponses[0].Window.Boundary = state.HistoryBoundary{FirstLineID: 10, LastLineID: 20}
 	host := NewFakeTerminalHost(8)
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	runtime := NewInteractiveRuntime(
 		state.Root{
 			Shell: state.DefaultShell(),
@@ -4491,8 +4493,8 @@ func TestCopyModeFooterOlderActionUsesAuthoritativeHistoryPath(t *testing.T) {
 }
 
 func TestCopyModeLatestFallsBackToCopyContentRectColsWithoutNativeSurface(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -4522,8 +4524,8 @@ func TestCopyModeLatestFallsBackToCopyContentRectColsWithoutNativeSurface(t *tes
 }
 
 func TestCopyModeLatestIgnoresLiveSurfaceColsForHistoryRequest(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -4562,8 +4564,8 @@ func TestCopyModeLatestIgnoresLiveSurfaceColsForHistoryRequest(t *testing.T) {
 }
 
 func TestCopyModeHostResizeRebindsLatestAndDoesNotRenderOldWindow(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{
 			{Window: historyWindowForApp(
 				state.HistoryWindowReplace,
 				"term-1",
@@ -4625,7 +4627,7 @@ func TestCopyModeHostResizeRebindsLatestAndDoesNotRenderOldWindow(t *testing.T) 
 }
 
 func TestCopyModeResizeRebindInvalidatesOldWindowBeforeLatestResponse(t *testing.T) {
-	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
+	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20})
 	root := state.Root{
 		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
 		Shell:   state.DefaultShell(),
@@ -4717,7 +4719,7 @@ func TestCopyModeResizeRebindPendingFrameDoesNotShowOldRowsOrLiveFallback(t *tes
 			ViewRows:   20,
 		},
 	}
-	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
+	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20})
 	root.History.SourceLines = historyLogicalLinesForApp(root.History.Rows)
 	root, _ = reducer(root, HostResizeMsg{Cols: 100, Rows: 40})
 	frame := render.NewRenderer(render.DefaultTheme()).Render(render.NewRenderVMBuilder().Build(root))
@@ -4728,7 +4730,7 @@ func TestCopyModeResizeRebindPendingFrameDoesNotShowOldRowsOrLiveFallback(t *tes
 }
 
 func TestCopyModeResizeRebindRecoversClippedSourceFromRowsFallback(t *testing.T) {
-	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
+	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20})
 	root := state.Root{
 		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
 		Shell:   state.DefaultShell(),
@@ -4790,7 +4792,7 @@ func TestCopyModeResizeRebindRuntimeRendersPendingBeforeLatestResponse(t *testin
 	runner := &recordingEffectRunner{}
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, nil, &testkit.FakeTerminalService{}, runner)
 	runtime.state.Surface.Lines = []string{"live-fallback"}
 	runtime.state.History = state.HistoryStore{
 		PaneID:      state.DefaultPaneID,
@@ -4831,7 +4833,7 @@ func TestCopyModeResizeRebindRuntimeRendersPendingBeforeLatestResponse(t *testin
 }
 
 func TestCopyModeResizeRowsOnlyKeepsWindowAndDoesNotRequestLatest(t *testing.T) {
-	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
+	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20})
 	root := state.Root{
 		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
 		Shell:   state.DefaultShell(),
@@ -4884,8 +4886,8 @@ func TestCopyModeResizeRowsOnlyKeepsWindowAndDoesNotRequestLatest(t *testing.T) 
 }
 
 func TestCopyModePaneSizeCommandReflowsFrozenWindowAtContentCols(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{
 			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 38, 7, []state.HistoryRow{{Text: "old-window", LineID: 20}})},
 			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 22, 8, []state.HistoryRow{{Text: "sized-window", LineID: 30}})},
 		},
@@ -4899,7 +4901,7 @@ func TestCopyModePaneSizeCommandReflowsFrozenWindowAtContentCols(t *testing.T) {
 		state.Root{Shell: initialShell},
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4}}},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 4}}},
 		CopyModeDeps{Core: core, Rows: 20},
 	)
 
@@ -4939,9 +4941,9 @@ func TestCopyModePaneSizeCommandReflowsFrozenWindowAtContentCols(t *testing.T) {
 }
 
 func TestInteractiveRuntimeHostResizeKeepsReboundCopyWindowAfterTerminalResizeResult(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 78, Rows: 20}}
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 78, Rows: 20}}
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{
 			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 78, 7, []state.HistoryRow{{Text: "old-window", LineID: 20}})},
 			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 98, 8, []state.HistoryRow{{Text: "new-window", LineID: 30}})},
 		},
@@ -4984,7 +4986,7 @@ func TestInteractiveRuntimeHostResizeKeepsReboundCopyWindowAfterTerminalResizeRe
 }
 
 func TestCopyModeResizeRejectsOldColsResponseAsStale(t *testing.T) {
-	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 98, 8, []state.HistoryRow{{Text: "rebound", LineID: 30}})}}}
+	core := &testkit.FakeCoreClient{LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 98, 8, []state.HistoryRow{{Text: "rebound", LineID: 30}})}}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := newCopyModeRuntime(host, core, nil)
@@ -5013,7 +5015,7 @@ func TestCopyModeResizeRejectsOldColsResponseAsStale(t *testing.T) {
 	}
 	staleWindow := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-old", 98, 7, []state.HistoryRow{{Text: "stale", LineID: 1}})
 	staleWindow.ViewID = "stale-view"
-	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 99, Window: staleWindow}}); err != nil {
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: port.HistoryResult{RequestID: 99, Window: staleWindow}}); err != nil {
 		t.Fatalf("post stale response: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -5033,7 +5035,7 @@ func TestCopyModeResizeRejectsOldColsResponseAsStale(t *testing.T) {
 }
 
 func TestCopyModeRejectsSiblingViewHistoryResponseForSameTerminal(t *testing.T) {
-	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 		state.HistoryWindowReplace,
 		"term-1",
 		"tok-1",
@@ -5058,7 +5060,7 @@ func TestCopyModeRejectsSiblingViewHistoryResponseForSameTerminal(t *testing.T) 
 	sibling := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-sibling", 78, 8, []state.HistoryRow{{Text: "sibling-window", LineID: 30}})
 	sibling.PaneID = "pane-2"
 	sibling.ViewID = "pane:pane-2"
-	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: core.LatestRequests[0].RequestID, Window: sibling}}); err != nil {
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: port.HistoryResult{RequestID: core.LatestRequests[0].RequestID, Window: sibling}}); err != nil {
 		t.Fatalf("post sibling response: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -5078,7 +5080,7 @@ func TestCopyModeRejectsSiblingViewHistoryResponseForSameTerminal(t *testing.T) 
 }
 
 func TestCopyModeRebindIgnoresStaleResponseFromPreviousViewBinding(t *testing.T) {
-	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 		state.HistoryWindowReplace,
 		"term-1",
 		"tok-2",
@@ -5121,7 +5123,7 @@ func TestCopyModeRebindIgnoresStaleResponseFromPreviousViewBinding(t *testing.T)
 	stale := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-stale", 98, 9, []state.HistoryRow{{Text: "previous-view", LineID: 40}})
 	stale.PaneID = "pane-old"
 	stale.ViewID = "pane:pane-old"
-	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 99, Window: stale}}); err != nil {
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: port.HistoryResult{RequestID: 99, Window: stale}}); err != nil {
 		t.Fatalf("post stale view response: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -5143,7 +5145,7 @@ func TestCopyModeRebindIgnoresStaleResponseFromPreviousViewBinding(t *testing.T)
 func TestCopyModeIgnoresLaterDestructiveLatestAndKeepsFrozenRows(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
-	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, nil)
+	runtime := newCopyModeRuntime(host, &testkit.FakeCoreClient{}, nil)
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
 		PaneID:     state.DefaultPaneID,
@@ -5165,7 +5167,7 @@ func TestCopyModeIgnoresLaterDestructiveLatestAndKeepsFrozenRows(t *testing.T) {
 
 	destructive := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-after-clear", 78, 9, []state.HistoryRow{{Text: "new-live-tail", LineID: 30}})
 	destructive.Boundary = state.HistoryBoundary{FirstLineID: 30, LastLineID: 30}
-	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 999, Window: destructive}}); err != nil {
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: port.HistoryResult{RequestID: 999, Window: destructive}}); err != nil {
 		t.Fatalf("post destructive latest response: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -5187,7 +5189,7 @@ func TestCopyModeIgnoresLaterDestructiveLatestAndKeepsFrozenRows(t *testing.T) {
 func TestCopyModeIgnoresLaterRestartLatestAndKeepsFrozenRows(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
-	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, nil)
+	runtime := newCopyModeRuntime(host, &testkit.FakeCoreClient{}, nil)
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
 		PaneID:     state.DefaultPaneID,
@@ -5212,7 +5214,7 @@ func TestCopyModeIgnoresLaterRestartLatestAndKeepsFrozenRows(t *testing.T) {
 	restarted.TotalLines = 0
 	restarted.HasMore = false
 	restarted.Cursor = state.HistoryCursor{}
-	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 1001, Window: restarted}}); err != nil {
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: port.HistoryResult{RequestID: 1001, Window: restarted}}); err != nil {
 		t.Fatalf("post restart latest response: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -5272,7 +5274,7 @@ func TestCopyModeRestartResultKeepsFrozenHistory(t *testing.T) {
 func TestCopyModeRuntimeRestartResultKeepsFrozenRows(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
-	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, nil)
+	runtime := newCopyModeRuntime(host, &testkit.FakeCoreClient{}, nil)
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
 		PaneID:     state.DefaultPaneID,
@@ -5317,7 +5319,7 @@ func TestCopyModeRuntimeRestartResultKeepsFrozenRows(t *testing.T) {
 func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, nil, &testkit.FakeTerminalService{}, runner)
 	pendingHistory, err := (state.HistoryStore{}).BeginLatest(state.HistoryPendingRequest{
 		ID:         1,
 		PaneID:     state.DefaultPaneID,
@@ -5374,7 +5376,7 @@ func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T)
 		8,
 		[]state.HistoryRow{{Text: "stale-after-exit", LineID: 30}},
 	)
-	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 999, Window: stale}}); err != nil {
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: port.HistoryResult{RequestID: 999, Window: stale}}); err != nil {
 		t.Fatalf("post stale after exit: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -5406,7 +5408,7 @@ func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T)
 func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingLatest(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, nil, &testkit.FakeTerminalService{}, runner)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		t.Fatalf("send page up: %v", err)
@@ -5445,7 +5447,7 @@ func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingLatest(t *testing.T
 	)
 	delayed.PaneID = state.DefaultPaneID
 	delayed.ViewID = state.TerminalPaneViewID(state.DefaultPaneID)
-	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: services.RequestID(pending.ID), Window: delayed}}); err != nil {
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: port.HistoryResult{RequestID: port.RequestID(pending.ID), Window: delayed}}); err != nil {
 		t.Fatalf("post delayed latest after exit: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -5463,7 +5465,7 @@ func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingLatest(t *testing.T
 func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingError(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, nil, &testkit.FakeTerminalService{}, runner)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		t.Fatalf("send page up: %v", err)
@@ -5487,7 +5489,7 @@ func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingError(t *testing.T)
 	}
 
 	if err := runtime.Post(CopyModeHistoryResultMsg{
-		Result: services.HistoryResult{RequestID: services.RequestID(pending.ID)},
+		Result: port.HistoryResult{RequestID: port.RequestID(pending.ID)},
 		Err:    errors.New("late history failed"),
 	}); err != nil {
 		t.Fatalf("post delayed latest error after exit: %v", err)
@@ -5507,7 +5509,7 @@ func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingError(t *testing.T)
 func TestCopyModeIgnoresDelayedHistoryErrorForSupersededPendingRequest(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, nil, &testkit.FakeTerminalService{}, runner)
 
 	pendingHistory, err := (state.HistoryStore{}).BeginLatest(state.HistoryPendingRequest{
 		ID:         2,
@@ -5530,7 +5532,7 @@ func TestCopyModeIgnoresDelayedHistoryErrorForSupersededPendingRequest(t *testin
 	)
 
 	if err := runtime.Post(CopyModeHistoryResultMsg{
-		Result: services.HistoryResult{RequestID: 1},
+		Result: port.HistoryResult{RequestID: 1},
 		Err:    errors.New("superseded history failed"),
 	}); err != nil {
 		t.Fatalf("post superseded history error: %v", err)
@@ -5552,7 +5554,7 @@ func TestCopyModeIgnoresDelayedHistoryErrorForSupersededPendingRequest(t *testin
 func TestCopyModeIgnoresDelayedHistoryWindowForSupersededPendingRequest(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, nil, &testkit.FakeTerminalService{}, runner)
 
 	pendingHistory, err := (state.HistoryStore{}).BeginLatest(state.HistoryPendingRequest{
 		ID:         2,
@@ -5585,7 +5587,7 @@ func TestCopyModeIgnoresDelayedHistoryWindowForSupersededPendingRequest(t *testi
 	superseded.PaneID = state.DefaultPaneID
 	superseded.ViewID = state.TerminalPaneViewID(state.DefaultPaneID)
 	if err := runtime.Post(CopyModeHistoryResultMsg{
-		Result: services.HistoryResult{RequestID: 1, Window: superseded},
+		Result: port.HistoryResult{RequestID: 1, Window: superseded},
 	}); err != nil {
 		t.Fatalf("post superseded history window: %v", err)
 	}
@@ -5610,7 +5612,7 @@ func TestCopyModeIgnoresDelayedHistoryWindowForSupersededPendingRequest(t *testi
 func TestCopyModeClearsOlderPendingForMatchingStaleHistoryWindow(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, nil, &testkit.FakeTerminalService{}, runner)
 
 	store := state.HistoryStore{
 		PaneID:      state.DefaultPaneID,
@@ -5660,7 +5662,7 @@ func TestCopyModeClearsOlderPendingForMatchingStaleHistoryWindow(t *testing.T) {
 	stale.PaneID = state.DefaultPaneID
 	stale.ViewID = state.TerminalPaneViewID(state.DefaultPaneID)
 	if err := runtime.Post(CopyModeHistoryResultMsg{
-		Result: services.HistoryResult{RequestID: 4, Window: stale},
+		Result: port.HistoryResult{RequestID: 4, Window: stale},
 	}); err != nil {
 		t.Fatalf("post matching stale older window: %v", err)
 	}
@@ -5681,7 +5683,7 @@ func TestCopyModeClearsOlderPendingForMatchingStaleHistoryWindow(t *testing.T) {
 func TestCopyModeSwallowsMatchingProtocolStaleHistoryWindowError(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, nil, &testkit.FakeTerminalService{}, runner)
 
 	store := state.HistoryStore{
 		PaneID:      state.DefaultPaneID,
@@ -5722,8 +5724,8 @@ func TestCopyModeSwallowsMatchingProtocolStaleHistoryWindowError(t *testing.T) {
 		ViewportTop: 0,
 	}
 	if err := runtime.Post(CopyModeHistoryResultMsg{
-		Result: services.HistoryResult{RequestID: 4},
-		Err:    fmt.Errorf("%w: protocol error 400: stale history window", services.ErrStaleHistoryWindow),
+		Result: port.HistoryResult{RequestID: 4},
+		Err:    fmt.Errorf("%w: protocol error 400: stale history window", port.ErrStaleHistoryWindow),
 	}); err != nil {
 		t.Fatalf("post protocol stale older error: %v", err)
 	}
@@ -5742,11 +5744,11 @@ func TestCopyModeSwallowsMatchingProtocolStaleHistoryWindowError(t *testing.T) {
 }
 
 func TestInteractiveRuntimeRoutesTerminalInputAndCopyModeInput(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
 	}
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -5807,11 +5809,11 @@ func TestInteractiveRuntimeRoutesTerminalInputAndCopyModeInput(t *testing.T) {
 }
 
 func TestInteractiveRuntimeCopyModeSwallowsUnboundRawKeys(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
 	}
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -5853,8 +5855,8 @@ func TestInteractiveRuntimeCopyModeSwallowsUnboundRawKeys(t *testing.T) {
 }
 
 func TestInteractiveRuntimePassesRawSpecialKeysAndSwallowsUIModeUnboundKeys(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
 	}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
@@ -5863,7 +5865,7 @@ func TestInteractiveRuntimePassesRawSpecialKeysAndSwallowsUIModeUnboundKeys(t *t
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)
@@ -5908,9 +5910,9 @@ func TestInteractiveRuntimePassesRawSpecialKeysAndSwallowsUIModeUnboundKeys(t *t
 }
 
 func TestCopyModeSelectionCopiesAuthoritativeRows(t *testing.T) {
-	clipboard := &services.FakeClipboardService{}
+	clipboard := &testkit.FakeClipboardService{}
 	host := NewFakeTerminalHost(4)
-	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, clipboard)
+	runtime := newCopyModeRuntime(host, &testkit.FakeCoreClient{}, clipboard)
 	runtime.state.History = historyStoreForCopySelection()
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
@@ -5943,9 +5945,9 @@ func TestCopyModeSelectionCopiesAuthoritativeRows(t *testing.T) {
 }
 
 func TestCopyModeSelectionFetchesTrimmedRangeFromBackend(t *testing.T) {
-	clipboard := &services.FakeClipboardService{}
-	core := &services.FakeCoreClient{
-		CopyResponses: []services.HistoryCopyRangeResult{{Text: "older\ntrimmed\ncurrent"}},
+	clipboard := &testkit.FakeClipboardService{}
+	core := &testkit.FakeCoreClient{
+		CopyResponses: []port.HistoryCopyRangeResult{{Text: "older\ntrimmed\ncurrent"}},
 	}
 	host := NewFakeTerminalHost(4)
 	runtime := newCopyModeRuntime(host, core, clipboard)
@@ -5997,9 +5999,9 @@ func TestCopyModeSelectionFetchesTrimmedRangeFromBackend(t *testing.T) {
 }
 
 func TestCopyModeCanonicalKeysMoveSelectAndCopy(t *testing.T) {
-	clipboard := &services.FakeClipboardService{}
+	clipboard := &testkit.FakeClipboardService{}
 	host := NewFakeTerminalHost(16)
-	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, clipboard)
+	runtime := newCopyModeRuntime(host, &testkit.FakeCoreClient{}, clipboard)
 	runtime.state.History = state.HistoryStore{
 		TerminalID: "term-1",
 		Token:      "tok-1",
@@ -6048,9 +6050,9 @@ func TestCopyModeCanonicalKeysMoveSelectAndCopy(t *testing.T) {
 }
 
 func TestCopyModeEnterCopiesAndExits(t *testing.T) {
-	clipboard := &services.FakeClipboardService{}
+	clipboard := &testkit.FakeClipboardService{}
 	host := NewFakeTerminalHost(16)
-	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, clipboard)
+	runtime := newCopyModeRuntime(host, &testkit.FakeCoreClient{}, clipboard)
 	runtime.state.History = historyStoreForCopySelection()
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
@@ -6080,10 +6082,10 @@ func TestCopyModeEnterCopiesAndExits(t *testing.T) {
 }
 
 func TestCopyModePasteLastCopyExitsAndTargetsActiveTerminal(t *testing.T) {
-	clipboard := &services.FakeClipboardService{LastCopied: "hello\nworld"}
-	terminal := &services.FakeTerminalService{}
+	clipboard := &testkit.FakeClipboardService{LastCopied: "hello\nworld"}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(8)
-	runtime := newInteractiveCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
 		PaneID:     state.DefaultPaneID,
@@ -6109,10 +6111,10 @@ func TestCopyModePasteLastCopyExitsAndTargetsActiveTerminal(t *testing.T) {
 }
 
 func TestCopyModePasteLastCopyFallsBackToClipboardHistory(t *testing.T) {
-	clipboard := &services.FakeClipboardService{}
-	terminal := &services.FakeTerminalService{}
+	clipboard := &testkit.FakeClipboardService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(8)
-	runtime := newInteractiveCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
 	runtime.state.Clipboard = state.ClipboardStore{}.WithCopiedText("from-history")
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
@@ -6136,10 +6138,10 @@ func TestCopyModePasteLastCopyFallsBackToClipboardHistory(t *testing.T) {
 }
 
 func TestCopyModePasteClipboardUsesSystemClipboardAndBracketedPaste(t *testing.T) {
-	clipboard := &services.FakeClipboardService{ReadResult: services.ClipboardReadResult{Text: "clip-text"}}
-	terminal := &services.FakeTerminalService{}
+	clipboard := &testkit.FakeClipboardService{ReadResult: port.ClipboardReadResult{Text: "clip-text"}}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(8)
-	runtime := newInteractiveCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
 	runtime.state.Surface = runtime.state.Surface.Attach("term-1", 80, 24)
 	runtime.state.Surface.Modes = state.LiveTerminalModes{BracketedPaste: true}
 	runtime.state.Surface.Surfaces = map[string]state.LiveSurfaceSnapshot{
@@ -6170,10 +6172,10 @@ func TestCopyModePasteClipboardUsesSystemClipboardAndBracketedPaste(t *testing.T
 }
 
 func TestCopyModeClipboardHistoryOverlayFiltersAndPastesSelectedEntry(t *testing.T) {
-	clipboard := &services.FakeClipboardService{}
-	terminal := &services.FakeTerminalService{}
+	clipboard := &testkit.FakeClipboardService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
-	runtime := newInteractiveCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, &testkit.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
 		PaneID:     state.DefaultPaneID,
@@ -6218,8 +6220,8 @@ func TestCopyModeClipboardHistoryOverlayFiltersAndPastesSelectedEntry(t *testing
 }
 
 func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -6328,7 +6330,7 @@ func TestCopyModeLatestShowsCodexLiveTailFrameHead(t *testing.T) {
 		{Text: "gpt-5.5 xhigh · ~/Documents/workdir/termx", LineID: 20, LiveTail: true},
 	}
 	latest := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
-	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: latest}}}
+	core := &testkit.FakeCoreClient{LatestResponses: []port.HistoryResult{{Window: latest}}}
 	host := NewFakeTerminalHost(32)
 	host.SetSize(80, 8)
 	runtime := newCopyModeRuntime(host, core, nil)
@@ -6381,7 +6383,7 @@ func TestR414CopyModeLatestKeepsCurrentFrameScreenRowAnchor(t *testing.T) {
 		},
 	}
 	latest := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
-	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: latest}}}
+	core := &testkit.FakeCoreClient{LatestResponses: []port.HistoryResult{{Window: latest}}}
 	host := NewFakeTerminalHost(32)
 	host.SetSize(80, 16)
 	runtime := newCopyModeRuntime(host, core, nil)
@@ -6403,8 +6405,8 @@ func TestR414CopyModeLatestKeepsCurrentFrameScreenRowAnchor(t *testing.T) {
 }
 
 func TestCopyModeSearchMatchesAcrossReflowRows(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: state.HistoryWindow{
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: state.HistoryWindow{
 			TerminalID: "term-1",
 			Token:      "tok-1",
 			Op:         state.HistoryWindowReplace,
@@ -6450,8 +6452,8 @@ func TestCopyModeSearchMatchesAcrossReflowRows(t *testing.T) {
 }
 
 func TestCopyModeLocalReflowResizeKeepsSelectionOnOriginalContent(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: state.HistoryWindow{
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: state.HistoryWindow{
 			TerminalID: "term-1",
 			Token:      "tok-1",
 			Op:         state.HistoryWindowReplace,
@@ -6537,9 +6539,9 @@ func TestCopyModeOlderPrependKeepsCurrentSearchMatch(t *testing.T) {
 	older.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 10}
 	older.Boundary = state.HistoryBoundary{FirstLineID: 10, LastLineID: 21}
 	older.HasMore = true
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: latest}},
-		OlderResponses:  []services.HistoryResult{{Window: older}},
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: latest}},
+		OlderResponses:  []port.HistoryResult{{Window: older}},
 	}
 	host := NewFakeTerminalHost(16)
 	runtime := newCopyModeRuntime(host, core, nil)
@@ -6569,7 +6571,7 @@ func TestCopyModeOlderPrependKeepsCurrentSearchMatch(t *testing.T) {
 	}
 
 	beginPendingOlderForTest(&runtime.state, 2, 0)
-	core.OlderRequests = append(core.OlderRequests, services.HistoryOlderRequest{RequestID: 2})
+	core.OlderRequests = append(core.OlderRequests, port.HistoryOlderRequest{RequestID: 2})
 	if err := postHistoryResultForTest(runtime, 2, older); err != nil {
 		t.Fatalf("post older: %v", err)
 	}
@@ -6586,8 +6588,8 @@ func TestCopyModeOlderPrependKeepsCurrentSearchMatch(t *testing.T) {
 }
 
 func TestCopyModeMouseSelectionUsesHistoryDisplayColumns(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -6646,8 +6648,8 @@ func TestCopyModeMouseSelectionUsesHistoryDisplayColumns(t *testing.T) {
 }
 
 func TestCopyModeHistoryTextClickFocusesInactivePaneBeforeSelecting(t *testing.T) {
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
@@ -6661,7 +6663,7 @@ func TestCopyModeHistoryTextClickFocusesInactivePaneBeforeSelecting(t *testing.T
 	}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(42, 10)
-	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, &services.FakeTerminalService{}, NewSyncEffectRunner())
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, &testkit.FakeTerminalService{}, NewSyncEffectRunner())
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		t.Fatalf("send copy enter: %v", err)
@@ -6719,8 +6721,8 @@ func TestCopyModeHistoryTextClickFocusesInactivePaneBeforeSelecting(t *testing.T
 
 func TestCopyModeOlderPrependKeepsCursorAndSelectionOnOriginalContent(t *testing.T) {
 	host := NewFakeTerminalHost(8)
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{
 			Window: historyWindowForApp(
 				state.HistoryWindowReplace,
 				"term-1",
@@ -6735,7 +6737,7 @@ func TestCopyModeOlderPrependKeepsCursorAndSelectionOnOriginalContent(t *testing
 				},
 			),
 		}},
-		OlderResponses: []services.HistoryResult{{
+		OlderResponses: []port.HistoryResult{{
 			Window: historyWindowForApp(
 				state.HistoryWindowPrepend,
 				"term-1",
@@ -6772,7 +6774,7 @@ func TestCopyModeOlderPrependKeepsCursorAndSelectionOnOriginalContent(t *testing
 	}
 
 	beginPendingOlderForTest(&runtime.state, 2, 0)
-	core.OlderRequests = append(core.OlderRequests, services.HistoryOlderRequest{RequestID: 2})
+	core.OlderRequests = append(core.OlderRequests, port.HistoryOlderRequest{RequestID: 2})
 	if err := postHistoryResultForTest(runtime, 2, core.OlderResponses[0].Window); err != nil {
 		t.Fatalf("post older: %v", err)
 	}
@@ -6807,7 +6809,7 @@ func TestCopyModeContinuousOlderKeepsBoundedLocalHistoryWindow(t *testing.T) {
 	for i := 2000; i < 2128; i++ {
 		latestRows = append(latestRows, state.HistoryRow{Text: fmt.Sprintf("new-%04d", i), LineID: uint64(i)})
 	}
-	core := &services.FakeCoreClient{}
+	core := &testkit.FakeCoreClient{}
 	runtime := newCopyModeRuntime(host, core, nil)
 	latest := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 98, 7, latestRows)
 	latest.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: latestRows[0].LineID}
@@ -6855,7 +6857,7 @@ func TestCopyModeContinuousOlderKeepsBoundedLocalHistoryWindow(t *testing.T) {
 		window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: olderRows[0].LineID}
 		window.Boundary = state.HistoryBoundary{FirstLineID: olderRows[0].LineID, LastLineID: latestRows[len(latestRows)-1].LineID}
 		window.HasMore = true
-		if err := postHistoryResultForTest(runtime, services.RequestID(page+2), window); err != nil {
+		if err := postHistoryResultForTest(runtime, port.RequestID(page+2), window); err != nil {
 			t.Fatalf("post older page %d: %v", page, err)
 		}
 		if err := runtime.Drain(context.Background()); err != nil {
@@ -6887,8 +6889,8 @@ func TestCopyModeScrollsBackToTrimmedNewerWindowFromBackend(t *testing.T) {
 	}
 	newer := historyWindowForApp(state.HistoryWindowAppend, "term-1", "tok-1", 98, 7, newerRows)
 	newer.Boundary = state.HistoryBoundary{FirstLineID: loadedRows[0].LineID, LastLineID: 1199}
-	core := &services.FakeCoreClient{
-		NewerResponses: []services.HistoryResult{{Window: newer}},
+	core := &testkit.FakeCoreClient{
+		NewerResponses: []port.HistoryResult{{Window: newer}},
 	}
 	runtime := newCopyModeRuntime(host, core, nil)
 	runtime.state.History = state.HistoryStore{
@@ -6954,7 +6956,7 @@ func TestCopyModeContinuousNewerKeepsBoundedLocalHistoryWindow(t *testing.T) {
 	for i := 1000; i < 1384; i++ {
 		loadedRows = append(loadedRows, state.HistoryRow{Text: fmt.Sprintf("old-%04d", i), LineID: uint64(i)})
 	}
-	core := &services.FakeCoreClient{}
+	core := &testkit.FakeCoreClient{}
 	runtime := newCopyModeRuntime(host, core, nil)
 	runtime.state.History = state.HistoryStore{
 		PaneID:      state.DefaultPaneID,
@@ -6993,7 +6995,7 @@ func TestCopyModeContinuousNewerKeepsBoundedLocalHistoryWindow(t *testing.T) {
 		nextLineID += len(newerRows)
 		window := historyWindowForApp(state.HistoryWindowAppend, "term-1", "tok-1", 98, 7, newerRows)
 		window.Boundary = state.HistoryBoundary{FirstLineID: runtime.State().History.Boundary.FirstLineID, LastLineID: 1999}
-		core.NewerResponses = append(core.NewerResponses, services.HistoryResult{Window: window})
+		core.NewerResponses = append(core.NewerResponses, port.HistoryResult{Window: window})
 
 		runtime.state.CopyMode.ViewportTop = len(runtime.state.History.Rows) - runtime.state.CopyMode.ViewRows
 		runtime.state.CopyMode.Cursor = state.CopyPosition{Row: len(runtime.state.History.Rows) - 1}
@@ -7056,9 +7058,9 @@ func TestCopyModeOlderBoundaryOverlapKeepsSelectionOnOriginalContent(t *testing.
 	older.Lines = []state.HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 0, ClippedAfter: true}}
 	older.Boundary = state.HistoryBoundary{FirstLineID: 10, LastLineID: 10}
 	older.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 10}
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: latest}},
-		OlderResponses:  []services.HistoryResult{{Window: older}},
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: latest}},
+		OlderResponses:  []port.HistoryResult{{Window: older}},
 	}
 	runtime := newCopyModeRuntime(host, core, nil)
 	binding, _ := runtime.state.TerminalViews.PaneBinding(state.DefaultPaneID)
@@ -7086,7 +7088,7 @@ func TestCopyModeOlderBoundaryOverlapKeepsSelectionOnOriginalContent(t *testing.
 	}
 
 	beginPendingOlderForTest(&runtime.state, 2, 0)
-	core.OlderRequests = append(core.OlderRequests, services.HistoryOlderRequest{RequestID: 2})
+	core.OlderRequests = append(core.OlderRequests, port.HistoryOlderRequest{RequestID: 2})
 	if err := postHistoryResultForTest(runtime, 2, older); err != nil {
 		t.Fatalf("post older: %v", err)
 	}
@@ -7202,12 +7204,12 @@ func TestCopyModeLineEndAndClampUseDisplayColumns(t *testing.T) {
 
 func TestCopyModeRejectsStaleHistoryResult(t *testing.T) {
 	host := NewFakeTerminalHost(4)
-	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, nil)
+	runtime := newCopyModeRuntime(host, &testkit.FakeCoreClient{}, nil)
 	runtime.state.History = state.HistoryStore{
 		Pending: &state.HistoryPendingRequest{ID: 2, Kind: state.HistoryRequestOlder, TerminalID: "term-1", Cols: 80, Token: "tok-1", Generation: 7},
 	}
 
-	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: port.HistoryResult{
 		RequestID: 2,
 		Window:    historyWindowForApp(state.HistoryWindowPrepend, "term-1", "stale", 80, 7, []state.HistoryRow{{Text: "old", LineID: 1}}),
 	}}); err != nil {
@@ -7224,11 +7226,11 @@ func TestCopyModeRejectsStaleHistoryResult(t *testing.T) {
 	}
 }
 
-func newCopyModeRuntime(host *FakeTerminalHost, core services.CoreClient, clipboard services.ClipboardService) *AppRuntime {
-	return newCopyModeRuntimeWithRunner(host, core, clipboard, &services.FakeTerminalService{}, NewSyncEffectRunner())
+func newCopyModeRuntime(host *FakeTerminalHost, core port.CoreClient, clipboard port.ClipboardService) *AppRuntime {
+	return newCopyModeRuntimeWithRunner(host, core, clipboard, &testkit.FakeTerminalService{}, NewSyncEffectRunner())
 }
 
-func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClient, clipboard services.ClipboardService, terminal services.TerminalService, runner EffectRunner) *AppRuntime {
+func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core port.CoreClient, clipboard port.ClipboardService, terminal port.TerminalService, runner EffectRunner) *AppRuntime {
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
 	if cols, rows, _ := host.Size(); cols <= 0 || rows <= 0 {
@@ -7270,7 +7272,7 @@ func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClie
 	)
 }
 
-func newInteractiveCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClient, clipboard services.ClipboardService, terminal services.TerminalService, runner EffectRunner) *AppRuntime {
+func newInteractiveCopyModeRuntimeWithRunner(host *FakeTerminalHost, core port.CoreClient, clipboard port.ClipboardService, terminal port.TerminalService, runner EffectRunner) *AppRuntime {
 	if cols, rows, _ := host.Size(); cols <= 0 || rows <= 0 {
 		host.SetSize(80, 24)
 	}
@@ -7341,19 +7343,19 @@ func historyRequestEffectCount(effects []Effect) int {
 type blockingHistoryClient struct {
 	mu            sync.Mutex
 	allowOlder    bool
-	latestReqs    []services.HistoryLatestRequest
-	olderReqs     []services.HistoryOlderRequest
-	newerReqs     []services.HistoryNewerRequest
+	latestReqs    []port.HistoryLatestRequest
+	olderReqs     []port.HistoryOlderRequest
+	newerReqs     []port.HistoryNewerRequest
 	latestResultC chan blockingHistoryResult
 	olderResultC  chan blockingHistoryResult
 }
 
 type blockingHistoryResult struct {
-	result services.HistoryResult
+	result port.HistoryResult
 	err    error
 }
 
-func (client *blockingHistoryClient) HistoryLatest(ctx context.Context, req services.HistoryLatestRequest) (services.HistoryResult, error) {
+func (client *blockingHistoryClient) HistoryLatest(ctx context.Context, req port.HistoryLatestRequest) (port.HistoryResult, error) {
 	client.mu.Lock()
 	client.latestReqs = append(client.latestReqs, req)
 	if client.latestResultC == nil {
@@ -7363,19 +7365,19 @@ func (client *blockingHistoryClient) HistoryLatest(ctx context.Context, req serv
 	client.mu.Unlock()
 	select {
 	case <-ctx.Done():
-		return services.HistoryResult{}, ctx.Err()
+		return port.HistoryResult{}, ctx.Err()
 	case item := <-resultC:
 		item.result.RequestID = req.RequestID
 		return item.result, item.err
 	}
 }
 
-func (client *blockingHistoryClient) HistoryOlder(ctx context.Context, req services.HistoryOlderRequest) (services.HistoryResult, error) {
+func (client *blockingHistoryClient) HistoryOlder(ctx context.Context, req port.HistoryOlderRequest) (port.HistoryResult, error) {
 	client.mu.Lock()
 	client.olderReqs = append(client.olderReqs, req)
 	if !client.allowOlder {
 		client.mu.Unlock()
-		return services.HistoryResult{}, errors.New("unexpected older request")
+		return port.HistoryResult{}, errors.New("unexpected older request")
 	}
 	if client.olderResultC == nil {
 		client.olderResultC = make(chan blockingHistoryResult, 1)
@@ -7384,54 +7386,54 @@ func (client *blockingHistoryClient) HistoryOlder(ctx context.Context, req servi
 	client.mu.Unlock()
 	select {
 	case <-ctx.Done():
-		return services.HistoryResult{}, ctx.Err()
+		return port.HistoryResult{}, ctx.Err()
 	case item := <-resultC:
 		item.result.RequestID = req.RequestID
 		return item.result, item.err
 	}
 }
 
-func (client *blockingHistoryClient) HistoryOldest(context.Context, services.HistoryOldestRequest) (services.HistoryResult, error) {
-	return services.HistoryResult{}, errors.New("unexpected oldest request")
+func (client *blockingHistoryClient) HistoryOldest(context.Context, port.HistoryOldestRequest) (port.HistoryResult, error) {
+	return port.HistoryResult{}, errors.New("unexpected oldest request")
 }
 
-func (client *blockingHistoryClient) HistoryNewer(context.Context, services.HistoryNewerRequest) (services.HistoryResult, error) {
-	return services.HistoryResult{}, errors.New("unexpected newer request")
+func (client *blockingHistoryClient) HistoryNewer(context.Context, port.HistoryNewerRequest) (port.HistoryResult, error) {
+	return port.HistoryResult{}, errors.New("unexpected newer request")
 }
 
-func (client *blockingHistoryClient) HistoryCopyRange(context.Context, services.HistoryCopyRangeRequest) (services.HistoryCopyRangeResult, error) {
-	return services.HistoryCopyRangeResult{}, errors.New("unexpected copy range request")
+func (client *blockingHistoryClient) HistoryCopyRange(context.Context, port.HistoryCopyRangeRequest) (port.HistoryCopyRangeResult, error) {
+	return port.HistoryCopyRangeResult{}, errors.New("unexpected copy range request")
 }
 
-func (client *blockingHistoryClient) ReleaseHistory(context.Context, services.HistoryReleaseRequest) error {
+func (client *blockingHistoryClient) ReleaseHistory(context.Context, port.HistoryReleaseRequest) error {
 	return nil
 }
 
-func (client *blockingHistoryClient) latestRequests() []services.HistoryLatestRequest {
+func (client *blockingHistoryClient) latestRequests() []port.HistoryLatestRequest {
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	out := make([]services.HistoryLatestRequest, len(client.latestReqs))
+	out := make([]port.HistoryLatestRequest, len(client.latestReqs))
 	copy(out, client.latestReqs)
 	return out
 }
 
-func (client *blockingHistoryClient) olderRequests() []services.HistoryOlderRequest {
+func (client *blockingHistoryClient) olderRequests() []port.HistoryOlderRequest {
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	out := make([]services.HistoryOlderRequest, len(client.olderReqs))
+	out := make([]port.HistoryOlderRequest, len(client.olderReqs))
 	copy(out, client.olderReqs)
 	return out
 }
 
-func (client *blockingHistoryClient) newerRequests() []services.HistoryNewerRequest {
+func (client *blockingHistoryClient) newerRequests() []port.HistoryNewerRequest {
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	out := make([]services.HistoryNewerRequest, len(client.newerReqs))
+	out := make([]port.HistoryNewerRequest, len(client.newerReqs))
 	copy(out, client.newerReqs)
 	return out
 }
 
-func (client *blockingHistoryClient) finishLatest(result services.HistoryResult, err error) {
+func (client *blockingHistoryClient) finishLatest(result port.HistoryResult, err error) {
 	client.mu.Lock()
 	if client.latestResultC == nil {
 		client.latestResultC = make(chan blockingHistoryResult, 1)
@@ -7441,7 +7443,7 @@ func (client *blockingHistoryClient) finishLatest(result services.HistoryResult,
 	resultC <- blockingHistoryResult{result: result, err: err}
 }
 
-func (client *blockingHistoryClient) finishOlder(result services.HistoryResult, err error) {
+func (client *blockingHistoryClient) finishOlder(result port.HistoryResult, err error) {
 	client.mu.Lock()
 	if client.olderResultC == nil {
 		client.olderResultC = make(chan blockingHistoryResult, 1)
@@ -7604,10 +7606,10 @@ func beginPendingOlderForTest(root *state.Root, requestID state.RequestID, scrol
 	}
 }
 
-func postHistoryResultForTest(runtime *AppRuntime, requestID services.RequestID, window state.HistoryWindow) error {
+func postHistoryResultForTest(runtime *AppRuntime, requestID port.RequestID, window state.HistoryWindow) error {
 	window.PaneID = runtime.state.History.PaneID
 	window.ViewID = runtime.state.History.ViewID
-	return runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: requestID, Window: window}})
+	return runtime.Post(CopyModeHistoryResultMsg{Result: port.HistoryResult{RequestID: requestID, Window: window}})
 }
 
 func historyRowTexts(rows []state.HistoryRow) []string {

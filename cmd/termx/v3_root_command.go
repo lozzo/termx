@@ -6,8 +6,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/shared/connection"
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/state"
@@ -23,14 +23,14 @@ type v3RootConfig struct {
 	SocketPath         string
 	LogFile            string
 	TUIConfig          state.TUIConfigStore
-	ConnectionRegistry connection.Registry
+	ConnectionRegistry endpointdomain.Registry
 }
 
 type v3RootEmptyConfig struct {
 	SocketPath         string
 	LogFile            string
 	TUIConfig          state.TUIConfigStore
-	ConnectionRegistry connection.Registry
+	ConnectionRegistry endpointdomain.Registry
 }
 
 var runV3Root = runV3RootRuntime

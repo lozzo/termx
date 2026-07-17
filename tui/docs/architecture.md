@@ -20,7 +20,7 @@
 - TUI 用户配置以 `tui/docs/tui-config-management.md` 为基准；配置 loader 负责文件/env/flag，reducer 持有已验证快照，renderer 和 input router 只消费解析后的 theme/shortcuts，不直接读配置源。
 - `connections.yaml` 只保存 Endpoint/Route 期望配置。C3X 已删除旧 TUI lazy bundle/session owner 和 `ResolveCurrentRoute`；当前 CLI/TUI 正等待 `client/runtime` 接线，不能把删除后的编译缺口或 CONN003 目标态当成已交付结构。
 - CONN003 的目标是让 `client/runtime` 成为每个 Endpoint 唯一跨端 session owner，统一 planner、route race、`ReadySession`、`SessionGeneration`、winner/loser cleanup 和 lifecycle mailbox；TUI 只通过 `tui/port` 与 `tui/adapter/clientruntime` 消费 projection。算法细节不在本文复制。
-- 当前 `tui/services` 是 C3S2 待拆迁目录，不是稳定边界；interface/DTO 进入 `tui/port`，protocol/system 实现进入 `tui/adapter/*`，fake 不得留在生产 port。
+- 当前 interface/DTO 位于 `tui/port`，protocol/system 实现位于 `tui/adapter/*`，测试 fake 位于 `tui/testkit`；生产 port 不执行 IO，也不持有测试状态。
 - endpoint-scoped service result 的目标契约是携带原始 session stamp，并在 reducer 提交前统一校验 generation；旧 generation 结果不得污染当前 live/history/input/file 投影。
 - attach/input/paste/resize/detach 的目标契约是绑定创建 channel 的原始 stamp。stale cleanup 不得 lazy dial，adapter 已调用后的输入错误不得自动重放 payload。
 - input 和 mouse 只输出 semantic intent，不直接修改 workspace/history/copy mode。

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/tui/services"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -40,7 +40,7 @@ func TestEndpointRuntimeStatusMarksPanesWithoutGlobalToast(t *testing.T) {
 		BindPane(state.NewEndpointPaneTerminalView("west", "pane-west", "remote", 9, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-west"), false))
 
 	reducer := NewEndpointStatusReducer(LiveDeps{})
-	next, effects := reducer(root, EndpointRuntimeStatusMsg{Event: services.EndpointRuntimeEvent{
+	next, effects := reducer(root, EndpointRuntimeStatusMsg{Event: port.EndpointRuntimeEvent{
 		EndpointID: "west",
 		Status:     state.EndpointStatusOffline,
 		ErrorKind:  state.EndpointErrorTransportClosed,
@@ -84,7 +84,7 @@ func TestEndpointRuntimeStatusStoresAndClearsManagedRouteProjection(t *testing.T
 		ConnectMode: state.EndpointConnectOnDemand, Enabled: true,
 	})}
 	reducer := NewEndpointStatusReducer(LiveDeps{})
-	connected, _ := reducer(root, EndpointRuntimeStatusMsg{Event: services.EndpointRuntimeEvent{
+	connected, _ := reducer(root, EndpointRuntimeStatusMsg{Event: port.EndpointRuntimeEvent{
 		EndpointID: "studio", Status: state.EndpointStatusConnected, ObservedPath: "single_relay",
 		RouteSelectionReason: "lower_loss",
 	}})
@@ -92,7 +92,7 @@ func TestEndpointRuntimeStatusStoresAndClearsManagedRouteProjection(t *testing.T
 	if !ok || studio.ObservedPath != "single_relay" || studio.RouteSelectionReason != "lower_loss" || studio.ConnectionPhase != "connected" || studio.DisplayStatus() != state.EndpointStatusConnected {
 		t.Fatalf("connected managed path not stored: %#v ok=%v", studio, ok)
 	}
-	offline, _ := reducer(connected, EndpointRuntimeStatusMsg{Event: services.EndpointRuntimeEvent{
+	offline, _ := reducer(connected, EndpointRuntimeStatusMsg{Event: port.EndpointRuntimeEvent{
 		EndpointID: "studio", Status: state.EndpointStatusOffline, Err: errors.New("route closed"),
 	}})
 	studio, ok = offline.Endpoints.Endpoint("studio")
@@ -124,7 +124,7 @@ func TestEndpointRuntimeStatusKeepsActiveRemotePaneError(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView(ref.EndpointID, state.DefaultPaneID, ref.TerminalID, 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
 
 	reducer := NewEndpointStatusReducer(LiveDeps{})
-	next, effects := reducer(root, EndpointRuntimeStatusMsg{Event: services.EndpointRuntimeEvent{
+	next, effects := reducer(root, EndpointRuntimeStatusMsg{Event: port.EndpointRuntimeEvent{
 		EndpointID: "west",
 		Status:     state.EndpointStatusOffline,
 		ErrorKind:  state.EndpointErrorRemoteDaemon,

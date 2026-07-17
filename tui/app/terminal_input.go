@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/services"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -219,7 +219,7 @@ func terminalSendInputEffect(target liveInputTargetInfo, event input.InputEvent,
 		SerialKey:        terminalInputSerialKey(target),
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
-			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
+			err := deps.Terminal.SendInput(ctx, port.TerminalInputRequest{
 				EndpointID: target.EndpointID,
 				TerminalID: target.TerminalID,
 				Channel:    target.Channel,

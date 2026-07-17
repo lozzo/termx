@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	protocoladapter "github.com/lozzow/termx/tui/adapter/protocol"
 	"io"
 	"testing"
 	"time"
@@ -12,7 +13,6 @@ import (
 	"github.com/lozzow/termx/shared/transport/memory"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -41,8 +41,8 @@ func TestCopyModeUsesProtocolHistoryWindowClient(t *testing.T) {
 			TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)),
 		},
 		ComposeReducers(
-			NewCopyModeReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
-			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+			NewCopyModeReducer(CopyModeDeps{Core: protocoladapter.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: protocoladapter.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
 		),
 		func(root state.Root) render.Frame {
 			return renderer.Render(builder.Build(root))
@@ -109,8 +109,8 @@ func TestCopyModeProtocolCodexLatestDoesNotUseLiveRevisionBoundary(t *testing.T)
 			TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)),
 		},
 		ComposeReducers(
-			NewCopyModeReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
-			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+			NewCopyModeReducer(CopyModeDeps{Core: protocoladapter.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: protocoladapter.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
 		),
 		func(root state.Root) render.Frame {
 			return renderer.Render(builder.Build(root))
@@ -169,8 +169,8 @@ func TestCopyModeProtocolHistorySearchMatchesAcrossReflowRows(t *testing.T) {
 			TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 4, 8, 8, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)),
 		},
 		ComposeReducers(
-			NewCopyModeReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
-			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+			NewCopyModeReducer(CopyModeDeps{Core: protocoladapter.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: protocoladapter.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
 		),
 		func(root state.Root) render.Frame {
 			return renderer.Render(builder.Build(root))
@@ -236,8 +236,8 @@ func TestCopyModeProtocolHistoryReflowsWrappedLogicalLineLocally(t *testing.T) {
 			TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 4, 8, 8, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)),
 		},
 		ComposeReducers(
-			NewCopyModeReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
-			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+			NewCopyModeReducer(CopyModeDeps{Core: protocoladapter.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: protocoladapter.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
 		),
 		func(root state.Root) render.Frame {
 			return renderer.Render(builder.Build(root))
@@ -296,8 +296,8 @@ func TestCopyModeProtocolHistoryReflowsWideStyledCellLocally(t *testing.T) {
 			TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 4, 5, 8, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)),
 		},
 		ComposeReducers(
-			NewCopyModeReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
-			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+			NewCopyModeReducer(CopyModeDeps{Core: protocoladapter.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: protocoladapter.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
 		),
 		func(root state.Root) render.Frame {
 			return renderer.Render(builder.Build(root))

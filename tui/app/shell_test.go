@@ -3,10 +3,10 @@ package app
 import (
 	"context"
 	"errors"
+	"github.com/lozzow/termx/tui/testkit"
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -97,7 +97,7 @@ func TestShellReducerHandlesTerminalPickerOverlaySemanticActions(t *testing.T) {
 
 func TestTerminalPickerOpenRefreshKeepsExistingRowsOutOfLoading(t *testing.T) {
 	shellReducer := NewShellReducer()
-	poolReducer := NewTerminalPoolReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	poolReducer := NewTerminalPoolReducer(LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 	root := state.Root{
 		Shell: state.DefaultShell(),
 		TerminalPool: state.TerminalPoolStore{

@@ -5,14 +5,14 @@ import (
 	"strings"
 
 	"github.com/lozzow/termx/shared/cloudcompanion"
-	"github.com/lozzow/termx/tui/services"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
 
 const endpointStatusWatchToken = CancelToken("endpoint.status.watch")
 
 // EndpointWatchRequestMsg 请求启动 endpoint lifecycle 订阅。
-// 订阅源来自 EndpointManager；消息本身不改 reducer state，只建立主动侦测链路。
+// 订阅源来自 client runtime adapter；消息本身不改 reducer state，只建立主动侦测链路。
 type EndpointWatchRequestMsg struct{}
 
 func (EndpointWatchRequestMsg) isMsg() {}
@@ -24,7 +24,7 @@ func (EndpointWatchRequestMsg) SkipRender() bool {
 // EndpointRuntimeStatusMsg 是 endpoint lifecycle 事件进入 reducer 的唯一入口。
 // 它承载 endpoint-scoped 状态，不代表任何 terminal process 已退出或 history 已变化。
 type EndpointRuntimeStatusMsg struct {
-	Event services.EndpointRuntimeEvent
+	Event port.EndpointRuntimeEvent
 	Err   error
 }
 
@@ -48,7 +48,7 @@ func NewEndpointStatusReducer(deps LiveDeps) Reducer {
 func reduceEndpointWatchRequest(root state.Root, deps LiveDeps) (state.Root, []Effect) {
 	source := deps.EndpointEvents
 	if source == nil {
-		if candidate, ok := deps.Terminal.(services.EndpointEventSource); ok {
+		if candidate, ok := deps.Terminal.(port.EndpointEventSource); ok {
 			source = candidate
 		}
 	}
@@ -91,7 +91,7 @@ func reduceEndpointRuntimeStatus(root state.Root, msg EndpointRuntimeStatusMsg) 
 	message := endpointRuntimeEventMessage(event)
 	errorKind := state.NormalizeEndpointErrorKind(event.ErrorKind)
 	if errorKind == state.EndpointErrorUnknown && event.Err != nil {
-		errorKind = services.ClassifyEndpointError(event.Err)
+		errorKind = port.ClassifyEndpointError(event.Err)
 	}
 	if errorKind == state.EndpointErrorUnknown && message != "" {
 		errorKind = state.ClassifyEndpointErrorText(message)
@@ -124,7 +124,7 @@ func reduceEndpointRuntimeStatus(root state.Root, msg EndpointRuntimeStatusMsg) 
 	return root.Advance(), nil
 }
 
-func endpointRuntimeEventMessage(event services.EndpointRuntimeEvent) string {
+func endpointRuntimeEventMessage(event port.EndpointRuntimeEvent) string {
 	message := strings.TrimSpace(event.Message)
 	if message != "" {
 		return message

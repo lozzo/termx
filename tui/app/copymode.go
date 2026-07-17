@@ -8,14 +8,14 @@ import (
 
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/services"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
 
 type CopyModeDeps struct {
-	Core      services.CoreClient
-	Clipboard services.ClipboardService
-	Terminal  services.TerminalService
+	Core      port.CoreClient
+	Clipboard port.ClipboardService
+	Terminal  port.TerminalService
 	// Logger 是 copy/history 诊断链路的日志出口；truth source 仍是 core 返回的 HistoryWindow，
 	// reducer 不能从日志反推分页、合并或渲染状态。
 	Logger *slog.Logger
@@ -32,7 +32,7 @@ const (
 )
 
 type CopyModeHistoryResultMsg struct {
-	Result     services.HistoryResult
+	Result     port.HistoryResult
 	Err        error
 	PaneID     string
 	ViewID     string
@@ -318,7 +318,7 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			return saveCopyHistorySessionForView(next, activeViewID), effects
 		case CopyModeCopyResultMsg:
 			if msg.Err != nil {
-				if errors.Is(msg.Err, services.ErrStaleHistoryWindow) {
+				if errors.Is(msg.Err, port.ErrStaleHistoryWindow) {
 					root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "History window expired", Body: "retry copy mode", DismissAfterTicks: 3})
 					return root.Advance(), nil
 				}
@@ -907,9 +907,9 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.copy.history_latest.effect")
-			result, err := deps.Core.HistoryLatest(ctx, services.HistoryLatestRequest{
+			result, err := deps.Core.HistoryLatest(ctx, port.HistoryLatestRequest{
 				EndpointID: binding.EndpointID,
-				RequestID:  services.RequestID(requestID),
+				RequestID:  port.RequestID(requestID),
 				PaneID:     binding.PaneID,
 				ViewID:     binding.ViewID,
 				TerminalID: binding.TerminalID,
@@ -979,9 +979,9 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaAfterPrep
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.copy.history_older.effect")
-			result, err := deps.Core.HistoryOlder(ctx, services.HistoryOlderRequest{
+			result, err := deps.Core.HistoryOlder(ctx, port.HistoryOlderRequest{
 				EndpointID: req.EndpointID,
-				RequestID:  services.RequestID(requestID),
+				RequestID:  port.RequestID(requestID),
 				PaneID:     req.PaneID,
 				ViewID:     req.ViewID,
 				TerminalID: req.TerminalID,
@@ -1044,9 +1044,9 @@ func beginCopyModeNewer(root state.Root, deps CopyModeDeps, scrollDeltaAfterAppe
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.copy.history_newer.effect")
-			result, err := deps.Core.HistoryNewer(ctx, services.HistoryNewerRequest{
+			result, err := deps.Core.HistoryNewer(ctx, port.HistoryNewerRequest{
 				EndpointID: req.EndpointID,
-				RequestID:  services.RequestID(requestID),
+				RequestID:  port.RequestID(requestID),
 				PaneID:     req.PaneID,
 				ViewID:     req.ViewID,
 				TerminalID: req.TerminalID,
@@ -1102,9 +1102,9 @@ func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.copy.history_oldest.effect")
-			result, err := deps.Core.HistoryOldest(ctx, services.HistoryOldestRequest{
+			result, err := deps.Core.HistoryOldest(ctx, port.HistoryOldestRequest{
 				EndpointID: req.EndpointID,
-				RequestID:  services.RequestID(requestID),
+				RequestID:  port.RequestID(requestID),
 				PaneID:     req.PaneID,
 				ViewID:     req.ViewID,
 				TerminalID: req.TerminalID,
@@ -1126,7 +1126,7 @@ func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 
 func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, deps CopyModeDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
-		if errors.Is(msg.Err, services.ErrStaleHistoryWindow) {
+		if errors.Is(msg.Err, port.ErrStaleHistoryWindow) {
 			return rejectStaleHistoryWindowError(root, msg), nil
 		}
 		if staleCopyModeHistoryResult(root, msg) {
@@ -1381,7 +1381,7 @@ func reduceCopyModeCopySelection(root state.Root, deps CopyModeDeps) (state.Root
 	if text == "" && (!hasRange || !needsBackend) {
 		return root, nil
 	}
-	req := services.HistoryCopyRangeRequest{
+	req := port.HistoryCopyRangeRequest{
 		EndpointID: root.History.EndpointID,
 		TerminalID: root.History.TerminalID,
 		Cols:       root.History.Cols,
@@ -1414,7 +1414,7 @@ func reduceCopyModeCopySelection(root state.Root, deps CopyModeDeps) (state.Root
 				if copied == "" {
 					return CopyModeCopyResultMsg{}
 				}
-				err := deps.Clipboard.Write(ctx, services.ClipboardWriteRequest{Text: copied})
+				err := deps.Clipboard.Write(ctx, port.ClipboardWriteRequest{Text: copied})
 				return CopyModeCopyResultMsg{Text: copied, Err: err, Commit: true}
 			},
 		},
@@ -1460,7 +1460,7 @@ func reduceCopyModePaste(root state.Root, deps CopyModeDeps, readSystemClipboard
 			}
 			// 中文说明：paste 属于发往 active terminal 的语义化输入；
 			// 如果 live surface 开着 bracketed paste，就在 reducer-owned live modes 基础上包裹 200~/201~。
-			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
+			err := deps.Terminal.SendInput(ctx, port.TerminalInputRequest{
 				EndpointID: target.EndpointID,
 				TerminalID: target.TerminalID,
 				Channel:    target.Channel,
@@ -1511,7 +1511,7 @@ func reduceCopyModePasteText(root state.Root, deps CopyModeDeps, text string) (s
 		SerialKey:        terminalInputSerialKey(target),
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
-			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
+			err := deps.Terminal.SendInput(ctx, port.TerminalInputRequest{
 				EndpointID: target.EndpointID,
 				TerminalID: target.TerminalID,
 				Channel:    target.Channel,
@@ -1723,7 +1723,7 @@ func exitCopyModeWithRelease(root state.Root, deps CopyModeDeps) (state.Root, []
 		Async:            true,
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
-			_ = deps.Core.ReleaseHistory(ctx, services.HistoryReleaseRequest{
+			_ = deps.Core.ReleaseHistory(ctx, port.HistoryReleaseRequest{
 				EndpointID: endpointID,
 				TerminalID: terminalID,
 				Token:      token,

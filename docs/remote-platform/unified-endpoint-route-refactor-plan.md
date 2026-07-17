@@ -12,7 +12,7 @@
 
 当前实现仍处于重建期：
 
-- Endpoint/Route v2 contract 当前位于待迁移的 `shared/connection`，C3S2 将迁入 `client/endpoint`。
+- Endpoint/Route v2 contract 当前位于 `client/endpoint`。
 - C3X 已删除 TUI lazy bundle/session owner 和 CLI 直接 route/dial owner；`client/runtime` 尚未实现。
 - CLI/TUI 当前保留明确未接线缺口，不得恢复旧 helper 或 TUI owner。
 - Official App 同时存在共享 TypeScript connection orchestrator、TypeScript session manager 和 Android Kotlin managed Cloud `ConnectionStore` 等多套连接状态机。

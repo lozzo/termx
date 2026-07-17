@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/shared/connection"
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 )
 
 func TestDefaultShellOwnsWorkbenchTreeAndChromeState(t *testing.T) {
@@ -601,9 +601,9 @@ func TestTerminalCreateEndpointItemsUseAvailableEndpoints(t *testing.T) {
 }
 
 func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) {
-	registry, err := (connection.Registry{Default: connection.DefaultEndpointID, Endpoints: map[connection.EndpointID]connection.Endpoint{
-		connection.DefaultEndpointID: connection.NewLocalEndpoint(connection.DefaultEndpointID, "This Mac", "auto", connection.ConnectAuto),
-		"west":                       connection.NewSSHEndpoint("west", "US West", "root@155.94.155.192", "ssh:west", "auto", connection.ConnectOnDemand),
+	registry, err := (endpointdomain.Registry{Default: endpointdomain.DefaultEndpointID, Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{
+		endpointdomain.DefaultEndpointID: endpointdomain.NewLocalEndpoint(endpointdomain.DefaultEndpointID, "This Mac", "auto", endpointdomain.ConnectAuto),
+		"west":                           endpointdomain.NewSSHEndpoint("west", "US West", "root@155.94.155.192", "ssh:west", "auto", endpointdomain.ConnectOnDemand),
 	}}).Normalize()
 	if err != nil {
 		t.Fatalf("normalize registry: %v", err)
@@ -645,8 +645,8 @@ func TestEndpointStoreRegistryReloadClassifiesRuntimeDisplayState(t *testing.T) 
 }
 
 func TestEndpointStoreHubIdentityReloadRequiresReconnect(t *testing.T) {
-	registry, err := (connection.Registry{Default: "studio", Endpoints: map[connection.EndpointID]connection.Endpoint{
-		"studio": connection.NewManagedEndpoint("studio", "Studio Mac", connection.DaemonIdentity{DeviceID: "device_ed25519:studio", DeviceFingerprint: "SHA256:studio"}, "device_ed25519:studio", "grant:studio", connection.RelayAuto, connection.ConnectOnDemand),
+	registry, err := (endpointdomain.Registry{Default: "studio", Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{
+		"studio": endpointdomain.NewManagedEndpoint("studio", "Studio Mac", endpointdomain.DaemonIdentity{DeviceID: "device_ed25519:studio", DeviceFingerprint: "SHA256:studio"}, "device_ed25519:studio", "grant:studio", endpointdomain.RelayAuto, endpointdomain.ConnectOnDemand),
 	}}).Normalize()
 	if err != nil {
 		t.Fatalf("normalize hub registry: %v", err)
@@ -654,7 +654,7 @@ func TestEndpointStoreHubIdentityReloadRequiresReconnect(t *testing.T) {
 	store := (EndpointStore{}).ApplyConnectionRegistry(registry)
 	store = store.MarkManagedRoute("studio", "single_relay", "lower_loss")
 	studio, ok := store.Endpoint("studio")
-	if !ok || studio.Transport != EndpointTransportHubP2P || studio.DeviceID != "device_ed25519:studio" || studio.DeviceFingerprint != "SHA256:studio" || len(studio.Routes) != 1 || studio.Routes[0].DialIdentity.CredentialRef != "grant:studio" || studio.Routes[0].DialIdentity.RelayMode != connection.RelayAuto {
+	if !ok || studio.Transport != EndpointTransportHubP2P || studio.DeviceID != "device_ed25519:studio" || studio.DeviceFingerprint != "SHA256:studio" || len(studio.Routes) != 1 || studio.Routes[0].DialIdentity.CredentialRef != "grant:studio" || studio.Routes[0].DialIdentity.RelayMode != endpointdomain.RelayAuto {
 		t.Fatalf("hub endpoint should project identity fields, got %#v ok=%v", studio, ok)
 	}
 
@@ -688,12 +688,12 @@ func TestEndpointStoreHubIdentityReloadRequiresReconnect(t *testing.T) {
 	}
 }
 
-func cloneStateTestRegistry(src connection.Registry) connection.Registry {
+func cloneStateTestRegistry(src endpointdomain.Registry) endpointdomain.Registry {
 	out := src
-	out.Endpoints = map[connection.EndpointID]connection.Endpoint{}
+	out.Endpoints = map[endpointdomain.EndpointID]endpointdomain.Endpoint{}
 	for id, endpoint := range src.Endpoints {
 		cloned := endpoint
-		cloned.Routes = map[connection.RouteID]connection.AccessRoute{}
+		cloned.Routes = map[endpointdomain.RouteID]endpointdomain.AccessRoute{}
 		for routeID, route := range endpoint.Routes {
 			route.HostKeyFingerprints = append([]string(nil), route.HostKeyFingerprints...)
 			route.Addresses = append([]string(nil), route.Addresses...)

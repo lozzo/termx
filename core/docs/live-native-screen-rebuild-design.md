@@ -312,7 +312,7 @@ on live.screen.snapshot(snapshot):
 
 ### 6.3 TUI port 与 protocol adapter
 
-目标文件：`tui/adapter/protocol/`、`tui/port/`；C3S2 前旧实现暂位于 `tui/services/`。
+目标文件：`tui/adapter/protocol/`、`tui/port/`。
 
 建议删除或替换：
 

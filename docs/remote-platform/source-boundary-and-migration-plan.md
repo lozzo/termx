@@ -126,7 +126,7 @@ archive 不是 module dependency、git submodule 或 runtime fallback。需要�
 | 当前资产 | 现状问题 | 可保留资产 | 目标去向 |
 | --- | --- | --- | --- |
 | `core/` | 无远程领域所有权问题 | scoped transport、terminal/history truth | public namespace 保留 |
-| `client/` | C3S2 建立明确客户端领域边界 | Endpoint/Route、planner、runtime、port、adapter | public namespace 保留；不得依赖 TUI/CLI/private |
+| `client/` | 共享客户端领域边界 | Endpoint/Route、planner、runtime、port、adapter | public namespace 保留；不得依赖 TUI/CLI/private |
 | `tui/` | 旧连接 owner 已删除，port/adapter 待拆分 | TerminalRef UI 投影、交互、render、局部失败状态 | public namespace 保留；不拥有 route/session truth |
 | `shared/remoteauth/` | grant 概念可用，交付链路需重做 | DeviceIdentity、fingerprint、scope、revoke | public namespace 演进为 E2E auth owner |
 | `shared/transport/datachannel/` | primitive 基本可用 | reliable ordered packet transport | public namespace 保留 |

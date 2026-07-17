@@ -10,8 +10,8 @@ import (
 
 	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -1925,11 +1925,11 @@ func terminalDetachEffectsForWorkbenchCommand(root state.Root, previousShell sta
 	return effects
 }
 
-func terminalDetachRequestFromBinding(binding state.TerminalViewBinding) (services.TerminalDetachRequest, bool) {
+func terminalDetachRequestFromBinding(binding state.TerminalViewBinding) (port.TerminalDetachRequest, bool) {
 	if binding.TerminalID == "" || binding.Channel == 0 {
-		return services.TerminalDetachRequest{}, false
+		return port.TerminalDetachRequest{}, false
 	}
-	return services.TerminalDetachRequest{
+	return port.TerminalDetachRequest{
 		EndpointID: binding.EndpointID,
 		TerminalID: binding.TerminalID,
 		Channel:    binding.Channel,
@@ -1938,7 +1938,7 @@ func terminalDetachRequestFromBinding(binding state.TerminalViewBinding) (servic
 	}, true
 }
 
-func terminalDetachEffect(req services.TerminalDetachRequest) Effect {
+func terminalDetachEffect(req port.TerminalDetachRequest) Effect {
 	// 中文说明：pane/floating close 删除的是当前 view；core attachment 必须同步释放，
 	// 否则 terminal pool 的 xN 和 resize owner 会长期保留僵尸 view。
 	return FuncEffect{Run: func(context.Context) Msg {

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/shared/connection"
 	"github.com/spf13/cobra"
 )
 
@@ -68,24 +68,24 @@ func newWorkspaceCommand(socket, logFile *string) *cobra.Command {
 	return command
 }
 
-func (runtime *workspaceCommandRuntime) open(cmd *cobra.Command) (context.Context, *protocol.Client, connection.Endpoint, func(), error) {
+func (runtime *workspaceCommandRuntime) open(cmd *cobra.Command) (context.Context, *protocol.Client, endpointdomain.Endpoint, func(), error) {
 	if runtime.timeout <= 0 {
-		return nil, nil, connection.Endpoint{}, func() {}, usageCLIError("--timeout must be positive")
+		return nil, nil, endpointdomain.Endpoint{}, func() {}, usageCLIError("--timeout must be positive")
 	}
 	registry, err := loadNormalizedConnectionRegistry()
 	if err != nil {
-		return nil, nil, connection.Endpoint{}, func() {}, err
+		return nil, nil, endpointdomain.Endpoint{}, func() {}, err
 	}
 	endpoint, err := resolveEndpointConfig(runtime.endpointID, registry)
 	if err != nil {
-		return nil, nil, connection.Endpoint{}, func() {}, err
+		return nil, nil, endpointdomain.Endpoint{}, func() {}, err
 	}
 	ctx, cancel := context.WithTimeout(cmd.Context(), runtime.timeout)
 	cmd.Root().SilenceUsage = true
 	client, closeClient, err := openEndpointProtocolClient(ctx, endpoint, *runtime.socket, *runtime.logFile)
 	if err != nil {
 		cancel()
-		return nil, nil, connection.Endpoint{}, func() {}, classifyCLIError(err)
+		return nil, nil, endpointdomain.Endpoint{}, func() {}, classifyCLIError(err)
 	}
 	closeAll := func() { closeClient(); cancel() }
 	return ctx, client, endpoint, closeAll, nil
@@ -275,7 +275,7 @@ func runWorkspaceMutation(cmd *cobra.Command, runtime *workspaceCommandRuntime, 
 	return nil
 }
 
-func writeWorkspaceEnvelope(cmd *cobra.Command, kind string, endpointID connection.EndpointID, version uint64, view workspaceView) error {
+func writeWorkspaceEnvelope(cmd *cobra.Command, kind string, endpointID endpointdomain.EndpointID, version uint64, view workspaceView) error {
 	return json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
 		SchemaVersion int           `json:"schema_version"`
 		Kind          string        `json:"kind"`

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/shared/connection"
 	"github.com/spf13/cobra"
 )
 
@@ -150,7 +150,7 @@ func (runtime terminalCommandRuntime) requestedEndpoint() string {
 	return *runtime.endpointID
 }
 
-func (runtime terminalCommandRuntime) open(cmd *cobra.Command, cfg connection.Endpoint) (terminalProtocolClient, func(), error) {
+func (runtime terminalCommandRuntime) open(cmd *cobra.Command, cfg endpointdomain.Endpoint) (terminalProtocolClient, func(), error) {
 	// terminal lifecycle 与 metadata truth 始终来自 owning endpoint 的 daemon client。
 	// 参数已经在进入本函数前完成校验；transport/protocol 失败不得附带 Cobra usage。
 	cmd.Root().SilenceUsage = true
@@ -257,7 +257,7 @@ func newTerminalListCommand(runtime terminalCommandRuntime, use string) *cobra.C
 			if err != nil {
 				return err
 			}
-			configs := make([]connection.Endpoint, 0, len(registry.Endpoints))
+			configs := make([]endpointdomain.Endpoint, 0, len(registry.Endpoints))
 			if allEndpoints {
 				if runtime.requestedEndpoint() != "" {
 					return usageCLIError("--all-endpoints and --endpoint are mutually exclusive")
@@ -546,7 +546,7 @@ func findTerminal(ctx context.Context, client terminalProtocolClient, ref resolv
 	return protocol.TerminalInfo{}, &cliError{code: 3, message: fmt.Sprintf("terminal %s was not found", ref.String())}
 }
 
-func terminalInfoView(endpointID connection.EndpointID, item protocol.TerminalInfo) terminalView {
+func terminalInfoView(endpointID endpointdomain.EndpointID, item protocol.TerminalInfo) terminalView {
 	return terminalView{
 		Target: string(endpointID) + ":" + item.ID, EndpointID: string(endpointID), TerminalID: item.ID,
 		Name: item.Name, Command: append([]string(nil), item.Command...), CWD: item.CWD,

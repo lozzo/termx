@@ -14,16 +14,16 @@ import (
 	"testing"
 	"time"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/core/history"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/shared/connection"
 	tuiv3 "github.com/lozzow/termx/tui"
 	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/app"
 	tuiinput "github.com/lozzow/termx/tui/input"
+	tuiservices "github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
-	tuiservices "github.com/lozzow/termx/tui/services"
 	tuistate "github.com/lozzow/termx/tui/state"
 )
 
@@ -119,11 +119,11 @@ endpoints:
 	if gotCfg.SocketPath != socketPath {
 		t.Fatalf("expected registry socket %q, got %q", socketPath, gotCfg.SocketPath)
 	}
-	local, ok := gotCfg.ConnectionRegistry.Endpoints[connection.DefaultEndpointID]
+	local, ok := gotCfg.ConnectionRegistry.Endpoints[endpointdomain.DefaultEndpointID]
 	if !ok {
 		t.Fatalf("local connection missing from registry %#v", gotCfg.ConnectionRegistry)
 	}
-	if route, ok := local.Route(connection.DefaultLocalRouteID); local.Label != "Configured Local" || !ok || route.Socket != socketPath {
+	if route, ok := local.Route(endpointdomain.DefaultLocalRouteID); local.Label != "Configured Local" || !ok || route.Socket != socketPath {
 		t.Fatalf("unexpected local connection %#v", local)
 	}
 }
@@ -182,18 +182,18 @@ func writeCLIConnectionRegistry(t *testing.T, configHome string, content string)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir connection registry dir: %v", err)
 	}
-	path := filepath.Join(dir, connection.DefaultFileName)
+	path := filepath.Join(dir, endpointdomain.DefaultFileName)
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)+"\n"), 0o644); err != nil {
 		t.Fatalf("write connection registry: %v", err)
 	}
 }
 
 func TestV3InteractiveRuntimeInitializesEndpointStoreFromRegistry(t *testing.T) {
-	registry := connection.Registry{
-		Version: connection.RegistryVersion,
-		Default: connection.DefaultEndpointID,
-		Endpoints: map[connection.EndpointID]connection.Endpoint{
-			connection.DefaultEndpointID: testLocalEndpoint(connection.DefaultEndpointID, "Runtime Local", "auto", connection.ConnectAuto, true),
+	registry := endpointdomain.Registry{
+		Version: endpointdomain.RegistryVersion,
+		Default: endpointdomain.DefaultEndpointID,
+		Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{
+			endpointdomain.DefaultEndpointID: testLocalEndpoint(endpointdomain.DefaultEndpointID, "Runtime Local", "auto", endpointdomain.ConnectAuto, true),
 		},
 	}
 	runtime := newV3InteractiveRuntimeWithOptions("", 80, 24, nil, nil, nil, app.NewFakeTerminalHost(8), nil, v3InteractiveRuntimeOptions{
@@ -210,11 +210,11 @@ func TestV3InteractiveRuntimeInitializesEndpointStoreFromRegistry(t *testing.T) 
 }
 
 func TestV3InteractiveRuntimePreservesInitialRemoteTerminalRef(t *testing.T) {
-	registry := connection.Registry{
-		Version: connection.RegistryVersion,
+	registry := endpointdomain.Registry{
+		Version: endpointdomain.RegistryVersion,
 		Default: "west",
-		Endpoints: map[connection.EndpointID]connection.Endpoint{
-			"west": testSSHEndpoint("west", "West", "west.example", "", "auto", connection.ConnectOnDemand, true),
+		Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{
+			"west": testSSHEndpoint("west", "West", "west.example", "", "auto", endpointdomain.ConnectOnDemand, true),
 		},
 	}
 	runtime := newV3InteractiveRuntimeWithOptions("term-1", 80, 24, nil, nil, nil, app.NewFakeTerminalHost(8), nil, v3InteractiveRuntimeOptions{

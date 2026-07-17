@@ -5,16 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/signal"
-	"strings"
-	"syscall"
 	"time"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/shared/connection"
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/tui/app"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 	"github.com/lozzow/termx/tui/terminalhost"
 	"github.com/spf13/cobra"
@@ -39,7 +35,7 @@ type v3AttachConfig struct {
 	SocketPath         string
 	LogFile            string
 	TUIConfig          state.TUIConfigStore
-	ConnectionRegistry connection.Registry
+	ConnectionRegistry endpointdomain.Registry
 }
 
 var (
@@ -64,54 +60,7 @@ func runLocalAttachCommand(cmd *cobra.Command, terminalID, socket, logFile, conf
 }
 
 func runAttachCommand(cmd *cobra.Command, endpointID, terminalID, socket, logFile, configPath string) error {
-	if !isInteractiveTerminal() {
-		return usageCLIError("termx terminal attach requires an interactive terminal")
-	}
-	if err := rejectNestedTUI(); err != nil {
-		return err
-	}
-	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	tuiConfig, err := loadV3TUIConfig(configPath)
-	if err != nil {
-		return err
-	}
-	connectionRegistry, err := loadV3ConnectionRegistry()
-	if err != nil {
-		return err
-	}
-	resolvedEndpointID := connection.EndpointID(endpointID)
-	if resolvedEndpointID == "" {
-		resolvedEndpointID = connectionRegistry.Default
-	}
-	endpoint, ok := connectionRegistry.Endpoints[resolvedEndpointID]
-	if !ok {
-		return &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", resolvedEndpointID)}
-	}
-	if !endpoint.Enabled {
-		return &cliError{code: 4, message: fmt.Sprintf("endpoint %s is disabled", resolvedEndpointID)}
-	}
-	route, err := endpoint.ResolveCurrentRoute("")
-	if err != nil {
-		return classifyCLIError(err)
-	}
-	socketPath, err := resolveV3SocketForConnectionRegistry(socket, connectionRegistry)
-	if err != nil {
-		return err
-	}
-	if route.Kind == connection.RouteLocalUnix {
-		socketPath = strings.TrimSpace(route.Socket)
-		if strings.TrimSpace(socket) != "" {
-			socketPath = socket
-		}
-		if socketPath == "" || socketPath == "auto" {
-			socketPath = resolveV3Socket("")
-		}
-	}
-	return runV3Attach(ctx, v3AttachConfig{
-		EndpointID: state.EndpointID(resolvedEndpointID), TerminalID: terminalID, SocketPath: socketPath,
-		LogFile: resolveV3LogFilePath(logFile), TUIConfig: tuiConfig, ConnectionRegistry: connectionRegistry,
-	})
+	return runAttachCommandWithClientRuntime(cmd, endpointID, terminalID, socket, logFile, configPath)
 }
 
 func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
@@ -175,7 +124,7 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *protocol.Client, workbenchStorageClient *protocol.Client, clipboardStorageClient *protocol.Client, host app.TerminalHost, logger *slog.Logger) *app.AppRuntime {
 	return newV3InteractiveRuntimeWithOptions(terminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{
 		InitialEndpointID:  state.DefaultEndpointID,
-		ConnectionRegistry: connection.DefaultRegistry(),
+		ConnectionRegistry: endpointdomain.DefaultRegistry(),
 	})
 }
 
@@ -184,126 +133,16 @@ type v3InteractiveRuntimeOptions struct {
 	InitialEndpointID        state.EndpointID
 	RuntimeSurfaceID         string
 	TUIConfig                state.TUIConfigStore
-	ConnectionRegistry       connection.Registry
+	ConnectionRegistry       endpointdomain.Registry
 	EndpointContext          context.Context
 }
 
 func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, client *protocol.Client, workbenchStorageClient *protocol.Client, clipboardStorageClient *protocol.Client, host app.TerminalHost, logger *slog.Logger, opts v3InteractiveRuntimeOptions) *app.AppRuntime {
-	runtimeSurfaceID := opts.RuntimeSurfaceID
-	if runtimeSurfaceID == "" {
-		runtimeSurfaceID = app.DefaultRuntimeSurfaceID
-	}
-	initialEndpointID := state.NormalizeEndpointID(opts.InitialEndpointID)
-	initial := state.Root{
-		RuntimeSurfaceID: runtimeSurfaceID,
-		Session: state.TerminalSessionStore{
-			EndpointID: initialEndpointID,
-			TerminalID: terminalID,
-			Cols:       cols,
-			Rows:       rows,
-		},
-		Surface: state.TerminalSurfaceStore{
-			EndpointID: initialEndpointID,
-			TerminalID: terminalID,
-			Cols:       cols,
-			Rows:       rows,
-		},
-		Config: opts.TUIConfig,
-	}
-	if terminalID == "" {
-		initial.Shell = v3EmptyRootShell()
-	}
-	terminalAdapter := services.ProtocolTerminalServiceAdapter{Client: client}
-	coreAdapter := services.ProtocolCoreClientAdapter{Client: client}
-	pathAdapter := services.ProtocolPathServiceAdapter{Client: client}
-	endpointCtx := opts.EndpointContext
-	if endpointCtx == nil {
-		endpointCtx = context.Background()
-	}
-	endpointManager := services.NewEndpointManagerWithDialers(opts.ConnectionRegistry, map[connection.RouteKind]services.EndpointDialer{
-		connection.RouteLocalUnix:     v3LocalEndpointDialer(logger),
-		connection.RouteSSHStdio:      v3SSHEndpointDialer(endpointCtx),
-		connection.RouteManagedWebRTC: v3ManagedCloudEndpointDialer(),
-	}, services.EndpointServiceBundle{
-		EndpointID: initialEndpointID,
-		Terminal:   terminalAdapter,
-		Core:       coreAdapter,
-		Surface:    terminalAdapter,
-		LiveEvents: terminalAdapter,
-		Path:       pathAdapter,
-		Lifecycle:  services.EndpointLifecycle{Done: client.Done(), Err: client.Err},
-	})
-	initial.Endpoints = endpointManager.EndpointStore()
-	terminal := endpointManager
-	core := endpointManager
-	var storage services.WorkbenchStorageService
-	var clipboardStorage services.ClipboardStorageService
-	if workbenchStorageClient != nil {
-		// core-v2 当前每个 protocol session 只有一个 events stream；
-		// workbench storage.changed 必须独立于 terminal live events，避免互相取消。
-		storage = services.ProtocolWorkbenchStorageAdapter{Client: workbenchStorageClient}
-	}
-	if clipboardStorageClient != nil {
-		// clipboard storage.changed 使用独立 session，避免覆盖 workbench watch。
-		clipboardStorage = services.ProtocolClipboardStorageAdapter{Client: clipboardStorageClient}
-	}
-	return app.NewInteractiveRuntimeWithStorage(
-		initial,
-		host,
-		app.NewAsyncEffectRunner(),
-		app.LiveDeps{Terminal: terminal, Path: endpointManager, Logger: logger},
-		app.CopyModeDeps{Core: core, Clipboard: &services.SystemClipboardService{}, Terminal: terminal, Logger: logger, Rows: rows},
-		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID), Logger: logger, SkipInitialLoad: opts.SkipWorkbenchInitialLoad},
-		app.ClipboardDeps{Storage: clipboardStorage, Ref: state.DefaultClipboardStorageRef(state.DefaultWorkspaceID), Logger: logger},
-	)
+	return newV3InteractiveRuntimeFromClientRuntime(terminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, opts)
 }
 
 func openV3AttachProtocolClients(ctx context.Context, cfg v3AttachConfig, logPath string, logger *slog.Logger) (*protocol.Client, *protocol.Client, *protocol.Client, func(), error) {
-	endpointID := state.NormalizeEndpointID(cfg.EndpointID)
-	endpoint, ok := cfg.ConnectionRegistry.Endpoints[connection.EndpointID(endpointID)]
-	if !ok {
-		return nil, nil, nil, func() {}, fmt.Errorf("attach endpoint %q is not registered", endpointID)
-	}
-	route, err := endpoint.ResolveCurrentRoute("")
-	if err != nil {
-		return nil, nil, nil, func() {}, err
-	}
-	if route.Kind == connection.RouteLocalUnix {
-		socketPath := strings.TrimSpace(route.Socket)
-		if strings.TrimSpace(cfg.SocketPath) != "" {
-			socketPath = cfg.SocketPath
-		}
-		if socketPath == "" || socketPath == "auto" {
-			socketPath = resolveV3Socket("")
-		}
-		client, err := dialOrStartV3Client(socketPath, logPath, logger)
-		if err != nil {
-			return nil, nil, nil, func() {}, err
-		}
-		workbench, err := v3DialClient(socketPath)
-		if err != nil {
-			_ = client.Close()
-			return nil, nil, nil, func() {}, fmt.Errorf("dial core-v2 workbench storage events client: %w", err)
-		}
-		clipboard, err := v3DialClient(socketPath)
-		if err != nil {
-			_ = workbench.Close()
-			_ = client.Close()
-			return nil, nil, nil, func() {}, fmt.Errorf("dial core-v2 clipboard storage events client: %w", err)
-		}
-		return client, workbench, clipboard, func() {
-			_ = clipboard.Close()
-			_ = workbench.Close()
-			_ = client.Close()
-		}, nil
-	}
-	// 远程 attach 的 terminal/live/history 共用一条 protocol session；
-	// workbench/clipboard storage 不应把一次 attach 放大成额外 WebRTC session。
-	client, closeClient, err := openEndpointProtocolClient(ctx, endpoint, "", logPath)
-	if err != nil {
-		return nil, nil, nil, func() {}, err
-	}
-	return client, nil, nil, closeClient, nil
+	return openV3AttachProtocolClientsWithClientRuntime(ctx, cfg, logPath, logger)
 }
 
 func newV3RuntimeSurfaceID() string {

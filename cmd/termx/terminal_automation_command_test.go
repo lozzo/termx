@@ -10,18 +10,18 @@ import (
 	"testing"
 	"time"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/shared/connection"
 )
 
 func TestTerminalAutomationLocalDataPlane(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	socketPath, client, closeServer := startCLIEndpointServer(t)
 	defer closeServer()
-	if err := connection.Save("", connection.Registry{
-		Version: connection.RegistryVersion, Default: connection.DefaultEndpointID,
-		Endpoints: map[connection.EndpointID]connection.Endpoint{
-			connection.DefaultEndpointID: testLocalEndpoint(connection.DefaultEndpointID, "Local", socketPath, connection.ConnectAuto, true),
+	if err := endpointdomain.Save("", endpointdomain.Registry{
+		Version: endpointdomain.RegistryVersion, Default: endpointdomain.DefaultEndpointID,
+		Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{
+			endpointdomain.DefaultEndpointID: testLocalEndpoint(endpointdomain.DefaultEndpointID, "Local", socketPath, endpointdomain.ConnectAuto, true),
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -77,10 +77,10 @@ func TestTerminalEventsWritesStableNDJSON(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	socketPath, client, closeServer := startCLIEndpointServer(t)
 	defer closeServer()
-	if err := connection.Save("", connection.Registry{
-		Version: connection.RegistryVersion, Default: connection.DefaultEndpointID,
-		Endpoints: map[connection.EndpointID]connection.Endpoint{
-			connection.DefaultEndpointID: testLocalEndpoint(connection.DefaultEndpointID, "Local", socketPath, connection.ConnectAuto, true),
+	if err := endpointdomain.Save("", endpointdomain.Registry{
+		Version: endpointdomain.RegistryVersion, Default: endpointdomain.DefaultEndpointID,
+		Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{
+			endpointdomain.DefaultEndpointID: testLocalEndpoint(endpointdomain.DefaultEndpointID, "Local", socketPath, endpointdomain.ConnectAuto, true),
 		},
 	}); err != nil {
 		t.Fatal(err)

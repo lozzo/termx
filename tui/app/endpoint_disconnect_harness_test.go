@@ -3,12 +3,13 @@ package app
 import (
 	"context"
 	"errors"
+	"github.com/lozzow/termx/tui/testkit"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/tui/services"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -26,7 +27,7 @@ func TestEndpointDisconnectHarnessKeepsPaneReasonAfterEmptyInventory(t *testing.
 	host.SetSize(120, 32)
 	runtime := NewInteractiveRuntime(root, host, runner, LiveDeps{
 		EndpointEvents: source,
-		Terminal:       &services.FakeTerminalService{},
+		Terminal:       &testkit.FakeTerminalService{},
 	}, CopyModeDeps{})
 
 	ctx := context.Background()
@@ -35,7 +36,7 @@ func TestEndpointDisconnectHarnessKeepsPaneReasonAfterEmptyInventory(t *testing.
 	}
 	source.waitSubscribed(t)
 	errText := "ssh transport closed: exit status 255: stdio-proxy connect core-v2 daemon socket: connection refused"
-	source.emit(t, services.EndpointRuntimeEvent{
+	source.emit(t, port.EndpointRuntimeEvent{
 		EndpointID: ref.EndpointID,
 		Status:     state.EndpointStatusOffline,
 		ErrorKind:  state.EndpointErrorRemoteDaemon,
@@ -56,7 +57,7 @@ func TestEndpointDisconnectHarnessKeepsPaneReasonAfterEmptyInventory(t *testing.
 		t.Fatalf("disconnect frame should show local reason/actions instead of unconnected CTA, frame=%#v", frame.Lines)
 	}
 
-	if err := runtime.Post(TerminalPoolListResultMsg{EndpointID: ref.EndpointID, Seq: runtime.State().TerminalPool.RequestSeq, Refresh: true, Result: services.TerminalListResult{Items: nil}}); err != nil {
+	if err := runtime.Post(TerminalPoolListResultMsg{EndpointID: ref.EndpointID, Seq: runtime.State().TerminalPool.RequestSeq, Refresh: true, Result: port.TerminalListResult{Items: nil}}); err != nil {
 		t.Fatalf("post empty inventory failed: %v", err)
 	}
 	if err := runtime.Drain(ctx); err != nil {
@@ -94,9 +95,9 @@ func TestLiveInvalidationEOFHarnessShowsDisconnectedPane(t *testing.T) {
 	root := endpointDisconnectHarnessRoot(ref)
 	host := NewFakeTerminalHost(64)
 	host.SetSize(120, 32)
-	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: &services.FakeTerminalService{}}, CopyModeDeps{})
+	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: &testkit.FakeTerminalService{}}, CopyModeDeps{})
 
-	if err := runtime.Post(LiveEventMsg{Event: services.TerminalLiveEvent{
+	if err := runtime.Post(LiveEventMsg{Event: port.TerminalLiveEvent{
 		EndpointID: ref.EndpointID,
 		TerminalID: ref.TerminalID,
 		Err:        errors.New("EOF"),
@@ -172,7 +173,7 @@ func endpointDisconnectHarnessRoot(ref state.TerminalRef) state.Root {
 }
 
 type endpointDisconnectHarnessSource struct {
-	events        chan services.EndpointRuntimeEvent
+	events        chan port.EndpointRuntimeEvent
 	subscribed    chan struct{}
 	subscribeOnce sync.Once
 	closeOnce     sync.Once
@@ -180,12 +181,12 @@ type endpointDisconnectHarnessSource struct {
 
 func newEndpointDisconnectHarnessSource() *endpointDisconnectHarnessSource {
 	return &endpointDisconnectHarnessSource{
-		events:     make(chan services.EndpointRuntimeEvent, 4),
+		events:     make(chan port.EndpointRuntimeEvent, 4),
 		subscribed: make(chan struct{}),
 	}
 }
 
-func (source *endpointDisconnectHarnessSource) WatchEndpointEvents(context.Context) (<-chan services.EndpointRuntimeEvent, error) {
+func (source *endpointDisconnectHarnessSource) WatchEndpointEvents(context.Context) (<-chan port.EndpointRuntimeEvent, error) {
 	source.subscribeOnce.Do(func() {
 		close(source.subscribed)
 	})
@@ -201,7 +202,7 @@ func (source *endpointDisconnectHarnessSource) waitSubscribed(t *testing.T) {
 	}
 }
 
-func (source *endpointDisconnectHarnessSource) emit(t *testing.T, event services.EndpointRuntimeEvent) {
+func (source *endpointDisconnectHarnessSource) emit(t *testing.T, event port.EndpointRuntimeEvent) {
 	t.Helper()
 	select {
 	case source.events <- event:

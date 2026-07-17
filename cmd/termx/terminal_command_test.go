@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/shared/connection"
 )
 
 func TestProductCommandTreeExposesTerminalAndRejectsV3(t *testing.T) {
@@ -93,13 +93,13 @@ func TestCLIExitCodeUsesTypedProtocolErrors(t *testing.T) {
 }
 
 func TestResolveTerminalRefUsesOwningEndpoint(t *testing.T) {
-	registry := connection.Registry{
-		Version: connection.RegistryVersion,
+	registry := endpointdomain.Registry{
+		Version: endpointdomain.RegistryVersion,
 		Default: "west",
-		Endpoints: map[connection.EndpointID]connection.Endpoint{
-			"local": testLocalEndpoint("local", "Local", "auto", connection.ConnectAuto, true),
-			"west":  testSSHEndpoint("west", "West", "west.example", "", "auto", connection.ConnectOnDemand, true),
-			"off":   testLocalEndpoint("off", "Off", "auto", connection.ConnectOnDemand, false),
+		Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{
+			"local": testLocalEndpoint("local", "Local", "auto", endpointdomain.ConnectAuto, true),
+			"west":  testSSHEndpoint("west", "West", "west.example", "", "auto", endpointdomain.ConnectOnDemand, true),
+			"off":   testLocalEndpoint("off", "Off", "auto", endpointdomain.ConnectOnDemand, false),
 		},
 	}
 	if ref, err := resolveTerminalRef("demo", "", registry); err != nil || ref.String() != "west:demo" {

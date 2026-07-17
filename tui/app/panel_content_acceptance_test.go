@@ -3,11 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/lozzow/termx/tui/testkit"
 	"strings"
 	"testing"
 
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -52,7 +53,7 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 	})
 
 	t.Run("split resize live clipping", func(t *testing.T) {
-		terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 4}}
+		terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-main", Channel: 4}}
 		host := NewFakeTerminalHost(16)
 		host.SetSize(100, 28)
 		shell := state.DefaultShell().
@@ -63,7 +64,7 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 			host,
 			NewSyncEffectRunner(),
 			LiveDeps{Terminal: terminal},
-			CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+			CopyModeDeps{Core: &testkit.FakeCoreClient{}, Rows: 20},
 		)
 		if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{
 			TerminalID:   "term-main",
@@ -201,7 +202,7 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 	})
 
 	t.Run("error pane", func(t *testing.T) {
-		terminal := &services.FakeTerminalService{AttachErr: context.Canceled}
+		terminal := &testkit.FakeTerminalService{AttachErr: context.Canceled}
 		host := NewFakeTerminalHost(4)
 		host.SetSize(80, 24)
 		runtime := NewLiveRuntime(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal})
@@ -224,7 +225,7 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 			root,
 			host,
 			NewSyncEffectRunner(),
-			LiveDeps{Terminal: &services.FakeTerminalService{}},
+			LiveDeps{Terminal: &testkit.FakeTerminalService{}},
 		)
 		for revision := uint64(1); revision <= 50; revision++ {
 			if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{

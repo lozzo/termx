@@ -9,8 +9,8 @@ import (
 	"github.com/lozzow/termx/shared/perftrace"
 	"github.com/lozzow/termx/shared/terminalmeta"
 	"github.com/lozzow/termx/tui/input"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -28,9 +28,9 @@ type LiveConfig struct {
 }
 
 type LiveDeps struct {
-	Terminal       services.TerminalService
-	Path           services.PathService
-	EndpointEvents services.EndpointEventSource
+	Terminal       port.TerminalService
+	Path           port.PathService
+	EndpointEvents port.EndpointEventSource
 	Logger         *slog.Logger
 }
 
@@ -120,7 +120,7 @@ func NewInteractiveRuntimeWithStorage(
 
 func liveDepsWithEndpointEvents(deps LiveDeps) LiveDeps {
 	if deps.EndpointEvents == nil {
-		if source, ok := deps.Terminal.(services.EndpointEventSource); ok {
+		if source, ok := deps.Terminal.(port.EndpointEventSource); ok {
 			deps.EndpointEvents = source
 		}
 	}
@@ -173,20 +173,20 @@ type LiveAttachResultMsg struct {
 	TerminalID            string
 	ViewID                string
 	RequestedResizePolicy string
-	Result                services.TerminalAttachResult
+	Result                port.TerminalAttachResult
 	Err                   error
 }
 
 func (LiveAttachResultMsg) isMsg() {}
 
 type LiveDetachRequestMsg struct {
-	Request services.TerminalDetachRequest
+	Request port.TerminalDetachRequest
 }
 
 func (LiveDetachRequestMsg) isMsg() {}
 
 type LiveDetachResultMsg struct {
-	Request services.TerminalDetachRequest
+	Request port.TerminalDetachRequest
 	Err     error
 }
 
@@ -245,7 +245,7 @@ type LiveLifecycleQueryMsg struct {
 func (LiveLifecycleQueryMsg) isMsg() {}
 
 type LiveEventMsg struct {
-	Event services.TerminalLiveEvent
+	Event port.TerminalLiveEvent
 }
 
 func (LiveEventMsg) isMsg() {}
@@ -281,7 +281,7 @@ func (LiveResizeMsg) isMsg() {}
 type LiveResizeResultMsg struct {
 	EndpointID state.EndpointID
 	TerminalID string
-	Result     services.TerminalResizeResult
+	Result     port.TerminalResizeResult
 	Cols       int
 	Rows       int
 	Seq        uint64
@@ -308,7 +308,7 @@ type LiveInputAttachResultMsg struct {
 	Target liveInputTargetInfo
 	Event  input.InputEvent
 	Bytes  []byte
-	Result services.TerminalAttachResult
+	Result port.TerminalAttachResult
 	Err    error
 }
 
@@ -542,7 +542,7 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 		Async:            true,
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
-			result, err := deps.Terminal.Attach(ctx, services.TerminalAttachRequest{
+			result, err := deps.Terminal.Attach(ctx, port.TerminalAttachRequest{
 				EndpointID:   cfg.EndpointID,
 				TerminalID:   cfg.TerminalID,
 				Cols:         cfg.Cols,
@@ -728,7 +728,7 @@ func liveAttachAppliedEffects(endpointID state.EndpointID, terminalID string) []
 	return effects
 }
 
-func appendResizeOwnerConfirmAfterAttach(root state.Root, msg LiveAttachResultMsg, result services.TerminalAttachResult, viewID string, effects []Effect) (state.Root, []Effect) {
+func appendResizeOwnerConfirmAfterAttach(root state.Root, msg LiveAttachResultMsg, result port.TerminalAttachResult, viewID string, effects []Effect) (state.Root, []Effect) {
 	if msg.RequestedResizePolicy != state.TerminalResizeRoleOwner || result.CanResize || viewID == "" {
 		return root, effects
 	}
@@ -756,7 +756,7 @@ func appendResizeOwnerConfirmAfterAttach(root state.Root, msg LiveAttachResultMs
 	return root, effects
 }
 
-func logLiveAttachApplied(deps LiveDeps, root state.Root, result services.TerminalAttachResult, targetKind string) {
+func logLiveAttachApplied(deps LiveDeps, root state.Root, result port.TerminalAttachResult, targetKind string) {
 	logLifecycleTrace(deps.Logger, "live.attach.result",
 		"target_kind", targetKind,
 		"terminal_id", result.TerminalID,
@@ -777,7 +777,7 @@ func logLiveAttachApplied(deps LiveDeps, root state.Root, result services.Termin
 	)
 }
 
-func applyLiveAttachRuntimeProjection(root state.Root, result services.TerminalAttachResult, viewID string) state.Root {
+func applyLiveAttachRuntimeProjection(root state.Root, result port.TerminalAttachResult, viewID string) state.Root {
 	ref := state.NewTerminalRef(result.EndpointID, result.TerminalID)
 	if liveAttachResultOwnsActiveView(root, viewID, ref) {
 		// 中文说明：全局 Session/Surface 只表达当前前台 view 的 live/input 投影。
@@ -985,7 +985,7 @@ func liveSurfaceEffect(terminalID string, cols int, rows int, knownLifecycle boo
 }
 
 func liveSurfaceEffectForRef(endpointID state.EndpointID, terminalID string, cols int, rows int, knownLifecycle bool, deps LiveDeps) []Effect {
-	source, ok := deps.Terminal.(services.NativeScreenSource)
+	source, ok := deps.Terminal.(port.NativeScreenSource)
 	if !ok || terminalID == "" {
 		return nil
 	}
@@ -995,7 +995,7 @@ func liveSurfaceEffectForRef(endpointID state.EndpointID, terminalID string, col
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			finish := perftrace.Measure("tui.live_surface")
-			result, err := source.LiveSurface(ctx, services.TerminalSurfaceRequest{
+			result, err := source.LiveSurface(ctx, port.TerminalSurfaceRequest{
 				EndpointID: endpointID,
 				TerminalID: terminalID,
 				Cols:       cols,
@@ -1034,7 +1034,7 @@ func liveInvalidationArmEffect(terminalID string, cols int, rows int, observedRe
 }
 
 func liveInvalidationArmEffectForRef(endpointID state.EndpointID, terminalID string, cols int, rows int, observedRevision uint64, deps LiveDeps) []Effect {
-	source, ok := deps.Terminal.(services.LiveInvalidationSource)
+	source, ok := deps.Terminal.(port.LiveInvalidationSource)
 	if !ok || terminalID == "" {
 		return nil
 	}
@@ -1059,7 +1059,7 @@ func liveInvalidationArmEffectForRef(endpointID state.EndpointID, terminalID str
 				"rows", rows,
 				"observed_revision", observedRevision,
 			)
-			event, err := source.ArmLiveInvalidation(ctx, services.TerminalLiveEventRequest{
+			event, err := source.ArmLiveInvalidation(ctx, port.TerminalLiveEventRequest{
 				EndpointID:       endpointID,
 				TerminalID:       terminalID,
 				Cols:             cols,
@@ -1079,7 +1079,7 @@ func liveInvalidationArmEffectForRef(endpointID state.EndpointID, terminalID str
 					"endpoint_id", string(endpointID),
 					"terminal_id", terminalID,
 				)
-				return LiveEventMsg{Event: services.TerminalLiveEvent{
+				return LiveEventMsg{Event: port.TerminalLiveEvent{
 					EndpointID: endpointID,
 					TerminalID: terminalID,
 					Err:        err,
@@ -1123,11 +1123,11 @@ func liveSurfaceRefreshKey(ref state.TerminalRef) string {
 	return ref.Key()
 }
 
-func liveSurfaceResultApproxBytes(result services.TerminalSurfaceResult) int {
+func liveSurfaceResultApproxBytes(result port.TerminalSurfaceResult) int {
 	return liveSnapshotApproxBytes(result.Snapshot)
 }
 
-func liveEventApproxBytes(event services.TerminalLiveEvent) int {
+func liveEventApproxBytes(event port.TerminalLiveEvent) int {
 	if event.Ready {
 		return liveSnapshotApproxBytes(event.Snapshot)
 	}
@@ -1270,7 +1270,7 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Ro
 	return root.Advance(), nil
 }
 
-func ordinaryLiveRefreshEvent(event services.TerminalLiveEvent) bool {
+func ordinaryLiveRefreshEvent(event port.TerminalLiveEvent) bool {
 	return event.Refresh && event.Err == nil && !event.Exited && !event.LifecycleKnown && !event.Metadata && !event.Ready
 }
 
@@ -1289,7 +1289,7 @@ func terminalResizeControlReason(sizeLocked bool) string {
 	return ""
 }
 
-func applyTerminalAttachmentProjectionFromAttach(root state.Root, result services.TerminalAttachResult) state.Root {
+func applyTerminalAttachmentProjectionFromAttach(root state.Root, result port.TerminalAttachResult) state.Root {
 	if result.TerminalID == "" || result.AttachmentCount <= 0 {
 		return root
 	}
@@ -1297,7 +1297,7 @@ func applyTerminalAttachmentProjectionFromAttach(root state.Root, result service
 	return root
 }
 
-func applyTerminalAttachmentProjectionFromResize(root state.Root, result services.TerminalResizeResult) state.Root {
+func applyTerminalAttachmentProjectionFromResize(root state.Root, result port.TerminalResizeResult) state.Root {
 	if result.TerminalID == "" || result.AttachmentCount <= 0 {
 		return root
 	}
@@ -1357,7 +1357,7 @@ func reduceLiveFrameReady(root state.Root, msg LiveFrameReadyMsg, deps LiveDeps)
 		)
 		return root, nil
 	}
-	if _, ok := deps.Terminal.(services.LiveInvalidationSource); !ok {
+	if _, ok := deps.Terminal.(port.LiveInvalidationSource); !ok {
 		logLiveInvalidationTrace(deps.Logger, "frame.ready.skip",
 			"reason", "source-missing",
 			"endpoint_id", string(ref.EndpointID),
@@ -1518,7 +1518,7 @@ func liveAttachForInputEffect(root state.Root, target liveInputTargetInfo, event
 	}
 }
 
-func liveInputAttachRequest(root state.Root, target liveInputTargetInfo) services.TerminalAttachRequest {
+func liveInputAttachRequest(root state.Root, target liveInputTargetInfo) port.TerminalAttachRequest {
 	cols, rows := liveInputAttachSize(root, target)
 	resizePolicy := target.ResizeRole
 	if resizePolicy == "" {
@@ -1528,7 +1528,7 @@ func liveInputAttachRequest(root state.Root, target liveInputTargetInfo) service
 	if surfaceID == "" {
 		surfaceID = runtimeSurfaceID(root)
 	}
-	return services.TerminalAttachRequest{
+	return port.TerminalAttachRequest{
 		EndpointID:   target.EndpointID,
 		TerminalID:   target.TerminalID,
 		Cols:         cols,
@@ -1678,7 +1678,7 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 		Async:            true,
 		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
-			result, err := deps.Terminal.Resize(ctx, services.TerminalResizeRequest{
+			result, err := deps.Terminal.Resize(ctx, port.TerminalResizeRequest{
 				EndpointID:   session.EndpointID,
 				TerminalID:   session.TerminalID,
 				Channel:      session.Channel,
@@ -1724,11 +1724,11 @@ func adoptActiveOwnerResizeBinding(root state.Root, msg LiveResizeMsg) (state.Ro
 	return root, msg
 }
 
-func hasResizeControlResult(result services.TerminalResizeResult) bool {
+func hasResizeControlResult(result port.TerminalResizeResult) bool {
 	return result.TerminalID != "" || result.ControlReason != "" || result.SizeLocked || result.ResizeEpoch != 0 || result.OwnerSurfaceID != "" || result.OwnerViewID != "" || result.ResizePolicy != "" || result.SurfaceID != "" || result.ViewID != "" || result.CanResize || result.Resized
 }
 
-func liveResizeResultConflictsWithLocalOwner(root state.Root, binding state.TerminalViewBinding, result services.TerminalResizeResult) bool {
+func liveResizeResultConflictsWithLocalOwner(root state.Root, binding state.TerminalViewBinding, result port.TerminalResizeResult) bool {
 	if !hasResizeControlResult(result) || result.TerminalID == "" || result.OwnerViewID != binding.ViewID {
 		return false
 	}
@@ -1744,7 +1744,7 @@ func liveResizeResultConflictsWithLocalOwner(root state.Root, binding state.Term
 	return owner.ViewID != "" && owner.ViewID != binding.ViewID
 }
 
-func resizeControlProjectionFromResult(result services.TerminalResizeResult) state.TerminalResizeControlProjection {
+func resizeControlProjectionFromResult(result port.TerminalResizeResult) state.TerminalResizeControlProjection {
 	return state.TerminalResizeControlProjection{
 		CanResize:      result.CanResize,
 		SizeLocked:     result.SizeLocked,

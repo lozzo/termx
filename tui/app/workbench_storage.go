@@ -6,12 +6,12 @@ import (
 	"log/slog"
 	"sort"
 
-	"github.com/lozzow/termx/tui/services"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
 
 type WorkbenchDeps struct {
-	Storage services.WorkbenchStorageService
+	Storage port.WorkbenchStorageService
 	Ref     state.WorkbenchStorageRef
 	Logger  *slog.Logger
 	// root 空 terminal 启动时不能用旧 workbench snapshot 恢复连接意图。
@@ -32,14 +32,14 @@ type WorkbenchStorageWatchRequestMsg struct{}
 func (WorkbenchStorageWatchRequestMsg) isMsg() {}
 
 type WorkbenchStorageChangedMsg struct {
-	Event services.WorkbenchStorageEvent
+	Event port.WorkbenchStorageEvent
 	Err   error
 }
 
 func (WorkbenchStorageChangedMsg) isMsg() {}
 
 type WorkbenchStorageLoadResultMsg struct {
-	Result services.WorkbenchStorageLoadResult
+	Result port.WorkbenchStorageLoadResult
 	Err    error
 }
 
@@ -52,7 +52,7 @@ type WorkbenchStoragePersistRequestMsg struct {
 func (WorkbenchStoragePersistRequestMsg) isMsg() {}
 
 type WorkbenchStoragePersistResultMsg struct {
-	Result          services.WorkbenchStorageSaveResult
+	Result          port.WorkbenchStorageSaveResult
 	Err             error
 	Reason          string
 	ExpectedVersion uint64
@@ -669,7 +669,7 @@ func reduceWorkbenchStoragePersistRequest(root state.Root, msg WorkbenchStorageP
 	snapshot := state.SnapshotRootWorkbenchForStorage(root)
 	expectedVersion := root.WorkbenchSync.SaveVersion()
 	return root, []Effect{FuncEffect{Token: workbenchStorageSaveToken, Async: true, ForceSyncInTests: true, Run: func(ctx context.Context) Msg {
-		result, err := deps.Storage.SaveWorkbench(ctx, services.WorkbenchStorageSaveRequest{
+		result, err := deps.Storage.SaveWorkbench(ctx, port.WorkbenchStorageSaveRequest{
 			Ref:             ref.WithVersion(expectedVersion),
 			Snapshot:        snapshot,
 			CheckVersion:    true,
@@ -691,7 +691,7 @@ func reduceWorkbenchStoragePersistResult(root state.Root, msg WorkbenchStoragePe
 		if isContextLifecycleError(msg.Err) {
 			return root, nil
 		}
-		if errors.Is(msg.Err, services.ErrWorkbenchStorageConflict) {
+		if errors.Is(msg.Err, port.ErrWorkbenchStorageConflict) {
 			if root.WorkbenchSync.Conflict && root.WorkbenchSync.ConflictVersion == msg.ExpectedVersion {
 				return root, nil
 			}

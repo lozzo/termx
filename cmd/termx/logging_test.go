@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/proto/wire"
-	"github.com/lozzow/termx/shared/connection"
 )
 
 func TestResolveLogFilePathPrefersExplicitValue(t *testing.T) {
@@ -97,18 +97,18 @@ func TestV3PathPolicy(t *testing.T) {
 
 func TestResolveV3SocketRequiresRegisteredLocalRoute(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	if socket, err := resolveV3SocketForConnectionRegistry("", connection.DefaultRegistry()); err != nil || socket == "" {
+	if socket, err := resolveV3SocketForConnectionRegistry("", endpointdomain.DefaultRegistry()); err != nil || socket == "" {
 		t.Fatalf("default local registry socket = %q, err=%v", socket, err)
 	}
-	if _, err := resolveV3SocketForConnectionRegistry("", connection.Registry{}); err == nil {
+	if _, err := resolveV3SocketForConnectionRegistry("", endpointdomain.Registry{}); err == nil {
 		t.Fatal("empty registry must not start an unregistered local daemon")
 	}
-	remote := connection.NewSSHEndpoint("remote", "Remote", "remote.example", "", "auto", connection.ConnectOnDemand)
-	registry := connection.Registry{Version: connection.RegistryVersion, Default: "remote", Endpoints: map[connection.EndpointID]connection.Endpoint{"remote": remote}}
+	remote := endpointdomain.NewSSHEndpoint("remote", "Remote", "remote.example", "", "auto", endpointdomain.ConnectOnDemand)
+	registry := endpointdomain.Registry{Version: endpointdomain.RegistryVersion, Default: "remote", Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{"remote": remote}}
 	if _, err := resolveV3SocketForConnectionRegistry("", registry); err == nil {
 		t.Fatal("remote-only registry must not fall back to the default local socket")
 	}
-	mixed := connection.DefaultRegistry()
+	mixed := endpointdomain.DefaultRegistry()
 	mixed.Endpoints["remote"] = remote
 	mixed.Default = "remote"
 	if _, err := resolveV3SocketForConnectionRegistry("", mixed); err == nil {

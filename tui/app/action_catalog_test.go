@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/lozzow/termx/tui/testkit"
 	"reflect"
 	"strings"
 	"testing"
 
 	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/shortcut"
 	"github.com/lozzow/termx/tui/state"
 )
@@ -65,34 +66,34 @@ func TestDefaultShortcutActionsReachObservableOwnerBoundary(t *testing.T) {
 
 type defaultActionExecution struct {
 	root             state.Root
-	terminal         *services.FakeTerminalService
-	core             *services.FakeCoreClient
-	clipboard        *services.FakeClipboardService
-	workbenchStorage *services.FakeWorkbenchStorageService
-	clipboardStorage *services.FakeClipboardStorageService
+	terminal         *testkit.FakeTerminalService
+	core             *testkit.FakeCoreClient
+	clipboard        *testkit.FakeClipboardService
+	workbenchStorage *testkit.FakeWorkbenchStorageService
+	clipboardStorage *testkit.FakeClipboardStorageService
 	messageTypes     []string
 	quit             bool
 }
 
 func runDefaultActionToOwnerBoundary(t *testing.T, root state.Root, invocation actiondomain.Invocation) defaultActionExecution {
 	t.Helper()
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{EndpointID: "west", TerminalID: "term-1", Channel: 11},
-		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{EndpointID: "west", TerminalID: "term-1", Channel: 11},
+		ListResult: port.TerminalListResult{Items: []port.TerminalPoolItem{
 			{EndpointID: "west", TerminalID: "term-1", Title: "main", State: "running", Tags: map[string]string{"role": "shell"}},
 			{EndpointID: "west", TerminalID: "term-2", Title: "logs", State: "exited", Tags: map[string]string{"role": "build"}},
 		}},
 	}
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "copy-token", 98, 0, []state.HistoryRow{{Text: "latest", LineID: 30}})}},
-		OlderResponses:  []services.HistoryResult{{Window: historyWindowForApp(state.HistoryWindowPrepend, "term-1", "copy-token", 98, 0, []state.HistoryRow{{Text: "older", LineID: 5}})}},
-		NewerResponses:  []services.HistoryResult{{Window: historyWindowForApp(state.HistoryWindowAppend, "term-1", "copy-token", 98, 0, []state.HistoryRow{{Text: "newer", LineID: 40}})}},
-		OldestResponses: []services.HistoryResult{{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "copy-token", 98, 0, []state.HistoryRow{{Text: "oldest", LineID: 1}})}},
-		CopyResponses:   []services.HistoryCopyRangeResult{{Text: "alpha\nbravo"}},
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "copy-token", 98, 0, []state.HistoryRow{{Text: "latest", LineID: 30}})}},
+		OlderResponses:  []port.HistoryResult{{Window: historyWindowForApp(state.HistoryWindowPrepend, "term-1", "copy-token", 98, 0, []state.HistoryRow{{Text: "older", LineID: 5}})}},
+		NewerResponses:  []port.HistoryResult{{Window: historyWindowForApp(state.HistoryWindowAppend, "term-1", "copy-token", 98, 0, []state.HistoryRow{{Text: "newer", LineID: 40}})}},
+		OldestResponses: []port.HistoryResult{{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "copy-token", 98, 0, []state.HistoryRow{{Text: "oldest", LineID: 1}})}},
+		CopyResponses:   []port.HistoryCopyRangeResult{{Text: "alpha\nbravo"}},
 	}
-	clipboard := &services.FakeClipboardService{ReadResult: services.ClipboardReadResult{Text: "system clip"}}
-	workbenchStorage := &services.FakeWorkbenchStorageService{}
-	clipboardStorage := &services.FakeClipboardStorageService{}
+	clipboard := &testkit.FakeClipboardService{ReadResult: port.ClipboardReadResult{Text: "system clip"}}
+	workbenchStorage := &testkit.FakeWorkbenchStorageService{}
+	clipboardStorage := &testkit.FakeClipboardStorageService{}
 	copyDeps := CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 3}
 	liveDeps := LiveDeps{Terminal: terminal}
 	reducer := ComposeReducers(
@@ -162,7 +163,7 @@ func (execution defaultActionExecution) reachedOwnerBoundary(id actiondomain.ID,
 	return !reflect.DeepEqual(before, after)
 }
 
-func terminalServiceCallCount(service *services.FakeTerminalService) int {
+func terminalServiceCallCount(service *testkit.FakeTerminalService) int {
 	return len(service.Attaches) + len(service.Detaches) + len(service.Lists) + len(service.Creates) +
 		len(service.Restarts) + len(service.Reconnects) + len(service.Kills) + len(service.Removes) +
 		len(service.Edits) + len(service.TagEdits) + len(service.Inputs) + len(service.Resizes) + len(service.Surfaces)
@@ -262,7 +263,7 @@ type terminalMutationVector struct {
 	Resizes    []state.TerminalRef
 }
 
-func terminalMutationVectorFromService(terminal *services.FakeTerminalService) terminalMutationVector {
+func terminalMutationVectorFromService(terminal *testkit.FakeTerminalService) terminalMutationVector {
 	var vector terminalMutationVector
 	for _, request := range terminal.Attaches {
 		vector.Attaches = append(vector.Attaches, state.NewTerminalRef(request.EndpointID, request.TerminalID))
@@ -363,7 +364,7 @@ func expectedDefaultActionTerminalMutations(invocation actiondomain.Invocation) 
 	}
 }
 
-func assertNoCoreServiceFallback(t *testing.T, core *services.FakeCoreClient, messages []string) {
+func assertNoCoreServiceFallback(t *testing.T, core *testkit.FakeCoreClient, messages []string) {
 	t.Helper()
 	assertRef := func(operation string, endpoint state.EndpointID, terminalID string) {
 		if ref := state.NewTerminalRef(endpoint, terminalID); ref.EndpointID != "west" || ref.TerminalID != "term-1" {
@@ -414,7 +415,7 @@ func TestTerminalPickerSplitAttachFailureKeepsDeclaredPartialResult(t *testing.T
 		t.Fatalf("split transaction must declare its endpoint-aware target before attach: pane=%q request=%#v", newPaneID, request)
 	}
 
-	terminal := &services.FakeTerminalService{AttachErr: errors.New("west attach denied")}
+	terminal := &testkit.FakeTerminalService{AttachErr: errors.New("west attach denied")}
 	poolReducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
 	next, effects = poolReducer(next, request)
 	if len(effects) != 1 {
@@ -482,7 +483,7 @@ func TestTerminalPoolCombinationAttachFailuresKeepDeclaredSlots(t *testing.T) {
 			if !ok || request.EndpointID != "west" || request.TerminalID != "term-1" {
 				t.Fatalf("combination must declare endpoint-aware attach target: request=%#v ok=%v", request, ok)
 			}
-			terminal := &services.FakeTerminalService{AttachErr: errors.New("west attach denied")}
+			terminal := &testkit.FakeTerminalService{AttachErr: errors.New("west attach denied")}
 			poolReducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
 			next, effects = poolReducer(next, request)
 			if len(effects) != 1 {

@@ -3,12 +3,13 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/lozzow/termx/tui/testkit"
 	"io"
 	"testing"
 
 	"github.com/lozzow/termx/tui/input"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 	"github.com/lozzow/termx/tui/terminalhost"
 )
@@ -89,7 +90,7 @@ func BenchmarkCopyHistoryRuntimeWheelBatch(b *testing.B) {
 	renderer := render.NewRenderer(render.DefaultTheme())
 	runtime := NewAppRuntime(
 		root,
-		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}})),
+		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}})),
 		func(root state.Root) render.Frame {
 			return renderer.Render(builder.Build(root))
 		},
@@ -107,7 +108,7 @@ func BenchmarkCopyHistoryRuntimeWheelBatchANSI(b *testing.B) {
 	renderer := render.NewRenderer(render.DefaultTheme())
 	runtime := NewAppRuntime(
 		root,
-		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}})),
+		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}})),
 		func(root state.Root) render.Frame {
 			return renderer.RenderANSI(builder.Build(root))
 		},
@@ -125,7 +126,7 @@ func BenchmarkCopyHistoryRuntimeWheelBatchIncremental(b *testing.B) {
 	renderer := render.NewRenderer(render.DefaultTheme())
 	runtime := NewAppRuntime(
 		root,
-		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}})),
+		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}})),
 		func(root state.Root) render.Frame {
 			return renderer.RenderANSI(builder.Build(root))
 		},
@@ -145,7 +146,7 @@ func BenchmarkCopyHistoryRuntimeWheelAlternatingIncremental(b *testing.B) {
 	renderer := render.NewRenderer(render.DefaultTheme())
 	runtime := NewAppRuntime(
 		root,
-		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}})),
+		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}})),
 		func(root state.Root) render.Frame {
 			return renderer.RenderANSI(builder.Build(root))
 		},
@@ -201,7 +202,7 @@ func BenchmarkCopyHistoryRuntimeOlderResultIncremental(b *testing.B) {
 	window := copyHistoryPerfOlderWindow(128, root.History)
 	runtime := NewAppRuntime(
 		root,
-		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}})),
+		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}})),
 		func(root state.Root) render.Frame {
 			return renderer.RenderANSI(builder.Build(root))
 		},
@@ -213,7 +214,7 @@ func BenchmarkCopyHistoryRuntimeOlderResultIncremental(b *testing.B) {
 		b.Fatal("expected copy history patch cache")
 	}
 	cache.Metadata = render.RenderMetadata{Width: 180, Height: 60}
-	msg := CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 1, Window: window}}
+	msg := CopyModeHistoryResultMsg{Result: port.HistoryResult{RequestID: 1, Window: window}}
 
 	b.ReportAllocs()
 	b.ResetTimer()

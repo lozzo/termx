@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/proto/wire"
-	"github.com/lozzow/termx/shared/connection"
 	"github.com/spf13/cobra"
 )
 
@@ -71,22 +71,22 @@ func newFileCommand(socket, logFile *string) *cobra.Command {
 	return command
 }
 
-func (runtime *fileCommandRuntime) open(ctx context.Context, cmd *cobra.Command, endpointValue string) (*protocol.Client, connection.Endpoint, func(), error) {
+func (runtime *fileCommandRuntime) open(ctx context.Context, cmd *cobra.Command, endpointValue string) (*protocol.Client, endpointdomain.Endpoint, func(), error) {
 	if runtime.timeout <= 0 {
-		return nil, connection.Endpoint{}, func() {}, usageCLIError("--timeout must be positive")
+		return nil, endpointdomain.Endpoint{}, func() {}, usageCLIError("--timeout must be positive")
 	}
 	registry, err := loadNormalizedConnectionRegistry()
 	if err != nil {
-		return nil, connection.Endpoint{}, func() {}, err
+		return nil, endpointdomain.Endpoint{}, func() {}, err
 	}
 	endpoint, err := resolveEndpointConfig(endpointValue, registry)
 	if err != nil {
-		return nil, connection.Endpoint{}, func() {}, err
+		return nil, endpointdomain.Endpoint{}, func() {}, err
 	}
 	cmd.Root().SilenceUsage = true
 	client, closeClient, err := openEndpointProtocolClient(ctx, endpoint, *runtime.socket, *runtime.logFile)
 	if err != nil {
-		return nil, connection.Endpoint{}, func() {}, classifyCLIError(err)
+		return nil, endpointdomain.Endpoint{}, func() {}, classifyCLIError(err)
 	}
 	return client, endpoint, closeClient, nil
 }
@@ -398,7 +398,7 @@ func runFileSingleMutation(cmd *cobra.Command, runtime *fileCommandRuntime, endp
 	return writeFileOperationResults(cmd, endpoint.ID, "file_operation", []protocol.FileOperationResult{*result}, jsonOutput)
 }
 
-func writeFileOperationResults(cmd *cobra.Command, endpointID connection.EndpointID, kind string, results []protocol.FileOperationResult, jsonOutput bool) error {
+func writeFileOperationResults(cmd *cobra.Command, endpointID endpointdomain.EndpointID, kind string, results []protocol.FileOperationResult, jsonOutput bool) error {
 	views := make([]fileOperationView, 0, len(results))
 	failures := 0
 	for _, result := range results {

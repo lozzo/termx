@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lozzow/termx/tui/services"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -35,10 +35,10 @@ func (PromptPathCompletionRequestMsg) SkipRender() bool {
 }
 
 // PromptPathCompletionResultMsg 是 endpoint daemon 目录候选回到 TUI reducer 的结果。
-// Request 是 stale guard 的真值快照，Result.EndpointID 由 EndpointManager 回填。
+// Request 是 stale guard 的真值快照，Result.EndpointID 由 client runtime adapter 回填。
 type PromptPathCompletionResultMsg struct {
 	Request PromptPathCompletionRequestMsg
-	Result  services.PathListDirectoriesResult
+	Result  port.PathListDirectoriesResult
 	Err     error
 }
 
@@ -75,7 +75,7 @@ func reducePromptPathCompletionRequest(root state.Root, msg PromptPathCompletion
 			if deps.Path == nil {
 				return PromptPathCompletionResultMsg{Request: msg, Err: fmt.Errorf("path service missing")}
 			}
-			result, err := deps.Path.ListDirectories(ctx, services.PathListDirectoriesRequest{
+			result, err := deps.Path.ListDirectories(ctx, port.PathListDirectoriesRequest{
 				EndpointID: msg.EndpointID,
 				Prefix:     msg.Prefix,
 				Limit:      msg.Limit,
@@ -184,7 +184,7 @@ func promptPathCompletionPrefix(value string, cursor int) string {
 	return string(runes[:cursor])
 }
 
-func promptPathCompletionSuggestions(result services.PathListDirectoriesResult, err error) (string, []string, string) {
+func promptPathCompletionSuggestions(result port.PathListDirectoriesResult, err error) (string, []string, string) {
 	title := "path"
 	if result.BasePath != "" {
 		title = "path: " + result.BasePath

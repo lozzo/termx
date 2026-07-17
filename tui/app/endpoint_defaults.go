@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lozzow/termx/tui/services"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -25,10 +25,10 @@ func (EndpointDefaultsRequestMsg) SkipRender() bool {
 }
 
 // EndpointDefaultsResultMsg 是 path.defaults 查询回投。
-// Request.EndpointID 是 stale guard；Result.EndpointID 由 EndpointManager 回填。
+// Request.EndpointID 是 stale guard；Result.EndpointID 由 client runtime adapter 回填。
 type EndpointDefaultsResultMsg struct {
 	Request EndpointDefaultsRequestMsg
-	Result  services.PathDefaultsResult
+	Result  port.PathDefaultsResult
 	Err     error
 }
 
@@ -65,7 +65,7 @@ func reduceEndpointDefaultsRequest(root state.Root, msg EndpointDefaultsRequestM
 			if deps.Path == nil {
 				return EndpointDefaultsResultMsg{Request: request, Err: fmt.Errorf("path service missing")}
 			}
-			result, err := deps.Path.Defaults(ctx, services.PathDefaultsRequest{EndpointID: endpointID})
+			result, err := deps.Path.Defaults(ctx, port.PathDefaultsRequest{EndpointID: endpointID})
 			return EndpointDefaultsResultMsg{Request: request, Result: result, Err: err}
 		},
 	}}

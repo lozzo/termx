@@ -19,7 +19,7 @@ func TestRenderPackageDoesNotImportBubbleTea(t *testing.T) {
 func TestRenderPackageDoesNotImportRuntimeOrServices(t *testing.T) {
 	forbidden := []string{
 		"github.com/lozzow/termx/tui/app",
-		"github.com/lozzow/termx/tui/services",
+		"github.com/lozzow/termx/tui/port",
 		"github.com/lozzow/termx/tui/terminalhost",
 	}
 	assertRenderImports(t, func(file string, path string) {

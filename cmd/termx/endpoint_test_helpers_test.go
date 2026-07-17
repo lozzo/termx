@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/lozzow/termx/shared/connection"
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 )
 
 func TestMain(m *testing.M) {
@@ -19,27 +19,27 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func testLocalEndpoint(id connection.EndpointID, label, socket string, mode connection.ConnectMode, enabled bool) connection.Endpoint {
-	endpoint := connection.NewLocalEndpoint(id, label, socket, mode)
+func testLocalEndpoint(id endpointdomain.EndpointID, label, socket string, mode endpointdomain.ConnectMode, enabled bool) endpointdomain.Endpoint {
+	endpoint := endpointdomain.NewLocalEndpoint(id, label, socket, mode)
 	endpoint.Enabled = enabled
 	return endpoint
 }
 
-func testSSHEndpoint(id connection.EndpointID, label, host, credentialRef, remoteSocket string, mode connection.ConnectMode, enabled bool) connection.Endpoint {
-	endpoint := connection.NewSSHEndpoint(id, label, host, credentialRef, remoteSocket, mode)
+func testSSHEndpoint(id endpointdomain.EndpointID, label, host, credentialRef, remoteSocket string, mode endpointdomain.ConnectMode, enabled bool) endpointdomain.Endpoint {
+	endpoint := endpointdomain.NewSSHEndpoint(id, label, host, credentialRef, remoteSocket, mode)
 	endpoint.Enabled = enabled
 	return endpoint
 }
 
-func testManagedEndpoint(id connection.EndpointID, label, deviceID, fingerprint, credentialRef string, relayMode connection.RelayMode, mode connection.ConnectMode, enabled bool) connection.Endpoint {
-	endpoint := connection.NewManagedEndpoint(id, label, connection.DaemonIdentity{DeviceID: deviceID, DeviceFingerprint: fingerprint}, deviceID, credentialRef, relayMode, mode)
+func testManagedEndpoint(id endpointdomain.EndpointID, label, deviceID, fingerprint, credentialRef string, relayMode endpointdomain.RelayMode, mode endpointdomain.ConnectMode, enabled bool) endpointdomain.Endpoint {
+	endpoint := endpointdomain.NewManagedEndpoint(id, label, endpointdomain.DaemonIdentity{DeviceID: deviceID, DeviceFingerprint: fingerprint}, deviceID, credentialRef, relayMode, mode)
 	endpoint.Enabled = enabled
 	return endpoint
 }
 
-func testOnlyRoute(endpoint connection.Endpoint) connection.AccessRoute {
+func testOnlyRoute(endpoint endpointdomain.Endpoint) endpointdomain.AccessRoute {
 	for _, route := range endpoint.Routes {
 		return route
 	}
-	return connection.AccessRoute{}
+	return endpointdomain.AccessRoute{}
 }

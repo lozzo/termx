@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	corev2 "github.com/lozzow/termx/core"
-	"github.com/lozzow/termx/shared/connection"
 	"github.com/lozzow/termx/shared/filelock"
 	"github.com/lozzow/termx/shared/remoteauth"
 	unixtransport "github.com/lozzow/termx/shared/transport/unix"
@@ -25,7 +25,7 @@ func TestPairCreateAndImportUsesTicketThenClientBoundCredential(t *testing.T) {
 	if err != nil || !ticketClaims.ScopeCeiling.AllowDaemon || bundle.GetIdentity().GetDeviceId() == "" {
 		t.Fatalf("created pairing bundle = (%#v, %#v, %v)", bundle, ticketClaims, err)
 	}
-	canonicalBundle, err := connection.ParseEndpointBootstrapBundle(created)
+	canonicalBundle, err := endpointdomain.ParseEndpointBootstrapBundle(created)
 	if err != nil || canonicalBundle.GetBundleId() != bundle.GetBundleId() {
 		t.Fatalf("pair create did not emit canonical EndpointBootstrapBundleV2: bundle=%#v err=%v", canonicalBundle, err)
 	}
@@ -33,7 +33,7 @@ func TestPairCreateAndImportUsesTicketThenClientBoundCredential(t *testing.T) {
 		t.Fatalf("static pairing bundle leaked long-lived credential: %s", created)
 	}
 	registryPath := filepath.Join(configHome, "termx", "connections.yaml")
-	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, connection.RelayDirect)
+	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayDirect)
 	pairSocket := filepath.Join(runtimeDir, "daemon.sock.pair")
 	imported := executePairCommand(t, created, "pair", "import", "--id", "lab", "--registry", registryPath, "--pair-socket", pairSocket, "-")
 	registryPayload, err := os.ReadFile(registryPath)
@@ -43,13 +43,13 @@ func TestPairCreateAndImportUsesTicketThenClientBoundCredential(t *testing.T) {
 	if bytes.Contains(registryPayload, created) || strings.Contains(string(registryPayload), "capability_grant") || strings.Contains(string(registryPayload), "termx-grant-v2") {
 		t.Fatalf("registry leaked ticket or grant: %s", registryPayload)
 	}
-	registry, err := connection.Load(registryPath)
+	registry, err := endpointdomain.Load(registryPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	endpoint := registry.Endpoints["lab"]
 	route, ok := endpoint.Route("cloud")
-	if !ok || route.CredentialRef == "" || route.RelayMode != connection.RelayDirect || endpoint.DaemonIdentity.DeviceFingerprint != bundle.GetIdentity().GetDeviceFingerprint() {
+	if !ok || route.CredentialRef == "" || route.RelayMode != endpointdomain.RelayDirect || endpoint.DaemonIdentity.DeviceFingerprint != bundle.GetIdentity().GetDeviceFingerprint() {
 		t.Fatalf("imported endpoint = %#v", endpoint)
 	}
 	credential, err := remoteauth.NewCredentialStore(filepath.Join(stateHome, "termx", "remote-v2", "credentials")).Resolve(route.CredentialRef)
@@ -74,15 +74,15 @@ func TestPairImportDoesNotInventManagedRouteForExistingSSHEndpoint(t *testing.T)
 		t.Fatal(err)
 	}
 	registryPath := filepath.Join(configHome, "termx", "connections.yaml")
-	ssh := connection.NewSSHEndpoint("lab", "Existing SSH label", "lab.example", "ssh:lab", "auto", connection.ConnectOnDemand)
-	if err := connection.Save(registryPath, connection.Registry{Version: connection.RegistryVersion, Default: "lab", Endpoints: map[connection.EndpointID]connection.Endpoint{"lab": ssh}}); err != nil {
+	ssh := endpointdomain.NewSSHEndpoint("lab", "Existing SSH label", "lab.example", "ssh:lab", "auto", endpointdomain.ConnectOnDemand)
+	if err := endpointdomain.Save(registryPath, endpointdomain.Registry{Version: endpointdomain.RegistryVersion, Default: "lab", Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{"lab": ssh}}); err != nil {
 		t.Fatal(err)
 	}
 	err = executePairCommandError(created, "pair", "import", "--id", "lab", "--registry", registryPath, "--pair-socket", v3PairingSocketPath(socket), "-")
 	if err == nil || !strings.Contains(err.Error(), "no direct-tls or managed-webrtc route") {
 		t.Fatalf("SSH-only pairing import error = %v", err)
 	}
-	registry, err := connection.Load(registryPath)
+	registry, err := endpointdomain.Load(registryPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,17 +134,17 @@ func TestPairImportRegistryFailureKeepsRecoverableBoundCredential(t *testing.T) 
 		t.Fatal(err)
 	}
 	registryPath := filepath.Join(configHome, "termx", "connections.yaml")
-	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, connection.RelayAuto)
+	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayAuto)
 	wantErr := errors.New("injected registry write failure")
 	previousUpdate := updateV3ConnectionRegistry
-	updateV3ConnectionRegistry = func(_ context.Context, path string, _ bool, mutate func(connection.Registry) (connection.Registry, error)) (connection.Registry, error) {
-		registry, loadErr := connection.Load(path)
+	updateV3ConnectionRegistry = func(_ context.Context, path string, _ bool, mutate func(endpointdomain.Registry) (endpointdomain.Registry, error)) (endpointdomain.Registry, error) {
+		registry, loadErr := endpointdomain.Load(path)
 		if loadErr != nil {
-			return connection.Registry{}, loadErr
+			return endpointdomain.Registry{}, loadErr
 		}
 		updated, updateErr := mutate(registry)
 		if updateErr != nil {
-			return connection.Registry{}, updateErr
+			return endpointdomain.Registry{}, updateErr
 		}
 		return updated, wantErr
 	}
@@ -172,7 +172,7 @@ func TestPairImportRequiresExplicitScopeExpansionConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 	registryPath := filepath.Join(configHome, "termx", "connections.yaml")
-	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, connection.RelayAuto)
+	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayAuto)
 	pairSocket := v3PairingSocketPath(socket)
 	executePairCommand(t, narrow, "pair", "import", "--id", "lab", "--registry", registryPath, "--pair-socket", pairSocket, "-")
 
@@ -194,7 +194,7 @@ func TestPairImportRootTimeoutCancelsLockedDaemonHelloAndReleasesLocks(t *testin
 		t.Fatal(err)
 	}
 	registryPath := filepath.Join(configHome, "termx", "connections.yaml")
-	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, connection.RelayAuto)
+	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayAuto)
 
 	hungSocket := filepath.Join(t.TempDir(), "hung.sock")
 	previousStart := startV3Daemon
@@ -258,7 +258,7 @@ func TestPairImportRootTimeoutCancelsPairingSocketDialAndReleasesLocks(t *testin
 		t.Fatal(err)
 	}
 	registryPath := filepath.Join(configHome, "termx", "connections.yaml")
-	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, connection.RelayAuto)
+	savePairTestManagedEndpoint(t, registryPath, "lab", bundle, endpointdomain.RelayAuto)
 
 	previousDial := dialV3PairingTransport
 	dialStarted := make(chan struct{})
@@ -288,7 +288,7 @@ func TestPairImportRootTimeoutCancelsPairingSocketDialAndReleasesLocks(t *testin
 	assertPairImportLocksReleased(t, stateHome, registryPath, "lab", bundle)
 }
 
-func assertPairImportLocksReleased(t *testing.T, stateHome string, registryPath string, endpointID connection.EndpointID, bundle *remoteauth.PairingBundle) {
+func assertPairImportLocksReleased(t *testing.T, stateHome string, registryPath string, endpointID endpointdomain.EndpointID, bundle *remoteauth.PairingBundle) {
 	t.Helper()
 	lockCtx, cancelLock := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	registryLock, lockErr := filelock.AcquireContext(lockCtx, registryPath+".lock", false)
@@ -378,14 +378,14 @@ func configurePairCommandTest(t *testing.T) (string, string, string) {
 	return runtimeDir, stateHome, configHome
 }
 
-func savePairTestManagedEndpoint(t *testing.T, registryPath string, endpointID connection.EndpointID, bundle *remoteauth.PairingBundle, relayMode connection.RelayMode) {
+func savePairTestManagedEndpoint(t *testing.T, registryPath string, endpointID endpointdomain.EndpointID, bundle *remoteauth.PairingBundle, relayMode endpointdomain.RelayMode) {
 	t.Helper()
-	identity := connection.DaemonIdentity{
+	identity := endpointdomain.DaemonIdentity{
 		DeviceID: bundle.GetIdentity().GetDeviceId(), DeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint(),
 	}
-	endpoint := connection.NewManagedEndpoint(endpointID, "Existing managed endpoint", identity, identity.DeviceID, "", relayMode, connection.ConnectOnDemand)
-	if err := connection.Save(registryPath, connection.Registry{
-		Version: connection.RegistryVersion, Default: endpointID, Endpoints: map[connection.EndpointID]connection.Endpoint{endpointID: endpoint},
+	endpoint := endpointdomain.NewManagedEndpoint(endpointID, "Existing managed endpoint", identity, identity.DeviceID, "", relayMode, endpointdomain.ConnectOnDemand)
+	if err := endpointdomain.Save(registryPath, endpointdomain.Registry{
+		Version: endpointdomain.RegistryVersion, Default: endpointID, Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{endpointID: endpoint},
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/lozzow/termx/tui/testkit"
 	"log/slog"
 	"strings"
 	"sync"
@@ -11,23 +12,23 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/tui/input"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
 
 type refreshingInputTerminalService struct {
-	services.FakeTerminalService
+	testkit.FakeTerminalService
 	nextChannel         uint16
 	staleChannels       map[uint16]bool
 	staleKnownOnAttach  bool
 	knownActiveChannels map[uint16]bool
 }
 
-func (service *refreshingInputTerminalService) Attach(_ context.Context, req services.TerminalAttachRequest) (services.TerminalAttachResult, error) {
+func (service *refreshingInputTerminalService) Attach(_ context.Context, req port.TerminalAttachRequest) (port.TerminalAttachResult, error) {
 	service.Attaches = append(service.Attaches, req)
 	if service.AttachErr != nil {
-		return services.TerminalAttachResult{}, service.AttachErr
+		return port.TerminalAttachResult{}, service.AttachErr
 	}
 	if service.staleChannels == nil {
 		service.staleChannels = make(map[uint16]bool)
@@ -73,7 +74,7 @@ func (service *refreshingInputTerminalService) Attach(_ context.Context, req ser
 	return result, nil
 }
 
-func (service *refreshingInputTerminalService) SendInput(_ context.Context, req services.TerminalInputRequest) error {
+func (service *refreshingInputTerminalService) SendInput(_ context.Context, req port.TerminalInputRequest) error {
 	service.Inputs = append(service.Inputs, req)
 	if service.InputErr != nil {
 		return service.InputErr
@@ -85,12 +86,12 @@ func (service *refreshingInputTerminalService) SendInput(_ context.Context, req 
 }
 
 type blockingOrderedInputTerminalService struct {
-	services.FakeTerminalService
+	testkit.FakeTerminalService
 	firstStarted chan struct{}
 	releaseFirst chan struct{}
 	done         chan struct{}
 	mu           sync.Mutex
-	inputs       []services.TerminalInputRequest
+	inputs       []port.TerminalInputRequest
 }
 
 func newBlockingOrderedInputTerminalService() *blockingOrderedInputTerminalService {
@@ -101,7 +102,7 @@ func newBlockingOrderedInputTerminalService() *blockingOrderedInputTerminalServi
 	}
 }
 
-func (service *blockingOrderedInputTerminalService) SendInput(_ context.Context, req services.TerminalInputRequest) error {
+func (service *blockingOrderedInputTerminalService) SendInput(_ context.Context, req port.TerminalInputRequest) error {
 	service.mu.Lock()
 	isFirst := len(service.inputs) == 0
 	service.inputs = append(service.inputs, req)
@@ -183,7 +184,7 @@ func hasTerminalPoolListEffect(effects []Effect) bool {
 }
 
 func TestLiveInputRoutesLSSequenceAcrossTwoTiledPaneBindings(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	shell := state.DefaultShell().
 		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1").
 		SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
@@ -199,7 +200,7 @@ func TestLiveInputRoutesLSSequenceAcrossTwoTiledPaneBindings(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain setup: %v", err)
@@ -250,7 +251,7 @@ func TestTerminalInputRouterLogsActiveViewRoute(t *testing.T) {
 	t.Setenv(tuiInputTraceEnv, "1")
 	var logs strings.Builder
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	root := state.Root{
 		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
 	}
@@ -290,7 +291,7 @@ func TestBracketedPasteBypassesShortcutDispatchAsOneTerminalSemanticEvent(t *tes
 		{name: "bracketed downstream", bracketed: true, want: "\x1b[200~\x07danger\n\x1b[201~"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			terminal := &services.FakeTerminalService{}
+			terminal := &testkit.FakeTerminalService{}
 			root := state.Root{Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")}
 			root.TerminalViews = root.TerminalViews.BindPane(state.NewEndpointPaneTerminalView(
 				"west", state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true,
@@ -320,7 +321,7 @@ func TestBracketedPasteBypassesShortcutDispatchAsOneTerminalSemanticEvent(t *tes
 }
 
 func TestTerminalInputRouterRoutesEndpointBinding(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	root := state.Root{
 		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
 	}
@@ -363,7 +364,7 @@ func TestInteractiveRuntimeSerializesAsyncTerminalInputBytes(t *testing.T) {
 		host,
 		NewAsyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain setup: %v", err)
@@ -399,7 +400,7 @@ func TestInteractiveRuntimeSerializesAsyncTerminalInputBytes(t *testing.T) {
 }
 
 func TestCopyModeBoundToSiblingPaneDoesNotConsumeActivePaneInput(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	shell := state.DefaultShell().
 		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-shared").
 		SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-shared"}, state.SplitDirectionVertical).
@@ -421,7 +422,7 @@ func TestCopyModeBoundToSiblingPaneDoesNotConsumeActivePaneInput(t *testing.T) {
 		BindPane(state.NewPaneTerminalView("pane-2", "term-shared", 8, 80, 24, state.TerminalResizeRoleFollower, "surface-2", state.TerminalPaneViewID("pane-2"), false))
 	reducer := ComposeReducers(
 		NewUIInputReducer(),
-		NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}}),
+		NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}}),
 		NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal}),
 	)
 
@@ -439,7 +440,7 @@ func TestCopyModeBoundToSiblingPaneDoesNotConsumeActivePaneInput(t *testing.T) {
 }
 
 func TestLiveInputRoutesBetweenTiledAndFloatingSharedTerminalChannels(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-shared")
 	var result state.FloatingCommandResult
 	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -464,7 +465,7 @@ func TestLiveInputRoutesBetweenTiledAndFloatingSharedTerminalChannels(t *testing
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain setup: %v", err)
@@ -500,7 +501,7 @@ func TestLiveInputRoutesBetweenTiledAndFloatingSharedTerminalChannels(t *testing
 }
 
 func TestLiveInputRoutesBetweenTiledAndFloatingDifferentTerminals(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-pane")
 	var result state.FloatingCommandResult
 	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -524,7 +525,7 @@ func TestLiveInputRoutesBetweenTiledAndFloatingDifferentTerminals(t *testing.T) 
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain setup: %v", err)
@@ -560,8 +561,8 @@ func TestLiveInputRoutesBetweenTiledAndFloatingDifferentTerminals(t *testing.T) 
 }
 
 func TestTerminalPoolReattachCurrentPaneDoesNotOverwriteSiblingBinding(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      21,
 			Cols:         80,
@@ -601,8 +602,8 @@ func TestTerminalPoolReattachCurrentPaneDoesNotOverwriteSiblingBinding(t *testin
 }
 
 func TestTerminalPoolAttachRoutesEndpointRef(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      31,
 			Cols:         100,
@@ -653,8 +654,8 @@ func TestTerminalInputSerialKeyIsEndpointScoped(t *testing.T) {
 func TestTerminalPoolAttachExitedTerminalDoesNotCacheLifecycleBeforeSurface(t *testing.T) {
 	exitedAt := time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC)
 	exitCode := 23
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{
 			TerminalID:   "term-exited",
 			Channel:      21,
 			Cols:         80,
@@ -698,8 +699,8 @@ func TestTerminalPoolAttachExitedTerminalDoesNotCacheLifecycleBeforeSurface(t *t
 }
 
 func TestLiveEffectsPreserveLifecycleBoundaryOnSurfaceMessage(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		SurfaceResult: services.TerminalSurfaceResult{
+	terminal := &testkit.FakeTerminalService{
+		SurfaceResult: port.TerminalSurfaceResult{
 			Ready: true,
 			Snapshot: state.LiveSurfaceSnapshot{
 				TerminalID: "term-1",
@@ -736,7 +737,7 @@ func TestLiveEffectsPreserveLifecycleBoundaryOnSurfaceMessage(t *testing.T) {
 }
 
 func TestInteractionModeContentClickThenKeyUsesTerminalInputRoute(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	root := state.Root{
 		Shell: state.DefaultShell().
 			BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1").
@@ -750,7 +751,7 @@ func TestInteractionModeContentClickThenKeyUsesTerminalInputRoute(t *testing.T) 
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain setup: %v", err)
@@ -775,8 +776,8 @@ func TestInteractionModeContentClickThenKeyUsesTerminalInputRoute(t *testing.T) 
 }
 
 func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{
 			TerminalID: "term-1",
 			Channel:    9,
 			Cols:       78,
@@ -838,7 +839,7 @@ func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
 }
 
 func TestLiveAttachMarksViewPendingBeforeResult(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
 	root := state.Root{Shell: state.DefaultShell(), RuntimeSurfaceID: "runtime-a"}
 
@@ -864,7 +865,7 @@ func TestLiveAttachMarksViewPendingBeforeResult(t *testing.T) {
 
 func TestLiveAttachResultRefreshesTerminalPoolProjection(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
-	next, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{
+	next, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-1",
 		Channel:      7,
 		Cols:         80,
@@ -905,7 +906,7 @@ func TestLiveAttachResultForBackgroundViewDoesNotReplaceActiveProjection(t *test
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-main", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-main", state.TerminalPaneViewID(state.DefaultPaneID), true)).
 		BindPane(state.NewEndpointPaneTerminalView("west", "pane-remote", "remote", 0, 100, 30, state.TerminalResizeRoleFollower, "surface-remote", state.TerminalPaneViewID("pane-remote"), false))
 
-	next, _ := reducer(root, LiveAttachResultMsg{EndpointID: "west", TerminalID: "remote", ViewID: state.TerminalPaneViewID("pane-remote"), Result: services.TerminalAttachResult{
+	next, _ := reducer(root, LiveAttachResultMsg{EndpointID: "west", TerminalID: "remote", ViewID: state.TerminalPaneViewID("pane-remote"), Result: port.TerminalAttachResult{
 		EndpointID:    "west",
 		TerminalID:    "remote",
 		Channel:       9,
@@ -1032,12 +1033,12 @@ func TestLiveAttachmentStoreSupportsSameTerminalAcrossTwoPanes(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneEmpty}, state.SplitDirectionVertical)}
 
 	var effects []Effect
-	root, effects = reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 40, Rows: 12, ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: "surface", ViewID: state.TerminalPaneViewID("pane-2")}})
+	root, effects = reducer(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 40, Rows: 12, ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: "surface", ViewID: state.TerminalPaneViewID("pane-2")}})
 	if msg := firstWorkbenchPersistEffect(t, effects); msg.Reason != "terminal.attach" {
 		t.Fatalf("expected terminal attach persist request, got %#v", msg)
 	}
 	root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
-	root, _ = reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-1", Channel: 7, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface", ViewID: state.TerminalPaneViewID(state.DefaultPaneID), CanResize: true}})
+	root, _ = reducer(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-1", Channel: 7, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface", ViewID: state.TerminalPaneViewID(state.DefaultPaneID), CanResize: true}})
 
 	bindings := root.TerminalViews.BindingsForTerminal("term-1")
 	if len(bindings) != 2 {
@@ -1128,7 +1129,7 @@ func TestLiveInputAttachesActiveViewWhenChannelMissing(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}); err != nil {
@@ -1171,7 +1172,7 @@ func TestLiveInputDoesNotReattachWhileViewAttachPending(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}); err != nil {
@@ -1212,7 +1213,7 @@ func TestLiveInputRefreshesStaleViewChannelWithoutStealingSibling(t *testing.T) 
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}); err != nil {
@@ -1274,7 +1275,7 @@ func TestLiveInputReattachesOnlyActiveViewWhenProtocolChannelCheckFails(t *testi
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}); err != nil {
@@ -1305,7 +1306,7 @@ func TestLiveAttachResultAcceptsPrefilledSessionBeforeFirstBinding(t *testing.T)
 		Session: state.TerminalSessionStore{TerminalID: "term-1", Cols: 100, Rows: 30},
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 100, Rows: 30},
 	}
-	root, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{
+	root, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-1",
 		Channel:      7,
 		Cols:         100,
@@ -1334,7 +1335,7 @@ func TestLiveAttachResultDoesNotAutoRestartExitedTerminal(t *testing.T) {
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-1", State: state.TerminalLiveExited},
 	}
 
-	root, effects := reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{
+	root, effects := reducer(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-1",
 		Channel:      7,
 		Cols:         80,
@@ -1360,7 +1361,7 @@ func TestLiveAttachResultDoesNotAutoRestartExitedTerminal(t *testing.T) {
 }
 
 func TestLiveAttachAndInitialSurfaceEffectsAreAsync(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	root := state.Root{Shell: state.DefaultShell()}
 	_, effects := reduceLiveAttach(root, LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}, LiveDeps{Terminal: terminal})
 	if len(effects) != 1 {
@@ -1382,7 +1383,7 @@ func TestLiveAttachAndInitialSurfaceEffectsAreAsync(t *testing.T) {
 }
 
 func TestTerminalPoolRemoveDeletesInventoryAndBindings(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Shell:        state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
@@ -1416,7 +1417,7 @@ func TestTerminalPoolRemoveDeletesInventoryAndBindings(t *testing.T) {
 }
 
 func TestLiveInvalidationArmEffectIsOneShot(t *testing.T) {
-	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 2)}
+	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 2)}
 	effects := liveInvalidationArmEffect("term-1", 80, 24, 7, LiveDeps{Terminal: terminal})
 	if len(effects) != 1 {
 		t.Fatalf("expected one arm effect, got %#v", effects)
@@ -1425,8 +1426,8 @@ func TestLiveInvalidationArmEffectIsOneShot(t *testing.T) {
 	if !ok || !arm.Async || arm.ForceSyncInTests || arm.Token != liveInvalidationTokenForTerminal("term-1") {
 		t.Fatalf("expected async terminal-scoped one-shot arm, got %#v", effects[0])
 	}
-	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
-	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
+	terminal.LiveInvalidationsCh <- port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
+	terminal.LiveInvalidationsCh <- port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
 
 	msg := arm.Run(context.Background())
 	live, ok := msg.(LiveEventMsg)
@@ -1440,7 +1441,7 @@ func TestLiveInvalidationArmEffectIsOneShot(t *testing.T) {
 }
 
 func TestR394LiveInvalidationArmEffectDoesNotUseFixedDelay(t *testing.T) {
-	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 1)}
+	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 1)}
 	effects := liveInvalidationArmEffect("term-1", 80, 24, 7, LiveDeps{Terminal: terminal})
 	if len(effects) != 1 {
 		t.Fatalf("expected one arm effect, got %#v", effects)
@@ -1457,7 +1458,7 @@ func TestR394LiveInvalidationArmEffectDoesNotUseFixedDelay(t *testing.T) {
 		t.Fatalf("canceled arm must not call service, got %#v", requests)
 	}
 
-	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
+	terminal.LiveInvalidationsCh <- port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 8}}
 	msg := arm.Run(context.Background())
 	live, ok := msg.(LiveEventMsg)
 	if !ok || live.Event.Snapshot.Revision != 8 {
@@ -1469,7 +1470,7 @@ func TestR394LiveInvalidationArmEffectDoesNotUseFixedDelay(t *testing.T) {
 }
 
 func TestLiveFrameReadyArmsNextInvalidation(t *testing.T) {
-	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 1)}
+	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 1)}
 	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
 	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",
@@ -1486,7 +1487,7 @@ func TestLiveFrameReadyArmsNextInvalidation(t *testing.T) {
 		t.Fatalf("expected one follow-up arm effect, got %#v", effects)
 	}
 	arm := effects[0].(FuncEffect)
-	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
+	terminal.LiveInvalidationsCh <- port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
 	if msg := arm.Run(context.Background()); msg == nil {
 		t.Fatal("expected one-shot arm to return wake message")
 	}
@@ -1497,7 +1498,7 @@ func TestLiveFrameReadyArmsNextInvalidation(t *testing.T) {
 }
 
 func TestLiveFrameReadyArmsEndpointInvalidation(t *testing.T) {
-	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 1)}
+	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 1)}
 	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
 	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
 		EndpointID: "west",
@@ -1513,7 +1514,7 @@ func TestLiveFrameReadyArmsEndpointInvalidation(t *testing.T) {
 		t.Fatalf("expected one endpoint-scoped follow-up arm effect, got %#v", effects)
 	}
 	arm := effects[0].(FuncEffect)
-	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
+	terminal.LiveInvalidationsCh <- port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
 	if msg := arm.Run(context.Background()); msg == nil {
 		t.Fatal("expected one-shot arm to return wake message")
 	}
@@ -1524,7 +1525,7 @@ func TestLiveFrameReadyArmsEndpointInvalidation(t *testing.T) {
 }
 
 func TestLiveFrameReadyDedupesPendingCallbackForSharedTerminalViews(t *testing.T) {
-	terminal := &services.FakeTerminalService{LiveInvalidationsCh: make(chan services.TerminalLiveEvent, 1)}
+	terminal := &testkit.FakeTerminalService{LiveInvalidationsCh: make(chan port.TerminalLiveEvent, 1)}
 	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
 	shell := state.DefaultShell().
 		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-shared").
@@ -1561,7 +1562,7 @@ func TestLiveFrameReadyDedupesPendingCallbackForSharedTerminalViews(t *testing.T
 		t.Fatalf("duplicate ready should leave pending callback unchanged, got %#v", request)
 	}
 
-	terminal.LiveInvalidationsCh <- services.TerminalLiveEvent{TerminalID: "term-shared", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
+	terminal.LiveInvalidationsCh <- port.TerminalLiveEvent{TerminalID: "term-shared", Refresh: true, Snapshot: state.LiveSurfaceSnapshot{Revision: 9}}
 	wake, ok := firstArm.Run(context.Background()).(LiveEventMsg)
 	if !ok {
 		t.Fatalf("pending arm should return live wake msg")
@@ -1576,7 +1577,7 @@ func TestLiveFrameReadyDedupesPendingCallbackForSharedTerminalViews(t *testing.T
 }
 
 func TestLiveInvalidationArmContextCanceledDoesNotPostPanelError(t *testing.T) {
-	terminal := &services.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
+	terminal := &testkit.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
 	effects := liveInvalidationArmEffect("term-1", 80, 24, 7, LiveDeps{Terminal: terminal})
 	arm := effects[0].(FuncEffect)
 	if msg := arm.Run(context.Background()); msg == nil {
@@ -1588,14 +1589,14 @@ func TestLiveInvalidationArmContextCanceledDoesNotPostPanelError(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
 	root.Surface = state.TerminalSurfaceStore{TerminalID: "term-1"}
 	root.Session = state.TerminalSessionStore{TerminalID: "term-1"}
-	next, effects := reduceLiveEvent(root, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Err: context.Canceled}}, LiveDeps{})
+	next, effects := reduceLiveEvent(root, LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Err: context.Canceled}}, LiveDeps{})
 	if len(effects) != 0 || next.Surface.Err != "" || next.Session.LastError != "" {
 		t.Fatalf("context canceled live event must stay silent, root=%#v effects=%#v", next, effects)
 	}
 }
 
 func TestLiveInvalidationArmCancellationReleasesPendingCallback(t *testing.T) {
-	terminal := &services.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
+	terminal := &testkit.FakeTerminalService{LiveInvalidationsErr: context.Canceled}
 	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
 	root := state.Root{}
 	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
@@ -1652,19 +1653,19 @@ func TestLiveEventBoundaryClearsPendingRefreshDebt(t *testing.T) {
 	reducer := NewLiveReducer(LiveDeps{})
 	cases := []struct {
 		name  string
-		event services.TerminalLiveEvent
+		event port.TerminalLiveEvent
 	}{
 		{
 			name:  "exited",
-			event: services.TerminalLiveEvent{TerminalID: "term-1", Exited: true, ExitCode: 0, Reason: "done"},
+			event: port.TerminalLiveEvent{TerminalID: "term-1", Exited: true, ExitCode: 0, Reason: "done"},
 		},
 		{
 			name:  "error",
-			event: services.TerminalLiveEvent{TerminalID: "term-1", Err: errors.New("transport offline")},
+			event: port.TerminalLiveEvent{TerminalID: "term-1", Err: errors.New("transport offline")},
 		},
 		{
 			name:  "terminal exited error",
-			event: services.TerminalLiveEvent{TerminalID: "term-1", Err: errors.New("protocol error 400: terminal exited")},
+			event: port.TerminalLiveEvent{TerminalID: "term-1", Err: errors.New("protocol error 400: terminal exited")},
 		},
 	}
 	for _, tt := range cases {
@@ -1682,8 +1683,8 @@ func TestLiveEventBoundaryClearsPendingRefreshDebt(t *testing.T) {
 }
 
 func TestLiveEventRefreshRequestsLatestSurfaceAfterEventLoopCoalescing(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		SurfaceResult: services.TerminalSurfaceResult{
+	terminal := &testkit.FakeTerminalService{
+		SurfaceResult: port.TerminalSurfaceResult{
 			Ready: true,
 			Snapshot: state.LiveSurfaceSnapshot{
 				TerminalID: "term-1",
@@ -1710,7 +1711,7 @@ func TestLiveEventRefreshRequestsLatestSurfaceAfterEventLoopCoalescing(t *testin
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 96, 30, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
 		BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false))
 
-	next, effects := reduceLiveEvent(root, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}}, LiveDeps{Terminal: terminal})
+	next, effects := reduceLiveEvent(root, LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}}, LiveDeps{Terminal: terminal})
 	if next.Generation != root.Generation || next.Surface.Lines[0] != "stale" {
 		t.Fatalf("refresh invalidation should not mutate live state before surface returns, next=%#v", next.Surface)
 	}
@@ -1731,7 +1732,7 @@ func TestLiveEventRefreshRequestsLatestSurfaceAfterEventLoopCoalescing(t *testin
 	if len(terminal.Surfaces) != 1 || terminal.Surfaces[0].Cols != 96 || terminal.Surfaces[0].Rows != 30 {
 		t.Fatalf("refresh should use resize owner surface size, got %#v", terminal.Surfaces)
 	}
-	refreshMsg := LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}}
+	refreshMsg := LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}}
 	if !refreshMsg.SkipRender() {
 		t.Fatal("ordinary refresh invalidation should not render stale frame")
 	}
@@ -1765,18 +1766,18 @@ func rootWithDirtyRefreshForLiveTest(t *testing.T, ref state.TerminalRef) state.
 }
 
 func TestLiveEventRefreshBackpressureSchedulesDirtyLatestFetchAfterSurfaceReturn(t *testing.T) {
-	terminal := &services.FakeTerminalService{SurfaceResult: services.TerminalSurfaceResult{
+	terminal := &testkit.FakeTerminalService{SurfaceResult: port.TerminalSurfaceResult{
 		Ready:    true,
 		Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Lines: []string{"latest"}},
 	}}
 	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
 	root := state.Root{Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 80, Rows: 24}}
 
-	root, effects := reducer(root, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
+	root, effects := reducer(root, LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
 	if len(effects) != 1 {
 		t.Fatalf("first refresh should schedule one surface fetch, got %#v", effects)
 	}
-	root, effects = reducer(root, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
+	root, effects = reducer(root, LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
 	if len(effects) != 0 {
 		t.Fatalf("second refresh while in-flight should only mark dirty, got %#v", effects)
 	}
@@ -1802,7 +1803,7 @@ func TestLiveEventRefreshBackpressureSchedulesDirtyLatestFetchAfterSurfaceReturn
 }
 
 func TestLiveEventRefreshUsesCoreLatestScreenInsteadOfEventPayload(t *testing.T) {
-	terminal := &services.FakeTerminalService{SurfaceResult: services.TerminalSurfaceResult{
+	terminal := &testkit.FakeTerminalService{SurfaceResult: port.TerminalSurfaceResult{
 		Ready:    true,
 		Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 11, Lines: []string{"latest"}},
 	}}
@@ -1813,7 +1814,7 @@ func TestLiveEventRefreshUsesCoreLatestScreenInsteadOfEventPayload(t *testing.T)
 		Lines:      []string{"rev10"},
 	})}
 
-	root, effects := reducer(root, LiveEventMsg{Event: services.TerminalLiveEvent{
+	root, effects := reducer(root, LiveEventMsg{Event: port.TerminalLiveEvent{
 		TerminalID: "term-1",
 		Refresh:    true,
 		Snapshot:   state.LiveSurfaceSnapshot{Revision: 5},
@@ -1833,18 +1834,18 @@ func TestLiveEventRefreshUsesCoreLatestScreenInsteadOfEventPayload(t *testing.T)
 
 func TestLiveEventRefreshDoesNotTriggerLayoutResizeMeasurement(t *testing.T) {
 	root := state.Root{Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 80, DesiredRows: 24}}
-	refresh := LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}}
+	refresh := LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}}
 	if terminalLayoutMayNeedResize(root, refresh) {
 		t.Fatal("ordinary live refresh must not enter layout resize measurement")
 	}
-	metadata := LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Metadata: true}}
+	metadata := LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Metadata: true}}
 	if !terminalLayoutMayNeedResize(root, metadata) {
 		t.Fatal("metadata event should still allow layout resize checks")
 	}
 }
 
 func TestTerminalPoolReconnectUsesActiveViewIdentity(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 11, Cols: 80, Rows: 24, CanResize: true}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 11, Cols: 80, Rows: 24, CanResize: true}}
 	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
 	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)}
 
@@ -1872,7 +1873,7 @@ func TestLiveMetadataProjectionUpdatesGlobalOwnerAndAttachmentCount(t *testing.T
 	}
 	rootB.TerminalViews = rootB.TerminalViews.BindPane(state.NewPaneTerminalView("pane-1", "term-1", 8, 80, 24, state.TerminalResizeRoleOwner, "surface-b", "pane:main", true))
 
-	event := LiveEventMsg{Event: services.TerminalLiveEvent{
+	event := LiveEventMsg{Event: port.TerminalLiveEvent{
 		TerminalID:           "term-1",
 		Metadata:             true,
 		AttachmentProjection: true,
@@ -1900,8 +1901,8 @@ func TestLiveMetadataProjectionUpdatesGlobalOwnerAndAttachmentCount(t *testing.T
 }
 
 func TestLiveAppLayoutResizePreservesAttachResizeOwner(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      9,
 			Cols:         80,
@@ -2114,7 +2115,7 @@ func TestLiveMetadataEventProjectsTerminalSizeLockAndUnlockResize(t *testing.T) 
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", "view-2", false))
 
-	locked, effects := reducer(root, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Metadata: true, Tags: map[string]string{"termx.size_lock": "lock"}}})
+	locked, effects := reducer(root, LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Metadata: true, Tags: map[string]string{"termx.size_lock": "lock"}}})
 	if _, ok := liveResizeMsgFromEffects(effects); ok {
 		t.Fatalf("metadata lock must not resize PTY, effects=%#v", effects)
 	}
@@ -2127,7 +2128,7 @@ func TestLiveMetadataEventProjectsTerminalSizeLockAndUnlockResize(t *testing.T) 
 		t.Fatalf("metadata lock should update terminal pool tags, pool=%#v", locked.TerminalPool)
 	}
 
-	unlocked, effects := reducer(locked, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Metadata: true, Tags: map[string]string{}}})
+	unlocked, effects := reducer(locked, LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Metadata: true, Tags: map[string]string{}}})
 	msg, ok := liveResizeMsgFromEffects(effects)
 	if !ok {
 		t.Fatalf("metadata unlock should trigger owner resize when panel and terminal size diverged, effects=%#v", effects)
@@ -2174,7 +2175,7 @@ func TestTerminalSizeLockBlocksAttachResultResizeToSplitPane(t *testing.T) {
 
 	next, effects := reducer(root, TerminalPoolAttachResultMsg{
 		TerminalID: "term-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      8,
 			Cols:         60,
@@ -2199,8 +2200,8 @@ func TestTerminalSizeLockBlocksAttachResultResizeToSplitPane(t *testing.T) {
 }
 
 func TestTerminalPoolAttachRequestToSameLockedTerminalDoesNotResize(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      8,
 			Cols:         60,
@@ -2229,7 +2230,7 @@ func TestTerminalPoolAttachRequestToSameLockedTerminalDoesNotResize(t *testing.T
 	}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 100, 30, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
 	root.TerminalViews = root.TerminalViews.ApplyTerminalSizeLock("term-1", true)
-	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}})
+	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &testkit.FakeCoreClient{}})
 
 	if err := runtime.Post(ShellSplitActivePaneMsg{
 		Pane:      state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneEmpty},
@@ -2273,7 +2274,7 @@ func TestTakeResizeOwnerAttachResultTriggersOwnerViewResize(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
 
-	next, effects := reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 40, Rows: 12, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface", ViewID: "view-2", CanResize: true, OwnerSurfaceID: "surface", OwnerViewID: "view-2", ResizeEpoch: 2}})
+	next, effects := reducer(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 40, Rows: 12, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface", ViewID: "view-2", CanResize: true, OwnerSurfaceID: "surface", OwnerViewID: "view-2", ResizeEpoch: 2}})
 	owner, _ := next.TerminalViews.PaneBinding("pane-2")
 	if !owner.HasAuthoritativeResizeOwner() {
 		t.Fatalf("attach result should project clicked view as authoritative owner, got %#v", owner)
@@ -2300,7 +2301,7 @@ func TestTakeResizeOwnerAttachResultTriggersSameSizeOwnerResize(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 59, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 59, 24, state.TerminalResizeRoleFollower, "surface", "view-2", false))
 
-	next, effects := reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 59, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface", ViewID: "view-2", CanResize: true, OwnerSurfaceID: "surface", OwnerViewID: "view-2", ResizeEpoch: 2}})
+	next, effects := reducer(root, LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 59, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface", ViewID: "view-2", CanResize: true, OwnerSurfaceID: "surface", OwnerViewID: "view-2", ResizeEpoch: 2}})
 	msg, ok := liveResizeMsgFromEffects(effects)
 	if !ok || msg.ViewID != "view-2" || msg.Seq != 1 || msg.Cols != 59 || msg.Rows != 24 {
 		t.Fatalf("owner attach result should force same-size resize check, msg=%#v effects=%#v", msg, effects)
@@ -2312,7 +2313,7 @@ func TestTakeResizeOwnerAttachResultTriggersSameSizeOwnerResize(t *testing.T) {
 }
 
 func TestViewScopedOwnerResizeUsesBindingResizePolicy(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Session: state.TerminalSessionStore{
@@ -2351,7 +2352,7 @@ func TestViewScopedOwnerResizeUsesBindingResizePolicy(t *testing.T) {
 }
 
 func TestViewScopedOwnerResizeRoutesEndpointBinding(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Session: state.TerminalSessionStore{
@@ -2452,7 +2453,7 @@ func TestLiveResizeResultProjectsTerminalSizeLockWithoutResizingSurface(t *testi
 		Seq:    1,
 		Cols:   100,
 		Rows:   30,
-		Result: services.TerminalResizeResult{
+		Result: port.TerminalResizeResult{
 			TerminalID:     "term-1",
 			Cols:           80,
 			Rows:           24,
@@ -2484,8 +2485,8 @@ func TestLiveResizeResultProjectsTerminalSizeLockWithoutResizingSurface(t *testi
 }
 
 func TestLiveAppInputDisplaysOnlyAfterSurfaceEventAndExitState(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 78, Rows: 20},
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 78, Rows: 20},
 	}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
@@ -2547,8 +2548,8 @@ func TestLiveAppInputDisplaysOnlyAfterSurfaceEventAndExitState(t *testing.T) {
 }
 
 func TestLiveInputRoutesToFocusedPaneTerminal(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20},
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20},
 	}
 	shell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
@@ -2561,16 +2562,16 @@ func TestLiveInputRoutesToFocusedPaneTerminal(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 90, Rows: 24}}); err != nil {
 		t.Fatalf("post main attach: %v", err)
 	}
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-2", Channel: 2, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-2")}}); err != nil {
+	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-2", Channel: 2, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-2")}}); err != nil {
 		t.Fatalf("post term-2 attach result: %v", err)
 	}
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-3", Channel: 3, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-3")}}); err != nil {
+	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-3", Channel: 3, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-3")}}); err != nil {
 		t.Fatalf("post term-3 attach result: %v", err)
 	}
 	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandFocus, Target: state.PaneCommandTarget{PaneID: state.DefaultPaneID}, Source: state.PaneCommandSourceTest}}); err != nil {
@@ -2619,7 +2620,7 @@ func TestLiveInputRoutesToFocusedPaneTerminal(t *testing.T) {
 }
 
 func TestMousePaneContentActivationExitsInteractionModeBeforeLiveInput(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	shell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
 		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}).
@@ -2631,13 +2632,13 @@ func TestMousePaneContentActivationExitsInteractionModeBeforeLiveInput(t *testin
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
+	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
 		t.Fatalf("post main attach result: %v", err)
 	}
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-2", Channel: 2, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-2")}}); err != nil {
+	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-2", Channel: 2, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-2")}}); err != nil {
 		t.Fatalf("post term-2 attach result: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2666,7 +2667,7 @@ func TestMousePaneContentActivationExitsInteractionModeBeforeLiveInput(t *testin
 }
 
 func TestLiveInputTargetsActiveFloatingBeforeTiledPane(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20}}
 	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-main")
 	var result state.FloatingCommandResult
 	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -2686,13 +2687,13 @@ func TestLiveInputTargetsActiveFloatingBeforeTiledPane(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post main attach: %v", err)
 	}
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 28, Rows: 6, ViewID: state.TerminalFloatingViewID("floating-1")}}); err != nil {
+	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 28, Rows: 6, ViewID: state.TerminalFloatingViewID("floating-1")}}); err != nil {
 		t.Fatalf("post floating attach result: %v", err)
 	}
 	if err := runtime.Post(ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: "floating-1", Source: state.PaneCommandSourceTest}}); err != nil {
@@ -2714,7 +2715,7 @@ func TestLiveInputTargetsActiveFloatingBeforeTiledPane(t *testing.T) {
 }
 
 func TestMouseFloatingContentActivationExitsInteractionModeBeforeLiveInput(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-main")
 	var result state.FloatingCommandResult
 	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -2735,13 +2736,13 @@ func TestMouseFloatingContentActivationExitsInteractionModeBeforeLiveInput(t *te
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20, ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
+	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20, ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
 		t.Fatalf("post main attach result: %v", err)
 	}
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 28, Rows: 6, ViewID: state.TerminalFloatingViewID("floating-1")}}); err != nil {
+	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 28, Rows: 6, ViewID: state.TerminalFloatingViewID("floating-1")}}); err != nil {
 		t.Fatalf("post floating attach result: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2770,8 +2771,8 @@ func TestMouseFloatingContentActivationExitsInteractionModeBeforeLiveInput(t *te
 }
 
 func TestTerminalPoolPaneReattachDoesNotStealSharedFloatingBinding(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{
 			TerminalID:   "term-b",
 			Channel:      9,
 			Cols:         80,
@@ -2824,7 +2825,7 @@ func TestTerminalPoolPaneReattachDoesNotStealSharedFloatingBinding(t *testing.T)
 }
 
 func TestLiveInputDoesNotFallbackToSessionForEmptyActivePane(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20}}
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
 	runtime := NewInteractiveRuntime(
@@ -2832,7 +2833,7 @@ func TestLiveInputDoesNotFallbackToSessionForEmptyActivePane(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
@@ -2866,9 +2867,9 @@ func TestLiveInputDoesNotFallbackToSessionForEmptyActivePane(t *testing.T) {
 }
 
 func TestFloatingEmptyPaneAttachesExistingTerminalFromPicker(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{Channel: 9},
-		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{Channel: 9},
+		ListResult: port.TerminalListResult{Items: []port.TerminalPoolItem{{
 			TerminalID: "term-float",
 			Title:      "floating shell",
 			State:      "running",
@@ -2897,7 +2898,7 @@ func TestFloatingEmptyPaneAttachesExistingTerminalFromPicker(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 90, Rows: 24}}); err != nil {
@@ -2991,7 +2992,7 @@ func TestFloatingEmptyPaneAttachesExistingTerminalFromPicker(t *testing.T) {
 }
 
 func TestActiveFloatingResizeCommandResizesAttachedTerminalContentRect(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-float", Channel: 5, Cols: 28, Rows: 6}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-float", Channel: 5, Cols: 28, Rows: 6}}
 	shell := state.DefaultShell()
 	var result state.FloatingCommandResult
 	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -3011,12 +3012,12 @@ func TestActiveFloatingResizeCommandResizesAttachedTerminalContentRect(t *testin
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 	if err := runtime.Post(TerminalPoolAttachResultMsg{
 		TerminalID:       "term-float",
 		TargetFloatingID: "floating-1",
-		Result:           services.TerminalAttachResult{TerminalID: "term-float", Channel: 5, Cols: 28, Rows: 6, ResizePolicy: state.TerminalResizeRoleOwner, CanResize: true},
+		Result:           port.TerminalAttachResult{TerminalID: "term-float", Channel: 5, Cols: 28, Rows: 6, ResizePolicy: state.TerminalResizeRoleOwner, CanResize: true},
 	}); err != nil {
 		t.Fatalf("post floating attach result: %v", err)
 	}
@@ -3046,8 +3047,8 @@ func TestActiveFloatingResizeCommandResizesAttachedTerminalContentRect(t *testin
 }
 
 func TestLiveAppAttachSwitchClearsStaleSurfaceRows(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-new", Channel: 5, Cols: 78, Rows: 20},
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-new", Channel: 5, Cols: 78, Rows: 20},
 	}
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
@@ -3081,9 +3082,9 @@ func TestLiveAppAttachSwitchClearsStaleSurfaceRows(t *testing.T) {
 }
 
 func TestLiveAppAttachHydratesReadySurfaceFromService(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 78, Rows: 20},
-		SurfaceResult: services.TerminalSurfaceResult{
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 78, Rows: 20},
+		SurfaceResult: port.TerminalSurfaceResult{
 			Ready: true,
 			Snapshot: state.LiveSurfaceSnapshot{
 				TerminalID: "term-1",
@@ -3120,9 +3121,9 @@ func TestLiveAppAttachHydratesReadySurfaceFromService(t *testing.T) {
 }
 
 func TestLiveAppAttachClearsPendingForEmptySurfaceSnapshot(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-blank", Channel: 8, Cols: 78, Rows: 20},
-		SurfaceResult: services.TerminalSurfaceResult{
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-blank", Channel: 8, Cols: 78, Rows: 20},
+		SurfaceResult: port.TerminalSurfaceResult{
 			Snapshot: state.LiveSurfaceSnapshot{
 				TerminalID: "term-blank",
 				Cols:       78,
@@ -3156,11 +3157,11 @@ func TestLiveAppAttachClearsPendingForEmptySurfaceSnapshot(t *testing.T) {
 }
 
 func TestLiveRuntimeConsumesBackendLiveEventsAndRedraws(t *testing.T) {
-	liveEvents := make(chan services.TerminalLiveEvent, 2)
-	terminal := &services.FakeTerminalService{
-		AttachResult:        services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 78, Rows: 20},
+	liveEvents := make(chan port.TerminalLiveEvent, 2)
+	terminal := &testkit.FakeTerminalService{
+		AttachResult:        port.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 78, Rows: 20},
 		LiveInvalidationsCh: liveEvents,
-		SurfaceResult: services.TerminalSurfaceResult{
+		SurfaceResult: port.TerminalSurfaceResult{
 			Ready: true,
 			Snapshot: state.LiveSurfaceSnapshot{
 				TerminalID: "term-1",
@@ -3188,7 +3189,7 @@ func TestLiveRuntimeConsumesBackendLiveEventsAndRedraws(t *testing.T) {
 	if err := waitForLiveInvalidationRequest(context.Background(), runtime, terminal, "term-1"); err != nil {
 		t.Fatal(err)
 	}
-	liveEvents <- services.TerminalLiveEvent{
+	liveEvents <- port.TerminalLiveEvent{
 		TerminalID: "term-1",
 		Refresh:    true,
 		Snapshot:   state.LiveSurfaceSnapshot{Revision: 7},
@@ -3209,7 +3210,7 @@ func TestLiveEventUsesEventTerminalIDWhenSnapshotTerminalIDMissing(t *testing.T)
 		}),
 	}
 	reducer := NewLiveReducer(LiveDeps{})
-	next, _ := reducer(root, LiveEventMsg{Event: services.TerminalLiveEvent{
+	next, _ := reducer(root, LiveEventMsg{Event: port.TerminalLiveEvent{
 		TerminalID: "term-logs",
 		Ready:      true,
 		Snapshot: state.LiveSurfaceSnapshot{
@@ -3244,7 +3245,7 @@ func TestLiveSurfaceStoreKeepsPaneTerminalBindingsIsolated(t *testing.T) {
 		root,
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{}},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{}},
 	)
 
 	for _, msg := range []Msg{
@@ -3280,8 +3281,8 @@ func TestLiveSurfaceStoreKeepsPaneTerminalBindingsIsolated(t *testing.T) {
 }
 
 func TestLiveContentRendererKeepsStyleCursorAndChromeSafe(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 9, Cols: 28, Rows: 10},
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 9, Cols: 28, Rows: 10},
 	}
 	host := NewFakeTerminalHost(8)
 	host.SetSize(30, 12)
@@ -3340,7 +3341,7 @@ func TestLiveContentRendererKeepsStyleCursorAndChromeSafe(t *testing.T) {
 }
 
 func TestLiveAttachUsesCardContentRectForInitialTerminalSize(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 7}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 7}}
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
 	runtime := NewLiveRuntime(
@@ -3366,7 +3367,7 @@ func TestLiveAttachUsesCardContentRectForInitialTerminalSize(t *testing.T) {
 }
 
 func TestAttachResultWithExistingSizeIsCorrectedToContentRect(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 7, Cols: 80, Rows: 24}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 7, Cols: 80, Rows: 24}}
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
 	runtime := NewLiveRuntime(
@@ -3395,7 +3396,7 @@ func TestAttachResultWithExistingSizeIsCorrectedToContentRect(t *testing.T) {
 }
 
 func TestHostResizeUsesActiveContentRectAndDeduplicates(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewLiveRuntime(
@@ -3430,7 +3431,7 @@ func TestHostResizeUsesActiveContentRectAndDeduplicates(t *testing.T) {
 }
 
 func TestLiveResizeKeepsLatestContentRectAndIgnoresOldSizeSurface(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewLiveRuntime(
@@ -3539,7 +3540,7 @@ func TestLiveResizeKeepsLatestContentRectAndIgnoresOldSizeSurface(t *testing.T) 
 }
 
 func TestLiveResizeFallbacksDoNotUseResizeBoundaryDots(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewLiveRuntime(
@@ -3574,7 +3575,7 @@ func TestLiveResizeFallbacksDoNotUseResizeBoundaryDots(t *testing.T) {
 		t.Fatalf("empty fallback should not be filled by resize-boundary dots, got %#v", emptyLayer.Lines)
 	}
 
-	if err := runtime.Post(LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Exited: true, ExitCode: 0, Reason: "exited"}}); err != nil {
+	if err := runtime.Post(LiveEventMsg{Event: port.TerminalLiveEvent{TerminalID: "term-1", Exited: true, ExitCode: 0, Reason: "exited"}}); err != nil {
 		t.Fatalf("post exit: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -3594,8 +3595,8 @@ func TestLiveResizeFallbacksDoNotUseResizeBoundaryDots(t *testing.T) {
 }
 
 func TestLiveSurfaceProtocolTerminalExitedIsNotErrorUI(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5},
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 5},
 		SurfaceErr:   errors.New("protocol error 400: terminal exited"),
 	}
 	host := NewFakeTerminalHost(16)
@@ -3657,7 +3658,7 @@ func TestLiveSurfaceAuthoritativeRunningClearsExitedSessionAndSurface(t *testing
 			Lines:      []string{"terminal exited: term-1 code:0 exited"},
 		}).MarkExitedWithMetadata("term-1", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
 	}
-	runtime := NewLiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: &services.FakeTerminalService{}})
+	runtime := NewLiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 
 	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",
@@ -3714,7 +3715,7 @@ func TestLiveQueueKeepsAuthoritativeRunningLifecycleWhenOrdinaryFrameFollows(t *
 			Lines:      []string{"terminal exited: term-1 code:0 exited"},
 		}).MarkExitedWithMetadata("term-1", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
 	}
-	runtime := NewLiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: &services.FakeTerminalService{}})
+	runtime := NewLiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: &testkit.FakeTerminalService{}})
 
 	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",
@@ -3753,7 +3754,7 @@ func TestLiveQueueKeepsAuthoritativeRunningLifecycleWhenOrdinaryFrameFollows(t *
 }
 
 func TestLiveResizeOverflowMarkersStayOnChrome(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(100, 40)
 	runtime := NewLiveRuntime(
@@ -3827,7 +3828,7 @@ func TestLiveResizeOverflowMarkersStayOnChrome(t *testing.T) {
 }
 
 func TestHostResizeUsesBusinessActivePaneWhenFloatingOwnsVisualFocus(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewLiveRuntime(
@@ -3874,7 +3875,7 @@ func TestHostResizeUsesBusinessActivePaneWhenFloatingOwnsVisualFocus(t *testing.
 }
 
 func TestHeaderFooterHideResizesTerminalWithReclaimedContentRows(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 6}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 6}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewLiveRuntime(
@@ -3910,7 +3911,7 @@ func TestHeaderFooterHideResizesTerminalWithReclaimedContentRows(t *testing.T) {
 }
 
 func TestSplitPresentationUsesSplitContentRectForResize(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewLiveRuntime(
@@ -3936,7 +3937,7 @@ func TestSplitPresentationUsesSplitContentRectForResize(t *testing.T) {
 }
 
 func TestVerticalSplitActivePaneReservesDividerCellForResize(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewLiveRuntime(
@@ -3971,7 +3972,7 @@ func TestVerticalSplitActivePaneReservesDividerCellForResize(t *testing.T) {
 }
 
 func TestNestedEmptySplitResizesOwnerTerminalViewContentRect(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(140, 36)
 	runtime := NewLiveRuntime(
@@ -4056,7 +4057,7 @@ func TestNestedEmptySplitResizesOwnerTerminalViewContentRect(t *testing.T) {
 }
 
 func TestPaneSizeCommandResizesActiveTerminalContentRect(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewLiveRuntime(
@@ -4107,7 +4108,7 @@ func TestPaneSizeCommandResizesActiveTerminalContentRect(t *testing.T) {
 }
 
 func TestBatchedPaneCommandsResizeTerminalToLatestContentRect(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(100, 40)
 	runtime := NewLiveRuntime(
@@ -4159,7 +4160,7 @@ func TestBatchedPaneCommandsResizeTerminalToLatestContentRect(t *testing.T) {
 }
 
 func TestClosePaneTransfersResizeOwnerAndRestoresFullContentRect(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(120, 40)
 	runtime := NewLiveRuntime(
@@ -4208,7 +4209,7 @@ func TestClosePaneTransfersResizeOwnerAndRestoresFullContentRect(t *testing.T) {
 }
 
 func TestCloseResizeOwnerPromotesFollowerAndResizesImmediately(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(122, 28)
 	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
@@ -4251,7 +4252,7 @@ func TestCloseResizeOwnerPromotesFollowerAndResizesImmediately(t *testing.T) {
 }
 
 func TestClosingTabDetachesAllTerminalViewAttachments(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
 	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
@@ -4289,7 +4290,7 @@ func TestClosingTabDetachesAllTerminalViewAttachments(t *testing.T) {
 }
 
 func TestLiveAppShowsTerminalServiceError(t *testing.T) {
-	terminal := &services.FakeTerminalService{
+	terminal := &testkit.FakeTerminalService{
 		AttachErr: errors.New("attach failed"),
 	}
 	host := NewFakeTerminalHost(4)
@@ -4323,7 +4324,7 @@ func TestLiveRuntimeIncludesShellReducer(t *testing.T) {
 		state.Root{},
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{}},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{}},
 	)
 
 	if err := runtime.Post(ShellSetHeaderVisibleMsg{Visible: false}); err != nil {
@@ -4350,8 +4351,8 @@ func TestInteractiveRuntimeIncludesShellReducer(t *testing.T) {
 		state.Root{},
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{}},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
 	if err := runtime.Post(ShellOpenTerminalPickerMsg{}); err != nil {
@@ -4366,7 +4367,7 @@ func TestInteractiveRuntimeIncludesShellReducer(t *testing.T) {
 	}
 }
 
-func compactInputRequests(inputs []services.TerminalInputRequest) []string {
+func compactInputRequests(inputs []port.TerminalInputRequest) []string {
 	if len(inputs) == 0 {
 		return nil
 	}
@@ -4491,7 +4492,7 @@ func drainUntilFrameContains(ctx context.Context, runtime *AppRuntime, host *Fak
 	}
 }
 
-func waitForLiveInvalidationRequest(ctx context.Context, runtime *AppRuntime, terminal *services.FakeTerminalService, terminalID string) error {
+func waitForLiveInvalidationRequest(ctx context.Context, runtime *AppRuntime, terminal *testkit.FakeTerminalService, terminalID string) error {
 	deadlineCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	ticker := time.NewTicker(10 * time.Millisecond)

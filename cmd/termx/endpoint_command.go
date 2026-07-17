@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/shared/connection"
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/spf13/cobra"
 )
 
@@ -81,20 +81,20 @@ func newEndpointCommand(socket, logFile *string) *cobra.Command {
 	return command
 }
 
-func (runtime *endpointCommandRuntime) load() (connection.Registry, error) {
-	registry, err := connection.Load(runtime.registryPath)
+func (runtime *endpointCommandRuntime) load() (endpointdomain.Registry, error) {
+	registry, err := endpointdomain.Load(runtime.registryPath)
 	if err != nil {
-		return connection.Registry{}, &cliError{code: 2, message: err.Error(), cause: err}
+		return endpointdomain.Registry{}, &cliError{code: 2, message: err.Error(), cause: err}
 	}
 	registry, err = registry.Normalize()
 	if err != nil {
-		return connection.Registry{}, &cliError{code: 2, message: err.Error(), cause: err}
+		return endpointdomain.Registry{}, &cliError{code: 2, message: err.Error(), cause: err}
 	}
 	return registry, nil
 }
 
-func (runtime *endpointCommandRuntime) update(ctx context.Context, createIfMissing bool, mutate func(connection.Registry) (connection.Registry, error)) error {
-	_, err := connection.UpdateContext(ctx, runtime.registryPath, createIfMissing, mutate)
+func (runtime *endpointCommandRuntime) update(ctx context.Context, createIfMissing bool, mutate func(endpointdomain.Registry) (endpointdomain.Registry, error)) error {
+	_, err := endpointdomain.UpdateContext(ctx, runtime.registryPath, createIfMissing, mutate)
 	if err == nil {
 		return nil
 	}
@@ -146,7 +146,7 @@ func newEndpointShowCommand(runtime *endpointCommandRuntime) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			endpoint, ok := registry.Endpoints[connection.EndpointID(args[0])]
+			endpoint, ok := registry.Endpoints[endpointdomain.EndpointID(args[0])]
 			if !ok {
 				return &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", args[0])}
 			}
@@ -188,30 +188,30 @@ type routeEditFlags struct {
 
 func newEndpointAddCommand(runtime *endpointCommandRuntime) *cobra.Command {
 	command := &cobra.Command{Use: "add", Short: "Add an endpoint with its first route"}
-	for _, kind := range []connection.RouteKind{connection.RouteLocalUnix, connection.RouteSSHStdio, connection.RouteDirectTLS, connection.RouteManagedWebRTC} {
+	for _, kind := range []endpointdomain.RouteKind{endpointdomain.RouteLocalUnix, endpointdomain.RouteSSHStdio, endpointdomain.RouteDirectTLS, endpointdomain.RouteManagedWebRTC} {
 		endpointFlags := &endpointEditFlags{}
 		routeFlags := &routeEditFlags{}
 		name := routeCommandName(kind)
 		child := &cobra.Command{
 			Use: name + " ID", Short: "Add an endpoint with a " + string(kind) + " route", Args: cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				id := connection.EndpointID(strings.TrimSpace(args[0]))
+				id := endpointdomain.EndpointID(strings.TrimSpace(args[0]))
 				route := routeFromFlags(kind, *routeFlags)
 				endpoint := endpointFromFlags(id, *endpointFlags, route)
 				if cmd.Flags().Changed("hedge-delay") {
-					endpoint.SelectionPolicy = connection.SelectionPolicy{HedgeDelay: endpointFlags.hedgeDelay, HedgeDelayConfigured: true}
+					endpoint.SelectionPolicy = endpointdomain.SelectionPolicy{HedgeDelay: endpointFlags.hedgeDelay, HedgeDelayConfigured: true}
 				}
-				if _, err := (connection.Registry{Version: connection.RegistryVersion, Default: id, Endpoints: map[connection.EndpointID]connection.Endpoint{id: endpoint}}).Normalize(); err != nil {
+				if _, err := (endpointdomain.Registry{Version: endpointdomain.RegistryVersion, Default: id, Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{id: endpoint}}).Normalize(); err != nil {
 					return usageCLIError(err.Error())
 				}
-				if err := runtime.update(cmd.Context(), true, func(registry connection.Registry) (connection.Registry, error) {
+				if err := runtime.update(cmd.Context(), true, func(registry endpointdomain.Registry) (endpointdomain.Registry, error) {
 					if _, exists := registry.Endpoints[id]; exists {
-						return connection.Registry{}, &cliError{code: 4, message: fmt.Sprintf("endpoint %s already exists", id)}
+						return endpointdomain.Registry{}, &cliError{code: 4, message: fmt.Sprintf("endpoint %s already exists", id)}
 					}
 					if registry.Endpoints == nil {
-						registry.Endpoints = map[connection.EndpointID]connection.Endpoint{}
+						registry.Endpoints = map[endpointdomain.EndpointID]endpointdomain.Endpoint{}
 					}
-					registry.Version = connection.RegistryVersion
+					registry.Version = endpointdomain.RegistryVersion
 					registry.Endpoints[id] = endpoint
 					if registry.Default == "" {
 						registry.Default = id
@@ -237,20 +237,20 @@ func newEndpointUpdateCommand(runtime *endpointCommandRuntime) *cobra.Command {
 	command := &cobra.Command{
 		Use: "update ID", Short: "Update endpoint identity, label, or selection policy", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id := connection.EndpointID(args[0])
-			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+			id := endpointdomain.EndpointID(args[0])
+			if err := runtime.update(cmd.Context(), false, func(registry endpointdomain.Registry) (endpointdomain.Registry, error) {
 				endpoint, ok := registry.Endpoints[id]
 				if !ok {
-					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
+					return endpointdomain.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
 				}
 				if cmd.Flags().Changed("label") {
-					endpoint.Label, endpoint.LabelSource = strings.TrimSpace(flags.label), connection.SourceUser
+					endpoint.Label, endpoint.LabelSource = strings.TrimSpace(flags.label), endpointdomain.SourceUser
 				}
 				if cmd.Flags().Changed("connect-mode") {
-					endpoint.ConnectMode = connection.ConnectMode(flags.connectMode)
+					endpoint.ConnectMode = endpointdomain.ConnectMode(flags.connectMode)
 				}
 				if cmd.Flags().Changed("hedge-delay") {
-					endpoint.SelectionPolicy = connection.SelectionPolicy{HedgeDelay: flags.hedgeDelay, HedgeDelayConfigured: true}
+					endpoint.SelectionPolicy = endpointdomain.SelectionPolicy{HedgeDelay: flags.hedgeDelay, HedgeDelayConfigured: true}
 				}
 				registry.Endpoints[id] = endpoint
 				return registry, nil
@@ -269,18 +269,18 @@ func newEndpointRemoveCommand(runtime *endpointCommandRuntime) *cobra.Command {
 	return &cobra.Command{
 		Use: "remove ID", Short: "Remove an endpoint from the registry", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id := connection.EndpointID(args[0])
-			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+			id := endpointdomain.EndpointID(args[0])
+			if err := runtime.update(cmd.Context(), false, func(registry endpointdomain.Registry) (endpointdomain.Registry, error) {
 				if _, ok := registry.Endpoints[id]; !ok {
-					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
+					return endpointdomain.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
 				}
 				if len(registry.Endpoints) == 1 {
-					return connection.Registry{}, &cliError{code: 4, message: "cannot remove the last endpoint"}
+					return endpointdomain.Registry{}, &cliError{code: 4, message: "cannot remove the last endpoint"}
 				}
 				delete(registry.Endpoints, id)
 				if registry.Default == id {
 					if err := reassignEndpointDefault(&registry); err != nil {
-						return connection.Registry{}, err
+						return endpointdomain.Registry{}, err
 					}
 				}
 				return registry, nil
@@ -301,17 +301,17 @@ func newEndpointToggleCommand(runtime *endpointCommandRuntime, enabled bool) *co
 	return &cobra.Command{
 		Use: verb + " ID", Short: endpointVerbTitle(verb) + " an endpoint", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id := connection.EndpointID(args[0])
-			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+			id := endpointdomain.EndpointID(args[0])
+			if err := runtime.update(cmd.Context(), false, func(registry endpointdomain.Registry) (endpointdomain.Registry, error) {
 				endpoint, ok := registry.Endpoints[id]
 				if !ok {
-					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
+					return endpointdomain.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
 				}
 				endpoint.Enabled = enabled
 				registry.Endpoints[id] = endpoint
 				if !enabled && registry.Default == id {
 					if err := reassignEndpointDefault(&registry); err != nil {
-						return connection.Registry{}, err
+						return endpointdomain.Registry{}, err
 					}
 				}
 				return registry, nil
@@ -324,8 +324,8 @@ func newEndpointToggleCommand(runtime *endpointCommandRuntime, enabled bool) *co
 	}
 }
 
-func reassignEndpointDefault(registry *connection.Registry) error {
-	var firstEnabled connection.EndpointID
+func reassignEndpointDefault(registry *endpointdomain.Registry) error {
+	var firstEnabled endpointdomain.EndpointID
 	for _, endpoint := range registry.List() {
 		if !endpoint.Enabled {
 			continue
@@ -334,7 +334,7 @@ func reassignEndpointDefault(registry *connection.Registry) error {
 			firstEnabled = endpoint.ID
 		}
 		for _, route := range endpoint.RouteList() {
-			if route.Enabled && route.Kind == connection.RouteLocalUnix {
+			if route.Enabled && route.Kind == endpointdomain.RouteLocalUnix {
 				registry.Default = endpoint.ID
 				return nil
 			}
@@ -358,14 +358,14 @@ func newEndpointSetDefaultCommand(runtime *endpointCommandRuntime) *cobra.Comman
 	return &cobra.Command{
 		Use: "set-default ID", Short: "Set the default endpoint", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id := connection.EndpointID(args[0])
-			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+			id := endpointdomain.EndpointID(args[0])
+			if err := runtime.update(cmd.Context(), false, func(registry endpointdomain.Registry) (endpointdomain.Registry, error) {
 				endpoint, ok := registry.Endpoints[id]
 				if !ok {
-					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
+					return endpointdomain.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
 				}
 				if !endpoint.Enabled {
-					return connection.Registry{}, &cliError{code: 4, message: fmt.Sprintf("endpoint %s is disabled", id)}
+					return endpointdomain.Registry{}, &cliError{code: 4, message: fmt.Sprintf("endpoint %s is disabled", id)}
 				}
 				registry.Default = id
 				return registry, nil
@@ -386,21 +386,21 @@ func newEndpointRouteCommand(runtime *endpointCommandRuntime) *cobra.Command {
 
 func newEndpointRouteAddCommand(runtime *endpointCommandRuntime) *cobra.Command {
 	command := &cobra.Command{Use: "add", Short: "Add a route to an existing endpoint"}
-	for _, kind := range []connection.RouteKind{connection.RouteLocalUnix, connection.RouteSSHStdio, connection.RouteDirectTLS, connection.RouteManagedWebRTC} {
+	for _, kind := range []endpointdomain.RouteKind{endpointdomain.RouteLocalUnix, endpointdomain.RouteSSHStdio, endpointdomain.RouteDirectTLS, endpointdomain.RouteManagedWebRTC} {
 		flags := &routeEditFlags{}
 		child := &cobra.Command{
 			Use: routeCommandName(kind) + " ENDPOINT_ID ROUTE_ID", Args: cobra.ExactArgs(2),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				endpointID, routeID := connection.EndpointID(args[0]), connection.RouteID(args[1])
+				endpointID, routeID := endpointdomain.EndpointID(args[0]), endpointdomain.RouteID(args[1])
 				flags.routeID = string(routeID)
 				route := routeFromFlags(kind, *flags)
-				if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+				if err := runtime.update(cmd.Context(), false, func(registry endpointdomain.Registry) (endpointdomain.Registry, error) {
 					endpoint, ok := registry.Endpoints[endpointID]
 					if !ok {
-						return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
+						return endpointdomain.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
 					}
 					if _, exists := endpoint.Routes[routeID]; exists {
-						return connection.Registry{}, &cliError{code: 4, message: fmt.Sprintf("endpoint %s route %s already exists", endpointID, routeID)}
+						return endpointdomain.Registry{}, &cliError{code: 4, message: fmt.Sprintf("endpoint %s route %s already exists", endpointID, routeID)}
 					}
 					endpoint.Routes[routeID] = route
 					registry.Endpoints[endpointID] = endpoint
@@ -423,18 +423,18 @@ func newEndpointRouteUpdateCommand(runtime *endpointCommandRuntime) *cobra.Comma
 	command := &cobra.Command{
 		Use: "update ENDPOINT_ID ROUTE_ID", Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			endpointID, routeID := connection.EndpointID(args[0]), connection.RouteID(args[1])
-			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+			endpointID, routeID := endpointdomain.EndpointID(args[0]), endpointdomain.RouteID(args[1])
+			if err := runtime.update(cmd.Context(), false, func(registry endpointdomain.Registry) (endpointdomain.Registry, error) {
 				endpoint, ok := registry.Endpoints[endpointID]
 				if !ok {
-					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
+					return endpointdomain.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
 				}
 				route, ok := endpoint.Routes[routeID]
 				if !ok {
-					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s route %s was not found", endpointID, routeID)}
+					return endpointdomain.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s route %s was not found", endpointID, routeID)}
 				}
 				applyRouteFlagChanges(cmd, &route, *flags)
-				route.PolicySource = connection.SourceUser
+				route.PolicySource = endpointdomain.SourceUser
 				endpoint.Routes[routeID] = route
 				registry.Endpoints[endpointID] = endpoint
 				return registry, nil
@@ -453,17 +453,17 @@ func newEndpointRouteRemoveCommand(runtime *endpointCommandRuntime) *cobra.Comma
 	return &cobra.Command{
 		Use: "remove ENDPOINT_ID ROUTE_ID", Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			endpointID, routeID := connection.EndpointID(args[0]), connection.RouteID(args[1])
-			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+			endpointID, routeID := endpointdomain.EndpointID(args[0]), endpointdomain.RouteID(args[1])
+			if err := runtime.update(cmd.Context(), false, func(registry endpointdomain.Registry) (endpointdomain.Registry, error) {
 				endpoint, ok := registry.Endpoints[endpointID]
 				if !ok {
-					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
+					return endpointdomain.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
 				}
 				if _, ok := endpoint.Routes[routeID]; !ok {
-					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s route %s was not found", endpointID, routeID)}
+					return endpointdomain.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s route %s was not found", endpointID, routeID)}
 				}
 				if len(endpoint.Routes) == 1 {
-					return connection.Registry{}, &cliError{code: 4, message: "cannot remove the last route from an endpoint"}
+					return endpointdomain.Registry{}, &cliError{code: 4, message: "cannot remove the last route from an endpoint"}
 				}
 				delete(endpoint.Routes, routeID)
 				registry.Endpoints[endpointID] = endpoint
@@ -485,17 +485,17 @@ func newEndpointRouteToggleCommand(runtime *endpointCommandRuntime, enabled bool
 	return &cobra.Command{
 		Use: verb + " ENDPOINT_ID ROUTE_ID", Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			endpointID, routeID := connection.EndpointID(args[0]), connection.RouteID(args[1])
-			if err := runtime.update(cmd.Context(), false, func(registry connection.Registry) (connection.Registry, error) {
+			endpointID, routeID := endpointdomain.EndpointID(args[0]), endpointdomain.RouteID(args[1])
+			if err := runtime.update(cmd.Context(), false, func(registry endpointdomain.Registry) (endpointdomain.Registry, error) {
 				endpoint, ok := registry.Endpoints[endpointID]
 				if !ok {
-					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
+					return endpointdomain.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", endpointID)}
 				}
 				route, ok := endpoint.Routes[routeID]
 				if !ok {
-					return connection.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s route %s was not found", endpointID, routeID)}
+					return endpointdomain.Registry{}, &cliError{code: 3, message: fmt.Sprintf("endpoint %s route %s was not found", endpointID, routeID)}
 				}
-				route.Enabled, route.PolicySource = enabled, connection.SourceUser
+				route.Enabled, route.PolicySource = enabled, endpointdomain.SourceUser
 				endpoint.Routes[routeID] = route
 				registry.Endpoints[endpointID] = endpoint
 				return registry, nil
@@ -518,7 +518,7 @@ func newEndpointTestCommand(runtime *endpointCommandRuntime) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			id := connection.EndpointID(args[0])
+			id := endpointdomain.EndpointID(args[0])
 			endpoint, ok := registry.Endpoints[id]
 			if !ok {
 				return &cliError{code: 3, message: fmt.Sprintf("endpoint %s was not found", id)}
@@ -527,7 +527,7 @@ func newEndpointTestCommand(runtime *endpointCommandRuntime) *cobra.Command {
 				return &cliError{code: 4, message: fmt.Sprintf("endpoint %s is disabled", id)}
 			}
 			cmd.Root().SilenceUsage = true
-			routeID, observedPath, selectionReason, closeClient, err := probeEndpointProtocolClient(cmd.Context(), endpoint, connection.RouteID(routeValue), *runtime.socket, *runtime.logFile)
+			routeID, observedPath, selectionReason, closeClient, err := probeEndpointProtocolClient(cmd.Context(), endpoint, endpointdomain.RouteID(routeValue), *runtime.socket, *runtime.logFile)
 			if err != nil {
 				return classifyCLIError(err)
 			}
@@ -552,7 +552,7 @@ func newEndpointTestCommand(runtime *endpointCommandRuntime) *cobra.Command {
 
 func bindEndpointPolicyFlags(command *cobra.Command, flags *endpointEditFlags) {
 	command.Flags().StringVar(&flags.label, "label", "", "display label")
-	command.Flags().StringVar(&flags.connectMode, "connect-mode", string(connection.ConnectOnDemand), "auto, on_demand, or manual")
+	command.Flags().StringVar(&flags.connectMode, "connect-mode", string(endpointdomain.ConnectOnDemand), "auto, on_demand, or manual")
 	command.Flags().DurationVar(&flags.hedgeDelay, "hedge-delay", 300*time.Millisecond, "delay before starting the next priority group")
 }
 
@@ -561,19 +561,19 @@ func bindEndpointIdentityFlags(command *cobra.Command, flags *endpointEditFlags)
 	command.Flags().StringVar(&flags.deviceFingerprint, "device-fingerprint", "", "pinned daemon identity fingerprint")
 }
 
-func bindRouteEditFlags(command *cobra.Command, flags *routeEditFlags, kind connection.RouteKind, includeRouteID bool) {
+func bindRouteEditFlags(command *cobra.Command, flags *routeEditFlags, kind endpointdomain.RouteKind, includeRouteID bool) {
 	if includeRouteID {
 		command.Flags().StringVar(&flags.routeID, "route", routeCommandName(kind), "route ID")
 	}
 	command.Flags().BoolVar(&flags.manualOnly, "manual-only", false, "exclude this route from automatic selection")
 	command.Flags().IntVar(&flags.priority, "priority", -1, "route priority; lower starts earlier, -1 means unset")
-	if kind == "" || kind == connection.RouteSSHStdio || kind == connection.RouteDirectTLS || kind == connection.RouteManagedWebRTC {
+	if kind == "" || kind == endpointdomain.RouteSSHStdio || kind == endpointdomain.RouteDirectTLS || kind == endpointdomain.RouteManagedWebRTC {
 		command.Flags().StringVar(&flags.credentialRef, "credential-ref", "", "local secure credential reference")
 	}
-	if kind == "" || kind == connection.RouteLocalUnix {
+	if kind == "" || kind == endpointdomain.RouteLocalUnix {
 		command.Flags().StringVar(&flags.socket, "socket", "auto", "local daemon socket")
 	}
-	if kind == "" || kind == connection.RouteSSHStdio {
+	if kind == "" || kind == endpointdomain.RouteSSHStdio {
 		command.Flags().StringVar(&flags.host, "host", "", "OpenSSH host or alias")
 		command.Flags().Uint16Var(&flags.port, "port", 22, "SSH port")
 		command.Flags().StringVar(&flags.user, "user", "", "SSH user hint")
@@ -581,45 +581,45 @@ func bindRouteEditFlags(command *cobra.Command, flags *routeEditFlags, kind conn
 		command.Flags().StringVar(&flags.remoteSocket, "remote-socket", "auto", "remote daemon socket")
 		command.Flags().StringSliceVar(&flags.hostKeyFingerprints, "host-key", nil, "accepted SSH host-key fingerprint")
 	}
-	if kind == "" || kind == connection.RouteDirectTLS {
+	if kind == "" || kind == endpointdomain.RouteDirectTLS {
 		command.Flags().StringSliceVar(&flags.addresses, "address", nil, "direct TLS address (repeatable)")
 		command.Flags().StringVar(&flags.serverName, "server-name", "", "TLS routing server name; not a trust anchor")
 	}
-	if kind == "" || kind == connection.RouteManagedWebRTC {
+	if kind == "" || kind == endpointdomain.RouteManagedWebRTC {
 		command.Flags().StringVar(&flags.targetDeviceID, "target-device-id", "", "managed target device ID")
 		command.Flags().StringVar(&flags.accountProfile, "account-profile", "", "local Cloud account profile hint")
-		command.Flags().StringVar(&flags.relayMode, "relay", string(connection.RelayAuto), "auto, direct, relay_only, or smart_route")
+		command.Flags().StringVar(&flags.relayMode, "relay", string(endpointdomain.RelayAuto), "auto, direct, relay_only, or smart_route")
 	}
 }
 
-func endpointFromFlags(id connection.EndpointID, flags endpointEditFlags, route connection.AccessRoute) connection.Endpoint {
+func endpointFromFlags(id endpointdomain.EndpointID, flags endpointEditFlags, route endpointdomain.AccessRoute) endpointdomain.Endpoint {
 	label := strings.TrimSpace(flags.label)
 	if label == "" {
 		label = string(id)
 	}
-	endpoint := connection.Endpoint{
-		ID: id, Label: label, LabelSource: connection.SourceUser, Enabled: true, ConnectMode: connection.ConnectMode(flags.connectMode),
-		DaemonIdentity: connection.DaemonIdentity{DeviceID: strings.TrimSpace(flags.deviceID), DeviceFingerprint: strings.TrimSpace(flags.deviceFingerprint)},
-		Routes:         map[connection.RouteID]connection.AccessRoute{route.ID: route},
+	endpoint := endpointdomain.Endpoint{
+		ID: id, Label: label, LabelSource: endpointdomain.SourceUser, Enabled: true, ConnectMode: endpointdomain.ConnectMode(flags.connectMode),
+		DaemonIdentity: endpointdomain.DaemonIdentity{DeviceID: strings.TrimSpace(flags.deviceID), DeviceFingerprint: strings.TrimSpace(flags.deviceFingerprint)},
+		Routes:         map[endpointdomain.RouteID]endpointdomain.AccessRoute{route.ID: route},
 	}
 	if flags.hedgeDelay != 300*time.Millisecond {
-		endpoint.SelectionPolicy = connection.SelectionPolicy{HedgeDelay: flags.hedgeDelay, HedgeDelayConfigured: true}
+		endpoint.SelectionPolicy = endpointdomain.SelectionPolicy{HedgeDelay: flags.hedgeDelay, HedgeDelayConfigured: true}
 	}
 	return endpoint
 }
 
-func routeFromFlags(kind connection.RouteKind, flags routeEditFlags) connection.AccessRoute {
-	routeID := connection.RouteID(strings.TrimSpace(flags.routeID))
+func routeFromFlags(kind endpointdomain.RouteKind, flags routeEditFlags) endpointdomain.AccessRoute {
+	routeID := endpointdomain.RouteID(strings.TrimSpace(flags.routeID))
 	if routeID == "" {
-		routeID = connection.RouteID(routeCommandName(kind))
+		routeID = endpointdomain.RouteID(routeCommandName(kind))
 	}
-	route := connection.AccessRoute{
+	route := endpointdomain.AccessRoute{
 		ID: routeID, Kind: kind, Enabled: true, ManualOnly: flags.manualOnly, CredentialRef: strings.TrimSpace(flags.credentialRef),
-		Source: connection.SourceManual, PolicySource: connection.SourceUser, Socket: strings.TrimSpace(flags.socket),
+		Source: endpointdomain.SourceManual, PolicySource: endpointdomain.SourceUser, Socket: strings.TrimSpace(flags.socket),
 		Host: strings.TrimSpace(flags.host), Port: flags.port, User: strings.TrimSpace(flags.user), ProxyJump: strings.TrimSpace(flags.proxyJump),
 		RemoteSocket: strings.TrimSpace(flags.remoteSocket), HostKeyFingerprints: append([]string(nil), flags.hostKeyFingerprints...),
 		Addresses: append([]string(nil), flags.addresses...), ServerName: strings.TrimSpace(flags.serverName),
-		TargetDeviceID: strings.TrimSpace(flags.targetDeviceID), AccountProfile: strings.TrimSpace(flags.accountProfile), RelayMode: connection.RelayMode(flags.relayMode),
+		TargetDeviceID: strings.TrimSpace(flags.targetDeviceID), AccountProfile: strings.TrimSpace(flags.accountProfile), RelayMode: endpointdomain.RelayMode(flags.relayMode),
 	}
 	if flags.priority >= 0 {
 		priority := flags.priority
@@ -628,7 +628,7 @@ func routeFromFlags(kind connection.RouteKind, flags routeEditFlags) connection.
 	return route
 }
 
-func applyRouteFlagChanges(command *cobra.Command, route *connection.AccessRoute, flags routeEditFlags) {
+func applyRouteFlagChanges(command *cobra.Command, route *endpointdomain.AccessRoute, flags routeEditFlags) {
 	if command.Flags().Changed("manual-only") {
 		route.ManualOnly = flags.manualOnly
 	}
@@ -677,26 +677,26 @@ func applyRouteFlagChanges(command *cobra.Command, route *connection.AccessRoute
 		route.AccountProfile = strings.TrimSpace(flags.accountProfile)
 	}
 	if command.Flags().Changed("relay") {
-		route.RelayMode = connection.RelayMode(flags.relayMode)
+		route.RelayMode = endpointdomain.RelayMode(flags.relayMode)
 	}
 }
 
-func routeCommandName(kind connection.RouteKind) string {
+func routeCommandName(kind endpointdomain.RouteKind) string {
 	switch kind {
-	case connection.RouteLocalUnix:
+	case endpointdomain.RouteLocalUnix:
 		return "local"
-	case connection.RouteSSHStdio:
+	case endpointdomain.RouteSSHStdio:
 		return "ssh"
-	case connection.RouteDirectTLS:
+	case endpointdomain.RouteDirectTLS:
 		return "direct"
-	case connection.RouteManagedWebRTC:
+	case endpointdomain.RouteManagedWebRTC:
 		return "cloud"
 	default:
 		return string(kind)
 	}
 }
 
-func endpointViews(registry connection.Registry) []endpointView {
+func endpointViews(registry endpointdomain.Registry) []endpointView {
 	views := make([]endpointView, 0, len(registry.Endpoints))
 	for _, endpoint := range registry.List() {
 		views = append(views, endpointConfigView(endpoint, registry.Default == endpoint.ID))
@@ -704,7 +704,7 @@ func endpointViews(registry connection.Registry) []endpointView {
 	return views
 }
 
-func endpointConfigView(endpoint connection.Endpoint, isDefault bool) endpointView {
+func endpointConfigView(endpoint endpointdomain.Endpoint, isDefault bool) endpointView {
 	view := endpointView{
 		ID: string(endpoint.ID), Label: endpoint.Label, DeviceID: endpoint.DaemonIdentity.DeviceID,
 		DeviceFingerprint: endpoint.DaemonIdentity.DeviceFingerprint, Enabled: endpoint.Enabled, Default: isDefault,

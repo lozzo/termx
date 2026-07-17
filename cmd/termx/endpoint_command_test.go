@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/shared/connection"
 	"github.com/lozzow/termx/shared/filelock"
 )
 
@@ -83,7 +83,7 @@ func TestEndpointRegistryCommandLifecycle(t *testing.T) {
 	}
 
 	run("endpoint", "disable", "west")
-	registry, err := connection.Load("")
+	registry, err := endpointdomain.Load("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestEndpointRegistryCommandLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if registry.Default != connection.DefaultEndpointID || registry.Endpoints["west"].Enabled {
+	if registry.Default != endpointdomain.DefaultEndpointID || registry.Endpoints["west"].Enabled {
 		t.Fatalf("disable did not select enabled default: %#v", registry)
 	}
 	run("endpoint", "enable", "west")
@@ -100,7 +100,7 @@ func TestEndpointRegistryCommandLifecycle(t *testing.T) {
 		t.Fatal("removed endpoint is still present")
 	}
 
-	info, err := os.Stat(filepath.Join(configHome, "termx", connection.DefaultFileName))
+	info, err := os.Stat(filepath.Join(configHome, "termx", endpointdomain.DefaultFileName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,14 +118,14 @@ func TestEndpointAddCreatesExplicitRegistryWithoutInventingLocalEndpoint(t *test
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	registry, err := connection.Load(registryPath)
+	registry, err := endpointdomain.Load(registryPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(registry.Endpoints) != 1 || registry.Default != "west" {
 		t.Fatalf("explicit registry should contain only the imported endpoint: %#v", registry)
 	}
-	if _, exists := registry.Endpoints[connection.DefaultEndpointID]; exists {
+	if _, exists := registry.Endpoints[endpointdomain.DefaultEndpointID]; exists {
 		t.Fatal("explicit registry creation invented a local endpoint")
 	}
 }
@@ -144,14 +144,14 @@ func TestTerminalCommandsRouteDuplicateIDsToOwningLocalEndpoint(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	registry := connection.Registry{
-		Version: connection.RegistryVersion, Default: "local",
-		Endpoints: map[connection.EndpointID]connection.Endpoint{
-			"local": testLocalEndpoint("local", "Local", localSocket, connection.ConnectAuto, true),
-			"west":  testLocalEndpoint("west", "West", westSocket, connection.ConnectOnDemand, true),
+	registry := endpointdomain.Registry{
+		Version: endpointdomain.RegistryVersion, Default: "local",
+		Endpoints: map[endpointdomain.EndpointID]endpointdomain.Endpoint{
+			"local": testLocalEndpoint("local", "Local", localSocket, endpointdomain.ConnectAuto, true),
+			"west":  testLocalEndpoint("west", "West", westSocket, endpointdomain.ConnectOnDemand, true),
 		},
 	}
-	if err := connection.Save("", registry); err != nil {
+	if err := endpointdomain.Save("", registry); err != nil {
 		t.Fatal(err)
 	}
 
@@ -211,9 +211,9 @@ func startCLIEndpointServer(t *testing.T) (string, *protocol.Client, func()) {
 	}
 }
 
-func mustLoadEndpointRegistry(t *testing.T) connection.Registry {
+func mustLoadEndpointRegistry(t *testing.T) endpointdomain.Registry {
 	t.Helper()
-	registry, err := connection.Load("")
+	registry, err := endpointdomain.Load("")
 	if err != nil {
 		t.Fatal(err)
 	}

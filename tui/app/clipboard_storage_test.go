@@ -2,16 +2,17 @@ package app
 
 import (
 	"context"
+	"github.com/lozzow/termx/tui/testkit"
 	"testing"
 
 	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/services"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
 
 func TestClipboardStorageReducerLoadsEntriesFromCoreStorage(t *testing.T) {
-	storage := &services.FakeClipboardStorageService{
-		LoadResult: services.ClipboardStorageLoadResult{
+	storage := &testkit.FakeClipboardStorageService{
+		LoadResult: port.ClipboardStorageLoadResult{
 			Snapshot: state.SnapshotClipboardForStorage(state.ClipboardStore{}.WithCopiedText("persisted")),
 			Version:  3,
 			Found:    true,
@@ -36,12 +37,12 @@ func TestClipboardStorageReducerLoadsEntriesFromCoreStorage(t *testing.T) {
 }
 
 func TestCopySelectionPersistsClipboardHistoryToCoreStorage(t *testing.T) {
-	core := &services.FakeCoreClient{}
-	clipboard := &services.FakeClipboardService{}
-	storage := &services.FakeClipboardStorageService{}
+	core := &testkit.FakeCoreClient{}
+	clipboard := &testkit.FakeClipboardService{}
+	storage := &testkit.FakeClipboardStorageService{}
 	reducer := ComposeReducers(
 		NewClipboardStorageReducer(ClipboardDeps{Storage: storage}),
-		NewCopyModeReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: &services.FakeTerminalService{}, Rows: 20}),
+		NewCopyModeReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: &testkit.FakeTerminalService{}, Rows: 20}),
 	)
 	root := state.Root{
 		Shell: state.DefaultShell(),
@@ -86,10 +87,10 @@ func TestCopySelectionPersistsClipboardHistoryToCoreStorage(t *testing.T) {
 }
 
 func TestClipboardHistoryOpenRequestsStorageLoad(t *testing.T) {
-	storage := &services.FakeClipboardStorageService{}
+	storage := &testkit.FakeClipboardStorageService{}
 	reducer := ComposeReducers(
 		NewClipboardStorageReducer(ClipboardDeps{Storage: storage}),
-		NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Clipboard: &services.FakeClipboardService{}, Terminal: &services.FakeTerminalService{}, Rows: 20}),
+		NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}, Clipboard: &testkit.FakeClipboardService{}, Terminal: &testkit.FakeTerminalService{}, Rows: 20}),
 	)
 	root := state.Root{CopyMode: state.CopyModeStore{Active: true}}
 
@@ -112,7 +113,7 @@ func TestClipboardHistoryOpenRequestsStorageLoad(t *testing.T) {
 }
 
 func TestClipboardHistoryNewEntryPersistsStorage(t *testing.T) {
-	storage := &services.FakeClipboardStorageService{}
+	storage := &testkit.FakeClipboardStorageService{}
 	reducer := ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewClipboardStorageReducer(ClipboardDeps{Storage: storage}))
 	root := state.Root{Shell: state.DefaultShell().OpenClipboardHistory()}
 
@@ -140,7 +141,7 @@ func TestClipboardHistoryNewEntryPersistsStorage(t *testing.T) {
 }
 
 func TestClipboardHistoryEditAndDeletePersistStorage(t *testing.T) {
-	storage := &services.FakeClipboardStorageService{}
+	storage := &testkit.FakeClipboardStorageService{}
 	reducer := ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewClipboardStorageReducer(ClipboardDeps{Storage: storage}))
 	root := state.Root{
 		Shell: state.DefaultShell().OpenClipboardHistory(),
@@ -190,9 +191,9 @@ func TestClipboardHistoryEditAndDeletePersistStorage(t *testing.T) {
 }
 
 func TestClipboardStorageConflictReloads(t *testing.T) {
-	storage := &services.FakeClipboardStorageService{
+	storage := &testkit.FakeClipboardStorageService{
 		CurrentVersion: 9,
-		LoadResult: services.ClipboardStorageLoadResult{
+		LoadResult: port.ClipboardStorageLoadResult{
 			Snapshot: state.SnapshotClipboardForStorage(state.ClipboardStore{}.WithCopiedText("remote")),
 			Version:  9,
 			Found:    true,
@@ -221,8 +222,8 @@ func TestClipboardStorageConflictReloads(t *testing.T) {
 }
 
 func TestClipboardStorageLoadMergesPendingLocalCopy(t *testing.T) {
-	storage := &services.FakeClipboardStorageService{
-		LoadResult: services.ClipboardStorageLoadResult{
+	storage := &testkit.FakeClipboardStorageService{
+		LoadResult: port.ClipboardStorageLoadResult{
 			Snapshot: state.SnapshotClipboardForStorage(state.ClipboardStore{}.WithCopiedText("remote")),
 			Version:  4,
 			Found:    true,
@@ -251,8 +252,8 @@ func TestClipboardStorageLoadMergesPendingLocalCopy(t *testing.T) {
 }
 
 func TestClipboardStorageLoadRebasesPendingDeleteWithoutRevivingRemoteEntry(t *testing.T) {
-	storage := &services.FakeClipboardStorageService{
-		LoadResult: services.ClipboardStorageLoadResult{
+	storage := &testkit.FakeClipboardStorageService{
+		LoadResult: port.ClipboardStorageLoadResult{
 			Snapshot: state.SnapshotClipboardForStorage(state.ClipboardStore{}.WithCopiedText("remote").WithCopiedText("deleted")),
 			Version:  4,
 			Found:    true,
@@ -286,7 +287,7 @@ func TestClipboardStorageLoadRebasesPendingDeleteWithoutRevivingRemoteEntry(t *t
 }
 
 func TestClipboardStorageContextCanceledStaysSilent(t *testing.T) {
-	storage := &services.FakeClipboardStorageService{
+	storage := &testkit.FakeClipboardStorageService{
 		LoadErr:  context.Canceled,
 		SaveErr:  context.Canceled,
 		WatchErr: context.Canceled,

@@ -4,8 +4,8 @@ import (
 	"sort"
 	"strings"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/shared/cloudcompanion"
-	"github.com/lozzow/termx/shared/connection"
 )
 
 const (
@@ -106,12 +106,12 @@ type EndpointErrorKind string
 // EndpointRouteItem 是 reducer-owned 的脱敏 route 配置投影。
 // DialIdentity 只用于判断 registry reload 是否要求 reconnect，不包含 credential body 或 runtime Transport。
 type EndpointRouteItem struct {
-	ID           connection.RouteID
+	ID           endpointdomain.RouteID
 	Kind         EndpointTransportKind
 	Enabled      bool
 	ManualOnly   bool
 	Priority     *int
-	DialIdentity connection.DialIdentity
+	DialIdentity endpointdomain.DialIdentity
 }
 
 // EndpointItem 是 reducer-owned endpoint 展示投影。
@@ -156,7 +156,7 @@ type EndpointStore struct {
 
 // EndpointItemFromEndpoint 把共享 Endpoint registry 配置转换成 TUI 脱敏投影。
 // 该转换不做网络 IO，也不验证凭据；失败和 host key 只能由后续 transport 连接消息回投。
-func EndpointItemFromEndpoint(endpoint connection.Endpoint) EndpointItem {
+func EndpointItemFromEndpoint(endpoint endpointdomain.Endpoint) EndpointItem {
 	endpointID := EndpointID(strings.TrimSpace(string(endpoint.ID)))
 	if endpointID == "" {
 		endpointID = DefaultEndpointID
@@ -177,7 +177,7 @@ func EndpointItemFromEndpoint(endpoint connection.Endpoint) EndpointItem {
 
 // ApplyConnectionRegistry 用新的 connections.yaml 快照更新 endpoint 展示配置。
 // 已存在的运行时状态会按 endpoint id 保留；被删除但仍有运行时状态的 endpoint 会标记为 unregistered。
-func (store EndpointStore) ApplyConnectionRegistry(registry connection.Registry) EndpointStore {
+func (store EndpointStore) ApplyConnectionRegistry(registry endpointdomain.Registry) EndpointStore {
 	next := EndpointStore{}
 	seen := map[EndpointID]struct{}{}
 	for _, endpoint := range registry.List() {
@@ -394,8 +394,8 @@ func DefaultLocalEndpoint() EndpointItem {
 		Label:     string(DefaultEndpointID),
 		Transport: EndpointTransportLocal,
 		Routes: []EndpointRouteItem{{
-			ID: connection.DefaultLocalRouteID, Kind: EndpointTransportLocal, Enabled: true,
-			DialIdentity: connection.AccessRoute{ID: connection.DefaultLocalRouteID, Kind: connection.RouteLocalUnix, Enabled: true, Socket: "auto"}.DialIdentity(),
+			ID: endpointdomain.DefaultLocalRouteID, Kind: EndpointTransportLocal, Enabled: true,
+			DialIdentity: endpointdomain.AccessRoute{ID: endpointdomain.DefaultLocalRouteID, Kind: endpointdomain.RouteLocalUnix, Enabled: true, Socket: "auto"}.DialIdentity(),
 		}},
 		ConnectMode: EndpointConnectAuto,
 		Enabled:     true,
@@ -532,7 +532,7 @@ func ClassifyEndpointErrorText(text string) EndpointErrorKind {
 }
 
 // RequiresReconnect 判断 registry reload 后是否改变了 endpoint dial identity。
-// 该判断只覆盖 TUI 展示字段，完整 dial identity 仍由 shared/connection.Endpoint 负责。
+// 该判断只覆盖 TUI 展示字段，完整 dial identity 仍由 shared/endpointdomain.Endpoint 负责。
 func (item EndpointItem) RequiresReconnect(next EndpointItem) bool {
 	item = item.withDefaults()
 	next = next.withDefaults()

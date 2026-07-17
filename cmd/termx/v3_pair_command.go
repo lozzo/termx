@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/shared/connection"
 	"github.com/lozzow/termx/shared/remoteauth"
 	unixtransport "github.com/lozzow/termx/shared/transport/unix"
 	qrcode "github.com/skip2/go-qrcode"
@@ -25,7 +25,7 @@ import (
 const pairingBootstrapURIPrefix = "termx://bootstrap?payload="
 
 var (
-	updateV3ConnectionRegistry = connection.UpdateContext
+	updateV3ConnectionRegistry = endpointdomain.UpdateContext
 	dialV3PairingTransport     = unixtransport.DialContext
 	v3PairHostname             = os.Hostname
 	v3PairOutputIsTerminal     = func(output io.Writer) bool {
@@ -206,7 +206,7 @@ func renderV3PairingQR(output io.Writer, payload []byte, expiresAt time.Time) er
 func localPairTerminalID(target string) (string, error) {
 	target = strings.TrimSpace(target)
 	if endpointID, terminalID, found := strings.Cut(target, ":"); found {
-		if endpointID != string(connection.DefaultEndpointID) || terminalID == "" || strings.Contains(terminalID, ":") {
+		if endpointID != string(endpointdomain.DefaultEndpointID) || terminalID == "" || strings.Contains(terminalID, ":") {
 			return "", usageCLIError("pair create can only scope the local daemon target local:TERMINAL_ID")
 		}
 		return terminalID, nil
@@ -238,7 +238,7 @@ func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			id := connection.EndpointID(strings.TrimSpace(endpointID))
+			id := endpointdomain.EndpointID(strings.TrimSpace(endpointID))
 			endpointLabel := strings.TrimSpace(label)
 			if endpointLabel == "" {
 				endpointLabel = bundle.GetSuggestedLabel()
@@ -246,13 +246,13 @@ func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 			if endpointLabel == "" {
 				endpointLabel = string(id)
 			}
-			identity := connection.DaemonIdentity{DeviceID: bundle.GetIdentity().GetDeviceId(), DeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint()}
-			var endpoint connection.Endpoint
+			identity := endpointdomain.DaemonIdentity{DeviceID: bundle.GetIdentity().GetDeviceId(), DeviceFingerprint: bundle.GetIdentity().GetDeviceFingerprint()}
+			var endpoint endpointdomain.Endpoint
 			var credential remoteauth.ClientAccessCredential
-			_, err = updateV3ConnectionRegistry(cmd.Context(), registryPath, true, func(registry connection.Registry) (connection.Registry, error) {
+			_, err = updateV3ConnectionRegistry(cmd.Context(), registryPath, true, func(registry endpointdomain.Registry) (endpointdomain.Registry, error) {
 				updated, mergedEndpoint, grantRef, mergeErr := mergePairingEndpoint(registry, id, endpointLabel, bundle)
 				if mergeErr != nil {
-					return connection.Registry{}, mergeErr
+					return endpointdomain.Registry{}, mergeErr
 				}
 				credentials := remoteauth.NewCredentialStore(v3RemoteCredentialDir())
 				bound, bindErr := credentials.PairAndBind(
@@ -293,7 +293,7 @@ func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 					},
 				)
 				if bindErr != nil {
-					return connection.Registry{}, bindErr
+					return endpointdomain.Registry{}, bindErr
 				}
 				endpoint = mergedEndpoint
 				credential = bound
@@ -317,14 +317,14 @@ func v3PairImportCommand(socket *string, logFile *string) *cobra.Command {
 }
 
 func mergePairingEndpoint(
-	registry connection.Registry,
-	preferredID connection.EndpointID,
+	registry endpointdomain.Registry,
+	preferredID endpointdomain.EndpointID,
 	label string,
 	bundle *remoteauth.PairingBundle,
-) (connection.Registry, connection.Endpoint, string, error) {
-	candidate, err := connection.EndpointCandidateFromBootstrapBundle(bundle)
+) (endpointdomain.Registry, endpointdomain.Endpoint, string, error) {
+	candidate, err := endpointdomain.EndpointCandidateFromBootstrapBundle(bundle)
 	if err != nil {
-		return connection.Registry{}, connection.Endpoint{}, "", err
+		return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", err
 	}
 	identity := candidate.Identity
 	if strings.TrimSpace(label) != "" {
@@ -332,13 +332,13 @@ func mergePairingEndpoint(
 	}
 	normalized, err := registry.Normalize()
 	if err != nil {
-		return connection.Registry{}, connection.Endpoint{}, "", err
+		return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", err
 	}
 	registry = normalized
 	actualID := preferredID
 	target, targetExists := registry.Endpoints[preferredID]
 	if targetExists && !target.DaemonIdentity.Empty() && target.DaemonIdentity != identity {
-		return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("endpoint %q is pinned to a different daemon identity", preferredID)
+		return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", fmt.Errorf("endpoint %q is pinned to a different daemon identity", preferredID)
 	}
 	if !targetExists {
 		for _, endpoint := range registry.List() {
@@ -352,34 +352,34 @@ func mergePairingEndpoint(
 	grantRef := v3PairingGrantRef(actualID, identity.DeviceID)
 	if targetExists {
 		for _, route := range target.Routes {
-			if route.Kind != connection.RouteDirectTLS && route.Kind != connection.RouteManagedWebRTC || strings.TrimSpace(route.CredentialRef) == "" {
+			if route.Kind != endpointdomain.RouteDirectTLS && route.Kind != endpointdomain.RouteManagedWebRTC || strings.TrimSpace(route.CredentialRef) == "" {
 				continue
 			}
 			if grantRef != v3PairingGrantRef(actualID, identity.DeviceID) && grantRef != route.CredentialRef {
-				return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("endpoint %q has conflicting capability credential refs", actualID)
+				return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", fmt.Errorf("endpoint %q has conflicting capability credential refs", actualID)
 			}
 			grantRef = route.CredentialRef
 		}
 	}
 	if !targetExists && len(candidate.Routes) == 0 {
-		return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("pairing bundle contains no portable route and no existing endpoint matches daemon %q", identity.DeviceID)
+		return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", fmt.Errorf("pairing bundle contains no portable route and no existing endpoint matches daemon %q", identity.DeviceID)
 	}
 	for index := range candidate.Routes {
-		if candidate.Routes[index].Kind == connection.RouteDirectTLS || candidate.Routes[index].Kind == connection.RouteManagedWebRTC {
+		if candidate.Routes[index].Kind == endpointdomain.RouteDirectTLS || candidate.Routes[index].Kind == endpointdomain.RouteManagedWebRTC {
 			candidate.Routes[index].CredentialRef = grantRef
 		}
 	}
-	input := connection.EndpointAssemblerInput{Registry: registry, Candidates: []connection.EndpointCandidate{candidate}}
+	input := endpointdomain.EndpointAssemblerInput{Registry: registry, Candidates: []endpointdomain.EndpointCandidate{candidate}}
 	if targetExists && target.DaemonIdentity.Empty() {
-		input.ConfirmedIdentityBindings = []connection.ConfirmedIdentityBinding{{EndpointID: actualID, Identity: identity}}
+		input.ConfirmedIdentityBindings = []endpointdomain.ConfirmedIdentityBinding{{EndpointID: actualID, Identity: identity}}
 	}
-	result, err := connection.AssembleEndpoints(input)
+	result, err := endpointdomain.AssembleEndpoints(input)
 	if err != nil {
-		return connection.Registry{}, connection.Endpoint{}, "", err
+		return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", err
 	}
 	resolvedID := result.ResolvedEndpointIDs[0]
 	if targetExists && resolvedID != actualID {
-		return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("pairing identity resolved to endpoint %q instead of confirmed endpoint %q", resolvedID, actualID)
+		return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", fmt.Errorf("pairing identity resolved to endpoint %q instead of confirmed endpoint %q", resolvedID, actualID)
 	}
 	if !targetExists && resolvedID != actualID {
 		endpoint := result.Registry.Endpoints[resolvedID]
@@ -391,30 +391,30 @@ func mergePairingEndpoint(
 		}
 		result.Registry, err = result.Registry.Normalize()
 		if err != nil {
-			return connection.Registry{}, connection.Endpoint{}, "", err
+			return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", err
 		}
 		resolvedID = actualID
 	}
 	endpoint := result.Registry.Endpoints[resolvedID]
 	authRoutes := 0
 	for routeID, route := range endpoint.Routes {
-		if route.Kind != connection.RouteDirectTLS && route.Kind != connection.RouteManagedWebRTC {
+		if route.Kind != endpointdomain.RouteDirectTLS && route.Kind != endpointdomain.RouteManagedWebRTC {
 			continue
 		}
 		if strings.TrimSpace(route.CredentialRef) != "" && route.CredentialRef != grantRef {
-			return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("endpoint %q route %q uses a different capability credential ref", resolvedID, routeID)
+			return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", fmt.Errorf("endpoint %q route %q uses a different capability credential ref", resolvedID, routeID)
 		}
 		route.CredentialRef = grantRef
 		endpoint.Routes[routeID] = route
 		authRoutes++
 	}
 	if authRoutes == 0 {
-		return connection.Registry{}, connection.Endpoint{}, "", fmt.Errorf("endpoint %q has no direct-tls or managed-webrtc route that can use the paired capability", resolvedID)
+		return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", fmt.Errorf("endpoint %q has no direct-tls or managed-webrtc route that can use the paired capability", resolvedID)
 	}
 	result.Registry.Endpoints[resolvedID] = endpoint
 	result.Registry, err = result.Registry.Normalize()
 	if err != nil {
-		return connection.Registry{}, connection.Endpoint{}, "", err
+		return endpointdomain.Registry{}, endpointdomain.Endpoint{}, "", err
 	}
 	endpoint = result.Registry.Endpoints[resolvedID]
 	return result.Registry, endpoint, grantRef, nil
@@ -437,18 +437,18 @@ func readV3PairingBundle(ctx context.Context, stdin io.Reader, path string) ([]b
 		defer file.Close()
 		reader = file
 	}
-	payload, err := io.ReadAll(io.LimitReader(reader, connection.MaxPortableContractBytes+1))
+	payload, err := io.ReadAll(io.LimitReader(reader, endpointdomain.MaxPortableContractBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read pairing bundle: %w", err)
 	}
-	if len(payload) == 0 || len(payload) > connection.MaxPortableContractBytes {
+	if len(payload) == 0 || len(payload) > endpointdomain.MaxPortableContractBytes {
 		clear(payload)
 		return nil, fmt.Errorf("pairing bundle size is invalid")
 	}
 	if text := strings.TrimSpace(string(payload)); strings.HasPrefix(text, pairingBootstrapURIPrefix) {
 		decoded, decodeErr := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(text, pairingBootstrapURIPrefix))
 		clear(payload)
-		if decodeErr != nil || len(decoded) == 0 || len(decoded) > connection.MaxPortableContractBytes {
+		if decodeErr != nil || len(decoded) == 0 || len(decoded) > endpointdomain.MaxPortableContractBytes {
 			clear(decoded)
 			return nil, fmt.Errorf("pairing bootstrap URI payload is invalid")
 		}
@@ -457,7 +457,7 @@ func readV3PairingBundle(ctx context.Context, stdin io.Reader, path string) ([]b
 	return payload, nil
 }
 
-func v3PairingGrantRef(endpointID connection.EndpointID, deviceID string) string {
+func v3PairingGrantRef(endpointID endpointdomain.EndpointID, deviceID string) string {
 	digest := sha256.Sum256([]byte(string(endpointID) + "\x00" + strings.TrimSpace(deviceID)))
 	return "managed-" + hex.EncodeToString(digest[:12])
 }

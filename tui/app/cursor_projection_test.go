@@ -2,20 +2,21 @@ package app
 
 import (
 	"context"
+	"github.com/lozzow/termx/tui/testkit"
 	"testing"
 
 	"github.com/lozzow/termx/tui/input"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
 
 func TestHostCursorProjectionLiveCopyPromptFloatingAndOverlayPriority(t *testing.T) {
-	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 7, Cols: 78, Rows: 20},
+	terminal := &testkit.FakeTerminalService{
+		AttachResult: port.TerminalAttachResult{TerminalID: "term-main", Channel: 7, Cols: 78, Rows: 20},
 	}
-	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+	core := &testkit.FakeCoreClient{
+		LatestResponses: []port.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
 			"term-main",
 			"tok-1",
@@ -102,7 +103,7 @@ func TestHostCursorProjectionLiveCopyPromptFloatingAndOverlayPriority(t *testing
 	if err := runtime.Post(TerminalPoolAttachResultMsg{
 		TerminalID:       "term-float",
 		TargetFloatingID: "floating-1",
-		Result:           services.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 30, Rows: 7},
+		Result:           port.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 30, Rows: 7},
 	}); err != nil {
 		t.Fatalf("attach floating terminal: %v", err)
 	}
@@ -142,7 +143,7 @@ func TestHostCursorProjectionLiveCopyPromptFloatingAndOverlayPriority(t *testing
 }
 
 func TestHostCursorProjectionHidesPaneCursorCoveredByFloating(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 7, Cols: 78, Rows: 20}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-main", Channel: 7, Cols: 78, Rows: 20}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewInteractiveRuntime(
@@ -150,7 +151,7 @@ func TestHostCursorProjectionHidesPaneCursorCoveredByFloating(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
@@ -207,7 +208,7 @@ func TestHostCursorProjectionHidesPaneCursorCoveredByFloating(t *testing.T) {
 }
 
 func TestHostCursorProjectionStaysInViewportAfterResize(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 3, Cols: 78, Rows: 20}}
+	terminal := &testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{TerminalID: "term-main", Channel: 3, Cols: 78, Rows: 20}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := NewInteractiveRuntime(
@@ -215,7 +216,7 @@ func TestHostCursorProjectionStaysInViewportAfterResize(t *testing.T) {
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 	)
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post attach: %v", err)

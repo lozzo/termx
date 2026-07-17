@@ -5,12 +5,12 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/lozzow/termx/tui/services"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
 
 type ClipboardDeps struct {
-	Storage services.ClipboardStorageService
+	Storage port.ClipboardStorageService
 	Ref     state.ClipboardStorageRef
 	Logger  *slog.Logger
 }
@@ -26,14 +26,14 @@ type ClipboardStorageWatchRequestMsg struct{}
 func (ClipboardStorageWatchRequestMsg) isMsg() {}
 
 type ClipboardStorageChangedMsg struct {
-	Event services.ClipboardStorageEvent
+	Event port.ClipboardStorageEvent
 	Err   error
 }
 
 func (ClipboardStorageChangedMsg) isMsg() {}
 
 type ClipboardStorageLoadResultMsg struct {
-	Result services.ClipboardStorageLoadResult
+	Result port.ClipboardStorageLoadResult
 	Err    error
 }
 
@@ -46,7 +46,7 @@ type ClipboardStoragePersistRequestMsg struct {
 func (ClipboardStoragePersistRequestMsg) isMsg() {}
 
 type ClipboardStoragePersistResultMsg struct {
-	Result services.ClipboardStorageSaveResult
+	Result port.ClipboardStorageSaveResult
 	Err    error
 }
 
@@ -180,7 +180,7 @@ func reduceClipboardStoragePersistRequest(root state.Root, _ ClipboardStoragePer
 	snapshot := state.SnapshotClipboardForStorage(root.Clipboard)
 	expectedVersion := root.Clipboard.SaveVersion()
 	return root, []Effect{FuncEffect{Async: true, ForceSyncInTests: true, Run: func(ctx context.Context) Msg {
-		result, err := deps.Storage.SaveClipboard(ctx, services.ClipboardStorageSaveRequest{
+		result, err := deps.Storage.SaveClipboard(ctx, port.ClipboardStorageSaveRequest{
 			Ref:             ref.WithVersion(expectedVersion),
 			Snapshot:        snapshot,
 			CheckVersion:    true,
@@ -199,7 +199,7 @@ func reduceClipboardStoragePersistResult(root state.Root, msg ClipboardStoragePe
 		if isContextLifecycleError(msg.Err) {
 			return root, nil
 		}
-		if errors.Is(msg.Err, services.ErrClipboardStorageConflict) {
+		if errors.Is(msg.Err, port.ErrClipboardStorageConflict) {
 			root.Clipboard = root.Clipboard.MarkConflict(root.Clipboard.SaveVersion())
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "clipboard.storage", Body: "conflict: reloading"})
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {

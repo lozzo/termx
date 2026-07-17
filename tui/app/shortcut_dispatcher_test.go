@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/lozzow/termx/tui/testkit"
 	"os"
 	"strconv"
 	"strings"
@@ -8,7 +9,6 @@ import (
 
 	actiondomain "github.com/lozzow/termx/tui/action"
 	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/shortcut"
 	"github.com/lozzow/termx/tui/state"
 )
@@ -83,7 +83,7 @@ func TestCopyShortcutInvocationIsOwnedByCopyReducer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	core := &services.FakeCoreClient{}
+	core := &testkit.FakeCoreClient{}
 	reducer := ComposeReducers(NewShellReducer(), NewCopyModeReducer(CopyModeDeps{Core: core, Rows: 20}))
 	root := state.Root{
 		Shell:    state.DefaultShell(),

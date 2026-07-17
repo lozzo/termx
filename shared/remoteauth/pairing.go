@@ -14,15 +14,15 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/proto/remoteauthpb"
-	"github.com/lozzow/termx/shared/connection"
 )
 
 const (
 	// PairingBundleVersion 与 connection owner 冻结的 EndpointBootstrapBundleV2 版本一致。
 	// remoteauth 不再维护第二套 JSON bundle 或独立 ticket envelope。
-	PairingBundleVersion     = connection.EndpointBootstrapBundleVersion
-	pairingTicketVersion     = connection.PortableSignatureVersion
+	PairingBundleVersion     = endpointdomain.EndpointBootstrapBundleVersion
+	pairingTicketVersion     = endpointdomain.PortableSignatureVersion
 	defaultPairingTicketTTL  = 10 * time.Minute
 	defaultPairingGrantTTL   = 90 * 24 * time.Hour
 	maxPairingTicketTTL      = 24 * time.Hour
@@ -132,7 +132,7 @@ func issuePairingBundle(identity Identity, options PairingIssueOptions) (*Pairin
 	wireIdentity := &remoteauthpb.EndpointDaemonIdentity{
 		DeviceId: identity.DeviceID, DevicePublicKey: append([]byte(nil), identity.PublicKey...), DeviceFingerprint: identity.Fingerprint,
 	}
-	ticketSigningBytes, err := connection.PairingTicketSigningBytes(wireIdentity, ticket)
+	ticketSigningBytes, err := endpointdomain.PairingTicketSigningBytes(wireIdentity, ticket)
 	if err != nil {
 		return nil, PairingTicketClaims{}, fmt.Errorf("build pairing ticket signature input: %w", err)
 	}
@@ -142,7 +142,7 @@ func issuePairingBundle(identity Identity, options PairingIssueOptions) (*Pairin
 		Authorization:    &remoteauthpb.EndpointAuthorizationBootstrap{Payload: &remoteauthpb.EndpointAuthorizationBootstrap_PairingTicket{PairingTicket: ticket}},
 		IssuedAtUnixNano: now.UnixNano(), ExpiresAtUnixNano: ticket.GetExpiresAtUnixNano(),
 	}
-	bundleSigningBytes, err := connection.EndpointBootstrapSigningBytes(bundle)
+	bundleSigningBytes, err := endpointdomain.EndpointBootstrapSigningBytes(bundle)
 	if err != nil {
 		return nil, PairingTicketClaims{}, fmt.Errorf("build pairing bundle signature input: %w", err)
 	}
@@ -157,7 +157,7 @@ func issuePairingBundle(identity Identity, options PairingIssueOptions) (*Pairin
 // EncodePairingBundle 严格校验并以 deterministic protobuf 编码一次性 bootstrap bundle。
 // 返回 bytes 可以进入静态二维码；调用方不得附加 grant、SSH credential、Cloud token 或客户端私钥。
 func EncodePairingBundle(bundle *PairingBundle) ([]byte, error) {
-	return connection.MarshalEndpointBootstrapBundle(bundle)
+	return endpointdomain.MarshalEndpointBootstrapBundle(bundle)
 }
 
 // ParsePairingBundle 严格解析 bundle 并验证两层 daemon signature、identity、scope ceiling 与短期有效期。
@@ -166,7 +166,7 @@ func ParsePairingBundle(payload []byte, now time.Time) (*PairingBundle, PairingT
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	bundle, err := connection.ParseEndpointBootstrapBundleForExchange(payload)
+	bundle, err := endpointdomain.ParseEndpointBootstrapBundleForExchange(payload)
 	if err != nil {
 		return nil, PairingTicketClaims{}, fmt.Errorf("%w: %v", ErrPairingTicketMalformed, err)
 	}
@@ -183,7 +183,7 @@ func ParsePairingBundle(payload []byte, now time.Time) (*PairingBundle, PairingT
 // ParsePairingBundleForExchange 严格解析并验签配对 bundle，但把兑换时效判断留给 owning daemon 的 AccessStore。
 // 该入口只供持久化 ClientAccessIdentity 后的 PairingExchange 使用：首次兑换仍必须在 ticket 有效期内，只有 daemon 已原子绑定的同一 key 才能在 delivery grace 内取回原结果。
 func ParsePairingBundleForExchange(payload []byte) (*PairingBundle, PairingTicketClaims, error) {
-	bundle, err := connection.ParseEndpointBootstrapBundleForExchange(payload)
+	bundle, err := endpointdomain.ParseEndpointBootstrapBundleForExchange(payload)
 	if err != nil {
 		return nil, PairingTicketClaims{}, fmt.Errorf("%w: %v", ErrPairingTicketMalformed, err)
 	}

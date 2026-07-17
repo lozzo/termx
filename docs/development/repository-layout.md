@@ -78,18 +78,18 @@ cmd / platform binding / tui adapter
 - `core/`、`remote/`、`private/` 不反向 import TUI 或 CLI。
 - 外部绑定只暴露 versioned protobuf command/event、opaque handle 和显式资源释放，不暴露 Go pointer 或内部 struct。
 
-## C3S2 迁移范围
+## 当前已落实边界
 
-C3S2 只完成当前连接主线必须先纠正的结构：
+当前连接主线已经完成以下结构收口：
 
-1. `shared/connection/` 迁到 `client/endpoint/`，package 名改为 `endpoint`。
-2. 建立 `client/runtime/`、`client/port/` 与 `client/adapter/` 目录骨架；不提前实现 C3B-C3F 行为。
-3. `tui/services/` 拆成 `tui/port/` 与 `tui/adapter/protocol/`、`tui/adapter/system/`。
-4. fake 移入 `tui/testkit/` 或测试文件，不留在生产 port package。
-5. `EndpointServiceBundle`、`EndpointDialer` 不留在 TUI；C3D 所需 ready bundle contract 归 `client/runtime` 或 `client/port`。
-6. 更新 import、文档链接和静态依赖守卫，不改变协议、registry 格式或用户行为。
+1. Endpoint/Route 持久领域位于 `client/endpoint/`，package 名为 `endpoint`。
+2. `client/runtime/`、`client/port/` 与 `client/adapter/` 已建立明确边界；runtime 行为按 workflow 后续切片实现。
+3. TUI application contract 位于 `tui/port/`，protocol 与系统实现分别位于 `tui/adapter/protocol/`、`tui/adapter/system/`。
+4. TUI fake 位于 `tui/testkit/`，生产 port 不包含测试状态或宿主 IO。
+5. `EndpointServiceBundle`、`EndpointDialer` 已退出 TUI；后续 ready bundle contract 只能归 `client/runtime` 或 `client/port`。
+6. 静态依赖守卫禁止 client 依赖 UI/CLI/private，也禁止 TUI port 重新依赖 protocol、adapter、testkit 或 `os/exec`。
 
-C3S2 不移动 `shared/transport`、`shared/remoteauth`、`shared/cloudcompanion`、`perftrace`、`filelock`，也不机械重命名整个 `tui/app`、`tui/state`、`tui/render`。这些目录确有命名与职责债务，但必须按后续独立切片处理，避免把连接重写淹没在十万行纯路径 diff 中。
+本轮没有移动 `shared/transport`、`shared/remoteauth`、`shared/cloudcompanion`、`perftrace`、`filelock`，也没有机械重命名整个 `tui/app`、`tui/state`、`tui/render`。这些目录确有命名与职责债务，但只能按后续独立切片处理，避免干扰连接运行时主线。
 
 ## 后续目录债务
 

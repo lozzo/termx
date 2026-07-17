@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/connection"
 )
 
 const (
@@ -85,14 +85,14 @@ type DialPolicy struct {
 
 // ValidateManagedRoute 校验公开客户端准备建立的 managed WebRTC route。
 // Endpoint 持有 daemon identity，route 持有 Cloud target/credential ref；该函数不读取 secret，也不访问 Companion 或 daemon。
-func ValidateManagedRoute(endpoint connection.Endpoint, route connection.AccessRoute) error {
+func ValidateManagedRoute(endpoint endpointdomain.Endpoint, route endpointdomain.AccessRoute) error {
 	if err := endpoint.Validate(); err != nil {
 		return err
 	}
 	if err := route.Validate(endpoint.DaemonIdentity); err != nil {
 		return err
 	}
-	if route.Kind != connection.RouteManagedWebRTC {
+	if route.Kind != endpointdomain.RouteManagedWebRTC {
 		return fmt.Errorf("endpoint %q route %q kind %q is not managed WebRTC", endpoint.ID, route.ID, route.Kind)
 	}
 	return nil
@@ -100,15 +100,15 @@ func ValidateManagedRoute(endpoint connection.Endpoint, route connection.AccessR
 
 // DialPolicyForRelayMode 把公开 registry 的 relay_mode 映射为统一的云 route preference 与 ICE 约束。
 // 未知值 fail closed；调用方不得因此退回 local、SSH、旧 Hub API 或任意默认中继。
-func DialPolicyForRelayMode(mode connection.RelayMode) (DialPolicy, error) {
-	switch connection.RelayMode(strings.TrimSpace(string(mode))) {
-	case "", connection.RelayAuto:
+func DialPolicyForRelayMode(mode endpointdomain.RelayMode) (DialPolicy, error) {
+	switch endpointdomain.RelayMode(strings.TrimSpace(string(mode))) {
+	case "", endpointdomain.RelayAuto:
 		return DialPolicy{RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY}, nil
-	case connection.RelayDirect:
+	case endpointdomain.RelayDirect:
 		return DialPolicy{RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_DIRECT_ONLY}, nil
-	case connection.RelayOnly:
+	case endpointdomain.RelayOnly:
 		return DialPolicy{RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_STANDARD_RELAY, RelayOnly: true}, nil
-	case connection.RelaySmart:
+	case endpointdomain.RelaySmart:
 		return DialPolicy{RoutePreference: cloudpb.RoutePreference_ROUTE_PREFERENCE_SMART_ROUTE}, nil
 	default:
 		return DialPolicy{}, fmt.Errorf("unknown managed WebRTC relay mode %q", mode)

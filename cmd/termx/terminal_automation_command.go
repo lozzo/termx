@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/shared/connection"
 	"github.com/spf13/cobra"
 )
 
@@ -21,7 +21,7 @@ const maxTerminalSendBytes = 16 << 20
 
 type terminalAutomationTarget struct {
 	Ref      resolvedTerminalRef
-	Endpoint connection.Endpoint
+	Endpoint endpointdomain.Endpoint
 	Client   terminalProtocolClient
 	Close    func()
 }
@@ -520,7 +520,7 @@ func newTerminalEventsCommand(runtime terminalCommandRuntime) *cobra.Command {
 				return err
 			}
 			var ref resolvedTerminalRef
-			var endpoint connection.Endpoint
+			var endpoint endpointdomain.Endpoint
 			if len(args) == 1 {
 				ref, err = resolveTerminalRef(args[0], runtime.requestedEndpoint(), registry)
 				if err != nil {
@@ -597,7 +597,7 @@ func parseTerminalEventTypes(values []string) ([]protocol.EventType, error) {
 	return out, nil
 }
 
-func terminalEventView(endpointID connection.EndpointID, event protocol.Event) terminalEventEnvelope {
+func terminalEventView(endpointID endpointdomain.EndpointID, event protocol.Event) terminalEventEnvelope {
 	view := terminalEventEnvelope{
 		SchemaVersion: 1, Kind: "terminal_event", EndpointID: string(endpointID),
 		Type: terminalEventTypeName(event.Type), Timestamp: formatTerminalTime(event.Timestamp),

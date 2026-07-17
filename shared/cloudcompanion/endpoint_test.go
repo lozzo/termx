@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	"github.com/lozzow/termx/proto/cloudpb"
-	"github.com/lozzow/termx/shared/connection"
 )
 
 type endpointContractFixture struct {
@@ -48,7 +48,7 @@ func TestManagedEndpointContractFixtureMatchesGoDomain(t *testing.T) {
 	if err := json.Unmarshal(payload, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.SchemaVersion != 2 || fixture.Transport != string(connection.RouteManagedWebRTC) {
+	if fixture.SchemaVersion != 2 || fixture.Transport != string(endpointdomain.RouteManagedWebRTC) {
 		t.Fatalf("unexpected fixture header: %#v", fixture)
 	}
 	wantPhases := []string{"idle", "resolving", "signaling", "connecting", "authorizing", "connected", "failed"}
@@ -60,7 +60,7 @@ func TestManagedEndpointContractFixtureMatchesGoDomain(t *testing.T) {
 		t.Fatalf("paths = %#v, want %#v", fixture.ObservedPaths, wantPaths)
 	}
 	for _, policyFixture := range fixture.RelayPolicies {
-		policy, err := DialPolicyForRelayMode(connection.RelayMode(policyFixture.RelayMode))
+		policy, err := DialPolicyForRelayMode(endpointdomain.RelayMode(policyFixture.RelayMode))
 		if err != nil {
 			t.Fatalf("relay policy %q: %v", policyFixture.RelayMode, err)
 		}
@@ -103,10 +103,10 @@ func TestManagedEndpointContractFixtureMatchesGoDomain(t *testing.T) {
 		}
 	}
 	for _, testCase := range fixture.AuthorizationCases {
-		cfg := connection.NewManagedEndpoint(
-			connection.EndpointID(testCase.EndpointID), testCase.EndpointID,
-			connection.DaemonIdentity{DeviceID: testCase.TargetDeviceID, DeviceFingerprint: testCase.DeviceFingerprint},
-			testCase.TargetDeviceID, testCase.GrantRef, connection.RelayMode(testCase.RelayMode), connection.ConnectOnDemand,
+		cfg := endpointdomain.NewManagedEndpoint(
+			endpointdomain.EndpointID(testCase.EndpointID), testCase.EndpointID,
+			endpointdomain.DaemonIdentity{DeviceID: testCase.TargetDeviceID, DeviceFingerprint: testCase.DeviceFingerprint},
+			testCase.TargetDeviceID, testCase.GrantRef, endpointdomain.RelayMode(testCase.RelayMode), endpointdomain.ConnectOnDemand,
 		)
 		route, _ := cfg.Route("cloud")
 		err := ValidateManagedRoute(cfg, route)

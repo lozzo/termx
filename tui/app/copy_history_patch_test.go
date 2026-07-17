@@ -2,12 +2,13 @@ package app
 
 import (
 	"context"
+	"github.com/lozzow/termx/tui/testkit"
 	"strings"
 	"testing"
 
 	"github.com/lozzow/termx/tui/input"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -32,7 +33,7 @@ func TestCopyHistoryOlderResultUsesIncrementalPatchWhenVisibleContentOnlyShifts(
 	}
 	runtime := NewAppRuntime(
 		root,
-		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}})),
+		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &testkit.FakeCoreClient{}})),
 		func(root state.Root) render.Frame {
 			return render.NewRenderer(render.DefaultTheme()).RenderANSI(render.NewRenderVMBuilder().Build(root))
 		},
@@ -47,7 +48,7 @@ func TestCopyHistoryOlderResultUsesIncrementalPatchWhenVisibleContentOnlyShifts(
 	runtime.copyHistoryPatch = cache
 
 	window := copyHistoryPerfOlderWindow(64, root.History)
-	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 1, Window: window}}); err != nil {
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: port.HistoryResult{RequestID: 1, Window: window}}); err != nil {
 		t.Fatalf("post older result: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -137,7 +138,7 @@ func TestCopyHistoryPatchDisabledWhenFloatingOverlapsContent(t *testing.T) {
 func TestCopyHistoryExitClearsSessionsAndPatchCache(t *testing.T) {
 	host := newCopyHistoryPerfIncrementalHost(16)
 	host.SetSize(80, 24)
-	core := &services.FakeCoreClient{}
+	core := &testkit.FakeCoreClient{}
 	root := copyHistoryPerfRoot(80, 24, 256)
 	viewID := root.CopyMode.ViewID
 	root = root.WithCopyHistorySession(viewID, root.History, root.CopyMode)

@@ -3,12 +3,13 @@ package app
 import (
 	"context"
 	"errors"
+	"github.com/lozzow/termx/tui/testkit"
 	"testing"
 	"time"
 
 	"github.com/lozzow/termx/tui/input"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/render"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -16,8 +17,8 @@ func TestWorkbenchStorageReducerLoadsSnapshotFromOpaqueStorage(t *testing.T) {
 	shell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).
 		FocusPane(state.PaneCommandTarget{PaneID: "pane-logs"})
-	storage := &services.FakeWorkbenchStorageService{
-		LoadResult: services.WorkbenchStorageLoadResult{
+	storage := &testkit.FakeWorkbenchStorageService{
+		LoadResult: port.WorkbenchStorageLoadResult{
 			Snapshot: state.SnapshotWorkbenchForStorage(shell),
 			Version:  4,
 			Found:    true,
@@ -43,8 +44,8 @@ func TestWorkbenchStorageReducerLoadsSnapshotFromOpaqueStorage(t *testing.T) {
 
 func TestWorkbenchStorageLoadAppliesConfiguredPanelPresentation(t *testing.T) {
 	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
-	storage := &services.FakeWorkbenchStorageService{
-		LoadResult: services.WorkbenchStorageLoadResult{
+	storage := &testkit.FakeWorkbenchStorageService{
+		LoadResult: port.WorkbenchStorageLoadResult{
 			Snapshot: state.SnapshotWorkbenchForStorage(shell),
 			Version:  4,
 			Found:    true,
@@ -68,7 +69,7 @@ func TestWorkbenchStorageLoadAppliesConfiguredPanelPresentation(t *testing.T) {
 }
 
 func TestWorkbenchStorageLoadAndSaveEffectsAreAsync(t *testing.T) {
-	storage := &services.FakeWorkbenchStorageService{}
+	storage := &testkit.FakeWorkbenchStorageService{}
 	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage})
 	root := state.Root{Shell: state.DefaultShell()}
 
@@ -96,7 +97,7 @@ func TestWorkbenchStorageReducerLoadsAndPersistsTerminalViews(t *testing.T) {
 	views := state.TerminalViewStore{}
 	views = views.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
 	views = views.BindPane(state.NewPaneTerminalView("pane-logs", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-logs"), false))
-	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}), Version: 4, Found: true}}
+	storage := &testkit.FakeWorkbenchStorageService{LoadResult: port.WorkbenchStorageLoadResult{Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}), Version: 4, Found: true}}
 	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage})
 	root := state.Root{Shell: state.DefaultShell()}
 
@@ -116,7 +117,7 @@ func TestWorkbenchStorageReducerLoadsAndPersistsTerminalViews(t *testing.T) {
 }
 
 func TestWorkbenchCommandPersistsSnapshotThroughStorageReducer(t *testing.T) {
-	storage := &services.FakeWorkbenchStorageService{}
+	storage := &testkit.FakeWorkbenchStorageService{}
 	reducer := ComposeReducers(NewShellReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))
 	root := state.Root{Shell: state.DefaultShell()}
 
@@ -154,13 +155,13 @@ func TestWorkbenchCommandPersistsSnapshotThroughStorageReducer(t *testing.T) {
 }
 
 func TestTerminalPoolAttachPersistsTerminalViewBindingThroughStorageReducer(t *testing.T) {
-	storage := &services.FakeWorkbenchStorageService{}
+	storage := &testkit.FakeWorkbenchStorageService{}
 	reducer := ComposeReducers(NewTerminalPoolReducer(LiveDeps{}), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))
 	root := state.Root{Shell: state.DefaultShell()}
 
 	root, effects := reducer(root, TerminalPoolAttachResultMsg{
 		TerminalID: "term-1",
-		Result: services.TerminalAttachResult{
+		Result: port.TerminalAttachResult{
 			TerminalID:   "term-1",
 			Channel:      7,
 			Cols:         80,
@@ -205,7 +206,7 @@ func TestTerminalPoolAttachPersistsTerminalViewBindingThroughStorageReducer(t *t
 }
 
 func TestTerminalViewLayoutCommandPersistsWorkbenchSnapshot(t *testing.T) {
-	storage := &services.FakeWorkbenchStorageService{}
+	storage := &testkit.FakeWorkbenchStorageService{}
 	reducer := ComposeReducers(NewUIInputReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))
 	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeResize)}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true))
@@ -380,8 +381,8 @@ func TestWorkbenchStorageRestoreInitializesFloatingGeometryFromTerminalSize(t *t
 	views := state.TerminalViewStore{}
 	views = views.BindFloating(state.NewFloatingTerminalView("float-1", "float-1-pane", "term-one", 7, 90, 20, state.TerminalResizeRoleOwner, "surface-one", state.TerminalFloatingViewID("float-1"), true))
 	views = views.BindFloating(state.NewFloatingTerminalView("float-2", "float-2-pane", "term-two", 8, 50, 10, state.TerminalResizeRoleFollower, "surface-two", state.TerminalFloatingViewID("float-2"), false))
-	storage := &services.FakeWorkbenchStorageService{
-		LoadResult: services.WorkbenchStorageLoadResult{
+	storage := &testkit.FakeWorkbenchStorageService{
+		LoadResult: port.WorkbenchStorageLoadResult{
 			Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
 			Version:  4,
 			Found:    true,
@@ -413,7 +414,7 @@ func TestWorkbenchStorageRestoreInitializesFloatingGeometryFromTerminalSize(t *t
 }
 
 func TestWorkbenchPaneCRUDPersistsClosedPaneSnapshotWithCAS(t *testing.T) {
-	storage := &services.FakeWorkbenchStorageService{CurrentVersion: 3}
+	storage := &testkit.FakeWorkbenchStorageService{CurrentVersion: 3}
 	reducer := ComposeReducers(NewShellReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))
 	root := state.Root{
 		Shell: state.DefaultShell().
@@ -451,7 +452,7 @@ func TestWorkbenchPaneCRUDPersistsClosedPaneSnapshotWithCAS(t *testing.T) {
 }
 
 func TestWorkbenchCommandPersistsAgainstLoadedStorageVersion(t *testing.T) {
-	storage := &services.FakeWorkbenchStorageService{CurrentVersion: 7}
+	storage := &testkit.FakeWorkbenchStorageService{CurrentVersion: 7}
 	reducer := ComposeReducers(NewShellReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))
 	root := state.Root{
 		Shell:         state.DefaultShell(),
@@ -482,8 +483,8 @@ func TestWorkbenchStorageChangedReloadsExternalSnapshot(t *testing.T) {
 	externalShell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-external", Title: "external", Kind: state.PaneTerminalLive, TerminalID: "term-external"}, state.SplitDirectionVertical).
 		FocusPane(state.PaneCommandTarget{PaneID: "pane-external"})
-	storage := &services.FakeWorkbenchStorageService{
-		LoadResult: services.WorkbenchStorageLoadResult{
+	storage := &testkit.FakeWorkbenchStorageService{
+		LoadResult: port.WorkbenchStorageLoadResult{
 			Snapshot: state.SnapshotWorkbenchForStorage(externalShell),
 			Version:  8,
 			Found:    true,
@@ -492,7 +493,7 @@ func TestWorkbenchStorageChangedReloadsExternalSnapshot(t *testing.T) {
 	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage})
 	root := state.Root{Shell: state.DefaultShell()}
 
-	root, effects := reducer(root, WorkbenchStorageChangedMsg{Event: services.WorkbenchStorageEvent{
+	root, effects := reducer(root, WorkbenchStorageChangedMsg{Event: port.WorkbenchStorageEvent{
 		Ref:     state.DefaultWorkbenchStorageRef("").WithVersion(8),
 		Version: 8,
 		Op:      "put",
@@ -519,7 +520,7 @@ func TestWorkbenchStorageLoadInvalidatesFrozenHistoryAndCopyMode(t *testing.T) {
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-new"
 	views := state.TerminalViewStore{}.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-new", 11, 80, 24, state.TerminalResizeRoleFollower, "surface-new", state.TerminalPaneViewID(state.DefaultPaneID), false))
-	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: &services.FakeWorkbenchStorageService{}})
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: &testkit.FakeWorkbenchStorageService{}})
 	root := state.Root{
 		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-old"),
 		TerminalViews: state.TerminalViewStore{}.
@@ -543,7 +544,7 @@ func TestWorkbenchStorageLoadInvalidatesFrozenHistoryAndCopyMode(t *testing.T) {
 		},
 	}
 
-	root, effects := reducer(root, WorkbenchStorageLoadResultMsg{Result: services.WorkbenchStorageLoadResult{
+	root, effects := reducer(root, WorkbenchStorageLoadResultMsg{Result: port.WorkbenchStorageLoadResult{
 		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
 		Version:  9,
 		Found:    true,
@@ -567,9 +568,9 @@ func TestWorkbenchStorageConflictReloadsLatestSnapshot(t *testing.T) {
 	remoteShell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-remote", Title: "remote", Kind: state.PaneTerminalLive, TerminalID: "term-remote"}, state.SplitDirectionVertical).
 		FocusPane(state.PaneCommandTarget{PaneID: "pane-remote"})
-	storage := &services.FakeWorkbenchStorageService{
+	storage := &testkit.FakeWorkbenchStorageService{
 		CurrentVersion: 9,
-		LoadResult: services.WorkbenchStorageLoadResult{
+		LoadResult: port.WorkbenchStorageLoadResult{
 			Snapshot: state.SnapshotWorkbenchForStorage(remoteShell),
 			Version:  9,
 			Found:    true,
@@ -607,14 +608,14 @@ func TestWorkbenchStorageConflictReloadsLatestSnapshot(t *testing.T) {
 }
 
 func TestWorkbenchStorageDuplicateConflictDoesNotReloadAgain(t *testing.T) {
-	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: &services.FakeWorkbenchStorageService{}})
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: &testkit.FakeWorkbenchStorageService{}})
 	root := state.Root{
 		Shell:         state.DefaultShell(),
 		WorkbenchSync: (state.WorkbenchSyncStore{}).MarkApplied(8),
 	}
 
 	conflict := WorkbenchStoragePersistResultMsg{
-		Err:             services.ErrWorkbenchStorageConflict,
+		Err:             port.ErrWorkbenchStorageConflict,
 		ExpectedVersion: 8,
 	}
 	root, effects := reducer(root, conflict)
@@ -628,7 +629,7 @@ func TestWorkbenchStorageDuplicateConflictDoesNotReloadAgain(t *testing.T) {
 	}
 
 	stale := WorkbenchStoragePersistResultMsg{
-		Err:             services.ErrWorkbenchStorageConflict,
+		Err:             port.ErrWorkbenchStorageConflict,
 		ExpectedVersion: 7,
 	}
 	root, effects = reducer(root, stale)
@@ -638,13 +639,13 @@ func TestWorkbenchStorageDuplicateConflictDoesNotReloadAgain(t *testing.T) {
 }
 
 func TestWorkbenchStorageChangedIgnoresSelfPersistVersion(t *testing.T) {
-	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: &services.FakeWorkbenchStorageService{}})
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: &testkit.FakeWorkbenchStorageService{}})
 	root := state.Root{
 		Shell:         state.DefaultShell(),
 		WorkbenchSync: (state.WorkbenchSyncStore{}).MarkSaved(state.DefaultWorkbenchStorageRef("").WithVersion(5), 5),
 	}
 
-	root, effects := reducer(root, WorkbenchStorageChangedMsg{Event: services.WorkbenchStorageEvent{
+	root, effects := reducer(root, WorkbenchStorageChangedMsg{Event: port.WorkbenchStorageEvent{
 		Ref:     state.DefaultWorkbenchStorageRef("").WithVersion(5),
 		Version: 5,
 		Op:      "put",
@@ -661,7 +662,7 @@ func TestWorkbenchStorageReducerReportsMissingServiceAndSaveErrors(t *testing.T)
 		t.Fatalf("missing storage should be visible feedback, root=%#v effects=%#v", root, effects)
 	}
 
-	storage := &services.FakeWorkbenchStorageService{SaveErr: errors.New("version conflict")}
+	storage := &testkit.FakeWorkbenchStorageService{SaveErr: errors.New("version conflict")}
 	reducer = NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage})
 	root = state.Root{Shell: state.DefaultShell()}
 	root, effects = reducer(root, WorkbenchStoragePersistRequestMsg{Reason: "tab.create"})
@@ -673,7 +674,7 @@ func TestWorkbenchStorageReducerReportsMissingServiceAndSaveErrors(t *testing.T)
 }
 
 func TestWorkbenchStorageContextCanceledStaysSilent(t *testing.T) {
-	storage := &services.FakeWorkbenchStorageService{
+	storage := &testkit.FakeWorkbenchStorageService{
 		LoadErr:  context.Canceled,
 		SaveErr:  context.Canceled,
 		WatchErr: context.Canceled,
@@ -707,15 +708,15 @@ func TestWorkbenchStorageContextCanceledStaysSilent(t *testing.T) {
 
 func TestInteractiveRuntimeWithWorkbenchPersistsWorkbenchCommand(t *testing.T) {
 	host := NewFakeTerminalHost(8)
-	watchCh := make(chan services.WorkbenchStorageEvent)
+	watchCh := make(chan port.WorkbenchStorageEvent)
 	close(watchCh)
-	storage := &services.FakeWorkbenchStorageService{WatchCh: watchCh}
+	storage := &testkit.FakeWorkbenchStorageService{WatchCh: watchCh}
 	runtime := NewInteractiveRuntimeWithWorkbench(
 		state.Root{},
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{}},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 		WorkbenchDeps{Storage: storage},
 	)
 
@@ -736,15 +737,15 @@ func TestInteractiveRuntimeWithWorkbenchPersistsWorkbenchCommand(t *testing.T) {
 
 func TestInteractiveRuntimeWithWorkbenchCanSkipInitialLoad(t *testing.T) {
 	host := NewFakeTerminalHost(8)
-	watchCh := make(chan services.WorkbenchStorageEvent)
+	watchCh := make(chan port.WorkbenchStorageEvent)
 	close(watchCh)
-	storage := &services.FakeWorkbenchStorageService{WatchCh: watchCh}
+	storage := &testkit.FakeWorkbenchStorageService{WatchCh: watchCh}
 	runtime := NewInteractiveRuntimeWithStorage(
 		state.Root{Shell: state.DefaultShell()},
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{}},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 		WorkbenchDeps{Storage: storage, SkipInitialLoad: true},
 		ClipboardDeps{},
 	)
@@ -762,9 +763,9 @@ func TestInteractiveRuntimeWithWorkbenchCanSkipInitialLoad(t *testing.T) {
 
 func TestInteractiveRuntimeWithWorkbenchPersistsFloatingCommand(t *testing.T) {
 	host := NewFakeTerminalHost(8)
-	watchCh := make(chan services.WorkbenchStorageEvent)
+	watchCh := make(chan port.WorkbenchStorageEvent)
 	close(watchCh)
-	storage := &services.FakeWorkbenchStorageService{WatchCh: watchCh}
+	storage := &testkit.FakeWorkbenchStorageService{WatchCh: watchCh}
 	root := state.Root{Shell: state.DefaultShell()}
 	root.Shell, _ = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
@@ -779,8 +780,8 @@ func TestInteractiveRuntimeWithWorkbenchPersistsFloatingCommand(t *testing.T) {
 		root,
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{}},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 		WorkbenchDeps{Storage: storage},
 	)
 
@@ -798,9 +799,9 @@ func TestInteractiveRuntimeWithWorkbenchPersistsFloatingCommand(t *testing.T) {
 
 func TestInteractiveRuntimeFloatingAutoFitRefreshDoesNotPersist(t *testing.T) {
 	host := NewFakeTerminalHost(8)
-	watchCh := make(chan services.WorkbenchStorageEvent)
+	watchCh := make(chan port.WorkbenchStorageEvent)
 	close(watchCh)
-	storage := &services.FakeWorkbenchStorageService{WatchCh: watchCh}
+	storage := &testkit.FakeWorkbenchStorageService{WatchCh: watchCh}
 	root := state.Root{
 		Shell:    state.DefaultShell(),
 		Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30},
@@ -820,8 +821,8 @@ func TestInteractiveRuntimeFloatingAutoFitRefreshDoesNotPersist(t *testing.T) {
 		root,
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{}},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 		WorkbenchDeps{Storage: storage},
 	)
 
@@ -851,15 +852,15 @@ func TestInteractiveRuntimeFloatingAutoFitRefreshDoesNotPersist(t *testing.T) {
 
 func TestInteractiveRuntimeWithWorkbenchLoadsSnapshotBeforeWatch(t *testing.T) {
 	host := NewFakeTerminalHost(8)
-	watchCh := make(chan services.WorkbenchStorageEvent)
+	watchCh := make(chan port.WorkbenchStorageEvent)
 	close(watchCh)
 	shell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-restored", Title: "restored", Kind: state.PaneTerminalLive, TerminalID: "term-restored"}, state.SplitDirectionVertical).
 		FocusPane(state.PaneCommandTarget{PaneID: "pane-restored"})
 	views := state.TerminalViewStore{}.
 		BindPane(state.NewPaneTerminalView("pane-restored", "term-restored", 11, 80, 24, state.TerminalResizeRoleOwner, "surface-restored", state.TerminalPaneViewID("pane-restored"), true))
-	storage := &services.FakeWorkbenchStorageService{
-		LoadResult: services.WorkbenchStorageLoadResult{
+	storage := &testkit.FakeWorkbenchStorageService{
+		LoadResult: port.WorkbenchStorageLoadResult{
 			Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
 			Version:  7,
 			Found:    true,
@@ -870,8 +871,8 @@ func TestInteractiveRuntimeWithWorkbenchLoadsSnapshotBeforeWatch(t *testing.T) {
 		state.Root{},
 		host,
 		NewSyncEffectRunner(),
-		LiveDeps{Terminal: &services.FakeTerminalService{}},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		LiveDeps{Terminal: &testkit.FakeTerminalService{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 		WorkbenchDeps{Storage: storage},
 	)
 
@@ -897,19 +898,19 @@ func TestInteractiveRuntimeWithWorkbenchLoadsSnapshotBeforeWatch(t *testing.T) {
 func TestInteractiveRuntimeWorkbenchRestoreReattachesTerminalViewsFromCore(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(120, 40)
-	watchCh := make(chan services.WorkbenchStorageEvent)
+	watchCh := make(chan port.WorkbenchStorageEvent)
 	close(watchCh)
 	shell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-restored", Title: "restored", Kind: state.PaneTerminalLive, TerminalID: "term-restored"}, state.SplitDirectionVertical).
 		FocusPane(state.PaneCommandTarget{PaneID: "pane-restored"})
 	views := state.TerminalViewStore{}.
 		BindPane(state.NewPaneTerminalView("pane-restored", "term-restored", 11, 80, 24, state.TerminalResizeRoleOwner, "surface-restored", state.TerminalPaneViewID("pane-restored"), true))
-	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}), Version: 7, Found: true}, WatchCh: watchCh}
-	terminal := &services.FakeTerminalService{
-		AttachResult:  services.TerminalAttachResult{Channel: 42, Cols: 100, Rows: 30, ResizePolicy: state.TerminalResizeRoleOwner, CanResize: true, OwnerSurfaceID: DefaultRuntimeSurfaceID, OwnerViewID: state.TerminalPaneViewID("pane-restored")},
-		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-restored", Cols: 100, Rows: 30, Lines: []string{"changed by another tui"}, State: state.TerminalLiveAttached}},
+	storage := &testkit.FakeWorkbenchStorageService{LoadResult: port.WorkbenchStorageLoadResult{Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}), Version: 7, Found: true}, WatchCh: watchCh}
+	terminal := &testkit.FakeTerminalService{
+		AttachResult:  port.TerminalAttachResult{Channel: 42, Cols: 100, Rows: 30, ResizePolicy: state.TerminalResizeRoleOwner, CanResize: true, OwnerSurfaceID: DefaultRuntimeSurfaceID, OwnerViewID: state.TerminalPaneViewID("pane-restored")},
+		SurfaceResult: port.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-restored", Cols: 100, Rows: 30, Lines: []string{"changed by another tui"}, State: state.TerminalLiveAttached}},
 	}
-	runtime := NewInteractiveRuntimeWithWorkbench(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
+	runtime := NewInteractiveRuntimeWithWorkbench(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &testkit.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
 
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain: %v", err)
@@ -941,7 +942,7 @@ func TestWorkbenchRestoreInputDoesNotUseStoredOldChannelBeforeAttachEffect(t *te
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-restored"
 	views := state.TerminalViewStore{}.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-restored", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-old", state.TerminalPaneViewID(state.DefaultPaneID), true))
-	loadResult := services.WorkbenchStorageLoadResult{
+	loadResult := port.WorkbenchStorageLoadResult{
 		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
 		Version:  7,
 		Found:    true,
@@ -952,7 +953,7 @@ func TestWorkbenchRestoreInputDoesNotUseStoredOldChannelBeforeAttachEffect(t *te
 	loadResult.Snapshot.TerminalViews[0].OwnerViewID = state.TerminalPaneViewID(state.DefaultPaneID)
 	terminal := &refreshingInputTerminalService{
 		nextChannel: 21,
-		FakeTerminalService: services.FakeTerminalService{AttachResult: services.TerminalAttachResult{
+		FakeTerminalService: testkit.FakeTerminalService{AttachResult: port.TerminalAttachResult{
 			TerminalID:   "term-restored",
 			Cols:         80,
 			Rows:         24,
@@ -1010,7 +1011,7 @@ func TestWorkbenchRestoreKeepsMissingEndpointBindingUnresolved(t *testing.T) {
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-remote"
 	views := state.TerminalViewStore{}.
 		BindPane(state.NewEndpointPaneTerminalView("west", state.DefaultPaneID, "term-remote", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-west", state.TerminalPaneViewID(state.DefaultPaneID), true))
-	loadResult := services.WorkbenchStorageLoadResult{
+	loadResult := port.WorkbenchStorageLoadResult{
 		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
 		Version:  7,
 		Found:    true,
@@ -1046,19 +1047,19 @@ func TestWorkbenchRestoreKeepsMissingEndpointBindingUnresolved(t *testing.T) {
 func TestInteractiveRuntimeWorkbenchRestoreShowsExitedTerminalFromCore(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
-	watchCh := make(chan services.WorkbenchStorageEvent)
+	watchCh := make(chan port.WorkbenchStorageEvent)
 	close(watchCh)
 	shell := state.DefaultShell()
 	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneTerminalLive
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-exited"
 	views := state.TerminalViewStore{}.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-exited", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
-	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}), Version: 7, Found: true}, WatchCh: watchCh}
-	terminal := &services.FakeTerminalService{
-		AttachResult:  services.TerminalAttachResult{Channel: 12, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleFollower},
-		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-exited", Cols: 80, Rows: 24, State: state.TerminalLiveExited, ExitCode: 130, ExitReason: "process exited"}},
+	storage := &testkit.FakeWorkbenchStorageService{LoadResult: port.WorkbenchStorageLoadResult{Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}), Version: 7, Found: true}, WatchCh: watchCh}
+	terminal := &testkit.FakeTerminalService{
+		AttachResult:  port.TerminalAttachResult{Channel: 12, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleFollower},
+		SurfaceResult: port.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-exited", Cols: 80, Rows: 24, State: state.TerminalLiveExited, ExitCode: 130, ExitReason: "process exited"}},
 	}
-	runtime := NewInteractiveRuntimeWithWorkbench(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
+	runtime := NewInteractiveRuntimeWithWorkbench(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &testkit.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
 
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain: %v", err)
@@ -1076,7 +1077,7 @@ func TestInteractiveRuntimeWorkbenchRestoreShowsExitedTerminalFromCore(t *testin
 func TestInteractiveRuntimeWorkbenchRestoreLegacyExitedPaneUsesCoreRunningLifecycle(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
-	watchCh := make(chan services.WorkbenchStorageEvent)
+	watchCh := make(chan port.WorkbenchStorageEvent)
 	close(watchCh)
 	shell := state.DefaultShell()
 	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneKind("exited")
@@ -1087,13 +1088,13 @@ func TestInteractiveRuntimeWorkbenchRestoreLegacyExitedPaneUsesCoreRunningLifecy
 	// 模拟 R75 之前已经落盘的旧 storage：snapshot restore 入口必须自己 scrub。
 	snapshot.Workspace.Tabs[0].Panes[0].Kind = state.PaneKind("exited")
 	snapshot.Workspaces[0].Tabs[0].Panes[0].Kind = state.PaneKind("exited")
-	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: snapshot, Version: 7, Found: true}, WatchCh: watchCh}
-	terminal := &services.FakeTerminalService{
-		ListResult:    services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running", Cols: 80, Rows: 24}}},
-		AttachResult:  services.TerminalAttachResult{TerminalID: "term-main", Channel: 12, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner},
-		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-main", Cols: 80, Rows: 24, Lines: []string{"terminal exited: term-main code:0 exited", "% "}, Cursor: state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"}, State: state.TerminalLiveAttached}},
+	storage := &testkit.FakeWorkbenchStorageService{LoadResult: port.WorkbenchStorageLoadResult{Snapshot: snapshot, Version: 7, Found: true}, WatchCh: watchCh}
+	terminal := &testkit.FakeTerminalService{
+		ListResult:    port.TerminalListResult{Items: []port.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running", Cols: 80, Rows: 24}}},
+		AttachResult:  port.TerminalAttachResult{TerminalID: "term-main", Channel: 12, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner},
+		SurfaceResult: port.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-main", Cols: 80, Rows: 24, Lines: []string{"terminal exited: term-main code:0 exited", "% "}, Cursor: state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"}, State: state.TerminalLiveAttached}},
 	}
-	runtime := NewInteractiveRuntimeWithWorkbench(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
+	runtime := NewInteractiveRuntimeWithWorkbench(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &testkit.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
 
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain: %v", err)
@@ -1115,7 +1116,7 @@ func TestInteractiveRuntimeWorkbenchRestoreLegacyExitedPaneUsesCoreRunningLifecy
 func TestInteractiveRuntimeWorkbenchRestoreLegacyPaneWithoutTerminalViewsUsesCoreRunningLifecycle(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
-	watchCh := make(chan services.WorkbenchStorageEvent)
+	watchCh := make(chan port.WorkbenchStorageEvent)
 	close(watchCh)
 	snapshot := state.WorkbenchStorageSnapshot{
 		Schema:        state.WorkbenchStorageSchema,
@@ -1157,11 +1158,11 @@ func TestInteractiveRuntimeWorkbenchRestoreLegacyPaneWithoutTerminalViewsUsesCor
 		HeaderVisible:     true,
 		FooterVisible:     true,
 	}
-	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: snapshot, Version: 7, Found: true}, WatchCh: watchCh}
-	terminal := &services.FakeTerminalService{
-		ListResult:    services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running", Cols: 80, Rows: 24}}},
-		AttachResult:  services.TerminalAttachResult{TerminalID: "term-main", Channel: 12, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner},
-		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-main", Cols: 80, Rows: 24, Lines: []string{"terminal exited: term-main code:0 exited", "% "}, Cursor: state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"}, State: state.TerminalLiveAttached}},
+	storage := &testkit.FakeWorkbenchStorageService{LoadResult: port.WorkbenchStorageLoadResult{Snapshot: snapshot, Version: 7, Found: true}, WatchCh: watchCh}
+	terminal := &testkit.FakeTerminalService{
+		ListResult:    port.TerminalListResult{Items: []port.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running", Cols: 80, Rows: 24}}},
+		AttachResult:  port.TerminalAttachResult{TerminalID: "term-main", Channel: 12, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner},
+		SurfaceResult: port.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-main", Cols: 80, Rows: 24, Lines: []string{"terminal exited: term-main code:0 exited", "% "}, Cursor: state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"}, State: state.TerminalLiveAttached}},
 	}
 	initial := state.Root{
 		Surface: state.TerminalSurfaceStore{}.ApplySnapshot(state.LiveSurfaceSnapshot{
@@ -1173,7 +1174,7 @@ func TestInteractiveRuntimeWorkbenchRestoreLegacyPaneWithoutTerminalViewsUsesCor
 		}).MarkExitedWithMetadata("term-main", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
 		Session: state.TerminalSessionStore{}.Attach("term-main", 7, 80, 24).MarkExitedWithMetadata("term-main", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
 	}
-	runtime := NewInteractiveRuntimeWithWorkbench(initial, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
+	runtime := NewInteractiveRuntimeWithWorkbench(initial, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &testkit.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
 
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain: %v", err)
@@ -1198,15 +1199,15 @@ func TestInteractiveRuntimeWorkbenchRestoreLegacyPaneWithoutTerminalViewsUsesCor
 func TestInteractiveRuntimeWorkbenchRestoreAlreadyLiveBindingQueriesCoreLifecycle(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
-	watchCh := make(chan services.WorkbenchStorageEvent)
+	watchCh := make(chan port.WorkbenchStorageEvent)
 	close(watchCh)
 	shell := state.DefaultShell()
 	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneTerminalLive
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
 	binding := state.NewPaneTerminalView(state.DefaultPaneID, "term-main", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)
 	views := state.TerminalViewStore{}.BindPane(binding)
-	storage := &services.FakeWorkbenchStorageService{
-		LoadResult: services.WorkbenchStorageLoadResult{
+	storage := &testkit.FakeWorkbenchStorageService{
+		LoadResult: port.WorkbenchStorageLoadResult{
 			Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
 			Version:  7,
 			Found:    true,
@@ -1226,9 +1227,9 @@ func TestInteractiveRuntimeWorkbenchRestoreAlreadyLiveBindingQueriesCoreLifecycl
 		}).MarkExitedWithMetadata("term-main", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
 		Session: state.TerminalSessionStore{}.Attach("term-main", 7, 80, 24).MarkExitedWithMetadata("term-main", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
 	}
-	terminal := &services.FakeTerminalService{
-		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running", Cols: 80, Rows: 24}}},
-		SurfaceResult: services.TerminalSurfaceResult{
+	terminal := &testkit.FakeTerminalService{
+		ListResult: port.TerminalListResult{Items: []port.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running", Cols: 80, Rows: 24}}},
+		SurfaceResult: port.TerminalSurfaceResult{
 			Ready:          true,
 			LifecycleKnown: true,
 			Snapshot: state.LiveSurfaceSnapshot{
@@ -1241,7 +1242,7 @@ func TestInteractiveRuntimeWorkbenchRestoreAlreadyLiveBindingQueriesCoreLifecycl
 			},
 		},
 	}
-	runtime := NewInteractiveRuntimeWithWorkbench(initial, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
+	runtime := NewInteractiveRuntimeWithWorkbench(initial, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &testkit.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
 
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain: %v", err)
@@ -1266,7 +1267,7 @@ func TestInteractiveRuntimeWorkbenchRestoreAlreadyLiveBindingQueriesCoreLifecycl
 func TestInteractiveRuntimeStartupLoadsTerminalPoolTitleAfterWorkbenchRestore(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
-	watchCh := make(chan services.WorkbenchStorageEvent)
+	watchCh := make(chan port.WorkbenchStorageEvent)
 	close(watchCh)
 	shell := state.DefaultShell()
 	shell.Workspace.Tabs[0].Panes[0].Title = "shell"
@@ -1274,21 +1275,21 @@ func TestInteractiveRuntimeStartupLoadsTerminalPoolTitleAfterWorkbenchRestore(t 
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
 	views := state.TerminalViewStore{}.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-main", 11, 80, 24, state.TerminalResizeRoleOwner, "surface-main", state.TerminalPaneViewID(state.DefaultPaneID), true))
-	storage := &services.FakeWorkbenchStorageService{
-		LoadResult: services.WorkbenchStorageLoadResult{
+	storage := &testkit.FakeWorkbenchStorageService{
+		LoadResult: port.WorkbenchStorageLoadResult{
 			Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
 			Version:  7,
 			Found:    true,
 		},
 		WatchCh: watchCh,
 	}
-	terminal := &services.FakeTerminalService{ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running"}}}}
+	terminal := &testkit.FakeTerminalService{ListResult: port.TerminalListResult{Items: []port.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running"}}}}
 	runtime := NewInteractiveRuntimeWithWorkbench(
 		state.Root{},
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: terminal},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 		WorkbenchDeps{Storage: storage},
 	)
 
@@ -1334,7 +1335,7 @@ func TestInteractiveRuntimeWorkbenchReloadDoesNotKeepOldFrozenHistory(t *testing
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 		WorkbenchDeps{},
 	)
 
@@ -1350,7 +1351,7 @@ func TestInteractiveRuntimeWorkbenchReloadDoesNotKeepOldFrozenHistory(t *testing
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-new"
 	views := state.TerminalViewStore{}.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-new", 11, 80, 24, state.TerminalResizeRoleFollower, "surface-new", state.TerminalPaneViewID(state.DefaultPaneID), false))
-	if err := runtime.Post(WorkbenchStorageLoadResultMsg{Result: services.WorkbenchStorageLoadResult{
+	if err := runtime.Post(WorkbenchStorageLoadResultMsg{Result: port.WorkbenchStorageLoadResult{
 		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
 		Version:  9,
 		Found:    true,
@@ -1404,7 +1405,7 @@ func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldHistoryWindow(t *test
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 		WorkbenchDeps{},
 	)
 
@@ -1413,7 +1414,7 @@ func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldHistoryWindow(t *test
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-new"
 	views := state.TerminalViewStore{}.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-new", 11, 80, 24, state.TerminalResizeRoleFollower, "surface-new", state.TerminalPaneViewID(state.DefaultPaneID), false))
-	if err := runtime.Post(WorkbenchStorageLoadResultMsg{Result: services.WorkbenchStorageLoadResult{
+	if err := runtime.Post(WorkbenchStorageLoadResultMsg{Result: port.WorkbenchStorageLoadResult{
 		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
 		Version:  9,
 		Found:    true,
@@ -1433,7 +1434,7 @@ func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldHistoryWindow(t *test
 		Op:         state.HistoryWindowReplace,
 		Rows:       []state.HistoryRow{{Text: "delayed-old-history", LineID: 8}},
 	}
-	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 7, Window: delayed}}); err != nil {
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: port.HistoryResult{RequestID: 7, Window: delayed}}); err != nil {
 		t.Fatalf("post delayed old history window: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -1483,7 +1484,7 @@ func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldHistoryError(t *testi
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 		WorkbenchDeps{},
 	)
 
@@ -1492,7 +1493,7 @@ func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldHistoryError(t *testi
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-new"
 	views := state.TerminalViewStore{}.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-new", 11, 80, 24, state.TerminalResizeRoleFollower, "surface-new", state.TerminalPaneViewID(state.DefaultPaneID), false))
-	if err := runtime.Post(WorkbenchStorageLoadResultMsg{Result: services.WorkbenchStorageLoadResult{
+	if err := runtime.Post(WorkbenchStorageLoadResultMsg{Result: port.WorkbenchStorageLoadResult{
 		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
 		Version:  9,
 		Found:    true,
@@ -1506,7 +1507,7 @@ func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldHistoryError(t *testi
 	beforeSessionErr := runtime.State().Session.LastError
 
 	if err := runtime.Post(CopyModeHistoryResultMsg{
-		Result: services.HistoryResult{RequestID: 7},
+		Result: port.HistoryResult{RequestID: 7},
 		Err:    errors.New("delayed old history failed"),
 	}); err != nil {
 		t.Fatalf("post delayed old history error: %v", err)
@@ -1536,7 +1537,7 @@ func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldAttachResult(t *testi
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{},
-		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		CopyModeDeps{Core: &testkit.FakeCoreClient{}},
 		WorkbenchDeps{},
 	)
 
@@ -1545,7 +1546,7 @@ func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldAttachResult(t *testi
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-new"
 	views := state.TerminalViewStore{}.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-new", 11, 80, 24, state.TerminalResizeRoleFollower, "surface-new", state.TerminalPaneViewID(state.DefaultPaneID), false))
-	if err := runtime.Post(WorkbenchStorageLoadResultMsg{Result: services.WorkbenchStorageLoadResult{
+	if err := runtime.Post(WorkbenchStorageLoadResultMsg{Result: port.WorkbenchStorageLoadResult{
 		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
 		Version:  9,
 		Found:    true,
@@ -1556,7 +1557,7 @@ func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldAttachResult(t *testi
 		t.Fatalf("drain workbench load result: %v", err)
 	}
 
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{
+	if err := runtime.Post(LiveAttachResultMsg{Result: port.TerminalAttachResult{
 		TerminalID:   "term-old",
 		Channel:      99,
 		Cols:         100,

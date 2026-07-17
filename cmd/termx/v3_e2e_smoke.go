@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
+	endpointdomain "github.com/lozzow/termx/client/endpoint"
 	corev2 "github.com/lozzow/termx/core"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/shared/connection"
 	"github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/input"
 	"github.com/lozzow/termx/tui/render"
@@ -98,7 +98,7 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	runtime := newV3InteractiveRuntimeWithOptions(created.TerminalID, 80, 24, client, workbenchStorageClient, clipboardStorageClient, host, nil, v3InteractiveRuntimeOptions{
 		InitialEndpointID:  state.DefaultEndpointID,
 		RuntimeSurfaceID:   "v3-e2e-smoke",
-		ConnectionRegistry: connection.DefaultRegistry(),
+		ConnectionRegistry: endpointdomain.DefaultRegistry(),
 	})
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   created.TerminalID,

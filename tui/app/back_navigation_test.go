@@ -2,10 +2,10 @@ package app
 
 import (
 	"context"
+	"github.com/lozzow/termx/tui/testkit"
 	"testing"
 
 	"github.com/lozzow/termx/tui/input"
-	"github.com/lozzow/termx/tui/services"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -53,7 +53,7 @@ func TestBackNavigationPriorityPreservesUnderlyingCopyAndStickyState(t *testing.
 
 func TestBackNavigationLeavesPlainLiveEscForTerminal(t *testing.T) {
 	host := NewFakeTerminalHost(1)
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	runtime := NewLiveRuntime(
 		liveBackNavigationRoot(),
 		host,
@@ -93,7 +93,7 @@ func TestBackNavigationModifiedEscDoesNotCloseOverlay(t *testing.T) {
 
 func TestBackNavigationLiveAltEscWritesLegacyPrefix(t *testing.T) {
 	host := NewFakeTerminalHost(1)
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	runtime := NewLiveRuntime(liveBackNavigationRoot(), host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal})
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc, Alt: true, KeyboardProtocol: input.KeyboardProtocolKittyCSIU}); err != nil {
 		t.Fatalf("send alt esc: %v", err)

@@ -2,9 +2,10 @@ package app
 
 import (
 	"errors"
+	"github.com/lozzow/termx/tui/testkit"
 	"testing"
 
-	"github.com/lozzow/termx/tui/services"
+	"github.com/lozzow/termx/tui/port"
 	"github.com/lozzow/termx/tui/state"
 )
 
@@ -40,7 +41,7 @@ func TestDetachedViewResizeResultDoesNotOverrideCurrentSessionSize(t *testing.T)
 		Seq:    1,
 		Cols:   64,
 		Rows:   38,
-		Result: services.TerminalResizeResult{
+		Result: port.TerminalResizeResult{
 			TerminalID:   "term-1",
 			Cols:         64,
 			Rows:         38,
@@ -73,7 +74,7 @@ func TestDetachedViewResizeResultDoesNotOverrideCurrentSessionSize(t *testing.T)
 }
 
 func TestDetachedViewResizeRequestDoesNotReuseCurrentSessionChannel(t *testing.T) {
-	terminal := &services.FakeTerminalService{}
+	terminal := &testkit.FakeTerminalService{}
 	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
 	root := state.Root{
 		Session: state.TerminalSessionStore{
