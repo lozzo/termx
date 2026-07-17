@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 当前最早未完成切片是 `PA005A2`。在 `PA001-PA007` 全部完成前，暂停 `C3B` 以及后续连接功能开发。
+- 当前最早未完成切片是 `PA005A3`。在 `PA001-PA007` 全部完成前，暂停 `C3B` 以及后续连接功能开发。
 - 用户已确立仓库级强约定：所有插件、第三方客户端、官方客户端、跨进程和跨语言 API 的唯一 schema truth 必须位于 `proto/`。
 - 完整依赖链固定为 `core <-> api_layer <-> transformer <-> 插件/客户端`。任何 transport、CLI、TUI、Cloud 或平台 binding 都不得绕过该链路消费 core domain struct。
 - `core/api` Go DTO 路线已判定错误，必须删除；此前 `AR003B1A/AR003B1B` 结论作废，不得继续迁移或补兼容层。
@@ -69,8 +69,8 @@ plugins / CLI / TUI / mobile / desktop / web / third-party clients
 | PA003 | 已完成 | 公共 API schema 与 envelope | 在 `proto/` 定义 versioned command/result/event/error/capability/resource handle；区分公共 application API 与内部 wire framing；生成代码和 compatibility harness 通过 |
 | PA004 | 已完成 | API Layer 与 Transformer 骨架 | 建立 `api_layer/` 与 `transformer/`；只依赖 core domain interface 与生成 proto；静态守卫禁止 UI/transport/private/state owner；fake harness 覆盖取消、释放和错误 |
 | PA005A1 | 已完成 | Terminal/attachment/path Proto schema | 定义 TerminalRef、lifecycle、attachment/input/resize、path typed command/result/event；加入 application envelope、生成代码和 compatibility harness |
-| PA005A2 | 进行中 | Terminal API Layer 与 Transformer | proto validation、core domain transformer、typed error/cancel/release；不接 protocol transport 或 UI |
-| PA005A3 | 待开始 | Core/protocol terminal adapter 迁移 | core 通过 API Layer/transformer；protocol 只传 proto payload；删除 terminal/attachment/path protocol DTO，不使用 alias |
+| PA005A2 | 已完成 | Terminal API Layer 与 Transformer | proto validation、core domain transformer、typed error/cancel/release；不接 protocol transport 或 UI |
+| PA005A3 | 进行中 | Core/protocol terminal adapter 迁移 | core 通过 API Layer/transformer；protocol 只传 proto payload；删除 terminal/attachment/path protocol DTO，不使用 alias |
 | PA005A4 | 待开始 | Terminal consumer 与守卫收口 | client runtime、CLI/TUI/remote consumer 使用 proto；删除重复 application DTO；依赖守卫与测试通过 |
 | PA005B | 待开始 | History/live 迁移 | authoritative history window/native screen API 进入 proto；保持 history/live revision 边界；删除重复 projection owner |
 | PA005C | 待开始 | File/storage/workbench 迁移 | file 隐藏 frame/channel，storage 保持 opaque，workbench 只表达 client intent；删除旧专用或重复 DTO |

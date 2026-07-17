@@ -29,11 +29,12 @@ type ResourceController interface {
 type Service struct {
 	operations OperationController
 	resources  ResourceController
+	terminals  TerminalController
 }
 
 // NewService 创建 application API service；缺失 controller 的对应 command 会 fail closed。
-func NewService(operations OperationController, resources ResourceController) *Service {
-	return &Service{operations: operations, resources: resources}
+func NewService(operations OperationController, resources ResourceController, terminals TerminalController) *Service {
+	return &Service{operations: operations, resources: resources, terminals: terminals}
 }
 
 // Execute 校验并执行单个 typed command。返回值始终非 nil，领域失败不会泄露成 Go error。
@@ -41,7 +42,8 @@ func (service *Service) Execute(ctx context.Context, command *apipb.CommandEnvel
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	requestID, requestContext := commandRequestContext(command)
+	requestContext := transformer.RequestContextForCommand(command)
+	requestID := requestContext.GetRequestId()
 	if err := transformer.ValidateRequestContext(requestContext); err != nil {
 		return errorResult(requestID, transformer.ErrorToProto(err, false))
 	}
@@ -62,6 +64,9 @@ func (service *Service) Execute(ctx context.Context, command *apipb.CommandEnvel
 	case *apipb.CommandEnvelope_ReleaseResource:
 		return service.releaseResource(ctx, requestContext, value.ReleaseResource)
 	default:
+		if transformer.RequiredCapabilityForCommand(command) != apipb.ApiCapability_API_CAPABILITY_UNSPECIFIED {
+			return service.executeTerminal(ctx, command, requestContext)
+		}
 		return errorResult(requestID, &apipb.ApiError{
 			Code:    apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST,
 			Message: "command is required",
@@ -104,23 +109,6 @@ func (service *Service) releaseResource(ctx context.Context, requestContext *api
 		return errorResult(requestID, transformer.ErrorToProto(err, true))
 	}
 	return acknowledge(requestID)
-}
-
-func commandRequestContext(command *apipb.CommandEnvelope) (string, *apipb.RequestContext) {
-	if command == nil {
-		return "", nil
-	}
-	switch value := command.GetCommand().(type) {
-	case *apipb.CommandEnvelope_CancelOperation:
-		if value.CancelOperation != nil {
-			return value.CancelOperation.GetContext().GetRequestId(), value.CancelOperation.GetContext()
-		}
-	case *apipb.CommandEnvelope_ReleaseResource:
-		if value.ReleaseResource != nil {
-			return value.ReleaseResource.GetContext().GetRequestId(), value.ReleaseResource.GetContext()
-		}
-	}
-	return "", nil
 }
 
 func acknowledge(requestID string) *apipb.ResultEnvelope {

@@ -30,7 +30,7 @@ func (controller *fakeResourceController) ReleaseResource(_ context.Context, res
 
 func TestServiceExecutesTypedCancelWithSessionFence(t *testing.T) {
 	operations := &fakeOperationController{}
-	service := NewService(operations, nil)
+	service := NewService(operations, nil, nil)
 	result := service.Execute(context.Background(), cancelCommand("request-1", 1, true))
 	if result.GetAcknowledge() == nil || result.GetError() != nil {
 		t.Fatalf("cancel result=%#v", result)
@@ -46,7 +46,7 @@ func TestServiceRejectsStaleOperationStampBeforeController(t *testing.T) {
 	operations := &fakeOperationController{}
 	command := cancelCommand("request-2", 1, true)
 	command.GetCancelOperation().GetOperation().GetSession().Generation = 6
-	result := NewService(operations, nil).Execute(context.Background(), command)
+	result := NewService(operations, nil, nil).Execute(context.Background(), command)
 	if result.GetError().GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST || result.GetError().GetAttempted() {
 		t.Fatalf("stale result=%#v", result)
 	}
@@ -57,7 +57,7 @@ func TestServiceRejectsStaleOperationStampBeforeController(t *testing.T) {
 
 func TestServiceReportsControllerFailureAsAttempted(t *testing.T) {
 	operations := &fakeOperationController{err: errors.New("write failed")}
-	result := NewService(operations, nil).Execute(context.Background(), cancelCommand("request-3", 1, true))
+	result := NewService(operations, nil, nil).Execute(context.Background(), cancelCommand("request-3", 1, true))
 	if result.GetError().GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_INTERNAL || !result.GetError().GetAttempted() {
 		t.Fatalf("controller failure=%#v", result)
 	}
@@ -65,15 +65,15 @@ func TestServiceReportsControllerFailureAsAttempted(t *testing.T) {
 
 func TestServiceRequiresVersionCapabilityAndResourceController(t *testing.T) {
 	resources := &fakeResourceController{}
-	unsupportedVersion := NewService(nil, resources).Execute(context.Background(), releaseCommand("request-4", 2, true))
+	unsupportedVersion := NewService(nil, resources, nil).Execute(context.Background(), releaseCommand("request-4", 2, true))
 	if unsupportedVersion.GetError().GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_UNSUPPORTED_VERSION {
 		t.Fatalf("version result=%#v", unsupportedVersion)
 	}
-	missingCapability := NewService(nil, resources).Execute(context.Background(), releaseCommand("request-5", 1, false))
+	missingCapability := NewService(nil, resources, nil).Execute(context.Background(), releaseCommand("request-5", 1, false))
 	if missingCapability.GetError().GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_UNSUPPORTED_CAPABILITY {
 		t.Fatalf("capability result=%#v", missingCapability)
 	}
-	unavailable := NewService(nil, nil).Execute(context.Background(), releaseCommand("request-6", 1, true))
+	unavailable := NewService(nil, nil, nil).Execute(context.Background(), releaseCommand("request-6", 1, true))
 	if unavailable.GetError().GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_UNAVAILABLE || unavailable.GetError().GetAttempted() {
 		t.Fatalf("unavailable result=%#v", unavailable)
 	}
@@ -82,7 +82,7 @@ func TestServiceRequiresVersionCapabilityAndResourceController(t *testing.T) {
 func TestServiceReleasesClonedProtoResource(t *testing.T) {
 	resources := &fakeResourceController{}
 	command := releaseCommand("request-resource", 1, true)
-	result := NewService(nil, resources).Execute(context.Background(), command)
+	result := NewService(nil, resources, nil).Execute(context.Background(), command)
 	if result.GetAcknowledge() == nil || len(resources.resources) != 1 {
 		t.Fatalf("release result=%#v resources=%#v", result, resources.resources)
 	}
@@ -96,7 +96,7 @@ func TestServiceHonorsContextCancellationBeforeController(t *testing.T) {
 	operations := &fakeOperationController{}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	result := NewService(operations, nil).Execute(ctx, cancelCommand("request-7", 1, true))
+	result := NewService(operations, nil, nil).Execute(ctx, cancelCommand("request-7", 1, true))
 	if result.GetError().GetCode() != apipb.ApiErrorCode_API_ERROR_CODE_CANCELLED || result.GetError().GetAttempted() {
 		t.Fatalf("cancelled result=%#v", result)
 	}
