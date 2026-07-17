@@ -10,18 +10,17 @@ import (
 )
 
 func TestApplicationEnvelopeRoundTripPreservesTypedCommandAndUnknownFields(t *testing.T) {
-	command := &CommandEnvelope{Command: &CommandEnvelope_CancelOperation{CancelOperation: &CancelOperationCommand{
+	command := &CommandEnvelope{
 		Context: &RequestContext{
-			RequestId:    "request-1",
-			ApiVersion:   &ApiVersion{Major: 1},
-			Capabilities: []ApiCapability{ApiCapability_API_CAPABILITY_TYPED_ERRORS, ApiCapability_API_CAPABILITY_OPERATION_CANCELLATION},
-			Session:      &EndpointSessionStamp{EndpointId: "studio", RouteId: "ssh", Generation: 7},
+			RequestId:  "request-1",
+			ApiVersion: &ApiVersion{Major: 1},
+			Session:    &EndpointSessionStamp{EndpointId: "studio", RouteId: "ssh", Generation: 7},
 		},
-		Operation: &OperationStamp{
+		Command: &CommandEnvelope_CancelOperation{CancelOperation: &CancelOperationCommand{Operation: &OperationStamp{
 			Session:     &EndpointSessionStamp{EndpointId: "studio", RouteId: "ssh", Generation: 7},
 			OperationId: "operation-1",
-		},
-	}}}
+		}}},
+	}
 	payload, err := proto.Marshal(command)
 	if err != nil {
 		t.Fatal(err)
@@ -33,7 +32,7 @@ func TestApplicationEnvelopeRoundTripPreservesTypedCommandAndUnknownFields(t *te
 	if err := proto.Unmarshal(payload, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.GetCancelOperation().GetContext().GetRequestId() != "request-1" || decoded.GetCancelOperation().GetOperation().GetOperationId() != "operation-1" {
+	if decoded.GetContext().GetRequestId() != "request-1" || decoded.GetCancelOperation().GetOperation().GetOperationId() != "operation-1" {
 		t.Fatalf("typed command did not round trip: %#v", &decoded)
 	}
 	reencoded, err := proto.Marshal(&decoded)
@@ -50,13 +49,35 @@ func TestApplicationEnvelopeRoundTripPreservesTypedCommandAndUnknownFields(t *te
 func TestApplicationContractFieldNumbersRemainStable(t *testing.T) {
 	assertFieldNumber(t, (&RequestContext{}).ProtoReflect().Descriptor(), "request_id", 1)
 	assertFieldNumber(t, (&RequestContext{}).ProtoReflect().Descriptor(), "api_version", 2)
-	assertFieldNumber(t, (&RequestContext{}).ProtoReflect().Descriptor(), "capabilities", 3)
 	assertFieldNumber(t, (&RequestContext{}).ProtoReflect().Descriptor(), "session", 4)
+	assertFieldNumber(t, (&CommandEnvelope{}).ProtoReflect().Descriptor(), "context", 1)
 	assertFieldNumber(t, (&CommandEnvelope{}).ProtoReflect().Descriptor(), "cancel_operation", 10)
 	assertFieldNumber(t, (&CommandEnvelope{}).ProtoReflect().Descriptor(), "release_resource", 11)
 	assertFieldNumber(t, (&ResultEnvelope{}).ProtoReflect().Descriptor(), "acknowledge", 10)
 	assertFieldNumber(t, (&ResultEnvelope{}).ProtoReflect().Descriptor(), "error", 11)
+	assertFieldNumber(t, (&ResultEnvelope{}).ProtoReflect().Descriptor(), "origin_session", 2)
 	assertFieldNumber(t, (&EventEnvelope{}).ProtoReflect().Descriptor(), "api_version", 3)
+	assertFieldNumber(t, (&EventEnvelope{}).ProtoReflect().Descriptor(), "origin_session", 4)
+}
+
+func TestUnknownCommandPreservesTopLevelRequestCorrelation(t *testing.T) {
+	command := &CommandEnvelope{Context: &RequestContext{
+		RequestId: "future-request", ApiVersion: &ApiVersion{Major: 1},
+		Session: &EndpointSessionStamp{EndpointId: "studio", RouteId: "ssh", Generation: 9},
+	}}
+	payload, err := proto.Marshal(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload = protowire.AppendTag(payload, 99, protowire.BytesType)
+	payload = protowire.AppendBytes(payload, []byte{0x08, 0x01})
+	var decoded CommandEnvelope
+	if err := proto.Unmarshal(payload, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.GetContext().GetRequestId() != "future-request" || decoded.GetContext().GetSession().GetGeneration() != 9 {
+		t.Fatalf("unknown command lost envelope correlation: %#v", &decoded)
+	}
 }
 
 func assertFieldNumber(t *testing.T, descriptor protoreflect.MessageDescriptor, name protoreflect.Name, want protoreflect.FieldNumber) {

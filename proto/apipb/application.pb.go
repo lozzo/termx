@@ -23,7 +23,6 @@ const (
 
 type CancelOperationCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Operation     *OperationStamp        `protobuf:"bytes,2,opt,name=operation,proto3" json:"operation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -59,13 +58,6 @@ func (*CancelOperationCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_application_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *CancelOperationCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 func (x *CancelOperationCommand) GetOperation() *OperationStamp {
 	if x != nil {
 		return x.Operation
@@ -75,7 +67,6 @@ func (x *CancelOperationCommand) GetOperation() *OperationStamp {
 
 type ReleaseResourceCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Resource      *ResourceHandle        `protobuf:"bytes,2,opt,name=resource,proto3" json:"resource,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -111,13 +102,6 @@ func (*ReleaseResourceCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_application_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *ReleaseResourceCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 func (x *ReleaseResourceCommand) GetResource() *ResourceHandle {
 	if x != nil {
 		return x.Resource
@@ -126,7 +110,8 @@ func (x *ReleaseResourceCommand) GetResource() *ResourceHandle {
 }
 
 type CommandEnvelope struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Context *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	// Types that are valid to be assigned to Command:
 	//
 	//	*CommandEnvelope_CancelOperation
@@ -179,6 +164,13 @@ func (x *CommandEnvelope) ProtoReflect() protoreflect.Message {
 // Deprecated: Use CommandEnvelope.ProtoReflect.Descriptor instead.
 func (*CommandEnvelope) Descriptor() ([]byte, []int) {
 	return file_apipb_application_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CommandEnvelope) GetContext() *RequestContext {
+	if x != nil {
+		return x.Context
+	}
+	return nil
 }
 
 func (x *CommandEnvelope) GetCommand() isCommandEnvelope_Command {
@@ -484,8 +476,9 @@ func (*AcknowledgeResult) Descriptor() ([]byte, []int) {
 }
 
 type ResultEnvelope struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	OriginSession *EndpointSessionStamp  `protobuf:"bytes,2,opt,name=origin_session,json=originSession,proto3" json:"origin_session,omitempty"`
 	// Types that are valid to be assigned to Result:
 	//
 	//	*ResultEnvelope_Acknowledge
@@ -537,6 +530,13 @@ func (x *ResultEnvelope) GetRequestId() string {
 		return x.RequestId
 	}
 	return ""
+}
+
+func (x *ResultEnvelope) GetOriginSession() *EndpointSessionStamp {
+	if x != nil {
+		return x.OriginSession
+	}
+	return nil
 }
 
 func (x *ResultEnvelope) GetResult() isResultEnvelope_Result {
@@ -778,6 +778,7 @@ type EventEnvelope struct {
 	EventId           string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	TimestampUnixNano int64                  `protobuf:"varint,2,opt,name=timestamp_unix_nano,json=timestampUnixNano,proto3" json:"timestamp_unix_nano,omitempty"`
 	ApiVersion        *ApiVersion            `protobuf:"bytes,3,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	OriginSession     *EndpointSessionStamp  `protobuf:"bytes,4,opt,name=origin_session,json=originSession,proto3" json:"origin_session,omitempty"`
 	// Types that are valid to be assigned to Event:
 	//
 	//	*EventEnvelope_OperationCancelled
@@ -836,6 +837,13 @@ func (x *EventEnvelope) GetTimestampUnixNano() int64 {
 func (x *EventEnvelope) GetApiVersion() *ApiVersion {
 	if x != nil {
 		return x.ApiVersion
+	}
+	return nil
+}
+
+func (x *EventEnvelope) GetOriginSession() *EndpointSessionStamp {
+	if x != nil {
+		return x.OriginSession
 	}
 	return nil
 }
@@ -915,14 +923,13 @@ var File_apipb_application_proto protoreflect.FileDescriptor
 
 const file_apipb_application_proto_rawDesc = "" +
 	"\n" +
-	"\x17apipb/application.proto\x12\ftermx.api.v1\x1a\x12apipb/common.proto\x1a\x14apipb/terminal.proto\"\x8c\x01\n" +
-	"\x16CancelOperationCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x12:\n" +
-	"\toperation\x18\x02 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\"\x8a\x01\n" +
-	"\x16ReleaseResourceCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x128\n" +
-	"\bresource\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\"\x94\v\n" +
-	"\x0fCommandEnvelope\x12Q\n" +
+	"\x17apipb/application.proto\x12\ftermx.api.v1\x1a\x12apipb/common.proto\x1a\x14apipb/terminal.proto\"Z\n" +
+	"\x16CancelOperationCommand\x12:\n" +
+	"\toperation\x18\x02 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"X\n" +
+	"\x16ReleaseResourceCommand\x128\n" +
+	"\bresource\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresourceJ\x04\b\x01\x10\x02\"\xcc\v\n" +
+	"\x0fCommandEnvelope\x126\n" +
+	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x12Q\n" +
 	"\x10cancel_operation\x18\n" +
 	" \x01(\v2$.termx.api.v1.CancelOperationCommandH\x00R\x0fcancelOperation\x12Q\n" +
 	"\x10release_resource\x18\v \x01(\v2$.termx.api.v1.ReleaseResourceCommandH\x00R\x0freleaseResource\x12T\n" +
@@ -942,10 +949,11 @@ const file_apipb_application_proto_rawDesc = "" +
 	"\x14terminal_resize_lock\x18! \x01(\v2'.termx.api.v1.TerminalResizeLockCommandH\x00R\x12terminalResizeLock\x12^\n" +
 	"\x15path_list_directories\x18\" \x01(\v2(.termx.api.v1.PathListDirectoriesCommandH\x00R\x13pathListDirectoriesB\t\n" +
 	"\acommand\"\x13\n" +
-	"\x11AcknowledgeResult\"\xde\x05\n" +
+	"\x11AcknowledgeResult\"\xa9\x06\n" +
 	"\x0eResultEnvelope\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x12C\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12I\n" +
+	"\x0eorigin_session\x18\x02 \x01(\v2\".termx.api.v1.EndpointSessionStampR\roriginSession\x12C\n" +
 	"\vacknowledge\x18\n" +
 	" \x01(\v2\x1f.termx.api.v1.AcknowledgeResultH\x00R\vacknowledge\x12.\n" +
 	"\x05error\x18\v \x01(\v2\x16.termx.api.v1.ApiErrorH\x00R\x05error\x12S\n" +
@@ -960,12 +968,13 @@ const file_apipb_application_proto_rawDesc = "" +
 	"\x17OperationCancelledEvent\x12:\n" +
 	"\toperation\x18\x01 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\"Q\n" +
 	"\x15ResourceReleasedEvent\x128\n" +
-	"\bresource\x18\x01 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\"\x87\x04\n" +
+	"\bresource\x18\x01 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\"\xd2\x04\n" +
 	"\rEventEnvelope\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12.\n" +
 	"\x13timestamp_unix_nano\x18\x02 \x01(\x03R\x11timestampUnixNano\x129\n" +
 	"\vapi_version\x18\x03 \x01(\v2\x18.termx.api.v1.ApiVersionR\n" +
-	"apiVersion\x12X\n" +
+	"apiVersion\x12I\n" +
+	"\x0eorigin_session\x18\x04 \x01(\v2\".termx.api.v1.EndpointSessionStampR\roriginSession\x12X\n" +
 	"\x13operation_cancelled\x18\n" +
 	" \x01(\v2%.termx.api.v1.OperationCancelledEventH\x00R\x12operationCancelled\x12R\n" +
 	"\x11resource_released\x18\v \x01(\v2#.termx.api.v1.ResourceReleasedEventH\x00R\x10resourceReleased\x12U\n" +
@@ -995,9 +1004,9 @@ var file_apipb_application_proto_goTypes = []any{
 	(*OperationCancelledEvent)(nil),    // 5: termx.api.v1.OperationCancelledEvent
 	(*ResourceReleasedEvent)(nil),      // 6: termx.api.v1.ResourceReleasedEvent
 	(*EventEnvelope)(nil),              // 7: termx.api.v1.EventEnvelope
-	(*RequestContext)(nil),             // 8: termx.api.v1.RequestContext
-	(*OperationStamp)(nil),             // 9: termx.api.v1.OperationStamp
-	(*ResourceHandle)(nil),             // 10: termx.api.v1.ResourceHandle
+	(*OperationStamp)(nil),             // 8: termx.api.v1.OperationStamp
+	(*ResourceHandle)(nil),             // 9: termx.api.v1.ResourceHandle
+	(*RequestContext)(nil),             // 10: termx.api.v1.RequestContext
 	(*TerminalDefaultsCommand)(nil),    // 11: termx.api.v1.TerminalDefaultsCommand
 	(*TerminalCreateCommand)(nil),      // 12: termx.api.v1.TerminalCreateCommand
 	(*TerminalListCommand)(nil),        // 13: termx.api.v1.TerminalListCommand
@@ -1013,61 +1022,63 @@ var file_apipb_application_proto_goTypes = []any{
 	(*TerminalResizeCommand)(nil),      // 23: termx.api.v1.TerminalResizeCommand
 	(*TerminalResizeLockCommand)(nil),  // 24: termx.api.v1.TerminalResizeLockCommand
 	(*PathListDirectoriesCommand)(nil), // 25: termx.api.v1.PathListDirectoriesCommand
-	(*ApiError)(nil),                   // 26: termx.api.v1.ApiError
-	(*TerminalDefaultsResult)(nil),     // 27: termx.api.v1.TerminalDefaultsResult
-	(*TerminalCreateResult)(nil),       // 28: termx.api.v1.TerminalCreateResult
-	(*TerminalListResult)(nil),         // 29: termx.api.v1.TerminalListResult
-	(*TerminalGetResult)(nil),          // 30: termx.api.v1.TerminalGetResult
-	(*TerminalAttachResult)(nil),       // 31: termx.api.v1.TerminalAttachResult
-	(*TerminalResizeResult)(nil),       // 32: termx.api.v1.TerminalResizeResult
-	(*PathListDirectoriesResult)(nil),  // 33: termx.api.v1.PathListDirectoriesResult
-	(*ApiVersion)(nil),                 // 34: termx.api.v1.ApiVersion
-	(*TerminalLifecycleEvent)(nil),     // 35: termx.api.v1.TerminalLifecycleEvent
-	(*TerminalResizeControlEvent)(nil), // 36: termx.api.v1.TerminalResizeControlEvent
+	(*EndpointSessionStamp)(nil),       // 26: termx.api.v1.EndpointSessionStamp
+	(*ApiError)(nil),                   // 27: termx.api.v1.ApiError
+	(*TerminalDefaultsResult)(nil),     // 28: termx.api.v1.TerminalDefaultsResult
+	(*TerminalCreateResult)(nil),       // 29: termx.api.v1.TerminalCreateResult
+	(*TerminalListResult)(nil),         // 30: termx.api.v1.TerminalListResult
+	(*TerminalGetResult)(nil),          // 31: termx.api.v1.TerminalGetResult
+	(*TerminalAttachResult)(nil),       // 32: termx.api.v1.TerminalAttachResult
+	(*TerminalResizeResult)(nil),       // 33: termx.api.v1.TerminalResizeResult
+	(*PathListDirectoriesResult)(nil),  // 34: termx.api.v1.PathListDirectoriesResult
+	(*ApiVersion)(nil),                 // 35: termx.api.v1.ApiVersion
+	(*TerminalLifecycleEvent)(nil),     // 36: termx.api.v1.TerminalLifecycleEvent
+	(*TerminalResizeControlEvent)(nil), // 37: termx.api.v1.TerminalResizeControlEvent
 }
 var file_apipb_application_proto_depIdxs = []int32{
-	8,  // 0: termx.api.v1.CancelOperationCommand.context:type_name -> termx.api.v1.RequestContext
-	9,  // 1: termx.api.v1.CancelOperationCommand.operation:type_name -> termx.api.v1.OperationStamp
-	8,  // 2: termx.api.v1.ReleaseResourceCommand.context:type_name -> termx.api.v1.RequestContext
-	10, // 3: termx.api.v1.ReleaseResourceCommand.resource:type_name -> termx.api.v1.ResourceHandle
-	0,  // 4: termx.api.v1.CommandEnvelope.cancel_operation:type_name -> termx.api.v1.CancelOperationCommand
-	1,  // 5: termx.api.v1.CommandEnvelope.release_resource:type_name -> termx.api.v1.ReleaseResourceCommand
-	11, // 6: termx.api.v1.CommandEnvelope.terminal_defaults:type_name -> termx.api.v1.TerminalDefaultsCommand
-	12, // 7: termx.api.v1.CommandEnvelope.terminal_create:type_name -> termx.api.v1.TerminalCreateCommand
-	13, // 8: termx.api.v1.CommandEnvelope.terminal_list:type_name -> termx.api.v1.TerminalListCommand
-	14, // 9: termx.api.v1.CommandEnvelope.terminal_get:type_name -> termx.api.v1.TerminalGetCommand
-	15, // 10: termx.api.v1.CommandEnvelope.terminal_restart:type_name -> termx.api.v1.TerminalRestartCommand
-	16, // 11: termx.api.v1.CommandEnvelope.terminal_kill:type_name -> termx.api.v1.TerminalKillCommand
-	17, // 12: termx.api.v1.CommandEnvelope.terminal_remove:type_name -> termx.api.v1.TerminalRemoveCommand
-	18, // 13: termx.api.v1.CommandEnvelope.terminal_set_metadata:type_name -> termx.api.v1.TerminalSetMetadataCommand
-	19, // 14: termx.api.v1.CommandEnvelope.terminal_set_tags:type_name -> termx.api.v1.TerminalSetTagsCommand
-	20, // 15: termx.api.v1.CommandEnvelope.terminal_attach:type_name -> termx.api.v1.TerminalAttachCommand
-	21, // 16: termx.api.v1.CommandEnvelope.terminal_detach:type_name -> termx.api.v1.TerminalDetachCommand
-	22, // 17: termx.api.v1.CommandEnvelope.terminal_input:type_name -> termx.api.v1.TerminalInputCommand
-	23, // 18: termx.api.v1.CommandEnvelope.terminal_resize:type_name -> termx.api.v1.TerminalResizeCommand
-	24, // 19: termx.api.v1.CommandEnvelope.terminal_resize_lock:type_name -> termx.api.v1.TerminalResizeLockCommand
-	25, // 20: termx.api.v1.CommandEnvelope.path_list_directories:type_name -> termx.api.v1.PathListDirectoriesCommand
+	8,  // 0: termx.api.v1.CancelOperationCommand.operation:type_name -> termx.api.v1.OperationStamp
+	9,  // 1: termx.api.v1.ReleaseResourceCommand.resource:type_name -> termx.api.v1.ResourceHandle
+	10, // 2: termx.api.v1.CommandEnvelope.context:type_name -> termx.api.v1.RequestContext
+	0,  // 3: termx.api.v1.CommandEnvelope.cancel_operation:type_name -> termx.api.v1.CancelOperationCommand
+	1,  // 4: termx.api.v1.CommandEnvelope.release_resource:type_name -> termx.api.v1.ReleaseResourceCommand
+	11, // 5: termx.api.v1.CommandEnvelope.terminal_defaults:type_name -> termx.api.v1.TerminalDefaultsCommand
+	12, // 6: termx.api.v1.CommandEnvelope.terminal_create:type_name -> termx.api.v1.TerminalCreateCommand
+	13, // 7: termx.api.v1.CommandEnvelope.terminal_list:type_name -> termx.api.v1.TerminalListCommand
+	14, // 8: termx.api.v1.CommandEnvelope.terminal_get:type_name -> termx.api.v1.TerminalGetCommand
+	15, // 9: termx.api.v1.CommandEnvelope.terminal_restart:type_name -> termx.api.v1.TerminalRestartCommand
+	16, // 10: termx.api.v1.CommandEnvelope.terminal_kill:type_name -> termx.api.v1.TerminalKillCommand
+	17, // 11: termx.api.v1.CommandEnvelope.terminal_remove:type_name -> termx.api.v1.TerminalRemoveCommand
+	18, // 12: termx.api.v1.CommandEnvelope.terminal_set_metadata:type_name -> termx.api.v1.TerminalSetMetadataCommand
+	19, // 13: termx.api.v1.CommandEnvelope.terminal_set_tags:type_name -> termx.api.v1.TerminalSetTagsCommand
+	20, // 14: termx.api.v1.CommandEnvelope.terminal_attach:type_name -> termx.api.v1.TerminalAttachCommand
+	21, // 15: termx.api.v1.CommandEnvelope.terminal_detach:type_name -> termx.api.v1.TerminalDetachCommand
+	22, // 16: termx.api.v1.CommandEnvelope.terminal_input:type_name -> termx.api.v1.TerminalInputCommand
+	23, // 17: termx.api.v1.CommandEnvelope.terminal_resize:type_name -> termx.api.v1.TerminalResizeCommand
+	24, // 18: termx.api.v1.CommandEnvelope.terminal_resize_lock:type_name -> termx.api.v1.TerminalResizeLockCommand
+	25, // 19: termx.api.v1.CommandEnvelope.path_list_directories:type_name -> termx.api.v1.PathListDirectoriesCommand
+	26, // 20: termx.api.v1.ResultEnvelope.origin_session:type_name -> termx.api.v1.EndpointSessionStamp
 	3,  // 21: termx.api.v1.ResultEnvelope.acknowledge:type_name -> termx.api.v1.AcknowledgeResult
-	26, // 22: termx.api.v1.ResultEnvelope.error:type_name -> termx.api.v1.ApiError
-	27, // 23: termx.api.v1.ResultEnvelope.terminal_defaults:type_name -> termx.api.v1.TerminalDefaultsResult
-	28, // 24: termx.api.v1.ResultEnvelope.terminal_create:type_name -> termx.api.v1.TerminalCreateResult
-	29, // 25: termx.api.v1.ResultEnvelope.terminal_list:type_name -> termx.api.v1.TerminalListResult
-	30, // 26: termx.api.v1.ResultEnvelope.terminal_get:type_name -> termx.api.v1.TerminalGetResult
-	31, // 27: termx.api.v1.ResultEnvelope.terminal_attach:type_name -> termx.api.v1.TerminalAttachResult
-	32, // 28: termx.api.v1.ResultEnvelope.terminal_resize:type_name -> termx.api.v1.TerminalResizeResult
-	33, // 29: termx.api.v1.ResultEnvelope.path_list_directories:type_name -> termx.api.v1.PathListDirectoriesResult
-	9,  // 30: termx.api.v1.OperationCancelledEvent.operation:type_name -> termx.api.v1.OperationStamp
-	10, // 31: termx.api.v1.ResourceReleasedEvent.resource:type_name -> termx.api.v1.ResourceHandle
-	34, // 32: termx.api.v1.EventEnvelope.api_version:type_name -> termx.api.v1.ApiVersion
-	5,  // 33: termx.api.v1.EventEnvelope.operation_cancelled:type_name -> termx.api.v1.OperationCancelledEvent
-	6,  // 34: termx.api.v1.EventEnvelope.resource_released:type_name -> termx.api.v1.ResourceReleasedEvent
-	35, // 35: termx.api.v1.EventEnvelope.terminal_lifecycle:type_name -> termx.api.v1.TerminalLifecycleEvent
-	36, // 36: termx.api.v1.EventEnvelope.terminal_resize_control:type_name -> termx.api.v1.TerminalResizeControlEvent
-	37, // [37:37] is the sub-list for method output_type
-	37, // [37:37] is the sub-list for method input_type
-	37, // [37:37] is the sub-list for extension type_name
-	37, // [37:37] is the sub-list for extension extendee
-	0,  // [0:37] is the sub-list for field type_name
+	27, // 22: termx.api.v1.ResultEnvelope.error:type_name -> termx.api.v1.ApiError
+	28, // 23: termx.api.v1.ResultEnvelope.terminal_defaults:type_name -> termx.api.v1.TerminalDefaultsResult
+	29, // 24: termx.api.v1.ResultEnvelope.terminal_create:type_name -> termx.api.v1.TerminalCreateResult
+	30, // 25: termx.api.v1.ResultEnvelope.terminal_list:type_name -> termx.api.v1.TerminalListResult
+	31, // 26: termx.api.v1.ResultEnvelope.terminal_get:type_name -> termx.api.v1.TerminalGetResult
+	32, // 27: termx.api.v1.ResultEnvelope.terminal_attach:type_name -> termx.api.v1.TerminalAttachResult
+	33, // 28: termx.api.v1.ResultEnvelope.terminal_resize:type_name -> termx.api.v1.TerminalResizeResult
+	34, // 29: termx.api.v1.ResultEnvelope.path_list_directories:type_name -> termx.api.v1.PathListDirectoriesResult
+	8,  // 30: termx.api.v1.OperationCancelledEvent.operation:type_name -> termx.api.v1.OperationStamp
+	9,  // 31: termx.api.v1.ResourceReleasedEvent.resource:type_name -> termx.api.v1.ResourceHandle
+	35, // 32: termx.api.v1.EventEnvelope.api_version:type_name -> termx.api.v1.ApiVersion
+	26, // 33: termx.api.v1.EventEnvelope.origin_session:type_name -> termx.api.v1.EndpointSessionStamp
+	5,  // 34: termx.api.v1.EventEnvelope.operation_cancelled:type_name -> termx.api.v1.OperationCancelledEvent
+	6,  // 35: termx.api.v1.EventEnvelope.resource_released:type_name -> termx.api.v1.ResourceReleasedEvent
+	36, // 36: termx.api.v1.EventEnvelope.terminal_lifecycle:type_name -> termx.api.v1.TerminalLifecycleEvent
+	37, // 37: termx.api.v1.EventEnvelope.terminal_resize_control:type_name -> termx.api.v1.TerminalResizeControlEvent
+	38, // [38:38] is the sub-list for method output_type
+	38, // [38:38] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_apipb_application_proto_init() }

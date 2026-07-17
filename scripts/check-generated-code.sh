@@ -16,7 +16,7 @@ fi
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/termx-generated-check.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
-mkdir -p "$tmp_dir/go" "$tmp_dir/api" "$tmp_dir/runtime" "$tmp_dir/wire"
+mkdir -p "$tmp_dir/go" "$tmp_dir/api" "$tmp_dir/runtime" "$tmp_dir/wire" "$tmp_dir/descriptor"
 
 # Go 与 TypeScript 都从 proto 源码生成到临时目录；检查过程不改工作树。
 protoc -I proto \
@@ -28,6 +28,13 @@ protoc -I proto \
   proto/cloudpb/cloud_companion.proto \
   proto/remoteauthpb/remote_auth.proto \
   proto/wirepb/terminal.proto
+
+protoc -I proto \
+  --include_imports \
+  --descriptor_set_out="$tmp_dir/descriptor/public-api-v1.pb" \
+  proto/apipb/common.proto \
+  proto/apipb/terminal.proto \
+  proto/apipb/application.proto
 
 PATH="$repo_root/node_modules/.bin:$PATH" NODE_NO_WARNINGS=1 protoc \
   -I proto \
@@ -65,6 +72,7 @@ check_generated_file "$tmp_dir/go/apipb/terminal.pb.go" proto/apipb/terminal.pb.
 check_generated_file "$tmp_dir/go/cloudpb/cloud_companion.pb.go" proto/cloudpb/cloud_companion.pb.go
 check_generated_file "$tmp_dir/go/remoteauthpb/remote_auth.pb.go" proto/remoteauthpb/remote_auth.pb.go
 check_generated_file "$tmp_dir/go/wirepb/terminal.pb.go" proto/wirepb/terminal.pb.go
+check_generated_file "$tmp_dir/descriptor/public-api-v1.pb" proto/apipb/testdata/public-api-v1.pb
 check_generated_file "$tmp_dir/api/apipb/application_pb.ts" clients/ui/src/generated/apipb/application_pb.ts
 check_generated_file "$tmp_dir/api/apipb/common_pb.ts" clients/ui/src/generated/apipb/common_pb.ts
 check_generated_file "$tmp_dir/api/apipb/terminal_pb.ts" clients/ui/src/generated/apipb/terminal_pb.ts

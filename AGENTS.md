@@ -96,6 +96,7 @@
 - 唯一允许的完整运行链路是 `插件/客户端 -> transport/platform binding -> protocol framing -> generated proto -> api_layer -> api_mapping -> core`，返回方向相反。Unix Socket、TCP/TLS、SSH、WebRTC DataChannel、JNI、Swift 和 WASM binding 都属于 transport 或平台接入，不属于 API Mapping；任何入口不得绕过 API Layer 直接消费 core domain struct。
 - `core/` 可以拥有内部领域 struct、value object 和状态机，但这些类型不得成为插件/客户端契约，也不得为了复用而移动到所谓 shared API DTO 目录。
 - `api_layer/` 的公开方法参数、返回值、command、event、stream item 和稳定错误 detail 必须来自 proto 生成类型；允许的非 proto 参数仅限 `context.Context`、内部依赖接口和不越过调用边界的资源句柄实现。
+- `EndpointSessionStamp.generation` 属于 client runtime correlation truth，daemon/API Layer 不得建立第二份“当前 generation”状态。API Layer 必须使用 protocol connection 提供的原子 admission lease 校验连接存活、已协商 capability 和具体 command/resource authorization；请求中的 stamp 只用于 operation/resource fence 与结果 origin correlation。
 - `api_mapping/` 是 core domain 与 proto API 之间唯一允许的字段映射位置；API Mapping 必须无状态、可测试、失败显式，不得建立连接、处理 framing、选择 route/fallback、判断权限、执行重试或修改 reducer/core-owned state。
 - `proto/` schema 是 API 字段、枚举、oneof、版本和兼容语义的唯一真值。Proto 是 schema 与消息契约，不是 transport、连接管理器或主动运行层。修改 API 必须先改 proto、重新生成、补兼容/round-trip harness，再修改 API Layer、API Mapping 和 consumer。
 - 禁止在 `core/api`、`client/runtime`、`internal/protocol`、`tui/port`、插件 SDK 或平台 binding 中复制 proto 业务字段形成平行 DTO；UI-only view model 和 core-only domain model 除外，但必须通过 API Mapping 显式转换。

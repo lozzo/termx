@@ -94,6 +94,7 @@ Proto 在图中表示 schema/message boundary，不表示网络 transport 或独
 - `core/`、`remote/`、`private/` 不反向 import TUI 或 CLI。
 - `proto/` 是所有跨边界 API 的唯一 schema truth；禁止在 `core/api`、client runtime、protocol 或 TUI port 复制业务 DTO。
 - `api_layer/` 公开边界只使用 proto 生成类型，禁止依赖 UI、CLI、具体 transport、插件和 private Cloud implementation。
+- `api_layer.RequestAdmission` 由当前 protocol connection 提供原子 lease，在同一准入边界校验连接存活、已协商 capability 和具体 command/resource authorization；daemon 不拥有 client runtime 的 endpoint alias、route 或 generation truth。
 - `api_mapping/` 只做 core domain 与 proto 的确定性字段映射，不建立连接、不处理 framing，也不拥有状态、权限、session、route、fallback 或重试。
 - `internal/protocol/` 只传输 proto payload，不拥有 application request/result/event 字段语义。
 - 外部绑定只暴露 versioned protobuf command/event、opaque handle 和显式资源释放，不暴露 Go pointer 或内部 struct。

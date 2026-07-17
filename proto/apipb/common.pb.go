@@ -161,6 +161,64 @@ func (ApiErrorCode) EnumDescriptor() ([]byte, []int) {
 	return file_apipb_common_proto_rawDescGZIP(), []int{1}
 }
 
+type ResourceKind int32
+
+const (
+	ResourceKind_RESOURCE_KIND_UNSPECIFIED         ResourceKind = 0
+	ResourceKind_RESOURCE_KIND_OPERATION           ResourceKind = 1
+	ResourceKind_RESOURCE_KIND_SUBSCRIPTION        ResourceKind = 2
+	ResourceKind_RESOURCE_KIND_TERMINAL_ATTACHMENT ResourceKind = 3
+	ResourceKind_RESOURCE_KIND_HISTORY_WINDOW      ResourceKind = 4
+	ResourceKind_RESOURCE_KIND_FILE_TRANSFER       ResourceKind = 5
+)
+
+// Enum value maps for ResourceKind.
+var (
+	ResourceKind_name = map[int32]string{
+		0: "RESOURCE_KIND_UNSPECIFIED",
+		1: "RESOURCE_KIND_OPERATION",
+		2: "RESOURCE_KIND_SUBSCRIPTION",
+		3: "RESOURCE_KIND_TERMINAL_ATTACHMENT",
+		4: "RESOURCE_KIND_HISTORY_WINDOW",
+		5: "RESOURCE_KIND_FILE_TRANSFER",
+	}
+	ResourceKind_value = map[string]int32{
+		"RESOURCE_KIND_UNSPECIFIED":         0,
+		"RESOURCE_KIND_OPERATION":           1,
+		"RESOURCE_KIND_SUBSCRIPTION":        2,
+		"RESOURCE_KIND_TERMINAL_ATTACHMENT": 3,
+		"RESOURCE_KIND_HISTORY_WINDOW":      4,
+		"RESOURCE_KIND_FILE_TRANSFER":       5,
+	}
+)
+
+func (x ResourceKind) Enum() *ResourceKind {
+	p := new(ResourceKind)
+	*p = x
+	return p
+}
+
+func (x ResourceKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ResourceKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_apipb_common_proto_enumTypes[2].Descriptor()
+}
+
+func (ResourceKind) Type() protoreflect.EnumType {
+	return &file_apipb_common_proto_enumTypes[2]
+}
+
+func (x ResourceKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ResourceKind.Descriptor instead.
+func (ResourceKind) EnumDescriptor() ([]byte, []int) {
+	return file_apipb_common_proto_rawDescGZIP(), []int{2}
+}
+
 type ApiVersion struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Major         uint32                 `protobuf:"varint,1,opt,name=major,proto3" json:"major,omitempty"`
@@ -327,9 +385,10 @@ func (x *OperationStamp) GetOperationId() string {
 
 type ResourceHandle struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	Generation    uint64                 `protobuf:"varint,3,opt,name=generation,proto3" json:"generation,omitempty"`
+	OpaqueToken   []byte                 `protobuf:"bytes,1,opt,name=opaque_token,json=opaqueToken,proto3" json:"opaque_token,omitempty"`
+	Kind          ResourceKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=termx.api.v1.ResourceKind" json:"kind,omitempty"`
+	Session       *EndpointSessionStamp  `protobuf:"bytes,3,opt,name=session,proto3" json:"session,omitempty"`
+	Generation    uint64                 `protobuf:"varint,4,opt,name=generation,proto3" json:"generation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -364,18 +423,25 @@ func (*ResourceHandle) Descriptor() ([]byte, []int) {
 	return file_apipb_common_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *ResourceHandle) GetId() string {
+func (x *ResourceHandle) GetOpaqueToken() []byte {
 	if x != nil {
-		return x.Id
+		return x.OpaqueToken
 	}
-	return ""
+	return nil
 }
 
-func (x *ResourceHandle) GetKind() string {
+func (x *ResourceHandle) GetKind() ResourceKind {
 	if x != nil {
 		return x.Kind
 	}
-	return ""
+	return ResourceKind_RESOURCE_KIND_UNSPECIFIED
+}
+
+func (x *ResourceHandle) GetSession() *EndpointSessionStamp {
+	if x != nil {
+		return x.Session
+	}
+	return nil
 }
 
 func (x *ResourceHandle) GetGeneration() uint64 {
@@ -389,7 +455,6 @@ type RequestContext struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	ApiVersion    *ApiVersion            `protobuf:"bytes,2,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
-	Capabilities  []ApiCapability        `protobuf:"varint,3,rep,packed,name=capabilities,proto3,enum=termx.api.v1.ApiCapability" json:"capabilities,omitempty"`
 	Session       *EndpointSessionStamp  `protobuf:"bytes,4,opt,name=session,proto3" json:"session,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -435,13 +500,6 @@ func (x *RequestContext) GetRequestId() string {
 func (x *RequestContext) GetApiVersion() *ApiVersion {
 	if x != nil {
 		return x.ApiVersion
-	}
-	return nil
-}
-
-func (x *RequestContext) GetCapabilities() []ApiCapability {
-	if x != nil {
-		return x.Capabilities
 	}
 	return nil
 }
@@ -749,20 +807,20 @@ const file_apipb_common_proto_rawDesc = "" +
 	"generation\"q\n" +
 	"\x0eOperationStamp\x12<\n" +
 	"\asession\x18\x01 \x01(\v2\".termx.api.v1.EndpointSessionStampR\asession\x12!\n" +
-	"\foperation_id\x18\x02 \x01(\tR\voperationId\"T\n" +
-	"\x0eResourceHandle\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1e\n" +
+	"\foperation_id\x18\x02 \x01(\tR\voperationId\"\xc1\x01\n" +
+	"\x0eResourceHandle\x12!\n" +
+	"\fopaque_token\x18\x01 \x01(\fR\vopaqueToken\x12.\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x1a.termx.api.v1.ResourceKindR\x04kind\x12<\n" +
+	"\asession\x18\x03 \x01(\v2\".termx.api.v1.EndpointSessionStampR\asession\x12\x1e\n" +
 	"\n" +
-	"generation\x18\x03 \x01(\x04R\n" +
-	"generation\"\xe9\x01\n" +
+	"generation\x18\x04 \x01(\x04R\n" +
+	"generation\"\xae\x01\n" +
 	"\x0eRequestContext\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x129\n" +
 	"\vapi_version\x18\x02 \x01(\v2\x18.termx.api.v1.ApiVersionR\n" +
-	"apiVersion\x12?\n" +
-	"\fcapabilities\x18\x03 \x03(\x0e2\x1b.termx.api.v1.ApiCapabilityR\fcapabilities\x12<\n" +
-	"\asession\x18\x04 \x01(\v2\".termx.api.v1.EndpointSessionStampR\asession\"E\n" +
+	"apiVersion\x12<\n" +
+	"\asession\x18\x04 \x01(\v2\".termx.api.v1.EndpointSessionStampR\asessionJ\x04\b\x03\x10\x04\"E\n" +
 	"\x15ValidationErrorDetail\x12\x14\n" +
 	"\x05field\x18\x01 \x01(\tR\x05field\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x8a\x01\n" +
@@ -805,7 +863,14 @@ const file_apipb_common_proto_rawDesc = "" +
 	"\x18API_ERROR_CODE_CANCELLED\x10\t\x12\x1e\n" +
 	"\x1aAPI_ERROR_CODE_UNAVAILABLE\x10\n" +
 	"\x12\x1b\n" +
-	"\x17API_ERROR_CODE_INTERNAL\x10\vB%Z#github.com/lozzow/termx/proto/apipbb\x06proto3"
+	"\x17API_ERROR_CODE_INTERNAL\x10\v*\xd4\x01\n" +
+	"\fResourceKind\x12\x1d\n" +
+	"\x19RESOURCE_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17RESOURCE_KIND_OPERATION\x10\x01\x12\x1e\n" +
+	"\x1aRESOURCE_KIND_SUBSCRIPTION\x10\x02\x12%\n" +
+	"!RESOURCE_KIND_TERMINAL_ATTACHMENT\x10\x03\x12 \n" +
+	"\x1cRESOURCE_KIND_HISTORY_WINDOW\x10\x04\x12\x1f\n" +
+	"\x1bRESOURCE_KIND_FILE_TRANSFER\x10\x05B%Z#github.com/lozzow/termx/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_common_proto_rawDescOnce sync.Once
@@ -819,37 +884,39 @@ func file_apipb_common_proto_rawDescGZIP() []byte {
 	return file_apipb_common_proto_rawDescData
 }
 
-var file_apipb_common_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_apipb_common_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_apipb_common_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_apipb_common_proto_goTypes = []any{
 	(ApiCapability)(0),              // 0: termx.api.v1.ApiCapability
 	(ApiErrorCode)(0),               // 1: termx.api.v1.ApiErrorCode
-	(*ApiVersion)(nil),              // 2: termx.api.v1.ApiVersion
-	(*EndpointSessionStamp)(nil),    // 3: termx.api.v1.EndpointSessionStamp
-	(*OperationStamp)(nil),          // 4: termx.api.v1.OperationStamp
-	(*ResourceHandle)(nil),          // 5: termx.api.v1.ResourceHandle
-	(*RequestContext)(nil),          // 6: termx.api.v1.RequestContext
-	(*ValidationErrorDetail)(nil),   // 7: termx.api.v1.ValidationErrorDetail
-	(*StaleSessionErrorDetail)(nil), // 8: termx.api.v1.StaleSessionErrorDetail
-	(*ResourceErrorDetail)(nil),     // 9: termx.api.v1.ResourceErrorDetail
-	(*ApiError)(nil),                // 10: termx.api.v1.ApiError
+	(ResourceKind)(0),               // 2: termx.api.v1.ResourceKind
+	(*ApiVersion)(nil),              // 3: termx.api.v1.ApiVersion
+	(*EndpointSessionStamp)(nil),    // 4: termx.api.v1.EndpointSessionStamp
+	(*OperationStamp)(nil),          // 5: termx.api.v1.OperationStamp
+	(*ResourceHandle)(nil),          // 6: termx.api.v1.ResourceHandle
+	(*RequestContext)(nil),          // 7: termx.api.v1.RequestContext
+	(*ValidationErrorDetail)(nil),   // 8: termx.api.v1.ValidationErrorDetail
+	(*StaleSessionErrorDetail)(nil), // 9: termx.api.v1.StaleSessionErrorDetail
+	(*ResourceErrorDetail)(nil),     // 10: termx.api.v1.ResourceErrorDetail
+	(*ApiError)(nil),                // 11: termx.api.v1.ApiError
 }
 var file_apipb_common_proto_depIdxs = []int32{
-	3,  // 0: termx.api.v1.OperationStamp.session:type_name -> termx.api.v1.EndpointSessionStamp
-	2,  // 1: termx.api.v1.RequestContext.api_version:type_name -> termx.api.v1.ApiVersion
-	0,  // 2: termx.api.v1.RequestContext.capabilities:type_name -> termx.api.v1.ApiCapability
-	3,  // 3: termx.api.v1.RequestContext.session:type_name -> termx.api.v1.EndpointSessionStamp
-	3,  // 4: termx.api.v1.StaleSessionErrorDetail.requested:type_name -> termx.api.v1.EndpointSessionStamp
-	5,  // 5: termx.api.v1.ResourceErrorDetail.resource:type_name -> termx.api.v1.ResourceHandle
-	1,  // 6: termx.api.v1.ApiError.code:type_name -> termx.api.v1.ApiErrorCode
-	7,  // 7: termx.api.v1.ApiError.validation:type_name -> termx.api.v1.ValidationErrorDetail
-	8,  // 8: termx.api.v1.ApiError.stale_session:type_name -> termx.api.v1.StaleSessionErrorDetail
-	9,  // 9: termx.api.v1.ApiError.resource:type_name -> termx.api.v1.ResourceErrorDetail
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	4,  // 0: termx.api.v1.OperationStamp.session:type_name -> termx.api.v1.EndpointSessionStamp
+	2,  // 1: termx.api.v1.ResourceHandle.kind:type_name -> termx.api.v1.ResourceKind
+	4,  // 2: termx.api.v1.ResourceHandle.session:type_name -> termx.api.v1.EndpointSessionStamp
+	3,  // 3: termx.api.v1.RequestContext.api_version:type_name -> termx.api.v1.ApiVersion
+	4,  // 4: termx.api.v1.RequestContext.session:type_name -> termx.api.v1.EndpointSessionStamp
+	4,  // 5: termx.api.v1.StaleSessionErrorDetail.requested:type_name -> termx.api.v1.EndpointSessionStamp
+	6,  // 6: termx.api.v1.ResourceErrorDetail.resource:type_name -> termx.api.v1.ResourceHandle
+	1,  // 7: termx.api.v1.ApiError.code:type_name -> termx.api.v1.ApiErrorCode
+	8,  // 8: termx.api.v1.ApiError.validation:type_name -> termx.api.v1.ValidationErrorDetail
+	9,  // 9: termx.api.v1.ApiError.stale_session:type_name -> termx.api.v1.StaleSessionErrorDetail
+	10, // 10: termx.api.v1.ApiError.resource:type_name -> termx.api.v1.ResourceErrorDetail
+	11, // [11:11] is the sub-list for method output_type
+	11, // [11:11] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_apipb_common_proto_init() }
@@ -867,7 +934,7 @@ func file_apipb_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_apipb_common_proto_rawDesc), len(file_apipb_common_proto_rawDesc)),
-			NumEnums:      2,
+			NumEnums:      3,
 			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,

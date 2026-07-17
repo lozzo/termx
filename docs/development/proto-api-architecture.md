@@ -54,7 +54,7 @@ core
 ### API Layer
 
 - 对外参数、结果、事件和稳定错误 detail 只使用 proto 生成类型。
-- 负责 application method dispatch、权威 session fence、capability/authorization、取消、资源分配与释放、stream 生命周期和错误分类。
+- 负责 application method dispatch、connection-bound admission、capability/authorization、operation/resource origin fence、取消、资源分配与释放、stream 生命周期和错误分类。
 - 不负责 protobuf 字段转换、socket framing、WebRTC、SSH、UI projection 或 route fallback。
 - 通过 API Mapping 把 generated proto 转为 core domain value，再调用 core 的窄 domain interface；不得把 core struct 泄露到公开方法。
 
@@ -87,8 +87,13 @@ PA003 已建立 `proto/apipb/`，package 为 `termx.api.v1`，它是新的公共
 ## API 设计要求
 
 - 使用 versioned command/event envelope；未知 command、enum 和 field 必须有明确兼容行为。
+- `RequestContext` 只能位于 command envelope 顶层，不能复制到每个 oneof command；这样旧服务收到未来 command 时仍能保留 request ID、版本和 session correlation。
+- request/result/event 必须携带消息起源 endpoint session 的 stamp；结果只能回显请求 origin generation，不能用新 generation 包装旧请求结果。client runtime 按 generation 拒绝旧 session 迟到消息。
+- endpoint generation 是 client runtime truth，daemon 不查询或复制“当前 generation”。capability 与具体 application scope 由 protocol connection 在 Hello/authorization 后持有，并通过覆盖 controller 执行期的原子 admission lease 交给 API Layer；每条请求不得自声明 capability。
+- API Layer 在深拷贝 in-process/JNI/WASM Proto 前必须执行 envelope 总量门禁；通过后 admission、validation 与 dispatch 只能使用同一私有快照。
 - 非幂等 input、paste、resize、detach 必须携带 operation/session fence，失败后不得隐式重放。
-- 长生命周期资源使用 opaque handle，并有显式 release/cancel；不得暴露 Go pointer 或 goroutine。
+- 长生命周期资源使用 session-bound opaque token 与稳定 `ResourceKind` enum，并有显式 release/cancel；owning registry 必须验证 token 真伪、kind、generation 和 session ownership，不得暴露 Go pointer、channel 或 goroutine。
+- 创建长期资源的 controller 必须返回 pending transaction；API Layer 校验公开 projection 后才 commit，校验或提交失败必须通过不继承请求取消且有超时的 cleanup context rollback。
 - 稳定错误使用 code + typed detail，不依赖字符串解析。
 - `EndpointID + TerminalID` 是跨 endpoint terminal identity；裸 `TerminalID` 只在 owning daemon 内有效。
 - history token/generation、live revision、runtime session generation 是不同版本空间，proto 中不得复用同一字段表达。
@@ -116,6 +121,7 @@ proto schema
 - `internal/protocol/` 禁止定义与 application proto 同字段的业务 DTO。
 - `client/runtime`、`tui/port` 和平台 binding 禁止复制 application proto 业务字段。
 - 生成代码必须通过仓库 generated-code check，禁止手工编辑。
+- `proto/apipb/testdata/public-api-v1.pb` 是完整 descriptor baseline；字段、enum、oneof、reserved 和 message 变更必须显式更新 baseline，并接受 schema compatibility review。
 
 ## 当前迁移债务
 

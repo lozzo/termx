@@ -4,7 +4,7 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { OperationStamp, RequestContext, ResourceHandle } from "./common_pb";
+import type { OperationStamp, ResourceHandle } from "./common_pb";
 import { file_apipb_common } from "./common_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file apipb/terminal.proto.
  */
 export const file_apipb_terminal: GenFile = /*@__PURE__*/
-  fileDesc("ChRhcGlwYi90ZXJtaW5hbC5wcm90bxIMdGVybXguYXBpLnYxIjcKC1Rlcm1pbmFsUmVmEhMKC2VuZHBvaW50X2lkGAEgASgJEhMKC3Rlcm1pbmFsX2lkGAIgASgJIioKDFRlcm1pbmFsU2l6ZRIMCgRjb2xzGAEgASgNEgwKBHJvd3MYAiABKA0icgoVVGVybWluYWxSZXNvdXJjZVVzYWdlEgsKA3BpZBgBIAEoBRIYChBjcHVfcGVyY2VudF94MTAwGAIgASgFEhQKDG1lbW9yeV9ieXRlcxgDIAEoBBIcChRzYW1wbGVkX2F0X3VuaXhfbmFubxgEIAEoAyLeAwoMVGVybWluYWxJbmZvEiYKA3JlZhgBIAEoCzIZLnRlcm14LmFwaS52MS5UZXJtaW5hbFJlZhIMCgRuYW1lGAIgASgJEg8KB2NvbW1hbmQYAyADKAkSMgoEdGFncxgEIAMoCzIkLnRlcm14LmFwaS52MS5UZXJtaW5hbEluZm8uVGFnc0VudHJ5EigKBHNpemUYBSABKAsyGi50ZXJteC5hcGkudjEuVGVybWluYWxTaXplEioKBXN0YXRlGAYgASgOMhsudGVybXguYXBpLnYxLlRlcm1pbmFsU3RhdGUSCwoDY3dkGAcgASgJEhAKCGxpdmVfY3dkGAggASgJEhwKFGNyZWF0ZWRfYXRfdW5peF9uYW5vGAkgASgDEhYKCWV4aXRfY29kZRgKIAEoBUgAiAEBEhsKE2V4aXRlZF9hdF91bml4X25hbm8YCyABKAMSGAoQYXR0YWNobWVudF9jb3VudBgMIAEoBRI2CglyZXNvdXJjZXMYDSABKAsyIy50ZXJteC5hcGkudjEuVGVybWluYWxSZXNvdXJjZVVzYWdlGisKCVRhZ3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBQgwKCl9leGl0X2NvZGUizgIKElRlcm1pbmFsQ3JlYXRlU3BlYxITCgt0ZXJtaW5hbF9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEg8KB2NvbW1hbmQYAyADKAkSOAoEdGFncxgEIAMoCzIqLnRlcm14LmFwaS52MS5UZXJtaW5hbENyZWF0ZVNwZWMuVGFnc0VudHJ5EigKBHNpemUYBSABKAsyGi50ZXJteC5hcGkudjEuVGVybWluYWxTaXplEgsKA2N3ZBgGIAEoCRILCgNlbnYYByADKAkSFwoPc2Nyb2xsYmFja19yb3dzGAggASgFEhwKFHNjcm9sbGJhY2tfbWF4X2J5dGVzGAkgASgDEiIKGnNjcm9sbGJhY2tfbWF4X2FnZV9zZWNvbmRzGAogASgDGisKCVRhZ3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIkAKEFRlcm1pbmFsRGVmYXVsdHMSFwoPZGVmYXVsdF9jb21tYW5kGAEgAygJEhMKC2RlZmF1bHRfY3dkGAIgASgJIq0BCg9SZXNpemVPd25lcnNoaXASGwoTb3duZXJfYXR0YWNobWVudF9pZBgBIAEoCRIYChBvd25lcl9zdXJmYWNlX2lkGAIgASgJEhUKDW93bmVyX3ZpZXdfaWQYAyABKAkSKAoEc2l6ZRgEIAEoCzIaLnRlcm14LmFwaS52MS5UZXJtaW5hbFNpemUSEwoLc2l6ZV9sb2NrZWQYBSABKAgSDQoFZXBvY2gYBiABKAQi4gEKDVJlc2l6ZUNvbnRyb2wSEgoKY2FuX3Jlc2l6ZRgBIAEoCBIxCgZyZWFzb24YAiABKA4yIS50ZXJteC5hcGkudjEuUmVzaXplQ29udHJvbFJlYXNvbhITCgtzaXplX2xvY2tlZBgDIAEoCBISCgpzdXJmYWNlX2lkGAQgASgJEhgKEG93bmVyX3N1cmZhY2VfaWQYBSABKAkSFQoNb3duZXJfdmlld19pZBgGIAEoCRIwCglvd25lcnNoaXAYByABKAsyHS50ZXJteC5hcGkudjEuUmVzaXplT3duZXJzaGlwIsUBChBBdHRhY2htZW50SGFuZGxlEi4KCHJlc291cmNlGAEgASgLMhwudGVybXguYXBpLnYxLlJlc291cmNlSGFuZGxlEisKCHRlcm1pbmFsGAIgASgLMhkudGVybXguYXBpLnYxLlRlcm1pbmFsUmVmEi8KCW9wZXJhdGlvbhgDIAEoCzIcLnRlcm14LmFwaS52MS5PcGVyYXRpb25TdGFtcBISCgpzdXJmYWNlX2lkGAQgASgJEg8KB3ZpZXdfaWQYBSABKAkiMAoSUGF0aERpcmVjdG9yeUVudHJ5EgwKBG5hbWUYASABKAkSDAoEcGF0aBgCIAEoCSJIChdUZXJtaW5hbERlZmF1bHRzQ29tbWFuZBItCgdjb250ZXh0GAEgASgLMhwudGVybXguYXBpLnYxLlJlcXVlc3RDb250ZXh0InoKFVRlcm1pbmFsQ3JlYXRlQ29tbWFuZBItCgdjb250ZXh0GAEgASgLMhwudGVybXguYXBpLnYxLlJlcXVlc3RDb250ZXh0EjIKCHRlcm1pbmFsGAIgASgLMiAudGVybXguYXBpLnYxLlRlcm1pbmFsQ3JlYXRlU3BlYyJEChNUZXJtaW5hbExpc3RDb21tYW5kEi0KB2NvbnRleHQYASABKAsyHC50ZXJteC5hcGkudjEuUmVxdWVzdENvbnRleHQicAoSVGVybWluYWxHZXRDb21tYW5kEi0KB2NvbnRleHQYASABKAsyHC50ZXJteC5hcGkudjEuUmVxdWVzdENvbnRleHQSKwoIdGVybWluYWwYAiABKAsyGS50ZXJteC5hcGkudjEuVGVybWluYWxSZWYidAoWVGVybWluYWxSZXN0YXJ0Q29tbWFuZBItCgdjb250ZXh0GAEgASgLMhwudGVybXguYXBpLnYxLlJlcXVlc3RDb250ZXh0EisKCHRlcm1pbmFsGAIgASgLMhkudGVybXguYXBpLnYxLlRlcm1pbmFsUmVmInEKE1Rlcm1pbmFsS2lsbENvbW1hbmQSLQoHY29udGV4dBgBIAEoCzIcLnRlcm14LmFwaS52MS5SZXF1ZXN0Q29udGV4dBIrCgh0ZXJtaW5hbBgCIAEoCzIZLnRlcm14LmFwaS52MS5UZXJtaW5hbFJlZiJzChVUZXJtaW5hbFJlbW92ZUNvbW1hbmQSLQoHY29udGV4dBgBIAEoCzIcLnRlcm14LmFwaS52MS5SZXF1ZXN0Q29udGV4dBIrCgh0ZXJtaW5hbBgCIAEoCzIZLnRlcm14LmFwaS52MS5UZXJtaW5hbFJlZiL1AQoaVGVybWluYWxTZXRNZXRhZGF0YUNvbW1hbmQSLQoHY29udGV4dBgBIAEoCzIcLnRlcm14LmFwaS52MS5SZXF1ZXN0Q29udGV4dBIrCgh0ZXJtaW5hbBgCIAEoCzIZLnRlcm14LmFwaS52MS5UZXJtaW5hbFJlZhIMCgRuYW1lGAMgASgJEkAKBHRhZ3MYBCADKAsyMi50ZXJteC5hcGkudjEuVGVybWluYWxTZXRNZXRhZGF0YUNvbW1hbmQuVGFnc0VudHJ5GisKCVRhZ3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIt8BChZUZXJtaW5hbFNldFRhZ3NDb21tYW5kEi0KB2NvbnRleHQYASABKAsyHC50ZXJteC5hcGkudjEuUmVxdWVzdENvbnRleHQSKwoIdGVybWluYWwYAiABKAsyGS50ZXJteC5hcGkudjEuVGVybWluYWxSZWYSPAoEdGFncxgDIAMoCzIuLnRlcm14LmFwaS52MS5UZXJtaW5hbFNldFRhZ3NDb21tYW5kLlRhZ3NFbnRyeRorCglUYWdzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKoAgoVVGVybWluYWxBdHRhY2hDb21tYW5kEi0KB2NvbnRleHQYASABKAsyHC50ZXJteC5hcGkudjEuUmVxdWVzdENvbnRleHQSKwoIdGVybWluYWwYAiABKAsyGS50ZXJteC5hcGkudjEuVGVybWluYWxSZWYSKgoEbW9kZRgDIAEoDjIcLnRlcm14LmFwaS52MS5BdHRhY2htZW50TW9kZRIxCg1yZXNpemVfcG9saWN5GAQgASgOMhoudGVybXguYXBpLnYxLlJlc2l6ZVBvbGljeRISCgpzdXJmYWNlX2lkGAUgASgJEg8KB3ZpZXdfaWQYBiABKAkSLwoJb3BlcmF0aW9uGAcgASgLMhwudGVybXguYXBpLnYxLk9wZXJhdGlvblN0YW1wIqkBChVUZXJtaW5hbERldGFjaENvbW1hbmQSLQoHY29udGV4dBgBIAEoCzIcLnRlcm14LmFwaS52MS5SZXF1ZXN0Q29udGV4dBIwCgphdHRhY2htZW50GAIgASgLMhwudGVybXguYXBpLnYxLlJlc291cmNlSGFuZGxlEi8KCW9wZXJhdGlvbhgDIAEoCzIcLnRlcm14LmFwaS52MS5PcGVyYXRpb25TdGFtcCK2AQoUVGVybWluYWxJbnB1dENvbW1hbmQSLQoHY29udGV4dBgBIAEoCzIcLnRlcm14LmFwaS52MS5SZXF1ZXN0Q29udGV4dBIwCgphdHRhY2htZW50GAIgASgLMhwudGVybXguYXBpLnYxLlJlc291cmNlSGFuZGxlEi8KCW9wZXJhdGlvbhgDIAEoCzIcLnRlcm14LmFwaS52MS5PcGVyYXRpb25TdGFtcBIMCgRkYXRhGAQgASgMIoYCChVUZXJtaW5hbFJlc2l6ZUNvbW1hbmQSLQoHY29udGV4dBgBIAEoCzIcLnRlcm14LmFwaS52MS5SZXF1ZXN0Q29udGV4dBIwCgphdHRhY2htZW50GAIgASgLMhwudGVybXguYXBpLnYxLlJlc291cmNlSGFuZGxlEi8KCW9wZXJhdGlvbhgDIAEoCzIcLnRlcm14LmFwaS52MS5PcGVyYXRpb25TdGFtcBIoCgRzaXplGAQgASgLMhoudGVybXguYXBpLnYxLlRlcm1pbmFsU2l6ZRIxCg1yZXNpemVfcG9saWN5GAUgASgOMhoudGVybXguYXBpLnYxLlJlc2l6ZVBvbGljeSK9AQoZVGVybWluYWxSZXNpemVMb2NrQ29tbWFuZBItCgdjb250ZXh0GAEgASgLMhwudGVybXguYXBpLnYxLlJlcXVlc3RDb250ZXh0EjAKCmF0dGFjaG1lbnQYAiABKAsyHC50ZXJteC5hcGkudjEuUmVzb3VyY2VIYW5kbGUSLwoJb3BlcmF0aW9uGAMgASgLMhwudGVybXguYXBpLnYxLk9wZXJhdGlvblN0YW1wEg4KBmxvY2tlZBgEIAEoCCJqChpQYXRoTGlzdERpcmVjdG9yaWVzQ29tbWFuZBItCgdjb250ZXh0GAEgASgLMhwudGVybXguYXBpLnYxLlJlcXVlc3RDb250ZXh0Eg4KBnByZWZpeBgCIAEoCRINCgVsaW1pdBgDIAEoBSJEChRUZXJtaW5hbENyZWF0ZVJlc3VsdBIsCgh0ZXJtaW5hbBgBIAEoCzIaLnRlcm14LmFwaS52MS5UZXJtaW5hbEluZm8iQwoSVGVybWluYWxMaXN0UmVzdWx0Ei0KCXRlcm1pbmFscxgBIAMoCzIaLnRlcm14LmFwaS52MS5UZXJtaW5hbEluZm8iQQoRVGVybWluYWxHZXRSZXN1bHQSLAoIdGVybWluYWwYASABKAsyGi50ZXJteC5hcGkudjEuVGVybWluYWxJbmZvIkoKFlRlcm1pbmFsRGVmYXVsdHNSZXN1bHQSMAoIZGVmYXVsdHMYASABKAsyHi50ZXJteC5hcGkudjEuVGVybWluYWxEZWZhdWx0cyKIAgoUVGVybWluYWxBdHRhY2hSZXN1bHQSMgoKYXR0YWNobWVudBgBIAEoCzIeLnRlcm14LmFwaS52MS5BdHRhY2htZW50SGFuZGxlEioKBG1vZGUYAiABKA4yHC50ZXJteC5hcGkudjEuQXR0YWNobWVudE1vZGUSMQoNcmVzaXplX3BvbGljeRgDIAEoDjIaLnRlcm14LmFwaS52MS5SZXNpemVQb2xpY3kSKAoEc2l6ZRgEIAEoCzIaLnRlcm14LmFwaS52MS5UZXJtaW5hbFNpemUSMwoOcmVzaXplX2NvbnRyb2wYBSABKAsyGy50ZXJteC5hcGkudjEuUmVzaXplQ29udHJvbCKGAQoUVGVybWluYWxSZXNpemVSZXN1bHQSKAoEc2l6ZRgBIAEoCzIaLnRlcm14LmFwaS52MS5UZXJtaW5hbFNpemUSDwoHcmVzaXplZBgCIAEoCBIzCg5yZXNpemVfY29udHJvbBgDIAEoCzIbLnRlcm14LmFwaS52MS5SZXNpemVDb250cm9sIoUBChlQYXRoTGlzdERpcmVjdG9yaWVzUmVzdWx0EhEKCWJhc2VfcGF0aBgBIAEoCRIxCgdlbnRyaWVzGAIgAygLMiAudGVybXguYXBpLnYxLlBhdGhEaXJlY3RvcnlFbnRyeRIPCgdtaXNzaW5nGAMgASgIEhEKCXRydW5jYXRlZBgEIAEoCCJGChZUZXJtaW5hbExpZmVjeWNsZUV2ZW50EiwKCHRlcm1pbmFsGAEgASgLMhoudGVybXguYXBpLnYxLlRlcm1pbmFsSW5mbyJ+ChpUZXJtaW5hbFJlc2l6ZUNvbnRyb2xFdmVudBIrCgh0ZXJtaW5hbBgBIAEoCzIZLnRlcm14LmFwaS52MS5UZXJtaW5hbFJlZhIzCg5yZXNpemVfY29udHJvbBgCIAEoCzIbLnRlcm14LmFwaS52MS5SZXNpemVDb250cm9sKp4BCg1UZXJtaW5hbFN0YXRlEh4KGlRFUk1JTkFMX1NUQVRFX1VOU1BFQ0lGSUVEEAASGgoWVEVSTUlOQUxfU1RBVEVfQ1JFQVRFRBABEhoKFlRFUk1JTkFMX1NUQVRFX1JVTk5JTkcQAhIZChVURVJNSU5BTF9TVEFURV9FWElURUQQAxIaChZURVJNSU5BTF9TVEFURV9SRU1PVkVEEAQqcQoOQXR0YWNobWVudE1vZGUSHwobQVRUQUNITUVOVF9NT0RFX1VOU1BFQ0lGSUVEEAASIAocQVRUQUNITUVOVF9NT0RFX0NPTExBQk9SQVRPUhABEhwKGEFUVEFDSE1FTlRfTU9ERV9PQlNFUlZFUhACKn4KDFJlc2l6ZVBvbGljeRIdChlSRVNJWkVfUE9MSUNZX1VOU1BFQ0lGSUVEEAASFwoTUkVTSVpFX1BPTElDWV9PV05FUhABEhoKFlJFU0laRV9QT0xJQ1lfRk9MTE9XRVIQAhIaChZSRVNJWkVfUE9MSUNZX09CU0VSVkVSEAMqzAEKE1Jlc2l6ZUNvbnRyb2xSZWFzb24SJQohUkVTSVpFX0NPTlRST0xfUkVBU09OX1VOU1BFQ0lGSUVEEAASHwobUkVTSVpFX0NPTlRST0xfUkVBU09OX09XTkVSEAESIgoeUkVTSVpFX0NPTlRST0xfUkVBU09OX0ZPTExPV0VSEAISIgoeUkVTSVpFX0NPTlRST0xfUkVBU09OX09CU0VSVkVSEAMSJQohUkVTSVpFX0NPTlRST0xfUkVBU09OX1NJWkVfTE9DS0VEEARCJVojZ2l0aHViLmNvbS9sb3p6b3cvdGVybXgvcHJvdG8vYXBpcGJiBnByb3RvMw", [file_apipb_common]);
+  fileDesc("ChRhcGlwYi90ZXJtaW5hbC5wcm90bxIMdGVybXguYXBpLnYxIjcKC1Rlcm1pbmFsUmVmEhMKC2VuZHBvaW50X2lkGAEgASgJEhMKC3Rlcm1pbmFsX2lkGAIgASgJIioKDFRlcm1pbmFsU2l6ZRIMCgRjb2xzGAEgASgNEgwKBHJvd3MYAiABKA0icgoVVGVybWluYWxSZXNvdXJjZVVzYWdlEgsKA3BpZBgBIAEoBRIYChBjcHVfcGVyY2VudF94MTAwGAIgASgFEhQKDG1lbW9yeV9ieXRlcxgDIAEoBBIcChRzYW1wbGVkX2F0X3VuaXhfbmFubxgEIAEoAyLeAwoMVGVybWluYWxJbmZvEiYKA3JlZhgBIAEoCzIZLnRlcm14LmFwaS52MS5UZXJtaW5hbFJlZhIMCgRuYW1lGAIgASgJEg8KB2NvbW1hbmQYAyADKAkSMgoEdGFncxgEIAMoCzIkLnRlcm14LmFwaS52MS5UZXJtaW5hbEluZm8uVGFnc0VudHJ5EigKBHNpemUYBSABKAsyGi50ZXJteC5hcGkudjEuVGVybWluYWxTaXplEioKBXN0YXRlGAYgASgOMhsudGVybXguYXBpLnYxLlRlcm1pbmFsU3RhdGUSCwoDY3dkGAcgASgJEhAKCGxpdmVfY3dkGAggASgJEhwKFGNyZWF0ZWRfYXRfdW5peF9uYW5vGAkgASgDEhYKCWV4aXRfY29kZRgKIAEoBUgAiAEBEhsKE2V4aXRlZF9hdF91bml4X25hbm8YCyABKAMSGAoQYXR0YWNobWVudF9jb3VudBgMIAEoBRI2CglyZXNvdXJjZXMYDSABKAsyIy50ZXJteC5hcGkudjEuVGVybWluYWxSZXNvdXJjZVVzYWdlGisKCVRhZ3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBQgwKCl9leGl0X2NvZGUizgIKElRlcm1pbmFsQ3JlYXRlU3BlYxITCgt0ZXJtaW5hbF9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEg8KB2NvbW1hbmQYAyADKAkSOAoEdGFncxgEIAMoCzIqLnRlcm14LmFwaS52MS5UZXJtaW5hbENyZWF0ZVNwZWMuVGFnc0VudHJ5EigKBHNpemUYBSABKAsyGi50ZXJteC5hcGkudjEuVGVybWluYWxTaXplEgsKA2N3ZBgGIAEoCRILCgNlbnYYByADKAkSFwoPc2Nyb2xsYmFja19yb3dzGAggASgFEhwKFHNjcm9sbGJhY2tfbWF4X2J5dGVzGAkgASgDEiIKGnNjcm9sbGJhY2tfbWF4X2FnZV9zZWNvbmRzGAogASgDGisKCVRhZ3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIkAKEFRlcm1pbmFsRGVmYXVsdHMSFwoPZGVmYXVsdF9jb21tYW5kGAEgAygJEhMKC2RlZmF1bHRfY3dkGAIgASgJIq0BCg9SZXNpemVPd25lcnNoaXASGwoTb3duZXJfYXR0YWNobWVudF9pZBgBIAEoCRIYChBvd25lcl9zdXJmYWNlX2lkGAIgASgJEhUKDW93bmVyX3ZpZXdfaWQYAyABKAkSKAoEc2l6ZRgEIAEoCzIaLnRlcm14LmFwaS52MS5UZXJtaW5hbFNpemUSEwoLc2l6ZV9sb2NrZWQYBSABKAgSDQoFZXBvY2gYBiABKAQi4gEKDVJlc2l6ZUNvbnRyb2wSEgoKY2FuX3Jlc2l6ZRgBIAEoCBIxCgZyZWFzb24YAiABKA4yIS50ZXJteC5hcGkudjEuUmVzaXplQ29udHJvbFJlYXNvbhITCgtzaXplX2xvY2tlZBgDIAEoCBISCgpzdXJmYWNlX2lkGAQgASgJEhgKEG93bmVyX3N1cmZhY2VfaWQYBSABKAkSFQoNb3duZXJfdmlld19pZBgGIAEoCRIwCglvd25lcnNoaXAYByABKAsyHS50ZXJteC5hcGkudjEuUmVzaXplT3duZXJzaGlwIsUBChBBdHRhY2htZW50SGFuZGxlEi4KCHJlc291cmNlGAEgASgLMhwudGVybXguYXBpLnYxLlJlc291cmNlSGFuZGxlEisKCHRlcm1pbmFsGAIgASgLMhkudGVybXguYXBpLnYxLlRlcm1pbmFsUmVmEi8KCW9wZXJhdGlvbhgDIAEoCzIcLnRlcm14LmFwaS52MS5PcGVyYXRpb25TdGFtcBISCgpzdXJmYWNlX2lkGAQgASgJEg8KB3ZpZXdfaWQYBSABKAkiMAoSUGF0aERpcmVjdG9yeUVudHJ5EgwKBG5hbWUYASABKAkSDAoEcGF0aBgCIAEoCSIfChdUZXJtaW5hbERlZmF1bHRzQ29tbWFuZEoECAEQAiJRChVUZXJtaW5hbENyZWF0ZUNvbW1hbmQSMgoIdGVybWluYWwYAiABKAsyIC50ZXJteC5hcGkudjEuVGVybWluYWxDcmVhdGVTcGVjSgQIARACIhsKE1Rlcm1pbmFsTGlzdENvbW1hbmRKBAgBEAIiRwoSVGVybWluYWxHZXRDb21tYW5kEisKCHRlcm1pbmFsGAIgASgLMhkudGVybXguYXBpLnYxLlRlcm1pbmFsUmVmSgQIARACIksKFlRlcm1pbmFsUmVzdGFydENvbW1hbmQSKwoIdGVybWluYWwYAiABKAsyGS50ZXJteC5hcGkudjEuVGVybWluYWxSZWZKBAgBEAIiSAoTVGVybWluYWxLaWxsQ29tbWFuZBIrCgh0ZXJtaW5hbBgCIAEoCzIZLnRlcm14LmFwaS52MS5UZXJtaW5hbFJlZkoECAEQAiJKChVUZXJtaW5hbFJlbW92ZUNvbW1hbmQSKwoIdGVybWluYWwYAiABKAsyGS50ZXJteC5hcGkudjEuVGVybWluYWxSZWZKBAgBEAIizAEKGlRlcm1pbmFsU2V0TWV0YWRhdGFDb21tYW5kEisKCHRlcm1pbmFsGAIgASgLMhkudGVybXguYXBpLnYxLlRlcm1pbmFsUmVmEgwKBG5hbWUYAyABKAkSQAoEdGFncxgEIAMoCzIyLnRlcm14LmFwaS52MS5UZXJtaW5hbFNldE1ldGFkYXRhQ29tbWFuZC5UYWdzRW50cnkaKwoJVGFnc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAFKBAgBEAIitgEKFlRlcm1pbmFsU2V0VGFnc0NvbW1hbmQSKwoIdGVybWluYWwYAiABKAsyGS50ZXJteC5hcGkudjEuVGVybWluYWxSZWYSPAoEdGFncxgDIAMoCzIuLnRlcm14LmFwaS52MS5UZXJtaW5hbFNldFRhZ3NDb21tYW5kLlRhZ3NFbnRyeRorCglUYWdzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4AUoECAEQAiL/AQoVVGVybWluYWxBdHRhY2hDb21tYW5kEisKCHRlcm1pbmFsGAIgASgLMhkudGVybXguYXBpLnYxLlRlcm1pbmFsUmVmEioKBG1vZGUYAyABKA4yHC50ZXJteC5hcGkudjEuQXR0YWNobWVudE1vZGUSMQoNcmVzaXplX3BvbGljeRgEIAEoDjIaLnRlcm14LmFwaS52MS5SZXNpemVQb2xpY3kSEgoKc3VyZmFjZV9pZBgFIAEoCRIPCgd2aWV3X2lkGAYgASgJEi8KCW9wZXJhdGlvbhgHIAEoCzIcLnRlcm14LmFwaS52MS5PcGVyYXRpb25TdGFtcEoECAEQAiKAAQoVVGVybWluYWxEZXRhY2hDb21tYW5kEjAKCmF0dGFjaG1lbnQYAiABKAsyHC50ZXJteC5hcGkudjEuUmVzb3VyY2VIYW5kbGUSLwoJb3BlcmF0aW9uGAMgASgLMhwudGVybXguYXBpLnYxLk9wZXJhdGlvblN0YW1wSgQIARACIo0BChRUZXJtaW5hbElucHV0Q29tbWFuZBIwCgphdHRhY2htZW50GAIgASgLMhwudGVybXguYXBpLnYxLlJlc291cmNlSGFuZGxlEi8KCW9wZXJhdGlvbhgDIAEoCzIcLnRlcm14LmFwaS52MS5PcGVyYXRpb25TdGFtcBIMCgRkYXRhGAQgASgMSgQIARACIt0BChVUZXJtaW5hbFJlc2l6ZUNvbW1hbmQSMAoKYXR0YWNobWVudBgCIAEoCzIcLnRlcm14LmFwaS52MS5SZXNvdXJjZUhhbmRsZRIvCglvcGVyYXRpb24YAyABKAsyHC50ZXJteC5hcGkudjEuT3BlcmF0aW9uU3RhbXASKAoEc2l6ZRgEIAEoCzIaLnRlcm14LmFwaS52MS5UZXJtaW5hbFNpemUSMQoNcmVzaXplX3BvbGljeRgFIAEoDjIaLnRlcm14LmFwaS52MS5SZXNpemVQb2xpY3lKBAgBEAIilAEKGVRlcm1pbmFsUmVzaXplTG9ja0NvbW1hbmQSMAoKYXR0YWNobWVudBgCIAEoCzIcLnRlcm14LmFwaS52MS5SZXNvdXJjZUhhbmRsZRIvCglvcGVyYXRpb24YAyABKAsyHC50ZXJteC5hcGkudjEuT3BlcmF0aW9uU3RhbXASDgoGbG9ja2VkGAQgASgISgQIARACIkEKGlBhdGhMaXN0RGlyZWN0b3JpZXNDb21tYW5kEg4KBnByZWZpeBgCIAEoCRINCgVsaW1pdBgDIAEoBUoECAEQAiJEChRUZXJtaW5hbENyZWF0ZVJlc3VsdBIsCgh0ZXJtaW5hbBgBIAEoCzIaLnRlcm14LmFwaS52MS5UZXJtaW5hbEluZm8iQwoSVGVybWluYWxMaXN0UmVzdWx0Ei0KCXRlcm1pbmFscxgBIAMoCzIaLnRlcm14LmFwaS52MS5UZXJtaW5hbEluZm8iQQoRVGVybWluYWxHZXRSZXN1bHQSLAoIdGVybWluYWwYASABKAsyGi50ZXJteC5hcGkudjEuVGVybWluYWxJbmZvIkoKFlRlcm1pbmFsRGVmYXVsdHNSZXN1bHQSMAoIZGVmYXVsdHMYASABKAsyHi50ZXJteC5hcGkudjEuVGVybWluYWxEZWZhdWx0cyKIAgoUVGVybWluYWxBdHRhY2hSZXN1bHQSMgoKYXR0YWNobWVudBgBIAEoCzIeLnRlcm14LmFwaS52MS5BdHRhY2htZW50SGFuZGxlEioKBG1vZGUYAiABKA4yHC50ZXJteC5hcGkudjEuQXR0YWNobWVudE1vZGUSMQoNcmVzaXplX3BvbGljeRgDIAEoDjIaLnRlcm14LmFwaS52MS5SZXNpemVQb2xpY3kSKAoEc2l6ZRgEIAEoCzIaLnRlcm14LmFwaS52MS5UZXJtaW5hbFNpemUSMwoOcmVzaXplX2NvbnRyb2wYBSABKAsyGy50ZXJteC5hcGkudjEuUmVzaXplQ29udHJvbCKGAQoUVGVybWluYWxSZXNpemVSZXN1bHQSKAoEc2l6ZRgBIAEoCzIaLnRlcm14LmFwaS52MS5UZXJtaW5hbFNpemUSDwoHcmVzaXplZBgCIAEoCBIzCg5yZXNpemVfY29udHJvbBgDIAEoCzIbLnRlcm14LmFwaS52MS5SZXNpemVDb250cm9sIoUBChlQYXRoTGlzdERpcmVjdG9yaWVzUmVzdWx0EhEKCWJhc2VfcGF0aBgBIAEoCRIxCgdlbnRyaWVzGAIgAygLMiAudGVybXguYXBpLnYxLlBhdGhEaXJlY3RvcnlFbnRyeRIPCgdtaXNzaW5nGAMgASgIEhEKCXRydW5jYXRlZBgEIAEoCCJGChZUZXJtaW5hbExpZmVjeWNsZUV2ZW50EiwKCHRlcm1pbmFsGAEgASgLMhoudGVybXguYXBpLnYxLlRlcm1pbmFsSW5mbyJ+ChpUZXJtaW5hbFJlc2l6ZUNvbnRyb2xFdmVudBIrCgh0ZXJtaW5hbBgBIAEoCzIZLnRlcm14LmFwaS52MS5UZXJtaW5hbFJlZhIzCg5yZXNpemVfY29udHJvbBgCIAEoCzIbLnRlcm14LmFwaS52MS5SZXNpemVDb250cm9sKp4BCg1UZXJtaW5hbFN0YXRlEh4KGlRFUk1JTkFMX1NUQVRFX1VOU1BFQ0lGSUVEEAASGgoWVEVSTUlOQUxfU1RBVEVfQ1JFQVRFRBABEhoKFlRFUk1JTkFMX1NUQVRFX1JVTk5JTkcQAhIZChVURVJNSU5BTF9TVEFURV9FWElURUQQAxIaChZURVJNSU5BTF9TVEFURV9SRU1PVkVEEAQqcQoOQXR0YWNobWVudE1vZGUSHwobQVRUQUNITUVOVF9NT0RFX1VOU1BFQ0lGSUVEEAASIAocQVRUQUNITUVOVF9NT0RFX0NPTExBQk9SQVRPUhABEhwKGEFUVEFDSE1FTlRfTU9ERV9PQlNFUlZFUhACKn4KDFJlc2l6ZVBvbGljeRIdChlSRVNJWkVfUE9MSUNZX1VOU1BFQ0lGSUVEEAASFwoTUkVTSVpFX1BPTElDWV9PV05FUhABEhoKFlJFU0laRV9QT0xJQ1lfRk9MTE9XRVIQAhIaChZSRVNJWkVfUE9MSUNZX09CU0VSVkVSEAMqzAEKE1Jlc2l6ZUNvbnRyb2xSZWFzb24SJQohUkVTSVpFX0NPTlRST0xfUkVBU09OX1VOU1BFQ0lGSUVEEAASHwobUkVTSVpFX0NPTlRST0xfUkVBU09OX09XTkVSEAESIgoeUkVTSVpFX0NPTlRST0xfUkVBU09OX0ZPTExPV0VSEAISIgoeUkVTSVpFX0NPTlRST0xfUkVBU09OX09CU0VSVkVSEAMSJQohUkVTSVpFX0NPTlRST0xfUkVBU09OX1NJWkVfTE9DS0VEEARCJVojZ2l0aHViLmNvbS9sb3p6b3cvdGVybXgvcHJvdG8vYXBpcGJiBnByb3RvMw", [file_apipb_common]);
 
 /**
  * @generated from message termx.api.v1.TerminalRef
@@ -403,10 +403,6 @@ export const PathDirectoryEntrySchema: GenMessage<PathDirectoryEntry> = /*@__PUR
  * @generated from message termx.api.v1.TerminalDefaultsCommand
  */
 export type TerminalDefaultsCommand = Message<"termx.api.v1.TerminalDefaultsCommand"> & {
-  /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
 };
 
 /**
@@ -420,11 +416,6 @@ export const TerminalDefaultsCommandSchema: GenMessage<TerminalDefaultsCommand> 
  * @generated from message termx.api.v1.TerminalCreateCommand
  */
 export type TerminalCreateCommand = Message<"termx.api.v1.TerminalCreateCommand"> & {
-  /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
-
   /**
    * @generated from field: termx.api.v1.TerminalCreateSpec terminal = 2;
    */
@@ -442,10 +433,6 @@ export const TerminalCreateCommandSchema: GenMessage<TerminalCreateCommand> = /*
  * @generated from message termx.api.v1.TerminalListCommand
  */
 export type TerminalListCommand = Message<"termx.api.v1.TerminalListCommand"> & {
-  /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
 };
 
 /**
@@ -459,11 +446,6 @@ export const TerminalListCommandSchema: GenMessage<TerminalListCommand> = /*@__P
  * @generated from message termx.api.v1.TerminalGetCommand
  */
 export type TerminalGetCommand = Message<"termx.api.v1.TerminalGetCommand"> & {
-  /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
-
   /**
    * @generated from field: termx.api.v1.TerminalRef terminal = 2;
    */
@@ -482,11 +464,6 @@ export const TerminalGetCommandSchema: GenMessage<TerminalGetCommand> = /*@__PUR
  */
 export type TerminalRestartCommand = Message<"termx.api.v1.TerminalRestartCommand"> & {
   /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
-
-  /**
    * @generated from field: termx.api.v1.TerminalRef terminal = 2;
    */
   terminal?: TerminalRef | undefined;
@@ -503,11 +480,6 @@ export const TerminalRestartCommandSchema: GenMessage<TerminalRestartCommand> = 
  * @generated from message termx.api.v1.TerminalKillCommand
  */
 export type TerminalKillCommand = Message<"termx.api.v1.TerminalKillCommand"> & {
-  /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
-
   /**
    * @generated from field: termx.api.v1.TerminalRef terminal = 2;
    */
@@ -526,11 +498,6 @@ export const TerminalKillCommandSchema: GenMessage<TerminalKillCommand> = /*@__P
  */
 export type TerminalRemoveCommand = Message<"termx.api.v1.TerminalRemoveCommand"> & {
   /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
-
-  /**
    * @generated from field: termx.api.v1.TerminalRef terminal = 2;
    */
   terminal?: TerminalRef | undefined;
@@ -547,11 +514,6 @@ export const TerminalRemoveCommandSchema: GenMessage<TerminalRemoveCommand> = /*
  * @generated from message termx.api.v1.TerminalSetMetadataCommand
  */
 export type TerminalSetMetadataCommand = Message<"termx.api.v1.TerminalSetMetadataCommand"> & {
-  /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
-
   /**
    * @generated from field: termx.api.v1.TerminalRef terminal = 2;
    */
@@ -580,11 +542,6 @@ export const TerminalSetMetadataCommandSchema: GenMessage<TerminalSetMetadataCom
  */
 export type TerminalSetTagsCommand = Message<"termx.api.v1.TerminalSetTagsCommand"> & {
   /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
-
-  /**
    * @generated from field: termx.api.v1.TerminalRef terminal = 2;
    */
   terminal?: TerminalRef | undefined;
@@ -606,11 +563,6 @@ export const TerminalSetTagsCommandSchema: GenMessage<TerminalSetTagsCommand> = 
  * @generated from message termx.api.v1.TerminalAttachCommand
  */
 export type TerminalAttachCommand = Message<"termx.api.v1.TerminalAttachCommand"> & {
-  /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
-
   /**
    * @generated from field: termx.api.v1.TerminalRef terminal = 2;
    */
@@ -654,11 +606,6 @@ export const TerminalAttachCommandSchema: GenMessage<TerminalAttachCommand> = /*
  */
 export type TerminalDetachCommand = Message<"termx.api.v1.TerminalDetachCommand"> & {
   /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
-
-  /**
    * @generated from field: termx.api.v1.ResourceHandle attachment = 2;
    */
   attachment?: ResourceHandle | undefined;
@@ -680,11 +627,6 @@ export const TerminalDetachCommandSchema: GenMessage<TerminalDetachCommand> = /*
  * @generated from message termx.api.v1.TerminalInputCommand
  */
 export type TerminalInputCommand = Message<"termx.api.v1.TerminalInputCommand"> & {
-  /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
-
   /**
    * @generated from field: termx.api.v1.ResourceHandle attachment = 2;
    */
@@ -712,11 +654,6 @@ export const TerminalInputCommandSchema: GenMessage<TerminalInputCommand> = /*@_
  * @generated from message termx.api.v1.TerminalResizeCommand
  */
 export type TerminalResizeCommand = Message<"termx.api.v1.TerminalResizeCommand"> & {
-  /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
-
   /**
    * @generated from field: termx.api.v1.ResourceHandle attachment = 2;
    */
@@ -750,11 +687,6 @@ export const TerminalResizeCommandSchema: GenMessage<TerminalResizeCommand> = /*
  */
 export type TerminalResizeLockCommand = Message<"termx.api.v1.TerminalResizeLockCommand"> & {
   /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
-
-  /**
    * @generated from field: termx.api.v1.ResourceHandle attachment = 2;
    */
   attachment?: ResourceHandle | undefined;
@@ -781,11 +713,6 @@ export const TerminalResizeLockCommandSchema: GenMessage<TerminalResizeLockComma
  * @generated from message termx.api.v1.PathListDirectoriesCommand
  */
 export type PathListDirectoriesCommand = Message<"termx.api.v1.PathListDirectoriesCommand"> & {
-  /**
-   * @generated from field: termx.api.v1.RequestContext context = 1;
-   */
-  context?: RequestContext | undefined;
-
   /**
    * @generated from field: string prefix = 2;
    */

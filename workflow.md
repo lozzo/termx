@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 当前最早未完成切片是 `PA005A3`。在 `PA001-PA007` 全部完成前，暂停 `C3B` 以及后续连接功能开发。
+- 当前最早未完成切片是 `PA005A3`。`PA005A2R` 已按 client-owned origin session、connection-bound atomic admission、transactional resource publication 和 descriptor baseline 完成修正，架构 reviewer 与代码 reviewer 均明确 PASS。
 - 用户已确立仓库级强约定：所有插件、第三方客户端、官方客户端、跨进程和跨语言 API 的唯一 schema truth 必须位于 `proto/`。
 - 完整运行链路固定为 `插件/客户端 -> transport/platform binding -> protocol framing -> generated proto -> api_layer -> api_mapping -> core`，返回方向相反。Proto 是 schema/message truth，不是 transport 或主动运行层；任何入口都不得绕过 API Layer 消费 core domain struct。
 - `core/api` Go DTO 路线已判定错误，必须删除；此前 `AR003B1A/AR003B1B` 结论作废，不得继续迁移或补兼容层。
@@ -78,7 +78,8 @@ core domain truth
 | PA004 | 已完成 | API Layer 与 API Mapping 骨架 | 建立 `api_layer/` 与 `api_mapping/`；只依赖 core domain interface 与生成 proto；静态守卫禁止 UI/transport/private/state owner；fake harness 覆盖取消、释放和错误 |
 | PA005A1 | 已完成 | Terminal/attachment/path Proto schema | 定义 TerminalRef、lifecycle、attachment/input/resize、path typed command/result/event；加入 application envelope、生成代码和 compatibility harness |
 | PA005A2 | 已完成 | Terminal API Layer 与 API Mapping | proto validation、core domain mapping、typed error/cancel/release；不接 protocol transport 或 UI |
-| PA005A3 | 进行中 | Core/protocol terminal adapter 迁移 | protocol framing 把 proto payload 交给 API Layer，API Layer 经 API Mapping 调用 core；删除 terminal/attachment/path protocol DTO，不使用 alias |
+| PA005A2R | 已完成 | Proto API 基础契约审查修正 | envelope 顶层 context 保留未知 command correlation；result/event 回显 origin session；API Layer 使用 connection-bound atomic admission lease；resource handle 绑定 origin session 且事务式发布；稳定错误、enum/数值边界、response clone、descriptor baseline 和双 reviewer 通过 |
+| PA005A3 | 待开始 | Core/protocol terminal adapter 迁移 | protocol framing 把 proto payload 交给 API Layer，API Layer 经 API Mapping 调用 core；删除 terminal/attachment/path protocol DTO，不使用 alias |
 | PA005A4 | 待开始 | Terminal consumer 与守卫收口 | client runtime、CLI/TUI/remote consumer 使用 proto；删除重复 application DTO；依赖守卫与测试通过 |
 | PA005B | 待开始 | History/live 迁移 | authoritative history window/native screen API 进入 proto；保持 history/live revision 边界；删除重复 projection owner |
 | PA005C | 待开始 | File/storage/workbench 迁移 | file 隐藏 frame/channel，storage 保持 opaque，workbench 只表达 client intent；删除旧专用或重复 DTO |
@@ -98,6 +99,7 @@ core domain truth
 - `PA002`：`git diff --check`；inventory 中每项必须有 schema owner、consumer、迁移目标和删除条件。
 - `PA003`：生成代码检查；proto round-trip、unknown-field/compatibility、enum/oneof/version harness；`git diff --check`。
 - `PA004`：API Layer/API Mapping unit tests 与 dependency guards；取消、资源释放和错误映射 harness。
+- `PA005A2R`：generated-code check；descriptor baseline；Proto/API Layer/API Mapping race tests；client-owned origin session、atomic admission lease、command authorization、resource ownership、unknown command correlation、typed error 和边界 validation harness；`git diff --check`。
 - `PA005-PA006`：对应 core/protocol/client/TUI/CLI tests；迁移后的重复类型与旧 helper 扫描；必要 race/E2E。
 - `PA007`：全量可运行测试、generated-code check、import graph、重复 schema/DTO 扫描和双 Agent 审查。
 

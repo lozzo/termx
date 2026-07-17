@@ -1018,7 +1018,6 @@ func (x *PathDirectoryEntry) GetPath() string {
 
 type TerminalDefaultsCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1053,16 +1052,8 @@ func (*TerminalDefaultsCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *TerminalDefaultsCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 type TerminalCreateCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Terminal      *TerminalCreateSpec    `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1098,13 +1089,6 @@ func (*TerminalCreateCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *TerminalCreateCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 func (x *TerminalCreateCommand) GetTerminal() *TerminalCreateSpec {
 	if x != nil {
 		return x.Terminal
@@ -1114,7 +1098,6 @@ func (x *TerminalCreateCommand) GetTerminal() *TerminalCreateSpec {
 
 type TerminalListCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1149,16 +1132,8 @@ func (*TerminalListCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *TerminalListCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 type TerminalGetCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Terminal      *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1194,13 +1169,6 @@ func (*TerminalGetCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *TerminalGetCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 func (x *TerminalGetCommand) GetTerminal() *TerminalRef {
 	if x != nil {
 		return x.Terminal
@@ -1210,7 +1178,6 @@ func (x *TerminalGetCommand) GetTerminal() *TerminalRef {
 
 type TerminalRestartCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Terminal      *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1246,13 +1213,6 @@ func (*TerminalRestartCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{14}
 }
 
-func (x *TerminalRestartCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 func (x *TerminalRestartCommand) GetTerminal() *TerminalRef {
 	if x != nil {
 		return x.Terminal
@@ -1262,7 +1222,6 @@ func (x *TerminalRestartCommand) GetTerminal() *TerminalRef {
 
 type TerminalKillCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Terminal      *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1298,13 +1257,6 @@ func (*TerminalKillCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{15}
 }
 
-func (x *TerminalKillCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 func (x *TerminalKillCommand) GetTerminal() *TerminalRef {
 	if x != nil {
 		return x.Terminal
@@ -1314,7 +1266,6 @@ func (x *TerminalKillCommand) GetTerminal() *TerminalRef {
 
 type TerminalRemoveCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Terminal      *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1350,13 +1301,6 @@ func (*TerminalRemoveCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{16}
 }
 
-func (x *TerminalRemoveCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 func (x *TerminalRemoveCommand) GetTerminal() *TerminalRef {
 	if x != nil {
 		return x.Terminal
@@ -1366,7 +1310,6 @@ func (x *TerminalRemoveCommand) GetTerminal() *TerminalRef {
 
 type TerminalSetMetadataCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Terminal      *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	Tags          map[string]string      `protobuf:"bytes,4,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
@@ -1404,13 +1347,6 @@ func (*TerminalSetMetadataCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{17}
 }
 
-func (x *TerminalSetMetadataCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 func (x *TerminalSetMetadataCommand) GetTerminal() *TerminalRef {
 	if x != nil {
 		return x.Terminal
@@ -1434,7 +1370,6 @@ func (x *TerminalSetMetadataCommand) GetTags() map[string]string {
 
 type TerminalSetTagsCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Terminal      *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	Tags          map[string]string      `protobuf:"bytes,3,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
@@ -1471,13 +1406,6 @@ func (*TerminalSetTagsCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{18}
 }
 
-func (x *TerminalSetTagsCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 func (x *TerminalSetTagsCommand) GetTerminal() *TerminalRef {
 	if x != nil {
 		return x.Terminal
@@ -1494,7 +1422,6 @@ func (x *TerminalSetTagsCommand) GetTags() map[string]string {
 
 type TerminalAttachCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Terminal      *TerminalRef           `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	Mode          AttachmentMode         `protobuf:"varint,3,opt,name=mode,proto3,enum=termx.api.v1.AttachmentMode" json:"mode,omitempty"`
 	ResizePolicy  ResizePolicy           `protobuf:"varint,4,opt,name=resize_policy,json=resizePolicy,proto3,enum=termx.api.v1.ResizePolicy" json:"resize_policy,omitempty"`
@@ -1533,13 +1460,6 @@ func (x *TerminalAttachCommand) ProtoReflect() protoreflect.Message {
 // Deprecated: Use TerminalAttachCommand.ProtoReflect.Descriptor instead.
 func (*TerminalAttachCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *TerminalAttachCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
 }
 
 func (x *TerminalAttachCommand) GetTerminal() *TerminalRef {
@@ -1586,7 +1506,6 @@ func (x *TerminalAttachCommand) GetOperation() *OperationStamp {
 
 type TerminalDetachCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Attachment    *ResourceHandle        `protobuf:"bytes,2,opt,name=attachment,proto3" json:"attachment,omitempty"`
 	Operation     *OperationStamp        `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1623,13 +1542,6 @@ func (*TerminalDetachCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{20}
 }
 
-func (x *TerminalDetachCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 func (x *TerminalDetachCommand) GetAttachment() *ResourceHandle {
 	if x != nil {
 		return x.Attachment
@@ -1646,7 +1558,6 @@ func (x *TerminalDetachCommand) GetOperation() *OperationStamp {
 
 type TerminalInputCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Attachment    *ResourceHandle        `protobuf:"bytes,2,opt,name=attachment,proto3" json:"attachment,omitempty"`
 	Operation     *OperationStamp        `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
 	Data          []byte                 `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
@@ -1684,13 +1595,6 @@ func (*TerminalInputCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{21}
 }
 
-func (x *TerminalInputCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 func (x *TerminalInputCommand) GetAttachment() *ResourceHandle {
 	if x != nil {
 		return x.Attachment
@@ -1714,7 +1618,6 @@ func (x *TerminalInputCommand) GetData() []byte {
 
 type TerminalResizeCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Attachment    *ResourceHandle        `protobuf:"bytes,2,opt,name=attachment,proto3" json:"attachment,omitempty"`
 	Operation     *OperationStamp        `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
 	Size          *TerminalSize          `protobuf:"bytes,4,opt,name=size,proto3" json:"size,omitempty"`
@@ -1753,13 +1656,6 @@ func (*TerminalResizeCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{22}
 }
 
-func (x *TerminalResizeCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 func (x *TerminalResizeCommand) GetAttachment() *ResourceHandle {
 	if x != nil {
 		return x.Attachment
@@ -1790,7 +1686,6 @@ func (x *TerminalResizeCommand) GetResizePolicy() ResizePolicy {
 
 type TerminalResizeLockCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Attachment    *ResourceHandle        `protobuf:"bytes,2,opt,name=attachment,proto3" json:"attachment,omitempty"`
 	Operation     *OperationStamp        `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
 	Locked        bool                   `protobuf:"varint,4,opt,name=locked,proto3" json:"locked,omitempty"`
@@ -1828,13 +1723,6 @@ func (*TerminalResizeLockCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{23}
 }
 
-func (x *TerminalResizeLockCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
 func (x *TerminalResizeLockCommand) GetAttachment() *ResourceHandle {
 	if x != nil {
 		return x.Attachment
@@ -1858,7 +1746,6 @@ func (x *TerminalResizeLockCommand) GetLocked() bool {
 
 type PathListDirectoriesCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	Prefix        string                 `protobuf:"bytes,2,opt,name=prefix,proto3" json:"prefix,omitempty"`
 	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1893,13 +1780,6 @@ func (x *PathListDirectoriesCommand) ProtoReflect() protoreflect.Message {
 // Deprecated: Use PathListDirectoriesCommand.ProtoReflect.Descriptor instead.
 func (*PathListDirectoriesCommand) Descriptor() ([]byte, []int) {
 	return file_apipb_terminal_proto_rawDescGZIP(), []int{24}
-}
-
-func (x *PathListDirectoriesCommand) GetContext() *RequestContext {
-	if x != nil {
-		return x.Context
-	}
-	return nil
 }
 
 func (x *PathListDirectoriesCommand) GetPrefix() string {
@@ -2478,82 +2358,67 @@ const file_apipb_terminal_proto_rawDesc = "" +
 	"\aview_id\x18\x05 \x01(\tR\x06viewId\"<\n" +
 	"\x12PathDirectoryEntry\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path\"Q\n" +
-	"\x17TerminalDefaultsCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\"\x8d\x01\n" +
-	"\x15TerminalCreateCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x12<\n" +
-	"\bterminal\x18\x02 \x01(\v2 .termx.api.v1.TerminalCreateSpecR\bterminal\"M\n" +
-	"\x13TerminalListCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\"\x83\x01\n" +
-	"\x12TerminalGetCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\"\x87\x01\n" +
-	"\x16TerminalRestartCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\"\x84\x01\n" +
-	"\x13TerminalKillCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\"\x86\x01\n" +
-	"\x15TerminalRemoveCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x125\n" +
-	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\"\xa0\x02\n" +
-	"\x1aTerminalSetMetadataCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x125\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"\x1f\n" +
+	"\x17TerminalDefaultsCommandJ\x04\b\x01\x10\x02\"[\n" +
+	"\x15TerminalCreateCommand\x12<\n" +
+	"\bterminal\x18\x02 \x01(\v2 .termx.api.v1.TerminalCreateSpecR\bterminalJ\x04\b\x01\x10\x02\"\x1b\n" +
+	"\x13TerminalListCommandJ\x04\b\x01\x10\x02\"Q\n" +
+	"\x12TerminalGetCommand\x125\n" +
+	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"U\n" +
+	"\x16TerminalRestartCommand\x125\n" +
+	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"R\n" +
+	"\x13TerminalKillCommand\x125\n" +
+	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"T\n" +
+	"\x15TerminalRemoveCommand\x125\n" +
+	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminalJ\x04\b\x01\x10\x02\"\xee\x01\n" +
+	"\x1aTerminalSetMetadataCommand\x125\n" +
 	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12F\n" +
 	"\x04tags\x18\x04 \x03(\v22.termx.api.v1.TerminalSetMetadataCommand.TagsEntryR\x04tags\x1a7\n" +
 	"\tTagsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x84\x02\n" +
-	"\x16TerminalSetTagsCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x125\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x01\x10\x02\"\xd2\x01\n" +
+	"\x16TerminalSetTagsCommand\x125\n" +
 	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x12B\n" +
 	"\x04tags\x18\x03 \x03(\v2..termx.api.v1.TerminalSetTagsCommand.TagsEntryR\x04tags\x1a7\n" +
 	"\tTagsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xed\x02\n" +
-	"\x15TerminalAttachCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x125\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x01\x10\x02\"\xbb\x02\n" +
+	"\x15TerminalAttachCommand\x125\n" +
 	"\bterminal\x18\x02 \x01(\v2\x19.termx.api.v1.TerminalRefR\bterminal\x120\n" +
 	"\x04mode\x18\x03 \x01(\x0e2\x1c.termx.api.v1.AttachmentModeR\x04mode\x12?\n" +
 	"\rresize_policy\x18\x04 \x01(\x0e2\x1a.termx.api.v1.ResizePolicyR\fresizePolicy\x12\x1d\n" +
 	"\n" +
 	"surface_id\x18\x05 \x01(\tR\tsurfaceId\x12\x17\n" +
 	"\aview_id\x18\x06 \x01(\tR\x06viewId\x12:\n" +
-	"\toperation\x18\a \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\"\xc9\x01\n" +
-	"\x15TerminalDetachCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x12<\n" +
+	"\toperation\x18\a \x01(\v2\x1c.termx.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"\x97\x01\n" +
+	"\x15TerminalDetachCommand\x12<\n" +
 	"\n" +
 	"attachment\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\n" +
 	"attachment\x12:\n" +
-	"\toperation\x18\x03 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\"\xdc\x01\n" +
-	"\x14TerminalInputCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x12<\n" +
+	"\toperation\x18\x03 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperationJ\x04\b\x01\x10\x02\"\xaa\x01\n" +
+	"\x14TerminalInputCommand\x12<\n" +
 	"\n" +
 	"attachment\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\n" +
 	"attachment\x12:\n" +
 	"\toperation\x18\x03 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\x12\x12\n" +
-	"\x04data\x18\x04 \x01(\fR\x04data\"\xba\x02\n" +
-	"\x15TerminalResizeCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x12<\n" +
+	"\x04data\x18\x04 \x01(\fR\x04dataJ\x04\b\x01\x10\x02\"\x88\x02\n" +
+	"\x15TerminalResizeCommand\x12<\n" +
 	"\n" +
 	"attachment\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\n" +
 	"attachment\x12:\n" +
 	"\toperation\x18\x03 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\x12.\n" +
 	"\x04size\x18\x04 \x01(\v2\x1a.termx.api.v1.TerminalSizeR\x04size\x12?\n" +
-	"\rresize_policy\x18\x05 \x01(\x0e2\x1a.termx.api.v1.ResizePolicyR\fresizePolicy\"\xe5\x01\n" +
-	"\x19TerminalResizeLockCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x12<\n" +
+	"\rresize_policy\x18\x05 \x01(\x0e2\x1a.termx.api.v1.ResizePolicyR\fresizePolicyJ\x04\b\x01\x10\x02\"\xb3\x01\n" +
+	"\x19TerminalResizeLockCommand\x12<\n" +
 	"\n" +
 	"attachment\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\n" +
 	"attachment\x12:\n" +
 	"\toperation\x18\x03 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\x12\x16\n" +
-	"\x06locked\x18\x04 \x01(\bR\x06locked\"\x82\x01\n" +
-	"\x1aPathListDirectoriesCommand\x126\n" +
-	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x12\x16\n" +
+	"\x06locked\x18\x04 \x01(\bR\x06lockedJ\x04\b\x01\x10\x02\"P\n" +
+	"\x1aPathListDirectoriesCommand\x12\x16\n" +
 	"\x06prefix\x18\x02 \x01(\tR\x06prefix\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"N\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limitJ\x04\b\x01\x10\x02\"N\n" +
 	"\x14TerminalCreateResult\x126\n" +
 	"\bterminal\x18\x01 \x01(\v2\x1a.termx.api.v1.TerminalInfoR\bterminal\"N\n" +
 	"\x12TerminalListResult\x128\n" +
@@ -2665,7 +2530,6 @@ var file_apipb_terminal_proto_goTypes = []any{
 	nil,                                // 41: termx.api.v1.TerminalSetTagsCommand.TagsEntry
 	(*ResourceHandle)(nil),             // 42: termx.api.v1.ResourceHandle
 	(*OperationStamp)(nil),             // 43: termx.api.v1.OperationStamp
-	(*RequestContext)(nil),             // 44: termx.api.v1.RequestContext
 }
 var file_apipb_terminal_proto_depIdxs = []int32{
 	4,  // 0: termx.api.v1.TerminalInfo.ref:type_name -> termx.api.v1.TerminalRef
@@ -2681,64 +2545,49 @@ var file_apipb_terminal_proto_depIdxs = []int32{
 	42, // 10: termx.api.v1.AttachmentHandle.resource:type_name -> termx.api.v1.ResourceHandle
 	4,  // 11: termx.api.v1.AttachmentHandle.terminal:type_name -> termx.api.v1.TerminalRef
 	43, // 12: termx.api.v1.AttachmentHandle.operation:type_name -> termx.api.v1.OperationStamp
-	44, // 13: termx.api.v1.TerminalDefaultsCommand.context:type_name -> termx.api.v1.RequestContext
-	44, // 14: termx.api.v1.TerminalCreateCommand.context:type_name -> termx.api.v1.RequestContext
-	8,  // 15: termx.api.v1.TerminalCreateCommand.terminal:type_name -> termx.api.v1.TerminalCreateSpec
-	44, // 16: termx.api.v1.TerminalListCommand.context:type_name -> termx.api.v1.RequestContext
-	44, // 17: termx.api.v1.TerminalGetCommand.context:type_name -> termx.api.v1.RequestContext
-	4,  // 18: termx.api.v1.TerminalGetCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	44, // 19: termx.api.v1.TerminalRestartCommand.context:type_name -> termx.api.v1.RequestContext
-	4,  // 20: termx.api.v1.TerminalRestartCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	44, // 21: termx.api.v1.TerminalKillCommand.context:type_name -> termx.api.v1.RequestContext
-	4,  // 22: termx.api.v1.TerminalKillCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	44, // 23: termx.api.v1.TerminalRemoveCommand.context:type_name -> termx.api.v1.RequestContext
-	4,  // 24: termx.api.v1.TerminalRemoveCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	44, // 25: termx.api.v1.TerminalSetMetadataCommand.context:type_name -> termx.api.v1.RequestContext
-	4,  // 26: termx.api.v1.TerminalSetMetadataCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	40, // 27: termx.api.v1.TerminalSetMetadataCommand.tags:type_name -> termx.api.v1.TerminalSetMetadataCommand.TagsEntry
-	44, // 28: termx.api.v1.TerminalSetTagsCommand.context:type_name -> termx.api.v1.RequestContext
-	4,  // 29: termx.api.v1.TerminalSetTagsCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	41, // 30: termx.api.v1.TerminalSetTagsCommand.tags:type_name -> termx.api.v1.TerminalSetTagsCommand.TagsEntry
-	44, // 31: termx.api.v1.TerminalAttachCommand.context:type_name -> termx.api.v1.RequestContext
-	4,  // 32: termx.api.v1.TerminalAttachCommand.terminal:type_name -> termx.api.v1.TerminalRef
-	1,  // 33: termx.api.v1.TerminalAttachCommand.mode:type_name -> termx.api.v1.AttachmentMode
-	2,  // 34: termx.api.v1.TerminalAttachCommand.resize_policy:type_name -> termx.api.v1.ResizePolicy
-	43, // 35: termx.api.v1.TerminalAttachCommand.operation:type_name -> termx.api.v1.OperationStamp
-	44, // 36: termx.api.v1.TerminalDetachCommand.context:type_name -> termx.api.v1.RequestContext
-	42, // 37: termx.api.v1.TerminalDetachCommand.attachment:type_name -> termx.api.v1.ResourceHandle
-	43, // 38: termx.api.v1.TerminalDetachCommand.operation:type_name -> termx.api.v1.OperationStamp
-	44, // 39: termx.api.v1.TerminalInputCommand.context:type_name -> termx.api.v1.RequestContext
-	42, // 40: termx.api.v1.TerminalInputCommand.attachment:type_name -> termx.api.v1.ResourceHandle
-	43, // 41: termx.api.v1.TerminalInputCommand.operation:type_name -> termx.api.v1.OperationStamp
-	44, // 42: termx.api.v1.TerminalResizeCommand.context:type_name -> termx.api.v1.RequestContext
-	42, // 43: termx.api.v1.TerminalResizeCommand.attachment:type_name -> termx.api.v1.ResourceHandle
-	43, // 44: termx.api.v1.TerminalResizeCommand.operation:type_name -> termx.api.v1.OperationStamp
-	5,  // 45: termx.api.v1.TerminalResizeCommand.size:type_name -> termx.api.v1.TerminalSize
-	2,  // 46: termx.api.v1.TerminalResizeCommand.resize_policy:type_name -> termx.api.v1.ResizePolicy
-	44, // 47: termx.api.v1.TerminalResizeLockCommand.context:type_name -> termx.api.v1.RequestContext
-	42, // 48: termx.api.v1.TerminalResizeLockCommand.attachment:type_name -> termx.api.v1.ResourceHandle
-	43, // 49: termx.api.v1.TerminalResizeLockCommand.operation:type_name -> termx.api.v1.OperationStamp
-	44, // 50: termx.api.v1.PathListDirectoriesCommand.context:type_name -> termx.api.v1.RequestContext
-	7,  // 51: termx.api.v1.TerminalCreateResult.terminal:type_name -> termx.api.v1.TerminalInfo
-	7,  // 52: termx.api.v1.TerminalListResult.terminals:type_name -> termx.api.v1.TerminalInfo
-	7,  // 53: termx.api.v1.TerminalGetResult.terminal:type_name -> termx.api.v1.TerminalInfo
-	9,  // 54: termx.api.v1.TerminalDefaultsResult.defaults:type_name -> termx.api.v1.TerminalDefaults
-	12, // 55: termx.api.v1.TerminalAttachResult.attachment:type_name -> termx.api.v1.AttachmentHandle
-	1,  // 56: termx.api.v1.TerminalAttachResult.mode:type_name -> termx.api.v1.AttachmentMode
-	2,  // 57: termx.api.v1.TerminalAttachResult.resize_policy:type_name -> termx.api.v1.ResizePolicy
-	5,  // 58: termx.api.v1.TerminalAttachResult.size:type_name -> termx.api.v1.TerminalSize
-	11, // 59: termx.api.v1.TerminalAttachResult.resize_control:type_name -> termx.api.v1.ResizeControl
-	5,  // 60: termx.api.v1.TerminalResizeResult.size:type_name -> termx.api.v1.TerminalSize
-	11, // 61: termx.api.v1.TerminalResizeResult.resize_control:type_name -> termx.api.v1.ResizeControl
-	13, // 62: termx.api.v1.PathListDirectoriesResult.entries:type_name -> termx.api.v1.PathDirectoryEntry
-	7,  // 63: termx.api.v1.TerminalLifecycleEvent.terminal:type_name -> termx.api.v1.TerminalInfo
-	4,  // 64: termx.api.v1.TerminalResizeControlEvent.terminal:type_name -> termx.api.v1.TerminalRef
-	11, // 65: termx.api.v1.TerminalResizeControlEvent.resize_control:type_name -> termx.api.v1.ResizeControl
-	66, // [66:66] is the sub-list for method output_type
-	66, // [66:66] is the sub-list for method input_type
-	66, // [66:66] is the sub-list for extension type_name
-	66, // [66:66] is the sub-list for extension extendee
-	0,  // [0:66] is the sub-list for field type_name
+	8,  // 13: termx.api.v1.TerminalCreateCommand.terminal:type_name -> termx.api.v1.TerminalCreateSpec
+	4,  // 14: termx.api.v1.TerminalGetCommand.terminal:type_name -> termx.api.v1.TerminalRef
+	4,  // 15: termx.api.v1.TerminalRestartCommand.terminal:type_name -> termx.api.v1.TerminalRef
+	4,  // 16: termx.api.v1.TerminalKillCommand.terminal:type_name -> termx.api.v1.TerminalRef
+	4,  // 17: termx.api.v1.TerminalRemoveCommand.terminal:type_name -> termx.api.v1.TerminalRef
+	4,  // 18: termx.api.v1.TerminalSetMetadataCommand.terminal:type_name -> termx.api.v1.TerminalRef
+	40, // 19: termx.api.v1.TerminalSetMetadataCommand.tags:type_name -> termx.api.v1.TerminalSetMetadataCommand.TagsEntry
+	4,  // 20: termx.api.v1.TerminalSetTagsCommand.terminal:type_name -> termx.api.v1.TerminalRef
+	41, // 21: termx.api.v1.TerminalSetTagsCommand.tags:type_name -> termx.api.v1.TerminalSetTagsCommand.TagsEntry
+	4,  // 22: termx.api.v1.TerminalAttachCommand.terminal:type_name -> termx.api.v1.TerminalRef
+	1,  // 23: termx.api.v1.TerminalAttachCommand.mode:type_name -> termx.api.v1.AttachmentMode
+	2,  // 24: termx.api.v1.TerminalAttachCommand.resize_policy:type_name -> termx.api.v1.ResizePolicy
+	43, // 25: termx.api.v1.TerminalAttachCommand.operation:type_name -> termx.api.v1.OperationStamp
+	42, // 26: termx.api.v1.TerminalDetachCommand.attachment:type_name -> termx.api.v1.ResourceHandle
+	43, // 27: termx.api.v1.TerminalDetachCommand.operation:type_name -> termx.api.v1.OperationStamp
+	42, // 28: termx.api.v1.TerminalInputCommand.attachment:type_name -> termx.api.v1.ResourceHandle
+	43, // 29: termx.api.v1.TerminalInputCommand.operation:type_name -> termx.api.v1.OperationStamp
+	42, // 30: termx.api.v1.TerminalResizeCommand.attachment:type_name -> termx.api.v1.ResourceHandle
+	43, // 31: termx.api.v1.TerminalResizeCommand.operation:type_name -> termx.api.v1.OperationStamp
+	5,  // 32: termx.api.v1.TerminalResizeCommand.size:type_name -> termx.api.v1.TerminalSize
+	2,  // 33: termx.api.v1.TerminalResizeCommand.resize_policy:type_name -> termx.api.v1.ResizePolicy
+	42, // 34: termx.api.v1.TerminalResizeLockCommand.attachment:type_name -> termx.api.v1.ResourceHandle
+	43, // 35: termx.api.v1.TerminalResizeLockCommand.operation:type_name -> termx.api.v1.OperationStamp
+	7,  // 36: termx.api.v1.TerminalCreateResult.terminal:type_name -> termx.api.v1.TerminalInfo
+	7,  // 37: termx.api.v1.TerminalListResult.terminals:type_name -> termx.api.v1.TerminalInfo
+	7,  // 38: termx.api.v1.TerminalGetResult.terminal:type_name -> termx.api.v1.TerminalInfo
+	9,  // 39: termx.api.v1.TerminalDefaultsResult.defaults:type_name -> termx.api.v1.TerminalDefaults
+	12, // 40: termx.api.v1.TerminalAttachResult.attachment:type_name -> termx.api.v1.AttachmentHandle
+	1,  // 41: termx.api.v1.TerminalAttachResult.mode:type_name -> termx.api.v1.AttachmentMode
+	2,  // 42: termx.api.v1.TerminalAttachResult.resize_policy:type_name -> termx.api.v1.ResizePolicy
+	5,  // 43: termx.api.v1.TerminalAttachResult.size:type_name -> termx.api.v1.TerminalSize
+	11, // 44: termx.api.v1.TerminalAttachResult.resize_control:type_name -> termx.api.v1.ResizeControl
+	5,  // 45: termx.api.v1.TerminalResizeResult.size:type_name -> termx.api.v1.TerminalSize
+	11, // 46: termx.api.v1.TerminalResizeResult.resize_control:type_name -> termx.api.v1.ResizeControl
+	13, // 47: termx.api.v1.PathListDirectoriesResult.entries:type_name -> termx.api.v1.PathDirectoryEntry
+	7,  // 48: termx.api.v1.TerminalLifecycleEvent.terminal:type_name -> termx.api.v1.TerminalInfo
+	4,  // 49: termx.api.v1.TerminalResizeControlEvent.terminal:type_name -> termx.api.v1.TerminalRef
+	11, // 50: termx.api.v1.TerminalResizeControlEvent.resize_control:type_name -> termx.api.v1.ResizeControl
+	51, // [51:51] is the sub-list for method output_type
+	51, // [51:51] is the sub-list for method input_type
+	51, // [51:51] is the sub-list for extension type_name
+	51, // [51:51] is the sub-list for extension extendee
+	0,  // [0:51] is the sub-list for field type_name
 }
 
 func init() { file_apipb_terminal_proto_init() }

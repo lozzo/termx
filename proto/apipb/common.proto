@@ -30,6 +30,15 @@ enum ApiErrorCode {
   API_ERROR_CODE_INTERNAL = 11;
 }
 
+enum ResourceKind {
+  RESOURCE_KIND_UNSPECIFIED = 0;
+  RESOURCE_KIND_OPERATION = 1;
+  RESOURCE_KIND_SUBSCRIPTION = 2;
+  RESOURCE_KIND_TERMINAL_ATTACHMENT = 3;
+  RESOURCE_KIND_HISTORY_WINDOW = 4;
+  RESOURCE_KIND_FILE_TRANSFER = 5;
+}
+
 message ApiVersion {
   uint32 major = 1;
   uint32 minor = 2;
@@ -47,15 +56,16 @@ message OperationStamp {
 }
 
 message ResourceHandle {
-  string id = 1;
-  string kind = 2;
-  uint64 generation = 3;
+  bytes opaque_token = 1;
+  ResourceKind kind = 2;
+  EndpointSessionStamp session = 3;
+  uint64 generation = 4;
 }
 
 message RequestContext {
   string request_id = 1;
   ApiVersion api_version = 2;
-  repeated ApiCapability capabilities = 3;
+  reserved 3;
   EndpointSessionStamp session = 4;
 }
 

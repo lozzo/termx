@@ -7,19 +7,20 @@ import (
 )
 
 func TestTerminalInputRoundTripKeepsAttachmentAndOperationFence(t *testing.T) {
-	command := &CommandEnvelope{Command: &CommandEnvelope_TerminalInput{TerminalInput: &TerminalInputCommand{
+	session := &EndpointSessionStamp{EndpointId: "studio", RouteId: "ssh", Generation: 9}
+	command := &CommandEnvelope{
 		Context: &RequestContext{
-			RequestId:    "input-1",
-			ApiVersion:   &ApiVersion{Major: 1},
-			Capabilities: []ApiCapability{ApiCapability_API_CAPABILITY_TERMINAL_ATTACHMENT},
-			Session:      &EndpointSessionStamp{EndpointId: "studio", RouteId: "ssh", Generation: 9},
+			RequestId:  "input-1",
+			ApiVersion: &ApiVersion{Major: 1},
+			Session:    session,
 		},
-		Attachment: &ResourceHandle{Id: "attachment-1", Kind: "terminal_attachment", Generation: 3},
-		Operation: &OperationStamp{
-			Session: &EndpointSessionStamp{EndpointId: "studio", RouteId: "ssh", Generation: 9}, OperationId: "input-op-1",
-		},
-		Data: []byte("echo test\r"),
-	}}}
+		Command: &CommandEnvelope_TerminalInput{TerminalInput: &TerminalInputCommand{
+			Attachment: &ResourceHandle{OpaqueToken: []byte("attachment-1"), Kind: ResourceKind_RESOURCE_KIND_TERMINAL_ATTACHMENT, Session: session, Generation: 3},
+			Operation: &OperationStamp{
+				Session: session, OperationId: "input-op-1",
+			},
+			Data: []byte("echo test\r"),
+		}}}
 	payload, err := proto.Marshal(command)
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +30,7 @@ func TestTerminalInputRoundTripKeepsAttachmentAndOperationFence(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := decoded.GetTerminalInput()
-	if input.GetAttachment().GetId() != "attachment-1" || input.GetOperation().GetOperationId() != "input-op-1" || string(input.GetData()) != "echo test\r" {
+	if string(input.GetAttachment().GetOpaqueToken()) != "attachment-1" || input.GetAttachment().GetSession().GetGeneration() != 9 || input.GetOperation().GetOperationId() != "input-op-1" || string(input.GetData()) != "echo test\r" {
 		t.Fatalf("terminal input did not preserve fences: %#v", input)
 	}
 }

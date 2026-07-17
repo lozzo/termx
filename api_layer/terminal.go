@@ -3,11 +3,25 @@ package apilayer
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/lozzow/termx/api_mapping"
 	"github.com/lozzow/termx/proto/apipb"
 	"google.golang.org/protobuf/proto"
 )
+
+const attachmentCleanupTimeout = 5 * time.Second
+
+// TerminalAttachTransaction 持有尚未发布的 attachment 资源。
+// API Layer 校验 Result 后调用 Commit；任何校验或提交失败都调用 Rollback，防止客户端不可见资源泄漏。
+type TerminalAttachTransaction interface {
+	// Result 返回 pending attachment 的不可变 Proto projection；不得在返回后继续修改。
+	Result() *apipb.TerminalAttachResult
+	// Commit 原子发布 attachment，使后续 handle 操作可见。
+	Commit(context.Context) error
+	// Rollback 无条件释放 pending attachment；实现必须幂等并接受独立 cleanup context。
+	Rollback(context.Context) error
+}
 
 // TerminalController 是 API Layer 到 core terminal/path adapter 的 typed Proto API 边界。
 // 每个实现必须返回当前 command 对应的 result，不得返回 wirepb、protocol DTO 或 UI model。
@@ -21,7 +35,7 @@ type TerminalController interface {
 	TerminalRemove(context.Context, *apipb.TerminalRemoveCommand) error
 	TerminalSetMetadata(context.Context, *apipb.TerminalSetMetadataCommand) error
 	TerminalSetTags(context.Context, *apipb.TerminalSetTagsCommand) error
-	TerminalAttach(context.Context, *apipb.TerminalAttachCommand) (*apipb.TerminalAttachResult, error)
+	TerminalAttach(context.Context, *apipb.TerminalAttachCommand) (TerminalAttachTransaction, error)
 	TerminalDetach(context.Context, *apipb.TerminalDetachCommand) error
 	TerminalInput(context.Context, *apipb.TerminalInputCommand) error
 	TerminalResize(context.Context, *apipb.TerminalResizeCommand) (*apipb.TerminalResizeResult, error)
@@ -29,60 +43,56 @@ type TerminalController interface {
 	PathListDirectories(context.Context, *apipb.PathListDirectoriesCommand) (*apipb.PathListDirectoriesResult, error)
 }
 
-func (service *Service) executeTerminal(ctx context.Context, command *apipb.CommandEnvelope, requestContext *apipb.RequestContext) *apipb.ResultEnvelope {
+func (service *Service) executeTerminal(ctx context.Context, currentSession *apipb.EndpointSessionStamp, command *apipb.CommandEnvelope, requestContext *apipb.RequestContext) *apipb.ResultEnvelope {
 	requestID := requestContext.GetRequestId()
-	required := apimapping.RequiredCapabilityForCommand(command)
-	if !apimapping.HasCapability(requestContext, required) {
-		return unsupportedCapability(requestID, required)
-	}
 	if err := apimapping.ValidateTerminalCommand(command); err != nil {
-		return errorResult(requestID, apimapping.ErrorToProto(err, false))
+		return errorResult(requestID, currentSession, apimapping.ErrorToProto(err, false))
 	}
 	if service == nil || service.terminals == nil {
-		return unavailable(requestID, "terminal controller is unavailable")
+		return unavailable(requestID, currentSession, "terminal controller is unavailable")
 	}
 
 	switch value := command.GetCommand().(type) {
 	case *apipb.CommandEnvelope_TerminalDefaults:
 		result, err := service.terminals.TerminalDefaults(ctx, cloneMessage(value.TerminalDefaults))
-		return terminalDefaultsResult(requestID, result, err)
+		return terminalDefaultsResult(requestID, currentSession, result, err)
 	case *apipb.CommandEnvelope_TerminalCreate:
 		result, err := service.terminals.TerminalCreate(ctx, cloneMessage(value.TerminalCreate))
-		return terminalCreateResult(requestID, result, err)
+		return terminalCreateResult(requestID, currentSession, result, err)
 	case *apipb.CommandEnvelope_TerminalList:
 		result, err := service.terminals.TerminalList(ctx, cloneMessage(value.TerminalList))
-		return terminalListResult(requestID, result, err)
+		return terminalListResult(requestID, currentSession, result, err)
 	case *apipb.CommandEnvelope_TerminalGet:
 		result, err := service.terminals.TerminalGet(ctx, cloneMessage(value.TerminalGet))
-		return terminalGetResult(requestID, result, err)
+		return terminalGetResult(requestID, currentSession, result, err)
 	case *apipb.CommandEnvelope_TerminalRestart:
-		return terminalAck(requestID, service.terminals.TerminalRestart(ctx, cloneMessage(value.TerminalRestart)))
+		return terminalAck(requestID, currentSession, service.terminals.TerminalRestart(ctx, cloneMessage(value.TerminalRestart)))
 	case *apipb.CommandEnvelope_TerminalKill:
-		return terminalAck(requestID, service.terminals.TerminalKill(ctx, cloneMessage(value.TerminalKill)))
+		return terminalAck(requestID, currentSession, service.terminals.TerminalKill(ctx, cloneMessage(value.TerminalKill)))
 	case *apipb.CommandEnvelope_TerminalRemove:
-		return terminalAck(requestID, service.terminals.TerminalRemove(ctx, cloneMessage(value.TerminalRemove)))
+		return terminalAck(requestID, currentSession, service.terminals.TerminalRemove(ctx, cloneMessage(value.TerminalRemove)))
 	case *apipb.CommandEnvelope_TerminalSetMetadata:
-		return terminalAck(requestID, service.terminals.TerminalSetMetadata(ctx, cloneMessage(value.TerminalSetMetadata)))
+		return terminalAck(requestID, currentSession, service.terminals.TerminalSetMetadata(ctx, cloneMessage(value.TerminalSetMetadata)))
 	case *apipb.CommandEnvelope_TerminalSetTags:
-		return terminalAck(requestID, service.terminals.TerminalSetTags(ctx, cloneMessage(value.TerminalSetTags)))
+		return terminalAck(requestID, currentSession, service.terminals.TerminalSetTags(ctx, cloneMessage(value.TerminalSetTags)))
 	case *apipb.CommandEnvelope_TerminalAttach:
-		result, err := service.terminals.TerminalAttach(ctx, cloneMessage(value.TerminalAttach))
-		return terminalAttachResult(requestID, result, err)
+		transaction, err := service.terminals.TerminalAttach(ctx, cloneMessage(value.TerminalAttach))
+		return service.terminalAttachResult(ctx, requestID, currentSession, value.TerminalAttach, transaction, err)
 	case *apipb.CommandEnvelope_TerminalDetach:
-		return terminalAck(requestID, service.terminals.TerminalDetach(ctx, cloneMessage(value.TerminalDetach)))
+		return terminalAck(requestID, currentSession, service.terminals.TerminalDetach(ctx, cloneMessage(value.TerminalDetach)))
 	case *apipb.CommandEnvelope_TerminalInput:
-		return terminalAck(requestID, service.terminals.TerminalInput(ctx, cloneMessage(value.TerminalInput)))
+		return terminalAck(requestID, currentSession, service.terminals.TerminalInput(ctx, cloneMessage(value.TerminalInput)))
 	case *apipb.CommandEnvelope_TerminalResize:
 		result, err := service.terminals.TerminalResize(ctx, cloneMessage(value.TerminalResize))
-		return terminalResizeResult(requestID, result, err)
+		return terminalResizeResult(requestID, currentSession, result, err)
 	case *apipb.CommandEnvelope_TerminalResizeLock:
 		result, err := service.terminals.TerminalResizeLock(ctx, cloneMessage(value.TerminalResizeLock))
-		return terminalResizeResult(requestID, result, err)
+		return terminalResizeResult(requestID, currentSession, result, err)
 	case *apipb.CommandEnvelope_PathListDirectories:
 		result, err := service.terminals.PathListDirectories(ctx, cloneMessage(value.PathListDirectories))
-		return pathListDirectoriesResult(requestID, result, err)
+		return pathListDirectoriesResult(requestID, currentSession, result, err)
 	default:
-		return errorResult(requestID, apimapping.ErrorToProto(&apimapping.ValidationError{Field: "command", Reason: "unsupported terminal command"}, false))
+		return errorResult(requestID, currentSession, apimapping.ErrorToProto(&apimapping.ValidationError{Field: "command", Reason: "unsupported terminal command"}, false))
 	}
 }
 
@@ -90,65 +100,95 @@ func cloneMessage[T proto.Message](message T) T {
 	return proto.Clone(message).(T)
 }
 
-func terminalAck(requestID string, err error) *apipb.ResultEnvelope {
+func terminalAck(requestID string, session *apipb.EndpointSessionStamp, err error) *apipb.ResultEnvelope {
 	if err != nil {
-		return errorResult(requestID, apimapping.ErrorToProto(err, true))
+		return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 	}
-	return acknowledge(requestID)
+	return acknowledge(requestID, session)
 }
 
-func terminalDefaultsResult(requestID string, result *apipb.TerminalDefaultsResult, err error) *apipb.ResultEnvelope {
+func terminalDefaultsResult(requestID string, session *apipb.EndpointSessionStamp, result *apipb.TerminalDefaultsResult, err error) *apipb.ResultEnvelope {
 	if err != nil || result == nil {
-		return terminalResultError(requestID, result, err)
+		return terminalResultError(requestID, session, err)
 	}
-	return &apipb.ResultEnvelope{RequestId: requestID, Result: &apipb.ResultEnvelope_TerminalDefaults{TerminalDefaults: result}}
+	return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_TerminalDefaults{TerminalDefaults: cloneMessage(result)}}
 }
 
-func terminalCreateResult(requestID string, result *apipb.TerminalCreateResult, err error) *apipb.ResultEnvelope {
+func terminalCreateResult(requestID string, session *apipb.EndpointSessionStamp, result *apipb.TerminalCreateResult, err error) *apipb.ResultEnvelope {
 	if err != nil || result == nil {
-		return terminalResultError(requestID, result, err)
+		return terminalResultError(requestID, session, err)
 	}
-	return &apipb.ResultEnvelope{RequestId: requestID, Result: &apipb.ResultEnvelope_TerminalCreate{TerminalCreate: result}}
+	return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_TerminalCreate{TerminalCreate: cloneMessage(result)}}
 }
 
-func terminalListResult(requestID string, result *apipb.TerminalListResult, err error) *apipb.ResultEnvelope {
+func terminalListResult(requestID string, session *apipb.EndpointSessionStamp, result *apipb.TerminalListResult, err error) *apipb.ResultEnvelope {
 	if err != nil || result == nil {
-		return terminalResultError(requestID, result, err)
+		return terminalResultError(requestID, session, err)
 	}
-	return &apipb.ResultEnvelope{RequestId: requestID, Result: &apipb.ResultEnvelope_TerminalList{TerminalList: result}}
+	return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_TerminalList{TerminalList: cloneMessage(result)}}
 }
 
-func terminalGetResult(requestID string, result *apipb.TerminalGetResult, err error) *apipb.ResultEnvelope {
+func terminalGetResult(requestID string, session *apipb.EndpointSessionStamp, result *apipb.TerminalGetResult, err error) *apipb.ResultEnvelope {
 	if err != nil || result == nil {
-		return terminalResultError(requestID, result, err)
+		return terminalResultError(requestID, session, err)
 	}
-	return &apipb.ResultEnvelope{RequestId: requestID, Result: &apipb.ResultEnvelope_TerminalGet{TerminalGet: result}}
+	return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_TerminalGet{TerminalGet: cloneMessage(result)}}
 }
 
-func terminalAttachResult(requestID string, result *apipb.TerminalAttachResult, err error) *apipb.ResultEnvelope {
+func (service *Service) terminalAttachResult(ctx context.Context, requestID string, session *apipb.EndpointSessionStamp, command *apipb.TerminalAttachCommand, transaction TerminalAttachTransaction, err error) *apipb.ResultEnvelope {
+	if err != nil {
+		if transaction != nil {
+			if rollbackErr := rollbackAttachment(ctx, transaction); rollbackErr != nil {
+				return errorResult(requestID, session, &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_INTERNAL, Message: "terminal attachment failed and rollback failed", Attempted: true})
+			}
+		}
+		return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
+	}
+	if transaction == nil {
+		return terminalResultError(requestID, session, err)
+	}
+	result := transaction.Result()
+	if result != nil {
+		result = cloneMessage(result)
+	}
+	if err := apimapping.ValidateTerminalAttachResult(command, result, session); err != nil {
+		if rollbackErr := rollbackAttachment(ctx, transaction); rollbackErr != nil {
+			return errorResult(requestID, session, &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_INTERNAL, Message: "terminal attachment publication failed and rollback failed", Attempted: true})
+		}
+		return errorResult(requestID, session, &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_INTERNAL, Message: "terminal controller returned an invalid attachment result", Attempted: true})
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		if rollbackErr := rollbackAttachment(ctx, transaction); rollbackErr != nil {
+			return errorResult(requestID, session, &apipb.ApiError{Code: apipb.ApiErrorCode_API_ERROR_CODE_INTERNAL, Message: "terminal attachment commit and rollback failed", Attempted: true})
+		}
+		return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
+	}
+	return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_TerminalAttach{TerminalAttach: cloneMessage(result)}}
+}
+
+func rollbackAttachment(ctx context.Context, transaction TerminalAttachTransaction) error {
+	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), attachmentCleanupTimeout)
+	defer cancel()
+	return transaction.Rollback(cleanupContext)
+}
+
+func terminalResizeResult(requestID string, session *apipb.EndpointSessionStamp, result *apipb.TerminalResizeResult, err error) *apipb.ResultEnvelope {
 	if err != nil || result == nil {
-		return terminalResultError(requestID, result, err)
+		return terminalResultError(requestID, session, err)
 	}
-	return &apipb.ResultEnvelope{RequestId: requestID, Result: &apipb.ResultEnvelope_TerminalAttach{TerminalAttach: result}}
+	return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_TerminalResize{TerminalResize: cloneMessage(result)}}
 }
 
-func terminalResizeResult(requestID string, result *apipb.TerminalResizeResult, err error) *apipb.ResultEnvelope {
+func pathListDirectoriesResult(requestID string, session *apipb.EndpointSessionStamp, result *apipb.PathListDirectoriesResult, err error) *apipb.ResultEnvelope {
 	if err != nil || result == nil {
-		return terminalResultError(requestID, result, err)
+		return terminalResultError(requestID, session, err)
 	}
-	return &apipb.ResultEnvelope{RequestId: requestID, Result: &apipb.ResultEnvelope_TerminalResize{TerminalResize: result}}
+	return &apipb.ResultEnvelope{RequestId: requestID, OriginSession: cloneSession(session), Result: &apipb.ResultEnvelope_PathListDirectories{PathListDirectories: cloneMessage(result)}}
 }
 
-func pathListDirectoriesResult(requestID string, result *apipb.PathListDirectoriesResult, err error) *apipb.ResultEnvelope {
-	if err != nil || result == nil {
-		return terminalResultError(requestID, result, err)
-	}
-	return &apipb.ResultEnvelope{RequestId: requestID, Result: &apipb.ResultEnvelope_PathListDirectories{PathListDirectories: result}}
-}
-
-func terminalResultError(requestID string, result any, err error) *apipb.ResultEnvelope {
-	if err == nil && result == nil {
+func terminalResultError(requestID string, session *apipb.EndpointSessionStamp, err error) *apipb.ResultEnvelope {
+	if err == nil {
 		err = errors.New("terminal controller returned nil result")
 	}
-	return errorResult(requestID, apimapping.ErrorToProto(err, true))
+	return errorResult(requestID, session, apimapping.ErrorToProto(err, true))
 }
