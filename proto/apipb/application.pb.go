@@ -21,719 +21,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ApiCapability 描述调用方和 API Layer 明确协商的公共能力。
-type ApiCapability int32
-
-const (
-	ApiCapability_API_CAPABILITY_UNSPECIFIED            ApiCapability = 0
-	ApiCapability_API_CAPABILITY_TYPED_ERRORS           ApiCapability = 1
-	ApiCapability_API_CAPABILITY_ENDPOINT_SESSION_FENCE ApiCapability = 2
-	ApiCapability_API_CAPABILITY_OPERATION_CANCELLATION ApiCapability = 3
-	ApiCapability_API_CAPABILITY_RESOURCE_LIFECYCLE     ApiCapability = 4
-)
-
-// Enum value maps for ApiCapability.
-var (
-	ApiCapability_name = map[int32]string{
-		0: "API_CAPABILITY_UNSPECIFIED",
-		1: "API_CAPABILITY_TYPED_ERRORS",
-		2: "API_CAPABILITY_ENDPOINT_SESSION_FENCE",
-		3: "API_CAPABILITY_OPERATION_CANCELLATION",
-		4: "API_CAPABILITY_RESOURCE_LIFECYCLE",
-	}
-	ApiCapability_value = map[string]int32{
-		"API_CAPABILITY_UNSPECIFIED":            0,
-		"API_CAPABILITY_TYPED_ERRORS":           1,
-		"API_CAPABILITY_ENDPOINT_SESSION_FENCE": 2,
-		"API_CAPABILITY_OPERATION_CANCELLATION": 3,
-		"API_CAPABILITY_RESOURCE_LIFECYCLE":     4,
-	}
-)
-
-func (x ApiCapability) Enum() *ApiCapability {
-	p := new(ApiCapability)
-	*p = x
-	return p
-}
-
-func (x ApiCapability) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (ApiCapability) Descriptor() protoreflect.EnumDescriptor {
-	return file_apipb_application_proto_enumTypes[0].Descriptor()
-}
-
-func (ApiCapability) Type() protoreflect.EnumType {
-	return &file_apipb_application_proto_enumTypes[0]
-}
-
-func (x ApiCapability) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use ApiCapability.Descriptor instead.
-func (ApiCapability) EnumDescriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{0}
-}
-
-// ApiErrorCode 是所有 application API 共用的稳定失败分类。
-type ApiErrorCode int32
-
-const (
-	ApiErrorCode_API_ERROR_CODE_UNSPECIFIED            ApiErrorCode = 0
-	ApiErrorCode_API_ERROR_CODE_INVALID_REQUEST        ApiErrorCode = 1
-	ApiErrorCode_API_ERROR_CODE_UNSUPPORTED_VERSION    ApiErrorCode = 2
-	ApiErrorCode_API_ERROR_CODE_UNSUPPORTED_CAPABILITY ApiErrorCode = 3
-	ApiErrorCode_API_ERROR_CODE_UNAUTHORIZED           ApiErrorCode = 4
-	ApiErrorCode_API_ERROR_CODE_FORBIDDEN              ApiErrorCode = 5
-	ApiErrorCode_API_ERROR_CODE_NOT_FOUND              ApiErrorCode = 6
-	ApiErrorCode_API_ERROR_CODE_CONFLICT               ApiErrorCode = 7
-	ApiErrorCode_API_ERROR_CODE_STALE_SESSION          ApiErrorCode = 8
-	ApiErrorCode_API_ERROR_CODE_CANCELLED              ApiErrorCode = 9
-	ApiErrorCode_API_ERROR_CODE_UNAVAILABLE            ApiErrorCode = 10
-	ApiErrorCode_API_ERROR_CODE_INTERNAL               ApiErrorCode = 11
-)
-
-// Enum value maps for ApiErrorCode.
-var (
-	ApiErrorCode_name = map[int32]string{
-		0:  "API_ERROR_CODE_UNSPECIFIED",
-		1:  "API_ERROR_CODE_INVALID_REQUEST",
-		2:  "API_ERROR_CODE_UNSUPPORTED_VERSION",
-		3:  "API_ERROR_CODE_UNSUPPORTED_CAPABILITY",
-		4:  "API_ERROR_CODE_UNAUTHORIZED",
-		5:  "API_ERROR_CODE_FORBIDDEN",
-		6:  "API_ERROR_CODE_NOT_FOUND",
-		7:  "API_ERROR_CODE_CONFLICT",
-		8:  "API_ERROR_CODE_STALE_SESSION",
-		9:  "API_ERROR_CODE_CANCELLED",
-		10: "API_ERROR_CODE_UNAVAILABLE",
-		11: "API_ERROR_CODE_INTERNAL",
-	}
-	ApiErrorCode_value = map[string]int32{
-		"API_ERROR_CODE_UNSPECIFIED":            0,
-		"API_ERROR_CODE_INVALID_REQUEST":        1,
-		"API_ERROR_CODE_UNSUPPORTED_VERSION":    2,
-		"API_ERROR_CODE_UNSUPPORTED_CAPABILITY": 3,
-		"API_ERROR_CODE_UNAUTHORIZED":           4,
-		"API_ERROR_CODE_FORBIDDEN":              5,
-		"API_ERROR_CODE_NOT_FOUND":              6,
-		"API_ERROR_CODE_CONFLICT":               7,
-		"API_ERROR_CODE_STALE_SESSION":          8,
-		"API_ERROR_CODE_CANCELLED":              9,
-		"API_ERROR_CODE_UNAVAILABLE":            10,
-		"API_ERROR_CODE_INTERNAL":               11,
-	}
-)
-
-func (x ApiErrorCode) Enum() *ApiErrorCode {
-	p := new(ApiErrorCode)
-	*p = x
-	return p
-}
-
-func (x ApiErrorCode) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (ApiErrorCode) Descriptor() protoreflect.EnumDescriptor {
-	return file_apipb_application_proto_enumTypes[1].Descriptor()
-}
-
-func (ApiErrorCode) Type() protoreflect.EnumType {
-	return &file_apipb_application_proto_enumTypes[1]
-}
-
-func (x ApiErrorCode) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use ApiErrorCode.Descriptor instead.
-func (ApiErrorCode) EnumDescriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{1}
-}
-
-// ApiVersion 是公共 application schema 的显式主次版本。
-type ApiVersion struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Major         uint32                 `protobuf:"varint,1,opt,name=major,proto3" json:"major,omitempty"`
-	Minor         uint32                 `protobuf:"varint,2,opt,name=minor,proto3" json:"minor,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ApiVersion) Reset() {
-	*x = ApiVersion{}
-	mi := &file_apipb_application_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ApiVersion) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ApiVersion) ProtoMessage() {}
-
-func (x *ApiVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ApiVersion.ProtoReflect.Descriptor instead.
-func (*ApiVersion) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *ApiVersion) GetMajor() uint32 {
-	if x != nil {
-		return x.Major
-	}
-	return 0
-}
-
-func (x *ApiVersion) GetMinor() uint32 {
-	if x != nil {
-		return x.Minor
-	}
-	return 0
-}
-
-// EndpointSessionStamp 把一次操作固定到 endpoint route generation。
-type EndpointSessionStamp struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	EndpointId    string                 `protobuf:"bytes,1,opt,name=endpoint_id,json=endpointId,proto3" json:"endpoint_id,omitempty"`
-	RouteId       string                 `protobuf:"bytes,2,opt,name=route_id,json=routeId,proto3" json:"route_id,omitempty"`
-	Generation    uint64                 `protobuf:"varint,3,opt,name=generation,proto3" json:"generation,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EndpointSessionStamp) Reset() {
-	*x = EndpointSessionStamp{}
-	mi := &file_apipb_application_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EndpointSessionStamp) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EndpointSessionStamp) ProtoMessage() {}
-
-func (x *EndpointSessionStamp) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EndpointSessionStamp.ProtoReflect.Descriptor instead.
-func (*EndpointSessionStamp) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *EndpointSessionStamp) GetEndpointId() string {
-	if x != nil {
-		return x.EndpointId
-	}
-	return ""
-}
-
-func (x *EndpointSessionStamp) GetRouteId() string {
-	if x != nil {
-		return x.RouteId
-	}
-	return ""
-}
-
-func (x *EndpointSessionStamp) GetGeneration() uint64 {
-	if x != nil {
-		return x.Generation
-	}
-	return 0
-}
-
-// OperationStamp 标识不可隐式重放的 application operation。
-type OperationStamp struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Session       *EndpointSessionStamp  `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
-	OperationId   string                 `protobuf:"bytes,2,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *OperationStamp) Reset() {
-	*x = OperationStamp{}
-	mi := &file_apipb_application_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *OperationStamp) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*OperationStamp) ProtoMessage() {}
-
-func (x *OperationStamp) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use OperationStamp.ProtoReflect.Descriptor instead.
-func (*OperationStamp) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *OperationStamp) GetSession() *EndpointSessionStamp {
-	if x != nil {
-		return x.Session
-	}
-	return nil
-}
-
-func (x *OperationStamp) GetOperationId() string {
-	if x != nil {
-		return x.OperationId
-	}
-	return ""
-}
-
-// ResourceHandle 是跨语言边界可传递的 opaque 资源身份。
-type ResourceHandle struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	Generation    uint64                 `protobuf:"varint,3,opt,name=generation,proto3" json:"generation,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ResourceHandle) Reset() {
-	*x = ResourceHandle{}
-	mi := &file_apipb_application_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ResourceHandle) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ResourceHandle) ProtoMessage() {}
-
-func (x *ResourceHandle) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ResourceHandle.ProtoReflect.Descriptor instead.
-func (*ResourceHandle) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *ResourceHandle) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *ResourceHandle) GetKind() string {
-	if x != nil {
-		return x.Kind
-	}
-	return ""
-}
-
-func (x *ResourceHandle) GetGeneration() uint64 {
-	if x != nil {
-		return x.Generation
-	}
-	return 0
-}
-
-// RequestContext 是所有公共 command 的共同调用上下文。
-type RequestContext struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	ApiVersion    *ApiVersion            `protobuf:"bytes,2,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
-	Capabilities  []ApiCapability        `protobuf:"varint,3,rep,packed,name=capabilities,proto3,enum=termx.api.v1.ApiCapability" json:"capabilities,omitempty"`
-	Session       *EndpointSessionStamp  `protobuf:"bytes,4,opt,name=session,proto3" json:"session,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RequestContext) Reset() {
-	*x = RequestContext{}
-	mi := &file_apipb_application_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RequestContext) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RequestContext) ProtoMessage() {}
-
-func (x *RequestContext) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RequestContext.ProtoReflect.Descriptor instead.
-func (*RequestContext) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *RequestContext) GetRequestId() string {
-	if x != nil {
-		return x.RequestId
-	}
-	return ""
-}
-
-func (x *RequestContext) GetApiVersion() *ApiVersion {
-	if x != nil {
-		return x.ApiVersion
-	}
-	return nil
-}
-
-func (x *RequestContext) GetCapabilities() []ApiCapability {
-	if x != nil {
-		return x.Capabilities
-	}
-	return nil
-}
-
-func (x *RequestContext) GetSession() *EndpointSessionStamp {
-	if x != nil {
-		return x.Session
-	}
-	return nil
-}
-
-// ValidationErrorDetail 返回字段级 validation 失败，不包含内部 Go 类型信息。
-type ValidationErrorDetail struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Field         string                 `protobuf:"bytes,1,opt,name=field,proto3" json:"field,omitempty"`
-	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ValidationErrorDetail) Reset() {
-	*x = ValidationErrorDetail{}
-	mi := &file_apipb_application_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ValidationErrorDetail) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ValidationErrorDetail) ProtoMessage() {}
-
-func (x *ValidationErrorDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ValidationErrorDetail.ProtoReflect.Descriptor instead.
-func (*ValidationErrorDetail) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *ValidationErrorDetail) GetField() string {
-	if x != nil {
-		return x.Field
-	}
-	return ""
-}
-
-func (x *ValidationErrorDetail) GetReason() string {
-	if x != nil {
-		return x.Reason
-	}
-	return ""
-}
-
-// StaleSessionErrorDetail 返回当前可观察 generation，调用方不得自动重放非幂等操作。
-type StaleSessionErrorDetail struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	Requested         *EndpointSessionStamp  `protobuf:"bytes,1,opt,name=requested,proto3" json:"requested,omitempty"`
-	CurrentGeneration uint64                 `protobuf:"varint,2,opt,name=current_generation,json=currentGeneration,proto3" json:"current_generation,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *StaleSessionErrorDetail) Reset() {
-	*x = StaleSessionErrorDetail{}
-	mi := &file_apipb_application_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *StaleSessionErrorDetail) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*StaleSessionErrorDetail) ProtoMessage() {}
-
-func (x *StaleSessionErrorDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use StaleSessionErrorDetail.ProtoReflect.Descriptor instead.
-func (*StaleSessionErrorDetail) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *StaleSessionErrorDetail) GetRequested() *EndpointSessionStamp {
-	if x != nil {
-		return x.Requested
-	}
-	return nil
-}
-
-func (x *StaleSessionErrorDetail) GetCurrentGeneration() uint64 {
-	if x != nil {
-		return x.CurrentGeneration
-	}
-	return 0
-}
-
-// ResourceErrorDetail 返回资源生命周期失败的 opaque handle。
-type ResourceErrorDetail struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Resource      *ResourceHandle        `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ResourceErrorDetail) Reset() {
-	*x = ResourceErrorDetail{}
-	mi := &file_apipb_application_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ResourceErrorDetail) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ResourceErrorDetail) ProtoMessage() {}
-
-func (x *ResourceErrorDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ResourceErrorDetail.ProtoReflect.Descriptor instead.
-func (*ResourceErrorDetail) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *ResourceErrorDetail) GetResource() *ResourceHandle {
-	if x != nil {
-		return x.Resource
-	}
-	return nil
-}
-
-// ApiError 是所有 application result 共用的 typed error。
-type ApiError struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	Code      ApiErrorCode           `protobuf:"varint,1,opt,name=code,proto3,enum=termx.api.v1.ApiErrorCode" json:"code,omitempty"`
-	Message   string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	Retryable bool                   `protobuf:"varint,3,opt,name=retryable,proto3" json:"retryable,omitempty"`
-	Attempted bool                   `protobuf:"varint,4,opt,name=attempted,proto3" json:"attempted,omitempty"`
-	// Types that are valid to be assigned to Detail:
-	//
-	//	*ApiError_Validation
-	//	*ApiError_StaleSession
-	//	*ApiError_Resource
-	Detail        isApiError_Detail `protobuf_oneof:"detail"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ApiError) Reset() {
-	*x = ApiError{}
-	mi := &file_apipb_application_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ApiError) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ApiError) ProtoMessage() {}
-
-func (x *ApiError) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ApiError.ProtoReflect.Descriptor instead.
-func (*ApiError) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *ApiError) GetCode() ApiErrorCode {
-	if x != nil {
-		return x.Code
-	}
-	return ApiErrorCode_API_ERROR_CODE_UNSPECIFIED
-}
-
-func (x *ApiError) GetMessage() string {
-	if x != nil {
-		return x.Message
-	}
-	return ""
-}
-
-func (x *ApiError) GetRetryable() bool {
-	if x != nil {
-		return x.Retryable
-	}
-	return false
-}
-
-func (x *ApiError) GetAttempted() bool {
-	if x != nil {
-		return x.Attempted
-	}
-	return false
-}
-
-func (x *ApiError) GetDetail() isApiError_Detail {
-	if x != nil {
-		return x.Detail
-	}
-	return nil
-}
-
-func (x *ApiError) GetValidation() *ValidationErrorDetail {
-	if x != nil {
-		if x, ok := x.Detail.(*ApiError_Validation); ok {
-			return x.Validation
-		}
-	}
-	return nil
-}
-
-func (x *ApiError) GetStaleSession() *StaleSessionErrorDetail {
-	if x != nil {
-		if x, ok := x.Detail.(*ApiError_StaleSession); ok {
-			return x.StaleSession
-		}
-	}
-	return nil
-}
-
-func (x *ApiError) GetResource() *ResourceErrorDetail {
-	if x != nil {
-		if x, ok := x.Detail.(*ApiError_Resource); ok {
-			return x.Resource
-		}
-	}
-	return nil
-}
-
-type isApiError_Detail interface {
-	isApiError_Detail()
-}
-
-type ApiError_Validation struct {
-	Validation *ValidationErrorDetail `protobuf:"bytes,10,opt,name=validation,proto3,oneof"`
-}
-
-type ApiError_StaleSession struct {
-	StaleSession *StaleSessionErrorDetail `protobuf:"bytes,11,opt,name=stale_session,json=staleSession,proto3,oneof"`
-}
-
-type ApiError_Resource struct {
-	Resource *ResourceErrorDetail `protobuf:"bytes,12,opt,name=resource,proto3,oneof"`
-}
-
-func (*ApiError_Validation) isApiError_Detail() {}
-
-func (*ApiError_StaleSession) isApiError_Detail() {}
-
-func (*ApiError_Resource) isApiError_Detail() {}
-
-// CancelOperationCommand 显式取消仍由 API Layer 持有的 operation。
 type CancelOperationCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
@@ -744,7 +31,7 @@ type CancelOperationCommand struct {
 
 func (x *CancelOperationCommand) Reset() {
 	*x = CancelOperationCommand{}
-	mi := &file_apipb_application_proto_msgTypes[9]
+	mi := &file_apipb_application_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -756,7 +43,7 @@ func (x *CancelOperationCommand) String() string {
 func (*CancelOperationCommand) ProtoMessage() {}
 
 func (x *CancelOperationCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[9]
+	mi := &file_apipb_application_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -769,7 +56,7 @@ func (x *CancelOperationCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOperationCommand.ProtoReflect.Descriptor instead.
 func (*CancelOperationCommand) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{9}
+	return file_apipb_application_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *CancelOperationCommand) GetContext() *RequestContext {
@@ -786,7 +73,6 @@ func (x *CancelOperationCommand) GetOperation() *OperationStamp {
 	return nil
 }
 
-// ReleaseResourceCommand 显式释放 stream、subscription 或其它长期资源。
 type ReleaseResourceCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
@@ -797,7 +83,7 @@ type ReleaseResourceCommand struct {
 
 func (x *ReleaseResourceCommand) Reset() {
 	*x = ReleaseResourceCommand{}
-	mi := &file_apipb_application_proto_msgTypes[10]
+	mi := &file_apipb_application_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -809,7 +95,7 @@ func (x *ReleaseResourceCommand) String() string {
 func (*ReleaseResourceCommand) ProtoMessage() {}
 
 func (x *ReleaseResourceCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[10]
+	mi := &file_apipb_application_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -822,7 +108,7 @@ func (x *ReleaseResourceCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseResourceCommand.ProtoReflect.Descriptor instead.
 func (*ReleaseResourceCommand) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{10}
+	return file_apipb_application_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ReleaseResourceCommand) GetContext() *RequestContext {
@@ -839,13 +125,27 @@ func (x *ReleaseResourceCommand) GetResource() *ResourceHandle {
 	return nil
 }
 
-// CommandEnvelope 是公共 API command 的 versioned typed envelope。
 type CommandEnvelope struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Command:
 	//
 	//	*CommandEnvelope_CancelOperation
 	//	*CommandEnvelope_ReleaseResource
+	//	*CommandEnvelope_TerminalDefaults
+	//	*CommandEnvelope_TerminalCreate
+	//	*CommandEnvelope_TerminalList
+	//	*CommandEnvelope_TerminalGet
+	//	*CommandEnvelope_TerminalRestart
+	//	*CommandEnvelope_TerminalKill
+	//	*CommandEnvelope_TerminalRemove
+	//	*CommandEnvelope_TerminalSetMetadata
+	//	*CommandEnvelope_TerminalSetTags
+	//	*CommandEnvelope_TerminalAttach
+	//	*CommandEnvelope_TerminalDetach
+	//	*CommandEnvelope_TerminalInput
+	//	*CommandEnvelope_TerminalResize
+	//	*CommandEnvelope_TerminalResizeLock
+	//	*CommandEnvelope_PathListDirectories
 	Command       isCommandEnvelope_Command `protobuf_oneof:"command"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -853,7 +153,7 @@ type CommandEnvelope struct {
 
 func (x *CommandEnvelope) Reset() {
 	*x = CommandEnvelope{}
-	mi := &file_apipb_application_proto_msgTypes[11]
+	mi := &file_apipb_application_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -865,7 +165,7 @@ func (x *CommandEnvelope) String() string {
 func (*CommandEnvelope) ProtoMessage() {}
 
 func (x *CommandEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[11]
+	mi := &file_apipb_application_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -878,7 +178,7 @@ func (x *CommandEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandEnvelope.ProtoReflect.Descriptor instead.
 func (*CommandEnvelope) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{11}
+	return file_apipb_application_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CommandEnvelope) GetCommand() isCommandEnvelope_Command {
@@ -906,6 +206,141 @@ func (x *CommandEnvelope) GetReleaseResource() *ReleaseResourceCommand {
 	return nil
 }
 
+func (x *CommandEnvelope) GetTerminalDefaults() *TerminalDefaultsCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalDefaults); ok {
+			return x.TerminalDefaults
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetTerminalCreate() *TerminalCreateCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalCreate); ok {
+			return x.TerminalCreate
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetTerminalList() *TerminalListCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalList); ok {
+			return x.TerminalList
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetTerminalGet() *TerminalGetCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalGet); ok {
+			return x.TerminalGet
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetTerminalRestart() *TerminalRestartCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalRestart); ok {
+			return x.TerminalRestart
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetTerminalKill() *TerminalKillCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalKill); ok {
+			return x.TerminalKill
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetTerminalRemove() *TerminalRemoveCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalRemove); ok {
+			return x.TerminalRemove
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetTerminalSetMetadata() *TerminalSetMetadataCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalSetMetadata); ok {
+			return x.TerminalSetMetadata
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetTerminalSetTags() *TerminalSetTagsCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalSetTags); ok {
+			return x.TerminalSetTags
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetTerminalAttach() *TerminalAttachCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalAttach); ok {
+			return x.TerminalAttach
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetTerminalDetach() *TerminalDetachCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalDetach); ok {
+			return x.TerminalDetach
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetTerminalInput() *TerminalInputCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalInput); ok {
+			return x.TerminalInput
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetTerminalResize() *TerminalResizeCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalResize); ok {
+			return x.TerminalResize
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetTerminalResizeLock() *TerminalResizeLockCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_TerminalResizeLock); ok {
+			return x.TerminalResizeLock
+		}
+	}
+	return nil
+}
+
+func (x *CommandEnvelope) GetPathListDirectories() *PathListDirectoriesCommand {
+	if x != nil {
+		if x, ok := x.Command.(*CommandEnvelope_PathListDirectories); ok {
+			return x.PathListDirectories
+		}
+	}
+	return nil
+}
+
 type isCommandEnvelope_Command interface {
 	isCommandEnvelope_Command()
 }
@@ -918,11 +353,100 @@ type CommandEnvelope_ReleaseResource struct {
 	ReleaseResource *ReleaseResourceCommand `protobuf:"bytes,11,opt,name=release_resource,json=releaseResource,proto3,oneof"`
 }
 
+type CommandEnvelope_TerminalDefaults struct {
+	TerminalDefaults *TerminalDefaultsCommand `protobuf:"bytes,20,opt,name=terminal_defaults,json=terminalDefaults,proto3,oneof"`
+}
+
+type CommandEnvelope_TerminalCreate struct {
+	TerminalCreate *TerminalCreateCommand `protobuf:"bytes,21,opt,name=terminal_create,json=terminalCreate,proto3,oneof"`
+}
+
+type CommandEnvelope_TerminalList struct {
+	TerminalList *TerminalListCommand `protobuf:"bytes,22,opt,name=terminal_list,json=terminalList,proto3,oneof"`
+}
+
+type CommandEnvelope_TerminalGet struct {
+	TerminalGet *TerminalGetCommand `protobuf:"bytes,23,opt,name=terminal_get,json=terminalGet,proto3,oneof"`
+}
+
+type CommandEnvelope_TerminalRestart struct {
+	TerminalRestart *TerminalRestartCommand `protobuf:"bytes,24,opt,name=terminal_restart,json=terminalRestart,proto3,oneof"`
+}
+
+type CommandEnvelope_TerminalKill struct {
+	TerminalKill *TerminalKillCommand `protobuf:"bytes,25,opt,name=terminal_kill,json=terminalKill,proto3,oneof"`
+}
+
+type CommandEnvelope_TerminalRemove struct {
+	TerminalRemove *TerminalRemoveCommand `protobuf:"bytes,26,opt,name=terminal_remove,json=terminalRemove,proto3,oneof"`
+}
+
+type CommandEnvelope_TerminalSetMetadata struct {
+	TerminalSetMetadata *TerminalSetMetadataCommand `protobuf:"bytes,27,opt,name=terminal_set_metadata,json=terminalSetMetadata,proto3,oneof"`
+}
+
+type CommandEnvelope_TerminalSetTags struct {
+	TerminalSetTags *TerminalSetTagsCommand `protobuf:"bytes,28,opt,name=terminal_set_tags,json=terminalSetTags,proto3,oneof"`
+}
+
+type CommandEnvelope_TerminalAttach struct {
+	TerminalAttach *TerminalAttachCommand `protobuf:"bytes,29,opt,name=terminal_attach,json=terminalAttach,proto3,oneof"`
+}
+
+type CommandEnvelope_TerminalDetach struct {
+	TerminalDetach *TerminalDetachCommand `protobuf:"bytes,30,opt,name=terminal_detach,json=terminalDetach,proto3,oneof"`
+}
+
+type CommandEnvelope_TerminalInput struct {
+	TerminalInput *TerminalInputCommand `protobuf:"bytes,31,opt,name=terminal_input,json=terminalInput,proto3,oneof"`
+}
+
+type CommandEnvelope_TerminalResize struct {
+	TerminalResize *TerminalResizeCommand `protobuf:"bytes,32,opt,name=terminal_resize,json=terminalResize,proto3,oneof"`
+}
+
+type CommandEnvelope_TerminalResizeLock struct {
+	TerminalResizeLock *TerminalResizeLockCommand `protobuf:"bytes,33,opt,name=terminal_resize_lock,json=terminalResizeLock,proto3,oneof"`
+}
+
+type CommandEnvelope_PathListDirectories struct {
+	PathListDirectories *PathListDirectoriesCommand `protobuf:"bytes,34,opt,name=path_list_directories,json=pathListDirectories,proto3,oneof"`
+}
+
 func (*CommandEnvelope_CancelOperation) isCommandEnvelope_Command() {}
 
 func (*CommandEnvelope_ReleaseResource) isCommandEnvelope_Command() {}
 
-// AcknowledgeResult 表示 command 已完成且没有领域 payload。
+func (*CommandEnvelope_TerminalDefaults) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_TerminalCreate) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_TerminalList) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_TerminalGet) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_TerminalRestart) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_TerminalKill) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_TerminalRemove) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_TerminalSetMetadata) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_TerminalSetTags) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_TerminalAttach) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_TerminalDetach) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_TerminalInput) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_TerminalResize) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_TerminalResizeLock) isCommandEnvelope_Command() {}
+
+func (*CommandEnvelope_PathListDirectories) isCommandEnvelope_Command() {}
+
 type AcknowledgeResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -931,7 +455,7 @@ type AcknowledgeResult struct {
 
 func (x *AcknowledgeResult) Reset() {
 	*x = AcknowledgeResult{}
-	mi := &file_apipb_application_proto_msgTypes[12]
+	mi := &file_apipb_application_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -943,7 +467,7 @@ func (x *AcknowledgeResult) String() string {
 func (*AcknowledgeResult) ProtoMessage() {}
 
 func (x *AcknowledgeResult) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[12]
+	mi := &file_apipb_application_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -956,10 +480,9 @@ func (x *AcknowledgeResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcknowledgeResult.ProtoReflect.Descriptor instead.
 func (*AcknowledgeResult) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{12}
+	return file_apipb_application_proto_rawDescGZIP(), []int{3}
 }
 
-// ResultEnvelope 通过 request_id 对应 command，并且只返回 typed result 或 typed error。
 type ResultEnvelope struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -967,6 +490,13 @@ type ResultEnvelope struct {
 	//
 	//	*ResultEnvelope_Acknowledge
 	//	*ResultEnvelope_Error
+	//	*ResultEnvelope_TerminalDefaults
+	//	*ResultEnvelope_TerminalCreate
+	//	*ResultEnvelope_TerminalList
+	//	*ResultEnvelope_TerminalGet
+	//	*ResultEnvelope_TerminalAttach
+	//	*ResultEnvelope_TerminalResize
+	//	*ResultEnvelope_PathListDirectories
 	Result        isResultEnvelope_Result `protobuf_oneof:"result"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -974,7 +504,7 @@ type ResultEnvelope struct {
 
 func (x *ResultEnvelope) Reset() {
 	*x = ResultEnvelope{}
-	mi := &file_apipb_application_proto_msgTypes[13]
+	mi := &file_apipb_application_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -986,7 +516,7 @@ func (x *ResultEnvelope) String() string {
 func (*ResultEnvelope) ProtoMessage() {}
 
 func (x *ResultEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[13]
+	mi := &file_apipb_application_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -999,7 +529,7 @@ func (x *ResultEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResultEnvelope.ProtoReflect.Descriptor instead.
 func (*ResultEnvelope) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{13}
+	return file_apipb_application_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ResultEnvelope) GetRequestId() string {
@@ -1034,6 +564,69 @@ func (x *ResultEnvelope) GetError() *ApiError {
 	return nil
 }
 
+func (x *ResultEnvelope) GetTerminalDefaults() *TerminalDefaultsResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_TerminalDefaults); ok {
+			return x.TerminalDefaults
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetTerminalCreate() *TerminalCreateResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_TerminalCreate); ok {
+			return x.TerminalCreate
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetTerminalList() *TerminalListResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_TerminalList); ok {
+			return x.TerminalList
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetTerminalGet() *TerminalGetResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_TerminalGet); ok {
+			return x.TerminalGet
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetTerminalAttach() *TerminalAttachResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_TerminalAttach); ok {
+			return x.TerminalAttach
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetTerminalResize() *TerminalResizeResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_TerminalResize); ok {
+			return x.TerminalResize
+		}
+	}
+	return nil
+}
+
+func (x *ResultEnvelope) GetPathListDirectories() *PathListDirectoriesResult {
+	if x != nil {
+		if x, ok := x.Result.(*ResultEnvelope_PathListDirectories); ok {
+			return x.PathListDirectories
+		}
+	}
+	return nil
+}
+
 type isResultEnvelope_Result interface {
 	isResultEnvelope_Result()
 }
@@ -1046,11 +639,52 @@ type ResultEnvelope_Error struct {
 	Error *ApiError `protobuf:"bytes,11,opt,name=error,proto3,oneof"`
 }
 
+type ResultEnvelope_TerminalDefaults struct {
+	TerminalDefaults *TerminalDefaultsResult `protobuf:"bytes,20,opt,name=terminal_defaults,json=terminalDefaults,proto3,oneof"`
+}
+
+type ResultEnvelope_TerminalCreate struct {
+	TerminalCreate *TerminalCreateResult `protobuf:"bytes,21,opt,name=terminal_create,json=terminalCreate,proto3,oneof"`
+}
+
+type ResultEnvelope_TerminalList struct {
+	TerminalList *TerminalListResult `protobuf:"bytes,22,opt,name=terminal_list,json=terminalList,proto3,oneof"`
+}
+
+type ResultEnvelope_TerminalGet struct {
+	TerminalGet *TerminalGetResult `protobuf:"bytes,23,opt,name=terminal_get,json=terminalGet,proto3,oneof"`
+}
+
+type ResultEnvelope_TerminalAttach struct {
+	TerminalAttach *TerminalAttachResult `protobuf:"bytes,24,opt,name=terminal_attach,json=terminalAttach,proto3,oneof"`
+}
+
+type ResultEnvelope_TerminalResize struct {
+	TerminalResize *TerminalResizeResult `protobuf:"bytes,25,opt,name=terminal_resize,json=terminalResize,proto3,oneof"`
+}
+
+type ResultEnvelope_PathListDirectories struct {
+	PathListDirectories *PathListDirectoriesResult `protobuf:"bytes,26,opt,name=path_list_directories,json=pathListDirectories,proto3,oneof"`
+}
+
 func (*ResultEnvelope_Acknowledge) isResultEnvelope_Result() {}
 
 func (*ResultEnvelope_Error) isResultEnvelope_Result() {}
 
-// OperationCancelledEvent 是 API Layer 完成取消后的可观察事件。
+func (*ResultEnvelope_TerminalDefaults) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_TerminalCreate) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_TerminalList) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_TerminalGet) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_TerminalAttach) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_TerminalResize) isResultEnvelope_Result() {}
+
+func (*ResultEnvelope_PathListDirectories) isResultEnvelope_Result() {}
+
 type OperationCancelledEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Operation     *OperationStamp        `protobuf:"bytes,1,opt,name=operation,proto3" json:"operation,omitempty"`
@@ -1060,7 +694,7 @@ type OperationCancelledEvent struct {
 
 func (x *OperationCancelledEvent) Reset() {
 	*x = OperationCancelledEvent{}
-	mi := &file_apipb_application_proto_msgTypes[14]
+	mi := &file_apipb_application_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1072,7 +706,7 @@ func (x *OperationCancelledEvent) String() string {
 func (*OperationCancelledEvent) ProtoMessage() {}
 
 func (x *OperationCancelledEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[14]
+	mi := &file_apipb_application_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1085,7 +719,7 @@ func (x *OperationCancelledEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperationCancelledEvent.ProtoReflect.Descriptor instead.
 func (*OperationCancelledEvent) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{14}
+	return file_apipb_application_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *OperationCancelledEvent) GetOperation() *OperationStamp {
@@ -1095,7 +729,6 @@ func (x *OperationCancelledEvent) GetOperation() *OperationStamp {
 	return nil
 }
 
-// ResourceReleasedEvent 是 API Layer 完成资源释放后的可观察事件。
 type ResourceReleasedEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Resource      *ResourceHandle        `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
@@ -1105,7 +738,7 @@ type ResourceReleasedEvent struct {
 
 func (x *ResourceReleasedEvent) Reset() {
 	*x = ResourceReleasedEvent{}
-	mi := &file_apipb_application_proto_msgTypes[15]
+	mi := &file_apipb_application_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1117,7 +750,7 @@ func (x *ResourceReleasedEvent) String() string {
 func (*ResourceReleasedEvent) ProtoMessage() {}
 
 func (x *ResourceReleasedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[15]
+	mi := &file_apipb_application_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1130,7 +763,7 @@ func (x *ResourceReleasedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceReleasedEvent.ProtoReflect.Descriptor instead.
 func (*ResourceReleasedEvent) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{15}
+	return file_apipb_application_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ResourceReleasedEvent) GetResource() *ResourceHandle {
@@ -1140,7 +773,6 @@ func (x *ResourceReleasedEvent) GetResource() *ResourceHandle {
 	return nil
 }
 
-// EventEnvelope 是公共 application event 的 versioned typed envelope。
 type EventEnvelope struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	EventId           string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
@@ -1150,6 +782,8 @@ type EventEnvelope struct {
 	//
 	//	*EventEnvelope_OperationCancelled
 	//	*EventEnvelope_ResourceReleased
+	//	*EventEnvelope_TerminalLifecycle
+	//	*EventEnvelope_TerminalResizeControl
 	Event         isEventEnvelope_Event `protobuf_oneof:"event"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1157,7 +791,7 @@ type EventEnvelope struct {
 
 func (x *EventEnvelope) Reset() {
 	*x = EventEnvelope{}
-	mi := &file_apipb_application_proto_msgTypes[16]
+	mi := &file_apipb_application_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1169,7 +803,7 @@ func (x *EventEnvelope) String() string {
 func (*EventEnvelope) ProtoMessage() {}
 
 func (x *EventEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_apipb_application_proto_msgTypes[16]
+	mi := &file_apipb_application_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1182,7 +816,7 @@ func (x *EventEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventEnvelope.ProtoReflect.Descriptor instead.
 func (*EventEnvelope) Descriptor() ([]byte, []int) {
-	return file_apipb_application_proto_rawDescGZIP(), []int{16}
+	return file_apipb_application_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *EventEnvelope) GetEventId() string {
@@ -1231,6 +865,24 @@ func (x *EventEnvelope) GetResourceReleased() *ResourceReleasedEvent {
 	return nil
 }
 
+func (x *EventEnvelope) GetTerminalLifecycle() *TerminalLifecycleEvent {
+	if x != nil {
+		if x, ok := x.Event.(*EventEnvelope_TerminalLifecycle); ok {
+			return x.TerminalLifecycle
+		}
+	}
+	return nil
+}
+
+func (x *EventEnvelope) GetTerminalResizeControl() *TerminalResizeControlEvent {
+	if x != nil {
+		if x, ok := x.Event.(*EventEnvelope_TerminalResizeControl); ok {
+			return x.TerminalResizeControl
+		}
+	}
+	return nil
+}
+
 type isEventEnvelope_Event interface {
 	isEventEnvelope_Event()
 }
@@ -1243,85 +895,72 @@ type EventEnvelope_ResourceReleased struct {
 	ResourceReleased *ResourceReleasedEvent `protobuf:"bytes,11,opt,name=resource_released,json=resourceReleased,proto3,oneof"`
 }
 
+type EventEnvelope_TerminalLifecycle struct {
+	TerminalLifecycle *TerminalLifecycleEvent `protobuf:"bytes,20,opt,name=terminal_lifecycle,json=terminalLifecycle,proto3,oneof"`
+}
+
+type EventEnvelope_TerminalResizeControl struct {
+	TerminalResizeControl *TerminalResizeControlEvent `protobuf:"bytes,21,opt,name=terminal_resize_control,json=terminalResizeControl,proto3,oneof"`
+}
+
 func (*EventEnvelope_OperationCancelled) isEventEnvelope_Event() {}
 
 func (*EventEnvelope_ResourceReleased) isEventEnvelope_Event() {}
+
+func (*EventEnvelope_TerminalLifecycle) isEventEnvelope_Event() {}
+
+func (*EventEnvelope_TerminalResizeControl) isEventEnvelope_Event() {}
 
 var File_apipb_application_proto protoreflect.FileDescriptor
 
 const file_apipb_application_proto_rawDesc = "" +
 	"\n" +
-	"\x17apipb/application.proto\x12\ftermx.api.v1\"8\n" +
-	"\n" +
-	"ApiVersion\x12\x14\n" +
-	"\x05major\x18\x01 \x01(\rR\x05major\x12\x14\n" +
-	"\x05minor\x18\x02 \x01(\rR\x05minor\"r\n" +
-	"\x14EndpointSessionStamp\x12\x1f\n" +
-	"\vendpoint_id\x18\x01 \x01(\tR\n" +
-	"endpointId\x12\x19\n" +
-	"\broute_id\x18\x02 \x01(\tR\arouteId\x12\x1e\n" +
-	"\n" +
-	"generation\x18\x03 \x01(\x04R\n" +
-	"generation\"q\n" +
-	"\x0eOperationStamp\x12<\n" +
-	"\asession\x18\x01 \x01(\v2\".termx.api.v1.EndpointSessionStampR\asession\x12!\n" +
-	"\foperation_id\x18\x02 \x01(\tR\voperationId\"T\n" +
-	"\x0eResourceHandle\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1e\n" +
-	"\n" +
-	"generation\x18\x03 \x01(\x04R\n" +
-	"generation\"\xe9\x01\n" +
-	"\x0eRequestContext\x12\x1d\n" +
-	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x129\n" +
-	"\vapi_version\x18\x02 \x01(\v2\x18.termx.api.v1.ApiVersionR\n" +
-	"apiVersion\x12?\n" +
-	"\fcapabilities\x18\x03 \x03(\x0e2\x1b.termx.api.v1.ApiCapabilityR\fcapabilities\x12<\n" +
-	"\asession\x18\x04 \x01(\v2\".termx.api.v1.EndpointSessionStampR\asession\"E\n" +
-	"\x15ValidationErrorDetail\x12\x14\n" +
-	"\x05field\x18\x01 \x01(\tR\x05field\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x8a\x01\n" +
-	"\x17StaleSessionErrorDetail\x12@\n" +
-	"\trequested\x18\x01 \x01(\v2\".termx.api.v1.EndpointSessionStampR\trequested\x12-\n" +
-	"\x12current_generation\x18\x02 \x01(\x04R\x11currentGeneration\"O\n" +
-	"\x13ResourceErrorDetail\x128\n" +
-	"\bresource\x18\x01 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\"\xf0\x02\n" +
-	"\bApiError\x12.\n" +
-	"\x04code\x18\x01 \x01(\x0e2\x1a.termx.api.v1.ApiErrorCodeR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
-	"\tretryable\x18\x03 \x01(\bR\tretryable\x12\x1c\n" +
-	"\tattempted\x18\x04 \x01(\bR\tattempted\x12E\n" +
-	"\n" +
-	"validation\x18\n" +
-	" \x01(\v2#.termx.api.v1.ValidationErrorDetailH\x00R\n" +
-	"validation\x12L\n" +
-	"\rstale_session\x18\v \x01(\v2%.termx.api.v1.StaleSessionErrorDetailH\x00R\fstaleSession\x12?\n" +
-	"\bresource\x18\f \x01(\v2!.termx.api.v1.ResourceErrorDetailH\x00R\bresourceB\b\n" +
-	"\x06detail\"\x8c\x01\n" +
+	"\x17apipb/application.proto\x12\ftermx.api.v1\x1a\x12apipb/common.proto\x1a\x14apipb/terminal.proto\"\x8c\x01\n" +
 	"\x16CancelOperationCommand\x126\n" +
 	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x12:\n" +
 	"\toperation\x18\x02 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\"\x8a\x01\n" +
 	"\x16ReleaseResourceCommand\x126\n" +
 	"\acontext\x18\x01 \x01(\v2\x1c.termx.api.v1.RequestContextR\acontext\x128\n" +
-	"\bresource\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\"\xc2\x01\n" +
+	"\bresource\x18\x02 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\"\x94\v\n" +
 	"\x0fCommandEnvelope\x12Q\n" +
 	"\x10cancel_operation\x18\n" +
 	" \x01(\v2$.termx.api.v1.CancelOperationCommandH\x00R\x0fcancelOperation\x12Q\n" +
-	"\x10release_resource\x18\v \x01(\v2$.termx.api.v1.ReleaseResourceCommandH\x00R\x0freleaseResourceB\t\n" +
+	"\x10release_resource\x18\v \x01(\v2$.termx.api.v1.ReleaseResourceCommandH\x00R\x0freleaseResource\x12T\n" +
+	"\x11terminal_defaults\x18\x14 \x01(\v2%.termx.api.v1.TerminalDefaultsCommandH\x00R\x10terminalDefaults\x12N\n" +
+	"\x0fterminal_create\x18\x15 \x01(\v2#.termx.api.v1.TerminalCreateCommandH\x00R\x0eterminalCreate\x12H\n" +
+	"\rterminal_list\x18\x16 \x01(\v2!.termx.api.v1.TerminalListCommandH\x00R\fterminalList\x12E\n" +
+	"\fterminal_get\x18\x17 \x01(\v2 .termx.api.v1.TerminalGetCommandH\x00R\vterminalGet\x12Q\n" +
+	"\x10terminal_restart\x18\x18 \x01(\v2$.termx.api.v1.TerminalRestartCommandH\x00R\x0fterminalRestart\x12H\n" +
+	"\rterminal_kill\x18\x19 \x01(\v2!.termx.api.v1.TerminalKillCommandH\x00R\fterminalKill\x12N\n" +
+	"\x0fterminal_remove\x18\x1a \x01(\v2#.termx.api.v1.TerminalRemoveCommandH\x00R\x0eterminalRemove\x12^\n" +
+	"\x15terminal_set_metadata\x18\x1b \x01(\v2(.termx.api.v1.TerminalSetMetadataCommandH\x00R\x13terminalSetMetadata\x12R\n" +
+	"\x11terminal_set_tags\x18\x1c \x01(\v2$.termx.api.v1.TerminalSetTagsCommandH\x00R\x0fterminalSetTags\x12N\n" +
+	"\x0fterminal_attach\x18\x1d \x01(\v2#.termx.api.v1.TerminalAttachCommandH\x00R\x0eterminalAttach\x12N\n" +
+	"\x0fterminal_detach\x18\x1e \x01(\v2#.termx.api.v1.TerminalDetachCommandH\x00R\x0eterminalDetach\x12K\n" +
+	"\x0eterminal_input\x18\x1f \x01(\v2\".termx.api.v1.TerminalInputCommandH\x00R\rterminalInput\x12N\n" +
+	"\x0fterminal_resize\x18  \x01(\v2#.termx.api.v1.TerminalResizeCommandH\x00R\x0eterminalResize\x12[\n" +
+	"\x14terminal_resize_lock\x18! \x01(\v2'.termx.api.v1.TerminalResizeLockCommandH\x00R\x12terminalResizeLock\x12^\n" +
+	"\x15path_list_directories\x18\" \x01(\v2(.termx.api.v1.PathListDirectoriesCommandH\x00R\x13pathListDirectoriesB\t\n" +
 	"\acommand\"\x13\n" +
-	"\x11AcknowledgeResult\"\xae\x01\n" +
+	"\x11AcknowledgeResult\"\xde\x05\n" +
 	"\x0eResultEnvelope\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12C\n" +
 	"\vacknowledge\x18\n" +
 	" \x01(\v2\x1f.termx.api.v1.AcknowledgeResultH\x00R\vacknowledge\x12.\n" +
-	"\x05error\x18\v \x01(\v2\x16.termx.api.v1.ApiErrorH\x00R\x05errorB\b\n" +
+	"\x05error\x18\v \x01(\v2\x16.termx.api.v1.ApiErrorH\x00R\x05error\x12S\n" +
+	"\x11terminal_defaults\x18\x14 \x01(\v2$.termx.api.v1.TerminalDefaultsResultH\x00R\x10terminalDefaults\x12M\n" +
+	"\x0fterminal_create\x18\x15 \x01(\v2\".termx.api.v1.TerminalCreateResultH\x00R\x0eterminalCreate\x12G\n" +
+	"\rterminal_list\x18\x16 \x01(\v2 .termx.api.v1.TerminalListResultH\x00R\fterminalList\x12D\n" +
+	"\fterminal_get\x18\x17 \x01(\v2\x1f.termx.api.v1.TerminalGetResultH\x00R\vterminalGet\x12M\n" +
+	"\x0fterminal_attach\x18\x18 \x01(\v2\".termx.api.v1.TerminalAttachResultH\x00R\x0eterminalAttach\x12M\n" +
+	"\x0fterminal_resize\x18\x19 \x01(\v2\".termx.api.v1.TerminalResizeResultH\x00R\x0eterminalResize\x12]\n" +
+	"\x15path_list_directories\x18\x1a \x01(\v2'.termx.api.v1.PathListDirectoriesResultH\x00R\x13pathListDirectoriesB\b\n" +
 	"\x06result\"U\n" +
 	"\x17OperationCancelledEvent\x12:\n" +
 	"\toperation\x18\x01 \x01(\v2\x1c.termx.api.v1.OperationStampR\toperation\"Q\n" +
 	"\x15ResourceReleasedEvent\x128\n" +
-	"\bresource\x18\x01 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\"\xcc\x02\n" +
+	"\bresource\x18\x01 \x01(\v2\x1c.termx.api.v1.ResourceHandleR\bresource\"\x87\x04\n" +
 	"\rEventEnvelope\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12.\n" +
 	"\x13timestamp_unix_nano\x18\x02 \x01(\x03R\x11timestampUnixNano\x129\n" +
@@ -1329,28 +968,10 @@ const file_apipb_application_proto_rawDesc = "" +
 	"apiVersion\x12X\n" +
 	"\x13operation_cancelled\x18\n" +
 	" \x01(\v2%.termx.api.v1.OperationCancelledEventH\x00R\x12operationCancelled\x12R\n" +
-	"\x11resource_released\x18\v \x01(\v2#.termx.api.v1.ResourceReleasedEventH\x00R\x10resourceReleasedB\a\n" +
-	"\x05event*\xcd\x01\n" +
-	"\rApiCapability\x12\x1e\n" +
-	"\x1aAPI_CAPABILITY_UNSPECIFIED\x10\x00\x12\x1f\n" +
-	"\x1bAPI_CAPABILITY_TYPED_ERRORS\x10\x01\x12)\n" +
-	"%API_CAPABILITY_ENDPOINT_SESSION_FENCE\x10\x02\x12)\n" +
-	"%API_CAPABILITY_OPERATION_CANCELLATION\x10\x03\x12%\n" +
-	"!API_CAPABILITY_RESOURCE_LIFECYCLE\x10\x04*\x9c\x03\n" +
-	"\fApiErrorCode\x12\x1e\n" +
-	"\x1aAPI_ERROR_CODE_UNSPECIFIED\x10\x00\x12\"\n" +
-	"\x1eAPI_ERROR_CODE_INVALID_REQUEST\x10\x01\x12&\n" +
-	"\"API_ERROR_CODE_UNSUPPORTED_VERSION\x10\x02\x12)\n" +
-	"%API_ERROR_CODE_UNSUPPORTED_CAPABILITY\x10\x03\x12\x1f\n" +
-	"\x1bAPI_ERROR_CODE_UNAUTHORIZED\x10\x04\x12\x1c\n" +
-	"\x18API_ERROR_CODE_FORBIDDEN\x10\x05\x12\x1c\n" +
-	"\x18API_ERROR_CODE_NOT_FOUND\x10\x06\x12\x1b\n" +
-	"\x17API_ERROR_CODE_CONFLICT\x10\a\x12 \n" +
-	"\x1cAPI_ERROR_CODE_STALE_SESSION\x10\b\x12\x1c\n" +
-	"\x18API_ERROR_CODE_CANCELLED\x10\t\x12\x1e\n" +
-	"\x1aAPI_ERROR_CODE_UNAVAILABLE\x10\n" +
-	"\x12\x1b\n" +
-	"\x17API_ERROR_CODE_INTERNAL\x10\vB%Z#github.com/lozzow/termx/proto/apipbb\x06proto3"
+	"\x11resource_released\x18\v \x01(\v2#.termx.api.v1.ResourceReleasedEventH\x00R\x10resourceReleased\x12U\n" +
+	"\x12terminal_lifecycle\x18\x14 \x01(\v2$.termx.api.v1.TerminalLifecycleEventH\x00R\x11terminalLifecycle\x12b\n" +
+	"\x17terminal_resize_control\x18\x15 \x01(\v2(.termx.api.v1.TerminalResizeControlEventH\x00R\x15terminalResizeControlB\a\n" +
+	"\x05eventB%Z#github.com/lozzow/termx/proto/apipbb\x06proto3"
 
 var (
 	file_apipb_application_proto_rawDescOnce sync.Once
@@ -1364,58 +985,89 @@ func file_apipb_application_proto_rawDescGZIP() []byte {
 	return file_apipb_application_proto_rawDescData
 }
 
-var file_apipb_application_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_apipb_application_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_apipb_application_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_apipb_application_proto_goTypes = []any{
-	(ApiCapability)(0),              // 0: termx.api.v1.ApiCapability
-	(ApiErrorCode)(0),               // 1: termx.api.v1.ApiErrorCode
-	(*ApiVersion)(nil),              // 2: termx.api.v1.ApiVersion
-	(*EndpointSessionStamp)(nil),    // 3: termx.api.v1.EndpointSessionStamp
-	(*OperationStamp)(nil),          // 4: termx.api.v1.OperationStamp
-	(*ResourceHandle)(nil),          // 5: termx.api.v1.ResourceHandle
-	(*RequestContext)(nil),          // 6: termx.api.v1.RequestContext
-	(*ValidationErrorDetail)(nil),   // 7: termx.api.v1.ValidationErrorDetail
-	(*StaleSessionErrorDetail)(nil), // 8: termx.api.v1.StaleSessionErrorDetail
-	(*ResourceErrorDetail)(nil),     // 9: termx.api.v1.ResourceErrorDetail
-	(*ApiError)(nil),                // 10: termx.api.v1.ApiError
-	(*CancelOperationCommand)(nil),  // 11: termx.api.v1.CancelOperationCommand
-	(*ReleaseResourceCommand)(nil),  // 12: termx.api.v1.ReleaseResourceCommand
-	(*CommandEnvelope)(nil),         // 13: termx.api.v1.CommandEnvelope
-	(*AcknowledgeResult)(nil),       // 14: termx.api.v1.AcknowledgeResult
-	(*ResultEnvelope)(nil),          // 15: termx.api.v1.ResultEnvelope
-	(*OperationCancelledEvent)(nil), // 16: termx.api.v1.OperationCancelledEvent
-	(*ResourceReleasedEvent)(nil),   // 17: termx.api.v1.ResourceReleasedEvent
-	(*EventEnvelope)(nil),           // 18: termx.api.v1.EventEnvelope
+	(*CancelOperationCommand)(nil),     // 0: termx.api.v1.CancelOperationCommand
+	(*ReleaseResourceCommand)(nil),     // 1: termx.api.v1.ReleaseResourceCommand
+	(*CommandEnvelope)(nil),            // 2: termx.api.v1.CommandEnvelope
+	(*AcknowledgeResult)(nil),          // 3: termx.api.v1.AcknowledgeResult
+	(*ResultEnvelope)(nil),             // 4: termx.api.v1.ResultEnvelope
+	(*OperationCancelledEvent)(nil),    // 5: termx.api.v1.OperationCancelledEvent
+	(*ResourceReleasedEvent)(nil),      // 6: termx.api.v1.ResourceReleasedEvent
+	(*EventEnvelope)(nil),              // 7: termx.api.v1.EventEnvelope
+	(*RequestContext)(nil),             // 8: termx.api.v1.RequestContext
+	(*OperationStamp)(nil),             // 9: termx.api.v1.OperationStamp
+	(*ResourceHandle)(nil),             // 10: termx.api.v1.ResourceHandle
+	(*TerminalDefaultsCommand)(nil),    // 11: termx.api.v1.TerminalDefaultsCommand
+	(*TerminalCreateCommand)(nil),      // 12: termx.api.v1.TerminalCreateCommand
+	(*TerminalListCommand)(nil),        // 13: termx.api.v1.TerminalListCommand
+	(*TerminalGetCommand)(nil),         // 14: termx.api.v1.TerminalGetCommand
+	(*TerminalRestartCommand)(nil),     // 15: termx.api.v1.TerminalRestartCommand
+	(*TerminalKillCommand)(nil),        // 16: termx.api.v1.TerminalKillCommand
+	(*TerminalRemoveCommand)(nil),      // 17: termx.api.v1.TerminalRemoveCommand
+	(*TerminalSetMetadataCommand)(nil), // 18: termx.api.v1.TerminalSetMetadataCommand
+	(*TerminalSetTagsCommand)(nil),     // 19: termx.api.v1.TerminalSetTagsCommand
+	(*TerminalAttachCommand)(nil),      // 20: termx.api.v1.TerminalAttachCommand
+	(*TerminalDetachCommand)(nil),      // 21: termx.api.v1.TerminalDetachCommand
+	(*TerminalInputCommand)(nil),       // 22: termx.api.v1.TerminalInputCommand
+	(*TerminalResizeCommand)(nil),      // 23: termx.api.v1.TerminalResizeCommand
+	(*TerminalResizeLockCommand)(nil),  // 24: termx.api.v1.TerminalResizeLockCommand
+	(*PathListDirectoriesCommand)(nil), // 25: termx.api.v1.PathListDirectoriesCommand
+	(*ApiError)(nil),                   // 26: termx.api.v1.ApiError
+	(*TerminalDefaultsResult)(nil),     // 27: termx.api.v1.TerminalDefaultsResult
+	(*TerminalCreateResult)(nil),       // 28: termx.api.v1.TerminalCreateResult
+	(*TerminalListResult)(nil),         // 29: termx.api.v1.TerminalListResult
+	(*TerminalGetResult)(nil),          // 30: termx.api.v1.TerminalGetResult
+	(*TerminalAttachResult)(nil),       // 31: termx.api.v1.TerminalAttachResult
+	(*TerminalResizeResult)(nil),       // 32: termx.api.v1.TerminalResizeResult
+	(*PathListDirectoriesResult)(nil),  // 33: termx.api.v1.PathListDirectoriesResult
+	(*ApiVersion)(nil),                 // 34: termx.api.v1.ApiVersion
+	(*TerminalLifecycleEvent)(nil),     // 35: termx.api.v1.TerminalLifecycleEvent
+	(*TerminalResizeControlEvent)(nil), // 36: termx.api.v1.TerminalResizeControlEvent
 }
 var file_apipb_application_proto_depIdxs = []int32{
-	3,  // 0: termx.api.v1.OperationStamp.session:type_name -> termx.api.v1.EndpointSessionStamp
-	2,  // 1: termx.api.v1.RequestContext.api_version:type_name -> termx.api.v1.ApiVersion
-	0,  // 2: termx.api.v1.RequestContext.capabilities:type_name -> termx.api.v1.ApiCapability
-	3,  // 3: termx.api.v1.RequestContext.session:type_name -> termx.api.v1.EndpointSessionStamp
-	3,  // 4: termx.api.v1.StaleSessionErrorDetail.requested:type_name -> termx.api.v1.EndpointSessionStamp
-	5,  // 5: termx.api.v1.ResourceErrorDetail.resource:type_name -> termx.api.v1.ResourceHandle
-	1,  // 6: termx.api.v1.ApiError.code:type_name -> termx.api.v1.ApiErrorCode
-	7,  // 7: termx.api.v1.ApiError.validation:type_name -> termx.api.v1.ValidationErrorDetail
-	8,  // 8: termx.api.v1.ApiError.stale_session:type_name -> termx.api.v1.StaleSessionErrorDetail
-	9,  // 9: termx.api.v1.ApiError.resource:type_name -> termx.api.v1.ResourceErrorDetail
-	6,  // 10: termx.api.v1.CancelOperationCommand.context:type_name -> termx.api.v1.RequestContext
-	4,  // 11: termx.api.v1.CancelOperationCommand.operation:type_name -> termx.api.v1.OperationStamp
-	6,  // 12: termx.api.v1.ReleaseResourceCommand.context:type_name -> termx.api.v1.RequestContext
-	5,  // 13: termx.api.v1.ReleaseResourceCommand.resource:type_name -> termx.api.v1.ResourceHandle
-	11, // 14: termx.api.v1.CommandEnvelope.cancel_operation:type_name -> termx.api.v1.CancelOperationCommand
-	12, // 15: termx.api.v1.CommandEnvelope.release_resource:type_name -> termx.api.v1.ReleaseResourceCommand
-	14, // 16: termx.api.v1.ResultEnvelope.acknowledge:type_name -> termx.api.v1.AcknowledgeResult
-	10, // 17: termx.api.v1.ResultEnvelope.error:type_name -> termx.api.v1.ApiError
-	4,  // 18: termx.api.v1.OperationCancelledEvent.operation:type_name -> termx.api.v1.OperationStamp
-	5,  // 19: termx.api.v1.ResourceReleasedEvent.resource:type_name -> termx.api.v1.ResourceHandle
-	2,  // 20: termx.api.v1.EventEnvelope.api_version:type_name -> termx.api.v1.ApiVersion
-	16, // 21: termx.api.v1.EventEnvelope.operation_cancelled:type_name -> termx.api.v1.OperationCancelledEvent
-	17, // 22: termx.api.v1.EventEnvelope.resource_released:type_name -> termx.api.v1.ResourceReleasedEvent
-	23, // [23:23] is the sub-list for method output_type
-	23, // [23:23] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	8,  // 0: termx.api.v1.CancelOperationCommand.context:type_name -> termx.api.v1.RequestContext
+	9,  // 1: termx.api.v1.CancelOperationCommand.operation:type_name -> termx.api.v1.OperationStamp
+	8,  // 2: termx.api.v1.ReleaseResourceCommand.context:type_name -> termx.api.v1.RequestContext
+	10, // 3: termx.api.v1.ReleaseResourceCommand.resource:type_name -> termx.api.v1.ResourceHandle
+	0,  // 4: termx.api.v1.CommandEnvelope.cancel_operation:type_name -> termx.api.v1.CancelOperationCommand
+	1,  // 5: termx.api.v1.CommandEnvelope.release_resource:type_name -> termx.api.v1.ReleaseResourceCommand
+	11, // 6: termx.api.v1.CommandEnvelope.terminal_defaults:type_name -> termx.api.v1.TerminalDefaultsCommand
+	12, // 7: termx.api.v1.CommandEnvelope.terminal_create:type_name -> termx.api.v1.TerminalCreateCommand
+	13, // 8: termx.api.v1.CommandEnvelope.terminal_list:type_name -> termx.api.v1.TerminalListCommand
+	14, // 9: termx.api.v1.CommandEnvelope.terminal_get:type_name -> termx.api.v1.TerminalGetCommand
+	15, // 10: termx.api.v1.CommandEnvelope.terminal_restart:type_name -> termx.api.v1.TerminalRestartCommand
+	16, // 11: termx.api.v1.CommandEnvelope.terminal_kill:type_name -> termx.api.v1.TerminalKillCommand
+	17, // 12: termx.api.v1.CommandEnvelope.terminal_remove:type_name -> termx.api.v1.TerminalRemoveCommand
+	18, // 13: termx.api.v1.CommandEnvelope.terminal_set_metadata:type_name -> termx.api.v1.TerminalSetMetadataCommand
+	19, // 14: termx.api.v1.CommandEnvelope.terminal_set_tags:type_name -> termx.api.v1.TerminalSetTagsCommand
+	20, // 15: termx.api.v1.CommandEnvelope.terminal_attach:type_name -> termx.api.v1.TerminalAttachCommand
+	21, // 16: termx.api.v1.CommandEnvelope.terminal_detach:type_name -> termx.api.v1.TerminalDetachCommand
+	22, // 17: termx.api.v1.CommandEnvelope.terminal_input:type_name -> termx.api.v1.TerminalInputCommand
+	23, // 18: termx.api.v1.CommandEnvelope.terminal_resize:type_name -> termx.api.v1.TerminalResizeCommand
+	24, // 19: termx.api.v1.CommandEnvelope.terminal_resize_lock:type_name -> termx.api.v1.TerminalResizeLockCommand
+	25, // 20: termx.api.v1.CommandEnvelope.path_list_directories:type_name -> termx.api.v1.PathListDirectoriesCommand
+	3,  // 21: termx.api.v1.ResultEnvelope.acknowledge:type_name -> termx.api.v1.AcknowledgeResult
+	26, // 22: termx.api.v1.ResultEnvelope.error:type_name -> termx.api.v1.ApiError
+	27, // 23: termx.api.v1.ResultEnvelope.terminal_defaults:type_name -> termx.api.v1.TerminalDefaultsResult
+	28, // 24: termx.api.v1.ResultEnvelope.terminal_create:type_name -> termx.api.v1.TerminalCreateResult
+	29, // 25: termx.api.v1.ResultEnvelope.terminal_list:type_name -> termx.api.v1.TerminalListResult
+	30, // 26: termx.api.v1.ResultEnvelope.terminal_get:type_name -> termx.api.v1.TerminalGetResult
+	31, // 27: termx.api.v1.ResultEnvelope.terminal_attach:type_name -> termx.api.v1.TerminalAttachResult
+	32, // 28: termx.api.v1.ResultEnvelope.terminal_resize:type_name -> termx.api.v1.TerminalResizeResult
+	33, // 29: termx.api.v1.ResultEnvelope.path_list_directories:type_name -> termx.api.v1.PathListDirectoriesResult
+	9,  // 30: termx.api.v1.OperationCancelledEvent.operation:type_name -> termx.api.v1.OperationStamp
+	10, // 31: termx.api.v1.ResourceReleasedEvent.resource:type_name -> termx.api.v1.ResourceHandle
+	34, // 32: termx.api.v1.EventEnvelope.api_version:type_name -> termx.api.v1.ApiVersion
+	5,  // 33: termx.api.v1.EventEnvelope.operation_cancelled:type_name -> termx.api.v1.OperationCancelledEvent
+	6,  // 34: termx.api.v1.EventEnvelope.resource_released:type_name -> termx.api.v1.ResourceReleasedEvent
+	35, // 35: termx.api.v1.EventEnvelope.terminal_lifecycle:type_name -> termx.api.v1.TerminalLifecycleEvent
+	36, // 36: termx.api.v1.EventEnvelope.terminal_resize_control:type_name -> termx.api.v1.TerminalResizeControlEvent
+	37, // [37:37] is the sub-list for method output_type
+	37, // [37:37] is the sub-list for method input_type
+	37, // [37:37] is the sub-list for extension type_name
+	37, // [37:37] is the sub-list for extension extendee
+	0,  // [0:37] is the sub-list for field type_name
 }
 
 func init() { file_apipb_application_proto_init() }
@@ -1423,36 +1075,56 @@ func file_apipb_application_proto_init() {
 	if File_apipb_application_proto != nil {
 		return
 	}
-	file_apipb_application_proto_msgTypes[8].OneofWrappers = []any{
-		(*ApiError_Validation)(nil),
-		(*ApiError_StaleSession)(nil),
-		(*ApiError_Resource)(nil),
-	}
-	file_apipb_application_proto_msgTypes[11].OneofWrappers = []any{
+	file_apipb_common_proto_init()
+	file_apipb_terminal_proto_init()
+	file_apipb_application_proto_msgTypes[2].OneofWrappers = []any{
 		(*CommandEnvelope_CancelOperation)(nil),
 		(*CommandEnvelope_ReleaseResource)(nil),
+		(*CommandEnvelope_TerminalDefaults)(nil),
+		(*CommandEnvelope_TerminalCreate)(nil),
+		(*CommandEnvelope_TerminalList)(nil),
+		(*CommandEnvelope_TerminalGet)(nil),
+		(*CommandEnvelope_TerminalRestart)(nil),
+		(*CommandEnvelope_TerminalKill)(nil),
+		(*CommandEnvelope_TerminalRemove)(nil),
+		(*CommandEnvelope_TerminalSetMetadata)(nil),
+		(*CommandEnvelope_TerminalSetTags)(nil),
+		(*CommandEnvelope_TerminalAttach)(nil),
+		(*CommandEnvelope_TerminalDetach)(nil),
+		(*CommandEnvelope_TerminalInput)(nil),
+		(*CommandEnvelope_TerminalResize)(nil),
+		(*CommandEnvelope_TerminalResizeLock)(nil),
+		(*CommandEnvelope_PathListDirectories)(nil),
 	}
-	file_apipb_application_proto_msgTypes[13].OneofWrappers = []any{
+	file_apipb_application_proto_msgTypes[4].OneofWrappers = []any{
 		(*ResultEnvelope_Acknowledge)(nil),
 		(*ResultEnvelope_Error)(nil),
+		(*ResultEnvelope_TerminalDefaults)(nil),
+		(*ResultEnvelope_TerminalCreate)(nil),
+		(*ResultEnvelope_TerminalList)(nil),
+		(*ResultEnvelope_TerminalGet)(nil),
+		(*ResultEnvelope_TerminalAttach)(nil),
+		(*ResultEnvelope_TerminalResize)(nil),
+		(*ResultEnvelope_PathListDirectories)(nil),
 	}
-	file_apipb_application_proto_msgTypes[16].OneofWrappers = []any{
+	file_apipb_application_proto_msgTypes[7].OneofWrappers = []any{
 		(*EventEnvelope_OperationCancelled)(nil),
 		(*EventEnvelope_ResourceReleased)(nil),
+		(*EventEnvelope_TerminalLifecycle)(nil),
+		(*EventEnvelope_TerminalResizeControl)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_apipb_application_proto_rawDesc), len(file_apipb_application_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   17,
+			NumEnums:      0,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_apipb_application_proto_goTypes,
 		DependencyIndexes: file_apipb_application_proto_depIdxs,
-		EnumInfos:         file_apipb_application_proto_enumTypes,
 		MessageInfos:      file_apipb_application_proto_msgTypes,
 	}.Build()
 	File_apipb_application_proto = out.File

@@ -2,140 +2,68 @@ syntax = "proto3";
 
 package termx.api.v1;
 
+import "apipb/common.proto";
+import "apipb/terminal.proto";
+
 option go_package = "github.com/lozzow/termx/proto/apipb";
 
-// ApiCapability 描述调用方和 API Layer 明确协商的公共能力。
-enum ApiCapability {
-  API_CAPABILITY_UNSPECIFIED = 0;
-  API_CAPABILITY_TYPED_ERRORS = 1;
-  API_CAPABILITY_ENDPOINT_SESSION_FENCE = 2;
-  API_CAPABILITY_OPERATION_CANCELLATION = 3;
-  API_CAPABILITY_RESOURCE_LIFECYCLE = 4;
-}
-
-// ApiErrorCode 是所有 application API 共用的稳定失败分类。
-enum ApiErrorCode {
-  API_ERROR_CODE_UNSPECIFIED = 0;
-  API_ERROR_CODE_INVALID_REQUEST = 1;
-  API_ERROR_CODE_UNSUPPORTED_VERSION = 2;
-  API_ERROR_CODE_UNSUPPORTED_CAPABILITY = 3;
-  API_ERROR_CODE_UNAUTHORIZED = 4;
-  API_ERROR_CODE_FORBIDDEN = 5;
-  API_ERROR_CODE_NOT_FOUND = 6;
-  API_ERROR_CODE_CONFLICT = 7;
-  API_ERROR_CODE_STALE_SESSION = 8;
-  API_ERROR_CODE_CANCELLED = 9;
-  API_ERROR_CODE_UNAVAILABLE = 10;
-  API_ERROR_CODE_INTERNAL = 11;
-}
-
-// ApiVersion 是公共 application schema 的显式主次版本。
-message ApiVersion {
-  uint32 major = 1;
-  uint32 minor = 2;
-}
-
-// EndpointSessionStamp 把一次操作固定到 endpoint route generation。
-message EndpointSessionStamp {
-  string endpoint_id = 1;
-  string route_id = 2;
-  uint64 generation = 3;
-}
-
-// OperationStamp 标识不可隐式重放的 application operation。
-message OperationStamp {
-  EndpointSessionStamp session = 1;
-  string operation_id = 2;
-}
-
-// ResourceHandle 是跨语言边界可传递的 opaque 资源身份。
-message ResourceHandle {
-  string id = 1;
-  string kind = 2;
-  uint64 generation = 3;
-}
-
-// RequestContext 是所有公共 command 的共同调用上下文。
-message RequestContext {
-  string request_id = 1;
-  ApiVersion api_version = 2;
-  repeated ApiCapability capabilities = 3;
-  EndpointSessionStamp session = 4;
-}
-
-// ValidationErrorDetail 返回字段级 validation 失败，不包含内部 Go 类型信息。
-message ValidationErrorDetail {
-  string field = 1;
-  string reason = 2;
-}
-
-// StaleSessionErrorDetail 返回当前可观察 generation，调用方不得自动重放非幂等操作。
-message StaleSessionErrorDetail {
-  EndpointSessionStamp requested = 1;
-  uint64 current_generation = 2;
-}
-
-// ResourceErrorDetail 返回资源生命周期失败的 opaque handle。
-message ResourceErrorDetail {
-  ResourceHandle resource = 1;
-}
-
-// ApiError 是所有 application result 共用的 typed error。
-message ApiError {
-  ApiErrorCode code = 1;
-  string message = 2;
-  bool retryable = 3;
-  bool attempted = 4;
-  oneof detail {
-    ValidationErrorDetail validation = 10;
-    StaleSessionErrorDetail stale_session = 11;
-    ResourceErrorDetail resource = 12;
-  }
-}
-
-// CancelOperationCommand 显式取消仍由 API Layer 持有的 operation。
 message CancelOperationCommand {
   RequestContext context = 1;
   OperationStamp operation = 2;
 }
 
-// ReleaseResourceCommand 显式释放 stream、subscription 或其它长期资源。
 message ReleaseResourceCommand {
   RequestContext context = 1;
   ResourceHandle resource = 2;
 }
 
-// CommandEnvelope 是公共 API command 的 versioned typed envelope。
 message CommandEnvelope {
   oneof command {
     CancelOperationCommand cancel_operation = 10;
     ReleaseResourceCommand release_resource = 11;
+    TerminalDefaultsCommand terminal_defaults = 20;
+    TerminalCreateCommand terminal_create = 21;
+    TerminalListCommand terminal_list = 22;
+    TerminalGetCommand terminal_get = 23;
+    TerminalRestartCommand terminal_restart = 24;
+    TerminalKillCommand terminal_kill = 25;
+    TerminalRemoveCommand terminal_remove = 26;
+    TerminalSetMetadataCommand terminal_set_metadata = 27;
+    TerminalSetTagsCommand terminal_set_tags = 28;
+    TerminalAttachCommand terminal_attach = 29;
+    TerminalDetachCommand terminal_detach = 30;
+    TerminalInputCommand terminal_input = 31;
+    TerminalResizeCommand terminal_resize = 32;
+    TerminalResizeLockCommand terminal_resize_lock = 33;
+    PathListDirectoriesCommand path_list_directories = 34;
   }
 }
 
-// AcknowledgeResult 表示 command 已完成且没有领域 payload。
 message AcknowledgeResult {}
 
-// ResultEnvelope 通过 request_id 对应 command，并且只返回 typed result 或 typed error。
 message ResultEnvelope {
   string request_id = 1;
   oneof result {
     AcknowledgeResult acknowledge = 10;
     ApiError error = 11;
+    TerminalDefaultsResult terminal_defaults = 20;
+    TerminalCreateResult terminal_create = 21;
+    TerminalListResult terminal_list = 22;
+    TerminalGetResult terminal_get = 23;
+    TerminalAttachResult terminal_attach = 24;
+    TerminalResizeResult terminal_resize = 25;
+    PathListDirectoriesResult path_list_directories = 26;
   }
 }
 
-// OperationCancelledEvent 是 API Layer 完成取消后的可观察事件。
 message OperationCancelledEvent {
   OperationStamp operation = 1;
 }
 
-// ResourceReleasedEvent 是 API Layer 完成资源释放后的可观察事件。
 message ResourceReleasedEvent {
   ResourceHandle resource = 1;
 }
 
-// EventEnvelope 是公共 application event 的 versioned typed envelope。
 message EventEnvelope {
   string event_id = 1;
   int64 timestamp_unix_nano = 2;
@@ -143,5 +71,7 @@ message EventEnvelope {
   oneof event {
     OperationCancelledEvent operation_cancelled = 10;
     ResourceReleasedEvent resource_released = 11;
+    TerminalLifecycleEvent terminal_lifecycle = 20;
+    TerminalResizeControlEvent terminal_resize_control = 21;
   }
 }
