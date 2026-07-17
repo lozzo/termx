@@ -14,7 +14,7 @@
 - `clients/ui/src/generated/apipb/` 只保存由公共 API schema 生成的 TypeScript projection；组件和 runtime 不得复制 proto 业务字段建立第二套 API DTO。
 - `proto/runtimepb/runtime.proto` 是迁移期旧 Web/mobile runtime schema；不得新增 application API，字段迁入 `apipb` 并切换 consumer 后删除。
 - `proto/wirepb/` 是迁移期 daemon wire/framing schema；UI 不得把 wire message 当作新的公共 application API。
-- 所有客户端 API 修改顺序固定为 proto -> generated code -> compatibility harness -> transformer/client consumer。
+- 所有客户端 API 修改顺序固定为 proto -> generated code -> compatibility harness -> API Layer/API Mapping -> transport/client consumer。
 
 ## Transport And Security
 

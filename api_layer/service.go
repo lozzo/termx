@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/lozzow/termx/api_mapping"
 	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/transformer"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -42,10 +42,10 @@ func (service *Service) Execute(ctx context.Context, command *apipb.CommandEnvel
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	requestContext := transformer.RequestContextForCommand(command)
+	requestContext := apimapping.RequestContextForCommand(command)
 	requestID := requestContext.GetRequestId()
-	if err := transformer.ValidateRequestContext(requestContext); err != nil {
-		return errorResult(requestID, transformer.ErrorToProto(err, false))
+	if err := apimapping.ValidateRequestContext(requestContext); err != nil {
+		return errorResult(requestID, apimapping.ErrorToProto(err, false))
 	}
 	requestID = requestContext.GetRequestId()
 	if requestContext.GetApiVersion().GetMajor() != supportedAPIMajor {
@@ -55,7 +55,7 @@ func (service *Service) Execute(ctx context.Context, command *apipb.CommandEnvel
 		})
 	}
 	if err := ctx.Err(); err != nil {
-		return errorResult(requestID, transformer.ErrorToProto(err, false))
+		return errorResult(requestID, apimapping.ErrorToProto(err, false))
 	}
 
 	switch value := command.GetCommand().(type) {
@@ -64,7 +64,7 @@ func (service *Service) Execute(ctx context.Context, command *apipb.CommandEnvel
 	case *apipb.CommandEnvelope_ReleaseResource:
 		return service.releaseResource(ctx, requestContext, value.ReleaseResource)
 	default:
-		if transformer.RequiredCapabilityForCommand(command) != apipb.ApiCapability_API_CAPABILITY_UNSPECIFIED {
+		if apimapping.RequiredCapabilityForCommand(command) != apipb.ApiCapability_API_CAPABILITY_UNSPECIFIED {
 			return service.executeTerminal(ctx, command, requestContext)
 		}
 		return errorResult(requestID, &apipb.ApiError{
@@ -77,36 +77,36 @@ func (service *Service) Execute(ctx context.Context, command *apipb.CommandEnvel
 
 func (service *Service) cancelOperation(ctx context.Context, requestContext *apipb.RequestContext, command *apipb.CancelOperationCommand) *apipb.ResultEnvelope {
 	requestID := requestContext.GetRequestId()
-	if !transformer.HasCapability(requestContext, apipb.ApiCapability_API_CAPABILITY_OPERATION_CANCELLATION) {
+	if !apimapping.HasCapability(requestContext, apipb.ApiCapability_API_CAPABILITY_OPERATION_CANCELLATION) {
 		return unsupportedCapability(requestID, apipb.ApiCapability_API_CAPABILITY_OPERATION_CANCELLATION)
 	}
-	if err := transformer.ValidateOperationStamp(command.GetOperation(), requestContext.GetSession()); err != nil {
-		return errorResult(requestID, transformer.ErrorToProto(err, false))
+	if err := apimapping.ValidateOperationStamp(command.GetOperation(), requestContext.GetSession()); err != nil {
+		return errorResult(requestID, apimapping.ErrorToProto(err, false))
 	}
 	if service == nil || service.operations == nil {
 		return unavailable(requestID, "operation controller is unavailable")
 	}
 	operation := proto.Clone(command.GetOperation()).(*apipb.OperationStamp)
 	if err := service.operations.CancelOperation(ctx, operation); err != nil {
-		return errorResult(requestID, transformer.ErrorToProto(err, true))
+		return errorResult(requestID, apimapping.ErrorToProto(err, true))
 	}
 	return acknowledge(requestID)
 }
 
 func (service *Service) releaseResource(ctx context.Context, requestContext *apipb.RequestContext, command *apipb.ReleaseResourceCommand) *apipb.ResultEnvelope {
 	requestID := requestContext.GetRequestId()
-	if !transformer.HasCapability(requestContext, apipb.ApiCapability_API_CAPABILITY_RESOURCE_LIFECYCLE) {
+	if !apimapping.HasCapability(requestContext, apipb.ApiCapability_API_CAPABILITY_RESOURCE_LIFECYCLE) {
 		return unsupportedCapability(requestID, apipb.ApiCapability_API_CAPABILITY_RESOURCE_LIFECYCLE)
 	}
-	if err := transformer.ValidateResourceHandle(command.GetResource()); err != nil {
-		return errorResult(requestID, transformer.ErrorToProto(err, false))
+	if err := apimapping.ValidateResourceHandle(command.GetResource()); err != nil {
+		return errorResult(requestID, apimapping.ErrorToProto(err, false))
 	}
 	if service == nil || service.resources == nil {
 		return unavailable(requestID, "resource controller is unavailable")
 	}
 	resource := proto.Clone(command.GetResource()).(*apipb.ResourceHandle)
 	if err := service.resources.ReleaseResource(ctx, resource); err != nil {
-		return errorResult(requestID, transformer.ErrorToProto(err, true))
+		return errorResult(requestID, apimapping.ErrorToProto(err, true))
 	}
 	return acknowledge(requestID)
 }

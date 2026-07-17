@@ -21,8 +21,8 @@ client/
   binding/           后续 AAR、XCFramework、C ABI、WASM 的稳定外部边界
 
 core/                daemon terminal lifecycle、history、live、storage truth
-api_layer/           generated proto 驱动的 application dispatch、授权、取消与资源生命周期
-transformer/         core domain 与 generated proto 的无状态双向转换
+api_layer/           generated proto 驱动的 application dispatch、授权、session fence、取消与资源生命周期
+api_mapping/         core domain 与 generated proto 的无状态双向字段映射；不是 transport
 tui/                 纯 TUI 产品与平台适配
   state/             当前 reducer-owned UI model；后续独立切片再评估改名 model
   app/               当前 reducer/effect/workflow；后续独立切片再拆 update/runtime
@@ -50,26 +50,34 @@ testkit/             跨 package harness；不得成为生产 truth
 
 ## 依赖方向
 
-允许的主方向：
+允许的运行与依赖主方向：
 
 ```text
-cmd / platform binding / tui adapter
+cmd / TUI / plugin / platform client
                   |
                   v
-            client/runtime
+       client runtime / platform binding
+                  |
+                  v
+ transport: Unix / TCP+TLS / SSH / WebRTC / JNI / Swift / WASM
+                  |
+                  v
+ protocol framing: Hello / channel / correlation / proto payload
                   |
                   v
           generated proto API
                   |
                   v
-             transformer
-                  |
-                  v
               api_layer
                   |
                   v
-             core domain
+             api_mapping
+                  |
+                  v
+              core domain
 ```
+
+Proto 在图中表示 schema/message boundary，不表示网络 transport 或独立运行服务。返回结果和事件按相反方向流动。
 
 硬规则：
 
@@ -86,7 +94,7 @@ cmd / platform binding / tui adapter
 - `core/`、`remote/`、`private/` 不反向 import TUI 或 CLI。
 - `proto/` 是所有跨边界 API 的唯一 schema truth；禁止在 `core/api`、client runtime、protocol 或 TUI port 复制业务 DTO。
 - `api_layer/` 公开边界只使用 proto 生成类型，禁止依赖 UI、CLI、具体 transport、插件和 private Cloud implementation。
-- `transformer/` 只做 core domain 与 proto 的确定性转换，不拥有状态、权限、session、route、fallback 或重试。
+- `api_mapping/` 只做 core domain 与 proto 的确定性字段映射，不建立连接、不处理 framing，也不拥有状态、权限、session、route、fallback 或重试。
 - `internal/protocol/` 只传输 proto payload，不拥有 application request/result/event 字段语义。
 - 外部绑定只暴露 versioned protobuf command/event、opaque handle 和显式资源释放，不暴露 Go pointer 或内部 struct。
 

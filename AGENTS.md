@@ -11,7 +11,7 @@
 - `core/docs/architecture.md` 是 core-v2 技术设计基准。
 - `tui/docs/architecture.md` 是 tui-v3 技术设计基准。
 - `docs/development/repository-layout.md` 是目录 ownership、依赖方向和迁移边界的唯一架构基准。
-- `docs/development/proto-api-architecture.md` 是 Proto API、API Layer、Transformer、插件与客户端依赖关系的唯一架构基准。
+- `docs/development/proto-api-architecture.md` 是 Proto API、API Layer、API Mapping、transport、插件与客户端依赖关系的唯一架构基准。
 - `AGENTS.md` 只规定代理执行方式和目录职责，不替代 `workflow.md` 的范围判断。
 - 若 `workflow.md` 与旧说明、聊天记录、旧代码行为或局部假设冲突，默认以 `workflow.md` 为准。
 
@@ -69,7 +69,7 @@
 ## 目录职责
 
 - `api_layer/`：core application API 的执行边界，负责调用编排、授权、取消、错误分类和资源生命周期；所有跨边界 request/result/event 必须使用 `proto/` 生成类型，不得定义第二套业务 DTO。
-- `transformer/`：`core domain <-> proto API` 以及必要的平台 projection 转换；只做确定性转换和 validation，不拥有 lifecycle、session、history、route 或 UI state。
+- `api_mapping/`：`generated proto <-> core domain` 以及必要的平台 projection 映射；只做确定性字段映射和结构 validation，不建立连接，不处理 framing，也不拥有 lifecycle、session、history、route 或 UI state。
 - `client/endpoint/`：客户端 Endpoint/Route 持久领域、assembler、planner 与 portable contract；不负责网络 IO、credential、protocol session 或 UI。
 - `client/runtime/`：跨端客户端 route race、ReadySession、generation、session owner 和 proto command/event 执行生命周期；不得自定义 application DTO，不得依赖 TUI、CLI、平台 UI 或私有 Cloud 实现。
 - `client/port/` 与 `client/adapter/`：host capability 接口与 local/SSH/managed/protocol adapter；adapter 不得创建第二份 route/session truth。
@@ -93,12 +93,12 @@
 ## 硬语义规则
 
 - **Proto API 强约定**：所有对插件、第三方客户端、官方客户端、CLI/TUI client runtime、跨进程服务或跨语言 binding 暴露的 API，都必须先定义在 `proto/`；任何 Go interface、dispatcher、adapter 或 binding 只能消费生成类型，不得先写 Go struct 再补 proto。
-- 唯一允许的完整依赖链是 `core <-> api_layer <-> transformer <-> 插件/客户端`。Transport、CLI、TUI、Cloud、WebRTC、JNI、Swift、WASM 不得绕过 API Layer 或 Transformer 直接把 core domain struct 当成 API。
+- 唯一允许的完整运行链路是 `插件/客户端 -> transport/platform binding -> protocol framing -> generated proto -> api_layer -> api_mapping -> core`，返回方向相反。Unix Socket、TCP/TLS、SSH、WebRTC DataChannel、JNI、Swift 和 WASM binding 都属于 transport 或平台接入，不属于 API Mapping；任何入口不得绕过 API Layer 直接消费 core domain struct。
 - `core/` 可以拥有内部领域 struct、value object 和状态机，但这些类型不得成为插件/客户端契约，也不得为了复用而移动到所谓 shared API DTO 目录。
 - `api_layer/` 的公开方法参数、返回值、command、event、stream item 和稳定错误 detail 必须来自 proto 生成类型；允许的非 proto 参数仅限 `context.Context`、内部依赖接口和不越过调用边界的资源句柄实现。
-- `transformer/` 是 core domain 与 proto API 之间唯一允许的字段转换位置；transformer 必须无状态、可测试、失败显式，不得选择 route、fallback、权限、重试或修改 reducer/core-owned state。
-- `proto/` schema 是 API 字段、枚举、oneof、版本和兼容语义的唯一真值。修改 API 必须先改 proto、重新生成、补兼容/round-trip harness，再修改 API Layer、Transformer 和 consumer。
-- 禁止在 `core/api`、`client/runtime`、`internal/protocol`、`tui/port`、插件 SDK 或平台 binding 中复制 proto 业务字段形成平行 DTO；UI-only view model 和 core-only domain model 除外，但必须通过 transformer 显式转换。
+- `api_mapping/` 是 core domain 与 proto API 之间唯一允许的字段映射位置；API Mapping 必须无状态、可测试、失败显式，不得建立连接、处理 framing、选择 route/fallback、判断权限、执行重试或修改 reducer/core-owned state。
+- `proto/` schema 是 API 字段、枚举、oneof、版本和兼容语义的唯一真值。Proto 是 schema 与消息契约，不是 transport、连接管理器或主动运行层。修改 API 必须先改 proto、重新生成、补兼容/round-trip harness，再修改 API Layer、API Mapping 和 consumer。
+- 禁止在 `core/api`、`client/runtime`、`internal/protocol`、`tui/port`、插件 SDK 或平台 binding 中复制 proto 业务字段形成平行 DTO；UI-only view model 和 core-only domain model 除外，但必须通过 API Mapping 显式转换。
 - `internal/protocol` 只能负责 wire transport，不拥有 API 语义；method string 到 proto command 的分发属于迁移债，最终必须由 versioned proto command/event envelope 取代。
 - 插件和第三方客户端只以发布的 proto schema、生成 SDK 和 API capability/version contract 为基础，不依赖仓库内部 Go package、core struct、TUI state 或私有 Cloud 类型。
 - 禁止症状补丁：遇到状态错乱、输入错路由、生命周期误判或恢复异常时，必须先定位权威状态边界和消息链路，再修改模型或契约；不得用 storage scrub、fallback、定时刷新、重复 attach、局部 if 分支等方式掩盖根因。
@@ -138,7 +138,7 @@
 
 ## 实现纪律
 
-- 新增或修改跨边界 API 时，顺序固定为：proto schema -> generated code -> API Layer interface/dispatcher -> transformer harness -> core adapter -> consumer；不得颠倒顺序。
+- 新增或修改跨边界 API 时，顺序固定为：proto schema -> generated code -> compatibility harness -> API Layer interface/dispatcher -> API Mapping harness -> core adapter -> transport/consumer；不得颠倒顺序。
 - 如果发现现有 API 只存在 Go struct/interface 而没有 proto 定义，必须先在 `workflow.md` 登记并迁移到 proto；不得继续扩大该 Go-only API。
 - 先写 domain model 和小 harness，再接真实 protocol、terminal 或 CLI 入口。
 - 所有新增或修改的导出 `type`、`interface`、`struct`、导出方法和导出函数都必须写清晰、详细的中文注释；注释要说明用途、领域归属、真值来源、消息链路、失败条件或调用边界中的至少相关部分，不能只复述名字。

@@ -1,5 +1,6 @@
-// Package transformer 提供 core domain 与公共 Proto API 之间的无状态确定性转换。
-package transformer
+// Package apimapping 提供 core domain 与公共 Proto API 之间的无状态确定性映射。
+// 它不建立连接、不处理 framing，也不拥有授权、session 或应用状态。
+package apimapping
 
 import (
 	"context"
@@ -114,8 +115,8 @@ func ValidateResourceHandle(handle *apipb.ResourceHandle) error {
 	return nil
 }
 
-// ErrorToProto 把 transformer/core adapter 失败映射为公共 typed error。
-// attempted 必须由 API Layer 在 adapter 调用边界确定，transformer 不推断是否已执行副作用。
+// ErrorToProto 把 API mapping/core adapter 失败映射为公共 typed error。
+// attempted 必须由 API Layer 在 adapter 调用边界确定，API mapping 不推断是否已执行副作用。
 func ErrorToProto(err error, attempted bool) *apipb.ApiError {
 	if err == nil {
 		return nil

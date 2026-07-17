@@ -15,7 +15,7 @@
 | `client/runtime/` | 跨端 route race、ReadySession、generation 与 session owner |
 | `client/port/`、`client/adapter/` | host capability 接口和 local/SSH/managed/protocol adapter |
 | `core/` | terminal lifecycle、live surface、history 与 daemon storage truth |
-| `api_layer/`、`transformer/` | generated proto 驱动的 application API 与 core/proto 无状态转换 |
+| `api_layer/`、`api_mapping/` | generated proto 驱动的 application API 与 core/proto 无状态字段映射；transport/framing 归独立 adapter 与 protocol |
 | `tui/` | UI state、reducer/effect、terminal host、workbench/copy/history 投影、交互与渲染 |
 | `remote/` | 公开 WebRTC/DataChannel transport 与端到端 remote auth 接线 |
 | `shared/` | 尚未迁移的 transport、remote auth、Cloud Companion 和 infrastructure primitive；不得新增 domain owner |

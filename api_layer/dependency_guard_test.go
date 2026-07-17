@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestAPILayerAndTransformerRespectDependencyDirection(t *testing.T) {
+func TestAPILayerAndAPIMappingRespectDependencyDirection(t *testing.T) {
 	assertImportsExclude(t, ".", []string{
 		"github.com/lozzow/termx/client",
 		"github.com/lozzow/termx/cmd",
@@ -21,7 +21,7 @@ func TestAPILayerAndTransformerRespectDependencyDirection(t *testing.T) {
 		"github.com/lozzow/termx/shared/transport",
 		"github.com/lozzow/termx/tui",
 	})
-	assertImportsExclude(t, "../transformer", []string{
+	assertImportsExclude(t, "../api_mapping", []string{
 		"github.com/lozzow/termx/api_layer",
 		"github.com/lozzow/termx/client",
 		"github.com/lozzow/termx/cmd",

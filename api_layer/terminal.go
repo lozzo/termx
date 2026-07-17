@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/lozzow/termx/api_mapping"
 	"github.com/lozzow/termx/proto/apipb"
-	"github.com/lozzow/termx/transformer"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -31,12 +31,12 @@ type TerminalController interface {
 
 func (service *Service) executeTerminal(ctx context.Context, command *apipb.CommandEnvelope, requestContext *apipb.RequestContext) *apipb.ResultEnvelope {
 	requestID := requestContext.GetRequestId()
-	required := transformer.RequiredCapabilityForCommand(command)
-	if !transformer.HasCapability(requestContext, required) {
+	required := apimapping.RequiredCapabilityForCommand(command)
+	if !apimapping.HasCapability(requestContext, required) {
 		return unsupportedCapability(requestID, required)
 	}
-	if err := transformer.ValidateTerminalCommand(command); err != nil {
-		return errorResult(requestID, transformer.ErrorToProto(err, false))
+	if err := apimapping.ValidateTerminalCommand(command); err != nil {
+		return errorResult(requestID, apimapping.ErrorToProto(err, false))
 	}
 	if service == nil || service.terminals == nil {
 		return unavailable(requestID, "terminal controller is unavailable")
@@ -82,7 +82,7 @@ func (service *Service) executeTerminal(ctx context.Context, command *apipb.Comm
 		result, err := service.terminals.PathListDirectories(ctx, cloneMessage(value.PathListDirectories))
 		return pathListDirectoriesResult(requestID, result, err)
 	default:
-		return errorResult(requestID, transformer.ErrorToProto(&transformer.ValidationError{Field: "command", Reason: "unsupported terminal command"}, false))
+		return errorResult(requestID, apimapping.ErrorToProto(&apimapping.ValidationError{Field: "command", Reason: "unsupported terminal command"}, false))
 	}
 }
 
@@ -92,7 +92,7 @@ func cloneMessage[T proto.Message](message T) T {
 
 func terminalAck(requestID string, err error) *apipb.ResultEnvelope {
 	if err != nil {
-		return errorResult(requestID, transformer.ErrorToProto(err, true))
+		return errorResult(requestID, apimapping.ErrorToProto(err, true))
 	}
 	return acknowledge(requestID)
 }
@@ -150,5 +150,5 @@ func terminalResultError(requestID string, result any, err error) *apipb.ResultE
 	if err == nil && result == nil {
 		err = errors.New("terminal controller returned nil result")
 	}
-	return errorResult(requestID, transformer.ErrorToProto(err, true))
+	return errorResult(requestID, apimapping.ErrorToProto(err, true))
 }
